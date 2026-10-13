@@ -93,7 +93,7 @@ func trailWaitPaused(t *testing.T, f *runFixture) {
 }
 
 func TestCompleteToolTrailAndJSONRPCError(t *testing.T) {
-	// R-9FOL-TQG6 R-HH81-3BX6
+	// R-A8O7-4GBE R-HH81-3BX6 R-AB3Z-VZSS
 	socket, received := sibling(t, false)
 	path := filepath.Join(t.TempDir(), "services")
 	writeServices(t, path, "", []map[string]any{trailService("repos", socket)})
@@ -104,6 +104,11 @@ func TestCompleteToolTrailAndJSONRPCError(t *testing.T) {
 	}{
 		{"catalog", "catalog-full", "read", "ok", map[string]any{}},
 		{"search", "search-full", "read", "ok", map[string]any{}},
+		{"search", "search-limit-refused", "read", "error", map[string]any{"limit": 0}},
+		{"search", "search-page-refused", "read", "error", map[string]any{"page": "private-page-token"}},
+		{"search", "search-invalid", "read", "invalid_arguments", map[string]any{"limit": "not-an-integer"}},
+		{"catalog", "catalog-invalid", "read", "invalid_arguments", map[string]any{"service": 1}},
+		{"subscribers", "subscribers-invalid", "read", "invalid_arguments", map[string]any{"unknown": true}},
 		{"subscribers", "subscribers-full", "read", "ok", map[string]any{}},
 		{"skip", "skip-error", "destructive", "error", map[string]any{"service": "absent"}},
 		{"resume", "resume-error", "additive", "error", map[string]any{"service": "absent"}},
@@ -164,6 +169,19 @@ func TestCompleteToolTrailAndJSONRPCError(t *testing.T) {
 		}
 		if len(recorded) != 1 {
 			t.Fatalf("%s tool records %#v", tc.id, recorded)
+		}
+		var names []string
+		for _, event := range f.capture.Events() {
+			if event.RequestID == tc.id {
+				names = append(names, event.Name)
+			}
+		}
+		wantNames := []string{"request.started", "tool.called", "request.finished"}
+		if tc.id == "skip-ok" {
+			wantNames = []string{"request.started", "event.skipped", "tool.called", "request.finished"}
+		}
+		if !reflect.DeepEqual(names, wantNames) {
+			t.Fatalf("%s request records %v want %v", tc.id, names, wantNames)
 		}
 		e := recorded[0]
 		duration, ok := e.Attrs["duration_us"].(int64)

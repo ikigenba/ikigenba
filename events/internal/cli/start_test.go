@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/db"
 	appEvents "github.com/ikigenba/ikigenba/appkit/events"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/events"
@@ -190,7 +192,7 @@ func TestDatabaseOpenRefusal(t *testing.T) {
 	}
 }
 
-// R-9V2D-WR50 R-9WAA-AIVP R-A15V-TLUH R-A2DS-7DL6
+// R-9V2D-WR50 R-AERP-1B0V R-A15V-TLUH R-A2DS-7DL6
 func TestNewerDatabaseWarnsAndServes(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -205,11 +207,15 @@ func TestNewerDatabaseWarnsAndServes(t *testing.T) {
 	if err := st.Declare(ctx, "repos", store.Declaration{Emits: []appEvents.Emission{{Event: "repo.pushed"}}}); err != nil {
 		t.Fatal(err)
 	}
-	kept := appEvents.Event{ID: "evt_0000000000000001", Time: fixed, Service: "repos", Name: "repo.pushed", Attrs: appEvents.Attrs{}}
-	old := appEvents.Event{ID: "evt_0000000000000002", Time: fixed.Add(-72 * time.Hour), Service: "repos", Name: "repo.pushed", Attrs: appEvents.Attrs{}}
-	if err := st.Deliver(ctx, kept); err != nil {
-		t.Fatal(err)
+	keptIDs := make(map[string]bool, paging.DefaultLimit)
+	for n := range paging.DefaultLimit {
+		kept := appEvents.Event{ID: fmt.Sprintf("evt_%016x", n+1), Time: fixed, Service: "repos", Name: "repo.pushed", Attrs: appEvents.Attrs{}}
+		if err := st.Deliver(ctx, kept); err != nil {
+			t.Fatal(err)
+		}
+		keptIDs[kept.ID] = true
 	}
+	old := appEvents.Event{ID: fmt.Sprintf("evt_%016x", paging.DefaultLimit+1), Time: fixed.Add(-72 * time.Hour), Service: "repos", Name: "repo.pushed", Attrs: appEvents.Attrs{}}
 	oldStore := store.New(d, store.Config{Now: func() time.Time { return old.Time }, DepthMax: 8})
 	if err := oldStore.Deliver(ctx, old); err != nil {
 		t.Fatal(err)
@@ -258,8 +264,17 @@ func TestNewerDatabaseWarnsAndServes(t *testing.T) {
 	if err := json.Unmarshal(data, &answer); err != nil {
 		t.Fatal(err)
 	}
-	if result.IsError() || len(answer.Structured.Records) != 1 || answer.Structured.Records[0].ID != kept.ID {
+	if result.IsError() || len(answer.Structured.Records) != len(keptIDs) {
 		t.Fatal(string(data))
+	}
+	for _, record := range answer.Structured.Records {
+		if !keptIDs[record.ID] {
+			t.Fatal("unexpected or repeated retained event", record.ID)
+		}
+		delete(keptIDs, record.ID)
+	}
+	if len(keptIDs) != 0 {
+		t.Fatal("retained events absent", keptIDs)
 	}
 	f.stop(t)
 	calls := logs.snapshot()

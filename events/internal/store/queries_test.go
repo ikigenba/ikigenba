@@ -1,10 +1,6 @@
 package store_test
 
 import (
-	"encoding/base64"
-	"encoding/binary"
-	"errors"
-	"hash/crc32"
 	"math"
 	"reflect"
 	"testing"
@@ -58,7 +54,7 @@ func TestCatalog(t *testing.T) {
 }
 
 func TestSearchFiltersAndTimeBoundaries(t *testing.T) {
-	// R-E7IH-AI8J R-E8QD-O9Z8 R-39OW-WS8K
+	// R-E7IH-AI8J R-90RT-CPME
 	s, _, _ := openStore(t, store.Config{DepthMax: 3})
 	declare(t, s, "producer")
 	declare(t, s, "other")
@@ -108,13 +104,13 @@ func TestSearchFiltersAndTimeBoundaries(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			p, err := s.Search(ctx, tt.filter, 20, "")
+			p, err := s.Search(ctx, tt.filter, nil, 20)
 			must(t, err)
 			ids := []int64{}
-			for _, e := range p.Records {
+			for _, e := range p {
 				ids = append(ids, e.Seq)
 			}
-			if !reflect.DeepEqual(ids, tt.ids) || p.Next != "" {
+			if !reflect.DeepEqual(ids, tt.ids) {
 				t.Fatal(p)
 			}
 		})
@@ -125,10 +121,10 @@ func TestSearchFiltersAndTimeBoundaries(t *testing.T) {
 		ids   []int64
 	}{{"string", "true", []int64{1}}, {"bool", true, []int64{1}}, {"bool", false, []int64{2}}, {"integer", int(9), []int64{1}}, {"integer", uint16(9), []int64{1}}, {"integer", float64(9), []int64{1}}, {"integer", 9.5, []int64{2}}, {"float", float32(1.5), []int64{1}}, {"zero", 0, []int64{1}}, {"large", uint64(math.MaxUint64), []int64{1}}, {"integer", "9", []int64{}}, {"absent", 0, []int64{}}, {"string", true, []int64{}}, {"zero", nil, []int64{}}, {"zero", []int{0}, []int64{}}, {"zero", map[string]int{}, []int64{}}, {"float", math.NaN(), []int64{}}, {"float", math.Inf(1), []int64{}}, {"zero", complex(0, 0), []int64{}}}
 	for _, tt := range attrCases {
-		p, err := s.Search(ctx, store.Filter{Attrs: event.Attrs{tt.key: tt.value}}, 10, "")
+		p, err := s.Search(ctx, store.Filter{Attrs: event.Attrs{tt.key: tt.value}}, nil, 10)
 		must(t, err)
 		ids := []int64{}
-		for _, e := range p.Records {
+		for _, e := range p {
 			ids = append(ids, e.Seq)
 		}
 		if !reflect.DeepEqual(ids, tt.ids) {
@@ -137,82 +133,89 @@ func TestSearchFiltersAndTimeBoundaries(t *testing.T) {
 	}
 }
 
-func TestSearchCursorAndSweepPosition(t *testing.T) {
-	// R-EB66-FTGM R-ECE2-TL7B R-EDLZ-7CY0 R-EETV-L4OP
-	s, d, _ := openStore(t, store.Config{})
+func TestSearchSequenceWindows(t *testing.T) {
+	// R-90RT-CPME
+	s, _, _ := openStore(t, store.Config{})
 	declare(t, s, "producer")
-	for n := 1; n <= 5; n++ {
-		must(t, s.Deliver(ctx, emit(n)))
+	for n := 1; n <= 6; n++ {
+		e := emit(n)
+		if n%2 == 0 {
+			e.Name = "item.changed"
+		}
+		must(t, s.Deliver(ctx, e))
 	}
-	p, err := s.Search(ctx, store.Filter{}, 2, "")
-	must(t, err)
-	if p.Records[0].Seq != 5 || p.Records[1].Seq != 4 || p.Next == "" {
-		t.Fatal(p)
-	}
-	raw, err := base64.RawURLEncoding.Strict().DecodeString(string(p.Next))
-	must(t, err)
-	if len(raw) != 12 || binary.BigEndian.Uint64(raw[:8]) != 4 || binary.BigEndian.Uint32(raw[8:]) != crc32.ChecksumIEEE(raw[:8]) {
-		t.Fatal(raw)
-	}
-	seen := []int64{}
-	var after store.Cursor
-	for {
-		p, err := s.Search(ctx, store.Filter{}, 2, after)
+	filters := []store.Filter{{}, {Events: []string{"item.changed"}}, {User: stringPtr("missing")}, {Attrs: event.Attrs{"flag": []bool{true}}}}
+	for _, f := range filters {
+		full, err := s.Search(ctx, f, nil, 100)
 		must(t, err)
-		for _, e := range p.Records {
-			seen = append(seen, e.Seq)
+		for _, n := range []int{1, 2, 3, 6, 7, math.MaxInt} {
+			var before *int64
+			seen := []event.Event{}
+			for {
+				window, err := s.Search(ctx, f, before, n)
+				must(t, err)
+				if window == nil || len(window) > n {
+					t.Fatal(window)
+				}
+				seen = append(seen, window...)
+				if len(seen) > 6 {
+					t.Fatal("window traversal repeated events", seen)
+				}
+				if len(window) < n {
+					break
+				}
+				position := window[len(window)-1].Seq
+				before = &position
+			}
+			if !reflect.DeepEqual(seen, full) {
+				t.Fatal(n, seen, full)
+			}
 		}
-		if p.Next == "" {
-			break
+		for _, n := range []int{0, -1, math.MinInt} {
+			window, err := s.Search(ctx, f, nil, n)
+			must(t, err)
+			if window == nil || len(window) != 0 {
+				t.Fatal(n, window)
+			}
 		}
-		after = p.Next
 	}
-	if !reflect.DeepEqual(seen, []int64{5, 4, 3, 2, 1}) {
-		t.Fatal(seen)
+	for _, tt := range []struct {
+		before int64
+		want   []int64
+	}{
+		{math.MaxInt64, []int64{6, 4}}, {5, []int64{4, 2}}, {4, []int64{2}}, {1, []int64{}}, {0, []int64{}}, {math.MinInt64, []int64{}},
+	} {
+		window, err := s.Search(ctx, store.Filter{Events: []string{"item.changed"}}, &tt.before, 2)
+		must(t, err)
+		seqs := []int64{}
+		for _, e := range window {
+			seqs = append(seqs, e.Seq)
+		}
+		if window == nil || !reflect.DeepEqual(seqs, tt.want) {
+			t.Fatal(tt, window)
+		}
 	}
-	cursor := store.Cursor(base64.RawURLEncoding.EncodeToString(raw))
-	p, err = s.Search(ctx, store.Filter{User: stringPtr("missing")}, 2, cursor)
+	first, err := s.Search(ctx, store.Filter{Events: []string{"item.changed"}}, nil, 2)
 	must(t, err)
-	if len(p.Records) != 0 || p.Next != "" {
-		t.Fatal(p)
+	position := first[len(first)-1].Seq
+	window, err := s.Search(ctx, store.Filter{}, &position, 2)
+	must(t, err)
+	if len(window) != 2 || window[0].Seq != 3 || window[1].Seq != 2 {
+		t.Fatal(window)
 	}
-	invalid := []store.Cursor{"page2", store.Cursor(base64.RawURLEncoding.EncodeToString(raw[:11])), store.Cursor(string(cursor) + "A"), store.Cursor(string(cursor)[:len(cursor)-1]), store.Cursor(string(cursor) + "\n")}
-	for i := range string(cursor) {
-		mutated := []byte(cursor)
-		mutated[i] = 'A'
-		if string(mutated) == string(cursor) {
-			mutated[i] = 'B'
-		}
-		invalid = append(invalid, store.Cursor(mutated))
-	}
-	for _, failing := range []bool{false, true} {
-		d.SetFailing(failing)
-		for _, c := range invalid {
-			p, err = s.Search(ctx, store.Filter{}, 2, c)
-			if !errors.Is(err, store.ErrCursor) || !reflect.DeepEqual(p, store.Page{}) {
-				t.Fatal(c, p, err)
-			}
-		}
-		for _, limit := range []int{0, -1} {
-			p, err = s.Search(ctx, store.Filter{}, limit, "")
-			if err == nil || errors.Is(err, store.ErrCursor) || !reflect.DeepEqual(p, store.Page{}) {
-				t.Fatal(p, err)
-			}
-		}
-	}
-	d.SetFailing(false)
 	must(t, s.Sweep(ctx, instant.Add(time.Second)))
-	p, err = s.Search(ctx, store.Filter{}, 2, cursor)
+	window, err = s.Search(ctx, store.Filter{}, &position, 2)
 	must(t, err)
-	if p.Records == nil || len(p.Records) != 0 || p.Next != "" {
-		t.Fatal(p)
+	if window == nil || len(window) != 0 {
+		t.Fatal(window)
 	}
-	// Any signed position with a valid checksum is accepted.
-	negative := make([]byte, 12)
-	binary.BigEndian.PutUint64(negative[:8], math.MaxUint64)
-	binary.BigEndian.PutUint32(negative[8:], crc32.ChecksumIEEE(negative[:8]))
-	_, err = s.Search(ctx, store.Filter{}, 2, store.Cursor(base64.RawURLEncoding.EncodeToString(negative)))
+	must(t, s.Deliver(ctx, emit(7)))
+	position = 8
+	window, err = s.Search(ctx, store.Filter{}, &position, 2)
 	must(t, err)
+	if len(window) != 1 || window[0].Seq != 7 {
+		t.Fatal(window)
+	}
 }
 func stringPtr(s string) *string { return &s }
 
@@ -231,7 +234,7 @@ func TestReadPurityAndReturnedCopies(t *testing.T) {
 	must(t, err)
 	firstCat, err := s.Catalog(ctx, "", "")
 	must(t, err)
-	firstPage, err := s.Search(ctx, store.Filter{}, 1, "")
+	firstPage, err := s.Search(ctx, store.Filter{}, nil, 1)
 	must(t, err)
 	for i := 0; i < 3; i++ {
 		ds, err := s.Declarations(ctx)
@@ -241,7 +244,7 @@ func TestReadPurityAndReturnedCopies(t *testing.T) {
 		must(t, err)
 		cat, err := s.Catalog(ctx, "", "")
 		must(t, err)
-		p, err := s.Search(ctx, store.Filter{}, 1, "")
+		p, err := s.Search(ctx, store.Filter{}, nil, 1)
 		must(t, err)
 		if !reflect.DeepEqual(ds, firstDs) || !reflect.DeepEqual(v, firstSubs) || h != firstHead || !reflect.DeepEqual(cat, firstCat) || !reflect.DeepEqual(p, firstPage) {
 			t.Fatal("read changed answers")
@@ -250,7 +253,7 @@ func TestReadPurityAndReturnedCopies(t *testing.T) {
 	firstDs["producer"].Emits[0].Attrs[0] = "changed"
 	firstSubs[0].Reason.Error = "changed"
 	firstCat[0].Emits[0].Attrs = append(firstCat[0].Emits[0].Attrs, "changed")
-	firstPage.Records[0].Attrs["text"] = "changed"
+	firstPage[0].Attrs["text"] = "changed"
 	ds, err := s.Declarations(ctx)
 	must(t, err)
 	if ds["producer"].Emits[0].Attrs[0] != "count" || one(t, s, "reader").Reason.Error != "failed" || all(t, s)[0].Attrs["text"] != "value" {
@@ -260,7 +263,7 @@ func TestReadPurityAndReturnedCopies(t *testing.T) {
 }
 
 func TestSearchExtremeTimeBounds(t *testing.T) {
-	// R-E7IH-AI8J R-E8QD-O9Z8
+	// R-E7IH-AI8J R-90RT-CPME
 	s, _, _ := openStore(t, store.Config{})
 	declare(t, s, "producer")
 	must(t, s.Deliver(ctx, emit(1)))
@@ -270,9 +273,9 @@ func TestSearchExtremeTimeBounds(t *testing.T) {
 		filter store.Filter
 		count  int
 	}{{store.Filter{Since: &future}, 0}, {store.Filter{Until: &future}, 1}, {store.Filter{Since: &past}, 1}, {store.Filter{Until: &past}, 0}} {
-		p, err := s.Search(ctx, tt.filter, 10, "")
+		p, err := s.Search(ctx, tt.filter, nil, 10)
 		must(t, err)
-		if len(p.Records) != tt.count || p.Records == nil || p.Next != "" {
+		if len(p) != tt.count || p == nil {
 			t.Fatal(tt, p)
 		}
 	}

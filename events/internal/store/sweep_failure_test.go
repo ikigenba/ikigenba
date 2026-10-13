@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	event "github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/events/internal/store"
 )
 
@@ -166,7 +167,7 @@ func TestSweepFailureAndCancellation(t *testing.T) {
 }
 
 func TestAllMethodsFailureAndRecovery(t *testing.T) {
-	// R-EH9O-CO63 R-THIC-XAJO R-E1EZ-DNJ2
+	// R-9AJ0-EVJY R-THIC-XAJO R-E1EZ-DNJ2
 	scans := 0
 	s, d, _ := openStore(t, store.Config{Scanned: func(string) { scans++ }})
 	declare(t, s, "producer")
@@ -198,7 +199,12 @@ func TestAllMethodsFailureAndRecovery(t *testing.T) {
 		{"resume", func() error { _, err := s.Resume(ctx, "reader"); return err }},
 		{"sweep", func() error { return s.Sweep(ctx, instant.Add(time.Second)) }},
 		{"catalog", func() error { _, err := s.Catalog(ctx, "", ""); return err }},
-		{"search", func() error { _, err := s.Search(ctx, store.Filter{}, 1, ""); return err }},
+		{"search", func() error { _, err := s.Search(ctx, store.Filter{}, nil, 1); return err }},
+		{"search zero window", func() error { _, err := s.Search(ctx, store.Filter{}, nil, 0); return err }},
+		{"search invalid attr and negative window", func() error {
+			_, err := s.Search(ctx, store.Filter{Attrs: event.Attrs{"x": []int{1}}}, nil, -1)
+			return err
+		}},
 	}
 	d.SetFailing(true)
 	for _, call := range calls {
@@ -232,7 +238,7 @@ func TestAllMethodsFailureAndRecovery(t *testing.T) {
 	must(t, err)
 	_, err = s.Catalog(ctx, "", "")
 	must(t, err)
-	_, err = s.Search(ctx, store.Filter{}, 1, "")
+	_, err = s.Search(ctx, store.Filter{}, nil, 1)
 	must(t, err)
 	_, err = s.Resume(ctx, "reader")
 	must(t, err)
@@ -263,7 +269,7 @@ func TestAllMethodsConcurrent(t *testing.T) {
 				return errors.New("nil channel")
 			}
 			return nil
-		}, func() error { return s.Sweep(ctx, instant.Add(-time.Second)) }, func() error { _, err := s.Catalog(ctx, "", ""); return err }, func() error { _, err := s.Search(ctx, store.Filter{}, 1, ""); return err },
+		}, func() error { return s.Sweep(ctx, instant.Add(-time.Second)) }, func() error { _, err := s.Catalog(ctx, "", ""); return err }, func() error { _, err := s.Search(ctx, store.Filter{}, nil, 1); return err },
 	}
 	var wg sync.WaitGroup
 	errs := make(chan error, len(calls)*10)

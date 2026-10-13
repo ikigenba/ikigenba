@@ -51,9 +51,9 @@ func declare(t *testing.T, s *store.Store, service string, accepts ...string) {
 }
 func all(t *testing.T, s *store.Store) []event.Event {
 	t.Helper()
-	p, err := s.Search(ctx, store.Filter{}, 10000, "")
+	p, err := s.Search(ctx, store.Filter{}, nil, 10000)
 	must(t, err)
-	return p.Records
+	return p
 }
 func subs(t *testing.T, s *store.Store) []store.Subscriber {
 	t.Helper()
@@ -88,8 +88,14 @@ func assertClosed(t *testing.T, ch <-chan struct{}) {
 	}
 }
 
+func checkSearchContract(t *testing.T, search func(context.Context, store.Filter, *int64, int) ([]event.Event, error)) {
+	t.Helper()
+	_, err := search(ctx, store.Filter{}, nil, 1)
+	must(t, err)
+}
+
 func TestPublicContract(t *testing.T) {
-	// R-TGAG-JISZ R-CIJI-5Z5T R-CJRE-JQWI R-CKZA-XIN7 R-CM77-BADW R-CNF3-P24L R-CON0-2TVA R-CPUW-GLLZ R-CSAP-853D
+	// R-TGAG-JISZ R-CIJI-5Z5T R-CKZA-XIN7 R-CM77-BADW R-CNF3-P24L R-CON0-2TVA R-CPUW-GLLZ R-8YC0-L650
 	s, _, _ := openStore(t, store.Config{func() time.Time { return instant }, 3, nil, nil, nil, nil})
 	var sink event.Sink = s
 	if !errors.Is(sink.Deliver(ctx, event.Event{}), event.ErrRejected) {
@@ -104,7 +110,7 @@ func TestPublicContract(t *testing.T) {
 	_ = store.Producer{"service", []string{}}
 	_ = store.CatalogEntry{"item.created", []store.Producer{}, []string{}, 0, time.Time{}}
 	_ = store.Filter{nil, nil, []string{}, []string{}, nil, nil, nil, event.Attrs{}}
-	_ = store.Page{[]event.Event{}, store.Cursor("")}
+	checkSearchContract(t, s.Search)
 	if store.StatusOK != "ok" || store.StatusPaused != "paused" || store.StatusGone != "gone" {
 		t.Fatal("status constants")
 	}
@@ -119,7 +125,7 @@ func TestPublicContract(t *testing.T) {
 	must(t, err)
 	_, err = s.Catalog(ctx, "", "")
 	must(t, err)
-	_, err = s.Search(ctx, store.Filter{}, 1, "")
+	_, err = s.Search(ctx, store.Filter{}, nil, 1)
 	must(t, err)
 	if !errors.Is(s.Advance(ctx, "missing", 1), store.ErrNoSubscriber) || !errors.Is(s.Pause(ctx, "missing", 1, "failure"), store.ErrNoSubscriber) {
 		t.Fatal("missing subscriber")
@@ -128,9 +134,9 @@ func TestPublicContract(t *testing.T) {
 }
 
 func TestErrorsAndEmptyReads(t *testing.T) {
-	// R-CJRE-JQWI R-D21W-AB0X R-DKCE-0V5C R-YLFP-E8EU R-E8QD-O9Z8 R-E072-ZVSD R-DSVO-P9C7
+	// R-8VW7-TMNM R-D21W-AB0X R-DKCE-0V5C R-YLFP-E8EU R-90RT-CPME R-E072-ZVSD R-DSVO-P9C7
 	s, _, _ := openStore(t, store.Config{})
-	sentinels := []error{store.ErrUndeclared, store.ErrTooDeep, store.ErrNoSubscriber, store.ErrNotPaused, store.ErrCursor}
+	sentinels := []error{store.ErrUndeclared, store.ErrTooDeep, store.ErrNoSubscriber, store.ErrNotPaused}
 	for i, a := range sentinels {
 		if a == nil {
 			t.Fatal("nil sentinel")
@@ -157,9 +163,9 @@ func TestErrorsAndEmptyReads(t *testing.T) {
 	if catalog == nil || len(catalog) != 0 {
 		t.Fatal(catalog)
 	}
-	p, err := s.Search(ctx, store.Filter{}, 1, "")
+	p, err := s.Search(ctx, store.Filter{}, nil, 1)
 	must(t, err)
-	if p.Records == nil || len(p.Records) != 0 || p.Next != "" {
+	if p == nil || len(p) != 0 {
 		t.Fatal(p)
 	}
 	for _, service := range []string{"", "missing", "never"} {
@@ -182,7 +188,7 @@ func TestErrorsAndEmptyReads(t *testing.T) {
 }
 
 func TestIngestStoredFormAndSchemaRows(t *testing.T) {
-	// R-YXMP-7XTS R-3794-58R6 R-39OW-WS8K R-3617-RH0H R-6E6I-RU1F R-PNJD-XS7X
+	// R-YXMP-7XTS R-3794-58R6 R-937M-493S R-3617-RH0H R-6E6I-RU1F R-PNJD-XS7X
 	s, d, _ := openStore(t, store.Config{DepthMax: 10})
 	declare(t, s, "producer")
 	declare(t, s, "consumer", "*")
@@ -208,7 +214,7 @@ func TestIngestStoredFormAndSchemaRows(t *testing.T) {
 	must(t, err)
 	got, err := records[0].MarshalJSON()
 	must(t, err)
-	if !bytes.Equal(got, want) {
+	if records[0].Seq != expected.Seq || records[0].Received != expected.Received || !bytes.Equal(got, want) {
 		t.Fatalf("%s != %s", got, want)
 	}
 	next, ok, err := s.Next(ctx, "consumer")
@@ -218,7 +224,7 @@ func TestIngestStoredFormAndSchemaRows(t *testing.T) {
 	}
 	got, err = next.MarshalJSON()
 	must(t, err)
-	if !bytes.Equal(got, want) {
+	if next.Seq != expected.Seq || next.Received != expected.Received || !bytes.Equal(got, want) {
 		t.Fatal(string(got))
 	}
 	must(t, d.Read(ctx, func(tx *sql.Tx) error {
@@ -366,13 +372,13 @@ func TestTelemetryBeforeVisibility(t *testing.T) {
 	w, capture := writer(t, func() time.Time {
 		clockCalls++
 		if inside {
-			p, err := second.Search(ctx, store.Filter{}, 10, "")
+			p, err := second.Search(ctx, store.Filter{}, nil, 10)
 			must(t, err)
 			h, err := second.Head(ctx)
 			must(t, err)
 			c, err := second.Catalog(ctx, "", "")
 			must(t, err)
-			if len(p.Records) != 0 || h != 0 || len(c) != 1 || c[0].Count != 0 {
+			if len(p) != 0 || h != 0 || len(c) != 1 || c[0].Count != 0 {
 				t.Fatal("event visible before accepted record")
 			}
 			e, ok, err := second.Next(ctx, "absent")

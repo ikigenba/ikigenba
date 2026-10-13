@@ -142,11 +142,11 @@ func (f *fixture) event(i int) events.Event {
 	if err := f.store.Deliver(context.Background(), e); err != nil {
 		f.t.Fatal(err)
 	}
-	page, err := f.store.Search(context.Background(), store.Filter{}, 100, "")
+	page, err := f.store.Search(context.Background(), store.Filter{}, nil, 100)
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	for _, record := range page.Records {
+	for _, record := range page {
 		if record.ID == e.ID {
 			return record
 		}
@@ -1007,8 +1007,8 @@ func TestSkippedStoreFailureReattempts(t *testing.T) {
 	if f.subscriber("consumer").Cursor != e.Seq {
 		t.Fatal("cursor")
 	}
-	page, err := f.store.Search(context.Background(), store.Filter{}, 10, "")
-	if err != nil || len(page.Records) != 1 || page.Records[0].ID != e.ID {
+	page, err := f.store.Search(context.Background(), store.Filter{}, nil, 10)
+	if err != nil || len(page) != 1 || page[0].ID != e.ID {
 		t.Fatal(page, err)
 	}
 }

@@ -3,11 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
-	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
-	"fmt"
-	"hash/crc32"
 	"math"
 	"reflect"
 	"sort"
@@ -38,15 +34,6 @@ type Filter struct {
 	Services, Events       []string
 	User, RequestID, Cause *string
 	Attrs                  events.Attrs
-}
-
-// Cursor is a checked sequence position, independent of filters.
-type Cursor string
-
-// Page holds descending retained events and the next position.
-type Page struct {
-	Records []events.Event
-	Next    Cursor
 }
 
 // Catalog returns declared and observed event names.
@@ -142,26 +129,6 @@ func (s *Store) Catalog(ctx context.Context, service, event string) ([]CatalogEn
 	})
 	return result, err
 }
-func encodeCursor(seq int64) Cursor {
-	var b [12]byte
-	_, _ = binary.Encode(b[:8], binary.BigEndian, seq)
-	binary.BigEndian.PutUint32(b[8:], crc32.ChecksumIEEE(b[:8]))
-	return Cursor(base64.RawURLEncoding.Strict().EncodeToString(b[:]))
-}
-func decodeCursor(c Cursor) (int64, error) {
-	b, err := base64.RawURLEncoding.Strict().DecodeString(string(c))
-	if err != nil || len(b) != 12 || base64.RawURLEncoding.Strict().EncodeToString(b) != string(c) {
-		return 0, ErrCursor
-	}
-	if crc32.ChecksumIEEE(b[:8]) != binary.BigEndian.Uint32(b[8:]) {
-		return 0, ErrCursor
-	}
-	var seq int64
-	if _, err := binary.Decode(b[:8], binary.BigEndian, &seq); err != nil {
-		return 0, ErrCursor
-	}
-	return seq, nil
-}
 func microsCeil(t time.Time) int64 {
 	// Filter and sweep bounds may exceed the range of stored microseconds.
 	if t.After(time.UnixMicro(math.MaxInt64)) {
@@ -191,24 +158,16 @@ func scalar(v any) bool {
 	return false
 }
 
-// Search reads a checked page from the retained log.
-func (s *Store) Search(ctx context.Context, f Filter, limit int, after Cursor) (Page, error) {
-	if limit < 1 {
-		return Page{}, fmt.Errorf("limit must be positive")
-	}
-	var position int64
-	var err error
-	if after != "" {
-		position, err = decodeCursor(after)
-		if err != nil {
-			return Page{}, err
-		}
+// Search reads a descending sequence window from the retained log.
+func (s *Store) Search(ctx context.Context, f Filter, before *int64, n int) ([]events.Event, error) {
+	if n < 1 {
+		n = 0
 	}
 	where := []string{"1=1"}
 	args := []any{}
 	add := func(condition string, value any) { where = append(where, condition); args = append(args, value) }
-	if after != "" {
-		add("seq<?", position)
+	if before != nil {
+		add("seq<?", *before)
 	}
 	if f.Since != nil {
 		add("time>=?", microsCeil(*f.Since))
@@ -256,13 +215,13 @@ func (s *Store) Search(ctx context.Context, f Filter, limit int, after Cursor) (
 		where = append(where, "EXISTS (SELECT 1 FROM attrs WHERE attrs.seq=events.seq AND key=? AND value=?)")
 		args = append(args, k, string(raw))
 	}
-	// Fetch one extra row without overflowing a caller's int limit.
-	page := Page{Records: make([]events.Event, 0)}
-	err = s.d.Read(ctx, func(tx *sql.Tx) error {
+	result := make([]events.Event, 0)
+	args = append(args, n)
+	err := s.d.Read(ctx, func(tx *sql.Tx) error {
 		var query strings.Builder
 		query.WriteString("SELECT " + eventColumns + " FROM events WHERE ")
 		query.WriteString(strings.Join(where, " AND "))
-		query.WriteString(" ORDER BY seq DESC")
+		query.WriteString(" ORDER BY seq DESC LIMIT ?")
 		rows, err := tx.Query(query.String(), args...)
 		if err != nil {
 			return err
@@ -273,16 +232,12 @@ func (s *Store) Search(ctx context.Context, f Filter, limit int, after Cursor) (
 			if err != nil {
 				return err
 			}
-			if len(page.Records) == limit {
-				page.Next = encodeCursor(page.Records[len(page.Records)-1].Seq)
-				break
-			}
-			page.Records = append(page.Records, e)
+			result = append(result, e)
 		}
 		return rows.Err()
 	})
 	if err != nil {
-		return Page{}, err
+		return nil, err
 	}
-	return page, nil
+	return result, nil
 }

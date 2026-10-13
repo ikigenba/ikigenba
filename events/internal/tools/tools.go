@@ -13,6 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/events/internal/store"
 )
@@ -36,8 +37,8 @@ type searchInput struct {
 	RequestID *string         `json:"request_id"`
 	Cause     *string         `json:"cause"`
 	Attrs     json.RawMessage `json:"attrs"`
-	Limit     *int64          `json:"limit"`
-	Cursor    *string         `json:"cursor"`
+	Limit     *int            `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
+	Page      *string         `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
 }
 type serviceInput struct {
 	Service string `json:"service" mcp:"required"`
@@ -71,7 +72,7 @@ type record struct {
 }
 type searchOutput struct {
 	Records []record `json:"records"`
-	Cursor  *string  `json:"cursor"`
+	Next    *string  `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
 }
 type reason struct {
 	Event string `json:"event"`
@@ -103,9 +104,7 @@ func entry(s store.Subscriber) subscriberEntry {
 // Tool refusal copy is shared with callers and tests.
 const (
 	Unreachable  = "cannot reach the log; try again later"
-	BadCursor    = "cursor is not one search issued"
 	BadTime      = "%s is not an RFC 3339 time: '%s'"
-	BadLimit     = "limit must be between 1 and 500, got %d"
 	NoSubscriber = "no subscriber '%s'"
 	NotPaused    = "'%s' is not paused"
 )
@@ -195,36 +194,36 @@ func search(ctx context.Context, st *store.Store, in searchInput) (searchOutput,
 			*field.target = &t
 		}
 	}
-	limit := int64(50)
-	if in.Limit != nil {
-		limit = *in.Limit
+	limit, err := paging.Window(in.Limit)
+	if err != nil {
+		return searchOutput{}, err
 	}
-	if limit < 1 || limit > 500 {
-		return searchOutput{}, fmt.Errorf(BadLimit, limit)
-	}
-	after := store.Cursor("")
-	if in.Cursor != nil {
-		after = store.Cursor(*in.Cursor)
+	var before *int64
+	token := paging.Token{Tool: "search"}
+	if in.Page != nil && *in.Page != "" {
+		var seq int64
+		if err := token.Decode(*in.Page, &seq); err != nil {
+			return searchOutput{}, err
+		}
+		before = &seq
 	}
 	f.Attrs = decodeAttrs(in.Attrs)
-	p, err := st.Search(ctx, f, int(limit), after)
-	if errors.Is(err, store.ErrCursor) {
-		return searchOutput{}, errors.New(BadCursor)
-	}
+	items, err := st.Search(ctx, f, before, limit+1)
 	if err != nil {
 		return searchOutput{}, errLog
 	}
-	out := searchOutput{Records: make([]record, 0, len(p.Records))}
-	for _, e := range p.Records {
+	out := searchOutput{Records: make([]record, 0, min(len(items), limit))}
+	if len(items) > limit {
+		v := token.Encode(items[limit-1].Seq)
+		out.Next = &v
+		items = items[:limit]
+	}
+	for _, e := range items {
 		attrs, err := json.Marshal(e.Attrs)
 		if err != nil {
 			return searchOutput{}, errLog
 		}
 		out.Records = append(out.Records, record{ID: e.ID, Time: wireTime(e.Time), Service: e.Service, Event: e.Name, RequestID: e.RequestID, User: e.User, Attrs: attrs, Cause: e.Cause, Depth: e.Depth, Seq: e.Seq, Received: wireTime(e.Received)})
-	}
-	if p.Next != "" {
-		v := string(p.Next)
-		out.Cursor = &v
 	}
 	return out, nil
 }

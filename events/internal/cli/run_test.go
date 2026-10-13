@@ -381,7 +381,7 @@ func emit(t *testing.T, f *runFixture, e appEvents.Event, want int) {
 	_ = body(t, resp)
 }
 
-// R-9CMB-1JQ3 R-9F23-T37H R-9GA0-6UY6 R-9FOL-TQG6 R-HH81-3BX6 R-9GWI-7I6V
+// R-9CMB-1JQ3 R-9F23-T37H R-9GA0-6UY6 R-HH81-3BX6 R-AB3Z-VZSS
 // R-HJNT-UVEK R-F8NN-M0DB R-F9VJ-ZS40 R-HKVQ-8N59
 func TestRunEventTrail(t *testing.T) {
 	socket, received := sibling(t, false)

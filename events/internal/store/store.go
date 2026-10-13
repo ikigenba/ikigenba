@@ -50,7 +50,6 @@ var (
 	ErrTooDeep      = fmt.Errorf("event too deep: %w", events.ErrRejected)
 	ErrNoSubscriber = errors.New("no subscriber")
 	ErrNotPaused    = errors.New("subscriber not paused")
-	ErrCursor       = errors.New("invalid cursor")
 )
 
 func (s *Store) now() time.Time { return s.cfg.Now().UTC().Truncate(time.Microsecond) }

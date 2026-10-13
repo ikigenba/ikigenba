@@ -178,11 +178,11 @@ func (f *fixture) put(t *testing.T, id string, age time.Duration) {
 }
 func (f *fixture) records(t *testing.T) []bus.Event {
 	t.Helper()
-	p, e := f.cfg.Store.Search(context.Background(), store.Filter{}, 100, "")
+	p, e := f.cfg.Store.Search(context.Background(), store.Filter{}, nil, 100)
 	if e != nil {
 		t.Fatal(e)
 	}
-	return p.Records
+	return p
 }
 func TestPublicContractAndNormalLifecycle(t *testing.T) {
 	// R-AV6Y-9ADI R-AWEU-N247 R-AXMR-0TUW R-AYUN-ELLL R-B2IC-JWTO

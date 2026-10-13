@@ -99,7 +99,7 @@ func equalDecl(a, b store.Declaration) bool {
 }
 
 func TestSubscriberLifecycle(t *testing.T) {
-	// R-YNVI-5RW8 R-2SYA-X13P R-DKCE-0V5C R-YQBA-XBDM R-YSR3-OUV0 R-YTZ0-2MLP R-2VE3-OKL3 R-DVBH-GSTL R-DWJD-UKKA R-DXRA-8CAZ R-DYZ6-M41O R-E072-ZVSD R-DSVO-P9C7 R-E1EZ-DNJ2
+	// R-YNVI-5RW8 R-2SYA-X13P R-DKCE-0V5C R-YQBA-XBDM R-YSR3-OUV0 R-YTZ0-2MLP R-2VE3-OKL3 R-DVBH-GSTL R-96VB-9KBV R-DXRA-8CAZ R-DYZ6-M41O R-E072-ZVSD R-DSVO-P9C7 R-E1EZ-DNJ2
 	now := instant
 	s, _, _ := openStore(t, store.Config{Now: func() time.Time { return now }})
 	declare(t, s, "producer")
@@ -139,6 +139,7 @@ func TestSubscriberLifecycle(t *testing.T) {
 	declare(t, s, "reader", "*")
 	must(t, s.Advance(ctx, "reader", 3))
 	must(t, s.Pause(ctx, "reader", 1, "ignored"))
+	must(t, s.Pause(ctx, "reader", 999, "missing ignored"))
 	e, ok, err = s.Next(ctx, "reader")
 	must(t, err)
 	if ok || !reflect.DeepEqual(e, event.Event{}) {
@@ -198,6 +199,7 @@ func TestSubscriberLifecycle(t *testing.T) {
 	must(t, s.Forget(ctx, "reader"))
 	must(t, s.Advance(ctx, "reader", 5))
 	must(t, s.Pause(ctx, "reader", 1, "ignored"))
+	must(t, s.Pause(ctx, "reader", 999, "missing ignored"))
 	e, ok, err = s.Next(ctx, "reader")
 	must(t, err)
 	if ok || !reflect.DeepEqual(e, event.Event{}) {
@@ -229,7 +231,7 @@ func TestSubscriberLifecycle(t *testing.T) {
 	}
 }
 func sentinel(err error) bool {
-	for _, e := range []error{store.ErrUndeclared, store.ErrTooDeep, store.ErrNoSubscriber, store.ErrNotPaused, store.ErrCursor, event.ErrRejected} {
+	for _, e := range []error{store.ErrUndeclared, store.ErrTooDeep, store.ErrNoSubscriber, store.ErrNotPaused, event.ErrRejected} {
 		if errors.Is(err, e) {
 			return true
 		}

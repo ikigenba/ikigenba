@@ -21,6 +21,7 @@ import (
 	appEvents "github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/events"
@@ -282,7 +283,7 @@ func (h *harness) snapshot() []byte {
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	page, err := h.st.Search(ctx, store.Filter{}, 500, "")
+	page, err := h.st.Search(ctx, store.Filter{}, nil, paging.MaxLimit+1)
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -290,7 +291,7 @@ func (h *harness) snapshot() []byte {
 }
 
 func TestToolList(t *testing.T) {
-	// R-D21A-JUFA R-YW1S-U90F R-SYH1-ZZ80 R-SZOY-DQYP R-T0WU-RIPE R-T24R-5AG3 R-T3CN-J26S R-DBSH-M0CU
+	// R-D21A-JUFA R-YW1S-U90F R-SYH1-ZZ80 R-9E6P-K6S1 R-9GMI-BQ9F R-T0WU-RIPE R-T24R-5AG3 R-T3CN-J26S R-DBSH-M0CU
 	h := newHarness(t, false)
 	listed, err := h.client.ListTools(context.Background(), caller)
 	if err != nil {
@@ -300,8 +301,8 @@ func TestToolList(t *testing.T) {
 	if len(listed) != len(wantNames) {
 		t.Fatalf("tools = %v", listed)
 	}
-	schemas := []string{`{"type":"object","properties":{"service":{"type":"string"},"event":{"type":"string"}},"additionalProperties":false}`, `{"type":"object","properties":{"since":{"type":"string"},"until":{"type":"string"},"services":{"type":"array","items":{"type":"string"}},"events":{"type":"array","items":{"type":"string"}},"user":{"type":"string"},"request_id":{"type":"string"},"cause":{"type":"string"},"attrs":{"type":"object"},"limit":{"type":"integer"},"cursor":{"type":"string"}},"additionalProperties":false}`, `{"type":"object","additionalProperties":false}`, `{"type":"object","properties":{"service":{"type":"string"}},"required":["service"],"additionalProperties":false}`, `{"type":"object","properties":{"service":{"type":"string"}},"required":["service"],"additionalProperties":false}`}
-	propertyOrder := [][]string{{"service", "event"}, {"since", "until", "services", "events", "user", "request_id", "cause", "attrs", "limit", "cursor"}, nil, {"service"}, {"service"}}
+	schemas := []string{`{"type":"object","properties":{"service":{"type":"string"},"event":{"type":"string"}},"additionalProperties":false}`, `{"type":"object","properties":{"since":{"type":"string"},"until":{"type":"string"},"services":{"type":"array","items":{"type":"string"}},"events":{"type":"array","items":{"type":"string"}},"user":{"type":"string"},"request_id":{"type":"string"},"cause":{"type":"string"},"attrs":{"type":"object"},"limit":{"type":"integer"},"page":{"type":"string"}},"additionalProperties":false}`, `{"type":"object","additionalProperties":false}`, `{"type":"object","properties":{"service":{"type":"string"}},"required":["service"],"additionalProperties":false}`, `{"type":"object","properties":{"service":{"type":"string"}},"required":["service"],"additionalProperties":false}`}
+	propertyOrder := [][]string{{"service", "event"}, {"since", "until", "services", "events", "user", "request_id", "cause", "attrs", "limit", "page"}, nil, {"service"}, {"service"}}
 	for i, tool := range listed {
 		if tool.Name != wantNames[i] || tool.Description == "" {
 			t.Fatalf("tool %d = %+v", i, tool)
@@ -321,12 +322,38 @@ func TestToolList(t *testing.T) {
 			if err := json.Unmarshal(raw, &props); err != nil {
 				t.Fatal(err)
 			}
+			if i == 1 {
+				for name, want := range map[string]string{"limit": paging.LimitDescription, "page": paging.PageDescription} {
+					equalJSON(t, props[name]["description"], marshal(t, want))
+				}
+			}
 			for _, p := range props {
 				delete(p, "description")
 			}
 			schema["properties"] = marshal(t, props)
 		}
 		equalJSON(t, marshal(t, schema), []byte(schemas[i]))
+		if i == 1 {
+			var schema map[string]json.RawMessage
+			if err := json.Unmarshal(tool.OutputSchema, &schema); err != nil {
+				t.Fatal(err)
+			}
+			checkKeys(t, schema["properties"], "records", "next")
+			var props map[string]json.RawMessage
+			if err := json.Unmarshal(schema["properties"], &props); err != nil {
+				t.Fatal(err)
+			}
+			equalJSON(t, props["next"], marshal(t, map[string]string{"type": "string", "description": paging.NextDescription}))
+			var required []string
+			if raw, ok := schema["required"]; ok {
+				if err := json.Unmarshal(raw, &required); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if slices.Contains(required, "next") {
+				t.Fatal("next is required")
+			}
+		}
 		var output map[string]any
 		if err := json.Unmarshal(tool.OutputSchema, &output); err != nil {
 			t.Fatal(err)
@@ -358,7 +385,7 @@ func TestToolList(t *testing.T) {
 }
 
 func TestCatalog(t *testing.T) {
-	// R-T70C-ODEV R-DLJO-O6AE R-CZLH-SAXW R-YR67-B61N
+	// R-A3SL-LDCM R-DLJO-O6AE R-CZLH-SAXW R-YR67-B61N
 	h := newHarness(t, false)
 	h.seed(2)
 	before := h.snapshot()
@@ -416,7 +443,7 @@ func TestCatalog(t *testing.T) {
 }
 
 func TestSearchFiltersAndRecords(t *testing.T) {
-	// R-VQH6-MZ9J R-DP7D-THIH R-DQFA-7996 R-DRN6-L0ZV R-VRP3-0R08 R-YR67-B61N
+	// R-9NXW-MCPL R-DP7D-THIH R-9STI-5FOD R-9QDP-DW6Z R-YR67-B61N
 	h := newHarness(t, false)
 	h.seed(3)
 	before := h.snapshot()
@@ -428,23 +455,23 @@ func TestSearchFiltersAndRecords(t *testing.T) {
 		args   string
 		filter store.Filter
 		limit  int
-		after  store.Cursor
+		before *int64
 	}{
-		{`{}`, store.Filter{}, 50, ""},
-		{`{"since":null,"until":null,"user":null,"request_id":null,"cause":null,"limit":null,"cursor":null}`, store.Filter{}, 50, ""},
-		{`{"cursor":"","limit":3.0}`, store.Filter{}, 3, ""},
-		{fmt.Sprintf(`{"since":%q,"until":%q}`, since.Format(time.RFC3339Nano), until.Format(time.RFC3339Nano)), store.Filter{Since: &since, Until: &until}, 50, ""},
-		{`{"services":["missing","producer"],"events":["item.quiet","item.changed"],"user":"alice","request_id":"request-1","cause":"evt_ffffffffffffffff"}`, store.Filter{Services: []string{"missing", "producer"}, Events: []string{"item.quiet", "item.changed"}, User: str("alice"), RequestID: str("request-1"), Cause: str("evt_ffffffffffffffff")}, 50, ""},
-		{`{"user":"","request_id":"","cause":""}`, store.Filter{User: str(""), RequestID: str(""), Cause: str("")}, 50, ""},
-		{`{"services":[],"events":[],"attrs":{}}`, store.Filter{}, 50, ""},
-		{`{"attrs":{"number":1,"enabled":true,"label":"hello","large":9007199254740993,"unsigned":9223372036854775808}}`, store.Filter{Attrs: appEvents.Attrs{"number": int64(1), "enabled": true, "label": "hello", "large": int64(9007199254740993), "unsigned": uint64(9223372036854775808)}}, 50, ""},
-		{`{"attrs":{"number":1.0}}`, store.Filter{Attrs: appEvents.Attrs{"number": float64(1)}}, 50, ""},
-		{`{"attrs":{"number":1e0}}`, store.Filter{Attrs: appEvents.Attrs{"number": float64(1)}}, 50, ""},
-		{`{"attrs":{"large":9007199254740992}}`, store.Filter{Attrs: appEvents.Attrs{"large": int64(9007199254740992)}}, 50, ""},
-		{`{"limit":1}`, store.Filter{}, 1, ""},
-		{`{"limit":500,"events":["missing"]}`, store.Filter{Events: []string{"missing"}}, 500, ""},
+		{`{}`, store.Filter{}, paging.DefaultLimit, nil},
+		{`{"since":null,"until":null,"user":null,"request_id":null,"cause":null,"limit":null,"page":null}`, store.Filter{}, paging.DefaultLimit, nil},
+		{`{"page":"","limit":3.0}`, store.Filter{}, 3, nil},
+		{fmt.Sprintf(`{"since":%q,"until":%q}`, since.Format(time.RFC3339Nano), until.Format(time.RFC3339Nano)), store.Filter{Since: &since, Until: &until}, paging.DefaultLimit, nil},
+		{`{"services":["missing","producer"],"events":["item.quiet","item.changed"],"user":"alice","request_id":"request-1","cause":"evt_ffffffffffffffff"}`, store.Filter{Services: []string{"missing", "producer"}, Events: []string{"item.quiet", "item.changed"}, User: str("alice"), RequestID: str("request-1"), Cause: str("evt_ffffffffffffffff")}, paging.DefaultLimit, nil},
+		{`{"user":"","request_id":"","cause":""}`, store.Filter{User: str(""), RequestID: str(""), Cause: str("")}, paging.DefaultLimit, nil},
+		{`{"services":[],"events":[],"attrs":{}}`, store.Filter{}, paging.DefaultLimit, nil},
+		{`{"attrs":{"number":1,"enabled":true,"label":"hello","large":9007199254740993,"unsigned":9223372036854775808}}`, store.Filter{Attrs: appEvents.Attrs{"number": int64(1), "enabled": true, "label": "hello", "large": int64(9007199254740993), "unsigned": uint64(9223372036854775808)}}, paging.DefaultLimit, nil},
+		{`{"attrs":{"number":1.0}}`, store.Filter{Attrs: appEvents.Attrs{"number": float64(1)}}, paging.DefaultLimit, nil},
+		{`{"attrs":{"number":1e0}}`, store.Filter{Attrs: appEvents.Attrs{"number": float64(1)}}, paging.DefaultLimit, nil},
+		{`{"attrs":{"large":9007199254740992}}`, store.Filter{Attrs: appEvents.Attrs{"large": int64(9007199254740992)}}, paging.DefaultLimit, nil},
+		{`{"limit":1}`, store.Filter{}, 1, nil},
+		{`{"limit":500,"events":["missing"]}`, store.Filter{Events: []string{"missing"}}, paging.MaxLimit, nil},
 	}
-	first, err := h.st.Search(ctx, store.Filter{}, 1, "")
+	first, err := h.st.Search(ctx, store.Filter{}, nil, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -452,16 +479,16 @@ func TestSearchFiltersAndRecords(t *testing.T) {
 		args   string
 		filter store.Filter
 		limit  int
-		after  store.Cursor
-	}{fmt.Sprintf(`{"limit":1,"cursor":%q}`, first.Next), store.Filter{}, 1, first.Next})
+		before *int64
+	}{fmt.Sprintf(`{"limit":1,"page":%q}`, paging.Token{Tool: "search"}.Encode(first[0].Seq)), store.Filter{}, 1, &first[0].Seq})
 	for _, c := range cases {
-		page, err := h.st.Search(ctx, c.filter, c.limit, c.after)
+		page, err := h.st.Search(ctx, c.filter, c.before, c.limit+1)
 		if err != nil {
 			t.Fatal(err)
 		}
 		out := success(t, h.call("search", c.args))
-		records := make([]json.RawMessage, 0, len(page.Records))
-		for _, e := range page.Records {
+		records := make([]json.RawMessage, 0, len(page))
+		for _, e := range page[:min(len(page), c.limit)] {
 			raw, err := e.MarshalJSON()
 			if err != nil {
 				t.Fatal(err)
@@ -470,9 +497,9 @@ func TestSearchFiltersAndRecords(t *testing.T) {
 		}
 		want := map[string]any{"records": records}
 		k := []string{"records"}
-		if page.Next != "" {
-			want["cursor"] = string(page.Next)
-			k = append(k, "cursor")
+		if len(page) > c.limit {
+			want["next"] = paging.Token{Tool: "search"}.Encode(page[c.limit-1].Seq)
+			k = append(k, "next")
 		}
 		equalJSON(t, out, marshal(t, want))
 		checkKeys(t, out, k...)
@@ -489,33 +516,103 @@ func TestSearchFiltersAndRecords(t *testing.T) {
 }
 
 func TestSearchDefaultAndNullLimit(t *testing.T) {
-	// R-DRN6-L0ZV R-VRP3-0R08
+	// R-9NXW-MCPL R-9QDP-DW6Z
 	h := newHarness(t, false)
-	h.seed(51)
-	for _, args := range []string{`{}`, `{"limit":null}`} {
+	h.seed(paging.DefaultLimit + 1)
+	for _, args := range []string{`{}`, `{"limit":null}`, `{"page":null}`, `{"page":""}`} {
 		out := success(t, h.call("search", args))
 		var page struct {
 			Records []json.RawMessage `json:"records"`
-			Cursor  string            `json:"cursor"`
+			Next    string            `json:"next"`
 		}
 		if err := json.Unmarshal(out, &page); err != nil {
 			t.Fatal(err)
 		}
-		if len(page.Records) != 50 || page.Cursor == "" {
+		if len(page.Records) != paging.DefaultLimit || page.Next != (paging.Token{Tool: "search"}).Encode(int64(2)) {
 			t.Fatalf("default page = %s", out)
-		}
-		p, err := h.st.Search(context.Background(), store.Filter{}, 50, "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if page.Cursor != string(p.Next) {
-			t.Fatalf("cursor = %q, want %q", page.Cursor, p.Next)
 		}
 	}
 }
 
+func TestSearchPageTraversalAndChangedFilters(t *testing.T) {
+	// R-9NXW-MCPL R-9QDP-DW6Z R-YR67-B61N
+	h := newHarness(t, false)
+	h.seed(6)
+	before := h.snapshot()
+	token := paging.Token{Tool: "search"}
+	page := ""
+	var seen []int64
+	for round := 0; round < 3; round++ {
+		out := success(t, h.call("search", fmt.Sprintf(`{"limit":2,"page":%q}`, page)))
+		var result struct {
+			Records []struct {
+				Seq int64 `json:"seq"`
+			} `json:"records"`
+			Next *string `json:"next"`
+		}
+		if err := json.Unmarshal(out, &result); err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Records) != 2 {
+			t.Fatalf("page = %s", out)
+		}
+		for _, record := range result.Records {
+			seen = append(seen, record.Seq)
+		}
+		if round < 2 {
+			checkKeys(t, out, "records", "next")
+			want := token.Encode(result.Records[1].Seq)
+			if result.Next == nil || *result.Next != want {
+				t.Fatalf("next = %v, want %s", result.Next, want)
+			}
+			page = *result.Next
+		} else {
+			checkKeys(t, out, "records")
+			if result.Next != nil {
+				t.Fatal("full final page carries next")
+			}
+		}
+	}
+	if !slices.Equal(seen, []int64{6, 5, 4, 3, 2, 1}) {
+		t.Fatalf("sequence = %v", seen)
+	}
+	// Reuse a token issued with a different filter, continuing by sequence.
+	out := success(t, h.call("search", `{"limit":1,"user":"alice"}`))
+	var first struct {
+		Next string `json:"next"`
+	}
+	if err := json.Unmarshal(out, &first); err != nil {
+		t.Fatal(err)
+	}
+	changed := success(t, h.call("search", fmt.Sprintf(`{"limit":2,"user":"","page":%q}`, first.Next)))
+	var result struct {
+		Records []struct {
+			Seq int64 `json:"seq"`
+		} `json:"records"`
+	}
+	if err := json.Unmarshal(changed, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Records) != 2 || result.Records[0].Seq != 4 || result.Records[1].Seq != 2 {
+		t.Fatalf("changed filters = %s", changed)
+	}
+	checkKeys(t, changed, "records")
+	h.unchanged(before)
+	if got := h.ownEvents(); len(got) != 0 {
+		t.Fatalf("own events = %v", got)
+	}
+	// The caller may continue after retention has removed the boundary.
+	if err := h.st.Advance(context.Background(), "worker", 6); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.st.Sweep(context.Background(), h.now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	equalJSON(t, success(t, h.call("search", fmt.Sprintf(`{"page":%q}`, first.Next))), []byte(`{"records":[]}`))
+}
+
 func TestSearchEmptyAndNumericValues(t *testing.T) {
-	// R-VQH6-MZ9J R-DQFA-7996 R-VRP3-0R08
+	// R-9NXW-MCPL R-9STI-5FOD
 	h := newHarness(t, false)
 	equalJSON(t, success(t, h.call("search", `{}`)), []byte(`{"records":[]}`))
 	h.seed(1)
@@ -530,11 +627,11 @@ func TestSearchEmptyAndNumericValues(t *testing.T) {
 		number float64
 	}{{"1e3", 1000}, {"1.5", 1.5}} {
 		out := success(t, h.call("search", `{"attrs":{"number":`+c.text+`}}`))
-		page, err := h.st.Search(context.Background(), store.Filter{Attrs: appEvents.Attrs{"number": c.number}}, 50, "")
-		if err != nil || len(page.Records) != 1 {
+		page, err := h.st.Search(context.Background(), store.Filter{Attrs: appEvents.Attrs{"number": c.number}}, nil, paging.DefaultLimit+1)
+		if err != nil || len(page) != 1 {
 			t.Fatalf("numeric fixture search: %+v, %v", page, err)
 		}
-		record, err := page.Records[0].MarshalJSON()
+		record, err := page[0].MarshalJSON()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -543,20 +640,22 @@ func TestSearchEmptyAndNumericValues(t *testing.T) {
 }
 
 func TestSearchRefusalOrder(t *testing.T) {
-	// R-T9G5-FWW9 R-TAO1-TOMY R-TBVY-7GDN R-TD3U-L84C R-T5SG-ALO6
+	// R-T9G5-FWW9 R-9WH7-AQWG R-9YX0-2ADU R-A1CS-TTV8 R-9LI3-UT87
 	h := newHarness(t, false)
 	h.seed(1)
 	before := h.snapshot()
 	for _, failing := range []bool{false, true} {
 		h.d.SetFailing(failing)
 		for _, value := range []string{"", "2026-01-02", "today", "2026-01-02T03:04:05", "line\nbreak"} {
-			refusal(t, h.call("search", fmt.Sprintf(`{"since":%q,"until":"bad","limit":0,"cursor":"page2"}`, value)), timeRefusal(t, "since", value))
-			refusal(t, h.call("search", fmt.Sprintf(`{"until":%q,"limit":0,"cursor":"page2"}`, value)), timeRefusal(t, "until", value))
+			refusal(t, h.call("search", fmt.Sprintf(`{"since":%q,"until":"bad","limit":0,"page":"page2"}`, value)), timeRefusal(t, "since", value))
+			refusal(t, h.call("search", fmt.Sprintf(`{"until":%q,"limit":0,"page":"page2"}`, value)), timeRefusal(t, "until", value))
 		}
-		for _, limit := range []int64{-1, 0, 501, 9223372036854775807} {
-			refusal(t, h.call("search", fmt.Sprintf(`{"limit":%d,"cursor":"page2"}`, limit)), limitRefusal(t, limit))
+		for _, limit := range []int64{-1, 0, paging.MaxLimit + 1, 9223372036854775807} {
+			refusal(t, h.call("search", fmt.Sprintf(`{"limit":%d,"page":"page2"}`, limit)), limitRefusal(t, limit))
 		}
-		refusal(t, h.call("search", `{"cursor":"page2"}`), tools.BadCursor)
+		for _, page := range []string{"page2", (paging.Token{Tool: "other"}).Encode(int64(1)), "1", (paging.Token{Tool: "search"}).Encode("wrong-type")} {
+			refusal(t, h.call("search", fmt.Sprintf(`{"page":%q}`, page)), paging.BadPage)
+		}
 		if failing {
 			refusal(t, h.call("search", `{}`), tools.Unreachable)
 		}
@@ -593,7 +692,7 @@ func checkSubscriber(t *testing.T, raw []byte, s store.Subscriber) {
 }
 
 func TestSubscribers(t *testing.T) {
-	// R-T889-255K R-D0TE-62OL R-CZLH-SAXW R-YR67-B61N
+	// R-A68E-CWU0 R-D0TE-62OL R-CZLH-SAXW R-YR67-B61N
 	h := newHarness(t, false)
 	equalJSON(t, success(t, h.call("subscribers", `{}`)), []byte(`{"subscribers":[]}`))
 	h.seed(2)
@@ -711,38 +810,55 @@ func TestControlRefusals(t *testing.T) {
 	}
 }
 
+func invalidArguments(t *testing.T, r mcp.Result, offences int, required ...string) {
+	t.Helper()
+	b, err := r.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Content []struct {
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(b, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Content) != 1 {
+		t.Fatalf("invalid refusal = %s", b)
+	}
+	text := result.Content[0].Text
+	refusal(t, r, text)
+	lines := strings.Split(text, "\n")
+	if len(lines) != offences+1 || lines[0] != "invalid arguments:" {
+		t.Fatalf("invalid refusal has wrong heading or offence count: %s", b)
+	}
+	for _, line := range lines[1:] {
+		if line == "" {
+			t.Fatalf("empty offence line: %s", b)
+		}
+	}
+	for _, want := range required {
+		if !slices.Contains(lines[1:], want) {
+			t.Fatalf("invalid refusal lacks %q: %s", want, b)
+		}
+	}
+}
+
 func TestInvalidArguments(t *testing.T) {
-	// R-T4KJ-WTXH R-YSE3-OXSC
+	// R-9J2B-39QT R-YSE3-OXSC
 	h := newHarness(t, false)
 	h.seed(1)
 	h.pause()
 	before := h.snapshot()
 	cases := []struct{ tool, args string }{
-		{"catalog", `[]`}, {"catalog", `{"service":null}`}, {"catalog", `{"event":3}`}, {"search", `{"since":3}`}, {"search", `{"until":true}`}, {"search", `{"services":null}`}, {"search", `{"events":[4]}`}, {"search", `{"user":false}`}, {"search", `{"request_id":[]}`}, {"search", `{"cause":{}}`}, {"search", `{"attrs":null}`}, {"search", `{"attrs":[]}`}, {"search", `{"limit":3.5}`}, {"search", `{"limit":9223372036854775808}`}, {"search", `{"cursor":1}`}, {"skip", `{}`}, {"skip", `{"service":null}`}, {"resume", `{}`}, {"resume", `{"service":true}`},
+		{"catalog", `[]`}, {"catalog", `{"service":null}`}, {"catalog", `{"event":3}`}, {"search", `{"since":3}`}, {"search", `{"until":true}`}, {"search", `{"services":null}`}, {"search", `{"events":[4]}`}, {"search", `{"events":null}`}, {"search", `{"services":[4]}`}, {"search", `{"user":false}`}, {"search", `{"request_id":[]}`}, {"search", `{"cause":{}}`}, {"search", `{"attrs":null}`}, {"search", `{"attrs":[]}`}, {"search", `{"limit":3.5}`}, {"search", `{"limit":9223372036854775808}`}, {"search", `{"page":1}`}, {"search", `{"cursor":""}`}, {"skip", `{}`}, {"skip", `{"service":null}`}, {"resume", `{}`}, {"resume", `{"service":true}`},
 	}
 	for _, failing := range []bool{false, true} {
 		h.d.SetFailing(failing)
 		for _, tool := range []string{"catalog", "search", "subscribers", "skip", "resume"} {
 			for _, nonObject := range []string{`[]`, `null`, `"text"`, `42`, `true`} {
-				r := h.call(tool, nonObject)
-				if !r.IsError() {
-					t.Fatalf("accepted nonobject %s arguments %s", tool, nonObject)
-				}
-				b, err := r.MarshalJSON()
-				if err != nil {
-					t.Fatal(err)
-				}
-				var v struct {
-					Content []struct {
-						Text string `json:"text"`
-					} `json:"content"`
-				}
-				if err := json.Unmarshal(b, &v); err != nil {
-					t.Fatal(err)
-				}
-				if len(v.Content) != 1 || !strings.HasPrefix(v.Content[0].Text, "invalid arguments:") {
-					t.Fatalf("nonobject refusal = %s", b)
-				}
+				invalidArguments(t, h.call(tool, nonObject), 1)
 			}
 			args := `{"bogus":"x"}`
 			if tool == "skip" || tool == "resume" {
@@ -751,27 +867,13 @@ func TestInvalidArguments(t *testing.T) {
 			refusal(t, h.call(tool, args), "invalid arguments:\nbogus: unknown field")
 		}
 		for _, c := range cases {
-			r := h.call(c.tool, c.args)
-			if !r.IsError() {
-				t.Fatalf("accepted %s %s", c.tool, c.args)
-			}
-			b, err := r.MarshalJSON()
-			if err != nil {
-				t.Fatal(err)
-			}
-			var v struct {
-				Content []struct {
-					Text string `json:"text"`
-				} `json:"content"`
-			}
-			if err := json.Unmarshal(b, &v); err != nil {
-				t.Fatal(err)
-			}
-			if len(v.Content) != 1 || !strings.HasPrefix(v.Content[0].Text, "invalid arguments:\n") {
-				t.Fatalf("invalid refusal = %s", b)
-			}
+			invalidArguments(t, h.call(c.tool, c.args), 1)
 		}
+		refusal(t, h.call("search", `{"cursor":""}`), "invalid arguments:\ncursor: unknown field")
+		invalidArguments(t, h.call("search", `{"since":3,"until":false,"limit":3.5,"page":42,"cursor":"","bogus":"x"}`), 6, "cursor: unknown field", "bogus: unknown field")
 		for _, tool := range []string{"skip", "resume"} {
+			invalidArguments(t, h.call(tool, `{"bogus":"x","extra":true}`), 3, "service: missing required field", "bogus: unknown field", "extra: unknown field")
+			invalidArguments(t, h.call(tool, `{"service":false,"bogus":"x","extra":true}`), 3, "bogus: unknown field", "extra: unknown field")
 			refusal(t, h.call(tool, `{}`), "invalid arguments:\nservice: missing required field")
 		}
 		h.d.SetFailing(false)
@@ -783,7 +885,7 @@ func TestInvalidArguments(t *testing.T) {
 }
 
 func TestUnavailableLog(t *testing.T) {
-	// R-T5SG-ALO6 R-YSE3-OXSC
+	// R-9LI3-UT87 R-YSE3-OXSC
 	h := newHarness(t, false)
 	h.seed(2)
 	h.pause()
@@ -848,18 +950,16 @@ func TestEveryCallerSeesSameBus(t *testing.T) {
 	}
 }
 
-// R-SX95-M7HB
+// R-9BQW-SNAN
 func TestCopyConstants(_ *testing.T) {
 	type copyText string
 	const (
 		unreachable = tools.Unreachable
-		cursor      = tools.BadCursor
 		badTime     = tools.BadTime
-		limit       = tools.BadLimit
 		missing     = tools.NoSubscriber
 		paused      = tools.NotPaused
 	)
-	_ = []copyText{unreachable, cursor, badTime, limit, missing, paused}
+	_ = []copyText{unreachable, badTime, missing, paused}
 }
 
 func timeRefusal(t *testing.T, field, value string) string {
@@ -873,7 +973,12 @@ func timeRefusal(t *testing.T, field, value string) string {
 
 func limitRefusal(t *testing.T, limit int64) string {
 	t.Helper()
-	text := fmt.Sprintf(tools.BadLimit, limit)
+	l := int(limit)
+	_, err := paging.Window(&l)
+	if err == nil {
+		t.Fatal("expected invalid limit fixture")
+	}
+	text := err.Error()
 	if !strings.Contains(text, strconv.FormatInt(limit, 10)) {
 		t.Fatal("refusal lost supplied limit")
 	}

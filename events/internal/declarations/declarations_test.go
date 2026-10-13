@@ -176,7 +176,7 @@ func TestAskContract(t *testing.T) {
 	if err := h.store.Deliver(context.Background(), contract.Event{ID: "evt_0000000000000001", Time: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Service: "other", Name: "repo.old", Attrs: contract.Attrs{}}); err != nil {
 		t.Fatal(err)
 	}
-	before, _ := h.store.Search(context.Background(), store.Filter{}, 100, "")
+	before, _ := h.store.Search(context.Background(), store.Filter{}, nil, 100)
 	head, _ := h.store.Head(context.Background())
 	var timerCalls int
 	d := h.manager(func(duration time.Duration) <-chan time.Time {
@@ -193,7 +193,7 @@ func TestAskContract(t *testing.T) {
 	if !reflect.DeepEqual(h.held(), map[string]store.Declaration{"repos": expected, "other": old}) {
 		t.Fatalf("held %#v", h.held())
 	}
-	after, _ := h.store.Search(context.Background(), store.Filter{}, 100, "")
+	after, _ := h.store.Search(context.Background(), store.Filter{}, nil, 100)
 	afterHead, _ := h.store.Head(context.Background())
 	if head != afterHead || !reflect.DeepEqual(before, after) {
 		t.Fatal("log changed")
@@ -205,7 +205,7 @@ func TestAskContract(t *testing.T) {
 	telemetryBefore = h.snapshot()
 	d.Refresh(context.Background())
 	h.siblingRecords(telemetryBefore, map[string]int64{"repos": 200})
-	refreshed, err := h.store.Search(context.Background(), store.Filter{}, 100, "")
+	refreshed, err := h.store.Search(context.Background(), store.Filter{}, nil, 100)
 	if err != nil || !reflect.DeepEqual(before, refreshed) {
 		t.Fatalf("refresh changed log: %v %#v", err, refreshed)
 	}
