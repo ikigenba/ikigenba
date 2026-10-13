@@ -32,6 +32,7 @@ type panelTemplateData struct {
 	Count   int
 	Table   []widget.Widget
 	Form    panel.FormView
+	Page    string
 	Next    string
 }
 

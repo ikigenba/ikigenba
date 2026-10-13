@@ -18,7 +18,12 @@ func (h *handler) table(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	widgets, _, err := h.firstPage(r.Context())
+	after, err := pageCursor(r.URL.Query().Get("page"))
+	if err != nil {
+		plainFailure(w, r, http.StatusNotFound, NotFoundBody)
+		return
+	}
+	widgets, _, err := h.window(r.Context(), after)
 	if err != nil {
 		plainFailure(w, r, http.StatusServiceUnavailable, widget.Unreachable+"\n")
 		return

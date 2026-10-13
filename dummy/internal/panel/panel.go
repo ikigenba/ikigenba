@@ -25,6 +25,9 @@ const Description string = "Demo widgets to list and create"
 // MethodNotAllowedBody reports a refused fragment method.
 const MethodNotAllowedBody = "method not allowed\n"
 
+// NotFoundBody reports an unknown fragment window.
+const NotFoundBody string = "not found\n"
+
 // NotFoundMessage reports an unknown route.
 const NotFoundMessage = "That page was not found."
 

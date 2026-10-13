@@ -170,7 +170,7 @@ func runWidgets(t *testing.T, run *servingRun) []servedWidget {
 	return result.StructuredContent.Widgets
 }
 
-// R-DPQ2-9T5Q R-JAR7-IV3N R-JD70-AEL1 R-O0OE-SHSS R-RQ4Z-NXE7 R-RRCW-1P4W R-ROX3-A5NI R-IXZD-5HBP
+// R-DPQ2-9T5Q R-JAR7-IV3N R-JD70-AEL1 R-O0OE-SHSS R-45TL-PG30 R-RRCW-1P4W R-ROX3-A5NI R-IXZD-5HBP
 func TestRunSharesWidgetsAndPersists(t *testing.T) {
 	for _, total := range []int{2, paging.DefaultLimit + 1} {
 		t.Run(fmt.Sprint(total), func(t *testing.T) {
@@ -241,6 +241,10 @@ func TestRunSharesWidgetsAndPersists(t *testing.T) {
 				want = append(want, servedWidget{"wgt_0100000000000000", "tool-widget", 7, "retired"})
 				if got := runWidgets(t, run); !reflect.DeepEqual(got, want) {
 					t.Fatalf("after tool widgets=%+v", got)
+				}
+				last := want[len(want)-1]
+				if last.ID != answer.Widget.ID || last.Name != answer.Widget.Name || last.Count != answer.Widget.Count || last.Status != string(answer.Widget.Status) {
+					t.Fatal("list's final widget differs from creation result")
 				}
 				for i := 2; i < total; i++ {
 					args, err := json.Marshal(map[string]any{"name": fmt.Sprintf("extra-%d", i), "count": i, "status": string(widget.StatusActive)})

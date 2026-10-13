@@ -18,6 +18,7 @@ type pageData struct {
 	Count   int
 	Table   []widget.Widget
 	Form    FormView
+	Page    string
 	Next    string
 }
 
@@ -28,7 +29,16 @@ func (h *handler) pageData(r *http.Request) pageData {
 }
 
 func (h *handler) renderPage(w http.ResponseWriter, r *http.Request, status int, sub widget.Submission, errs widget.FieldErrors) {
-	widgets, next, err := h.firstPage(r.Context())
+	pageValue := ""
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		pageValue = r.URL.Query().Get("page")
+	}
+	after, err := pageCursor(pageValue)
+	if err != nil {
+		h.renderFailure(w, r, http.StatusNotFound, NotFoundMessage)
+		return
+	}
+	widgets, next, err := h.window(r.Context(), after)
 	if err != nil {
 		plainFailure(w, r, http.StatusServiceUnavailable, widget.Unreachable+"\n")
 		return
@@ -37,6 +47,7 @@ func (h *handler) renderPage(w http.ResponseWriter, r *http.Request, status int,
 	data.Panel = true
 	data.Table = widgets
 	data.Count = len(data.Table)
+	data.Page = pageValue
 	data.Next = next
 	data.Form = newFormData(sub, errs)
 	h.renderDocument(w, r, status, data)
@@ -64,8 +75,19 @@ func (h *handler) renderTemplate(w http.ResponseWriter, r *http.Request, status 
 	}
 }
 
-func (h *handler) firstPage(ctx context.Context) ([]widget.Widget, string, error) {
-	widgets, err := h.store.List(ctx, nil, paging.DefaultLimit+1)
+func pageCursor(value string) (*int64, error) {
+	if value == "" {
+		return nil, nil
+	}
+	var seq int64
+	if err := (paging.Token{Tool: "list_widgets"}).Decode(value, &seq); err != nil {
+		return nil, err
+	}
+	return &seq, nil
+}
+
+func (h *handler) window(ctx context.Context, after *int64) ([]widget.Widget, string, error) {
+	widgets, err := h.store.List(ctx, after, paging.DefaultLimit+1)
 	if err != nil {
 		return nil, "", err
 	}

@@ -49,7 +49,7 @@ func tableTestFragment(t *testing.T, raw string, widgets []widget.Widget) {
 }
 
 func TestTableMarkupAndPageIdentity(t *testing.T) {
-	// R-HIIF-VFOP
+	// R-3UUI-9IER
 	for _, store := range []*widget.Store{panelEmptyStore(t), panelTestStore(t)} {
 		response := tableTestRequest(coreHandler(t, store, pageTestBanner, io.Discard), "GET", "/widgets/table", tableTestIdentity(), "")
 		if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "text/html; charset=utf-8" {
@@ -59,7 +59,7 @@ func TestTableMarkupAndPageIdentity(t *testing.T) {
 }
 
 func TestTableValidatorsTrackRenderedContent(t *testing.T) {
-	// R-HZFA-S3P3 R-I1V3-JN6H R-R6ML-JLJ3
+	// R-HZFA-S3P3 R-I1V3-JN6H R-3YI7-ETMU
 	store := panelTestStore(t)
 	h := coreHandler(t, store, pageTestBanner, io.Discard)
 	first := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "")
@@ -86,7 +86,7 @@ func TestTableValidatorsTrackRenderedContent(t *testing.T) {
 }
 
 func TestTableConditionalRequests(t *testing.T) {
-	// R-HJQC-97FE R-ICU6-ZKUQ R-HG2N-3W7B
+	// R-3W2E-NA5G R-ICU6-ZKUQ R-HG2N-3W7B
 	for _, empty := range []bool{false, true} {
 		store := panelTestStore(t)
 		if empty {
@@ -288,7 +288,7 @@ func TestTableTransportHeadParity(t *testing.T) {
 	}
 }
 
-// R-R5EP-5TSE
+// R-3TML-VQO2
 func TestTableUsesAssetData(t *testing.T) {
 	set, err := page.Templates().ParseFS(dummy.Assets(), "*.html")
 	if err != nil {
