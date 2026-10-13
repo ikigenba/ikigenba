@@ -18,6 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/webhooks"
 	"github.com/ikigenba/ikigenba/webhooks/internal/pages"
 	"github.com/ikigenba/ikigenba/webhooks/internal/store"
@@ -73,7 +74,7 @@ func TestPublicNamesAndTemplateExecution(t *testing.T) {
 	require(t, description != "", "empty description")
 	equal(t, pages.ToolsLevel, page.Level{Name: "tools", URL: "/tools"})
 	equal(t, pages.AboutLevel, page.Level{Name: "about", URL: "/about"})
-	// R-ZPLN-5WEE R-ZQTJ-JO53
+	// R-ZPLN-5WEE R-0P8Q-8E6W
 	s, err := pages.Load()
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +87,7 @@ func TestPublicNamesAndTemplateExecution(t *testing.T) {
 		name       string
 		zero, full any
 	}{
-		{"landing", pages.LandingData{}, pages.LandingData{Banner: b, Webhooks: []pages.WebhookRow{row}}},
+		{"landing", pages.LandingData{}, pages.LandingData{Banner: b, Webhooks: []pages.WebhookRow{row}, Next: "sample-token"}},
 		{"tools", pages.ToolsData{}, pages.ToolsData{Banner: b, Tools: []pages.ToolRow{{Name: "n", Description: "<d>"}}}},
 		{"about", pages.AboutData{}, pages.AboutData{Banner: b, Description: "<description>"}},
 		{"notfound", pages.NoticeData{}, pages.NoticeData{Banner: b}},
@@ -179,7 +180,7 @@ func answer(cfg pages.Config, r *http.Request) *httptest.ResponseRecorder {
 
 func expectedRows(t *testing.T, f *fixture, user, base string) []pages.WebhookRow {
 	t.Helper()
-	xs, err := f.store.List(context.Background())
+	xs, err := f.store.List(context.Background(), "", paging.DefaultLimit)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +208,7 @@ func writeServices(t *testing.T, path string, entries map[string]string) {
 }
 
 func TestSignedInPagesExactBodies(t *testing.T) {
-	// R-ZUH8-OZD6 R-ZWX1-GIUK R-ZY4X-UAL9 R-00KQ-LU2N R-01SM-ZLTC
+	// R-ID4R-G4DD R-ZWX1-GIUK R-ZY4X-UAL9 R-00KQ-LU2N R-01SM-ZLTC
 	for _, populated := range []bool{false, true} {
 		t.Run(fmt.Sprint(populated), func(t *testing.T) {
 			f := setup(t, populated)
@@ -305,5 +306,44 @@ func TestNotFoundMethodsGuestsAndFailures(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// R-0QGM-M5XL R-ID4R-G4DD
+func TestLandingFirstPageAndNext(t *testing.T) {
+	for _, count := range []int{0, paging.DefaultLimit - 1, paging.DefaultLimit, paging.DefaultLimit + 1} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			f := setup(t, false)
+			var hooks []store.Webhook
+			for i := 0; i < count; i++ {
+				x, _, err := f.store.Create(context.Background(), store.Draft{Slug: fmt.Sprintf("hook%03d", i), Scheme: store.Bearer, OwnerID: fmt.Sprintf("user%d", i%2), OwnerEmail: fmt.Sprintf("user%d@example.test", i%2)})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if i%2 == 0 {
+					if _, err = f.store.Receive(context.Background(), x.ID, store.Arrival{}); err != nil {
+						t.Fatal(err)
+					}
+					x.LastReceived = now
+				}
+				hooks = append(hooks, x)
+			}
+			rows := make([]pages.WebhookRow, 0, min(count, paging.DefaultLimit))
+			for _, x := range hooks[:min(count, paging.DefaultLimit)] {
+				row := pages.WebhookRow{ID: x.ID, Slug: x.Slug, Scheme: x.Scheme, URL: "https://hooks.example.test/in/" + x.Slug, Owner: x.OwnerEmail, Mine: x.OwnerID == "user0"}
+				if !x.LastReceived.IsZero() {
+					row.LastReceived = now.Format(time.RFC3339)
+					row.LastReceivedText = now.Format("2006-01-02 15:04")
+				}
+				rows = append(rows, row)
+			}
+			var next string
+			if count > paging.DefaultLimit {
+				next = (paging.Token{Tool: "list"}).Encode(hooks[paging.DefaultLimit-1].Slug)
+			}
+			w := answer(f.cfg, request("GET", "/", "user0", "user0@example.test", "hooks.example.test", "https"))
+			equal(t, w.Code, 200)
+			equal(t, w.Body.String(), rendered(t, templates(t), "landing", pages.LandingData{Banner: f.banner, Webhooks: rows, Next: next}))
+		})
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/webhooks/internal/ingress"
 	"github.com/ikigenba/ikigenba/webhooks/internal/store"
@@ -33,8 +34,11 @@ type Scheme string
 // Enum lists the two schemes.
 func (Scheme) Enum() []string { return []string{store.Bearer, store.GitHubHMAC} }
 
-// ListArgs has no arguments.
-type ListArgs struct{}
+// ListArgs selects a window of webhooks.
+type ListArgs struct {
+	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
+}
 
 // SlugArgs names a webhook.
 type SlugArgs struct {
@@ -88,6 +92,7 @@ type ListedWebhook struct {
 // WebhookList holds webhooks in slug order.
 type WebhookList struct {
 	Webhooks []ListedWebhook `json:"webhooks"`
+	Next     *string         `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
 // Deleted confirms removal.
@@ -183,12 +188,28 @@ func minted(ctx context.Context, x store.Webhook, secret string) Minted {
 	return Minted{ID: w.ID, Slug: w.Slug, Scheme: w.Scheme, URL: w.URL, Owner: w.Owner, Created: w.Created, LastReceived: w.LastReceived, Secret: secret}
 }
 
-func (h handlers) list(ctx context.Context, _ identity.Caller, _ ListArgs) (WebhookList, error) {
-	xs, err := h.cfg.Store.List(ctx)
+func (h handlers) list(ctx context.Context, _ identity.Caller, a ListArgs) (WebhookList, error) {
+	n, err := paging.Window(a.Limit)
+	if err != nil {
+		return WebhookList{}, err
+	}
+	token := paging.Token{Tool: "list"}
+	var after string
+	if a.Page != nil && *a.Page != "" {
+		if err = token.Decode(*a.Page, &after); err != nil {
+			return WebhookList{}, errors.New(paging.BadPage)
+		}
+	}
+	xs, err := h.cfg.Store.List(ctx, after, n+1)
 	if err != nil {
 		return WebhookList{}, answerError(err, "")
 	}
 	result := WebhookList{Webhooks: make([]ListedWebhook, 0, len(xs))}
+	if len(xs) > n {
+		next := token.Encode(xs[n-1].Slug)
+		result.Next = &next
+		xs = xs[:n]
+	}
 	for _, x := range xs {
 		v := object(ctx, x)
 		result.Webhooks = append(result.Webhooks, ListedWebhook{ID: v.ID, Slug: v.Slug, Scheme: v.Scheme, URL: v.URL, Owner: v.Owner, LastReceived: v.LastReceived})
@@ -298,7 +319,7 @@ func FirstLine(description string) string {
 
 const createDescription = "Create a webhook that turns each authenticated delivery from outside into an event on the suite's event bus.\n\nslug is 1 to 64 characters: a lowercase letter, then lowercase letters and digits, with single underscores between them; it must not already be a webhook's slug in the space, whoever owns that webhook. scheme is how a sender proves it holds the secret, fixed for the webhook's life: bearer, the default, sends the secret itself in the X-Webhook-Secret header (n8n's Header Auth does this); github-hmac signs the raw body with HMAC-SHA256 under the secret and sends X-Hub-Signature-256: sha256=<hex>, as GitHub does, and its secret is kept in plaintext so it can be checked. The result is what show returns plus secret, minted here as whs_ and 52 characters; it is shown this once and never again, so hand it and url to the sender now. A sender POSTs to url; an accepted delivery is answered 202, and a wrong or missing secret or signature, like an unknown slug, is answered 404. Each accepted delivery emits webhook.<slug>.received with attrs hook (the webhook's id), delivery (the delivery's id), type (X-GitHub-Event for github-hmac, otherwise empty), content_type and bytes; fetch its body with delivery. Creating it emits webhook.<slug>.created. The webhook is yours: only you can rotate or delete it, or read its deliveries."
 
-const listDescription = "Every webhook in the space, by slug.\n\nTakes no arguments. Every user's webhooks are listed, not only yours. Each has its id, slug, scheme (bearer or github-hmac), url (the address a sender posts to), owner (the email of the user who created it), and last_received (when it last accepted a delivery; absent until its first). Times are UTC. No secret is ever shown. Use show for one webhook's created time."
+const listDescription = "One page of webhooks in the space, by slug.\n\nPass next back as page to continue, keeping the same limit; leave page out to start. limit sets the most entries to return. Every user's webhooks are listed, not only yours. Each has its id, slug, scheme (bearer or github-hmac), url (the address a sender posts to), owner (the email of the user who created it), and last_received (when it last accepted a delivery; absent until its first). Times are UTC. No secret is ever shown. Use show for one webhook's created time."
 
 const showDescription = "One webhook, with its scheme, its address and when it last received a delivery.\n\nPass slug, the webhook's slug; any user's webhook can be shown. The result has its id, slug, scheme (bearer or github-hmac), url (the address a sender posts to), owner (the email of the user who created it), created, and last_received (when it last accepted a delivery; absent until its first). Times are UTC. The secret is never shown again after create or rotate."
 

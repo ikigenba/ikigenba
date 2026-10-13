@@ -23,6 +23,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/webhooks"
 	"github.com/ikigenba/ikigenba/webhooks/internal/ingress"
@@ -111,7 +112,7 @@ func (f *fixture) flush() {
 
 func (f *fixture) content() []store.Webhook {
 	f.t.Helper()
-	xs, e := f.st.List(f.ctx)
+	xs, e := f.st.List(f.ctx, "", paging.MaxLimit+1)
 	if e != nil {
 		f.t.Fatal(e)
 	}
@@ -263,7 +264,7 @@ func lifecycle(t *testing.T, f *fixture, kind string, x tools.Minted, requestID 
 	}
 }
 
-// R-0HNB-YMGD R-0K34-Q5XR R-0MIX-HPF5
+// R-0HNB-YMGD R-ZX71-FO4X R-0MIX-HPF5
 func TestDeclarations(t *testing.T) {
 	var _ = tools.Config{Store: (*store.Store)(nil), Telemetry: (*telemetry.Writer)(nil), Events: (*events.Emitter)(nil)}
 	var register = tools.Register
@@ -296,10 +297,11 @@ func TestDeclarations(t *testing.T) {
 	_ = tools.CreateArgs{Slug: "x", Scheme: &scheme}
 	_ = tools.SlugArgs{Slug: "x"}
 	_ = tools.DeliveryArgs{ID: "x"}
-	_ = tools.ListArgs{}
+	limit := 1
+	_ = tools.ListArgs{Page: func() *string { v := ""; return &v }(), Limit: &limit}
 }
 
-// R-0IV8-CE72 R-0LB1-3XOG
+// R-ZZMU-77MB R-0LB1-3XOG
 func TestResultShapesAndCopy(t *testing.T) {
 	s := "x"
 	_ = tools.Webhook{ID: s, Slug: s, Scheme: s, URL: s, Owner: s, Created: s, LastReceived: &s}
@@ -313,7 +315,7 @@ func TestResultShapesAndCopy(t *testing.T) {
 	}{
 		{tools.Minted{LastReceived: &s}, []string{"id", "slug", "scheme", "url", "owner", "created", "last_received", "secret"}},
 		{tools.ListedWebhook{LastReceived: &s}, []string{"id", "slug", "scheme", "url", "owner", "last_received"}},
-		{tools.WebhookList{}, []string{"webhooks"}},
+		{tools.WebhookList{Next: &s}, []string{"webhooks", "next"}},
 		{tools.Deleted{}, []string{"deleted", "id"}},
 		{tools.Header{}, []string{"name", "value"}},
 		{tools.Delivery{Body: &s, BodyBase64: &s}, []string{"id", "hook", "received", "content_type", "headers", "body", "body_base64"}},
@@ -430,7 +432,7 @@ func TestCreateRefusals(t *testing.T) {
 	f.unchanged("create", map[string]any{"slug": "taken", "scheme": store.GitHubHMAC}, tools.SlugTaken("taken"))
 }
 
-// R-0REJ-0SDX
+// R-03AJ-CIUE R-0J58-BJHF
 func TestListAndShow(t *testing.T) {
 	f := setup(t)
 	var empty tools.WebhookList
@@ -650,4 +652,227 @@ func TestUnreachable(t *testing.T) {
 	t.Cleanup(server.Close)
 	g.client = mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL + "/mcp"})
 	g.unchanged("create", map[string]any{"slug": "fresh"}, store.Unreachable)
+}
+
+// R-05QC-42BS R-0864-VLT6
+func TestPagingSchemas(t *testing.T) {
+	f := setup(t)
+	infos, err := f.client.ListTools(f.ctx, f.caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, info := range infos {
+		if info.Name != "list" {
+			continue
+		}
+		want := map[string]any{"type": "object", "properties": map[string]any{
+			"page":  map[string]any{"type": "string", "description": paging.PageDescription},
+			"limit": map[string]any{"type": "integer", "description": paging.LimitDescription},
+		}, "additionalProperties": false}
+		var got any
+		if err = json.Unmarshal(info.InputSchema, &got); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("input schema: %s", info.InputSchema)
+		}
+		var out struct {
+			Properties json.RawMessage
+			Required   []string
+		}
+		if err = json.Unmarshal(info.OutputSchema, &out); err != nil {
+			t.Fatal(err)
+		}
+		assertKeys(t, out.Properties, []string{"webhooks", "next"})
+		var props map[string]any
+		if err = json.Unmarshal(out.Properties, &props); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(props["next"], map[string]any{"type": "string", "description": paging.NextDescription}) {
+			t.Fatal("next schema", props)
+		}
+		for _, field := range out.Required {
+			if field == "next" {
+				t.Fatal("next required")
+			}
+		}
+		return
+	}
+	t.Fatal("list absent")
+}
+
+// R-0D1Q-EORY R-0GPF-K001 R-41DF-7ZBJ
+func TestPagingRefusalsAndTrail(t *testing.T) {
+	f := setup(t)
+	srv := mcp.NewServer(mcp.ServerConfig{Name: "webhooks", Version: "test", Telemetry: f.w})
+	tools.Register(srv, tools.Config{Store: f.st, Telemetry: f.w, Events: f.em})
+	server := httptest.NewServer(events.Middleware(identity.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		srv.ServeHTTP(w, r.WithContext(urls.NewContext(r.Context(), base)))
+	}))))
+	t.Cleanup(server.Close)
+	f.client = mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL + "/mcp"})
+	f.create("kept", "")
+	token := paging.Token{Tool: "list"}
+	invalid := []string{"mistyped", (paging.Token{Tool: "list_widgets"}).Encode("a"), token.Encode(int64(1))}
+	check := func(args any, want string) {
+		t.Helper()
+		f.flush()
+		before, bus := len(f.tc.Events()), len(f.ec.Events())
+		result := f.call("list", args)
+		if want != "" {
+			refusal(t, result, want)
+		} else {
+			var out tools.WebhookList
+			success(t, result, &out)
+		}
+		f.flush()
+		if len(f.ec.Events()) != bus {
+			t.Fatal("list emitted bus event")
+		}
+		recorded := f.tc.Events()[before:]
+		if len(recorded) != 1 || recorded[0].Name != "tool.called" {
+			t.Fatalf("list events: %+v", recorded)
+		}
+	}
+	for _, failing := range []bool{false, true} {
+		f.d.SetFailing(failing)
+		for _, limit := range []int{-1, 0, paging.MaxLimit + 1} {
+			_, err := paging.Window(&limit)
+			for _, page := range append([]string{""}, invalid...) {
+				check(map[string]any{"page": page, "limit": limit}, err.Error())
+			}
+		}
+		for _, page := range invalid {
+			for _, limit := range []any{nil, 1, paging.MaxLimit} {
+				check(map[string]any{"page": page, "limit": limit}, paging.BadPage)
+			}
+			check(map[string]any{"page": page}, paging.BadPage)
+		}
+		want := ""
+		if failing {
+			want = store.Unreachable
+		}
+		check(map[string]any{}, want)
+		check(map[string]any{"page": nil, "limit": nil}, want)
+		check(map[string]any{"page": "", "limit": 1}, want)
+	}
+}
+
+// R-0BTU-0X19 R-0J58-BJHF R-0LL1-32YT
+func TestPagingWindows(t *testing.T) {
+	f := setup(t)
+	slugs := []string{"a1", "a_b", "aa"}
+	for i := 0; i < paging.DefaultLimit+2; i++ {
+		slugs = append(slugs, fmt.Sprintf("z%03d", i))
+	}
+	for i := len(slugs) - 1; i >= 0; i-- {
+		f.as(fmt.Sprintf("user%d", i%2), fmt.Sprintf("user%d@example.test", i%2))
+		f.create(slugs[i], "")
+	}
+	token := paging.Token{Tool: "list"}
+	fetch := func(args any, want []string, next bool) tools.WebhookList {
+		t.Helper()
+		raw := f.call("list", args)
+		var out tools.WebhookList
+		success(t, raw, &out)
+		got := make([]string, 0, len(out.Webhooks))
+		for _, w := range out.Webhooks {
+			got = append(got, w.Slug)
+			var show tools.Webhook
+			success(t, f.call("show", tools.SlugArgs{Slug: w.Slug}), &show)
+			if !reflect.DeepEqual(w, tools.ListedWebhook{ID: show.ID, Slug: show.Slug, Scheme: show.Scheme, URL: show.URL, Owner: show.Owner, LastReceived: show.LastReceived}) {
+				t.Fatal("listed fields", w, show)
+			}
+		}
+		if out.Webhooks == nil || !reflect.DeepEqual(got, want) {
+			t.Fatal("window", got, want)
+		}
+		var members map[string]json.RawMessage
+		if err := json.Unmarshal(raw["structuredContent"], &members); err != nil {
+			t.Fatal(err)
+		}
+		_, present := members["next"]
+		if present != next || (out.Next != nil) != next {
+			t.Fatal("next presence", out)
+		}
+		if next && *out.Next != token.Encode(want[len(want)-1]) {
+			t.Fatal("next token", out.Next)
+		}
+		return out
+	}
+	for _, args := range []any{tools.ListArgs{}, map[string]any{"page": nil, "limit": nil}, map[string]any{"page": ""}} {
+		fetch(args, slugs[:paging.DefaultLimit], true)
+	}
+	fetch(map[string]any{"limit": paging.MaxLimit}, slugs, false)
+	fetch(map[string]any{"page": token.Encode("B"), "limit": 2}, slugs[:2], true)
+	fetch(map[string]any{"page": token.Encode(string([]byte{0xff})), "limit": 2}, []string{}, false)
+	fetch(map[string]any{"page": token.Encode("a2"), "limit": 2}, slugs[1:3], true)
+	for _, limit := range []int{1, 2, 3, len(slugs)} {
+		var page *string
+		for offset := 0; offset < len(slugs); {
+			end := min(offset+limit, len(slugs))
+			out := fetch(tools.ListArgs{Page: page, Limit: &limit}, slugs[offset:end], end < len(slugs))
+			page = out.Next
+			offset = end
+		}
+	}
+}
+
+// R-ZX71-FO4X
+func TestArgumentSchemaProperties(t *testing.T) {
+	f := setup(t)
+	infos, err := f.client.ListTools(f.ctx, f.caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := map[string]struct {
+		properties []string
+		required   []string
+	}{
+		"create":   {properties: []string{"slug", "scheme"}, required: []string{"slug"}},
+		"list":     {properties: []string{"page", "limit"}},
+		"show":     {properties: []string{"slug"}, required: []string{"slug"}},
+		"rotate":   {properties: []string{"slug"}, required: []string{"slug"}},
+		"delete":   {properties: []string{"slug"}, required: []string{"slug"}},
+		"delivery": {properties: []string{"id"}, required: []string{"id"}},
+	}
+	for _, info := range infos {
+		want, ok := expected[info.Name]
+		if !ok {
+			continue
+		}
+		var schema struct {
+			Properties map[string]json.RawMessage
+			Required   []string
+		}
+		if err = json.Unmarshal(info.InputSchema, &schema); err != nil {
+			t.Fatal(err)
+		}
+		if len(schema.Properties) != len(want.properties) {
+			t.Fatalf("%s properties: %v", info.Name, schema.Properties)
+		}
+		for _, property := range want.properties {
+			if _, ok := schema.Properties[property]; !ok {
+				t.Fatalf("%s missing property %s", info.Name, property)
+			}
+		}
+		if len(schema.Required) != len(want.required) {
+			t.Fatalf("%s required: %v", info.Name, schema.Required)
+		}
+		for _, required := range want.required {
+			found := false
+			for _, got := range schema.Required {
+				if got == required {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("%s missing required property %s", info.Name, required)
+			}
+		}
+		delete(expected, info.Name)
+	}
+	if len(expected) != 0 {
+		t.Fatal("missing tool schemas", expected)
+	}
 }

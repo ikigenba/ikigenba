@@ -223,11 +223,14 @@ func byID(ctx context.Context, tx *sql.Tx, id string) (Webhook, error) {
 	return w, err
 }
 
-// List returns every webhook in ascending slug order.
-func (s *Store) List(ctx context.Context) ([]Webhook, error) {
+// List returns at most n webhooks whose slug follows after in byte order.
+func (s *Store) List(ctx context.Context, after string, n int) ([]Webhook, error) {
+	if n < 1 {
+		n = 0
+	}
 	result := make([]Webhook, 0)
 	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, "SELECT "+columns+" FROM webhooks ORDER BY slug COLLATE BINARY")
+		rows, err := tx.QueryContext(ctx, "SELECT "+columns+" FROM webhooks WHERE slug > ? ORDER BY slug COLLATE BINARY LIMIT ?", after, n)
 		if err != nil {
 			return err
 		}

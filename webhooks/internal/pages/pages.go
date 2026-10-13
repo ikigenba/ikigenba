@@ -9,6 +9,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/webhooks"
 	"github.com/ikigenba/ikigenba/webhooks/internal/store"
 	"github.com/ikigenba/ikigenba/webhooks/internal/tools"
@@ -34,6 +35,7 @@ type Set struct{ templates *template.Template }
 type LandingData struct {
 	Banner   page.Banner
 	Webhooks []WebhookRow
+	Next     string
 }
 
 // WebhookRow contains the public display fields of one webhook.
@@ -123,7 +125,7 @@ func Handler(cfg Config) http.Handler {
 		}
 		switch path {
 		case "/":
-			entries, err := cfg.Store.List(r.Context())
+			entries, err := cfg.Store.List(r.Context(), "", paging.DefaultLimit+1)
 			if err != nil {
 				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 				w.WriteHeader(http.StatusServiceUnavailable)
@@ -132,8 +134,13 @@ func Handler(cfg Config) http.Handler {
 				}
 				return
 			}
+			var next string
+			if len(entries) > paging.DefaultLimit {
+				next = (paging.Token{Tool: "list"}).Encode(entries[paging.DefaultLimit-1].Slug)
+				entries = entries[:paging.DefaultLimit]
+			}
 			base := urls.Base(r, cfg.ServicesPath)
-			data := LandingData{Banner: cfg.Banner(bannerUser(r, cfg.ServicesPath)), Webhooks: make([]WebhookRow, 0, len(entries))}
+			data := LandingData{Next: next, Banner: cfg.Banner(bannerUser(r, cfg.ServicesPath)), Webhooks: make([]WebhookRow, 0, len(entries))}
 			for _, x := range entries {
 				data.Webhooks = append(data.Webhooks, row(x, caller.UserID, base))
 			}

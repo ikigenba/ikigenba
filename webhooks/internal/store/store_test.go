@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"math"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -118,7 +119,7 @@ func create(t *testing.T, s *store.Store, slug, scheme string) (store.Webhook, s
 
 func list(t *testing.T, s *store.Store) []store.Webhook {
 	t.Helper()
-	xs, err := s.List(context.Background())
+	xs, err := s.List(context.Background(), "", math.MaxInt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +139,7 @@ func validSecret(s string) bool {
 }
 
 func methods(
-	func(context.Context) ([]store.Webhook, error),
+	func(context.Context, string, int) ([]store.Webhook, error),
 	func(context.Context, string) (store.Webhook, error),
 	func(context.Context, store.Draft) (store.Webhook, string, error),
 	func(context.Context, string) (store.Webhook, string, error),
@@ -173,7 +174,7 @@ func TestDeclarations(t *testing.T) {
 			}
 		}
 	}
-	// R-YQ8K-2JW9: the method set, by use.
+	// R-ZM7X-ZQGO: the method set, by use.
 	var s *store.Store
 	methods(s.List, s.Get, s.Create, s.Rotate, s.Delete, s.Receive, s.Delivery, s.Sweep)
 	// R-YK52-5P6S
@@ -233,7 +234,7 @@ func TestCreateAndRestart(t *testing.T) {
 	random = append(random, bytes.Repeat([]byte{0x11}, 40)...)
 	d := openDB(t, path, c.Now)
 	s := store.New(d, store.Config{Now: c.Now, Rand: bytes.NewReader(random)})
-	// R-YYRU-QY34: empty store.
+	// R-ZTJC-ACWU R-ZPVN-51OR: empty store.
 	empty := list(t, s)
 	if empty == nil || len(empty) != 0 {
 		t.Fatalf("empty list %#v", empty)
@@ -365,7 +366,7 @@ func TestCreateRefusals(t *testing.T) {
 	same(t, ok, 1)
 }
 
-func TestGetAndList(t *testing.T) {
+func TestGet(t *testing.T) {
 	ctx := context.Background()
 	_, _, s, _ := fixture(t)
 	for _, slug := range []string{"tick", "alpha", "gh_push", "zeta", "a1"} {
@@ -373,23 +374,68 @@ func TestGetAndList(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// R-YYRU-QY34: any owner's webhook by slug.
+		// R-ZPVN-51OR: any owner's webhook by slug.
 		got, err := s.Get(ctx, slug)
 		if err != nil {
 			t.Fatal(err)
 		}
 		same(t, got, x)
 	}
-	var slugs []string
-	for _, x := range list(t, s) {
-		slugs = append(slugs, x.Slug)
-	}
-	same(t, slugs, []string{"a1", "alpha", "gh_push", "tick", "zeta"})
 	tick, _ := s.Get(ctx, "tick")
 	for _, slug := range []string{"", "Tick", "tic", tick.ID} {
 		if _, err := s.Get(ctx, slug); !errors.Is(err, store.ErrNotFound) {
 			t.Fatal(slug, err)
 		}
+	}
+}
+
+func TestListWindows(t *testing.T) {
+	// R-ZTJC-ACWU: bounded windows use byte order and include every owner.
+	ctx := context.Background()
+	_, _, s, _ := fixture(t)
+	hooks := make(map[string]store.Webhook)
+	for i, slug := range []string{"tick", "aa", "a_b", "zeta", "a1"} {
+		scheme := store.Bearer
+		if i%2 == 1 {
+			scheme = store.GitHubHMAC
+		}
+		w, _, err := s.Create(ctx, store.Draft{Slug: slug, Scheme: scheme, OwnerID: "owner_" + slug, OwnerEmail: slug + "@example.test"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		hooks[slug] = w
+	}
+	ordered := []store.Webhook{hooks["a1"], hooks["a_b"], hooks["aa"], hooks["tick"], hooks["zeta"]}
+	for _, tc := range []struct {
+		name  string
+		after string
+		n     int
+		want  []store.Webhook
+	}{
+		{"first", "", 1, ordered[:1]},
+		{"window", "", 2, ordered[:2]},
+		{"exact", "", len(ordered), ordered},
+		{"larger", "", len(ordered) + 1, ordered},
+		{"zero", "", 0, ordered[:0]},
+		{"negative", "", -1, ordered[:0]},
+		{"minimum", "", math.MinInt, ordered[:0]},
+		{"uppercase position", "B", 10, ordered},
+		{"equal position", "a1", 10, ordered[1:]},
+		{"bounded suffix", "a_b", 2, ordered[2:4]},
+		{"missing position", "a2", 10, ordered[1:]},
+		{"final position", "zeta", 10, ordered[:0]},
+		{"high byte position", string([]byte{0xff}), 10, ordered[:0]},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := s.List(ctx, tc.after, tc.n)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got == nil {
+				t.Fatal("nil window")
+			}
+			same(t, got, tc.want)
+		})
 	}
 }
 
@@ -622,9 +668,11 @@ func TestUnreachable(t *testing.T) {
 		}
 	}
 	calls := func(ctx context.Context, s *store.Store) {
-		_, err := s.List(ctx)
-		check(err)
-		_, err = s.Get(ctx, "tick")
+		for _, n := range []int{math.MaxInt, 0, -1} {
+			_, err := s.List(ctx, "", n)
+			check(err)
+		}
+		_, err := s.Get(ctx, "tick")
 		check(err)
 		_, _, err = s.Create(ctx, draft("fresh", store.Bearer))
 		check(err)
@@ -687,7 +735,7 @@ func TestConcurrent(t *testing.T) {
 			if _, err := s.Get(ctx, slug); err != nil {
 				errs <- err
 			}
-			if _, err := s.List(ctx); err != nil {
+			if _, err := s.List(ctx, "", math.MaxInt); err != nil {
 				errs <- err
 			}
 			if w.Created.Location() != time.UTC || w.Created.Nanosecond() != 0 {
