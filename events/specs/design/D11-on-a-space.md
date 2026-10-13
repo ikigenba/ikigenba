@@ -32,8 +32,8 @@ The sandbox runs the same binary with a host's environment; variables it sets th
 - The tools page and the about screen on a space or in a sandbox, with the banner's trail: R-IVTH-IZYR, R-DPYN-93CY, R-5MS9-KEY1 (the about screen the binary serves, its release and commit), R-DNIU-HJVK, R-B2WL-CQEE (the tools `tools/list` names), R-DCJR-1M7B; what the banner draws from the trail is appkit's.
 - A visitor, a guest or an MCP client without a credential, on a space or in a sandbox: outside events' contract (nginx, auth, sandbox); events' part R-YURM-HNUF.
 - An agent asking for events' emit path through nginx: R-0D0Y-G62L, R-0LK9-4K9G and nginx's documentation (above); the socket path R-CV50-TR4H, R-9CMB-1JQ3.
-- A push emitted by repos and found by an agent: the emit is repos'; storing it R-9CMB-1JQ3, R-69AX-8R2N; the search answer `D09-tools`; request and tool records R-9GWI-7I6V, R-9FOL-TQG6; no stderr R-A2DS-7DL6; the gateway's `serverInfo` is the gateway's.
-- An agent checking the subscribers, and a subscriber taking a push: `D09-tools`' `subscribers`, delivery R-9GA0-6UY6, R-G1LB-MGO7, R-H68X-NE8X, records R-9GWI-7I6V, R-9FOL-TQG6, no stderr R-A2DS-7DL6.
+- A push emitted by repos and found by an agent: the emit is repos'; storing it R-9CMB-1JQ3, R-69AX-8R2N; the search answer `D09-tools`; request and tool records R-AB3Z-VZSS, R-A8O7-4GBE; no stderr R-A2DS-7DL6; the gateway's `serverInfo` is the gateway's.
+- An agent checking the subscribers, and a subscriber taking a push: `D09-tools`' `subscribers`, delivery R-9GA0-6UY6, R-G1LB-MGO7, R-H68X-NE8X, records R-AB3Z-VZSS, R-A8O7-4GBE, no stderr R-A2DS-7DL6.
 - An operator restoring events on a space: R-E0E3-6NDU, R-X661-3MC4, R-PNJD-XS7X; R-8LSI-MLET (a new `service.started`), R-G1LB-MGO7 (`event.delivered` per redelivery); the command, its output and the replica are opsctl's.
 
 ## REQUIREMENTS
