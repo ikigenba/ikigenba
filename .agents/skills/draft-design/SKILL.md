@@ -42,7 +42,8 @@ story sources may be read without broadening output authority. Existing design a
 current target, not a compatibility obligation. Respect spec's sub-project
 boundary; do not inspect sibling internals. A sibling's `specs/` and
 `AGENTS.md` are precedent: read them to match their patterns, never to cite
-them.
+them. Design follows the suite's conventions in the repository's `shape/`
+and records any departure from an entry there.
 
 Repository writes are limited to `specs/design/`. No source, test, story,
 issue, or review-file changes. Do not start `build-spec`.

@@ -48,11 +48,13 @@ Personal tools:
 
 - `agent-monitor` watches the coding agents running on the developer's machine. Nothing depends on it.
 
-Not sub-projects: `design/` holds the visual style every page follows, and `.agents/skills/` holds the spec workflow, which is shared across projects.
+Not sub-projects: `design/` holds the visual style every page follows, `shape/` holds the conventions every service shares, such as how a list pages, and `.agents/skills/` holds the spec workflow, which is shared across projects.
 
 ## Working rules
 
 Each sub-project's code is derived from its `specs/`; a hand-written file desynchronizes the tree from the design. An agent writes under a sub-project's tree only inside work the user started, and each kind of work has its own exclusions: the build run (`build-spec`) writes source and tests and nothing it treats as read-only; a delivery (`deliver`) writes what the build run cannot; a direct instruction writes what it names. Only the user starts the build run, directly or through a delivery.
+
+A sub-project's design follows the conventions in `shape/`; one that departs from an entry records the departure and why.
 
 Stories and designs are working material, not a constraint. Only the build run and the audit treat them as read-only. Never cite a requirement as a reason something cannot be done: it is a decision we made and can unmake, so argue for or against it on its merits. Changing one costs a re-minted id.
 
