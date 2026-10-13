@@ -216,15 +216,13 @@ func (s *Store) List(ctx context.Context, after *string, n int) ([]Artifact, err
 		n = 0
 	}
 	err := s.tx(ctx, false, func(tx *sql.Tx) error {
-		query := "SELECT " + columns + " FROM artifacts"
-		args := make([]any, 0, 2)
-		if after != nil {
-			query += " WHERE path > ?"
-			args = append(args, *after)
+		var rows *sql.Rows
+		var err error
+		if after == nil {
+			rows, err = tx.QueryContext(ctx, "SELECT id,path,blob,bytes,content_type,sha256,owner_id,owner_email,created,modified,expires FROM artifacts ORDER BY path COLLATE BINARY LIMIT ?", n)
+		} else {
+			rows, err = tx.QueryContext(ctx, "SELECT id,path,blob,bytes,content_type,sha256,owner_id,owner_email,created,modified,expires FROM artifacts WHERE path > ? ORDER BY path COLLATE BINARY LIMIT ?", *after, n)
 		}
-		query += " ORDER BY path COLLATE BINARY LIMIT ?"
-		args = append(args, n)
-		rows, err := tx.QueryContext(ctx, query, args...)
 		if err != nil {
 			return err
 		}

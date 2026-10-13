@@ -3,12 +3,14 @@ package pages_test
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -31,13 +33,15 @@ import (
 	"github.com/ikigenba/ikigenba/artifacts/internal/urls"
 )
 
-type countingRandom struct{ next byte }
+type countingRandom struct{ next uint64 }
 
 func (r *countingRandom) Read(b []byte) (int, error) {
+	var encoded [8]byte
+	binary.LittleEndian.PutUint64(encoded[:], r.next)
 	for i := range b {
-		b[i] = r.next
-		r.next++
+		b[i] = encoded[i%len(encoded)]
 	}
+	r.next++
 	return len(b), nil
 }
 
@@ -125,7 +129,7 @@ func put(t *testing.T, s *store.Store, path string, exp time.Time) store.Artifac
 func TestPublicDataAndTemplates(t *testing.T) {
 	const _ string = pages.ServiceName
 	const _ string = pages.Description
-	// R-NQFY-7UB1 R-MSDH-H40V R-A7P4-T1U8 R-MW16-MF8Y R-MX93-06ZN
+	// R-NQFY-7UB1 R-MSDH-H40V R-AOLW-DYVR R-MW16-MF8Y R-MX93-06ZN
 	if pages.ServiceName != "artifacts" || pages.Description != "Binary files agents and services share" || pages.ToolsLevel != (page.Level{Name: "tools", URL: "/tools"}) || pages.AboutLevel != (page.Level{Name: "about", URL: "/about"}) {
 		t.Fatal("service identity or levels")
 	}
@@ -148,7 +152,7 @@ func TestPublicDataAndTemplates(t *testing.T) {
 	}{
 		{"landing", pages.LandingData{Banner: b}},
 		{"landing", pages.LandingData{Banner: b, Artifacts: []pages.ArtifactRow{row, noExpiryRow}, TotalBytes: 74}},
-		{"landing", pages.LandingData{Banner: b, Artifacts: []pages.ArtifactRow{row}, TotalBytes: 74, Next: (paging.Token{Tool: "list"}).Encode(row.Path)}},
+		{"landing", pages.LandingData{Banner: b, Artifacts: []pages.ArtifactRow{row}, TotalBytes: 74, Page: (paging.Token{Tool: "list"}).Encode("before-row"), Next: (paging.Token{Tool: "list"}).Encode(row.Path)}},
 		{"artifact", pages.ArtifactData{Banner: b, Artifact: view}},
 		{"artifact", pages.ArtifactData{Banner: b, Artifact: noExpiryView}},
 		{"tools", pages.ToolsData{Banner: b, Tools: []pages.ToolRow{{Name: "test-tool", Description: "test-description"}}}},
@@ -190,7 +194,7 @@ func TestIdentityRequired(t *testing.T) {
 }
 
 func TestLandingData(t *testing.T) {
-	// R-A8X1-6TKX
+	// R-AS9L-JA3U
 	now := time.Date(2030, 1, 2, 3, 4, 5, 0, time.FixedZone("test-zone", 7200))
 	cfg, _ := fixtureWithClock(t, func() time.Time { return now })
 	r := request(http.MethodGet, "/")
@@ -218,8 +222,8 @@ func TestLandingData(t *testing.T) {
 	checkPage(t, cfg, r, 200, "landing", pages.LandingData{Banner: b, Artifacts: rows, TotalBytes: a.Bytes + z.Bytes})
 }
 
-func TestLandingFirstPageMatchesList(t *testing.T) {
-	// R-A8X1-6TKX
+func TestLandingWindowsMatchList(t *testing.T) {
+	// R-AS9L-JA3U
 	t.Setenv(services.Variable, "")
 	now := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
 	clock := func() time.Time { return now }
@@ -239,14 +243,23 @@ func TestLandingFirstPageMatchesList(t *testing.T) {
 	b := banner(r, cfg.ServicesPath)
 	b.Trail = nil
 	var all []store.Artifact
-	check := func() {
+	check := func(value string) string {
 		t.Helper()
 		sort.Slice(all, func(i, j int) bool { return all[i].Path < all[j].Path })
-		data := pages.LandingData{Banner: b}
+		data := pages.LandingData{Banner: b, Page: value}
+		r.URL.RawQuery = url.Values{"page": {value}}.Encode()
 		for _, a := range all {
 			data.TotalBytes += a.Bytes
 		}
 		first := all
+		if value != "" {
+			var position string
+			if err := (paging.Token{Tool: "list"}).Decode(value, &position); err != nil {
+				t.Fatal(err)
+			}
+			start := sort.Search(len(all), func(i int) bool { return all[i].Path > position })
+			first = all[start:]
+		}
 		if len(first) > paging.DefaultLimit {
 			first = first[:paging.DefaultLimit]
 			data.Next = (paging.Token{Tool: "list"}).Encode(first[len(first)-1].Path)
@@ -260,7 +273,11 @@ func TestLandingFirstPageMatchesList(t *testing.T) {
 			data.Artifacts = append(data.Artifacts, row)
 		}
 		checkPage(t, cfg, r, http.StatusOK, "landing", data)
-		args, err := json.Marshal(tools.ListArgs{})
+		in := tools.ListArgs{}
+		if value != "" {
+			in.Page = &value
+		}
+		args, err := json.Marshal(in)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -293,8 +310,9 @@ func TestLandingFirstPageMatchesList(t *testing.T) {
 		} else if reply.Structured.Next == nil || *reply.Structured.Next != data.Next {
 			t.Fatal("list next differs from page")
 		}
+		return data.Next
 	}
-	check()
+	check("")
 	paths := []string{"Zeta.bin", "alpha.bin"}
 	for i := len(paths); i < paging.DefaultLimit; i++ {
 		paths = append(paths, fmt.Sprintf("middle-%03d.bin", i))
@@ -311,9 +329,29 @@ func TestLandingFirstPageMatchesList(t *testing.T) {
 		}
 		all = append(all, a)
 	}
-	check()
+	check("")
 	all = append(all, put(t, cfg.Store, "zz-extra.bin", time.Time{}))
-	check()
+	check("")
+	for _, position := range []string{"", "middle-010.bin", "middle-010.bina", "zz-extra.bin", "zzzz"} {
+		check((paging.Token{Tool: "list"}).Encode(position))
+	}
+	for i := 0; i < paging.DefaultLimit; i++ {
+		all = append(all, put(t, cfg.Store, fmt.Sprintf("later-%03d.bin", i), time.Time{}))
+	}
+	value := ""
+	for {
+		value = check(value)
+		if value == "" {
+			break
+		}
+	}
+	// The token remains a valid position after its artifact is deleted.
+	position := all[paging.DefaultLimit-1].Path
+	if _, err := cfg.Store.Delete(context.Background(), position, all[paging.DefaultLimit-1].OwnerID); err != nil {
+		t.Fatal(err)
+	}
+	all = append(all[:paging.DefaultLimit-1], all[paging.DefaultLimit:]...)
+	check((paging.Token{Tool: "list"}).Encode(position))
 }
 
 func artifactData(r *http.Request, cfg pages.Config, a store.Artifact) pages.ArtifactData {
@@ -420,12 +458,12 @@ func TestMethodBeforeStore(t *testing.T) {
 	}
 }
 func TestStoreOutage(t *testing.T) {
-	// R-N9G2-TWEL
+	// R-AX57-2D2M
 	cfg, d := fixture(t)
 	a := put(t, cfg.Store, "outage.bin", time.Time{})
 	d.SetFailing(true)
 	for _, method := range []string{http.MethodGet, http.MethodHead} {
-		for _, path := range []string{"/", "/" + a.ID, "/art_0000000000000000"} {
+		for _, path := range []string{"/", "/?page=" + url.QueryEscape((paging.Token{Tool: "list"}).Encode("absent")), "/" + a.ID, "/art_0000000000000000"} {
 			w := serve(cfg, request(method, path))
 			want := store.Unreachable + "\n"
 			if method == http.MethodHead {
@@ -436,14 +474,16 @@ func TestStoreOutage(t *testing.T) {
 			}
 		}
 	}
-	for _, path := range []string{"/tools", "/about", "/missing"} {
-		r := request(http.MethodGet, path)
-		before := serve(cfg, r)
-		d.SetFailing(false)
-		after := serve(cfg, r)
-		d.SetFailing(true)
-		if before.Code != after.Code || !reflect.DeepEqual(before.Header(), after.Header()) || before.Body.String() != after.Body.String() {
-			t.Fatalf("outage affects %s", path)
+	for _, path := range []string{"/tools", "/about", "/missing", "/?page=bogus"} {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			r := request(method, path)
+			before := serve(cfg, r)
+			d.SetFailing(false)
+			after := serve(cfg, r)
+			d.SetFailing(true)
+			if before.Code != after.Code || !reflect.DeepEqual(before.Header(), after.Header()) || before.Body.String() != after.Body.String() {
+				t.Fatalf("outage affects %s", path)
+			}
 		}
 	}
 }
@@ -485,5 +525,65 @@ func TestHeadAndReadOnly(t *testing.T) {
 	}
 	if got.String() != a.Path {
 		t.Fatal("page changed artifact bytes")
+	}
+}
+
+func TestLandingPageValueAndInvalidTokens(t *testing.T) {
+	// R-AM63-MFED R-AUPE-ATL8
+	cfg, d := fixture(t)
+	put(t, cfg.Store, "visible.bin", time.Time{})
+	invalid := []string{"bogus", (paging.Token{Tool: "list_widgets"}).Encode("visible.bin"), (paging.Token{Tool: "list"}).Encode(int64(123))}
+	valid := (paging.Token{Tool: "list"}).Encode("visible.bin")
+	invalid = append(invalid, valid[:len(valid)-1])
+	for _, failing := range []bool{false, true} {
+		d.SetFailing(failing)
+		for _, value := range invalid {
+			for _, method := range []string{http.MethodGet, http.MethodHead} {
+				r := request(method, "/?"+url.Values{"page": {value, valid}}.Encode())
+				checkPage(t, cfg, r, 404, "notfound", pages.NoticeData{Banner: banner(r, cfg.ServicesPath)})
+				// A nil store makes any attempted read observable as a panic.
+				withoutStore := cfg
+				withoutStore.Store = nil
+				checkPage(t, withoutStore, r, 404, "notfound", pages.NoticeData{Banner: banner(r, cfg.ServicesPath)})
+			}
+		}
+	}
+	d.SetFailing(false)
+	b := banner(request(http.MethodGet, "/"), cfg.ServicesPath)
+	b.Trail = nil
+	for _, query := range []string{"page=" + url.QueryEscape(valid), url.Values{"page": {valid, "bogus"}}.Encode()} {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			checkPage(t, cfg, request(method, "/?"+query), 200, "landing", pages.LandingData{Banner: b, TotalBytes: int64(len("visible.bin")), Page: valid})
+		}
+	}
+}
+
+func TestPageQueryInvariance(t *testing.T) {
+	// R-AZKZ-TWK0
+	cfg, d := fixture(t)
+	a := put(t, cfg.Store, "query.bin", time.Time{})
+	token := (paging.Token{Tool: "list"}).Encode("query.bin")
+	for _, failing := range []bool{false, true} {
+		d.SetFailing(failing)
+		for _, path := range []string{"/", "/tools", "/about", "/missing", "/" + a.ID, "/%61" + a.ID[1:]} {
+			for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions, "CUSTOM"} {
+				pairs := [][2]string{
+					{"", "limit=1&other=chosen"},
+					{"page=", "page=&page=bogus&limit=999"},
+					{"page=" + url.QueryEscape(token), "page=" + url.QueryEscape(token) + "&page=bogus&limit=1&other=x"},
+					{"page=bogus", "page=bogus&limit=2"},
+				}
+				if path != "/" || (method != http.MethodGet && method != http.MethodHead) {
+					pairs = append(pairs, [2]string{"page=bogus", "page=" + url.QueryEscape(token)})
+				}
+				for _, pair := range pairs {
+					left := serve(cfg, request(method, path+"?"+pair[0]))
+					right := serve(cfg, request(method, path+"?"+pair[1]))
+					if left.Code != right.Code || !reflect.DeepEqual(left.Header(), right.Header()) || left.Body.String() != right.Body.String() {
+						t.Fatalf("query affects %s %s (failing=%t): %q vs %q", method, path, failing, pair[0], pair[1])
+					}
+				}
+			}
+		}
 	}
 }

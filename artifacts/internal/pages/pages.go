@@ -67,6 +67,7 @@ type LandingData struct {
 	Banner     page.Banner
 	Artifacts  []ArtifactRow
 	TotalBytes int64
+	Page       string
 	Next       string
 }
 
@@ -141,7 +142,17 @@ func Handler(cfg Config) http.Handler {
 		banner := cfg.Banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: auth + "/", LogoutURL: auth + "/logout"})
 		switch path {
 		case "/":
-			all, err := cfg.Store.List(r.Context(), nil, paging.DefaultLimit+1)
+			value := r.URL.Query().Get("page")
+			var after *string
+			if value != "" {
+				var position string
+				if err := (paging.Token{Tool: "list"}).Decode(value, &position); err != nil {
+					cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NoticeData{Banner: banner})
+					return
+				}
+				after = &position
+			}
+			all, err := cfg.Store.List(r.Context(), after, paging.DefaultLimit+1)
 			if err != nil {
 				unavailable(w, r)
 				return
@@ -152,7 +163,7 @@ func Handler(cfg Config) http.Handler {
 				return
 			}
 			banner.Trail = nil
-			data := LandingData{Banner: banner, TotalBytes: total}
+			data := LandingData{Banner: banner, TotalBytes: total, Page: value}
 			if len(all) > paging.DefaultLimit {
 				all = all[:paging.DefaultLimit]
 				data.Next = (paging.Token{Tool: "list"}).Encode(all[len(all)-1].Path)
