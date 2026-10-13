@@ -25,12 +25,13 @@
      only when .Mine, a space and span.badge[data-kind=mine] with text
      "yours"), and td.webhook-last holding, only when .LastReceived is not
      empty, time[datetime=<.LastReceived>] (text .LastReceivedText); after
-     the section, when .Webhooks is not empty, nav.paging#paging
+     the section, when .Webhooks is not empty or .Page is not empty (a
+     later window, even one left empty), nav.paging#paging
      (aria-label "Pages") whose children are, in order, First (on the
      first window, .Page empty, a span with aria-current="page" and text
      "First"; otherwise a link to / with text "First") and, only when .Next
-     is not empty, Next (a link to /?page=<.Next> with text "Next"); with
-     no webhooks there is no nav; a #about-link (text "About webhooks") whose href is "/about". No script
+     is not empty, Next (a link to /?page=<.Next> with text "Next"); on
+     the first window with no webhooks there is no nav; a #about-link (text "About webhooks") whose href is "/about". No script
      but appkit's /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
@@ -62,7 +63,7 @@
 <p>A webhook an agent creates with the <code>create</code> tool shows up here.</p>
 </div>{{end}}
 </section>
-{{if .Webhooks}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}</nav>
+{{if or .Webhooks .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}</nav>
 {{end}}<p><a id="about-link" href="/about">About webhooks</a></p>
 </main>
 {{template "footer" .Banner}}
