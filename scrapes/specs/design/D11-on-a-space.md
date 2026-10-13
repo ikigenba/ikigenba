@@ -25,6 +25,7 @@ scrapes on a space is the same binary on the same terms as under a test: a socke
 | `scrapers` with no `current` and no `running`; `rows` refused `no_run`; `scrape` answered `running`, then `busy`, and `not_found` for `bogus` | `D10-tools`, `D06-runs` |
 | a real FMCSA run of about 16,700 rows, `new` equal to `rows`, rows in MN and WI with five or more power units, `raw.dot_number` equal to `source_id` | `D05-scrapers`; the counts and the scope: the real source, which no test reaches |
 | `rows` 25 at a time with `next`, no `raw`; the `name` filter; `row` with `raw` | `D10-tools`, `D04-store`, `D05-scrapers` |
+| `runs` newest first, `limit` at a time, `next` handed back as `page` until none; `{"limit":0}` and a made-up `page` refused with the shared sentences | `D10-tools`, `D04-store`; the sentences: `appkit/paging` |
 | the stream of `GET /runs/<id>/rows`, one line per row with `raw`; `GET /scrapers/fmcsa/current`; `GET /runs/<id>/record` at the public name with a token and 302 without (decision 8's `GET /runs/<id>`, moved there so the run page keeps that path) | `D03-serve`; the public name: this document's fragment, nginx and auth |
 | a second run's `unchanged` near its `rows`; a third run pruning the first | `D04-store`, `D06-runs` |
 | a failed run `source` with no rows, the current run unchanged | `D06-runs`, `D05-scrapers`; in the sandbox only if Socrata can be made to refuse (decision log D3) |
