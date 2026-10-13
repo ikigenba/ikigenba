@@ -22,7 +22,7 @@ The **name key** is the name upper-cased, punctuation stripped, white space coll
 
 Each step reads by key, never the whole of the links (`D04-store`): the first step finds the row's link by its source key, the second the oldest active candidate holding the row's match key, through the links' index on name key, state and ZIP; and the display of each candidate one of whose links the batch wrote is re-derived from that candidate's own links once, at the end of the batch. Identical keys collapse at creation, since a later row of the same batch meets the candidate an earlier one created; so there are never more candidates than rows. A link moved by a ruling attaches by `decision` with confidence 1.0, and a link keeps how it came to its candidate until a ruling moves it. Matching reads only the links: it never calls scrapes.
 
-`MarkGone` marks gone, in one statement, every link of a scraper not seen in the run a pass just read: kept, with its last seen, still counted for identity and no longer for the score (decision 6). A row that returns is unmarked by `Attach`.
+`MarkGone` marks gone, in one bounded statement per `MarkGone` call, over that call's scraper's links last seen in a run other than that call's run, every link the run a pass just read no longer holds. A gone link is kept, with its last seen; it still counts for identity and no longer for the score (decision 6). `MarkGone` then re-derives by key, from their own links, the display of the candidates whose links it marked, bounded by those candidates, since a link that is gone no longer leads the display. A row that returns is unmarked by `Attach`.
 
 ## Rulings
 
