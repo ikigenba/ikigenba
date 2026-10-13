@@ -108,11 +108,28 @@ design/
 - Every app has an `about` page and, when it has MCP tools, a `tools` page;
   both are reached from the banner's page menu, not from a card on the
   landing page.
-- A landing or detail page that lists shows the first page only. When more
-  entries remain, a `p#next` follows the list naming the tool to call and
-  the `page` value to pass, the opaque token the tool's own `next` would
-  carry; it has no link and the page has no navigation. scrapes-run.html is
-  the worked example. Whether pages ever page themselves is deferred.
+- A page that lists navigates (decided 2026-10-13, D30; it replaces the
+  `p#next` note that named the tool and token, with no link). The page takes
+  the `page` token of the list tool over it as a query parameter on its own
+  URL, `?page=<token>`; without it the page shows the first window. It shows
+  a window of 25 entries; `limit` is not a page parameter. Below the list, a
+  `nav.paging#paging` labelled `Pages` holds, in order:
+  - First, always, so the navigation keeps one shape: a link to the page's
+    own path without the parameter; on the first window it is the current
+    item instead, a `span` with `aria-current="page"` and no link, as the
+    breadcrumb draws its last level.
+  - Next, only when more entries follow: a link to the page's own path with
+    `?page=<token>`, the token the tool's own `next` would carry.
+  There is no Prev; it is deferred. A page with two lists (candidates'
+  shortlist and passes, gmail's drafts and transfers) has one nav per list,
+  `nav.paging#paging-<list>` (`#paging-shortlist`, `#paging-passes`,
+  `#paging-drafts`, `#paging-transfers`), each with its own parameter
+  `<list>_page` (`shortlist_page`, `passes_page`, `drafts_page`,
+  `transfers_page`); each nav's hrefs carry the other list's current token,
+  so paging one list never resets the other. A `page` value the page cannot
+  decode is refused with the app's ordinary bad-request answer, status 400,
+  never quietly the first window. An empty list shows its empty state and
+  no nav. scrapes-run.html is the worked example.
 - Every page ends with the feedback script (`ikigenba/feedback.js`), then the
   lab toolbar script (`ikigenba/lab.js`).
 
@@ -451,9 +468,11 @@ for Minnesota and Wisconsin, with made-up carriers.
   Started, Finished (once finished), Rows, New, Changed, Unchanged, Gone.
   When done, `section#rows` with `table#row-list` of Source ID / Name / City
   / State / County, the first page in source id order,
-  `tr[data-row=<source_id>]`, each id linking to its row's page; then, when
-  more follow, `p#next` naming the `rows` call, the run, and the `page`
-  token to pass (`6yGAPAqiIKZP1wGaUvHJ`), with no link. States: running
+  `tr[data-row=<source_id>]`, each id linking to its row's page; then
+  `nav.paging#paging`, First as the current item and, since more follow,
+  Next linking to `/runs/<id>?page=6yGAPAqiIKZP1wGaUvHJ`, the token `rows`
+  would hand back as `next`. States: a later window (First a link back to
+  `/runs/<id>`, no Next), running
   (`div#running.alert.quiet`, "Running", a Reload button, no rows), failed (`div#failure.alert` of kind err, "The run
   failed", the reason's sentence chosen from `source`, `interrupted` or
   `store`, and a line that a failed run keeps no rows), done with no rows
