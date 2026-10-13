@@ -81,6 +81,7 @@ type LandingData struct {
 	Banner   page.Banner
 	Scrapers []ScraperRow
 	Runs     []RunRow
+	Page     string
 	Next     string
 }
 
@@ -111,6 +112,7 @@ type RunData struct {
 	Banner page.Banner
 	Run    RunView
 	Rows   []RowLine
+	Page   string
 	Next   string
 }
 
@@ -261,11 +263,27 @@ func Handler(cfg Config) http.Handler {
 				_, _ = io.WriteString(w, store.Unreachable+"\n")
 			}
 		}
+		var pageValue, started, position string
+		if p == "/" || isRun {
+			pageValue = r.URL.Query().Get("page")
+			if pageValue != "" {
+				var err error
+				if isRun {
+					err = (paging.Token{Tool: "rows"}).Decode(pageValue, &position)
+				} else {
+					err = (paging.Token{Tool: "runs"}).Decode(pageValue, &started, &position)
+				}
+				if err != nil {
+					notfound()
+					return
+				}
+			}
+		}
 		ctx := r.Context()
 		switch {
 		case p == "/":
 			b.Trail = nil
-			d := LandingData{b, []ScraperRow{}, []RunRow{}, ""}
+			d := LandingData{b, []ScraperRow{}, []RunRow{}, pageValue, ""}
 			for _, n := range cfg.Scrapers.Names() {
 				x := ScraperRow{Name: n}
 				current, err := cfg.Store.CurrentRun(ctx, n)
@@ -285,7 +303,7 @@ func Handler(cfg Config) http.Handler {
 				}
 				d.Scrapers = append(d.Scrapers, x)
 			}
-			rs, err := cfg.Store.ListRunsAfter(ctx, "", "", "", paging.DefaultLimit+1)
+			rs, err := cfg.Store.ListRunsAfter(ctx, "", started, position, paging.DefaultLimit+1)
 			if err != nil {
 				refusal()
 				return
@@ -310,9 +328,9 @@ func Handler(cfg Config) http.Handler {
 				return
 			}
 			b.Trail = []page.Level{{Name: id, URL: "/runs/" + id}}
-			d := RunData{Banner: b, Run: runView(x), Rows: []RowLine{}}
+			d := RunData{Banner: b, Run: runView(x), Rows: []RowLine{}, Page: pageValue}
 			if x.Status == store.StatusDone {
-				rows, err := tools.RowsPage(ctx, cfg.Store, id, "", "", paging.DefaultLimit)
+				rows, err := tools.RowsPage(ctx, cfg.Store, id, "", position, paging.DefaultLimit)
 				if err != nil {
 					refusal()
 					return
