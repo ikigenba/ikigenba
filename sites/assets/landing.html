@@ -20,8 +20,8 @@
      span.status[data-status=published] (text "published") or
      span.status[data-status=unpublished] (text "not published"), and
      td.site-owner holding span.badge[data-kind=mine] (text "yours") only
-     when .Mine; then, when .Sites is not empty or .Page is not empty,
-     nav.paging#paging (aria-label "Pages") whose children are, in order,
+     when .Mine; then, after the card, when .Sites is not empty or .Page
+     is not empty, nav.paging#paging (aria-label "Pages") whose children are, in order,
      First (on the first window, .Page empty, a span with
      aria-current="page" and text "First"; otherwise a link to / with text
      "First") and, only when .Next is not empty, Next (a link to
@@ -53,9 +53,9 @@
 {{end}}</tbody>
 </table>
 </div>{{else}}<p id="no-sites" class="empty">No sites yet.</p>{{end}}
+</section>
 {{if or .Sites .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}</nav>
-{{end}}</section>
-<p><a id="about-link" href="/about">About sites</a></p>
+{{end}}<p><a id="about-link" href="/about">About sites</a></p>
 </main>
 {{template "footer" .Banner}}
 </body>
