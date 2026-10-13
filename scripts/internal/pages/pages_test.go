@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -66,7 +67,7 @@ func requireEqual(t *testing.T, got, want any) {
 	}
 }
 
-// R-VKHH-HQ5X R-OIC3-1CB3 R-VO56-N1E0 R-VPD3-0T4P R-HPXN-FQQA R-VRSV-SCM3 R-VT0S-64CS R-HR5J-TIGZ R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-W6FO-DLIF R-W7NK-RD94 R-WBB9-WOH7
+// R-VKHH-HQ5X R-OIC3-1CB3 R-VO56-N1E0 R-VPD3-0T4P R-QLMA-TIF8 R-VRSV-SCM3 R-VT0S-64CS R-QMU7-7A5X R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-W6FO-DLIF R-W7NK-RD94 R-WBB9-WOH7
 // R-RWIX-JJ9E R-RYYQ-B2QS R-S06M-OUHH R-S1EJ-2M86
 func TestTemplateSetAndData(t *testing.T) {
 	const serviceName = pages.ServiceName
@@ -274,8 +275,8 @@ func writeFile(t *testing.T, p, text string) {
 	}
 }
 
-// R-RU34-RZS0 R-RVB1-5RIP R-NY3P-CSH2 R-S9XT-R0F1 R-WL2G-YUER R-HSDG-7A7O R-HTLC-L1YD R-WW1K-ES30 R-WX9G-SJTP R-S2MF-GDYV R-RSV8-E81B R-HUT8-YTP2 R-NXN9-D70F R-X5SR-GY0K R-X70N-UPR9 R-XMU3-C5LL R-0S03-6TV6 R-XBW9-DSQ1 R-XD45-RKGQ
-// R-CUD2-F3SC R-CZ8N-Y6R4 R-D0GK-BYHT R-D1OG-PQ8I
+// R-RU34-RZS0 R-RVB1-5RIP R-NY3P-CSH2 R-S9XT-R0F1 R-WL2G-YUER R-QSXP-44VE R-QU5L-HWM3 R-WW1K-ES30 R-WX9G-SJTP R-QQHW-CLE0 R-RSV8-E81B R-QRPS-QD4P R-NXN9-D70F R-X5SR-GY0K R-X70N-UPR9 R-XMU3-C5LL R-0S03-6TV6 R-XBW9-DSQ1 R-XD45-RKGQ
+// R-CUD2-F3SC R-CZ8N-Y6R4 R-QZ17-0ZKV R-R093-ERBK
 func TestPageRoutesAndData(t *testing.T) {
 	var handler func(pages.Config) http.Handler
 	f := setup(t)
@@ -310,7 +311,7 @@ func TestPageRoutesAndData(t *testing.T) {
 	f.users = nil
 	f.mu.Unlock()
 	for _, base := range []string{"/alpha", "/alpha/runs/" + u.ID} {
-		for _, query := range []string{"", "?a=%2F&b=2"} {
+		for _, query := range []string{"", "?a=%2F&b=2", "?page=bogus&other=%2F"} {
 			get := f.request(context.Background(), "GET", base+query, "owner")
 			head := f.request(context.Background(), "HEAD", base+query, "owner")
 			requireEqual(t, get.Code, 301)
@@ -785,12 +786,13 @@ func TestReadOnlyGitAndConcurrentPages(t *testing.T) {
 
 // The anonymous conversions prove the complete ordered data contracts by use;
 // adding, removing, reordering or changing a field makes these fail to compile.
-// R-HPXN-FQQA R-VRSV-SCM3 R-VT0S-64CS R-HR5J-TIGZ R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-W6FO-DLIF R-W7NK-RD94 R-RU34-RZS0
+// R-QLMA-TIF8 R-VRSV-SCM3 R-VT0S-64CS R-QMU7-7A5X R-VXWD-P7BK R-VZ4A-2Z29 R-W0C6-GQSY R-W6FO-DLIF R-W7NK-RD94 R-RU34-RZS0
 // R-CFQ9-TUW0 R-CDAH-2BEM R-CEID-G35B R-CGY6-7MMP R-CI62-LEDE R-CJDY-Z643 R-CLTR-QPLH
 func TestDataContracts(t *testing.T) {
 	_ = struct {
 		Banner  page.Banner
 		Scripts []pages.ScriptRow
+		Page    string
 		Next    string
 	}(pages.LandingData{})
 	_ = struct {
@@ -813,6 +815,7 @@ func TestDataContracts(t *testing.T) {
 		Script        pages.ScriptCard
 		Runs          []pages.RunRow
 		Subscriptions []string
+		Page          string
 		Next          string
 	}(pages.ScriptData{})
 	_ = struct {
@@ -981,7 +984,7 @@ func TestSizeBoundaryAndDurationFormatting(t *testing.T) {
 	}
 }
 
-// R-HR5J-TIGZ R-HTLC-L1YD
+// R-QMU7-7A5X R-QU5L-HWM3
 func TestScriptSubscriptions(t *testing.T) {
 	f := setup(t)
 	sc := f.create(t, "owner", "alpha")
@@ -1007,7 +1010,7 @@ func TestScriptSubscriptions(t *testing.T) {
 	check([]string{"repo.pushed"})
 }
 
-// R-HSDG-7A7O R-HTLC-L1YD R-WW1K-ES30 R-S6A4-LP6Y
+// R-QSXP-44VE R-QU5L-HWM3 R-WW1K-ES30 R-S6A4-LP6Y
 func TestEmptyCatalogMissingRepositoryAndEventRun(t *testing.T) {
 	f := setup(t)
 	b := withTrail(fixedBanner)
@@ -1147,8 +1150,8 @@ func signedBanner() page.Banner {
 	return b
 }
 
-// R-HSDG-7A7O R-HW15-CLFR
-func TestLandingFirstPageAndToolContinuation(t *testing.T) {
+// R-QSXP-44VE R-QVDH-VOCS
+func TestLandingPagesAndToolContinuation(t *testing.T) {
 	for _, count := range []int{paging.DefaultLimit, paging.DefaultLimit + 1} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {
 			f := setup(t)
@@ -1187,7 +1190,7 @@ func TestLandingFirstPageAndToolContinuation(t *testing.T) {
 				requireEqual(t, sc.Name, want.Scripts[i].Name)
 			}
 			requireEqual(t, first.Next, want.Next)
-			for _, path := range []string{"/", "/?page=ignored&limit=1"} {
+			for _, path := range []string{"/", "/?page=&page=bogus&limit=1"} {
 				get := f.request(t.Context(), "GET", path, "owner")
 				requireEqual(t, get.Code, 200)
 				requireEqual(t, get.Body.String(), rendered(t, "landing", want))
@@ -1201,19 +1204,31 @@ func TestLandingFirstPageAndToolContinuation(t *testing.T) {
 				requireEqual(t, len(rest.Scripts), 1)
 				requireEqual(t, rest.Scripts[0].Name, scripts[len(scripts)-1].Name)
 				requireEqual(t, rest.Next, "")
+				last := scripts[len(scripts)-1]
+				continued := pages.LandingData{Banner: signedBanner(), Page: want.Next, Scripts: []pages.ScriptRow{{Name: last.Name, URL: "/" + last.Name + "/", Repo: pages.Repo{ID: last.Repo, Name: "Repository"}, Ref: last.Ref}}}
+				for _, suffix := range []string{"", "&page=bogus&limit=1&after=ignored"} {
+					get := f.request(t.Context(), "GET", "/?page="+url.QueryEscape(want.Next)+suffix, "owner")
+					requireEqual(t, get.Code, 200)
+					requireEqual(t, get.Body.String(), rendered(t, "landing", continued))
+					head := f.request(t.Context(), "HEAD", "/?page="+url.QueryEscape(want.Next)+suffix, "owner")
+					requireEqual(t, head.Code, get.Code)
+					requireEqual(t, head.Header(), get.Header())
+					requireEqual(t, head.Body.Len(), 0)
+				}
 			}
 		})
 	}
 }
 
-// R-HTLC-L1YD R-HUT8-YTP2 R-HX91-QD6G
-func TestScriptFirstPageCountAndToolContinuation(t *testing.T) {
+// R-QU5L-HWM3 R-QRPS-QD4P R-QWLE-9G3H
+func TestScriptPagesCountAndToolContinuation(t *testing.T) {
 	for _, count := range []int{paging.DefaultLimit, paging.DefaultLimit + 3} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {
 			f := setup(t)
 			sc := f.create(t, "owner", "alpha")
 			other := f.create(t, "owner", "beta")
 			f.add(t, other, count+10, store.StatusRunning, "", 0, 0)
+			f.add(t, other, count+20, store.StatusRunning, "", 0, 0)
 			var records []store.Run
 			for i := 1; i <= count; i++ {
 				started := fixedTime.Add(time.Duration(i) * time.Second)
@@ -1246,7 +1261,7 @@ func TestScriptFirstPageCountAndToolContinuation(t *testing.T) {
 				requireEqual(t, u.ID, want.Runs[i].ID)
 			}
 			requireEqual(t, first.Next, want.Next)
-			for _, path := range []string{"/alpha/", "/alpha/?page=ignored&limit=1"} {
+			for _, path := range []string{"/alpha/", "/alpha/?page=&page=bogus&limit=1"} {
 				get := f.request(t.Context(), "GET", path, "owner")
 				requireEqual(t, get.Code, 200)
 				requireEqual(t, get.Body.String(), rendered(t, "script", want))
@@ -1262,7 +1277,100 @@ func TestScriptFirstPageCountAndToolContinuation(t *testing.T) {
 					requireEqual(t, u.ID, records[paging.DefaultLimit+i].ID)
 				}
 				requireEqual(t, rest.Next, "")
+				continued := want
+				continued.Page, continued.Next, continued.Runs = want.Next, "", nil
+				for _, u := range records[paging.DefaultLimit:] {
+					continued.Runs = append(continued.Runs, pages.RunRow{ID: u.ID, URL: "/alpha/runs/" + u.ID + "/", Status: u.Status, Commit: u.SHA[:7], Started: u.Started.UTC().Format(pages.MinuteLayout), StartedAt: u.Started.UTC().Format(time.RFC3339)})
+				}
+				for _, suffix := range []string{"", "&page=bogus&limit=1&started=ignored"} {
+					path := "/alpha/?page=" + url.QueryEscape(want.Next) + suffix
+					get := f.request(t.Context(), "GET", path, "owner")
+					requireEqual(t, get.Code, 200)
+					requireEqual(t, get.Body.String(), rendered(t, "script", continued))
+					head := f.request(t.Context(), "HEAD", path, "owner")
+					requireEqual(t, head.Code, get.Code)
+					requireEqual(t, head.Header(), get.Header())
+					requireEqual(t, head.Body.Len(), 0)
+				}
 			}
+			// A next issued for beta resumes alpha at the same position.
+			var foreign struct{ Next string }
+			pageTool(t, f, "runs", map[string]any{"name": other.Name, "limit": 1}, &foreign)
+			if foreign.Next == "" {
+				t.Fatal("other script supplied no continuation")
+			}
+			var cross struct {
+				Runs []struct{ ID string }
+				Next string
+			}
+			pageTool(t, f, "runs", map[string]any{"name": sc.Name, "page": foreign.Next}, &cross)
+			requireEqual(t, len(cross.Runs), len(want.Runs))
+			for i, u := range cross.Runs {
+				requireEqual(t, u.ID, want.Runs[i].ID)
+			}
+			requireEqual(t, cross.Next, want.Next)
+			want.Page = foreign.Next
+			get := f.request(t.Context(), "GET", "/alpha/?page="+url.QueryEscape(foreign.Next), "owner")
+			requireEqual(t, get.Code, 200)
+			requireEqual(t, get.Body.String(), rendered(t, "script", want))
 		})
+	}
+}
+
+// R-QP9Z-YTNB R-QXTA-N7U6
+func TestUndecodableListingPagesBeforeCatalog(t *testing.T) {
+	f := setup(t)
+	f.create(t, "owner", "alpha")
+	f.create(t, "other", "private")
+	list := (paging.Token{Tool: "list"}).Encode("alpha")
+	runs := (paging.Token{Tool: "runs"}).Encode(fixedTime.UTC().Format(time.RFC3339), "run_0102030405060708")
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	for _, failing := range []bool{false, true} {
+		f.db.SetFailing(failing)
+		for _, requestContext := range []context.Context{t.Context(), ctx} {
+			for _, path := range []string{"/?page=bogus", "/?page=bogus&page=", "/?page=" + url.QueryEscape(runs), "/alpha/?page=bogus", "/private/?page=bogus", "/none/?page=bogus", "/%61lpha/?page=bogus", "/alpha/?page=" + url.QueryEscape(list)} {
+				for _, method := range []string{"GET", "HEAD"} {
+					w := f.request(requestContext, method, path+"&limit=1&from=ignored", "owner")
+					requireEqual(t, w.Code, 404)
+					requireEqual(t, w.Header(), http.Header{"Content-Type": {"text/html; charset=utf-8"}})
+					want := ""
+					if method == "GET" {
+						want = rendered(t, "notfound", pages.NoticeData{Banner: fixedBanner})
+					}
+					requireEqual(t, w.Body.String(), want)
+				}
+			}
+		}
+	}
+}
+
+// R-QZ17-0ZKV R-R093-ERBK R-QP9Z-YTNB
+func TestDecodablePagesUnavailable(t *testing.T) {
+	f := setup(t)
+	sc := f.create(t, "owner", "alpha")
+	u := f.add(t, sc, 1, store.StatusRunning, "", 0, 0)
+	list := (paging.Token{Tool: "list"}).Encode(sc.Name)
+	runs := (paging.Token{Tool: "runs"}).Encode(u.Started.UTC().Format(time.RFC3339), u.ID)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	for _, failing := range []bool{false, true} {
+		f.db.SetFailing(failing)
+		requestContext := ctx
+		if failing {
+			requestContext = t.Context()
+		}
+		for _, path := range []string{"/", "//", "/alpha/", "/alpha", "/none/", "/about/", "/alpha/other", "/alpha/runs/", "/alpha/a/b/c/d", "/alpha/runs/" + u.ID + "/", "/alpha?page=bogus", "/?page=" + url.QueryEscape(list), "/alpha/?page=" + url.QueryEscape(runs), "/?page=&page=bogus", "/alpha/?from=landing"} {
+			for _, method := range []string{"GET", "HEAD"} {
+				w := f.request(requestContext, method, path, "owner")
+				requireEqual(t, w.Code, 503)
+				requireEqual(t, w.Header(), http.Header{"Content-Type": {"text/html; charset=utf-8"}})
+				want := ""
+				if method == "GET" {
+					want = rendered(t, "unavailable", pages.NoticeData{Banner: fixedBanner})
+				}
+				requireEqual(t, w.Body.String(), want)
+			}
+		}
 	}
 }

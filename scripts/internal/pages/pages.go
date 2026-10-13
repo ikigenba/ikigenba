@@ -49,6 +49,7 @@ func (s *Set) Write(w http.ResponseWriter, r *http.Request, status int, name str
 type LandingData struct {
 	Banner  page.Banner
 	Scripts []ScriptRow
+	Page    string
 	Next    string
 }
 
@@ -83,6 +84,7 @@ type ScriptData struct {
 	Script        ScriptCard
 	Runs          []RunRow
 	Subscriptions []string
+	Page          string
 	Next          string
 }
 

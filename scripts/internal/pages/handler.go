@@ -56,12 +56,20 @@ func Handler(cfg Config) http.Handler {
 			return
 		}
 		if r.URL.Path == "/" {
-			scripts, err := cfg.Store.List(ctx, owner, "", paging.DefaultLimit+1)
+			p := r.URL.Query().Get("page")
+			var after string
+			if p != "" {
+				if err := (paging.Token{Tool: "list"}).Decode(p, &after); err != nil {
+					missing()
+					return
+				}
+			}
+			scripts, err := cfg.Store.List(ctx, owner, after, paging.DefaultLimit+1)
 			if err != nil {
 				refusal()
 				return
 			}
-			d := LandingData{Banner: banner(nil)}
+			d := LandingData{Banner: banner(nil), Page: p}
 			if len(scripts) > paging.DefaultLimit {
 				scripts = scripts[:paging.DefaultLimit]
 				d.Next = (paging.Token{Tool: "list"}).Encode(scripts[len(scripts)-1].Name)
@@ -83,6 +91,16 @@ func Handler(cfg Config) http.Handler {
 				parts[i] = v
 			}
 		}
+		var p, started, id string
+		if len(parts) == 2 && parts[0] != "" && parts[1] == "" {
+			p = r.URL.Query().Get("page")
+			if p != "" {
+				if err := (paging.Token{Tool: "runs"}).Decode(p, &started, &id); err != nil {
+					missing()
+					return
+				}
+			}
+		}
 		sc, err := cfg.Store.Find(ctx, owner, parts[0])
 		if err != nil {
 			if errors.Is(err, store.ErrNotFound) {
@@ -97,7 +115,7 @@ func Handler(cfg Config) http.Handler {
 			return
 		}
 		if len(parts) == 2 && parts[1] == "" {
-			rs, err := cfg.Store.Runs(ctx, sc.ID, "", "", paging.DefaultLimit+1)
+			rs, err := cfg.Store.Runs(ctx, sc.ID, started, id, paging.DefaultLimit+1)
 			if err != nil {
 				refusal()
 				return
@@ -107,7 +125,7 @@ func Handler(cfg Config) http.Handler {
 				refusal()
 				return
 			}
-			d := ScriptData{Banner: banner([]page.Level{{Name: sc.Name, URL: "/" + sc.Name + "/"}}), Script: ScriptCard{ID: sc.ID, Name: sc.Name, Repo: repository(ctx, cfg, sc), Ref: sc.Ref, Created: sc.Created.UTC().Format(CardLayout), CreatedAt: datetime(sc.Created), RunsKept: count, KeepNewest: cfg.KeepCount, KeepDays: cfg.KeepDays}}
+			d := ScriptData{Page: p, Banner: banner([]page.Level{{Name: sc.Name, URL: "/" + sc.Name + "/"}}), Script: ScriptCard{ID: sc.ID, Name: sc.Name, Repo: repository(ctx, cfg, sc), Ref: sc.Ref, Created: sc.Created.UTC().Format(CardLayout), CreatedAt: datetime(sc.Created), RunsKept: count, KeepNewest: cfg.KeepCount, KeepDays: cfg.KeepDays}}
 			if len(rs) > paging.DefaultLimit {
 				rs = rs[:paging.DefaultLimit]
 				last := rs[len(rs)-1]
