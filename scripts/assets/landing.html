@@ -2,14 +2,16 @@
      their last runs. The root of the hierarchy: .Banner's .Trail is empty,
      so the banner's breadcrumb holds only the service. Shown only to a
      signed-in user. Data: .Banner (a page.Banner, for banner and footer);
-     .Scripts, the caller's own scripts (never another user's), sorted by
-     name, each with .Name, .URL ("/<name>/"), .Repo (its repository: .ID,
+     .Scripts, the first page of the caller's own scripts (never another
+     user's) by name, each with .Name, .URL ("/<name>/"), .Repo (its repository: .ID,
      the rep_ id the catalog stores, and .Name, the name read from the
      repository's directory when the page renders, empty when the directory
      is gone or the name cannot be read), .Ref, and .LastRun (nil when the
      script has never run; else .Status, the store's status value, .ExitCode,
      int, the exit code, .Started, the start time as shown, "2006-01-02
-     15:04", and .StartedAt, the same as RFC 3339 UTC). Status words and
+     15:04", and .StartedAt, the same as RFC 3339 UTC); .Next (string, the
+     page token list's next carries for the scripts after these, the value
+     to pass as its page; empty when none remain). Status words and
      kinds, chosen here from .Status and .ExitCode by the run-status template
      (defined in run.html): "queued" and "running" info; "exited <.ExitCode>"
      ok when .ExitCode is 0, else warn; "timed out" (timed_out) and "killed"
@@ -24,7 +26,9 @@
      span.status[data-kind=<kind>] (text the status word) or, when never run,
      td.script-last.muted with text "never run", and td.script-when holding
      time[datetime=<.LastRun.StartedAt>] (text .LastRun.Started), empty when
-     never run; a#about-link whose href is "/about". No script but appkit's
+     never run, then, when .Next is not empty, p#next (text "More scripts
+     follow: call list with page <.Next>.", list, page and .Next each in a
+     code element); a#about-link whose href is "/about". No script but appkit's
      /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
@@ -51,7 +55,8 @@
 {{end}}</tr>
 {{end}}</tbody>
 </table>
-</div>{{else}}<div id="no-scripts" class="empty">
+</div>
+{{if .Next}}<p id="next">More scripts follow: call <code>list</code> with <code>page</code> <code>{{.Next}}</code>.</p>{{end}}{{else}}<div id="no-scripts" class="empty">
 <h3 class="text-md">No scripts yet</h3>
 <p>A script you create with the <code>create</code> tool, from one of your repositories, shows up here.</p>
 </div>{{end}}
