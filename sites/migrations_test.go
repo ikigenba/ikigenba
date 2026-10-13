@@ -15,14 +15,15 @@ import (
 )
 
 func TestEmbeddedMigrations(t *testing.T) {
-	// R-481H-77QR R-499D-KZHG
-	second, err := fs.ReadFile(sites.Migrations(), "0002_listed.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	original, err := fs.ReadFile(sites.Migrations(), "0001_catalog.sql")
-	if err != nil {
-		t.Fatal(err)
+	// R-CVSL-4CM2 R-M88D-7X15
+	names := []string{"0001_catalog.sql", "0002_listed.sql", "0003_backfill_listed.sql"}
+	original := make(map[string][]byte)
+	for _, name := range names {
+		contents, err := fs.ReadFile(sites.Migrations(), name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		original[name] = contents
 	}
 	t.Chdir(t.TempDir())
 	for range 2 {
@@ -31,19 +32,17 @@ func TestEmbeddedMigrations(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(entries) != 2 || entries[0].Name() != "0001_catalog.sql" || entries[1].Name() != "0002_listed.sql" || !entries[0].Type().IsRegular() || !entries[1].Type().IsRegular() {
+		if len(entries) != len(names) {
 			t.Fatalf("unexpected migrations: %v", entries)
 		}
-		secondContents, err := fs.ReadFile(files, "0002_listed.sql")
-		if err != nil || !bytes.Equal(second, secondContents) {
-			t.Fatalf("second migration changed: %v", err)
-		}
-		contents, err := fs.ReadFile(files, "0001_catalog.sql")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Equal(contents, original) {
-			t.Fatal("migration contents changed")
+		for i, name := range names {
+			if entries[i].Name() != name || !entries[i].Type().IsRegular() {
+				t.Fatalf("unexpected migration: %v", entries[i])
+			}
+			contents, err := fs.ReadFile(files, name)
+			if err != nil || !bytes.Equal(contents, original[name]) {
+				t.Fatalf("migration %s changed: %v", name, err)
+			}
 		}
 	}
 }

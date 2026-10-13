@@ -333,7 +333,7 @@ func TestRandomCandidates(t *testing.T) {
 }
 
 func TestReadSelection(t *testing.T) {
-	// R-4GKR-VLXM R-1T8G-21Q7 R-1UGC-FTGW R-4K8H-0X5P R-4LGD-EOWE R-4MO9-SGN3 R-1Y41-L4OZ
+	// R-4GKR-VLXM R-1T8G-21Q7 R-1UGC-FTGW R-4K8H-0X5P R-CX0H-I4CR R-CY8D-VW3G R-1Y41-L4OZ
 	s := open(t, store.Config{})
 	a := create(t, s, draft("z-last"))
 	d := draft("a-hidden")

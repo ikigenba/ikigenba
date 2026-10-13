@@ -47,10 +47,10 @@ func TestListWindows(t *testing.T) {
 }
 
 func TestVisibleWindows(t *testing.T) {
-	// R-4LGD-EOWE R-4MO9-SGN3
+	// R-CX0H-I4CR R-CY8D-VW3G
 	s := open(t, store.Config{})
 	var rows []store.Site
-	for i, name := range []string{"a", "b", "c", "d", "e", "f", "g", "h"} {
+	for i, name := range []string{"a-b", "a1", "aa", "b", "c", "d", "e", "f"} {
 		d := draft(name)
 		if i%2 != 0 {
 			d.Owner = "bob"
@@ -124,6 +124,86 @@ func TestListedBackfill(t *testing.T) {
 	}
 }
 
+func TestSecondListedBackfill(t *testing.T) {
+	// R-D0O6-NFKU R-CX0H-I4CR R-CY8D-VW3G
+	previous := fstest.MapFS{}
+	for _, name := range []string{"0001_catalog.sql", "0002_listed.sql"} {
+		contents, err := fs.ReadFile(sites.Migrations(), name)
+		equal(t, err, nil)
+		previous[name] = &fstest.MapFile{Data: contents}
+	}
+	path := filepath.Join(t.TempDir(), "sites.db")
+	clock := func() time.Time { return stamp }
+	d, err := db.Open(ctx, db.Config{Path: path, Migrations: previous, Now: clock})
+	equal(t, err, nil)
+	t.Cleanup(func() { _ = d.Close() })
+	type row struct {
+		site    store.Site
+		payload string
+		listed  int
+	}
+	var rows []row
+	for i, member := range []string{"true", "false", "missing", "true", "false", "missing"} {
+		name := string(rune('a' + i))
+		x := store.Site{ID: "site-" + name, Name: name, Slug: "slug-" + name, Owner: "owner-" + name, Repo: "repo-" + name, Ref: "main", Visibility: store.Public, Listed: member == "true", Created: stamp.UTC()}
+		payload, err := json.Marshal(x)
+		equal(t, err, nil)
+		if member == "missing" {
+			var fields map[string]any
+			equal(t, json.Unmarshal(payload, &fields), nil)
+			delete(fields, "Listed")
+			payload, err = json.Marshal(fields)
+			equal(t, err, nil)
+		}
+		rows = append(rows, row{x, string(payload), i / 3})
+	}
+	err = d.Write(ctx, func(tx *sql.Tx) error {
+		for _, r := range rows {
+			x := r.site
+			if _, err := tx.ExecContext(ctx, "INSERT INTO sites(id,name,slug,owner,payload,listed) VALUES(?,?,?,?,?,?)", x.ID, x.Name, x.Slug, x.Owner, r.payload, r.listed); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	equal(t, err, nil)
+	equal(t, d.Close(), nil)
+	d, err = db.Open(ctx, db.Config{Path: path, Migrations: sites.Migrations(), Now: clock})
+	equal(t, err, nil)
+	t.Cleanup(func() { _ = d.Close() })
+	err = d.Read(ctx, func(tx *sql.Tx) error {
+		var count int
+		if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM sites").Scan(&count); err != nil {
+			return err
+		}
+		equal(t, count, len(rows))
+		for _, r := range rows {
+			var id, name, slug, owner, payload string
+			var listed int
+			if err := tx.QueryRowContext(ctx, "SELECT id,name,slug,owner,payload,listed FROM sites WHERE id=?", r.site.ID).Scan(&id, &name, &slug, &owner, &payload, &listed); err != nil {
+				return err
+			}
+			x := r.site
+			equal(t, []string{id, name, slug, owner, payload}, []string{x.ID, x.Name, x.Slug, x.Owner, r.payload})
+			equal(t, listed, map[bool]int{false: 0, true: 1}[x.Listed])
+		}
+		return nil
+	})
+	equal(t, err, nil)
+	s := store.New(d, store.Config{Now: clock, Rand: &counter{}})
+	for _, user := range []string{"other", rows[1].site.Owner, rows[4].site.Owner} {
+		want := []store.Site{}
+		for _, r := range rows {
+			if r.site.Listed || r.site.Owner == user {
+				want = append(want, r.site)
+			}
+		}
+		got, err := s.Visible(ctx, user, len(rows)+1)
+		equal(t, err, nil)
+		equal(t, got, want)
+	}
+}
+
 func assertStoredRecord(t *testing.T, d *db.DB, x store.Site) {
 	t.Helper()
 	err := d.Read(ctx, func(tx *sql.Tx) error {
@@ -178,8 +258,8 @@ func TestStoredListedAndPayload(t *testing.T) {
 	}
 }
 
-func TestPayloadListingWinsDuringMixedRelease(t *testing.T) {
-	// R-4P42-K04H
+func TestColumnListingAndPayloadRecord(t *testing.T) {
+	// R-CZGA-9NU5 R-4NW6-68DS R-V51S-AZ1A
 	for _, listed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unlisted", true: "listed"}[listed], func(t *testing.T) {
 			s, d := openAt(t, filepath.Join(t.TempDir(), "sites.db"), store.Config{})
@@ -211,7 +291,7 @@ func TestPayloadListingWinsDuringMixedRelease(t *testing.T) {
 				rows, err = s.Visible(ctx, user, 8)
 				equal(t, err, nil)
 				want := []store.Site{}
-				if listed || user == x.Owner {
+				if !listed || user == x.Owner {
 					want = append(want, x)
 				}
 				equal(t, rows, want)
@@ -260,4 +340,29 @@ func TestReadsDecodeOnlyTheirWindow(t *testing.T) {
 	rows, err = s.Visible(ctx, "other", 1)
 	equal(t, err, nil)
 	equal(t, rows, []store.Site{x})
+}
+
+func TestVisibleDecodesOnlyVisibleWindow(t *testing.T) {
+	// R-CX0H-I4CR R-CY8D-VW3G
+	s, d := openAt(t, filepath.Join(t.TempDir(), "sites.db"), store.Config{})
+	x := create(t, s, draft("a"))
+	err := d.Write(ctx, func(tx *sql.Tx) error {
+		for _, name := range []string{"0-hidden", "z-beyond"} {
+			listed := name == "z-beyond"
+			if _, err := tx.ExecContext(ctx, "INSERT INTO sites(id,name,slug,owner,payload,listed) VALUES(?,?,?,?,?,?)", name, name, name, "bob", "invalid-json", listed); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	equal(t, err, nil)
+	for _, n := range []int{-1, 0, 1} {
+		want := []store.Site{}
+		if n == 1 {
+			want = append(want, x)
+		}
+		got, err := s.Visible(ctx, "other", n)
+		equal(t, err, nil)
+		equal(t, got, want)
+	}
 }
