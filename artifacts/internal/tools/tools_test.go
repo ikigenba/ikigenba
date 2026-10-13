@@ -3,6 +3,7 @@ package tools_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/artifacts"
 	"github.com/ikigenba/ikigenba/artifacts/internal/files"
@@ -87,8 +89,20 @@ func setup(t *testing.T, configuredBase string, clocks ...func() time.Time) *fix
 	t.Cleanup(s.Close)
 	return &fixture{cfg: cfg, client: mcp.NewClient(mcp.ClientConfig{Endpoint: s.URL}), db: d, blobs: blobs, tc: tc, ec: ec}
 }
+
+// R-DWQO-NDRN
 func (f *fixture) call(t *testing.T, c identity.Caller, name string, args any) mcp.Result {
 	t.Helper()
+	recorded, emitted := 0, 0
+	if name == "list" {
+		if err := f.cfg.Telemetry.Flush(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.cfg.Events.Flush(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		recorded, emitted = len(f.tc.Events()), len(f.ec.Events())
+	}
 	b, e := json.Marshal(args)
 	if e != nil {
 		t.Fatal(e)
@@ -96,6 +110,18 @@ func (f *fixture) call(t *testing.T, c identity.Caller, name string, args any) m
 	r, e := f.client.CallTool(context.Background(), c, name, b)
 	if e != nil {
 		t.Fatal(e)
+	}
+	if name == "list" {
+		if err := f.cfg.Telemetry.Flush(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.cfg.Events.Flush(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		added := f.tc.Events()[recorded:]
+		if len(added) != 1 || added[0].Name != "tool.called" || len(f.ec.Events()) != emitted {
+			t.Fatal(added, f.ec.Events()[emitted:])
+		}
 	}
 	return r
 }
@@ -126,6 +152,17 @@ func structured(t *testing.T, r mcp.Result, out any) {
 	}
 	if e = json.Unmarshal(encoded, &expected); e != nil {
 		t.Fatal(e)
+	}
+	if _, ok := out.(*tools.ArtifactList); ok {
+		if expected["next"] == nil {
+			delete(expected, "next")
+		}
+		for _, value := range expected["artifacts"].([]any) {
+			entry := value.(map[string]any)
+			if entry["expires"] == nil {
+				delete(entry, "expires")
+			}
+		}
 	}
 	if !reflect.DeepEqual(actual, expected) {
 		t.Fatalf("structured content has unexpected members: %s expected %s", v.Structured, encoded)
@@ -178,7 +215,7 @@ func (f *fixture) events(t *testing.T) []events.Event {
 }
 func (f *fixture) snapshot(t *testing.T) string {
 	t.Helper()
-	all, e := f.cfg.Store.List(context.Background())
+	all, e := f.cfg.Store.List(context.Background(), nil, paging.MaxLimit)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -228,7 +265,7 @@ func TestFirstLine(t *testing.T) {
 	}
 }
 
-// R-UJWM-7C3D R-UL4I-L3U2 R-UOS7-QF25 R-NFJK-QR42 R-NGRH-4IUR
+// R-UJWM-7C3D R-AA4X-KLBM R-UOS7-QF25 R-DVIS-9M0Y R-NGRH-4IUR
 func TestPublicContracts(t *testing.T) {
 	for _, configuredBase := range []string{"", base, "http://chosen.example:8123"} {
 		f := setup(t, configuredBase)
@@ -261,6 +298,10 @@ func TestPublicContracts(t *testing.T) {
 			}
 			properties := map[string]struct{ Type string }{}
 			required := map[string]bool{}
+			if i == 0 {
+				properties["page"] = struct{ Type string }{"string"}
+				properties["limit"] = struct{ Type string }{"integer"}
+			}
 			if i > 0 {
 				properties["path"] = struct{ Type string }{"string"}
 				required["path"] = true
@@ -290,15 +331,15 @@ func TestPublicContracts(t *testing.T) {
 	}
 
 	listed := tools.Listed{ID: "fixture-id", Path: "fixture-path", Bytes: 2, ContentType: "fixture-type", SHA256: "fixture-hash", Owner: "fixture-owner", Modified: "fixture-modified", URL: "fixture-url"}
-	expected := map[string]any{"id": "fixture-id", "path": "fixture-path", "bytes": float64(2), "content_type": "fixture-type", "sha256": "fixture-hash", "owner": "fixture-owner", "modified": "fixture-modified", "url": "fixture-url"}
+	expected := map[string]any{"id": "fixture-id", "path": "fixture-path", "bytes": float64(2), "content_type": "fixture-type", "sha256": "fixture-hash", "owner": "fixture-owner", "modified": "fixture-modified", "url": "fixture-url", "expires": nil}
 	assertJSONShape(t, listed, expected)
-	assertJSONShape(t, tools.ArtifactList{Artifacts: []tools.Listed{listed}}, map[string]any{"artifacts": []any{expected}})
+	assertJSONShape(t, tools.ArtifactList{Artifacts: []tools.Listed{listed}}, map[string]any{"artifacts": []any{expected}, "next": nil})
 	expiry := "fixture-expiry"
 	listed.Expires = &expiry
 	expected["expires"] = expiry
 	assertJSONShape(t, listed, expected)
-	assertJSONShape(t, tools.ArtifactList{Artifacts: []tools.Listed{listed}}, map[string]any{"artifacts": []any{expected}})
-	assertJSONShape(t, tools.ArtifactList{Artifacts: []tools.Listed{}}, map[string]any{"artifacts": []any{}})
+	assertJSONShape(t, tools.ArtifactList{Artifacts: []tools.Listed{listed}}, map[string]any{"artifacts": []any{expected}, "next": nil})
+	assertJSONShape(t, tools.ArtifactList{Artifacts: []tools.Listed{}}, map[string]any{"artifacts": []any{}, "next": nil})
 	assertJSONShape(t, tools.Deleted{Deleted: true, ID: "fixture-deleted"}, map[string]any{"deleted": true, "id": "fixture-deleted"})
 
 }
@@ -318,7 +359,7 @@ func assertJSONShape(t *testing.T, value any, expected map[string]any) {
 	}
 }
 
-// R-NKF6-9U2U R-NLN2-NLTJ
+// R-AHGB-V7RS R-NLN2-NLTJ
 func TestListShow(t *testing.T) {
 	f := setup(t, base)
 	var list tools.ArtifactList
@@ -465,7 +506,7 @@ func importUnchanged(t *testing.T, f *fixture, args tools.ImportArgs, failing bo
 	return result
 }
 
-// R-TQTC-VFWT R-USFW-VQA8 R-UTNT-9I0X R-UXBI-ET90 R-UL4I-L3U2
+// R-TQTC-VFWT R-USFW-VQA8 R-UTNT-9I0X R-UXBI-ET90 R-AA4X-KLBM
 func TestImportPlans(t *testing.T) {
 	expiry := now.Add(time.Hour).In(time.FixedZone("fixture", -7*3600)).Add(123 * time.Millisecond).Format(time.RFC3339Nano)
 	contentType := "application/fixture; spacing=  verbatim"
@@ -556,4 +597,183 @@ func TestDefaultImportClock(t *testing.T) {
 	f := setup(t, base, nil)
 	past := time.Time{}.Format(time.RFC3339)
 	refused(t, importUnchanged(t, f, tools.ImportArgs{Path: "valid", Expires: &past}, false), tools.PastExpiry(past))
+}
+
+// R-ACKQ-C4T0 R-ADSM-PWJP
+func TestListSchemas(t *testing.T) {
+	f := setup(t, base)
+	infos, err := f.client.ListTools(context.Background(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantInput := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"page":  map[string]any{"type": "string", "description": paging.PageDescription},
+			"limit": map[string]any{"type": "integer", "description": paging.LimitDescription},
+		},
+		"additionalProperties": false,
+	}
+	var input map[string]any
+	if err := json.Unmarshal(infos[0].InputSchema, &input); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(input, wantInput) {
+		t.Fatal(input, wantInput)
+	}
+	var output struct {
+		Properties map[string]map[string]any
+		Required   []string
+	}
+	if err := json.Unmarshal(infos[0].OutputSchema, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(output.Properties["next"], map[string]any{"type": "string", "description": paging.NextDescription}) {
+		t.Fatal(output)
+	}
+	for _, name := range output.Required {
+		if name == "next" {
+			t.Fatal(output)
+		}
+	}
+}
+
+// R-AA4X-KLBM R-DVIS-9M0Y
+func TestPagedPublicTypes(t *testing.T) {
+	page, limit, expiry := "fixture-page", 2, "fixture-expiry"
+	assertJSONShape(t, tools.ListArgs{Page: &page, Limit: &limit}, map[string]any{"page": page, "limit": float64(limit)})
+	assertJSONShape(t, tools.PathArgs{Path: "fixture-path"}, map[string]any{"path": "fixture-path"})
+	ct := "fixture-type"
+	assertJSONShape(t, tools.ImportArgs{Path: "fixture-path", ContentType: &ct, Expires: &expiry}, map[string]any{"path": "fixture-path", "content_type": ct, "expires": expiry})
+	f := setup(t, base)
+	a, _, err := f.cfg.Store.Put(context.Background(), store.Draft{Path: "no-expiry", OwnerID: owner.UserID, OwnerEmail: owner.Email, Max: 100}, strings.NewReader("fixture"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got tools.ArtifactList
+	structured(t, f.call(t, owner, "list", tools.ListArgs{}), &got)
+	if len(got.Artifacts) != 1 || got.Artifacts[0].ID != a.ID || got.Artifacts[0].Expires != nil || got.Next != nil {
+		t.Fatal(got)
+	}
+}
+
+// R-AF0J-3OAE R-AG8F-HG13
+func TestListRefusalPrecedence(t *testing.T) {
+	f := setup(t, base)
+	token := paging.Token{Tool: "list"}
+	wrong := (paging.Token{Tool: "list_widgets"}).Encode("a")
+	var decoded string
+	if err := token.Decode(wrong, &decoded); err == nil {
+		t.Fatal("fixture token has matching checksum")
+	}
+	pages := []string{"made-up", wrong, token.Encode(int64(1)), token.Encode("a", "b")}
+	for _, failing := range []bool{false, true} {
+		f.db.SetFailing(failing)
+		for _, n := range []int{-1, 0, paging.MaxLimit + 1} {
+			_, err := paging.Window(&n)
+			if err == nil {
+				t.Fatal("fixture limit accepted")
+			}
+			for _, page := range append(pages, token.Encode("a"), "") {
+				refused(t, f.call(t, owner, "list", tools.ListArgs{Page: &page, Limit: &n}), err.Error())
+			}
+		}
+		for _, page := range pages {
+			for _, n := range []*int{nil, newInt(1), newInt(paging.MaxLimit)} {
+				refused(t, f.call(t, owner, "list", tools.ListArgs{Page: &page, Limit: n}), paging.BadPage)
+			}
+		}
+	}
+	f.db.SetFailing(false)
+}
+
+func newInt(n int) *int { return &n }
+
+func listed(a store.Artifact) tools.Listed {
+	m := files.Describe(a, base)
+	return tools.Listed{ID: m.ID, Path: m.Path, Bytes: m.Bytes, ContentType: m.ContentType, SHA256: m.SHA256, Owner: m.Owner, Modified: m.Modified, Expires: m.Expires, URL: m.URL}
+}
+
+func assertPage(t *testing.T, f *fixture, args any, remainder []store.Artifact, limit int) tools.ArtifactList {
+	t.Helper()
+	var got tools.ArtifactList
+	structured(t, f.call(t, other, "list", args), &got)
+	count := min(limit, len(remainder))
+	want := make([]tools.Listed, count)
+	for i := range want {
+		want[i] = listed(remainder[i])
+	}
+	if !reflect.DeepEqual(got.Artifacts, want) {
+		t.Fatal(got, want)
+	}
+	if len(remainder) > limit {
+		next := (paging.Token{Tool: "list"}).Encode(remainder[limit-1].Path)
+		if got.Next == nil || *got.Next != next {
+			t.Fatal(got.Next, next)
+		}
+	} else if got.Next != nil {
+		t.Fatal(got.Next)
+	}
+	return got
+}
+
+// R-AHGB-V7RS R-AIO8-8ZIH
+func TestListPagination(t *testing.T) {
+	f := setup(t, base)
+	assertPage(t, f, tools.ListArgs{}, nil, paging.DefaultLimit)
+	paths := []string{"B", "a", "a-b", "a.b", "a/b", "a0"}
+	for i := 0; i < paging.DefaultLimit; i++ {
+		paths = append(paths, fmt.Sprintf("z%03d", i))
+	}
+	all := make([]store.Artifact, len(paths))
+	for i := len(paths) - 1; i >= 0; i-- {
+		c := owner
+		if i%2 != 0 {
+			c = other
+		}
+		all[i] = f.put(t, paths[i], c)
+	}
+	empty := ""
+	for _, args := range []any{
+		map[string]any{}, map[string]any{"page": nil, "limit": nil},
+		map[string]any{"page": ""}, tools.ListArgs{Page: &empty},
+	} {
+		assertPage(t, f, args, all, paging.DefaultLimit)
+	}
+	for _, n := range []int{1, 2, len(all), paging.MaxLimit} {
+		assertPage(t, f, tools.ListArgs{Limit: &n}, all, n)
+	}
+	token := paging.Token{Tool: "list"}
+	for _, cursor := range []string{"", "a", "a-", "zzzz"} {
+		page := token.Encode(cursor)
+		start := 0
+		for start < len(all) && all[start].Path <= cursor {
+			start++
+		}
+		assertPage(t, f, tools.ListArgs{Page: &page, Limit: newInt(2)}, all[start:], 2)
+	}
+	limit := 2
+	var page *string
+	var walked []tools.Listed
+	for start := 0; ; start += limit {
+		got := assertPage(t, f, tools.ListArgs{Page: page, Limit: &limit}, all[start:], limit)
+		walked = append(walked, got.Artifacts...)
+		if got.Next == nil {
+			break
+		}
+		page = got.Next
+	}
+	want := make([]tools.Listed, len(all))
+	for i := range want {
+		want[i] = listed(all[i])
+	}
+	if !reflect.DeepEqual(walked, want) {
+		t.Fatal(walked, want)
+	}
+	// The continuation position survives deletion of the artifact naming it.
+	if _, err := f.cfg.Store.Delete(context.Background(), "a", other.UserID); err != nil {
+		t.Fatal(err)
+	}
+	after := token.Encode("a")
+	assertPage(t, f, tools.ListArgs{Page: &after, Limit: &limit}, all[2:], limit)
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	artifacts "github.com/ikigenba/ikigenba/artifacts"
 	"github.com/ikigenba/ikigenba/artifacts/internal/store"
 	"github.com/ikigenba/ikigenba/artifacts/internal/tools"
@@ -66,6 +67,7 @@ type LandingData struct {
 	Banner     page.Banner
 	Artifacts  []ArtifactRow
 	TotalBytes int64
+	Next       string
 }
 
 // ArtifactRow is one artifact in the root page.
@@ -139,18 +141,27 @@ func Handler(cfg Config) http.Handler {
 		banner := cfg.Banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: auth + "/", LogoutURL: auth + "/logout"})
 		switch path {
 		case "/":
-			all, err := cfg.Store.List(r.Context())
+			all, err := cfg.Store.List(r.Context(), nil, paging.DefaultLimit+1)
+			if err != nil {
+				unavailable(w, r)
+				return
+			}
+			total, err := cfg.Store.TotalBytes(r.Context())
 			if err != nil {
 				unavailable(w, r)
 				return
 			}
 			banner.Trail = nil
-			data := LandingData{Banner: banner, Artifacts: make([]ArtifactRow, 0, len(all))}
+			data := LandingData{Banner: banner, TotalBytes: total}
+			if len(all) > paging.DefaultLimit {
+				all = all[:paging.DefaultLimit]
+				data.Next = (paging.Token{Tool: "list"}).Encode(all[len(all)-1].Path)
+			}
+			data.Artifacts = make([]ArtifactRow, 0, len(all))
 			for _, a := range all {
 				modified, mt := stamp(a.Modified, "2006-01-02 15:04")
 				expires, et := stamp(a.Expires, "2006-01-02 15:04")
 				data.Artifacts = append(data.Artifacts, ArtifactRow{ID: a.ID, Path: a.Path, Bytes: a.Bytes, ContentType: a.ContentType, Owner: a.OwnerEmail, Modified: modified, ModifiedText: mt, Expires: expires, ExpiresText: et})
-				data.TotalBytes += a.Bytes
 			}
 			cfg.Pages.Write(w, r, http.StatusOK, "landing", data)
 		case "/tools":

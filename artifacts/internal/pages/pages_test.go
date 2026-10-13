@@ -3,19 +3,27 @@ package pages_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"html/template"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
+	"github.com/ikigenba/ikigenba/appkit/services"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	artifacts "github.com/ikigenba/ikigenba/artifacts"
 	"github.com/ikigenba/ikigenba/artifacts/internal/pages"
 	"github.com/ikigenba/ikigenba/artifacts/internal/store"
@@ -117,7 +125,7 @@ func put(t *testing.T, s *store.Store, path string, exp time.Time) store.Artifac
 func TestPublicDataAndTemplates(t *testing.T) {
 	const _ string = pages.ServiceName
 	const _ string = pages.Description
-	// R-NQFY-7UB1 R-MSDH-H40V R-MUTA-8NI9 R-MW16-MF8Y R-MX93-06ZN
+	// R-NQFY-7UB1 R-MSDH-H40V R-A7P4-T1U8 R-MW16-MF8Y R-MX93-06ZN
 	if pages.ServiceName != "artifacts" || pages.Description != "Binary files agents and services share" || pages.ToolsLevel != (page.Level{Name: "tools", URL: "/tools"}) || pages.AboutLevel != (page.Level{Name: "about", URL: "/about"}) {
 		t.Fatal("service identity or levels")
 	}
@@ -140,6 +148,7 @@ func TestPublicDataAndTemplates(t *testing.T) {
 	}{
 		{"landing", pages.LandingData{Banner: b}},
 		{"landing", pages.LandingData{Banner: b, Artifacts: []pages.ArtifactRow{row, noExpiryRow}, TotalBytes: 74}},
+		{"landing", pages.LandingData{Banner: b, Artifacts: []pages.ArtifactRow{row}, TotalBytes: 74, Next: (paging.Token{Tool: "list"}).Encode(row.Path)}},
 		{"artifact", pages.ArtifactData{Banner: b, Artifact: view}},
 		{"artifact", pages.ArtifactData{Banner: b, Artifact: noExpiryView}},
 		{"tools", pages.ToolsData{Banner: b, Tools: []pages.ToolRow{{Name: "test-tool", Description: "test-description"}}}},
@@ -181,7 +190,7 @@ func TestIdentityRequired(t *testing.T) {
 }
 
 func TestLandingData(t *testing.T) {
-	// R-OS6H-LDVL
+	// R-A8X1-6TKX
 	now := time.Date(2030, 1, 2, 3, 4, 5, 0, time.FixedZone("test-zone", 7200))
 	cfg, _ := fixtureWithClock(t, func() time.Time { return now })
 	r := request(http.MethodGet, "/")
@@ -207,6 +216,104 @@ func TestLandingData(t *testing.T) {
 		rows = append(rows, row)
 	}
 	checkPage(t, cfg, r, 200, "landing", pages.LandingData{Banner: b, Artifacts: rows, TotalBytes: a.Bytes + z.Bytes})
+}
+
+func TestLandingFirstPageMatchesList(t *testing.T) {
+	// R-A8X1-6TKX
+	t.Setenv(services.Variable, "")
+	now := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+	clock := func() time.Time { return now }
+	cfg, _ := fixtureWithClock(t, clock)
+	w := telemetry.New(telemetry.Config{Service: pages.ServiceName, Sink: &telemetry.Capture{}, Now: clock, Rand: &countingRandom{}, Stderr: io.Discard})
+	t.Cleanup(func() { w.Shutdown(context.Background(), "test") })
+	srv := mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: w})
+	tools.Register(srv, tools.Config{Store: cfg.Store, Telemetry: w, Now: clock})
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		srv.ServeHTTP(w, r.WithContext(urls.NewContext(r.Context(), "https://artifacts.example.test")))
+	})
+	server := httptest.NewServer(identity.Require(h))
+	t.Cleanup(server.Close)
+	client := mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL})
+	caller := identity.Caller{UserID: "reader-id", Email: "reader@example.test"}
+	r := request(http.MethodGet, "/")
+	b := banner(r, cfg.ServicesPath)
+	b.Trail = nil
+	var all []store.Artifact
+	check := func() {
+		t.Helper()
+		sort.Slice(all, func(i, j int) bool { return all[i].Path < all[j].Path })
+		data := pages.LandingData{Banner: b}
+		for _, a := range all {
+			data.TotalBytes += a.Bytes
+		}
+		first := all
+		if len(first) > paging.DefaultLimit {
+			first = first[:paging.DefaultLimit]
+			data.Next = (paging.Token{Tool: "list"}).Encode(first[len(first)-1].Path)
+		}
+		for _, a := range first {
+			row := pages.ArtifactRow{ID: a.ID, Path: a.Path, Bytes: a.Bytes, ContentType: a.ContentType, Owner: a.OwnerEmail, Modified: a.Modified.UTC().Format(time.RFC3339), ModifiedText: a.Modified.UTC().Format("2006-01-02 15:04")}
+			if !a.Expires.IsZero() {
+				row.Expires = a.Expires.UTC().Format(time.RFC3339)
+				row.ExpiresText = a.Expires.UTC().Format("2006-01-02 15:04")
+			}
+			data.Artifacts = append(data.Artifacts, row)
+		}
+		checkPage(t, cfg, r, http.StatusOK, "landing", data)
+		args, err := json.Marshal(tools.ListArgs{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := client.CallTool(context.Background(), caller, "list", args)
+		if err != nil || result.IsError() {
+			t.Fatalf("list: %v, result %v", err, result)
+		}
+		encoded, err := json.Marshal(result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var reply struct {
+			Structured tools.ArtifactList `json:"structuredContent"`
+		}
+		if err := json.Unmarshal(encoded, &reply); err != nil {
+			t.Fatal(err)
+		}
+		if len(reply.Structured.Artifacts) != len(data.Artifacts) {
+			t.Fatalf("list has %d rows; page has %d", len(reply.Structured.Artifacts), len(data.Artifacts))
+		}
+		for i, row := range data.Artifacts {
+			if reply.Structured.Artifacts[i].ID != row.ID {
+				t.Fatalf("list row %d id differs from page", i)
+			}
+		}
+		if data.Next == "" {
+			if reply.Structured.Next != nil {
+				t.Fatal("list has next for a complete first page")
+			}
+		} else if reply.Structured.Next == nil || *reply.Structured.Next != data.Next {
+			t.Fatal("list next differs from page")
+		}
+	}
+	check()
+	paths := []string{"Zeta.bin", "alpha.bin"}
+	for i := len(paths); i < paging.DefaultLimit; i++ {
+		paths = append(paths, fmt.Sprintf("middle-%03d.bin", i))
+	}
+	for i := len(paths) - 1; i >= 0; i-- {
+		expiry := time.Time{}
+		if i%2 == 0 {
+			expiry = now.Add(24 * time.Hour)
+		}
+		draft := store.Draft{Path: paths[i], OwnerID: fmt.Sprintf("owner-%d", i%2), OwnerEmail: fmt.Sprintf("owner-%d@example.test", i%2), ContentType: "application/test", Max: 100, Expires: expiry}
+		a, _, err := cfg.Store.Put(context.Background(), draft, strings.NewReader(paths[i]))
+		if err != nil {
+			t.Fatal(err)
+		}
+		all = append(all, a)
+	}
+	check()
+	all = append(all, put(t, cfg.Store, "zz-extra.bin", time.Time{}))
+	check()
 }
 
 func artifactData(r *http.Request, cfg pages.Config, a store.Artifact) pages.ArtifactData {
@@ -344,7 +451,7 @@ func TestHeadAndReadOnly(t *testing.T) {
 	// R-NANZ-7O5A
 	cfg, _ := fixture(t)
 	a := put(t, cfg.Store, "unchanged.bin", time.Time{})
-	before, err := cfg.Store.List(context.Background())
+	before, err := cfg.Store.List(context.Background(), nil, paging.DefaultLimit+1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,7 +467,7 @@ func TestHeadAndReadOnly(t *testing.T) {
 			}
 		}
 	}
-	after, err := cfg.Store.List(context.Background())
+	after, err := cfg.Store.List(context.Background(), nil, paging.DefaultLimit+1)
 	if err != nil {
 		t.Fatal(err)
 	}

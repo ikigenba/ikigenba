@@ -527,7 +527,7 @@ func TestRunReconcileAndDrivenSweeps(t *testing.T) {
 		t.Fatalf("survivor %q", b)
 	}
 	seedRun(t, dir, r.p.Now(), func(_ *db.DB, st *store.Store) {
-		got, err := st.List(context.Background())
+		got, err := st.List(context.Background(), nil, 100)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -207,22 +207,52 @@ func (s *Store) Get(ctx context.Context, path string) (Artifact, error) {
 // GetID finds an exact id.
 func (s *Store) GetID(ctx context.Context, id string) (Artifact, error) { return s.get(ctx, "id", id) }
 
-// List returns every record in path order.
-func (s *Store) List(ctx context.Context) ([]Artifact, error) {
+// List returns a bounded window after a path in byte order.
+func (s *Store) List(ctx context.Context, after *string, n int) ([]Artifact, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]Artifact, 0)
+	if n < 1 {
+		n = 0
+	}
 	err := s.tx(ctx, false, func(tx *sql.Tx) error {
-		aa, e := all(ctx, tx)
-		for _, a := range aa {
+		query := "SELECT " + columns + " FROM artifacts"
+		args := make([]any, 0, 2)
+		if after != nil {
+			query += " WHERE path > ?"
+			args = append(args, *after)
+		}
+		query += " ORDER BY path COLLATE BINARY LIMIT ?"
+		args = append(args, n)
+		rows, err := tx.QueryContext(ctx, query, args...)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			a, err := scan(rows)
+			if err != nil {
+				return err
+			}
 			out = append(out, a.Artifact)
 		}
-		return e
+		return rows.Err()
 	})
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+// TotalBytes sums every stored artifact's byte count.
+func (s *Store) TotalBytes(ctx context.Context) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var total int64
+	err := s.tx(ctx, false, func(tx *sql.Tx) error {
+		return tx.QueryRowContext(ctx, "SELECT COALESCE(SUM(bytes), 0) FROM artifacts").Scan(&total)
+	})
+	return total, err
 }
 
 // Open returns the record and an immutable file positioned at its start.

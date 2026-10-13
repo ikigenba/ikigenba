@@ -12,6 +12,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/artifacts/internal/files"
 	"github.com/ikigenba/ikigenba/artifacts/internal/store"
@@ -56,7 +57,10 @@ type PlanHeaders struct {
 }
 
 // ListArgs describes the artifact service contract.
-type ListArgs struct{}
+type ListArgs struct {
+	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
+}
 
 // PathArgs describes the artifact service contract.
 type PathArgs struct {
@@ -79,13 +83,14 @@ type Listed struct {
 	SHA256      string  `json:"sha256"`
 	Owner       string  `json:"owner"`
 	Modified    string  `json:"modified"`
-	Expires     *string `json:"expires,omitempty"`
+	Expires     *string `json:"expires"`
 	URL         string  `json:"url"`
 }
 
 // ArtifactList describes the artifact service contract.
 type ArtifactList struct {
 	Artifacts []Listed `json:"artifacts"`
+	Next      *string  `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
 // Deleted describes the artifact service contract.
@@ -140,11 +145,29 @@ func Register(srv *mcp.Server, cfg Config) {
 		cfg.Now = time.Now
 	}
 	c := Catalog()
-	addTool(srv, mcp.Tool[ListArgs, ArtifactList]{Name: c[0].Name, Description: c[0].Description, Effect: mcp.Read, Handler: func(ctx context.Context, _ identity.Caller, _ ListArgs) (ArtifactList, error) {
+	mcp.AddTool(srv, mcp.Tool[ListArgs, ArtifactList]{Name: c[0].Name, Description: c[0].Description, Effect: mcp.Read, Handler: func(ctx context.Context, _ identity.Caller, in ListArgs) (ArtifactList, error) {
 		out := ArtifactList{Artifacts: make([]Listed, 0)}
-		all, err := cfg.Store.List(ctx)
+		limit, err := paging.Window(in.Limit)
+		if err != nil {
+			return out, err
+		}
+		token := paging.Token{Tool: "list"}
+		var after *string
+		if in.Page != nil && *in.Page != "" {
+			var path string
+			if err := token.Decode(*in.Page, &path); err != nil {
+				return out, errors.New(paging.BadPage)
+			}
+			after = &path
+		}
+		all, err := cfg.Store.List(ctx, after, limit+1)
 		if err != nil {
 			return out, refusal(err, "")
+		}
+		if len(all) > limit {
+			all = all[:limit]
+			next := token.Encode(all[limit-1].Path)
+			out.Next = &next
 		}
 		base, _ := urls.FromContext(ctx)
 		for _, a := range all {

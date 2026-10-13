@@ -400,7 +400,7 @@ func TestFailingStoreOnlyRecordsRequestAndToolEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := f.cfg.Store.List(context.Background())
+	before, err := f.cfg.Store.List(context.Background(), nil, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -515,7 +515,7 @@ func TestFailingStoreOnlyRecordsRequestAndToolEvents(t *testing.T) {
 	if !reflect.DeepEqual(beforeBlobs, blobNames()) {
 		t.Fatal("outage changed blob directory")
 	}
-	after, err := f.cfg.Store.List(context.Background())
+	after, err := f.cfg.Store.List(context.Background(), nil, 100)
 	if err != nil || !reflect.DeepEqual(before, after) {
 		t.Fatal("outage changed records", before, after, err)
 	}

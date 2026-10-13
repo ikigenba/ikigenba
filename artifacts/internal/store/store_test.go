@@ -97,7 +97,7 @@ func snapshot(t *testing.T, f *fixture) map[string]string {
 }
 func invariant(t *testing.T, f *fixture) {
 	t.Helper()
-	aa, e := f.s.List(ctx)
+	aa, e := f.s.List(ctx, nil, 100)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -151,7 +151,7 @@ func (r *hooked) Read(p []byte) (int, error) {
 	return n, e
 }
 
-// R-ZZ5Y-684F R-00DU-JZV4 R-01LQ-XRLT R-02TN-BJCI R-041J-PB37 R-059G-32TW
+// R-ZZ5Y-684F R-00DU-JZV4 R-01LQ-XRLT R-02TN-BJCI R-041J-PB37 R-A41F-NQM5
 func TestSurface(t *testing.T) {
 	f := setup(t, nil)
 	if store.IDPrefix != "art_" || store.DefaultContentType != "application/octet-stream" || store.MaxSegment != 128 || store.MaxPath != 1024 || store.Unreachable == "" {
@@ -174,9 +174,13 @@ func TestSurface(t *testing.T) {
 		t.Fatal(e)
 	}
 	s := store.New(f.d, f.blobs, store.Config{})
-	aa, e := s.List(ctx)
+	aa, e := s.List(ctx, nil, 100)
 	if e != nil || aa == nil || len(aa) != 0 {
 		t.Fatal(aa, e)
+	}
+	total, e := s.TotalBytes(ctx)
+	if e != nil || total != 0 {
+		t.Fatal(total, e)
 	}
 	a := put(t, f, draft("one"), "one")
 	if !store.ValidPath(a.Path) || !store.ValidID(a.ID) {
@@ -468,10 +472,10 @@ func TestRaces(t *testing.T) {
 	invariant(t, f)
 }
 
-// R-0L45-23GX R-0MC1-FV7M
+// R-0L45-23GX
 func TestListAndLookup(t *testing.T) {
 	f := setup(t, nil)
-	empty, e := f.s.List(ctx)
+	empty, e := f.s.List(ctx, nil, 100)
 	if e != nil || empty == nil || len(empty) != 0 {
 		t.Fatal(empty, e)
 	}
@@ -481,7 +485,7 @@ func TestListAndLookup(t *testing.T) {
 		d.OwnerID = p
 		want = append(want, put(t, f, d, p))
 	}
-	aa, e := f.s.List(ctx)
+	aa, e := f.s.List(ctx, nil, 100)
 	if e != nil || len(aa) != 3 {
 		t.Fatal(aa, e)
 	}
@@ -611,7 +615,7 @@ func TestSweep(t *testing.T) {
 	if e != nil || !reflect.DeepEqual(gone, expected) {
 		t.Fatal(gone, e)
 	}
-	aa, e := f.s.List(ctx)
+	aa, e := f.s.List(ctx, nil, 100)
 	if e != nil || len(aa) != 2 || aa[0].Path != "forever" || aa[1].Path != "later" {
 		t.Fatal(aa, e)
 	}
@@ -693,7 +697,7 @@ func TestUnavailableAndPrecedence(t *testing.T) {
 				f.d.SetFailing(true)
 			}
 			calls := []func() error{
-				func() error { _, e := f.s.List(c); return e }, func() error { _, e := f.s.Get(c, "bad//path"); return e }, func() error { _, e := f.s.GetID(c, "absent"); return e }, func() error {
+				func() error { _, e := f.s.List(c, nil, 100); return e }, func() error { _, e := f.s.List(c, nil, 0); return e }, func() error { _, e := f.s.TotalBytes(c); return e }, func() error { _, e := f.s.Get(c, "bad//path"); return e }, func() error { _, e := f.s.GetID(c, "absent"); return e }, func() error {
 					_, file, e := f.s.Open(c, "bad//path")
 					if file != nil {
 						t.Fatal("non-nil file")
@@ -768,7 +772,7 @@ func TestUnavailableAndPrecedence(t *testing.T) {
 		if !errors.Is(e, store.ErrUnreachable) || r.calls != 0 {
 			t.Fatal(e, r.calls)
 		}
-		aa, e := f.s.List(ctx)
+		aa, e := f.s.List(ctx, nil, 100)
 		if e != nil || len(aa) != 0 {
 			t.Fatal(aa, e)
 		}
@@ -915,4 +919,90 @@ func TestDefaultSourcesByUse(t *testing.T) {
 			invariant(t, f)
 		})
 	}
+}
+
+// R-A59C-1ICU
+func TestListWindows(t *testing.T) {
+	f := setup(t, nil)
+	empty, err := f.s.List(ctx, nil, 3)
+	if err != nil || empty == nil || len(empty) != 0 {
+		t.Fatal(empty, err)
+	}
+	paths := []string{"B", "a", "a-b", "a.b", "a/b", "a0"}
+	want := make([]store.Artifact, len(paths))
+	for i := len(paths) - 1; i >= 0; i-- {
+		d := draft(paths[i])
+		d.OwnerID = paths[i]
+		d.Expires = f.now.Add(time.Hour)
+		want[i] = put(t, f, d, paths[i])
+	}
+	f.now = f.now.Add(2 * time.Hour)
+	for _, tc := range []struct {
+		name       string
+		after      *string
+		n          int
+		start, end int
+	}{
+		{name: "all", n: 10, end: 6},
+		{name: "exact", n: 6, end: 6},
+		{name: "first", n: 2, end: 2},
+		{name: "one", n: 1, end: 1},
+		{name: "zero", n: 0},
+		{name: "negative", n: -1},
+		{name: "minimum", n: math.MinInt},
+		{name: "empty position", after: new(""), n: 10, end: 6},
+		{name: "existing position", after: new("a"), n: 2, start: 2, end: 4},
+		{name: "absent position", after: new("a-"), n: 2, start: 2, end: 4},
+		{name: "arbitrary position", after: new("a%"), n: 2, start: 2, end: 4},
+		{name: "short final window", after: new("a/b"), n: 2, start: 5, end: 6},
+		{name: "last position", after: new("a0"), n: 2, start: 6, end: 6},
+		{name: "past end", after: new("z"), n: 2, start: 6, end: 6},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := f.s.List(ctx, tc.after, tc.n)
+			if err != nil || got == nil || !reflect.DeepEqual(got, want[tc.start:tc.end]) {
+				t.Fatalf("got %+v, %v; want %+v", got, err, want[tc.start:tc.end])
+			}
+		})
+	}
+	if _, err := f.s.Delete(ctx, "a", "a"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.s.List(ctx, new("a"), 2)
+	if err != nil || !reflect.DeepEqual(got, want[2:4]) {
+		t.Fatal(got, err)
+	}
+}
+
+// R-A6H8-FA3J
+func TestTotalBytes(t *testing.T) {
+	f := setup(t, nil)
+	check := func(want int64) {
+		t.Helper()
+		got, err := f.s.TotalBytes(ctx)
+		if err != nil || got != want {
+			t.Fatalf("total %d, %v; want %d", got, err, want)
+		}
+	}
+	check(0)
+	put(t, f, draft("first"), "abc")
+	d := draft("second")
+	d.OwnerID = "bob"
+	put(t, f, d, "12345")
+	put(t, f, draft("empty"), "")
+	check(8)
+	if rows, err := f.s.List(ctx, nil, 1); err != nil || len(rows) != 1 {
+		t.Fatal(rows, err)
+	}
+	check(8)
+	put(t, f, draft("first"), "x")
+	check(6)
+	if _, err := f.s.Delete(ctx, "second", "bob"); err != nil {
+		t.Fatal(err)
+	}
+	check(1)
+	if _, err := f.s.Delete(ctx, "first", "alice"); err != nil {
+		t.Fatal(err)
+	}
+	check(0)
 }

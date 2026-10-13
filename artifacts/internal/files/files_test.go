@@ -538,7 +538,7 @@ func TestRefusedPutDrain(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					before, err := f.st.List(context.Background())
+					before, err := f.st.List(context.Background(), nil, 100)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -577,7 +577,7 @@ func TestRefusedPutDrain(t *testing.T) {
 					if body.read != wantRead {
 						t.Fatalf("read %d bytes, want %d", body.read, wantRead)
 					}
-					after, err := f.st.List(context.Background())
+					after, err := f.st.List(context.Background(), nil, 100)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -616,7 +616,7 @@ func TestRefusedPutAfterPartialStoreRead(t *testing.T) {
 			if body.read != wantRead {
 				t.Fatalf("aggregate read %d, want %d", body.read, wantRead)
 			}
-			all, err := f.st.List(context.Background())
+			all, err := f.st.List(context.Background(), nil, 100)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -649,7 +649,7 @@ func TestRefusedPutMissingBlobDirectory(t *testing.T) {
 			if body.read != wantRead {
 				t.Fatalf("read %d, want %d", body.read, wantRead)
 			}
-			all, err := f.st.List(context.Background())
+			all, err := f.st.List(context.Background(), nil, 100)
 			if err != nil {
 				t.Fatal(err)
 			}
