@@ -7,8 +7,8 @@
      creation time as shown, "2006-01-02 15:04 UTC") and .CreatedAt (the same
      as RFC 3339 UTC), .RunsKept (how many runs are kept), .KeepNewest and
      .KeepDays (the retention rule: the newest .KeepNewest runs are kept past
-     .KeepDays days); .Runs, the first page of the script's runs, newest
-     first, each with .ID
+     .KeepDays days); .Runs, one window of the script's runs, newest
+     first, the window .Page names, each with .ID
      (its run_ id), .URL ("/<name>/runs/<id>/"), .Status (the store's status
      value), .ExitCode (int, the exit code; meaningful only when .Status is
      "exited"), .Commit (the commit's short hash, empty when the ref
@@ -17,9 +17,10 @@
      else .Minutes and .Seconds, ints, shown as "<.Minutes>m <.Seconds>s"
      with the minutes part omitted when .Minutes is 0, by run-duration in
      run.html); .Subscriptions ([]string, the
-     event names the script is subscribed to, sorted by name); .Next
-     (string, the page token runs's next carries for the runs after these,
-     the value to pass as its page; empty when none remain). Status
+     event names the script is subscribed to, sorted by name); .Page
+     (string, this window's own page token, the ?page= the request carried;
+     empty on the first window); .Next (string, the page token for the
+     window after this one; empty when none remain). Status
      words and kinds, chosen here from .Status and .ExitCode by the
      run-status template (defined in run.html): "queued" and "running"
      info; "exited <.ExitCode>" ok when .ExitCode is 0, else warn; "timed
@@ -44,9 +45,14 @@
      td.run-started > time[datetime=.StartedAt] (text .Started),
      td.run-duration (text the duration, empty when none) and
      td.run-exit.num (text .ExitCode when .Status is "exited", else
-     empty), then, when .Next is not empty, p#next (text "More runs follow:
-     call runs with name <.Script.Name> and page <.Next>.", runs, name,
-     .Script.Name, page and .Next each in a code element). No
+     empty); then nav.paging#paging (aria-label "Pages") whose children
+     are, in order, First (on the first window, .Page empty, a span with
+     aria-current="page" and text "First"; otherwise a link to
+     /<.Script.Name>/ with text "First") and, only when .Next is not empty,
+     Next (a link to /<.Script.Name>/?page=<.Next> with text "Next"); the
+     nav shows when .Runs is not empty or .Page is not empty, after the
+     card (section#runs), so an emptied later window still offers First;
+     on the first window with no runs there is no nav. No
      script but appkit's /_appkit/feedback.js. */}}
 {{define "script"}}<!doctype html>
 <html lang="en">
@@ -91,12 +97,13 @@
 {{end}}</tbody>
 </table>
 </div>
-{{if .Next}}<p id="next">More runs follow: call <code>runs</code> with <code>name</code> <code>{{.Script.Name}}</code> and <code>page</code> <code>{{.Next}}</code>.</p>{{end}}{{else}}<div id="no-runs" class="empty">
+{{else}}<div id="no-runs" class="empty">
 <h3 class="text-md">No runs yet</h3>
 <p>Runs started with the <code>run</code> tool show up here, newest first.</p>
 </div>{{end}}
 </section>
-</main>
+{{if or .Runs .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/{{.Script.Name}}/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/{{.Script.Name}}/?page={{.Next}}">Next</a>{{end}}</nav>
+{{end}}</main>
 {{template "footer" .Banner}}
 </body>
 </html>
