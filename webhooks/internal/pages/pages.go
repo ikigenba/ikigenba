@@ -33,9 +33,9 @@ type Set struct{ templates *template.Template }
 
 // LandingData supplies chrome and ordered webhook rows.
 type LandingData struct {
-	Banner   page.Banner
-	Webhooks []WebhookRow
-	Next     string
+	Banner     page.Banner
+	Webhooks   []WebhookRow
+	Page, Next string
 }
 
 // WebhookRow contains the public display fields of one webhook.
@@ -125,7 +125,15 @@ func Handler(cfg Config) http.Handler {
 		}
 		switch path {
 		case "/":
-			entries, err := cfg.Store.List(r.Context(), "", paging.DefaultLimit+1)
+			pageValue := r.URL.Query().Get("page")
+			var after string
+			if pageValue != "" {
+				if err := (paging.Token{Tool: "list"}).Decode(pageValue, &after); err != nil {
+					cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NoticeData{Banner: cfg.Banner(bannerUser(r, cfg.ServicesPath))})
+					return
+				}
+			}
+			entries, err := cfg.Store.List(r.Context(), after, paging.DefaultLimit+1)
 			if err != nil {
 				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 				w.WriteHeader(http.StatusServiceUnavailable)
@@ -140,7 +148,7 @@ func Handler(cfg Config) http.Handler {
 				entries = entries[:paging.DefaultLimit]
 			}
 			base := urls.Base(r, cfg.ServicesPath)
-			data := LandingData{Next: next, Banner: cfg.Banner(bannerUser(r, cfg.ServicesPath)), Webhooks: make([]WebhookRow, 0, len(entries))}
+			data := LandingData{Page: pageValue, Next: next, Banner: cfg.Banner(bannerUser(r, cfg.ServicesPath)), Webhooks: make([]WebhookRow, 0, len(entries))}
 			for _, x := range entries {
 				data.Webhooks = append(data.Webhooks, row(x, caller.UserID, base))
 			}

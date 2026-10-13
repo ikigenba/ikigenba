@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -74,7 +75,7 @@ func TestPublicNamesAndTemplateExecution(t *testing.T) {
 	require(t, description != "", "empty description")
 	equal(t, pages.ToolsLevel, page.Level{Name: "tools", URL: "/tools"})
 	equal(t, pages.AboutLevel, page.Level{Name: "about", URL: "/about"})
-	// R-ZPLN-5WEE R-0P8Q-8E6W
+	// R-ZPLN-5WEE R-P3QS-6TI1
 	s, err := pages.Load()
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +88,7 @@ func TestPublicNamesAndTemplateExecution(t *testing.T) {
 		name       string
 		zero, full any
 	}{
-		{"landing", pages.LandingData{}, pages.LandingData{Banner: b, Webhooks: []pages.WebhookRow{row}, Next: "sample-token"}},
+		{"landing", pages.LandingData{}, pages.LandingData{Banner: b, Webhooks: []pages.WebhookRow{row}, Page: "current-token", Next: "sample-token"}},
 		{"tools", pages.ToolsData{}, pages.ToolsData{Banner: b, Tools: []pages.ToolRow{{Name: "n", Description: "<d>"}}}},
 		{"about", pages.AboutData{}, pages.AboutData{Banner: b, Description: "<description>"}},
 		{"notfound", pages.NoticeData{}, pages.NoticeData{Banner: b}},
@@ -137,7 +138,7 @@ func setup(t *testing.T, populated bool) *fixture {
 	t.Cleanup(func() { _ = d.Close() })
 	random := make([]byte, 4096)
 	for i := range random {
-		random[i] = byte(i * 7)
+		random[i] = byte(i*7 + i/256)
 	}
 	st := store.New(d, store.Config{Now: func() time.Time { return now }, Rand: bytes.NewReader(random)})
 	f := &fixture{db: d, store: st, banner: page.Banner{Service: "webhooks", Release: "test-release", Commit: "test-commit"}, path: filepath.Join(dir, "services.json")}
@@ -208,7 +209,7 @@ func writeServices(t *testing.T, path string, entries map[string]string) {
 }
 
 func TestSignedInPagesExactBodies(t *testing.T) {
-	// R-ID4R-G4DD R-ZWX1-GIUK R-ZY4X-UAL9 R-00KQ-LU2N R-01SM-ZLTC
+	// R-P66K-YCZF R-ZWX1-GIUK R-ZY4X-UAL9 R-00KQ-LU2N R-01SM-ZLTC
 	for _, populated := range []bool{false, true} {
 		t.Run(fmt.Sprint(populated), func(t *testing.T) {
 			f := setup(t, populated)
@@ -264,7 +265,7 @@ func TestServicesAddresses(t *testing.T) {
 }
 
 func TestNotFoundMethodsGuestsAndFailures(t *testing.T) {
-	// R-ZZCU-82BY R-030J-DDK1 R-048F-R5AQ R-05GC-4X1F
+	// R-ZZCU-82BY R-030J-DDK1 R-048F-R5AQ R-P8MD-PWGT
 	f := setup(t, true)
 	ts := templates(t)
 	notfound := rendered(t, ts, "notfound", pages.NoticeData{Banner: f.banner})
@@ -309,14 +310,23 @@ func TestNotFoundMethodsGuestsAndFailures(t *testing.T) {
 	}
 }
 
-// R-0QGM-M5XL R-ID4R-G4DD
-func TestLandingFirstPageAndNext(t *testing.T) {
-	for _, count := range []int{0, paging.DefaultLimit - 1, paging.DefaultLimit, paging.DefaultLimit + 1} {
+// R-P1AZ-FA0N R-P2IV-T1RC R-P66K-YCZF
+func TestLandingWindows(t *testing.T) {
+	for _, count := range []int{0, paging.DefaultLimit - 1, paging.DefaultLimit, paging.DefaultLimit + 1, 2 * paging.DefaultLimit, 2*paging.DefaultLimit + 1} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {
 			f := setup(t, false)
 			var hooks []store.Webhook
-			for i := 0; i < count; i++ {
-				x, _, err := f.store.Create(context.Background(), store.Draft{Slug: fmt.Sprintf("hook%03d", i), Scheme: store.Bearer, OwnerID: fmt.Sprintf("user%d", i%2), OwnerEmail: fmt.Sprintf("user%d@example.test", i%2)})
+			// Insert in reverse order so the expected order is not insertion order.
+			for i := count - 1; i >= 0; i-- {
+				slug := fmt.Sprintf("hook%03d", i)
+				if i < 3 {
+					slug = []string{"a1", "a_b", "aa"}[i]
+				}
+				scheme := store.Bearer
+				if i%2 == 0 {
+					scheme = store.GitHubHMAC
+				}
+				x, _, err := f.store.Create(context.Background(), store.Draft{Slug: slug, Scheme: scheme, OwnerID: fmt.Sprintf("user%d", i%2), OwnerEmail: fmt.Sprintf("user%d@example.test", i%2)})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -328,22 +338,140 @@ func TestLandingFirstPageAndNext(t *testing.T) {
 				}
 				hooks = append(hooks, x)
 			}
-			rows := make([]pages.WebhookRow, 0, min(count, paging.DefaultLimit))
-			for _, x := range hooks[:min(count, paging.DefaultLimit)] {
-				row := pages.WebhookRow{ID: x.ID, Slug: x.Slug, Scheme: x.Scheme, URL: "https://hooks.example.test/in/" + x.Slug, Owner: x.OwnerEmail, Mine: x.OwnerID == "user0"}
-				if !x.LastReceived.IsZero() {
-					row.LastReceived = now.Format(time.RFC3339)
-					row.LastReceivedText = now.Format("2006-01-02 15:04")
+			sort.Slice(hooks, func(i, j int) bool { return hooks[i].Slug < hooks[j].Slug })
+			ts := templates(t)
+			token := paging.Token{Tool: "list"}
+			// Check positions that need not be existing or valid webhook slugs.
+			for _, position := range []string{"", "B", "hook012x", "zzzz", string([]byte{0xff})} {
+				pageValue := ""
+				if position != "" {
+					pageValue = token.Encode(position)
 				}
-				rows = append(rows, row)
+				assertLandingWindow(t, f, ts, hooks, pageValue, position)
 			}
-			var next string
-			if count > paging.DefaultLimit {
-				next = (paging.Token{Tool: "list"}).Encode(hooks[paging.DefaultLimit-1].Slug)
+			assertLandingWindow(t, f, ts, hooks, token.Encode(""), "")
+			// Traverse every window through its next token.
+			var pageValue, position string
+			for {
+				next := assertLandingWindow(t, f, ts, hooks, pageValue, position)
+				if next == "" {
+					break
+				}
+				if err := token.Decode(next, &position); err != nil {
+					t.Fatal(err)
+				}
+				pageValue = next
 			}
-			w := answer(f.cfg, request("GET", "/", "user0", "user0@example.test", "hooks.example.test", "https"))
-			equal(t, w.Code, 200)
-			equal(t, w.Body.String(), rendered(t, templates(t), "landing", pages.LandingData{Banner: f.banner, Webhooks: rows, Next: next}))
 		})
+	}
+}
+
+func assertLandingWindow(t *testing.T, f *fixture, ts *template.Template, hooks []store.Webhook, pageValue, position string) string {
+	t.Helper()
+	var remainder []store.Webhook
+	for _, x := range hooks {
+		if pageValue == "" || x.Slug > position {
+			remainder = append(remainder, x)
+		}
+	}
+	rows := make([]pages.WebhookRow, 0, min(len(remainder), paging.DefaultLimit))
+	for _, x := range remainder[:min(len(remainder), paging.DefaultLimit)] {
+		row := pages.WebhookRow{ID: x.ID, Slug: x.Slug, Scheme: x.Scheme, URL: "https://hooks.example.test/in/" + x.Slug, Owner: x.OwnerEmail, Mine: x.OwnerID == "user0"}
+		if !x.LastReceived.IsZero() {
+			row.LastReceived = now.Format(time.RFC3339)
+			row.LastReceivedText = now.Format("2006-01-02 15:04")
+		}
+		rows = append(rows, row)
+	}
+	var next string
+	if len(remainder) > paging.DefaultLimit {
+		next = (paging.Token{Tool: "list"}).Encode(remainder[paging.DefaultLimit-1].Slug)
+	}
+	w := answer(f.cfg, request("GET", "/?page="+url.QueryEscape(pageValue), "user0", "user0@example.test", "hooks.example.test", "https"))
+	equal(t, w.Code, 200)
+	equal(t, w.Header().Get("Content-Type"), "text/html; charset=utf-8")
+	equal(t, w.Body.String(), rendered(t, ts, "landing", pages.LandingData{Banner: f.banner, Webhooks: rows, Page: pageValue, Next: next}))
+	return next
+}
+
+// R-P1AZ-FA0N R-P7EH-C4Q4 R-P8MD-PWGT R-030J-DDK1 R-048F-R5AQ
+func TestLandingTokenRefusalsAndPrecedence(t *testing.T) {
+	f := setup(t, true)
+	ts := templates(t)
+	token := paging.Token{Tool: "list"}
+	badPages := []string{"bogus", token.Encode("gh_push") + "!", (paging.Token{Tool: "list_widgets"}).Encode("gh_push"), token.Encode(int64(7))}
+	for _, failing := range []bool{false, true} {
+		f.db.SetFailing(failing)
+		for _, value := range badPages {
+			var key string
+			require(t, token.Decode(value, &key) != nil, "invalid token fixture decoded")
+			for _, method := range []string{"GET", "HEAD", "POST"} {
+				for _, user := range []string{"", "u_ada"} {
+					target := "/?page=" + url.QueryEscape(value)
+					w := answer(f.cfg, request(method, target, user, "a@example.test", "webhooks.example.test", "https"))
+					switch {
+					case method == "POST":
+						equal(t, w.Code, 405)
+						equal(t, w.Header().Get("Allow"), "GET, HEAD")
+						equal(t, w.Body.String(), "")
+					case user == "":
+						equal(t, w.Code, 302)
+						equal(t, w.Header().Get("Location"), "https://auth.example.test/?return="+url.QueryEscape("https://webhooks.example.test"+target))
+						equal(t, w.Body.String(), "")
+					default:
+						equal(t, w.Code, 404)
+						equal(t, w.Header().Get("Content-Type"), "text/html; charset=utf-8")
+						body := rendered(t, ts, "notfound", pages.NoticeData{Banner: f.banner})
+						if method == "HEAD" {
+							body = ""
+						}
+						equal(t, w.Body.String(), body)
+					}
+				}
+			}
+		}
+	}
+	f.db.SetFailing(true)
+	for _, value := range []string{"", token.Encode("gh_push"), token.Encode("zzzz")} {
+		w := answer(f.cfg, request("GET", "/?page="+url.QueryEscape(value), "u_ada", "a@example.test", "webhooks.example.test", "https"))
+		equal(t, w.Code, 503)
+		equal(t, w.Header().Get("Content-Type"), "text/plain; charset=utf-8")
+		equal(t, w.Body.String(), store.Unreachable+"\n")
+	}
+}
+
+// R-P1AZ-FA0N R-P9UA-3O7I
+func TestOnlyLandingPageValueAffectsQuery(t *testing.T) {
+	f := setup(t, true)
+	token := (paging.Token{Tool: "list"}).Encode("gh_push")
+	for _, services := range []bool{false, true} {
+		if services {
+			writeServices(t, f.path, map[string]string{"auth": "https://accounts.example.test", "webhooks": "https://hooks.example.test"})
+		}
+		for _, failing := range []bool{false, true} {
+			f.db.SetFailing(failing)
+			for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
+				for _, path := range []string{"/", "/tools", "/about", "/nope"} {
+					queries := [][2]string{
+						{"", "?limit=1&ignored=value"},
+						{"?page=", "?page=&page=bogus&limit=500"},
+						{"?page=" + url.QueryEscape(token), "?limit=1&page=" + url.QueryEscape(token) + "&page=bogus&x=y"},
+						{"?page=bogus", "?page=bogus&page=" + url.QueryEscape(token) + "&limit=bad"},
+					}
+					if path != "/" || (method != "GET" && method != "HEAD") {
+						queries = append(queries, [2]string{"?page=bogus", "?page=" + url.QueryEscape(token)})
+					}
+					for _, pair := range queries {
+						responses := make([]*httptest.ResponseRecorder, 2)
+						for i, query := range pair {
+							responses[i] = answer(f.cfg, request(method, path+query, "u_ada", "a@example.test", "webhooks.example.test", "https"))
+						}
+						equal(t, responses[0].Code, responses[1].Code)
+						equal(t, responses[0].Header(), responses[1].Header())
+						equal(t, responses[0].Body.String(), responses[1].Body.String())
+					}
+				}
+			}
+		}
 	}
 }
