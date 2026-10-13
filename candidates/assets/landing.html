@@ -10,7 +10,7 @@
      .MinRevenue (the default revenue cutoff as shown, "$10,000,000");
      .Shortlist, one window (paging.DefaultLimit, 25) of the candidates
      that pass the fit test under the default filters, ranked by score,
-     each with .Rank (int, from 1 within this window),
+     each with .Rank (int, its position in the whole ranked shortlist under the default filters, from 1, continuing across windows),
      .ID (its cand_ id, "cand_" and 16 hex), .Name (its display name),
      .City and .State (its display address's parts; each may be empty),
      .Minutes (int, drive minutes from the origin), .Class (its class tag,
