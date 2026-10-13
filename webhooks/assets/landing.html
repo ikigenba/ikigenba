@@ -1,15 +1,16 @@
-{{/* The landing page at GET /: what the service is and the first page of webhooks in
+{{/* The landing page at GET /: what the service is and one window of webhooks in
      the space. The root of the hierarchy: .Banner's .Trail is empty, so the
      banner's breadcrumb holds only the service. Shown only to a signed-in
      user; a guest is sent to sign in. Data: .Banner (a page.Banner, for
-     banner and footer); .Webhooks, the first page of webhooks in the space
+     banner and footer); .Webhooks, this window of webhooks in the space
      (whoever owns them), sorted by slug, each with .ID, .Slug, .Scheme ("bearer" or
      "github-hmac"), .URL (the address a sender posts to), .Owner (the
      owner's email), .Mine (bool: the caller owns it), .LastReceived and
      .LastReceivedText (RFC 3339 UTC to the second, and UTC to the minute,
-     "2026-10-05 09:00"; both empty until its first delivery); and .Next
-     (string, the page token list's next carries for the webhooks after
-     these, the value to pass as its page; empty when none remain). Hooks:
+     "2026-10-05 09:00"; both empty until its first delivery); .Page (string,
+     this window's own page token, the ?page= the request carried; empty
+     on the first window); and .Next (string, the page token for the
+     window after this one; empty when none remain). Hooks:
      title
      "webhooks"; h1 with text "webhooks"; p#summary (text "Webhooks that turn
      an authenticated delivery from outside into an event on the suite's
@@ -23,10 +24,13 @@
      td.webhook-url (.URL in a code element), td.webhook-owner (.Owner, then,
      only when .Mine, a space and span.badge[data-kind=mine] with text
      "yours"), and td.webhook-last holding, only when .LastReceived is not
-     empty, time[datetime=<.LastReceived>] (text .LastReceivedText), then,
-     when .Next is not empty, p#next (text "More webhooks follow: call list
-     with page <.Next>.", list, page and .Next each in a code element); a
-     #about-link (text "About webhooks") whose href is "/about". No script
+     empty, time[datetime=<.LastReceived>] (text .LastReceivedText); after
+     the section, when .Webhooks is not empty, nav.paging#paging
+     (aria-label "Pages") whose children are, in order, First (on the
+     first window, .Page empty, a span with aria-current="page" and text
+     "First"; otherwise a link to / with text "First") and, only when .Next
+     is not empty, Next (a link to /?page=<.Next> with text "Next"); with
+     no webhooks there is no nav; a #about-link (text "About webhooks") whose href is "/about". No script
      but appkit's /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
@@ -53,13 +57,13 @@
 {{end}}</tbody>
 </table>
 </div>
-{{if .Next}}<p id="next">More webhooks follow: call <code>list</code> with <code>page</code> <code>{{.Next}}</code>.</p>
-{{end}}{{else}}<div id="no-webhooks" class="empty">
+{{else}}<div id="no-webhooks" class="empty">
 <h3 class="text-md">No webhooks yet</h3>
 <p>A webhook an agent creates with the <code>create</code> tool shows up here.</p>
 </div>{{end}}
 </section>
-<p><a id="about-link" href="/about">About webhooks</a></p>
+{{if .Webhooks}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}</nav>
+{{end}}<p><a id="about-link" href="/about">About webhooks</a></p>
 </main>
 {{template "footer" .Banner}}
 </body>
