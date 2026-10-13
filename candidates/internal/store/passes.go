@@ -185,8 +185,14 @@ func (s *Store) ListPasses(ctx context.Context, started, id string, n int) ([]Pa
 		if n < 1 {
 			return ErrUnreachable
 		}
+		query := StartedFirst
+		args := []any{n}
+		if id != "" {
+			query = StartedAfter
+			args = []any{started, id, n}
+		}
 		var err error
-		out, err = readRecords[Pass](ctx, tx, "passes", passColumns, ` WHERE (?1='' OR started<?2 OR (started=?2 AND id<?1)) ORDER BY started DESC,id DESC LIMIT ?3`, id, started, n)
+		out, err = readQueryRecords[Pass](ctx, tx, passColumns, query, args...)
 		return err
 	}))
 	return out, err

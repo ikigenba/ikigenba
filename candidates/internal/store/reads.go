@@ -120,8 +120,18 @@ func (s *Store) ListCandidates(ctx context.Context, f CandidateFilter, created, 
 			return nil
 		}
 		phone := sources.PhoneKey(f.Phone)
+		if f.Phone != "" && phone == "" {
+			out = []Candidate{}
+			return nil
+		}
+		query := CandidatesFirst
+		args := []any{name, f.Zip, phone, n}
+		if id != "" {
+			query = CandidatesAfter
+			args = []any{name, f.Zip, phone, created, id, n}
+		}
 		var err error
-		out, err = readRecords[Candidate](ctx, tx, "candidates", candidateColumns, ` WHERE status=?1 AND (?2='' OR instr(names_lower,?2)>0) AND (?3='' OR zip=?3) AND (?4='' OR (?5<>'' AND id IN (SELECT candidate FROM links WHERE phone_key=?5))) AND (?6='' OR created<?7 OR (created=?7 AND id<?6)) ORDER BY created DESC,id DESC LIMIT ?8`, StatusActive, name, f.Zip, f.Phone, phone, id, created, n)
+		out, err = readQueryRecords[Candidate](ctx, tx, candidateColumns, query, args...)
 		return err
 	}))
 	return out, err
@@ -134,7 +144,13 @@ func (s *Store) Shortlist(ctx context.Context, f ShortlistFilter, scoreKey int64
 		if n < 1 {
 			return ErrUnreachable
 		}
-		rows, err := tx.QueryContext(ctx, `SELECT a.candidate FROM assessments AS a INDEXED BY assessments_score JOIN candidates AS c ON c.id=a.candidate WHERE c.status=?1 AND a.minutes IS NOT NULL AND a.minutes<=?2 AND (a.high IS NULL OR a.high>=?3) AND a.fleet=1 AND a.excluded=0 AND a.effective>0 AND (?4='' OR c.class=?4) AND (?5='' OR c.id IN (SELECT candidate FROM candidate_cargo WHERE cargo=?5)) AND (?6='' OR a.score_key<?7 OR (a.score_key=?7 AND a.candidate>?6)) ORDER BY a.score_key DESC,a.candidate ASC LIMIT ?8`, StatusActive, f.MaxMinutes, f.MinRevenue, f.Class, f.Cargo, id, scoreKey, n)
+		query := ShortlistFirst
+		args := []any{f.MaxMinutes, f.MinRevenue, f.Class, f.Cargo, n}
+		if id != "" {
+			query = ShortlistAfter
+			args = []any{f.MaxMinutes, f.MinRevenue, f.Class, f.Cargo, scoreKey, id, n}
+		}
+		rows, err := tx.QueryContext(ctx, query, args...)
 		if err != nil {
 			return err
 		}

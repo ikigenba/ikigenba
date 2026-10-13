@@ -51,7 +51,11 @@ func quoted(cs []column) string {
 	return strings.Join(a, ",")
 }
 func readRecords[T any](ctx context.Context, tx *sql.Tx, table string, cs []column, order string, args ...any) ([]T, error) {
-	rows, err := querySQL(ctx, tx, strings.Join([]string{"SELECT ", quoted(cs), " FROM ", table, order}, ""), args...)
+	return readQueryRecords[T](ctx, tx, cs, strings.Join([]string{"SELECT ", quoted(cs), " FROM ", table, order}, ""), args...)
+}
+
+func readQueryRecords[T any](ctx context.Context, tx *sql.Tx, cs []column, query string, args ...any) ([]T, error) {
+	rows, err := querySQL(ctx, tx, query, args...)
 	if err != nil {
 		return nil, err
 	}
