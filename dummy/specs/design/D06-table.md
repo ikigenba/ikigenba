@@ -11,13 +11,16 @@ repository's `design/` and embedded by the module's root package, whose
 into dummy's one template set (`D04-panel`). The code executes that template
 by name and writes no markup of its own — not a row, not a cell, not an
 escape. What it owes the template is its data, and the data is the plainest
-thing that could be: the first page of the store (`D04-panel`), its oldest
-`paging.DefaultLimit` widgets in creation order, each with its `Name`,
+thing that could be: the window of the store that the request's page value
+names (`D04-panel`), at most `paging.DefaultLimit` widgets in creation order
+and the first page when the request carries none, each with its `Name`,
 `Count` and `Status` (and its `Seq`, which the template has no use for). The
-page passes the same slice as its data's `Table`. The table never shows more
-than the first page: the widgets after it are reached through `list_widgets`
-and the token the page shows outside the table (`D04-panel`), so the fragment,
-which the page splices over the table alone, carries no token of its own. Escaping is `html/template`'s contextual autoescaping and
+page passes the same slice as its data's `Table`. The route takes the same
+`page` query parameter as `GET /widgets` and answers the same window, and the
+page's script requests it with the page's own query, so a later window
+refreshes its own rows; the way to the next window is the page's navigation
+outside the table (`D04-panel`), so the fragment, which the page splices over
+the table alone, carries no token of its own. Escaping is `html/template`'s contextual autoescaping and
 nothing else; no template function is named, so the template set carries none
 of dummy's. One requirement ties the code to the asset by use: the fragment's
 body is exactly what executing that template on that slice writes. What the
@@ -32,7 +35,8 @@ the page's inline polling script can replace the table with whatever the
 fragment returns. That replacement is why the two renderings must be the same
 markup: one template drawing the table in both places, given the same slice,
 is what makes them so, and both the page's body and the fragment's body are
-stated as template output over the first page of the store. The fragment is a
+stated as template output over the window of the store for the same page
+value. The fragment is a
 fragment, with no banner — a caller fetching it with `curl` sees exactly the
 markup the page splices in. That the fragment holds nothing the page must keep
 — the poller, the heading, the count — is the template author's obligation.
@@ -53,7 +57,11 @@ fragment is what makes it plain. The two failures are the missing-identity 500
 and the 405; their bodies are appkit's `identity.MissingBody` and
 `MethodNotAllowedBody`, which `D04-panel` declares; this document only names
 them. The 405 names `Allow: GET, HEAD` and refuses a `POST` rather than
-redirecting it, because creating a widget is a different route.
+redirecting it, because creating a widget is a different route. A page
+value the token cannot decode is the 404 `D04-panel` gives the page, but
+plain, its body `NotFoundBody`, which `D04-panel` declares: it is decided
+before the store is read, so it is the same while the store is unreachable,
+and it carries no `ETag`.
 
 The route has one more failure, and it is plain too. While the store cannot
 reach the widgets (`D04-panel` defines the store being unreachable), there is
@@ -78,11 +86,12 @@ is narrower than RFC 9110's own grammar allows, and that is deliberate — it
 costs an implementation nothing and makes the list split sound. The contract
 fixes the *relation* — equal content yields an equal tag, and the tag changes
 when a widget is created that the table then shows — and never the value; a
-requirement that did would be fixing an implementation. Since the table shows
-the first page and a new widget is always last, a creation changes the tag
-exactly when the store held fewer than `paging.DefaultLimit` widgets before
-it. A widget created beyond the first page leaves the fragment's bytes, and so
-its tag, as they were, and a conditional poll is answered 304: the poll's job
+requirement that did would be fixing an implementation. Since a new widget is
+always last, a creation changes the first window's tag exactly when the store
+held fewer than `paging.DefaultLimit` widgets before it, and a later window's
+only when the new widget falls inside it. A widget created beyond a window
+leaves that fragment's bytes, and so its tag, as they were, and a conditional
+poll is answered 304: the poll's job
 is to keep the table fresh, and that table has not changed. The page's count
 and token, which do change, sit outside the table and catch up on the next
 load, as the count always has. It is carried by the 200 and the 304 and by
@@ -139,16 +148,17 @@ but `FormView`, which `D07-form` declares, and nothing that computes the `ETag` 
 
 ## REQUIREMENTS
 
-- R-R5EP-5TSE: The body of a 200 response to a `GET` request whose path is `/widgets/table` MUST be byte-identical to the text that executing the template named `table` in dummy's template set (`D04-panel` R-Y5H2-05Q9) writes when given as its data the **table data** for the widget set current when the response was rendered, where the **widget set current** when a response was rendered is the first page (`D04-panel` R-QEKW-QVH4) of the store `Handler` was built over at that moment and the table data for a widget set is that slice of `widget.Widget` values (`D05-widgets`) itself; the table data is the data this document names for the template `table`, which a panel page's page data carries as its `Table` (`D04-panel` R-QFST-4N7T).
-- R-HIIF-VFOP: A `GET` request carrying a non-empty `X-User-Id` header, whose path is `/widgets/table`, and which carries no `If-None-Match` field whose condition succeeds, MUST, while the store `Handler` was built over is reachable (`D04-panel`), be answered with status 200 and the header `Content-Type: text/html; charset=utf-8`.
+- R-3TML-VQO2: The body of a 200 response to a `GET` request whose path is `/widgets/table` MUST be byte-identical to the text that executing the template named `table` in dummy's template set (`D04-panel` R-Y5H2-05Q9) writes when given as its data the **table data** for the widget set current when the response was rendered, where the **widget set current** when a response was rendered is the window (`D04-panel` R-3L3B-7CH7) of the store `Handler` was built over for the request's page value (`D04-panel` R-3JVE-TKQI) at that moment and the table data for a widget set is that slice of `widget.Widget` values (`D05-widgets`) itself; the table data is the data this document names for the template `table`, which a panel page's page data carries as its `Table` (`D04-panel` R-3MB7-L47W).
+- R-3UUI-9IER: A `GET` request carrying a non-empty `X-User-Id` header, whose path is `/widgets/table`, whose page value (`D04-panel` R-3JVE-TKQI) is decodable, and which carries no `If-None-Match` field whose condition succeeds, MUST, while the store `Handler` was built over is reachable (`D04-panel`), be answered with status 200 and the header `Content-Type: text/html; charset=utf-8`.
 - R-HZFA-S3P3: A 200 response to a request whose path is `/widgets/table` MUST carry an `ETag` header whose value is a strong validator: a `"`, then at least one character, none of which is a `"`, a comma or an ASCII whitespace character, then a `"`, with no `W/` prefix and nothing before or after the quoted string.
 - R-I1V3-JN6H: Two 200 responses to `GET` requests whose path is `/widgets/table` whose bodies are byte-identical MUST carry `ETag` values that are byte-identical.
-- R-R6ML-JLJ3: A 200 response to a request whose path is `/widgets/table` sent after a widget has been created on the store `Handler` was built over, while the widgets of that store (`D04-panel`) numbered fewer than `paging.DefaultLimit`, MUST carry an `ETag` value differing from the `ETag` value carried by the last such response sent before that creation.
+- R-3YI7-ETMU: A 200 response to a request whose path is `/widgets/table` and whose page value (`D04-panel` R-3JVE-TKQI) is empty, sent after a widget has been created on the store `Handler` was built over while the widgets of that store (`D04-panel`) numbered fewer than `paging.DefaultLimit`, MUST carry an `ETag` value differing from the `ETag` value carried by the last 200 response to a request whose path is `/widgets/table` and whose page value is empty sent before that creation.
 - R-HG2N-3W7B: For a `HEAD` request whose path is `/widgets/table` and the otherwise identical `GET` request, immediately before each of which the store `Handler` was built over is reachable and its widgets (`D04-panel`) are equal element for element and in the same order, the `HEAD` request MUST be answered with the status, the `ETag` value and every other header the `GET` request is answered with, and with an empty body.
-- R-HJQC-97FE: A `GET` or `HEAD` request carrying a non-empty `X-User-Id` header, whose path is `/widgets/table`, and which carries an `If-None-Match` field at least one of whose entries — the values of all its `If-None-Match` header lines joined with commas, split on commas, each entry trimmed of leading and trailing whitespace — is exactly `*`, is byte-identical to the `ETag` value the same request would be answered with were the field absent, or is `W/` followed by that value, MUST, while the store `Handler` was built over is reachable (`D04-panel`), be answered with status 304, that same `ETag` value, and an empty body.
-- R-HKY8-MZ63: While the store `Handler` was built over is unreachable (`D04-panel`), a `GET` or `HEAD` request carrying a non-empty `X-User-Id` header whose path is `/widgets/table` MUST be answered with the unreachable answer (`D04-panel`), never in the banner failure shape, whatever `If-None-Match` fields it carries, one with the entry `*` and one carrying the `ETag` value of a 200 response to a request whose path is `/widgets/table` sent while that store was reachable included.
+- R-3W2E-NA5G: A `GET` or `HEAD` request carrying a non-empty `X-User-Id` header, whose path is `/widgets/table`, whose page value (`D04-panel` R-3JVE-TKQI) is decodable, and which carries an `If-None-Match` field at least one of whose entries — the values of all its `If-None-Match` header lines joined with commas, split on commas, each entry trimmed of leading and trailing whitespace — is exactly `*`, is byte-identical to the `ETag` value the same request would be answered with were the field absent, or is `W/` followed by that value, MUST, while the store `Handler` was built over is reachable (`D04-panel`), be answered with status 304, that same `ETag` value, and an empty body.
+- R-3XAB-11W5: While the store `Handler` was built over is unreachable (`D04-panel`), a `GET` or `HEAD` request carrying a non-empty `X-User-Id` header whose path is `/widgets/table` and whose page value (`D04-panel` R-3JVE-TKQI) is decodable MUST be answered with the unreachable answer (`D04-panel`), never in the banner failure shape, whatever `If-None-Match` fields it carries, one with the entry `*` and one carrying the `ETag` value of a 200 response to a request whose path is `/widgets/table` sent while that store was reachable included.
 - R-ICU6-ZKUQ: A `GET` or `HEAD` request carrying a non-empty `X-User-Id` header, whose path is `/widgets/table`, and which carries an `If-None-Match` field no entry of which — the values of all its `If-None-Match` header lines joined with commas, split on commas, each entry trimmed of leading and trailing whitespace — is `*`, the `ETag` value the same request would be answered with were the field absent, or `W/` followed by that value, MUST be answered exactly as it would be were the field absent, and the `ETag` value it is answered with MUST be such that no entry of that field is that value or `W/` followed by it.
 - R-IF9Z-R4C4: A request whose path is `/widgets/table` and whose `X-User-Id` header is absent or present with an empty value MUST be answered with status 500 and a response in the plain failure shape (`D04-panel`) for appkit's `identity.MissingBody`, never in the banner failure shape.
 - R-IIXO-WFK7: A request carrying a non-empty `X-User-Id` header, whose path is `/widgets/table` and whose method is neither `GET` nor `HEAD`, MUST be answered with status 405, the header `Allow: GET, HEAD`, no `Location` header, and a response in the plain failure shape (`D04-panel`) for `MethodNotAllowedBody`, never in the banner failure shape.
+- R-40Y0-6D48: A `GET` or `HEAD` request carrying a non-empty `X-User-Id` header, whose path is `/widgets/table` and whose page value (`D04-panel` R-3JVE-TKQI) is undecodable, MUST be answered with status 404 and a response in the plain failure shape (`D04-panel`) for `NotFoundBody` (`D04-panel`), never in the banner failure shape, whether the store `Handler` was built over is reachable or unreachable and whatever `If-None-Match` fields it carries.
 - R-0142-4LXJ: A response to a request carrying a non-empty `X-User-Id` header whose path is `/widgets/table` and whose status is neither 200 nor 304 MUST carry no `ETag` header.
 - R-HHAJ-HNY0: Handling a request whose path is `/widgets/table` MUST leave the store `Handler` was built over unchanged, whatever the request's method and whatever status it is answered with, the unreachable answer (`D04-panel`) included: the widgets of that store (`D04-panel`) when it is last reachable before the request and when it is first reachable after it, no other request being answered in between, are equal element for element and in the same order.
