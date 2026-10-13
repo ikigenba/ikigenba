@@ -55,7 +55,7 @@
      "Candidates within <.MaxMinutes> minutes' drive of Sandstone, with a
      fleet, a high estimate of at least <.MinRevenue> or none, fresh
      evidence and no exclusion, ranked by score: the estimate's point
-     times its effective confidence. The first page; the shortlist tool takes
+     times its effective confidence. This window; the shortlist tool takes
      other filters."), then either, when .Shortlist is empty,
      div#no-shortlist.empty holding h3 "No candidates on the shortlist" and
      a p (text "A candidate shows here once a pass has resolved scrapes'
@@ -80,7 +80,7 @@
      shows when .Shortlist is not empty or .ShortlistPage is not empty, so
      an emptied later window still offers First; on the first window with
      no candidates there is no nav. Then section#passes with h2
-     "Passes" and a p in its header (text "The first page of passes, newest first. A
+     "Passes" and a p in its header (text "Passes, newest first. A
      pass resolves a scrapes run's records into candidates and re-scores
      the candidates they touch."), then either, when .Passes is empty,
      div#no-passes.empty holding h3 "No passes yet" and a p (text "A pass
@@ -118,7 +118,7 @@
 <h1>candidates</h1>
 <p id="summary" class="lede">Candidate businesses resolved from the records scrapes collects, one per business with every record that describes it as evidence, judged against the fit test and ranked for review.</p>
 <section id="shortlist" class="card flush" aria-labelledby="shortlist-title">
-<header><div><h2 id="shortlist-title">Shortlist</h2><p>Candidates within {{.MaxMinutes}} minutes' drive of Sandstone, with a fleet, a high estimate of at least {{.MinRevenue}} or none, fresh evidence and no exclusion, ranked by score: the estimate's point times its effective confidence. The first page; the <code>shortlist</code> tool takes other filters.</p></div></header>
+<header><div><h2 id="shortlist-title">Shortlist</h2><p>Candidates within {{.MaxMinutes}} minutes' drive of Sandstone, with a fleet, a high estimate of at least {{.MinRevenue}} or none, fresh evidence and no exclusion, ranked by score: the estimate's point times its effective confidence. This window; the <code>shortlist</code> tool takes other filters.</p></div></header>
 {{if .Shortlist}}<div class="table-scroll">
 <table id="shortlist-list">
 <thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th class="num">Minutes</th><th>Class</th><th class="num">Low</th><th class="num">High</th><th class="num">Confidence</th><th class="num">Score</th></tr></thead>
@@ -145,7 +145,7 @@
 </section>
 {{if or .Shortlist .ShortlistPage}}<nav class="paging" id="paging-shortlist" aria-label="Pages">{{if .ShortlistPage}}<a href="/{{if .PassesPage}}?passes_page={{.PassesPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .ShortlistNext}}<a href="/?shortlist_page={{.ShortlistNext}}{{if .PassesPage}}&amp;passes_page={{.PassesPage}}{{end}}">Next</a>{{end}}</nav>
 {{end}}<section id="passes" class="card flush" aria-labelledby="passes-title">
-<header><div><h2 id="passes-title">Passes</h2><p>The first page of passes, newest first. A pass resolves a scrapes run's records into candidates and re-scores the candidates they touch.</p></div></header>
+<header><div><h2 id="passes-title">Passes</h2><p>Passes, newest first. A pass resolves a scrapes run's records into candidates and re-scores the candidates they touch.</p></div></header>
 {{if .Passes}}<div class="table-scroll">
 <table id="pass-list">
 <thead><tr><th>Pass</th><th>Trigger</th><th>Status</th><th>Started</th><th>Finished</th><th class="num">Rows</th><th class="num">Created</th><th class="num">Rescored</th></tr></thead>
