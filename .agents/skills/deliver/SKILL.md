@@ -5,7 +5,7 @@ description: Carry a decisions document through stories, design, build, sandbox 
 
 # Deliver a decisions document
 
-Only the user starts this operation, naming a decisions document. From that moment the human is unavailable. Every decision the document leaves open is yours: you make it when the seam that needs it is reached, record it in the decisions log, and report it at the end. Nothing in this operation asks the user anything; what only the user can supply is checked in preflight, before any work starts.
+Only the user starts this operation, naming a decisions document. After preflight the human is unavailable. Every decision the document leaves open is yours: you make it when the seam that needs it is reached, record it in the decisions log, and report it at the end. Nothing after preflight asks the user anything; what only the user can supply is checked or asked there, before any work starts.
 
 The invocation is the human instruction the root `AGENTS.md` requires. It authorizes `build-spec`; the files the build run treats as read-only under a sub-project (`AGENTS.md`, build files, `assets/`, `share/`); adding an external dependency the document names or the work turns out to need; releasing a library seam mid-sequence; and everything the finish line needs: landing the branch on `main` with `git fetch . <branch>:main`, version bumps, tagging `<lib>/vX.Y.Z` and release tags, pushing `main` and tags, and deploying. It does not authorize going past the finish line the document declares, or work the document excludes.
 
@@ -21,7 +21,7 @@ Trust the agents you delegate to. Each operation verifies its own work through f
 
 Every question a child raises comes to you and stops here. Answer it from the document when the document settles the point, from precedent and the sub-project reports when it does not, and from your own judgment otherwise. A child never asks the user and never writes a guess; you decide, it writes the settled answer. The same rule covers the document's open items, a sequence the document does not give, a pattern that does not fit precedent, a need to change `design/` or `shape/`, a dependency the work needs, and an issue the build files.
 
-Record each decision in the decisions log as you make it, never at the end. The log is a markdown file beside the document, named after it with `-decisions` before the extension, created at preflight. An entry names the seam; what was unsettled and where it came from (a document open item, a child's question, an issue path); the options; the choice and why; and where it landed (story, design id, commit) once it has. Mark a decision the human should look at first: one that departs from precedent, changes `design/` or `shape/`, adds a dependency, chooses a version, or picks a default the document called configurable.
+Record each decision in the decisions log as you make it, never at the end. The log is a markdown file beside the document, named after it with `-decisions` before the extension, created at preflight. An entry names the seam; what was unsettled and where it came from (a document open item, a child's question, an issue path); the options; the choice and why; and where it landed (story, design id, commit) once it has. Mark a decision the human should look at first: one that departs from precedent, changes `design/` or `shape/`, adds a dependency, chooses a version, or picks a default the document called configurable. A decision that makes remaining seams run one after another instead of at the same time records how much time the serial choice adds and the rejected alternative that would have kept them running together.
 
 The log is also the resume point. Re-invoking `deliver` on a document whose log exists continues from it: decisions in the log stand, and a seam the log records as delivered is not redone.
 
@@ -41,11 +41,11 @@ Defaults the user may override at invocation: `draft-stories` and `draft-design`
 
 ## Preflight
 
-Before the first delegation, check what only the user can supply: the document is readable, `sandbox status` and `sandbox token` succeed, and the working tree is clean on the branch the user started on. If any check fails, stop and tell the user before any work starts; this is the only point at which the operation addresses the user. When they pass, create the decisions log (or find the existing one and resume) and begin.
+Before the first delegation, check what only the user can supply: the document is readable, `sandbox status` and `sandbox token` succeed, and the working tree is clean on the branch the user started on. If any check fails, stop and tell the user before any work starts. When they pass, put every question the document leaves open, and your reading of each exclusion or deferral, to the user in one message and wait for the answer; this is the only point at which the operation addresses the user. Then create the decisions log (or find the existing one and resume) and begin.
 
 ## Method
 
-Walk the sequence one seam at a time:
+The sequence is a dependency order, not an execution order. At preflight derive each seam's dependencies (a library seam before its consumers, expand before contract, a shared file) and record them; every seam whose dependencies are met runs at the same time as the others. For each seam:
 
 1. **Stories.** For a command-line program, delegate `draft-stories` with the document summary, the seam and the precedent, answering its questions as Decisions says. A library has no stories; go to design with the interface the document settles. An app has none either; go to assets.
 2. **Assets.** For an app, before design, a sub-agent writes or updates the templates under `assets/` from the document and the precedent, following `design/`: every word and hook the pages show, with each template's opening comment naming the data it receives. The document's copy lands here and nowhere else. A change `design/` needs is made there first and recorded as a marked decision.
@@ -55,7 +55,7 @@ Walk the sequence one seam at a time:
 6. **Sandbox.** A sub-agent runs `sandbox up` and drives the seam's observable behavior with the stored token, reporting what it drove and saw, the pages' words included. A failure is a defect: delegate the repair through `build-spec` for a gap, `draft-design` for a wrong contract, and an edit to the asset for wrong copy or markup.
 7. **Library release.** When a later seam consumes a library seam, release it once verified: land the branch on `main`, tag `<lib>/vX.Y.Z` there and push `main` and the tag, choosing the version from the change and recording it. Later seams require that version through the ordinary module proxy.
 
-When every seam is delivered, carry the branch to the finish line: land it on `main`; bump versions and tag as each sub-project's conventions require; deploy when the document names a space. Each is a recorded step.
+A release is cut only at a commit where every seam that has started is complete, assets and build both landed; a seam with assets committed and no build blocks the release, never its siblings. When every seam is delivered, carry the branch to the finish line: land it on `main`; bump versions and tag as each sub-project's conventions require; deploy when the document names a space. Each is a recorded step.
 
 ## Context
 
