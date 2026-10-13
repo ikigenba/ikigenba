@@ -125,8 +125,35 @@ query answers only `SEARCH tokens USING INDEX tokens_profile_idx (user_id=?
 AND kind=?)`: the scan is bounded to the owner's kind and needs no sort. With
 only `tokens_user_id_idx` it adds `USE TEMP B-TREE FOR ORDER BY`, and so does
 a leading `(last_used_at IS NULL)` term without a matching expression index.
-The window holds no position after the first page: nothing in auth asks for a
-later one (D07). `tokens_user_id_idx` stays; the new index serves an owner
+`ListTokens` also takes a position, a `TokenPosition`: the last use, the
+created time and the id of the last token of the window before, which the
+profile turns into a page token of its own (D07), so the store knows nothing
+of tokens here. A nil position is the first window, read with the query
+above. With a position, the window is the tokens that follow it in profile
+order. The three columns do not run one way (two descend, `id` ascends) and
+a never-used token's `last_used_at` is NULL, so no single row-value
+comparison can express that keyset; the query is a compound of index ranges,
+each carrying the owner, the kind and part of the position, merged in profile
+order: for a used position `(L, C, I)`, `last_used_at = L AND created_at = C
+AND id > I`, then `last_used_at = L AND created_at < C`, then `last_used_at <
+L` (which leaves out NULL), then `last_used_at IS NULL`; for a never-used
+position `(C, I)`, `last_used_at IS NULL AND created_at = C AND id > I`, then
+`last_used_at IS NULL AND created_at < C`. Each part is a `UNION ALL` branch
+over the same columns, with the order and the window in the compound's
+`ORDER BY` and `LIMIT`. Checked against the SQLite that `modernc.org/sqlite`
+carries (3.53.4), `EXPLAIN QUERY PLAN` answers `MERGE (UNION ALL)` over one
+`SEARCH tokens USING INDEX tokens_profile_idx` per branch, each with the
+owner, the kind and the branch's equalities and range (`(user_id=? AND
+kind=? AND last_used_at=? AND created_at=? AND id>?)`, `(... created_at<?)`,
+`(... last_used_at<?)`, `(... last_used_at=?)` for the NULL branch), and no
+temporary B-tree: SQLite merges the index orders from the position on and its
+`LIMIT` stops the merge early, so a window costs the same however deep it is.
+The single query that `OR`s the same conditions answers only `SEARCH tokens
+USING INDEX tokens_profile_idx (user_id=? AND kind=?)`: it needs no sort and
+holds no more rows, but it walks every token before the position. The
+existing index already has the profile order's columns and directions, so no
+migration is needed. Times are compared as the instants the store keeps, Unix
+nanoseconds. `tokens_user_id_idx` stays; the new index serves an owner
 lookup as well, and removing the old one is left for a later migration.
 Because `0004` indexes `kind`, a column SQLite will not drop while an index
 names it, a test that builds an earlier auth's database drops
@@ -227,7 +254,8 @@ was created.
 - R-4PX3-AXQC: `internal/store` MUST export `func (*Store) CreateLoginState(verifier, returnURL string) (LoginState, error)`.
 - R-4R4Z-OPH1: `internal/store` MUST export `func (*Store) ConsumeLoginState(state string) (LoginState, error)`.
 - R-4SCW-2H7Q: `internal/store` MUST export `func (*Store) CreateToken(userID, name string, expiry Expiry, now time.Time) (Token, string, error)`, whose second result is the plaintext secret.
-- R-95RQ-1FT0: `internal/store` MUST export `func (*Store) ListTokens(userID string, kind TokenKind, n int) ([]Token, error)`.
+- R-E0YZ-6DO8: `internal/store` MUST export `type TokenPosition struct` with exactly the fields `LastUsedAt *time.Time`, `CreatedAt time.Time`, and `ID string`.
+- R-E26V-K5EX: `internal/store` MUST export `func (*Store) ListTokens(userID string, kind TokenKind, after *TokenPosition, n int) ([]Token, error)`.
 - R-96ZM-F7JP: `internal/store` MUST export `func (*Store) FindToken(userID, tokenID string) (Token, error)`.
 - R-4X8H-LK6I: `internal/store` MUST export `func (*Store) SetTokenEnabled(userID, tokenID string, enabled bool) error`.
 - R-4YGD-ZBX7: `internal/store` MUST export `func (*Store) DeleteToken(userID, tokenID string) error`.
@@ -267,7 +295,7 @@ was created.
 - R-FHZK-LD6A: `CreateToken` MUST create a `Token` owned by `userID` whose `ID` is `TokenIDPrefix` followed by a freshly minted opaque id (via `NewID`), with the given `Name`, `Kind` equal to `TokenPersonal`, `Host` the empty string, `Enabled` true, `CreatedAt` equal to `now`, `LastUsedAt` nil, and `Hash` equal to `HashSecret` of a freshly minted secret (via `NewSecret`); it MUST return that record together with the plaintext secret as its second result and MUST persist only the hash, never the plaintext.
 - R-5O2A-0IHS: `CreateToken` MUST set `ExpiresAt` from `expiry`: nil for `ExpiryNever`, `now` plus 30 days for `Expiry30d`, `now` plus 90 days for `Expiry90d`, and `now` plus 365 days for `Expiry365d` (a day being 24 hours).
 - R-987I-SZAE: auth's design defines that a token `a` **precedes** a token `b` **in profile order** when `a.LastUsedAt` is non-nil and `b.LastUsedAt` is nil; when both are non-nil and the time `a.LastUsedAt` points to is later than the time `b.LastUsedAt` points to; when both are nil, or both are non-nil and point to the same instant, and `a.CreatedAt` is later than `b.CreatedAt`; when, in that same case, `a.CreatedAt` and `b.CreatedAt` are the same instant and `a.ID` is less than `b.ID` compared byte by byte; and in no other case; every requirement of auth's design that says a token precedes another in profile order, or names profile order, MUST denote that.
-- R-99FF-6R13: `ListTokens` MUST return the tokens owned by `userID` whose `Kind` is `kind`, each with its fields as they stand when the call is made, and no other token: when they number no more than `n`, every one of them, and otherwise the `n` of them that come first in profile order (R-987I-SZAE); the element of a token `a` lying before that of a token `b` whenever `a` precedes `b` in profile order; it MUST return a slice of length zero when `n` is less than 1, and MUST modify no row; so that a user's token of the other kind, or another user's token, is never among them however large `n` is, every token never used follows every token used, and two tokens last used at the same instant and created at the same instant are returned in byte order of their `ID`s.
+- R-E3ER-XX5M: auth's design defines that a token `t` **follows** a `TokenPosition` `p` when a token whose `LastUsedAt`, `CreatedAt` and `ID` are `p`'s fields of those names precedes `t` in profile order (R-987I-SZAE), and in no other case; `ListTokens` MUST return the tokens owned by `userID` whose `Kind` is `kind` and, when `after` is not nil, that follow the `TokenPosition` `after` points to, each with its fields as they stand when the call is made, and no other token: when they number no more than `n`, every one of them, and otherwise the `n` of them that come first in profile order; the element of a token `a` lying before that of a token `b` whenever `a` precedes `b` in profile order; it MUST return a slice of length zero when `n` is less than 1, and MUST modify no row; and every requirement of auth's design that names a `ListTokens` call without stating its `after` MUST denote that call with a nil `after`; so that a user's token of the other kind, or another user's token, is never among them however large `n` is, every token never used follows every token used, two tokens last used at the same instant and created at the same instant are returned in byte order of their `ID`s, an `after` holding the `LastUsedAt`, `CreatedAt` and `ID` of a token that the same call with a nil `after` returns leaves out that token and every one before it in profile order, an `after` whose `LastUsedAt` is nil leaves out every token used, and an `after` whose fields are no token's lands where profile order puts it.
 - R-9ANB-KIRS: `FindToken` MUST return the token whose `ID` is `tokenID`, with its fields as they stand when the call is made, when that token is owned by `userID`, whatever its `Kind`; MUST return `ErrNotFound` when `tokenID` names a token owned by another user or names no token; and MUST modify no row in either case.
 - R-FJ7G-Z4WZ: `SetTokenEnabled` MUST set `Enabled` to the argument for the token when `tokenID` names a token whose `Kind` is `TokenPersonal` owned by `userID`, and MUST return `ErrNotFound` (changing nothing) when the id names a token whose `Kind` is `TokenClient`, a token owned by another user, or no token.
 - R-FKFD-CWNO: `DeleteToken` MUST remove the token when `tokenID` names a token whose `Kind` is `TokenPersonal` owned by `userID`, and MUST return `ErrNotFound` (changing nothing) when the id names a token whose `Kind` is `TokenClient`, a token owned by another user, or no token.
