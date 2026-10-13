@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/repos/internal/clone"
 	"github.com/ikigenba/ikigenba/repos/internal/store"
 	"github.com/ikigenba/ikigenba/repos/internal/tools"
@@ -22,9 +23,9 @@ func registryExpectedMetadata() []struct {
 		name, input, output string
 		effect              mcp.Effect
 	}{
-		{"list", "{\"type\":\"object\",\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"repos\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"size_bytes\":{\"type\":\"integer\"},\"head\":{\"type\":\"string\"},\"available\":{\"type\":\"boolean\"}},\"required\":[\"id\",\"name\",\"size_bytes\",\"available\"],\"additionalProperties\":false}}},\"required\":[\"repos\"],\"additionalProperties\":false}", mcp.Read},
+		{"list", pagingInputSchema(), strings.ReplaceAll("{\"type\":\"object\",\"properties\":{\"repos\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"size_bytes\":{\"type\":\"integer\"},\"head\":{\"type\":\"string\"},\"available\":{\"type\":\"boolean\"}},\"required\":[\"id\",\"name\",\"size_bytes\",\"available\"],\"additionalProperties\":false}},\"next\":{\"type\":\"string\",\"description\":\"NEXT_COPY\"}},\"required\":[\"repos\"],\"additionalProperties\":false}", `"NEXT_COPY"`, pagingCopy(paging.NextDescription)), mcp.Read},
 		{"show", "{\"type\":\"object\",\"properties\":{\"repo\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"repo\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"default_branch\":{\"type\":\"string\"},\"head\":{\"type\":\"string\"},\"size_bytes\":{\"type\":\"integer\"},\"available\":{\"type\":\"boolean\"},\"created\":{\"type\":\"string\"},\"clone_url\":{\"type\":\"string\"},\"credentials\":{\"type\":\"string\"}},\"required\":[\"id\",\"name\",\"default_branch\",\"size_bytes\",\"available\",\"created\",\"clone_url\",\"credentials\"],\"additionalProperties\":false}", mcp.Read},
-		{"status", "{\"type\":\"object\",\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"read\":{\"type\":\"object\",\"properties\":{\"slots\":{\"type\":\"integer\"},\"active\":{\"type\":\"integer\"},\"queued\":{\"type\":\"integer\"}},\"required\":[\"slots\",\"active\",\"queued\"],\"additionalProperties\":false},\"write\":{\"type\":\"object\",\"properties\":{\"slots\":{\"type\":\"integer\"},\"active\":{\"type\":\"integer\"},\"queued\":{\"type\":\"integer\"}},\"required\":[\"slots\",\"active\",\"queued\"],\"additionalProperties\":false},\"repos\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"size_bytes\":{\"type\":\"integer\"},\"limit_bytes\":{\"type\":\"integer\"},\"available\":{\"type\":\"boolean\"},\"busy\":{\"type\":\"boolean\"}},\"required\":[\"id\",\"name\",\"size_bytes\",\"limit_bytes\",\"available\",\"busy\"],\"additionalProperties\":false}}},\"required\":[\"read\",\"write\",\"repos\"],\"additionalProperties\":false}", mcp.Read},
+		{"status", pagingInputSchema(), strings.ReplaceAll("{\"type\":\"object\",\"properties\":{\"read\":{\"type\":\"object\",\"properties\":{\"slots\":{\"type\":\"integer\"},\"active\":{\"type\":\"integer\"},\"queued\":{\"type\":\"integer\"}},\"required\":[\"slots\",\"active\",\"queued\"],\"additionalProperties\":false},\"write\":{\"type\":\"object\",\"properties\":{\"slots\":{\"type\":\"integer\"},\"active\":{\"type\":\"integer\"},\"queued\":{\"type\":\"integer\"}},\"required\":[\"slots\",\"active\",\"queued\"],\"additionalProperties\":false},\"repos\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"size_bytes\":{\"type\":\"integer\"},\"limit_bytes\":{\"type\":\"integer\"},\"available\":{\"type\":\"boolean\"},\"busy\":{\"type\":\"boolean\"}},\"required\":[\"id\",\"name\",\"size_bytes\",\"limit_bytes\",\"available\",\"busy\"],\"additionalProperties\":false}},\"next\":{\"type\":\"string\",\"description\":\"NEXT_COPY\"}},\"required\":[\"read\",\"write\",\"repos\"],\"additionalProperties\":false}", `"NEXT_COPY"`, pagingCopy(paging.NextDescription)), mcp.Read},
 		{"create", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"name\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"default_branch\":{\"type\":\"string\"},\"head\":{\"type\":\"string\"},\"size_bytes\":{\"type\":\"integer\"},\"available\":{\"type\":\"boolean\"},\"created\":{\"type\":\"string\"},\"clone_url\":{\"type\":\"string\"},\"credentials\":{\"type\":\"string\"}},\"required\":[\"id\",\"name\",\"default_branch\",\"size_bytes\",\"available\",\"created\",\"clone_url\",\"credentials\"],\"additionalProperties\":false}", mcp.Additive},
 		{"rename", "{\"type\":\"object\",\"properties\":{\"repo\":{\"type\":\"string\",\"description\":\"fixture\"},\"name\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"repo\",\"name\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"default_branch\":{\"type\":\"string\"},\"head\":{\"type\":\"string\"},\"size_bytes\":{\"type\":\"integer\"},\"available\":{\"type\":\"boolean\"},\"created\":{\"type\":\"string\"},\"clone_url\":{\"type\":\"string\"},\"credentials\":{\"type\":\"string\"}},\"required\":[\"id\",\"name\",\"default_branch\",\"size_bytes\",\"available\",\"created\",\"clone_url\",\"credentials\"],\"additionalProperties\":false}", mcp.Destructive},
 		{"delete", "{\"type\":\"object\",\"properties\":{\"repo\":{\"type\":\"string\",\"description\":\"fixture\"}},\"required\":[\"repo\"],\"additionalProperties\":false}", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"}},\"required\":[\"id\",\"name\"],\"additionalProperties\":false}", mcp.Destructive},
@@ -43,7 +44,11 @@ func assertRegistryMetadata(t *testing.T, f *toolsFixture) {
 		if g.Description == "" {
 			t.Fatal("empty tool description")
 		}
-		assertRegistryInput(t, g.InputSchema, w.input)
+		if g.Name == "list" || g.Name == "status" {
+			toolsEqual(t, string(g.InputSchema), w.input)
+		} else {
+			assertRegistryInput(t, g.InputSchema, w.input)
+		}
 		toolsEqual(t, string(g.OutputSchema), w.output)
 		toolsEqual(t, g.Effect(), w.effect)
 		if g.Annotations.ReadOnlyHint == nil || g.Annotations.DestructiveHint == nil || g.Annotations.OpenWorldHint == nil {
@@ -59,7 +64,7 @@ func assertRegistryMetadata(t *testing.T, f *toolsFixture) {
 func TestRegistryExactMetadataAndStability(t *testing.T) {
 	// R-UFI1-7ZPQ
 	// R-0QW7-YLRA R-LS48-WEAA
-	// R-0S44-CDHZ R-UHXT-ZJ74 R-UJ5Q-DAXT R-UKDM-R2OI R-0Y7M-987G R-0ZFI-MZY5 R-10NF-0ROU R-11VB-EJFJ R-UP98-A5NA
+	// R-10MC-IEEV R-UHXT-ZJ74 R-UJ5Q-DAXT R-UKDM-R2OI R-0Y7M-987G R-1325-9XW9 R-14A1-NPMY R-11VB-EJFJ R-UP98-A5NA
 	f := newToolsFixture(t)
 	assertRegistryMetadata(t, f)
 	successObject(t, f.call(t, "list", `{}`))
@@ -155,7 +160,7 @@ func registryFailingCalls() []struct{ name, args string } {
 }
 
 func TestRegistryFailingStoreRefusesAndPreservesState(t *testing.T) {
-	// R-ULLJ-4UF7 R-UO1B-WDWL R-UQH4-NXDZ
+	// R-ULLJ-4UF7 R-UO1B-WDWL R-UQH4-NXDZ R-FQJT-L42J
 	f := newToolsFixture(t)
 	f.create(t, f.Caller.UserID, "notes")
 	f.create(t, f.Caller.UserID, "taken")
@@ -266,4 +271,13 @@ func assertRegistryInput(t *testing.T, got []byte, want string) {
 		normalized = strings.ReplaceAll(normalized, `"description":`+string(encoded), `"description":"fixture"`)
 	}
 	toolsEqual(t, normalized, want)
+}
+
+func pagingCopy(value string) string {
+	raw, _ := json.Marshal(value)
+	return string(raw)
+}
+
+func pagingInputSchema() string {
+	return `{"type":"object","properties":{"page":{"type":"string","description":` + pagingCopy(paging.PageDescription) + `},"limit":{"type":"integer","description":` + pagingCopy(paging.LimitDescription) + `}},"additionalProperties":false}`
 }

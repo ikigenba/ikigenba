@@ -202,10 +202,21 @@ func (s *Store) rows(ctx context.Context, tx *sql.Tx, query string, args ...any)
 	return result, rows.Err()
 }
 
-// List returns this owner's repositories in name order.
-func (s *Store) List(ctx context.Context, owner string) ([]Repo, error) {
+// List returns a bounded window of this owner's repositories after a name.
+func (s *Store) List(ctx context.Context, owner string, after *string, n int) ([]Repo, error) {
 	return transact(ctx, s, false, func(tx *sql.Tx) ([]Repo, error) {
-		return s.rows(ctx, tx, "SELECT "+columns+" FROM repos WHERE owner=? ORDER BY name", owner)
+		if n < 1 {
+			return []Repo{}, nil
+		}
+		query := "SELECT " + columns + " FROM repos WHERE owner=?"
+		args := []any{owner}
+		if after != nil {
+			query += " AND name COLLATE BINARY>?"
+			args = append(args, *after)
+		}
+		query += " ORDER BY name COLLATE BINARY LIMIT ?"
+		args = append(args, n)
+		return s.rows(ctx, tx, query, args...)
 	})
 }
 

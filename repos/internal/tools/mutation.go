@@ -89,23 +89,15 @@ func (cfg Config) rename(ctx context.Context, caller identity.Caller, args renam
 }
 
 func (cfg Config) renameMissing(ctx context.Context, caller identity.Caller, args renameArgs, validName bool) error {
-	repos, err := cfg.Store.List(ctx, caller.UserID)
-	if err != nil {
-		if !validName {
-			return ruleRefusal("name: " + InvalidName)
-		}
-		return errUnreachable
-	}
 	lines := []string{missingLine(args.Repo)}
 	if !validName {
-		lines = append(lines, "name: "+InvalidName)
-	} else {
-		for _, r := range repos {
-			if r.Name == args.Name {
-				lines = append(lines, takenLine(args.Name))
-				break
-			}
-		}
+		return ruleRefusal(append(lines, "name: "+InvalidName)...)
+	}
+	_, err := cfg.Store.Find(ctx, caller.UserID, args.Name)
+	if err == nil {
+		lines = append(lines, takenLine(args.Name))
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return errUnreachable
 	}
 	return ruleRefusal(lines...)
 }

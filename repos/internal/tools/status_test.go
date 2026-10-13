@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -12,13 +13,14 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/repos/internal/limits"
 	"github.com/ikigenba/ikigenba/repos/internal/settings"
 	"github.com/ikigenba/ikigenba/repos/internal/store"
 	"github.com/ikigenba/ikigenba/repos/internal/tools"
 )
 
-// R-9B5A-8V19 R-9CD6-MMRY R-9G0V-RY01
+// R-13WE-8O1B R-FRRP-YVT8 R-9G0V-RY01
 func TestStatusArgumentsAndEmptyOwner(t *testing.T) {
 	f := newToolsFixture(t)
 	f.create(t, "other", "private")
@@ -38,7 +40,7 @@ func statusRepository(t *testing.T, f *toolsFixture, r store.Repo, limit int64, 
 	return fmt.Sprintf(`{"id":%q,"name":%q,"size_bytes":%d,"limit_bytes":%d,"available":%t,"busy":%t}`, r.ID, r.Name, size, limit, r.Available, busy)
 }
 
-// R-9CD6-MMRY R-9ESZ-E69C R-9G0V-RY01
+// R-FRRP-YVT8 R-9ESZ-E69C R-9G0V-RY01
 func TestStatusReadsPressureAndBusyWithoutTakingResources(t *testing.T) {
 	f := newToolsFixture(t)
 	zeta := f.create(t, f.Caller.UserID, "zeta")
@@ -143,7 +145,7 @@ func statusWaitCanceled(t *testing.T, done <-chan error) {
 	}
 }
 
-// R-9DL3-0EIN
+// R-FSZM-CNJX
 func TestStatusRefusesUnreachableList(t *testing.T) {
 	f := newToolsFixture(t)
 	f.create(t, f.Caller.UserID, "notes")
@@ -166,7 +168,7 @@ func (c *statusCancelOnAccess) Err() error {
 	return c.Context.Err()
 }
 
-// R-9DL3-0EIN
+// R-FSZM-CNJX
 func TestStatusRefusesSizeFailureAfterSuccessfulList(t *testing.T) {
 	f := newToolsFixture(t)
 	f.create(t, f.Caller.UserID, "notes")
@@ -178,7 +180,7 @@ func TestStatusRefusesSizeFailureAfterSuccessfulList(t *testing.T) {
 			ctx, cancel := context.WithCancel(toolsContext(t))
 			defer cancel()
 			probe := &statusCancelOnAccess{Context: ctx, cancel: cancel}
-			repos, err := f.Store.List(probe, f.Caller.UserID)
+			repos, err := f.Store.List(probe, f.Caller.UserID, nil, 3)
 			toolsMust(t, err)
 			toolsEqual(t, len(repos), 2)
 			for i := range completedSizes {
@@ -194,7 +196,7 @@ func TestStatusRefusesSizeFailureAfterSuccessfulList(t *testing.T) {
 			// but makes this particular Size fail before using it over MCP.
 			check, stop := decorate(toolsContext(t))
 			defer stop()
-			_, err = f.Store.List(check, f.Caller.UserID)
+			_, err = f.Store.List(check, f.Caller.UserID, nil, 3)
 			toolsMust(t, err)
 			for i := range completedSizes {
 				_, err = f.Store.Size(check, repos[i].ID)
@@ -220,5 +222,48 @@ func TestStatusRefusesSizeFailureAfterSuccessfulList(t *testing.T) {
 			toolsEqual(t, toolsSnapshot(t, f.Root), disk)
 			assertOnlyToolCalls(t, f, offset, "ok", "error")
 		})
+	}
+}
+
+// R-13WE-8O1B
+func TestStatusDecodesPagingArgumentsBeforeHandlerValidation(t *testing.T) {
+	f := newToolsFixture(t)
+	for _, tc := range []struct{ args, text string }{
+		{`{"page":1}`, "page: expected string, got number"},
+		{`{"page":true}`, "page: expected string, got boolean"},
+		{`{"page":[]}`, "page: expected string, got array"},
+		{`{"page":{}}`, "page: expected string, got object"},
+		{`{"limit":"1"}`, "limit: expected integer, got string"},
+		{`{"limit":true}`, "limit: expected integer, got boolean"},
+		{`{"limit":[]}`, "limit: expected integer, got array"},
+		{`{"limit":{}}`, "limit: expected integer, got object"},
+		{`{"limit":1.5}`, "limit: expected integer, got 1.5"},
+		{`{"page":false,"limit":[]}`, "page: expected string, got boolean\nlimit: expected integer, got array"},
+		{`[]`, "arguments: expected object, got array"},
+		{fmt.Sprintf(`{"limit":%d}`, uint64(math.MaxInt)+1), fmt.Sprintf("limit: must be between %d and %d, got %d", math.MinInt, math.MaxInt, uint64(math.MaxInt)+1)},
+		{fmt.Sprintf(`{"limit":-%d}`, uint64(math.MaxInt)+2), fmt.Sprintf("limit: must be between %d and %d, got -%d", math.MinInt, math.MaxInt, uint64(math.MaxInt)+2)},
+		{`{"page":"broken","limit":0,"repo":"notes"}`, "repo: unknown field"},
+	} {
+		offset := len(f.events(t))
+		refusal(t, f.call(t, "status", tc.args), "invalid arguments:\n"+tc.text)
+		assertOnlyToolCalls(t, f, offset, "invalid_arguments")
+	}
+	for _, page := range []any{nil, "", paging.Token{Tool: "status"}.Encode("cursor"), "broken"} {
+		for _, limit := range []any{nil, 1, paging.MaxLimit, math.MinInt, math.MaxInt} {
+			offset := len(f.events(t))
+			result := f.call(t, "status", pageArguments(t, page, limit))
+			expected := "ok"
+			if value, ok := limit.(int); ok && (value < 1 || value > paging.MaxLimit) {
+				_, err := paging.Window(&value)
+				refusal(t, result, err.Error())
+				expected = "error"
+			} else if page == "broken" {
+				refusal(t, result, paging.BadPage)
+				expected = "error"
+			} else {
+				successObject(t, result)
+			}
+			assertOnlyToolCalls(t, f, offset, expected)
+		}
 	}
 }

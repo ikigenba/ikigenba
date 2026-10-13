@@ -42,7 +42,7 @@ func TestVerificationSoundnessDamageRecoveryAndEvents(t *testing.T) {
 			got, err := s.Find(testContext(t), r.Owner, r.ID)
 			must(t, err)
 			same(t, got.Available, false)
-			list, err := s.List(testContext(t), r.Owner)
+			list, err := s.List(testContext(t), r.Owner, nil, 2)
 			must(t, err)
 			same(t, list[0].Available, false)
 			same(t, list[1], sound)
@@ -117,7 +117,7 @@ func TestAvailabilityChangesOnlyWithVerifyAndSurvivesReopen(t *testing.T) {
 	got, err = s.Find(testContext(t), r.Owner, r.Name)
 	must(t, err)
 	same(t, got, r)
-	list, err := s.List(testContext(t), r.Owner)
+	list, err := s.List(testContext(t), r.Owner, nil, 1)
 	must(t, err)
 	same(t, list, []store.Repo{r})
 	same(t, all(t, s), []store.Repo{r})
@@ -127,18 +127,12 @@ func TestAvailabilityChangesOnlyWithVerifyAndSurvivesReopen(t *testing.T) {
 }
 
 func TestOwnerReadsAndOrdering(t *testing.T) {
-	// R-MRIY-PBEX R-MSQV-335M R-MTYR-GUWB
+	// R-MRIY-PBEX R-MTYR-GUWB
 	f := setup(t)
 	s := f.open(t)
 	z := create(t, s, "owner", "zeta")
 	a := create(t, s, "owner", "alpha")
 	other := create(t, s, "other", "other")
-	list, err := s.List(testContext(t), "owner")
-	must(t, err)
-	same(t, list, []store.Repo{a, z})
-	empty, err := s.List(testContext(t), "missing")
-	must(t, err)
-	same(t, empty, []store.Repo{})
 	same(t, all(t, s), []store.Repo{z, a, other})
 	for _, r := range []store.Repo{z, a, other} {
 		for _, ref := range []string{r.ID, r.Name} {
@@ -157,6 +151,65 @@ func TestOwnerReadsAndOrdering(t *testing.T) {
 	f = setup(t)
 	s = f.open(t)
 	same(t, all(t, s), []store.Repo{})
+}
+
+func TestListNameWindows(t *testing.T) {
+	// R-0ZEG-4MO6
+	f := setup(t)
+	s := f.open(t)
+	z := create(t, s, "owner", "zeta")
+	ab := create(t, s, "owner", "ab")
+	one := create(t, s, "owner", "1")
+	a := create(t, s, "owner", "a")
+	aa := create(t, s, "owner", "a-a")
+	create(t, s, "other", "a")
+	create(t, s, "other", "aa")
+	ordered := []store.Repo{one, a, aa, ab, z}
+	bound := func(value string) *string { return &value }
+	cases := []struct {
+		name  string
+		owner string
+		after *string
+		n     int
+		want  []store.Repo
+	}{
+		{"first-one", "owner", nil, 1, ordered[:1]},
+		{"first-window", "owner", nil, 3, ordered[:3]},
+		{"exact-count", "owner", nil, len(ordered), ordered},
+		{"larger-count", "owner", nil, len(ordered) + 1, ordered},
+		{"empty-bound", "owner", bound(""), 10, ordered},
+		{"strict-bound", "owner", bound("a"), 2, ordered[2:4]},
+		{"between-names", "owner", bound("aa"), 10, ordered[3:]},
+		{"byte-bound", "owner", bound("A"), 10, ordered[1:]},
+		{"last-bound", "owner", bound(z.Name), 10, []store.Repo{}},
+		{"beyond-bound", "owner", bound("é"), 10, []store.Repo{}},
+		{"zero-count", "owner", nil, 0, []store.Repo{}},
+		{"negative-count", "owner", bound("a"), -1, []store.Repo{}},
+		{"missing-owner", "missing", nil, 10, []store.Repo{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := s.List(testContext(t), tc.owner, tc.after, tc.n)
+			must(t, err)
+			same(t, got, tc.want)
+		})
+	}
+	var collected []store.Repo
+	var after *string
+	for {
+		window, err := s.List(testContext(t), "owner", after, 2)
+		must(t, err)
+		if len(window) == 0 {
+			same(t, window, []store.Repo{})
+			break
+		}
+		collected = append(collected, window...)
+		after = bound(window[len(window)-1].Name)
+		if len(collected) > len(ordered) {
+			t.Fatal("window repeated repositories")
+		}
+	}
+	same(t, collected, ordered)
 }
 
 func TestHeadExactLoosePackedAndDamaged(t *testing.T) {

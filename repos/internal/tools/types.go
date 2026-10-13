@@ -20,7 +20,10 @@ type Config struct {
 	Telemetry *telemetry.Writer
 }
 
-type emptyArgs struct{}
+type pageArgs struct {
+	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
+}
 
 type repoArgs struct {
 	Repo string `json:"repo" mcp:"required" description:"The repository's id (rep_ and 16 hexadecimal digits) or its name."`
@@ -57,6 +60,7 @@ type listingEntry struct {
 
 type listOutput struct {
 	Repos []listingEntry `json:"repos" mcp:"required"`
+	Next  *string        `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
 type deleteOutput struct {
@@ -83,6 +87,7 @@ type statusOutput struct {
 	Read  usageOutput   `json:"read" mcp:"required"`
 	Write usageOutput   `json:"write" mcp:"required"`
 	Repos []statusEntry `json:"repos" mcp:"required"`
+	Next  *string       `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
 // Unreachable is the refusal for an unreachable store.

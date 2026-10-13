@@ -16,7 +16,8 @@ func calls(ctx context.Context, s *store.Store, w *telemetry.Writer, r store.Rep
 	return []func() error{
 		func() error { return s.Verify(ctx, w) },
 		func() error { _, err := s.Find(ctx, r.Owner, r.ID); return err },
-		func() error { _, err := s.List(ctx, r.Owner); return err },
+		func() error { _, err := s.List(ctx, r.Owner, nil, 1); return err },
+		func() error { _, err := s.List(ctx, r.Owner, nil, 0); return err },
 		func() error { _, err := s.All(ctx); return err },
 		func() error { _, err := s.Size(ctx, r.ID); return err },
 		func() error { _, err := s.Create(ctx, r.Owner, "new"); return err },
@@ -109,7 +110,7 @@ func TestConcurrentAllMethods(t *testing.T) {
 				errs <- fmt.Errorf("find differs: %+v", found)
 				return
 			}
-			list, err := s.List(testContext(t), owner)
+			list, err := s.List(testContext(t), owner, nil, 1)
 			if err != nil {
 				errs <- err
 				return

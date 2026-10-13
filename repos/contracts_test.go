@@ -184,7 +184,7 @@ func newContractFixture(t *testing.T) *contractFixture {
 	return f
 }
 
-// R-UI1W-LL6T R-SXIX-FTGL R-SYQT-TL7A R-T4UB-QFWR: Construct the exact
+// R-UI1W-LL6T R-SXIX-FTGL R-0Y6J-QUXH R-T4UB-QFWR: Construct the exact
 // store types and call each catalog, verification and path operation.
 func TestStorePublicContract(t *testing.T) {
 	f := newContractFixture(t)
@@ -205,7 +205,7 @@ func TestStorePublicContract(t *testing.T) {
 	if err := f.store.Verify(t.Context(), f.writer); err != nil {
 		t.Fatal(err)
 	}
-	for _, list := range []func(context.Context) ([]store.Repo, error){f.store.All, func(ctx context.Context) ([]store.Repo, error) { return f.store.List(ctx, "owner") }} {
+	for _, list := range []func(context.Context) ([]store.Repo, error){f.store.All, func(ctx context.Context) ([]store.Repo, error) { return f.store.List(ctx, "owner", nil, 1) }} {
 		got, err := list(t.Context())
 		if err != nil || len(got) != 1 || got[0] != r {
 			t.Fatalf("catalog=%+v, %v", got, err)

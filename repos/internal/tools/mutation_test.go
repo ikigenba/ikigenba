@@ -82,6 +82,43 @@ func TestMutationLateHeadFailurePreservesState(t *testing.T) {
 	toolsEqual(t, toolsSnapshot(t, f.Root), disk)
 }
 
+// R-FQJT-L42J
+func TestMutationMissingRenameRefusesWhenNameLookupFails(t *testing.T) {
+	f := newToolsFixture(t)
+	f.create(t, f.Caller.UserID, "taken")
+	ctx, cancel := context.WithCancel(toolsContext(t))
+	defer cancel()
+	probe := &statusCancelOnAccess{Context: ctx, cancel: cancel}
+	var threshold int64
+	toolsMust(t, f.Store.Coordinate(probe, func(ctx context.Context) error {
+		_, err := f.Store.Find(ctx, f.Caller.UserID, "missing")
+		if !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("initial Find error = %v, want not found", err)
+		}
+		threshold = probe.calls.Load() + 1
+		return nil
+	}))
+	decorate := func(ctx context.Context) (context.Context, context.CancelFunc) {
+		ctx, stop := context.WithCancel(ctx)
+		return &statusCancelOnAccess{Context: ctx, cancel: stop, threshold: threshold}, stop
+	}
+	check, stop := decorate(toolsContext(t))
+	defer stop()
+	err := f.Store.Coordinate(check, func(ctx context.Context) error {
+		_, err := f.Store.Find(ctx, f.Caller.UserID, "missing")
+		if !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("initial Find error = %v, want not found", err)
+		}
+		_, err = f.Store.Find(ctx, f.Caller.UserID, "taken")
+		return err
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("name Find error = %v, want canceled", err)
+	}
+	f.Client = queryContextClient(t, f, decorate)
+	refusal(t, f.call(t, "rename", toolsArguments("missing", "taken")), tools.Unreachable)
+}
+
 func mutationObject(t *testing.T, result mcp.Result) map[string]json.RawMessage {
 	t.Helper()
 	var object map[string]json.RawMessage
@@ -333,7 +370,7 @@ func TestMutationRenamePreservesIdentityAndHistoryWhileBusy(t *testing.T) {
 	want := r
 	want.Name = "journal"
 	toolsEqual(t, renamed, want)
-	owned, err := f.Store.List(toolsContext(t), f.Caller.UserID)
+	owned, err := f.Store.List(toolsContext(t), f.Caller.UserID, nil, 1)
 	toolsMust(t, err)
 	toolsEqual(t, owned, []store.Repo{want})
 	toolsEqual(t, string(successObject(t, result)), queryRepository(t, f, renamed, f.Base, head))
@@ -440,7 +477,7 @@ func TestMutationDeleteOnlyTheNamedRepositoryAndReleaseHold(t *testing.T) {
 			all, err := f.Store.All(toolsContext(t))
 			toolsMust(t, err)
 			toolsEqual(t, all, []store.Repo{other})
-			owned, err := f.Store.List(toolsContext(t), f.Caller.UserID)
+			owned, err := f.Store.List(toolsContext(t), f.Caller.UserID, nil, 1)
 			toolsMust(t, err)
 			toolsEqual(t, len(owned), 0)
 			_, err = os.Lstat(f.Store.Dir(r.ID))
@@ -489,7 +526,7 @@ func TestMutationDeleteUnavailableMissingBrokenAndRegularFile(t *testing.T) {
 			all, err := f.Store.All(toolsContext(t))
 			toolsMust(t, err)
 			toolsEqual(t, len(all), 0)
-			owned, err := f.Store.List(toolsContext(t), f.Caller.UserID)
+			owned, err := f.Store.List(toolsContext(t), f.Caller.UserID, nil, 1)
 			toolsMust(t, err)
 			toolsEqual(t, len(owned), 0)
 			entries, err := os.ReadDir(f.Root)

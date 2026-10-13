@@ -8,12 +8,12 @@ import (
 	"github.com/ikigenba/ikigenba/repos/internal/store"
 )
 
-func (cfg Config) list(ctx context.Context, caller identity.Caller, _ emptyArgs) (listOutput, error) {
-	repos, err := cfg.Store.List(ctx, caller.UserID)
+func (cfg Config) list(ctx context.Context, caller identity.Caller, args pageArgs) (listOutput, error) {
+	repos, next, err := cfg.page(ctx, caller.UserID, "list", args)
 	if err != nil {
-		return listOutput{}, errUnreachable
+		return listOutput{}, err
 	}
-	out := listOutput{Repos: make([]listingEntry, 0, len(repos))}
+	out := listOutput{Repos: make([]listingEntry, 0, len(repos)), Next: next}
 	for _, r := range repos {
 		size, err := cfg.Store.Size(ctx, r.ID)
 		if err != nil {

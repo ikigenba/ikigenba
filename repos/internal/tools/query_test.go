@@ -3,6 +3,7 @@ package tools_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -64,8 +65,8 @@ func assertOnlyToolCalls(t *testing.T, f *toolsFixture, offset int, outcomes ...
 	}
 }
 
-// R-7Y5T-5AG1 R-81TI-ALO4 R-Q4HR-3JLU R-849B-255I
-// R-85H7-FWW7 R-86P3-TOMW R-USWX-FGVD R-8BKP-CRLO
+// R-7Y5T-5AG1 R-195N-6SLQ R-Q4HR-3JLU R-849B-255I
+// R-FPBX-7CBU R-86P3-TOMW R-FQJT-L42J R-8BKP-CRLO
 func TestQueryListAndShowReadCurrentOwnerRepositories(t *testing.T) {
 	f := newToolsFixture(t)
 	zeta := f.create(t, f.Caller.UserID, "zeta")
@@ -107,7 +108,7 @@ func TestQueryListAndShowReadCurrentOwnerRepositories(t *testing.T) {
 	toolsEqual(t, string(successObject(t, f.call(t, "list", "{}"))), `{"repos":[`+queryListing(t, f, alpha, "")+`,`+queryListing(t, f, zeta, head)+`]}`)
 }
 
-// R-URP1-1P4O R-81TI-ALO4 R-ZJ0U-WGJF R-8BKP-CRLO
+// R-URP1-1P4O R-195N-6SLQ R-ZJ0U-WGJF R-8BKP-CRLO
 func TestQueryMissingRepositoryAndRuleVocabulary(t *testing.T) {
 	f := newToolsFixture(t)
 	f.create(t, f.Caller.UserID, "notes")
@@ -141,7 +142,7 @@ func repeatQueryOutcome(count int, outcome string) []string {
 	return result
 }
 
-// R-8ACS-YZUZ R-86P3-TOMW R-85H7-FWW7 R-8BKP-CRLO
+// R-8ACS-YZUZ R-86P3-TOMW R-FPBX-7CBU R-8BKP-CRLO
 func TestQueryUnavailableAndDamagedRepositoriesRemainReadable(t *testing.T) {
 	f := newToolsFixture(t)
 	unavailable := f.create(t, f.Caller.UserID, "unavailable")
@@ -195,7 +196,7 @@ func queryContextClient(t *testing.T, f *toolsFixture, decorate func(context.Con
 
 type queryRequestCancel struct{ cancel context.CancelFunc }
 
-// R-USWX-FGVD R-8BKP-CRLO
+// R-FQJT-L42J R-8BKP-CRLO
 func TestQueryRefusesWhenHeadFailsAfterReadingRepository(t *testing.T) {
 	f := newToolsFixture(t)
 	r := f.create(t, f.Caller.UserID, "notes")
@@ -247,4 +248,46 @@ func TestQueryRefusesWhenHeadFailsAfterReadingRepository(t *testing.T) {
 	toolsEqual(t, after, before)
 	toolsEqual(t, toolsSnapshot(t, f.Root), disk)
 	assertOnlyToolCalls(t, f, 0, "ok", "error", "ok", "error")
+}
+
+// R-FQJT-L42J
+func TestQuerySizeFailureAfterSuccessfulLookup(t *testing.T) {
+	for _, tool := range []string{"list", "show"} {
+		t.Run(tool, func(t *testing.T) {
+			f := newToolsFixture(t)
+			r := f.create(t, f.Caller.UserID, "notes")
+			first := func(ctx context.Context) error {
+				if tool == "list" {
+					_, err := f.Store.List(ctx, f.Caller.UserID, nil, 2)
+					return err
+				}
+				_, err := f.Store.Find(ctx, f.Caller.UserID, r.ID)
+				return err
+			}
+			ctx, cancel := context.WithCancel(toolsContext(t))
+			defer cancel()
+			probe := &statusCancelOnAccess{Context: ctx, cancel: cancel}
+			toolsMust(t, first(probe))
+			threshold := probe.calls.Load() + 1
+			decorate := func(ctx context.Context) (context.Context, context.CancelFunc) {
+				ctx, stop := context.WithCancel(ctx)
+				return &statusCancelOnAccess{Context: ctx, cancel: stop, threshold: threshold}, stop
+			}
+			check, stop := decorate(toolsContext(t))
+			defer stop()
+			toolsMust(t, first(check))
+			_, err := f.Store.Size(check, r.ID)
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("Size error = %v, want canceled", err)
+			}
+			f.Client = queryContextClient(t, f, decorate)
+			args := "{}"
+			if tool == "show" {
+				args = toolsRepoArgument(r.ID)
+			}
+			offset := len(f.events(t))
+			refusal(t, f.call(t, tool, args), tools.Unreachable)
+			assertOnlyToolCalls(t, f, offset, "error")
+		})
+	}
 }
