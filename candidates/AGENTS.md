@@ -51,10 +51,10 @@ its templates under `assets/`, and the design is the record.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the Go source, the tests, `go.mod`'s requirements and
-`go.sum`, the migrations under `migrations/` (one per table:
-`0001_candidates.sql`, `0002_links.sql`, `0003_estimates.sql`,
-`0004_assessments.sql`, `0005_decisions.sql`, `0006_passes.sql` and
-`0007_zip_drive.sql`), which the root package embeds, and everything under
+`go.sum`, the migrations under `migrations/` (`0001_candidates.sql`,
+`0002_links.sql`, `0003_estimates.sql`, `0004_assessments.sql`,
+`0005_decisions.sql`, `0006_passes.sql`, `0007_zip_drive.sql` and
+`0008_windows.sql`), which the root package embeds, and everything under
 `etc/` (`etc/manifest.toml` and the nginx fragment `etc/nginx.conf`). The
 delivery that created candidates seeded `go.mod` on appkit; the build run
 owns it and `go.sum` from then on and changes them as design says. It never
@@ -115,9 +115,9 @@ and the build run never writes either.
   one requirement below, set by the delivery that created candidates; the
   build run sets any other and its `go.sum` lines, and moves to another
   release only when this file names one:
-  - appkit `v0.24.0`, set with
-    `go get github.com/ikigenba/ikigenba/appkit@v0.24.0`: a release that
-    exports the `db`, `version` and `scrapes` packages and whose
+  - appkit `v0.25.0`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.25.0`: a release that
+    exports the `db`, `paging`, `version` and `scrapes` packages and whose
     `page.Banner` carries the trail, the home link and the tools flag the
     templates use, with `Release` and `Commit`. See Adopting appkit below.
     It and the modules it pulls in are candidates' only dependencies.
@@ -135,10 +135,10 @@ other external dependency needs approval first, the user's or a delivery's.
 
 ### Adopting appkit
 
-appkit is required only at a published release, here `v0.24.0`, fetched
+appkit is required only at a published release, here `v0.25.0`, fetched
 through the ordinary module proxy and checked against the checksum database
 (see the root `AGENTS.md`); it is set with
-`go get github.com/ikigenba/ikigenba/appkit@v0.24.0`. No `replace` directive,
+`go get github.com/ikigenba/ikigenba/appkit@v0.25.0`. No `replace` directive,
 no `go.work`, no local module cache stands in for it.
 
 ## Test files
@@ -247,7 +247,7 @@ a store holds by reopening its path, never by reading tables.
 
 **Time and the sweep are driven, not waited out.** A pass's started and
 finished times, a link's first and last seen, a ruling's time, a filing's
-freshness at query time and the prune's ordering are proved through the
+freshness as of the last refresh and the prune's ordering are proved through the
 injected `Now`: a test advances the clock it handed in, never waits real
 seconds. The sweeper waits on `Process.After`; a test hands in an `After`
 whose channels it holds and delivers on one to make the next prune happen. A
