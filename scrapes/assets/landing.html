@@ -1,7 +1,7 @@
 {{/* The landing page at GET /: what the service is, each registered
-     scraper with its current run and any running run, then every kept run
-     across scrapers, newest first. The root of the hierarchy: .Banner's
-     .Trail is empty, so the banner's breadcrumb holds only the service.
+     scraper with its current run and any running run, then the first
+     page of kept runs across scrapers, newest first. The root of the
+     hierarchy: .Banner's .Trail is empty, so the banner's breadcrumb holds only the service.
      Shown only to a signed-in user; a guest is sent to sign in. Every
      signed-in user sees every run: runs belong to no one. Never shows a
      row's name, address, phone or email. Read-only: no form but the
@@ -14,8 +14,8 @@
      "2026-10-05 09:00"), .Finished and .FinishedText (likewise), and
      .Rows, .New, .Changed and .Gone (ints, as the record holds them)) and
      .Running (nil when no run of the scraper is running; else that run,
-     with .ID); .Runs, every kept run across scrapers, newest first by
-     started, each with .ID, .Scraper (the scraper's name), .Status
+     with .ID); .Runs, the first page of kept runs across scrapers, newest
+     first by started, each with .ID, .Scraper (the scraper's name), .Status
      ("running", "done" or "failed", as stored), .Reason (the failure
      reason as stored, one of "source", "interrupted" or "store"; empty
      unless .Status is "failed"), .StartedBy (the email of the caller whose
@@ -23,7 +23,9 @@
      (the slug of the cron trigger whose fire started the run; empty when a
      tool call did), .Started and .StartedText, .Finished and .FinishedText
      (the same forms; both empty while running) and .Rows (int, as the
-     record holds it). Counts are shown as the plain integer. Status and
+     record holds it); and .Next (string, the page token runs's next
+     carries for the runs after these, the value to pass as its page; empty
+     when none remain). Counts are shown as the plain integer. Status and
      reason words are shown as stored; the status's kind is chosen here:
      "running" info, "done" ok, "failed" err. Hooks: title "scrapes"; h1
      with text "scrapes"; p#summary.lede (text "Public records about
@@ -64,8 +66,10 @@
      then .Trigger in a code element, else .StartedBy; td.run-started
      holding time[datetime=<.Started>] (text .StartedText); td.run-finished
      holding, only when .Finished is not empty, time[datetime=<.Finished>]
-     (text .FinishedText); and td.run-rows.num (.Rows); a #about-link (text
-     "About scrapes") whose href is "/about". No script but appkit's
+     (text .FinishedText); and td.run-rows.num (.Rows), then, when .Next is
+     not empty, p#next (text "More runs follow: call runs with page
+     <.Next>.", runs, page and .Next each in a code element); a #about-link
+     (text "About scrapes") whose href is "/about". No script but appkit's
      /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
@@ -122,7 +126,9 @@
 </tr>
 {{end}}</tbody>
 </table>
-</div>{{else}}<div id="no-runs" class="empty">
+</div>
+{{if .Next}}<p id="next">More runs follow: call <code>runs</code> with <code>page</code> <code>{{.Next}}</code>.</p>
+{{end}}{{else}}<div id="no-runs" class="empty">
 <h3 class="text-md">No runs yet</h3>
 <p>A run starts when an agent calls the <code>scrape</code> tool, or when the cron trigger <code>scrape_&lt;scraper&gt;</code> fires, and shows up here.</p>
 </div>{{end}}
