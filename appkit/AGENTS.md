@@ -15,6 +15,7 @@ appkit holds what every app shares: page chrome, identity, the MCP server and cl
 - `artifacts` is the client over the artifacts service's socket: `Put`, `Get` and `Head` on `/files/<path>`, the metadata object as appkit's type, and the typed errors artifacts' statuses map to.
 - `connections` is the client over the connections service's socket: `Token` for a provider's access token, and the typed errors its refusals map to, the reconnect one carrying its URL.
 - `scrapes` is the client over the scrapes service's socket: `Current`, `Record` and `Rows` on its sibling read path, the run record and row as appkit's types, and the typed errors its refusals map to.
+- `paging` is how a tool pages a list: the opaque token that marks where the next page starts, the reading of a requested page size, and the shared words a tool shows a model.
 - The build run writes the Go source and the tests. `page/assets/`, `Makefile`, `.golangci.yml` and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
 
 ## Assets
