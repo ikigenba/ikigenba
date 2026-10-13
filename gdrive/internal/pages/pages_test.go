@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -67,7 +68,7 @@ func pageStore(t *testing.T) (*store.Store, *db.DB) {
 	return store.New(d, store.Config{Rand: &sequence{n: 150}, Now: func() time.Time { return now }}), d
 }
 func TestTemplateSurface(t *testing.T) {
-	// R-BBSQ-YUAM R-BD0N-CM1B R-YXS8-3BIX R-L6YB-IMUK R-BGOC-HX9E
+	// R-BBSQ-YUAM R-BD0N-CM1B R-L6YB-IMUK R-BGOC-HX9E
 	if pages.ServiceName != "gdrive" || pages.Description != "Google Drive files, pulled into and pushed from artifacts" || pages.MinuteLayout != "2006-01-02 15:04" || pages.SecondLayout != "2006-01-02 15:04:05 UTC" || pages.ToolsLevel != (page.Level{Name: "tools", URL: "/tools"}) || pages.AboutLevel != (page.Level{Name: "about", URL: "/about"}) {
 		t.Fatal("constants")
 	}
@@ -124,8 +125,30 @@ func TestTemplateSurface(t *testing.T) {
 		}
 	}
 }
+func TestPageDataFields(t *testing.T) {
+	// R-Z5X6-T17L
+	b := fixedBanner(page.User{Email: "fixture-email"})
+	row := pages.TransferRow{"id", "direction", "status", "reason", "name", "link", "path", "artifact", "url", 17, "started", "started-text", "finished", "finished-text"}
+	view := pages.TransferView{"id", "direction", "status", "reason", "file", "name", "kind", "path", "artifact", "content-type", "format", 19, "started", "started-text", "finished", "finished-text", "url", "link"}
+	cases := []struct{ got, want any }{
+		{row, pages.TransferRow{ID: "id", Direction: "direction", Status: "status", Reason: "reason", Name: "name", Link: "link", Path: "path", ArtifactPage: "artifact", URL: "url", Bytes: 17, Started: "started", StartedText: "started-text", Finished: "finished", FinishedText: "finished-text"}},
+		{view, pages.TransferView{ID: "id", Direction: "direction", Status: "status", Reason: "reason", File: "file", Name: "name", Kind: "kind", Path: "path", ArtifactPage: "artifact", ContentType: "content-type", Format: "format", Bytes: 19, Started: "started", StartedText: "started-text", Finished: "finished", FinishedText: "finished-text", URL: "url", Link: "link"}},
+		{pages.LandingData{b, []pages.TransferRow{row}, "current-page", "next-page"}, pages.LandingData{Banner: b, Transfers: []pages.TransferRow{row}, Page: "current-page", Next: "next-page"}},
+		{pages.TransferData{b, view}, pages.TransferData{Banner: b, Transfer: view}},
+		{pages.ToolRow{"name", "description"}, pages.ToolRow{Name: "name", Description: "description"}},
+		{pages.ToolsData{b, []pages.ToolRow{{Name: "name", Description: "description"}}}, pages.ToolsData{Banner: b, Tools: []pages.ToolRow{{Name: "name", Description: "description"}}}},
+		{pages.AboutData{b, "description"}, pages.AboutData{Banner: b, Description: "description"}},
+		{pages.NotFoundData{b}, pages.NotFoundData{Banner: b}},
+	}
+	for _, c := range cases {
+		if !reflect.DeepEqual(c.got, c.want) {
+			t.Fatalf("data fields: got %#v want %#v", c.got, c.want)
+		}
+	}
+}
+
 func TestPagesRoutesAndData(t *testing.T) {
-	// R-BHW8-VP03 R-78WB-LOZ9 R-7A47-ZGPY R-YZ04-H39M R-BNZQ-SJPK R-7DRX-4RY1 R-BQFJ-K36Y R-BRNF-XUXN R-BVB5-365Q R-BWJ1-GXWF R-BU38-PEF1 R-BXQX-UPN4 R-BYYU-8HDT R-C06Q-M94I R-BJ45-9GQS R-L867-WEL9 R-L9E4-A6BY
+	// R-BHW8-VP03 R-78WB-LOZ9 R-7A47-ZGPY R-Z8CZ-KKOZ R-BNZQ-SJPK R-7DRX-4RY1 R-BQFJ-K36Y R-BRNF-XUXN R-BVB5-365Q R-BWJ1-GXWF R-BU38-PEF1 R-BXQX-UPN4 R-BYYU-8HDT R-ZASS-C46D R-BJ45-9GQS R-L867-WEL9 R-L9E4-A6BY
 	st, d := pageStore(t)
 	s, e := pages.Load()
 	if e != nil {
@@ -277,7 +300,7 @@ func (s *sequence) Read(p []byte) (int, error) {
 }
 
 func TestTransferStateProjectionAndReadOnly(t *testing.T) {
-	// R-7A47-ZGPY R-YZ04-H39M R-7DRX-4RY1 R-L9E4-A6BY R-L867-WEL9
+	// R-7A47-ZGPY R-Z8CZ-KKOZ R-7DRX-4RY1 R-L9E4-A6BY R-L867-WEL9
 	_, d := pageStore(t)
 	now := time.Date(2026, 10, 5, 10, 0, 7, 0, time.FixedZone("fixture", 3600))
 	st := store.New(d, store.Config{Now: func() time.Time { return now }, Rand: &sequence{n: 150}})
@@ -365,9 +388,9 @@ func TestTransferStateProjectionAndReadOnly(t *testing.T) {
 	}
 }
 
-func TestLandingFirstPage(t *testing.T) {
-	// R-YZ04-H39M R-YXS8-3BIX
-	st, _ := pageStore(t)
+func TestLandingPaging(t *testing.T) {
+	// R-Z8CZ-KKOZ R-Z753-6SYA R-Z9KV-YCFO R-ZASS-C46D
+	st, d := pageStore(t)
 	set, err := pages.Load()
 	if err != nil {
 		t.Fatal(err)
@@ -395,7 +418,7 @@ func TestLandingFirstPage(t *testing.T) {
 	next := (paging.Token{Tool: "transfers"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
 	b := fixedBanner(page.User{Email: "alice@example.test", ProfileURL: "https://auth.example.test/", LogoutURL: "https://auth.example.test/logout"})
 	b.Trail = nil
-	want := pages.LandingData{b, rows, next}
+	want := pages.LandingData{b, rows, "", next}
 	handler := identity.Require(pages.Handler(pages.Config{Banner: fixedBanner, Pages: set, Store: st}))
 	got := req(handler, "GET", "/")
 	if got.Code != 200 || got.Body.String() != render(t, "landing", want) {
@@ -408,19 +431,164 @@ func TestLandingFirstPage(t *testing.T) {
 	hs := httptest.NewServer(identity.Require(srv))
 	t.Cleanup(hs.Close)
 	client := mcp.NewClient(mcp.ClientConfig{Endpoint: hs.URL + "/mcp", HTTPClient: hs.Client()})
-	result, err := client.CallTool(ctx, identity.Caller{UserID: "alice"}, "transfers", json.RawMessage(`{}`))
-	if err != nil || result.IsError() {
-		t.Fatal("transfers", err, result)
+	call := func(value string) mcp.Result {
+		t.Helper()
+		args := map[string]string{}
+		if value != "" {
+			args["page"] = value
+		}
+		wire, err := json.Marshal(args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := client.CallTool(ctx, identity.Caller{UserID: "alice"}, "transfers", wire)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
 	}
-	wire, err := json.Marshal(result)
-	if err != nil {
-		t.Fatal(err)
+	checkWindow := func(path, value string, transfers []store.Transfer) {
+		t.Helper()
+		expectedRows := make([]pages.TransferRow, 0, len(transfers))
+		expectedRecords := make([]tools.Record, 0, len(transfers))
+		next := ""
+		if len(transfers) > paging.DefaultLimit {
+			transfers = transfers[:paging.DefaultLimit]
+			last := transfers[len(transfers)-1]
+			next = (paging.Token{Tool: "transfers"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
+		}
+		for _, tf := range transfers {
+			expectedRows = append(expectedRows, pages.TransferRow{ID: tf.ID, Direction: tf.Direction, Status: tf.Status, Name: tf.Name, Path: tf.Path, Started: tf.Started.UTC().Format(time.RFC3339), StartedText: tf.Started.UTC().Format(pages.MinuteLayout)})
+			expectedRecords = append(expectedRecords, tools.RecordOf(tf))
+		}
+		data := pages.LandingData{b, expectedRows, value, next}
+		get := req(handler, "GET", path)
+		if get.Code != 200 || get.Body.String() != render(t, "landing", data) {
+			t.Fatal("landing window", path)
+		}
+		head := req(handler, "HEAD", path)
+		if head.Code != get.Code || !reflect.DeepEqual(head.Header(), get.Header()) || head.Body.Len() != 0 {
+			t.Fatal("landing HEAD", path)
+		}
+		result := call(value)
+		if result.IsError() {
+			t.Fatal("transfers", result)
+		}
+		wire, err := json.Marshal(result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded struct{ StructuredContent tools.TransferList }
+		if err := json.Unmarshal(wire, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		toolNext := ""
+		if decoded.StructuredContent.Next != nil {
+			toolNext = *decoded.StructuredContent.Next
+		}
+		if toolNext != next || !reflect.DeepEqual(decoded.StructuredContent.Transfers, expectedRecords) {
+			t.Fatal("landing/tool window mismatch", path)
+		}
 	}
-	var decoded struct{ StructuredContent tools.TransferList }
-	if err := json.Unmarshal(wire, &decoded); err != nil {
-		t.Fatal(err)
+	for _, path := range []string{"/", "/?page=", "/?page=&page=bogus", "/?limit=1&user=bob&status=failed&other=bogus"} {
+		checkWindow(path, "", all)
 	}
-	if decoded.StructuredContent.Next == nil || *decoded.StructuredContent.Next != want.Next {
-		t.Fatal("landing/tool next mismatch")
+	for _, suffix := range []string{"", "&page=bogus", "&limit=1&user=bob&status=failed"} {
+		checkWindow("/?page="+url.QueryEscape(next)+suffix, next, all[paging.DefaultLimit:])
+	}
+	// Positioned tokens need not name an extant transfer: they name an ordering key.
+	for _, key := range []struct {
+		stamp string
+		id    string
+	}{
+		{all[0].Started.Add(time.Hour).UTC().Format(time.RFC3339), all[0].ID},
+		{all[0].Started.UTC().Format(time.RFC3339), "xfr_0000000000000000"},
+		{all[0].Started.Add(-time.Hour).UTC().Format(time.RFC3339), all[0].ID},
+		{all[0].Started.UTC().Format(time.RFC3339), all[1].ID},
+	} {
+		value := (paging.Token{Tool: "transfers"}).Encode(key.stamp, key.id)
+		stamp, err := time.Parse(time.RFC3339, key.stamp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		after := []store.Transfer{}
+		for _, tf := range all {
+			if tf.Started.Before(stamp) || tf.Started.Equal(stamp) && tf.ID < key.id {
+				after = append(after, tf)
+			}
+		}
+		checkWindow("/?page="+url.QueryEscape(value), value, after)
+	}
+	invalid := []string{
+		"bogus",
+		next[:len(next)-1] + "!",
+		(paging.Token{Tool: "list"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID),
+		(paging.Token{Tool: "transfers"}).Encode("2026-10-05T09:00:00+02:00", last.ID),
+		(paging.Token{Tool: "transfers"}).Encode("2026-10-05T09:00:07+00:00", last.ID),
+		(paging.Token{Tool: "transfers"}).Encode("2026-10-05T09:00:07.5Z", last.ID),
+		(paging.Token{Tool: "transfers"}).Encode("not-a-time", last.ID),
+		(paging.Token{Tool: "transfers"}).Encode(last.Started.UTC().Format(time.RFC3339), "not-an-id"),
+		(paging.Token{Tool: "transfers"}).Encode(last.Started.UTC().Format(time.RFC3339)),
+		(paging.Token{Tool: "transfers"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID, "extra"),
+	}
+	withoutStore := map[string]*httptest.ResponseRecorder{}
+	for _, path := range []string{"/tools", "/about", "/nowhere"} {
+		withoutStore[path] = req(handler, "GET", path)
+	}
+	for _, failing := range []bool{false, true} {
+		d.SetFailing(failing)
+		for path, want := range withoutStore {
+			got := req(handler, "GET", path)
+			if got.Code != want.Code || !reflect.DeepEqual(got.Header(), want.Header()) || got.Body.String() != want.Body.String() {
+				t.Fatal("store-independent page", failing, path)
+			}
+			head := req(handler, "HEAD", path)
+			if head.Code != want.Code || !reflect.DeepEqual(head.Header(), want.Header()) || head.Body.Len() != 0 {
+				t.Fatal("store-independent HEAD", failing, path)
+			}
+		}
+		for _, value := range invalid {
+			result := call(value)
+			wire, err := json.Marshal(result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var decoded struct {
+				Content           []struct{ Type, Text string }
+				StructuredContent json.RawMessage
+			}
+			if err := json.Unmarshal(wire, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			if !result.IsError() || len(decoded.Content) != 1 || decoded.Content[0].Type != "text" || decoded.Content[0].Text != paging.BadPage || len(decoded.StructuredContent) != 0 {
+				t.Fatal("tool accepted undecodable page", value, result)
+			}
+			for _, method := range []string{"GET", "HEAD"} {
+				want := req(handler, method, "/nowhere")
+				for _, suffix := range []string{"", "&page=" + url.QueryEscape(next) + "&limit=1"} {
+					got := req(handler, method, "/?page="+url.QueryEscape(value)+suffix)
+					if got.Code != 404 || !reflect.DeepEqual(got.Header(), want.Header()) || got.Body.String() != want.Body.String() {
+						t.Fatal("undecodable page", failing, method, value)
+					}
+				}
+			}
+		}
+		if got := req(handler, "POST", "/?page=bogus"); got.Code != 405 || got.Header().Get("Allow") != "GET, HEAD" || got.Body.Len() != 0 {
+			t.Fatal("method before page decoding")
+		}
+		if failing {
+			for _, path := range []string{"/", "/?page=&page=bogus", "/?page=" + url.QueryEscape(next), "/" + last.ID} {
+				for _, method := range []string{"GET", "HEAD"} {
+					got := req(handler, method, path)
+					body := store.Unreachable + "\n"
+					if method == "HEAD" {
+						body = ""
+					}
+					if got.Code != 503 || len(got.Header().Values("Content-Type")) != 1 || got.Header().Get("Content-Type") != "text/plain; charset=utf-8" || got.Body.String() != body {
+						t.Fatal("decodable page unavailable", method, path)
+					}
+				}
+			}
+		}
 	}
 }

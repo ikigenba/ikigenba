@@ -74,6 +74,7 @@ type Config struct {
 type LandingData struct {
 	Banner    page.Banner
 	Transfers []TransferRow
+	Page      string
 	Next      string
 }
 
@@ -171,7 +172,22 @@ func Handler(cfg Config) http.Handler {
 		}
 		switch {
 		case p == "/":
-			ts, e := cfg.Store.ListAfter(r.Context(), c.UserID, time.Time{}, "", paging.DefaultLimit+1)
+			pageValue := r.URL.Query().Get("page")
+			var started time.Time
+			var stamp, afterID string
+			if pageValue != "" {
+				if e := (paging.Token{Tool: "transfers"}).Decode(pageValue, &stamp, &afterID); e != nil {
+					notFound()
+					return
+				}
+				var e error
+				started, e = time.Parse(time.RFC3339, stamp)
+				if e != nil || started.UTC().Format(time.RFC3339) != stamp || !store.ValidID(afterID) {
+					notFound()
+					return
+				}
+			}
+			ts, e := cfg.Store.ListAfter(r.Context(), c.UserID, started, afterID, paging.DefaultLimit+1)
 			if e != nil {
 				unavailable()
 				return
@@ -187,7 +203,7 @@ func Handler(cfg Config) http.Handler {
 				rs = append(rs, row(t, cfg.ServicesPath))
 			}
 			b.Trail = nil
-			cfg.Pages.Write(w, r, 200, "landing", LandingData{b, rs, next})
+			cfg.Pages.Write(w, r, 200, "landing", LandingData{b, rs, pageValue, next})
 		case p == "/tools":
 			rs := make([]ToolRow, 0, 8)
 			for _, t := range tools.Catalog() {

@@ -312,16 +312,12 @@ func (s *Store) ListAfter(ctx context.Context, userID string, started time.Time,
 			out = []Transfer{}
 			return nil
 		}
-		query := "SELECT " + columns + " FROM transfers WHERE user_id=?"
-		args := []any{userID}
-		if id != "" {
-			query += " AND (started,id)<(?,?)"
-			args = append(args, started.UTC().Format(time.RFC3339), id)
-		}
-		query += " ORDER BY started DESC,id DESC LIMIT ?"
-		args = append(args, n)
 		var err error
-		out, err = rows(ctx, tx, query, args...)
+		if id == "" {
+			out, err = rows(ctx, tx, "SELECT "+columns+" FROM transfers WHERE user_id=? ORDER BY started DESC,id DESC LIMIT ?", userID, n)
+		} else {
+			out, err = rows(ctx, tx, "SELECT "+columns+" FROM transfers WHERE user_id=? AND (started,id)<(?,?) ORDER BY started DESC,id DESC LIMIT ?", userID, started.UTC().Format(time.RFC3339), id, n)
+		}
 		return err
 	})
 	if err != nil {
