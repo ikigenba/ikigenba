@@ -129,8 +129,9 @@ design/
   `transfers_page`); each nav's hrefs carry the other list's current token,
   so paging one list never resets the other, and its First link drops only
   its own list's parameter, keeping the other's. A `page` value the page cannot
-  decode is refused with the app's ordinary bad-request answer, status 400,
-  never quietly the first window. An empty list shows its empty state and
+  decode (a token issued for a different list included) is answered 404 with
+  the app's existing not-found page, never quietly the first window; a URL
+  carrying a token the page never issued names no page. An empty list shows its empty state and
   no nav. scrapes-run.html is the worked example.
 - Every page ends with the feedback script (`ikigenba/feedback.js`), then the
   lab toolbar script (`ikigenba/lab.js`).
