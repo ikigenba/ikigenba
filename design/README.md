@@ -54,15 +54,15 @@ design/
     gmail-transfer.html
                     one transfer: its record in full, running and failed
     scrapes.html    scrapes' landing: each scraper's current and running
-                    run, then every kept run
+                    run, then the kept runs, paged
     scrapes-run.html
-                    one run: its record, its first page of rows, running
+                    one run: its record, its rows, paged, running
                     and failed
     scrapes-row.html
                     one row: its envelope and its raw record, two levels
                     down the trail
     candidates.html candidates' landing: the shortlist, ranked, then
-                    every kept pass
+                    the kept passes, each list paged
     candidates-candidate.html
                     one candidate: its fields, assessment, estimates,
                     evidence and rulings; merged, excluded and stale
@@ -108,8 +108,9 @@ design/
 - Every app has an `about` page and, when it has MCP tools, a `tools` page;
   both are reached from the banner's page menu, not from a card on the
   landing page.
-- A page that lists navigates (decided 2026-10-13, D30; it replaces the
-  `p#next` note that named the tool and token, with no link). The page takes
+- A page that lists navigates (decided 2026-10-13: a person pages a list
+  on the page itself rather than being told which tool to call; it replaces
+  the `p#next` note that named the tool and token, with no link). The page takes
   the `page` token of the list tool over it as a query parameter on its own
   URL, `?page=<token>`; without it the page shows the first window. It shows
   a window of 25 entries; `limit` is not a page parameter. Below the list, a
@@ -126,7 +127,8 @@ design/
   `#paging-drafts`, `#paging-transfers`), each with its own parameter
   `<list>_page` (`shortlist_page`, `passes_page`, `drafts_page`,
   `transfers_page`); each nav's hrefs carry the other list's current token,
-  so paging one list never resets the other. A `page` value the page cannot
+  so paging one list never resets the other, and its First link drops only
+  its own list's parameter, keeping the other's. A `page` value the page cannot
   decode is refused with the app's ordinary bad-request answer, status 400,
   never quietly the first window. An empty list shows its empty state and
   no nav. scrapes-run.html is the worked example.
@@ -393,14 +395,16 @@ transfers; no form but sign out.
 - The landing: `h1` gmail, a lede, then two sections, each with a header
   saying its rows are the user's alone, newest first. `section#drafts` holds
   `table#draft-list` of Draft / Status / Subject / To / Attachments / Created
-  / Sent, one row per draft, `tr[data-draft=<id>]`: one open with two
+  / Sent, a window of 25 with `nav.paging#paging-drafts` below it
+  (parameter `drafts_page`), `tr[data-draft=<id>]`: one open with two
   attachments, one sent, one discarded. The id links to the draft's page
   `/drafts/<id>`; the subject links to the draft in Gmail by the record's
   `link` when it has one (an open draft's `#drafts/<message id>`, a sent
   one's `#all/<message id>`, none once discarded); an empty subject reads
   `(no subject)`, muted. `section#transfers` holds `table#transfer-list` of
   Transfer / Direction / Status / Name / Artifact / Bytes / Started /
-  Finished, one row per transfer, `tr[data-transfer=<id>]`: a push running,
+  Finished, a window of 25 with `nav.paging#paging-transfers` below it
+  (parameter `transfers_page`), `tr[data-transfer=<id>]`: a push running,
   a pull of an attachment done, a whole-message pull queued, a pull failed
   `too_large`, a push done. The id links to `/transfers/<id>`; the name links
   to the Gmail `link` when the record has one; the artifact path links as in
@@ -453,7 +457,8 @@ for Minnesota and Wisconsin, with made-up carriers.
   `tr[data-scraper=<name>]`: `fmcsa` with its current run, the latest done,
   and a run in progress in Running. Then `section#runs` with
   `table#run-list` of Run / Scraper / Status / Started by / Started /
-  Finished / Rows, every kept run newest first, `tr[data-run=<id>]`: one
+  Finished / Rows, the kept runs newest first, a window of 25 with
+  `nav.paging#paging` below it, `tr[data-run=<id>]`: one
   running, one failed `source`, two done by the trigger. Every run id links
   to `/runs/<id>`; Started by is the caller's email, or `cron` and the
   trigger's slug. A failed row's reason follows its status, muted. A link to
@@ -510,12 +515,15 @@ for Minnesota and Wisconsin.
 - The landing: `h1` candidates, a lede, then `section#shortlist` whose
   header names the default filters, with `table#shortlist-list` of Rank /
   Name / City / State / Minutes / Class / Low / High / Confidence / Score,
-  the first 30 ranked by score, `tr[data-candidate=<id>]`, each name
+  a window of 25 ranked by score with `nav.paging#paging-shortlist` below
+  it (parameter `shortlist_page`), `tr[data-candidate=<id>]`, each name
   linking to `/candidates/<id>`; High is empty when no source gives one,
   Confidence and Score are the effective ones at the request. No phone or
   email shows on this page. Then `section#passes` with `table#pass-list`
   of Pass / Trigger / Status / Started / Finished / Rows / Created /
-  Rescored, every kept pass newest first, `tr[data-pass=<id>]`: a running
+  Rescored, the kept passes newest first, a window of 25 with
+  `nav.paging#paging-passes` below it (parameter `passes_page`),
+  `tr[data-pass=<id>]`: a running
   rebuild, a rebuild failed `scrapes`, two done by a scrapes run. Every
   pass id links to `/passes/<id>`; Trigger is the run id or `rebuild`. A
   failed row's reason follows its status, muted. A link to the about
