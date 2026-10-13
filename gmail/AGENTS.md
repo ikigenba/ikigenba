@@ -41,7 +41,7 @@ packages `page` (the banner and footer, and the shared static files under
 route but the event bus's two), `mcp` (the server mounted at `/mcp`, and the
 client the tests drive it with), `telemetry` (the event contract, the request
 middleware and the writer gmail's events go through), `db` (the database's
-handle and its migrations), `services` (the services file), `version` (the
+handle and its migrations), `paging` (the list contract: page token, window and shared words), `services` (the services file), `version` (the
 identity and its display string), `events` (the event bus), `artifacts` (the
 client of artifacts' socket) and `connections` (the client of connections'
 socket).
@@ -52,8 +52,8 @@ its templates under `assets/`, and the design is the record.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the Go source, the tests, `go.mod`'s requirements and
-`go.sum`, the migrations under `migrations/` (`0001_transfers.sql` and
-`0002_drafts.sql`), which the root package embeds, and everything under `etc/`
+`go.sum`, the migrations under `migrations/` (`0001_transfers.sql`,
+`0002_drafts.sql` and `0003_list_indexes.sql`), which the root package embeds, and everything under `etc/`
 (`etc/manifest.toml` and the nginx fragment `etc/nginx.conf`). The delivery
 that created gmail seeded `go.mod` and `go.sum` on appkit; the build run owns
 them from then on and changes them as design says. It never writes `assets/`,
@@ -107,9 +107,9 @@ a service icon. The build run never writes it. `devctl build` packs it beside
   one requirement below, set by the delivery that created gmail; the
   build run sets any other and its `go.sum` lines, and moves to another
   release only when this file names one:
-  - appkit `v0.23.0`, set with
-    `go get github.com/ikigenba/ikigenba/appkit@v0.23.0`: a release that
-    exports the `db` and `version` packages, the `artifacts` and
+  - appkit `v0.25.0`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.25.0`: a release that
+    exports the `db`, `paging` and `version` packages, the `artifacts` and
     `connections` clients of those siblings' sockets, and whose
     `page.Banner` carries the trail, the home link and the tools flag the
     templates use, with `Release` and `Commit`. See Adopting appkit below.
@@ -128,10 +128,10 @@ external dependency needs approval first, the user's or a delivery's.
 
 ### Adopting appkit
 
-appkit is required only at a published release, here `v0.23.0`, fetched
+appkit is required only at a published release, here `v0.25.0`, fetched
 through the ordinary module proxy and checked against the checksum database
 (see the root `AGENTS.md`); it is set with
-`go get github.com/ikigenba/ikigenba/appkit@v0.23.0`. No `replace` directive,
+`go get github.com/ikigenba/ikigenba/appkit@v0.25.0`. No `replace` directive,
 no `go.work`, no local module cache stands in for it.
 
 ## Test files
