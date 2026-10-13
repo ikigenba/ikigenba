@@ -23,7 +23,7 @@ The key is the slug, space-wide as before: every user lists every webhook, in as
 
 A call is refused before the store is read in two cases. A `limit` outside 1 to `paging.MaxLimit` is refused with the text of the error `paging.Window` returns for it. A `page` that is not empty and that the token's `Decode` refuses — one another tool issued, a mistyped one, one made by hand — is refused with `paging.BadPage`. When both offend, the `limit` is the one reported. Because the store is not read, the answer is the same while the store is unreachable: the refusal, not `store.Unreachable`, which would tell a model to try again when its arguments can never succeed. A `limit` too large for a Go `int` never reaches the tool; appkit refuses it.
 
-An agent pages through the space by calling `list` with `{}` or `{"limit":100}`, reading `webhooks`, and, while the answer carries `next`, calling again with `{"page":<next>}` and the same `limit`, until an answer comes back without `next`. The landing page shows the same first page a `list` call with no arguments answers, and names that call's `next` (`D06-pages`).
+An agent pages through the space by calling `list` with `{}` or `{"limit":100}`, reading `webhooks`, and, while the answer carries `next`, calling again with `{"page":<next>}` and the same `limit`, until an answer comes back without `next`. The landing page takes the same token as its `page` query parameter and shows the same window a `list` call with that `page` and no `limit` answers, and navigates by that call's `next` (`D06-pages`).
 
 A paged call is a tool call like any other: appkit's `tool.called` carries no arguments, so a page token appears in no event and no log line, and paging adds nothing to the trail (`D07-trail`).
 
