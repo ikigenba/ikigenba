@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -49,8 +50,8 @@ func quoted(cs []column) string {
 	}
 	return strings.Join(a, ",")
 }
-func readRecords[T any](ctx context.Context, tx *sql.Tx, table string, cs []column, order string) ([]T, error) {
-	rows, err := tx.QueryContext(ctx, strings.Join([]string{"SELECT ", quoted(cs), " FROM ", table, order}, ""))
+func readRecords[T any](ctx context.Context, tx *sql.Tx, table string, cs []column, order string, args ...any) ([]T, error) {
+	rows, err := querySQL(ctx, tx, strings.Join([]string{"SELECT ", quoted(cs), " FROM ", table, order}, ""), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +175,13 @@ func insertRecord(ctx context.Context, tx *sql.Tx, table string, cs []column, v 
 		values = append(values, x)
 		names = append(names, `"`+c.name+`"`)
 	}
-	for k, v := range extra {
+	extraKeys := make([]string, 0, len(extra))
+	for k := range extra {
+		extraKeys = append(extraKeys, k)
+	}
+	sort.Strings(extraKeys)
+	for _, k := range extraKeys {
+		v := extra[k]
 		names = append(names, `"`+k+`"`)
 		values = append(values, v)
 	}
@@ -183,7 +190,7 @@ func insertRecord(ctx context.Context, tx *sql.Tx, table string, cs []column, v 
 	for i, name := range names {
 		updates[i] = strings.Join([]string{name, "=excluded.", name}, "")
 	}
-	_, err := tx.ExecContext(ctx, strings.Join([]string{"INSERT INTO ", table, " (", strings.Join(names, ","), ") VALUES (", marks, ") ON CONFLICT DO UPDATE SET ", strings.Join(updates, ",")}, ""), values...)
+	err := execSQL(ctx, tx, strings.Join([]string{"INSERT INTO ", table, " (", strings.Join(names, ","), ") VALUES (", marks, ") ON CONFLICT DO UPDATE SET ", strings.Join(updates, ",")}, ""), values...)
 	return err
 }
 func load(ctx context.Context, tx *sql.Tx) (*records, error) {
@@ -227,7 +234,7 @@ func load(ctx context.Context, tx *sql.Tx) (*records, error) {
 	for _, p := range ps {
 		r.passes[p.ID] = p
 	}
-	rows, err := tx.QueryContext(ctx, "SELECT zip,minutes FROM zip_drive")
+	rows, err := querySQL(ctx, tx, "SELECT zip,minutes FROM zip_drive")
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +267,7 @@ func cloneRecords(r *records) (*records, error) {
 	return old, nil
 }
 func deleteRecord(ctx context.Context, tx *sql.Tx, table, where string, args ...any) error {
-	_, err := tx.ExecContext(ctx, strings.Join([]string{"DELETE FROM ", table, " WHERE ", where}, ""), args...)
+	err := execSQL(ctx, tx, strings.Join([]string{"DELETE FROM ", table, " WHERE ", where}, ""), args...)
 	return err
 }
 func save(ctx context.Context, tx *sql.Tx, old, r *records) error {
@@ -340,7 +347,7 @@ func save(ctx context.Context, tx *sql.Tx, old, r *records) error {
 		if oldN, ok := old.zips[z]; ok && oldN == n {
 			continue
 		}
-		if _, err := tx.ExecContext(ctx, "INSERT INTO zip_drive(zip,minutes) VALUES (?,?) ON CONFLICT(zip) DO UPDATE SET minutes=excluded.minutes", z, n); err != nil {
+		if err := execSQL(ctx, tx, "INSERT INTO zip_drive(zip,minutes) VALUES (?,?) ON CONFLICT(zip) DO UPDATE SET minutes=excluded.minutes", z, n); err != nil {
 			return err
 		}
 	}

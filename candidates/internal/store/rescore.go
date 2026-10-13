@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"sort"
 	"time"
 
@@ -87,26 +88,45 @@ func rescore(r *records, ids []string, t time.Time) Counts {
 // Rescore replaces the scores of the active candidates named.
 func (s *Store) Rescore(ctx context.Context, ids []string) (Counts, error) {
 	var out Counts
-	err := s.transaction(ctx, true, func(r *records) error { out = rescore(r, ids, s.now()); return nil })
+	err := unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		var err error
+		out, err = rescoreKeys(ctx, tx, ids, s.now())
+		return err
+	}))
 	if err != nil {
 		return Counts{}, err
 	}
 	return out, nil
 }
 
-// RescoreAll replaces every active candidate’s score.
+// RescoreAll replaces every active candidate's score.
 func (s *Store) RescoreAll(ctx context.Context) (Counts, error) {
 	var out Counts
-	err := s.transaction(ctx, true, func(r *records) error {
-		ids := []string{}
-		for id, c := range r.candidates {
-			if c.Status == StatusActive {
-				ids = append(ids, id)
-			}
+	err := unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, "SELECT id FROM candidates WHERE status=?", StatusActive)
+		if err != nil {
+			return err
 		}
-		out = rescore(r, ids, s.now())
-		return nil
-	})
+		ids := []string{}
+		for rows.Next() {
+			var id string
+			if err = rows.Scan(&id); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			ids = append(ids, id)
+		}
+		err = rows.Err()
+		closeErr := rows.Close()
+		if err != nil {
+			return err
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		out, err = rescoreKeys(ctx, tx, ids, s.now())
+		return err
+	}))
 	if err != nil {
 		return Counts{}, err
 	}

@@ -199,6 +199,15 @@ func addCounts(a *store.Counts, b store.Counts) {
 func (e *Engine) resolve(ctx context.Context, delivery *scrapes.Run, rebuild bool) (store.Counts, string) {
 	var total store.Counts
 	var touched []string
+	seen := map[string]bool{}
+	remember := func(ids []string) {
+		for _, id := range ids {
+			if !seen[id] {
+				seen[id] = true
+				touched = append(touched, id)
+			}
+		}
+	}
 	process := func(run scrapes.Run, scraper string) string {
 		if run.Status != store.StatusDone {
 			return store.ReasonScrapes
@@ -214,7 +223,7 @@ func (e *Engine) resolve(ctx context.Context, delivery *scrapes.Run, rebuild boo
 				return err
 			}
 			addCounts(&total, counts)
-			touched = append(touched, ids...)
+			remember(ids)
 			batch = batch[:0]
 			return nil
 		}
@@ -243,7 +252,7 @@ func (e *Engine) resolve(ctx context.Context, delivery *scrapes.Run, rebuild boo
 			return store.ReasonStore
 		}
 		addCounts(&total, counts)
-		touched = append(touched, ids...)
+		remember(ids)
 		return ""
 	}
 	if delivery != nil {

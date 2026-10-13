@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -10,6 +11,8 @@ import (
 )
 
 func (s *Store) mint(r *records, prefix string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for range 8 {
 		var b [8]byte
 		if s.cfg.Rand == nil {
@@ -38,7 +41,17 @@ func validPass(p Pass) bool {
 // AddPass records a running pass, enforcing delivery uniqueness and exclusivity.
 func (s *Store) AddPass(ctx context.Context, p Pass) (Pass, error) {
 	var out Pass
-	err := s.transaction(ctx, true, func(r *records) error {
+	where := " WHERE status=?"
+	args := []any{StatusRunning}
+	if p.Delivery != "" {
+		where += " OR delivery=?"
+		args = append(args, p.Delivery)
+	}
+	if p.Trigger != TriggerRebuild {
+		where += ` OR "trigger"=?`
+		args = append(args, p.Trigger)
+	}
+	err := s.passWrite(ctx, where, args, func(tx *sql.Tx, r *records) error {
 		if !validPass(p) {
 			return ErrUnreachable
 		}
@@ -52,7 +65,7 @@ func (s *Store) AddPass(ctx context.Context, p Pass) (Pass, error) {
 				return ErrBusy
 			}
 		}
-		id, e := s.mint(r, PassIDPrefix)
+		id, e := s.mintKey(ctx, tx, PassIDPrefix)
 		if e != nil {
 			return e
 		}
@@ -78,7 +91,7 @@ func nonnegative(c Counts) bool {
 // FinishPass ends a running pass with its work counts.
 func (s *Store) FinishPass(ctx context.Context, id string, c Counts) (Pass, error) {
 	var out Pass
-	err := s.transaction(ctx, true, func(r *records) error {
+	err := s.passWrite(ctx, " WHERE id=?", []any{id}, func(_ *sql.Tx, r *records) error {
 		if !nonnegative(c) {
 			return ErrUnreachable
 		}
@@ -113,7 +126,7 @@ func (s *Store) FinishPass(ctx context.Context, id string, c Counts) (Pass, erro
 // FailPass ends a running pass with a failure reason.
 func (s *Store) FailPass(ctx context.Context, id, reason string) (Pass, error) {
 	var out Pass
-	err := s.transaction(ctx, true, func(r *records) error {
+	err := s.passWrite(ctx, " WHERE id=?", []any{id}, func(_ *sql.Tx, r *records) error {
 		if reason != ReasonScrapes && reason != ReasonInterrupted && reason != ReasonStore {
 			return ErrUnreachable
 		}
@@ -140,7 +153,7 @@ func (s *Store) FailPass(ctx context.Context, id, reason string) (Pass, error) {
 // GetPass reads one pass.
 func (s *Store) GetPass(ctx context.Context, id string) (Pass, error) {
 	var out Pass
-	err := s.transaction(ctx, false, func(r *records) error {
+	err := s.readScope(ctx, "pass", id, func(r *records) error {
 		var ok bool
 		out, ok = r.passes[id]
 		if !ok {
@@ -179,7 +192,7 @@ func validWindow(offset, limit int64) bool { return offset >= 0 && limit >= 1 }
 // ListPasses reads a window in newest-first pass order.
 func (s *Store) ListPasses(ctx context.Context, offset, limit int64) ([]Pass, error) {
 	var out []Pass
-	err := s.transaction(ctx, false, func(r *records) error {
+	err := s.readScope(ctx, "passes", "", func(r *records) error {
 		if !validWindow(offset, limit) {
 			return ErrUnreachable
 		}
@@ -192,7 +205,7 @@ func (s *Store) ListPasses(ctx context.Context, offset, limit int64) ([]Pass, er
 // RunningPasses reads all unfinished passes.
 func (s *Store) RunningPasses(ctx context.Context) ([]Pass, error) {
 	var out []Pass
-	err := s.transaction(ctx, false, func(r *records) error {
+	err := s.readScope(ctx, "running", "", func(r *records) error {
 		out = []Pass{}
 		for _, p := range r.passes {
 			if p.Status == StatusRunning {
@@ -251,7 +264,7 @@ func (s *Store) ReplaceZipDrive(ctx context.Context, table map[string]int64) err
 // ZipMinutes reads the drive time for one ZIP.
 func (s *Store) ZipMinutes(ctx context.Context, zip string) (int64, error) {
 	var out int64
-	err := s.transaction(ctx, false, func(r *records) error {
+	err := s.readScope(ctx, "zip", zip, func(r *records) error {
 		var ok bool
 		out, ok = r.zips[zip]
 		if !ok {

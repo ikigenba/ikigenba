@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"reflect"
 	"sort"
 	"strings"
@@ -10,9 +12,6 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
-func match(a, b sources.Reading) bool {
-	return a.NameKey != "" && a.State != "" && validZip(a.Zip) && b.NameKey == a.NameKey && b.State == a.State && b.Zip == a.Zip
-}
 func sortedIDs(m map[string]bool) []string {
 	out := []string{}
 	for id := range m {
@@ -73,7 +72,7 @@ func refresh(r *records, t time.Time) {
 func (s *Store) Attach(ctx context.Context, run string, rebuild bool, obs []Observation) (Counts, []string, error) {
 	var total Counts
 	var ids []string
-	err := s.transaction(ctx, true, func(r *records) error {
+	err := unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		if run == "" {
 			return ErrUnreachable
 		}
@@ -84,57 +83,108 @@ func (s *Store) Attach(ctx context.Context, run string, rebuild bool, obs []Obse
 		}
 		t := s.now()
 		touched := map[string]bool{}
+		views := map[string]*displayTracker{}
+		view := func(id string) (*displayTracker, error) {
+			if d := views[id]; d != nil {
+				return d, nil
+			}
+			c, err := candidateKey(ctx, tx, id)
+			if err != nil {
+				return nil, err
+			}
+			r, err := candidateRecords(ctx, tx, c)
+			if err != nil {
+				return nil, err
+			}
+			d := newDisplayTracker(r, id)
+			views[id] = d
+			return d, nil
+		}
 		for _, o := range obs {
 			total.Rows++
-			key := sources.SourceKey(o.Scraper, o.SourceID)
-			l, ok := r.links[key]
-			if ok {
+			ls, err := readRecords[Link](ctx, tx, "links", linkColumns, " WHERE scraper=? AND source_id=?", o.Scraper, o.SourceID)
+			if err != nil {
+				return err
+			}
+			var l Link
+			if len(ls) > 0 {
+				l = ls[0]
 				if !rebuild && l.Digest == o.Digest {
 					total.Unchanged++
-				} else {
-					total.Changed++
-					total.Linked++
-					l.Digest = o.Digest
-					l.Reading = o.Reading
+					d, err := view(l.Candidate)
+					if err != nil {
+						return err
+					}
+					if err = execSQL(ctx, tx, "UPDATE links SET run=?,last_seen=?,gone=0 WHERE scraper=? AND source_id=?", run, t.Format(time.RFC3339), o.Scraper, o.SourceID); err != nil {
+						return err
+					}
+					l.Run = run
+					l.LastSeen = t
+					l.Gone = false
+					touched[l.Candidate] = true
+					d.apply(l)
+					continue
 				}
-				l.Run = run
-				l.LastSeen = t
-				l.Gone = false
-				r.links[key] = l
-				touched[l.Candidate] = true
-				refresh(r, t)
-				continue
-			}
-			total.New++
-			var chosen Candidate
-			for _, existing := range r.links {
-				c := r.candidates[existing.Candidate]
-				if c.Status == StatusActive && match(o.Reading, existing.Reading) && (chosen.ID == "" || c.Created.Before(chosen.Created) || c.Created.Equal(chosen.Created) && c.ID < chosen.ID) {
-					chosen = c
-				}
-			}
-			reason := LinkMatchKey
-			confidence := 0.8
-			if chosen.ID == "" {
-				id, e := s.mint(r, CandidateIDPrefix)
-				if e != nil {
-					return e
-				}
-				chosen = Candidate{ID: id, Status: StatusActive, Names: []string{}, People: []sources.Person{}, Cargo: []string{}, Created: t, Updated: t}
-				r.candidates[id] = chosen
-				reason = LinkSourceKey
-				confidence = 1
-				total.Created++
-			} else {
+				total.Changed++
 				total.Linked++
+				l.Digest = o.Digest
+				l.Reading = o.Reading
+			} else {
+				total.New++
+				id := ""
+				if o.Reading.NameKey != "" && o.Reading.State != "" && validZip(o.Reading.Zip) {
+					err = scanSQL(ctx, tx, "SELECT c.id FROM links l JOIN candidates c ON c.id=l.candidate WHERE l.name_key=? AND l.state=? AND l.zip=? AND c.status=? ORDER BY c.created,c.id LIMIT 1", []any{o.Reading.NameKey, o.Reading.State, o.Reading.Zip, StatusActive}, &id)
+					if err != nil && !errors.Is(err, sql.ErrNoRows) {
+						return err
+					}
+				}
+				reason, confidence := LinkMatchKey, 0.8
+				if id == "" {
+					id, err = s.mintKey(ctx, tx, CandidateIDPrefix)
+					if err != nil {
+						return err
+					}
+					c := Candidate{ID: id, Status: StatusActive, Names: []string{}, People: []sources.Person{}, Cargo: []string{}, Created: t, Updated: t}
+					r := emptyRecords()
+					r.candidates[id] = c
+					views[id] = newDisplayTracker(r, id)
+					if err = putCandidate(ctx, tx, c); err != nil {
+						return err
+					}
+					reason, confidence = LinkSourceKey, 1
+					total.Created++
+				} else {
+					total.Linked++
+				}
+				l = Link{Candidate: id, Scraper: o.Scraper, SourceID: o.SourceID, Digest: o.Digest, Reading: o.Reading, Reason: reason, Confidence: confidence, FirstSeen: t}
 			}
-			r.links[key] = Link{Candidate: chosen.ID, Scraper: o.Scraper, SourceID: o.SourceID, Run: run, Digest: o.Digest, Reading: o.Reading, Reason: reason, Confidence: confidence, FirstSeen: t, LastSeen: t}
-			touched[chosen.ID] = true
-			refresh(r, t)
+			l.Run = run
+			l.LastSeen = t
+			l.Gone = false
+			d, err := view(l.Candidate)
+			if err != nil {
+				return err
+			}
+			if err = putLink(ctx, tx, l); err != nil {
+				return err
+			}
+			touched[l.Candidate] = true
+			d.apply(l)
 		}
 		ids = sortedIDs(touched)
+		for _, id := range ids {
+			d := views[id]
+			refresh(d.records, t)
+			c := d.records.candidates[id]
+			if d.changed && c.Status == StatusActive {
+				c.Updated = t
+			}
+			if err := putCandidate(ctx, tx, c); err != nil {
+				return err
+			}
+		}
 		return nil
-	})
+	}))
 	if err != nil {
 		return Counts{}, nil, err
 	}
@@ -145,24 +195,41 @@ func (s *Store) Attach(ctx context.Context, run string, rebuild bool, obs []Obse
 func (s *Store) MarkGone(ctx context.Context, scraper, run string) (Counts, []string, error) {
 	var c Counts
 	var out []string
-	err := s.transaction(ctx, true, func(r *records) error {
+	err := unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		if scraper == "" || run == "" {
 			return ErrUnreachable
 		}
 		t := s.now()
+		rows, err := tx.QueryContext(ctx, "UPDATE links SET gone=1 WHERE scraper=? AND run<>? AND gone=0 RETURNING candidate", scraper, run)
+		if err != nil {
+			return err
+		}
 		ids := map[string]bool{}
-		for key, l := range r.links {
-			if l.Scraper == scraper && l.Run != run && !l.Gone {
-				l.Gone = true
-				r.links[key] = l
-				c.Gone++
-				ids[l.Candidate] = true
+		for rows.Next() {
+			var id string
+			if err = rows.Scan(&id); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			ids[id] = true
+			c.Gone++
+		}
+		err = rows.Err()
+		closeErr := rows.Close()
+		if err != nil {
+			return err
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		out = sortedIDs(ids)
+		for _, id := range out {
+			if err = refreshKey(ctx, tx, id, t); err != nil {
+				return err
 			}
 		}
-		refresh(r, t)
-		out = sortedIDs(ids)
 		return nil
-	})
+	}))
 	if err != nil {
 		return Counts{}, nil, err
 	}

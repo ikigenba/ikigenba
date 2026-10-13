@@ -181,8 +181,6 @@ func unreachable(err error) error {
 }
 func (s *Store) now() time.Time { return s.cfg.Now().UTC().Truncate(time.Second) }
 func (s *Store) transaction(ctx context.Context, write bool, fn func(*records) error) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return unreachable(err)
 	}

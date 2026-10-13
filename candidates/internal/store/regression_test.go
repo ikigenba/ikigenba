@@ -814,3 +814,86 @@ func TestResolutionBatchPreservesIntermediateDisplayUpdate(t *testing.T) {
 	regEqual(t, regCandidate(t, batch, id), regCandidate(t, single, id))
 	regEqual(t, regLinks(t, batch, id), regLinks(t, single, id))
 }
+
+// R-GHLY-TCUG
+func TestResolutionBatchUnchangedDistinctKeysPreservesDisplayUpdate(t *testing.T) {
+	batch, single := regNew(t), regNew(t)
+	a, b := regObs("a", "Shared business"), regObs("b", "Shared business")
+	a.Reading.Phone = "320-555-0101"
+	b.Reading.Phone = "320-555-0102"
+	_, batchIDs := regAttach(t, batch, "initial-run", a, b)
+	_, singleIDs := regAttach(t, single, "initial-run", a, b)
+	regEqual(t, batchIDs, singleIDs)
+	id := batchIDs[0]
+	before := regCandidate(t, batch, id)
+	regEqual(t, before.Phone, a.Reading.Phone)
+	batch.now = batch.now.Add(time.Hour)
+	single.now = batch.now
+	counts, touched := regAttach(t, batch, "next-run", b, a)
+	first, firstTouched := regAttach(t, single, "next-run", b)
+	regEqual(t, regCandidate(t, single, id).Phone, b.Reading.Phone)
+	second, secondTouched := regAttach(t, single, "next-run", a)
+	regEqual(t, counts, store.Counts{Rows: first.Rows + second.Rows, Unchanged: first.Unchanged + second.Unchanged})
+	regEqual(t, counts, store.Counts{Rows: 2, Unchanged: 2})
+	regEqual(t, touched, firstTouched)
+	regEqual(t, touched, secondTouched)
+	want := before
+	want.Updated = regTime(batch)
+	regEqual(t, regCandidate(t, batch, id), want)
+	regEqual(t, regCandidate(t, batch, id), regCandidate(t, single, id))
+	regEqual(t, regLinks(t, batch, id), regLinks(t, single, id))
+	batch.reopen(t)
+	single.reopen(t)
+	regEqual(t, regCandidate(t, batch, id), want)
+	regEqual(t, regCandidate(t, batch, id), regCandidate(t, single, id))
+	regEqual(t, regLinks(t, batch, id), regLinks(t, single, id))
+}
+
+// R-GHLY-TCUG
+func TestResolutionBatchPreservesTransientNamesAndCargo(t *testing.T) {
+	for _, kind := range []string{"names", "cargo"} {
+		t.Run(kind, func(t *testing.T) {
+			batch, single := regNew(t), regNew(t)
+			a, b := regObs("a", "Shared business"), regObs("b", "Shared business")
+			if kind == "names" {
+				a.Reading.Names = []string{"Alias alpha"}
+				b.Reading.Names = []string{"Alias beta"}
+			} else {
+				a.Reading.Cargo = []string{}
+				b.Reading.Cargo = []string{"baseline"}
+			}
+			_, ids := regAttach(t, batch, "initial-run", a, b)
+			_, otherIDs := regAttach(t, single, "initial-run", a, b)
+			regEqual(t, ids, otherIDs)
+			id := ids[0]
+			before := regCandidate(t, batch, id)
+			batch.now = batch.now.Add(time.Hour)
+			single.now = batch.now
+			if kind == "cargo" {
+				b.Reading.Cargo = []string{}
+				a.Reading.Cargo = []string{"baseline"}
+				a.Digest = "changed-a"
+				b.Digest = "changed-b"
+			}
+			counts, touched := regAttach(t, batch, "next-run", b, a)
+			first, firstTouched := regAttach(t, single, "next-run", b)
+			if reflect.DeepEqual(regCandidate(t, single, id), before) {
+				t.Fatal("first observation produced no transient display change")
+			}
+			second, secondTouched := regAttach(t, single, "next-run", a)
+			regEqual(t, counts, store.Counts{Rows: first.Rows + second.Rows, Changed: first.Changed + second.Changed, Unchanged: first.Unchanged + second.Unchanged, Linked: first.Linked + second.Linked})
+			regEqual(t, touched, firstTouched)
+			regEqual(t, touched, secondTouched)
+			want := before
+			want.Updated = regTime(batch)
+			regEqual(t, regCandidate(t, batch, id), want)
+			regEqual(t, regCandidate(t, batch, id), regCandidate(t, single, id))
+			regEqual(t, regLinks(t, batch, id), regLinks(t, single, id))
+			batch.reopen(t)
+			single.reopen(t)
+			regEqual(t, regCandidate(t, batch, id), want)
+			regEqual(t, regCandidate(t, batch, id), regCandidate(t, single, id))
+			regEqual(t, regLinks(t, batch, id), regLinks(t, single, id))
+		})
+	}
+}

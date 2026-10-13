@@ -12,7 +12,7 @@ import (
 // GetCandidate reads one candidate, including merged candidates.
 func (s *Store) GetCandidate(ctx context.Context, id string) (Candidate, error) {
 	var out Candidate
-	err := s.transaction(ctx, false, func(r *records) error {
+	err := s.readScope(ctx, "candidate", id, func(r *records) error {
 		var ok bool
 		out, ok = r.candidates[id]
 		if !ok {
@@ -51,7 +51,7 @@ func linksFor(r *records, id string) []Link {
 // Links reads a candidate’s evidence in display order.
 func (s *Store) Links(ctx context.Context, id string) ([]Link, error) {
 	var out []Link
-	err := s.transaction(ctx, false, func(r *records) error {
+	err := s.readScope(ctx, "links", id, func(r *records) error {
 		if _, ok := r.candidates[id]; !ok {
 			return ErrNotFound
 		}
@@ -64,7 +64,7 @@ func (s *Store) Links(ctx context.Context, id string) ([]Link, error) {
 // Estimates reads a candidate’s stored source estimates.
 func (s *Store) Estimates(ctx context.Context, id string) ([]sources.Estimate, error) {
 	var out []sources.Estimate
-	err := s.transaction(ctx, false, func(r *records) error {
+	err := s.readScope(ctx, "estimates", id, func(r *records) error {
 		if _, ok := r.candidates[id]; !ok {
 			return ErrNotFound
 		}
@@ -77,7 +77,7 @@ func (s *Store) Estimates(ctx context.Context, id string) ([]sources.Estimate, e
 // GetAssessment reads a candidate’s last assessment.
 func (s *Store) GetAssessment(ctx context.Context, id string) (Assessment, error) {
 	var out Assessment
-	err := s.transaction(ctx, false, func(r *records) error {
+	err := s.readScope(ctx, "assessment", id, func(r *records) error {
 		var ok bool
 		out, ok = r.assessments[id]
 		if !ok {
@@ -91,7 +91,7 @@ func (s *Store) GetAssessment(ctx context.Context, id string) (Assessment, error
 // Rulings reads a candidate’s decisions in reverse recording order.
 func (s *Store) Rulings(ctx context.Context, id string) ([]Ruling, error) {
 	var out []Ruling
-	err := s.transaction(ctx, false, func(r *records) error {
+	err := s.readScope(ctx, "rulings", id, func(r *records) error {
 		if _, ok := r.candidates[id]; !ok {
 			return ErrNotFound
 		}
@@ -142,7 +142,7 @@ func matchesCandidate(r *records, c Candidate, f CandidateFilter) bool {
 // ListCandidates reads a filtered window of active candidates.
 func (s *Store) ListCandidates(ctx context.Context, f CandidateFilter, offset, limit int64) ([]Candidate, error) {
 	var out []Candidate
-	err := s.transaction(ctx, false, func(r *records) error {
+	err := s.readScope(ctx, "list", "", func(r *records) error {
 		if !validWindow(offset, limit) {
 			return ErrUnreachable
 		}
@@ -168,7 +168,7 @@ func (s *Store) ListCandidates(ctx context.Context, f CandidateFilter, offset, l
 // Shortlist ranks eligible candidates at the supplied clock time.
 func (s *Store) Shortlist(ctx context.Context, f ShortlistFilter, offset, limit int64) ([]Ranked, error) {
 	var out []Ranked
-	err := s.transaction(ctx, false, func(r *records) error {
+	err := s.readScope(ctx, "shortlist", "", func(r *records) error {
 		if !validWindow(offset, limit) {
 			return ErrUnreachable
 		}
