@@ -5,7 +5,7 @@
      to sign in. Never shows another user's draft or transfer, a draft's
      body text, a token or a byte of a file. Read-only: no form but the
      banner's sign out. Data: .Banner (a page.Banner, for banner and
-     footer); .Drafts, the first page of the caller's drafts, newest first
+     footer); .Drafts, one window of the caller's drafts, newest first
      by created, each with .ID (its drf_ id, "drf_" and 16 hex), .Status ("open", "sent" or
      "discarded", as stored), .Subject (the subject line; may be empty),
      .To, .Cc and .Bcc (the To, Cc and Bcc addresses, each a slice of
@@ -15,10 +15,12 @@
      open, "https://mail.google.com/mail/u/0/#all/<message id>" once sent;
      empty once discarded), .Created and .CreatedText (RFC 3339 UTC to the
      second, and UTC to the minute, "2026-10-05 09:00"), and .Sent and
-     .SentText (likewise; both empty unless sent); .DraftsNext (string, the
-     page token drafts's next carries for the drafts after these, the value
-     to pass as its page; empty when none remain); .Transfers, the first
-     page of the caller's transfers, newest first by started, each with .ID (its xfr_ id, "xfr_"
+     .SentText (likewise; both empty unless sent); .DraftsPage (string, this
+     window's own drafts page token, the ?drafts_page= the request carried;
+     empty on the first window) and .DraftsNext (string, the page token
+     drafts's next carries for the drafts after these; empty when none
+     remain); .Drafts is the window .DraftsPage names; .Transfers, one
+     window of the caller's transfers, newest first by started, each with .ID (its xfr_ id, "xfr_"
      and 16 hex), .Direction ("pull" or "push", as stored), .Status
      ("queued", "running", "done" or "failed", as stored), .Reason (the
      failure reason as stored, one of "not_found", "forbidden",
@@ -35,11 +37,16 @@
      when done), .Started and .StartedText (RFC 3339 UTC to the second, and
      UTC to the minute, "2026-10-05 09:00"), and .Finished and
      .FinishedText (likewise; both empty while queued or running); and
+     .TransfersPage (string, this window's own transfers page token, the
+     ?transfers_page= the request carried; empty on the first window) and
      .TransfersNext (string, the page token transfers's next carries for
-     the transfers after these, the value to pass as its page; empty when
-     none remain). Two lists share the page, so each hint has its own id,
-     p#next-drafts and p#next-transfers, where a page with one list uses
-     p#next. Counts
+     the transfers after these; empty when none remain); .Transfers is the
+     window .TransfersPage names. Two lists share the page, so each has its
+     own nav and parameter, nav#paging-drafts with drafts_page and
+     nav#paging-transfers with transfers_page, where a page with one list
+     uses nav#paging and page; each nav's hrefs carry the other list's
+     current token, so paging one list never resets the other, and its
+     First drops only its own parameter. Counts
      and bytes are shown as the plain integer, never a humanised size.
      Status, direction and reason words are shown as stored; the status's
      kind is chosen here: a draft's "open" info, "sent" ok, "discarded" no
@@ -68,9 +75,17 @@
      td.draft-attachments.num (.AttachmentCount); td.draft-created holding
      time[datetime=<.Created>] (text .CreatedText); and td.draft-sent
      holding, only when .Sent is not empty, time[datetime=<.Sent>] (text
-     .SentText), then, when .DraftsNext is not empty, p#next-drafts (text
-     "More drafts follow: call drafts with page <.DraftsNext>.", drafts,
-     page and .DraftsNext each in a code element). Then section#transfers with h2 "Transfers" and a p in its
+     .SentText); then, after the card (section#drafts),
+     nav.paging#paging-drafts (aria-label "Pages") whose children are, in
+     order, First (on the first window, .DraftsPage empty, a span with
+     aria-current="page" and text "First"; otherwise a link with text
+     "First" to / when .TransfersPage is empty, else to
+     /?transfers_page=<.TransfersPage>) and, only when .DraftsNext is not
+     empty, Next (a link with text "Next" to /?drafts_page=<.DraftsNext>,
+     followed by &transfers_page=<.TransfersPage> when .TransfersPage is
+     not empty); the nav shows when .Drafts is not empty or .DraftsPage is
+     not empty, so an emptied later window still offers First; on the
+     first window with no drafts there is no nav. Then section#transfers with h2 "Transfers" and a p in its
      header (text "Attachments and messages pulled into artifacts, and
      artifacts pushed onto drafts, yours alone, newest first."), then
      either, when .Transfers is empty, div#no-transfers.empty holding h3
@@ -91,11 +106,18 @@
      not empty, else .Path in a code element; td.transfer-bytes.num
      (.Bytes); td.transfer-started holding time[datetime=<.Started>] (text
      .StartedText); and td.transfer-finished holding, only when .Finished
-     is not empty, time[datetime=<.Finished>] (text .FinishedText), then,
-     when .TransfersNext is not empty, p#next-transfers (text "More
-     transfers follow: call transfers with page <.TransfersNext>.",
-     transfers, page and .TransfersNext each in a code element); a
-     #about-link (text "About gmail") whose href is "/about". No script
+     is not empty, time[datetime=<.Finished>] (text .FinishedText); then, after the card
+     (section#transfers), nav.paging#paging-transfers (aria-label "Pages")
+     whose children are, in order, First (on the first window,
+     .TransfersPage empty, a span with aria-current="page" and text
+     "First"; otherwise a link with text "First" to / when .DraftsPage is
+     empty, else to /?drafts_page=<.DraftsPage>) and, only when
+     .TransfersNext is not empty, Next (a link with text "Next" to
+     /?transfers_page=<.TransfersNext>, followed by
+     &drafts_page=<.DraftsPage> when .DraftsPage is not empty); the nav
+     shows when .Transfers is not empty or .TransfersPage is not empty, so
+     an emptied later window still offers First; on the first window with
+     no transfers there is no nav; a #about-link (text "About gmail") whose href is "/about". No script
      but appkit's /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
@@ -123,13 +145,13 @@
 {{end}}</tbody>
 </table>
 </div>
-{{if .DraftsNext}}<p id="next-drafts">More drafts follow: call <code>drafts</code> with <code>page</code> <code>{{.DraftsNext}}</code>.</p>
-{{end}}{{else}}<div id="no-drafts" class="empty">
+{{else}}<div id="no-drafts" class="empty">
 <h3 class="text-md">No drafts yet</h3>
 <p>A draft an agent writes with the <code>compose</code> tool shows up here, and stays as a record once it is sent or discarded.</p>
 </div>{{end}}
 </section>
-<section id="transfers" class="card flush" aria-labelledby="transfers-title">
+{{if or .Drafts .DraftsPage}}<nav class="paging" id="paging-drafts" aria-label="Pages">{{if .DraftsPage}}<a href="/{{if .TransfersPage}}?transfers_page={{.TransfersPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .DraftsNext}}<a href="/?drafts_page={{.DraftsNext}}{{if .TransfersPage}}&amp;transfers_page={{.TransfersPage}}{{end}}">Next</a>{{end}}</nav>
+{{end}}<section id="transfers" class="card flush" aria-labelledby="transfers-title">
 <header><div><h2 id="transfers-title">Transfers</h2><p>Attachments and messages pulled into artifacts, and artifacts pushed onto drafts, yours alone, newest first.</p></div></header>
 {{if .Transfers}}<div class="table-scroll">
 <table id="transfer-list">
@@ -148,13 +170,13 @@
 {{end}}</tbody>
 </table>
 </div>
-{{if .TransfersNext}}<p id="next-transfers">More transfers follow: call <code>transfers</code> with <code>page</code> <code>{{.TransfersNext}}</code>.</p>
-{{end}}{{else}}<div id="no-transfers" class="empty">
+{{else}}<div id="no-transfers" class="empty">
 <h3 class="text-md">No transfers yet</h3>
 <p>An attachment or message an agent pulls into artifacts with the <code>pull</code> tool, or an artifact it attaches to a draft with <code>push</code>, shows up here as a transfer.</p>
 </div>{{end}}
 </section>
-<p><a id="about-link" href="/about">About gmail</a></p>
+{{if or .Transfers .TransfersPage}}<nav class="paging" id="paging-transfers" aria-label="Pages">{{if .TransfersPage}}<a href="/{{if .DraftsPage}}?drafts_page={{.DraftsPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .TransfersNext}}<a href="/?transfers_page={{.TransfersNext}}{{if .DraftsPage}}&amp;drafts_page={{.DraftsPage}}{{end}}">Next</a>{{end}}</nav>
+{{end}}<p><a id="about-link" href="/about">About gmail</a></p>
 </main>
 {{template "footer" .Banner}}
 </body>
