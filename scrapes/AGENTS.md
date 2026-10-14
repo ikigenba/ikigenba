@@ -234,7 +234,10 @@ a test's own store recorded, including another scraper's, runs left
 the checkout's `state/` or a shared file. A database failure is provoked
 with `SetFailing(true)` on the handle the store the test handed the server
 or engine was built over, before a call or from a hook design names, never
-by corrupting the file, removing permissions or closing the store. Tests
+by corrupting the file, removing permissions or closing the store. The one
+other way is the secrecy run of D09 (R-U54Y-KZ5C), which drops `rows`, and
+later `rows` and `runs`, through the test's own handle; it is the only test
+that drops a table. Tests
 prove scrapes' use of the database, its schema, its store and its wiring,
 never SQLite's own guarantees (atomicity, durability, locking) and never
 appkit's `db` contract (opening, migrations, transactions, `db status`),
