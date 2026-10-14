@@ -16,6 +16,132 @@ import (
 	"github.com/ikigenba/ikigenba/prompts/internal/store"
 )
 
+// R-UVOD-XAS4 R-UY46-OU9I
+func TestPromptReverseWindows(t *testing.T) {
+	s, _, _ := setup(t)
+	ps := []store.Prompt{create(t, s, "a-b"), create(t, s, "a1"), create(t, s, "aa")}
+	other := draft("a0")
+	other.Owner = "bob"
+	if _, e := s.Create(ctx, other); e != nil {
+		t.Fatal(e)
+	}
+	for _, pattern := range []string{"repo.pushed", "cron.*.fired"} {
+		if _, e := s.Subscribe(ctx, ps[1].ID, pattern); e != nil {
+			t.Fatal(e)
+		}
+	}
+	add(t, s, record(ps[1], 1, store.StatusRunning))
+	add(t, s, record(ps[1], 2, store.StatusQueued))
+	want, e := s.List(ctx, "alice", "", math.MaxInt)
+	if e != nil {
+		t.Fatal(e)
+	}
+	method := (*store.Store).ListBefore
+	for _, tc := range []struct {
+		owner, before string
+		n             int
+		want          []store.Prompt
+	}{
+		{"alice", "aa", 5, []store.Prompt{want[1], want[0]}},
+		{"alice", "a2", 5, []store.Prompt{want[1], want[0]}},
+		{"alice", "", 2, []store.Prompt{want[2], want[1]}},
+		{"alice", "", 5, []store.Prompt{want[2], want[1], want[0]}},
+		{"alice", string([]byte{255}), 1, []store.Prompt{want[2]}},
+		{"alice", "a-b", 5, []store.Prompt{}},
+		{"alice", "", 0, []store.Prompt{}},
+		{"alice", "a2", -1, []store.Prompt{}},
+		{"missing", "", 5, []store.Prompt{}},
+		{"", "", 5, []store.Prompt{}},
+	} {
+		got, e := method(s, ctx, tc.owner, tc.before, tc.n)
+		if e != nil {
+			t.Fatal(e)
+		}
+		equal(t, got, tc.want)
+	}
+}
+
+// R-UWWA-B2IT R-UZC3-2M07
+func TestRunReverseWindows(t *testing.T) {
+	s, _, _ := setup(t)
+	p := create(t, s, "reverse-window")
+	q := create(t, s, "other-reverse-window")
+	want := []store.Run{}
+	for i, n := range []int{9, 4, 1, 2, 3} {
+		status := store.StatusQueued
+		if i == 2 {
+			status = store.StatusRunning
+		}
+		if i == 3 {
+			status = store.StatusFailed
+		}
+		r := record(p, n, status)
+		if i < 2 {
+			r.Started = instant.Add(time.Duration(i-2) * time.Second)
+		}
+		if status == store.StatusFailed {
+			r.Finished = r.Started
+			r.Reason = store.ReasonStartFailed
+		}
+		if i == 4 {
+			r.Trigger, r.Event = store.TriggerEvent, "reverse-delivery"
+		}
+		r = add(t, s, r)
+		if i == 2 {
+			var e error
+			r, e = s.FinishRun(ctx, r.ID, store.Ending{
+				Status: store.StatusExited, ExitCode: 2, Finished: instant.Add(time.Second),
+				StdoutBytes: 31, StderrBytes: 17, StderrTruncated: true,
+				Usage: store.Usage{Calls: 1, ToolCalls: 2, InputTokens: 3, CachedTokens: 4, OutputTokens: 5, ReasoningTokens: 6, CostNanos: 1234567},
+			})
+			if e != nil {
+				t.Fatal(e)
+			}
+		}
+		want = append(want, r)
+	}
+	add(t, s, record(q, 50, store.StatusQueued))
+	method := (*store.Store).RunsBefore
+	got := []store.Run{}
+	started, id := "2999-01-01T00:00:00Z", ""
+	for calls := 0; ; calls++ {
+		if calls > len(want) {
+			t.Fatal("reverse window did not terminate")
+		}
+		page, e := method(s, ctx, p.ID, started, id, 2)
+		if e != nil || page == nil || len(page) > 2 {
+			t.Fatal(page, e)
+		}
+		if len(page) == 0 {
+			break
+		}
+		got = append(got, page...)
+		last := page[len(page)-1]
+		started, id = last.Started.UTC().Format(time.RFC3339), last.ID
+	}
+	equal(t, got, want)
+	for _, tc := range []struct {
+		prompt, started, id string
+		n                   int
+		want                []store.Run
+	}{
+		{p.ID, want[0].Started.Format(time.RFC3339), want[0].ID, 5, want[1:]},
+		{p.ID, want[2].Started.Format(time.RFC3339), "prr_0000000000000000", 5, want[2:]},
+		{p.ID, want[0].Started.Add(-time.Second).Format(time.RFC3339), "position", 5, want},
+		{p.ID, "2999-01-01T00:00:00Z", "", 9, want},
+		{p.ID, "", "", 0, []store.Run{}},
+		{p.ID, "", "", -1, []store.Run{}},
+		{"missing", "", "", 9, []store.Run{}},
+		{"", "", "", 9, []store.Run{}},
+	} {
+		got, e := method(s, ctx, tc.prompt, tc.started, tc.id, tc.n)
+		if e != nil {
+			t.Fatal(e)
+		}
+		equal(t, got, tc.want)
+	}
+}
+
 // R-T27H-KF4L R-SNKO-Z689 R-STO6-W0XQ
 func TestPromptWindows(t *testing.T) {
 	s, _, _ := setup(t)

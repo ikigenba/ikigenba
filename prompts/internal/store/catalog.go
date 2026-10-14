@@ -157,6 +157,26 @@ func (s *Store) List(ctx context.Context, owner, after string, n int) (ps []Prom
 	return
 }
 
+// ListBefore lists a bounded window of an owner's prompts in reverse name order.
+func (s *Store) ListBefore(ctx context.Context, owner, before string, n int) (ps []Prompt, err error) {
+	err = s.read(ctx, func(tx *sql.Tx) error {
+		if n < 1 {
+			ps = []Prompt{}
+			return nil
+		}
+		if before == "" {
+			ps, err = queryPrompts(tx, "WHERE p.owner_id=? ORDER BY p.name DESC LIMIT ?", owner, n)
+		} else {
+			ps, err = queryPrompts(tx, "WHERE p.owner_id=? AND p.name<? ORDER BY p.name DESC LIMIT ?", owner, before, n)
+		}
+		return err
+	})
+	if err != nil {
+		ps = nil
+	}
+	return
+}
+
 // Taken reports whether a prompt name is in use.
 func (s *Store) Taken(ctx context.Context, name string) (yes bool, err error) {
 	err = s.read(ctx, func(tx *sql.Tx) error { yes, err = exists(tx, "SELECT 1 FROM prompts WHERE name=?", name); return err })

@@ -179,7 +179,7 @@ func assertPage(t *testing.T, w *httptest.ResponseRecorder, status int, name str
 }
 
 // R-YUFC-PT2O R-YDCR-D0OY R-YEKN-QSFN R-YLW2-1EVT R-CBT1-D6V6 R-CFGQ-II39
-// R-DEWD-0DU8 R-DJRY-JGT0
+// R-VCQZ-A35U R-VF6S-1MN8
 func TestLanding(t *testing.T) {
 	f := setup(t)
 	assertPage(t, serve(f.cfg, request("GET", "/?fixture=query", "alice")), 200, "landing", pages.LandingData{Banner: wantBanner("alice")})
@@ -196,7 +196,7 @@ func TestLanding(t *testing.T) {
 }
 
 // R-CD0X-QYLV R-CE8U-4QCK
-// R-DHC5-RXBM R-DKZU-X8JP
+// R-VDYV-NUWJ R-VGEO-FEDX
 func TestPrompt(t *testing.T) {
 	f := setup(t)
 	p := create(t, f, "fixture", "alice")
@@ -242,7 +242,7 @@ func TestAbout(t *testing.T) {
 }
 
 // R-CMS4-T4JF R-CO01-6WA4 R-C9D8-LNDS R-CVBF-HIQA R-CWJB-VAGZ R-CXR8-927O R-CYZ4-MTYD
-// R-DR3C-U396 R-PRE6-V2ZY R-D2MT-S56G R-D52M-JONU R-D6AI-XGEJ R-D8QB-OZVX
+// R-VV1H-0NA9 R-VW9D-EF0Y R-D2MT-S56G R-D52M-JONU R-D6AI-XGEJ R-VYP6-5YIC
 func TestRouting(t *testing.T) {
 	f := setup(t)
 	p := create(t, f, "summarize", "alice")
@@ -323,7 +323,7 @@ func TestRouting(t *testing.T) {
 	}
 	for _, mode := range []string{"failure", "cancelled"} {
 		f.db.SetFailing(mode == "failure")
-		for _, path := range []string{"/", "//", "/summarize/", "/summarize", "/nope/", "/about/", "/summarize/other", "/summarize/runs/", "/summarize/a/b/c/d", "/summarize/runs/" + own.ID + "/", "/?page=" + url.QueryEscape(paging.Token{Tool: "list"}.Encode("summarize")), "/summarize/?page=" + url.QueryEscape(paging.Token{Tool: "runs"}.Encode(instant.UTC().Format(time.RFC3339), own.ID)), "/summarize?page=bogus"} {
+		for _, path := range []string{"/", "/?page=last", "/summarize/?page=last", "/?page=" + url.QueryEscape(paging.Token{Tool: "list-before"}.Encode("summarize")), "/summarize/?page=" + url.QueryEscape(paging.Token{Tool: "runs-before"}.Encode("time", own.ID)), "//", "/summarize/", "/summarize", "/nope/", "/about/", "/summarize/other", "/summarize/runs/", "/summarize/a/b/c/d", "/summarize/runs/" + own.ID + "/", "/?page=" + url.QueryEscape(paging.Token{Tool: "list"}.Encode("summarize")), "/summarize/?page=" + url.QueryEscape(paging.Token{Tool: "runs"}.Encode(instant.UTC().Format(time.RFC3339), own.ID)), "/summarize?page=bogus"} {
 			for _, method := range []string{"GET", "HEAD"} {
 				r := request(method, path, "alice")
 				if mode == "cancelled" {
@@ -609,7 +609,7 @@ func TestConcurrentHandler(t *testing.T) {
 	wg.Wait()
 }
 
-// R-DHC5-RXBM R-DKZU-X8JP
+// R-VDYV-NUWJ R-VGEO-FEDX
 func TestPromptOptionalFields(t *testing.T) {
 	f := setup(t)
 	for i, groups := range [][]string{nil, {"files"}, {"bash", "suite", "files"}} {
@@ -634,7 +634,7 @@ func TestPromptOptionalFields(t *testing.T) {
 	}
 }
 
-// R-CBT1-D6V6 R-D8QB-OZVX
+// R-CBT1-D6V6 R-VYP6-5YIC
 func TestBannerServicesRewrite(t *testing.T) {
 	f := setup(t)
 	f.cfg.ServicesPath = filepath.Join(t.TempDir(), "services.json")

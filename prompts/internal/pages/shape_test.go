@@ -15,13 +15,14 @@ import (
 // R-BG3N-F5L4 R-BHBJ-SXBT R-BIJG-6P2I R-BJRC-KGT7 R-BKZ8-Y8JW
 // R-BNF1-PS1A R-BOMY-3JRZ R-BPUU-HBIO R-BR2Q-V39D R-BSAN-8V02 R-BTIJ-MMQR
 // R-BUQG-0EHG R-BVYC-E685 R-YDCR-D0OY R-YEKN-QSFN
-// R-DB8N-V2M5 R-DCGK-8UCU
+// R-V0JZ-GDQW R-V1RV-U5HL
 // Converting each contract shape checks field names, types, and order by use.
 func TestDataShapes(t *testing.T) {
 	_ = pages.LandingData(struct {
 		Banner  page.Banner
 		Prompts []pages.PromptRow
 		Page    string
+		Prev    string
 		Next    string
 	}{})
 	_ = pages.PromptRow(struct {
@@ -41,6 +42,7 @@ func TestDataShapes(t *testing.T) {
 		Runs          []pages.RunRow
 		Subscriptions []string
 		Page          string
+		Prev          string
 		Next          string
 	}{})
 	_ = pages.PromptCard(struct {
@@ -117,4 +119,16 @@ func TestDataShapes(t *testing.T) {
 			t.Fatal("missing API")
 		}
 	}(pages.Load, pages.Handler, (*pages.Set).Write)
+}
+
+// R-V0JZ-GDQW R-V1RV-U5HL
+func TestWindowDataFields(t *testing.T) {
+	landing := pages.LandingData{Page: "fixture-page", Prev: "fixture-prev", Next: "fixture-next"}
+	if landing.Page != "fixture-page" || landing.Prev != "fixture-prev" || landing.Next != "fixture-next" {
+		t.Fatal("landing window fields")
+	}
+	prompt := pages.PromptData{Page: "fixture-page", Prev: "fixture-prev", Next: "fixture-next"}
+	if prompt.Page != "fixture-page" || prompt.Prev != "fixture-prev" || prompt.Next != "fixture-next" {
+		t.Fatal("prompt window fields")
+	}
 }

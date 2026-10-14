@@ -68,7 +68,7 @@ func nextValue(next *string) string {
 	return *next
 }
 
-// R-DEWD-0DU8 R-DJRY-JGT0 R-DM7R-B0AE R-DDOG-MM3J
+// R-V47O-LOYZ R-VCQZ-A35U R-VF6S-1MN8 R-VHMK-T64M R-V2ZS-7X8A
 func TestLandingPaginationParity(t *testing.T) {
 	for _, count := range []int{paging.DefaultLimit, paging.DefaultLimit + 1} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {
@@ -104,6 +104,7 @@ func TestLandingPaginationParity(t *testing.T) {
 				}
 				last := rest.Prompts[0]
 				data.Page, data.Next = data.Next, ""
+				data.Prev = paging.Token{Tool: "list-before"}.Encode(last.Name)
 				data.Prompts = []pages.PromptRow{{Name: last.Name, URL: "/" + last.Name + "/", Model: last.Model}}
 				assertWindow(t, f, "/?page="+url.QueryEscape(data.Page)+"&page=bogus&limit=1", "landing", data)
 			}
@@ -111,14 +112,14 @@ func TestLandingPaginationParity(t *testing.T) {
 	}
 }
 
-// R-DHC5-RXBM R-DKZU-X8JP R-DNFN-OS13 R-DDOG-MM3J
+// R-V7VD-R072 R-VDYV-NUWJ R-VGEO-FEDX R-VIUH-6XVB R-V2ZS-7X8A
 func TestPromptPaginationParity(t *testing.T) {
 	for _, count := range []int{paging.DefaultLimit, paging.DefaultLimit + 3} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {
 			f := setup(t)
 			p := create(t, f, "fixture", "alice")
 			other := create(t, f, "other", "alice")
-			add(t, f, other, 100, store.StatusQueued, store.Ending{})
+			add(t, f, other, 1000, store.StatusQueued, store.Ending{})
 			var ordered []store.Run
 			for i := 0; i < count; i++ {
 				// Adjacent records share a second; their IDs deliberately oppose start order.
@@ -163,6 +164,7 @@ func TestPromptPaginationParity(t *testing.T) {
 					t.Fatalf("remainder: %+v", rest)
 				}
 				data.Page, data.Next = data.Next, ""
+				data.Prev = paging.Token{Tool: "runs-before"}.Encode(ordered[paging.DefaultLimit].Started.UTC().Format(time.RFC3339), ordered[paging.DefaultLimit].ID)
 				data.Runs = nil
 				for i, run := range ordered[paging.DefaultLimit:] {
 					if rest.Runs[i].ID != run.ID {
@@ -186,16 +188,16 @@ func assertWindow(t *testing.T, f *fixture, path, template string, data any) {
 	}
 }
 
-// R-DDOG-MM3J R-DONK-2JRS R-DPVG-GBIH R-D2MT-S56G R-D52M-JONU R-D6AI-XGEJ R-D8QB-OZVX
+// R-V2ZS-7X8A R-VRDR-VC26 R-VSLO-93SV R-D2MT-S56G R-D52M-JONU R-D6AI-XGEJ R-VYP6-5YIC
 func TestInvalidPagePrecedesCatalog(t *testing.T) {
 	f := setup(t)
 	create(t, f, "fixture", "alice")
 	create(t, f, "private", "bob")
 	list := paging.Token{Tool: "list"}.Encode("fixture")
 	runs := paging.Token{Tool: "runs"}.Encode(instant.UTC().Format(time.RFC3339), "prr_0000000000000001")
-	paths := []string{"/?page=bogus", "/?page=" + url.QueryEscape(runs), "/?page=" + url.QueryEscape(list+"x")}
+	paths := []string{"/?page=bogus", "/?page=LAST", "/?page=last/", "/?page=" + url.QueryEscape(paging.Token{Tool: "runs-before"}.Encode("time", "id")), "/?page=" + url.QueryEscape(runs), "/?page=" + url.QueryEscape(list+"x")}
 	for _, name := range []string{"fixture", "private", "nope", "about", "tools", "", "%66ixture"} {
-		for _, token := range []string{"bogus", list, runs + "x"} {
+		for _, token := range []string{"bogus", "LAST", "last/", list, paging.Token{Tool: "list-before"}.Encode("fixture"), runs + "x"} {
 			paths = append(paths, "/"+name+"/?page="+url.QueryEscape(token)+"&page=&limit=1&other=ignored")
 		}
 	}
@@ -236,5 +238,153 @@ func TestInvalidPagePrecedesCatalog(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// R-V5FK-ZGPO R-V6NH-D8GD R-VK2D-KPM0 R-VMI6-C93E R-VOXZ-3SKS
+func TestCatalogBackwardAndLastWindows(t *testing.T) {
+	for _, count := range []int{0, paging.DefaultLimit, paging.DefaultLimit + 2, 2 * paging.DefaultLimit, 2*paging.DefaultLimit + 3} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			f := setup(t)
+			var rows []pages.PromptRow
+			for i := 0; i < count; i++ {
+				p := create(t, f, fmt.Sprintf("prompt-%03d", i), "alice")
+				rows = append(rows, pages.PromptRow{Name: p.Name, URL: "/" + p.Name + "/", Model: p.Model})
+			}
+			create(t, f, "prompt-001-private", "bob")
+			check := func(value string, low, high int, backward, last bool) {
+				t.Helper()
+				data := pages.LandingData{Banner: wantBanner("alice"), Page: value, Prompts: rows[low:high]}
+				if value != "" && low < high {
+					data.Prev = paging.Token{Tool: "list-before"}.Encode(rows[low].Name)
+				}
+				if low < high && !last && (backward || high < count) {
+					data.Next = paging.Token{Tool: "list"}.Encode(rows[high-1].Name)
+				}
+				assertWindow(t, f, "/?page="+url.QueryEscape(value)+"&page=bogus&limit=1&other=ignored", "landing", data)
+			}
+			if count <= paging.DefaultLimit {
+				assertUnderflow(t, f, "/?page=last&other=ignored", "/")
+				assertUnderflow(t, f, "/?page="+url.QueryEscape(paging.Token{Tool: "list-before"}.Encode("")), "/")
+				return
+			}
+			// Walk forward by tool tokens, then back through the same window boundaries.
+			var starts []int
+			value := ""
+			for low := 0; low < count; low += paging.DefaultLimit {
+				high := min(low+paging.DefaultLimit, count)
+				starts = append(starts, low)
+				check(value, low, high, false, false)
+				value = paging.Token{Tool: "list"}.Encode(rows[high-1].Name)
+			}
+			for j := len(starts) - 2; j >= 0; j-- {
+				key := rows[starts[j+1]].Name
+				value = paging.Token{Tool: "list-before"}.Encode(key)
+				if j == 0 {
+					assertUnderflow(t, f, "/?page="+url.QueryEscape(value), "/")
+				} else {
+					check(value, starts[j], starts[j]+paging.DefaultLimit, true, false)
+				}
+			}
+			check("last", count-paging.DefaultLimit, count, true, true)
+			// An unoccupied position has the same preceding window as its successor.
+			key := rows[count-1].Name
+			check(paging.Token{Tool: "list-before"}.Encode(key), count-1-paging.DefaultLimit, count-1, true, false)
+			check(paging.Token{Tool: "list-before"}.Encode(rows[count-2].Name+"-gap"), count-1-paging.DefaultLimit, count-1, true, false)
+			check(paging.Token{Tool: "list-before"}.Encode(""), count-paging.DefaultLimit, count, true, false)
+			assertUnderflow(t, f, "/?page="+url.QueryEscape(paging.Token{Tool: "list-before"}.Encode(rows[paging.DefaultLimit].Name)), "/")
+			check(paging.Token{Tool: "list"}.Encode("zzz"), count, count, false, false)
+		})
+	}
+}
+
+func assertUnderflow(t *testing.T, f *fixture, path, location string) {
+	t.Helper()
+	for _, method := range []string{"GET", "HEAD"} {
+		f.calls = nil
+		r := request(method, path, "alice")
+		r.Header.Set("If-None-Match", "fixture-header")
+		r.Body = io.NopCloser(strings.NewReader("fixture-body"))
+		w := serve(f.cfg, r)
+		if _, cookie := w.Header()["Set-Cookie"]; w.Code != 303 || !reflect.DeepEqual(w.Header().Values("Location"), []string{location}) || cookie || len(f.calls) != 0 || method == "HEAD" && w.Body.Len() != 0 {
+			t.Fatalf("underflow %s %s: %d %v, calls %v", method, path, w.Code, w.Header(), f.calls)
+		}
+	}
+}
+
+// R-V93A-4RXR R-VAB6-IJOG R-VLA9-YHCP R-VNQ2-Q0U3 R-VQ5V-HKBH
+func TestRunsBackwardAndLastWindows(t *testing.T) {
+	for _, count := range []int{0, paging.DefaultLimit, paging.DefaultLimit + 2, 2 * paging.DefaultLimit, 2*paging.DefaultLimit + 3} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			f := setup(t)
+			p := create(t, f, "fixture", "alice")
+			other := create(t, f, "other", "alice")
+			add(t, f, other, 1000, store.StatusQueued, store.Ending{})
+			var ordered []store.Run
+			for i := 0; i < count; i++ {
+				// Every record shares a second, including all window boundaries.
+				r, e := f.cfg.Store.AddRun(context.Background(), store.Run{ID: fmt.Sprintf("prr_%016x", (count-i)*2), Prompt: p.ID, Model: "fixture-run-model", User: "alice", Trigger: store.TriggerManual, Status: store.StatusQueued, Started: instant})
+				if e != nil {
+					t.Fatal(e)
+				}
+				ordered = append(ordered, r)
+			}
+			token := func(tool string, r store.Run) string {
+				return paging.Token{Tool: tool}.Encode(r.Started.UTC().Format(time.RFC3339), r.ID)
+			}
+			check := func(value string, low, high int, backward, last bool) {
+				t.Helper()
+				data := pages.PromptData{Banner: wantBanner("alice", page.Level{Name: p.Name, URL: "/fixture/"}), Prompt: pages.PromptCard{ID: p.ID, Name: p.Name, Model: p.Model, Text: p.Prompt, System: p.System, Schema: string(p.Schema), Created: p.Created.UTC().Format(pages.CardLayout), CreatedAt: p.Created.UTC().Format(time.RFC3339), RunsKept: count, KeepNewest: f.cfg.KeepCount, KeepDays: f.cfg.KeepDays}, Page: value}
+				for i, g := range p.Tools {
+					data.Prompt.Tools = append(data.Prompt.Tools, pages.ToolGroup{Name: g, First: i == 0, Last: i == len(p.Tools)-1})
+				}
+				for _, r := range ordered[low:high] {
+					data.Runs = append(data.Runs, expectedRow(r, p.Name))
+				}
+				if value != "" && low < high {
+					data.Prev = token("runs-before", ordered[low])
+				}
+				if low < high && !last && (backward || high < count) {
+					data.Next = token("runs", ordered[high-1])
+				}
+				assertWindow(t, f, "/fixture/?page="+url.QueryEscape(value)+"&page=bogus&limit=1&other=ignored", "prompt", data)
+			}
+			if count <= paging.DefaultLimit {
+				assertUnderflow(t, f, "/fixture/?page=last&other=ignored", "/fixture/")
+				assertUnderflow(t, f, "/fixture/?page="+url.QueryEscape(paging.Token{Tool: "runs-before"}.Encode("ignored", "")), "/fixture/")
+				return
+			}
+			var starts []int
+			value := ""
+			for low := 0; low < count; low += paging.DefaultLimit {
+				high := min(low+paging.DefaultLimit, count)
+				starts = append(starts, low)
+				check(value, low, high, false, false)
+				value = token("runs", ordered[high-1])
+			}
+			for j := len(starts) - 2; j >= 0; j-- {
+				value = token("runs-before", ordered[starts[j+1]])
+				if j == 0 {
+					assertUnderflow(t, f, "/fixture/?page="+url.QueryEscape(value), "/fixture/")
+				} else {
+					check(value, starts[j], starts[j]+paging.DefaultLimit, true, false)
+				}
+			}
+			check("last", count-paging.DefaultLimit, count, true, true)
+			check(token("runs-before", ordered[count-1]), count-1-paging.DefaultLimit, count-1, true, false)
+			// Delete a run between the oldest two; its token still selects the preceding window.
+			missing := ordered[count-1]
+			missing.ID = fmt.Sprintf("prr_%016x", 3)
+			if _, err := f.cfg.Store.AddRun(context.Background(), missing); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.cfg.Store.DeleteRun(context.Background(), missing.ID); err != nil {
+				t.Fatal(err)
+			}
+			check(token("runs-before", missing), count-1-paging.DefaultLimit, count-1, true, false)
+			check(paging.Token{Tool: "runs-before"}.Encode("ignored", ""), count-paging.DefaultLimit, count, true, false)
+			assertUnderflow(t, f, "/fixture/?page="+url.QueryEscape(token("runs-before", ordered[paging.DefaultLimit])), "/fixture/")
+			check(paging.Token{Tool: "runs"}.Encode("", "absent"), count, count, false, false)
+		})
 	}
 }

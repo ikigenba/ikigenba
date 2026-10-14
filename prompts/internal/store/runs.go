@@ -241,6 +241,26 @@ func (s *Store) Runs(ctx context.Context, prompt, started, id string, n int) (rs
 	return
 }
 
+// RunsBefore lists a bounded window of a prompt's runs oldest first.
+func (s *Store) RunsBefore(ctx context.Context, prompt, started, id string, n int) (rs []Run, err error) {
+	err = s.read(ctx, func(tx *sql.Tx) error {
+		if n < 1 {
+			rs = []Run{}
+			return nil
+		}
+		if id == "" {
+			rs, err = queryRuns(tx, "SELECT "+runColumns+" FROM runs WHERE prompt=? ORDER BY started,id LIMIT ?", prompt, n)
+		} else {
+			rs, err = queryRuns(tx, "SELECT "+runColumns+" FROM runs WHERE prompt=? AND (started,id)>(?,?) ORDER BY started,id LIMIT ?", prompt, started, id, n)
+		}
+		return err
+	})
+	if err != nil {
+		rs = nil
+	}
+	return
+}
+
 // RunCount returns the total number of a prompt's runs.
 func (s *Store) RunCount(ctx context.Context, prompt string) (n int, err error) {
 	err = s.read(ctx, func(tx *sql.Tx) error {

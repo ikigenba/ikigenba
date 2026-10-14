@@ -979,6 +979,13 @@ func TestEveryMethodFailureAndCancellation(t *testing.T) {
 	p := create(t, s, "example")
 	r := add(t, s, record(p, 1, store.StatusRunning))
 	methods := []func(context.Context) error{
+		func(c context.Context) error { _, e := s.ListBefore(c, p.Owner, "", 0); return e },
+		func(c context.Context) error { _, e := s.ListBefore(c, p.Owner, p.Name, 9); return e },
+		func(c context.Context) error { _, e := s.RunsBefore(c, p.ID, "", "", 0); return e },
+		func(c context.Context) error {
+			_, e := s.RunsBefore(c, p.ID, r.Started.Format(time.RFC3339), r.ID, 9)
+			return e
+		},
 		func(c context.Context) error { _, e := s.Find(c, p.Owner, p.Name); return e }, func(c context.Context) error { _, e := s.List(c, p.Owner, "", math.MaxInt); return e }, func(c context.Context) error { _, e := s.Taken(c, p.Name); return e }, func(c context.Context) error { _, e := s.Create(c, store.Draft{}); return e }, func(c context.Context) error { _, _, e := s.Update(c, p.ID, store.Change{}); return e }, func(c context.Context) error { return s.Delete(c, p.ID) }, func(c context.Context) error { _, e := s.Subscribe(c, p.ID, "bad"); return e }, func(c context.Context) error { _, e := s.Unsubscribe(c, p.ID, "bad"); return e }, func(c context.Context) error { _, e := s.Subscribers(c, "repo.pushed"); return e }, func(c context.Context) error { _, e := s.Delivered(c, p.ID, "event"); return e }, func(c context.Context) error { _, e := s.AddRun(c, store.Run{}); return e }, func(c context.Context) error { _, e := s.StartRun(c, r.ID); return e }, func(c context.Context) error { _, e := s.FinishRun(c, r.ID, store.Ending{}); return e }, func(c context.Context) error { _, e := s.FindRun(c, p.Owner, r.ID); return e }, func(c context.Context) error { _, e := s.RunByID(c, r.ID); return e }, func(c context.Context) error { _, e := s.Runs(c, p.ID, "", "", math.MaxInt); return e }, func(c context.Context) error { _, e := s.RunCount(c, p.ID); return e }, func(c context.Context) error { _, e := s.Running(c); return e }, func(c context.Context) error { _, e := s.Queued(c); return e }, func(c context.Context) error { _, e := s.PastKeeping(c, instant, 0, 0); return e }, func(c context.Context) error { return s.DeleteRun(c, r.ID) },
 	}
 	before := content(t, s)

@@ -57,22 +57,42 @@ func Handler(cfg Config) http.Handler {
 		caller, _ := identity.FromContext(r.Context())
 		if r.URL.Path == "/" {
 			value := r.URL.Query().Get("page")
-			var after string
-			if value != "" {
-				if err := (paging.Token{Tool: "list"}).Decode(value, &after); err != nil {
-					notice(http.StatusNotFound, "notfound")
-					return
-				}
+			mode, keys, ok := decodePage(value, "list", 1)
+			if !ok {
+				notice(http.StatusNotFound, "notfound")
+				return
 			}
-			ps, err := cfg.Store.List(r.Context(), caller.UserID, after, paging.DefaultLimit+1)
+			var ps []store.Prompt
+			var err error
+			if mode == beforePage || mode == lastPage {
+				ps, err = cfg.Store.ListBefore(r.Context(), caller.UserID, keys[0], paging.DefaultLimit+1)
+			} else {
+				ps, err = cfg.Store.List(r.Context(), caller.UserID, keys[0], paging.DefaultLimit+1)
+			}
 			if err != nil {
 				failed(err)
 				return
 			}
-			data := LandingData{Banner: banner(), Page: value}
-			if len(ps) > paging.DefaultLimit {
+			if (mode == beforePage || mode == lastPage) && len(ps) <= paging.DefaultLimit {
+				w.Header().Set("Location", "/")
+				w.WriteHeader(http.StatusSeeOther)
+				return
+			}
+			more := len(ps) > paging.DefaultLimit
+			if more {
 				ps = ps[:paging.DefaultLimit]
-				data.Next = paging.Token{Tool: "list"}.Encode(ps[len(ps)-1].Name)
+			}
+			if mode == beforePage || mode == lastPage {
+				slices.Reverse(ps)
+			}
+			data := LandingData{Banner: banner(), Page: value}
+			if len(ps) > 0 {
+				if value != "" {
+					data.Prev = paging.Token{Tool: "list-before"}.Encode(ps[0].Name)
+				}
+				if mode == beforePage || more && mode != lastPage {
+					data.Next = paging.Token{Tool: "list"}.Encode(ps[len(ps)-1].Name)
+				}
 			}
 			for _, p := range ps {
 				row := PromptRow{Name: p.Name, URL: "/" + p.Name + "/", Model: p.Model}
@@ -91,14 +111,15 @@ func Handler(cfg Config) http.Handler {
 				parts[i] = decoded
 			}
 		}
-		var value, started, id string
+		var value string
+		mode, keys := firstPage, []string{"", ""}
 		if len(parts) == 2 && parts[1] == "" {
 			value = r.URL.Query().Get("page")
-			if value != "" {
-				if err := (paging.Token{Tool: "runs"}).Decode(value, &started, &id); err != nil {
-					notice(http.StatusNotFound, "notfound")
-					return
-				}
+			var ok bool
+			mode, keys, ok = decodePage(value, "runs", 2)
+			if !ok {
+				notice(http.StatusNotFound, "notfound")
+				return
 			}
 		}
 		p, err := cfg.Store.Find(r.Context(), caller.UserID, parts[0])
@@ -119,10 +140,28 @@ func Handler(cfg Config) http.Handler {
 			return
 		}
 		if len(parts) == 2 && parts[1] == "" {
-			rs, e := cfg.Store.Runs(r.Context(), p.ID, started, id, paging.DefaultLimit+1)
+			var rs []store.Run
+			var e error
+			if mode == beforePage || mode == lastPage {
+				rs, e = cfg.Store.RunsBefore(r.Context(), p.ID, keys[0], keys[1], paging.DefaultLimit+1)
+			} else {
+				rs, e = cfg.Store.Runs(r.Context(), p.ID, keys[0], keys[1], paging.DefaultLimit+1)
+			}
 			if e != nil {
 				failed(e)
 				return
+			}
+			if (mode == beforePage || mode == lastPage) && len(rs) <= paging.DefaultLimit {
+				w.Header().Set("Location", base)
+				w.WriteHeader(http.StatusSeeOther)
+				return
+			}
+			more := len(rs) > paging.DefaultLimit
+			if more {
+				rs = rs[:paging.DefaultLimit]
+			}
+			if mode == beforePage || mode == lastPage {
+				slices.Reverse(rs)
 			}
 			count, e := cfg.Store.RunCount(r.Context(), p.ID)
 			if e != nil {
@@ -131,6 +170,14 @@ func Handler(cfg Config) http.Handler {
 			}
 			data := promptData(p, rs, count, cfg, banner(page.Level{Name: p.Name, URL: base}))
 			data.Page = value
+			if len(rs) > 0 {
+				if value != "" {
+					data.Prev = runToken("runs-before", rs[0])
+				}
+				if mode == beforePage || more && mode != lastPage {
+					data.Next = runToken("runs", rs[len(rs)-1])
+				}
+			}
 			cfg.Pages.Write(w, r, http.StatusOK, "prompt", data)
 			return
 		}
@@ -157,11 +204,6 @@ func Handler(cfg Config) http.Handler {
 
 func promptData(p store.Prompt, rs []store.Run, count int, cfg Config, b page.Banner) PromptData {
 	d := PromptData{Banner: b, Prompt: PromptCard{ID: p.ID, Name: p.Name, Model: p.Model, Text: p.Prompt, System: p.System, Schema: string(p.Schema), Created: p.Created.UTC().Format(CardLayout), CreatedAt: datetime(p.Created), RunsKept: count, KeepNewest: cfg.KeepCount, KeepDays: cfg.KeepDays}}
-	if len(rs) > paging.DefaultLimit {
-		rs = rs[:paging.DefaultLimit]
-		last := rs[len(rs)-1]
-		d.Next = paging.Token{Tool: "runs"}.Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
-	}
 	for i, s := range p.Tools {
 		d.Prompt.Tools = append(d.Prompt.Tools, ToolGroup{Name: s, First: i == 0, Last: i == len(p.Tools)-1})
 	}
@@ -247,4 +289,39 @@ func runData(p store.Prompt, u store.Run, cfg Config, b page.Banner) RunData {
 func regular(root *os.Root, path string) bool {
 	fi, err := root.Lstat(path)
 	return err == nil && fi.Mode().IsRegular()
+}
+
+// pageMode identifies the direction in the store's ordering.
+type pageMode uint8
+
+const (
+	firstPage pageMode = iota
+	afterPage
+	beforePage
+	lastPage
+)
+
+func decodePage(value, tool string, n int) (pageMode, []string, bool) {
+	keys := make([]string, n)
+	if value == "" {
+		return firstPage, keys, true
+	}
+	targets := make([]any, n)
+	for i := range keys {
+		targets[i] = &keys[i]
+	}
+	if (paging.Token{Tool: tool}).Decode(value, targets...) == nil {
+		return afterPage, keys, true
+	}
+	if (paging.Token{Tool: tool + "-before"}).Decode(value, targets...) == nil {
+		return beforePage, keys, true
+	}
+	if value == "last" {
+		return lastPage, make([]string, n), true
+	}
+	return firstPage, keys, false
+}
+
+func runToken(tool string, run store.Run) string {
+	return paging.Token{Tool: tool}.Encode(run.Started.UTC().Format(time.RFC3339), run.ID)
 }

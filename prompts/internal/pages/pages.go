@@ -53,6 +53,7 @@ type LandingData struct {
 	Banner  page.Banner
 	Prompts []PromptRow
 	Page    string
+	Prev    string
 	Next    string
 }
 
@@ -80,6 +81,7 @@ type PromptData struct {
 	Runs          []RunRow
 	Subscriptions []string
 	Page          string
+	Prev          string
 	Next          string
 }
 
