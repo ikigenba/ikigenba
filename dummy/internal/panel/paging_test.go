@@ -18,7 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
-// R-LHTJ-BJ2Z
+// R-DRIC-98YE
 func TestWidgetsAcrossWindows(t *testing.T) {
 	store, handle := panelDatabaseStore(t)
 	var want []widget.Widget
@@ -48,6 +48,9 @@ func TestWidgetsAcrossWindows(t *testing.T) {
 			t.Fatalf("window %d: got %#v want %#v", size, got, want)
 		}
 	}
+	if _, err := store.ListBefore(context.Background(), 99, 4); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := store.Check(context.Background(), widget.Draft{}); err != nil {
 		t.Fatalf("reachable Check: %v", err)
 	}
@@ -55,6 +58,9 @@ func TestWidgetsAcrossWindows(t *testing.T) {
 		t.Fatalf("reachable invalid Create: errors=%v err=%v", errs, err)
 	}
 	handle.SetFailing(true)
+	if _, err := store.ListBefore(context.Background(), 99, 4); err == nil {
+		t.Fatal("unreachable ListBefore succeeded")
+	}
 	if _, err := store.List(context.Background(), nil, 4); err == nil {
 		t.Fatal("unreachable List succeeded")
 	}
@@ -70,7 +76,7 @@ func TestWidgetsAcrossWindows(t *testing.T) {
 	}
 }
 
-// R-3MB7-L47W R-3NJ3-YVYL R-43DS-XWLM R-425W-K4UX R-3L3B-7CH7 R-3TML-VQO2
+// R-DLEU-CE8X R-DMMQ-Q5ZM R-EEOF-IW1L R-EDGJ-54AW R-DHR5-730U R-E4X8-GQ41
 func TestPanelFirstPageAndRejectedForm(t *testing.T) {
 	for _, count := range []int{0, paging.DefaultLimit - 1, paging.DefaultLimit, paging.DefaultLimit + 1, paging.DefaultLimit*2 + 1} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {
@@ -123,7 +129,7 @@ func TestPanelFirstPageAndRejectedForm(t *testing.T) {
 	}
 }
 
-// R-3JVE-TKQI R-3L3B-7CH7 R-3MB7-L47W R-3NJ3-YVYL R-3TML-VQO2 R-3UUI-9IER R-3W2E-NA5G R-GXS5-DC2W
+// R-DGJ8-TBA5 R-DHR5-730U R-DLEU-CE8X R-DMMQ-Q5ZM R-E4X8-GQ41 R-E654-UHUQ R-E8KX-M1C4 R-GXS5-DC2W
 func TestPanelNavigatesWindows(t *testing.T) {
 	store := panelEmptyStore(t)
 	var all []widget.Widget
@@ -183,7 +189,11 @@ func TestPanelNavigatesWindows(t *testing.T) {
 		query := "?page=" + url.QueryEscape(p) + "&page=ignored&limit=1&noise=yes"
 		request := pageTestRequest(http.MethodGet, "/widgets"+query)
 		got := pageTestResponse(h, request)
-		data := panelTemplateData{Banner: pageTestBannerData(request), Panel: true, Count: len(window), Table: window, Page: p, Next: next, Form: panel.FormView{Statuses: widget.Statuses()}}
+		prev := ""
+		if p != "" && len(window) > 0 {
+			prev = (paging.Token{Tool: "list_widgets-before"}).Encode(window[0].Seq)
+		}
+		data := panelTemplateData{Banner: pageTestBannerData(request), Panel: true, Count: len(window), Table: window, Page: p, Prev: prev, Next: next, Form: panel.FormView{Statuses: widget.Statuses()}}
 		if got.Code != http.StatusOK || got.Header().Get("Content-Type") != "text/html; charset=utf-8" || got.Body.String() != renderPanelTemplate(t, "page", data) {
 			t.Fatalf("page offset %d differs", offset)
 		}
@@ -208,11 +218,11 @@ func TestPanelNavigatesWindows(t *testing.T) {
 	}
 }
 
-// R-3JVE-TKQI R-3OR0-CNPA R-40Y0-6D48 R-3SEP-HYXD R-3PYW-QFFZ R-3XAB-11W5
+// R-DGJ8-TBA5 R-DNUN-3XQB R-EB0Q-DKTI R-3SEP-HYXD R-DP2J-HPH0 R-E9ST-ZT2T
 func TestPageDecodePrecedesStoreAccess(t *testing.T) {
 	store, handle := panelDatabaseStore(t)
 	h := coreHandler(t, store, pageTestBanner, io.Discard)
-	bad := []string{"bad", (paging.Token{Tool: "other_tool"}).Encode(int64(1)), (paging.Token{Tool: "list_widgets"}).Encode("wrong-type")}
+	bad := []string{"bad", (paging.Token{Tool: "other_tool"}).Encode(int64(1)), (paging.Token{Tool: "list_widgets"}).Encode("wrong-type"), (paging.Token{Tool: "list_widgets-before"}).Encode("wrong-type")}
 	for _, failing := range []bool{false, true} {
 		handle.SetFailing(failing)
 		for _, p := range bad {
@@ -240,7 +250,7 @@ func TestPageDecodePrecedesStoreAccess(t *testing.T) {
 		}
 		if failing {
 			for _, path := range []string{"/widgets", "/widgets/table"} {
-				for _, p := range []string{"", (paging.Token{Tool: "list_widgets"}).Encode(int64(999))} {
+				for _, p := range []string{"", (paging.Token{Tool: "list_widgets"}).Encode(int64(999)), (paging.Token{Tool: "list_widgets-before"}).Encode(int64(1)), (paging.Token{Tool: "list_widgets-before"}).Encode(int64(999))} {
 					for _, method := range []string{http.MethodGet, http.MethodHead} {
 						headers := tableTestIdentity()
 						headers.Set("If-None-Match", "*")
@@ -259,7 +269,7 @@ func TestPageDecodePrecedesStoreAccess(t *testing.T) {
 	}
 }
 
-// R-3R6T-476O R-43DS-XWLM
+// R-DQAF-VH7P R-EEOF-IW1L
 func TestOnlyReadPageValueAffectsQuery(t *testing.T) {
 	store, handle := panelDatabaseStore(t)
 	h := coreHandler(t, store, pageTestEchoingBanner(), io.Discard)
@@ -284,5 +294,152 @@ func TestOnlyReadPageValueAffectsQuery(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// R-DK6X-YMI8 R-DSQ8-N0P3 R-EC8M-RCK7 R-DGJ8-TBA5
+// R-DLEU-CE8X R-DMMQ-Q5ZM R-E4X8-GQ41 R-E654-UHUQ R-E8KX-M1C4 R-GXS5-DC2W
+func TestBeforeWindowsAndUnderflow(t *testing.T) {
+	store := panelEmptyStore(t)
+	var all []widget.Widget
+	for i := range paging.DefaultLimit*3 + 3 {
+		w, fields := panelStoreCreate(t, store, widget.Draft{Name: fmt.Sprintf("before-%d", i), Count: i, Status: widget.StatusActive})
+		if fields.Any() {
+			t.Fatal(fields)
+		}
+		all = append(all, w)
+	}
+	h := coreHandler(t, store, pageTestBanner, io.Discard)
+	beforeCodec := paging.Token{Tool: "list_widgets-before"}
+	afterCodec := paging.Token{Tool: "list_widgets"}
+	// The outer keys have no corresponding row; bounds are strict and signed.
+	for _, key := range []int64{-1 << 63, 0, all[0].Seq, all[paging.DefaultLimit-1].Seq, all[paging.DefaultLimit].Seq, all[paging.DefaultLimit+1].Seq, all[paging.DefaultLimit*2].Seq, all[len(all)-1].Seq, 1<<63 - 1} {
+		p := beforeCodec.Encode(key)
+		var preceding []widget.Widget
+		for _, w := range all {
+			if w.Seq < key {
+				preceding = append(preceding, w)
+			}
+		}
+		underflow := len(preceding) <= paging.DefaultLimit
+		window := preceding
+		if !underflow {
+			window = preceding[len(preceding)-paging.DefaultLimit:]
+		}
+		for _, path := range []string{"/widgets", "/widgets/table"} {
+			query := "?page=" + url.QueryEscape(p) + "&page=ignored&limit=1&noise=yes"
+			for _, condition := range []string{"", "*", `"stale"`} {
+				request := pageTestRequest(http.MethodGet, path+query)
+				request.Header.Set("If-None-Match", condition)
+				got := pageTestResponse(h, request)
+				switch {
+				case underflow:
+					if got.Code != http.StatusSeeOther || got.Header().Get("Location") != path || got.Body.Len() != 0 {
+						t.Fatalf("underflow %s key %d: %d %v %q", path, key, got.Code, got.Header(), got.Body.String())
+					}
+					// R-0142-4LXJ: only a successful fragment answer carries a validator.
+					if path == "/widgets/table" && got.Header().Get("ETag") != "" {
+						t.Fatal("underflow fragment carries ETag")
+					}
+				case path == "/widgets":
+					data := panelTemplateData{Banner: pageTestBannerData(request), Panel: true, Count: len(window), Table: window, Page: p, Prev: beforeCodec.Encode(window[0].Seq), Next: afterCodec.Encode(window[len(window)-1].Seq), Form: panel.FormView{Statuses: widget.Statuses()}}
+					if got.Code != http.StatusOK || got.Header().Get("Content-Type") != "text/html; charset=utf-8" || got.Body.String() != renderPanelTemplate(t, "page", data) {
+						t.Fatalf("before page key %d differs", key)
+					}
+				case condition == "*":
+					if got.Code != http.StatusNotModified || got.Body.Len() != 0 {
+						t.Fatal("before conditional fragment differs")
+					}
+				default:
+					if got.Code != http.StatusOK || got.Header().Get("Content-Type") != "text/html; charset=utf-8" || got.Body.String() != renderPanelTemplate(t, "table", window) {
+						t.Fatalf("before fragment key %d differs", key)
+					}
+				}
+				request.Method = http.MethodHead
+				head := pageTestResponse(h, request)
+				if head.Code != got.Code || !reflect.DeepEqual(head.Header(), got.Header()) || head.Body.Len() != 0 {
+					t.Fatal("before HEAD differs")
+				}
+			}
+			if !underflow && path == "/widgets/table" {
+				baseline := pageTestResponse(h, pageTestRequest(http.MethodGet, path+query))
+				for _, method := range []string{http.MethodGet, http.MethodHead} {
+					for _, condition := range []string{baseline.Header().Get("ETag"), "W/" + baseline.Header().Get("ETag")} {
+						request := pageTestRequest(method, path+query)
+						request.Header.Add("If-None-Match", `"stale"`)
+						request.Header.Add("If-None-Match", " "+condition+", \"later\" ")
+						got := pageTestResponse(h, request)
+						if got.Code != http.StatusNotModified || got.Header().Get("ETag") != baseline.Header().Get("ETag") || got.Body.Len() != 0 {
+							t.Fatal("before validator differs")
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// R-DTY5-0SFS R-DHR5-730U R-DK6X-YMI8 R-DSQ8-N0P3
+func TestNextThenPrevVisitsSameWindows(t *testing.T) {
+	for _, count := range []int{paging.DefaultLimit + 1, paging.DefaultLimit * 2, paging.DefaultLimit*3 + 3} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			store := panelEmptyStore(t)
+			var all []widget.Widget
+			for i := range count {
+				w, fields := panelStoreCreate(t, store, widget.Draft{Name: fmt.Sprintf("walk-%d", i), Count: i, Status: widget.StatusActive})
+				if fields.Any() {
+					t.Fatal(fields)
+				}
+				all = append(all, w)
+			}
+			h := coreHandler(t, store, pageTestBanner, io.Discard)
+			afterCodec := paging.Token{Tool: "list_widgets"}
+			beforeCodec := paging.Token{Tool: "list_widgets-before"}
+			var windows [][]widget.Widget
+			p := ""
+			for offset := 0; offset < count; offset += paging.DefaultLimit {
+				end := min(offset+paging.DefaultLimit, count)
+				window := all[offset:end]
+				windows = append(windows, window)
+				prev, next := "", ""
+				if offset > 0 {
+					prev = beforeCodec.Encode(window[0].Seq)
+				}
+				if end < count {
+					next = afterCodec.Encode(window[len(window)-1].Seq)
+				}
+				assertNavigationPage(t, h, p, prev, next, window)
+				if next != "" {
+					p = next
+				}
+			}
+			// p is the last forward page. Its Prev is the next backward page.
+			for j := len(windows) - 1; j > 0; j-- {
+				window := windows[j]
+				prev := beforeCodec.Encode(window[0].Seq)
+				next := ""
+				if j != len(windows)-1 {
+					next = afterCodec.Encode(window[len(window)-1].Seq)
+				}
+				assertNavigationPage(t, h, p, prev, next, window)
+				p = prev
+			}
+			got := pageTestResponse(h, pageTestRequest(http.MethodGet, "/widgets?page="+url.QueryEscape(p)))
+			if got.Code != http.StatusSeeOther || got.Header().Get("Location") != "/widgets" || got.Body.Len() != 0 {
+				t.Fatal("backward walk did not reach first-page redirect")
+			}
+			window := windows[0]
+			assertNavigationPage(t, h, "", "", afterCodec.Encode(window[len(window)-1].Seq), window)
+		})
+	}
+}
+
+func assertNavigationPage(t *testing.T, h http.Handler, p, prev, next string, window []widget.Widget) {
+	t.Helper()
+	r := pageTestRequest(http.MethodGet, "/widgets?page="+url.QueryEscape(p))
+	got := pageTestResponse(h, r)
+	data := panelTemplateData{Banner: pageTestBannerData(r), Panel: true, Count: len(window), Table: window, Form: panel.FormView{Statuses: widget.Statuses()}, Page: p, Prev: prev, Next: next}
+	if got.Code != http.StatusOK || got.Body.String() != renderPanelTemplate(t, "page", data) {
+		t.Fatalf("walk page %q differs from expected window", p)
 	}
 }

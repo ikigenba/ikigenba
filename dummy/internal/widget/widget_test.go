@@ -297,7 +297,7 @@ func TestUnreachableConstant(_ *testing.T) {
 	_ = value
 }
 
-// R-E8TO-J993, R-QJGI-9YFW, R-QN47-F9NZ, R-QQRW-KKW2, R-QRZS-YCMR.
+// R-E8TO-J993, R-QJGI-9YFW, R-QN47-F9NZ, R-DYTQ-JVEK, R-QRZS-YCMR.
 func TestStoreEmptySnapshotsAndReopen(t *testing.T) {
 	constructor := struct {
 		call func(*db.DB, io.Reader) *widget.Store
@@ -551,7 +551,7 @@ func (r *countedSource) Read(p []byte) (int, error) {
 	return r.source.Read(p)
 }
 
-// R-EN7X-KS77, R-QUFL-PW45, R-QVNI-3NUU, R-QPK0-6T5D.
+// R-E01M-XN59, R-E19J-BEVY, R-QVNI-3NUU, R-DXLU-63NV.
 func TestFailureRecoveryAndNoDraw(t *testing.T) {
 	source := &countedSource{source: knownSource()}
 	s, d := newStore(t, source)
@@ -562,6 +562,9 @@ func TestFailureRecoveryAndNoDraw(t *testing.T) {
 		d.SetFailing(true)
 		if _, err := s.List(ctx, nil, 2); err == nil {
 			t.Error("List succeeded while failing")
+		}
+		if _, err := s.ListBefore(ctx, math.MaxInt64, 2); err == nil {
+			t.Error("ListBefore succeeded while failing")
 		}
 		if _, err := s.Check(ctx, value); err == nil {
 			t.Error("Check succeeded while failing")
@@ -591,7 +594,7 @@ func TestFailureRecoveryAndNoDraw(t *testing.T) {
 	create(t, s, draft("recovered"))
 }
 
-// R-EG52-TVP9, R-QPK0-6T5D, R-L0V4-B9LO.
+// R-EG52-TVP9, R-DXLU-63NV, R-L0V4-B9LO.
 func TestDrawsAndPersistedCollisions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "widgets.db")
 	d := openDB(t, path)
@@ -601,6 +604,9 @@ func TestDrawsAndPersistedCollisions(t *testing.T) {
 		t.Fatal("constructor drew")
 	}
 	all(t, s)
+	if _, err := s.ListBefore(ctx, math.MaxInt64, 2); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.Check(ctx, draft("first")); err != nil {
 		t.Fatal(err)
 	}
@@ -635,7 +641,7 @@ func (r chunkSource) Read(p []byte) (int, error) {
 	return r.source.Read(p)
 }
 
-// R-EG52-TVP9, R-QPK0-6T5D.
+// R-EG52-TVP9, R-DXLU-63NV.
 func TestReadFullAccumulatesShortReads(t *testing.T) {
 	source := &countedSource{source: chunkSource{source: bytes.NewReader([]byte{1, 2, 3, 4, 5, 6, 7, 8})}}
 	s, _ := newStore(t, source)
@@ -708,7 +714,7 @@ func TestNilSource(t *testing.T) {
 	assertIDs(t, []widget.Widget{a, b})
 }
 
-// R-L3AX-2T32, R-R1R0-0IKB, R-EPNQ-CBOL.
+// R-L3AX-2T32, R-E2HF-P6MN, R-EPNQ-CBOL.
 func TestConcurrentAcceptedCalls(t *testing.T) {
 	const n = 32
 	s, d := newStore(t, knownSource())
@@ -738,6 +744,14 @@ func TestConcurrentAcceptedCalls(t *testing.T) {
 				if len(rows) > 0 {
 					rows[0].Name = "mutation"
 				}
+				reverse, err := s.ListBefore(ctx, math.MaxInt64, 2)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				if len(reverse) > 0 {
+					reverse[0].Name = "mutation"
+				}
 				if _, err := s.Check(ctx, draft("unused")); err != nil {
 					t.Error(err)
 				}
@@ -764,7 +778,7 @@ func TestConcurrentAcceptedCalls(t *testing.T) {
 	}
 }
 
-// R-EQVM-Q3FA, R-R1R0-0IKB.
+// R-EQVM-Q3FA, R-E2HF-P6MN.
 func TestConcurrentDuplicateCreation(t *testing.T) {
 	const n = 32
 	s, d := newStore(t, knownSource())
@@ -853,7 +867,84 @@ func TestListWindowsAndCreationPositions(t *testing.T) {
 	}
 }
 
-// R-QN47-F9NZ, R-EN7X-KS77, R-QUFL-PW45.
+// R-DV61-EK6H, R-DWDX-SBX6, R-DYTQ-JVEK, R-E01M-XN59, R-E19J-BEVY, R-DXLU-63NV.
+func TestListBeforeWindowsAndIndependentResults(t *testing.T) {
+	listBefore := struct {
+		call func(*widget.Store, context.Context, int64, int) ([]widget.Widget, error)
+	}{(*widget.Store).ListBefore}.call
+	source := &countedSource{source: knownSource()}
+	s, d := newStore(t, source)
+	want := []widget.Widget{
+		{ID: "wgt_1111111111111111", Name: "zeta", Count: 9, Status: widget.StatusRetired, Seq: math.MinInt64},
+		{ID: "wgt_2222222222222222", Name: "alpha", Count: 2, Status: widget.StatusPaused, Seq: -8},
+		{ID: "wgt_3333333333333333", Name: "mu", Count: 0, Status: widget.StatusActive, Seq: 0},
+		{ID: "wgt_4444444444444444", Name: "beta", Count: 7, Status: widget.StatusRetired, Seq: 12},
+		{ID: "wgt_5555555555555555", Name: "omega", Count: 1, Status: widget.StatusPaused, Seq: math.MaxInt64},
+	}
+	if err := d.Write(ctx, func(tx *sql.Tx) error {
+		for _, i := range []int{3, 1, 4, 0, 2} {
+			w := want[i]
+			if _, err := tx.ExecContext(ctx, "INSERT INTO widgets VALUES (?, ?, ?, ?, ?)", w.Seq, w.ID, w.Name, w.Count, w.Status); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, before := range []int64{math.MinInt64, math.MinInt64 + 1, -9, -8, -7, 0, 1, 11, 12, 13, math.MaxInt64} {
+		for _, n := range []int{-int(^uint(0)>>1) - 1, -1, 0, 1, 2, 5, 6, int(^uint(0) >> 1)} {
+			var expected []widget.Widget
+			for i := len(want) - 1; i >= 0; i-- {
+				if n > len(expected) && want[i].Seq < before {
+					expected = append(expected, want[i])
+				}
+			}
+			for _, failing := range []bool{false, true, false} {
+				d.SetFailing(failing)
+				got, err := listBefore(s, ctx, before, n)
+				if failing {
+					if err == nil {
+						t.Fatalf("ListBefore(%d, %d) succeeded while failing", before, n)
+					}
+				} else if err != nil || !slices.Equal(got, expected) {
+					t.Fatalf("ListBefore(%d, %d) = %+v, %v; want %+v", before, n, got, err, expected)
+				}
+			}
+		}
+	}
+	backward := slices.Clone(want[:len(want)-1])
+	slices.Reverse(backward)
+	forward, err := s.List(ctx, nil, len(want))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reverse, err := listBefore(s, ctx, math.MaxInt64, len(want))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, snapshot := range [][]widget.Widget{forward, reverse} {
+		for i := range snapshot {
+			snapshot[i] = widget.Widget{Name: "mutation"}
+		}
+		snapshot = append(snapshot, widget.Widget{Name: "extra"})
+		if snapshot[len(snapshot)-1].Name != "extra" {
+			t.Fatal("append failed")
+		}
+		if !slices.Equal(all(t, s), want) {
+			t.Fatal("slice mutation changed forward values")
+		}
+		got, err := listBefore(s, ctx, math.MaxInt64, len(want))
+		if err != nil || !slices.Equal(got, backward) {
+			t.Fatalf("slice mutation changed reverse values: %+v, %v", got, err)
+		}
+	}
+	if len(source.lengths) != 0 {
+		t.Fatal("window read drew an ID")
+	}
+}
+
+// R-QN47-F9NZ, R-E01M-XN59, R-E19J-BEVY.
 func TestListEmptyWindowsReachDatabaseAndRecover(t *testing.T) {
 	s, d := newStore(t, knownSource())
 	for _, seq := range []int64{-1 << 63, -1, 0, 1, 1<<63 - 1} {
@@ -868,6 +959,14 @@ func TestListEmptyWindowsReachDatabaseAndRecover(t *testing.T) {
 						}
 					} else if err != nil || len(got) != 0 {
 						t.Fatalf("List(%v, %d) = %+v, %v", after, n, got, err)
+					}
+					got, err = s.ListBefore(ctx, seq, n)
+					if failing {
+						if err == nil {
+							t.Fatalf("ListBefore(%d, %d) succeeded while failing", seq, n)
+						}
+					} else if err != nil || len(got) != 0 {
+						t.Fatalf("ListBefore(%d, %d) = %+v, %v", seq, n, got, err)
 					}
 				}
 			}
@@ -885,7 +984,7 @@ func seedPosition(t *testing.T, d *db.DB, seq int64) {
 	}
 }
 
-// R-LLH8-GUB2, R-EN7X-KS77, R-QVNI-3NUU.
+// R-LLH8-GUB2, R-E01M-XN59, R-QVNI-3NUU.
 func TestMaximumPositionRejectsEveryDraftButAllowsReads(t *testing.T) {
 	s, d := newStore(t, knownSource())
 	seedPosition(t, d, math.MaxInt64-1)
@@ -901,22 +1000,29 @@ func TestMaximumPositionRejectsEveryDraftButAllowsReads(t *testing.T) {
 		if _, err := s.Check(ctx, value); err != nil {
 			t.Fatalf("Check after exhausted Create: %v", err)
 		}
+		if got, err := s.ListBefore(ctx, math.MaxInt64, 2); err != nil || !slices.Equal(got, before[:1]) {
+			t.Fatalf("ListBefore after exhausted Create: %+v %v", got, err)
+		}
 		if !slices.Equal(all(t, s), before) {
 			t.Fatal("exhausted creation changed widgets")
 		}
 	}
 }
 
-// R-EN7X-KS77.
+// R-E01M-XN59.
 func TestHealthyCallsRecoverAfterCanceledContext(t *testing.T) {
 	s, _ := newStore(t, knownSource())
 	canceled, cancel := context.WithCancel(ctx)
 	cancel()
 	_, _ = s.List(canceled, nil, 2)
+	_, _ = s.ListBefore(canceled, math.MaxInt64, 2)
 	_, _ = s.Check(canceled, draft("new"))
 	_, _, _ = s.Create(canceled, draft("new"))
 	for _, value := range []widget.Draft{draft("new"), draft("new"), {Name: "", Count: -1, Status: "bad"}} {
 		if _, err := s.List(ctx, nil, 2); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.ListBefore(ctx, math.MaxInt64, 2); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := s.Check(ctx, value); err != nil {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"slices"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/page"
@@ -19,6 +20,7 @@ type pageData struct {
 	Table   []widget.Widget
 	Form    FormView
 	Page    string
+	Prev    string
 	Next    string
 }
 
@@ -33,22 +35,28 @@ func (h *handler) renderPage(w http.ResponseWriter, r *http.Request, status int,
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
 		pageValue = r.URL.Query().Get("page")
 	}
-	after, err := pageCursor(pageValue)
+	cursor, err := pageCursor(pageValue)
 	if err != nil {
 		h.renderFailure(w, r, http.StatusNotFound, NotFoundMessage)
 		return
 	}
-	widgets, next, err := h.window(r.Context(), after)
+	window, err := h.window(r.Context(), cursor)
 	if err != nil {
 		plainFailure(w, r, http.StatusServiceUnavailable, widget.Unreachable+"\n")
 		return
 	}
+	if window.underflow {
+		w.Header().Set("Location", "/widgets")
+		w.WriteHeader(http.StatusSeeOther)
+		return
+	}
 	data := h.pageData(r)
 	data.Panel = true
-	data.Table = widgets
+	data.Table = window.widgets
 	data.Count = len(data.Table)
 	data.Page = pageValue
-	data.Next = next
+	data.Prev = window.prev
+	data.Next = window.next
 	data.Form = newFormData(sub, errs)
 	h.renderDocument(w, r, status, data)
 }
@@ -75,26 +83,61 @@ func (h *handler) renderTemplate(w http.ResponseWriter, r *http.Request, status 
 	}
 }
 
-func pageCursor(value string) (*int64, error) {
-	if value == "" {
-		return nil, nil
-	}
-	var seq int64
-	if err := (paging.Token{Tool: "list_widgets"}).Decode(value, &seq); err != nil {
-		return nil, err
-	}
-	return &seq, nil
+type cursor struct {
+	key    *int64
+	before bool
 }
 
-func (h *handler) window(ctx context.Context, after *int64) ([]widget.Widget, string, error) {
-	widgets, err := h.store.List(ctx, after, paging.DefaultLimit+1)
+func pageCursor(value string) (cursor, error) {
+	if value == "" {
+		return cursor{}, nil
+	}
+	var seq int64
+	if err := (paging.Token{Tool: "list_widgets"}).Decode(value, &seq); err == nil {
+		return cursor{key: &seq}, nil
+	}
+	if err := (paging.Token{Tool: "list_widgets-before"}).Decode(value, &seq); err != nil {
+		return cursor{}, err
+	}
+	return cursor{key: &seq, before: true}, nil
+}
+
+type widgetWindow struct {
+	widgets    []widget.Widget
+	prev, next string
+	underflow  bool
+}
+
+func (h *handler) window(ctx context.Context, c cursor) (widgetWindow, error) {
+	var widgets []widget.Widget
+	var err error
+	if c.before {
+		widgets, err = h.store.ListBefore(ctx, *c.key, paging.DefaultLimit+1)
+	} else {
+		widgets, err = h.store.List(ctx, c.key, paging.DefaultLimit+1)
+	}
 	if err != nil {
-		return nil, "", err
+		return widgetWindow{}, err
 	}
-	next := ""
-	if len(widgets) > paging.DefaultLimit {
+	result := widgetWindow{}
+	more := len(widgets) > paging.DefaultLimit
+	if c.before {
+		result.underflow = !more
+	}
+	if more {
 		widgets = widgets[:paging.DefaultLimit]
-		next = (paging.Token{Tool: "list_widgets"}).Encode(widgets[len(widgets)-1].Seq)
 	}
-	return widgets, next, nil
+	if c.before {
+		slices.Reverse(widgets)
+	}
+	result.widgets = widgets
+	if len(widgets) > 0 {
+		if c.before || more {
+			result.next = (paging.Token{Tool: "list_widgets"}).Encode(widgets[len(widgets)-1].Seq)
+		}
+		if c.key != nil && !result.underflow {
+			result.prev = (paging.Token{Tool: "list_widgets-before"}).Encode(widgets[0].Seq)
+		}
+	}
+	return result, nil
 }

@@ -268,7 +268,7 @@ func formTestCreate(t *testing.T, store *widget.Store, sub widget.Submission) (w
 	return widget.Widget{}, errors
 }
 
-// R-425W-K4UX R-RHG9-RNM6 R-RG8D-DVVH
+// R-EDGJ-54AW R-RHG9-RNM6 R-RG8D-DVVH
 // R-IQ93-720D  R-MMT3-PRQI
 func TestFormAssetAndDeclaredView(t *testing.T) {
 	for _, sub := range []widget.Submission{

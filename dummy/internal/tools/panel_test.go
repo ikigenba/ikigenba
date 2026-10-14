@@ -44,7 +44,7 @@ func panelRequest(h http.Handler, method, path, body, etag string) *httptest.Res
 	return response
 }
 
-// R-44LP-BOCB: a successful creation appears in both first-window surfaces.
+// R-EFWB-WNSA: a successful creation appears in both first-window surfaces.
 func TestToolCreationAppearsInPanel(t *testing.T) {
 	for _, existing := range []int{0, 3, paging.DefaultLimit - 1} {
 		t.Run(fmt.Sprint(existing), func(t *testing.T) {
@@ -99,7 +99,7 @@ func TestToolCreationAppearsInPanel(t *testing.T) {
 				name, data := "table", any(widgets)
 				if path == "/widgets" {
 					name = "page"
-					data = map[string]any{"Banner": banner, "Panel": true, "Message": "", "Count": len(widgets), "Table": widgets, "Page": "", "Next": "", "Form": panel.FormView{Statuses: widget.Statuses()}}
+					data = map[string]any{"Banner": banner, "Panel": true, "Message": "", "Count": len(widgets), "Table": widgets, "Page": "", "Prev": "", "Next": "", "Form": panel.FormView{Statuses: widget.Statuses()}}
 				}
 				if err = set.ExecuteTemplate(&expected, name, data); err != nil {
 					t.Fatal(err)

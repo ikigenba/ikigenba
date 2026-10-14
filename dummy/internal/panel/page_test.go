@@ -33,6 +33,7 @@ type panelTemplateData struct {
 	Table   []widget.Widget
 	Form    panel.FormView
 	Page    string
+	Prev    string
 	Next    string
 }
 

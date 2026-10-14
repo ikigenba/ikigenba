@@ -162,6 +162,33 @@ func (s *Store) List(ctx context.Context, after *int64, n int) ([]Widget, error)
 	return widgets, nil
 }
 
+// ListBefore returns an independent window in reverse creation order.
+func (s *Store) ListBefore(ctx context.Context, before int64, n int) ([]Widget, error) {
+	if n < 1 {
+		n = 0
+	}
+	var widgets []Widget
+	err := s.handle.Read(ctx, func(tx *sql.Tx) (err error) {
+		rows, err := tx.QueryContext(ctx, "SELECT id, name, count, status, seq FROM widgets WHERE seq < ? ORDER BY seq DESC LIMIT ?", before, n)
+		if err != nil {
+			return err
+		}
+		defer func() { err = errors.Join(err, rows.Close()) }()
+		for rows.Next() {
+			var w Widget
+			if err := rows.Scan(&w.ID, &w.Name, &w.Count, &w.Status, &w.Seq); err != nil {
+				return err
+			}
+			widgets = append(widgets, w)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return widgets, nil
+}
+
 // ParseSubmission converts the form's fields without judging typed values.
 func ParseSubmission(sub Submission) (Draft, FieldErrors) {
 	d := Draft{Name: sub.Name}

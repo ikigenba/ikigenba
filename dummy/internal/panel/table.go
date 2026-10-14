@@ -18,18 +18,23 @@ func (h *handler) table(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	after, err := pageCursor(r.URL.Query().Get("page"))
+	cursor, err := pageCursor(r.URL.Query().Get("page"))
 	if err != nil {
 		plainFailure(w, r, http.StatusNotFound, NotFoundBody)
 		return
 	}
-	widgets, _, err := h.window(r.Context(), after)
+	window, err := h.window(r.Context(), cursor)
 	if err != nil {
 		plainFailure(w, r, http.StatusServiceUnavailable, widget.Unreachable+"\n")
 		return
 	}
+	if window.underflow {
+		w.Header().Set("Location", "/widgets/table")
+		w.WriteHeader(http.StatusSeeOther)
+		return
+	}
 	var body bytes.Buffer
-	if err := h.templates.ExecuteTemplate(&body, "table", widgets); err != nil {
+	if err := h.templates.ExecuteTemplate(&body, "table", window.widgets); err != nil {
 		panic(err)
 	}
 	etag := fmt.Sprintf(`"%x"`, sha256.Sum256(body.Bytes()))
