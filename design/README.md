@@ -110,25 +110,43 @@ design/
   landing page.
 - A page that lists navigates (decided 2026-10-13: a person pages a list
   on the page itself rather than being told which tool to call; it replaces
-  the `p#next` note that named the tool and token, with no link). The page takes
-  the `page` token of the list tool over it as a query parameter on its own
-  URL, `?page=<token>`; without it the page shows the first window. It shows
-  a window of 25 entries; `limit` is not a page parameter. Below the list, a
-  `nav.paging#paging` labelled `Pages` holds, in order:
+  the `p#next` note that named the tool and token, with no link; decided
+  2026-10-13: Prev is not deferred; a person steps back a window as they
+  step forward). The page takes the `page` token of the list tool over it
+  as a query parameter on its own URL, `?page=<token>`; without it the page
+  shows the first window. It shows a window of 25 entries; `limit` is not a
+  page parameter. Below the list, a `nav.paging#paging` labelled `Pages`
+  holds, in order:
   - First, always, so the navigation keeps one shape: a link to the page's
     own path without the parameter; on the first window it is the current
     item instead, a `span` with `aria-current="page"` and no link, as the
     breadcrumb draws its last level.
+  - Prev, only on a window that is not the first: a link to the page's own
+    path with `?page=<before-token>`.
   - Next, only when more entries follow: a link to the page's own path with
     `?page=<token>`, the token the tool's own `next` would carry.
-  There is no Prev; it is deferred. A page with two lists (candidates'
+  Prev uses the same `page` parameter. Its before-token is issued by the
+  page under the list tool's name with `-before` appended (for example
+  `paging.Token{Tool: "list-before"}`), over the same key fields as the
+  tool's token, naming this window's first entry; the checksum keeps it
+  apart from a tool token, so one parameter serves both directions. A
+  before-token names the window of 25 entries that precede the named entry,
+  drawn in forward order. When fewer than 25 entries precede it, the
+  previous window is the first window, and the page answers a 303 redirect
+  to its own path without the parameter. A window reached by a before-token
+  shows First as a link, Prev when entries precede it, and Next as the
+  token of its last entry, the tool's form. The template receives `Prev`,
+  the before-token for this window's first entry and empty on the first
+  window, beside `Page` and `Next`. A page with two lists (candidates'
   shortlist and passes, gmail's drafts and transfers) has one nav per list,
   `nav.paging#paging-<list>` (`#paging-shortlist`, `#paging-passes`,
   `#paging-drafts`, `#paging-transfers`), each with its own parameter
   `<list>_page` (`shortlist_page`, `passes_page`, `drafts_page`,
-  `transfers_page`); each nav's hrefs carry the other list's current token,
-  so paging one list never resets the other, and its First link drops only
-  its own list's parameter, keeping the other's. A `page` value the page cannot
+  `transfers_page`) and its own fields (`<List>Prev` beside `<List>Page`
+  and `<List>Next`); each nav's hrefs, Prev's included, carry the other
+  list's current `page` value, so paging one list never resets the other;
+  its First link and its underflow redirect drop only its own list's
+  parameter, keeping the other's. A `page` value the page cannot
   decode (a token issued for a different list included) is answered 404 with
   the app's existing not-found page, never quietly the first window; a URL
   carrying a token the page never issued names no page. An empty list shows its empty state and
@@ -478,7 +496,8 @@ for Minnesota and Wisconsin, with made-up carriers.
   `nav.paging#paging`, First as the current item and, since more follow,
   Next linking to `/runs/<id>?page=6yGAPAqiIKZP1wGaUvHJ`, the token `rows`
   would hand back as `next`. States: a later window (First a link back to
-  `/runs/<id>`, no Next), running
+  `/runs/<id>`, Prev a link to `/runs/<id>?page=<before-token>`, no Next),
+  running
   (`div#running.alert.quiet`, "Running", a Reload button, no rows), failed (`div#failure.alert` of kind err, "The run
   failed", the reason's sentence chosen from `source`, `interrupted` or
   `store`, and a line that a failed run keeps no rows), done with no rows
