@@ -129,7 +129,7 @@ func put(t *testing.T, s *store.Store, path string, exp time.Time) store.Artifac
 func TestPublicDataAndTemplates(t *testing.T) {
 	const _ string = pages.ServiceName
 	const _ string = pages.Description
-	// R-NQFY-7UB1 R-MSDH-H40V R-AOLW-DYVR R-MW16-MF8Y R-MX93-06ZN
+	// R-NQFY-7UB1 R-MSDH-H40V R-Z3BV-BR89 R-MW16-MF8Y R-MX93-06ZN
 	if pages.ServiceName != "artifacts" || pages.Description != "Binary files agents and services share" || pages.ToolsLevel != (page.Level{Name: "tools", URL: "/tools"}) || pages.AboutLevel != (page.Level{Name: "about", URL: "/about"}) {
 		t.Fatal("service identity or levels")
 	}
@@ -152,7 +152,7 @@ func TestPublicDataAndTemplates(t *testing.T) {
 	}{
 		{"landing", pages.LandingData{Banner: b}},
 		{"landing", pages.LandingData{Banner: b, Artifacts: []pages.ArtifactRow{row, noExpiryRow}, TotalBytes: 74}},
-		{"landing", pages.LandingData{Banner: b, Artifacts: []pages.ArtifactRow{row}, TotalBytes: 74, Page: (paging.Token{Tool: "list"}).Encode("before-row"), Next: (paging.Token{Tool: "list"}).Encode(row.Path)}},
+		{"landing", pages.LandingData{Banner: b, Artifacts: []pages.ArtifactRow{row}, TotalBytes: 74, Page: (paging.Token{Tool: "list"}).Encode("before-row"), Prev: (paging.Token{Tool: "list-before"}).Encode(row.Path), Next: (paging.Token{Tool: "list"}).Encode(row.Path)}},
 		{"artifact", pages.ArtifactData{Banner: b, Artifact: view}},
 		{"artifact", pages.ArtifactData{Banner: b, Artifact: noExpiryView}},
 		{"tools", pages.ToolsData{Banner: b, Tools: []pages.ToolRow{{Name: "test-tool", Description: "test-description"}}}},
@@ -194,7 +194,7 @@ func TestIdentityRequired(t *testing.T) {
 }
 
 func TestLandingData(t *testing.T) {
-	// R-AS9L-JA3U
+	// R-Z4JR-PIYY
 	now := time.Date(2030, 1, 2, 3, 4, 5, 0, time.FixedZone("test-zone", 7200))
 	cfg, _ := fixtureWithClock(t, func() time.Time { return now })
 	r := request(http.MethodGet, "/")
@@ -223,7 +223,7 @@ func TestLandingData(t *testing.T) {
 }
 
 func TestLandingWindowsMatchList(t *testing.T) {
-	// R-AS9L-JA3U
+	// R-Z4JR-PIYY R-Z0W2-K7QV
 	t.Setenv(services.Variable, "")
 	now := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
 	clock := func() time.Time { return now }
@@ -263,6 +263,9 @@ func TestLandingWindowsMatchList(t *testing.T) {
 		if len(first) > paging.DefaultLimit {
 			first = first[:paging.DefaultLimit]
 			data.Next = (paging.Token{Tool: "list"}).Encode(first[len(first)-1].Path)
+		}
+		if value != "" && len(first) > 0 {
+			data.Prev = (paging.Token{Tool: "list-before"}).Encode(first[0].Path)
 		}
 		for _, a := range first {
 			row := pages.ArtifactRow{ID: a.ID, Path: a.Path, Bytes: a.Bytes, ContentType: a.ContentType, Owner: a.OwnerEmail, Modified: a.Modified.UTC().Format(time.RFC3339), ModifiedText: a.Modified.UTC().Format("2006-01-02 15:04")}
@@ -458,12 +461,12 @@ func TestMethodBeforeStore(t *testing.T) {
 	}
 }
 func TestStoreOutage(t *testing.T) {
-	// R-AX57-2D2M
+	// R-Z9FD-8LXQ
 	cfg, d := fixture(t)
 	a := put(t, cfg.Store, "outage.bin", time.Time{})
 	d.SetFailing(true)
 	for _, method := range []string{http.MethodGet, http.MethodHead} {
-		for _, path := range []string{"/", "/?page=" + url.QueryEscape((paging.Token{Tool: "list"}).Encode("absent")), "/" + a.ID, "/art_0000000000000000"} {
+		for _, path := range []string{"/", "/?page=" + url.QueryEscape((paging.Token{Tool: "list"}).Encode("absent")), "/?page=last", "/?page=" + url.QueryEscape((paging.Token{Tool: "list-before"}).Encode("absent")), "/" + a.ID, "/art_0000000000000000"} {
 			w := serve(cfg, request(method, path))
 			want := store.Unreachable + "\n"
 			if method == http.MethodHead {
@@ -529,10 +532,10 @@ func TestHeadAndReadOnly(t *testing.T) {
 }
 
 func TestLandingPageValueAndInvalidTokens(t *testing.T) {
-	// R-AM63-MFED R-AUPE-ATL8
+	// R-YZO6-6G06 R-Z5RO-3APN
 	cfg, d := fixture(t)
 	put(t, cfg.Store, "visible.bin", time.Time{})
-	invalid := []string{"bogus", (paging.Token{Tool: "list_widgets"}).Encode("visible.bin"), (paging.Token{Tool: "list"}).Encode(int64(123))}
+	invalid := []string{"bogus", (paging.Token{Tool: "list_widgets"}).Encode("visible.bin"), (paging.Token{Tool: "list"}).Encode(int64(123)), (paging.Token{Tool: "list-before"}).Encode(int64(123)), "Last", "last "}
 	valid := (paging.Token{Tool: "list"}).Encode("visible.bin")
 	invalid = append(invalid, valid[:len(valid)-1])
 	for _, failing := range []bool{false, true} {
@@ -559,10 +562,11 @@ func TestLandingPageValueAndInvalidTokens(t *testing.T) {
 }
 
 func TestPageQueryInvariance(t *testing.T) {
-	// R-AZKZ-TWK0
+	// R-Z6ZK-H2GC
 	cfg, d := fixture(t)
 	a := put(t, cfg.Store, "query.bin", time.Time{})
 	token := (paging.Token{Tool: "list"}).Encode("query.bin")
+	before := (paging.Token{Tool: "list-before"}).Encode("query.bin")
 	for _, failing := range []bool{false, true} {
 		d.SetFailing(failing)
 		for _, path := range []string{"/", "/tools", "/about", "/missing", "/" + a.ID, "/%61" + a.ID[1:]} {
@@ -572,6 +576,8 @@ func TestPageQueryInvariance(t *testing.T) {
 					{"page=", "page=&page=bogus&limit=999"},
 					{"page=" + url.QueryEscape(token), "page=" + url.QueryEscape(token) + "&page=bogus&limit=1&other=x"},
 					{"page=bogus", "page=bogus&limit=2"},
+					{"page=last", "page=last&page=bogus&limit=1"},
+					{"page=" + url.QueryEscape(before), "page=" + url.QueryEscape(before) + "&page=last&limit=1"},
 				}
 				if path != "/" || (method != http.MethodGet && method != http.MethodHead) {
 					pairs = append(pairs, [2]string{"page=bogus", "page=" + url.QueryEscape(token)})
@@ -585,5 +591,130 @@ func TestPageQueryInvariance(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// R-Z23Y-XZHK R-ZAN9-MDOF R-ZBV6-05F4 R-IWES-N358 R-YZO6-6G06 R-Z4JR-PIYY
+func TestBackwardWindowsAndLast(t *testing.T) {
+	for _, count := range []int{0, paging.DefaultLimit, paging.DefaultLimit + 1, 3 * paging.DefaultLimit, 3*paging.DefaultLimit + 7} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			cfg, _ := fixture(t)
+			var all []store.Artifact
+			for i := count - 1; i >= 0; i-- {
+				path := fmt.Sprintf("path-%04d.bin", i)
+				expiry := time.Time{}
+				if i%2 == 0 {
+					expiry = time.Date(2035, 2, 3, 4, 5, 6, 0, time.UTC)
+				}
+				a, _, err := cfg.Store.Put(context.Background(), store.Draft{Path: path, OwnerID: fmt.Sprintf("owner-%d", i%2), OwnerEmail: fmt.Sprintf("owner-%d@example.test", i%2), ContentType: "application/test", Expires: expiry, Max: 100}, strings.NewReader(path))
+				if err != nil {
+					t.Fatal(err)
+				}
+				all = append(all, a)
+			}
+			sort.Slice(all, func(i, j int) bool { return all[i].Path < all[j].Path })
+			check := func(value string) (pages.LandingData, bool) {
+				t.Helper()
+				r := request(http.MethodGet, "/?"+url.Values{"page": {value}}.Encode())
+				b := banner(r, cfg.ServicesPath)
+				b.Trail = nil
+				data := pages.LandingData{Banner: b, Page: value}
+				for _, a := range all {
+					data.TotalBytes += a.Bytes
+				}
+				selected := all
+				backward := value == "last"
+				if value != "" && value != "last" {
+					var key string
+					if err := (paging.Token{Tool: "list"}).Decode(value, &key); err == nil {
+						selected = all[sort.Search(len(all), func(i int) bool { return all[i].Path > key }):]
+					} else {
+						if err := (paging.Token{Tool: "list-before"}).Decode(value, &key); err != nil {
+							t.Fatal(err)
+						}
+						backward = true
+						selected = all[:sort.Search(len(all), func(i int) bool { return all[i].Path >= key })]
+					}
+				}
+				if backward && len(selected) <= paging.DefaultLimit {
+					for _, method := range []string{http.MethodGet, http.MethodHead} {
+						r.Method = method
+						got := serve(cfg, r)
+						if got.Code != http.StatusSeeOther || !reflect.DeepEqual(got.Header().Values("Location"), []string{"/"}) || got.Body.Len() != 0 {
+							t.Fatalf("underflow %q: %d %v %q", value, got.Code, got.Header(), got.Body.String())
+						}
+					}
+					return data, true
+				}
+				more := len(selected) > paging.DefaultLimit
+				if more {
+					if backward {
+						selected = selected[len(selected)-paging.DefaultLimit:]
+					} else {
+						selected = selected[:paging.DefaultLimit]
+					}
+				}
+				if len(selected) > 0 {
+					if value != "" {
+						data.Prev = (paging.Token{Tool: "list-before"}).Encode(selected[0].Path)
+					}
+					if backward && value != "last" || !backward && more {
+						data.Next = (paging.Token{Tool: "list"}).Encode(selected[len(selected)-1].Path)
+					}
+				}
+				for _, a := range selected {
+					row := pages.ArtifactRow{ID: a.ID, Path: a.Path, Bytes: a.Bytes, ContentType: a.ContentType, Owner: a.OwnerEmail, Modified: a.Modified.UTC().Format(time.RFC3339), ModifiedText: a.Modified.UTC().Format("2006-01-02 15:04")}
+					if !a.Expires.IsZero() {
+						row.Expires = a.Expires.UTC().Format(time.RFC3339)
+						row.ExpiresText = a.Expires.UTC().Format("2006-01-02 15:04")
+					}
+					data.Artifacts = append(data.Artifacts, row)
+				}
+				for _, method := range []string{http.MethodGet, http.MethodHead} {
+					r.Method = method
+					checkPage(t, cfg, r, http.StatusOK, "landing", data)
+				}
+				return data, false
+			}
+			last, _ := check("last")
+			for _, key := range []string{"", "path-0000.bin", fmt.Sprintf("path-%04d.bina", paging.DefaultLimit), "zz-missing"} {
+				// The two tool names over the same key select opposite sides.
+				check((paging.Token{Tool: "list"}).Encode(key))
+				check((paging.Token{Tool: "list-before"}).Encode(key))
+			}
+			var forward []pages.LandingData
+			value := ""
+			for {
+				data, underflow := check(value)
+				if underflow {
+					t.Fatal("forward window underflowed")
+				}
+				forward = append(forward, data)
+				if data.Next == "" {
+					break
+				}
+				value = data.Next
+			}
+			if count <= paging.DefaultLimit {
+				return
+			}
+			if last.Page != "last" || last.Next != "" || last.Prev == "" || len(last.Artifacts) != paging.DefaultLimit {
+				t.Fatal("last window navigation", last)
+			}
+			if count%paging.DefaultLimit == 0 && !reflect.DeepEqual(last.Artifacts, forward[len(forward)-1].Artifacts) {
+				t.Fatal("last differs from final full forward window")
+			}
+			value = forward[len(forward)-1].Page
+			for i := len(forward) - 1; i > 0; i-- {
+				data, underflow := check(value)
+				if underflow || !reflect.DeepEqual(data.Artifacts, forward[i].Artifacts) {
+					t.Fatalf("backward window %d differs from forward window", i)
+				}
+				value = data.Prev
+			}
+			if _, underflow := check(value); !underflow {
+				t.Fatal("backward walk did not finish at first-window redirect")
+			}
+		})
 	}
 }

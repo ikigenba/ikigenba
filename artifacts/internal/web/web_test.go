@@ -394,7 +394,7 @@ func (b *outageBody) Read(p []byte) (int, error) {
 
 func (*outageBody) Close() error { return nil }
 
-// R-B38O-Z7S3 R-MSA9-MRZ4
+// R-ZD32-DX5T R-MSA9-MRZ4
 func TestFailingStoreOnlyRecordsRequestAndToolEvents(t *testing.T) {
 	f := newFixture(t)
 	a, _, err := f.cfg.Store.Put(context.Background(), store.Draft{Path: "existing.bin", OwnerID: "owner-chosen", Max: 64}, strings.NewReader("retained fixture bytes"))
@@ -439,7 +439,7 @@ func TestFailingStoreOnlyRecordsRequestAndToolEvents(t *testing.T) {
 			t.Fatal("outage emitted bus event", f.bus.Events())
 		}
 	}
-	for _, path := range []string{"/files/existing.bin", "/files/missing.bin", "/", "/?page=" + (paging.Token{Tool: "list"}).Encode("absent"), "/" + a.ID, "/art_6666666666666666"} {
+	for _, path := range []string{"/files/existing.bin", "/files/missing.bin", "/", "/?page=" + (paging.Token{Tool: "list"}).Encode("absent"), "/?page=last", "/?page=" + (paging.Token{Tool: "list-before"}).Encode("absent"), "/" + a.ID, "/art_6666666666666666"} {
 		methods := []string{"GET", "HEAD"}
 		if strings.HasPrefix(path, "/files/") {
 			methods = append(methods, "PUT", "DELETE")

@@ -242,6 +242,41 @@ func (s *Store) List(ctx context.Context, after *string, n int) ([]Artifact, err
 	return out, nil
 }
 
+// ListBefore returns a bounded window before a path in descending byte order.
+func (s *Store) ListBefore(ctx context.Context, before *string, n int) ([]Artifact, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Artifact, 0)
+	if n < 1 {
+		n = 0
+	}
+	err := s.tx(ctx, false, func(tx *sql.Tx) error {
+		var rows *sql.Rows
+		var err error
+		if before == nil {
+			rows, err = tx.QueryContext(ctx, "SELECT id,path,blob,bytes,content_type,sha256,owner_id,owner_email,created,modified,expires FROM artifacts ORDER BY path COLLATE BINARY DESC LIMIT ?", n)
+		} else {
+			rows, err = tx.QueryContext(ctx, "SELECT id,path,blob,bytes,content_type,sha256,owner_id,owner_email,created,modified,expires FROM artifacts WHERE path < ? ORDER BY path COLLATE BINARY DESC LIMIT ?", *before, n)
+		}
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			a, err := scan(rows)
+			if err != nil {
+				return err
+			}
+			out = append(out, a.Artifact)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // TotalBytes sums every stored artifact's byte count.
 func (s *Store) TotalBytes(ctx context.Context) (int64, error) {
 	s.mu.Lock()

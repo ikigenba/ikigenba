@@ -6,6 +6,7 @@ import (
 	"errors"
 	"html/template"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/page"
@@ -68,6 +69,7 @@ type LandingData struct {
 	Artifacts  []ArtifactRow
 	TotalBytes int64
 	Page       string
+	Prev       string
 	Next       string
 }
 
@@ -143,18 +145,33 @@ func Handler(cfg Config) http.Handler {
 		switch path {
 		case "/":
 			value := r.URL.Query().Get("page")
-			var after *string
-			if value != "" {
-				var position string
-				if err := (paging.Token{Tool: "list"}).Decode(value, &position); err != nil {
-					cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NoticeData{Banner: banner})
-					return
+			var key string
+			var position *string
+			backward := value == "last"
+			if value != "" && value != "last" {
+				if err := (paging.Token{Tool: "list"}).Decode(value, &key); err != nil {
+					if err := (paging.Token{Tool: "list-before"}).Decode(value, &key); err != nil {
+						cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NoticeData{Banner: banner})
+						return
+					}
+					backward = true
 				}
-				after = &position
+				position = &key
 			}
-			all, err := cfg.Store.List(r.Context(), after, paging.DefaultLimit+1)
+			var all []store.Artifact
+			var err error
+			if backward {
+				all, err = cfg.Store.ListBefore(r.Context(), position, paging.DefaultLimit+1)
+			} else {
+				all, err = cfg.Store.List(r.Context(), position, paging.DefaultLimit+1)
+			}
 			if err != nil {
 				unavailable(w, r)
+				return
+			}
+			if backward && len(all) <= paging.DefaultLimit {
+				w.Header().Set("Location", "/")
+				w.WriteHeader(http.StatusSeeOther)
 				return
 			}
 			total, err := cfg.Store.TotalBytes(r.Context())
@@ -164,9 +181,20 @@ func Handler(cfg Config) http.Handler {
 			}
 			banner.Trail = nil
 			data := LandingData{Banner: banner, TotalBytes: total, Page: value}
-			if len(all) > paging.DefaultLimit {
+			more := len(all) > paging.DefaultLimit
+			if more {
 				all = all[:paging.DefaultLimit]
-				data.Next = (paging.Token{Tool: "list"}).Encode(all[len(all)-1].Path)
+			}
+			if backward {
+				slices.Reverse(all)
+			}
+			if len(all) > 0 {
+				if value != "" {
+					data.Prev = (paging.Token{Tool: "list-before"}).Encode(all[0].Path)
+				}
+				if (backward && value != "last") || (!backward && more) {
+					data.Next = (paging.Token{Tool: "list"}).Encode(all[len(all)-1].Path)
+				}
 			}
 			data.Artifacts = make([]ArtifactRow, 0, len(all))
 			for _, a := range all {
