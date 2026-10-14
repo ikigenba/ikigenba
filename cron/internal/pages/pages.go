@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"html/template"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -32,6 +33,7 @@ type LandingData struct {
 	Banner   page.Banner
 	Triggers []TriggerRow
 	Page     string
+	Prev     string
 	Next     string
 }
 
@@ -152,16 +154,20 @@ func Handler(cfg Config) http.Handler {
 		}
 		if path == "/" {
 			p := r.URL.Query().Get("page")
-			after := ""
-			if p != "" {
-				if err := (paging.Token{Tool: "list"}).Decode(p, &after); err != nil {
-					b := cfg.Banner(bannerUser(r, cfg.ServicesPath))
-					b.Trail = nil
-					cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NoticeData{Banner: b})
-					return
-				}
+			key, backward, last, valid := pageKey(p)
+			if !valid {
+				b := cfg.Banner(bannerUser(r, cfg.ServicesPath))
+				b.Trail = nil
+				cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NoticeData{Banner: b})
+				return
 			}
-			entries, err := cfg.Store.ListAfter(r.Context(), after, paging.DefaultLimit+1)
+			var entries []store.Trigger
+			var err error
+			if backward {
+				entries, err = cfg.Store.ListBefore(r.Context(), key, paging.DefaultLimit+1)
+			} else {
+				entries, err = cfg.Store.ListAfter(r.Context(), key, paging.DefaultLimit+1)
+			}
 			if err != nil {
 				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 				w.WriteHeader(http.StatusServiceUnavailable)
@@ -170,12 +176,31 @@ func Handler(cfg Config) http.Handler {
 				}
 				return
 			}
+			// An empty before-token key precedes every slug; only last opens the end.
+			if backward && !last && key == "" {
+				entries = entries[:0]
+			}
+			if backward && len(entries) <= paging.DefaultLimit {
+				w.Header().Set("Location", "/")
+				w.WriteHeader(http.StatusSeeOther)
+				return
+			}
 			next := ""
-			if len(entries) > paging.DefaultLimit {
-				next = (paging.Token{Tool: "list"}).Encode(entries[paging.DefaultLimit-1].Slug)
+			more := len(entries) > paging.DefaultLimit
+			if more {
 				entries = entries[:paging.DefaultLimit]
 			}
-			data := LandingData{Banner: cfg.Banner(bannerUser(r, cfg.ServicesPath)), Triggers: make([]TriggerRow, 0, len(entries)), Page: p, Next: next}
+			if backward {
+				slices.Reverse(entries)
+			}
+			prev := ""
+			if p != "" && len(entries) > 0 {
+				prev = (paging.Token{Tool: "list-before"}).Encode(entries[0].Slug)
+			}
+			if (backward && !last) || (!backward && more) {
+				next = (paging.Token{Tool: "list"}).Encode(entries[len(entries)-1].Slug)
+			}
+			data := LandingData{Banner: cfg.Banner(bannerUser(r, cfg.ServicesPath)), Triggers: make([]TriggerRow, 0, len(entries)), Page: p, Prev: prev, Next: next}
 			data.Banner.Trail = nil
 			caller, _ := identity.FromContext(r.Context())
 			for _, t := range entries {
@@ -203,4 +228,21 @@ func Handler(cfg Config) http.Handler {
 		}
 		cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NoticeData{Banner: b})
 	})
+}
+
+// pageKey distinguishes the tool's forward tokens from page-only navigation.
+func pageKey(p string) (key string, backward, last, valid bool) {
+	if p == "" {
+		return "", false, false, true
+	}
+	if err := (paging.Token{Tool: "list"}).Decode(p, &key); err == nil {
+		return key, false, false, true
+	}
+	if err := (paging.Token{Tool: "list-before"}).Decode(p, &key); err == nil {
+		return key, true, false, true
+	}
+	if p == "last" {
+		return "", true, true, true
+	}
+	return "", false, false, false
 }

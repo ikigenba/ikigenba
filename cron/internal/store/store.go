@@ -206,6 +206,33 @@ func (s *Store) ListAfter(ctx context.Context, after string, n int) ([]Trigger, 
 	return result, nil
 }
 
+// ListBefore returns at most n triggers before a byte-wise slug position, nearest first.
+func (s *Store) ListBefore(ctx context.Context, before string, n int) ([]Trigger, error) {
+	result := make([]Trigger, 0)
+	if n < 1 {
+		n = 0
+	}
+	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, "SELECT id, slug, schedule, owner_id, owner_email, status, created, last_fired FROM triggers WHERE (? = '' OR slug COLLATE BINARY < ?) ORDER BY slug COLLATE BINARY DESC LIMIT ?", before, before, n)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			t, err := scan(rows)
+			if err != nil {
+				return err
+			}
+			result = append(result, t)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // Get finds a trigger by its exact slug.
 func (s *Store) Get(ctx context.Context, slug string) (Trigger, error) {
 	var result Trigger

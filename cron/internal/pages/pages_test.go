@@ -86,7 +86,7 @@ func TestPublicDataAndTemplateExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	write := s.Write
-	// R-51S9-1O4N R-D1RO-RJ7G R-D2ZL-5AY5 R-D47H-J2OU
+	// R-J245-P92R R-D1RO-RJ7G R-D2ZL-5AY5 R-D47H-J2OU
 	row := pages.TriggerRow{"crn_example", "slug", "@hourly", "owner@example.test", "active", true, "stamp", "minute", "next", "nextminute"}
 	equal(t, row.ID, "crn_example")
 	equal(t, row.Mine, true)
@@ -96,13 +96,14 @@ func TestPublicDataAndTemplateExecution(t *testing.T) {
 		name       string
 		zero, full any
 	}{
-		{"landing", pages.LandingData{}, pages.LandingData{b, []pages.TriggerRow{row}, "supplied-page", "supplied-next"}},
+		{"landing", pages.LandingData{}, pages.LandingData{b, []pages.TriggerRow{row}, "supplied-page", "supplied-prev", "supplied-next"}},
 		{"about", pages.AboutData{}, pages.AboutData{b, "<description>"}},
 		// R-ZQUI-I4KJ R-ZS2E-VWB8
 		{"tools", pages.ToolsData{}, pages.ToolsData{b, []pages.Tool{{"example", "<description>"}}}},
 		{"notfound", pages.NoticeData{}, pages.NoticeData{b}},
 	}
 	equal(t, data[0].full.(pages.LandingData).Page, "supplied-page")
+	equal(t, data[0].full.(pages.LandingData).Prev, "supplied-prev")
 	equal(t, data[0].full.(pages.LandingData).Next, "supplied-next")
 	ts := templates(t)
 	// R-ZDFM-ANEW R-ZENI-OF5L R-ZFVF-26WA R-ZH3B-FYMZ
@@ -237,7 +238,7 @@ func expectedBanner(f *fixture, path string) page.Banner {
 	return b
 }
 func expectedRows(f *fixture, user string) []pages.TriggerRow {
-	// R-DK26-I3BV R-5305-FFVC
+	// R-DK26-I3BV R-J4JY-GSK5 R-JANG-DN9M
 	rows := make([]pages.TriggerRow, 0, len(f.triggers))
 	for _, x := range f.triggers[:min(len(f.triggers), paging.DefaultLimit)] {
 		r := pages.TriggerRow{ID: x.ID, Slug: x.Slug, When: x.When, Owner: x.OwnerEmail, Status: x.Status, Mine: x.OwnerID == user}
@@ -254,7 +255,7 @@ func expectedRows(f *fixture, user string) []pages.TriggerRow {
 	return rows
 }
 func TestLandingAndAboutExactBodies(t *testing.T) {
-	// R-5481-T7M1 R-ZKR0-L9V2
+	// R-JBVC-RF0B R-ZKR0-L9V2
 	for _, populated := range []bool{false, true} {
 		t.Run(fmt.Sprint(populated), func(t *testing.T) {
 			f := setup(t, populated)
@@ -341,7 +342,7 @@ func TestBannerUserAndFreshServices(t *testing.T) {
 	}
 }
 func TestRoutesMethodsFailuresAndReadOnly(t *testing.T) {
-	// R-ZLYW-Z1LR R-593N-CAKT R-ZN6T-CTCG R-57VQ-YIU4 R-DTTD-K99F R-CRFL-L3AY R-CSNH-YV1N
+	// R-ZLYW-Z1LR R-JGQY-AHZ3 R-ZN6T-CTCG R-JFJ1-WQ8E R-DTTD-K99F R-CRFL-L3AY R-CSNH-YV1N
 	f := setup(t, true)
 	handler := identity.Require(pages.Handler(f.cfg))
 	serve := func(r *http.Request) *httptest.ResponseRecorder {
@@ -507,7 +508,7 @@ func TestToolsExactBodiesAndFreshRegistration(t *testing.T) {
 }
 
 func TestLandingWindowsMatchList(t *testing.T) {
-	// R-50KC-NWDY R-5305-FFVC R-5481-T7M1 R-55FY-6ZCQ R-593N-CAKT
+	// R-J3C2-30TG R-J5RU-UKAU R-J4JY-GSK5 R-JANG-DN9M R-JBVC-RF0B R-JD39-56R0 R-JGQY-AHZ3
 	for _, count := range []int{0, paging.DefaultLimit - 1, paging.DefaultLimit, paging.DefaultLimit + 1, 2*paging.DefaultLimit + 1} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {
 			f := setup(t, false)
@@ -569,6 +570,10 @@ func TestLandingWindowsMatchList(t *testing.T) {
 					next = (paging.Token{Tool: "list"}).Encode(f.triggers[offset+paging.DefaultLimit-1].Slug)
 				}
 				equal(t, envelope.StructuredContent.Next, next)
+				prev := ""
+				if p != "" && len(rows) > 0 {
+					prev = (paging.Token{Tool: "list-before"}).Encode(rows[0].Slug)
+				}
 				queries := []string{"?page=" + url.QueryEscape(p), "?page=" + url.QueryEscape(p) + "&page=bogus&limit=1&owner=other&anything=yes"}
 				if p == "" {
 					queries = append(queries, "", "?limit=1&anything=yes")
@@ -577,7 +582,7 @@ func TestLandingWindowsMatchList(t *testing.T) {
 					get := answer(f.cfg, request("GET", "/"+query, "owner_0", "owner_0@example.test", "cron.example.test", "https"))
 					equal(t, get.Code, 200)
 					equal(t, get.Header(), http.Header{"Content-Type": []string{"text/html; charset=utf-8"}})
-					equal(t, get.Body.String(), rendered(t, templates(t), "landing", pages.LandingData{Banner: expectedBanner(f, "/"), Triggers: rows, Page: p, Next: next}))
+					equal(t, get.Body.String(), rendered(t, templates(t), "landing", pages.LandingData{Banner: expectedBanner(f, "/"), Triggers: rows, Page: p, Prev: prev, Next: next}))
 					head := answer(f.cfg, request("HEAD", "/"+query, "owner_0", "owner_0@example.test", "cron.example.test", "https"))
 					equal(t, head.Code, get.Code)
 					equal(t, head.Header(), get.Header())
@@ -593,7 +598,7 @@ func TestLandingWindowsMatchList(t *testing.T) {
 }
 
 func TestLandingCursorWindows(t *testing.T) {
-	// R-50KC-NWDY R-5305-FFVC R-5481-T7M1
+	// R-J3C2-30TG R-J5RU-UKAU R-J4JY-GSK5 R-JANG-DN9M R-JBVC-RF0B
 	f := setup(t, true)
 	for _, after := range []string{"", "month_end", "month_zzz", "zzzz"} {
 		p := (paging.Token{Tool: "list"}).Encode(after)
@@ -604,20 +609,24 @@ func TestLandingCursorWindows(t *testing.T) {
 				window.triggers = append(window.triggers, x)
 			}
 		}
+		prev := ""
+		if len(window.triggers) > 0 {
+			prev = (paging.Token{Tool: "list-before"}).Encode(window.triggers[0].Slug)
+		}
 		for _, user := range []string{"u_7f3a9c21", "u_2b8e1d04"} {
 			w := answer(f.cfg, request("GET", "/?page="+url.QueryEscape(p), user, "viewer@example.test", "cron.example.test", "https"))
 			equal(t, w.Code, 200)
 			equal(t, w.Header(), http.Header{"Content-Type": []string{"text/html; charset=utf-8"}})
-			equal(t, w.Body.String(), rendered(t, templates(t), "landing", pages.LandingData{Banner: expectedBanner(f, "/"), Triggers: expectedRows(&window, user), Page: p}))
+			equal(t, w.Body.String(), rendered(t, templates(t), "landing", pages.LandingData{Banner: expectedBanner(f, "/"), Triggers: expectedRows(&window, user), Page: p, Prev: prev}))
 		}
 	}
 }
 
 func TestLandingUndecodablePage(t *testing.T) {
-	// R-50KC-NWDY R-56NU-KR3F R-593N-CAKT
+	// R-J3C2-30TG R-JEB5-IYHP R-JGQY-AHZ3
 	f := setup(t, true)
 	list := paging.Token{Tool: "list"}
-	for _, p := range []string{"bogus", (paging.Token{Tool: "show"}).Encode("hourly"), list.Encode(int64(17)), list.Encode("hourly") + "!"} {
+	for _, p := range []string{"bogus", "LAST", "last/", (paging.Token{Tool: "show"}).Encode("hourly"), list.Encode(int64(17)), list.Encode("hourly") + "!", (paging.Token{Tool: "list-before"}).Encode(int64(17)), (paging.Token{Tool: "list-before"}).Encode("hourly") + "!"} {
 		for _, failing := range []bool{false, true} {
 			f.db.SetFailing(failing)
 			path := "/?page=" + url.QueryEscape(p) + "&page=&limit=1"
@@ -639,7 +648,7 @@ func TestLandingUndecodablePage(t *testing.T) {
 }
 
 func TestLandingFailedRead(t *testing.T) {
-	// R-57VQ-YIU4 R-593N-CAKT
+	// R-JFJ1-WQ8E R-JGQY-AHZ3
 	f := setup(t, true)
 	handler := identity.Require(pages.Handler(f.cfg))
 	for _, failure := range []string{"database", "cancelled"} {
@@ -650,7 +659,7 @@ func TestLandingFailedRead(t *testing.T) {
 			ctx, cancel = context.WithCancel(ctx)
 			cancel()
 		}
-		for _, p := range []string{"", (paging.Token{Tool: "list"}).Encode("month_end")} {
+		for _, p := range []string{"", (paging.Token{Tool: "list"}).Encode("month_end"), (paging.Token{Tool: "list-before"}).Encode("month_end"), (paging.Token{Tool: "list-before"}).Encode(""), "last"} {
 			var get *httptest.ResponseRecorder
 			for _, method := range []string{"GET", "HEAD"} {
 				r := request(method, "/?page="+url.QueryEscape(p), "viewer", "viewer@example.test", "cron.example.test", "https").WithContext(ctx)
@@ -669,4 +678,117 @@ func TestLandingFailedRead(t *testing.T) {
 			}
 		}
 	}
+}
+
+// checkWindow compares the response against the public template contract.
+func checkWindow(t *testing.T, f *fixture, p string, rows []pages.TriggerRow, prev, next string) {
+	t.Helper()
+	query := "/?page=" + url.QueryEscape(p) + "&page=bogus&limit=1&owner=other"
+	get := answer(f.cfg, request("GET", query, "owner_0", "owner_0@example.test", "cron.example.test", "https"))
+	equal(t, get.Code, 200)
+	equal(t, get.Header(), http.Header{"Content-Type": []string{"text/html; charset=utf-8"}})
+	equal(t, get.Body.String(), rendered(t, templates(t), "landing", pages.LandingData{Banner: expectedBanner(f, "/"), Triggers: rows, Page: p, Prev: prev, Next: next}))
+	head := answer(f.cfg, request("HEAD", query, "owner_0", "owner_0@example.test", "cron.example.test", "https"))
+	equal(t, head.Code, get.Code)
+	equal(t, head.Header(), get.Header())
+	equal(t, head.Body.String(), "")
+}
+
+func checkFirstRedirect(t *testing.T, f *fixture, p string) {
+	t.Helper()
+	for _, method := range []string{"GET", "HEAD"} {
+		w := answer(f.cfg, request(method, "/?page="+url.QueryEscape(p)+"&page=bogus&limit=1", "owner_0", "owner_0@example.test", "cron.example.test", "https"))
+		equal(t, w.Code, 303)
+		equal(t, w.Header(), http.Header{"Location": []string{"/"}})
+		equal(t, w.Body.String(), "")
+	}
+}
+
+func TestLandingBackwardAndLastWindows(t *testing.T) {
+	// R-J6ZR-8C1J R-J87N-M3S8 R-JHYU-O9PS R-JJ6R-21GH R-JKEN-FT76
+	// R-J3C2-30TG R-J4JY-GSK5 R-JANG-DN9M R-JBVC-RF0B R-JGQY-AHZ3
+	for _, count := range []int{0, paging.DefaultLimit - 1, paging.DefaultLimit, paging.DefaultLimit + 1, paging.DefaultLimit + 2, 2 * paging.DefaultLimit, 2*paging.DefaultLimit + 1} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			f := setup(t, false)
+			for i := count - 1; i >= 0; i-- {
+				_, err := f.scheduler.Create(t.Context(), store.Draft{Slug: fmt.Sprintf("trigger_%03d", i), When: "@hourly", OwnerID: fmt.Sprintf("owner_%d", i%2), OwnerEmail: fmt.Sprintf("owner_%d@example.test", i%2)})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			var err error
+			f.triggers, err = f.store.List(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			rows := expectedRowsForAll(f, "owner_0")
+			before := paging.Token{Tool: "list-before"}
+			after := paging.Token{Tool: "list"}
+			// Exercise every reverse boundary, including keys no trigger holds.
+			for end := 0; end <= count; end++ {
+				key := "zzzz"
+				if end < count {
+					key = f.triggers[end].Slug
+				}
+				keys := []string{key}
+				if end > 0 {
+					keys = append(keys, f.triggers[end-1].Slug+"z")
+				} else {
+					keys = append(keys, "", "aaa")
+				}
+				for _, k := range keys {
+					p := before.Encode(k)
+					if end <= paging.DefaultLimit {
+						checkFirstRedirect(t, f, p)
+					} else {
+						start := end - paging.DefaultLimit
+						checkWindow(t, f, p, rows[start:end], before.Encode(rows[start].Slug), after.Encode(rows[end-1].Slug))
+					}
+				}
+			}
+			if count <= paging.DefaultLimit {
+				checkFirstRedirect(t, f, "last")
+				return
+			}
+			// Follow Prev from the terminal forward window back to the first.
+			start := ((count - 1) / paging.DefaultLimit) * paging.DefaultLimit
+			p := after.Encode(rows[start-1].Slug)
+			for end := count; start > 0; {
+				prev := before.Encode(rows[start].Slug)
+				next := ""
+				if end < count {
+					next = after.Encode(rows[end-1].Slug)
+				}
+				checkWindow(t, f, p, rows[start:end], prev, next)
+				p = prev
+				end = start
+				start -= paging.DefaultLimit
+			}
+			checkFirstRedirect(t, f, p)
+			// Last is aligned to the end even when the forward tail is short.
+			end := count
+			p = "last"
+			for end > paging.DefaultLimit {
+				start = end - paging.DefaultLimit
+				prev := before.Encode(rows[start].Slug)
+				next := ""
+				if p != "last" {
+					next = after.Encode(rows[end-1].Slug)
+				}
+				checkWindow(t, f, p, rows[start:end], prev, next)
+				p, end = prev, start
+			}
+			checkFirstRedirect(t, f, p)
+		})
+	}
+}
+
+func expectedRowsForAll(f *fixture, user string) []pages.TriggerRow {
+	rows := make([]pages.TriggerRow, 0, len(f.triggers))
+	for start := 0; start < len(f.triggers); start += paging.DefaultLimit {
+		window := *f
+		window.triggers = f.triggers[start:]
+		rows = append(rows, expectedRows(&window, user)...)
+	}
+	return rows
 }

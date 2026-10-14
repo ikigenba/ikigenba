@@ -557,8 +557,8 @@ func stamp(t *testing.T, value string) time.Time {
 }
 
 func TestListAfter(t *testing.T) {
-	// R-MHT6-L5WU R-MJ12-YXNJ R-MK8Z-CPE8
-	d, s := fixture(t)
+	// R-MHT6-L5WU R-MJ12-YXNJ
+	_, s := fixture(t)
 	ctx := context.Background()
 	empty, err := s.ListAfter(ctx, "", 2)
 	if err != nil || empty == nil || len(empty) != 0 {
@@ -595,23 +595,79 @@ func TestListAfter(t *testing.T) {
 		}
 		same(t, got, all[c.start:c.end])
 	}
-	cancelled, cancel := context.WithCancel(ctx)
-	cancel()
-	for _, failing := range []bool{false, true} {
-		d.SetFailing(failing)
-		for _, n := range []int{-1, 0, 2} {
-			_, err := s.ListAfter(cancelled, "", n)
-			if !errors.Is(err, context.Canceled) || !errors.Is(err, store.ErrUnreachable) {
+	same(t, content(t, s), all)
+}
+
+func TestListBefore(t *testing.T) {
+	// R-IYGG-JXUO R-IZOC-XPLD
+	_, s := fixture(t)
+	ctx := context.Background()
+	empty, err := s.ListBefore(ctx, "", 2)
+	if err != nil || empty == nil || len(empty) != 0 {
+		t.Fatalf("empty window: %v %v", empty, err)
+	}
+	for i, name := range []string{"weekly_digest", "nightly_backup", "month_end", "hourly"} {
+		draft := draft(name)
+		draft.OwnerID = fmt.Sprintf("owner%d", i)
+		draft.OwnerEmail = fmt.Sprintf("person%d@example.test", i)
+		x, err := s.Create(ctx, draft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i%2 == 0 {
+			if _, err := s.SetLastFired(ctx, x.ID, instant.Add(time.Duration(i)*time.Hour)); err != nil {
 				t.Fatal(err)
 			}
-			if failing {
-				_, err = s.ListAfter(ctx, "", n)
-				if !errors.Is(err, store.ErrUnreachable) {
-					t.Fatal(err)
-				}
+			if _, err := s.SetStatus(ctx, x.ID, store.Paused); err != nil {
+				t.Fatal(err)
 			}
 		}
 	}
-	d.SetFailing(false)
+	all := content(t, s)
+	reversed := []store.Trigger{all[3], all[2], all[1], all[0]}
+	for _, c := range []struct {
+		before        string
+		n, start, end int
+	}{
+		{"nightly_backup", 2, 2, 4}, {"n", 5, 2, 4}, {"", 2, 0, 2}, {"zebra", 1, 0, 1},
+		{"hourly", 5, 4, 4}, {"Zebra", 5, 4, 4}, {"", 0, 0, 0}, {"", -3, 0, 0},
+		{"", 4, 0, 4}, {"", 9, 0, 4}, {"weekly_digest", 1, 1, 2},
+		{"' OR 1=1 --", 5, 4, 4}, {"é", 5, 0, 4},
+	} {
+		got, err := s.ListBefore(ctx, c.before, c.n)
+		if err != nil || got == nil {
+			t.Fatalf("window before %q, n=%d: %v %v", c.before, c.n, got, err)
+		}
+		same(t, got, reversed[c.start:c.end])
+	}
 	same(t, content(t, s), all)
+}
+
+func TestWindowFailures(t *testing.T) {
+	// R-J0W9-BHC2
+	d, s := fixture(t)
+	create(t, s, "first")
+	before := content(t, s)
+	ctx := context.Background()
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	for _, list := range []func(context.Context, string, int) ([]store.Trigger, error){s.ListAfter, s.ListBefore} {
+		for _, failing := range []bool{false, true} {
+			d.SetFailing(failing)
+			for _, n := range []int{-1, 0, 2} {
+				_, err := list(cancelled, "", n)
+				if !errors.Is(err, cancelled.Err()) || !errors.Is(err, store.ErrUnreachable) {
+					t.Fatalf("done context: %v", err)
+				}
+				if failing {
+					_, err := list(ctx, "", n)
+					if !errors.Is(err, store.ErrUnreachable) {
+						t.Fatalf("failing store: %v", err)
+					}
+				}
+			}
+			d.SetFailing(false)
+			same(t, content(t, s), before)
+		}
+	}
 }
