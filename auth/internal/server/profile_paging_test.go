@@ -45,7 +45,7 @@ func expectedProfileClient(token store.Token, draw time.Time) mcpClientData {
 }
 
 func TestProfileFirstPageBoundaries(t *testing.T) {
-	// R-E8AD-H04E R-EGTO-5EB9 R-E9I9-URV3 R-EEDV-DUTV: independent per-kind first pages, complete data and exact template output.
+	// R-V7O0-QYEF R-UZ4Q-2K7K R-VBBP-W9MI R-UT18-5PI3: independent per-kind first pages, complete data and exact template output.
 	counts := []int{0, paging.DefaultLimit - 1, paging.DefaultLimit, paging.DefaultLimit + 1, 2 * paging.DefaultLimit}
 	for _, personalCount := range counts {
 		for _, clientCount := range counts {
@@ -107,11 +107,11 @@ func TestProfileFirstPageBoundaries(t *testing.T) {
 				}
 				srv := tokenTestServer(t, st)
 				expected.Workspace = srv.cfg.WorkspaceDomain
-				rows, next, err := srv.tokenRows(user.ID, tokenTestNow, nil)
-				if err != nil || next != expected.Next || !reflect.DeepEqual(rows, expected.Rows) {
-					t.Fatalf("personal page=%#v next=%v err=%v", rows, next, err)
+				rows, window, err := srv.tokenRows(user.ID, tokenTestNow, tokenPage{empty: true})
+				if err != nil || window.next != expected.Next || !reflect.DeepEqual(rows, expected.Rows) {
+					t.Fatalf("personal page=%#v next=%v err=%v", rows, window.next, err)
 				}
-				clientData, err := srv.profileClients(user.ID, tokenTestNow, nil)
+				clientData, _, err := srv.profileClients(user.ID, tokenTestNow, tokenPage{empty: true})
 				if err != nil || !reflect.DeepEqual(clientData, expected.Clients) {
 					t.Fatalf("client page=%#v err=%v", clientData, err)
 				}
@@ -136,20 +136,20 @@ func TestProfileFirstPageBoundaries(t *testing.T) {
 						if err != nil {
 							t.Fatal(err)
 						}
-						got, next, err := srv.tokenWindow(user.ID, window.kind, position, window.tool)
+						result, err := srv.tokenWindow(user.ID, window.kind, position, window.tool)
 						length := min(len(remaining), paging.DefaultLimit)
-						sameWindow := reflect.DeepEqual(got, remaining[:length]) || len(got) == 0 && length == 0
-						if err != nil || !sameWindow || next != expectedNextToken(window.tool, remaining) {
-							t.Fatalf("%s window: %#v next=%q err=%v", window.tool, got, next, err)
+						sameWindow := reflect.DeepEqual(result.tokens, remaining[:length]) || len(result.tokens) == 0 && length == 0
+						if err != nil || !sameWindow || result.next != expectedNextToken(window.tool, remaining) {
+							t.Fatalf("%s window: %#v next=%q err=%v", window.tool, result.tokens, result.next, err)
 						}
 						remaining = remaining[length:]
-						if next == "" {
+						if result.next == "" {
 							if len(remaining) != 0 {
 								t.Fatal("traversal ended early")
 							}
 							break
 						}
-						pageValue = next
+						pageValue = result.next
 					}
 				}
 
@@ -217,24 +217,29 @@ func expectedNextToken(tool string, tokens []store.Token) string {
 }
 
 func TestTokenPagePositions(t *testing.T) {
-	// R-ED5Z-0336: empty, malformed, scoped and typed cursor positions.
+	// R-UQLF-E60P: empty, malformed, scoped and typed cursor positions.
 	for _, tool := range []string{"tokens", "clients"} {
-		for _, used := range []int64{0, 1, -1} {
-			value := (paging.Token{Tool: tool}).Encode(used, int64(-123456789), int64(987654321), "position-fixture")
-			got, err := tokenPagePosition(value, tool)
-			want := &store.TokenPosition{CreatedAt: time.Unix(0, 987654321), ID: "position-fixture"}
-			if used != 0 {
-				at := time.Unix(0, -123456789)
-				want.LastUsedAt = &at
-			}
-			if err != nil || !reflect.DeepEqual(got, want) {
-				t.Fatalf("%s position = %#v, %v want %#v", tool, got, err, want)
+		for _, scope := range []string{tool, tool + "-before"} {
+			for _, used := range []int64{0, 1, -1} {
+				value := (paging.Token{Tool: scope}).Encode(used, int64(-123456789), int64(987654321), "position-fixture")
+				got, err := tokenPagePosition(value, tool)
+				want := &store.TokenPosition{CreatedAt: time.Unix(0, 987654321), ID: "position-fixture"}
+				if used != 0 {
+					at := time.Unix(0, -123456789)
+					want.LastUsedAt = &at
+				}
+				if err != nil || !reflect.DeepEqual(got.position, want) || got.before != (scope == tool+"-before") {
+					t.Fatalf("%s position = %#v, %v want %#v", tool, got, err, want)
+				}
 			}
 		}
-		if got, err := tokenPagePosition("", tool); got != nil || err != nil {
+		if got, err := tokenPagePosition("", tool); got.position != nil || !got.empty || err != nil {
 			t.Fatalf("empty = %#v, %v", got, err)
 		}
-		for _, value := range []string{"bogus", (paging.Token{Tool: tool}).Encode("wrong-type", int64(1), int64(2), "fixture")} {
+		if got, err := tokenPagePosition("last", tool); err != nil || !got.last || got.position != nil {
+			t.Fatalf("last = %#v, %v", got, err)
+		}
+		for _, value := range []string{"bogus", "LAST", "last/", (paging.Token{Tool: tool}).Encode("wrong-type", int64(1), int64(2), "fixture")} {
 			if _, err := tokenPagePosition(value, tool); err == nil {
 				t.Fatalf("accepted malformed value %q", value)
 			}
@@ -243,7 +248,7 @@ func TestTokenPagePositions(t *testing.T) {
 }
 
 func TestProfileInvalidPages(t *testing.T) {
-	// R-EAQ6-8JLS: reject either cursor without rendering or modifying state, and leave unsigned requests with sign-in.
+	// R-VDRI-NT3W: reject either cursor without rendering or modifying state, and leave unsigned requests with sign-in.
 	for _, count := range []int{0, paging.DefaultLimit + 1} {
 		st := openTokenTestStore(t)
 		user, session := tokenTestIdentity(t, st, "invalid-pages")
@@ -256,12 +261,16 @@ func TestProfileInvalidPages(t *testing.T) {
 		srv := tokenTestServer(t, st)
 		validTokens := (paging.Token{Tool: "tokens"}).Encode(int64(0), int64(0), tokenTestNow.UnixNano(), "fixture")
 		validClients := (paging.Token{Tool: "clients"}).Encode(int64(0), int64(0), tokenTestNow.UnixNano(), "fixture")
-		queries := []string{"tokens_page=bogus", "clients_page=bogus", "tokens_page=bogus&clients_page=bogus", "tokens_page=" + validTokens + "&clients_page=bogus", "tokens_page=bogus&clients_page=" + validClients}
+		queries := []string{"tokens_page=LAST", "clients_page=last/", "tokens_page=last&clients_page=bogus", "tokens_page=bogus", "clients_page=bogus", "tokens_page=bogus&clients_page=bogus", "tokens_page=" + validTokens + "&clients_page=bogus", "tokens_page=bogus&clients_page=" + validClients}
 		if _, err := tokenPagePosition(validClients, "tokens"); err != nil {
 			queries = append(queries, "tokens_page="+validClients)
 		}
 		if _, err := tokenPagePosition(validTokens, "clients"); err != nil {
 			queries = append(queries, "clients_page="+validTokens)
+		}
+		foreignBefore := (paging.Token{Tool: "clients-before"}).Encode(int64(0), int64(0), tokenTestNow.UnixNano(), "fixture")
+		if _, err := tokenPagePosition(foreignBefore, "tokens"); err != nil {
+			queries = append(queries, "tokens_page="+foreignBefore)
 		}
 		before := profileStateSnapshot(t, st)
 		for _, query := range queries {
@@ -293,7 +302,7 @@ func TestProfileInvalidPages(t *testing.T) {
 }
 
 func TestProfileListsPageIndependently(t *testing.T) {
-	// R-EI1K-J61Y: each list retains its window when only the other list's cursor changes.
+	// R-V0CM-GBY9: each list retains its window when only the other list's cursor changes.
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "independent-pages")
 	var personal, clients []store.Token
@@ -319,11 +328,13 @@ func TestProfileListsPageIndependently(t *testing.T) {
 				expected.Next = personalNext
 			} else {
 				personalWindow = personal[paging.DefaultLimit:]
+				expected.Prev = tokenPageValue(personalWindow[0], "tokens-before")
 			}
 			if clientsPage == "" {
 				expected.Clients.ClientsNext = clientsNext
 			} else {
 				clientsWindow = clients[paging.DefaultLimit:]
+				expected.Clients.ClientsPrev = tokenPageValue(clientsWindow[0], "clients-before")
 			}
 			for _, token := range personalWindow {
 				expected.Rows = append(expected.Rows, expectedTokenRow(token, tokenTestNow))

@@ -37,20 +37,32 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	drawTime := s.now()
-	rows, next, err := s.tokenRows(identity.UserID, drawTime, tokensPosition)
+	rows, window, err := s.tokenRows(identity.UserID, drawTime, tokensPosition)
 	if err != nil {
 		s.writeServerError(w, r, err)
 		return
 	}
-	clients, err := s.profileClients(identity.UserID, drawTime, clientsPosition)
+	clients, clientsUnderflow, err := s.profileClients(identity.UserID, drawTime, clientsPosition)
 	if err != nil {
 		s.writeServerError(w, r, err)
+		return
+	}
+	if window.underflows || clientsUnderflow {
+		target := "/"
+		if tokensPage != "" && !window.underflows {
+			target += "?tokens_page=" + tokensPage
+		}
+		if clientsPage != "" && !clientsUnderflow {
+			target += "?clients_page=" + clientsPage
+		}
+		w.Header().Set("Location", target)
+		w.WriteHeader(http.StatusSeeOther)
 		return
 	}
 	clients.ClientsPage, clients.TokensPage = clientsPage, tokensPage
 	writeAuthPage(w, http.StatusOK, authPageData{Banner: s.pageBanner(identity.Email), Profile: &profilePageData{
 		Apex: apexName(r.Host), Email: identity.Email, Workspace: s.cfg.WorkspaceDomain,
-		Rows: rows, Page: tokensPage, Next: next, Clients: clients, Create: tokenCreateValues("", "90d", false),
+		Rows: rows, Page: tokensPage, Prev: window.prev, Next: window.next, Clients: clients, Create: tokenCreateValues("", "90d", false),
 	}})
 }
 

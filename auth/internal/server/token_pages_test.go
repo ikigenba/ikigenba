@@ -73,7 +73,7 @@ func expectedElapsed(d time.Duration) elapsedData {
 }
 
 func TestTokenDataDeclarations(_ *testing.T) {
-	// R-7DZ3-U9KX R-7F70-81BM R-7GEW-LT2B R-7HMS-ZKT0 R-7IUP-DCJP R-7K2L-R4AE R-EFLR-RMKK R-7MIE-INRS
+	// R-7DZ3-U9KX R-7F70-81BM R-7GEW-LT2B R-7HMS-ZKT0 R-7IUP-DCJP R-7K2L-R4AE R-UXWT-OSGV R-7MIE-INRS
 	// Assignment to the declared underlying structs checks names, types and order.
 	var _ struct {
 		ID, Name string
@@ -97,8 +97,8 @@ func TestTokenDataDeclarations(_ *testing.T) {
 	} = tokenCreateData{}
 	var _ struct{ Name, Secret string } = tokenCreatedData{}
 	var _ struct {
-		Clients                              []mcpClientData
-		ClientsPage, ClientsNext, TokensPage string
+		Clients                                           []mcpClientData
+		ClientsPage, ClientsPrev, ClientsNext, TokensPage string
 	} = mcpClientsData{}
 	var _ struct {
 		ID, Name, Approved, ApprovedText, LastUsed, LastUsedTitle string
@@ -150,7 +150,7 @@ func expectedTokenRow(token store.Token, draw time.Time) tokenRowData {
 }
 
 func TestTokenProfileValuesAndOrder(t *testing.T) {
-	// R-7Q63-NYZV R-E8AD-H04E
+	// R-7Q63-NYZV R-V7O0-QYEF
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "profile-rows")
 	used := tokenTestNow.Add(-2 * time.Hour)
@@ -202,8 +202,8 @@ func TestTokenProfileValuesAndOrder(t *testing.T) {
 		wantRows = append(wantRows, expectedTokenRow(byName[name], tokenTestNow))
 	}
 	srv := tokenTestServer(t, st)
-	rows, next, err := srv.tokenRows(user.ID, tokenTestNow, nil)
-	if err != nil || next != "" || !reflect.DeepEqual(rows, wantRows) {
+	rows, window, err := srv.tokenRows(user.ID, tokenTestNow, tokenPage{empty: true})
+	if err != nil || window.next != "" || !reflect.DeepEqual(rows, wantRows) {
 		t.Fatalf("rows=%#v err=%v want %#v", rows, err, wantRows)
 	}
 	w := httptest.NewRecorder()
@@ -444,11 +444,11 @@ func TestProfileDataTokenActionRoutes(t *testing.T) {
 			}
 			client, _ := mintProfileClient(t, st, user.ID, "data-client", tokenTestNow)
 			srv := tokenTestServer(t, st)
-			rows, next, err := srv.tokenRows(user.ID, tokenTestNow, nil)
-			if err != nil || next != "" || len(rows) != 1 {
+			rows, window, err := srv.tokenRows(user.ID, tokenTestNow, tokenPage{empty: true})
+			if err != nil || window.next != "" || len(rows) != 1 {
 				t.Fatalf("rows=%#v %v", rows, err)
 			}
-			clients, err := srv.profileClients(user.ID, tokenTestNow, nil)
+			clients, _, err := srv.profileClients(user.ID, tokenTestNow, tokenPage{empty: true})
 			if err != nil || len(clients.Clients) != 1 {
 				t.Fatalf("clients=%#v %v", clients, err)
 			}

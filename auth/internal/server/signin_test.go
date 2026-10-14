@@ -855,7 +855,7 @@ func TestCallbackMembershipIsHostedDomainAndVerifiedEmail(t *testing.T) {
 }
 
 func TestProfileUsesLookupAndIgnoresReturn(t *testing.T) {
-	// R-E4MO-BOWB: live-session GET / resolves without touching state, ignores
+	// R-V8VX-4Q54: live-session GET / resolves without touching state, ignores
 	// return, and responds with a 200 HTML page.
 	st := openSignInStore(t)
 	user, _, err := st.UpsertUserOnLogin("issuer", "subject", "member@green.example", signInNow)

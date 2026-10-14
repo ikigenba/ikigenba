@@ -394,7 +394,7 @@ func TestStorePersistsDomainStateAcrossHandles(t *testing.T) {
 }
 
 func TestEveryOperationFailsAndRecoversOnSameHandle(t *testing.T) {
-	// R-9KEI-MOPC
+	// R-UPDJ-0EA0
 	// R-8CEV-D3QG
 	d, err := db.Open(context.Background(), db.Config{Path: filepath.Join(t.TempDir(), "auth.db"), Migrations: auth.Migrations(), Now: sessionTestNow})
 	if err != nil {
@@ -452,6 +452,7 @@ func TestEveryOperationFailsAndRecoversOnSameHandle(t *testing.T) {
 		{"consume state", func() error { _, err := st.ConsumeLoginState(state.State); return err }},
 		{"create token", func() error { _, _, err := st.CreateToken(user.ID, "new token", ExpiryNever, now); return err }},
 		{"list tokens", func() error { _, err := st.ListTokens(user.ID, TokenPersonal, nil, 100); return err }},
+		{"list tokens before", func() error { _, err := st.ListTokensBefore(user.ID, TokenPersonal, nil, 100); return err }},
 		{"set enabled", func() error { return st.SetTokenEnabled(user.ID, token.ID, true) }},
 		{"delete token", func() error { return st.DeleteToken(user.ID, token.ID) }},
 		{"lookup token", func() error { _, err := st.LookupTokenIdentity(secret, "", now); return err }},
@@ -467,6 +468,7 @@ func TestEveryOperationFailsAndRecoversOnSameHandle(t *testing.T) {
 		{"revoke token", func() error { return st.RevokeToken(user.ID, clientToken.ID) }},
 		{"find token", func() error { _, err := st.FindToken(user.ID, token.ID); return err }},
 		{"list empty window", func() error { _, err := st.ListTokens(user.ID, TokenClient, nil, 0); return err }},
+		{"list empty reverse window", func() error { _, err := st.ListTokensBefore(user.ID, TokenClient, nil, 0); return err }},
 	}
 	d.SetFailing(true)
 	for _, c := range calls {

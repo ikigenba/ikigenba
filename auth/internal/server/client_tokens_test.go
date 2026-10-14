@@ -36,7 +36,7 @@ func mintProfileClient(t *testing.T, st *store.Store, owner, name string, approv
 }
 
 func TestClientProfileTemplateAndData(t *testing.T) {
-	// R-E9I9-URV3 R-E8AD-H04E R-EGTO-5EB9 R-3T1K-8Z4L: canonical rich profile data and template output.
+	// R-VBBP-W9MI R-V7O0-QYEF R-UZ4Q-2K7K R-3T1K-8Z4L: canonical rich profile data and template output.
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "client-profile")
 	other, _ := tokenTestIdentity(t, st, "foreign-client")
@@ -94,7 +94,7 @@ func TestClientProfileTemplateAndData(t *testing.T) {
 		}
 		expected.Clients = append(expected.Clients, row)
 	}
-	data, err := srv.profileClients(user.ID, tokenTestNow, nil)
+	data, _, err := srv.profileClients(user.ID, tokenTestNow, tokenPage{empty: true})
 	if err != nil {
 		t.Fatal(err)
 	}

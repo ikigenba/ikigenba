@@ -42,18 +42,11 @@ func assertAuthTemplate(t *testing.T, body, name string, data any) {
 }
 
 func TestTemplateDataShapesAndStates(t *testing.T) {
-	// R-6ZCB-90OL R-70K7-MSFA R-E72H-38DP: unkeyed construction proves exact field order and count.
+	// R-6ZCB-90OL R-70K7-MSFA: unkeyed construction proves exact field order and count.
 	signIn := signInPageData{"fixture.test", "", "encoded", "destination.test", "auth.fixture.test:443", "workspace.test", "email@fixture.test"}
-	profile := profilePageData{"fixture.test", "email@fixture.test", "workspace.test", nil, "", "", tokenCreateData{Expiry: "90d"}, mcpClientsData{}}
-	var _ struct {
-		Apex, Email, Workspace string
-		Rows                   []tokenRowData
-		Page, Next             string
-		Create                 tokenCreateData
-		Clients                mcpClientsData
-	} = profile
+	profile := profilePageData{Apex: "fixture.test", Email: "email@fixture.test", Workspace: "workspace.test", Create: tokenCreateData{Expiry: "90d"}}
 	_ = authPageData{page.Banner{}, &signIn, &profile, nil, nil}
-	// R-RCLV-11RS R-93BX-9WBM R-ELP9-OHA1
+	// R-RCLV-11RS R-93BX-9WBM R-VG7B-FCLA
 	set := expectedAuthTemplates(t)
 	for _, name := range []string{"page", "chrome", "signIn", "alert", "profile", "tokenList", "tokenTime", "tokenLastUsed", "tokenNever", "elapsed", "tokenCreate", "plusIcon", "tokenCreated", "copyIcon", "mcp-clients", "approve", "about", "value"} {
 		if set.Lookup(name) == nil {
@@ -78,15 +71,20 @@ func TestTemplateDataShapesAndStates(t *testing.T) {
 		last := tokenLastUsedData{Datetime: "fixture-datetime", Title: "fixture-title", Elapsed: elapsedData{Unit: unit, Count: 2}}
 		expires := tokenTimeData{Datetime: "expiry-datetime", Text: "expiry-text"}
 		profile.Rows = []tokenRowData{{ID: "fixture-unused", Name: "unused", Created: expires}, {ID: "fixture-used", Name: "used", Created: expires, LastUsed: &last, Expires: &expires, Enabled: true}}
-		profile.Page, profile.Next = "fixture-page", "fixture-next"
-		profile.Clients = mcpClientsData{ClientsPage: "fixture-clients-page", ClientsNext: "fixture-clients-next", TokensPage: profile.Page, Clients: []mcpClientData{{ID: "client-unused", Name: "unused"}, {ID: "client-used", Name: "used", LastUsed: "last-datetime", LastUsedElapsed: last.Elapsed, Expired: true}}}
+		profile.Page, profile.Prev, profile.Next = "fixture-page", "fixture-prev", "fixture-next"
+		profile.Clients = mcpClientsData{ClientsPage: "fixture-clients-page", ClientsPrev: "fixture-clients-prev", ClientsNext: "fixture-clients-next", TokensPage: profile.Page, Clients: []mcpClientData{{ID: "client-unused", Name: "unused"}, {ID: "client-used", Name: "used", LastUsed: "last-datetime", LastUsedElapsed: last.Elapsed, Expired: true}}}
 		execute("page", authPageData{Profile: &profile})
 		execute("chrome", authPageData{Profile: &profile})
 		execute("tokenList", profile)
 		execute("tokenTime", expires)
 		execute("tokenLastUsed", last)
 		execute("mcp-clients", profile.Clients)
-		profile.Page, profile.Clients.ClientsPage, profile.Clients.TokensPage = "", "", ""
+		profile.Page, profile.Prev, profile.Clients.ClientsPage, profile.Clients.ClientsPrev, profile.Clients.TokensPage = "", "", "", "", ""
+		execute("page", authPageData{Profile: &profile})
+		execute("chrome", authPageData{Profile: &profile})
+		profile.Page, profile.Clients.ClientsPage, profile.Clients.TokensPage = "last", "last", "last"
+		profile.Prev, profile.Clients.ClientsPrev = "fixture-prev", "fixture-clients-prev"
+		profile.Next, profile.Clients.ClientsNext = "", ""
 		execute("page", authPageData{Profile: &profile})
 		execute("chrome", authPageData{Profile: &profile})
 	}

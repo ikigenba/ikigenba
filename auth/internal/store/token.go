@@ -137,6 +137,68 @@ func (s *Store) ListTokens(userID string, kind TokenKind, after *TokenPosition, 
 	return tokens, err
 }
 
+// ListTokensBefore returns the nearest preceding tokens in reverse profile order.
+func (s *Store) ListTokensBefore(userID string, kind TokenKind, before *TokenPosition, n int) ([]Token, error) {
+	var tokens []Token
+	err := s.db.Read(context.Background(), func(tx *sql.Tx) error {
+		var query string
+		var args []any
+		switch {
+		case before == nil:
+			query = `SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host
+		 FROM tokens WHERE user_id = ? AND kind = ?
+		 ORDER BY last_used_at ASC, created_at ASC, id DESC LIMIT ?`
+			args = []any{userID, kind, max(n, 0)}
+		case before.LastUsedAt == nil:
+			query = `SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host
+		 FROM tokens WHERE user_id = ? AND kind = ? AND last_used_at IS NULL AND created_at = ? AND id < ?
+		 UNION ALL
+		 SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host
+		 FROM tokens WHERE user_id = ? AND kind = ? AND last_used_at IS NULL AND created_at > ?
+		 UNION ALL
+		 SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host
+		 FROM tokens WHERE user_id = ? AND kind = ? AND last_used_at IS NOT NULL
+		 ORDER BY last_used_at ASC, created_at ASC, id DESC LIMIT ?`
+			args = []any{userID, kind, before.CreatedAt.UnixNano(), before.ID,
+				userID, kind, before.CreatedAt.UnixNano(), userID, kind, max(n, 0)}
+		default:
+			query = `SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host
+		 FROM tokens WHERE user_id = ? AND kind = ? AND last_used_at = ? AND created_at = ? AND id < ?
+		 UNION ALL
+		 SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host
+		 FROM tokens WHERE user_id = ? AND kind = ? AND last_used_at = ? AND created_at > ?
+		 UNION ALL
+		 SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host
+		 FROM tokens WHERE user_id = ? AND kind = ? AND last_used_at > ?
+		 ORDER BY last_used_at ASC, created_at ASC, id DESC LIMIT ?`
+			args = []any{userID, kind, before.LastUsedAt.UnixNano(), before.CreatedAt.UnixNano(), before.ID,
+				userID, kind, before.LastUsedAt.UnixNano(), before.CreatedAt.UnixNano(),
+				userID, kind, before.LastUsedAt.UnixNano(), max(n, 0)}
+		}
+		rows, err := tx.QueryContext(context.Background(), query, args...)
+		if err != nil {
+			return fmt.Errorf("list tokens before: %w", err)
+		}
+		defer func() { _ = rows.Close() }()
+		tokens = make([]Token, 0)
+		for rows.Next() {
+			token, err := scanToken(rows)
+			if err != nil {
+				return fmt.Errorf("scan token listed before: %w", err)
+			}
+			tokens = append(tokens, token)
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("list tokens before: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return tokens, nil
+}
+
 // FindToken reads either kind of token scoped to its owner.
 func (s *Store) FindToken(userID, tokenID string) (Token, error) {
 	var token Token
