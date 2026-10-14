@@ -7,15 +7,19 @@
      shows); .Table (the table template's data, a slice of widgets); .Form
      (the form template's data); .Page (string, this window's own page
      token, the ?page= the request carried; empty on the first window);
-     and .Next (string, the page token for the window after this one;
-     empty when none remain). Hooks: title "dummy"; on the panel, h1 with
-     text "Widgets", p#panel-subtitle (text "<.Count> widget(s) · refreshes
+     .Prev (string, the page token for the window before this one, carried
+     in the same page parameter as Next; empty on the first window); and
+     .Next (string, the page token for the window after this one; empty
+     when none remain). Hooks: title "dummy"; on the panel, h1 with text
+     "Widgets", p#panel-subtitle (text "<.Count> widget(s) · refreshes
      every 5 seconds"), div.panel holding the table template
      (table#widgets-table) and the form template, then, when .Count is not
      zero or .Page is not empty, nav.paging#paging (aria-label "Pages")
-     whose children are, in order, First (on the first window, .Page empty, a span with
-     aria-current="page" and text "First"; otherwise a link to /widgets with
-     text "First") and, only when .Next is not empty, Next (a link to
+     whose children are, in order, First, Prev and Next: First (on the
+     first window, .Page empty, a span with aria-current="page" and text
+     "First"; otherwise a link to /widgets with text "First"); Prev, only
+     when .Prev is not empty (a link to /widgets?page=<.Prev> with text
+     "Prev"); and Next, only when .Next is not empty (a link to
      /widgets?page=<.Next> with text "Next"); on the first window with
      no widgets there is no nav, while an emptied later window still offers
      First. Then the script template, which polls the fragment
@@ -35,7 +39,7 @@
 {{template "table" .Table}}
 {{template "form" .Form}}
 </div>
-{{if or .Count .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/widgets">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/widgets?page={{.Next}}">Next</a>{{end}}</nav>
+{{if or .Count .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/widgets">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Prev}}<a href="/widgets?page={{.Prev}}">Prev</a>{{end}}{{if .Next}}<a href="/widgets?page={{.Next}}">Next</a>{{end}}</nav>
 {{end}}{{else}}
 <p>{{.Message}}</p>
 <a href="/widgets">Back to widgets</a>
