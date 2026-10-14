@@ -4,7 +4,7 @@ What sites answers on a site path and at the apex host: the order a site path is
 
 ## The order of a site path
 
-`serving.Sites` answers every gateway path `D03-serve` routes to it. Its first segment is a slug; the rest of the path is resolved in that site's tree. sites answers in a fixed order, and the first rule that applies gives the answer: a method other than `GET` or `HEAD` is refused with `405` before anything is read; a catalog that cannot be read is answered with sites' catalog refusal, which `D03-serve` states (R-P9E4-YQNX); a slug that names no site gets the not-found page with `Cache-Control: no-cache`; a private site sends a guest to auth's sign-in; `/<slug>` without its slash is redirected to `/<slug>/`; a site with no published commit gets the not-found page; and only then is the tree asked for and the rest of the path resolved in it. A guest of a private site therefore learns nothing but that it asks for a sign-in, and no rule before the tree starts a rebuild.
+`serving.Sites` answers every gateway path `D03-serve` routes to it. Its first segment is a slug; the rest of the path is resolved in that site's tree. sites answers in a fixed order, and the first rule that applies gives the answer: a method other than `GET` or `HEAD` is refused with `405` before anything is read; a catalog that cannot be read is answered with sites' catalog refusal, which `D03-serve` states (R-F9NC-PFC6); a slug that names no site gets the not-found page with `Cache-Control: no-cache`; a private site sends a guest to auth's sign-in; `/<slug>` without its slash is redirected to `/<slug>/`; a site with no published commit gets the not-found page; and only then is the tree asked for and the rest of the path resolved in it. A guest of a private site therefore learns nothing but that it asks for a sign-in, and no rule before the tree starts a rebuild.
 
 ## Resolving a path in a tree
 
@@ -58,7 +58,7 @@ When `cache.Tree` fails, the request is served from nowhere else. While sites is
 
 ## The apex
 
-`D03-serve` hands every apex request to `serving.Apex`, whatever its method and path, `/`, `/about`, `/tools` and `/mcp` included. An apex answer reads the catalog's apex setting and the apex site's slug and nothing else — not the site's visibility, its commit, its tree, nor who asks — so it never refuses a method and is never a view. With an apex set it is a `302` to `urls.ApexBase` followed by `/<slug>/` and the request's path without its leading `/`, query kept; with none it is the not-found page with `Cache-Control: no-cache`; and when the catalog cannot be read, sites' catalog refusal, which `D03-serve` states for every apex request (R-P9E4-YQNX).
+`D03-serve` hands every apex request to `serving.Apex`, whatever its method and path, `/`, `/about`, `/tools` and `/mcp` included. An apex answer reads the catalog's apex setting and the apex site's slug and nothing else — not the site's visibility, its commit, its tree, nor who asks — so it never refuses a method and is never a view. With an apex set it is a `302` to `urls.ApexBase` followed by `/<slug>/` and the request's path without its leading `/`, query kept; with none it is the not-found page with `Cache-Control: no-cache`; and when the catalog cannot be read, sites' catalog refusal, which `D03-serve` states for every apex request (R-F9NC-PFC6).
 
 ## Decisions
 
