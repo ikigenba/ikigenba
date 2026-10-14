@@ -55,11 +55,35 @@ func Handler(cfg Config) http.Handler {
 			cfg.Pages.Write(w, r, 200, "about", AboutData{b, Description})
 		case path == "/":
 			b.Trail = nil
-			d := LandingData{Banner: b, MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: dollars(scoring.DefaultMinRevenue), Shortlist: []ShortlistRow{}, Passes: []PassRow{}}
-			ranked, err := cfg.Store.Shortlist(r.Context(), store.ShortlistFilter{MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: scoring.DefaultMinRevenue}, 0, "", paging.DefaultLimit+1)
+			sp, pp := r.URL.Query().Get("shortlist_page"), r.URL.Query().Get("passes_page")
+			var key int64
+			var id, started, passID string
+			if sp != "" {
+				if err := (paging.Token{Tool: "shortlist"}).Decode(sp, &key, &id); err != nil {
+					notfound()
+					return
+				}
+			}
+			if pp != "" {
+				if err := (paging.Token{Tool: "passes"}).Decode(pp, &started, &passID); err != nil {
+					notfound()
+					return
+				}
+			}
+			d := LandingData{Banner: b, MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: dollars(scoring.DefaultMinRevenue), Shortlist: []ShortlistRow{}, ShortlistPage: sp, Passes: []PassRow{}, PassesPage: pp}
+			filter := store.ShortlistFilter{MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: scoring.DefaultMinRevenue}
+			ranked, err := cfg.Store.Shortlist(r.Context(), filter, key, id, paging.DefaultLimit+1)
 			if err != nil {
 				fail()
 				return
+			}
+			var offset int64
+			if id != "" {
+				offset, err = cfg.Store.ShortlistOffset(r.Context(), filter, key, id)
+				if err != nil {
+					fail()
+					return
+				}
 			}
 			if len(ranked) > paging.DefaultLimit {
 				ranked = ranked[:paging.DefaultLimit]
@@ -67,9 +91,9 @@ func Handler(cfg Config) http.Handler {
 				d.ShortlistNext = (paging.Token{Tool: "shortlist"}).Encode(last.Assessment.ScoreKey, last.Candidate.ID)
 			}
 			for i, e := range ranked {
-				d.Shortlist = append(d.Shortlist, shortlistRow(e, i))
+				d.Shortlist = append(d.Shortlist, shortlistRow(e, i, offset))
 			}
-			list, err := cfg.Store.ListPasses(r.Context(), "", "", paging.DefaultLimit+1)
+			list, err := cfg.Store.ListPasses(r.Context(), started, passID, paging.DefaultLimit+1)
 			if err != nil {
 				fail()
 				return

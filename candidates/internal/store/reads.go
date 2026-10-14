@@ -187,3 +187,15 @@ func (s *Store) Shortlist(ctx context.Context, f ShortlistFilter, scoreKey int64
 	}))
 	return out, err
 }
+
+// ShortlistOffset counts persisted eligible entries through a position.
+func (s *Store) ShortlistOffset(ctx context.Context, f ShortlistFilter, scoreKey int64, id string) (int64, error) {
+	var out int64
+	err := unreachable(s.readTx(ctx, func(tx *sql.Tx) error {
+		if id == "" {
+			return nil
+		}
+		return tx.QueryRowContext(ctx, ShortlistBefore, f.MaxMinutes, f.MinRevenue, f.Class, f.Cargo, scoreKey, id).Scan(&out)
+	}))
+	return out, err
+}

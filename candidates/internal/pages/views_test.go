@@ -47,7 +47,7 @@ func TestFormatting(t *testing.T) {
 	}
 }
 
-// R-5AWU-XSBJ R-4T6O-7GC0 R-4UEK-L82P R-4VMG-YZTE R-4Y29-QJAS R-4ZA6-4B1H R-8KNN-I5U6 R-5EKK-33JM R-591D-6GZ1 R-5I89-8ERP
+// R-IYJF-MAW3 R-4T6O-7GC0 R-4UEK-L82P R-4VMG-YZTE R-4Y29-QJAS R-4ZA6-4B1H R-8KNN-I5U6 R-J274-RM46 R-591D-6GZ1 R-5I89-8ERP
 func TestViews(t *testing.T) {
 	now := time.Date(2026, 10, 5, 9, 0, 7, 0, time.UTC)
 	hi := int64(24000000)
@@ -93,7 +93,7 @@ func TestViews(t *testing.T) {
 	}
 	a.Effective = .7
 	a.Score = 7279999.6
-	sr := shortlistRow(store.Ranked{Candidate: c, Assessment: a}, 2)
+	sr := shortlistRow(store.Ranked{Candidate: c, Assessment: a}, 2, 0)
 	if sr.Rank != 3 || sr.Minutes != 31 || sr.Low != "$14,400,000" || sr.High != "$24,000,000" || sr.Confidence != "0.70" || sr.Score != "$7,280,000" {
 		t.Fatal(sr)
 	}
@@ -115,7 +115,7 @@ func TestViews(t *testing.T) {
 	}
 }
 
-// R-5AWU-XSBJ R-4T6O-7GC0 R-4UEK-L82P R-4VMG-YZTE R-4Y29-QJAS R-4ZA6-4B1H
+// R-IYJF-MAW3 R-4T6O-7GC0 R-4UEK-L82P R-4VMG-YZTE R-4Y29-QJAS R-4ZA6-4B1H
 func TestTemplateDataShape(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -131,7 +131,7 @@ func TestTemplateDataShape(t *testing.T) {
 	for _, v := range []struct {
 		name string
 		data any
-	}{{"landing", LandingData{b, 120, "min", []ShortlistRow{{1, "id", "name", "city", "MN", 31, "class", "low", "high", "confidence", "score"}}, "chosen-shortlist-token", []PassRow{{"id", "trigger", store.StatusRunning, "", "", "", "", "", 1, 2, 3}}, "chosen-passes-token"}}, {"candidate", CandidateData{b, cv, &av, []EstimateView{ev}, []LinkView{lv}, []RulingView{rv}}}, {"pass", PassData{b, pv}}, {"tools", ToolsData{b, []ToolRow{{"name", "description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}} {
+	}{{"landing", LandingData{b, 120, "min", []ShortlistRow{{1, "id", "name", "city", "MN", 31, "class", "low", "high", "confidence", "score"}}, "chosen-shortlist-page", "chosen-shortlist-token", []PassRow{{"id", "trigger", store.StatusRunning, "", "", "", "", "", 1, 2, 3}}, "chosen-passes-page", "chosen-passes-token"}}, {"candidate", CandidateData{b, cv, &av, []EstimateView{ev}, []LinkView{lv}, []RulingView{rv}}}, {"pass", PassData{b, pv}}, {"tools", ToolsData{b, []ToolRow{{"name", "description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}} {
 		if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, v.name, v.data); err != nil {
 			t.Fatal(v.name, err)
 		}

@@ -67,7 +67,7 @@ func TestFindDeliveredUsesNewestMatchingPass(t *testing.T) {
 	contractError(t, err, store.ErrUnreachable)
 }
 
-// R-4GM5-BBUB R-99SY-SUWV
+// R-4GM5-BBUB R-99SY-SUWV R-IUVQ-GZO0
 func TestKeysetWindowsCrossTiesAndEarlierHighIDs(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -99,6 +99,11 @@ func TestKeysetWindowsCrossTiesAndEarlierHighIDs(t *testing.T) {
 	full, err := f.s.Shortlist(ctx, filter, 123, "", 20)
 	contractOK(t, err)
 	contractEqual(t, len(full), 5)
+	contractEqual(t, full[0].Assessment.ScoreKey, full[1].Assessment.ScoreKey)
+	contractEqual(t, full[1].Assessment.ScoreKey, full[2].Assessment.ScoreKey)
+	if full[2].Assessment.ScoreKey <= full[3].Assessment.ScoreKey || full[3].Assessment.ScoreKey <= full[4].Assessment.ScoreKey {
+		t.Fatal("fixture must have three equal leading scores and two lower scores")
+	}
 	for _, top := range full[:3] {
 		if full[3].Candidate.ID >= top.Candidate.ID {
 			t.Fatal("lower-score boundary id must precede every tied leading id")
@@ -120,6 +125,9 @@ func TestKeysetWindowsCrossTiesAndEarlierHighIDs(t *testing.T) {
 		last := page[len(page)-1]
 		key = last.Assessment.ScoreKey
 		id = last.Candidate.ID
+		offset, e := f.s.ShortlistOffset(ctx, filter, key, id)
+		contractOK(t, e)
+		contractEqual(t, offset, int64(len(ranked)))
 	}
 	contractEqual(t, ranked, full)
 	cs, err := f.s.ListCandidates(ctx, store.CandidateFilter{}, "ignored", "", 20)

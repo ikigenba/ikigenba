@@ -41,8 +41,10 @@ type LandingData struct {
 	MaxMinutes    int64
 	MinRevenue    string
 	Shortlist     []ShortlistRow
+	ShortlistPage string
 	ShortlistNext string
 	Passes        []PassRow
+	PassesPage    string
 	PassesNext    string
 }
 

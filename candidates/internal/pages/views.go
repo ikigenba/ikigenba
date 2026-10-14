@@ -55,8 +55,8 @@ func passView(p store.Pass, sp string) PassView {
 	v.Finished, v.FinishedText = stamp(p.Finished, SecondLayout)
 	return v
 }
-func shortlistRow(e store.Ranked, i int) ShortlistRow {
-	v := ShortlistRow{Rank: int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, Class: e.Candidate.Class, Low: dollars(e.Assessment.Low), Confidence: two(e.Assessment.Effective), Score: money(e.Assessment.Score)}
+func shortlistRow(e store.Ranked, i int, offset int64) ShortlistRow {
+	v := ShortlistRow{Rank: offset + int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, Class: e.Candidate.Class, Low: dollars(e.Assessment.Low), Confidence: two(e.Assessment.Effective), Score: money(e.Assessment.Score)}
 	if e.Assessment.Minutes != nil {
 		v.Minutes = *e.Assessment.Minutes
 	}

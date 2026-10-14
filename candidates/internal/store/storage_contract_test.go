@@ -907,6 +907,14 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 			return e
 		}},
 		{"Shortlist", func(c context.Context) error { _, e := f.s.Shortlist(c, store.ShortlistFilter{}, 0, "", 0); return e }},
+		{"ShortlistOffset", func(c context.Context) error {
+			_, e := f.s.ShortlistOffset(c, store.ShortlistFilter{}, 0, "missing")
+			return e
+		}},
+		{"ShortlistOffsetEmpty", func(c context.Context) error {
+			_, e := f.s.ShortlistOffset(c, store.ShortlistFilter{}, 0, "")
+			return e
+		}},
 	}
 	check := func(c context.Context, want error) {
 		t.Helper()

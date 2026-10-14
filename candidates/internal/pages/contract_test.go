@@ -136,7 +136,7 @@ func TestCompleteViewContracts(t *testing.T) {
 	}
 }
 
-// R-5C4R-BK28
+// R-J0Z8-DUDH
 func TestExplicitTemplateStates(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -144,6 +144,46 @@ func TestExplicitTemplateStates(t *testing.T) {
 	}
 	for _, starter := range []string{"starter@example.test", "user-id"} {
 		if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "pass", PassData{Pass: PassView{Trigger: store.TriggerRebuild, Status: store.StatusRunning, StartedBy: starter}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for bits := 0; bits < 16; bits++ {
+		text := func(bit int) string {
+			if bits&(1<<bit) != 0 {
+				return "chosen-token"
+			}
+			return ""
+		}
+		for _, short := range [][]ShortlistRow{{}, {{City: "chosen-city", State: "chosen-state", High: "chosen-high"}, {}}} {
+			for _, passes := range [][]PassRow{{}, {{Status: store.StatusRunning, Trigger: store.TriggerRebuild}}} {
+				data := LandingData{Shortlist: short, ShortlistPage: text(0), ShortlistNext: text(1), Passes: passes, PassesPage: text(2), PassesNext: text(3)}
+				if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "landing", data); err != nil {
+					t.Fatal(bits, err)
+				}
+			}
+		}
+	}
+	for _, status := range []string{store.StatusActive, store.StatusMerged} {
+		for _, text := range []string{"", "chosen-value"} {
+			for _, full := range []bool{false, true} {
+				data := CandidateData{Candidate: CandidateView{ID: text, Status: status, MergedInto: text, Name: text, Street: text, City: text, State: text, Zip: text, County: text, Phone: text, Email: text, Class: text, Created: text, CreatedText: text, Updated: text, UpdatedText: text}}
+				if full {
+					data.Candidate.Names = []string{text}
+					data.Candidate.People = []PersonRow{{Name: text, Role: text}}
+					data.Candidate.Cargo = []string{text}
+					data.Assessment = &AssessmentView{Minutes: text, High: text, Filed: text, Exclusions: []ExclusionRow{{Detail: text}}}
+					data.Estimates = []EstimateView{{High: text, Filed: text, Facts: []FactRow{{Key: text, Value: text}}}}
+					data.Links = []LinkView{{RowPage: text, Filed: text}}
+					data.Rulings = []RulingView{{Other: text, Keys: []string{text}, By: text, User: "chosen-user"}}
+				}
+				if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "candidate", data); err != nil {
+					t.Fatal(status, text, full, err)
+				}
+			}
+		}
+	}
+	for _, runPage := range []string{"", "https://chosen.example.test/run"} {
+		if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "pass", PassData{Pass: PassView{Trigger: "run_chosen", RunPage: runPage}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -172,19 +212,19 @@ func TestAssessmentStoredScoring(t *testing.T) {
 	}
 }
 
-// R-5EKK-33JM: every projected field and nullable value.
+// R-J274-RM46: every projected field and nullable value.
 func TestShortlistRowStoredAssessment(t *testing.T) {
 	minutes, high := int64(31), int64(24000000)
 	r := store.Ranked{Candidate: store.Candidate{ID: "chosen-id", Name: "chosen-name", City: "chosen-city", State: "MN", Class: "chosen-class"}, Assessment: store.Assessment{Minutes: &minutes, Low: 14400000, High: &high, Confidence: .8, Effective: .4, Score: 7279999.6}}
-	want := ShortlistRow{Rank: 3, ID: "chosen-id", Name: "chosen-name", City: "chosen-city", State: "MN", Minutes: 31, Class: "chosen-class", Low: "$14,400,000", High: "$24,000,000", Confidence: "0.40", Score: "$7,280,000"}
-	if got := shortlistRow(r, 2); !reflect.DeepEqual(got, want) {
+	want := ShortlistRow{Rank: 28, ID: "chosen-id", Name: "chosen-name", City: "chosen-city", State: "MN", Minutes: 31, Class: "chosen-class", Low: "$14,400,000", High: "$24,000,000", Confidence: "0.40", Score: "$7,280,000"}
+	if got := shortlistRow(r, 2, 25); !reflect.DeepEqual(got, want) {
 		t.Fatalf("%+v", got)
 	}
 	r.Assessment.Minutes = nil
 	r.Assessment.High = nil
 	want.Minutes = 0
 	want.High = ""
-	if got := shortlistRow(r, 2); !reflect.DeepEqual(got, want) {
+	if got := shortlistRow(r, 2, 25); !reflect.DeepEqual(got, want) {
 		t.Fatalf("%+v", got)
 	}
 }
