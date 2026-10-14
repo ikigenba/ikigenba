@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -82,6 +83,7 @@ type LandingData struct {
 	Scrapers []ScraperRow
 	Runs     []RunRow
 	Page     string
+	Prev     string
 	Next     string
 }
 
@@ -113,6 +115,7 @@ type RunData struct {
 	Run    RunView
 	Rows   []RowLine
 	Page   string
+	Prev   string
 	Next   string
 }
 
@@ -264,26 +267,36 @@ func Handler(cfg Config) http.Handler {
 			}
 		}
 		var pageValue, started, position string
+		backward, lastPage := false, false
 		if p == "/" || isRun {
 			pageValue = r.URL.Query().Get("page")
 			if pageValue != "" {
-				var err error
+				after, before := "runs", "runs-before"
+				keys := []any{&started, &position}
 				if isRun {
-					err = (paging.Token{Tool: "rows"}).Decode(pageValue, &position)
-				} else {
-					err = (paging.Token{Tool: "runs"}).Decode(pageValue, &started, &position)
+					after, before = "rows", "rows-before"
+					keys = []any{&position}
 				}
-				if err != nil {
-					notfound()
-					return
+				if (paging.Token{Tool: after}).Decode(pageValue, keys...) != nil {
+					switch {
+					case (paging.Token{Tool: before}).Decode(pageValue, keys...) == nil:
+						backward = true
+					case pageValue == "last":
+						backward, lastPage = true, true
+						started, position = "", ""
+					default:
+						notfound()
+						return
+					}
 				}
 			}
 		}
+		redirect := func(path string) { w.Header().Set("Location", path); w.WriteHeader(http.StatusSeeOther) }
 		ctx := r.Context()
 		switch {
 		case p == "/":
 			b.Trail = nil
-			d := LandingData{b, []ScraperRow{}, []RunRow{}, pageValue, ""}
+			d := LandingData{b, []ScraperRow{}, []RunRow{}, pageValue, "", ""}
 			for _, n := range cfg.Scrapers.Names() {
 				x := ScraperRow{Name: n}
 				current, err := cfg.Store.CurrentRun(ctx, n)
@@ -303,15 +316,36 @@ func Handler(cfg Config) http.Handler {
 				}
 				d.Scrapers = append(d.Scrapers, x)
 			}
-			rs, err := cfg.Store.ListRunsAfter(ctx, "", started, position, paging.DefaultLimit+1)
+			var rs []store.Run
+			var err error
+			if backward {
+				rs, err = cfg.Store.ListRunsBefore(ctx, "", started, position, paging.DefaultLimit+1)
+			} else {
+				rs, err = cfg.Store.ListRunsAfter(ctx, "", started, position, paging.DefaultLimit+1)
+			}
 			if err != nil {
 				refusal()
 				return
 			}
-			if len(rs) > paging.DefaultLimit {
+			more := len(rs) > paging.DefaultLimit
+			if backward && !more {
+				redirect("/")
+				return
+			}
+			if more {
 				rs = rs[:paging.DefaultLimit]
-				last := rs[len(rs)-1]
-				d.Next = paging.Token{Tool: "runs"}.Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
+			}
+			if backward {
+				slices.Reverse(rs)
+			}
+			if len(rs) > 0 {
+				first, last := rs[0], rs[len(rs)-1]
+				if pageValue != "" {
+					d.Prev = paging.Token{Tool: "runs-before"}.Encode(first.Started.UTC().Format(time.RFC3339), first.ID)
+				}
+				if !lastPage && (more || backward) {
+					d.Next = paging.Token{Tool: "runs"}.Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
+				}
 			}
 			for _, x := range rs {
 				d.Runs = append(d.Runs, landingRow(x))
@@ -330,15 +364,37 @@ func Handler(cfg Config) http.Handler {
 			b.Trail = []page.Level{{Name: id, URL: "/runs/" + id}}
 			d := RunData{Banner: b, Run: runView(x), Rows: []RowLine{}, Page: pageValue}
 			if x.Status == store.StatusDone {
-				rows, err := tools.RowsPage(ctx, cfg.Store, id, "", position, paging.DefaultLimit)
-				if err != nil {
-					refusal()
-					return
+				var rows []source.Row
+				if backward {
+					rows, err = cfg.Store.ListRowsBefore(ctx, id, "", position, paging.DefaultLimit+1)
+					if err != nil {
+						refusal()
+						return
+					}
+					if len(rows) <= paging.DefaultLimit {
+						redirect("/runs/" + id)
+						return
+					}
+					rows = rows[:paging.DefaultLimit]
+					slices.Reverse(rows)
+					if !lastPage {
+						d.Next = paging.Token{Tool: "rows"}.Encode(rows[len(rows)-1].SourceID)
+					}
+				} else {
+					result, readErr := tools.RowsPage(ctx, cfg.Store, id, "", position, paging.DefaultLimit)
+					if readErr != nil {
+						refusal()
+						return
+					}
+					rows = result.Rows
+					if result.Next != nil {
+						d.Next = *result.Next
+					}
 				}
-				if rows.Next != nil {
-					d.Next = *rows.Next
+				if pageValue != "" && len(rows) > 0 {
+					d.Prev = paging.Token{Tool: "rows-before"}.Encode(rows[0].SourceID)
 				}
-				for _, row := range rows.Rows {
+				for _, row := range rows {
 					d.Rows = append(d.Rows, rowLine(row))
 				}
 			}

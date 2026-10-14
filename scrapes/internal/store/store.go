@@ -233,6 +233,36 @@ func (s *Store) ListRunsAfter(ctx context.Context, scraper, started, id string, 
 	})
 	return out, err
 }
+
+// ListRunsBefore reads runs preceding a position in oldest-first order.
+func (s *Store) ListRunsBefore(ctx context.Context, scraper, started, id string, limit int) ([]Run, error) {
+	var out []Run
+	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
+		if limit < 1 {
+			return ErrUnreachable
+		}
+		var q string
+		var args []any
+		switch {
+		case scraper != "" && id != "":
+			q = `SELECT id,scraper,status,reason,started,finished,"rows","new",changed,unchanged,gone,user_id,user_email,"trigger",request_id,delivery FROM runs WHERE scraper=? AND (started,id)>(?,?) ORDER BY started,id LIMIT ?`
+			args = []any{scraper, started, id, limit}
+		case scraper != "":
+			q = `SELECT id,scraper,status,reason,started,finished,"rows","new",changed,unchanged,gone,user_id,user_email,"trigger",request_id,delivery FROM runs WHERE scraper=? ORDER BY started,id LIMIT ?`
+			args = []any{scraper, limit}
+		case id != "":
+			q = `SELECT id,scraper,status,reason,started,finished,"rows","new",changed,unchanged,gone,user_id,user_email,"trigger",request_id,delivery FROM runs WHERE (started,id)>(?,?) ORDER BY started,id LIMIT ?`
+			args = []any{started, id, limit}
+		default:
+			q = `SELECT id,scraper,status,reason,started,finished,"rows","new",changed,unchanged,gone,user_id,user_email,"trigger",request_id,delivery FROM runs ORDER BY started,id LIMIT ?`
+			args = []any{limit}
+		}
+		var e error
+		out, e = queryRuns(ctx, tx, q, args...)
+		return e
+	})
+	return out, err
+}
 func (s *Store) byStatus(ctx context.Context, scraper, status string) (Run, error) {
 	var out Run
 	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
@@ -464,6 +494,62 @@ func (s *Store) ListRowsAfter(ctx context.Context, run, name, after string, limi
 		case after != "":
 			q = rowsAfter
 			args = []any{run, after, limit}
+		default:
+			q = firstRows
+			args = []any{run, limit}
+		}
+		rows, e := tx.QueryContext(ctx, q, args...)
+		if e != nil {
+			return e
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			row, e := scanRow(rows)
+			if e != nil {
+				return e
+			}
+			out = append(out, row)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ListRowsBefore reads a reversed bounded filtered window without raw records.
+func (s *Store) ListRowsBefore(ctx context.Context, run, name, before string, limit int) ([]source.Row, error) {
+	var out []source.Row
+	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
+		if limit < 1 {
+			return ErrUnreachable
+		}
+		r, e := readRun(ctx, tx, run)
+		if e != nil {
+			return e
+		}
+		out = []source.Row{}
+		if r.Status != StatusDone {
+			return nil
+		}
+		// Select no raw data: the window's memory is bounded by its envelopes.
+		const firstRows = `SELECT r."run",r.source_id,r.scraper,r.collected,r.digest,r.name,r.names,r.street,r.city,r.state,r.zip,r.county,r.lat,r.lon,r.people,r.facts,NULL FROM "rows" r WHERE r."run"=? ORDER BY r.source_id DESC LIMIT ?`
+		const namedFirstRows = `SELECT r."run",r.source_id,r.scraper,r.collected,r.digest,r.name,r.names,r.street,r.city,r.state,r.zip,r.county,r.lat,r.lon,r.people,r.facts,NULL FROM "rows" r WHERE r."run"=? AND EXISTS (SELECT 1 FROM row_names n WHERE n."run"=r."run" AND n.source_id=r.source_id AND instr(n.name_lower,?)>0) ORDER BY r.source_id DESC LIMIT ?`
+		const rowsBefore = `SELECT r."run",r.source_id,r.scraper,r.collected,r.digest,r.name,r.names,r.street,r.city,r.state,r.zip,r.county,r.lat,r.lon,r.people,r.facts,NULL FROM "rows" r WHERE r."run"=? AND r.source_id<? ORDER BY r.source_id DESC LIMIT ?`
+		const namedRowsBefore = `SELECT r."run",r.source_id,r.scraper,r.collected,r.digest,r.name,r.names,r.street,r.city,r.state,r.zip,r.county,r.lat,r.lon,r.people,r.facts,NULL FROM "rows" r WHERE r."run"=? AND r.source_id<? AND EXISTS (SELECT 1 FROM row_names n WHERE n."run"=r."run" AND n.source_id=r.source_id AND instr(n.name_lower,?)>0) ORDER BY r.source_id DESC LIMIT ?`
+		var q string
+		var args []any
+		switch {
+		case name != "" && before != "":
+			q = namedRowsBefore
+			args = []any{run, before, strings.ToLower(name), limit}
+		case name != "":
+			q = namedFirstRows
+			args = []any{run, strings.ToLower(name), limit}
+		case before != "":
+			q = rowsBefore
+			args = []any{run, before, limit}
 		default:
 			q = firstRows
 			args = []any{run, limit}

@@ -971,3 +971,224 @@ func TestRowsNamesBackfillOnUpgrade(t *testing.T) {
 		}
 	}
 }
+
+// R-FO8F-PVZS
+func TestBeforeMethodSignatures(t *testing.T) {
+	s, _ := fresh(t)
+	var methods interface {
+		ListRunsBefore(context.Context, string, string, string, int) ([]store.Run, error)
+		ListRowsBefore(context.Context, string, string, string, int) ([]source.Row, error)
+	} = s
+	r := finish(t, s, add(t, s, "a"), source.Row{SourceID: "row"})
+	if _, err := methods.ListRunsBefore(ctx, "a", "", "", 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := methods.ListRowsBefore(ctx, r.ID, "", "", 1); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// R-FPGC-3NQH
+func TestRunsBeforeWindows(t *testing.T) {
+	s, d := fresh(t)
+	for _, scraper := range []string{"", "a", "missing"} {
+		got, err := s.ListRunsBefore(ctx, scraper, "2000-01-01T00:00:00Z", "missing", 2)
+		if err != nil || got == nil || len(got) != 0 {
+			t.Fatal(got, err)
+		}
+	}
+	clock := time.Date(2026, 2, 3, 4, 5, 6, 987, time.FixedZone("fixture", -3600))
+	rnd := bytes.NewReader(append(append(append(bytes.Repeat([]byte{0x40}, 8), bytes.Repeat([]byte{0x20}, 8)...), bytes.Repeat([]byte{0x30}, 8)...), bytes.Repeat([]byte{0x10}, 8)...))
+	s = store.New(d, store.Config{Now: func() time.Time { return clock }, Rand: rnd})
+	old := finish(t, s, add(t, s, "a"))
+	clock = clock.Add(time.Second)
+	tieA := finish(t, s, add(t, s, "a"))
+	tieB, err := s.FailRun(ctx, add(t, s, "b").ID, store.ReasonSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock = clock.Add(time.Second)
+	newest := add(t, s, "b")
+	for _, tc := range []struct {
+		scraper string
+		want    []store.Run
+	}{{"", []store.Run{old, tieA, tieB, newest}}, {"a", []store.Run{old, tieA}}, {"b", []store.Run{tieB, newest}}, {"missing", []store.Run{}}} {
+		for _, limit := range []int{1, 2, 3, 4, 5} {
+			index := 0
+			started, id := "2000-01-01T00:00:00Z", ""
+			for page := 0; page <= len(tc.want); page++ {
+				window, err := s.ListRunsBefore(ctx, tc.scraper, started, id, limit)
+				count := min(len(tc.want)-index, limit)
+				if err != nil || window == nil || !reflect.DeepEqual(window, tc.want[index:index+count]) {
+					t.Fatalf("scraper %q limit %d page %d: %#v, %v", tc.scraper, limit, page, window, err)
+				}
+				index += len(window)
+				if len(window) == 0 {
+					break
+				}
+				last := window[len(window)-1]
+				started, id = last.Started.UTC().Format(time.RFC3339), last.ID
+			}
+			if index != len(tc.want) {
+				t.Fatal(index, tc.want)
+			}
+		}
+	}
+	for _, tc := range []struct {
+		scraper, started, id string
+		want                 []store.Run
+	}{
+		{"", old.Started.Format(time.RFC3339), old.ID, []store.Run{tieA, tieB, newest}},
+		{"", newest.Started.Format(time.RFC3339), newest.ID, []store.Run{}},
+		{"", tieA.Started.Format(time.RFC3339), "run_2525252525252525", []store.Run{tieB, newest}},
+		{"a", tieA.Started.Format(time.RFC3339), "run_1515151515151515", []store.Run{tieA}},
+		{"b", old.Started.Format(time.RFC3339), old.ID, []store.Run{tieB, newest}},
+		{"", "2999-01-01T00:00:00Z", "missing", []store.Run{}},
+		{"", "1999-01-01T00:00:00Z", "missing", []store.Run{old, tieA, tieB, newest}},
+	} {
+		got, err := s.ListRunsBefore(ctx, tc.scraper, tc.started, tc.id, 5)
+		if err != nil || !reflect.DeepEqual(got, tc.want) {
+			t.Fatal(got, tc.want, err)
+		}
+	}
+	for _, limit := range []int{-1, 0} {
+		for _, scraper := range []string{"", "a", "missing"} {
+			got, err := s.ListRunsBefore(ctx, scraper, "", "", limit)
+			if got != nil || !errors.Is(err, store.ErrUnreachable) {
+				t.Fatal(got, err)
+			}
+		}
+	}
+}
+
+// R-FQO8-HFH6
+func TestRowsBeforeNamesAndWindows(t *testing.T) {
+	s, _ := fresh(t)
+	rows := []source.Row{
+		{SourceID: "a", Names: []string{"ACME TRUCKING INC", "ACME TRUCKING"}},
+		{SourceID: "b", Names: []string{"ACME TRUCK", "TRUCK ING LLC"}},
+		{SourceID: "c", Names: []string{"CAFÉ CARRIERS"}},
+		{SourceID: "d", Names: []string{"A_B FREIGHT"}},
+		{SourceID: "e", Names: []string{"AXB FREIGHT"}},
+		{SourceID: "f", Names: []string{"50% OFF MOVERS"}},
+		{SourceID: "g", Names: []string{"500 OFF MOVERS"}},
+		{SourceID: "h", Names: []string{`BACK\SLASH LLC`}},
+		{SourceID: "i", Names: []string{"FIRST", "SECOND"}},
+		{SourceID: "j", Names: []string{"O'BRIEN CARRIERS"}},
+	}
+	for i := range rows {
+		rows[i].Raw = []byte(`{"fixture":true}`)
+	}
+	r := finish(t, s, add(t, s, "names"), rows...)
+	for _, tc := range []struct {
+		name string
+		ids  []string
+	}{
+		{"TRUCKING", []string{"a"}}, {"trucking", []string{"a"}}, {"Trucking", []string{"a"}},
+		{"É", []string{"c"}}, {"A_B", []string{"d"}}, {"50%", []string{"f"}}, {`\`, []string{"h"}},
+		{"FIRST\nSECOND", []string{}}, {strings.Repeat("x", 60000), []string{}},
+		{"O'BRIEN", []string{"j"}}, {"' OR 1=1 --", []string{}}, {"", []string{"j", "i", "h", "g", "f", "e", "d", "c", "b", "a"}},
+	} {
+		for _, before := range []string{"", "z", "j"} {
+			want := []string{}
+			for _, id := range tc.ids {
+				if before == "" || id < before {
+					want = append(want, id)
+				}
+			}
+			got, err := s.ListRowsBefore(ctx, r.ID, tc.name, before, 25)
+			if err != nil || got == nil || len(got) != len(want) {
+				t.Fatal(tc.name, before, got, err)
+			}
+			for i, row := range got {
+				expected, err := s.GetRow(ctx, r.ID, want[i])
+				if err != nil {
+					t.Fatal(err)
+				}
+				expected.Raw = nil
+				if !reflect.DeepEqual(row, expected) {
+					t.Fatal(row, expected)
+				}
+			}
+		}
+	}
+	rows = nil
+	for i := 0; i < 30; i++ {
+		rows = append(rows, source.Row{SourceID: fmt.Sprintf("%02d", i), Names: []string{"matched", "MATCHED"}, Raw: []byte(`{"fixture":true}`)})
+	}
+	rows = append(rows, source.Row{SourceID: "00a", Names: []string{"other"}})
+	r = finish(t, s, add(t, s, "windows"), rows...)
+	before := ""
+	index := 29
+	for _, count := range []int{25, 5, 0} {
+		got, err := s.ListRowsBefore(ctx, r.ID, "matched", before, 25)
+		if err != nil || got == nil || len(got) != count {
+			t.Fatal(got, err)
+		}
+		for _, row := range got {
+			if row.SourceID != fmt.Sprintf("%02d", index) || row.Raw != nil {
+				t.Fatal(row, before)
+			}
+			expected, err := s.GetRow(ctx, r.ID, row.SourceID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expected.Raw = nil
+			if !reflect.DeepEqual(row, expected) {
+				t.Fatal(row, expected)
+			}
+			before = row.SourceID
+			index--
+		}
+	}
+	for _, tc := range []struct {
+		name, before string
+		ids          []string
+	}{{"", "01a", []string{"01", "00a"}}, {"matched", "01a", []string{"01", "00"}}} {
+		got, err := s.ListRowsBefore(ctx, r.ID, tc.name, tc.before, 2)
+		if err != nil || len(got) != len(tc.ids) {
+			t.Fatal(got, err)
+		}
+		for i, row := range got {
+			if row.SourceID != tc.ids[i] {
+				t.Fatal(got, tc.ids)
+			}
+		}
+	}
+}
+
+// R-FRW4-V77V
+func TestRowsBeforeRunState(t *testing.T) {
+	s, _ := fresh(t)
+	running := add(t, s, "a")
+	if err := s.PutRows(ctx, running.ID, []source.Row{{SourceID: "partial", Names: []string{"anything"}}}); err != nil {
+		t.Fatal(err)
+	}
+	failed, err := s.FailRun(ctx, add(t, s, "b").ID, store.ReasonSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := finish(t, s, add(t, s, "c"))
+	for _, run := range []string{"missing", running.ID, failed.ID, done.ID} {
+		for _, limit := range []int{-1, 0} {
+			got, err := s.ListRowsBefore(ctx, run, "anything", "position", limit)
+			if got != nil || !errors.Is(err, store.ErrUnreachable) {
+				t.Fatal(got, err)
+			}
+		}
+	}
+	for _, run := range []string{"missing", running.ID, failed.ID} {
+		for _, name := range []string{"", "anything"} {
+			for _, before := range []string{"", "z", "position"} {
+				got, err := s.ListRowsBefore(ctx, run, name, before, 1)
+				if run == "missing" {
+					if got != nil || !errors.Is(err, store.ErrNotFound) {
+						t.Fatal(got, err)
+					}
+				} else if err != nil || got == nil || len(got) != 0 {
+					t.Fatal(got, err)
+				}
+			}
+		}
+	}
+}

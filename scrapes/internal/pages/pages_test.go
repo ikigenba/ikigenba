@@ -169,9 +169,9 @@ func expectedCurrent(r store.Run) *CurrentRun {
 	return &CurrentRun{v.ID, v.Status, v.Started, v.StartedText, v.Finished, v.FinishedText, v.Rows, v.New, v.Changed, v.Gone}
 }
 
-// R-0MB6-K2N2 R-F477-FYMY R-S84D-C6DH R-FRDA-PLQ5
-// R-S5OK-KMW3 R-F6N0-7I4C R-F7UW-L9V1 R-F92S-Z1LQ R-FAAP-CTCF
-// R-S6WG-YEMS R-FCQI-4CTT R-FF6A-VWB7 R-FGE7-9O1W R-FHM3-NFSL
+// R-0MB6-K2N2 R-F477-FYMY R-FVJU-0IFY R-FRDA-PLQ5
+// R-FT41-8YYK R-F6N0-7I4C R-F7UW-L9V1 R-F92S-Z1LQ R-FAAP-CTCF
+// R-FUBX-MQP9 R-FCQI-4CTT R-FF6A-VWB7 R-FGE7-9O1W R-FHM3-NFSL
 // R-FIU0-17JA R-FK1W-EZ9Z R-FL9S-SR0O R-FMHP-6IRD R-FNPL-KAI2 R-FOXH-Y28R
 func TestLoadAndWrite(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -204,7 +204,7 @@ func TestLoadAndWrite(t *testing.T) {
 	cases := []struct {
 		name string
 		data any
-	}{{"landing", LandingData{b, []ScraperRow{}, []RunRow{}, "", ""}}, {"tools", ToolsData{b, []ToolRow{{"test-tool", "test-description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}, {"row", RowData{b, RowView{}}}, {"row", RowData{b, RowView{"test-scraper", "test-run", "test-source", "collected", "collected-text", "digest", "test-name", []string{"one", "two"}, "street", "city", "state", "zip", "county", "lat", "lon", []PersonRow{{"person", "role"}}, []FactRow{{"key", "value"}}, "raw"}}}}
+	}{{"landing", LandingData{b, []ScraperRow{}, []RunRow{}, "", "", ""}}, {"tools", ToolsData{b, []ToolRow{{"test-tool", "test-description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}, {"row", RowData{b, RowView{}}}, {"row", RowData{b, RowView{"test-scraper", "test-run", "test-source", "collected", "collected-text", "digest", "test-name", []string{"one", "two"}, "street", "city", "state", "zip", "county", "lat", "lon", []PersonRow{{"person", "role"}}, []FactRow{{"key", "value"}}, "raw"}}}}
 	for _, status := range []string{store.StatusRunning, store.StatusDone, store.StatusFailed} {
 		for _, reason := range []string{"", store.ReasonSource, store.ReasonInterrupted, store.ReasonStore} {
 			for _, full := range []bool{false, true} {
@@ -227,12 +227,22 @@ func TestLoadAndWrite(t *testing.T) {
 				cases = append(cases, struct {
 					name string
 					data any
-				}{"run", RunData{b, r, rows, "", next}}, struct {
+				}{"run", RunData{b, r, rows, "", "", next}}, struct {
 					name string
 					data any
-				}{"landing", LandingData{b, []ScraperRow{{"scraper", current, running}}, []RunRow{{"fixture", "scraper", status, reason, "caller", r.Trigger, "started", "started-text", r.Finished, r.FinishedText, 7}}, "", landingNext}})
+				}{"landing", LandingData{b, []ScraperRow{{"scraper", current, running}}, []RunRow{{"fixture", "scraper", status, reason, "caller", r.Trigger, "started", "started-text", r.Finished, r.FinishedText, 7}}, "", "", landingNext}})
 			}
 		}
+	}
+	for _, clear := range []func(*RowView){
+		func(v *RowView) { v.Street = "" }, func(v *RowView) { v.City = "" }, func(v *RowView) { v.State = "" }, func(v *RowView) { v.Zip = "" }, func(v *RowView) { v.County = "" }, func(v *RowView) { v.Lat = "" }, func(v *RowView) { v.Lon = "" }, func(v *RowView) { v.People = nil }, func(v *RowView) { v.Facts = nil },
+	} {
+		v := RowView{Street: "street", City: "city", State: "state", Zip: "zip", County: "county", Lat: "lat", Lon: "lon", People: []PersonRow{{"person", "role"}}, Facts: []FactRow{{"key", "value"}}}
+		clear(&v)
+		cases = append(cases, struct {
+			name string
+			data any
+		}{"row", RowData{b, v}})
 	}
 	initialCases := append([]struct {
 		name string
@@ -241,19 +251,21 @@ func TestLoadAndWrite(t *testing.T) {
 	for _, tc := range initialCases {
 		for _, pageValue := range []string{"", "test-current-token"} {
 			for _, next := range []string{"", "test-next-token"} {
-				switch d := tc.data.(type) {
-				case LandingData:
-					d.Page, d.Next = pageValue, next
-					cases = append(cases, struct {
-						name string
-						data any
-					}{tc.name, d})
-				case RunData:
-					d.Page, d.Next = pageValue, next
-					cases = append(cases, struct {
-						name string
-						data any
-					}{tc.name, d})
+				for _, prev := range []string{"", "test-prev-token"} {
+					switch d := tc.data.(type) {
+					case LandingData:
+						d.Page, d.Prev, d.Next = pageValue, prev, next
+						cases = append(cases, struct {
+							name string
+							data any
+						}{tc.name, d})
+					case RunData:
+						d.Page, d.Prev, d.Next = pageValue, prev, next
+						cases = append(cases, struct {
+							name string
+							data any
+						}{tc.name, d})
+					}
 				}
 			}
 		}
@@ -277,12 +289,12 @@ func TestLoadAndWrite(t *testing.T) {
 	}
 }
 
-// R-FSL7-3DGU R-FV0Z-UWY8 R-S9C9-PY46 R-G8FW-2E3V
+// R-FSL7-3DGU R-FV0Z-UWY8 R-G2V8-B4W4 R-G8FW-2E3V
 func TestLanding(t *testing.T) {
 	f := setup(t)
 	b := baseBanner()
 	b.Trail = nil
-	assertBody(t, request(f.h, "GET", "/", "first"), 200, "landing", LandingData{b, []ScraperRow{{Name: "alpha"}, {Name: "zeta"}}, []RunRow{}, "", ""})
+	assertBody(t, request(f.h, "GET", "/", "first"), 200, "landing", LandingData{b, []ScraperRow{{Name: "alpha"}, {Name: "zeta"}}, []RunRow{}, "", "", ""})
 	done := f.finish(t, f.add(t, "alpha", ""), nil)
 	failed := f.add(t, "zeta", "cron-slug")
 	var err error
@@ -291,11 +303,11 @@ func TestLanding(t *testing.T) {
 		t.Fatal(err)
 	}
 	running := f.add(t, "alpha", "")
-	d := LandingData{b, []ScraperRow{{"alpha", expectedCurrent(done), &RunningRun{running.ID}}, {Name: "zeta"}}, []RunRow{expectedLanding(running), expectedLanding(failed), expectedLanding(done)}, "", ""}
+	d := LandingData{b, []ScraperRow{{"alpha", expectedCurrent(done), &RunningRun{running.ID}}, {Name: "zeta"}}, []RunRow{expectedLanding(running), expectedLanding(failed), expectedLanding(done)}, "", "", ""}
 	assertBody(t, request(f.h, "GET", "/", "first"), 200, "landing", d)
 }
 
-// R-SCZY-V9C9 R-SE7V-912Y R-FV0Z-UWY8 R-EPO9-X5IF R-FZWL-DZX0
+// R-GDUB-R2KD R-GF28-4UB2 R-FV0Z-UWY8 R-EPO9-X5IF R-FZWL-DZX0
 func TestRunPages(t *testing.T) {
 	f := setup(t)
 	callRows := rowsTool(t, f)
@@ -318,7 +330,7 @@ func TestRunPages(t *testing.T) {
 		}
 		b := baseBanner()
 		b.Trail = []page.Level{{Name: r.ID, URL: "/runs/" + r.ID}}
-		assertBody(t, request(f.h, "GET", "/runs/"+r.ID, "user"), 200, "run", RunData{b, expectedRun(r, SecondLayout), lines, "", next})
+		assertBody(t, request(f.h, "GET", "/runs/"+r.ID, "user"), 200, "run", RunData{b, expectedRun(r, SecondLayout), lines, "", "", next})
 		first := callRows(r.ID, "")
 		toolLines := []RowLine{}
 		for _, row := range first.Rows {
@@ -336,9 +348,12 @@ func TestRunPages(t *testing.T) {
 			if len(last.Rows) != count-paging.DefaultLimit || last.Next != nil {
 				t.Fatal("cursor did not return remaining rows")
 			}
-			d := RunData{b, expectedRun(r, SecondLayout), []RowLine{}, next, ""}
+			d := RunData{b, expectedRun(r, SecondLayout), []RowLine{}, next, "", ""}
 			for _, row := range last.Rows {
 				d.Rows = append(d.Rows, rowLine(row))
+				if len(d.Rows) == 1 {
+					d.Prev = paging.Token{Tool: "rows-before"}.Encode(row.SourceID)
+				}
 			}
 			assertBody(t, request(f.h, "GET", "/runs/"+r.ID+"?page="+url.QueryEscape(next), "user"), 200, "run", d)
 			for i, row := range last.Rows {
@@ -359,7 +374,7 @@ func TestRunPages(t *testing.T) {
 		}
 		b := baseBanner()
 		b.Trail = []page.Level{{Name: r.ID, URL: "/runs/" + r.ID}}
-		assertBody(t, request(f.h, "GET", "/runs/"+r.ID, "user"), 200, "run", RunData{b, expectedRun(r, SecondLayout), []RowLine{}, "", ""})
+		assertBody(t, request(f.h, "GET", "/runs/"+r.ID, "user"), 200, "run", RunData{b, expectedRun(r, SecondLayout), []RowLine{}, "", "", ""})
 		if reason == "" {
 			f.finish(t, r, nil)
 		}
@@ -385,7 +400,7 @@ func TestRowPage(t *testing.T) {
 }
 
 // R-G603-AUMH R-G77Z-OMD6 R-G9NS-G5UK R-GAVO-TXL9 R-GDBH-LH2N
-// R-SHVK-ECB1 R-G4S6-X2VS R-G3KA-JB53
+// R-GMDM-FGR8 R-G4S6-X2VS R-G3KA-JB53
 func TestRoutesMethodsAndFailures(t *testing.T) {
 	f := setup(t)
 	r := f.add(t, "alpha", "")
@@ -483,7 +498,7 @@ func TestReadOnlyPrivacyAndSharedRecords(t *testing.T) {
 	}
 	oldBanner := baseBanner()
 	oldBanner.Trail = []page.Level{{Name: running.ID, URL: "/runs/" + running.ID}}
-	assertBody(t, request(f.h, "GET", "/runs/"+running.ID, "owner"), 200, "run", RunData{oldBanner, expectedRun(running, SecondLayout), []RowLine{}, "", ""})
+	assertBody(t, request(f.h, "GET", "/runs/"+running.ID, "owner"), 200, "run", RunData{oldBanner, expectedRun(running, SecondLayout), []RowLine{}, "", "", ""})
 	paths := []string{"/", "/tools", "/about", "/unknown", "/runs/" + r.ID, "/runs/" + r.ID + "/rows/one", "/runs/" + running.ID, "/runs/" + running.ID + "/rows/one"}
 	for _, p := range paths {
 		first, second := request(f.h, "GET", p, "owner"), request(f.h, "GET", p, "other")
@@ -526,7 +541,7 @@ func TestReadOnlyPrivacyAndSharedRecords(t *testing.T) {
 	}
 }
 
-// R-S9C9-PY46 R-SAK6-3PUV
+// R-G2V8-B4W4 R-G434-OWMT
 func TestLandingCursorPageMatchesRunsTool(t *testing.T) {
 	for _, count := range []int{paging.DefaultLimit, paging.DefaultLimit + 1} {
 		t.Run(strconv.Itoa(count), func(t *testing.T) {
@@ -541,7 +556,7 @@ func TestLandingCursorPageMatchesRunsTool(t *testing.T) {
 			}
 			b := baseBanner()
 			b.Trail = nil
-			d := LandingData{b, []ScraperRow{}, []RunRow{}, "", ""}
+			d := LandingData{b, []ScraperRow{}, []RunRow{}, "", "", ""}
 			for _, name := range f.cfg.Scrapers.Names() {
 				r, err := f.st.CurrentRun(t.Context(), name)
 				if err != nil {
@@ -606,6 +621,7 @@ func TestLandingCursorPageMatchesRunsTool(t *testing.T) {
 				last := call(args)
 				d.Page, d.Next = next, ""
 				d.Runs = []RunRow{expectedLanding(recorded[0])}
+				d.Prev = paging.Token{Tool: "runs-before"}.Encode(recorded[0].Started.UTC().Format(time.RFC3339), recorded[0].ID)
 				assertBody(t, request(f.h, "GET", "/?page="+url.QueryEscape(next), "user"), 200, "landing", d)
 				if len(last.Runs) != 1 || last.Runs[0].ID != recorded[0].ID || last.Next != nil {
 					t.Fatal("cursor did not return remaining run")
@@ -712,7 +728,7 @@ func rowsTool(t *testing.T, f fixture) func(string, string) tools.RowList {
 	}
 }
 
-// R-S4GO-6V5E R-SBS2-HHLK R-SFFR-MSTN R-SHVK-ECB1
+// R-FWRQ-EA6N R-G5B1-2ODI R-GGA4-IM1R R-GMDM-FGR8
 func TestPageTokenRefusals(t *testing.T) {
 	f := setup(t)
 	pruned := f.finish(t, f.add(t, "alpha", ""), nil)
@@ -727,8 +743,8 @@ func TestPageTokenRefusals(t *testing.T) {
 	running := f.add(t, "alpha", "")
 	runsToken := (paging.Token{Tool: "runs"}).Encode(done.Started.UTC().Format(time.RFC3339), done.ID)
 	rowsToken := (paging.Token{Tool: "rows"}).Encode("one")
-	landingTokens := []string{"bogus", rowsToken, (paging.Token{Tool: "runs"}).Encode("time"), (paging.Token{Tool: "runs"}).Encode("time", "id", "extra")}
-	runTokens := []string{"bogus", runsToken, (paging.Token{Tool: "rows"}).Encode("one", "extra")}
+	landingTokens := []string{"LAST", "last/", (paging.Token{Tool: "rows-before"}).Encode("one"), (paging.Token{Tool: "runs-before"}).Encode("time"), "bogus", rowsToken, (paging.Token{Tool: "runs"}).Encode("time"), (paging.Token{Tool: "runs"}).Encode("time", "id", "extra")}
+	runTokens := []string{"LAST", "last/", (paging.Token{Tool: "runs-before"}).Encode("time", "id"), (paging.Token{Tool: "rows-before"}).Encode("one", "extra"), "bogus", runsToken, (paging.Token{Tool: "rows"}).Encode("one", "extra")}
 	for _, failing := range []bool{false, true} {
 		f.handle.SetFailing(failing)
 		for _, method := range []string{"GET", "HEAD"} {
@@ -748,7 +764,7 @@ func TestPageTokenRefusals(t *testing.T) {
 					check("/runs/" + id + "?page=" + url.QueryEscape(token) + "&page=&name=one&limit=1")
 				}
 			}
-			for _, path := range []string{"/?page=", "/?page=" + url.QueryEscape(runsToken), "/runs/" + done.ID + "?page=", "/runs/" + done.ID + "?page=" + url.QueryEscape(rowsToken)} {
+			for _, path := range []string{"/?page=last", "/?page=" + url.QueryEscape((paging.Token{Tool: "runs-before"}).Encode("time", "id")), "/runs/" + done.ID + "?page=last", "/runs/" + done.ID + "?page=" + url.QueryEscape((paging.Token{Tool: "rows-before"}).Encode("one")), "/?page=", "/?page=" + url.QueryEscape(runsToken), "/runs/" + done.ID + "?page=", "/runs/" + done.ID + "?page=" + url.QueryEscape(rowsToken)} {
 				if failing {
 					got := request(f.h, method, path, "user")
 					body := store.Unreachable + "\n"
@@ -779,7 +795,7 @@ func TestPageTokenRefusals(t *testing.T) {
 	}
 }
 
-// R-S4GO-6V5E R-S9C9-PY46 R-SCZY-V9C9
+// R-FWRQ-EA6N R-G2V8-B4W4 R-GDUB-R2KD
 func TestPageQuerySelection(t *testing.T) {
 	f := setup(t)
 	done := f.finish(t, f.add(t, "alpha", ""), []source.Row{{SourceID: "one", Name: "chosen", Facts: []byte(`{}`), Raw: []byte(`{}`)}})
@@ -795,10 +811,10 @@ func TestPageQuerySelection(t *testing.T) {
 	}
 	b := baseBanner()
 	b.Trail = nil
-	landing := LandingData{b, []ScraperRow{{"alpha", expectedCurrent(done), nil}, {Name: "zeta"}}, []RunRow{}, runsToken, ""}
+	landing := LandingData{b, []ScraperRow{{"alpha", expectedCurrent(done), nil}, {Name: "zeta"}}, []RunRow{}, runsToken, "", ""}
 	assertBody(t, request(f.h, "GET", "/?page="+url.QueryEscape(runsToken)+"&page=bogus&scraper=missing&limit=1", "user"), 200, "landing", landing)
 	b.Trail = []page.Level{{Name: done.ID, URL: "/runs/" + done.ID}}
-	run := RunData{b, expectedRun(done, SecondLayout), []RowLine{}, rowsToken, ""}
+	run := RunData{b, expectedRun(done, SecondLayout), []RowLine{}, rowsToken, "", ""}
 	assertBody(t, request(f.h, "GET", "/runs/"+done.ID+"?page="+url.QueryEscape(rowsToken)+"&page=bogus&name=missing&limit=1", "user"), 200, "run", run)
 	for _, path := range []string{"/?page=" + url.QueryEscape(runsToken), "/runs/" + done.ID + "?page=" + url.QueryEscape(rowsToken)} {
 		get, head := request(f.h, "GET", path, "user"), request(f.h, "HEAD", path, "user")
@@ -808,37 +824,275 @@ func TestPageQuerySelection(t *testing.T) {
 	}
 }
 
-// R-SCZY-V9C9
+// R-GDUB-R2KD
 func TestNonDoneRunPreservesDecodablePage(t *testing.T) {
 	f := setup(t)
-	token := (paging.Token{Tool: "rows"}).Encode("position")
-	for _, reason := range []string{"", store.ReasonSource, store.ReasonInterrupted, store.ReasonStore} {
-		r := f.add(t, "alpha", "")
-		if reason != "" {
-			var err error
-			r, err = f.st.FailRun(t.Context(), r.ID, reason)
-			if err != nil {
-				t.Fatal(err)
+	for _, token := range []string{(paging.Token{Tool: "rows"}).Encode("position"), (paging.Token{Tool: "rows-before"}).Encode("position"), "last"} {
+		for _, reason := range []string{"", store.ReasonSource, store.ReasonInterrupted, store.ReasonStore} {
+			r := f.add(t, "alpha", "")
+			if reason != "" {
+				var err error
+				r, err = f.st.FailRun(t.Context(), r.ID, reason)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			b := baseBanner()
+			b.Trail = []page.Level{{Name: r.ID, URL: "/runs/" + r.ID}}
+			d := RunData{b, expectedRun(r, SecondLayout), []RowLine{}, token, "", ""}
+			path := "/runs/" + r.ID + "?page=" + url.QueryEscape(token)
+			assertBody(t, request(f.h, "GET", path, "user"), 200, "run", d)
+			// The production template hides navigation for these statuses. A renderer
+			// exposing the data proves the carried Page and empty Rows/Next too.
+			cfg := f.cfg
+			var observed RunData
+			cfg.Pages = &Set{template.Must(template.New("run").Funcs(template.FuncMap{
+				"observe": func(data RunData) string { observed = data; return "" },
+			}).Parse("{{observe .}}"))}
+			got := request(identity.Require(Handler(cfg)), "GET", path, "user")
+			if got.Code != 200 || !reflect.DeepEqual(observed, d) {
+				t.Fatal("non-done page data", got.Code, got.Body.String())
+			}
+			if reason == "" {
+				f.finish(t, r, nil)
 			}
 		}
-		b := baseBanner()
-		b.Trail = []page.Level{{Name: r.ID, URL: "/runs/" + r.ID}}
-		d := RunData{b, expectedRun(r, SecondLayout), []RowLine{}, token, ""}
-		path := "/runs/" + r.ID + "?page=" + url.QueryEscape(token)
+	}
+}
+
+func assertRedirect(t *testing.T, w *httptest.ResponseRecorder, path string) {
+	t.Helper()
+	if w.Code != http.StatusSeeOther || !reflect.DeepEqual(w.Header().Values("Location"), []string{path}) || w.Body.Len() != 0 {
+		t.Fatalf("redirect: status=%d headers=%v body=%q", w.Code, w.Header(), w.Body.String())
+	}
+}
+
+// Observe the handler's data, then independently execute the embedded asset.
+func observedLanding(t *testing.T, f fixture, value string) (LandingData, *httptest.ResponseRecorder) {
+	t.Helper()
+	var d LandingData
+	cfg := f.cfg
+	cfg.Pages = &Set{template.Must(template.New("landing").Funcs(template.FuncMap{"observe": func(v LandingData) string { d = v; return "" }}).Parse("{{observe .}}"))}
+	path := "/?page=" + url.QueryEscape(value)
+	w := request(identity.Require(Handler(cfg)), "GET", path, "user")
+	if w.Code == 200 {
+		assertBody(t, request(f.h, "GET", path, "user"), 200, "landing", d)
+	}
+	return d, w
+}
+func observedRun(t *testing.T, f fixture, id, value string) (RunData, *httptest.ResponseRecorder) {
+	t.Helper()
+	var d RunData
+	cfg := f.cfg
+	cfg.Pages = &Set{template.Must(template.New("run").Funcs(template.FuncMap{"observe": func(v RunData) string { d = v; return "" }}).Parse("{{observe .}}"))}
+	path := "/runs/" + id + "?page=" + url.QueryEscape(value)
+	w := request(identity.Require(Handler(cfg)), "GET", path, "user")
+	if w.Code == 200 {
 		assertBody(t, request(f.h, "GET", path, "user"), 200, "run", d)
-		// The production template hides navigation for these statuses. A renderer
-		// exposing the data proves the carried Page and empty Rows/Next too.
-		cfg := f.cfg
-		var observed RunData
-		cfg.Pages = &Set{template.Must(template.New("run").Funcs(template.FuncMap{
-			"observe": func(data RunData) string { observed = data; return "" },
-		}).Parse("{{observe .}}"))}
-		got := request(identity.Require(Handler(cfg)), "GET", path, "user")
-		if got.Code != 200 || !reflect.DeepEqual(observed, d) {
-			t.Fatal("non-done page data", got.Code, got.Body.String())
-		}
-		if reason == "" {
-			f.finish(t, r, nil)
-		}
+	}
+	return d, w
+}
+func runBefore(r store.Run) string {
+	return paging.Token{Tool: "runs-before"}.Encode(r.Started.UTC().Format(time.RFC3339), r.ID)
+}
+func runAfter(r store.Run) string {
+	return paging.Token{Tool: "runs"}.Encode(r.Started.UTC().Format(time.RFC3339), r.ID)
+}
+
+// R-FXZM-S1XC R-FZ7J-5TO1 R-G1NB-XD5F R-G6IX-GG47
+// R-G7QT-U7UW R-G8YQ-7ZLL R-G2V8-B4W4
+func TestLandingNavigation(t *testing.T) {
+	for _, count := range []int{0, paging.DefaultLimit, paging.DefaultLimit + 1, paging.DefaultLimit + 2, 2 * paging.DefaultLimit, 3*paging.DefaultLimit + 8} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
+			f := setup(t)
+			ordered := []store.Run{}
+			for i := 0; i < count; i++ {
+				name := "alpha"
+				if i%2 != 0 {
+					name = "zeta"
+				}
+				ordered = append([]store.Run{f.finish(t, f.add(t, name, ""), nil)}, ordered...)
+			}
+			var windows [][]RunRow
+			token := ""
+			for offset := 0; ; offset += paging.DefaultLimit {
+				d, w := observedLanding(t, f, token)
+				if w.Code != 200 {
+					t.Fatal(w.Code)
+				}
+				end := min(offset+paging.DefaultLimit, count)
+				want := []RunRow{}
+				for _, r := range ordered[offset:end] {
+					want = append(want, expectedLanding(r))
+				}
+				prev, next := "", ""
+				if token != "" && len(want) > 0 {
+					prev = runBefore(ordered[offset])
+				}
+				if end < count {
+					next = runAfter(ordered[end-1])
+				}
+				b := baseBanner()
+				b.Trail = nil
+				scrapersWant := []ScraperRow{}
+				for _, name := range f.cfg.Scrapers.Names() {
+					x := ScraperRow{Name: name}
+					for _, r := range ordered {
+						if r.Scraper == name {
+							x.Current = expectedCurrent(r)
+							break
+						}
+					}
+					scrapersWant = append(scrapersWant, x)
+				}
+				expected := LandingData{b, scrapersWant, want, token, prev, next}
+				if !reflect.DeepEqual(d, expected) {
+					t.Fatalf("forward offset %d: got %+v want %+v", offset, d, expected)
+				}
+				windows = append(windows, want)
+				if next == "" {
+					break
+				}
+				token = next
+			}
+			if count > paging.DefaultLimit {
+				for j := len(windows) - 1; j > 0; j-- {
+					d, w := observedLanding(t, f, token)
+					if w.Code != 200 || !reflect.DeepEqual(d.Runs, windows[j]) {
+						t.Fatalf("backward window %d: %+v", j, d)
+					}
+					wantPrev := (paging.Token{Tool: "runs-before"}).Encode(windows[j][0].Started, windows[j][0].ID)
+					wantNext := ""
+					if j < len(windows)-1 {
+						last := windows[j][len(windows[j])-1]
+						wantNext = (paging.Token{Tool: "runs"}).Encode(last.Started, last.ID)
+					}
+					if d.Page != token || d.Prev != wantPrev || d.Next != wantNext {
+						t.Fatal("backward navigation", j, d.Page, d.Prev, d.Next)
+					}
+					token = d.Prev
+				}
+				_, w := observedLanding(t, f, token)
+				assertRedirect(t, w, "/")
+				d, w := observedLanding(t, f, "last")
+				want := []RunRow{}
+				for _, r := range ordered[count-paging.DefaultLimit:] {
+					want = append(want, expectedLanding(r))
+				}
+				if w.Code != 200 || !reflect.DeepEqual(d.Runs, want) || d.Page != "last" || d.Next != "" || d.Prev != runBefore(ordered[count-paging.DefaultLimit]) {
+					t.Fatal("last window", d, w.Code)
+				}
+			} else {
+				_, w := observedLanding(t, f, "last")
+				assertRedirect(t, w, "/")
+			}
+			// Nearest-before with a key absent from the store, including an empty result.
+			if count > paging.DefaultLimit+1 {
+				anchor := ordered[count-1]
+				absent := paging.Token{Tool: "runs-before"}.Encode(anchor.Started.Add(time.Second).UTC().Format(time.RFC3339), anchor.ID)
+				d, w := observedLanding(t, f, absent)
+				start := count - 1 - paging.DefaultLimit
+				want := []RunRow{}
+				for _, r := range ordered[start : count-1] {
+					want = append(want, expectedLanding(r))
+				}
+				if w.Code != 200 || !reflect.DeepEqual(d.Runs, want) || d.Prev != runBefore(ordered[start]) || d.Next != runAfter(ordered[count-2]) {
+					t.Fatal("absent before anchor", d, w.Code)
+				}
+			}
+			_, w := observedLanding(t, f, paging.Token{Tool: "runs-before"}.Encode("9999-01-01T00:00:00Z", "run_ffffffffffffffff"))
+			assertRedirect(t, w, "/")
+			path := "/?page=last&scraper=missing&limit=1&page=bogus"
+			get, head := request(f.h, "GET", path, "user"), request(f.h, "HEAD", path, "user")
+			if get.Code != head.Code || !reflect.DeepEqual(get.Header(), head.Header()) || head.Body.Len() != 0 {
+				t.Fatal("navigation HEAD")
+			}
+		})
+	}
+}
+
+// R-GA6M-LRCA R-GBEI-ZJ2Z R-GCMF-DATO R-GHI0-WDSG
+// R-GJXT-NX9U R-GL5Q-1P0J R-GDUB-R2KD
+func TestRunNavigation(t *testing.T) {
+	for _, count := range []int{0, paging.DefaultLimit, paging.DefaultLimit + 1, paging.DefaultLimit + 2, 2 * paging.DefaultLimit, 3*paging.DefaultLimit + 8} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
+			f := setup(t)
+			r := f.add(t, "alpha", "")
+			rows := []source.Row{}
+			ordered := []RowLine{}
+			for i := 0; i < count; i++ {
+				s := fmt.Sprintf("%03d", i)
+				rows = append(rows, source.Row{SourceID: s, Name: "name-" + s, Address: source.Address{City: "city-" + s, State: "state", County: "county"}, Facts: []byte(`{}`), Raw: []byte(`{}`)})
+				ordered = append(ordered, RowLine{s, "name-" + s, "city-" + s, "state", "county"})
+			}
+			r = f.finish(t, r, rows)
+			var windows [][]RowLine
+			token := ""
+			for offset := 0; ; offset += paging.DefaultLimit {
+				d, w := observedRun(t, f, r.ID, token)
+				end := min(offset+paging.DefaultLimit, count)
+				want := append([]RowLine{}, ordered[offset:end]...)
+				prev, next := "", ""
+				if token != "" && len(want) > 0 {
+					prev = paging.Token{Tool: "rows-before"}.Encode(want[0].SourceID)
+				}
+				if end < count {
+					next = paging.Token{Tool: "rows"}.Encode(want[len(want)-1].SourceID)
+				}
+				b := baseBanner()
+				b.Trail = []page.Level{{Name: r.ID, URL: "/runs/" + r.ID}}
+				expected := RunData{b, expectedRun(r, SecondLayout), want, token, prev, next}
+				if w.Code != 200 || !reflect.DeepEqual(d, expected) {
+					t.Fatalf("forward offset %d: got %+v want %+v", offset, d, expected)
+				}
+				windows = append(windows, want)
+				if next == "" {
+					break
+				}
+				token = next
+			}
+			if count > paging.DefaultLimit {
+				for j := len(windows) - 1; j > 0; j-- {
+					d, w := observedRun(t, f, r.ID, token)
+					if w.Code != 200 || !reflect.DeepEqual(d.Rows, windows[j]) {
+						t.Fatal("backward", j, d)
+					}
+					wantPrev := (paging.Token{Tool: "rows-before"}).Encode(windows[j][0].SourceID)
+					wantNext := ""
+					if j < len(windows)-1 {
+						wantNext = (paging.Token{Tool: "rows"}).Encode(windows[j][len(windows[j])-1].SourceID)
+					}
+					if d.Page != token || d.Prev != wantPrev || d.Next != wantNext {
+						t.Fatal("backward navigation", j, d.Page, d.Prev, d.Next)
+					}
+					token = d.Prev
+				}
+				_, w := observedRun(t, f, r.ID, token)
+				assertRedirect(t, w, "/runs/"+r.ID)
+				d, w := observedRun(t, f, r.ID, "last")
+				want := ordered[count-paging.DefaultLimit:]
+				if w.Code != 200 || !reflect.DeepEqual(d.Rows, want) || d.Page != "last" || d.Next != "" || d.Prev != (paging.Token{Tool: "rows-before"}).Encode(want[0].SourceID) {
+					t.Fatal("last", d, w.Code)
+				}
+			} else {
+				_, w := observedRun(t, f, r.ID, "last")
+				assertRedirect(t, w, "/runs/"+r.ID)
+			}
+			if count > paging.DefaultLimit+1 {
+				absent := paging.Token{Tool: "rows-before"}.Encode(ordered[count-2].SourceID + "x")
+				d, w := observedRun(t, f, r.ID, absent)
+				want := ordered[count-1-paging.DefaultLimit : count-1]
+				if w.Code != 200 || !reflect.DeepEqual(d.Rows, want) || d.Prev != (paging.Token{Tool: "rows-before"}).Encode(want[0].SourceID) || d.Next != (paging.Token{Tool: "rows"}).Encode(want[len(want)-1].SourceID) {
+					t.Fatal("absent before anchor", d, w.Code)
+				}
+			}
+			_, w := observedRun(t, f, r.ID, paging.Token{Tool: "rows-before"}.Encode("!"))
+			assertRedirect(t, w, "/runs/"+r.ID)
+			path := "/runs/" + r.ID + "?page=last&name=missing&limit=1&page=bogus"
+			get, head := request(f.h, "GET", path, "user"), request(f.h, "HEAD", path, "user")
+			if get.Code != head.Code || !reflect.DeepEqual(get.Header(), head.Header()) || head.Body.Len() != 0 {
+				t.Fatal("navigation HEAD")
+			}
+		})
 	}
 }
