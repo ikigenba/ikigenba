@@ -194,9 +194,11 @@ test learns that the server is ready the way systemd does: it binds a Unix
 datagram socket in a short temporary directory (`os.MkdirTemp("", ...)`, since
 a Unix socket path is limited to 108 bytes and `t.TempDir()` can exceed it),
 names it in `NOTIFY_SOCKET`, and waits for `READY=1` with a deadline that
-fails the test. Drain tests are the one place a test waits on the clock,
-because the drain deadline is the behavior, and they keep that wait to a few
-seconds. The gates run offline as an ordinary user, with no systemd.
+fails the test. Drain tests wait on the clock, because the drain deadline is
+the behavior, and they keep that wait to a few seconds. A test proving the
+store's busy refusal or the engine's retry of a busy write may hold a real lock
+and wait out the database's five-second busy timeout. No other test waits on
+the clock. The gates run offline as an ordinary user, with no systemd.
 
 **The source is faked, never called.** No test reaches data.transportation.gov,
 data.sba.gov or enterprise.gisdata.mn.gov. A `Run`-level test hands
