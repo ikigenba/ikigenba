@@ -10,9 +10,11 @@
      the minute, "2026-10-05 09:00"; both empty when it never fired), .Next
      and .NextText (the same forms; both empty when it has no next); and
      the page's own .Page (string, this window's own page token, the
-     ?page= the request carried; empty on the first window) and .Next
+     ?page= the request carried; empty on the first window), .Next
      (string, the page token for the window after this one; empty when
-     none remain), distinct from each trigger's .Next. .Triggers is the
+     none remain), distinct from each trigger's .Next, and .Prev (string,
+     the page token for the window before this one, carried in the same
+     ?page= parameter; empty on the first window). .Triggers is the
      window of triggers .Page names. Hooks:
      title "cron"; h1 with text "cron"; p#summary (text "Triggers that emit
      events on the suite's event bus on a schedule."); section#triggers with
@@ -29,9 +31,11 @@
      time[datetime=<.LastFired>] (text .LastFiredText), and td.trigger-next
      holding, only when .Next is not empty, time[datetime=<.Next>] (text
      .NextText), then nav.paging#paging (aria-label "Pages") whose
-     children are, in order, First (on the first window, .Page empty, a
-     span with aria-current="page" and text "First"; otherwise a link to /
-     with text "First") and, only when the page's .Next is not empty, Next
+     children are, in order, First, Prev and Next: First (on the first window, .Page
+     empty, a span with aria-current="page" and text "First"; otherwise a link to /
+     with text "First"), then, only when .Prev is not empty, Prev (a link
+     to /?page=<.Prev> with text "Prev"), then, only when the page's .Next
+     is not empty, Next
      (a link to /?page=<.Next> with text "Next"); the nav shows when
      .Triggers is not empty or .Page is not empty, after the card
      (section#triggers), so an emptied later window still offers First; on the
@@ -68,7 +72,7 @@
 <p>A trigger an agent creates with the <code>create</code> tool shows up here.</p>
 </div>{{end}}
 </section>
-{{if or .Triggers .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}</nav>
+{{if or .Triggers .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Prev}}<a href="/?page={{.Prev}}">Prev</a>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}</nav>
 {{end}}<p><a id="about-link" href="/about">About cron</a></p>
 </main>
 {{template "footer" .Banner}}
