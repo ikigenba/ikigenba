@@ -58,6 +58,12 @@ func (c *catalog) windowRuns(ctx context.Context, script, started, id string, n 
 	}
 	return c.readRunsSQL(ctx, "SELECT "+runColumns+" FROM runs WHERE script=? AND (started,id)<(?,?) ORDER BY started DESC,id DESC LIMIT ?", script, started, id, max(n, 0))
 }
+func (c *catalog) windowRunsBefore(ctx context.Context, script, started, id string, n int) ([]Run, error) {
+	if id == "" {
+		return c.readRunsSQL(ctx, "SELECT id,script,sha,ref,user,request_id,trigger,event,status,exit_code,started,finished,stdout_bytes,stderr_bytes,truncated,reason FROM runs WHERE script=? ORDER BY started,id LIMIT ?", script, max(n, 0))
+	}
+	return c.readRunsSQL(ctx, "SELECT id,script,sha,ref,user,request_id,trigger,event,status,exit_code,started,finished,stdout_bytes,stderr_bytes,truncated,reason FROM runs WHERE script=? AND (started,id)>(?,?) ORDER BY started,id LIMIT ?", script, started, id, max(n, 0))
+}
 func (c *catalog) readScripts(ctx context.Context, query string, args ...any) ([]Script, error) {
 	out := []Script{}
 	rows, err := c.tx.QueryContext(ctx, query, args...)

@@ -50,6 +50,7 @@ type LandingData struct {
 	Banner  page.Banner
 	Scripts []ScriptRow
 	Page    string
+	Prev    string
 	Next    string
 }
 
@@ -85,6 +86,7 @@ type ScriptData struct {
 	Runs          []RunRow
 	Subscriptions []string
 	Page          string
+	Prev          string
 	Next          string
 }
 

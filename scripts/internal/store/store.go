@@ -561,6 +561,38 @@ func (s *Store) RunByID(ctx context.Context, id string) (Run, error) {
 	return out, nil
 }
 
+// ListBefore returns scripts nearest the upper bound in descending name order.
+func (s *Store) ListBefore(ctx context.Context, owner, before string, n int) ([]Script, error) {
+	var out []Script
+	err := s.transaction(ctx, false, func(c *catalog) error {
+		var err error
+		if before == "" {
+			out, err = c.readScripts(ctx, "SELECT id,name,owner,repo,ref,created FROM scripts WHERE owner=? ORDER BY name DESC LIMIT ?", owner, max(n, 0))
+		} else {
+			out, err = c.readScripts(ctx, "SELECT id,name,owner,repo,ref,created FROM scripts WHERE owner=? AND name<? ORDER BY name DESC LIMIT ?", owner, before, max(n, 0))
+		}
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// RunsBefore returns runs nearest the bound in the reverse of run order.
+func (s *Store) RunsBefore(ctx context.Context, script, started, id string, n int) ([]Run, error) {
+	var out []Run
+	err := s.transaction(ctx, false, func(c *catalog) error {
+		var err error
+		out, err = c.windowRunsBefore(ctx, script, started, id, n)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // Runs performs a catalog operation through the supplied handle.
 func (s *Store) Runs(ctx context.Context, script, started, id string, n int) ([]Run, error) {
 	var out []Run
