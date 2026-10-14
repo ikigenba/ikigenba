@@ -53,10 +53,16 @@ tool and the panel turn it into the opaque token of appkit's `paging`
 (`D09-mcp`, `D04-panel`), and the store knows nothing of tokens, limits or
 pages. A caller that wants one page and to know whether more follow asks for
 one more than the page. Beside it sits the reversed window, `ListBefore`, which
-the panel's backward step reads (`D04-panel`): at most `n` widgets whose `Seq`
-is less than a given one, newest first, `WHERE seq < ? ORDER BY seq DESC
-LIMIT ?`, a fixed statement like `List`'s with its values bound as parameters.
-The position need not be a `Seq` any widget holds. A window of fewer than one widget is empty, never
+the panel's backward step and its last window read (`D04-panel`): at most `n`
+widgets whose `Seq` is less than a given one, or the last ones when no
+position is given, newest first, `WHERE seq < ? ORDER BY seq DESC LIMIT ?`,
+fixed statements like `List`'s with their values bound as parameters.
+The position need not be a `Seq` any widget holds. It is a `*int64` like
+`List`'s, nil meaning the open end: the start of the order for `List`, its end
+for `ListBefore`. No `Seq` value can stand for no bound, since a store may hold
+a widget whose `Seq` is the maximum `int64`, and a nil pointer is the form
+`List` already takes; a sibling `ListLast` would add a method for a read
+`ListBefore` already makes. A window of fewer than one widget is empty, never
 "no limit", whatever SQLite makes of a negative `LIMIT`. Each widget a store
 adds gets a `Seq` greater than every one it already holds, so ascending
 `Seq` is creation order and a new widget is last. A store whose greatest
@@ -209,7 +215,7 @@ messages and `Unreachable`; this one declares them.
 - R-EXKM-XZU8: The `internal/widget` package MUST export `const Unreachable string`, a copy constant.
 - R-E8TO-J993: The `internal/widget` package MUST export `type Store` and `func NewStore(d *db.DB, src io.Reader) *Store`, where `db` is appkit's package `github.com/ikigenba/ikigenba/appkit/db` and `io` is the standard library's `io`; the handle passed as `d` is the store's **handle**, and the reader passed as `src` is the store's **source**.
 - R-QJGI-9YFW: The `internal/widget` package MUST export `func (s *Store) List(ctx context.Context, after *int64, n int) ([]Widget, error)`, where `context` is the standard library's `context`.
-- R-DV61-EK6H: The `internal/widget` package MUST export `func (s *Store) ListBefore(ctx context.Context, before int64, n int) ([]Widget, error)`, where `context` is the standard library's `context`.
+- R-GJXT-R3CO: The `internal/widget` package MUST export `func (s *Store) ListBefore(ctx context.Context, before *int64, n int) ([]Widget, error)`, where `context` is the standard library's `context`.
 - R-EMP8-WTAC: The `internal/widget` package MUST export `func ParseSubmission(sub Submission) (Draft, FieldErrors)`.
 - R-EB9H-ASQH: The `internal/widget` package MUST export `func (s *Store) Check(ctx context.Context, d Draft) (FieldErrors, error)`, where `context` is the standard library's `context`.
 - R-ECHD-OKH6: The `internal/widget` package MUST export `func (s *Store) Create(ctx context.Context, d Draft) (Widget, FieldErrors, error)`, where `context` is the standard library's `context`.
@@ -231,7 +237,7 @@ messages and `Unreachable`; this one declares them.
 - R-DYTQ-JVEK: `List` and `ListBefore` MUST each return a slice the caller may modify in place, append to, or discard without changing the widgets the store holds or the values a later call to `List` or `ListBefore` returns.
 - R-QLWB-1HXA: Every widget `Create` adds MUST have a `Seq` greater than the `Seq` of every widget the store held before it was added, and the `Widget` that `Create` returns for it MUST carry that `Seq`, so that ascending order of `Seq` is the order in which `Create` calls accepted their widgets.
 - R-QKOE-NQ6L: When `List` returns a nil error, it MUST return, in ascending order of `Seq`, the widgets the store holds whose `Seq` is greater than `*after`, or every widget the store holds when `after` is nil: when `n` is at least 1, the first `n` of them, or all of them when they number `n` or fewer; and when `n` is less than 1, none, so that the slice is then of length zero.
-- R-DWDX-SBX6: When `ListBefore` returns a nil error, it MUST return, in descending order of `Seq`, the widgets the store holds whose `Seq` is less than `before`, whether or not the store holds a widget whose `Seq` is `before`: when `n` is at least 1, the first `n` of them, or all of them when they number `n` or fewer; and when `n` is less than 1, none, so that the slice is then of length zero.
+- R-GL5Q-4V3D: When `ListBefore` returns a nil error, it MUST return, in descending order of `Seq`, the widgets the store holds whose `Seq` is less than `*before`, whether or not the store holds a widget whose `Seq` is `*before`, or every widget the store holds when `before` is nil: when `n` is at least 1, the first `n` of them, or all of them when they number `n` or fewer; and when `n` is less than 1, none, so that the slice is then of length zero.
 - R-QRZS-YCMR: When widgets were created through a store over a handle that was then closed, the widgets (`D04-panel`) of a store over a later handle that `db.Open` returned for the same path with `dummy.Migrations()` MUST be those widgets, each with the same `ID`, `Name`, `Count`, `Status` and `Seq` and in the same order, and a widget a `Create` call through the later store then accepts MUST be the last element of the widgets of that later store afterwards.
 - R-E01M-XN59: When the store's handle has not been closed and either `SetFailing(true)` was never called on it or a `SetFailing(false)` call on it returned after the last `SetFailing(true)` call on it, and the context passed is not done, every call to `List`, `ListBefore` and `Check` on the store MUST return a nil error, whatever `after`, `before`, `n` and `Draft` are passed, and so MUST every call to `Create` on the store made while no other `Create` call on the store is in progress and the store holds no widget whose `Seq` is `math.MaxInt64` (the standard library's `math`), whatever `Draft` is passed, whatever calls on the store returned an error before.
 - R-LLH8-GUB2: While the store holds a widget whose `Seq` is `math.MaxInt64` (the standard library's `math`), every call to `Create` on the store MUST return a non-nil error, whatever `Draft` is passed, one whose `Count` and `Status` the rules accept and whose trimmed name is not empty, is at most `MaxNameRunes` runes long and is the `Name` of no widget the store holds included.
