@@ -97,3 +97,50 @@ func TestLifecycle(t *testing.T) {
 		}
 	}
 }
+
+// R-4YTC-KHJZ R-5018-Y9AO R-NYYN-Z6UB R-O06K-CYL0 R-O1EG-QQBP
+func TestPhases(t *testing.T) {
+	if trail.Collected != "scrape.collected" || trail.Loaded != "scrape.loaded" {
+		t.Fatal("phase names")
+	}
+	for _, caller := range []bool{false, true} {
+		capture := new(telemetry.Capture)
+		bus := new(events.Capture)
+		now := func() time.Time { return time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC) }
+		w := telemetry.New(telemetry.Config{Service: "scrapes", Sink: capture, Now: now, Rand: bytes.NewReader(bytes.Repeat([]byte{1}, 100))})
+		em := events.New(events.Config{Service: "scrapes", Sink: bus, Emits: trail.Emits(), Now: now, Rand: bytes.NewReader(bytes.Repeat([]byte{2}, 100))})
+		ctx := events.NewContext(context.Background(), events.Cause{ID: "evt_0101010101010101", Depth: 3})
+		if caller {
+			ctx = identity.NewContext(ctx, identity.Caller{UserID: "other", RequestID: "other-request"})
+		}
+		r := store.Run{ID: "run_0202020202020202", Scraper: "test", UserID: "starter", RequestID: "starter-request"}
+		invoke := func(phase func(context.Context, *telemetry.Writer, string, store.Run, int64, time.Duration, time.Duration), name string) {
+			phase(ctx, w, name, r, 741, 2501*time.Nanosecond, 1901*time.Nanosecond)
+		}
+		for _, name := range []string{trail.Collected, trail.Loaded, trail.Started, trail.Finished, "other"} {
+			invoke(trail.Phase, name)
+		}
+		trail.Record(ctx, w, em, trail.Collected, r)
+		trail.Record(ctx, w, em, trail.Loaded, r)
+		deadline, cancel := context.WithTimeout(context.Background(), time.Second)
+		if err := w.Flush(deadline); err != nil {
+			t.Fatal(err)
+		}
+		if err := em.Flush(deadline); err != nil {
+			t.Fatal(err)
+		}
+		got := capture.Events()
+		if len(got) != 2 || len(bus.Events()) != 0 {
+			t.Fatalf("phase counts: %d, bus %d", len(got), len(bus.Events()))
+		}
+		want := telemetry.Attrs{"scraper": r.Scraper, "run": r.ID, "bytes": int64(741), "duration_us": int64(2), "paused_us": int64(1)}
+		for i, name := range []string{trail.Collected, trail.Loaded} {
+			if got[i].Name != name || got[i].User != r.UserID || got[i].RequestID != r.RequestID || !reflect.DeepEqual(got[i].Attrs, want) {
+				t.Fatalf("phase: %#v", got[i])
+			}
+		}
+		em.Shutdown(deadline)
+		w.Shutdown(deadline, "test")
+		cancel()
+	}
+}

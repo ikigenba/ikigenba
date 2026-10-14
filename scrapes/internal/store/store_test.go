@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -42,7 +42,7 @@ func open(t *testing.T, path string, rnd io.Reader) (*store.Store, *db.DB) {
 		}
 		rnd = bytes.NewReader(b)
 	}
-	return store.New(d, store.Config{Now: func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 999, time.FixedZone("test", 3600)) }, Rand: rnd}), d
+	return store.New(d, store.Config{Now: func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 999, time.FixedZone("test", 3600)) }, Rand: rnd, Runs: filepath.Join(filepath.Dir(path), "runs")}), d
 }
 func fresh(t *testing.T) (*store.Store, *db.DB) {
 	t.Helper()
@@ -58,13 +58,26 @@ func add(t *testing.T, s *store.Store, scraper string) store.Run {
 }
 func finish(t *testing.T, s *store.Store, r store.Run, rows ...source.Row) store.Run {
 	t.Helper()
-	if e := s.PutRows(ctx, r.ID, rows); e != nil {
-		t.Fatal(e)
-	}
-	r, e := s.FinishRun(ctx, r.ID)
+	c, e := s.Collect(ctx, r.ID, nil)
 	if e != nil {
 		t.Fatal(e)
 	}
+	t.Cleanup(func() { _ = c.Discard() })
+	if e = c.Add(ctx, rows); e != nil {
+		t.Fatal(e)
+	}
+	if e = c.Seal(ctx); e != nil {
+		t.Fatal(e)
+	}
+	counts, e := c.Load(ctx, nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	r, e = s.FinishRun(ctx, r.ID, counts)
+	if e != nil {
+		t.Fatal(e)
+	}
+
 	return r
 }
 func is(t *testing.T, e, want error) {
@@ -74,8 +87,13 @@ func is(t *testing.T, e, want error) {
 	}
 }
 
-// R-ZDDP-WI4Q R-ZFTI-O1M4 R-ZH1F-1TCT R-LIAV-UW31 R-ZKP4-74KW
+// R-MZJI-329N R-N0RE-GU0C R-N6UW-DOPT R-ZFTI-O1M4 R-ZH1F-1TCT R-LIAV-UW31 R-ZKP4-74KW
 func TestVocabulary(t *testing.T) {
+	shape := store.Run{"id", "scraper", "status", "reason", time.Unix(1, 0), time.Unix(2, 0), 3, 4, 5, 6, 7, "user", "email", "trigger", "request", "delivery"}
+	if shape.ID != "id" || shape.Scraper != "scraper" || shape.Status != "status" || shape.Reason != "reason" || !shape.Started.Equal(time.Unix(1, 0)) || !shape.Finished.Equal(time.Unix(2, 0)) || shape.Rows != 3 || shape.New != 4 || shape.Changed != 5 || shape.Unchanged != 6 || shape.Gone != 7 || shape.UserID != "user" || shape.UserEmail != "email" || shape.Trigger != "trigger" || shape.RequestID != "request" || shape.Delivery != "delivery" {
+		t.Fatal(shape)
+	}
+
 	for _, v := range []string{"run_0123456789abcdef", "run_0000000000000000"} {
 		if !store.ValidRunID(v) {
 			t.Fatal(v)
@@ -89,7 +107,7 @@ func TestVocabulary(t *testing.T) {
 	if store.RunIDPrefix != "run_" || store.StatusRunning != "running" || store.StatusDone != "done" || store.StatusFailed != "failed" || store.ReasonSource != "source" || store.ReasonInterrupted != "interrupted" || store.ReasonStore != "store" {
 		t.Fatal("vocabulary")
 	}
-	errs := []error{store.ErrNotFound, store.ErrBusy, store.ErrDelivered, store.ErrEnded, store.ErrUnreachable, store.ErrLocked}
+	errs := []error{store.ErrMissing, store.ErrNotFound, store.ErrBusy, store.ErrDelivered, store.ErrEnded, store.ErrUnreachable, store.ErrLocked}
 	for i, e := range errs {
 		if e == nil {
 			t.Fatal(i)
@@ -100,84 +118,14 @@ func TestVocabulary(t *testing.T) {
 			}
 		}
 	}
+	if store.DefaultChunkBytes != 16777216 || store.DefaultLoadRows != 5000 {
+		t.Fatal("defaults")
+	}
+	if store.Missing == "" || strings.Contains(store.Missing, "\n") {
+		t.Fatal("missing copy")
+	}
 	if store.Unreachable == "" || strings.Contains(store.Unreachable, "\n") {
 		t.Fatal("copy")
-	}
-}
-
-// R-LJIS-8NTQ
-func TestLockedWrite(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "db")
-	s, d := open(t, path, nil)
-	r := add(t, s, "scraper")
-	_, locker := open(t, path, nil)
-	held := make(chan error, 1)
-	release := make(chan struct{})
-	ended := make(chan error, 1)
-	rollback := errors.New("release without committing")
-	go func() {
-		ended <- locker.Write(ctx, func(tx *sql.Tx) error {
-			_, err := tx.ExecContext(ctx, `UPDATE runs SET "rows"="rows" WHERE id=?`, r.ID)
-			held <- err
-			if err != nil {
-				return err
-			}
-			<-release
-			return rollback
-		})
-	}()
-	unlock := sync.OnceFunc(func() {
-		close(release)
-		if err := <-ended; !errors.Is(err, rollback) {
-			t.Errorf("lock transaction: %v", err)
-		}
-	})
-	t.Cleanup(unlock)
-	if err := <-held; err != nil {
-		t.Fatal(err)
-	}
-	err := s.PutRows(ctx, r.ID, []source.Row{{SourceID: "blocked"}})
-	is(t, err, store.ErrLocked)
-	is(t, err, store.ErrUnreachable)
-	unlock()
-	got, err := s.GetRun(ctx, r.ID)
-	if err != nil || got != r {
-		t.Fatalf("run changed: %#v, %v", got, err)
-	}
-	for _, check := range []struct {
-		name string
-		call func() error
-		want error
-	}{
-		{"missing", func() error { return s.PutRows(ctx, "missing", []source.Row{{SourceID: "absent"}}) }, store.ErrNotFound},
-		{"invalid", func() error { return s.PutRows(ctx, r.ID, []source.Row{{}}) }, store.ErrUnreachable},
-		{"busy scraper", func() error { _, err := s.AddRun(ctx, store.Run{Scraper: r.Scraper, UserID: "caller"}); return err }, store.ErrBusy},
-	} {
-		t.Run(check.name, func(t *testing.T) {
-			err := check.call()
-			is(t, err, check.want)
-			if errors.Is(err, store.ErrLocked) {
-				t.Fatalf("non-lock error marked locked: %v", err)
-			}
-		})
-	}
-	done, cancel := context.WithCancel(ctx)
-	cancel()
-	err = s.PutRows(done, r.ID, []source.Row{{SourceID: "cancelled"}})
-	is(t, err, store.ErrUnreachable)
-	if errors.Is(err, store.ErrLocked) {
-		t.Fatalf("cancelled operation marked locked: %v", err)
-	}
-	d.SetFailing(true)
-	err = s.PutRows(ctx, r.ID, []source.Row{{SourceID: "failing"}})
-	is(t, err, store.ErrUnreachable)
-	if errors.Is(err, store.ErrLocked) {
-		t.Fatalf("failing handle marked locked: %v", err)
-	}
-	d.SetFailing(false)
-	got, err = s.FinishRun(ctx, r.ID)
-	if err != nil || got.Rows != 0 {
-		t.Fatalf("refused rows stored: %#v, %v", got, err)
 	}
 }
 
@@ -288,7 +236,7 @@ func TestIDCandidates(t *testing.T) {
 	is(t, e, store.ErrUnreachable)
 }
 
-// R-ZT8E-VIRR R-ZWW4-0TZU R-ZN4W-YO2A R-82KK-92F2 R-07V7-GRO3 R-0933-UJES R-047I-BGG0
+// R-NU0Z-NBT0 R-O7FV-USYN R-O8NS-8KPC R-NDH2-N018 R-O503-39H9 R-NWGS-EVAE R-NB19-VGJU R-047I-BGG0
 func TestRowsComparisonAndReads(t *testing.T) {
 	s, _ := fresh(t)
 	base := finish(t, s, add(t, s, "a"), source.Row{SourceID: "2", Digest: "b"}, source.Row{SourceID: "3", Digest: "x"}, source.Row{SourceID: "4", Digest: "d"})
@@ -298,7 +246,12 @@ func TestRowsComparisonAndReads(t *testing.T) {
 	r := add(t, s, "a")
 	lat, lon := 1.2, 3.4
 	row := source.Row{Scraper: "ignored", Run: "ignored", SourceID: "1", Collected: time.Date(2026, 2, 3, 4, 5, 6, 789, time.FixedZone("fixture", -3600)), Digest: "a", Name: "fixture", Names: []string{"Fixture Trucking", "Other"}, Address: source.Address{Street: "test street", City: "test city", State: "MN", Zip: "00000", County: "test county"}, Lat: &lat, Lon: &lon, People: []source.Person{{Name: "fixture person", Role: "fixture role"}}, Facts: []byte(" { \"units\": 5 } "), Raw: []byte(" { \"id\": \"1\" } ")}
-	if e := s.PutRows(ctx, r.ID, []source.Row{{SourceID: "1", Digest: "old"}, row, {SourceID: "2", Digest: "b"}, {SourceID: "3", Digest: "c"}}); e != nil {
+	col, e := s.Collect(ctx, r.ID, nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer func() { _ = col.Discard() }()
+	if e := col.Add(ctx, []source.Row{{SourceID: "1", Digest: "old"}, row, {SourceID: "2", Digest: "b"}, {SourceID: "3", Digest: "c"}}); e != nil {
 		t.Fatal(e)
 	}
 	rs, e := s.ListRowsAfter(ctx, r.ID, "", "", 10)
@@ -311,7 +264,17 @@ func TestRowsComparisonAndReads(t *testing.T) {
 	if e = s.EachRow(ctx, r.ID, func(source.Row) error { calls++; return nil }); e != nil || calls != 0 {
 		t.Fatal(e, calls)
 	}
-	r = finish(t, s, r)
+	if e = col.Seal(ctx); e != nil {
+		t.Fatal(e)
+	}
+	counts, e := col.Load(ctx, nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	r, e = s.FinishRun(ctx, r.ID, counts)
+	if e != nil {
+		t.Fatal(e)
+	}
 	if r.Rows != 3 || r.New != 1 || r.Changed != 1 || r.Unchanged != 1 || r.Gone != 1 || r.Status != store.StatusDone || r.Finished.Location() != time.UTC || r.Finished.Nanosecond() != 0 {
 		t.Fatal(r)
 	}
@@ -373,94 +336,7 @@ func TestRowsComparisonAndReads(t *testing.T) {
 	}
 }
 
-// R-ZUGB-9AIG R-82E3-ILLB R-ZZBW-SDH8 R-7V2P-7Z55 R-0DYP-DMDK
-func TestFailureAndInvalidWrites(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "db")
-	clock := time.Date(2026, 2, 3, 4, 5, 6, 789, time.FixedZone("failure", -3600))
-	randomBytes := []byte{}
-	for n := byte(1); n < 20; n++ {
-		randomBytes = append(randomBytes, bytes.Repeat([]byte{n}, 8)...)
-	}
-	rnd := bytes.NewReader(randomBytes)
-	_, d := open(t, path, rnd)
-	cfg := store.Config{Now: func() time.Time { return clock }, Rand: rnd}
-	s := store.New(d, cfg)
-	r := add(t, s, "a")
-	if e := s.PutRows(ctx, r.ID, []source.Row{{SourceID: "rejected"}, {}}); !errors.Is(e, store.ErrUnreachable) {
-		t.Fatal(e)
-	}
-	completed := finish(t, s, r)
-	if completed.Rows != 0 {
-		t.Fatal(completed)
-	}
-	if _, err := s.GetRow(ctx, completed.ID, "rejected"); !errors.Is(err, store.ErrNotFound) {
-		t.Fatal(err)
-	}
-	r = add(t, s, "a")
-	for _, reason := range []string{store.ReasonSource, store.ReasonInterrupted, store.ReasonStore} {
-		if reason != store.ReasonSource {
-			r = add(t, s, "a")
-		}
-		if e := s.PutRows(ctx, r.ID, []source.Row{{SourceID: "x"}}); e != nil {
-			t.Fatal(e)
-		}
-		clock = clock.Add(73*time.Second + 123*time.Nanosecond)
-		failed, e := s.FailRun(ctx, r.ID, reason)
-		expected := r
-		expected.Status, expected.Reason, expected.Finished = store.StatusFailed, reason, clock.UTC().Truncate(time.Second)
-		if e != nil || failed != expected {
-			t.Fatal(failed, expected, e)
-		}
-		if e := d.Close(); e != nil {
-			t.Fatal(e)
-		}
-		_, d = open(t, path, rnd)
-		s = store.New(d, cfg)
-		stored, e := s.GetRun(ctx, r.ID)
-		if e != nil || stored != expected {
-			t.Fatal(stored, expected, e)
-		}
-		calls := 0
-		if e := s.EachRow(ctx, r.ID, func(source.Row) error { calls++; return nil }); e != nil || calls != 0 {
-			t.Fatal(calls, e)
-		}
-		rows, e := s.ListRowsAfter(ctx, r.ID, "", "", 10)
-		if e != nil || rows == nil || len(rows) != 0 {
-			t.Fatal(rows, e)
-		}
-		_, e = s.GetRow(ctx, r.ID, "x")
-		is(t, e, store.ErrNotFound)
-		_, e = s.FinishRun(ctx, r.ID)
-		is(t, e, store.ErrEnded)
-		_, e = s.FailRun(ctx, r.ID, reason)
-		is(t, e, store.ErrEnded)
-		is(t, s.PutRows(ctx, r.ID, nil), store.ErrEnded)
-	}
-	_, e := s.FailRun(ctx, "missing", "bad")
-	is(t, e, store.ErrUnreachable)
-	_, e = s.FailRun(ctx, "missing", store.ReasonSource)
-	is(t, e, store.ErrNotFound)
-	_, e = s.FinishRun(ctx, "missing")
-	is(t, e, store.ErrNotFound)
-	is(t, s.PutRows(ctx, "missing", nil), store.ErrNotFound)
-	is(t, s.PutRows(ctx, "missing", []source.Row{{}}), store.ErrUnreachable)
-	for _, limit := range []int{-1, 0} {
-		rows, e := s.ListRowsAfter(ctx, "missing", "", "", limit)
-		is(t, e, store.ErrUnreachable)
-		if rows != nil {
-			t.Fatal(rows)
-		}
-	}
-	for _, n := range []int64{0, -1} {
-		rs, e := s.PruneRuns(ctx, n)
-		is(t, e, store.ErrUnreachable)
-		if rs != nil {
-			t.Fatal(rs)
-		}
-	}
-}
-
-// R-0BIW-M2W6 R-0XAA-00BB
+// R-OD11-7L2V R-0XAA-00BB
 func TestOrderingAndPrune(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "db")
 	s, d := open(t, path, nil)
@@ -508,43 +384,7 @@ func TestOrderingAndPrune(t *testing.T) {
 	is(t, e, store.ErrNotFound)
 }
 
-// R-0F6L-RE49 R-7XIH-ZIMJ
-func TestUnavailablePrecedence(t *testing.T) {
-	s, d := fresh(t)
-	r := add(t, s, "a")
-	done, cancel := context.WithCancel(ctx)
-	cancel()
-	for _, c := range []context.Context{done, ctx} {
-		if c == ctx {
-			d.SetFailing(true)
-		}
-		checks := []func() error{func() error { _, e := s.AddRun(c, store.Run{}); return e }, func() error { return s.PutRows(c, "missing", []source.Row{{}}) }, func() error { _, e := s.FinishRun(c, "missing"); return e }, func() error { _, e := s.FailRun(c, "missing", "bad"); return e }, func() error { _, e := s.GetRun(c, "missing"); return e }, func() error { _, e := s.ListRunsAfter(c, "", "", "", 0); return e }, func() error { _, e := s.CurrentRun(c, "a"); return e }, func() error { _, e := s.RunningRun(c, "a"); return e }, func() error { _, e := s.RunningRuns(c); return e }, func() error { _, e := s.GetRow(c, "missing", "x"); return e }, func() error { _, e := s.ListRowsAfter(c, "missing", "", "", 0); return e }, func() error { return s.EachRow(c, r.ID, func(source.Row) error { t.Fatal("callback"); return nil }) }, func() error { _, e := s.PruneRuns(c, 0); return e }}
-		for _, call := range checks {
-			e := call()
-			is(t, e, store.ErrUnreachable)
-			if c == done {
-				is(t, e, context.Canceled)
-			}
-			for _, bad := range []error{store.ErrNotFound, store.ErrBusy, store.ErrDelivered, store.ErrEnded} {
-				if errors.Is(e, bad) {
-					t.Fatal(e)
-				}
-			}
-		}
-	}
-	d.SetFailing(false)
-	got, e := s.GetRun(ctx, r.ID)
-	if e != nil || got != r {
-		t.Fatal(got, e)
-	}
-	if e = d.Close(); e != nil {
-		t.Fatal(e)
-	}
-	_, e = s.GetRun(ctx, r.ID)
-	is(t, e, store.ErrUnreachable)
-}
-
-// R-00JT-657X R-0IUA-WPCC
+// R-O04H-K6IH R-0IUA-WPCC
 func TestConcurrentOperations(t *testing.T) {
 	s, _ := fresh(t)
 	var wg sync.WaitGroup
@@ -569,8 +409,20 @@ func TestConcurrentOperations(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	col, e := s.Collect(ctx, r.ID, nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = col.Seal(ctx); e != nil {
+		t.Fatal(e)
+	}
+	counts, e := col.Load(ctx, nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer func() { _ = col.Discard() }()
 	ends := make(chan error, 2)
-	wg.Go(func() { _, e := s.FinishRun(ctx, r.ID); ends <- e })
+	wg.Go(func() { _, e := s.FinishRun(ctx, r.ID, counts); ends <- e })
 	wg.Go(func() { _, e := s.FailRun(ctx, r.ID, store.ReasonSource); ends <- e })
 	wg.Wait()
 	a, b := <-ends, <-ends
@@ -586,7 +438,7 @@ func TestConcurrentOperations(t *testing.T) {
 		wg.Go(func() {
 			r, e := s.AddRun(ctx, store.Run{Scraper: fmt.Sprint(i), Trigger: "trigger", Delivery: "same"})
 			if e == nil {
-				_, e = s.FinishRun(ctx, r.ID)
+				_, e = s.FailRun(ctx, r.ID, store.ReasonSource)
 			}
 			if e != nil && !errors.Is(e, store.ErrDelivered) {
 				t.Error(e)
@@ -596,7 +448,7 @@ func TestConcurrentOperations(t *testing.T) {
 	wg.Wait()
 }
 
-// R-ZT8E-VIRR R-ZWW4-0TZU R-82E3-ILLB R-0BIW-M2W6
+// R-NU0Z-NBT0 R-O7FV-USYN R-O8NS-8KPC R-NYWL-6ERS R-OD11-7L2V
 func TestRowsAndOutcomesPersist(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "db")
 	s, d := open(t, path, nil)
@@ -607,7 +459,12 @@ func TestRowsAndOutcomesPersist(t *testing.T) {
 	raw := source.Row{SourceID: "record", Names: []string{"fixture"}, Facts: []byte(" {} "), Raw: []byte(" {\"key\":1} ")}
 	done := finish(t, s, r, raw)
 	partial := add(t, s, "a")
-	if err := s.PutRows(ctx, partial.ID, []source.Row{{SourceID: "partial", Names: []string{"discarded"}}}); err != nil {
+	col, e := s.Collect(ctx, partial.ID, nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer func() { _ = col.Discard() }()
+	if err := col.Add(ctx, []source.Row{{SourceID: "partial", Names: []string{"discarded"}}}); err != nil {
 		t.Fatal(err)
 	}
 	failed, e := s.FailRun(ctx, partial.ID, store.ReasonInterrupted)
@@ -664,7 +521,7 @@ func TestRowsAndOutcomesPersist(t *testing.T) {
 	}
 }
 
-// R-ZN4W-YO2A R-047I-BGG0 R-ZWW4-0TZU R-82KK-92F2
+// R-NDH2-N018 R-047I-BGG0 R-O7FV-USYN R-O8NS-8KPC R-O503-39H9
 func TestStartOrderAndBaseline(t *testing.T) {
 	s, _ := fresh(t)
 	a := finish(t, s, add(t, s, "a"), source.Row{SourceID: "x", Digest: "first"})
@@ -696,7 +553,7 @@ func TestStartOrderAndBaseline(t *testing.T) {
 			t.Error(e)
 		}
 	})
-	custom := store.New(d, store.Config{Now: func() time.Time { return clock }, Rand: bytes.NewReader(append(bytes.Repeat([]byte{0x11}, 8), bytes.Repeat([]byte{0x22}, 8)...))})
+	custom := store.New(d, store.Config{Now: func() time.Time { return clock }, Rand: bytes.NewReader(append(bytes.Repeat([]byte{0x11}, 8), bytes.Repeat([]byte{0x22}, 8)...)), Runs: filepath.Join(t.TempDir(), "runs")})
 	older := finish(t, custom, add(t, custom, "a"))
 	clock = clock.Add(-time.Hour)
 	later := finish(t, custom, add(t, custom, "a"))
@@ -710,7 +567,7 @@ func TestStartOrderAndBaseline(t *testing.T) {
 	}
 }
 
-// R-ZQSM-3ZAD R-ZS0I-HR12 R-7XIH-ZIMJ
+// R-ZQSM-3ZAD R-ZS0I-HR12 R-OKUS-2A4A
 func TestRandomPrecedenceAndReadCounts(t *testing.T) {
 	rnd := bytes.NewReader(bytes.Repeat([]byte{0x5a}, 16))
 	s, _ := open(t, filepath.Join(t.TempDir(), "db"), rnd)
@@ -740,7 +597,7 @@ func TestRunsAfterWindows(t *testing.T) {
 	_, d := fresh(t)
 	clock := time.Date(2026, 2, 3, 4, 5, 6, 987, time.FixedZone("fixture", -3600))
 	rnd := bytes.NewReader(append(append(append(bytes.Repeat([]byte{0x40}, 8), bytes.Repeat([]byte{0x20}, 8)...), bytes.Repeat([]byte{0x30}, 8)...), bytes.Repeat([]byte{0x10}, 8)...))
-	s := store.New(d, store.Config{Now: func() time.Time { return clock }, Rand: rnd})
+	s := store.New(d, store.Config{Now: func() time.Time { return clock }, Rand: rnd, Runs: filepath.Join(t.TempDir(), "runs")})
 	old := finish(t, s, add(t, s, "a"))
 	clock = clock.Add(time.Second)
 	tieA := finish(t, s, add(t, s, "a"))
@@ -798,71 +655,7 @@ func TestRunsAfterWindows(t *testing.T) {
 	}
 }
 
-// R-7Q73-OW6D
-func TestStoreMethodSignatures(t *testing.T) {
-	s, _ := fresh(t)
-	var methods interface {
-		AddRun(context.Context, store.Run) (store.Run, error)
-		PutRows(context.Context, string, []source.Row) error
-		FinishRun(context.Context, string) (store.Run, error)
-		FailRun(context.Context, string, string) (store.Run, error)
-		GetRun(context.Context, string) (store.Run, error)
-		ListRunsAfter(context.Context, string, string, string, int) ([]store.Run, error)
-		CurrentRun(context.Context, string) (store.Run, error)
-		RunningRun(context.Context, string) (store.Run, error)
-		RunningRuns(context.Context) ([]store.Run, error)
-		ListRowsAfter(context.Context, string, string, string, int) ([]source.Row, error)
-		GetRow(context.Context, string, string) (source.Row, error)
-		EachRow(context.Context, string, func(source.Row) error) error
-		PruneRuns(context.Context, int64) ([]store.Run, error)
-	} = s
-	r, err := methods.AddRun(ctx, store.Run{Scraper: "a", UserID: "caller"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := methods.PutRows(ctx, r.ID, []source.Row{{SourceID: "row"}}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := methods.RunningRun(ctx, "a"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := methods.RunningRuns(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := methods.FinishRun(ctx, r.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := methods.GetRun(ctx, r.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := methods.CurrentRun(ctx, "a"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := methods.ListRunsAfter(ctx, "a", "", "", 1); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := methods.ListRowsAfter(ctx, r.ID, "", "", 1); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := methods.GetRow(ctx, r.ID, "row"); err != nil {
-		t.Fatal(err)
-	}
-	if err := methods.EachRow(ctx, r.ID, func(source.Row) error { return nil }); err != nil {
-		t.Fatal(err)
-	}
-	r, err = methods.AddRun(ctx, store.Run{Scraper: "a", UserID: "caller"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := methods.FailRun(ctx, r.ID, store.ReasonSource); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := methods.PruneRuns(ctx, 1); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// R-82KK-92F2
+// R-O503-39H9
 func TestRowsAfterNamesAndWindows(t *testing.T) {
 	s, _ := fresh(t)
 	rows := []source.Row{
@@ -937,18 +730,32 @@ func TestRowsAfterNamesAndWindows(t *testing.T) {
 	}
 }
 
-// R-9IJW-5V8T
+// R-NU0Z-NBT0
 func TestReplacedNamesPersist(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "db")
 	s, d := open(t, path, nil)
 	r := add(t, s, "a")
-	if err := s.PutRows(ctx, r.ID, []source.Row{{SourceID: "same", Names: []string{"ACME TRUCKING INC"}}, {SourceID: "same", Names: []string{"TEMP HAULING"}}}); err != nil {
+	col, e := s.Collect(ctx, r.ID, nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer func() { _ = col.Discard() }()
+	if err := col.Add(ctx, []source.Row{{SourceID: "same", Names: []string{"ACME TRUCKING INC"}}, {SourceID: "same", Names: []string{"TEMP HAULING"}}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.PutRows(ctx, r.ID, []source.Row{{SourceID: "same", Names: []string{"BETA HAULING"}}}); err != nil {
+	if err := col.Add(ctx, []source.Row{{SourceID: "same", Names: []string{"BETA HAULING"}}}); err != nil {
 		t.Fatal(err)
 	}
-	finish(t, s, r)
+	if e = col.Seal(ctx); e != nil {
+		t.Fatal(e)
+	}
+	counts, e := col.Load(ctx, nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.FinishRun(ctx, r.ID, counts); e != nil {
+		t.Fatal(e)
+	}
 	if err := d.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -993,61 +800,6 @@ func TestRowsAfterRunState(t *testing.T) {
 	}
 }
 
-func TestRowsNamesBackfillOnUpgrade(t *testing.T) {
-	migrations := fstest.MapFS{}
-	for _, name := range []string{"0001_runs.sql", "0002_rows.sql", "0003_list_indexes.sql"} {
-		data, err := fs.ReadFile(scrapes.Migrations(), name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		migrations[name] = &fstest.MapFile{Data: data}
-	}
-	path := filepath.Join(t.TempDir(), "db")
-	clock := func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
-	d, err := db.Open(ctx, db.Config{Path: path, Migrations: migrations, Now: clock})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := d.Close(); err != nil {
-			t.Error(err)
-		}
-	})
-	s := store.New(d, store.Config{Now: clock, Rand: bytes.NewReader(bytes.Repeat([]byte{1}, 8))})
-	r := add(t, s, "legacy")
-	err = d.Write(ctx, func(tx *sql.Tx) error {
-		for _, fixture := range []struct{ id, names string }{{"a", `["ACME TRUCKING","ACME TRUCKING INC"]`}, {"b", `[]`}, {"c", `["CAFÉ CARRIERS"]`}} {
-			_, err := tx.ExecContext(ctx, `INSERT INTO "rows" ("run",source_id,scraper,collected,digest,name,names,names_lower,street,city,state,zip,county,people) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, r.ID, fixture.id, r.Scraper, clock().Format(time.RFC3339), "fixture", "fixture", fixture.names, "unused", "", "", "", "", "", "[]")
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	finish(t, s, r)
-	if err := d.Close(); err != nil {
-		t.Fatal(err)
-	}
-	s, _ = open(t, path, nil)
-	for _, tc := range []struct {
-		name string
-		ids  []string
-	}{{"trucking", []string{"a"}}, {"caf", []string{"c"}}, {"É", []string{}}, {"", []string{"a", "b", "c"}}} {
-		got, err := s.ListRowsAfter(ctx, r.ID, tc.name, "", 25)
-		if err != nil || got == nil || len(got) != len(tc.ids) {
-			t.Fatal(got, err)
-		}
-		for i, row := range got {
-			if row.SourceID != tc.ids[i] {
-				t.Fatal(got, tc.ids)
-			}
-		}
-	}
-}
-
 // R-FO8F-PVZS
 func TestBeforeMethodSignatures(t *testing.T) {
 	s, _ := fresh(t)
@@ -1064,7 +816,7 @@ func TestBeforeMethodSignatures(t *testing.T) {
 	}
 }
 
-// R-FPGC-3NQH
+// R-FW2U-Q6N5 R-FR79-73OD
 func TestRunsBeforeWindows(t *testing.T) {
 	s, d := fresh(t)
 	for _, scraper := range []string{"", "a", "missing"} {
@@ -1075,7 +827,7 @@ func TestRunsBeforeWindows(t *testing.T) {
 	}
 	clock := time.Date(2026, 2, 3, 4, 5, 6, 987, time.FixedZone("fixture", -3600))
 	rnd := bytes.NewReader(append(append(append(bytes.Repeat([]byte{0x40}, 8), bytes.Repeat([]byte{0x20}, 8)...), bytes.Repeat([]byte{0x30}, 8)...), bytes.Repeat([]byte{0x10}, 8)...))
-	s = store.New(d, store.Config{Now: func() time.Time { return clock }, Rand: rnd})
+	s = store.New(d, store.Config{Now: func() time.Time { return clock }, Rand: rnd, Runs: filepath.Join(t.TempDir(), "runs")})
 	old := finish(t, s, add(t, s, "a"))
 	clock = clock.Add(time.Second)
 	tieA := finish(t, s, add(t, s, "a"))
@@ -1137,7 +889,7 @@ func TestRunsBeforeWindows(t *testing.T) {
 	}
 }
 
-// R-FQO8-HFH6
+// R-O67Z-H17Y
 func TestRowsBeforeNamesAndWindows(t *testing.T) {
 	s, _ := fresh(t)
 	rows := []source.Row{
@@ -1237,7 +989,12 @@ func TestRowsBeforeNamesAndWindows(t *testing.T) {
 func TestRowsBeforeRunState(t *testing.T) {
 	s, _ := fresh(t)
 	running := add(t, s, "a")
-	if err := s.PutRows(ctx, running.ID, []source.Row{{SourceID: "partial", Names: []string{"anything"}}}); err != nil {
+	col, e := s.Collect(ctx, running.ID, nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer func() { _ = col.Discard() }()
+	if err := col.Add(ctx, []source.Row{{SourceID: "partial", Names: []string{"anything"}}}); err != nil {
 		t.Fatal(err)
 	}
 	failed, err := s.FailRun(ctx, add(t, s, "b").ID, store.ReasonSource)
@@ -1267,4 +1024,1229 @@ func TestRowsBeforeRunState(t *testing.T) {
 			}
 		}
 	}
+}
+
+func configured(t *testing.T, chunk int64, load int) (*store.Store, *db.DB, string) {
+	t.Helper()
+	dir := t.TempDir()
+	_, d := open(t, filepath.Join(dir, "catalog"), nil)
+	rnd := []byte{}
+	for n := 1; n < 240; n++ {
+		rnd = append(rnd, bytes.Repeat([]byte{byte(n)}, 8)...)
+	}
+	runs := filepath.Join(dir, "nested", "runs")
+	cfg := store.Config{func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 999, time.UTC) }, bytes.NewReader(rnd), runs, chunk, load}
+	return store.New(d, cfg), d, runs
+}
+func collect(t *testing.T, s *store.Store, r store.Run, step store.Step) *store.Collection {
+	t.Helper()
+	c, e := s.Collect(ctx, r.ID, step)
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() { _ = c.Discard() })
+	return c
+}
+func load(t *testing.T, c *store.Collection, rows []source.Row, step store.Step) store.Counts {
+	t.Helper()
+	if e := c.Add(ctx, rows); e != nil {
+		t.Fatal(e)
+	}
+	if e := c.Seal(ctx); e != nil {
+		t.Fatal(e)
+	}
+	n, e := c.Load(ctx, step)
+	if e != nil {
+		t.Fatal(e)
+	}
+	return n
+}
+func snapshot(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	entries, e := os.ReadDir(dir)
+	if os.IsNotExist(e) {
+		return out
+	}
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, entry := range entries {
+		path := filepath.Join(dir, entry.Name())
+		info, e := os.Lstat(path)
+		if e != nil {
+			t.Fatal(e)
+		}
+		switch {
+		case info.Mode().IsRegular():
+			b, e := os.ReadFile(filepath.Clean(path))
+			if e != nil {
+				t.Fatal(e)
+			}
+			out[entry.Name()] = string(b)
+		case info.Mode()&os.ModeSymlink != 0:
+			target, e := os.Readlink(path)
+			if e != nil {
+				t.Fatal(e)
+			}
+			out[entry.Name()] = "link:" + target
+		default:
+			out[entry.Name()] = "directory"
+		}
+	}
+	return out
+}
+
+// R-MZJI-329N R-NEOZ-0RRX R-N377-8DHQ R-N4F3-M58F R-N5MZ-ZWZ4 R-NCYE-AJFA R-NE6A-OB5Z
+func TestCollectionAPI(t *testing.T) {
+	s, _, runs := configured(t, 1, 2)
+	var methods interface {
+		AddRun(context.Context, store.Run) (store.Run, error)
+		Collect(context.Context, string, store.Step) (*store.Collection, error)
+		FinishRun(context.Context, string, store.Counts) (store.Run, error)
+		FailRun(context.Context, string, string) (store.Run, error)
+		GetRun(context.Context, string) (store.Run, error)
+		ListRunsAfter(context.Context, string, string, string, int) ([]store.Run, error)
+		CurrentRun(context.Context, string) (store.Run, error)
+		RunningRun(context.Context, string) (store.Run, error)
+		RunningRuns(context.Context) ([]store.Run, error)
+		ListRowsAfter(context.Context, string, string, string, int) ([]source.Row, error)
+		GetRow(context.Context, string, string) (source.Row, error)
+		EachRow(context.Context, string, func(source.Row) error) error
+		PruneRuns(context.Context, int64) ([]store.Run, error)
+		TidyFiles(context.Context) error
+	} = s
+	c, e := methods.Collect(ctx, "missing", nil)
+	if c != nil {
+		t.Fatal(c)
+	}
+	is(t, e, store.ErrNotFound)
+	r, e := methods.AddRun(ctx, store.Run{Scraper: "a", UserID: "u"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	before, _ := methods.GetRun(ctx, r.ID)
+	step := store.Step(func(context.Context, int64, time.Duration) error { return nil })
+	c, e = methods.Collect(ctx, r.ID, step)
+	if e != nil || c == nil {
+		t.Fatal(c, e)
+	}
+	after, _ := methods.GetRun(ctx, r.ID)
+	if before != after {
+		t.Fatal(before, after)
+	}
+	if _, e = os.Lstat(runs); !os.IsNotExist(e) {
+		t.Fatal(e)
+	}
+	var builder interface {
+		Add(context.Context, []source.Row) error
+		Seal(context.Context) error
+		Load(context.Context, store.Step) (store.Counts, error)
+		Discard() error
+	} = c
+	if e = builder.Add(ctx, []source.Row{{SourceID: "row"}}); e != nil {
+		t.Fatal(e)
+	}
+	if e = builder.Seal(ctx); e != nil {
+		t.Fatal(e)
+	}
+	counts, e := builder.Load(ctx, step)
+	if e != nil || counts != (store.Counts{1, 1, 0, 0, 0}) {
+		t.Fatal(counts, e)
+	}
+	if _, e = methods.FinishRun(ctx, r.ID, counts); e != nil {
+		t.Fatal(e)
+	}
+	if e = builder.Discard(); e != nil {
+		t.Fatal(e)
+	}
+	c, e = methods.Collect(ctx, r.ID, nil)
+	if c != nil {
+		t.Fatal(c)
+	}
+	is(t, e, store.ErrEnded)
+	for _, call := range []func() error{
+		func() error { _, e := methods.GetRun(ctx, r.ID); return e }, func() error { _, e := methods.CurrentRun(ctx, "a"); return e }, func() error { _, e := methods.ListRunsAfter(ctx, "a", "", "", 1); return e }, func() error { _, e := methods.ListRowsAfter(ctx, r.ID, "", "", 1); return e }, func() error { _, e := methods.GetRow(ctx, r.ID, "row"); return e }, func() error { return methods.EachRow(ctx, r.ID, func(source.Row) error { return nil }) }, func() error { _, e := methods.PruneRuns(ctx, 1); return e }, func() error { return methods.TidyFiles(ctx) },
+	} {
+		if e = call(); e != nil {
+			t.Fatal(e)
+		}
+	}
+	r = add(t, s, "a")
+	if _, e = methods.RunningRun(ctx, "a"); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = methods.RunningRuns(ctx); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = methods.FailRun(ctx, r.ID, store.ReasonSource); e != nil {
+		t.Fatal(e)
+	}
+}
+
+// R-NFE7-22WO R-NGM3-FUND R-NMPL-CPCU R-O6XJ-AQDE R-OAL8-G1LH R-NU0Z-NBT0 R-N9AP-5877
+func TestChunkAndLoadSteps(t *testing.T) {
+	for _, chunk := range []int64{1, store.DefaultChunkBytes} {
+		t.Run(fmt.Sprint(chunk), func(t *testing.T) {
+			s, _, runs := configured(t, chunk, 2)
+			base := finish(t, s, add(t, s, "a"), source.Row{SourceID: "old"})
+			baseBytes := snapshot(t, runs)[base.ID+".db"]
+			r := add(t, s, "a")
+			calls := 0
+			var written int64
+			step := func(x context.Context, n int64, took time.Duration) error {
+				calls++
+				written += n
+				if took != 0 {
+					t.Fatal(took)
+				}
+				files := snapshot(t, runs)
+				if _, ok := files[r.ID+".db"]; ok {
+					t.Fatal("premature publication")
+				}
+				for name := range files {
+					if name != base.ID+".db" && !strings.HasPrefix(name, r.ID+".") {
+						t.Fatal(name)
+					}
+					info, e := os.Lstat(filepath.Join(runs, name))
+					if e != nil || !info.Mode().IsRegular() {
+						t.Fatal(info, e)
+					}
+				}
+				return x.Err()
+			}
+			c := collect(t, s, r, step)
+			rows := []source.Row{{SourceID: "3", Digest: "a"}, {SourceID: "1", Digest: "old"}, {SourceID: "2", Digest: "b"}}
+			if e := c.Add(ctx, rows); e != nil {
+				t.Fatal(e)
+			}
+			if chunk == 1 && calls != 3 || chunk != 1 && calls != 0 {
+				t.Fatal(calls)
+			}
+			row := source.Row{SourceID: "1", Digest: "latest", Names: []string{"new"}, Facts: []byte(" {} "), Raw: []byte(" { \"v\": 1 } ")}
+			if e := c.Add(ctx, []source.Row{row, {SourceID: "1", Digest: "last", Names: []string{"last"}, Facts: row.Facts, Raw: row.Raw}}); e != nil {
+				t.Fatal(e)
+			}
+			row.Facts[1] = 'x'
+			row.Raw[1] = 'x'
+			rows[0].Digest = "mutated"
+			if e := c.Seal(ctx); e != nil {
+				t.Fatal(e)
+			}
+			var total int64
+			for name := range snapshot(t, runs) {
+				if strings.HasPrefix(name, r.ID+".") {
+					info, e := os.Stat(filepath.Join(runs, name))
+					if e != nil {
+						t.Fatal(e)
+					}
+					total += info.Size()
+				}
+			}
+			if written != total {
+				t.Fatal(written, total)
+			}
+			if chunk != 1 && calls != 1 {
+				t.Fatal(calls)
+			}
+			loads := 0
+			previousRows := int64(0)
+			var growth int64
+			counts, e := c.Load(ctx, func(x context.Context, n int64, took time.Duration) error {
+				loads++
+				currentRows := buildRows(t, runs, r.ID)
+				if currentRows-previousRows > 2 {
+					t.Fatal("transaction exceeded row limit", currentRows, previousRows)
+				}
+				previousRows = currentRows
+				growth += n
+				return step(x, n, took)
+			})
+			if e != nil {
+				t.Fatal(e)
+			}
+			if loads < 2 || loads > 3 {
+				t.Fatal(loads)
+			}
+			info, e := os.Stat(filepath.Join(runs, r.ID+".db"))
+			if e != nil || growth != info.Size() {
+				t.Fatal(growth, info, e)
+			}
+			files := snapshot(t, runs)
+			if len(files) != 2 || files[base.ID+".db"] != baseBytes {
+				t.Fatal("unexpected files")
+			}
+			unchanged, e := s.GetRun(ctx, r.ID)
+			if e != nil || unchanged != r {
+				t.Fatal(unchanged, r, e)
+			}
+			if _, e = s.FinishRun(ctx, r.ID, counts); e != nil {
+				t.Fatal(e)
+			}
+			got, e := s.GetRow(ctx, r.ID, "1")
+			if e != nil || got.Digest != "last" || string(got.Facts) != " {} " || string(got.Raw) != " { \"v\": 1 } " {
+				t.Fatal(got, e)
+			}
+			got, e = s.GetRow(ctx, r.ID, "3")
+			if e != nil || got.Digest != "a" {
+				t.Fatal(got, e)
+			}
+		})
+	}
+}
+
+// R-O85F-OI43 R-N0RE-GU0C R-NGM3-FUND
+func TestDefaultsAndTiming(t *testing.T) {
+	_, d, runs := configured(t, 0, 0)
+	var tick int64
+	s := store.New(d, store.Config{Now: func() time.Time { tick++; return time.Unix(tick, 0) }, Rand: bytes.NewReader(append(bytes.Repeat([]byte{9}, 8), bytes.Repeat([]byte{10}, 8)...)), Runs: runs})
+	r := add(t, s, "a")
+	chunks := 0
+	step := func(_ context.Context, _ int64, took time.Duration) error {
+		if took <= 0 || took%time.Second != 0 {
+			t.Fatal(took)
+		}
+		chunks++
+		return nil
+	}
+	c := collect(t, s, r, step)
+	for n := 0; n < 3; n++ {
+		if e := c.Add(ctx, []source.Row{{SourceID: fmt.Sprint(n)}}); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if chunks != 0 {
+		t.Fatal(chunks)
+	}
+	rows := []source.Row{}
+	for n := 3; n < 5001; n++ {
+		rows = append(rows, source.Row{SourceID: fmt.Sprintf("%05d", n)})
+	}
+	if e := c.Add(ctx, rows); e != nil {
+		t.Fatal(e)
+	}
+	if e := c.Seal(ctx); e != nil {
+		t.Fatal(e)
+	}
+	loads := 0
+	var growth int64
+	counts, e := c.Load(ctx, func(_ context.Context, n int64, took time.Duration) error {
+		loads++
+		growth += n
+		if took <= 0 || took%time.Second != 0 {
+			t.Fatal(took)
+		}
+		return nil
+	})
+	if e != nil || counts.Rows != 5001 || loads < 2 || loads > 3 {
+		t.Fatal(counts, loads, e)
+	}
+	info, e := os.Stat(filepath.Join(runs, r.ID+".db"))
+	if e != nil || growth != info.Size() {
+		t.Fatal(growth, info, e)
+	}
+	empty := collect(t, s, add(t, s, "b"), step)
+	before := chunks
+	if e = empty.Seal(ctx); e != nil || before != chunks {
+		t.Fatal(e, chunks)
+	}
+	loads = 0
+	counts, e = empty.Load(ctx, func(context.Context, int64, time.Duration) error { loads++; return nil })
+	if e != nil || counts != (store.Counts{}) || loads > 1 {
+		t.Fatal(counts, loads, e)
+	}
+}
+
+// R-O4HQ-J6W0 R-NLHO-YXM5 R-NHTZ-TME2 R-O5PM-WYMP R-O39U-5F5B
+func TestCollectionRefusalsAndDiscard(t *testing.T) {
+	for _, chunk := range []int64{1, store.DefaultChunkBytes} {
+		t.Run(fmt.Sprint(chunk), func(t *testing.T) {
+			s, _, runs := configured(t, chunk, 2)
+			r := add(t, s, "a")
+			calls := 0
+			c := collect(t, s, r, func(context.Context, int64, time.Duration) error { calls++; return nil })
+			is(t, func() error { _, e := c.Load(ctx, nil); return e }(), store.ErrUnreachable)
+			if e := c.Add(ctx, []source.Row{{SourceID: "1"}}); e != nil {
+				t.Fatal(e)
+			}
+			before := snapshot(t, runs)
+			prior := calls
+			is(t, c.Add(ctx, []source.Row{{SourceID: "2"}, {}}), store.ErrUnreachable)
+			if calls != prior || !reflect.DeepEqual(snapshot(t, runs), before) {
+				t.Fatal("invalid call wrote")
+			}
+			if e := c.Seal(ctx); e != nil {
+				t.Fatal(e)
+			}
+			sealed := snapshot(t, runs)
+			is(t, c.Add(ctx, nil), store.ErrUnreachable)
+			is(t, c.Seal(ctx), store.ErrUnreachable)
+			if !reflect.DeepEqual(snapshot(t, runs), sealed) {
+				t.Fatal("sealed call wrote")
+			}
+			counts, e := c.Load(ctx, nil)
+			if e != nil || counts.Rows != 1 {
+				t.Fatal(counts, e)
+			}
+			loaded := snapshot(t, runs)
+			is(t, func() error { _, e := c.Load(ctx, nil); return e }(), store.ErrUnreachable)
+			if !reflect.DeepEqual(loaded, snapshot(t, runs)) {
+				t.Fatal("repeated load changed file")
+			}
+			if _, e = s.FinishRun(ctx, r.ID, counts); e != nil {
+				t.Fatal(e)
+			}
+			_, e = s.GetRow(ctx, r.ID, "2")
+			is(t, e, store.ErrNotFound)
+			if e = c.Discard(); e != nil {
+				t.Fatal(e)
+			}
+			if e = c.Discard(); e != nil {
+				t.Fatal(e)
+			}
+			is(t, c.Add(ctx, nil), store.ErrUnreachable)
+			is(t, c.Seal(ctx), store.ErrUnreachable)
+			is(t, func() error { _, e := c.Load(ctx, nil); return e }(), store.ErrUnreachable)
+			if !reflect.DeepEqual(loaded, snapshot(t, runs)) {
+				t.Fatal("discard changed published file")
+			}
+		})
+	}
+	for _, phase := range []string{"add", "seal", "load"} {
+		t.Run(phase, func(t *testing.T) {
+			chunk := int64(1)
+			if phase == "seal" {
+				chunk = store.DefaultChunkBytes
+			}
+			s, _, runs := configured(t, chunk, 1)
+			r := add(t, s, "a")
+			sentinel := errors.New("step refused")
+			calls := 0
+			fail := func(context.Context, int64, time.Duration) error { calls++; return sentinel }
+			var step store.Step
+			if phase != "load" {
+				step = fail
+			}
+			c := collect(t, s, r, step)
+			var e error
+			if phase == "add" {
+				e = c.Add(ctx, []source.Row{{SourceID: "1"}, {SourceID: "2"}})
+			} else {
+				if e = c.Add(ctx, []source.Row{{SourceID: "1"}, {SourceID: "2"}}); e != nil {
+					t.Fatal(e)
+				}
+				if phase == "seal" {
+					e = c.Seal(ctx)
+				} else {
+					if e = c.Seal(ctx); e != nil {
+						t.Fatal(e)
+					}
+					_, e = c.Load(ctx, fail)
+				}
+			}
+			is(t, e, sentinel)
+			is(t, e, store.ErrUnreachable)
+			if calls != 1 {
+				t.Fatal(calls)
+			}
+			before := snapshot(t, runs)
+			is(t, c.Add(ctx, nil), store.ErrUnreachable)
+			is(t, c.Seal(ctx), store.ErrUnreachable)
+			_, e = c.Load(ctx, fail)
+			is(t, e, store.ErrUnreachable)
+			if calls != 1 || !reflect.DeepEqual(before, snapshot(t, runs)) {
+				t.Fatal("poisoned build wrote")
+			}
+			if _, e = os.Lstat(filepath.Join(runs, r.ID+".db")); !os.IsNotExist(e) {
+				t.Fatal(e)
+			}
+			if e = c.Discard(); e != nil || len(snapshot(t, runs)) != 0 {
+				t.Fatal(e)
+			}
+		})
+	}
+}
+
+// R-NNXH-QH3J R-4YVC-I20A R-O39U-5F5B
+func TestDirectoryCreationAndCollectionOwnership(t *testing.T) {
+	for _, chunk := range []int64{1, store.DefaultChunkBytes} {
+		t.Run(fmt.Sprint(chunk), func(t *testing.T) {
+			s, _, runs := configured(t, chunk, 2)
+			r := add(t, s, "a")
+			c := collect(t, s, r, nil)
+			if _, e := os.Lstat(runs); !os.IsNotExist(e) {
+				t.Fatal(e)
+			}
+			if e := c.Add(ctx, []source.Row{{SourceID: "1"}}); e != nil {
+				t.Fatal(e)
+			}
+			if chunk != 1 {
+				if _, e := os.Lstat(runs); !os.IsNotExist(e) {
+					t.Fatal(e)
+				}
+			}
+			if e := c.Seal(ctx); e != nil {
+				t.Fatal(e)
+			}
+			for _, dir := range []string{runs, filepath.Dir(runs)} {
+				info, e := os.Stat(dir)
+				if e != nil || info.Mode().Perm() != 0700 {
+					t.Fatal(info, e)
+				}
+			}
+			second := collect(t, s, r, nil)
+			if e := second.Add(ctx, []source.Row{{SourceID: "2"}}); e != nil {
+				t.Fatal(e)
+			}
+			if e := second.Seal(ctx); e != nil {
+				t.Fatal(e)
+			}
+			before := snapshot(t, runs)
+			if e := c.Discard(); e != nil {
+				t.Fatal(e)
+			}
+			remaining := snapshot(t, runs)
+			if len(remaining) != 1 || len(before) != 2 {
+				t.Fatal(len(before), len(remaining))
+			}
+			target := filepath.Join(runs, r.ID+".db")
+			if e := os.Mkdir(target, 0700); e != nil {
+				t.Fatal(e)
+			}
+			if e := os.WriteFile(filepath.Join(target, "keep"), []byte("kept"), 0600); e != nil {
+				t.Fatal(e)
+			}
+			_, e := second.Load(ctx, nil)
+			is(t, e, store.ErrUnreachable)
+			if e = second.Discard(); e != nil {
+				t.Fatal(e)
+			}
+			b, e := os.ReadFile(filepath.Clean(filepath.Join(target, "keep")))
+			if e != nil || string(b) != "kept" {
+				t.Fatal(string(b), e)
+			}
+			if len(snapshot(t, runs)) != 1 {
+				t.Fatal("temporary files remain")
+			}
+		})
+	}
+	for _, chunk := range []int64{1, store.DefaultChunkBytes} {
+		s, _, runs := configured(t, chunk, 2)
+		r := add(t, s, "a")
+		if e := os.MkdirAll(filepath.Dir(runs), 0700); e != nil {
+			t.Fatal(e)
+		}
+		if e := os.WriteFile(runs, []byte("sentinel"), 0600); e != nil {
+			t.Fatal(e)
+		}
+		c := collect(t, s, r, nil)
+		e := c.Add(ctx, []source.Row{{SourceID: "1"}})
+		if chunk != 1 {
+			if e != nil {
+				t.Fatal(e)
+			}
+			e = c.Seal(ctx)
+		}
+		is(t, e, store.ErrUnreachable)
+		b, e := os.ReadFile(filepath.Clean(runs))
+		if e != nil || string(b) != "sentinel" {
+			t.Fatal(string(b), e)
+		}
+	}
+}
+
+// R-NXOO-SN13 R-NWGS-EVAE R-NYWL-6ERS R-OBT4-TTC6 R-0DYP-DMDK
+func TestEndValidationAndLoadAfterEnd(t *testing.T) {
+	s, _, runs := configured(t, 1, 1)
+	r := add(t, s, "a")
+	c := collect(t, s, r, nil)
+	if e := c.Add(ctx, []source.Row{{SourceID: "1"}}); e != nil {
+		t.Fatal(e)
+	}
+	if e := c.Seal(ctx); e != nil {
+		t.Fatal(e)
+	}
+	before := snapshot(t, runs)
+	for _, n := range []store.Counts{{Rows: -1}, {New: -1}, {Changed: -1}, {Unchanged: -1}, {Gone: -1}, {Rows: 1}, {Rows: 0, New: 1}} {
+		for _, id := range []string{r.ID, "missing"} {
+			got, e := s.FinishRun(ctx, id, n)
+			is(t, e, store.ErrUnreachable)
+			if got != (store.Run{}) {
+				t.Fatal(got)
+			}
+		}
+	}
+	for _, reason := range []string{"", "unknown"} {
+		got, e := s.FailRun(ctx, "missing", reason)
+		is(t, e, store.ErrUnreachable)
+		if got != (store.Run{}) {
+			t.Fatal(got)
+		}
+	}
+	got, e := s.FinishRun(ctx, r.ID, store.Counts{})
+	is(t, e, store.ErrMissing)
+	if got != (store.Run{}) {
+		t.Fatal(got)
+	}
+	if !reflect.DeepEqual(before, snapshot(t, runs)) {
+		t.Fatal("end refusal changed files")
+	}
+	for _, reason := range []string{store.ReasonSource, store.ReasonStore, store.ReasonInterrupted} {
+		if reason != store.ReasonSource {
+			r = add(t, s, "a")
+		}
+		expected := r
+		expected.Status = store.StatusFailed
+		expected.Reason = reason
+		expected.Finished = r.Started
+		failed, e := s.FailRun(ctx, r.ID, reason)
+		if e != nil || failed != expected {
+			t.Fatal(failed, expected, e)
+		}
+		_, e = s.FinishRun(ctx, r.ID, store.Counts{})
+		is(t, e, store.ErrEnded)
+		_, e = s.FailRun(ctx, r.ID, reason)
+		is(t, e, store.ErrEnded)
+		got, e = s.GetRun(ctx, r.ID)
+		if e != nil || got != expected {
+			t.Fatal(got, e)
+		}
+	}
+	if !reflect.DeepEqual(before, snapshot(t, runs)) {
+		t.Fatal("failure changed files")
+	}
+	_, e = c.Load(ctx, nil)
+	is(t, e, store.ErrEnded)
+	// A fresh sealed collection's run is pruned before its first Load.
+	r = add(t, s, "a")
+	removed := collect(t, s, r, nil)
+	if e = removed.Seal(ctx); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.FailRun(ctx, r.ID, store.ReasonSource); e != nil {
+		t.Fatal(e)
+	}
+	finish(t, s, add(t, s, "a"))
+	if _, e = s.FailRun(ctx, add(t, s, "a").ID, store.ReasonSource); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.PruneRuns(ctx, 1); e != nil {
+		t.Fatal(e)
+	}
+	_, e = removed.Load(ctx, nil)
+	is(t, e, store.ErrNotFound)
+	for _, id := range []string{"absent"} {
+		_, e = s.FinishRun(ctx, id, store.Counts{})
+		is(t, e, store.ErrNotFound)
+		_, e = s.FailRun(ctx, id, store.ReasonSource)
+		is(t, e, store.ErrNotFound)
+	}
+	for _, keep := range []int64{0, -1} {
+		got, e := s.PruneRuns(ctx, keep)
+		if got != nil {
+			t.Fatal(got)
+		}
+		is(t, e, store.ErrUnreachable)
+	}
+}
+
+// R-NB19-VGJU R-NC96-98AJ R-NDH2-N018 R-OAL8-G1LH
+func TestComparisonFallback(t *testing.T) {
+	for _, kind := range []string{"gone", "garbage", "header", "other database", "directory", "symlink", "corrupt pages", "missing names"} {
+		t.Run(kind, func(t *testing.T) {
+			s, _, runs := configured(t, 4096, 2)
+			base := finish(t, s, add(t, s, "a"), source.Row{SourceID: "2", Digest: "b"}, source.Row{SourceID: "3", Digest: "x"}, source.Row{SourceID: "4", Digest: "d"})
+			newestRows := []source.Row{{SourceID: "bogus", Digest: "bad"}}
+			if kind == "corrupt pages" {
+				newestRows = nil
+				for n := 0; n < 200; n++ {
+					newestRows = append(newestRows, source.Row{SourceID: fmt.Sprintf("%04d", n), Digest: "bad", Raw: []byte(strings.Repeat("x", 4000))})
+				}
+			}
+			newest := finish(t, s, add(t, s, "a"), newestRows...)
+			path := filepath.Join(runs, newest.ID+".db")
+			switch kind {
+			case "gone":
+				if e := os.Remove(path); e != nil {
+					t.Fatal(e)
+				}
+			case "garbage":
+				if e := os.WriteFile(path, []byte("not sqlite"), 0600); e != nil {
+					t.Fatal(e)
+				}
+			case "header":
+				if e := os.WriteFile(path, append([]byte("SQLite format 3\x00"), []byte("bad")...), 0600); e != nil {
+					t.Fatal(e)
+				}
+			case "other database":
+				otherPath := filepath.Join(t.TempDir(), "other.db")
+				other, e := db.Open(ctx, db.Config{Path: otherPath, Migrations: fstest.MapFS{}, Now: func() time.Time { return time.Unix(0, 0) }})
+				if e != nil {
+					t.Fatal(e)
+				}
+				if e = other.Write(ctx, func(tx *sql.Tx) error { _, e := tx.ExecContext(ctx, "CREATE TABLE other(n TEXT)"); return e }); e != nil {
+					t.Fatal(e)
+				}
+				if e = other.Close(); e != nil {
+					t.Fatal(e)
+				}
+				b, e := os.ReadFile(filepath.Clean(otherPath))
+				if e != nil {
+					t.Fatal(e)
+				}
+				if e = writeRunFile(runs, newest.ID, b); e != nil {
+					t.Fatal(e)
+				}
+			case "directory":
+				if e := os.Remove(path); e != nil {
+					t.Fatal(e)
+				}
+				if e := os.Mkdir(path, 0700); e != nil {
+					t.Fatal(e)
+				}
+			case "symlink":
+				if e := os.Remove(path); e != nil {
+					t.Fatal(e)
+				}
+				if e := os.Symlink(filepath.Join(runs, base.ID+".db"), path); e != nil {
+					t.Fatal(e)
+				}
+			case "corrupt pages":
+				b, e := os.ReadFile(filepath.Clean(path))
+				if e != nil {
+					t.Fatal(e)
+				}
+				for n := 4096; n < len(b); n++ {
+					b[n] = 0xa5
+				}
+				if e = writeRunFile(runs, newest.ID, b); e != nil {
+					t.Fatal(e)
+				}
+			case "missing names":
+				other, e := db.Open(ctx, db.Config{Path: path, Migrations: fstest.MapFS{}, Now: func() time.Time { return time.Unix(0, 0) }})
+				if e != nil {
+					t.Fatal(e)
+				}
+				if e = other.Write(ctx, func(tx *sql.Tx) error { _, e := tx.ExecContext(ctx, "DROP TABLE names"); return e }); e != nil {
+					t.Fatal(e)
+				}
+				if e = other.Close(); e != nil {
+					t.Fatal(e)
+				}
+			}
+			before := snapshot(t, runs)
+			r := add(t, s, "a")
+			c := collect(t, s, r, nil)
+			counts := load(t, c, []source.Row{{SourceID: "1", Digest: "a"}, {SourceID: "2", Digest: "b"}, {SourceID: "3", Digest: "c"}}, nil)
+			if counts != (store.Counts{3, 1, 1, 1, 1}) {
+				t.Fatal(counts)
+			}
+			after := snapshot(t, runs)
+			for name, b := range before {
+				if after[name] != b {
+					t.Fatal("comparison changed", name)
+				}
+			}
+			if _, e := s.FinishRun(ctx, r.ID, counts); e != nil {
+				t.Fatal(e)
+			}
+			if e := os.Remove(filepath.Join(runs, r.ID+".db")); e != nil {
+				t.Fatal(e)
+			}
+			if e := os.Remove(filepath.Join(runs, base.ID+".db")); e != nil {
+				t.Fatal(e)
+			}
+			finish(t, s, add(t, s, "other"), source.Row{SourceID: "1", Digest: "a"})
+			c = collect(t, s, add(t, s, "a"), nil)
+			counts = load(t, c, []source.Row{{SourceID: "1", Digest: "a"}}, nil)
+			if counts != (store.Counts{1, 1, 0, 0, 0}) {
+				t.Fatal(counts)
+			}
+		})
+	}
+}
+
+// R-OB3L-046Q R-OCBH-DVXF R-OERA-5FET R-O9VO-MCG1
+func TestFileReadFailuresAndStreamDeletion(t *testing.T) {
+	for _, kind := range []string{"gone", "parent file", "garbage", "directory", "intact"} {
+		t.Run(kind, func(t *testing.T) {
+			s, _, runs := configured(t, 1, 2)
+			r := finish(t, s, add(t, s, "a"), source.Row{SourceID: "1", Raw: []byte("{}")})
+			path := filepath.Join(runs, r.ID+".db")
+			want := store.ErrUnreachable
+			switch kind {
+			case "gone":
+				if e := os.Remove(path); e != nil {
+					t.Fatal(e)
+				}
+				want = store.ErrMissing
+			case "parent file":
+				if e := os.RemoveAll(runs); e != nil {
+					t.Fatal(e)
+				}
+				if e := os.WriteFile(runs, []byte("sentinel"), 0600); e != nil {
+					t.Fatal(e)
+				}
+				want = store.ErrMissing
+			case "garbage":
+				if e := os.WriteFile(path, []byte("garbage"), 0600); e != nil {
+					t.Fatal(e)
+				}
+			case "directory":
+				if e := os.Remove(path); e != nil {
+					t.Fatal(e)
+				}
+				if e := os.Mkdir(path, 0700); e != nil {
+					t.Fatal(e)
+				}
+			case "intact":
+				want = nil
+			}
+			var before map[string]string
+			if kind != "parent file" {
+				before = snapshot(t, runs)
+			}
+			for _, call := range []func() error{
+				func() error {
+					out, e := s.ListRowsAfter(ctx, r.ID, "", "", 1)
+					if want != nil && out != nil {
+						t.Fatal(out)
+					}
+					return e
+				}, func() error {
+					out, e := s.ListRowsBefore(ctx, r.ID, "", "", 1)
+					if want != nil && out != nil {
+						t.Fatal(out)
+					}
+					return e
+				}, func() error {
+					out, e := s.GetRow(ctx, r.ID, "1")
+					if want != nil && !reflect.DeepEqual(out, source.Row{}) {
+						t.Fatal(out)
+					}
+					return e
+				}, func() error {
+					return s.EachRow(ctx, r.ID, func(source.Row) error {
+						if want != nil {
+							t.Fatal("callback")
+						}
+						return nil
+					})
+				},
+			} {
+				e := call()
+				if want == nil {
+					if e != nil {
+						t.Fatal(e)
+					}
+				} else {
+					is(t, e, want)
+					for _, other := range []error{store.ErrMissing, store.ErrNotFound, store.ErrUnreachable} {
+						if !errors.Is(want, other) && errors.Is(e, other) {
+							t.Fatal(e)
+						}
+					}
+				}
+			}
+			if kind != "parent file" {
+				if !reflect.DeepEqual(before, snapshot(t, runs)) {
+					t.Fatal("read changed files")
+				}
+			} else {
+				b, e := os.ReadFile(filepath.Clean(runs))
+				if e != nil || string(b) != "sentinel" {
+					t.Fatal(string(b), e)
+				}
+			}
+		})
+	}
+	for _, prune := range []bool{false, true} {
+		s, _, runs := configured(t, 1, 1)
+		r := finish(t, s, add(t, s, "a"), source.Row{SourceID: "1"}, source.Row{SourceID: "2"}, source.Row{SourceID: "3"})
+		if prune {
+			finish(t, s, add(t, s, "a"))
+		}
+		ids := []string{}
+		e := s.EachRow(ctx, r.ID, func(row source.Row) error {
+			ids = append(ids, row.SourceID)
+			if len(ids) == 1 {
+				if prune {
+					_, e := s.PruneRuns(ctx, 1)
+					return e
+				}
+				return os.Remove(filepath.Join(runs, r.ID+".db"))
+			}
+			return nil
+		})
+		if e != nil || !reflect.DeepEqual(ids, []string{"1", "2", "3"}) {
+			t.Fatal(ids, e)
+		}
+	}
+}
+
+func writeRunFile(runs, id string, b []byte) error {
+	root, e := os.OpenRoot(runs)
+	if e != nil {
+		return e
+	}
+	defer func() { _ = root.Close() }()
+	return root.WriteFile(id+".db", b, 0600)
+}
+
+// R-OJMV-OIDL R-OKUS-2A4A R-OH72-WYW7
+func TestOutageAndContextPrecedence(t *testing.T) {
+	s, d, runs := configured(t, 1, 2)
+	r := add(t, s, "a")
+	finish(t, s, add(t, s, "eligible"), source.Row{SourceID: "old"})
+	finish(t, s, add(t, s, "eligible"), source.Row{SourceID: "new"})
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	for _, mode := range []string{"cancelled", "failing", "closed"} {
+		t.Run(mode, func(t *testing.T) {
+			c := collect(t, s, r, nil)
+			if e := c.Add(ctx, []source.Row{{SourceID: "1"}}); e != nil {
+				t.Fatal(e)
+			}
+			if e := c.Seal(ctx); e != nil {
+				t.Fatal(e)
+			}
+			before := snapshot(t, runs)
+			x := ctx
+			switch mode {
+			case "cancelled":
+				x = cancelled
+			case "failing":
+				d.SetFailing(true)
+			default:
+				if e := d.Close(); e != nil {
+					t.Fatal(e)
+				}
+			}
+			checks := []func() error{
+				func() error { _, e := s.AddRun(x, store.Run{}); return e }, func() error { _, e := s.Collect(x, "missing", nil); return e }, func() error { _, e := s.FinishRun(x, "missing", store.Counts{Rows: -1}); return e }, func() error { _, e := s.FailRun(x, "missing", "bad"); return e }, func() error { _, e := s.GetRun(x, "missing"); return e }, func() error { _, e := s.ListRunsAfter(x, "", "", "", 0); return e }, func() error { _, e := s.ListRunsBefore(x, "", "", "", 0); return e }, func() error { _, e := s.CurrentRun(x, "missing"); return e }, func() error { _, e := s.RunningRun(x, "missing"); return e }, func() error { _, e := s.RunningRuns(x); return e }, func() error { _, e := s.ListRowsAfter(x, "missing", "", "", 0); return e }, func() error { _, e := s.ListRowsBefore(x, "missing", "", "", 0); return e }, func() error { _, e := s.GetRow(x, "missing", "missing"); return e }, func() error { return s.EachRow(x, r.ID, func(source.Row) error { t.Fatal("callback"); return nil }) }, func() error { _, e := s.PruneRuns(x, 0); return e }, func() error { _, e := s.PruneRuns(x, 1); return e }, func() error { return s.TidyFiles(x) }, func() error {
+					_, e := c.Load(x, func(context.Context, int64, time.Duration) error { t.Fatal("step"); return nil })
+					return e
+				},
+			}
+			if mode == "cancelled" {
+				checks = append(checks, func() error { return c.Add(x, []source.Row{{}}) }, func() error { return c.Seal(x) })
+			}
+			for _, check := range checks {
+				e := check()
+				is(t, e, store.ErrUnreachable)
+				if mode == "cancelled" {
+					is(t, e, x.Err())
+				}
+				for _, wrong := range []error{store.ErrNotFound, store.ErrBusy, store.ErrDelivered, store.ErrEnded, store.ErrMissing, store.ErrLocked} {
+					if errors.Is(e, wrong) {
+						t.Fatal(e)
+					}
+				}
+			}
+			if !reflect.DeepEqual(before, snapshot(t, runs)) {
+				t.Fatal("outage changed files")
+			}
+			if mode == "failing" {
+				d.SetFailing(false)
+			}
+		})
+	}
+}
+
+// R-O3S6-PHQK
+func TestLockedCatalogFinish(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "catalog")
+	s, d := open(t, path, nil)
+	r := add(t, s, "a")
+	c := collect(t, s, r, nil)
+	counts := load(t, c, []source.Row{{SourceID: "1"}}, nil)
+	_, locker := open(t, path, nil)
+	held := make(chan error, 1)
+	release := make(chan struct{})
+	ended := make(chan error, 1)
+	rollback := errors.New("release")
+	go func() {
+		ended <- locker.Write(ctx, func(tx *sql.Tx) error {
+			_, e := tx.ExecContext(ctx, `UPDATE runs SET "rows"="rows" WHERE id=?`, r.ID)
+			held <- e
+			if e != nil {
+				return e
+			}
+			<-release
+			return rollback
+		})
+	}()
+	unlock := sync.OnceFunc(func() {
+		close(release)
+		if e := <-ended; !errors.Is(e, rollback) {
+			t.Error(e)
+		}
+	})
+	t.Cleanup(unlock)
+	if e := <-held; e != nil {
+		t.Fatal(e)
+	}
+	before := snapshot(t, filepath.Join(dir, "runs"))
+	_, e := s.FinishRun(ctx, r.ID, counts)
+	is(t, e, store.ErrLocked)
+	is(t, e, store.ErrUnreachable)
+	unlock()
+	got, e := s.GetRun(ctx, r.ID)
+	if e != nil || got != r {
+		t.Fatal(got, e)
+	}
+	if !reflect.DeepEqual(before, snapshot(t, filepath.Join(dir, "runs"))) {
+		t.Fatal("locked write changed files")
+	}
+	for _, mode := range []string{"missing", "cancelled", "failing"} {
+		var e error
+		switch mode {
+		case "missing":
+			_, e = s.FinishRun(ctx, "missing", counts)
+			is(t, e, store.ErrNotFound)
+		case "cancelled":
+			x, cancel := context.WithCancel(ctx)
+			cancel()
+			_, e = s.FinishRun(x, r.ID, counts)
+			is(t, e, store.ErrUnreachable)
+		case "failing":
+			d.SetFailing(true)
+			_, e = s.FinishRun(ctx, r.ID, counts)
+			is(t, e, store.ErrUnreachable)
+			d.SetFailing(false)
+		}
+		if errors.Is(e, store.ErrLocked) {
+			t.Fatal(e)
+		}
+	}
+}
+
+// R-O2KA-BPZV
+func TestConcurrentCollections(t *testing.T) {
+	s, _, _ := configured(t, 1, 2)
+	a := add(t, s, "a")
+	b := add(t, s, "b")
+	var wg sync.WaitGroup
+	for _, r := range []store.Run{a, b} {
+		wg.Go(func() {
+			c, e := s.Collect(ctx, r.ID, nil)
+			if e != nil {
+				t.Error(e)
+				return
+			}
+			defer func() { _ = c.Discard() }()
+			for n := 0; n < 20; n++ {
+				if e = c.Add(ctx, []source.Row{{SourceID: fmt.Sprint(n), Digest: r.Scraper}}); e != nil {
+					t.Error(e)
+					return
+				}
+				if _, e = s.GetRun(ctx, r.ID); e != nil {
+					t.Error(e)
+					return
+				}
+			}
+			if e = c.Seal(ctx); e != nil {
+				t.Error(e)
+				return
+			}
+			counts, e := c.Load(ctx, nil)
+			if e != nil || counts != (store.Counts{20, 20, 0, 0, 0}) {
+				t.Error(counts, e)
+				return
+			}
+			if _, e = s.FinishRun(ctx, r.ID, counts); e != nil {
+				t.Error(e)
+				return
+			}
+		})
+	}
+	wg.Wait()
+	for _, r := range []store.Run{a, b} {
+		rows, e := s.ListRowsAfter(ctx, r.ID, "", "", 30)
+		if e != nil || len(rows) != 20 {
+			t.Fatal(rows, e)
+		}
+		for _, row := range rows {
+			if row.Scraper != r.Scraper || row.Run != r.ID || row.Digest != r.Scraper {
+				t.Fatal(row)
+			}
+		}
+	}
+}
+
+// R-OIEZ-AQMW R-OD11-7L2V R-OH72-WYW7 R-OTK5-HRD4
+func TestLegacyTablesPruneAndTidy(t *testing.T) {
+	s, d, runs := configured(t, 1, 1)
+	// Seed legacy rows for the identifiers the deterministic random source will mint.
+	if e := d.Write(ctx, func(tx *sql.Tx) error {
+		for _, id := range []string{"run_0101010101010101", "run_0202020202020202"} {
+			if _, e := tx.ExecContext(ctx, `INSERT INTO rows("run",source_id,scraper,collected,digest,name,names,names_lower,street,city,state,zip,county,people,facts,raw) VALUES(?, 'legacy','a','','bad','','["legacy"]','legacy','','','','','','[]','{}','{}')`, id); e != nil {
+				return e
+			}
+			if _, e := tx.ExecContext(ctx, `INSERT INTO row_names VALUES(?,'legacy','legacy','legacy')`, id); e != nil {
+				return e
+			}
+		}
+		for _, q := range []string{`CREATE TRIGGER guard_rows_INSERT BEFORE INSERT ON rows BEGIN SELECT RAISE(ABORT,'legacy write'); END`, `CREATE TRIGGER guard_rows_UPDATE BEFORE UPDATE ON rows BEGIN SELECT RAISE(ABORT,'legacy write'); END`, `CREATE TRIGGER guard_rows_DELETE BEFORE DELETE ON rows BEGIN SELECT RAISE(ABORT,'legacy write'); END`, `CREATE TRIGGER guard_row_names_INSERT BEFORE INSERT ON row_names BEGIN SELECT RAISE(ABORT,'legacy write'); END`, `CREATE TRIGGER guard_row_names_UPDATE BEFORE UPDATE ON row_names BEGIN SELECT RAISE(ABORT,'legacy write'); END`, `CREATE TRIGGER guard_row_names_DELETE BEFORE DELETE ON row_names BEGIN SELECT RAISE(ABORT,'legacy write'); END`} {
+			if _, e := tx.ExecContext(ctx, q); e != nil {
+				return e
+			}
+		}
+		return nil
+	}); e != nil {
+		t.Fatal(e)
+	}
+	done := finish(t, s, add(t, s, "a"), source.Row{SourceID: "file", Names: []string{"file"}})
+	failed, e := s.FailRun(ctx, add(t, s, "b").ID, store.ReasonSource)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, call := range []func() error{
+		func() error {
+			rows, e := s.ListRowsAfter(ctx, done.ID, "", "", 10)
+			if len(rows) != 1 || rows[0].SourceID != "file" {
+				t.Fatal(rows)
+			}
+			return e
+		}, func() error {
+			rows, e := s.ListRowsBefore(ctx, done.ID, "", "", 10)
+			if len(rows) != 1 || rows[0].SourceID != "file" {
+				t.Fatal(rows)
+			}
+			return e
+		}, func() error { _, e := s.GetRow(ctx, done.ID, "file"); return e }, func() error {
+			return s.EachRow(ctx, done.ID, func(r source.Row) error {
+				if r.SourceID != "file" {
+					t.Fatal(r)
+				}
+				return nil
+			})
+		},
+	} {
+		if e = call(); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if e = os.Remove(filepath.Join(runs, done.ID+".db")); e != nil {
+		t.Fatal(e)
+	}
+	_, e = s.GetRow(ctx, done.ID, "legacy")
+	is(t, e, store.ErrMissing)
+	// A directory at a pruned file is deleted, too.
+	if e = os.Mkdir(filepath.Join(runs, done.ID+".db"), 0700); e != nil {
+		t.Fatal(e)
+	}
+	if e = os.WriteFile(filepath.Join(runs, done.ID+".db", "keep"), []byte("x"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	newest := finish(t, s, add(t, s, "a"), source.Row{SourceID: "newest"})
+	if _, e = s.FailRun(ctx, add(t, s, "b").ID, store.ReasonSource); e != nil {
+		t.Fatal(e)
+	}
+	if e = d.Write(ctx, func(tx *sql.Tx) error {
+		_, e := tx.ExecContext(ctx, "CREATE TRIGGER refuse_prune BEFORE DELETE ON runs BEGIN SELECT RAISE(ABORT,'refuse'); END")
+		return e
+	}); e != nil {
+		t.Fatal(e)
+	}
+	before := snapshot(t, runs)
+	_, e = s.PruneRuns(ctx, 1)
+	is(t, e, store.ErrUnreachable)
+	if !reflect.DeepEqual(before, snapshot(t, runs)) {
+		t.Fatal("failed prune changed files")
+	}
+	if e = d.Write(ctx, func(tx *sql.Tx) error { _, e := tx.ExecContext(ctx, "DROP TRIGGER refuse_prune"); return e }); e != nil {
+		t.Fatal(e)
+	}
+	removed, e := s.PruneRuns(ctx, 1)
+	if e != nil || !reflect.DeepEqual(removed, []store.Run{done, failed}) {
+		t.Fatal(removed, e)
+	}
+	if _, e = os.Lstat(filepath.Join(runs, done.ID+".db")); !os.IsNotExist(e) {
+		t.Fatal(e)
+	}
+	// The legacy records remain independent of both pruned run records.
+	if e = d.Read(ctx, func(tx *sql.Tx) error {
+		for _, table := range []string{"rows", "row_names"} {
+			var n int
+			if e := tx.QueryRowContext(ctx, "SELECT count(*) FROM "+table).Scan(&n); e != nil {
+				return e
+			}
+			if n != 2 {
+				t.Fatal(table, n)
+			}
+		}
+		return nil
+	}); e != nil {
+		t.Fatal(e)
+	}
+	running := add(t, s, "a")
+	for _, name := range []string{running.ID + ".db", failed.ID + ".db", newest.ID + ".chunk", "unknown.db", "notes.txt"} {
+		if e = os.WriteFile(filepath.Join(runs, name), []byte("trash"), 0600); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if e = os.Mkdir(filepath.Join(runs, "junk"), 0700); e != nil {
+		t.Fatal(e)
+	}
+	if e = os.WriteFile(filepath.Join(runs, "junk", "child"), []byte("trash"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	kept := snapshot(t, runs)[newest.ID+".db"]
+	if e = s.TidyFiles(ctx); e != nil {
+		t.Fatal(e)
+	}
+	if got := snapshot(t, runs); len(got) != 1 || got[newest.ID+".db"] != kept {
+		t.Fatal("tidy contents", len(got))
+	}
+	records, e := s.ListRunsAfter(ctx, "", "", "", 30)
+	if e != nil || len(records) != 3 {
+		t.Fatal(records, e)
+	}
+	if e = os.RemoveAll(runs); e != nil {
+		t.Fatal(e)
+	}
+	if e = s.TidyFiles(ctx); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = os.Lstat(runs); !os.IsNotExist(e) {
+		t.Fatal(e)
+	}
+	if e = os.WriteFile(runs, []byte("sentinel"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	if e = s.TidyFiles(ctx); e != nil {
+		t.Fatal(e)
+	}
+	b, e := os.ReadFile(filepath.Clean(runs))
+	if e != nil || string(b) != "sentinel" {
+		t.Fatal(string(b), e)
+	}
+}
+
+func buildRows(t *testing.T, runs, id string) int64 {
+	t.Helper()
+	entries, e := os.ReadDir(runs)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), id+".") {
+			continue
+		}
+		d, e := db.OpenImmutable(ctx, filepath.Join(runs, entry.Name()))
+		if e != nil {
+			continue
+		}
+		var n int64
+		e = d.Read(ctx, func(tx *sql.Tx) error { return tx.QueryRowContext(ctx, "SELECT count(*) FROM rows").Scan(&n) })
+		closeErr := d.Close()
+		if e != nil || closeErr != nil {
+			t.Fatal(e, closeErr)
+		}
+		return n
+	}
+	t.Fatal("no SQLite build file")
+	return 0
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -56,12 +57,13 @@ func (*scraper) Name() string                                             { retu
 func (s *scraper) Scrape(context.Context, func([]source.Row) error) error { s.calls.Add(1); return nil }
 
 type fixture struct {
-	cfg  web.Config
-	d    *db.DB
-	tc   *telemetry.Capture
-	ec   *events.Capture
-	fake *scraper
-	h    http.Handler
+	runsDir string
+	cfg     web.Config
+	d       *db.DB
+	tc      *telemetry.Capture
+	ec      *events.Capture
+	fake    *scraper
+	h       http.Handler
 }
 
 func setup(t *testing.T) *fixture {
@@ -76,16 +78,17 @@ func setup(t *testing.T) *fixture {
 	ec := new(events.Capture)
 	w := telemetry.New(telemetry.Config{Service: pages.ServiceName, Sink: tc, Now: now, Rand: fixed(0x5a), Stderr: io.Discard})
 	em := events.New(events.Config{Service: pages.ServiceName, Sink: ec, Now: now, Rand: fixed(0x5a), Telemetry: w, Emits: trail.Emits(), Stderr: io.Discard})
-	st := store.New(d, store.Config{Now: now, Rand: &random{}})
+	runsDir := t.TempDir()
+	st := store.New(d, store.Config{Now: now, Rand: &random{}, Runs: runsDir})
 	fake := new(scraper)
 	reg := scrapers.New(fake)
-	eng := runs.New(runs.Config{Store: st, Scrapers: reg, Telemetry: w, Events: em, Sleep: func(context.Context, time.Duration) {}, Stderr: io.Discard})
+	eng := runs.New(runs.Config{Store: st, Scrapers: reg, Telemetry: w, Events: em, Sleep: func(context.Context, time.Duration) {}, Stderr: io.Discard, Now: now, Budget: 1 << 30, PressureLimit: 1 << 30})
 	var handler func(web.Config) http.Handler
 	cfg := web.Config{func(u page.User) page.Banner {
 		return page.Banner{Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 	}, mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: "test", Telemetry: w}), "", st, reg, eng, w, em}
 	handler = web.Handler
-	f := &fixture{cfg: cfg, d: d, tc: tc, ec: ec, fake: fake, h: handler(cfg)}
+	f := &fixture{runsDir: runsDir, cfg: cfg, d: d, tc: tc, ec: ec, fake: fake, h: handler(cfg)}
 	t.Cleanup(func() {
 		eng.Drain(context.Background())
 		em.Shutdown(context.Background())
@@ -100,12 +103,10 @@ func (f *fixture) seed(t *testing.T, status string, rows ...source.Row) store.Ru
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = f.cfg.Store.PutRows(t.Context(), r.ID, rows); err != nil {
-		t.Fatal(err)
-	}
+
 	switch status {
 	case store.StatusDone:
-		r, err = f.cfg.Store.FinishRun(t.Context(), r.ID)
+		r, err = f.cfg.Store.FinishRun(t.Context(), r.ID, loadRows(t, f.cfg.Store, r.ID, rows))
 	case store.StatusFailed:
 		r, err = f.cfg.Store.FailRun(t.Context(), r.ID, store.ReasonSource)
 	}
@@ -161,7 +162,7 @@ func TestCurrentRefusals(t *testing.T) {
 	}
 }
 
-// R-DWBI-3K05 R-DXJE-HBQU R-E173-MMYX R-E2F0-0EPM R-DSNS-Y8S2
+// R-DWBI-3K05 R-DXJE-HBQU R-WW7P-NGYF R-E2F0-0EPM R-DSNS-Y8S2
 func TestReadRecordsAndRows(t *testing.T) {
 	f := setup(t)
 	row := func(id string) source.Row {
@@ -600,6 +601,66 @@ func TestFailingHandlerEmitsNoRunEvents(t *testing.T) {
 	for _, ev := range f.tc.Events() {
 		if ev.Name == trail.Started || ev.Name == trail.Finished {
 			t.Fatal("failed request recorded run event")
+		}
+	}
+}
+
+func loadRows(t *testing.T, st *store.Store, id string, rows []source.Row) store.Counts {
+	t.Helper()
+	step := func(context.Context, int64, time.Duration) error { return nil }
+	c, err := st.Collect(t.Context(), id, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = c.Add(t.Context(), rows); err != nil {
+		t.Fatal(err)
+	}
+	if err = c.Seal(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	counts, err := c.Load(t.Context(), step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return counts
+}
+
+// R-WXFM-18P4 R-WYNI-F0FT R-1MSM-UZJN
+func TestRunFileRefusalsLeaveCatalogAnswers(t *testing.T) {
+	f := setup(t)
+	done := f.seed(t, store.StatusDone, source.Row{SourceID: "one", Facts: json.RawMessage(`{}`), Raw: json.RawMessage(`{"fixture":true}`)})
+	file := filepath.Join(f.runsDir, done.ID+".db")
+	for _, missing := range []bool{true, false} {
+		if missing {
+			if err := os.Remove(file); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			if err := os.WriteFile(file, []byte("broken fixture"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		line := store.Unreachable
+		if missing {
+			line = store.Missing
+		}
+		for _, method := range []string{"GET", "HEAD"} {
+			body := line + "\n"
+			if method == "HEAD" {
+				body = ""
+			}
+			assertResponse(t, request(f.h, method, "/runs/"+done.ID+"/rows", "user"), 503, "text/plain; charset=utf-8", body)
+			for _, path := range []string{"/runs/" + done.ID + "/record", "/scrapers/fmcsa/current"} {
+				b, err := json.Marshal(runs.RecordOf(done))
+				if err != nil {
+					t.Fatal(err)
+				}
+				body := string(b) + "\n"
+				if method == "HEAD" {
+					body = ""
+				}
+				assertResponse(t, request(f.h, method, path, "user"), 200, "application/json", body)
+			}
 		}
 	}
 }

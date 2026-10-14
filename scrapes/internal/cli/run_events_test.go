@@ -143,7 +143,8 @@ func TestRunCronEventCause(t *testing.T) {
 	}
 }
 
-// R-2YN2-G6QC R-724S-I1KQ R-LH2Z-H4CC
+// R-FPZC-TBXO R-2YN2-G6QC R-724S-I1KQ
+// R-FPZC-TBXO
 func TestRunReadRequestsAndRefusalsHaveNoRunEventsOrSiblingCalls(t *testing.T) {
 	f := startRun(t, runOptions{DefaultSinks: true})
 	id := runID(t, startScrape(t, f, fixtureCaller))
@@ -346,7 +347,7 @@ func TestRunAssembledRowsPaginationAndRawRecord(t *testing.T) {
 	}
 }
 
-// R-2YN2-G6QC R-LH2Z-H4CC
+// R-FPZC-TBXO R-2YN2-G6QC
 func TestRunErrorDeliveryAndRefusedScrapeEmitNoRunEvents(t *testing.T) {
 	// Reusing the injected random bytes makes a later run id collide with the
 	// completed run. The store cannot record either attempted new run.

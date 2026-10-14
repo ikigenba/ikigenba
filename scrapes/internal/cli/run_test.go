@@ -24,10 +24,11 @@ import (
 	"github.com/ikigenba/ikigenba/scrapes/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/scrapes/internal/pages"
 	"github.com/ikigenba/ikigenba/scrapes/internal/settings"
+	"github.com/ikigenba/ikigenba/scrapes/internal/source"
 	"github.com/ikigenba/ikigenba/scrapes/internal/store"
 )
 
-// R-YZYT-P0Z3 R-R8ZM-TAFI R-DDS2-65CJ
+// R-YZYT-P0Z3 R-48SL-TOC5 R-DDS2-65CJ
 func TestRunRejectsBeforeInheriting(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -58,9 +59,9 @@ func TestRunRejectsBeforeInheriting(t *testing.T) {
 	}
 }
 
-// R-YBKU-1M57 R-YCSQ-FDVW R-YHOB-YGUO R-6S6O-M7DE
-// R-R8ZM-TAFI R-312V-7Q7Q R-YMJX-HJTG R-YNRT-VBK5
-// R-DEZY-JX38 R-DJVK-3020 R-DNJ9-8BA3 R-LH2Z-H4CC R-ELOF-XW1J
+// R-42P3-WTMO R-YCSQ-FDVW R-YHOB-YGUO R-454W-OD42
+// R-48SL-TOC5 R-312V-7Q7Q R-YMJX-HJTG R-YNRT-VBK5
+// R-47KP-FWLG R-DEZY-JX38 R-DJVK-3020 R-DNJ9-8BA3  R-ELOF-XW1J
 func TestRunAssembly(t *testing.T) {
 	var mu sync.Mutex
 	looked := []string{}
@@ -73,7 +74,7 @@ func TestRunAssembly(t *testing.T) {
 		inherit := p.Inherit
 		p.Inherit = func(fd uintptr) (net.Listener, error) { inherited++; return inherit(fd) }
 	}})
-	checkStateTree(t, f.Dir)
+	checkStateTree(t, f.Dir, "")
 	v := resultJSON(t, f.call(fixtureCaller, "scrape", map[string]any{"scraper": "fmcsa"}))
 	id, _ := v["id"].(string)
 	if id != "run_5a5a5a5a5a5a5a5a" {
@@ -83,7 +84,7 @@ func TestRunAssembly(t *testing.T) {
 	if v["status"] != store.StatusDone || v["rows"] != float64(2) {
 		t.Fatalf("ended %v", v)
 	}
-	checkStateTree(t, f.Dir)
+	checkStateTree(t, f.Dir, id)
 	resp := f.request("GET", "/runs/"+id+"/rows", "", true)
 	body, e := io.ReadAll(resp.Body)
 	if e != nil {
@@ -110,7 +111,7 @@ func TestRunAssembly(t *testing.T) {
 	if code := f.stop(); code != cli.ExitSuccess {
 		t.Fatalf("exit %d", code)
 	}
-	checkStateTree(t, f.Dir)
+	checkStateTree(t, f.Dir, id)
 	if pendingNotify(t, f.Notify) {
 		t.Fatal("extra readiness datagram")
 	}
@@ -119,11 +120,21 @@ func TestRunAssembly(t *testing.T) {
 	if e != nil || r.ID != id || !r.Started.Equal(fixtureNow()) || !r.Finished.Equal(fixtureNow()) {
 		t.Fatalf("persisted %+v %v", r, e)
 	}
+	count := 0
+	if err := st.EachRow(context.Background(), id, func(row source.Row) error {
+		count++
+		if row.Run != id {
+			t.Errorf("persisted row run %q", row.Run)
+		}
+		return nil
+	}); err != nil || count != 2 {
+		t.Fatalf("persisted rows %d: %v", count, err)
+	}
 	if inherited != 1 || !reflect.DeepEqual(unset, []string{"LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES"}) {
 		t.Fatalf("inherit %d unset %v", inherited, unset)
 	}
 	allowed := map[string]bool{}
-	for _, k := range []string{"DRAIN_SECONDS", "SCRAPE_KEEP_RUNS", "FMCSA_STATES", "FMCSA_MIN_POWER_UNITS", "FMCSA_STATUS", "PPP_FILES", "PPP_STATES", "MN_PARCELS_COUNTIES", services.Variable, "LISTEN_PID", "LISTEN_FDS", "NOTIFY_SOCKET"} {
+	for _, k := range []string{"DRAIN_SECONDS", "SCRAPE_KEEP_RUNS", "SCRAPE_WRITE_BUDGET", "SCRAPE_PRESSURE_LIMIT", "FMCSA_STATES", "FMCSA_MIN_POWER_UNITS", "FMCSA_STATUS", "PPP_FILES", "PPP_STATES", "MN_PARCELS_COUNTIES", services.Variable, "LISTEN_PID", "LISTEN_FDS", "NOTIFY_SOCKET"} {
 		allowed[k] = true
 	}
 	for _, k := range looked {
@@ -167,11 +178,26 @@ func TestRunAssembly(t *testing.T) {
 		t.Fatalf("streams %q %q", f.Out.String(), f.Err.String())
 	}
 }
-func checkStateTree(t *testing.T, dir string) {
+func checkStateTree(t *testing.T, dir, id string) {
 	t.Helper()
 	entries, e := os.ReadDir(dir)
-	if e != nil || len(entries) != 1 || entries[0].Name() != "state" || !entries[0].IsDir() {
+	wantEntries := 1
+	if id != "" {
+		wantEntries = 2
+	}
+	if e != nil || len(entries) != wantEntries {
 		t.Fatalf("dir entries %v %v", entries, e)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || (entry.Name() != "state" && (id == "" || entry.Name() != "runs")) {
+			t.Fatalf("unexpected entry %v", entry)
+		}
+	}
+	if id != "" {
+		runFiles, err := os.ReadDir(filepath.Join(dir, "runs"))
+		if err != nil || len(runFiles) != 1 || runFiles[0].Name() != id+".db" || !runFiles[0].Type().IsRegular() {
+			t.Fatalf("run files %v: %v", runFiles, err)
+		}
 	}
 	entries, e = os.ReadDir(filepath.Join(dir, "state"))
 	if e != nil {

@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -18,8 +20,11 @@ import (
 
 // Config supplies the clock and random source.
 type Config struct {
-	Now  func() time.Time
-	Rand io.Reader
+	Now        func() time.Time
+	Rand       io.Reader
+	Runs       string
+	ChunkBytes int64
+	LoadRows   int
 }
 
 // Store serializes operations over its database handle.
@@ -49,11 +54,15 @@ const (
 	ReasonSource      = "source"
 	ReasonInterrupted = "interrupted"
 	ReasonStore       = "store"
+	Missing           = "The run rows are missing."
+	DefaultChunkBytes = 16777216
+	DefaultLoadRows   = 5000
 	Unreachable       = "The scrapes database is unavailable."
 )
 
 // Record-state and database errors.
 var (
+	ErrMissing     = errors.New("run file missing")
 	ErrNotFound    = errors.New("record not found")
 	ErrBusy        = errors.New("scraper already running")
 	ErrDelivered   = errors.New("delivery already recorded")
@@ -89,7 +98,7 @@ func decodeTime(v string) time.Time {
 	return t.UTC()
 }
 func normalize(err error) error {
-	if err == nil || errors.Is(err, ErrNotFound) || errors.Is(err, ErrBusy) || errors.Is(err, ErrDelivered) || errors.Is(err, ErrEnded) {
+	if err == nil || errors.Is(err, ErrNotFound) || errors.Is(err, ErrBusy) || errors.Is(err, ErrDelivered) || errors.Is(err, ErrEnded) || errors.Is(err, ErrMissing) {
 		return err
 	}
 	var coded interface{ Code() int }
@@ -101,6 +110,9 @@ func normalize(err error) error {
 func (s *Store) transaction(ctx context.Context, write bool, fn func(*sql.Tx) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.transactionLocked(ctx, write, fn)
+}
+func (s *Store) transactionLocked(ctx context.Context, write bool, fn func(*sql.Tx) error) error {
 	if err := ctx.Err(); err != nil {
 		return errors.Join(ErrUnreachable, err)
 	}
@@ -317,50 +329,20 @@ func scanRow(row scanner) (source.Row, error) {
 	return r, nil
 }
 
-// PutRows atomically stores a source batch, replacing repeated identifiers.
-func (s *Store) PutRows(ctx context.Context, id string, batch []source.Row) error {
-	return s.transaction(ctx, true, func(tx *sql.Tx) error {
-		for _, r := range batch {
-			if r.SourceID == "" {
-				return ErrUnreachable
-			}
-		}
-		run, err := readRun(ctx, tx, id)
-		if err != nil {
-			return err
-		}
-		if run.Status != StatusRunning {
-			return ErrEnded
-		}
-		for _, r := range batch {
-			names, e := json.Marshal(r.Names)
-			if e != nil {
-				return e
-			}
-			people, e := json.Marshal(r.People)
-			if e != nil {
-				return e
-			}
-			_, e = tx.ExecContext(ctx, "INSERT OR REPLACE INTO rows ("+rowCols+",names_lower) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", id, r.SourceID, run.Scraper, encodeTime(r.Collected), r.Digest, r.Name, string(names), r.Address.Street, r.Address.City, r.Address.State, r.Address.Zip, r.Address.County, r.Lat, r.Lon, string(people), []byte(r.Facts), []byte(r.Raw), strings.ToLower(strings.Join(r.Names, "\n")))
-			if e != nil {
-				return e
-			}
-			if _, e = tx.ExecContext(ctx, `DELETE FROM row_names WHERE "run"=? AND source_id=?`, id, r.SourceID); e != nil {
-				return e
-			}
-			for _, name := range r.Names {
-				if _, e = tx.ExecContext(ctx, `INSERT INTO row_names ("run",source_id,name,name_lower) VALUES (?,?,?,?)`, id, r.SourceID, name, strings.ToLower(name)); e != nil {
-					return e
-				}
-			}
-		}
-		return nil
-	})
-}
-func (s *Store) end(ctx context.Context, id, reason string) (Run, error) {
+// Counts describes the comparison produced by a load.
+type Counts struct{ Rows, New, Changed, Unchanged, Gone int64 }
+
+func (s *Store) file(id string) string { return filepath.Join(s.cfg.Runs, id+".db") }
+func inPlace(path string) bool         { _, err := os.Lstat(path); return err == nil }
+
+func (s *Store) end(ctx context.Context, id, reason string, c Counts) (Run, error) {
 	var out Run
 	err := s.transaction(ctx, true, func(tx *sql.Tx) error {
-		if reason != "" && reason != ReasonSource && reason != ReasonInterrupted && reason != ReasonStore {
+		if reason == "" {
+			if c.Rows < 0 || c.New < 0 || c.Changed < 0 || c.Unchanged < 0 || c.Gone < 0 || c.Rows != c.New+c.Changed+c.Unchanged {
+				return ErrUnreachable
+			}
+		} else if reason != ReasonSource && reason != ReasonInterrupted && reason != ReasonStore {
 			return ErrUnreachable
 		}
 		r, e := readRun(ctx, tx, id)
@@ -370,38 +352,21 @@ func (s *Store) end(ctx context.Context, id, reason string) (Run, error) {
 		if r.Status != StatusRunning {
 			return ErrEnded
 		}
-		r.Finished = stamp(s.cfg.Now())
-		if reason != "" {
+		if reason == "" {
+			if !inPlace(s.file(id)) {
+				return ErrMissing
+			}
+			r.Status = StatusDone
+			r.Rows = c.Rows
+			r.New = c.New
+			r.Changed = c.Changed
+			r.Unchanged = c.Unchanged
+			r.Gone = c.Gone
+		} else {
 			r.Status = StatusFailed
 			r.Reason = reason
-			if _, e = tx.ExecContext(ctx, `DELETE FROM row_names WHERE "run"=?`, id); e != nil {
-				return e
-			}
-			_, e = tx.ExecContext(ctx, `DELETE FROM rows WHERE "run"=?`, id)
-			if e != nil {
-				return e
-			}
-		} else {
-			r.Status = StatusDone
-			baseline, e := scanRun(tx.QueryRowContext(ctx, "SELECT "+runCols+" FROM runs WHERE scraper=? AND status=? AND id<>? ORDER BY started DESC,id DESC LIMIT 1", r.Scraper, StatusDone, id))
-			if e != nil && !errors.Is(e, ErrNotFound) {
-				return e
-			}
-			b := baseline.ID
-			if e = tx.QueryRowContext(ctx, `SELECT count(*) FROM rows WHERE "run"=?`, id).Scan(&r.Rows); e != nil {
-				return e
-			}
-			if e = tx.QueryRowContext(ctx, `SELECT count(*) FROM rows a WHERE a."run"=? AND NOT EXISTS (SELECT 1 FROM rows b WHERE b."run"=? AND b.source_id=a.source_id)`, id, b).Scan(&r.New); e != nil {
-				return e
-			}
-			if e = tx.QueryRowContext(ctx, `SELECT count(*) FROM rows a JOIN rows b ON a.source_id=b.source_id WHERE a."run"=? AND b."run"=? AND a.digest<>b.digest`, id, b).Scan(&r.Changed); e != nil {
-				return e
-			}
-			r.Unchanged = r.Rows - r.New - r.Changed
-			if e = tx.QueryRowContext(ctx, `SELECT count(*) FROM rows a WHERE a."run"=? AND NOT EXISTS (SELECT 1 FROM rows b WHERE b."run"=? AND b.source_id=a.source_id)`, b, id).Scan(&r.Gone); e != nil {
-				return e
-			}
 		}
+		r.Finished = stamp(s.cfg.Now())
 		if e = putRun(ctx, tx, r); e == nil {
 			out = r
 		}
@@ -410,191 +375,25 @@ func (s *Store) end(ctx context.Context, id, reason string) (Run, error) {
 	return out, err
 }
 
-// FinishRun completes a run and compares its rows with the latest baseline.
-func (s *Store) FinishRun(ctx context.Context, id string) (Run, error) { return s.end(ctx, id, "") }
+// FinishRun records a loaded run's counts.
+func (s *Store) FinishRun(ctx context.Context, id string, c Counts) (Run, error) {
+	return s.end(ctx, id, "", c)
+}
 
-// FailRun fails a run and removes its partial rows.
+// FailRun records a failure without touching build files.
 func (s *Store) FailRun(ctx context.Context, id, reason string) (Run, error) {
 	if reason == "" {
 		return Run{}, s.transaction(ctx, true, func(*sql.Tx) error { return ErrUnreachable })
 	}
-	return s.end(ctx, id, reason)
-}
-
-// GetRow reads a raw row from a completed run.
-func (s *Store) GetRow(ctx context.Context, run, id string) (source.Row, error) {
-	var out source.Row
-	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
-		r, e := readRun(ctx, tx, run)
-		if e != nil {
-			return e
-		}
-		if r.Status != StatusDone {
-			return ErrNotFound
-		}
-		out, e = scanRow(tx.QueryRowContext(ctx, "SELECT "+rowCols+` FROM rows WHERE "run"=? AND source_id=?`, run, id))
-		return e
-	})
-	return out, err
-}
-func each(ctx context.Context, tx *sql.Tx, run string, fn func(source.Row) error) error {
-	r, e := readRun(ctx, tx, run)
-	if e != nil {
-		return e
-	}
-	if r.Status != StatusDone {
-		return nil
-	}
-	rows, e := tx.QueryContext(ctx, "SELECT "+rowCols+` FROM rows WHERE "run"=? ORDER BY source_id`, run)
-	if e != nil {
-		return e
-	}
-	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		r, e := scanRow(rows)
-		if e != nil {
-			return e
-		}
-		if e = fn(r); e != nil {
-			return e
-		}
-	}
-	return rows.Err()
-}
-
-// ListRowsAfter reads a bounded filtered window without raw records.
-func (s *Store) ListRowsAfter(ctx context.Context, run, name, after string, limit int) ([]source.Row, error) {
-	var out []source.Row
-	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
-		if limit < 1 {
-			return ErrUnreachable
-		}
-		r, e := readRun(ctx, tx, run)
-		if e != nil {
-			return e
-		}
-		out = []source.Row{}
-		if r.Status != StatusDone {
-			return nil
-		}
-		// Select no raw data: the window's memory is bounded by its envelopes.
-		const cols = `r."run",r.source_id,r.scraper,r.collected,r.digest,r.name,r.names,r.street,r.city,r.state,r.zip,r.county,r.lat,r.lon,r.people,r.facts,NULL`
-		const named = ` AND EXISTS (SELECT 1 FROM row_names n WHERE n."run"=r."run" AND n.source_id=r.source_id AND instr(n.name_lower,?)>0)`
-		const first = "SELECT " + cols + ` FROM "rows" r WHERE r."run"=?`
-		const positioned = first + ` AND r.source_id>?`
-		const ordered = " ORDER BY r.source_id LIMIT ?"
-		const firstRows = first + ordered
-		const namedFirstRows = first + named + ordered
-		const rowsAfter = positioned + ordered
-		const namedRowsAfter = positioned + named + ordered
-		var q string
-		var args []any
-		switch {
-		case name != "" && after != "":
-			q = namedRowsAfter
-			args = []any{run, after, strings.ToLower(name), limit}
-		case name != "":
-			q = namedFirstRows
-			args = []any{run, strings.ToLower(name), limit}
-		case after != "":
-			q = rowsAfter
-			args = []any{run, after, limit}
-		default:
-			q = firstRows
-			args = []any{run, limit}
-		}
-		rows, e := tx.QueryContext(ctx, q, args...)
-		if e != nil {
-			return e
-		}
-		defer func() { _ = rows.Close() }()
-		for rows.Next() {
-			row, e := scanRow(rows)
-			if e != nil {
-				return e
-			}
-			out = append(out, row)
-		}
-		return rows.Err()
-	})
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// ListRowsBefore reads a reversed bounded filtered window without raw records.
-func (s *Store) ListRowsBefore(ctx context.Context, run, name, before string, limit int) ([]source.Row, error) {
-	var out []source.Row
-	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
-		if limit < 1 {
-			return ErrUnreachable
-		}
-		r, e := readRun(ctx, tx, run)
-		if e != nil {
-			return e
-		}
-		out = []source.Row{}
-		if r.Status != StatusDone {
-			return nil
-		}
-		// Select no raw data: the window's memory is bounded by its envelopes.
-		const firstRows = `SELECT r."run",r.source_id,r.scraper,r.collected,r.digest,r.name,r.names,r.street,r.city,r.state,r.zip,r.county,r.lat,r.lon,r.people,r.facts,NULL FROM "rows" r WHERE r."run"=? ORDER BY r.source_id DESC LIMIT ?`
-		const namedFirstRows = `SELECT r."run",r.source_id,r.scraper,r.collected,r.digest,r.name,r.names,r.street,r.city,r.state,r.zip,r.county,r.lat,r.lon,r.people,r.facts,NULL FROM "rows" r WHERE r."run"=? AND EXISTS (SELECT 1 FROM row_names n WHERE n."run"=r."run" AND n.source_id=r.source_id AND instr(n.name_lower,?)>0) ORDER BY r.source_id DESC LIMIT ?`
-		const rowsBefore = `SELECT r."run",r.source_id,r.scraper,r.collected,r.digest,r.name,r.names,r.street,r.city,r.state,r.zip,r.county,r.lat,r.lon,r.people,r.facts,NULL FROM "rows" r WHERE r."run"=? AND r.source_id<? ORDER BY r.source_id DESC LIMIT ?`
-		const namedRowsBefore = `SELECT r."run",r.source_id,r.scraper,r.collected,r.digest,r.name,r.names,r.street,r.city,r.state,r.zip,r.county,r.lat,r.lon,r.people,r.facts,NULL FROM "rows" r WHERE r."run"=? AND r.source_id<? AND EXISTS (SELECT 1 FROM row_names n WHERE n."run"=r."run" AND n.source_id=r.source_id AND instr(n.name_lower,?)>0) ORDER BY r.source_id DESC LIMIT ?`
-		var q string
-		var args []any
-		switch {
-		case name != "" && before != "":
-			q = namedRowsBefore
-			args = []any{run, before, strings.ToLower(name), limit}
-		case name != "":
-			q = namedFirstRows
-			args = []any{run, strings.ToLower(name), limit}
-		case before != "":
-			q = rowsBefore
-			args = []any{run, before, limit}
-		default:
-			q = firstRows
-			args = []any{run, limit}
-		}
-		rows, e := tx.QueryContext(ctx, q, args...)
-		if e != nil {
-			return e
-		}
-		defer func() { _ = rows.Close() }()
-		for rows.Next() {
-			row, e := scanRow(rows)
-			if e != nil {
-				return e
-			}
-			out = append(out, row)
-		}
-		return rows.Err()
-	})
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// EachRow streams completed rows in source identifier order.
-func (s *Store) EachRow(ctx context.Context, run string, fn func(source.Row) error) error {
-	var callback error
-	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
-		return each(ctx, tx, run, func(r source.Row) error { callback = fn(r); return callback })
-	})
-	if callback != nil {
-		return callback
-	}
-	return err
+	return s.end(ctx, id, reason, Counts{})
 }
 
 // PruneRuns removes older completed and failed runs per scraper and status.
 func (s *Store) PruneRuns(ctx context.Context, keep int64) ([]Run, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	var out []Run
-	err := s.transaction(ctx, true, func(tx *sql.Tx) error {
+	err := s.transactionLocked(ctx, true, func(tx *sql.Tx) error {
 		if keep < 1 {
 			return ErrUnreachable
 		}
@@ -614,12 +413,6 @@ func (s *Store) PruneRuns(ctx context.Context, keep int64) ([]Run, error) {
 			if rank < keep {
 				continue
 			}
-			if _, e = tx.ExecContext(ctx, `DELETE FROM row_names WHERE "run"=?`, r.ID); e != nil {
-				return e
-			}
-			if _, e = tx.ExecContext(ctx, `DELETE FROM rows WHERE "run"=?`, r.ID); e != nil {
-				return e
-			}
 			if _, e = tx.ExecContext(ctx, "DELETE FROM runs WHERE id=?", r.ID); e != nil {
 				return e
 			}
@@ -630,5 +423,36 @@ func (s *Store) PruneRuns(ctx context.Context, keep int64) ([]Run, error) {
 	if err != nil {
 		return nil, err
 	}
+	for _, r := range out {
+		_ = os.RemoveAll(s.file(r.ID))
+	}
 	return out, nil
+}
+
+// TidyFiles removes abandoned files while retaining done runs.
+func (s *Store) TidyFiles(ctx context.Context) error {
+	return s.transaction(ctx, false, func(tx *sql.Tx) error {
+		runs, e := queryRuns(ctx, tx, "SELECT "+runCols+" FROM runs WHERE status=?", StatusDone)
+		if e != nil {
+			return e
+		}
+		keep := map[string]bool{}
+		for _, r := range runs {
+			keep[r.ID+".db"] = true
+		}
+		info, e := os.Lstat(s.cfg.Runs)
+		if e != nil || !info.IsDir() {
+			return nil
+		}
+		entries, e := os.ReadDir(s.cfg.Runs)
+		if e != nil {
+			return nil
+		}
+		for _, entry := range entries {
+			if !keep[entry.Name()] {
+				_ = os.RemoveAll(filepath.Join(s.cfg.Runs, entry.Name()))
+			}
+		}
+		return nil
+	})
 }

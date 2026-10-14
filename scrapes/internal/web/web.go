@@ -135,26 +135,42 @@ func read(cfg Config, w http.ResponseWriter, r *http.Request, kind, key string) 
 		}
 		return
 	}
-	w.Header().Set("Content-Type", "application/x-ndjson")
-	w.WriteHeader(http.StatusOK)
-	if r.Method == http.MethodHead {
-		return
+	started := false
+	begin := func() {
+		if started {
+			return
+		}
+		started = true
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.WriteHeader(http.StatusOK)
+		if r.Method != http.MethodHead {
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+		}
 	}
-	// Flushing also prevents net/http from assigning a Content-Length to
-	// small or empty streams.
-	flush := func() {
+	err = cfg.Store.EachRow(r.Context(), key, func(row source.Row) error {
+		begin()
+		if r.Method == http.MethodHead {
+			return nil
+		}
+		b, marshalErr := json.Marshal(row)
+		if marshalErr != nil {
+			return marshalErr
+		}
+		_, writeErr := w.Write(append(b, '\n'))
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()
 		}
-	}
-	flush()
-	_ = cfg.Store.EachRow(r.Context(), key, func(row source.Row) error {
-		b, err := json.Marshal(row)
-		if err != nil {
-			return err
-		}
-		_, err = w.Write(append(b, '\n'))
-		flush()
-		return err
+		return writeErr
 	})
+	if err != nil && !started {
+		line := store.Unreachable
+		if errors.Is(err, store.ErrMissing) {
+			line = store.Missing
+		}
+		refusal(w, r, 503, line)
+		return
+	}
+	begin()
 }

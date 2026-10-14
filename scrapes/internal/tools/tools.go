@@ -38,6 +38,7 @@ const (
 	RefuseBusy        = "This scraper already has a run in progress."
 	RefuseNoRun       = "This scraper has no completed run."
 	RefuseStopping    = "The service is stopping; try again later."
+	RefuseMissing     = "The run rows are missing; scrape again."
 	RefuseUnavailable = "The database is unavailable; try again later."
 )
 
@@ -140,6 +141,8 @@ func refuse(word string) error {
 		sentence = RefuseBusy
 	case runs.RefusalNoRun:
 		sentence = RefuseNoRun
+	case runs.RefusalMissing:
+		sentence = RefuseMissing
 	case runs.RefusalStopping:
 		sentence = RefuseStopping
 	default:
@@ -148,6 +151,9 @@ func refuse(word string) error {
 	return errors.New(word + ": " + sentence)
 }
 func storeError(err error) error {
+	if errors.Is(err, store.ErrMissing) {
+		return refuse(runs.RefusalMissing)
+	}
 	if errors.Is(err, store.ErrNotFound) {
 		return refuse(runs.RefusalNotFound)
 	}

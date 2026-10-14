@@ -8,6 +8,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -32,12 +34,28 @@ func seedRun(t *testing.T, st *store.Store, scraper, status string) store.Run {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if e = st.PutRows(ctx, r.ID, []source.Row{{SourceID: "seed-one", Raw: []byte(`{"dot_number":"seed-one"}`), Digest: "seed-digest", Collected: fixtureNow()}, {SourceID: "seed-two", Raw: []byte(`{"dot_number":"seed-two"}`), Digest: "seed-digest", Collected: fixtureNow()}}); e != nil {
-		t.Fatal(e)
+	counts := store.Counts{}
+	if status == store.StatusDone {
+		collection, err := st.Collect(ctx, r.ID, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, row := range []source.Row{{SourceID: "seed-one", Raw: []byte(`{"dot_number":"seed-one"}`), Digest: "seed-digest", Collected: fixtureNow()}, {SourceID: "seed-two", Raw: []byte(`{"dot_number":"seed-two"}`), Digest: "seed-digest", Collected: fixtureNow()}} {
+			if err := collection.Add(ctx, []source.Row{row}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := collection.Seal(ctx); err != nil {
+			t.Fatal(err)
+		}
+		counts, err = collection.Load(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	switch status {
 	case store.StatusDone:
-		r, e = st.FinishRun(ctx, r.ID)
+		r, e = st.FinishRun(ctx, r.ID, counts)
 	case store.StatusFailed:
 		r, e = st.FailRun(ctx, r.ID, store.ReasonSource)
 	}
@@ -51,13 +69,29 @@ func runRefused(t *testing.T, f *runFixture, id string) bool {
 	return f.call(fixtureCaller, "run", map[string]any{"run": id}).IsError()
 }
 
-// R-2HKH-3ECM R-DL3G-GRSP
+// R-RJPE-VAAJ R-FORG-FK6Z
 func TestRunSettlesBeforeReady(t *testing.T) {
 	dir := t.TempDir()
 	st, d := openStore(t, dir)
 	seed := seedRun(t, st, "fmcsa", store.StatusRunning)
+	loadSeedRows(t, st, seed.ID)
+	done := seedRun(t, st, "other", store.StatusDone)
+	failed := seedRun(t, st, "other", store.StatusRunning)
+	loadSeedRows(t, st, failed.ID)
+	if _, err := st.FailRun(context.Background(), failed.ID, store.ReasonSource); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{seed.ID + ".part", "fixture-junk"} {
+		if err := os.WriteFile(filepath.Join(dir, "runs", name), []byte("fixture"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "runs", "fixture-dir"), 0700); err != nil {
+		t.Fatal(err)
+	}
 	_ = d.Close()
 	f := startRun(t, runOptions{Dir: dir})
+	assertRunFiles(t, dir, done.ID)
 	v := resultJSON(t, f.call(fixtureCaller, "run", map[string]any{"run": seed.ID}))
 	if v["status"] != store.StatusFailed || v["reason"] != store.ReasonInterrupted || v["finished"] != fixtureNow().Format(time.RFC3339) {
 		t.Fatalf("settled %v", v)
@@ -84,7 +118,7 @@ func TestRunSettlesBeforeReady(t *testing.T) {
 	}
 }
 
-// R-2ISD-H63B
+// R-RKXB-9218 R-3MYZ-6YRM
 func TestRunPrunesBeforeReady(t *testing.T) {
 	dir := t.TempDir()
 	st, d := openStore(t, dir)
@@ -99,6 +133,7 @@ func TestRunPrunesBeforeReady(t *testing.T) {
 	other := seedRun(t, st, "other", store.StatusDone)
 	_ = d.Close()
 	f := startRun(t, runOptions{Dir: dir, Env: map[string]string{"SCRAPE_KEEP_RUNS": "1"}})
+	assertRunFiles(t, dir, done[2].ID, other.ID)
 	all := append(append(done, failed...), other)
 	for _, r := range all {
 		want := r.ID != done[2].ID && r.ID != failed[1].ID && r.ID != other.ID
@@ -165,7 +200,7 @@ func TestRunSweepsOnInjectedTimer(t *testing.T) {
 	}
 }
 
-// R-6UMH-DQUS
+// R-6UMH-DQUS R-3MYZ-6YRM
 func TestRunPruneFailureIsSilentAndRetried(t *testing.T) {
 	dir := t.TempDir()
 	st, d := openStore(t, dir)
@@ -184,9 +219,11 @@ func TestRunPruneFailureIsSilentAndRetried(t *testing.T) {
 	if runRefused(t, f, first.ID) || runRefused(t, f, second.ID) || f.Err.String() != "" {
 		t.Fatal("prune refused startup or removed run")
 	}
+	assertRunFiles(t, dir, first.ID, second.ID)
 	before := len(f.Events.Events())
 	tick <- fixtureNow()
 	tick = timer.next()
+	assertRunFiles(t, dir, first.ID, second.ID)
 	if runRefused(t, f, first.ID) || f.Err.String() != "" || len(f.Events.Events()) != before {
 		t.Fatal("failed prune not silent")
 	}
@@ -195,6 +232,7 @@ func TestRunPruneFailureIsSilentAndRetried(t *testing.T) {
 	}
 	tick <- fixtureNow()
 	_ = timer.next()
+	assertRunFiles(t, dir, second.ID)
 	if !runRefused(t, f, first.ID) || runRefused(t, f, second.ID) {
 		t.Fatal("prune not retried")
 	}
@@ -203,17 +241,15 @@ func TestRunPruneFailureIsSilentAndRetried(t *testing.T) {
 	}
 }
 
-// R-DINN-P8BB
+// R-FNJK-1SGA
 func TestRunRecoveryFailure(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	dir := t.TempDir()
-	_, d := openStore(t, dir)
+	st, d := openStore(t, dir)
+	seedRun(t, st, "fmcsa", store.StatusRunning)
 	ctx := context.Background()
 	if e := d.Write(ctx, func(tx *sql.Tx) error {
-		_, e := tx.ExecContext(ctx, `DROP TABLE rows`)
-		if e == nil {
-			_, e = tx.ExecContext(ctx, `DROP TABLE runs`)
-		}
+		_, e := tx.ExecContext(ctx, `CREATE TRIGGER fixture_settle BEFORE INSERT ON runs BEGIN SELECT RAISE(ABORT,'fixture'); END`)
 		return e
 	}); e != nil {
 		t.Fatal(e)
@@ -357,7 +393,7 @@ func TestRunDrainsBlockedSource(t *testing.T) {
 	}
 }
 
-// R-DR6Y-DMI6 R-UDO9-9DC7 R-LH2Z-H4CC
+// R-DR6Y-DMI6 R-UDO9-9DC7
 func TestRunReportsUnfinishedRequest(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -423,7 +459,7 @@ func TestRunReportsUnfinishedRequest(t *testing.T) {
 	}
 }
 
-// R-UDO9-9DC7 R-LH2Z-H4CC
+// R-UDO9-9DC7
 func TestRunFlushesCancelledRunWithinDrain(t *testing.T) {
 	entered := make(chan struct{})
 	var once sync.Once
@@ -554,6 +590,40 @@ func awaitDiagnosticEvent(t *testing.T, b *outputBuffer, name string) {
 			t.Fatalf("late event %s missing from diagnostics %q", name, b.String())
 		default:
 			runtime.Gosched()
+		}
+	}
+}
+
+func loadSeedRows(t *testing.T, st *store.Store, id string) {
+	t.Helper()
+	ctx := context.Background()
+	c, err := st.Collect(ctx, id, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = c.Add(ctx, []source.Row{{SourceID: "seed-one", Raw: []byte(`{"id":"seed-one"}`), Digest: "seed-digest", Collected: fixtureNow()}}); err != nil {
+		t.Fatal(err)
+	}
+	if err = c.Seal(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = c.Load(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+func assertRunFiles(t *testing.T, dir string, ids ...string) {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(dir, "runs"))
+	if err != nil || len(entries) != len(ids) {
+		t.Fatalf("run files %v: %v, want %v", entries, err, ids)
+	}
+	want := map[string]bool{}
+	for _, id := range ids {
+		want[id+".db"] = true
+	}
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() || !want[entry.Name()] {
+			t.Fatalf("unexpected run file %v", entry)
 		}
 	}
 }

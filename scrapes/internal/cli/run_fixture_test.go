@@ -204,7 +204,7 @@ func startRun(t *testing.T, o runOptions) *runFixture {
 			t.Errorf("descriptor %d", fd)
 		}
 		return ln, nil
-	}, Now: fixtureNow, Sleep: func(ctx context.Context, _ time.Duration) { <-ctx.Done() }, After: after, Rand: rnd, Dir: f.Dir, Sink: sink, EventSink: es, Banner: func(page.User) page.Banner { return page.Banner{Service: "fixture"} }, MCP: func(w *telemetry.Writer) *mcp.Server {
+	}, Now: fixtureNow, Sleep: func(context.Context, time.Duration) {}, After: after, Rand: rnd, Dir: f.Dir, Sink: sink, EventSink: es, Banner: func(page.User) page.Banner { return page.Banner{Service: "fixture"} }, MCP: func(w *telemetry.Writer) *mcp.Server {
 		return mcp.NewServer(mcp.ServerConfig{Name: "fixture", Version: "fixture-version", Telemetry: w})
 	}, HTTP: &http.Client{Transport: f.Source}}
 	if o.DefaultSinks {
@@ -377,7 +377,7 @@ func openStore(t *testing.T, dir string) (*store.Store, *db.DB) {
 		t.Fatal(e)
 	}
 	t.Cleanup(func() { _ = d.Close() })
-	return store.New(d, store.Config{Now: fixtureNow, Rand: &runRandom{}}), d
+	return store.New(d, store.Config{Now: fixtureNow, Rand: &runRandom{}, Runs: filepath.Join(dir, "runs")}), d
 }
 
 func pendingNotify(t *testing.T, n *net.UnixConn) bool {

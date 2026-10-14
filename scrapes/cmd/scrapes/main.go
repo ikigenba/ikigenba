@@ -44,7 +44,7 @@ func main() {
 			defer func() { _ = f.Close() }()
 			return net.FileListener(f)
 		},
-		Now: time.Now, Rand: rand.Reader, After: time.After,
+		Now: time.Now, Rand: rand.Reader, After: time.After, Pressure: cli.PressureFile,
 		Banner: page.New(pages.ServiceName, id).Banner,
 		MCP: func(w *telemetry.Writer) *mcp.Server {
 			return mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: v, Telemetry: w})

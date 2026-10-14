@@ -111,12 +111,13 @@ type RunRow struct {
 
 // RunData is the run template input.
 type RunData struct {
-	Banner page.Banner
-	Run    RunView
-	Rows   []RowLine
-	Page   string
-	Prev   string
-	Next   string
+	Banner  page.Banner
+	Run     RunView
+	Rows    []RowLine
+	Page    string
+	Prev    string
+	Next    string
+	Missing bool
 }
 
 // RunView holds the complete visible run record.
@@ -259,11 +260,11 @@ func Handler(cfg Config) http.Handler {
 		auth := urls.Auth(r, cfg.ServicesPath)
 		b := cfg.Banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: auth + "/", LogoutURL: auth + "/logout"})
 		notfound := func() { cfg.Pages.Write(w, r, 404, "notfound", NotFoundData{b}) }
-		refusal := func() {
+		refusal := func(line string) {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(503)
 			if r.Method != http.MethodHead {
-				_, _ = io.WriteString(w, store.Unreachable+"\n")
+				_, _ = io.WriteString(w, line+"\n")
 			}
 		}
 		var pageValue, started, position string
@@ -304,14 +305,14 @@ func Handler(cfg Config) http.Handler {
 					v := currentView(current)
 					x.Current = &v
 				} else if !errors.Is(err, store.ErrNotFound) {
-					refusal()
+					refusal(store.Unreachable)
 					return
 				}
 				running, err := cfg.Store.RunningRun(ctx, n)
 				if err == nil {
 					x.Running = &RunningRun{running.ID}
 				} else if !errors.Is(err, store.ErrNotFound) {
-					refusal()
+					refusal(store.Unreachable)
 					return
 				}
 				d.Scrapers = append(d.Scrapers, x)
@@ -324,7 +325,7 @@ func Handler(cfg Config) http.Handler {
 				rs, err = cfg.Store.ListRunsAfter(ctx, "", started, position, paging.DefaultLimit+1)
 			}
 			if err != nil {
-				refusal()
+				refusal(store.Unreachable)
 				return
 			}
 			more := len(rs) > paging.DefaultLimit
@@ -358,17 +359,25 @@ func Handler(cfg Config) http.Handler {
 				return
 			}
 			if err != nil {
-				refusal()
+				refusal(store.Unreachable)
 				return
 			}
 			b.Trail = []page.Level{{Name: id, URL: "/runs/" + id}}
 			d := RunData{Banner: b, Run: runView(x), Rows: []RowLine{}, Page: pageValue}
+			readFailure := func(err error) {
+				if errors.Is(err, store.ErrMissing) {
+					d.Page, d.Prev, d.Next, d.Missing = "", "", "", true
+					cfg.Pages.Write(w, r, 503, "run", d)
+				} else {
+					refusal(store.Unreachable)
+				}
+			}
 			if x.Status == store.StatusDone {
 				var rows []source.Row
 				if backward {
 					rows, err = cfg.Store.ListRowsBefore(ctx, id, "", position, paging.DefaultLimit+1)
 					if err != nil {
-						refusal()
+						readFailure(err)
 						return
 					}
 					if len(rows) <= paging.DefaultLimit {
@@ -383,7 +392,7 @@ func Handler(cfg Config) http.Handler {
 				} else {
 					result, readErr := tools.RowsPage(ctx, cfg.Store, id, "", position, paging.DefaultLimit)
 					if readErr != nil {
-						refusal()
+						readFailure(readErr)
 						return
 					}
 					rows = result.Rows
@@ -401,12 +410,16 @@ func Handler(cfg Config) http.Handler {
 			cfg.Pages.Write(w, r, 200, "run", d)
 		case isRow:
 			x, err := cfg.Store.GetRow(ctx, id, sid)
+			if errors.Is(err, store.ErrMissing) {
+				refusal(store.Missing)
+				return
+			}
 			if errors.Is(err, store.ErrNotFound) {
 				notfound()
 				return
 			}
 			if err != nil {
-				refusal()
+				refusal(store.Unreachable)
 				return
 			}
 			b.Trail = []page.Level{{Name: id, URL: "/runs/" + id}, {Name: sid, URL: "/runs/" + id + "/rows/" + url.PathEscape(sid)}}

@@ -26,9 +26,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	app "github.com/ikigenba/ikigenba/scrapes"
 	"github.com/ikigenba/ikigenba/scrapes/internal/cli"
-	"github.com/ikigenba/ikigenba/scrapes/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/scrapes/internal/runs"
-	"github.com/ikigenba/ikigenba/scrapes/internal/source"
 	"github.com/ikigenba/ikigenba/scrapes/internal/store"
 	"github.com/ikigenba/ikigenba/scrapes/internal/tools"
 )
@@ -146,6 +144,10 @@ func startTrail(t *testing.T, dir string, src *trailSource, fixed bool) *trailRu
 	if dir == "" {
 		dir = t.TempDir()
 	}
+	pressure := filepath.Join(dir, "pressure")
+	if e := os.WriteFile(pressure, []byte("some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"), 0600); e != nil {
+		t.Fatal(e)
+	}
 	f := &trailRun{t: t, dir: dir, sink: &telemetry.Capture{}, bus: &events.Capture{}, out: &trailBuffer{}, err: &trailBuffer{}, done: make(chan int, 1)}
 	sd, e := os.MkdirTemp("", "scrapes-trail-")
 	if e != nil {
@@ -168,7 +170,7 @@ func startTrail(t *testing.T, dir string, src *trailSource, fixed bool) *trailRu
 	if now == nil {
 		now = trailTime
 	}
-	p := cli.Process{LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }, Pid: 77, Stdout: f.out, Stderr: f.err, Version: "trail-fixture", Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Now: now, Sleep: func(context.Context, time.Duration) {}, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Rand: &trailRandom{fixed: fixed}, Dir: dir, Sink: f.sink, EventSink: f.bus, Banner: func(page.User) page.Banner { return page.Banner{Service: "fixture"} }, HTTP: &http.Client{Transport: src}}
+	p := cli.Process{LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }, Pid: 77, Stdout: f.out, Stderr: f.err, Version: "trail-fixture", Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Now: now, Sleep: func(context.Context, time.Duration) {}, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Rand: &trailRandom{fixed: fixed}, Dir: dir, Pressure: pressure, Sink: f.sink, EventSink: f.bus, Banner: func(page.User) page.Banner { return page.Banner{Service: "fixture"} }, HTTP: &http.Client{Transport: src}}
 	go func() { f.done <- cli.Run(ctx, p) }()
 	t.Cleanup(func() {
 		if !f.stopped {
@@ -334,10 +336,10 @@ func trailDB(t *testing.T, dir string) (*store.Store, *db.DB) {
 		t.Fatal(e)
 	}
 	t.Cleanup(func() { _ = d.Close() })
-	return store.New(d, store.Config{Now: trailTime, Rand: &trailRandom{}}), d
+	return store.New(d, store.Config{Now: trailTime, Rand: &trailRandom{}, Runs: filepath.Join(dir, "runs")}), d
 }
 
-// R-EMWC-BNS8 R-2RE9-N96G R-UB8G-HTUT
+// R-HWXU-4EC7 R-HY5Q-I62W R-UB8G-HTUT
 func TestRunTrailSourceAndDelivery(t *testing.T) {
 	src := &trailSource{}
 	f := startTrail(t, "", src, false)
@@ -409,13 +411,13 @@ func TestRunTrailSourceAndDelivery(t *testing.T) {
 			if e.RequestID == "ignored-delivery" {
 				wantStatus = ignoredStatus
 			}
-			if (e.Name == "scrape.started" || e.Name == "scrape.finished") && e.Attrs["run"] != deliveryID {
+			if (e.Name == "scrape.started" || e.Name == "scrape.collected" || e.Name == "scrape.loaded" || e.Name == "scrape.finished") && e.Attrs["run"] != deliveryID {
 				t.Errorf("delivery lifecycle belongs to %v, want %s", e.Attrs["run"], deliveryID)
 			}
 			if e.Name == "request.finished" && fmt.Sprint(e.Attrs["status"]) != fmt.Sprint(wantStatus) {
 				t.Errorf("delivery status %#v", e.Attrs)
 			}
-			if e.Name != "request.started" && e.Name != "request.finished" && e.Name != "scrape.started" && e.Name != "scrape.finished" && e.Name != "source.called" {
+			if e.Name != "request.started" && e.Name != "request.finished" && e.Name != "scrape.started" && e.Name != "scrape.collected" && e.Name != "scrape.loaded" && e.Name != "scrape.finished" && e.Name != "source.called" {
 				t.Errorf("delivery extra event %s", e.Name)
 			}
 		}
@@ -470,7 +472,7 @@ func TestRunTrailUsesInjectedClockAndRandom(t *testing.T) {
 	}
 }
 
-// R-U54Y-KZ5C R-U6CU-YQW1 R-U7KR-CIMQ R-UA0K-4244 R-LH2Z-H4CC
+// R-HZDM-VXTL R-I0LJ-9PKA R-I1TF-NHAZ R-I31C-191O
 func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	// A deterministic sequence supplies random-looking markers without process randomness.
 	markerRand := uint64(731)
@@ -523,32 +525,10 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	raw, e := json.Marshal(record)
-	if e != nil {
+	src := &trailSource{record: record, echo: strings.Join(markers, " ")}
+	if e := os.WriteFile(filepath.Join(dir, "runs"), []byte("fixture obstacle"), 0600); e != nil {
 		t.Fatal(e)
 	}
-	row, e := fmcsa.RowOf(raw, trailTime())
-	if e != nil {
-		t.Fatal(e)
-	}
-	if e = st.PutRows(ctx, seed.ID, []source.Row{row}); e != nil {
-		t.Fatal(e)
-	}
-	var clockMu sync.Mutex
-	clockArmed := false
-	clockCalls := 0
-	batchRefused := make(chan struct{})
-	src := &trailSource{record: record, echo: strings.Join(markers, " "), now: func() time.Time {
-		clockMu.Lock()
-		defer clockMu.Unlock()
-		if clockArmed {
-			clockCalls++
-			if clockCalls == 2 {
-				close(batchRefused)
-			}
-		}
-		return trailTime()
-	}}
 	f := startTrail(t, dir, src, false)
 	f.await(seed.ID, "failed", "interrupted")
 	reject := func(v any) {
@@ -581,6 +561,14 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	}
 	for _, entry := range tools.Catalog() {
 		refused(entry.Name, []any{})
+	}
+	failedStore := f.scrape()
+	f.await(failedStore, "failed", "store")
+	if src.count() < 2 {
+		t.Fatal("store failure run did not request marker records")
+	}
+	if e := os.Remove(filepath.Join(dir, "runs")); e != nil {
+		t.Fatal(e)
 	}
 	id := f.scrape()
 	f.await(id, "done", "")
@@ -662,59 +650,30 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 		}
 		runtime.Gosched()
 	}
-	drop := func(table string) {
-		t.Helper()
-		if e := d.Write(ctx, func(tx *sql.Tx) error { _, e := tx.ExecContext(ctx, "DROP TABLE "+table); return e }); e != nil {
-			t.Fatal(e)
+	// The catalog still describes a done run after its row file disappears.
+	if e := os.Remove(filepath.Join(dir, "runs", id+".db")); e != nil {
+		t.Fatal(e)
+	}
+	for _, name := range []string{"run", "rows", "row"} {
+		r := f.call(trailCaller, name, answered[name])
+		if r.IsError() {
+			reject(r)
+		} else if name != "run" {
+			t.Errorf("missing run file answered %s", name)
 		}
 	}
-	drop("rows")
-	pageGate := make(chan struct{})
-	src.mu.Lock()
-	src.gate = pageGate
-	src.closed = func() { clockMu.Lock(); clockArmed = true; clockMu.Unlock() }
-	src.mu.Unlock()
-	batchCaller := trailCaller
-	batchCaller.RequestID = "batch-request"
-	batchResult := f.call(batchCaller, "scrape", tools.ScrapeArgs{Scraper: "fmcsa"})
-	if batchResult.IsError() {
-		t.Fatal("batch scrape refused before worker")
-	}
-	var batchRun runs.Record
-	if err := json.Unmarshal(payload(t, batchResult), &batchRun); err != nil || batchRun.ID == "" {
-		t.Fatalf("batch run record %s: %v", payload(t, batchResult), err)
-	}
-	batchctx, batchcancel := context.WithTimeout(ctx, 5*time.Second)
-	defer batchcancel()
-	for {
-		found := false
-		for _, e := range f.sink.Events() {
-			if e.Name == "request.finished" && e.RequestID == batchCaller.RequestID {
-				found = true
-			}
+	for _, path := range []string{"/runs/" + id, "/runs/" + id + "/rows/1234", "/runs/" + id + "/record", "/runs/" + id + "/rows"} {
+		for _, method := range methods {
+			safeRequest(method, path)
 		}
-		if found {
-			break
-		}
-		if batchctx.Err() != nil {
-			t.Fatal("batch tool response was not finished")
-		}
-		runtime.Gosched()
 	}
-	close(pageGate)
-	// With the request complete and the sweep held, the page-body close arms
-	// the clock. The scraper reads it for collection, then failure cleanup reads
-	// it only after PutRows refused this marker-bearing batch.
-	select {
-	case <-batchRefused:
-	case <-batchctx.Done():
-		t.Fatal("marker batch did not reach failure cleanup")
+	if e := d.Write(ctx, func(tx *sql.Tx) error {
+		_, e := tx.ExecContext(ctx, "DROP TABLE runs")
+		return e
+	}); e != nil {
+		t.Fatal(e)
 	}
-	clockMu.Lock()
-	clockArmed = false
-	clockMu.Unlock()
-	drop("runs")
-	// With both tables absent all tools and sibling paths are exercised again.
+	// With the catalog unavailable every tool and sibling path is exercised again.
 	for _, entry := range tools.Catalog() {
 		args := answered[entry.Name]
 		if entry.Name == "scrape" {
@@ -752,21 +711,11 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	if f.out.String() != "" {
 		t.Errorf("serving stdout was not silent: %q", f.out.String())
 	}
-	lines := strings.Split(strings.TrimSuffix(f.err.String(), "\n"), "\n")
-	if len(lines) != 2 || !strings.HasSuffix(f.err.String(), "\n") {
-		t.Fatalf("expected only two engine diagnostics, got %q", f.err.String())
-	}
-	for i, op := range []string{"PutRows", "FailRun"} {
-		prefix := "scrapes: " + batchRun.ID + " " + op + ": " + runs.GaveUp + ": "
-		if !strings.HasPrefix(lines[i], prefix) || len(lines[i]) == len(prefix) {
-			t.Errorf("expected %s diagnostic, got %q", op, lines[i])
-		}
-	}
 }
 
 func trailNameAllowed(name string) bool {
 	switch name {
-	case "service.started", "service.stopping", "request.started", "request.finished", "tool.called", "event.lost", "source.called", "scrape.started", "scrape.finished":
+	case "service.started", "service.stopping", "request.started", "request.finished", "tool.called", "event.lost", "source.called", "scrape.started", "scrape.collected", "scrape.loaded", "scrape.finished":
 		return true
 	}
 	return false

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -52,14 +53,15 @@ func (f *fake) Scrape(ctx context.Context, _ func([]source.Row) error) error {
 }
 
 type fixture struct {
-	t      *testing.T
-	d      *db.DB
-	st     *store.Store
-	eng    *runs.Engine
-	sc     *fake
-	client *mcp.Client
-	caller identity.Caller
-	now    time.Time
+	runsDir string
+	t       *testing.T
+	d       *db.DB
+	st      *store.Store
+	eng     *runs.Engine
+	sc      *fake
+	client  *mcp.Client
+	caller  identity.Caller
+	now     time.Time
 }
 
 func setup(t *testing.T) *fixture {
@@ -76,12 +78,14 @@ func setupRegistry(t *testing.T, reg *scrapers.Registry) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.st = store.New(f.d, store.Config{Now: func() time.Time { return f.now }, Rand: &random{}})
+	f.runsDir = t.TempDir()
+	f.st = store.New(f.d, store.Config{Now: func() time.Time { return f.now }, Rand: &random{}, Runs: f.runsDir})
 	if reg == nil {
 		reg = scrapers.New(f.sc)
 	}
 	writer := telemetry.New(telemetry.Config{Service: "scrapes", Version: "fixture", Sink: &telemetry.Capture{}, Now: func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }, Rand: bytes.NewReader(make([]byte, 65536)), Sleep: func(context.Context, time.Duration) {}, Stderr: io.Discard})
-	f.eng = runs.New(runs.Config{Store: f.st, Scrapers: reg, Telemetry: writer, Sleep: func(context.Context, time.Duration) {}, Stderr: io.Discard})
+	engineNow := f.now
+	f.eng = runs.New(runs.Config{Store: f.st, Scrapers: reg, Telemetry: writer, Sleep: func(context.Context, time.Duration) {}, Stderr: io.Discard, Now: func() time.Time { return engineNow }, Budget: 1 << 30, PressureLimit: 1 << 30})
 	srv := mcp.NewServer(mcp.ServerConfig{Name: "scrapes", Version: "fixture", Telemetry: writer})
 	tools.Register(srv, tools.Config{f.eng, reg, f.st})
 	server := httptest.NewServer(identity.Require(srv))
@@ -173,12 +177,10 @@ func (f *fixture) add(status string, n int) store.Run {
 	for i := range rows {
 		rows[i] = source.Row{SourceID: fmt.Sprintf("%03d", i), Collected: f.now, Name: "chosen-business", Names: []string{"Chosen Business", "Alternate"}, Digest: fmt.Sprint(i), Facts: json.RawMessage(`{"chosen":true}`), Raw: json.RawMessage(fmt.Sprintf(`{"number":%d}`, i))}
 	}
-	if err = f.st.PutRows(f.t.Context(), r.ID, rows); err != nil {
-		f.t.Fatal(err)
-	}
+
 	switch status {
 	case store.StatusDone:
-		r, err = f.st.FinishRun(f.t.Context(), r.ID)
+		r, err = f.st.FinishRun(f.t.Context(), r.ID, loadRows(f.t, f.st, r.ID, rows))
 	case store.StatusFailed:
 		r, err = f.st.FailRun(f.t.Context(), r.ID, store.ReasonSource)
 	}
@@ -324,7 +326,7 @@ func TestScrapers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pppDone, err = f.st.FinishRun(t.Context(), pppDone.ID)
+	pppDone, err = f.st.FinishRun(t.Context(), pppDone.ID, loadRows(t, f.st, pppDone.ID, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,7 +340,7 @@ func TestScrapers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	parcelDone, err = f.st.FinishRun(t.Context(), parcelDone.ID)
+	parcelDone, err = f.st.FinishRun(t.Context(), parcelDone.ID, loadRows(t, f.st, parcelDone.ID, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -422,11 +424,11 @@ func TestRowsAndLookup(t *testing.T) {
 	f.refused("row", tools.RowArgs{done.ID, "000"}, runs.RefusalNotFound, tools.RefuseNotFound)
 }
 
-// R-EFT7-SJT2 R-EH14-6BJR R-92Z2-ZPU5 R-EPKE-UPQM
+// R-UKN1-6JN6 R-ULUX-KBDV R-UN2T-Y34K R-EPKE-UPQM
 func TestStartRefusals(t *testing.T) {
 	f := setup(t)
 	seen := map[string]bool{}
-	for _, s := range []string{tools.RefuseNotFound, tools.RefuseBusy, tools.RefuseNoRun, tools.RefuseStopping, tools.RefuseUnavailable} {
+	for _, s := range []string{tools.RefuseNotFound, tools.RefuseBusy, tools.RefuseNoRun, tools.RefuseStopping, tools.RefuseUnavailable, tools.RefuseMissing} {
 		if s == "" || strings.Contains(s, "\n") || seen[s] {
 			t.Fatal(s)
 		}
@@ -548,10 +550,8 @@ func TestReadToolsShareRunStartedByCaller(t *testing.T) {
 		t.Fatal(err)
 	}
 	row := source.Row{SourceID: "chosen-id", Collected: f.now, Name: "chosen-name", Names: []string{"chosen-name"}, Facts: json.RawMessage(`{}`), Raw: json.RawMessage(`{"chosen":true}`)}
-	if err := f.st.PutRows(t.Context(), record.ID, []source.Row{row}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.st.FinishRun(t.Context(), record.ID); err != nil {
+	counts := loadRows(t, f.st, record.ID, []source.Row{row})
+	if _, err := f.st.FinishRun(t.Context(), record.ID, counts); err != nil {
 		t.Fatal(err)
 	}
 	first := f.caller
@@ -575,7 +575,7 @@ func TestReadToolsShareRunStartedByCaller(t *testing.T) {
 	}
 }
 
-// R-0DRV-VOG7 R-0EZS-9G6W R-0G7O-N7XL R-92Z2-ZPU5
+// R-0DRV-VOG7 R-0EZS-9G6W R-0G7O-N7XL R-UN2T-Y34K
 func TestRunsPagingRefusals(t *testing.T) {
 	f := setup(t)
 	token := paging.Token{Tool: "runs"}
@@ -669,7 +669,7 @@ func TestRunsWindowsAcrossEqualStartedTimes(t *testing.T) {
 	}
 }
 
-// R-9AAH-ACAB R-9CQA-1VRP R-92Z2-ZPU5
+// R-9AAH-ACAB R-9CQA-1VRP R-UN2T-Y34K
 func TestRowsPagingRefusals(t *testing.T) {
 	f := setup(t)
 	r := f.add(store.StatusDone, 1)
@@ -758,7 +758,7 @@ func TestScrapersInjectedRegistry(t *testing.T) {
 			t.Fatal(err)
 		}
 		if done {
-			r, err = f.st.FinishRun(t.Context(), r.ID)
+			r, err = f.st.FinishRun(t.Context(), r.ID, loadRows(t, f.st, r.ID, nil))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -782,4 +782,75 @@ func TestScrapersEmptyRegistry(t *testing.T) {
 	f := setupRegistry(t, scrapers.New())
 	f.add(store.StatusDone, 0)
 	f.success("scrapers", tools.NoArgs{}, tools.ScraperList{})
+}
+
+func loadRows(t *testing.T, st *store.Store, id string, rows []source.Row) store.Counts {
+	t.Helper()
+	step := func(context.Context, int64, time.Duration) error { return nil }
+	c, err := st.Collect(t.Context(), id, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = c.Add(t.Context(), rows); err != nil {
+		t.Fatal(err)
+	}
+	if err = c.Seal(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	counts, err := c.Load(t.Context(), step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return counts
+}
+
+// R-SULF-SCH1 R-UPIM-PMLY R-ULUX-KBDV R-UN2T-Y34K
+func TestRunFileToolRefusals(t *testing.T) {
+	f := setup(t)
+	done := f.add(store.StatusDone, paging.DefaultLimit+1)
+	unchanged := map[string]mcp.Result{}
+	for _, name := range []string{"runs", "scrapers"} {
+		unchanged[name] = f.call(name, tools.NoArgs{})
+	}
+	record := runs.RecordOf(done)
+	file := filepath.Join(f.runsDir, done.ID+".db")
+	for _, missing := range []bool{true, false} {
+		if missing {
+			if err := os.Remove(file); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			if err := os.WriteFile(file, []byte("broken fixture"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		word, sentence := runs.RefusalUnavailable, tools.RefuseUnavailable
+		if missing {
+			word, sentence = runs.RefusalMissing, tools.RefuseMissing
+		}
+		token := paging.Token{Tool: "rows"}.Encode("000")
+		for _, a := range []tools.RowsArgs{{Run: done.ID}, {Scraper: "fmcsa"}, {Run: done.ID, Name: "chosen", Page: &token}} {
+			f.refused("rows", a, word, sentence)
+		}
+		for _, sid := range []string{"000", "never-held"} {
+			f.refused("row", tools.RowArgs{Run: done.ID, SourceID: sid}, word, sentence)
+		}
+		f.success("run", tools.RunArgs{Run: done.ID}, record)
+		for name, want := range unchanged {
+			if !reflect.DeepEqual(f.call(name, tools.NoArgs{}), want) {
+				t.Fatal("catalog changed", name)
+			}
+		}
+		zero := 0
+		_, limitError := paging.Window(&zero)
+		r := f.call("rows", tools.RowsArgs{Run: done.ID, Limit: &zero})
+		if !r.IsError() || decode(t, r).Content[0].Text != limitError.Error() {
+			t.Fatal("limit precedence")
+		}
+		bogus := "bogus"
+		r = f.call("rows", tools.RowsArgs{Run: done.ID, Page: &bogus})
+		if !r.IsError() || decode(t, r).Content[0].Text != paging.BadPage {
+			t.Fatal("page precedence")
+		}
+	}
 }

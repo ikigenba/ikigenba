@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -55,20 +56,22 @@ func (f fake) Name() string                                                 { re
 func (f fake) Scrape(ctx context.Context, b func([]source.Row) error) error { return f.scrape(ctx, b) }
 
 type fixture struct {
-	st *store.Store
-	d  *db.DB
-	e  *runs.Engine
-	tc *telemetry.Capture
-	ec *events.Capture
-	w  *telemetry.Writer
-	em *events.Emitter
+	st  *store.Store
+	d   *db.DB
+	e   *runs.Engine
+	tc  *telemetry.Capture
+	ec  *events.Capture
+	w   *telemetry.Writer
+	em  *events.Emitter
+	dir string
 }
 
 func setup(t *testing.T, list ...source.Scraper) *fixture {
 	t.Helper()
 	t.Setenv("IKIGENBA_SERVICES", "")
 	now := func() time.Time { return time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC) }
-	d, err := db.Open(context.Background(), db.Config{Path: filepath.Join(t.TempDir(), "state", "scrapes.db"), Migrations: scrapes.Migrations(), Now: now})
+	dir := t.TempDir()
+	d, err := db.Open(context.Background(), db.Config{Path: filepath.Join(dir, "state", "scrapes.db"), Migrations: scrapes.Migrations(), Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,9 +79,9 @@ func setup(t *testing.T, list ...source.Scraper) *fixture {
 	ec := new(events.Capture)
 	w := telemetry.New(telemetry.Config{Service: "scrapes", Sink: tc, Now: now, Rand: new(random)})
 	em := events.New(events.Config{Service: "scrapes", Sink: ec, Now: now, Rand: new(random), Emits: trail.Emits()})
-	st := store.New(d, store.Config{Now: now, Rand: new(random)})
-	e := runs.New(runs.Config{Store: st, Scrapers: scrapers.New(list...), Telemetry: w, Events: em})
-	f := &fixture{st, d, e, tc, ec, w, em}
+	st := store.New(d, store.Config{Now: now, Rand: new(random), Runs: filepath.Join(dir, "runs")})
+	e := runs.New(runs.Config{Store: st, Scrapers: scrapers.New(list...), Telemetry: w, Events: em, Now: now})
+	f := &fixture{st, d, e, tc, ec, w, em, filepath.Join(dir, "runs")}
 	t.Cleanup(func() {
 		ctx, c := context.WithTimeout(context.Background(), time.Second)
 		defer c()
@@ -159,19 +162,19 @@ func refused(t *testing.T, f *fixture, name, word string) {
 	}
 }
 
-// R-2IUY-YUZL
+// R-QVBF-7VGN R-QWJB-LN7C R-QXR7-ZEY1 R-QYZ4-D6OQ R-R1EX-4Q64
 func TestWords(t *testing.T) {
-	for _, w := range []string{runs.RefusalNotFound, runs.RefusalBusy, runs.RefusalNoRun, runs.RefusalStopping, runs.RefusalUnavailable} {
+	for _, w := range []string{runs.RefusalNotFound, runs.RefusalBusy, runs.RefusalNoRun, runs.RefusalStopping, runs.RefusalUnavailable, runs.RefusalMissing} {
 		if (&runs.Refusal{Word: w}).Error() != w {
 			t.Fatal(w)
 		}
 	}
-	if !reflect.DeepEqual([]string{runs.RefusalNotFound, runs.RefusalBusy, runs.RefusalNoRun, runs.RefusalStopping, runs.RefusalUnavailable}, []string{"not_found", "busy", "no_run", "stopping", "unavailable"}) || runs.TriggerPrefix != "scrape_" || runs.Stopping == "" || strings.Contains(runs.Stopping, "\n") {
+	if !reflect.DeepEqual([]string{runs.RefusalNotFound, runs.RefusalBusy, runs.RefusalNoRun, runs.RefusalStopping, runs.RefusalUnavailable, runs.RefusalMissing}, []string{"not_found", "busy", "no_run", "stopping", "unavailable", "missing"}) || runs.TriggerPrefix != "scrape_" || runs.Stopping == "" || strings.Contains(runs.Stopping, "\n") {
 		t.Fatal("constants")
 	}
 }
 
-// R-2K2V-CMQA
+// R-2K2V-CMQA R-R070-QYFF
 func TestFiredEvent(t *testing.T) {
 	for _, name := range []string{"fmcsa", "other", "", "scrape_fmcsa", "a.b", "*", " name ", "name\n"} {
 		if got, want := runs.FiredEvent(name), "cron.scrape_"+name+".fired"; got != want {
@@ -180,7 +183,7 @@ func TestFiredEvent(t *testing.T) {
 	}
 }
 
-// R-2LAR-QEGZ
+// R-2LAR-QEGZ R-QQFT-OSHV
 func TestHandlerNames(t *testing.T) {
 	for _, names := range [][]string{{}, {"fmcsa"}, {"fmcsa", "other"}, {"fmcsa", "fmcsa", "other"}} {
 		var list []source.Scraper
@@ -242,7 +245,9 @@ func TestRecord(t *testing.T) {
 	}
 }
 
-// R-L4VZ-NEXE R-1RYL-27S1 R-1T6H-FZIQ R-1WU6-LAQT R-L7BS-EYES R-6M36-PCNX R-6IFH-K1FU
+//	R-1RYL-27S1 R-1T6H-FZIQ R-1WU6-LAQT   R-6IFH-K1FU
+//
+// R-1RYL-27S1 R-1T6H-FZIQ R-1WU6-LAQT R-6IFH-K1FU R-33GL-2MWI R-34OH-GEN7 R-QO00-X90H
 func TestStartAndBatches(t *testing.T) {
 	entered := make(chan context.Context, 1)
 	release := make(chan struct{})
@@ -286,7 +291,7 @@ func TestStartAndBatches(t *testing.T) {
 	f.e.Drain(context.Background())
 	f.flush(t)
 	ts, es := f.tc.Events(), f.ec.Events()
-	if len(ts) != 2 || len(es) != 2 || es[1].Name != trail.Finished || es[1].Attrs["rows"] != int64(5) || es[1].Cause != cause.ID || es[1].Depth != 3 {
+	if len(ts) != 4 || len(es) != 2 || es[1].Name != trail.Finished || es[1].Attrs["rows"] != int64(5) || es[1].Cause != cause.ID || es[1].Depth != 3 {
 		t.Fatal(ts, es)
 	}
 	refused(t, f, "fake", runs.RefusalStopping)
@@ -307,61 +312,6 @@ func TestDatabaseStartFailure(t *testing.T) {
 	f.flush(t)
 	if len(f.ec.Events()) != 0 || len(f.tc.Events()) != 0 {
 		t.Fatal("events for failure")
-	}
-}
-
-// R-88HL-FGAS R-LAZH-K9MV
-func TestFailures(t *testing.T) {
-	for _, mode := range []string{"source", "store", "ending"} {
-		t.Run(mode, func(t *testing.T) {
-			var f *fixture
-			released := make(chan struct{})
-			batchResult := make(chan error, 1)
-			f = setup(t, fake{"fake", func(_ context.Context, b func([]source.Row) error) error {
-				if mode == "store" {
-					f.d.SetFailing(true)
-				}
-				err := b([]source.Row{{SourceID: "one"}})
-				f.d.SetFailing(false)
-				batchResult <- err
-				<-released
-				if mode == "ending" {
-					f.d.SetFailing(true)
-					return nil
-				}
-				return errors.New("walk failed")
-			}})
-			r, err := f.e.Start(context.Background(), caller(), "fake")
-			if err != nil {
-				t.Fatal(err)
-			}
-			batcherr := receive(t, batchResult)
-			if (mode == "store") != (batcherr != nil) {
-				t.Fatal(batcherr)
-			}
-			close(released)
-			if mode == "ending" {
-				// Waiting for Drain also proves an unrecorded ending releases the work.
-				f.e.Drain(context.Background())
-				f.d.SetFailing(false)
-				got, err := f.st.GetRun(context.Background(), r.ID)
-				if err != nil || got.Status != store.StatusRunning {
-					t.Fatal(got, err)
-				}
-				f.flush(t)
-				if len(f.ec.Events()) != 1 || len(f.tc.Events()) != 1 {
-					t.Fatal(f.ec.Events())
-				}
-				return
-			}
-			done := ended(t, f.st, r.ID)
-			if done.Status != store.StatusFailed || done.Reason != mode || done.Rows != 0 {
-				t.Fatal(done)
-			}
-			if _, err := f.st.GetRow(context.Background(), r.ID, "one"); !errors.Is(err, store.ErrNotFound) {
-				t.Fatal(err)
-			}
-		})
 	}
 }
 
@@ -440,7 +390,7 @@ func testDelivery(t *testing.T, viaHandler bool) {
 	}
 }
 
-// R-8AXE-6ZS6
+// R-RIHI-HIJU R-QSVM-GBZ9
 func TestRecover(t *testing.T) {
 	f := setup(t)
 	for _, name := range []string{"first", "second"} {
@@ -448,25 +398,56 @@ func TestRecover(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := f.st.PutRows(context.Background(), r.ID, []source.Row{{SourceID: "old-row"}}); err != nil {
+		loadFixture(t, f.st, r.ID, []source.Row{{SourceID: "old-row"}})
+		if err := os.WriteFile(filepath.Join(f.dir, r.ID+".part"), []byte("leftover"), 0600); err != nil {
 			t.Fatal(err)
 		}
+	}
+	done, err := f.st.AddRun(context.Background(), store.Run{Scraper: "done", UserID: "old"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := loadFixture(t, f.st, done.ID, []source.Row{{SourceID: "kept"}})
+	if _, err = f.st.FinishRun(context.Background(), done.ID, c); err != nil {
+		t.Fatal(err)
+	}
+	failed, err := f.st.AddRun(context.Background(), store.Run{Scraper: "failed", UserID: "old"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.st.FailRun(context.Background(), failed.ID, store.ReasonSource); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{failed.ID + ".db", "run_ffffffffffffffff.db", "foreign"} {
+		if err := os.WriteFile(filepath.Join(f.dir, name), []byte("leftover"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(f.dir, "foreign-dir"), 0700); err != nil {
+		t.Fatal(err)
 	}
 	ctx := events.NewContext(context.Background(), events.Cause{ID: "evt_0101010101010101", Depth: 3})
 	if err := f.e.Recover(ctx); err != nil {
 		t.Fatal(err)
 	}
 	list, err := f.st.ListRunsAfter(context.Background(), "", "", "", 10)
-	if err != nil || len(list) != 2 {
+	if err != nil || len(list) != 4 {
 		t.Fatal(err, list)
 	}
 	for _, r := range list {
+		if r.ID == done.ID || r.ID == failed.ID {
+			continue
+		}
 		if r.Status != store.StatusFailed || r.Reason != store.ReasonInterrupted {
 			t.Fatal(r)
 		}
 		if _, err := f.st.GetRow(ctx, r.ID, "old-row"); !errors.Is(err, store.ErrNotFound) {
 			t.Fatal(err)
 		}
+	}
+	entries, err := os.ReadDir(f.dir)
+	if err != nil || len(entries) != 1 || entries[0].Name() != done.ID+".db" {
+		t.Fatal(entries, err)
 	}
 	f.flush(t)
 	if len(f.ec.Events()) != 2 || len(f.tc.Events()) != 2 {
@@ -484,7 +465,8 @@ func TestRecover(t *testing.T) {
 	f.d.SetFailing(false)
 }
 
-// R-2DWR-Y34J R-LFV3-3CLN
+// R-2DWR-Y34J
+// R-QU3I-U3PY R-374A-7Y4L
 func TestDrainCancellation(t *testing.T) {
 	entered := make(chan struct{})
 	f := setup(t, fake{"fake", func(ctx context.Context, b func([]source.Row) error) error {
@@ -524,7 +506,7 @@ func (c *observedContext) Done() <-chan struct{} {
 	return c.Context.Done()
 }
 
-// R-LFV3-3CLN
+// R-3I3D-NVSU
 func TestDrainDeadline(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -590,7 +572,9 @@ func TestConcurrentMethods(t *testing.T) {
 	f.e.Drain(context.Background())
 }
 
-// R-L7BS-EYES R-6M36-PCNX R-6IFH-K1FU
+//	R-6IFH-K1FU
+//
+// R-34OH-GEN7 R-RH9M-3QT5
 func TestBaselineAndLifecycle(t *testing.T) {
 	count := 0
 	observed := make(chan struct{})
@@ -611,10 +595,8 @@ func TestBaselineAndLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.st.PutRows(context.Background(), base.ID, []source.Row{{SourceID: "one", Digest: "same"}, {SourceID: "two", Digest: "old"}, {SourceID: "gone", Digest: "gone"}}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.st.FinishRun(context.Background(), base.ID); err != nil {
+	counts := loadFixture(t, f.st, base.ID, []source.Row{{SourceID: "one", Digest: "same"}, {SourceID: "two", Digest: "old"}, {SourceID: "gone", Digest: "gone"}})
+	if _, err := f.st.FinishRun(context.Background(), base.ID, counts); err != nil {
 		t.Fatal(err)
 	}
 	cause := events.Cause{ID: "evt_0101010101010101", Depth: 2}
@@ -644,89 +626,16 @@ func TestBaselineAndLifecycle(t *testing.T) {
 			attrs["gone"] = run.Gone
 		}
 		ts, es := f.tc.Events(), f.ec.Events()
-		if len(ts) != 2 || len(es) != 2 {
+		if len(ts) != 4 || len(es) != 2 {
 			t.Fatal(ts, es)
 		}
-		if ts[i].Name != name || es[i].Name != name || !reflect.DeepEqual(ts[i].Attrs, attrs) || !reflect.DeepEqual(es[i].Attrs, events.Attrs(attrs)) || ts[i].RequestID != r.RequestID || es[i].RequestID != r.RequestID || ts[i].User != r.UserID || es[i].User != r.UserID || es[i].Cause != cause.ID || es[i].Depth != cause.Depth+1 {
+		if ts[i*3].Name != name || es[i].Name != name || !reflect.DeepEqual(ts[i*3].Attrs, attrs) || !reflect.DeepEqual(es[i].Attrs, events.Attrs(attrs)) || ts[i*3].RequestID != r.RequestID || es[i].RequestID != r.RequestID || ts[i*3].User != r.UserID || es[i].User != r.UserID || es[i].Cause != cause.ID || es[i].Depth != cause.Depth+1 {
 			t.Fatal(ts[i], es[i])
 		}
 	}
 }
 
-// R-L7BS-EYES
-func TestBatchStoredBeforeReturn(t *testing.T) {
-	observed := make(chan struct{})
-	release := make(chan struct{})
-	calls := 0
-	f := setup(t, fake{"fake", func(_ context.Context, b func([]source.Row) error) error {
-		calls++
-		for _, rows := range [][]source.Row{{{SourceID: "one"}, {SourceID: "two"}}, {{SourceID: "three"}, {SourceID: "four"}, {SourceID: "five"}}} {
-			if err := b(rows); err != nil {
-				return err
-			}
-		}
-		close(observed)
-		<-release
-		return nil
-	}})
-	r, err := f.e.Start(context.Background(), caller(), "fake")
-	if err != nil {
-		t.Fatal(err)
-	}
-	receive(t, observed)
-	done, err := f.st.FinishRun(context.Background(), r.ID)
-	if err != nil || done.Rows != 5 {
-		t.Fatal(done, err)
-	}
-	for _, id := range []string{"one", "two", "three", "four", "five"} {
-		if _, err := f.st.GetRow(context.Background(), r.ID, id); err != nil {
-			t.Fatal(err)
-		}
-	}
-	close(release)
-	f.e.Drain(context.Background())
-	if calls != 1 {
-		t.Fatal(calls)
-	}
-}
-
-// R-88HL-FGAS
-func TestInterruptedPrecedence(t *testing.T) {
-	for _, batchFailure := range []bool{false, true} {
-		t.Run(map[bool]string{false: "source", true: "batch"}[batchFailure], func(t *testing.T) {
-			var f *fixture
-			entered := make(chan struct{})
-			f = setup(t, fake{"fake", func(ctx context.Context, b func([]source.Row) error) error {
-				if batchFailure {
-					f.d.SetFailing(true)
-				}
-				err := b([]source.Row{{SourceID: "one"}})
-				f.d.SetFailing(false)
-				if batchFailure && err == nil {
-					panic("accepted failing batch")
-				}
-				close(entered)
-				<-ctx.Done()
-				return errors.New("source failure")
-			}})
-			r, err := f.e.Start(context.Background(), caller(), "fake")
-			if err != nil {
-				t.Fatal(err)
-			}
-			receive(t, entered)
-			f.e.Drain(context.Background())
-			done, err := f.st.GetRun(context.Background(), r.ID)
-			if err != nil || done.Status != store.StatusFailed || done.Reason != store.ReasonInterrupted {
-				t.Fatal(done, err)
-			}
-			if _, err := f.st.GetRow(context.Background(), r.ID, "one"); !errors.Is(err, store.ErrNotFound) {
-				t.Fatal(err)
-			}
-		})
-	}
-}
-
-// R-88HL-FGAS
+// R-374A-7Y4L
 func TestFMCSASourceFailure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) }))
 	defer srv.Close()
@@ -816,38 +725,336 @@ func TestRefusedCallsHaveNoEffects(t *testing.T) {
 	})
 }
 
-// R-L7BS-EYES
-func TestFirstBatchStoredBeforeSecond(t *testing.T) {
-	first := make(chan struct{})
-	next := make(chan struct{})
-	second := make(chan error, 1)
-	f := setup(t, fake{"fake", func(_ context.Context, b func([]source.Row) error) error {
-		if err := b([]source.Row{{SourceID: "first-one"}, {SourceID: "first-two"}}); err != nil {
-			return err
-		}
-		close(first)
-		<-next
-		err := b([]source.Row{{SourceID: "second"}})
-		second <- err
-		return err
-	}})
-	r, err := f.e.Start(context.Background(), caller(), "fake")
+func loadFixture(t *testing.T, s *store.Store, id string, rows []source.Row) store.Counts {
+	t.Helper()
+	ctx := context.Background()
+	b, err := s.Collect(ctx, id, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	receive(t, first)
-	snapshot, err := f.st.FinishRun(context.Background(), r.ID)
-	if err != nil || snapshot.Rows != 2 {
-		t.Fatal(snapshot, err)
+	if err = b.Add(ctx, rows); err != nil {
+		t.Fatal(err)
 	}
-	for _, id := range []string{"first-one", "first-two"} {
-		if _, err := f.st.GetRow(context.Background(), r.ID, id); err != nil {
-			t.Fatal(err)
-		}
+	if err = b.Seal(ctx); err != nil {
+		t.Fatal(err)
 	}
-	close(next)
-	if receive(t, second) == nil {
-		t.Fatal("batch of ended run accepted")
+	c, err := b.Load(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	f.e.Drain(context.Background())
+	return c
+}
+
+// R-328O-OV5T R-35WD-U6DW
+func TestFilePrecedesEnding(t *testing.T) {
+	f := setup(t)
+	s := &fileCheckingStore{Store: f.st, t: t, dir: f.dir}
+	e := retryEngine(t, f, s, fake{"fake", func(_ context.Context, b func([]source.Row) error) error { return b([]source.Row{{SourceID: "one"}}) }}, func(context.Context, time.Duration) { t.Error("unbudgeted pause") }, new(diagnosticCapture))
+	r, err := e.Start(context.Background(), caller(), "fake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ended(t, f.st, r.ID)
+	e.Drain(context.Background())
+	entries, err := os.ReadDir(f.dir)
+	if err != nil || len(entries) != 1 || entries[0].Name() != r.ID+".db" {
+		t.Fatal(entries, err)
+	}
+}
+
+type fileCheckingStore struct {
+	runs.Store
+	t   *testing.T
+	dir string
+}
+
+func (s *fileCheckingStore) FinishRun(ctx context.Context, id string, c store.Counts) (store.Run, error) {
+	info, err := os.Stat(filepath.Join(s.dir, id+".db"))
+	if err != nil || !info.Mode().IsRegular() {
+		s.t.Error("ending precedes file", err)
+	}
+	return s.Store.FinishRun(ctx, id, c)
+}
+
+// R-374A-7Y4L R-3GVH-A425 R-3FNK-WCBG
+func TestBuildFailuresDiagnosed(t *testing.T) {
+	for _, op := range []string{"Collect", "Add", "Seal", "Load"} {
+		t.Run(op, func(t *testing.T) {
+			f := setup(t)
+			out := new(diagnosticCapture)
+			var s runs.Store = f.st
+			switch op {
+			case "Collect":
+				s = &retryStore{Store: f.st, op: "Collect", failures: 1, err: errors.New("chosen\nerror")}
+			case "Load":
+				if err := os.MkdirAll(filepath.Join(f.dir, "run_0101010101010101.db"), 0700); err != nil {
+					t.Fatal(err)
+				}
+			default:
+				if err := os.WriteFile(f.dir, []byte("block"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				chunk := int64(0)
+				if op == "Add" {
+					chunk = 1
+				}
+				s = store.New(f.d, store.Config{Runs: f.dir, ChunkBytes: chunk, Now: func() time.Time { return time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC) }, Rand: new(random)})
+			}
+			calls := 0
+			e := retryEngine(t, f, s, fake{"fake", func(_ context.Context, b func([]source.Row) error) error {
+				calls++
+				return b([]source.Row{{SourceID: "one", Raw: []byte(`{"private":"secret"}`)}})
+			}}, func(context.Context, time.Duration) { t.Error("build retry") }, out)
+			r, err := e.Start(context.Background(), caller(), "fake")
+			if err != nil {
+				t.Fatal(err)
+			}
+			done := ended(t, f.st, r.ID)
+			e.Drain(context.Background())
+			if done.Status != store.StatusFailed || done.Reason != store.ReasonStore {
+				t.Fatal(done)
+			}
+			lines := out.snapshot()
+			if len(lines) != 1 || !strings.HasPrefix(lines[0], "scrapes: "+r.ID+" "+op+": "+runs.GaveUp+": ") || strings.Contains(lines[0], "secret") {
+				t.Fatal(lines)
+			}
+			if op == "Collect" && calls != 0 {
+				t.Fatal("walk called without build")
+			}
+			f.flush(t)
+			names := []string{}
+			for _, ev := range f.tc.Events() {
+				names = append(names, ev.Name)
+			}
+			want := []string{trail.Started, trail.Finished}
+			if op == "Load" {
+				want = []string{trail.Started, trail.Collected, trail.Finished}
+			}
+			if !reflect.DeepEqual(names, want) {
+				t.Fatal(names)
+			}
+		})
+	}
+}
+
+// R-RM57-MTRX R-RND4-0LIM R-3ARZ-D9CO R-RH9M-3QT5
+func TestSerializedLoadsAndDrain(t *testing.T) {
+	for _, drain := range []bool{false, true} {
+		t.Run(map[bool]string{false: "finish", true: "drain"}[drain], func(t *testing.T) {
+			f := setup(t)
+			out := new(diagnosticCapture)
+			secondWalk := make(chan struct{})
+			held := make(chan context.Context, 1)
+			release := make(chan struct{})
+			unexpected := make(chan struct{}, 1)
+			collected := func(id string) bool {
+				f.flush(t)
+				for _, ev := range f.tc.Events() {
+					if ev.Name == trail.Collected && ev.RequestID == id {
+						return true
+					}
+				}
+				return false
+			}
+			sleep := func(ctx context.Context, _ time.Duration) {
+				c, _ := identity.FromContext(ctx)
+				if !collected(c.RequestID) {
+					return
+				}
+				if c.RequestID == "first-request" {
+					select {
+					case held <- ctx:
+					default:
+					}
+					if drain {
+						<-ctx.Done()
+					} else {
+						<-release
+					}
+				} else {
+					select {
+					case unexpected <- struct{}{}:
+					default:
+					}
+				}
+			}
+			rows := func(_ context.Context, b func([]source.Row) error) error { return b([]source.Row{{SourceID: "one"}}) }
+			e := runs.New(runs.Config{Store: f.st, Scrapers: scrapers.New(fake{"first", rows}, fake{"second", func(ctx context.Context, b func([]source.Row) error) error { <-secondWalk; return rows(ctx, b) }}), Telemetry: f.w, Events: f.em, Sleep: sleep, Stderr: out, Now: func() time.Time { return time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC) }, Budget: 1})
+			first := caller()
+			first.RequestID = "first-request"
+			second := caller()
+			second.RequestID = "second-request"
+			a, err := e.Start(context.Background(), first, "first")
+			if err != nil {
+				t.Fatal(err)
+			}
+			receive(t, held)
+			b, err := e.Start(context.Background(), second, "second")
+			if err != nil {
+				t.Fatal(err)
+			}
+			close(secondWalk)
+			deadline, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			for !collected(second.RequestID) {
+				select {
+				case <-deadline.Done():
+					t.Fatal("second collect never completed")
+				default:
+					runtime.Gosched()
+				}
+			}
+			if !drain {
+				select {
+				case <-unexpected:
+					t.Fatal("concurrent load")
+				case <-time.After(30 * time.Microsecond):
+				}
+				close(release)
+				ended(t, f.st, a.ID)
+				ended(t, f.st, b.ID)
+			}
+			e.Drain(context.Background())
+			for _, r := range []store.Run{a, b} {
+				got, err := f.st.GetRun(context.Background(), r.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if drain {
+					if got.Status != store.StatusFailed || got.Reason != store.ReasonInterrupted {
+						t.Fatal(got)
+					}
+				} else if got.Status != store.StatusDone {
+					t.Fatal(got)
+				}
+			}
+			if len(out.snapshot()) != 0 {
+				t.Fatal(out.snapshot())
+			}
+			f.flush(t)
+			loaded := []string{}
+			for _, ev := range f.tc.Events() {
+				if ev.Name == trail.Loaded {
+					loaded = append(loaded, ev.RequestID)
+				}
+			}
+			if drain {
+				entries, err := os.ReadDir(f.dir)
+				if err != nil || len(entries) != 0 || len(loaded) != 0 {
+					t.Fatal(entries, loaded, err)
+				}
+			} else if !reflect.DeepEqual(loaded, []string{first.RequestID, second.RequestID}) {
+				t.Fatal(loaded)
+			}
+		})
+	}
+}
+
+// R-3ARZ-D9CO R-RH9M-3QT5
+func TestBuildPacingAndPhaseTotals(t *testing.T) {
+	for _, mode := range []string{"budget", "disabled", "pressure"} {
+		t.Run(mode, func(t *testing.T) {
+			f := setup(t)
+			out := new(diagnosticCapture)
+			pauses := []time.Duration{}
+			budget := int64(0)
+			pressure := ""
+			if mode == "budget" {
+				budget = 1
+			}
+			if mode == "pressure" {
+				pressure = filepath.Join(t.TempDir(), "pressure")
+				if err := os.WriteFile(pressure, []byte("some avg10=99.00\nfull avg10=50.00 avg60=0.00\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			sleep := func(ctx context.Context, d time.Duration) {
+				c, ok := identity.FromContext(ctx)
+				if !ok || c != caller() {
+					t.Error("pause caller", c)
+				}
+				pauses = append(pauses, d)
+				if mode == "pressure" && len(pauses) == 3 {
+					if err := os.WriteFile(pressure, []byte("full avg10=0.00\n"), 0600); err != nil {
+						t.Error(err)
+					}
+				}
+			}
+			e := runs.New(runs.Config{Store: f.st, Scrapers: scrapers.New(fake{"fake", func(_ context.Context, b func([]source.Row) error) error {
+				return b([]source.Row{{SourceID: "one", Digest: "value"}})
+			}}), Telemetry: f.w, Events: f.em, Sleep: sleep, Stderr: out, Now: func() time.Time { return time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC) }, Budget: budget, Pressure: pressure, PressureLimit: 10})
+			r, err := e.Start(context.Background(), caller(), "fake")
+			if err != nil {
+				t.Fatal(err)
+			}
+			ended(t, f.st, r.ID)
+			e.Drain(context.Background())
+			f.flush(t)
+			ts := f.tc.Events()
+			names := []string{}
+			var bytes int64
+			var paused time.Duration
+			for _, ev := range ts {
+				names = append(names, ev.Name)
+				if ev.Name == trail.Collected || ev.Name == trail.Loaded {
+					if ev.User != caller().UserID || ev.RequestID != caller().RequestID || ev.Attrs["scraper"] != "fake" || ev.Attrs["run"] != r.ID || ev.Attrs["duration_us"] != int64(0) {
+						t.Fatal(ev)
+					}
+					bytes += ev.Attrs["bytes"].(int64)
+					paused += time.Duration(ev.Attrs["paused_us"].(int64)) * time.Microsecond
+				}
+			}
+			if !reflect.DeepEqual(names, []string{trail.Started, trail.Collected, trail.Loaded, trail.Finished}) || len(f.ec.Events()) != 2 {
+				t.Fatal(names, f.ec.Events())
+			}
+			total := time.Duration(0)
+			for _, d := range pauses {
+				total += d
+			}
+			switch mode {
+			case "budget":
+				if bytes <= 0 || total != time.Duration(bytes)*time.Second || paused != total {
+					t.Fatal(bytes, total, paused)
+				}
+			case "disabled":
+				if len(pauses) != 0 {
+					t.Fatal(pauses)
+				}
+			case "pressure":
+				if !reflect.DeepEqual(pauses, []time.Duration{5 * time.Second, 5 * time.Second, 5 * time.Second}) || paused != total {
+					t.Fatal(pauses, paused)
+				}
+			}
+		})
+	}
+}
+
+// R-33GL-2MWI R-374A-7Y4L R-3GVH-A425
+func TestFailedBatchSticks(t *testing.T) {
+	f := setup(t)
+	if err := os.WriteFile(f.dir, []byte("blocked"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s := store.New(f.d, store.Config{Runs: f.dir, ChunkBytes: 1, Now: func() time.Time { return time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC) }, Rand: new(random)})
+	out := new(diagnosticCapture)
+	errs := make(chan []error, 1)
+	e := retryEngine(t, f, s, fake{"fake", func(_ context.Context, b func([]source.Row) error) error {
+		a := b([]source.Row{{SourceID: "first"}})
+		z := b([]source.Row{{SourceID: "second"}})
+		errs <- []error{a, z}
+		return nil
+	}}, func(context.Context, time.Duration) { t.Error("build failure paused") }, out)
+	r, err := e.Start(context.Background(), caller(), "fake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := receive(t, errs)
+	if got[0] == nil || got[1] == nil || !errors.Is(got[1], got[0]) {
+		t.Fatal(got)
+	}
+	done := ended(t, f.st, r.ID)
+	e.Drain(context.Background())
+	if done.Reason != store.ReasonStore || len(out.snapshot()) != 1 {
+		t.Fatal(done, out.snapshot())
+	}
 }

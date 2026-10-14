@@ -3,6 +3,7 @@ package trail
 
 import (
 	"context"
+	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
@@ -39,4 +40,19 @@ func Record(ctx context.Context, w *telemetry.Writer, em *events.Emitter, name s
 	if em != nil {
 		em.Emit(ctx, name, events.Attrs(attrs))
 	}
+}
+
+// Collected names a completed collect phase.
+const Collected = "scrape.collected"
+
+// Loaded names a completed load phase.
+const Loaded = "scrape.loaded"
+
+// Phase records successful build phases in telemetry as the stored starter.
+func Phase(ctx context.Context, w *telemetry.Writer, name string, r store.Run, bytes int64, elapsed, paused time.Duration) {
+	if w == nil || (name != Collected && name != Loaded) {
+		return
+	}
+	ctx = identity.NewContext(ctx, identity.Caller{UserID: r.UserID, RequestID: r.RequestID})
+	w.Emit(ctx, name, telemetry.Attrs{"scraper": r.Scraper, "run": r.ID, "bytes": bytes, "duration_us": int64(elapsed / time.Microsecond), "paused_us": int64(paused / time.Microsecond)})
 }

@@ -24,7 +24,6 @@ type retryStore struct {
 	err      error
 	calls    int
 	ids      []string
-	rows     [][]source.Row
 	mu       sync.Mutex
 }
 
@@ -35,7 +34,7 @@ func (s *retryStore) RunningRuns(ctx context.Context) ([]store.Run, error) {
 	return s.Store.RunningRuns(ctx)
 }
 
-func (s *retryStore) refuse(op, id string, rows []source.Row) error {
+func (s *retryStore) refuse(op, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if op != s.op {
@@ -43,26 +42,26 @@ func (s *retryStore) refuse(op, id string, rows []source.Row) error {
 	}
 	s.calls++
 	s.ids = append(s.ids, id)
-	s.rows = append(s.rows, append([]source.Row(nil), rows...))
 	if s.calls <= s.failures {
 		return s.err
 	}
 	return nil
 }
-func (s *retryStore) PutRows(ctx context.Context, id string, rows []source.Row) error {
-	if err := s.refuse("PutRows", id, rows); err != nil {
-		return err
+func (s *retryStore) Collect(ctx context.Context, id string, step store.Step) (*store.Collection, error) {
+	if err := s.refuse("Collect", id); err != nil {
+		return nil, err
 	}
-	return s.Store.PutRows(ctx, id, rows)
+	return s.Store.Collect(ctx, id, step)
 }
-func (s *retryStore) FinishRun(ctx context.Context, id string) (store.Run, error) {
-	if err := s.refuse("FinishRun", id, nil); err != nil {
+func (s *retryStore) TidyFiles(ctx context.Context) error { return s.Store.TidyFiles(ctx) }
+func (s *retryStore) FinishRun(ctx context.Context, id string, counts store.Counts) (store.Run, error) {
+	if err := s.refuse("FinishRun", id); err != nil {
 		return store.Run{}, err
 	}
-	return s.Store.FinishRun(ctx, id)
+	return s.Store.FinishRun(ctx, id, counts)
 }
 func (s *retryStore) FailRun(ctx context.Context, id, reason string) (store.Run, error) {
-	if err := s.refuse("FailRun", id, nil); err != nil {
+	if err := s.refuse("FailRun", id); err != nil {
 		return store.Run{}, err
 	}
 	return s.Store.FailRun(ctx, id, reason)
@@ -86,7 +85,7 @@ func (c *diagnosticCapture) snapshot() []string {
 }
 func retryEngine(t *testing.T, f *fixture, s runs.Store, sc source.Scraper, sleep func(context.Context, time.Duration), out *diagnosticCapture) *runs.Engine {
 	t.Helper()
-	cfg := runs.Config{s, scrapers.New(sc), f.w, f.em, sleep, out}
+	cfg := runs.Config{s, scrapers.New(sc), f.w, f.em, sleep, out, func() time.Time { return time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC) }, 0, 0, ""}
 	e := runs.New(cfg)
 	var _ events.Handler = e.Deliver
 	t.Cleanup(func() {
@@ -97,12 +96,12 @@ func retryEngine(t *testing.T, f *fixture, s runs.Store, sc source.Scraper, slee
 	return e
 }
 
-// R-L3O3-9N6P R-L4VZ-NEXE R-L63W-16O3 R-L8JO-SQ5H R-LAZH-K9MV R-LC7D-Y1DK R-LDFA-BT49
+// R-2XD3-5S71 R-QKCB-RXSE R-QLK8-5PJ3 R-QMS4-JH9S R-QP7X-B0R6 R-R2MT-IHWT R-R3UP-W9NI R-R52M-A1E7 R-R6AI-NT4W R-3EFO-IKKR R-3FNK-WCBG R-3GVH-A425
 func TestWriteRetriesAndDiagnostics(t *testing.T) {
 	if runs.WriteRetries != 5 || runs.WriteBackoff != time.Second || runs.Retrying == "" || runs.GaveUp == "" || strings.Contains(runs.Retrying+runs.GaveUp, "\n") {
 		t.Fatal("retry declarations")
 	}
-	for _, op := range []string{"PutRows", "FinishRun", "FailRun"} {
+	for _, op := range []string{"FinishRun", "FailRun"} {
 		for _, mode := range []string{"success", "exhausted", "other", "clean"} {
 			t.Run(op+"/"+mode, func(t *testing.T) {
 				f := setup(t)
@@ -129,11 +128,9 @@ func TestWriteRetriesAndDiagnostics(t *testing.T) {
 						t.Error("diagnostic did not precede pause")
 					}
 				}
-				batch := []source.Row{{SourceID: "first", Raw: []byte(`{"value":"private"}`)}, {SourceID: "second"}}
-				sc := fake{"fake", func(_ context.Context, b func([]source.Row) error) error {
-					if op == "PutRows" {
-						return b(batch)
-					}
+
+				sc := fake{"fake", func(_ context.Context, _ func([]source.Row) error) error {
+
 					if op == "FailRun" {
 						return errors.New("source failed")
 					}
@@ -144,7 +141,7 @@ func TestWriteRetriesAndDiagnostics(t *testing.T) {
 				if startErr != nil {
 					t.Fatal(startErr)
 				}
-				if (mode == "other" || mode == "exhausted") && op != "PutRows" {
+				if mode == "other" || mode == "exhausted" {
 					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 					defer cancel()
 					for len(out.snapshot()) != failures {
@@ -162,7 +159,7 @@ func TestWriteRetriesAndDiagnostics(t *testing.T) {
 				s.mu.Lock()
 				calls := s.calls
 				ids := append([]string(nil), s.ids...)
-				rows := append([][]source.Row(nil), s.rows...)
+
 				s.mu.Unlock()
 				wantCalls := failures + 1
 				if mode == "other" || mode == "exhausted" {
@@ -204,13 +201,7 @@ func TestWriteRetriesAndDiagnostics(t *testing.T) {
 						t.Fatalf("%q want %q", line, want)
 					}
 				}
-				if op == "PutRows" {
-					for _, got := range rows {
-						if !reflect.DeepEqual(got, batch) {
-							t.Fatal("retried different rows", got)
-						}
-					}
-				}
+
 				got, getErr := f.st.GetRun(context.Background(), r.ID)
 				if getErr != nil {
 					t.Fatal(getErr)
@@ -221,11 +212,7 @@ func TestWriteRetriesAndDiagnostics(t *testing.T) {
 					status, reason = store.StatusFailed, store.ReasonSource
 				}
 				if mode == "other" || mode == "exhausted" {
-					if op == "PutRows" {
-						status, reason = store.StatusFailed, store.ReasonStore
-					} else {
-						status, reason, finished = store.StatusRunning, "", false
-					}
+					status, reason, finished = store.StatusRunning, "", false
 				}
 				if got.Status != status || got.Reason != reason {
 					t.Fatal(got)
@@ -235,20 +222,17 @@ func TestWriteRetriesAndDiagnostics(t *testing.T) {
 				if finished {
 					wantEvents = 2
 				}
-				if len(f.ec.Events()) != wantEvents || len(f.tc.Events()) != wantEvents {
+				if len(f.ec.Events()) != wantEvents || len(f.tc.Events()) != wantEvents+map[bool]int{true: 2, false: 0}[op == "FinishRun"] {
 					t.Fatal(f.ec.Events(), f.tc.Events())
 				}
-				if status == store.StatusDone && op == "PutRows" && got.Rows != int64(len(batch)) {
-					t.Fatal(got)
-				}
+
 			})
 		}
 	}
 }
 
-// R-L7BS-EYES R-L8JO-SQ5H R-LAZH-K9MV R-LC7D-Y1DK R-LDFA-BT49
 func TestRetryWaitsForEachInjectedPause(t *testing.T) {
-	for _, op := range []string{"PutRows", "FinishRun"} {
+	for _, op := range []string{"FinishRun"} {
 		t.Run(op, func(t *testing.T) {
 			f := setup(t)
 			failures := 2
@@ -295,16 +279,7 @@ func TestRetryWaitsForEachInjectedPause(t *testing.T) {
 				if err != nil || stored.Status != store.StatusRunning {
 					t.Fatal(stored, err)
 				}
-				if op == "PutRows" {
-					if _, err := f.st.GetRow(context.Background(), r.ID, "kept"); !errors.Is(err, store.ErrNotFound) {
-						t.Fatal("batch stored before retry", err)
-					}
-					select {
-					case err := <-batchResult:
-						t.Fatal("batch returned before retry", err)
-					default:
-					}
-				}
+
 				release <- struct{}{}
 			}
 			if err := receive(t, batchResult); err != nil {
@@ -322,41 +297,8 @@ func TestRetryWaitsForEachInjectedPause(t *testing.T) {
 	}
 }
 
-// R-L7BS-EYES R-L8JO-SQ5H R-LC7D-Y1DK R-LDFA-BT49
-func TestFailingHandleRefusesBatchWithoutPause(t *testing.T) {
-	f := setup(t)
-	out := new(diagnosticCapture)
-	batchResult := make(chan error, 1)
-	sc := fake{"fake", func(_ context.Context, batch func([]source.Row) error) error {
-		f.d.SetFailing(true)
-		err := batch([]source.Row{{SourceID: "refused"}})
-		f.d.SetFailing(false)
-		batchResult <- err
-		return err
-	}}
-	e := retryEngine(t, f, f.st, sc, func(context.Context, time.Duration) { t.Error("non-lock error paused") }, out)
-	r, err := e.Start(context.Background(), caller(), "fake")
-	if err != nil {
-		t.Fatal(err)
-	}
-	batchErr := receive(t, batchResult)
-	if !errors.Is(batchErr, store.ErrUnreachable) || errors.Is(batchErr, store.ErrLocked) {
-		t.Fatal(batchErr)
-	}
-	done := ended(t, f.st, r.ID)
-	e.Drain(context.Background())
-	if done.Status != store.StatusFailed || done.Reason != store.ReasonStore {
-		t.Fatal(done)
-	}
-	want := "scrapes: " + r.ID + " PutRows: " + runs.GaveUp + ": " + strings.ReplaceAll(batchErr.Error(), "\n", "; ") + "\n"
-	if lines := out.snapshot(); !reflect.DeepEqual(lines, []string{want}) {
-		t.Fatal(lines, want)
-	}
-}
-
-// R-L8JO-SQ5H R-LAZH-K9MV R-LDFA-BT49 R-LFV3-3CLN
 func TestDrainDuringWritePause(t *testing.T) {
-	for _, op := range []string{"PutRows", "FinishRun", "FailRun"} {
+	for _, op := range []string{"FinishRun", "FailRun"} {
 		t.Run(op, func(t *testing.T) {
 			f := setup(t)
 			s := &retryStore{Store: f.st, op: op, failures: 100, err: errors.Join(store.ErrLocked, store.ErrUnreachable)}
@@ -365,11 +307,9 @@ func TestDrainDuringWritePause(t *testing.T) {
 			released := make(chan struct{})
 			workerDone := make(chan struct{})
 			sleep := func(ctx context.Context, _ time.Duration) { paused <- ctx; <-ctx.Done(); <-released }
-			sc := fake{"fake", func(_ context.Context, b func([]source.Row) error) error {
+			sc := fake{"fake", func(_ context.Context, _ func([]source.Row) error) error {
 				defer close(workerDone)
-				if op == "PutRows" {
-					return b([]source.Row{{SourceID: "first"}})
-				}
+
 				if op == "FailRun" {
 					return errors.New("source")
 				}
@@ -386,7 +326,7 @@ func TestDrainDuringWritePause(t *testing.T) {
 			drained := make(chan struct{})
 			go func() { e.Drain(observed); close(drained) }()
 			receive(t, observed.seen)
-			if op != "PutRows" && pausectx.Err() != nil {
+			if pausectx.Err() != nil {
 				t.Fatal("ending cancelled before drain deadline")
 			}
 			cancel()
@@ -408,18 +348,13 @@ func TestDrainDuringWritePause(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if op == "PutRows" {
-				if got.Status != store.StatusFailed || got.Reason != store.ReasonInterrupted {
-					t.Fatal(got)
-				}
-			} else if got.Status != store.StatusRunning {
+			if got.Status != store.StatusRunning {
 				t.Fatal("ending changed at drain", got)
 			}
 		})
 	}
 }
 
-// R-LAZH-K9MV R-LFV3-3CLN
 func TestEndingPauseKeepsEndingAndAllowsOtherStarts(t *testing.T) {
 	for _, op := range []string{"FinishRun", "FailRun"} {
 		t.Run(op, func(t *testing.T) {
@@ -441,7 +376,7 @@ func TestEndingPauseKeepsEndingAndAllowsOtherStarts(t *testing.T) {
 				<-ctx.Done()
 				return ctx.Err()
 			}}
-			cfg := runs.Config{s, scrapers.New(sc, other), f.w, f.em, sleep, out}
+			cfg := runs.Config{s, scrapers.New(sc, other), f.w, f.em, sleep, out, func() time.Time { return time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC) }, 0, 0, ""}
 			e := runs.New(cfg)
 			t.Cleanup(func() {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -509,14 +444,14 @@ type heldSuccessfulEnding struct {
 	release chan struct{}
 }
 
-func (s *heldSuccessfulEnding) FinishRun(ctx context.Context, id string) (store.Run, error) {
-	r, err := s.Store.FinishRun(ctx, id)
+func (s *heldSuccessfulEnding) FinishRun(ctx context.Context, id string, counts store.Counts) (store.Run, error) {
+	r, err := s.Store.FinishRun(ctx, id, counts)
 	s.stored <- r
 	<-s.release
 	return r, err
 }
 
-// R-LAZH-K9MV R-LFV3-3CLN R-LDFA-BT49 R-6IFH-K1FU
+// R-6IFH-K1FU
 func TestSuccessfulEndingCrossingDrainDeadlineEmitsFinished(t *testing.T) {
 	f := setup(t)
 	s := &heldSuccessfulEnding{Store: f.st, stored: make(chan store.Run, 1), release: make(chan struct{})}
@@ -541,7 +476,7 @@ func TestSuccessfulEndingCrossingDrainDeadlineEmitsFinished(t *testing.T) {
 		t.Fatal("successful in-flight write blocked drain deadline")
 	}
 	f.flush(t)
-	if len(f.tc.Events()) != 1 || len(f.ec.Events()) != 1 {
+	if len(f.tc.Events()) != 3 || len(f.ec.Events()) != 1 {
 		t.Fatal("finished published before ending returned", f.tc.Events(), f.ec.Events())
 	}
 	close(s.release)
@@ -549,7 +484,7 @@ func TestSuccessfulEndingCrossingDrainDeadlineEmitsFinished(t *testing.T) {
 	defer waitcancel()
 	for {
 		f.flush(t)
-		if len(f.tc.Events()) >= 2 && len(f.ec.Events()) >= 2 {
+		if len(f.tc.Events()) >= 4 && len(f.ec.Events()) >= 2 {
 			break
 		}
 		select {
@@ -559,12 +494,12 @@ func TestSuccessfulEndingCrossingDrainDeadlineEmitsFinished(t *testing.T) {
 			runtime.Gosched()
 		}
 	}
-	for _, list := range [][]string{{f.tc.Events()[0].Name, f.tc.Events()[1].Name}, {f.ec.Events()[0].Name, f.ec.Events()[1].Name}} {
+	for _, list := range [][]string{{f.tc.Events()[0].Name, f.tc.Events()[3].Name}, {f.ec.Events()[0].Name, f.ec.Events()[1].Name}} {
 		if !reflect.DeepEqual(list, []string{"scrape.started", "scrape.finished"}) {
 			t.Fatal(list)
 		}
 	}
-	if len(f.tc.Events()) != 2 || len(f.ec.Events()) != 2 {
+	if len(f.tc.Events()) != 4 || len(f.ec.Events()) != 2 {
 		t.Fatal(f.tc.Events(), f.ec.Events())
 	}
 	if len(out.snapshot()) != 0 {
@@ -576,28 +511,19 @@ func TestSuccessfulEndingCrossingDrainDeadlineEmitsFinished(t *testing.T) {
 	}
 }
 
-type heldDiagnostic struct {
-	entered chan struct{}
-	release chan struct{}
-}
-
-func (w *heldDiagnostic) Write(p []byte) (int, error) {
-	close(w.entered)
-	<-w.release
-	return len(p), nil
-}
-
-// R-L4VZ-NEXE
-func TestNilSleepEndsImmediatelyForCancelledWork(t *testing.T) {
+// R-QKCB-RXSE
+func TestNilSleepBuildPauseEndsOnDrain(t *testing.T) {
 	f := setup(t)
-	s := &retryStore{Store: f.st, op: "PutRows", failures: 1, err: errors.Join(store.ErrUnreachable, store.ErrLocked)}
-	out := &heldDiagnostic{entered: make(chan struct{}), release: make(chan struct{})}
-	work := make(chan context.Context, 1)
-	sc := fake{"fake", func(ctx context.Context, b func([]source.Row) error) error {
-		work <- ctx
-		return b([]source.Row{{SourceID: "first"}})
-	}}
-	e := runs.New(runs.Config{Store: s, Scrapers: scrapers.New(sc), Telemetry: f.w, Events: f.em, Stderr: out})
+	now := func() time.Time { return time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC) }
+	st := store.New(f.d, store.Config{Now: now, Rand: new(random), Runs: f.dir, ChunkBytes: 1})
+	sleeping := make(chan struct{})
+	result := make(chan error, 1)
+	s := &observedBuildPause{Store: st, sleeping: sleeping}
+	e := runs.New(runs.Config{Store: s, Scrapers: scrapers.New(fake{"fake", func(_ context.Context, b func([]source.Row) error) error {
+		err := b([]source.Row{{SourceID: "one"}})
+		result <- err
+		return err
+	}}), Telemetry: f.w, Events: f.em, Now: now, Budget: 1})
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
@@ -607,29 +533,254 @@ func TestNilSleepEndsImmediatelyForCancelledWork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	workctx := receive(t, work)
-	receive(t, out.entered)
-	observed := &observedContext{Context: context.Background(), seen: make(chan struct{})}
+	// The observed context signals when the default Sleep evaluates its Done
+	// channel, after its long budget pause has begun. A no-op default never
+	// reaches this observation; a default ignoring cancellation cannot release
+	// the batch within the drain's deadline.
+	receive(t, sleeping)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
 	drained := make(chan struct{})
-	go func() { e.Drain(observed); close(drained) }()
-	receive(t, observed.seen)
-	receive(t, workctx.Done())
-	// The diagnostic precedes Sleep; releasing it now gives the default Sleep
-	// an already-cancelled context, so it must not wait its one-second timer.
-	close(out.release)
+	go func() { e.Drain(ctx); close(drained) }()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal("default pause did not cancel", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("default pause ignored cancellation")
+	}
+	receive(t, drained)
+	done, err := st.GetRun(context.Background(), r.ID)
+	if err != nil || done.Status != store.StatusFailed || done.Reason != store.ReasonInterrupted {
+		t.Fatal(done, err)
+	}
+}
+
+type observedBuildPause struct {
+	runs.Store
+	sleeping chan struct{}
+}
+
+func (s *observedBuildPause) Collect(ctx context.Context, id string, step store.Step) (*store.Collection, error) {
+	observed := &observedContext{Context: ctx, seen: s.sleeping}
+	return s.Store.Collect(ctx, id, func(ctx context.Context, n int64, took time.Duration) error {
+		observed.Context = ctx
+		return step(observed, n, took)
+	})
+}
+
+// R-3I3D-NVSU
+func TestDrainDeadlineWhileStoreCallBlocked(t *testing.T) {
+	for _, op := range []string{"Start", "Deliver", "RunningRuns", "FailRun", "TidyFiles"} {
+		t.Run(op, func(t *testing.T) {
+			f := setup(t)
+			if op == "FailRun" {
+				if _, err := f.st.AddRun(context.Background(), store.Run{Scraper: "old", UserID: "old"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			entered := make(chan struct{})
+			release := make(chan struct{})
+			var once sync.Once
+			unblock := func() { once.Do(func() { close(release) }) }
+			defer unblock()
+			storeOp := op
+			if op == "Start" || op == "Deliver" {
+				storeOp = "AddRun"
+			}
+			s := &heldEngineStore{Store: f.st, op: storeOp, entered: entered, release: release}
+			e := runs.New(runs.Config{Store: s, Scrapers: scrapers.New(fake{"fake", func(ctx context.Context, _ func([]source.Row) error) error { <-ctx.Done(); return ctx.Err() }}), Telemetry: f.w, Events: f.em, Now: func() time.Time { return time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC) }})
+			returned := make(chan struct{})
+			t.Cleanup(func() {
+				unblock()
+				receive(t, returned)
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
+				e.Drain(ctx)
+			})
+			go func() {
+				defer close(returned)
+				switch op {
+				case "Deliver":
+					_ = e.Deliver(context.Background(), events.Delivery{Event: events.Event{ID: "blocked-delivery", Name: runs.FiredEvent("fake")}})
+				case "Start":
+					_, _ = e.Start(context.Background(), caller(), "fake")
+				default:
+					_ = e.Recover(context.Background())
+				}
+			}()
+			receive(t, entered)
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			drained := make(chan struct{})
+			go func() { e.Drain(ctx); close(drained) }()
+			select {
+			case <-drained:
+			case <-time.After(time.Second):
+				t.Fatal("blocked store call prevented drain deadline")
+			}
+			unblock()
+			receive(t, returned)
+			endctx, endcancel := context.WithTimeout(context.Background(), time.Second)
+			defer endcancel()
+			e.Drain(endctx)
+		})
+	}
+}
+
+type heldEngineStore struct {
+	runs.Store
+	op      string
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (s *heldEngineStore) hold(op string) {
+	if op == s.op {
+		close(s.entered)
+		<-s.release
+	}
+}
+func (s *heldEngineStore) AddRun(ctx context.Context, r store.Run) (store.Run, error) {
+	s.hold("AddRun")
+	return s.Store.AddRun(ctx, r)
+}
+func (s *heldEngineStore) RunningRuns(ctx context.Context) ([]store.Run, error) {
+	s.hold("RunningRuns")
+	return s.Store.RunningRuns(ctx)
+}
+func (s *heldEngineStore) FailRun(ctx context.Context, id, reason string) (store.Run, error) {
+	s.hold("FailRun")
+	return s.Store.FailRun(ctx, id, reason)
+}
+func (s *heldEngineStore) TidyFiles(ctx context.Context) error {
+	s.hold("TidyFiles")
+	return s.Store.TidyFiles(ctx)
+}
+
+// R-3I3D-NVSU R-2DWR-Y34J
+func TestSuccessfulStartCrossingDrainDeadlineIsInterrupted(t *testing.T) {
+	for _, delivery := range []bool{false, true} {
+		t.Run(map[bool]string{false: "Start", true: "Deliver"}[delivery], func(t *testing.T) {
+			f := setup(t)
+			stored := make(chan store.Run, 1)
+			release := make(chan struct{})
+			var once sync.Once
+			unblock := func() { once.Do(func() { close(release) }) }
+			defer unblock()
+			s := &heldSuccessfulStart{Store: f.st, stored: stored, release: release}
+			e := runs.New(runs.Config{Store: s, Scrapers: scrapers.New(fake{"fake", func(ctx context.Context, _ func([]source.Row) error) error {
+				if ctx.Err() == nil {
+					t.Error("late starter launched uncanceled scraper")
+				}
+				return ctx.Err()
+			}}), Telemetry: f.w, Events: f.em, Now: func() time.Time { return time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC) }})
+			returned := make(chan struct{})
+			t.Cleanup(func() {
+				unblock()
+				receive(t, returned)
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
+				e.Drain(ctx)
+			})
+			go func() {
+				defer close(returned)
+				if delivery {
+					_ = e.Deliver(context.Background(), events.Delivery{Event: events.Event{ID: "late-delivery", Name: runs.FiredEvent("fake")}})
+				} else {
+					_, _ = e.Start(context.Background(), caller(), "fake")
+				}
+			}()
+			r := receive(t, stored)
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			drained := make(chan struct{})
+			go func() { e.Drain(ctx); close(drained) }()
+			receive(t, drained)
+			unblock()
+			receive(t, returned)
+			done := ended(t, f.st, r.ID)
+			if done.Status != store.StatusFailed || done.Reason != store.ReasonInterrupted {
+				t.Fatal(done)
+			}
+			e.Drain(context.Background())
+			f.flush(t)
+			telemetryNames, busNames := []string{}, []string{}
+			for _, ev := range f.tc.Events() {
+				telemetryNames = append(telemetryNames, ev.Name)
+			}
+			for _, ev := range f.ec.Events() {
+				busNames = append(busNames, ev.Name)
+			}
+			for _, list := range [][]string{telemetryNames, busNames} {
+				if !reflect.DeepEqual(list, []string{"scrape.started", "scrape.finished"}) {
+					t.Fatal(list)
+				}
+			}
+		})
+	}
+}
+
+type heldSuccessfulStart struct {
+	runs.Store
+	stored  chan store.Run
+	release chan struct{}
+}
+
+func (s *heldSuccessfulStart) AddRun(ctx context.Context, r store.Run) (store.Run, error) {
+	r, err := s.Store.AddRun(ctx, r)
+	s.stored <- r
+	<-s.release
+	return r, err
+}
+
+// R-3I3D-NVSU
+func TestDrainDeadlineWhileDiagnosticBlocked(t *testing.T) {
+	f := setup(t)
+	release := make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	defer unblock()
+	out := &heldDiagnostic{entered: make(chan struct{}), release: release, exited: make(chan struct{})}
+	s := &retryStore{Store: f.st, op: "Collect", failures: 1, err: errors.New("chosen error")}
+	e := runs.New(runs.Config{Store: s, Scrapers: scrapers.New(fake{"fake", func(context.Context, func([]source.Row) error) error {
+		t.Error("refused build walked source")
+		return nil
+	}}), Telemetry: f.w, Events: f.em, Stderr: out, Now: func() time.Time { return time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC) }})
+	t.Cleanup(func() {
+		unblock()
+		receive(t, out.exited)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		e.Drain(ctx)
+	})
+	if _, err := e.Start(context.Background(), caller(), "fake"); err != nil {
+		t.Fatal(err)
+	}
+	receive(t, out.entered)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	drained := make(chan struct{})
+	go func() { e.Drain(ctx); close(drained) }()
 	select {
 	case <-drained:
-	case <-time.After(time.Second / 2):
-		t.Fatal("nil Sleep ignored cancelled context")
+	case <-time.After(time.Second):
+		t.Fatal("blocked diagnostic prevented drain deadline")
 	}
-	s.mu.Lock()
-	calls := s.calls
-	s.mu.Unlock()
-	if calls != 1 {
-		t.Fatal(calls)
-	}
-	got, err := f.st.GetRun(context.Background(), r.ID)
-	if err != nil || got.Status != store.StatusFailed || got.Reason != store.ReasonInterrupted {
-		t.Fatal(got, err)
-	}
+	unblock()
+	receive(t, out.exited)
+}
+
+type heldDiagnostic struct {
+	entered chan struct{}
+	release chan struct{}
+	exited  chan struct{}
+}
+
+func (w *heldDiagnostic) Write(p []byte) (int, error) {
+	close(w.entered)
+	<-w.release
+	close(w.exited)
+	return len(p), nil
 }

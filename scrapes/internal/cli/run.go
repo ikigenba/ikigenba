@@ -77,10 +77,10 @@ func Run(ctx context.Context, p Process) int {
 	writer := telemetry.New(telemetry.Config{Service: "scrapes", Version: p.Version, Sink: telemetryGate{gate, p.Sink}, Stderr: p.Stderr, Now: p.Now, Sleep: p.Sleep, Rand: random})
 	writer.Ready()
 	emitter := events.New(events.Config{Service: "scrapes", Sink: eventGate{gate, p.EventSink}, Stderr: p.Stderr, Now: p.Now, Sleep: p.Sleep, Rand: random, Telemetry: writer, Emits: trail.Emits()})
-	s := store.New(d, store.Config{Now: p.Now, Rand: random})
+	s := store.New(d, store.Config{Now: p.Now, Rand: random, Runs: filepath.Join(p.Dir, "runs")})
 	servicesPath, _ := p.LookupEnv(services.Variable)
 	registry := scrapers.Default(scrapers.Config{HTTP: p.HTTP, Telemetry: writer, Now: p.Now, Sleep: p.Sleep, UserAgent: pages.ServiceName + " (" + pages.Description + ")", Settings: cfg})
-	engine := runs.New(runs.Config{Store: s, Scrapers: registry, Telemetry: writer, Events: emitter, Sleep: p.Sleep, Stderr: p.Stderr})
+	engine := runs.New(runs.Config{Store: s, Scrapers: registry, Telemetry: writer, Events: emitter, Sleep: p.Sleep, Stderr: p.Stderr, Now: p.Now, Budget: cfg.WriteBudget, PressureLimit: cfg.PressureLimit, Pressure: p.Pressure})
 	err = engine.Recover(ctx)
 	if err != nil {
 		emitter.Shutdown(context.Background())

@@ -31,7 +31,7 @@ import (
 
 // TestBinary is the sole process-executing test: the remaining tests use Run.
 func TestBinary(t *testing.T) {
-	// R-Z2EM-GKGH R-Z3MI-UC76 R-Z4UF-83XV
+	// R-Z2EM-GKGH R-Z3MI-UC76 R-4M7I-15HS
 	t.Setenv(services.Variable, "")
 	t.Setenv(version.CommitVariable, "123456789abcdef")
 	release := pages.ServiceName + "-binary-fixture"
@@ -85,7 +85,7 @@ func TestBinary(t *testing.T) {
 		{"int", syscall.SIGINT, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// R-RIQT-VGD2 R-Z7A7-ZNF9 R-Z8I4-DF5Y R-Z9Q0-R6WN
+			// R-4KZL-NDR3 R-Z7A7-ZNF9 R-Z8I4-DF5Y R-Z9Q0-R6WN
 			short, err := os.MkdirTemp("", "scrapes-")
 			if err != nil {
 				t.Fatal(err)

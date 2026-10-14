@@ -10,13 +10,13 @@ import (
 
 // Settings holds startup settings in read order.
 type Settings struct {
-	DrainSeconds, KeepRuns int64
-	FMCSAStates            []string
-	FMCSAMinPowerUnits     int64
-	FMCSAStatus            string
-	PPPFiles               []string
-	PPPStates              []string
-	MNParcelsCounties      []string
+	DrainSeconds, KeepRuns, WriteBudget, PressureLimit int64
+	FMCSAStates                                        []string
+	FMCSAMinPowerUnits                                 int64
+	FMCSAStatus                                        string
+	PPPFiles                                           []string
+	PPPStates                                          []string
+	MNParcelsCounties                                  []string
 }
 
 // Error identifies a refused setting.
@@ -27,6 +27,8 @@ func (e *Error) Error() string { return e.Name + " is '" + e.Value + "', not " +
 // Configuration refusal copy.
 const (
 	WantSeconds    string = "a positive whole number of seconds"
+	WantBudget     string = "a positive whole number of bytes per second"
+	WantPressure   string = "a whole percentage from 1 to 100"
 	WantRuns       string = "a positive whole number of runs"
 	WantStates     string = "comma-separated two-letter uppercase state codes"
 	WantPowerUnits string = "a non-negative whole number of power units"
@@ -37,7 +39,7 @@ const (
 
 // Defaults returns fresh default settings.
 func Defaults() Settings {
-	return Settings{5, 2, []string{"MN", "WI"}, 5, "A", []string{"public_150k_plus_240930.csv"}, []string{"MN", "WI"}, []string{"Carlton", "Chisago", "Isanti", "Mille Lacs", "Aitkin", "St. Louis", "Anoka", "Washington", "Sherburne", "Stearns", "Benton", "Morrison", "Crow Wing"}}
+	return Settings{5, 2, 4096000, 10, []string{"MN", "WI"}, 5, "A", []string{"public_150k_plus_240930.csv"}, []string{"MN", "WI"}, []string{"Carlton", "Chisago", "Isanti", "Mille Lacs", "Aitkin", "St. Louis", "Anoka", "Washington", "Sherburne", "Stearns", "Benton", "Morrison", "Crow Wing"}}
 }
 
 // Drain returns the bounded drain duration.
@@ -73,11 +75,11 @@ func capital(v string, n int) bool {
 	return true
 }
 
-// Read validates and reads the eight settings, stopping at the first refusal.
+// Read validates and reads the ten settings, stopping at the first refusal.
 func Read(lookup func(string) (string, bool)) (Settings, error) {
 	s := Defaults()
-	keys := []string{"DRAIN_SECONDS", "SCRAPE_KEEP_RUNS", "FMCSA_STATES", "FMCSA_MIN_POWER_UNITS", "FMCSA_STATUS", "PPP_FILES", "PPP_STATES", "MN_PARCELS_COUNTIES"}
-	wants := []string{WantSeconds, WantRuns, WantStates, WantPowerUnits, WantStatus, WantFiles, WantStates, WantCounties}
+	keys := []string{"DRAIN_SECONDS", "SCRAPE_KEEP_RUNS", "SCRAPE_WRITE_BUDGET", "SCRAPE_PRESSURE_LIMIT", "FMCSA_STATES", "FMCSA_MIN_POWER_UNITS", "FMCSA_STATUS", "PPP_FILES", "PPP_STATES", "MN_PARCELS_COUNTIES"}
+	wants := []string{WantSeconds, WantRuns, WantBudget, WantPressure, WantStates, WantPowerUnits, WantStatus, WantFiles, WantStates, WantCounties}
 	for i, k := range keys {
 		v, ok := lookup(k)
 		if !ok || v == "" {
@@ -85,27 +87,31 @@ func Read(lookup func(string) (string, bool)) (Settings, error) {
 		}
 		valid := false
 		switch i {
-		case 0, 1, 3:
-			valid = number(v, i == 3)
-		case 2, 6:
+		case 0, 1, 2, 3, 5:
+			valid = number(v, i == 5)
+			if i == 3 {
+				n, err := strconv.ParseInt(v, 10, 64)
+				valid = valid && err == nil && n <= 100
+			}
+		case 4, 8:
 			valid = true
 			for _, code := range strings.Split(v, ",") {
 				if !capital(code, 2) {
 					valid = false
 				}
 			}
-		case 4:
+		case 6:
 			valid = capital(v, 1)
-		case 5:
-			valid = fileNames(v)
 		case 7:
+			valid = fileNames(v)
+		case 9:
 			valid = countyNames(v)
 		}
 		if !valid {
 			return Settings{}, &Error{k, v, wants[i]}
 		}
 		switch i {
-		case 0, 1, 3:
+		case 0, 1, 2, 3, 5:
 			n, err := strconv.ParseInt(v, 10, 64)
 			if err != nil {
 				n = math.MaxInt64
@@ -115,18 +121,22 @@ func Read(lookup func(string) (string, bool)) (Settings, error) {
 				s.DrainSeconds = n
 			case 1:
 				s.KeepRuns = n
+			case 2:
+				s.WriteBudget = n
 			case 3:
+				s.PressureLimit = n
+			case 5:
 				s.FMCSAMinPowerUnits = n
 			}
-		case 2:
-			s.FMCSAStates = strings.Split(v, ",")
 		case 4:
-			s.FMCSAStatus = v
-		case 5:
-			s.PPPFiles = strings.Split(v, ",")
+			s.FMCSAStates = strings.Split(v, ",")
 		case 6:
-			s.PPPStates = strings.Split(v, ",")
+			s.FMCSAStatus = v
 		case 7:
+			s.PPPFiles = strings.Split(v, ",")
+		case 8:
+			s.PPPStates = strings.Split(v, ",")
+		case 9:
 			s.MNParcelsCounties = strings.Split(v, ",")
 		}
 	}

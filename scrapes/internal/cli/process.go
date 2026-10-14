@@ -35,6 +35,7 @@ type Process struct {
 	Banner    func(page.User) page.Banner
 	MCP       func(*telemetry.Writer) *mcp.Server
 	HTTP      *http.Client
+	Pressure  string
 }
 
 type lockedReader struct {
@@ -47,3 +48,6 @@ func (r *lockedReader) Read(p []byte) (int, error) {
 	defer r.mu.Unlock()
 	return r.reader.Read(p)
 }
+
+// PressureFile is the host I/O pressure source.
+const PressureFile = "/proc/pressure/io"
