@@ -6,6 +6,7 @@ import (
 	"errors"
 	"html/template"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -76,6 +77,7 @@ type LandingData struct {
 	Transfers []TransferRow
 	Page      string
 	Next      string
+	Prev      string
 }
 
 // TransferRow contains the public fields shown in a landing row.
@@ -174,36 +176,63 @@ func Handler(cfg Config) http.Handler {
 		case p == "/":
 			pageValue := r.URL.Query().Get("page")
 			var started time.Time
-			var stamp, afterID string
+			var keyID string
+			backward := false
 			if pageValue != "" {
-				if e := (paging.Token{Tool: "transfers"}).Decode(pageValue, &stamp, &afterID); e != nil {
-					notFound()
-					return
+				var valid bool
+				started, keyID, valid = decodePage(pageValue, "transfers")
+				if !valid {
+					started, keyID, valid = decodePage(pageValue, "transfers-before")
+					backward = valid
 				}
-				var e error
-				started, e = time.Parse(time.RFC3339, stamp)
-				if e != nil || started.UTC().Format(time.RFC3339) != stamp || !store.ValidID(afterID) {
+				if !valid && pageValue == "last" {
+					backward, valid = true, true
+				}
+				if !valid {
 					notFound()
 					return
 				}
 			}
-			ts, e := cfg.Store.ListAfter(r.Context(), c.UserID, started, afterID, paging.DefaultLimit+1)
+			var ts []store.Transfer
+			var e error
+			if backward {
+				ts, e = cfg.Store.ListBefore(r.Context(), c.UserID, started, keyID, paging.DefaultLimit+1)
+			} else {
+				ts, e = cfg.Store.ListAfter(r.Context(), c.UserID, started, keyID, paging.DefaultLimit+1)
+			}
 			if e != nil {
 				unavailable()
 				return
 			}
-			next := ""
-			if len(ts) > paging.DefaultLimit {
+			if backward && len(ts) <= paging.DefaultLimit {
+				w.Header().Set("Location", "/")
+				w.WriteHeader(http.StatusSeeOther)
+				return
+			}
+			more := len(ts) > paging.DefaultLimit
+			if more {
 				ts = ts[:paging.DefaultLimit]
-				last := ts[len(ts)-1]
-				next = (paging.Token{Tool: "transfers"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
+			}
+			if backward {
+				slices.Reverse(ts)
+			}
+			next, prev := "", ""
+			if len(ts) != 0 {
+				if pageValue != "" {
+					first := ts[0]
+					prev = (paging.Token{Tool: "transfers-before"}).Encode(first.Started.UTC().Format(time.RFC3339), first.ID)
+				}
+				if pageValue != "last" && (backward || more) {
+					last := ts[len(ts)-1]
+					next = (paging.Token{Tool: "transfers"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
+				}
 			}
 			rs := make([]TransferRow, 0, len(ts))
 			for _, t := range ts {
 				rs = append(rs, row(t, cfg.ServicesPath))
 			}
 			b.Trail = nil
-			cfg.Pages.Write(w, r, 200, "landing", LandingData{b, rs, pageValue, next})
+			cfg.Pages.Write(w, r, 200, "landing", LandingData{b, rs, pageValue, next, prev})
 		case p == "/tools":
 			rs := make([]ToolRow, 0, 8)
 			for _, t := range tools.Catalog() {
@@ -230,4 +259,16 @@ func Handler(cfg Config) http.Handler {
 			notFound()
 		}
 	})
+}
+
+func decodePage(value, tool string) (time.Time, string, bool) {
+	var stamp, id string
+	if e := (paging.Token{Tool: tool}).Decode(value, &stamp, &id); e != nil {
+		return time.Time{}, "", false
+	}
+	started, e := time.Parse(time.RFC3339, stamp)
+	if e != nil || started.UTC().Format(time.RFC3339) != stamp || !store.ValidID(id) {
+		return time.Time{}, "", false
+	}
+	return started, id, true
 }

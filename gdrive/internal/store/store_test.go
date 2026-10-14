@@ -533,6 +533,70 @@ func TestListAfter(t *testing.T) {
 	read("alice", c.Started, c.ID, 2, []store.Transfer{b, d})
 }
 
+// R-2T5A-SWUY R-2UD7-6OLN
+func TestListBefore(t *testing.T) {
+	f := setup(t)
+	got, err := f.st.ListBefore(background, "alice", time.Time{}, "", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	equal(t, got, []store.Transfer{})
+	f.now = time.Date(2026, 5, 3, 9, 0, 0, 0, time.UTC)
+	d := f.add(store.StatusQueued, "alice")
+	f.now = f.now.Add(time.Second)
+	b := f.add(store.StatusRunning, "alice")
+	c := f.add(store.StatusQueued, "alice")
+	other := f.add(store.StatusRunning, "bob")
+	b, err = f.st.Finish(background, b.ID, store.Ending{Status: store.StatusDone, Bytes: 21, URL: "artifact-url", Link: "drive-link", ArtifactID: "artifact-id"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err = f.st.Finish(background, c.ID, store.Ending{Status: store.StatusFailed, Reason: store.ReasonInterrupted, Bytes: 13})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.now = f.now.Add(time.Second)
+	a := f.add(store.StatusRunning, "alice")
+	for _, test := range []struct {
+		name    string
+		user    string
+		started time.Time
+		id      string
+		n       int
+		want    []store.Transfer
+	}{
+		{"last", "alice", time.Time{}, "", 2, []store.Transfer{d, b}},
+		{"empty key ignores started", "alice", a.Started.Add(time.Hour), "", 2, []store.Transfer{d, b}},
+		{"previous", "alice", b.Started, b.ID, 2, []store.Transfer{c, a}},
+		{"remaining shorter", "alice", c.Started, c.ID, 5, []store.Transfer{a}},
+		{"exact size", "alice", time.Time{}, "", 4, []store.Transfer{d, b, c, a}},
+		{"larger size", "alice", time.Time{}, "", math.MaxInt, []store.Transfer{d, b, c, a}},
+		{"single", "alice", time.Time{}, "", 1, []store.Transfer{d}},
+		{"absent key", "alice", d.Started, "xfr_ffffffffffffffff", 5, []store.Transfer{b, c, a}},
+		{"equivalent timezone", "alice", b.Started.In(time.FixedZone("offset", 3600)), b.ID, 2, []store.Transfer{c, a}},
+		{"before first", "alice", a.Started, a.ID, 2, []store.Transfer{}},
+		{"key after all", "alice", a.Started.Add(time.Second), d.ID, 2, []store.Transfer{}},
+		{"key before all", "alice", d.Started.Add(-time.Second), a.ID, 5, []store.Transfer{d, b, c, a}},
+		{"other user", "bob", time.Time{}, "", 5, []store.Transfer{other}},
+		{"other user keyed", "bob", b.Started, b.ID, 5, []store.Transfer{other}},
+		{"unknown user", "stranger", time.Time{}, "", 5, []store.Transfer{}},
+		{"empty user", "", time.Time{}, "", 5, []store.Transfer{}},
+		{"zero size", "alice", time.Time{}, "", 0, []store.Transfer{}},
+		{"zero keyed size", "alice", b.Started, b.ID, 0, []store.Transfer{}},
+		{"negative size", "alice", b.Started, b.ID, -1, []store.Transfer{}},
+		{"negative open size", "alice", time.Time{}, "", -1, []store.Transfer{}},
+		{"minimum size", "alice", time.Time{}, "", math.MinInt, []store.Transfer{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := f.st.ListBefore(background, test.user, test.started, test.id, test.n)
+			if err != nil {
+				t.Fatal(err)
+			}
+			equal(t, got, test.want)
+		})
+	}
+}
+
 // R-SO60-03YC R-SPDW-DVP1
 func TestPrune(t *testing.T) {
 	f := setup(t)
@@ -644,6 +708,8 @@ func TestUnavailablePrecedence(t *testing.T) {
 				t.Fatal(l)
 			}
 			errs = append(errs, e)
+			_, e = f.st.ListBefore(ctx, "alice", v.Started, v.ID, n)
+			errs = append(errs, e)
 		}
 		l, e = f.st.Unfinished(ctx)
 		if l != nil {
@@ -749,7 +815,7 @@ func TestConcurrentTransitions(t *testing.T) {
 	for i := range 32 {
 		wg.Go(func() {
 			<-gate
-			switch i % 9 {
+			switch i % 10 {
 			case 0:
 				_, e := f.st.Add(background, store.Transfer{Direction: store.DirectionPush, Status: store.StatusRunning, UserID: "bob", Path: "path"})
 				errs <- e
@@ -782,6 +848,9 @@ func TestConcurrentTransitions(t *testing.T) {
 				}
 			case 8:
 				_, e := f.st.ListAfter(background, "alice", v.Started, v.ID, 2)
+				errs <- e
+			case 9:
+				_, e := f.st.ListBefore(background, "alice", v.Started, v.ID, 2)
 				errs <- e
 			}
 		})

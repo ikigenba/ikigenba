@@ -326,6 +326,28 @@ func (s *Store) ListAfter(ctx context.Context, userID string, started time.Time,
 	return out, nil
 }
 
+// ListBefore reads a bounded window before a key, nearest first.
+func (s *Store) ListBefore(ctx context.Context, userID string, started time.Time, id string, n int) ([]Transfer, error) {
+	var out []Transfer
+	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
+		if n < 1 {
+			out = []Transfer{}
+			return nil
+		}
+		var err error
+		if id == "" {
+			out, err = rows(ctx, tx, "SELECT id,direction,status,reason,file,name,kind,path,content_type,format,bytes,started,finished,url,link,artifact_id,user_id,user_email,request_id FROM transfers WHERE user_id=? ORDER BY started,id LIMIT ?", userID, n)
+		} else {
+			out, err = rows(ctx, tx, "SELECT id,direction,status,reason,file,name,kind,path,content_type,format,bytes,started,finished,url,link,artifact_id,user_id,user_email,request_id FROM transfers WHERE user_id=? AND (started,id)>(?,?) ORDER BY started,id LIMIT ?", userID, started.UTC().Format(time.RFC3339), id, n)
+		}
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // Unfinished reads queued and running transfers oldest first.
 func (s *Store) Unfinished(ctx context.Context) ([]Transfer, error) {
 	var out []Transfer

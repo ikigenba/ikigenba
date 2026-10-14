@@ -3,6 +3,7 @@ package pages_test
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"html/template"
 	"io"
@@ -126,14 +127,14 @@ func TestTemplateSurface(t *testing.T) {
 	}
 }
 func TestPageDataFields(t *testing.T) {
-	// R-Z5X6-T17L
+	// R-2VL3-KGCC
 	b := fixedBanner(page.User{Email: "fixture-email"})
 	row := pages.TransferRow{"id", "direction", "status", "reason", "name", "link", "path", "artifact", "url", 17, "started", "started-text", "finished", "finished-text"}
 	view := pages.TransferView{"id", "direction", "status", "reason", "file", "name", "kind", "path", "artifact", "content-type", "format", 19, "started", "started-text", "finished", "finished-text", "url", "link"}
 	cases := []struct{ got, want any }{
 		{row, pages.TransferRow{ID: "id", Direction: "direction", Status: "status", Reason: "reason", Name: "name", Link: "link", Path: "path", ArtifactPage: "artifact", URL: "url", Bytes: 17, Started: "started", StartedText: "started-text", Finished: "finished", FinishedText: "finished-text"}},
 		{view, pages.TransferView{ID: "id", Direction: "direction", Status: "status", Reason: "reason", File: "file", Name: "name", Kind: "kind", Path: "path", ArtifactPage: "artifact", ContentType: "content-type", Format: "format", Bytes: 19, Started: "started", StartedText: "started-text", Finished: "finished", FinishedText: "finished-text", URL: "url", Link: "link"}},
-		{pages.LandingData{b, []pages.TransferRow{row}, "current-page", "next-page"}, pages.LandingData{Banner: b, Transfers: []pages.TransferRow{row}, Page: "current-page", Next: "next-page"}},
+		{pages.LandingData{b, []pages.TransferRow{row}, "current-page", "next-page", "prev-page"}, pages.LandingData{Banner: b, Transfers: []pages.TransferRow{row}, Page: "current-page", Next: "next-page", Prev: "prev-page"}},
 		{pages.TransferData{b, view}, pages.TransferData{Banner: b, Transfer: view}},
 		{pages.ToolRow{"name", "description"}, pages.ToolRow{Name: "name", Description: "description"}},
 		{pages.ToolsData{b, []pages.ToolRow{{Name: "name", Description: "description"}}}, pages.ToolsData{Banner: b, Tools: []pages.ToolRow{{Name: "name", Description: "description"}}}},
@@ -148,7 +149,7 @@ func TestPageDataFields(t *testing.T) {
 }
 
 func TestPagesRoutesAndData(t *testing.T) {
-	// R-BHW8-VP03 R-78WB-LOZ9 R-7A47-ZGPY R-Z8CZ-KKOZ R-BNZQ-SJPK R-7DRX-4RY1 R-BQFJ-K36Y R-BRNF-XUXN R-BVB5-365Q R-BWJ1-GXWF R-BU38-PEF1 R-BXQX-UPN4 R-BYYU-8HDT R-ZASS-C46D R-BJ45-9GQS R-L867-WEL9 R-L9E4-A6BY
+	// R-BHW8-VP03 R-78WB-LOZ9 R-7A47-ZGPY R-30GP-3JB4 R-BNZQ-SJPK R-7DRX-4RY1 R-BQFJ-K36Y R-BRNF-XUXN R-BVB5-365Q R-BWJ1-GXWF R-BU38-PEF1 R-BXQX-UPN4 R-BYYU-8HDT R-344E-8UJ7 R-BJ45-9GQS R-L867-WEL9 R-L9E4-A6BY
 	st, d := pageStore(t)
 	s, e := pages.Load()
 	if e != nil {
@@ -300,7 +301,7 @@ func (s *sequence) Read(p []byte) (int, error) {
 }
 
 func TestTransferStateProjectionAndReadOnly(t *testing.T) {
-	// R-7A47-ZGPY R-Z8CZ-KKOZ R-7DRX-4RY1 R-L9E4-A6BY R-L867-WEL9
+	// R-7A47-ZGPY R-30GP-3JB4 R-7DRX-4RY1 R-L9E4-A6BY R-L867-WEL9
 	_, d := pageStore(t)
 	now := time.Date(2026, 10, 5, 10, 0, 7, 0, time.FixedZone("fixture", 3600))
 	st := store.New(d, store.Config{Now: func() time.Time { return now }, Rand: &sequence{n: 150}})
@@ -389,7 +390,7 @@ func TestTransferStateProjectionAndReadOnly(t *testing.T) {
 }
 
 func TestLandingPaging(t *testing.T) {
-	// R-Z8CZ-KKOZ R-Z753-6SYA R-Z9KV-YCFO R-ZASS-C46D
+	// R-30GP-3JB4 R-2Y0W-BZTQ R-32WH-V2SI R-2WSZ-Y831 R-344E-8UJ7 R-L867-WEL9
 	st, d := pageStore(t)
 	set, err := pages.Load()
 	if err != nil {
@@ -418,7 +419,7 @@ func TestLandingPaging(t *testing.T) {
 	next := (paging.Token{Tool: "transfers"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
 	b := fixedBanner(page.User{Email: "alice@example.test", ProfileURL: "https://auth.example.test/", LogoutURL: "https://auth.example.test/logout"})
 	b.Trail = nil
-	want := pages.LandingData{b, rows, "", next}
+	want := pages.LandingData{b, rows, "", next, ""}
 	handler := identity.Require(pages.Handler(pages.Config{Banner: fixedBanner, Pages: set, Store: st}))
 	got := req(handler, "GET", "/")
 	if got.Code != 200 || got.Body.String() != render(t, "landing", want) {
@@ -461,7 +462,12 @@ func TestLandingPaging(t *testing.T) {
 			expectedRows = append(expectedRows, pages.TransferRow{ID: tf.ID, Direction: tf.Direction, Status: tf.Status, Name: tf.Name, Path: tf.Path, Started: tf.Started.UTC().Format(time.RFC3339), StartedText: tf.Started.UTC().Format(pages.MinuteLayout)})
 			expectedRecords = append(expectedRecords, tools.RecordOf(tf))
 		}
-		data := pages.LandingData{b, expectedRows, value, next}
+		prev := ""
+		if value != "" && len(transfers) != 0 {
+			first := transfers[0]
+			prev = (paging.Token{Tool: "transfers-before"}).Encode(first.Started.UTC().Format(time.RFC3339), first.ID)
+		}
+		data := pages.LandingData{b, expectedRows, value, next, prev}
 		get := req(handler, "GET", path)
 		if get.Code != 200 || get.Body.String() != render(t, "landing", data) {
 			t.Fatal("landing window", path)
@@ -520,7 +526,7 @@ func TestLandingPaging(t *testing.T) {
 		checkWindow("/?page="+url.QueryEscape(value), value, after)
 	}
 	invalid := []string{
-		"bogus",
+		"bogus", "LAST", "last/",
 		next[:len(next)-1] + "!",
 		(paging.Token{Tool: "list"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID),
 		(paging.Token{Tool: "transfers"}).Encode("2026-10-05T09:00:00+02:00", last.ID),
@@ -531,6 +537,10 @@ func TestLandingPaging(t *testing.T) {
 		(paging.Token{Tool: "transfers"}).Encode(last.Started.UTC().Format(time.RFC3339)),
 		(paging.Token{Tool: "transfers"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID, "extra"),
 	}
+	for _, stamp := range []string{"2026-10-05T09:00:00+02:00", "2026-10-05T09:00:07+00:00", "2026-10-05T09:00:07.5Z", "not-a-time"} {
+		invalid = append(invalid, (paging.Token{Tool: "transfers-before"}).Encode(stamp, last.ID))
+	}
+	invalid = append(invalid, (paging.Token{Tool: "transfers-before"}).Encode(last.Started.UTC().Format(time.RFC3339), "not-an-id"), (paging.Token{Tool: "transfers-before"}).Encode(last.Started.UTC().Format(time.RFC3339)), (paging.Token{Tool: "transfers-before"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID, "extra"))
 	withoutStore := map[string]*httptest.ResponseRecorder{}
 	for _, path := range []string{"/tools", "/about", "/nowhere"} {
 		withoutStore[path] = req(handler, "GET", path)
@@ -577,7 +587,7 @@ func TestLandingPaging(t *testing.T) {
 			t.Fatal("method before page decoding")
 		}
 		if failing {
-			for _, path := range []string{"/", "/?page=&page=bogus", "/?page=" + url.QueryEscape(next), "/" + last.ID} {
+			for _, path := range []string{"/", "/?page=&page=bogus", "/?page=" + url.QueryEscape(next), "/?page=last", "/?page=" + url.QueryEscape((paging.Token{Tool: "transfers-before"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID)), "/" + last.ID} {
 				for _, method := range []string{"GET", "HEAD"} {
 					got := req(handler, method, path)
 					body := store.Unreachable + "\n"
@@ -590,5 +600,144 @@ func TestLandingPaging(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// counterRandom gives each transfer a distinct deterministic id.
+type counterRandom struct{ n uint64 }
+
+func (r *counterRandom) Read(p []byte) (int, error) {
+	r.n++
+	var encoded [8]byte
+	binary.LittleEndian.PutUint64(encoded[:], r.n)
+	copy(p, encoded[:])
+	return len(p), nil
+}
+
+func TestLandingBackwardAndLast(t *testing.T) {
+	// R-2Z8S-PRKF R-31OL-HB1T R-35CA-MM9W R-36K7-0E0L R-30GP-3JB4 R-2WSZ-Y831 R-L867-WEL9
+	for _, count := range []int{0, paging.DefaultLimit, paging.DefaultLimit + 1, paging.DefaultLimit + 2, 2 * paging.DefaultLimit, 3*paging.DefaultLimit + 7} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
+			_, d := pageStore(t)
+			now := time.Date(2026, 10, 5, 9, 0, 7, 0, time.UTC)
+			st := store.New(d, store.Config{Now: func() time.Time { return now }, Rand: &counterRandom{}})
+			ctx := context.Background()
+			for i := 0; i < count+4; i++ {
+				user := "alice"
+				if i >= count {
+					user = "bob"
+				}
+				now = time.Date(2026, 10, 5, 9, 0, 7, 0, time.UTC).Add(time.Duration(i/3) * time.Second)
+				if _, e := st.Add(ctx, store.Transfer{UserID: user, Direction: store.DirectionPull, Status: store.StatusQueued, Name: "file-" + strconv.Itoa(i), Path: "path/" + strconv.Itoa(i)}); e != nil {
+					t.Fatal(e)
+				}
+			}
+			all, e := st.List(ctx, "alice")
+			if e != nil {
+				t.Fatal(e)
+			}
+			set, e := pages.Load()
+			if e != nil {
+				t.Fatal(e)
+			}
+			h := identity.Require(pages.Handler(pages.Config{Banner: fixedBanner, Pages: set, Store: st}))
+			b := fixedBanner(page.User{Email: "alice@example.test", ProfileURL: "https://auth.example.test/", LogoutURL: "https://auth.example.test/logout"})
+			b.Trail = nil
+			token := func(tool string, tf store.Transfer) string {
+				return (paging.Token{Tool: tool}).Encode(tf.Started.UTC().Format(time.RFC3339), tf.ID)
+			}
+			check := func(value string, window []store.Transfer, next, prev string) {
+				t.Helper()
+				rows := make([]pages.TransferRow, 0, len(window))
+				for _, tf := range window {
+					rows = append(rows, pages.TransferRow{ID: tf.ID, Direction: tf.Direction, Status: tf.Status, Name: tf.Name, Path: tf.Path, Started: tf.Started.UTC().Format(time.RFC3339), StartedText: tf.Started.UTC().Format(pages.MinuteLayout)})
+				}
+				path := "/?page=" + url.QueryEscape(value) + "&page=bogus&limit=1&user=bob"
+				get := req(h, "GET", path)
+				if get.Code != 200 || get.Body.String() != render(t, "landing", pages.LandingData{b, rows, value, next, prev}) {
+					t.Fatalf("window %q: status %d", value, get.Code)
+				}
+				head := req(h, "HEAD", path)
+				if head.Code != get.Code || !reflect.DeepEqual(head.Header(), get.Header()) || head.Body.Len() != 0 {
+					t.Fatal("window HEAD", value)
+				}
+			}
+			redirect := func(value string) {
+				t.Helper()
+				get := req(h, "GET", "/?page="+url.QueryEscape(value)+"&limit=1&user=bob")
+				if get.Code != 303 || len(get.Header().Values("Location")) != 1 || get.Header().Get("Location") != "/" || get.Body.Len() != 0 {
+					t.Fatal("underflow", value, get.Code, get.Header(), get.Body.String())
+				}
+			}
+			if count == 0 {
+				check("", all, "", "")
+			}
+			values := []string{}
+			windows := [][]store.Transfer{}
+			value := ""
+			for start := 0; start < len(all); start += paging.DefaultLimit {
+				end := min(start+paging.DefaultLimit, len(all))
+				window := all[start:end]
+				next, prev := "", ""
+				if end < len(all) {
+					next = token("transfers", window[len(window)-1])
+				}
+				if start != 0 {
+					prev = token("transfers-before", window[0])
+				}
+				check(value, window, next, prev)
+				values = append(values, value)
+				windows = append(windows, window)
+				value = next
+			}
+			if len(windows) > 1 {
+				value = values[len(values)-1]
+				for j := len(windows) - 1; j > 0; j-- {
+					window := windows[j]
+					next := ""
+					if j != len(windows)-1 {
+						next = token("transfers", window[len(window)-1])
+					}
+					prev := token("transfers-before", window[0])
+					check(value, window, next, prev)
+					value = prev
+				}
+				redirect(value)
+			}
+			if count <= paging.DefaultLimit {
+				redirect("last")
+			} else {
+				window := all[count-paging.DefaultLimit:]
+				prev := token("transfers-before", window[0])
+				check("last", window, "", prev)
+				for end := count - paging.DefaultLimit; end > paging.DefaultLimit; end -= paging.DefaultLimit {
+					window = all[end-paging.DefaultLimit : end]
+					value = prev
+					prev = token("transfers-before", window[0])
+					check(value, window, token("transfers", window[len(window)-1]), prev)
+				}
+				redirect(prev)
+			}
+			// A key that names no record still positions the backward window.
+			key := store.Transfer{Started: now.Add(time.Hour), ID: "xfr_ffffffffffffffff"}
+			redirect(token("transfers-before", key))
+			if count > paging.DefaultLimit+1 {
+				key = all[len(all)-1]
+				key.ID = "xfr_ffffffffffffffff"
+				before := []store.Transfer{}
+				for _, tf := range all {
+					if tf.Started.After(key.Started) || tf.Started.Equal(key.Started) && tf.ID > key.ID {
+						before = append(before, tf)
+					}
+				}
+				value = token("transfers-before", key)
+				if len(before) <= paging.DefaultLimit {
+					redirect(value)
+				} else {
+					window := before[len(before)-paging.DefaultLimit:]
+					check(value, window, token("transfers", window[len(window)-1]), token("transfers-before", window[0]))
+				}
+			}
+		})
 	}
 }
