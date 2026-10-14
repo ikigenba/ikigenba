@@ -62,6 +62,9 @@ result, exclusion, or pending decision. Partition the inventory when needed;
 coordinators retain bounded summaries.
 
 Partition by public contract or design seam; several stories may share one.
+An author owns one design document; a change that spans several documents
+is several authors. An author reads the requirements it needs, never a
+whole document it does not own.
 Assign ownership of design numbering and folder-wide padding changes. Shared
 vocabulary, ownership, dependency direction, and interfaces must be settled
 and verified before dependent authors draft against them. Changes return to
