@@ -20,7 +20,7 @@ const (
 const Usage = "Usage: scrapes [command]\n\nPublic records for agents: MCP tools at /mcp start scrapers and read\ntheir runs and rows, with a page of runs at /, and each run's rows\nstreamed to siblings, on the socket systemd passes in.\nWith no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
 
 // Manifest declares the app to platform deployment tools.
-const Manifest = "app = \"scrapes\"\ndescription = \"Public records about businesses in range, collected per source as rows per run\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[env]\nSCRAPE_KEEP_RUNS = \"2\"\nFMCSA_STATES = \"MN,WI\"\nFMCSA_MIN_POWER_UNITS = \"5\"\nFMCSA_STATUS = \"A\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/scrapes.db\"\n\n[resources]\nmemory_max = \"256M\"\n\n[home]\ngroup = \"application\"\n"
+const Manifest = "app = \"scrapes\"\ndescription = \"Public records about businesses in range, collected per source as rows per run\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[env]\nSCRAPE_KEEP_RUNS = \"2\"\nFMCSA_STATES = \"MN,WI\"\nFMCSA_MIN_POWER_UNITS = \"5\"\nFMCSA_STATUS = \"A\"\nPPP_FILES = \"public_150k_plus_240930.csv\"\nPPP_STATES = \"MN,WI\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/scrapes.db\"\n\n[resources]\nmemory_max = \"256M\"\n\n[home]\ngroup = \"application\"\n"
 
 // NginxConf keeps the bus paths private at the public name.
 const NginxConf = "location = /events { return 404; }\nlocation = /declarations { return 404; }\n"

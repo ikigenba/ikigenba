@@ -9,6 +9,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/scrapes/internal/fmcsa"
+	"github.com/ikigenba/ikigenba/scrapes/internal/ppp"
 	"github.com/ikigenba/ikigenba/scrapes/internal/settings"
 	"github.com/ikigenba/ikigenba/scrapes/internal/source"
 )
@@ -38,9 +39,12 @@ func New(list ...source.Scraper) *Registry {
 	return r
 }
 
-// Default constructs the service registry with its FMCSA scraper.
+// Default constructs the service registry with both fixed scrapers.
 func Default(cfg Config) *Registry {
-	return New(fmcsa.New(fmcsa.Config{HTTP: cfg.HTTP, Telemetry: cfg.Telemetry, Now: cfg.Now, Sleep: cfg.Sleep, UserAgent: cfg.UserAgent, States: cfg.Settings.FMCSAStates, MinPowerUnits: cfg.Settings.FMCSAMinPowerUnits, Status: cfg.Settings.FMCSAStatus}))
+	return New(
+		fmcsa.New(fmcsa.Config{HTTP: cfg.HTTP, Telemetry: cfg.Telemetry, Now: cfg.Now, Sleep: cfg.Sleep, UserAgent: cfg.UserAgent, States: cfg.Settings.FMCSAStates, MinPowerUnits: cfg.Settings.FMCSAMinPowerUnits, Status: cfg.Settings.FMCSAStatus}),
+		ppp.New(ppp.Config{HTTP: cfg.HTTP, Telemetry: cfg.Telemetry, Now: cfg.Now, Sleep: cfg.Sleep, UserAgent: cfg.UserAgent, Files: cfg.Settings.PPPFiles, States: cfg.Settings.PPPStates}),
+	)
 }
 
 // Names trims and deduplicates names while preserving their order.

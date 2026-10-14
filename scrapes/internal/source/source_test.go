@@ -17,7 +17,7 @@ func (fake) Scrape(_ context.Context, batch func([]source.Row) error) error {
 	return batch([]source.Row{})
 }
 
-// R-0NPW-FSB4 R-0OXS-TK1T R-0Q5P-7BSI
+// R-CJDD-W8F4 R-0OXS-TK1T R-0Q5P-7BSI
 func TestRowJSON(t *testing.T) {
 	var sc source.Scraper = fake{}
 	if sc.Name() != "test" || sc.Scrape(context.Background(), func([]source.Row) error { return nil }) != nil || source.Called != "source.called" {

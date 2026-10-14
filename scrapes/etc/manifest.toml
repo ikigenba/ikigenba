@@ -10,6 +10,8 @@ SCRAPE_KEEP_RUNS = "2"
 FMCSA_STATES = "MN,WI"
 FMCSA_MIN_POWER_UNITS = "5"
 FMCSA_STATUS = "A"
+PPP_FILES = "public_150k_plus_240930.csv"
+PPP_STATES = "MN,WI"
 
 [database]
 engine = "sqlite"

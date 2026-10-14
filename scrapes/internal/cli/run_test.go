@@ -27,7 +27,7 @@ import (
 	"github.com/ikigenba/ikigenba/scrapes/internal/store"
 )
 
-// R-YZYT-P0Z3 R-YK44-Q0C2 R-DDS2-65CJ
+// R-YZYT-P0Z3 R-62L0-7CCT R-DDS2-65CJ
 func TestRunRejectsBeforeInheriting(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -59,7 +59,7 @@ func TestRunRejectsBeforeInheriting(t *testing.T) {
 }
 
 // R-YBKU-1M57 R-YCSQ-FDVW R-YHOB-YGUO R-6S6O-M7DE
-// R-YK44-Q0C2 R-312V-7Q7Q R-YMJX-HJTG R-YNRT-VBK5
+// R-62L0-7CCT R-312V-7Q7Q R-YMJX-HJTG R-YNRT-VBK5
 // R-DEZY-JX38 R-DJVK-3020 R-DNJ9-8BA3 R-UEW5-N52W R-ELOF-XW1J
 func TestRunAssembly(t *testing.T) {
 	var mu sync.Mutex
@@ -123,7 +123,7 @@ func TestRunAssembly(t *testing.T) {
 		t.Fatalf("inherit %d unset %v", inherited, unset)
 	}
 	allowed := map[string]bool{}
-	for _, k := range []string{"DRAIN_SECONDS", "SCRAPE_KEEP_RUNS", "FMCSA_STATES", "FMCSA_MIN_POWER_UNITS", "FMCSA_STATUS", services.Variable, "LISTEN_PID", "LISTEN_FDS", "NOTIFY_SOCKET"} {
+	for _, k := range []string{"DRAIN_SECONDS", "SCRAPE_KEEP_RUNS", "FMCSA_STATES", "FMCSA_MIN_POWER_UNITS", "FMCSA_STATUS", "PPP_FILES", "PPP_STATES", services.Variable, "LISTEN_PID", "LISTEN_FDS", "NOTIFY_SOCKET"} {
 		allowed[k] = true
 	}
 	for _, k := range looked {

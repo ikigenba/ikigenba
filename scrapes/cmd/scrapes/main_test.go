@@ -85,7 +85,7 @@ func TestBinary(t *testing.T) {
 		{"int", syscall.SIGINT, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// R-Z62B-LVOK R-Z7A7-ZNF9 R-Z8I4-DF5Y R-Z9Q0-R6WN
+			// R-6QYZ-UR6P R-Z7A7-ZNF9 R-Z8I4-DF5Y R-Z9Q0-R6WN
 			short, err := os.MkdirTemp("", "scrapes-")
 			if err != nil {
 				t.Fatal(err)

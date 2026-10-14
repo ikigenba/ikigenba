@@ -73,13 +73,13 @@ func commandProcess(t *testing.T, args []string, out, errout io.Writer) cli.Proc
 	}
 }
 
-// R-CWPG-TCYT R-CXXD-74PI
+// R-CWPG-TCYT R-IIKO-46FO
 func TestManifestConsistency(t *testing.T) {
 	if !strings.Contains(cli.Manifest, "description = \""+pages.Description+"\"\n") {
 		t.Fatal("description differs")
 	}
 	s := settings.Defaults()
-	want := fmt.Sprintf("[env]\nSCRAPE_KEEP_RUNS = \"%d\"\nFMCSA_STATES = \"%s\"\nFMCSA_MIN_POWER_UNITS = \"%d\"\nFMCSA_STATUS = \"%s\"\n\n", s.KeepRuns, strings.Join(s.FMCSAStates, ","), s.FMCSAMinPowerUnits, s.FMCSAStatus)
+	want := fmt.Sprintf("[env]\nSCRAPE_KEEP_RUNS = \"%d\"\nFMCSA_STATES = \"%s\"\nFMCSA_MIN_POWER_UNITS = \"%d\"\nFMCSA_STATUS = \"%s\"\nPPP_FILES = \"%s\"\nPPP_STATES = \"%s\"\n\n", s.KeepRuns, strings.Join(s.FMCSAStates, ","), s.FMCSAMinPowerUnits, s.FMCSAStatus, strings.Join(s.PPPFiles, ","), strings.Join(s.PPPStates, ","))
 	start := strings.Index(cli.Manifest, "[env]\n")
 	if start < 0 {
 		t.Fatal("env missing")
@@ -232,9 +232,9 @@ func TestUsageConstant(t *testing.T) {
 	}
 }
 
-// R-CVHK-FL84
+// R-IEWY-YV7L
 func TestManifestConstant(t *testing.T) {
-	const want = "app = \"scrapes\"\ndescription = \"Public records about businesses in range, collected per source as rows per run\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[env]\nSCRAPE_KEEP_RUNS = \"2\"\nFMCSA_STATES = \"MN,WI\"\nFMCSA_MIN_POWER_UNITS = \"5\"\nFMCSA_STATUS = \"A\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/scrapes.db\"\n\n[resources]\nmemory_max = \"256M\"\n\n[home]\ngroup = \"application\"\n"
+	const want = "app = \"scrapes\"\ndescription = \"Public records about businesses in range, collected per source as rows per run\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[env]\nSCRAPE_KEEP_RUNS = \"2\"\nFMCSA_STATES = \"MN,WI\"\nFMCSA_MIN_POWER_UNITS = \"5\"\nFMCSA_STATUS = \"A\"\nPPP_FILES = \"public_150k_plus_240930.csv\"\nPPP_STATES = \"MN,WI\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/scrapes.db\"\n\n[resources]\nmemory_max = \"256M\"\n\n[home]\ngroup = \"application\"\n"
 	const got = cli.Manifest
 	if got != want {
 		t.Fatalf("constant mismatch: %q", cli.Manifest)

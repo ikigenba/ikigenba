@@ -3,6 +3,8 @@ package scrapers_test
 import (
 	"bytes"
 	"context"
+	"encoding/csv"
+	"fmt"
 	"io"
 	"net/http"
 	"reflect"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/scrapes/internal/fmcsa"
+	"github.com/ikigenba/ikigenba/scrapes/internal/ppp"
 	"github.com/ikigenba/ikigenba/scrapes/internal/scrapers"
 	"github.com/ikigenba/ikigenba/scrapes/internal/settings"
 	"github.com/ikigenba/ikigenba/scrapes/internal/source"
@@ -53,8 +56,8 @@ func TestRegistry(t *testing.T) {
 	}
 }
 
-// R-1KN6-RLBV
-func TestDefault(t *testing.T) {
+// R-DA76-B6QE R-DBF2-OYH3
+func TestDefaultFMCSA(t *testing.T) {
 	attempts, batches, sleeps := 0, 0, 0
 	now := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
 	states := []string{"WI", "IA"}
@@ -83,7 +86,7 @@ func TestDefault(t *testing.T) {
 		return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
 	})}
 	r := scrapers.Default(scrapers.Config{HTTP: client, Telemetry: writer, Now: func() time.Time { return now }, Sleep: func(context.Context, time.Duration) { sleeps++ }, UserAgent: "registry ua", Settings: settings.Settings{FMCSAStates: states, FMCSAMinPowerUnits: 7, FMCSAStatus: "I"}})
-	if !reflect.DeepEqual(r.Names(), []string{fmcsa.Name}) {
+	if !reflect.DeepEqual(r.Names(), []string{fmcsa.Name, ppp.Name}) {
 		t.Fatal(r.Names())
 	}
 	sc, ok := r.Get(fmcsa.Name)
@@ -117,5 +120,92 @@ func TestDefault(t *testing.T) {
 	}
 	if _, ok = r.Get("bogus"); ok {
 		t.Fatal("unknown scraper")
+	}
+}
+
+// R-DCMZ-2Q7S
+func TestDefaultPPP(t *testing.T) {
+	for _, retry := range []bool{false, true} {
+		t.Run(fmt.Sprint(retry), func(t *testing.T) {
+			now := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
+			var capture telemetry.Capture
+			writer := telemetry.New(telemetry.Config{Service: "scrapes", Sink: &capture, Now: func() time.Time { return now }, Rand: bytes.NewReader(make([]byte, 1024)), Stderr: io.Discard, Sleep: func(context.Context, time.Duration) {}})
+			defer writer.Shutdown(context.Background(), "test")
+			var paths []string
+			var pauses []time.Duration
+			client := &http.Client{Transport: transport(func(r *http.Request) (*http.Response, error) {
+				paths = append(paths, r.URL.String())
+				if r.Header.Get("User-Agent") != "registry ppp ua" {
+					t.Fatal(r.Header)
+				}
+				if retry && len(paths) == 1 {
+					return &http.Response{StatusCode: 503, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
+				}
+				var body bytes.Buffer
+				csvWriter := csv.NewWriter(&body)
+				columns := ppp.Columns()
+				if err := csvWriter.Write(columns); err != nil {
+					t.Fatal(err)
+				}
+				for _, state := range []string{"IA", "MN"} {
+					record := make([]string, len(columns))
+					for i, column := range columns {
+						switch column {
+						case "LoanNumber":
+							record[i] = state + r.URL.Path
+						case "BorrowerState":
+							record[i] = state
+						}
+					}
+					if err := csvWriter.Write(record); err != nil {
+						t.Fatal(err)
+					}
+				}
+				csvWriter.Flush()
+				if err := csvWriter.Error(); err != nil {
+					t.Fatal(err)
+				}
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(body.Bytes()))}, nil
+			})}
+			reg := scrapers.Default(scrapers.Config{HTTP: client, Telemetry: writer, Now: func() time.Time { return now }, Sleep: func(_ context.Context, d time.Duration) { pauses = append(pauses, d) }, UserAgent: "registry ppp ua", Settings: settings.Settings{PPPFiles: []string{"a.csv", "b.csv"}, PPPStates: []string{"IA"}}})
+			sc, ok := reg.Get("ppp")
+			if !ok {
+				t.Fatal("missing scraper")
+			}
+			var rows []source.Row
+			if err := sc.Scrape(t.Context(), func(batch []source.Row) error { rows = append(rows, batch...); return nil }); err != nil {
+				t.Fatal(err)
+			}
+			wantPaths := []string{ppp.DefaultBaseURL + "a.csv", ppp.DefaultBaseURL + "b.csv"}
+			wantPauses := []time.Duration(nil)
+			if retry {
+				wantPaths = append([]string{ppp.DefaultBaseURL + "a.csv"}, wantPaths...)
+				wantPauses = []time.Duration{ppp.Backoff}
+			}
+			if !reflect.DeepEqual(paths, wantPaths) || !reflect.DeepEqual(pauses, wantPauses) || len(rows) != 2 {
+				t.Fatal(paths, pauses, rows)
+			}
+			for i, row := range rows {
+				if row.Scraper != "ppp" || row.Address.State != "IA" || !row.Collected.Equal(now) || !strings.HasSuffix(row.SourceID, []string{"a.csv", "b.csv"}[i]) {
+					t.Fatal(row)
+				}
+			}
+			if err := writer.Flush(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			events := capture.Events()
+			if len(events) != len(paths) {
+				t.Fatal(events)
+			}
+			for i, event := range events {
+				status := int64(200)
+				if retry && i == 0 {
+					status = 503
+				}
+				if event.Name != source.Called || !reflect.DeepEqual(event.Attrs, telemetry.Attrs{"scraper": "ppp", "status": status, "duration_us": int64(0)}) {
+					t.Fatal(event)
+				}
+			}
+		})
 	}
 }

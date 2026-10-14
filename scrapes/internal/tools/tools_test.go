@@ -64,6 +64,11 @@ type fixture struct {
 
 func setup(t *testing.T) *fixture {
 	t.Helper()
+	return setupRegistry(t, nil)
+}
+
+func setupRegistry(t *testing.T, reg *scrapers.Registry) *fixture {
+	t.Helper()
 	t.Setenv(services.Variable, "")
 	f := &fixture{t: t, sc: &fake{}, caller: identity.Caller{UserID: "caller-one", Email: "caller-one@example.invalid", RequestID: "request-one"}, now: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)}
 	var err error
@@ -72,7 +77,9 @@ func setup(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	f.st = store.New(f.d, store.Config{Now: func() time.Time { return f.now }, Rand: &random{}})
-	reg := scrapers.New(f.sc)
+	if reg == nil {
+		reg = scrapers.New(f.sc)
+	}
 	writer := telemetry.New(telemetry.Config{Service: "scrapes", Version: "fixture", Sink: &telemetry.Capture{}, Now: func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }, Rand: bytes.NewReader(make([]byte, 65536)), Sleep: func(context.Context, time.Duration) {}, Stderr: io.Discard})
 	f.eng = runs.New(runs.Config{Store: f.st, Scrapers: reg, Telemetry: writer})
 	srv := mcp.NewServer(mcp.ServerConfig{Name: "scrapes", Version: "fixture", Telemetry: writer})
@@ -305,14 +312,28 @@ func TestListEncoding(t *testing.T) {
 	}
 }
 
-// R-EOCI-GXZX R-EI90-K3AG
+// R-BS3S-HEWA R-EI90-K3AG
 func TestScrapers(t *testing.T) {
-	f := setup(t)
-	f.success("scrapers", tools.NoArgs{}, tools.ScraperList{Scrapers: []tools.Scraper{{Name: "fmcsa"}}})
+	f := setupRegistry(t, scrapers.Default(scrapers.Config{Now: func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }}))
+	f.success("scrapers", tools.NoArgs{}, tools.ScraperList{Scrapers: []tools.Scraper{{Name: "fmcsa"}, {Name: "ppp"}}})
 	done := f.add(store.StatusDone, 1)
 	running := f.add(store.StatusRunning, 0)
 	currentRecord, runningRecord := runs.RecordOf(done), runs.RecordOf(running)
-	f.success("scrapers", tools.NoArgs{}, tools.ScraperList{Scrapers: []tools.Scraper{{"fmcsa", &currentRecord, &runningRecord}}})
+	f.success("scrapers", tools.NoArgs{}, tools.ScraperList{Scrapers: []tools.Scraper{{"fmcsa", &currentRecord, &runningRecord}, {Name: "ppp"}}})
+	pppDone, err := f.st.AddRun(t.Context(), store.Run{Scraper: "ppp", UserID: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pppDone, err = f.st.FinishRun(t.Context(), pppDone.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pppRunning, err := f.st.AddRun(t.Context(), store.Run{Scraper: "ppp", UserID: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pppCurrentRecord, pppRunningRecord := runs.RecordOf(pppDone), runs.RecordOf(pppRunning)
+	f.success("scrapers", tools.NoArgs{}, tools.ScraperList{Scrapers: []tools.Scraper{{"fmcsa", &currentRecord, &runningRecord}, {"ppp", &pppCurrentRecord, &pppRunningRecord}}})
 }
 
 // R-0HFL-0ZOA
@@ -701,4 +722,50 @@ func TestRowsWindows(t *testing.T) {
 	for _, args := range []any{map[string]any{"run": r.ID, "page": nil, "limit": nil}, tools.RowsArgs{Run: r.ID, Page: new("")}} {
 		f.success("rows", args, want)
 	}
+}
+
+type namedScraper struct {
+	name string
+	fake
+}
+
+func (s *namedScraper) Name() string { return s.name }
+
+// R-BS3S-HEWA
+func TestScrapersInjectedRegistry(t *testing.T) {
+	reg := scrapers.New(&namedScraper{name: "zeta"}, &namedScraper{name: "alpha"}, &namedScraper{name: "middle"})
+	f := setupRegistry(t, reg)
+	f.success("scrapers", tools.NoArgs{}, tools.ScraperList{Scrapers: []tools.Scraper{{Name: "alpha"}, {Name: "middle"}, {Name: "zeta"}}})
+	add := func(name string, done bool) runs.Record {
+		t.Helper()
+		f.now = f.now.Add(time.Second)
+		r, err := f.st.AddRun(t.Context(), store.Run{Scraper: name, UserID: "registry-owner"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if done {
+			r, err = f.st.FinishRun(t.Context(), r.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		return runs.RecordOf(r)
+	}
+	alphaCurrent := add("alpha", true)
+	middleRunning := add("middle", false)
+	zetaCurrent := add("zeta", true)
+	zetaRunning := add("zeta", false)
+	add("outside-registry", true)
+	f.success("scrapers", tools.NoArgs{}, tools.ScraperList{Scrapers: []tools.Scraper{
+		{Name: "alpha", Current: &alphaCurrent},
+		{Name: "middle", Running: &middleRunning},
+		{Name: "zeta", Current: &zetaCurrent, Running: &zetaRunning},
+	}})
+}
+
+// R-BS3S-HEWA
+func TestScrapersEmptyRegistry(t *testing.T) {
+	f := setupRegistry(t, scrapers.New())
+	f.add(store.StatusDone, 0)
+	f.success("scrapers", tools.NoArgs{}, tools.ScraperList{})
 }
