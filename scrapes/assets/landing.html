@@ -26,7 +26,7 @@
      record holds it); .Page (string, this window's own page token, the
      ?page= the request carried; empty on the first window); and .Next
      (string, the page token for the window after this one, the token
-     runs's next carries; empty when none remain). Counts are shown as the plain integer. Status and
+     runs's next carries; empty when none remain), and .Prev (string, the page token for the window before this one, carried in the same ?page= parameter; empty on the first window). Counts are shown as the plain integer. Status and
      reason words are shown as stored; the status's kind is chosen here:
      "running" info, "done" ok, "failed" err. Hooks: title "scrapes"; h1
      with text "scrapes"; p#summary.lede (text "Public records about
@@ -68,11 +68,9 @@
      holding time[datetime=<.Started>] (text .StartedText); td.run-finished
      holding, only when .Finished is not empty, time[datetime=<.Finished>]
      (text .FinishedText); and td.run-rows.num (.Rows); then
-     nav.paging#paging (aria-label "Pages") whose children are, in order,
-     First (on the first window, .Page empty, a span with
+     nav.paging#paging (aria-label "Pages") whose children are, in order, First, Prev, Next and Last: First (on the first window, .Page empty, a span with
      aria-current="page" and text "First"; otherwise a link to / with text
-     "First") and, only when .Next is not empty, Next (a link to
-     /?page=<.Next> with text "Next"); the nav shows when .Runs is not
+     "First"), then, only when .Prev is not empty, Prev (a link to /?page=<.Prev> with text "Prev"), then, only when .Next is not empty, Next (a link to /?page=<.Next> with text "Next"), then, always, Last (while .Next is not empty, a link to /?page=last with text "Last", page=last naming the last window; when .Next is empty, the last window, a span with aria-current="page" and text "Last", so a single window shows First and Last both as the current item); the nav shows when .Runs is not
      empty or .Page is not empty, after the card (section#runs), so an
      emptied later window still offers First; on the first window with no
      runs there is no nav; a #about-link
@@ -139,7 +137,7 @@
 <p>A run starts when an agent calls the <code>scrape</code> tool, or when the cron trigger <code>scrape_&lt;scraper&gt;</code> fires, and shows up here.</p>
 </div>{{end}}
 </section>
-{{if or .Runs .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}</nav>
+{{if or .Runs .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Prev}}<a href="/?page={{.Prev}}">Prev</a>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}{{if .Next}}<a href="/?page=last">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
 {{end}}<p><a id="about-link" href="/about">About scrapes</a></p>
 </main>
 {{template "footer" .Banner}}

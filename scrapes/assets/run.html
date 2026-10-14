@@ -25,7 +25,7 @@
      the request carried; empty on the first window); and .Next (string,
      the page token for the window after this one, the token the rows
      tool's next carries; empty when none remain or the run is not
-     done). Counts are shown as the plain integer. Status and reason words
+     done), and .Prev (string, the page token for the window before this one, carried in the same ?page= parameter; empty on the first window). Counts are shown as the plain integer. Status and reason words
      are shown as stored; the status's kind is chosen here: "running" info,
      "done" ok, "failed" err; the failure's sentence is chosen from
      .Reason. Hooks: title "<.ID> · scrapes"; h1 with text .ID;
@@ -70,11 +70,9 @@
      td.row-id > a.row-link (href "/runs/<.Run.ID>/rows/<.SourceID>",
      .SourceID in a code element), td.row-name (.Name), td.row-city
      (.City), td.row-state (.State) and td.row-county (.County in a code
-     element when set); then nav.paging#paging (aria-label "Pages") whose
-     children are, in order, First (on the first window, .Page empty, a
+     element when set); then nav.paging#paging (aria-label "Pages") whose children are, in order, First, Prev, Next and Last: First (on the first window, .Page empty, a
      span with aria-current="page" and text "First"; otherwise a link to
-     /runs/<.Run.ID> with text "First") and, only when .Next is not empty,
-     Next (a link to /runs/<.Run.ID>?page=<.Next> with text "Next"); the
+     /runs/<.Run.ID> with text "First"), then, only when .Prev is not empty, Prev (a link to /runs/<.Run.ID>?page=<.Prev> with text "Prev"), then, only when .Next is not empty, Next (a link to /runs/<.Run.ID>?page=<.Next> with text "Next"), then, always, Last (while .Next is not empty, a link to /runs/<.Run.ID>?page=last with text "Last", page=last naming the last window; when .Next is empty, the last window, a span with aria-current="page" and text "Last", so a single window shows First and Last both as the current item); the
      nav shows only when .Status is "done" and .Rows is not empty or .Page
      is not empty, after the card (section#rows), so an emptied later
      window still offers First; on the first window with no rows there is
@@ -86,7 +84,7 @@
 <body>
 {{template "banner" .Banner}}
 <main>
-{{$next := .Next}}{{$page := .Page}}{{$rows := .Rows}}{{with .Run}}<h1>{{.ID}}</h1>
+{{$next := .Next}}{{$prev := .Prev}}{{$page := .Page}}{{$rows := .Rows}}{{with .Run}}<h1>{{.ID}}</h1>
 <p id="headline" class="cluster"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span> <span class="muted">started <time datetime="{{.Started}}">{{.StartedText}}</time>{{if .Finished}} · finished <time datetime="{{.Finished}}">{{.FinishedText}}</time>{{end}}</span></p>
 {{if eq .Status "running"}}<div id="running" class="alert quiet" data-kind="info"><strong id="notice">Running</strong><p>The page does not stream. Reload it to see the outcome; the rows show once the run is done.</p></div>
 <p><a id="reload" class="button secondary small" href="/runs/{{.ID}}"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg>Reload</a></p>
@@ -128,7 +126,7 @@
 <p>The source answered no record inside the scraper's scope.</p>
 </div>{{end}}
 </section>
-{{if or $rows $page}}<nav class="paging" id="paging" aria-label="Pages">{{if $page}}<a href="/runs/{{$id}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if $next}}<a href="/runs/{{$id}}?page={{$next}}">Next</a>{{end}}</nav>
+{{if or $rows $page}}<nav class="paging" id="paging" aria-label="Pages">{{if $page}}<a href="/runs/{{$id}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if $prev}}<a href="/runs/{{$id}}?page={{$prev}}">Prev</a>{{end}}{{if $next}}<a href="/runs/{{$id}}?page={{$next}}">Next</a>{{end}}{{if $next}}<a href="/runs/{{$id}}?page=last">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
 {{end}}{{end}}{{end}}</main>
 {{template "footer" .Banner}}
 </body>
