@@ -31,12 +31,16 @@
      time[datetime=<.LastFired>] (text .LastFiredText), and td.trigger-next
      holding, only when .Next is not empty, time[datetime=<.Next>] (text
      .NextText), then nav.paging#paging (aria-label "Pages") whose
-     children are, in order, First, Prev and Next: First (on the first window, .Page
+     children are, in order, First, Prev, Next and Last: First (on the first window, .Page
      empty, a span with aria-current="page" and text "First"; otherwise a link to /
      with text "First"), then, only when .Prev is not empty, Prev (a link
      to /?page=<.Prev> with text "Prev"), then, only when the page's .Next
      is not empty, Next
-     (a link to /?page=<.Next> with text "Next"); the nav shows when
+     (a link to /?page=<.Next> with text "Next"), then, always,
+     Last (while .Next is not empty, a link to /?page=last with text
+     "Last", page=last naming the last window; when .Next is empty, the
+     last window, a span with aria-current="page" and text "Last", so a
+     single window shows First and Last both as the current item); the nav shows when
      .Triggers is not empty or .Page is not empty, after the card
      (section#triggers), so an emptied later window still offers First; on the
      first window with no triggers there is no nav; a#about-link (text "About cron") whose href is "/about". No
@@ -72,7 +76,7 @@
 <p>A trigger an agent creates with the <code>create</code> tool shows up here.</p>
 </div>{{end}}
 </section>
-{{if or .Triggers .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Prev}}<a href="/?page={{.Prev}}">Prev</a>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}</nav>
+{{if or .Triggers .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Prev}}<a href="/?page={{.Prev}}">Prev</a>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}{{if .Next}}<a href="/?page=last">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
 {{end}}<p><a id="about-link" href="/about">About cron</a></p>
 </main>
 {{template "footer" .Banner}}
