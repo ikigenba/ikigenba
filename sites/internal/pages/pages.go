@@ -4,6 +4,7 @@ import (
 	"html/template"
 	"io"
 	"net/http"
+	"slices"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/page"
@@ -40,6 +41,7 @@ type LandingData struct {
 	SitesURL string
 	Sites    []SiteRow
 	Page     string
+	Prev     string
 	Next     string
 }
 
@@ -93,18 +95,29 @@ func Handler(cfg Config) http.Handler {
 		var rows []SiteRow
 		var base string
 		var next string
+		var prev string
 		var current string
 		if r.URL.Path == "/" {
 			current = r.URL.Query().Get("page")
-			var after string
-			if current != "" {
-				if err := (paging.Token{Tool: "sites"}).Decode(current, &after); err != nil {
-					w.Header().Set("Cache-Control", "no-cache")
-					cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NoticeData{Banner: cfg.Banner(page.User{})})
-					return
+			var key string
+			reverse := current == "last"
+			if current != "" && !reverse {
+				if err := (paging.Token{Tool: "sites"}).Decode(current, &key); err != nil {
+					if err := (paging.Token{Tool: "sites-before"}).Decode(current, &key); err != nil || key == "" {
+						w.Header().Set("Cache-Control", "no-cache")
+						cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NoticeData{Banner: cfg.Banner(page.User{})})
+						return
+					}
+					reverse = true
 				}
 			}
-			xs, err := cfg.Store.Visible(r.Context(), caller.UserID, after, paging.DefaultLimit+1)
+			var xs []store.Site
+			var err error
+			if reverse {
+				xs, err = cfg.Store.VisibleBefore(r.Context(), caller.UserID, key, paging.DefaultLimit+1)
+			} else {
+				xs, err = cfg.Store.Visible(r.Context(), caller.UserID, key, paging.DefaultLimit+1)
+			}
 			if err != nil {
 				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 				w.WriteHeader(http.StatusServiceUnavailable)
@@ -113,9 +126,25 @@ func Handler(cfg Config) http.Handler {
 				}
 				return
 			}
-			if len(xs) > paging.DefaultLimit {
+			more := len(xs) > paging.DefaultLimit
+			if reverse && !more {
+				w.Header().Set("Location", "/")
+				w.WriteHeader(http.StatusSeeOther)
+				return
+			}
+			if more {
 				xs = xs[:paging.DefaultLimit]
-				next = (paging.Token{Tool: "sites"}).Encode(xs[len(xs)-1].Name)
+			}
+			if reverse {
+				slices.Reverse(xs)
+			}
+			if len(xs) != 0 {
+				if current != "" {
+					prev = (paging.Token{Tool: "sites-before"}).Encode(xs[0].Name)
+				}
+				if reverse && current != "last" || !reverse && more {
+					next = (paging.Token{Tool: "sites"}).Encode(xs[len(xs)-1].Name)
+				}
 			}
 			base = urls.SitesURL(r, cfg.ServicesPath)
 			rows = make([]SiteRow, 0, len(xs))
@@ -135,6 +164,6 @@ func Handler(cfg Config) http.Handler {
 			return
 		}
 		banner.Trail = nil
-		cfg.Pages.Write(w, r, http.StatusOK, "landing", LandingData{Banner: banner, SitesURL: base, Sites: rows, Page: current, Next: next})
+		cfg.Pages.Write(w, r, http.StatusOK, "landing", LandingData{Banner: banner, SitesURL: base, Sites: rows, Page: current, Prev: prev, Next: next})
 	})
 }

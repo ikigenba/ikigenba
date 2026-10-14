@@ -124,7 +124,7 @@ func config(t *testing.T, s *store.Store) pages.Config {
 	return pages.Config{Banner: banner, Pages: load(t), Store: s}
 }
 
-// R-CP7E-TIAG R-CQFB-7A15 R-YBBX-PRDS R-CU30-CL98 R-CVAW-QCZX R-CWIT-44QM
+// R-CP7E-TIAG R-CQFB-7A15 R-OURC-DHRL R-CU30-CL98 R-CVAW-QCZX R-CWIT-44QM
 // R-D06I-9FYP R-X3R9-INHK R-X4Z5-WF89 R-X7EY-NYPN R-X8MV-1QGC
 // R-X9UR-FI71 R-XB2N-T9XQ R-XCAK-71OF
 func TestTemplateSetAndWrite(t *testing.T) {
@@ -138,8 +138,8 @@ func TestTemplateSetAndWrite(t *testing.T) {
 		name string
 		data any
 	}{
-		{"landing", pages.LandingData{b, "https://example.test/<\"&", []pages.SiteRow{row}, "current<&", "next<&"}},
-		{"landing", pages.LandingData{b, "https://example.test/", nil, "", ""}},
+		{"landing", pages.LandingData{b, "https://example.test/<\"&", []pages.SiteRow{row}, "current<&", "prev<&", "next<&"}},
+		{"landing", pages.LandingData{b, "https://example.test/", nil, "", "", ""}},
 		{"about", pages.AboutData{b, "description<\"&"}},
 		{"tools", pages.ToolsData{b, []pages.Tool{{"tool<\"&", "description<\"&"}, {"second-tool", "second description"}}}},
 		{"tools", pages.ToolsData{b, nil}},
@@ -182,8 +182,8 @@ func TestTemplateSetAndWrite(t *testing.T) {
 	}
 }
 
-// R-X2JD-4VQV R-XWC7-R027 R-D7HW-K2EV R-YCJU-3J4H R-XEQC-YL5T R-XFY9-CCWI
-// R-YDRQ-HAV6 R-DCDI-35DN R-DJOW-DRTT
+// R-X2JD-4VQV R-XWC7-R027 R-D7HW-K2EV R-F142-115B R-XEQC-YL5T R-XFY9-CCWI
+// R-F2BY-ESW0 R-DCDI-35DN R-P6YC-776J
 func TestHandlerTemplateBytesAndBannerUser(t *testing.T) {
 	s := catalog(t)
 	fixtureSites(t, s)
@@ -254,9 +254,9 @@ func TestHandlerTemplateBytesAndBannerUser(t *testing.T) {
 	}
 }
 
-// R-Y8W4-Y7WE R-YA41-BZN3 R-YCJU-3J4H R-YDRQ-HAV6
+// R-EXGC-VPX8 R-EYO9-9HNX R-EZW5-N9EM R-F142-115B R-F2BY-ESW0 R-F3JU-SKMP R-F8FG-BNLH
 func TestLandingWindows(t *testing.T) {
-	for _, count := range []int{0, paging.DefaultLimit - 1, paging.DefaultLimit, paging.DefaultLimit + 1, 2 * paging.DefaultLimit} {
+	for _, count := range []int{0, paging.DefaultLimit - 1, paging.DefaultLimit, paging.DefaultLimit + 1, 2 * paging.DefaultLimit, 2*paging.DefaultLimit + 1} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {
 			s := catalog(t)
 			ctx := context.Background()
@@ -288,24 +288,52 @@ func TestLandingWindows(t *testing.T) {
 			cfg := config(t, s)
 			h := identity.Optional(pages.Handler(cfg))
 			token := paging.Token{Tool: "sites"}
-			positions := []string{"", token.Encode(""), token.Encode("site-000000"), token.Encode("site-000000-extra"), token.Encode("zz-after-all")}
+			positions := []string{"last", (paging.Token{Tool: "sites-before"}).Encode("site-000000-extra"), (paging.Token{Tool: "sites-before"}).Encode("zz-after-all"), "", token.Encode(""), token.Encode("site-000000"), token.Encode("site-000000-extra"), token.Encode("zz-after-all")}
 			if count > paging.DefaultLimit {
-				positions = append(positions, token.Encode(visible[paging.DefaultLimit-1].Name))
+				positions = append(positions, token.Encode(visible[paging.DefaultLimit-1].Name), (paging.Token{Tool: "sites-before"}).Encode(visible[paging.DefaultLimit].Name), (paging.Token{Tool: "sites-before"}).Encode(visible[paging.DefaultLimit].Name+"-gap"))
 			}
 			for _, current := range positions {
 				for _, suffix := range []string{"", "&limit=1&unrelated=ignored&page=bogus"} {
 					r := request("GET", "/?page="+current+suffix, "alice", "alice@example.test")
-					var after string
-					if current != "" {
-						if err := token.Decode(current, &after); err != nil {
-							t.Fatal(err)
+					var key string
+					reverse := current == "last"
+					if current != "" && !reverse {
+						if err := token.Decode(current, &key); err != nil {
+							if err := (paging.Token{Tool: "sites-before"}).Decode(current, &key); err != nil {
+								t.Fatal(err)
+							}
+							reverse = true
 						}
 					}
-					remaining := slices.DeleteFunc(slices.Clone(visible), func(x store.Site) bool { return x.Name <= after })
+					remaining := slices.Clone(visible)
+					if reverse {
+						if current != "last" {
+							remaining = slices.DeleteFunc(remaining, func(x store.Site) bool { return x.Name >= key })
+						}
+					} else if current != "" {
+						remaining = slices.DeleteFunc(remaining, func(x store.Site) bool { return x.Name <= key })
+					}
+					if reverse && len(remaining) <= paging.DefaultLimit {
+						for _, method := range []string{"GET", "HEAD"} {
+							w := answer(h, request(method, r.URL.String(), "alice", "alice@example.test"))
+							if w.Code != 303 || !reflect.DeepEqual(w.Header()["Location"], []string{"/"}) {
+								t.Fatalf("underflow: %d %v", w.Code, w.Header())
+							}
+						}
+						continue
+					}
 					window := remaining[:min(len(remaining), paging.DefaultLimit)]
-					next := ""
-					if len(remaining) > paging.DefaultLimit {
-						next = token.Encode(window[len(window)-1].Name)
+					if reverse {
+						window = remaining[max(0, len(remaining)-paging.DefaultLimit):]
+					}
+					next, prev := "", ""
+					if len(window) > 0 {
+						if reverse && current != "last" || !reverse && len(remaining) > paging.DefaultLimit {
+							next = token.Encode(window[len(window)-1].Name)
+						}
+						if current != "" {
+							prev = (paging.Token{Tool: "sites-before"}).Encode(window[0].Name)
+						}
 					}
 					base := urls.SitesURL(r, cfg.ServicesPath)
 					rows := make([]pages.SiteRow, 0, len(window))
@@ -314,10 +342,14 @@ func TestLandingWindows(t *testing.T) {
 					}
 					b := banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: urls.AuthProfile(r, cfg.ServicesPath), LogoutURL: urls.AuthLogout(r, cfg.ServicesPath)})
 					b.Trail = nil
-					data := pages.LandingData{Banner: b, SitesURL: base, Sites: rows, Page: current, Next: next}
+					data := pages.LandingData{Banner: b, SitesURL: base, Sites: rows, Page: current, Prev: prev, Next: next}
 					w := answer(h, r)
 					if w.Code != http.StatusOK || !reflect.DeepEqual(w.Header()["Content-Type"], []string{"text/html; charset=utf-8"}) || w.Body.String() != execute(t, templateSet(t), "landing", data) {
 						t.Fatalf("landing with %d visible sites at %s differs from window template", count, r.URL)
+					}
+					head := answer(h, request("HEAD", r.URL.String(), "alice", "alice@example.test"))
+					if head.Code != w.Code || !reflect.DeepEqual(head.Header(), w.Header()) || head.Body.Len() != 0 {
+						t.Fatalf("landing HEAD differs at %s", r.URL)
 					}
 				}
 			}
@@ -325,7 +357,7 @@ func TestLandingWindows(t *testing.T) {
 	}
 }
 
-// R-Y8W4-Y7WE R-YEZM-V2LV
+// R-EXGC-VPX8 R-F5ZN-K443
 func TestLandingUndecodablePage(t *testing.T) {
 	s, handle := catalogHandle(t)
 	cfg := config(t, s)
@@ -340,7 +372,7 @@ func TestLandingUndecodablePage(t *testing.T) {
 	wrongShape := (paging.Token{Tool: "sites"}).Encode(int64(123))
 	for _, failing := range []bool{false, true} {
 		handle.SetFailing(failing)
-		for _, current := range []string{"bogus", foreign, wrongShape} {
+		for _, current := range []string{"bogus", "Last", foreign, wrongShape, (paging.Token{Tool: "sites-before"}).Encode(int64(123)), (paging.Token{Tool: "sites-before"}).Encode("")} {
 			for _, method := range []string{"GET", "HEAD"} {
 				r := request(method, "/?ignored=x&page="+current+"&page=", "alice", "ignored@example.test")
 				users = nil
@@ -359,7 +391,7 @@ func TestLandingUndecodablePage(t *testing.T) {
 	}
 }
 
-// R-XH65-Q4N7 R-XIE2-3WDW R-XJLY-HO4L R-XKTU-VFVA R-DJOW-DRTT
+// R-XH65-Q4N7 R-XIE2-3WDW R-XJLY-HO4L R-XKTU-VFVA R-P6YC-776J
 func TestMethodsGuestsAndFailingCatalog(t *testing.T) {
 	s, handle := catalogHandle(t)
 	var calls int
@@ -452,4 +484,99 @@ func TestHandlerConcurrent(t *testing.T) {
 		})
 	}
 	wg.Wait()
+}
+
+// R-F77J-XVUS
+func TestLandingForwardBackwardWalk(t *testing.T) {
+	for _, count := range []int{paging.DefaultLimit + 1, 2 * paging.DefaultLimit, 2*paging.DefaultLimit + 7} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			s := catalog(t)
+			visible := make([]store.Site, 0, count)
+			for i := range count {
+				x, err := s.Create(context.Background(), store.Draft{Owner: "alice", Name: fmt.Sprintf("walk-%06d", i), Repo: "walk-repository", Ref: "main", Visibility: store.Private})
+				if err != nil {
+					t.Fatal(err)
+				}
+				visible = append(visible, x)
+			}
+			cfg := config(t, s)
+			h := identity.Optional(pages.Handler(cfg))
+			check := func(current string, window []store.Site, prev, next string) {
+				t.Helper()
+				r := request("GET", "/?page="+current, "alice", "walk@example.test")
+				b := banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: urls.AuthProfile(r, cfg.ServicesPath), LogoutURL: urls.AuthLogout(r, cfg.ServicesPath)})
+				b.Trail = nil
+				base := urls.SitesURL(r, cfg.ServicesPath)
+				rows := make([]pages.SiteRow, 0, len(window))
+				for _, x := range window {
+					rows = append(rows, pages.SiteRow{Slug: x.Slug, Name: x.Name, URL: urls.SiteURL(base, x.Slug), Visibility: x.Visibility, Listed: x.Listed, Published: x.Commit != "", Mine: x.Owner == "alice"})
+				}
+				want := pages.LandingData{Banner: b, SitesURL: base, Sites: rows, Page: current, Prev: prev, Next: next}
+				w := answer(h, r)
+				if w.Code != 200 || w.Body.String() != execute(t, templateSet(t), "landing", want) {
+					t.Fatalf("walk page %q does not match expected window", current)
+				}
+			}
+			after, before := paging.Token{Tool: "sites"}, paging.Token{Tool: "sites-before"}
+			var windows [][]store.Site
+			current := ""
+			for start := 0; start < len(visible); start += paging.DefaultLimit {
+				end := min(start+paging.DefaultLimit, len(visible))
+				window := visible[start:end]
+				prev, next := "", ""
+				if start > 0 {
+					prev = before.Encode(window[0].Name)
+				}
+				if end < len(visible) {
+					next = after.Encode(window[len(window)-1].Name)
+				}
+				check(current, window, prev, next)
+				windows = append(windows, window)
+				if next != "" {
+					current = next
+				}
+			}
+			steps := 0
+			for j := len(windows) - 1; j > 0; j-- {
+				window := windows[j]
+				prev := before.Encode(window[0].Name)
+				next := ""
+				if j != len(windows)-1 {
+					next = after.Encode(window[len(window)-1].Name)
+				}
+				check(current, window, prev, next)
+				current = prev
+				steps++
+			}
+			w := answer(h, request("GET", "/?page="+current, "alice", "walk@example.test"))
+			if steps != len(windows)-1 || w.Code != 303 || !reflect.DeepEqual(w.Header()["Location"], []string{"/"}) {
+				t.Fatalf("walk did not end at first-page redirect: steps %d response %d %v", steps, w.Code, w.Header())
+			}
+		})
+	}
+}
+
+// R-P6YC-776J
+func TestLandingRedirectDoesNotCallBanner(t *testing.T) {
+	s, handle := catalogHandle(t)
+	cfg := config(t, s)
+	calls := 0
+	cfg.Banner = func(u page.User) page.Banner { calls++; return banner(u) }
+	h := identity.Optional(pages.Handler(cfg))
+	for _, failing := range []bool{false, true} {
+		handle.SetFailing(failing)
+		for _, value := range []string{"last", (paging.Token{Tool: "sites-before"}).Encode("before-any")} {
+			for _, method := range []string{"GET", "HEAD"} {
+				calls = 0
+				w := answer(h, request(method, "/?page="+value, "alice", "banner@example.test"))
+				want := 303
+				if failing {
+					want = 503
+				}
+				if w.Code != want || calls != 0 {
+					t.Fatalf("status %d banner calls %d", w.Code, calls)
+				}
+			}
+		}
+	}
 }

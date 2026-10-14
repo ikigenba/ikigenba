@@ -390,6 +390,59 @@ func TestReadSelection(t *testing.T) {
 	equal(t, taken, false)
 }
 
+func TestVisibleBeforeWindows(t *testing.T) {
+	// R-ONFY-2VBF R-OPVQ-UEST
+	s, handle := openAt(t, filepath.Join(t.TempDir(), "db"), store.Config{})
+	var all []store.Site
+	for i, name := range []string{"z-last", "aa", "a1", "a-b", "b-private", "c-hidden"} {
+		d := draft(name)
+		if i%2 == 1 {
+			d.Owner = "bob"
+		}
+		if i == 1 || i == 5 {
+			d.Listed = false
+		}
+		if i == 4 {
+			d.Visibility = store.Private
+		}
+		all = append(all, create(t, s, d))
+	}
+	// Deliberately disagreeing payloads ensure selection uses the row column.
+	err := handle.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "UPDATE sites SET listed=CASE WHEN name=? THEN 0 WHEN name=? THEN 1 ELSE listed END", "a1", "aa")
+		return err
+	})
+	equal(t, err, nil)
+	for _, user := range []string{"alice", "bob", "", "nobody"} {
+		for _, before := range []string{"", "a-b", "a1", "a2", "aa", "z-last", "-", "\xff", "' OR 1=1 --"} {
+			for _, n := range []int{-100, -1, 0, 1, 2, 3, 100} {
+				want := make([]store.Site, 0)
+				// Iterate in descending byte order, applying the row's actual listing.
+				for _, i := range []int{0, 5, 4, 1, 2, 3} {
+					x := all[i]
+					listed := x.Listed
+					switch x.Name {
+					case "a1":
+						listed = false
+					case "aa":
+						listed = true
+					}
+					if (listed || x.Owner == user) && (before == "" || x.Name < before) && len(want) < n {
+						want = append(want, x)
+					}
+				}
+				got, err := s.VisibleBefore(ctx, user, before, n)
+				equal(t, err, nil)
+				equal(t, got, want)
+			}
+		}
+	}
+	empty := open(t, store.Config{})
+	got, err := empty.VisibleBefore(ctx, "alice", "", 10)
+	equal(t, err, nil)
+	equal(t, got, []store.Site{})
+}
+
 func TestPublishUpdateAndApex(t *testing.T) {
 	// R-17A9-66DP R-18I5-JY4E R-1ZBX-YWFO R-20JU-CO6D R-22ZN-47NR R-247J-HZEG R-2AB1-EU3X R-2BIX-SLUM R-4QBY-XRV6 R-2CQU-6DLB
 	now := stamp
@@ -596,10 +649,26 @@ func calls(c context.Context, s *store.Store, id string) []error {
 	_, negativeList := s.List(c, "alice", "", -1)
 	_, zeroVisible := s.Visible(c, "alice", "", 0)
 	_, negativeVisible := s.Visible(c, "alice", "", -1)
-	return []error{a, b, d, e, f, g, h, i, j, k, l, m, zeroList, negativeList, zeroVisible, negativeVisible}
+	_, before := s.VisibleBefore(c, "alice", "docs", 10000)
+	_, last := s.VisibleBefore(c, "alice", "", 10000)
+	_, zeroBefore := s.VisibleBefore(c, "alice", "docs", 0)
+	_, negativeBefore := s.VisibleBefore(c, "alice", "", -1)
+	_, missingFind := s.Find(c, "alice", "missing")
+	_, missingSlug := s.BySlug(c, "missing")
+	_, invalidCreate := s.Create(c, store.Draft{})
+	_, takenCreate := s.Create(c, draft("docs"))
+	_, invalidPublish := s.Publish(c, "missing", "invalid")
+	_, missingPublish := s.Publish(c, "missing", strings.Repeat("a", 40))
+	bad, private := "invalid", store.Private
+	_, _, invalidUpdate := s.Update(c, "missing", store.Change{Visibility: &bad})
+	_, _, missingUpdate := s.Update(c, "missing", store.Change{})
+	_, _, privateApex := s.Update(c, id, store.Change{Visibility: &private})
+	_, missingDelete := s.Delete(c, "missing")
+	_, missingApex := s.SetApex(c, "missing")
+	return []error{a, b, d, e, f, g, h, i, j, k, l, m, zeroList, negativeList, zeroVisible, negativeVisible, before, last, zeroBefore, negativeBefore, missingFind, missingSlug, invalidCreate, takenCreate, invalidPublish, missingPublish, invalidUpdate, missingUpdate, privateApex, missingDelete, missingApex}
 }
 func TestContextCloseAndPrecedence(t *testing.T) {
-	// R-XFGT-M0TW R-2HMF-PGK3 R-X5PM-JUWC
+	// R-OR3N-86JI R-OSBJ-LYA7 R-OTJF-ZQ0W
 	path := filepath.Join(t.TempDir(), "db")
 	s, handle := openAt(t, path, store.Config{})
 	x := create(t, s, draft("docs"))
@@ -641,6 +710,44 @@ func TestContextCloseAndPrecedence(t *testing.T) {
 	bad := "other"
 	_, _, e = q.Update(ctx, "missing", store.Change{Visibility: &bad})
 	catalog(t, e)
+}
+
+func TestStoreRefusalPrecedence(t *testing.T) {
+	// R-OTJF-ZQ0W
+	randomFailure := errors.New("test randomness failure")
+	s := open(t, store.Config{})
+	x := create(t, s, draft("docs"))
+	_, err := s.SetApex(ctx, x.ID)
+	equal(t, err, nil)
+	before := snapshot(t, s)
+	bad, private, empty := "invalid", store.Private, ""
+	d := draft(x.Name)
+	d.Visibility = bad
+	_, err = s.Create(ctx, d)
+	catalog(t, err)
+	_, err = s.Publish(ctx, "missing", "invalid")
+	catalog(t, err)
+	for _, id := range []string{"missing", x.ID} {
+		for _, c := range []store.Change{{Visibility: &bad}, {Visibility: &private, Ref: &empty}} {
+			_, _, err = s.Update(ctx, id, c)
+			catalog(t, err)
+		}
+	}
+	equal(t, snapshot(t, s), before)
+	// Name refusal wins before a failing random read; random errors on success
+	// paths remain catalog errors even if the source returns a store sentinel.
+	for _, failure := range []error{randomFailure, store.ErrNotFound, store.ErrNameTaken, store.ErrNotPublic} {
+		path := filepath.Join(t.TempDir(), "db")
+		q, handle := openAt(t, path, store.Config{})
+		_ = create(t, q, draft("taken"))
+		q = store.New(handle, store.Config{Now: func() time.Time { return stamp }, Rand: failedReader{failure}})
+		before := snapshot(t, q)
+		_, err := q.Create(ctx, draft("taken"))
+		checkErr(t, err, store.ErrNameTaken)
+		_, err = q.Create(ctx, draft("new"))
+		catalog(t, err)
+		equal(t, snapshot(t, q), before)
+	}
 }
 
 func TestConcurrentCreates(t *testing.T) {

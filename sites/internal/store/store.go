@@ -233,6 +233,41 @@ func (s *Store) Visible(ctx context.Context, user, after string, n int) ([]Site,
 		return out, rows.Err()
 	})
 }
+
+// VisibleBefore lists the visible set backwards, ending strictly before a name.
+// An empty before selects the last window without a name bound.
+func (s *Store) VisibleBefore(ctx context.Context, user, before string, n int) ([]Site, error) {
+	return transact(ctx, s.db.Read, func(tx *sql.Tx) ([]Site, error) {
+		out := make([]Site, 0)
+		if n < 1 {
+			return out, nil
+		}
+		query := "SELECT name, payload FROM sites WHERE listed=1 UNION ALL SELECT name, payload FROM sites INDEXED BY sites_owner_name WHERE owner=? AND listed=0 ORDER BY name DESC LIMIT ?"
+		args := []any{user, n}
+		if before != "" {
+			query = "SELECT name, payload FROM sites WHERE listed=1 AND name < ? UNION ALL SELECT name, payload FROM sites INDEXED BY sites_owner_name WHERE owner=? AND listed=0 AND name < ? ORDER BY name DESC LIMIT ?"
+			args = []any{before, user, before, n}
+		}
+		rows, err := tx.QueryContext(ctx, query, args...)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var name, payload string
+			if err := rows.Scan(&name, &payload); err != nil {
+				return nil, err
+			}
+			x, err := decode(payload)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, x)
+		}
+		return out, rows.Err()
+	})
+}
+
 func (s *Store) taken(ctx context.Context, tx *sql.Tx, name string) (bool, error) {
 	var n int
 	err := tx.QueryRowContext(ctx, "SELECT count(*) FROM sites WHERE name=? OR slug=?", name, name).Scan(&n)
