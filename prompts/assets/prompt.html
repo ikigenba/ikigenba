@@ -26,7 +26,7 @@
      names the prompt is subscribed to, sorted by name); .Page (string, this
      window's own page token, the ?page= the request carried; empty on the
      first window) and .Next (string, the page token for the window after
-     this one; empty when none remain). .Runs is the window of runs .Page
+     this one; empty when none remain), and .Prev (string, the page token for the window before this one, carried in the same ?page= parameter; empty on the first window). .Runs is the window of runs .Page
      names. Status words and
      kinds, chosen here from .Status and .ExitCode by the run-status
      template (defined in run.html): "queued" and "running" info; "exited
@@ -61,10 +61,9 @@
      duration, empty when none), td.run-cost.num (text the cost, empty when
      .Cost is empty) and td.run-exit.num (text .ExitCode when .Status is
      "exited", else empty); then nav.paging#paging (aria-label "Pages")
-     whose children are, in order, First (on the first window, .Page empty,
+     whose children are, in order, First, Prev, Next and Last: First (on the first window, .Page empty,
      a span with aria-current="page" and text "First"; otherwise a link to
-     /<.Prompt.Name>/ with text "First") and, only when .Next is not empty,
-     Next (a link to /<.Prompt.Name>/?page=<.Next> with text "Next"); the
+     /<.Prompt.Name>/ with text "First"), then, only when .Prev is not empty, Prev (a link to /<.Prompt.Name>/?page=<.Prev> with text "Prev"), then, only when .Next is not empty, Next (a link to /<.Prompt.Name>/?page=<.Next> with text "Next"), then, always, Last (while .Next is not empty, a link to /<.Prompt.Name>/?page=last with text "Last", page=last naming the last window; when .Next is empty, the last window, a span with aria-current="page" and text "Last", so a single window shows First and Last both as the current item); the
      nav shows when .Runs is not empty or .Page is not empty, after the card
      (section#runs), so an emptied later window still offers First; on the
      first window with no runs there is no nav. No script but appkit's /_appkit/feedback.js. */}}
@@ -133,7 +132,7 @@
 <p>Runs started with the <code>run</code> tool show up here, newest first.</p>
 </div>{{end}}
 </section>
-{{if or .Runs .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/{{.Prompt.Name}}/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/{{.Prompt.Name}}/?page={{.Next}}">Next</a>{{end}}</nav>
+{{if or .Runs .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/{{.Prompt.Name}}/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Prev}}<a href="/{{.Prompt.Name}}/?page={{.Prev}}">Prev</a>{{end}}{{if .Next}}<a href="/{{.Prompt.Name}}/?page={{.Next}}">Next</a>{{end}}{{if .Next}}<a href="/{{.Prompt.Name}}/?page=last">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
 {{end}}</main>
 {{template "footer" .Banner}}
 </body>
