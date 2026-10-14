@@ -24,8 +24,8 @@ const (
 	Name           = "mn_parcels"
 	DefaultBaseURL = "https://enterprise.gisdata.mn.gov/aghost/rest/services/us_mn_state_mngeo/plan_parcels_open/FeatureServer/1/query"
 	PageSize       = 2000
-	Retries        = 3
-	Backoff        = time.Second
+	Retries        = 5
+	Backoff        = 5 * time.Second
 	RequestTimeout = 180 * time.Second
 	OwnerRole      = "owner"
 	TaxpayerRole   = "taxpayer"
@@ -87,12 +87,17 @@ func (s *Scraper) Scrape(ctx context.Context, batch func([]source.Row) error) er
 		if _, err := s.request(ctx, countQuery, true); err != nil {
 			return err
 		}
-		for offset := 0; ; offset += PageSize {
-			query := url.Values{"where": {Where(county)}, "outFields": {"*"}, "returnGeometry": {"false"}, "returnCentroid": {"true"}, "outSR": {"4326"}, "orderByFields": {"objectid"}, "resultOffset": {strconv.Itoa(offset)}, "resultRecordCount": {strconv.Itoa(PageSize)}, "f": {"json"}}
+		for bound := int64(-1); ; {
+			query := url.Values{"where": {Where(county) + " AND objectid>" + strconv.FormatInt(bound, 10)}, "outFields": {"*"}, "returnGeometry": {"false"}, "returnCentroid": {"true"}, "outSR": {"4326"}, "orderByFields": {"objectid"}, "resultRecordCount": {strconv.Itoa(PageSize)}, "f": {"json"}}
 			features, err := s.request(ctx, query, false)
 			if err != nil {
 				return err
 			}
+			cursor, err := pageCursor(features, bound)
+			if err != nil {
+				return err
+			}
+			bound = cursor
 			if len(features) > 0 {
 				collected := s.cfg.Now()
 				rows := make([]source.Row, 0, len(features))
@@ -119,6 +124,22 @@ func (s *Scraper) Scrape(ctx context.Context, batch func([]source.Row) error) er
 		}
 	}
 	return ctx.Err()
+}
+
+func pageCursor(features []json.RawMessage, bound int64) (int64, error) {
+	cursor := bound
+	for _, feature := range features {
+		f, _ := object(feature)
+		a, _ := object(f["attributes"])
+		id, err := strconv.ParseInt(string(a["objectid"]), 10, 64)
+		if err != nil || id <= bound {
+			return 0, errors.New("unreadable source feature")
+		}
+		if id > cursor {
+			cursor = id
+		}
+	}
+	return cursor, nil
 }
 
 func (s *Scraper) request(ctx context.Context, query url.Values, count bool) ([]json.RawMessage, error) {

@@ -2,6 +2,8 @@ package cli_test
 
 import (
 	"net/http"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -12,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/scrapes/internal/store"
 )
 
-// R-RJYQ-983R
+// R-6ETF-W4WI
 func TestRunMNParcelsCounties(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -25,22 +27,34 @@ func TestRunMNParcelsCounties(t *testing.T) {
 		{"apostrophe", map[string]string{"MN_PARCELS_COUNTIES": "O'Brien"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			source := &fakeSource{page: func(r *http.Request) (*http.Response, error) {
-				if r.URL.Query().Get("returnCountOnly") == "true" {
-					return jsonResponse(r, map[string]any{"count": 1}), nil
-				}
-				return jsonResponse(r, map[string]any{"features": []any{map[string]any{"attributes": map[string]string{"state_pin": r.URL.Query().Get("where")}}}}), nil
-			}}
-			f := startRun(t, runOptions{Env: tc.env, Source: source})
-			v := resultJSON(t, f.call(fixtureCaller, "scrape", map[string]any{"scraper": "mn_parcels"}))
 			cfg, err := settings.Read(func(k string) (string, bool) { v, ok := tc.env[k]; return v, ok })
 			if err != nil {
 				t.Fatal(err)
 			}
-			if done := f.awaitRun(v["id"].(string)); done["status"] != store.StatusDone || done["rows"] != float64(len(cfg.MNParcelsCounties)) {
+			source := &fakeSource{page: func(r *http.Request) (*http.Response, error) {
+				query := r.URL.Query()
+				if query.Has("returnCountOnly") {
+					return jsonResponse(r, map[string]any{"count": 1}), nil
+				}
+				for _, county := range cfg.MNParcelsCounties {
+					prefix := mnparcels.Where(county) + " AND objectid>"
+					if strings.HasPrefix(query.Get("where"), prefix) {
+						bound, err := strconv.ParseInt(strings.TrimPrefix(query.Get("where"), prefix), 10, 64)
+						if err != nil || bound == 1<<63-1 {
+							t.Fatalf("invalid page bound: %s", query.Get("where"))
+						}
+						return jsonResponse(r, map[string]any{"features": []any{map[string]any{"attributes": map[string]any{"objectid": bound + 1, "state_pin": county}}}}), nil
+					}
+				}
+				t.Fatalf("unexpected parcel request: %s", r.URL)
+				return nil, nil
+			}}
+			f := startRun(t, runOptions{Env: tc.env, Source: source})
+			v := resultJSON(t, f.call(fixtureCaller, "scrape", map[string]any{"scraper": "mn_parcels"}))
+			if done := f.awaitRun(v["id"].(string)); done["status"] != store.StatusDone {
 				t.Fatal(done)
 			}
-			if tc.name == "unset" && len(cfg.MNParcelsCounties) != 13 {
+			if tc.name == "unset" && !reflect.DeepEqual(cfg.MNParcelsCounties, settings.Defaults().MNParcelsCounties) {
 				t.Fatal(cfg.MNParcelsCounties)
 			}
 			seen := map[string]bool{}
@@ -48,13 +62,30 @@ func TestRunMNParcelsCounties(t *testing.T) {
 				if r.Method != http.MethodGet || !strings.HasPrefix(r.URL.String(), mnparcels.DefaultBaseURL+"?") || r.Header.Get("User-Agent") != pages.ServiceName+" ("+pages.Description+")" {
 					t.Fatal(r)
 				}
-				seen[r.URL.Query().Get("where")] = true
-			}
-			if len(seen) != len(cfg.MNParcelsCounties) {
-				t.Fatal(seen, cfg.MNParcelsCounties)
+				query := r.URL.Query()
+				where := query.Get("where")
+				matched := false
+				for _, county := range cfg.MNParcelsCounties {
+					if query.Has("returnCountOnly") {
+						matched = where == mnparcels.Where(county)
+					} else {
+						prefix := mnparcels.Where(county) + " AND objectid>"
+						if strings.HasPrefix(where, prefix) {
+							bound, err := strconv.ParseInt(strings.TrimPrefix(where, prefix), 10, 64)
+							matched = err == nil && where == prefix+strconv.FormatInt(bound, 10)
+						}
+					}
+					if matched {
+						seen[county] = true
+						break
+					}
+				}
+				if !matched {
+					t.Fatalf("unexpected where: %s", where)
+				}
 			}
 			for _, county := range cfg.MNParcelsCounties {
-				if !seen[mnparcels.Where(county)] {
+				if !seen[county] {
 					t.Fatal(county, seen)
 				}
 			}

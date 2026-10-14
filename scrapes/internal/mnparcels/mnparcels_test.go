@@ -37,19 +37,23 @@ func config(f transport) mnparcels.Config {
 	return mnparcels.Config{HTTP: &http.Client{Transport: f}, Now: clock, Sleep: func(context.Context, time.Duration) {}, Counties: []string{"Carlton"}, UserAgent: "parcel test"}
 }
 func feature(id string) string {
-	return `{"attributes": { "state_pin" : "` + id + `", "owner_name":"A<B" }}`
+	return `{"attributes": { "objectid":0, "state_pin" : "` + id + `", "owner_name":"A<B" }}`
 }
+func objectFeature(objectID int, id string) string {
+	return strings.Replace(feature(id), `"objectid":0`, `"objectid":`+strconv.Itoa(objectID), 1)
+}
+
 func page(n int) string {
 	values := make([]string, n)
 	for i := range values {
-		values[i] = feature(strconv.Itoa(i))
+		values[i] = objectFeature(i+1, strconv.Itoa(i))
 	}
 	return `{"features":[` + strings.Join(values, ",\n") + `]}`
 }
 
-// R-ROUB-SB2J R-RQ28-62T8 R-RTPX-BE1B
+// R-K73A-6CZA R-RQ28-62T8 R-RTPX-BE1B
 func TestAPI(t *testing.T) {
-	if mnparcels.Name != "mn_parcels" || mnparcels.DefaultBaseURL != "https://enterprise.gisdata.mn.gov/aghost/rest/services/us_mn_state_mngeo/plan_parcels_open/FeatureServer/1/query" || mnparcels.PageSize != 2000 || mnparcels.Retries != 3 || mnparcels.Backoff != time.Second || mnparcels.RequestTimeout != 180*time.Second || mnparcels.OwnerRole != "owner" || mnparcels.TaxpayerRole != "taxpayer" {
+	if mnparcels.Name != "mn_parcels" || mnparcels.DefaultBaseURL != "https://enterprise.gisdata.mn.gov/aghost/rest/services/us_mn_state_mngeo/plan_parcels_open/FeatureServer/1/query" || mnparcels.PageSize != 2000 || mnparcels.Retries != 5 || mnparcels.Backoff != 5*time.Second || mnparcels.RequestTimeout != 180*time.Second || mnparcels.OwnerRole != "owner" || mnparcels.TaxpayerRole != "taxpayer" {
 		t.Fatal("constants")
 	}
 	var s source.Scraper = mnparcels.New(mnparcels.Config{})
@@ -83,7 +87,7 @@ func TestWhere(t *testing.T) {
 	}
 }
 
-// R-7TIT-NA3I R-W1GM-M7UI R-7UQQ-11U7 R-RYLI-UH03
+// R-K9J2-XWGO R-IO0Y-X1VN R-IROO-2D3Q R-RYLI-UH03
 func TestWalk(t *testing.T) {
 	for _, count := range []string{"0", "5000", "2e3", "99999999999999999999999999999999999999999"} {
 		t.Run(count, func(t *testing.T) {
@@ -103,11 +107,12 @@ func TestWalk(t *testing.T) {
 				if i == 0 || i == 2 {
 					want.Set("returnCountOnly", "true")
 				} else {
-					for k, v := range map[string]string{"outFields": "*", "returnGeometry": "false", "returnCentroid": "true", "outSR": "4326", "orderByFields": "objectid", "resultOffset": "0", "resultRecordCount": "2000"} {
+					for k, v := range map[string]string{"outFields": "*", "returnGeometry": "false", "returnCentroid": "true", "outSR": "4326", "orderByFields": "objectid", "resultRecordCount": "2000"} {
 						want.Set(k, v)
 					}
+					want.Set("where", mnparcels.Where(county)+" AND objectid>-1")
 					if i == 4 {
-						want.Set("resultOffset", "2000")
+						want.Set("where", mnparcels.Where(county)+" AND objectid>2000")
 					}
 				}
 				if !reflect.DeepEqual(r.URL.Query(), want) {
@@ -119,7 +124,10 @@ func TestWalk(t *testing.T) {
 				if i == 0 || i == 2 {
 					return response(200, `{"count":`+count+`}`), nil
 				}
-				return response(200, page(map[int]int{1: 3, 3: 2000, 4: 1}[i])), nil
+				if i == 4 {
+					return response(200, `{"features":[`+objectFeature(2001, "0")+`]}`), nil
+				}
+				return response(200, page(map[int]int{1: 3, 3: 2000}[i])), nil
 			})
 			c.Counties = []string{"Carlton", "O'Brien"}
 			c.Now = func() time.Time { reads++; return clock().Add(time.Duration(reads) * time.Hour) }
@@ -130,7 +138,7 @@ func TestWalk(t *testing.T) {
 			err := mnparcels.New(c).Scrape(context.Background(), func(rows []source.Row) error {
 				batches++
 				for i, row := range rows {
-					want, err := mnparcels.RowOf(json.RawMessage(feature(strconv.Itoa(i))), clock().Add(time.Duration(batches)*time.Hour))
+					want, err := mnparcels.RowOf(json.RawMessage(objectFeature(i+1+map[int]int{3: 2000}[batches], strconv.Itoa(i))), clock().Add(time.Duration(batches)*time.Hour))
 					if err != nil || !reflect.DeepEqual(row, want) {
 						t.Error("row differs", i, row, want, err)
 					}
@@ -153,7 +161,7 @@ func TestWalk(t *testing.T) {
 	}
 }
 
-// R-W1GM-M7UI R-7UQQ-11U7
+// R-IO0Y-X1VN R-IROO-2D3Q
 func TestEmptyPageAndExactBoundary(t *testing.T) {
 	requests, batches := 0, 0
 	c := config(func(*http.Request) (*http.Response, error) {
@@ -172,7 +180,7 @@ func TestEmptyPageAndExactBoundary(t *testing.T) {
 	}
 }
 
-// R-7TIT-NA3I R-7UQQ-11U7 R-S4P0-RBPK R-W1GM-M7UI
+// R-K9J2-XWGO R-IROO-2D3Q R-S4P0-RBPK R-IO0Y-X1VN
 func TestPinlessPages(t *testing.T) {
 	for _, attrs := range []string{`{"state_pin":null,"county_pin":null}`, `{"state_pin":" ","county_pin":""}`, `{}`, `{"state_pin":123,"county_pin":456}`} {
 		for _, size := range []int{3, 2000} {
@@ -183,9 +191,12 @@ func TestPinlessPages(t *testing.T) {
 					var wanted []source.Row
 					collected := clock().Add(time.Hour)
 					for i := range features {
-						features[i] = pinless
+						features[i] = strings.Replace(pinless, `{}`, `{"objectid":`+strconv.Itoa(i+1)+`}`, 1)
+						if attrs != `{}` {
+							features[i] = strings.Replace(pinless, `"attributes":{`, `"attributes":{"objectid":`+strconv.Itoa(i+1)+`,`, 1)
+						}
 						if !all && i != 1 {
-							features[i] = feature(strconv.Itoa(i))
+							features[i] = objectFeature(i+1, strconv.Itoa(i))
 							row, err := mnparcels.RowOf(json.RawMessage(features[i]), collected)
 							if err != nil {
 								t.Fatal(err)
@@ -200,10 +211,16 @@ func TestPinlessPages(t *testing.T) {
 					c := config(func(r *http.Request) (*http.Response, error) {
 						requests++
 						want := url.Values{"where": {mnparcels.Where("Carlton")}, "f": {"json"}}
+						bound := "-1"
+						if requests == 3 {
+							bound = "2000"
+						}
+						want.Set("where", mnparcels.Where("Carlton")+" AND objectid>"+bound)
 						if requests == 1 {
+							want.Set("where", mnparcels.Where("Carlton"))
 							want.Set("returnCountOnly", "true")
 						} else {
-							for k, v := range map[string]string{"outFields": "*", "returnGeometry": "false", "returnCentroid": "true", "outSR": "4326", "orderByFields": "objectid", "resultOffset": strconv.Itoa((requests - 2) * 2000), "resultRecordCount": "2000"} {
+							for k, v := range map[string]string{"outFields": "*", "returnGeometry": "false", "returnCentroid": "true", "outSR": "4326", "orderByFields": "objectid", "resultRecordCount": "2000"} {
 								want.Set(k, v)
 							}
 						}
@@ -266,7 +283,7 @@ func TestPinlessPages(t *testing.T) {
 	}
 }
 
-// R-7UQQ-11U7 R-W1GM-M7UI
+// R-IROO-2D3Q R-IO0Y-X1VN
 func TestPinlessShortPageContinuesToNextCounty(t *testing.T) {
 	requests, batches := 0, 0
 	c := config(func(r *http.Request) (*http.Response, error) {
@@ -274,14 +291,14 @@ func TestPinlessShortPageContinuesToNextCounty(t *testing.T) {
 		if requests == 3 && batches != 1 {
 			t.Error("next county requested before batch", batches)
 		}
-		if requests <= 2 && r.URL.Query().Get("where") != mnparcels.Where("Carlton") || requests > 2 && r.URL.Query().Get("where") != mnparcels.Where("Chisago") {
+		if requests <= 2 && !strings.HasPrefix(r.URL.Query().Get("where"), mnparcels.Where("Carlton")) || requests > 2 && !strings.HasPrefix(r.URL.Query().Get("where"), mnparcels.Where("Chisago")) {
 			t.Error(r.URL)
 		}
 		if r.URL.Query().Get("returnCountOnly") == "true" {
 			return response(200, `{"count":3}`), nil
 		}
 		if requests == 2 {
-			return response(200, `{"features":[`+feature("first")+`,{"attributes":{"state_pin":null,"county_pin":null}},`+feature("last")+`]}`), nil
+			return response(200, `{"features":[`+feature("first")+`,{"attributes":{"objectid":1,"state_pin":null,"county_pin":null}},`+feature("last")+`]}`), nil
 		}
 		return response(200, page(0)), nil
 	})
@@ -298,14 +315,23 @@ func TestPinlessShortPageContinuesToNextCounty(t *testing.T) {
 	}
 }
 
-// R-RZTF-88QS
+// R-KD6S-37OR
 func TestRetries(t *testing.T) {
 	for _, kind := range []string{"client", "429", "500", "503", "599", "error-null", "error-object", "page-recovery"} {
 		t.Run(kind, func(t *testing.T) {
 			requests, batches := 0, 0
 			var sleeps []time.Duration
-			c := config(func(*http.Request) (*http.Response, error) {
+			var firstPageURL string
+			c := config(func(r *http.Request) (*http.Response, error) {
 				requests++
+				if kind == "page-recovery" && requests >= 2 {
+					if requests == 2 {
+						firstPageURL = r.URL.String()
+					}
+					if r.URL.String() != firstPageURL || r.URL.Query().Get("where") != mnparcels.Where("Carlton")+" AND objectid>-1" {
+						t.Error("retry changed page bound", r.URL)
+					}
+				}
 				if kind == "page-recovery" && (requests == 1 || requests == 3) {
 					if requests == 1 {
 						return response(200, `{"count":1}`), nil
@@ -334,17 +360,17 @@ func TestRetries(t *testing.T) {
 			}
 			err := mnparcels.New(c).Scrape(context.Background(), func([]source.Row) error { batches++; return nil })
 			if kind == "page-recovery" {
-				if err != nil || requests != 3 || batches != 1 || !reflect.DeepEqual(sleeps, []time.Duration{time.Second}) {
+				if err != nil || requests != 3 || batches != 1 || !reflect.DeepEqual(sleeps, []time.Duration{5 * time.Second}) {
 					t.Fatal(err, requests, batches, sleeps)
 				}
-			} else if err == nil || requests != 4 || batches != 0 || !reflect.DeepEqual(sleeps, []time.Duration{time.Second, 2 * time.Second, 4 * time.Second}) {
+			} else if err == nil || requests != 6 || batches != 0 || !reflect.DeepEqual(sleeps, []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second, 80 * time.Second}) {
 				t.Fatal(err, requests, batches, sleeps)
 			}
 		})
 	}
 }
 
-// R-RZTF-88QS R-RYLI-UH03
+// R-KD6S-37OR R-RYLI-UH03
 func TestPageErrorExhaustionAndStableRequest(t *testing.T) {
 	for _, kind := range []string{"client", "429", "500", "599", "error"} {
 		t.Run(kind, func(t *testing.T) {
@@ -376,7 +402,7 @@ func TestPageErrorExhaustionAndStableRequest(t *testing.T) {
 			})
 			c.Sleep = func(_ context.Context, d time.Duration) { sleeps = append(sleeps, d) }
 			err := mnparcels.New(c).Scrape(context.Background(), func([]source.Row) error { batches++; return nil })
-			if err == nil || requests != 5 || batches != 0 || !reflect.DeepEqual(sleeps, []time.Duration{time.Second, 2 * time.Second, 4 * time.Second}) {
+			if err == nil || requests != 7 || batches != 0 || !reflect.DeepEqual(sleeps, []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second, 80 * time.Second}) {
 				t.Fatal(err, requests, batches, sleeps)
 			}
 		})
@@ -387,7 +413,7 @@ type brokenReader struct{}
 
 func (brokenReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
 
-// R-7X6I-SLBL R-7TIT-NA3I
+// R-IP8V-ATMC R-K9J2-XWGO
 func TestTerminalAnswers(t *testing.T) {
 	cases := []struct {
 		name, body string
@@ -607,11 +633,11 @@ func TestTelemetry(t *testing.T) {
 	}
 }
 
-// R-ZY04-9OL8 R-7UQQ-11U7
+// R-ISWK-G4UF R-IROO-2D3Q
 func TestPrivacy(t *testing.T) {
 	marker, number := "GHIJKLMNopqrstuvWXYZ0123", "123456789012"
-	valid := `{"attributes":{"state_pin":"` + marker + `","emv_total":` + number + `}}`
-	for _, kind := range []string{"500", "error", "null-attributes", "oversize", "cut", "batch", "pinless"} {
+	valid := `{"attributes":{"objectid":123456789012,"state_pin":"` + marker + `","emv_total":` + number + `}}`
+	for _, kind := range []string{"500", "error", "null-attributes", "oversize", "cut", "batch", "pinless", "late-client"} {
 		t.Run(kind, func(t *testing.T) {
 			var capture telemetry.Capture
 			w := telemetry.New(telemetry.Config{Service: "scrapes", Sink: &capture, Now: clock, Rand: bytes.NewReader(make([]byte, 4096)), Stderr: io.Discard, Sleep: func(context.Context, time.Duration) {}})
@@ -619,6 +645,12 @@ func TestPrivacy(t *testing.T) {
 			c := config(func(r *http.Request) (*http.Response, error) {
 				if r.URL.Query().Get("returnCountOnly") == "true" {
 					return response(200, `{"count":1}`), nil
+				}
+				if kind == "late-client" {
+					if r.URL.Query().Get("where") == mnparcels.Where("Carlton")+" AND objectid>-1" {
+						return response(200, `{"features":[`+strings.Repeat(valid+",", 1999)+valid+`]}`), nil
+					}
+					return nil, errors.New(marker + number)
 				}
 				switch kind {
 				case "500":
@@ -628,7 +660,7 @@ func TestPrivacy(t *testing.T) {
 				case "null-attributes":
 					return response(200, `{"features":[{"attributes":null},`+valid+`]}`), nil
 				case "pinless":
-					return response(200, `{"features":[{"attributes":{"owner_name":"`+marker+`","emv_total":`+number+`}}]}`), nil
+					return response(200, `{"features":[{"attributes":{"objectid":123456789012,"owner_name":"`+marker+`","emv_total":`+number+`}}]}`), nil
 				case "oversize":
 					return response(200, `{"features":[`+strings.Repeat(valid+",", 2000)+valid+`]}`), nil
 				case "cut":
@@ -641,6 +673,9 @@ func TestPrivacy(t *testing.T) {
 			err := mnparcels.New(c).Scrape(context.Background(), func([]source.Row) error {
 				if kind == "pinless" {
 					t.Error("pinless batch")
+				}
+				if kind == "late-client" {
+					return nil
 				}
 				return errors.New("refused")
 			})
@@ -667,7 +702,7 @@ type blockedBody struct{ ctx context.Context }
 func (b blockedBody) Read([]byte) (int, error) { <-b.ctx.Done(); return 0, b.ctx.Err() }
 func (blockedBody) Close() error               { return nil }
 
-// R-RZTF-88QS R-7X6I-SLBL R-RQ28-62T8
+// R-KD6S-37OR R-IP8V-ATMC R-RQ28-62T8
 func TestAttemptBounds(t *testing.T) {
 	for _, phase := range []string{"headers", "count-body", "page-body", "error-body"} {
 		t.Run(phase, func(t *testing.T) {
@@ -698,7 +733,7 @@ func TestAttemptBounds(t *testing.T) {
 				err := mnparcels.New(c).Scrape(context.Background(), func([]source.Row) error { batches++; return nil })
 				wantAttempts, wantSleeps := 1, 0
 				if phase == "headers" {
-					wantAttempts, wantSleeps = 4, 3
+					wantAttempts, wantSleeps = 6, 5
 				}
 				if phase == "page-body" {
 					wantAttempts = 2
@@ -708,7 +743,7 @@ func TestAttemptBounds(t *testing.T) {
 				}
 				wantElapsed := 25 * time.Millisecond
 				if phase == "headers" {
-					wantElapsed *= 4
+					wantElapsed *= 6
 				}
 				if elapsed := time.Since(started); elapsed != wantElapsed {
 					t.Fatal("attempt bound", elapsed, wantElapsed)
@@ -836,7 +871,7 @@ func (b *gatedBody) Read(p []byte) (int, error) {
 	return b.Reader.Read(p)
 }
 
-// R-S4P0-RBPK R-W1GM-M7UI
+// R-S4P0-RBPK R-IO0Y-X1VN
 func TestTelemetryBeforeBodyAndSequentialReading(t *testing.T) {
 	var capture telemetry.Capture
 	now := clock()
@@ -889,6 +924,138 @@ func TestTelemetryBeforeBodyAndSequentialReading(t *testing.T) {
 	for _, e := range events {
 		if !reflect.DeepEqual(e.Attrs, telemetry.Attrs{"scraper": mnparcels.Name, "status": int64(200), "duration_us": int64(1500)}) {
 			t.Fatal(e)
+		}
+	}
+}
+
+// R-K9J2-XWGO R-IO0Y-X1VN R-IROO-2D3Q
+func TestKeysetCursor(t *testing.T) {
+	for _, kind := range []string{"zero", "4001", "reordered", "pinless-max", "int64-max"} {
+		t.Run(kind, func(t *testing.T) {
+			features := []string{objectFeature(0, "zero")}
+			if kind != "zero" {
+				features = make([]string, 2000)
+				for i := range features {
+					features[i] = objectFeature(i+1, strconv.Itoa(i+1))
+				}
+			}
+			maxID := int64(2000)
+			if kind == "reordered" {
+				for i := range features {
+					features[i] = objectFeature((i+1)*10, strconv.Itoa(i+1))
+				}
+				features[999], features[1999] = features[1999], features[999]
+				maxID = 20000
+			}
+			if kind == "pinless-max" {
+				features[1999] = `{"attributes":{"objectid":2000,"state_pin":null,"county_pin":null}}`
+			}
+			if kind == "int64-max" {
+				maxID = 9223372036854775807
+				features[1999] = `{"attributes":{"objectid":9223372036854775807,"state_pin":"largest"}}`
+			}
+			var seen []string
+			batches, rows := 0, 0
+			c := config(func(r *http.Request) (*http.Response, error) {
+				q := r.URL.Query()
+				seen = append(seen, q.Get("where"))
+				if q.Get("resultOffset") != "" {
+					t.Error("offset", q)
+				}
+				if q.Get("returnCountOnly") == "true" {
+					return response(200, `{"count":0}`), nil
+				}
+				var answer []string
+				switch q.Get("where") {
+				case mnparcels.Where("Carlton") + " AND objectid>-1":
+					answer = features
+				case mnparcels.Where("Carlton") + " AND objectid>" + strconv.FormatInt(maxID, 10):
+					if batches != 1 {
+						t.Error("page before batch", batches)
+					}
+					if kind == "4001" {
+						for i := 2001; i <= 4000; i++ {
+							answer = append(answer, objectFeature(i, strconv.Itoa(i)))
+						}
+					}
+				case mnparcels.Where("Carlton") + " AND objectid>4000":
+					if batches != 2 {
+						t.Error("page before batch", batches)
+					}
+					answer = []string{objectFeature(4001, "4001")}
+				default:
+					t.Errorf("unexpected query %v", q)
+					return response(400, ""), nil
+				}
+				return response(200, `{"features":[`+strings.Join(answer, ",")+`],"exceededTransferLimit":true}`), nil
+			})
+			if err := mnparcels.New(c).Scrape(t.Context(), func(batch []source.Row) error { batches++; rows += len(batch); return nil }); err != nil {
+				t.Fatal(err)
+			}
+			want := []string{mnparcels.Where("Carlton"), mnparcels.Where("Carlton") + " AND objectid>-1"}
+			wantRows, wantBatches := 1, 1
+			if kind != "zero" {
+				want = append(want, mnparcels.Where("Carlton")+" AND objectid>"+strconv.FormatInt(maxID, 10))
+				wantRows = 2000
+			}
+			if kind == "pinless-max" {
+				wantRows = 1999
+			}
+			if kind == "4001" {
+				want = append(want, mnparcels.Where("Carlton")+" AND objectid>4000")
+				wantRows, wantBatches = 4001, 3
+			}
+			if !reflect.DeepEqual(seen, want) || rows != wantRows || batches != wantBatches {
+				t.Fatal(seen, want, rows, batches)
+			}
+		})
+	}
+}
+
+// R-K9J2-XWGO R-IP8V-ATMC
+func TestInvalidObjectIDs(t *testing.T) {
+	for _, pinless := range []bool{false, true} {
+		for _, value := range []string{"", `null`, `"7"`, "7.5", "7e0", "9223372036854775808", "-1", "2000", "1999"} {
+			t.Run(fmt.Sprint(value, "/pinless=", pinless), func(t *testing.T) {
+				late := value == "2000" || value == "1999"
+				requests, batches, sleeps := 0, 0, 0
+				bad := `{"attributes":{"state_pin":"bad"`
+				if pinless {
+					bad = `{"attributes":{"state_pin":null,"county_pin":null`
+				}
+				if value != "" {
+					bad += `,"objectid":` + value
+				}
+				bad += `}}`
+				c := config(func(r *http.Request) (*http.Response, error) {
+					requests++
+					q := r.URL.Query()
+					if q.Get("returnCountOnly") == "true" {
+						return response(200, `{"count":5000}`), nil
+					}
+					if late && q.Get("where") == mnparcels.Where("Carlton")+" AND objectid>-1" {
+						return response(200, page(2000)), nil
+					}
+					good := objectFeature(0, "good")
+					if late {
+						good = objectFeature(2001, "good")
+					}
+					body := `{"features":[` + good + `,` + bad + `]}`
+					if value == "" {
+						body = strings.TrimSuffix(page(1999), `]}`) + `,` + bad + `]}`
+					}
+					return response(200, body), nil
+				})
+				c.Sleep = func(context.Context, time.Duration) { sleeps++ }
+				err := mnparcels.New(c).Scrape(t.Context(), func([]source.Row) error { batches++; return nil })
+				wantRequests, wantBatches := 2, 0
+				if late {
+					wantRequests, wantBatches = 3, 1
+				}
+				if err == nil || requests != wantRequests || batches != wantBatches || sleeps != 0 {
+					t.Fatal(err, requests, batches, sleeps)
+				}
+			})
 		}
 	}
 }

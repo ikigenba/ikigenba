@@ -211,59 +211,80 @@ func TestDefaultPPP(t *testing.T) {
 	}
 }
 
-// R-SD8B-FPWF
+// R-KFMK-UR65
 func TestDefaultMNParcels(t *testing.T) {
-	now := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
-	var capture telemetry.Capture
-	writer := telemetry.New(telemetry.Config{Service: "scrapes", Sink: &capture, Now: func() time.Time { return now }, Rand: bytes.NewReader(make([]byte, 1024)), Stderr: io.Discard, Sleep: func(context.Context, time.Duration) {}})
-	defer writer.Shutdown(t.Context(), "test")
-	var requests []string
-	var pauses []time.Duration
-	client := &http.Client{Transport: transport(func(r *http.Request) (*http.Response, error) {
-		requests = append(requests, r.URL.Query().Get("where"))
-		if r.Method != http.MethodGet || !strings.HasPrefix(r.URL.String(), mnparcels.DefaultBaseURL+"?") || r.Header.Get("User-Agent") != "registry parcels ua" {
-			t.Fatal(r)
-		}
-		status, body := 200, `{"features":[{"attributes":{"state_pin":"parcel-fixture"}}]}`
-		if len(requests) == 1 {
-			status, body = 503, ""
-		} else if r.URL.Query().Get("returnCountOnly") == "true" {
-			body = `{"count":1}`
-		}
-		return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
-	})}
-	reg := scrapers.Default(scrapers.Config{HTTP: client, Telemetry: writer, Now: func() time.Time { return now }, Sleep: func(_ context.Context, d time.Duration) { pauses = append(pauses, d) }, UserAgent: "registry parcels ua", Settings: settings.Settings{MNParcelsCounties: []string{"Chisago", "St. Louis"}}})
-	sc, ok := reg.Get("mn_parcels")
-	if !ok {
-		t.Fatal("missing scraper")
-	}
-	var rows []source.Row
-	if err := sc.Scrape(t.Context(), func(batch []source.Row) error { rows = append(rows, batch...); return nil }); err != nil {
-		t.Fatal(err)
-	}
-	want := []string{mnparcels.Where("Chisago"), mnparcels.Where("Chisago"), mnparcels.Where("Chisago"), mnparcels.Where("St. Louis"), mnparcels.Where("St. Louis")}
-	if !reflect.DeepEqual(requests, want) || !reflect.DeepEqual(pauses, []time.Duration{mnparcels.Backoff}) || len(rows) != 2 {
-		t.Fatal(requests, pauses, rows)
-	}
-	for _, row := range rows {
-		if row.Scraper != mnparcels.Name || !row.Collected.Equal(now) {
-			t.Fatal(row)
-		}
-	}
-	if err := writer.Flush(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	events := capture.Events()
-	if len(events) != len(requests) {
-		t.Fatal(events)
-	}
-	for i, event := range events {
-		status := int64(200)
-		if i == 0 {
-			status = 503
-		}
-		if event.Name != source.Called || !reflect.DeepEqual(event.Attrs, telemetry.Attrs{"scraper": mnparcels.Name, "status": status, "duration_us": int64(0)}) {
-			t.Fatal(event)
-		}
+	for _, exhaust := range []bool{false, true} {
+		t.Run(fmt.Sprint(exhaust), func(t *testing.T) {
+			now := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
+			var capture telemetry.Capture
+			writer := telemetry.New(telemetry.Config{Service: "scrapes", Sink: &capture, Now: func() time.Time { return now }, Rand: bytes.NewReader(make([]byte, 1024)), Stderr: io.Discard, Sleep: func(context.Context, time.Duration) {}})
+			defer writer.Shutdown(t.Context(), "test")
+			var requests []string
+			var statuses []int64
+			var pauses []time.Duration
+			attempts := map[string]int{}
+			client := &http.Client{Transport: transport(func(r *http.Request) (*http.Response, error) {
+				query := r.URL.Query()
+				where := query.Get("where")
+				requests = append(requests, where)
+				if r.Method != http.MethodGet || !strings.HasPrefix(r.URL.String(), mnparcels.DefaultBaseURL+"?") || r.Header.Get("User-Agent") != "registry parcels ua" {
+					t.Fatal(r)
+				}
+				key := r.URL.String()
+				attempts[key]++
+				status, body := 200, ""
+				switch {
+				case query.Has("returnCountOnly") && where == mnparcels.Where("Chisago") && (exhaust || attempts[key] <= 5):
+					status = 503
+				case query.Has("returnCountOnly") && (where == mnparcels.Where("Chisago") || where == mnparcels.Where("St. Louis")):
+					body = `{"count":1}`
+				case !query.Has("returnCountOnly") && (where == mnparcels.Where("Chisago")+" AND objectid>-1" || where == mnparcels.Where("St. Louis")+" AND objectid>-1"):
+					body = `{"features":[{"attributes":{"objectid":0,"state_pin":"parcel-fixture"}}]}`
+				default:
+					t.Fatalf("unexpected parcel request: %s", r.URL)
+				}
+				statuses = append(statuses, int64(status))
+				return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+			})}
+			reg := scrapers.Default(scrapers.Config{HTTP: client, Telemetry: writer, Now: func() time.Time { return now }, Sleep: func(_ context.Context, d time.Duration) { pauses = append(pauses, d) }, UserAgent: "registry parcels ua", Settings: settings.Settings{MNParcelsCounties: []string{"Chisago", "St. Louis"}}})
+			sc, ok := reg.Get("mn_parcels")
+			if !ok {
+				t.Fatal("missing scraper")
+			}
+			var rows []source.Row
+			err := sc.Scrape(t.Context(), func(batch []source.Row) error { rows = append(rows, batch...); return nil })
+			if (err != nil) != exhaust {
+				t.Fatal(err)
+			}
+			want := []string{}
+			for range 6 {
+				want = append(want, mnparcels.Where("Chisago"))
+			}
+			wantRows := 0
+			if !exhaust {
+				want = append(want, mnparcels.Where("Chisago")+" AND objectid>-1", mnparcels.Where("St. Louis"), mnparcels.Where("St. Louis")+" AND objectid>-1")
+				wantRows = 2
+			}
+			if !reflect.DeepEqual(requests, want) || !reflect.DeepEqual(pauses, []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second, 80 * time.Second}) || len(rows) != wantRows {
+				t.Fatal(requests, pauses, rows)
+			}
+			for _, row := range rows {
+				if row.Scraper != mnparcels.Name || !row.Collected.Equal(now) {
+					t.Fatal(row)
+				}
+			}
+			if err := writer.Flush(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			events := capture.Events()
+			if len(events) != len(requests) {
+				t.Fatal(events)
+			}
+			for i, event := range events {
+				if event.Name != source.Called || !reflect.DeepEqual(event.Attrs, telemetry.Attrs{"scraper": mnparcels.Name, "status": statuses[i], "duration_us": int64(0)}) {
+					t.Fatal(event)
+				}
+			}
+		})
 	}
 }
