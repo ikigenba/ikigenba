@@ -75,7 +75,7 @@ func TestPublicNamesAndTemplateExecution(t *testing.T) {
 	require(t, description != "", "empty description")
 	equal(t, pages.ToolsLevel, page.Level{Name: "tools", URL: "/tools"})
 	equal(t, pages.AboutLevel, page.Level{Name: "about", URL: "/about"})
-	// R-ZPLN-5WEE R-P3QS-6TI1
+	// R-ZPLN-5WEE R-FZQZ-NDZ7
 	s, err := pages.Load()
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +88,7 @@ func TestPublicNamesAndTemplateExecution(t *testing.T) {
 		name       string
 		zero, full any
 	}{
-		{"landing", pages.LandingData{}, pages.LandingData{Banner: b, Webhooks: []pages.WebhookRow{row}, Page: "current-token", Next: "sample-token"}},
+		{"landing", pages.LandingData{}, pages.LandingData{Banner: b, Webhooks: []pages.WebhookRow{row}, Page: "current-token", Prev: "previous-token", Next: "sample-token"}},
 		{"tools", pages.ToolsData{}, pages.ToolsData{Banner: b, Tools: []pages.ToolRow{{Name: "n", Description: "<d>"}}}},
 		{"about", pages.AboutData{}, pages.AboutData{Banner: b, Description: "<description>"}},
 		{"notfound", pages.NoticeData{}, pages.NoticeData{Banner: b}},
@@ -209,7 +209,7 @@ func writeServices(t *testing.T, path string, entries map[string]string) {
 }
 
 func TestSignedInPagesExactBodies(t *testing.T) {
-	// R-P66K-YCZF R-ZWX1-GIUK R-ZY4X-UAL9 R-00KQ-LU2N R-01SM-ZLTC
+	// R-G4ML-6GXZ R-ZWX1-GIUK R-ZY4X-UAL9 R-00KQ-LU2N R-01SM-ZLTC
 	for _, populated := range []bool{false, true} {
 		t.Run(fmt.Sprint(populated), func(t *testing.T) {
 			f := setup(t, populated)
@@ -265,7 +265,7 @@ func TestServicesAddresses(t *testing.T) {
 }
 
 func TestNotFoundMethodsGuestsAndFailures(t *testing.T) {
-	// R-ZZCU-82BY R-030J-DDK1 R-048F-R5AQ R-P8MD-PWGT
+	// R-ZZCU-82BY R-030J-DDK1 R-048F-R5AQ R-G9I6-PJWR
 	f := setup(t, true)
 	ts := templates(t)
 	notfound := rendered(t, ts, "notfound", pages.NoticeData{Banner: f.banner})
@@ -310,9 +310,9 @@ func TestNotFoundMethodsGuestsAndFailures(t *testing.T) {
 	}
 }
 
-// R-P1AZ-FA0N R-P2IV-T1RC R-P66K-YCZF
+// R-G0YW-15PW R-G26S-EXGL R-G3EO-SP7A R-B54W-6ZL0 R-G4ML-6GXZ R-GAQ3-3BNG R-GBXZ-H3E5 R-B6CS-KRBP
 func TestLandingWindows(t *testing.T) {
-	for _, count := range []int{0, paging.DefaultLimit - 1, paging.DefaultLimit, paging.DefaultLimit + 1, 2 * paging.DefaultLimit, 2*paging.DefaultLimit + 1} {
+	for _, count := range []int{0, paging.DefaultLimit - 1, paging.DefaultLimit, paging.DefaultLimit + 1, 2 * paging.DefaultLimit, 2*paging.DefaultLimit + 1, 3*paging.DefaultLimit + 7} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {
 			f := setup(t, false)
 			var hooks []store.Webhook
@@ -347,14 +347,35 @@ func TestLandingWindows(t *testing.T) {
 				if position != "" {
 					pageValue = token.Encode(position)
 				}
-				assertLandingWindow(t, f, ts, hooks, pageValue, position)
+				assertLandingWindow(t, f, ts, hooks, pageValue, position, false, false)
 			}
-			assertLandingWindow(t, f, ts, hooks, token.Encode(""), "")
-			// Traverse every window through its next token.
+			assertLandingWindow(t, f, ts, hooks, token.Encode(""), "", false, false)
+			beforeToken := paging.Token{Tool: "list-before"}
+			for _, position := range []string{"", "B", "a_b", "hook012x", "hook020", "zzzz", string([]byte{0xff})} {
+				value := beforeToken.Encode(position)
+				var key string
+				require(t, token.Decode(value, &key) != nil, "before token accepted as after token")
+				require(t, beforeToken.Decode(token.Encode(position), &key) != nil, "after token accepted as before token")
+				assertLandingWindow(t, f, ts, hooks, value, position, true, false)
+			}
+			assertLandingWindow(t, f, ts, hooks, "last", "", true, true)
+			// Traverse Next and compare each backward window to the corresponding forward window.
 			var pageValue, position string
+			var windows [][]store.Webhook
 			for {
-				next := assertLandingWindow(t, f, ts, hooks, pageValue, position)
+				prev, next, window := assertLandingWindow(t, f, ts, hooks, pageValue, position, false, false)
+				windows = append(windows, window)
 				if next == "" {
+					if len(windows) > 1 {
+						for i := len(windows) - 1; i > 0; i-- {
+							equal(t, window, windows[i])
+							if err := beforeToken.Decode(prev, &position); err != nil {
+								t.Fatal(err)
+							}
+							prev, _, window = assertLandingWindow(t, f, ts, hooks, prev, position, true, false)
+						}
+						equal(t, window, windows[0])
+					}
 					break
 				}
 				if err := token.Decode(next, &position); err != nil {
@@ -362,20 +383,46 @@ func TestLandingWindows(t *testing.T) {
 				}
 				pageValue = next
 			}
+			if count > paging.DefaultLimit {
+				var concatenated []store.Webhook
+				for _, window := range windows {
+					concatenated = append(concatenated, window...)
+				}
+				_, next, last := assertLandingWindow(t, f, ts, hooks, "last", "", true, true)
+				equal(t, last, concatenated[len(concatenated)-paging.DefaultLimit:])
+				equal(t, next, "")
+				equal(t, reflect.DeepEqual(last, windows[len(windows)-1]), count%paging.DefaultLimit == 0)
+			}
+			// Keep a token valid after its boundary webhook is deleted.
+			if count > paging.DefaultLimit+1 {
+				anchor := hooks[paging.DefaultLimit+1]
+				value := beforeToken.Encode(anchor.Slug)
+				if _, err := f.store.Delete(context.Background(), anchor.ID); err != nil {
+					t.Fatal(err)
+				}
+				remaining := append(append([]store.Webhook{}, hooks[:paging.DefaultLimit+1]...), hooks[paging.DefaultLimit+2:]...)
+				assertLandingWindow(t, f, ts, remaining, value, anchor.Slug, true, false)
+			}
+
 		})
 	}
 }
 
-func assertLandingWindow(t *testing.T, f *fixture, ts *template.Template, hooks []store.Webhook, pageValue, position string) string {
+func assertLandingWindow(t *testing.T, f *fixture, ts *template.Template, hooks []store.Webhook, pageValue, position string, reverse, last bool) (string, string, []store.Webhook) {
 	t.Helper()
 	var remainder []store.Webhook
 	for _, x := range hooks {
-		if pageValue == "" || x.Slug > position {
+		if last || pageValue == "" || (!reverse && x.Slug > position) || (reverse && x.Slug < position) {
 			remainder = append(remainder, x)
 		}
 	}
-	rows := make([]pages.WebhookRow, 0, min(len(remainder), paging.DefaultLimit))
-	for _, x := range remainder[:min(len(remainder), paging.DefaultLimit)] {
+	window := remainder[:min(len(remainder), paging.DefaultLimit)]
+	if reverse {
+		window = remainder[max(0, len(remainder)-paging.DefaultLimit):]
+	}
+	underflow := reverse && len(remainder) <= paging.DefaultLimit
+	rows := make([]pages.WebhookRow, 0, len(window))
+	for _, x := range window {
 		row := pages.WebhookRow{ID: x.ID, Slug: x.Slug, Scheme: x.Scheme, URL: "https://hooks.example.test/in/" + x.Slug, Owner: x.OwnerEmail, Mine: x.OwnerID == "user0"}
 		if !x.LastReceived.IsZero() {
 			row.LastReceived = now.Format(time.RFC3339)
@@ -383,23 +430,40 @@ func assertLandingWindow(t *testing.T, f *fixture, ts *template.Template, hooks 
 		}
 		rows = append(rows, row)
 	}
-	var next string
-	if len(remainder) > paging.DefaultLimit {
-		next = (paging.Token{Tool: "list"}).Encode(remainder[paging.DefaultLimit-1].Slug)
+	var prev, next string
+	if len(window) > 0 {
+		if pageValue != "" && !underflow {
+			prev = (paging.Token{Tool: "list-before"}).Encode(window[0].Slug)
+		}
+		if !last && (reverse || len(remainder) > paging.DefaultLimit) {
+			next = (paging.Token{Tool: "list"}).Encode(window[len(window)-1].Slug)
+		}
 	}
-	w := answer(f.cfg, request("GET", "/?page="+url.QueryEscape(pageValue), "user0", "user0@example.test", "hooks.example.test", "https"))
-	equal(t, w.Code, 200)
-	equal(t, w.Header().Get("Content-Type"), "text/html; charset=utf-8")
-	equal(t, w.Body.String(), rendered(t, ts, "landing", pages.LandingData{Banner: f.banner, Webhooks: rows, Page: pageValue, Next: next}))
-	return next
+	for _, method := range []string{"GET", "HEAD"} {
+		w := answer(f.cfg, request(method, "/?page="+url.QueryEscape(pageValue)+"&ignored=value#fragment", "user0", "user0@example.test", "hooks.example.test", "https"))
+		if underflow {
+			equal(t, w.Code, 303)
+			equal(t, w.Header().Get("Location"), "/")
+			equal(t, w.Body.String(), "")
+		} else {
+			equal(t, w.Code, 200)
+			equal(t, w.Header().Get("Content-Type"), "text/html; charset=utf-8")
+			body := rendered(t, ts, "landing", pages.LandingData{Banner: f.banner, Webhooks: rows, Page: pageValue, Prev: prev, Next: next})
+			if method == "HEAD" {
+				body = ""
+			}
+			equal(t, w.Body.String(), body)
+		}
+	}
+	return prev, next, window
 }
 
-// R-P1AZ-FA0N R-P7EH-C4Q4 R-P8MD-PWGT R-030J-DDK1 R-048F-R5AQ
+// R-G0YW-15PW R-G72D-Y0FD R-G9I6-PJWR R-030J-DDK1 R-048F-R5AQ
 func TestLandingTokenRefusalsAndPrecedence(t *testing.T) {
 	f := setup(t, true)
 	ts := templates(t)
 	token := paging.Token{Tool: "list"}
-	badPages := []string{"bogus", token.Encode("gh_push") + "!", (paging.Token{Tool: "list_widgets"}).Encode("gh_push"), token.Encode(int64(7))}
+	badPages := []string{"bogus", token.Encode("gh_push") + "!", (paging.Token{Tool: "list_widgets"}).Encode("gh_push"), token.Encode(int64(7)), (paging.Token{Tool: "list-before"}).Encode(int64(7)), (paging.Token{Tool: "list-before"}).Encode("gh_push") + "!", "LAST", "last "}
 	for _, failing := range []bool{false, true} {
 		f.db.SetFailing(failing)
 		for _, value := range badPages {
@@ -431,19 +495,46 @@ func TestLandingTokenRefusalsAndPrecedence(t *testing.T) {
 			}
 		}
 	}
+	validPages := []string{"", token.Encode("gh_push"), token.Encode("zzzz"), (paging.Token{Tool: "list-before"}).Encode("gh_push"), (paging.Token{Tool: "list-before"}).Encode("zzzz"), "last"}
 	f.db.SetFailing(true)
-	for _, value := range []string{"", token.Encode("gh_push"), token.Encode("zzzz")} {
-		w := answer(f.cfg, request("GET", "/?page="+url.QueryEscape(value), "u_ada", "a@example.test", "webhooks.example.test", "https"))
-		equal(t, w.Code, 503)
-		equal(t, w.Header().Get("Content-Type"), "text/plain; charset=utf-8")
-		equal(t, w.Body.String(), store.Unreachable+"\n")
+	for _, value := range validPages {
+		for _, method := range []string{"GET", "HEAD"} {
+			w := answer(f.cfg, request(method, "/?page="+url.QueryEscape(value), "u_ada", "a@example.test", "webhooks.example.test", "https"))
+			equal(t, w.Code, 503)
+			equal(t, w.Header().Get("Content-Type"), "text/plain; charset=utf-8")
+			body := store.Unreachable + "\n"
+			if method == "HEAD" {
+				body = ""
+			}
+			equal(t, w.Body.String(), body)
+		}
 	}
+	// A nil store makes an unintended read observable in the earlier method and guest cases.
+	cfg := f.cfg
+	cfg.Store = nil
+	for _, value := range append(validPages, badPages...) {
+		target := "/?page=" + url.QueryEscape(value)
+		for _, user := range []string{"", "u_ada"} {
+			w := answer(cfg, request("POST", target, user, "a@example.test", "webhooks.example.test", "https"))
+			equal(t, w.Code, 405)
+			equal(t, w.Header().Get("Allow"), "GET, HEAD")
+			equal(t, w.Body.String(), "")
+		}
+		for _, method := range []string{"GET", "HEAD"} {
+			w := answer(cfg, request(method, target, "", "a@example.test", "webhooks.example.test", "https"))
+			equal(t, w.Code, 302)
+			equal(t, w.Header().Get("Location"), "https://auth.example.test/?return="+url.QueryEscape("https://webhooks.example.test"+target))
+			equal(t, w.Body.String(), "")
+		}
+	}
+
 }
 
-// R-P1AZ-FA0N R-P9UA-3O7I
+// R-G0YW-15PW R-G8AA-BS62
 func TestOnlyLandingPageValueAffectsQuery(t *testing.T) {
 	f := setup(t, true)
 	token := (paging.Token{Tool: "list"}).Encode("gh_push")
+	before := (paging.Token{Tool: "list-before"}).Encode("gh_push")
 	for _, services := range []bool{false, true} {
 		if services {
 			writeServices(t, f.path, map[string]string{"auth": "https://accounts.example.test", "webhooks": "https://hooks.example.test"})
@@ -456,6 +547,8 @@ func TestOnlyLandingPageValueAffectsQuery(t *testing.T) {
 						{"", "?limit=1&ignored=value"},
 						{"?page=", "?page=&page=bogus&limit=500"},
 						{"?page=" + url.QueryEscape(token), "?limit=1&page=" + url.QueryEscape(token) + "&page=bogus&x=y"},
+						{"?page=last", "?ignored=value&page=last&page=bogus"},
+						{"?page=" + url.QueryEscape(before), "?limit=1&page=" + url.QueryEscape(before) + "&page=last"},
 						{"?page=bogus", "?page=bogus&page=" + url.QueryEscape(token) + "&limit=bad"},
 					}
 					if path != "/" || (method != "GET" && method != "HEAD") {

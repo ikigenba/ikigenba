@@ -250,6 +250,60 @@ func (s *Store) List(ctx context.Context, after string, n int) ([]Webhook, error
 	return result, nil
 }
 
+// ListBefore returns at most n webhooks preceding before, greatest slug first.
+func (s *Store) ListBefore(ctx context.Context, before string, n int) ([]Webhook, error) {
+	if n < 1 {
+		n = 0
+	}
+	result := make([]Webhook, 0)
+	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, "SELECT id, slug, scheme, secret_sha256, secret_plain, owner_id, owner_email, created, last_received FROM webhooks WHERE slug < ? ORDER BY slug COLLATE BINARY DESC LIMIT ?", before, n)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			w, err := scan(rows)
+			if err != nil {
+				return err
+			}
+			result = append(result, w)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// ListLast returns at most n webhooks, greatest slug first.
+func (s *Store) ListLast(ctx context.Context, n int) ([]Webhook, error) {
+	if n < 1 {
+		n = 0
+	}
+	result := make([]Webhook, 0)
+	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, "SELECT id, slug, scheme, secret_sha256, secret_plain, owner_id, owner_email, created, last_received FROM webhooks ORDER BY slug COLLATE BINARY DESC LIMIT ?", n)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			w, err := scan(rows)
+			if err != nil {
+				return err
+			}
+			result = append(result, w)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // Get finds a webhook by its exact slug.
 func (s *Store) Get(ctx context.Context, slug string) (Webhook, error) {
 	var result Webhook

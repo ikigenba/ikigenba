@@ -439,6 +439,116 @@ func TestListWindows(t *testing.T) {
 	}
 }
 
+func reverseWindowHooks(t *testing.T, s *store.Store) []store.Webhook {
+	t.Helper()
+	hooks := make(map[string]store.Webhook)
+	for i, slug := range []string{"tick", "aa", "a_b", "zeta", "a1"} {
+		scheme := store.Bearer
+		if i%2 == 1 {
+			scheme = store.GitHubHMAC
+		}
+		w, _, err := s.Create(context.Background(), store.Draft{Slug: slug, Scheme: scheme, OwnerID: "owner_" + slug, OwnerEmail: slug + "@example.test"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if slug == "zeta" {
+			w.LastReceived = receive(t, s, w.ID, store.Arrival{Body: []byte("reverse window delivery")}).Received
+		}
+		hooks[slug] = w
+	}
+	return []store.Webhook{hooks["zeta"], hooks["tick"], hooks["aa"], hooks["a_b"], hooks["a1"]}
+}
+
+func TestListBeforeWindows(t *testing.T) {
+	// R-FXB6-VUHT R-FYJ3-9M8I: strict, bounded reversed windows of every owner.
+	ctx := context.Background()
+	_, _, s, _ := fixture(t)
+	empty, err := s.ListBefore(ctx, string([]byte{0xff}), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	same(t, empty, []store.Webhook{})
+	ordered := reverseWindowHooks(t, s)
+	for _, tc := range []struct {
+		name   string
+		before string
+		n      int
+		want   []store.Webhook
+	}{
+		{"first", string([]byte{0xff}), 1, ordered[:1]},
+		{"window", string([]byte{0xff}), 2, ordered[:2]},
+		{"exact", string([]byte{0xff}), len(ordered), ordered},
+		{"larger", string([]byte{0xff}), len(ordered) + 1, ordered},
+		{"maximum", string([]byte{0xff}), math.MaxInt, ordered},
+		{"zero", string([]byte{0xff}), 0, ordered[:0]},
+		{"negative", string([]byte{0xff}), -1, ordered[:0]},
+		{"minimum", string([]byte{0xff}), math.MinInt, ordered[:0]},
+		{"empty position", "", 10, ordered[:0]},
+		{"uppercase position", "B", 10, ordered[:0]},
+		{"equal position", "aa", 10, ordered[3:]},
+		{"bounded prefix", "zeta", 2, ordered[1:3]},
+		{"missing position", "a2", 10, ordered[4:]},
+		{"first position", "a1", 10, ordered[:0]},
+		{"bound parameter", "' OR 1=1 --", 10, ordered[:0]},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := s.ListBefore(ctx, tc.before, tc.n)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got == nil {
+				t.Fatal("nil window")
+			}
+			same(t, got, tc.want)
+		})
+	}
+	if _, err := s.Delete(ctx, ordered[2].ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ListBefore(ctx, ordered[2].Slug, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	same(t, got, ordered[3:])
+}
+
+func TestListLastWindows(t *testing.T) {
+	// R-B2P3-FG3M R-B3WZ-T7UB: bounded reversed windows of every owner.
+	ctx := context.Background()
+	_, _, s, _ := fixture(t)
+	empty, err := s.ListLast(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	same(t, empty, []store.Webhook{})
+	ordered := reverseWindowHooks(t, s)
+	for _, tc := range []struct {
+		name string
+		n    int
+		want []store.Webhook
+	}{
+		{"first", 1, ordered[:1]},
+		{"window", 2, ordered[:2]},
+		{"exact", len(ordered), ordered},
+		{"larger", len(ordered) + 1, ordered},
+		{"maximum", math.MaxInt, ordered},
+		{"zero", 0, ordered[:0]},
+		{"negative", -1, ordered[:0]},
+		{"minimum", math.MinInt, ordered[:0]},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := s.ListLast(ctx, tc.n)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got == nil {
+				t.Fatal("nil window")
+			}
+			same(t, got, tc.want)
+		})
+	}
+}
+
 func TestRotate(t *testing.T) {
 	ctx := context.Background()
 	path, d, s, c := fixture(t)
@@ -671,6 +781,10 @@ func TestUnreachable(t *testing.T) {
 		for _, n := range []int{math.MaxInt, 0, -1} {
 			_, err := s.List(ctx, "", n)
 			check(err)
+			_, err = s.ListBefore(ctx, "tick", n)
+			check(err)
+			_, err = s.ListLast(ctx, n)
+			check(err)
 		}
 		_, err := s.Get(ctx, "tick")
 		check(err)
@@ -736,6 +850,12 @@ func TestConcurrent(t *testing.T) {
 				errs <- err
 			}
 			if _, err := s.List(ctx, "", math.MaxInt); err != nil {
+				errs <- err
+			}
+			if _, err := s.ListBefore(ctx, "z", math.MaxInt); err != nil {
+				errs <- err
+			}
+			if _, err := s.ListLast(ctx, math.MaxInt); err != nil {
 				errs <- err
 			}
 			if w.Created.Location() != time.UTC || w.Created.Nanosecond() != 0 {

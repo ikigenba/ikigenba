@@ -3,8 +3,10 @@ package pages
 
 import (
 	"bytes"
+	"context"
 	"html/template"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
@@ -33,9 +35,9 @@ type Set struct{ templates *template.Template }
 
 // LandingData supplies chrome and ordered webhook rows.
 type LandingData struct {
-	Banner     page.Banner
-	Webhooks   []WebhookRow
-	Page, Next string
+	Banner           page.Banner
+	Webhooks         []WebhookRow
+	Page, Prev, Next string
 }
 
 // WebhookRow contains the public display fields of one webhook.
@@ -126,14 +128,11 @@ func Handler(cfg Config) http.Handler {
 		switch path {
 		case "/":
 			pageValue := r.URL.Query().Get("page")
-			var after string
-			if pageValue != "" {
-				if err := (paging.Token{Tool: "list"}).Decode(pageValue, &after); err != nil {
-					cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NoticeData{Banner: cfg.Banner(bannerUser(r, cfg.ServicesPath))})
-					return
-				}
+			entries, prev, next, valid, underflow, err := landingWindow(r.Context(), cfg.Store, pageValue)
+			if !valid {
+				cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NoticeData{Banner: cfg.Banner(bannerUser(r, cfg.ServicesPath))})
+				return
 			}
-			entries, err := cfg.Store.List(r.Context(), after, paging.DefaultLimit+1)
 			if err != nil {
 				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 				w.WriteHeader(http.StatusServiceUnavailable)
@@ -142,13 +141,13 @@ func Handler(cfg Config) http.Handler {
 				}
 				return
 			}
-			var next string
-			if len(entries) > paging.DefaultLimit {
-				next = (paging.Token{Tool: "list"}).Encode(entries[paging.DefaultLimit-1].Slug)
-				entries = entries[:paging.DefaultLimit]
+			if underflow {
+				w.Header().Set("Location", "/")
+				w.WriteHeader(http.StatusSeeOther)
+				return
 			}
 			base := urls.Base(r, cfg.ServicesPath)
-			data := LandingData{Page: pageValue, Next: next, Banner: cfg.Banner(bannerUser(r, cfg.ServicesPath)), Webhooks: make([]WebhookRow, 0, len(entries))}
+			data := LandingData{Page: pageValue, Prev: prev, Next: next, Banner: cfg.Banner(bannerUser(r, cfg.ServicesPath)), Webhooks: make([]WebhookRow, 0, len(entries))}
 			for _, x := range entries {
 				data.Webhooks = append(data.Webhooks, row(x, caller.UserID, base))
 			}
@@ -169,4 +168,54 @@ func Handler(cfg Config) http.Handler {
 			cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NoticeData{Banner: cfg.Banner(bannerUser(r, cfg.ServicesPath))})
 		}
 	})
+}
+
+// landingWindow resolves a page before reading the store and returns ascending rows.
+func landingWindow(ctx context.Context, st *store.Store, value string) (entries []store.Webhook, prev, next string, valid, underflow bool, err error) {
+	afterToken := paging.Token{Tool: "list"}
+	beforeToken := paging.Token{Tool: "list-before"}
+	var key string
+	reverse, last := false, false
+	switch {
+	case value == "":
+	case afterToken.Decode(value, &key) == nil:
+	case beforeToken.Decode(value, &key) == nil:
+		reverse = true
+	case value == "last":
+		reverse, last = true, true
+	default:
+		return nil, "", "", false, false, nil
+	}
+	valid = true
+	switch {
+	case last:
+		entries, err = st.ListLast(ctx, paging.DefaultLimit+1)
+	case reverse:
+		entries, err = st.ListBefore(ctx, key, paging.DefaultLimit+1)
+	default:
+		entries, err = st.List(ctx, key, paging.DefaultLimit+1)
+	}
+	if err != nil {
+		return
+	}
+	more := len(entries) > paging.DefaultLimit
+	if reverse && !more {
+		underflow = true
+		return
+	}
+	if more {
+		entries = entries[:paging.DefaultLimit]
+	}
+	if reverse {
+		slices.Reverse(entries)
+	}
+	if len(entries) != 0 {
+		if value != "" {
+			prev = beforeToken.Encode(entries[0].Slug)
+		}
+		if !last && (reverse || more) {
+			next = afterToken.Encode(entries[len(entries)-1].Slug)
+		}
+	}
+	return
 }
