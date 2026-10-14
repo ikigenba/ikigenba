@@ -9,8 +9,10 @@
      .LastReceivedText (RFC 3339 UTC to the second, and UTC to the minute,
      "2026-10-05 09:00"; both empty until its first delivery); .Page (string,
      this window's own page token, the ?page= the request carried; empty
-     on the first window); and .Next (string, the page token for the
-     window after this one; empty when none remain). Hooks:
+     on the first window); .Next (string, the page token for the
+     window after this one; empty when none remain); and .Prev (string, the page token for the window before this
+     one, carried in the same ?page= parameter; empty on the first
+     window). Hooks:
      title
      "webhooks"; h1 with text "webhooks"; p#summary (text "Webhooks that turn
      an authenticated delivery from outside into an event on the suite's
@@ -27,9 +29,10 @@
      empty, time[datetime=<.LastReceived>] (text .LastReceivedText); after
      the section, when .Webhooks is not empty or .Page is not empty (a
      later window, even one left empty), nav.paging#paging
-     (aria-label "Pages") whose children are, in order, First (on the
+     (aria-label "Pages") whose children are, in order, First, Prev and Next: First (on the
      first window, .Page empty, a span with aria-current="page" and text
-     "First"; otherwise a link to / with text "First") and, only when .Next
+     "First"; otherwise a link to / with text "First"), then, only when .Prev is not empty, Prev
+     (a link to /?page=<.Prev> with text "Prev"), then, only when .Next
      is not empty, Next (a link to /?page=<.Next> with text "Next"); on
      the first window with no webhooks there is no nav; a #about-link (text "About webhooks") whose href is "/about". No script
      but appkit's /_appkit/feedback.js. */}}
@@ -63,7 +66,7 @@
 <p>A webhook an agent creates with the <code>create</code> tool shows up here.</p>
 </div>{{end}}
 </section>
-{{if or .Webhooks .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}</nav>
+{{if or .Webhooks .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Prev}}<a href="/?page={{.Prev}}">Prev</a>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}</nav>
 {{end}}<p><a id="about-link" href="/about">About webhooks</a></p>
 </main>
 {{template "footer" .Banner}}
