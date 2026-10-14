@@ -21,8 +21,10 @@
      stored, not computed at the request, two decimals, "0.70") and .Score
      (the score as of that refresh, in dollars as shown, "$7,280,000");
      .ShortlistPage (string, this window's own shortlist page token, the
-     ?shortlist_page= the request carried; empty on the first window) and
-     .ShortlistNext (string, the page token shortlist's next carries for
+     ?shortlist_page= the request carried; empty on the first window),
+     .ShortlistPrev (string, the page token for the shortlist window before
+     this one, in the same shortlist_page parameter as .ShortlistNext;
+     empty on the first window) and .ShortlistNext (string, the page token shortlist's next carries for
      the candidates after these, the value to pass as its page; empty when
      none remain); .Shortlist is the window .ShortlistPage names; .Passes,
      one window (paging.DefaultLimit, 25) of the
@@ -36,14 +38,16 @@
      while running), and .Rows, .Created and .Rescored (ints, as the record
      holds them); and .PassesPage (string, this window's own passes page
      token, the ?passes_page= the request carried; empty on the first
-     window) and .PassesNext (string, the page token passes's next
+     window), .PassesPrev (string, the page token for the passes window
+     before this one, in the same passes_page parameter as .PassesNext;
+     empty on the first window) and .PassesNext (string, the page token passes's next
      carries for the passes after these, the value to pass as its page;
      empty when none remain); .Passes is the window .PassesPage names. Two
      lists share the page, so each has its own nav and parameter,
      nav#paging-shortlist with shortlist_page and nav#paging-passes with
      passes_page, where a page with one list uses nav#paging and page;
-     each nav's hrefs carry the other list's current token, so paging one
-     list never resets the other, and its First drops only its own
+     each nav's hrefs carry the other list's current token, Prev's and
+     Last's included, so paging one list never resets the other, and its First drops only its own
      parameter. Counts and minutes are shown as the plain integer. Status
      and reason words, class tags and the trigger are shown as stored; the
      status's kind is chosen here: "running" info, "done" ok, "failed" err.
@@ -70,13 +74,23 @@
      (.High, empty when absent), td.candidate-confidence.num (.Confidence)
      and td.candidate-score.num (.Score); then, after the card
      (section#shortlist), nav.paging#paging-shortlist (aria-label "Pages")
-     whose children are, in order, First (on the first window,
-     .ShortlistPage empty, a span with aria-current="page" and text
+     whose children are, in order, First, Prev, Next and Last: First (on
+     the first window, .ShortlistPage empty, a span with aria-current="page" and text
      "First"; otherwise a link with text "First" to / when .PassesPage is
-     empty, else to /?passes_page=<.PassesPage>) and, only when
-     .ShortlistNext is not empty, Next (a link with text "Next" to
+     empty, else to /?passes_page=<.PassesPage>), then, only when
+     .ShortlistPrev is not empty, Prev (a link with text "Prev" to
+     /?shortlist_page=<.ShortlistPrev>, followed by
+     &passes_page=<.PassesPage> when .PassesPage is not empty), then, only
+     when .ShortlistNext is not empty, Next (a link with text "Next" to
      /?shortlist_page=<.ShortlistNext>, followed by
-     &passes_page=<.PassesPage> when .PassesPage is not empty); the nav
+     &passes_page=<.PassesPage> when .PassesPage is not empty), then,
+     always, Last (while .ShortlistNext is not empty, a link with text
+     "Last" to /?shortlist_page=last, followed by
+     &passes_page=<.PassesPage> when .PassesPage is not empty,
+     shortlist_page=last naming the last shortlist window; when
+     .ShortlistNext is empty, the last window, a span with
+     aria-current="page" and text "Last", so a single window shows First
+     and Last both as the current item); the nav
      shows when .Shortlist is not empty or .ShortlistPage is not empty, so
      an emptied later window still offers First; on the first window with
      no candidates there is no nav. Then section#passes with h2
@@ -99,13 +113,22 @@
      (.Rows), td.pass-created.num (.Created) and td.pass-rescored.num
      (.Rescored); then, after the card (section#passes),
      nav.paging#paging-passes (aria-label "Pages") whose children are, in
-     order, First (on the first window, .PassesPage empty, a span with
+     order, First, Prev, Next and Last: First (on the first window, .PassesPage empty, a span with
      aria-current="page" and text "First"; otherwise a link with text
      "First" to / when .ShortlistPage is empty, else to
-     /?shortlist_page=<.ShortlistPage>) and, only when .PassesNext is not
-     empty, Next (a link with text "Next" to /?passes_page=<.PassesNext>,
+     /?shortlist_page=<.ShortlistPage>), then, only when .PassesPrev is not
+     empty, Prev (a link with text "Prev" to /?passes_page=<.PassesPrev>,
      followed by &shortlist_page=<.ShortlistPage> when .ShortlistPage is
-     not empty); the nav shows when .Passes is not empty or .PassesPage is
+     not empty), then, only when .PassesNext is not empty, Next (a link
+     with text "Next" to /?passes_page=<.PassesNext>, followed by
+     &shortlist_page=<.ShortlistPage> when .ShortlistPage is not empty),
+     then, always, Last (while .PassesNext is not empty, a link with text
+     "Last" to /?passes_page=last, followed by
+     &shortlist_page=<.ShortlistPage> when .ShortlistPage is not empty,
+     passes_page=last naming the last passes window; when .PassesNext is
+     empty, the last window, a span with aria-current="page" and text
+     "Last", so a single window shows First and Last both as the current
+     item); the nav shows when .Passes is not empty or .PassesPage is
      not empty, so an emptied later window still offers First; on the
      first window with no passes there is no nav; a #about-link (text "About candidates") whose href is
      "/about". No script but appkit's /_appkit/feedback.js. */}}
@@ -143,7 +166,7 @@
 <p>A candidate shows here once a pass has resolved scrapes' records into it and it passes the fit test.</p>
 </div>{{end}}
 </section>
-{{if or .Shortlist .ShortlistPage}}<nav class="paging" id="paging-shortlist" aria-label="Pages">{{if .ShortlistPage}}<a href="/{{if .PassesPage}}?passes_page={{.PassesPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .ShortlistNext}}<a href="/?shortlist_page={{.ShortlistNext}}{{if .PassesPage}}&amp;passes_page={{.PassesPage}}{{end}}">Next</a>{{end}}</nav>
+{{if or .Shortlist .ShortlistPage}}<nav class="paging" id="paging-shortlist" aria-label="Pages">{{if .ShortlistPage}}<a href="/{{if .PassesPage}}?passes_page={{.PassesPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .ShortlistPrev}}<a href="/?shortlist_page={{.ShortlistPrev}}{{if .PassesPage}}&amp;passes_page={{.PassesPage}}{{end}}">Prev</a>{{end}}{{if .ShortlistNext}}<a href="/?shortlist_page={{.ShortlistNext}}{{if .PassesPage}}&amp;passes_page={{.PassesPage}}{{end}}">Next</a>{{end}}{{if .ShortlistNext}}<a href="/?shortlist_page=last{{if .PassesPage}}&amp;passes_page={{.PassesPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
 {{end}}<section id="passes" class="card flush" aria-labelledby="passes-title">
 <header><div><h2 id="passes-title">Passes</h2><p>Passes, newest first. A pass resolves a scrapes run's records into candidates and re-scores the candidates they touch.</p></div></header>
 {{if .Passes}}<div class="table-scroll">
@@ -168,7 +191,7 @@
 <p>A pass starts when scrapes finishes a run, or when an agent calls the <code>rebuild</code> tool, and shows up here.</p>
 </div>{{end}}
 </section>
-{{if or .Passes .PassesPage}}<nav class="paging" id="paging-passes" aria-label="Pages">{{if .PassesPage}}<a href="/{{if .ShortlistPage}}?shortlist_page={{.ShortlistPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .PassesNext}}<a href="/?passes_page={{.PassesNext}}{{if .ShortlistPage}}&amp;shortlist_page={{.ShortlistPage}}{{end}}">Next</a>{{end}}</nav>
+{{if or .Passes .PassesPage}}<nav class="paging" id="paging-passes" aria-label="Pages">{{if .PassesPage}}<a href="/{{if .ShortlistPage}}?shortlist_page={{.ShortlistPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .PassesPrev}}<a href="/?passes_page={{.PassesPrev}}{{if .ShortlistPage}}&amp;shortlist_page={{.ShortlistPage}}{{end}}">Prev</a>{{end}}{{if .PassesNext}}<a href="/?passes_page={{.PassesNext}}{{if .ShortlistPage}}&amp;shortlist_page={{.ShortlistPage}}{{end}}">Next</a>{{end}}{{if .PassesNext}}<a href="/?passes_page=last{{if .ShortlistPage}}&amp;shortlist_page={{.ShortlistPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
 {{end}}<p><a id="about-link" href="/about">About candidates</a></p>
 </main>
 {{template "footer" .Banner}}
