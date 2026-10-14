@@ -59,6 +59,7 @@ var (
 	ErrDelivered   = errors.New("delivery already recorded")
 	ErrEnded       = errors.New("run already ended")
 	ErrUnreachable = errors.New("database unreachable")
+	ErrLocked      = errors.New("database locked")
 )
 
 // ValidRunID recognizes the run identifier format.
@@ -90,6 +91,10 @@ func decodeTime(v string) time.Time {
 func normalize(err error) error {
 	if err == nil || errors.Is(err, ErrNotFound) || errors.Is(err, ErrBusy) || errors.Is(err, ErrDelivered) || errors.Is(err, ErrEnded) {
 		return err
+	}
+	var coded interface{ Code() int }
+	if errors.As(err, &coded) && coded.Code()&0xff == 5 {
+		return errors.Join(ErrUnreachable, ErrLocked, err)
 	}
 	return errors.Join(ErrUnreachable, err)
 }

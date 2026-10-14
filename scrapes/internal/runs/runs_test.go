@@ -242,7 +242,7 @@ func TestRecord(t *testing.T) {
 	}
 }
 
-// R-1LV3-5D2K R-1RYL-27S1 R-1T6H-FZIQ R-1WU6-LAQT R-6KVA-BKX8 R-6M36-PCNX R-6IFH-K1FU
+// R-L4VZ-NEXE R-1RYL-27S1 R-1T6H-FZIQ R-1WU6-LAQT R-L7BS-EYES R-6M36-PCNX R-6IFH-K1FU
 func TestStartAndBatches(t *testing.T) {
 	entered := make(chan context.Context, 1)
 	release := make(chan struct{})
@@ -310,7 +310,7 @@ func TestDatabaseStartFailure(t *testing.T) {
 	}
 }
 
-// R-88HL-FGAS R-21PS-4DPL
+// R-88HL-FGAS R-LAZH-K9MV
 func TestFailures(t *testing.T) {
 	for _, mode := range []string{"source", "store", "ending"} {
 		t.Run(mode, func(t *testing.T) {
@@ -484,7 +484,7 @@ func TestRecover(t *testing.T) {
 	f.d.SetFailing(false)
 }
 
-// R-2DWR-Y34J R-2F4O-BUV8
+// R-2DWR-Y34J R-LFV3-3CLN
 func TestDrainCancellation(t *testing.T) {
 	entered := make(chan struct{})
 	f := setup(t, fake{"fake", func(ctx context.Context, b func([]source.Row) error) error {
@@ -524,7 +524,7 @@ func (c *observedContext) Done() <-chan struct{} {
 	return c.Context.Done()
 }
 
-// R-2F4O-BUV8
+// R-LFV3-3CLN
 func TestDrainDeadline(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -590,7 +590,7 @@ func TestConcurrentMethods(t *testing.T) {
 	f.e.Drain(context.Background())
 }
 
-// R-6KVA-BKX8 R-6M36-PCNX R-6IFH-K1FU
+// R-L7BS-EYES R-6M36-PCNX R-6IFH-K1FU
 func TestBaselineAndLifecycle(t *testing.T) {
 	count := 0
 	observed := make(chan struct{})
@@ -653,7 +653,7 @@ func TestBaselineAndLifecycle(t *testing.T) {
 	}
 }
 
-// R-6KVA-BKX8
+// R-L7BS-EYES
 func TestBatchStoredBeforeReturn(t *testing.T) {
 	observed := make(chan struct{})
 	release := make(chan struct{})
@@ -816,7 +816,7 @@ func TestRefusedCallsHaveNoEffects(t *testing.T) {
 	})
 }
 
-// R-6KVA-BKX8
+// R-L7BS-EYES
 func TestFirstBatchStoredBeforeSecond(t *testing.T) {
 	first := make(chan struct{})
 	next := make(chan struct{})

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -17,6 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/scrapes/internal/cli"
 	"github.com/ikigenba/ikigenba/scrapes/internal/store"
 	"github.com/ikigenba/ikigenba/scrapes/internal/trail"
+	"github.com/ikigenba/ikigenba/scrapes/internal/web"
 )
 
 func runID(t *testing.T, v map[string]any) string {
@@ -141,7 +143,7 @@ func TestRunCronEventCause(t *testing.T) {
 	}
 }
 
-// R-2YN2-G6QC R-724S-I1KQ
+// R-2YN2-G6QC R-724S-I1KQ R-LH2Z-H4CC
 func TestRunReadRequestsAndRefusalsHaveNoRunEventsOrSiblingCalls(t *testing.T) {
 	f := startRun(t, runOptions{DefaultSinks: true})
 	id := runID(t, startScrape(t, f, fixtureCaller))
@@ -161,6 +163,13 @@ func TestRunReadRequestsAndRefusalsHaveNoRunEventsOrSiblingCalls(t *testing.T) {
 	for _, path := range []string{"/", "/tools", "/about", "/runs/" + id, "/runs/" + id + "/rows/" + url.PathEscape(sourceID), "/scrapers/fmcsa/current", "/runs/" + id + "/rows"} {
 		if r := f.request("GET", path, "", true); r.StatusCode != 200 {
 			t.Fatalf("path %s status %d", path, r.StatusCode)
+		}
+	}
+	for _, path := range []string{"/scrapers/unknown/current", "/runs/run_0000000000000000/record"} {
+		resp := f.request("GET", path, "", true)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil || resp.StatusCode != http.StatusNotFound || string(body) != web.NotFound+"\n" {
+			t.Fatalf("read refusal %s: status %d body %q error %v", path, resp.StatusCode, body, err)
 		}
 	}
 	if r := f.call(fixtureCaller, "scrape", map[string]any{"scraper": "bogus"}); !r.IsError() {
@@ -184,6 +193,9 @@ func TestRunReadRequestsAndRefusalsHaveNoRunEventsOrSiblingCalls(t *testing.T) {
 	deliverCron(t, f, deliveryID, "skip")
 	if f.stop() != cli.ExitSuccess {
 		t.Fatal("stop failed")
+	}
+	if f.Out.String() != "" || f.Err.String() != "" {
+		t.Fatalf("streams %q %q", f.Out.String(), f.Err.String())
 	}
 	f.siblingsMu.Lock()
 	defer f.siblingsMu.Unlock()
@@ -334,7 +346,7 @@ func TestRunAssembledRowsPaginationAndRawRecord(t *testing.T) {
 	}
 }
 
-// R-2YN2-G6QC
+// R-2YN2-G6QC R-LH2Z-H4CC
 func TestRunErrorDeliveryAndRefusedScrapeEmitNoRunEvents(t *testing.T) {
 	// Reusing the injected random bytes makes a later run id collide with the
 	// completed run. The store cannot record either attempted new run.
@@ -349,6 +361,9 @@ func TestRunErrorDeliveryAndRefusedScrapeEmitNoRunEvents(t *testing.T) {
 	deliverCron(t, f, "evt_dddddddddddddddd", "error")
 	if f.stop() != cli.ExitSuccess {
 		t.Fatal("stop failed")
+	}
+	if f.Out.String() != "" || f.Err.String() != "" {
+		t.Fatalf("streams %q %q", f.Out.String(), f.Err.String())
 	}
 	for _, es := range [][]string{eventNames(f.Events.Events()), trailNames(runTrail(f))} {
 		if !reflect.DeepEqual(es, []string{trail.Started, trail.Finished}) {

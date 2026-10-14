@@ -470,7 +470,7 @@ func TestRunTrailUsesInjectedClockAndRandom(t *testing.T) {
 	}
 }
 
-// R-U54Y-KZ5C R-U6CU-YQW1 R-U7KR-CIMQ R-UA0K-4244
+// R-U54Y-KZ5C R-U6CU-YQW1 R-U7KR-CIMQ R-UA0K-4244 R-LH2Z-H4CC
 func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	// A deterministic sequence supplies random-looking markers without process randomness.
 	markerRand := uint64(731)
@@ -680,6 +680,10 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	if batchResult.IsError() {
 		t.Fatal("batch scrape refused before worker")
 	}
+	var batchRun runs.Record
+	if err := json.Unmarshal(payload(t, batchResult), &batchRun); err != nil || batchRun.ID == "" {
+		t.Fatalf("batch run record %s: %v", payload(t, batchResult), err)
+	}
 	batchctx, batchcancel := context.WithTimeout(ctx, 5*time.Second)
 	defer batchcancel()
 	for {
@@ -745,8 +749,18 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	}
 	reject(f.out.String())
 	reject(f.err.String())
-	if f.out.String() != "" || f.err.String() != "" {
-		t.Errorf("serving streams were not silent: %q %q", f.out.String(), f.err.String())
+	if f.out.String() != "" {
+		t.Errorf("serving stdout was not silent: %q", f.out.String())
+	}
+	lines := strings.Split(strings.TrimSuffix(f.err.String(), "\n"), "\n")
+	if len(lines) != 2 || !strings.HasSuffix(f.err.String(), "\n") {
+		t.Fatalf("expected only two engine diagnostics, got %q", f.err.String())
+	}
+	for i, op := range []string{"PutRows", "FailRun"} {
+		prefix := "scrapes: " + batchRun.ID + " " + op + ": " + runs.GaveUp + ": "
+		if !strings.HasPrefix(lines[i], prefix) || len(lines[i]) == len(prefix) {
+			t.Errorf("expected %s diagnostic, got %q", op, lines[i])
+		}
 	}
 }
 

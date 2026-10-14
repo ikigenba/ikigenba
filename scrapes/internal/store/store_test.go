@@ -74,7 +74,7 @@ func is(t *testing.T, e, want error) {
 	}
 }
 
-// R-ZDDP-WI4Q R-ZFTI-O1M4 R-ZH1F-1TCT R-ZI9B-FL3I R-ZKP4-74KW
+// R-ZDDP-WI4Q R-ZFTI-O1M4 R-ZH1F-1TCT R-LIAV-UW31 R-ZKP4-74KW
 func TestVocabulary(t *testing.T) {
 	for _, v := range []string{"run_0123456789abcdef", "run_0000000000000000"} {
 		if !store.ValidRunID(v) {
@@ -89,7 +89,7 @@ func TestVocabulary(t *testing.T) {
 	if store.RunIDPrefix != "run_" || store.StatusRunning != "running" || store.StatusDone != "done" || store.StatusFailed != "failed" || store.ReasonSource != "source" || store.ReasonInterrupted != "interrupted" || store.ReasonStore != "store" {
 		t.Fatal("vocabulary")
 	}
-	errs := []error{store.ErrNotFound, store.ErrBusy, store.ErrDelivered, store.ErrEnded, store.ErrUnreachable}
+	errs := []error{store.ErrNotFound, store.ErrBusy, store.ErrDelivered, store.ErrEnded, store.ErrUnreachable, store.ErrLocked}
 	for i, e := range errs {
 		if e == nil {
 			t.Fatal(i)
@@ -102,6 +102,82 @@ func TestVocabulary(t *testing.T) {
 	}
 	if store.Unreachable == "" || strings.Contains(store.Unreachable, "\n") {
 		t.Fatal("copy")
+	}
+}
+
+// R-LJIS-8NTQ
+func TestLockedWrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "db")
+	s, d := open(t, path, nil)
+	r := add(t, s, "scraper")
+	_, locker := open(t, path, nil)
+	held := make(chan error, 1)
+	release := make(chan struct{})
+	ended := make(chan error, 1)
+	rollback := errors.New("release without committing")
+	go func() {
+		ended <- locker.Write(ctx, func(tx *sql.Tx) error {
+			_, err := tx.ExecContext(ctx, `UPDATE runs SET "rows"="rows" WHERE id=?`, r.ID)
+			held <- err
+			if err != nil {
+				return err
+			}
+			<-release
+			return rollback
+		})
+	}()
+	unlock := sync.OnceFunc(func() {
+		close(release)
+		if err := <-ended; !errors.Is(err, rollback) {
+			t.Errorf("lock transaction: %v", err)
+		}
+	})
+	t.Cleanup(unlock)
+	if err := <-held; err != nil {
+		t.Fatal(err)
+	}
+	err := s.PutRows(ctx, r.ID, []source.Row{{SourceID: "blocked"}})
+	is(t, err, store.ErrLocked)
+	is(t, err, store.ErrUnreachable)
+	unlock()
+	got, err := s.GetRun(ctx, r.ID)
+	if err != nil || got != r {
+		t.Fatalf("run changed: %#v, %v", got, err)
+	}
+	for _, check := range []struct {
+		name string
+		call func() error
+		want error
+	}{
+		{"missing", func() error { return s.PutRows(ctx, "missing", []source.Row{{SourceID: "absent"}}) }, store.ErrNotFound},
+		{"invalid", func() error { return s.PutRows(ctx, r.ID, []source.Row{{}}) }, store.ErrUnreachable},
+		{"busy scraper", func() error { _, err := s.AddRun(ctx, store.Run{Scraper: r.Scraper, UserID: "caller"}); return err }, store.ErrBusy},
+	} {
+		t.Run(check.name, func(t *testing.T) {
+			err := check.call()
+			is(t, err, check.want)
+			if errors.Is(err, store.ErrLocked) {
+				t.Fatalf("non-lock error marked locked: %v", err)
+			}
+		})
+	}
+	done, cancel := context.WithCancel(ctx)
+	cancel()
+	err = s.PutRows(done, r.ID, []source.Row{{SourceID: "cancelled"}})
+	is(t, err, store.ErrUnreachable)
+	if errors.Is(err, store.ErrLocked) {
+		t.Fatalf("cancelled operation marked locked: %v", err)
+	}
+	d.SetFailing(true)
+	err = s.PutRows(ctx, r.ID, []source.Row{{SourceID: "failing"}})
+	is(t, err, store.ErrUnreachable)
+	if errors.Is(err, store.ErrLocked) {
+		t.Fatalf("failing handle marked locked: %v", err)
+	}
+	d.SetFailing(false)
+	got, err = s.FinishRun(ctx, r.ID)
+	if err != nil || got.Rows != 0 {
+		t.Fatalf("refused rows stored: %#v, %v", got, err)
 	}
 }
 

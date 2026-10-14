@@ -81,7 +81,7 @@ func setupRegistry(t *testing.T, reg *scrapers.Registry) *fixture {
 		reg = scrapers.New(f.sc)
 	}
 	writer := telemetry.New(telemetry.Config{Service: "scrapes", Version: "fixture", Sink: &telemetry.Capture{}, Now: func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }, Rand: bytes.NewReader(make([]byte, 65536)), Sleep: func(context.Context, time.Duration) {}, Stderr: io.Discard})
-	f.eng = runs.New(runs.Config{Store: f.st, Scrapers: reg, Telemetry: writer})
+	f.eng = runs.New(runs.Config{Store: f.st, Scrapers: reg, Telemetry: writer, Sleep: func(context.Context, time.Duration) {}, Stderr: io.Discard})
 	srv := mcp.NewServer(mcp.ServerConfig{Name: "scrapes", Version: "fixture", Telemetry: writer})
 	tools.Register(srv, tools.Config{f.eng, reg, f.st})
 	server := httptest.NewServer(identity.Require(srv))

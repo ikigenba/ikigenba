@@ -79,7 +79,7 @@ func setup(t *testing.T) *fixture {
 	st := store.New(d, store.Config{Now: now, Rand: &random{}})
 	fake := new(scraper)
 	reg := scrapers.New(fake)
-	eng := runs.New(runs.Config{Store: st, Scrapers: reg, Telemetry: w, Events: em})
+	eng := runs.New(runs.Config{Store: st, Scrapers: reg, Telemetry: w, Events: em, Sleep: func(context.Context, time.Duration) {}, Stderr: io.Discard})
 	var handler func(web.Config) http.Handler
 	cfg := web.Config{func(u page.User) page.Banner {
 		return page.Banner{Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}

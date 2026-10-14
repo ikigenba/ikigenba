@@ -60,7 +60,7 @@ func TestRunRejectsBeforeInheriting(t *testing.T) {
 
 // R-YBKU-1M57 R-YCSQ-FDVW R-YHOB-YGUO R-6S6O-M7DE
 // R-R8ZM-TAFI R-312V-7Q7Q R-YMJX-HJTG R-YNRT-VBK5
-// R-DEZY-JX38 R-DJVK-3020 R-DNJ9-8BA3 R-UEW5-N52W R-ELOF-XW1J
+// R-DEZY-JX38 R-DJVK-3020 R-DNJ9-8BA3 R-LH2Z-H4CC R-ELOF-XW1J
 func TestRunAssembly(t *testing.T) {
 	var mu sync.Mutex
 	looked := []string{}

@@ -357,7 +357,7 @@ func TestRunDrainsBlockedSource(t *testing.T) {
 	}
 }
 
-// R-DR6Y-DMI6 R-UDO9-9DC7
+// R-DR6Y-DMI6 R-UDO9-9DC7 R-LH2Z-H4CC
 func TestRunReportsUnfinishedRequest(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -413,9 +413,17 @@ func TestRunReportsUnfinishedRequest(t *testing.T) {
 	if len(trailSink.Starts()) != beforeTrail || len(busSink.Starts()) != beforeBus {
 		t.Fatal("late handler event reached sink")
 	}
+	if f.Out.String() != "" {
+		t.Fatalf("stdout %q", f.Out.String())
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(f.Err.String(), "\n"), "\n") {
+		if line != "scrapes: stopped with 1 request unfinished" && !strings.HasPrefix(line, "scrapes: undelivered event: ") && !strings.HasPrefix(line, "scrapes: lost event: ") {
+			t.Fatalf("unexpected stderr line %q", line)
+		}
+	}
 }
 
-// R-UDO9-9DC7
+// R-UDO9-9DC7 R-LH2Z-H4CC
 func TestRunFlushesCancelledRunWithinDrain(t *testing.T) {
 	entered := make(chan struct{})
 	var once sync.Once
@@ -439,8 +447,8 @@ func TestRunFlushesCancelledRunWithinDrain(t *testing.T) {
 	if len(bus) != 2 || bus[0].Name != "scrape.started" || bus[1].Name != "scrape.finished" || bus[1].Attrs["run"] != id {
 		t.Fatalf("bus not flushed %v", bus)
 	}
-	if f.Err.String() != "" {
-		t.Fatalf("healthy sinks lost events %q", f.Err.String())
+	if f.Out.String() != "" || f.Err.String() != "" {
+		t.Fatalf("healthy sinks wrote output %q %q", f.Out.String(), f.Err.String())
 	}
 }
 

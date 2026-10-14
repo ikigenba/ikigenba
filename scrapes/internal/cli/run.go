@@ -80,7 +80,7 @@ func Run(ctx context.Context, p Process) int {
 	s := store.New(d, store.Config{Now: p.Now, Rand: random})
 	servicesPath, _ := p.LookupEnv(services.Variable)
 	registry := scrapers.Default(scrapers.Config{HTTP: p.HTTP, Telemetry: writer, Now: p.Now, Sleep: p.Sleep, UserAgent: pages.ServiceName + " (" + pages.Description + ")", Settings: cfg})
-	engine := runs.New(runs.Config{Store: s, Scrapers: registry, Telemetry: writer, Events: emitter})
+	engine := runs.New(runs.Config{Store: s, Scrapers: registry, Telemetry: writer, Events: emitter, Sleep: p.Sleep, Stderr: p.Stderr})
 	err = engine.Recover(ctx)
 	if err != nil {
 		emitter.Shutdown(context.Background())

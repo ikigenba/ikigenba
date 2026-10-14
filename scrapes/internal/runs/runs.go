@@ -4,6 +4,8 @@ package runs
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -17,12 +19,31 @@ import (
 	"github.com/ikigenba/ikigenba/scrapes/internal/trail"
 )
 
+// Store is the persistence seam used by the engine.
+type Store interface {
+	AddRun(context.Context, store.Run) (store.Run, error)
+	PutRows(context.Context, string, []source.Row) error
+	FinishRun(context.Context, string) (store.Run, error)
+	FailRun(context.Context, string, string) (store.Run, error)
+	RunningRuns(context.Context) ([]store.Run, error)
+}
+
+// Database write retry policy and diagnostic copy.
+const (
+	WriteRetries = 5
+	WriteBackoff = time.Second
+	Retrying     = "retrying"
+	GaveUp       = "gave up"
+)
+
 // Config supplies the engine dependencies.
 type Config struct {
-	Store     *store.Store
+	Store     Store
 	Scrapers  *scrapers.Registry
 	Telemetry *telemetry.Writer
 	Events    *events.Emitter
+	Sleep     func(context.Context, time.Duration)
+	Stderr    io.Writer
 }
 
 // Refusal is a machine-readable refusal word.
@@ -73,17 +94,33 @@ func RecordOf(r store.Run) Record {
 
 // Engine starts, settles and cancels background runs.
 type Engine struct {
-	contexts map[string]context.Context
-	cfg      Config
-	mu       sync.Mutex
-	stopping bool
-	active   map[string]context.CancelFunc
-	changed  chan struct{}
+	contexts  map[string]context.Context
+	ending    map[string]bool
+	endctx    context.Context
+	endcancel context.CancelFunc
+	diagMu    sync.Mutex
+	drained   bool
+	cfg       Config
+	mu        sync.Mutex
+	stopping  bool
+	active    map[string]context.CancelFunc
+	changed   chan struct{}
 }
 
 // New constructs an engine.
 func New(cfg Config) *Engine {
-	return &Engine{cfg: cfg, active: make(map[string]context.CancelFunc), contexts: make(map[string]context.Context), changed: make(chan struct{})}
+	if cfg.Sleep == nil {
+		cfg.Sleep = func(ctx context.Context, d time.Duration) {
+			timer := time.NewTimer(d)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+			case <-timer.C:
+			}
+		}
+	}
+	endctx, endcancel := context.WithCancel(context.Background())
+	return &Engine{cfg: cfg, endctx: endctx, endcancel: endcancel, ending: make(map[string]bool), active: make(map[string]context.CancelFunc), contexts: make(map[string]context.Context), changed: make(chan struct{})}
 }
 
 // Start records a manual run and starts its work in the background.
@@ -161,42 +198,97 @@ func (e *Engine) launch(ctx context.Context, sc source.Scraper, r store.Run) {
 		e.work(ctx, sc, r)
 	}()
 }
+func (e *Engine) diagnostic(ctx context.Context, id, op, wording string, err error) {
+	e.diagMu.Lock()
+	defer e.diagMu.Unlock()
+	if e.drained || ctx.Err() != nil || e.cfg.Stderr == nil {
+		return
+	}
+	line := "scrapes: " + id + " " + op + ": " + wording + ": " + strings.ReplaceAll(err.Error(), "\n", "; ") + "\n"
+	_, _ = fmt.Fprint(e.cfg.Stderr, line)
+}
+
+func (e *Engine) write(ctx context.Context, id, op string, call func() error) error {
+	for attempt := 0; ; attempt++ {
+		err := call()
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return err
+		}
+		if !errors.Is(err, store.ErrLocked) || attempt == WriteRetries {
+			e.diagnostic(ctx, id, op, GaveUp, err)
+			return err
+		}
+		e.diagnostic(ctx, id, op, Retrying, err)
+		e.cfg.Sleep(ctx, WriteBackoff<<attempt)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+	}
+}
+
+func (e *Engine) release(id string) {
+	e.active[id]()
+	delete(e.active, id)
+	delete(e.contexts, id)
+	delete(e.ending, id)
+	close(e.changed)
+	e.changed = make(chan struct{})
+}
+
 func (e *Engine) work(ctx context.Context, sc source.Scraper, r store.Run) {
 	batchFailed := false
 	err := sc.Scrape(ctx, func(rows []source.Row) error {
-		err := e.cfg.Store.PutRows(ctx, r.ID, rows)
+		err := e.write(ctx, r.ID, "PutRows", func() error { return e.cfg.Store.PutRows(ctx, r.ID, rows) })
 		if err != nil {
 			batchFailed = true
 		}
 		return err
 	})
-	interrupted := ctx.Err() != nil
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	if _, active := e.active[r.ID]; !active {
+		e.mu.Unlock()
 		return
 	}
-	endctx := context.WithoutCancel(ctx)
+	interrupted := ctx.Err() != nil
+	e.ending[r.ID] = true
+	e.mu.Unlock()
+	endctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	stop := context.AfterFunc(e.endctx, cancel)
+	defer stop()
+	defer cancel()
 	var ended store.Run
-	var enderr error
+	op := "FailRun"
+	reason := store.ReasonSource
 	switch {
 	case interrupted:
-		ended, enderr = e.cfg.Store.FailRun(endctx, r.ID, store.ReasonInterrupted)
+		reason = store.ReasonInterrupted
 	case batchFailed:
-		ended, enderr = e.cfg.Store.FailRun(endctx, r.ID, store.ReasonStore)
-	case err != nil:
-		ended, enderr = e.cfg.Store.FailRun(endctx, r.ID, store.ReasonSource)
-	default:
-		ended, enderr = e.cfg.Store.FinishRun(endctx, r.ID)
+		reason = store.ReasonStore
+	case err == nil:
+		op = "FinishRun"
 	}
+	enderr := e.write(endctx, r.ID, op, func() error {
+		var err error
+		if op == "FinishRun" {
+			ended, err = e.cfg.Store.FinishRun(endctx, r.ID)
+		} else {
+			ended, err = e.cfg.Store.FailRun(endctx, r.ID, reason)
+		}
+		return err
+	})
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	// A deadline stops waiting for an in-flight ending, but a successful
+	// write still owns its finished event even after the run was detached.
 	if enderr == nil {
 		trail.Record(endctx, e.cfg.Telemetry, e.cfg.Events, trail.Finished, ended)
 	}
-	e.active[r.ID]()
-	delete(e.active, r.ID)
-	delete(e.contexts, r.ID)
-	close(e.changed)
-	e.changed = make(chan struct{})
+	if _, active := e.active[r.ID]; active {
+		e.release(r.ID)
+	}
 }
 
 // Recover settles runs left running by an earlier process.
@@ -219,28 +311,52 @@ func (e *Engine) Recover(ctx context.Context) error {
 
 // Drain stops new work, cancels active work and waits within ctx.
 func (e *Engine) Drain(ctx context.Context) {
+	stop := context.AfterFunc(ctx, e.endcancel)
+	defer stop()
+	defer func() {
+		e.diagMu.Lock()
+		e.drained = true
+		e.diagMu.Unlock()
+	}()
 	e.mu.Lock()
 	e.stopping = true
-	for _, cancel := range e.active {
-		cancel()
+	for id, cancel := range e.active {
+		if !e.ending[id] {
+			cancel()
+		}
 	}
 	for len(e.active) > 0 {
 		changed := e.changed
 		e.mu.Unlock()
 		select {
 		case <-ctx.Done():
+			e.endcancel()
 			e.mu.Lock()
+			pending := make(map[string]context.Context)
 			for id := range e.active {
-				ended, err := e.cfg.Store.FailRun(context.WithoutCancel(ctx), id, store.ReasonInterrupted)
-				if err == nil {
-					trail.Record(context.WithoutCancel(e.contexts[id]), e.cfg.Telemetry, e.cfg.Events, trail.Finished, ended)
+				if !e.ending[id] {
+					pending[id] = e.contexts[id]
 				}
-				delete(e.active, id)
-				delete(e.contexts, id)
+				e.release(id)
 			}
-			close(e.changed)
-			e.changed = make(chan struct{})
 			e.mu.Unlock()
+			settled := make(chan struct{})
+			go func() {
+				defer close(settled)
+				for id, workctx := range pending {
+					endctx := context.WithoutCancel(workctx)
+					ended, err := e.cfg.Store.FailRun(endctx, id, store.ReasonInterrupted)
+					if err == nil {
+						trail.Record(endctx, e.cfg.Telemetry, e.cfg.Events, trail.Finished, ended)
+					}
+				}
+			}()
+			timer := time.NewTimer(time.Second / 2)
+			defer timer.Stop()
+			select {
+			case <-settled:
+			case <-timer.C:
+			}
 			return
 		case <-changed:
 		}
