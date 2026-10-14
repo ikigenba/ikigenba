@@ -17,7 +17,7 @@ import (
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
-// R-GMT1-XEEN R-DP2J-HPH0 R-E9ST-ZT2T
+// R-GMT1-XEEN R-GTP0-T9A8 R-H5W0-MYP6
 // R-HUPF-P53N R-HOLX-SAE6 R-HHAJ-HNY0 R-GXS5-DC2W R-HR1Q-JTVK R-HS9M-XLM9
 // R-L6YM-84B5 R-CO16-H2KI
 func TestUnreachableWidgetsAnswers(t *testing.T) {

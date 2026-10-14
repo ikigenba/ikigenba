@@ -86,6 +86,7 @@ func (h *handler) renderTemplate(w http.ResponseWriter, r *http.Request, status 
 type cursor struct {
 	key    *int64
 	before bool
+	last   bool
 }
 
 func pageCursor(value string) (cursor, error) {
@@ -96,10 +97,14 @@ func pageCursor(value string) (cursor, error) {
 	if err := (paging.Token{Tool: "list_widgets"}).Decode(value, &seq); err == nil {
 		return cursor{key: &seq}, nil
 	}
-	if err := (paging.Token{Tool: "list_widgets-before"}).Decode(value, &seq); err != nil {
-		return cursor{}, err
+	err := (paging.Token{Tool: "list_widgets-before"}).Decode(value, &seq)
+	if err == nil {
+		return cursor{key: &seq, before: true}, nil
 	}
-	return cursor{key: &seq, before: true}, nil
+	if value == "last" {
+		return cursor{last: true}, nil
+	}
+	return cursor{}, err
 }
 
 type widgetWindow struct {
@@ -111,8 +116,8 @@ type widgetWindow struct {
 func (h *handler) window(ctx context.Context, c cursor) (widgetWindow, error) {
 	var widgets []widget.Widget
 	var err error
-	if c.before {
-		widgets, err = h.store.ListBefore(ctx, *c.key, paging.DefaultLimit+1)
+	if c.before || c.last {
+		widgets, err = h.store.ListBefore(ctx, c.key, paging.DefaultLimit+1)
 	} else {
 		widgets, err = h.store.List(ctx, c.key, paging.DefaultLimit+1)
 	}
@@ -121,21 +126,21 @@ func (h *handler) window(ctx context.Context, c cursor) (widgetWindow, error) {
 	}
 	result := widgetWindow{}
 	more := len(widgets) > paging.DefaultLimit
-	if c.before {
+	if c.before || c.last {
 		result.underflow = !more
 	}
 	if more {
 		widgets = widgets[:paging.DefaultLimit]
 	}
-	if c.before {
+	if c.before || c.last {
 		slices.Reverse(widgets)
 	}
 	result.widgets = widgets
 	if len(widgets) > 0 {
-		if c.before || more {
+		if !c.last && (c.before || more) {
 			result.next = (paging.Token{Tool: "list_widgets"}).Encode(widgets[len(widgets)-1].Seq)
 		}
-		if c.key != nil && !result.underflow {
+		if (c.key != nil || c.last) && !result.underflow {
 			result.prev = (paging.Token{Tool: "list_widgets-before"}).Encode(widgets[0].Seq)
 		}
 	}

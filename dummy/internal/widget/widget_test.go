@@ -563,7 +563,7 @@ func TestFailureRecoveryAndNoDraw(t *testing.T) {
 		if _, err := s.List(ctx, nil, 2); err == nil {
 			t.Error("List succeeded while failing")
 		}
-		if _, err := s.ListBefore(ctx, math.MaxInt64, 2); err == nil {
+		if _, err := s.ListBefore(ctx, nil, 2); err == nil {
 			t.Error("ListBefore succeeded while failing")
 		}
 		if _, err := s.Check(ctx, value); err == nil {
@@ -604,7 +604,7 @@ func TestDrawsAndPersistedCollisions(t *testing.T) {
 		t.Fatal("constructor drew")
 	}
 	all(t, s)
-	if _, err := s.ListBefore(ctx, math.MaxInt64, 2); err != nil {
+	if _, err := s.ListBefore(ctx, nil, 2); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Check(ctx, draft("first")); err != nil {
@@ -744,7 +744,7 @@ func TestConcurrentAcceptedCalls(t *testing.T) {
 				if len(rows) > 0 {
 					rows[0].Name = "mutation"
 				}
-				reverse, err := s.ListBefore(ctx, math.MaxInt64, 2)
+				reverse, err := s.ListBefore(ctx, nil, 2)
 				if err != nil {
 					t.Error(err)
 					return
@@ -867,10 +867,10 @@ func TestListWindowsAndCreationPositions(t *testing.T) {
 	}
 }
 
-// R-DV61-EK6H, R-DWDX-SBX6, R-DYTQ-JVEK, R-E01M-XN59, R-E19J-BEVY, R-DXLU-63NV.
+// R-GJXT-R3CO, R-GL5Q-4V3D, R-DYTQ-JVEK, R-E01M-XN59, R-E19J-BEVY, R-DXLU-63NV.
 func TestListBeforeWindowsAndIndependentResults(t *testing.T) {
 	listBefore := struct {
-		call func(*widget.Store, context.Context, int64, int) ([]widget.Widget, error)
+		call func(*widget.Store, context.Context, *int64, int) ([]widget.Widget, error)
 	}{(*widget.Store).ListBefore}.call
 	source := &countedSource{source: knownSource()}
 	s, d := newStore(t, source)
@@ -892,11 +892,15 @@ func TestListBeforeWindowsAndIndependentResults(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	for _, before := range []int64{math.MinInt64, math.MinInt64 + 1, -9, -8, -7, 0, 1, 11, 12, 13, math.MaxInt64} {
+	positions := []*int64{nil}
+	for _, seq := range []int64{math.MinInt64, math.MinInt64 + 1, -9, -8, -7, 0, 1, 11, 12, 13, math.MaxInt64} {
+		positions = append(positions, &seq)
+	}
+	for _, before := range positions {
 		for _, n := range []int{-int(^uint(0)>>1) - 1, -1, 0, 1, 2, 5, 6, int(^uint(0) >> 1)} {
 			var expected []widget.Widget
 			for i := len(want) - 1; i >= 0; i-- {
-				if n > len(expected) && want[i].Seq < before {
+				if n > len(expected) && (before == nil || want[i].Seq < *before) {
 					expected = append(expected, want[i])
 				}
 			}
@@ -905,21 +909,21 @@ func TestListBeforeWindowsAndIndependentResults(t *testing.T) {
 				got, err := listBefore(s, ctx, before, n)
 				if failing {
 					if err == nil {
-						t.Fatalf("ListBefore(%d, %d) succeeded while failing", before, n)
+						t.Fatalf("ListBefore(%v, %d) succeeded while failing", before, n)
 					}
 				} else if err != nil || !slices.Equal(got, expected) {
-					t.Fatalf("ListBefore(%d, %d) = %+v, %v; want %+v", before, n, got, err, expected)
+					t.Fatalf("ListBefore(%v, %d) = %+v, %v; want %+v", before, n, got, err, expected)
 				}
 			}
 		}
 	}
-	backward := slices.Clone(want[:len(want)-1])
+	backward := slices.Clone(want)
 	slices.Reverse(backward)
 	forward, err := s.List(ctx, nil, len(want))
 	if err != nil {
 		t.Fatal(err)
 	}
-	reverse, err := listBefore(s, ctx, math.MaxInt64, len(want))
+	reverse, err := listBefore(s, ctx, nil, len(want))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -934,7 +938,7 @@ func TestListBeforeWindowsAndIndependentResults(t *testing.T) {
 		if !slices.Equal(all(t, s), want) {
 			t.Fatal("slice mutation changed forward values")
 		}
-		got, err := listBefore(s, ctx, math.MaxInt64, len(want))
+		got, err := listBefore(s, ctx, nil, len(want))
 		if err != nil || !slices.Equal(got, backward) {
 			t.Fatalf("slice mutation changed reverse values: %+v, %v", got, err)
 		}
@@ -960,13 +964,13 @@ func TestListEmptyWindowsReachDatabaseAndRecover(t *testing.T) {
 					} else if err != nil || len(got) != 0 {
 						t.Fatalf("List(%v, %d) = %+v, %v", after, n, got, err)
 					}
-					got, err = s.ListBefore(ctx, seq, n)
+					got, err = s.ListBefore(ctx, after, n)
 					if failing {
 						if err == nil {
-							t.Fatalf("ListBefore(%d, %d) succeeded while failing", seq, n)
+							t.Fatalf("ListBefore(%v, %d) succeeded while failing", after, n)
 						}
 					} else if err != nil || len(got) != 0 {
-						t.Fatalf("ListBefore(%d, %d) = %+v, %v", seq, n, got, err)
+						t.Fatalf("ListBefore(%v, %d) = %+v, %v", after, n, got, err)
 					}
 				}
 			}
@@ -1000,7 +1004,7 @@ func TestMaximumPositionRejectsEveryDraftButAllowsReads(t *testing.T) {
 		if _, err := s.Check(ctx, value); err != nil {
 			t.Fatalf("Check after exhausted Create: %v", err)
 		}
-		if got, err := s.ListBefore(ctx, math.MaxInt64, 2); err != nil || !slices.Equal(got, before[:1]) {
+		if got, err := s.ListBefore(ctx, &last.Seq, 2); err != nil || !slices.Equal(got, before[:1]) {
 			t.Fatalf("ListBefore after exhausted Create: %+v %v", got, err)
 		}
 		if !slices.Equal(all(t, s), before) {
@@ -1015,14 +1019,14 @@ func TestHealthyCallsRecoverAfterCanceledContext(t *testing.T) {
 	canceled, cancel := context.WithCancel(ctx)
 	cancel()
 	_, _ = s.List(canceled, nil, 2)
-	_, _ = s.ListBefore(canceled, math.MaxInt64, 2)
+	_, _ = s.ListBefore(canceled, nil, 2)
 	_, _ = s.Check(canceled, draft("new"))
 	_, _, _ = s.Create(canceled, draft("new"))
 	for _, value := range []widget.Draft{draft("new"), draft("new"), {Name: "", Count: -1, Status: "bad"}} {
 		if _, err := s.List(ctx, nil, 2); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.ListBefore(ctx, math.MaxInt64, 2); err != nil {
+		if _, err := s.ListBefore(ctx, nil, 2); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := s.Check(ctx, value); err != nil {

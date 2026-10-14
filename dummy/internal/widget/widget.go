@@ -163,13 +163,19 @@ func (s *Store) List(ctx context.Context, after *int64, n int) ([]Widget, error)
 }
 
 // ListBefore returns an independent window in reverse creation order.
-func (s *Store) ListBefore(ctx context.Context, before int64, n int) ([]Widget, error) {
+func (s *Store) ListBefore(ctx context.Context, before *int64, n int) ([]Widget, error) {
 	if n < 1 {
 		n = 0
 	}
 	var widgets []Widget
 	err := s.handle.Read(ctx, func(tx *sql.Tx) (err error) {
-		rows, err := tx.QueryContext(ctx, "SELECT id, name, count, status, seq FROM widgets WHERE seq < ? ORDER BY seq DESC LIMIT ?", before, n)
+		query := "SELECT id, name, count, status, seq FROM widgets ORDER BY seq DESC LIMIT ?"
+		args := []any{n}
+		if before != nil {
+			query = "SELECT id, name, count, status, seq FROM widgets WHERE seq < ? ORDER BY seq DESC LIMIT ?"
+			args = []any{*before, n}
+		}
+		rows, err := tx.QueryContext(ctx, query, args...)
 		if err != nil {
 			return err
 		}
