@@ -5,10 +5,12 @@ collected per source as rows per run, served at `scrapes.<host>`. One Go
 binary serves on the listening socket it is passed as descriptor 3
 (`/run/ikigenba/scrapes.sock` on a host), behind the host's nginx. scrapes is
 stage one of the funnel: a scraper is Go code in the service that knows one
-source, and the fixed registry holds two: `fmcsa`, which walks FMCSA's census
-on data.transportation.gov over its Socrata API, and `ppp`, which streams the
-SBA's Paycheck Protection Program CSV files from data.sba.gov. A run is one
-walk of one scraper's source, recorded at once and worked in the background;
+source, and the fixed registry holds three: `fmcsa`, which walks FMCSA's
+census on data.transportation.gov over its Socrata API, `ppp`, which streams
+the SBA's Paycheck Protection Program CSV files from data.sba.gov, and
+`mn_parcels`, which walks Minnesota's compiled county parcel dataset, an
+ArcGIS feature service at enterprise.gisdata.mn.gov, per configured county,
+one row per parcel. A run is one walk of one scraper's source, recorded at once and worked in the background;
 its rows are the records the source answered inside the scraper's scope, each
 kept as a common envelope beside the raw record. A run is started by the
 `scrape` tool or by a cron trigger's fire, `cron.scrape_<scraper>.fired`,
@@ -134,10 +136,10 @@ no `go.work`, no local module cache stands in for it.
 The sub-project's tests are all `*_test.go` files in the module: the root
 package, `cmd/scrapes` and everything under `internal/` (`internal/cli`,
 `internal/settings`, `internal/server`, `internal/web`, `internal/store`,
-`internal/source`, `internal/fmcsa`, `internal/ppp`, `internal/scrapers`,
-`internal/runs`, `internal/trail`, `internal/urls`, `internal/tools` and
-`internal/pages`). This is the file set the canonical gap greps for
-requirement ids:
+`internal/source`, `internal/fmcsa`, `internal/ppp`, `internal/mnparcels`,
+`internal/scrapers`, `internal/runs`, `internal/trail`, `internal/urls`,
+`internal/tools` and `internal/pages`). This is the file set the canonical gap
+greps for requirement ids:
 
 ```
 grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' . | sort -u
@@ -156,7 +158,7 @@ ids, the services file's URLs, and the `run_` ids scrapes mints — and tests
 echo source ids above all, since every row, row page and `row` call names one,
 so a test that sends an id-shaped value lands one in the test file. No fixture
 carries one: not a header value, a query parameter, a tool argument, a fake
-Socrata's answer, a fake SBA file, a record's field, a source id, a run id, a
+Socrata's answer, a fake SBA file, a fake ArcGIS answer, a record's field, a source id, a run id, a
 trigger slug, a URL, a services file entry, an event's payload, or an expected
 body.
 
@@ -196,13 +198,14 @@ fails the test. Drain tests are the one place a test waits on the clock,
 because the drain deadline is the behavior, and they keep that wait to a few
 seconds. The gates run offline as an ordinary user, with no systemd.
 
-**The source is faked, never called.** No test reaches data.transportation.gov
-or data.sba.gov. A `Run`-level test hands `Process.HTTP` a client whose
-transport answers every request as a fake Socrata does, or as a fake of the
-SBA's file folder does, a small CSV per file name; `internal/fmcsa`'s and
-`internal/ppp`'s own tests may instead point `fmcsa.Config.BaseURL` or
-`ppp.Config.BaseURL` at a loopback fake served with `httptest`, as design
-names. The fake answers the counts and pages of records the test chooses,
+**The source is faked, never called.** No test reaches data.transportation.gov,
+data.sba.gov or enterprise.gisdata.mn.gov. A `Run`-level test hands
+`Process.HTTP` a client whose transport answers every request as a fake Socrata
+does, as a fake of the SBA's file folder does, a small CSV per file name, or as
+a fake ArcGIS feature service does; `internal/fmcsa`'s, `internal/ppp`'s and
+`internal/mnparcels`' own tests may instead point `fmcsa.Config.BaseURL`,
+`ppp.Config.BaseURL` or `mnparcels.Config.BaseURL` at a loopback fake served
+with `httptest`, as design names. The fake answers the counts and pages of records the test chooses,
 refuses or fails on demand, holds an answer open when a test needs it, and
 records each request it receives, so a test proves a request by what the fake
 received. The exec'ing test never lets the binary reach a source, since
@@ -264,9 +267,10 @@ through a scrapes constructor, first sets that variable with
 developer's environment never decides a result. It is the only variable an
 in-process test sets for scrapes' own code; `DRAIN_SECONDS`,
 `SCRAPE_KEEP_RUNS`, `FMCSA_STATES`, `FMCSA_MIN_POWER_UNITS`, `FMCSA_STATUS`,
-`PPP_FILES` and `PPP_STATES` reach `Run` through the `LookupEnv` the test
-gives it; unset or empty, `PPP_FILES` is `public_150k_plus_240930.csv` and
-`PPP_STATES` is `MN,WI`. The exec'ing test also sets `IKIGENBA_COMMIT` and
+`PPP_FILES`, `PPP_STATES` and `MN_PARCELS_COUNTIES` reach `Run` through the
+`LookupEnv` the test gives it; unset or empty, `PPP_FILES` is
+`public_150k_plus_240930.csv`, `PPP_STATES` is `MN,WI` and
+`MN_PARCELS_COUNTIES` is `Carlton,Chisago,Isanti,Mille Lacs,Aitkin,St. Louis,Anoka,Washington,Sherburne,Stearns,Benton,Morrison,Crow Wing`. The exec'ing test also sets `IKIGENBA_COMMIT` and
 `IKIGENBA_RELEASE` with `testing.T.Setenv`, so it may call appkit's
 `version.Read()` and the identity's `String()` under the same two values it
 composes into the child's environment; the commit it sets is longer than seven
@@ -344,12 +348,13 @@ other test that builds, execs, waits on, or signals a process is a bug.
 
 ## Live tests
 
-There are none. scrapes calls two external services, FMCSA's census on
-data.transportation.gov and the SBA's PPP files on data.sba.gov, and design
-calls for no live test: every Socrata and PPP file fact the design states was
-observed in read-only probes made while it was drafted or taken from the
-published documentation, the unit tests stand in for Socrata and the SBA's
-file folder with fakes, and the sandbox check proves the real sources.
+There are none. scrapes calls three external services, FMCSA's census on
+data.transportation.gov, the SBA's PPP files on data.sba.gov and Minnesota's
+parcel dataset on enterprise.gisdata.mn.gov, and design calls for no live test:
+every Socrata, PPP file and ArcGIS fact the design states was observed in
+read-only probes made while it was drafted or taken from the published
+documentation, the unit tests stand in for Socrata, the SBA's file folder and
+the ArcGIS service with fakes, and the sandbox check proves the real sources.
 
 ## Gates
 
@@ -402,7 +407,7 @@ every other app, its part of the release holding `bin/scrapes`, `etc/` and
 `share/icon.svg`, and `devctl deploy <space> <sha|tag>` deploys that release.
 The host must run events, which scrapes emits to and takes cron's fires from;
 its services file names it, with telemetry and auth. The host needs outbound
-network to data.transportation.gov and data.sba.gov. scrapes holds no secret
-of its own, and neither Socrata nor the PPP files need a key. The host's
+network to data.transportation.gov, data.sba.gov and enterprise.gisdata.mn.gov. scrapes
+holds no secret of its own, and none of the three sources needs a key. The host's
 backup archives `state/` whole, so `scrapes.db` is taken with it; it holds
 runs and rows, public records only, and no secret.
