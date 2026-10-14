@@ -2,8 +2,10 @@ package store_test
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -1181,6 +1183,151 @@ func TestCollectionAPI(t *testing.T) {
 	}
 	if _, e = methods.FailRun(ctx, r.ID, store.ReasonSource); e != nil {
 		t.Fatal(e)
+	}
+}
+
+func orderedJSONTokens(t *testing.T, data []byte) string {
+	t.Helper()
+	d := json.NewDecoder(bytes.NewReader(data))
+	var tokens []any
+	for {
+		token, e := d.Token()
+		if errors.Is(e, io.EOF) {
+			break
+		}
+		if e != nil {
+			t.Fatal(e)
+		}
+		if delimiter, ok := token.(json.Delim); ok {
+			token = struct{ Delimiter string }{string(delimiter)}
+		}
+		tokens = append(tokens, token)
+	}
+	b, e := json.Marshal(tokens)
+	if e != nil {
+		t.Fatal(e)
+	}
+	return string(b)
+}
+
+// R-6QF7-C764
+func TestGzipJSONLineChunks(t *testing.T) {
+	for _, chunk := range []int64{1, store.DefaultChunkBytes} {
+		t.Run(fmt.Sprint(chunk), func(t *testing.T) {
+			s, _, runs := configured(t, chunk, 2)
+			r := add(t, s, "a")
+			lat, lon := 44.25, -93.5
+			rows := []source.Row{
+				{Scraper: "ignored", Run: "ignored", SourceID: "2", Collected: time.Date(2026, 2, 3, 4, 5, 6, 789, time.FixedZone("source", -6*3600)), Digest: "digest", Name: "<name>", Names: []string{"one", "two"}, Address: source.Address{Street: "street", City: "city", State: "state", Zip: "zip", County: "county"}, Lat: &lat, Lon: &lon, People: []source.Person{{Name: "person", Role: "role"}}, Facts: []byte(" { \"html\": \"<&>\" } "), Raw: []byte(" \n{ \"v\": 1 } \t")},
+				{SourceID: "1", Digest: "first", Facts: []byte(`{"v":1}`), Raw: []byte(`{"v":1}`)},
+				{SourceID: "1", Digest: "second", Facts: []byte(" { \"v\": 2 } ")},
+				{SourceID: "1", Digest: "third", Names: []string{}, People: []source.Person{}, Raw: []byte{}},
+			}
+			expected := make([]string, len(rows))
+			for i, row := range rows {
+				row.Run, row.Scraper = r.ID, r.Scraper
+				row.Collected = row.Collected.UTC().Truncate(time.Second)
+				var e error
+				row.Facts, e = json.Marshal(string(row.Facts))
+				if e != nil {
+					t.Fatal(e)
+				}
+				if row.Raw != nil {
+					row.Raw, e = json.Marshal(string(row.Raw))
+					if e != nil {
+						t.Fatal(e)
+					}
+				}
+				encoded, e := json.Marshal(row)
+				if e != nil {
+					t.Fatal(e)
+				}
+				expected[i] = orderedJSONTokens(t, encoded)
+			}
+			seenFiles := map[string]bool{}
+			c := collect(t, s, r, func(_ context.Context, n int64, _ time.Duration) error {
+				newFiles := 0
+				for name, data := range snapshot(t, runs) {
+					if seenFiles[name] {
+						continue
+					}
+					seenFiles[name] = true
+					newFiles++
+					if n != int64(len(data)) {
+						t.Fatalf("step bytes %d, gzip file bytes %d", n, len(data))
+					}
+				}
+				if newFiles != 1 {
+					t.Fatal(newFiles)
+				}
+				return nil
+			})
+			if e := c.Add(ctx, rows[:2]); e != nil {
+				t.Fatal(e)
+			}
+			if e := c.Add(ctx, rows[2:]); e != nil {
+				t.Fatal(e)
+			}
+			if e := c.Seal(ctx); e != nil {
+				t.Fatal(e)
+			}
+			files := snapshot(t, runs)
+			wantFiles := 1
+			if chunk == 1 {
+				wantFiles = len(rows)
+			}
+			if len(files) != wantFiles || len(seenFiles) != wantFiles {
+				t.Fatal(len(files), len(seenFiles), wantFiles)
+			}
+			remaining := map[string]int{}
+			for _, line := range expected {
+				remaining[line]++
+			}
+			for name, data := range files {
+				if !strings.HasPrefix(name, r.ID+".") {
+					t.Fatal(name)
+				}
+				z, e := gzip.NewReader(strings.NewReader(data))
+				if e != nil {
+					t.Fatal(e)
+				}
+				plain, e := io.ReadAll(z)
+				if e != nil {
+					t.Fatal(e)
+				}
+				if e = z.Close(); e != nil {
+					t.Fatal(e)
+				}
+				if len(plain) == 0 || plain[len(plain)-1] != '\n' {
+					t.Fatalf("missing line terminator: %q", plain)
+				}
+				lines := bytes.Split(plain[:len(plain)-1], []byte{'\n'})
+				if chunk == 1 && len(lines) != 1 {
+					t.Fatal(len(lines))
+				}
+				objects := make([]string, len(lines))
+				for i, line := range lines {
+					objects[i] = orderedJSONTokens(t, line)
+				}
+				if chunk != 1 {
+					want := []string{expected[1], expected[2], expected[3], expected[0]}
+					if !reflect.DeepEqual(objects, want) {
+						t.Fatalf("chunk objects %q, want %q", objects, want)
+					}
+				}
+				for _, object := range objects {
+					if remaining[object] == 0 {
+						t.Fatalf("unexpected row object tokens: %s", object)
+					}
+					remaining[object]--
+				}
+			}
+			for line, n := range remaining {
+				if n != 0 {
+					t.Fatalf("missing %d copies of %s", n, line)
+				}
+			}
+		})
 	}
 }
 

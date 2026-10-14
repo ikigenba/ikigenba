@@ -1,12 +1,11 @@
 package store
 
 import (
-	"bytes"
+	"bufio"
+	"compress/gzip"
 	"container/heap"
 	"context"
 	"database/sql"
-	"encoding/binary"
-	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"io"
@@ -32,16 +31,67 @@ type Collection struct {
 	step                              Step
 	buffer                            []encodedRow
 	size                              int64
-	sequence                          uint64
 	chunks                            []string
 	owned                             []string
 	sealed, loaded, discarded, failed bool
 }
-type storedRow source.Row
 type wireRow struct {
-	Sequence uint64
-	Row      storedRow
+	Scraper   string       `json:"scraper"`
+	Run       string       `json:"run"`
+	SourceID  string       `json:"source_id"`
+	Collected time.Time    `json:"collected"`
+	Digest    string       `json:"digest"`
+	Name      string       `json:"name"`
+	Names     []string     `json:"names"`
+	Address   wireAddress  `json:"address"`
+	Lat       *float64     `json:"lat,omitempty"`
+	Lon       *float64     `json:"lon,omitempty"`
+	People    []wirePerson `json:"people"`
+	Facts     string       `json:"facts"`
+	Raw       *string      `json:"raw,omitempty"`
 }
+type wireAddress struct {
+	Street string `json:"street,omitempty"`
+	City   string `json:"city,omitempty"`
+	State  string `json:"state,omitempty"`
+	Zip    string `json:"zip,omitempty"`
+	County string `json:"county,omitempty"`
+}
+type wirePerson struct {
+	Name string `json:"name"`
+	Role string `json:"role"`
+}
+
+func encodeRow(r source.Row) ([]byte, error) {
+	names := r.Names
+	if names == nil {
+		names = []string{}
+	}
+	people := make([]wirePerson, len(r.People))
+	for i, p := range r.People {
+		people[i] = wirePerson(p)
+	}
+	var raw *string
+	if r.Raw != nil {
+		v := string(r.Raw)
+		raw = &v
+	}
+	b, err := json.Marshal(wireRow{r.Scraper, r.Run, r.SourceID, r.Collected, r.Digest, r.Name, names, wireAddress(r.Address), r.Lat, r.Lon, people, string(r.Facts), raw})
+	return append(b, '\n'), err
+}
+
+func (r wireRow) sourceRow() source.Row {
+	people := make([]source.Person, len(r.People))
+	for i, p := range r.People {
+		people[i] = source.Person(p)
+	}
+	var raw json.RawMessage
+	if r.Raw != nil {
+		raw = json.RawMessage(*r.Raw)
+	}
+	return source.Row{Scraper: r.Scraper, Run: r.Run, SourceID: r.SourceID, Collected: r.Collected, Digest: r.Digest, Name: r.Name, Names: r.Names, Address: source.Address(r.Address), Lat: r.Lat, Lon: r.Lon, People: people, Facts: json.RawMessage(r.Facts), Raw: raw}
+}
+
 type encodedRow struct {
 	id   string
 	data []byte
@@ -116,13 +166,12 @@ func (c *Collection) Add(ctx context.Context, rows []source.Row) error {
 		r.Run = c.run.ID
 		r.Scraper = c.run.Scraper
 		r.Collected = stamp(r.Collected)
-		var b bytes.Buffer
-		c.sequence++
-		if e := gob.NewEncoder(&b).Encode(wireRow{c.sequence, storedRow(r)}); e != nil {
+		b, e := encodeRow(r)
+		if e != nil {
 			return c.poison(e)
 		}
-		c.buffer = append(c.buffer, encodedRow{r.SourceID, b.Bytes()})
-		c.size += int64(b.Len() + 8)
+		c.buffer = append(c.buffer, encodedRow{r.SourceID, b})
+		c.size += int64(len(b))
 		if c.size >= c.chunkBytes() {
 			if e := c.flush(ctx); e != nil {
 				return c.poison(e)
@@ -146,22 +195,25 @@ func (c *Collection) flush(ctx context.Context) error {
 	if e != nil {
 		return e
 	}
+	z := gzip.NewWriter(f)
 	for _, r := range c.buffer {
-		if e = binary.Write(f, binary.LittleEndian, uint64(len(r.data))); e == nil {
-			_, e = f.Write(r.data)
-		}
+		_, e = z.Write(r.data)
 		if e != nil {
+			_ = z.Close()
 			_ = f.Close()
 			return e
 		}
 	}
-	if e = f.Close(); e != nil {
+	if e = errors.Join(z.Close(), f.Close()); e != nil {
 		return e
 	}
-	n := c.size
+	info, e := os.Stat(p)
+	if e != nil {
+		return e
+	}
 	c.buffer = nil
 	c.size = 0
-	return c.notify(ctx, c.step, n, start)
+	return c.notify(ctx, c.step, info.Size(), start)
 }
 
 // Seal writes the final partial chunk.
@@ -191,17 +243,18 @@ func (c *Collection) Discard() error {
 }
 
 type chunkCursor struct {
-	file *os.File
-	row  wireRow
+	reader *bufio.Reader
+	index  int
+	row    wireRow
 }
 
 func (c *chunkCursor) next() error {
-	var n uint64
-	if e := binary.Read(c.file, binary.LittleEndian, &n); e != nil {
+	line, e := c.reader.ReadBytes('\n')
+	if e != nil {
 		return e
 	}
 	c.row = wireRow{}
-	return gob.NewDecoder(io.LimitReader(c.file, int64(n))).Decode(&c.row)
+	return json.Unmarshal(line, &c.row)
 }
 
 type mergeHeap []*chunkCursor
@@ -209,10 +262,10 @@ type mergeHeap []*chunkCursor
 func (h mergeHeap) Len() int { return len(h) }
 func (h mergeHeap) Less(i, j int) bool {
 	a, b := h[i].row, h[j].row
-	if a.Row.SourceID == b.Row.SourceID {
-		return a.Sequence < b.Sequence
+	if a.SourceID == b.SourceID {
+		return h[i].index < h[j].index
 	}
-	return a.Row.SourceID < b.Row.SourceID
+	return a.SourceID < b.SourceID
 }
 func (h mergeHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 func (h *mergeHeap) Push(v any)   { *h = append(*h, v.(*chunkCursor)) }
@@ -221,7 +274,7 @@ func (h *mergeHeap) take() (wireRow, error) {
 	var out wireRow
 	for h.Len() > 0 {
 		cursor := (*h)[0]
-		if out.Row.SourceID != "" && cursor.row.Row.SourceID != out.Row.SourceID {
+		if out.SourceID != "" && cursor.row.SourceID != out.SourceID {
 			break
 		}
 		out = cursor.row
@@ -387,13 +440,18 @@ func (c *Collection) load(ctx context.Context, step Step, base *sql.Tx) (Counts,
 		}
 	}
 	h := mergeHeap{}
-	for _, path := range c.chunks {
+	for index, path := range c.chunks {
 		f, e := os.Open(filepath.Clean(path))
 		if e != nil {
 			return counts, e
 		}
 		defer func() { _ = f.Close() }()
-		cursor := &chunkCursor{file: f}
+		z, e := gzip.NewReader(f)
+		if e != nil {
+			return counts, e
+		}
+		defer func() { _ = z.Close() }()
+		cursor := &chunkCursor{reader: bufio.NewReader(z), index: index}
 		if e = cursor.next(); e != nil {
 			if errors.Is(e, io.EOF) {
 				continue
@@ -429,7 +487,7 @@ func (c *Collection) load(ctx context.Context, step Step, base *sql.Tx) (Counts,
 				if err != nil {
 					return err
 				}
-				r := source.Row(wire.Row)
+				r := wire.sourceRow()
 				for hasPrev && prevID < r.SourceID {
 					counts.Gone++
 					if err = advance(); err != nil {
