@@ -4,18 +4,22 @@
      .Workspace (WORKSPACE_DOMAIN), .Rows (the personal-token rows, below),
      .Page (string, at this profile level: this window's own tokens page
      token, the ?tokens_page= the request carried; empty on the first
-     window), .Next (string, at this profile level: the page token the
-     tokens nav's Next carries for the personal tokens after .Rows; empty
-     when none remain), .Create (the create data for an empty form,
+     window; "last" on the last window reached by ?tokens_page=last), .Prev
+     (string, at this profile level: the page token the tokens nav's Prev
+     carries for the window of personal tokens before .Rows, in the same
+     tokens_page parameter as Next; empty on the first window), .Next
+     (string, at this profile level: the page token the tokens nav's Next
+     carries for the personal tokens after .Rows; empty when none remain),
+     .Create (the create data for an empty form,
      token-create.html) and .Clients (the MCP clients data,
      mcp-clients.html, whose .ClientsPage the tokens nav reads to carry the
      clients list's current token). Two lists share the page, so each has
      its own nav and parameter, nav#paging-tokens with tokens_page and
      nav#paging-clients with clients_page (mcp-clients.html); each nav's
-     hrefs carry the other list's current token, so paging one list never
-     resets the other, and its First drops only its own parameter. Template
-     "tokenList" receives the profile data itself, reading .Rows, .Page,
-     .Next and .Clients.ClientsPage: .Rows is a list in profile order, one
+     hrefs carry the other list's current token, Prev's and Last's included,
+     so paging one list never resets the other, and its First drops only
+     its own parameter. Template "tokenList" receives the profile data
+     itself, reading .Rows, .Page, .Prev, .Next and .Clients.ClientsPage: .Rows is a list in profile order, one
      window of personal tokens, the window .Page names, most recently used
      first, one per personal token, each with .ID (the tok_ id), .Name, .Created and .Expires (each a token time:
      .Datetime, YYYY-MM-DDTHH:MM:SSZ, and .Text, YYYY-MM-DD HH:MM UTC;
@@ -44,18 +48,27 @@
      button.ghost.small[type=submit] "Delete". Without rows, div.empty with
      h3 "No tokens yet" and a p. Then, after the card (section.card.flush),
      nav.paging#paging-tokens (aria-label "Pages") whose children are, in
-     order, First (on the first window, .Page empty, a span with
-     aria-current="page" and text "First"; otherwise a link with text
-     "First" to / when .Clients.ClientsPage is empty, else to
-     /?clients_page=<.Clients.ClientsPage>) and, only when .Next is not
+     order, First, Prev, Next and Last: First (on the first window, .Page
+     empty, a span with aria-current="page" and text "First"; otherwise a
+     link with text "First" to / when .Clients.ClientsPage is empty, else
+     to /?clients_page=<.Clients.ClientsPage>), then, only when .Prev is
+     not empty, Prev (a link with text "Prev" to /?tokens_page=<.Prev>,
+     followed by &clients_page=<.Clients.ClientsPage> when
+     .Clients.ClientsPage is not empty), then, only when .Next is not
      empty, Next (a link with text "Next" to /?tokens_page=<.Next>,
      followed by &clients_page=<.Clients.ClientsPage> when
-     .Clients.ClientsPage is not empty); the nav shows when .Rows is not
+     .Clients.ClientsPage is not empty), then, always, Last (while .Next is
+     not empty, a link with text "Last" to /?tokens_page=last, followed by
+     &clients_page=<.Clients.ClientsPage> when .Clients.ClientsPage is not
+     empty, tokens_page=last naming the last tokens window; when .Next is
+     empty, the last window, a span with aria-current="page" and text
+     "Last", so a single window shows First and Last both as the current
+     item); the nav shows when .Rows is not
      empty or .Page is not empty, so an emptied later window still offers
      First; on the first window with no tokens there is no nav. Then the
      create card and the MCP clients card. */}}
 {{define "profile"}}<h1>Your account</h1><p>You're signed in to {{template "value" .Apex}}.</p><section class="card"><header><h2>Account</h2></header><dl class="kv"><dt>Email</dt><dd>{{template "value" .Email}}</dd><dt>Workspace</dt><dd>{{template "value" .Workspace}}</dd><dt>Signed in via</dt><dd>Google</dd></dl></section>{{template "tokenList" .}}{{template "tokenCreate" .Create}}{{template "mcp-clients" .Clients}}{{end}}
-{{define "tokenList"}}<section class="card flush"><header><h2>API tokens</h2><p>Personal access tokens let scripts and tools act as you. Send one as a bearer token.</p></header>{{if .Rows}}<div class="table-scroll"><table><thead><tr><th>Name</th><th>Created</th><th>Last used</th><th>Expires</th><th>Status</th><th></th></tr></thead><tbody>{{range .Rows}}<tr><td>{{template "value" .Name}}</td>{{template "tokenTime" .Created}}{{if .LastUsed}}{{template "tokenLastUsed" .LastUsed}}{{else}}{{template "tokenNever"}}{{end}}{{if .Expires}}{{template "tokenTime" .Expires}}{{else}}{{template "tokenNever"}}{{end}}<td>{{if .Enabled}}<span class="badge" data-kind="ok">Enabled</span>{{else}}<span class="badge">Disabled</span>{{end}}</td><td class="row-actions"><form class="inline" method="post" action="/tokens/{{.ID}}/{{if .Enabled}}disable{{else}}enable{{end}}"><button class="ghost small" type="submit">{{if .Enabled}}Disable{{else}}Enable{{end}}</button></form><form class="inline" method="post" action="/tokens/{{.ID}}/delete"><button class="ghost small" type="submit">Delete</button></form></td></tr>{{end}}</tbody></table></div>{{else}}<div class="empty"><h3>No tokens yet</h3><p>Create one below when a script or tool needs to act as you.</p></div>{{end}}</section>{{if or .Rows .Page}}<nav class="paging" id="paging-tokens" aria-label="Pages">{{if .Page}}<a href="/{{if .Clients.ClientsPage}}?clients_page={{.Clients.ClientsPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/?tokens_page={{.Next}}{{if .Clients.ClientsPage}}&amp;clients_page={{.Clients.ClientsPage}}{{end}}">Next</a>{{end}}</nav>{{end}}{{end}}
+{{define "tokenList"}}<section class="card flush"><header><h2>API tokens</h2><p>Personal access tokens let scripts and tools act as you. Send one as a bearer token.</p></header>{{if .Rows}}<div class="table-scroll"><table><thead><tr><th>Name</th><th>Created</th><th>Last used</th><th>Expires</th><th>Status</th><th></th></tr></thead><tbody>{{range .Rows}}<tr><td>{{template "value" .Name}}</td>{{template "tokenTime" .Created}}{{if .LastUsed}}{{template "tokenLastUsed" .LastUsed}}{{else}}{{template "tokenNever"}}{{end}}{{if .Expires}}{{template "tokenTime" .Expires}}{{else}}{{template "tokenNever"}}{{end}}<td>{{if .Enabled}}<span class="badge" data-kind="ok">Enabled</span>{{else}}<span class="badge">Disabled</span>{{end}}</td><td class="row-actions"><form class="inline" method="post" action="/tokens/{{.ID}}/{{if .Enabled}}disable{{else}}enable{{end}}"><button class="ghost small" type="submit">{{if .Enabled}}Disable{{else}}Enable{{end}}</button></form><form class="inline" method="post" action="/tokens/{{.ID}}/delete"><button class="ghost small" type="submit">Delete</button></form></td></tr>{{end}}</tbody></table></div>{{else}}<div class="empty"><h3>No tokens yet</h3><p>Create one below when a script or tool needs to act as you.</p></div>{{end}}</section>{{if or .Rows .Page}}<nav class="paging" id="paging-tokens" aria-label="Pages">{{if .Page}}<a href="/{{if .Clients.ClientsPage}}?clients_page={{.Clients.ClientsPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Prev}}<a href="/?tokens_page={{.Prev}}{{if .Clients.ClientsPage}}&amp;clients_page={{.Clients.ClientsPage}}{{end}}">Prev</a>{{end}}{{if .Next}}<a href="/?tokens_page={{.Next}}{{if .Clients.ClientsPage}}&amp;clients_page={{.Clients.ClientsPage}}{{end}}">Next</a>{{end}}{{if .Next}}<a href="/?tokens_page=last{{if .Clients.ClientsPage}}&amp;clients_page={{.Clients.ClientsPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>{{end}}{{end}}
 {{define "tokenTime"}}<td><time datetime="{{.Datetime}}">{{.Text}}</time></td>{{end}}
 {{define "tokenLastUsed"}}<td><time datetime="{{.Datetime}}" title="{{.Title}}">{{template "elapsed" .Elapsed}}</time></td>{{end}}
 {{define "tokenNever"}}<td class="muted">Never</td>{{end}}

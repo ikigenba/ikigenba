@@ -13,7 +13,11 @@
      .Expired (the expiry is not after the draw time); .ClientsPage
      (string, at this MCP clients data level beside .Clients: this window's
      own clients page token, the ?clients_page= the request carried; empty
-     on the first window); .ClientsNext (string, at this level: the page
+     on the first window; "last" on the last window reached by
+     ?clients_page=last); .ClientsPrev (string, at this level: the page
+     token the clients nav's Prev carries for the window of MCP clients
+     before .Clients, in the same clients_page parameter as Next; empty on
+     the first window); .ClientsNext (string, at this level: the page
      token the clients nav's Next carries for the MCP clients after
      .Clients; empty when none remain); and .TokensPage (string, at this
      level: the tokens list's current token, the profile data's .Page, for
@@ -21,8 +25,9 @@
      share the profile page, so each has its own nav and parameter,
      nav#paging-tokens with tokens_page (profile.html) and
      nav#paging-clients with clients_page; each nav's hrefs carry the other
-     list's current token, so paging one list never resets the other, and
-     its First drops only its own parameter. Hooks:
+     list's current token, Prev's and Last's included, so paging one list
+     never resets the other, and its First drops only its own parameter.
+     Hooks:
      section.card.flush; header with h2 "MCP clients" and p "MCP clients you
      approve act as you at the MCP gateway. Revoke one to sign it out.";
      then one div: with clients, div.table-scroll holding one table whose
@@ -35,13 +40,23 @@
      "Revoke". Without clients, div.empty with h3 "No MCP clients yet" and
      p "A client appears here once you approve it from its login." Then,
      after the card (section.card.flush), nav.paging#paging-clients
-     (aria-label "Pages") whose children are, in order, First (on the first
-     window, .ClientsPage empty, a span with aria-current="page" and text
-     "First"; otherwise a link with text "First" to / when .TokensPage is
-     empty, else to /?tokens_page=<.TokensPage>) and, only when
-     .ClientsNext is not empty, Next (a link with text "Next" to
+     (aria-label "Pages") whose children are, in order, First, Prev, Next
+     and Last: First (on the first window, .ClientsPage empty, a span with
+     aria-current="page" and text "First"; otherwise a link with text
+     "First" to / when .TokensPage is empty, else to
+     /?tokens_page=<.TokensPage>), then, only when .ClientsPrev is not
+     empty, Prev (a link with text "Prev" to
+     /?clients_page=<.ClientsPrev>, followed by
+     &tokens_page=<.TokensPage> when .TokensPage is not empty), then, only
+     when .ClientsNext is not empty, Next (a link with text "Next" to
      /?clients_page=<.ClientsNext>, followed by
-     &tokens_page=<.TokensPage> when .TokensPage is not empty); the nav
+     &tokens_page=<.TokensPage> when .TokensPage is not empty), then,
+     always, Last (while .ClientsNext is not empty, a link with text "Last"
+     to /?clients_page=last, followed by &tokens_page=<.TokensPage> when
+     .TokensPage is not empty, clients_page=last naming the last clients
+     window; when .ClientsNext is empty, the last window, a span with
+     aria-current="page" and text "Last", so a single window shows First
+     and Last both as the current item); the nav
      shows when .Clients is not empty or .ClientsPage is not empty, so an
      emptied later window still offers First; on the first window with no
      clients there is no nav. No other form, button, input, select or a,
@@ -56,5 +71,5 @@
 </table></div>
 {{else}}<div class="empty"><h3>No MCP clients yet</h3> <p>A client appears here once you approve it from its login.</p></div>{{end}}
 </section>
-{{if or .Clients .ClientsPage}}<nav class="paging" id="paging-clients" aria-label="Pages">{{if .ClientsPage}}<a href="/{{if .TokensPage}}?tokens_page={{.TokensPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .ClientsNext}}<a href="/?clients_page={{.ClientsNext}}{{if .TokensPage}}&amp;tokens_page={{.TokensPage}}{{end}}">Next</a>{{end}}</nav>
+{{if or .Clients .ClientsPage}}<nav class="paging" id="paging-clients" aria-label="Pages">{{if .ClientsPage}}<a href="/{{if .TokensPage}}?tokens_page={{.TokensPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .ClientsPrev}}<a href="/?clients_page={{.ClientsPrev}}{{if .TokensPage}}&amp;tokens_page={{.TokensPage}}{{end}}">Prev</a>{{end}}{{if .ClientsNext}}<a href="/?clients_page={{.ClientsNext}}{{if .TokensPage}}&amp;tokens_page={{.TokensPage}}{{end}}">Next</a>{{end}}{{if .ClientsNext}}<a href="/?clients_page=last{{if .TokensPage}}&amp;tokens_page={{.TokensPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
 {{end}}{{end}}
