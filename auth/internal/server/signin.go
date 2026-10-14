@@ -29,20 +29,28 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tokensPage, clientsPage := r.URL.Query().Get("tokens_page"), r.URL.Query().Get("clients_page")
+	tokensPosition, tokensErr := tokenPagePosition(tokensPage, "tokens")
+	clientsPosition, clientsErr := tokenPagePosition(clientsPage, "clients")
+	if tokensErr != nil || clientsErr != nil {
+		http.NotFound(w, r)
+		return
+	}
 	drawTime := s.now()
-	rows, next, err := s.tokenRows(identity.UserID, drawTime)
+	rows, next, err := s.tokenRows(identity.UserID, drawTime, tokensPosition)
 	if err != nil {
 		s.writeServerError(w, r, err)
 		return
 	}
-	clients, err := s.profileClients(identity.UserID, drawTime)
+	clients, err := s.profileClients(identity.UserID, drawTime, clientsPosition)
 	if err != nil {
 		s.writeServerError(w, r, err)
 		return
 	}
+	clients.ClientsPage, clients.TokensPage = clientsPage, tokensPage
 	writeAuthPage(w, http.StatusOK, authPageData{Banner: s.pageBanner(identity.Email), Profile: &profilePageData{
 		Apex: apexName(r.Host), Email: identity.Email, Workspace: s.cfg.WorkspaceDomain,
-		Rows: rows, Next: next, Clients: clients, Create: tokenCreateValues("", "90d", false),
+		Rows: rows, Page: tokensPage, Next: next, Clients: clients, Create: tokenCreateValues("", "90d", false),
 	}})
 }
 

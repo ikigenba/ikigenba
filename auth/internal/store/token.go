@@ -62,19 +62,56 @@ func (s *Store) CreateToken(userID, name string, expiry Expiry, now time.Time) (
 	return token, secret, err
 }
 
+// TokenPosition identifies a place in profile order.
+type TokenPosition struct {
+	LastUsedAt *time.Time
+	CreatedAt  time.Time
+	ID         string
+}
+
 // ListTokens returns an owner's bounded window of one kind in profile order.
-func (s *Store) ListTokens(userID string, kind TokenKind, n int) ([]Token, error) {
+func (s *Store) ListTokens(userID string, kind TokenKind, after *TokenPosition, n int) ([]Token, error) {
 	var tokens []Token
 	err := s.db.Read(context.Background(), func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(
-			context.Background(),
-			`SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host
+		var query string
+		var args []any
+		switch {
+		case after == nil:
+			query = `SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host
 		 FROM tokens
 		 WHERE user_id = ? AND kind = ?
 		 ORDER BY last_used_at DESC, created_at DESC, id
-		 LIMIT ?`,
-			userID, kind, max(n, 0),
-		)
+		 LIMIT ?`
+			args = []any{userID, kind, max(n, 0)}
+		case after.LastUsedAt == nil:
+			query = `SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host
+		 FROM tokens WHERE user_id = ? AND kind = ? AND last_used_at IS NULL AND created_at = ? AND id > ?
+		 UNION ALL
+		 SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host
+		 FROM tokens WHERE user_id = ? AND kind = ? AND last_used_at IS NULL AND created_at < ?
+		 ORDER BY last_used_at DESC, created_at DESC, id
+		 LIMIT ?`
+			args = []any{userID, kind, after.CreatedAt.UnixNano(), after.ID,
+				userID, kind, after.CreatedAt.UnixNano(), max(n, 0)}
+		default:
+			query = `SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host
+		 FROM tokens WHERE user_id = ? AND kind = ? AND last_used_at = ? AND created_at = ? AND id > ?
+		 UNION ALL
+		 SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host
+		 FROM tokens WHERE user_id = ? AND kind = ? AND last_used_at = ? AND created_at < ?
+		 UNION ALL
+		 SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host
+		 FROM tokens WHERE user_id = ? AND kind = ? AND last_used_at < ?
+		 UNION ALL
+		 SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at, kind, host
+		 FROM tokens WHERE user_id = ? AND kind = ? AND last_used_at IS NULL
+		 ORDER BY last_used_at DESC, created_at DESC, id
+		 LIMIT ?`
+			args = []any{userID, kind, after.LastUsedAt.UnixNano(), after.CreatedAt.UnixNano(), after.ID,
+				userID, kind, after.LastUsedAt.UnixNano(), after.CreatedAt.UnixNano(),
+				userID, kind, after.LastUsedAt.UnixNano(), userID, kind, max(n, 0)}
+		}
+		rows, err := tx.QueryContext(context.Background(), query, args...)
 		if err != nil {
 			return fmt.Errorf("list tokens: %w", err)
 		}

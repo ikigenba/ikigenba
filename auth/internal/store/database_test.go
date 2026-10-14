@@ -330,15 +330,15 @@ func TestStorePersistsDomainStateAcrossHandles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tokens, err := st.ListTokens(user.ID, TokenPersonal, 100)
+	tokens, err := st.ListTokens(user.ID, TokenPersonal, nil, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
-	window, err := st.ListTokens(user.ID, TokenPersonal, 1)
+	window, err := st.ListTokens(user.ID, TokenPersonal, nil, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	clients, err := st.ListTokens(user.ID, TokenClient, 100)
+	clients, err := st.ListTokens(user.ID, TokenClient, nil, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,15 +360,15 @@ func TestStorePersistsDomainStateAcrossHandles(t *testing.T) {
 	if err != nil || gotToken != tokenIdentity {
 		t.Fatalf("token identity: %#v, %v", gotToken, err)
 	}
-	gotTokens, err := later.ListTokens(user.ID, TokenPersonal, 100)
+	gotTokens, err := later.ListTokens(user.ID, TokenPersonal, nil, 100)
 	if err != nil || !reflect.DeepEqual(gotTokens, tokens) {
 		t.Fatalf("tokens: %#v, %v; want %#v", gotTokens, err, tokens)
 	}
-	gotWindow, err := later.ListTokens(user.ID, TokenPersonal, 1)
+	gotWindow, err := later.ListTokens(user.ID, TokenPersonal, nil, 1)
 	if err != nil || !reflect.DeepEqual(gotWindow, window) {
 		t.Fatalf("persisted window: %#v,%v; want %#v", gotWindow, err, window)
 	}
-	gotClients, err := later.ListTokens(user.ID, TokenClient, 100)
+	gotClients, err := later.ListTokens(user.ID, TokenClient, nil, 100)
 	if err != nil || !reflect.DeepEqual(gotClients, clients) {
 		t.Fatalf("persisted client list: %#v,%v; want %#v", gotClients, err, clients)
 	}
@@ -451,7 +451,7 @@ func TestEveryOperationFailsAndRecoversOnSameHandle(t *testing.T) {
 		{"create state", func() error { _, err := st.CreateLoginState("new verifier", "/new"); return err }},
 		{"consume state", func() error { _, err := st.ConsumeLoginState(state.State); return err }},
 		{"create token", func() error { _, _, err := st.CreateToken(user.ID, "new token", ExpiryNever, now); return err }},
-		{"list tokens", func() error { _, err := st.ListTokens(user.ID, TokenPersonal, 100); return err }},
+		{"list tokens", func() error { _, err := st.ListTokens(user.ID, TokenPersonal, nil, 100); return err }},
 		{"set enabled", func() error { return st.SetTokenEnabled(user.ID, token.ID, true) }},
 		{"delete token", func() error { return st.DeleteToken(user.ID, token.ID) }},
 		{"lookup token", func() error { _, err := st.LookupTokenIdentity(secret, "", now); return err }},
@@ -466,7 +466,7 @@ func TestEveryOperationFailsAndRecoversOnSameHandle(t *testing.T) {
 		{"create client token", func() error { _, _, err := st.CreateClientToken(code, "host", now); return err }},
 		{"revoke token", func() error { return st.RevokeToken(user.ID, clientToken.ID) }},
 		{"find token", func() error { _, err := st.FindToken(user.ID, token.ID); return err }},
-		{"list empty window", func() error { _, err := st.ListTokens(user.ID, TokenClient, 0); return err }},
+		{"list empty window", func() error { _, err := st.ListTokens(user.ID, TokenClient, nil, 0); return err }},
 	}
 	d.SetFailing(true)
 	for _, c := range calls {

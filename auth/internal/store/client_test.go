@@ -160,7 +160,7 @@ func TestClientTokenExactValuesAndMissingClient(t *testing.T) {
 	before := allTokenStates(t, st)
 	lists := map[TokenKind][]Token{}
 	for _, kind := range []TokenKind{TokenPersonal, TokenClient} {
-		list, err := st.ListTokens(code.UserID, kind, 100)
+		list, err := st.ListTokens(code.UserID, kind, nil, 100)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -174,7 +174,7 @@ func TestClientTokenExactValuesAndMissingClient(t *testing.T) {
 		t.Fatal("missing client created token")
 	}
 	for kind, want := range lists {
-		got, err := st.ListTokens(code.UserID, kind, 100)
+		got, err := st.ListTokens(code.UserID, kind, nil, 100)
 		if err != nil || !reflect.DeepEqual(got, want) {
 			t.Fatalf("missing client changed %s list: %#v,%v", kind, got, err)
 		}
@@ -359,11 +359,11 @@ func TestClientTokenHostAndMutationScopes(t *testing.T) {
 	if _, err := st.FindToken("owner", tok.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("revoked token found: %v", err)
 	}
-	clients, err := st.ListTokens("owner", TokenClient, 100)
+	clients, err := st.ListTokens("owner", TokenClient, nil, 100)
 	if err != nil || len(clients) != 0 {
 		t.Fatalf("revoked client list: %#v,%v", clients, err)
 	}
-	listed, err := st.ListTokens("owner", TokenPersonal, 100)
+	listed, err := st.ListTokens("owner", TokenPersonal, nil, 100)
 	if err != nil || len(listed) != 1 || listed[0].ID != personal.ID {
 		t.Fatalf("revoke list %#v %v", listed, err)
 	}

@@ -219,7 +219,7 @@ func TestCreateTokenAcceptsTrimmedNameAndEveryExpiry(t *testing.T) {
 			if response.Code != http.StatusOK || response.Header().Get("Content-Type") != htmlDocumentContentType {
 				t.Fatalf("response = %d %q, want 200 HTML", response.Code, response.Header().Get("Content-Type"))
 			}
-			tokens, err := st.ListTokens(user.ID, store.TokenPersonal, 100)
+			tokens, err := st.ListTokens(user.ID, store.TokenPersonal, nil, 100)
 			if err != nil {
 				t.Fatalf("ListTokens() error = %v", err)
 			}
@@ -266,7 +266,7 @@ func TestCreateTokenRejectsInvalidNameAndExpiryWithoutMutation(t *testing.T) {
 			if response.Code != http.StatusBadRequest || response.Header().Get("Content-Type") != htmlDocumentContentType {
 				t.Fatalf("response = %d %q, want 400 HTML", response.Code, response.Header().Get("Content-Type"))
 			}
-			tokens, err := st.ListTokens(user.ID, store.TokenPersonal, 100)
+			tokens, err := st.ListTokens(user.ID, store.TokenPersonal, nil, 100)
 			if err != nil || len(tokens) != 0 {
 				t.Errorf("ListTokens() = %#v, %v; want empty", tokens, err)
 			}
@@ -294,7 +294,7 @@ func TestTokenToggleAndDeleteEffects(t *testing.T) {
 		if response.Code != http.StatusFound || response.Header().Get("Location") != "/" {
 			t.Fatalf("%s response = %d Location %q", tt.action, response.Code, response.Header().Get("Location"))
 		}
-		tokens, err := st.ListTokens(owner.ID, store.TokenPersonal, 100)
+		tokens, err := st.ListTokens(owner.ID, store.TokenPersonal, nil, 100)
 		if err != nil || len(tokens) != 1 || tokens[0].Enabled != tt.wantEnabled {
 			t.Fatalf("after %s ListTokens() = %#v, %v", tt.action, tokens, err)
 		}
@@ -334,8 +334,8 @@ func TestTokenActionsHideOwnershipAndDoNotMutateOnNotFound(t *testing.T) {
 				if target == "foreign" {
 					tokenID = foreignToken.ID
 				}
-				beforeOwner, _ := st.ListTokens(owner.ID, store.TokenPersonal, 100)
-				beforeOther, _ := st.ListTokens(other.ID, store.TokenPersonal, 100)
+				beforeOwner, _ := st.ListTokens(owner.ID, store.TokenPersonal, nil, 100)
+				beforeOther, _ := st.ListTokens(other.ID, store.TokenPersonal, nil, 100)
 
 				response := httptest.NewRecorder()
 				tokenTestServer(t, st).handleTokenAction(response, tokenActionRequest(session.ID, tokenID, action))
@@ -344,8 +344,8 @@ func TestTokenActionsHideOwnershipAndDoNotMutateOnNotFound(t *testing.T) {
 				if response.Code != http.StatusNotFound || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
 					t.Fatalf("response = %d %q, want 404 plain text", response.Code, response.Header().Get("Content-Type"))
 				}
-				afterOwner, _ := st.ListTokens(owner.ID, store.TokenPersonal, 100)
-				afterOther, _ := st.ListTokens(other.ID, store.TokenPersonal, 100)
+				afterOwner, _ := st.ListTokens(owner.ID, store.TokenPersonal, nil, 100)
+				afterOther, _ := st.ListTokens(other.ID, store.TokenPersonal, nil, 100)
 				if !reflect.DeepEqual(afterOwner, beforeOwner) || !reflect.DeepEqual(afterOther, beforeOther) {
 					t.Errorf("tokens changed: owner %#v -> %#v; other %#v -> %#v", beforeOwner, afterOwner, beforeOther, afterOther)
 				}
@@ -382,7 +382,7 @@ func TestTokenMutationsRejectBadOrMissingOriginWithoutMutation(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				before, err := st.ListTokens(owner.ID, store.TokenPersonal, 100)
+				before, err := st.ListTokens(owner.ID, store.TokenPersonal, nil, 100)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -401,7 +401,7 @@ func TestTokenMutationsRejectBadOrMissingOriginWithoutMutation(t *testing.T) {
 				if response.Code != http.StatusForbidden || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
 					t.Fatalf("response = %d %q, want 403 plain text", response.Code, response.Header().Get("Content-Type"))
 				}
-				after, err := st.ListTokens(owner.ID, store.TokenPersonal, 100)
+				after, err := st.ListTokens(owner.ID, store.TokenPersonal, nil, 100)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -447,7 +447,7 @@ func TestCreateTokenRejectsMissingAndNonMemberExpiry(t *testing.T) {
 			if response.Code != http.StatusBadRequest || response.Header().Get("Content-Type") != "text/html; charset=utf-8" {
 				t.Fatalf("response = %d %q, want 400 text/html; charset=utf-8", response.Code, response.Header().Get("Content-Type"))
 			}
-			tokens, err := st.ListTokens(user.ID, store.TokenPersonal, 100)
+			tokens, err := st.ListTokens(user.ID, store.TokenPersonal, nil, 100)
 			if err != nil || len(tokens) != 0 {
 				t.Fatalf("ListTokens() = %#v, %v; want no CreateToken result", tokens, err)
 			}

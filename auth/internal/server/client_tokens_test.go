@@ -36,7 +36,7 @@ func mintProfileClient(t *testing.T, st *store.Store, owner, name string, approv
 }
 
 func TestClientProfileTemplateAndData(t *testing.T) {
-	// R-9QI0-JJET R-9PA4-5RO4 R-9SXT-B2W7 R-3T1K-8Z4L: canonical rich profile data and template output.
+	// R-E9I9-URV3 R-E8AD-H04E R-EGTO-5EB9 R-3T1K-8Z4L: canonical rich profile data and template output.
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "client-profile")
 	other, _ := tokenTestIdentity(t, st, "foreign-client")
@@ -94,7 +94,7 @@ func TestClientProfileTemplateAndData(t *testing.T) {
 		}
 		expected.Clients = append(expected.Clients, row)
 	}
-	data, err := srv.profileClients(user.ID, tokenTestNow)
+	data, err := srv.profileClients(user.ID, tokenTestNow, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestClientTokenRevokeEffectsAndTrail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := st.ListTokens(user.ID, store.TokenClient, 100)
+	before, err := st.ListTokens(user.ID, store.TokenClient, nil, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestClientTokenRevokeEffectsAndTrail(t *testing.T) {
 		t.Fatalf("revoke=%d %v", w.Code, w.Header())
 	}
 	assertTokenDomainTrail(t, events, user.ID, "token.revoked", target.ID)
-	after, err := st.ListTokens(user.ID, store.TokenClient, 100)
+	after, err := st.ListTokens(user.ID, store.TokenClient, nil, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +291,7 @@ func TestRejectedTokenCreationHasNoTokenTrail(t *testing.T) {
 		assertTokenPlainResult(t, w, 403)
 		assertTokenDomainTrail(t, events, user.ID, "", "")
 	}
-	tokens, err := st.ListTokens(user.ID, store.TokenPersonal, 100)
+	tokens, err := st.ListTokens(user.ID, store.TokenPersonal, nil, 100)
 	if err != nil || len(tokens) != 0 {
 		t.Fatalf("refused creates=%#v %v", tokens, err)
 	}

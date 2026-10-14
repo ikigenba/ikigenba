@@ -19,8 +19,8 @@ import (
 
 var (
 	_ func(*Store, string, string, Expiry, time.Time) (Token, string, error) = (*Store).CreateToken
-	// R-95RQ-1FT0
-	_ func(*Store, string, TokenKind, int) ([]Token, error) = (*Store).ListTokens
+	// R-E26V-K5EX
+	_ func(*Store, string, TokenKind, *TokenPosition, int) ([]Token, error) = (*Store).ListTokens
 	// R-4X8H-LK6I
 	_ func(*Store, string, string, bool) error = (*Store).SetTokenEnabled
 	// R-4YGD-ZBX7
@@ -30,6 +30,15 @@ var (
 	// R-F3CS-049Y
 	_ func(*Store, string, string, time.Time) (Identity, error) = (*Store).TouchTokenIdentity
 )
+
+func TestTokenPositionContract(_ *testing.T) {
+	// R-E0YZ-6DO8
+	_ = TokenPosition(struct {
+		LastUsedAt *time.Time
+		CreatedAt  time.Time
+		ID         string
+	}{})
+}
 
 func TestCreateTokenSecondResultIsPlaintextSecret(t *testing.T) {
 	// R-4SCW-2H7Q
@@ -162,7 +171,7 @@ func TestCreateTokenExactValuesExpiryAndHashPersistence(t *testing.T) {
 
 func TestListTokensOwnerKindWindowAndProfileOrder(t *testing.T) {
 	// R-987I-SZAE
-	// R-99FF-6R13
+	// R-E3ER-XX5M
 	st := openTokenTestStore(t, bytes.NewReader(nil))
 	now := tokenTestNow()
 	insertTokenUser(t, st, "owner", "owner@example.com", now)
@@ -201,16 +210,50 @@ func TestListTokensOwnerKindWindowAndProfileOrder(t *testing.T) {
 	}
 	before := domainRows(t, st)
 	for _, kind := range []TokenKind{TokenPersonal, TokenClient} {
-		for _, n := range []int{-3, 0, 1, 3, len(order), len(order) + 1, 100} {
-			got, err := st.ListTokens("owner", kind, n)
-			want := wants[kind][:min(max(n, 0), len(order))]
-			if err != nil || len(got) != len(want) || (len(want) > 0 && !reflect.DeepEqual(got, want)) {
-				t.Fatalf("ListTokens(%q,%d) = %#v,%v; want %#v", kind, n, got, err, want)
-			}
+		positions := []struct {
+			name  string
+			after *TokenPosition
+			first int
+		}{
+			{name: "first window"},
+			{name: "before used rows", after: &TokenPosition{LastUsedAt: tokenTimePointer(now.Add(time.Nanosecond)), CreatedAt: now}, first: 0},
+			{name: "between last uses", after: &TokenPosition{LastUsedAt: tokenTimePointer(now.Add(-time.Minute)), CreatedAt: now}, first: 1},
+			{name: "before used creation tie", after: &TokenPosition{LastUsedAt: tokenTimePointer(now.Add(-time.Hour)), CreatedAt: now.Add(-time.Hour)}, first: 1},
+			{name: "between used ids", after: &TokenPosition{LastUsedAt: tokenTimePointer(now.Add(-time.Hour)), CreatedAt: now.Add(-2 * time.Hour), ID: string(kind) + "tie-Z"}, first: 2},
+			{name: "between used creation times", after: &TokenPosition{LastUsedAt: tokenTimePointer(now.Add(-time.Hour)), CreatedAt: now.Add(-150 * time.Minute)}, first: 3},
+			{name: "after every used row", after: &TokenPosition{LastUsedAt: tokenTimePointer(now.Add(-2 * time.Hour)), CreatedAt: now}, first: 4},
+			{name: "before unused rows", after: &TokenPosition{CreatedAt: now.Add(2 * time.Hour)}, first: 4},
+			{name: "between unused ids", after: &TokenPosition{CreatedAt: now.Add(time.Hour), ID: string(kind) + "unused-Z"}, first: 5},
+			{name: "between unused creation times", after: &TokenPosition{CreatedAt: now.Add(time.Minute)}, first: 6},
+			{name: "after every row", after: &TokenPosition{CreatedAt: now.Add(-time.Hour)}, first: 7},
+			{name: "bound id", after: &TokenPosition{CreatedAt: now.Add(time.Hour), ID: "' OR 1=1 --"}, first: 4},
 		}
-		got, err := st.ListTokens("missing-owner", kind, 100)
-		if err != nil || len(got) != 0 {
-			t.Fatalf("missing owner = %#v,%v", got, err)
+		for i, token := range wants[kind] {
+			positions = append(positions, struct {
+				name  string
+				after *TokenPosition
+				first int
+			}{name: "after " + token.ID, after: &TokenPosition{LastUsedAt: token.LastUsedAt, CreatedAt: token.CreatedAt, ID: token.ID}, first: i + 1})
+		}
+		for _, position := range positions {
+			for _, n := range []int{-3, 0, 1, 3, len(order), len(order) + 1, 100} {
+				got, err := st.ListTokens("owner", kind, position.after, n)
+				remaining := wants[kind][position.first:]
+				want := remaining[:min(max(n, 0), len(remaining))]
+				if err != nil || len(got) != len(want) || (len(want) > 0 && !reflect.DeepEqual(got, want)) {
+					t.Fatalf("ListTokens(%q,%s,%d) = %#v,%v; want %#v", kind, position.name, n, got, err, want)
+				}
+			}
+			for _, owner := range []string{"missing-owner", "' OR 1=1 --"} {
+				got, err := st.ListTokens(owner, kind, position.after, 100)
+				if err != nil || len(got) != 0 {
+					t.Fatalf("absent owner %q, %s = %#v,%v", owner, position.name, got, err)
+				}
+			}
+			got, err := st.ListTokens("owner", TokenKind("' OR 1=1 --"), position.after, 100)
+			if err != nil || len(got) != 0 {
+				t.Fatalf("absent kind, %s = %#v,%v", position.name, got, err)
+			}
 		}
 	}
 	if after := domainRows(t, st); !reflect.DeepEqual(before, after) {

@@ -40,14 +40,10 @@ type elapsedData struct {
 	Count int64
 }
 
-func (s *Server) tokenRows(userID string, drawTime time.Time) ([]tokenRowData, bool, error) {
-	tokens, err := s.st.ListTokens(userID, store.TokenPersonal, paging.DefaultLimit+1)
+func (s *Server) tokenRows(userID string, drawTime time.Time, after *store.TokenPosition) ([]tokenRowData, string, error) {
+	tokens, next, err := s.tokenWindow(userID, store.TokenPersonal, after, "tokens")
 	if err != nil {
-		return nil, false, err
-	}
-	next := len(tokens) > paging.DefaultLimit
-	if next {
-		tokens = tokens[:paging.DefaultLimit]
+		return nil, "", err
 	}
 	rows := make([]tokenRowData, 0, len(tokens))
 	for _, token := range tokens {
@@ -96,8 +92,8 @@ func tokenCreateValues(name, expiry string, rejected bool) tokenCreateData {
 
 // mcpClientsData is the exact input of the human-authored mcp-clients template.
 type mcpClientsData struct {
-	Clients     []mcpClientData
-	ClientsNext bool
+	Clients                              []mcpClientData
+	ClientsPage, ClientsNext, TokensPage string
 }
 type mcpClientData struct {
 	ID, Name, Approved, ApprovedText, LastUsed, LastUsedTitle string
@@ -106,14 +102,10 @@ type mcpClientData struct {
 	Expired                                                   bool
 }
 
-func (s *Server) profileClients(userID string, drawTime time.Time) (mcpClientsData, error) {
-	tokens, err := s.st.ListTokens(userID, store.TokenClient, paging.DefaultLimit+1)
+func (s *Server) profileClients(userID string, drawTime time.Time, after *store.TokenPosition) (mcpClientsData, error) {
+	tokens, next, err := s.tokenWindow(userID, store.TokenClient, after, "clients")
 	if err != nil {
 		return mcpClientsData{}, err
-	}
-	next := len(tokens) > paging.DefaultLimit
-	if next {
-		tokens = tokens[:paging.DefaultLimit]
 	}
 	data := mcpClientsData{Clients: make([]mcpClientData, 0, len(tokens)), ClientsNext: next}
 	for _, token := range tokens {
@@ -131,4 +123,39 @@ func (s *Server) profileClients(userID string, drawTime time.Time) (mcpClientsDa
 		data.Clients = append(data.Clients, row)
 	}
 	return data, nil
+}
+
+func tokenPagePosition(value, tool string) (*store.TokenPosition, error) {
+	if value == "" {
+		return nil, nil
+	}
+	var used, last, created int64
+	var id string
+	if err := (paging.Token{Tool: tool}).Decode(value, &used, &last, &created, &id); err != nil {
+		return nil, err
+	}
+	position := &store.TokenPosition{CreatedAt: time.Unix(0, created), ID: id}
+	if used != 0 {
+		at := time.Unix(0, last)
+		position.LastUsedAt = &at
+	}
+	return position, nil
+}
+
+func (s *Server) tokenWindow(userID string, kind store.TokenKind, after *store.TokenPosition, tool string) ([]store.Token, string, error) {
+	tokens, err := s.st.ListTokens(userID, kind, after, paging.DefaultLimit+1)
+	if err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(tokens) > paging.DefaultLimit {
+		tokens = tokens[:paging.DefaultLimit]
+		last := tokens[len(tokens)-1]
+		var used, at int64
+		if last.LastUsedAt != nil {
+			used, at = 1, last.LastUsedAt.UnixNano()
+		}
+		next = (paging.Token{Tool: tool}).Encode(used, at, last.CreatedAt.UnixNano(), last.ID)
+	}
+	return tokens, next, nil
 }

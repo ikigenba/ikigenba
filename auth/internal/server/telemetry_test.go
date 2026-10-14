@@ -424,7 +424,7 @@ func TestTokenAndCheckTrail(t *testing.T) {
 		t.Fatalf("create=%d", w.Code)
 	}
 	assertTrail(t, events, r, 200, "token.minted")
-	tokens, err := st.ListTokens(user.ID, store.TokenPersonal, 100)
+	tokens, err := st.ListTokens(user.ID, store.TokenPersonal, nil, 100)
 	if err != nil || len(tokens) != 1 {
 		t.Fatalf("tokens=%#v %v", tokens, err)
 	}
@@ -686,7 +686,7 @@ func TestMigratedTokenRoutesHaveNoBareAlias(t *testing.T) {
 			}
 			st = openServerStore(t, path, &identityRand{}, func() time.Time { return signInNow })
 			f := newTrail(t, Config{Store: st}, nil)
-			before, err := st.ListTokens(user.ID, store.TokenPersonal, 100)
+			before, err := st.ListTokens(user.ID, store.TokenPersonal, nil, 100)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -697,7 +697,7 @@ func TestMigratedTokenRoutesHaveNoBareAlias(t *testing.T) {
 				t.Fatalf("bare route=%d", w.Code)
 			}
 			assertTrail(t, events, r, 404)
-			after, err := st.ListTokens(user.ID, store.TokenPersonal, 100)
+			after, err := st.ListTokens(user.ID, store.TokenPersonal, nil, 100)
 			if err != nil || !reflect.DeepEqual(before, after) {
 				t.Fatalf("bare route changed tokens: %#v %#v %v", before, after, err)
 			}
@@ -712,7 +712,7 @@ func TestMigratedTokenRoutesHaveNoBareAlias(t *testing.T) {
 				event = "token.deleted"
 			}
 			assertTrail(t, events, r, 302, event)
-			after, err = st.ListTokens(user.ID, store.TokenPersonal, 100)
+			after, err = st.ListTokens(user.ID, store.TokenPersonal, nil, 100)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -835,7 +835,7 @@ func TestOriginalMetadataPreservesCredentialStateChanges(t *testing.T) {
 				t.Fatalf("variant %d %s answer=%d %#v", i, credential, w.Code, w.Header())
 			}
 		}
-		rows, err := st.ListTokens(user.ID, store.TokenPersonal, 100)
+		rows, err := st.ListTokens(user.ID, store.TokenPersonal, nil, 100)
 		if err != nil || len(rows) != 1 {
 			t.Fatalf("variant %d tokens=%#v %v", i, rows, err)
 		}

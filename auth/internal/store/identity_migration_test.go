@@ -146,7 +146,7 @@ func testMigrationPreservesRecords(t *testing.T, bare bool) {
 				t.Fatalf("bare id %q still deletes a token: %v", bare, err)
 			}
 		}
-		listed, err := st.ListTokens(user.ID, TokenPersonal, 100)
+		listed, err := st.ListTokens(user.ID, TokenPersonal, nil, 100)
 		if err != nil || len(listed) != len(tokens) {
 			t.Fatalf("ListTokens() = %#v, %v; want four tokens", listed, err)
 		}

@@ -73,7 +73,7 @@ func expectedElapsed(d time.Duration) elapsedData {
 }
 
 func TestTokenDataDeclarations(_ *testing.T) {
-	// R-7DZ3-U9KX R-7F70-81BM R-7GEW-LT2B R-7HMS-ZKT0 R-7IUP-DCJP R-7K2L-R4AE R-9RPW-XB5I R-7MIE-INRS
+	// R-7DZ3-U9KX R-7F70-81BM R-7GEW-LT2B R-7HMS-ZKT0 R-7IUP-DCJP R-7K2L-R4AE R-EFLR-RMKK R-7MIE-INRS
 	// Assignment to the declared underlying structs checks names, types and order.
 	var _ struct {
 		ID, Name string
@@ -97,8 +97,8 @@ func TestTokenDataDeclarations(_ *testing.T) {
 	} = tokenCreateData{}
 	var _ struct{ Name, Secret string } = tokenCreatedData{}
 	var _ struct {
-		Clients     []mcpClientData
-		ClientsNext bool
+		Clients                              []mcpClientData
+		ClientsPage, ClientsNext, TokensPage string
 	} = mcpClientsData{}
 	var _ struct {
 		ID, Name, Approved, ApprovedText, LastUsed, LastUsedTitle string
@@ -150,7 +150,7 @@ func expectedTokenRow(token store.Token, draw time.Time) tokenRowData {
 }
 
 func TestTokenProfileValuesAndOrder(t *testing.T) {
-	// R-7Q63-NYZV R-9PA4-5RO4
+	// R-7Q63-NYZV R-E8AD-H04E
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "profile-rows")
 	used := tokenTestNow.Add(-2 * time.Hour)
@@ -202,8 +202,8 @@ func TestTokenProfileValuesAndOrder(t *testing.T) {
 		wantRows = append(wantRows, expectedTokenRow(byName[name], tokenTestNow))
 	}
 	srv := tokenTestServer(t, st)
-	rows, next, err := srv.tokenRows(user.ID, tokenTestNow)
-	if err != nil || next || !reflect.DeepEqual(rows, wantRows) {
+	rows, next, err := srv.tokenRows(user.ID, tokenTestNow, nil)
+	if err != nil || next != "" || !reflect.DeepEqual(rows, wantRows) {
 		t.Fatalf("rows=%#v err=%v want %#v", rows, err, wantRows)
 	}
 	w := httptest.NewRecorder()
@@ -298,7 +298,7 @@ func TestTokenCreatedPageAndSecretLifetime(t *testing.T) {
 	}
 	assertPageBanner(t, w.Body.String(), wantBanner)
 	assertPageValues(t, w.Body.String(), strings.TrimSpace(name))
-	tokens, err := st.ListTokens(user.ID, store.TokenPersonal, 100)
+	tokens, err := st.ListTokens(user.ID, store.TokenPersonal, nil, 100)
 	if err != nil || len(tokens) != 1 {
 		t.Fatalf("tokens=%v %v", tokens, err)
 	}
@@ -422,7 +422,7 @@ func TestTokenUnicodeAndInvalidUTF8Trimming(t *testing.T) {
 		user, session := tokenTestIdentity(t, st, "unicode-name")
 		w := httptest.NewRecorder()
 		tokenTestServer(t, st).ServeHTTP(w, tokenRequest("/tokens", session.ID, url.Values{"name": {tc.name}, "expires": {"never"}}))
-		tokens, err := st.ListTokens(user.ID, store.TokenPersonal, 100)
+		tokens, err := st.ListTokens(user.ID, store.TokenPersonal, nil, 100)
 		if w.Code != 200 || err != nil || len(tokens) != 1 || tokens[0].Name != tc.want {
 			t.Fatalf("status=%d tokens=%#v err=%v want name %q", w.Code, tokens, err, tc.want)
 		}
@@ -444,11 +444,11 @@ func TestProfileDataTokenActionRoutes(t *testing.T) {
 			}
 			client, _ := mintProfileClient(t, st, user.ID, "data-client", tokenTestNow)
 			srv := tokenTestServer(t, st)
-			rows, next, err := srv.tokenRows(user.ID, tokenTestNow)
-			if err != nil || next || len(rows) != 1 {
+			rows, next, err := srv.tokenRows(user.ID, tokenTestNow, nil)
+			if err != nil || next != "" || len(rows) != 1 {
 				t.Fatalf("rows=%#v %v", rows, err)
 			}
-			clients, err := srv.profileClients(user.ID, tokenTestNow)
+			clients, err := srv.profileClients(user.ID, tokenTestNow, nil)
 			if err != nil || len(clients.Clients) != 1 {
 				t.Fatalf("clients=%#v %v", clients, err)
 			}
@@ -462,7 +462,7 @@ func TestProfileDataTokenActionRoutes(t *testing.T) {
 			if action == "revoke" {
 				id = clients.Clients[0].ID
 			}
-			before, err := st.ListTokens(user.ID, store.TokenPersonal, 100)
+			before, err := st.ListTokens(user.ID, store.TokenPersonal, nil, 100)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -471,7 +471,7 @@ func TestProfileDataTokenActionRoutes(t *testing.T) {
 			if w.Code != 302 || w.Header().Get("Location") != "/" {
 				t.Fatalf("route=%d %v", w.Code, w.Header())
 			}
-			after, err := st.ListTokens(user.ID, store.TokenPersonal, 100)
+			after, err := st.ListTokens(user.ID, store.TokenPersonal, nil, 100)
 			if err != nil {
 				t.Fatal(err)
 			}

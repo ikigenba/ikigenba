@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	googleclient "github.com/ikigenba/ikigenba/auth/internal/google"
 	"github.com/ikigenba/ikigenba/auth/internal/idcodec"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
@@ -854,7 +855,7 @@ func TestCallbackMembershipIsHostedDomainAndVerifiedEmail(t *testing.T) {
 }
 
 func TestProfileUsesLookupAndIgnoresReturn(t *testing.T) {
-	// R-V33R-60ZQ: live-session GET / resolves without touching state, ignores
+	// R-E4MO-BOWB: live-session GET / resolves without touching state, ignores
 	// return, and responds with a 200 HTML page.
 	st := openSignInStore(t)
 	user, _, err := st.UpsertUserOnLogin("issuer", "subject", "member@green.example", signInNow)
@@ -892,6 +893,7 @@ func TestProfileUsesLookupAndIgnoresReturn(t *testing.T) {
 	for _, query := range []string{
 		"return=", "return=https%3A%2F%2Fevil.example", "return=https%3A%2F%2Fapp.green.example%2Fwork",
 		"return=first&return=second", "return=%FF", "return=%", "ret%75rn=carried",
+		"tokens_page=&tokens_page=bogus", "clients_page=&clients_page=bogus", "page=bogus&limit=1&other=value",
 	} {
 		w := serveSignIn(s, http.MethodGet, "/?"+query, "auth.green.example", cookie, "")
 		if w.Code != baseline.Code || !reflect.DeepEqual(w.Header(), baseline.Header()) || w.Body.String() != body {
@@ -901,6 +903,18 @@ func TestProfileUsesLookupAndIgnoresReturn(t *testing.T) {
 			t.Fatalf("profile query %q changed state:\n%s\nwant:\n%s", query, got, before)
 		}
 	}
+
+	for _, tool := range []string{"tokens", "clients"} {
+		cursor := (paging.Token{Tool: tool}).Encode(int64(1), signInNow.UnixNano(), signInNow.UnixNano(), "position-fixture")
+		w := serveSignIn(s, http.MethodGet, "/?"+tool+"_page="+cursor+"&return=ignored&limit=1", "auth.green.example", cookie, "")
+		if w.Code != 200 || w.Header().Get("Content-Type") != signInHTMLContentType {
+			t.Fatalf("decodable %s response = %d", tool, w.Code)
+		}
+		if got := profileStateSnapshot(t, st); got != before {
+			t.Fatalf("decodable %s page changed state", tool)
+		}
+	}
+
 }
 
 // profileStateSnapshot observes all persisted values without modifying them.
@@ -1010,7 +1024,7 @@ func TestLogoutOriginDeletionAndCookieAttributes(t *testing.T) {
 			if got := signInUserRows(t, st); len(got) != len(beforeUser) || got[0] != beforeUser[0] {
 				t.Fatalf("logout changed user: %#v, want %#v", got, beforeUser)
 			}
-			if tokens, err := st.ListTokens(user.ID, store.TokenPersonal, 100); err != nil || len(tokens) != 1 || !reflect.DeepEqual(tokens[0], token) {
+			if tokens, err := st.ListTokens(user.ID, store.TokenPersonal, nil, 100); err != nil || len(tokens) != 1 || !reflect.DeepEqual(tokens[0], token) {
 				t.Fatalf("logout changed token/user: %#v %v", tokens, err)
 			}
 			jar.SetCookies(requestURL, good.Result().Cookies())

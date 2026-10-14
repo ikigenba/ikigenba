@@ -176,12 +176,12 @@ func TestOAuthTokenMintResponseAndPersistence(t *testing.T) {
 			if _, _, err := f.st.CreateToken(f.user.ID, "Existing", store.ExpiryNever, f.now); err != nil {
 				t.Fatal(err)
 			}
-			beforePersonal, err := f.st.ListTokens(f.user.ID, store.TokenPersonal, 100)
+			beforePersonal, err := f.st.ListTokens(f.user.ID, store.TokenPersonal, nil, 100)
 			if err != nil {
 				t.Fatal(err)
 			}
 			mintProfileClient(t, f.st, f.user.ID, "Existing MCP", f.now)
-			before, err := f.st.ListTokens(f.user.ID, store.TokenClient, 100)
+			before, err := f.st.ListTokens(f.user.ID, store.TokenClient, nil, 100)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -217,11 +217,11 @@ func TestOAuthTokenMintResponseAndPersistence(t *testing.T) {
 					t.Fatalf("secret character %q", ch)
 				}
 			}
-			afterPersonal, err := f.st.ListTokens(f.user.ID, store.TokenPersonal, 100)
+			afterPersonal, err := f.st.ListTokens(f.user.ID, store.TokenPersonal, nil, 100)
 			if err != nil || !reflect.DeepEqual(beforePersonal, afterPersonal) {
 				t.Fatalf("personal history changed: %#v %v", afterPersonal, err)
 			}
-			after, err := f.st.ListTokens(f.user.ID, store.TokenClient, 100)
+			after, err := f.st.ListTokens(f.user.ID, store.TokenClient, nil, 100)
 			if err != nil {
 				t.Fatal(err)
 			}
