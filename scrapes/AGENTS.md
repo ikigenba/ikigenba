@@ -17,9 +17,12 @@ kept as a common envelope beside the raw record. A run is started by the
 delivered on the bus. scrapes speaks to its sources with the standard library
 alone (`net/http`, `encoding/json`, `encoding/csv`, `crypto/sha256`); no
 Socrata library, and no `golang.org/x/text` for the PPP files' bytes, which it
-decodes by hand. It keeps its runs and rows in its own SQLite database,
-`state/scrapes.db` resolved against the working directory and opened through
-appkit's `db` package; it is the only writer of it. It emits an event on the
+decodes by hand. It keeps its run records in its own SQLite database, the
+catalog, `state/scrapes.db` resolved against the working directory and opened
+through appkit's `db` package, and each done run's rows in a write-once SQLite
+file of its own, `runs/<id>.db` beside `state/`, built through appkit's bulk
+open and read through its immutable open; it is the only writer of both. It
+emits an event on the
 bus for each run that begins and each that ends, and records every source
 request in the trail. Its manifest sets `guests = false`: nginx lets no
 request without a credential through, to the pages, to `/mcp` and to the
@@ -39,7 +42,8 @@ banner and footer, and the shared static files under `/_appkit/`), `identity`
 (the caller nginx authenticated, required on every route but the event bus's
 two), `mcp` (the server mounted at `/mcp`, and the client the tests drive it
 with), `telemetry` (the event contract, the request middleware and the writer
-scrapes' events go through), `db` (the database's handle and its migrations),
+scrapes' events go through), `db` (the catalog's handle and its migrations,
+and the bulk and immutable opens of the run files),
 `services` (the services file), `version` (the identity and its display
 string) and `events` (the event bus). It uses neither `artifacts` nor
 `connections`.
@@ -56,8 +60,9 @@ build run writes the Go source, the tests, `go.mod`'s requirements and
 that created scrapes seeded `go.mod` and `go.sum` on appkit; the build run
 owns them from then on and changes them as design says. It never writes
 `assets/`, `share/`, this `AGENTS.md`, the `Makefile` or `.golangci.yml`.
-`state/` is where a running scrapes keeps `scrapes.db`; it is created at run
-time and never committed. See the `spec` and `build-spec` skills. Everything
+`state/` is where a running scrapes keeps `scrapes.db`, and `runs/` beside it
+is where it keeps the run files; both are created at run time and never
+committed. See the `spec` and `build-spec` skills. Everything
 below is what the build run computes the gap and runs the gates against; it
 is written outside the run and read-only to it.
 
@@ -105,9 +110,11 @@ a service icon. The build run never writes it. `devctl build` packs it beside
   one requirement below, set by the delivery that created scrapes; the
   build run sets any other and its `go.sum` lines, and moves to another
   release only when this file names one:
-  - appkit `v0.26.0`, set with
-    `go get github.com/ikigenba/ikigenba/appkit@v0.26.0`: a release that
-    exports the `db`, `paging` and `version` packages and whose `page.Banner` carries
+  - appkit `v0.27.0`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.27.0`: a release that
+    exports the `db`, `paging` and `version` packages, whose `db` has the bulk
+    open `db.OpenBulk` a run file is built through and the immutable open
+    `db.OpenImmutable` it is read through, and whose `page.Banner` carries
     the trail, the home link and the tools flag the templates use, with
     `Release` and `Commit`. See Adopting appkit below. It and the modules it
     pulls in are scrapes' only dependencies.
@@ -125,10 +132,10 @@ other external dependency needs approval first, the user's or a delivery's.
 
 ### Adopting appkit
 
-appkit is required only at a published release, here `v0.26.0`, fetched
+appkit is required only at a published release, here `v0.27.0`, fetched
 through the ordinary module proxy and checked against the checksum database
 (see the root `AGENTS.md`); it is set with
-`go get github.com/ikigenba/ikigenba/appkit@v0.26.0`. No `replace` directive,
+`go get github.com/ikigenba/ikigenba/appkit@v0.27.0`. No `replace` directive,
 no `go.work`, no local module cache stands in for it.
 
 ## Test files
@@ -137,7 +144,8 @@ The sub-project's tests are all `*_test.go` files in the module: the root
 package, `cmd/scrapes` and everything under `internal/` (`internal/cli`,
 `internal/settings`, `internal/server`, `internal/web`, `internal/store`,
 `internal/source`, `internal/fmcsa`, `internal/ppp`, `internal/mnparcels`,
-`internal/scrapers`, `internal/runs`, `internal/trail`, `internal/urls`,
+`internal/scrapers`, `internal/runs`, `internal/pace`, `internal/trail`,
+`internal/urls`,
 `internal/tools` and `internal/pages`). This is the file set the canonical gap
 greps for requirement ids:
 
@@ -173,17 +181,18 @@ These rules govern the unit tests: everything `go test ./...` runs.
 - No fixed ports: a test binds `127.0.0.1:0` or a Unix socket in a
   temporary directory.
 - Isolated: a test touches only its own temporary directory, never the
-  developer's home, config, or real state.
+  developer's home, config, or real state: the catalog under `<Dir>/state`
+  and the run files under `<Dir>/runs` are the test's own.
 
 **The run seam carries the process.** scrapes binds nothing itself; it serves
 on the listener it is passed. Arguments, environment lookup and removal, the
 pid, the inherited listener, the output streams, the clock, the pause between
 delivery attempts and between retries of a source request, the sweeper's
-timer, the random source, the working directory and the HTTP client every
-source request goes through come in through the run seam design declares
+timer, the random source, the working directory, the HTTP client every
+source request goes through and the pressure file the pacing reads come in through the run seam design declares
 (`cli.Run` with `cli.Process`), and tests inject them. A `Run`-level test sets
 the version string to one of its own and `Dir` to a temporary directory of its
-own, so the database lands there and never in the checkout. A test never
+own, so the catalog and the run files land there and never in the checkout. A test never
 reads or changes the real environment, clock, or randomness, and never leaves
 the inherited-listener step unset, since that would take the test process's
 real descriptor 3. The one exception is the working directory: a test that
@@ -196,9 +205,11 @@ a Unix socket path is limited to 108 bytes and `t.TempDir()` can exceed it),
 names it in `NOTIFY_SOCKET`, and waits for `READY=1` with a deadline that
 fails the test. Drain tests wait on the clock, because the drain deadline is
 the behavior, and they keep that wait to a few seconds. A test proving the
-store's busy refusal or the engine's retry of a busy write may hold a real lock
-and wait out the database's five-second busy timeout. No other test waits on
-the clock. The gates run offline as an ordinary user, with no systemd.
+store's busy refusal (R-O3S6-PHQK) or the engine's retry of a locked
+`FinishRun` or `FailRun` (R-3EFO-IKKR) may hold a real lock and wait out the
+database's five-second busy timeout. The one-load-at-a-time test
+(R-RM57-MTRX) may wait a short real-time grace of its choosing, a fraction of
+a second, for a pause that must not come. No other test waits on the clock. The gates run offline as an ordinary user, with no systemd.
 
 **The source is faked, never called.** No test reaches data.transportation.gov,
 data.sba.gov or enterprise.gisdata.mn.gov. A `Run`-level test hands
@@ -221,23 +232,33 @@ which loopback fakes listen and record every request they receive, as design
 names, and checks that none received one.
 
 **The state is an isolated directory.** Each test gives scrapes a working
-directory inside a test-owned temporary directory, so the database is the
-test's own. A test that needs a store opens its own database with appkit's
-`db.Open` at a path in its own temporary directory, with the root package's
-`Migrations()` and a clock it controls, closes the handle when it ends, and
-builds the store over that handle with `store.New`. Tests may create
+directory inside a test-owned temporary directory, so the catalog and the
+runs directory are the test's own. A test that needs a store opens its own
+catalog with appkit's `db.Open` at a path in its own temporary directory,
+with the root package's `Migrations()` and a clock it controls, closes the
+handle when it ends, and builds the store over that handle with `store.New`
+and a `Config.Runs` in that same temporary directory. Tests may create
 filesystem fixtures inside that temporary tree (a regular file named
 `state`, a file at `state/scrapes.db` that is not a database, a database a
 test's own `db.Open` made and then changed through `DB.Write`, runs and rows
 a test's own store recorded, including another scraper's, runs left
-`running`, `done` or `failed`); nothing touches `/var/opt/ikigenba/scrapes`,
-the checkout's `state/` or a shared file. A database failure is provoked
-with `SetFailing(true)` on the handle the store the test handed the server
-or engine was built over, before a call or from a hook design names, never
-by corrupting the file, removing permissions or closing the store. The one
-other way is the secrecy run of D09 (R-U54Y-KZ5C), which drops `rows`, and
-later `rows` and `runs`, through the test's own handle; it is the only test
-that drops a table. Tests
+`running`, `done` or `failed`, run files the test's own store built, a
+regular file at `<Dir>/runs`, a directory at `runs/<id>.db`, a run file
+deleted or part of one overwritten, a symbolic link in `runs/`, a database
+made with `db.Open` without a `rows` table and copied in where a run file
+belongs, and a fake pressure file in the temporary directory handed in
+through `Process.Pressure` or the `Pressure` of a config design names);
+nothing touches `/var/opt/ikigenba/scrapes`, the checkout's `state/` or
+`runs/` or a shared file, and no test reads `/proc/pressure`. A database
+failure is provoked with `SetFailing(true)` on the handle the store the test
+handed the server or engine was built over, before a call or from a hook
+design names, never by corrupting the catalog, removing permissions or
+closing the store. Two other ways are admitted. A test may add triggers that
+abort writes through its own catalog handle, as R-OH72-WYW7 does on `runs`
+and R-OTK5-HRD4 on `rows` and `row_names`. The secrecy run of D09
+(R-HZDM-VXTL) injects its failure with a regular file at `<Dir>/runs`, and
+later drops the catalog's `runs` table alone through the test's own handle;
+it is the only test that drops a table. Tests
 prove scrapes' use of the database, its schema, its store and its wiring,
 never SQLite's own guarantees (atomicity, durability, locking) and never
 appkit's `db` contract (opening, migrations, transactions, `db status`),
@@ -246,7 +267,9 @@ its path, never by reading tables.
 
 **Time and the sweep are driven, not waited out.** A run's started and
 finished times, a row's collected time, the prune's ordering and the
-scraper's retry backoff are proved through the injected `Now` and `Sleep`: a
+scraper's retry backoff, and the pacing's pauses for the write budget, the
+latency backoff and I/O pressure, are proved through the injected `Now` and
+`Sleep`: a
 test advances the clock it handed in and records the pauses asked of it,
 never waits real seconds. The sweeper waits on `Process.After`; a test hands
 in an `After` whose channels it holds and delivers on one to make the next
@@ -271,7 +294,8 @@ through a scrapes constructor, first sets that variable with
 `testing.T.Setenv` to a services file it wrote or to the empty string, so the
 developer's environment never decides a result. It is the only variable an
 in-process test sets for scrapes' own code; `DRAIN_SECONDS`,
-`SCRAPE_KEEP_RUNS`, `FMCSA_STATES`, `FMCSA_MIN_POWER_UNITS`, `FMCSA_STATUS`,
+`SCRAPE_KEEP_RUNS`, `SCRAPE_WRITE_BUDGET`, `SCRAPE_PRESSURE_LIMIT`,
+`FMCSA_STATES`, `FMCSA_MIN_POWER_UNITS`, `FMCSA_STATUS`,
 `PPP_FILES`, `PPP_STATES` and `MN_PARCELS_COUNTIES` reach `Run` through the
 `LookupEnv` the test gives it; unset or empty, `PPP_FILES` is
 `public_150k_plus_240930.csv`, `PPP_STATES` is `MN,WI` and
@@ -414,5 +438,9 @@ The host must run events, which scrapes emits to and takes cron's fires from;
 its services file names it, with telemetry and auth. The host needs outbound
 network to data.transportation.gov, data.sba.gov and enterprise.gisdata.mn.gov. scrapes
 holds no secret of its own, and none of the three sources needs a key. The host's
-backup archives `state/` whole, so `scrapes.db` is taken with it; it holds
-runs and rows, public records only, and no secret.
+backup archives `state/` whole and Litestream replicates `scrapes.db`, which
+holds run records only, public and no secret. The rows live in `runs/<id>.db`
+beside `state/`, which is neither backed up nor replicated: a run file is
+regenerable by scraping again. The disk peak is about 12 GB, for MN parcels
+at `SCRAPE_KEEP_RUNS` 2: two retained run files, one being built and its
+chunks.
