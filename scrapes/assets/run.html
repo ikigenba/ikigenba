@@ -25,7 +25,7 @@
      the request carried; empty on the first window); and .Next (string,
      the page token for the window after this one, the token the rows
      tool's next carries; empty when none remain or the run is not
-     done), and .Prev (string, the page token for the window before this one, carried in the same ?page= parameter; empty on the first window). Counts are shown as the plain integer. Status and reason words
+     done), and .Prev (string, the page token for the window before this one, carried in the same ?page= parameter; empty on the first window); and .Missing (bool, true when .Run.Status is "done" but the run's file of rows is missing, so no row can be read; .Rows, .Page, .Next and .Prev are then empty). Counts are shown as the plain integer. Status and reason words
      are shown as stored; the status's kind is chosen here: "running" info,
      "done" ok, "failed" err; the failure's sentence is chosen from
      .Reason. Hooks: title "<.ID> · scrapes"; h1 with text .ID;
@@ -60,7 +60,12 @@
      (text .FinishedText) only when .Finished is set, dt "Rows" then
      dd#run-rows, dt "New" then dd#run-new, dt "Changed" then
      dd#run-changed, dt "Unchanged" then dd#run-unchanged and dt "Gone" then
-     dd#run-gone (each the count). Then, only when .Status is "done",
+     dd#run-gone (each the count). Then, when .Status is "done" and
+     .Missing is true, div#missing.alert[data-kind=err][role=alert]
+     holding strong "The rows are missing" and a p (text "The file that
+     held this run's rows is gone, so they cannot be shown. The record
+     above still stands; the scraper's next run lands its rows anew."), and
+     no section#rows and no nav. Otherwise, only when .Status is "done",
      section#rows with h2 "Rows" and a p in its header (text "This
      window, in source id order, each row as the source spelled it."), then
      either, when .Rows is empty, div#no-rows.empty holding h3 "No rows"
@@ -84,7 +89,7 @@
 <body>
 {{template "banner" .Banner}}
 <main>
-{{$next := .Next}}{{$prev := .Prev}}{{$page := .Page}}{{$rows := .Rows}}{{with .Run}}<h1>{{.ID}}</h1>
+{{$next := .Next}}{{$prev := .Prev}}{{$page := .Page}}{{$rows := .Rows}}{{$missing := .Missing}}{{with .Run}}<h1>{{.ID}}</h1>
 <p id="headline" class="cluster"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span> <span class="muted">started <time datetime="{{.Started}}">{{.StartedText}}</time>{{if .Finished}} · finished <time datetime="{{.Finished}}">{{.FinishedText}}</time>{{end}}</span></p>
 {{if eq .Status "running"}}<div id="running" class="alert quiet" data-kind="info"><strong id="notice">Running</strong><p>The page does not stream. Reload it to see the outcome; the rows show once the run is done.</p></div>
 <p><a id="reload" class="button secondary small" href="/runs/{{.ID}}"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg>Reload</a></p>
@@ -106,7 +111,8 @@
 <dt>Gone</dt><dd id="run-gone">{{.Gone}}</dd>
 </dl>
 </section>
-{{if eq .Status "done"}}{{$id := .ID}}<section id="rows" class="card flush" aria-labelledby="rows-title">
+{{if and (eq .Status "done") $missing}}<div id="missing" class="alert" data-kind="err" role="alert"><strong>The rows are missing</strong><p>The file that held this run's rows is gone, so they cannot be shown. The record above still stands; the scraper's next run lands its rows anew.</p></div>
+{{else if eq .Status "done"}}{{$id := .ID}}<section id="rows" class="card flush" aria-labelledby="rows-title">
 <header><div><h2 id="rows-title">Rows</h2><p>This window, in source id order, each row as the source spelled it.</p></div></header>
 {{if $rows}}<div class="table-scroll">
 <table id="row-list">
