@@ -58,7 +58,7 @@ Verification must establish:
 - Every declared gate exits zero, in the declared order, with nothing skipped or suppressed.
 - Every commit follows the declared convention, names the gap ids it closes, and was made with every declared gate passing.
 
-Have one sub-agent measure the final gap and another run the gates in the declared order, each against the same commit; a fresh sub-agent verifies each result.
+Have one sub-agent measure the final gap, run the gates in the declared order and commit, all against one tree state; one fresh sub-agent re-runs both against that commit and verifies the result.
 
 A run halted by a confirmed blocker cannot meet these criteria and does not claim to. It ends as a partial result: committed, verified work is kept, and the issue stays open for the user.
 

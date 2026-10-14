@@ -23,7 +23,7 @@ Before delegating, establish:
 - Compatibility: dependencies, shared changes, and integration have owners and an execution order where needed.
 - Sufficiency: completing the delegated tasks satisfies the coordinator’s assignment, including relationships between tasks.
 
-Explain in each assignment how the delegated tasks together satisfy the goal. Delegate discovery when needed. Revise the task breakdown when evidence shows it is incomplete or incorrect. Successful tasks cannot satisfy a goal they do not fully address. Plan within the twelve-sub-agent limit, leaving room for verifiers and repairs.
+Explain in each assignment how the delegated tasks together satisfy the goal. Delegate discovery when needed. Revise the task breakdown when evidence shows it is incomplete or incorrect. Successful tasks cannot satisfy a goal they do not fully address. Plan within the twelve-sub-agent limit, leaving room for verifiers and repairs. Spawn a sub-coordinator only to stay within that limit, never to group gates or verification.
 
 Give each sub-agent its scope, completion criteria, dependencies, and exclusive write authority. Coordinators divide that authority among their sub-agents. Transfer authority between subtrees only after the previous subtree relinquishes it. Delegate integration and checks of relationships between tasks as bounded tasks, splitting them further when necessary.
 
