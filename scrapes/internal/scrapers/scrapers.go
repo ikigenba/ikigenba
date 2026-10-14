@@ -9,6 +9,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/scrapes/internal/fmcsa"
+	"github.com/ikigenba/ikigenba/scrapes/internal/mnparcels"
 	"github.com/ikigenba/ikigenba/scrapes/internal/ppp"
 	"github.com/ikigenba/ikigenba/scrapes/internal/settings"
 	"github.com/ikigenba/ikigenba/scrapes/internal/source"
@@ -39,10 +40,11 @@ func New(list ...source.Scraper) *Registry {
 	return r
 }
 
-// Default constructs the service registry with both fixed scrapers.
+// Default constructs the service registry with the fixed scrapers.
 func Default(cfg Config) *Registry {
 	return New(
 		fmcsa.New(fmcsa.Config{HTTP: cfg.HTTP, Telemetry: cfg.Telemetry, Now: cfg.Now, Sleep: cfg.Sleep, UserAgent: cfg.UserAgent, States: cfg.Settings.FMCSAStates, MinPowerUnits: cfg.Settings.FMCSAMinPowerUnits, Status: cfg.Settings.FMCSAStatus}),
+		mnparcels.New(mnparcels.Config{HTTP: cfg.HTTP, Telemetry: cfg.Telemetry, Now: cfg.Now, Sleep: cfg.Sleep, UserAgent: cfg.UserAgent, Counties: cfg.Settings.MNParcelsCounties}),
 		ppp.New(ppp.Config{HTTP: cfg.HTTP, Telemetry: cfg.Telemetry, Now: cfg.Now, Sleep: cfg.Sleep, UserAgent: cfg.UserAgent, Files: cfg.Settings.PPPFiles, States: cfg.Settings.PPPStates}),
 	)
 }

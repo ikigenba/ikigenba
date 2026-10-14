@@ -16,6 +16,7 @@ type Settings struct {
 	FMCSAStatus            string
 	PPPFiles               []string
 	PPPStates              []string
+	MNParcelsCounties      []string
 }
 
 // Error identifies a refused setting.
@@ -31,11 +32,12 @@ const (
 	WantPowerUnits string = "a non-negative whole number of power units"
 	WantStatus     string = "one uppercase status letter"
 	WantFiles      string = "comma-separated file names of letters, digits, underscore, hyphen and dot, not starting with dot"
+	WantCounties   string = "comma-separated county names starting with a letter, containing letters, spaces, dots and apostrophes, and not ending with a space"
 )
 
 // Defaults returns fresh default settings.
 func Defaults() Settings {
-	return Settings{5, 2, []string{"MN", "WI"}, 5, "A", []string{"public_150k_plus_240930.csv"}, []string{"MN", "WI"}}
+	return Settings{5, 2, []string{"MN", "WI"}, 5, "A", []string{"public_150k_plus_240930.csv"}, []string{"MN", "WI"}, []string{"Carlton", "Chisago", "Isanti", "Mille Lacs", "Aitkin", "St. Louis", "Anoka", "Washington", "Sherburne", "Stearns", "Benton", "Morrison", "Crow Wing"}}
 }
 
 // Drain returns the bounded drain duration.
@@ -71,11 +73,11 @@ func capital(v string, n int) bool {
 	return true
 }
 
-// Read validates and reads the seven settings, stopping at the first refusal.
+// Read validates and reads the eight settings, stopping at the first refusal.
 func Read(lookup func(string) (string, bool)) (Settings, error) {
 	s := Defaults()
-	keys := []string{"DRAIN_SECONDS", "SCRAPE_KEEP_RUNS", "FMCSA_STATES", "FMCSA_MIN_POWER_UNITS", "FMCSA_STATUS", "PPP_FILES", "PPP_STATES"}
-	wants := []string{WantSeconds, WantRuns, WantStates, WantPowerUnits, WantStatus, WantFiles, WantStates}
+	keys := []string{"DRAIN_SECONDS", "SCRAPE_KEEP_RUNS", "FMCSA_STATES", "FMCSA_MIN_POWER_UNITS", "FMCSA_STATUS", "PPP_FILES", "PPP_STATES", "MN_PARCELS_COUNTIES"}
+	wants := []string{WantSeconds, WantRuns, WantStates, WantPowerUnits, WantStatus, WantFiles, WantStates, WantCounties}
 	for i, k := range keys {
 		v, ok := lookup(k)
 		if !ok || v == "" {
@@ -96,6 +98,8 @@ func Read(lookup func(string) (string, bool)) (Settings, error) {
 			valid = capital(v, 1)
 		case 5:
 			valid = fileNames(v)
+		case 7:
+			valid = countyNames(v)
 		}
 		if !valid {
 			return Settings{}, &Error{k, v, wants[i]}
@@ -122,10 +126,28 @@ func Read(lookup func(string) (string, bool)) (Settings, error) {
 			s.PPPFiles = strings.Split(v, ",")
 		case 6:
 			s.PPPStates = strings.Split(v, ",")
+		case 7:
+			s.MNParcelsCounties = strings.Split(v, ",")
 		}
 	}
 	return s, nil
 }
+
+func countyNames(v string) bool {
+	for _, name := range strings.Split(v, ",") {
+		if name == "" || !letter(name[0]) || name[len(name)-1] == ' ' {
+			return false
+		}
+		for _, c := range []byte(name) {
+			if !letter(c) && c != ' ' && c != '.' && c != '\'' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func letter(c byte) bool { return c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' }
 
 func fileNames(v string) bool {
 	for _, name := range strings.Split(v, ",") {

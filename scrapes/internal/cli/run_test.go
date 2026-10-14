@@ -27,18 +27,18 @@ import (
 	"github.com/ikigenba/ikigenba/scrapes/internal/store"
 )
 
-// R-YZYT-P0Z3 R-62L0-7CCT R-DDS2-65CJ
+// R-YZYT-P0Z3 R-R8ZM-TAFI R-DDS2-65CJ
 func TestRunRejectsBeforeInheriting(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		env  map[string]string
 		want string
-	}{{"settings", map[string]string{"SCRAPE_KEEP_RUNS": "0"}, "scrapes: SCRAPE_KEEP_RUNS is '0', not " + settings.WantRuns + "\n"}, {"absent", nil, "scrapes: no socket was passed in\n\nrun it under systemd, with a listening socket passed in\n"}, {"many", map[string]string{"LISTEN_PID": "123", "LISTEN_FDS": "02"}, "scrapes: 02 sockets were passed in, expected 1\n\nrun it under systemd, with a listening socket passed in\n"}, {"wrongpid", map[string]string{"LISTEN_PID": "124", "LISTEN_FDS": "1"}, "scrapes: no socket was passed in\n\nrun it under systemd, with a listening socket passed in\n"}} {
+	}{{"settings", map[string]string{"SCRAPE_KEEP_RUNS": "0"}, "scrapes: SCRAPE_KEEP_RUNS is '0', not " + settings.WantRuns + "\n"}, {"counties", map[string]string{"MN_PARCELS_COUNTIES": "Chisago;"}, "scrapes: MN_PARCELS_COUNTIES is 'Chisago;', not " + settings.WantCounties + "\n"}, {"absent", nil, "scrapes: no socket was passed in\n\nrun it under systemd, with a listening socket passed in\n"}, {"many", map[string]string{"LISTEN_PID": "123", "LISTEN_FDS": "02"}, "scrapes: 02 sockets were passed in, expected 1\n\nrun it under systemd, with a listening socket passed in\n"}, {"wrongpid", map[string]string{"LISTEN_PID": "124", "LISTEN_FDS": "1"}, "scrapes: no socket was passed in\n\nrun it under systemd, with a listening socket passed in\n"}} {
 		t.Run(tc.name, func(t *testing.T) {
 			out, errw := &outputBuffer{}, &outputBuffer{}
 			dir := t.TempDir()
 			p := cli.Process{Stdout: out, Stderr: errw, Pid: 123, Dir: dir, Version: "test", LookupEnv: func(k string) (string, bool) {
-				if tc.name == "settings" && (k == "LISTEN_PID" || k == "LISTEN_FDS" || k == services.Variable) {
+				if (tc.name == "settings" || tc.name == "counties") && (k == "LISTEN_PID" || k == "LISTEN_FDS" || k == services.Variable) {
 					t.Fatalf("lookup after settings %s", k)
 				}
 				v, ok := tc.env[k]
@@ -59,7 +59,7 @@ func TestRunRejectsBeforeInheriting(t *testing.T) {
 }
 
 // R-YBKU-1M57 R-YCSQ-FDVW R-YHOB-YGUO R-6S6O-M7DE
-// R-62L0-7CCT R-312V-7Q7Q R-YMJX-HJTG R-YNRT-VBK5
+// R-R8ZM-TAFI R-312V-7Q7Q R-YMJX-HJTG R-YNRT-VBK5
 // R-DEZY-JX38 R-DJVK-3020 R-DNJ9-8BA3 R-UEW5-N52W R-ELOF-XW1J
 func TestRunAssembly(t *testing.T) {
 	var mu sync.Mutex
@@ -123,7 +123,7 @@ func TestRunAssembly(t *testing.T) {
 		t.Fatalf("inherit %d unset %v", inherited, unset)
 	}
 	allowed := map[string]bool{}
-	for _, k := range []string{"DRAIN_SECONDS", "SCRAPE_KEEP_RUNS", "FMCSA_STATES", "FMCSA_MIN_POWER_UNITS", "FMCSA_STATUS", "PPP_FILES", "PPP_STATES", services.Variable, "LISTEN_PID", "LISTEN_FDS", "NOTIFY_SOCKET"} {
+	for _, k := range []string{"DRAIN_SECONDS", "SCRAPE_KEEP_RUNS", "FMCSA_STATES", "FMCSA_MIN_POWER_UNITS", "FMCSA_STATUS", "PPP_FILES", "PPP_STATES", "MN_PARCELS_COUNTIES", services.Variable, "LISTEN_PID", "LISTEN_FDS", "NOTIFY_SOCKET"} {
 		allowed[k] = true
 	}
 	for _, k := range looked {

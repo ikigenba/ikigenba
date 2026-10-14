@@ -12,6 +12,7 @@ FMCSA_MIN_POWER_UNITS = "5"
 FMCSA_STATUS = "A"
 PPP_FILES = "public_150k_plus_240930.csv"
 PPP_STATES = "MN,WI"
+MN_PARCELS_COUNTIES = "Carlton,Chisago,Isanti,Mille Lacs,Aitkin,St. Louis,Anoka,Washington,Sherburne,Stearns,Benton,Morrison,Crow Wing"
 
 [database]
 engine = "sqlite"

@@ -14,6 +14,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/scrapes/internal/fmcsa"
+	"github.com/ikigenba/ikigenba/scrapes/internal/mnparcels"
 	"github.com/ikigenba/ikigenba/scrapes/internal/ppp"
 	"github.com/ikigenba/ikigenba/scrapes/internal/scrapers"
 	"github.com/ikigenba/ikigenba/scrapes/internal/settings"
@@ -56,7 +57,7 @@ func TestRegistry(t *testing.T) {
 	}
 }
 
-// R-DA76-B6QE R-DBF2-OYH3
+// R-SASI-O6F1 R-DBF2-OYH3
 func TestDefaultFMCSA(t *testing.T) {
 	attempts, batches, sleeps := 0, 0, 0
 	now := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
@@ -86,7 +87,7 @@ func TestDefaultFMCSA(t *testing.T) {
 		return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
 	})}
 	r := scrapers.Default(scrapers.Config{HTTP: client, Telemetry: writer, Now: func() time.Time { return now }, Sleep: func(context.Context, time.Duration) { sleeps++ }, UserAgent: "registry ua", Settings: settings.Settings{FMCSAStates: states, FMCSAMinPowerUnits: 7, FMCSAStatus: "I"}})
-	if !reflect.DeepEqual(r.Names(), []string{fmcsa.Name, ppp.Name}) {
+	if !reflect.DeepEqual(r.Names(), []string{fmcsa.Name, mnparcels.Name, ppp.Name}) {
 		t.Fatal(r.Names())
 	}
 	sc, ok := r.Get(fmcsa.Name)
@@ -207,5 +208,62 @@ func TestDefaultPPP(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// R-SD8B-FPWF
+func TestDefaultMNParcels(t *testing.T) {
+	now := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
+	var capture telemetry.Capture
+	writer := telemetry.New(telemetry.Config{Service: "scrapes", Sink: &capture, Now: func() time.Time { return now }, Rand: bytes.NewReader(make([]byte, 1024)), Stderr: io.Discard, Sleep: func(context.Context, time.Duration) {}})
+	defer writer.Shutdown(t.Context(), "test")
+	var requests []string
+	var pauses []time.Duration
+	client := &http.Client{Transport: transport(func(r *http.Request) (*http.Response, error) {
+		requests = append(requests, r.URL.Query().Get("where"))
+		if r.Method != http.MethodGet || !strings.HasPrefix(r.URL.String(), mnparcels.DefaultBaseURL+"?") || r.Header.Get("User-Agent") != "registry parcels ua" {
+			t.Fatal(r)
+		}
+		status, body := 200, `{"features":[{"attributes":{"state_pin":"parcel-fixture"}}]}`
+		if len(requests) == 1 {
+			status, body = 503, ""
+		} else if r.URL.Query().Get("returnCountOnly") == "true" {
+			body = `{"count":1}`
+		}
+		return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}
+	reg := scrapers.Default(scrapers.Config{HTTP: client, Telemetry: writer, Now: func() time.Time { return now }, Sleep: func(_ context.Context, d time.Duration) { pauses = append(pauses, d) }, UserAgent: "registry parcels ua", Settings: settings.Settings{MNParcelsCounties: []string{"Chisago", "St. Louis"}}})
+	sc, ok := reg.Get("mn_parcels")
+	if !ok {
+		t.Fatal("missing scraper")
+	}
+	var rows []source.Row
+	if err := sc.Scrape(t.Context(), func(batch []source.Row) error { rows = append(rows, batch...); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{mnparcels.Where("Chisago"), mnparcels.Where("Chisago"), mnparcels.Where("Chisago"), mnparcels.Where("St. Louis"), mnparcels.Where("St. Louis")}
+	if !reflect.DeepEqual(requests, want) || !reflect.DeepEqual(pauses, []time.Duration{mnparcels.Backoff}) || len(rows) != 2 {
+		t.Fatal(requests, pauses, rows)
+	}
+	for _, row := range rows {
+		if row.Scraper != mnparcels.Name || !row.Collected.Equal(now) {
+			t.Fatal(row)
+		}
+	}
+	if err := writer.Flush(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	events := capture.Events()
+	if len(events) != len(requests) {
+		t.Fatal(events)
+	}
+	for i, event := range events {
+		status := int64(200)
+		if i == 0 {
+			status = 503
+		}
+		if event.Name != source.Called || !reflect.DeepEqual(event.Attrs, telemetry.Attrs{"scraper": mnparcels.Name, "status": status, "duration_us": int64(0)}) {
+			t.Fatal(event)
+		}
 	}
 }

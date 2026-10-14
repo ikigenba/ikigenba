@@ -11,9 +11,9 @@ import (
 	"github.com/ikigenba/ikigenba/scrapes/internal/settings"
 )
 
-// R-650S-YVU7 R-67GL-QFBL R-6CC7-9IAD R-YYQX-B98E
+// R-RBFF-KTWW R-RCNB-YLNL R-RF34-Q54Z R-YYQX-B98E
 func TestDefaultsAndValues(t *testing.T) {
-	want := settings.Settings{5, 2, []string{"MN", "WI"}, 5, "A", []string{"public_150k_plus_240930.csv"}, []string{"MN", "WI"}}
+	want := settings.Settings{5, 2, []string{"MN", "WI"}, 5, "A", []string{"public_150k_plus_240930.csv"}, []string{"MN", "WI"}, []string{"Carlton", "Chisago", "Isanti", "Mille Lacs", "Aitkin", "St. Louis", "Anoka", "Washington", "Sherburne", "Stearns", "Benton", "Morrison", "Crow Wing"}}
 	a := settings.Defaults()
 	if !reflect.DeepEqual(a, want) {
 		t.Fatal(a)
@@ -24,6 +24,7 @@ func TestDefaultsAndValues(t *testing.T) {
 	}
 	a.PPPStates[0] = "XX"
 	a.PPPFiles[0] = "changed.csv"
+	a.MNParcelsCounties[0] = "Changed"
 	if !reflect.DeepEqual(settings.Defaults(), want) {
 		t.Fatal("shared defaults")
 	}
@@ -31,9 +32,9 @@ func TestDefaultsAndValues(t *testing.T) {
 	if e != nil || !reflect.DeepEqual(s, want) {
 		t.Fatal(s, e)
 	}
-	vals := map[string]string{"DRAIN_SECONDS": "99999999999999999999999", "SCRAPE_KEEP_RUNS": "99999999999999999999999", "FMCSA_STATES": "WI,MN,WI", "FMCSA_MIN_POWER_UNITS": "0", "FMCSA_STATUS": "I", "PPP_FILES": "b.csv,a.csv,b.csv", "PPP_STATES": "IA"}
+	vals := map[string]string{"DRAIN_SECONDS": "99999999999999999999999", "SCRAPE_KEEP_RUNS": "99999999999999999999999", "FMCSA_STATES": "WI,MN,WI", "FMCSA_MIN_POWER_UNITS": "0", "FMCSA_STATUS": "I", "PPP_FILES": "b.csv,a.csv,b.csv", "PPP_STATES": "IA", "MN_PARCELS_COUNTIES": "St. Louis,O'Brien,St. Louis"}
 	s, e = settings.Read(func(k string) (string, bool) { v, ok := vals[k]; return v, ok })
-	if e != nil || s.DrainSeconds != math.MaxInt64 || s.KeepRuns != math.MaxInt64 || s.FMCSAMinPowerUnits != 0 || s.FMCSAStatus != "I" || !reflect.DeepEqual(s.PPPFiles, []string{"b.csv", "a.csv", "b.csv"}) || !reflect.DeepEqual(s.PPPStates, []string{"IA"}) || !reflect.DeepEqual(s.FMCSAStates, []string{"WI", "MN", "WI"}) || s.Drain() != time.Duration(math.MaxInt64) {
+	if e != nil || s.DrainSeconds != math.MaxInt64 || s.KeepRuns != math.MaxInt64 || s.FMCSAMinPowerUnits != 0 || s.FMCSAStatus != "I" || !reflect.DeepEqual(s.PPPFiles, []string{"b.csv", "a.csv", "b.csv"}) || !reflect.DeepEqual(s.PPPStates, []string{"IA"}) || !reflect.DeepEqual(s.FMCSAStates, []string{"WI", "MN", "WI"}) || !reflect.DeepEqual(s.MNParcelsCounties, []string{"St. Louis", "O'Brien", "St. Louis"}) || s.Drain() != time.Duration(math.MaxInt64) {
 		t.Fatal(s, e)
 	}
 	if settings.Defaults().Drain() != 5*time.Second {
@@ -41,12 +42,12 @@ func TestDefaultsAndValues(t *testing.T) {
 	}
 }
 
-// R-YRFJ-0MS8 R-YSNF-EEIX R-6FZW-ETIG R-6QYS-8FMP R-6IFP-6CZU R-69WE-HYSZ
+// R-YRFJ-0MS8 R-YSNF-EEIX R-RGB1-3WVO R-6QYS-8FMP R-RHIX-HOMD R-69WE-HYSZ R-RDV8-CDEA
 func TestValidation(t *testing.T) {
-	keys := []string{"DRAIN_SECONDS", "SCRAPE_KEEP_RUNS", "FMCSA_STATES", "FMCSA_MIN_POWER_UNITS", "FMCSA_STATUS", "PPP_FILES", "PPP_STATES"}
-	wants := []string{settings.WantSeconds, settings.WantRuns, settings.WantStates, settings.WantPowerUnits, settings.WantStatus, settings.WantFiles, settings.WantStates}
-	bad := [][]string{{"0", "00", "-1", "+5", "2.5", "5s", "1e9", "05", " 5", "5 ", "abc"}, {"0", "00", "-1", "+5", "2.5", "5s", "1e9", "05", " 5", "5 ", "abc"}, {"mn", "MN, WI", "MN,", ",MN", "MN,,WI", "MNW", "M", "MN;WI", "MN'", "M'N"}, {"00", "05", "-1"}, {"a", "AA", "A ", "'"}, {"a.csv,", ",a.csv", "a.csv,,b.csv", "a.csv, b.csv", " a.csv", "a/b.csv", "../a.csv", "..", ".x", "a.csv,.x", "a%2Fb.csv", "a.csv?x=1", "a.csv#x", "a+b.csv", `a\b.csv`, "é.csv", "a.csv;b"}, {"mn", "MN, WI", "MN,", ",MN", "MN,,WI", "MNW", "M", "MN'"}}
-	good := [][]string{{"1", "12", "99999999999999999999999"}, {"1", "12"}, {"MN", "MN,WI", "MN,WI,IA"}, {"0", "1"}, {"A", "I"}, {"public_150k_plus_240930.csv", "a.csv,b.csv", "a", "a..b.csv", "A-1_b.CSV"}, {"MN", "MN,WI", "MN,WI,IA"}}
+	keys := []string{"DRAIN_SECONDS", "SCRAPE_KEEP_RUNS", "FMCSA_STATES", "FMCSA_MIN_POWER_UNITS", "FMCSA_STATUS", "PPP_FILES", "PPP_STATES", "MN_PARCELS_COUNTIES"}
+	wants := []string{settings.WantSeconds, settings.WantRuns, settings.WantStates, settings.WantPowerUnits, settings.WantStatus, settings.WantFiles, settings.WantStates, settings.WantCounties}
+	bad := [][]string{{"0", "00", "-1", "+5", "2.5", "5s", "1e9", "05", " 5", "5 ", "abc"}, {"0", "00", "-1", "+5", "2.5", "5s", "1e9", "05", " 5", "5 ", "abc"}, {"mn", "MN, WI", "MN,", ",MN", "MN,,WI", "MNW", "M", "MN;WI", "MN'", "M'N"}, {"00", "05", "-1"}, {"a", "AA", "A ", "'"}, {"a.csv,", ",a.csv", "a.csv,,b.csv", "a.csv, b.csv", " a.csv", "a/b.csv", "../a.csv", "..", ".x", "a.csv,.x", "a%2Fb.csv", "a.csv?x=1", "a.csv#x", "a+b.csv", `a\b.csv`, "é.csv", "a.csv;b"}, {"mn", "MN, WI", "MN,", ",MN", "MN,,WI", "MNW", "M", "MN'"}, {"Chisago,", ",Chisago", "Chisago,,Isanti", "Chisago, Isanti", "Chisago ,Isanti", " Chisago", ".Chisago", "'Chisago", "Chisago;Isanti", "Chisago--", "Chisago\"", "Crow_Wing", "Crow-Wing", "St. Louis2", "Chisago' OR '1'='1", "Ramsé", "A\tB", "A\nB", "A\x00B"}}
+	good := [][]string{{"1", "12", "99999999999999999999999"}, {"1", "12"}, {"MN", "MN,WI", "MN,WI,IA"}, {"0", "1"}, {"A", "I"}, {"public_150k_plus_240930.csv", "a.csv,b.csv", "a", "a..b.csv", "A-1_b.CSV"}, {"MN", "MN,WI", "MN,WI,IA"}, {"Chisago", "Mille Lacs,St. Louis", "Lac qui Parle", "O'Brien", strings.Join(settings.Defaults().MNParcelsCounties, ","), "a", "Z.", "A'", "a  b", "A.'B"}}
 	seen := map[string]bool{}
 	for i, k := range keys {
 		if wants[i] == "" || strings.Contains(wants[i], "\n") || (seen[wants[i]] && k != "PPP_STATES") {
@@ -87,11 +88,11 @@ func TestValidation(t *testing.T) {
 	}
 }
 
-// R-6FZW-ETIG
+// R-RGB1-3WVO
 func TestFirstRefusal(t *testing.T) {
-	keys := []string{"DRAIN_SECONDS", "SCRAPE_KEEP_RUNS", "FMCSA_STATES", "FMCSA_MIN_POWER_UNITS", "FMCSA_STATUS", "PPP_FILES", "PPP_STATES"}
-	values := []string{"0", "0", "mn", "-1", "a", "a/b.csv", "mn"}
-	wants := []string{settings.WantSeconds, settings.WantRuns, settings.WantStates, settings.WantPowerUnits, settings.WantStatus, settings.WantFiles, settings.WantStates}
+	keys := []string{"DRAIN_SECONDS", "SCRAPE_KEEP_RUNS", "FMCSA_STATES", "FMCSA_MIN_POWER_UNITS", "FMCSA_STATUS", "PPP_FILES", "PPP_STATES", "MN_PARCELS_COUNTIES"}
+	values := []string{"0", "0", "mn", "-1", "a", "a/b.csv", "mn", "Chisago;"}
+	wants := []string{settings.WantSeconds, settings.WantRuns, settings.WantStates, settings.WantPowerUnits, settings.WantStatus, settings.WantFiles, settings.WantStates, settings.WantCounties}
 	for first := range keys {
 		for last := first; last < len(keys); last++ {
 			_, err := settings.Read(func(k string) (string, bool) {
@@ -110,16 +111,20 @@ func TestFirstRefusal(t *testing.T) {
 	}
 }
 
-// R-6CC7-9IAD
+// R-RF34-Q54Z
 func TestEmptyAndIndependentSettings(t *testing.T) {
 	want := settings.Defaults()
 	got, err := settings.Read(func(string) (string, bool) { return "", true })
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatal(got, err)
 	}
+	got, err = settings.Read(func(string) (string, bool) { return "invalid;", false })
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatal(got, err)
+	}
 	values := map[string]string{"DRAIN_SECONDS": "12", "SCRAPE_KEEP_RUNS": "3", "FMCSA_MIN_POWER_UNITS": "99999999999999999999999", "PPP_STATES": "IA,IA", "unknown": "invalid"}
 	got, err = settings.Read(func(k string) (string, bool) {
-		if _, known := map[string]bool{"DRAIN_SECONDS": true, "SCRAPE_KEEP_RUNS": true, "FMCSA_STATES": true, "FMCSA_MIN_POWER_UNITS": true, "FMCSA_STATUS": true, "PPP_FILES": true, "PPP_STATES": true}[k]; !known {
+		if _, known := map[string]bool{"DRAIN_SECONDS": true, "SCRAPE_KEEP_RUNS": true, "FMCSA_STATES": true, "FMCSA_MIN_POWER_UNITS": true, "FMCSA_STATUS": true, "PPP_FILES": true, "PPP_STATES": true, "MN_PARCELS_COUNTIES": true}[k]; !known {
 			return "invalid", true
 		}
 		v, ok := values[k]
@@ -131,11 +136,11 @@ func TestEmptyAndIndependentSettings(t *testing.T) {
 	}
 }
 
-// R-6IFP-6CZU
+// R-RHIX-HOMD
 func TestCopyConstants(t *testing.T) {
-	const a, b, c, d, e, f = settings.WantSeconds, settings.WantRuns, settings.WantStates, settings.WantPowerUnits, settings.WantStatus, settings.WantFiles
+	const a, b, c, d, e, f, g = settings.WantSeconds, settings.WantRuns, settings.WantStates, settings.WantPowerUnits, settings.WantStatus, settings.WantFiles, settings.WantCounties
 	seen := map[string]bool{}
-	for _, value := range []string{a, b, c, d, e, f} {
+	for _, value := range []string{a, b, c, d, e, f, g} {
 		if value == "" || strings.Contains(value, "\n") || seen[value] {
 			t.Fatal("copy constants", value)
 		}
