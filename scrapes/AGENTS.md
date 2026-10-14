@@ -263,7 +263,9 @@ prove scrapes' use of the database, its schema, its store and its wiring,
 never SQLite's own guarantees (atomicity, durability, locking) and never
 appkit's `db` contract (opening, migrations, transactions, `db status`),
 which appkit's own tests prove; they prove what a store holds by reopening
-its path, never by reading tables.
+its path, never by reading tables. A store test may also open, decompress and
+decode the chunk files a collection's `Seal` leaves in its own runs
+directory before `Load` (R-6QF7-C764).
 
 **Time and the sweep are driven, not waited out.** A run's started and
 finished times, a row's collected time, the prune's ordering and the
@@ -441,6 +443,6 @@ holds no secret of its own, and none of the three sources needs a key. The host'
 backup archives `state/` whole and Litestream replicates `scrapes.db`, which
 holds run records only, public and no secret. The rows live in `runs/<id>.db`
 beside `state/`, which is neither backed up nor replicated: a run file is
-regenerable by scraping again. The disk peak is about 12 GB, for MN parcels
+regenerable by scraping again. The disk peak is about 12.3 GB, for MN parcels
 at `SCRAPE_KEEP_RUNS` 2: two retained run files, one being built and its
-chunks.
+compressed chunks.
