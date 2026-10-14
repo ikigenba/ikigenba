@@ -83,7 +83,7 @@ func TestWhere(t *testing.T) {
 	}
 }
 
-// R-RUXT-P5S0 R-W1GM-M7UI R-RXDM-GP9E R-RYLI-UH03
+// R-7TIT-NA3I R-W1GM-M7UI R-7UQQ-11U7 R-RYLI-UH03
 func TestWalk(t *testing.T) {
 	for _, count := range []string{"0", "5000", "2e3", "99999999999999999999999999999999999999999"} {
 		t.Run(count, func(t *testing.T) {
@@ -153,7 +153,7 @@ func TestWalk(t *testing.T) {
 	}
 }
 
-// R-W1GM-M7UI R-RXDM-GP9E
+// R-W1GM-M7UI R-7UQQ-11U7
 func TestEmptyPageAndExactBoundary(t *testing.T) {
 	requests, batches := 0, 0
 	c := config(func(*http.Request) (*http.Response, error) {
@@ -168,6 +168,132 @@ func TestEmptyPageAndExactBoundary(t *testing.T) {
 		}
 	})
 	if err := mnparcels.New(c).Scrape(context.Background(), func([]source.Row) error { batches++; return nil }); err != nil || requests != 3 || batches != 1 {
+		t.Fatal(err, requests, batches)
+	}
+}
+
+// R-7TIT-NA3I R-7UQQ-11U7 R-S4P0-RBPK R-W1GM-M7UI
+func TestPinlessPages(t *testing.T) {
+	for _, attrs := range []string{`{"state_pin":null,"county_pin":null}`, `{"state_pin":" ","county_pin":""}`, `{}`, `{"state_pin":123,"county_pin":456}`} {
+		for _, size := range []int{3, 2000} {
+			for _, all := range []bool{false, true} {
+				t.Run(fmt.Sprint(attrs, size, all), func(t *testing.T) {
+					pinless := `{"attributes":` + attrs + `}`
+					features := make([]string, size)
+					var wanted []source.Row
+					collected := clock().Add(time.Hour)
+					for i := range features {
+						features[i] = pinless
+						if !all && i != 1 {
+							features[i] = feature(strconv.Itoa(i))
+							row, err := mnparcels.RowOf(json.RawMessage(features[i]), collected)
+							if err != nil {
+								t.Fatal(err)
+							}
+							wanted = append(wanted, row)
+						}
+					}
+					var capture telemetry.Capture
+					w := telemetry.New(telemetry.Config{Service: "scrapes", Sink: &capture, Now: clock, Rand: bytes.NewReader(make([]byte, 4096)), Stderr: io.Discard, Sleep: func(context.Context, time.Duration) {}})
+					defer w.Shutdown(context.Background(), "test")
+					requests, batches := 0, 0
+					c := config(func(r *http.Request) (*http.Response, error) {
+						requests++
+						want := url.Values{"where": {mnparcels.Where("Carlton")}, "f": {"json"}}
+						if requests == 1 {
+							want.Set("returnCountOnly", "true")
+						} else {
+							for k, v := range map[string]string{"outFields": "*", "returnGeometry": "false", "returnCentroid": "true", "outSR": "4326", "orderByFields": "objectid", "resultOffset": strconv.Itoa((requests - 2) * 2000), "resultRecordCount": "2000"} {
+								want.Set(k, v)
+							}
+						}
+						if r.Method != "GET" || r.URL.Scheme+"://"+r.URL.Host+r.URL.Path != mnparcels.DefaultBaseURL || !reflect.DeepEqual(r.URL.Query(), want) {
+							t.Error(r.Method, r.URL, want)
+						}
+						if requests == 1 {
+							return response(200, `{"count":0}`), nil
+						}
+						if requests == 2 {
+							return response(200, `{"features":[`+strings.Join(features, ",\n")+`]}`), nil
+						}
+						if !all && batches != 1 {
+							t.Error("next request before batch", batches)
+						}
+						return response(200, page(0)), nil
+					})
+					c.Now = func() time.Time {
+						if requests != 2 {
+							t.Error("row clock read before page answer", requests)
+						}
+						return collected
+					}
+					c.Sleep = func(context.Context, time.Duration) { t.Error("readable page retried") }
+					c.Telemetry = w
+					if err := mnparcels.New(c).Scrape(context.Background(), func(rows []source.Row) error {
+						batches++
+						if requests != 2 || !reflect.DeepEqual(rows, wanted) {
+							t.Error("batch differs from retained features", requests, len(rows), len(wanted))
+						}
+						return nil
+					}); err != nil {
+						t.Fatal(err)
+					}
+					wantRequests, wantBatches := 2, 1
+					if size == 2000 {
+						wantRequests = 3
+					}
+					if all {
+						wantBatches = 0
+					}
+					if requests != wantRequests || batches != wantBatches {
+						t.Fatal(requests, batches)
+					}
+					if err := w.Flush(context.Background()); err != nil {
+						t.Fatal(err)
+					}
+					if events := capture.Events(); len(events) != requests {
+						t.Fatal("unexpected skip event", events)
+					} else {
+						for _, event := range events {
+							if event.Name != source.Called || !reflect.DeepEqual(event.Attrs, telemetry.Attrs{"scraper": mnparcels.Name, "status": int64(200), "duration_us": int64(0)}) {
+								t.Fatal("unexpected skip attributes", event)
+							}
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+// R-7UQQ-11U7 R-W1GM-M7UI
+func TestPinlessShortPageContinuesToNextCounty(t *testing.T) {
+	requests, batches := 0, 0
+	c := config(func(r *http.Request) (*http.Response, error) {
+		requests++
+		if requests == 3 && batches != 1 {
+			t.Error("next county requested before batch", batches)
+		}
+		if requests <= 2 && r.URL.Query().Get("where") != mnparcels.Where("Carlton") || requests > 2 && r.URL.Query().Get("where") != mnparcels.Where("Chisago") {
+			t.Error(r.URL)
+		}
+		if r.URL.Query().Get("returnCountOnly") == "true" {
+			return response(200, `{"count":3}`), nil
+		}
+		if requests == 2 {
+			return response(200, `{"features":[`+feature("first")+`,{"attributes":{"state_pin":null,"county_pin":null}},`+feature("last")+`]}`), nil
+		}
+		return response(200, page(0)), nil
+	})
+	c.Counties = []string{"Carlton", "Chisago"}
+	c.Sleep = func(context.Context, time.Duration) { t.Error("readable page retried") }
+	if err := mnparcels.New(c).Scrape(context.Background(), func(rows []source.Row) error {
+		batches++
+		if len(rows) != 2 || rows[0].SourceID != "first" || rows[1].SourceID != "last" {
+			t.Error(rows)
+		}
+		return nil
+	}); err != nil || requests != 4 || batches != 1 {
 		t.Fatal(err, requests, batches)
 	}
 }
@@ -261,14 +387,14 @@ type brokenReader struct{}
 
 func (brokenReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
 
-// R-S11B-M0HH R-RUXT-P5S0
+// R-7X6I-SLBL R-7TIT-NA3I
 func TestTerminalAnswers(t *testing.T) {
 	cases := []struct {
 		name, body string
 		count      bool
 		status     int
 	}{
-		{"bad-status", "", true, 400}, {"redirect", "", true, 302}, {"204", "", true, 204}, {"count-string", `{"count":"2"}`, true, 200}, {"count-negative", `{"count":-1}`, true, 200}, {"count-fraction", `{"count":1.5}`, true, 200}, {"count-null", `{"count":null}`, true, 200}, {"count-missing", `{}`, true, 200}, {"array", `[]`, false, 200}, {"null", `null`, false, 200}, {"missing", `{}`, false, 200}, {"null-features", `{"features":null}`, false, 200}, {"bad-features", `{"features":{}}`, false, 200}, {"oversize", page(2001), false, 200}, {"no-id", `{"features":[{"attributes":{}}]}`, false, 200}, {"cut", `{"features":[`, false, 200}, {"trailing", `{"features":[]} trailing`, false, 200}, {"broken", "", false, 200},
+		{"bad-status", "", true, 400}, {"redirect", "", true, 302}, {"204", "", true, 204}, {"count-string", `{"count":"2"}`, true, 200}, {"count-negative", `{"count":-1}`, true, 200}, {"count-fraction", `{"count":1.5}`, true, 200}, {"count-null", `{"count":null}`, true, 200}, {"count-missing", `{}`, true, 200}, {"array", `[]`, false, 200}, {"null", `null`, false, 200}, {"missing", `{}`, false, 200}, {"null-features", `{"features":null}`, false, 200}, {"bad-features", `{"features":{}}`, false, 200}, {"oversize", page(2001), false, 200}, {"null-attributes", `{"features":[` + feature("first") + `,{"attributes":null},` + feature("last") + `]}`, false, 200}, {"missing-attributes", `{"features":[{}]}`, false, 200}, {"nonobject-feature", `{"features":[5]}`, false, 200}, {"null-feature", `{"features":[null]}`, false, 200}, {"array-attributes", `{"features":[{"attributes":[]}]}`, false, 200}, {"cut", `{"features":[`, false, 200}, {"trailing", `{"features":[]} trailing`, false, 200}, {"broken", "", false, 200},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -280,7 +406,7 @@ func TestTerminalAnswers(t *testing.T) {
 				}
 				resp := response(tc.status, tc.body)
 				if tc.name == "broken" {
-					resp.Body = io.NopCloser(brokenReader{})
+					resp.Body = io.NopCloser(io.MultiReader(strings.NewReader(`{"features":[`+feature("first")), brokenReader{}))
 				}
 				return resp, nil
 			})
@@ -481,11 +607,11 @@ func TestTelemetry(t *testing.T) {
 	}
 }
 
-// R-S9KM-AEOC
+// R-ZY04-9OL8 R-7UQQ-11U7
 func TestPrivacy(t *testing.T) {
 	marker, number := "GHIJKLMNopqrstuvWXYZ0123", "123456789012"
 	valid := `{"attributes":{"state_pin":"` + marker + `","emv_total":` + number + `}}`
-	for _, kind := range []string{"500", "error", "no-id", "oversize", "cut", "batch"} {
+	for _, kind := range []string{"500", "error", "null-attributes", "oversize", "cut", "batch", "pinless"} {
 		t.Run(kind, func(t *testing.T) {
 			var capture telemetry.Capture
 			w := telemetry.New(telemetry.Config{Service: "scrapes", Sink: &capture, Now: clock, Rand: bytes.NewReader(make([]byte, 4096)), Stderr: io.Discard, Sleep: func(context.Context, time.Duration) {}})
@@ -499,7 +625,9 @@ func TestPrivacy(t *testing.T) {
 					return response(500, marker+number), nil
 				case "error":
 					return response(200, `{"error":{"message":"`+marker+number+`"}}`), nil
-				case "no-id":
+				case "null-attributes":
+					return response(200, `{"features":[{"attributes":null},`+valid+`]}`), nil
+				case "pinless":
 					return response(200, `{"features":[{"attributes":{"owner_name":"`+marker+`","emv_total":`+number+`}}]}`), nil
 				case "oversize":
 					return response(200, `{"features":[`+strings.Repeat(valid+",", 2000)+valid+`]}`), nil
@@ -510,8 +638,13 @@ func TestPrivacy(t *testing.T) {
 				}
 			})
 			c.Telemetry = w
-			err := mnparcels.New(c).Scrape(context.Background(), func([]source.Row) error { return errors.New("refused") })
-			if err == nil || strings.Contains(err.Error(), marker) || strings.Contains(err.Error(), number) {
+			err := mnparcels.New(c).Scrape(context.Background(), func([]source.Row) error {
+				if kind == "pinless" {
+					t.Error("pinless batch")
+				}
+				return errors.New("refused")
+			})
+			if kind == "pinless" && err != nil || kind != "pinless" && (err == nil || strings.Contains(err.Error(), marker) || strings.Contains(err.Error(), number)) {
 				t.Fatal(err)
 			}
 			if err := w.Flush(context.Background()); err != nil {
@@ -534,7 +667,7 @@ type blockedBody struct{ ctx context.Context }
 func (b blockedBody) Read([]byte) (int, error) { <-b.ctx.Done(); return 0, b.ctx.Err() }
 func (blockedBody) Close() error               { return nil }
 
-// R-RZTF-88QS R-S11B-M0HH R-RQ28-62T8
+// R-RZTF-88QS R-7X6I-SLBL R-RQ28-62T8
 func TestAttemptBounds(t *testing.T) {
 	for _, phase := range []string{"headers", "count-body", "page-body", "error-body"} {
 		t.Run(phase, func(t *testing.T) {

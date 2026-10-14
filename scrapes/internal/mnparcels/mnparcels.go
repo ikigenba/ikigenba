@@ -46,6 +46,8 @@ type Config struct {
 // Scraper walks configured counties in order.
 type Scraper struct{ cfg Config }
 
+var errPinless = errors.New("source feature lacks parcel id")
+
 // New constructs a scraper with the supplied hooks.
 func New(cfg Config) *Scraper {
 	if cfg.HTTP == nil {
@@ -93,17 +95,21 @@ func (s *Scraper) Scrape(ctx context.Context, batch func([]source.Row) error) er
 			}
 			if len(features) > 0 {
 				collected := s.cfg.Now()
-				rows := make([]source.Row, len(features))
-				for i, feature := range features {
-					rows[i], err = RowOf(feature, collected)
+				rows := make([]source.Row, 0, len(features))
+				for _, feature := range features {
+					row, err := RowOf(feature, collected)
+					if errors.Is(err, errPinless) {
+						continue
+					}
 					if err != nil {
 						return errors.New("unreadable source feature")
 					}
+					rows = append(rows, row)
 				}
 				if err := ctx.Err(); err != nil {
 					return err
 				}
-				if batch(rows) != nil {
+				if len(rows) > 0 && batch(rows) != nil {
 					return errors.New("source batch refused")
 				}
 			}
@@ -176,7 +182,7 @@ func (s *Scraper) request(ctx context.Context, query url.Values, count bool) ([]
 					valid = len(raw) > 0 && raw[0] == '[' && json.Unmarshal(raw, &features) == nil && len(features) <= PageSize
 					if valid {
 						for _, f := range features {
-							if _, err := RowOf(f, time.Time{}); err != nil {
+							if _, err := RowOf(f, time.Time{}); err != nil && !errors.Is(err, errPinless) {
 								valid = false
 								break
 							}
@@ -248,7 +254,7 @@ func RowOf(feature json.RawMessage, collected time.Time) (source.Row, error) {
 	if strings.TrimSpace(id) == "" {
 		countyID := stringValue(a["county_pin"])
 		if strings.TrimSpace(countyID) == "" {
-			return source.Row{}, errors.New("source feature lacks parcel id")
+			return source.Row{}, errPinless
 		}
 		id = stringValue(a["co_code"]) + "-" + countyID
 	}
