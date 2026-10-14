@@ -42,9 +42,11 @@ type LandingData struct {
 	MinRevenue    string
 	Shortlist     []ShortlistRow
 	ShortlistPage string
+	ShortlistPrev string
 	ShortlistNext string
 	Passes        []PassRow
 	PassesPage    string
+	PassesPrev    string
 	PassesNext    string
 }
 

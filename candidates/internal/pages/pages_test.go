@@ -110,7 +110,7 @@ func comparePage(t *testing.T, cfg Config, path, name string, status int, data a
 	}
 }
 
-// R-2GH2-BY8N R-58H2-68U5 R-J0Z8-DUDH R-51PY-VUIV
+// R-2GH2-BY8N R-58H2-68U5 R-HPHC-4JK3 R-51PY-VUIV
 func TestTemplateSet(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
@@ -157,7 +157,7 @@ func TestTemplateSet(t *testing.T) {
 	}
 }
 
-// R-5DCN-PBSX R-J4MX-J5LK R-5K0G-MENA R-5L8D-06DZ R-5MG9-DY4O R-5NO5-RPVD R-5OW2-5HM2 R-JAQF-G0B1 R-5RBU-X13G R-5UZK-2CBJ
+// R-5DCN-PBSX R-HVKU-1E9K R-5K0G-MENA R-5L8D-06DZ R-5MG9-DY4O R-5NO5-RPVD R-5OW2-5HM2 R-I2W8-C0PQ R-5RBU-X13G R-5UZK-2CBJ
 func TestStaticEmptyAndRefusals(t *testing.T) {
 	cfg, d := pageFixture(t)
 	b := bannerFor(cfg)
@@ -275,7 +275,7 @@ func TestStoredPages(t *testing.T) {
 		t.Fatal(ranked, err)
 	}
 	b.Trail = nil
-	comparePage(t, cfg, "/", "landing", 200, LandingData{b, scoring.DefaultMaxMinutes, dollars(scoring.DefaultMinRevenue), []ShortlistRow{shortlistRow(ranked[0], 0, 0)}, "", "", []PassRow{passRow(p)}, "", ""})
+	comparePage(t, cfg, "/", "landing", 200, LandingData{b, scoring.DefaultMaxMinutes, dollars(scoring.DefaultMinRevenue), []ShortlistRow{shortlistRow(ranked[0], 0, 0)}, "", "", "", []PassRow{passRow(p)}, "", "", ""})
 	landing := requestPage(cfg, "GET", "/", "reader").Body.String()
 	for _, value := range []string{c.Phone, c.Email} {
 		if strings.Contains(landing, value) {
@@ -319,7 +319,7 @@ func TestStoredPages(t *testing.T) {
 	comparePage(t, cfg, "/candidates/"+id, "candidate", 200, CandidateData{Banner: b, Candidate: candidateView(merged), Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{rulingView(r, id)}})
 }
 
-// R-J3F1-5DUV R-J4MX-J5LK R-J5UT-WXC9 R-J72Q-AP2Y R-J8AM-OGTN
+// R-HQP8-IBAS R-HT51-9US6 R-HUCX-NMIV R-HVKU-1E9K R-HWSQ-F609 R-HY0M-SXQY R-HZ8J-6PHN
 func TestLandingWindows(t *testing.T) {
 	for _, counts := range [][2]int{{0, 0}, {25, 0}, {26, 0}, {0, 30}, {26, 30}, {60, 60}} {
 		t.Run(strconv.Itoa(counts[0])+"-"+strconv.Itoa(counts[1]), func(t *testing.T) {
@@ -378,6 +378,10 @@ func TestLandingWindows(t *testing.T) {
 						t.Fatal("tool shortlist order")
 					}
 					data.Shortlist = append(data.Shortlist, shortlistRow(ranked[offset+i], offset+i, 0))
+					if token != "" && i == 0 {
+						first := ranked[offset]
+						data.ShortlistPrev = (paging.Token{Tool: "shortlist-before"}).Encode(first.Assessment.ScoreKey, first.Candidate.ID)
+					}
 				}
 				if answer.Next != nil {
 					last := ranked[offset+wantCount-1]
@@ -408,6 +412,10 @@ func TestLandingWindows(t *testing.T) {
 						t.Fatal("tool passes order")
 					}
 					data.Passes = append(data.Passes, passRow(ps[offset+i]))
+					if token != "" && i == 0 {
+						first := ps[offset]
+						data.PassesPrev = (paging.Token{Tool: "passes-before"}).Encode(first.Started.UTC().Format(time.RFC3339), first.ID)
+					}
 				}
 				if answer.Next != nil {
 					last := ps[offset+wantCount-1]
@@ -424,9 +432,73 @@ func TestLandingWindows(t *testing.T) {
 				}
 				token, offset = *answer.Next, offset+wantCount
 			}
+			// Construct backwards and tail expectations from the complete forward order.
+			if len(ranked) > paging.DefaultLimit {
+				for _, end := range []int{paging.DefaultLimit + 1, len(ranked)} {
+					start := end - paging.DefaultLimit
+					data := LandingData{Shortlist: []ShortlistRow{}}
+					first, last := ranked[start], ranked[end-1]
+					data.ShortlistPrev = (paging.Token{Tool: "shortlist-before"}).Encode(first.Assessment.ScoreKey, first.Candidate.ID)
+					for i := start; i < end; i++ {
+						data.Shortlist = append(data.Shortlist, shortlistRow(ranked[i], i, 0))
+					}
+					if end == len(ranked) {
+						data.ShortlistPage = "last"
+					} else {
+						next := ranked[end]
+						data.ShortlistPage = (paging.Token{Tool: "shortlist-before"}).Encode(next.Assessment.ScoreKey, next.Candidate.ID)
+						data.ShortlistNext = (paging.Token{Tool: "shortlist"}).Encode(last.Assessment.ScoreKey, last.Candidate.ID)
+					}
+					shortWindows = append(shortWindows, data)
+				}
+			}
+			if len(ps) > paging.DefaultLimit {
+				for _, end := range []int{paging.DefaultLimit + 1, len(ps)} {
+					start := end - paging.DefaultLimit
+					data := LandingData{Passes: []PassRow{}}
+					first, last := ps[start], ps[end-1]
+					data.PassesPrev = (paging.Token{Tool: "passes-before"}).Encode(first.Started.UTC().Format(time.RFC3339), first.ID)
+					for i := start; i < end; i++ {
+						data.Passes = append(data.Passes, passRow(ps[i]))
+					}
+					if end == len(ps) {
+						data.PassesPage = "last"
+					} else {
+						next := ps[end]
+						data.PassesPage = (paging.Token{Tool: "passes-before"}).Encode(next.Started.UTC().Format(time.RFC3339), next.ID)
+						data.PassesNext = (paging.Token{Tool: "passes"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
+					}
+					passWindows = append(passWindows, data)
+				}
+			}
+			if len(ranked) > 2*paging.DefaultLimit {
+				// A token is a position even when no row retains that identity.
+				anchor := ranked[paging.DefaultLimit+1]
+				end := paging.DefaultLimit + 2
+				data := LandingData{Shortlist: []ShortlistRow{}, ShortlistPage: (paging.Token{Tool: "shortlist-before"}).Encode(anchor.Assessment.ScoreKey, anchor.Candidate.ID+"x")}
+				first, last := ranked[end-paging.DefaultLimit], ranked[end-1]
+				data.ShortlistPrev = (paging.Token{Tool: "shortlist-before"}).Encode(first.Assessment.ScoreKey, first.Candidate.ID)
+				data.ShortlistNext = (paging.Token{Tool: "shortlist"}).Encode(last.Assessment.ScoreKey, last.Candidate.ID)
+				for i := end - paging.DefaultLimit; i < end; i++ {
+					data.Shortlist = append(data.Shortlist, shortlistRow(ranked[i], i, 0))
+				}
+				shortWindows = append(shortWindows, data)
+			}
+			if len(ps) > 2*paging.DefaultLimit {
+				anchor := ps[paging.DefaultLimit+1]
+				end := paging.DefaultLimit + 1
+				data := LandingData{Passes: []PassRow{}, PassesPage: (paging.Token{Tool: "passes-before"}).Encode(anchor.Started.UTC().Format(time.RFC3339), anchor.ID+"x")}
+				first, last := ps[end-paging.DefaultLimit], ps[end-1]
+				data.PassesPrev = (paging.Token{Tool: "passes-before"}).Encode(first.Started.UTC().Format(time.RFC3339), first.ID)
+				data.PassesNext = (paging.Token{Tool: "passes"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
+				for i := end - paging.DefaultLimit; i < end; i++ {
+					data.Passes = append(data.Passes, passRow(ps[i]))
+				}
+				passWindows = append(passWindows, data)
+			}
 			for _, sw := range shortWindows {
 				for _, pw := range passWindows {
-					data := LandingData{Banner: bannerFor(cfg), MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: dollars(scoring.DefaultMinRevenue), Shortlist: sw.Shortlist, ShortlistPage: sw.ShortlistPage, ShortlistNext: sw.ShortlistNext, Passes: pw.Passes, PassesPage: pw.PassesPage, PassesNext: pw.PassesNext}
+					data := LandingData{Banner: bannerFor(cfg), MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: dollars(scoring.DefaultMinRevenue), Shortlist: sw.Shortlist, ShortlistPage: sw.ShortlistPage, ShortlistPrev: sw.ShortlistPrev, ShortlistNext: sw.ShortlistNext, Passes: pw.Passes, PassesPage: pw.PassesPage, PassesPrev: pw.PassesPrev, PassesNext: pw.PassesNext}
 					query := url.Values{"shortlist_page": {sw.ShortlistPage}, "passes_page": {pw.PassesPage}}
 					comparePage(t, cfg, "/?"+query.Encode(), "landing", 200, data)
 					comparePage(t, cfg, "/?"+query.Encode()+"&shortlist_page=bogus&passes_page=bogus&page=bogus&limit=1&class=bogus", "landing", 200, data)
@@ -502,12 +574,12 @@ func callPageTool(t *testing.T, client *mcp.Client, name, token string, target a
 	}
 }
 
-// R-J3F1-5DUV R-J9IJ-28KC R-JAQF-G0B1
+// R-HQP8-IBAS R-I0GF-KH8C R-I2W8-C0PQ
 func TestLandingTokenRefusals(t *testing.T) {
 	cfg, d := pageFixture(t)
 	short := (paging.Token{Tool: "shortlist"}).Encode(int64(42), "chosen-candidate")
 	pass := (paging.Token{Tool: "passes"}).Encode("chosen-start", "chosen-pass")
-	invalid := []string{"/?shortlist_page=bogus", "/?passes_page=bogus", "/?shortlist_page=bogus&passes_page=bogus", "/?shortlist_page=bogus&shortlist_page=", "/?passes_page=bogus&passes_page=", "/?shortlist_page=bogus&passes_page=" + url.QueryEscape(pass), "/?shortlist_page=" + url.QueryEscape(short) + "&passes_page=bogus", "/?shortlist_page=" + url.QueryEscape(pass), "/?passes_page=" + url.QueryEscape(short)}
+	invalid := []string{"/?passes_page=LAST", "/?shortlist_page=last/", "/?shortlist_page=last&passes_page=last/", "/?shortlist_page=" + (paging.Token{Tool: "passes-before"}).Encode("start", "id"), "/?passes_page=" + (paging.Token{Tool: "shortlist-before"}).Encode(int64(42), "id"), "/?shortlist_page=bogus", "/?passes_page=bogus", "/?shortlist_page=bogus&passes_page=bogus", "/?shortlist_page=bogus&shortlist_page=", "/?passes_page=bogus&passes_page=", "/?shortlist_page=bogus&passes_page=" + url.QueryEscape(pass), "/?shortlist_page=" + url.QueryEscape(short) + "&passes_page=bogus", "/?shortlist_page=" + url.QueryEscape(pass), "/?passes_page=" + url.QueryEscape(short)}
 	for _, failing := range []bool{false, true} {
 		d.SetFailing(failing)
 		for _, method := range []string{"GET", "HEAD"} {
@@ -519,7 +591,7 @@ func TestLandingTokenRefusals(t *testing.T) {
 				}
 			}
 			if failing {
-				for _, path := range []string{"/", "/?shortlist_page=" + url.QueryEscape(short), "/?passes_page=" + url.QueryEscape(pass), "/?shortlist_page=" + url.QueryEscape(short) + "&passes_page=" + url.QueryEscape(pass), "/?shortlist_page=&shortlist_page=bogus&passes_page=&passes_page=bogus"} {
+				for _, path := range []string{"/?shortlist_page=last", "/?passes_page=last", "/?shortlist_page=" + (paging.Token{Tool: "shortlist-before"}).Encode(int64(42), "id"), "/?passes_page=" + (paging.Token{Tool: "passes-before"}).Encode("start", "id"), "/", "/?shortlist_page=" + url.QueryEscape(short), "/?passes_page=" + url.QueryEscape(pass), "/?shortlist_page=" + url.QueryEscape(short) + "&passes_page=" + url.QueryEscape(pass), "/?shortlist_page=&shortlist_page=bogus&passes_page=&passes_page=bogus"} {
 					got := requestPage(cfg, method, path, "reader")
 					body := store.Unreachable + "\n"
 					if method == "HEAD" {

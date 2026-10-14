@@ -150,40 +150,9 @@ func (s *Store) Shortlist(ctx context.Context, f ShortlistFilter, scoreKey int64
 			query = ShortlistAfter
 			args = []any{f.MaxMinutes, f.MinRevenue, f.Class, f.Cargo, scoreKey, id, n}
 		}
-		rows, err := tx.QueryContext(ctx, query, args...)
-		if err != nil {
-			return err
-		}
-		ids := []string{}
-		for rows.Next() {
-			var key string
-			if err = rows.Scan(&key); err != nil {
-				_ = rows.Close()
-				return err
-			}
-			ids = append(ids, key)
-		}
-		err = rows.Err()
-		closeErr := rows.Close()
-		if err != nil {
-			return err
-		}
-		if closeErr != nil {
-			return closeErr
-		}
-		out = []Ranked{}
-		for _, key := range ids {
-			c, err := candidateKey(ctx, tx, key)
-			if err != nil {
-				return err
-			}
-			a, err := readRecords[Assessment](ctx, tx, "assessments", assessmentColumns, " WHERE candidate=?", key)
-			if err != nil {
-				return err
-			}
-			out = append(out, Ranked{Candidate: c, Assessment: a[0]})
-		}
-		return nil
+		var err error
+		out, err = rankedWindow(ctx, tx, query, args...)
+		return err
 	}))
 	return out, err
 }
@@ -198,4 +167,61 @@ func (s *Store) ShortlistOffset(ctx context.Context, f ShortlistFilter, scoreKey
 		return tx.QueryRowContext(ctx, ShortlistBefore, f.MaxMinutes, f.MinRevenue, f.Class, f.Cargo, scoreKey, id).Scan(&out)
 	}))
 	return out, err
+}
+
+// ShortlistReversed reads preceding entries nearest first in reversed shortlist order.
+func (s *Store) ShortlistReversed(ctx context.Context, f ShortlistFilter, scoreKey int64, id string, n int) ([]Ranked, error) {
+	var out []Ranked
+	err := unreachable(s.readTx(ctx, func(tx *sql.Tx) error {
+		if n < 1 {
+			return ErrUnreachable
+		}
+		query := ShortlistLast
+		args := []any{f.MaxMinutes, f.MinRevenue, f.Class, f.Cargo, n}
+		if id != "" {
+			query = ShortlistPreceding
+			args = []any{f.MaxMinutes, f.MinRevenue, f.Class, f.Cargo, scoreKey, id, n}
+		}
+		var err error
+		out, err = rankedWindow(ctx, tx, query, args...)
+		return err
+	}))
+	return out, err
+}
+
+func rankedWindow(ctx context.Context, tx *sql.Tx, query string, args ...any) ([]Ranked, error) {
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	ids := []string{}
+	for rows.Next() {
+		var key string
+		if err = rows.Scan(&key); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		ids = append(ids, key)
+	}
+	err = rows.Err()
+	closeErr := rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	out := []Ranked{}
+	for _, key := range ids {
+		c, err := candidateKey(ctx, tx, key)
+		if err != nil {
+			return nil, err
+		}
+		a, err := readRecords[Assessment](ctx, tx, "assessments", assessmentColumns, " WHERE candidate=?", key)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, Ranked{Candidate: c, Assessment: a[0]})
+	}
+	return out, nil
 }

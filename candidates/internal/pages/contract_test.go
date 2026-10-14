@@ -136,7 +136,7 @@ func TestCompleteViewContracts(t *testing.T) {
 	}
 }
 
-// R-J0Z8-DUDH
+// R-HPHC-4JK3
 func TestExplicitTemplateStates(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -147,7 +147,7 @@ func TestExplicitTemplateStates(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for bits := 0; bits < 16; bits++ {
+	for bits := 0; bits < 64; bits++ {
 		text := func(bit int) string {
 			if bits&(1<<bit) != 0 {
 				return "chosen-token"
@@ -156,10 +156,17 @@ func TestExplicitTemplateStates(t *testing.T) {
 		}
 		for _, short := range [][]ShortlistRow{{}, {{City: "chosen-city", State: "chosen-state", High: "chosen-high"}, {}}} {
 			for _, passes := range [][]PassRow{{}, {{Status: store.StatusRunning, Trigger: store.TriggerRebuild}}} {
-				data := LandingData{Shortlist: short, ShortlistPage: text(0), ShortlistNext: text(1), Passes: passes, PassesPage: text(2), PassesNext: text(3)}
+				data := LandingData{Shortlist: short, ShortlistPage: text(0), ShortlistPrev: text(4), ShortlistNext: text(1), Passes: passes, PassesPage: text(2), PassesPrev: text(5), PassesNext: text(3)}
 				if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "landing", data); err != nil {
 					t.Fatal(bits, err)
 				}
+			}
+		}
+	}
+	for _, shortPage := range []string{"", "last"} {
+		for _, passPage := range []string{"", "last"} {
+			if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "landing", LandingData{ShortlistPage: shortPage, PassesPage: passPage}); err != nil {
+				t.Fatal(err)
 			}
 		}
 	}

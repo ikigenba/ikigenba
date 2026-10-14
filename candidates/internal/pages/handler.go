@@ -3,6 +3,7 @@ package pages
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -56,52 +57,101 @@ func Handler(cfg Config) http.Handler {
 		case path == "/":
 			b.Trail = nil
 			sp, pp := r.URL.Query().Get("shortlist_page"), r.URL.Query().Get("passes_page")
-			var key int64
-			var id, started, passID string
-			if sp != "" {
-				if err := (paging.Token{Tool: "shortlist"}).Decode(sp, &key, &id); err != nil {
-					notfound()
-					return
-				}
+			shortPos, ok := decodeShortlistPage(sp)
+			if !ok {
+				notfound()
+				return
 			}
-			if pp != "" {
-				if err := (paging.Token{Tool: "passes"}).Decode(pp, &started, &passID); err != nil {
-					notfound()
-					return
-				}
+			passPos, ok := decodePassesPage(pp)
+			if !ok {
+				notfound()
+				return
 			}
 			d := LandingData{Banner: b, MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: dollars(scoring.DefaultMinRevenue), Shortlist: []ShortlistRow{}, ShortlistPage: sp, Passes: []PassRow{}, PassesPage: pp}
 			filter := store.ShortlistFilter{MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: scoring.DefaultMinRevenue}
-			ranked, err := cfg.Store.Shortlist(r.Context(), filter, key, id, paging.DefaultLimit+1)
+			var ranked []store.Ranked
+			var err error
+			if shortPos.reversed {
+				ranked, err = cfg.Store.ShortlistReversed(r.Context(), filter, shortPos.key, shortPos.id, paging.DefaultLimit+1)
+			} else {
+				ranked, err = cfg.Store.Shortlist(r.Context(), filter, shortPos.key, shortPos.id, paging.DefaultLimit+1)
+			}
 			if err != nil {
 				fail()
 				return
 			}
+			shortMore := len(ranked) > paging.DefaultLimit
+			shortUnder := shortPos.reversed && !shortMore
+			if shortMore {
+				ranked = ranked[:paging.DefaultLimit]
+			}
+			if shortPos.reversed {
+				slices.Reverse(ranked)
+			}
 			var offset int64
-			if id != "" {
+			if len(ranked) > 0 && sp != "" {
+				key, id := shortPos.key, shortPos.id
+				if shortPos.reversed {
+					key, id = ranked[0].Assessment.ScoreKey, ranked[0].Candidate.ID
+				}
 				offset, err = cfg.Store.ShortlistOffset(r.Context(), filter, key, id)
 				if err != nil {
 					fail()
 					return
 				}
+				if shortPos.reversed {
+					offset--
+				}
 			}
-			if len(ranked) > paging.DefaultLimit {
-				ranked = ranked[:paging.DefaultLimit]
-				last := ranked[len(ranked)-1]
-				d.ShortlistNext = (paging.Token{Tool: "shortlist"}).Encode(last.Assessment.ScoreKey, last.Candidate.ID)
+			var list []store.Pass
+			if passPos.reversed {
+				list, err = cfg.Store.ListPassesReversed(r.Context(), passPos.started, passPos.id, paging.DefaultLimit+1)
+			} else {
+				list, err = cfg.Store.ListPasses(r.Context(), passPos.started, passPos.id, paging.DefaultLimit+1)
 			}
-			for i, e := range ranked {
-				d.Shortlist = append(d.Shortlist, shortlistRow(e, i, offset))
-			}
-			list, err := cfg.Store.ListPasses(r.Context(), started, passID, paging.DefaultLimit+1)
 			if err != nil {
 				fail()
 				return
 			}
-			if len(list) > paging.DefaultLimit {
+			passMore := len(list) > paging.DefaultLimit
+			passUnder := passPos.reversed && !passMore
+			if shortUnder || passUnder {
+				loc := "/"
+				if !shortUnder && sp != "" {
+					loc += "?shortlist_page=" + sp
+				} else if !passUnder && pp != "" {
+					loc += "?passes_page=" + pp
+				}
+				w.Header().Set("Location", loc)
+				w.WriteHeader(http.StatusSeeOther)
+				return
+			}
+			if passMore {
 				list = list[:paging.DefaultLimit]
-				last := list[len(list)-1]
-				d.PassesNext = (paging.Token{Tool: "passes"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
+			}
+			if passPos.reversed {
+				slices.Reverse(list)
+			}
+			if len(ranked) > 0 {
+				first, last := ranked[0], ranked[len(ranked)-1]
+				if sp != "" {
+					d.ShortlistPrev = (paging.Token{Tool: "shortlist-before"}).Encode(first.Assessment.ScoreKey, first.Candidate.ID)
+				}
+				if !shortPos.last && (shortMore || shortPos.reversed) {
+					d.ShortlistNext = (paging.Token{Tool: "shortlist"}).Encode(last.Assessment.ScoreKey, last.Candidate.ID)
+				}
+			}
+			for i, e := range ranked {
+				d.Shortlist = append(d.Shortlist, shortlistRow(e, i, offset))
+			}
+			if len(list) > 0 {
+				first, last := list[0], list[len(list)-1]
+				if pp != "" {
+					d.PassesPrev = (paging.Token{Tool: "passes-before"}).Encode(first.Started.UTC().Format(time.RFC3339), first.ID)
+				}
+				if !passPos.last && (passMore || passPos.reversed) {
+					d.PassesNext = (paging.Token{Tool: "passes"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
+				}
 			}
 			for _, p := range list {
 				d.Passes = append(d.Passes, passRow(p))
@@ -169,4 +219,47 @@ func Handler(cfg Config) http.Handler {
 			cfg.Pages.Write(w, r, 200, "candidate", d)
 		}
 	})
+}
+
+// landingPosition identifies a window in either landing list.
+type landingPosition struct {
+	key            int64
+	started, id    string
+	reversed, last bool
+}
+
+func decodeShortlistPage(value string) (landingPosition, bool) {
+	p := landingPosition{}
+	if value == "" {
+		return p, true
+	}
+	if (paging.Token{Tool: "shortlist"}).Decode(value, &p.key, &p.id) == nil {
+		return p, true
+	}
+	if (paging.Token{Tool: "shortlist-before"}).Decode(value, &p.key, &p.id) == nil {
+		p.reversed = true
+		return p, true
+	}
+	if value == "last" {
+		return landingPosition{reversed: true, last: true}, true
+	}
+	return p, false
+}
+
+func decodePassesPage(value string) (landingPosition, bool) {
+	p := landingPosition{}
+	if value == "" {
+		return p, true
+	}
+	if (paging.Token{Tool: "passes"}).Decode(value, &p.started, &p.id) == nil {
+		return p, true
+	}
+	if (paging.Token{Tool: "passes-before"}).Decode(value, &p.started, &p.id) == nil {
+		p.reversed = true
+		return p, true
+	}
+	if value == "last" {
+		return landingPosition{reversed: true, last: true}, true
+	}
+	return p, false
 }

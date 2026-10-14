@@ -287,3 +287,23 @@ func (s *Store) ZipMinutes(ctx context.Context, zip string) (int64, error) {
 	})
 	return out, err
 }
+
+// ListPassesReversed reads preceding passes nearest first in reversed pass order.
+func (s *Store) ListPassesReversed(ctx context.Context, started, id string, n int) ([]Pass, error) {
+	var out []Pass
+	err := unreachable(s.readTx(ctx, func(tx *sql.Tx) error {
+		if n < 1 {
+			return ErrUnreachable
+		}
+		query := StartedLast
+		args := []any{n}
+		if id != "" {
+			query = StartedPreceding
+			args = []any{started, id, n}
+		}
+		var err error
+		out, err = readQueryRecords[Pass](ctx, tx, passColumns, query, args...)
+		return err
+	}))
+	return out, err
+}

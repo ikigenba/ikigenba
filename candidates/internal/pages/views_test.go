@@ -47,7 +47,7 @@ func TestFormatting(t *testing.T) {
 	}
 }
 
-// R-IYJF-MAW3 R-4T6O-7GC0 R-4UEK-L82P R-4VMG-YZTE R-4Y29-QJAS R-4ZA6-4B1H R-8KNN-I5U6 R-J274-RM46 R-591D-6GZ1 R-5I89-8ERP
+// R-HO9F-QRTE R-4T6O-7GC0 R-4UEK-L82P R-4VMG-YZTE R-4Y29-QJAS R-4ZA6-4B1H R-8KNN-I5U6 R-J274-RM46 R-591D-6GZ1 R-5I89-8ERP
 func TestViews(t *testing.T) {
 	now := time.Date(2026, 10, 5, 9, 0, 7, 0, time.UTC)
 	hi := int64(24000000)
@@ -115,7 +115,7 @@ func TestViews(t *testing.T) {
 	}
 }
 
-// R-IYJF-MAW3 R-4T6O-7GC0 R-4UEK-L82P R-4VMG-YZTE R-4Y29-QJAS R-4ZA6-4B1H
+// R-HO9F-QRTE R-4T6O-7GC0 R-4UEK-L82P R-4VMG-YZTE R-4Y29-QJAS R-4ZA6-4B1H
 func TestTemplateDataShape(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -128,10 +128,25 @@ func TestTemplateDataShape(t *testing.T) {
 	lv := LinkView{"scraper", "source", "run", "", "name", "city", "55072", "reason", "confidence", "", "", "", "", "", "", false}
 	rv := RulingView{"kind", "other", []string{"key"}, "by", "user", "", "", "why"}
 	pv := PassView{"id", store.TriggerRebuild, "", store.StatusRunning, "", "starter", "", "", "", "", 1, 2, 3, 4, 5, 6, 7, 8, 9}
+	short := ShortlistRow{11, "row-id", "row-name", "row-city", "row-state", 12, "row-class", "row-low", "row-high", "row-confidence", "row-score"}
+	wantShort := ShortlistRow{Rank: 11, ID: "row-id", Name: "row-name", City: "row-city", State: "row-state", Minutes: 12, Class: "row-class", Low: "row-low", High: "row-high", Confidence: "row-confidence", Score: "row-score"}
+	if short != wantShort {
+		t.Fatalf("shortlist positional fields: %#v", short)
+	}
+	pass := PassRow{"pass-id", "pass-trigger", "pass-status", "pass-reason", "pass-started", "pass-started-text", "pass-finished", "pass-finished-text", 21, 22, 23}
+	wantPass := PassRow{ID: "pass-id", Trigger: "pass-trigger", Status: "pass-status", Reason: "pass-reason", Started: "pass-started", StartedText: "pass-started-text", Finished: "pass-finished", FinishedText: "pass-finished-text", Rows: 21, Created: 22, Rescored: 23}
+	if pass != wantPass {
+		t.Fatalf("pass positional fields: %#v", pass)
+	}
+	landing := LandingData{b, 120, "min", []ShortlistRow{short}, "chosen-shortlist-page", "chosen-shortlist-prev", "chosen-shortlist-token", []PassRow{pass}, "chosen-passes-page", "chosen-passes-prev", "chosen-passes-token"}
+	wantLanding := LandingData{Banner: b, MaxMinutes: 120, MinRevenue: "min", Shortlist: []ShortlistRow{wantShort}, ShortlistPage: "chosen-shortlist-page", ShortlistPrev: "chosen-shortlist-prev", ShortlistNext: "chosen-shortlist-token", Passes: []PassRow{wantPass}, PassesPage: "chosen-passes-page", PassesPrev: "chosen-passes-prev", PassesNext: "chosen-passes-token"}
+	if landing.Banner.Service != wantLanding.Banner.Service || landing.MaxMinutes != wantLanding.MaxMinutes || landing.MinRevenue != wantLanding.MinRevenue || len(landing.Shortlist) != 1 || landing.Shortlist[0] != wantLanding.Shortlist[0] || landing.ShortlistPage != wantLanding.ShortlistPage || landing.ShortlistPrev != wantLanding.ShortlistPrev || landing.ShortlistNext != wantLanding.ShortlistNext || len(landing.Passes) != 1 || landing.Passes[0] != wantLanding.Passes[0] || landing.PassesPage != wantLanding.PassesPage || landing.PassesPrev != wantLanding.PassesPrev || landing.PassesNext != wantLanding.PassesNext {
+		t.Fatalf("landing positional fields: %#v", landing)
+	}
 	for _, v := range []struct {
 		name string
 		data any
-	}{{"landing", LandingData{b, 120, "min", []ShortlistRow{{1, "id", "name", "city", "MN", 31, "class", "low", "high", "confidence", "score"}}, "chosen-shortlist-page", "chosen-shortlist-token", []PassRow{{"id", "trigger", store.StatusRunning, "", "", "", "", "", 1, 2, 3}}, "chosen-passes-page", "chosen-passes-token"}}, {"candidate", CandidateData{b, cv, &av, []EstimateView{ev}, []LinkView{lv}, []RulingView{rv}}}, {"pass", PassData{b, pv}}, {"tools", ToolsData{b, []ToolRow{{"name", "description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}} {
+	}{{"landing", landing}, {"candidate", CandidateData{b, cv, &av, []EstimateView{ev}, []LinkView{lv}, []RulingView{rv}}}, {"pass", PassData{b, pv}}, {"tools", ToolsData{b, []ToolRow{{"name", "description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}} {
 		if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, v.name, v.data); err != nil {
 			t.Fatal(v.name, err)
 		}
