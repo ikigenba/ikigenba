@@ -112,7 +112,8 @@ design/
   on the page itself rather than being told which tool to call; it replaces
   the `p#next` note that named the tool and token, with no link; decided
   2026-10-13: Prev is not deferred; a person steps back a window as they
-  step forward). The page takes the `page` token of the list tool over it
+  step forward; decided 2026-10-13: Last joins them, so the end of a list
+  is one step away). The page takes the `page` token of the list tool over it
   as a query parameter on its own URL, `?page=<token>`; without it the page
   shows the first window. It shows a window of 25 entries; `limit` is not a
   page parameter. Below the list, a `nav.paging#paging` labelled `Pages`
@@ -125,25 +126,35 @@ design/
     path with `?page=<before-token>`.
   - Next, only when more entries follow: a link to the page's own path with
     `?page=<token>`, the token the tool's own `next` would carry.
+  - Last, always: a link to the page's own path with `?page=last` while
+    more entries follow; on the last window it is the current item instead,
+    a `span` with `aria-current="page"` and no link, so a single window
+    shows First and Last both as the current item.
   Prev uses the same `page` parameter. Its before-token is issued by the
   page under the list tool's name with `-before` appended (for example
   `paging.Token{Tool: "list-before"}`), over the same key fields as the
   tool's token, naming this window's first entry; the checksum keeps it
   apart from a tool token, so one parameter serves both directions. A
   before-token names the window of 25 entries that precede the named entry,
-  drawn in forward order. When fewer than 25 entries precede it, the
+  drawn in forward order. When 25 or fewer entries precede it, the
   previous window is the first window, and the page answers a 303 redirect
   to its own path without the parameter. A window reached by a before-token
   shows First as a link, Prev when entries precede it, and Next as the
   token of its last entry, the tool's form. The template receives `Prev`,
   the before-token for this window's first entry and empty on the first
-  window, beside `Page` and `Next`. A page with two lists (candidates'
+  window, beside `Page` and `Next`. The `page` value `last`, the literal
+  word, decodes as no token and names the last window: the last 25 entries
+  in the list's order, drawn forward. When the list holds 25 or fewer
+  entries in all, the last window is the first window, and the page answers
+  the same 303 redirect. On the last window `Page` is `last`, `Prev` is the
+  before-token of its first entry and `Next` is empty; Last needs no field
+  of its own, drawn as the current item exactly when `Next` is empty. A page with two lists (candidates'
   shortlist and passes, gmail's drafts and transfers) has one nav per list,
   `nav.paging#paging-<list>` (`#paging-shortlist`, `#paging-passes`,
   `#paging-drafts`, `#paging-transfers`), each with its own parameter
   `<list>_page` (`shortlist_page`, `passes_page`, `drafts_page`,
-  `transfers_page`) and its own fields (`<List>Prev` beside `<List>Page`
-  and `<List>Next`); each nav's hrefs, Prev's included, carry the other
+  `transfers_page`), its Last link `<list>_page=last`, and its own fields (`<List>Prev` beside `<List>Page`
+  and `<List>Next`); each nav's hrefs, Prev's and Last's included, carry the other
   list's current `page` value, so paging one list never resets the other;
   its First link and its underflow redirect drop only its own list's
   parameter, keeping the other's. A `page` value the page cannot
@@ -495,8 +506,9 @@ for Minnesota and Wisconsin, with made-up carriers.
   `tr[data-row=<source_id>]`, each id linking to its row's page; then
   `nav.paging#paging`, First as the current item and, since more follow,
   Next linking to `/runs/<id>?page=6yGAPAqiIKZP1wGaUvHJ`, the token `rows`
-  would hand back as `next`. States: a later window (First a link back to
-  `/runs/<id>`, Prev a link to `/runs/<id>?page=<before-token>`, no Next),
+  would hand back as `next`, and Last linking to `/runs/<id>?page=last`. States: a later window (First a link back to
+  `/runs/<id>`, Prev a link to `/runs/<id>?page=<before-token>`, no Next, Last the
+  current item),
   running
   (`div#running.alert.quiet`, "Running", a Reload button, no rows), failed (`div#failure.alert` of kind err, "The run
   failed", the reason's sentence chosen from `source`, `interrupted` or
