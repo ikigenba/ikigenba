@@ -10,7 +10,9 @@
      .Mine (bool: the caller owns it); .Page (string, this window's own page
      token, the ?page= the request carried; empty on the first window);
      .Next (string, the page token for the window after this one; empty
-     when none remain). Hooks: h1 with text "sites";
+     when none remain); .Prev (string, the page token for the window
+     before this one, carried in the same ?page= parameter; empty on the
+     first window). Hooks: h1 with text "sites";
      p#summary; section#sites with h2 "Sites" and either p#no-sites (text
      "No sites yet.") when .Sites is empty, or table#site-list with one
      tr[data-site=<slug>] per site holding td.site-name > a.site-link (href
@@ -22,9 +24,11 @@
      td.site-owner holding span.badge[data-kind=mine] (text "yours") only
      when .Mine; then, after the card, when .Sites is not empty or .Page
      is not empty, nav.paging#paging (aria-label "Pages") whose children are, in order,
-     First (on the first window, .Page empty, a span with
+     First, Prev and Next: First (on the first window, .Page empty, a span with
      aria-current="page" and text "First"; otherwise a link to / with text
-     "First") and, only when .Next is not empty, Next (a link to
+     "First"), then, only when .Prev is not empty, Prev (a link to
+     /?page=<.Prev> with text "Prev"), then, only when .Next is not empty,
+     Next (a link to
      /?page=<.Next> with text "Next"); on the first window with no sites
      there is no nav, while an emptied later window still offers First;
      p#site-url whose code element holds "<.SitesURL>/<slug>/";
@@ -54,7 +58,7 @@
 </table>
 </div>{{else}}<p id="no-sites" class="empty">No sites yet.</p>{{end}}
 </section>
-{{if or .Sites .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}</nav>
+{{if or .Sites .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Prev}}<a href="/?page={{.Prev}}">Prev</a>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}</nav>
 {{end}}<p><a id="about-link" href="/about">About sites</a></p>
 </main>
 {{template "footer" .Banner}}
