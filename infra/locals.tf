@@ -4,8 +4,8 @@
 # them on the host at space create.
 locals {
   ami                = "ami-01c265752adadcdf8" # AL2023 x86_64, us-east-2
-  instance_type      = "t3.small"
-  root_volume_gb     = 10
+  instance_type      = "t3.medium"
+  root_volume_gb     = 80
   backup_expiry_days = 30
   ssh_admin_cidr     = "208.118.151.172/32"
   # The monthly cost budget only notifies; it never stops or changes anything.
