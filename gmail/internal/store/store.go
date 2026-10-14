@@ -350,6 +350,21 @@ func (s *Store) ListTransfersAfter(ctx context.Context, userID, started, id stri
 	return out, err
 }
 
+// ListTransfersBefore reads a bounded window above the supplied list position, oldest first.
+func (s *Store) ListTransfersBefore(ctx context.Context, userID, started, id string, n int) ([]Transfer, error) {
+	var out []Transfer
+	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
+		var err error
+		if started == "" && id == "" {
+			out, err = queryTransfers(ctx, tx, "SELECT id,direction,status,reason,message,attachment,draft,name,path,content_type,bytes,started,finished,url,link,artifact_id,user_id,user_email,request_id FROM transfers WHERE user_id=? ORDER BY started ASC,id ASC LIMIT ?", userID, max(n, 0))
+		} else {
+			out, err = queryTransfers(ctx, tx, "SELECT id,direction,status,reason,message,attachment,draft,name,path,content_type,bytes,started,finished,url,link,artifact_id,user_id,user_email,request_id FROM transfers WHERE user_id=? AND (started,id) > (?,?) ORDER BY started ASC,id ASC LIMIT ?", userID, started, id, max(n, 0))
+		}
+		return err
+	})
+	return out, err
+}
+
 // HasActivePush reports whether the user has a queued or running push onto a draft.
 func (s *Store) HasActivePush(ctx context.Context, userID, draft string) (bool, error) {
 	var active bool
@@ -622,6 +637,21 @@ func (s *Store) ListDraftsAfter(ctx context.Context, userID, created, id string,
 		}
 		var err error
 		out, err = queryDrafts(ctx, tx, query, args...)
+		return err
+	})
+	return out, err
+}
+
+// ListDraftsBefore reads a bounded window above the supplied list position, oldest first.
+func (s *Store) ListDraftsBefore(ctx context.Context, userID, created, id string, n int) ([]Draft, error) {
+	var out []Draft
+	err := s.transaction(ctx, false, func(tx *sql.Tx) error {
+		var err error
+		if created == "" && id == "" {
+			out, err = queryDrafts(ctx, tx, "SELECT id,gmail_draft,message,thread,status,to_addrs,cc_addrs,bcc_addrs,subject,body,reply_to,in_reply_to,references_header,attachments,created,modified,sent,user_id FROM drafts WHERE user_id=? ORDER BY created ASC,id ASC LIMIT ?", userID, max(n, 0))
+		} else {
+			out, err = queryDrafts(ctx, tx, "SELECT id,gmail_draft,message,thread,status,to_addrs,cc_addrs,bcc_addrs,subject,body,reply_to,in_reply_to,references_header,attachments,created,modified,sent,user_id FROM drafts WHERE user_id=? AND (created,id) > (?,?) ORDER BY created ASC,id ASC LIMIT ?", userID, created, id, max(n, 0))
+		}
 		return err
 	})
 	return out, err

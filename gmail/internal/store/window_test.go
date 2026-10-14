@@ -154,6 +154,10 @@ func TestWindowAndPushUnavailable(t *testing.T) {
 			checkError(err)
 			_, err = f.s.ListTransfersAfter(c, "owner", "", "", n)
 			checkError(err)
+			_, err = f.s.ListDraftsBefore(c, "owner", "", "", n)
+			checkError(err)
+			_, err = f.s.ListTransfersBefore(c, "owner", "", "", n)
+			checkError(err)
 		}
 		active, err := f.s.HasActivePush(c, "owner", "draft")
 		checkError(err)

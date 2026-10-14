@@ -91,7 +91,7 @@ func load(t *testing.T) *Set {
 	return s
 }
 
-// R-W1L5-PYP4 R-W2T2-3QFT R-9GJB-KBPG R-W58U-V9X7 R-W6GR-91NW
+// R-W1L5-PYP4 R-W2T2-3QFT R-GV1J-GUEB R-W58U-V9X7 R-W6GR-91NW
 func TestLoadAndWrite(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if ServiceName != "gmail" || MinuteLayout != "2006-01-02 15:04" || SecondLayout != "2006-01-02 15:04:05 UTC" || Description == "" || ToolsLevel != (page.Level{Name: "tools", URL: "/tools"}) || AboutLevel != (page.Level{Name: "about", URL: "/about"}) {
@@ -120,7 +120,7 @@ func TestLoadAndWrite(t *testing.T) {
 	cases := []struct {
 		name string
 		data any
-	}{{"landing", LandingData{b, []DraftRow{}, "", "", []TransferRow{}, "", ""}}, {"tools", ToolsData{b, []ToolRow{{"chosen-tool", "chosen-description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}}
+	}{{"landing", LandingData{b, []DraftRow{}, "", "", "", []TransferRow{}, "", "", ""}}, {"tools", ToolsData{b, []ToolRow{{"chosen-tool", "chosen-description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}}
 	for _, status := range []string{store.DraftOpen, store.DraftSent, store.DraftDiscarded} {
 		for _, filled := range []bool{false, true} {
 			v := DraftView{ID: "drf_1111111111111111", Status: status, To: []string{}, Cc: []string{}, Bcc: []string{}, Attachments: []AttachmentRow{}}
@@ -148,7 +148,7 @@ func TestLoadAndWrite(t *testing.T) {
 			}{"draft", DraftData{b, v}}, struct {
 				name string
 				data any
-			}{"landing", LandingData{b, []DraftRow{{ID: v.ID, Status: status, Subject: v.Subject, To: v.To, Cc: v.Cc, Bcc: v.Bcc, AttachmentCount: len(v.Attachments), Link: v.Link, Created: v.Created, CreatedText: v.CreatedText, Sent: v.Sent, SentText: v.SentText}}, "", "", []TransferRow{}, "", ""}})
+			}{"landing", LandingData{b, []DraftRow{{ID: v.ID, Status: status, Subject: v.Subject, To: v.To, Cc: v.Cc, Bcc: v.Bcc, AttachmentCount: len(v.Attachments), Link: v.Link, Created: v.Created, CreatedText: v.CreatedText, Sent: v.Sent, SentText: v.SentText}}, "", "", "", []TransferRow{}, "", "", ""}})
 		}
 	}
 	for _, status := range []string{store.StatusQueued, store.StatusRunning, store.StatusDone, store.StatusFailed} {
@@ -178,7 +178,7 @@ func TestLoadAndWrite(t *testing.T) {
 					}{"transfer", TransferData{b, v}}, struct {
 						name string
 						data any
-					}{"landing", LandingData{b, []DraftRow{}, "", "", []TransferRow{{ID: v.ID, Direction: dir, Status: status, Reason: reason, Name: v.Name, Link: v.Link, Path: v.Path, ArtifactPage: v.ArtifactPage, URL: v.URL, Bytes: v.Bytes, Started: v.Started, StartedText: v.StartedText, Finished: v.Finished, FinishedText: v.FinishedText}}, "", ""}})
+					}{"landing", LandingData{b, []DraftRow{}, "", "", "", []TransferRow{{ID: v.ID, Direction: dir, Status: status, Reason: reason, Name: v.Name, Link: v.Link, Path: v.Path, ArtifactPage: v.ArtifactPage, URL: v.URL, Bytes: v.Bytes, Started: v.Started, StartedText: v.StartedText, Finished: v.Finished, FinishedText: v.FinishedText}}, "", "", ""}})
 				}
 			}
 		}
@@ -198,7 +198,7 @@ func TestLoadAndWrite(t *testing.T) {
 	}
 }
 
-// R-W7ON-MTEL R-9IZ4-BV6U R-DTYQ-Z6E4 R-WHFU-OZC5 R-WOR8-ZLSB
+// R-W7ON-MTEL R-H3KU-58L6 R-DTYQ-Z6E4 R-WHFU-OZC5 R-WOR8-ZLSB
 // R-WBCC-S4MO R-DRIY-7MWQ R-WA4G-ECVZ R-WUUQ-WGHS
 func TestOwnerRecords(t *testing.T) {
 	st, _, now := fixture(t)
@@ -240,8 +240,8 @@ func TestOwnerRecords(t *testing.T) {
 	b.Trail = nil
 	dr := DraftRow{ID: d.ID, Status: d.Status, Subject: d.Subject, To: d.To, Cc: d.Cc, Bcc: d.Bcc, AttachmentCount: 1, Link: d.Link, Created: now().Format(time.RFC3339), CreatedText: now().Format(MinuteLayout)}
 	xr := TransferRow{ID: x.ID, Direction: x.Direction, Status: x.Status, Name: x.Name, Link: x.Link, Path: x.Path, ArtifactPage: "https://artifacts.example.test/" + x.ArtifactID, URL: x.URL, Bytes: 71, Started: now().Format(time.RFC3339), StartedText: now().Format(MinuteLayout), Finished: now().Format(time.RFC3339), FinishedText: now().Format(MinuteLayout)}
-	check(t, request(h, "GET", "/", "owner"), 200, "landing", LandingData{b, []DraftRow{dr}, "", "", []TransferRow{xr}, "", ""})
-	check(t, request(h, "GET", "/", "empty"), 200, "landing", LandingData{b, []DraftRow{}, "", "", []TransferRow{}, "", ""})
+	check(t, request(h, "GET", "/", "owner"), 200, "landing", LandingData{b, []DraftRow{dr}, "", "", "", []TransferRow{xr}, "", "", ""})
+	check(t, request(h, "GET", "/", "empty"), 200, "landing", LandingData{b, []DraftRow{}, "", "", "", []TransferRow{}, "", "", ""})
 	dv := DraftView{ID: d.ID, Status: d.Status, GmailDraft: d.GmailDraft, Message: d.Message, Thread: d.Thread, To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, InReplyTo: d.ReplyTo, Link: d.Link, Created: now().Format(time.RFC3339), CreatedText: now().Format(SecondLayout), Modified: now().Format(time.RFC3339), ModifiedText: now().Format(SecondLayout), Attachments: []AttachmentRow{{"out/a.pdf", "https://artifacts.example.test/files/out/a.pdf", "chosen-attachment", "application/pdf", 29}}}
 	b.Trail = []page.Level{{Name: d.ID, URL: "/drafts/" + d.ID}}
 	check(t, request(h, "GET", "/drafts/"+d.ID, "owner"), 200, "draft", DraftData{b, dv})
@@ -283,7 +283,7 @@ func TestOwnerRecords(t *testing.T) {
 	}
 }
 
-// R-9IZ4-BV6U R-9GJB-KBPG
+// R-H3KU-58L6 R-GV1J-GUEB
 func TestLandingFirstPages(t *testing.T) {
 	for _, counts := range [][2]int{{0, 0}, {paging.DefaultLimit, paging.DefaultLimit}, {paging.DefaultLimit + 1, 0}, {0, paging.DefaultLimit + 1}, {paging.DefaultLimit + 1, paging.DefaultLimit + 1}} {
 		t.Run(strconv.Itoa(counts[0])+"/"+strconv.Itoa(counts[1]), func(t *testing.T) {
@@ -323,7 +323,7 @@ func TestLandingFirstPages(t *testing.T) {
 			}
 			b := expectedBanner()
 			b.Trail = nil
-			data := LandingData{b, []DraftRow{}, "", "", []TransferRow{}, "", ""}
+			data := LandingData{b, []DraftRow{}, "", "", "", []TransferRow{}, "", "", ""}
 			for _, d := range ds[:min(len(ds), paging.DefaultLimit)] {
 				data.Drafts = append(data.Drafts, DraftRow{ID: d.ID, Status: d.Status, Subject: d.Subject, To: d.To, Cc: d.Cc, Bcc: d.Bcc, AttachmentCount: len(d.Attachments), Link: d.Link, Created: d.Created.UTC().Format(time.RFC3339), CreatedText: d.Created.UTC().Format(MinuteLayout)})
 			}
@@ -340,12 +340,12 @@ func TestLandingFirstPages(t *testing.T) {
 			}
 			h := identity.Require(Handler(Config{Banner: banner, Pages: load(t), Store: st}))
 			check(t, request(h, http.MethodGet, "/", "owner"), http.StatusOK, "landing", data)
-			check(t, request(h, http.MethodGet, "/", "empty"), http.StatusOK, "landing", LandingData{b, []DraftRow{}, "", "", []TransferRow{}, "", ""})
+			check(t, request(h, http.MethodGet, "/", "empty"), http.StatusOK, "landing", LandingData{b, []DraftRow{}, "", "", "", []TransferRow{}, "", "", ""})
 		})
 	}
 }
 
-// R-9IZ4-BV6U
+// R-H3KU-58L6
 func TestLandingEmptySlices(t *testing.T) {
 	st, _, _ := fixture(t)
 	var captured *LandingData
@@ -360,13 +360,13 @@ func TestLandingEmptySlices(t *testing.T) {
 	if w.Code != http.StatusOK || captured == nil {
 		t.Fatal("landing data was not captured", w.Code)
 	}
-	if captured.DraftsPage != "" || captured.TransfersPage != "" || captured.Drafts == nil || len(captured.Drafts) != 0 || captured.Transfers == nil || len(captured.Transfers) != 0 || captured.DraftsNext != "" || captured.TransfersNext != "" {
+	if captured.DraftsPage != "" || captured.TransfersPage != "" || captured.Drafts == nil || len(captured.Drafts) != 0 || captured.Transfers == nil || len(captured.Transfers) != 0 || captured.DraftsPrev != "" || captured.TransfersPrev != "" || captured.DraftsNext != "" || captured.TransfersNext != "" {
 		t.Fatal("empty landing lists or tokens", captured)
 	}
 }
 
 // R-WF01-XFUR R-WINR-2R2U R-WJVN-GITJ R-WMBG-82AX R-WPZ5-DDJ0
-// R-9NUP-UY5M R-WTMU-IOR3 R-W8WK-0L5A R-WL3J-UAK8 R-WNJC-LU1M
+// R-HAW8-FV1C R-WTMU-IOR3 R-W8WK-0L5A R-WL3J-UAK8 R-WNJC-LU1M
 func TestRoutingMethodsAndFailure(t *testing.T) {
 	st, d, _ := fixture(t)
 	ctx := context.Background()
@@ -477,7 +477,7 @@ func TestMailPrivacy(t *testing.T) {
 	}
 }
 
-// R-9GJB-KBPG R-WBCC-S4MO R-DRIY-7MWQ R-WA4G-ECVZ
+// R-GV1J-GUEB R-WBCC-S4MO R-DRIY-7MWQ R-WA4G-ECVZ
 func TestDataConversions(t *testing.T) {
 	z := time.Date(2026, 10, 5, 11, 0, 7, 0, time.FixedZone("offset", 2*60*60))
 	short, long := z.UTC().Format(time.RFC3339), z.UTC().Format(SecondLayout)
@@ -536,8 +536,8 @@ func TestDataConversions(t *testing.T) {
 		}
 	}
 	// Positional construction checks the remaining page contracts' exact field order.
-	landing := LandingData{page.Banner{}, []DraftRow{}, "chosen-drafts-page", "chosen-drafts-token", []TransferRow{}, "chosen-transfers-page", "chosen-transfers-token"}
-	if landing.DraftsPage != "chosen-drafts-page" || landing.TransfersPage != "chosen-transfers-page" || landing.DraftsNext != "chosen-drafts-token" || landing.TransfersNext != "chosen-transfers-token" {
+	landing := LandingData{page.Banner{}, []DraftRow{}, "chosen-drafts-page", "chosen-drafts-prev", "chosen-drafts-token", []TransferRow{}, "chosen-transfers-page", "chosen-transfers-prev", "chosen-transfers-token"}
+	if landing.DraftsPage != "chosen-drafts-page" || landing.TransfersPage != "chosen-transfers-page" || landing.DraftsPrev != "chosen-drafts-prev" || landing.TransfersPrev != "chosen-transfers-prev" || landing.DraftsNext != "chosen-drafts-token" || landing.TransfersNext != "chosen-transfers-token" {
 		t.Fatal("landing token field order")
 	}
 	_ = DraftData{page.Banner{}, dv}
@@ -548,7 +548,7 @@ func TestDataConversions(t *testing.T) {
 	_ = Config{banner, load(t), "", nil}
 }
 
-// R-9IZ4-BV6U R-WINR-2R2U R-WUUQ-WGHS
+// R-H3KU-58L6 R-WINR-2R2U R-WUUQ-WGHS
 func TestStoredStatesOrderAndPrunedRecords(t *testing.T) {
 	st, _, now := fixture(t)
 	ctx := context.Background()
@@ -598,7 +598,7 @@ func TestStoredStatesOrderAndPrunedRecords(t *testing.T) {
 	}
 	b := expectedBanner()
 	b.Trail = nil
-	data := LandingData{b, []DraftRow{}, "", "", []TransferRow{}, "", ""}
+	data := LandingData{b, []DraftRow{}, "", "", "", []TransferRow{}, "", "", ""}
 	for _, d := range ds {
 		r := DraftRow{ID: d.ID, Status: d.Status, Subject: d.Subject, To: d.To, Cc: d.Cc, Bcc: d.Bcc, AttachmentCount: len(d.Attachments), Link: d.Link, Created: now().Format(time.RFC3339), CreatedText: now().Format(MinuteLayout)}
 		if d.Status == store.DraftSent {
@@ -683,7 +683,7 @@ func callList(t *testing.T, client *mcp.Client, name, token string, out any) {
 	}
 }
 
-// R-9HR7-Y3G5 R-9IZ4-BV6U R-9K70-PMXJ R-9LEX-3EO8
+// R-GXHC-8DVP R-H3KU-58L6 R-H4SQ-J0BV R-H60M-WS2K
 func TestLandingWindows(t *testing.T) {
 	for _, count := range []int{0, paging.DefaultLimit, paging.DefaultLimit + 1, 2*paging.DefaultLimit + 3} {
 		t.Run(strconv.Itoa(count), func(t *testing.T) {
@@ -739,13 +739,18 @@ func TestLandingWindows(t *testing.T) {
 				data := get(path(dp, xp))
 				b := expectedBanner()
 				b.Trail = nil
-				want := LandingData{b, []DraftRow{}, dp, "", []TransferRow{}, xp, ""}
+				want := LandingData{b, []DraftRow{}, dp, "", "", []TransferRow{}, xp, "", ""}
 				end := min(offset+paging.DefaultLimit, count)
 				for _, d := range drafts[offset:end] {
 					want.Drafts = append(want.Drafts, DraftRow{ID: d.ID, Status: d.Status, Subject: d.Subject, To: d.To, Cc: d.Cc, Bcc: d.Bcc, AttachmentCount: len(d.Attachments), Link: d.Link, Created: d.Created.UTC().Format(time.RFC3339), CreatedText: d.Created.UTC().Format(MinuteLayout)})
 				}
 				for _, x := range transfers[offset:end] {
 					want.Transfers = append(want.Transfers, TransferRow{ID: x.ID, Direction: x.Direction, Status: x.Status, Name: x.Name, Path: x.Path, Started: x.Started.UTC().Format(time.RFC3339), StartedText: x.Started.UTC().Format(MinuteLayout)})
+				}
+				if offset > 0 && end > offset {
+					d, x := drafts[offset], transfers[offset]
+					want.DraftsPrev = (paging.Token{Tool: "drafts-before"}).Encode(d.Created.UTC().Format(time.RFC3339), d.ID)
+					want.TransfersPrev = (paging.Token{Tool: "transfers-before"}).Encode(x.Started.UTC().Format(time.RFC3339), x.ID)
 				}
 				if end < count {
 					d, x := drafts[end-1], transfers[end-1]
@@ -800,7 +805,7 @@ func TestLandingWindows(t *testing.T) {
 	}
 }
 
-// R-9HR7-Y3G5 R-9MMT-H6EX R-9NUP-UY5M
+// R-GXHC-8DVP R-H78J-AJT9 R-HAW8-FV1C
 func TestLandingTokenFailures(t *testing.T) {
 	_, database, clock := fixture(t)
 	seq := make([]byte, (2*paging.DefaultLimit+4)*8)
@@ -828,6 +833,11 @@ func TestLandingTokenFailures(t *testing.T) {
 	h := identity.Require(Handler(Config{Banner: banner, Pages: load(t), Store: st}))
 	invalid := []url.Values{
 		{"drafts_page": {"bogus"}}, {"transfers_page": {"bogus"}},
+		{"drafts_page": {"LAST"}}, {"transfers_page": {"LAST"}},
+		{"drafts_page": {"last/"}}, {"transfers_page": {"last/"}},
+		{"drafts_page": {"last"}, "transfers_page": {"last/"}},
+		{"drafts_page": {(paging.Token{Tool: "search"}).Encode("time", "id")}},
+		{"transfers_page": {(paging.Token{Tool: "transfers"}).Encode(int64(1))}},
 		{"drafts_page": {"bogus"}, "transfers_page": {"bogus"}},
 		{"drafts_page": {dp}, "transfers_page": {"bogus"}},
 		{"drafts_page": {"bogus", dp}}, {"transfers_page": {"bogus", xp}},
@@ -838,6 +848,12 @@ func TestLandingTokenFailures(t *testing.T) {
 	}
 	if err := (paging.Token{Tool: "transfers"}).Decode(dp, &a, &b); err != nil {
 		invalid = append(invalid, url.Values{"transfers_page": {dp}})
+	}
+	for _, names := range [][2]string{{"drafts", "transfers-before"}, {"transfers", "drafts-before"}} {
+		token := (paging.Token{Tool: names[1]}).Encode("time", "id")
+		if (paging.Token{Tool: names[0]}).Decode(token, &a, &b) != nil && (paging.Token{Tool: names[0] + "-before"}).Decode(token, &a, &b) != nil {
+			invalid = append(invalid, url.Values{names[0] + "_page": {token}})
+		}
 	}
 	for _, failing := range []bool{false, true} {
 		database.SetFailing(failing)
@@ -854,6 +870,10 @@ func TestLandingTokenFailures(t *testing.T) {
 			if failing {
 				for _, query := range []url.Values{
 					{}, {"drafts_page": {"", "bogus"}, "transfers_page": {"", "bogus"}},
+					{"drafts_page": {"last"}}, {"transfers_page": {"last"}},
+					{"drafts_page": {"last"}, "transfers_page": {"last"}},
+					{"drafts_page": {(paging.Token{Tool: "drafts-before"}).Encode("time", "id")}},
+					{"transfers_page": {(paging.Token{Tool: "transfers-before"}).Encode("time", "id")}},
 					{"drafts_page": {dp}}, {"transfers_page": {xp}},
 					{"drafts_page": {dp, "bogus"}, "transfers_page": {xp, "bogus"}},
 				} {

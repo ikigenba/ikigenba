@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -76,9 +77,11 @@ type LandingData struct {
 	Banner        page.Banner
 	Drafts        []DraftRow
 	DraftsPage    string
+	DraftsPrev    string
 	DraftsNext    string
 	Transfers     []TransferRow
 	TransfersPage string
+	TransfersPrev string
 	TransfersNext string
 }
 
@@ -191,6 +194,56 @@ func transferView(t store.Transfer, base string) TransferView {
 	return v
 }
 
+type pagePosition struct {
+	value, time, id string
+	reverse, last   bool
+}
+
+func decodePage(name, value string) (pagePosition, bool) {
+	p := pagePosition{value: value}
+	if value == "" {
+		return p, true
+	}
+	if (paging.Token{Tool: name}).Decode(value, &p.time, &p.id) == nil {
+		return p, true
+	}
+	if (paging.Token{Tool: name + "-before"}).Decode(value, &p.time, &p.id) == nil {
+		p.reverse = true
+		return p, true
+	}
+	if value == "last" {
+		p.time, p.id = "", ""
+		p.reverse, p.last = true, true
+		return p, true
+	}
+	return p, false
+}
+
+func pageWindow[T any](rows []T, p pagePosition, name string, key func(T) (string, string)) ([]T, string, string, bool) {
+	more := len(rows) > paging.DefaultLimit
+	if p.reverse && !more {
+		return rows, "", "", true
+	}
+	if more {
+		rows = rows[:paging.DefaultLimit]
+	}
+	if p.reverse {
+		slices.Reverse(rows)
+	}
+	var prev, next string
+	if len(rows) != 0 {
+		if p.value != "" {
+			a, b := key(rows[0])
+			prev = (paging.Token{Tool: name + "-before"}).Encode(a, b)
+		}
+		if !p.last && (p.reverse || more) {
+			a, b := key(rows[len(rows)-1])
+			next = (paging.Token{Tool: name}).Encode(a, b)
+		}
+	}
+	return rows, prev, next, false
+}
+
 // Handler serves the caller’s records without modifying them.
 func Handler(cfg Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -220,41 +273,50 @@ func Handler(cfg Config) http.Handler {
 		case p == "/":
 			draftsPage := r.URL.Query().Get("drafts_page")
 			transfersPage := r.URL.Query().Get("transfers_page")
-			var created, draftPosition, started, transferPosition string
-			if draftsPage != "" {
-				if err := (paging.Token{Tool: "drafts"}).Decode(draftsPage, &created, &draftPosition); err != nil {
-					notfound()
-					return
-				}
+			dp, ok := decodePage("drafts", draftsPage)
+			if !ok {
+				notfound()
+				return
 			}
-			if transfersPage != "" {
-				if err := (paging.Token{Tool: "transfers"}).Decode(transfersPage, &started, &transferPosition); err != nil {
-					notfound()
-					return
-				}
+			tp, ok := decodePage("transfers", transfersPage)
+			if !ok {
+				notfound()
+				return
 			}
-			ds, err := cfg.Store.ListDraftsAfter(r.Context(), c.UserID, created, draftPosition, paging.DefaultLimit+1)
+			draftRead := cfg.Store.ListDraftsAfter
+			if dp.reverse {
+				draftRead = cfg.Store.ListDraftsBefore
+			}
+			ds, err := draftRead(r.Context(), c.UserID, dp.time, dp.id, paging.DefaultLimit+1)
 			if err != nil {
 				refusal()
 				return
 			}
-			ts, err := cfg.Store.ListTransfersAfter(r.Context(), c.UserID, started, transferPosition, paging.DefaultLimit+1)
+			transferRead := cfg.Store.ListTransfersAfter
+			if tp.reverse {
+				transferRead = cfg.Store.ListTransfersBefore
+			}
+			ts, err := transferRead(r.Context(), c.UserID, tp.time, tp.id, paging.DefaultLimit+1)
 			if err != nil {
 				refusal()
+				return
+			}
+			ds, dprev, dnext, du := pageWindow(ds, dp, "drafts", func(d store.Draft) (string, string) { return d.Created.UTC().Format(time.RFC3339), d.ID })
+			ts, tprev, tnext, tu := pageWindow(ts, tp, "transfers", func(t store.Transfer) (string, string) { return t.Started.UTC().Format(time.RFC3339), t.ID })
+			if du || tu {
+				location := "/"
+				if !du && draftsPage != "" {
+					location += "?drafts_page=" + draftsPage
+				}
+				if !tu && transfersPage != "" {
+					location += "?transfers_page=" + transfersPage
+				}
+				w.Header().Set("Location", location)
+				w.WriteHeader(http.StatusSeeOther)
 				return
 			}
 			b.Trail = nil
-			d := LandingData{Banner: b, Drafts: []DraftRow{}, DraftsPage: draftsPage, Transfers: []TransferRow{}, TransfersPage: transfersPage}
-			if len(ds) > paging.DefaultLimit {
-				ds = ds[:paging.DefaultLimit]
-				last := ds[len(ds)-1]
-				d.DraftsNext = (paging.Token{Tool: "drafts"}).Encode(last.Created.UTC().Format(time.RFC3339), last.ID)
-			}
-			if len(ts) > paging.DefaultLimit {
-				ts = ts[:paging.DefaultLimit]
-				last := ts[len(ts)-1]
-				d.TransfersNext = (paging.Token{Tool: "transfers"}).Encode(last.Started.UTC().Format(time.RFC3339), last.ID)
-			}
+			d := LandingData{Banner: b, Drafts: []DraftRow{}, DraftsPage: draftsPage, DraftsPrev: dprev, DraftsNext: dnext, Transfers: []TransferRow{}, TransfersPage: transfersPage, TransfersPrev: tprev, TransfersNext: tnext}
 			base := artifactBase(cfg.ServicesPath)
 			for _, x := range ds {
 				d.Drafts = append(d.Drafts, draftRow(x))
