@@ -9,7 +9,7 @@ The goal exceeds one agent's capacity. Both execution and verification must be s
 
 ## Goal
 
-Every agent receives this document, the overall goal, and its assigned task. The goal specifies the absolute working directory, verifiable completion criteria, authority boundaries, and where to report blockers with evidence. Ask for any missing information. Confirm the directory with `pwd` and stay there. Respect the stated boundaries.
+Every coordinator receives this document, the overall goal, and its assigned task. A leaf or verifier receives the goal and its assignment, with the rules its role needs written into the assignment, never this document. The goal specifies the absolute working directory, verifiable completion criteria, authority boundaries, and where to report blockers with evidence. Ask for any missing information. Confirm the directory with `pwd` and stay there. Respect the stated boundaries.
 
 ## Decomposition
 
