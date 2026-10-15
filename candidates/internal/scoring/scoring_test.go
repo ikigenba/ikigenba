@@ -93,19 +93,19 @@ func TestWeight(t *testing.T) {
 	}
 }
 
-// R-BKMJ-570Z R-PDA4-YXZ2
+// R-W5ON-JD1Z R-PDA4-YXZ2
 func TestOperating(t *testing.T) {
 	for _, tc := range []struct {
 		weights []float64
 		want    float64
-	}{{[]float64{.6, .3, .2}, .776}, {[]float64{.6, .5}, .8}, {[]float64{.2}, .2}, {[]float64{0}, 0}} {
+	}{{[]float64{.6, .3, .2}, .776}, {[]float64{.6, .5}, .8}, {[]float64{.2}, .2}, {[]float64{.6, .3, .2, .2}, .8208}, {[]float64{.0000004}, 0}, {[]float64{.1234564}, .123456}, {[]float64{.1234566}, .123457}, {[]float64{.0078125}, .007813}, {[]float64{-.0078125}, -.007813}, {[]float64{0}, 0}} {
 		es := []sources.Evidence{}
 		for _, w := range tc.weights {
-			es = append(es, sources.Evidence{Weight: w})
+			es = append(es, sources.Evidence{Name: "chosen-signal", Source: "chosen-source", Weight: w, Description: "chosen-description"})
 		}
 		before := append([]sources.Evidence{}, es...)
 		got := scoring.Operating(es)
-		if got == nil || math.Abs(*got-tc.want) > 1e-9 || !reflect.DeepEqual(es, before) {
+		if got == nil || *got != tc.want || !reflect.DeepEqual(es, before) {
 			t.Fatal(got, es)
 		}
 	}
@@ -114,7 +114,7 @@ func TestOperating(t *testing.T) {
 	}
 }
 
-// R-BLUF-IYRO
+// R-W6WJ-X4SO
 func TestOperatingKey(t *testing.T) {
 	if scoring.OperatingKey(nil) != -1 {
 		t.Fatal("nil")
@@ -122,7 +122,7 @@ func TestOperatingKey(t *testing.T) {
 	for _, tc := range []struct {
 		in   float64
 		want int64
-	}{{0, 0}, {.0000015, 1}, {-.0000015, -1}, {.776, 776000}, {1, 1000000}, {1e13, math.MaxInt64}, {-1e13, math.MinInt64}, {0x1p63 / 1000000, math.MaxInt64}} {
+	}{{0, 0}, {.000001, 1}, {.0000015, 2}, {-.0000015, -2}, {.2, 200000}, {.776, 776000}, {1, 1000000}, {1e13, math.MaxInt64}, {-1e13, math.MinInt64}, {0x1p63 / 1000000, math.MaxInt64}} {
 		if got := scoring.OperatingKey(&tc.in); got != tc.want {
 			t.Fatal(tc, got)
 		}

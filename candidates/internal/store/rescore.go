@@ -101,28 +101,6 @@ func assessment(r *records, c Candidate, t time.Time) ([]sources.Estimate, Asses
 	}
 	return es, a
 }
-func judge(r *records, ids []string, t time.Time) Counts {
-	out := Counts{}
-	seen := map[string]bool{}
-	for _, id := range ids {
-		if seen[id] {
-			continue
-		}
-		seen[id] = true
-		c, ok := r.candidates[id]
-		if !ok || c.Status != StatusActive {
-			continue
-		}
-		es, a := assessment(r, c, t)
-		r.estimates[id] = es
-		r.assessments[id] = a
-		out.Judged++
-		if a.RevenueLow == nil {
-			out.Unranged++
-		}
-	}
-	return out
-}
 
 // Judge replaces the judgments of the active candidates named by ids.
 func (s *Store) Judge(ctx context.Context, ids []string) (Counts, error) {

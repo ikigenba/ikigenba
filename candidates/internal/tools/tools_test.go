@@ -491,7 +491,7 @@ func decodeList[T any](t *testing.T, r mcp.Result) T {
 
 var _ io.Reader = (*random)(nil)
 
-// R-0I0J-AFZJ R-N3IJ-G0NV R-0PBX-L2FP R-0QJT-YU6E R-6WSF-X8B2
+// R-0I0J-AFZJ R-ZI54-T4GR R-0PBX-L2FP R-0QJT-YU6E R-6WSF-X8B2
 func TestDetailAndRulings(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)

@@ -267,37 +267,42 @@ func malformed(d Ruling) bool {
 func (s *Store) Decide(ctx context.Context, d Ruling) (Ruling, []Candidate, error) {
 	var out Ruling
 	var cs []Candidate
-	err := s.transaction(ctx, true, func(r *records) error {
+	err := unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		if d.UserID == "" {
 			return ErrUnreachable
 		}
 		if malformed(d) {
 			return ErrInvalid
 		}
-		c, ok := r.candidates[d.Candidate]
-		if !ok {
-			return ErrNotFound
+		c, err := candidateKey(ctx, tx, d.Candidate)
+		if err != nil {
+			return err
 		}
 		var other Candidate
 		if d.Kind == KindMerge || d.Kind == KindNotSame {
-			other, ok = r.candidates[d.Other]
-			if !ok {
-				return ErrNotFound
+			other, err = candidateKey(ctx, tx, d.Other)
+			if err != nil {
+				return err
 			}
 		}
 		if c.Status == StatusMerged || (d.Kind == KindMerge || d.Kind == KindNotSame) && (other.Status == StatusMerged || other.ID == c.ID) {
 			return ErrInvalid
 		}
 		keys := map[string]bool{}
+		var split *records
 		if d.Kind == KindSplit {
+			split, err = candidateRecords(ctx, tx, c)
+			if err != nil {
+				return err
+			}
 			for _, key := range d.Keys {
-				l, exists := r.links[key]
-				if !exists || l.Candidate != c.ID {
+				_, exists := split.links[key]
+				if !exists {
 					return ErrInvalid
 				}
 				keys[key] = true
 			}
-			if len(keys) == len(linksFor(r, c.ID)) {
+			if len(keys) == len(split.links) {
 				return ErrInvalid
 			}
 		}
@@ -308,7 +313,7 @@ func (s *Store) Decide(ctx context.Context, d Ruling) (Ruling, []Candidate, erro
 			out.Other = d.Other
 			ids = append(ids, d.Other)
 		case KindSplit:
-			id, e := s.mint(r, CandidateIDPrefix)
+			id, e := s.mintKey(ctx, tx, CandidateIDPrefix)
 			if e != nil {
 				return e
 			}
@@ -318,42 +323,61 @@ func (s *Store) Decide(ctx context.Context, d Ruling) (Ruling, []Candidate, erro
 		}
 		t := s.now()
 		out.At = t
-		r.rulings = append(r.rulings, out)
+		if err = insertRecord(ctx, tx, "decisions", rulingColumns, out, nil); err != nil {
+			return err
+		}
 		switch d.Kind {
 		case KindMerge:
-			for key, l := range r.links {
-				if l.Candidate == other.ID {
-					l.Candidate = c.ID
-					l.Reason = LinkDecision
-					l.Confidence = 1
-					r.links[key] = l
-				}
+			if err = execSQL(ctx, tx, "UPDATE links SET candidate=?,reason=?,confidence=1 WHERE candidate=?", c.ID, LinkDecision, other.ID); err != nil {
+				return err
 			}
 			other.Status = StatusMerged
 			other.MergedInto = c.ID
 			other.Updated = t
-			r.candidates[other.ID] = other
+			if err = putCandidate(ctx, tx, other); err != nil {
+				return err
+			}
 		case KindSplit:
-			r.candidates[out.Other] = Candidate{ID: out.Other, Status: StatusActive, Names: []string{}, People: []sources.Person{}, Cargo: []string{}, Created: t, Updated: t}
+			n := Candidate{ID: out.Other, Status: StatusActive, Names: []string{}, People: []sources.Person{}, Cargo: []string{}, Created: t, Updated: t}
+			if err = putCandidate(ctx, tx, n); err != nil {
+				return err
+			}
 			for key := range keys {
-				l := r.links[key]
+				l := split.links[key]
 				l.Candidate = out.Other
 				l.Reason = LinkDecision
 				l.Confidence = 1
-				r.links[key] = l
+				if err = putLink(ctx, tx, l); err != nil {
+					return err
+				}
 			}
-			r.rulings = append(r.rulings, Ruling{Kind: KindNotSame, Candidate: c.ID, Other: out.Other, Keys: []string{}, Why: d.Why, UserID: d.UserID, UserEmail: d.UserEmail, At: t})
+			pair := Ruling{Kind: KindNotSame, Candidate: c.ID, Other: out.Other, Keys: []string{}, Why: d.Why, UserID: d.UserID, UserEmail: d.UserEmail, At: t}
+			if err = insertRecord(ctx, tx, "decisions", rulingColumns, pair, nil); err != nil {
+				return err
+			}
 		}
-		refresh(r, t)
+		if d.Kind == KindMerge || d.Kind == KindSplit {
+			for _, id := range ids {
+				if err = refreshKey(ctx, tx, id, t); err != nil {
+					return err
+				}
+			}
+		}
 		if d.Kind != KindNotSame {
-			judge(r, ids, t)
+			if _, err = judgeKeys(ctx, tx, ids, t); err != nil {
+				return err
+			}
 		}
 		cs = []Candidate{}
 		for _, id := range ids {
-			cs = append(cs, r.candidates[id])
+			c, err := candidateKey(ctx, tx, id)
+			if err != nil {
+				return err
+			}
+			cs = append(cs, c)
 		}
 		return nil
-	})
+	}))
 	if err != nil {
 		return Ruling{}, nil, err
 	}

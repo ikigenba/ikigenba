@@ -123,7 +123,7 @@ func TestPagingRefusalsBeforeStoreAndSchema(t *testing.T) {
 	}
 }
 
-// R-N3IJ-G0NV R-0I0J-AFZJ
+// R-ZI54-T4GR R-0I0J-AFZJ
 func TestStoredJudgmentsChangeOnlyAtJudge(t *testing.T) {
 	f := newFixture(t)
 	f.now = time.Date(2021, 6, 1, 0, 0, 0, 0, time.UTC)
@@ -147,8 +147,11 @@ func TestStoredJudgmentsChangeOnlyAtJudge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Assessment == nil || first.Assessment.OperatingConfidence == nil || *first.Assessment.OperatingConfidence != *a.Operating || math.Abs(*first.Assessment.OperatingConfidence-.776) > 1e-9 || first.Assessment.RevenueLow != nil || first.Assessment.RevenueHigh != nil || first.Assessment.RevenueConfidence != nil {
+	if first.Assessment == nil || first.Assessment.OperatingConfidence == nil || *first.Assessment.OperatingConfidence != *a.Operating || *first.Assessment.OperatingConfidence != .776 || first.Assessment.RevenueLow != nil || first.Assessment.RevenueHigh != nil || first.Assessment.RevenueConfidence != nil {
 		t.Fatal(first.Assessment)
+	}
+	if len(first.Links) != 1 || first.Links[0].Reason != store.LinkSourceKey || len(first.Assessment.OperatingEvidence) != 3 {
+		t.Fatal(first)
 	}
 	for i, w := range []float64{.6, .3, .2} {
 		if first.Assessment.OperatingEvidence[i].Name != reading.Evidence[i].Name || math.Abs(first.Assessment.OperatingEvidence[i].Weight-w) > 1e-9 {
@@ -165,20 +168,48 @@ func TestStoredJudgmentsChangeOnlyAtJudge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.Assessment == nil || updated.Assessment.OperatingConfidence == nil || *updated.Assessment.OperatingConfidence != *a.Operating || math.Abs(*updated.Assessment.OperatingConfidence-.6076934307) > 1e-9 {
+	if updated.Assessment == nil || updated.Assessment.OperatingConfidence == nil || *updated.Assessment.OperatingConfidence != *a.Operating || *updated.Assessment.OperatingConfidence != .607693 {
 		t.Fatal(updated.Assessment)
+	}
+	activeFound := false
+	var storedActive *sources.Evidence
+	for i := range a.Evidence {
+		if a.Evidence[i].Name == sources.EvidenceFMCSAActive {
+			storedActive = &a.Evidence[i]
+		}
 	}
 	for _, e := range updated.Assessment.OperatingEvidence {
 		if e.Name == sources.EvidenceFMCSAActive {
-			if math.Abs(e.Weight-.2994525547) > 1e-9 {
+			activeFound = true
+			if storedActive == nil || math.Abs(e.Weight-.2994525547) > 1e-9 || e.Weight != storedActive.Weight {
 				t.Fatal(e)
 			}
 		}
+	}
+	if !activeFound {
+		t.Fatal("missing active evidence", updated.Assessment)
 	}
 	success(t, f.call("candidate", tools.CandidateArgs{Candidate: ids[0]}), tools.Detail{Candidate: first.Candidate, Assessment: assessmentExpected(a), Estimates: first.Estimates, Links: first.Links, Rulings: first.Rulings})
 	list := decodeList[tools.ShortlistPage](t, f.call("shortlist", tools.ShortlistArgs{}))
 	if len(list.Shortlist) != 1 || *list.Shortlist[0].OperatingConfidence != *updated.Assessment.OperatingConfidence {
 		t.Fatal(list)
+	}
+	reading.Evidence = nil
+	if _, _, err = f.st.Attach(t.Context(), "run-no-evidence", true, []store.Observation{{Scraper: "fmcsa", SourceID: links[0].SourceID, Digest: "no-evidence", Reading: reading}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.st.JudgeAll(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	result := decode(t, f.call("candidate", tools.CandidateArgs{Candidate: ids[0]}))
+	var detail struct {
+		Assessment map[string]json.RawMessage `json:"assessment"`
+	}
+	if err := json.Unmarshal(result.Structured, &detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail.Assessment == nil || detail.Assessment["operating_confidence"] != nil || string(detail.Assessment["operating_evidence"]) != "[]" {
+		t.Fatal(string(result.Structured))
 	}
 }
 

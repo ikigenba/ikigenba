@@ -173,7 +173,7 @@ func TestResolutionRefusesWholeInvalidBatch(t *testing.T) {
 	regEqual(t, len(cs), 0)
 }
 
-// R-GCQD-A9VO R-GDY9-O1MD R-GAAK-IQEA
+// R-GCQD-A9VO R-GDY9-O1MD R-VFA1-PLHH
 func TestResolutionRefreshAndRebuild(t *testing.T) {
 	f := regNew(t)
 	a := regObs("one", "First")
@@ -211,7 +211,7 @@ func TestResolutionRefreshAndRebuild(t *testing.T) {
 	regEqual(t, regLinks(t, f, ids[0])[0], want)
 }
 
-// R-5XOA-44OS R-GAAK-IQEA R-GITV-74L5
+// R-5XOA-44OS R-VFA1-PLHH R-GITV-74L5
 func TestResolutionDisplayAndGone(t *testing.T) {
 	f := regNew(t)
 	a := regObs("older", "Acme INC")
@@ -479,7 +479,7 @@ func TestScoringRulingsTakeEffectImmediately(t *testing.T) {
 	regEqual(t, rulings[0].Kind, store.KindInclude)
 }
 
-// R-GF66-1TD2 R-GHLY-TCUG R-GAAK-IQEA
+// R-GF66-1TD2 R-GHLY-TCUG R-VFA1-PLHH
 func TestResolutionOldestTieAndGoneIdentity(t *testing.T) {
 	f := regNew(t)
 	a, b := regObs("one", "Acme Inc"), regObs("two", "Acme LLC")

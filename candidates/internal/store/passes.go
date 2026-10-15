@@ -3,37 +3,11 @@ package store
 import (
 	"context"
 	"database/sql"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"reflect"
 	"sort"
 )
 
-func (s *Store) mint(r *records, prefix string) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for range 8 {
-		var b [8]byte
-		if s.cfg.Rand == nil {
-			return "", ErrUnreachable
-		}
-		if _, err := io.ReadFull(s.cfg.Rand, b[:]); err != nil {
-			return "", ErrUnreachable
-		}
-		id := prefix + hex.EncodeToString(b[:])
-		if prefix == CandidateIDPrefix {
-			if _, ok := r.candidates[id]; !ok {
-				return id, nil
-			}
-		} else {
-			if _, ok := r.passes[id]; !ok {
-				return id, nil
-			}
-		}
-	}
-	return "", ErrUnreachable
-}
 func validPass(p Pass) bool {
 	return p.Trigger != "" && (p.Kind == KindRebuild && p.Origin == OriginRebuild && p.Trigger == TriggerRebuild && p.Delivery == "" && p.UserID != "" || p.Kind == KindIngest && p.Origin == OriginRun && p.Trigger != TriggerRebuild && p.Delivery != "" || p.Kind == KindJudge && p.Origin == OriginCron && p.Trigger != TriggerRebuild && p.Delivery != "")
 }

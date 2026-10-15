@@ -97,7 +97,7 @@ func Operating(evidence []sources.Evidence) *float64 {
 	for _, e := range evidence {
 		p *= 1 - e.Weight
 	}
-	v := 1 - p
+	v := math.Round((1-p)*1000000) / 1000000
 	return &v
 }
 
@@ -106,7 +106,7 @@ func OperatingKey(operating *float64) int64 {
 	if operating == nil {
 		return -1
 	}
-	v := *operating * 1000000
+	v := math.Round(*operating * 1000000)
 	if v >= 0x1p63 {
 		return math.MaxInt64
 	}

@@ -325,7 +325,7 @@ func TestUpgradeClearsOldJudgmentsAndRepairsCargo(t *testing.T) {
 	contractEqual(t, len(rs), 1)
 }
 
-// R-5XOA-44OS R-GAAK-IQEA
+// R-5XOA-44OS R-VFA1-PLHH
 func TestGivingLinksFillDisplayFields(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
