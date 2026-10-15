@@ -51,14 +51,24 @@ func (v Candidate) MarshalJSON() ([]byte, error) {
 
 // ShortlistEntry is a tool answer value.
 type ShortlistEntry struct {
-	Candidate  Candidate `json:"candidate"`
-	Minutes    int64     `json:"minutes"`
-	Low        int64     `json:"low"`
-	High       *int64    `json:"high,omitempty"`
-	Confidence float64   `json:"confidence"`
-	Effective  float64   `json:"effective"`
-	Point      int64     `json:"point"`
-	Score      int64     `json:"score"`
+	Candidate           Candidate `json:"candidate"`
+	OperatingConfidence *float64  `json:"operating_confidence,omitempty"`
+	RevenueLow          *int64    `json:"revenue_low,omitempty"`
+	RevenueHigh         *int64    `json:"revenue_high,omitempty"`
+	RevenueConfidence   *float64  `json:"revenue_confidence,omitempty"`
+	Categories          []string  `json:"categories"`
+	Fleet               bool      `json:"fleet"`
+	Minutes             *int64    `json:"minutes,omitempty"`
+	GovernmentMatch     string    `json:"government_match,omitempty"`
+}
+
+// MarshalJSON encodes empty categories as an array.
+func (v ShortlistEntry) MarshalJSON() ([]byte, error) {
+	type plain ShortlistEntry
+	if v.Categories == nil {
+		v.Categories = []string{}
+	}
+	return json.Marshal(plain(v))
 }
 
 // ShortlistPage is a tool answer value.
@@ -171,36 +181,46 @@ func (v Estimate) MarshalJSON() ([]byte, error) {
 	return json.Marshal(plain(v))
 }
 
-// Exclusion is a tool answer value.
-type Exclusion struct {
-	Reason string `json:"reason"`
-	Detail string `json:"detail,omitempty"`
+// Evidence is an operating judgment input.
+type Evidence struct {
+	Name        string  `json:"name"`
+	Source      string  `json:"source"`
+	Weight      float64 `json:"weight"`
+	Description string  `json:"description"`
 }
 
-// Assessment is a tool answer value.
+// Category names the source of a business category.
+type Category struct {
+	Name   string `json:"name"`
+	Source string `json:"source"`
+}
+
+// Assessment is a stored judgment answer.
 type Assessment struct {
-	Fleet      bool        `json:"fleet"`
-	Minutes    *int64      `json:"minutes,omitempty"`
-	Low        int64       `json:"low"`
-	High       *int64      `json:"high,omitempty"`
-	Confidence float64     `json:"confidence"`
-	Filed      string      `json:"filed,omitempty"`
-	Freshness  float64     `json:"freshness"`
-	Effective  float64     `json:"effective"`
-	Point      int64       `json:"point"`
-	Score      int64       `json:"score"`
-	Base       int64       `json:"base"`
-	Excluded   bool        `json:"excluded"`
-	Exclusions []Exclusion `json:"exclusions"`
-	Rules      int64       `json:"rules"`
-	Scored     string      `json:"scored"`
+	OperatingConfidence *float64   `json:"operating_confidence,omitempty"`
+	OperatingEvidence   []Evidence `json:"operating_evidence"`
+	RevenueLow          *int64     `json:"revenue_low,omitempty"`
+	RevenueHigh         *int64     `json:"revenue_high,omitempty"`
+	RevenueConfidence   *float64   `json:"revenue_confidence,omitempty"`
+	KnownSince          string     `json:"known_since,omitempty"`
+	NewestFiling        string     `json:"newest_filing,omitempty"`
+	Categories          []Category `json:"categories"`
+	GovernmentMatch     string     `json:"government_match,omitempty"`
+	Fleet               bool       `json:"fleet"`
+	Minutes             *int64     `json:"minutes,omitempty"`
+	Excluded            bool       `json:"excluded"`
+	Rules               int64      `json:"rules"`
+	Calculated          string     `json:"calculated"`
 }
 
-// MarshalJSON encodes empty collections as arrays or objects.
+// MarshalJSON encodes empty collections as arrays.
 func (v Assessment) MarshalJSON() ([]byte, error) {
 	type plain Assessment
-	if v.Exclusions == nil {
-		v.Exclusions = []Exclusion{}
+	if v.OperatingEvidence == nil {
+		v.OperatingEvidence = []Evidence{}
+	}
+	if v.Categories == nil {
+		v.Categories = []Category{}
 	}
 	return json.Marshal(plain(v))
 }

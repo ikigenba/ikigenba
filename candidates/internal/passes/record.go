@@ -32,6 +32,8 @@ func (r *Refusal) Error() string { return r.Word }
 // Record is the public JSON representation of a pass.
 type Record struct {
 	ID        string `json:"id"`
+	Kind      string `json:"kind"`
+	Origin    string `json:"origin"`
 	Trigger   string `json:"trigger"`
 	Status    string `json:"status"`
 	Reason    string `json:"reason,omitempty"`
@@ -44,7 +46,7 @@ type Record struct {
 	Gone      int64  `json:"gone"`
 	Created   int64  `json:"created"`
 	Linked    int64  `json:"linked"`
-	Rescored  int64  `json:"rescored"`
+	Judged    int64  `json:"judged"`
 	Unranged  int64  `json:"unranged"`
 	User      string `json:"user,omitempty"`
 	Email     string `json:"email,omitempty"`
@@ -52,11 +54,11 @@ type Record struct {
 
 // RecordOf renders a pass with UTC timestamps and its public starter.
 func RecordOf(p store.Pass) Record {
-	r := Record{ID: p.ID, Trigger: p.Trigger, Status: p.Status, Reason: p.Reason, Started: p.Started.UTC().Format(time.RFC3339), Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Rescored: p.Rescored, Unranged: p.Unranged}
+	r := Record{ID: p.ID, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Status: p.Status, Reason: p.Reason, Started: p.Started.UTC().Format(time.RFC3339), Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged}
 	if !p.Finished.IsZero() {
 		r.Finished = p.Finished.UTC().Format(time.RFC3339)
 	}
-	if p.Trigger == store.TriggerRebuild {
+	if p.Origin == store.OriginRebuild {
 		r.User = p.UserID
 		r.Email = p.UserEmail
 	}

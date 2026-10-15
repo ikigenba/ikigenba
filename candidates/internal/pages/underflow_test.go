@@ -7,17 +7,16 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/paging"
-	"github.com/ikigenba/ikigenba/candidates/internal/scoring"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-I1OB-Y8Z1: underflow drops just that list's value, for both methods.
+// R-55P6-B7TM: underflow drops just that list's value, for both methods.
 func TestLandingUnderflowRedirects(t *testing.T) {
 	for _, count := range []int{0, paging.DefaultLimit, paging.DefaultLimit + 1} {
 		cfg, _ := pageFixture(t)
 		ctx := context.Background()
 		for i := 0; i < count; i++ {
-			p, err := cfg.Store.AddPass(ctx, store.Pass{Trigger: store.TriggerRebuild, UserID: "starter"})
+			p, err := cfg.Store.AddPass(ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "starter"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -62,11 +61,11 @@ func TestLandingUnderflowRedirects(t *testing.T) {
 	}
 }
 
-// R-HT51-9US6 R-HUCX-NMIV R-HVKU-1E9K: empty after-windows carry no prev or next.
+// R-TBM8-4RJJ R-HUCX-NMIV R-TGHT-NUIB: empty after-windows carry no prev or next.
 func TestLandingEmptyAfterWindows(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	sp := (paging.Token{Tool: "shortlist"}).Encode(int64(42), "candidate_position")
 	pp := (paging.Token{Tool: "passes"}).Encode("2020-01-01T00:00:00Z", "pass_position")
-	data := LandingData{Banner: bannerFor(cfg), MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: dollars(scoring.DefaultMinRevenue), Shortlist: []ShortlistRow{}, ShortlistPage: sp, Passes: []PassRow{}, PassesPage: pp}
+	data := LandingData{Banner: bannerFor(cfg), Shortlist: []ShortlistRow{}, ShortlistPage: sp, Passes: []PassRow{}, PassesPage: pp}
 	comparePage(t, cfg, "/?"+(url.Values{"shortlist_page": {sp}, "passes_page": {pp}}).Encode(), "landing", 200, data)
 }

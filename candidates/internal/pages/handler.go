@@ -9,7 +9,6 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/paging"
-	"github.com/ikigenba/ikigenba/candidates/internal/scoring"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 	"github.com/ikigenba/ikigenba/candidates/internal/urls"
@@ -67,8 +66,8 @@ func Handler(cfg Config) http.Handler {
 				notfound()
 				return
 			}
-			d := LandingData{Banner: b, MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: dollars(scoring.DefaultMinRevenue), Shortlist: []ShortlistRow{}, ShortlistPage: sp, Passes: []PassRow{}, PassesPage: pp}
-			filter := store.ShortlistFilter{MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: scoring.DefaultMinRevenue}
+			d := LandingData{Banner: b, Shortlist: []ShortlistRow{}, ShortlistPage: sp, Passes: []PassRow{}, PassesPage: pp}
+			filter := store.ShortlistFilter{}
 			var ranked []store.Ranked
 			var err error
 			if shortPos.reversed {
@@ -92,7 +91,7 @@ func Handler(cfg Config) http.Handler {
 			if len(ranked) > 0 && sp != "" {
 				key, id := shortPos.key, shortPos.id
 				if shortPos.reversed {
-					key, id = ranked[0].Assessment.ScoreKey, ranked[0].Candidate.ID
+					key, id = ranked[0].Assessment.OperatingKey, ranked[0].Candidate.ID
 				}
 				offset, err = cfg.Store.ShortlistOffset(r.Context(), filter, key, id)
 				if err != nil {
@@ -135,10 +134,10 @@ func Handler(cfg Config) http.Handler {
 			if len(ranked) > 0 {
 				first, last := ranked[0], ranked[len(ranked)-1]
 				if sp != "" {
-					d.ShortlistPrev = (paging.Token{Tool: "shortlist-before"}).Encode(first.Assessment.ScoreKey, first.Candidate.ID)
+					d.ShortlistPrev = (paging.Token{Tool: "shortlist-before"}).Encode(first.Assessment.OperatingKey, first.Candidate.ID)
 				}
 				if !shortPos.last && (shortMore || shortPos.reversed) {
-					d.ShortlistNext = (paging.Token{Tool: "shortlist"}).Encode(last.Assessment.ScoreKey, last.Candidate.ID)
+					d.ShortlistNext = (paging.Token{Tool: "shortlist"}).Encode(last.Assessment.OperatingKey, last.Candidate.ID)
 				}
 			}
 			for i, e := range ranked {

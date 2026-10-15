@@ -23,7 +23,6 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/candidates"
-	"github.com/ikigenba/ikigenba/candidates/internal/scoring"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
@@ -110,7 +109,7 @@ func comparePage(t *testing.T, cfg Config, path, name string, status int, data a
 	}
 }
 
-// R-2GH2-BY8N R-58H2-68U5 R-HPHC-4JK3 R-51PY-VUIV
+// R-2GH2-BY8N R-58H2-68U5 R-4OMK-YFFW R-51PY-VUIV
 func TestTemplateSet(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
@@ -140,7 +139,7 @@ func TestTemplateSet(t *testing.T) {
 					if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "pass", data); err != nil {
 						t.Fatal(err)
 					}
-					if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "landing", LandingData{ShortlistPage: finished, ShortlistNext: finished, PassesPage: finished, PassesNext: finished, Shortlist: []ShortlistRow{{Name: "name", City: "city", State: "MN", High: "value"}, {}}, Passes: []PassRow{{Status: status, Reason: reason, Trigger: trigger, Finished: finished}}}); err != nil {
+					if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "landing", LandingData{ShortlistPage: finished, ShortlistNext: finished, PassesPage: finished, PassesNext: finished, Shortlist: []ShortlistRow{{Name: "name", City: "city", State: "MN", RevenueHigh: "value"}, {}}, Passes: []PassRow{{Status: status, Reason: reason, Trigger: trigger, Finished: finished}}}); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -149,7 +148,7 @@ func TestTemplateSet(t *testing.T) {
 	}
 	for _, flag := range []bool{false, true} {
 		for _, text := range []string{"", "value"} {
-			data := CandidateData{Candidate: CandidateView{Status: store.StatusActive, Name: text, Names: []string{text}, People: []PersonRow{{Name: text, Role: text}}, Cargo: []string{text}}, Assessment: &AssessmentView{Fleet: flag, Stale: flag, Excluded: flag, Minutes: text, High: text, Filed: text, Exclusions: []ExclusionRow{{Reason: text, Detail: text}}}, Estimates: []EstimateView{{High: text, Filed: text, Facts: []FactRow{{Key: text, Value: text}}}}, Links: []LinkView{{RowPage: text, Filed: text, Gone: flag}}, Rulings: []RulingView{{Other: text, Keys: []string{text}, By: text, User: text}}}
+			data := CandidateData{Candidate: CandidateView{Status: store.StatusActive, Name: text, Names: []string{text}, People: []PersonRow{{Name: text, Role: text}}, Cargo: []string{text}}, Assessment: &AssessmentView{Fleet: flag, Excluded: flag, Minutes: text, RevenueLow: text, RevenueHigh: text, NewestFiling: text, OperatingEvidence: []EvidenceRow{{Name: text, Description: text}}}, Estimates: []EstimateView{{High: text, Filed: text, Facts: []FactRow{{Key: text, Value: text}}}}, Links: []LinkView{{RowPage: text, Filed: text, Gone: flag}}, Rulings: []RulingView{{Other: text, Keys: []string{text}, By: text, User: text}}}
 			if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "candidate", data); err != nil {
 				t.Fatal(err)
 			}
@@ -157,11 +156,11 @@ func TestTemplateSet(t *testing.T) {
 	}
 }
 
-// R-5DCN-PBSX R-HVKU-1E9K R-5K0G-MENA R-5L8D-06DZ R-5MG9-DY4O R-5NO5-RPVD R-5OW2-5HM2 R-I2W8-C0PQ R-5RBU-X13G R-5UZK-2CBJ
+// R-5DCN-PBSX R-TGHT-NUIB R-5K0G-MENA R-5L8D-06DZ R-5MG9-DY4O R-5NO5-RPVD R-5OW2-5HM2 R-I2W8-C0PQ R-5RBU-X13G R-5UZK-2CBJ
 func TestStaticEmptyAndRefusals(t *testing.T) {
 	cfg, d := pageFixture(t)
 	b := bannerFor(cfg)
-	comparePage(t, cfg, "/", "landing", 200, LandingData{Banner: b, MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: dollars(scoring.DefaultMinRevenue), Shortlist: []ShortlistRow{}, Passes: []PassRow{}})
+	comparePage(t, cfg, "/", "landing", 200, LandingData{Banner: b, Shortlist: []ShortlistRow{}, Passes: []PassRow{}})
 	b.Trail = []page.Level{AboutLevel}
 	comparePage(t, cfg, "/about", "about", 200, AboutData{b, Description})
 	b.Trail = []page.Level{ToolsLevel}
@@ -219,7 +218,7 @@ func TestInvalidAndMissingPaths(t *testing.T) {
 	}
 }
 
-// R-5JG5-M6IE R-5KO1-ZY93 R-8N3G-9PBK R-5SJR-ASU5 R-5TRN-OKKU
+// R-TIXM-FDZP R-TMLB-KP7S R-TK5I-T5QE R-5SJR-ASU5 R-5TRN-OKKU
 func TestStoredPages(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := context.Background()
@@ -229,11 +228,11 @@ func TestStoredPages(t *testing.T) {
 	if err != nil || len(ids) != 1 {
 		t.Fatal(ids, err)
 	}
-	if _, err := cfg.Store.Rescore(ctx, ids); err != nil {
+	if _, err := cfg.Store.Judge(ctx, ids); err != nil {
 		t.Fatal(err)
 	}
 	id := ids[0]
-	p, err := cfg.Store.AddPass(ctx, store.Pass{Trigger: store.TriggerRebuild, UserID: "starter", UserEmail: "starter@example.test"})
+	p, err := cfg.Store.AddPass(ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "starter", UserEmail: "starter@example.test"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,12 +269,12 @@ func TestStoredPages(t *testing.T) {
 	comparePage(t, cfg, "/candidates/"+id, "candidate", 200, cd)
 	b.Trail = []page.Level{{Name: p.ID, URL: "/passes/" + p.ID}}
 	comparePage(t, cfg, "/passes/"+p.ID, "pass", 200, PassData{b, passView(p, "")})
-	ranked, err := cfg.Store.Shortlist(ctx, store.ShortlistFilter{MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: scoring.DefaultMinRevenue}, 0, "", paging.DefaultLimit+1)
+	ranked, err := cfg.Store.Shortlist(ctx, store.ShortlistFilter{}, 0, "", paging.DefaultLimit+1)
 	if err != nil || len(ranked) != 1 {
 		t.Fatal(ranked, err)
 	}
 	b.Trail = nil
-	comparePage(t, cfg, "/", "landing", 200, LandingData{b, scoring.DefaultMaxMinutes, dollars(scoring.DefaultMinRevenue), []ShortlistRow{shortlistRow(ranked[0], 0, 0)}, "", "", "", []PassRow{passRow(p)}, "", "", ""})
+	comparePage(t, cfg, "/", "landing", 200, LandingData{b, []ShortlistRow{shortlistRow(ranked[0], 0, 0)}, "", "", "", []PassRow{passRow(p)}, "", "", ""})
 	landing := requestPage(cfg, "GET", "/", "reader").Body.String()
 	for _, value := range []string{c.Phone, c.Email} {
 		if strings.Contains(landing, value) {
@@ -319,7 +318,7 @@ func TestStoredPages(t *testing.T) {
 	comparePage(t, cfg, "/candidates/"+id, "candidate", 200, CandidateData{Banner: b, Candidate: candidateView(merged), Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{rulingView(r, id)}})
 }
 
-// R-HQP8-IBAS R-HT51-9US6 R-HUCX-NMIV R-HVKU-1E9K R-HWSQ-F609 R-HY0M-SXQY R-HZ8J-6PHN
+// R-HQP8-IBAS R-TBM8-4RJJ R-HUCX-NMIV R-TGHT-NUIB R-THPQ-1M90 R-TCU4-IJA8 R-4TI6-HIEO
 func TestLandingWindows(t *testing.T) {
 	for _, counts := range [][2]int{{0, 0}, {25, 0}, {26, 0}, {0, 30}, {26, 30}, {60, 60}} {
 		t.Run(strconv.Itoa(counts[0])+"-"+strconv.Itoa(counts[1]), func(t *testing.T) {
@@ -333,12 +332,12 @@ func TestLandingWindows(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if _, err = cfg.Store.Rescore(ctx, ids); err != nil {
+				if _, err = cfg.Store.Judge(ctx, ids); err != nil {
 					t.Fatal(err)
 				}
 			}
 			for i := 0; i < counts[1]; i++ {
-				p, err := cfg.Store.AddPass(ctx, store.Pass{Trigger: store.TriggerRebuild, UserID: "starter"})
+				p, err := cfg.Store.AddPass(ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "starter"})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -346,11 +345,11 @@ func TestLandingWindows(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			ranked, err := cfg.Store.Shortlist(ctx, store.ShortlistFilter{MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: scoring.DefaultMinRevenue}, 0, "", counts[0]+1)
+			ranked, err := cfg.Store.Shortlist(ctx, store.ShortlistFilter{}, 0, "", counts[0]+1)
 			if err != nil || len(ranked) != counts[0] {
 				t.Fatal(len(ranked), err)
 			}
-			if len(ranked) == 60 && (ranked[24].Assessment.ScoreKey != ranked[25].Assessment.ScoreKey || ranked[25].Assessment.ScoreKey != ranked[26].Assessment.ScoreKey) {
+			if len(ranked) == 60 && (ranked[24].Assessment.OperatingKey != ranked[25].Assessment.OperatingKey || ranked[25].Assessment.OperatingKey != ranked[26].Assessment.OperatingKey) {
 				t.Fatal("fixture must tie across the page boundary")
 			}
 			ps, err := cfg.Store.ListPasses(ctx, "", "", counts[1]+1)
@@ -380,12 +379,12 @@ func TestLandingWindows(t *testing.T) {
 					data.Shortlist = append(data.Shortlist, shortlistRow(ranked[offset+i], offset+i, 0))
 					if token != "" && i == 0 {
 						first := ranked[offset]
-						data.ShortlistPrev = (paging.Token{Tool: "shortlist-before"}).Encode(first.Assessment.ScoreKey, first.Candidate.ID)
+						data.ShortlistPrev = (paging.Token{Tool: "shortlist-before"}).Encode(first.Assessment.OperatingKey, first.Candidate.ID)
 					}
 				}
 				if answer.Next != nil {
 					last := ranked[offset+wantCount-1]
-					data.ShortlistNext = (paging.Token{Tool: "shortlist"}).Encode(last.Assessment.ScoreKey, last.Candidate.ID)
+					data.ShortlistNext = (paging.Token{Tool: "shortlist"}).Encode(last.Assessment.OperatingKey, last.Candidate.ID)
 					if data.ShortlistNext != *answer.Next || offset+wantCount >= counts[0] {
 						t.Fatal("shortlist next")
 					}
@@ -438,7 +437,7 @@ func TestLandingWindows(t *testing.T) {
 					start := end - paging.DefaultLimit
 					data := LandingData{Shortlist: []ShortlistRow{}}
 					first, last := ranked[start], ranked[end-1]
-					data.ShortlistPrev = (paging.Token{Tool: "shortlist-before"}).Encode(first.Assessment.ScoreKey, first.Candidate.ID)
+					data.ShortlistPrev = (paging.Token{Tool: "shortlist-before"}).Encode(first.Assessment.OperatingKey, first.Candidate.ID)
 					for i := start; i < end; i++ {
 						data.Shortlist = append(data.Shortlist, shortlistRow(ranked[i], i, 0))
 					}
@@ -446,8 +445,8 @@ func TestLandingWindows(t *testing.T) {
 						data.ShortlistPage = "last"
 					} else {
 						next := ranked[end]
-						data.ShortlistPage = (paging.Token{Tool: "shortlist-before"}).Encode(next.Assessment.ScoreKey, next.Candidate.ID)
-						data.ShortlistNext = (paging.Token{Tool: "shortlist"}).Encode(last.Assessment.ScoreKey, last.Candidate.ID)
+						data.ShortlistPage = (paging.Token{Tool: "shortlist-before"}).Encode(next.Assessment.OperatingKey, next.Candidate.ID)
+						data.ShortlistNext = (paging.Token{Tool: "shortlist"}).Encode(last.Assessment.OperatingKey, last.Candidate.ID)
 					}
 					shortWindows = append(shortWindows, data)
 				}
@@ -475,10 +474,10 @@ func TestLandingWindows(t *testing.T) {
 				// A token is a position even when no row retains that identity.
 				anchor := ranked[paging.DefaultLimit+1]
 				end := paging.DefaultLimit + 2
-				data := LandingData{Shortlist: []ShortlistRow{}, ShortlistPage: (paging.Token{Tool: "shortlist-before"}).Encode(anchor.Assessment.ScoreKey, anchor.Candidate.ID+"x")}
+				data := LandingData{Shortlist: []ShortlistRow{}, ShortlistPage: (paging.Token{Tool: "shortlist-before"}).Encode(anchor.Assessment.OperatingKey, anchor.Candidate.ID+"x")}
 				first, last := ranked[end-paging.DefaultLimit], ranked[end-1]
-				data.ShortlistPrev = (paging.Token{Tool: "shortlist-before"}).Encode(first.Assessment.ScoreKey, first.Candidate.ID)
-				data.ShortlistNext = (paging.Token{Tool: "shortlist"}).Encode(last.Assessment.ScoreKey, last.Candidate.ID)
+				data.ShortlistPrev = (paging.Token{Tool: "shortlist-before"}).Encode(first.Assessment.OperatingKey, first.Candidate.ID)
+				data.ShortlistNext = (paging.Token{Tool: "shortlist"}).Encode(last.Assessment.OperatingKey, last.Candidate.ID)
 				for i := end - paging.DefaultLimit; i < end; i++ {
 					data.Shortlist = append(data.Shortlist, shortlistRow(ranked[i], i, 0))
 				}
@@ -498,7 +497,7 @@ func TestLandingWindows(t *testing.T) {
 			}
 			for _, sw := range shortWindows {
 				for _, pw := range passWindows {
-					data := LandingData{Banner: bannerFor(cfg), MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: dollars(scoring.DefaultMinRevenue), Shortlist: sw.Shortlist, ShortlistPage: sw.ShortlistPage, ShortlistPrev: sw.ShortlistPrev, ShortlistNext: sw.ShortlistNext, Passes: pw.Passes, PassesPage: pw.PassesPage, PassesPrev: pw.PassesPrev, PassesNext: pw.PassesNext}
+					data := LandingData{Banner: bannerFor(cfg), Shortlist: sw.Shortlist, ShortlistPage: sw.ShortlistPage, ShortlistPrev: sw.ShortlistPrev, ShortlistNext: sw.ShortlistNext, Passes: pw.Passes, PassesPage: pw.PassesPage, PassesPrev: pw.PassesPrev, PassesNext: pw.PassesNext}
 					query := url.Values{"shortlist_page": {sw.ShortlistPage}, "passes_page": {pw.PassesPage}}
 					comparePage(t, cfg, "/?"+query.Encode(), "landing", 200, data)
 					comparePage(t, cfg, "/?"+query.Encode()+"&shortlist_page=bogus&passes_page=bogus&page=bogus&limit=1&class=bogus", "landing", 200, data)
@@ -520,7 +519,7 @@ func TestLandingWindows(t *testing.T) {
 	}
 }
 
-// R-5JG5-M6IE R-8N3G-9PBK: external links use the caller's configured services file.
+// R-TIXM-FDZP R-TK5I-T5QE: external links use the caller's configured services file.
 func TestSiblingPageLinks(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	path := filepath.Join(t.TempDir(), "services.json")
@@ -532,7 +531,7 @@ func TestSiblingPageLinks(t *testing.T) {
 	if l.RowPage != "https://records.example.test/runs/run_fixture/rows/a%2Fb" {
 		t.Fatal(l)
 	}
-	p, err := cfg.Store.AddPass(context.Background(), store.Pass{Trigger: "run_fixture", Delivery: "evt_fixture", UserID: "irrelevant", UserEmail: "irrelevant@example.test"})
+	p, err := cfg.Store.AddPass(context.Background(), store.Pass{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "run_fixture", Delivery: "evt_fixture", UserID: "irrelevant", UserEmail: "irrelevant@example.test"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -617,4 +616,54 @@ func TestLandingTokenRefusals(t *testing.T) {
 	if got := requestPage(cfg, "POST", invalid[0], "reader"); got.Code != 405 {
 		t.Fatal(got)
 	}
+}
+
+// R-TBM8-4RJJ R-TGHT-NUIB
+func TestLandingIncludesUnknownAndBelowCutoffs(t *testing.T) {
+	cfg, _ := pageFixture(t)
+	farZip := ""
+	for z, m := range candidates.ZipDrive() {
+		if m > 120 && (farZip == "" || z < farZip) {
+			farZip = z
+		}
+	}
+	if farZip == "" {
+		t.Fatal("embedded ZIP table has no distant location")
+	}
+	low := int64(100)
+	readings := []sources.Reading{
+		{Name: "chosen-distant-business", Zip: farZip, GovernmentMatch: "chosen-government", Evidence: []sources.Evidence{{Name: sources.EvidenceOwnDomain, Source: "mixed", Weight: .8}}, Estimate: &sources.Estimate{Source: "mixed", Low: low, Confidence: .4}},
+		{Name: "chosen-unknown-business"},
+		{Name: "chosen-small-business", Zip: "55072", Evidence: []sources.Evidence{{Name: sources.EvidenceOwnDomain, Source: "mixed", Weight: .2}}, Estimate: &sources.Estimate{Source: "mixed", Low: low, Confidence: .4}},
+	}
+	ids := []string{}
+	for i, reading := range readings {
+		reading.Names = []string{reading.Name}
+		reading.NameKey = reading.Name
+		_, created, err := cfg.Store.Attach(t.Context(), "run-mixed", false, []store.Observation{{Scraper: "mixed", SourceID: strconv.Itoa(i), Digest: strconv.Itoa(i), Reading: reading}})
+		if err != nil || len(created) != 1 {
+			t.Fatal(created, err)
+		}
+		ids = append(ids, created[0])
+	}
+	if _, err := cfg.Store.JudgeAll(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	want := LandingData{Banner: bannerFor(cfg), Shortlist: []ShortlistRow{}, Passes: []PassRow{}}
+	for rank, i := range []int{0, 2, 1} {
+		c, err := cfg.Store.GetCandidate(t.Context(), ids[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+		a, err := cfg.Store.GetAssessment(t.Context(), ids[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+		want.Shortlist = append(want.Shortlist, shortlistRow(store.Ranked{Candidate: c, Assessment: a}, rank, 0))
+	}
+	if want.Shortlist[0].Fleet || want.Shortlist[0].GovernmentMatch != "chosen-government" || want.Shortlist[0].RevenueLow != "$100" || want.Shortlist[1].RevenueLow != "$100" || want.Shortlist[2].OperatingConfidence != "" || want.Shortlist[2].Minutes != "" || want.Shortlist[2].RevenueLow != "" {
+		t.Fatal("mixed fixture", want.Shortlist)
+	}
+	navigationLanding(t, cfg, "/", want)
+	navigationLanding(t, cfg, "/?max_minutes=0&min_revenue=999999999&class=bogus", want)
 }

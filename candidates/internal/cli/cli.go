@@ -23,6 +23,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/candidates/internal/pages"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
+	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
 	"github.com/ikigenba/ikigenba/candidates/internal/server"
 	"github.com/ikigenba/ikigenba/candidates/internal/settings"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
@@ -175,11 +176,9 @@ func Run(ctx context.Context, p Process) int {
 		sc = scrapes.NewClient(scrapes.ClientConfig{Service: e, Telemetry: w})
 	}
 	st := store.New(d, store.Config{Now: p.Now, Rand: rnd})
-	eng := passes.New(passes.Config{Store: st, Sources: sources.New(fmcsa.New()), Scrapes: sc, Telemetry: w, Events: em})
+	eng := passes.New(passes.Config{Store: st, Sources: sources.New(fmcsa.New(), ppp.New()), Scrapes: sc, Telemetry: w, Events: em})
 	w.Ready()
-	if err = st.ReplaceZipDrive(bg, candidates.ZipDrive()); err == nil {
-		err = st.RefreshShortlist(bg)
-	}
+	err = st.ReplaceZipDrive(bg, candidates.ZipDrive())
 	if err == nil {
 		err = eng.Recover(bg)
 	}

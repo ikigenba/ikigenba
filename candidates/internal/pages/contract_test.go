@@ -9,11 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-591D-6GZ1 R-8KNN-I5U6 R-5I89-8ERP
+// R-TP14-C8P6 R-T6QM-LOKR R-TAEB-QZSU
 func TestCompleteViewContracts(t *testing.T) {
 	start := time.Date(2026, 10, 5, 10, 0, 7, 0, time.FixedZone("offset", 3600))
 	end := start.Add(time.Hour)
@@ -29,12 +30,12 @@ func TestCompleteViewContracts(t *testing.T) {
 	if got := candidateView(c); !reflect.DeepEqual(got, wantC) {
 		t.Fatalf("merged %#v", got)
 	}
-	p := store.Pass{ID: "pass", Trigger: store.TriggerRebuild, Status: store.StatusDone, Reason: "reason", Started: start, Finished: end, Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Rescored: 8, Unranged: 9, UserID: "starter", UserEmail: "starter@example.test"}
-	wantP := PassView{ID: "pass", Trigger: store.TriggerRebuild, Status: store.StatusDone, Reason: "reason", StartedBy: "starter@example.test", Started: "2026-10-05T09:00:07Z", StartedText: "2026-10-05 09:00:07 UTC", Finished: "2026-10-05T10:00:07Z", FinishedText: "2026-10-05 10:00:07 UTC", Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Rescored: 8, Unranged: 9}
+	p := store.Pass{ID: "pass", Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, Status: store.StatusDone, Reason: "reason", Started: start, Finished: end, Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, UserID: "starter", UserEmail: "starter@example.test"}
+	wantP := PassView{ID: "pass", Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, Status: store.StatusDone, Reason: "reason", StartedBy: "starter@example.test", Started: "2026-10-05T09:00:07Z", StartedText: "2026-10-05 09:00:07 UTC", Finished: "2026-10-05T10:00:07Z", FinishedText: "2026-10-05 10:00:07 UTC", Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9}
 	if got := passView(p, ""); !reflect.DeepEqual(got, wantP) {
 		t.Fatalf("pass %#v", got)
 	}
-	wantRow := PassRow{ID: "pass", Trigger: store.TriggerRebuild, Status: store.StatusDone, Reason: "reason", Started: "2026-10-05T09:00:07Z", StartedText: "2026-10-05 09:00", Finished: "2026-10-05T10:00:07Z", FinishedText: "2026-10-05 10:00", Rows: 1, Created: 6, Rescored: 8}
+	wantRow := PassRow{ID: "pass", Kind: store.KindRebuild, Trigger: store.TriggerRebuild, Status: store.StatusDone, Reason: "reason", Started: "2026-10-05T09:00:07Z", StartedText: "2026-10-05 09:00", Finished: "2026-10-05T10:00:07Z", FinishedText: "2026-10-05 10:00", Rows: 1, Created: 6, Judged: 8}
 	if got := passRow(p); !reflect.DeepEqual(got, wantRow) {
 		t.Fatal(got)
 	}
@@ -53,6 +54,8 @@ func TestCompleteViewContracts(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"services":[{"name":"scrapes","url":"https://chosen-records.example.test///","description":"","socket":"","enabled":true,"mcp":false}]}`), 0600); err != nil {
 		t.Fatal(err)
 	}
+	p.Origin = store.OriginRun
+	wantP.Origin = store.OriginRun
 	p.Trigger = "run_delivery"
 	p.Started = start
 	p.Finished = end
@@ -66,22 +69,13 @@ func TestCompleteViewContracts(t *testing.T) {
 	if got := passView(p, path); !reflect.DeepEqual(got, wantP) {
 		t.Fatal(got)
 	}
-	a := store.Assessment{Fleet: true, Low: 14400000, High: &hi, Confidence: .7, Filed: start, Minutes: &minutes, Exclusions: []sources.Exclusion{{Reason: "signal", Detail: "detail"}, {Reason: "other"}}, Excluded: true, Base: 13440000.4, Effective: .7, Score: 13440000, Rules: 7, Scored: end}
-	wantA := AssessmentView{Fleet: true, Minutes: "31", Low: "$14,400,000", High: "$24,000,000", Confidence: "0.70", Filed: "2026-10-05", FiledText: "2026-10-05", Freshness: "1.00", Effective: "0.70", Point: "$19,200,000", Base: "$13,440,000", Score: "$13,440,000", Excluded: true, Exclusions: []ExclusionRow{{"signal", "detail"}, {"other", ""}}, Rules: 7, Scored: "2026-10-05T10:00:07Z", ScoredText: "2026-10-05 10:00:07 UTC"}
+	op, rc, low := .776, .7, int64(14400000)
+	a := store.Assessment{Operating: &op, Evidence: []sources.Evidence{{Name: "signal", Source: "source", Weight: .6, Description: "detail"}, {Name: "other", Weight: .3}, {Name: "third", Weight: .2}}, RevenueLow: &low, RevenueHigh: &hi, RevenueConfidence: &rc, KnownSince: start, NewestFiling: start, Categories: []sources.Category{{Name: "category", Source: "source"}}, GovernmentMatch: "chosen-government", Fleet: true, Minutes: &minutes, Excluded: true, Rules: int64(sources.Rules), Calculated: end}
+	wantA := AssessmentView{OperatingConfidence: "0.78", OperatingEvidence: []EvidenceRow{{"signal", "source", "0.60", "detail"}, {"other", "", "0.30", ""}, {"third", "", "0.20", ""}}, RevenueLow: "$14,400,000", RevenueHigh: "$24,000,000", RevenueConfidence: "0.70", KnownSince: "2026-10-05", KnownSinceText: "2026-10-05", NewestFiling: "2026-10-05", NewestFilingText: "2026-10-05", Categories: []CategoryRow{{"category", "source"}}, GovernmentMatch: "chosen-government", Fleet: true, Minutes: "31", Excluded: true, Rules: int64(sources.Rules), Calculated: "2026-10-05T10:00:07Z", CalculatedText: "2026-10-05 10:00:07 UTC"}
 	if got := assessmentView(a); !reflect.DeepEqual(got, wantA) {
-		t.Fatalf("assessment %#v", got)
+		t.Fatalf("assessment got %#v want %#v", got, wantA)
 	}
-	a.High = nil
-	a.Minutes = nil
-	a.Filed = time.Time{}
-	a.Scored = time.Time{}
-	a.Excluded = false
-	a.Exclusions = nil
-	a.Fleet = false
-	a.Effective = 0
-	a.Score = 0
-	wantA = AssessmentView{Low: "$14,400,000", Confidence: "0.70", Freshness: "0.00", Effective: "0.00", Stale: true, Point: "$14,400,000", Base: "$13,440,000", Score: "$0", Exclusions: []ExclusionRow{}, Rules: 7}
-	if got := assessmentView(a); !reflect.DeepEqual(got, wantA) {
+	if got := assessmentView(store.Assessment{}); !reflect.DeepEqual(got, AssessmentView{OperatingEvidence: []EvidenceRow{}, Categories: []CategoryRow{}}) {
 		t.Fatalf("empty assessment %#v", got)
 	}
 	e := sources.Estimate{Source: "source", Low: 14400000, High: &hi, Confidence: .7, Filed: start, Formula: 8, Facts: map[string]json.RawMessage{"z": json.RawMessage(` [1, 2] `), "a": json.RawMessage(` {"k": true} `)}}
@@ -136,7 +130,7 @@ func TestCompleteViewContracts(t *testing.T) {
 	}
 }
 
-// R-HPHC-4JK3
+// R-4OMK-YFFW
 func TestExplicitTemplateStates(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -154,7 +148,7 @@ func TestExplicitTemplateStates(t *testing.T) {
 			}
 			return ""
 		}
-		for _, short := range [][]ShortlistRow{{}, {{City: "chosen-city", State: "chosen-state", High: "chosen-high"}, {}}} {
+		for _, short := range [][]ShortlistRow{{}, {{City: "chosen-city", State: "chosen-state", RevenueHigh: "chosen-high"}, {}}} {
 			for _, passes := range [][]PassRow{{}, {{Status: store.StatusRunning, Trigger: store.TriggerRebuild}}} {
 				data := LandingData{Shortlist: short, ShortlistPage: text(0), ShortlistPrev: text(4), ShortlistNext: text(1), Passes: passes, PassesPage: text(2), PassesPrev: text(5), PassesNext: text(3)}
 				if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "landing", data); err != nil {
@@ -178,7 +172,7 @@ func TestExplicitTemplateStates(t *testing.T) {
 					data.Candidate.Names = []string{text}
 					data.Candidate.People = []PersonRow{{Name: text, Role: text}}
 					data.Candidate.Cargo = []string{text}
-					data.Assessment = &AssessmentView{Minutes: text, High: text, Filed: text, Exclusions: []ExclusionRow{{Detail: text}}}
+					data.Assessment = &AssessmentView{Minutes: text, RevenueLow: text, RevenueHigh: text, OperatingConfidence: text, RevenueConfidence: text, KnownSince: text, KnownSinceText: text, NewestFiling: text, NewestFilingText: text, GovernmentMatch: text, OperatingEvidence: []EvidenceRow{{Name: text, Source: text, Weight: text, Description: text}}, Categories: []CategoryRow{{Name: text, Source: text}}}
 					data.Estimates = []EstimateView{{High: text, Filed: text, Facts: []FactRow{{Key: text, Value: text}}}}
 					data.Links = []LinkView{{RowPage: text, Filed: text}}
 					data.Rulings = []RulingView{{Other: text, Keys: []string{text}, By: text, User: "chosen-user"}}
@@ -200,38 +194,98 @@ func TestExplicitTemplateStates(t *testing.T) {
 	}
 }
 
-// R-5I89-8ERP: freshness and effective values reflect stored scoring.
-func TestAssessmentStoredScoring(t *testing.T) {
-	for _, tc := range []struct {
-		confidence, effective float64
-		freshness             string
-		stale                 bool
-	}{
-		{.8, .4, "0.50", false}, {.7, .7, "1.00", false}, {0, 0, "0.00", true}, {.7, 0, "0.00", true}, {.7, -.1, "0.00", true}, {.5, .8, "1.00", false},
+// R-T7YI-ZGBG
+func TestShortlistRowStoredAssessment(t *testing.T) {
+	minutes, low, high, op, rc := int64(84), int64(2400000), int64(3840000), .776, .4
+	c := store.Candidate{ID: "chosen-id", Name: "chosen-name", City: "chosen-city", State: "MN", Class: "chosen-class"}
+	a := store.Assessment{Operating: &op, Minutes: &minutes, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &rc, Categories: []sources.Category{{Name: sources.CategoryTrucking, Source: "fmcsa"}, {Name: sources.CategoryConstruction, Source: "ppp"}, {Name: sources.CategoryTrucking, Source: "ppp"}}, Fleet: true, GovernmentMatch: "chosen-government"}
+	want := ShortlistRow{Rank: 28, ID: c.ID, Name: c.Name, City: c.City, State: c.State, Class: c.Class, OperatingConfidence: "0.78", Minutes: "84", RevenueLow: "$2,400,000", RevenueHigh: "$3,840,000", RevenueConfidence: "0.40", Categories: []string{sources.CategoryConstruction, sources.CategoryTrucking}, Fleet: true, GovernmentMatch: "chosen-government"}
+	if got := shortlistRow(store.Ranked{Candidate: c, Assessment: a}, 2, 25); !reflect.DeepEqual(got, want) {
+		t.Fatalf("%+v", got)
+	}
+	a.RevenueHigh = nil
+	want.RevenueHigh = ""
+	if got := shortlistRow(store.Ranked{Candidate: c, Assessment: a}, 2, 25); !reflect.DeepEqual(got, want) {
+		t.Fatalf("minimum %+v", got)
+	}
+	want = ShortlistRow{Rank: 26, ID: c.ID, Name: c.Name, City: c.City, State: c.State, Class: c.Class, Categories: []string{}}
+	if got := shortlistRow(store.Ranked{Candidate: c}, 0, 25); !reflect.DeepEqual(got, want) {
+		t.Fatalf("unknown %+v", got)
+	}
+}
+
+// R-T6QM-LOKR R-TMLB-KP7S
+func TestPassOrigins(t *testing.T) {
+	cfg, _ := pageFixture(t)
+	path := filepath.Join(t.TempDir(), "services.json")
+	if err := os.WriteFile(path, []byte(`{"services":[{"name":"scrapes","url":"https://chosen-records.example.test/","description":"","socket":"","enabled":true,"mcp":false}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg.ServicesPath = path
+	for _, tc := range []struct{ kind, origin, trigger, by, run string }{
+		{store.KindRebuild, store.OriginRebuild, store.TriggerRebuild, "starter@example.test", ""},
+		{store.KindJudge, store.OriginCron, store.TriggerJudge, "", ""},
+		{store.KindIngest, store.OriginRun, "run_chosen", "", "https://chosen-records.example.test/runs/run_chosen"},
 	} {
-		// Deliberately old filing and independently stored score ensure the view
-		// cannot calculate an effective value or score from today's date.
-		a := store.Assessment{Confidence: tc.confidence, Effective: tc.effective, Score: 7279999.6, Filed: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), Scored: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
-		got := assessmentView(a)
-		if got.Freshness != tc.freshness || got.Effective != two(tc.effective) || got.Stale != tc.stale || got.Score != "$7,280,000" {
-			t.Fatalf("%+v: %+v", tc, got)
+		input := store.Pass{Kind: tc.kind, Origin: tc.origin, Trigger: tc.trigger, UserID: "starter-id", UserEmail: "starter@example.test"}
+		if tc.origin != store.OriginRebuild {
+			input.Delivery = "delivery-" + tc.origin
+		}
+		p, err := cfg.Store.AddPass(t.Context(), input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := passView(p, path)
+		if got.Kind != tc.kind || got.Origin != tc.origin || got.StartedBy != tc.by || got.RunPage != tc.run {
+			t.Fatal(got)
+		}
+		b := bannerFor(cfg)
+		b.Trail = []page.Level{{Name: p.ID, URL: "/passes/" + p.ID}}
+		comparePage(t, cfg, "/passes/"+p.ID, "pass", 200, PassData{Banner: b, Pass: got})
+		if _, err = cfg.Store.FinishPass(t.Context(), p.ID, store.Counts{}); err != nil {
+			t.Fatal(err)
 		}
 	}
 }
 
-// R-J274-RM46: every projected field and nullable value.
-func TestShortlistRowStoredAssessment(t *testing.T) {
-	minutes, high := int64(31), int64(24000000)
-	r := store.Ranked{Candidate: store.Candidate{ID: "chosen-id", Name: "chosen-name", City: "chosen-city", State: "MN", Class: "chosen-class"}, Assessment: store.Assessment{Minutes: &minutes, Low: 14400000, High: &high, Confidence: .8, Effective: .4, Score: 7279999.6}}
-	want := ShortlistRow{Rank: 28, ID: "chosen-id", Name: "chosen-name", City: "chosen-city", State: "MN", Minutes: 31, Class: "chosen-class", Low: "$14,400,000", High: "$24,000,000", Confidence: "0.40", Score: "$7,280,000"}
-	if got := shortlistRow(r, 2, 25); !reflect.DeepEqual(got, want) {
-		t.Fatalf("%+v", got)
+// R-4OMK-YFFW
+func TestJudgmentTemplateStates(t *testing.T) {
+	t.Chdir(t.TempDir())
+	set, err := Load()
+	if err != nil {
+		t.Fatal(err)
 	}
-	r.Assessment.Minutes = nil
-	r.Assessment.High = nil
-	want.Minutes = 0
-	want.High = ""
-	if got := shortlistRow(r, 2, 25); !reflect.DeepEqual(got, want) {
-		t.Fatalf("%+v", got)
+	render := func(name string, data any) {
+		t.Helper()
+		if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, name, data); err != nil {
+			t.Fatal(name, err)
+		}
+	}
+	for _, value := range []string{"", "chosen-value"} {
+		for _, flag := range []bool{false, true} {
+			for _, categories := range [][]string{{}, {"chosen-one"}, {"chosen-one", "chosen-two"}} {
+				row := ShortlistRow{City: value, State: value, OperatingConfidence: value, RevenueLow: value, RevenueHigh: value, RevenueConfidence: value, Categories: categories, Class: value, Fleet: flag, Minutes: value, GovernmentMatch: value}
+				render("landing", LandingData{Shortlist: []ShortlistRow{row}})
+			}
+			for _, evidence := range [][]EvidenceRow{{}, {{Name: value, Source: value, Weight: value, Description: value}}} {
+				for _, categories := range [][]CategoryRow{{}, {{Name: value, Source: value}}} {
+					for _, high := range []string{"", "chosen-high"} {
+						d := CandidateData{Candidate: CandidateView{Status: store.StatusActive}, Assessment: &AssessmentView{OperatingConfidence: value, OperatingEvidence: evidence, RevenueLow: value, RevenueHigh: high, RevenueConfidence: value, KnownSince: value, KnownSinceText: value, NewestFiling: value, NewestFilingText: value, Categories: categories, GovernmentMatch: value, Fleet: flag, Minutes: value, Excluded: flag}}
+						render("candidate", d)
+					}
+				}
+			}
+		}
+	}
+	for _, status := range []string{store.StatusRunning, store.StatusDone, store.StatusFailed} {
+		for _, reason := range []string{"", store.ReasonScrapes, store.ReasonInterrupted, store.ReasonStore} {
+			for _, finished := range []string{"", "chosen-finished"} {
+				for _, p := range []PassView{{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, StartedBy: "starter@example.test"}, {Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, StartedBy: "starter-id"}, {Kind: store.KindJudge, Origin: store.OriginCron, Trigger: store.TriggerJudge}, {Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "run_chosen"}, {Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "run_chosen", RunPage: "https://chosen-records.example.test/run"}} {
+					p.Status, p.Reason, p.Finished = status, reason, finished
+					render("pass", PassData{Pass: p})
+					render("landing", LandingData{Passes: []PassRow{{Kind: p.Kind, Trigger: p.Trigger, Status: status, Reason: reason, Finished: finished}}})
+				}
+			}
+		}
 	}
 }

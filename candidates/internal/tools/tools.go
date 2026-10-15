@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -12,7 +12,6 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
-	"github.com/ikigenba/ikigenba/candidates/internal/scoring"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
@@ -97,12 +96,14 @@ func Register(srv *mcp.Server, cfg Config) {
 		if err != nil {
 			return mcp.ErrorResult(err.Error())
 		}
-		f := store.ShortlistFilter{MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: scoring.DefaultMinRevenue, Class: a.Class, Cargo: a.Cargo}
+		f := store.ShortlistFilter{Class: a.Class, Cargo: a.Cargo}
 		if a.MaxMinutes != nil {
-			f.MaxMinutes = int64(*a.MaxMinutes)
+			v := int64(*a.MaxMinutes)
+			f.MaxMinutes = &v
 		}
 		if a.MinRevenue != nil {
-			f.MinRevenue = int64(*a.MinRevenue)
+			v := int64(*a.MinRevenue)
+			f.MinRevenue = &v
 		}
 		rows, err := cfg.Store.Shortlist(ctx, f, key, id, z+1)
 		if err != nil {
@@ -113,15 +114,11 @@ func Register(srv *mcp.Server, cfg Config) {
 			if i == z {
 				break
 			}
-			minutes := int64(0)
-			if e.Assessment.Minutes != nil {
-				minutes = *e.Assessment.Minutes
-			}
-			out.Shortlist = append(out.Shortlist, ShortlistEntry{candidateOf(e.Candidate), minutes, e.Assessment.Low, e.Assessment.High, e.Assessment.Confidence, e.Assessment.Effective, scoring.Point(e.Assessment.Low, e.Assessment.High), int64(math.Round(e.Assessment.Score))})
+			out.Shortlist = append(out.Shortlist, shortlistOf(e))
 		}
 		if len(rows) > z {
 			last := rows[z-1]
-			token := paging.Token{Tool: "shortlist"}.Encode(last.Assessment.ScoreKey, last.Candidate.ID)
+			token := paging.Token{Tool: "shortlist"}.Encode(last.Assessment.OperatingKey, last.Candidate.ID)
 			out.Next = &token
 		}
 		return answer(out)
@@ -276,17 +273,29 @@ func estimateOf(e sources.Estimate) Estimate {
 	return Estimate{e.Source, e.Low, e.High, e.Confidence, e.Facts, date(e.Filed), e.Formula}
 }
 func assessmentOf(a store.Assessment) Assessment {
-	ex := []Exclusion{}
-	for _, e := range a.Exclusions {
-		ex = append(ex, Exclusion{e.Reason, e.Detail})
+	v := Assessment{OperatingConfidence: a.Operating, OperatingEvidence: []Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, KnownSince: date(a.KnownSince), NewestFiling: date(a.NewestFiling), Categories: []Category{}, GovernmentMatch: a.GovernmentMatch, Fleet: a.Fleet, Minutes: a.Minutes, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
+	for _, e := range a.Evidence {
+		v.OperatingEvidence = append(v.OperatingEvidence, Evidence{e.Name, e.Source, e.Weight, e.Description})
 	}
-	freshness := float64(0)
-	if a.Confidence > 0 {
-		freshness = math.Max(0, math.Min(1, a.Effective/a.Confidence))
+	for _, c := range a.Categories {
+		v.Categories = append(v.Categories, Category{c.Name, c.Source})
 	}
-	point := scoring.Point(a.Low, a.High)
-	return Assessment{a.Fleet, a.Minutes, a.Low, a.High, a.Confidence, date(a.Filed), freshness, a.Effective, point, int64(math.Round(a.Score)), int64(math.Round(a.Base)), a.Excluded, ex, a.Rules, stamp(a.Scored)}
+	return v
 }
+func shortlistOf(e store.Ranked) ShortlistEntry {
+	a := e.Assessment
+	v := ShortlistEntry{Candidate: candidateOf(e.Candidate), OperatingConfidence: a.Operating, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, Fleet: a.Fleet, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch}
+	seen := map[string]bool{}
+	for _, c := range a.Categories {
+		if !seen[c.Name] {
+			v.Categories = append(v.Categories, c.Name)
+			seen[c.Name] = true
+		}
+	}
+	sort.Strings(v.Categories)
+	return v
+}
+
 func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 	c, err := cfg.Store.GetCandidate(ctx, id)
 	if err != nil {

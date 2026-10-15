@@ -87,6 +87,13 @@ type runFake struct {
 }
 
 func (f *runFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/scrapers/ppp/current" {
+		f.mu.Lock()
+		f.requests = append(f.requests, runRequest{r.URL.Path, r.Header.Clone()})
+		f.mu.Unlock()
+		w.WriteHeader(404)
+		return
+	}
 	f.mu.Lock()
 	f.requests = append(f.requests, runRequest{r.URL.Path, r.Header.Clone()})
 	rows := f.rows
@@ -409,7 +416,7 @@ func runOnlyState(t *testing.T, dir string) {
 
 // R-119A-9L3H R-13P3-14KV R-14WZ-EWBK R-164V-SO29 R-17CS-6FSY
 // R-3TTL-43TV R-42CV-SI0Q R-43KS-69RF R-478H-BKZI R-49OA-34GW R-4C42-UNYA
-// R-FN4H-93B3 R-ZY3R-GAKJ R-ZZBN-U2B8 R-00JK-7U1X R-P0W3-KWS2 R-ZQSD-5O4D
+// R-UN51-NEQR R-ZY3R-GAKJ R-UOCY-16HG R-UPKU-EY85  R-ZQSD-5O4D
 // R-0479-D5A0 R-06N2-4ORE R-07UY-IGI3 R-76JM-ZE8M R-7BF8-IH7E R-7CN4-W8Y3 R-7F2X-NSFH
 func TestRunAssembledChain(t *testing.T) {
 	if cli.SweepInterval != time.Hour {
@@ -660,7 +667,7 @@ func TestRunAssembledChain(t *testing.T) {
 		default:
 			t.Fatalf("unexpected sibling request %v", rq)
 		}
-		if strings.HasPrefix(rq.Path, "/scrapers/") && rq.Path != "/scrapers/fmcsa/current" {
+		if strings.HasPrefix(rq.Path, "/scrapers/") && rq.Path != "/scrapers/fmcsa/current" && rq.Path != "/scrapers/ppp/current" {
 			t.Fatalf("registry requested %s", rq.Path)
 		}
 	}
@@ -671,7 +678,7 @@ func TestRunAssembledChain(t *testing.T) {
 			if e.RequestID == "delivery-request" {
 				record = dp
 			}
-			for _, key := range []string{"trigger", "status", "reason", "rows", "new", "changed", "unchanged", "gone", "created", "linked", "rescored", "unranged"} {
+			for _, key := range []string{"trigger", "status", "reason", "rows", "new", "changed", "unchanged", "gone", "created", "linked", "judged", "unranged"} {
 				raw, err := json.Marshal(e.Attrs[key])
 				if err != nil {
 					t.Fatal(err)
@@ -857,7 +864,7 @@ func TestRunSettlesLoadsAndSweepsBeforeAndAfterReady(t *testing.T) {
 	var oldDone, oldFailed string
 	doneIDs, failedIDs := []string{}, []string{}
 	for i := 0; i < 3; i++ {
-		p, err := st.AddPass(ctx, store.Pass{Trigger: store.TriggerRebuild, UserID: "seed"})
+		p, err := st.AddPass(ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "seed"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -870,7 +877,7 @@ func TestRunSettlesLoadsAndSweepsBeforeAndAfterReady(t *testing.T) {
 		}
 	}
 	for i := 0; i < 2; i++ {
-		p, err := st.AddPass(ctx, store.Pass{Trigger: store.TriggerRebuild, UserID: "seed"})
+		p, err := st.AddPass(ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "seed"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -882,7 +889,7 @@ func TestRunSettlesLoadsAndSweepsBeforeAndAfterReady(t *testing.T) {
 			oldFailed = p.ID
 		}
 	}
-	running, err := st.AddPass(ctx, store.Pass{Trigger: "run_seed", UserID: "seed", UserEmail: "seed@example.test", RequestID: "seed-request", Delivery: "evt_8888888888888888"})
+	running, err := st.AddPass(ctx, store.Pass{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "run_seed", UserID: "seed", UserEmail: "seed@example.test", RequestID: "seed-request", Delivery: "evt_8888888888888888"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -923,7 +930,7 @@ func TestRunSettlesLoadsAndSweepsBeforeAndAfterReady(t *testing.T) {
 		runAssertNotFound(t, r)
 	}
 	// A fresh failed pass makes the recovered failed pass old; driving After must prune it.
-	newer, err := st.AddPass(ctx, store.Pass{Trigger: store.TriggerRebuild, UserID: "seed"})
+	newer, err := st.AddPass(ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "seed"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1016,7 +1023,7 @@ func TestRunKeepsScrapesSocketSelectedAtStart(t *testing.T) {
 	_, v = h.call(c, "rebuild", map[string]any{})
 	h.waitPass(c, runText(v, "id"))
 	h.stop()
-	if len(first.Requests()) != 4 || len(second.Requests()) != 0 {
+	if len(first.Requests()) != 6 || len(second.Requests()) != 0 {
 		t.Fatalf("socket reads first %d second %d", len(first.Requests()), len(second.Requests()))
 	}
 }
@@ -1135,7 +1142,7 @@ type runFailBus struct{}
 
 func (runFailBus) Deliver(context.Context, events.Event) error { return errors.New("fixture refusal") }
 
-// R-02ZC-ZDJB
+// R-UQSQ-SPYU
 func TestRunSinkFailuresDoNotChangePass(t *testing.T) {
 	var answers []map[string]json.RawMessage
 	var initial []map[string]json.RawMessage
@@ -1391,7 +1398,7 @@ func TestRunNotificationIsSingleAndOptional(t *testing.T) {
 	}
 }
 
-// R-P0W3-KWS2
+// R-UPKU-EY85
 func TestRunBusyRefusalsEmitNoPassEvents(t *testing.T) {
 	hold := make(chan struct{})
 	f := &runFake{hold: hold, arrived: make(chan struct{}, 1)}
@@ -1474,7 +1481,7 @@ func TestRunSweepPrunesDoneAndPreservesRunning(t *testing.T) {
 	h.p.Now = func() time.Time { return baseNow.Add(time.Duration(offset.Load()) * time.Second) }
 	_, st := runStore(t, h.p.Dir, h.p.Now)
 	ctx := context.Background()
-	seed, err := st.AddPass(ctx, store.Pass{Trigger: store.TriggerRebuild, UserID: "seed"})
+	seed, err := st.AddPass(ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "seed"})
 	if err != nil {
 		t.Fatal(err)
 	}

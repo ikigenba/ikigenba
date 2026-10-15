@@ -51,20 +51,21 @@ type Link struct {
 
 // Assessment is the last stored score and its evidence.
 type Assessment struct {
-	Candidate        string
-	Fleet            bool
-	Low              int64
-	High             *int64
-	Confidence       float64
-	Filed            time.Time
-	Minutes          *int64
-	Exclusions       []sources.Exclusion
-	Excluded         bool
-	Base             float64
-	Effective, Score float64
-	ScoreKey         int64
-	Rules            int64
-	Scored           time.Time
+	Candidate               string
+	Operating               *float64
+	OperatingKey            int64
+	Evidence                []sources.Evidence
+	RevenueLow, RevenueHigh *int64
+	RevenueConfidence       *float64
+	KnownSince              time.Time
+	GovernmentMatch         string
+	NewestFiling            time.Time
+	Categories              []sources.Category
+	Fleet                   bool
+	Minutes                 *int64
+	Excluded                bool
+	Rules                   int64
+	Calculated              time.Time
 }
 
 // Ruling records an owner decision.
@@ -77,14 +78,14 @@ type Ruling struct {
 
 // Pass records one resolution pass.
 type Pass struct {
-	ID, Trigger, Status, Reason                                              string
-	Started, Finished                                                        time.Time
-	Rows, New, Changed, Unchanged, Gone, Created, Linked, Rescored, Unranged int64
-	UserID, UserEmail, RequestID, Delivery                                   string
+	ID, Kind, Origin, Trigger, Status, Reason                              string
+	Started, Finished                                                      time.Time
+	Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged int64
+	UserID, UserEmail, RequestID, Delivery                                 string
 }
 
 // Counts contains the results of pass work.
-type Counts struct{ Rows, New, Changed, Unchanged, Gone, Created, Linked, Rescored, Unranged int64 }
+type Counts struct{ Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged int64 }
 
 // Observation is one source reading to attach.
 type Observation struct {
@@ -97,7 +98,7 @@ type CandidateFilter struct{ Name, Zip, Phone string }
 
 // ShortlistFilter supplies all shortlist thresholds.
 type ShortlistFilter struct {
-	MaxMinutes, MinRevenue int64
+	MaxMinutes, MinRevenue *int64
 	Class, Cargo           string
 }
 
@@ -120,6 +121,13 @@ const (
 	ReasonInterrupted = "interrupted"
 	ReasonStore       = "store"
 	TriggerRebuild    = "rebuild"
+	TriggerJudge      = "judge_candidates"
+	KindIngest        = "ingest"
+	KindJudge         = "judge"
+	KindRebuild       = "rebuild"
+	OriginRun         = "run"
+	OriginCron        = "cron"
+	OriginRebuild     = "rebuild"
 	LinkSourceKey     = "source_key"
 	LinkMatchKey      = "match_key"
 	LinkDecision      = "decision"

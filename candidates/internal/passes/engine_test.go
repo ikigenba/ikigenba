@@ -30,6 +30,7 @@ import (
 	candidates "github.com/ikigenba/ikigenba/candidates"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
+	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
@@ -182,7 +183,7 @@ func assertRefusal(t *testing.T, p store.Pass, err error, word string) {
 	}
 }
 
-// R-295O-1BSH R-JRS0-VXTN R-2ADK-F3J6 R-YE0D-UUGL R-YF8A-8M7A
+// R-295O-1BSH R-JRS0-VXTN R-PEI1-CPPR R-ZN0H-I73W R-ZO8D-VYUL
 func TestRecordContract(t *testing.T) {
 	if passes.BatchSize != 500 || passes.Busy == "" || passes.Stopping == "" || passes.Busy == passes.Stopping || strings.Contains(passes.Busy+passes.Stopping, "\n") {
 		t.Fatal("constants")
@@ -196,9 +197,9 @@ func TestRecordContract(t *testing.T) {
 		t.Fatal("word")
 	}
 	start := time.Date(2001, 2, 3, 4, 5, 6, 0, time.FixedZone("east", 3600))
-	p := store.Pass{ID: "id", Trigger: store.TriggerRebuild, Status: store.StatusDone, Reason: "reason", Started: start, Finished: start.Add(time.Hour), Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Rescored: 8, Unranged: 9, UserID: "user", UserEmail: "email"}
+	p := store.Pass{ID: "id", Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, Status: store.StatusDone, Reason: "reason", Started: start, Finished: start.Add(time.Hour), Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, UserID: "user", UserEmail: "email"}
 	r := passes.RecordOf(p)
-	want := passes.Record{"id", store.TriggerRebuild, store.StatusDone, "reason", start.UTC().Format(time.RFC3339), p.Finished.UTC().Format(time.RFC3339), 1, 2, 3, 4, 5, 6, 7, 8, 9, "user", "email"}
+	want := passes.Record{"id", store.KindRebuild, store.OriginRebuild, store.TriggerRebuild, store.StatusDone, "reason", start.UTC().Format(time.RFC3339), p.Finished.UTC().Format(time.RFC3339), 1, 2, 3, 4, 5, 6, 7, 8, 9, "user", "email"}
 	if r != want {
 		t.Fatalf("%#v", r)
 	}
@@ -206,11 +207,12 @@ func TestRecordContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := `{"id":"id","trigger":"rebuild","status":"done","reason":"reason","started":"2001-02-03T03:05:06Z","finished":"2001-02-03T04:05:06Z","rows":1,"new":2,"changed":3,"unchanged":4,"gone":5,"created":6,"linked":7,"rescored":8,"unranged":9,"user":"user","email":"email"}`
+	expected := `{"id":"id","kind":"rebuild","origin":"rebuild","trigger":"rebuild","status":"done","reason":"reason","started":"2001-02-03T03:05:06Z","finished":"2001-02-03T04:05:06Z","rows":1,"new":2,"changed":3,"unchanged":4,"gone":5,"created":6,"linked":7,"judged":8,"unranged":9,"user":"user","email":"email"}`
 	if string(got) != expected {
 		t.Fatalf("%s", got)
 	}
 	p.Trigger = "run"
+	p.Origin = store.OriginRun
 	p.Finished = time.Time{}
 	p.Reason = ""
 	r = passes.RecordOf(p)
@@ -231,7 +233,7 @@ func TestRefusals(t *testing.T) {
 			before := f.list()
 			switch mode {
 			case "busy":
-				_, err := f.st.AddPass(context.Background(), store.Pass{Trigger: "other", Delivery: "other"})
+				_, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "other", Delivery: "other"})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -267,14 +269,14 @@ func TestRefusals(t *testing.T) {
 	}
 }
 
-// R-YLBS-5GWR R-YMJO-J8NG R-YQ7D-OJVJ R-ZWVV-2ITU
+// R-ZQO6-NIBZ R-YMJO-J8NG R-ZT3Z-F1TD R-ULX5-9N02
 func TestSkippedAndHandlers(t *testing.T) {
 	f := newFixture(t, nil, false)
 	handlers := f.eng.Handlers()
-	if len(handlers) != 1 || handlers[trail.Accepted] == nil {
+	if len(handlers) != 2 || handlers[trail.Accepted] == nil || handlers[trail.AcceptedJudge] == nil {
 		t.Fatal(handlers)
 	}
-	variants := []events.Event{{ID: "e", Name: "scrape.started"}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "run": "run_a", "status": "failed"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "other", "run": "run_a", "status": "done"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "status": "done"}}, {Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "run": "run_a", "status": "done"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "run": "rebuild", "status": "done"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": 17, "run": "run_a", "status": "done"}}}
+	variants := []events.Event{{Name: trail.AcceptedJudge}, {Name: "cron.other.fired", ID: "e"}, {ID: "e", Name: "scrape.started"}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "run": "run_a", "status": "failed"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "other", "run": "run_a", "status": "done"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "status": "done"}}, {Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "run": "run_a", "status": "done"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "run": "rebuild", "status": "done"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": 17, "run": "run_a", "status": "done"}}}
 	for _, event := range variants {
 		d := events.Delivery{Event: event}
 		if f.eng.Deliver(context.Background(), d) != events.Skip() || handlers[trail.Accepted](context.Background(), d) != events.Skip() {
@@ -289,14 +291,14 @@ func TestSkippedAndHandlers(t *testing.T) {
 		t.Fatal("skip events")
 	}
 	r := httptest.NewRecorder()
-	events.DeclarationsHandler(f.em, f.eng.Handlers()).ServeHTTP(r, httptest.NewRequest(http.MethodGet, "/declarations", nil))
-	want := `{"emits":[{"event":"pass.finished","attrs":["pass","trigger","status","reason","rows","new","changed","unchanged","gone","created","linked","rescored","unranged"]},{"event":"pass.started","attrs":["pass","trigger"]}],"accepts":["scrape.finished"]}`
+	events.DeclarationsHandler(f.em, passes.New(passes.Config{Sources: sources.New(fmcsa.New(), ppp.New())}).Handlers()).ServeHTTP(r, httptest.NewRequest(http.MethodGet, "/declarations", nil))
+	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","status","reason","rows","new","changed","unchanged","gone","created","linked","judged","rescored","unranged"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger"]}],"accepts":["cron.judge_candidates.fired","scrape.finished"]}`
 	if r.Code != 200 || r.Body.String() != want {
 		t.Fatal(r.Code, r.Body.String())
 	}
 }
 
-// R-YRFA-2BM8 R-JSZX-9PKC R-JU7T-NHB1 R-YSN6-G3CX
+// R-YRFA-2BM8 R-JSZX-9PKC R-8WYD-D83X R-YSN6-G3CX
 func TestDeliveryRecordAndRedelivery(t *testing.T) {
 	for _, mode := range []string{"missing", "unfinished", "unavailable", "malformed", "nil", "done"} {
 		t.Run(mode, func(t *testing.T) {
@@ -367,7 +369,7 @@ func TestDeliveryRecordAndRedelivery(t *testing.T) {
 	}
 }
 
-// R-YK3V-RP62 R-YWAV-LEL0 R-YXIR-Z6BP R-JVFQ-191Q R-ZDDG-Y6YQ
+// R-ZPGA-9QLA R-YWAV-LEL0 R-YXIR-Z6BP R-ZWRO-KD1G R-ZDDG-Y6YQ
 func TestRebuildBackgroundIdentityAndEvents(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -389,7 +391,7 @@ func TestRebuildBackgroundIdentityAndEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitSignal(t, entered)
-	if p.Status != store.StatusRunning || p.Trigger != store.TriggerRebuild || p.UserID != caller.UserID || p.UserEmail != caller.Email || p.RequestID != caller.RequestID || p.Delivery != "" {
+	if p.Kind != store.KindRebuild || p.Origin != store.OriginRebuild || p.Status != store.StatusRunning || p.Trigger != store.TriggerRebuild || p.UserID != caller.UserID || p.UserEmail != caller.Email || p.RequestID != caller.RequestID || p.Delivery != "" {
 		t.Fatal(p)
 	}
 	stored, err := f.st.GetPass(context.Background(), p.ID)
@@ -443,12 +445,12 @@ func TestRebuildBackgroundIdentityAndEvents(t *testing.T) {
 		}
 	}
 	attrs := es[1].Attrs
-	if attrs["status"] != end.Status || attrs["rows"] != end.Rows || attrs["new"] != end.New || attrs["changed"] != end.Changed || attrs["unchanged"] != end.Unchanged || attrs["gone"] != end.Gone || attrs["created"] != end.Created || attrs["linked"] != end.Linked || attrs["rescored"] != end.Rescored || attrs["unranged"] != end.Unranged || attrs["reason"] != end.Reason {
+	if attrs["status"] != end.Status || attrs["rows"] != end.Rows || attrs["new"] != end.New || attrs["changed"] != end.Changed || attrs["unchanged"] != end.Unchanged || attrs["gone"] != end.Gone || attrs["created"] != end.Created || attrs["linked"] != end.Linked || attrs["rescored"] != end.Judged || attrs["unranged"] != end.Unranged || attrs["reason"] != end.Reason {
 		t.Fatal(attrs, end)
 	}
 }
 
-// R-9UJ9-AYIO R-9VR5-OQ9D R-9WZ2-2I02 R-Z3M9-W116 R-Z622-NKIK
+// R-ZXZK-Y4S5 R-0432-UZHM R-05AZ-8R8B R-Z3M9-W116 R-GU9F-TVQY
 func TestResolutionAndRebuild(t *testing.T) {
 	var stateMu sync.Mutex
 	rows := 3
@@ -469,7 +471,7 @@ func TestResolutionAndRebuild(t *testing.T) {
 		t.Fatal(out)
 	}
 	first := f.ended(f.list()[0].ID)
-	if first.Status != store.StatusDone || first.Rows != 3 || first.New != 3 || first.Changed != 0 || first.Unchanged != 0 || first.Gone != 0 || first.Created+first.Linked != 3 || first.Rescored != 3 || first.Unranged != 3 {
+	if first.Status != store.StatusDone || first.Rows != 3 || first.New != 3 || first.Changed != 0 || first.Unchanged != 0 || first.Gone != 0 || first.Created+first.Linked != 3 || first.Judged != 0 || first.Unranged != 0 {
 		t.Fatal(first)
 	}
 	cs, err := f.st.ListCandidates(context.Background(), store.CandidateFilter{}, "", "", 1000)
@@ -535,7 +537,7 @@ func TestResolutionAndRebuild(t *testing.T) {
 			t.Fatal(ls)
 		}
 		a, err := f.st.GetAssessment(context.Background(), id)
-		if err != nil || a.Scored.Before(p.Started) {
+		if err != nil || a.Calculated.Before(p.Started) {
 			t.Fatal(a, err)
 		}
 	}
@@ -545,7 +547,7 @@ func TestResolutionAndRebuild(t *testing.T) {
 	}
 }
 
-// R-Z4U6-9SRV R-SF2K-0S3I R-Z9PR-SVQN R-A32J-ZCPJ
+// R-Z4U6-9SRV R-SF2K-0S3I R-Z9PR-SVQN R-0A6K-RU73
 func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	released, firstBatch := make(chan struct{}), make(chan struct{})
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -623,7 +625,7 @@ func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	}
 }
 
-// R-Z9PR-SVQN R-SF2K-0S3I R-A32J-ZCPJ
+// R-Z9PR-SVQN R-SF2K-0S3I R-0A6K-RU73
 func TestFailedReads(t *testing.T) {
 	for _, mode := range []string{"short", "500", "malformed", "not_done", "missing_current", "dead"} {
 		t.Run(mode, func(t *testing.T) {
@@ -663,7 +665,7 @@ func TestFailedReads(t *testing.T) {
 			}
 			end := f.ended(p.ID)
 			if mode == "missing_current" {
-				if end.Status != store.StatusDone || end.Rows != 0 || end.Rescored != 1 {
+				if end.Status != store.StatusDone || end.Rows != 0 || end.Judged != 1 {
 					t.Fatal(end)
 				}
 			} else {
@@ -679,7 +681,7 @@ func TestFailedReads(t *testing.T) {
 	}
 }
 
-// R-ZFT9-PQG4 R-ZH16-3I6T R-A32J-ZCPJ R-YOZH-AS4U
+// R-ZFT9-PQG4 R-ZH16-3I6T R-0A6K-RU73 R-YOZH-AS4U
 func TestDrainCancelsReadsAndPendingDelivery(t *testing.T) {
 	for _, which := range []string{"rows", "record"} {
 		t.Run(which, func(t *testing.T) {
@@ -745,7 +747,7 @@ func TestDrainCancelsReadsAndPendingDelivery(t *testing.T) {
 // R-ZELD-BYPF R-ZC5K-KF81 R-ZH16-3I6T
 func TestRecoverAndUnrecordableEnding(t *testing.T) {
 	f := newFixture(t, nil, false)
-	original, err := f.st.AddPass(context.Background(), store.Pass{Trigger: "old_run", Delivery: "old_event", UserID: "old_user", RequestID: "old_request"})
+	original, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "old_run", Delivery: "old_event", UserID: "old_user", RequestID: "old_request"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -808,7 +810,7 @@ func TestRecoverAndUnrecordableEnding(t *testing.T) {
 	})
 }
 
-// R-ZI92-H9XI R-YGG6-MDXZ R-YHO3-05OO R-JU7T-NHB1
+// R-ZI92-H9XI R-YGG6-MDXZ R-YHO3-05OO R-8WYD-D83X
 func TestConcurrentStarts(t *testing.T) {
 	entered := make(chan struct{}, 32)
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -870,7 +872,7 @@ func (r *failCandidateRandom) Read(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// R-A32J-ZCPJ
+// R-0A6K-RU73
 func TestStoreFailureReason(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/current") {
@@ -895,7 +897,7 @@ func TestStoreFailureReason(t *testing.T) {
 // R-YHO3-05OO
 func TestRefusalPrecedence(t *testing.T) {
 	f := newFixture(t, nil, false)
-	_, err := f.st.AddPass(context.Background(), store.Pass{Trigger: "existing", Delivery: "existing_event"})
+	_, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "existing", Delivery: "existing_event"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -913,7 +915,7 @@ func TestRefusalPrecedence(t *testing.T) {
 	}
 }
 
-// R-YWAV-LEL0 R-YXIR-Z6BP R-JU7T-NHB1
+// R-YWAV-LEL0 R-YXIR-Z6BP R-8WYD-D83X
 func TestDeliveryOutlivesStartingContext(t *testing.T) {
 	for _, alreadyCancelled := range []bool{false, true} {
 		t.Run(fmt.Sprint(alreadyCancelled), func(t *testing.T) {
@@ -1035,5 +1037,5 @@ func TestRecoverSettlesActivePass(t *testing.T) {
 }
 
 func failedCounts(p store.Pass) store.Counts {
-	return store.Counts{Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Rescored: p.Rescored, Unranged: p.Unranged}
+	return store.Counts{Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged}
 }

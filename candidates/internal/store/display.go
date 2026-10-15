@@ -179,6 +179,7 @@ type displayTracker struct {
 	records      *records
 	id           string
 	links, names *displayTree
+	giving       [4]*displayTree
 	mentions     map[string]*displayTree
 	cargo        map[string]int
 	changed      bool
@@ -189,6 +190,7 @@ func newDisplayTracker(r *records, id string) *displayTracker {
 	d := &displayTracker{records: r, id: id, mentions: map[string]*displayTree{}, cargo: map[string]int{}, fields: fieldsCandidate(r.candidates[id])}
 	for _, l := range r.links {
 		d.links = treeInsert(d.links, orderLink(l))
+		d.updateGiving(l, true)
 		for name, key := range readingNames(l) {
 			d.mentions[name] = treeInsert(d.mentions[name], key)
 		}
@@ -233,6 +235,7 @@ func (d *displayTracker) apply(l Link) {
 	}
 	if exists {
 		d.links = treeRemove(d.links, orderLink(old))
+		d.updateGiving(old, false)
 		for name, key := range oldNames {
 			d.mentions[name] = treeRemove(d.mentions[name], key)
 		}
@@ -242,6 +245,7 @@ func (d *displayTracker) apply(l Link) {
 	}
 	d.records.links[source] = l
 	d.links = treeInsert(d.links, orderLink(l))
+	d.updateGiving(l, true)
 	for name, key := range newNames {
 		d.mentions[name] = treeInsert(d.mentions[name], key)
 	}
@@ -267,8 +271,44 @@ func (d *displayTracker) apply(l Link) {
 	}
 	winner := treeFirst(d.links)
 	fields := fieldsReading(d.records.links[sources.SourceKey(winner.scraper, winner.source)].Reading)
+	fields.phone, fields.email, fields.class = "", "", ""
+	fields.people = []sources.Person{}
+	for i, tree := range d.giving {
+		if tree == nil {
+			continue
+		}
+		k := treeFirst(tree)
+		if k.gone && !winner.gone {
+			continue
+		}
+		rd := d.records.links[sources.SourceKey(k.scraper, k.source)].Reading
+		switch i {
+		case 0:
+			fields.phone = rd.Phone
+		case 1:
+			fields.email = rd.Email
+		case 2:
+			fields.class = rd.Class
+		case 3:
+			fields.people = append([]sources.Person{}, rd.People...)
+		}
+	}
 	if !reflect.DeepEqual(d.fields, fields) {
 		d.changed = true
 	}
 	d.fields = fields
+}
+
+func (d *displayTracker) updateGiving(l Link, add bool) {
+	present := [4]bool{l.Reading.Phone != "", l.Reading.Email != "", l.Reading.Class != "", len(l.Reading.People) > 0}
+	for i, ok := range present {
+		if !ok {
+			continue
+		}
+		if add {
+			d.giving[i] = treeInsert(d.giving[i], orderLink(l))
+		} else {
+			d.giving[i] = treeRemove(d.giving[i], orderLink(l))
+		}
+	}
 }

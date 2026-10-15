@@ -96,7 +96,7 @@ func refreshKey(ctx context.Context, tx *sql.Tx, id string, t time.Time) error {
 	refresh(r, t)
 	return putCandidate(ctx, tx, r.candidates[id])
 }
-func rescoreKeys(ctx context.Context, tx *sql.Tx, ids []string, t time.Time) (Counts, error) {
+func judgeKeys(ctx context.Context, tx *sql.Tx, ids []string, t time.Time) (Counts, error) {
 	out := Counts{}
 	seen := map[string]bool{}
 	for _, id := range ids {
@@ -142,8 +142,8 @@ func rescoreKeys(ctx context.Context, tx *sql.Tx, ids []string, t time.Time) (Co
 		if err = insertRecord(ctx, tx, "assessments", assessmentColumns, a, nil); err != nil {
 			return Counts{}, err
 		}
-		out.Rescored++
-		if a.Minutes == nil {
+		out.Judged++
+		if a.RevenueLow == nil {
 			out.Unranged++
 		}
 	}

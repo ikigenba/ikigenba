@@ -3,6 +3,7 @@ package sources_test
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,11 +11,16 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
-// R-20MD-CXLM
+// R-P8EJ-FV0A
 func TestRecordShapes(t *testing.T) {
 	// Conversions use the records' complete underlying shapes, including order.
 	type personShape struct{ Name, Role string }
-	type exclusionShape struct{ Reason, Detail string }
+	type evidenceShape struct {
+		Name, Source string
+		Weight       float64
+		Description  string
+	}
+	type categoryShape struct{ Name, Source string }
 	type estimateShape struct {
 		Source     string
 		Low        int64
@@ -34,9 +40,11 @@ func TestRecordShapes(t *testing.T) {
 		Filed                                          time.Time
 		Fleet                                          bool
 		Estimate                                       *sources.Estimate
-		Exclusions                                     []sources.Exclusion
+		Evidence                                       []sources.Evidence
+		KnownSince                                     time.Time
+		Category, GovernmentMatch                      string
 	}
-	if personShape(sources.Person{}) != (personShape{}) || exclusionShape(sources.Exclusion{}) != (exclusionShape{}) {
+	if personShape(sources.Person{}) != (personShape{}) || evidenceShape(sources.Evidence{}) != (evidenceShape{}) || categoryShape(sources.Category{}) != (categoryShape{}) {
 		t.Fatal("zero record")
 	}
 	if !reflect.DeepEqual(estimateShape(sources.Estimate{}), estimateShape{}) || !reflect.DeepEqual(readingShape(sources.Reading{}), readingShape{}) {
@@ -49,7 +57,7 @@ type fake struct{ name string }
 func (f *fake) Name() string                   { return f.name }
 func (*fake) Read(scrapes.Row) sources.Reading { return sources.Reading{} }
 
-// R-FLWK-VBKE R-2326-4H30
+// R-FLWK-VBKE R-P9MF-TMQZ
 func TestRegistry(t *testing.T) {
 	a, b, c := &fake{"z"}, &fake{"a"}, &fake{"z"}
 	r := sources.New(a, b, c)
@@ -118,25 +126,45 @@ func TestCountySourceKey(t *testing.T) {
 	}
 }
 
-// R-OW1D-D01A
+// R-PAUC-7EHO
 func TestConstants(t *testing.T) {
-	const (
-		private         = sources.ClassPrivate
-		forHire         = sources.ClassForHire
-		mixed           = sources.ClassMixed
-		unknown         = sources.ClassUnknown
-		governmentClass = sources.ExcludeGovernmentClass
-		governmentName  = sources.ExcludeGovernmentName
-		ruling          = sources.ExcludeRuling
-		// A typed integer cannot initialize this float64 without conversion;
-		// the remainder also requires Rules to be an integer constant.
-		rules  float64 = sources.Rules
-		parity         = sources.Rules % 2
-	)
-	if got, want := []string{private, forHire, mixed, unknown, governmentClass, governmentName, ruling}, []string{"private", "for_hire", "mixed", "unknown", "government_class", "government_name", "ruling"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("constants = %q, want %q", got, want)
+	const rules float64 = sources.Rules
+	const parity = sources.Rules % 2
+	_ = rules
+	_ = parity
+	got := []string{sources.ClassPrivate, sources.ClassForHire, sources.ClassMixed, sources.ClassUnknown, sources.CategoryConstruction, sources.CategoryTrucking, sources.CategoryAgriculture, sources.CategoryManufacturing, sources.CategoryWholesale, sources.CategoryMining, sources.CategoryWaste, sources.CategoryOther, sources.EvidenceFMCSAActive, sources.EvidenceFMCSAActivity, sources.EvidencePPPLoan, sources.EvidenceOwnDomain}
+	want := []string{"private", "for_hire", "mixed", "unknown", "construction", "trucking and logistics", "agriculture", "manufacturing", "wholesale and distribution", "mining and aggregates", "waste and environmental", "other", "fmcsa_active", "fmcsa_activity", "ppp_loan", "own_domain"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatal(got)
 	}
-	if rules != 2 || parity != 0 {
-		t.Fatalf("rules = %v, parity = %v", rules, parity)
+}
+
+// R-ZTZR-N36E R-ZV7O-0UX3
+func TestDescriptions(t *testing.T) {
+	const a string = sources.DescribeFMCSAActive
+	const b string = sources.DescribeFMCSAActivity
+	const c string = sources.DescribePPPLoan
+	const d string = sources.DescribeOwnDomain
+	seen := map[string]bool{}
+	for _, s := range []string{a, b, c, d} {
+		if s == "" || strings.Contains(s, "\n") || seen[s] {
+			t.Fatal(s)
+		}
+		seen[s] = true
+	}
+}
+
+// R-ZWFK-EMNS
+func TestGovernmentMatch(t *testing.T) {
+	patterns := []string{"COUNTY", "CITY OF", "TOWN OF", "VILLAGE OF", "TOWNSHIP", "SCHOOL DISTRICT", "STATE OF", "DEPT", "DEPARTMENT", "UNIVERSITY", "PUBLIC WORKS"}
+	for i, p := range patterns {
+		if got := sources.GovernmentMatch("PREFIX " + strings.Join(patterns[i:], " ") + " SUFFIX"); got != p {
+			t.Fatal(got, p)
+		}
+	}
+	for _, k := range []string{"COUNTYLINE TRUCKING INC", "DEPTFORD LLC", "TOWNSHIPS UNLIMITED", "", "county"} {
+		if got := sources.GovernmentMatch(k); got != "" {
+			t.Fatal(k, got)
+		}
 	}
 }

@@ -9,13 +9,13 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-SATC-3077
+// R-34OV-GGR0
 func TestContractReadsDuringQueuedWrites(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
 	id := contractSeed(t, f)
 	pass := contractNewPass(t, f, "read-while-write")
-	shortlist := store.ShortlistFilter{MaxMinutes: 120, MinRevenue: 1}
+	shortlist := store.ShortlistFilter{MaxMinutes: ptrInt(120), MinRevenue: ptrInt(1)}
 	reads := []struct {
 		name string
 		call func() (any, error)
@@ -73,7 +73,7 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 			_, _, err := f.s.Decide(ctx, store.Ruling{Kind: store.KindExclude, Candidate: id, Why: "queued ruling", UserID: "owner"})
 			return err
 		},
-		func() error { _, err := f.s.Rescore(ctx, []string{id}); return err },
+		func() error { _, err := f.s.Judge(ctx, []string{id}); return err },
 	}
 	results := make(chan error, len(writes))
 	begun := make(chan struct{}, len(writes))

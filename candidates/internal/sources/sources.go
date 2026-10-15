@@ -11,23 +11,47 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/scrapes"
 )
 
-// Class, exclusion and rules constants identify the versioned source rules.
+// Class, category, evidence and rules constants identify the source rules.
 const (
-	ClassPrivate           = "private"
-	ClassForHire           = "for_hire"
-	ClassMixed             = "mixed"
-	ClassUnknown           = "unknown"
-	ExcludeGovernmentClass = "government_class"
-	ExcludeGovernmentName  = "government_name"
-	ExcludeRuling          = "ruling"
-	Rules                  = 2
+	ClassPrivate          = "private"
+	ClassForHire          = "for_hire"
+	ClassMixed            = "mixed"
+	ClassUnknown          = "unknown"
+	CategoryConstruction  = "construction"
+	CategoryTrucking      = "trucking and logistics"
+	CategoryAgriculture   = "agriculture"
+	CategoryManufacturing = "manufacturing"
+	CategoryWholesale     = "wholesale and distribution"
+	CategoryMining        = "mining and aggregates"
+	CategoryWaste         = "waste and environmental"
+	CategoryOther         = "other"
+	EvidenceFMCSAActive   = "fmcsa_active"
+	EvidenceFMCSAActivity = "fmcsa_activity"
+	EvidencePPPLoan       = "ppp_loan"
+	EvidenceOwnDomain     = "own_domain"
+	Rules                 = 3
 )
 
 // Person is a party named by a source record.
 type Person struct{ Name, Role string }
 
-// Exclusion is one reason a source flags a business.
-type Exclusion struct{ Reason, Detail string }
+// Evidence describes one sign of current or past operation.
+type Evidence struct {
+	Name, Source string
+	Weight       float64
+	Description  string
+}
+
+// Category identifies a business category and its source.
+type Category struct{ Name, Source string }
+
+// Evidence descriptions are the copy displayed with each evidence kind.
+const (
+	DescribeFMCSAActive   string = "Active FMCSA registration"
+	DescribeFMCSAActivity string = "Reported drivers and mileage"
+	DescribePPPLoan       string = "Recorded PPP loan"
+	DescribeOwnDomain     string = "Email on a business domain"
+)
 
 // Estimate is one source's revenue estimate and supporting facts.
 type Estimate struct {
@@ -51,7 +75,9 @@ type Reading struct {
 	Filed                                          time.Time
 	Fleet                                          bool
 	Estimate                                       *Estimate
-	Exclusions                                     []Exclusion
+	Evidence                                       []Evidence
+	KnownSince                                     time.Time
+	Category, GovernmentMatch                      string
 }
 
 // Source interprets rows from a named scraper.
@@ -147,3 +173,13 @@ func County(state, fips string) string {
 
 // SourceKey identifies one record within a scraper.
 func SourceKey(scraper, sourceID string) string { return scraper + ":" + sourceID }
+
+// GovernmentMatch returns the first whole-word government name pattern.
+func GovernmentMatch(k string) string {
+	for _, p := range []string{"COUNTY", "CITY OF", "TOWN OF", "VILLAGE OF", "TOWNSHIP", "SCHOOL DISTRICT", "STATE OF", "DEPT", "DEPARTMENT", "UNIVERSITY", "PUBLIC WORKS"} {
+		if strings.Contains(" "+k+" ", " "+p+" ") {
+			return p
+		}
+	}
+	return ""
+}

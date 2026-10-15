@@ -12,7 +12,7 @@ import (
 
 func ptr(n int64) *int64 { return &n }
 
-// R-26PV-9SB3
+// R-PDA4-YXZ2
 func TestCombinedShape(t *testing.T) {
 	type shape struct {
 		Low        int64
@@ -24,7 +24,7 @@ func TestCombinedShape(t *testing.T) {
 	}
 }
 
-// R-WDFE-H5CE R-26PV-9SB3
+// R-WDFE-H5CE R-PDA4-YXZ2
 func TestCombine(t *testing.T) {
 	cases := []struct {
 		in   []sources.Estimate
@@ -58,13 +58,10 @@ func TestCombine(t *testing.T) {
 			t.Fatal("changed or shared estimates")
 		}
 	}
-	if scoring.DefaultMaxMinutes != 120 || scoring.DefaultMinRevenue != 10000000 {
-		t.Fatal("defaults")
-	}
 }
 
-// R-GW8R-ELQS R-GXGN-SDHH R-GZWG-JWYV
-func TestFreshnessEffectiveScore(t *testing.T) {
+// R-GW8R-ELQS
+func TestFreshness(t *testing.T) {
 	filed := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	t2, t5 := filed.AddDate(2, 0, 0), filed.AddDate(5, 0, 0)
 	for _, c := range []struct {
@@ -74,28 +71,60 @@ func TestFreshnessEffectiveScore(t *testing.T) {
 		if got := scoring.Freshness(c.filed, c.now); got != c.want {
 			t.Fatal(got, c.want)
 		}
-		if got := scoring.Effective(.7, c.filed, c.now); got != .7*c.want {
+	}
+
+}
+
+// R-41SV-M95N
+func TestWeight(t *testing.T) {
+	filed := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		filed, now time.Time
+		want       float64
+	}{{filed, filed.AddDate(1, 0, 0), .6}, {filed, time.Date(2023, 7, 3, 0, 0, 0, 0, time.UTC), .3}, {filed, filed.AddDate(5, 0, 0), 0}, {time.Time{}, filed, 0}} {
+		if got := scoring.Weight(sources.Evidence{Name: sources.EvidenceFMCSAActive, Weight: .6}, tc.filed, tc.now); got != tc.want {
 			t.Fatal(got)
 		}
-		if got := scoring.Score(123, scoring.Effective(.7, c.filed, c.now)); got != 123*.7*c.want {
-			if math.Abs(got-123*.7*c.want) > 1e-12 {
+		for _, name := range []string{sources.EvidenceOwnDomain, sources.EvidenceFMCSAActivity, sources.EvidencePPPLoan, "future"} {
+			if got := scoring.Weight(sources.Evidence{Name: name, Weight: .2}, tc.filed, tc.now); got != .2 {
 				t.Fatal(got)
 			}
 		}
 	}
-	if scoring.Score(-4, .5) != -2 {
-		t.Fatal("negative")
+}
+
+// R-BKMJ-570Z R-PDA4-YXZ2
+func TestOperating(t *testing.T) {
+	for _, tc := range []struct {
+		weights []float64
+		want    float64
+	}{{[]float64{.6, .3, .2}, .776}, {[]float64{.6, .5}, .8}, {[]float64{.2}, .2}, {[]float64{0}, 0}} {
+		es := []sources.Evidence{}
+		for _, w := range tc.weights {
+			es = append(es, sources.Evidence{Weight: w})
+		}
+		before := append([]sources.Evidence{}, es...)
+		got := scoring.Operating(es)
+		if got == nil || math.Abs(*got-tc.want) > 1e-9 || !reflect.DeepEqual(es, before) {
+			t.Fatal(got, es)
+		}
+	}
+	if scoring.Operating(nil) != nil || scoring.Operating([]sources.Evidence{}) != nil {
+		t.Fatal("empty")
 	}
 }
 
-// R-GYOK-6586
-func TestPoint(t *testing.T) {
-	for _, c := range [][3]int64{{2100000, 3500000, 2800000}, {1, 2, 1}, {math.MaxInt64, math.MaxInt64, math.MaxInt64}, {math.MinInt64, math.MinInt64, math.MinInt64}, {math.MaxInt64, math.MinInt64, 0}, {4, -1, 1}, {-4, 1, -1}, {-1, -2, -1}, {0, 1, 0}, {0, -1, 0}} {
-		if got := scoring.Point(c[0], &c[1]); got != c[2] {
-			t.Error(c, got)
-		}
+// R-BLUF-IYRO
+func TestOperatingKey(t *testing.T) {
+	if scoring.OperatingKey(nil) != -1 {
+		t.Fatal("nil")
 	}
-	if scoring.Point(math.MinInt64, nil) != math.MinInt64 {
-		t.Fatal("floor")
+	for _, tc := range []struct {
+		in   float64
+		want int64
+	}{{0, 0}, {.0000015, 1}, {-.0000015, -1}, {.776, 776000}, {1, 1000000}, {1e13, math.MaxInt64}, {-1e13, math.MinInt64}, {0x1p63 / 1000000, math.MaxInt64}} {
+		if got := scoring.OperatingKey(&tc.in); got != tc.want {
+			t.Fatal(tc, got)
+		}
 	}
 }

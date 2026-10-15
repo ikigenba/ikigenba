@@ -3,19 +3,21 @@ package store
 import (
 	"context"
 	"database/sql"
-	"math"
 	"sort"
 	"time"
 
+	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
 	"github.com/ikigenba/ikigenba/candidates/internal/scoring"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
 func assessment(r *records, c Candidate, t time.Time) ([]sources.Estimate, Assessment) {
-	es := []sources.Estimate{}
-	a := Assessment{Candidate: c.ID, Exclusions: []sources.Exclusion{}, Rules: sources.Rules, Scored: t}
+	t = t.UTC().Truncate(time.Second)
+	a := Assessment{Candidate: c.ID, Evidence: []sources.Evidence{}, Categories: []sources.Category{}, Rules: sources.Rules, Calculated: t}
+	estimates := map[string]sources.Estimate{}
 	seen := map[string]bool{}
-	exclusions := map[sources.Exclusion]bool{}
+	evidence := map[string]sources.Evidence{}
+	categories := map[sources.Category]bool{}
 	for _, l := range linksFor(r, c.ID) {
 		if l.Gone {
 			continue
@@ -23,50 +25,83 @@ func assessment(r *records, c Candidate, t time.Time) ([]sources.Estimate, Asses
 		rd := l.Reading
 		if !seen[l.Scraper] {
 			seen[l.Scraper] = true
-			if rd.Fleet {
-				a.Fleet = true
-			}
+			a.Fleet = a.Fleet || rd.Fleet
 			if rd.Estimate != nil {
-				es = append(es, *rd.Estimate)
+				estimates[l.Scraper] = *rd.Estimate
+			}
+		} else if l.Scraper == ppp.Name && rd.Estimate != nil {
+			old, ok := estimates[l.Scraper]
+			if !ok || rd.Estimate.Low > old.Low {
+				estimates[l.Scraper] = *rd.Estimate
 			}
 		}
-		if rd.Filed.After(a.Filed) {
-			a.Filed = rd.Filed
+		if !rd.KnownSince.IsZero() && (a.KnownSince.IsZero() || rd.KnownSince.Before(a.KnownSince)) {
+			a.KnownSince = rd.KnownSince
 		}
-		for _, e := range rd.Exclusions {
-			if !exclusions[e] {
-				exclusions[e] = true
-				a.Exclusions = append(a.Exclusions, e)
+		if rd.Filed.After(a.NewestFiling) {
+			a.NewestFiling = rd.Filed
+		}
+		if a.GovernmentMatch == "" {
+			a.GovernmentMatch = rd.GovernmentMatch
+		}
+		if rd.Category != "" {
+			categories[sources.Category{Name: rd.Category, Source: l.Scraper}] = true
+		}
+		for _, e := range rd.Evidence {
+			e.Weight = scoring.Weight(e, rd.Filed, t)
+			if e.Weight <= 0 {
+				continue
+			}
+			old, ok := evidence[e.Name]
+			if !ok || e.Weight > old.Weight {
+				evidence[e.Name] = e
 			}
 		}
 	}
+	es := []sources.Estimate{}
+	for _, e := range estimates {
+		es = append(es, e)
+	}
 	sort.Slice(es, func(i, j int) bool { return es[i].Source < es[j].Source })
-	combined := scoring.Combine(es)
-	a.Low = combined.Low
-	a.High = combined.High
-	a.Confidence = combined.Confidence
+	for _, e := range evidence {
+		a.Evidence = append(a.Evidence, e)
+	}
+	sort.Slice(a.Evidence, func(i, j int) bool {
+		if a.Evidence[i].Weight != a.Evidence[j].Weight {
+			return a.Evidence[i].Weight > a.Evidence[j].Weight
+		}
+		return a.Evidence[i].Name < a.Evidence[j].Name
+	})
+	for c := range categories {
+		a.Categories = append(a.Categories, c)
+	}
+	sort.Slice(a.Categories, func(i, j int) bool {
+		if a.Categories[i].Name != a.Categories[j].Name {
+			return a.Categories[i].Name < a.Categories[j].Name
+		}
+		return a.Categories[i].Source < a.Categories[j].Source
+	})
+	a.Operating = scoring.Operating(a.Evidence)
+	a.OperatingKey = scoring.OperatingKey(a.Operating)
+	if len(es) > 0 {
+		combined := scoring.Combine(es)
+		a.RevenueLow = &combined.Low
+		a.RevenueHigh = combined.High
+		a.RevenueConfidence = &combined.Confidence
+	}
 	if m, ok := r.zips[c.Zip]; ok {
 		a.Minutes = &m
 	}
-	a.Excluded = len(a.Exclusions) > 0
 	for i := len(r.rulings) - 1; i >= 0; i-- {
 		d := r.rulings[i]
-		if d.Candidate != c.ID || d.Kind != KindExclude && d.Kind != KindInclude {
-			continue
+		if d.Candidate == c.ID && (d.Kind == KindExclude || d.Kind == KindInclude) {
+			a.Excluded = d.Kind == KindExclude
+			break
 		}
-		a.Excluded = d.Kind == KindExclude
-		if a.Excluded {
-			a.Exclusions = append(a.Exclusions, sources.Exclusion{Reason: sources.ExcludeRuling})
-		}
-		break
 	}
-	a.Base = scoring.Score(scoring.Point(a.Low, a.High), a.Confidence)
-	a.Effective = scoring.Effective(a.Confidence, a.Filed, t)
-	a.Score = scoring.Score(scoring.Point(a.Low, a.High), a.Effective)
-	a.ScoreKey = scoreKey(a.Score)
 	return es, a
 }
-func rescore(r *records, ids []string, t time.Time) Counts {
+func judge(r *records, ids []string, t time.Time) Counts {
 	out := Counts{}
 	seen := map[string]bool{}
 	for _, id := range ids {
@@ -81,20 +116,20 @@ func rescore(r *records, ids []string, t time.Time) Counts {
 		es, a := assessment(r, c, t)
 		r.estimates[id] = es
 		r.assessments[id] = a
-		out.Rescored++
-		if a.Minutes == nil {
+		out.Judged++
+		if a.RevenueLow == nil {
 			out.Unranged++
 		}
 	}
 	return out
 }
 
-// Rescore replaces the scores of the active candidates named.
-func (s *Store) Rescore(ctx context.Context, ids []string) (Counts, error) {
+// Judge replaces the judgments of the active candidates named by ids.
+func (s *Store) Judge(ctx context.Context, ids []string) (Counts, error) {
 	var out Counts
 	err := unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		var err error
-		out, err = rescoreKeys(ctx, tx, ids, s.now())
+		out, err = judgeKeys(ctx, tx, ids, s.now())
 		return err
 	}))
 	if err != nil {
@@ -103,11 +138,11 @@ func (s *Store) Rescore(ctx context.Context, ids []string) (Counts, error) {
 	return out, nil
 }
 
-// RescoreAll replaces every active candidate's score.
-func (s *Store) RescoreAll(ctx context.Context) (Counts, error) {
+// JudgeAll replaces every active candidate's judgments and repairs cargo lookups.
+func (s *Store) JudgeAll(ctx context.Context) (Counts, error) {
 	var out Counts
 	err := unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, "SELECT id FROM candidates WHERE status=?", StatusActive)
+		rows, err := querySQL(ctx, tx, "SELECT id FROM candidates WHERE status=?", StatusActive)
 		if err != nil {
 			return err
 		}
@@ -128,35 +163,17 @@ func (s *Store) RescoreAll(ctx context.Context) (Counts, error) {
 		if closeErr != nil {
 			return closeErr
 		}
-		out, err = rescoreKeys(ctx, tx, ids, s.now())
-		return err
+		out, err = judgeKeys(ctx, tx, ids, s.now())
+		if err != nil {
+			return err
+		}
+		if err = execSQL(ctx, tx, "DELETE FROM candidate_cargo"); err != nil {
+			return err
+		}
+		return execSQL(ctx, tx, `INSERT INTO candidate_cargo(candidate,cargo) SELECT DISTINCT candidates.id,j.value FROM candidates,json_each(candidates.cargo) AS j WHERE j.type='text'`)
 	}))
 	if err != nil {
 		return Counts{}, err
 	}
 	return out, nil
-}
-
-func scoreKey(score float64) int64 {
-	x := score * 1000000
-	if x >= 0x1p63 {
-		return math.MaxInt64
-	}
-	if x < -0x1p63 {
-		return math.MinInt64
-	}
-	return int64(x)
-}
-
-// RefreshShortlist updates persisted freshness and repairs cargo lookup rows.
-func (s *Store) RefreshShortlist(ctx context.Context) error {
-	return unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		if err := execSQL(ctx, tx, `UPDATE assessments SET effective = confidence * w.f, score = base * w.f, score_key = CAST(base * w.f * 1000000.0 AS INTEGER) FROM (SELECT candidate AS id, CASE WHEN filed = '' THEN 0.0 WHEN julianday(?1) <= julianday(filed, '+2 years') THEN 1.0 WHEN julianday(?1) >= julianday(filed, '+5 years') THEN 0.0 ELSE (julianday(filed, '+5 years') - julianday(?1)) / (julianday(filed, '+5 years') - julianday(filed, '+2 years')) END AS f FROM assessments) AS w WHERE assessments.candidate = w.id`, s.now().Format(time.RFC3339)); err != nil {
-			return err
-		}
-		if err := execSQL(ctx, tx, "DELETE FROM candidate_cargo"); err != nil {
-			return err
-		}
-		return execSQL(ctx, tx, `INSERT INTO candidate_cargo(candidate,cargo) SELECT DISTINCT candidates.id, j.value FROM candidates, json_each(candidates.cargo) AS j WHERE j.type = 'text'`)
-	}))
 }

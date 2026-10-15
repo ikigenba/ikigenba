@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-ISFX-PG6M: this assignment requires an untyped string constant.
+// R-2SHV-MRC2: this assignment requires an untyped string constant.
 const shortlistBefore windowStatement = store.ShortlistBefore
 
 func statementOffset(t *testing.T, f *contractFixture, args ...any) int64 {
@@ -38,12 +38,12 @@ func statementOffset(t *testing.T, f *contractFixture, args ...any) int64 {
 	return out
 }
 
-// R-ISFX-PG6M R-ITNU-37XB R-IUVQ-GZO0
+// R-2SHV-MRC2 R-ITNU-37XB R-2TPS-0J2R
 func TestShortlistBeforeParameters(t *testing.T) {
 	f := contractDB(t)
 	args := []any{int64(120), int64(10000000), "class", "cargo", int64(9), "id"}
 	contractEqual(t, statementOffset(t, f, args...), int64(0))
-	offset, err := f.s.ShortlistOffset(context.Background(), store.ShortlistFilter{MaxMinutes: 120, MinRevenue: 10000000, Class: "class", Cargo: "cargo"}, 9, "id")
+	offset, err := f.s.ShortlistOffset(context.Background(), store.ShortlistFilter{MaxMinutes: ptrInt(120), MinRevenue: ptrInt(10000000), Class: "class", Cargo: "cargo"}, 9, "id")
 	contractOK(t, err)
 	contractEqual(t, offset, int64(0))
 	contractOK(t, f.d.Read(context.Background(), func(tx *sql.Tx) error {
@@ -56,16 +56,16 @@ func TestShortlistBeforeParameters(t *testing.T) {
 	}))
 }
 
-// R-ITNU-37XB R-IUVQ-GZO0 R-IW3M-UREP
+// R-ITNU-37XB R-2TPS-0J2R R-2W5K-S2K5
 func TestShortlistOffsetMatchesFilteredPositions(t *testing.T) {
 	f := statementFixture(t)
 	ctx := context.Background()
 	filters := []store.ShortlistFilter{
-		{MaxMinutes: 100}, {MaxMinutes: 20}, {MaxMinutes: 100, MinRevenue: 13000000},
-		{MaxMinutes: 100, Class: sources.ClassForHire}, {MaxMinutes: 100, Class: "private"},
-		{MaxMinutes: 100, Cargo: "machinery"}, {MaxMinutes: 100, Cargo: "missing"},
-		{MaxMinutes: 70, MinRevenue: 11000000, Class: "private", Cargo: "machinery"},
-		{MaxMinutes: -1}, {MaxMinutes: 100, Class: "missing"},
+		{MaxMinutes: ptrInt(100)}, {MaxMinutes: ptrInt(20)}, {MaxMinutes: ptrInt(100), MinRevenue: ptrInt(6500000)},
+		{MaxMinutes: ptrInt(100), Class: sources.ClassForHire}, {MaxMinutes: ptrInt(100), Class: "private"},
+		{MaxMinutes: ptrInt(100), Cargo: "machinery"}, {MaxMinutes: ptrInt(100), Cargo: "missing"},
+		{MaxMinutes: ptrInt(70), MinRevenue: ptrInt(5500000), Class: "private", Cargo: "machinery"},
+		{MaxMinutes: ptrInt(-1)}, {MaxMinutes: ptrInt(100), Class: "missing"},
 	}
 	for _, filter := range filters {
 		full, err := f.s.Shortlist(ctx, filter, 0, "", 100)
@@ -78,19 +78,19 @@ func TestShortlistOffsetMatchesFilteredPositions(t *testing.T) {
 			positions = append(positions, struct {
 				key int64
 				id  string
-			}{entry.Assessment.ScoreKey, entry.Candidate.ID})
+			}{entry.Assessment.OperatingKey, entry.Candidate.ID})
 		}
 		for _, p := range positions {
 			var want int64
 			for _, entry := range full {
-				if entry.Assessment.ScoreKey > p.key || (entry.Assessment.ScoreKey == p.key && entry.Candidate.ID <= p.id) {
+				if entry.Assessment.OperatingKey > p.key || (entry.Assessment.OperatingKey == p.key && entry.Candidate.ID <= p.id) {
 					want++
 				}
 			}
 			got, err := f.s.ShortlistOffset(ctx, filter, p.key, p.id)
 			contractOK(t, err)
 			contractEqual(t, got, want)
-			contractEqual(t, statementOffset(t, f, filter.MaxMinutes, filter.MinRevenue, filter.Class, filter.Cargo, p.key, p.id), want)
+			contractEqual(t, statementOffset(t, f, boundNumber(filter.MaxMinutes), boundNumber(filter.MinRevenue), filter.Class, filter.Cargo, p.key, p.id), want)
 		}
 		for _, key := range []int64{math.MinInt64, 0, math.MaxInt64} {
 			got, err := f.s.ShortlistOffset(ctx, filter, key, "")
@@ -108,7 +108,7 @@ func TestShortlistOffsetMatchesFilteredPositions(t *testing.T) {
 	contractEqual(t, contractState(t, f), before)
 }
 
-// R-IXBJ-8J5E
+// R-2XDH-5UAU
 func TestShortlistBeforeSeeksScoreIndex(t *testing.T) {
 	for _, populated := range []bool{false, true} {
 		var f *contractFixture
@@ -118,9 +118,9 @@ func TestShortlistBeforeSeeksScoreIndex(t *testing.T) {
 			f = contractDB(t)
 		}
 		for _, key := range []int64{math.MinInt64, 0, math.MaxInt64} {
-			for _, filter := range []store.ShortlistFilter{{}, {MaxMinutes: 70, MinRevenue: 11000000, Class: "private", Cargo: "machinery"}} {
-				details := statementPlan(t, f, shortlistBefore, filter.MaxMinutes, filter.MinRevenue, filter.Class, filter.Cargo, key, "id")
-				if len(details) == 0 || !strings.HasPrefix(details[0], "SEARCH ") || !strings.HasSuffix(details[0], " INDEX assessments_score (score_key>?)") {
+			for _, filter := range []store.ShortlistFilter{{}, {MaxMinutes: ptrInt(70), MinRevenue: ptrInt(5500000), Class: "private", Cargo: "machinery"}} {
+				details := statementPlan(t, f, shortlistBefore, boundNumber(filter.MaxMinutes), boundNumber(filter.MinRevenue), filter.Class, filter.Cargo, key, "id")
+				if len(details) == 0 || !strings.HasPrefix(details[0], "SEARCH ") || !strings.HasSuffix(details[0], " INDEX assessments_operating (operating_key>?)") {
 					t.Fatalf("unexpected leading plan: %v", details)
 				}
 				for _, detail := range details {

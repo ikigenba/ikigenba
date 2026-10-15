@@ -35,18 +35,17 @@ func reversedFixture(t *testing.T) *contractFixture {
 		}
 		contractAttach(t, f, "extra-run", observation)
 	}
-	_, err := f.s.RescoreAll(context.Background())
+	_, err := f.s.JudgeAll(context.Background())
 	contractOK(t, err)
-	contractOK(t, f.s.RefreshShortlist(context.Background()))
 	return f
 }
 
 func reversedFilters() []store.ShortlistFilter {
 	return []store.ShortlistFilter{
-		{MaxMinutes: 100}, {MaxMinutes: 20}, {MaxMinutes: 100, MinRevenue: 13000000},
-		{MaxMinutes: 100, Class: sources.ClassForHire}, {MaxMinutes: 100, Class: "private"},
-		{MaxMinutes: 100, Cargo: "machinery"}, {MaxMinutes: 100, Cargo: "missing"},
-		{MaxMinutes: 70, MinRevenue: 11000000, Class: "private", Cargo: "machinery"},
+		{MaxMinutes: ptrInt(100)}, {MaxMinutes: ptrInt(20)}, {MaxMinutes: ptrInt(100), MinRevenue: ptrInt(6500000)},
+		{MaxMinutes: ptrInt(100), Class: sources.ClassForHire}, {MaxMinutes: ptrInt(100), Class: "private"},
+		{MaxMinutes: ptrInt(100), Cargo: "machinery"}, {MaxMinutes: ptrInt(100), Cargo: "missing"},
+		{MaxMinutes: ptrInt(70), MinRevenue: ptrInt(5500000), Class: "private", Cargo: "machinery"},
 	}
 }
 
@@ -63,29 +62,29 @@ func reversedShortlistOracle(t *testing.T, f *contractFixture, filter store.Shor
 		for _, v := range c.Cargo {
 			cargo = cargo || v == filter.Cargo
 		}
-		if a.Minutes != nil && *a.Minutes <= filter.MaxMinutes && (a.High == nil || *a.High >= filter.MinRevenue) && a.Fleet && !a.Excluded && a.Effective > 0 && (filter.Class == "" || filter.Class == c.Class) && cargo {
+		if (filter.MaxMinutes == nil || a.Minutes != nil && *a.Minutes <= *filter.MaxMinutes) && (filter.MinRevenue == nil || a.RevenueLow != nil && *a.RevenueLow >= *filter.MinRevenue) && !a.Excluded && (filter.Class == "" || filter.Class == c.Class) && cargo {
 			out = append(out, store.Ranked{Candidate: c, Assessment: a})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
-		if out[i].Assessment.ScoreKey != out[j].Assessment.ScoreKey {
-			return out[i].Assessment.ScoreKey < out[j].Assessment.ScoreKey
+		if out[i].Assessment.OperatingKey != out[j].Assessment.OperatingKey {
+			return out[i].Assessment.OperatingKey < out[j].Assessment.OperatingKey
 		}
 		return out[i].Candidate.ID > out[j].Candidate.ID
 	})
 	return out
 }
 
-// R-HEI8-OLVU R-HFQ5-2DMJ R-HKLQ-LGLB
+// R-HEI8-OLVU R-2YLD-JM1J R-3116-B5IX
 func TestReversedShortlistWindows(t *testing.T) {
 	f := reversedFixture(t)
 	ctx := context.Background()
 	for _, filter := range reversedFilters() {
 		full := reversedShortlistOracle(t, f, filter)
-		if filter == (store.ShortlistFilter{MaxMinutes: 100}) {
+		if filter.MaxMinutes != nil && *filter.MaxMinutes == 100 && filter.MinRevenue == nil && filter.Class == "" && filter.Cargo == "" {
 			tied := false
 			for i := 1; i < len(full); i++ {
-				tied = tied || full[i-1].Assessment.ScoreKey == full[i].Assessment.ScoreKey
+				tied = tied || full[i-1].Assessment.OperatingKey == full[i].Assessment.OperatingKey
 			}
 			if !tied {
 				t.Fatal("fixture lacks score ties")
@@ -99,18 +98,18 @@ func TestReversedShortlistWindows(t *testing.T) {
 			positions = append(positions, struct {
 				score int64
 				id    string
-			}{r.Assessment.ScoreKey, r.Candidate.ID})
+			}{r.Assessment.OperatingKey, r.Candidate.ID})
 			// A synthetic position next to this id exercises a position absent from the store.
 			positions = append(positions, struct {
 				score int64
 				id    string
-			}{r.Assessment.ScoreKey, r.Candidate.ID + "!"})
+			}{r.Assessment.OperatingKey, r.Candidate.ID + "!"})
 		}
 		for _, pos := range positions {
 			for _, n := range []int{1, 2, 3, 100} {
 				want := []store.Ranked{}
 				for _, r := range full {
-					if pos.id == "" || r.Assessment.ScoreKey > pos.score || (r.Assessment.ScoreKey == pos.score && r.Candidate.ID < pos.id) {
+					if pos.id == "" || r.Assessment.OperatingKey > pos.score || (r.Assessment.OperatingKey == pos.score && r.Candidate.ID < pos.id) {
 						want = append(want, r)
 						if len(want) == n {
 							break
@@ -125,10 +124,10 @@ func TestReversedShortlistWindows(t *testing.T) {
 					ids = append(ids, r.Candidate.ID)
 				}
 				query := shortlistLast
-				args := []any{filter.MaxMinutes, filter.MinRevenue, filter.Class, filter.Cargo, n}
+				args := []any{boundNumber(filter.MaxMinutes), boundNumber(filter.MinRevenue), filter.Class, filter.Cargo, n}
 				if pos.id != "" {
 					query = shortlistPreceding
-					args = []any{filter.MaxMinutes, filter.MinRevenue, filter.Class, filter.Cargo, pos.score, pos.id, n}
+					args = []any{boundNumber(filter.MaxMinutes), boundNumber(filter.MinRevenue), filter.Class, filter.Cargo, pos.score, pos.id, n}
 				}
 				contractEqual(t, statementIDs(t, f, query, args...), ids)
 			}
@@ -147,13 +146,13 @@ func TestReversedShortlistWindows(t *testing.T) {
 				t.Fatal("reversed walk repeated entries")
 			}
 			last := got[len(got)-1]
-			score, id = last.Assessment.ScoreKey, last.Candidate.ID
+			score, id = last.Assessment.OperatingKey, last.Candidate.ID
 		}
 		contractEqual(t, traversed, full)
 	}
 }
 
-// R-HEI8-OLVU R-HGY1-G5D8 R-HKLQ-LGLB
+// R-HEI8-OLVU R-HGY1-G5D8 R-3116-B5IX
 func TestReversedPassWindows(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -233,7 +232,7 @@ func TestReversedWindowsRejectInvalidCounts(t *testing.T) {
 	}
 }
 
-// R-HJDU-7OUM
+// R-2ZT9-XDS8
 func TestReversedStatementParameters(t *testing.T) {
 	f := contractDB(t)
 	for _, tc := range []struct {
@@ -256,7 +255,7 @@ func TestReversedStatementParameters(t *testing.T) {
 	}
 }
 
-// R-HLTM-Z8C0 R-HN1J-D02P
+// R-3292-OX9M R-33GZ-2P0B
 func TestReversedStatementPlans(t *testing.T) {
 	for _, populated := range []bool{false, true} {
 		f := contractDB(t)
@@ -269,8 +268,8 @@ func TestReversedStatementPlans(t *testing.T) {
 				args           []any
 				prefix, suffix string
 			}{
-				{shortlistLast, []any{filter.MaxMinutes, filter.MinRevenue, filter.Class, filter.Cargo, 3}, "SCAN ", " INDEX assessments_score"},
-				{shortlistPreceding, []any{filter.MaxMinutes, filter.MinRevenue, filter.Class, filter.Cargo, int64(9), "id", 3}, "SEARCH ", " INDEX assessments_score (score_key>?)"},
+				{shortlistLast, []any{boundNumber(filter.MaxMinutes), boundNumber(filter.MinRevenue), filter.Class, filter.Cargo, 3}, "SCAN ", " INDEX assessments_operating"},
+				{shortlistPreceding, []any{boundNumber(filter.MaxMinutes), boundNumber(filter.MinRevenue), filter.Class, filter.Cargo, int64(9), "id", 3}, "SEARCH ", " INDEX assessments_operating (operating_key>?)"},
 				{startedLast, []any{3}, "SCAN ", " INDEX passes_window"},
 				{startedPreceding, []any{"started", "id", 3}, "SEARCH ", " INDEX passes_window ((started,id)>(?,?))"},
 			} {

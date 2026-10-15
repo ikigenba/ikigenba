@@ -35,7 +35,7 @@ func (s *Store) mint(r *records, prefix string) (string, error) {
 	return "", ErrUnreachable
 }
 func validPass(p Pass) bool {
-	return p.Trigger != "" && (p.Trigger == TriggerRebuild && p.Delivery == "" && p.UserID != "" || p.Trigger != TriggerRebuild && p.Delivery != "")
+	return p.Trigger != "" && (p.Kind == KindRebuild && p.Origin == OriginRebuild && p.Trigger == TriggerRebuild && p.Delivery == "" && p.UserID != "" || p.Kind == KindIngest && p.Origin == OriginRun && p.Trigger != TriggerRebuild && p.Delivery != "" || p.Kind == KindJudge && p.Origin == OriginCron && p.Trigger != TriggerRebuild && p.Delivery != "")
 }
 
 // AddPass records a running pass, enforcing delivery uniqueness and exclusivity.
@@ -47,8 +47,8 @@ func (s *Store) AddPass(ctx context.Context, p Pass) (Pass, error) {
 		where += " OR delivery=?"
 		args = append(args, p.Delivery)
 	}
-	if p.Trigger != TriggerRebuild {
-		where += ` OR "trigger"=?`
+	if p.Origin == OriginRun {
+		where += ` OR (origin='run' AND "trigger"=?)`
 		args = append(args, p.Trigger)
 	}
 	err := s.passWrite(ctx, where, args, func(tx *sql.Tx, r *records) error {
@@ -56,7 +56,7 @@ func (s *Store) AddPass(ctx context.Context, p Pass) (Pass, error) {
 			return ErrUnreachable
 		}
 		for _, q := range r.passes {
-			if p.Delivery != "" && p.Delivery == q.Delivery || p.Trigger != TriggerRebuild && p.Trigger == q.Trigger {
+			if p.Delivery != "" && p.Delivery == q.Delivery || p.Origin == OriginRun && q.Origin == OriginRun && p.Trigger == q.Trigger {
 				return ErrDelivered
 			}
 		}
@@ -69,7 +69,7 @@ func (s *Store) AddPass(ctx context.Context, p Pass) (Pass, error) {
 		if e != nil {
 			return e
 		}
-		out = Pass{ID: id, Trigger: p.Trigger, Status: StatusRunning, Started: s.now(), UserID: p.UserID, UserEmail: p.UserEmail, RequestID: p.RequestID, Delivery: p.Delivery}
+		out = Pass{ID: id, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Status: StatusRunning, Started: s.now(), UserID: p.UserID, UserEmail: p.UserEmail, RequestID: p.RequestID, Delivery: p.Delivery}
 		r.passes[id] = out
 		return nil
 	})
@@ -111,7 +111,7 @@ func (s *Store) FinishPass(ctx context.Context, id string, c Counts) (Pass, erro
 		p.Gone = c.Gone
 		p.Created = c.Created
 		p.Linked = c.Linked
-		p.Rescored = c.Rescored
+		p.Judged = c.Judged
 		p.Unranged = c.Unranged
 		r.passes[id] = p
 		out = p
@@ -202,7 +202,7 @@ func (s *Store) ListPasses(ctx context.Context, started, id string, n int) ([]Pa
 func (s *Store) FindDelivered(ctx context.Context, delivery, run string) (Pass, error) {
 	var out Pass
 	err := unreachable(s.readTx(ctx, func(tx *sql.Tx) error {
-		ps, err := readRecords[Pass](ctx, tx, "passes", passColumns, ` WHERE (delivery<>'' AND delivery=?1) OR (?2<>'' AND ?2<>?3 AND "trigger"=?2) ORDER BY started DESC,id DESC LIMIT 1`, delivery, run, TriggerRebuild)
+		ps, err := readRecords[Pass](ctx, tx, "passes", passColumns, ` WHERE (delivery<>'' AND delivery=?1) OR (?2<>'' AND origin=?3 AND "trigger"=?2) ORDER BY started DESC,id DESC LIMIT 1`, delivery, run, OriginRun)
 		if err != nil {
 			return err
 		}

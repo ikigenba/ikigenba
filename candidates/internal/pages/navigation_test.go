@@ -12,19 +12,18 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/paging"
-	"github.com/ikigenba/ikigenba/candidates/internal/scoring"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-I444-PSGF R-I5C1-3K74 R-I6JX-HBXT R-I7RT-V3OI
+// R-TE20-WB0X R-TNT7-YGYH R-THPQ-1M90 R-TCU4-IJA8 R-TF9X-A2RM R-TQ90-Q0FV
 func TestNavigationWalksAndTail(t *testing.T) {
 	for _, count := range []int{paging.DefaultLimit + 1, paging.DefaultLimit + 2, 2 * paging.DefaultLimit, 2*paging.DefaultLimit + 1, 3*paging.DefaultLimit + 2} {
 		t.Run(strconv.Itoa(count), func(t *testing.T) {
 			cfg, ranked, passes := navigationFixture(t, count)
 			// Every key ties, including both sides of every window boundary.
 			for i := 1; i < count; i++ {
-				if ranked[i].Assessment.ScoreKey != ranked[0].Assessment.ScoreKey || !passes[i].Started.Equal(passes[0].Started) {
+				if ranked[i].Assessment.OperatingKey != ranked[0].Assessment.OperatingKey || !passes[i].Started.Equal(passes[0].Started) {
 					t.Fatal("fixture must exercise tie breakers")
 				}
 			}
@@ -52,10 +51,10 @@ func navigationFixture(t *testing.T, count int) (Config, []store.Ranked, []store
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err = cfg.Store.Rescore(ctx, ids); err != nil {
+		if _, err = cfg.Store.Judge(ctx, ids); err != nil {
 			t.Fatal(err)
 		}
-		p, err := cfg.Store.AddPass(ctx, store.Pass{Trigger: store.TriggerRebuild, UserID: "navigation-starter"})
+		p, err := cfg.Store.AddPass(ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "navigation-starter"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -63,7 +62,7 @@ func navigationFixture(t *testing.T, count int) (Config, []store.Ranked, []store
 			t.Fatal(err)
 		}
 	}
-	ranked, err := cfg.Store.Shortlist(ctx, store.ShortlistFilter{MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: scoring.DefaultMinRevenue}, 0, "", count+1)
+	ranked, err := cfg.Store.Shortlist(ctx, store.ShortlistFilter{}, 0, "", count+1)
 	if err != nil || len(ranked) != count {
 		t.Fatal("shortlist fixture", len(ranked), err)
 	}
@@ -81,7 +80,7 @@ func navigationToken(ranked []store.Ranked, passes []store.Pass, short, before b
 	}
 	if short {
 		e := ranked[index]
-		return (paging.Token{Tool: "shortlist" + suffix}).Encode(e.Assessment.ScoreKey, e.Candidate.ID)
+		return (paging.Token{Tool: "shortlist" + suffix}).Encode(e.Assessment.OperatingKey, e.Candidate.ID)
 	}
 	p := passes[index]
 	return (paging.Token{Tool: "passes" + suffix}).Encode(p.Started.UTC().Format(time.RFC3339), p.ID)
@@ -115,7 +114,7 @@ func navigationBounds(ranked []store.Ranked, passes []store.Pass, short bool, va
 }
 
 func navigationExpected(cfg Config, ranked []store.Ranked, passes []store.Pass, sp, pp string) LandingData {
-	data := LandingData{Banner: bannerFor(cfg), MaxMinutes: scoring.DefaultMaxMinutes, MinRevenue: dollars(scoring.DefaultMinRevenue), Shortlist: []ShortlistRow{}, Passes: []PassRow{}, ShortlistPage: sp, PassesPage: pp}
+	data := LandingData{Banner: bannerFor(cfg), Shortlist: []ShortlistRow{}, Passes: []PassRow{}, ShortlistPage: sp, PassesPage: pp}
 	start, end := navigationBounds(ranked, passes, true, sp)
 	for i := start; i < end; i++ {
 		data.Shortlist = append(data.Shortlist, shortlistRow(ranked[i], i, 0))

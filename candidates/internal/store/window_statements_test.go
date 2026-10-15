@@ -53,13 +53,12 @@ func statementFixture(t *testing.T) *contractFixture {
 		_, err := f.s.FinishPass(ctx, p.ID, store.Counts{})
 		contractOK(t, err)
 	}
-	_, err := f.s.RescoreAll(ctx)
+	_, err := f.s.JudgeAll(ctx)
 	contractOK(t, err)
 	_, _, err = f.s.Decide(ctx, store.Ruling{Kind: store.KindMerge, Candidate: ids[0], Other: ids[1], Why: "same business", UserID: "owner"})
 	contractOK(t, err)
 	_, _, err = f.s.Decide(ctx, store.Ruling{Kind: store.KindExclude, Candidate: ids[2], Why: "out of scope", UserID: "owner"})
 	contractOK(t, err)
-	contractOK(t, f.s.RefreshShortlist(ctx))
 	return f
 }
 
@@ -94,21 +93,44 @@ func statementIDs(t *testing.T, f *contractFixture, query windowStatement, args 
 	return out
 }
 
-// R-4DK1-YWAT R-4H7R-47IW
+func statementPlan(t *testing.T, f *contractFixture, query windowStatement, args ...any) []string {
+	t.Helper()
+	ctx := context.Background()
+	details := []string{}
+	contractOK(t, f.d.Read(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, "EXPLAIN QUERY PLAN "+string(query), args...)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var id, parent, unused int
+			var detail string
+			if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+				return err
+			}
+			details = append(details, detail)
+		}
+		return rows.Err()
+	}))
+	return details
+}
+
+// R-2MED-PWML R-2NMA-3ODA
 func TestWindowStatementsMatchStoreWindows(t *testing.T) {
 	f := statementFixture(t)
 	ctx := context.Background()
 	for _, filter := range []store.ShortlistFilter{
-		{MaxMinutes: 100}, {MaxMinutes: 20}, {MaxMinutes: 100, MinRevenue: 13000000},
-		{MaxMinutes: 100, Class: sources.ClassForHire}, {MaxMinutes: 100, Class: "private"},
-		{MaxMinutes: 100, Cargo: "machinery"}, {MaxMinutes: 100, Cargo: "missing"},
-		{MaxMinutes: 70, MinRevenue: 11000000, Class: "private", Cargo: "machinery"},
+		{MaxMinutes: ptrInt(100)}, {MaxMinutes: ptrInt(20)}, {MaxMinutes: ptrInt(100), MinRevenue: ptrInt(6500000)},
+		{MaxMinutes: ptrInt(100), Class: sources.ClassForHire}, {MaxMinutes: ptrInt(100), Class: "private"},
+		{MaxMinutes: ptrInt(100), Cargo: "machinery"}, {MaxMinutes: ptrInt(100), Cargo: "missing"},
+		{MaxMinutes: ptrInt(70), MinRevenue: ptrInt(5500000), Class: "private", Cargo: "machinery"},
 	} {
 		full, err := f.s.Shortlist(ctx, filter, 0, "", 100)
 		contractOK(t, err)
 		positions := [][2]any{{int64(0), "missing"}, {int64(-1), "end"}, {int64(1 << 62), "start"}}
 		for _, r := range full {
-			positions = append(positions, [2]any{r.Assessment.ScoreKey, r.Candidate.ID})
+			positions = append(positions, [2]any{r.Assessment.OperatingKey, r.Candidate.ID})
 		}
 		for _, n := range []int{1, 3, 100} {
 			rs, e := f.s.Shortlist(ctx, filter, 0, "", n)
@@ -117,7 +139,7 @@ func TestWindowStatementsMatchStoreWindows(t *testing.T) {
 			for _, r := range rs {
 				want = append(want, r.Candidate.ID)
 			}
-			contractEqual(t, statementIDs(t, f, shortlistFirst, filter.MaxMinutes, filter.MinRevenue, filter.Class, filter.Cargo, n), want)
+			contractEqual(t, statementIDs(t, f, shortlistFirst, boundNumber(filter.MaxMinutes), boundNumber(filter.MinRevenue), filter.Class, filter.Cargo, n), want)
 			for _, p := range positions {
 				rs, e = f.s.Shortlist(ctx, filter, p[0].(int64), p[1].(string), n)
 				contractOK(t, e)
@@ -125,7 +147,7 @@ func TestWindowStatementsMatchStoreWindows(t *testing.T) {
 				for _, r := range rs {
 					want = append(want, r.Candidate.ID)
 				}
-				contractEqual(t, statementIDs(t, f, shortlistAfter, filter.MaxMinutes, filter.MinRevenue, filter.Class, filter.Cargo, p[0], p[1], n), want)
+				contractEqual(t, statementIDs(t, f, shortlistAfter, boundNumber(filter.MaxMinutes), boundNumber(filter.MinRevenue), filter.Class, filter.Cargo, p[0], p[1], n), want)
 			}
 		}
 	}
@@ -185,7 +207,7 @@ func TestWindowStatementsMatchStoreWindows(t *testing.T) {
 	}
 }
 
-// R-4DK1-YWAT
+// R-2MED-PWML
 func TestWindowStatementParameterCounts(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -211,30 +233,7 @@ func TestWindowStatementParameterCounts(t *testing.T) {
 	}
 }
 
-func statementPlan(t *testing.T, f *contractFixture, query windowStatement, args ...any) []string {
-	t.Helper()
-	ctx := context.Background()
-	details := []string{}
-	contractOK(t, f.d.Read(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, "EXPLAIN QUERY PLAN "+string(query), args...)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = rows.Close() }()
-		for rows.Next() {
-			var id, parent, unused int
-			var detail string
-			if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
-				return err
-			}
-			details = append(details, detail)
-		}
-		return rows.Err()
-	}))
-	return details
-}
-
-// R-4JNJ-VR0A R-4NB9-128D R-4PR1-SLPR
+// R-2OU6-HG3Z R-2Q22-V7UO R-2R9Z-8ZLD
 func TestWindowStatementsSeekAndAvoidTemporarySorting(t *testing.T) {
 	for _, populated := range []bool{false, true} {
 		t.Run(fmt.Sprint(populated), func(t *testing.T) {
@@ -254,8 +253,8 @@ func TestWindowStatementsSeekAndAvoidTemporarySorting(t *testing.T) {
 					args           []any
 					prefix, suffix string
 				}{
-					{shortlistFirst, []any{int64(70), int64(11000000), class, cargo, 3}, "SCAN ", " INDEX assessments_score"},
-					{shortlistAfter, []any{int64(70), int64(11000000), class, cargo, int64(9), "id", 3}, "SEARCH ", " INDEX assessments_score (score_key<?)"},
+					{shortlistFirst, []any{int64(70), int64(11000000), class, cargo, 3}, "SCAN ", " INDEX assessments_operating"},
+					{shortlistAfter, []any{int64(70), int64(11000000), class, cargo, int64(9), "id", 3}, "SEARCH ", " INDEX assessments_operating (operating_key<?)"},
 					{candidatesFirst, []any{name, zip, phone, 3}, "SEARCH ", " INDEX candidates_window (status=?)"},
 					{candidatesAfter, []any{name, zip, phone, "created", "id", 3}, "SEARCH ", " INDEX candidates_window (status=? AND (created,id)<(?,?))"},
 					{startedFirst, []any{3}, "SCAN ", " INDEX passes_window"},
@@ -274,4 +273,11 @@ func TestWindowStatementsSeekAndAvoidTemporarySorting(t *testing.T) {
 			}
 		})
 	}
+}
+
+func boundNumber(p *int64) any {
+	if p == nil {
+		return nil
+	}
+	return *p
 }

@@ -3,6 +3,7 @@ package passes_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -14,10 +15,11 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/scrapes"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
+	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-9UJ9-AYIO R-9VR5-OQ9D R-9WZ2-2I02
+// R-ZXZK-Y4S5 R-0432-UZHM R-05AZ-8R8B R-GU9F-TVQY
 func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 	for _, rebuild := range []bool{false, true} {
 		t.Run(fmt.Sprint(rebuild), func(t *testing.T) {
@@ -39,7 +41,7 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 			}, true)
 			expected := newFixture(t, nil, false)
 			ctx := context.Background()
-			// Give both stores unrelated evidence: a delivery must refresh it globally.
+			// Give both stores unrelated evidence to compare the complete post-pass state.
 			seed := store.Observation{Scraper: "fmcsa", SourceID: "unrelated", Digest: "unrelated", Reading: fmcsa.New().Read(scrapes.Row{Name: "Unrelated", Facts: map[string]json.RawMessage{}})}
 			for _, f := range []*fixture{actual, expected} {
 				if _, _, err := f.st.Attach(ctx, "previous", false, []store.Observation{seed}); err != nil {
@@ -50,7 +52,7 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 			if rebuild {
 				trigger, delivery = store.TriggerRebuild, ""
 			}
-			if _, err := expected.st.AddPass(ctx, store.Pass{Trigger: trigger, Delivery: delivery, UserID: "owner"}); err != nil {
+			if _, err := expected.st.AddPass(ctx, store.Pass{Kind: map[bool]string{true: store.KindRebuild, false: store.KindIngest}[rebuild], Origin: map[bool]string{true: store.OriginRebuild, false: store.OriginRun}[rebuild], Trigger: trigger, Delivery: delivery, UserID: "owner"}); err != nil {
 				t.Fatal(err)
 			}
 			var total store.Counts
@@ -82,23 +84,14 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 			for _, id := range ids {
 				touched[id] = true
 			}
-			list := make([]string, 0, len(touched))
-			for id := range touched {
-				list = append(list, id)
-			}
-			if rebuild {
-				counts, err = expected.st.RescoreAll(ctx)
-			} else {
-				counts, err = expected.st.Rescore(ctx, list)
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
 			total.Rows = int64(len(rows))
-			total.Rescored = counts.Rescored
-			total.Unranged = counts.Unranged
-			if err = expected.st.RefreshShortlist(ctx); err != nil {
-				t.Fatal(err)
+			if rebuild {
+				counts, err = expected.st.JudgeAll(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				total.Judged = counts.Judged
+				total.Unranged = counts.Unranged
 			}
 			var p store.Pass
 			if rebuild {
@@ -113,10 +106,11 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 				p = actual.list()[0]
 			}
 			p = actual.ended(p.ID)
-			got := store.Counts{Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Rescored: p.Rescored, Unranged: p.Unranged}
+			got := store.Counts{Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged}
 			if p.Status != store.StatusDone || got != total {
 				t.Fatal(p, total)
 			}
+			estimateCount := 0
 			wantCandidates, err := expected.st.ListCandidates(ctx, store.CandidateFilter{}, "", "", len(rows)+1)
 			if err != nil {
 				t.Fatal(err)
@@ -136,14 +130,23 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 				}
 				gotEst, ge := actual.st.Estimates(ctx, c.ID)
 				wantEst, we := expected.st.Estimates(ctx, c.ID)
+				for _, est := range gotEst {
+					estimateCount++
+					if est.Formula != sources.Rules {
+						t.Fatal(est)
+					}
+				}
 				if ge != nil || we != nil || !reflect.DeepEqual(gotEst, wantEst) {
 					t.Fatal("estimate records differ", ge, we)
 				}
 				gotA, ge := actual.st.GetAssessment(ctx, c.ID)
 				wantA, we := expected.st.GetAssessment(ctx, c.ID)
-				if ge != nil || we != nil || !reflect.DeepEqual(gotA, wantA) {
+				if !errors.Is(ge, we) || !reflect.DeepEqual(gotA, wantA) {
 					t.Fatal("assessment records differ", ge, we)
 				}
+			}
+			if rebuild && estimateCount == 0 {
+				t.Fatal("no estimates were recomputed")
 			}
 		})
 	}

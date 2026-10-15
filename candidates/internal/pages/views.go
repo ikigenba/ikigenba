@@ -3,12 +3,10 @@ package pages
 import (
 	"bytes"
 	"encoding/json"
-	"math"
 	"sort"
 	"strconv"
 	"time"
 
-	"github.com/ikigenba/ikigenba/candidates/internal/scoring"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/urls"
@@ -21,8 +19,7 @@ func dollars(v int64) string {
 	}
 	return "$" + s
 }
-func money(v float64) string { return dollars(int64(math.Round(v))) }
-func two(v float64) string   { return strconv.FormatFloat(v, 'f', 2, 64) }
+func two(v float64) string { return strconv.FormatFloat(v, 'f', 2, 64) }
 func date(t time.Time) string {
 	if t.IsZero() {
 		return ""
@@ -36,19 +33,20 @@ func stamp(t time.Time, layout string) (string, string) {
 	return t.UTC().Format(time.RFC3339), t.UTC().Format(layout)
 }
 func passRow(p store.Pass) PassRow {
-	v := PassRow{ID: p.ID, Trigger: p.Trigger, Status: p.Status, Reason: p.Reason, Rows: p.Rows, Created: p.Created, Rescored: p.Rescored}
+	v := PassRow{ID: p.ID, Kind: p.Kind, Trigger: p.Trigger, Status: p.Status, Reason: p.Reason, Rows: p.Rows, Created: p.Created, Judged: p.Judged}
 	v.Started, v.StartedText = stamp(p.Started, MinuteLayout)
 	v.Finished, v.FinishedText = stamp(p.Finished, MinuteLayout)
 	return v
 }
 func passView(p store.Pass, sp string) PassView {
-	v := PassView{ID: p.ID, Trigger: p.Trigger, Status: p.Status, Reason: p.Reason, Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Rescored: p.Rescored, Unranged: p.Unranged}
-	if p.Trigger == store.TriggerRebuild {
+	v := PassView{ID: p.ID, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Status: p.Status, Reason: p.Reason, Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged}
+	switch p.Origin {
+	case store.OriginRebuild:
 		v.StartedBy = p.UserEmail
 		if v.StartedBy == "" {
 			v.StartedBy = p.UserID
 		}
-	} else {
+	case store.OriginRun:
 		v.RunPage = urls.RunPage(urls.Scrapes(sp), p.Trigger)
 	}
 	v.Started, v.StartedText = stamp(p.Started, SecondLayout)
@@ -56,13 +54,16 @@ func passView(p store.Pass, sp string) PassView {
 	return v
 }
 func shortlistRow(e store.Ranked, i int, offset int64) ShortlistRow {
-	v := ShortlistRow{Rank: offset + int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, Class: e.Candidate.Class, Low: dollars(e.Assessment.Low), Confidence: two(e.Assessment.Effective), Score: money(e.Assessment.Score)}
-	if e.Assessment.Minutes != nil {
-		v.Minutes = *e.Assessment.Minutes
+	a := assessmentView(e.Assessment)
+	v := ShortlistRow{Rank: offset + int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, Class: e.Candidate.Class, Fleet: a.Fleet, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch}
+	seen := map[string]bool{}
+	for _, c := range a.Categories {
+		if !seen[c.Name] {
+			v.Categories = append(v.Categories, c.Name)
+			seen[c.Name] = true
+		}
 	}
-	if e.Assessment.High != nil {
-		v.High = dollars(*e.Assessment.High)
-	}
+	sort.Strings(v.Categories)
 	return v
 }
 func candidateView(c store.Candidate) CandidateView {
@@ -89,22 +90,29 @@ func candidateView(c store.Candidate) CandidateView {
 	return v
 }
 func assessmentView(a store.Assessment) AssessmentView {
-	freshness := 0.0
-	if a.Confidence > 0 {
-		freshness = max(0, min(1, a.Effective/a.Confidence))
+	v := AssessmentView{OperatingEvidence: []EvidenceRow{}, Categories: []CategoryRow{}, GovernmentMatch: a.GovernmentMatch, Fleet: a.Fleet, Excluded: a.Excluded, Rules: a.Rules, KnownSince: date(a.KnownSince), KnownSinceText: date(a.KnownSince), NewestFiling: date(a.NewestFiling), NewestFilingText: date(a.NewestFiling)}
+	if a.Operating != nil {
+		v.OperatingConfidence = two(*a.Operating)
 	}
-	point := scoring.Point(a.Low, a.High)
-	v := AssessmentView{Fleet: a.Fleet, Low: dollars(a.Low), Confidence: two(a.Confidence), Filed: date(a.Filed), FiledText: date(a.Filed), Freshness: two(freshness), Effective: two(a.Effective), Stale: a.Effective <= 0, Point: dollars(point), Base: money(a.Base), Score: money(a.Score), Excluded: a.Excluded, Exclusions: []ExclusionRow{}, Rules: a.Rules}
+	if a.RevenueLow != nil {
+		v.RevenueLow = dollars(*a.RevenueLow)
+	}
+	if a.RevenueHigh != nil {
+		v.RevenueHigh = dollars(*a.RevenueHigh)
+	}
+	if a.RevenueConfidence != nil {
+		v.RevenueConfidence = two(*a.RevenueConfidence)
+	}
 	if a.Minutes != nil {
 		v.Minutes = strconv.FormatInt(*a.Minutes, 10)
 	}
-	if a.High != nil {
-		v.High = dollars(*a.High)
+	for _, e := range a.Evidence {
+		v.OperatingEvidence = append(v.OperatingEvidence, EvidenceRow{e.Name, e.Source, two(e.Weight), e.Description})
 	}
-	for _, e := range a.Exclusions {
-		v.Exclusions = append(v.Exclusions, ExclusionRow{e.Reason, e.Detail})
+	for _, c := range a.Categories {
+		v.Categories = append(v.Categories, CategoryRow{c.Name, c.Source})
 	}
-	v.Scored, v.ScoredText = stamp(a.Scored, SecondLayout)
+	v.Calculated, v.CalculatedText = stamp(a.Calculated, SecondLayout)
 	return v
 }
 func estimateView(e sources.Estimate) EstimateView {

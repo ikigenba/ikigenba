@@ -37,10 +37,25 @@ func refresh(r *records, t time.Time) {
 		c.State = d.State
 		c.Zip = d.Zip
 		c.County = d.County
-		c.Phone = d.Phone
-		c.Email = d.Email
-		c.Class = d.Class
-		c.People = append([]sources.Person{}, d.People...)
+		c.Phone, c.Email, c.Class = "", "", ""
+		c.People = []sources.Person{}
+		for _, l := range ls {
+			if l.Gone && !ls[0].Gone {
+				continue
+			}
+			if c.Phone == "" {
+				c.Phone = l.Reading.Phone
+			}
+			if c.Email == "" {
+				c.Email = l.Reading.Email
+			}
+			if c.Class == "" {
+				c.Class = l.Reading.Class
+			}
+			if len(c.People) == 0 {
+				c.People = append([]sources.Person{}, l.Reading.People...)
+			}
+		}
 		c.Names = []string{}
 		names := map[string]bool{}
 		add := func(n string) {
@@ -331,7 +346,7 @@ func (s *Store) Decide(ctx context.Context, d Ruling) (Ruling, []Candidate, erro
 		}
 		refresh(r, t)
 		if d.Kind != KindNotSame {
-			rescore(r, ids, t)
+			judge(r, ids, t)
 		}
 		cs = []Candidate{}
 		for _, id := range ids {

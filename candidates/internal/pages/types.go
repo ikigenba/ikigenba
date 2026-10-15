@@ -38,8 +38,6 @@ type Config struct {
 // LandingData supplies landing data page data.
 type LandingData struct {
 	Banner        page.Banner
-	MaxMinutes    int64
-	MinRevenue    string
 	Shortlist     []ShortlistRow
 	ShortlistPage string
 	ShortlistPrev string
@@ -52,16 +50,18 @@ type LandingData struct {
 
 // ShortlistRow supplies shortlist row page data.
 type ShortlistRow struct {
-	Rank                                int64
-	ID, Name, City, State               string
-	Minutes                             int64
-	Class, Low, High, Confidence, Score string
+	Rank                                                                                   int64
+	ID, Name, City, State, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence string
+	Categories                                                                             []string
+	Class                                                                                  string
+	Fleet                                                                                  bool
+	Minutes, GovernmentMatch                                                               string
 }
 
 // PassRow supplies pass row page data.
 type PassRow struct {
-	ID, Trigger, Status, Reason, Started, StartedText, Finished, FinishedText string
-	Rows, Created, Rescored                                                   int64
+	ID, Kind, Trigger, Status, Reason, Started, StartedText, Finished, FinishedText string
+	Rows, Created, Judged                                                           int64
 }
 
 // CandidateData supplies candidate data page data.
@@ -90,18 +90,23 @@ type PersonRow struct{ Name, Role string }
 
 // AssessmentView supplies assessment view page data.
 type AssessmentView struct {
-	Fleet                                                                  bool
-	Minutes, Low, High, Confidence, Filed, FiledText, Freshness, Effective string
-	Stale                                                                  bool
-	Point, Base, Score                                                     string
-	Excluded                                                               bool
-	Exclusions                                                             []ExclusionRow
-	Rules                                                                  int64
-	Scored, ScoredText                                                     string
+	OperatingConfidence                                                                                    string
+	OperatingEvidence                                                                                      []EvidenceRow
+	RevenueLow, RevenueHigh, RevenueConfidence, KnownSince, KnownSinceText, NewestFiling, NewestFilingText string
+	Categories                                                                                             []CategoryRow
+	GovernmentMatch                                                                                        string
+	Fleet                                                                                                  bool
+	Minutes                                                                                                string
+	Excluded                                                                                               bool
+	Rules                                                                                                  int64
+	Calculated, CalculatedText                                                                             string
 }
 
-// ExclusionRow supplies exclusion row page data.
-type ExclusionRow struct{ Reason, Detail string }
+// EvidenceRow supplies operating evidence page data.
+type EvidenceRow struct{ Name, Source, Weight, Description string }
+
+// CategoryRow supplies category page data.
+type CategoryRow struct{ Name, Source string }
 
 // EstimateView supplies estimate view page data.
 type EstimateView struct {
@@ -134,8 +139,8 @@ type PassData struct {
 
 // PassView supplies pass view page data.
 type PassView struct {
-	ID, Trigger, RunPage, Status, Reason, StartedBy, Started, StartedText, Finished, FinishedText string
-	Rows, New, Changed, Unchanged, Gone, Created, Linked, Rescored, Unranged                      int64
+	ID, Kind, Origin, Trigger, RunPage, Status, Reason, StartedBy, Started, StartedText, Finished, FinishedText string
+	Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged                                      int64
 }
 
 // ToolsData supplies tools data page data.

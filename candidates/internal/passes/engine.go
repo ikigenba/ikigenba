@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
@@ -28,7 +29,7 @@ type Config struct {
 type Engine struct {
 	cfg      Config
 	mu       sync.Mutex
-	stopping bool
+	stopping atomic.Bool
 	ctx      context.Context
 	cancel   context.CancelFunc
 	work     sync.WaitGroup
@@ -41,19 +42,27 @@ func New(cfg Config) *Engine {
 }
 
 // Handlers declares the engine's accepted event.
-func (e *Engine) Handlers() events.Handlers { return events.Handlers{trail.Accepted: e.Deliver} }
+func (e *Engine) Handlers() events.Handlers {
+	return events.Handlers{trail.Accepted: e.Deliver, trail.AcceptedJudge: e.Deliver}
+}
 
 // Rebuild records a pass and starts its work without waiting.
 func (e *Engine) Rebuild(ctx context.Context, c identity.Caller) (store.Pass, error) {
+	if e.stopping.Load() {
+		return store.Pass{}, &Refusal{RefusalStopping}
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.stopping {
+	if e.stopping.Load() {
 		return store.Pass{}, &Refusal{RefusalStopping}
 	}
 	if e.cfg.Scrapes == nil {
 		return store.Pass{}, &Refusal{RefusalUnavailable}
 	}
-	p, err := e.cfg.Store.AddPass(context.WithoutCancel(ctx), store.Pass{Trigger: store.TriggerRebuild, UserID: c.UserID, UserEmail: c.Email, RequestID: c.RequestID})
+	p, err := e.cfg.Store.AddPass(e.ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: c.UserID, UserEmail: c.Email, RequestID: c.RequestID})
+	if err != nil && e.stopping.Load() {
+		return store.Pass{}, &Refusal{RefusalStopping}
+	}
 	if errors.Is(err, store.ErrBusy) {
 		return store.Pass{}, &Refusal{RefusalBusy}
 	}
@@ -70,30 +79,40 @@ func (e *Engine) start(ctx context.Context, p store.Pass, c identity.Caller, run
 	go func() {
 		defer e.work.Done()
 		workCtx := identity.NewContext(e.ctx, c)
-		totals, reason := e.resolve(workCtx, run, p.Trigger == store.TriggerRebuild)
-		e.mu.Lock()
-		defer e.mu.Unlock()
-		if e.ctx.Err() != nil {
-			reason = store.ReasonInterrupted
-		}
-		var ended store.Pass
-		var err error
-		if reason != "" {
-			_ = e.cfg.Store.RefreshShortlist(finishCtx)
-			ended, err = e.cfg.Store.FailPass(finishCtx, p.ID, reason)
-		} else {
-			ended, err = e.cfg.Store.FinishPass(finishCtx, p.ID, totals)
-		}
+		totals, reason := e.resolve(workCtx, run, p.Kind)
+		ended, err := e.finish(finishCtx, p.ID, totals, reason)
 		if err == nil {
 			trail.Record(context.WithoutCancel(ctx), e.cfg.Telemetry, e.cfg.Events, trail.Finished, ended)
 		}
 	}()
 }
 
+// finish cancels an uncommitted ending when the drain arrives, then records
+// interruption independently of the cancelled work context.
+func (e *Engine) finish(ctx context.Context, id string, counts store.Counts, reason string) (store.Pass, error) {
+	if e.ctx.Err() != nil {
+		return e.cfg.Store.FailPass(ctx, id, store.ReasonInterrupted)
+	}
+	var ended store.Pass
+	var err error
+	if reason == "" {
+		ended, err = e.cfg.Store.FinishPass(e.ctx, id, counts)
+	} else {
+		ended, err = e.cfg.Store.FailPass(e.ctx, id, reason)
+	}
+	if err != nil && e.ctx.Err() != nil {
+		return e.cfg.Store.FailPass(ctx, id, store.ReasonInterrupted)
+	}
+	return ended, err
+}
+
 // Deliver handles a completed scraper run from the event bus.
 func (e *Engine) Deliver(ctx context.Context, d events.Delivery) events.Outcome {
+	if e.stopping.Load() {
+		return events.Fail(Stopping)
+	}
 	e.mu.Lock()
-	if e.stopping {
+	if e.stopping.Load() {
 		e.mu.Unlock()
 		return events.Fail(Stopping)
 	}
@@ -101,9 +120,13 @@ func (e *Engine) Deliver(ctx context.Context, d events.Delivery) events.Outcome 
 	runID, _ := d.Event.Attrs["run"].(string)
 	status, _ := d.Event.Attrs["status"].(string)
 	_, known := e.cfg.Sources.Get(scraper)
-	if d.Event.Name != trail.Accepted || d.Event.ID == "" || status != store.StatusDone || !known || runID == "" || runID == store.TriggerRebuild {
+	judge := d.Event.Name == trail.AcceptedJudge && d.Event.ID != ""
+	if !judge && (d.Event.Name != trail.Accepted || d.Event.ID == "" || status != store.StatusDone || !known || runID == "" || runID == store.TriggerRebuild) {
 		e.mu.Unlock()
 		return events.Skip()
+	}
+	if judge {
+		runID = ""
 	}
 	_, err := e.cfg.Store.FindDelivered(context.WithoutCancel(ctx), d.Event.ID, runID)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -118,21 +141,30 @@ func (e *Engine) Deliver(ctx context.Context, d events.Delivery) events.Outcome 
 	caller, _ := identity.FromContext(ctx)
 	service := identity.Caller{UserID: "candidates", RequestID: caller.RequestID}
 	var run scrapes.Run
-	if e.cfg.Scrapes == nil {
+	switch {
+	case judge:
+		err = nil
+	case e.cfg.Scrapes == nil:
 		err = scrapes.ErrUnavailable
-	} else {
+	default:
 		run, err = e.cfg.Scrapes.Record(identity.NewContext(e.ctx, service), runID)
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.stopping {
+	if e.stopping.Load() {
 		return events.Fail(Stopping)
 	}
-	if errors.Is(err, scrapes.ErrNotFound) || (err == nil && run.Status != store.StatusDone) {
+	if !judge && (errors.Is(err, scrapes.ErrNotFound) || (err == nil && run.Status != store.StatusDone)) {
 		return events.Skip()
 	}
-	p, writeErr := e.cfg.Store.AddPass(context.Background(), store.Pass{Trigger: runID, Delivery: d.Event.ID, UserID: caller.UserID, RequestID: caller.RequestID})
+	kind, origin, trigger := store.KindIngest, store.OriginRun, runID
+	if judge {
+		kind, origin, trigger = store.KindJudge, store.OriginCron, store.TriggerJudge
+	}
+	p, writeErr := e.cfg.Store.AddPass(e.ctx, store.Pass{Kind: kind, Origin: origin, Trigger: trigger, Delivery: d.Event.ID, UserID: caller.UserID, RequestID: caller.RequestID})
 	switch {
+	case writeErr != nil && e.stopping.Load():
+		return events.Fail(Stopping)
 	case errors.Is(writeErr, store.ErrDelivered):
 		return events.Skip()
 	case errors.Is(writeErr, store.ErrBusy):
@@ -141,12 +173,16 @@ func (e *Engine) Deliver(ctx context.Context, d events.Delivery) events.Outcome 
 		return events.Fail(store.Unreachable)
 	}
 	if err == nil {
-		e.start(ctx, p, service, &run)
+		if judge {
+			e.start(ctx, p, service, nil)
+		} else {
+			run.Scraper = scraper
+			e.start(ctx, p, service, &run)
+		}
 		return events.OK()
 	}
 	trail.Record(context.WithoutCancel(ctx), e.cfg.Telemetry, e.cfg.Events, trail.Started, p)
-	_ = e.cfg.Store.RefreshShortlist(context.WithoutCancel(ctx))
-	ended, writeErr := e.cfg.Store.FailPass(context.WithoutCancel(ctx), p.ID, store.ReasonScrapes)
+	ended, writeErr := e.finish(context.WithoutCancel(ctx), p.ID, store.Counts{}, store.ReasonScrapes)
 	if writeErr != nil {
 		return events.Fail(store.Unreachable)
 	}
@@ -174,12 +210,15 @@ func (e *Engine) Recover(ctx context.Context) error {
 
 // Drain prevents starts and cancels outstanding pass work.
 func (e *Engine) Drain(ctx context.Context) {
-	e.mu.Lock()
-	e.stopping = true
+	e.stopping.Store(true)
 	e.cancel()
-	e.mu.Unlock()
 	done := make(chan struct{})
-	go func() { e.work.Wait(); close(done) }()
+	go func() {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		e.work.Wait()
+		close(done)
+	}()
 	select {
 	case <-done:
 	case <-ctx.Done():
@@ -192,21 +231,12 @@ func addCounts(a *store.Counts, b store.Counts) {
 	a.Gone += b.Gone
 	a.Created += b.Created
 	a.Linked += b.Linked
-	a.Rescored += b.Rescored
+	a.Judged += b.Judged
 	a.Unranged += b.Unranged
 }
-func (e *Engine) resolve(ctx context.Context, delivery *scrapes.Run, rebuild bool) (store.Counts, string) {
+func (e *Engine) resolve(ctx context.Context, delivery *scrapes.Run, kind string) (store.Counts, string) {
 	var total store.Counts
-	var touched []string
-	seen := map[string]bool{}
-	remember := func(ids []string) {
-		for _, id := range ids {
-			if !seen[id] {
-				seen[id] = true
-				touched = append(touched, id)
-			}
-		}
-	}
+	rebuild := kind == store.KindRebuild
 	process := func(run scrapes.Run, scraper string) string {
 		if run.Status != store.StatusDone {
 			return store.ReasonScrapes
@@ -216,13 +246,12 @@ func (e *Engine) resolve(ctx context.Context, delivery *scrapes.Run, rebuild boo
 		var rows int64
 		var storeFailure bool
 		flush := func() error {
-			counts, ids, err := e.cfg.Store.Attach(ctx, run.ID, rebuild, batch)
+			counts, _, err := e.cfg.Store.Attach(ctx, run.ID, rebuild, batch)
 			if err != nil {
 				storeFailure = true
 				return err
 			}
 			addCounts(&total, counts)
-			remember(ids)
 			batch = batch[:0]
 			return nil
 		}
@@ -246,19 +275,18 @@ func (e *Engine) resolve(ctx context.Context, delivery *scrapes.Run, rebuild boo
 				return store.ReasonStore
 			}
 		}
-		counts, ids, err := e.cfg.Store.MarkGone(ctx, scraper, run.ID)
+		counts, _, err := e.cfg.Store.MarkGone(ctx, scraper, run.ID)
 		if err != nil {
 			return store.ReasonStore
 		}
 		addCounts(&total, counts)
-		remember(ids)
 		return ""
 	}
 	if delivery != nil {
 		if reason := process(*delivery, delivery.Scraper); reason != "" {
 			return store.Counts{}, reason
 		}
-	} else {
+	} else if rebuild {
 		for _, name := range e.cfg.Sources.Names() {
 			run, err := e.cfg.Scrapes.Current(ctx, name)
 			if errors.Is(err, scrapes.ErrNotFound) {
@@ -272,19 +300,12 @@ func (e *Engine) resolve(ctx context.Context, delivery *scrapes.Run, rebuild boo
 			}
 		}
 	}
-	var counts store.Counts
-	var err error
-	if rebuild {
-		counts, err = e.cfg.Store.RescoreAll(ctx)
-	} else {
-		counts, err = e.cfg.Store.Rescore(ctx, touched)
-	}
-	if err != nil {
-		return store.Counts{}, store.ReasonStore
-	}
-	addCounts(&total, counts)
-	if err = e.cfg.Store.RefreshShortlist(ctx); err != nil {
-		return store.Counts{}, store.ReasonStore
+	if kind == store.KindRebuild || kind == store.KindJudge {
+		counts, err := e.cfg.Store.JudgeAll(ctx)
+		if err != nil {
+			return store.Counts{}, store.ReasonStore
+		}
+		addCounts(&total, counts)
 	}
 	return total, ""
 }

@@ -8,12 +8,6 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
-// DefaultMaxMinutes is the default drive-time cutoff.
-const DefaultMaxMinutes = 120
-
-// DefaultMinRevenue is the default upper revenue cutoff.
-const DefaultMinRevenue = 10000000
-
 // Combined is a confidence-weighted revenue estimate.
 type Combined struct {
 	Low        int64
@@ -86,33 +80,38 @@ func Freshness(filed, now time.Time) float64 {
 	return float64(t5.Sub(now)) / float64(t5.Sub(t2))
 }
 
-// Effective applies filing freshness to confidence.
-func Effective(confidence float64, filed, now time.Time) float64 {
-	return confidence * Freshness(filed, now)
+// Weight applies freshness only to active registration evidence.
+func Weight(e sources.Evidence, filed, now time.Time) float64 {
+	if e.Name == sources.EvidenceFMCSAActive {
+		return e.Weight * Freshness(filed, now)
+	}
+	return e.Weight
 }
 
-// Point returns a bound's midpoint truncated toward zero without overflow.
-func Point(low int64, high *int64) int64 {
-	if high == nil {
-		return low
+// Operating combines independent signs of operation.
+func Operating(evidence []sources.Evidence) *float64 {
+	if len(evidence) == 0 {
+		return nil
 	}
-	h := *high
-	q := low/2 + h/2
-	r := low%2 + h%2
-	if r == 2 {
-		return q + 1
+	p := 1.0
+	for _, e := range evidence {
+		p *= 1 - e.Weight
 	}
-	if r == -2 {
-		return q - 1
-	}
-	if q > 0 && r == -1 {
-		return q - 1
-	}
-	if q < 0 && r == 1 {
-		return q + 1
-	}
-	return q
+	v := 1 - p
+	return &v
 }
 
-// Score scales the revenue point by its confidence.
-func Score(point int64, confidence float64) float64 { return float64(point) * confidence }
+// OperatingKey provides the persisted ordering key.
+func OperatingKey(operating *float64) int64 {
+	if operating == nil {
+		return -1
+	}
+	v := *operating * 1000000
+	if v >= 0x1p63 {
+		return math.MaxInt64
+	}
+	if v < -0x1p63 {
+		return math.MinInt64
+	}
+	return int64(v)
+}

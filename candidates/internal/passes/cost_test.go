@@ -3,7 +3,6 @@ package passes_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"runtime"
@@ -20,7 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
 )
 
-// R-USO8-ARLT: both runs have the same generated evidence except Run.
+// R-ZZ7H-BWIU: both runs have the same generated evidence except Run.
 func generatedRows(t *testing.T, run string) []scrapes.Row {
 	t.Helper()
 	rows := make([]scrapes.Row, 10000)
@@ -88,7 +87,7 @@ func costEnded(t *testing.T, f *fixture, trigger string, began time.Time) store.
 
 }
 
-// R-UTW4-OJCI R-UV41-2B37 R-UWBX-G2TW
+// R-00FD-PO9J R-01NA-3G08 R-02V6-H7QX
 func TestGeneratedRunCostChain(t *testing.T) {
 	first, second := "generated-first", "generated-second"
 	rows := map[string][]scrapes.Row{first: generatedRows(t, first), second: generatedRows(t, second)}
@@ -127,18 +126,9 @@ func TestGeneratedRunCostChain(t *testing.T) {
 	if err := f.st.ReplaceZipDrive(context.Background(), candidates.ZipDrive()); err != nil {
 		t.Fatal(err)
 	}
-	var unranged int64
-	for _, row := range rows[first][:5000] {
-		_, err := f.st.ZipMinutes(context.Background(), row.Address.Zip)
-		if errors.Is(err, store.ErrNotFound) {
-			unranged++
-		} else if err != nil {
-			t.Fatal(err)
-		}
-	}
 	assertCounts := func(p store.Pass, want store.Counts) {
 		t.Helper()
-		got := store.Counts{Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Rescored: p.Rescored, Unranged: p.Unranged}
+		got := store.Counts{Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged}
 		if got != want {
 			t.Fatalf("pass %s counts: got %+v, want %+v", p.Trigger, got, want)
 		}
@@ -147,19 +137,37 @@ func TestGeneratedRunCostChain(t *testing.T) {
 	if got := f.delivery("generated-event-first", first); got != events.OK() {
 		t.Fatal(got)
 	}
-	assertCounts(costEnded(t, f, first, began), store.Counts{Rows: 10000, New: 10000, Created: 5000, Linked: 5000, Rescored: 5000, Unranged: unranged})
+	assertCounts(costEnded(t, f, first, began), store.Counts{Rows: 10000, New: 10000, Created: 5000, Linked: 5000})
 	current = second
 	began = time.Now()
 	if got := f.delivery("generated-event-second", second); got != events.OK() {
 		t.Fatal(got)
 	}
-	assertCounts(costEnded(t, f, second, began), store.Counts{Rows: 10000, Unchanged: 10000, Rescored: 5000, Unranged: unranged})
+	assertCounts(costEnded(t, f, second, began), store.Counts{Rows: 10000, Unchanged: 10000})
 	began = time.Now()
 	_, err := f.eng.Rebuild(context.Background(), identity.Caller{UserID: "cost-owner"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertCounts(costEnded(t, f, store.TriggerRebuild, began), store.Counts{Rows: 10000, Changed: 10000, Linked: 10000, Rescored: 5000, Unranged: unranged})
+	ended := costEnded(t, f, store.TriggerRebuild, began)
+	var unranged int64
+	cs, err := f.st.ListCandidates(context.Background(), store.CandidateFilter{}, "", "", 10000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cs {
+		if c.Status != store.StatusActive {
+			continue
+		}
+		a, err := f.st.GetAssessment(context.Background(), c.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a.RevenueLow == nil {
+			unranged++
+		}
+	}
+	assertCounts(ended, store.Counts{Rows: 10000, Changed: 10000, Linked: 10000, Judged: 5000, Unranged: unranged})
 }
 
 func reflectRowsEqual(a, b scrapes.Row) bool {

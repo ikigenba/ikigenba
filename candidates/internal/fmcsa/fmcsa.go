@@ -49,7 +49,7 @@ func count(f map[string]json.RawMessage, key string) (int64, bool) {
 
 // Read returns an independent interpretation of r.
 func (*Source) Read(r scrapes.Row) sources.Reading {
-	out := sources.Reading{NameKey: sources.NameKey(r.Name), Name: r.Name, Names: append([]string{}, r.Names...), Street: r.Address.Street, City: r.Address.City, State: r.Address.State, Zip: r.Address.Zip, County: sources.County(r.Address.State, r.Address.County), Phone: stringFact(r.Facts, "phone"), Email: stringFact(r.Facts, "email"), People: make([]sources.Person, 0, len(r.People)), Class: sources.ClassUnknown, Cargo: []string{}, Exclusions: []sources.Exclusion{}}
+	out := sources.Reading{NameKey: sources.NameKey(r.Name), Name: r.Name, Names: append([]string{}, r.Names...), Street: r.Address.Street, City: r.Address.City, State: r.Address.State, Zip: r.Address.Zip, County: sources.County(r.Address.State, r.Address.County), Phone: stringFact(r.Facts, "phone"), Email: stringFact(r.Facts, "email"), People: make([]sources.Person, 0, len(r.People)), Class: sources.ClassUnknown, Cargo: []string{}, Evidence: []sources.Evidence{}, Category: sources.CategoryTrucking}
 	out.PhoneKey = sources.PhoneKey(out.Phone)
 	out.DomainKey = sources.DomainKey(out.Email)
 	for _, p := range r.People {
@@ -115,15 +115,27 @@ func (*Source) Read(r scrapes.Row) sources.Reading {
 		}
 		out.Estimate = est
 	}
-	for _, p := range []string{"STATE GOVERNMENT", "LOCAL GOVERNMENT", "FEDERAL GOVERNMENT", "INDIAN NATION"} {
-		if parts[p] {
-			out.Exclusions = append(out.Exclusions, sources.Exclusion{Reason: sources.ExcludeGovernmentClass, Detail: p})
+
+	out.KnownSince = parseDate(stringFact(r.Facts, "added"))
+	out.GovernmentMatch = sources.GovernmentMatch(out.NameKey)
+	if !implausible {
+		if stringFact(r.Facts, "status") == "A" {
+			out.Evidence = append(out.Evidence, sources.Evidence{Name: sources.EvidenceFMCSAActive, Source: Name, Weight: 0.6, Description: sources.DescribeFMCSAActive})
 		}
-	}
-	for _, p := range []string{"COUNTY", "CITY OF", "TOWN OF", "VILLAGE OF", "TOWNSHIP", "SCHOOL DISTRICT", "STATE OF", "DEPT", "DEPARTMENT", "UNIVERSITY", "PUBLIC WORKS"} {
-		if strings.Contains(" "+out.NameKey+" ", " "+p+" ") {
-			out.Exclusions = append(out.Exclusions, sources.Exclusion{Reason: sources.ExcludeGovernmentName, Detail: p})
+		if driversRead && drivers > 0 && mileageRead && mileage > 0 {
+			out.Evidence = append(out.Evidence, sources.Evidence{Name: sources.EvidenceFMCSAActivity, Source: Name, Weight: 0.3, Description: sources.DescribeFMCSAActivity})
+		}
+		if out.DomainKey != "" {
+			out.Evidence = append(out.Evidence, sources.Evidence{Name: sources.EvidenceOwnDomain, Source: Name, Weight: 0.2, Description: sources.DescribeOwnDomain})
 		}
 	}
 	return out
+}
+func parseDate(s string) time.Time {
+	if len(s) == 8 && digits(s) {
+		if t, err := time.Parse("20060102", s); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
 }

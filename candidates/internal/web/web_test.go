@@ -241,7 +241,7 @@ func TestMCPContextAndTools(t *testing.T) {
 	}
 }
 
-// R-P0W3-KWS2: the failing-handle web clause; Run's other clauses are covered at its seam.
+// R-UPKU-EY85: a failing store prevents rebuilding before a pass can start.
 func TestFailingStoreEmitsNoPassEvent(t *testing.T) {
 	cfg, d, capture, bus := fixture(t)
 	srv := httptest.NewServer(web.Handler(cfg))

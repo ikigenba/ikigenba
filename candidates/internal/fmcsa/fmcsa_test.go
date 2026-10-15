@@ -35,16 +35,16 @@ func TestSource(t *testing.T) {
 	}
 }
 
-// R-FUFV-JPR9 R-20MD-CXLM
+// R-FUFV-JPR9
 func TestIdentity(t *testing.T) {
 	r := scrapes.Row{Name: "Acme, Inc.", Names: []string{"Other", "Third"}, Address: scrapes.Address{Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "115"}, People: []scrapes.Person{{Name: "Alex", Role: "owner"}}, Facts: facts(map[string]string{"phone": "+1 320 555 0123", "email": "x@ACME.COM"})}
 	got := fmcsa.New().Read(r)
-	want := sources.Reading{NameKey: "ACME", PhoneKey: "3205550123", DomainKey: "acme.com", Name: "Acme, Inc.", Names: []string{"Other", "Third"}, Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "MN-115", Phone: "+1 320 555 0123", Email: "x@ACME.COM", People: []sources.Person{{Name: "Alex", Role: "owner"}}, Class: sources.ClassUnknown, Cargo: []string{}, Filed: time.Time{}, Fleet: false, Estimate: nil, Exclusions: []sources.Exclusion{}}
+	want := sources.Reading{NameKey: "ACME", PhoneKey: "3205550123", DomainKey: "acme.com", Name: "Acme, Inc.", Names: []string{"Other", "Third"}, Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "MN-115", Phone: "+1 320 555 0123", Email: "x@ACME.COM", People: []sources.Person{{Name: "Alex", Role: "owner"}}, Class: sources.ClassUnknown, Cargo: []string{}, Filed: time.Time{}, Fleet: false, Estimate: nil, Evidence: []sources.Evidence{{Name: sources.EvidenceOwnDomain, Source: fmcsa.Name, Weight: .2, Description: sources.DescribeOwnDomain}}, Category: sources.CategoryTrucking}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("%+v != %+v", got, want)
 	}
 	empty := fmcsa.New().Read(scrapes.Row{})
-	if empty.Names == nil || empty.People == nil || empty.Cargo == nil || empty.Exclusions == nil {
+	if empty.Names == nil || empty.People == nil || empty.Cargo == nil || empty.Evidence == nil {
 		t.Fatal("nil slice")
 	}
 }
@@ -247,7 +247,7 @@ func TestPlausibility(t *testing.T) {
 			}
 			got := fmcsa.New().Read(scrapes.Row{Facts: facts(f)})
 			if tc.confidence == 0 {
-				if got.Estimate != nil || got.Fleet || len(got.Exclusions) != 0 {
+				if got.Estimate != nil || got.Fleet {
 					t.Fatal(got)
 				}
 				return
@@ -352,31 +352,50 @@ func TestEstimateCopiesUnreadableFacts(t *testing.T) {
 	}
 }
 
-// R-W8JS-Y2DM
-func TestExclusions(t *testing.T) {
-	classes := []string{"STATE GOVERNMENT", "LOCAL GOVERNMENT", "FEDERAL GOVERNMENT", "INDIAN NATION"}
-	patterns := []string{"COUNTY", "CITY OF", "TOWN OF", "VILLAGE OF", "TOWNSHIP", "SCHOOL DISTRICT", "STATE OF", "DEPT", "DEPARTMENT", "UNIVERSITY", "PUBLIC WORKS"}
-	r := scrapes.Row{Name: "COUNTY CITY OF TOWN OF VILLAGE OF TOWNSHIP SCHOOL DISTRICT STATE OF DEPT DEPARTMENT UNIVERSITY PUBLIC WORKS LLC", Facts: facts(map[string]string{"class": " indian nation ; local government ; state government ; federal government ; local government"})}
-	want := []sources.Exclusion{}
-	for _, p := range classes {
-		want = append(want, sources.Exclusion{Reason: sources.ExcludeGovernmentClass, Detail: p})
-	}
-	for _, p := range patterns {
-		want = append(want, sources.Exclusion{Reason: sources.ExcludeGovernmentName, Detail: p})
-	}
-	if got := fmcsa.New().Read(r).Exclusions; !reflect.DeepEqual(got, want) {
-		t.Fatal(got)
-	}
-	for _, name := range []string{"COUNTYLINE TRUCKING INC", "DEPTFORD LLC", "GOVERNMENT TRANSPORT", "MUNICIPAL TRUCKING"} {
-		got := fmcsa.New().Read(scrapes.Row{Name: name}).Exclusions
-		if len(got) != 0 {
-			t.Fatal(name, got)
+// R-0039-JXVV R-ZXNG-SEEH
+func TestAddedCategoryGovernment(t *testing.T) {
+	for _, tc := range []struct {
+		raw  string
+		want time.Time
+	}{
+		{`"20040115"`, time.Date(2004, 1, 15, 0, 0, 0, 0, time.UTC)},
+		{`"20250230"`, time.Time{}}, {`"2004-01-15"`, time.Time{}}, {`"2004011"`, time.Time{}}, {`""`, time.Time{}}, {`20040115`, time.Time{}}, {`null`, time.Time{}}, {``, time.Time{}},
+	} {
+		r := scrapes.Row{Name: "Pine County Highway Dept.", Facts: facts(map[string]string{"class": "LOCAL GOVERNMENT", "power_units": "199999", "total_drivers": "4", "mileage": "0"})}
+		if tc.raw != "" {
+			r.Facts["added"] = json.RawMessage(tc.raw)
+		}
+		got := fmcsa.New().Read(r)
+		if got.KnownSince != tc.want || got.Category != sources.CategoryTrucking || got.GovernmentMatch != "COUNTY" {
+			t.Fatal(got)
 		}
 	}
-	r = scrapes.Row{Name: "Pine County Highway Dept.", Facts: facts(map[string]string{"class": "LOCAL GOVERNMENT"})}
-	want = []sources.Exclusion{{Reason: sources.ExcludeGovernmentClass, Detail: "LOCAL GOVERNMENT"}, {Reason: sources.ExcludeGovernmentName, Detail: "COUNTY"}, {Reason: sources.ExcludeGovernmentName, Detail: "DEPT"}}
-	if got := fmcsa.New().Read(r).Exclusions; !reflect.DeepEqual(got, want) {
+	if got := fmcsa.New().Read(scrapes.Row{Name: "COUNTYLINE TRUCKING INC"}); !got.KnownSince.IsZero() || got.GovernmentMatch != "" {
 		t.Fatal(got)
+	}
+}
+
+// R-ZYVD-6656
+func TestEvidence(t *testing.T) {
+	active := sources.Evidence{Name: sources.EvidenceFMCSAActive, Source: fmcsa.Name, Weight: .6, Description: sources.DescribeFMCSAActive}
+	activity := sources.Evidence{Name: sources.EvidenceFMCSAActivity, Source: fmcsa.Name, Weight: .3, Description: sources.DescribeFMCSAActivity}
+	domain := sources.Evidence{Name: sources.EvidenceOwnDomain, Source: fmcsa.Name, Weight: .2, Description: sources.DescribeOwnDomain}
+	for _, tc := range []struct {
+		status, units, drivers, mileage, email string
+		want                                   []sources.Evidence
+	}{
+		{"A", "14", "20", "500000", "dispatch@acmetrucking.com", []sources.Evidence{active, activity, domain}},
+		{"I", "14", "20", "500000", "joe@gmail.com", []sources.Evidence{activity}},
+		{"A", "14", "0", "500000", "", []sources.Evidence{active}},
+		{"A", "14", "", "500000", "", []sources.Evidence{active}},
+		{"A", "forty", "3", "100", "", []sources.Evidence{active, activity}},
+		{"A", "199999", "4", "0", "dispatch@acmetrucking.com", []sources.Evidence{}},
+		{"", "", "", "", "", []sources.Evidence{}},
+	} {
+		got := fmcsa.New().Read(scrapes.Row{Facts: facts(map[string]string{"status": tc.status, "power_units": tc.units, "total_drivers": tc.drivers, "mileage": tc.mileage, "email": tc.email})})
+		if !reflect.DeepEqual(got.Evidence, tc.want) {
+			t.Fatal(got.Evidence, tc.want)
+		}
 	}
 }
 
@@ -392,7 +411,7 @@ func TestOwnsReading(t *testing.T) {
 	a.Names[0] = "new"
 	a.People[0].Name = "new"
 	a.Cargo[0] = "new"
-	a.Exclusions[0].Detail = "new"
+	a.Evidence[0].Description = "new"
 	for _, key := range []string{"power_units", "total_drivers", "mileage", "plausibility"} {
 		a.Estimate.Facts[key][1] = '9'
 	}

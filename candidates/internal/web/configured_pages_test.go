@@ -19,7 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/web"
 )
 
-// R-NWYH-IOWD R-5MG9-DY4O R-5JG5-M6IE
+// R-NWYH-IOWD R-5MG9-DY4O R-TIXM-FDZP
 func TestConfiguredScoredAndUnscoredPage(t *testing.T) {
 	cfg, _, _, _ := fixture(t)
 	ctx := context.Background()
@@ -46,7 +46,7 @@ func TestConfiguredScoredAndUnscoredPage(t *testing.T) {
 	h := web.Handler(cfg)
 	for _, scored := range []bool{false, true} {
 		if scored {
-			if _, err := cfg.Store.Rescore(ctx, ids); err != nil {
+			if _, err := cfg.Store.Judge(ctx, ids); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -66,7 +66,7 @@ func TestConfiguredScoredAndUnscoredPage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want.Assessment = &pages.AssessmentView{Fleet: true, Minutes: "31", Low: "$14,400,000", High: "$24,000,000", Confidence: "0.70", Filed: "2026-10-05", FiledText: "2026-10-05", Freshness: "1.00", Effective: "0.70", Stale: false, Point: "$19,200,000", Base: "$13,440,000", Score: "$13,440,000", Exclusions: []pages.ExclusionRow{}, Rules: int64(sources.Rules), Scored: a.Scored.UTC().Format(time.RFC3339), ScoredText: a.Scored.UTC().Format(pages.SecondLayout)}
+			want.Assessment = &pages.AssessmentView{OperatingEvidence: []pages.EvidenceRow{}, Categories: []pages.CategoryRow{}, Fleet: true, Minutes: "31", RevenueLow: "$14,400,000", RevenueHigh: "$24,000,000", RevenueConfidence: "0.70", NewestFiling: "2026-10-05", NewestFilingText: "2026-10-05", Rules: int64(sources.Rules), Calculated: a.Calculated.UTC().Format(time.RFC3339), CalculatedText: a.Calculated.UTC().Format(pages.SecondLayout)}
 		}
 		set, err := page.Templates().ParseFS(candidates.Assets(), "*.html")
 		if err != nil {
