@@ -187,7 +187,7 @@
 </div>
 {{else}}<div id="no-shortlist" class="empty">
 <h3 class="text-md">No candidates on the shortlist</h3>
-<p>A candidate shows here once a pass has resolved scrapes' records into it, unless the owner excludes it.</p>
+<p>A candidate shows here once a judge pass has judged it, unless the owner excludes it.</p>
 </div>{{end}}
 </section>
 {{if or .Shortlist .ShortlistPage}}<nav class="paging" id="paging-shortlist" aria-label="Pages">{{if .ShortlistPage}}<a href="/{{if .PassesPage}}?passes_page={{.PassesPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .ShortlistPrev}}<a href="/?shortlist_page={{.ShortlistPrev}}{{if .PassesPage}}&amp;passes_page={{.PassesPage}}{{end}}">Prev</a>{{end}}{{if .ShortlistNext}}<a href="/?shortlist_page={{.ShortlistNext}}{{if .PassesPage}}&amp;passes_page={{.PassesPage}}{{end}}">Next</a>{{end}}{{if .ShortlistNext}}<a href="/?shortlist_page=last{{if .PassesPage}}&amp;passes_page={{.PassesPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
