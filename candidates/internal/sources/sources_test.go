@@ -118,9 +118,25 @@ func TestCountySourceKey(t *testing.T) {
 	}
 }
 
-// R-24A2-I8TP
+// R-OW1D-D01A
 func TestConstants(t *testing.T) {
-	if !reflect.DeepEqual([]string{sources.ClassPrivate, sources.ClassForHire, sources.ClassMixed, sources.ClassUnknown, sources.ExcludeGovernmentClass, sources.ExcludeGovernmentName, sources.ExcludeRuling}, []string{"private", "for_hire", "mixed", "unknown", "government_class", "government_name", "ruling"}) || sources.Rules != 1 {
-		t.Fatal("constants")
+	const (
+		private         = sources.ClassPrivate
+		forHire         = sources.ClassForHire
+		mixed           = sources.ClassMixed
+		unknown         = sources.ClassUnknown
+		governmentClass = sources.ExcludeGovernmentClass
+		governmentName  = sources.ExcludeGovernmentName
+		ruling          = sources.ExcludeRuling
+		// A typed integer cannot initialize this float64 without conversion;
+		// the remainder also requires Rules to be an integer constant.
+		rules  float64 = sources.Rules
+		parity         = sources.Rules % 2
+	)
+	if got, want := []string{private, forHire, mixed, unknown, governmentClass, governmentName, ruling}, []string{"private", "for_hire", "mixed", "unknown", "government_class", "government_name", "ruling"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("constants = %q, want %q", got, want)
+	}
+	if rules != 2 || parity != 0 {
+		t.Fatalf("rules = %v, parity = %v", rules, parity)
 	}
 }

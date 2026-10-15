@@ -20,7 +20,7 @@ const (
 	ExcludeGovernmentClass = "government_class"
 	ExcludeGovernmentName  = "government_name"
 	ExcludeRuling          = "ruling"
-	Rules                  = 1
+	Rules                  = 2
 )
 
 // Person is a party named by a source record.

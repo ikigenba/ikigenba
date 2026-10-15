@@ -41,6 +41,12 @@ func digits(s string) bool {
 	return true
 }
 
+func count(f map[string]json.RawMessage, key string) (int64, bool) {
+	s := stringFact(f, key)
+	n, err := strconv.ParseInt(s, 10, 64)
+	return n, digits(s) && err == nil && n <= 36893488147419
+}
+
 // Read returns an independent interpretation of r.
 func (*Source) Read(r scrapes.Row) sources.Reading {
 	out := sources.Reading{NameKey: sources.NameKey(r.Name), Name: r.Name, Names: append([]string{}, r.Names...), Street: r.Address.Street, City: r.Address.City, State: r.Address.State, Zip: r.Address.Zip, County: sources.County(r.Address.State, r.Address.County), Phone: stringFact(r.Facts, "phone"), Email: stringFact(r.Facts, "email"), People: make([]sources.Person, 0, len(r.People)), Class: sources.ClassUnknown, Cargo: []string{}, Exclusions: []sources.Exclusion{}}
@@ -77,9 +83,13 @@ func (*Source) Read(r scrapes.Row) sources.Reading {
 			out.Filed = t
 		}
 	}
-	units := stringFact(r.Facts, "power_units")
-	n, err := strconv.ParseInt(units, 10, 64)
-	if digits(units) && err == nil && n <= 36893488147419 {
+	n, unitsRead := count(r.Facts, "power_units")
+	drivers, driversRead := count(r.Facts, "total_drivers")
+	mileage, mileageRead := count(r.Facts, "mcs150_mileage")
+	driverFloor := max(drivers, 1)
+	implausible := unitsRead && driversRead && n > 50*driverFloor && (!mileageRead || mileage == 0)
+	suspicious := !implausible && unitsRead && driversRead && n > 10*driverFloor
+	if unitsRead && !implausible {
 		out.Fleet = stringFact(r.Facts, "status") == "A" && n >= 2
 		est := &sources.Estimate{Source: Name, Low: 150000 * n, Facts: make(map[string]json.RawMessage), Filed: out.Filed, Formula: sources.Rules}
 		switch out.Class {
@@ -94,7 +104,11 @@ func (*Source) Read(r scrapes.Row) sources.Reading {
 		default:
 			est.Confidence = 0.2
 		}
-		for _, k := range []string{"power_units", "class", "mcs150_date"} {
+		if suspicious {
+			est.Confidence /= 2
+			est.Facts["plausibility"] = json.RawMessage(`"suspicious"`)
+		}
+		for _, k := range []string{"power_units", "class", "mcs150_date", "total_drivers", "mcs150_mileage"} {
 			if v, ok := r.Facts[k]; ok {
 				est.Facts[k] = append(json.RawMessage(nil), v...)
 			}
