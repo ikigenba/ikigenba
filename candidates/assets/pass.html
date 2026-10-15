@@ -6,23 +6,28 @@
      One level below the root: .Banner's .Trail is the one level
      <.Pass.ID> at /passes/<.Pass.ID>. Data: .Banner (a page.Banner, for
      banner and footer); .Pass, with .ID (its pass_ id, "pass_" and 16
-     hex), .Trigger (the run_ id of the scrapes run a delivery named, or
-     "rebuild"), .RunPage (the URL of that run's page at scrapes,
-     "<scrapes URL>/runs/<.Trigger>" built on the services entry; empty for
-     a rebuild or when the entry has none), .Status ("running", "done" or
-     "failed", as stored), .Reason (the failure reason as stored, one of
-     "scrapes", "interrupted" or "store"; empty unless .Status is
-     "failed"), .StartedBy (the starter's email, or the starter's user id
-     when the email is empty; the starter is a rebuild's caller), .Started
-     and .StartedText (RFC 3339 UTC to the second, and the same as shown,
+     hex), .Kind (the pass's kind as stored, such as "ingest" or
+     "judge"), .Origin (what started it, as stored: "run" for a scrapes
+     run a delivery named, "cron" for a fire of the daily cron trigger,
+     "rebuild" for a rebuild), .Trigger (the run_ id of that scrapes
+     run, the slug of that cron trigger, "judge_candidates", or
+     "rebuild"), .RunPage (the URL of
+     that run's page at scrapes, "<scrapes URL>/runs/<.Trigger>" built on
+     the services entry; empty unless .Origin is "run", and empty when the
+     entry has none), .Status ("running", "done" or "failed", as stored),
+     .Reason (the failure reason as stored, one of "scrapes",
+     "interrupted" or "store"; empty unless .Status is "failed"),
+     .StartedBy (the starter's email, or the starter's user id when the
+     email is empty; the starter is a rebuild's caller), .Started and
+     .StartedText (RFC 3339 UTC to the second, and the same as shown,
      "2006-01-02 15:04:05 UTC"), .Finished and .FinishedText (likewise;
      both empty while running), and .Rows, .New, .Changed, .Unchanged,
-     .Gone, .Created, .Linked, .Rescored and .Unranged (ints, as the record
-     holds them). Counts are shown as the plain integer. Status and reason
-     words are shown as stored; the status's kind is chosen here:
+     .Gone, .Created, .Linked, .Judged and .Unranged (ints, as the record
+     holds them). Counts are shown as the plain integer. Kind, status and
+     reason words are shown as stored; the status's kind is chosen here:
      "running" info, "done" ok, "failed" err; the failure's sentence is
-     chosen from .Reason. Hooks: title "<.ID> · candidates"; h1 with text .ID;
-     p#headline.cluster holding span.status[data-status=<.Status>]
+     chosen from .Reason. Hooks: title "<.ID> · candidates"; h1 with text
+     .ID; p#headline.cluster holding span.status[data-status=<.Status>]
      [data-kind=<kind>] (text .Status), a space, and span.muted holding
      "started" and time[datetime=<.Started>] (text .StartedText), then,
      when .Finished is set, " · finished" and time[datetime=<.Finished>]
@@ -38,16 +43,20 @@
      one."; "store" "The database failed while the pass was storing its
      work."; then a p (text "What the pass wrote before it failed stays;
      the next pass or a rebuild repairs it.", rebuild in a code element);
-     section#pass-card with h2 "Pass" and a p in its header (text "Rows,
-     new, changed, unchanged and gone count the run's records against what
-     candidates held; created, linked, rescored and unranged count
-     candidates."); then dl#pass.kv holding, in this order, dt "ID" then
-     dd#pass-id (.ID in a code element), dt "Trigger" then dd#pass-trigger
-     (a.run-link, href .RunPage, holding .Trigger in a code element, when
-     .RunPage is set, else .Trigger in a code element), dt "Status" then
-     dd#pass-status (the status span), dt "Reason" then dd#pass-reason
-     (.Reason in a code element) only when .Reason is set, dt "Started by"
-     then dd#pass-by ("scrapes" when .Trigger is not "rebuild", else
+     section#pass-card with h2 "Pass" and a p in its header (text "An
+     ingest stores a run's records and judges nothing: rows, new, changed,
+     unchanged and gone count the records against what candidates held,
+     and created and linked count candidates. A judge judges every
+     candidate again: judged counts them and unranged those left with no
+     revenue estimate."); then dl#pass.kv holding, in
+     this order, dt "ID" then dd#pass-id (.ID in a code element), dt
+     "Kind" then dd#pass-kind (.Kind in a code element), dt "Trigger" then
+     dd#pass-trigger (a.run-link, href .RunPage, holding .Trigger in a
+     code element, when .RunPage is set, else .Trigger in a code element),
+     dt "Status" then dd#pass-status (the status span), dt "Reason" then
+     dd#pass-reason (.Reason in a code element) only when .Reason is set,
+     dt "Started by" then dd#pass-by (by .Origin: "run" "scrapes"; "cron"
+     "cron" and a space then .Trigger in a code element; "rebuild"
      .StartedBy), dt "Started" then dd#pass-started holding
      time[datetime=<.Started>] (text .StartedText), dt "Finished" then
      dd#pass-finished holding time[datetime=<.Finished>] (text
@@ -55,7 +64,7 @@
      dd#pass-rows, dt "New" then dd#pass-new, dt "Changed" then
      dd#pass-changed, dt "Unchanged" then dd#pass-unchanged,
      dt "Gone" then dd#pass-gone, dt "Created" then dd#pass-created, dt
-     "Linked" then dd#pass-linked, dt "Rescored" then dd#pass-rescored and
+     "Linked" then dd#pass-linked, dt "Judged" then dd#pass-judged and
      dt "Unranged" then dd#pass-unranged (each the count). No script but
      appkit's /_appkit/feedback.js. */}}
 {{define "pass"}}<!doctype html>
@@ -70,13 +79,14 @@
 <p><a id="reload" class="button secondary small" href="/passes/{{.ID}}"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg>Reload</a></p>
 {{end}}{{if eq .Status "failed"}}<div id="failure" class="alert" data-kind="err" role="alert"><strong>The pass failed</strong><p id="failure-reason">{{if eq .Reason "scrapes"}}Reading the run from scrapes failed, or its rows did not match the count its record holds.{{else if eq .Reason "interrupted"}}candidates stopped or restarted while the pass was running, and it does not resume one.{{else if eq .Reason "store"}}The database failed while the pass was storing its work.{{end}}</p><p>What the pass wrote before it failed stays; the next pass or a <code>rebuild</code> repairs it.</p></div>
 {{end}}<section id="pass-card" class="card" aria-labelledby="pass-title">
-<header><h2 id="pass-title">Pass</h2><p>Rows, new, changed, unchanged and gone count the run's records against what candidates held; created, linked, rescored and unranged count candidates.</p></header>
+<header><h2 id="pass-title">Pass</h2><p>An ingest stores a run's records and judges nothing: rows, new, changed, unchanged and gone count the records against what candidates held, and created and linked count candidates. A judge judges every candidate again: judged counts them and unranged those left with no revenue estimate.</p></header>
 <dl id="pass" class="kv">
 <dt>ID</dt><dd id="pass-id"><code>{{.ID}}</code></dd>
+<dt>Kind</dt><dd id="pass-kind"><code>{{.Kind}}</code></dd>
 <dt>Trigger</dt><dd id="pass-trigger">{{if .RunPage}}<a class="run-link" href="{{.RunPage}}"><code>{{.Trigger}}</code></a>{{else}}<code>{{.Trigger}}</code>{{end}}</dd>
 <dt>Status</dt><dd id="pass-status"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span></dd>
 {{if .Reason}}<dt>Reason</dt><dd id="pass-reason"><code>{{.Reason}}</code></dd>
-{{end}}<dt>Started by</dt><dd id="pass-by">{{if ne .Trigger "rebuild"}}scrapes{{else}}{{.StartedBy}}{{end}}</dd>
+{{end}}<dt>Started by</dt><dd id="pass-by">{{if eq .Origin "rebuild"}}{{.StartedBy}}{{else if eq .Origin "cron"}}cron <code>{{.Trigger}}</code>{{else}}scrapes{{end}}</dd>
 <dt>Started</dt><dd id="pass-started"><time datetime="{{.Started}}">{{.StartedText}}</time></dd>
 {{if .Finished}}<dt>Finished</dt><dd id="pass-finished"><time datetime="{{.Finished}}">{{.FinishedText}}</time></dd>
 {{end}}<dt>Rows</dt><dd id="pass-rows">{{.Rows}}</dd>
@@ -86,7 +96,7 @@
 <dt>Gone</dt><dd id="pass-gone">{{.Gone}}</dd>
 <dt>Created</dt><dd id="pass-created">{{.Created}}</dd>
 <dt>Linked</dt><dd id="pass-linked">{{.Linked}}</dd>
-<dt>Rescored</dt><dd id="pass-rescored">{{.Rescored}}</dd>
+<dt>Judged</dt><dd id="pass-judged">{{.Judged}}</dd>
 <dt>Unranged</dt><dd id="pass-unranged">{{.Unranged}}</dd>
 </dl>
 </section>

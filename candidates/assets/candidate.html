@@ -1,6 +1,6 @@
 {{/* One candidate at GET /candidates/<id>: its display fields and tags,
-     its assessment with the effective numbers as of the last refresh at
-     the end of a pass, each
+     its assessment with the two judgments and the facts beside them as
+     the last judge wrote them, the operating evidence behind it, each
      estimate with the facts it used, each link to a scrapes record with
      its last seen and gone, and the owner's rulings on it. A merged
      candidate's page says what it merged into and links there, with its
@@ -22,28 +22,31 @@
      cargo tags, a slice of strings; may be empty), .Created and
      .CreatedText (RFC 3339 UTC to the second, and the same as shown,
      "2006-01-02 15:04:05 UTC") and .Updated and .UpdatedText (likewise);
-     .Assessment (nil when merged or not yet scored; else the last pass's
-     assessment with the effective numbers as of the last refresh at the
-     end of a pass, as stored), with .Fleet
-     (bool, the fleet pass), .Minutes (drive minutes from the origin as
-     text, "84"; empty when its ZIP is not in the table), .Low (the
-     combined low as shown, "$7,800,000"), .High (the combined high as
-     shown; empty when no source gives one), .Confidence (the stored
-     combined confidence, two decimals, "0.70"), .Filed and .FiledText (the
+     .Assessment (nil when merged or not yet judged; else the assessment
+     the last judge, rebuild or ruling wrote, as stored), with
+     .OperatingConfidence (the operating confidence, two decimals,
+     "0.78"; empty when there is no evidence), .OperatingEvidence (the
+     evidence behind it, in the order stored, each with .Name (its kind
+     as stored, such as "fmcsa_active", "fmcsa_activity", "ppp_loan" or
+     "own_domain"), .Source (the source it came from, "fmcsa"), .Weight
+     (two decimals, "0.60") and .Description (its short description, as
+     stored); empty when there is no evidence), .RevenueLow (the combined
+     low as shown, "$2,400,000"), .RevenueHigh (the combined high as
+     shown; empty when the sources give only a minimum) and
+     .RevenueConfidence (two decimals, "0.40"), all three empty when
+     there is no estimate, .KnownSince and .KnownSinceText (the earliest
+     date any link not gone shows it existing, "2018-04-09", both the
+     same; empty when none), .NewestFiling and .NewestFilingText (the
      newest filing date among its links not gone, "2025-03-18", both the
-     same; empty when it has none), .Freshness (that filing's weight as
-     of the last refresh at the end of a pass, the stored effective
-     confidence over the stored confidence, two decimals, "1.00"),
-     .Effective (the effective confidence as of the last refresh at the end
-     of a pass, as stored, two decimals), .Stale (bool, true when .Effective is
-     zero), .Point (the point estimate as shown), .Base (the score before
-     freshness, as stored, as shown), .Score (the score as of the last refresh
-     at the end of a pass, as stored, as shown), .Excluded (bool), .Exclusions (each with .Reason, the
-     exclusion's word as stored, such as "government_class",
-     "government_name" or "ruling", and .Detail, the class word or name
-     pattern that matched, empty for a ruling), .Rules (int, the rules
-     version) and .Scored and .ScoredText (when it was scored, the
-     timestamp forms above); .Estimates, one per source with evidence on it
+     same; empty when none), .Categories (each with .Name, the category
+     word as stored, and .Source, the source that gave it, one per
+     category and source; empty when unknown), .GovernmentMatch (the
+     government name pattern its name matched, as stored, "COUNTY"; empty
+     when none), .Fleet (bool, the fleet pass), .Minutes (drive minutes
+     from the origin as text, "84"; empty when its ZIP is not in the
+     table), .Excluded (bool, true when the owner's ruling excludes it),
+     .Rules (int, the rules version) and .Calculated and .CalculatedText
+     (when it was calculated, the timestamp forms above); .Estimates, one per source with evidence on it
      in source name order, empty when merged, each with .Source (the source's
      name, "fmcsa"), .Low, .High, .Confidence, .Filed and .FiledText (as
      the assessment's, for this source), .Formula (int, the rules version
@@ -82,13 +85,9 @@
      .MergedInto as a.candidate-link, href "/candidates/<.MergedInto>",
      holding .MergedInto in a code element). When .Assessment.Excluded:
      div#excluded.alert.quiet[data-kind=warn] holding strong "Excluded" and
-     a p (text "An excluded candidate is never on the shortlist. Its
-     reasons are in the assessment; an include ruling reverses it.",
-     include in a code element). When .Assessment.Stale:
-     div#stale.alert.quiet[data-kind=warn] holding strong "Stale evidence"
-     and a p (text "Its newest filing among the links not gone is five
-     years old or more, or it has none, so its effective confidence is 0
-     and it is off the shortlist until a source shows it alive.").
+     a p (text "The owner excluded this candidate, so it is never on the
+     shortlist. The ruling is below; an include ruling reverses it.",
+     include in a code element).
      section#candidate-card with h2 "Candidate" and a p in its header (text
      "Display fields from its freshest evidence: the link not gone with
      the newest filing."), then dl#candidate.kv holding, in this order, dt
@@ -108,28 +107,50 @@
      "Created" then dd#candidate-created and dt "Updated" then
      dd#candidate-updated (each a time[datetime] with the text form). Only
      when .Status is "active": section#assessment-card with h2 "Assessment"
-     and a p in its header (text "The combined estimate and the fit test as
-     the last pass scored them. Freshness, effective confidence and score
-     are as of the last refresh at the end of a pass."), then
-     either, when .Assessment is nil, div#no-assessment.empty holding h3
-     "Not scored yet" and a p (text "A pass scores a candidate after it
-     resolves the records that touch it."), or dl#assessment.kv holding,
-     in this order, dt "Fleet" then dd#assessment-fleet ("yes" or "no"),
-     dt "Drive minutes" then dd#assessment-minutes (.Minutes, or when
-     empty span.muted "not in the ZIP table"), dt "Low" then
-     dd#assessment-low, dt "High" then dd#assessment-high (.High, or when
-     empty span.muted "none: a floor only"), dt "Confidence" then
-     dd#assessment-confidence, dt "Newest filing" then dd#assessment-filed
-     (time[datetime=<.Filed>] with .FiledText, or when empty span.muted
-     "none"), dt "Freshness" then dd#assessment-freshness, dt "Effective
-     confidence" then dd#assessment-effective, dt "Point" then
-     dd#assessment-point, dt "Score" then dd#assessment-score, dt "Score
-     before freshness" then dd#assessment-base, dt "Excluded" then
-     dd#assessment-excluded ("no" unless .Assessment.Excluded, then one
-     div[data-exclusion=<.Reason>] per exclusion holding .Reason in a code
-     element and, when .Detail is set, a space and span.muted with .Detail),
-     dt "Rules" then dd#assessment-rules (the version) and dt "Scored" then
-     dd#assessment-scored (a time[datetime] with the text form). Then
+     and a p in its header (text "Two judgments, whether it is a real
+     business operating today and how big it is, and the facts beside
+     them, as the last judge calculated them. None of the facts removes a
+     candidate; nothing decays between judges."), then either, when
+     .Assessment is nil, div#no-assessment.empty holding h3 "Not judged
+     yet" and a p (text "An ingest stores its records and judges nothing.
+     The daily judge, a rebuild or an owner ruling judges it."), or
+     dl#assessment.kv holding, in this order, dt "Operating confidence"
+     then dd#assessment-operating (.OperatingConfidence, or when empty
+     span.muted "no evidence"), dt "Revenue low" then
+     dd#assessment-revenue-low (.RevenueLow, or when empty span.muted "no
+     estimate"), dt "Revenue high" then dd#assessment-revenue-high
+     (.RevenueHigh; when empty and .RevenueLow is set, span.muted "none: a
+     floor only"; when both are empty, span.muted "no estimate"), dt
+     "Revenue confidence" then dd#assessment-revenue-confidence
+     (.RevenueConfidence, or when empty span.muted "no estimate"), dt
+     "Categories" then dd#assessment-categories (one
+     div[data-category=<.Name>] per category holding .Name in a code
+     element, a space and span.muted with .Source, or when empty
+     span.muted "unknown"), dt "Known since" then dd#assessment-known-since
+     (time[datetime=<.KnownSince>] with .KnownSinceText, or when empty
+     span.muted "none"), dt "Newest filing" then dd#assessment-filed
+     (time[datetime=<.NewestFiling>] with .NewestFilingText, or when empty
+     span.muted "none"), dt "Government match" then
+     dd#assessment-government (.GovernmentMatch in a code element, or
+     "no" when empty), dt "Fleet" then dd#assessment-fleet ("yes" or
+     "no"), dt "Drive minutes" then dd#assessment-minutes (.Minutes, or
+     when empty span.muted "not in the ZIP table"), dt "Excluded" then
+     dd#assessment-excluded ("yes" when .Excluded, else "no"), dt "Rules"
+     then dd#assessment-rules (the version) and dt "Calculated" then
+     dd#assessment-calculated (a time[datetime] with the text form). Then,
+     only when .Assessment is not nil, section#operating with h2
+     "Operating evidence" and a p in its header (text "Each piece closes
+     part of the gap to certainty: the operating confidence is 1 minus the
+     product of 1 minus each weight. Each kind counts once, from the best
+     record that gives it."), then either, when .OperatingEvidence is
+     empty, div#no-operating-evidence.empty holding h3 "No evidence" and a
+     p (text "No record not gone shows this business operating, so its
+     operating confidence is empty, not 0."), or table#evidence-list
+     whose th read Evidence, Source, Weight, Description, with one
+     tr[data-evidence=<.Name>] per piece holding td.evidence-name (.Name
+     in a code element), td.evidence-source (.Source in a code element),
+     td.evidence-weight.num (.Weight) and td.evidence-description
+     (.Description). Then
      section#estimates with h2 "Estimates" and a p in its header (text "One
      per source with evidence on this candidate, with the facts it used,
      copied from the source's record."), then either, when .Estimates is
@@ -144,7 +165,7 @@
      section#links with h2 "Evidence" and a p in its header (text "Each
      record attached to this candidate, linked to its row in scrapes. A
      gone record was absent from its scraper's latest run; it still counts
-     for identity and no longer for the score."), then table#link-list
+     for identity and no longer for the judgments."), then table#link-list
      whose th read Scraper, Source ID, Name, City, Zip, Reason, Confidence,
      Filed, First seen, Last seen, Gone, with one
      tr[data-link=<.Scraper>:<.SourceID>] per link holding td.link-scraper
@@ -179,8 +200,7 @@
 {{$a := .Assessment}}{{$estimates := .Estimates}}{{$links := .Links}}{{$rulings := .Rulings}}{{with .Candidate}}<h1>{{.ID}}</h1>
 <p id="headline" class="cluster">{{if .Name}}{{.Name}} {{end}}<span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "merged"}}info{{else}}ok{{end}}">{{.Status}}</span>{{if $a}}{{if $a.Excluded}} <span class="badge" data-kind="warn">excluded</span>{{end}}{{end}} <span class="muted">updated <time datetime="{{.Updated}}">{{.UpdatedText}}</time></span></p>
 {{if eq .Status "merged"}}<div id="merged" class="alert quiet" data-kind="info"><strong>Merged</strong><p id="merged-into">This candidate was merged into <a class="candidate-link" href="/candidates/{{.MergedInto}}"><code>{{.MergedInto}}</code></a>. Its evidence, estimates and assessment are there now.</p></div>
-{{end}}{{if $a}}{{if $a.Excluded}}<div id="excluded" class="alert quiet" data-kind="warn"><strong>Excluded</strong><p>An excluded candidate is never on the shortlist. Its reasons are in the assessment; an <code>include</code> ruling reverses it.</p></div>
-{{end}}{{if $a.Stale}}<div id="stale" class="alert quiet" data-kind="warn"><strong>Stale evidence</strong><p>Its newest filing among the links not gone is five years old or more, or it has none, so its effective confidence is 0 and it is off the shortlist until a source shows it alive.</p></div>
+{{end}}{{if $a}}{{if $a.Excluded}}<div id="excluded" class="alert quiet" data-kind="warn"><strong>Excluded</strong><p>The owner excluded this candidate, so it is never on the shortlist. The ruling is below; an <code>include</code> ruling reverses it.</p></div>
 {{end}}{{end}}<section id="candidate-card" class="card" aria-labelledby="candidate-title">
 <header><h2 id="candidate-title">Candidate</h2><p>Display fields from its freshest evidence: the link not gone with the newest filing.</p></header>
 <dl id="candidate" class="kv">
@@ -204,27 +224,46 @@
 </dl>
 </section>
 {{if eq .Status "active"}}<section id="assessment-card" class="card" aria-labelledby="assessment-title">
-<header><h2 id="assessment-title">Assessment</h2><p>The combined estimate and the fit test as the last pass scored them. Freshness, effective confidence and score are as of the last refresh at the end of a pass.</p></header>
+<header><h2 id="assessment-title">Assessment</h2><p>Two judgments, whether it is a real business operating today and how big it is, and the facts beside them, as the last judge calculated them. None of the facts removes a candidate; nothing decays between judges.</p></header>
 {{with $a}}<dl id="assessment" class="kv">
+<dt>Operating confidence</dt><dd id="assessment-operating">{{if .OperatingConfidence}}{{.OperatingConfidence}}{{else}}<span class="muted">no evidence</span>{{end}}</dd>
+<dt>Revenue low</dt><dd id="assessment-revenue-low">{{if .RevenueLow}}{{.RevenueLow}}{{else}}<span class="muted">no estimate</span>{{end}}</dd>
+<dt>Revenue high</dt><dd id="assessment-revenue-high">{{if .RevenueHigh}}{{.RevenueHigh}}{{else if .RevenueLow}}<span class="muted">none: a floor only</span>{{else}}<span class="muted">no estimate</span>{{end}}</dd>
+<dt>Revenue confidence</dt><dd id="assessment-revenue-confidence">{{if .RevenueConfidence}}{{.RevenueConfidence}}{{else}}<span class="muted">no estimate</span>{{end}}</dd>
+<dt>Categories</dt><dd id="assessment-categories">{{range .Categories}}<div data-category="{{.Name}}"><code>{{.Name}}</code> <span class="muted">{{.Source}}</span></div>{{else}}<span class="muted">unknown</span>{{end}}</dd>
+<dt>Known since</dt><dd id="assessment-known-since">{{if .KnownSince}}<time datetime="{{.KnownSince}}">{{.KnownSinceText}}</time>{{else}}<span class="muted">none</span>{{end}}</dd>
+<dt>Newest filing</dt><dd id="assessment-filed">{{if .NewestFiling}}<time datetime="{{.NewestFiling}}">{{.NewestFilingText}}</time>{{else}}<span class="muted">none</span>{{end}}</dd>
+<dt>Government match</dt><dd id="assessment-government">{{if .GovernmentMatch}}<code>{{.GovernmentMatch}}</code>{{else}}no{{end}}</dd>
 <dt>Fleet</dt><dd id="assessment-fleet">{{if .Fleet}}yes{{else}}no{{end}}</dd>
 <dt>Drive minutes</dt><dd id="assessment-minutes">{{if .Minutes}}{{.Minutes}}{{else}}<span class="muted">not in the ZIP table</span>{{end}}</dd>
-<dt>Low</dt><dd id="assessment-low">{{.Low}}</dd>
-<dt>High</dt><dd id="assessment-high">{{if .High}}{{.High}}{{else}}<span class="muted">none: a floor only</span>{{end}}</dd>
-<dt>Confidence</dt><dd id="assessment-confidence">{{.Confidence}}</dd>
-<dt>Newest filing</dt><dd id="assessment-filed">{{if .Filed}}<time datetime="{{.Filed}}">{{.FiledText}}</time>{{else}}<span class="muted">none</span>{{end}}</dd>
-<dt>Freshness</dt><dd id="assessment-freshness">{{.Freshness}}</dd>
-<dt>Effective confidence</dt><dd id="assessment-effective">{{.Effective}}</dd>
-<dt>Point</dt><dd id="assessment-point">{{.Point}}</dd>
-<dt>Score</dt><dd id="assessment-score">{{.Score}}</dd>
-<dt>Score before freshness</dt><dd id="assessment-base">{{.Base}}</dd>
-<dt>Excluded</dt><dd id="assessment-excluded">{{if .Excluded}}{{range .Exclusions}}<div data-exclusion="{{.Reason}}"><code>{{.Reason}}</code>{{if .Detail}} <span class="muted">{{.Detail}}</span>{{end}}</div>{{end}}{{else}}no{{end}}</dd>
+<dt>Excluded</dt><dd id="assessment-excluded">{{if .Excluded}}yes{{else}}no{{end}}</dd>
 <dt>Rules</dt><dd id="assessment-rules">{{.Rules}}</dd>
-<dt>Scored</dt><dd id="assessment-scored"><time datetime="{{.Scored}}">{{.ScoredText}}</time></dd>
+<dt>Calculated</dt><dd id="assessment-calculated"><time datetime="{{.Calculated}}">{{.CalculatedText}}</time></dd>
 </dl>{{else}}<div id="no-assessment" class="empty">
-<h3 class="text-md">Not scored yet</h3>
-<p>A pass scores a candidate after it resolves the records that touch it.</p>
+<h3 class="text-md">Not judged yet</h3>
+<p>An ingest stores its records and judges nothing. The daily judge, a rebuild or an owner ruling judges it.</p>
 </div>{{end}}
 </section>
+{{with $a}}<section id="operating" class="card flush" aria-labelledby="operating-title">
+<header><div><h2 id="operating-title">Operating evidence</h2><p>Each piece closes part of the gap to certainty: the operating confidence is 1 minus the product of 1 minus each weight. Each kind counts once, from the best record that gives it.</p></div></header>
+{{if .OperatingEvidence}}<div class="table-scroll">
+<table id="evidence-list">
+<thead><tr><th>Evidence</th><th>Source</th><th class="num">Weight</th><th>Description</th></tr></thead>
+<tbody>
+{{range .OperatingEvidence}}<tr data-evidence="{{.Name}}">
+<td class="evidence-name"><code>{{.Name}}</code></td>
+<td class="evidence-source"><code>{{.Source}}</code></td>
+<td class="evidence-weight num">{{.Weight}}</td>
+<td class="evidence-description">{{.Description}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<div id="no-operating-evidence" class="empty">
+<h3 class="text-md">No evidence</h3>
+<p>No record not gone shows this business operating, so its operating confidence is empty, not 0.</p>
+</div>{{end}}
+</section>
+{{end}}
 <section id="estimates" class="card" aria-labelledby="estimates-title">
 <header><h2 id="estimates-title">Estimates</h2><p>One per source with evidence on this candidate, with the facts it used, copied from the source's record.</p></header>
 {{range $estimates}}<dl class="kv" data-estimate="{{.Source}}">
@@ -244,7 +283,7 @@
 </div>
 {{end}}</section>
 <section id="links" class="card flush" aria-labelledby="links-title">
-<header><div><h2 id="links-title">Evidence</h2><p>Each record attached to this candidate, linked to its row in scrapes. A gone record was absent from its scraper's latest run; it still counts for identity and no longer for the score.</p></div></header>
+<header><div><h2 id="links-title">Evidence</h2><p>Each record attached to this candidate, linked to its row in scrapes. A gone record was absent from its scraper's latest run; it still counts for identity and no longer for the judgments.</p></div></header>
 <div class="table-scroll">
 <table id="link-list">
 <thead><tr><th>Scraper</th><th>Source ID</th><th>Name</th><th>City</th><th>Zip</th><th>Reason</th><th class="num">Confidence</th><th>Filed</th><th>First seen</th><th>Last seen</th><th>Gone</th></tr></thead>

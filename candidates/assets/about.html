@@ -14,22 +14,29 @@
      record that describes it attached as evidence. A record attaches by
      its source key, else by its normalized name with its state and ZIP;
      when in doubt it starts a new candidate rather than join the wrong
-     one."; "Each candidate is judged against the fit test: within 120
-     minutes' drive of Sandstone, a fleet, and ten million dollars or more
-     flowing through it. Each source gives a size estimate with a
-     confidence; the score is the estimate's point times that confidence,
-     weighed down as the newest filing ages past two years, to nothing at
-     five."; "A pass starts when scrapes finishes a run: it resolves the
-     run's records, marks gone the records the run no longer holds, and
-     re-scores the candidates they touch. rebuild starts one over every
-     scraper's current run and recomputes everything but the candidates
-     and the rulings."; "shortlist ranks the candidates that pass the fit
-     test; candidates finds them by name, ZIP or phone, and candidate
-     answers one with its evidence. decide records the owner's rulings,
-     merge, split, not_same, exclude and include, which every pass
-     reapplies and none overwrites. passes and pass show the passes.";
-     "Candidates belong to no one: every signed-in user sees every
-     candidate, pass and ruling." (rebuild, shortlist, candidates,
+     one."; "Each candidate carries two judgments. Its operating
+     confidence, from 0 to 1, says how sure we are that it is a real
+     business operating today; each piece of evidence its records give
+     closes part of the gap to certainty, and with no evidence it is
+     empty, not 0. Its revenue range, low to high with a confidence,
+     combines the size estimates its sources give. Drive time from
+     Sandstone, the fleet test, the government match, the categories and
+     the filing dates are kept beside them as facts; none removes a
+     candidate."; "An ingest pass starts when scrapes finishes a run: it
+     resolves the run's records and marks gone the records the run no
+     longer holds, and judges nothing. A judge pass judges every
+     candidate again from its records not gone, once a day when the
+     judge_candidates trigger fires. rebuild ingests every scraper's
+     current run, then judges, and recomputes everything but the
+     candidates and the rulings."; "shortlist ranks every candidate the
+     owner has not excluded by operating confidence, highest first, with
+     no evidence last; candidates finds them by name, ZIP or phone, and
+     candidate answers one with its evidence. decide records the owner's
+     rulings, merge, split, not_same, exclude and include, which judge
+     the candidates they touch at once and which every pass reapplies and
+     none overwrites. passes and pass show the passes."; "Candidates
+     belong to no one: every signed-in user sees every candidate, pass
+     and ruling." (judge_candidates, rebuild, shortlist, candidates,
      candidate, decide, merge, split, not_same, exclude, include, passes
      and pass each in a code element). No section of the landing page's.
      No script but appkit's /_appkit/feedback.js. */}}
@@ -50,9 +57,9 @@
 <section id="how" class="card" aria-labelledby="how-title">
 <header><h2 id="how-title">How it works</h2></header>
 <p>candidates turns the records scrapes collects into candidate businesses, one per real business with every record that describes it attached as evidence. A record attaches by its source key, else by its normalized name with its state and ZIP; when in doubt it starts a new candidate rather than join the wrong one.</p>
-<p>Each candidate is judged against the fit test: within 120 minutes' drive of Sandstone, a fleet, and ten million dollars or more flowing through it. Each source gives a size estimate with a confidence; the score is the estimate's point times that confidence, weighed down as the newest filing ages past two years, to nothing at five.</p>
-<p>A pass starts when scrapes finishes a run: it resolves the run's records, marks gone the records the run no longer holds, and re-scores the candidates they touch. <code>rebuild</code> starts one over every scraper's current run and recomputes everything but the candidates and the rulings.</p>
-<p><code>shortlist</code> ranks the candidates that pass the fit test; <code>candidates</code> finds them by name, ZIP or phone, and <code>candidate</code> answers one with its evidence. <code>decide</code> records the owner's rulings, <code>merge</code>, <code>split</code>, <code>not_same</code>, <code>exclude</code> and <code>include</code>, which every pass reapplies and none overwrites. <code>passes</code> and <code>pass</code> show the passes.</p>
+<p>Each candidate carries two judgments. Its operating confidence, from 0 to 1, says how sure we are that it is a real business operating today; each piece of evidence its records give closes part of the gap to certainty, and with no evidence it is empty, not 0. Its revenue range, low to high with a confidence, combines the size estimates its sources give. Drive time from Sandstone, the fleet test, the government match, the categories and the filing dates are kept beside them as facts; none removes a candidate.</p>
+<p>An ingest pass starts when scrapes finishes a run: it resolves the run's records and marks gone the records the run no longer holds, and judges nothing. A judge pass judges every candidate again from its records not gone, once a day when the <code>judge_candidates</code> trigger fires. <code>rebuild</code> ingests every scraper's current run, then judges, and recomputes everything but the candidates and the rulings.</p>
+<p><code>shortlist</code> ranks every candidate the owner has not excluded by operating confidence, highest first, with no evidence last; <code>candidates</code> finds them by name, ZIP or phone, and <code>candidate</code> answers one with its evidence. <code>decide</code> records the owner's rulings, <code>merge</code>, <code>split</code>, <code>not_same</code>, <code>exclude</code> and <code>include</code>, which judge the candidates they touch at once and which every pass reapplies and none overwrites. <code>passes</code> and <code>pass</code> show the passes.</p>
 <p>Candidates belong to no one: every signed-in user sees every candidate, pass and ruling.</p>
 </section>
 </main>

@@ -1,25 +1,32 @@
 {{/* The landing page at GET /: what the service is, one window
-     (paging.DefaultLimit, 25) of the shortlist under the default filters,
-     ranked by score, then one window of the passes, newest first. The root of the hierarchy: .Banner's .Trail is empty, so the
+     (paging.DefaultLimit, 25) of the shortlist with no filter, every
+     active candidate the owner has not excluded, ranked by operating
+     confidence, then one window of the passes, newest first. The root of the hierarchy: .Banner's .Trail is empty, so the
      banner's breadcrumb holds only the service. Shown only to a signed-in
      user; a guest is sent to sign in. Every signed-in user sees every
      candidate and pass: they are the funnel's, not a user's. Never shows a
      phone number or an email of a candidate. Read-only: no form but the
      banner's sign out. Data: .Banner (a page.Banner, for banner and
-     footer); .MaxMinutes (int, the default drive-minutes cutoff, 120);
-     .MinRevenue (the default revenue cutoff as shown, "$10,000,000");
-     .Shortlist, one window (paging.DefaultLimit, 25) of the candidates
-     that pass the fit test under the default filters, ranked by score,
-     each with .Rank (int, its position in the whole ranked shortlist under the default filters, from 1, continuing across windows),
-     .ID (its cand_ id, "cand_" and 16 hex), .Name (its display name),
-     .City and .State (its display address's parts; each may be empty),
-     .Minutes (int, drive minutes from the origin), .Class (its class tag,
-     one of "private", "for_hire", "mixed" or "unknown"), .Low (the
-     combined low estimate as shown, "$7,800,000"), .High (the combined
-     high as shown; empty when no source gives one), .Confidence (the
-     effective confidence as of the last refresh at the end of a pass, as
-     stored, not computed at the request, two decimals, "0.70") and .Score
-     (the score as of that refresh, in dollars as shown, "$7,280,000");
+     footer); .Shortlist, one window (paging.DefaultLimit, 25) of the
+     active candidates the owner has not excluded, with no filter,
+     ranked by operating confidence, highest first, those with none
+     last, the candidate id breaking ties, each with .Rank (int, its
+     position in the whole ranked shortlist with no filter, from 1,
+     continuing across windows), .ID (its cand_ id, "cand_" and 16 hex),
+     .Name (its display name), .City and .State (its display address's
+     parts; each may be empty), .OperatingConfidence (the operating
+     confidence as the last judge wrote it, two decimals, "0.78"; empty
+     when there is no evidence), .RevenueLow (the combined low as shown,
+     "$2,400,000"), .RevenueHigh (the combined high as shown; empty when
+     the sources give only a minimum) and .RevenueConfidence (two
+     decimals, "0.40"), all three empty when there is no estimate,
+     .Categories (its distinct category words, as stored, a slice of
+     strings; empty when unknown), .Class (its class tag, one of
+     "private", "for_hire", "mixed" or "unknown"; empty when it has
+     none), .Fleet (bool, the fleet pass), .Minutes (drive minutes from
+     the origin as text, "84"; empty when its ZIP is not in the table)
+     and .GovernmentMatch (the government name pattern its name matched,
+     as stored, "COUNTY"; empty when none);
      .ShortlistPage (string, this window's own shortlist page token, the
      ?shortlist_page= the request carried; empty on the first window),
      .ShortlistPrev (string, the page token for the shortlist window before
@@ -29,13 +36,15 @@
      none remain); .Shortlist is the window .ShortlistPage names; .Passes,
      one window (paging.DefaultLimit, 25) of the
      kept passes, newest first by started, not every pass, each with .ID (its pass_ id,
-     "pass_" and 16 hex), .Trigger (the run_ id of the scrapes run a
-     delivery named, or "rebuild"), .Status ("running", "done" or "failed",
+     "pass_" and 16 hex), .Kind (the pass's kind as stored, such as
+     "ingest" or "judge"), .Trigger (the run_ id of the scrapes run a
+     delivery named, the slug of the cron trigger whose fire started it,
+     "judge_candidates", or "rebuild"), .Status ("running", "done" or "failed",
      as stored), .Reason (the failure reason as stored, one of "scrapes",
      "interrupted" or "store"; empty unless .Status is "failed"), .Started
      and .StartedText (RFC 3339 UTC to the second, and UTC to the minute,
      "2026-10-05 09:00"), .Finished and .FinishedText (likewise; both empty
-     while running), and .Rows, .Created and .Rescored (ints, as the record
+     while running), and .Rows, .Created and .Judged (ints, as the record
      holds them); and .PassesPage (string, this window's own passes page
      token, the ?passes_page= the request carried; empty on the first
      window), .PassesPrev (string, the page token for the passes window
@@ -49,30 +58,39 @@
      each nav's hrefs carry the other list's current token, Prev's and
      Last's included, so paging one list never resets the other, and its First drops only its own
      parameter. Counts and minutes are shown as the plain integer. Status
-     and reason words, class tags and the trigger are shown as stored; the
-     status's kind is chosen here: "running" info, "done" ok, "failed" err.
+     and reason words, kinds, class tags, category words, patterns and the
+     trigger are shown as stored; the status's kind is chosen here:
+     "running" info, "done" ok, "failed" err.
      Hooks: title "candidates"; h1 with text "candidates"; p#summary.lede
      (text "Candidate businesses resolved from the records scrapes
      collects, one per business with every record that describes it as
-     evidence, judged against the fit test and ranked for review.");
-     section#shortlist with h2 "Shortlist" and a p in its header (text
-     "Candidates within <.MaxMinutes> minutes' drive of Sandstone, with a
-     fleet, a high estimate of at least <.MinRevenue> or none, fresh
-     evidence and no exclusion, ranked by score: the estimate's point
-     times its effective confidence. This window; the shortlist tool takes
-     other filters."), then either, when .Shortlist is empty,
-     div#no-shortlist.empty holding h3 "No candidates on the shortlist" and
-     a p (text "A candidate shows here once a pass has resolved scrapes'
-     records into it and it passes the fit test."), or table#shortlist-list
-     whose th read Rank, Name, City, State, Minutes, Class, Low, High,
-     Confidence, Score, with one tr[data-candidate=<.ID>] per candidate
-     holding td.candidate-rank.num (.Rank), td.candidate-name >
-     a.candidate-link (href "/candidates/<.ID>", text .Name),
-     td.candidate-city (.City), td.candidate-state (.State),
-     td.candidate-minutes.num (.Minutes), td.candidate-class (.Class in a
-     code element), td.candidate-low.num (.Low), td.candidate-high.num
-     (.High, empty when absent), td.candidate-confidence.num (.Confidence)
-     and td.candidate-score.num (.Score); then, after the card
+     evidence, judged on whether it operates today and how big it is, and
+     ranked for review."); section#shortlist with h2 "Shortlist" and a p
+     in its header (text "Every active candidate the owner has not
+     excluded, ranked by operating confidence, highest first, with no
+     evidence last. Drive time, the fleet test and the government match
+     are facts here; none removes a candidate. This window; the shortlist
+     tool takes filters.", shortlist in a code element), then either, when
+     .Shortlist is empty, div#no-shortlist.empty holding h3 "No candidates
+     on the shortlist" and a p (text "A candidate shows here once a pass
+     has resolved scrapes' records into it, unless the owner excludes
+     it."), or table#shortlist-list whose th read Rank, Name, City, State,
+     Operating confidence, Low, High, Revenue confidence, Categories,
+     Class, Fleet, Minutes, Government, with one tr[data-candidate=<.ID>]
+     per candidate holding td.candidate-rank.num (.Rank),
+     td.candidate-name > a.candidate-link (href "/candidates/<.ID>", text
+     .Name), td.candidate-city (.City), td.candidate-state (.State),
+     td.candidate-operating.num (.OperatingConfidence, or when empty
+     span.muted "no evidence"), td.candidate-low.num (.RevenueLow, or when
+     empty span.muted "none"), td.candidate-high.num (.RevenueHigh, or
+     when empty span.muted "none"), td.candidate-revenue-confidence.num
+     (.RevenueConfidence, empty when absent), td.candidate-categories (one
+     code[data-category=<word>] per category, separated by spaces, or when
+     .Categories is empty span.muted "unknown"), td.candidate-class (.Class
+     in a code element, empty when absent), td.candidate-fleet ("yes" or
+     "no"), td.candidate-minutes.num (.Minutes, empty when absent) and
+     td.candidate-government (.GovernmentMatch in a code element, empty
+     when none); then, after the card
      (section#shortlist), nav.paging#paging-shortlist (aria-label "Pages")
      whose children are, in order, First, Prev, Next and Last: First (on
      the first window, .ShortlistPage empty, a span with aria-current="page" and text
@@ -94,24 +112,27 @@
      shows when .Shortlist is not empty or .ShortlistPage is not empty, so
      an emptied later window still offers First; on the first window with
      no candidates there is no nav. Then section#passes with h2
-     "Passes" and a p in its header (text "Passes, newest first. A
-     pass resolves a scrapes run's records into candidates and re-scores
-     the candidates they touch."), then either, when .Passes is empty,
-     div#no-passes.empty holding h3 "No passes yet" and a p (text "A pass
-     starts when scrapes finishes a run, or when an agent calls the rebuild
-     tool, and shows up here.", rebuild in a code element), or
-     table#pass-list whose th read Pass, Trigger, Status, Started,
-     Finished, Rows, Created, Rescored, with one tr[data-pass=<.ID>] per
+     "Passes" and a p in its header (text "Passes, newest first. An
+     ingest resolves a scrapes run's records into candidates and judges
+     nothing; a judge judges every candidate again from its records not
+     gone."), then either, when .Passes is empty, div#no-passes.empty
+     holding h3 "No passes yet" and a p (text "A pass starts when scrapes
+     finishes a run, when the daily judge_candidates trigger fires, or
+     when an agent calls the rebuild tool, and shows up here.",
+     judge_candidates and rebuild each in a code element), or
+     table#pass-list whose th read Pass, Kind, Trigger, Status, Started,
+     Finished, Rows, Created, Judged, with one tr[data-pass=<.ID>] per
      pass holding td.pass-id > a.pass-link (href "/passes/<.ID>", .ID in a
-     code element); td.pass-trigger (.Trigger in a code element);
+     code element); td.pass-kind (.Kind in a code element);
+     td.pass-trigger (.Trigger in a code element);
      td.pass-status holding span.status[data-status=<.Status>]
      [data-kind=<kind>] (text .Status), followed, when .Reason is not
      empty, by a space and span.muted (text .Reason); td.pass-started
      holding time[datetime=<.Started>] (text .StartedText);
      td.pass-finished holding, only when .Finished is not empty,
      time[datetime=<.Finished>] (text .FinishedText); td.pass-rows.num
-     (.Rows), td.pass-created.num (.Created) and td.pass-rescored.num
-     (.Rescored); then, after the card (section#passes),
+     (.Rows), td.pass-created.num (.Created) and td.pass-judged.num
+     (.Judged); then, after the card (section#passes),
      nav.paging#paging-passes (aria-label "Pages") whose children are, in
      order, First, Prev, Next and Last: First (on the first window, .PassesPage empty, a span with
      aria-current="page" and text "First"; otherwise a link with text
@@ -139,56 +160,60 @@
 {{template "banner" .Banner}}
 <main>
 <h1>candidates</h1>
-<p id="summary" class="lede">Candidate businesses resolved from the records scrapes collects, one per business with every record that describes it as evidence, judged against the fit test and ranked for review.</p>
+<p id="summary" class="lede">Candidate businesses resolved from the records scrapes collects, one per business with every record that describes it as evidence, judged on whether it operates today and how big it is, and ranked for review.</p>
 <section id="shortlist" class="card flush" aria-labelledby="shortlist-title">
-<header><div><h2 id="shortlist-title">Shortlist</h2><p>Candidates within {{.MaxMinutes}} minutes' drive of Sandstone, with a fleet, a high estimate of at least {{.MinRevenue}} or none, fresh evidence and no exclusion, ranked by score: the estimate's point times its effective confidence. This window; the <code>shortlist</code> tool takes other filters.</p></div></header>
+<header><div><h2 id="shortlist-title">Shortlist</h2><p>Every active candidate the owner has not excluded, ranked by operating confidence, highest first, with no evidence last. Drive time, the fleet test and the government match are facts here; none removes a candidate. This window; the <code>shortlist</code> tool takes filters.</p></div></header>
 {{if .Shortlist}}<div class="table-scroll">
 <table id="shortlist-list">
-<thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th class="num">Minutes</th><th>Class</th><th class="num">Low</th><th class="num">High</th><th class="num">Confidence</th><th class="num">Score</th></tr></thead>
+<thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th class="num">Operating confidence</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Class</th><th>Fleet</th><th class="num">Minutes</th><th>Government</th></tr></thead>
 <tbody>
 {{range .Shortlist}}<tr data-candidate="{{.ID}}">
 <td class="candidate-rank num">{{.Rank}}</td>
 <td class="candidate-name"><a class="candidate-link" href="/candidates/{{.ID}}">{{.Name}}</a></td>
 <td class="candidate-city">{{.City}}</td>
 <td class="candidate-state">{{.State}}</td>
+<td class="candidate-operating num">{{if .OperatingConfidence}}{{.OperatingConfidence}}{{else}}<span class="muted">no evidence</span>{{end}}</td>
+<td class="candidate-low num">{{if .RevenueLow}}{{.RevenueLow}}{{else}}<span class="muted">none</span>{{end}}</td>
+<td class="candidate-high num">{{if .RevenueHigh}}{{.RevenueHigh}}{{else}}<span class="muted">none</span>{{end}}</td>
+<td class="candidate-revenue-confidence num">{{.RevenueConfidence}}</td>
+<td class="candidate-categories">{{range $i, $c := .Categories}}{{if $i}} {{end}}<code data-category="{{$c}}">{{$c}}</code>{{else}}<span class="muted">unknown</span>{{end}}</td>
+<td class="candidate-class">{{if .Class}}<code>{{.Class}}</code>{{end}}</td>
+<td class="candidate-fleet">{{if .Fleet}}yes{{else}}no{{end}}</td>
 <td class="candidate-minutes num">{{.Minutes}}</td>
-<td class="candidate-class"><code>{{.Class}}</code></td>
-<td class="candidate-low num">{{.Low}}</td>
-<td class="candidate-high num">{{.High}}</td>
-<td class="candidate-confidence num">{{.Confidence}}</td>
-<td class="candidate-score num">{{.Score}}</td>
+<td class="candidate-government">{{if .GovernmentMatch}}<code>{{.GovernmentMatch}}</code>{{end}}</td>
 </tr>
 {{end}}</tbody>
 </table>
 </div>
 {{else}}<div id="no-shortlist" class="empty">
 <h3 class="text-md">No candidates on the shortlist</h3>
-<p>A candidate shows here once a pass has resolved scrapes' records into it and it passes the fit test.</p>
+<p>A candidate shows here once a pass has resolved scrapes' records into it, unless the owner excludes it.</p>
 </div>{{end}}
 </section>
 {{if or .Shortlist .ShortlistPage}}<nav class="paging" id="paging-shortlist" aria-label="Pages">{{if .ShortlistPage}}<a href="/{{if .PassesPage}}?passes_page={{.PassesPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .ShortlistPrev}}<a href="/?shortlist_page={{.ShortlistPrev}}{{if .PassesPage}}&amp;passes_page={{.PassesPage}}{{end}}">Prev</a>{{end}}{{if .ShortlistNext}}<a href="/?shortlist_page={{.ShortlistNext}}{{if .PassesPage}}&amp;passes_page={{.PassesPage}}{{end}}">Next</a>{{end}}{{if .ShortlistNext}}<a href="/?shortlist_page=last{{if .PassesPage}}&amp;passes_page={{.PassesPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
 {{end}}<section id="passes" class="card flush" aria-labelledby="passes-title">
-<header><div><h2 id="passes-title">Passes</h2><p>Passes, newest first. A pass resolves a scrapes run's records into candidates and re-scores the candidates they touch.</p></div></header>
+<header><div><h2 id="passes-title">Passes</h2><p>Passes, newest first. An ingest resolves a scrapes run's records into candidates and judges nothing; a judge judges every candidate again from its records not gone.</p></div></header>
 {{if .Passes}}<div class="table-scroll">
 <table id="pass-list">
-<thead><tr><th>Pass</th><th>Trigger</th><th>Status</th><th>Started</th><th>Finished</th><th class="num">Rows</th><th class="num">Created</th><th class="num">Rescored</th></tr></thead>
+<thead><tr><th>Pass</th><th>Kind</th><th>Trigger</th><th>Status</th><th>Started</th><th>Finished</th><th class="num">Rows</th><th class="num">Created</th><th class="num">Judged</th></tr></thead>
 <tbody>
 {{range .Passes}}<tr data-pass="{{.ID}}">
 <td class="pass-id"><a class="pass-link" href="/passes/{{.ID}}"><code>{{.ID}}</code></a></td>
+<td class="pass-kind"><code>{{.Kind}}</code></td>
 <td class="pass-trigger"><code>{{.Trigger}}</code></td>
 <td class="pass-status"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span>{{if .Reason}} <span class="muted">{{.Reason}}</span>{{end}}</td>
 <td class="pass-started"><time datetime="{{.Started}}">{{.StartedText}}</time></td>
 <td class="pass-finished">{{if .Finished}}<time datetime="{{.Finished}}">{{.FinishedText}}</time>{{end}}</td>
 <td class="pass-rows num">{{.Rows}}</td>
 <td class="pass-created num">{{.Created}}</td>
-<td class="pass-rescored num">{{.Rescored}}</td>
+<td class="pass-judged num">{{.Judged}}</td>
 </tr>
 {{end}}</tbody>
 </table>
 </div>
 {{else}}<div id="no-passes" class="empty">
 <h3 class="text-md">No passes yet</h3>
-<p>A pass starts when scrapes finishes a run, or when an agent calls the <code>rebuild</code> tool, and shows up here.</p>
+<p>A pass starts when scrapes finishes a run, when the daily <code>judge_candidates</code> trigger fires, or when an agent calls the <code>rebuild</code> tool, and shows up here.</p>
 </div>{{end}}
 </section>
 {{if or .Passes .PassesPage}}<nav class="paging" id="paging-passes" aria-label="Pages">{{if .PassesPage}}<a href="/{{if .ShortlistPage}}?shortlist_page={{.ShortlistPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .PassesPrev}}<a href="/?passes_page={{.PassesPrev}}{{if .ShortlistPage}}&amp;shortlist_page={{.ShortlistPage}}{{end}}">Prev</a>{{end}}{{if .PassesNext}}<a href="/?passes_page={{.PassesNext}}{{if .ShortlistPage}}&amp;shortlist_page={{.ShortlistPage}}{{end}}">Next</a>{{end}}{{if .PassesNext}}<a href="/?passes_page=last{{if .ShortlistPage}}&amp;shortlist_page={{.ShortlistPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
