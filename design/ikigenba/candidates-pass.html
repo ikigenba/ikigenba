@@ -20,9 +20,10 @@
   <p id="headline" class="cluster"><span class="status" data-status="done" data-kind="ok">done</span> <span class="muted">started <time datetime="2026-10-02T06:02:05Z">2026-10-02 06:02:05 UTC</time> · finished <time datetime="2026-10-02T06:02:19Z">2026-10-02 06:02:19 UTC</time></span></p>
 
   <section id="pass-card" class="card" aria-labelledby="pass-title">
-    <header><h2 id="pass-title">Pass</h2><p>Rows, new, changed, unchanged and gone count the run's records against what candidates held; created, linked, rescored and unranged count candidates.</p></header>
+    <header><h2 id="pass-title">Pass</h2><p>An ingest stores a run's records and judges nothing: rows, new, changed, unchanged and gone count the records against what candidates held, and created and linked count candidates. A judge judges every candidate again: judged counts them and unranged those left with no revenue estimate.</p></header>
     <dl id="pass" class="kv">
       <dt>ID</dt><dd id="pass-id"><code>pass_9a27f6c1e3b40d58</code></dd>
+      <dt>Kind</dt><dd id="pass-kind"><code>ingest</code></dd>
       <dt>Trigger</dt><dd id="pass-trigger"><a class="run-link" href="https://scrapes.acme.ikigenba.com/runs/run_7c2e9f41a0b3d856"><code>run_7c2e9f41a0b3d856</code></a></dd>
       <dt>Status</dt><dd id="pass-status"><span class="status" data-status="done" data-kind="ok">done</span></dd>
       <dt>Started by</dt><dd id="pass-by">scrapes</dd>
@@ -35,8 +36,8 @@
       <dt>Gone</dt><dd id="pass-gone">37</dd>
       <dt>Created</dt><dd id="pass-created">29</dd>
       <dt>Linked</dt><dd id="pass-linked">400</dd>
-      <dt>Rescored</dt><dd id="pass-rescored">466</dd>
-      <dt>Unranged</dt><dd id="pass-unranged">3</dd>
+      <dt>Judged</dt><dd id="pass-judged">0</dd>
+      <dt>Unranged</dt><dd id="pass-unranged">0</dd>
     </dl>
   </section>
 
@@ -55,6 +56,7 @@
         <p><a class="button secondary small" href="candidates-pass.html"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg>Reload</a></p>
         <dl class="kv">
           <dt>ID</dt><dd><code>pass_e81c4a6f0d29b375</code></dd>
+          <dt>Kind</dt><dd><code>judge</code></dd>
           <dt>Trigger</dt><dd><code>rebuild</code></dd>
           <dt>Started by</dt><dd>ada@acme.dev</dd>
           <dt>Rows</dt><dd>0</dd>
@@ -66,11 +68,26 @@
         <p class="cluster"><span class="status" data-status="failed" data-kind="err">failed</span> <span class="muted">started <time datetime="2026-10-09T10:12:44Z">2026-10-09 10:12:44 UTC</time> · finished <time datetime="2026-10-09T10:12:45Z">2026-10-09 10:12:45 UTC</time></span></p>
         <div class="alert" data-kind="err" role="alert"><strong>The pass failed</strong><p>Reading the run from scrapes failed, or its rows did not match the count its record holds.</p><p>What the pass wrote before it failed stays; the next pass or a <code>rebuild</code> repairs it.</p></div>
         <dl class="kv">
+          <dt>Kind</dt><dd><code>judge</code></dd>
           <dt>Trigger</dt><dd><code>rebuild</code></dd>
           <dt>Status</dt><dd><span class="status" data-status="failed" data-kind="err">failed</span></dd>
           <dt>Reason</dt><dd><code>scrapes</code></dd>
           <dt>Started by</dt><dd>ada@acme.dev</dd>
           <dt>Rows</dt><dd>0</dd>
+        </dl>
+      </div>
+
+      <h3 class="text-md">Done: a judge started by cron</h3>
+      <div class="card">
+        <p class="cluster"><span class="status" data-status="done" data-kind="ok">done</span> <span class="muted">started <time datetime="2026-10-03T03:00:00Z">2026-10-03 03:00:00 UTC</time> · finished <time datetime="2026-10-03T03:00:41Z">2026-10-03 03:00:41 UTC</time></span></p>
+        <dl class="kv">
+          <dt>ID</dt><dd><code>pass_c40a7e19d6b25f83</code></dd>
+          <dt>Kind</dt><dd><code>judge</code></dd>
+          <dt>Trigger</dt><dd><code>judge_candidates</code></dd>
+          <dt>Started by</dt><dd>cron <code>judge_candidates</code></dd>
+          <dt>Rows</dt><dd>0</dd>
+          <dt>Judged</dt><dd>15941</dd>
+          <dt>Unranged</dt><dd>212</dd>
         </dl>
       </div>
 

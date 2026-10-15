@@ -42,23 +42,50 @@
   </section>
 
   <section id="assessment-card" class="card" aria-labelledby="assessment-title">
-    <header><h2 id="assessment-title">Assessment</h2><p>The combined estimate and the fit test as the last pass scored them. Freshness, effective confidence and score are computed as the page loads, from the newest filing's age.</p></header>
+    <header><h2 id="assessment-title">Assessment</h2><p>Two judgments, whether it is a real business operating today and how big it is, and the facts beside them, as the last judge calculated them. None of the facts removes a candidate; nothing decays between judges.</p></header>
     <dl id="assessment" class="kv">
+      <dt>Operating confidence</dt><dd id="assessment-operating">0.85</dd>
+      <dt>Revenue low</dt><dd id="assessment-revenue-low">$7,800,000</dd>
+      <dt>Revenue high</dt><dd id="assessment-revenue-high">$13,000,000</dd>
+      <dt>Revenue confidence</dt><dd id="assessment-revenue-confidence">0.70</dd>
+      <dt>Categories</dt><dd id="assessment-categories"><div data-category="freight"><code>freight</code> <span class="muted">fmcsa</span></div></dd>
+      <dt>Known since</dt><dd id="assessment-known-since"><time datetime="2018-04-09">2018-04-09</time></dd>
+      <dt>Newest filing</dt><dd id="assessment-filed"><time datetime="2025-03-18">2025-03-18</time></dd>
+      <dt>Government match</dt><dd id="assessment-government">no</dd>
       <dt>Fleet</dt><dd id="assessment-fleet">yes</dd>
       <dt>Drive minutes</dt><dd id="assessment-minutes">84</dd>
-      <dt>Low</dt><dd id="assessment-low">$7,800,000</dd>
-      <dt>High</dt><dd id="assessment-high">$13,000,000</dd>
-      <dt>Confidence</dt><dd id="assessment-confidence">0.70</dd>
-      <dt>Newest filing</dt><dd id="assessment-filed"><time datetime="2025-03-18">2025-03-18</time></dd>
-      <dt>Freshness</dt><dd id="assessment-freshness">1.00</dd>
-      <dt>Effective confidence</dt><dd id="assessment-effective">0.70</dd>
-      <dt>Point</dt><dd id="assessment-point">$10,400,000</dd>
-      <dt>Score</dt><dd id="assessment-score">$7,280,000</dd>
-      <dt>Score before freshness</dt><dd id="assessment-base">$7,280,000</dd>
       <dt>Excluded</dt><dd id="assessment-excluded">no</dd>
-      <dt>Rules</dt><dd id="assessment-rules">1</dd>
-      <dt>Scored</dt><dd id="assessment-scored"><time datetime="2026-10-05T15:12:40Z">2026-10-05 15:12:40 UTC</time></dd>
+      <dt>Rules</dt><dd id="assessment-rules">2</dd>
+      <dt>Calculated</dt><dd id="assessment-calculated"><time datetime="2026-10-05T15:12:40Z">2026-10-05 15:12:40 UTC</time></dd>
     </dl>
+  </section>
+
+  <section id="operating" class="card flush" aria-labelledby="operating-title">
+    <header>
+      <div>
+        <h2 id="operating-title">Operating evidence</h2>
+        <p>Each piece closes part of the gap to certainty: the operating confidence is 1 minus the product of 1 minus each weight. Each kind counts once, from the best record that gives it.</p>
+      </div>
+    </header>
+    <div class="table-scroll">
+      <table id="evidence-list">
+        <thead><tr><th>Evidence</th><th>Source</th><th class="num">Weight</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr data-evidence="fmcsa_active">
+            <td class="evidence-name"><code>fmcsa_active</code></td>
+            <td class="evidence-source"><code>fmcsa</code></td>
+            <td class="evidence-weight num">0.60</td>
+            <td class="evidence-description">Active operating status in the FMCSA census</td>
+          </tr>
+          <tr data-evidence="fmcsa_activity">
+            <td class="evidence-name"><code>fmcsa_activity</code></td>
+            <td class="evidence-source"><code>fmcsa</code></td>
+            <td class="evidence-weight num">0.62</td>
+            <td class="evidence-description">Recent filing and mileage on the FMCSA record</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </section>
 
   <section id="estimates" class="card" aria-labelledby="estimates-title">
@@ -69,7 +96,7 @@
       <dt>High</dt><dd>$13,000,000</dd>
       <dt>Confidence</dt><dd>0.70</dd>
       <dt>Filed</dt><dd><time datetime="2025-03-18">2025-03-18</time></dd>
-      <dt>Rules</dt><dd>1</dd>
+      <dt>Rules</dt><dd>2</dd>
       <dt>Facts</dt><dd><dl class="kv">
           <dt data-fact="class"><code>class</code></dt><dd><code>"AUTHORIZED FOR HIRE"</code></dd>
           <dt data-fact="dot_number"><code>dot_number</code></dt><dd><code>"1039480"</code></dd>
@@ -84,7 +111,7 @@
     <header>
       <div>
         <h2 id="links-title">Evidence</h2>
-        <p>Each record attached to this candidate, linked to its row in scrapes. A gone record was absent from its scraper's latest run; it still counts for identity and no longer for the score.</p>
+        <p>Each record attached to this candidate, linked to its row in scrapes. A gone record was absent from its scraper's latest run; it still counts for identity and no longer for the judgments.</p>
       </div>
     </header>
     <div class="table-scroll">
@@ -234,64 +261,56 @@
         </div>
       </div>
 
-      <h3 class="text-md">Excluded: government by name, with its reasons</h3>
+      <h3 class="text-md">Excluded: the owner's ruling, the facts unchanged</h3>
       <div class="card">
         <p class="cluster">PINE COUNTY PUBLIC WORKS <span class="status" data-status="active" data-kind="ok">active</span> <span class="badge" data-kind="warn">excluded</span> <span class="muted">updated <time datetime="2026-10-02T06:02:17Z">2026-10-02 06:02:17 UTC</time></span></p>
-        <div class="alert quiet" data-kind="warn"><strong>Excluded</strong><p>An excluded candidate is never on the shortlist. Its reasons are in the assessment; an <code>include</code> ruling reverses it.</p></div>
+        <div class="alert quiet" data-kind="warn"><strong>Excluded</strong><p>The owner excluded this candidate, so it is never on the shortlist. The ruling is below; an <code>include</code> ruling reverses it.</p></div>
         <dl class="kv">
+          <dt>Operating confidence</dt><dd>0.60</dd>
+          <dt>Revenue low</dt><dd>$3,900,000</dd>
+          <dt>Revenue high</dt><dd><span class="muted">none: a floor only</span></dd>
+          <dt>Revenue confidence</dt><dd>0.30</dd>
+          <dt>Government match</dt><dd><code>COUNTY</code></dd>
           <dt>Fleet</dt><dd>yes</dd>
           <dt>Drive minutes</dt><dd>21</dd>
-          <dt>Low</dt><dd>$3,900,000</dd>
-          <dt>High</dt><dd><span class="muted">none: a floor only</span></dd>
-          <dt>Confidence</dt><dd>0.30</dd>
-          <dt>Newest filing</dt><dd><time datetime="2025-08-04">2025-08-04</time></dd>
-          <dt>Freshness</dt><dd>1.00</dd>
-          <dt>Effective confidence</dt><dd>0.30</dd>
-          <dt>Point</dt><dd>$3,900,000</dd>
-          <dt>Score</dt><dd>$1,170,000</dd>
-          <dt>Score before freshness</dt><dd>$1,170,000</dd>
-          <dt>Excluded</dt><dd><div data-exclusion="government_name"><code>government_name</code> <span class="muted">COUNTY</span></div><div data-exclusion="government_name"><code>government_name</code> <span class="muted">PUBLIC WORKS</span></div></dd>
-          <dt>Rules</dt><dd>1</dd>
-          <dt>Scored</dt><dd><time datetime="2026-10-02T06:02:17Z">2026-10-02 06:02:17 UTC</time></dd>
+          <dt>Excluded</dt><dd>yes</dd>
+          <dt>Rules</dt><dd>2</dd>
+          <dt>Calculated</dt><dd><time datetime="2026-10-02T06:02:17Z">2026-10-02 06:02:17 UTC</time></dd>
         </dl>
       </div>
 
-      <h3 class="text-md">Stale: the only filing is over five years old, so effective confidence is 0</h3>
-      <div class="card">
-        <p class="cluster">HINCKLEY AGGREGATE HAULING INC <span class="status" data-status="active" data-kind="ok">active</span> <span class="muted">updated <time datetime="2026-10-02T06:02:13Z">2026-10-02 06:02:13 UTC</time></span></p>
-        <div class="alert quiet" data-kind="warn"><strong>Stale evidence</strong><p>Its newest filing among the links not gone is five years old or more, or it has none, so its effective confidence is 0 and it is off the shortlist until a source shows it alive.</p></div>
-        <dl class="kv">
-          <dt>Fleet</dt><dd>yes</dd>
-          <dt>Drive minutes</dt><dd>16</dd>
-          <dt>Low</dt><dd>$6,300,000</dd>
-          <dt>High</dt><dd>$10,500,000</dd>
-          <dt>Confidence</dt><dd>0.70</dd>
-          <dt>Newest filing</dt><dd><time datetime="2019-04-22">2019-04-22</time></dd>
-          <dt>Freshness</dt><dd>0.00</dd>
-          <dt>Effective confidence</dt><dd>0.00</dd>
-          <dt>Point</dt><dd>$8,400,000</dd>
-          <dt>Score</dt><dd>$0</dd>
-          <dt>Score before freshness</dt><dd>$5,880,000</dd>
-          <dt>Excluded</dt><dd>no</dd>
-          <dt>Rules</dt><dd>1</dd>
-          <dt>Scored</dt><dd><time datetime="2026-10-02T06:02:13Z">2026-10-02 06:02:13 UTC</time></dd>
-        </dl>
-      </div>
-
-      <h3 class="text-md">A ZIP not in the table, and no high estimate</h3>
+      <h3 class="text-md">A ZIP not in the table, no high estimate and no filing</h3>
       <div class="card">
         <dl class="kv">
           <dt>Drive minutes</dt><dd><span class="muted">not in the ZIP table</span></dd>
-          <dt>High</dt><dd><span class="muted">none: a floor only</span></dd>
+          <dt>Revenue high</dt><dd><span class="muted">none: a floor only</span></dd>
+          <dt>Known since</dt><dd><span class="muted">none</span></dd>
           <dt>Newest filing</dt><dd><span class="muted">none</span></dd>
         </dl>
       </div>
 
-      <h3 class="text-md">Not scored yet, no estimates, no rulings</h3>
+      <h3 class="text-md">No evidence, no estimate and no categories</h3>
+      <div class="card">
+        <dl class="kv">
+          <dt>Operating confidence</dt><dd><span class="muted">no evidence</span></dd>
+          <dt>Revenue low</dt><dd><span class="muted">no estimate</span></dd>
+          <dt>Revenue high</dt><dd><span class="muted">no estimate</span></dd>
+          <dt>Revenue confidence</dt><dd><span class="muted">no estimate</span></dd>
+          <dt>Categories</dt><dd><span class="muted">unknown</span></dd>
+        </dl>
+      </div>
+      <div class="card">
+        <div id="no-operating-evidence" class="empty">
+          <h3 class="text-md">No evidence</h3>
+          <p>No record not gone shows this business operating, so its operating confidence is empty, not 0.</p>
+        </div>
+      </div>
+
+      <h3 class="text-md">Not judged yet, no estimates, no rulings</h3>
       <div class="card">
         <div id="no-assessment" class="empty">
-          <h3 class="text-md">Not scored yet</h3>
-          <p>A pass scores a candidate after it resolves the records that touch it.</p>
+          <h3 class="text-md">Not judged yet</h3>
+          <p>An ingest stores its records and judges nothing. The daily judge, a rebuild or an owner ruling judges it.</p>
         </div>
       </div>
       <div class="card">
