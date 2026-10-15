@@ -7,24 +7,32 @@ passed as descriptor 3 (`/run/ikigenba/candidates.sock` on a host), behind
 the host's nginx. candidates is stages two and three of the funnel, resolve
 and qualify: it turns scrapes' rows into candidates, one per real business
 with every row that describes it attached as evidence, and judges each
-against the fit test into a ranked shortlist. A source is Go code in the
-service that knows how one scraper's rows become match keys, tags, a size
-estimate, a filing date and exclusion signals, and the fixed registry holds
-one, `fmcsa`. A pass is one resolve and re-score, recorded at once and worked
-in the background; it is started by a `scrape.finished` event of a `done`
-run, delivered on the bus, or by the `rebuild` tool. A pass reads the run's
-record and rows from scrapes over its socket through appkit's `scrapes`
-client, as the caller for `rebuild` and as the service identity for a
-delivery; candidates calls no other sibling and no service outside the
-suite. It keeps its candidates, links, estimates, assessments, the owner's
-rulings, its passes and the ZIP drive-time table in its own SQLite database,
-`state/candidates.db` resolved against the working directory and opened
-through appkit's `db` package; it is the only writer of it. It emits an
-event on the bus for each pass that begins and each that ends, and records
-every scrapes read in the trail. Its manifest sets `guests = false`: nginx
-lets no request without a credential through, to the pages and to `/mcp`
-alike, and its nginx fragment answers the bus's two paths 404 at the public
-name. At `/mcp` it offers seven MCP tools, which agents reach through the
+against the fit test into a ranked shortlist. Each candidate is judged
+twice, under rules version 3: an operating confidence, how sure candidates
+is that the business operates today, with the evidence behind it, and a
+revenue range; nothing is removed automatically, and a candidate leaves the
+shortlist only by the owner's ruling. A source is Go code in the service
+that knows how one scraper's rows become match keys, tags, a size estimate,
+a filing date, operating evidence and a category, and the fixed registry
+holds two, `fmcsa` and `ppp`. A pass is one ingest, judge or rebuild,
+recorded at once and worked in the background: an ingest is started by a
+`scrape.finished` event of a `done` run, delivered on the bus, and resolves
+that run's rows without judging; a judge is started by the daily
+`cron.judge_candidates.fired` event, delivered on the bus, and judges every
+candidate, reading nothing from scrapes; a rebuild, started by the `rebuild`
+tool, ingests every source's current run and then judges. An ingest or a
+rebuild reads the run's record and rows from scrapes over its socket through
+appkit's `scrapes` client, as the caller for `rebuild` and as the service
+identity for a delivery; candidates calls no other sibling and no service
+outside the suite. It keeps its candidates, links, estimates, assessments,
+the owner's rulings, its passes and the ZIP drive-time table in its own
+SQLite database, `state/candidates.db` resolved against the working
+directory and opened through appkit's `db` package; it is the only writer of
+it. It emits an event on the bus for each pass that begins and each that
+ends, and records every scrapes read in the trail. Its manifest sets
+`guests = false`: nginx lets no request without a credential through, to the
+pages and to `/mcp` alike, and its nginx fragment answers the bus's two paths
+404 at the public name. At `/mcp` it offers seven MCP tools, which agents reach through the
 MCP gateway: `shortlist`, `candidates`, `candidate`, `passes`, `pass`,
 `rebuild` and `decide`. At `/` it serves a page of the shortlist and the
 passes, a page per candidate at `/candidates/<id>`, a page per pass at
@@ -53,9 +61,10 @@ This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the Go source, the tests, `go.mod`'s requirements and
 `go.sum`, the migrations under `migrations/` (`0001_candidates.sql`,
 `0002_links.sql`, `0003_estimates.sql`, `0004_assessments.sql`,
-`0005_decisions.sql`, `0006_passes.sql`, `0007_zip_drive.sql` and
-`0008_windows.sql`), which the root package embeds, and everything under
-`etc/` (`etc/manifest.toml` and the nginx fragment `etc/nginx.conf`). The
+`0005_decisions.sql`, `0006_passes.sql`, `0007_zip_drive.sql`,
+`0008_windows.sql` and `0009_judgments.sql`), which the root package
+embeds, and everything under `etc/` (`etc/manifest.toml` and the nginx
+fragment `etc/nginx.conf`). The
 delivery that created candidates seeded `go.mod` on appkit; the build run
 owns it and `go.sum` from then on and changes them as design says. It never
 writes `assets/`, `share/`, `tools/`, this `AGENTS.md`, the `Makefile` or
@@ -146,8 +155,9 @@ no `go.work`, no local module cache stands in for it.
 The sub-project's tests are all `*_test.go` files in the module: the root
 package, `cmd/candidates` and everything under `internal/` (`internal/cli`,
 `internal/settings`, `internal/server`, `internal/web`, `internal/store`,
-`internal/sources`, `internal/fmcsa`, `internal/scoring`, `internal/passes`,
-`internal/trail`, `internal/urls`, `internal/tools` and `internal/pages`).
+`internal/sources`, `internal/fmcsa`, `internal/ppp`, `internal/scoring`,
+`internal/passes`, `internal/trail`, `internal/urls`, `internal/tools` and
+`internal/pages`).
 This is the file set the canonical gap greps for requirement ids:
 
 ```
@@ -161,10 +171,10 @@ design documents never enter the test side of the grep.
 from any other string of that shape: such a literal anywhere in a `*_test.go`
 file counts as a covered id. candidates echoes back what callers and its
 siblings give it — scrapes' rows and every field of them (DOT numbers,
-business names, addresses, phones, emails, counties, people, facts), source
-ids, scraper names, run ids, user ids and emails, request ids, bus event ids,
-the services file's URLs, ruling text, and the `cand_` and `pass_` ids
-candidates mints — and tests echo source ids above all, since every link,
+loan amounts and dates, business names, addresses, phones, emails, counties,
+people, facts), source ids, scraper names, run ids, user ids and emails,
+request ids, bus event ids, the services file's URLs, ruling text, and the
+`cand_` and `pass_` ids candidates mints — and tests echo source ids above all, since every link,
 split and candidate page names one, so a test that sends an id-shaped value
 lands one in the test file. No fixture carries one: not a header value, a
 query parameter, a tool argument, a fake scrapes' answer, a row's field, a
@@ -246,14 +256,16 @@ transactions, `db status`), which appkit's own tests prove; they prove what
 a store holds by reopening its path, never by reading tables.
 
 **Time and the sweep are driven, not waited out.** A pass's started and
-finished times, a link's first and last seen, a ruling's time, a filing's
-freshness as of the last refresh and the prune's ordering are proved through the
+finished times, a link's first and last seen, a ruling's time, a judge's
+weighing of a filing's age and the prune's ordering are proved through the
 injected `Now`: a test advances the clock it handed in, never waits real
 seconds. The sweeper waits on `Process.After`; a test hands in an `After`
 whose channels it holds and delivers on one to make the next prune happen. A
 test that sleeps to age a pass or a filing or to let a sweep come round is a
-bug. A test waits for something it started to finish (a pass reaching `done`
-or `failed`, a fake receiving a request) with a deadline that fails the test.
+bug. The judgment formulas live once, in Go: no pass and no start rewrites
+the stored judgments in SQL, so no test compares SQL with Go. A test waits
+for something it started to finish (a pass reaching `done` or `failed`, a
+fake receiving a request) with a deadline that fails the test.
 
 **Events come from the test's own sink.** Where a test observes the events
 candidates records or emits, it hands candidates' writer appkit's
@@ -405,9 +417,10 @@ candidates ships in the suite release: `devctl build <sha|tag>` builds it
 with every other app, its part of the release holding `bin/candidates`,
 `etc/` and `share/icon.svg`, and `devctl deploy <space> <sha|tag>` deploys
 that release. The host must run events, which candidates emits to and takes
-scrapes' `scrape.finished` from, and scrapes, which it reads over the socket;
-its services file names them, with telemetry and auth. candidates needs no
-outbound network and holds no secret of its own. The host's backup archives
+scrapes' `scrape.finished` and cron's `cron.judge_candidates.fired` from,
+and scrapes, which it reads over the socket; its services file names them,
+with telemetry and auth. candidates needs no outbound network and holds no
+secret of its own. The host's backup archives
 `state/` whole, so `candidates.db` is taken with it; it holds candidates,
 their evidence copied from public records, the owner's rulings and the
 passes, and no secret.
