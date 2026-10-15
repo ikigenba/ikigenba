@@ -85,7 +85,7 @@ func (*Source) Read(r scrapes.Row) sources.Reading {
 	}
 	n, unitsRead := count(r.Facts, "power_units")
 	drivers, driversRead := count(r.Facts, "total_drivers")
-	mileage, mileageRead := count(r.Facts, "mcs150_mileage")
+	mileage, mileageRead := count(r.Facts, "mileage")
 	driverFloor := max(drivers, 1)
 	implausible := unitsRead && driversRead && n > 50*driverFloor && (!mileageRead || mileage == 0)
 	suspicious := !implausible && unitsRead && driversRead && n > 10*driverFloor
@@ -108,7 +108,7 @@ func (*Source) Read(r scrapes.Row) sources.Reading {
 			est.Confidence /= 2
 			est.Facts["plausibility"] = json.RawMessage(`"suspicious"`)
 		}
-		for _, k := range []string{"power_units", "class", "mcs150_date", "total_drivers", "mcs150_mileage"} {
+		for _, k := range []string{"power_units", "class", "mcs150_date", "total_drivers", "mileage"} {
 			if v, ok := r.Facts[k]; ok {
 				est.Facts[k] = append(json.RawMessage(nil), v...)
 			}
