@@ -79,7 +79,7 @@ The PPP source reads a row of scrapes' PPP scraper: one SBA Paycheck Protection 
 - **`Fleet` is still written**, true exactly when the verdict is pass (decisions log 11): the release before this one reads `Fleet` from links this release writes, and a rollback must keep working. The next release can stop writing it.
 - **The reading carries power units and drivers** (decisions log 20), so the judge can give a candidate its trucks and drivers from the same freshest FMCSA link its verdict comes from, without going back to the estimate's copied facts, which an implausible row does not have. An implausible row carries neither (decisions log 28): its counts are not trusted, as its verdict says. They are the counts the plausibility rule reads, so a count past the ceiling is none here too.
 - **A link stored before this change has no verdict.** It decodes with an empty `FleetVerdict` and no counts; whoever reads it treats empty as unknown (`D13-scoring`, `D10-tools`), and a rebuild rewrites it.
-- **Rules version 4.** What a judge writes changes, so the rules version moves to 4 (`D13-scoring`); every estimate a source gives carries `sources.Rules` as before, so after a rebuild every estimate says 4. No source formula changes.
+- **The rules version is `D13-scoring`'s.** It moves when what a judge writes changes, and `D13-scoring` states its current value; every estimate a source gives carries `sources.Rules` as before, so after a rebuild every estimate carries the version `D13-scoring` states. No source formula changes with it.
 - **A source shares nothing with its row**: the reading's slices and maps are its own, so the link the store writes cannot change when the streamed row is reused.
 
 ## Consumer tasks
