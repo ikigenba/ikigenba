@@ -1,17 +1,19 @@
 # candidates
 
 An app of the Ikigenba platform: candidate businesses resolved from the
-records scrapes collects, ranked against the fit test, served at
+records scrapes collects, groomed into cohorts, served at
 `candidates.<host>`. One Go binary serves on the listening socket it is
 passed as descriptor 3 (`/run/ikigenba/candidates.sock` on a host), behind
 the host's nginx. candidates is stages two and three of the funnel, resolve
 and qualify: it turns scrapes' rows into candidates, one per real business
-with every row that describes it attached as evidence, and judges each
-against the fit test into a ranked shortlist. Each candidate is judged
-twice, under rules version 3: an operating confidence, how sure candidates
-is that the business operates today, with the evidence behind it, and a
-revenue range; nothing is removed automatically, and a candidate leaves the
-shortlist only by the owner's ruling. A source is Go code in the service
+with every row that describes it attached as evidence, and judges each.
+Each candidate is judged twice, under rules version 4: an operating
+confidence, how sure candidates is that the business operates today, with
+the evidence behind it, and a revenue range. A cohort is a saved search the
+owner creates and grooms: filters, a sort order, a size and a reject list,
+its members worked out each time it is read; nothing is removed
+automatically, and a candidate leaves every cohort only by the owner's
+exclusion. A source is Go code in the service
 that knows how one scraper's rows become match keys, tags, a size estimate,
 a filing date, operating evidence and a category, and the fixed registry
 holds two, `fmcsa` and `ppp`. A pass is one ingest, judge or rebuild,
@@ -25,18 +27,20 @@ rebuild reads the run's record and rows from scrapes over its socket through
 appkit's `scrapes` client, as the caller for `rebuild` and as the service
 identity for a delivery; candidates calls no other sibling and no service
 outside the suite. It keeps its candidates, links, estimates, assessments,
-the owner's rulings, its passes and the ZIP drive-time table in its own
+the owner's rulings, cohorts and rejects, its passes and the ZIP drive-time table in its own
 SQLite database, `state/candidates.db` resolved against the working
 directory and opened through appkit's `db` package; it is the only writer of
 it. It emits an event on the bus for each pass that begins and each that
 ends, and records every scrapes read in the trail. Its manifest sets
 `guests = false`: nginx lets no request without a credential through, to the
 pages and to `/mcp` alike, and its nginx fragment answers the bus's two paths
-404 at the public name. At `/mcp` it offers seven MCP tools, which agents reach through the
-MCP gateway: `shortlist`, `candidates`, `candidate`, `passes`, `pass`,
-`rebuild` and `decide`. At `/` it serves a page of the shortlist and the
-passes, a page per candidate at `/candidates/<id>`, a page per pass at
-`/passes/<id>`, a tools page at `/tools`, an about screen at `/about` and a
+404 at the public name. At `/mcp` it offers fifteen MCP tools, which agents
+reach through the MCP gateway: `cohorts`, `cohort`, `candidates`,
+`candidate`, `passes`, `pass`, `rebuild`, `decide`, `exclude`, `include`,
+`create_cohort`, `edit_cohort`, `delete_cohort`, `reject` and `unreject`.
+At `/` it serves a page of the cohorts and the passes, a page per cohort at
+`/cohorts/<id>`, a page per candidate at `/candidates/<id>`, a page per pass
+at `/passes/<id>`, a tools page at `/tools`, an about screen at `/about` and a
 not-found page. On a host it runs as `bin/candidates` of its release with
 `/var/opt/ikigenba/candidates` as its working directory and its environment
 from `/etc/opt/ikigenba/candidates/env`; a developer runs the same binary
@@ -62,9 +66,9 @@ build run writes the Go source, the tests, `go.mod`'s requirements and
 `go.sum`, the migrations under `migrations/` (`0001_candidates.sql`,
 `0002_links.sql`, `0003_estimates.sql`, `0004_assessments.sql`,
 `0005_decisions.sql`, `0006_passes.sql`, `0007_zip_drive.sql`,
-`0008_windows.sql` and `0009_judgments.sql`), which the root package
-embeds, and everything under `etc/` (`etc/manifest.toml` and the nginx
-fragment `etc/nginx.conf`). The
+`0008_windows.sql`, `0009_judgments.sql` and `0010_cohorts.sql`), which
+the root package embeds, and everything under `etc/` (`etc/manifest.toml`
+and the nginx fragment `etc/nginx.conf`). The
 delivery that created candidates seeded `go.mod` on appkit; the build run
 owns it and `go.sum` from then on and changes them as design says. It never
 writes `assets/`, `share/`, `tools/`, this `AGENTS.md`, the `Makefile` or
@@ -78,7 +82,7 @@ and read-only to it.
 
 `assets/` holds candidates' markup: Go `html/template` files, each opening
 with a comment naming the data it receives: `landing.html`,
-`candidate.html`, `pass.html`, `about.html`, `tools.html` and
+`cohort.html`, `candidate.html`, `pass.html`, `about.html`, `tools.html` and
 `notfound.html`. Every page is shown only to a signed-in user. They are
 written by the user or the delivering agent, following the repository's
 `design/`, and are inputs to the spec: the build run reads them and never
@@ -173,13 +177,14 @@ file counts as a covered id. candidates echoes back what callers and its
 siblings give it — scrapes' rows and every field of them (DOT numbers,
 loan amounts and dates, business names, addresses, phones, emails, counties,
 people, facts), source ids, scraper names, run ids, user ids and emails,
-request ids, bus event ids, the services file's URLs, ruling text, and the
-`cand_` and `pass_` ids candidates mints — and tests echo source ids above all, since every link,
+request ids, bus event ids, the services file's URLs, ruling text, cohort
+names, reject reasons, and the `cand_`, `pass_` and `coh_` ids candidates
+mints — and tests echo source ids above all, since every link,
 split and candidate page names one, so a test that sends an id-shaped value
 lands one in the test file. No fixture carries one: not a header value, a
 query parameter, a tool argument, a fake scrapes' answer, a row's field, a
-source id, a run id, a candidate id, a pass id, a URL, a services file entry,
-an event's payload, a ruling's reason, or an expected body.
+source id, a run id, a candidate id, a pass id, a cohort id, a URL, a services file entry,
+an event's payload, a ruling's or reject's reason, a cohort's name, or an expected body.
 
 ## Test discipline
 
@@ -243,7 +248,7 @@ builds the store over that handle with `store.New`. Tests may create
 filesystem fixtures inside that temporary tree (a regular file named
 `state`, a file at `state/candidates.db` that is not a database, a database
 a test's own `db.Open` made and then changed through `DB.Write`, candidates,
-links, rulings and passes a test's own store recorded, passes left
+links, rulings, cohorts, rejects and passes a test's own store recorded, passes left
 `running`, `done` or `failed`); nothing touches
 `/var/opt/ikigenba/candidates`, the checkout's `state/` or a shared file. A
 database failure is provoked with `SetFailing(true)` on the handle the store
@@ -422,5 +427,5 @@ and scrapes, which it reads over the socket; its services file names them,
 with telemetry and auth. candidates needs no outbound network and holds no
 secret of its own. The host's backup archives
 `state/` whole, so `candidates.db` is taken with it; it holds candidates,
-their evidence copied from public records, the owner's rulings and the
-passes, and no secret.
+their evidence copied from public records, the owner's rulings, cohorts
+and rejects and the passes, and no secret.
