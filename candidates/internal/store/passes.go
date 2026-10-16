@@ -137,20 +137,6 @@ func (s *Store) GetPass(ctx context.Context, id string) (Pass, error) {
 	})
 	return out, err
 }
-func orderedPasses(r *records) []Pass {
-	out := []Pass{}
-	for _, p := range r.passes {
-		out = append(out, p)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		a, b := out[i], out[j]
-		if !a.Started.Equal(b.Started) {
-			return a.Started.After(b.Started)
-		}
-		return a.ID > b.ID
-	})
-	return out
-}
 
 // ListPasses reads a keyset window in newest-first pass order.
 func (s *Store) ListPasses(ctx context.Context, started, id string, n int) ([]Pass, error) {
@@ -208,24 +194,25 @@ func (s *Store) RunningPasses(ctx context.Context) ([]Pass, error) {
 // PrunePasses removes old completed passes independently by status.
 func (s *Store) PrunePasses(ctx context.Context, keep int64) ([]Pass, error) {
 	var out []Pass
-	err := s.transaction(ctx, true, func(r *records) error {
+	err := unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		if keep < 1 {
 			return ErrUnreachable
 		}
-		out = []Pass{}
-		counts := map[string]int64{}
-		for _, p := range orderedPasses(r) {
-			if p.Status == StatusRunning {
-				continue
-			}
-			counts[p.Status]++
-			if counts[p.Status] > keep {
-				out = append(out, p)
-				delete(r.passes, p.ID)
+		var err error
+		out, err = readRecords[Pass](ctx, tx, "passes", passColumns, ` WHERE
+            (status=? AND id NOT IN (SELECT id FROM passes WHERE status=? ORDER BY started DESC,id DESC LIMIT ?))
+            OR (status=? AND id NOT IN (SELECT id FROM passes WHERE status=? ORDER BY started DESC,id DESC LIMIT ?))
+            ORDER BY started DESC,id DESC`, StatusDone, StatusDone, keep, StatusFailed, StatusFailed, keep)
+		if err != nil {
+			return err
+		}
+		for _, p := range out {
+			if err := deleteRecord(ctx, tx, "passes", "id=?", p.ID); err != nil {
+				return err
 			}
 		}
 		return nil
-	})
+	}))
 	if err != nil {
 		return nil, err
 	}
@@ -234,18 +221,22 @@ func (s *Store) PrunePasses(ctx context.Context, keep int64) ([]Pass, error) {
 
 // ReplaceZipDrive replaces the ZIP drive-time table.
 func (s *Store) ReplaceZipDrive(ctx context.Context, table map[string]int64) error {
-	return s.transaction(ctx, true, func(r *records) error {
+	return unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		for z, n := range table {
 			if !validZip(z) || n < 0 {
 				return fmt.Errorf("invalid ZIP entry")
 			}
 		}
-		r.zips = map[string]int64{}
+		if err := execSQL(ctx, tx, "DELETE FROM zip_drive"); err != nil {
+			return err
+		}
 		for z, n := range table {
-			r.zips[z] = n
+			if err := execSQL(ctx, tx, "INSERT INTO zip_drive(zip,minutes) VALUES (?,?)", z, n); err != nil {
+				return err
+			}
 		}
 		return nil
-	})
+	}))
 }
 
 // ZipMinutes reads the drive time for one ZIP.

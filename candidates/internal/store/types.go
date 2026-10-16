@@ -2,7 +2,6 @@
 package store
 
 import (
-	"context"
 	"errors"
 	"io"
 	"sync"
@@ -184,9 +183,3 @@ func unreachable(err error) error {
 	return errors.Join(ErrUnreachable, err)
 }
 func (s *Store) now() time.Time { return s.cfg.Now().UTC().Truncate(time.Second) }
-func (s *Store) transaction(ctx context.Context, write bool, fn func(*records) error) error {
-	if err := ctx.Err(); err != nil {
-		return unreachable(err)
-	}
-	return s.transact(ctx, write, fn)
-}

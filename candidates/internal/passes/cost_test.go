@@ -168,6 +168,36 @@ func TestGeneratedRunCostChain(t *testing.T) {
 		}
 	}
 	assertCounts(ended, store.Counts{Rows: 10000, Changed: 10000, Linked: 10000, Judged: 5000, Unranged: unranged})
+
+	// The ending event has been captured and no engine work remains. Prepare
+	// inputs before measuring so only each upkeep call contributes allocations.
+	table := candidates.ZipDrive()
+	ctx := context.Background()
+	var before, after runtime.MemStats
+	// R-Y4NM-OD2H
+	runtime.ReadMemStats(&before)
+	err = f.st.ReplaceZipDrive(ctx, table)
+	runtime.ReadMemStats(&after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated >= 4194304 {
+		t.Errorf("ReplaceZipDrive allocated %d bytes; want less than 4194304", allocated)
+	} else {
+		t.Logf("ReplaceZipDrive allocated %d bytes", allocated)
+	}
+	// R-Y5VJ-24T6
+	runtime.ReadMemStats(&before)
+	_, err = f.st.PrunePasses(ctx, 1)
+	runtime.ReadMemStats(&after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated >= 4194304 {
+		t.Errorf("PrunePasses allocated %d bytes; want less than 4194304", allocated)
+	} else {
+		t.Logf("PrunePasses allocated %d bytes", allocated)
+	}
 }
 
 func reflectRowsEqual(a, b scrapes.Row) bool {
