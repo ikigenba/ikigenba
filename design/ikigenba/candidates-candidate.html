@@ -52,10 +52,12 @@
       <dt>Known since</dt><dd id="assessment-known-since"><time datetime="2018-04-09">2018-04-09</time></dd>
       <dt>Newest filing</dt><dd id="assessment-filed"><time datetime="2025-03-18">2025-03-18</time></dd>
       <dt>Government match</dt><dd id="assessment-government">no</dd>
-      <dt>Fleet</dt><dd id="assessment-fleet">yes</dd>
+      <dt>Fleet</dt><dd id="assessment-fleet" data-fleet="pass">pass</dd>
+      <dt>Trucks</dt><dd id="assessment-power-units">52</dd>
+      <dt>Drivers</dt><dd id="assessment-drivers">61</dd>
       <dt>Drive minutes</dt><dd id="assessment-minutes">84</dd>
       <dt>Excluded</dt><dd id="assessment-excluded">no</dd>
-      <dt>Rules</dt><dd id="assessment-rules">2</dd>
+      <dt>Rules</dt><dd id="assessment-rules">4</dd>
       <dt>Calculated</dt><dd id="assessment-calculated"><time datetime="2026-10-05T15:12:40Z">2026-10-05 15:12:40 UTC</time></dd>
     </dl>
   </section>
@@ -96,7 +98,7 @@
       <dt>High</dt><dd>$13,000,000</dd>
       <dt>Confidence</dt><dd>0.70</dd>
       <dt>Filed</dt><dd><time datetime="2025-03-18">2025-03-18</time></dd>
-      <dt>Rules</dt><dd>2</dd>
+      <dt>Rules</dt><dd>4</dd>
       <dt>Facts</dt><dd><dl class="kv">
           <dt data-fact="class"><code>class</code></dt><dd><code>"AUTHORIZED FOR HIRE"</code></dd>
           <dt data-fact="dot_number"><code>dot_number</code></dt><dd><code>"1039480"</code></dd>
@@ -175,6 +177,43 @@
             <td class="ruling-by">ada@acme.dev</td>
             <td class="ruling-at"><time datetime="2026-10-05T15:12:40Z">2026-10-05 15:12</time></td>
             <td class="ruling-why">Second DOT number for the same business: same officers and phone, the New Richmond yard filed as its own unit.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="rejects" class="card flush" aria-labelledby="rejects-title">
+    <header>
+      <div>
+        <h2 id="rejects-title">Rejects</h2>
+        <p>Every reject and unreject naming this candidate, newest first, each with its cohort, who made it, when and why. The latest on a cohort stands; a deleted cohort's records stay, without its name.</p>
+      </div>
+    </header>
+    <div class="table-scroll">
+      <table id="reject-list">
+        <thead><tr><th>Kind</th><th>Cohort</th><th>By</th><th>When</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr data-reject="unreject" data-cohort="coh_d05a3e86b4c17f29">
+            <td class="reject-kind"><code>unreject</code></td>
+            <td class="reject-cohort"><a class="cohort-link" href="/cohorts/coh_d05a3e86b4c17f29">Trucking and construction, $5M to $10M, 2 hours</a> <code>coh_d05a3e86b4c17f29</code></td>
+            <td class="reject-by">ada@acme.dev</td>
+            <td class="reject-at"><time datetime="2026-10-15T11:20:05Z">2026-10-15 11:20</time></td>
+            <td class="reject-why">Their new dispatcher called back; worth the campaign after all.</td>
+          </tr>
+          <tr data-reject="reject" data-cohort="coh_d05a3e86b4c17f29">
+            <td class="reject-kind"><code>reject</code></td>
+            <td class="reject-cohort"><a class="cohort-link" href="/cohorts/coh_d05a3e86b4c17f29">Trucking and construction, $5M to $10M, 2 hours</a> <code>coh_d05a3e86b4c17f29</code></td>
+            <td class="reject-by">ada@acme.dev</td>
+            <td class="reject-at"><time datetime="2026-10-15T10:05:31Z">2026-10-15 10:05</time></td>
+            <td class="reject-why">Already a customer of a partner firm.</td>
+          </tr>
+          <tr data-reject="reject" data-cohort="coh_71c9a2e5f08b4d36">
+            <td class="reject-kind"><code>reject</code></td>
+            <td class="reject-cohort"><code>coh_71c9a2e5f08b4d36</code> <span class="muted">deleted</span></td>
+            <td class="reject-by">grace@acme.dev</td>
+            <td class="reject-at"><time datetime="2026-10-14T09:12:44Z">2026-10-14 09:12</time></td>
+            <td class="reject-why">Too far east for a first visit.</td>
           </tr>
         </tbody>
       </table>
@@ -264,17 +303,19 @@
       <h3 class="text-md">Excluded: the owner's ruling, the facts unchanged</h3>
       <div class="card">
         <p class="cluster">PINE COUNTY PUBLIC WORKS <span class="status" data-status="active" data-kind="ok">active</span> <span class="badge" data-kind="warn">excluded</span> <span class="muted">updated <time datetime="2026-10-02T06:02:17Z">2026-10-02 06:02:17 UTC</time></span></p>
-        <div class="alert quiet" data-kind="warn"><strong>Excluded</strong><p>The owner excluded this candidate, so it is never on the shortlist. The ruling is below; an <code>include</code> ruling reverses it.</p></div>
+        <div class="alert quiet" data-kind="warn"><strong>Excluded</strong><p>The owner excluded this candidate, so no cohort shows it unless the cohort shows excluded candidates. The ruling is below; the <code>include</code> tool reverses it.</p></div>
         <dl class="kv">
           <dt>Operating confidence</dt><dd>0.60</dd>
           <dt>Revenue low</dt><dd>$3,900,000</dd>
           <dt>Revenue high</dt><dd><span class="muted">none: a floor only</span></dd>
           <dt>Revenue confidence</dt><dd>0.30</dd>
           <dt>Government match</dt><dd><code>COUNTY</code></dd>
-          <dt>Fleet</dt><dd>yes</dd>
+          <dt>Fleet</dt><dd data-fleet="unknown"><span class="muted">unknown</span></dd>
+          <dt>Trucks</dt><dd><span class="muted">unknown</span></dd>
+          <dt>Drivers</dt><dd><span class="muted">unknown</span></dd>
           <dt>Drive minutes</dt><dd>21</dd>
           <dt>Excluded</dt><dd>yes</dd>
-          <dt>Rules</dt><dd>2</dd>
+          <dt>Rules</dt><dd>4</dd>
           <dt>Calculated</dt><dd><time datetime="2026-10-02T06:02:17Z">2026-10-02 06:02:17 UTC</time></dd>
         </dl>
       </div>
@@ -306,7 +347,7 @@
         </div>
       </div>
 
-      <h3 class="text-md">Not judged yet, no estimates, no rulings</h3>
+      <h3 class="text-md">Not judged yet, no estimates, no rulings, no rejects</h3>
       <div class="card">
         <div id="no-assessment" class="empty">
           <h3 class="text-md">Not judged yet</h3>
@@ -322,7 +363,13 @@
       <div class="card flush">
         <div id="no-rulings" class="empty">
           <h3 class="text-md">No rulings</h3>
-          <p>Rulings are made by hand with the <code>decide</code> tool: <code>merge</code>, <code>split</code>, <code>not_same</code>, <code>exclude</code> or <code>include</code>.</p>
+          <p>Rulings are made by hand: <code>merge</code>, <code>split</code> and <code>not_same</code> with the <code>decide</code> tool, and <code>exclude</code> and <code>include</code> with tools of their own.</p>
+        </div>
+      </div>
+      <div class="card flush">
+        <div id="no-rejects" class="empty">
+          <h3 class="text-md">No rejects</h3>
+          <p>Rejects are made by hand with the <code>reject</code> tool, one cohort at a time; <code>unreject</code> reverses one.</p>
         </div>
       </div>
     </div>

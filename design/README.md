@@ -61,13 +61,12 @@ design/
     scrapes-row.html
                     one row: its envelope and its raw record, two levels
                     down the trail
-    candidates.html candidates' landing: the shortlist, ranked by
-                    operating confidence, then the kept passes, each
-                    list paged
+    candidates.html candidates' landing: the cohorts, by name, then
+                    the kept passes, each list paged
     candidates-candidate.html
                     one candidate: its fields, assessment, operating
-                    evidence, estimates, evidence and rulings; merged
-                    and excluded
+                    evidence, estimates, evidence, rulings and rejects;
+                    merged and excluded
     candidates-pass.html
                     one pass: its record, running and failed
     webhooks.html   webhooks' landing: the space's webhooks
@@ -151,10 +150,10 @@ design/
   the same 303 redirect. On the last window `Page` is `last`, `Prev` is the
   before-token of its first entry and `Next` is empty; Last needs no field
   of its own, drawn as the current item exactly when `Next` is empty. A page with two lists (candidates'
-  shortlist and passes, gmail's drafts and transfers) has one nav per list,
-  `nav.paging#paging-<list>` (`#paging-shortlist`, `#paging-passes`,
+  cohorts and passes, gmail's drafts and transfers) has one nav per list,
+  `nav.paging#paging-<list>` (`#paging-cohorts`, `#paging-passes`,
   `#paging-drafts`, `#paging-transfers`), each with its own parameter
-  `<list>_page` (`shortlist_page`, `passes_page`, `drafts_page`,
+  `<list>_page` (`cohorts_page`, `passes_page`, `drafts_page`,
   `transfers_page`), its Last link `<list>_page=last`, and its own fields (`<List>Prev` beside `<List>Page`
   and `<List>Next`); each nav's hrefs, Prev's and Last's included, carry the other
   list's current `page` value, so paging one list never resets the other;
@@ -538,29 +537,26 @@ candidates at `candidates.acme.ikigenba.com`, the funnel's judgment over
 scrapes' evidence: a pass resolves each scrapes run's records into
 candidate businesses, one per business with every record that describes it
 attached as a link, and a judge makes two separate judgments of each,
-whether it is a real business operating today and how big it is, into a
-shortlist ranked by operating confidence; the owner rules on candidates
-with `decide`. Candidates belong to no one: every signed-in user sees every
-candidate, pass and ruling. Three levels: the landing page, one candidate
-at `/candidates/<id>`, and one pass at `/passes/<id>`. Banner and footer as
+whether it is a real business operating today and how big it is; the owner
+reads them through cohorts, saved searches of filters, an order, a size and
+rejects whose members are worked out at each read, and rules on candidates
+with `decide`, `exclude` and `include`. Candidates and cohorts belong to no
+one: every signed-in user sees every candidate, cohort, pass, ruling and
+reject. Four pages: the landing page, one candidate at
+`/candidates/<id>`, one cohort at `/cohorts/<id>`, and one pass at
+`/passes/<id>`; the cohort page has no mock. Banner and footer as
 in app.html, the service `candidates` with the Tabler `filter` icon (added
 to `icons/tabler/` on 2026-10-12 for this app). No form but sign out. The
 sample data is made-up carriers from FMCSA's census for Minnesota and
 Wisconsin.
-- The landing: `h1` candidates, a lede, then `section#shortlist` whose
-  header says every active candidate the owner has not excluded is ranked
-  by operating confidence, highest first, no evidence last, and that drive
-  time, the fleet test and the government match are facts here and none
-  removes a candidate, with `table#shortlist-list` of Rank / Name / City /
-  State / Operating confidence / Low / High / Revenue confidence /
-  Categories / Class / Fleet / Minutes / Government, a window of 25 with
-  `nav.paging#paging-shortlist` below it (parameter `shortlist_page`),
-  `tr[data-candidate=<id>]`, each name linking to `/candidates/<id>`. An
-  empty operating confidence reads "no evidence" and an empty Low or High
-  "none", both muted; Categories are one `code[data-category]` each, muted
-  "unknown" when none; Fleet is yes or no; Government shows the matched
-  name pattern in a `code`, empty when none. No phone or email shows on
-  this page. Then `section#passes` with `table#pass-list` of Pass / Kind /
+- The landing: `h1` candidates, a lede, then `section#cohorts` whose
+  header says a cohort is a saved search whose members are worked out each
+  time its page is read, with `table#cohort-list` of Name / Cohort / Size /
+  Created by / Changed, by name then id, a window of 25 with
+  `nav.paging#paging-cohorts` below it (parameter `cohorts_page`),
+  `tr[data-cohort=<id>]`, each name linking to `/cohorts/<id>`; Created by
+  is the email, or the user id in a `code` when none. No phone or email of
+  a candidate shows on this page. Then `section#passes` with `table#pass-list` of Pass / Kind /
   Trigger / Status / Started / Finished / Rows / Created / Judged, the kept
   passes newest first, a window of 25 with `nav.paging#paging-passes` below
   it (parameter `passes_page`), `tr[data-pass=<id>]`: a running judge from a
@@ -568,10 +564,11 @@ Wisconsin.
   `judge_candidates`, two ingests done by a scrapes run. Every pass id links
   to `/passes/<id>`; Kind is `ingest` or `judge`; Trigger is the run id, the
   cron trigger's slug or `rebuild`. A failed row's reason follows its
-  status, muted. A link to the about screen. Its tools (`shortlist`,
-  `candidates`, `candidate`, `passes`, `pass`, `rebuild`, `decide`) are on
-  its tools page. States: an empty shortlist (`div#no-shortlist.empty`), no
-  passes (`div#no-passes.empty`).
+  status, muted. A link to the about screen. Its tools (`cohorts`,
+  `cohort`, `candidates`, `candidate`, `passes`, `pass`, `rebuild`,
+  `decide`, `exclude`, `include`, `create_cohort`, `edit_cohort`,
+  `delete_cohort`, `reject`, `unreject`) are on its tools page. States: no
+  cohorts (`div#no-cohorts.empty`), no passes (`div#no-passes.empty`).
 - One candidate, `cand_4b9e1f07c2d83a65`, a for-hire carrier at Hudson, WI,
   with two records, one moved onto it by a merge: the trail candidates /
   the id, the id as the `h1`; `p#headline` with the name, the status and
@@ -584,8 +581,9 @@ Wisconsin.
   the facts beside them as the last judge calculated them: Operating
   confidence, Revenue low, Revenue high, Revenue confidence, Categories
   (one `div[data-category]` each, its source muted), Known since, Newest
-  filing, Government match, Fleet, Drive minutes, Excluded (yes or no),
-  Rules, Calculated. `section#operating` (Operating evidence) with
+  filing, Government match, Fleet (the verdict `pass`, `fail` or, muted,
+  `unknown`), Trucks and Drivers (muted "unknown" when FMCSA gives none),
+  Drive minutes, Excluded (yes or no), Rules, Calculated. `section#operating` (Operating evidence) with
   `table#evidence-list` of Evidence / Source / Weight / Description,
   `tr[data-evidence=<name>]`. `section#estimates` with one
   `dl.kv[data-estimate=<source>]` per source, its facts in a nested
@@ -595,15 +593,21 @@ Wisconsin.
   `tr[data-link=<scraper>:<source_id>]`, each source id linking to its row
   at scrapes, `/runs/<run>/rows/<source_id>`. `section#rulings` with
   `table#ruling-list` of Kind / With / Records / By / When / Why, newest
-  first, `tr[data-ruling=<kind>]`. States: merged (`div#merged.alert.quiet`
+  first, `tr[data-ruling=<kind>]`. `section#rejects` with
+  `table#reject-list` of Kind / Cohort / By / When / Why, every reject and
+  unreject naming the candidate, newest first,
+  `tr[data-reject=<kind>][data-cohort=<id>]`, the cohort's name linking to
+  `/cohorts/<id>` beside its id, or its id and a muted "deleted" when the
+  cohort is gone. States: merged (`div#merged.alert.quiet`
   of kind info, "Merged", linking to the survivor; the record and the
-  rulings only), a gone record (`.badge` gone of kind warn) and a split's
+  rulings and rejects only), a gone record (`.badge` gone of kind warn) and a split's
   moved records, excluded (`div#excluded.alert.quiet` of kind warn; the
-  facts unchanged, Excluded yes), a ZIP not in the table, no high estimate
+  facts unchanged, Excluded yes, here with an unknown fleet verdict and
+  counts), a ZIP not in the table, no high estimate
   and no filing (muted words), no evidence, no estimate and no categories
   (muted words, and `div#no-operating-evidence.empty`), not judged
   (`div#no-assessment.empty`), no estimates (`div#no-estimates.empty`), no
-  rulings (`div#no-rulings.empty`). An unknown id is the not-found page.
+  rulings (`div#no-rulings.empty`), no rejects (`div#no-rejects.empty`). An unknown id is the not-found page.
 - One pass, `pass_9a27f6c1e3b40d58`, an ingest done over a scrapes run: the
   trail candidates / the id, the id as the `h1`; `p#headline` with the
   status and the started and finished times; `section#pass-card` with
@@ -620,7 +624,8 @@ Wisconsin.
 - Candidate status reads as a `.status` word, as stored: active is ok,
   merged is info; pass status as scrapes' run status: running info, done
   ok, failed err. Class tags, cargo tags, category words, evidence kinds,
-  kinds, ruling kinds, ids and county codes are shown as stored. Dollars
+  kinds, ruling and reject kinds, fleet verdicts, ids and county codes are
+  shown as stored. Dollars
   are whole with a `$` and thousands commas; confidences and weights have
   two decimals; counts and minutes are the plain integer. Dates are
   `YYYY-MM-DD` in a `time`. Times are UTC in a `time` carrying the RFC 3339
