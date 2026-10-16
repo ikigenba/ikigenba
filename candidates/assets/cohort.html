@@ -20,6 +20,9 @@
      category names it admits, as stored, a slice of strings; empty when
      absent), .CategoryUnknown (bool), .Fleet (the fleet verdict it
      admits, "pass" or "fail"; empty when absent), .FleetUnknown (bool),
+     .Website (the website states it admits, as stored, any of "https",
+     "http" and "none", a slice of strings; empty when absent),
+     .WebsiteUnknown (bool),
      .Government ("true" or "false", the government filter as given;
      empty when absent), .MaxFilingAgeDays (the filing-age maximum in
      days as text, "730"; empty when absent), .FilingUnknown (bool),
@@ -50,6 +53,9 @@
      strings; empty when unknown), .Class (its class tag, one of
      "private", "for_hire", "mixed" or "unknown"; empty when it has
      none), .FleetVerdict ("pass", "fail" or "unknown", as stored),
+     .Website ("https", "http", "none" or "unknown", as stored),
+     .WebsiteURL (the URL its website check landed on, as stored; empty
+     unless .Website is "https" or "http"),
      .Minutes (drive minutes from the origin as text, "84"; empty when its
      ZIP is not in the table), .GovernmentMatch (the government name
      pattern its name matched, as stored, "COUNTY"; empty when none),
@@ -65,7 +71,8 @@
      the second, and UTC to the minute, "2026-10-05 09:00") and .Why (the
      sentence given). Counts, sizes and minutes are shown as the plain
      integer. Names are shown as given; class tags, category words,
-     verdicts, patterns, order fields and directions as stored.
+     verdicts, website states, patterns, order fields and directions as
+     stored.
      Hooks: title "<.Cohort.Name> · candidates"; h1 with text .Name;
      p#headline.cluster holding span#matching.badge[data-kind=info] (text
      "<.Matching> matching"), a space and span.muted holding "changed" and
@@ -92,7 +99,7 @@
      whose value is unknown unless its switch lets them in."), then
      dl#filters.kv holding, in this order, each dd showing span.muted
      "any" when the cohort does not carry that filter's value, and, for
-     the five filters with a switch, followed when the switch is set by a
+     the six filters with a switch, followed when the switch is set by a
      space and span.badge[data-kind=info][data-unknown] (text "unknown
      included"): dt "Revenue low" then dd#filter-revenue ("<.RevenueMin>
      to <.RevenueMax>" when both are set, "at least <.RevenueMin>" or "at
@@ -101,7 +108,9 @@
      .MinutesUnknown), dt "Categories" then dd#filter-categories (one
      code[data-category=<word>] per category, separated by spaces; switch
      .CategoryUnknown), dt "Fleet" then dd#filter-fleet (.Fleet in a code
-     element; switch .FleetUnknown), dt "Government" then
+     element; switch .FleetUnknown), dt "Website" then dd#filter-website
+     (one code[data-website=<state>] per state, separated by spaces;
+     switch .WebsiteUnknown), dt "Government" then
      dd#filter-government ("a government match only" when .Government is
      "true", "no government match" when "false"), dt "Filing age" then
      dd#filter-filing ("newest filing at most <.MaxFilingAgeDays> days
@@ -118,7 +127,7 @@
      switch with the edit_cohort tool.", edit_cohort in a code element),
      or table#member-list whose th read Rank, Name, City, State, Operating
      confidence, Low, High, Revenue confidence, Categories, Class, Fleet,
-     Minutes, Government, Known since, Newest filing, with one
+     Website, Minutes, Government, Known since, Newest filing, with one
      tr[data-candidate=<.ID>] per member holding td.candidate-rank.num
      (.Rank), td.candidate-name (a.candidate-link, href
      "/candidates/<.ID>", text .Name, followed, when .Excluded, by a space
@@ -133,7 +142,10 @@
      .Categories is empty span.muted "unknown"), td.candidate-class
      (.Class in a code element, empty when absent),
      td.candidate-fleet[data-fleet=<.FleetVerdict>] (.FleetVerdict, in
-     span.muted when "unknown"), td.candidate-minutes.num (.Minutes, empty
+     span.muted when "unknown"),
+     td.candidate-website[data-website=<.Website>] (a.website-link, href
+     .WebsiteURL, text .Website, when .WebsiteURL is set; else .Website,
+     in span.muted when "unknown"), td.candidate-minutes.num (.Minutes, empty
      when absent), td.candidate-government (.GovernmentMatch in a code
      element, empty when none), td.candidate-known-since and
      td.candidate-filed (each, only when set, a time[datetime] with the
@@ -179,6 +191,7 @@
 <dt>Drive minutes</dt><dd id="filter-minutes">{{if .MaxMinutes}}at most {{.MaxMinutes}}{{else}}<span class="muted">any</span>{{end}}{{if .MinutesUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
 <dt>Categories</dt><dd id="filter-categories">{{range $i, $c := .Categories}}{{if $i}} {{end}}<code data-category="{{$c}}">{{$c}}</code>{{else}}<span class="muted">any</span>{{end}}{{if .CategoryUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
 <dt>Fleet</dt><dd id="filter-fleet">{{if .Fleet}}<code>{{.Fleet}}</code>{{else}}<span class="muted">any</span>{{end}}{{if .FleetUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
+<dt>Website</dt><dd id="filter-website">{{range $i, $w := .Website}}{{if $i}} {{end}}<code data-website="{{$w}}">{{$w}}</code>{{else}}<span class="muted">any</span>{{end}}{{if .WebsiteUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
 <dt>Government</dt><dd id="filter-government">{{if eq .Government "true"}}a government match only{{else if eq .Government "false"}}no government match{{else}}<span class="muted">any</span>{{end}}</dd>
 <dt>Filing age</dt><dd id="filter-filing">{{if .MaxFilingAgeDays}}newest filing at most {{.MaxFilingAgeDays}} days old{{else}}<span class="muted">any</span>{{end}}{{if .FilingUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
 <dt>Class</dt><dd id="filter-class">{{if .Class}}<code>{{.Class}}</code>{{else}}<span class="muted">any</span>{{end}}{{if .ClassUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
@@ -189,7 +202,7 @@
 <header><div><h2 id="members-title">Members</h2><p>The first of the {{$matching}} matching candidates in the cohort's order, up to its size of {{.Size}}, worked out as this page was read. An unknown value sorts last whatever the direction; the candidate id breaks ties.</p></div></header>
 {{if $members}}<div class="table-scroll">
 <table id="member-list">
-<thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th class="num">Operating confidence</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Class</th><th>Fleet</th><th class="num">Minutes</th><th>Government</th><th>Known since</th><th>Newest filing</th></tr></thead>
+<thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th class="num">Operating confidence</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Class</th><th>Fleet</th><th>Website</th><th class="num">Minutes</th><th>Government</th><th>Known since</th><th>Newest filing</th></tr></thead>
 <tbody>
 {{range $members}}<tr data-candidate="{{.ID}}">
 <td class="candidate-rank num">{{.Rank}}</td>
@@ -203,6 +216,7 @@
 <td class="candidate-categories">{{range $i, $c := .Categories}}{{if $i}} {{end}}<code data-category="{{$c}}">{{$c}}</code>{{else}}<span class="muted">unknown</span>{{end}}</td>
 <td class="candidate-class">{{if .Class}}<code>{{.Class}}</code>{{end}}</td>
 <td class="candidate-fleet" data-fleet="{{.FleetVerdict}}">{{if eq .FleetVerdict "unknown"}}<span class="muted">{{.FleetVerdict}}</span>{{else}}{{.FleetVerdict}}{{end}}</td>
+<td class="candidate-website" data-website="{{.Website}}">{{if .WebsiteURL}}<a class="website-link" href="{{.WebsiteURL}}">{{.Website}}</a>{{else if eq .Website "unknown"}}<span class="muted">{{.Website}}</span>{{else}}{{.Website}}{{end}}</td>
 <td class="candidate-minutes num">{{.Minutes}}</td>
 <td class="candidate-government">{{if .GovernmentMatch}}<code>{{.GovernmentMatch}}</code>{{end}}</td>
 <td class="candidate-known-since">{{if .KnownSince}}<time datetime="{{.KnownSince}}">{{.KnownSinceText}}</time>{{end}}</td>

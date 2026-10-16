@@ -2,8 +2,8 @@
      its assessment with the two judgments and the facts beside them as
      the last judge wrote them, the operating evidence behind it, each
      estimate with the facts it used, each link to a scrapes record with
-     its last seen and gone, the owner's rulings on it, and every reject
-     and unreject naming it. A merged candidate's page says what it merged
+     its last seen and gone, the owner's rulings on it, its enrichment
+     results, and every reject and unreject naming it. A merged candidate's page says what it merged
      into and links there, with its record, its rulings and its rejects
      and no evidence. Shown to any signed-in user; a
      guest is sent to sign in; an unknown id is the not-found page.
@@ -18,7 +18,14 @@
      name any link uses, .Name first, a slice of strings), .Street, .City,
      .State, .Zip, .County (as stored, "MN-115"), .Phone (ten digits, as
      stored) and .Email (each empty when its freshest evidence gives none,
-     and all empty when merged), .People (each with .Name and .Role, as the
+     and all empty when merged), .Website (the state of its newest
+     website_check result, "https", "http" or "none", as stored, or
+     "unknown" when it has none; empty when merged), .WebsiteURL (the URL
+     that result landed on; empty unless .Website is "https" or "http"),
+     .WebsiteTitle (that result's page title, as stored; empty when none)
+     and .WebsiteChecked and .WebsiteCheckedText (when that result was
+     found, in .Created's two forms below; both empty when it has none),
+     .People (each with .Name and .Role, as the
      source gives them; may be empty), .Class (its class tag, "private",
      "for_hire", "mixed" or "unknown"; empty when merged), .Cargo (its
      cargo tags, a slice of strings; may be empty), .Created and
@@ -81,7 +88,16 @@
      (the cohort's name; empty when the cohort is deleted), .By (the email
      of who made it; empty when none), .User (their user id), .At and
      .AtText (when it was made, RFC 3339 UTC to the second, and UTC to the
-     minute) and .Why (the sentence given). Words and tags are shown as stored; the
+     minute) and .Why (the sentence given); .Enrichments, every enrichment
+     result on this candidate, newest first, empty when merged, each with
+     .Kind (its kind as stored, "website_check"), .State ("https", "http"
+     or "none", as stored), .URL (the URL it landed on; empty when none),
+     .Title (the page title, as stored; empty when none), .StatusCode (the
+     final HTTP status code as text, "200"; empty when no response came),
+     .Size (int, the body bytes read), .Error (the last failed attempt's
+     error text, as stored; empty on success), .Domain (the domain
+     checked, "example.com") and .At and .AtText (when it was found, RFC
+     3339 UTC to the second, and UTC to the minute). Words and tags are shown as stored; the
      candidate status's kind is chosen here: "active" ok, "merged" info.
      Hooks: title "<.Candidate.ID> · candidates"; h1 with text .ID;
      p#headline.cluster holding, when .Name is set, .Name and a space, then
@@ -109,7 +125,14 @@
      dd#candidate-street, dt "City" then dd#candidate-city, dt "State" then
      dd#candidate-state, dt "Zip" then dd#candidate-zip, dt "County" then
      dd#candidate-county (in a code element), dt "Phone" then
-     dd#candidate-phone, dt "Email" then dd#candidate-email, dt "People"
+     dd#candidate-phone, dt "Email" then dd#candidate-email, dt "Website"
+     then dd#candidate-website[data-website=<.Website>] (when .Website is
+     "unknown", span.muted "unknown"; else a.website-link, href
+     .WebsiteURL, text .WebsiteURL, and a space when .WebsiteURL is set,
+     then .Website; then, when .WebsiteTitle is set, div[data-website-title]
+     with .WebsiteTitle; then, when .WebsiteChecked is set, div.muted
+     holding "checked" and time[datetime=<.WebsiteChecked>] (text
+     .WebsiteCheckedText)), dt "People"
      then dd#candidate-people (one div[data-person] per person, .Name, a
      space, and span.muted with .Role), dt "Class" then dd#candidate-class
      (in a code element) and dt "Cargo" then dd#candidate-cargo (one
@@ -205,8 +228,24 @@
      set), td.ruling-keys (each of .Keys in a code element, separated by
      spaces), td.ruling-by (.By, or .User in a code element when .By is
      empty), td.ruling-at (time[datetime=<.At>] with .AtText) and
-     td.ruling-why (.Why). Then, for active and merged alike,
-     section#rejects with h2 "Rejects" and a p in its header (text "Every
+     td.ruling-why (.Why). Then, only when .Status is "active",
+     section#enrichments with h2 "Enrichments" and a p in its header (text
+     "What the website check found for this candidate, newest first. A
+     redo adds a result and the newest stands; the judge reads it."),
+     then either, when .Enrichments is empty, div#no-enrichments.empty
+     holding h3 "No enrichments" and a p (text "Only a candidate whose
+     email is on its own domain is checked. The enrich pass checks each
+     after an ingest, and the enrich tool starts one.", enrich in a code
+     element), or table#enrichment-list whose th read Kind, State,
+     Landed, Title, Status, Bytes, Error, Domain, When, with one
+     tr[data-enrichment=<.Kind>][data-state=<.State>] per result holding
+     td.enrichment-kind (.Kind in a code element), td.enrichment-state
+     (.State), td.enrichment-url (a.website-link, href .URL, text .URL,
+     when .URL is set), td.enrichment-title (.Title),
+     td.enrichment-status.num (.StatusCode), td.enrichment-size.num
+     (.Size), td.enrichment-error (.Error), td.enrichment-domain (.Domain
+     in a code element) and td.enrichment-at (time[datetime=<.At>] with
+     .AtText). Then, for active and merged alike, section#rejects with h2 "Rejects" and a p in its header (text "Every
      reject and unreject naming this candidate, newest first, each with
      its cohort, who made it, when and why. The latest on a cohort stands;
      a deleted cohort's records stay, without its name."), then either,
@@ -228,7 +267,7 @@
 <body>
 {{template "banner" .Banner}}
 <main>
-{{$a := .Assessment}}{{$estimates := .Estimates}}{{$links := .Links}}{{$rulings := .Rulings}}{{$rejects := .Rejects}}{{with .Candidate}}<h1>{{.ID}}</h1>
+{{$a := .Assessment}}{{$estimates := .Estimates}}{{$links := .Links}}{{$rulings := .Rulings}}{{$enrichments := .Enrichments}}{{$rejects := .Rejects}}{{with .Candidate}}<h1>{{.ID}}</h1>
 <p id="headline" class="cluster">{{if .Name}}{{.Name}} {{end}}<span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "merged"}}info{{else}}ok{{end}}">{{.Status}}</span>{{if $a}}{{if $a.Excluded}} <span class="badge" data-kind="warn">excluded</span>{{end}}{{end}} <span class="muted">updated <time datetime="{{.Updated}}">{{.UpdatedText}}</time></span></p>
 {{if eq .Status "merged"}}<div id="merged" class="alert quiet" data-kind="info"><strong>Merged</strong><p id="merged-into">This candidate was merged into <a class="candidate-link" href="/candidates/{{.MergedInto}}"><code>{{.MergedInto}}</code></a>. Its evidence, estimates and assessment are there now.</p></div>
 {{end}}{{if $a}}{{if $a.Excluded}}<div id="excluded" class="alert quiet" data-kind="warn"><strong>Excluded</strong><p>The owner excluded this candidate, so no cohort shows it unless the cohort shows excluded candidates. The ruling is below; the <code>include</code> tool reverses it.</p></div>
@@ -247,6 +286,7 @@
 {{end}}{{if .County}}<dt>County</dt><dd id="candidate-county"><code>{{.County}}</code></dd>
 {{end}}{{if .Phone}}<dt>Phone</dt><dd id="candidate-phone">{{.Phone}}</dd>
 {{end}}{{if .Email}}<dt>Email</dt><dd id="candidate-email">{{.Email}}</dd>
+{{end}}{{if .Website}}<dt>Website</dt><dd id="candidate-website" data-website="{{.Website}}">{{if eq .Website "unknown"}}<span class="muted">unknown</span>{{else}}{{if .WebsiteURL}}<a class="website-link" href="{{.WebsiteURL}}">{{.WebsiteURL}}</a> {{end}}{{.Website}}{{end}}{{if .WebsiteTitle}}<div data-website-title>{{.WebsiteTitle}}</div>{{end}}{{if .WebsiteChecked}}<div class="muted">checked <time datetime="{{.WebsiteChecked}}">{{.WebsiteCheckedText}}</time></div>{{end}}</dd>
 {{end}}{{if .People}}<dt>People</dt><dd id="candidate-people">{{range .People}}<div data-person>{{.Name}} <span class="muted">{{.Role}}</span></div>{{end}}</dd>
 {{end}}{{if .Class}}<dt>Class</dt><dd id="candidate-class"><code>{{.Class}}</code></dd>
 {{end}}{{if .Cargo}}<dt>Cargo</dt><dd id="candidate-cargo">{{range $i, $c := .Cargo}}{{if $i}} {{end}}<code data-cargo="{{$c}}">{{$c}}</code>{{end}}</dd>
@@ -359,7 +399,31 @@
 <p>Rulings are made by hand: <code>merge</code>, <code>split</code> and <code>not_same</code> with the <code>decide</code> tool, and <code>exclude</code> and <code>include</code> with tools of their own.</p>
 </div>{{end}}
 </section>
-<section id="rejects" class="card flush" aria-labelledby="rejects-title">
+{{if eq .Status "active"}}<section id="enrichments" class="card flush" aria-labelledby="enrichments-title">
+<header><div><h2 id="enrichments-title">Enrichments</h2><p>What the website check found for this candidate, newest first. A redo adds a result and the newest stands; the judge reads it.</p></div></header>
+{{if $enrichments}}<div class="table-scroll">
+<table id="enrichment-list">
+<thead><tr><th>Kind</th><th>State</th><th>Landed</th><th>Title</th><th class="num">Status</th><th class="num">Bytes</th><th>Error</th><th>Domain</th><th>When</th></tr></thead>
+<tbody>
+{{range $enrichments}}<tr data-enrichment="{{.Kind}}" data-state="{{.State}}">
+<td class="enrichment-kind"><code>{{.Kind}}</code></td>
+<td class="enrichment-state">{{.State}}</td>
+<td class="enrichment-url">{{if .URL}}<a class="website-link" href="{{.URL}}">{{.URL}}</a>{{end}}</td>
+<td class="enrichment-title">{{.Title}}</td>
+<td class="enrichment-status num">{{.StatusCode}}</td>
+<td class="enrichment-size num">{{.Size}}</td>
+<td class="enrichment-error">{{.Error}}</td>
+<td class="enrichment-domain"><code>{{.Domain}}</code></td>
+<td class="enrichment-at"><time datetime="{{.At}}">{{.AtText}}</time></td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<div id="no-enrichments" class="empty">
+<h3 class="text-md">No enrichments</h3>
+<p>Only a candidate whose email is on its own domain is checked. The enrich pass checks each after an ingest, and the <code>enrich</code> tool starts one.</p>
+</div>{{end}}
+</section>
+{{end}}<section id="rejects" class="card flush" aria-labelledby="rejects-title">
 <header><div><h2 id="rejects-title">Rejects</h2><p>Every reject and unreject naming this candidate, newest first, each with its cohort, who made it, when and why. The latest on a cohort stands; a deleted cohort's records stay, without its name.</p></div></header>
 {{if $rejects}}<div class="table-scroll">
 <table id="reject-list">

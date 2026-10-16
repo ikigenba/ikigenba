@@ -9,7 +9,7 @@
      (.Banner.Service), dt "Version" then dd#about-version (.Banner.Release
      and .Banner.Commit, present even when empty), and dt "Description"
      then dd#about-description (.Description); then section#how.card with
-     h2 "How it works" and six p: "candidates turns the records scrapes
+     h2 "How it works" and seven p: "candidates turns the records scrapes
      collects into candidate businesses, one per real business with every
      record that describes it attached as evidence. A record attaches by
      its source key, else by its normalized name with its state and ZIP;
@@ -21,14 +21,22 @@
      empty, not 0. Its revenue range, low to high with a confidence,
      combines the size estimates its sources give. Drive time from
      Sandstone, the fleet verdict (pass, fail or unknown), the truck and
-     driver counts, the government match, the categories and the filing
-     dates are kept beside them as facts; none removes a candidate."; "An ingest pass starts when scrapes finishes a run: it
+     driver counts, the website (https, http, none or unknown), the
+     government match, the categories and the filing dates are kept
+     beside them as facts; none removes a candidate."; "An ingest pass starts when scrapes finishes a run: it
      resolves the run's records and marks gone the records the run no
      longer holds, and judges nothing. A judge pass judges every
      candidate again from its records not gone, once a day when the
      judge_candidates trigger fires. rebuild ingests every scraper's
      current run, then judges, and recomputes everything but the
-     candidates and the rulings."; "The owner reads candidates through
+     candidates and the rulings."; "An enrich pass follows every ingest
+     that ends done, or starts when an agent calls enrich: for each
+     candidate whose email is on its own domain and is due, it fetches
+     the domain once and keeps whether it serves a site over https, over
+     http or not at all, with the page it landed on. A site that answers
+     is evidence the business operates; a missing one
+     is never held against it. When it writes a result and no other pass
+     is running, a judge pass follows."; "The owner reads candidates through
      cohorts. A cohort is a saved search: filters, an order, a size and
      the candidates rejected from it. Its members are worked out each
      time it is read: the active, judged candidates that pass every
@@ -46,7 +54,7 @@
      reapplies it and none overwrites it. passes and pass show the
      passes."; "Candidates and cohorts belong to no one: every signed-in
      user sees every candidate, cohort, pass, ruling and reject, and may
-     change every cohort." (judge_candidates, rebuild, cohorts, cohort,
+     change every cohort." (judge_candidates, rebuild, enrich, cohorts, cohort,
      create_cohort, edit_cohort, delete_cohort, reject, unreject,
      candidates, candidate, decide, merge, split, not_same, exclude,
      include, passes and pass each in a code element). No section of the landing page's.
@@ -68,8 +76,9 @@
 <section id="how" class="card" aria-labelledby="how-title">
 <header><h2 id="how-title">How it works</h2></header>
 <p>candidates turns the records scrapes collects into candidate businesses, one per real business with every record that describes it attached as evidence. A record attaches by its source key, else by its normalized name with its state and ZIP; when in doubt it starts a new candidate rather than join the wrong one.</p>
-<p>Each candidate carries two judgments. Its operating confidence, from 0 to 1, says how sure we are that it is a real business operating today; each piece of evidence its records give closes part of the gap to certainty, and with no evidence it is empty, not 0. Its revenue range, low to high with a confidence, combines the size estimates its sources give. Drive time from Sandstone, the fleet verdict (pass, fail or unknown), the truck and driver counts, the government match, the categories and the filing dates are kept beside them as facts; none removes a candidate.</p>
+<p>Each candidate carries two judgments. Its operating confidence, from 0 to 1, says how sure we are that it is a real business operating today; each piece of evidence its records give closes part of the gap to certainty, and with no evidence it is empty, not 0. Its revenue range, low to high with a confidence, combines the size estimates its sources give. Drive time from Sandstone, the fleet verdict (pass, fail or unknown), the truck and driver counts, the website (https, http, none or unknown), the government match, the categories and the filing dates are kept beside them as facts; none removes a candidate.</p>
 <p>An ingest pass starts when scrapes finishes a run: it resolves the run's records and marks gone the records the run no longer holds, and judges nothing. A judge pass judges every candidate again from its records not gone, once a day when the <code>judge_candidates</code> trigger fires. <code>rebuild</code> ingests every scraper's current run, then judges, and recomputes everything but the candidates and the rulings.</p>
+<p>An enrich pass follows every ingest that ends done, or starts when an agent calls <code>enrich</code>: for each candidate whose email is on its own domain and is due, it fetches the domain once and keeps whether it serves a site over https, over http or not at all, with the page it landed on. A site that answers is evidence the business operates; a missing one is never held against it. When it writes a result and no other pass is running, a judge pass follows.</p>
 <p>The owner reads candidates through cohorts. A cohort is a saved search: filters, an order, a size and the candidates rejected from it. Its members are worked out each time it is read: the active, judged candidates that pass every filter, are not rejected from it and are not excluded unless it shows excluded ones, in its order, cut to its size. A filter on a fact that can be unknown has a switch that lets the unknowns in, so none is left out silently. <code>cohorts</code> and <code>cohort</code> read them; <code>create_cohort</code>, <code>edit_cohort</code> and <code>delete_cohort</code> keep them; <code>reject</code> keeps a candidate out of one cohort and <code>unreject</code> lets it back.</p>
 <p><code>candidates</code> finds candidates by name, ZIP or phone, and <code>candidate</code> answers one with its evidence, its rulings and its rejects. <code>decide</code> records the owner's <code>merge</code>, <code>split</code> and <code>not_same</code> rulings, and <code>exclude</code> and <code>include</code> keep a candidate out of every cohort or bring it back; each ruling judges the candidates it touches at once, and every pass reapplies it and none overwrites it. <code>passes</code> and <code>pass</code> show the passes.</p>
 <p>Candidates and cohorts belong to no one: every signed-in user sees every candidate, cohort, pass, ruling and reject, and may change every cohort.</p>
