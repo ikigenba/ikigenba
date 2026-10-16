@@ -29,7 +29,7 @@ const (
 	EvidenceFMCSAActivity = "fmcsa_activity"
 	EvidencePPPLoan       = "ppp_loan"
 	EvidenceOwnDomain     = "own_domain"
-	Rules                 = 3
+	Rules                 = 4
 )
 
 // Person is a party named by a source record.
