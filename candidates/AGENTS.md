@@ -23,18 +23,20 @@ enrich, recorded at once and worked in the background: an ingest is started by a
 that run's rows without judging; a judge is started by the daily
 `cron.judge_candidates.fired` event, delivered on the bus, and judges every
 candidate, reading nothing from scrapes; a rebuild, started by the `rebuild`
-tool, ingests every source's current run and then judges; an enrich,
-started by an ingest that ends `done` or by the `enrich` tool, runs the
-website check on the candidates that are due, fetching the home page of the
-domain of each one's display email and recording what it found, and reads
-nothing from scrapes. An ingest or a rebuild reads the run's record and rows from scrapes over its socket through
+tool, ingests every source's current run, records every derived kind of
+enrichment for every candidate and then judges; an enrich, started by an
+ingest that ends `done` or by the `enrich` tool, walks the registry of
+enrichment kinds `D16-enrichers` names, one kind or every kind, derived
+kinds first, and records a result for each candidate whose inputs for a
+kind differ from those of its newest result, fetching from outside only for
+the website check, and reads nothing from scrapes. An ingest or a rebuild reads the run's record and rows from scrapes over its socket through
 appkit's `scrapes` client, as the caller for `rebuild` and as the service
 identity for a delivery; candidates calls no other sibling. Outside the
 suite it fetches nothing but the websites the website check visits, over
 outbound HTTP through `cli.Process.HTTP`; when `IKIGENBA_SANDBOX` is
 present it fetches only from an in-process stub on loopback, so nothing a
 sandbox runs reaches outside. It keeps its candidates, links, estimates,
-assessments, website results, the owner's rulings, cohorts and rejects, its
+assessments, enrichment results and facts, the owner's rulings, cohorts and rejects, its
 passes and the ZIP drive-time table in its own
 SQLite database, `state/candidates.db` resolved against the working
 directory and opened through appkit's `db` package; it is the only writer of
@@ -73,8 +75,8 @@ build run writes the Go source, the tests, `go.mod`'s requirements and
 `go.sum`, the migrations under `migrations/` (`0001_candidates.sql`,
 `0002_links.sql`, `0003_estimates.sql`, `0004_assessments.sql`,
 `0005_decisions.sql`, `0006_passes.sql`, `0007_zip_drive.sql`,
-`0008_windows.sql`, `0009_judgments.sql`, `0010_cohorts.sql` and
-`0011_enrichments.sql`), which
+`0008_windows.sql`, `0009_judgments.sql`, `0010_cohorts.sql`,
+`0011_enrichments.sql` and `0012_facts.sql`), which
 the root package embeds, and everything under `etc/` (`etc/manifest.toml`
 and the nginx fragment `etc/nginx.conf`). The
 delivery that created candidates seeded `go.mod` on appkit; the build run
@@ -176,7 +178,8 @@ The sub-project's tests are all `*_test.go` files in the module: the root
 package, `cmd/candidates` and everything under `internal/` (`internal/cli`,
 `internal/settings`, `internal/server`, `internal/web`, `internal/store`,
 `internal/sources`, `internal/fmcsa`, `internal/ppp`, `internal/scoring`,
-`internal/passes`, `internal/website`, `internal/trail`, `internal/urls`,
+`internal/passes`, `internal/website`, `internal/enrichers`,
+`internal/trail`, `internal/urls`,
 `internal/tools` and `internal/pages`).
 This is the file set the canonical gap greps for requirement ids:
 
@@ -264,9 +267,11 @@ such a transport, or names `IKIGENBA_SANDBOX` in the lookup it gives `Run`
 to check against the stub. The real fetcher's refusal of inward addresses is
 proved with addresses it refuses before any connection, never by fetching.
 
-**The ZIP table is the embedded one.** A test that needs drive minutes reads
-the table the root package embeds, through the root package, never from the
-checkout's `share/`.
+**The ZIP table is the embedded one or the test's own.** A test that needs
+the real drive minutes reads the table the root package embeds, through the
+root package, never from the checkout's `share/`; a test may instead load a
+ZIP table of its own into its own store with `ReplaceZipDrive`, as design
+names.
 
 **The state is an isolated directory.** Each test gives candidates a working
 directory inside a test-owned temporary directory, so the database is the
@@ -277,7 +282,8 @@ builds the store over that handle with `store.New`. Tests may create
 filesystem fixtures inside that temporary tree (a regular file named
 `state`, a file at `state/candidates.db` that is not a database, a database
 a test's own `db.Open` made and then changed through `DB.Write`, candidates,
-links, rulings, cohorts, rejects and passes a test's own store recorded, passes left
+links, rulings, cohorts, rejects, enrichments, ZIP tables and passes a test's
+own store recorded, passes left
 `running`, `done` or `failed`); nothing touches
 `/var/opt/ikigenba/candidates`, the checkout's `state/` or a shared file. A
 database failure is provoked with `SetFailing(true)` on the handle the store
@@ -474,5 +480,5 @@ with telemetry and auth. The host needs outbound HTTP and HTTPS to the
 public internet, since the website check fetches candidates' own domains;
 candidates holds no secret of its own. The host's backup archives `state/`
 whole, so `candidates.db` is taken with it; it holds candidates, their
-evidence copied from public records, their website results, the owner's
+evidence copied from public records, their enrichment results and facts, the owner's
 rulings, cohorts and rejects and the passes, and no secret.

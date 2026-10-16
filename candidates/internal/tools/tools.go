@@ -31,7 +31,7 @@ const (
 	DescribeCandidate    string = "Read a candidate with its evidence, assessment and rulings."
 	DescribePasses       string = "Read recorded passes."
 	DescribePass         string = "Read a pass."
-	DescribeEnrich       string = "Check websites of candidates whose results are due for refresh."
+	DescribeEnrich       string = "Enrich candidates whose inputs changed since their last result, for one kind or every kind."
 	DescribeRebuild      string = "Start a resolution pass over current scraper runs."
 	DescribeDecide       string = "Record an owner's ruling and reassess the affected candidates."
 	RefuseNotFound       string = "The requested record was not found."
