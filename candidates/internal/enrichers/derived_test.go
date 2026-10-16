@@ -63,7 +63,7 @@ func TestDriveMinutesValid(t *testing.T) {
 	}
 }
 
-// R-3LPJ-J75P
+// R-UK9O-6ROP
 func TestLinkFactsDerive(t *testing.T) {
 	date := func(v string) time.Time {
 		t.Helper()
@@ -78,6 +78,11 @@ func TestLinkFactsDerive(t *testing.T) {
 	gone := enrichers.Link{Gone: true, Scraper: ppp.Name, Reading: sources.Reading{KnownSince: date("2010-01-01T00:00:00Z"), Filed: date("2026-01-01T00:00:00Z"), GovernmentMatch: "ignored", Category: "ignored"}}
 	pg := p
 	pg.Gone = true
+	unrepresentable := enrichers.Link{Reading: sources.Reading{
+		KnownSince: time.Date(-1, 1, 1, 0, 0, 0, 0, time.UTC),
+		Filed:      time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC),
+	}}
+	noScraper := enrichers.Link{Reading: sources.Reading{Category: sources.CategoryConstruction, GovernmentMatch: "x"}}
 	construction := enrichers.Category{Name: sources.CategoryConstruction, Source: ppp.Name}
 	trucking := enrichers.Category{Name: sources.CategoryTrucking, Source: fmcsa.Name}
 	for _, tc := range []struct {
@@ -97,21 +102,38 @@ func TestLinkFactsDerive(t *testing.T) {
 		{"government order", []enrichers.Link{{}, {Reading: sources.Reading{GovernmentMatch: "x"}}, {Reading: sources.Reading{GovernmentMatch: "y"}}}, "", "", "x", []enrichers.Category{}},
 		{"gone government", []enrichers.Link{{}, {Gone: true, Reading: sources.Reading{GovernmentMatch: "x"}}, {Reading: sources.Reading{GovernmentMatch: "y"}}}, "", "", "y", []enrichers.Category{}},
 		{"UTC dates", []enrichers.Link{{Reading: sources.Reading{KnownSince: date("2018-04-09T23:30:00-05:00"), Filed: date("2025-06-01T00:30:00+05:00")}}}, "2018-04-10", "2025-05-31", "", []enrichers.Category{}},
+		{"unrepresentable dates", []enrichers.Link{unrepresentable}, "", "", "", []enrichers.Category{}},
+		{"opposite unrepresentable dates", []enrichers.Link{{Reading: sources.Reading{KnownSince: unrepresentable.Reading.Filed, Filed: unrepresentable.Reading.KnownSince}}}, "", "", "", []enrichers.Category{}},
+		{"ignore unrepresentable dates", []enrichers.Link{unrepresentable, p}, "2018-04-09", "2020-04-09", "", []enrichers.Category{construction}},
+		{"ignore later unrepresentable dates", []enrichers.Link{p, unrepresentable}, "2018-04-09", "2020-04-09", "", []enrichers.Category{construction}},
+		{"UTC year overflow", []enrichers.Link{{Reading: sources.Reading{KnownSince: date("9999-12-31T23:00:00-05:00"), Filed: date("9999-12-31T23:00:00-05:00")}}}, "", "", "", []enrichers.Category{}},
+		{"UTC year underflow", []enrichers.Link{{Reading: sources.Reading{KnownSince: date("0000-01-01T00:30:00+05:00"), Filed: date("0000-01-01T00:30:00+05:00")}}}, "", "", "", []enrichers.Category{}},
+		{"date boundaries", []enrichers.Link{{Reading: sources.Reading{KnownSince: date("0000-01-01T00:00:00Z"), Filed: date("9999-12-31T00:00:00Z")}}}, "0000-01-01", "9999-12-31", "", []enrichers.Category{}},
+		{"UTC enters date range", []enrichers.Link{{Reading: sources.Reading{
+			KnownSince: time.Date(-1, 12, 31, 23, 0, 0, 0, time.FixedZone("west", -5*60*60)),
+			Filed:      time.Date(10000, 1, 1, 0, 30, 0, 0, time.FixedZone("east", 5*60*60)),
+		}}}, "0000-01-01", "9999-12-31", "", []enrichers.Category{}},
+		{"no scraper", []enrichers.Link{noScraper}, "", "", "x", []enrichers.Category{}},
+		{"no scraper beside category", []enrichers.Link{noScraper, p}, "2018-04-09", "2020-04-09", "x", []enrichers.Category{construction}},
 		{"category source order", []enrichers.Link{{Scraper: "z", Reading: sources.Reading{Category: "a"}}, {Scraper: "a", Reading: sources.Reading{Category: "a"}}, {Scraper: "a", Reading: sources.Reading{Category: "B"}}, {}}, "", "", "", []enrichers.Category{{Name: "B", Source: "a"}, {Name: "a", Source: "a"}, {Name: "a", Source: "z"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := enrichers.Subject{ID: "candidate", Zip: "55072", Minutes: count(84), Links: tc.links}
-			before := subjectJSON(t, s)
+			before := s
+			if s.Links != nil {
+				before.Links = append([]enrichers.Link{}, s.Links...)
+			}
+			before.Minutes = count(*s.Minutes)
 			want := enrichers.LinkFound{KnownSince: tc.known, NewestFiling: tc.filed, GovernmentMatch: tc.government, Categories: tc.categories, FleetVerdict: sources.FleetUnknown}
 			assertLinkResult(t, s, want)
-			if !bytes.Equal(before, subjectJSON(t, s)) {
+			if !reflect.DeepEqual(before, s) {
 				t.Fatal("subject changed")
 			}
 		})
 	}
 }
 
-// R-3O5C-AQN3
+// R-UMPG-YB63
 func TestLinkFactsFleet(t *testing.T) {
 	first := enrichers.Link{Scraper: fmcsa.Name, Reading: sources.Reading{FleetVerdict: sources.FleetFail, PowerUnits: count(1), Drivers: count(2)}}
 	second := enrichers.Link{Scraper: fmcsa.Name, Reading: sources.Reading{FleetVerdict: sources.FleetPass, PowerUnits: count(5), Drivers: count(6)}}
@@ -124,6 +146,8 @@ func TestLinkFactsFleet(t *testing.T) {
 		{"fail", sources.FleetFail, count(1), count(4)},
 		{"unknown", sources.FleetUnknown, nil, nil},
 		{"legacy", "", count(3), count(4)},
+		{"unsupported verdict", "maybe", count(3), count(4)},
+		{"wrong case verdict", "PASS", count(3), count(4)},
 		{"negative units", sources.FleetPass, count(-1), count(4)},
 		{"negative drivers", sources.FleetPass, count(3), count(-1)},
 		{"zero counts", sources.FleetPass, count(0), count(0)},
@@ -132,7 +156,7 @@ func TestLinkFactsFleet(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			l := enrichers.Link{Scraper: fmcsa.Name, Reading: sources.Reading{Fleet: true, FleetVerdict: tc.verdict, PowerUnits: tc.units, Drivers: tc.drivers}}
 			verdict := tc.verdict
-			if verdict == "" {
+			if verdict == "" || verdict == "maybe" || verdict == "PASS" {
 				verdict = sources.FleetUnknown
 			}
 			units, drivers := tc.units, tc.drivers
@@ -153,6 +177,7 @@ func TestLinkFactsFleet(t *testing.T) {
 	assertFleet(t, []enrichers.Link{first, second}, sources.FleetUnknown, nil, nil)
 }
 
+// R-UNTA-0OLN
 func TestLinkFactsValid(t *testing.T) {
 	e := enrichers.LinkFacts{}
 	valid := []string{`{"categories":[],"fleet_verdict":"unknown"}`, ` {"categories":[],"fleet_verdict":"pass","power_units":0,"drivers":null} `, `{"categories":[{"name":"construction","source":"ppp"}],"fleet_verdict":"fail","known_since":"2018-04-09","newest_filing":"2025-06-01","government_match":"x","power_units":9223372036854775807,"drivers":4}`, `{"categories":[],"FLEET_VERDICT":"unknown"}`, `{"categories":[],"fleet_verdict":"unknown","known_since":null}`}
@@ -194,6 +219,10 @@ func assertLinkResult(t *testing.T, s enrichers.Subject, want enrichers.LinkFoun
 	if r.Source != enrichers.SourceLinks || r.Cost != 0 || !bytes.Equal(r.Found, b) {
 		t.Fatalf("result %+v, found %s, want %s", r, r.Found, b)
 	}
+	// R-UNTA-0OLN
+	if !e.Valid(r.Found) {
+		t.Fatalf("invalid derived link facts: %s", r.Found)
+	}
 }
 
 func assertFleet(t *testing.T, links []enrichers.Link, verdict string, units, drivers *int64) {
@@ -207,6 +236,10 @@ func assertFleet(t *testing.T, links []enrichers.Link, verdict string, units, dr
 	}
 	if got.FleetVerdict != verdict || !reflect.DeepEqual(got.PowerUnits, units) || !reflect.DeepEqual(got.Drivers, drivers) {
 		t.Fatalf("fleet %+v, want %q %v %v", got, verdict, units, drivers)
+	}
+	// R-UNTA-0OLN
+	if !(enrichers.LinkFacts{}).Valid(r.Found) {
+		t.Fatalf("invalid derived fleet facts: %s", r.Found)
 	}
 	if !bytes.Equal(before, subjectJSON(t, s)) {
 		t.Fatal("subject changed")

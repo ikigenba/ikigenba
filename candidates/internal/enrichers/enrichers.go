@@ -184,16 +184,16 @@ func (LinkFacts) Derive(s Subject) Result {
 			continue
 		}
 		r := l.Reading
-		if !r.KnownSince.IsZero() && (known.IsZero() || r.KnownSince.Before(known)) {
+		if datable(r.KnownSince) && (known.IsZero() || r.KnownSince.Before(known)) {
 			known = r.KnownSince
 		}
-		if !r.Filed.IsZero() && (filed.IsZero() || r.Filed.After(filed)) {
+		if datable(r.Filed) && (filed.IsZero() || r.Filed.After(filed)) {
 			filed = r.Filed
 		}
 		if f.GovernmentMatch == "" {
 			f.GovernmentMatch = r.GovernmentMatch
 		}
-		if r.Category != "" {
+		if r.Category != "" && l.Scraper != "" {
 			c := Category{Name: r.Category, Source: l.Scraper}
 			if !seen[c] {
 				seen[c] = true
@@ -202,7 +202,7 @@ func (LinkFacts) Derive(s Subject) Result {
 		}
 		if !fleet && l.Scraper == fmcsa.Name {
 			fleet = true
-			if r.FleetVerdict != "" {
+			if r.FleetVerdict == sources.FleetPass || r.FleetVerdict == sources.FleetFail || r.FleetVerdict == sources.FleetUnknown {
 				f.FleetVerdict = r.FleetVerdict
 			}
 			f.PowerUnits = knownCount(r.PowerUnits)
@@ -222,6 +222,10 @@ func (LinkFacts) Derive(s Subject) Result {
 		return strings.Compare(a.Source, b.Source)
 	})
 	return result(SourceLinks, f)
+}
+
+func datable(t time.Time) bool {
+	return !t.IsZero() && t.UTC().Year() >= 0 && t.UTC().Year() <= 9999
 }
 
 // Valid checks the strict link-facts JSON shape.
