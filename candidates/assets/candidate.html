@@ -82,22 +82,22 @@
      slice of strings; empty for other kinds), .By (the email of who made
      it; empty when none), .User (their user id), .At and .AtText (when it
      was made, RFC 3339 UTC to the second, and UTC to the minute) and .Why
-     (the sentence given); .Rejects, every reject and unreject record
+     (the sentence given); .Enrichments, every enrichment result on this
+     candidate, newest first, empty when merged, each with .Kind (its kind
+     as stored, "website_check"), .State ("https", "http" or "none", as
+     stored), .URL (the URL it landed on; empty when none), .Title (the
+     page title, as stored; empty when none), .StatusCode (the final HTTP
+     status code as text, "200"; empty when no response came), .Size (int,
+     the body bytes read), .Error (the last failed attempt's error text, as
+     stored; empty on success), .Domain (the domain checked, "example.com")
+     and .At and .AtText (when it was found, RFC 3339 UTC to the second,
+     and UTC to the minute); .Rejects, every reject and unreject record
      naming this candidate, newest first, each with .Kind ("reject" or
      "unreject", as stored), .Cohort (the cohort's coh_ id), .CohortName
      (the cohort's name; empty when the cohort is deleted), .By (the email
      of who made it; empty when none), .User (their user id), .At and
      .AtText (when it was made, RFC 3339 UTC to the second, and UTC to the
-     minute) and .Why (the sentence given); .Enrichments, every enrichment
-     result on this candidate, newest first, empty when merged, each with
-     .Kind (its kind as stored, "website_check"), .State ("https", "http"
-     or "none", as stored), .URL (the URL it landed on; empty when none),
-     .Title (the page title, as stored; empty when none), .StatusCode (the
-     final HTTP status code as text, "200"; empty when no response came),
-     .Size (int, the body bytes read), .Error (the last failed attempt's
-     error text, as stored; empty on success), .Domain (the domain
-     checked, "example.com") and .At and .AtText (when it was found, RFC
-     3339 UTC to the second, and UTC to the minute). Words and tags are shown as stored; the
+     minute) and .Why (the sentence given). Words and tags are shown as stored; the
      candidate status's kind is chosen here: "active" ok, "merged" info.
      Hooks: title "<.Candidate.ID> · candidates"; h1 with text .ID;
      p#headline.cluster holding, when .Name is set, .Name and a space, then

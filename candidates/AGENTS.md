@@ -7,7 +7,8 @@ passed as descriptor 3 (`/run/ikigenba/candidates.sock` on a host), behind
 the host's nginx. candidates is stages two and three of the funnel, resolve
 and qualify: it turns scrapes' rows into candidates, one per real business
 with every row that describes it attached as evidence, and judges each.
-Each candidate is judged twice, under rules version 4: an operating
+Each candidate is judged twice, under the rules version `D13-scoring`
+names: an operating
 confidence, how sure candidates is that the business operates today, with
 the evidence behind it, and a revenue range. A cohort is a saved search the
 owner creates and grooms: filters, a sort order, a size and a reject list,
@@ -16,28 +17,33 @@ automatically, and a candidate leaves every cohort only by the owner's
 exclusion. A source is Go code in the service
 that knows how one scraper's rows become match keys, tags, a size estimate,
 a filing date, operating evidence and a category, and the fixed registry
-holds two, `fmcsa` and `ppp`. A pass is one ingest, judge or rebuild,
-recorded at once and worked in the background: an ingest is started by a
+holds two, `fmcsa` and `ppp`. A pass is one ingest, judge, rebuild or
+enrich, recorded at once and worked in the background: an ingest is started by a
 `scrape.finished` event of a `done` run, delivered on the bus, and resolves
 that run's rows without judging; a judge is started by the daily
 `cron.judge_candidates.fired` event, delivered on the bus, and judges every
 candidate, reading nothing from scrapes; a rebuild, started by the `rebuild`
-tool, ingests every source's current run and then judges. An ingest or a
-rebuild reads the run's record and rows from scrapes over its socket through
+tool, ingests every source's current run and then judges; an enrich,
+started by an ingest that ends `done` or by the `enrich` tool, runs the
+website check on the candidates that are due, fetching the home page of the
+domain of each one's display email and recording what it found, and reads
+nothing from scrapes. An ingest or a rebuild reads the run's record and rows from scrapes over its socket through
 appkit's `scrapes` client, as the caller for `rebuild` and as the service
-identity for a delivery; candidates calls no other sibling and no service
-outside the suite. It keeps its candidates, links, estimates, assessments,
-the owner's rulings, cohorts and rejects, its passes and the ZIP drive-time table in its own
+identity for a delivery; candidates calls no other sibling. Outside the
+suite it fetches nothing but the websites the website check visits, over
+outbound HTTP through `cli.Process.HTTP`; when `IKIGENBA_SANDBOX` is
+present it fetches only from an in-process stub on loopback, so nothing a
+sandbox runs reaches outside. It keeps its candidates, links, estimates,
+assessments, website results, the owner's rulings, cohorts and rejects, its
+passes and the ZIP drive-time table in its own
 SQLite database, `state/candidates.db` resolved against the working
 directory and opened through appkit's `db` package; it is the only writer of
 it. It emits an event on the bus for each pass that begins and each that
 ends, and records every scrapes read in the trail. Its manifest sets
 `guests = false`: nginx lets no request without a credential through, to the
 pages and to `/mcp` alike, and its nginx fragment answers the bus's two paths
-404 at the public name. At `/mcp` it offers fifteen MCP tools, which agents
-reach through the MCP gateway: `cohorts`, `cohort`, `candidates`,
-`candidate`, `passes`, `pass`, `rebuild`, `decide`, `exclude`, `include`,
-`create_cohort`, `edit_cohort`, `delete_cohort`, `reject` and `unreject`.
+404 at the public name. At `/mcp` it offers the MCP tools `D10-tools`
+catalogs, which agents reach through the MCP gateway.
 At `/` it serves a page of the cohorts and the passes, a page per cohort at
 `/cohorts/<id>`, a page per candidate at `/candidates/<id>`, a page per pass
 at `/passes/<id>`, a tools page at `/tools`, an about screen at `/about` and a
@@ -55,7 +61,8 @@ middleware and the writer candidates' events go through), `db` (the
 database's handle and its migrations), `services` (the services file),
 `version` (the identity and its display string), `events` (the event bus)
 and `scrapes` (the client of scrapes' socket). It uses neither `artifacts`
-nor `connections`.
+nor `connections`. It also requires `golang.org/x/net`, whose `html` package
+the website check parses a page's title with.
 The contract is the documents in `specs/design/`. This file restates none of
 it. candidates is an app, so it has no stories: its intent is the decisions
 document that delivered it, or what was agreed in conversation, together with
@@ -66,7 +73,8 @@ build run writes the Go source, the tests, `go.mod`'s requirements and
 `go.sum`, the migrations under `migrations/` (`0001_candidates.sql`,
 `0002_links.sql`, `0003_estimates.sql`, `0004_assessments.sql`,
 `0005_decisions.sql`, `0006_passes.sql`, `0007_zip_drive.sql`,
-`0008_windows.sql`, `0009_judgments.sql` and `0010_cohorts.sql`), which
+`0008_windows.sql`, `0009_judgments.sql`, `0010_cohorts.sql` and
+`0011_enrichments.sql`), which
 the root package embeds, and everything under `etc/` (`etc/manifest.toml`
 and the nginx fragment `etc/nginx.conf`). The
 delivery that created candidates seeded `go.mod` on appkit; the build run
@@ -88,7 +96,10 @@ written by the user or the delivering agent, following the repository's
 `design/`, and are inputs to the spec: the build run reads them and never
 writes them. The code parses them into the set appkit's `page.Templates`
 returns and executes them by template name; it never writes markup of its
-own, not even a fragment or an error page. Go's `embed` reaches only files at
+own, not even a fragment or an error page. The one departure is design's:
+the website check's loopback stub answers with bodies of its own, fixture
+bytes standing in for a foreign site, which candidates' routes never serve
+and no person sees (`D15-website-check`). Go's `embed` reaches only files at
 or below the embedding package's directory, so the module's root package (the
 directory holding `go.mod`) embeds `assets/`, and design names what it
 exports.
@@ -133,7 +144,12 @@ and the build run never writes either.
     exports the `db`, `paging`, `version` and `scrapes` packages and whose
     `page.Banner` carries the trail, the home link and the tools flag the
     templates use, with `Release` and `Commit`. See Adopting appkit below.
-    It and the modules it pulls in are candidates' only dependencies.
+  - `golang.org/x/net`, for its `html` package, which the website check
+    parses a page's title with: approved by the delivery of the website
+    check, and required by the build run at a release it chooses.
+
+  These two and the modules they pull in are candidates' only
+  dependencies.
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through
   it (see Test discipline)
@@ -160,8 +176,8 @@ The sub-project's tests are all `*_test.go` files in the module: the root
 package, `cmd/candidates` and everything under `internal/` (`internal/cli`,
 `internal/settings`, `internal/server`, `internal/web`, `internal/store`,
 `internal/sources`, `internal/fmcsa`, `internal/ppp`, `internal/scoring`,
-`internal/passes`, `internal/trail`, `internal/urls`, `internal/tools` and
-`internal/pages`).
+`internal/passes`, `internal/website`, `internal/trail`, `internal/urls`,
+`internal/tools` and `internal/pages`).
 This is the file set the canonical gap greps for requirement ids:
 
 ```
@@ -202,8 +218,9 @@ These rules govern the unit tests: everything `go test ./...` runs.
 **The run seam carries the process.** candidates binds nothing itself; it
 serves on the listener it is passed. Arguments, environment lookup and
 removal, the pid, the inherited listener, the output streams, the clock, the
-pause between delivery attempts, the sweeper's timer, the random source and
-the working directory come in through the run seam design declares
+pause between delivery attempts, the sweeper's and the website check's
+timer, the random source, the working directory and the HTTP client the
+website check fetches through come in through the run seam design declares
 (`cli.Run` with `cli.Process`), and tests inject them. A `Run`-level test
 sets the version string to one of its own and `Dir` to a temporary directory
 of its own, so the database lands there and never in the checkout. A test
@@ -233,7 +250,19 @@ request it receives, identity headers included; a test of the passes or the
 tools hands them appkit's `scrapes` client built over such an entry, as
 design names. A test proves a read by what the fake received. The bus and
 telemetry are captures. The exec'ing test never lets the binary reach
-scrapes, since nothing it asks starts a pass.
+scrapes, since the one pass it starts is an enrich, which reads nothing
+from scrapes.
+
+**Websites are faked, never fetched.** No test reaches a website outside
+loopback. A test of the check hands `website.Checker` a client over an
+`http.RoundTripper` of its own, which answers by URL, holds or fails a
+request on demand and records each it receives, and an `After` whose
+channels it holds, as design names; a test of the stub checks through the
+stub's own client, which dials only its loopback listeners. A `Run`-level
+test leaves `Process.HTTP` nil, so it has no checker, hands in a client over
+such a transport, or names `IKIGENBA_SANDBOX` in the lookup it gives `Run`
+to check against the stub. The real fetcher's refusal of inward addresses is
+proved with addresses it refuses before any connection, never by fetching.
 
 **The ZIP table is the embedded one.** A test that needs drive minutes reads
 the table the root package embeds, through the root package, never from the
@@ -265,8 +294,10 @@ finished times, a link's first and last seen, a ruling's time, a judge's
 weighing of a filing's age and the prune's ordering are proved through the
 injected `Now`: a test advances the clock it handed in, never waits real
 seconds. The sweeper waits on `Process.After`; a test hands in an `After`
-whose channels it holds and delivers on one to make the next prune happen. A
-test that sleeps to age a pass or a filing or to let a sweep come round is a
+whose channels it holds and delivers on one to make the next prune happen.
+The website check's attempt timeouts and its pace between checks wait on the
+same `After`, told apart by duration, and a test delivers on or holds those
+channels the same way. A test that sleeps to age a pass or a filing or to let a sweep come round is a
 bug. The judgment formulas live once, in Go: no pass and no start rewrites
 the stored judgments in SQL, so no test compares SQL with Go. A test waits
 for something it started to finish (a pass reaching `done` or `failed`, a
@@ -295,6 +326,13 @@ identity's `String()` under the same two values it composes into the child's
 environment; the commit it sets is longer than seven characters, so a `main`
 that skipped shortening would fail. Any test that sets a variable with
 `testing.T.Setenv` does not call `t.Parallel`.
+
+**Process-wide state is not shared.** A test that changes the standard
+`log` package's output, as the proof that the stub writes nothing through
+it does with `log.SetOutput`, restores it when it ends and does not call
+`t.Parallel`, so no other test's line lands in its buffer. Nor does a test
+that measures the heap with `runtime.ReadMemStats`, since another test's
+allocations would land in its reading.
 
 **Identity comes from headers the test sets.** appkit's `identity.Require`
 wraps every route but the event bus's `/events` and `/declarations`, so a
@@ -361,16 +399,22 @@ display string with its `String()` after setting the same two values with
 neither variable in the child's environment and expects exactly one empty
 line. The test waits for `READY=1`, makes the requests design names for the
 binary, over the socket, then stops the child with `SIGTERM`, and in a second
-run with `SIGINT`, asserting what design states. It never starts a pass. The
+run with `SIGINT`, asserting what design states. It may make exactly one
+`enrich` call, with kind `website_check`, on the empty store the child
+started on and with `IKIGENBA_SANDBOX` absent from the child's
+environment, expecting a `running` pass record, to prove the binary wires a
+real HTTP client; it waits for that pass to end before it stops the child,
+starts no other pass and, with nothing due, fetches nothing. The
 binary's `--version` output, the MCP `serverInfo` and `service.started` all
 carry that display string, and the pages' footer the release and commit. Any
 other test that builds, execs, waits on, or signals a process is a bug.
 
 ## Live tests
 
-There are none. candidates calls no service outside the suite, and its one
-sibling read, scrapes, is faked in every unit test; the sandbox check proves
-the real chain.
+There are none. No test reaches outside the suite: scrapes, candidates' one
+sibling read, is faked in every unit test, and the website check fetches
+through a transport the test holds or the loopback stub. The sandbox
+fetches only from the stub, and the sandbox check proves the real chain.
 
 ## Gates
 
@@ -392,8 +436,10 @@ one; a finding it cannot fix, or believes is wrong, is filed as an issue.
    sub-projects lint at once; `make lint` runs this form
 
 Gate 5 also flags an undocumented `package main` (`revive`) and an
-`http.Server` without `ReadHeaderTimeout` (`gosec` G112); both are fixed in
-code, never suppressed.
+`http.Server` without `ReadHeaderTimeout` (`gosec` G112), and a TLS
+configuration that sets `InsecureSkipVerify` (`gosec` G402), which the stub's
+client avoids by trusting its own certificate; all are fixed in code, never
+suppressed.
 
 ## Commit conventions
 
@@ -424,8 +470,9 @@ with every other app, its part of the release holding `bin/candidates`,
 that release. The host must run events, which candidates emits to and takes
 scrapes' `scrape.finished` and cron's `cron.judge_candidates.fired` from,
 and scrapes, which it reads over the socket; its services file names them,
-with telemetry and auth. candidates needs no outbound network and holds no
-secret of its own. The host's backup archives
-`state/` whole, so `candidates.db` is taken with it; it holds candidates,
-their evidence copied from public records, the owner's rulings, cohorts
-and rejects and the passes, and no secret.
+with telemetry and auth. The host needs outbound HTTP and HTTPS to the
+public internet, since the website check fetches candidates' own domains;
+candidates holds no secret of its own. The host's backup archives `state/`
+whole, so `candidates.db` is taken with it; it holds candidates, their
+evidence copied from public records, their website results, the owner's
+rulings, cohorts and rejects and the passes, and no secret.
