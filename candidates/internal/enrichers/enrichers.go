@@ -139,7 +139,7 @@ func (DriveMinutes) Inputs(s Subject) string { return s.Zip }
 
 // Derive records the table value, including an unknown ZIP.
 func (DriveMinutes) Derive(s Subject) Result {
-	return result(SourceZipDrive, MinutesFound{Minutes: s.Minutes})
+	return result(SourceZipDrive, MinutesFound{Minutes: knownCount(s.Minutes)})
 }
 
 // Valid checks the strict drive-time JSON shape.
@@ -205,8 +205,8 @@ func (LinkFacts) Derive(s Subject) Result {
 			if r.FleetVerdict != "" {
 				f.FleetVerdict = r.FleetVerdict
 			}
-			f.PowerUnits = r.PowerUnits
-			f.Drivers = r.Drivers
+			f.PowerUnits = knownCount(r.PowerUnits)
+			f.Drivers = knownCount(r.Drivers)
 		}
 	}
 	if !known.IsZero() {
@@ -259,6 +259,12 @@ func validDate(s string) bool {
 	return err == nil
 }
 func nonnegative(v *int64) bool { return v == nil || *v >= 0 }
+func knownCount(v *int64) *int64 {
+	if !nonnegative(v) {
+		return nil
+	}
+	return v
+}
 func strictObject(b json.RawMessage, v any) bool {
 	b = bytes.TrimSpace(b)
 	if len(b) == 0 || b[0] != '{' {
