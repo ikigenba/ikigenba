@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
 	"github.com/ikigenba/ikigenba/candidates/internal/scoring"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
@@ -13,7 +14,7 @@ import (
 
 func assessment(r *records, c Candidate, t time.Time) ([]sources.Estimate, Assessment) {
 	t = t.UTC().Truncate(time.Second)
-	a := Assessment{Candidate: c.ID, Evidence: []sources.Evidence{}, Categories: []sources.Category{}, Rules: sources.Rules, Calculated: t}
+	a := Assessment{Candidate: c.ID, FleetVerdict: sources.FleetUnknown, Evidence: []sources.Evidence{}, Categories: []sources.Category{}, Rules: sources.Rules, Calculated: t}
 	estimates := map[string]sources.Estimate{}
 	seen := map[string]bool{}
 	evidence := map[string]sources.Evidence{}
@@ -25,7 +26,19 @@ func assessment(r *records, c Candidate, t time.Time) ([]sources.Estimate, Asses
 		rd := l.Reading
 		if !seen[l.Scraper] {
 			seen[l.Scraper] = true
-			a.Fleet = a.Fleet || rd.Fleet
+			if l.Scraper == fmcsa.Name {
+				if rd.FleetVerdict != "" {
+					a.FleetVerdict = rd.FleetVerdict
+				}
+				if rd.PowerUnits != nil {
+					n := *rd.PowerUnits
+					a.PowerUnits = &n
+				}
+				if rd.Drivers != nil {
+					n := *rd.Drivers
+					a.Drivers = &n
+				}
+			}
 			if rd.Estimate != nil {
 				estimates[l.Scraper] = *rd.Estimate
 			}
@@ -116,7 +129,7 @@ func (s *Store) Judge(ctx context.Context, ids []string) (Counts, error) {
 	return out, nil
 }
 
-// JudgeAll replaces every active candidate's judgments and repairs cargo lookups.
+// JudgeAll replaces every active candidate's judgments.
 func (s *Store) JudgeAll(ctx context.Context) (Counts, error) {
 	var out Counts
 	err := unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
@@ -145,10 +158,7 @@ func (s *Store) JudgeAll(ctx context.Context) (Counts, error) {
 		if err != nil {
 			return err
 		}
-		if err = execSQL(ctx, tx, "DELETE FROM candidate_cargo"); err != nil {
-			return err
-		}
-		return execSQL(ctx, tx, `INSERT INTO candidate_cargo(candidate,cargo) SELECT DISTINCT candidates.id,j.value FROM candidates,json_each(candidates.cargo) AS j WHERE j.type='text'`)
+		return nil
 	}))
 	if err != nil {
 		return Counts{}, err

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
+	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
 // Person is a tool answer value.
@@ -49,39 +50,98 @@ func (v Candidate) MarshalJSON() ([]byte, error) {
 	return json.Marshal(plain(v))
 }
 
-// ShortlistEntry is a tool answer value.
-type ShortlistEntry struct {
+// Member is a cohort member's stored judgment.
+type Member struct {
 	Candidate           Candidate `json:"candidate"`
 	OperatingConfidence *float64  `json:"operating_confidence,omitempty"`
 	RevenueLow          *int64    `json:"revenue_low,omitempty"`
 	RevenueHigh         *int64    `json:"revenue_high,omitempty"`
 	RevenueConfidence   *float64  `json:"revenue_confidence,omitempty"`
 	Categories          []string  `json:"categories"`
-	Fleet               bool      `json:"fleet"`
+	FleetVerdict        string    `json:"fleet_verdict"`
 	Minutes             *int64    `json:"minutes,omitempty"`
 	GovernmentMatch     string    `json:"government_match,omitempty"`
+	KnownSince          string    `json:"known_since,omitempty"`
+	NewestFiling        string    `json:"newest_filing,omitempty"`
+	Excluded            bool      `json:"excluded"`
 }
 
 // MarshalJSON encodes empty categories as an array.
-func (v ShortlistEntry) MarshalJSON() ([]byte, error) {
-	type plain ShortlistEntry
+func (v Member) MarshalJSON() ([]byte, error) {
+	type plain Member
 	if v.Categories == nil {
 		v.Categories = []string{}
 	}
 	return json.Marshal(plain(v))
 }
 
-// ShortlistPage is a tool answer value.
-type ShortlistPage struct {
-	Shortlist []ShortlistEntry `json:"shortlist"`
-	Next      *string          `json:"next,omitempty" description:"Present when more entries follow; pass it back as page to get them."`
+// Cohort is a saved search definition.
+type Cohort struct {
+	ID           string              `json:"id"`
+	Name         string              `json:"name"`
+	Size         int64               `json:"size"`
+	Filters      store.CohortFilters `json:"filters"`
+	Order        []store.CohortOrder `json:"order"`
+	CreatedBy    string              `json:"created_by"`
+	CreatedEmail string              `json:"created_email"`
+	Created      string              `json:"created"`
+	ChangedBy    string              `json:"changed_by"`
+	ChangedEmail string              `json:"changed_email"`
+	Changed      string              `json:"changed"`
 }
 
-// MarshalJSON encodes empty collections as arrays or objects.
-func (v ShortlistPage) MarshalJSON() ([]byte, error) {
-	type plain ShortlistPage
-	if v.Shortlist == nil {
-		v.Shortlist = []ShortlistEntry{}
+// MarshalJSON encodes empty order as an array.
+func (v Cohort) MarshalJSON() ([]byte, error) {
+	type plain Cohort
+	if v.Order == nil {
+		v.Order = []store.CohortOrder{}
+	}
+	return json.Marshal(plain(v))
+}
+
+// CohortList is a page of definitions.
+type CohortList struct {
+	Cohorts []Cohort `json:"cohorts"`
+	Next    *string  `json:"next,omitempty" description:"Present when more entries follow; pass it back as page to get them."`
+}
+
+// MarshalJSON encodes empty cohorts as an array.
+func (v CohortList) MarshalJSON() ([]byte, error) {
+	type plain CohortList
+	if v.Cohorts == nil {
+		v.Cohorts = []Cohort{}
+	}
+	return json.Marshal(plain(v))
+}
+
+// Reject is an owner's cohort ruling.
+type Reject struct {
+	Kind       string `json:"kind"`
+	Cohort     string `json:"cohort"`
+	CohortName string `json:"cohort_name,omitempty"`
+	Candidate  string `json:"candidate"`
+	Why        string `json:"why,omitempty"`
+	User       string `json:"user,omitempty"`
+	Email      string `json:"email,omitempty"`
+	At         string `json:"at,omitempty"`
+}
+
+// CohortRead answers a cohort and its current members.
+type CohortRead struct {
+	Cohort   Cohort   `json:"cohort"`
+	Matching int64    `json:"matching"`
+	Members  []Member `json:"members"`
+	Rejects  []Reject `json:"rejects"`
+}
+
+// MarshalJSON encodes empty members and rejects as arrays.
+func (v CohortRead) MarshalJSON() ([]byte, error) {
+	type plain CohortRead
+	if v.Members == nil {
+		v.Members = []Member{}
+	}
+	if v.Rejects == nil {
+		v.Rejects = []Reject{}
 	}
 	return json.Marshal(plain(v))
 }
@@ -118,32 +178,32 @@ func (v PassList) MarshalJSON() ([]byte, error) {
 
 // Link is a tool answer value.
 type Link struct {
-	Scraper    string   `json:"scraper"`
-	SourceID   string   `json:"source_id"`
-	Run        string   `json:"run"`
-	Digest     string   `json:"digest"`
-	Name       string   `json:"name"`
-	Names      []string `json:"names"`
-	Street     string   `json:"street"`
-	City       string   `json:"city"`
-	State      string   `json:"state"`
-	Zip        string   `json:"zip"`
-	County     string   `json:"county"`
-	Phone      string   `json:"phone"`
-	Email      string   `json:"email"`
-	People     []Person `json:"people"`
-	Class      string   `json:"class"`
-	Cargo      []string `json:"cargo"`
-	Filed      string   `json:"filed,omitempty"`
-	Fleet      bool     `json:"fleet"`
-	NameKey    string   `json:"name_key"`
-	PhoneKey   string   `json:"phone_key"`
-	DomainKey  string   `json:"domain_key"`
-	Reason     string   `json:"reason"`
-	Confidence float64  `json:"confidence"`
-	FirstSeen  string   `json:"first_seen"`
-	LastSeen   string   `json:"last_seen"`
-	Gone       bool     `json:"gone"`
+	Scraper      string   `json:"scraper"`
+	SourceID     string   `json:"source_id"`
+	Run          string   `json:"run"`
+	Digest       string   `json:"digest"`
+	Name         string   `json:"name"`
+	Names        []string `json:"names"`
+	Street       string   `json:"street"`
+	City         string   `json:"city"`
+	State        string   `json:"state"`
+	Zip          string   `json:"zip"`
+	County       string   `json:"county"`
+	Phone        string   `json:"phone"`
+	Email        string   `json:"email"`
+	People       []Person `json:"people"`
+	Class        string   `json:"class"`
+	Cargo        []string `json:"cargo"`
+	Filed        string   `json:"filed,omitempty"`
+	FleetVerdict string   `json:"fleet_verdict"`
+	NameKey      string   `json:"name_key"`
+	PhoneKey     string   `json:"phone_key"`
+	DomainKey    string   `json:"domain_key"`
+	Reason       string   `json:"reason"`
+	Confidence   float64  `json:"confidence"`
+	FirstSeen    string   `json:"first_seen"`
+	LastSeen     string   `json:"last_seen"`
+	Gone         bool     `json:"gone"`
 }
 
 // MarshalJSON encodes empty collections as arrays or objects.
@@ -206,7 +266,9 @@ type Assessment struct {
 	NewestFiling        string     `json:"newest_filing,omitempty"`
 	Categories          []Category `json:"categories"`
 	GovernmentMatch     string     `json:"government_match,omitempty"`
-	Fleet               bool       `json:"fleet"`
+	FleetVerdict        string     `json:"fleet_verdict"`
+	PowerUnits          *int64     `json:"power_units,omitempty"`
+	Drivers             *int64     `json:"drivers,omitempty"`
 	Minutes             *int64     `json:"minutes,omitempty"`
 	Excluded            bool       `json:"excluded"`
 	Rules               int64      `json:"rules"`
@@ -253,6 +315,7 @@ type Detail struct {
 	Estimates  []Estimate  `json:"estimates"`
 	Links      []Link      `json:"links"`
 	Rulings    []Ruling    `json:"rulings"`
+	Rejects    []Reject    `json:"rejects"`
 }
 
 // MarshalJSON encodes empty collections as arrays or objects.
@@ -266,6 +329,9 @@ func (v Detail) MarshalJSON() ([]byte, error) {
 	}
 	if v.Rulings == nil {
 		v.Rulings = []Ruling{}
+	}
+	if v.Rejects == nil {
+		v.Rejects = []Reject{}
 	}
 	return json.Marshal(plain(v))
 }
@@ -289,14 +355,70 @@ func (v Decision) MarshalJSON() ([]byte, error) {
 type NoArgs struct {
 }
 
-// ShortlistArgs holds a tool call's arguments.
-type ShortlistArgs struct {
-	MaxMinutes *uint32 `json:"max_minutes"`
-	MinRevenue *uint32 `json:"min_revenue"`
-	Class      string  `json:"class"`
-	Cargo      string  `json:"cargo"`
-	Page       *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
-	Limit      *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
+// CohortsArgs holds list paging arguments.
+type CohortsArgs struct {
+	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
+}
+
+// CohortArgs identifies a cohort.
+type CohortArgs struct {
+	Cohort string `json:"cohort" mcp:"required"`
+}
+
+// FilterArgs holds a cohort's filters.
+type FilterArgs struct {
+	RevenueMin       *uint32  `json:"revenue_min"`
+	RevenueMax       *uint32  `json:"revenue_max"`
+	RevenueUnknown   bool     `json:"revenue_unknown"`
+	MaxMinutes       *uint32  `json:"max_minutes"`
+	MinutesUnknown   bool     `json:"minutes_unknown"`
+	Categories       []string `json:"categories"`
+	CategoryUnknown  bool     `json:"category_unknown"`
+	Fleet            string   `json:"fleet"`
+	FleetUnknown     bool     `json:"fleet_unknown"`
+	Government       *bool    `json:"government"`
+	MaxFilingAgeDays *uint32  `json:"max_filing_age_days"`
+	FilingUnknown    bool     `json:"filing_unknown"`
+	Class            string   `json:"class"`
+	ClassUnknown     bool     `json:"class_unknown"`
+	ShowExcluded     bool     `json:"show_excluded"`
+}
+
+// OrderArgs selects one member ordering.
+type OrderArgs struct {
+	Field     string `json:"field" mcp:"required"`
+	Direction string `json:"direction" mcp:"required"`
+}
+
+// CreateCohortArgs defines a saved search.
+type CreateCohortArgs struct {
+	Name    string       `json:"name" mcp:"required"`
+	Filters *FilterArgs  `json:"filters"`
+	Order   *[]OrderArgs `json:"order"`
+	Size    *int         `json:"size"`
+}
+
+// EditCohortArgs replaces supplied parts of a saved search.
+type EditCohortArgs struct {
+	Cohort  string       `json:"cohort" mcp:"required"`
+	Name    *string      `json:"name"`
+	Filters *FilterArgs  `json:"filters"`
+	Order   *[]OrderArgs `json:"order"`
+	Size    *int         `json:"size"`
+}
+
+// RejectArgs identifies a cohort ruling.
+type RejectArgs struct {
+	Cohort    string `json:"cohort" mcp:"required"`
+	Candidate string `json:"candidate" mcp:"required"`
+	Why       string `json:"why" mcp:"required"`
+}
+
+// RulingArgs identifies an exclusion or inclusion.
+type RulingArgs struct {
+	Candidate string `json:"candidate" mcp:"required"`
+	Why       string `json:"why" mcp:"required"`
 }
 
 // CandidatesArgs holds a tool call's arguments.

@@ -194,7 +194,7 @@ func secrecyAbsent(t *testing.T, where string, value any, markers []string) {
 	}
 }
 
-// R-67U5-9LCA R-6921-ND2Z R-6A9Y-14TO
+// R-R270-3GN4 R-R72L-MJLW R-R8AI-0BCL
 func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	markers, phone := secrecyMarkers(t)
@@ -301,11 +301,25 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 		t.Fatal("baseline candidate missing")
 	}
 	id := text(list[0], "id")
-	args := map[string]any{"shortlist": map[string]any{}, "candidate": map[string]any{"candidate": id}, "passes": map[string]any{}, "pass": map[string]any{"pass": passID}, "rebuild": map[string]any{}, "decide": map[string]any{"kind": store.KindInclude, "candidate": id, "why": markers[9]}}
-	for _, entry := range tools.Catalog() {
-		if entry.Name != "rebuild" && entry.Name != "candidates" {
-			call(entry.Name, args[entry.Name], false)
-		}
+	// A second independent candidate allows a valid two-candidate ruling.
+	_, ids, err := st.Attach(context.Background(), "run_other", false, []store.Observation{{Scraper: "fmcsa", SourceID: "202", Digest: "other", Reading: sources.Reading{Name: markers[1], NameKey: markers[1]}}})
+	if err != nil || len(ids) != 1 {
+		t.Fatal("second candidate", err)
+	}
+	co := call("create_cohort", map[string]any{"name": markers[0]}, false)
+	cohort := co
+	cohortID := text(cohort, "id")
+	args := map[string]any{
+		"cohorts": map[string]any{}, "cohort": map[string]any{"cohort": cohortID},
+		"candidate": map[string]any{"candidate": id}, "passes": map[string]any{}, "pass": map[string]any{"pass": passID}, "rebuild": map[string]any{},
+		"decide":  map[string]any{"kind": store.KindNotSame, "candidate": id, "other": ids[0], "why": markers[9]},
+		"exclude": map[string]any{"candidate": id, "why": markers[9]}, "include": map[string]any{"candidate": id, "why": markers[9]},
+		"create_cohort": map[string]any{"name": markers[2]}, "edit_cohort": map[string]any{"cohort": cohortID, "name": markers[3]},
+		"reject": map[string]any{"cohort": cohortID, "candidate": id, "why": markers[9]}, "unreject": map[string]any{"cohort": cohortID, "candidate": id, "why": markers[9]},
+		"delete_cohort": map[string]any{"cohort": cohortID},
+	}
+	for _, name := range []string{"cohorts", "cohort", "candidate", "passes", "pass", "decide", "exclude", "include", "edit_cohort", "reject", "unreject"} {
+		call(name, args[name], false)
 	}
 	for _, mode := range []string{"rows_failure", "malformed"} {
 		f.set(mode)
@@ -370,7 +384,7 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	}
 	call("candidates", map[string]any{"name": markers[0]}, true)
 	call("candidates", map[string]any{"phone": phone}, true)
-	for _, path := range []string{"/", "/candidates/" + id, "/passes/" + passID, "/tools", "/about", "/absent"} {
+	for _, path := range []string{"/", "/cohorts/" + cohortID, "/candidates/" + id, "/passes/" + passID, "/tools", "/about", "/absent"} {
 		response := request(handler, "GET", path, "", "reader")
 		secrecyAbsent(t, "failing page", response.Body.Bytes(), forbidden)
 	}

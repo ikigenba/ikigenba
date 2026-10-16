@@ -4,33 +4,38 @@ import (
 	"bytes"
 	"context"
 	"html/template"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/paging"
-	"github.com/ikigenba/ikigenba/candidates/internal/sources"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
+	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-TE20-WB0X R-TNT7-YGYH R-THPQ-1M90 R-TCU4-IJA8 R-TF9X-A2RM R-TQ90-Q0FV
+// R-BCBE-X9AQ R-BDJB-B11F R-BER7-OSS4 R-BFZ4-2KIT R-AMPI-W2Q5 R-ANXF-9UGU R-AYWI-PS53
 func TestNavigationWalksAndTail(t *testing.T) {
 	for _, count := range []int{paging.DefaultLimit + 1, paging.DefaultLimit + 2, 2 * paging.DefaultLimit, 2*paging.DefaultLimit + 1, 3*paging.DefaultLimit + 2} {
 		t.Run(strconv.Itoa(count), func(t *testing.T) {
-			cfg, ranked, passes := navigationFixture(t, count)
+			cfg, cohorts, passes := navigationFixture(t, count)
 			// Every key ties, including both sides of every window boundary.
 			for i := 1; i < count; i++ {
-				if ranked[i].Assessment.OperatingKey != ranked[0].Assessment.OperatingKey || !passes[i].Started.Equal(passes[0].Started) {
+				if cohorts[i].Name != cohorts[0].Name || !passes[i].Started.Equal(passes[0].Started) {
 					t.Fatal("fixture must exercise tie breakers")
 				}
 			}
-			for _, short := range []bool{true, false} {
-				for _, other := range navigationOtherValues(ranked, passes, !short) {
-					t.Run(strconv.FormatBool(short)+"/"+other, func(t *testing.T) {
-						navigationWalk(t, cfg, ranked, passes, short, other)
+			for _, cohortList := range []bool{true, false} {
+				for _, other := range navigationOtherValues(cohorts, passes, !cohortList) {
+					t.Run(strconv.FormatBool(cohortList)+"/"+other, func(t *testing.T) {
+						navigationWalk(t, cfg, cohorts, passes, cohortList, other)
 					})
 				}
 			}
@@ -38,20 +43,13 @@ func TestNavigationWalksAndTail(t *testing.T) {
 	}
 }
 
-func navigationFixture(t *testing.T, count int) (Config, []store.Ranked, []store.Pass) {
+func navigationFixture(t *testing.T, count int) (Config, []store.Cohort, []store.Pass) {
 	t.Helper()
 	cfg, _ := pageFixture(t)
 	ctx := context.Background()
-	hi := int64(24000000)
 	for i := 0; i < count; i++ {
-		key := strconv.Itoa(i)
-		name := "navigation-business-" + key
-		reading := sources.Reading{Name: name, Names: []string{name}, NameKey: name, Zip: "55072", Fleet: true, Filed: fixtureTime(), Class: sources.ClassPrivate, Estimate: &sources.Estimate{Source: "navigation", Low: 14400000, High: &hi, Confidence: .7, Filed: fixtureTime(), Formula: 1}}
-		_, ids, err := cfg.Store.Attach(ctx, "navigation-run", false, []store.Observation{{Scraper: "navigation", SourceID: key, Digest: key, Reading: reading}})
+		_, err := cfg.Store.CreateCohort(ctx, store.Cohort{Name: "navigation-cohort", Size: store.CohortSizeDefault, CreatedUserID: "navigation-creator", CreatedUserEmail: "navigation@example.test"})
 		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err = cfg.Store.Judge(ctx, ids); err != nil {
 			t.Fatal(err)
 		}
 		p, err := cfg.Store.AddPass(ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "navigation-starter"})
@@ -62,40 +60,40 @@ func navigationFixture(t *testing.T, count int) (Config, []store.Ranked, []store
 			t.Fatal(err)
 		}
 	}
-	ranked, err := cfg.Store.Shortlist(ctx, store.ShortlistFilter{}, 0, "", count+1)
-	if err != nil || len(ranked) != count {
-		t.Fatal("shortlist fixture", len(ranked), err)
+	cohorts, err := cfg.Store.ListCohorts(ctx, "", "", count+1)
+	if err != nil || len(cohorts) != count {
+		t.Fatal("cohorts fixture", len(cohorts), err)
 	}
 	passes, err := cfg.Store.ListPasses(ctx, "", "", count+1)
 	if err != nil || len(passes) != count {
 		t.Fatal("passes fixture", len(passes), err)
 	}
-	return cfg, ranked, passes
+	return cfg, cohorts, passes
 }
 
-func navigationToken(ranked []store.Ranked, passes []store.Pass, short, before bool, index int) string {
+func navigationToken(cohorts []store.Cohort, passes []store.Pass, cohortList, before bool, index int) string {
 	suffix := ""
 	if before {
 		suffix = "-before"
 	}
-	if short {
-		e := ranked[index]
-		return (paging.Token{Tool: "shortlist" + suffix}).Encode(e.Assessment.OperatingKey, e.Candidate.ID)
+	if cohortList {
+		e := cohorts[index]
+		return (paging.Token{Tool: "cohorts" + suffix}).Encode(e.Name, e.ID)
 	}
 	p := passes[index]
 	return (paging.Token{Tool: "passes" + suffix}).Encode(p.Started.UTC().Format(time.RFC3339), p.ID)
 }
 
-func navigationOtherValues(ranked []store.Ranked, passes []store.Pass, short bool) []string {
-	values := []string{"", navigationToken(ranked, passes, short, false, paging.DefaultLimit-1), "last"}
-	if len(ranked) > paging.DefaultLimit+1 {
-		values = append(values, navigationToken(ranked, passes, short, true, len(ranked)-1))
+func navigationOtherValues(cohorts []store.Cohort, passes []store.Pass, cohortList bool) []string {
+	values := []string{"", navigationToken(cohorts, passes, cohortList, false, paging.DefaultLimit-1), "last"}
+	if len(cohorts) > paging.DefaultLimit+1 {
+		values = append(values, navigationToken(cohorts, passes, cohortList, true, len(cohorts)-1))
 	}
 	return values
 }
 
-func navigationBounds(ranked []store.Ranked, passes []store.Pass, short bool, value string) (int, int) {
-	count := len(ranked)
+func navigationBounds(cohorts []store.Cohort, passes []store.Pass, cohortList bool, value string) (int, int) {
+	count := len(cohorts)
 	if value == "" {
 		return 0, min(count, paging.DefaultLimit)
 	}
@@ -103,47 +101,47 @@ func navigationBounds(ranked []store.Ranked, passes []store.Pass, short bool, va
 		return count - paging.DefaultLimit, count
 	}
 	for i := 0; i < count; i++ {
-		if value == navigationToken(ranked, passes, short, false, i) {
+		if value == navigationToken(cohorts, passes, cohortList, false, i) {
 			return i + 1, min(count, i+1+paging.DefaultLimit)
 		}
-		if value == navigationToken(ranked, passes, short, true, i) {
+		if value == navigationToken(cohorts, passes, cohortList, true, i) {
 			return max(0, i-paging.DefaultLimit), i
 		}
 	}
 	panic("navigation fixture token not found")
 }
 
-func navigationExpected(cfg Config, ranked []store.Ranked, passes []store.Pass, sp, pp string) LandingData {
-	data := LandingData{Banner: bannerFor(cfg), Shortlist: []ShortlistRow{}, Passes: []PassRow{}, ShortlistPage: sp, PassesPage: pp}
-	start, end := navigationBounds(ranked, passes, true, sp)
+func navigationExpected(cfg Config, cohorts []store.Cohort, passes []store.Pass, cp, pp string) LandingData {
+	data := LandingData{Banner: bannerFor(cfg), Cohorts: []CohortRow{}, Passes: []PassRow{}, CohortsPage: cp, PassesPage: pp}
+	start, end := navigationBounds(cohorts, passes, true, cp)
 	for i := start; i < end; i++ {
-		data.Shortlist = append(data.Shortlist, shortlistRow(ranked[i], i, 0))
+		data.Cohorts = append(data.Cohorts, cohortRow(cohorts[i]))
 	}
-	if sp != "" && start < end {
-		data.ShortlistPrev = navigationToken(ranked, passes, true, true, start)
+	if cp != "" && start < end {
+		data.CohortsPrev = navigationToken(cohorts, passes, true, true, start)
 	}
-	if end < len(ranked) {
-		data.ShortlistNext = navigationToken(ranked, passes, true, false, end-1)
+	if end < len(cohorts) {
+		data.CohortsNext = navigationToken(cohorts, passes, true, false, end-1)
 	}
-	start, end = navigationBounds(ranked, passes, false, pp)
+	start, end = navigationBounds(cohorts, passes, false, pp)
 	for i := start; i < end; i++ {
 		data.Passes = append(data.Passes, passRow(passes[i]))
 	}
 	if pp != "" && start < end {
-		data.PassesPrev = navigationToken(ranked, passes, false, true, start)
+		data.PassesPrev = navigationToken(cohorts, passes, false, true, start)
 	}
 	if end < len(passes) {
-		data.PassesNext = navigationToken(ranked, passes, false, false, end-1)
+		data.PassesNext = navigationToken(cohorts, passes, false, false, end-1)
 	}
 	return data
 }
 
-func navigationPath(short bool, value, other string) string {
-	sp, pp := other, value
-	if short {
-		sp, pp = value, other
+func navigationPath(cohortList bool, value, other string) string {
+	cp, pp := other, value
+	if cohortList {
+		cp, pp = value, other
 	}
-	return "/?" + (url.Values{"shortlist_page": {sp}, "passes_page": {pp}}).Encode()
+	return "/?" + (url.Values{"cohorts_page": {cp}, "passes_page": {pp}}).Encode()
 }
 
 // Observe the handler's template data through a template function, then
@@ -180,48 +178,48 @@ func navigationLanding(t *testing.T, cfg Config, path string, want LandingData) 
 	return got
 }
 
-func navigationWalk(t *testing.T, cfg Config, ranked []store.Ranked, passes []store.Pass, short bool, other string) {
+func navigationWalk(t *testing.T, cfg Config, cohorts []store.Cohort, passes []store.Pass, cohortList bool, other string) {
 	t.Helper()
 	var windows []LandingData
 	value := ""
 	for step := 0; ; step++ {
-		if step > len(ranked)/paging.DefaultLimit+1 {
+		if step > len(cohorts)/paging.DefaultLimit+1 {
 			t.Fatal("forward walk did not terminate")
 		}
-		sp, pp := other, value
-		if short {
-			sp, pp = value, other
+		cp, pp := other, value
+		if cohortList {
+			cp, pp = value, other
 		}
-		got := navigationLanding(t, cfg, navigationPath(short, value, other), navigationExpected(cfg, ranked, passes, sp, pp))
+		got := navigationLanding(t, cfg, navigationPath(cohortList, value, other), navigationExpected(cfg, cohorts, passes, cp, pp))
 		windows = append(windows, got)
 		next := got.PassesNext
-		if short {
-			next = got.ShortlistNext
+		if cohortList {
+			next = got.CohortsNext
 		}
 		if next == "" {
 			break
 		}
 		value = next
 	}
-	if len(windows) != (len(ranked)+paging.DefaultLimit-1)/paging.DefaultLimit {
+	if len(windows) != (len(cohorts)+paging.DefaultLimit-1)/paging.DefaultLimit {
 		t.Fatal("forward window count", len(windows))
 	}
 	// Follow each actual Prev, requiring precisely the preceding forward
-	// window, including full row data and the shortlist's absolute ranks.
+	// window, including full row data.
 	for j := len(windows) - 1; j > 0; j-- {
 		prev := windows[j].PassesPrev
-		if short {
-			prev = windows[j].ShortlistPrev
+		if cohortList {
+			prev = windows[j].CohortsPrev
 		}
 		if prev == "" {
 			t.Fatal("missing backward token", j)
 		}
 		if j == 1 {
-			response := requestPage(cfg, http.MethodGet, navigationPath(short, prev, other), "reader")
+			response := requestPage(cfg, http.MethodGet, navigationPath(cohortList, prev, other), "reader")
 			location := "/"
 			if other != "" {
-				param := "shortlist_page"
-				if short {
+				param := "cohorts_page"
+				if cohortList {
 					param = "passes_page"
 				}
 				location = "/?" + param + "=" + other
@@ -230,43 +228,113 @@ func navigationWalk(t *testing.T, cfg Config, ranked []store.Ranked, passes []st
 				t.Fatal("backward first-window redirect", response)
 			}
 		} else {
-			sp, pp := other, prev
-			if short {
-				sp, pp = prev, other
+			cp, pp := other, prev
+			if cohortList {
+				cp, pp = prev, other
 			}
-			got := navigationLanding(t, cfg, navigationPath(short, prev, other), navigationExpected(cfg, ranked, passes, sp, pp))
-			if short && !reflect.DeepEqual(got.Shortlist, windows[j-1].Shortlist) || !short && !reflect.DeepEqual(got.Passes, windows[j-1].Passes) {
+			got := navigationLanding(t, cfg, navigationPath(cohortList, prev, other), navigationExpected(cfg, cohorts, passes, cp, pp))
+			if cohortList && !reflect.DeepEqual(got.Cohorts, windows[j-1].Cohorts) || !cohortList && !reflect.DeepEqual(got.Passes, windows[j-1].Passes) {
 				t.Fatal("backward window differs", j)
 			}
 			windows[j-1] = got
 		}
 	}
-	sp, pp := other, "last"
-	if short {
-		sp, pp = "last", other
+	cp, pp := other, "last"
+	if cohortList {
+		cp, pp = "last", other
 	}
-	last := navigationLanding(t, cfg, navigationPath(short, "last", other), navigationExpected(cfg, ranked, passes, sp, pp))
+	last := navigationLanding(t, cfg, navigationPath(cohortList, "last", other), navigationExpected(cfg, cohorts, passes, cp, pp))
 	// Derive the tail independently from the full forward walk's rows.
-	if short {
-		all := []ShortlistRow{}
+	if cohortList {
+		all := []CohortRow{}
 		for _, window := range windows {
-			all = append(all, window.Shortlist...)
+			all = append(all, window.Cohorts...)
 		}
-		if !reflect.DeepEqual(last.Shortlist, all[len(all)-paging.DefaultLimit:]) || last.ShortlistPage != "last" || last.ShortlistNext != "" || last.ShortlistPrev != navigationToken(ranked, passes, true, true, len(all)-paging.DefaultLimit) {
-			t.Fatal("shortlist last is not forward-walk tail")
-		}
-		for i, row := range all {
-			if row.Rank != int64(i+1) {
-				t.Fatal("discontinuous rank", i, row.Rank)
-			}
+		if !reflect.DeepEqual(last.Cohorts, all[len(all)-paging.DefaultLimit:]) || last.CohortsPage != "last" || last.CohortsNext != "" || last.CohortsPrev != navigationToken(cohorts, passes, true, true, len(all)-paging.DefaultLimit) {
+			t.Fatal("cohorts last is not forward-walk tail")
 		}
 	} else {
 		all := []PassRow{}
 		for _, window := range windows {
 			all = append(all, window.Passes...)
 		}
-		if !reflect.DeepEqual(last.Passes, all[len(all)-paging.DefaultLimit:]) || last.PassesPage != "last" || last.PassesNext != "" || last.PassesPrev != navigationToken(ranked, passes, false, true, len(all)-paging.DefaultLimit) {
+		if !reflect.DeepEqual(last.Passes, all[len(all)-paging.DefaultLimit:]) || last.PassesPage != "last" || last.PassesNext != "" || last.PassesPrev != navigationToken(cohorts, passes, false, true, len(all)-paging.DefaultLimit) {
 			t.Fatal("passes last is not forward-walk tail")
 		}
+	}
+}
+
+// R-AXOM-C0EE
+func TestLandingAgreesWithTools(t *testing.T) {
+	for _, count := range []int{0, paging.DefaultLimit, paging.DefaultLimit + 1} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
+			cfg, cohorts, passes := navigationFixture(t, count)
+			writer := telemetry.New(telemetry.Config{Service: ServiceName, Sink: &telemetry.Capture{}, Now: fixtureTime, Rand: &sequence{}, Stderr: io.Discard})
+			defer writer.Shutdown(t.Context(), "fixture-stop")
+			server := mcp.NewServer(mcp.ServerConfig{Name: ServiceName, Telemetry: writer})
+			tools.Register(server, tools.Config{Store: cfg.Store})
+			endpoint := httptest.NewServer(identity.Require(server))
+			defer endpoint.Close()
+			client := mcp.NewClient(mcp.ClientConfig{Endpoint: endpoint.URL})
+			for _, cohortList := range []bool{true, false} {
+				token := ""
+				for step := 0; ; step++ {
+					if step > count/paging.DefaultLimit+1 {
+						t.Fatal("tool walk did not terminate")
+					}
+					next := ""
+					ids := []string{}
+					if cohortList {
+						var answer tools.CohortList
+						callPageTool(t, client, "cohorts", token, &answer)
+						for _, row := range answer.Cohorts {
+							ids = append(ids, row.ID)
+						}
+						if answer.Next != nil {
+							next = *answer.Next
+						}
+					} else {
+						var answer tools.PassList
+						callPageTool(t, client, "passes", token, &answer)
+						for _, row := range answer.Passes {
+							ids = append(ids, row.ID)
+						}
+						if answer.Next != nil {
+							next = *answer.Next
+						}
+					}
+					others := []string{""}
+					if count > paging.DefaultLimit {
+						others = navigationOtherValues(cohorts, passes, !cohortList)
+					}
+					for _, other := range others {
+						cp, pp := other, token
+						if cohortList {
+							cp, pp = token, other
+						}
+						data := navigationLanding(t, cfg, navigationPath(cohortList, token, other), navigationExpected(cfg, cohorts, passes, cp, pp))
+						got := []string{}
+						gotNext, pageValue := data.PassesNext, data.PassesPage
+						if cohortList {
+							for _, row := range data.Cohorts {
+								got = append(got, row.ID)
+							}
+							gotNext, pageValue = data.CohortsNext, data.CohortsPage
+						} else {
+							for _, row := range data.Passes {
+								got = append(got, row.ID)
+							}
+						}
+						if !reflect.DeepEqual(got, ids) || gotNext != next || pageValue != token {
+							t.Fatal("tool and page differ", cohortList, got, ids, gotNext, next, pageValue, token)
+						}
+					}
+					if next == "" {
+						break
+					}
+					token = next
+				}
+			}
+		})
 	}
 }

@@ -1,0 +1,17 @@
+CREATE TABLE cohorts (id TEXT PRIMARY KEY, name TEXT NOT NULL, filters TEXT NOT NULL, ordering TEXT NOT NULL, size INTEGER NOT NULL, created_user_id TEXT NOT NULL, created_user_email TEXT NOT NULL, created TEXT NOT NULL, changed_user_id TEXT NOT NULL, changed_user_email TEXT NOT NULL, changed TEXT NOT NULL);
+CREATE INDEX cohorts_window ON cohorts(name,id);
+CREATE TABLE rejects (seq INTEGER PRIMARY KEY, cohort TEXT NOT NULL, candidate TEXT NOT NULL, kind TEXT NOT NULL, user_id TEXT NOT NULL, user_email TEXT NOT NULL, at TEXT NOT NULL, why TEXT NOT NULL);
+CREATE INDEX rejects_cohort ON rejects(cohort,candidate,seq);
+CREATE INDEX rejects_candidate ON rejects(candidate,seq);
+ALTER TABLE assessments ADD COLUMN fleet_verdict TEXT NOT NULL DEFAULT 'unknown';
+ALTER TABLE assessments ADD COLUMN power_units INTEGER;
+ALTER TABLE assessments ADD COLUMN drivers INTEGER;
+DROP INDEX assessments_base;
+DROP INDEX assessments_score;
+ALTER TABLE assessments DROP COLUMN confidence;
+ALTER TABLE assessments DROP COLUMN base;
+ALTER TABLE assessments DROP COLUMN effective;
+ALTER TABLE assessments DROP COLUMN score;
+ALTER TABLE assessments DROP COLUMN score_key;
+ALTER TABLE assessments DROP COLUMN filed;
+ALTER TABLE assessments DROP COLUMN exclusions;

@@ -158,7 +158,7 @@ func TestContractVocabulary(t *testing.T) {
 	}
 }
 
-// R-9B0V-6MNK R-2BFA-9YYC R-2DV3-1IFQ R-2HIS-6TNT R-2IQO-KLEI R-4TU1-3W59 R-4W9T-VFMN R-4ZXJ-0QUQ R-52DB-SAC4 R-5LVP-WM78
+// R-9B0V-6MNK R-2BFA-9YYC R-2HIS-6TNT R-2IQO-KLEI R-4TU1-3W59 R-4W9T-VFMN R-4ZXJ-0QUQ R-52DB-SAC4 R-5LVP-WM78
 func TestContractPassLifecyclePersistence(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -220,7 +220,7 @@ func TestContractPassLifecyclePersistence(t *testing.T) {
 	contractEqual(t, read, store.Pass{})
 }
 
-// R-2JYK-YD57 R-4SM4-Q4EK R-4XHQ-97DC R-9KS2-8SL4
+// R-2JYK-YD57 R-4SM4-Q4EK R-4XHQ-97DC R-D90U-1QCR
 func TestContractPassRefusals(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -503,7 +503,7 @@ func TestContractZipReplacement(t *testing.T) {
 	}
 }
 
-// R-47VU-80SR R-493Q-LSJG R-2A7D-W77N R-4CRF-R3RJ R-2GAV-T1X4 R-9C8R-KEE9 R-578X-BDAW R-58GT-P51L R-5AWM-GOIZ R-5C4I-UG9O
+// R-47VU-80SR R-493Q-LSJG R-COAJ-JMQY R-CPIF-XEHN R-2GAV-T1X4 R-578X-BDAW R-58GT-P51L R-5AWM-GOIZ R-5C4I-UG9O
 func TestContractBusinessRecordsPersistence(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -538,7 +538,7 @@ func TestContractBusinessRecordsPersistence(t *testing.T) {
 	_, err = f.s.Judge(ctx, ids)
 	contractOK(t, err)
 	m := int64(41)
-	wantA := store.Assessment{Candidate: id, OperatingKey: -1, Evidence: []sources.Evidence{}, RevenueLow: &o.Reading.Estimate.Low, RevenueHigh: o.Reading.Estimate.High, RevenueConfidence: &o.Reading.Estimate.Confidence, NewestFiling: o.Reading.Filed, Categories: []sources.Category{}, Fleet: true, Minutes: &m, Rules: sources.Rules, Calculated: stamp}
+	wantA := store.Assessment{Candidate: id, OperatingKey: -1, Evidence: []sources.Evidence{}, RevenueLow: &o.Reading.Estimate.Low, RevenueHigh: o.Reading.Estimate.High, RevenueConfidence: &o.Reading.Estimate.Confidence, NewestFiling: o.Reading.Filed, Categories: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Minutes: &m, Rules: sources.Rules, Calculated: stamp}
 	a, err = f.s.GetAssessment(ctx, id)
 	contractOK(t, err)
 	contractEqual(t, a, wantA)
@@ -647,7 +647,7 @@ func TestContractLinkReadOrder(t *testing.T) {
 	}
 }
 
-// R-4HU1-P3L0 R-9JK5-V0UF
+// R-4HU1-P3L0 R-CRY8-OXZ1
 func TestContractCandidateWindowsAndFilters(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -712,15 +712,11 @@ func TestContractCandidateWindowsAndFilters(t *testing.T) {
 		if page != nil {
 			t.Fatal(page)
 		}
-		ranked, e := f.s.Shortlist(ctx, store.ShortlistFilter{}, 0, "", n)
-		contractError(t, e, store.ErrUnreachable)
-		if ranked != nil {
-			t.Fatal(ranked)
-		}
+
 	}
 }
 
-// R-5I80-RAZ5 R-58GT-P51L
+// R-D5D4-WF4O R-58GT-P51L
 func TestContractFreshStoreAndUnknownReads(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -739,10 +735,26 @@ func TestContractFreshStoreAndUnknownReads(t *testing.T) {
 	if cs == nil || len(cs) != 0 {
 		t.Fatal(cs)
 	}
-	rs, err := f.s.Shortlist(ctx, store.ShortlistFilter{}, 0, "", 3)
+	rs, err := f.s.ListCohorts(ctx, "", "", 3)
 	contractOK(t, err)
 	if rs == nil || len(rs) != 0 {
 		t.Fatal(rs)
+	}
+	ks, err := f.s.ListCohortsReversed(ctx, "", "", 3)
+	contractOK(t, err)
+	if ks == nil || len(ks) != 0 {
+		t.Fatal(ks)
+	}
+	k, err := f.s.GetCohort(ctx, "unknown")
+	contractError(t, err, store.ErrNotFound)
+	contractEqual(t, k, store.Cohort{})
+	cr, err := f.s.ReadCohort(ctx, "unknown")
+	contractError(t, err, store.ErrNotFound)
+	contractEqual(t, cr, store.CohortRead{})
+	rejects, err := f.s.Rejects(ctx, "unknown")
+	contractError(t, err, store.ErrNotFound)
+	if rejects != nil {
+		t.Fatal(rejects)
 	}
 	p, err := f.s.GetPass(ctx, "unknown")
 	contractError(t, err, store.ErrNotFound)
@@ -851,7 +863,7 @@ func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	contractEqual(t, after, zipBefore)
 }
 
-// R-OD8H-2EDG R-9KS2-8SL4
+// R-OD8H-2EDG R-D90U-1QCR
 func TestContractAllMethodsUnavailable(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -898,17 +910,17 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 		{"Estimates", func(c context.Context) error { _, e := f.s.Estimates(c, "missing"); return e }},
 		{"GetAssessment", func(c context.Context) error { _, e := f.s.GetAssessment(c, "missing"); return e }},
 		{"Rulings", func(c context.Context) error { _, e := f.s.Rulings(c, "missing"); return e }},
+		{"CreateCohort", func(c context.Context) error { _, e := f.s.CreateCohort(c, store.Cohort{}); return e }},
+		{"EditCohort", func(c context.Context) error { _, e := f.s.EditCohort(c, store.CohortEdit{}); return e }},
+		{"DeleteCohort", func(c context.Context) error { _, e := f.s.DeleteCohort(c, "missing"); return e }},
+		{"GetCohort", func(c context.Context) error { _, e := f.s.GetCohort(c, "missing"); return e }},
+		{"ReadCohort", func(c context.Context) error { _, e := f.s.ReadCohort(c, "missing"); return e }},
+		{"ListCohorts", func(c context.Context) error { _, e := f.s.ListCohorts(c, "", "", 0); return e }},
+		{"ListCohortsReversed", func(c context.Context) error { _, e := f.s.ListCohortsReversed(c, "", "", 0); return e }},
+		{"Reject", func(c context.Context) error { _, e := f.s.Reject(c, store.Reject{}); return e }},
+		{"Rejects", func(c context.Context) error { _, e := f.s.Rejects(c, "missing"); return e }},
 		{"ListCandidates", func(c context.Context) error {
 			_, e := f.s.ListCandidates(c, store.CandidateFilter{}, "", "", 0)
-			return e
-		}},
-		{"Shortlist", func(c context.Context) error { _, e := f.s.Shortlist(c, store.ShortlistFilter{}, 0, "", 0); return e }},
-		{"ShortlistOffset", func(c context.Context) error {
-			_, e := f.s.ShortlistOffset(c, store.ShortlistFilter{}, 0, "missing")
-			return e
-		}},
-		{"ShortlistOffsetEmpty", func(c context.Context) error {
-			_, e := f.s.ShortlistOffset(c, store.ShortlistFilter{}, 0, "")
 			return e
 		}},
 	}
@@ -1023,10 +1035,6 @@ func TestContractConcurrentStoreCalls(t *testing.T) {
 		func() error { _, e := f.s.GetAssessment(ctx, id); return e },
 		func() error { _, e := f.s.Rulings(ctx, id); return e },
 		func() error { _, e := f.s.ListCandidates(ctx, store.CandidateFilter{}, "", "", 20); return e },
-		func() error {
-			_, e := f.s.Shortlist(ctx, store.ShortlistFilter{MaxMinutes: ptrInt(120)}, 0, "", 20)
-			return e
-		},
 	}
 	start = make(chan struct{})
 	for _, call := range calls {
@@ -1052,7 +1060,7 @@ func (r *contractErrorReader) Read(p []byte) (int, error) {
 	return 0, r.err
 }
 
-// R-5AB2-LACZ R-9KS2-8SL4
+// R-5AB2-LACZ R-D90U-1QCR
 func TestContractMintReaderRecordErrorsAreUnreachable(t *testing.T) {
 	recordErrors := []struct {
 		name string

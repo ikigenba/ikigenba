@@ -4,9 +4,9 @@ package cli
 // Usage is the complete command help.
 const Usage = `Usage: candidates [command]
 
-Candidate businesses for agents: MCP tools at /mcp rank the shortlist,
+Candidate businesses for agents: MCP tools at /mcp keep the owner's cohorts,
 read each candidate with its evidence and record the owner's rulings,
-with a page of the shortlist and the passes at /, on the socket systemd
+with the cohorts and the passes at /, on the socket systemd
 passes in.
 With no command, serve.
 
@@ -26,7 +26,7 @@ Exit codes:
 
 // Manifest is the host-readable service manifest.
 const Manifest = `app = "candidates"
-description = "Candidate businesses resolved from the records scrapes collects, ranked against the fit test"
+description = "Candidate businesses resolved from the records scrapes collects, judged and read through the owner's cohorts"
 default = false
 mcp = true
 guests = false

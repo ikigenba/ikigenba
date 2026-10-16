@@ -43,10 +43,10 @@ type countingBus struct{ calls *atomic.Int64 }
 
 func (s countingBus) Deliver(context.Context, events.Event) error { s.calls.Add(1); return nil }
 
-// R-362Y-D4T8 R-38IR-4OAM R-39QN-IG1B R-3AYJ-W7S0 R-3C6G-9ZIP R-743U-7UR8 R-75BQ-LMHX
+// R-VR0S-Y3YB R-VS8P-BVP0 R-39QN-IG1B R-3AYJ-W7S0 R-3C6G-9ZIP R-743U-7UR8 R-75BQ-LMHX
 func TestPublishedFiles(t *testing.T) {
-	usage := "Usage: candidates [command]\n\nCandidate businesses for agents: MCP tools at /mcp rank the shortlist,\nread each candidate with its evidence and record the owner's rulings,\nwith a page of the shortlist and the passes at /, on the socket systemd\npasses in.\nWith no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
-	manifest := "app = \"candidates\"\ndescription = \"Candidate businesses resolved from the records scrapes collects, ranked against the fit test\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[env]\nCANDIDATES_KEEP_PASSES = \"20\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/candidates.db\"\n\n[resources]\nmemory_max = \"256M\"\n\n[home]\ngroup = \"application\"\n"
+	usage := "Usage: candidates [command]\n\nCandidate businesses for agents: MCP tools at /mcp keep the owner's cohorts,\nread each candidate with its evidence and record the owner's rulings,\nwith the cohorts and the passes at /, on the socket systemd\npasses in.\nWith no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
+	manifest := "app = \"candidates\"\ndescription = \"Candidate businesses resolved from the records scrapes collects, judged and read through the owner's cohorts\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[env]\nCANDIDATES_KEEP_PASSES = \"20\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/candidates.db\"\n\n[resources]\nmemory_max = \"256M\"\n\n[home]\ngroup = \"application\"\n"
 	if cli.Usage != usage || cli.Manifest != manifest || cli.NginxConf != "location = /events { return 404; }\nlocation = /declarations { return 404; }\n" {
 		t.Fatal("published contract differs")
 	}

@@ -78,7 +78,7 @@ func category(s string) string {
 
 // Read returns a self-contained interpretation of the loan.
 func (*Source) Read(r scrapes.Row) sources.Reading {
-	out := sources.Reading{NameKey: sources.NameKey(r.Name), Name: r.Name, Names: append([]string{}, r.Names...), Street: r.Address.Street, City: r.Address.City, State: r.Address.State, Zip: r.Address.Zip, County: sources.County(r.Address.State, r.Address.County), People: []sources.Person{}, Cargo: []string{}, Evidence: []sources.Evidence{{Name: sources.EvidencePPPLoan, Source: Name, Weight: 0.2, Description: sources.DescribePPPLoan}}, Category: category(fact(r.Facts, "naics"))}
+	out := sources.Reading{FleetVerdict: sources.FleetUnknown, NameKey: sources.NameKey(r.Name), Name: r.Name, Names: append([]string{}, r.Names...), Street: r.Address.Street, City: r.Address.City, State: r.Address.State, Zip: r.Address.Zip, County: sources.County(r.Address.State, r.Address.County), People: []sources.Person{}, Cargo: []string{}, Evidence: []sources.Evidence{{Name: sources.EvidencePPPLoan, Source: Name, Weight: 0.2, Description: sources.DescribePPPLoan}}, Category: category(fact(r.Facts, "naics"))}
 	out.GovernmentMatch = sources.GovernmentMatch(out.NameKey)
 	s := fact(r.Facts, "date_approved")
 	if len(s) == 10 {

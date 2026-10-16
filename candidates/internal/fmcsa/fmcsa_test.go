@@ -39,7 +39,7 @@ func TestSource(t *testing.T) {
 func TestIdentity(t *testing.T) {
 	r := scrapes.Row{Name: "Acme, Inc.", Names: []string{"Other", "Third"}, Address: scrapes.Address{Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "115"}, People: []scrapes.Person{{Name: "Alex", Role: "owner"}}, Facts: facts(map[string]string{"phone": "+1 320 555 0123", "email": "x@ACME.COM"})}
 	got := fmcsa.New().Read(r)
-	want := sources.Reading{NameKey: "ACME", PhoneKey: "3205550123", DomainKey: "acme.com", Name: "Acme, Inc.", Names: []string{"Other", "Third"}, Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "MN-115", Phone: "+1 320 555 0123", Email: "x@ACME.COM", People: []sources.Person{{Name: "Alex", Role: "owner"}}, Class: sources.ClassUnknown, Cargo: []string{}, Filed: time.Time{}, Fleet: false, Estimate: nil, Evidence: []sources.Evidence{{Name: sources.EvidenceOwnDomain, Source: fmcsa.Name, Weight: .2, Description: sources.DescribeOwnDomain}}, Category: sources.CategoryTrucking}
+	want := sources.Reading{NameKey: "ACME", PhoneKey: "3205550123", DomainKey: "acme.com", Name: "Acme, Inc.", Names: []string{"Other", "Third"}, Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "MN-115", Phone: "+1 320 555 0123", Email: "x@ACME.COM", People: []sources.Person{{Name: "Alex", Role: "owner"}}, Class: sources.ClassUnknown, Cargo: []string{}, Filed: time.Time{}, Fleet: false, FleetVerdict: sources.FleetFail, Estimate: nil, Evidence: []sources.Evidence{{Name: sources.EvidenceOwnDomain, Source: fmcsa.Name, Weight: .2, Description: sources.DescribeOwnDomain}}, Category: sources.CategoryTrucking}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("%+v != %+v", got, want)
 	}
@@ -428,3 +428,37 @@ func TestOwnsReading(t *testing.T) {
 		t.Fatal("shares row")
 	}
 }
+
+// R-45BN-FM63 R-46JJ-TDWS
+func TestFleetVerdictAndReportedCounts(t *testing.T) {
+	for _, tc := range []struct {
+		status, units, drivers, mileage, verdict string
+		power, driver                            *int64
+	}{
+		{"A", "3", "4", "0", sources.FleetPass, number(3), number(4)},
+		{"A", "2", "1", "0", sources.FleetPass, number(2), number(1)},
+		{"A", "1828", "1", "19390412", sources.FleetPass, number(1828), number(1)},
+		{"A", "1", "1", "0", sources.FleetFail, number(1), number(1)},
+		{"A", "0", "0", "0", sources.FleetFail, number(0), number(0)},
+		{"I", "40", "4", "0", sources.FleetFail, number(40), number(4)},
+		{"I", "forty", "3", "0", sources.FleetFail, nil, number(3)},
+		{"", "14", "20", "0", sources.FleetFail, number(14), number(20)},
+		{"A", "forty", "3", "0", sources.FleetUnknown, nil, number(3)},
+		{"A", "", "", "", sources.FleetUnknown, nil, nil},
+		{"A", "199999", "4", "0", sources.FleetUnknown, nil, nil},
+		{"A", "510", "", "", sources.FleetPass, number(510), nil},
+		{"A", "36893488147420", "4", "", sources.FleetUnknown, nil, number(4)},
+	} {
+		got := fmcsa.New().Read(scrapes.Row{Facts: facts(map[string]string{"status": tc.status, "power_units": tc.units, "total_drivers": tc.drivers, "mileage": tc.mileage})})
+		if got.FleetVerdict != tc.verdict || got.Fleet != (tc.verdict == sources.FleetPass) || !reflect.DeepEqual(got.PowerUnits, tc.power) || !reflect.DeepEqual(got.Drivers, tc.driver) {
+			t.Fatalf("%+v: %+v", tc, got)
+		}
+	}
+	for _, raw := range []string{"null", "14", "true", "[]", "{}"} {
+		got := fmcsa.New().Read(scrapes.Row{Facts: map[string]json.RawMessage{"status": json.RawMessage(`"A"`), "power_units": json.RawMessage(raw), "total_drivers": json.RawMessage(raw)}})
+		if got.FleetVerdict != sources.FleetUnknown || got.PowerUnits != nil || got.Drivers != nil {
+			t.Fatal(raw, got)
+		}
+	}
+}
+func number(n int64) *int64 { return &n }

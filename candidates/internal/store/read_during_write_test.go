@@ -9,13 +9,14 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-34OV-GGR0
+// R-DA8Q-FI3G
 func TestContractReadsDuringQueuedWrites(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
 	id := contractSeed(t, f)
 	pass := contractNewPass(t, f, "read-while-write")
-	shortlist := store.ShortlistFilter{MaxMinutes: ptrInt(120), MinRevenue: ptrInt(1)}
+	cohort, err := f.s.CreateCohort(ctx, store.Cohort{Name: "read", Size: 100, CreatedUserID: "owner"})
+	contractOK(t, err)
 	reads := []struct {
 		name string
 		call func() (any, error)
@@ -30,7 +31,11 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 		{"GetAssessment", func() (any, error) { return f.s.GetAssessment(ctx, id) }},
 		{"Rulings", func() (any, error) { return f.s.Rulings(ctx, id) }},
 		{"ListCandidates", func() (any, error) { return f.s.ListCandidates(ctx, store.CandidateFilter{}, "", "", 100) }},
-		{"Shortlist", func() (any, error) { return f.s.Shortlist(ctx, shortlist, 0, "", 100) }},
+		{"ReadCohort", func() (any, error) { return f.s.ReadCohort(ctx, cohort.ID) }},
+		{"GetCohort", func() (any, error) { return f.s.GetCohort(ctx, cohort.ID) }},
+		{"ListCohorts", func() (any, error) { return f.s.ListCohorts(ctx, "", "", 100) }},
+		{"ListCohortsReversed", func() (any, error) { return f.s.ListCohortsReversed(ctx, "", "", 100) }},
+		{"Rejects", func() (any, error) { return f.s.Rejects(ctx, id) }},
 		{"ZipMinutes", func() (any, error) { return f.s.ZipMinutes(ctx, "55072") }},
 	}
 	before := make([]any, len(reads))

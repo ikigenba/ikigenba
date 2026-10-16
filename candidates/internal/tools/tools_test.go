@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -59,7 +58,6 @@ type fixture struct {
 func newFixture(t *testing.T) *fixture { return fixtureWithScrapes(t, nil) }
 func fixtureWithScrapes(t *testing.T, h http.Handler) *fixture {
 	t.Helper()
-	t.Setenv(services.Variable, "")
 	f := &fixture{t: t, now: time.Date(2026, 4, 5, 0, 7, 8, 0, time.FixedZone("fixture", 2*60*60))}
 	now := func() time.Time { return f.now }
 	d, err := db.Open(t.Context(), db.Config{Path: filepath.Join(t.TempDir(), "db"), Migrations: candidates.Migrations(), Now: now, Service: "candidates"})
@@ -204,7 +202,7 @@ func (f *fixture) seedWithStep(n int, step time.Duration, tie bool) []string {
 		if tie {
 			high = 16000001
 		}
-		r := sources.Reading{Name: fmt.Sprintf("Business %02d", i), Names: []string{fmt.Sprintf("Business %02d", i), fmt.Sprintf("Trucking Alias %02d", i)}, NameKey: fmt.Sprintf("key%d", i), PhoneKey: "5551234567", DomainKey: "business.test", Street: "12 Main", City: "City", State: "MN", Zip: zip, County: "MN-001", Phone: "(555) 123-4567", Email: "mail@business.test", People: []sources.Person{{Name: "Person", Role: "Owner"}}, Class: sources.ClassForHire, Cargo: []string{"general"}, Fleet: true, Filed: f.now, Estimate: &sources.Estimate{Source: "fmcsa", Low: 10000001, High: &high, Confidence: .7, Facts: map[string]json.RawMessage{"units": json.RawMessage(`52`)}, Filed: f.now, Formula: 1}}
+		r := sources.Reading{Name: fmt.Sprintf("Business %02d", i), Names: []string{fmt.Sprintf("Business %02d", i), fmt.Sprintf("Trucking Alias %02d", i)}, NameKey: fmt.Sprintf("key%d", i), PhoneKey: "5551234567", DomainKey: "business.test", Street: "12 Main", City: "City", State: "MN", Zip: zip, County: "MN-001", Phone: "(555) 123-4567", Email: "mail@business.test", People: []sources.Person{{Name: "Person", Role: "Owner"}}, Class: sources.ClassForHire, Cargo: []string{"general"}, FleetVerdict: sources.FleetPass, PowerUnits: ptrInt(52), Drivers: ptrInt(37), Filed: f.now, Estimate: &sources.Estimate{Source: "fmcsa", Low: 10000001, High: &high, Confidence: .7, Facts: map[string]json.RawMessage{"units": json.RawMessage(`52`)}, Filed: f.now, Formula: 1}}
 		_, newIDs, err := f.st.Attach(f.t.Context(), "run-fixture", true, []store.Observation{{Scraper: "fmcsa", SourceID: fmt.Sprintf("row%d", i), Digest: fmt.Sprintf("digest%d", i), Reading: r}})
 		if err != nil {
 			f.t.Fatal(err)
@@ -217,15 +215,16 @@ func (f *fixture) seedWithStep(n int, step time.Duration, tie bool) []string {
 	return ids
 }
 
-// R-5795-SH3G R-676J-W1QH R-68EG-9TH6 R-6EHY-6O6N R-6FPU-KFXC R-5LVY-DPZS R-5N3U-RHQH R-5OBR-59H6
+// R-5795-SH3G     R-5LVY-DPZS
+// R-AO19-O2DI R-AU4R-KX2Z R-AVCN-YOTO
 func TestCatalogAndSchemas(t *testing.T) {
 	f := newFixture(t)
-	want := []tools.Entry{{Name: "shortlist", Description: tools.DescribeShortlist}, {Name: "candidates", Description: tools.DescribeCandidates}, {Name: "candidate", Description: tools.DescribeCandidate}, {Name: "passes", Description: tools.DescribePasses}, {Name: "pass", Description: tools.DescribePass}, {Name: "rebuild", Description: tools.DescribeRebuild}, {Name: "decide", Description: tools.DescribeDecide}}
+	want := []tools.Entry{{"cohorts", tools.DescribeCohorts}, {"cohort", tools.DescribeCohort}, {"candidates", tools.DescribeCandidates}, {"candidate", tools.DescribeCandidate}, {"passes", tools.DescribePasses}, {"pass", tools.DescribePass}, {"rebuild", tools.DescribeRebuild}, {"decide", tools.DescribeDecide}, {"exclude", tools.DescribeExclude}, {"include", tools.DescribeInclude}, {"create_cohort", tools.DescribeCreateCohort}, {"edit_cohort", tools.DescribeEditCohort}, {"delete_cohort", tools.DescribeDeleteCohort}, {"reject", tools.DescribeReject}, {"unreject", tools.DescribeUnreject}}
 	if !reflect.DeepEqual(tools.Catalog(), want) {
-		t.Fatal("catalog")
+		t.Fatal(tools.Catalog())
 	}
-	a := tools.Catalog()
-	a[0].Name = "changed"
+	changed := tools.Catalog()
+	changed[0].Name = "changed"
 	if !reflect.DeepEqual(tools.Catalog(), want) {
 		t.Fatal("catalog aliases")
 	}
@@ -237,26 +236,27 @@ func TestCatalogAndSchemas(t *testing.T) {
 		t.Fatal(infos)
 	}
 	seen := map[string]bool{}
+	properties := [][]string{{"page", "limit"}, {"cohort"}, {"name", "zip", "phone", "page", "limit"}, {"candidate"}, {"page", "limit"}, {"pass"}, {}, {"kind", "why", "candidate", "other", "links"}, {"candidate", "why"}, {"candidate", "why"}, {"name", "filters", "order", "size"}, {"cohort", "name", "filters", "order", "size"}, {"cohort"}, {"cohort", "candidate", "why"}, {"cohort", "candidate", "why"}}
+	required := [][]string{nil, {"cohort"}, nil, {"candidate"}, nil, {"pass"}, nil, {"kind", "why", "candidate"}, {"candidate", "why"}, {"candidate", "why"}, {"name"}, {"cohort"}, {"cohort"}, {"cohort", "candidate", "why"}, {"cohort", "candidate", "why"}}
 	for i, info := range infos {
 		if info.Name != want[i].Name || info.Description != want[i].Description || len(info.OutputSchema) != 0 {
 			t.Fatal(info)
 		}
-		s := info.Description
-		if len(s) > 120 || !strings.HasSuffix(s, ".") || strings.Contains(s, "\n") || strings.Contains(s, ". ") || strings.TrimSpace(s) != s || seen[s] {
-			t.Fatal("description", s)
+		d := info.Description
+		if len(d) > 120 || !strings.HasSuffix(d, ".") || strings.Contains(d, "\n") || strings.Contains(d, ". ") || strings.TrimSpace(d) != d || seen[d] {
+			t.Fatal(d)
 		}
-		seen[s] = true
-		effect := mcp.Read
-		if i >= 5 {
-			effect = mcp.Additive
+		seen[d] = true
+		effect := mcp.Additive
+		if i < 6 {
+			effect = mcp.Read
+		}
+		if info.Name == "delete_cohort" {
+			effect = mcp.Destructive
 		}
 		if info.Effect() != effect {
-			t.Fatal("effect", info)
+			t.Fatal(info)
 		}
-	}
-	properties := [][]string{{"max_minutes", "min_revenue", "class", "cargo", "page", "limit"}, {"name", "zip", "phone", "page", "limit"}, {"candidate"}, {"page", "limit"}, {"pass"}, {}, {"kind", "why", "candidate", "other", "links"}}
-	required := [][]string{nil, nil, {"candidate"}, nil, {"pass"}, nil, {"kind", "why", "candidate"}}
-	for i, info := range infos {
 		var schema struct {
 			Properties json.RawMessage
 			Required   []string
@@ -264,57 +264,35 @@ func TestCatalogAndSchemas(t *testing.T) {
 		if err := json.Unmarshal(info.InputSchema, &schema); err != nil {
 			t.Fatal(err)
 		}
-		keys := objectKeys(t, schema.Properties)
-		if !reflect.DeepEqual(keys, properties[i]) || !reflect.DeepEqual(schema.Required, required[i]) {
-			t.Fatalf("schema %s keys %v required %v", info.Name, keys, schema.Required)
-		}
-		var props map[string]struct {
-			Type    string
-			Minimum *int64
-			Items   struct{ Type string }
-		}
-		if len(schema.Properties) > 0 {
-			if err := json.Unmarshal(schema.Properties, &props); err != nil {
-				t.Fatal(err)
-			}
-		}
-		for name, prop := range props {
-			expectedType := "string"
-			if name == "min_revenue" || name == "max_minutes" {
-				expectedType = "integer"
-				if prop.Minimum == nil || *prop.Minimum != 0 {
-					t.Fatal("unsigned schema", name)
-				}
-			}
-			if name == "limit" {
-				expectedType = "integer"
-			}
-			if name == "links" {
-				expectedType = "array"
-				if prop.Items.Type != "string" {
-					t.Fatal("link schema")
-				}
-			}
-			if prop.Type != expectedType {
-				t.Fatal("property type", name, prop.Type)
-			}
+		if !reflect.DeepEqual(objectKeys(t, schema.Properties), properties[i]) || !reflect.DeepEqual(schema.Required, required[i]) {
+			t.Fatal(info.Name, string(info.InputSchema))
 		}
 	}
 	seen = map[string]bool{}
-	for _, s := range []string{tools.RefuseNotFound, tools.RefuseInvalid, tools.RefuseBusy, tools.RefuseStopping, tools.RefuseUnavailable} {
-		if s == "" || strings.Contains(s, "\n") || seen[s] {
-			t.Fatal("refusal constant")
+	for _, d := range []string{tools.RefuseNotFound, tools.RefuseInvalid, tools.RefuseBusy, tools.RefuseStopping, tools.RefuseUnavailable} {
+		if d == "" || strings.Contains(d, "\n") || seen[d] {
+			t.Fatal(d)
 		}
-		seen[s] = true
+		seen[d] = true
 	}
-	// Argument types are usable at their declared signatures.
+	_ = tools.Cohort{"id", "name", 1, store.CohortFilters{}, []store.CohortOrder{}, "creator", "email", "created", "changer", "email", "changed"}
+	_ = tools.Member{tools.Candidate{}, nil, nil, nil, nil, nil, "", nil, "", "", "", false}
+	_ = tools.Reject{"kind", "cohort", "name", "candidate", "why", "user", "email", "at"}
+	_ = tools.CohortRead{tools.Cohort{}, 0, nil, nil}
 	_ = tools.NoArgs{}
-	_ = tools.ShortlistArgs{}
-	_ = tools.CandidatesArgs{}
-	_ = tools.CandidateArgs{Candidate: "bad"}
-	_ = tools.PassesArgs{}
-	_ = tools.PassArgs{Pass: "bad"}
-	_ = tools.DecideArgs{Kind: store.KindExclude, Why: "reason", Candidate: "bad", Other: "ignored", Links: []string{"ignored"}}
+	_ = tools.CandidateArgs{"id"}
+	_ = tools.PassArgs{"id"}
+	_ = tools.DecideArgs{"kind", "why", "candidate", "other", []string{}}
+	_ = tools.CandidatesArgs{"name", "zip", "phone", nil, nil}
+	_ = tools.PassesArgs{nil, nil}
+	_ = tools.CohortsArgs{nil, nil}
+	_ = tools.CohortArgs{"id"}
+	_ = tools.FilterArgs{nil, nil, false, nil, false, nil, false, "", false, nil, nil, false, "", false, false}
+	_ = tools.OrderArgs{"field", "direction"}
+	_ = tools.CreateCohortArgs{"name", nil, nil, nil}
+	_ = tools.EditCohortArgs{"id", nil, nil, nil, nil}
+	_ = tools.RejectArgs{"cohort", "candidate", "why"}
+	_ = tools.RulingArgs{"candidate", "why"}
 }
 func objectKeys(t *testing.T, b []byte) []string {
 	t.Helper()
@@ -340,7 +318,8 @@ func objectKeys(t *testing.T, b []byte) []string {
 	return out
 }
 
-// R-6131-Z710 R-0FKQ-IWI5 R-0GSM-WO8U R-63IU-QQIE R-65YN-I9ZS
+// R-AEA2-LWFY R-AFHY-ZO6N R-AGPV-DFXC R-AHXR-R7O1 R-AJ5O-4ZEQ R-AKDK-IR5F R-ALLG-WIW4 R-AMTD-AAMT
+// R-6131-Z710 R-AEA2-LWFY R-AFHY-ZO6N R-AGPV-DFXC R-AHXR-R7O1 R-AJ5O-4ZEQ R-AKDK-IR5F R-ALLG-WIW4 R-AMTD-AAMT
 func TestAnswerJSONShapes(t *testing.T) {
 	tests := []struct {
 		v      any
@@ -349,10 +328,10 @@ func TestAnswerJSONShapes(t *testing.T) {
 		object string
 	}{
 		{tools.Person{}, "name role", "", ""}, {tools.Evidence{}, "name source weight description", "", ""}, {tools.Category{}, "name source", "", ""}, {tools.Candidate{}, "id status name names street city state zip county phone email people class cargo created updated", "names people cargo", ""},
-		{tools.ShortlistEntry{}, "candidate categories fleet", "categories", ""}, {tools.ShortlistPage{}, "shortlist", "shortlist", ""}, {tools.CandidateList{}, "candidates", "candidates", ""}, {tools.PassList{}, "passes", "passes", ""},
-		{tools.Link{}, "scraper source_id run digest name names street city state zip county phone email people class cargo fleet name_key phone_key domain_key reason confidence first_seen last_seen gone", "names people cargo", ""},
-		{tools.Estimate{}, "source low confidence facts formula", "", "facts"}, {tools.Assessment{}, "operating_evidence categories fleet excluded rules calculated", "operating_evidence categories", ""},
-		{tools.Ruling{}, "kind candidate keys why user email at", "keys", ""}, {tools.Detail{}, "candidate estimates links rulings", "estimates links rulings", ""}, {tools.Decision{}, "ruling candidates", "candidates", ""},
+		{tools.Member{}, "candidate categories fleet_verdict excluded", "categories", ""}, {tools.CohortList{}, "cohorts", "cohorts", ""}, {tools.Cohort{}, "id name size filters order created_by created_email created changed_by changed_email changed", "order", "filters"}, {tools.Reject{}, "kind cohort candidate", "", ""}, {tools.CohortRead{}, "cohort matching members rejects", "members rejects", ""}, {tools.CandidateList{}, "candidates", "candidates", ""}, {tools.PassList{}, "passes", "passes", ""},
+		{tools.Link{}, "scraper source_id run digest name names street city state zip county phone email people class cargo fleet_verdict name_key phone_key domain_key reason confidence first_seen last_seen gone", "names people cargo", ""},
+		{tools.Estimate{}, "source low confidence facts formula", "", "facts"}, {tools.Assessment{}, "operating_evidence categories fleet_verdict excluded rules calculated", "operating_evidence categories", ""},
+		{tools.Ruling{}, "kind candidate keys why user email at", "keys", ""}, {tools.Detail{}, "candidate estimates links rulings rejects", "estimates links rulings rejects", ""}, {tools.Decision{}, "ruling candidates", "candidates", ""},
 	}
 	for _, tt := range tests {
 		b, err := json.Marshal(tt.v)
@@ -383,12 +362,13 @@ func TestAnswerJSONShapes(t *testing.T) {
 		keys string
 	}{
 		{tools.Candidate{MergedInto: "survivor"}, "id status merged_into name names street city state zip county phone email people class cargo created updated"},
-		{tools.ShortlistEntry{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, Minutes: &one, GovernmentMatch: "chosen"}, "candidate operating_confidence revenue_low revenue_high revenue_confidence categories fleet minutes government_match"},
-		{tools.ShortlistPage{Next: &continuation}, "shortlist next"}, {tools.CandidateList{Next: &continuation}, "candidates next"}, {tools.PassList{Next: &continuation}, "passes next"},
-		{tools.Link{Filed: "2026-01-01"}, "scraper source_id run digest name names street city state zip county phone email people class cargo filed fleet name_key phone_key domain_key reason confidence first_seen last_seen gone"},
+		{tools.Member{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, Minutes: &one, GovernmentMatch: "chosen", KnownSince: "known", NewestFiling: "newest"}, "candidate operating_confidence revenue_low revenue_high revenue_confidence categories fleet_verdict minutes government_match known_since newest_filing excluded"},
+		{tools.CohortList{Next: &continuation}, "cohorts next"}, {tools.CandidateList{Next: &continuation}, "candidates next"}, {tools.PassList{Next: &continuation}, "passes next"},
+		{tools.Link{Filed: "2026-01-01"}, "scraper source_id run digest name names street city state zip county phone email people class cargo filed fleet_verdict name_key phone_key domain_key reason confidence first_seen last_seen gone"},
 		{tools.Estimate{High: &one, Filed: "2026-01-01"}, "source low high confidence facts filed formula"},
-		{tools.Assessment{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, KnownSince: "chosen-known", NewestFiling: "chosen-newest", GovernmentMatch: "chosen-government", Minutes: &one}, "operating_confidence operating_evidence revenue_low revenue_high revenue_confidence known_since newest_filing categories government_match fleet minutes excluded rules calculated"},
-		{tools.Ruling{Other: "other"}, "kind candidate other keys why user email at"}, {tools.Detail{Assessment: &tools.Assessment{}}, "candidate assessment estimates links rulings"},
+		{tools.Assessment{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, KnownSince: "chosen-known", NewestFiling: "chosen-newest", GovernmentMatch: "chosen-government", PowerUnits: &one, Drivers: &one, Minutes: &one}, "operating_confidence operating_evidence revenue_low revenue_high revenue_confidence known_since newest_filing categories government_match fleet_verdict power_units drivers minutes excluded rules calculated"},
+		{tools.Reject{Kind: "reject", Cohort: "cohort", CohortName: "name", Candidate: "candidate", Why: "why", User: "user", Email: "email", At: "at"}, "kind cohort cohort_name candidate why user email at"},
+		{tools.Ruling{Other: "other"}, "kind candidate other keys why user email at"}, {tools.Detail{Assessment: &tools.Assessment{}}, "candidate assessment estimates links rulings rejects"},
 	}
 	for _, tt := range populated {
 		b, err := json.Marshal(tt.v)
@@ -401,12 +381,12 @@ func TestAnswerJSONShapes(t *testing.T) {
 	}
 }
 
-// R-6C25-F4P9 R-0J8F-O7Q8 R-0KGC-1ZGX R-0MW4-TIYB
+// R-6C25-F4P9 R-B3VY-N30J R-B1G5-VJJ5
 func TestListsPaginationAndFilters(t *testing.T) {
 	f := newFixture(t)
 	success(t, f.call("candidates", tools.CandidatesArgs{}), tools.CandidateList{})
-	success(t, f.call("shortlist", tools.ShortlistArgs{}), tools.ShortlistPage{})
 	f.seed(30)
+	checkDefaultPage(t, f, "candidates")
 	for _, args := range []tools.CandidatesArgs{{}, {Name: "TRUCKING"}, {Name: "aLiAs 07"}, {Name: "absent-name"}, {Zip: "bogus"}, {Phone: "5551234567"}, {Phone: "bad"}} {
 		rows, err := f.st.ListCandidates(t.Context(), store.CandidateFilter{Name: args.Name, Zip: args.Zip, Phone: args.Phone}, "", "", 100)
 		if err != nil {
@@ -439,47 +419,8 @@ func TestListsPaginationAndFilters(t *testing.T) {
 			}
 		}
 	}
-	zero, thirty := uint32(0), uint32(30)
-	for _, args := range []tools.ShortlistArgs{{}, {Class: "bogus"}, {Cargo: "bogus"}, {Class: sources.ClassForHire}, {MaxMinutes: &thirty}, {MinRevenue: &zero}, {MaxMinutes: &zero}} {
-		filter := store.ShortlistFilter{Class: args.Class, Cargo: args.Cargo}
-		if args.MaxMinutes != nil {
-			v := int64(*args.MaxMinutes)
-			filter.MaxMinutes = &v
-		}
-		if args.MinRevenue != nil {
-			v := int64(*args.MinRevenue)
-			filter.MinRevenue = &v
-		}
-		rows, err := f.st.Shortlist(t.Context(), filter, 0, "", 100)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, limit := range []int{1, 7, 25, 30, 100} {
-			args.Limit = &limit
-			args.Page = nil
-			offset := 0
-			for {
-				end := min(offset+limit, len(rows))
-				want := tools.ShortlistPage{}
-				for _, r := range rows[offset:end] {
-					want.Shortlist = append(want.Shortlist, shortlistExpected(r))
-				}
-				if end < len(rows) {
-					last := rows[end-1]
-					token := paging.Token{Tool: "shortlist"}.Encode(last.Assessment.OperatingKey, last.Candidate.ID)
-					want.Next = &token
-				}
-				success(t, f.call("shortlist", args), want)
-				if want.Next == nil {
-					break
-				}
-				args.Page = want.Next
-				offset = end
-			}
-		}
-	}
-	success(t, f.call("shortlist", map[string]any{"max_minutes": nil, "min_revenue": nil}), decodeList[tools.ShortlistPage](t, f.call("shortlist", tools.ShortlistArgs{})))
 }
+
 func decodeList[T any](t *testing.T, r mcp.Result) T {
 	t.Helper()
 	var v T
@@ -491,7 +432,7 @@ func decodeList[T any](t *testing.T, r mcp.Result) T {
 
 var _ io.Reader = (*random)(nil)
 
-// R-0I0J-AFZJ R-ZI54-T4GR R-0PBX-L2FP R-0QJT-YU6E R-6WSF-X8B2
+// R-AWKK-CGKD R-B53V-0UR8 R-B6BR-EMHX R-BDN5-P8Y3
 func TestDetailAndRulings(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -515,7 +456,7 @@ func TestDetailAndRulings(t *testing.T) {
 	expected := tools.Detail{Candidate: candidateOf(c)}
 	for _, l := range ls {
 		r := l.Reading
-		expected.Links = append(expected.Links, tools.Link{Scraper: l.Scraper, SourceID: l.SourceID, Run: l.Run, Digest: l.Digest, Name: r.Name, Names: r.Names, Street: r.Street, City: r.City, State: r.State, Zip: r.Zip, County: r.County, Phone: r.Phone, Email: r.Email, People: []tools.Person{{Name: r.People[0].Name, Role: r.People[0].Role}}, Class: r.Class, Cargo: r.Cargo, Filed: r.Filed.UTC().Format("2006-01-02"), Fleet: r.Fleet, NameKey: r.NameKey, PhoneKey: r.PhoneKey, DomainKey: r.DomainKey, Reason: l.Reason, Confidence: l.Confidence, FirstSeen: stamp(l.FirstSeen), LastSeen: stamp(l.LastSeen), Gone: l.Gone})
+		expected.Links = append(expected.Links, tools.Link{Scraper: l.Scraper, SourceID: l.SourceID, Run: l.Run, Digest: l.Digest, Name: r.Name, Names: r.Names, Street: r.Street, City: r.City, State: r.State, Zip: r.Zip, County: r.County, Phone: r.Phone, Email: r.Email, People: []tools.Person{{Name: r.People[0].Name, Role: r.People[0].Role}}, Class: r.Class, Cargo: r.Cargo, Filed: r.Filed.UTC().Format("2006-01-02"), FleetVerdict: r.FleetVerdict, NameKey: r.NameKey, PhoneKey: r.PhoneKey, DomainKey: r.DomainKey, Reason: l.Reason, Confidence: l.Confidence, FirstSeen: stamp(l.FirstSeen), LastSeen: stamp(l.LastSeen), Gone: l.Gone})
 	}
 	for _, e := range es {
 		expected.Estimates = append(expected.Estimates, tools.Estimate{Source: e.Source, Low: e.Low, High: e.High, Confidence: e.Confidence, Facts: e.Facts, Filed: e.Filed.UTC().Format("2006-01-02"), Formula: e.Formula})
@@ -527,7 +468,7 @@ func TestDetailAndRulings(t *testing.T) {
 	f.now = f.now.AddDate(-6, 0, 0)
 	for _, kind := range []string{store.KindExclude, store.KindInclude} {
 		why := "  owner's reason  "
-		result := decodeList[tools.Decision](t, f.call("decide", tools.DecideArgs{Kind: kind, Candidate: id, Why: why, Other: "ignored", Links: []string{"ignored"}}))
+		result := decodeList[tools.Decision](t, f.call(kind, tools.RulingArgs{Candidate: id, Why: why}))
 		rs, err := f.st.Rulings(t.Context(), id)
 		if err != nil {
 			t.Fatal(err)
@@ -543,17 +484,7 @@ func TestDetailAndRulings(t *testing.T) {
 		if string(rb) != string(wb) {
 			t.Fatalf("ruling got %+v want %+v", result, want)
 		}
-		success(t, f.call("decide", tools.DecideArgs{Kind: kind, Candidate: id, Why: why}), tools.Decision{Ruling: tools.Ruling{Kind: kind, Candidate: id, Why: why, User: caller.UserID, Email: caller.Email, At: stamp(f.now)}, Candidates: []tools.Candidate{candidateOf(updated)}})
-		list := decodeList[tools.ShortlistPage](t, f.call("shortlist", tools.ShortlistArgs{}))
-		found := false
-		for _, e := range list.Shortlist {
-			if e.Candidate.ID == id {
-				found = true
-			}
-		}
-		if found != (kind == store.KindInclude) {
-			t.Fatal("ruling did not affect shortlist")
-		}
+		success(t, f.call(kind, tools.RulingArgs{Candidate: id, Why: why}), tools.Decision{Ruling: tools.Ruling{Kind: kind, Candidate: id, Why: why, User: caller.UserID, Email: caller.Email, At: stamp(f.now)}, Candidates: []tools.Candidate{candidateOf(updated)}})
 	}
 	merged := decodeList[tools.Decision](t, f.call("decide", tools.DecideArgs{Kind: store.KindMerge, Candidate: id, Other: ids[1], Why: "same owner"}))
 	if len(merged.Candidates) != 2 {
@@ -578,7 +509,7 @@ func TestDetailAndRulings(t *testing.T) {
 	}
 }
 
-// R-69MC-NL7V R-5Y2Y-7FEQ R-6LTC-HAMT R-6QOY-0DLL R-HUCL-6CB0 R-6Y0C-B01R
+// R-6LTC-HAMT R-6QOY-0DLL
 func TestRefusalsAndPrecedence(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -586,7 +517,7 @@ func TestRefusalsAndPrecedence(t *testing.T) {
 	for _, args := range []tools.DecideArgs{{Kind: "bad", Candidate: "bad", Why: "reason"}, {Kind: store.KindExclude, Candidate: "bad", Why: " \t\n"}, {Kind: store.KindMerge, Candidate: "bad", Why: "reason"}, {Kind: store.KindSplit, Candidate: "bad", Why: "reason"}} {
 		refusal(t, f.call("decide", args), passes.RefusalInvalid, tools.RefuseInvalid)
 	}
-	for _, args := range []tools.DecideArgs{{Kind: store.KindExclude, Candidate: "bad", Why: "reason"}, {Kind: store.KindMerge, Candidate: ids[0], Other: "bad", Why: "reason"}} {
+	for _, args := range []tools.DecideArgs{{Kind: store.KindNotSame, Candidate: "bad", Other: ids[0], Why: "reason"}, {Kind: store.KindMerge, Candidate: ids[0], Other: "bad", Why: "reason"}} {
 		refusal(t, f.call("decide", args), passes.RefusalNotFound, tools.RefuseNotFound)
 	}
 	refusal(t, f.call("decide", tools.DecideArgs{Kind: store.KindMerge, Candidate: unknown, Other: unknown, Why: "reason"}), passes.RefusalNotFound, tools.RefuseNotFound)
@@ -614,16 +545,16 @@ func TestRefusalsAndPrecedence(t *testing.T) {
 	for _, call := range []struct {
 		name string
 		args any
-	}{{"shortlist", tools.ShortlistArgs{}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: ids[0]}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}}, {"decide", tools.DecideArgs{Kind: store.KindInclude, Candidate: ids[0], Why: "reason"}}, {"rebuild", tools.NoArgs{}}} {
+	}{{"cohorts", tools.CohortsArgs{}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: ids[0]}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}}, {"include", tools.RulingArgs{Candidate: ids[0], Why: "reason"}}, {"rebuild", tools.NoArgs{}}} {
 		refusal(t, f.call(call.name, call.args), passes.RefusalUnavailable, tools.RefuseUnavailable)
 	}
 	refusal(t, f.call("candidate", tools.CandidateArgs{Candidate: "private-invalid-id"}), passes.RefusalNotFound, tools.RefuseNotFound)
 	refusal(t, f.call("pass", tools.PassArgs{Pass: "private-invalid-id"}), passes.RefusalNotFound, tools.RefuseNotFound)
 	refusal(t, f.call("decide", tools.DecideArgs{Kind: "private-kind", Candidate: ids[0], Why: "private-reason"}), passes.RefusalInvalid, tools.RefuseInvalid)
-	refusal(t, f.call("decide", tools.DecideArgs{Kind: store.KindInclude, Candidate: "bad", Why: "reason"}), passes.RefusalNotFound, tools.RefuseNotFound)
+	refusal(t, f.call("include", tools.RulingArgs{Candidate: "bad", Why: "reason"}), passes.RefusalNotFound, tools.RefuseNotFound)
 }
 
-// R-0O41-7AP0 R-0J8F-O7Q8
+// R-B7JN-SE8M
 func TestPassPages(t *testing.T) {
 	f := newFixture(t)
 	success(t, f.call("passes", tools.PassesArgs{}), tools.PassList{})
@@ -636,6 +567,7 @@ func TestPassPages(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	checkDefaultPage(t, f, "passes")
 	ps, err := f.st.ListPasses(t.Context(), "", "", 100)
 	if err != nil {
 		t.Fatal(err)
@@ -664,12 +596,14 @@ func TestPassPages(t *testing.T) {
 	}
 }
 
-// R-6Z88-ORSG R-70G5-2JJ5
+// R-1UJY-J0A1 R-1VRU-WS0Q
 func TestSharedReadAnswersAndNoMutation(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(1)
 	id := ids[0]
-	f.call("decide", tools.DecideArgs{Kind: store.KindInclude, Candidate: id, Why: "owner ruling"})
+	k := f.create("shared")
+	f.call("reject", tools.RejectArgs{Cohort: k.ID, Candidate: id, Why: "shared reject"})
+	f.call("include", tools.RulingArgs{Candidate: id, Why: "owner ruling"})
 	p, err := f.st.AddPass(t.Context(), store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: caller.UserID})
 	if err != nil {
 		t.Fatal(err)
@@ -708,7 +642,19 @@ func TestSharedReadAnswersAndNoMutation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		b, err := json.Marshal([]any{c, ls, es, a, rs, ps, pass})
+		xs, err := f.st.Rejects(t.Context(), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ks, err := f.st.ListCohorts(t.Context(), "", "", 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cr, err := f.st.ReadCohort(t.Context(), k.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := json.Marshal([]any{c, ls, es, a, rs, xs, ps, pass, ks, cr})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -718,12 +664,20 @@ func TestSharedReadAnswersAndNoMutation(t *testing.T) {
 	for _, call := range []struct {
 		name string
 		args any
-	}{{"shortlist", tools.ShortlistArgs{}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: id}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}}, {"candidate", tools.CandidateArgs{Candidate: "bad"}}, {"pass", tools.PassArgs{Pass: "bad"}}} {
+	}{{"cohorts", tools.CohortsArgs{}}, {"cohort", tools.CohortArgs{Cohort: k.ID}}, {"cohort", tools.CohortArgs{Cohort: "bad"}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: id}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}}, {"candidate", tools.CandidateArgs{Candidate: "bad"}}, {"pass", tools.PassArgs{Pass: "bad"}}} {
 		a, b := decode(t, f.callAs(caller, call.name, call.args)), decode(t, f.callAs(other, call.name, call.args))
 		if !reflect.DeepEqual(a, b) {
 			t.Fatal("caller changes product", call.name)
 		}
 	}
+	f.d.SetFailing(true)
+	for _, call := range []struct {
+		name string
+		args any
+	}{{"cohorts", tools.CohortsArgs{}}, {"cohort", tools.CohortArgs{Cohort: k.ID}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: id}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}}} {
+		refusal(t, f.call(call.name, call.args), passes.RefusalUnavailable, tools.RefuseUnavailable)
+	}
+	f.d.SetFailing(false)
 	if string(snapshot()) != before {
 		t.Fatal("read changed records")
 	}
@@ -733,7 +687,7 @@ func TestSharedReadAnswersAndNoMutation(t *testing.T) {
 	}
 }
 
-// R-6RWU-E5CA R-70G5-2JJ5
+// R-6RWU-E5CA
 func TestRebuildAndNoSiblingReads(t *testing.T) {
 	entered := make(chan identity.Caller, 1)
 	release := make(chan struct{})
@@ -752,7 +706,7 @@ func TestRebuildAndNoSiblingReads(t *testing.T) {
 	for _, call := range []struct {
 		name string
 		args any
-	}{{"shortlist", tools.ShortlistArgs{}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: ids[0]}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: "bad"}}, {"decide", tools.DecideArgs{Kind: store.KindInclude, Candidate: ids[0], Why: "reason"}}} {
+	}{{"cohorts", tools.CohortsArgs{}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: ids[0]}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: "bad"}}, {"include", tools.RulingArgs{Candidate: ids[0], Why: "reason"}}} {
 		r := f.call(call.name, call.args)
 		if call.name != "pass" && r.IsError() {
 			t.Fatal(decode(t, r))
@@ -782,16 +736,11 @@ func TestRebuildAndNoSiblingReads(t *testing.T) {
 	if p.Status != store.StatusRunning || p.UserID != caller.UserID || p.UserEmail != caller.Email || p.RequestID != caller.RequestID {
 		t.Fatal("rebuild caller", p)
 	}
-	timer := time.NewTimer(5 * time.Second)
-	defer timer.Stop()
-	select {
-	case got := <-entered:
-		if got != caller {
-			t.Fatal("sibling caller", got)
-		}
-	case <-timer.C:
-		t.Fatal("no sibling request")
+	got := <-entered
+	if got != caller {
+		t.Fatal("sibling caller", got)
 	}
+
 	refusal(t, f.call("rebuild", tools.NoArgs{}), passes.RefusalBusy, tools.RefuseBusy)
 	close(release)
 	f.eng.Drain(context.Background())
@@ -800,7 +749,7 @@ func TestRebuildAndNoSiblingReads(t *testing.T) {
 	refusal(t, unavailable.call("rebuild", tools.NoArgs{}), passes.RefusalUnavailable, tools.RefuseUnavailable)
 }
 
-// R-0QJT-YU6E
+// R-BB7C-XPGP
 func TestSplitAndNotSame(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -844,97 +793,12 @@ func TestSplitAndNotSame(t *testing.T) {
 	}
 }
 
-// R-0KGC-1ZGX R-0O41-7AP0 R-6QOY-0DLL
-func TestCutoffMissingAssessmentAndPrunedPass(t *testing.T) {
-	f := newFixture(t)
-	ids := f.seed(1)
-	ls, err := f.st.Links(t.Context(), ids[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	reading := ls[0].Reading
-	high := int64(9000000)
-	reading.Estimate = &sources.Estimate{Source: "fmcsa", Low: 6000000, High: &high, Confidence: .7, Filed: f.now, Formula: 1}
-	if _, _, err := f.st.Attach(t.Context(), "run-new", true, []store.Observation{{Scraper: "fmcsa", SourceID: "row0", Digest: "new", Reading: reading}}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.st.JudgeAll(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	limit := uint32(10000000)
-	success(t, f.call("shortlist", tools.ShortlistArgs{MinRevenue: &limit}), tools.ShortlistPage{})
-	zero := uint32(0)
-	list := decodeList[tools.ShortlistPage](t, f.call("shortlist", tools.ShortlistArgs{MinRevenue: &zero}))
-	if len(list.Shortlist) != 1 || list.Shortlist[0].Candidate.ID != ids[0] || list.Shortlist[0].RevenueHigh == nil || *list.Shortlist[0].RevenueHigh != high {
-		t.Fatal("zero cutoff did not lift revenue filter", list)
-	}
-	_, newIDs, err := f.st.Attach(t.Context(), "run-unscored", true, []store.Observation{{Scraper: "other-source", SourceID: "unscored", Digest: "unscored", Reading: sources.Reading{Name: "Unscored", Names: []string{"Unscored"}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	c, err := f.st.GetCandidate(t.Context(), newIDs[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	result := decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: c.ID}))
-	if result.Assessment != nil || len(result.Estimates) != 0 || len(result.Links) != 1 || result.Links[0].Filed != "" || result.Candidate.ID != c.ID {
-		t.Fatal(result)
-	}
-	var oldest string
-	for i := range 2 {
-		p, err := f.st.AddPass(t.Context(), store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: caller.UserID})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if i == 0 {
-			oldest = p.ID
-		}
-		if _, err := f.st.FinishPass(t.Context(), p.ID, store.Counts{}); err != nil {
-			t.Fatal(err)
-		}
-		f.now = f.now.Add(time.Second)
-	}
-	if _, err := f.st.PrunePasses(t.Context(), 1); err != nil {
-		t.Fatal(err)
-	}
-	refusal(t, f.call("pass", tools.PassArgs{Pass: oldest}), passes.RefusalNotFound, tools.RefuseNotFound)
-}
+//   R-6QOY-0DLL
 
-// R-0I0J-AFZJ R-0KGC-1ZGX
-func TestGovernmentMatchDoesNotExclude(t *testing.T) {
-	f := newFixture(t)
-	ids := f.seed(1)
-	links, err := f.st.Links(t.Context(), ids[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	reading := links[0].Reading
-	reading.GovernmentMatch = "chosen-government"
-	reading.Fleet = false
-	reading.Zip = ""
-	reading.Estimate = nil
-	reading.Evidence = nil
-	if _, _, err = f.st.Attach(t.Context(), "run-government", true, []store.Observation{{Scraper: links[0].Scraper, SourceID: links[0].SourceID, Digest: "government", Reading: reading}}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = f.st.JudgeAll(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	got := decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: ids[0]}))
-	if got.Assessment == nil || got.Assessment.GovernmentMatch != reading.GovernmentMatch || got.Assessment.Excluded || got.Assessment.OperatingConfidence != nil || len(got.Assessment.OperatingEvidence) != 0 || got.Assessment.RevenueLow != nil {
-		t.Fatal(got.Assessment)
-	}
-	list := decodeList[tools.ShortlistPage](t, f.call("shortlist", tools.ShortlistArgs{}))
-	if len(list.Shortlist) != 1 || list.Shortlist[0].GovernmentMatch != reading.GovernmentMatch || list.Shortlist[0].Fleet || list.Shortlist[0].Minutes != nil || list.Shortlist[0].RevenueLow != nil || list.Shortlist[0].OperatingConfidence != nil {
-		t.Fatal(list)
-	}
-	zero := uint32(0)
-	success(t, f.call("shortlist", tools.ShortlistArgs{MinRevenue: &zero}), tools.ShortlistPage{})
-	success(t, f.call("shortlist", tools.ShortlistArgs{MaxMinutes: &zero}), tools.ShortlistPage{})
-}
+//
 
 func assessmentExpected(a store.Assessment) *tools.Assessment {
-	v := &tools.Assessment{OperatingConfidence: a.Operating, OperatingEvidence: []tools.Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []tools.Category{}, GovernmentMatch: a.GovernmentMatch, Fleet: a.Fleet, Minutes: a.Minutes, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
+	v := &tools.Assessment{OperatingConfidence: a.Operating, OperatingEvidence: []tools.Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []tools.Category{}, GovernmentMatch: a.GovernmentMatch, FleetVerdict: a.FleetVerdict, PowerUnits: a.PowerUnits, Drivers: a.Drivers, Minutes: a.Minutes, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
 	if !a.KnownSince.IsZero() {
 		v.KnownSince = a.KnownSince.UTC().Format("2006-01-02")
 	}
@@ -947,18 +811,5 @@ func assessmentExpected(a store.Assessment) *tools.Assessment {
 	for _, c := range a.Categories {
 		v.Categories = append(v.Categories, tools.Category{Name: c.Name, Source: c.Source})
 	}
-	return v
-}
-func shortlistExpected(r store.Ranked) tools.ShortlistEntry {
-	a := assessmentExpected(r.Assessment)
-	v := tools.ShortlistEntry{Candidate: candidateOf(r.Candidate), OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Fleet: a.Fleet, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch, Categories: []string{}}
-	seen := map[string]bool{}
-	for _, c := range a.Categories {
-		if !seen[c.Name] {
-			v.Categories = append(v.Categories, c.Name)
-			seen[c.Name] = true
-		}
-	}
-	sort.Strings(v.Categories)
 	return v
 }

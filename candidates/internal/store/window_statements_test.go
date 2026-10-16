@@ -16,8 +16,6 @@ import (
 type windowStatement string
 
 const (
-	shortlistFirst  windowStatement = store.ShortlistFirst
-	shortlistAfter  windowStatement = store.ShortlistAfter
 	candidatesFirst windowStatement = store.CandidatesFirst
 	candidatesAfter windowStatement = store.CandidatesAfter
 	startedFirst    windowStatement = store.StartedFirst
@@ -116,41 +114,10 @@ func statementPlan(t *testing.T, f *contractFixture, query windowStatement, args
 	return details
 }
 
-// R-2MED-PWML R-2NMA-3ODA
+// R-CT65-2PPQ R-CUE1-GHGF
 func TestWindowStatementsMatchStoreWindows(t *testing.T) {
 	f := statementFixture(t)
 	ctx := context.Background()
-	for _, filter := range []store.ShortlistFilter{
-		{MaxMinutes: ptrInt(100)}, {MaxMinutes: ptrInt(20)}, {MaxMinutes: ptrInt(100), MinRevenue: ptrInt(6500000)},
-		{MaxMinutes: ptrInt(100), Class: sources.ClassForHire}, {MaxMinutes: ptrInt(100), Class: "private"},
-		{MaxMinutes: ptrInt(100), Cargo: "machinery"}, {MaxMinutes: ptrInt(100), Cargo: "missing"},
-		{MaxMinutes: ptrInt(70), MinRevenue: ptrInt(5500000), Class: "private", Cargo: "machinery"},
-	} {
-		full, err := f.s.Shortlist(ctx, filter, 0, "", 100)
-		contractOK(t, err)
-		positions := [][2]any{{int64(0), "missing"}, {int64(-1), "end"}, {int64(1 << 62), "start"}}
-		for _, r := range full {
-			positions = append(positions, [2]any{r.Assessment.OperatingKey, r.Candidate.ID})
-		}
-		for _, n := range []int{1, 3, 100} {
-			rs, e := f.s.Shortlist(ctx, filter, 0, "", n)
-			contractOK(t, e)
-			want := []string{}
-			for _, r := range rs {
-				want = append(want, r.Candidate.ID)
-			}
-			contractEqual(t, statementIDs(t, f, shortlistFirst, boundNumber(filter.MaxMinutes), boundNumber(filter.MinRevenue), filter.Class, filter.Cargo, n), want)
-			for _, p := range positions {
-				rs, e = f.s.Shortlist(ctx, filter, p[0].(int64), p[1].(string), n)
-				contractOK(t, e)
-				want = []string{}
-				for _, r := range rs {
-					want = append(want, r.Candidate.ID)
-				}
-				contractEqual(t, statementIDs(t, f, shortlistAfter, boundNumber(filter.MaxMinutes), boundNumber(filter.MinRevenue), filter.Class, filter.Cargo, p[0], p[1], n), want)
-			}
-		}
-	}
 	for _, filter := range []store.CandidateFilter{
 		{}, {Name: "SELECTED"}, {Name: "Business 03"}, {Name: "missing"},
 		{Zip: "55073"}, {Phone: "(218) 555-0199"}, {Phone: "320.555.0101"},
@@ -207,7 +174,7 @@ func TestWindowStatementsMatchStoreWindows(t *testing.T) {
 	}
 }
 
-// R-2MED-PWML
+// R-CT65-2PPQ
 func TestWindowStatementParameterCounts(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -215,8 +182,6 @@ func TestWindowStatementParameterCounts(t *testing.T) {
 		query windowStatement
 		args  []any
 	}{
-		{shortlistFirst, []any{int64(100), int64(10), "class", "cargo", 3}},
-		{shortlistAfter, []any{int64(100), int64(10), "class", "cargo", int64(9), "id", 3}},
 		{candidatesFirst, []any{"name", "zip", "phone", 3}},
 		{candidatesAfter, []any{"name", "zip", "phone", "created", "id", 3}},
 		{startedFirst, []any{3}}, {startedAfter, []any{"started", "id", 3}},
@@ -233,7 +198,7 @@ func TestWindowStatementParameterCounts(t *testing.T) {
 	}
 }
 
-// R-2OU6-HG3Z R-2Q22-V7UO R-2R9Z-8ZLD
+// R-CVLX-U974 R-CWTU-80XT
 func TestWindowStatementsSeekAndAvoidTemporarySorting(t *testing.T) {
 	for _, populated := range []bool{false, true} {
 		t.Run(fmt.Sprint(populated), func(t *testing.T) {
@@ -244,17 +209,15 @@ func TestWindowStatementsSeekAndAvoidTemporarySorting(t *testing.T) {
 				f = contractDB(t)
 			}
 			for _, filtered := range []bool{false, true} {
-				class, cargo, name, zip, phone := "", "", "", "", ""
+				name, zip, phone := "", "", ""
 				if filtered {
-					class, cargo, name, zip, phone = "private", "machinery", "selected", "55073", "2185550199"
+					name, zip, phone = "selected", "55073", "2185550199"
 				}
 				for _, tc := range []struct {
 					query          windowStatement
 					args           []any
 					prefix, suffix string
 				}{
-					{shortlistFirst, []any{int64(70), int64(11000000), class, cargo, 3}, "SCAN ", " INDEX assessments_operating"},
-					{shortlistAfter, []any{int64(70), int64(11000000), class, cargo, int64(9), "id", 3}, "SEARCH ", " INDEX assessments_operating (operating_key<?)"},
 					{candidatesFirst, []any{name, zip, phone, 3}, "SEARCH ", " INDEX candidates_window (status=?)"},
 					{candidatesAfter, []any{name, zip, phone, "created", "id", 3}, "SEARCH ", " INDEX candidates_window (status=? AND (created,id)<(?,?))"},
 					{startedFirst, []any{3}, "SCAN ", " INDEX passes_window"},
@@ -273,11 +236,4 @@ func TestWindowStatementsSeekAndAvoidTemporarySorting(t *testing.T) {
 			}
 		})
 	}
-}
-
-func boundNumber(p *int64) any {
-	if p == nil {
-		return nil
-	}
-	return *p
 }

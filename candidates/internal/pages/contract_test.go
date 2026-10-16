@@ -14,12 +14,13 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-TP14-C8P6 R-T6QM-LOKR R-TAEB-QZSU
+// R-TP14-C8P6 R-T6QM-LOKR R-AU0X-6P6B
 func TestCompleteViewContracts(t *testing.T) {
 	start := time.Date(2026, 10, 5, 10, 0, 7, 0, time.FixedZone("offset", 3600))
 	end := start.Add(time.Hour)
 	hi := int64(24000000)
 	minutes := int64(31)
+	power, drivers := int64(12), int64(0)
 	c := store.Candidate{ID: "candidate", Status: store.StatusActive, MergedInto: "survivor", Name: "name", Names: []string{"name", "alias"}, Street: "street", City: "city", State: "MN", Zip: "55072", County: "MN-001", Phone: "phone", Email: "email", People: []sources.Person{{Name: "person", Role: "owner"}, {Name: "other", Role: "officer"}}, Class: "class", Cargo: []string{"cargo", "other"}, Created: start, Updated: end}
 	wantC := CandidateView{ID: "candidate", Status: store.StatusActive, MergedInto: "survivor", Name: "name", Names: []string{"name", "alias"}, Street: "street", City: "city", State: "MN", Zip: "55072", County: "MN-001", Phone: "phone", Email: "email", People: []PersonRow{{"person", "owner"}, {"other", "officer"}}, Class: "class", Cargo: []string{"cargo", "other"}, Created: "2026-10-05T09:00:07Z", CreatedText: "2026-10-05 09:00:07 UTC", Updated: "2026-10-05T10:00:07Z", UpdatedText: "2026-10-05 10:00:07 UTC"}
 	if got := candidateView(c); !reflect.DeepEqual(got, wantC) {
@@ -70,8 +71,8 @@ func TestCompleteViewContracts(t *testing.T) {
 		t.Fatal(got)
 	}
 	op, rc, low := .776, .7, int64(14400000)
-	a := store.Assessment{Operating: &op, Evidence: []sources.Evidence{{Name: "signal", Source: "source", Weight: .6, Description: "detail"}, {Name: "other", Weight: .3}, {Name: "third", Weight: .2}}, RevenueLow: &low, RevenueHigh: &hi, RevenueConfidence: &rc, KnownSince: start, NewestFiling: start, Categories: []sources.Category{{Name: "category", Source: "source"}}, GovernmentMatch: "chosen-government", Fleet: true, Minutes: &minutes, Excluded: true, Rules: int64(sources.Rules), Calculated: end}
-	wantA := AssessmentView{OperatingConfidence: "0.78", OperatingEvidence: []EvidenceRow{{"signal", "source", "0.60", "detail"}, {"other", "", "0.30", ""}, {"third", "", "0.20", ""}}, RevenueLow: "$14,400,000", RevenueHigh: "$24,000,000", RevenueConfidence: "0.70", KnownSince: "2026-10-05", KnownSinceText: "2026-10-05", NewestFiling: "2026-10-05", NewestFilingText: "2026-10-05", Categories: []CategoryRow{{"category", "source"}}, GovernmentMatch: "chosen-government", Fleet: true, Minutes: "31", Excluded: true, Rules: int64(sources.Rules), Calculated: "2026-10-05T10:00:07Z", CalculatedText: "2026-10-05 10:00:07 UTC"}
+	a := store.Assessment{Operating: &op, Evidence: []sources.Evidence{{Name: "signal", Source: "source", Weight: .6, Description: "detail"}, {Name: "other", Weight: .3}, {Name: "third", Weight: .2}}, RevenueLow: &low, RevenueHigh: &hi, RevenueConfidence: &rc, KnownSince: start, NewestFiling: start, Categories: []sources.Category{{Name: "category", Source: "source"}}, GovernmentMatch: "chosen-government", FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, Minutes: &minutes, Excluded: true, Rules: int64(sources.Rules), Calculated: end}
+	wantA := AssessmentView{OperatingConfidence: "0.78", OperatingEvidence: []EvidenceRow{{"signal", "source", "0.60", "detail"}, {"other", "", "0.30", ""}, {"third", "", "0.20", ""}}, RevenueLow: "$14,400,000", RevenueHigh: "$24,000,000", RevenueConfidence: "0.70", KnownSince: "2026-10-05", KnownSinceText: "2026-10-05", NewestFiling: "2026-10-05", NewestFilingText: "2026-10-05", Categories: []CategoryRow{{"category", "source"}}, GovernmentMatch: "chosen-government", FleetVerdict: sources.FleetPass, PowerUnits: "12", Drivers: "0", Minutes: "31", Excluded: true, Rules: int64(sources.Rules), Calculated: "2026-10-05T10:00:07Z", CalculatedText: "2026-10-05 10:00:07 UTC"}
 	if got := assessmentView(a); !reflect.DeepEqual(got, wantA) {
 		t.Fatalf("assessment got %#v want %#v", got, wantA)
 	}
@@ -130,7 +131,7 @@ func TestCompleteViewContracts(t *testing.T) {
 	}
 }
 
-// R-4OMK-YFFW
+// R-AJ1T-QRI2
 func TestExplicitTemplateStates(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -148,9 +149,9 @@ func TestExplicitTemplateStates(t *testing.T) {
 			}
 			return ""
 		}
-		for _, short := range [][]ShortlistRow{{}, {{City: "chosen-city", State: "chosen-state", RevenueHigh: "chosen-high"}, {}}} {
+		for _, cohorts := range [][]CohortRow{{}, {{Name: "chosen-name", CreatedBy: "chosen-email", Changed: "chosen-at", ChangedText: "chosen-at-text"}, {CreatedUser: "chosen-user"}}} {
 			for _, passes := range [][]PassRow{{}, {{Status: store.StatusRunning, Trigger: store.TriggerRebuild}}} {
-				data := LandingData{Shortlist: short, ShortlistPage: text(0), ShortlistPrev: text(4), ShortlistNext: text(1), Passes: passes, PassesPage: text(2), PassesPrev: text(5), PassesNext: text(3)}
+				data := LandingData{Cohorts: cohorts, CohortsPage: text(0), CohortsPrev: text(4), CohortsNext: text(1), Passes: passes, PassesPage: text(2), PassesPrev: text(5), PassesNext: text(3)}
 				if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "landing", data); err != nil {
 					t.Fatal(bits, err)
 				}
@@ -159,7 +160,7 @@ func TestExplicitTemplateStates(t *testing.T) {
 	}
 	for _, shortPage := range []string{"", "last"} {
 		for _, passPage := range []string{"", "last"} {
-			if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "landing", LandingData{ShortlistPage: shortPage, PassesPage: passPage}); err != nil {
+			if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "landing", LandingData{CohortsPage: shortPage, PassesPage: passPage}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -194,22 +195,22 @@ func TestExplicitTemplateStates(t *testing.T) {
 	}
 }
 
-// R-T7YI-ZGBG
-func TestShortlistRowStoredAssessment(t *testing.T) {
+// R-ARL4-F5OX
+func TestMemberRowStoredAssessment(t *testing.T) {
 	minutes, low, high, op, rc := int64(84), int64(2400000), int64(3840000), .776, .4
 	c := store.Candidate{ID: "chosen-id", Name: "chosen-name", City: "chosen-city", State: "MN", Class: "chosen-class"}
-	a := store.Assessment{Operating: &op, Minutes: &minutes, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &rc, Categories: []sources.Category{{Name: sources.CategoryTrucking, Source: "fmcsa"}, {Name: sources.CategoryConstruction, Source: "ppp"}, {Name: sources.CategoryTrucking, Source: "ppp"}}, Fleet: true, GovernmentMatch: "chosen-government"}
-	want := ShortlistRow{Rank: 28, ID: c.ID, Name: c.Name, City: c.City, State: c.State, Class: c.Class, OperatingConfidence: "0.78", Minutes: "84", RevenueLow: "$2,400,000", RevenueHigh: "$3,840,000", RevenueConfidence: "0.40", Categories: []string{sources.CategoryConstruction, sources.CategoryTrucking}, Fleet: true, GovernmentMatch: "chosen-government"}
-	if got := shortlistRow(store.Ranked{Candidate: c, Assessment: a}, 2, 25); !reflect.DeepEqual(got, want) {
+	a := store.Assessment{Operating: &op, Minutes: &minutes, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &rc, Categories: []sources.Category{{Name: sources.CategoryTrucking, Source: "fmcsa"}, {Name: sources.CategoryConstruction, Source: "ppp"}, {Name: sources.CategoryTrucking, Source: "ppp"}}, FleetVerdict: sources.FleetPass, GovernmentMatch: "chosen-government", KnownSince: fixtureTime(), NewestFiling: fixtureTime(), Excluded: true}
+	want := MemberRow{Rank: 3, ID: c.ID, Name: c.Name, City: c.City, State: c.State, Class: c.Class, OperatingConfidence: "0.78", Minutes: "84", RevenueLow: "$2,400,000", RevenueHigh: "$3,840,000", RevenueConfidence: "0.40", Categories: []string{sources.CategoryConstruction, sources.CategoryTrucking}, FleetVerdict: sources.FleetPass, GovernmentMatch: "chosen-government", KnownSince: "2026-10-05", KnownSinceText: "2026-10-05", NewestFiling: "2026-10-05", NewestFilingText: "2026-10-05", Excluded: true}
+	if got := memberRow(store.Ranked{Candidate: c, Assessment: a}, 2); !reflect.DeepEqual(got, want) {
 		t.Fatalf("%+v", got)
 	}
 	a.RevenueHigh = nil
 	want.RevenueHigh = ""
-	if got := shortlistRow(store.Ranked{Candidate: c, Assessment: a}, 2, 25); !reflect.DeepEqual(got, want) {
+	if got := memberRow(store.Ranked{Candidate: c, Assessment: a}, 2); !reflect.DeepEqual(got, want) {
 		t.Fatalf("minimum %+v", got)
 	}
-	want = ShortlistRow{Rank: 26, ID: c.ID, Name: c.Name, City: c.City, State: c.State, Class: c.Class, Categories: []string{}}
-	if got := shortlistRow(store.Ranked{Candidate: c}, 0, 25); !reflect.DeepEqual(got, want) {
+	want = MemberRow{Rank: 1, ID: c.ID, Name: c.Name, City: c.City, State: c.State, Class: c.Class, Categories: []string{}}
+	if got := memberRow(store.Ranked{Candidate: c}, 0); !reflect.DeepEqual(got, want) {
 		t.Fatalf("unknown %+v", got)
 	}
 }
@@ -248,7 +249,7 @@ func TestPassOrigins(t *testing.T) {
 	}
 }
 
-// R-4OMK-YFFW
+// R-AJ1T-QRI2
 func TestJudgmentTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
@@ -264,13 +265,13 @@ func TestJudgmentTemplateStates(t *testing.T) {
 	for _, value := range []string{"", "chosen-value"} {
 		for _, flag := range []bool{false, true} {
 			for _, categories := range [][]string{{}, {"chosen-one"}, {"chosen-one", "chosen-two"}} {
-				row := ShortlistRow{City: value, State: value, OperatingConfidence: value, RevenueLow: value, RevenueHigh: value, RevenueConfidence: value, Categories: categories, Class: value, Fleet: flag, Minutes: value, GovernmentMatch: value}
-				render("landing", LandingData{Shortlist: []ShortlistRow{row}})
+				row := MemberRow{City: value, State: value, OperatingConfidence: value, RevenueLow: value, RevenueHigh: value, RevenueConfidence: value, Categories: categories, Class: value, FleetVerdict: sources.FleetUnknown, Minutes: value, GovernmentMatch: value}
+				render("cohort", CohortData{Members: []MemberRow{row}})
 			}
 			for _, evidence := range [][]EvidenceRow{{}, {{Name: value, Source: value, Weight: value, Description: value}}} {
 				for _, categories := range [][]CategoryRow{{}, {{Name: value, Source: value}}} {
 					for _, high := range []string{"", "chosen-high"} {
-						d := CandidateData{Candidate: CandidateView{Status: store.StatusActive}, Assessment: &AssessmentView{OperatingConfidence: value, OperatingEvidence: evidence, RevenueLow: value, RevenueHigh: high, RevenueConfidence: value, KnownSince: value, KnownSinceText: value, NewestFiling: value, NewestFilingText: value, Categories: categories, GovernmentMatch: value, Fleet: flag, Minutes: value, Excluded: flag}}
+						d := CandidateData{Candidate: CandidateView{Status: store.StatusActive}, Assessment: &AssessmentView{OperatingConfidence: value, OperatingEvidence: evidence, RevenueLow: value, RevenueHigh: high, RevenueConfidence: value, KnownSince: value, KnownSinceText: value, NewestFiling: value, NewestFilingText: value, Categories: categories, GovernmentMatch: value, FleetVerdict: sources.FleetUnknown, Minutes: value, Excluded: flag}}
 						render("candidate", d)
 					}
 				}

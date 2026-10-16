@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
-// R-P8EJ-FV0A
+// R-IIJA-OWN9
 func TestRecordShapes(t *testing.T) {
 	// Conversions use the records' complete underlying shapes, including order.
 	type personShape struct{ Name, Role string }
@@ -39,6 +39,8 @@ func TestRecordShapes(t *testing.T) {
 		Cargo                                          []string
 		Filed                                          time.Time
 		Fleet                                          bool
+		FleetVerdict                                   string
+		PowerUnits, Drivers                            *int64
 		Estimate                                       *sources.Estimate
 		Evidence                                       []sources.Evidence
 		KnownSince                                     time.Time
@@ -166,5 +168,15 @@ func TestGovernmentMatch(t *testing.T) {
 		if got := sources.GovernmentMatch(k); got != "" {
 			t.Fatal(k, got)
 		}
+	}
+}
+
+// R-IJR7-2ODY
+func TestFleetVerdictConstants(t *testing.T) {
+	const pass string = sources.FleetPass
+	const fail string = sources.FleetFail
+	const unknown string = sources.FleetUnknown
+	if pass != "pass" || fail != "fail" || unknown != "unknown" {
+		t.Fatal(pass, fail, unknown)
 	}
 }

@@ -10,7 +10,7 @@ import (
 const ServiceName = "candidates"
 
 // Description supplies description page data.
-const Description = "Candidate businesses resolved from the records scrapes collects, ranked against the fit test"
+const Description = "Candidate businesses resolved from the records scrapes collects, judged and read through the owner's cohorts"
 
 // MinuteLayout supplies minute layout page data.
 const MinuteLayout = "2006-01-02 15:04"
@@ -37,26 +37,77 @@ type Config struct {
 
 // LandingData supplies landing data page data.
 type LandingData struct {
-	Banner        page.Banner
-	Shortlist     []ShortlistRow
-	ShortlistPage string
-	ShortlistPrev string
-	ShortlistNext string
-	Passes        []PassRow
-	PassesPage    string
-	PassesPrev    string
-	PassesNext    string
+	Banner      page.Banner
+	Cohorts     []CohortRow
+	CohortsPage string
+	CohortsPrev string
+	CohortsNext string
+	Passes      []PassRow
+	PassesPage  string
+	PassesPrev  string
+	PassesNext  string
 }
 
-// ShortlistRow supplies shortlist row page data.
-type ShortlistRow struct {
-	Rank                                                                                   int64
-	ID, Name, City, State, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence string
-	Categories                                                                             []string
-	Class                                                                                  string
-	Fleet                                                                                  bool
-	Minutes, GovernmentMatch                                                               string
+// CohortRow supplies a landing cohort row.
+type CohortRow struct {
+	ID, Name                                     string
+	Size                                         int64
+	CreatedBy, CreatedUser, Changed, ChangedText string
 }
+
+// CohortData supplies a cohort page.
+type CohortData struct {
+	Banner   page.Banner
+	Cohort   CohortView
+	Matching int64
+	Members  []MemberRow
+	Rejects  []RejectRow
+}
+
+// CohortView supplies the cohort definition.
+type CohortView struct {
+	ID, Name                                                                                   string
+	Size                                                                                       int64
+	Filters                                                                                    FiltersView
+	Order                                                                                      []OrderRow
+	CreatedBy, CreatedUser, Created, CreatedText, ChangedBy, ChangedUser, Changed, ChangedText string
+}
+
+// OrderRow supplies one ordering term.
+type OrderRow struct{ Field, Direction string }
+
+// FiltersView supplies formatted filter values.
+type FiltersView struct {
+	RevenueMin, RevenueMax string
+	RevenueUnknown         bool
+	MaxMinutes             string
+	MinutesUnknown         bool
+	Categories             []string
+	CategoryUnknown        bool
+	Fleet                  string
+	FleetUnknown           bool
+	Government             string
+	MaxFilingAgeDays       string
+	FilingUnknown          bool
+	Class                  string
+	ClassUnknown           bool
+	ShowExcluded           bool
+}
+
+// MemberRow supplies one cohort member.
+type MemberRow struct {
+	Rank                                                                                                      int64
+	ID, Name, City, State, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence                    string
+	Categories                                                                                                []string
+	Class, FleetVerdict, Minutes, GovernmentMatch, KnownSince, KnownSinceText, NewestFiling, NewestFilingText string
+	Excluded                                                                                                  bool
+}
+
+// RejectRow supplies a standing reject.
+type RejectRow struct{ Candidate, By, User, At, AtText, Why string }
+
+// RejectRecordRow supplies a candidate's reject history.
+type RejectRecordRow struct{ Kind, Cohort, CohortName, By, User, At, AtText, Why string }
 
 // PassRow supplies pass row page data.
 type PassRow struct {
@@ -72,6 +123,7 @@ type CandidateData struct {
 	Estimates  []EstimateView
 	Links      []LinkView
 	Rulings    []RulingView
+	Rejects    []RejectRecordRow
 }
 
 // CandidateView supplies candidate view page data.
@@ -94,9 +146,7 @@ type AssessmentView struct {
 	OperatingEvidence                                                                                      []EvidenceRow
 	RevenueLow, RevenueHigh, RevenueConfidence, KnownSince, KnownSinceText, NewestFiling, NewestFilingText string
 	Categories                                                                                             []CategoryRow
-	GovernmentMatch                                                                                        string
-	Fleet                                                                                                  bool
-	Minutes                                                                                                string
+	GovernmentMatch, FleetVerdict, PowerUnits, Drivers, Minutes                                            string
 	Excluded                                                                                               bool
 	Rules                                                                                                  int64
 	Calculated, CalculatedText                                                                             string

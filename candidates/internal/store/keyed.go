@@ -19,6 +19,9 @@ func (s *Store) mintKey(ctx context.Context, tx *sql.Tx, prefix string) (string,
 	if prefix == PassIDPrefix {
 		table = "passes"
 	}
+	if prefix == CohortIDPrefix {
+		table = "cohorts"
+	}
 	for range 8 {
 		var b [8]byte
 		if s.cfg.Rand == nil {
@@ -29,7 +32,13 @@ func (s *Store) mintKey(ctx context.Context, tx *sql.Tx, prefix string) (string,
 		}
 		id := prefix + hex.EncodeToString(b[:])
 		var exists int
-		err := scanSQL(ctx, tx, "SELECT 1 FROM "+table+" WHERE id=?", []any{id}, &exists)
+		query := "SELECT 1 FROM " + table + " WHERE id=?"
+		args := []any{id}
+		if prefix == CohortIDPrefix {
+			query += " UNION ALL SELECT 1 FROM rejects WHERE cohort=? LIMIT 1"
+			args = append(args, id)
+		}
+		err := scanSQL(ctx, tx, query, args, &exists)
 		if errors.Is(err, sql.ErrNoRows) {
 			return id, nil
 		}
@@ -139,7 +148,7 @@ func judgeKeys(ctx context.Context, tx *sql.Tx, ids []string, t time.Time) (Coun
 				return Counts{}, err
 			}
 		}
-		if err = insertRecord(ctx, tx, "assessments", assessmentColumns, a, nil); err != nil {
+		if err = insertRecord(ctx, tx, "assessments", assessmentColumns, a, map[string]any{"fleet": a.FleetVerdict == sources.FleetPass}); err != nil {
 			return Counts{}, err
 		}
 		out.Judged++

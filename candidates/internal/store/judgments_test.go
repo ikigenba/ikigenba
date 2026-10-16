@@ -2,17 +2,11 @@ package store_test
 
 import (
 	"context"
-	"database/sql"
-	"io/fs"
 	"math"
-	"strings"
 	"sync"
 	"testing"
-	"testing/fstest"
 	"time"
 
-	"github.com/ikigenba/ikigenba/appkit/db"
-	"github.com/ikigenba/ikigenba/candidates"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
@@ -26,7 +20,7 @@ func near(t *testing.T, p *float64, w float64) {
 	}
 }
 
-// R-12LF-GSLK R-BN2B-WQID R-BOA8-AI92 R-BPI4-O9ZR R-JPOG-9EA8
+// R-EEX1-QBR6 R-EG4Y-43HV R-EHCU-HV8K R-BN2B-WQID R-BOA8-AI92
 func TestJudgmentsAggregateAndPersist(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -131,73 +125,6 @@ func TestJudgmentsAggregateAndPersist(t *testing.T) {
 	near(t, got.RevenueConfidence, .7)
 }
 
-// R-BUDQ-7CYJ R-2L6H-C4VW R-13TB-UKC9
-func TestShortlistIncludesEmptyJudgmentsAndOwnerControlsExclusion(t *testing.T) {
-	f := contractDB(t)
-	ctx := context.Background()
-	contractOK(t, f.s.ReplaceZipDrive(ctx, map[string]int64{"55072": 0, "55073": 120, "55074": 121}))
-	ids := []string{}
-	for i, weight := range []float64{.0000016, .0000015, 0, .8, .9} {
-		o := contractObservation(string(rune('a'+i)), string(rune('A'+i)), f.now)
-		o.Reading.Estimate = nil
-		o.Reading.Fleet = false
-		o.Reading.GovernmentMatch = "fixture"
-		o.Reading.Cargo = []string{"genfreight"}
-		if i == 0 {
-			o.Reading.Zip = "55073"
-		}
-		if i == 1 {
-			o.Reading.Zip = "55074"
-		}
-		if i == 2 {
-			o.Reading.Zip = "99999"
-		}
-		if weight > 0 {
-			o.Reading.Evidence = []sources.Evidence{{Name: sources.EvidenceOwnDomain, Source: o.Scraper, Weight: weight}}
-		}
-		ids = append(ids, contractAttach(t, f, "run", o)[0])
-	}
-	unjudged := contractAttach(t, f, "run", contractObservation("unjudged", "Unjudged", f.now))[0]
-	_, err := f.s.Judge(ctx, ids)
-	contractOK(t, err)
-	_, _, err = f.s.Decide(ctx, store.Ruling{Kind: store.KindMerge, Candidate: ids[3], Other: ids[4], Why: "same", UserID: "owner"})
-	contractOK(t, err)
-	rs, err := f.s.Shortlist(ctx, store.ShortlistFilter{}, 0, "", 20)
-	contractOK(t, err)
-	contractEqual(t, len(rs), 4)
-	contractEqual(t, rs[1].Candidate.ID, ids[0])
-	contractEqual(t, rs[2].Candidate.ID, ids[1])
-	contractEqual(t, rs[3].Candidate.ID, ids[2])
-	for _, r := range rs {
-		if r.Candidate.ID == unjudged {
-			t.Fatal("unjudged ranked")
-		}
-	}
-	rs, err = f.s.Shortlist(ctx, store.ShortlistFilter{MaxMinutes: ptrInt(120)}, 0, "", 20)
-	contractOK(t, err)
-	contractEqual(t, len(rs), 2)
-	rs, err = f.s.Shortlist(ctx, store.ShortlistFilter{MaxMinutes: ptrInt(0)}, 0, "", 20)
-	contractOK(t, err)
-	contractEqual(t, len(rs), 1)
-	rs, err = f.s.Shortlist(ctx, store.ShortlistFilter{MinRevenue: ptrInt(0)}, 0, "", 20)
-	contractOK(t, err)
-	contractEqual(t, len(rs), 0)
-	for _, kind := range []string{store.KindExclude, store.KindInclude} {
-		_, _, err = f.s.Decide(ctx, store.Ruling{Kind: kind, Candidate: ids[0], Why: "owner decision", UserID: "owner"})
-		contractOK(t, err)
-		a, e := f.s.GetAssessment(ctx, ids[0])
-		contractOK(t, e)
-		contractEqual(t, a.Excluded, kind == store.KindExclude)
-		rs, e = f.s.Shortlist(ctx, store.ShortlistFilter{}, 0, "", 20)
-		contractOK(t, e)
-		want := 4
-		if kind == store.KindExclude {
-			want = 3
-		}
-		contractEqual(t, len(rs), want)
-	}
-}
-
 // R-5MCP-YOO7
 func TestConcurrentResolutionAndJudgments(t *testing.T) {
 	f := contractDB(t)
@@ -231,98 +158,6 @@ func TestConcurrentResolutionAndJudgments(t *testing.T) {
 			t.Fatal("merged candidate retains links")
 		}
 	}
-}
-
-// R-38CK-LRZ3
-func TestPreviousWriterAssessmentHasNoJudgment(t *testing.T) {
-	f := contractDB(t)
-	id := contractAttach(t, f, "run", contractObservation("old", "Old writer", f.now))[0]
-	insertOldAssessment(t, f, id)
-	a, e := f.s.GetAssessment(context.Background(), id)
-	contractOK(t, e)
-	contractEqual(t, a, store.Assessment{Candidate: id, OperatingKey: -1, Evidence: []sources.Evidence{}, Categories: []sources.Category{}, Fleet: true, Minutes: ptrInt(17), Rules: sources.Rules, Calculated: f.now.UTC().Truncate(time.Second)})
-}
-func insertOldAssessment(t *testing.T, f *contractFixture, id string) {
-	t.Helper()
-	contractOK(t, f.d.Write(context.Background(), func(tx *sql.Tx) error {
-		_, e := tx.ExecContext(context.Background(), `INSERT INTO assessments(candidate,fleet,low,high,confidence,filed,minutes,exclusions,excluded,base,rules,scored,effective,score,score_key) VALUES (?,1,900,1000,.8,'',17,'[]',0,800,?,?,.7,700,700000)`, id, sources.Rules, f.now.UTC().Truncate(time.Second).Format(time.RFC3339))
-		return e
-	}))
-}
-
-// R-5YW6-HWFH
-func TestUpgradeClearsOldJudgmentsAndRepairsCargo(t *testing.T) {
-	f := contractDB(t)
-	ctx := context.Background()
-	contractOK(t, f.d.Close())
-	old := fstest.MapFS{}
-	entries, e := fs.ReadDir(candidates.Migrations(), ".")
-	contractOK(t, e)
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), "0009") {
-			continue
-		}
-		b, err := fs.ReadFile(candidates.Migrations(), entry.Name())
-		contractOK(t, err)
-		old[entry.Name()] = &fstest.MapFile{Data: b}
-	}
-	// Use a separate old-schema path; the initialized fixture path already has 0009.
-	f.path += ".previous"
-	f.d, e = db.Open(ctx, db.Config{Path: f.path, Migrations: old, Now: func() time.Time { return f.now }})
-	contractOK(t, e)
-	id := "cand_00000000000000aa"
-	contractOK(t, f.d.Write(ctx, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `INSERT INTO candidates(id,status,merged_into,name,names,names_lower,street,city,state,zip,county,phone,email,people,class,cargo,created,updated) VALUES (?,'active','','Old','["Old"]','old','','','MN','55072','','','','[]','','["genfreight"]',?,?)`, id, f.now.UTC().Format(time.RFC3339), f.now.UTC().Format(time.RFC3339))
-		return err
-	}))
-	insertOldAssessment(t, f, id)
-	for i, trig := range []string{store.TriggerRebuild, "old-run"} {
-		delivery := ""
-		if i == 1 {
-			delivery = "old-event"
-		}
-		contractOK(t, f.d.Write(ctx, func(tx *sql.Tx) error {
-			_, err := tx.ExecContext(ctx, `INSERT INTO passes(id,"trigger",status,reason,started,finished,"rows","new",changed,unchanged,gone,created,linked,rescored,unranged,user_id,user_email,request_id,delivery) VALUES (?,?,'done','',?,?,1,2,3,4,5,6,7,8,9,'owner','','',?)`, store.PassIDPrefix+strings.Repeat([]string{"a", "b"}[i], 16), trig, f.now.UTC().Format(time.RFC3339), f.now.UTC().Format(time.RFC3339), delivery)
-			return err
-		}))
-	}
-	f.reopen()
-	_, e = f.s.GetAssessment(ctx, id)
-	contractError(t, e, store.ErrNotFound)
-	ps, e := f.s.ListPasses(ctx, "", "", 10)
-	contractOK(t, e)
-	contractEqual(t, len(ps), 2)
-	for i, trig := range []string{store.TriggerRebuild, "old-run"} {
-		kind, origin, delivery := store.KindRebuild, store.OriginRebuild, ""
-		if i == 1 {
-			kind, origin, delivery = store.KindIngest, store.OriginRun, "old-event"
-		}
-		pid := store.PassIDPrefix + strings.Repeat([]string{"a", "b"}[i], 16)
-		got, err := f.s.GetPass(ctx, pid)
-		contractOK(t, err)
-		stamp := f.now.UTC().Truncate(time.Second)
-		contractEqual(t, got, store.Pass{ID: pid, Kind: kind, Origin: origin, Trigger: trig, Status: store.StatusDone, Started: stamp, Finished: stamp, Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, UserID: "owner", Delivery: delivery})
-	}
-
-	_, e = f.s.AddPass(ctx, store.Pass{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "old-run", Delivery: "new-event"})
-	contractError(t, e, store.ErrDelivered)
-	_, e = f.s.JudgeAll(ctx)
-	contractOK(t, e)
-	rs, e := f.s.Shortlist(ctx, store.ShortlistFilter{Cargo: "genfreight"}, 0, "", 10)
-	contractOK(t, e)
-	contractEqual(t, len(rs), 1)
-	contractOK(t, f.d.Write(ctx, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `UPDATE candidates SET cargo='["machinery"]' WHERE id=?`, id)
-		return err
-	}))
-	_, e = f.s.JudgeAll(ctx)
-	contractOK(t, e)
-	rs, e = f.s.Shortlist(ctx, store.ShortlistFilter{Cargo: "genfreight"}, 0, "", 10)
-	contractOK(t, e)
-	contractEqual(t, len(rs), 0)
-	rs, e = f.s.Shortlist(ctx, store.ShortlistFilter{Cargo: "machinery"}, 0, "", 10)
-	contractOK(t, e)
-	contractEqual(t, len(rs), 1)
 }
 
 // R-5XOA-44OS R-VFA1-PLHH
@@ -410,7 +245,7 @@ func TestJudgePassTriggerRepeatsAcrossDeliveries(t *testing.T) {
 	contractEqual(t, got.Unranged, int64(2))
 }
 
-// R-BN2B-WQID R-BOA8-AI92 R-BPI4-O9ZR
+// R-BN2B-WQID R-BOA8-AI92 R-EEX1-QBR6
 func TestJudgmentConflictsFollowLinkOrder(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -456,11 +291,11 @@ func TestJudgmentConflictsFollowLinkOrder(t *testing.T) {
 	contractEqual(t, es, []sources.Estimate{*q.Reading.Estimate})
 	a, e := f.s.GetAssessment(ctx, id)
 	contractOK(t, e)
-	contractEqual(t, a.Fleet, false)
+	contractEqual(t, a.FleetVerdict, sources.FleetUnknown)
 	contractEqual(t, a.GovernmentMatch, "newer-pattern")
 	contractEqual(t, a.Evidence, []sources.Evidence{{Name: "maximum", Source: "strongest", Weight: .8}, {Name: "equal", Source: "first", Weight: .4}})
 	contractEqual(t, a.Categories, []sources.Category{{Name: sources.CategoryConstruction, Source: ppp.Name}, {Name: sources.CategoryTrucking, Source: fmcsa.Name}})
-	// Fleet is true if a different scraper's freshest link supplies it.
+	// A different scraper cannot supply an FMCSA fleet verdict.
 	q.Reading.Fleet = true
 	q.Digest = "fleet-change"
 	contractAttach(t, f, "next", q)
@@ -468,33 +303,204 @@ func TestJudgmentConflictsFollowLinkOrder(t *testing.T) {
 	contractOK(t, e)
 	a, e = f.s.GetAssessment(ctx, id)
 	contractOK(t, e)
-	contractEqual(t, a.Fleet, true)
+	contractEqual(t, a.FleetVerdict, sources.FleetUnknown)
 }
 
-// R-BUDQ-7CYJ R-2L6H-C4VW
-func TestShortlistMinimumUsesLowWithInclusiveBoundary(t *testing.T) {
+// R-EEX1-QBR6 R-EG4Y-43HV
+func TestJudgmentFleetUsesOnlyFreshestLiveFMCSA(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
-	ids := []string{}
-	for i, low := range []int64{9999999, 10000000, 10000001} {
-		o := contractObservation([]string{"below", "at", "above"}[i], []string{"Below", "At", "Above"}[i], f.now)
-		hi := int64(999999999)
-		o.Reading.Estimate.Low = low
-		o.Reading.Estimate.High = &hi
-		ids = append(ids, contractAttach(t, f, "run", o)[0])
+	o := contractObservation("carrier", "Fleet business", f.now)
+	o.Scraper = fmcsa.Name
+	o.Reading.FleetVerdict = sources.FleetPass
+	o.Reading.PowerUnits = ptrInt(3)
+	o.Reading.Drivers = ptrInt(4)
+	id := contractAttach(t, f, "first", o)[0]
+	for _, tc := range []struct {
+		verdict        string
+		units, drivers *int64
+	}{
+		{sources.FleetPass, ptrInt(3), ptrInt(4)}, {sources.FleetFail, ptrInt(1), ptrInt(4)}, {sources.FleetUnknown, nil, nil}, {"", nil, nil},
+	} {
+		o.Reading.FleetVerdict = tc.verdict
+		o.Reading.PowerUnits = tc.units
+		o.Reading.Drivers = tc.drivers
+		o.Digest += "x"
+		contractAttach(t, f, "first", o)
+		_, e := f.s.Judge(ctx, []string{id})
+		contractOK(t, e)
+		a, e := f.s.GetAssessment(ctx, id)
+		contractOK(t, e)
+		verdict := tc.verdict
+		if verdict == "" {
+			verdict = sources.FleetUnknown
+		}
+		contractEqual(t, a.FleetVerdict, verdict)
+		contractEqual(t, a.PowerUnits, tc.units)
+		contractEqual(t, a.Drivers, tc.drivers)
+		f.reopen()
+		b, e := f.s.GetAssessment(ctx, id)
+		contractOK(t, e)
+		contractEqual(t, b, a)
 	}
+	o.Reading.FleetVerdict = sources.FleetFail
+	o.Reading.PowerUnits = ptrInt(1)
+	o.Digest += "x"
+	contractAttach(t, f, "current", o)
+	older := o
+	older.SourceID = "older"
+	older.Reading.Filed = f.now.AddDate(-2, 0, 0)
+	older.Reading.FleetVerdict = sources.FleetPass
+	older.Reading.PowerUnits = ptrInt(5)
+	older.Reading.Drivers = ptrInt(6)
+	contractAttach(t, f, "older", older)
+	loan := older
+	loan.Scraper = ppp.Name
+	loan.SourceID = "loan"
+	loan.Reading.Filed = f.now.AddDate(1, 0, 0)
+	contractAttach(t, f, "loan", loan)
+	check := func(verdict string, units, drivers *int64) {
+		t.Helper()
+		_, e := f.s.Judge(ctx, []string{id})
+		contractOK(t, e)
+		a, e := f.s.GetAssessment(ctx, id)
+		contractOK(t, e)
+		contractEqual(t, a.FleetVerdict, verdict)
+		contractEqual(t, a.PowerUnits, units)
+		contractEqual(t, a.Drivers, drivers)
+	}
+	check(sources.FleetFail, ptrInt(1), nil)
+	_, _, e := f.s.MarkGone(ctx, fmcsa.Name, "older")
+	contractOK(t, e)
+	check(sources.FleetPass, ptrInt(5), ptrInt(6))
+	_, _, e = f.s.MarkGone(ctx, fmcsa.Name, "none")
+	contractOK(t, e)
+	check(sources.FleetUnknown, nil, nil)
+}
+
+// R-EHCU-HV8K R-EG4Y-43HV
+func TestJudgeAllAgreesWithExplicitActiveIDs(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	contractOK(t, f.s.ReplaceZipDrive(ctx, map[string]int64{"55072": 42}))
+	ids := contractAttach(t, f, "run", contractObservation("a", "Alpha", f.now), contractObservation("b", "Beta", f.now))
+	cohort, e := f.s.CreateCohort(ctx, store.Cohort{Name: "Preserved", Size: store.CohortSizeMax, CreatedUserID: "owner"})
+	contractOK(t, e)
+	_, e = f.s.Reject(ctx, store.Reject{Kind: store.KindReject, Cohort: cohort.ID, Candidate: ids[0], Why: "Owner choice", UserID: "owner"})
+	contractOK(t, e)
+	rejects, e := f.s.Rejects(ctx, ids[0])
+	contractOK(t, e)
+	explicit, e := f.s.Judge(ctx, ids)
+	contractOK(t, e)
+	before := contractState(t, f)
+	all, e := f.s.JudgeAll(ctx)
+	contractOK(t, e)
+	contractEqual(t, all, explicit)
+	contractEqual(t, contractState(t, f), before)
+	persisted, e := f.s.GetCohort(ctx, cohort.ID)
+	contractOK(t, e)
+	contractEqual(t, persisted, cohort)
+	afterRejects, e := f.s.Rejects(ctx, ids[0])
+	contractOK(t, e)
+	contractEqual(t, afterRejects, rejects)
+}
+
+// R-EIKQ-VMZ9
+func TestRulingJudgmentsUpdateCohortMembership(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	ids := contractAttach(t, f, "run", contractObservation("a", "Alpha", f.now), contractObservation("b", "Beta", f.now))
 	_, e := f.s.JudgeAll(ctx)
 	contractOK(t, e)
-	for _, tc := range []struct {
-		min  int64
-		want []string
-	}{{10000000, ids[1:]}, {10000001, ids[2:]}, {10000002, []string{}}} {
-		rs, e := f.s.Shortlist(ctx, store.ShortlistFilter{MinRevenue: &tc.min}, 0, "", 20)
+	cohort, e := f.s.CreateCohort(ctx, store.Cohort{Name: "Membership", Size: store.CohortSizeMax, CreatedUserID: "owner"})
+	contractOK(t, e)
+	for _, kind := range []string{store.KindExclude, store.KindInclude} {
+		untouched, e := f.s.GetAssessment(ctx, ids[1])
 		contractOK(t, e)
-		got := []string{}
-		for _, r := range rs {
-			got = append(got, r.Candidate.ID)
+		es, e := f.s.Estimates(ctx, ids[1])
+		contractOK(t, e)
+		f.now = f.now.Add(time.Hour)
+		_, cs, e := f.s.Decide(ctx, store.Ruling{Kind: kind, Candidate: ids[0], Why: "Owner ruling", UserID: "owner"})
+		contractOK(t, e)
+		contractEqual(t, len(cs), 1)
+		got, e := f.s.GetAssessment(ctx, ids[0])
+		contractOK(t, e)
+		contractEqual(t, got.Excluded, kind == store.KindExclude)
+		contractEqual(t, got.Calculated, f.now.UTC().Truncate(time.Second))
+		other, e := f.s.GetAssessment(ctx, ids[1])
+		contractOK(t, e)
+		contractEqual(t, other, untouched)
+		after, e := f.s.Estimates(ctx, ids[1])
+		contractOK(t, e)
+		contractEqual(t, after, es)
+		read, e := f.s.ReadCohort(ctx, cohort.ID)
+		contractOK(t, e)
+		want := 2
+		if kind == store.KindExclude {
+			want = 1
 		}
-		contractEqual(t, got, tc.want)
+		contractEqual(t, read.Matching, int64(want))
+		contractEqual(t, len(read.Members), want)
 	}
+}
+
+// R-EIKQ-VMZ9
+func TestMovingRulingsWriteTheSameJudgmentsAsJudge(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	a := contractObservation("a", "Same business", f.now)
+	a.Scraper = fmcsa.Name
+	a.Reading.FleetVerdict = sources.FleetPass
+	a.Reading.PowerUnits = ptrInt(5)
+	b := a
+	b.SourceID = "b"
+	b.Reading.Filed = f.now.AddDate(0, 1, 0)
+	b.Reading.FleetVerdict = sources.FleetFail
+	b.Reading.PowerUnits = ptrInt(1)
+	id := contractAttach(t, f, "run", a, b)[0]
+	_, e := f.s.JudgeAll(ctx)
+	contractOK(t, e)
+	split, cs, e := f.s.Decide(ctx, store.Ruling{Kind: store.KindSplit, Candidate: id, Keys: []string{sources.SourceKey(b.Scraper, b.SourceID)}, Why: "Separate businesses", UserID: "owner"})
+	contractOK(t, e)
+	check := func(cs []store.Candidate) {
+		t.Helper()
+		for _, c := range cs {
+			if c.Status != store.StatusActive {
+				continue
+			}
+			before, e := f.s.GetAssessment(ctx, c.ID)
+			contractOK(t, e)
+			es, e := f.s.Estimates(ctx, c.ID)
+			contractOK(t, e)
+			contractEqual(t, before.Calculated, f.now.UTC().Truncate(time.Second))
+			_, e = f.s.Judge(ctx, []string{c.ID})
+			contractOK(t, e)
+			after, e := f.s.GetAssessment(ctx, c.ID)
+			contractOK(t, e)
+			contractEqual(t, after, before)
+			afterE, e := f.s.Estimates(ctx, c.ID)
+			contractOK(t, e)
+			contractEqual(t, afterE, es)
+		}
+	}
+	check(cs)
+	left, e := f.s.GetAssessment(ctx, id)
+	contractOK(t, e)
+	contractEqual(t, left.FleetVerdict, sources.FleetPass)
+	contractEqual(t, left.PowerUnits, ptrInt(5))
+	right, e := f.s.GetAssessment(ctx, split.Other)
+	contractOK(t, e)
+	contractEqual(t, right.FleetVerdict, sources.FleetFail)
+	contractEqual(t, right.PowerUnits, ptrInt(1))
+	f.now = f.now.Add(time.Hour)
+	_, cs, e = f.s.Decide(ctx, store.Ruling{Kind: store.KindMerge, Candidate: id, Other: split.Other, Why: "One business", UserID: "owner"})
+	contractOK(t, e)
+	check(cs)
+	merged, e := f.s.GetAssessment(ctx, id)
+	contractOK(t, e)
+	contractEqual(t, merged.FleetVerdict, sources.FleetFail)
+	contractEqual(t, merged.PowerUnits, ptrInt(1))
+	counts, e := f.s.Judge(ctx, []string{id, id, split.Other, "missing"})
+	contractOK(t, e)
+	contractEqual(t, counts.Judged, int64(1))
 }

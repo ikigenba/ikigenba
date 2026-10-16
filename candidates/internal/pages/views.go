@@ -53,9 +53,9 @@ func passView(p store.Pass, sp string) PassView {
 	v.Finished, v.FinishedText = stamp(p.Finished, SecondLayout)
 	return v
 }
-func shortlistRow(e store.Ranked, i int, offset int64) ShortlistRow {
+func memberRow(e store.Ranked, i int) MemberRow {
 	a := assessmentView(e.Assessment)
-	v := ShortlistRow{Rank: offset + int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, Class: e.Candidate.Class, Fleet: a.Fleet, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch}
+	v := MemberRow{Rank: int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, Class: e.Candidate.Class, FleetVerdict: a.FleetVerdict, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch, KnownSince: a.KnownSince, KnownSinceText: a.KnownSinceText, NewestFiling: a.NewestFiling, NewestFilingText: a.NewestFilingText, Excluded: a.Excluded}
 	seen := map[string]bool{}
 	for _, c := range a.Categories {
 		if !seen[c.Name] {
@@ -90,7 +90,7 @@ func candidateView(c store.Candidate) CandidateView {
 	return v
 }
 func assessmentView(a store.Assessment) AssessmentView {
-	v := AssessmentView{OperatingEvidence: []EvidenceRow{}, Categories: []CategoryRow{}, GovernmentMatch: a.GovernmentMatch, Fleet: a.Fleet, Excluded: a.Excluded, Rules: a.Rules, KnownSince: date(a.KnownSince), KnownSinceText: date(a.KnownSince), NewestFiling: date(a.NewestFiling), NewestFilingText: date(a.NewestFiling)}
+	v := AssessmentView{OperatingEvidence: []EvidenceRow{}, Categories: []CategoryRow{}, GovernmentMatch: a.GovernmentMatch, FleetVerdict: a.FleetVerdict, Excluded: a.Excluded, Rules: a.Rules, KnownSince: date(a.KnownSince), KnownSinceText: date(a.KnownSince), NewestFiling: date(a.NewestFiling), NewestFilingText: date(a.NewestFiling)}
 	if a.Operating != nil {
 		v.OperatingConfidence = two(*a.Operating)
 	}
@@ -102,6 +102,12 @@ func assessmentView(a store.Assessment) AssessmentView {
 	}
 	if a.RevenueConfidence != nil {
 		v.RevenueConfidence = two(*a.RevenueConfidence)
+	}
+	if a.PowerUnits != nil {
+		v.PowerUnits = strconv.FormatInt(*a.PowerUnits, 10)
+	}
+	if a.Drivers != nil {
+		v.Drivers = strconv.FormatInt(*a.Drivers, 10)
 	}
 	if a.Minutes != nil {
 		v.Minutes = strconv.FormatInt(*a.Minutes, 10)
@@ -145,6 +151,54 @@ func rulingView(r store.Ruling, id string) RulingView {
 	if r.Candidate != id {
 		v.Other = r.Candidate
 	}
+	v.At, v.AtText = stamp(r.At, MinuteLayout)
+	return v
+}
+
+func cohortRow(c store.Cohort) CohortRow {
+	v := CohortRow{ID: c.ID, Name: c.Name, Size: c.Size, CreatedBy: c.CreatedUserEmail, CreatedUser: c.CreatedUserID}
+	v.Changed, v.ChangedText = stamp(c.Changed, MinuteLayout)
+	return v
+}
+
+func filtersView(f store.CohortFilters) FiltersView {
+	v := FiltersView{RevenueUnknown: f.RevenueUnknown, MinutesUnknown: f.MinutesUnknown, Categories: append([]string{}, f.Categories...), CategoryUnknown: f.CategoryUnknown, Fleet: f.Fleet, FleetUnknown: f.FleetUnknown, FilingUnknown: f.FilingUnknown, Class: f.Class, ClassUnknown: f.ClassUnknown, ShowExcluded: f.ShowExcluded}
+	if f.RevenueMin != nil {
+		v.RevenueMin = dollars(*f.RevenueMin)
+	}
+	if f.RevenueMax != nil {
+		v.RevenueMax = dollars(*f.RevenueMax)
+	}
+	if f.MaxMinutes != nil {
+		v.MaxMinutes = strconv.FormatInt(*f.MaxMinutes, 10)
+	}
+	if f.MaxFilingAgeDays != nil {
+		v.MaxFilingAgeDays = strconv.FormatInt(*f.MaxFilingAgeDays, 10)
+	}
+	if f.Government != nil {
+		v.Government = strconv.FormatBool(*f.Government)
+	}
+	return v
+}
+
+func cohortView(c store.Cohort) CohortView {
+	v := CohortView{ID: c.ID, Name: c.Name, Size: c.Size, Filters: filtersView(c.Filters), Order: []OrderRow{}, CreatedBy: c.CreatedUserEmail, CreatedUser: c.CreatedUserID, ChangedBy: c.ChangedUserEmail, ChangedUser: c.ChangedUserID}
+	for _, o := range c.Order {
+		v.Order = append(v.Order, OrderRow{o.Field, o.Direction})
+	}
+	v.Created, v.CreatedText = stamp(c.Created, SecondLayout)
+	v.Changed, v.ChangedText = stamp(c.Changed, SecondLayout)
+	return v
+}
+
+func rejectRow(r store.Reject) RejectRow {
+	v := RejectRow{Candidate: r.Candidate, By: r.UserEmail, User: r.UserID, Why: r.Why}
+	v.At, v.AtText = stamp(r.At, MinuteLayout)
+	return v
+}
+
+func rejectRecordRow(r store.Reject) RejectRecordRow {
+	v := RejectRecordRow{Kind: r.Kind, Cohort: r.Cohort, CohortName: r.CohortName, By: r.UserEmail, User: r.UserID, Why: r.Why}
 	v.At, v.AtText = stamp(r.At, MinuteLayout)
 	return v
 }

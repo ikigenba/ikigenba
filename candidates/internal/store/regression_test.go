@@ -435,8 +435,10 @@ func TestScoringRulingsTakeEffectImmediately(t *testing.T) {
 	id := ids[0]
 	_, e := f.st.JudgeAll(regCtx)
 	regNoErr(t, e)
-	filter := store.ShortlistFilter{MaxMinutes: ptrInt(120), MinRevenue: ptrInt(10000000)}
-	rs, e := f.st.Shortlist(regCtx, filter, 0, "", 10)
+	k, e := f.st.CreateCohort(regCtx, store.Cohort{Name: "test", Size: 10, Filters: store.CohortFilters{MaxMinutes: ptrInt(120), RevenueMin: ptrInt(10000000)}, CreatedUserID: "owner"})
+	regNoErr(t, e)
+	cr, e := f.st.ReadCohort(regCtx, k.ID)
+	rs := cr.Members
 	regNoErr(t, e)
 	regEqual(t, len(rs), 1)
 	before := regCandidate(t, f, id)
@@ -452,7 +454,8 @@ func TestScoringRulingsTakeEffectImmediately(t *testing.T) {
 		regNoErr(t, e)
 		regEqual(t, a.Excluded, kind == store.KindExclude)
 		regEqual(t, a.Calculated, regTime(f))
-		rs, e = f.st.Shortlist(regCtx, filter, 0, "", 10)
+		cr, e = f.st.ReadCohort(regCtx, k.ID)
+		rs = cr.Members
 		regNoErr(t, e)
 		want := 1
 		if kind == store.KindExclude {
@@ -509,7 +512,7 @@ func TestResolutionOldestTieAndGoneIdentity(t *testing.T) {
 	regEqual(t, touched, wantIDs)
 }
 
-// R-GMHK-CFT8 R-13TB-UKC9
+// R-GMHK-CFT8 R-EIKQ-VMZ9
 func TestScoringMergeAndSplitAssessOnlyActiveSides(t *testing.T) {
 	f := regNew(t)
 	regNoErr(t, f.st.ReplaceZipDrive(regCtx, map[string]int64{"55072": 18}))
@@ -528,7 +531,7 @@ func TestScoringMergeAndSplitAssessOnlyActiveSides(t *testing.T) {
 		got, e := f.st.GetAssessment(regCtx, c.ID)
 		regNoErr(t, e)
 		regEqual(t, got.Calculated, regTime(f))
-		regEqual(t, got.Fleet, true)
+		regEqual(t, got.FleetVerdict, sources.FleetUnknown)
 		regEqual(t, *got.Minutes, int64(18))
 		want := a.Reading.Estimate
 		if i == 1 {

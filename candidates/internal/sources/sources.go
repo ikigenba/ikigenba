@@ -13,6 +13,9 @@ import (
 
 // Class, category, evidence and rules constants identify the source rules.
 const (
+	FleetPass             = "pass"
+	FleetFail             = "fail"
+	FleetUnknown          = "unknown"
 	ClassPrivate          = "private"
 	ClassForHire          = "for_hire"
 	ClassMixed            = "mixed"
@@ -74,6 +77,8 @@ type Reading struct {
 	Cargo                                          []string
 	Filed                                          time.Time
 	Fleet                                          bool
+	FleetVerdict                                   string
+	PowerUnits, Drivers                            *int64
 	Estimate                                       *Estimate
 	Evidence                                       []Evidence
 	KnownSince                                     time.Time

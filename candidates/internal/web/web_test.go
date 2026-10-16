@@ -203,7 +203,7 @@ func TestMCPContextAndTools(t *testing.T) {
 	client := mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL + "/mcp", HTTPClient: &http.Client{Transport: causeTransport{http.DefaultTransport}}})
 	caller := identity.Caller{UserID: "owner", Email: "owner@example.test", RequestID: "chosen-request"}
 	list, err := client.ListTools(context.Background(), caller)
-	if err != nil || len(list) != 8 {
+	if err != nil || len(list) != len(tools.Catalog())+1 {
 		t.Fatal(list, err)
 	}
 	for i, e := range tools.Catalog() {

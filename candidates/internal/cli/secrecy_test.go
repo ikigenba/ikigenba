@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -168,7 +169,7 @@ func secrecyAbsent(t *testing.T, where string, value any, markers []string) {
 	}
 }
 
-// R-O4P6-E06L R-O74Z-5JNZ R-O9KR-X35D R-OASO-AUW2 R-6BHU-EWKD
+// R-R0Z3-POWF R-R3EW-H8DT R-R4MS-V04I R-R5UP-8RV7 R-R9IE-E33A
 func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	markers, phone := secrecyMarkers(t)
 	forbidden := append(append([]string{}, markers...), phone)
@@ -235,7 +236,7 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 		return id
 	}
 	doneID := rebuild("")
-	call("shortlist", map[string]any{}, false)
+	call("cohorts", map[string]any{}, false)
 	list := call("candidates", map[string]any{"name": markers[0], "phone": phone}, false)
 	var candidates []map[string]json.RawMessage
 	if err := json.Unmarshal(list["candidates"], &candidates); err != nil || len(candidates) != 1 {
@@ -248,25 +249,68 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 		t.Fatal("successful answer omitted supplied marker")
 	}
 	call("passes", map[string]any{}, false)
-	call("decide", map[string]any{"kind": store.KindInclude, "candidate": id, "why": markers[9]}, false)
+	all := call("candidates", map[string]any{}, false)
+	var active []map[string]json.RawMessage
+	if err := json.Unmarshal(all["candidates"], &active); err != nil || len(active) < 2 {
+		t.Fatal("distinct candidates missing")
+	}
+	other := runText(active[0], "id")
+	if other == id {
+		other = runText(active[1], "id")
+	}
+	call("decide", map[string]any{"kind": store.KindNotSame, "candidate": id, "other": other, "why": markers[9]}, false)
+	call("exclude", map[string]any{"candidate": id, "why": markers[9]}, false)
+	call("include", map[string]any{"candidate": id, "why": markers[9]}, false)
+	co := call("create_cohort", map[string]any{"name": markers[0]}, false)
+	cohort := co
+	cohortID := runText(cohort, "id")
+	call("edit_cohort", map[string]any{"cohort": cohortID, "name": markers[1]}, false)
+	call("create_cohort", map[string]any{"name": markers[2]}, false)
+	call("reject", map[string]any{"cohort": cohortID, "candidate": id, "why": markers[9]}, false)
+	call("unreject", map[string]any{"cohort": cohortID, "candidate": id, "why": markers[9]}, false)
+	call("reject", map[string]any{"cohort": cohortID, "candidate": id, "why": markers[9]}, false)
+	cohortRead := call("cohort", map[string]any{"cohort": cohortID}, false)
+	var members, rejects []map[string]json.RawMessage
+	if err := json.Unmarshal(cohortRead["members"], &members); err != nil || len(members) == 0 {
+		t.Fatal("marker cohort has no members", err)
+	}
+	if err := json.Unmarshal(cohortRead["rejects"], &rejects); err != nil || len(rejects) != 1 || runText(rejects[0], "why") != markers[9] {
+		t.Fatal("marker cohort standing reject missing", err)
+	}
+	var readCohort map[string]json.RawMessage
+	if err := json.Unmarshal(cohortRead["cohort"], &readCohort); err != nil || runText(readCohort, "name") != markers[1] {
+		t.Fatal("marker cohort name missing", err)
+	}
 	for _, tc := range []struct {
 		name string
 		args any
 	}{
-		{"shortlist", map[string]any{"page": markers[0]}}, {"candidates", map[string]any{"name": markers[0], "phone": phone, "page": markers[0]}},
+		{"cohorts", map[string]any{"page": markers[0]}}, {"candidates", map[string]any{"name": markers[0], "phone": phone, "page": markers[0]}},
 		{"candidate", map[string]any{"candidate": "absent"}}, {"passes", map[string]any{"page": markers[0]}}, {"pass", map[string]any{"pass": "absent"}},
+		{"cohort", map[string]any{"cohort": "absent"}},
+		{"create_cohort", map[string]any{"name": markers[4], "size": 0}}, {"edit_cohort", map[string]any{"cohort": "absent", "name": markers[1]}},
+		{"delete_cohort", map[string]any{"cohort": "absent"}},
+		{"exclude", map[string]any{"candidate": "absent", "why": markers[9]}}, {"include", map[string]any{"candidate": "absent", "why": markers[9]}},
+		{"reject", map[string]any{"cohort": cohortID, "candidate": "absent", "why": markers[9]}}, {"unreject", map[string]any{"cohort": cohortID, "candidate": "absent", "why": markers[9]}},
 		{"rebuild", []any{}}, {"decide", map[string]any{"kind": "invalid", "candidate": id, "why": markers[9]}},
 	} {
 		call(tc.name, tc.args, true)
 	}
-	for _, path := range []string{"/", "/candidates/" + id, "/passes/" + doneID, "/tools", "/about", "/absent", "/candidates/absent", "/passes/absent"} {
+	for _, path := range []string{"/", "/cohorts/" + cohortID, "/candidates/" + id, "/passes/" + doneID, "/tools", "/about", "/absent", "/candidates/absent", "/passes/absent"} {
 		status, body := h.request("GET", path, "page-request", nil)
+		if path == "/cohorts/"+cohortID {
+			if status != 200 || !strings.Contains(strings.ToLower(string(body)), strings.ToLower(markers[1])) || !strings.Contains(strings.ToLower(string(body)), strings.ToLower(markers[9])) {
+				t.Fatal("signed-in cohort page omitted marker cohort or standing reject")
+			}
+		}
 		if path == "/candidates/"+id {
 			if status != 200 || !strings.Contains(strings.ToLower(string(body)), strings.ToLower(markers[0])) {
 				t.Fatal("signed-in candidate page omitted marker")
 			}
 		}
 	}
+	call("delete_cohort", map[string]any{"cohort": cohortID}, false)
+	call("create_cohort", map[string]any{"name": markers[3]}, false)
 	answers := [][]byte{}
 	delivery := func(eventID, runID, status string) {
 		t.Helper()
@@ -303,13 +347,19 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 		t.Fatal("record failure pass missing")
 	}
 	// Each list has two entries here, and every returned paging handle is searched.
-	for _, name := range []string{"shortlist", "candidates", "passes"} {
+	for _, name := range []string{"cohorts", "candidates", "passes"} {
 		first := call(name, map[string]any{"limit": 1}, false)
 		token := runText(first, "next")
 		if token == "" {
 			t.Fatalf("%s missing paging handle", name)
 		}
 		forbidden = append(forbidden, token)
+		if name == "cohorts" {
+			status, _ := h.request("GET", "/?cohorts_page="+url.QueryEscape(token), "paged-landing", nil)
+			if status != 200 {
+				t.Fatal("paged landing failed")
+			}
+		}
 		second := call(name, map[string]any{"limit": 1, "page": token}, false)
 		if token = runText(second, "next"); token != "" {
 			forbidden = append(forbidden, token)

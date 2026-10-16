@@ -124,7 +124,7 @@ func TestIdentityAndEvidence(t *testing.T) {
 	r.Names = []string{"Alias", "Other"}
 	r.Address = scrapes.Address{Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "HENNEPIN"}
 	r.People = []scrapes.Person{{Name: "Pat", Role: "owner"}}
-	want := sources.Reading{NameKey: "ACME BUILDERS", Name: r.Name, Names: []string{"Alias", "Other"}, Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "MN-HENNEPIN", People: []sources.Person{}, Cargo: []string{}, Evidence: []sources.Evidence{{Name: sources.EvidencePPPLoan, Source: ppp.Name, Weight: .2, Description: sources.DescribePPPLoan}}}
+	want := sources.Reading{FleetVerdict: sources.FleetUnknown, NameKey: "ACME BUILDERS", Name: r.Name, Names: []string{"Alias", "Other"}, Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "MN-HENNEPIN", People: []sources.Person{}, Cargo: []string{}, Evidence: []sources.Evidence{{Name: sources.EvidencePPPLoan, Source: ppp.Name, Weight: .2, Description: sources.DescribePPPLoan}}}
 	if got := ppp.New().Read(r); !reflect.DeepEqual(got, want) {
 		t.Fatal(got, want)
 	}
@@ -172,5 +172,15 @@ func TestFactsAndOwnership(t *testing.T) {
 	want = map[string]json.RawMessage{"amount": sparse.Facts["amount"], "naics": sparse.Facts["naics"], "jobs_reported": sparse.Facts["jobs_reported"]}
 	if got := ppp.New().Read(sparse).Estimate.Facts; !reflect.DeepEqual(got, want) {
 		t.Fatal(got)
+	}
+}
+
+// R-47RG-75NH
+func TestFleetUnknown(t *testing.T) {
+	for _, r := range []scrapes.Row{{}, row(map[string]string{"power_units": "14", "total_drivers": "4", "status": "A"})} {
+		got := ppp.New().Read(r)
+		if got.FleetVerdict != sources.FleetUnknown || got.PowerUnits != nil || got.Drivers != nil {
+			t.Fatal(got)
+		}
 	}
 }

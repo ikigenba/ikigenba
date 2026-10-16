@@ -61,7 +61,8 @@ type Assessment struct {
 	GovernmentMatch         string
 	NewestFiling            time.Time
 	Categories              []sources.Category
-	Fleet                   bool
+	FleetVerdict            string
+	PowerUnits, Drivers     *int64
 	Minutes                 *int64
 	Excluded                bool
 	Rules                   int64
@@ -95,12 +96,6 @@ type Observation struct {
 
 // CandidateFilter selects active candidates.
 type CandidateFilter struct{ Name, Zip, Phone string }
-
-// ShortlistFilter supplies all shortlist thresholds.
-type ShortlistFilter struct {
-	MaxMinutes, MinRevenue *int64
-	Class, Cargo           string
-}
 
 // Ranked contains a candidate and its persisted assessment.
 type Ranked struct {

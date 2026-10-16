@@ -20,9 +20,11 @@ func Handler(cfg Config) http.Handler {
 		path := r.URL.EscapedPath()
 		cid := strings.TrimPrefix(path, "/candidates/")
 		pid := strings.TrimPrefix(path, "/passes/")
+		hid := strings.TrimPrefix(path, "/cohorts/")
+		cohort := strings.HasPrefix(path, "/cohorts/") && store.ValidCohortID(hid)
 		candidate := strings.HasPrefix(path, "/candidates/") && store.ValidCandidateID(cid)
 		pass := strings.HasPrefix(path, "/passes/") && store.ValidPassID(pid)
-		known := path == "/" || path == "/tools" || path == "/about" || candidate || pass
+		known := path == "/" || path == "/tools" || path == "/about" || candidate || pass || cohort
 		auth := urls.Auth(r, cfg.ServicesPath)
 		b := cfg.Banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: auth + "/", LogoutURL: auth + "/logout"})
 		notfound := func() { cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NotFoundData{Banner: b}) }
@@ -55,8 +57,8 @@ func Handler(cfg Config) http.Handler {
 			cfg.Pages.Write(w, r, 200, "about", AboutData{b, Description})
 		case path == "/":
 			b.Trail = nil
-			sp, pp := r.URL.Query().Get("shortlist_page"), r.URL.Query().Get("passes_page")
-			shortPos, ok := decodeShortlistPage(sp)
+			sp, pp := r.URL.Query().Get("cohorts_page"), r.URL.Query().Get("passes_page")
+			cohortPos, ok := decodeCohortsPage(sp)
 			if !ok {
 				notfound()
 				return
@@ -66,41 +68,25 @@ func Handler(cfg Config) http.Handler {
 				notfound()
 				return
 			}
-			d := LandingData{Banner: b, Shortlist: []ShortlistRow{}, ShortlistPage: sp, Passes: []PassRow{}, PassesPage: pp}
-			filter := store.ShortlistFilter{}
-			var ranked []store.Ranked
+			d := LandingData{Banner: b, Cohorts: []CohortRow{}, CohortsPage: sp, Passes: []PassRow{}, PassesPage: pp}
+			var cohorts []store.Cohort
 			var err error
-			if shortPos.reversed {
-				ranked, err = cfg.Store.ShortlistReversed(r.Context(), filter, shortPos.key, shortPos.id, paging.DefaultLimit+1)
+			if cohortPos.reversed {
+				cohorts, err = cfg.Store.ListCohortsReversed(r.Context(), cohortPos.name, cohortPos.id, paging.DefaultLimit+1)
 			} else {
-				ranked, err = cfg.Store.Shortlist(r.Context(), filter, shortPos.key, shortPos.id, paging.DefaultLimit+1)
+				cohorts, err = cfg.Store.ListCohorts(r.Context(), cohortPos.name, cohortPos.id, paging.DefaultLimit+1)
 			}
 			if err != nil {
 				fail()
 				return
 			}
-			shortMore := len(ranked) > paging.DefaultLimit
-			shortUnder := shortPos.reversed && !shortMore
-			if shortMore {
-				ranked = ranked[:paging.DefaultLimit]
+			cohortMore := len(cohorts) > paging.DefaultLimit
+			cohortUnder := cohortPos.reversed && !cohortMore
+			if cohortMore {
+				cohorts = cohorts[:paging.DefaultLimit]
 			}
-			if shortPos.reversed {
-				slices.Reverse(ranked)
-			}
-			var offset int64
-			if len(ranked) > 0 && sp != "" {
-				key, id := shortPos.key, shortPos.id
-				if shortPos.reversed {
-					key, id = ranked[0].Assessment.OperatingKey, ranked[0].Candidate.ID
-				}
-				offset, err = cfg.Store.ShortlistOffset(r.Context(), filter, key, id)
-				if err != nil {
-					fail()
-					return
-				}
-				if shortPos.reversed {
-					offset--
-				}
+			if cohortPos.reversed {
+				slices.Reverse(cohorts)
 			}
 			var list []store.Pass
 			if passPos.reversed {
@@ -114,10 +100,10 @@ func Handler(cfg Config) http.Handler {
 			}
 			passMore := len(list) > paging.DefaultLimit
 			passUnder := passPos.reversed && !passMore
-			if shortUnder || passUnder {
+			if cohortUnder || passUnder {
 				loc := "/"
-				if !shortUnder && sp != "" {
-					loc += "?shortlist_page=" + sp
+				if !cohortUnder && sp != "" {
+					loc += "?cohorts_page=" + sp
 				} else if !passUnder && pp != "" {
 					loc += "?passes_page=" + pp
 				}
@@ -131,17 +117,17 @@ func Handler(cfg Config) http.Handler {
 			if passPos.reversed {
 				slices.Reverse(list)
 			}
-			if len(ranked) > 0 {
-				first, last := ranked[0], ranked[len(ranked)-1]
+			if len(cohorts) > 0 {
+				first, last := cohorts[0], cohorts[len(cohorts)-1]
 				if sp != "" {
-					d.ShortlistPrev = (paging.Token{Tool: "shortlist-before"}).Encode(first.Assessment.OperatingKey, first.Candidate.ID)
+					d.CohortsPrev = (paging.Token{Tool: "cohorts-before"}).Encode(first.Name, first.ID)
 				}
-				if !shortPos.last && (shortMore || shortPos.reversed) {
-					d.ShortlistNext = (paging.Token{Tool: "shortlist"}).Encode(last.Assessment.OperatingKey, last.Candidate.ID)
+				if !cohortPos.last && (cohortMore || cohortPos.reversed) {
+					d.CohortsNext = (paging.Token{Tool: "cohorts"}).Encode(last.Name, last.ID)
 				}
 			}
-			for i, e := range ranked {
-				d.Shortlist = append(d.Shortlist, shortlistRow(e, i, offset))
+			for _, e := range cohorts {
+				d.Cohorts = append(d.Cohorts, cohortRow(e))
 			}
 			if len(list) > 0 {
 				first, last := list[0], list[len(list)-1]
@@ -156,6 +142,25 @@ func Handler(cfg Config) http.Handler {
 				d.Passes = append(d.Passes, passRow(p))
 			}
 			cfg.Pages.Write(w, r, 200, "landing", d)
+		case cohort:
+			v, err := cfg.Store.ReadCohort(r.Context(), hid)
+			if errors.Is(err, store.ErrNotFound) {
+				notfound()
+				return
+			}
+			if err != nil {
+				fail()
+				return
+			}
+			b.Trail = []page.Level{{Name: hid, URL: "/cohorts/" + hid}}
+			d := CohortData{Banner: b, Cohort: cohortView(v.Cohort), Matching: v.Matching, Members: []MemberRow{}, Rejects: []RejectRow{}}
+			for i, m := range v.Members {
+				d.Members = append(d.Members, memberRow(m, i))
+			}
+			for _, x := range v.Rejects {
+				d.Rejects = append(d.Rejects, rejectRow(x))
+			}
+			cfg.Pages.Write(w, r, 200, "cohort", d)
 		case pass:
 			p, err := cfg.Store.GetPass(r.Context(), pid)
 			if errors.Is(err, store.ErrNotFound) {
@@ -178,7 +183,7 @@ func Handler(cfg Config) http.Handler {
 				fail()
 				return
 			}
-			d := CandidateData{Candidate: candidateView(c), Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{}}
+			d := CandidateData{Candidate: candidateView(c), Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{}, Rejects: []RejectRecordRow{}}
 			rulings, err := cfg.Store.Rulings(r.Context(), cid)
 			if err != nil {
 				fail()
@@ -186,6 +191,14 @@ func Handler(cfg Config) http.Handler {
 			}
 			for _, v := range rulings {
 				d.Rulings = append(d.Rulings, rulingView(v, cid))
+			}
+			rejects, err := cfg.Store.Rejects(r.Context(), cid)
+			if err != nil {
+				fail()
+				return
+			}
+			for _, x := range rejects {
+				d.Rejects = append(d.Rejects, rejectRecordRow(x))
 			}
 			if c.Status != store.StatusMerged {
 				a, err := cfg.Store.GetAssessment(r.Context(), cid)
@@ -222,20 +235,19 @@ func Handler(cfg Config) http.Handler {
 
 // landingPosition identifies a window in either landing list.
 type landingPosition struct {
-	key            int64
-	started, id    string
-	reversed, last bool
+	name, started, id string
+	reversed, last    bool
 }
 
-func decodeShortlistPage(value string) (landingPosition, bool) {
+func decodeCohortsPage(value string) (landingPosition, bool) {
 	p := landingPosition{}
 	if value == "" {
 		return p, true
 	}
-	if (paging.Token{Tool: "shortlist"}).Decode(value, &p.key, &p.id) == nil {
+	if (paging.Token{Tool: "cohorts"}).Decode(value, &p.name, &p.id) == nil {
 		return p, true
 	}
-	if (paging.Token{Tool: "shortlist-before"}).Decode(value, &p.key, &p.id) == nil {
+	if (paging.Token{Tool: "cohorts-before"}).Decode(value, &p.name, &p.id) == nil {
 		p.reversed = true
 		return p, true
 	}

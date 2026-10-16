@@ -89,8 +89,23 @@ func (*Source) Read(r scrapes.Row) sources.Reading {
 	driverFloor := max(drivers, 1)
 	implausible := unitsRead && driversRead && n > 50*driverFloor && (!mileageRead || mileage == 0)
 	suspicious := !implausible && unitsRead && driversRead && n > 10*driverFloor
+	out.FleetVerdict = sources.FleetFail
+	switch {
+	case implausible, stringFact(r.Facts, "status") == "A" && !unitsRead:
+		out.FleetVerdict = sources.FleetUnknown
+	case stringFact(r.Facts, "status") == "A" && n >= 2:
+		out.FleetVerdict = sources.FleetPass
+	}
+	out.Fleet = out.FleetVerdict == sources.FleetPass
+	if !implausible {
+		if unitsRead {
+			out.PowerUnits = &n
+		}
+		if driversRead {
+			out.Drivers = &drivers
+		}
+	}
 	if unitsRead && !implausible {
-		out.Fleet = stringFact(r.Facts, "status") == "A" && n >= 2
 		est := &sources.Estimate{Source: Name, Low: 150000 * n, Facts: make(map[string]json.RawMessage), Filed: out.Filed, Formula: sources.Rules}
 		switch out.Class {
 		case sources.ClassForHire:

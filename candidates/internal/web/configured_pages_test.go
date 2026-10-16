@@ -19,7 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/web"
 )
 
-// R-NWYH-IOWD R-5MG9-DY4O R-TIXM-FDZP
+// R-B1CB-HBMH R-5MG9-DY4O R-AU0X-6P6B
 func TestConfiguredScoredAndUnscoredPage(t *testing.T) {
 	cfg, _, _, _ := fixture(t)
 	ctx := context.Background()
@@ -29,7 +29,7 @@ func TestConfiguredScoredAndUnscoredPage(t *testing.T) {
 	}
 	cfg.ServicesPath = path
 	hi := int64(24000000)
-	reading := sources.Reading{Name: "Chosen carrier", Names: []string{"Chosen carrier"}, Street: "Chosen street", City: "Chosen city", State: "MN", Zip: "55072", Phone: "Chosen phone", Email: "Chosen email", People: []sources.Person{{Name: "Chosen person", Role: "owner"}}, Class: sources.ClassPrivate, Cargo: []string{"chosen-cargo"}, Fleet: true, Filed: fixtureTime(), Estimate: &sources.Estimate{Source: "fixture", Low: 14400000, High: &hi, Confidence: .7, Filed: fixtureTime(), Formula: 1, Facts: map[string]json.RawMessage{"chosen": json.RawMessage(` [ 1, 2 ] `)}}}
+	reading := sources.Reading{Name: "Chosen carrier", Names: []string{"Chosen carrier"}, Street: "Chosen street", City: "Chosen city", State: "MN", Zip: "55072", Phone: "Chosen phone", Email: "Chosen email", People: []sources.Person{{Name: "Chosen person", Role: "owner"}}, Class: sources.ClassPrivate, Cargo: []string{"chosen-cargo"}, FleetVerdict: sources.FleetUnknown, Filed: fixtureTime(), Estimate: &sources.Estimate{Source: "fixture", Low: 14400000, High: &hi, Confidence: .7, Filed: fixtureTime(), Formula: 1, Facts: map[string]json.RawMessage{"chosen": json.RawMessage(` [ 1, 2 ] `)}}}
 	if err := cfg.Store.ReplaceZipDrive(ctx, candidates.ZipDrive()); err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestConfiguredScoredAndUnscoredPage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want.Assessment = &pages.AssessmentView{OperatingEvidence: []pages.EvidenceRow{}, Categories: []pages.CategoryRow{}, Fleet: true, Minutes: "31", RevenueLow: "$14,400,000", RevenueHigh: "$24,000,000", RevenueConfidence: "0.70", NewestFiling: "2026-10-05", NewestFilingText: "2026-10-05", Rules: int64(sources.Rules), Calculated: a.Calculated.UTC().Format(time.RFC3339), CalculatedText: a.Calculated.UTC().Format(pages.SecondLayout)}
+			want.Assessment = &pages.AssessmentView{OperatingEvidence: []pages.EvidenceRow{}, Categories: []pages.CategoryRow{}, FleetVerdict: sources.FleetUnknown, Minutes: "31", RevenueLow: "$14,400,000", RevenueHigh: "$24,000,000", RevenueConfidence: "0.70", NewestFiling: "2026-10-05", NewestFilingText: "2026-10-05", Rules: int64(sources.Rules), Calculated: a.Calculated.UTC().Format(time.RFC3339), CalculatedText: a.Calculated.UTC().Format(pages.SecondLayout)}
 		}
 		set, err := page.Templates().ParseFS(candidates.Assets(), "*.html")
 		if err != nil {

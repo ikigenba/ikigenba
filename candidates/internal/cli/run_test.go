@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -417,7 +418,7 @@ func runOnlyState(t *testing.T, dir string) {
 // R-119A-9L3H R-13P3-14KV R-14WZ-EWBK R-164V-SO29 R-17CS-6FSY
 // R-3TTL-43TV R-42CV-SI0Q R-43KS-69RF R-478H-BKZI R-49OA-34GW R-4C42-UNYA
 // R-UN51-NEQR R-ZY3R-GAKJ R-UOCY-16HG R-UPKU-EY85  R-ZQSD-5O4D
-// R-0479-D5A0 R-06N2-4ORE R-07UY-IGI3 R-76JM-ZE8M R-7BF8-IH7E R-7CN4-W8Y3 R-7F2X-NSFH
+// R-0479-D5A0 R-06N2-4ORE R-07UY-IGI3 R-76JM-ZE8M R-7BF8-IH7E
 func TestRunAssembledChain(t *testing.T) {
 	if cli.SweepInterval != time.Hour {
 		t.Fatal("sweep constant")
@@ -455,13 +456,13 @@ func TestRunAssembledChain(t *testing.T) {
 		t.Fatalf("candidates %v %v", list, err)
 	}
 	cid := cs[0].ID
-	_, decision := h.call(identity.Caller{UserID: "ruler", Email: "ruler@example.test", RequestID: "decision-request"}, "decide", map[string]any{"kind": "exclude", "why": "fixture ruling", "candidate": cid})
+	_, decision := h.call(identity.Caller{UserID: "ruler", Email: "ruler@example.test", RequestID: "decision-request"}, "exclude", map[string]any{"why": "fixture ruling", "candidate": cid})
 	var ruling map[string]json.RawMessage
 	_ = json.Unmarshal(decision["ruling"], &ruling)
 	if runText(ruling, "user") != "ruler" || runText(ruling, "email") != "ruler@example.test" {
 		t.Fatalf("ruling identity %v", ruling)
 	}
-	for name, args := range map[string]any{"shortlist": map[string]any{}, "candidate": map[string]any{"candidate": cid}, "passes": map[string]any{}, "pass": map[string]any{"pass": id}} {
+	for name, args := range map[string]any{"cohorts": map[string]any{}, "candidate": map[string]any{"candidate": cid}, "passes": map[string]any{}, "pass": map[string]any{"pass": id}} {
 		rr, _ := h.call(caller, name, args)
 		if rr.IsError() {
 			t.Fatalf("%s refused", name)
@@ -1603,5 +1604,108 @@ func runAssertSilent(t *testing.T, h *runHarness) {
 	t.Helper()
 	if h.out.String() != "" || h.err.String() != "" {
 		t.Fatalf("streams stdout=%q stderr=%q", h.out.String(), h.err.String())
+	}
+}
+
+// R-WBVO-DL78 R-7CN4-W8Y3
+func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
+	rows := make([]map[string]any, 3)
+	for i := range rows {
+		rows[i] = runRow()
+		rows[i]["source_id"] = fmt.Sprintf("%d", 501+i)
+		rows[i]["name"] = fmt.Sprintf("Independent carrier %d", i)
+		rows[i]["names"] = []string{fmt.Sprintf("Independent carrier %d", i)}
+		facts := rows[i]["facts"].(map[string]any)
+		facts["phone"] = fmt.Sprintf("612555%04d", i)
+		facts["email"] = fmt.Sprintf("owner@independent%d.example", i)
+	}
+	fake := &runFake{rows: rows}
+	entries := map[string]string{"scrapes": runSocket(t, fake)}
+	for _, name := range []string{"events", "telemetry"} {
+		entries[name] = runSocket(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }))
+	}
+	var unrelated atomic.Int64
+	for _, name := range []string{"auth", "artifacts", "connections", "cron", "gdrive"} {
+		entries[name] = runSocket(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { unrelated.Add(1); w.WriteHeader(500) }))
+	}
+	h := newRunHarness(t, t.TempDir(), runServices(t, entries))
+	h.start()
+	caller := identity.Caller{UserID: "owner", RequestID: "all-tools"}
+	call := func(name string, args any) map[string]json.RawMessage {
+		t.Helper()
+		r, v := h.call(caller, name, args)
+		if r.IsError() {
+			t.Fatalf("%s refused: %v", name, r)
+		}
+		return v
+	}
+	p := call("rebuild", map[string]any{})
+	passID := runText(p, "id")
+	if runText(h.waitPass(caller, passID), "status") != store.StatusDone {
+		t.Fatal("rebuild failed")
+	}
+	call("cohorts", map[string]any{})
+	list := call("candidates", map[string]any{})
+	var active []map[string]json.RawMessage
+	if err := json.Unmarshal(list["candidates"], &active); err != nil || len(active) < 3 {
+		t.Fatal("three candidates missing", err)
+	}
+	id, other := runText(active[0], "id"), runText(active[1], "id")
+	call("passes", map[string]any{})
+	call("pass", map[string]any{"pass": passID})
+	call("candidate", map[string]any{"candidate": id})
+	ruler := identity.Caller{UserID: "chosen-ruler", Email: "chosen-ruler@example.test", RequestID: "ruler-request"}
+	result, decision := h.call(ruler, "decide", map[string]any{"kind": store.KindNotSame, "candidate": id, "other": other, "why": "independent records"})
+	var ruling map[string]json.RawMessage
+	if err := json.Unmarshal(decision["ruling"], &ruling); err != nil || result.IsError() || runText(ruling, "user") != ruler.UserID || runText(ruling, "email") != ruler.Email {
+		t.Fatal("decide ruling identity mismatch", err)
+	}
+	call("exclude", map[string]any{"candidate": id, "why": "owner excludes"})
+	call("include", map[string]any{"candidate": id, "why": "owner includes"})
+	co := call("create_cohort", map[string]any{"name": "first cohort"})
+	cohortID := runText(co, "id")
+	call("cohort", map[string]any{"cohort": cohortID})
+	call("edit_cohort", map[string]any{"cohort": cohortID, "name": "renamed cohort"})
+	call("reject", map[string]any{"cohort": cohortID, "candidate": id, "why": "owner rejects"})
+	call("unreject", map[string]any{"cohort": cohortID, "candidate": id, "why": "owner restores"})
+	for _, path := range []string{"/", "/tools", "/about", "/cohorts/" + cohortID, "/candidates/" + id, "/passes/" + passID} {
+		status, _ := h.request("GET", path, "all-pages", nil)
+		if status != 200 {
+			t.Fatalf("%s status %d", path, status)
+		}
+	}
+	call("delete_cohort", map[string]any{"cohort": cohortID})
+	h.deliver("evt_4444444444444444", "all-delivery", "done", 2)
+	ps := call("passes", map[string]any{})
+	var records []map[string]json.RawMessage
+	_ = json.Unmarshal(ps["passes"], &records)
+	found := false
+	for _, p := range records {
+		if runText(p, "trigger") == "run_fixture" {
+			found = true
+			if runText(h.waitPass(caller, runText(p, "id")), "status") != store.StatusDone {
+				t.Fatal("delivery failed")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("delivery pass missing")
+	}
+	if code := h.stop(); code != cli.ExitSuccess {
+		t.Fatal("run failed", code)
+	}
+	_, persisted := runStore(t, h.p.Dir, h.p.Now)
+	rulings, err := persisted.Rulings(context.Background(), id)
+	foundRuling := false
+	for _, r := range rulings {
+		if r.Kind == store.KindNotSame && r.UserID == ruler.UserID && r.UserEmail == ruler.Email {
+			foundRuling = true
+		}
+	}
+	if err != nil || !foundRuling {
+		t.Fatal("persisted decide identity mismatch", err)
+	}
+	if unrelated.Load() != 0 {
+		t.Fatalf("unrelated requests %d", unrelated.Load())
 	}
 }

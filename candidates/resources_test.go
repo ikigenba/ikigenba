@@ -9,11 +9,11 @@ import (
 	"github.com/ikigenba/ikigenba/candidates"
 )
 
-// R-0RI3-7F5X
+// R-IEVL-JLF6
 func TestAssets(t *testing.T) {
 	t.Chdir(t.TempDir())
 	checkFiles(t, candidates.Assets, []string{
-		"about.html", "candidate.html", "landing.html", "notfound.html", "pass.html", "tools.html",
+		"about.html", "candidate.html", "cohort.html", "landing.html", "notfound.html", "pass.html", "tools.html",
 	})
 }
 
@@ -23,12 +23,12 @@ func TestEtc(t *testing.T) {
 	checkFiles(t, candidates.Etc, []string{"manifest.toml", "nginx.conf"})
 }
 
-// R-P76N-239L
+// R-IG3H-XD5V
 func TestMigrations(t *testing.T) {
 	t.Chdir(t.TempDir())
 	checkFiles(t, candidates.Migrations, []string{
 		"0001_candidates.sql", "0002_links.sql", "0003_estimates.sql", "0004_assessments.sql",
-		"0005_decisions.sql", "0006_passes.sql", "0007_zip_drive.sql", "0008_windows.sql", "0009_judgments.sql",
+		"0005_decisions.sql", "0006_passes.sql", "0007_zip_drive.sql", "0008_windows.sql", "0009_judgments.sql", "0010_cohorts.sql",
 	})
 }
 

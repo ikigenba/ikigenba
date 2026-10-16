@@ -137,58 +137,6 @@ func (s *Store) ListCandidates(ctx context.Context, f CandidateFilter, created, 
 	return out, err
 }
 
-// Shortlist reads a window of persisted eligible scores in score-key order.
-func (s *Store) Shortlist(ctx context.Context, f ShortlistFilter, scoreKey int64, id string, n int) ([]Ranked, error) {
-	var out []Ranked
-	err := unreachable(s.readTx(ctx, func(tx *sql.Tx) error {
-		if n < 1 {
-			return ErrUnreachable
-		}
-		query := ShortlistFirst
-		args := []any{f.MaxMinutes, f.MinRevenue, f.Class, f.Cargo, n}
-		if id != "" {
-			query = ShortlistAfter
-			args = []any{f.MaxMinutes, f.MinRevenue, f.Class, f.Cargo, scoreKey, id, n}
-		}
-		var err error
-		out, err = rankedWindow(ctx, tx, query, args...)
-		return err
-	}))
-	return out, err
-}
-
-// ShortlistOffset counts persisted eligible entries through a position.
-func (s *Store) ShortlistOffset(ctx context.Context, f ShortlistFilter, scoreKey int64, id string) (int64, error) {
-	var out int64
-	err := unreachable(s.readTx(ctx, func(tx *sql.Tx) error {
-		if id == "" {
-			return nil
-		}
-		return tx.QueryRowContext(ctx, ShortlistBefore, f.MaxMinutes, f.MinRevenue, f.Class, f.Cargo, scoreKey, id).Scan(&out)
-	}))
-	return out, err
-}
-
-// ShortlistReversed reads preceding entries nearest first in reversed shortlist order.
-func (s *Store) ShortlistReversed(ctx context.Context, f ShortlistFilter, scoreKey int64, id string, n int) ([]Ranked, error) {
-	var out []Ranked
-	err := unreachable(s.readTx(ctx, func(tx *sql.Tx) error {
-		if n < 1 {
-			return ErrUnreachable
-		}
-		query := ShortlistLast
-		args := []any{f.MaxMinutes, f.MinRevenue, f.Class, f.Cargo, n}
-		if id != "" {
-			query = ShortlistPreceding
-			args = []any{f.MaxMinutes, f.MinRevenue, f.Class, f.Cargo, scoreKey, id, n}
-		}
-		var err error
-		out, err = rankedWindow(ctx, tx, query, args...)
-		return err
-	}))
-	return out, err
-}
-
 func rankedWindow(ctx context.Context, tx *sql.Tx, query string, args ...any) ([]Ranked, error) {
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
