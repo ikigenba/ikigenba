@@ -1,7 +1,9 @@
 package passes_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
@@ -54,9 +57,9 @@ func seedEmails(t *testing.T, f *fixture, n int, email func(int) string) []strin
 	}
 	return ids
 }
-func (f *fixture) enrich(o *int64) store.Pass {
+func (f *fixture) enrich(kind string) store.Pass {
 	f.t.Helper()
-	p, err := f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner", Email: "owner@private.test", RequestID: "enrich-request"}, o)
+	p, err := f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner", Email: "owner@private.test", RequestID: "enrich-request"}, kind)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -81,7 +84,7 @@ func waitFollow(t *testing.T, f *fixture, id string) store.Pass {
 	}
 }
 
-// R-YMBG-CJ2H R-IQTS-AOZJ R-IS1O-OGQ8 R-HI03-PTKO R-HJ80-3LBD R-SCNW-OD58 R-S541-PPF0 R-RWKR-1B85 R-RXSN-F2YU R-RZ0J-SUPJ
+// R-MQX0-5TXM R-MS4W-JLOB R-N4BW-DB39 R-N6RP-4UKN R-N33Z-ZJCK R-MZGA-U84H R-N97H-WE21 R-29XT-CHB8 R-2B5P-Q91X R-RZ0J-SUPJ
 func TestEnrichCountsDedupAndFollowOn(t *testing.T) {
 	f := newFixture(t, nil, false)
 	var mu sync.Mutex
@@ -98,7 +101,7 @@ func TestEnrichCountsDedupAndFollowOn(t *testing.T) {
 	ids := seedEmails(t, f, 5, func(i int) string {
 		return []string{"one@acme.test", "two@acme.test", "three@gone.test", "user@gmail.com", ""}[i]
 	})
-	p := f.enrich(nil)
+	p := f.enrich(sources.WebsiteCheck)
 	if p.Status != store.StatusDone || p.Due != 3 || p.Fetched != 2 || p.HTTPS != 2 || p.HTTP != 0 || p.None != 1 || p.Rows+p.New+p.Changed+p.Unchanged+p.Gone+p.Created+p.Linked+p.Judged+p.Unranged != 0 {
 		t.Fatal(p)
 	}
@@ -121,7 +124,14 @@ func TestEnrichCountsDedupAndFollowOn(t *testing.T) {
 		if len(es) != 1 || es[0].Kind != sources.WebsiteCheck || es[0].Source != dom || es[0].Cost != 0 || es[0].At != p.Started {
 			t.Fatal(es)
 		}
-		if dom == "acme.test" && (es[0].State != sources.WebsiteHTTPS || es[0].URL != "https://acme.test" || es[0].Title != "fixture title" || es[0].StatusCode != 200 || es[0].Size <= 0 || es[0].Error != "") {
+		var found website.Result
+		if err := json.Unmarshal(es[0].Found, &found); err != nil {
+			t.Fatal(err)
+		}
+		if es[0].Inputs != dom {
+			t.Fatal(es)
+		}
+		if dom == "acme.test" && (found.State != sources.WebsiteHTTPS || found.URL != "https://acme.test" || found.Title != "fixture title" || found.StatusCode != 200 || found.Size <= 0 || found.Error != "") {
 			t.Fatal(es)
 		}
 	}
@@ -147,7 +157,7 @@ func TestEnrichCountsDedupAndFollowOn(t *testing.T) {
 	}
 }
 
-// R-IS1O-OGQ8 R-IT9L-28GX R-IVPD-TRYB
+// R-N4BW-DB39 R-MTCS-XDF0 R-MUKP-B55P R-NAFE-A5SQ
 func TestEnrichAcrossBatches(t *testing.T) {
 	for _, same := range []bool{true, false} {
 		t.Run(fmt.Sprint(same), func(t *testing.T) {
@@ -161,7 +171,7 @@ func TestEnrichAcrossBatches(t *testing.T) {
 				if !same {
 					return nil, fmt.Errorf("fixture offline")
 				}
-				return pageResponse(r), nil
+				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/html"}}, Body: io.NopCloser(strings.NewReader(fmt.Sprintf("<title>fixture %d</title>", calls))), Request: r}, nil
 			})
 			n := 2*passes.BatchSize + 1
 			ids := seedEmails(t, f, n, func(i int) string {
@@ -170,8 +180,7 @@ func TestEnrichAcrossBatches(t *testing.T) {
 				}
 				return fmt.Sprintf("one@domain-%d.test", i)
 			})
-			zero := int64(0)
-			p := f.enrich(&zero)
+			p := f.enrich(sources.WebsiteCheck)
 			if p.Status != store.StatusDone || p.Due != int64(n) {
 				t.Fatal(p)
 			}
@@ -185,14 +194,34 @@ func TestEnrichAcrossBatches(t *testing.T) {
 			if gotCalls != wantCalls {
 				t.Fatal(gotCalls, wantCalls)
 			}
+			var shared string
 			for _, id := range ids {
 				es, err := f.st.Enrichments(context.Background(), id)
 				if err != nil || len(es) != 1 {
 					t.Fatal(id, es, err)
 				}
+				if same {
+					if shared == "" {
+						shared = string(es[0].Found)
+					}
+					if string(es[0].Found) != shared {
+						t.Fatal("domain fetched differently across batches")
+					}
+				}
+				var found website.Result
+				if err := json.Unmarshal(es[0].Found, &found); err != nil {
+					t.Fatal(err)
+				}
+				want := sources.WebsiteNone
+				if same {
+					want = sources.WebsiteHTTPS
+				}
+				if found.State != want {
+					t.Fatal(found)
+				}
 			}
 			waitFollow(t, f, p.ID)
-			second := f.enrich(nil)
+			second := f.enrich(sources.WebsiteCheck)
 			if second.Status != store.StatusDone || second.Due+second.Fetched+second.HTTPS+second.HTTP+second.None != 0 {
 				t.Fatal(second)
 			}
@@ -205,38 +234,69 @@ func TestEnrichAcrossBatches(t *testing.T) {
 	}
 }
 
-// R-RFI5-OIUF R-RHXY-G2BT R-RKDR-7LT7
+// R-1HW4-JR99 R-1J40-XIZY R-1GO8-5ZIK
 func TestEnrichRefusals(t *testing.T) {
 	for _, mode := range []string{"unavailable", "invalid", "busy", "store", "stopping"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newFixture(t, nil, false)
+			ids := seedEmails(t, f, 1, func(int) string { return "owner@preserved.test" })
+			if _, _, err := f.st.Derive(context.Background(), enrichers.KindLinkFacts, "", false, 1); err != nil {
+				t.Fatal(err)
+			}
+			snapshot := func() []byte {
+				es, err := f.st.Enrichments(context.Background(), ids[0])
+				if err != nil {
+					t.Fatal(err)
+				}
+				facts, err := f.st.GetFacts(context.Background(), ids[0])
+				if err != nil {
+					t.Fatal(err)
+				}
+				result, err := json.Marshal(struct {
+					Passes  []store.Pass
+					Results []store.Enrichment
+					Facts   store.Facts
+				}{f.list(), es, facts})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return result
+			}
+
 			f.checker(func(r *http.Request) (*http.Response, error) {
 				t.Error("refused pass fetched")
 				return pageResponse(r), nil
 			})
-			negative := int64(-1)
-			var age *int64
+			kind := sources.WebsiteCheck
 			switch mode {
 			case "unavailable":
+				if _, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindEnrich, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, UserID: "owner"}); err != nil {
+					t.Fatal(err)
+				}
 				f.eng = passes.New(passes.Config{Store: f.st})
-				age = &negative
 			case "invalid":
-				age = &negative
+				if _, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindEnrich, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, UserID: "owner"}); err != nil {
+					t.Fatal(err)
+				}
+				kind = "WEBSITE_CHECK"
 			case "busy":
 				if _, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindEnrich, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, UserID: "owner"}); err != nil {
 					t.Fatal(err)
 				}
 			case "store":
-				f.d.SetFailing(true)
 			case "stopping":
 				f.eng.Drain(context.Background())
-				age = &negative
+				kind = "WEBSITE_CHECK"
 			}
 			before := []store.Pass(nil)
 			if mode != "store" {
 				before = f.list()
 			}
-			p, err := f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner"}, age)
+			saved := snapshot()
+			if mode == "store" {
+				f.d.SetFailing(true)
+			}
+			p, err := f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner"}, kind)
 			if mode == "store" {
 				var refusal *passes.Refusal
 				if p.ID != "" || !errors.Is(err, store.ErrUnreachable) || errors.As(err, &refusal) {
@@ -249,6 +309,9 @@ func TestEnrichRefusals(t *testing.T) {
 					t.Fatal(f.list())
 				}
 			}
+			if !bytes.Equal(saved, snapshot()) {
+				t.Fatal("refusal changed persisted state")
+			}
 			f.flush()
 			if len(f.tc.Events())+len(f.ec.Events()) != 0 {
 				t.Fatal("refusal emitted")
@@ -257,7 +320,7 @@ func TestEnrichRefusals(t *testing.T) {
 	}
 }
 
-// R-RLLN-LDJW R-RMTJ-Z5AL R-IY56-LBFP R-Q3XB-GX8X R-S08G-6MG8
+// R-1KBX-BAQN R-1RNB-LX6T R-IY56-LBFP R-Q3XB-GX8X R-S08G-6MG8
 func TestEnrichPersistsCompletedChecksAndDrain(t *testing.T) {
 	f := newFixture(t, nil, false)
 	held := make(chan struct{})
@@ -279,7 +342,7 @@ func TestEnrichPersistsCompletedChecksAndDrain(t *testing.T) {
 		return "x@b.test"
 	})
 	ctx, cancel := context.WithCancel(context.Background())
-	p, err := f.eng.Enrich(ctx, identity.Caller{UserID: "owner"}, nil)
+	p, err := f.eng.Enrich(ctx, identity.Caller{UserID: "owner"}, sources.WebsiteCheck)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -323,11 +386,11 @@ func TestEnrichPersistsCompletedChecksAndDrain(t *testing.T) {
 	if err != nil || len(es) != 1 {
 		t.Fatal(es, err)
 	}
-	p, err = f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner"}, nil)
+	p, err = f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner"}, sources.WebsiteCheck)
 	assertRefusal(t, p, err, passes.RefusalStopping)
 }
 
-// R-RVCU-NJHG R-RXSN-F2YU R-RZ0J-SUPJ
+// R-28PW-YPKJ R-2B5P-Q91X R-RZ0J-SUPJ
 func TestIngestStartsEnrichThenJudgeWithLineage(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/record") {
@@ -365,40 +428,43 @@ func TestIngestStartsEnrichThenJudgeWithLineage(t *testing.T) {
 	}
 }
 
-// R-IWXA-7JP0
-func TestEnrichRefreshAges(t *testing.T) {
+// R-MX0I-2ON3
+func TestEnrichUnchangedInputsIgnoreAge(t *testing.T) {
 	f := newFixture(t, nil, false)
 	now := time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC)
 	f.st = store.New(f.d, store.Config{Now: func() time.Time { return now }, Rand: &random{}})
-	ids := seedEmails(t, f, 4, func(i int) string { return fmt.Sprintf("x@age-%d.test", i) })
-	for i, id := range ids {
-		age := []int{89, 91, 29, 31}[i]
-		state := sources.WebsiteHTTPS
-		if i >= 2 {
-			state = sources.WebsiteNone
+	ids := seedEmails(t, f, 4, func(i int) string { return []string{"x@acme.test", "x@changed.test", "x@gmail.com", ""}[i] })
+	for _, id := range ids {
+		c, _ := f.st.GetCandidate(context.Background(), id)
+		if c.Email == "x@gmail.com" || c.Email == "" {
+			continue
 		}
-		at := now
-		now = now.Add(-time.Duration(age) * 24 * time.Hour)
-		_, err := f.st.AddEnrichments(context.Background(), []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Source: fmt.Sprintf("age-%d.test", i), State: state}})
-		now = at
+		inputs := website.Domain(c.Email)
+		if c.Email == "x@changed.test" {
+			inputs = "old.test"
+		}
+		now = now.Add(-400 * 24 * time.Hour)
+		found, _ := json.Marshal(website.Result{State: sources.WebsiteHTTPS})
+		_, err := f.st.AddEnrichments(context.Background(), []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Inputs: inputs, Source: inputs, Found: found}})
+		now = now.Add(400 * 24 * time.Hour)
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 	f.checker(func(r *http.Request) (*http.Response, error) { return pageResponse(r), nil })
-	p := f.enrich(nil)
-	if p.Due != 2 || p.Fetched != 2 || p.HTTPS != 2 {
+	p := f.enrich(sources.WebsiteCheck)
+	if p.Due != 1 || p.Fetched != 1 || p.HTTPS != 1 {
 		t.Fatal(p)
 	}
 	waitFollow(t, f, p.ID)
-	zero := int64(0)
-	p = f.enrich(&zero)
-	if p.Due != 4 || p.Fetched != 4 || p.HTTPS != 4 {
+	now = now.Add(400 * 24 * time.Hour)
+	p = f.enrich(sources.WebsiteCheck)
+	if p.Due+p.Fetched+p.HTTPS+p.HTTP+p.None != 0 {
 		t.Fatal(p)
 	}
 }
 
-// R-Q6D4-8GQB
+// R-MY8E-GGDS
 func TestEnrichMemoryBound(t *testing.T) {
 	for _, n := range []int{passes.BatchSize, 20 * passes.BatchSize} {
 		t.Run(fmt.Sprint(n), func(t *testing.T) {
@@ -425,7 +491,7 @@ func TestEnrichMemoryBound(t *testing.T) {
 				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/html"}}, Body: io.NopCloser(strings.NewReader("<title>" + strings.Repeat("x", 960) + "</title>")), Request: r}, nil
 			})
 			runtime.GC()
-			p, err := f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner"}, nil)
+			p, err := f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner"}, sources.WebsiteCheck)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -442,7 +508,7 @@ func TestEnrichMemoryBound(t *testing.T) {
 	}
 }
 
-// R-S2O8-Y5XM R-RGQ2-2AL4 R-RHXY-G2BT R-RLLN-LDJW
+// R-S2O8-Y5XM R-RGQ2-2AL4 R-1J40-XIZY R-1KBX-BAQN
 func TestConcurrentEnrichStartsAndIndependentLanes(t *testing.T) {
 	f := newFixture(t, nil, true)
 	held := make(chan struct{})
@@ -464,7 +530,7 @@ func TestConcurrentEnrichStartsAndIndependentLanes(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			p, err := f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner"}, nil)
+			p, err := f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner"}, sources.WebsiteCheck)
 			mu.Lock()
 			defer mu.Unlock()
 			if err == nil {
@@ -499,7 +565,7 @@ func TestConcurrentEnrichStartsAndIndependentLanes(t *testing.T) {
 	f.eng.Drain(context.Background())
 }
 
-// R-HJ80-3LBD R-SCNW-OD58 R-RWKR-1B85
+// R-N33Z-ZJCK R-MZGA-U84H R-29XT-CHB8
 func TestEnrichSkipsMergedCandidateAndBlockedFollowOn(t *testing.T) {
 	f := newFixture(t, nil, false)
 	held, release := make(chan struct{}), make(chan struct{})
@@ -515,7 +581,7 @@ func TestEnrichSkipsMergedCandidateAndBlockedFollowOn(t *testing.T) {
 		}
 		return pageResponse(r), nil
 	})
-	ids := seedEmails(t, f, 3, func(i int) string { return []string{"x@a.test", "x@b.test", "x@gmail.com"}[i] })
+	ids := seedEmails(t, f, 3, func(i int) string { return []string{"x@gmail.com", "x@a.test", "x@b.test"}[i] })
 	var merging, into string
 	for _, id := range ids {
 		c, _ := f.st.GetCandidate(context.Background(), id)
@@ -530,7 +596,7 @@ func TestEnrichSkipsMergedCandidateAndBlockedFollowOn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner"}, nil)
+	p, err := f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner"}, sources.WebsiteCheck)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -545,8 +611,7 @@ func TestEnrichSkipsMergedCandidateAndBlockedFollowOn(t *testing.T) {
 		t.Fatal(p)
 	}
 	// Complete a subsequent admitted pass under the same blocked judge lane.
-	zero := int64(0)
-	second := f.enrich(&zero)
+	second := f.enrich(sources.WebsiteCheck)
 	if second.Status != store.StatusDone {
 		t.Fatal(second)
 	}
@@ -561,14 +626,14 @@ func TestEnrichSkipsMergedCandidateAndBlockedFollowOn(t *testing.T) {
 	}
 }
 
-// R-Q557-UOZM
+// R-N5JS-R2TY
 func TestEnrichDistinctSuccessfulBatchesWithinBudget(t *testing.T) {
 	f := newFixture(t, nil, false)
 	f.checker(func(r *http.Request) (*http.Response, error) { return pageResponse(r), nil })
 	n := 2*passes.BatchSize + 1
 	seedEmails(t, f, n, func(i int) string { return fmt.Sprintf("x@success-%d.test", i) })
 	began := time.Now()
-	p, err := f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner"}, nil)
+	p, err := f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner"}, sources.WebsiteCheck)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -579,7 +644,7 @@ func TestEnrichDistinctSuccessfulBatchesWithinBudget(t *testing.T) {
 	}
 }
 
-// R-RVCU-NJHG
+// R-28PW-YPKJ
 func TestIngestSkipsFollowOnWhileEnrichRuns(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/record") {
@@ -594,7 +659,7 @@ func TestIngestSkipsFollowOnWhileEnrichRuns(t *testing.T) {
 		return nil, r.Context().Err()
 	})
 	seedEmails(t, f, 1, func(int) string { return "x@held.test" })
-	en, err := f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner"}, nil)
+	en, err := f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner"}, sources.WebsiteCheck)
 	if err != nil {
 		t.Fatal(err)
 	}

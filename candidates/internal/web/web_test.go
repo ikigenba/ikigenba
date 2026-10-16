@@ -24,6 +24,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/candidates/internal/pages"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
+	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
@@ -242,7 +243,7 @@ func TestMCPContextAndTools(t *testing.T) {
 	}
 }
 
-// R-YBJE-PAYH: a failing store prevents rebuilding before a pass can start.
+// R-YDTV-I753: a failing store prevents rebuilding before a pass can start.
 func TestFailingStoreEmitsNoPassEvent(t *testing.T) {
 	cfg, d, capture, bus := fixture(t)
 	cfg.Passes = passes.New(passes.Config{Store: cfg.Store, Sources: sources.New(fmcsa.New()), Website: &website.Checker{}, Telemetry: cfg.Telemetry, Events: cfg.Events})
@@ -286,5 +287,16 @@ func TestFailingStoreEmitsNoPassEvent(t *testing.T) {
 		if e.Name == trail.Started || e.Name == trail.Finished {
 			t.Fatal(e)
 		}
+	}
+}
+
+// R-YBE2-QNNP
+func TestLifecycleDeclarationsIncludeDerived(t *testing.T) {
+	cfg, _, _, _ := fixture(t)
+	cfg.Passes = passes.New(passes.Config{Store: cfg.Store, Sources: sources.New(fmcsa.New(), ppp.New()), Telemetry: cfg.Telemetry, Events: cfg.Events})
+	r := request(web.Handler(cfg), http.MethodGet, "/declarations", "", "")
+	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","status","reason","rows","new","changed","unchanged","gone","created","linked","judged","rescored","unranged","derived","due","fetched","https","http","none"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger"]}],"accepts":["cron.judge_candidates.fired","scrape.finished"]}`
+	if r.Code != http.StatusOK || r.Body.String() != want {
+		t.Fatal(r.Code, r.Body.String())
 	}
 }

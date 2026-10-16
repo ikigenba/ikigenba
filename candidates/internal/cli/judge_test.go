@@ -17,7 +17,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
 )
 
-// R-GT1J-G409 R-US0N-6HPJ
+// R-GT1J-G409 R-YIPH-1A3V
 func TestRunJudgeDeliveryMakesNoSiblingRead(t *testing.T) {
 	fake := &runFake{}
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, fake)}))

@@ -8,9 +8,10 @@ import (
 
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-IWE2-8G5O
+// R-HHXH-Q0R6
 func TestContractReadsDuringQueuedWrites(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -29,6 +30,7 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 		{"GetCandidate", func() (any, error) { return f.s.GetCandidate(ctx, id) }},
 		{"Links", func() (any, error) { return f.s.Links(ctx, id) }},
 		{"Estimates", func() (any, error) { return f.s.Estimates(ctx, id) }},
+		{"GetFacts", func() (any, error) { return f.s.GetFacts(ctx, id) }},
 		{"GetAssessment", func() (any, error) { return f.s.GetAssessment(ctx, id) }},
 		{"Rulings", func() (any, error) { return f.s.Rulings(ctx, id) }},
 		{"ListCandidates", func() (any, error) { return f.s.ListCandidates(ctx, store.CandidateFilter{}, "", "", 100) }},
@@ -39,7 +41,7 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 		{"Rejects", func() (any, error) { return f.s.Rejects(ctx, id) }},
 		{"ZipMinutes", func() (any, error) { return f.s.ZipMinutes(ctx, "55072") }},
 	}
-	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Source: "read.test", State: sources.WebsiteHTTPS}})
+	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Source: "read.test", Inputs: "read.test", Found: websiteFound(website.Result{State: sources.WebsiteHTTPS})}})
 	contractOK(t, err)
 	reads = append(reads, struct {
 		name string
@@ -48,7 +50,7 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 		struct {
 			name string
 			call func() (any, error)
-		}{"DueEnrichments", func() (any, error) { return f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 30, 7, 100) }},
+		}{"DueEnrichments", func() (any, error) { return f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 100) }},
 		struct {
 			name string
 			call func() (any, error)
@@ -98,8 +100,10 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 			return err
 		},
 		func() error { _, err := f.s.Judge(ctx, []string{id}); return err },
+		func() error { return f.s.FillFacts(ctx) },
+		func() error { _, _, err := f.s.Derive(ctx, "link_facts", "", false, 10); return err },
 		func() error {
-			_, err := f.s.AddEnrichments(ctx, []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, State: sources.WebsiteNone}})
+			_, err := f.s.AddEnrichments(ctx, []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "fixture.test", Source: "fixture.test", Found: websiteFound(website.Result{State: sources.WebsiteNone})}})
 			return err
 		},
 	}

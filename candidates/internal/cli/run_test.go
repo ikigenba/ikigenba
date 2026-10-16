@@ -418,7 +418,7 @@ func runOnlyState(t *testing.T, dir string) {
 
 // R-119A-9L3H R-13P3-14KV R-14WZ-EWBK R-164V-SO29 R-JMTD-X5LH
 // R-3TTL-43TV R-42CV-SI0Q R-43KS-69RF R-QR9U-4LFL R-49OA-34GW R-4C42-UNYA
-// R-UN51-NEQR R-ZY3R-GAKJ R-UOCY-16HG R-YBJE-PAYH  R-ZQSD-5O4D
+// R-YF1R-VYVS R-ZY3R-GAKJ R-YG9O-9QMH R-YDTV-I753  R-ZQSD-5O4D
 // R-0479-D5A0 R-06N2-4ORE R-07UY-IGI3 R-76JM-ZE8M R-7BF8-IH7E
 func TestRunAssembledChain(t *testing.T) {
 	if cli.SweepInterval != time.Hour {
@@ -611,7 +611,7 @@ func TestRunAssembledChain(t *testing.T) {
 					t.Fatalf("delivery request start user %v", e)
 				}
 			case "pass.started", "pass.finished":
-				if q != "delivery-request" || e.Attrs["pass"] != deliveryID {
+				if q != "delivery-request" || (e.Attrs["pass"] != deliveryID && e.Attrs["origin"] != store.OriginPass) {
 					t.Fatalf("delivery pass event %v", e)
 				}
 			case "sibling.called":
@@ -673,14 +673,22 @@ func TestRunAssembledChain(t *testing.T) {
 			t.Fatalf("registry requested %s", rq.Path)
 		}
 	}
-	bus := h.bus.Events()
+	bus := []events.Event{}
+	followIDs := map[string]bool{}
+	for _, e := range h.bus.Events() {
+		if e.Attrs["origin"] == store.OriginPass {
+			followIDs[e.Attrs["pass"].(string)] = true
+			continue
+		}
+		bus = append(bus, e)
+	}
 	for _, e := range bus {
 		if e.Name == "pass.finished" {
 			record := finished
 			if e.RequestID == "delivery-request" {
 				record = dp
 			}
-			for _, key := range []string{"trigger", "status", "reason", "rows", "new", "changed", "unchanged", "gone", "created", "linked", "judged", "unranged"} {
+			for _, key := range []string{"kind", "origin", "trigger", "status", "reason", "rows", "new", "changed", "unchanged", "gone", "created", "linked", "judged", "unranged", "derived"} {
 				raw, err := json.Marshal(e.Attrs[key])
 				if err != nil {
 					t.Fatal(err)
@@ -699,7 +707,7 @@ func TestRunAssembledChain(t *testing.T) {
 		t.Fatalf("bus events %d", len(bus))
 	}
 	for _, te := range evs {
-		if te.Name != "pass.started" && te.Name != "pass.finished" {
+		if followIDs[fmt.Sprint(te.Attrs["pass"])] || (te.Name != "pass.started" && te.Name != "pass.finished") {
 			continue
 		}
 		matches := 0
@@ -1144,7 +1152,7 @@ type runFailBus struct{}
 
 func (runFailBus) Deliver(context.Context, events.Event) error { return errors.New("fixture refusal") }
 
-// R-UQSQ-SPYU
+// R-YHHK-NID6
 func TestRunSinkFailuresDoNotChangePass(t *testing.T) {
 	var answers []map[string]json.RawMessage
 	var initial []map[string]json.RawMessage
@@ -1400,7 +1408,7 @@ func TestRunNotificationIsSingleAndOptional(t *testing.T) {
 	}
 }
 
-// R-YBJE-PAYH
+// R-YDTV-I753
 func TestRunBusyRefusalsEmitNoPassEvents(t *testing.T) {
 	hold := make(chan struct{})
 	f := &runFake{hold: hold, arrived: make(chan struct{}, 1)}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 // R-AWKK-CGKD R-AXSG-Q8B2
@@ -48,7 +49,7 @@ func TestJudgmentProjectionFullPrecision(t *testing.T) {
 	}
 }
 
-// R-VMVY-6MV9 R-VO3U-KELY
+// R-RK27-M08T R-VO3U-KELY
 func TestWebsiteProjections(t *testing.T) {
 	for _, state := range []string{sources.WebsiteUnknown, sources.WebsiteHTTPS} {
 		url := ""
@@ -64,11 +65,15 @@ func TestWebsiteProjections(t *testing.T) {
 		}
 	}
 	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
-	e := store.Enrichment{Kind: sources.WebsiteCheck, State: sources.WebsiteHTTPS, URL: "https://chosen.test", Title: "chosen", StatusCode: 200, Size: 33, Error: "chosen-error", Source: "chosen.test", Cost: .25, At: at}
-	if got := enrichmentOf(e); got != (Enrichment{e.Kind, e.State, e.URL, e.Title, e.StatusCode, e.Size, e.Error, e.Source, e.Cost, stamp(at)}) {
-		t.Fatal(got)
+	e := store.Enrichment{Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteHTTPS, URL: "https://chosen.test", Title: "chosen", StatusCode: 200, Size: 33, Error: "chosen-error"}), Source: "chosen.test", Cost: .25, At: at}
+	var wr website.Result
+	_ = json.Unmarshal(e.Found, &wr)
+	wantE := Enrichment{Kind: e.Kind, Source: e.Source, Inputs: e.Inputs, State: wr.State, URL: wr.URL, Title: wr.Title, StatusCode: wr.StatusCode, Size: &wr.Size, Error: wr.Error, Domain: e.Source, Cost: e.Cost, At: stamp(at)}
+	if got := enrichmentOf(e); !reflect.DeepEqual(got, wantE) {
+		t.Fatal(got, wantE)
 	}
-	b, err := json.Marshal(enrichmentOf(store.Enrichment{Kind: sources.WebsiteCheck, State: sources.WebsiteNone}))
+
+	b, err := json.Marshal(enrichmentOf(store.Enrichment{Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteNone})}))
 	if err != nil {
 		t.Fatal(err)
 	}

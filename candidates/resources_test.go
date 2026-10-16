@@ -23,12 +23,12 @@ func TestEtc(t *testing.T) {
 	checkFiles(t, candidates.Etc, []string{"manifest.toml", "nginx.conf"})
 }
 
-// R-JKDL-5M43
+// R-KMPE-SXDA
 func TestMigrations(t *testing.T) {
 	t.Chdir(t.TempDir())
 	checkFiles(t, candidates.Migrations, []string{
 		"0001_candidates.sql", "0002_links.sql", "0003_estimates.sql", "0004_assessments.sql",
-		"0005_decisions.sql", "0006_passes.sql", "0007_zip_drive.sql", "0008_windows.sql", "0009_judgments.sql", "0010_cohorts.sql", "0011_enrichments.sql",
+		"0005_decisions.sql", "0006_passes.sql", "0007_zip_drive.sql", "0008_windows.sql", "0009_judgments.sql", "0010_cohorts.sql", "0011_enrichments.sql", "0012_facts.sql",
 	})
 }
 
@@ -144,5 +144,21 @@ UPDATE passes SET kind = 'rebuild', origin = 'rebuild' WHERE "trigger" = 'rebuil
 	}
 	if string(got) != want {
 		t.Fatal("judgment migration differs")
+	}
+}
+
+// R-HAM3-FEB0
+func TestFactsMigrationBytes(t *testing.T) {
+	want := "ALTER TABLE enrichments ADD COLUMN inputs TEXT NOT NULL DEFAULT '';\n" +
+		"UPDATE enrichments SET inputs = source WHERE kind = 'website_check';\n" +
+		"CREATE INDEX enrichments_inputs ON enrichments(kind,inputs,seq);\n" +
+		"CREATE TABLE facts (candidate TEXT PRIMARY KEY, known_since TEXT, government_match TEXT, newest_filing TEXT, categories TEXT, fleet_verdict TEXT NOT NULL DEFAULT 'unknown', power_units INTEGER, drivers INTEGER, website TEXT NOT NULL DEFAULT 'unknown', website_url TEXT NOT NULL DEFAULT '', minutes INTEGER, drive_minutes_at TEXT NOT NULL DEFAULT '', link_facts_at TEXT NOT NULL DEFAULT '', website_check_at TEXT NOT NULL DEFAULT '');\n" +
+		"ALTER TABLE passes ADD COLUMN derived INTEGER NOT NULL DEFAULT 0;\n"
+	got, err := fs.ReadFile(candidates.Migrations(), "0012_facts.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != want {
+		t.Fatal("facts migration differs")
 	}
 }

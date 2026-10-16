@@ -356,7 +356,7 @@ func TestResolutionSplitAndPersistence(t *testing.T) {
 	regEqual(t, rs, []store.Ruling{pair, r})
 }
 
-// R-WC7I-3DLP R-5JWX-756T R-GSL2-9AIP R-GL9N-YO2J R-GMHK-CFT8
+// R-WHCP-H0OX R-5JWX-756T R-GSL2-9AIP R-GL9N-YO2J R-GMHK-CFT8
 func TestResolutionMergeAndNotSame(t *testing.T) {
 	f := regNew(t)
 	a := regObs("one", "First")
@@ -364,6 +364,7 @@ func TestResolutionMergeAndNotSame(t *testing.T) {
 	_, ids := regAttach(t, f, "run", a, b)
 	ca := regCandidate(t, f, ids[0])
 	cb := regCandidate(t, f, ids[1])
+	deriveAll(t, f.st)
 	_, e := f.st.JudgeAll(regCtx)
 	regNoErr(t, e)
 	oldAssessment, e := f.st.GetAssessment(regCtx, cb.ID)
@@ -433,6 +434,7 @@ func TestScoringRulingsTakeEffectImmediately(t *testing.T) {
 	a.Reading.Estimate = &sources.Estimate{Source: a.Scraper, Low: 20000000, Confidence: 0.7, Filed: a.Reading.Filed, Formula: sources.Rules}
 	_, ids := regAttach(t, f, "run", a)
 	id := ids[0]
+	deriveAll(t, f.st)
 	_, e := f.st.JudgeAll(regCtx)
 	regNoErr(t, e)
 	k, e := f.st.CreateCohort(regCtx, store.Cohort{Name: "test", Size: 10, Filters: store.CohortFilters{MaxMinutes: ptrInt(120), RevenueMin: ptrInt(10000000)}, CreatedUserID: "owner"})
@@ -466,6 +468,7 @@ func TestScoringRulingsTakeEffectImmediately(t *testing.T) {
 	a.Reading.GovernmentMatch = "pattern"
 	a.Digest = "excluded-signal"
 	regAttach(t, f, "run-new", a)
+	deriveAll(t, f.st)
 	_, e = f.st.JudgeAll(regCtx)
 	regNoErr(t, e)
 	got, e := f.st.GetAssessment(regCtx, id)
@@ -512,7 +515,7 @@ func TestResolutionOldestTieAndGoneIdentity(t *testing.T) {
 	regEqual(t, touched, wantIDs)
 }
 
-// R-GMHK-CFT8 R-3YFZ-L6V2
+// R-GMHK-CFT8 R-WM8B-03NP
 func TestScoringMergeAndSplitAssessOnlyActiveSides(t *testing.T) {
 	f := regNew(t)
 	regNoErr(t, f.st.ReplaceZipDrive(regCtx, map[string]int64{"55072": 18}))
@@ -520,6 +523,7 @@ func TestScoringMergeAndSplitAssessOnlyActiveSides(t *testing.T) {
 	a.Reading.Estimate = &sources.Estimate{Source: "fmcsa", Low: 100, Confidence: 0.7, Filed: a.Reading.Filed, Formula: sources.Rules}
 	b.Reading.Estimate = &sources.Estimate{Source: "fmcsa", Low: 200, Confidence: 0.8, Filed: b.Reading.Filed, Formula: sources.Rules}
 	_, ids := regAttach(t, f, "run", a, b)
+	deriveAll(t, f.st)
 	_, e := f.st.JudgeAll(regCtx)
 	regNoErr(t, e)
 	f.now = f.now.Add(time.Hour)

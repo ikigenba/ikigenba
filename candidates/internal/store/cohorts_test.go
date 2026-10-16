@@ -15,6 +15,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 // R-DBGM-T9U5 R-DCOJ-71KU R-DDWF-KTBJ R-4B7S-FL5R R-4CFO-TCWG R-4EVH-KWDU R-PJLE-8T42 R-4HBA-CFV8
@@ -570,6 +571,7 @@ func cohortPopulation(t *testing.T, f *contractFixture) []string {
 		}
 		ids = append(ids, contractAttach(t, f, "run", o)[0])
 	}
+	deriveAll(t, f.s)
 	_, e := f.s.JudgeAll(ctx)
 	contractOK(t, e)
 	return ids
@@ -891,6 +893,7 @@ func TestCohortOperatingOrderUsesRoundedKey(t *testing.T) {
 		o.Reading.Evidence = []sources.Evidence{{Name: sources.EvidenceOwnDomain, Source: o.Scraper, Weight: weight}}
 		ids = append(ids, contractAttach(t, f, "run", o)[0])
 	}
+	deriveAll(t, f.s)
 	_, e := f.s.JudgeAll(ctx)
 	contractOK(t, e)
 	a, e := f.s.GetAssessment(ctx, ids[0])
@@ -914,6 +917,7 @@ func TestCohortCategoryMatchesAnyAssessmentCategory(t *testing.T) {
 	o.SourceID = "loan"
 	o.Reading.Category = sources.CategoryConstruction
 	contractAttach(t, f, "run", o)
+	deriveAll(t, f.s)
 	_, e := f.s.JudgeAll(ctx)
 	contractOK(t, e)
 	a, e := f.s.GetAssessment(ctx, id)
@@ -937,10 +941,11 @@ func TestCohortWebsiteFiltersReadStoredJudgment(t *testing.T) {
 		id := contractAttach(t, f, "run", o)[0]
 		ids = append(ids, id)
 		if state != sources.WebsiteUnknown {
-			_, e := f.s.AddEnrichments(ctx, []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, State: state, Source: fmt.Sprintf("business%d.example", i)}})
+			_, e := f.s.AddEnrichments(ctx, []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Source: fmt.Sprintf("business%d.example", i), Inputs: fmt.Sprintf("business%d.example", i), Found: websiteFound(website.Result{State: state})}})
 			contractOK(t, e)
 		}
 	}
+	deriveAll(t, f.s)
 	_, e := f.s.JudgeAll(ctx)
 	contractOK(t, e)
 	c := cohortCreate(t, f, "Websites")
@@ -979,13 +984,13 @@ func TestCohortWebsiteFiltersReadStoredJudgment(t *testing.T) {
 	c, e = f.s.EditCohort(ctx, store.CohortEdit{ID: c.ID, Filters: &combined, UserID: "owner"})
 	contractOK(t, e)
 	contractEqual(t, cohortRead(t, f, c).Matching, int64(0))
-	// Adding a result leaves the saved assessment and membership untouched until judged.
+	// A result updates cohort facts before a judge.
 	filters := store.CohortFilters{Website: []string{sources.WebsiteHTTPS}}
 	c, e = f.s.EditCohort(ctx, store.CohortEdit{ID: c.ID, Filters: &filters, UserID: "owner"})
 	contractOK(t, e)
-	_, e = f.s.AddEnrichments(ctx, []store.Enrichment{{Candidate: ids[2], Kind: sources.WebsiteCheck, State: sources.WebsiteHTTPS, Source: "business2.example"}})
+	_, e = f.s.AddEnrichments(ctx, []store.Enrichment{{Candidate: ids[2], Kind: sources.WebsiteCheck, Source: "business2.example", Inputs: "business2.example", Found: websiteFound(website.Result{State: sources.WebsiteHTTPS})}})
 	contractOK(t, e)
-	contractEqual(t, cohortIDs(cohortRead(t, f, c).Members), []string{ids[0]})
+	contractEqual(t, cohortRead(t, f, c).Matching, int64(2))
 	_, e = f.s.Judge(ctx, []string{ids[2]})
 	contractOK(t, e)
 	contractEqual(t, cohortRead(t, f, c).Matching, int64(2))

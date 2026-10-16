@@ -16,6 +16,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 // R-A0V6-EFAB R-V9H1-Z5PM R-A3AZ-5YRP R-A4IV-JQIE R-A5QR-XI93 R-A6YO-B9ZS R-A9EH-2TH6 R-VAOY-CXGB R-AD26-84P9
@@ -185,7 +186,7 @@ func TestCohortLifecycleRejectAndExclusion(t *testing.T) {
 		}
 	}
 	// Reject history remains for a merged candidate and after its cohort is deleted.
-	if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, State: sources.WebsiteHTTPS, URL: "https://business.test", Source: "business.test"}}); err != nil {
+	if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteHTTPS, URL: "https://business.test"}), Source: "business.test"}}); err != nil {
 		t.Fatal(err)
 	}
 	enriched := decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: id}))

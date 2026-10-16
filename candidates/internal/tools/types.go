@@ -467,20 +467,23 @@ type DecideArgs struct {
 
 // EnrichArgs selects a website enrichment pass.
 type EnrichArgs struct {
-	Kind          string `json:"kind" mcp:"required"`
+	Kind          string `json:"kind"`
 	OlderThanDays *int   `json:"older_than_days"`
 }
 
-// Enrichment is one recorded website result.
+// Enrichment is one recorded enrichment result.
 type Enrichment struct {
-	Kind       string  `json:"kind"`
-	State      string  `json:"state"`
-	URL        string  `json:"url,omitempty"`
-	Title      string  `json:"title,omitempty"`
-	StatusCode int     `json:"status_code,omitempty"`
-	Size       int64   `json:"size"`
-	Error      string  `json:"error,omitempty"`
-	Domain     string  `json:"domain"`
-	Cost       float64 `json:"cost"`
-	At         string  `json:"at"`
+	Kind       string          `json:"kind"`
+	Source     string          `json:"source"`
+	Inputs     string          `json:"inputs"`
+	Found      json.RawMessage `json:"found,omitempty"`
+	State      string          `json:"state,omitempty"`
+	URL        string          `json:"url,omitempty"`
+	Title      string          `json:"title,omitempty"`
+	StatusCode int             `json:"status_code,omitempty"`
+	Size       *int64          `json:"size,omitempty"`
+	Error      string          `json:"error,omitempty"`
+	Domain     string          `json:"domain,omitempty"`
+	Cost       float64         `json:"cost"`
+	At         string          `json:"at"`
 }

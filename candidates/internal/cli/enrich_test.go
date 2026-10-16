@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -54,7 +55,7 @@ func websiteTimers(t *testing.T, h *runHarness, timeout chan chan time.Time) {
 	}
 }
 
-// R-Q09M-BM0U R-JLLH-JDUS
+// R-N0O7-7ZV6 R-JLLH-JDUS
 func TestRunSandboxSelectsStub(t *testing.T) {
 	for _, supplied := range []bool{false, true} {
 		t.Run(map[bool]string{false: "nil", true: "injected"}[supplied], func(t *testing.T) {
@@ -78,14 +79,20 @@ func TestRunSandboxSelectsStub(t *testing.T) {
 			h.stop()
 			_, st := runStore(t, h.p.Dir, h.p.Now)
 			es, err := st.Enrichments(t.Context(), id)
-			if err != nil || len(es) != 1 || es[0].State != sources.WebsiteHTTPS || es[0].URL != "https://secure.test" || requests.Load() != 0 {
+			var found website.Result
+			if len(es) == 1 {
+				if e := json.Unmarshal(es[0].Found, &found); e != nil {
+					t.Fatal(e)
+				}
+			}
+			if err != nil || len(es) != 1 || es[0].Kind != sources.WebsiteCheck || found.State != sources.WebsiteHTTPS || found.URL != "https://secure.test" || requests.Load() != 0 {
 				t.Fatal(es, err, requests.Load())
 			}
 		})
 	}
 }
 
-// R-IN63-5DRG R-S3W5-BXOB
+// R-N1W3-LRLV R-S3W5-BXOB
 func TestRunInjectedHTTPAndTimeouts(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
 	arrived := make(chan string, 4)
@@ -125,12 +132,18 @@ func TestRunInjectedHTTPAndTimeouts(t *testing.T) {
 	h.stop()
 	_, st := runStore(t, h.p.Dir, h.p.Now)
 	es, err := st.Enrichments(t.Context(), id)
-	if err != nil || len(es) != 1 || es[0].State != sources.WebsiteNone || es[0].Error != website.FailTimeout {
+	var found website.Result
+	if len(es) == 1 {
+		if e := json.Unmarshal(es[0].Found, &found); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if err != nil || len(es) != 1 || es[0].Kind != sources.WebsiteCheck || found.State != sources.WebsiteNone || found.Error != website.FailTimeout {
 		t.Fatal(es, err)
 	}
 }
 
-// R-IODZ-J5I5 R-YBJE-PAYH
+// R-IODZ-J5I5 R-YDTV-I753
 func TestRunNoHTTPRefusesEnrichWithoutPass(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
 	h.start()
@@ -154,54 +167,60 @@ func TestRunNoHTTPRefusesEnrichWithoutPass(t *testing.T) {
 	}
 }
 
-// R-YCRB-32P6
+// R-YCLZ-4FEE
 func TestRunManualEnrichLifecycle(t *testing.T) {
-	h := newRunHarness(t, t.TempDir(), "")
-	h.p.HTTP = &http.Client{Transport: enrichTransport(func(*http.Request) (*http.Response, error) { t.Error("empty pass fetched"); return nil, io.EOF })}
-	h.start()
-	c := identity.Caller{UserID: "chosen-owner", RequestID: "chosen-request"}
-	r, p := h.call(c, "enrich", tools.EnrichArgs{Kind: sources.WebsiteCheck})
-	if r.IsError() {
-		t.Fatal(r)
-	}
-	id := runText(p, "id")
-	done := h.waitPass(c, id)
-	h.stop()
-	bus := h.bus.Events()
-	if len(bus) != 2 {
-		t.Fatal(bus)
-	}
-	for i, e := range bus {
-		if e.Name != []string{"pass.started", "pass.finished"}[i] || e.RequestID != c.RequestID || e.User != c.UserID || e.Cause != "" || e.Depth != 0 || e.Attrs["pass"] != id || e.Attrs["kind"] != store.KindEnrich || e.Attrs["origin"] != store.OriginEnrich || e.Attrs["trigger"] != store.TriggerEnrich {
-			t.Fatal(e)
-		}
-		count := 0
-		for _, te := range h.telemetry.Events() {
-			if te.Name == e.Name && te.RequestID == e.RequestID && te.User == e.User && reflect.DeepEqual(map[string]any(te.Attrs), map[string]any(e.Attrs)) {
-				count++
+	for _, fetched := range []bool{false, true} {
+		t.Run(map[bool]string{false: "derived", true: "fetched"}[fetched], func(t *testing.T) {
+			h := newRunHarness(t, t.TempDir(), "")
+			if fetched {
+				h.p.HTTP = &http.Client{Transport: enrichTransport(func(*http.Request) (*http.Response, error) { t.Error("empty pass fetched"); return nil, io.EOF })}
 			}
-		}
-		if count != 1 {
-			t.Fatal(count, e)
-		}
-	}
-	for _, k := range []string{"status", "reason", "due", "fetched", "https", "http", "none"} {
-		var value any
-		if raw := done[k]; len(raw) > 0 {
-			if err := json.Unmarshal(raw, &value); err != nil {
-				t.Fatal(err)
+			h.start()
+			c := identity.Caller{UserID: "chosen-owner", RequestID: "chosen-request"}
+			r, p := h.call(c, "enrich", tools.EnrichArgs{})
+			if r.IsError() {
+				t.Fatal(r)
 			}
-		} else {
-			value = ""
-		}
-		got := bus[1].Attrs[k]
-		if n, ok := value.(float64); ok {
-			if got != int64(n) {
-				t.Fatal(k, got, value)
+			id := runText(p, "id")
+			done := h.waitPass(c, id)
+			h.stop()
+			bus := h.bus.Events()
+			if len(bus) != 2 {
+				t.Fatal(bus)
 			}
-		} else if got != value {
-			t.Fatal(k, got, value)
-		}
+			for i, e := range bus {
+				if e.Name != []string{"pass.started", "pass.finished"}[i] || e.RequestID != c.RequestID || e.User != c.UserID || e.Cause != "" || e.Depth != 0 || e.Attrs["pass"] != id || e.Attrs["kind"] != store.KindEnrich || e.Attrs["origin"] != store.OriginEnrich || e.Attrs["trigger"] != store.TriggerEnrich {
+					t.Fatal(e)
+				}
+				count := 0
+				for _, te := range h.telemetry.Events() {
+					if te.Name == e.Name && te.RequestID == e.RequestID && te.User == e.User && reflect.DeepEqual(map[string]any(te.Attrs), map[string]any(e.Attrs)) {
+						count++
+					}
+				}
+				if count != 1 {
+					t.Fatal(count, e)
+				}
+			}
+			for _, k := range []string{"status", "reason", "derived", "due", "fetched", "https", "http", "none"} {
+				var value any
+				if raw := done[k]; len(raw) > 0 {
+					if err := json.Unmarshal(raw, &value); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					value = ""
+				}
+				got := bus[1].Attrs[k]
+				if n, ok := value.(float64); ok {
+					if got != int64(n) {
+						t.Fatal(k, got, value)
+					}
+				} else if got != value {
+					t.Fatal(k, got, value)
+				}
+			}
+		})
 	}
 }
 
@@ -222,7 +241,7 @@ func TestRunFollowOnPassKeepsLineage(t *testing.T) {
 		if err := json.Unmarshal(v["passes"], &ps); err != nil {
 			t.Fatal(err)
 		}
-		ended := len(ps) == 2
+		ended := len(ps) == 3
 		for _, p := range ps {
 			if runText(p, "status") == store.StatusRunning {
 				ended = false
@@ -256,7 +275,38 @@ func TestRunFollowOnPassKeepsLineage(t *testing.T) {
 			}{e.RequestID, e.Cause, e.Depth}
 		}
 	}
-	if follow != 2 {
+	if follow != 4 {
 		t.Fatal(follow, h.bus.Events())
 	}
+}
+
+// R-GBFU-DOJ9
+func TestRunFillsFactsBeforeReady(t *testing.T) {
+	h := newRunHarness(t, t.TempDir(), "")
+	id := seedRunWebsite(t, h, "ops@ready.test")
+	d, st := runStore(t, h.p.Dir, h.p.Now)
+	found, err := json.Marshal(website.Result{State: sources.WebsiteHTTPS, URL: "https://ready.test/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	es, err := st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "ready.test", Source: "ready.test", Found: found}})
+	if err != nil || len(es) != 1 {
+		t.Fatal(es, err)
+	}
+	if err := d.Write(t.Context(), func(tx *sql.Tx) error { _, err := tx.ExecContext(t.Context(), "DELETE FROM facts"); return err }); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Close(); err != nil {
+		t.Fatal(err)
+	}
+	h.start()
+	d, st = runStore(t, h.p.Dir, h.p.Now)
+	f, err := st.GetFacts(t.Context(), id)
+	if err != nil || f.Website != sources.WebsiteHTTPS || f.WebsiteURL != "https://ready.test/" || len(f.Written) != 1 || f.Written[0].Kind != sources.WebsiteCheck || !f.Written[0].At.Equal(es[0].At) {
+		t.Fatal(f, err)
+	}
+	if err := d.Close(); err != nil {
+		t.Fatal(err)
+	}
+	h.stop()
 }

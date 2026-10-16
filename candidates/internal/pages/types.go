@@ -121,6 +121,7 @@ type PassRow struct {
 type CandidateData struct {
 	Banner      page.Banner
 	Candidate   CandidateView
+	Facts       *FactsView
 	Assessment  *AssessmentView
 	Estimates   []EstimateView
 	Links       []LinkView
@@ -145,15 +146,24 @@ type PersonRow struct{ Name, Role string }
 
 // AssessmentView supplies assessment view page data.
 type AssessmentView struct {
-	OperatingConfidence                                                                                    string
-	OperatingEvidence                                                                                      []EvidenceRow
-	RevenueLow, RevenueHigh, RevenueConfidence, KnownSince, KnownSinceText, NewestFiling, NewestFilingText string
-	Categories                                                                                             []CategoryRow
-	GovernmentMatch, FleetVerdict, PowerUnits, Drivers, Minutes                                            string
-	Excluded                                                                                               bool
-	Rules                                                                                                  int64
-	Calculated, CalculatedText                                                                             string
+	OperatingConfidence                        string
+	OperatingEvidence                          []EvidenceRow
+	RevenueLow, RevenueHigh, RevenueConfidence string
+	Excluded                                   bool
+	Rules                                      int64
+	Calculated, CalculatedText                 string
 }
+
+// FactsView supplies the newest recorded facts.
+type FactsView struct {
+	KnownSince, KnownSinceText, NewestFiling, NewestFilingText  string
+	Categories                                                  []CategoryRow
+	GovernmentMatch, FleetVerdict, PowerUnits, Drivers, Minutes string
+	Written                                                     []WrittenRow
+}
+
+// WrittenRow supplies a fact kind's recording time.
+type WrittenRow struct{ Kind, At, AtText string }
 
 // EvidenceRow supplies operating evidence page data.
 type EvidenceRow struct{ Name, Source, Weight, Description string }
@@ -192,8 +202,8 @@ type PassData struct {
 
 // PassView supplies pass view page data.
 type PassView struct {
-	ID, Kind, Origin, Trigger, RunPage, Status, Reason, StartedBy, Started, StartedText, Finished, FinishedText string
-	Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Due, Fetched, HTTPS, HTTP, None     int64
+	ID, Kind, Origin, Trigger, RunPage, Status, Reason, StartedBy, Started, StartedText, Finished, FinishedText      string
+	Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None int64
 }
 
 // ToolsData supplies tools data page data.
@@ -216,7 +226,9 @@ type NotFoundData struct{ Banner page.Banner }
 
 // EnrichmentRow supplies one recorded enrichment result.
 type EnrichmentRow struct {
-	Kind, State, URL, Title, StatusCode string
-	Size                                int64
-	Error, Domain, At, AtText           string
+	Kind, Source                  string
+	Found                         []FactRow
+	State, URL, Title, StatusCode string
+	Size                          int64
+	Error, At, AtText             string
 }

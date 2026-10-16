@@ -11,6 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/scrapes"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
@@ -71,10 +72,10 @@ func (e *Engine) Rebuild(ctx context.Context, c identity.Caller) (store.Pass, er
 	if err != nil {
 		return store.Pass{}, err
 	}
-	e.start(ctx, p, c, nil, nil)
+	e.start(ctx, p, c, nil, "")
 	return p, nil
 }
-func (e *Engine) start(ctx context.Context, p store.Pass, c identity.Caller, run *scrapes.Run, ages *int64) {
+func (e *Engine) start(ctx context.Context, p store.Pass, c identity.Caller, run *scrapes.Run, kind string) {
 	trail.Record(context.WithoutCancel(ctx), e.cfg.Telemetry, e.cfg.Events, trail.Started, p)
 	e.work.Add(1)
 	finishCtx := context.WithoutCancel(ctx)
@@ -84,7 +85,7 @@ func (e *Engine) start(ctx context.Context, p store.Pass, c identity.Caller, run
 		var totals store.Counts
 		var reason string
 		if p.Kind == store.KindEnrich {
-			totals, reason = e.enrich(workCtx, ages)
+			totals, reason = e.enrich(workCtx, kind)
 		} else {
 			totals, reason = e.resolve(workCtx, run, p.Kind)
 		}
@@ -183,10 +184,10 @@ func (e *Engine) Deliver(ctx context.Context, d events.Delivery) events.Outcome 
 	}
 	if err == nil {
 		if judge {
-			e.start(ctx, p, service, nil, nil)
+			e.start(ctx, p, service, nil, "")
 		} else {
 			run.Scraper = scraper
-			e.start(ctx, p, service, &run, nil)
+			e.start(ctx, p, service, &run, "")
 		}
 		return events.OK()
 	}
@@ -244,6 +245,7 @@ func addCounts(a *store.Counts, b store.Counts) {
 	a.Linked += b.Linked
 	a.Judged += b.Judged
 	a.Unranged += b.Unranged
+	a.Derived += b.Derived
 }
 func (e *Engine) resolve(ctx context.Context, delivery *scrapes.Run, kind string) (store.Counts, string) {
 	var total store.Counts
@@ -308,6 +310,17 @@ func (e *Engine) resolve(ctx context.Context, delivery *scrapes.Run, kind string
 			}
 			if reason := process(run, name); reason != "" {
 				return store.Counts{}, reason
+			}
+		}
+	}
+	if rebuild {
+		for _, en := range enrichers.New(e.cfg.Website).All() {
+			if _, ok := en.(enrichers.Deriver); ok {
+				n, err := e.derive(ctx, en.Kind(), true)
+				if err != nil {
+					return store.Counts{}, store.ReasonStore
+				}
+				total.Derived += n
 			}
 		}
 	}

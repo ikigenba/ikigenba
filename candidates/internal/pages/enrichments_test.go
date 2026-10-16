@@ -12,18 +12,19 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-AFKV-F72T R-AMW9-PTIZ R-AO46-3L9O
+// R-01IE-0J8A R-0CHH-GGWJ R-0DPD-U8N8
 func TestEnrichmentAndWebsiteViews(t *testing.T) {
 	at := fixtureTime()
-	x := store.Enrichment{Kind: sources.WebsiteCheck, State: sources.WebsiteHTTPS, URL: "https://fixture.example.test/", Title: "fixture-title", StatusCode: 200, Size: 1256, Source: "fixture.example.test", At: at}
-	want := EnrichmentRow{sources.WebsiteCheck, sources.WebsiteHTTPS, x.URL, x.Title, "200", 1256, "", x.Source, "2026-10-05T09:00:07Z", "2026-10-05 09:00"}
+	x := store.Enrichment{Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteHTTPS, URL: "https://fixture.example.test/", Title: "fixture-title", StatusCode: 200, Size: 1256}), Source: "fixture.example.test", At: at}
+	want := EnrichmentRow{Kind: sources.WebsiteCheck, Source: x.Source, Found: []FactRow{}, State: sources.WebsiteHTTPS, URL: "https://fixture.example.test/", Title: "fixture-title", StatusCode: "200", Size: 1256, At: "2026-10-05T09:00:07Z", AtText: "2026-10-05 09:00"}
 	if got := enrichmentRow(x); !reflect.DeepEqual(got, want) {
 		t.Fatal(got, want)
 	}
-	empty := store.Enrichment{Kind: sources.WebsiteCheck, State: sources.WebsiteNone, Error: "fixture-error"}
-	if got := enrichmentRow(empty); !reflect.DeepEqual(got, EnrichmentRow{sources.WebsiteCheck, sources.WebsiteNone, "", "", "", 0, "fixture-error", "", "", ""}) {
+	empty := store.Enrichment{Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteNone, Error: "fixture-error"})}
+	if got := enrichmentRow(empty); !reflect.DeepEqual(got, EnrichmentRow{Kind: sources.WebsiteCheck, Found: []FactRow{}, State: sources.WebsiteNone, Error: "fixture-error"}) {
 		t.Fatal(got)
 	}
 	for _, tc := range []struct {
@@ -32,9 +33,9 @@ func TestEnrichmentAndWebsiteViews(t *testing.T) {
 	}{
 		{nil, sources.WebsiteUnknown, "", "", "", ""},
 		{[]store.Enrichment{{Kind: "other-check"}}, sources.WebsiteUnknown, "", "", "", ""},
-		{[]store.Enrichment{{Kind: "other-check"}, x, empty}, sources.WebsiteHTTPS, x.URL, x.Title, "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC"},
-		{[]store.Enrichment{{Kind: sources.WebsiteCheck, State: sources.WebsiteHTTP, URL: "http://fixture.example.test/", Title: "http-title"}}, sources.WebsiteHTTP, "http://fixture.example.test/", "http-title", "", ""},
-		{[]store.Enrichment{{Kind: sources.WebsiteCheck, State: sources.WebsiteNone, URL: "https://ignore.example.test/", Title: x.Title, At: at}, x}, sources.WebsiteNone, "", x.Title, "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC"},
+		{[]store.Enrichment{{Kind: "other-check"}, x, empty}, sources.WebsiteHTTPS, "https://fixture.example.test/", "fixture-title", "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC"},
+		{[]store.Enrichment{{Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteHTTP, URL: "http://fixture.example.test/", Title: "http-title"})}}, sources.WebsiteHTTP, "http://fixture.example.test/", "http-title", "", ""},
+		{[]store.Enrichment{{Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteNone, URL: "https://ignore.example.test/", Title: "fixture-title"}), At: at}, x}, sources.WebsiteNone, "", "fixture-title", "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC"},
 	} {
 		var got CandidateView
 		setWebsite(&got, tc.results)
@@ -44,7 +45,7 @@ func TestEnrichmentAndWebsiteViews(t *testing.T) {
 	}
 }
 
-// R-APC2-HD0D R-AQJY-V4R2 R-AJ8K-KIAW R-AKGG-YA1L
+// R-APC2-HD0D R-0B9L-2P5U R-AJ8K-KIAW R-AKGG-YA1L
 func TestWebsiteFiltersAndStoredMember(t *testing.T) {
 	f := store.CohortFilters{Website: []string{sources.WebsiteNone, sources.WebsiteHTTP}, WebsiteUnknown: true}
 	if got := filtersView(f); !reflect.DeepEqual(got.Website, f.Website) || !got.WebsiteUnknown {
@@ -87,7 +88,7 @@ func capturedCandidate(t *testing.T, cfg Config, id string) CandidateData {
 	return got
 }
 
-// R-ARRV-8WHR R-ASZR-MO8G R-AQJY-V4R2 R-AECZ-1FC4
+// R-0EXA-80DX R-0G56-LS4M R-0B9L-2P5U R-ZZ2L-8ZQW
 func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()
@@ -100,7 +101,7 @@ func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 	}
 	id := ids[0]
 	first := capturedCandidate(t, cfg, id)
-	if first.Assessment != nil || first.Candidate.Website != sources.WebsiteUnknown || first.Candidate.WebsiteURL != "" || first.Candidate.WebsiteTitle != "" || first.Candidate.WebsiteChecked != "" || first.Candidate.WebsiteCheckedText != "" || first.Enrichments == nil || len(first.Enrichments) != 0 {
+	if first.Facts != nil || first.Assessment != nil || first.Candidate.Website != sources.WebsiteUnknown || first.Candidate.WebsiteURL != "" || first.Candidate.WebsiteTitle != "" || first.Candidate.WebsiteChecked != "" || first.Candidate.WebsiteCheckedText != "" || first.Enrichments == nil || len(first.Enrichments) != 0 {
 		t.Fatal(first)
 	}
 	if len(first.Links) != 1 || first.Links[0].RowPage != "" || first.Estimates == nil || first.Rulings == nil || first.Rejects == nil {
@@ -124,8 +125,8 @@ func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 		}
 	}
 	for _, x := range []store.Enrichment{
-		{Candidate: id, Kind: sources.WebsiteCheck, State: sources.WebsiteNone, Error: "fixture-error", Source: "fixture.example.test"},
-		{Candidate: id, Kind: sources.WebsiteCheck, State: sources.WebsiteHTTPS, URL: "https://fixture.example.test/", Title: "fixture-title", StatusCode: 200, Size: 1256, Source: "fixture.example.test"},
+		{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteNone, Error: "fixture-error"}), Source: "fixture.example.test"},
+		{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteHTTPS, URL: "https://fixture.example.test/", Title: "fixture-title", StatusCode: 200, Size: 1256}), Source: "fixture.example.test"},
 	} {
 		if _, err = cfg.Store.AddEnrichments(ctx, []store.Enrichment{x}); err != nil {
 			t.Fatal(err)
@@ -161,7 +162,7 @@ func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 		t.Fatal(view)
 	}
 	for _, m := range view.Members {
-		if m.Website != sources.WebsiteUnknown || m.WebsiteURL != "" {
+		if (m.ID == id && (m.Website != got.Candidate.Website || m.WebsiteURL != got.Candidate.WebsiteURL)) || (m.ID != id && m.Website != sources.WebsiteUnknown) {
 			t.Fatal(m)
 		}
 	}
@@ -173,7 +174,7 @@ func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(merged.Candidate, candidateView(c)) || merged.Assessment != nil || merged.Estimates == nil || len(merged.Estimates) != 0 || merged.Links == nil || len(merged.Links) != 0 || merged.Enrichments == nil || len(merged.Enrichments) != 0 || len(merged.Rulings) != 1 || len(merged.Rejects) != 2 {
+	if !reflect.DeepEqual(merged.Candidate, candidateView(c)) || merged.Facts != nil || merged.Assessment != nil || merged.Estimates == nil || len(merged.Estimates) != 0 || merged.Links == nil || len(merged.Links) != 0 || merged.Enrichments == nil || len(merged.Enrichments) != 0 || len(merged.Rulings) != 1 || len(merged.Rejects) != 2 {
 		t.Fatal(merged)
 	}
 	b := bannerFor(cfg)
@@ -183,7 +184,7 @@ func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 	}
 }
 
-// R-AI0O-6QK7 R-838Y-808J R-AU7O-0FZ5
+// R-03Y6-S2PO R-WTV0-234V R-X3M7-492F
 func TestEnrichPassViews(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	for _, tc := range []struct{ origin, email, user, by string }{
@@ -199,12 +200,12 @@ func TestEnrichPassViews(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		p, err = cfg.Store.FinishPass(t.Context(), p.ID, store.Counts{Due: 6, Fetched: 5, HTTPS: 3, HTTP: 2, None: 1})
+		p, err = cfg.Store.FinishPass(t.Context(), p.ID, store.Counts{Derived: 7, Due: 6, Fetched: 5, HTTPS: 3, HTTP: 2, None: 1})
 		if err != nil {
 			t.Fatal(err)
 		}
 		v := passView(p, "")
-		if v.StartedBy != tc.by || v.RunPage != "" || v.Trigger != trigger || v.Due != 6 || v.Fetched != 5 || v.HTTPS != 3 || v.HTTP != 2 || v.None != 1 {
+		if v.StartedBy != tc.by || v.RunPage != "" || v.Trigger != trigger || v.Derived != 7 || v.Due != 6 || v.Fetched != 5 || v.HTTPS != 3 || v.HTTP != 2 || v.None != 1 {
 			t.Fatal(v)
 		}
 		b := bannerFor(cfg)
@@ -213,7 +214,7 @@ func TestEnrichPassViews(t *testing.T) {
 	}
 }
 
-// R-ALOD-C1SA
+// R-0563-5UGD
 func TestWebsiteTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
@@ -236,7 +237,7 @@ func TestWebsiteTemplateStates(t *testing.T) {
 				for _, full := range []bool{false, true} {
 					d := CandidateData{Candidate: CandidateView{Status: status, Website: state, WebsiteURL: url, WebsiteTitle: text, WebsiteChecked: text, WebsiteCheckedText: text}}
 					if full {
-						d.Enrichments = []EnrichmentRow{{State: state, URL: text, Title: text, StatusCode: text, Error: text, At: text, AtText: text, Domain: text}}
+						d.Enrichments = []EnrichmentRow{{State: state, URL: text, Title: text, StatusCode: text, Error: text, At: text, AtText: text, Source: text}}
 					}
 					render("candidate", d)
 				}

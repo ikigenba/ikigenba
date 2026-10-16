@@ -11,6 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 func near(t *testing.T, p *float64, w float64) {
@@ -20,7 +21,7 @@ func near(t *testing.T, p *float64, w float64) {
 	}
 }
 
-// R-3W06-TNDO R-3X83-7F4D R-EHCU-HV8K R-BN2B-WQID R-3USA-FVMZ
+// R-WJSI-8K6B R-WIKL-USFM R-EHCU-HV8K R-BN2B-WQID R-WHCP-H0OX
 func TestJudgmentsAggregateAndPersist(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -64,6 +65,7 @@ func TestJudgmentsAggregateAndPersist(t *testing.T) {
 	contractOK(t, err)
 	beforeLinks, err := f.s.Links(ctx, id)
 	contractOK(t, err)
+	deriveAll(t, f.s)
 	c, err := f.s.Judge(ctx, []string{id, id, "missing", emptyID})
 	contractOK(t, err)
 	contractEqual(t, c, store.Counts{Judged: 2, Unranged: 1})
@@ -125,7 +127,7 @@ func TestJudgmentsAggregateAndPersist(t *testing.T) {
 	near(t, got.RevenueConfidence, .7)
 }
 
-// R-NDOY-ZQ39
+// R-MUPS-FJX3
 func TestConcurrentResolutionAndJudgments(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -133,7 +135,7 @@ func TestConcurrentResolutionAndJudgments(t *testing.T) {
 	b := contractObservation("b", "Beta", f.now)
 	ids := contractAttach(t, f, "run", a, b)
 	var wg sync.WaitGroup
-	errs := make(chan error, 6)
+	errs := make(chan error, 8)
 	added := make(chan []store.Enrichment, 1)
 	for _, fn := range []func() error{func() error {
 		_, _, e := f.s.Decide(ctx, store.Ruling{Kind: store.KindMerge, Candidate: ids[0], Other: ids[1], Why: "same", UserID: "owner"})
@@ -142,8 +144,8 @@ func TestConcurrentResolutionAndJudgments(t *testing.T) {
 		b.SourceID = "extra"
 		_, _, e := f.s.Attach(ctx, "next", false, []store.Observation{b})
 		return e
-	}, func() error { _, _, e := f.s.MarkGone(ctx, a.Scraper, "next"); return e }, func() error { _, e := f.s.Judge(ctx, ids); return e }, func() error { _, e := f.s.JudgeAll(ctx); return e }, func() error {
-		results, e := f.s.AddEnrichments(ctx, []store.Enrichment{{Candidate: ids[1], Kind: sources.WebsiteCheck, State: sources.WebsiteHTTPS, URL: "https://race.example.test/"}})
+	}, func() error { _, _, e := f.s.MarkGone(ctx, a.Scraper, "next"); return e }, func() error { _, e := f.s.Judge(ctx, ids); return e }, func() error { _, e := f.s.JudgeAll(ctx); return e }, func() error { return f.s.FillFacts(ctx) }, func() error { _, _, e := f.s.Derive(ctx, "link_facts", "", false, 10); return e }, func() error {
+		results, e := f.s.AddEnrichments(ctx, []store.Enrichment{{Candidate: ids[1], Kind: sources.WebsiteCheck, Inputs: "fixture.test", Source: "fixture.test", Found: websiteFound(website.Result{State: sources.WebsiteHTTPS, URL: "https://race.example.test/"})}})
 		added <- results
 		return e
 	}} {
@@ -160,7 +162,7 @@ func TestConcurrentResolutionAndJudgments(t *testing.T) {
 	}
 	survivorResults, e := f.s.Enrichments(ctx, ids[0])
 	contractOK(t, e)
-	contractEqual(t, survivorResults, recorded)
+	contractEqual(t, onlyWebsite(survivorResults), recorded)
 	for _, id := range ids {
 		c, e := f.s.GetCandidate(ctx, id)
 		contractOK(t, e)
@@ -168,6 +170,10 @@ func TestConcurrentResolutionAndJudgments(t *testing.T) {
 		contractOK(t, e)
 		es, e := f.s.Enrichments(ctx, id)
 		contractOK(t, e)
+		if c.Status == store.StatusMerged {
+			_, e := f.s.GetFacts(ctx, id)
+			contractError(t, e, store.ErrNotFound)
+		}
 		if c.Status == store.StatusMerged && (len(ls) != 0 || len(es) != 0) {
 			t.Fatal("merged candidate retains links or enrichments")
 		}
@@ -215,7 +221,7 @@ func TestGivingLinksFillDisplayFields(t *testing.T) {
 	contractEqual(t, c.Phone, a.Reading.Phone)
 }
 
-// R-IMMV-6A84 R-IP2N-XTPI
+// R-GIKE-MO91 R-IP2N-XTPI
 func TestJudgePassTriggerRepeatsAcrossDeliveries(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -259,7 +265,7 @@ func TestJudgePassTriggerRepeatsAcrossDeliveries(t *testing.T) {
 	contractEqual(t, got.Unranged, int64(2))
 }
 
-// R-BN2B-WQID R-3USA-FVMZ R-3W06-TNDO
+// R-BN2B-WQID R-WHCP-H0OX R-WJSI-8K6B
 func TestJudgmentConflictsFollowLinkOrder(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -295,6 +301,7 @@ func TestJudgmentConflictsFollowLinkOrder(t *testing.T) {
 	hi := int64(900)
 	q.Reading.Estimate = &sources.Estimate{Source: ppp.Name, Low: 500, High: &hi, Confidence: .7}
 	contractAttach(t, f, "run", p, q)
+	deriveAll(t, f.s)
 	_, e := f.s.Judge(ctx, []string{id})
 	contractOK(t, e)
 	es, e := f.s.Estimates(ctx, id)
@@ -310,6 +317,7 @@ func TestJudgmentConflictsFollowLinkOrder(t *testing.T) {
 	q.Reading.FleetVerdict = sources.FleetPass
 	q.Digest = "fleet-change"
 	contractAttach(t, f, "next", q)
+	deriveAll(t, f.s)
 	_, e = f.s.Judge(ctx, []string{id})
 	contractOK(t, e)
 	a, e = f.s.GetAssessment(ctx, id)
@@ -317,7 +325,7 @@ func TestJudgmentConflictsFollowLinkOrder(t *testing.T) {
 	contractEqual(t, a.FleetVerdict, sources.FleetUnknown)
 }
 
-// R-3W06-TNDO R-3X83-7F4D
+// R-WJSI-8K6B R-WIKL-USFM
 func TestJudgmentFleetUsesOnlyFreshestLiveFMCSA(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -338,6 +346,7 @@ func TestJudgmentFleetUsesOnlyFreshestLiveFMCSA(t *testing.T) {
 		o.Reading.Drivers = tc.drivers
 		o.Digest += "x"
 		contractAttach(t, f, "first", o)
+		deriveAll(t, f.s)
 		_, e := f.s.Judge(ctx, []string{id})
 		contractOK(t, e)
 		a, e := f.s.GetAssessment(ctx, id)
@@ -372,6 +381,7 @@ func TestJudgmentFleetUsesOnlyFreshestLiveFMCSA(t *testing.T) {
 	contractAttach(t, f, "loan", loan)
 	check := func(verdict string, units, drivers *int64) {
 		t.Helper()
+		deriveAll(t, f.s)
 		_, e := f.s.Judge(ctx, []string{id})
 		contractOK(t, e)
 		a, e := f.s.GetAssessment(ctx, id)
@@ -389,7 +399,7 @@ func TestJudgmentFleetUsesOnlyFreshestLiveFMCSA(t *testing.T) {
 	check(sources.FleetUnknown, nil, nil)
 }
 
-// R-EHCU-HV8K R-3X83-7F4D
+// R-EHCU-HV8K R-WIKL-USFM
 func TestJudgeAllAgreesWithExplicitActiveIDs(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -416,11 +426,12 @@ func TestJudgeAllAgreesWithExplicitActiveIDs(t *testing.T) {
 	contractEqual(t, afterRejects, rejects)
 }
 
-// R-3YFZ-L6V2
+// R-WM8B-03NP
 func TestRulingJudgmentsUpdateCohortMembership(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
 	ids := contractAttach(t, f, "run", contractObservation("a", "Alpha", f.now), contractObservation("b", "Beta", f.now))
+	deriveAll(t, f.s)
 	_, e := f.s.JudgeAll(ctx)
 	contractOK(t, e)
 	cohort, e := f.s.CreateCohort(ctx, store.Cohort{Name: "Membership", Size: store.CohortSizeMax, CreatedUserID: "owner"})
@@ -455,7 +466,7 @@ func TestRulingJudgmentsUpdateCohortMembership(t *testing.T) {
 	}
 }
 
-// R-3YFZ-L6V2
+// R-WM8B-03NP
 func TestMovingRulingsWriteTheSameJudgmentsAsJudge(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -469,6 +480,7 @@ func TestMovingRulingsWriteTheSameJudgmentsAsJudge(t *testing.T) {
 	b.Reading.FleetVerdict = sources.FleetFail
 	b.Reading.PowerUnits = ptrInt(1)
 	id := contractAttach(t, f, "run", a, b)[0]
+	deriveAll(t, f.s)
 	_, e := f.s.JudgeAll(ctx)
 	contractOK(t, e)
 	split, cs, e := f.s.Decide(ctx, store.Ruling{Kind: store.KindSplit, Candidate: id, Keys: []string{sources.SourceKey(b.Scraper, b.SourceID)}, Why: "Separate businesses", UserID: "owner"})

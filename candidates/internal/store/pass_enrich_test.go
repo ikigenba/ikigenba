@@ -10,15 +10,15 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-IHR9-N79C R-IXLY-M7WD
+// R-GB90-C1SV R-IXLY-M7WD
 func TestEnrichPassShapeAndVocabulary(t *testing.T) {
 	contractEqual(t, []string{store.KindEnrich, store.OriginEnrich, store.OriginPass, store.TriggerEnrich}, []string{"enrich", "enrich", "pass", "enrich"})
 	p := store.Pass{ID: "pass", Kind: store.KindEnrich, Origin: store.OriginPass, Trigger: "parent", Status: store.StatusDone, Reason: "reason", Started: time.Time{}, Finished: time.Time{}, Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14, UserID: "user", UserEmail: "email", RequestID: "request", Delivery: "delivery"}
 	shape := struct {
-		ID, Kind, Origin, Trigger, Status, Reason                                                               string
-		Started, Finished                                                                                       time.Time
-		Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Due, Fetched, HTTPS, HTTP, None int64
-		UserID, UserEmail, RequestID, Delivery                                                                  string
+		ID, Kind, Origin, Trigger, Status, Reason                                                                        string
+		Started, Finished                                                                                                time.Time
+		Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None int64
+		UserID, UserEmail, RequestID, Delivery                                                                           string
 	}(p)
 	contractEqual(t, store.Pass(shape), p)
 }
@@ -27,7 +27,7 @@ func enrichPass() store.Pass {
 	return store.Pass{Kind: store.KindEnrich, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
 }
 
-// R-ILEY-SIHF R-IMMV-6A84 R-IP2N-XTPI
+// R-ILEY-SIHF R-GIKE-MO91 R-IP2N-XTPI
 func TestPassLanesAndOrigins(t *testing.T) {
 	ctx := context.Background()
 	parent := store.PassIDPrefix + "0123456789abcdef"

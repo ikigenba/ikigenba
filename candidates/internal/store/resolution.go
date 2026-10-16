@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
@@ -334,6 +335,9 @@ func (s *Store) Decide(ctx context.Context, d Ruling) (Ruling, []Candidate, erro
 			if err = execSQL(ctx, tx, "UPDATE enrichments SET candidate=? WHERE candidate=?", c.ID, other.ID); err != nil {
 				return err
 			}
+			if err = execSQL(ctx, tx, "DELETE FROM facts WHERE candidate=?", other.ID); err != nil {
+				return err
+			}
 			other.Status = StatusMerged
 			other.MergedInto = c.ID
 			other.Updated = t
@@ -362,6 +366,27 @@ func (s *Store) Decide(ctx context.Context, d Ruling) (Ruling, []Candidate, erro
 		if d.Kind == KindMerge || d.Kind == KindSplit {
 			for _, id := range ids {
 				if err = refreshKey(ctx, tx, id, t); err != nil {
+					return err
+				}
+			}
+		}
+		if d.Kind == KindMerge || d.Kind == KindSplit {
+			for _, id := range ids {
+				c, err := candidateKey(ctx, tx, id)
+				if err != nil {
+					return err
+				}
+				if c.Status != StatusActive {
+					continue
+				}
+				for _, en := range enrichers.New(nil).All() {
+					if der, ok := en.(enrichers.Deriver); ok {
+						if _, err = deriveCandidate(ctx, tx, c, der, true, t); err != nil {
+							return err
+						}
+					}
+				}
+				if err = projectFacts(ctx, tx, id); err != nil {
 					return err
 				}
 			}

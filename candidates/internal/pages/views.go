@@ -10,6 +10,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/urls"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 func dollars(v int64) string {
@@ -39,7 +40,7 @@ func passRow(p store.Pass) PassRow {
 	return v
 }
 func passView(p store.Pass, sp string) PassView {
-	v := PassView{ID: p.ID, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Status: p.Status, Reason: p.Reason, Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged, Due: p.Due, Fetched: p.Fetched, HTTPS: p.HTTPS, HTTP: p.HTTP, None: p.None}
+	v := PassView{ID: p.ID, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Status: p.Status, Reason: p.Reason, Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged, Derived: p.Derived, Due: p.Due, Fetched: p.Fetched, HTTPS: p.HTTPS, HTTP: p.HTTP, None: p.None}
 	switch p.Origin {
 	case store.OriginRebuild, store.OriginEnrich:
 		v.StartedBy = p.UserEmail
@@ -55,9 +56,10 @@ func passView(p store.Pass, sp string) PassView {
 }
 func memberRow(e store.Ranked, i int) MemberRow {
 	a := assessmentView(e.Assessment)
-	v := MemberRow{Rank: int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, Class: e.Candidate.Class, FleetVerdict: a.FleetVerdict, Website: e.Assessment.Website, WebsiteURL: e.Assessment.WebsiteURL, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch, KnownSince: a.KnownSince, KnownSinceText: a.KnownSinceText, NewestFiling: a.NewestFiling, NewestFilingText: a.NewestFilingText, Excluded: a.Excluded}
+	f := factsView(store.Facts{KnownSince: e.Assessment.KnownSince, NewestFiling: e.Assessment.NewestFiling, Categories: e.Assessment.Categories, GovernmentMatch: e.Assessment.GovernmentMatch, FleetVerdict: e.Assessment.FleetVerdict, PowerUnits: e.Assessment.PowerUnits, Drivers: e.Assessment.Drivers, Minutes: e.Assessment.Minutes})
+	v := MemberRow{Rank: int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, Class: e.Candidate.Class, FleetVerdict: f.FleetVerdict, Website: e.Assessment.Website, WebsiteURL: e.Assessment.WebsiteURL, Minutes: f.Minutes, GovernmentMatch: f.GovernmentMatch, KnownSince: f.KnownSince, KnownSinceText: f.KnownSinceText, NewestFiling: f.NewestFiling, NewestFilingText: f.NewestFilingText, Excluded: a.Excluded}
 	seen := map[string]bool{}
-	for _, c := range a.Categories {
+	for _, c := range f.Categories {
 		if !seen[c.Name] {
 			v.Categories = append(v.Categories, c.Name)
 			seen[c.Name] = true
@@ -90,7 +92,7 @@ func candidateView(c store.Candidate) CandidateView {
 	return v
 }
 func assessmentView(a store.Assessment) AssessmentView {
-	v := AssessmentView{OperatingEvidence: []EvidenceRow{}, Categories: []CategoryRow{}, GovernmentMatch: a.GovernmentMatch, FleetVerdict: a.FleetVerdict, Excluded: a.Excluded, Rules: a.Rules, KnownSince: date(a.KnownSince), KnownSinceText: date(a.KnownSince), NewestFiling: date(a.NewestFiling), NewestFilingText: date(a.NewestFiling)}
+	v := AssessmentView{OperatingEvidence: []EvidenceRow{}, Excluded: a.Excluded, Rules: a.Rules}
 	if a.Operating != nil {
 		v.OperatingConfidence = two(*a.Operating)
 	}
@@ -103,24 +105,33 @@ func assessmentView(a store.Assessment) AssessmentView {
 	if a.RevenueConfidence != nil {
 		v.RevenueConfidence = two(*a.RevenueConfidence)
 	}
-	if a.PowerUnits != nil {
-		v.PowerUnits = strconv.FormatInt(*a.PowerUnits, 10)
-	}
-	if a.Drivers != nil {
-		v.Drivers = strconv.FormatInt(*a.Drivers, 10)
-	}
-	if a.Minutes != nil {
-		v.Minutes = strconv.FormatInt(*a.Minutes, 10)
-	}
 	for _, e := range a.Evidence {
 		v.OperatingEvidence = append(v.OperatingEvidence, EvidenceRow{e.Name, e.Source, two(e.Weight), e.Description})
-	}
-	for _, c := range a.Categories {
-		v.Categories = append(v.Categories, CategoryRow{c.Name, c.Source})
 	}
 	v.Calculated, v.CalculatedText = stamp(a.Calculated, SecondLayout)
 	return v
 }
+func factsView(f store.Facts) FactsView {
+	v := FactsView{KnownSince: date(f.KnownSince), KnownSinceText: date(f.KnownSince), NewestFiling: date(f.NewestFiling), NewestFilingText: date(f.NewestFiling), Categories: []CategoryRow{}, GovernmentMatch: f.GovernmentMatch, FleetVerdict: f.FleetVerdict, Written: []WrittenRow{}}
+	if f.PowerUnits != nil {
+		v.PowerUnits = strconv.FormatInt(*f.PowerUnits, 10)
+	}
+	if f.Drivers != nil {
+		v.Drivers = strconv.FormatInt(*f.Drivers, 10)
+	}
+	if f.Minutes != nil {
+		v.Minutes = strconv.FormatInt(*f.Minutes, 10)
+	}
+	for _, c := range f.Categories {
+		v.Categories = append(v.Categories, CategoryRow{c.Name, c.Source})
+	}
+	for _, w := range f.Written {
+		at, txt := stamp(w.At, SecondLayout)
+		v.Written = append(v.Written, WrittenRow{w.Kind, at, txt})
+	}
+	return v
+}
+
 func estimateView(e sources.Estimate) EstimateView {
 	v := EstimateView{Source: e.Source, Low: dollars(e.Low), Confidence: two(e.Confidence), Filed: date(e.Filed), FiledText: date(e.Filed), Formula: e.Formula, Facts: []FactRow{}}
 	if e.High != nil {
@@ -204,26 +215,45 @@ func rejectRecordRow(r store.Reject) RejectRecordRow {
 }
 
 func enrichmentRow(x store.Enrichment) EnrichmentRow {
-	v := EnrichmentRow{Kind: x.Kind, State: x.State, URL: x.URL, Title: x.Title, Size: x.Size, Error: x.Error, Domain: x.Source}
-	if x.StatusCode != 0 {
-		v.StatusCode = strconv.Itoa(x.StatusCode)
+	v := EnrichmentRow{Kind: x.Kind, Source: x.Source, Found: []FactRow{}}
+	if x.Kind == sources.WebsiteCheck {
+		var r website.Result
+		_ = json.Unmarshal(x.Found, &r)
+		v.State, v.URL, v.Title, v.Size, v.Error = r.State, r.URL, r.Title, r.Size, r.Error
+		if r.StatusCode != 0 {
+			v.StatusCode = strconv.Itoa(r.StatusCode)
+		}
+	} else {
+		var found map[string]json.RawMessage
+		_ = json.Unmarshal(x.Found, &found)
+		keys := make([]string, 0, len(found))
+		for k := range found {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			var b bytes.Buffer
+			_ = json.Compact(&b, found[k])
+			v.Found = append(v.Found, FactRow{k, b.String()})
+		}
 	}
 	v.At, v.AtText = stamp(x.At, MinuteLayout)
 	return v
 }
-
 func setWebsite(v *CandidateView, es []store.Enrichment) {
 	v.Website = sources.WebsiteUnknown
-	for _, r := range es {
-		if r.Kind != sources.WebsiteCheck {
+	for _, e := range es {
+		if e.Kind != sources.WebsiteCheck {
 			continue
 		}
+		var r website.Result
+		_ = json.Unmarshal(e.Found, &r)
 		v.Website = r.State
 		if r.State == sources.WebsiteHTTPS || r.State == sources.WebsiteHTTP {
 			v.WebsiteURL = r.URL
 		}
 		v.WebsiteTitle = r.Title
-		v.WebsiteChecked, v.WebsiteCheckedText = stamp(r.At, SecondLayout)
+		v.WebsiteChecked, v.WebsiteCheckedText = stamp(e.At, SecondLayout)
 		return
 	}
 }

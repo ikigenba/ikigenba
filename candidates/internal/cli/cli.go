@@ -197,6 +197,9 @@ func Run(ctx context.Context, p Process) int {
 	w.Ready()
 	err = st.ReplaceZipDrive(bg, candidates.ZipDrive())
 	if err == nil {
+		err = st.FillFacts(bg)
+	}
+	if err == nil {
 		err = eng.Recover(bg)
 	}
 	if err != nil {

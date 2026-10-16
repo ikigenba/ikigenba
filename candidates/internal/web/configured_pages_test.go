@@ -19,7 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/web"
 )
 
-// R-5MG9-DY4O R-AU0X-6P6B
+// R-5MG9-DY4O
 func TestConfiguredScoredAndUnscoredPage(t *testing.T) {
 	cfg, _, _, _ := fixture(t)
 	ctx := context.Background()
@@ -66,7 +66,7 @@ func TestConfiguredScoredAndUnscoredPage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want.Assessment = &pages.AssessmentView{OperatingEvidence: []pages.EvidenceRow{}, Categories: []pages.CategoryRow{}, FleetVerdict: sources.FleetUnknown, Minutes: "31", RevenueLow: "$14,400,000", RevenueHigh: "$24,000,000", RevenueConfidence: "0.70", NewestFiling: "2026-10-05", NewestFilingText: "2026-10-05", Rules: int64(sources.Rules), Calculated: a.Calculated.UTC().Format(time.RFC3339), CalculatedText: a.Calculated.UTC().Format(pages.SecondLayout)}
+			want.Assessment = &pages.AssessmentView{OperatingEvidence: []pages.EvidenceRow{}, RevenueLow: "$14,400,000", RevenueHigh: "$24,000,000", RevenueConfidence: "0.70", Rules: int64(sources.Rules), Calculated: a.Calculated.UTC().Format(time.RFC3339), CalculatedText: a.Calculated.UTC().Format(pages.SecondLayout)}
 		}
 		set, err := page.Templates().ParseFS(candidates.Assets(), "*.html")
 		if err != nil {

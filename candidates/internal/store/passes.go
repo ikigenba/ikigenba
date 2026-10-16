@@ -87,6 +87,7 @@ func (s *Store) FinishPass(ctx context.Context, id string, c Counts) (Pass, erro
 		p.Linked = c.Linked
 		p.Judged = c.Judged
 		p.Unranged = c.Unranged
+		p.Derived = c.Derived
 		p.Due = c.Due
 		p.Fetched = c.Fetched
 		p.HTTPS = c.HTTPS

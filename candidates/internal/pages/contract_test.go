@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-TP14-C8P6 R-838Y-808J R-AU0X-6P6B
+// R-TP14-C8P6 R-WTV0-234V R-08TS-B5OG
 func TestCompleteViewContracts(t *testing.T) {
 	start := time.Date(2026, 10, 5, 10, 0, 7, 0, time.FixedZone("offset", 3600))
 	end := start.Add(time.Hour)
@@ -72,11 +72,11 @@ func TestCompleteViewContracts(t *testing.T) {
 	}
 	op, rc, low := .776, .7, int64(14400000)
 	a := store.Assessment{Operating: &op, Evidence: []sources.Evidence{{Name: "signal", Source: "source", Weight: .6, Description: "detail"}, {Name: "other", Weight: .3}, {Name: "third", Weight: .2}}, RevenueLow: &low, RevenueHigh: &hi, RevenueConfidence: &rc, KnownSince: start, NewestFiling: start, Categories: []sources.Category{{Name: "category", Source: "source"}}, GovernmentMatch: "chosen-government", FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, Minutes: &minutes, Excluded: true, Rules: int64(sources.Rules), Calculated: end}
-	wantA := AssessmentView{OperatingConfidence: "0.78", OperatingEvidence: []EvidenceRow{{"signal", "source", "0.60", "detail"}, {"other", "", "0.30", ""}, {"third", "", "0.20", ""}}, RevenueLow: "$14,400,000", RevenueHigh: "$24,000,000", RevenueConfidence: "0.70", KnownSince: "2026-10-05", KnownSinceText: "2026-10-05", NewestFiling: "2026-10-05", NewestFilingText: "2026-10-05", Categories: []CategoryRow{{"category", "source"}}, GovernmentMatch: "chosen-government", FleetVerdict: sources.FleetPass, PowerUnits: "12", Drivers: "0", Minutes: "31", Excluded: true, Rules: int64(sources.Rules), Calculated: "2026-10-05T10:00:07Z", CalculatedText: "2026-10-05 10:00:07 UTC"}
+	wantA := AssessmentView{OperatingConfidence: "0.78", OperatingEvidence: []EvidenceRow{{"signal", "source", "0.60", "detail"}, {"other", "", "0.30", ""}, {"third", "", "0.20", ""}}, RevenueLow: "$14,400,000", RevenueHigh: "$24,000,000", RevenueConfidence: "0.70", Excluded: true, Rules: int64(sources.Rules), Calculated: "2026-10-05T10:00:07Z", CalculatedText: "2026-10-05 10:00:07 UTC"}
 	if got := assessmentView(a); !reflect.DeepEqual(got, wantA) {
 		t.Fatalf("assessment got %#v want %#v", got, wantA)
 	}
-	if got := assessmentView(store.Assessment{}); !reflect.DeepEqual(got, AssessmentView{OperatingEvidence: []EvidenceRow{}, Categories: []CategoryRow{}}) {
+	if got := assessmentView(store.Assessment{}); !reflect.DeepEqual(got, AssessmentView{OperatingEvidence: []EvidenceRow{}}) {
 		t.Fatalf("empty assessment %#v", got)
 	}
 	e := sources.Estimate{Source: "source", Low: 14400000, High: &hi, Confidence: .7, Filed: start, Formula: 8, Facts: map[string]json.RawMessage{"z": json.RawMessage(` [1, 2] `), "a": json.RawMessage(` {"k": true} `)}}
@@ -131,7 +131,7 @@ func TestCompleteViewContracts(t *testing.T) {
 	}
 }
 
-// R-ALOD-C1SA
+// R-0563-5UGD
 func TestExplicitTemplateStates(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -173,7 +173,7 @@ func TestExplicitTemplateStates(t *testing.T) {
 					data.Candidate.Names = []string{text}
 					data.Candidate.People = []PersonRow{{Name: text, Role: text}}
 					data.Candidate.Cargo = []string{text}
-					data.Assessment = &AssessmentView{Minutes: text, RevenueLow: text, RevenueHigh: text, OperatingConfidence: text, RevenueConfidence: text, KnownSince: text, KnownSinceText: text, NewestFiling: text, NewestFilingText: text, GovernmentMatch: text, OperatingEvidence: []EvidenceRow{{Name: text, Source: text, Weight: text, Description: text}}, Categories: []CategoryRow{{Name: text, Source: text}}}
+					data.Assessment = &AssessmentView{RevenueLow: text, RevenueHigh: text, OperatingConfidence: text, RevenueConfidence: text, OperatingEvidence: []EvidenceRow{{Name: text, Source: text, Weight: text, Description: text}}}
 					data.Estimates = []EstimateView{{High: text, Filed: text, Facts: []FactRow{{Key: text, Value: text}}}}
 					data.Links = []LinkView{{RowPage: text, Filed: text}}
 					data.Rulings = []RulingView{{Other: text, Keys: []string{text}, By: text, User: "chosen-user"}}
@@ -215,7 +215,7 @@ func TestMemberRowStoredAssessment(t *testing.T) {
 	}
 }
 
-// R-838Y-808J R-AU7O-0FZ5
+// R-WTV0-234V R-X3M7-492F
 func TestPassOrigins(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	path := filepath.Join(t.TempDir(), "services.json")
@@ -249,7 +249,7 @@ func TestPassOrigins(t *testing.T) {
 	}
 }
 
-// R-ALOD-C1SA
+// R-0563-5UGD
 func TestJudgmentTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
@@ -271,7 +271,7 @@ func TestJudgmentTemplateStates(t *testing.T) {
 			for _, evidence := range [][]EvidenceRow{{}, {{Name: value, Source: value, Weight: value, Description: value}}} {
 				for _, categories := range [][]CategoryRow{{}, {{Name: value, Source: value}}} {
 					for _, high := range []string{"", "chosen-high"} {
-						d := CandidateData{Candidate: CandidateView{Status: store.StatusActive}, Assessment: &AssessmentView{OperatingConfidence: value, OperatingEvidence: evidence, RevenueLow: value, RevenueHigh: high, RevenueConfidence: value, KnownSince: value, KnownSinceText: value, NewestFiling: value, NewestFilingText: value, Categories: categories, GovernmentMatch: value, FleetVerdict: sources.FleetUnknown, Minutes: value, Excluded: flag}}
+						d := CandidateData{Facts: &FactsView{KnownSince: value, KnownSinceText: value, NewestFiling: value, NewestFilingText: value, Categories: categories, GovernmentMatch: value, FleetVerdict: sources.FleetUnknown, Minutes: value}, Candidate: CandidateView{Status: store.StatusActive}, Assessment: &AssessmentView{OperatingConfidence: value, OperatingEvidence: evidence, RevenueLow: value, RevenueHigh: high, RevenueConfidence: value, Excluded: flag}}
 						render("candidate", d)
 					}
 				}

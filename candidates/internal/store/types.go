@@ -2,6 +2,7 @@
 package store
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"sync"
@@ -69,14 +70,35 @@ type Assessment struct {
 	Calculated              time.Time
 }
 
-// Enrichment is one recorded website result.
+// Enrichment is one recorded result.
 type Enrichment struct {
-	Candidate, Kind, State, URL, Title string
-	StatusCode                         int
-	Size                               int64
-	Error, Source                      string
-	Cost                               float64
-	At                                 time.Time
+	Candidate, Kind, Inputs, Source string
+	Found                           json.RawMessage
+	Cost                            float64
+	At                              time.Time
+}
+
+// Due names a candidate and the inputs requiring enrichment.
+type Due struct{ Candidate, Inputs string }
+
+// Facts records the latest enrichment facts.
+type Facts struct {
+	Candidate           string
+	KnownSince          time.Time
+	GovernmentMatch     string
+	NewestFiling        time.Time
+	Categories          []sources.Category
+	FleetVerdict        string
+	PowerUnits, Drivers *int64
+	Website, WebsiteURL string
+	Minutes             *int64
+	Written             []Written
+}
+
+// Written records the result time used for one kind.
+type Written struct {
+	Kind string
+	At   time.Time
 }
 
 // Ruling records an owner decision.
@@ -89,14 +111,14 @@ type Ruling struct {
 
 // Pass records one resolution pass.
 type Pass struct {
-	ID, Kind, Origin, Trigger, Status, Reason                                                               string
-	Started, Finished                                                                                       time.Time
-	Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Due, Fetched, HTTPS, HTTP, None int64
-	UserID, UserEmail, RequestID, Delivery                                                                  string
+	ID, Kind, Origin, Trigger, Status, Reason                                                                        string
+	Started, Finished                                                                                                time.Time
+	Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None int64
+	UserID, UserEmail, RequestID, Delivery                                                                           string
 }
 
 // Counts contains the results of pass work.
-type Counts struct{ Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Due, Fetched, HTTPS, HTTP, None int64 }
+type Counts struct{ Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None int64 }
 
 // Observation is one source reading to attach.
 type Observation struct {

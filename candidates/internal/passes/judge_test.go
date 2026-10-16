@@ -12,24 +12,26 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/events"
+	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/scrapes"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 type evidenceSource struct{}
 
 func (evidenceSource) Name() string { return "fmcsa" }
 func (evidenceSource) Read(r scrapes.Row) sources.Reading {
-	return sources.Reading{Name: r.Name, NameKey: sources.NameKey(r.Name), Filed: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), Evidence: []sources.Evidence{{Name: sources.EvidenceFMCSAActive, Source: "fmcsa", Weight: 1, Description: "fixture"}}}
+	return sources.Reading{Name: r.Name, Email: "owner@held.test", NameKey: sources.NameKey(r.Name), Filed: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), Evidence: []sources.Evidence{{Name: sources.EvidenceFMCSAActive, Source: "fmcsa", Weight: 1, Description: "fixture"}}}
 }
 func judgeDelivery(id string) events.Delivery {
 	return events.Delivery{Event: events.Event{Name: trail.AcceptedJudge, ID: id, Attrs: events.Attrs{"anything": true}}}
 }
 
-// R-ZRW3-1A2O R-ZVJS-6LAR R-RRP5-I89D R-06IV-MIZ0 R-RSX1-W002
+// R-ZRW3-1A2O R-ZVJS-6LAR R-22MF-1UV2 R-23UB-FMLR R-2527-TECG
 func TestJudgeSeparatesIngestFromAssessment(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/runs/run_a/record" {
@@ -52,6 +54,17 @@ func TestJudgeSeparatesIngestFromAssessment(t *testing.T) {
 	if _, err = f.st.GetAssessment(context.Background(), ids[0]); !errors.Is(err, store.ErrNotFound) {
 		t.Fatal(err)
 	}
+	held := make(chan struct{})
+	var once sync.Once
+	f.eng = passes.New(passes.Config{Store: f.st, Sources: sources.New(src), Scrapes: f.sc, Telemetry: f.w, Events: f.em, Website: &website.Checker{Client: &http.Client{Transport: enrichTransport(func(r *http.Request) (*http.Response, error) {
+		once.Do(func() { close(held) })
+		<-r.Context().Done()
+		return nil, r.Context().Err()
+	})}, After: fastAfter}})
+	if _, err := f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	waitSignal(t, held)
 	judge := func(id string) store.Pass {
 		t.Helper()
 		before := len(f.requests())

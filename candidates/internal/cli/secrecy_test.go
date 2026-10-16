@@ -407,6 +407,19 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	if err != nil || ended.Status != store.StatusFailed || ended.Reason != store.ReasonInterrupted {
 		t.Fatal("held pass did not end interrupted")
 	}
+	allPasses, err := st.ListPasses(t.Context(), "", "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range allPasses {
+		if p.Origin == store.OriginPass {
+			parent, err := st.GetPass(t.Context(), p.Trigger)
+			if err != nil || p.RequestID != parent.RequestID {
+				t.Fatal(p, parent, err)
+			}
+			expectedPasses[p.ID] = p.RequestID
+		}
+	}
 	stamp := h.p.Now().UTC().Truncate(time.Microsecond)
 	trailPasses, busPasses := map[string]int{}, map[string]int{}
 	interruptRequests, interruptReads := map[string]int{}, map[string]int{}

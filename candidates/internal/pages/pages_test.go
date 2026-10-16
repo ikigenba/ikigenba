@@ -106,7 +106,7 @@ func comparePage(t *testing.T, cfg Config, path, name string, status int, data a
 	}
 }
 
-// R-ALOD-C1SA R-58H2-68U5 R-ALOD-C1SA R-51PY-VUIV
+// R-0563-5UGD R-58H2-68U5 R-0563-5UGD R-51PY-VUIV
 func TestTemplateSet(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
@@ -145,7 +145,7 @@ func TestTemplateSet(t *testing.T) {
 	}
 	for _, flag := range []bool{false, true} {
 		for _, text := range []string{"", "value"} {
-			data := CandidateData{Candidate: CandidateView{Status: store.StatusActive, Name: text, Names: []string{text}, People: []PersonRow{{Name: text, Role: text}}, Cargo: []string{text}}, Assessment: &AssessmentView{FleetVerdict: sources.FleetUnknown, Excluded: flag, Minutes: text, RevenueLow: text, RevenueHigh: text, NewestFiling: text, OperatingEvidence: []EvidenceRow{{Name: text, Description: text}}}, Estimates: []EstimateView{{High: text, Filed: text, Facts: []FactRow{{Key: text, Value: text}}}}, Links: []LinkView{{RowPage: text, Filed: text, Gone: flag}}, Rulings: []RulingView{{Other: text, Keys: []string{text}, By: text, User: text}}}
+			data := CandidateData{Facts: &FactsView{FleetVerdict: sources.FleetUnknown, Minutes: text, NewestFiling: text}, Candidate: CandidateView{Status: store.StatusActive, Name: text, Names: []string{text}, People: []PersonRow{{Name: text, Role: text}}, Cargo: []string{text}}, Assessment: &AssessmentView{Excluded: flag, RevenueLow: text, RevenueHigh: text, OperatingEvidence: []EvidenceRow{{Name: text, Description: text}}}, Estimates: []EstimateView{{High: text, Filed: text, Facts: []FactRow{{Key: text, Value: text}}}}, Links: []LinkView{{RowPage: text, Filed: text, Gone: flag}}, Rulings: []RulingView{{Other: text, Keys: []string{text}, By: text, User: text}}}
 			if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "candidate", data); err != nil {
 				t.Fatal(err)
 			}
@@ -153,7 +153,7 @@ func TestTemplateSet(t *testing.T) {
 	}
 }
 
-// R-IKZ3-GG4N R-5DCN-PBSX R-ANXF-9UGU R-84GU-LRZ8 R-5K0G-MENA R-5L8D-06DZ R-5MG9-DY4O R-B7FT-E6BY R-B8NP-RY2N R-BB3I-JHK1 R-5RBU-X13G R-5UZK-2CBJ
+// R-IKZ3-GG4N R-5DCN-PBSX R-ANXF-9UGU R-WV2W-FUVK R-5K0G-MENA R-5L8D-06DZ R-5MG9-DY4O R-B7FT-E6BY R-B8NP-RY2N R-BB3I-JHK1 R-5RBU-X13G R-5UZK-2CBJ
 func TestStaticEmptyAndRefusals(t *testing.T) {
 	cfg, d := pageFixture(t)
 	b := bannerFor(cfg)
@@ -215,7 +215,7 @@ func TestInvalidAndMissingPaths(t *testing.T) {
 	}
 }
 
-// R-AU0X-6P6B R-AU7O-0FZ5 R-AU0X-6P6B R-BH70-GC9I R-BIEW-U407
+// R-08TS-B5OG R-X3M7-492F R-08TS-B5OG R-BH70-GC9I R-BIEW-U407
 func TestStoredPages(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := context.Background()
@@ -316,7 +316,7 @@ func TestStoredPages(t *testing.T) {
 	comparePage(t, cfg, "/candidates/"+id, "candidate", 200, CandidateData{Banner: b, Candidate: candidateView(merged), Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{rulingView(r, id)}})
 }
 
-// R-AU0X-6P6B R-AU0X-6P6B: external links use the caller's configured services file.
+// R-08TS-B5OG R-08TS-B5OG: external links use the caller's configured services file.
 func TestSiblingPageLinks(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	path := filepath.Join(t.TempDir(), "services.json")

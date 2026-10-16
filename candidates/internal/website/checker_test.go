@@ -55,8 +55,14 @@ func await[T any](t *testing.T, c <-chan T) T {
 }
 
 func TestVocabularyAndDomain(t *testing.T) {
-	// R-HGHL-RET5 R-HHPI-56JU R-HIXE-IYAJ R-HML3-O9IM R-PXTT-K2JG
-	if website.Concurrency != 8 || website.Interval != 500*time.Millisecond || website.Timeout != 10*time.Second || website.BodyCap != 262144 || website.Redirects != 5 || website.RefreshLive != 90 || website.RefreshNone != 30 {
+	type tuning int64
+	var untyped = []tuning{website.Concurrency, website.Interval, website.Timeout, website.BodyCap, website.Redirects}
+	if len(untyped) != 5 {
+		t.Fatal(untyped)
+	}
+
+	// R-MPP3-S26X R-HHPI-56JU R-HIXE-IYAJ R-HML3-O9IM R-PXTT-K2JG
+	if website.Concurrency != 8 || website.Interval != 500*time.Millisecond || website.Timeout != 10*time.Second || website.BodyCap != 262144 || website.Redirects != 5 {
 		t.Fatal("check tuning")
 	}
 	if website.UserAgent == "" || strings.Contains(website.UserAgent, "\n") {

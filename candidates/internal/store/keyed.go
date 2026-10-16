@@ -131,19 +131,13 @@ func judgeKeys(ctx context.Context, tx *sql.Tx, ids []string, t time.Time) (Coun
 		if err != nil {
 			return Counts{}, err
 		}
-		r.enrichments, err = enrichmentRecords(ctx, tx, " WHERE candidate=? ORDER BY seq DESC", id)
-		if err != nil {
+		f, err := factsKey(ctx, tx, id)
+		if errors.Is(err, ErrNotFound) {
+			f = unknownFacts(id)
+		} else if err != nil {
 			return Counts{}, err
 		}
-		var minutes int64
-		err = scanSQL(ctx, tx, "SELECT minutes FROM zip_drive WHERE zip=?", []any{c.Zip}, &minutes)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return Counts{}, err
-		}
-		if err == nil {
-			r.zips[c.Zip] = minutes
-		}
-		es, a := assessment(r, c, t)
+		es, a := assessment(r, c, f, t)
 		if err = deleteRecord(ctx, tx, "estimates", "candidate=?", id); err != nil {
 			return Counts{}, err
 		}
@@ -255,6 +249,9 @@ func (s *Store) readScope(ctx context.Context, scope, id string, fn func(*record
 				return e
 			}
 			for _, a := range as {
+				if e = assessmentFacts(ctx, tx, &a); e != nil {
+					return e
+				}
 				r.assessments[a.Candidate] = a
 			}
 		case "rulings":

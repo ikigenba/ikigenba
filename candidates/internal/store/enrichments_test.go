@@ -2,39 +2,16 @@ package store_test
 
 import (
 	"context"
+	"encoding/json"
 	"math"
-	"slices"
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
-
-// R-IYTU-ZZN2 R-J01R-DRDR
-func TestEnrichmentShapeAndMethods(t *testing.T) {
-	e := store.Enrichment{Candidate: "candidate", Kind: sources.WebsiteCheck, State: sources.WebsiteHTTP, URL: "http://business.test/", Title: "Business", StatusCode: 200, Size: 15, Error: "failure", Source: "business.test", Cost: 0.25, At: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)}
-	shape := struct {
-		Candidate, Kind, State, URL, Title string
-		StatusCode                         int
-		Size                               int64
-		Error, Source                      string
-		Cost                               float64
-		At                                 time.Time
-	}(e)
-	contractEqual(t, store.Enrichment(shape), e)
-	f := contractDB(t)
-	methods := struct {
-		add   func(context.Context, []store.Enrichment) ([]store.Enrichment, error)
-		list  func(context.Context, string) ([]store.Enrichment, error)
-		due   func(context.Context, string, string, int64, int64, int) ([]store.Candidate, error)
-		mark  func(context.Context) (int64, error)
-		after func(context.Context, string, string, int64) (store.Enrichment, error)
-	}{f.s.AddEnrichments, f.s.Enrichments, f.s.DueEnrichments, f.s.EnrichmentMark, f.s.EnrichmentAfter}
-	if methods.add == nil || methods.list == nil || methods.due == nil || methods.mark == nil || methods.after == nil {
-		t.Fatal("missing method")
-	}
-}
 
 func enrichmentCandidate(t *testing.T, f *contractFixture, key, email string) string {
 	t.Helper()
@@ -44,245 +21,283 @@ func enrichmentCandidate(t *testing.T, f *contractFixture, key, email string) st
 	obs.Reading.Email = email
 	return contractAttach(t, f, "run-"+key, obs)[0]
 }
+func websiteFound(r website.Result) json.RawMessage {
+	b, err := json.Marshal(r)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+func websiteDecoded(e store.Enrichment) website.Result {
+	var r website.Result
+	if err := json.Unmarshal(e.Found, &r); err != nil {
+		panic(err)
+	}
+	return r
+}
 func websiteResult(id, state string) store.Enrichment {
-	return store.Enrichment{Candidate: id, Kind: sources.WebsiteCheck, State: state, URL: "https://business.test/", Title: "Business", StatusCode: 200, Size: 100, Source: "business.test", Cost: 0.02}
+	return store.Enrichment{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "business.test", Source: "business.test", Found: websiteFound(website.Result{State: state, URL: "https://business.test/", StatusCode: 200}), Cost: .02}
 }
 
-// R-3VR0-VQ0M R-J7D5-ODTX R-ITY9-GWOA
-func TestEnrichmentAppendPersistsAndSkipsAbsentCandidates(t *testing.T) {
-	f := contractDB(t)
-	ctx := context.Background()
-	active := contractSeed(t, f)
-	other := enrichmentCandidate(t, f, "distinct-other", "office@other.test")
-	_, _, err := f.s.Decide(ctx, store.Ruling{Kind: store.KindMerge, Candidate: active, Other: other, UserID: "owner", Why: "verified merge"})
-	contractOK(t, err)
-	before := contractState(t, f)
-	first := websiteResult(active, sources.WebsiteHTTPS)
-	first.At = f.now.AddDate(-1, 0, 0)
-	first.URL = "https://business.test/\xff"
-	first.Title = "title\xfe"
-	first.Error = "error\xff\xfe"
-	last := websiteResult(active, sources.WebsiteNone)
-	last.URL = ""
-	last.Title = ""
-	last.StatusCode = 0
-	inputs := []store.Enrichment{first, websiteResult(other, sources.WebsiteHTTP), websiteResult("missing", sources.WebsiteNone), last}
-	reads := 0
-	f.s = store.New(f.d, store.Config{Now: func() time.Time { reads++; return f.now }, Rand: f.rnd})
-	got, err := f.s.AddEnrichments(ctx, inputs)
-	contractOK(t, err)
-	contractEqual(t, reads, 1)
-	first.At = f.now.UTC().Truncate(time.Second)
-	first.URL = string([]rune(first.URL))
-	first.Title = string([]rune(first.Title))
-	first.Error = string([]rune(first.Error))
-	last.At = first.At
-	contractEqual(t, got, []store.Enrichment{first, last})
-	after := contractState(t, f)
-	after.enrichments = before.enrichments
-	contractEqual(t, after, before)
-	f.reopen()
-	for _, id := range []string{active, other} {
-		es, e := f.s.Enrichments(ctx, id)
-		contractOK(t, e)
-		want := []store.Enrichment{}
-		if id == active {
-			want = []store.Enrichment{last, first}
-		}
-		contractEqual(t, es, want)
-		for _, result := range es {
-			if result.At.Location() != time.UTC || result.At.Nanosecond() != 0 {
-				t.Fatal(result.At)
-			}
+// R-GDOT-3LA9 R-GEWP-HD0Y R-GG4L-V4RN R-GHCI-8WIC
+func TestEnrichmentShapesAndMethods(t *testing.T) {
+	e := websiteResult("candidate", sources.WebsiteHTTPS)
+	contractEqual(t, store.Enrichment(struct {
+		Candidate, Kind, Inputs, Source string
+		Found                           json.RawMessage
+		Cost                            float64
+		At                              time.Time
+	}(e)), e)
+	d := store.Due{Candidate: "candidate", Inputs: "input"}
+	contractEqual(t, store.Due(struct{ Candidate, Inputs string }(d)), d)
+	f := store.Facts{Candidate: "candidate", Written: []store.Written{{Kind: sources.WebsiteCheck, At: time.Time{}}}}
+	contractEqual(t, store.Facts(struct {
+		Candidate           string
+		KnownSince          time.Time
+		GovernmentMatch     string
+		NewestFiling        time.Time
+		Categories          []sources.Category
+		FleetVerdict        string
+		PowerUnits, Drivers *int64
+		Website, WebsiteURL string
+		Minutes             *int64
+		Written             []store.Written
+	}(f)), f)
+	contractEqual(t, store.Written(struct {
+		Kind string
+		At   time.Time
+	}(f.Written[0])), f.Written[0])
+	st := contractDB(t).s
+	checkMethods := func(
+		add func(context.Context, []store.Enrichment) ([]store.Enrichment, error),
+		due func(context.Context, string, string, int) ([]store.Due, error),
+		derive func(context.Context, string, string, bool, int) (string, int64, error),
+	) {
+		if add == nil || due == nil || derive == nil {
+			t.Fatal("missing method")
 		}
 	}
+	checkMethods(st.AddEnrichments, st.DueEnrichments, st.Derive)
+}
+
+// R-GONW-JIYI R-GR3P-B2FW R-GSBL-OU6L R-GX77-7X5D R-O1Q2-RX0O R-O2XZ-5ORD
+func TestEnrichmentAppendAndMark(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	id := contractSeed(t, f)
+	_, err := f.s.GetFacts(ctx, id)
+	contractError(t, err, store.ErrNotFound)
+	mark, err := f.s.EnrichmentMark(ctx)
+	contractOK(t, err)
+	contractEqual(t, mark, int64(0))
+	e := websiteResult(id, sources.WebsiteHTTPS)
+	e.Found = append([]byte("  "), e.Found...)
+	got, err := f.s.AddEnrichments(ctx, []store.Enrichment{e, websiteResult("missing", sources.WebsiteNone)})
+	contractOK(t, err)
+	contractEqual(t, len(got), 1)
+	e = websiteResult(id, sources.WebsiteHTTPS)
+	e.At = f.now.UTC().Truncate(time.Second)
+	contractEqual(t, got[0], e)
+	found, err := f.s.EnrichmentAfter(ctx, e.Kind, e.Inputs, mark)
+	contractOK(t, err)
+	contractEqual(t, found, e)
+	mark, err = f.s.EnrichmentMark(ctx)
+	contractOK(t, err)
+	_, err = f.s.EnrichmentAfter(ctx, e.Kind, e.Inputs, mark)
+	contractError(t, err, store.ErrNotFound)
+	_, err = f.s.EnrichmentAfter(ctx, e.Kind, e.Inputs, -1)
+	contractError(t, err, store.ErrUnreachable)
+	f.reopen()
+	es, err := f.s.Enrichments(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, es, []store.Enrichment{e})
+	facts, err := f.s.GetFacts(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, facts.Website, sources.WebsiteHTTPS)
 	empty, err := f.s.AddEnrichments(ctx, nil)
 	contractOK(t, err)
 	contractEqual(t, empty, []store.Enrichment{})
-	empty, err = f.s.Enrichments(ctx, "missing")
+	_, err = f.s.Enrichments(ctx, "missing")
 	contractError(t, err, store.ErrNotFound)
-	if empty != nil {
-		t.Fatal(empty)
-	}
 }
 
-// R-3WYX-9HRB
-func TestEnrichmentInvalidBatchChangesNothing(t *testing.T) {
+// R-GPVS-XAP7
+func TestInvalidEnrichmentsAreAtomic(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
-	id := enrichmentCandidate(t, f, "business", "mail@business.test")
+	id := contractSeed(t, f)
 	good := websiteResult(id, sources.WebsiteHTTPS)
-	saved, err := f.s.AddEnrichments(ctx, []store.Enrichment{good})
-	contractOK(t, err)
-	bad := []store.Enrichment{good, good, good, good, good, good, good, good}
-	bad[0].Kind = "other"
-	bad[1].State = sources.WebsiteUnknown
-	bad[2].StatusCode = -1
-	bad[3].Size = -1
-	bad[4].Cost = -0.1
-	bad[5].Cost = math.NaN()
-	bad[6].Cost = math.Inf(1)
-	bad[7].Cost = math.Inf(-1)
-	for _, e := range bad {
-		out, e2 := f.s.AddEnrichments(ctx, []store.Enrichment{good, e, good})
-		contractError(t, e2, store.ErrUnreachable)
-		if out != nil {
-			t.Fatal(out)
-		}
-		got, e2 := f.s.Enrichments(ctx, id)
-		contractOK(t, e2)
-		contractEqual(t, got, saved)
-	}
-	f.reopen()
-	got, err := f.s.Enrichments(ctx, id)
-	contractOK(t, err)
-	contractEqual(t, got, saved)
-}
-
-// R-3Y6T-N9I0
-func TestEnrichmentMarksFollowRecordingOrderAcrossMerge(t *testing.T) {
-	f := contractDB(t)
-	ctx := context.Background()
-	a := enrichmentCandidate(t, f, "first", "mail@first.test")
-	b := enrichmentCandidate(t, f, "second", "mail@second.test")
-	zero, err := f.s.EnrichmentMark(ctx)
-	contractOK(t, err)
-	contractEqual(t, zero, int64(0))
-	absent, err := f.s.EnrichmentAfter(ctx, sources.WebsiteCheck, "business.test", zero)
-	contractError(t, err, store.ErrNotFound)
-	contractEqual(t, absent, store.Enrichment{})
-	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{websiteResult(a, sources.WebsiteHTTPS)})
-	contractOK(t, err)
-	mark, err := f.s.EnrichmentMark(ctx)
-	contractOK(t, err)
-	if mark < 0 {
-		t.Fatal(mark)
-	}
-	absent, err = f.s.EnrichmentAfter(ctx, sources.WebsiteCheck, "business.test", mark)
-	contractError(t, err, store.ErrNotFound)
-	contractEqual(t, absent, store.Enrichment{})
-	// Keep the same clock: the later recording, rather than At, defines newest.
-	added, err := f.s.AddEnrichments(ctx, []store.Enrichment{websiteResult(b, sources.WebsiteHTTP), websiteResult(a, sources.WebsiteNone)})
-	contractOK(t, err)
-	got, err := f.s.EnrichmentAfter(ctx, sources.WebsiteCheck, "business.test", mark)
-	contractOK(t, err)
-	contractEqual(t, got, added[1])
-	_, _, err = f.s.Decide(ctx, store.Ruling{Kind: store.KindMerge, Candidate: b, Other: a, UserID: "owner", Why: "verified merge"})
-	contractOK(t, err)
-	got, err = f.s.EnrichmentAfter(ctx, sources.WebsiteCheck, "business.test", mark)
-	contractOK(t, err)
-	want := added[1]
-	want.Candidate = b
-	contractEqual(t, got, want)
-	for _, args := range []struct {
-		kind, domain string
-		mark         int64
-	}{{"other", "business.test", zero}, {sources.WebsiteCheck, "other.test", zero}, {sources.WebsiteCheck, "business.test", math.MaxInt64}} {
-		got, err = f.s.EnrichmentAfter(ctx, args.kind, args.domain, args.mark)
-		contractError(t, err, store.ErrNotFound)
-		contractEqual(t, got, store.Enrichment{})
-	}
-	got, err = f.s.EnrichmentAfter(ctx, sources.WebsiteCheck, "business.test", -1)
-	contractError(t, err, store.ErrUnreachable)
-	contractEqual(t, got, store.Enrichment{})
-	f.reopen()
-	got, err = f.s.EnrichmentAfter(ctx, sources.WebsiteCheck, "business.test", mark)
-	contractOK(t, err)
-	contractEqual(t, got, want)
-}
-
-// R-J8L2-25KM R-J9SY-FXBB R-JB0U-TP20
-func TestDueEnrichmentWindowsAndAges(t *testing.T) {
-	f := contractDB(t)
-	ctx := context.Background()
-	now := f.now
-	var dueIDs []string
-	var allIDs []string
-	for i, tc := range []struct {
-		state string
-		age   int
-		due   bool
-	}{{sources.WebsiteHTTPS, 91, true}, {sources.WebsiteHTTPS, 90, true}, {sources.WebsiteHTTPS, 89, false}, {sources.WebsiteHTTP, 90, true}, {sources.WebsiteNone, 31, true}, {sources.WebsiteNone, 30, true}, {sources.WebsiteNone, 29, false}} {
-		f.now = now
-		id := enrichmentCandidate(t, f, string(rune('a'+i)), "mail@business.test")
-		allIDs = append(allIDs, id)
-		f.now = now.AddDate(0, 0, -tc.age)
-		_, err := f.s.AddEnrichments(ctx, []store.Enrichment{websiteResult(id, tc.state)})
+	bad := []store.Enrichment{good, good, good, good, good, good, good}
+	bad[0].Kind = "bad"
+	bad[1].Found = json.RawMessage(`{}`)
+	bad[2].Inputs = ""
+	bad[3].Cost = -1
+	bad[4].Cost = math.NaN()
+	bad[5].Cost = math.Inf(1)
+	bad[6].Found = json.RawMessage(`null`)
+	for _, b := range bad {
+		out, err := f.s.AddEnrichments(ctx, []store.Enrichment{good, b})
+		contractError(t, err, store.ErrUnreachable)
+		contractEqual(t, out, []store.Enrichment(nil))
+		es, err := f.s.Enrichments(ctx, id)
 		contractOK(t, err)
-		if tc.due {
-			dueIDs = append(dueIDs, id)
+		contractEqual(t, len(es), 0)
+	}
+}
+
+// R-GTJI-2LXA R-GURE-GDNZ R-O45V-JGI2 R-JB0U-TP20
+func TestDueUsesInputs(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	id := enrichmentCandidate(t, f, "due", "office@business.test")
+	ds, err := f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 1)
+	contractOK(t, err)
+	contractEqual(t, ds, []store.Due{{Candidate: id, Inputs: "business.test"}})
+	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{websiteResult(id, sources.WebsiteHTTPS)})
+	contractOK(t, err)
+	f.now = f.now.AddDate(10, 0, 0)
+	ds, err = f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 1)
+	contractOK(t, err)
+	contractEqual(t, ds, []store.Due{})
+	_, err = f.s.DueEnrichments(ctx, "invalid", "", 1)
+	contractError(t, err, store.ErrUnreachable)
+	_, err = f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 0)
+	contractError(t, err, store.ErrUnreachable)
+}
+
+// R-GYF3-LOW2 R-O5DR-X88R R-IJ2C-94V9 R-GZMZ-ZGMR R-H22S-R045
+func TestDeriveFactsAndFill(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	id := contractSeed(t, f)
+	c, err := f.s.GetCandidate(ctx, id)
+	contractOK(t, err)
+	contractOK(t, f.s.ReplaceZipDrive(ctx, map[string]int64{c.Zip: 84}))
+	last, n, err := f.s.Derive(ctx, enrichers.KindDriveMinutes, "", false, 1)
+	contractOK(t, err)
+	contractEqual(t, last, id)
+	contractEqual(t, n, int64(1))
+	facts, err := f.s.GetFacts(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, *facts.Minutes, int64(84))
+	contractEqual(t, facts.Website, sources.WebsiteUnknown)
+	_, n, err = f.s.Derive(ctx, enrichers.KindDriveMinutes, "", false, 1)
+	contractOK(t, err)
+	contractEqual(t, n, int64(0))
+	_, n, err = f.s.Derive(ctx, enrichers.KindDriveMinutes, "", true, 1)
+	contractOK(t, err)
+	contractEqual(t, n, int64(1))
+	last, n, err = f.s.Derive(ctx, enrichers.KindDriveMinutes, id, false, 1)
+	contractOK(t, err)
+	contractEqual(t, last, "")
+	contractEqual(t, n, int64(0))
+	_, _, err = f.s.Derive(ctx, sources.WebsiteCheck, "", false, 1)
+	contractError(t, err, store.ErrUnreachable)
+	_, _, err = f.s.Derive(ctx, enrichers.KindDriveMinutes, "", false, 0)
+	contractError(t, err, store.ErrUnreachable)
+	_, _, err = f.s.Derive(ctx, enrichers.KindLinkFacts, "", false, 10)
+	contractOK(t, err)
+	before, err := f.s.GetFacts(ctx, id)
+	contractOK(t, err)
+	contractOK(t, f.s.FillFacts(ctx))
+	after, err := f.s.GetFacts(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, after, before)
+	f.reopen()
+	after, err = f.s.GetFacts(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, after, before)
+}
+
+func deriveAll(t *testing.T, s *store.Store) {
+	t.Helper()
+	for _, kind := range []string{enrichers.KindDriveMinutes, enrichers.KindLinkFacts} {
+		_, _, err := s.Derive(context.Background(), kind, "", true, 1000)
+		contractOK(t, err)
+	}
+}
+
+func onlyWebsite(es []store.Enrichment) []store.Enrichment {
+	out := []store.Enrichment{}
+	for _, e := range es {
+		if e.Kind == sources.WebsiteCheck {
+			out = append(out, e)
 		}
 	}
-	f.now = now
-	never := enrichmentCandidate(t, f, "never", "mail@business.test")
-	dueIDs = append(dueIDs, never)
-	allIDs = append(allIDs, never)
-	_ = enrichmentCandidate(t, f, "empty-email", "")
-	merged := enrichmentCandidate(t, f, "merged", "mail@business.test")
-	_, _, err := f.s.Decide(ctx, store.Ruling{Kind: store.KindMerge, Candidate: never, Other: merged, UserID: "owner", Why: "verified merge"})
+	return out
+}
+
+// R-GURE-GDNZ R-GTJI-2LXA R-GYF3-LOW2 R-IJ2C-94V9
+func TestDueWindowsAndDerivedSubject(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	ids := []string{}
+	for _, key := range []string{"a", "b", "c"} {
+		ids = append(ids, enrichmentCandidate(t, f, key, "office@"+key+".test"))
+	}
+	all := []store.Due{}
+	cursor := ""
+	for {
+		ds, err := f.s.DueEnrichments(ctx, sources.WebsiteCheck, cursor, 2)
+		contractOK(t, err)
+		if len(ds) == 0 {
+			break
+		}
+		all = append(all, ds...)
+		cursor = ds[len(ds)-1].Candidate
+	}
+	contractEqual(t, len(all), 3)
+	for i := 1; i < len(all); i++ {
+		if all[i-1].Candidate >= all[i].Candidate {
+			t.Fatal("window ordering")
+		}
+	}
+	for _, d := range all {
+		e := websiteResult(d.Candidate, sources.WebsiteNone)
+		e.Inputs = d.Inputs
+		_, err := f.s.AddEnrichments(ctx, []store.Enrichment{e})
+		contractOK(t, err)
+	}
+	ds, err := f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 10)
 	contractOK(t, err)
-	slices.Sort(dueIDs)
-	slices.Sort(allIDs)
-	read := func(live, none int64, n int) []string {
-		t.Helper()
-		var ids []string
-		after := ""
-		for {
-			cs, e := f.s.DueEnrichments(ctx, sources.WebsiteCheck, after, live, none, n)
-			contractOK(t, e)
-			if cs == nil {
-				t.Fatal("nil due slice")
-			}
-			if len(cs) == 0 {
+	contractEqual(t, ds, []store.Due{})
+	// The next result's inputs are intentionally obsolete, so only this candidate is due.
+	e := websiteResult(ids[0], sources.WebsiteNone)
+	e.Inputs = "previous.test"
+	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{e})
+	contractOK(t, err)
+	ds, err = f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 10)
+	contractOK(t, err)
+	contractEqual(t, len(ds), 1)
+	contractEqual(t, ds[0].Candidate, ids[0])
+	// Compare the store's derived result to the pure function over the complete public subject.
+	c, err := f.s.GetCandidate(ctx, ids[0])
+	contractOK(t, err)
+	contractOK(t, f.s.ReplaceZipDrive(ctx, map[string]int64{c.Zip: 0}))
+	_, _, err = f.s.MarkGone(ctx, "source-z", "later")
+	contractOK(t, err)
+	links, err := f.s.Links(ctx, c.ID)
+	contractOK(t, err)
+	su := enrichers.Subject{ID: c.ID, Email: c.Email, Zip: c.Zip, Minutes: ptrInt(0), Links: []enrichers.Link{}}
+	for _, l := range links {
+		su.Links = append(su.Links, enrichers.Link{Scraper: l.Scraper, SourceID: l.SourceID, Gone: l.Gone, Reading: l.Reading})
+	}
+	for _, der := range []enrichers.Deriver{enrichers.DriveMinutes{}, enrichers.LinkFacts{}} {
+		_, _, err = f.s.Derive(ctx, der.Kind(), "", true, 10)
+		contractOK(t, err)
+		es, err := f.s.Enrichments(ctx, c.ID)
+		contractOK(t, err)
+		var got store.Enrichment
+		for _, e := range es {
+			if e.Kind == der.Kind() {
+				got = e
 				break
 			}
-			for _, c := range cs {
-				want, e2 := f.s.GetCandidate(ctx, c.ID)
-				contractOK(t, e2)
-				contractEqual(t, c, want)
-				ids = append(ids, c.ID)
-			}
-			after = cs[len(cs)-1].ID
 		}
-		return ids
+		expected := der.Derive(su)
+		contractEqual(t, got.Inputs, der.Inputs(su))
+		contractEqual(t, got.Found, expected.Found)
+		contractEqual(t, got.Source, expected.Source)
+		contractEqual(t, got.Cost, expected.Cost)
 	}
-	contractEqual(t, read(90, 30, 2), dueIDs)
-	contractEqual(t, read(0, 0, 3), allIDs)
-	contractEqual(t, read(math.MaxInt64, math.MaxInt64, 2), []string{never})
-	contractEqual(t, read(math.MinInt64, math.MinInt64, 2), allIDs)
-	// A new result at the very same time supersedes an old result by record order.
-	f.now = now.AddDate(0, 0, -100)
-	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{websiteResult(never, sources.WebsiteNone)})
-	contractOK(t, err)
-	f.now = now
-	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{websiteResult(never, sources.WebsiteHTTPS)})
-	contractOK(t, err)
-	filtered := read(90, 30, 2)
-	if slices.Contains(filtered, never) {
-		t.Fatal("older result overrode newest")
-	}
-	for _, n := range []int{0, -1} {
-		cs, e := f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 90, 30, n)
-		contractError(t, e, store.ErrUnreachable)
-		if cs != nil {
-			t.Fatal(cs)
-		}
-	}
-	// A cutoff before year one cannot make a result due even when it
-	// was recorded at that cutoff.
-	f.now = time.Date(0, 12, 31, 0, 0, 0, 0, time.UTC)
-	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{websiteResult(never, sources.WebsiteHTTPS)})
-	contractOK(t, err)
-	f.now = time.Date(1, 1, 2, 0, 0, 0, 0, time.UTC)
-	reads := 0
-	f.s = store.New(f.d, store.Config{Now: func() time.Time { reads++; return f.now }, Rand: f.rnd})
-	cs, err := f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 2, 2, 100)
-	contractEqual(t, reads, 1)
-	contractOK(t, err)
-	contractEqual(t, cs, []store.Candidate{})
-	cs, err = f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 1, 1, 100)
-	contractOK(t, err)
-	expected, err := f.s.GetCandidate(ctx, never)
-	contractOK(t, err)
-	contractEqual(t, cs, []store.Candidate{expected})
 }

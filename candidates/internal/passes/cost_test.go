@@ -19,7 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
 )
 
-// R-ZZ7H-BWIU: both runs have the same generated evidence except Run.
+// R-1XQT-IRWA: both runs have the same generated evidence except Run.
 func generatedRows(t *testing.T, run string) []scrapes.Row {
 	t.Helper()
 	rows := make([]scrapes.Row, 10000)
@@ -87,7 +87,7 @@ func costEnded(t *testing.T, f *fixture, trigger string, began time.Time) store.
 
 }
 
-// R-00FD-PO9J R-01NA-3G08 R-02V6-H7QX
+// R-00FD-PO9J R-1YYP-WJMZ R-206M-ABDO
 func TestGeneratedRunCostChain(t *testing.T) {
 	first, second := "generated-first", "generated-second"
 	rows := map[string][]scrapes.Row{first: generatedRows(t, first), second: generatedRows(t, second)}
@@ -128,7 +128,7 @@ func TestGeneratedRunCostChain(t *testing.T) {
 	}
 	assertCounts := func(p store.Pass, want store.Counts) {
 		t.Helper()
-		got := store.Counts{Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged}
+		got := store.Counts{Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged, Derived: p.Derived}
 		if got != want {
 			t.Fatalf("pass %s counts: got %+v, want %+v", p.Trigger, got, want)
 		}
@@ -138,12 +138,14 @@ func TestGeneratedRunCostChain(t *testing.T) {
 		t.Fatal(got)
 	}
 	assertCounts(costEnded(t, f, first, began), store.Counts{Rows: 10000, New: 10000, Created: 5000, Linked: 5000})
+	settleCostChain(t, f, first, began)
 	current = second
 	began = time.Now()
 	if got := f.delivery("generated-event-second", second); got != events.OK() {
 		t.Fatal(got)
 	}
 	assertCounts(costEnded(t, f, second, began), store.Counts{Rows: 10000, Unchanged: 10000})
+	settleCostChain(t, f, second, began)
 	began = time.Now()
 	_, err := f.eng.Rebuild(context.Background(), identity.Caller{UserID: "cost-owner"})
 	if err != nil {
@@ -167,14 +169,14 @@ func TestGeneratedRunCostChain(t *testing.T) {
 			unranged++
 		}
 	}
-	assertCounts(ended, store.Counts{Rows: 10000, Changed: 10000, Linked: 10000, Judged: 5000, Unranged: unranged})
+	assertCounts(ended, store.Counts{Rows: 10000, Changed: 10000, Linked: 10000, Judged: 5000, Unranged: unranged, Derived: 10000})
 
 	// The ending event has been captured and no engine work remains. Prepare
 	// inputs before measuring so only each upkeep call contributes allocations.
 	table := candidates.ZipDrive()
 	ctx := context.Background()
 	var before, after runtime.MemStats
-	// R-Y4NM-OD2H
+	// R-HJ5E-3SHV
 	runtime.ReadMemStats(&before)
 	err = f.st.ReplaceZipDrive(ctx, table)
 	runtime.ReadMemStats(&after)
@@ -186,7 +188,7 @@ func TestGeneratedRunCostChain(t *testing.T) {
 	} else {
 		t.Logf("ReplaceZipDrive allocated %d bytes", allocated)
 	}
-	// R-Y5VJ-24T6
+	// R-HKDA-HK8K
 	runtime.ReadMemStats(&before)
 	_, err = f.st.PrunePasses(ctx, 1)
 	runtime.ReadMemStats(&after)
@@ -205,4 +207,21 @@ func reflectRowsEqual(a, b scrapes.Row) bool {
 	left, le := json.Marshal(a)
 	right, re := json.Marshal(b)
 	return le == nil && re == nil && string(left) == string(right)
+}
+
+func settleCostChain(t *testing.T, f *fixture, trigger string, began time.Time) {
+	t.Helper()
+	var p store.Pass
+	for _, v := range f.list() {
+		if v.Trigger == trigger {
+			p = v
+		}
+	}
+	en := waitFollow(t, f, p.ID)
+	if en.Derived+en.HTTPS+en.HTTP+en.None > 0 {
+		waitFollow(t, f, en.ID)
+	}
+	if time.Since(began) > 120*time.Second {
+		t.Fatal("cost chain exceeded deadline")
+	}
 }

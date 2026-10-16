@@ -210,6 +210,14 @@ func Handler(cfg Config) http.Handler {
 				for _, x := range enrichments {
 					d.Enrichments = append(d.Enrichments, enrichmentRow(x))
 				}
+				facts, err := cfg.Store.GetFacts(r.Context(), cid)
+				if err == nil {
+					v := factsView(facts)
+					d.Facts = &v
+				} else if !errors.Is(err, store.ErrNotFound) {
+					fail()
+					return
+				}
 				a, err := cfg.Store.GetAssessment(r.Context(), cid)
 				if err == nil {
 					v := assessmentView(a)

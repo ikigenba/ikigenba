@@ -68,11 +68,11 @@ func assertPriorJudgment(t *testing.T, s *store.Store, id string) {
 	a, err := s.GetAssessment(context.Background(), id)
 	contractOK(t, err)
 	op, conf := 0.6, 0.7
-	low, high, minutes := int64(100), int64(200), int64(42)
-	contractEqual(t, a, store.Assessment{Candidate: id, Operating: &op, OperatingKey: 600000, Evidence: []sources.Evidence{}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &conf, KnownSince: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: "pattern", NewestFiling: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown, Minutes: &minutes, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)})
+	low, high := int64(100), int64(200)
+	contractEqual(t, a, store.Assessment{Candidate: id, Operating: &op, OperatingKey: 600000, Evidence: []sources.Evidence{}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &conf, Categories: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)})
 }
 
-// R-TJXQ-1G1J
+// R-HE9S-KPJ3
 func TestPriorJudgmentsAcrossMigration(t *testing.T) {
 	for _, fleet := range []bool{false, true} {
 		t.Run(map[bool]string{false: "false", true: "true"}[fleet], func(t *testing.T) {
@@ -144,7 +144,7 @@ func TestOldAssessmentsClearWhilePassesRetainTheirMeaning(t *testing.T) {
 	contractError(t, err, store.ErrDelivered)
 }
 
-// R-J2HK-5AV5
+// R-HFHO-YH9S
 func TestWebsiteMigrationKeepsPreviousJudgments(t *testing.T) {
 	for _, fleet := range []bool{false, true} {
 		t.Run(map[bool]string{false: "false", true: "true"}[fleet], func(t *testing.T) {
@@ -171,8 +171,8 @@ func TestWebsiteMigrationKeepsPreviousJudgments(t *testing.T) {
 			a, err := s.GetAssessment(ctx, id)
 			contractOK(t, err)
 			op, conf := 0.6, 0.7
-			low, high, minutes, power, drivers := int64(100), int64(200), int64(42), int64(3), int64(2)
-			contractEqual(t, a, store.Assessment{Candidate: id, Operating: &op, OperatingKey: 600000, Evidence: []sources.Evidence{}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &conf, KnownSince: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: "pattern", NewestFiling: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{}, FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, Website: sources.WebsiteUnknown, Minutes: &minutes, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)})
+			low, high := int64(100), int64(200)
+			contractEqual(t, a, store.Assessment{Candidate: id, Operating: &op, OperatingKey: 600000, Evidence: []sources.Evidence{}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &conf, Categories: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)})
 			p, err := s.GetPass(ctx, pid)
 			contractOK(t, err)
 			contractEqual(t, p, store.Pass{ID: pid, Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, Status: store.StatusDone, Started: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Finished: time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC), Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, UserID: "owner", UserEmail: "mail", RequestID: "request"})

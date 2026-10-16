@@ -158,12 +158,12 @@ func TestContractVocabulary(t *testing.T) {
 	}
 }
 
-// R-IMMV-6A84 R-IRIG-PD6W R-ISQD-34XL R-ITY9-GWOA R-9B0V-6MNK R-4ZXJ-0QUQ R-52DB-SAC4
+// R-GIKE-MO91 R-GJSB-0FZQ R-GL07-E7QF R-GM83-RZH4 R-9B0V-6MNK R-4ZXJ-0QUQ R-52DB-SAC4
 func TestContractPassLifecyclePersistence(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
 	stamp := f.now.UTC().Truncate(time.Second)
-	input := store.Pass{ID: "ignored", Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, Status: "ignored", Reason: "ignored", Started: f.now.AddDate(-1, 0, 0), Finished: f.now, Rows: 99, New: 99, Changed: 99, Unchanged: 99, Gone: 99, Created: 99, Linked: 99, Judged: 99, Unranged: 99, Due: 99, Fetched: 99, HTTPS: 99, HTTP: 99, None: 99, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
+	input := store.Pass{ID: "ignored", Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, Status: "ignored", Reason: "ignored", Started: f.now.AddDate(-1, 0, 0), Finished: f.now, Rows: 99, New: 99, Changed: 99, Unchanged: 99, Gone: 99, Created: 99, Linked: 99, Judged: 99, Unranged: 99, Derived: 99, Due: 99, Fetched: 99, HTTPS: 99, HTTP: 99, None: 99, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
 	p, err := f.s.AddPass(ctx, input)
 	contractOK(t, err)
 	want := store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, ID: store.PassIDPrefix + "0101010101010101", Trigger: input.Trigger, Status: store.StatusRunning, Started: stamp, UserID: input.UserID, UserEmail: input.UserEmail, RequestID: input.RequestID}
@@ -176,7 +176,7 @@ func TestContractPassLifecyclePersistence(t *testing.T) {
 	contractOK(t, err)
 	contractEqual(t, read, p)
 	f.now = f.now.Add(time.Hour)
-	c := store.Counts{Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14}
+	c := store.Counts{Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Derived: 15, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14}
 	ended, err := f.s.FinishPass(ctx, p.ID, c)
 	contractOK(t, err)
 	want.Status = store.StatusDone
@@ -190,6 +190,7 @@ func TestContractPassLifecyclePersistence(t *testing.T) {
 	want.Linked = c.Linked
 	want.Judged = c.Judged
 	want.Unranged = c.Unranged
+	want.Derived = c.Derived
 	want.Due, want.Fetched, want.HTTPS, want.HTTP, want.None = c.Due, c.Fetched, c.HTTPS, c.HTTP, c.None
 	contractEqual(t, ended, want)
 	f.reopen()
@@ -243,7 +244,7 @@ func TestContractPassRefusals(t *testing.T) {
 	out, err := f.s.AddPass(ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "owner"})
 	contractError(t, err, store.ErrBusy)
 	contractEqual(t, out, store.Pass{})
-	negatives := []store.Counts{{Rows: -1}, {New: -1}, {Changed: -1}, {Unchanged: -1}, {Gone: -1}, {Created: -1}, {Linked: -1}, {Judged: -1}, {Unranged: -1}, {Due: -1}, {Fetched: -1}, {HTTPS: -1}, {HTTP: -1}, {None: -1}}
+	negatives := []store.Counts{{Rows: -1}, {New: -1}, {Changed: -1}, {Unchanged: -1}, {Gone: -1}, {Created: -1}, {Linked: -1}, {Judged: -1}, {Unranged: -1}, {Derived: -1}, {Due: -1}, {Fetched: -1}, {HTTPS: -1}, {HTTP: -1}, {None: -1}}
 	for _, c := range negatives {
 		for _, id := range []string{p.ID, "missing"} {
 			out, err = f.s.FinishPass(ctx, id, c)
@@ -504,7 +505,7 @@ func TestContractZipReplacement(t *testing.T) {
 	}
 }
 
-// R-ITY9-GWOA R-47VU-80SR R-493Q-LSJG R-2GAV-T1X4 R-578X-BDAW R-58GT-P51L R-5AWM-GOIZ R-5C4I-UG9O
+// R-GM83-RZH4 R-47VU-80SR R-493Q-LSJG R-2GAV-T1X4 R-578X-BDAW R-H4IL-IJLJ R-5AWM-GOIZ R-5C4I-UG9O
 func TestContractBusinessRecordsPersistence(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -536,10 +537,11 @@ func TestContractBusinessRecordsPersistence(t *testing.T) {
 	contractError(t, err, store.ErrNotFound)
 	contractEqual(t, a, store.Assessment{})
 	contractOK(t, f.s.ReplaceZipDrive(ctx, map[string]int64{o.Reading.Zip: 41}))
+	deriveAll(t, f.s)
 	_, err = f.s.Judge(ctx, ids)
 	contractOK(t, err)
 	m := int64(41)
-	wantA := store.Assessment{Candidate: id, OperatingKey: -1, Evidence: []sources.Evidence{}, RevenueLow: &o.Reading.Estimate.Low, RevenueHigh: o.Reading.Estimate.High, RevenueConfidence: &o.Reading.Estimate.Confidence, NewestFiling: o.Reading.Filed, Categories: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown, Minutes: &m, Rules: sources.Rules, Calculated: stamp}
+	wantA := store.Assessment{Candidate: id, OperatingKey: -1, Evidence: []sources.Evidence{}, RevenueLow: &o.Reading.Estimate.Low, RevenueHigh: o.Reading.Estimate.High, RevenueConfidence: &o.Reading.Estimate.Confidence, NewestFiling: time.Date(o.Reading.Filed.Year(), o.Reading.Filed.Month(), o.Reading.Filed.Day(), 0, 0, 0, 0, time.UTC), Categories: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown, Minutes: &m, Rules: sources.Rules, Calculated: stamp}
 	a, err = f.s.GetAssessment(ctx, id)
 	contractOK(t, err)
 	contractEqual(t, a, wantA)
@@ -717,7 +719,7 @@ func TestContractCandidateWindowsAndFilters(t *testing.T) {
 	}
 }
 
-// R-D5D4-WF4O R-58GT-P51L
+// R-D5D4-WF4O R-H4IL-IJLJ
 func TestContractFreshStoreAndUnknownReads(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -835,7 +837,7 @@ func contractSeed(t *testing.T, f *contractFixture) string {
 	return id
 }
 
-// R-IRIG-PD6W R-ISQD-34XL R-53L8-622T R-5610-XLK7
+// R-GJSB-0FZQ R-GL07-E7QF R-53L8-622T R-5610-XLK7
 func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -869,7 +871,7 @@ func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	contractEqual(t, after, zipBefore)
 }
 
-// R-3ZEQ-118P R-OD8H-2EDG
+// R-O7TK-ORQ5 R-OD8H-2EDG
 func TestContractAllMethodsUnavailable(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -890,9 +892,12 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 		}},
 		{"Enrichments", func(c context.Context) error { _, e := f.s.Enrichments(c, "missing"); return e }},
 		{"DueEnrichments", func(c context.Context) error {
-			_, e := f.s.DueEnrichments(c, sources.WebsiteCheck, "", 90, 30, 0)
+			_, e := f.s.DueEnrichments(c, sources.WebsiteCheck, "", 0)
 			return e
 		}},
+		{"Derive", func(c context.Context) error { _, _, e := f.s.Derive(c, "invalid", "", false, 0); return e }},
+		{"FillFacts", f.s.FillFacts},
+		{"GetFacts", func(c context.Context) error { _, e := f.s.GetFacts(c, id); return e }},
 		{"EnrichmentMark", func(c context.Context) error { _, e := f.s.EnrichmentMark(c); return e }},
 		{"EnrichmentAfter", func(c context.Context) error {
 			_, e := f.s.EnrichmentAfter(c, sources.WebsiteCheck, "missing", -1)

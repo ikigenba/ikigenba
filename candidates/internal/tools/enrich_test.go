@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
@@ -44,7 +45,7 @@ func (f *fixture) waitEnrich(id string) store.Pass {
 	}
 }
 
-// R-V895-LDYX R-VBWU-QP70 R-VVF8-V124 R-VSZG-3HKQ R-VJ89-1BN6
+// R-RDYP-P5JC R-RF6M-2XA1 R-RHME-UGRF R-RMI0-DJQ7 R-VJ89-1BN6
 func TestEnrichSchemaAndValidation(t *testing.T) {
 	f := newFixture(t)
 	infos, err := f.client.ListTools(t.Context(), caller)
@@ -55,7 +56,7 @@ func TestEnrichSchemaAndValidation(t *testing.T) {
 	for _, info := range infos {
 		if info.Name == "enrich" {
 			found = true
-			if string(info.InputSchema) != `{"type":"object","properties":{"kind":{"type":"string"},"older_than_days":{"type":"integer"}},"required":["kind"],"additionalProperties":false}` {
+			if string(info.InputSchema) != `{"type":"object","properties":{"kind":{"type":"string"},"older_than_days":{"type":"integer"}},"additionalProperties":false}` {
 				t.Fatal(string(info.InputSchema))
 			}
 		}
@@ -76,12 +77,13 @@ func TestEnrichSchemaAndValidation(t *testing.T) {
 		}
 	}
 	minus := -1
+	zero := 0
 	for _, fail := range []bool{true, false} {
 		f.d.SetFailing(fail)
 		if !fail {
 			f.eng.Drain(context.Background())
 		}
-		for _, args := range []tools.EnrichArgs{{Kind: ""}, {Kind: strings.ToUpper(sources.WebsiteCheck)}, {Kind: sources.WebsiteCheck, OlderThanDays: &minus}} {
+		for _, args := range []tools.EnrichArgs{{Kind: strings.ToUpper(sources.WebsiteCheck)}, {Kind: enrichers.SourceLinks}, {Kind: sources.WebsiteCheck, OlderThanDays: &zero}, {OlderThanDays: &minus}} {
 			refusal(t, f.call("enrich", args), passes.RefusalInvalid, tools.RefuseInvalid)
 		}
 	}
@@ -91,8 +93,8 @@ func TestEnrichSchemaAndValidation(t *testing.T) {
 	}
 }
 
-// R-VU7C-H9BF R-VXV1-MKJI
-func TestEnrichDispatchAndExplicitZeroAge(t *testing.T) {
+// R-RNPW-RBGW R-VXV1-MKJI
+func TestEnrichDispatchAndRefusals(t *testing.T) {
 	entered := make(chan struct{}, 4)
 	release := make(chan struct{})
 	k := &website.Checker{Client: &http.Client{Transport: websiteTransport(func(r *http.Request) (*http.Response, error) {
@@ -105,16 +107,7 @@ func TestEnrichDispatchAndExplicitZeroAge(t *testing.T) {
 		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/html"}}, Body: io.NopCloser(strings.NewReader("fixture"))}, nil
 	})}, After: immediateWebsite}
 	f := fixtureWithWebsite(t, nil, k)
-	ids := f.seed(1)
-	f.now = f.now.Add(-24 * time.Hour)
-	if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: ids[0], Kind: sources.WebsiteCheck, State: sources.WebsiteHTTPS, Source: "business.test"}}); err != nil {
-		t.Fatal(err)
-	}
-	f.now = f.now.Add(24 * time.Hour)
-	history, err := f.st.Enrichments(t.Context(), ids[0])
-	if err != nil || len(history) != 1 || !history[0].At.Equal(f.now.Add(-24*time.Hour)) {
-		t.Fatal(history, err)
-	}
+	f.seed(1)
 	r := f.call("enrich", tools.EnrichArgs{Kind: sources.WebsiteCheck})
 	if r.IsError() {
 		t.Fatal(decode(t, r))
@@ -123,15 +116,6 @@ func TestEnrichDispatchAndExplicitZeroAge(t *testing.T) {
 	if record.Kind != store.KindEnrich || record.Origin != store.OriginEnrich || record.Trigger != store.TriggerEnrich || record.Status != store.StatusRunning || record.User != caller.UserID {
 		t.Fatal(record)
 	}
-	if p := f.waitEnrich(record.ID); p.Status != store.StatusDone || p.Due != 0 {
-		t.Fatal(p)
-	}
-	zero := 0
-	r = f.call("enrich", tools.EnrichArgs{Kind: sources.WebsiteCheck, OlderThanDays: &zero})
-	if r.IsError() {
-		t.Fatal(decode(t, r))
-	}
-	record = decodeList[passes.Record](t, r)
 	select {
 	case <-entered:
 	case <-time.After(3 * time.Second):
@@ -151,16 +135,16 @@ func TestEnrichDispatchAndExplicitZeroAge(t *testing.T) {
 	refusal(t, absent.call("enrich", tools.EnrichArgs{Kind: sources.WebsiteCheck}), passes.RefusalUnavailable, tools.RefuseUnavailable)
 }
 
-// R-VQJN-BY3C R-VMVY-6MV9
+// R-RLA3-ZRZI R-RK27-M08T
 func TestCandidateEnrichmentHistory(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
-	first := store.Enrichment{Candidate: id, Kind: sources.WebsiteCheck, State: sources.WebsiteHTTPS, URL: "https://business.test", Title: "chosen", StatusCode: 200, Size: 8, Source: "business.test"}
+	first := store.Enrichment{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteHTTPS, URL: "https://business.test", Title: "chosen", StatusCode: 200, Size: 8}), Source: "business.test"}
 	if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{first}); err != nil {
 		t.Fatal(err)
 	}
 	f.now = f.now.Add(time.Hour)
-	if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, State: sources.WebsiteNone, Source: "business.test"}}); err != nil {
+	if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteNone}), Source: "business.test"}}); err != nil {
 		t.Fatal(err)
 	}
 	r := f.call("candidate", tools.CandidateArgs{Candidate: id})
@@ -173,7 +157,9 @@ func TestCandidateEnrichmentHistory(t *testing.T) {
 		t.Fatal(got, err)
 	}
 	for i, e := range es {
-		want := tools.Enrichment{Kind: e.Kind, State: e.State, URL: e.URL, Title: e.Title, StatusCode: e.StatusCode, Size: e.Size, Error: e.Error, Domain: e.Source, Cost: e.Cost, At: stamp(e.At)}
+		var w website.Result
+		_ = json.Unmarshal(e.Found, &w)
+		want := tools.Enrichment{Kind: e.Kind, Source: e.Source, Inputs: e.Inputs, State: w.State, URL: w.URL, Title: w.Title, StatusCode: w.StatusCode, Size: &w.Size, Error: w.Error, Domain: e.Source, Cost: e.Cost, At: stamp(e.At)}
 		a, _ := json.Marshal(got.Enrichments[i])
 		b, _ := json.Marshal(want)
 		if string(a) != string(b) {
@@ -185,7 +171,7 @@ func TestCandidateEnrichmentHistory(t *testing.T) {
 	}
 }
 
-// R-8YDY-8SNX R-VU7C-H9BF
+// R-8YDY-8SNX R-RNPW-RBGW
 func TestToolsAllowIndependentPassLanes(t *testing.T) {
 	t.Run("rebuild", func(t *testing.T) {
 		f := fixtureWithScrapes(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) }))
@@ -217,4 +203,64 @@ func TestToolsAllowIndependentPassLanes(t *testing.T) {
 			t.Fatal(done)
 		}
 	})
+}
+
+// R-RNPW-RBGW
+func TestEnrichDerivedAndAllWithoutChecker(t *testing.T) {
+	for _, kind := range []string{enrichers.KindDriveMinutes, enrichers.KindLinkFacts, ""} {
+		t.Run(kind, func(t *testing.T) {
+			f := newFixture(t)
+			f.seed(1)
+			r := f.call("enrich", tools.EnrichArgs{Kind: kind})
+			if r.IsError() {
+				t.Fatal(decode(t, r))
+			}
+			p := decodeList[passes.Record](t, r)
+			if p.Kind != store.KindEnrich || p.Status != store.StatusRunning || p.User != caller.UserID {
+				t.Fatal(p)
+			}
+			done := f.waitEnrich(p.ID)
+			if done.Status != store.StatusDone || done.Due != 0 {
+				t.Fatal(done)
+			}
+			if kind == enrichers.KindDriveMinutes && done.Derived != 1 {
+				t.Fatal(done)
+			}
+		})
+	}
+	f := newFixture(t)
+	r := f.call("enrich", map[string]any{})
+	if r.IsError() {
+		t.Fatal(decode(t, r))
+	}
+	p := decodeList[passes.Record](t, r)
+	if p.Kind != store.KindEnrich || p.Status != store.StatusRunning {
+		t.Fatal(p)
+	}
+	if f.waitEnrich(p.ID).Status != store.StatusDone {
+		t.Fatal(p)
+	}
+}
+
+// R-RLA3-ZRZI
+func TestCandidateHistoryIncludesDerivedKinds(t *testing.T) {
+	f := newFixture(t)
+	id := f.seed(1)[0]
+	for _, state := range []string{sources.WebsiteHTTPS, sources.WebsiteNone} {
+		if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Source: "business.test", Inputs: "fixture", Found: encodedJSON(website.Result{State: state})}}); err != nil {
+			t.Fatal(err)
+		}
+		f.now = f.now.Add(time.Second)
+	}
+	if _, _, err := f.st.Derive(t.Context(), enrichers.KindLinkFacts, "", false, 100); err != nil {
+		t.Fatal(err)
+	}
+	r := f.call("candidate", tools.CandidateArgs{Candidate: id})
+	if r.IsError() {
+		t.Fatal(decode(t, r))
+	}
+	got := decodeList[tools.Detail](t, r)
+	if len(got.Enrichments) != 3 || got.Enrichments[0].Kind != enrichers.KindLinkFacts || len(got.Enrichments[0].Found) == 0 || got.Enrichments[0].Size != nil || got.Enrichments[1].State != sources.WebsiteNone || got.Enrichments[2].State != sources.WebsiteHTTPS {
+		t.Fatal(got.Enrichments)
+	}
 }

@@ -9,7 +9,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-NEWV-DHTY R-GSL2-9AIP
+// R-MPU6-WGYB R-GSL2-9AIP
 func TestRulingLeavesEveryUntouchedCandidateAsStored(t *testing.T) {
 	for _, kind := range []string{store.KindExclude, store.KindInclude, store.KindNotSame, store.KindMerge, store.KindSplit} {
 		t.Run(kind, func(t *testing.T) {
@@ -26,6 +26,11 @@ func TestRulingLeavesEveryUntouchedCandidateAsStored(t *testing.T) {
 			_, err = f.st.JudgeAll(regCtx)
 			regNoErr(t, err)
 			all := append([]string{ids[0], r.Other}, others...)
+			deriveAll(t, f.st)
+			for _, id := range all {
+				_, err = f.st.AddEnrichments(regCtx, []store.Enrichment{websiteResult(id, sources.WebsiteHTTPS)})
+				regNoErr(t, err)
+			}
 			// The separated candidate still shares a match key with a. Its stored
 			// display is deliberately stale, a supported fixture that a refresh repairs.
 			stale := "Owner-maintained display"
@@ -45,7 +50,13 @@ func TestRulingLeavesEveryUntouchedCandidateAsStored(t *testing.T) {
 			beforeL := map[string][]store.Link{}
 			beforeA := map[string]store.Assessment{}
 			beforeE := map[string][]sources.Estimate{}
+			beforeFacts := map[string]store.Facts{}
+			beforeResults := map[string][]store.Enrichment{}
 			for _, id := range all {
+				beforeFacts[id], err = f.st.GetFacts(regCtx, id)
+				regNoErr(t, err)
+				beforeResults[id], err = f.st.Enrichments(regCtx, id)
+				regNoErr(t, err)
 				beforeC[id] = regCandidate(t, f, id)
 				beforeL[id] = regLinks(t, f, id)
 				beforeA[id], err = f.st.GetAssessment(regCtx, id)
@@ -63,6 +74,14 @@ func TestRulingLeavesEveryUntouchedCandidateAsStored(t *testing.T) {
 				touched[c.ID] = true
 			}
 			for _, id := range all {
+				if !touched[id] {
+					facts, err := f.st.GetFacts(regCtx, id)
+					regNoErr(t, err)
+					regEqual(t, facts, beforeFacts[id])
+					results, err := f.st.Enrichments(regCtx, id)
+					regNoErr(t, err)
+					regEqual(t, results, beforeResults[id])
+				}
 				if !touched[id] || kind == store.KindExclude || kind == store.KindInclude || kind == store.KindNotSame {
 					regEqual(t, regCandidate(t, f, id), beforeC[id])
 					regEqual(t, regLinks(t, f, id), beforeL[id])

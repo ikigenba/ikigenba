@@ -169,6 +169,9 @@ func rankedWindow(ctx context.Context, tx *sql.Tx, query string, args ...any) ([
 		if err != nil {
 			return nil, err
 		}
+		if err = assessmentFacts(ctx, tx, &a[0]); err != nil {
+			return nil, err
+		}
 		out = append(out, Ranked{Candidate: c, Assessment: a[0]})
 	}
 	return out, nil

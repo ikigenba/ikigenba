@@ -13,13 +13,14 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/scrapes"
+	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-RP9C-QORZ R-RQH9-4GIO R-RRP5-I89D R-GU9F-TVQY
+// R-1WIX-505L R-21EI-O34D R-22MF-1UV2 R-GU9F-TVQY
 func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 	for _, rebuild := range []bool{false, true} {
 		t.Run(fmt.Sprint(rebuild), func(t *testing.T) {
@@ -40,6 +41,13 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 				}
 			}, true)
 			expected := newFixture(t, nil, false)
+			if !rebuild {
+				for _, f := range []*fixture{actual, expected} {
+					if _, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindEnrich, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, UserID: "blocker"}); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
 			ctx := context.Background()
 			// Give both stores unrelated evidence to compare the complete post-pass state.
 			seed := store.Observation{Scraper: "fmcsa", SourceID: "unrelated", Digest: "unrelated", Reading: fmcsa.New().Read(scrapes.Row{Name: "Unrelated", Facts: map[string]json.RawMessage{}})}
@@ -86,6 +94,20 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 			}
 			total.Rows = int64(len(rows))
 			if rebuild {
+				for _, kind := range []string{enrichers.KindDriveMinutes, enrichers.KindLinkFacts} {
+					after := ""
+					for {
+						next, n, err := expected.st.Derive(ctx, kind, after, true, passes.BatchSize)
+						if err != nil {
+							t.Fatal(err)
+						}
+						total.Derived += n
+						if next == "" {
+							break
+						}
+						after = next
+					}
+				}
 				counts, err = expected.st.JudgeAll(ctx)
 				if err != nil {
 					t.Fatal(err)
@@ -103,10 +125,14 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 				if out := actual.delivery(delivery, "write-run"); out != events.OK() {
 					t.Fatal(out)
 				}
-				p = actual.list()[0]
+				for _, v := range actual.list() {
+					if v.Trigger == "write-run" {
+						p = v
+					}
+				}
 			}
 			p = actual.ended(p.ID)
-			got := store.Counts{Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged}
+			got := store.Counts{Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged, Derived: p.Derived}
 			if p.Status != store.StatusDone || got != total {
 				t.Fatal(p, total)
 			}

@@ -102,7 +102,7 @@ func pageCohort(t *testing.T, cfg Config, id string) CohortData {
 	return d
 }
 
-// R-AV8T-KGX0 R-B3S4-8V3V R-ARRV-8WHR R-ASZR-MO8G R-B500-MMUK R-BIEW-U407 R-BH70-GC9I
+// R-AV8T-KGX0 R-B3S4-8V3V R-0EXA-80DX R-0G56-LS4M R-B500-MMUK R-BIEW-U407 R-BH70-GC9I
 func TestCohortAndRejectHistoryPages(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()
@@ -236,7 +236,7 @@ func TestCohortAndRejectHistoryPages(t *testing.T) {
 	checkCandidate()
 }
 
-// R-ALOD-C1SA
+// R-0563-5UGD
 func TestCohortAndRejectTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
@@ -266,7 +266,7 @@ func TestCohortAndRejectTemplateStates(t *testing.T) {
 								render("cohort", d)
 								for _, status := range []string{store.StatusActive, store.StatusMerged} {
 									for _, kind := range []string{store.KindReject, store.KindUnreject} {
-										render("candidate", CandidateData{Candidate: CandidateView{Status: status}, Assessment: &AssessmentView{FleetVerdict: fleet, PowerUnits: text, Drivers: text}, Rejects: []RejectRecordRow{{Kind: kind, Cohort: "chosen-cohort", CohortName: text, By: text, User: "chosen-user", At: text, AtText: text, Why: text}}})
+										render("candidate", CandidateData{Facts: &FactsView{FleetVerdict: fleet, PowerUnits: text, Drivers: text}, Candidate: CandidateView{Status: status}, Assessment: &AssessmentView{}, Rejects: []RejectRecordRow{{Kind: kind, Cohort: "chosen-cohort", CohortName: text, By: text, User: "chosen-user", At: text, AtText: text, Why: text}}})
 									}
 								}
 							}

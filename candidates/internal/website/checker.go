@@ -19,12 +19,10 @@ import (
 // Check limits and result diagnostics.
 const (
 	Concurrency          = 8
-	Interval             = 500 * time.Millisecond
-	Timeout              = 10 * time.Second
+	Interval             = 500_000_000
+	Timeout              = 10_000_000_000
 	BodyCap              = 262144
 	Redirects            = 5
-	RefreshLive          = 90
-	RefreshNone          = 30
 	UserAgent     string = "Mozilla/5.0 (compatible; Ikigenba website checker)"
 	FailStatus    string = "Website returned an unsuccessful status"
 	FailEmpty     string = "Website returned an empty page"

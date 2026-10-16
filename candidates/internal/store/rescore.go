@@ -6,19 +6,17 @@ import (
 	"sort"
 	"time"
 
-	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
 	"github.com/ikigenba/ikigenba/candidates/internal/scoring"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
-func assessment(r *records, c Candidate, t time.Time) ([]sources.Estimate, Assessment) {
+func assessment(r *records, c Candidate, f Facts, t time.Time) ([]sources.Estimate, Assessment) {
 	t = t.UTC().Truncate(time.Second)
 	a := Assessment{Candidate: c.ID, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown, Evidence: []sources.Evidence{}, Categories: []sources.Category{}, Rules: sources.Rules, Calculated: t}
 	estimates := map[string]sources.Estimate{}
 	seen := map[string]bool{}
 	evidence := map[string]sources.Evidence{}
-	categories := map[sources.Category]bool{}
 	for _, l := range linksFor(r, c.ID) {
 		if l.Gone {
 			continue
@@ -26,19 +24,6 @@ func assessment(r *records, c Candidate, t time.Time) ([]sources.Estimate, Asses
 		rd := l.Reading
 		if !seen[l.Scraper] {
 			seen[l.Scraper] = true
-			if l.Scraper == fmcsa.Name {
-				if rd.FleetVerdict != "" {
-					a.FleetVerdict = rd.FleetVerdict
-				}
-				if rd.PowerUnits != nil {
-					n := *rd.PowerUnits
-					a.PowerUnits = &n
-				}
-				if rd.Drivers != nil {
-					n := *rd.Drivers
-					a.Drivers = &n
-				}
-			}
 			if rd.Estimate != nil {
 				estimates[l.Scraper] = *rd.Estimate
 			}
@@ -47,18 +32,6 @@ func assessment(r *records, c Candidate, t time.Time) ([]sources.Estimate, Asses
 			if !ok || rd.Estimate.Low > old.Low {
 				estimates[l.Scraper] = *rd.Estimate
 			}
-		}
-		if !rd.KnownSince.IsZero() && (a.KnownSince.IsZero() || rd.KnownSince.Before(a.KnownSince)) {
-			a.KnownSince = rd.KnownSince
-		}
-		if rd.Filed.After(a.NewestFiling) {
-			a.NewestFiling = rd.Filed
-		}
-		if a.GovernmentMatch == "" {
-			a.GovernmentMatch = rd.GovernmentMatch
-		}
-		if rd.Category != "" {
-			categories[sources.Category{Name: rd.Category, Source: l.Scraper}] = true
 		}
 		for _, e := range rd.Evidence {
 			e.Weight = scoring.Weight(e, rd.Filed, t)
@@ -71,19 +44,12 @@ func assessment(r *records, c Candidate, t time.Time) ([]sources.Estimate, Asses
 			}
 		}
 	}
-	for _, result := range r.enrichments {
-		if result.Candidate != c.ID || result.Kind != sources.WebsiteCheck {
-			continue
+	overlayFacts(&a, f)
+	if f.Website == sources.WebsiteHTTPS || f.Website == sources.WebsiteHTTP {
+		e := sources.Evidence{Name: sources.EvidenceWebsiteLive, Source: sources.WebsiteCheck, Weight: .5, Description: sources.DescribeWebsiteLive}
+		if old, ok := evidence[e.Name]; !ok || e.Weight > old.Weight {
+			evidence[e.Name] = e
 		}
-		a.Website = result.State
-		if result.State == sources.WebsiteHTTPS || result.State == sources.WebsiteHTTP {
-			a.WebsiteURL = result.URL
-			e := sources.Evidence{Name: sources.EvidenceWebsiteLive, Source: sources.WebsiteCheck, Weight: .5, Description: sources.DescribeWebsiteLive}
-			if old, ok := evidence[e.Name]; !ok || e.Weight > old.Weight {
-				evidence[e.Name] = e
-			}
-		}
-		break
 	}
 	es := []sources.Estimate{}
 	for _, e := range estimates {
@@ -99,15 +65,6 @@ func assessment(r *records, c Candidate, t time.Time) ([]sources.Estimate, Asses
 		}
 		return a.Evidence[i].Name < a.Evidence[j].Name
 	})
-	for c := range categories {
-		a.Categories = append(a.Categories, c)
-	}
-	sort.Slice(a.Categories, func(i, j int) bool {
-		if a.Categories[i].Name != a.Categories[j].Name {
-			return a.Categories[i].Name < a.Categories[j].Name
-		}
-		return a.Categories[i].Source < a.Categories[j].Source
-	})
 	a.Operating = scoring.Operating(a.Evidence)
 	a.OperatingKey = scoring.OperatingKey(a.Operating)
 	if len(es) > 0 {
@@ -115,9 +72,6 @@ func assessment(r *records, c Candidate, t time.Time) ([]sources.Estimate, Asses
 		a.RevenueLow = &combined.Low
 		a.RevenueHigh = combined.High
 		a.RevenueConfidence = &combined.Confidence
-	}
-	if m, ok := r.zips[c.Zip]; ok {
-		a.Minutes = &m
 	}
 	for i := len(r.rulings) - 1; i >= 0; i-- {
 		d := r.rulings[i]

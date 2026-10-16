@@ -26,28 +26,28 @@ func cohortCondition(k Cohort, now time.Time) (string, []any) {
 		add(`((a.revenue_low>=? AND (? IS NULL OR a.revenue_low<=?)) OR (a.revenue_low IS NULL AND ?))`, lo, f.RevenueMax, f.RevenueMax, f.RevenueUnknown)
 	}
 	if f.MaxMinutes != nil {
-		add(`(a.minutes<=? OR (a.minutes IS NULL AND ?))`, *f.MaxMinutes, f.MinutesUnknown)
+		add(`(f.minutes<=? OR (f.minutes IS NULL AND ?))`, *f.MaxMinutes, f.MinutesUnknown)
 	}
 	if len(f.Categories) > 0 {
 		b, _ := json.Marshal(f.Categories)
-		add(`(EXISTS (SELECT 1 FROM json_each(a.categories) AS ccat JOIN json_each(?) AS wanted ON json_extract(ccat.value,'$.Name')=wanted.value) OR ((a.categories IS NULL OR json_array_length(a.categories)=0) AND ?))`, string(b), f.CategoryUnknown)
+		add(`(EXISTS (SELECT 1 FROM json_each(f.categories) AS ccat JOIN json_each(?) AS wanted ON json_extract(ccat.value,'$.Name')=wanted.value) OR ((f.categories IS NULL OR json_array_length(f.categories)=0) AND ?))`, string(b), f.CategoryUnknown)
 	}
 	if f.Fleet != "" {
-		add(`(a.fleet_verdict=? OR (a.fleet_verdict=? AND ?))`, f.Fleet, sources.FleetUnknown, f.FleetUnknown)
+		add(`(coalesce(f.fleet_verdict,'unknown')=? OR (coalesce(f.fleet_verdict,'unknown')=? AND ?))`, f.Fleet, sources.FleetUnknown, f.FleetUnknown)
 	}
 	if len(f.Website) > 0 {
 		b, _ := json.Marshal(f.Website)
-		add(`(a.website IN (SELECT value FROM json_each(?)) OR (a.website=? AND ?))`, string(b), sources.WebsiteUnknown, f.WebsiteUnknown)
+		add(`(f.website IN (SELECT value FROM json_each(?)) OR (coalesce(f.website,'unknown')=? AND ?))`, string(b), sources.WebsiteUnknown, f.WebsiteUnknown)
 	}
 	if f.Government != nil {
 		if *f.Government {
-			add(`coalesce(a.government_match,'')<>''`)
+			add(`coalesce(f.government_match,'')<>''`)
 		} else {
-			add(`coalesce(a.government_match,'')=''`)
+			add(`coalesce(f.government_match,'')=''`)
 		}
 	}
 	if f.MaxFilingAgeDays != nil {
-		add(`((coalesce(a.newest_filing,'')<>'' AND julianday(?)-julianday(substr(a.newest_filing,1,10))<=?) OR (coalesce(a.newest_filing,'')='' AND ?))`, now.UTC().Format("2006-01-02"), *f.MaxFilingAgeDays, f.FilingUnknown)
+		add(`((coalesce(f.newest_filing,'')<>'' AND julianday(?)-julianday(substr(f.newest_filing,1,10))<=?) OR (coalesce(f.newest_filing,'')='' AND ?))`, now.UTC().Format("2006-01-02"), *f.MaxFilingAgeDays, f.FilingUnknown)
 	}
 	if f.Class != "" {
 		add(`(c.class=? OR ((c.class='' OR c.class=?) AND ?))`, f.Class, sources.ClassUnknown, f.ClassUnknown)
@@ -56,7 +56,7 @@ func cohortCondition(k Cohort, now time.Time) (string, []any) {
 }
 func cohortOrdering(o []CohortOrder) string {
 	fields := map[string][2]string{
-		OrderOperatingConfidence: {"a.operating", "a.operating_key"}, OrderRevenueLow: {"a.revenue_low", "a.revenue_low"}, OrderRevenueConfidence: {"a.revenue_confidence", "a.revenue_confidence"}, OrderDriveMinutes: {"a.minutes", "a.minutes"}, OrderNewestFiling: {"nullif(a.newest_filing,'')", "a.newest_filing"}, OrderKnownSince: {"nullif(a.known_since,'')", "a.known_since"},
+		OrderOperatingConfidence: {"a.operating", "a.operating_key"}, OrderRevenueLow: {"a.revenue_low", "a.revenue_low"}, OrderRevenueConfidence: {"a.revenue_confidence", "a.revenue_confidence"}, OrderDriveMinutes: {"f.minutes", "f.minutes"}, OrderNewestFiling: {"nullif(f.newest_filing,'')", "f.newest_filing"}, OrderKnownSince: {"nullif(f.known_since,'')", "f.known_since"},
 	}
 	parts := []string{}
 	for _, term := range normalOrder(o) {
@@ -79,7 +79,7 @@ func (s *Store) ReadCohort(ctx context.Context, id string) (CohortRead, error) {
 			return err
 		}
 		condition, args := cohortCondition(k, s.cfg.Now())
-		base := ` FROM assessments AS a JOIN candidates AS c ON c.id=a.candidate WHERE ` + condition
+		base := ` FROM assessments AS a JOIN candidates AS c ON c.id=a.candidate LEFT JOIN facts AS f ON f.candidate=c.id WHERE ` + condition
 		var count int64
 		if err = tx.QueryRowContext(ctx, `SELECT count(*)`+base, args...).Scan(&count); err != nil {
 			return err

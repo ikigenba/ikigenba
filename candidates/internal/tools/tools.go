@@ -1,9 +1,11 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -11,9 +13,11 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/paging"
+	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 // Tool descriptions and refusal sentences are public copy.
@@ -207,15 +211,10 @@ func Register(srv *mcp.Server, cfg Config) {
 		return answer(passes.RecordOf(p))
 	})
 	add(srv, "enrich", DescribeEnrich, mcp.Additive, func(ctx context.Context, c identity.Caller, a EnrichArgs) mcp.Result {
-		if a.Kind != sources.WebsiteCheck || a.OlderThanDays != nil && *a.OlderThanDays < 0 {
+		if a.OlderThanDays != nil || a.Kind != "" && !slices.Contains(enrichers.Kinds(), a.Kind) {
 			return refuse(passes.RefusalInvalid)
 		}
-		var age *int64
-		if a.OlderThanDays != nil {
-			n := int64(*a.OlderThanDays)
-			age = &n
-		}
-		p, err := cfg.Passes.Enrich(ctx, c, age)
+		p, err := cfg.Passes.Enrich(ctx, c, a.Kind)
 		if err != nil {
 			var r *passes.Refusal
 			if errors.As(err, &r) {
@@ -456,7 +455,21 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 }
 
 func enrichmentOf(e store.Enrichment) Enrichment {
-	return Enrichment{e.Kind, e.State, e.URL, e.Title, e.StatusCode, e.Size, e.Error, e.Source, e.Cost, stamp(e.At)}
+	v := Enrichment{Kind: e.Kind, Source: e.Source, Inputs: e.Inputs, Cost: e.Cost, At: stamp(e.At)}
+	if e.Kind == sources.WebsiteCheck {
+		var r website.Result
+		_ = json.Unmarshal(e.Found, &r)
+		v.State, v.URL, v.Title, v.StatusCode, v.Error, v.Domain = r.State, r.URL, r.Title, r.StatusCode, r.Error, e.Source
+		v.Size = &r.Size
+	} else {
+		var b bytes.Buffer
+		if len(e.Found) == 0 {
+			v.Found = json.RawMessage(`{}`)
+		} else if json.Compact(&b, e.Found) == nil {
+			v.Found = append(json.RawMessage{}, b.Bytes()...)
+		}
+	}
+	return v
 }
 
 func fleetOf(v string) string {

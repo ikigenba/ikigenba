@@ -218,7 +218,7 @@ func (f *fixture) seedWithStep(n int, step time.Duration, tie bool) []string {
 }
 
 // R-5795-SH3G     R-5LVY-DPZS
-// R-VI0C-NJWH R-VKG5-F3DV R-VLO1-SV4K R-V895-LDYX
+// R-VI0C-NJWH R-VKG5-F3DV R-VLO1-SV4K R-RDYP-P5JC
 func TestCatalogAndSchemas(t *testing.T) {
 	f := newFixture(t)
 	want := []tools.Entry{{"cohorts", tools.DescribeCohorts}, {"cohort", tools.DescribeCohort}, {"candidates", tools.DescribeCandidates}, {"candidate", tools.DescribeCandidate}, {"passes", tools.DescribePasses}, {"pass", tools.DescribePass}, {"rebuild", tools.DescribeRebuild}, {"enrich", tools.DescribeEnrich}, {"decide", tools.DescribeDecide}, {"exclude", tools.DescribeExclude}, {"include", tools.DescribeInclude}, {"create_cohort", tools.DescribeCreateCohort}, {"edit_cohort", tools.DescribeEditCohort}, {"delete_cohort", tools.DescribeDeleteCohort}, {"reject", tools.DescribeReject}, {"unreject", tools.DescribeUnreject}}
@@ -239,7 +239,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	properties := [][]string{{"page", "limit"}, {"cohort"}, {"name", "zip", "phone", "page", "limit"}, {"candidate"}, {"page", "limit"}, {"pass"}, {}, {"kind", "older_than_days"}, {"kind", "why", "candidate", "other", "links"}, {"candidate", "why"}, {"candidate", "why"}, {"name", "filters", "order", "size"}, {"cohort", "name", "filters", "order", "size"}, {"cohort"}, {"cohort", "candidate", "why"}, {"cohort", "candidate", "why"}}
-	required := [][]string{nil, {"cohort"}, nil, {"candidate"}, nil, {"pass"}, nil, {"kind"}, {"kind", "why", "candidate"}, {"candidate", "why"}, {"candidate", "why"}, {"name"}, {"cohort"}, {"cohort"}, {"cohort", "candidate", "why"}, {"cohort", "candidate", "why"}}
+	required := [][]string{nil, {"cohort"}, nil, {"candidate"}, nil, {"pass"}, nil, nil, {"kind", "why", "candidate"}, {"candidate", "why"}, {"candidate", "why"}, {"name"}, {"cohort"}, {"cohort"}, {"cohort", "candidate", "why"}, {"cohort", "candidate", "why"}}
 	for i, info := range infos {
 		if info.Name != want[i].Name || info.Description != want[i].Description || len(info.OutputSchema) != 0 {
 			t.Fatal(info)
@@ -287,7 +287,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 	_ = tools.Detail{tools.Candidate{}, nil, nil, nil, nil, nil, nil}
 	_ = tools.Decision{tools.Ruling{}, nil}
 	_ = tools.EnrichArgs{"kind", nil}
-	_ = tools.Enrichment{"kind", "state", "url", "title", 200, 7, "error", "domain", .2, "at"}
+	_ = tools.Enrichment{"kind", "source", "inputs", nil, "state", "url", "title", 200, nil, "error", "domain", .2, "at"}
 	_ = tools.NoArgs{}
 	_ = tools.CandidateArgs{"id"}
 	_ = tools.PassArgs{"id"}
@@ -328,7 +328,7 @@ func objectKeys(t *testing.T, b []byte) []string {
 }
 
 // R-AEA2-LWFY R-AFHY-ZO6N R-VD4R-4GXP R-AHXR-R7O1 R-AJ5O-4ZEQ R-AKDK-IR5F R-VECN-I8OE R-VGSG-9S5S
-// R-VFKJ-W0F3
+// R-RIUB-88I4
 // R-6131-Z710 R-AEA2-LWFY R-AFHY-ZO6N R-VD4R-4GXP R-AHXR-R7O1 R-AJ5O-4ZEQ R-AKDK-IR5F R-VECN-I8OE R-VGSG-9S5S
 func TestAnswerJSONShapes(t *testing.T) {
 	tests := []struct {
@@ -337,7 +337,7 @@ func TestAnswerJSONShapes(t *testing.T) {
 		arrays string
 		object string
 	}{
-		{tools.Enrichment{}, "kind state size domain cost at", "", ""},
+		{tools.Enrichment{}, "kind source inputs cost at", "", ""},
 		{tools.Person{}, "name role", "", ""}, {tools.Evidence{}, "name source weight description", "", ""}, {tools.Category{}, "name source", "", ""}, {tools.Candidate{}, "id status name names street city state zip county phone email people class cargo created updated", "names people cargo", ""},
 		{tools.Member{}, "candidate categories fleet_verdict website excluded", "categories", ""}, {tools.CohortList{}, "cohorts", "cohorts", ""}, {tools.Cohort{}, "id name size filters order created_by created_email created changed_by changed_email changed", "order", "filters"}, {tools.Reject{}, "kind cohort candidate", "", ""}, {tools.CohortRead{}, "cohort matching members rejects", "members rejects", ""}, {tools.CandidateList{}, "candidates", "candidates", ""}, {tools.PassList{}, "passes", "passes", ""},
 		{tools.Link{}, "scraper source_id run digest name names street city state zip county phone email people class cargo fleet_verdict name_key phone_key domain_key reason confidence first_seen last_seen gone", "names people cargo", ""},
@@ -372,7 +372,7 @@ func TestAnswerJSONShapes(t *testing.T) {
 		v    any
 		keys string
 	}{
-		{tools.Enrichment{URL: "chosen-url", Title: "chosen-title", StatusCode: 200, Error: "chosen-error"}, "kind state url title status_code size error domain cost at"},
+		{tools.Enrichment{URL: "chosen-url", Title: "chosen-title", StatusCode: 200, Error: "chosen-error"}, "kind source inputs url title status_code error cost at"},
 		{tools.Candidate{MergedInto: "survivor"}, "id status merged_into name names street city state zip county phone email people class cargo created updated"},
 		{tools.Member{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, Website: sources.WebsiteHTTPS, WebsiteURL: "https://chosen.test", Minutes: &one, GovernmentMatch: "chosen", KnownSince: "known", NewestFiling: "newest"}, "candidate operating_confidence revenue_low revenue_high revenue_confidence categories fleet_verdict website website_url minutes government_match known_since newest_filing excluded"},
 		{tools.CohortList{Next: &continuation}, "cohorts next"}, {tools.CandidateList{Next: &continuation}, "candidates next"}, {tools.PassList{Next: &continuation}, "passes next"},
@@ -444,7 +444,7 @@ func decodeList[T any](t *testing.T, r mcp.Result) T {
 
 var _ io.Reader = (*random)(nil)
 
-// R-AWKK-CGKD R-VJ89-1BN6 R-VRRJ-PPU1 R-VQJN-BY3C R-BDN5-P8Y3
+// R-AWKK-CGKD R-VJ89-1BN6 R-VRRJ-PPU1 R-RLA3-ZRZI R-BDN5-P8Y3
 func TestDetailAndRulings(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
