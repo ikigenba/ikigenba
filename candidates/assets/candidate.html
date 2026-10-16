@@ -1,6 +1,7 @@
 {{/* One candidate at GET /candidates/<id>: its display fields and tags,
-     its assessment with the two judgments and the facts beside them as
-     the last judge wrote them, the operating evidence behind it, each
+     its facts as the enrichers last wrote them, its assessment with the
+     two judgments as the last judge wrote them, the operating evidence
+     behind it, each
      estimate with the facts it used, each link to a scrapes record with
      its last seen and gone, the owner's rulings on it, its enrichment
      results, and every reject and unreject naming it. A merged candidate's page says what it merged
@@ -31,6 +32,23 @@
      cargo tags, a slice of strings; may be empty), .Created and
      .CreatedText (RFC 3339 UTC to the second, and the same as shown,
      "2006-01-02 15:04:05 UTC") and .Updated and .UpdatedText (likewise);
+     .Facts (nil when merged or when it has no facts row; else its facts
+     row, as stored), with .KnownSince and .KnownSinceText (the earliest
+     date any link not gone shows it existing, "2018-04-09", both the
+     same; empty when none), .NewestFiling and .NewestFilingText (the
+     newest filing date among its links not gone, "2025-03-18", both the
+     same; empty when none), .Categories (each with .Name, the category
+     word as stored, and .Source, the source that gave it, one per
+     category and source; empty when unknown), .GovernmentMatch (the
+     government name pattern its name matched, as stored, "COUNTY"; empty
+     when none), .FleetVerdict ("pass", "fail" or "unknown", as stored),
+     .PowerUnits and .Drivers (the truck and driver counts the freshest
+     FMCSA link gives, as text, "12"; each empty when unknown), .Minutes
+     (drive minutes from the origin as text, "84"; empty when unknown)
+     and .Written (when each kind last wrote the row, one per kind that
+     has, in kind name order, each with .Kind, the kind as stored,
+     "drive_minutes", "link_facts" or "website_check", and .At and .AtText
+     in .Created's two forms above; empty when none has);
      .Assessment (nil when merged or not yet judged; else the assessment
      the last judge, rebuild or ruling wrote, as stored), with
      .OperatingConfidence (the operating confidence, two decimals,
@@ -43,19 +61,8 @@
      low as shown, "$2,400,000"), .RevenueHigh (the combined high as
      shown; empty when the sources give only a minimum) and
      .RevenueConfidence (two decimals, "0.40"), all three empty when
-     there is no estimate, .KnownSince and .KnownSinceText (the earliest
-     date any link not gone shows it existing, "2018-04-09", both the
-     same; empty when none), .NewestFiling and .NewestFilingText (the
-     newest filing date among its links not gone, "2025-03-18", both the
-     same; empty when none), .Categories (each with .Name, the category
-     word as stored, and .Source, the source that gave it, one per
-     category and source; empty when unknown), .GovernmentMatch (the
-     government name pattern its name matched, as stored, "COUNTY"; empty
-     when none), .FleetVerdict ("pass", "fail" or "unknown", as stored),
-     .PowerUnits and .Drivers (the truck and driver counts the freshest
-     FMCSA link gives, as text, "12"; each empty when unknown), .Minutes (drive minutes
-     from the origin as text, "84"; empty when its ZIP is not in the
-     table), .Excluded (bool, true when the owner's ruling excludes it),
+     there is no estimate, .Excluded (bool, true when the owner's ruling
+     excludes it),
      .Rules (int, the rules version) and .Calculated and .CalculatedText
      (when it was calculated, the timestamp forms above); .Estimates, one per source with evidence on it
      in source name order, empty when merged, each with .Source (the source's
@@ -83,15 +90,21 @@
      it; empty when none), .User (their user id), .At and .AtText (when it
      was made, RFC 3339 UTC to the second, and UTC to the minute) and .Why
      (the sentence given); .Enrichments, every enrichment result on this
-     candidate, newest first, empty when merged, each with .Kind (its kind
-     as stored, "website_check"), .State ("https", "http" or "none", as
-     stored), .URL (the URL it landed on; empty when none), .Title (the
-     page title, as stored; empty when none), .StatusCode (the final HTTP
-     status code as text, "200"; empty when no response came), .Size (int,
-     the body bytes read), .Error (the last failed attempt's error text, as
-     stored; empty on success), .Domain (the domain checked, "example.com")
-     and .At and .AtText (when it was found, RFC 3339 UTC to the second,
-     and UTC to the minute); .Rejects, every reject and unreject record
+     candidate, of every kind, newest first, empty when merged, each with
+     .Kind (its kind as stored, "website_check", "link_facts" or
+     "drive_minutes"), .Source (where the result came from, as stored:
+     the domain checked, "example.com", for website_check, "links" for
+     link_facts, "zip_drive" for drive_minutes), .Found (what it found, in
+     key order, each with .Key and .Value, the value as compact JSON text
+     such as "84" or "\"pass\""; used for every kind but website_check),
+     .State ("https", "http" or "none", as stored), .URL (the URL it
+     landed on; empty when none), .Title (the page title, as stored; empty
+     when none), .StatusCode (the final HTTP status code as text, "200";
+     empty when no response came), .Size (int, the body bytes read) and
+     .Error (the last failed attempt's error text, as stored; empty on
+     success), these six for website_check only and empty or 0 for any
+     other kind, and .At and .AtText (when it was found, RFC 3339 UTC to
+     the second, and UTC to the minute); .Rejects, every reject and unreject record
      naming this candidate, newest first, each with .Kind ("reject" or
      "unreject", as stored), .Cohort (the cohort's coh_ id), .CohortName
      (the cohort's name; empty when the cohort is deleted), .By (the email
@@ -139,11 +152,36 @@
      code[data-cargo=<tag>] per tag, separated by spaces); then dt
      "Created" then dd#candidate-created and dt "Updated" then
      dd#candidate-updated (each a time[datetime] with the text form). Only
-     when .Status is "active": section#assessment-card with h2 "Assessment"
-     and a p in its header (text "Two judgments, whether it is a real
-     business operating today and how big it is, and the facts beside
-     them, as the last judge calculated them. None of the facts removes a
-     candidate; nothing decays between judges."), then either, when
+     when .Status is "active": section#facts-card with h2 "Facts" and a p
+     in its header (text "What the enrichers found, from the newest result
+     of each kind. A fact is recomputed only when what it was computed
+     from changes, never because it is old, and a cohort reads it at once.
+     None of the facts removes a candidate."), then either, when .Facts is
+     nil, div#no-facts.empty holding h3 "No facts yet" and a p (text "The
+     enrich pass writes them after an ingest, and the enrich tool starts
+     one.", enrich in a code element), or dl#facts.kv holding, in this
+     order, dt "Categories" then dd#facts-categories (one
+     div[data-category=<.Name>] per category holding .Name in a code
+     element, a space and span.muted with .Source, or when empty
+     span.muted "unknown"), dt "Known since" then dd#facts-known-since
+     (time[datetime=<.KnownSince>] with .KnownSinceText, or when empty
+     span.muted "none"), dt "Newest filing" then dd#facts-filed
+     (time[datetime=<.NewestFiling>] with .NewestFilingText, or when empty
+     span.muted "none"), dt "Government match" then dd#facts-government
+     (.GovernmentMatch in a code element, or "no" when empty), dt "Fleet"
+     then dd#facts-fleet[data-fleet=<.FleetVerdict>] (.FleetVerdict, in
+     span.muted when "unknown"), dt "Trucks" then dd#facts-power-units
+     (.PowerUnits, or when empty span.muted "unknown"), dt "Drivers" then
+     dd#facts-drivers (.Drivers, or when empty span.muted "unknown"), dt
+     "Drive minutes" then dd#facts-minutes (.Minutes, or when empty
+     span.muted "unknown") and dt "Written" then dd#facts-written (one
+     div[data-written=<.Kind>] per kind holding .Kind in a code element, a
+     space and time[datetime=<.At>] with .AtText, or when empty span.muted
+     "never"). Then, only when .Status is "active",
+     section#assessment-card with h2 "Assessment" and a p in its header
+     (text "Two judgments, whether it is a real business operating today
+     and how big it is, as the last judge calculated them from the facts
+     and the records. Nothing decays between judges."), then either, when
      .Assessment is nil, div#no-assessment.empty holding h3 "Not judged
      yet" and a p (text "An ingest stores its records and judges nothing.
      The daily judge, a rebuild or an owner ruling judges it."), or
@@ -156,25 +194,10 @@
      floor only"; when both are empty, span.muted "no estimate"), dt
      "Revenue confidence" then dd#assessment-revenue-confidence
      (.RevenueConfidence, or when empty span.muted "no estimate"), dt
-     "Categories" then dd#assessment-categories (one
-     div[data-category=<.Name>] per category holding .Name in a code
-     element, a space and span.muted with .Source, or when empty
-     span.muted "unknown"), dt "Known since" then dd#assessment-known-since
-     (time[datetime=<.KnownSince>] with .KnownSinceText, or when empty
-     span.muted "none"), dt "Newest filing" then dd#assessment-filed
-     (time[datetime=<.NewestFiling>] with .NewestFilingText, or when empty
-     span.muted "none"), dt "Government match" then
-     dd#assessment-government (.GovernmentMatch in a code element, or
-     "no" when empty), dt "Fleet" then
-     dd#assessment-fleet[data-fleet=<.FleetVerdict>] (.FleetVerdict, in
-     span.muted when "unknown"), dt "Trucks" then dd#assessment-power-units
-     (.PowerUnits, or when empty span.muted "unknown"), dt "Drivers" then
-     dd#assessment-drivers (.Drivers, or when empty span.muted "unknown"),
-     dt "Drive minutes" then dd#assessment-minutes (.Minutes, or
-     when empty span.muted "not in the ZIP table"), dt "Excluded" then
-     dd#assessment-excluded ("yes" when .Excluded, else "no"), dt "Rules"
-     then dd#assessment-rules (the version) and dt "Calculated" then
-     dd#assessment-calculated (a time[datetime] with the text form). Then,
+     "Excluded" then dd#assessment-excluded ("yes" when .Excluded, else
+     "no"), dt "Rules" then dd#assessment-rules (the version) and dt
+     "Calculated" then dd#assessment-calculated (a time[datetime] with the
+     text form). Then,
      only when .Assessment is not nil, section#operating with h2
      "Operating evidence" and a p in its header (text "Each piece closes
      part of the gap to certainty: the operating confidence is 1 minus the
@@ -230,21 +253,27 @@
      empty), td.ruling-at (time[datetime=<.At>] with .AtText) and
      td.ruling-why (.Why). Then, only when .Status is "active",
      section#enrichments with h2 "Enrichments" and a p in its header (text
-     "What the website check found for this candidate, newest first. A
-     redo adds a result and the newest stands; the judge reads it."),
-     then either, when .Enrichments is empty, div#no-enrichments.empty
-     holding h3 "No enrichments" and a p (text "Only a candidate whose
-     email is on its own domain is checked. The enrich pass checks each
-     after an ingest, and the enrich tool starts one.", enrich in a code
-     element), or table#enrichment-list whose th read Kind, State,
-     Landed, Title, Status, Bytes, Error, Domain, When, with one
-     tr[data-enrichment=<.Kind>][data-state=<.State>] per result holding
-     td.enrichment-kind (.Kind in a code element), td.enrichment-state
-     (.State), td.enrichment-url (a.website-link, href .URL, text .URL,
-     when .URL is set), td.enrichment-title (.Title),
-     td.enrichment-status.num (.StatusCode), td.enrichment-size.num
-     (.Size), td.enrichment-error (.Error), td.enrichment-domain (.Domain
-     in a code element) and td.enrichment-at (time[datetime=<.At>] with
+     "What each enricher found for this candidate, newest first. A kind is
+     recomputed only when its inputs change; the newest result of each
+     kind stands and gives the facts above."), then either, when
+     .Enrichments is empty, div#no-enrichments.empty holding h3 "No
+     enrichments" and a p (text "A kind needs inputs: the website check
+     an email on its own domain, drive minutes a ZIP, link facts a record
+     not gone. The enrich pass runs every kind after an ingest, and the
+     enrich tool starts one.", enrich in a code element), or
+     table#enrichment-list whose th read Kind, Source, Found, When, with
+     one tr[data-enrichment=<.Kind>] per result, carrying also
+     [data-state=<.State>] when .State is set, holding td.enrichment-kind
+     (.Kind in a code element), td.enrichment-source (.Source in a code
+     element), td.enrichment-found (when .Kind is "website_check": .State,
+     then, when .URL is set, a space and a.website-link, href .URL, text
+     .URL, then, when .Title is set, div[data-website-title] with .Title,
+     then div.muted holding, when .StatusCode is set, "status", a space,
+     .StatusCode and " · ", then .Size, a space and "bytes", then, when
+     .Error is set, div[data-error] with .Error; for any other kind,
+     dl.kv with one dt[data-found=<.Key>] per entry of .Found (.Key in a
+     code element) followed by a dd (.Value in a code element)) and
+     td.enrichment-at (time[datetime=<.At>] with
      .AtText). Then, for active and merged alike, section#rejects with h2 "Rejects" and a p in its header (text "Every
      reject and unreject naming this candidate, newest first, each with
      its cohort, who made it, when and why. The latest on a cohort stands;
@@ -267,7 +296,7 @@
 <body>
 {{template "banner" .Banner}}
 <main>
-{{$a := .Assessment}}{{$estimates := .Estimates}}{{$links := .Links}}{{$rulings := .Rulings}}{{$enrichments := .Enrichments}}{{$rejects := .Rejects}}{{with .Candidate}}<h1>{{.ID}}</h1>
+{{$a := .Assessment}}{{$f := .Facts}}{{$estimates := .Estimates}}{{$links := .Links}}{{$rulings := .Rulings}}{{$enrichments := .Enrichments}}{{$rejects := .Rejects}}{{with .Candidate}}<h1>{{.ID}}</h1>
 <p id="headline" class="cluster">{{if .Name}}{{.Name}} {{end}}<span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "merged"}}info{{else}}ok{{end}}">{{.Status}}</span>{{if $a}}{{if $a.Excluded}} <span class="badge" data-kind="warn">excluded</span>{{end}}{{end}} <span class="muted">updated <time datetime="{{.Updated}}">{{.UpdatedText}}</time></span></p>
 {{if eq .Status "merged"}}<div id="merged" class="alert quiet" data-kind="info"><strong>Merged</strong><p id="merged-into">This candidate was merged into <a class="candidate-link" href="/candidates/{{.MergedInto}}"><code>{{.MergedInto}}</code></a>. Its evidence, estimates and assessment are there now.</p></div>
 {{end}}{{if $a}}{{if $a.Excluded}}<div id="excluded" class="alert quiet" data-kind="warn"><strong>Excluded</strong><p>The owner excluded this candidate, so no cohort shows it unless the cohort shows excluded candidates. The ruling is below; the <code>include</code> tool reverses it.</p></div>
@@ -294,21 +323,30 @@
 <dt>Updated</dt><dd id="candidate-updated"><time datetime="{{.Updated}}">{{.UpdatedText}}</time></dd>
 </dl>
 </section>
-{{if eq .Status "active"}}<section id="assessment-card" class="card" aria-labelledby="assessment-title">
-<header><h2 id="assessment-title">Assessment</h2><p>Two judgments, whether it is a real business operating today and how big it is, and the facts beside them, as the last judge calculated them. None of the facts removes a candidate; nothing decays between judges.</p></header>
+{{if eq .Status "active"}}<section id="facts-card" class="card" aria-labelledby="facts-title">
+<header><h2 id="facts-title">Facts</h2><p>What the enrichers found, from the newest result of each kind. A fact is recomputed only when what it was computed from changes, never because it is old, and a cohort reads it at once. None of the facts removes a candidate.</p></header>
+{{with $f}}<dl id="facts" class="kv">
+<dt>Categories</dt><dd id="facts-categories">{{range .Categories}}<div data-category="{{.Name}}"><code>{{.Name}}</code> <span class="muted">{{.Source}}</span></div>{{else}}<span class="muted">unknown</span>{{end}}</dd>
+<dt>Known since</dt><dd id="facts-known-since">{{if .KnownSince}}<time datetime="{{.KnownSince}}">{{.KnownSinceText}}</time>{{else}}<span class="muted">none</span>{{end}}</dd>
+<dt>Newest filing</dt><dd id="facts-filed">{{if .NewestFiling}}<time datetime="{{.NewestFiling}}">{{.NewestFilingText}}</time>{{else}}<span class="muted">none</span>{{end}}</dd>
+<dt>Government match</dt><dd id="facts-government">{{if .GovernmentMatch}}<code>{{.GovernmentMatch}}</code>{{else}}no{{end}}</dd>
+<dt>Fleet</dt><dd id="facts-fleet" data-fleet="{{.FleetVerdict}}">{{if eq .FleetVerdict "unknown"}}<span class="muted">{{.FleetVerdict}}</span>{{else}}{{.FleetVerdict}}{{end}}</dd>
+<dt>Trucks</dt><dd id="facts-power-units">{{if .PowerUnits}}{{.PowerUnits}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
+<dt>Drivers</dt><dd id="facts-drivers">{{if .Drivers}}{{.Drivers}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
+<dt>Drive minutes</dt><dd id="facts-minutes">{{if .Minutes}}{{.Minutes}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
+<dt>Written</dt><dd id="facts-written">{{range .Written}}<div data-written="{{.Kind}}"><code>{{.Kind}}</code> <time datetime="{{.At}}">{{.AtText}}</time></div>{{else}}<span class="muted">never</span>{{end}}</dd>
+</dl>{{else}}<div id="no-facts" class="empty">
+<h3 class="text-md">No facts yet</h3>
+<p>The enrich pass writes them after an ingest, and the <code>enrich</code> tool starts one.</p>
+</div>{{end}}
+</section>
+<section id="assessment-card" class="card" aria-labelledby="assessment-title">
+<header><h2 id="assessment-title">Assessment</h2><p>Two judgments, whether it is a real business operating today and how big it is, as the last judge calculated them from the facts and the records. Nothing decays between judges.</p></header>
 {{with $a}}<dl id="assessment" class="kv">
 <dt>Operating confidence</dt><dd id="assessment-operating">{{if .OperatingConfidence}}{{.OperatingConfidence}}{{else}}<span class="muted">no evidence</span>{{end}}</dd>
 <dt>Revenue low</dt><dd id="assessment-revenue-low">{{if .RevenueLow}}{{.RevenueLow}}{{else}}<span class="muted">no estimate</span>{{end}}</dd>
 <dt>Revenue high</dt><dd id="assessment-revenue-high">{{if .RevenueHigh}}{{.RevenueHigh}}{{else if .RevenueLow}}<span class="muted">none: a floor only</span>{{else}}<span class="muted">no estimate</span>{{end}}</dd>
 <dt>Revenue confidence</dt><dd id="assessment-revenue-confidence">{{if .RevenueConfidence}}{{.RevenueConfidence}}{{else}}<span class="muted">no estimate</span>{{end}}</dd>
-<dt>Categories</dt><dd id="assessment-categories">{{range .Categories}}<div data-category="{{.Name}}"><code>{{.Name}}</code> <span class="muted">{{.Source}}</span></div>{{else}}<span class="muted">unknown</span>{{end}}</dd>
-<dt>Known since</dt><dd id="assessment-known-since">{{if .KnownSince}}<time datetime="{{.KnownSince}}">{{.KnownSinceText}}</time>{{else}}<span class="muted">none</span>{{end}}</dd>
-<dt>Newest filing</dt><dd id="assessment-filed">{{if .NewestFiling}}<time datetime="{{.NewestFiling}}">{{.NewestFilingText}}</time>{{else}}<span class="muted">none</span>{{end}}</dd>
-<dt>Government match</dt><dd id="assessment-government">{{if .GovernmentMatch}}<code>{{.GovernmentMatch}}</code>{{else}}no{{end}}</dd>
-<dt>Fleet</dt><dd id="assessment-fleet" data-fleet="{{.FleetVerdict}}">{{if eq .FleetVerdict "unknown"}}<span class="muted">{{.FleetVerdict}}</span>{{else}}{{.FleetVerdict}}{{end}}</dd>
-<dt>Trucks</dt><dd id="assessment-power-units">{{if .PowerUnits}}{{.PowerUnits}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
-<dt>Drivers</dt><dd id="assessment-drivers">{{if .Drivers}}{{.Drivers}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
-<dt>Drive minutes</dt><dd id="assessment-minutes">{{if .Minutes}}{{.Minutes}}{{else}}<span class="muted">not in the ZIP table</span>{{end}}</dd>
 <dt>Excluded</dt><dd id="assessment-excluded">{{if .Excluded}}yes{{else}}no{{end}}</dd>
 <dt>Rules</dt><dd id="assessment-rules">{{.Rules}}</dd>
 <dt>Calculated</dt><dd id="assessment-calculated"><time datetime="{{.Calculated}}">{{.CalculatedText}}</time></dd>
@@ -400,27 +438,22 @@
 </div>{{end}}
 </section>
 {{if eq .Status "active"}}<section id="enrichments" class="card flush" aria-labelledby="enrichments-title">
-<header><div><h2 id="enrichments-title">Enrichments</h2><p>What the website check found for this candidate, newest first. A redo adds a result and the newest stands; the judge reads it.</p></div></header>
+<header><div><h2 id="enrichments-title">Enrichments</h2><p>What each enricher found for this candidate, newest first. A kind is recomputed only when its inputs change; the newest result of each kind stands and gives the facts above.</p></div></header>
 {{if $enrichments}}<div class="table-scroll">
 <table id="enrichment-list">
-<thead><tr><th>Kind</th><th>State</th><th>Landed</th><th>Title</th><th class="num">Status</th><th class="num">Bytes</th><th>Error</th><th>Domain</th><th>When</th></tr></thead>
+<thead><tr><th>Kind</th><th>Source</th><th>Found</th><th>When</th></tr></thead>
 <tbody>
-{{range $enrichments}}<tr data-enrichment="{{.Kind}}" data-state="{{.State}}">
+{{range $enrichments}}<tr data-enrichment="{{.Kind}}"{{if .State}} data-state="{{.State}}"{{end}}>
 <td class="enrichment-kind"><code>{{.Kind}}</code></td>
-<td class="enrichment-state">{{.State}}</td>
-<td class="enrichment-url">{{if .URL}}<a class="website-link" href="{{.URL}}">{{.URL}}</a>{{end}}</td>
-<td class="enrichment-title">{{.Title}}</td>
-<td class="enrichment-status num">{{.StatusCode}}</td>
-<td class="enrichment-size num">{{.Size}}</td>
-<td class="enrichment-error">{{.Error}}</td>
-<td class="enrichment-domain"><code>{{.Domain}}</code></td>
+<td class="enrichment-source"><code>{{.Source}}</code></td>
+<td class="enrichment-found">{{if eq .Kind "website_check"}}{{.State}}{{if .URL}} <a class="website-link" href="{{.URL}}">{{.URL}}</a>{{end}}{{if .Title}}<div data-website-title>{{.Title}}</div>{{end}}<div class="muted">{{if .StatusCode}}status {{.StatusCode}} · {{end}}{{.Size}} bytes</div>{{if .Error}}<div data-error>{{.Error}}</div>{{end}}{{else}}<dl class="kv">{{range .Found}}<dt data-found="{{.Key}}"><code>{{.Key}}</code></dt><dd><code>{{.Value}}</code></dd>{{end}}</dl>{{end}}</td>
 <td class="enrichment-at"><time datetime="{{.At}}">{{.AtText}}</time></td>
 </tr>
 {{end}}</tbody>
 </table>
 </div>{{else}}<div id="no-enrichments" class="empty">
 <h3 class="text-md">No enrichments</h3>
-<p>Only a candidate whose email is on its own domain is checked. The enrich pass checks each after an ingest, and the <code>enrich</code> tool starts one.</p>
+<p>A kind needs inputs: the website check an email on its own domain, drive minutes a ZIP, link facts a record not gone. The enrich pass runs every kind after an ingest, and the <code>enrich</code> tool starts one.</p>
 </div>{{end}}
 </section>
 {{end}}<section id="rejects" class="card flush" aria-labelledby="rejects-title">
