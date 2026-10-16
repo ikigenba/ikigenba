@@ -569,8 +569,9 @@ Wisconsin.
   cron trigger's slug or `rebuild`. A failed row's reason follows its
   status, muted. A link to the about screen. Its tools (`cohorts`,
   `cohort`, `candidates`, `candidate`, `passes`, `pass`, `rebuild`,
-  `decide`, `exclude`, `include`, `create_cohort`, `edit_cohort`,
-  `delete_cohort`, `reject`, `unreject`) are on its tools page. States: no
+  `enrich`, `decide`, `exclude`, `include`, `create_cohort`,
+  `edit_cohort`, `delete_cohort`, `reject`, `unreject`, sixteen in all) are
+  on its tools page. States: no
   cohorts (`div#no-cohorts.empty`), no passes (`div#no-passes.empty`).
 - One candidate, `cand_4b9e1f07c2d83a65`, a for-hire carrier at Hudson, WI,
   with two records, one moved onto it by a merge: the trail candidates /
@@ -578,7 +579,9 @@ Wisconsin.
   when it was updated, plus a `.badge` excluded when excluded;
   `section#candidate-card` with `dl#candidate.kv`: ID, Status, Merged into
   (merged only), then each when set Name, Names, Street, City, State, Zip,
-  County, Phone, Email, People (one `div[data-person]` each), Class and
+  County, Phone, Email, Website (the state, `https`, `http` or `none`, with the URL it
+  landed on as an `a.website-link`, its title in `div[data-website-title]`
+  and a muted "checked" time; muted `unknown` when it has no result), People (one `div[data-person]` each), Class and
   Cargo (one `code[data-cargo]` per tag), then Created and Updated.
   `section#assessment-card` with `dl#assessment.kv`, the two judgments and
   the facts beside them as the last judge calculated them: Operating
@@ -596,7 +599,11 @@ Wisconsin.
   `tr[data-link=<scraper>:<source_id>]`, each source id linking to its row
   at scrapes, `/runs/<run>/rows/<source_id>`. `section#rulings` with
   `table#ruling-list` of Kind / With / Records / By / When / Why, newest
-  first, `tr[data-ruling=<kind>]`. `section#rejects` with
+  first, `tr[data-ruling=<kind>]`. `section#enrichments` (Enrichments), on
+  an active candidate only, with `table#enrichment-list` of Kind / State /
+  Landed / Title / Status / Bytes / Error / Domain / When, newest first,
+  `tr[data-enrichment=<kind>][data-state=<state>]`, Landed an
+  `a.website-link` when a URL was reached. `section#rejects` with
   `table#reject-list` of Kind / Cohort / By / When / Why, every reject and
   unreject naming the candidate, newest first,
   `tr[data-reject=<kind>][data-cohort=<id>]`, the cohort's name linking to
@@ -610,7 +617,8 @@ Wisconsin.
   and no filing (muted words), no evidence, no estimate and no categories
   (muted words, and `div#no-operating-evidence.empty`), not judged
   (`div#no-assessment.empty`), no estimates (`div#no-estimates.empty`), no
-  rulings (`div#no-rulings.empty`), no rejects (`div#no-rejects.empty`).
+  rulings (`div#no-rulings.empty`), no enrichments
+  (`div#no-enrichments.empty`), no rejects (`div#no-rejects.empty`).
 - One cohort, `coh_d05a3e86b4c17f29`, "Trucking and construction, $5M to
   $10M, 2 hours": the trail candidates / the id, the name as the `h1`;
   `p#headline` with `#matching`, a `.badge` of kind info counting the
@@ -618,15 +626,19 @@ Wisconsin.
   `dl#cohort.kv`: ID, Name, Size, Order (one `div[data-order]` per field,
   its direction muted), Created by, Created, Changed by, Changed.
   `section#filters` with `dl#filters.kv`: Revenue low, Drive minutes,
-  Categories, Fleet, Government, Filing age, Class and Excluded, each muted
+  Categories, Fleet, Website, Government, Filing age, Class and Excluded, each muted
   "any" when not carried, and a `.badge[data-unknown]` "unknown included"
-  of kind info when its switch is set. `section#members` with
+  of kind info when its switch is set (Fleet and Website each have one;
+  Website's states are `code[data-website]`, its switch `website_unknown`).
+  `section#members` with
   `table#member-list`, the landing's old ranked row (Rank / Name / City /
   State / Operating confidence / Low / High / Revenue confidence /
-  Categories / Class / Fleet / Minutes / Government) plus Known since and
-  Newest filing, `tr[data-candidate=<id>]`, each name linking to
+  Categories / Class / Fleet / Minutes / Government) plus Website, Known
+  since and Newest filing, `tr[data-candidate=<id>]`, each name linking to
   `/candidates/<id>`; Fleet is the verdict, muted when `unknown`, carried
-  in `data-fleet`. `section#rejects` with `table#reject-list` of Candidate /
+  in `data-fleet`; Website is the state, an `a.website-link` to the URL it
+  landed on when there is one, muted when `unknown`, carried in
+  `data-website`. `section#rejects` with `table#reject-list` of Candidate /
   By / When / Why, the standing rejects newest first,
   `tr[data-reject=<cand id>]`. No form: cohorts change through the tools.
   States: a cohort showing excluded candidates (a `.badge` excluded of kind
@@ -640,12 +652,20 @@ Wisconsin.
   scrapes, the cron trigger's slug or `rebuild`), Status, Reason (failed
   only), Started by (scrapes, `cron` and the trigger's slug, or the
   caller's email for a rebuild), Started, Finished (once finished), Rows,
-  New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged. States:
+  New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged; an
+  enrich pass shows five counts in their place, Due, Fetched, `https`,
+  `http` and `none` (`#pass-due`, `#pass-fetched`, `#pass-https`,
+  `#pass-http`, `#pass-none`). States:
   running (`div#running.alert.quiet`, "Running", a Reload button), failed
   (`div#failure.alert` of kind err, "The pass failed", the reason's
   sentence chosen from `scrapes`, `interrupted` or `store`, and a line that
   what it wrote stays), a judge started by cron. An unknown id or a pruned
   one is the not-found page.
+- The about page's facts paragraph lists the website (https, http, none or
+  unknown) among the facts kept beside the judgments, and a paragraph
+  describes the enrich pass: it follows every ingest that ends done, or
+  starts on a call of `enrich`, fetches each own-domain candidate's domain
+  once and keeps the result, and a judge pass follows when it wrote one.
 - Candidate status reads as a `.status` word, as stored: active is ok,
   merged is info; pass status as scrapes' run status: running info, done
   ok, failed err. Class tags, cargo tags, category words, evidence kinds,
