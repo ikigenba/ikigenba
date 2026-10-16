@@ -67,6 +67,9 @@ design/
                     one candidate: its fields, assessment, operating
                     evidence, estimates, evidence, rulings and rejects;
                     merged and excluded
+    candidates-cohort.html
+                    one cohort: its definition, filters, members and
+                    standing rejects; showing excluded, and empty
     candidates-pass.html
                     one pass: its record, running and failed
     webhooks.html   webhooks' landing: the space's webhooks
@@ -544,7 +547,7 @@ with `decide`, `exclude` and `include`. Candidates and cohorts belong to no
 one: every signed-in user sees every candidate, cohort, pass, ruling and
 reject. Four pages: the landing page, one candidate at
 `/candidates/<id>`, one cohort at `/cohorts/<id>`, and one pass at
-`/passes/<id>`; the cohort page has no mock. Banner and footer as
+`/passes/<id>`. Banner and footer as
 in app.html, the service `candidates` with the Tabler `filter` icon (added
 to `icons/tabler/` on 2026-10-12 for this app). No form but sign out. The
 sample data is made-up carriers from FMCSA's census for Minnesota and
@@ -607,7 +610,29 @@ Wisconsin.
   and no filing (muted words), no evidence, no estimate and no categories
   (muted words, and `div#no-operating-evidence.empty`), not judged
   (`div#no-assessment.empty`), no estimates (`div#no-estimates.empty`), no
-  rulings (`div#no-rulings.empty`), no rejects (`div#no-rejects.empty`). An unknown id is the not-found page.
+  rulings (`div#no-rulings.empty`), no rejects (`div#no-rejects.empty`).
+- One cohort, `coh_d05a3e86b4c17f29`, "Trucking and construction, $5M to
+  $10M, 2 hours": the trail candidates / the id, the name as the `h1`;
+  `p#headline` with `#matching`, a `.badge` of kind info counting the
+  matching candidates, and when it was changed. `section#cohort-card` with
+  `dl#cohort.kv`: ID, Name, Size, Order (one `div[data-order]` per field,
+  its direction muted), Created by, Created, Changed by, Changed.
+  `section#filters` with `dl#filters.kv`: Revenue low, Drive minutes,
+  Categories, Fleet, Government, Filing age, Class and Excluded, each muted
+  "any" when not carried, and a `.badge[data-unknown]` "unknown included"
+  of kind info when its switch is set. `section#members` with
+  `table#member-list`, the landing's old ranked row (Rank / Name / City /
+  State / Operating confidence / Low / High / Revenue confidence /
+  Categories / Class / Fleet / Minutes / Government) plus Known since and
+  Newest filing, `tr[data-candidate=<id>]`, each name linking to
+  `/candidates/<id>`; Fleet is the verdict, muted when `unknown`, carried
+  in `data-fleet`. `section#rejects` with `table#reject-list` of Candidate /
+  By / When / Why, the standing rejects newest first,
+  `tr[data-reject=<cand id>]`. No form: cohorts change through the tools.
+  States: a cohort showing excluded candidates (a `.badge` excluded of kind
+  warn after the name), no members (`div#no-members.empty`), no rejects
+  (`div#no-rejects.empty`). An unknown or malformed id is the not-found
+  page. An unknown id is the not-found page.
 - One pass, `pass_9a27f6c1e3b40d58`, an ingest done over a scrapes run: the
   trail candidates / the id, the id as the `h1`; `p#headline` with the
   status and the started and finished times; `section#pass-card` with
