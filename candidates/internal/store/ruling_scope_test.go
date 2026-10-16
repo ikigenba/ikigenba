@@ -9,7 +9,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-P19S-CDSR R-GSL2-9AIP
+// R-NEWV-DHTY R-GSL2-9AIP
 func TestRulingLeavesEveryUntouchedCandidateAsStored(t *testing.T) {
 	for _, kind := range []string{store.KindExclude, store.KindInclude, store.KindNotSame, store.KindMerge, store.KindSplit} {
 		t.Run(kind, func(t *testing.T) {

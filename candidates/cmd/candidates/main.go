@@ -17,6 +17,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/version"
 	"github.com/ikigenba/ikigenba/candidates/internal/cli"
 	"github.com/ikigenba/ikigenba/candidates/internal/pages"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 func main() {
@@ -40,7 +41,7 @@ func main() {
 		f := os.NewFile(fd, "listener")
 		defer func() { _ = f.Close() }()
 		return net.FileListener(f)
-	}, Now: time.Now, Rand: rand.Reader, After: time.After, Banner: page.New(pages.ServiceName, id).Banner, MCP: func(w *telemetry.Writer) *mcp.Server {
+	}, HTTP: website.Client(), Now: time.Now, Rand: rand.Reader, After: time.After, Banner: page.New(pages.ServiceName, id).Banner, MCP: func(w *telemetry.Writer) *mcp.Server {
 		return mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: v, Telemetry: w})
 	}})
 	signal.Stop(signals)

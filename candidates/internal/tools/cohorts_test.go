@@ -18,14 +18,14 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-A0V6-EFAB R-A232-S710 R-A3AZ-5YRP R-A4IV-JQIE R-A5QR-XI93 R-A6YO-B9ZS R-A9EH-2TH6 R-ABU9-UCYK R-AD26-84P9
+// R-A0V6-EFAB R-V9H1-Z5PM R-A3AZ-5YRP R-A4IV-JQIE R-A5QR-XI93 R-A6YO-B9ZS R-A9EH-2TH6 R-VAOY-CXGB R-AD26-84P9
 func TestCohortExactSchemas(t *testing.T) {
 	f := newFixture(t)
 	infos, err := f.client.ListTools(t.Context(), caller)
 	if err != nil {
 		t.Fatal(err)
 	}
-	filters := `{"type":"object","properties":{"revenue_min":{"type":"integer","minimum":0},"revenue_max":{"type":"integer","minimum":0},"revenue_unknown":{"type":"boolean"},"max_minutes":{"type":"integer","minimum":0},"minutes_unknown":{"type":"boolean"},"categories":{"type":"array","items":{"type":"string"}},"category_unknown":{"type":"boolean"},"fleet":{"type":"string"},"fleet_unknown":{"type":"boolean"},"government":{"type":"boolean"},"max_filing_age_days":{"type":"integer","minimum":0},"filing_unknown":{"type":"boolean"},"class":{"type":"string"},"class_unknown":{"type":"boolean"},"show_excluded":{"type":"boolean"}},"additionalProperties":false}`
+	filters := `{"type":"object","properties":{"revenue_min":{"type":"integer","minimum":0},"revenue_max":{"type":"integer","minimum":0},"revenue_unknown":{"type":"boolean"},"max_minutes":{"type":"integer","minimum":0},"minutes_unknown":{"type":"boolean"},"categories":{"type":"array","items":{"type":"string"}},"category_unknown":{"type":"boolean"},"fleet":{"type":"string"},"fleet_unknown":{"type":"boolean"},"website":{"type":"array","items":{"type":"string"}},"website_unknown":{"type":"boolean"},"government":{"type":"boolean"},"max_filing_age_days":{"type":"integer","minimum":0},"filing_unknown":{"type":"boolean"},"class":{"type":"string"},"class_unknown":{"type":"boolean"},"show_excluded":{"type":"boolean"}},"additionalProperties":false}`
 	order := `{"type":"array","items":{"type":"object","properties":{"field":{"type":"string"},"direction":{"type":"string"}},"required":["field","direction"],"additionalProperties":false}}`
 	want := map[string]string{
 		"create_cohort": `{"type":"object","properties":{"name":{"type":"string"},"filters":` + filters + `,"order":` + order + `,"size":{"type":"integer"}},"required":["name"],"additionalProperties":false}`,
@@ -65,7 +65,7 @@ func rejectExpected(r store.Reject) tools.Reject {
 }
 func memberExpected(r store.Ranked) tools.Member {
 	a := assessmentExpected(r.Assessment)
-	v := tools.Member{Candidate: candidateOf(r.Candidate), OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, FleetVerdict: a.FleetVerdict, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch, KnownSince: a.KnownSince, NewestFiling: a.NewestFiling, Excluded: a.Excluded, Categories: []string{}}
+	v := tools.Member{Candidate: candidateOf(r.Candidate), OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, FleetVerdict: a.FleetVerdict, Website: a.Website, WebsiteURL: a.WebsiteURL, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch, KnownSince: a.KnownSince, NewestFiling: a.NewestFiling, Excluded: a.Excluded, Categories: []string{}}
 	seen := map[string]bool{}
 	for _, c := range a.Categories {
 		seen[c.Name] = true
@@ -97,7 +97,8 @@ func (f *fixture) create(name string) tools.Cohort {
 	return k
 }
 
-// R-AFHY-ZO6N R-AGPV-DFXC R-AHXR-R7O1 R-AJ5O-4ZEQ R-AXSG-Q8B2 R-BEV2-30OS R-P2HO-Q5JG R-BKYJ-ZVE9 R-1POC-ZXB9 R-1S45-RGSN R-BDN5-P8Y3
+// R-VRRJ-PPU1
+// R-AFHY-ZO6N R-VD4R-4GXP R-AHXR-R7O1 R-AJ5O-4ZEQ R-AXSG-Q8B2 R-BEV2-30OS R-P2HO-Q5JG R-BKYJ-ZVE9 R-1POC-ZXB9 R-1S45-RGSN R-BDN5-P8Y3
 func TestCohortLifecycleRejectAndExclusion(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(5)
@@ -184,6 +185,13 @@ func TestCohortLifecycleRejectAndExclusion(t *testing.T) {
 		}
 	}
 	// Reject history remains for a merged candidate and after its cohort is deleted.
+	if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, State: sources.WebsiteHTTPS, URL: "https://business.test", Source: "business.test"}}); err != nil {
+		t.Fatal(err)
+	}
+	enriched := decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: id}))
+	if len(enriched.Enrichments) != 1 {
+		t.Fatal(enriched)
+	}
 	f.call("reject", args)
 	otherID := ids[0]
 	if otherID == id {
@@ -191,7 +199,7 @@ func TestCohortLifecycleRejectAndExclusion(t *testing.T) {
 	}
 	f.call("decide", tools.DecideArgs{Kind: store.KindMerge, Candidate: otherID, Other: id, Why: "merge"})
 	detail = decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: id}))
-	if detail.Candidate.MergedInto != otherID || detail.Assessment != nil || len(detail.Links) != 0 || len(detail.Estimates) != 0 || len(detail.Rejects) != 3 {
+	if detail.Candidate.MergedInto != otherID || detail.Assessment != nil || len(detail.Links) != 0 || len(detail.Estimates) != 0 || detail.Enrichments == nil || len(detail.Enrichments) != 0 || len(detail.Rejects) != 3 {
 		t.Fatal(detail)
 	}
 	for _, kind := range []string{"reject", "unreject"} {
@@ -215,18 +223,19 @@ func TestCohortLifecycleRejectAndExclusion(t *testing.T) {
 	}
 }
 
-// R-BG2Y-GSFH R-P2HO-Q5JG R-BKYJ-ZVE9
+// R-BG2Y-GSFH R-P2HO-Q5JG R-BKYJ-ZVE9 R-VWN5-8SST
 func TestCohortFiltersAndReplacement(t *testing.T) {
 	f := newFixture(t)
 	lo, hi, minutes, days := uint32(0), uint32(20000000), uint32(120), uint32(730)
+	websites := []string{sources.WebsiteHTTP, sources.WebsiteHTTPS}
 	government := false
-	args := tools.FilterArgs{RevenueMin: &lo, RevenueMax: &hi, RevenueUnknown: true, MaxMinutes: &minutes, MinutesUnknown: true, Categories: []string{sources.CategoryTrucking, sources.CategoryOther}, CategoryUnknown: true, Fleet: sources.FleetPass, FleetUnknown: true, Government: &government, MaxFilingAgeDays: &days, FilingUnknown: true, Class: sources.ClassForHire, ClassUnknown: true, ShowExcluded: true}
+	args := tools.FilterArgs{RevenueMin: &lo, RevenueMax: &hi, RevenueUnknown: true, MaxMinutes: &minutes, MinutesUnknown: true, Categories: []string{sources.CategoryTrucking, sources.CategoryOther}, CategoryUnknown: true, Fleet: sources.FleetPass, FleetUnknown: true, Website: &websites, WebsiteUnknown: true, Government: &government, MaxFilingAgeDays: &days, FilingUnknown: true, Class: sources.ClassForHire, ClassUnknown: true, ShowExcluded: true}
 	order := []tools.OrderArgs{{Field: store.OrderRevenueLow, Direction: store.DirectionAsc}, {Field: store.OrderKnownSince, Direction: store.DirectionDesc}}
 	size := 17
 	r := f.call("create_cohort", tools.CreateCohortArgs{Name: "filtered", Filters: &args, Order: &order, Size: &size})
 	k := decodeList[tools.Cohort](t, r)
 	a, b, c, d := int64(lo), int64(hi), int64(minutes), int64(days)
-	want := store.CohortFilters{RevenueMin: &a, RevenueMax: &b, RevenueUnknown: true, MaxMinutes: &c, MinutesUnknown: true, Categories: []string{sources.CategoryOther, sources.CategoryTrucking}, CategoryUnknown: true, Fleet: args.Fleet, FleetUnknown: true, Government: &government, MaxFilingAgeDays: &d, FilingUnknown: true, Class: args.Class, ClassUnknown: true, ShowExcluded: true}
+	want := store.CohortFilters{RevenueMin: &a, RevenueMax: &b, RevenueUnknown: true, MaxMinutes: &c, MinutesUnknown: true, Categories: []string{sources.CategoryOther, sources.CategoryTrucking}, CategoryUnknown: true, Fleet: args.Fleet, FleetUnknown: true, Website: websites, WebsiteUnknown: true, Government: &government, MaxFilingAgeDays: &d, FilingUnknown: true, Class: args.Class, ClassUnknown: true, ShowExcluded: true}
 	if !reflect.DeepEqual(k.Filters, want) || k.Size != int64(size) || !reflect.DeepEqual(k.Order, []store.CohortOrder{{Field: store.OrderRevenueLow, Direction: store.DirectionAsc}, {Field: store.OrderKnownSince, Direction: store.DirectionDesc}}) {
 		t.Fatal(k)
 	}
@@ -293,14 +302,14 @@ func TestCohortPagingNameTies(t *testing.T) {
 	}
 }
 
-// R-BHAU-UK66 R-BJQN-M3NK R-1QW9-DP1Y R-BCF9-BH7E R-B8RK-65ZB R-ASWV-75CA R-AROY-TDLL R-AP96-1U47
+// R-BHAU-UK66 R-BJQN-M3NK R-1QW9-DP1Y R-BCF9-BH7E R-B8RK-65ZB R-VWN5-8SST R-AROY-TDLL R-AP96-1U47
 func TestCohortValidationBeforeFailingStore(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
 	k := f.create("validation")
 	unknown := store.CohortIDPrefix + strings.Repeat("0", 16)
 	unknownCandidate := store.CandidateIDPrefix + strings.Repeat("0", 16)
-	badParts := []map[string]any{{"name": " \t\n"}, {"size": 0}, {"size": 101}, {"size": -1}, {"filters": map[string]any{"revenue_min": 2, "revenue_max": 1}}, {"filters": map[string]any{"fleet": sources.FleetUnknown}}, {"filters": map[string]any{"class": sources.ClassUnknown}}, {"filters": map[string]any{"categories": []string{"invalid"}}}, {"order": []map[string]any{{"field": "invalid", "direction": store.DirectionAsc}}}, {"order": []map[string]any{{"field": store.OrderRevenueLow, "direction": "invalid"}}}, {"order": []map[string]any{{"field": store.OrderRevenueLow, "direction": store.DirectionAsc}, {"field": store.OrderRevenueLow, "direction": store.DirectionDesc}}}}
+	badParts := []map[string]any{{"name": " \t\n"}, {"size": 0}, {"size": 101}, {"size": -1}, {"filters": map[string]any{"revenue_min": 2, "revenue_max": 1}}, {"filters": map[string]any{"website": []string{}}}, {"filters": map[string]any{"fleet": sources.FleetUnknown}}, {"filters": map[string]any{"class": sources.ClassUnknown}}, {"filters": map[string]any{"categories": []string{"invalid"}}}, {"order": []map[string]any{{"field": "invalid", "direction": store.DirectionAsc}}}, {"order": []map[string]any{{"field": store.OrderRevenueLow, "direction": "invalid"}}}, {"order": []map[string]any{{"field": store.OrderRevenueLow, "direction": store.DirectionAsc}, {"field": store.OrderRevenueLow, "direction": store.DirectionDesc}}}}
 	for _, failing := range []bool{false, true} {
 		f.d.SetFailing(failing)
 		for _, part := range badParts {
@@ -370,7 +379,7 @@ func TestCohortValidationBeforeFailingStore(t *testing.T) {
 	}
 }
 
-// R-1TC2-58JC R-ASWV-75CA
+// R-VXV1-MKJI R-VWN5-8SST
 func TestEveryToolUnavailable(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -428,7 +437,7 @@ func TestToolsContactNoSiblingOrStartPass(t *testing.T) {
 	}
 }
 
-// R-B53V-0UR8 R-6QOY-0DLL
+// R-VJ89-1BN6 R-6QOY-0DLL
 func TestUnjudgedCandidateAndPrunedPass(t *testing.T) {
 	f := newFixture(t)
 	_, ids, err := f.st.Attach(t.Context(), "unjudged", false, []store.Observation{{Scraper: "fixture", SourceID: "unjudged", Digest: "chosen", Reading: sources.Reading{Name: "Unjudged", Names: []string{"Unjudged"}}}})

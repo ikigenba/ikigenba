@@ -62,10 +62,21 @@ type Assessment struct {
 	Categories              []sources.Category
 	FleetVerdict            string
 	PowerUnits, Drivers     *int64
+	Website, WebsiteURL     string
 	Minutes                 *int64
 	Excluded                bool
 	Rules                   int64
 	Calculated              time.Time
+}
+
+// Enrichment is one recorded website result.
+type Enrichment struct {
+	Candidate, Kind, State, URL, Title string
+	StatusCode                         int
+	Size                               int64
+	Error, Source                      string
+	Cost                               float64
+	At                                 time.Time
 }
 
 // Ruling records an owner decision.
@@ -78,14 +89,14 @@ type Ruling struct {
 
 // Pass records one resolution pass.
 type Pass struct {
-	ID, Kind, Origin, Trigger, Status, Reason                              string
-	Started, Finished                                                      time.Time
-	Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged int64
-	UserID, UserEmail, RequestID, Delivery                                 string
+	ID, Kind, Origin, Trigger, Status, Reason                                                               string
+	Started, Finished                                                                                       time.Time
+	Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Due, Fetched, HTTPS, HTTP, None int64
+	UserID, UserEmail, RequestID, Delivery                                                                  string
 }
 
 // Counts contains the results of pass work.
-type Counts struct{ Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged int64 }
+type Counts struct{ Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Due, Fetched, HTTPS, HTTP, None int64 }
 
 // Observation is one source reading to attach.
 type Observation struct {
@@ -116,6 +127,10 @@ const (
 	ReasonStore       = "store"
 	TriggerRebuild    = "rebuild"
 	TriggerJudge      = "judge_candidates"
+	KindEnrich        = "enrich"
+	OriginEnrich      = "enrich"
+	OriginPass        = "pass"
+	TriggerEnrich     = "enrich"
 	KindIngest        = "ingest"
 	KindJudge         = "judge"
 	KindRebuild       = "rebuild"

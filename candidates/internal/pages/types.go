@@ -86,6 +86,8 @@ type FiltersView struct {
 	CategoryUnknown        bool
 	Fleet                  string
 	FleetUnknown           bool
+	Website                []string
+	WebsiteUnknown         bool
 	Government             string
 	MaxFilingAgeDays       string
 	FilingUnknown          bool
@@ -96,11 +98,11 @@ type FiltersView struct {
 
 // MemberRow supplies one cohort member.
 type MemberRow struct {
-	Rank                                                                                                      int64
-	ID, Name, City, State, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence                    string
-	Categories                                                                                                []string
-	Class, FleetVerdict, Minutes, GovernmentMatch, KnownSince, KnownSinceText, NewestFiling, NewestFilingText string
-	Excluded                                                                                                  bool
+	Rank                                                                                                                           int64
+	ID, Name, City, State, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence                                         string
+	Categories                                                                                                                     []string
+	Class, FleetVerdict, Website, WebsiteURL, Minutes, GovernmentMatch, KnownSince, KnownSinceText, NewestFiling, NewestFilingText string
+	Excluded                                                                                                                       bool
 }
 
 // RejectRow supplies a standing reject.
@@ -117,24 +119,25 @@ type PassRow struct {
 
 // CandidateData supplies candidate data page data.
 type CandidateData struct {
-	Banner     page.Banner
-	Candidate  CandidateView
-	Assessment *AssessmentView
-	Estimates  []EstimateView
-	Links      []LinkView
-	Rulings    []RulingView
-	Rejects    []RejectRecordRow
+	Banner      page.Banner
+	Candidate   CandidateView
+	Assessment  *AssessmentView
+	Estimates   []EstimateView
+	Links       []LinkView
+	Rulings     []RulingView
+	Enrichments []EnrichmentRow
+	Rejects     []RejectRecordRow
 }
 
 // CandidateView supplies candidate view page data.
 type CandidateView struct {
-	ID, Status, MergedInto, Name                   string
-	Names                                          []string
-	Street, City, State, Zip, County, Phone, Email string
-	People                                         []PersonRow
-	Class                                          string
-	Cargo                                          []string
-	Created, CreatedText, Updated, UpdatedText     string
+	ID, Status, MergedInto, Name                                                                                          string
+	Names                                                                                                                 []string
+	Street, City, State, Zip, County, Phone, Email, Website, WebsiteURL, WebsiteTitle, WebsiteChecked, WebsiteCheckedText string
+	People                                                                                                                []PersonRow
+	Class                                                                                                                 string
+	Cargo                                                                                                                 []string
+	Created, CreatedText, Updated, UpdatedText                                                                            string
 }
 
 // PersonRow supplies person row page data.
@@ -190,7 +193,7 @@ type PassData struct {
 // PassView supplies pass view page data.
 type PassView struct {
 	ID, Kind, Origin, Trigger, RunPage, Status, Reason, StartedBy, Started, StartedText, Finished, FinishedText string
-	Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged                                      int64
+	Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Due, Fetched, HTTPS, HTTP, None     int64
 }
 
 // ToolsData supplies tools data page data.
@@ -210,3 +213,10 @@ type AboutData struct {
 
 // NotFoundData supplies not found data page data.
 type NotFoundData struct{ Banner page.Banner }
+
+// EnrichmentRow supplies one recorded enrichment result.
+type EnrichmentRow struct {
+	Kind, State, URL, Title, StatusCode string
+	Size                                int64
+	Error, Domain, At, AtText           string
+}

@@ -32,6 +32,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 type random struct{ n uint64 }
@@ -55,8 +56,9 @@ type fixture struct {
 	now    time.Time
 }
 
-func newFixture(t *testing.T) *fixture { return fixtureWithScrapes(t, nil) }
-func fixtureWithScrapes(t *testing.T, h http.Handler) *fixture {
+func newFixture(t *testing.T) *fixture                         { return fixtureWithScrapes(t, nil) }
+func fixtureWithScrapes(t *testing.T, h http.Handler) *fixture { return fixtureWithWebsite(t, h, nil) }
+func fixtureWithWebsite(t *testing.T, h http.Handler, k *website.Checker) *fixture {
 	t.Helper()
 	f := &fixture{t: t, now: time.Date(2026, 4, 5, 0, 7, 8, 0, time.FixedZone("fixture", 2*60*60))}
 	now := func() time.Time { return f.now }
@@ -97,7 +99,7 @@ func fixtureWithScrapes(t *testing.T, h http.Handler) *fixture {
 		t.Cleanup(func() { _ = server.Close() })
 		sc = scrapes.NewClient(scrapes.ClientConfig{Service: services.Entry{Name: "scrapes", Socket: socket}, Telemetry: w})
 	}
-	f.eng = passes.New(passes.Config{Store: f.st, Sources: sources.New(fmcsa.New()), Scrapes: sc, Telemetry: w, Events: em})
+	f.eng = passes.New(passes.Config{Website: k, Store: f.st, Sources: sources.New(fmcsa.New()), Scrapes: sc, Telemetry: w, Events: em})
 	t.Cleanup(func() { f.eng.Drain(context.Background()) })
 	srv := mcp.NewServer(mcp.ServerConfig{Name: "candidates", Telemetry: w})
 	tools.Register(srv, tools.Config{f.eng, f.st})
@@ -216,10 +218,10 @@ func (f *fixture) seedWithStep(n int, step time.Duration, tie bool) []string {
 }
 
 // R-5795-SH3G     R-5LVY-DPZS
-// R-AO19-O2DI R-AU4R-KX2Z R-AVCN-YOTO
+// R-VI0C-NJWH R-VKG5-F3DV R-VLO1-SV4K R-V895-LDYX
 func TestCatalogAndSchemas(t *testing.T) {
 	f := newFixture(t)
-	want := []tools.Entry{{"cohorts", tools.DescribeCohorts}, {"cohort", tools.DescribeCohort}, {"candidates", tools.DescribeCandidates}, {"candidate", tools.DescribeCandidate}, {"passes", tools.DescribePasses}, {"pass", tools.DescribePass}, {"rebuild", tools.DescribeRebuild}, {"decide", tools.DescribeDecide}, {"exclude", tools.DescribeExclude}, {"include", tools.DescribeInclude}, {"create_cohort", tools.DescribeCreateCohort}, {"edit_cohort", tools.DescribeEditCohort}, {"delete_cohort", tools.DescribeDeleteCohort}, {"reject", tools.DescribeReject}, {"unreject", tools.DescribeUnreject}}
+	want := []tools.Entry{{"cohorts", tools.DescribeCohorts}, {"cohort", tools.DescribeCohort}, {"candidates", tools.DescribeCandidates}, {"candidate", tools.DescribeCandidate}, {"passes", tools.DescribePasses}, {"pass", tools.DescribePass}, {"rebuild", tools.DescribeRebuild}, {"enrich", tools.DescribeEnrich}, {"decide", tools.DescribeDecide}, {"exclude", tools.DescribeExclude}, {"include", tools.DescribeInclude}, {"create_cohort", tools.DescribeCreateCohort}, {"edit_cohort", tools.DescribeEditCohort}, {"delete_cohort", tools.DescribeDeleteCohort}, {"reject", tools.DescribeReject}, {"unreject", tools.DescribeUnreject}}
 	if !reflect.DeepEqual(tools.Catalog(), want) {
 		t.Fatal(tools.Catalog())
 	}
@@ -236,8 +238,8 @@ func TestCatalogAndSchemas(t *testing.T) {
 		t.Fatal(infos)
 	}
 	seen := map[string]bool{}
-	properties := [][]string{{"page", "limit"}, {"cohort"}, {"name", "zip", "phone", "page", "limit"}, {"candidate"}, {"page", "limit"}, {"pass"}, {}, {"kind", "why", "candidate", "other", "links"}, {"candidate", "why"}, {"candidate", "why"}, {"name", "filters", "order", "size"}, {"cohort", "name", "filters", "order", "size"}, {"cohort"}, {"cohort", "candidate", "why"}, {"cohort", "candidate", "why"}}
-	required := [][]string{nil, {"cohort"}, nil, {"candidate"}, nil, {"pass"}, nil, {"kind", "why", "candidate"}, {"candidate", "why"}, {"candidate", "why"}, {"name"}, {"cohort"}, {"cohort"}, {"cohort", "candidate", "why"}, {"cohort", "candidate", "why"}}
+	properties := [][]string{{"page", "limit"}, {"cohort"}, {"name", "zip", "phone", "page", "limit"}, {"candidate"}, {"page", "limit"}, {"pass"}, {}, {"kind", "older_than_days"}, {"kind", "why", "candidate", "other", "links"}, {"candidate", "why"}, {"candidate", "why"}, {"name", "filters", "order", "size"}, {"cohort", "name", "filters", "order", "size"}, {"cohort"}, {"cohort", "candidate", "why"}, {"cohort", "candidate", "why"}}
+	required := [][]string{nil, {"cohort"}, nil, {"candidate"}, nil, {"pass"}, nil, {"kind"}, {"kind", "why", "candidate"}, {"candidate", "why"}, {"candidate", "why"}, {"name"}, {"cohort"}, {"cohort"}, {"cohort", "candidate", "why"}, {"cohort", "candidate", "why"}}
 	for i, info := range infos {
 		if info.Name != want[i].Name || info.Description != want[i].Description || len(info.OutputSchema) != 0 {
 			t.Fatal(info)
@@ -276,9 +278,16 @@ func TestCatalogAndSchemas(t *testing.T) {
 		seen[d] = true
 	}
 	_ = tools.Cohort{"id", "name", 1, store.CohortFilters{}, []store.CohortOrder{}, "creator", "email", "created", "changer", "email", "changed"}
-	_ = tools.Member{tools.Candidate{}, nil, nil, nil, nil, nil, "", nil, "", "", "", false}
+	_ = tools.Member{tools.Candidate{}, nil, nil, nil, nil, nil, "", "", "", nil, "", "", "", false}
 	_ = tools.Reject{"kind", "cohort", "name", "candidate", "why", "user", "email", "at"}
 	_ = tools.CohortRead{tools.Cohort{}, 0, nil, nil}
+	_ = tools.Assessment{nil, nil, nil, nil, nil, "", "", nil, "", "", nil, nil, "", "", nil, false, 0, ""}
+	_ = tools.Estimate{"source", 1, nil, .5, nil, "", 1}
+	_ = tools.Ruling{"kind", "candidate", "other", nil, "why", "user", "email", "at"}
+	_ = tools.Detail{tools.Candidate{}, nil, nil, nil, nil, nil, nil}
+	_ = tools.Decision{tools.Ruling{}, nil}
+	_ = tools.EnrichArgs{"kind", nil}
+	_ = tools.Enrichment{"kind", "state", "url", "title", 200, 7, "error", "domain", .2, "at"}
 	_ = tools.NoArgs{}
 	_ = tools.CandidateArgs{"id"}
 	_ = tools.PassArgs{"id"}
@@ -287,7 +296,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 	_ = tools.PassesArgs{nil, nil}
 	_ = tools.CohortsArgs{nil, nil}
 	_ = tools.CohortArgs{"id"}
-	_ = tools.FilterArgs{nil, nil, false, nil, false, nil, false, "", false, nil, nil, false, "", false, false}
+	_ = tools.FilterArgs{nil, nil, false, nil, false, nil, false, "", false, nil, false, nil, nil, false, "", false, false}
 	_ = tools.OrderArgs{"field", "direction"}
 	_ = tools.CreateCohortArgs{"name", nil, nil, nil}
 	_ = tools.EditCohortArgs{"id", nil, nil, nil, nil}
@@ -318,8 +327,9 @@ func objectKeys(t *testing.T, b []byte) []string {
 	return out
 }
 
-// R-AEA2-LWFY R-AFHY-ZO6N R-AGPV-DFXC R-AHXR-R7O1 R-AJ5O-4ZEQ R-AKDK-IR5F R-ALLG-WIW4 R-AMTD-AAMT
-// R-6131-Z710 R-AEA2-LWFY R-AFHY-ZO6N R-AGPV-DFXC R-AHXR-R7O1 R-AJ5O-4ZEQ R-AKDK-IR5F R-ALLG-WIW4 R-AMTD-AAMT
+// R-AEA2-LWFY R-AFHY-ZO6N R-VD4R-4GXP R-AHXR-R7O1 R-AJ5O-4ZEQ R-AKDK-IR5F R-VECN-I8OE R-VGSG-9S5S
+// R-VFKJ-W0F3
+// R-6131-Z710 R-AEA2-LWFY R-AFHY-ZO6N R-VD4R-4GXP R-AHXR-R7O1 R-AJ5O-4ZEQ R-AKDK-IR5F R-VECN-I8OE R-VGSG-9S5S
 func TestAnswerJSONShapes(t *testing.T) {
 	tests := []struct {
 		v      any
@@ -327,11 +337,12 @@ func TestAnswerJSONShapes(t *testing.T) {
 		arrays string
 		object string
 	}{
+		{tools.Enrichment{}, "kind state size domain cost at", "", ""},
 		{tools.Person{}, "name role", "", ""}, {tools.Evidence{}, "name source weight description", "", ""}, {tools.Category{}, "name source", "", ""}, {tools.Candidate{}, "id status name names street city state zip county phone email people class cargo created updated", "names people cargo", ""},
-		{tools.Member{}, "candidate categories fleet_verdict excluded", "categories", ""}, {tools.CohortList{}, "cohorts", "cohorts", ""}, {tools.Cohort{}, "id name size filters order created_by created_email created changed_by changed_email changed", "order", "filters"}, {tools.Reject{}, "kind cohort candidate", "", ""}, {tools.CohortRead{}, "cohort matching members rejects", "members rejects", ""}, {tools.CandidateList{}, "candidates", "candidates", ""}, {tools.PassList{}, "passes", "passes", ""},
+		{tools.Member{}, "candidate categories fleet_verdict website excluded", "categories", ""}, {tools.CohortList{}, "cohorts", "cohorts", ""}, {tools.Cohort{}, "id name size filters order created_by created_email created changed_by changed_email changed", "order", "filters"}, {tools.Reject{}, "kind cohort candidate", "", ""}, {tools.CohortRead{}, "cohort matching members rejects", "members rejects", ""}, {tools.CandidateList{}, "candidates", "candidates", ""}, {tools.PassList{}, "passes", "passes", ""},
 		{tools.Link{}, "scraper source_id run digest name names street city state zip county phone email people class cargo fleet_verdict name_key phone_key domain_key reason confidence first_seen last_seen gone", "names people cargo", ""},
-		{tools.Estimate{}, "source low confidence facts formula", "", "facts"}, {tools.Assessment{}, "operating_evidence categories fleet_verdict excluded rules calculated", "operating_evidence categories", ""},
-		{tools.Ruling{}, "kind candidate keys why user email at", "keys", ""}, {tools.Detail{}, "candidate estimates links rulings rejects", "estimates links rulings rejects", ""}, {tools.Decision{}, "ruling candidates", "candidates", ""},
+		{tools.Estimate{}, "source low confidence facts formula", "", "facts"}, {tools.Assessment{}, "operating_evidence categories fleet_verdict website excluded rules calculated", "operating_evidence categories", ""},
+		{tools.Ruling{}, "kind candidate keys why user email at", "keys", ""}, {tools.Detail{}, "candidate estimates links rulings enrichments rejects", "estimates links rulings enrichments rejects", ""}, {tools.Decision{}, "ruling candidates", "candidates", ""},
 	}
 	for _, tt := range tests {
 		b, err := json.Marshal(tt.v)
@@ -361,14 +372,15 @@ func TestAnswerJSONShapes(t *testing.T) {
 		v    any
 		keys string
 	}{
+		{tools.Enrichment{URL: "chosen-url", Title: "chosen-title", StatusCode: 200, Error: "chosen-error"}, "kind state url title status_code size error domain cost at"},
 		{tools.Candidate{MergedInto: "survivor"}, "id status merged_into name names street city state zip county phone email people class cargo created updated"},
-		{tools.Member{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, Minutes: &one, GovernmentMatch: "chosen", KnownSince: "known", NewestFiling: "newest"}, "candidate operating_confidence revenue_low revenue_high revenue_confidence categories fleet_verdict minutes government_match known_since newest_filing excluded"},
+		{tools.Member{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, Website: sources.WebsiteHTTPS, WebsiteURL: "https://chosen.test", Minutes: &one, GovernmentMatch: "chosen", KnownSince: "known", NewestFiling: "newest"}, "candidate operating_confidence revenue_low revenue_high revenue_confidence categories fleet_verdict website website_url minutes government_match known_since newest_filing excluded"},
 		{tools.CohortList{Next: &continuation}, "cohorts next"}, {tools.CandidateList{Next: &continuation}, "candidates next"}, {tools.PassList{Next: &continuation}, "passes next"},
 		{tools.Link{Filed: "2026-01-01"}, "scraper source_id run digest name names street city state zip county phone email people class cargo filed fleet_verdict name_key phone_key domain_key reason confidence first_seen last_seen gone"},
 		{tools.Estimate{High: &one, Filed: "2026-01-01"}, "source low high confidence facts filed formula"},
-		{tools.Assessment{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, KnownSince: "chosen-known", NewestFiling: "chosen-newest", GovernmentMatch: "chosen-government", PowerUnits: &one, Drivers: &one, Minutes: &one}, "operating_confidence operating_evidence revenue_low revenue_high revenue_confidence known_since newest_filing categories government_match fleet_verdict power_units drivers minutes excluded rules calculated"},
+		{tools.Assessment{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, KnownSince: "chosen-known", NewestFiling: "chosen-newest", GovernmentMatch: "chosen-government", PowerUnits: &one, Drivers: &one, Website: sources.WebsiteHTTPS, WebsiteURL: "https://chosen.test", Minutes: &one}, "operating_confidence operating_evidence revenue_low revenue_high revenue_confidence known_since newest_filing categories government_match fleet_verdict power_units drivers website website_url minutes excluded rules calculated"},
 		{tools.Reject{Kind: "reject", Cohort: "cohort", CohortName: "name", Candidate: "candidate", Why: "why", User: "user", Email: "email", At: "at"}, "kind cohort cohort_name candidate why user email at"},
-		{tools.Ruling{Other: "other"}, "kind candidate other keys why user email at"}, {tools.Detail{Assessment: &tools.Assessment{}}, "candidate assessment estimates links rulings rejects"},
+		{tools.Ruling{Other: "other"}, "kind candidate other keys why user email at"}, {tools.Detail{Assessment: &tools.Assessment{}}, "candidate assessment estimates links rulings enrichments rejects"},
 	}
 	for _, tt := range populated {
 		b, err := json.Marshal(tt.v)
@@ -432,7 +444,7 @@ func decodeList[T any](t *testing.T, r mcp.Result) T {
 
 var _ io.Reader = (*random)(nil)
 
-// R-AWKK-CGKD R-B53V-0UR8 R-B6BR-EMHX R-BDN5-P8Y3
+// R-AWKK-CGKD R-VJ89-1BN6 R-VRRJ-PPU1 R-VQJN-BY3C R-BDN5-P8Y3
 func TestDetailAndRulings(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -687,7 +699,7 @@ func TestSharedReadAnswersAndNoMutation(t *testing.T) {
 	}
 }
 
-// R-6RWU-E5CA
+// R-8YDY-8SNX
 func TestRebuildAndNoSiblingReads(t *testing.T) {
 	entered := make(chan identity.Caller, 1)
 	release := make(chan struct{})
@@ -798,7 +810,7 @@ func TestSplitAndNotSame(t *testing.T) {
 //
 
 func assessmentExpected(a store.Assessment) *tools.Assessment {
-	v := &tools.Assessment{OperatingConfidence: a.Operating, OperatingEvidence: []tools.Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []tools.Category{}, GovernmentMatch: a.GovernmentMatch, FleetVerdict: a.FleetVerdict, PowerUnits: a.PowerUnits, Drivers: a.Drivers, Minutes: a.Minutes, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
+	v := &tools.Assessment{OperatingConfidence: a.Operating, OperatingEvidence: []tools.Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []tools.Category{}, GovernmentMatch: a.GovernmentMatch, FleetVerdict: a.FleetVerdict, PowerUnits: a.PowerUnits, Drivers: a.Drivers, Minutes: a.Minutes, Excluded: a.Excluded, Website: a.Website, WebsiteURL: a.WebsiteURL, Rules: a.Rules, Calculated: stamp(a.Calculated)}
 	if !a.KnownSince.IsZero() {
 		v.KnownSince = a.KnownSince.UTC().Format("2006-01-02")
 	}

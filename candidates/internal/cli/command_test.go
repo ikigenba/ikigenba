@@ -63,7 +63,7 @@ func TestPublishedFiles(t *testing.T) {
 	}
 }
 
-// R-0XLL-49VE R-101D-VTCS R-3DEC-NR9E R-3EM9-1J03 R-3FU5-FAQS R-3H21-T2HH R-3I9Y-6U86
+// R-JLLH-JDUS R-101D-VTCS R-3DEC-NR9E R-3EM9-1J03 R-3FU5-FAQS R-3H21-T2HH R-3I9Y-6U86
 func TestCommands(t *testing.T) {
 	if cli.ExitSuccess != 0 || cli.ExitServerFailed != 1 || cli.ExitUsage != 2 {
 		t.Fatal("exit codes")
@@ -106,7 +106,7 @@ func TestCommands(t *testing.T) {
 		})
 	}
 	var out, stderr bytes.Buffer
-	p := cli.Process{[]string{"--version"}, nil, nil, 0, &out, &stderr, "", nil, nil, nil, nil, nil, "", nil, nil, nil, nil}
+	p := cli.Process{[]string{"--version"}, nil, nil, 0, &out, &stderr, "", nil, nil, nil, nil, nil, "", nil, nil, nil, nil, nil}
 	if cli.Run(context.Background(), p) != cli.ExitSuccess || out.String() != "\n" {
 		t.Fatal(out.String())
 	}

@@ -512,7 +512,7 @@ func TestResolutionOldestTieAndGoneIdentity(t *testing.T) {
 	regEqual(t, touched, wantIDs)
 }
 
-// R-GMHK-CFT8 R-EIKQ-VMZ9
+// R-GMHK-CFT8 R-3YFZ-L6V2
 func TestScoringMergeAndSplitAssessOnlyActiveSides(t *testing.T) {
 	f := regNew(t)
 	regNoErr(t, f.st.ReplaceZipDrive(regCtx, map[string]int64{"55072": 18}))

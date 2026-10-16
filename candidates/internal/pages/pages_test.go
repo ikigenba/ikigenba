@@ -106,7 +106,7 @@ func comparePage(t *testing.T, cfg Config, path, name string, status int, data a
 	}
 }
 
-// R-AJ1T-QRI2 R-58H2-68U5 R-AJ1T-QRI2 R-51PY-VUIV
+// R-ALOD-C1SA R-58H2-68U5 R-ALOD-C1SA R-51PY-VUIV
 func TestTemplateSet(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
@@ -153,7 +153,7 @@ func TestTemplateSet(t *testing.T) {
 	}
 }
 
-// R-IKZ3-GG4N R-5DCN-PBSX R-ANXF-9UGU R-AWGP-Y8NP R-5K0G-MENA R-5L8D-06DZ R-5MG9-DY4O R-B7FT-E6BY R-B8NP-RY2N R-BB3I-JHK1 R-5RBU-X13G R-5UZK-2CBJ
+// R-IKZ3-GG4N R-5DCN-PBSX R-ANXF-9UGU R-84GU-LRZ8 R-5K0G-MENA R-5L8D-06DZ R-5MG9-DY4O R-B7FT-E6BY R-B8NP-RY2N R-BB3I-JHK1 R-5RBU-X13G R-5UZK-2CBJ
 func TestStaticEmptyAndRefusals(t *testing.T) {
 	cfg, d := pageFixture(t)
 	b := bannerFor(cfg)
@@ -215,7 +215,7 @@ func TestInvalidAndMissingPaths(t *testing.T) {
 	}
 }
 
-// R-AU0X-6P6B R-TMLB-KP7S R-AU0X-6P6B R-BH70-GC9I R-BIEW-U407
+// R-AU0X-6P6B R-AU7O-0FZ5 R-AU0X-6P6B R-BH70-GC9I R-BIEW-U407
 func TestStoredPages(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := context.Background()
@@ -257,6 +257,7 @@ func TestStoredPages(t *testing.T) {
 	b.Trail = []page.Level{{Name: id, URL: "/candidates/" + id}}
 	av := assessmentView(a)
 	cd := CandidateData{Banner: b, Candidate: candidateView(c), Assessment: &av, Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{}}
+	cd.Candidate.Website = sources.WebsiteUnknown
 	for _, e := range est {
 		cd.Estimates = append(cd.Estimates, estimateView(e))
 	}

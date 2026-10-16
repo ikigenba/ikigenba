@@ -48,17 +48,22 @@ type Record struct {
 	Linked    int64  `json:"linked"`
 	Judged    int64  `json:"judged"`
 	Unranged  int64  `json:"unranged"`
+	Due       int64  `json:"due"`
+	Fetched   int64  `json:"fetched"`
+	HTTPS     int64  `json:"https"`
+	HTTP      int64  `json:"http"`
+	None      int64  `json:"none"`
 	User      string `json:"user,omitempty"`
 	Email     string `json:"email,omitempty"`
 }
 
 // RecordOf renders a pass with UTC timestamps and its public starter.
 func RecordOf(p store.Pass) Record {
-	r := Record{ID: p.ID, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Status: p.Status, Reason: p.Reason, Started: p.Started.UTC().Format(time.RFC3339), Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged}
+	r := Record{ID: p.ID, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Status: p.Status, Reason: p.Reason, Started: p.Started.UTC().Format(time.RFC3339), Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged, Due: p.Due, Fetched: p.Fetched, HTTPS: p.HTTPS, HTTP: p.HTTP, None: p.None}
 	if !p.Finished.IsZero() {
 		r.Finished = p.Finished.UTC().Format(time.RFC3339)
 	}
-	if p.Origin == store.OriginRebuild {
+	if p.Origin == store.OriginRebuild || p.Origin == store.OriginEnrich {
 		r.User = p.UserID
 		r.Email = p.UserEmail
 	}

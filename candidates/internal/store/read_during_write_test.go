@@ -6,10 +6,11 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-DA8Q-FI3G
+// R-IWE2-8G5O
 func TestContractReadsDuringQueuedWrites(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -38,6 +39,24 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 		{"Rejects", func() (any, error) { return f.s.Rejects(ctx, id) }},
 		{"ZipMinutes", func() (any, error) { return f.s.ZipMinutes(ctx, "55072") }},
 	}
+	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Source: "read.test", State: sources.WebsiteHTTPS}})
+	contractOK(t, err)
+	reads = append(reads, struct {
+		name string
+		call func() (any, error)
+	}{"Enrichments", func() (any, error) { return f.s.Enrichments(ctx, id) }},
+		struct {
+			name string
+			call func() (any, error)
+		}{"DueEnrichments", func() (any, error) { return f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 30, 7, 100) }},
+		struct {
+			name string
+			call func() (any, error)
+		}{"EnrichmentMark", func() (any, error) { return f.s.EnrichmentMark(ctx) }},
+		struct {
+			name string
+			call func() (any, error)
+		}{"EnrichmentAfter", func() (any, error) { return f.s.EnrichmentAfter(ctx, sources.WebsiteCheck, "read.test", 0) }})
 	before := make([]any, len(reads))
 	for i, read := range reads {
 		value, err := read.call()
@@ -79,6 +98,10 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 			return err
 		},
 		func() error { _, err := f.s.Judge(ctx, []string{id}); return err },
+		func() error {
+			_, err := f.s.AddEnrichments(ctx, []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, State: sources.WebsiteNone}})
+			return err
+		},
 	}
 	results := make(chan error, len(writes))
 	begun := make(chan struct{}, len(writes))

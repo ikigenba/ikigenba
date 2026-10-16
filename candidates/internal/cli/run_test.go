@@ -31,6 +31,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/cli"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/candidates/internal/server"
+	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
@@ -415,9 +416,9 @@ func runOnlyState(t *testing.T, dir string) {
 	}
 }
 
-// R-119A-9L3H R-13P3-14KV R-14WZ-EWBK R-164V-SO29 R-17CS-6FSY
-// R-3TTL-43TV R-42CV-SI0Q R-43KS-69RF R-478H-BKZI R-49OA-34GW R-4C42-UNYA
-// R-UN51-NEQR R-ZY3R-GAKJ R-UOCY-16HG R-UPKU-EY85  R-ZQSD-5O4D
+// R-119A-9L3H R-13P3-14KV R-14WZ-EWBK R-164V-SO29 R-JMTD-X5LH
+// R-3TTL-43TV R-42CV-SI0Q R-43KS-69RF R-QR9U-4LFL R-49OA-34GW R-4C42-UNYA
+// R-UN51-NEQR R-ZY3R-GAKJ R-UOCY-16HG R-YBJE-PAYH  R-ZQSD-5O4D
 // R-0479-D5A0 R-06N2-4ORE R-07UY-IGI3 R-76JM-ZE8M R-7BF8-IH7E
 func TestRunAssembledChain(t *testing.T) {
 	if cli.SweepInterval != time.Hour {
@@ -532,7 +533,7 @@ func TestRunAssembledChain(t *testing.T) {
 	if inherits != 1 || !reflect.DeepEqual(unsets, []string{"LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES"}) {
 		t.Fatalf("socket seam %d %v", inherits, unsets)
 	}
-	allowed := map[string]bool{"DRAIN_SECONDS": true, "CANDIDATES_KEEP_PASSES": true, services.Variable: true, "LISTEN_PID": true, "LISTEN_FDS": true, "NOTIFY_SOCKET": true}
+	allowed := map[string]bool{"DRAIN_SECONDS": true, "CANDIDATES_KEEP_PASSES": true, services.Variable: true, "LISTEN_PID": true, "LISTEN_FDS": true, "NOTIFY_SOCKET": true, "IKIGENBA_SANDBOX": true}
 	for _, k := range lookups {
 		if !allowed[k] {
 			t.Fatalf("environment lookup %s", k)
@@ -853,7 +854,7 @@ func TestRunFreshDeliveryCounts(t *testing.T) {
 	}
 }
 
-// R-7OUE-HOSB R-ZJGY-V1O7 R-ZKOV-8TEW R-ZLWR-ML5L
+// R-7OUE-HOSB R-ZJGY-V1O7 R-ZKOV-8TEW R-S3W5-BXOB
 func TestRunSettlesLoadsAndSweepsBeforeAndAfterReady(t *testing.T) {
 	dir := t.TempDir()
 	h := newRunHarness(t, dir, "")
@@ -1399,7 +1400,7 @@ func TestRunNotificationIsSingleAndOptional(t *testing.T) {
 	}
 }
 
-// R-UPKU-EY85
+// R-YBJE-PAYH
 func TestRunBusyRefusalsEmitNoPassEvents(t *testing.T) {
 	hold := make(chan struct{})
 	f := &runFake{hold: hold, arrived: make(chan struct{}, 1)}
@@ -1473,7 +1474,7 @@ func runAssertNotFound(t *testing.T, r mcp.Result) {
 	}
 }
 
-// R-ZLWR-ML5L
+// R-S3W5-BXOB
 func TestRunSweepPrunesDoneAndPreservesRunning(t *testing.T) {
 	f := &runFake{}
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, f)}))
@@ -1607,7 +1608,7 @@ func runAssertSilent(t *testing.T, h *runHarness) {
 	}
 }
 
-// R-WBVO-DL78 R-7CN4-W8Y3
+// R-P1WQ-5DKX R-7CN4-W8Y3
 func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	rows := make([]map[string]any, 3)
 	for i := range rows {
@@ -1629,6 +1630,8 @@ func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 		entries[name] = runSocket(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { unrelated.Add(1); w.WriteHeader(500) }))
 	}
 	h := newRunHarness(t, t.TempDir(), runServices(t, entries))
+	h.p.HTTP = &http.Client{Transport: enrichTransport(func(*http.Request) (*http.Response, error) { return nil, io.EOF })}
+	websiteTimers(t, h, nil)
 	h.start()
 	caller := identity.Caller{UserID: "owner", RequestID: "all-tools"}
 	call := func(name string, args any) map[string]json.RawMessage {
@@ -1653,6 +1656,8 @@ func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	id, other := runText(active[0], "id"), runText(active[1], "id")
 	call("passes", map[string]any{})
 	call("pass", map[string]any{"pass": passID})
+	enrich := call("enrich", tools.EnrichArgs{Kind: sources.WebsiteCheck})
+	h.waitPass(caller, runText(enrich, "id"))
 	call("candidate", map[string]any{"candidate": id})
 	ruler := identity.Caller{UserID: "chosen-ruler", Email: "chosen-ruler@example.test", RequestID: "ruler-request"}
 	result, decision := h.call(ruler, "decide", map[string]any{"kind": store.KindNotSame, "candidate": id, "other": other, "why": "independent records"})

@@ -35,6 +35,10 @@ func cohortCondition(k Cohort, now time.Time) (string, []any) {
 	if f.Fleet != "" {
 		add(`(a.fleet_verdict=? OR (a.fleet_verdict=? AND ?))`, f.Fleet, sources.FleetUnknown, f.FleetUnknown)
 	}
+	if len(f.Website) > 0 {
+		b, _ := json.Marshal(f.Website)
+		add(`(a.website IN (SELECT value FROM json_each(?)) OR (a.website=? AND ?))`, string(b), sources.WebsiteUnknown, f.WebsiteUnknown)
+	}
 	if f.Government != nil {
 		if *f.Government {
 			add(`coalesce(a.government_match,'')<>''`)

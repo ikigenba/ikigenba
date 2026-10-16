@@ -13,6 +13,8 @@ type CohortFilters struct {
 	CategoryUnknown  bool     `json:"category_unknown,omitempty"`
 	Fleet            string   `json:"fleet,omitempty"`
 	FleetUnknown     bool     `json:"fleet_unknown,omitempty"`
+	Website          []string `json:"website,omitempty"`
+	WebsiteUnknown   bool     `json:"website_unknown,omitempty"`
 	Government       *bool    `json:"government,omitempty"`
 	MaxFilingAgeDays *int64   `json:"max_filing_age_days,omitempty"`
 	FilingUnknown    bool     `json:"filing_unknown,omitempty"`

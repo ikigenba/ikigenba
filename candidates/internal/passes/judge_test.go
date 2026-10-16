@@ -29,7 +29,7 @@ func judgeDelivery(id string) events.Delivery {
 	return events.Delivery{Event: events.Event{Name: trail.AcceptedJudge, ID: id, Attrs: events.Attrs{"anything": true}}}
 }
 
-// R-ZRW3-1A2O R-ZVJS-6LAR R-05AZ-8R8B R-06IV-MIZ0 R-07QS-0APP
+// R-ZRW3-1A2O R-ZVJS-6LAR R-RRP5-I89D R-06IV-MIZ0 R-RSX1-W002
 func TestJudgeSeparatesIngestFromAssessment(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/runs/run_a/record" {
@@ -164,7 +164,7 @@ func TestJudgeNeedsNoScrapesAndHonorsRefusals(t *testing.T) {
 	}
 }
 
-// R-ZH16-3I6T R-ZFT9-PQG4
+// R-ZH16-3I6T R-S08G-6MG8
 func TestDrainDeadlineAfterEndingHasAlreadyBlocked(t *testing.T) {
 	f := newFixture(t, nil, false)
 	f.eng.Drain(context.Background())

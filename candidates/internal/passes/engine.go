@@ -14,6 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 // Config supplies the state, source registry, and sibling and event clients.
@@ -23,9 +24,10 @@ type Config struct {
 	Scrapes   *scrapes.Client
 	Telemetry *telemetry.Writer
 	Events    *events.Emitter
+	Website   *website.Checker
 }
 
-// Engine coordinates a single cancellable background pass.
+// Engine coordinates cancellable enrichment and resolution passes.
 type Engine struct {
 	cfg      Config
 	mu       sync.Mutex
@@ -69,20 +71,27 @@ func (e *Engine) Rebuild(ctx context.Context, c identity.Caller) (store.Pass, er
 	if err != nil {
 		return store.Pass{}, err
 	}
-	e.start(ctx, p, c, nil)
+	e.start(ctx, p, c, nil, nil)
 	return p, nil
 }
-func (e *Engine) start(ctx context.Context, p store.Pass, c identity.Caller, run *scrapes.Run) {
+func (e *Engine) start(ctx context.Context, p store.Pass, c identity.Caller, run *scrapes.Run, ages *int64) {
 	trail.Record(context.WithoutCancel(ctx), e.cfg.Telemetry, e.cfg.Events, trail.Started, p)
 	e.work.Add(1)
 	finishCtx := context.WithoutCancel(ctx)
 	go func() {
 		defer e.work.Done()
 		workCtx := identity.NewContext(e.ctx, c)
-		totals, reason := e.resolve(workCtx, run, p.Kind)
+		var totals store.Counts
+		var reason string
+		if p.Kind == store.KindEnrich {
+			totals, reason = e.enrich(workCtx, ages)
+		} else {
+			totals, reason = e.resolve(workCtx, run, p.Kind)
+		}
 		ended, err := e.finish(finishCtx, p.ID, totals, reason)
 		if err == nil {
 			trail.Record(context.WithoutCancel(ctx), e.cfg.Telemetry, e.cfg.Events, trail.Finished, ended)
+			e.follow(finishCtx, ended)
 		}
 	}()
 }
@@ -174,10 +183,10 @@ func (e *Engine) Deliver(ctx context.Context, d events.Delivery) events.Outcome 
 	}
 	if err == nil {
 		if judge {
-			e.start(ctx, p, service, nil)
+			e.start(ctx, p, service, nil, nil)
 		} else {
 			run.Scraper = scraper
-			e.start(ctx, p, service, &run)
+			e.start(ctx, p, service, &run, nil)
 		}
 		return events.OK()
 	}
@@ -214,9 +223,11 @@ func (e *Engine) Drain(ctx context.Context) {
 	e.cancel()
 	done := make(chan struct{})
 	go func() {
+		// Synchronize with starts admitted before stopping was set.
 		e.mu.Lock()
-		defer e.mu.Unlock()
-		e.work.Wait()
+		wait := e.work.Wait
+		e.mu.Unlock()
+		wait()
 		close(done)
 	}()
 	select {

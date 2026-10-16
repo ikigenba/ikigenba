@@ -183,7 +183,7 @@ func Handler(cfg Config) http.Handler {
 				fail()
 				return
 			}
-			d := CandidateData{Candidate: candidateView(c), Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{}, Rejects: []RejectRecordRow{}}
+			d := CandidateData{Candidate: candidateView(c), Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{}, Enrichments: []EnrichmentRow{}, Rejects: []RejectRecordRow{}}
 			rulings, err := cfg.Store.Rulings(r.Context(), cid)
 			if err != nil {
 				fail()
@@ -201,6 +201,15 @@ func Handler(cfg Config) http.Handler {
 				d.Rejects = append(d.Rejects, rejectRecordRow(x))
 			}
 			if c.Status != store.StatusMerged {
+				enrichments, err := cfg.Store.Enrichments(r.Context(), cid)
+				if err != nil {
+					fail()
+					return
+				}
+				setWebsite(&d.Candidate, enrichments)
+				for _, x := range enrichments {
+					d.Enrichments = append(d.Enrichments, enrichmentRow(x))
+				}
 				a, err := cfg.Store.GetAssessment(r.Context(), cid)
 				if err == nil {
 					v := assessmentView(a)

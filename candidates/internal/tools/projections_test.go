@@ -47,3 +47,61 @@ func TestJudgmentProjectionFullPrecision(t *testing.T) {
 		t.Fatalf("precision %s", b)
 	}
 }
+
+// R-VMVY-6MV9 R-VO3U-KELY
+func TestWebsiteProjections(t *testing.T) {
+	for _, state := range []string{sources.WebsiteUnknown, sources.WebsiteHTTPS} {
+		url := ""
+		if state == sources.WebsiteHTTPS {
+			url = "https://chosen.test"
+		}
+		a := store.Assessment{Website: state, WebsiteURL: url}
+		if got := assessmentOf(a); got.Website != state || got.WebsiteURL != url {
+			t.Fatal(got)
+		}
+		if got := memberOf(store.Ranked{Assessment: a}); got.Website != state || got.WebsiteURL != url {
+			t.Fatal(got)
+		}
+	}
+	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	e := store.Enrichment{Kind: sources.WebsiteCheck, State: sources.WebsiteHTTPS, URL: "https://chosen.test", Title: "chosen", StatusCode: 200, Size: 33, Error: "chosen-error", Source: "chosen.test", Cost: .25, At: at}
+	if got := enrichmentOf(e); got != (Enrichment{e.Kind, e.State, e.URL, e.Title, e.StatusCode, e.Size, e.Error, e.Source, e.Cost, stamp(at)}) {
+		t.Fatal(got)
+	}
+	b, err := json.Marshal(enrichmentOf(store.Enrichment{Kind: sources.WebsiteCheck, State: sources.WebsiteNone}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(b, &obj); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"url", "title", "status_code"} {
+		if _, ok := obj[key]; ok {
+			t.Fatal(string(b))
+		}
+	}
+}
+
+// R-VWN5-8SST
+func TestWebsiteFilterPresence(t *testing.T) {
+	for _, raw := range []string{`{}`, `{"website":null}`, `{"website":[]}`, `{"website":["http","https"],"website_unknown":true}`} {
+		var a FilterArgs
+		if err := json.Unmarshal([]byte(raw), &a); err != nil {
+			t.Fatal(err)
+		}
+		got := filterOf(a)
+		if a.Website == nil {
+			if got.Website != nil {
+				t.Fatal(got)
+			}
+		} else {
+			if got.Website == nil || !reflect.DeepEqual(got.Website, *a.Website) || got.WebsiteUnknown != a.WebsiteUnknown {
+				t.Fatal(got, a)
+			}
+			if len(*a.Website) == 0 && store.ValidCohortFilters(got) {
+				t.Fatal("empty website filter accepted")
+			}
+		}
+	}
+}

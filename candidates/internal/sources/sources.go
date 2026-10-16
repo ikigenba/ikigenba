@@ -32,7 +32,13 @@ const (
 	EvidenceFMCSAActivity = "fmcsa_activity"
 	EvidencePPPLoan       = "ppp_loan"
 	EvidenceOwnDomain     = "own_domain"
-	Rules                 = 4
+	EvidenceWebsiteLive   = "website_live"
+	WebsiteCheck          = "website_check"
+	WebsiteHTTPS          = "https"
+	WebsiteHTTP           = "http"
+	WebsiteNone           = "none"
+	WebsiteUnknown        = "unknown"
+	Rules                 = 5
 )
 
 // Person is a party named by a source record.
@@ -54,6 +60,7 @@ const (
 	DescribeFMCSAActivity string = "Reported drivers and mileage"
 	DescribePPPLoan       string = "Recorded PPP loan"
 	DescribeOwnDomain     string = "Email on a business domain"
+	DescribeWebsiteLive   string = "Business website responds"
 )
 
 // Estimate is one source's revenue estimate and supporting facts.

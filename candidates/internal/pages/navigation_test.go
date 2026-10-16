@@ -21,7 +21,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-BCBE-X9AQ R-BDJB-B11F R-BER7-OSS4 R-BFZ4-2KIT R-AMPI-W2Q5 R-ANXF-9UGU R-AYWI-PS53
+// R-884J-R37B R-89CG-4UY0 R-8BS8-WEFE R-8D05-A663 R-AMPI-W2Q5 R-ANXF-9UGU R-86WN-DBGM
 func TestNavigationWalksAndTail(t *testing.T) {
 	for _, count := range []int{paging.DefaultLimit + 1, paging.DefaultLimit + 2, 2 * paging.DefaultLimit, 2*paging.DefaultLimit + 1, 3*paging.DefaultLimit + 2} {
 		t.Run(strconv.Itoa(count), func(t *testing.T) {
@@ -264,7 +264,7 @@ func navigationWalk(t *testing.T, cfg Config, cohorts []store.Cohort, passes []s
 	}
 }
 
-// R-AXOM-C0EE
+// R-85OQ-ZJPX
 func TestLandingAgreesWithTools(t *testing.T) {
 	for _, count := range []int{0, paging.DefaultLimit, paging.DefaultLimit + 1} {
 		t.Run(strconv.Itoa(count), func(t *testing.T) {

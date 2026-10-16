@@ -128,14 +128,14 @@ func TestCountySourceKey(t *testing.T) {
 	}
 }
 
-// R-PAUC-7EHO
+// R-JP96-OP2V
 func TestConstants(t *testing.T) {
 	const rules float64 = sources.Rules
 	const parity = sources.Rules % 2
 	_ = rules
 	_ = parity
-	got := []string{sources.ClassPrivate, sources.ClassForHire, sources.ClassMixed, sources.ClassUnknown, sources.CategoryConstruction, sources.CategoryTrucking, sources.CategoryAgriculture, sources.CategoryManufacturing, sources.CategoryWholesale, sources.CategoryMining, sources.CategoryWaste, sources.CategoryOther, sources.EvidenceFMCSAActive, sources.EvidenceFMCSAActivity, sources.EvidencePPPLoan, sources.EvidenceOwnDomain}
-	want := []string{"private", "for_hire", "mixed", "unknown", "construction", "trucking and logistics", "agriculture", "manufacturing", "wholesale and distribution", "mining and aggregates", "waste and environmental", "other", "fmcsa_active", "fmcsa_activity", "ppp_loan", "own_domain"}
+	got := []string{sources.ClassPrivate, sources.ClassForHire, sources.ClassMixed, sources.ClassUnknown, sources.CategoryConstruction, sources.CategoryTrucking, sources.CategoryAgriculture, sources.CategoryManufacturing, sources.CategoryWholesale, sources.CategoryMining, sources.CategoryWaste, sources.CategoryOther, sources.EvidenceFMCSAActive, sources.EvidenceFMCSAActivity, sources.EvidencePPPLoan, sources.EvidenceOwnDomain, sources.EvidenceWebsiteLive}
+	want := []string{"private", "for_hire", "mixed", "unknown", "construction", "trucking and logistics", "agriculture", "manufacturing", "wholesale and distribution", "mining and aggregates", "waste and environmental", "other", "fmcsa_active", "fmcsa_activity", "ppp_loan", "own_domain", "website_live"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatal(got)
 	}
@@ -178,5 +178,31 @@ func TestFleetVerdictConstants(t *testing.T) {
 	const unknown string = sources.FleetUnknown
 	if pass != "pass" || fail != "fail" || unknown != "unknown" {
 		t.Fatal(pass, fail, unknown)
+	}
+}
+
+// R-JQH3-2GTK
+func TestWebsiteConstants(t *testing.T) {
+	const check string = sources.WebsiteCheck
+	const secure string = sources.WebsiteHTTPS
+	const plain string = sources.WebsiteHTTP
+	const none string = sources.WebsiteNone
+	const unknown string = sources.WebsiteUnknown
+	got := []string{check, secure, plain, none, unknown}
+	if !reflect.DeepEqual(got, []string{"website_check", "https", "http", "none", "unknown"}) {
+		t.Fatal(got)
+	}
+}
+
+// R-3ZNV-YYLR R-40VS-CQCG
+func TestWebsiteEvidenceDescription(t *testing.T) {
+	const description string = sources.DescribeWebsiteLive
+	if description == "" || strings.Contains(description, "\n") {
+		t.Fatal(description)
+	}
+	for _, other := range []string{sources.DescribeFMCSAActive, sources.DescribeFMCSAActivity, sources.DescribePPPLoan, sources.DescribeOwnDomain} {
+		if description == other {
+			t.Fatal(description)
+		}
 	}
 }

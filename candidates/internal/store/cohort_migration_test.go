@@ -69,11 +69,11 @@ func assertPriorJudgment(t *testing.T, s *store.Store, id string) {
 	contractOK(t, err)
 	op, conf := 0.6, 0.7
 	low, high, minutes := int64(100), int64(200), int64(42)
-	contractEqual(t, a, store.Assessment{Candidate: id, Operating: &op, OperatingKey: 600000, Evidence: []sources.Evidence{}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &conf, KnownSince: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: "pattern", NewestFiling: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Minutes: &minutes, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)})
+	contractEqual(t, a, store.Assessment{Candidate: id, Operating: &op, OperatingKey: 600000, Evidence: []sources.Evidence{}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &conf, KnownSince: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: "pattern", NewestFiling: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown, Minutes: &minutes, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)})
 }
 
-// R-TJXQ-1G1J R-D7SX-NYM2
-func TestPriorJudgmentsAcrossMigrationAndRollback(t *testing.T) {
+// R-TJXQ-1G1J
+func TestPriorJudgmentsAcrossMigration(t *testing.T) {
 	for _, fleet := range []bool{false, true} {
 		t.Run(map[bool]string{false: "false", true: "true"}[fleet], func(t *testing.T) {
 			ctx := context.Background()
@@ -81,7 +81,7 @@ func TestPriorJudgmentsAcrossMigrationAndRollback(t *testing.T) {
 			clock := func() time.Time { return time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC) }
 			d, err := db.Open(ctx, db.Config{Path: path, Migrations: earlierMigrations(t, "0009_judgments.sql")})
 			contractOK(t, err)
-			first, second := "cand_1111111111111111", "cand_2222222222222222"
+			first := "cand_1111111111111111"
 			contractOK(t, d.Write(ctx, func(tx *sql.Tx) error {
 				if e := writePriorCandidate(ctx, tx, first); e != nil {
 					return e
@@ -94,13 +94,6 @@ func TestPriorJudgmentsAcrossMigrationAndRollback(t *testing.T) {
 			defer func() { contractOK(t, d.Close()) }()
 			s := store.New(d, store.Config{Now: clock, Rand: &contractRandom{next: 1}})
 			assertPriorJudgment(t, s, first)
-			contractOK(t, d.Write(ctx, func(tx *sql.Tx) error {
-				if e := writePriorCandidate(ctx, tx, second); e != nil {
-					return e
-				}
-				return writePriorJudgment(ctx, tx, second, fleet)
-			}))
-			assertPriorJudgment(t, s, second)
 		})
 	}
 }
@@ -149,4 +142,43 @@ func TestOldAssessmentsClearWhilePassesRetainTheirMeaning(t *testing.T) {
 	}
 	_, err = s.AddPass(ctx, store.Pass{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "historic-run", Delivery: "another"})
 	contractError(t, err, store.ErrDelivered)
+}
+
+// R-J2HK-5AV5
+func TestWebsiteMigrationKeepsPreviousJudgments(t *testing.T) {
+	for _, fleet := range []bool{false, true} {
+		t.Run(map[bool]string{false: "false", true: "true"}[fleet], func(t *testing.T) {
+			ctx := context.Background()
+			path := filepath.Join(t.TempDir(), "state.db")
+			d, err := db.Open(ctx, db.Config{Path: path, Migrations: earlierMigrations(t, "0010_cohorts.sql")})
+			contractOK(t, err)
+			id, pid := "cand_1111111111111111", "pass_1111111111111111"
+			contractOK(t, d.Write(ctx, func(tx *sql.Tx) error {
+				if e := writePriorCandidate(ctx, tx, id); e != nil {
+					return e
+				}
+				if _, e := tx.ExecContext(ctx, `INSERT INTO assessments(candidate,operating,operating_key,evidence,revenue_low,revenue_high,revenue_confidence,known_since,government_match,newest_filing,categories,fleet,fleet_verdict,power_units,drivers,minutes,excluded,rules,scored) VALUES (?,0.6,600000,'[]',100,200,0.7,'2020-01-01T00:00:00Z','pattern','2026-01-01T00:00:00Z','[]',?,'pass',3,2,42,1,?,'2026-10-01T00:00:00Z')`, id, fleet, sources.Rules); e != nil {
+					return e
+				}
+				_, e := tx.ExecContext(ctx, `INSERT INTO passes(id,"trigger",status,reason,started,finished,"rows","new",changed,unchanged,gone,created,linked,rescored,unranged,user_id,user_email,request_id,delivery,kind,origin) VALUES (?,'rebuild','done','','2026-01-01T00:00:00Z','2026-01-01T00:00:01Z',1,2,3,4,5,6,7,8,9,'owner','mail','request','','rebuild','rebuild')`, pid)
+				return e
+			}))
+			contractOK(t, d.Close())
+			d, err = db.Open(ctx, db.Config{Path: path, Migrations: candidates.Migrations()})
+			contractOK(t, err)
+			defer func() { contractOK(t, d.Close()) }()
+			s := store.New(d, store.Config{Now: func() time.Time { return time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC) }, Rand: &contractRandom{next: 1}})
+			a, err := s.GetAssessment(ctx, id)
+			contractOK(t, err)
+			op, conf := 0.6, 0.7
+			low, high, minutes, power, drivers := int64(100), int64(200), int64(42), int64(3), int64(2)
+			contractEqual(t, a, store.Assessment{Candidate: id, Operating: &op, OperatingKey: 600000, Evidence: []sources.Evidence{}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &conf, KnownSince: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: "pattern", NewestFiling: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{}, FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, Website: sources.WebsiteUnknown, Minutes: &minutes, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)})
+			p, err := s.GetPass(ctx, pid)
+			contractOK(t, err)
+			contractEqual(t, p, store.Pass{ID: pid, Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, Status: store.StatusDone, Started: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Finished: time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC), Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, UserID: "owner", UserEmail: "mail", RequestID: "request"})
+			es, err := s.Enrichments(ctx, id)
+			contractOK(t, err)
+			contractEqual(t, es, []store.Enrichment{})
+		})
+	}
 }

@@ -20,6 +20,7 @@ type records struct {
 	assessments map[string]Assessment
 	rulings     []Ruling
 	passes      map[string]Pass
+	enrichments []Enrichment
 	zips        map[string]int64
 }
 type estimateRecord struct {
@@ -31,9 +32,9 @@ type column struct{ name, field string }
 var candidateColumns = columns("id:ID status:Status merged_into:MergedInto name:Name names:Names street:Street city:City state:State zip:Zip county:County phone:Phone email:Email people:People class:Class cargo:Cargo created:Created updated:Updated")
 var linkColumns = columns("candidate:Candidate scraper:Scraper source_id:SourceID run:Run digest:Digest reading:Reading reason:Reason confidence:Confidence first_seen:FirstSeen last_seen:LastSeen gone:Gone")
 var estimateColumns = columns("candidate:Candidate source:Source low:Low high:High confidence:Confidence facts:Facts filed:Filed formula:Formula")
-var assessmentColumns = columns("candidate:Candidate operating:Operating operating_key:OperatingKey evidence:Evidence revenue_low:RevenueLow revenue_high:RevenueHigh revenue_confidence:RevenueConfidence known_since:KnownSince government_match:GovernmentMatch newest_filing:NewestFiling categories:Categories fleet_verdict:FleetVerdict power_units:PowerUnits drivers:Drivers minutes:Minutes excluded:Excluded rules:Rules scored:Calculated")
+var assessmentColumns = columns("candidate:Candidate operating:Operating operating_key:OperatingKey evidence:Evidence revenue_low:RevenueLow revenue_high:RevenueHigh revenue_confidence:RevenueConfidence known_since:KnownSince government_match:GovernmentMatch newest_filing:NewestFiling categories:Categories fleet_verdict:FleetVerdict power_units:PowerUnits drivers:Drivers website:Website website_url:WebsiteURL minutes:Minutes excluded:Excluded rules:Rules scored:Calculated")
 var rulingColumns = columns("kind:Kind candidate:Candidate other:Other keys:Keys why:Why user_id:UserID user_email:UserEmail at:At")
-var passColumns = columns("id:ID kind:Kind origin:Origin trigger:Trigger status:Status reason:Reason started:Started finished:Finished rows:Rows new:New changed:Changed unchanged:Unchanged gone:Gone created:Created linked:Linked rescored:Judged unranged:Unranged user_id:UserID user_email:UserEmail request_id:RequestID delivery:Delivery")
+var passColumns = columns("id:ID kind:Kind origin:Origin trigger:Trigger status:Status reason:Reason started:Started finished:Finished rows:Rows new:New changed:Changed unchanged:Unchanged gone:Gone created:Created linked:Linked rescored:Judged unranged:Unranged due:Due fetched:Fetched https:HTTPS http:HTTP none:None user_id:UserID user_email:UserEmail request_id:RequestID delivery:Delivery")
 
 func columns(s string) []column {
 	out := []column{}

@@ -14,7 +14,7 @@ import (
 
 func assessment(r *records, c Candidate, t time.Time) ([]sources.Estimate, Assessment) {
 	t = t.UTC().Truncate(time.Second)
-	a := Assessment{Candidate: c.ID, FleetVerdict: sources.FleetUnknown, Evidence: []sources.Evidence{}, Categories: []sources.Category{}, Rules: sources.Rules, Calculated: t}
+	a := Assessment{Candidate: c.ID, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown, Evidence: []sources.Evidence{}, Categories: []sources.Category{}, Rules: sources.Rules, Calculated: t}
 	estimates := map[string]sources.Estimate{}
 	seen := map[string]bool{}
 	evidence := map[string]sources.Evidence{}
@@ -70,6 +70,20 @@ func assessment(r *records, c Candidate, t time.Time) ([]sources.Estimate, Asses
 				evidence[e.Name] = e
 			}
 		}
+	}
+	for _, result := range r.enrichments {
+		if result.Candidate != c.ID || result.Kind != sources.WebsiteCheck {
+			continue
+		}
+		a.Website = result.State
+		if result.State == sources.WebsiteHTTPS || result.State == sources.WebsiteHTTP {
+			a.WebsiteURL = result.URL
+			e := sources.Evidence{Name: sources.EvidenceWebsiteLive, Source: sources.WebsiteCheck, Weight: .5, Description: sources.DescribeWebsiteLive}
+			if old, ok := evidence[e.Name]; !ok || e.Weight > old.Weight {
+				evidence[e.Name] = e
+			}
+		}
+		break
 	}
 	es := []sources.Estimate{}
 	for _, e := range estimates {

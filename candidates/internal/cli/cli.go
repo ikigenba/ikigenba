@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -30,6 +31,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
 	"github.com/ikigenba/ikigenba/candidates/internal/web"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 // SweepInterval is the delay between pass retention sweeps.
@@ -54,6 +56,7 @@ type Process struct {
 	EventSink events.Sink
 	Banner    func(page.User) page.Banner
 	MCP       func(*telemetry.Writer) *mcp.Server
+	HTTP      *http.Client
 }
 type lockedReader struct {
 	mu sync.Mutex
@@ -176,7 +179,21 @@ func Run(ctx context.Context, p Process) int {
 		sc = scrapes.NewClient(scrapes.ClientConfig{Service: e, Telemetry: w})
 	}
 	st := store.New(d, store.Config{Now: p.Now, Rand: rnd})
-	eng := passes.New(passes.Config{Store: st, Sources: sources.New(fmcsa.New(), ppp.New()), Scrapes: sc, Telemetry: w, Events: em})
+	var checker *website.Checker
+	client := p.HTTP
+	if _, sandbox := p.LookupEnv("IKIGENBA_SANDBOX"); sandbox {
+		stub, err := website.NewStub()
+		if err != nil {
+			diagnostic(p, err.Error())
+			return ExitServerFailed
+		}
+		defer func() { _ = stub.Close() }()
+		client = stub.Client()
+	}
+	if client != nil {
+		checker = &website.Checker{Client: client, After: p.After}
+	}
+	eng := passes.New(passes.Config{Website: checker, Store: st, Sources: sources.New(fmcsa.New(), ppp.New()), Scrapes: sc, Telemetry: w, Events: em})
 	w.Ready()
 	err = st.ReplaceZipDrive(bg, candidates.ZipDrive())
 	if err == nil {

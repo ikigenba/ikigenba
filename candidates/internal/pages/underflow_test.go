@@ -65,7 +65,7 @@ func TestLandingUnderflowRedirects(t *testing.T) {
 	}
 }
 
-// R-AWGP-Y8NP R-AMPI-W2Q5 R-ANXF-9UGU: empty after-windows carry no prev or next.
+// R-84GU-LRZ8 R-AMPI-W2Q5 R-ANXF-9UGU: empty after-windows carry no prev or next.
 func TestLandingEmptyAfterWindows(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	sp := (paging.Token{Tool: "cohorts"}).Encode("navigation-cohort", "coh_position")

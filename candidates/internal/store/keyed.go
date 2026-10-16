@@ -131,6 +131,10 @@ func judgeKeys(ctx context.Context, tx *sql.Tx, ids []string, t time.Time) (Coun
 		if err != nil {
 			return Counts{}, err
 		}
+		r.enrichments, err = enrichmentRecords(ctx, tx, " WHERE candidate=? ORDER BY seq DESC", id)
+		if err != nil {
+			return Counts{}, err
+		}
 		var minutes int64
 		err = scanSQL(ctx, tx, "SELECT minutes FROM zip_drive WHERE zip=?", []any{c.Zip}, &minutes)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -148,7 +152,7 @@ func judgeKeys(ctx context.Context, tx *sql.Tx, ids []string, t time.Time) (Coun
 				return Counts{}, err
 			}
 		}
-		if err = insertRecord(ctx, tx, "assessments", assessmentColumns, a, map[string]any{"fleet": a.FleetVerdict == sources.FleetPass}); err != nil {
+		if err = insertRecord(ctx, tx, "assessments", assessmentColumns, a, nil); err != nil {
 			return Counts{}, err
 		}
 		out.Judged++

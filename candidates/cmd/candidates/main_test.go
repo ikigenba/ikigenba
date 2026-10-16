@@ -25,9 +25,12 @@ import (
 	"github.com/ikigenba/ikigenba/candidates"
 	"github.com/ikigenba/ikigenba/candidates/internal/cli"
 	"github.com/ikigenba/ikigenba/candidates/internal/pages"
+	"github.com/ikigenba/ikigenba/candidates/internal/passes"
+	"github.com/ikigenba/ikigenba/candidates/internal/sources"
+	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-1N7H-5GFZ R-1OFD-J86O R-1PN9-WZXD R-1QV6-ARO2 R-1S32-OJER R-1TAZ-2B5G R-1UIV-G2W5
+// R-1N7H-5GFZ R-1OFD-J86O R-1PN9-WZXD R-1QV6-ARO2 R-1S32-OJER R-1TAZ-2B5G R-LAIK-RNO1 R-LCYD-J75F
 func TestBinary(t *testing.T) {
 	t.Setenv(version.CommitVariable, "abcdef0123456789")
 	t.Setenv(version.ReleaseVariable, "test-release")
@@ -104,8 +107,15 @@ func TestBinary(t *testing.T) {
 				ingest = &http.Server{Handler: telemetry.IngestHandler(capture), ReadHeaderTimeout: time.Second}
 				go func() { _ = ingest.Serve(tl) }()
 				defer func() { _ = ingest.Close() }()
+				el, err := net.Listen("unix", filepath.Join(short, "events"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				bus := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }), ReadHeaderTimeout: time.Second}
+				go func() { _ = bus.Serve(el) }()
+				defer func() { _ = bus.Close() }()
 				path := filepath.Join(short, "services.json")
-				body := map[string]any{"services": []map[string]any{{"name": "telemetry", "url": "http://telemetry.test", "description": "fixture", "socket": tl.Addr().String(), "enabled": true, "mcp": false}}}
+				body := map[string]any{"services": []map[string]any{{"name": "telemetry", "url": "http://telemetry.test", "description": "fixture", "socket": tl.Addr().String(), "enabled": true, "mcp": false}, {"name": "events", "url": "http://events.test", "description": "fixture", "socket": el.Addr().String(), "enabled": true, "mcp": false}}}
 				data, err := json.Marshal(body)
 				if err != nil {
 					t.Fatal(err)
@@ -168,6 +178,35 @@ func TestBinary(t *testing.T) {
 			if err = json.Unmarshal(meta["io.modelcontextprotocol/serverInfo"], &serverInfo); err != nil || !reflect.DeepEqual(serverInfo, map[string]string{"name": pages.ServiceName, "version": display}) {
 				t.Fatal(string(data), err)
 			}
+			if signal == syscall.SIGTERM {
+				args, _ := json.Marshal(map[string]any{"kind": sources.WebsiteCheck})
+				result, err := client.CallTool(ctx, identity.Caller{UserID: "fixture-user"}, "enrich", args)
+				if err != nil || result.IsError() {
+					t.Fatal(err, result)
+				}
+				record := binaryRecord(t, result)
+				if record.Kind != store.KindEnrich || record.Status != store.StatusRunning {
+					t.Fatal(record)
+				}
+				args, _ = json.Marshal(map[string]string{"pass": record.ID})
+				for {
+					result, err = client.CallTool(ctx, identity.Caller{UserID: "fixture-user"}, "pass", args)
+					if err != nil || result.IsError() {
+						t.Fatal(err, result)
+					}
+					record = binaryRecord(t, result)
+					if record.Status == store.StatusDone {
+						break
+					}
+					if ctx.Err() != nil {
+						t.Fatal("enrich did not finish")
+					}
+				}
+				if record.Due != 0 || record.Fetched != 0 {
+					t.Fatal(record)
+				}
+			}
+
 			if signal == syscall.SIGINT {
 				req, err := http.NewRequestWithContext(ctx, "GET", "http://candidates.test/about", nil)
 				if err != nil {
@@ -228,4 +267,19 @@ func TestBinary(t *testing.T) {
 			}
 		})
 	}
+}
+
+func binaryRecord(t *testing.T, result mcp.Result) passes.Record {
+	t.Helper()
+	b, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		Record passes.Record `json:"structuredContent"`
+	}
+	if err := json.Unmarshal(b, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	return envelope.Record
 }

@@ -20,13 +20,13 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-AFE4-LG9Z R-AGM0-Z80O R-AHTX-CZRD R-AQD8-1DY8 R-AK9Q-4J8R R-AST0-SXFM
+// R-AFE4-LG9Z R-AJ8K-KIAW R-AKGG-YA1L R-AQD8-1DY8 R-AK9Q-4J8R R-AST0-SXFM
 func TestCohortViewContracts(t *testing.T) {
 	low, high, minutes, days := int64(5000000), int64(9000000), int64(120), int64(730)
 	government := false
 	at := fixtureTime()
 	f := store.CohortFilters{RevenueMin: &low, RevenueMax: &high, RevenueUnknown: true, MaxMinutes: &minutes, MinutesUnknown: true, Categories: []string{sources.CategoryConstruction, sources.CategoryTrucking}, CategoryUnknown: true, Fleet: sources.FleetPass, FleetUnknown: true, Government: &government, MaxFilingAgeDays: &days, FilingUnknown: true, Class: sources.ClassPrivate, ClassUnknown: true, ShowExcluded: true}
-	wantF := FiltersView{"$5,000,000", "$9,000,000", true, "120", true, []string{sources.CategoryConstruction, sources.CategoryTrucking}, true, sources.FleetPass, true, "false", "730", true, sources.ClassPrivate, true, true}
+	wantF := FiltersView{"$5,000,000", "$9,000,000", true, "120", true, []string{sources.CategoryConstruction, sources.CategoryTrucking}, true, sources.FleetPass, true, []string{}, false, "false", "730", true, sources.ClassPrivate, true, true}
 	if got := filtersView(f); !reflect.DeepEqual(got, wantF) {
 		t.Fatalf("filters got %#v want %#v", got, wantF)
 	}
@@ -35,7 +35,7 @@ func TestCohortViewContracts(t *testing.T) {
 	if got := filtersView(f); !reflect.DeepEqual(got, wantF) {
 		t.Fatal(got)
 	}
-	if got := filtersView(store.CohortFilters{}); !reflect.DeepEqual(got, FiltersView{Categories: []string{}}) {
+	if got := filtersView(store.CohortFilters{}); !reflect.DeepEqual(got, FiltersView{Categories: []string{}, Website: []string{}}) {
 		t.Fatal(got)
 	}
 	c := store.Cohort{ID: "chosen-cohort", Name: "chosen-name", Size: 2, Filters: f, Order: []store.CohortOrder{{Field: store.OrderRevenueLow, Direction: store.DirectionAsc}, {Field: store.OrderKnownSince, Direction: store.DirectionDesc}}, CreatedUserID: "creator", CreatedUserEmail: "creator@example.test", Created: at, ChangedUserID: "editor", ChangedUserEmail: "editor@example.test", Changed: at.Add(time.Hour)}
@@ -74,7 +74,10 @@ func TestCohortViewContracts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := CohortData{page.Banner{}, want, 5, []MemberRow{{1, "id", "name", "city", "state", "operating", "low", "high", "confidence", []string{"category"}, "class", "verdict", "minutes", "government", "since", "since-text", "filing", "filing-text", true}}, []RejectRow{rejectRow(r)}}
+	d := CohortData{page.Banner{}, want, 5, []MemberRow{{1, "id", "name", "city", "state", "operating", "low", "high", "confidence", []string{"category"}, "class", "verdict", "chosen-website", "https://chosen.example.test/", "minutes", "government", "since", "since-text", "filing", "filing-text", true}}, []RejectRow{rejectRow(r)}}
+	if d.Members[0].Website != "chosen-website" || d.Members[0].WebsiteURL != "https://chosen.example.test/" {
+		t.Fatal("member positional shape")
+	}
 	if err = set.templates.ExecuteTemplate(&bytes.Buffer{}, "cohort", d); err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +102,7 @@ func pageCohort(t *testing.T, cfg Config, id string) CohortData {
 	return d
 }
 
-// R-AV8T-KGX0 R-B3S4-8V3V R-B1CB-HBMH R-B2K7-V3D6 R-B500-MMUK R-BIEW-U407 R-BH70-GC9I
+// R-AV8T-KGX0 R-B3S4-8V3V R-ARRV-8WHR R-ASZR-MO8G R-B500-MMUK R-BIEW-U407 R-BH70-GC9I
 func TestCohortAndRejectHistoryPages(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()
@@ -162,6 +165,7 @@ func TestCohortAndRejectHistoryPages(t *testing.T) {
 			d.Rulings = append(d.Rulings, rulingView(r, id))
 		}
 		if c.Status == store.StatusActive {
+			d.Candidate.Website = sources.WebsiteUnknown
 			a, e := cfg.Store.GetAssessment(ctx, id)
 			if e != nil {
 				t.Fatal(e)
@@ -232,7 +236,7 @@ func TestCohortAndRejectHistoryPages(t *testing.T) {
 	checkCandidate()
 }
 
-// R-AJ1T-QRI2
+// R-ALOD-C1SA
 func TestCohortAndRejectTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()

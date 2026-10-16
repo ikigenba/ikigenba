@@ -17,7 +17,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-DBGM-T9U5 R-DCOJ-71KU R-DDWF-KTBJ R-4B7S-FL5R R-4CFO-TCWG R-4EVH-KWDU R-4G3D-YO4J R-4HBA-CFV8
+// R-DBGM-T9U5 R-DCOJ-71KU R-DDWF-KTBJ R-4B7S-FL5R R-4CFO-TCWG R-4EVH-KWDU R-PJLE-8T42 R-4HBA-CFV8
 func TestCohortValidators(t *testing.T) {
 	contractEqual(t, []string{store.CohortIDPrefix, store.OrderOperatingConfidence, store.OrderRevenueLow, store.OrderRevenueConfidence, store.OrderDriveMinutes, store.OrderNewestFiling, store.OrderKnownSince, store.DirectionDesc, store.DirectionAsc, store.KindReject, store.KindUnreject}, []string{"coh_", "operating_confidence", "revenue_low", "revenue_confidence", "drive_minutes", "newest_filing", "known_since", "desc", "asc", "reject", "unreject"})
 	contractEqual(t, []int{store.CohortSizeMin, store.CohortSizeMax, store.CohortSizeDefault}, []int{1, 100, 30})
@@ -34,7 +34,7 @@ func TestCohortValidators(t *testing.T) {
 	for _, n := range []int64{-1, 0, 1, 30, 100, 101} {
 		contractEqual(t, store.ValidCohortSize(n), n >= 1 && n <= 100)
 	}
-	good := []store.CohortFilters{{}, {RevenueUnknown: true, MinutesUnknown: true, CategoryUnknown: true, FleetUnknown: true, FilingUnknown: true, ClassUnknown: true, ShowExcluded: true}, {RevenueMin: ptrInt(5), RevenueMax: ptrInt(5)}, {Categories: []string{sources.CategoryConstruction, sources.CategoryTrucking, sources.CategoryAgriculture, sources.CategoryManufacturing, sources.CategoryWholesale, sources.CategoryMining, sources.CategoryWaste, sources.CategoryOther, sources.CategoryOther}}}
+	good := []store.CohortFilters{{}, {RevenueUnknown: true, MinutesUnknown: true, CategoryUnknown: true, FleetUnknown: true, WebsiteUnknown: true, FilingUnknown: true, ClassUnknown: true, ShowExcluded: true}, {RevenueMin: ptrInt(5), RevenueMax: ptrInt(5)}, {Categories: []string{sources.CategoryConstruction, sources.CategoryTrucking, sources.CategoryAgriculture, sources.CategoryManufacturing, sources.CategoryWholesale, sources.CategoryMining, sources.CategoryWaste, sources.CategoryOther, sources.CategoryOther}}}
 	for _, f := range good {
 		contractEqual(t, store.ValidCohortFilters(f), true)
 	}
@@ -46,6 +46,12 @@ func TestCohortValidators(t *testing.T) {
 		contractEqual(t, store.ValidCohortFilters(f), true)
 		*fields[i] = ptrInt(-1)
 		bad = append(bad, f)
+	}
+	for _, states := range [][]string{{}, {sources.WebsiteNone, sources.WebsiteNone}, {sources.WebsiteUnknown}, {""}, {"HTTPS"}} {
+		bad = append(bad, store.CohortFilters{Website: states})
+	}
+	for _, states := range [][]string{{sources.WebsiteHTTPS}, {sources.WebsiteHTTP}, {sources.WebsiteNone}, {sources.WebsiteHTTPS, sources.WebsiteHTTP}} {
+		contractEqual(t, store.ValidCohortFilters(store.CohortFilters{Website: states}), true)
 	}
 	for _, f := range bad {
 		contractEqual(t, store.ValidCohortFilters(f), false)
@@ -68,7 +74,7 @@ func TestCohortValidators(t *testing.T) {
 	}
 }
 
-// R-DF4B-YL28 R-DGC8-CCSX
+// R-IK72-EQQQ R-DGC8-CCSX
 func TestCohortJSON(t *testing.T) {
 	for _, tc := range []struct {
 		v    any
@@ -78,13 +84,13 @@ func TestCohortJSON(t *testing.T) {
 		contractOK(t, e)
 		contractEqual(t, string(b), tc.want)
 	}
-	f := store.CohortFilters{RevenueMin: ptrInt(1), RevenueMax: ptrInt(2), RevenueUnknown: true, MaxMinutes: ptrInt(3), MinutesUnknown: true, Categories: []string{sources.CategoryOther}, CategoryUnknown: true, Fleet: sources.FleetPass, FleetUnknown: true, Government: new(bool), MaxFilingAgeDays: ptrInt(4), FilingUnknown: true, Class: sources.ClassPrivate, ClassUnknown: true, ShowExcluded: true}
+	f := store.CohortFilters{RevenueMin: ptrInt(1), RevenueMax: ptrInt(2), RevenueUnknown: true, MaxMinutes: ptrInt(3), MinutesUnknown: true, Categories: []string{sources.CategoryOther}, CategoryUnknown: true, Fleet: sources.FleetPass, FleetUnknown: true, Website: []string{sources.WebsiteHTTPS, sources.WebsiteNone}, WebsiteUnknown: true, Government: new(bool), MaxFilingAgeDays: ptrInt(4), FilingUnknown: true, Class: sources.ClassPrivate, ClassUnknown: true, ShowExcluded: true}
 	b, e := json.Marshal(f)
 	contractOK(t, e)
 	var round store.CohortFilters
 	contractOK(t, json.Unmarshal(b, &round))
 	contractEqual(t, round, f)
-	contractEqual(t, string(b), `{"revenue_min":1,"revenue_max":2,"revenue_unknown":true,"max_minutes":3,"minutes_unknown":true,"categories":["other"],"category_unknown":true,"fleet":"pass","fleet_unknown":true,"government":false,"max_filing_age_days":4,"filing_unknown":true,"class":"private","class_unknown":true,"show_excluded":true}`)
+	contractEqual(t, string(b), `{"revenue_min":1,"revenue_max":2,"revenue_unknown":true,"max_minutes":3,"minutes_unknown":true,"categories":["other"],"category_unknown":true,"fleet":"pass","fleet_unknown":true,"website":["https","none"],"website_unknown":true,"government":false,"max_filing_age_days":4,"filing_unknown":true,"class":"private","class_unknown":true,"show_excluded":true}`)
 }
 
 func cohortCreate(t *testing.T, f *contractFixture, name string) store.Cohort {
@@ -569,7 +575,7 @@ func cohortPopulation(t *testing.T, f *contractFixture) []string {
 	return ids
 }
 
-// R-4M6V-VIU0 R-4NES-9AKP R-4OMO-N2BE R-4PUL-0U23 R-4R2H-ELSS R-4SAD-SDJH R-4TIA-65A6 R-4UQ6-JX0V R-4VY2-XORK R-4KYZ-HR3B
+// R-4M6V-VIU0 R-4NES-9AKP R-4OMO-N2BE R-4PUL-0U23 R-4R2H-ELSS R-4SAD-SDJH R-4TIA-65A6 R-4UQ6-JX0V R-PN93-E4C5 R-4KYZ-HR3B
 func TestCohortFilterBoundariesAndUnknownSwitches(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -582,7 +588,7 @@ func TestCohortFilterBoundariesAndUnknownSwitches(t *testing.T) {
 		indices []int
 	}{
 		{"none", store.CohortFilters{}, []int{0, 1, 2, 3, 4}},
-		{"switches alone", store.CohortFilters{RevenueUnknown: true, MinutesUnknown: true, CategoryUnknown: true, FleetUnknown: true, FilingUnknown: true, ClassUnknown: true}, []int{0, 1, 2, 3, 4}},
+		{"switches alone", store.CohortFilters{RevenueUnknown: true, MinutesUnknown: true, CategoryUnknown: true, FleetUnknown: true, WebsiteUnknown: true, FilingUnknown: true, ClassUnknown: true}, []int{0, 1, 2, 3, 4}},
 		{"revenue bounds", store.CohortFilters{RevenueMin: ptrInt(5000000), RevenueMax: ptrInt(10000000)}, []int{0, 1}},
 		{"revenue unknown", store.CohortFilters{RevenueMin: ptrInt(5000000), RevenueMax: ptrInt(10000000), RevenueUnknown: true}, []int{0, 1, 4}},
 		{"revenue only max", store.CohortFilters{RevenueMax: ptrInt(10000000)}, []int{0, 1, 2}},
@@ -684,7 +690,7 @@ func TestCohortOrderFieldsDirectionsUnknownsAndTies(t *testing.T) {
 	contractEqual(t, cohortIDs(cohortRead(t, f, c).Members), []string{ids[1], ids[3], ids[2], ids[0], ids[4]})
 }
 
-// R-DMFQ-97IE R-6BUH-Z4AZ R-50TO-GRQC R-4ZLS-2ZZN
+// R-DMFQ-97IE R-6BUH-Z4AZ R-POGZ-RW2U R-4ZLS-2ZZN
 func TestCohortMembershipReadsStoredJudgmentsAndStandingRejects(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -775,7 +781,7 @@ func TestCohortReadUsesOneClockSnapshot(t *testing.T) {
 	contractEqual(t, r.Matching, int64(3))
 }
 
-// R-DHK4-Q4JM R-DIS1-3WAB R-DJZX-HO10 R-DMFQ-97IE R-DF4B-YL28 R-DGC8-CCSX
+// R-DHK4-Q4JM R-DIS1-3WAB R-DJZX-HO10 R-DMFQ-97IE R-IK72-EQQQ R-DGC8-CCSX
 func TestCohortRecordShapesByUse(t *testing.T) {
 	type cohort struct {
 		ID, Name                        string
@@ -815,6 +821,8 @@ func TestCohortRecordShapesByUse(t *testing.T) {
 		CategoryUnknown        bool
 		Fleet                  string
 		FleetUnknown           bool
+		Website                []string
+		WebsiteUnknown         bool
 		Government             *bool
 		MaxFilingAgeDays       *int64
 		FilingUnknown          bool
@@ -916,4 +924,72 @@ func TestCohortCategoryMatchesAnyAssessmentCategory(t *testing.T) {
 	c, e = f.s.EditCohort(ctx, store.CohortEdit{ID: c.ID, Filters: &filters, UserID: "owner"})
 	contractOK(t, e)
 	contractEqual(t, cohortIDs(cohortRead(t, f, c).Members), []string{id})
+}
+
+// R-PKTA-MKUR R-PN93-E4C5 R-POGZ-RW2U
+func TestCohortWebsiteFiltersReadStoredJudgment(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	ids := []string{}
+	for i, state := range []string{sources.WebsiteHTTPS, sources.WebsiteHTTP, sources.WebsiteNone, sources.WebsiteUnknown} {
+		o := contractObservation(fmt.Sprint(i), fmt.Sprintf("Website cohort %d", i), f.now)
+		o.Reading.Email = fmt.Sprintf("owner@business%d.example", i)
+		id := contractAttach(t, f, "run", o)[0]
+		ids = append(ids, id)
+		if state != sources.WebsiteUnknown {
+			_, e := f.s.AddEnrichments(ctx, []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, State: state, Source: fmt.Sprintf("business%d.example", i)}})
+			contractOK(t, e)
+		}
+	}
+	_, e := f.s.JudgeAll(ctx)
+	contractOK(t, e)
+	c := cohortCreate(t, f, "Websites")
+	for _, tc := range []struct {
+		states  []string
+		indices []int
+	}{
+		{[]string{sources.WebsiteHTTPS}, []int{0}},
+		{[]string{sources.WebsiteHTTP}, []int{1}},
+		{[]string{sources.WebsiteHTTPS, sources.WebsiteHTTP}, []int{0, 1}},
+		{[]string{sources.WebsiteHTTP, sources.WebsiteHTTPS}, []int{0, 1}},
+		{[]string{sources.WebsiteNone}, []int{2}},
+	} {
+		for _, unknown := range []bool{false, true} {
+			filters := store.CohortFilters{Website: tc.states, WebsiteUnknown: unknown}
+			c, e = f.s.EditCohort(ctx, store.CohortEdit{ID: c.ID, Filters: &filters, UserID: "owner"})
+			contractOK(t, e)
+			// The requested order is kept as supplied across serialization and reopening.
+			f.reopen()
+			got := cohortRead(t, f, c)
+			want := []string{}
+			for _, i := range tc.indices {
+				want = append(want, ids[i])
+			}
+			if unknown {
+				want = append(want, ids[3])
+			}
+			actual := cohortIDs(got.Members)
+			slices.Sort(actual)
+			slices.Sort(want)
+			contractEqual(t, actual, want)
+			contractEqual(t, got.Matching, int64(len(want)))
+		}
+	}
+	combined := store.CohortFilters{Website: []string{sources.WebsiteHTTPS}, RevenueMin: ptrInt(math.MaxInt64)}
+	c, e = f.s.EditCohort(ctx, store.CohortEdit{ID: c.ID, Filters: &combined, UserID: "owner"})
+	contractOK(t, e)
+	contractEqual(t, cohortRead(t, f, c).Matching, int64(0))
+	// Adding a result leaves the saved assessment and membership untouched until judged.
+	filters := store.CohortFilters{Website: []string{sources.WebsiteHTTPS}}
+	c, e = f.s.EditCohort(ctx, store.CohortEdit{ID: c.ID, Filters: &filters, UserID: "owner"})
+	contractOK(t, e)
+	_, e = f.s.AddEnrichments(ctx, []store.Enrichment{{Candidate: ids[2], Kind: sources.WebsiteCheck, State: sources.WebsiteHTTPS, Source: "business2.example"}})
+	contractOK(t, e)
+	contractEqual(t, cohortIDs(cohortRead(t, f, c).Members), []string{ids[0]})
+	_, e = f.s.Judge(ctx, []string{ids[2]})
+	contractOK(t, e)
+	contractEqual(t, cohortRead(t, f, c).Matching, int64(2))
+	_, _, e = f.s.Decide(ctx, store.Ruling{Kind: store.KindExclude, Candidate: ids[0], Why: "owner excluded", UserID: "owner"})
+	contractOK(t, e)
+	contractEqual(t, cohortIDs(cohortRead(t, f, c).Members), []string{ids[2]})
 }

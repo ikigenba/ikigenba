@@ -9,7 +9,7 @@ import (
 )
 
 func validPass(p Pass) bool {
-	return p.Trigger != "" && (p.Kind == KindRebuild && p.Origin == OriginRebuild && p.Trigger == TriggerRebuild && p.Delivery == "" && p.UserID != "" || p.Kind == KindIngest && p.Origin == OriginRun && p.Trigger != TriggerRebuild && p.Delivery != "" || p.Kind == KindJudge && p.Origin == OriginCron && p.Trigger != TriggerRebuild && p.Delivery != "")
+	return p.Trigger != "" && (p.Kind == KindRebuild && p.Origin == OriginRebuild && p.Trigger == TriggerRebuild && p.Delivery == "" && p.UserID != "" || p.Kind == KindIngest && p.Origin == OriginRun && p.Trigger != TriggerRebuild && p.Delivery != "" || p.Kind == KindJudge && p.Origin == OriginCron && p.Trigger != TriggerRebuild && p.Delivery != "" || p.Kind == KindEnrich && p.Origin == OriginEnrich && p.Trigger == TriggerEnrich && p.Delivery == "" && p.UserID != "" || (p.Kind == KindEnrich || p.Kind == KindJudge) && p.Origin == OriginPass && ValidPassID(p.Trigger) && p.Delivery == "")
 }
 
 // AddPass records a running pass, enforcing delivery uniqueness and exclusivity.
@@ -35,7 +35,7 @@ func (s *Store) AddPass(ctx context.Context, p Pass) (Pass, error) {
 			}
 		}
 		for _, q := range r.passes {
-			if q.Status == StatusRunning {
+			if q.Status == StatusRunning && (q.Kind == KindEnrich) == (p.Kind == KindEnrich) {
 				return ErrBusy
 			}
 		}
@@ -87,6 +87,11 @@ func (s *Store) FinishPass(ctx context.Context, id string, c Counts) (Pass, erro
 		p.Linked = c.Linked
 		p.Judged = c.Judged
 		p.Unranged = c.Unranged
+		p.Due = c.Due
+		p.Fetched = c.Fetched
+		p.HTTPS = c.HTTPS
+		p.HTTP = c.HTTP
+		p.None = c.None
 		r.passes[id] = p
 		out = p
 		return nil

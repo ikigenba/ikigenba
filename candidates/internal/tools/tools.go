@@ -31,6 +31,7 @@ const (
 	DescribeCandidate    string = "Read a candidate with its evidence, assessment and rulings."
 	DescribePasses       string = "Read recorded passes."
 	DescribePass         string = "Read a pass."
+	DescribeEnrich       string = "Check websites of candidates whose results are due for refresh."
 	DescribeRebuild      string = "Start a resolution pass over current scraper runs."
 	DescribeDecide       string = "Record an owner's ruling and reassess the affected candidates."
 	RefuseNotFound       string = "The requested record was not found."
@@ -51,7 +52,7 @@ type Entry struct{ Name, Description string }
 
 // Catalog returns independent ordered tool metadata.
 func Catalog() []Entry {
-	return []Entry{{"cohorts", DescribeCohorts}, {"cohort", DescribeCohort}, {"candidates", DescribeCandidates}, {"candidate", DescribeCandidate}, {"passes", DescribePasses}, {"pass", DescribePass}, {"rebuild", DescribeRebuild}, {"decide", DescribeDecide}, {"exclude", DescribeExclude}, {"include", DescribeInclude}, {"create_cohort", DescribeCreateCohort}, {"edit_cohort", DescribeEditCohort}, {"delete_cohort", DescribeDeleteCohort}, {"reject", DescribeReject}, {"unreject", DescribeUnreject}}
+	return []Entry{{"cohorts", DescribeCohorts}, {"cohort", DescribeCohort}, {"candidates", DescribeCandidates}, {"candidate", DescribeCandidate}, {"passes", DescribePasses}, {"pass", DescribePass}, {"rebuild", DescribeRebuild}, {"enrich", DescribeEnrich}, {"decide", DescribeDecide}, {"exclude", DescribeExclude}, {"include", DescribeInclude}, {"create_cohort", DescribeCreateCohort}, {"edit_cohort", DescribeEditCohort}, {"delete_cohort", DescribeDeleteCohort}, {"reject", DescribeReject}, {"unreject", DescribeUnreject}}
 }
 func refuse(word string) mcp.Result {
 	text := RefuseUnavailable
@@ -97,7 +98,7 @@ func add[A any](srv *mcp.Server, name, description string, effect mcp.Effect, ha
 	mcp.AddRawTool(srv, mcp.RawTool[A]{Name: name, Description: description, Effect: effect, Handler: func(ctx context.Context, c identity.Caller, a A) (mcp.Result, error) { return handler(ctx, c, a), nil }})
 }
 
-// Register installs the fifteen candidate tools on srv.
+// Register installs the sixteen candidate tools on srv.
 func Register(srv *mcp.Server, cfg Config) {
 	add(srv, "cohorts", DescribeCohorts, mcp.Read, func(ctx context.Context, _ identity.Caller, a CohortsArgs) mcp.Result {
 		z, key, id, err := timePosition("cohorts", a.Page, a.Limit)
@@ -205,6 +206,26 @@ func Register(srv *mcp.Server, cfg Config) {
 		}
 		return answer(passes.RecordOf(p))
 	})
+	add(srv, "enrich", DescribeEnrich, mcp.Additive, func(ctx context.Context, c identity.Caller, a EnrichArgs) mcp.Result {
+		if a.Kind != sources.WebsiteCheck || a.OlderThanDays != nil && *a.OlderThanDays < 0 {
+			return refuse(passes.RefusalInvalid)
+		}
+		var age *int64
+		if a.OlderThanDays != nil {
+			n := int64(*a.OlderThanDays)
+			age = &n
+		}
+		p, err := cfg.Passes.Enrich(ctx, c, age)
+		if err != nil {
+			var r *passes.Refusal
+			if errors.As(err, &r) {
+				return refuse(r.Word)
+			}
+			return refuse(passes.RefusalUnavailable)
+		}
+		return answer(passes.RecordOf(p))
+	})
+
 	add(srv, "decide", DescribeDecide, mcp.Additive, func(ctx context.Context, c identity.Caller, a DecideArgs) mcp.Result {
 		pair := a.Kind == store.KindMerge || a.Kind == store.KindNotSame
 		if a.Kind != store.KindMerge && a.Kind != store.KindNotSame && a.Kind != store.KindSplit || strings.TrimSpace(a.Why) == "" || pair && a.Other == "" || a.Kind == store.KindSplit && len(a.Links) == 0 {
@@ -357,7 +378,7 @@ func estimateOf(e sources.Estimate) Estimate {
 	return Estimate{e.Source, e.Low, e.High, e.Confidence, e.Facts, date(e.Filed), e.Formula}
 }
 func assessmentOf(a store.Assessment) Assessment {
-	v := Assessment{OperatingConfidence: a.Operating, OperatingEvidence: []Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, KnownSince: date(a.KnownSince), NewestFiling: date(a.NewestFiling), Categories: []Category{}, GovernmentMatch: a.GovernmentMatch, FleetVerdict: a.FleetVerdict, PowerUnits: a.PowerUnits, Drivers: a.Drivers, Minutes: a.Minutes, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
+	v := Assessment{OperatingConfidence: a.Operating, OperatingEvidence: []Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, KnownSince: date(a.KnownSince), NewestFiling: date(a.NewestFiling), Categories: []Category{}, GovernmentMatch: a.GovernmentMatch, FleetVerdict: a.FleetVerdict, PowerUnits: a.PowerUnits, Drivers: a.Drivers, Website: a.Website, WebsiteURL: a.WebsiteURL, Minutes: a.Minutes, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
 	for _, e := range a.Evidence {
 		v.OperatingEvidence = append(v.OperatingEvidence, Evidence{e.Name, e.Source, e.Weight, e.Description})
 	}
@@ -368,7 +389,7 @@ func assessmentOf(a store.Assessment) Assessment {
 }
 func memberOf(e store.Ranked) Member {
 	a := e.Assessment
-	v := Member{Candidate: candidateOf(e.Candidate), OperatingConfidence: a.Operating, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, FleetVerdict: a.FleetVerdict, KnownSince: date(a.KnownSince), NewestFiling: date(a.NewestFiling), Excluded: a.Excluded, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch}
+	v := Member{Candidate: candidateOf(e.Candidate), OperatingConfidence: a.Operating, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, FleetVerdict: a.FleetVerdict, Website: a.Website, WebsiteURL: a.WebsiteURL, KnownSince: date(a.KnownSince), NewestFiling: date(a.NewestFiling), Excluded: a.Excluded, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch}
 	seen := map[string]bool{}
 	for _, c := range a.Categories {
 		if !seen[c.Name] {
@@ -385,7 +406,7 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 	if err != nil {
 		return failure(err)
 	}
-	out := Detail{Candidate: candidateOf(c), Estimates: []Estimate{}, Links: []Link{}, Rulings: []Ruling{}, Rejects: []Reject{}}
+	out := Detail{Candidate: candidateOf(c), Estimates: []Estimate{}, Links: []Link{}, Rulings: []Ruling{}, Enrichments: []Enrichment{}, Rejects: []Reject{}}
 	rs, err := cfg.Store.Rulings(ctx, id)
 	if err != nil {
 		return failure(err)
@@ -408,6 +429,14 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 		} else if !errors.Is(err, store.ErrNotFound) {
 			return failure(err)
 		}
+		enrichments, err := cfg.Store.Enrichments(ctx, id)
+		if err != nil {
+			return failure(err)
+		}
+		for _, e := range enrichments {
+			out.Enrichments = append(out.Enrichments, enrichmentOf(e))
+		}
+
 		es, err := cfg.Store.Estimates(ctx, id)
 		if err != nil {
 			return failure(err)
@@ -424,6 +453,10 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 		}
 	}
 	return answer(out)
+}
+
+func enrichmentOf(e store.Enrichment) Enrichment {
+	return Enrichment{e.Kind, e.State, e.URL, e.Title, e.StatusCode, e.Size, e.Error, e.Source, e.Cost, stamp(e.At)}
 }
 
 func fleetOf(v string) string {
@@ -467,7 +500,11 @@ func int64Of(p *uint32) *int64 {
 	return &v
 }
 func filterOf(a FilterArgs) store.CohortFilters {
-	return store.CohortFilters{RevenueMin: int64Of(a.RevenueMin), RevenueMax: int64Of(a.RevenueMax), RevenueUnknown: a.RevenueUnknown, MaxMinutes: int64Of(a.MaxMinutes), MinutesUnknown: a.MinutesUnknown, Categories: append([]string(nil), a.Categories...), CategoryUnknown: a.CategoryUnknown, Fleet: a.Fleet, FleetUnknown: a.FleetUnknown, Government: a.Government, MaxFilingAgeDays: int64Of(a.MaxFilingAgeDays), FilingUnknown: a.FilingUnknown, Class: a.Class, ClassUnknown: a.ClassUnknown, ShowExcluded: a.ShowExcluded}
+	var websites []string
+	if a.Website != nil {
+		websites = append([]string{}, (*a.Website)...)
+	}
+	return store.CohortFilters{RevenueMin: int64Of(a.RevenueMin), RevenueMax: int64Of(a.RevenueMax), RevenueUnknown: a.RevenueUnknown, MaxMinutes: int64Of(a.MaxMinutes), MinutesUnknown: a.MinutesUnknown, Categories: append([]string(nil), a.Categories...), CategoryUnknown: a.CategoryUnknown, Fleet: a.Fleet, FleetUnknown: a.FleetUnknown, Website: websites, WebsiteUnknown: a.WebsiteUnknown, Government: a.Government, MaxFilingAgeDays: int64Of(a.MaxFilingAgeDays), FilingUnknown: a.FilingUnknown, Class: a.Class, ClassUnknown: a.ClassUnknown, ShowExcluded: a.ShowExcluded}
 }
 func orderOf(a []OrderArgs) []store.CohortOrder {
 	v := []store.CohortOrder{}

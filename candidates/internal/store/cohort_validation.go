@@ -37,6 +37,21 @@ func ValidCohortFilters(f CohortFilters) bool {
 	default:
 		return false
 	}
+	if f.Website != nil && len(f.Website) == 0 {
+		return false
+	}
+	seen := make(map[string]bool, len(f.Website))
+	for _, state := range f.Website {
+		switch state {
+		case sources.WebsiteHTTPS, sources.WebsiteHTTP, sources.WebsiteNone:
+		default:
+			return false
+		}
+		if seen[state] {
+			return false
+		}
+		seen[state] = true
+	}
 	switch f.Class {
 	case "", sources.ClassForHire, sources.ClassPrivate, sources.ClassMixed:
 	default:

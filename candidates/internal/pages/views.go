@@ -39,9 +39,9 @@ func passRow(p store.Pass) PassRow {
 	return v
 }
 func passView(p store.Pass, sp string) PassView {
-	v := PassView{ID: p.ID, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Status: p.Status, Reason: p.Reason, Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged}
+	v := PassView{ID: p.ID, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Status: p.Status, Reason: p.Reason, Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged, Due: p.Due, Fetched: p.Fetched, HTTPS: p.HTTPS, HTTP: p.HTTP, None: p.None}
 	switch p.Origin {
-	case store.OriginRebuild:
+	case store.OriginRebuild, store.OriginEnrich:
 		v.StartedBy = p.UserEmail
 		if v.StartedBy == "" {
 			v.StartedBy = p.UserID
@@ -55,7 +55,7 @@ func passView(p store.Pass, sp string) PassView {
 }
 func memberRow(e store.Ranked, i int) MemberRow {
 	a := assessmentView(e.Assessment)
-	v := MemberRow{Rank: int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, Class: e.Candidate.Class, FleetVerdict: a.FleetVerdict, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch, KnownSince: a.KnownSince, KnownSinceText: a.KnownSinceText, NewestFiling: a.NewestFiling, NewestFilingText: a.NewestFilingText, Excluded: a.Excluded}
+	v := MemberRow{Rank: int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, Class: e.Candidate.Class, FleetVerdict: a.FleetVerdict, Website: e.Assessment.Website, WebsiteURL: e.Assessment.WebsiteURL, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch, KnownSince: a.KnownSince, KnownSinceText: a.KnownSinceText, NewestFiling: a.NewestFiling, NewestFilingText: a.NewestFilingText, Excluded: a.Excluded}
 	seen := map[string]bool{}
 	for _, c := range a.Categories {
 		if !seen[c.Name] {
@@ -162,7 +162,7 @@ func cohortRow(c store.Cohort) CohortRow {
 }
 
 func filtersView(f store.CohortFilters) FiltersView {
-	v := FiltersView{RevenueUnknown: f.RevenueUnknown, MinutesUnknown: f.MinutesUnknown, Categories: append([]string{}, f.Categories...), CategoryUnknown: f.CategoryUnknown, Fleet: f.Fleet, FleetUnknown: f.FleetUnknown, FilingUnknown: f.FilingUnknown, Class: f.Class, ClassUnknown: f.ClassUnknown, ShowExcluded: f.ShowExcluded}
+	v := FiltersView{RevenueUnknown: f.RevenueUnknown, MinutesUnknown: f.MinutesUnknown, Categories: append([]string{}, f.Categories...), CategoryUnknown: f.CategoryUnknown, Fleet: f.Fleet, FleetUnknown: f.FleetUnknown, Website: append([]string{}, f.Website...), WebsiteUnknown: f.WebsiteUnknown, FilingUnknown: f.FilingUnknown, Class: f.Class, ClassUnknown: f.ClassUnknown, ShowExcluded: f.ShowExcluded}
 	if f.RevenueMin != nil {
 		v.RevenueMin = dollars(*f.RevenueMin)
 	}
@@ -201,4 +201,29 @@ func rejectRecordRow(r store.Reject) RejectRecordRow {
 	v := RejectRecordRow{Kind: r.Kind, Cohort: r.Cohort, CohortName: r.CohortName, By: r.UserEmail, User: r.UserID, Why: r.Why}
 	v.At, v.AtText = stamp(r.At, MinuteLayout)
 	return v
+}
+
+func enrichmentRow(x store.Enrichment) EnrichmentRow {
+	v := EnrichmentRow{Kind: x.Kind, State: x.State, URL: x.URL, Title: x.Title, Size: x.Size, Error: x.Error, Domain: x.Source}
+	if x.StatusCode != 0 {
+		v.StatusCode = strconv.Itoa(x.StatusCode)
+	}
+	v.At, v.AtText = stamp(x.At, MinuteLayout)
+	return v
+}
+
+func setWebsite(v *CandidateView, es []store.Enrichment) {
+	v.Website = sources.WebsiteUnknown
+	for _, r := range es {
+		if r.Kind != sources.WebsiteCheck {
+			continue
+		}
+		v.Website = r.State
+		if r.State == sources.WebsiteHTTPS || r.State == sources.WebsiteHTTP {
+			v.WebsiteURL = r.URL
+		}
+		v.WebsiteTitle = r.Title
+		v.WebsiteChecked, v.WebsiteCheckedText = stamp(r.At, SecondLayout)
+		return
+	}
 }

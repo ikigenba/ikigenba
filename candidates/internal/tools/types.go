@@ -59,6 +59,8 @@ type Member struct {
 	RevenueConfidence   *float64  `json:"revenue_confidence,omitempty"`
 	Categories          []string  `json:"categories"`
 	FleetVerdict        string    `json:"fleet_verdict"`
+	Website             string    `json:"website"`
+	WebsiteURL          string    `json:"website_url,omitempty"`
 	Minutes             *int64    `json:"minutes,omitempty"`
 	GovernmentMatch     string    `json:"government_match,omitempty"`
 	KnownSince          string    `json:"known_since,omitempty"`
@@ -269,6 +271,8 @@ type Assessment struct {
 	FleetVerdict        string     `json:"fleet_verdict"`
 	PowerUnits          *int64     `json:"power_units,omitempty"`
 	Drivers             *int64     `json:"drivers,omitempty"`
+	Website             string     `json:"website"`
+	WebsiteURL          string     `json:"website_url,omitempty"`
 	Minutes             *int64     `json:"minutes,omitempty"`
 	Excluded            bool       `json:"excluded"`
 	Rules               int64      `json:"rules"`
@@ -310,12 +314,13 @@ func (v Ruling) MarshalJSON() ([]byte, error) {
 
 // Detail is a tool answer value.
 type Detail struct {
-	Candidate  Candidate   `json:"candidate"`
-	Assessment *Assessment `json:"assessment,omitempty"`
-	Estimates  []Estimate  `json:"estimates"`
-	Links      []Link      `json:"links"`
-	Rulings    []Ruling    `json:"rulings"`
-	Rejects    []Reject    `json:"rejects"`
+	Candidate   Candidate    `json:"candidate"`
+	Assessment  *Assessment  `json:"assessment,omitempty"`
+	Estimates   []Estimate   `json:"estimates"`
+	Links       []Link       `json:"links"`
+	Rulings     []Ruling     `json:"rulings"`
+	Enrichments []Enrichment `json:"enrichments"`
+	Rejects     []Reject     `json:"rejects"`
 }
 
 // MarshalJSON encodes empty collections as arrays or objects.
@@ -332,6 +337,9 @@ func (v Detail) MarshalJSON() ([]byte, error) {
 	}
 	if v.Rejects == nil {
 		v.Rejects = []Reject{}
+	}
+	if v.Enrichments == nil {
+		v.Enrichments = []Enrichment{}
 	}
 	return json.Marshal(plain(v))
 }
@@ -368,21 +376,23 @@ type CohortArgs struct {
 
 // FilterArgs holds a cohort's filters.
 type FilterArgs struct {
-	RevenueMin       *uint32  `json:"revenue_min"`
-	RevenueMax       *uint32  `json:"revenue_max"`
-	RevenueUnknown   bool     `json:"revenue_unknown"`
-	MaxMinutes       *uint32  `json:"max_minutes"`
-	MinutesUnknown   bool     `json:"minutes_unknown"`
-	Categories       []string `json:"categories"`
-	CategoryUnknown  bool     `json:"category_unknown"`
-	Fleet            string   `json:"fleet"`
-	FleetUnknown     bool     `json:"fleet_unknown"`
-	Government       *bool    `json:"government"`
-	MaxFilingAgeDays *uint32  `json:"max_filing_age_days"`
-	FilingUnknown    bool     `json:"filing_unknown"`
-	Class            string   `json:"class"`
-	ClassUnknown     bool     `json:"class_unknown"`
-	ShowExcluded     bool     `json:"show_excluded"`
+	RevenueMin       *uint32   `json:"revenue_min"`
+	RevenueMax       *uint32   `json:"revenue_max"`
+	RevenueUnknown   bool      `json:"revenue_unknown"`
+	MaxMinutes       *uint32   `json:"max_minutes"`
+	MinutesUnknown   bool      `json:"minutes_unknown"`
+	Categories       []string  `json:"categories"`
+	CategoryUnknown  bool      `json:"category_unknown"`
+	Fleet            string    `json:"fleet"`
+	FleetUnknown     bool      `json:"fleet_unknown"`
+	Website          *[]string `json:"website"`
+	WebsiteUnknown   bool      `json:"website_unknown"`
+	Government       *bool     `json:"government"`
+	MaxFilingAgeDays *uint32   `json:"max_filing_age_days"`
+	FilingUnknown    bool      `json:"filing_unknown"`
+	Class            string    `json:"class"`
+	ClassUnknown     bool      `json:"class_unknown"`
+	ShowExcluded     bool      `json:"show_excluded"`
 }
 
 // OrderArgs selects one member ordering.
@@ -453,4 +463,24 @@ type DecideArgs struct {
 	Candidate string   `json:"candidate" mcp:"required"`
 	Other     string   `json:"other"`
 	Links     []string `json:"links"`
+}
+
+// EnrichArgs selects a website enrichment pass.
+type EnrichArgs struct {
+	Kind          string `json:"kind" mcp:"required"`
+	OlderThanDays *int   `json:"older_than_days"`
+}
+
+// Enrichment is one recorded website result.
+type Enrichment struct {
+	Kind       string  `json:"kind"`
+	State      string  `json:"state"`
+	URL        string  `json:"url,omitempty"`
+	Title      string  `json:"title,omitempty"`
+	StatusCode int     `json:"status_code,omitempty"`
+	Size       int64   `json:"size"`
+	Error      string  `json:"error,omitempty"`
+	Domain     string  `json:"domain"`
+	Cost       float64 `json:"cost"`
+	At         string  `json:"at"`
 }

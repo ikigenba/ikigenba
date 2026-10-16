@@ -29,6 +29,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
 	"github.com/ikigenba/ikigenba/candidates/internal/web"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 func fixtureTime() time.Time { return time.Date(2026, 10, 5, 9, 0, 7, 0, time.UTC) }
@@ -241,15 +242,25 @@ func TestMCPContextAndTools(t *testing.T) {
 	}
 }
 
-// R-UPKU-EY85: a failing store prevents rebuilding before a pass can start.
+// R-YBJE-PAYH: a failing store prevents rebuilding before a pass can start.
 func TestFailingStoreEmitsNoPassEvent(t *testing.T) {
 	cfg, d, capture, bus := fixture(t)
+	cfg.Passes = passes.New(passes.Config{Store: cfg.Store, Sources: sources.New(fmcsa.New()), Website: &website.Checker{}, Telemetry: cfg.Telemetry, Events: cfg.Events})
+	defer cfg.Passes.Drain(context.Background())
 	srv := httptest.NewServer(web.Handler(cfg))
 	defer srv.Close()
 	d.SetFailing(true)
 	client := mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL + "/mcp"})
 	result, err := client.CallTool(context.Background(), identity.Caller{UserID: "caller"}, "rebuild", json.RawMessage(`{}`))
 	if err != nil || !result.IsError() {
+		t.Fatal(result, err)
+	}
+	result, err = client.CallTool(context.Background(), identity.Caller{UserID: "caller"}, "enrich", json.RawMessage(`{"kind":"`+sources.WebsiteCheck+`"}`))
+	if err != nil || !result.IsError() {
+		t.Fatal(result, err)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil || !strings.Contains(string(encoded), "unavailable: "+tools.RefuseUnavailable) {
 		t.Fatal(result, err)
 	}
 	event := events.Event{ID: "evt_0000000000000000", Time: fixtureTime(), Received: fixtureTime(), Seq: 1, Service: "scrapes", Name: trail.Accepted, Attrs: events.Attrs{"run": "run_fixture", "scraper": "fmcsa", "status": "done"}}
