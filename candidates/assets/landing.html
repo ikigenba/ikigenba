@@ -1,119 +1,95 @@
 {{/* The landing page at GET /: what the service is, one window
-     (paging.DefaultLimit, 25) of the shortlist with no filter, every
-     active candidate the owner has not excluded, ranked by operating
-     confidence, then one window of the passes, newest first. The root of the hierarchy: .Banner's .Trail is empty, so the
-     banner's breadcrumb holds only the service. Shown only to a signed-in
-     user; a guest is sent to sign in. Every signed-in user sees every
-     candidate and pass: they are the funnel's, not a user's. Never shows a
-     phone number or an email of a candidate. Read-only: no form but the
-     banner's sign out. Data: .Banner (a page.Banner, for banner and
-     footer); .Shortlist, one window (paging.DefaultLimit, 25) of the
-     active candidates the owner has not excluded, with no filter,
-     ranked by operating confidence, highest first, those with none
-     last, the candidate id breaking ties, each with .Rank (int, its
-     position in the whole ranked shortlist with no filter, from 1,
-     continuing across windows), .ID (its cand_ id, "cand_" and 16 hex),
-     .Name (its display name), .City and .State (its display address's
-     parts; each may be empty), .OperatingConfidence (the operating
-     confidence as the last judge wrote it, two decimals, "0.78"; empty
-     when there is no evidence), .RevenueLow (the combined low as shown,
-     "$2,400,000"), .RevenueHigh (the combined high as shown; empty when
-     the sources give only a minimum) and .RevenueConfidence (two
-     decimals, "0.40"), all three empty when there is no estimate,
-     .Categories (its distinct category words, as stored, a slice of
-     strings; empty when unknown), .Class (its class tag, one of
-     "private", "for_hire", "mixed" or "unknown"; empty when it has
-     none), .Fleet (bool, the fleet pass), .Minutes (drive minutes from
-     the origin as text, "84"; empty when its ZIP is not in the table)
-     and .GovernmentMatch (the government name pattern its name matched,
-     as stored, "COUNTY"; empty when none);
-     .ShortlistPage (string, this window's own shortlist page token, the
-     ?shortlist_page= the request carried; empty on the first window),
-     .ShortlistPrev (string, the page token for the shortlist window before
-     this one, in the same shortlist_page parameter as .ShortlistNext;
-     empty on the first window) and .ShortlistNext (string, the page token shortlist's next carries for
-     the candidates after these, the value to pass as its page; empty when
-     none remain); .Shortlist is the window .ShortlistPage names; .Passes,
-     one window (paging.DefaultLimit, 25) of the
-     kept passes, newest first by started, not every pass, each with .ID (its pass_ id,
-     "pass_" and 16 hex), .Kind (the pass's kind as stored, such as
-     "ingest" or "judge"), .Trigger (the run_ id of the scrapes run a
-     delivery named, the slug of the cron trigger whose fire started it,
-     "judge_candidates", or "rebuild"), .Status ("running", "done" or "failed",
-     as stored), .Reason (the failure reason as stored, one of "scrapes",
+     (paging.DefaultLimit, 25) of the cohorts, by name, then one window of
+     the passes, newest first. The root of the hierarchy: .Banner's .Trail
+     is empty, so the banner's breadcrumb holds only the service. Shown
+     only to a signed-in user; a guest is sent to sign in. Every signed-in
+     user sees every cohort and pass: they are the space's, not a user's.
+     Never shows a phone number or an email of a candidate. Read-only: no
+     form but the banner's sign out. Data: .Banner (a page.Banner, for
+     banner and footer); .Cohorts, one window (paging.DefaultLimit, 25) of
+     the cohorts not deleted, ordered by name, then by cohort id, in byte
+     order, each with .ID (its coh_ id, "coh_" and 16 hex), .Name (its
+     name, as given), .Size (int, its size), .CreatedBy (the email of who
+     created it; empty when none), .CreatedUser (their user id) and
+     .Changed and .ChangedText (when it was last changed, RFC 3339 UTC to
+     the second, and UTC to the minute, "2026-10-05 09:00"; both empty
+     when the store holds none); .CohortsPage (string, this window's own
+     cohorts page token, the ?cohorts_page= the request carried; empty on
+     the first window), .CohortsPrev (string, the page token for the
+     cohorts window before this one, in the same cohorts_page parameter as
+     .CohortsNext; empty on the first window) and .CohortsNext (string,
+     the page token cohorts's next carries for the cohorts after these,
+     the value to pass as its page; empty when none remain); .Cohorts is
+     the window .CohortsPage names; .Passes, one window
+     (paging.DefaultLimit, 25) of the kept passes, newest first by
+     started, not every pass, each with .ID (its pass_ id, "pass_" and 16
+     hex), .Kind (the pass's kind as stored, such as "ingest" or "judge"),
+     .Trigger (the run_ id of the scrapes run a delivery named, the slug
+     of the cron trigger whose fire started it, "judge_candidates", or
+     "rebuild"), .Status ("running", "done" or "failed", as stored),
+     .Reason (the failure reason as stored, one of "scrapes",
      "interrupted" or "store"; empty unless .Status is "failed"), .Started
      and .StartedText (RFC 3339 UTC to the second, and UTC to the minute,
-     "2026-10-05 09:00"), .Finished and .FinishedText (likewise; both empty
-     while running), and .Rows, .Created and .Judged (ints, as the record
-     holds them); and .PassesPage (string, this window's own passes page
-     token, the ?passes_page= the request carried; empty on the first
+     "2026-10-05 09:00"), .Finished and .FinishedText (likewise; both
+     empty while running), and .Rows, .Created and .Judged (ints, as the
+     record holds them); and .PassesPage (string, this window's own passes
+     page token, the ?passes_page= the request carried; empty on the first
      window), .PassesPrev (string, the page token for the passes window
      before this one, in the same passes_page parameter as .PassesNext;
-     empty on the first window) and .PassesNext (string, the page token passes's next
-     carries for the passes after these, the value to pass as its page;
-     empty when none remain); .Passes is the window .PassesPage names. Two
-     lists share the page, so each has its own nav and parameter,
-     nav#paging-shortlist with shortlist_page and nav#paging-passes with
-     passes_page, where a page with one list uses nav#paging and page;
-     each nav's hrefs carry the other list's current token, Prev's and
-     Last's included, so paging one list never resets the other, and its First drops only its own
-     parameter. Counts and minutes are shown as the plain integer. Status
-     and reason words, kinds, class tags, category words, patterns and the
-     trigger are shown as stored; the status's kind is chosen here:
-     "running" info, "done" ok, "failed" err.
+     empty on the first window) and .PassesNext (string, the page token
+     passes's next carries for the passes after these, the value to pass
+     as its page; empty when none remain); .Passes is the window
+     .PassesPage names. Two lists share the page, so each has its own nav
+     and parameter, nav#paging-cohorts with cohorts_page and
+     nav#paging-passes with passes_page, where a page with one list uses
+     nav#paging and page; each nav's hrefs carry the other list's current
+     token, Prev's and Last's included, so paging one list never resets
+     the other, and its First drops only its own parameter. Counts and
+     sizes are shown as the plain integer. Names are shown as given.
+     Status and reason words, kinds and the trigger are shown as stored;
+     the status's kind is chosen here: "running" info, "done" ok,
+     "failed" err.
      Hooks: title "candidates"; h1 with text "candidates"; p#summary.lede
      (text "Candidate businesses resolved from the records scrapes
      collects, one per business with every record that describes it as
      evidence, judged on whether it operates today and how big it is, and
-     ranked for review."); section#shortlist with h2 "Shortlist" and a p
-     in its header (text "Every active candidate the owner has not
-     excluded, ranked by operating confidence, highest first, with no
-     evidence last. Drive time, the fleet test and the government match
-     are facts here; none removes a candidate. This window; the shortlist
-     tool takes filters.", shortlist in a code element), then either, when
-     .Shortlist is empty, div#no-shortlist.empty holding h3 "No candidates
-     on the shortlist" and a p (text "A candidate shows here once a pass
-     has resolved scrapes' records into it, unless the owner excludes
-     it."), or table#shortlist-list whose th read Rank, Name, City, State,
-     Operating confidence, Low, High, Revenue confidence, Categories,
-     Class, Fleet, Minutes, Government, with one tr[data-candidate=<.ID>]
-     per candidate holding td.candidate-rank.num (.Rank),
-     td.candidate-name > a.candidate-link (href "/candidates/<.ID>", text
-     .Name), td.candidate-city (.City), td.candidate-state (.State),
-     td.candidate-operating.num (.OperatingConfidence, or when empty
-     span.muted "no evidence"), td.candidate-low.num (.RevenueLow, or when
-     empty span.muted "none"), td.candidate-high.num (.RevenueHigh, or
-     when empty span.muted "none"), td.candidate-revenue-confidence.num
-     (.RevenueConfidence, empty when absent), td.candidate-categories (one
-     code[data-category=<word>] per category, separated by spaces, or when
-     .Categories is empty span.muted "unknown"), td.candidate-class (.Class
-     in a code element, empty when absent), td.candidate-fleet ("yes" or
-     "no"), td.candidate-minutes.num (.Minutes, empty when absent) and
-     td.candidate-government (.GovernmentMatch in a code element, empty
-     when none); then, after the card
-     (section#shortlist), nav.paging#paging-shortlist (aria-label "Pages")
-     whose children are, in order, First, Prev, Next and Last: First (on
-     the first window, .ShortlistPage empty, a span with aria-current="page" and text
-     "First"; otherwise a link with text "First" to / when .PassesPage is
-     empty, else to /?passes_page=<.PassesPage>), then, only when
-     .ShortlistPrev is not empty, Prev (a link with text "Prev" to
-     /?shortlist_page=<.ShortlistPrev>, followed by
-     &passes_page=<.PassesPage> when .PassesPage is not empty), then, only
-     when .ShortlistNext is not empty, Next (a link with text "Next" to
-     /?shortlist_page=<.ShortlistNext>, followed by
-     &passes_page=<.PassesPage> when .PassesPage is not empty), then,
-     always, Last (while .ShortlistNext is not empty, a link with text
-     "Last" to /?shortlist_page=last, followed by
+     read through cohorts, the saved searches the owner grooms.");
+     section#cohorts with h2 "Cohorts" and a p in its header (text "The
+     space's cohorts, by name. A cohort is a saved search, its filters,
+     order, size and rejects; its members are worked out each time its
+     page is read. Agents make and change cohorts with the tools."), then
+     either, when .Cohorts is empty, div#no-cohorts.empty holding h3 "No
+     cohorts yet" and a p (text "A cohort shows here once an agent creates
+     one with the create_cohort tool.", create_cohort in a code element),
+     or table#cohort-list whose th read Name, Cohort, Size, Created by,
+     Changed, with one tr[data-cohort=<.ID>] per cohort holding
+     td.cohort-name > a.cohort-link (href "/cohorts/<.ID>", text .Name),
+     td.cohort-id (.ID in a code element), td.cohort-size.num (.Size),
+     td.cohort-by (.CreatedBy, or .CreatedUser in a code element when
+     .CreatedBy is empty) and td.cohort-changed holding, only when
+     .Changed is not empty, time[datetime=<.Changed>] (text
+     .ChangedText); then, after the card (section#cohorts),
+     nav.paging#paging-cohorts (aria-label "Pages") whose children are, in
+     order, First, Prev, Next and Last: First (on the first window,
+     .CohortsPage empty, a span with aria-current="page" and text "First";
+     otherwise a link with text "First" to / when .PassesPage is empty,
+     else to /?passes_page=<.PassesPage>), then, only when .CohortsPrev is
+     not empty, Prev (a link with text "Prev" to
+     /?cohorts_page=<.CohortsPrev>, followed by &passes_page=<.PassesPage>
+     when .PassesPage is not empty), then, only when .CohortsNext is not
+     empty, Next (a link with text "Next" to /?cohorts_page=<.CohortsNext>,
+     followed by &passes_page=<.PassesPage> when .PassesPage is not
+     empty), then, always, Last (while .CohortsNext is not empty, a link
+     with text "Last" to /?cohorts_page=last, followed by
      &passes_page=<.PassesPage> when .PassesPage is not empty,
-     shortlist_page=last naming the last shortlist window; when
-     .ShortlistNext is empty, the last window, a span with
-     aria-current="page" and text "Last", so a single window shows First
-     and Last both as the current item); the nav
-     shows when .Shortlist is not empty or .ShortlistPage is not empty, so
-     an emptied later window still offers First; on the first window with
-     no candidates there is no nav. Then section#passes with h2
-     "Passes" and a p in its header (text "Passes, newest first. An
-     ingest resolves a scrapes run's records into candidates and judges
+     cohorts_page=last naming the last cohorts window; when .CohortsNext
+     is empty, the last window, a span with aria-current="page" and text
+     "Last", so a single window shows First and Last both as the current
+     item); the nav shows when .Cohorts is not empty or .CohortsPage is
+     not empty, so an emptied later window still offers First; on the
+     first window with no cohorts there is no nav. Then section#passes
+     with h2 "Passes" and a p in its header (text "Passes, newest first.
+     An ingest resolves a scrapes run's records into candidates and judges
      nothing; a judge judges every candidate again from its records not
      gone."), then either, when .Passes is empty, div#no-passes.empty
      holding h3 "No passes yet" and a p (text "A pass starts when scrapes
@@ -134,25 +110,26 @@
      (.Rows), td.pass-created.num (.Created) and td.pass-judged.num
      (.Judged); then, after the card (section#passes),
      nav.paging#paging-passes (aria-label "Pages") whose children are, in
-     order, First, Prev, Next and Last: First (on the first window, .PassesPage empty, a span with
-     aria-current="page" and text "First"; otherwise a link with text
-     "First" to / when .ShortlistPage is empty, else to
-     /?shortlist_page=<.ShortlistPage>), then, only when .PassesPrev is not
-     empty, Prev (a link with text "Prev" to /?passes_page=<.PassesPrev>,
-     followed by &shortlist_page=<.ShortlistPage> when .ShortlistPage is
-     not empty), then, only when .PassesNext is not empty, Next (a link
-     with text "Next" to /?passes_page=<.PassesNext>, followed by
-     &shortlist_page=<.ShortlistPage> when .ShortlistPage is not empty),
-     then, always, Last (while .PassesNext is not empty, a link with text
-     "Last" to /?passes_page=last, followed by
-     &shortlist_page=<.ShortlistPage> when .ShortlistPage is not empty,
+     order, First, Prev, Next and Last: First (on the first window,
+     .PassesPage empty, a span with aria-current="page" and text "First";
+     otherwise a link with text "First" to / when .CohortsPage is empty,
+     else to /?cohorts_page=<.CohortsPage>), then, only when .PassesPrev
+     is not empty, Prev (a link with text "Prev" to
+     /?passes_page=<.PassesPrev>, followed by &cohorts_page=<.CohortsPage>
+     when .CohortsPage is not empty), then, only when .PassesNext is not
+     empty, Next (a link with text "Next" to /?passes_page=<.PassesNext>,
+     followed by &cohorts_page=<.CohortsPage> when .CohortsPage is not
+     empty), then, always, Last (while .PassesNext is not empty, a link
+     with text "Last" to /?passes_page=last, followed by
+     &cohorts_page=<.CohortsPage> when .CohortsPage is not empty,
      passes_page=last naming the last passes window; when .PassesNext is
      empty, the last window, a span with aria-current="page" and text
      "Last", so a single window shows First and Last both as the current
-     item); the nav shows when .Passes is not empty or .PassesPage is
-     not empty, so an emptied later window still offers First; on the
-     first window with no passes there is no nav; a #about-link (text "About candidates") whose href is
-     "/about". No script but appkit's /_appkit/feedback.js. */}}
+     item); the nav shows when .Passes is not empty or .PassesPage is not
+     empty, so an emptied later window still offers First; on the first
+     window with no passes there is no nav; a #about-link (text "About
+     candidates") whose href is "/about". No script but appkit's
+     /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>candidates</title></head>
@@ -160,37 +137,29 @@
 {{template "banner" .Banner}}
 <main>
 <h1>candidates</h1>
-<p id="summary" class="lede">Candidate businesses resolved from the records scrapes collects, one per business with every record that describes it as evidence, judged on whether it operates today and how big it is, and ranked for review.</p>
-<section id="shortlist" class="card flush" aria-labelledby="shortlist-title">
-<header><div><h2 id="shortlist-title">Shortlist</h2><p>Every active candidate the owner has not excluded, ranked by operating confidence, highest first, with no evidence last. Drive time, the fleet test and the government match are facts here; none removes a candidate. This window; the <code>shortlist</code> tool takes filters.</p></div></header>
-{{if .Shortlist}}<div class="table-scroll">
-<table id="shortlist-list">
-<thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th class="num">Operating confidence</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Class</th><th>Fleet</th><th class="num">Minutes</th><th>Government</th></tr></thead>
+<p id="summary" class="lede">Candidate businesses resolved from the records scrapes collects, one per business with every record that describes it as evidence, judged on whether it operates today and how big it is, and read through cohorts, the saved searches the owner grooms.</p>
+<section id="cohorts" class="card flush" aria-labelledby="cohorts-title">
+<header><div><h2 id="cohorts-title">Cohorts</h2><p>The space's cohorts, by name. A cohort is a saved search, its filters, order, size and rejects; its members are worked out each time its page is read. Agents make and change cohorts with the tools.</p></div></header>
+{{if .Cohorts}}<div class="table-scroll">
+<table id="cohort-list">
+<thead><tr><th>Name</th><th>Cohort</th><th class="num">Size</th><th>Created by</th><th>Changed</th></tr></thead>
 <tbody>
-{{range .Shortlist}}<tr data-candidate="{{.ID}}">
-<td class="candidate-rank num">{{.Rank}}</td>
-<td class="candidate-name"><a class="candidate-link" href="/candidates/{{.ID}}">{{.Name}}</a></td>
-<td class="candidate-city">{{.City}}</td>
-<td class="candidate-state">{{.State}}</td>
-<td class="candidate-operating num">{{if .OperatingConfidence}}{{.OperatingConfidence}}{{else}}<span class="muted">no evidence</span>{{end}}</td>
-<td class="candidate-low num">{{if .RevenueLow}}{{.RevenueLow}}{{else}}<span class="muted">none</span>{{end}}</td>
-<td class="candidate-high num">{{if .RevenueHigh}}{{.RevenueHigh}}{{else}}<span class="muted">none</span>{{end}}</td>
-<td class="candidate-revenue-confidence num">{{.RevenueConfidence}}</td>
-<td class="candidate-categories">{{range $i, $c := .Categories}}{{if $i}} {{end}}<code data-category="{{$c}}">{{$c}}</code>{{else}}<span class="muted">unknown</span>{{end}}</td>
-<td class="candidate-class">{{if .Class}}<code>{{.Class}}</code>{{end}}</td>
-<td class="candidate-fleet">{{if .Fleet}}yes{{else}}no{{end}}</td>
-<td class="candidate-minutes num">{{.Minutes}}</td>
-<td class="candidate-government">{{if .GovernmentMatch}}<code>{{.GovernmentMatch}}</code>{{end}}</td>
+{{range .Cohorts}}<tr data-cohort="{{.ID}}">
+<td class="cohort-name"><a class="cohort-link" href="/cohorts/{{.ID}}">{{.Name}}</a></td>
+<td class="cohort-id"><code>{{.ID}}</code></td>
+<td class="cohort-size num">{{.Size}}</td>
+<td class="cohort-by">{{if .CreatedBy}}{{.CreatedBy}}{{else}}<code>{{.CreatedUser}}</code>{{end}}</td>
+<td class="cohort-changed">{{if .Changed}}<time datetime="{{.Changed}}">{{.ChangedText}}</time>{{end}}</td>
 </tr>
 {{end}}</tbody>
 </table>
 </div>
-{{else}}<div id="no-shortlist" class="empty">
-<h3 class="text-md">No candidates on the shortlist</h3>
-<p>A candidate shows here once a judge pass has judged it, unless the owner excludes it.</p>
+{{else}}<div id="no-cohorts" class="empty">
+<h3 class="text-md">No cohorts yet</h3>
+<p>A cohort shows here once an agent creates one with the <code>create_cohort</code> tool.</p>
 </div>{{end}}
 </section>
-{{if or .Shortlist .ShortlistPage}}<nav class="paging" id="paging-shortlist" aria-label="Pages">{{if .ShortlistPage}}<a href="/{{if .PassesPage}}?passes_page={{.PassesPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .ShortlistPrev}}<a href="/?shortlist_page={{.ShortlistPrev}}{{if .PassesPage}}&amp;passes_page={{.PassesPage}}{{end}}">Prev</a>{{end}}{{if .ShortlistNext}}<a href="/?shortlist_page={{.ShortlistNext}}{{if .PassesPage}}&amp;passes_page={{.PassesPage}}{{end}}">Next</a>{{end}}{{if .ShortlistNext}}<a href="/?shortlist_page=last{{if .PassesPage}}&amp;passes_page={{.PassesPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
+{{if or .Cohorts .CohortsPage}}<nav class="paging" id="paging-cohorts" aria-label="Pages">{{if .CohortsPage}}<a href="/{{if .PassesPage}}?passes_page={{.PassesPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .CohortsPrev}}<a href="/?cohorts_page={{.CohortsPrev}}{{if .PassesPage}}&amp;passes_page={{.PassesPage}}{{end}}">Prev</a>{{end}}{{if .CohortsNext}}<a href="/?cohorts_page={{.CohortsNext}}{{if .PassesPage}}&amp;passes_page={{.PassesPage}}{{end}}">Next</a>{{end}}{{if .CohortsNext}}<a href="/?cohorts_page=last{{if .PassesPage}}&amp;passes_page={{.PassesPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
 {{end}}<section id="passes" class="card flush" aria-labelledby="passes-title">
 <header><div><h2 id="passes-title">Passes</h2><p>Passes, newest first. An ingest resolves a scrapes run's records into candidates and judges nothing; a judge judges every candidate again from its records not gone.</p></div></header>
 {{if .Passes}}<div class="table-scroll">
@@ -216,7 +185,7 @@
 <p>A pass starts when scrapes finishes a run, when the daily <code>judge_candidates</code> trigger fires, or when an agent calls the <code>rebuild</code> tool, and shows up here.</p>
 </div>{{end}}
 </section>
-{{if or .Passes .PassesPage}}<nav class="paging" id="paging-passes" aria-label="Pages">{{if .PassesPage}}<a href="/{{if .ShortlistPage}}?shortlist_page={{.ShortlistPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .PassesPrev}}<a href="/?passes_page={{.PassesPrev}}{{if .ShortlistPage}}&amp;shortlist_page={{.ShortlistPage}}{{end}}">Prev</a>{{end}}{{if .PassesNext}}<a href="/?passes_page={{.PassesNext}}{{if .ShortlistPage}}&amp;shortlist_page={{.ShortlistPage}}{{end}}">Next</a>{{end}}{{if .PassesNext}}<a href="/?passes_page=last{{if .ShortlistPage}}&amp;shortlist_page={{.ShortlistPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
+{{if or .Passes .PassesPage}}<nav class="paging" id="paging-passes" aria-label="Pages">{{if .PassesPage}}<a href="/{{if .CohortsPage}}?cohorts_page={{.CohortsPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .PassesPrev}}<a href="/?passes_page={{.PassesPrev}}{{if .CohortsPage}}&amp;cohorts_page={{.CohortsPage}}{{end}}">Prev</a>{{end}}{{if .PassesNext}}<a href="/?passes_page={{.PassesNext}}{{if .CohortsPage}}&amp;cohorts_page={{.CohortsPage}}{{end}}">Next</a>{{end}}{{if .PassesNext}}<a href="/?passes_page=last{{if .CohortsPage}}&amp;cohorts_page={{.CohortsPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
 {{end}}<p><a id="about-link" href="/about">About candidates</a></p>
 </main>
 {{template "footer" .Banner}}

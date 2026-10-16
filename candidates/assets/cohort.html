@@ -1,0 +1,242 @@
+{{/* One cohort at GET /cohorts/<id>: its definition (name, size,
+     filters with their unknown switches, order, who created and last
+     changed it and when), how many candidates match, its members in rank
+     order as this read works them out, and its standing rejects. Shown
+     to any signed-in user; a guest is sent to sign in; an unknown or
+     malformed id, or a deleted cohort's, is the not-found page. Every
+     signed-in user sees every cohort: they are the space's, not a
+     user's. Never shows a phone number or an email of a candidate.
+     Read-only: no form but the banner's sign out; cohorts are made,
+     changed and groomed with the tools. One level below the root:
+     .Banner's .Trail is the one level <.Cohort.ID> at
+     /cohorts/<.Cohort.ID>. Data: .Banner (a page.Banner, for banner and
+     footer); .Cohort, with .ID (its coh_ id, "coh_" and 16 hex), .Name
+     (its name, as given), .Size (int, its size), .Filters (the filters
+     it carries, each part empty or false when the cohort does not carry
+     it), with .RevenueMin and .RevenueMax (the bounds as shown,
+     "$5,000,000"; each empty when absent), .RevenueUnknown (bool, the
+     revenue switch), .MaxMinutes (the drive-minutes maximum as text,
+     "120"; empty when absent), .MinutesUnknown (bool), .Categories (the
+     category names it admits, as stored, a slice of strings; empty when
+     absent), .CategoryUnknown (bool), .Fleet (the fleet verdict it
+     admits, "pass" or "fail"; empty when absent), .FleetUnknown (bool),
+     .Government ("true" or "false", the government filter as given;
+     empty when absent), .MaxFilingAgeDays (the filing-age maximum in
+     days as text, "730"; empty when absent), .FilingUnknown (bool),
+     .Class (the class tag it admits, "for_hire", "private" or "mixed";
+     empty when absent), .ClassUnknown (bool) and .ShowExcluded (bool,
+     true when it shows excluded candidates); .Order (its sort order, in
+     the order stored, never empty, each with .Field, as stored, one of
+     "operating_confidence", "revenue_low", "revenue_confidence",
+     "drive_minutes", "newest_filing" and "known_since", and .Direction,
+     "desc" or "asc"), .CreatedBy (the email of who created it; empty
+     when none), .CreatedUser (their user id), .Created and .CreatedText
+     (RFC 3339 UTC to the second, and the same as shown, "2006-01-02
+     15:04:05 UTC"), .ChangedBy (the email of who last changed it; empty
+     when none), .ChangedUser (their user id) and .Changed and
+     .ChangedText (likewise; .Changed, .ChangedText, .ChangedBy and
+     .ChangedUser all empty when the store holds none); .Matching (int,
+     how many candidates pass its filters and the exclusion rule and are
+     not rejected from it, before the size cut); .Members, the first
+     .Size of those, in the cohort's order, each with .Rank (int, its
+     position, from 1), .ID (its cand_ id, "cand_" and 16 hex), .Name (its
+     display name), .City and .State (its display address's parts; each
+     may be empty), .OperatingConfidence (two decimals, "0.78"; empty when
+     there is no evidence), .RevenueLow (the combined low as shown,
+     "$2,400,000"), .RevenueHigh (the combined high as shown; empty when
+     the sources give only a minimum) and .RevenueConfidence (two
+     decimals, "0.40"), all three empty when there is no estimate,
+     .Categories (its distinct category words, as stored, a slice of
+     strings; empty when unknown), .Class (its class tag, one of
+     "private", "for_hire", "mixed" or "unknown"; empty when it has
+     none), .FleetVerdict ("pass", "fail" or "unknown", as stored),
+     .Minutes (drive minutes from the origin as text, "84"; empty when its
+     ZIP is not in the table), .GovernmentMatch (the government name
+     pattern its name matched, as stored, "COUNTY"; empty when none),
+     .KnownSince and .KnownSinceText (the earliest date any link not gone
+     shows it existing, "2018-04-09", both the same; empty when none),
+     .NewestFiling and .NewestFilingText (the newest filing date among its
+     links not gone, "2025-03-18", both the same; empty when none) and
+     .Excluded (bool, true when the owner's ruling excludes it; only a
+     cohort that shows excluded candidates has one); .Rejects, the
+     cohort's standing rejects, newest first, each with .Candidate (the
+     cand_ id rejected), .By (the email of who rejected it; empty when
+     none), .User (their user id), .At and .AtText (when, RFC 3339 UTC to
+     the second, and UTC to the minute, "2026-10-05 09:00") and .Why (the
+     sentence given). Counts, sizes and minutes are shown as the plain
+     integer. Names are shown as given; class tags, category words,
+     verdicts, patterns, order fields and directions as stored.
+     Hooks: title "<.Cohort.Name> · candidates"; h1 with text .Name;
+     p#headline.cluster holding span#matching.badge[data-kind=info] (text
+     "<.Matching> matching"), a space and span.muted holding "changed" and
+     time[datetime=<.Changed>] (text .ChangedText) when .Changed is set,
+     else "created" and time[datetime=<.Created>] (text .CreatedText).
+     section#cohort-card with h2 "Cohort" and a p in its header (text "A
+     saved search: its members are the active, judged candidates that pass
+     every filter, are not rejected from it and are not excluded unless it
+     shows excluded ones, in its order, cut to its size. Agents change it
+     with the edit_cohort tool.", edit_cohort in a code element), then
+     dl#cohort.kv holding, in this order, dt "ID" then dd#cohort-id (.ID
+     in a code element), dt "Name" then dd#cohort-name (.Name), dt "Size"
+     then dd#cohort-size (.Size), dt "Order" then dd#cohort-order (one
+     div[data-order=<.Field>] per entry holding .Field in a code element, a
+     space and span.muted with .Direction), dt "Created by" then
+     dd#cohort-created-by (.CreatedBy, or .CreatedUser in a code element
+     when .CreatedBy is empty), dt "Created" then dd#cohort-created (a
+     time[datetime] with the text form), then, only when .Changed is set,
+     dt "Changed by" then dd#cohort-changed-by (as Created by) and dt
+     "Changed" then dd#cohort-changed (a time[datetime] with the text
+     form). section#filters with h2 "Filters" and a p in its header (text
+     "A filter applies only when the cohort carries it; any means it does
+     not. A filter on a fact that can be unknown leaves out the candidates
+     whose value is unknown unless its switch lets them in."), then
+     dl#filters.kv holding, in this order, each dd showing span.muted
+     "any" when the cohort does not carry that filter's value, and, for
+     the five filters with a switch, followed when the switch is set by a
+     space and span.badge[data-kind=info][data-unknown] (text "unknown
+     included"): dt "Revenue low" then dd#filter-revenue ("<.RevenueMin>
+     to <.RevenueMax>" when both are set, "at least <.RevenueMin>" or "at
+     most <.RevenueMax>" when one is; switch .RevenueUnknown), dt "Drive
+     minutes" then dd#filter-minutes ("at most <.MaxMinutes>"; switch
+     .MinutesUnknown), dt "Categories" then dd#filter-categories (one
+     code[data-category=<word>] per category, separated by spaces; switch
+     .CategoryUnknown), dt "Fleet" then dd#filter-fleet (.Fleet in a code
+     element; switch .FleetUnknown), dt "Government" then
+     dd#filter-government ("a government match only" when .Government is
+     "true", "no government match" when "false"), dt "Filing age" then
+     dd#filter-filing ("newest filing at most <.MaxFilingAgeDays> days
+     old"; switch .FilingUnknown), dt "Class" then dd#filter-class (.Class
+     in a code element; switch .ClassUnknown) and dt "Excluded" then
+     dd#filter-excluded ("shown" when .ShowExcluded, else "hidden").
+     section#members with h2 "Members" and a p in its header (text "The
+     first of the <.Matching> matching candidates in the cohort's order,
+     up to its size of <.Size>, worked out as this page was read. An unknown value sorts last
+     whatever the direction; the candidate id breaks ties."), then either,
+     when .Members is empty, div#no-members.empty holding h3 "No members"
+     and a p (text "No judged candidate passes the filters, or every one
+     that does is rejected from the cohort. Loosen a filter or set a
+     switch with the edit_cohort tool.", edit_cohort in a code element),
+     or table#member-list whose th read Rank, Name, City, State, Operating
+     confidence, Low, High, Revenue confidence, Categories, Class, Fleet,
+     Minutes, Government, Known since, Newest filing, with one
+     tr[data-candidate=<.ID>] per member holding td.candidate-rank.num
+     (.Rank), td.candidate-name (a.candidate-link, href
+     "/candidates/<.ID>", text .Name, followed, when .Excluded, by a space
+     and span.badge[data-kind=warn] (text "excluded")), td.candidate-city
+     (.City), td.candidate-state (.State), td.candidate-operating.num
+     (.OperatingConfidence, or when empty span.muted "no evidence"),
+     td.candidate-low.num (.RevenueLow, or when empty span.muted "none"),
+     td.candidate-high.num (.RevenueHigh, or when empty span.muted
+     "none"), td.candidate-revenue-confidence.num (.RevenueConfidence,
+     empty when absent), td.candidate-categories (one
+     code[data-category=<word>] per category, separated by spaces, or when
+     .Categories is empty span.muted "unknown"), td.candidate-class
+     (.Class in a code element, empty when absent),
+     td.candidate-fleet[data-fleet=<.FleetVerdict>] (.FleetVerdict, in
+     span.muted when "unknown"), td.candidate-minutes.num (.Minutes, empty
+     when absent), td.candidate-government (.GovernmentMatch in a code
+     element, empty when none), td.candidate-known-since and
+     td.candidate-filed (each, only when set, a time[datetime] with the
+     text form). section#rejects with h2 "Rejects" and a p in its header
+     (text "Candidates the owner rejected from this cohort, newest first,
+     each kept out whether or not it would be a member. The unreject tool
+     lets one back.", unreject in a code element), then either, when
+     .Rejects is empty, div#no-rejects.empty holding h3 "No rejects" and a
+     p (text "Rejects are made by hand with the reject tool, one candidate
+     and one cohort at a time, each with a reason.", reject in a code
+     element), or table#reject-list whose th read Candidate, By, When,
+     Why, with one tr[data-reject=<.Candidate>] per reject holding
+     td.reject-candidate (a.candidate-link, href
+     "/candidates/<.Candidate>", .Candidate in a code element),
+     td.reject-by (.By, or .User in a code element when .By is empty),
+     td.reject-at (time[datetime=<.At>] with .AtText) and td.reject-why
+     (.Why). No script but appkit's /_appkit/feedback.js. */}}
+{{define "cohort"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>{{.Cohort.Name}} · candidates</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+{{$matching := .Matching}}{{$members := .Members}}{{$rejects := .Rejects}}{{with .Cohort}}<h1>{{.Name}}</h1>
+<p id="headline" class="cluster"><span id="matching" class="badge" data-kind="info">{{$matching}} matching</span> <span class="muted">{{if .Changed}}changed <time datetime="{{.Changed}}">{{.ChangedText}}</time>{{else}}created <time datetime="{{.Created}}">{{.CreatedText}}</time>{{end}}</span></p>
+<section id="cohort-card" class="card" aria-labelledby="cohort-title">
+<header><h2 id="cohort-title">Cohort</h2><p>A saved search: its members are the active, judged candidates that pass every filter, are not rejected from it and are not excluded unless it shows excluded ones, in its order, cut to its size. Agents change it with the <code>edit_cohort</code> tool.</p></header>
+<dl id="cohort" class="kv">
+<dt>ID</dt><dd id="cohort-id"><code>{{.ID}}</code></dd>
+<dt>Name</dt><dd id="cohort-name">{{.Name}}</dd>
+<dt>Size</dt><dd id="cohort-size">{{.Size}}</dd>
+<dt>Order</dt><dd id="cohort-order">{{range .Order}}<div data-order="{{.Field}}"><code>{{.Field}}</code> <span class="muted">{{.Direction}}</span></div>{{end}}</dd>
+<dt>Created by</dt><dd id="cohort-created-by">{{if .CreatedBy}}{{.CreatedBy}}{{else}}<code>{{.CreatedUser}}</code>{{end}}</dd>
+<dt>Created</dt><dd id="cohort-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></dd>
+{{if .Changed}}<dt>Changed by</dt><dd id="cohort-changed-by">{{if .ChangedBy}}{{.ChangedBy}}{{else}}<code>{{.ChangedUser}}</code>{{end}}</dd>
+<dt>Changed</dt><dd id="cohort-changed"><time datetime="{{.Changed}}">{{.ChangedText}}</time></dd>
+{{end}}</dl>
+</section>
+{{with .Filters}}<section id="filters" class="card" aria-labelledby="filters-title">
+<header><h2 id="filters-title">Filters</h2><p>A filter applies only when the cohort carries it; any means it does not. A filter on a fact that can be unknown leaves out the candidates whose value is unknown unless its switch lets them in.</p></header>
+<dl id="filters" class="kv">
+<dt>Revenue low</dt><dd id="filter-revenue">{{if and .RevenueMin .RevenueMax}}{{.RevenueMin}} to {{.RevenueMax}}{{else if .RevenueMin}}at least {{.RevenueMin}}{{else if .RevenueMax}}at most {{.RevenueMax}}{{else}}<span class="muted">any</span>{{end}}{{if .RevenueUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
+<dt>Drive minutes</dt><dd id="filter-minutes">{{if .MaxMinutes}}at most {{.MaxMinutes}}{{else}}<span class="muted">any</span>{{end}}{{if .MinutesUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
+<dt>Categories</dt><dd id="filter-categories">{{range $i, $c := .Categories}}{{if $i}} {{end}}<code data-category="{{$c}}">{{$c}}</code>{{else}}<span class="muted">any</span>{{end}}{{if .CategoryUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
+<dt>Fleet</dt><dd id="filter-fleet">{{if .Fleet}}<code>{{.Fleet}}</code>{{else}}<span class="muted">any</span>{{end}}{{if .FleetUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
+<dt>Government</dt><dd id="filter-government">{{if eq .Government "true"}}a government match only{{else if eq .Government "false"}}no government match{{else}}<span class="muted">any</span>{{end}}</dd>
+<dt>Filing age</dt><dd id="filter-filing">{{if .MaxFilingAgeDays}}newest filing at most {{.MaxFilingAgeDays}} days old{{else}}<span class="muted">any</span>{{end}}{{if .FilingUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
+<dt>Class</dt><dd id="filter-class">{{if .Class}}<code>{{.Class}}</code>{{else}}<span class="muted">any</span>{{end}}{{if .ClassUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
+<dt>Excluded</dt><dd id="filter-excluded">{{if .ShowExcluded}}shown{{else}}hidden{{end}}</dd>
+</dl>
+</section>
+{{end}}<section id="members" class="card flush" aria-labelledby="members-title">
+<header><div><h2 id="members-title">Members</h2><p>The first of the {{$matching}} matching candidates in the cohort's order, up to its size of {{.Size}}, worked out as this page was read. An unknown value sorts last whatever the direction; the candidate id breaks ties.</p></div></header>
+{{if $members}}<div class="table-scroll">
+<table id="member-list">
+<thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th class="num">Operating confidence</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Class</th><th>Fleet</th><th class="num">Minutes</th><th>Government</th><th>Known since</th><th>Newest filing</th></tr></thead>
+<tbody>
+{{range $members}}<tr data-candidate="{{.ID}}">
+<td class="candidate-rank num">{{.Rank}}</td>
+<td class="candidate-name"><a class="candidate-link" href="/candidates/{{.ID}}">{{.Name}}</a>{{if .Excluded}} <span class="badge" data-kind="warn">excluded</span>{{end}}</td>
+<td class="candidate-city">{{.City}}</td>
+<td class="candidate-state">{{.State}}</td>
+<td class="candidate-operating num">{{if .OperatingConfidence}}{{.OperatingConfidence}}{{else}}<span class="muted">no evidence</span>{{end}}</td>
+<td class="candidate-low num">{{if .RevenueLow}}{{.RevenueLow}}{{else}}<span class="muted">none</span>{{end}}</td>
+<td class="candidate-high num">{{if .RevenueHigh}}{{.RevenueHigh}}{{else}}<span class="muted">none</span>{{end}}</td>
+<td class="candidate-revenue-confidence num">{{.RevenueConfidence}}</td>
+<td class="candidate-categories">{{range $i, $c := .Categories}}{{if $i}} {{end}}<code data-category="{{$c}}">{{$c}}</code>{{else}}<span class="muted">unknown</span>{{end}}</td>
+<td class="candidate-class">{{if .Class}}<code>{{.Class}}</code>{{end}}</td>
+<td class="candidate-fleet" data-fleet="{{.FleetVerdict}}">{{if eq .FleetVerdict "unknown"}}<span class="muted">{{.FleetVerdict}}</span>{{else}}{{.FleetVerdict}}{{end}}</td>
+<td class="candidate-minutes num">{{.Minutes}}</td>
+<td class="candidate-government">{{if .GovernmentMatch}}<code>{{.GovernmentMatch}}</code>{{end}}</td>
+<td class="candidate-known-since">{{if .KnownSince}}<time datetime="{{.KnownSince}}">{{.KnownSinceText}}</time>{{end}}</td>
+<td class="candidate-filed">{{if .NewestFiling}}<time datetime="{{.NewestFiling}}">{{.NewestFilingText}}</time>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}<div id="no-members" class="empty">
+<h3 class="text-md">No members</h3>
+<p>No judged candidate passes the filters, or every one that does is rejected from the cohort. Loosen a filter or set a switch with the <code>edit_cohort</code> tool.</p>
+</div>{{end}}
+</section>
+{{end}}<section id="rejects" class="card flush" aria-labelledby="rejects-title">
+<header><div><h2 id="rejects-title">Rejects</h2><p>Candidates the owner rejected from this cohort, newest first, each kept out whether or not it would be a member. The <code>unreject</code> tool lets one back.</p></div></header>
+{{if $rejects}}<div class="table-scroll">
+<table id="reject-list">
+<thead><tr><th>Candidate</th><th>By</th><th>When</th><th>Why</th></tr></thead>
+<tbody>
+{{range $rejects}}<tr data-reject="{{.Candidate}}">
+<td class="reject-candidate"><a class="candidate-link" href="/candidates/{{.Candidate}}"><code>{{.Candidate}}</code></a></td>
+<td class="reject-by">{{if .By}}{{.By}}{{else}}<code>{{.User}}</code>{{end}}</td>
+<td class="reject-at"><time datetime="{{.At}}">{{.AtText}}</time></td>
+<td class="reject-why">{{.Why}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<div id="no-rejects" class="empty">
+<h3 class="text-md">No rejects</h3>
+<p>Rejects are made by hand with the <code>reject</code> tool, one candidate and one cohort at a time, each with a reason.</p>
+</div>{{end}}
+</section>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

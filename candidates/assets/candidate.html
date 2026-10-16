@@ -2,12 +2,14 @@
      its assessment with the two judgments and the facts beside them as
      the last judge wrote them, the operating evidence behind it, each
      estimate with the facts it used, each link to a scrapes record with
-     its last seen and gone, and the owner's rulings on it. A merged
-     candidate's page says what it merged into and links there, with its
-     record and its rulings and no evidence. Shown to any signed-in user; a
+     its last seen and gone, the owner's rulings on it, and every reject
+     and unreject naming it. A merged candidate's page says what it merged
+     into and links there, with its record, its rulings and its rejects
+     and no evidence. Shown to any signed-in user; a
      guest is sent to sign in; an unknown id is the not-found page.
      Read-only: no form but the banner's sign out; rulings are made with
-     the decide tool. One level below the root: .Banner's .Trail is the one
+     the decide, exclude and include tools, and rejects with the reject
+     and unreject tools. One level below the root: .Banner's .Trail is the one
      level <.Candidate.ID> at /candidates/<.Candidate.ID>. Data: .Banner (a
      page.Banner, for banner and footer); .Candidate, with .ID (its cand_
      id, "cand_" and 16 hex), .Status ("active" or "merged", as stored),
@@ -42,7 +44,9 @@
      word as stored, and .Source, the source that gave it, one per
      category and source; empty when unknown), .GovernmentMatch (the
      government name pattern its name matched, as stored, "COUNTY"; empty
-     when none), .Fleet (bool, the fleet pass), .Minutes (drive minutes
+     when none), .FleetVerdict ("pass", "fail" or "unknown", as stored),
+     .PowerUnits and .Drivers (the truck and driver counts the freshest
+     FMCSA link gives, as text, "12"; each empty when unknown), .Minutes (drive minutes
      from the origin as text, "84"; empty when its ZIP is not in the
      table), .Excluded (bool, true when the owner's ruling excludes it),
      .Rules (int, the rules version) and .Calculated and .CalculatedText
@@ -71,7 +75,13 @@
      slice of strings; empty for other kinds), .By (the email of who made
      it; empty when none), .User (their user id), .At and .AtText (when it
      was made, RFC 3339 UTC to the second, and UTC to the minute) and .Why
-     (the sentence given). Words and tags are shown as stored; the
+     (the sentence given); .Rejects, every reject and unreject record
+     naming this candidate, newest first, each with .Kind ("reject" or
+     "unreject", as stored), .Cohort (the cohort's coh_ id), .CohortName
+     (the cohort's name; empty when the cohort is deleted), .By (the email
+     of who made it; empty when none), .User (their user id), .At and
+     .AtText (when it was made, RFC 3339 UTC to the second, and UTC to the
+     minute) and .Why (the sentence given). Words and tags are shown as stored; the
      candidate status's kind is chosen here: "active" ok, "merged" info.
      Hooks: title "<.Candidate.ID> · candidates"; h1 with text .ID;
      p#headline.cluster holding, when .Name is set, .Name and a space, then
@@ -85,9 +95,9 @@
      .MergedInto as a.candidate-link, href "/candidates/<.MergedInto>",
      holding .MergedInto in a code element). When .Assessment.Excluded:
      div#excluded.alert.quiet[data-kind=warn] holding strong "Excluded" and
-     a p (text "The owner excluded this candidate, so it is never on the
-     shortlist. The ruling is below; an include ruling reverses it.",
-     include in a code element).
+     a p (text "The owner excluded this candidate, so no cohort shows it
+     unless the cohort shows excluded candidates. The ruling is below; the
+     include tool reverses it.", include in a code element).
      section#candidate-card with h2 "Candidate" and a p in its header (text
      "Display fields from its freshest evidence: the link not gone with
      the newest filing."), then dl#candidate.kv holding, in this order, dt
@@ -132,8 +142,12 @@
      (time[datetime=<.NewestFiling>] with .NewestFilingText, or when empty
      span.muted "none"), dt "Government match" then
      dd#assessment-government (.GovernmentMatch in a code element, or
-     "no" when empty), dt "Fleet" then dd#assessment-fleet ("yes" or
-     "no"), dt "Drive minutes" then dd#assessment-minutes (.Minutes, or
+     "no" when empty), dt "Fleet" then
+     dd#assessment-fleet[data-fleet=<.FleetVerdict>] (.FleetVerdict, in
+     span.muted when "unknown"), dt "Trucks" then dd#assessment-power-units
+     (.PowerUnits, or when empty span.muted "unknown"), dt "Drivers" then
+     dd#assessment-drivers (.Drivers, or when empty span.muted "unknown"),
+     dt "Drive minutes" then dd#assessment-minutes (.Minutes, or
      when empty span.muted "not in the ZIP table"), dt "Excluded" then
      dd#assessment-excluded ("yes" when .Excluded, else "no"), dt "Rules"
      then dd#assessment-rules (the version) and dt "Calculated" then
@@ -181,8 +195,9 @@
      newest first, each with who made it, when and why. Every pass
      reapplies them."), then either, when .Rulings is empty,
      div#no-rulings.empty holding h3 "No rulings" and a p (text "Rulings
-     are made by hand with the decide tool: merge, split, not_same,
-     exclude or include.", each name in a code element), or
+     are made by hand: merge, split and not_same with the decide tool, and
+     exclude and include with tools of their own.", each name in a code
+     element), or
      table#ruling-list whose th read Kind, With, Records, By, When, Why,
      with one tr[data-ruling=<.Kind>] per ruling holding td.ruling-kind
      (.Kind in a code element), td.ruling-other (a.candidate-link, href
@@ -190,17 +205,33 @@
      set), td.ruling-keys (each of .Keys in a code element, separated by
      spaces), td.ruling-by (.By, or .User in a code element when .By is
      empty), td.ruling-at (time[datetime=<.At>] with .AtText) and
-     td.ruling-why (.Why). No script but appkit's /_appkit/feedback.js. */}}
+     td.ruling-why (.Why). Then, for active and merged alike,
+     section#rejects with h2 "Rejects" and a p in its header (text "Every
+     reject and unreject naming this candidate, newest first, each with
+     its cohort, who made it, when and why. The latest on a cohort stands;
+     a deleted cohort's records stay, without its name."), then either,
+     when .Rejects is empty, div#no-rejects.empty holding h3 "No rejects"
+     and a p (text "Rejects are made by hand with the reject tool, one
+     cohort at a time; unreject reverses one.", reject and unreject each
+     in a code element), or table#reject-list whose th read Kind, Cohort,
+     By, When, Why, with one tr[data-reject=<.Kind>][data-cohort=<.Cohort>]
+     per record holding td.reject-kind (.Kind in a code element),
+     td.reject-cohort (when .CohortName is set, a.cohort-link, href
+     "/cohorts/<.Cohort>", text .CohortName, then a space and .Cohort in a
+     code element; else .Cohort in a code element, a space and span.muted
+     "deleted"), td.reject-by (.By, or .User in a code element when .By is
+     empty), td.reject-at (time[datetime=<.At>] with .AtText) and
+     td.reject-why (.Why). No script but appkit's /_appkit/feedback.js. */}}
 {{define "candidate"}}<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>{{.Candidate.ID}} · candidates</title></head>
 <body>
 {{template "banner" .Banner}}
 <main>
-{{$a := .Assessment}}{{$estimates := .Estimates}}{{$links := .Links}}{{$rulings := .Rulings}}{{with .Candidate}}<h1>{{.ID}}</h1>
+{{$a := .Assessment}}{{$estimates := .Estimates}}{{$links := .Links}}{{$rulings := .Rulings}}{{$rejects := .Rejects}}{{with .Candidate}}<h1>{{.ID}}</h1>
 <p id="headline" class="cluster">{{if .Name}}{{.Name}} {{end}}<span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "merged"}}info{{else}}ok{{end}}">{{.Status}}</span>{{if $a}}{{if $a.Excluded}} <span class="badge" data-kind="warn">excluded</span>{{end}}{{end}} <span class="muted">updated <time datetime="{{.Updated}}">{{.UpdatedText}}</time></span></p>
 {{if eq .Status "merged"}}<div id="merged" class="alert quiet" data-kind="info"><strong>Merged</strong><p id="merged-into">This candidate was merged into <a class="candidate-link" href="/candidates/{{.MergedInto}}"><code>{{.MergedInto}}</code></a>. Its evidence, estimates and assessment are there now.</p></div>
-{{end}}{{if $a}}{{if $a.Excluded}}<div id="excluded" class="alert quiet" data-kind="warn"><strong>Excluded</strong><p>The owner excluded this candidate, so it is never on the shortlist. The ruling is below; an <code>include</code> ruling reverses it.</p></div>
+{{end}}{{if $a}}{{if $a.Excluded}}<div id="excluded" class="alert quiet" data-kind="warn"><strong>Excluded</strong><p>The owner excluded this candidate, so no cohort shows it unless the cohort shows excluded candidates. The ruling is below; the <code>include</code> tool reverses it.</p></div>
 {{end}}{{end}}<section id="candidate-card" class="card" aria-labelledby="candidate-title">
 <header><h2 id="candidate-title">Candidate</h2><p>Display fields from its freshest evidence: the link not gone with the newest filing.</p></header>
 <dl id="candidate" class="kv">
@@ -234,7 +265,9 @@
 <dt>Known since</dt><dd id="assessment-known-since">{{if .KnownSince}}<time datetime="{{.KnownSince}}">{{.KnownSinceText}}</time>{{else}}<span class="muted">none</span>{{end}}</dd>
 <dt>Newest filing</dt><dd id="assessment-filed">{{if .NewestFiling}}<time datetime="{{.NewestFiling}}">{{.NewestFilingText}}</time>{{else}}<span class="muted">none</span>{{end}}</dd>
 <dt>Government match</dt><dd id="assessment-government">{{if .GovernmentMatch}}<code>{{.GovernmentMatch}}</code>{{else}}no{{end}}</dd>
-<dt>Fleet</dt><dd id="assessment-fleet">{{if .Fleet}}yes{{else}}no{{end}}</dd>
+<dt>Fleet</dt><dd id="assessment-fleet" data-fleet="{{.FleetVerdict}}">{{if eq .FleetVerdict "unknown"}}<span class="muted">{{.FleetVerdict}}</span>{{else}}{{.FleetVerdict}}{{end}}</dd>
+<dt>Trucks</dt><dd id="assessment-power-units">{{if .PowerUnits}}{{.PowerUnits}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
+<dt>Drivers</dt><dd id="assessment-drivers">{{if .Drivers}}{{.Drivers}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
 <dt>Drive minutes</dt><dd id="assessment-minutes">{{if .Minutes}}{{.Minutes}}{{else}}<span class="muted">not in the ZIP table</span>{{end}}</dd>
 <dt>Excluded</dt><dd id="assessment-excluded">{{if .Excluded}}yes{{else}}no{{end}}</dd>
 <dt>Rules</dt><dd id="assessment-rules">{{.Rules}}</dd>
@@ -323,7 +356,27 @@
 </table>
 </div>{{else}}<div id="no-rulings" class="empty">
 <h3 class="text-md">No rulings</h3>
-<p>Rulings are made by hand with the <code>decide</code> tool: <code>merge</code>, <code>split</code>, <code>not_same</code>, <code>exclude</code> or <code>include</code>.</p>
+<p>Rulings are made by hand: <code>merge</code>, <code>split</code> and <code>not_same</code> with the <code>decide</code> tool, and <code>exclude</code> and <code>include</code> with tools of their own.</p>
+</div>{{end}}
+</section>
+<section id="rejects" class="card flush" aria-labelledby="rejects-title">
+<header><div><h2 id="rejects-title">Rejects</h2><p>Every reject and unreject naming this candidate, newest first, each with its cohort, who made it, when and why. The latest on a cohort stands; a deleted cohort's records stay, without its name.</p></div></header>
+{{if $rejects}}<div class="table-scroll">
+<table id="reject-list">
+<thead><tr><th>Kind</th><th>Cohort</th><th>By</th><th>When</th><th>Why</th></tr></thead>
+<tbody>
+{{range $rejects}}<tr data-reject="{{.Kind}}" data-cohort="{{.Cohort}}">
+<td class="reject-kind"><code>{{.Kind}}</code></td>
+<td class="reject-cohort">{{if .CohortName}}<a class="cohort-link" href="/cohorts/{{.Cohort}}">{{.CohortName}}</a> <code>{{.Cohort}}</code>{{else}}<code>{{.Cohort}}</code> <span class="muted">deleted</span>{{end}}</td>
+<td class="reject-by">{{if .By}}{{.By}}{{else}}<code>{{.User}}</code>{{end}}</td>
+<td class="reject-at"><time datetime="{{.At}}">{{.AtText}}</time></td>
+<td class="reject-why">{{.Why}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<div id="no-rejects" class="empty">
+<h3 class="text-md">No rejects</h3>
+<p>Rejects are made by hand with the <code>reject</code> tool, one cohort at a time; <code>unreject</code> reverses one.</p>
 </div>{{end}}
 </section>
 {{end}}</main>
