@@ -28,7 +28,8 @@
      of the cron trigger whose fire started it, "judge_candidates", or
      "rebuild"), .Status ("running", "done" or "failed", as stored),
      .Reason (the failure reason as stored, one of "scrapes",
-     "interrupted" or "store"; empty unless .Status is "failed"), .Started
+     "interrupted", "store" or "prompts"; empty unless .Status is
+     "failed"), .Started
      and .StartedText (RFC 3339 UTC to the second, and UTC to the minute,
      "2026-10-05 09:00"), .Finished and .FinishedText (likewise; both
      empty while running), and .Rows, .Created and .Judged (ints, as the

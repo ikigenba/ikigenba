@@ -17,8 +17,8 @@ automatically, and a candidate leaves every cohort only by the owner's
 exclusion. A source is Go code in the service
 that knows how one scraper's rows become match keys, tags, a size estimate,
 a filing date, operating evidence and a category, and the fixed registry
-holds two, `fmcsa` and `ppp`. A pass is one ingest, judge, rebuild or
-enrich, recorded at once and worked in the background: an ingest is started by a
+holds two, `fmcsa` and `ppp`. A pass is one ingest, judge, rebuild,
+enrich or targeted enrich, recorded at once and worked in the background: an ingest is started by a
 `scrape.finished` event of a `done` run, delivered on the bus, and resolves
 that run's rows without judging; a judge is started by the daily
 `cron.judge_candidates.fired` event, delivered on the bus, and judges every
@@ -29,14 +29,20 @@ ingest that ends `done` or by the `enrich` tool, walks the registry of
 enrichment kinds `D16-enrichers` names, one kind or every kind, derived
 kinds first, and records a result for each candidate whose inputs for a
 kind differ from those of its newest result, fetching from outside only for
-the website check, and reads nothing from scrapes. An ingest or a rebuild reads the run's record and rows from scrapes over its socket through
+the website check, and reads nothing from scrapes; a targeted enrich, of
+kind `enrich_cohort`, started by the `enrich` tool naming a cohort or a
+candidate, walks one kind over that target, and for `site_text` runs the
+owner's `site-text` prompt for each due candidate. An ingest or a rebuild reads the run's record and rows from scrapes over its socket through
 appkit's `scrapes` client, as the caller for `rebuild` and as the service
-identity for a delivery; candidates calls no other sibling. Outside the
-suite it fetches nothing but the websites the website check visits, over
+identity for a delivery; a targeted `site_text` pass runs its prompts
+through appkit's `prompts` client over the socket the services file's
+`prompts` entry names, as the caller of the `enrich` that started it;
+candidates calls no other sibling. Outside the suite it fetches nothing but
+the websites the website check visits and the pages `add_page` keeps, over
 outbound HTTP through `cli.Process.HTTP`; when `IKIGENBA_SANDBOX` is
 present it fetches only from an in-process stub on loopback, so nothing a
 sandbox runs reaches outside. It keeps its candidates, links, estimates,
-assessments, enrichment results and facts, the owner's rulings, cohorts and rejects, its
+assessments, enrichment results, facts and kept pages, the owner's rulings, cohorts and rejects, its
 passes and the ZIP drive-time table in its own
 SQLite database, `state/candidates.db` resolved against the working
 directory and opened through appkit's `db` package; it is the only writer of
@@ -47,7 +53,8 @@ pages and to `/mcp` alike, and its nginx fragment answers the bus's two paths
 404 at the public name. At `/mcp` it offers the MCP tools `D10-tools`
 catalogs, which agents reach through the MCP gateway.
 At `/` it serves a page of the cohorts and the passes, a page per cohort at
-`/cohorts/<id>`, a page per candidate at `/candidates/<id>`, a page per pass
+`/cohorts/<id>`, a page per candidate at `/candidates/<id>`, a page per kept page at
+`/candidates/<id>/pages/<n>`, a page per pass
 at `/passes/<id>`, a tools page at `/tools`, an about screen at `/about` and a
 not-found page. On a host it runs as `bin/candidates` of its release with
 `/var/opt/ikigenba/candidates` as its working directory and its environment
@@ -62,9 +69,10 @@ tests drive it with), `telemetry` (the event contract, the request
 middleware and the writer candidates' events go through), `db` (the
 database's handle and its migrations), `services` (the services file),
 `version` (the identity and its display string), `events` (the event bus)
-and `scrapes` (the client of scrapes' socket). It uses neither `artifacts`
-nor `connections`. It also requires `golang.org/x/net`, whose `html` package
-the website check parses a page's title with.
+`scrapes` (the client of scrapes' socket) and `prompts` (the client of
+prompts' socket). It uses neither `artifacts` nor `connections`. It also
+requires `golang.org/x/net`, whose `html` package the website check parses a
+page's title with and `add_page` strips a page to its text with.
 The contract is the documents in `specs/design/`. This file restates none of
 it. candidates is an app, so it has no stories: its intent is the decisions
 document that delivered it, or what was agreed in conversation, together with
@@ -76,7 +84,7 @@ build run writes the Go source, the tests, `go.mod`'s requirements and
 `0002_links.sql`, `0003_estimates.sql`, `0004_assessments.sql`,
 `0005_decisions.sql`, `0006_passes.sql`, `0007_zip_drive.sql`,
 `0008_windows.sql`, `0009_judgments.sql`, `0010_cohorts.sql`,
-`0011_enrichments.sql` and `0012_facts.sql`), which
+`0011_enrichments.sql`, `0012_facts.sql` and `0013_site_text.sql`), which
 the root package embeds, and everything under `etc/` (`etc/manifest.toml`
 and the nginx fragment `etc/nginx.conf`). The
 delivery that created candidates seeded `go.mod` on appkit; the build run
@@ -92,8 +100,8 @@ and read-only to it.
 
 `assets/` holds candidates' markup: Go `html/template` files, each opening
 with a comment naming the data it receives: `landing.html`,
-`cohort.html`, `candidate.html`, `pass.html`, `about.html`, `tools.html` and
-`notfound.html`. Every page is shown only to a signed-in user. They are
+`cohort.html`, `candidate.html`, `page.html`, `pass.html`, `about.html`,
+`tools.html` and `notfound.html`. Every page is shown only to a signed-in user. They are
 written by the user or the delivering agent, following the repository's
 `design/`, and are inputs to the spec: the build run reads them and never
 writes them. The code parses them into the set appkit's `page.Templates`
@@ -141,13 +149,15 @@ and the build run never writes either.
   one requirement below, set by the delivery that created candidates; the
   build run sets any other and its `go.sum` lines, and moves to another
   release only when this file names one:
-  - appkit `v0.26.0`, set with
-    `go get github.com/ikigenba/ikigenba/appkit@v0.26.0`: a release that
-    exports the `db`, `paging`, `version` and `scrapes` packages and whose
+  - appkit `v0.28.0`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.28.0`: a release that
+    exports the `db`, `paging`, `version`, `scrapes` and `prompts` packages
+    and whose
     `page.Banner` carries the trail, the home link and the tools flag the
     templates use, with `Release` and `Commit`. See Adopting appkit below.
   - `golang.org/x/net`, for its `html` package, which the website check
-    parses a page's title with: approved by the delivery of the website
+    parses a page's title with and `add_page` strips a page to its text
+    with: approved by the delivery of the website
     check, and required by the build run at a release it chooses.
 
   These two and the modules they pull in are candidates' only
@@ -166,10 +176,10 @@ other external dependency needs approval first, the user's or a delivery's.
 
 ### Adopting appkit
 
-appkit is required only at a published release, here `v0.26.0`, fetched
+appkit is required only at a published release, here `v0.28.0`, fetched
 through the ordinary module proxy and checked against the checksum database
 (see the root `AGENTS.md`); it is set with
-`go get github.com/ikigenba/ikigenba/appkit@v0.26.0`. No `replace` directive,
+`go get github.com/ikigenba/ikigenba/appkit@v0.28.0`. No `replace` directive,
 no `go.work`, no local module cache stands in for it.
 
 ## Test files
@@ -201,7 +211,8 @@ names, reject reasons, and the `cand_`, `pass_` and `coh_` ids candidates
 mints — and tests echo source ids above all, since every link,
 split and candidate page names one, so a test that sends an id-shaped value
 lands one in the test file. No fixture carries one: not a header value, a
-query parameter, a tool argument, a fake scrapes' answer, a row's field, a
+query parameter, a tool argument, a fake scrapes' or fake prompts' answer,
+a row's field, a
 source id, a run id, a candidate id, a pass id, a cohort id, a URL, a services file entry,
 an event's payload, a ruling's or reject's reason, a cohort's name, or an expected body.
 
@@ -251,10 +262,18 @@ and `/runs/<id>/rows`) with the runs and rows the test chooses, refuses or
 fails on demand, holds an answer open when a test needs it, and records each
 request it receives, identity headers included; a test of the passes or the
 tools hands them appkit's `scrapes` client built over such an entry, as
-design names. A test proves a read by what the fake received. The bus and
-telemetry are captures. The exec'ing test never lets the binary reach
-scrapes, since the one pass it starts is an enrich, which reads nothing
-from scrapes.
+design names. A test proves a read by what the fake received. No test reaches
+prompts either. A test that drives a targeted `site_text` pass writes a
+services file whose `prompts` entry names a Unix socket in a short temporary
+directory on which a loopback fake serves prompts' MCP tools `show`, `run`
+and `result` with the prompt, starts and run records the test chooses,
+refuses or fails on demand, holds a run `running` when a test needs it, and
+records each call it receives, arguments and identity headers included; a
+test of the passes or the tools hands them appkit's `prompts` client built
+over such an entry, as design names. The bus and telemetry are captures.
+The exec'ing test never lets the binary reach scrapes or prompts, since the
+one pass it starts is an enrich of `website_check`, which reads nothing from
+either.
 
 **Websites are faked, never fetched.** No test reaches a website outside
 loopback. A test of the check hands `website.Checker` a client over an
@@ -282,7 +301,7 @@ builds the store over that handle with `store.New`. Tests may create
 filesystem fixtures inside that temporary tree (a regular file named
 `state`, a file at `state/candidates.db` that is not a database, a database
 a test's own `db.Open` made and then changed through `DB.Write`, candidates,
-links, rulings, cohorts, rejects, enrichments, ZIP tables and passes a test's
+links, rulings, cohorts, rejects, enrichments, pages, ZIP tables and passes a test's
 own store recorded, passes left
 `running`, `done` or `failed`); nothing touches
 `/var/opt/ikigenba/candidates`, the checkout's `state/` or a shared file. A
@@ -360,7 +379,7 @@ Assertions are on the `mcp.Result` and `mcp.ToolInfo` the client returns.
 candidates' tests never re-prove appkit's transport.
 
 **Pages are raw HTTP.** A test drives `/`, `/candidates/<id>`,
-`/passes/<id>`, `/tools`, `/about`, the event bus's two paths and any other
+`/candidates/<id>/pages/<n>`, `/passes/<id>`, `/tools`, `/about`, the event bus's two paths and any other
 path as a browser or the bus would: raw HTTP requests on the handler it
 built, served with `httptest` or on a Unix socket, with the identity headers
 where the route takes them, and never follows a redirect.
@@ -417,9 +436,10 @@ other test that builds, execs, waits on, or signals a process is a bug.
 
 ## Live tests
 
-There are none. No test reaches outside the suite: scrapes, candidates' one
-sibling read, is faked in every unit test, and the website check fetches
-through a transport the test holds or the loopback stub. The sandbox
+There are none. No test reaches outside the suite: scrapes and prompts,
+the two siblings candidates calls, are faked in every unit test, so nothing
+reaches a real prompts, and the website check and `add_page` fetch through a
+transport the test holds or the loopback stub. The sandbox
 fetches only from the stub, and the sandbox check proves the real chain.
 
 ## Gates
@@ -475,10 +495,13 @@ with every other app, its part of the release holding `bin/candidates`,
 `etc/` and `share/icon.svg`, and `devctl deploy <space> <sha|tag>` deploys
 that release. The host must run events, which candidates emits to and takes
 scrapes' `scrape.finished` and cron's `cron.judge_candidates.fired` from,
-and scrapes, which it reads over the socket; its services file names them,
-with telemetry and auth. The host needs outbound HTTP and HTTPS to the
-public internet, since the website check fetches candidates' own domains;
+scrapes, which it reads over the socket, and prompts, which a targeted
+`site_text` pass runs the `site-text` prompt through over the socket; its
+services file names them, with telemetry and auth. The host needs outbound HTTP and HTTPS to the
+public internet, since the website check and `add_page` fetch candidates'
+own domains;
 candidates holds no secret of its own. The host's backup archives `state/`
 whole, so `candidates.db` is taken with it; it holds candidates, their
-evidence copied from public records, their enrichment results and facts, the owner's
+evidence copied from public records, their enrichment results, facts and
+kept pages, the owner's
 rulings, cohorts and rejects and the passes, and no secret.
