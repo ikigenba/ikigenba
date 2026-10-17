@@ -3,14 +3,15 @@
      two judgments as the last judge wrote them, the operating evidence
      behind it, each
      estimate with the facts it used, each link to a scrapes record with
-     its last seen and gone, the owner's rulings on it, its enrichment
+     its last seen and gone, the owner's rulings on it, the pages of its
+     website kept on it, its enrichment
      results, and every reject and unreject naming it. A merged candidate's page says what it merged
      into and links there, with its record, its rulings and its rejects
      and no evidence. Shown to any signed-in user; a
      guest is sent to sign in; an unknown id is the not-found page.
      Read-only: no form but the banner's sign out; rulings are made with
-     the decide, exclude and include tools, and rejects with the reject
-     and unreject tools. One level below the root: .Banner's .Trail is the one
+     the decide, exclude and include tools, rejects with the reject
+     and unreject tools, and pages with the add_page tool. One level below the root: .Banner's .Trail is the one
      level <.Candidate.ID> at /candidates/<.Candidate.ID>. Data: .Banner (a
      page.Banner, for banner and footer); .Candidate, with .ID (its cand_
      id, "cand_" and 16 hex), .Status ("active" or "merged", as stored),
@@ -47,7 +48,7 @@
      (drive minutes from the origin as text, "84"; empty when unknown)
      and .Written (when each kind last wrote the row, one per kind that
      has, in kind name order, each with .Kind, the kind as stored,
-     "drive_minutes", "link_facts" or "website_check", and .At and .AtText
+     "drive_minutes", "link_facts", "site_text" or "website_check", and .At and .AtText
      in .Created's two forms above; empty when none has);
      .Assessment (nil when merged or not yet judged; else the assessment
      the last judge, rebuild or ruling wrote, as stored), with
@@ -89,12 +90,21 @@
      slice of strings; empty for other kinds), .By (the email of who made
      it; empty when none), .User (their user id), .At and .AtText (when it
      was made, RFC 3339 UTC to the second, and UTC to the minute) and .Why
-     (the sentence given); .Enrichments, every enrichment result on this
+     (the sentence given); .Pages, the pages kept on it, the newest copy
+     of each URL, newest first, empty when merged, each with .Number (the
+     page's number as text, the <n> of its text page's path), .Path (that
+     path, "/candidates/<.Candidate.ID>/pages/<.Number>"), .URL (the URL it
+     was fetched from, as stored), .Title (its title, as stored; empty
+     when none), .Size (int, the body bytes read), .Fetched and
+     .FetchedText (when it was fetched, RFC 3339 UTC to the second, and
+     UTC to the minute), .By (the email of who added it; empty when none)
+     and .User (their user id); .Enrichments, every enrichment result on this
      candidate, of every kind, newest first, empty when merged, each with
-     .Kind (its kind as stored, "website_check", "link_facts" or
-     "drive_minutes"), .Source (where the result came from, as stored:
-     the domain checked, "example.com", for website_check, "links" for
-     link_facts, "zip_drive" for drive_minutes), .Found (what it found, in
+     .Kind (its kind as stored, "website_check", "link_facts",
+     "drive_minutes" or "site_text"), .Source (where the result came from,
+     as stored: the domain checked, "example.com", for website_check,
+     "links" for link_facts, "zip_drive" for drive_minutes, "prompts" for
+     site_text), .Found (what it found, in
      key order, each with .Key and .Value, the value as compact JSON text
      such as "84" or "\"pass\""; used for every kind but website_check),
      .State ("https", "http" or "none", as stored), .URL (the URL it
@@ -103,7 +113,11 @@
      empty when no response came), .Size (int, the body bytes read) and
      .Error (the last failed attempt's error text, as stored; empty on
      success), these six for website_check only and empty or 0 for any
-     other kind, and .At and .AtText (when it was found, RFC 3339 UTC to
+     other kind, .Failed (bool, true for a site_text result whose prompts
+     run ended failed, killed or timed_out or exited non-zero; false for
+     every other result), .Cost (what the result cost as US dollars to six
+     decimal places, "$0.023714", as prompts shows a cost; empty when it
+     cost nothing) and .At and .AtText (when it was found, RFC 3339 UTC to
      the second, and UTC to the minute); .Rejects, every reject and unreject record
      naming this candidate, newest first, each with .Kind ("reject" or
      "unreject", as stored), .Cohort (the cohort's coh_ id), .CohortName
@@ -252,6 +266,21 @@
      spaces), td.ruling-by (.By, or .User in a code element when .By is
      empty), td.ruling-at (time[datetime=<.At>] with .AtText) and
      td.ruling-why (.Why). Then, only when .Status is "active",
+     section#pages with h2 "Pages" and a p in its header (text "Pages of
+     its website kept on this candidate, the newest copy of each URL,
+     newest first. candidates fetches each page itself when add_page names
+     it; the site text enricher's agent chooses them, and anyone may add
+     one.", add_page in a code element), then either, when .Pages is
+     empty, div#no-pages.empty holding h3 "No pages" and a p (text "The
+     site text enricher keeps them when the enrich tool runs it over a
+     cohort or this candidate, and add_page keeps one by hand.", enrich and
+     add_page each in a code element), or table#page-list whose th read
+     URL, Title, Bytes, Fetched, By, with one tr[data-page=<.Number>] per
+     page holding td.page-url (a.page-link, href .Path, text .URL),
+     td.page-title (.Title, or when empty span.muted "none"),
+     td.page-size.num (.Size), td.page-fetched (time[datetime=<.Fetched>]
+     with .FetchedText) and td.page-by (.By, or .User in a code element
+     when .By is empty). Then, only when .Status is "active",
      section#enrichments with h2 "Enrichments" and a p in its header (text
      "What each enricher found for this candidate, newest first. A kind is
      recomputed only when its inputs change; the newest result of each
@@ -259,12 +288,15 @@
      .Enrichments is empty, div#no-enrichments.empty holding h3 "No
      enrichments" and a p (text "A kind needs inputs: the website check
      an email on its own domain, drive minutes a ZIP, link facts a record
-     not gone. The enrich pass runs every kind after an ingest, and the
-     enrich tool starts one.", enrich in a code element), or
-     table#enrichment-list whose th read Kind, Source, Found, When, with
-     one tr[data-enrichment=<.Kind>] per result, carrying also
-     [data-state=<.State>] when .State is set, holding td.enrichment-kind
-     (.Kind in a code element), td.enrichment-source (.Source in a code
+     not gone, site text a website. The enrich pass runs every kind but
+     site text after an ingest; the enrich tool starts one, and runs site
+     text over a cohort or one candidate.", enrich in a code element), or
+     table#enrichment-list whose th read Kind, Source, Found, Cost, When,
+     with one tr[data-enrichment=<.Kind>] per result, carrying also
+     [data-state=<.State>] when .State is set and [data-failed] when
+     .Failed, holding td.enrichment-kind (.Kind in a code element,
+     followed, when .Failed, by a space and span.badge[data-kind=err]
+     (text "failed")), td.enrichment-source (.Source in a code
      element), td.enrichment-found (when .Kind is "website_check": .State,
      then, when .URL is set, a space and a.website-link, href .URL, text
      .URL, then, when .Title is set, div[data-website-title] with .Title,
@@ -272,7 +304,8 @@
      .StatusCode and " · ", then .Size, a space and "bytes", then, when
      .Error is set, div[data-error] with .Error; for any other kind,
      dl.kv with one dt[data-found=<.Key>] per entry of .Found (.Key in a
-     code element) followed by a dd (.Value in a code element)) and
+     code element) followed by a dd (.Value in a code element)),
+     td.enrichment-cost.num (.Cost; empty when empty) and
      td.enrichment-at (time[datetime=<.At>] with
      .AtText). Then, for active and merged alike, section#rejects with h2 "Rejects" and a p in its header (text "Every
      reject and unreject naming this candidate, newest first, each with
@@ -296,7 +329,7 @@
 <body>
 {{template "banner" .Banner}}
 <main>
-{{$a := .Assessment}}{{$f := .Facts}}{{$estimates := .Estimates}}{{$links := .Links}}{{$rulings := .Rulings}}{{$enrichments := .Enrichments}}{{$rejects := .Rejects}}{{with .Candidate}}<h1>{{.ID}}</h1>
+{{$a := .Assessment}}{{$f := .Facts}}{{$estimates := .Estimates}}{{$links := .Links}}{{$rulings := .Rulings}}{{$pages := .Pages}}{{$enrichments := .Enrichments}}{{$rejects := .Rejects}}{{with .Candidate}}<h1>{{.ID}}</h1>
 <p id="headline" class="cluster">{{if .Name}}{{.Name}} {{end}}<span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "merged"}}info{{else}}ok{{end}}">{{.Status}}</span>{{if $a}}{{if $a.Excluded}} <span class="badge" data-kind="warn">excluded</span>{{end}}{{end}} <span class="muted">updated <time datetime="{{.Updated}}">{{.UpdatedText}}</time></span></p>
 {{if eq .Status "merged"}}<div id="merged" class="alert quiet" data-kind="info"><strong>Merged</strong><p id="merged-into">This candidate was merged into <a class="candidate-link" href="/candidates/{{.MergedInto}}"><code>{{.MergedInto}}</code></a>. Its evidence, estimates and assessment are there now.</p></div>
 {{end}}{{if $a}}{{if $a.Excluded}}<div id="excluded" class="alert quiet" data-kind="warn"><strong>Excluded</strong><p>The owner excluded this candidate, so no cohort shows it unless the cohort shows excluded candidates. The ruling is below; the <code>include</code> tool reverses it.</p></div>
@@ -437,23 +470,44 @@
 <p>Rulings are made by hand: <code>merge</code>, <code>split</code> and <code>not_same</code> with the <code>decide</code> tool, and <code>exclude</code> and <code>include</code> with tools of their own.</p>
 </div>{{end}}
 </section>
-{{if eq .Status "active"}}<section id="enrichments" class="card flush" aria-labelledby="enrichments-title">
+{{if eq .Status "active"}}<section id="pages" class="card flush" aria-labelledby="pages-title">
+<header><div><h2 id="pages-title">Pages</h2><p>Pages of its website kept on this candidate, the newest copy of each URL, newest first. candidates fetches each page itself when <code>add_page</code> names it; the site text enricher's agent chooses them, and anyone may add one.</p></div></header>
+{{if $pages}}<div class="table-scroll">
+<table id="page-list">
+<thead><tr><th>URL</th><th>Title</th><th class="num">Bytes</th><th>Fetched</th><th>By</th></tr></thead>
+<tbody>
+{{range $pages}}<tr data-page="{{.Number}}">
+<td class="page-url"><a class="page-link" href="{{.Path}}">{{.URL}}</a></td>
+<td class="page-title">{{if .Title}}{{.Title}}{{else}}<span class="muted">none</span>{{end}}</td>
+<td class="page-size num">{{.Size}}</td>
+<td class="page-fetched"><time datetime="{{.Fetched}}">{{.FetchedText}}</time></td>
+<td class="page-by">{{if .By}}{{.By}}{{else}}<code>{{.User}}</code>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<div id="no-pages" class="empty">
+<h3 class="text-md">No pages</h3>
+<p>The site text enricher keeps them when the <code>enrich</code> tool runs it over a cohort or this candidate, and <code>add_page</code> keeps one by hand.</p>
+</div>{{end}}
+</section>
+<section id="enrichments" class="card flush" aria-labelledby="enrichments-title">
 <header><div><h2 id="enrichments-title">Enrichments</h2><p>What each enricher found for this candidate, newest first. A kind is recomputed only when its inputs change; the newest result of each kind stands and gives the facts above.</p></div></header>
 {{if $enrichments}}<div class="table-scroll">
 <table id="enrichment-list">
-<thead><tr><th>Kind</th><th>Source</th><th>Found</th><th>When</th></tr></thead>
+<thead><tr><th>Kind</th><th>Source</th><th>Found</th><th class="num">Cost</th><th>When</th></tr></thead>
 <tbody>
-{{range $enrichments}}<tr data-enrichment="{{.Kind}}"{{if .State}} data-state="{{.State}}"{{end}}>
-<td class="enrichment-kind"><code>{{.Kind}}</code></td>
+{{range $enrichments}}<tr data-enrichment="{{.Kind}}"{{if .State}} data-state="{{.State}}"{{end}}{{if .Failed}} data-failed{{end}}>
+<td class="enrichment-kind"><code>{{.Kind}}</code>{{if .Failed}} <span class="badge" data-kind="err">failed</span>{{end}}</td>
 <td class="enrichment-source"><code>{{.Source}}</code></td>
 <td class="enrichment-found">{{if eq .Kind "website_check"}}{{.State}}{{if .URL}} <a class="website-link" href="{{.URL}}">{{.URL}}</a>{{end}}{{if .Title}}<div data-website-title>{{.Title}}</div>{{end}}<div class="muted">{{if .StatusCode}}status {{.StatusCode}} · {{end}}{{.Size}} bytes</div>{{if .Error}}<div data-error>{{.Error}}</div>{{end}}{{else}}<dl class="kv">{{range .Found}}<dt data-found="{{.Key}}"><code>{{.Key}}</code></dt><dd><code>{{.Value}}</code></dd>{{end}}</dl>{{end}}</td>
+<td class="enrichment-cost num">{{.Cost}}</td>
 <td class="enrichment-at"><time datetime="{{.At}}">{{.AtText}}</time></td>
 </tr>
 {{end}}</tbody>
 </table>
 </div>{{else}}<div id="no-enrichments" class="empty">
 <h3 class="text-md">No enrichments</h3>
-<p>A kind needs inputs: the website check an email on its own domain, drive minutes a ZIP, link facts a record not gone. The enrich pass runs every kind after an ingest, and the <code>enrich</code> tool starts one.</p>
+<p>A kind needs inputs: the website check an email on its own domain, drive minutes a ZIP, link facts a record not gone, site text a website. The enrich pass runs every kind but site text after an ingest; the <code>enrich</code> tool starts one, and runs site text over a cohort or one candidate.</p>
 </div>{{end}}
 </section>
 {{end}}<section id="rejects" class="card flush" aria-labelledby="rejects-title">

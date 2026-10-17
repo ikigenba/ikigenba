@@ -1,0 +1,76 @@
+{{/* One kept page's text at GET /candidates/<id>/pages/<n>: the copy of a
+     page of the candidate's website that candidates fetched and kept, its
+     URL, the candidate it belongs to, when it was fetched, who added it,
+     and its text. Any copy is served, the newest of its URL or an older
+     one. Shown to any signed-in user; a guest is sent to sign in; an
+     unknown candidate, or a number that names no page of that candidate,
+     is the not-found page. Read-only: no form but the banner's sign out;
+     pages are kept with the add_page tool. Two levels below the root:
+     .Banner's .Trail is <.Page.Candidate> at
+     /candidates/<.Page.Candidate> then <.Page.Number> at
+     /candidates/<.Page.Candidate>/pages/<.Page.Number>. Data: .Banner (a
+     page.Banner, for banner and footer); .Page, with .Candidate (the
+     cand_ id of the candidate that holds it, "cand_" and 16 hex), .Name
+     (that candidate's display name; empty when none), .Number (the page's
+     number, the <n> of its path, as text), .URL (the URL it was fetched
+     from, as stored), .Title (its title, as stored; empty when none),
+     .Size (int, the body bytes read), .Fetched and .FetchedText (when it
+     was fetched, RFC 3339 UTC to the second, and the same as shown,
+     "2006-01-02 15:04:05 UTC"), .By (the email of who added it; empty
+     when none), .User (their user id) and .Text (its text, as stored:
+     markup removed and white space collapsed; may be empty). Hooks:
+     title "<.Page.Candidate> page <.Page.Number> · candidates"; h1 with
+     text .Title, or .URL when .Title is empty; p#headline.cluster holding
+     .Name and a space when .Name is set, then span.muted holding
+     "fetched" and time[datetime=<.Fetched>] (text .FetchedText);
+     p holding a#back.button.secondary.small, href
+     "/candidates/<.Candidate>" (text "Back to the
+     candidate"); section#page-card with h2 "Page" and a p in its header
+     (text "A page of the candidate's website, fetched and kept by
+     candidates itself when add_page named it.", add_page in a code
+     element), then dl#page.kv holding, in this order, dt "Candidate" then
+     dd#page-candidate (a.candidate-link, href "/candidates/<.Candidate>",
+     holding .Candidate in a code element), dt "URL" then dd#page-url
+     (a.website-link, href .URL, text .URL), dt "Title" then dd#page-title
+     (.Title, or when empty span.muted "none"), dt "Bytes" then
+     dd#page-size (.Size), dt "Fetched" then dd#page-fetched holding
+     time[datetime=<.Fetched>] (text .FetchedText) and dt "Added by" then
+     dd#page-by (.By, or .User in a code element when .By is empty);
+     section#text-card with h2 "Text" and a p in its header (text "The
+     page as candidates read it, with script, style and markup removed and
+     white space collapsed."), then either, when .Text is empty,
+     div#no-text.empty holding h3 "No text" and a p (text "The page held
+     no text once its markup was removed."), or p#page-text.prose holding
+     .Text. No script but appkit's /_appkit/feedback.js. */}}
+{{define "page"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>{{.Page.Candidate}} page {{.Page.Number}} · candidates</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+{{with .Page}}<h1>{{if .Title}}{{.Title}}{{else}}{{.URL}}{{end}}</h1>
+<p id="headline" class="cluster">{{if .Name}}{{.Name}} {{end}}<span class="muted">fetched <time datetime="{{.Fetched}}">{{.FetchedText}}</time></span></p>
+<p><a id="back" class="button secondary small" href="/candidates/{{.Candidate}}">Back to the candidate</a></p>
+<section id="page-card" class="card" aria-labelledby="page-card-title">
+<header><h2 id="page-card-title">Page</h2><p>A page of the candidate's website, fetched and kept by candidates itself when <code>add_page</code> named it.</p></header>
+<dl id="page" class="kv">
+<dt>Candidate</dt><dd id="page-candidate"><a class="candidate-link" href="/candidates/{{.Candidate}}"><code>{{.Candidate}}</code></a></dd>
+<dt>URL</dt><dd id="page-url"><a class="website-link" href="{{.URL}}">{{.URL}}</a></dd>
+<dt>Title</dt><dd id="page-title">{{if .Title}}{{.Title}}{{else}}<span class="muted">none</span>{{end}}</dd>
+<dt>Bytes</dt><dd id="page-size">{{.Size}}</dd>
+<dt>Fetched</dt><dd id="page-fetched"><time datetime="{{.Fetched}}">{{.FetchedText}}</time></dd>
+<dt>Added by</dt><dd id="page-by">{{if .By}}{{.By}}{{else}}<code>{{.User}}</code>{{end}}</dd>
+</dl>
+</section>
+<section id="text-card" class="card" aria-labelledby="text-title">
+<header><h2 id="text-title">Text</h2><p>The page as candidates read it, with script, style and markup removed and white space collapsed.</p></header>
+{{if .Text}}<p id="page-text" class="prose">{{.Text}}</p>{{else}}<div id="no-text" class="empty">
+<h3 class="text-md">No text</h3>
+<p>The page held no text once its markup was removed.</p>
+</div>{{end}}
+</section>
+{{end}}</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

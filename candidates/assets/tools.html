@@ -3,9 +3,9 @@
      is the one level tools at /tools. Shown only to a signed-in user; a
      guest is sent to sign in. Data: .Banner (a page.Banner, for banner and
      footer); .Tools (a slice of items, each with .Name, the tool's name,
-     and .Description, the first line of its description), the sixteen
+     and .Description, the first line of its description), the seventeen
      tools in catalog order: cohorts, cohort, candidates, candidate,
-     passes, pass, rebuild, enrich, decide, exclude, include, create_cohort,
+     passes, pass, rebuild, enrich, add_page, decide, exclude, include, create_cohort,
      edit_cohort, delete_cohort, reject and unreject.
      Hooks: title "tools · candidates"; h1 with text "Tools";
      p#summary.lede (text "Agents keep and read the owner's cohorts, read
@@ -13,9 +13,10 @@
      rulings and rejects, with these tools, through the MCP gateway's call
      and mutate. rebuild and enrich answer at once and the pass lands in
      the background; decide, exclude and include record rulings that every
-     pass reapplies; reject keeps a candidate out of one cohort.", call,
-     mutate, rebuild, enrich, decide, exclude, include and reject each in a code
-     element);
+     pass reapplies; reject keeps a candidate out of one cohort; add_page
+     keeps a page of a candidate's website, fetched by candidates itself.",
+     call, mutate, rebuild, enrich, decide, exclude, include, reject and
+     add_page each in a code element);
      a section.card holding dl#tools.kv with one dt[data-tool=<.Name>] per
      tool, in the order of .Tools, holding .Name in a code element and
      followed by a dd holding .Description. No script but appkit's
@@ -27,7 +28,7 @@
 {{template "banner" .Banner}}
 <main>
 <h1>Tools</h1>
-<p id="summary" class="lede">Agents keep and read the owner's cohorts, read each candidate and the evidence behind it, and record the owner's rulings and rejects, with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>. <code>rebuild</code> and <code>enrich</code> answer at once and the pass lands in the background; <code>decide</code>, <code>exclude</code> and <code>include</code> record rulings that every pass reapplies; <code>reject</code> keeps a candidate out of one cohort.</p>
+<p id="summary" class="lede">Agents keep and read the owner's cohorts, read each candidate and the evidence behind it, and record the owner's rulings and rejects, with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>. <code>rebuild</code> and <code>enrich</code> answer at once and the pass lands in the background; <code>decide</code>, <code>exclude</code> and <code>include</code> record rulings that every pass reapplies; <code>reject</code> keeps a candidate out of one cohort; <code>add_page</code> keeps a page of a candidate's website, fetched by candidates itself.</p>
 <section class="card">
 <dl id="tools" class="kv">
 {{range .Tools}}<dt data-tool="{{.Name}}"><code>{{.Name}}</code></dt><dd>{{.Description}}</dd>
