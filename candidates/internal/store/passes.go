@@ -5,11 +5,34 @@ import (
 	"database/sql"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
+
+	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 )
 
 func validPass(p Pass) bool {
-	return p.Trigger != "" && (p.Kind == KindRebuild && p.Origin == OriginRebuild && p.Trigger == TriggerRebuild && p.Delivery == "" && p.UserID != "" || p.Kind == KindIngest && p.Origin == OriginRun && p.Trigger != TriggerRebuild && p.Delivery != "" || p.Kind == KindJudge && p.Origin == OriginCron && p.Trigger != TriggerRebuild && p.Delivery != "" || p.Kind == KindEnrich && p.Origin == OriginEnrich && p.Trigger == TriggerEnrich && p.Delivery == "" && p.UserID != "" || (p.Kind == KindEnrich || p.Kind == KindJudge) && p.Origin == OriginPass && ValidPassID(p.Trigger) && p.Delivery == "")
+	if p.Trigger == "" {
+		return false
+	}
+	if p.Kind == KindEnrichCohort {
+		return p.Origin == OriginEnrich && p.Trigger == TriggerEnrich && (ValidCohortID(p.Target) || ValidCandidateID(p.Target)) && slices.Contains(enrichers.Kinds(), p.EnrichKind) && p.Delivery == "" && p.UserID != ""
+	}
+	if p.Target != "" || p.EnrichKind != "" {
+		return false
+	}
+	return p.Kind == KindRebuild && p.Origin == OriginRebuild && p.Trigger == TriggerRebuild && p.Delivery == "" && p.UserID != "" || p.Kind == KindIngest && p.Origin == OriginRun && p.Trigger != TriggerRebuild && p.Delivery != "" || p.Kind == KindJudge && p.Origin == OriginCron && p.Trigger != TriggerRebuild && p.Delivery != "" || p.Kind == KindEnrich && p.Origin == OriginEnrich && p.Trigger == TriggerEnrich && p.Delivery == "" && p.UserID != "" || (p.Kind == KindEnrich || p.Kind == KindJudge) && p.Origin == OriginPass && ValidPassID(p.Trigger) && p.Delivery == ""
+}
+
+func passScope(p Pass) string {
+	switch p.Kind {
+	case KindIngest:
+		return p.Trigger
+	case KindEnrichCohort:
+		return p.Target
+	default:
+		return ""
+	}
 }
 
 // AddPass records a running pass, enforcing delivery uniqueness and exclusivity.
@@ -35,7 +58,7 @@ func (s *Store) AddPass(ctx context.Context, p Pass) (Pass, error) {
 			}
 		}
 		for _, q := range r.passes {
-			if q.Status == StatusRunning && (q.Kind == KindEnrich) == (p.Kind == KindEnrich) {
+			if q.Status == StatusRunning && q.Kind == p.Kind && passScope(q) == passScope(p) {
 				return ErrBusy
 			}
 		}
@@ -43,7 +66,7 @@ func (s *Store) AddPass(ctx context.Context, p Pass) (Pass, error) {
 		if e != nil {
 			return e
 		}
-		out = Pass{ID: id, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Status: StatusRunning, Started: s.now(), UserID: p.UserID, UserEmail: p.UserEmail, RequestID: p.RequestID, Delivery: p.Delivery}
+		out = Pass{ID: id, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Target: p.Target, EnrichKind: p.EnrichKind, Status: StatusRunning, Started: s.now(), UserID: p.UserID, UserEmail: p.UserEmail, RequestID: p.RequestID, Delivery: p.Delivery}
 		r.passes[id] = out
 		return nil
 	})
@@ -93,6 +116,10 @@ func (s *Store) FinishPass(ctx context.Context, id string, c Counts) (Pass, erro
 		p.HTTPS = c.HTTPS
 		p.HTTP = c.HTTP
 		p.None = c.None
+		p.Runs = c.Runs
+		p.RunsFailed = c.RunsFailed
+		p.Pages = c.Pages
+		p.Cost = c.Cost
 		r.passes[id] = p
 		out = p
 		return nil
@@ -107,7 +134,7 @@ func (s *Store) FinishPass(ctx context.Context, id string, c Counts) (Pass, erro
 func (s *Store) FailPass(ctx context.Context, id, reason string) (Pass, error) {
 	var out Pass
 	err := s.passWrite(ctx, " WHERE id=?", []any{id}, func(_ *sql.Tx, r *records) error {
-		if reason != ReasonScrapes && reason != ReasonInterrupted && reason != ReasonStore {
+		if reason != ReasonScrapes && reason != ReasonInterrupted && reason != ReasonStore && reason != ReasonPrompts {
 			return ErrUnreachable
 		}
 		p, ok := r.passes[id]

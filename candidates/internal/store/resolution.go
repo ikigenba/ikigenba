@@ -332,6 +332,9 @@ func (s *Store) Decide(ctx context.Context, d Ruling) (Ruling, []Candidate, erro
 			if err = execSQL(ctx, tx, "UPDATE links SET candidate=?,reason=?,confidence=1 WHERE candidate=?", c.ID, LinkDecision, other.ID); err != nil {
 				return err
 			}
+			if err = execSQL(ctx, tx, "UPDATE pages SET candidate=? WHERE candidate=?", c.ID, other.ID); err != nil {
+				return err
+			}
 			if err = execSQL(ctx, tx, "UPDATE enrichments SET candidate=? WHERE candidate=?", c.ID, other.ID); err != nil {
 				return err
 			}
@@ -379,7 +382,7 @@ func (s *Store) Decide(ctx context.Context, d Ruling) (Ruling, []Candidate, erro
 				if c.Status != StatusActive {
 					continue
 				}
-				for _, en := range enrichers.New(nil).All() {
+				for _, en := range enrichers.New(enrichers.Config{}).All() {
 					if der, ok := en.(enrichers.Deriver); ok {
 						if _, err = deriveCandidate(ctx, tx, c, der, true, t); err != nil {
 							return err

@@ -99,7 +99,7 @@ func (f *fixture) create(name string) tools.Cohort {
 }
 
 // R-VRRJ-PPU1
-// R-AFHY-ZO6N R-VD4R-4GXP R-AHXR-R7O1 R-AJ5O-4ZEQ R-AXSG-Q8B2 R-BEV2-30OS R-P2HO-Q5JG R-BKYJ-ZVE9 R-1POC-ZXB9 R-1S45-RGSN R-BDN5-P8Y3
+// R-AFHY-ZO6N R-ODX3-TRBJ R-AHXR-R7O1 R-AJ5O-4ZEQ R-AXSG-Q8B2 R-BEV2-30OS R-P2HO-Q5JG R-BKYJ-ZVE9 R-1POC-ZXB9 R-1S45-RGSN R-BDN5-P8Y3
 func TestCohortLifecycleRejectAndExclusion(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(5)
@@ -303,7 +303,7 @@ func TestCohortPagingNameTies(t *testing.T) {
 	}
 }
 
-// R-BHAU-UK66 R-BJQN-M3NK R-1QW9-DP1Y R-BCF9-BH7E R-B8RK-65ZB R-VWN5-8SST R-AROY-TDLL R-AP96-1U47
+// R-BHAU-UK66 R-BJQN-M3NK R-1QW9-DP1Y R-BCF9-BH7E R-B8RK-65ZB R-VWN5-8SST R-OL8I-4DRP R-OMGE-I5IE
 func TestCohortValidationBeforeFailingStore(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -380,7 +380,7 @@ func TestCohortValidationBeforeFailingStore(t *testing.T) {
 	}
 }
 
-// R-VXV1-MKJI R-VWN5-8SST
+// R-P76P-0947 R-VWN5-8SST
 func TestEveryToolUnavailable(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -405,12 +405,14 @@ func TestEveryToolUnavailable(t *testing.T) {
 
 func ptrInt(n int64) *int64 { return &n }
 
-// R-1VRU-WS0Q
+// R-P8EL-E0UW
 func TestToolsContactNoSiblingOrStartPass(t *testing.T) {
 	var requests atomic.Int64
-	f := fixtureWithScrapes(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { requests.Add(1); w.WriteHeader(http.StatusNotFound) }))
+	var fetched, prompted atomic.Int64
+	f := fixtureWithPrompts(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { requests.Add(1); w.WriteHeader(http.StatusNotFound) }), pageChecker(&fetched), promptClient(t, false, &prompted))
 	ids := f.seed(2)
 	k := f.create("local-only")
+	setSite(t, f, ids[0], "https://acme.test/")
 	p, err := f.st.AddPass(t.Context(), store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: caller.UserID})
 	if err != nil {
 		t.Fatal(err)
@@ -424,12 +426,21 @@ func TestToolsContactNoSiblingOrStartPass(t *testing.T) {
 	}{
 		{"cohorts", tools.CohortsArgs{}}, {"cohort", tools.CohortArgs{Cohort: k.ID}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: ids[0]}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}},
 		{"cohorts", map[string]any{"page": "bad"}}, {"cohort", tools.CohortArgs{Cohort: "bad"}}, {"candidates", map[string]any{"limit": 0}}, {"candidate", tools.CandidateArgs{Candidate: "bad"}}, {"passes", map[string]any{"page": "bad"}}, {"pass", tools.PassArgs{Pass: "bad"}},
-		{"decide", tools.DecideArgs{Kind: store.KindNotSame, Candidate: ids[0], Other: ids[1], Why: "separate"}}, {"exclude", tools.RulingArgs{Candidate: ids[0], Why: "excluded"}}, {"include", tools.RulingArgs{Candidate: ids[0], Why: "included"}},
+		{"add_page", tools.AddPageArgs{Candidate: ids[0], URL: "https://acme.test/about"}}, {"create_cohort", tools.CreateCohortArgs{Name: "another"}}, {"decide", tools.DecideArgs{Kind: store.KindNotSame, Candidate: ids[0], Other: ids[1], Why: "separate"}}, {"exclude", tools.RulingArgs{Candidate: ids[0], Why: "excluded"}}, {"include", tools.RulingArgs{Candidate: ids[0], Why: "included"}},
 		{"edit_cohort", tools.EditCohortArgs{Cohort: k.ID}}, {"reject", tools.RejectArgs{Cohort: k.ID, Candidate: ids[0], Why: "reject"}}, {"unreject", tools.RejectArgs{Cohort: k.ID, Candidate: ids[0], Why: "restore"}}, {"delete_cohort", tools.CohortArgs{Cohort: k.ID}},
 	} {
 		f.call(call.name, call.args)
-		if requests.Load() != 0 {
+		if requests.Load() != 0 || prompted.Load() != 0 {
 			t.Fatal("unexpected sibling request", call.name)
+		}
+		if call.name != "add_page" && fetched.Load() != 0 {
+			t.Fatal("read fetched", call.name)
+		}
+		if call.name == "add_page" {
+			if fetched.Load() != 1 {
+				t.Fatal("page fetch missing")
+			}
+			fetched.Store(0)
 		}
 		ps, err := f.st.ListPasses(t.Context(), "", "", 100)
 		if err != nil || len(ps) != 1 || ps[0].ID != p.ID {
@@ -438,7 +449,7 @@ func TestToolsContactNoSiblingOrStartPass(t *testing.T) {
 	}
 }
 
-// R-VJ89-1BN6 R-6QOY-0DLL
+// R-P76P-0947 R-6QOY-0DLL
 func TestUnjudgedCandidateAndPrunedPass(t *testing.T) {
 	f := newFixture(t)
 	_, ids, err := f.st.Attach(t.Context(), "unjudged", false, []store.Observation{{Scraper: "fixture", SourceID: "unjudged", Digest: "chosen", Reading: sources.Reading{Name: "Unjudged", Names: []string{"Unjudged"}}}})

@@ -217,9 +217,9 @@ func settleCostChain(t *testing.T, f *fixture, trigger string, began time.Time) 
 			p = v
 		}
 	}
-	en := waitFollow(t, f, p.ID)
+	en := waitFollowUntil(t, f, p.ID, began.Add(120*time.Second))
 	if en.Derived+en.HTTPS+en.HTTP+en.None > 0 {
-		waitFollow(t, f, en.ID)
+		waitFollowUntil(t, f, en.ID, began.Add(120*time.Second))
 	}
 	if time.Since(began) > 120*time.Second {
 		t.Fatal("cost chain exceeded deadline")

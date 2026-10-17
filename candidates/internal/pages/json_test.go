@@ -35,7 +35,7 @@ func TestFactsProjection(t *testing.T) {
 	}
 }
 
-// R-01IE-0J8A R-0CHH-GGWJ R-0DPD-U8N8
+// R-3VZN-BZMO R-0CHH-GGWJ R-0DPD-U8N8
 func TestDerivedProjection(t *testing.T) {
 	for _, tc := range []struct {
 		kind, source, raw string
@@ -47,7 +47,7 @@ func TestDerivedProjection(t *testing.T) {
 	} {
 		e := store.Enrichment{Kind: tc.kind, Source: tc.source, Found: json.RawMessage(tc.raw)}
 		got := enrichmentRow(e)
-		want := EnrichmentRow{tc.kind, tc.source, tc.want, "", "", "", "", 0, "", "", ""}
+		want := EnrichmentRow{tc.kind, tc.source, tc.want, "", "", "", "", 0, "", false, "", "", ""}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatal(got, want)
 		}
@@ -59,7 +59,7 @@ func TestDerivedProjection(t *testing.T) {
 	}
 }
 
-// R-0EXA-80DX
+// R-PGXW-QMWW
 func TestCandidateFactsWithoutJudgment(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	_, ids, err := cfg.Store.Attach(t.Context(), "run", false, []store.Observation{{Scraper: "fixture", SourceID: "row", Digest: "digest", Reading: sources.Reading{Name: "facts-business", NameKey: "facts-business"}}})
@@ -99,7 +99,7 @@ func TestCandidateFactsWithoutJudgment(t *testing.T) {
 	}
 }
 
-// R-0563-5UGD R-ZZ2L-8ZQW R-00AH-MRHL R-02QA-EAYZ
+// R-3TJU-KG5A R-3URQ-Y7VZ R-00AH-MRHL R-02QA-EAYZ
 func TestIndependentFactsAndAssessmentTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()

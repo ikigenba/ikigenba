@@ -18,7 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-1LJT-P2HC R-1MRQ-2U81 R-1NZM-GLYQ R-1QFF-85G4 R-29XT-CHB8 R-2B5P-Q91X
+// R-SNXH-17VW R-SMPK-NG57 R-SLHO-9OEI R-1QFF-85G4 R-T7FV-5JR0 R-T8NR-JBHP
 func TestDerivedKindsAndIdempotentAll(t *testing.T) {
 	for _, kind := range []string{"", enrichers.KindDriveMinutes, enrichers.KindLinkFacts} {
 		t.Run(kind, func(t *testing.T) {
@@ -103,7 +103,7 @@ func TestDerivedKindsAndIdempotentAll(t *testing.T) {
 					for _, l := range links {
 						subject.Links = append(subject.Links, enrichers.Link{Scraper: l.Scraper, SourceID: l.SourceID, Gone: l.Gone, Reading: l.Reading})
 					}
-					regEn, _ := enrichers.New(nil).Get(en.Kind)
+					regEn, _ := enrichers.New(enrichers.Config{}).Get(en.Kind)
 					deriver := regEn.(enrichers.Deriver)
 					expected := deriver.Derive(subject)
 					if en.Inputs != deriver.Inputs(subject) || en.Source != expected.Source || en.Cost != expected.Cost || !bytes.Equal(en.Found, expected.Found) {
@@ -151,7 +151,7 @@ func TestDerivedKindsAndIdempotentAll(t *testing.T) {
 	}
 }
 
-// R-1P7I-UDPF R-1MRQ-2U81 R-1NZM-GLYQ R-1QFF-85G4
+// R-SP5D-EZML R-SMPK-NG57 R-SLHO-9OEI R-1QFF-85G4
 func TestDerivedFactsExistBeforeFirstFetch(t *testing.T) {
 	f := newFixture(t, nil, false)
 	ids := seedEmails(t, f, 1, func(int) string { return "owner@derived.test" })
@@ -208,7 +208,7 @@ func TestDerivedFactsExistBeforeFirstFetch(t *testing.T) {
 	}
 }
 
-// R-1HW4-JR99 R-KP57-KGUO
+// R-SK9R-VWNT R-83CI-ZGWB
 func TestDerivedKindsAvailableWithoutChecker(t *testing.T) {
 	for _, kind := range []string{"", enrichers.KindDriveMinutes, enrichers.KindLinkFacts} {
 		f := newFixture(t, nil, false)
@@ -254,7 +254,7 @@ func TestWebsiteInputsChangeRecordsAnotherResult(t *testing.T) {
 	}
 }
 
-// R-XZ9G-5OLP R-1WIX-505L R-22MF-1UV2 R-2B5P-Q91X
+// R-SU0Y-Y2LD R-SQD9-SRDA R-SWGR-PM2R R-T8NR-JBHP
 func TestRebuildForcesDerivedResultsBeforeJudging(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/scrapers/fmcsa/current" {
@@ -330,7 +330,7 @@ func equalInt(a, b *int64) bool {
 	return *a == *b
 }
 
-// R-XZ9G-5OLP
+// R-SU0Y-Y2LD
 func TestRebuildPersistsDerivedFactsInHistoricalAssessment(t *testing.T) {
 	rows := []scrapes.Row{
 		{Scraper: ppp.Name, Run: "ppp-current", SourceID: "original", Digest: "one", Name: "Original Carrier", Address: scrapes.Address{State: "MN", Zip: "55072"}, Facts: map[string]json.RawMessage{}, Raw: json.RawMessage(`{}`)},

@@ -61,6 +61,7 @@ type Member struct {
 	FleetVerdict        string    `json:"fleet_verdict"`
 	Website             string    `json:"website"`
 	WebsiteURL          string    `json:"website_url,omitempty"`
+	SiteText            *string   `json:"site_text"`
 	Minutes             *int64    `json:"minutes,omitempty"`
 	GovernmentMatch     string    `json:"government_match,omitempty"`
 	KnownSince          string    `json:"known_since,omitempty"`
@@ -319,6 +320,7 @@ type Detail struct {
 	Estimates   []Estimate   `json:"estimates"`
 	Links       []Link       `json:"links"`
 	Rulings     []Ruling     `json:"rulings"`
+	Pages       []Page       `json:"pages"`
 	Enrichments []Enrichment `json:"enrichments"`
 	Rejects     []Reject     `json:"rejects"`
 }
@@ -337,6 +339,9 @@ func (v Detail) MarshalJSON() ([]byte, error) {
 	}
 	if v.Rejects == nil {
 		v.Rejects = []Reject{}
+	}
+	if v.Pages == nil {
+		v.Pages = []Page{}
 	}
 	if v.Enrichments == nil {
 		v.Enrichments = []Enrichment{}
@@ -467,8 +472,10 @@ type DecideArgs struct {
 
 // EnrichArgs selects a website enrichment pass.
 type EnrichArgs struct {
-	Kind          string `json:"kind"`
-	OlderThanDays *int   `json:"older_than_days"`
+	Kind      string `json:"kind"`
+	Cohort    string `json:"cohort"`
+	Candidate string `json:"candidate"`
+	Force     bool   `json:"force"`
 }
 
 // Enrichment is one recorded enrichment result.
@@ -486,4 +493,22 @@ type Enrichment struct {
 	Domain     string          `json:"domain,omitempty"`
 	Cost       float64         `json:"cost"`
 	At         string          `json:"at"`
+}
+
+// AddPageArgs selects a candidate website page to keep.
+type AddPageArgs struct {
+	Candidate string `json:"candidate" mcp:"required"`
+	URL       string `json:"url" mcp:"required"`
+}
+
+// Page describes a kept copy without its text.
+type Page struct {
+	Number  int64  `json:"number"`
+	URL     string `json:"url"`
+	Title   string `json:"title,omitempty"`
+	Size    int64  `json:"size"`
+	Fetched string `json:"fetched"`
+	By      string `json:"by"`
+	Email   string `json:"email,omitempty"`
+	Path    string `json:"path"`
 }

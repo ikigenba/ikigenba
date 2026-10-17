@@ -22,6 +22,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/paging"
+	"github.com/ikigenba/ikigenba/appkit/prompts"
 	"github.com/ikigenba/ikigenba/appkit/scrapes"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
@@ -59,6 +60,9 @@ type fixture struct {
 func newFixture(t *testing.T) *fixture                         { return fixtureWithScrapes(t, nil) }
 func fixtureWithScrapes(t *testing.T, h http.Handler) *fixture { return fixtureWithWebsite(t, h, nil) }
 func fixtureWithWebsite(t *testing.T, h http.Handler, k *website.Checker) *fixture {
+	return fixtureWithPrompts(t, h, k, nil)
+}
+func fixtureWithPrompts(t *testing.T, h http.Handler, k *website.Checker, pc *prompts.Client) *fixture {
 	t.Helper()
 	f := &fixture{t: t, now: time.Date(2026, 4, 5, 0, 7, 8, 0, time.FixedZone("fixture", 2*60*60))}
 	now := func() time.Time { return f.now }
@@ -99,10 +103,10 @@ func fixtureWithWebsite(t *testing.T, h http.Handler, k *website.Checker) *fixtu
 		t.Cleanup(func() { _ = server.Close() })
 		sc = scrapes.NewClient(scrapes.ClientConfig{Service: services.Entry{Name: "scrapes", Socket: socket}, Telemetry: w})
 	}
-	f.eng = passes.New(passes.Config{Website: k, Store: f.st, Sources: sources.New(fmcsa.New()), Scrapes: sc, Telemetry: w, Events: em})
+	f.eng = passes.New(passes.Config{Prompts: pc, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Website: k, Store: f.st, Sources: sources.New(fmcsa.New()), Scrapes: sc, Telemetry: w, Events: em})
 	t.Cleanup(func() { f.eng.Drain(context.Background()) })
 	srv := mcp.NewServer(mcp.ServerConfig{Name: "candidates", Telemetry: w})
-	tools.Register(srv, tools.Config{f.eng, f.st})
+	tools.Register(srv, tools.Config{f.eng, f.st, k})
 	host := httptest.NewServer(identity.Require(srv))
 	t.Cleanup(host.Close)
 	f.client = mcp.NewClient(mcp.ClientConfig{Endpoint: host.URL, HTTPClient: host.Client()})
@@ -217,11 +221,11 @@ func (f *fixture) seedWithStep(n int, step time.Duration, tie bool) []string {
 	return ids
 }
 
-// R-5795-SH3G     R-5LVY-DPZS
-// R-VI0C-NJWH R-VKG5-F3DV R-VLO1-SV4K R-RDYP-P5JC
+// R-8884-IJV3     R-5LVY-DPZS
+// R-OISP-CUAB R-ONOA-VX93 R-OOW7-9OZS R-O91I-AOCR
 func TestCatalogAndSchemas(t *testing.T) {
 	f := newFixture(t)
-	want := []tools.Entry{{"cohorts", tools.DescribeCohorts}, {"cohort", tools.DescribeCohort}, {"candidates", tools.DescribeCandidates}, {"candidate", tools.DescribeCandidate}, {"passes", tools.DescribePasses}, {"pass", tools.DescribePass}, {"rebuild", tools.DescribeRebuild}, {"enrich", tools.DescribeEnrich}, {"decide", tools.DescribeDecide}, {"exclude", tools.DescribeExclude}, {"include", tools.DescribeInclude}, {"create_cohort", tools.DescribeCreateCohort}, {"edit_cohort", tools.DescribeEditCohort}, {"delete_cohort", tools.DescribeDeleteCohort}, {"reject", tools.DescribeReject}, {"unreject", tools.DescribeUnreject}}
+	want := []tools.Entry{{"cohorts", tools.DescribeCohorts}, {"cohort", tools.DescribeCohort}, {"candidates", tools.DescribeCandidates}, {"candidate", tools.DescribeCandidate}, {"passes", tools.DescribePasses}, {"pass", tools.DescribePass}, {"rebuild", tools.DescribeRebuild}, {"enrich", tools.DescribeEnrich}, {"add_page", tools.DescribeAddPage}, {"decide", tools.DescribeDecide}, {"exclude", tools.DescribeExclude}, {"include", tools.DescribeInclude}, {"create_cohort", tools.DescribeCreateCohort}, {"edit_cohort", tools.DescribeEditCohort}, {"delete_cohort", tools.DescribeDeleteCohort}, {"reject", tools.DescribeReject}, {"unreject", tools.DescribeUnreject}}
 	if !reflect.DeepEqual(tools.Catalog(), want) {
 		t.Fatal(tools.Catalog())
 	}
@@ -238,8 +242,8 @@ func TestCatalogAndSchemas(t *testing.T) {
 		t.Fatal(infos)
 	}
 	seen := map[string]bool{}
-	properties := [][]string{{"page", "limit"}, {"cohort"}, {"name", "zip", "phone", "page", "limit"}, {"candidate"}, {"page", "limit"}, {"pass"}, {}, {"kind", "older_than_days"}, {"kind", "why", "candidate", "other", "links"}, {"candidate", "why"}, {"candidate", "why"}, {"name", "filters", "order", "size"}, {"cohort", "name", "filters", "order", "size"}, {"cohort"}, {"cohort", "candidate", "why"}, {"cohort", "candidate", "why"}}
-	required := [][]string{nil, {"cohort"}, nil, {"candidate"}, nil, {"pass"}, nil, nil, {"kind", "why", "candidate"}, {"candidate", "why"}, {"candidate", "why"}, {"name"}, {"cohort"}, {"cohort"}, {"cohort", "candidate", "why"}, {"cohort", "candidate", "why"}}
+	properties := [][]string{{"page", "limit"}, {"cohort"}, {"name", "zip", "phone", "page", "limit"}, {"candidate"}, {"page", "limit"}, {"pass"}, {}, {"kind", "cohort", "candidate", "force"}, {"candidate", "url"}, {"kind", "why", "candidate", "other", "links"}, {"candidate", "why"}, {"candidate", "why"}, {"name", "filters", "order", "size"}, {"cohort", "name", "filters", "order", "size"}, {"cohort"}, {"cohort", "candidate", "why"}, {"cohort", "candidate", "why"}}
+	required := [][]string{nil, {"cohort"}, nil, {"candidate"}, nil, {"pass"}, nil, nil, {"candidate", "url"}, {"kind", "why", "candidate"}, {"candidate", "why"}, {"candidate", "why"}, {"name"}, {"cohort"}, {"cohort"}, {"cohort", "candidate", "why"}, {"cohort", "candidate", "why"}}
 	for i, info := range infos {
 		if info.Name != want[i].Name || info.Description != want[i].Description || len(info.OutputSchema) != 0 {
 			t.Fatal(info)
@@ -271,22 +275,23 @@ func TestCatalogAndSchemas(t *testing.T) {
 		}
 	}
 	seen = map[string]bool{}
-	for _, d := range []string{tools.RefuseNotFound, tools.RefuseInvalid, tools.RefuseBusy, tools.RefuseStopping, tools.RefuseUnavailable} {
+	for _, d := range []string{tools.RefuseNotFound, tools.RefuseInvalid, tools.RefuseBusy, tools.RefuseStopping, tools.RefuseUnavailable, tools.RefuseNoWebsite, tools.RefuseOffSite, tools.RefusePageCap, tools.RefuseFetch} {
 		if d == "" || strings.Contains(d, "\n") || seen[d] {
 			t.Fatal(d)
 		}
 		seen[d] = true
 	}
 	_ = tools.Cohort{"id", "name", 1, store.CohortFilters{}, []store.CohortOrder{}, "creator", "email", "created", "changer", "email", "changed"}
-	_ = tools.Member{tools.Candidate{}, nil, nil, nil, nil, nil, "", "", "", nil, "", "", "", false}
+	_ = tools.Member{tools.Candidate{}, nil, nil, nil, nil, nil, "", "", "", nil, nil, "", "", "", false}
 	_ = tools.Reject{"kind", "cohort", "name", "candidate", "why", "user", "email", "at"}
 	_ = tools.CohortRead{tools.Cohort{}, 0, nil, nil}
 	_ = tools.Assessment{nil, nil, nil, nil, nil, "", "", nil, "", "", nil, nil, "", "", nil, false, 0, ""}
 	_ = tools.Estimate{"source", 1, nil, .5, nil, "", 1}
 	_ = tools.Ruling{"kind", "candidate", "other", nil, "why", "user", "email", "at"}
-	_ = tools.Detail{tools.Candidate{}, nil, nil, nil, nil, nil, nil}
+	_ = tools.Detail{tools.Candidate{}, nil, nil, nil, nil, nil, nil, nil}
 	_ = tools.Decision{tools.Ruling{}, nil}
-	_ = tools.EnrichArgs{"kind", nil}
+	_ = tools.EnrichArgs{"kind", "cohort", "candidate", false}
+	_ = tools.AddPageArgs{"candidate", "url"}
 	_ = tools.Enrichment{"kind", "source", "inputs", nil, "state", "url", "title", 200, nil, "error", "domain", .2, "at"}
 	_ = tools.NoArgs{}
 	_ = tools.CandidateArgs{"id"}
@@ -327,9 +332,9 @@ func objectKeys(t *testing.T, b []byte) []string {
 	return out
 }
 
-// R-AEA2-LWFY R-AFHY-ZO6N R-VD4R-4GXP R-AHXR-R7O1 R-AJ5O-4ZEQ R-AKDK-IR5F R-VECN-I8OE R-VGSG-9S5S
+// R-AEA2-LWFY R-AFHY-ZO6N R-ODX3-TRBJ R-AHXR-R7O1 R-AJ5O-4ZEQ R-AKDK-IR5F R-VECN-I8OE R-OHKS-Z2JM
 // R-RIUB-88I4
-// R-6131-Z710 R-AEA2-LWFY R-AFHY-ZO6N R-VD4R-4GXP R-AHXR-R7O1 R-AJ5O-4ZEQ R-AKDK-IR5F R-VECN-I8OE R-VGSG-9S5S
+// R-6131-Z710 R-AEA2-LWFY R-AFHY-ZO6N R-ODX3-TRBJ R-AHXR-R7O1 R-AJ5O-4ZEQ R-AKDK-IR5F R-VECN-I8OE R-OHKS-Z2JM
 func TestAnswerJSONShapes(t *testing.T) {
 	tests := []struct {
 		v      any
@@ -339,10 +344,10 @@ func TestAnswerJSONShapes(t *testing.T) {
 	}{
 		{tools.Enrichment{}, "kind source inputs cost at", "", ""},
 		{tools.Person{}, "name role", "", ""}, {tools.Evidence{}, "name source weight description", "", ""}, {tools.Category{}, "name source", "", ""}, {tools.Candidate{}, "id status name names street city state zip county phone email people class cargo created updated", "names people cargo", ""},
-		{tools.Member{}, "candidate categories fleet_verdict website excluded", "categories", ""}, {tools.CohortList{}, "cohorts", "cohorts", ""}, {tools.Cohort{}, "id name size filters order created_by created_email created changed_by changed_email changed", "order", "filters"}, {tools.Reject{}, "kind cohort candidate", "", ""}, {tools.CohortRead{}, "cohort matching members rejects", "members rejects", ""}, {tools.CandidateList{}, "candidates", "candidates", ""}, {tools.PassList{}, "passes", "passes", ""},
+		{tools.Member{}, "candidate categories fleet_verdict website site_text excluded", "categories", ""}, {tools.CohortList{}, "cohorts", "cohorts", ""}, {tools.Cohort{}, "id name size filters order created_by created_email created changed_by changed_email changed", "order", "filters"}, {tools.Reject{}, "kind cohort candidate", "", ""}, {tools.CohortRead{}, "cohort matching members rejects", "members rejects", ""}, {tools.CandidateList{}, "candidates", "candidates", ""}, {tools.PassList{}, "passes", "passes", ""},
 		{tools.Link{}, "scraper source_id run digest name names street city state zip county phone email people class cargo fleet_verdict name_key phone_key domain_key reason confidence first_seen last_seen gone", "names people cargo", ""},
 		{tools.Estimate{}, "source low confidence facts formula", "", "facts"}, {tools.Assessment{}, "operating_evidence categories fleet_verdict website excluded rules calculated", "operating_evidence categories", ""},
-		{tools.Ruling{}, "kind candidate keys why user email at", "keys", ""}, {tools.Detail{}, "candidate estimates links rulings enrichments rejects", "estimates links rulings enrichments rejects", ""}, {tools.Decision{}, "ruling candidates", "candidates", ""},
+		{tools.Ruling{}, "kind candidate keys why user email at", "keys", ""}, {tools.Detail{}, "candidate estimates links rulings pages enrichments rejects", "estimates links rulings pages enrichments rejects", ""}, {tools.Decision{}, "ruling candidates", "candidates", ""},
 	}
 	for _, tt := range tests {
 		b, err := json.Marshal(tt.v)
@@ -374,13 +379,13 @@ func TestAnswerJSONShapes(t *testing.T) {
 	}{
 		{tools.Enrichment{URL: "chosen-url", Title: "chosen-title", StatusCode: 200, Error: "chosen-error"}, "kind source inputs url title status_code error cost at"},
 		{tools.Candidate{MergedInto: "survivor"}, "id status merged_into name names street city state zip county phone email people class cargo created updated"},
-		{tools.Member{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, Website: sources.WebsiteHTTPS, WebsiteURL: "https://chosen.test", Minutes: &one, GovernmentMatch: "chosen", KnownSince: "known", NewestFiling: "newest"}, "candidate operating_confidence revenue_low revenue_high revenue_confidence categories fleet_verdict website website_url minutes government_match known_since newest_filing excluded"},
+		{tools.Member{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, Website: sources.WebsiteHTTPS, WebsiteURL: "https://chosen.test", Minutes: &one, GovernmentMatch: "chosen", KnownSince: "known", NewestFiling: "newest"}, "candidate operating_confidence revenue_low revenue_high revenue_confidence categories fleet_verdict website website_url site_text minutes government_match known_since newest_filing excluded"},
 		{tools.CohortList{Next: &continuation}, "cohorts next"}, {tools.CandidateList{Next: &continuation}, "candidates next"}, {tools.PassList{Next: &continuation}, "passes next"},
 		{tools.Link{Filed: "2026-01-01"}, "scraper source_id run digest name names street city state zip county phone email people class cargo filed fleet_verdict name_key phone_key domain_key reason confidence first_seen last_seen gone"},
 		{tools.Estimate{High: &one, Filed: "2026-01-01"}, "source low high confidence facts filed formula"},
 		{tools.Assessment{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, KnownSince: "chosen-known", NewestFiling: "chosen-newest", GovernmentMatch: "chosen-government", PowerUnits: &one, Drivers: &one, Website: sources.WebsiteHTTPS, WebsiteURL: "https://chosen.test", Minutes: &one}, "operating_confidence operating_evidence revenue_low revenue_high revenue_confidence known_since newest_filing categories government_match fleet_verdict power_units drivers website website_url minutes excluded rules calculated"},
 		{tools.Reject{Kind: "reject", Cohort: "cohort", CohortName: "name", Candidate: "candidate", Why: "why", User: "user", Email: "email", At: "at"}, "kind cohort cohort_name candidate why user email at"},
-		{tools.Ruling{Other: "other"}, "kind candidate other keys why user email at"}, {tools.Detail{Assessment: &tools.Assessment{}}, "candidate assessment estimates links rulings enrichments rejects"},
+		{tools.Ruling{Other: "other"}, "kind candidate other keys why user email at"}, {tools.Detail{Assessment: &tools.Assessment{}}, "candidate assessment estimates links rulings pages enrichments rejects"},
 	}
 	for _, tt := range populated {
 		b, err := json.Marshal(tt.v)
@@ -444,7 +449,7 @@ func decodeList[T any](t *testing.T, r mcp.Result) T {
 
 var _ io.Reader = (*random)(nil)
 
-// R-AWKK-CGKD R-VJ89-1BN6 R-VRRJ-PPU1 R-RLA3-ZRZI R-BDN5-P8Y3
+// R-AWKK-CGKD R-P76P-0947 R-VRRJ-PPU1 R-RLA3-ZRZI R-BDN5-P8Y3
 func TestDetailAndRulings(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -608,12 +613,22 @@ func TestPassPages(t *testing.T) {
 	}
 }
 
-// R-1UJY-J0A1 R-1VRU-WS0Q
+// R-1UJY-J0A1 R-P8EL-E0UW
 func TestSharedReadAnswersAndNoMutation(t *testing.T) {
-	f := newFixture(t)
+	var websiteRequests, siblingRequests, promptRequests atomic.Int64
+	kWebsite := pageChecker(&websiteRequests)
+	pc := promptClient(t, false, &promptRequests)
+	f := fixtureWithPrompts(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		siblingRequests.Add(1)
+		w.WriteHeader(http.StatusNotFound)
+	}), kWebsite, pc)
 	ids := f.seed(1)
 	id := ids[0]
 	k := f.create("shared")
+	setSite(t, f, id, "https://acme.test/")
+	if _, err := f.st.AddPage(t.Context(), store.Page{Candidate: id, URL: "https://acme.test/kept", Text: "kept text", Size: 9, UserID: caller.UserID}); err != nil {
+		t.Fatal(err)
+	}
 	f.call("reject", tools.RejectArgs{Cohort: k.ID, Candidate: id, Why: "shared reject"})
 	f.call("include", tools.RulingArgs{Candidate: id, Why: "owner ruling"})
 	p, err := f.st.AddPass(t.Context(), store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: caller.UserID})
@@ -666,7 +681,15 @@ func TestSharedReadAnswersAndNoMutation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		b, err := json.Marshal([]any{c, ls, es, a, rs, xs, ps, pass, ks, cr})
+		pages, err := f.st.Pages(t.Context(), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		count, err := f.st.CountPages(t.Context(), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := json.Marshal([]any{c, ls, es, a, rs, xs, pages, count, ps, pass, ks, cr})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -697,9 +720,13 @@ func TestSharedReadAnswersAndNoMutation(t *testing.T) {
 	if err != nil || len(ps) != 1 {
 		t.Fatal("unexpected pass", ps, err)
 	}
+	if websiteRequests.Load() != 0 || siblingRequests.Load() != 0 || promptRequests.Load() != 0 {
+		t.Fatal("read tool contacted a remote", websiteRequests.Load(), siblingRequests.Load(), promptRequests.Load())
+	}
+
 }
 
-// R-8YDY-8SNX
+// R-OUZP-6JP9
 func TestRebuildAndNoSiblingReads(t *testing.T) {
 	entered := make(chan identity.Caller, 1)
 	release := make(chan struct{})

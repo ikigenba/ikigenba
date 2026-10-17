@@ -67,24 +67,27 @@ func (f *fixture) enrich(kind string) store.Pass {
 }
 func waitFollow(t *testing.T, f *fixture, id string) store.Pass {
 	t.Helper()
-	deadline := time.NewTimer(30 * time.Second)
+	return waitFollowUntil(t, f, id, time.Now().Add(30*time.Second))
+}
+func waitFollowUntil(t *testing.T, f *fixture, id string, end time.Time) store.Pass {
+	t.Helper()
+	deadline := time.NewTimer(time.Until(end))
 	defer deadline.Stop()
 	for {
 		for _, p := range f.list() {
 			if p.Trigger == id {
-				return f.ended(p.ID)
+				return f.endedWithin(p.ID, time.Until(end))
 			}
 		}
 		select {
 		case <-deadline.C:
 			t.Fatal("missing follow-on")
-		default:
-			runtime.Gosched()
+		case <-f.changed:
 		}
 	}
 }
 
-// R-MQX0-5TXM R-MS4W-JLOB R-N4BW-DB39 R-N6RP-4UKN R-N33Z-ZJCK R-MZGA-U84H R-N97H-WE21 R-29XT-CHB8 R-2B5P-Q91X R-RZ0J-SUPJ
+// R-MQX0-5TXM R-MS4W-JLOB R-N4BW-DB39 R-N6RP-4UKN R-N33Z-ZJCK R-MZGA-U84H R-N97H-WE21 R-T7FV-5JR0 R-T8NR-JBHP R-T502-E09M
 func TestEnrichCountsDedupAndFollowOn(t *testing.T) {
 	f := newFixture(t, nil, false)
 	var mu sync.Mutex
@@ -234,7 +237,7 @@ func TestEnrichAcrossBatches(t *testing.T) {
 	}
 }
 
-// R-1HW4-JR99 R-1J40-XIZY R-1GO8-5ZIK
+// R-SK9R-VWNT R-1J40-XIZY R-SGM2-QLFQ
 func TestEnrichRefusals(t *testing.T) {
 	for _, mode := range []string{"unavailable", "invalid", "busy", "store", "stopping"} {
 		t.Run(mode, func(t *testing.T) {
@@ -320,7 +323,7 @@ func TestEnrichRefusals(t *testing.T) {
 	}
 }
 
-// R-1KBX-BAQN R-1RNB-LX6T R-IY56-LBFP R-Q3XB-GX8X R-S08G-6MG8
+// R-1KBX-BAQN R-T1CD-8P1J R-IY56-LBFP R-Q3XB-GX8X R-T9VN-X38E
 func TestEnrichPersistsCompletedChecksAndDrain(t *testing.T) {
 	f := newFixture(t, nil, false)
 	held := make(chan struct{})
@@ -390,7 +393,7 @@ func TestEnrichPersistsCompletedChecksAndDrain(t *testing.T) {
 	assertRefusal(t, p, err, passes.RefusalStopping)
 }
 
-// R-28PW-YPKJ R-2B5P-Q91X R-RZ0J-SUPJ
+// R-T67Y-RS0B R-T8NR-JBHP R-T502-E09M
 func TestIngestStartsEnrichThenJudgeWithLineage(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/record") {
@@ -508,7 +511,7 @@ func TestEnrichMemoryBound(t *testing.T) {
 	}
 }
 
-// R-S2O8-Y5XM R-RGQ2-2AL4 R-1J40-XIZY R-1KBX-BAQN
+// R-TB3K-AUZ3 R-SHTZ-4D6F R-1J40-XIZY R-1KBX-BAQN
 func TestConcurrentEnrichStartsAndIndependentLanes(t *testing.T) {
 	f := newFixture(t, nil, true)
 	held := make(chan struct{})
@@ -565,7 +568,7 @@ func TestConcurrentEnrichStartsAndIndependentLanes(t *testing.T) {
 	f.eng.Drain(context.Background())
 }
 
-// R-N33Z-ZJCK R-MZGA-U84H R-29XT-CHB8
+// R-N33Z-ZJCK R-MZGA-U84H R-T7FV-5JR0
 func TestEnrichSkipsMergedCandidateAndBlockedFollowOn(t *testing.T) {
 	f := newFixture(t, nil, false)
 	held, release := make(chan struct{}), make(chan struct{})
@@ -592,7 +595,7 @@ func TestEnrichSkipsMergedCandidateAndBlockedFollowOn(t *testing.T) {
 			into = id
 		}
 	}
-	blocker, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "owner"})
+	blocker, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindJudge, Origin: store.OriginCron, Trigger: store.TriggerJudge, Delivery: "held-judge"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -644,7 +647,7 @@ func TestEnrichDistinctSuccessfulBatchesWithinBudget(t *testing.T) {
 	}
 }
 
-// R-28PW-YPKJ
+// R-T67Y-RS0B
 func TestIngestSkipsFollowOnWhileEnrichRuns(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/record") {

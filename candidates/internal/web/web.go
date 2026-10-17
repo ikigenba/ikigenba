@@ -14,6 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 // Config supplies the handler dependencies.
@@ -25,6 +26,7 @@ type Config struct {
 	Passes       *passes.Engine
 	Telemetry    *telemetry.Writer
 	Events       *events.Emitter
+	Website      *website.Checker
 }
 
 // Handler builds the service HTTP handler.
@@ -33,7 +35,7 @@ func Handler(cfg Config) http.Handler {
 	if err != nil {
 		panic(err)
 	}
-	tools.Register(cfg.MCP, tools.Config{Passes: cfg.Passes, Store: cfg.Store})
+	tools.Register(cfg.MCP, tools.Config{Passes: cfg.Passes, Store: cfg.Store, Website: cfg.Website})
 	ph := pages.Handler(pages.Config{Banner: cfg.Banner, Pages: set, ServicesPath: cfg.ServicesPath, Store: cfg.Store})
 	static := page.Static()
 	gated := identity.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

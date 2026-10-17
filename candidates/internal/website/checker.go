@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -115,7 +116,17 @@ func (k *Checker) check(ctx context.Context, domain string, started chan struct{
 }
 
 func (k *Checker) attempt(ctx context.Context, address string) Result {
-	r := Result{State: sources.WebsiteNone}
+	pg := k.fetch(ctx, address)
+	r := Result{State: sources.WebsiteNone, StatusCode: pg.StatusCode, Size: pg.Size, Error: pg.Error}
+	if pg.Error == "" {
+		u, _ := url.Parse(pg.URL)
+		r.State, r.URL, r.Title = u.Scheme, pg.URL, pg.Title
+	}
+	return r
+}
+
+func (k *Checker) fetch(ctx context.Context, address string) Page {
+	r := Page{}
 	client := *k.Client
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	for redirects := 0; ; redirects++ {
@@ -134,6 +145,7 @@ func (k *Checker) attempt(ctx context.Context, address string) Result {
 			}
 			return r
 		}
+		r.URL = req.URL.String()
 		r.StatusCode = resp.StatusCode
 		if isRedirect(resp.StatusCode) && resp.Header.Get("Location") != "" {
 			next, e := req.URL.Parse(resp.Header.Get("Location"))
@@ -174,9 +186,9 @@ func (k *Checker) attempt(ctx context.Context, address string) Result {
 		case readErr != nil:
 			r.Error = transportError(readErr)
 		default:
-			r.State = req.URL.Scheme
 			r.URL = req.URL.String()
 			r.Title = title(body)
+			r.Text = Text(body)
 		}
 		return r
 	}

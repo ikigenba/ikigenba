@@ -26,17 +26,17 @@ func factsKey(ctx context.Context, tx *sql.Tx, id string) (Facts, error) {
 		return Facts{}, ErrNotFound
 	}
 	f := fs[0]
-	var d, l, w string
-	if err = scanSQL(ctx, tx, "SELECT drive_minutes_at,link_facts_at,website_check_at FROM facts WHERE candidate=?", []any{id}, &d, &l, &w); err != nil {
+	var d, l, st, w string
+	if err = scanSQL(ctx, tx, "SELECT drive_minutes_at,link_facts_at,site_text_at,website_check_at FROM facts WHERE candidate=?", []any{id}, &d, &l, &st, &w); err != nil {
 		return Facts{}, err
 	}
-	for i, a := range []string{d, l, w} {
+	for i, a := range []string{d, l, st, w} {
 		if a != "" {
 			t, err := time.Parse(time.RFC3339, a)
 			if err != nil {
 				return Facts{}, err
 			}
-			f.Written = append(f.Written, Written{Kind: enrichers.Kinds()[i], At: t.UTC()})
+			f.Written = append(f.Written, Written{Kind: []string{enrichers.KindDriveMinutes, enrichers.KindLinkFacts, enrichers.KindSiteText, sources.WebsiteCheck}[i], At: t.UTC()})
 		}
 	}
 	return f, nil
@@ -51,7 +51,7 @@ func projectFacts(ctx context.Context, tx *sql.Tx, id string) error {
 	}
 	f := unknownFacts(id)
 	seen := map[string]bool{}
-	extra := map[string]any{"drive_minutes_at": "", "link_facts_at": "", "website_check_at": ""}
+	extra := map[string]any{"drive_minutes_at": "", "link_facts_at": "", "website_check_at": "", "site_text_at": ""}
 	for _, e := range es {
 		if seen[e.Kind] {
 			continue

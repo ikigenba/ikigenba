@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/prompts"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
@@ -23,6 +24,11 @@ const (
 	KindLinkFacts    = "link_facts"
 	SourceZipDrive   = "zip_drive"
 	SourceLinks      = "links"
+	KindSiteText     = "site_text"
+	SourcePrompts    = "prompts"
+	RunQueued        = "queued"
+	RunRunning       = "running"
+	RunExited        = "exited"
 )
 
 // Link is one source reading in the subject's display order.
@@ -34,9 +40,9 @@ type Link struct {
 
 // Subject holds the stored inputs for a candidate.
 type Subject struct {
-	ID, Email, Zip string
-	Minutes        *int64
-	Links          []Link
+	ID, Name, City, State, Email, Zip, Website string
+	Minutes                                    *int64
+	Links                                      []Link
 }
 
 // Result is a kind's finding and its provenance.
@@ -98,18 +104,61 @@ type LinkFacts struct{}
 // WebsiteCheck fetches candidate domains through its checker.
 type WebsiteCheck struct{ Checker *website.Checker }
 
+// Prompter records one run of a prompt per subject.
+type Prompter interface {
+	Enricher
+	Ready() bool
+	Prompt() string
+	Input(s Subject) json.RawMessage
+	Found(out prompts.Outcome, pages int64) Result
+}
+
+// SiteTextInput is the input object sent to the site text prompt.
+type SiteTextInput struct {
+	Candidate string `json:"candidate"`
+	Name      string `json:"name"`
+	City      string `json:"city"`
+	State     string `json:"state"`
+	Website   string `json:"website"`
+}
+
+// SiteTextFound records the outcome and retained page count of a prompt run.
+type SiteTextFound struct {
+	Run       string `json:"run"`
+	Status    string `json:"status"`
+	ExitCode  *int   `json:"exit_code,omitempty"`
+	Pages     int64  `json:"pages"`
+	CostNanos int64  `json:"cost_nanos"`
+}
+
+// Failed reports whether the run failed to exit successfully.
+func (f SiteTextFound) Failed() bool {
+	return f.Status != RunExited || f.ExitCode == nil || *f.ExitCode != 0
+}
+
+// SiteText builds inputs and records outcomes of the site text prompt.
+type SiteText struct{ Prompts *prompts.Client }
+
+// Config supplies the clients used by fetched kinds.
+type Config struct {
+	Website *website.Checker
+	Prompts *prompts.Client
+}
+
 // Registry is the fixed ordered set of enrichment kinds.
-type Registry struct{ checker *website.Checker }
+type Registry struct{ cfg Config }
 
 // Kinds returns independent storage in processing order.
-func Kinds() []string { return []string{KindDriveMinutes, KindLinkFacts, sources.WebsiteCheck} }
+func Kinds() []string {
+	return []string{KindDriveMinutes, KindLinkFacts, sources.WebsiteCheck, KindSiteText}
+}
 
 // New constructs the registry, including an unavailable website checker.
-func New(ck *website.Checker) *Registry { return &Registry{checker: ck} }
+func New(cfg Config) *Registry { return &Registry{cfg: cfg} }
 
 // All returns fresh ordered element storage.
 func (r *Registry) All() []Enricher {
-	return []Enricher{DriveMinutes{}, LinkFacts{}, WebsiteCheck{Checker: r.checker}}
+	return []Enricher{DriveMinutes{}, LinkFacts{}, WebsiteCheck{Checker: r.cfg.Website}, SiteText{Prompts: r.cfg.Prompts}}
 }
 
 // Get returns the kind with the exact matching word.
@@ -308,4 +357,41 @@ func (w WebsiteCheck) Ready() bool { return w.Checker != nil }
 // Fetch relays checked domains as canonical website results.
 func (w WebsiteCheck) Fetch(ctx context.Context, inputs []string, each func(string, Result)) {
 	w.Checker.CheckAll(ctx, inputs, func(in string, r website.Result) { each(in, result(in, r)) })
+}
+
+// PromptName converts a kind word into its prompt name.
+func PromptName(kind string) string { return strings.ReplaceAll(kind, "_", "-") }
+
+// Kind returns the site text kind word.
+func (SiteText) Kind() string { return KindSiteText }
+
+// Fetched reports that this kind runs outside the service.
+func (SiteText) Fetched() bool { return true }
+
+// Inputs returns the stored website URL without normalization.
+func (SiteText) Inputs(s Subject) string { return s.Website }
+
+// Ready reports whether a prompts client is available.
+func (s SiteText) Ready() bool { return s.Prompts != nil }
+
+// Prompt returns the catalog name of the prompt to run.
+func (SiteText) Prompt() string { return PromptName(KindSiteText) }
+
+// Input constructs the prompt's candidate input object.
+func (SiteText) Input(s Subject) json.RawMessage {
+	b, _ := json.Marshal(SiteTextInput{s.ID, s.Name, s.City, s.State, s.Website})
+	return b
+}
+
+// Found records the run's outcome without retaining its output.
+func (SiteText) Found(out prompts.Outcome, pages int64) Result {
+	r := result(SourcePrompts, SiteTextFound{out.ID, out.Status, out.ExitCode, pages, out.CostNanos})
+	r.Cost = float64(out.CostNanos) / 1e9
+	return r
+}
+
+// Valid checks the strict site text outcome shape.
+func (SiteText) Valid(b json.RawMessage) bool {
+	var f SiteTextFound
+	return strictObject(b, &f) && f.Run != "" && f.Status != "" && f.Pages >= 0 && f.CostNanos >= 0
 }

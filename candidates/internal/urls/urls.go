@@ -4,6 +4,7 @@ package urls
 import (
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/ikigenba/ikigenba/appkit/services"
@@ -72,4 +73,9 @@ func RunPage(base, run string) string {
 		return ""
 	}
 	return base + "/runs/" + run
+}
+
+// PagePath returns the local address of one kept page.
+func PagePath(candidate string, number int64) string {
+	return "/candidates/" + candidate + "/pages/" + strconv.FormatInt(number, 10)
 }

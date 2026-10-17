@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -55,7 +54,7 @@ func websiteTimers(t *testing.T, h *runHarness, timeout chan chan time.Time) {
 	}
 }
 
-// R-N0O7-7ZV6 R-JLLH-JDUS
+// R-N0O7-7ZV6
 func TestRunSandboxSelectsStub(t *testing.T) {
 	for _, supplied := range []bool{false, true} {
 		t.Run(map[bool]string{false: "nil", true: "injected"}[supplied], func(t *testing.T) {
@@ -92,7 +91,7 @@ func TestRunSandboxSelectsStub(t *testing.T) {
 	}
 }
 
-// R-N1W3-LRLV R-S3W5-BXOB
+// R-N1W3-LRLV
 func TestRunInjectedHTTPAndTimeouts(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
 	arrived := make(chan string, 4)
@@ -143,7 +142,7 @@ func TestRunInjectedHTTPAndTimeouts(t *testing.T) {
 	}
 }
 
-// R-IODZ-J5I5 R-YDTV-I753
+// R-IODZ-J5I5
 func TestRunNoHTTPRefusesEnrichWithoutPass(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
 	h.start()
@@ -164,63 +163,6 @@ func TestRunNoHTTPRefusesEnrichWithoutPass(t *testing.T) {
 		if e.Name == "pass.started" || e.Name == "pass.finished" {
 			t.Fatal(e)
 		}
-	}
-}
-
-// R-YCLZ-4FEE
-func TestRunManualEnrichLifecycle(t *testing.T) {
-	for _, fetched := range []bool{false, true} {
-		t.Run(map[bool]string{false: "derived", true: "fetched"}[fetched], func(t *testing.T) {
-			h := newRunHarness(t, t.TempDir(), "")
-			if fetched {
-				h.p.HTTP = &http.Client{Transport: enrichTransport(func(*http.Request) (*http.Response, error) { t.Error("empty pass fetched"); return nil, io.EOF })}
-			}
-			h.start()
-			c := identity.Caller{UserID: "chosen-owner", RequestID: "chosen-request"}
-			r, p := h.call(c, "enrich", tools.EnrichArgs{})
-			if r.IsError() {
-				t.Fatal(r)
-			}
-			id := runText(p, "id")
-			done := h.waitPass(c, id)
-			h.stop()
-			bus := h.bus.Events()
-			if len(bus) != 2 {
-				t.Fatal(bus)
-			}
-			for i, e := range bus {
-				if e.Name != []string{"pass.started", "pass.finished"}[i] || e.RequestID != c.RequestID || e.User != c.UserID || e.Cause != "" || e.Depth != 0 || e.Attrs["pass"] != id || e.Attrs["kind"] != store.KindEnrich || e.Attrs["origin"] != store.OriginEnrich || e.Attrs["trigger"] != store.TriggerEnrich {
-					t.Fatal(e)
-				}
-				count := 0
-				for _, te := range h.telemetry.Events() {
-					if te.Name == e.Name && te.RequestID == e.RequestID && te.User == e.User && reflect.DeepEqual(map[string]any(te.Attrs), map[string]any(e.Attrs)) {
-						count++
-					}
-				}
-				if count != 1 {
-					t.Fatal(count, e)
-				}
-			}
-			for _, k := range []string{"status", "reason", "derived", "due", "fetched", "https", "http", "none"} {
-				var value any
-				if raw := done[k]; len(raw) > 0 {
-					if err := json.Unmarshal(raw, &value); err != nil {
-						t.Fatal(err)
-					}
-				} else {
-					value = ""
-				}
-				got := bus[1].Attrs[k]
-				if n, ok := value.(float64); ok {
-					if got != int64(n) {
-						t.Fatal(k, got, value)
-					}
-				} else if got != value {
-					t.Fatal(k, got, value)
-				}
-			}
-		})
 	}
 }
 
@@ -309,4 +251,66 @@ func TestRunFillsFactsBeforeReady(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.stop()
+}
+
+// R-V2ER-KG1T R-V3MN-Y7SI R-V4UK-BZJ7
+func TestRunAddPageUsesSelectedWebsiteClient(t *testing.T) {
+	for _, mode := range []string{"sandbox-nil", "sandbox-injected", "injected", "nil"} {
+		t.Run(mode, func(t *testing.T) {
+			h := newRunHarness(t, t.TempDir(), "")
+			sandbox := strings.HasPrefix(mode, "sandbox")
+			if sandbox {
+				h.env["IKIGENBA_SANDBOX"] = ""
+			}
+			var requests []string
+			if mode == "injected" || mode == "sandbox-injected" {
+				h.p.HTTP = &http.Client{Transport: enrichTransport(func(r *http.Request) (*http.Response, error) {
+					requests = append(requests, r.URL.String())
+					return &http.Response{StatusCode: 404, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("fixture"))}, nil
+				})}
+			}
+			websiteTimers(t, h, nil)
+			id := seedRunWebsite(t, h, "ops@secure.test")
+			d, st := runStore(t, h.p.Dir, h.p.Now)
+			found, err := json.Marshal(website.Result{State: sources.WebsiteHTTPS, URL: "https://secure.test"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "secure.test", Source: "secure.test", Found: found}}); err != nil {
+				t.Fatal(err)
+			}
+			if err = d.Close(); err != nil {
+				t.Fatal(err)
+			}
+			h.start()
+			r, _ := h.call(identity.Caller{UserID: "owner"}, "add_page", map[string]any{"candidate": id, "url": "https://secure.test/about"})
+			if r.IsError() == sandbox {
+				t.Fatal(r)
+			}
+			if !sandbox {
+				b, _ := json.Marshal(r)
+				if !strings.Contains(string(b), "unavailable:") {
+					t.Fatal(r)
+				}
+			}
+			h.stop()
+			_, st = runStore(t, h.p.Dir, h.p.Now)
+			pages, err := st.Pages(t.Context(), id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if sandbox {
+				if len(pages) != 1 || pages[0].URL != "https://secure.test/about" || pages[0].Title != "secure.test" || len(requests) != 0 {
+					t.Fatal(pages, requests)
+				}
+			} else {
+				if len(pages) != 0 {
+					t.Fatal(pages)
+				}
+				if mode == "injected" && (len(requests) == 0 || requests[0] != "https://secure.test/about") {
+					t.Fatal(requests)
+				}
+			}
+		})
+	}
 }

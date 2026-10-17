@@ -86,7 +86,7 @@ func failureCopy() []string {
 }
 
 func TestAttemptsAndResult(t *testing.T) {
-	// R-HK5A-WQ18 R-HLD7-AHRX R-HQ8S-TKQP R-HRGP-7CHE R-HV4E-CNPH R-HWCA-QFG6
+	// R-HK5A-WQ18 R-HQ8S-TKQP R-HRGP-7CHE R-HV4E-CNPH R-HWCA-QFG6
 	urls := []string{"https://acme.test", "https://www.acme.test", "http://acme.test", "http://www.acme.test"}
 	for success := -1; success < 4; success++ {
 		t.Run(fmt.Sprint(success), func(t *testing.T) {
@@ -352,7 +352,7 @@ func TestTimeoutAndCancellation(t *testing.T) {
 }
 
 func TestCheckAllConcurrency(t *testing.T) {
-	// R-PZ1P-XUA5 R-HLD7-AHRX
+	// R-PZ1P-XUA5
 	const n = 10
 	arrivals := make(chan string, n)
 	release := make(chan struct{})

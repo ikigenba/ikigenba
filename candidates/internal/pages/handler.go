@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,12 +20,13 @@ func Handler(cfg Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.EscapedPath()
 		cid := strings.TrimPrefix(path, "/candidates/")
+		pageID, number, textPage := decodePagePath(path)
 		pid := strings.TrimPrefix(path, "/passes/")
 		hid := strings.TrimPrefix(path, "/cohorts/")
 		cohort := strings.HasPrefix(path, "/cohorts/") && store.ValidCohortID(hid)
 		candidate := strings.HasPrefix(path, "/candidates/") && store.ValidCandidateID(cid)
 		pass := strings.HasPrefix(path, "/passes/") && store.ValidPassID(pid)
-		known := path == "/" || path == "/tools" || path == "/about" || candidate || pass || cohort
+		known := path == "/" || path == "/tools" || path == "/about" || candidate || pass || cohort || textPage
 		auth := urls.Auth(r, cfg.ServicesPath)
 		b := cfg.Banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: auth + "/", LogoutURL: auth + "/logout"})
 		notfound := func() { cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NotFoundData{Banner: b}) }
@@ -173,6 +175,27 @@ func Handler(cfg Config) http.Handler {
 			}
 			b.Trail = []page.Level{{Name: pid, URL: "/passes/" + pid}}
 			cfg.Pages.Write(w, r, 200, "pass", PassData{b, passView(p, cfg.ServicesPath)})
+		case textPage:
+			c, err := cfg.Store.GetCandidate(r.Context(), pageID)
+			if errors.Is(err, store.ErrNotFound) {
+				notfound()
+				return
+			}
+			if err != nil {
+				fail()
+				return
+			}
+			p, err := cfg.Store.GetPage(r.Context(), pageID, number)
+			if errors.Is(err, store.ErrNotFound) {
+				notfound()
+				return
+			}
+			if err != nil {
+				fail()
+				return
+			}
+			b.Trail = []page.Level{{Name: pageID, URL: "/candidates/" + pageID}, {Name: strconv.FormatInt(number, 10), URL: path}}
+			cfg.Pages.Write(w, r, 200, "page", PageData{Banner: b, Page: pageView(p, c)})
 		case candidate:
 			c, err := cfg.Store.GetCandidate(r.Context(), cid)
 			if errors.Is(err, store.ErrNotFound) {
@@ -183,7 +206,7 @@ func Handler(cfg Config) http.Handler {
 				fail()
 				return
 			}
-			d := CandidateData{Candidate: candidateView(c), Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{}, Enrichments: []EnrichmentRow{}, Rejects: []RejectRecordRow{}}
+			d := CandidateData{Candidate: candidateView(c), Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{}, Pages: []PageRow{}, Enrichments: []EnrichmentRow{}, Rejects: []RejectRecordRow{}}
 			rulings, err := cfg.Store.Rulings(r.Context(), cid)
 			if err != nil {
 				fail()
@@ -205,6 +228,14 @@ func Handler(cfg Config) http.Handler {
 				if err != nil {
 					fail()
 					return
+				}
+				kept, err := cfg.Store.Pages(r.Context(), cid)
+				if err != nil {
+					fail()
+					return
+				}
+				for _, p := range kept {
+					d.Pages = append(d.Pages, pageRow(p))
 				}
 				setWebsite(&d.Candidate, enrichments)
 				for _, x := range enrichments {
@@ -290,4 +321,18 @@ func decodePassesPage(value string) (landingPosition, bool) {
 		return landingPosition{reversed: true, last: true}, true
 	}
 	return p, false
+}
+
+func decodePagePath(path string) (string, int64, bool) {
+	parts := strings.Split(path, "/")
+	if len(parts) != 5 || parts[0] != "" || parts[1] != "candidates" || !store.ValidCandidateID(parts[2]) || parts[3] != "pages" || parts[4] == "" || parts[4][0] == '0' {
+		return "", 0, false
+	}
+	for _, c := range parts[4] {
+		if c < '0' || c > '9' {
+			return "", 0, false
+		}
+	}
+	n, err := strconv.ParseInt(parts[4], 10, 64)
+	return parts[2], n, err == nil
 }

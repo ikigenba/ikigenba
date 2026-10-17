@@ -416,10 +416,10 @@ func runOnlyState(t *testing.T, dir string) {
 	}
 }
 
-// R-119A-9L3H R-13P3-14KV R-14WZ-EWBK R-164V-SO29 R-JMTD-X5LH
+// R-60KT-WY1K R-119A-9L3H R-13P3-14KV R-14WZ-EWBK R-164V-SO29 R-JMTD-X5LH
 // R-3TTL-43TV R-42CV-SI0Q R-43KS-69RF R-QR9U-4LFL R-49OA-34GW R-4C42-UNYA
-// R-YF1R-VYVS R-ZY3R-GAKJ R-YG9O-9QMH R-YDTV-I753  R-ZQSD-5O4D
-// R-0479-D5A0 R-06N2-4ORE R-07UY-IGI3 R-76JM-ZE8M R-7BF8-IH7E
+// R-YF1R-VYVS R-ZY3R-GAKJ R-YG9O-9QMH   R-ZQSD-5O4D
+// R-08GD-3XUM R-06N2-4ORE R-0AW5-VHC0 R-76JM-ZE8M R-7BF8-IH7E
 func TestRunAssembledChain(t *testing.T) {
 	if cli.SweepInterval != time.Hour {
 		t.Fatal("sweep constant")
@@ -430,7 +430,7 @@ func TestRunAssembledChain(t *testing.T) {
 		entries[name] = runSocket(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }))
 	}
 	var unrelated atomic.Int64
-	for _, name := range []string{"auth", "artifacts", "connections", "cron", "gdrive"} {
+	for _, name := range []string{"auth", "artifacts", "connections", "cron", "gdrive", "prompts"} {
 		entries[name] = runSocket(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { unrelated.Add(1); w.WriteHeader(500) }))
 	}
 	dir := t.TempDir()
@@ -862,7 +862,7 @@ func TestRunFreshDeliveryCounts(t *testing.T) {
 	}
 }
 
-// R-7OUE-HOSB R-ZJGY-V1O7 R-ZKOV-8TEW R-S3W5-BXOB
+// R-7OUE-HOSB R-ZJGY-V1O7 R-ZKOV-8TEW
 func TestRunSettlesLoadsAndSweepsBeforeAndAfterReady(t *testing.T) {
 	dir := t.TempDir()
 	h := newRunHarness(t, dir, "")
@@ -1408,7 +1408,7 @@ func TestRunNotificationIsSingleAndOptional(t *testing.T) {
 	}
 }
 
-// R-YDTV-I753
+// R-TJ66-KD0B
 func TestRunBusyRefusalsEmitNoPassEvents(t *testing.T) {
 	hold := make(chan struct{})
 	f := &runFake{hold: hold, arrived: make(chan struct{}, 1)}
@@ -1425,7 +1425,7 @@ func TestRunBusyRefusalsEmitNoPassEvents(t *testing.T) {
 	if !r.IsError() {
 		t.Fatal("busy rebuild accepted")
 	}
-	e := events.Event{ID: "evt_7777777777777777", Time: h.p.Now(), Service: "scrapes", Name: "scrape.finished", Attrs: events.Attrs{"scraper": "fmcsa", "run": "run_fixture", "status": "done"}, Seq: 1, Received: h.p.Now()}
+	e := events.Event{ID: "evt_7777777777777777", Time: h.p.Now(), Service: "scrapes", Name: "scrape.finished", Attrs: events.Attrs{"scraper": "fmcsa", "run": "run_fixture", "status": "running"}, Seq: 1, Received: h.p.Now()}
 	b, err := json.Marshal(e)
 	if err != nil {
 		t.Fatal(err)
@@ -1434,18 +1434,24 @@ func TestRunBusyRefusalsEmitNoPassEvents(t *testing.T) {
 	_ = json.Unmarshal(b, &env)
 	env["attempt"] = 1
 	b, _ = json.Marshal(env)
-	status, body := h.request("POST", "/events", "busy-delivery", b)
+	status, body := h.request("POST", "/events", "skipped-delivery", b)
 	var out map[string]string
 	_ = json.Unmarshal(body, &out)
-	if status != 500 || out["outcome"] != events.OutcomeError {
-		t.Fatalf("busy delivery %d %s", status, body)
+	if status != 200 || out["outcome"] != events.OutcomeSkip {
+		t.Fatalf("skipped delivery %d %s", status, body)
 	}
+	r, _ = h.call(identity.Caller{UserID: "reader", RequestID: "refused-enrich"}, "enrich", tools.EnrichArgs{Kind: "unknown-kind"})
+	if !r.IsError() {
+		t.Fatal("unknown enrich accepted")
+	}
+	h.call(c, "passes", tools.PassesArgs{})
+	h.request("GET", "/", "page-request", nil)
 	close(hold)
 	h.waitPass(c, runText(v, "id"))
 	h.stop()
 	runAssertSilent(t, h)
 	for _, e := range h.telemetry.Events() {
-		if (e.Name == "pass.started" || e.Name == "pass.finished") && (e.RequestID == "refused" || e.RequestID == "busy-delivery") {
+		if (e.Name == "pass.started" || e.Name == "pass.finished") && (e.RequestID == "refused" || e.RequestID == "skipped-delivery" || e.RequestID == "refused-enrich" || e.RequestID == "page-request") {
 			t.Fatalf("refusal emitted %v", e)
 		}
 	}
@@ -1482,7 +1488,7 @@ func runAssertNotFound(t *testing.T, r mcp.Result) {
 	}
 }
 
-// R-S3W5-BXOB
+// R-TCBG-OMPS
 func TestRunSweepPrunesDoneAndPreservesRunning(t *testing.T) {
 	f := &runFake{}
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, f)}))
@@ -1616,7 +1622,7 @@ func runAssertSilent(t *testing.T, h *runHarness) {
 	}
 }
 
-// R-P1WQ-5DKX R-7CN4-W8Y3
+// R-IBIN-ZJ0W R-7CN4-W8Y3
 func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	rows := make([]map[string]any, 3)
 	for i := range rows {
@@ -1634,11 +1640,13 @@ func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 		entries[name] = runSocket(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }))
 	}
 	var unrelated atomic.Int64
-	for _, name := range []string{"auth", "artifacts", "connections", "cron", "gdrive"} {
+	for _, name := range []string{"auth", "artifacts", "connections", "cron", "gdrive", "prompts"} {
 		entries[name] = runSocket(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { unrelated.Add(1); w.WriteHeader(500) }))
 	}
 	h := newRunHarness(t, t.TempDir(), runServices(t, entries))
-	h.p.HTTP = &http.Client{Transport: enrichTransport(func(*http.Request) (*http.Response, error) { return nil, io.EOF })}
+	h.p.HTTP = &http.Client{Transport: enrichTransport(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/html"}}, Body: io.NopCloser(strings.NewReader("<html><title>fixture</title><p>fixture page</p></html>"))}, nil
+	})}
 	websiteTimers(t, h, nil)
 	h.start()
 	caller := identity.Caller{UserID: "owner", RequestID: "all-tools"}
@@ -1667,6 +1675,13 @@ func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	enrich := call("enrich", tools.EnrichArgs{Kind: sources.WebsiteCheck})
 	h.waitPass(caller, runText(enrich, "id"))
 	call("candidate", map[string]any{"candidate": id})
+	var email string
+	_ = json.Unmarshal(active[0]["email"], &email)
+	domain := strings.SplitN(email, "@", 2)
+	if len(domain) != 2 {
+		t.Fatal("candidate email missing", active[0])
+	}
+	call("add_page", map[string]any{"candidate": id, "url": "https://" + domain[1] + "/"})
 	ruler := identity.Caller{UserID: "chosen-ruler", Email: "chosen-ruler@example.test", RequestID: "ruler-request"}
 	result, decision := h.call(ruler, "decide", map[string]any{"kind": store.KindNotSame, "candidate": id, "other": other, "why": "independent records"})
 	var ruling map[string]json.RawMessage

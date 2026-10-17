@@ -106,7 +106,7 @@ func comparePage(t *testing.T, cfg Config, path, name string, status int, data a
 	}
 }
 
-// R-0563-5UGD R-58H2-68U5 R-0563-5UGD R-51PY-VUIV
+// R-3TJU-KG5A R-58H2-68U5 R-3TJU-KG5A R-51PY-VUIV
 func TestTemplateSet(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
@@ -153,7 +153,7 @@ func TestTemplateSet(t *testing.T) {
 	}
 }
 
-// R-IKZ3-GG4N R-5DCN-PBSX R-ANXF-9UGU R-WV2W-FUVK R-5K0G-MENA R-5L8D-06DZ R-5MG9-DY4O R-B7FT-E6BY R-B8NP-RY2N R-BB3I-JHK1 R-5RBU-X13G R-5UZK-2CBJ
+// R-IKZ3-GG4N R-5DCN-PBSX R-ANXF-9UGU R-WV2W-FUVK R-5K0G-MENA R-5L8D-06DZ R-5MG9-DY4O R-4GPX-U38H R-4FI1-GBHS R-4HXU-7UZ6 R-5RBU-X13G R-5UZK-2CBJ
 func TestStaticEmptyAndRefusals(t *testing.T) {
 	cfg, d := pageFixture(t)
 	b := bannerFor(cfg)
@@ -169,7 +169,7 @@ func TestStaticEmptyAndRefusals(t *testing.T) {
 	b = bannerFor(cfg)
 	comparePage(t, cfg, "/unknown", "notfound", 404, NotFoundData{b})
 	d.SetFailing(true)
-	for _, p := range []string{"/", "/candidates/cand_0000000000000000", "/passes/pass_0000000000000000", "/cohorts/coh_0000000000000000"} {
+	for _, p := range []string{"/", "/candidates/cand_0000000000000000", "/passes/pass_0000000000000000", "/cohorts/coh_0000000000000000", "/candidates/cand_0000000000000000/pages/1"} {
 		for _, method := range []string{"GET", "HEAD"} {
 			w := requestPage(cfg, method, p, "reader")
 			want := store.Unreachable + "\n"
@@ -181,7 +181,7 @@ func TestStaticEmptyAndRefusals(t *testing.T) {
 			}
 		}
 	}
-	for _, p := range []string{"/", "/tools", "/about", "/candidates/cand_0000000000000000", "/passes/pass_0000000000000000", "/cohorts/coh_0000000000000000"} {
+	for _, p := range []string{"/", "/tools", "/about", "/candidates/cand_0000000000000000", "/passes/pass_0000000000000000", "/cohorts/coh_0000000000000000", "/candidates/cand_0000000000000000/pages/1"} {
 		w := requestPage(cfg, "POST", p, "reader")
 		if w.Code != 405 || w.Body.Len() != 0 || w.Header().Get("Allow") != "GET, HEAD" {
 			t.Fatal(p, w)
@@ -198,12 +198,12 @@ func TestStaticEmptyAndRefusals(t *testing.T) {
 	}
 }
 
-// R-5BH5-Y0GF R-B500-MMUK R-B67X-0EL9
+// R-5BH5-Y0GF R-4D28-OS0E R-4EA5-2JR3
 func TestInvalidAndMissingPaths(t *testing.T) {
 	cfg, d := pageFixture(t)
 	b := bannerFor(cfg)
 	want := requestPage(cfg, "GET", "/unknown", "reader").Body.String()
-	for _, p := range []string{"/candidates/cand_0000000000000000", "/passes/pass_0000000000000000", "/cohorts/coh_0000000000000000"} {
+	for _, p := range []string{"/candidates/cand_0000000000000000", "/passes/pass_0000000000000000", "/cohorts/coh_0000000000000000", "/candidates/cand_0000000000000000/pages/1"} {
 		w := requestPage(cfg, "GET", p, "reader")
 		if w.Code != 404 || w.Body.String() != want {
 			t.Fatal(p)
@@ -370,7 +370,7 @@ func callPageTool(t *testing.T, client *mcp.Client, name, token string, target a
 	}
 }
 
-// R-ALHM-IAZG R-B04F-3JVS R-BB3I-JHK1
+// R-ALHM-IAZG R-4J5Q-LMPV R-4HXU-7UZ6
 func TestLandingTokenRefusals(t *testing.T) {
 	cfg, d := pageFixture(t)
 	short := (paging.Token{Tool: "cohorts"}).Encode("chosen-name", "chosen-candidate")

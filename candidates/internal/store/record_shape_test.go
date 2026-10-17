@@ -5,11 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-O6LO-AZZG R-GCGW-PTJK
+// R-O6LO-AZZG R-NR6Q-0JYJ
 func TestStoredRecordShapes(t *testing.T) {
 	n, confidence := int64(3), 0.8
 	a := store.Assessment{Candidate: "candidate", Operating: &confidence, OperatingKey: 800000, Evidence: []sources.Evidence{{Weight: confidence}}, RevenueLow: &n, RevenueHigh: &n, RevenueConfidence: &confidence, KnownSince: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: "pattern", NewestFiling: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{{Name: sources.CategoryOther, Source: "source"}}, FleetVerdict: sources.FleetPass, PowerUnits: &n, Drivers: &n, Minutes: &n, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
@@ -34,7 +35,7 @@ func TestStoredRecordShapes(t *testing.T) {
 	}(a)
 	contractEqual(t, store.Assessment(shaped), a)
 	counts := store.Counts{Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14}
-	contractEqual(t, store.Counts(struct{ Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None int64 }(counts)), counts)
+	contractEqual(t, store.Counts(struct{ Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None, Runs, RunsFailed, Pages, Cost int64 }(counts)), counts)
 	o := store.Observation{Scraper: "source", SourceID: "row", Digest: "digest", Reading: sources.Reading{Name: "business"}}
 	contractEqual(t, store.Observation(struct {
 		Scraper, SourceID, Digest string
@@ -46,6 +47,7 @@ func TestStoredRecordShapes(t *testing.T) {
 	contractEqual(t, store.Ranked(struct {
 		Candidate  store.Candidate
 		Assessment store.Assessment
+		SiteText   time.Time
 	}(r)), r)
 }
 
@@ -101,4 +103,23 @@ func TestRulingRecordShape(t *testing.T) {
 		At                     time.Time
 	}(r)
 	contractEqual(t, store.Ruling(shaped), r)
+}
+
+// R-NW2B-JMXB
+func TestTargetedStoreMethodSignatures(t *testing.T) {
+	f := contractDB(t)
+	check := func(
+		add func(context.Context, store.Page) (store.Page, error),
+		pages func(context.Context, string) ([]store.Page, error),
+		page func(context.Context, string, int64) (store.Page, error),
+		count func(context.Context, string) (store.PageCount, error),
+		subject func(context.Context, string) (enrichers.Subject, error),
+		due func(context.Context, string, []string, bool) ([]store.Due, error),
+		derive func(context.Context, string, []string, bool) (int64, error),
+	) {
+		if add == nil || pages == nil || page == nil || count == nil || subject == nil || due == nil || derive == nil {
+			t.Fatal("missing targeted method")
+		}
+	}
+	check(f.s.AddPage, f.s.Pages, f.s.GetPage, f.s.CountPages, f.s.Subject, f.s.DueAmong, f.s.DeriveAmong)
 }

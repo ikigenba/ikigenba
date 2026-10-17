@@ -49,24 +49,44 @@ func (r *random) Read(b []byte) (int, error) {
 }
 
 type request struct{ path, user, email, id string }
+
+// lifecycleSink wakes observers after the capture contains a lifecycle event.
+// Waiting tests do not compete with the worker for SQLite read connections.
+type lifecycleSink struct {
+	capture *events.Capture
+	changed chan struct{}
+}
+
+func (s lifecycleSink) Deliver(ctx context.Context, event events.Event) error {
+	if err := s.capture.Deliver(ctx, event); err != nil {
+		return err
+	}
+	select {
+	case s.changed <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
 type fixture struct {
-	sc   *scrapes.Client
-	t    *testing.T
-	d    *db.DB
-	st   *store.Store
-	eng  *passes.Engine
-	w    *telemetry.Writer
-	em   *events.Emitter
-	tc   *telemetry.Capture
-	ec   *events.Capture
-	mu   sync.Mutex
-	reqs []request
+	sc      *scrapes.Client
+	t       *testing.T
+	d       *db.DB
+	st      *store.Store
+	eng     *passes.Engine
+	w       *telemetry.Writer
+	em      *events.Emitter
+	tc      *telemetry.Capture
+	ec      *events.Capture
+	mu      sync.Mutex
+	reqs    []request
+	changed chan struct{}
 }
 
 func newFixture(t *testing.T, h http.HandlerFunc, available bool) *fixture {
 	t.Helper()
 	t.Setenv(services.Variable, "")
-	f := &fixture{t: t, tc: &telemetry.Capture{}, ec: &events.Capture{}}
+	f := &fixture{t: t, tc: &telemetry.Capture{}, ec: &events.Capture{}, changed: make(chan struct{}, 1)}
 	now := func() time.Time { return time.Unix(100000, 0) }
 	pause := func(context.Context, time.Duration) {}
 	var err error
@@ -76,7 +96,7 @@ func newFixture(t *testing.T, h http.HandlerFunc, available bool) *fixture {
 	}
 	f.st = store.New(f.d, store.Config{Now: now, Rand: &random{}})
 	f.w = telemetry.New(telemetry.Config{Service: "candidates", Sink: f.tc, Now: now, Sleep: pause, Rand: &random{}})
-	f.em = events.New(events.Config{Service: "candidates", Sink: f.ec, Now: now, Sleep: pause, Rand: &random{}, Emits: trail.Emits()})
+	f.em = events.New(events.Config{Service: "candidates", Sink: lifecycleSink{f.ec, f.changed}, Now: now, Sleep: pause, Rand: &random{}, Emits: trail.Emits()})
 	var sc *scrapes.Client
 	if available {
 		dir, err := os.MkdirTemp("", "pass-")
@@ -102,7 +122,7 @@ func newFixture(t *testing.T, h http.HandlerFunc, available bool) *fixture {
 		sc = scrapes.NewClient(scrapes.ClientConfig{Service: services.Entry{Name: "scrapes", Socket: sock}, Telemetry: f.w})
 	}
 	f.sc = sc
-	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), sc, f.w, f.em, nil})
+	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), sc, nil, f.w, f.em, nil, nil})
 	t.Cleanup(func() {
 		f.eng.Drain(context.Background())
 		f.em.Shutdown(context.Background())
@@ -142,26 +162,28 @@ func (f *fixture) endedWithin(id string, budget time.Duration) store.Pass {
 	deadline := time.NewTimer(budget)
 	defer deadline.Stop()
 	for {
-		p, err := f.st.GetPass(context.Background(), id)
-		if err != nil {
-			f.t.Fatal(err)
-		}
-		if p.Status != store.StatusRunning {
-			f.flush()
-			for _, event := range f.ec.Events() {
-				if event.Name == trail.Finished && event.Attrs["pass"] == id {
-					return p
-				}
+		for _, event := range f.ec.Events() {
+			if event.Name != trail.Finished || event.Attrs["pass"] != id {
+				continue
 			}
+			p, err := f.st.GetPass(context.Background(), id)
+			if err != nil {
+				f.t.Fatal(err)
+			}
+			if p.Status == store.StatusRunning {
+				f.t.Fatal("ending event preceded stored ending")
+			}
+			f.flush()
+			return p
 		}
 		select {
 		case <-deadline.C:
 			f.t.Fatal("pass never ended")
-		default:
-			runtime.Gosched()
+		case <-f.changed:
 		}
 	}
 }
+
 func (f *fixture) delivery(id, run string) events.Outcome {
 	return f.eng.Deliver(events.NewContext(identity.NewContext(context.Background(), identity.Caller{RequestID: "delivery_request"}), events.Cause{ID: "evt_0101010101010101", Depth: 2}), events.Delivery{Event: events.Event{ID: id, Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "run": run, "status": "done"}}})
 }
@@ -187,7 +209,7 @@ func assertRefusal(t *testing.T, p store.Pass, err error, word string) {
 	}
 }
 
-// R-295O-1BSH R-RBUG-J7MC R-KQD3-Y8LD R-1E8F-EG16 R-1FGB-S7RV
+// R-SBQH-7IGY R-84KF-D8N0 R-85SB-R0DP R-SE69-Z1YC R-SFE6-CTP1
 func TestRecordContract(t *testing.T) {
 	if passes.BatchSize != 500 || passes.Busy == "" || passes.Stopping == "" || passes.Busy == passes.Stopping || strings.Contains(passes.Busy+passes.Stopping, "\n") {
 		t.Fatal("constants")
@@ -203,7 +225,7 @@ func TestRecordContract(t *testing.T) {
 	start := time.Date(2001, 2, 3, 4, 5, 6, 0, time.FixedZone("east", 3600))
 	p := store.Pass{ID: "id", Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, Status: store.StatusDone, Reason: "reason", Started: start, Finished: start.Add(time.Hour), Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Derived: 15, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14, UserID: "user", UserEmail: "email"}
 	r := passes.RecordOf(p)
-	want := passes.Record{"id", store.KindRebuild, store.OriginRebuild, store.TriggerRebuild, store.StatusDone, "reason", start.UTC().Format(time.RFC3339), p.Finished.UTC().Format(time.RFC3339), 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 10, 11, 12, 13, 14, "user", "email"}
+	want := passes.Record{"id", store.KindRebuild, store.OriginRebuild, store.TriggerRebuild, "", "", store.StatusDone, "reason", start.UTC().Format(time.RFC3339), p.Finished.UTC().Format(time.RFC3339), 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 10, 11, 12, 13, 14, 0, 0, 0, 0, "user", "email"}
 	if r != want {
 		t.Fatalf("%#v", r)
 	}
@@ -211,7 +233,7 @@ func TestRecordContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := `{"id":"id","kind":"rebuild","origin":"rebuild","trigger":"rebuild","status":"done","reason":"reason","started":"2001-02-03T03:05:06Z","finished":"2001-02-03T04:05:06Z","rows":1,"new":2,"changed":3,"unchanged":4,"gone":5,"created":6,"linked":7,"judged":8,"unranged":9,"derived":15,"due":10,"fetched":11,"https":12,"http":13,"none":14,"user":"user","email":"email"}`
+	expected := `{"id":"id","kind":"rebuild","origin":"rebuild","trigger":"rebuild","status":"done","reason":"reason","started":"2001-02-03T03:05:06Z","finished":"2001-02-03T04:05:06Z","rows":1,"new":2,"changed":3,"unchanged":4,"gone":5,"created":6,"linked":7,"judged":8,"unranged":9,"derived":15,"due":10,"fetched":11,"https":12,"http":13,"none":14,"runs":0,"runs_failed":0,"pages":0,"cost":0,"user":"user","email":"email"}`
 	if string(got) != expected {
 		t.Fatalf("%s", got)
 	}
@@ -233,7 +255,7 @@ func TestRecordContract(t *testing.T) {
 	}
 }
 
-// R-YGG6-MDXZ R-RGQ2-2AL4 R-YIVZ-DXFD R-YOZH-AS4U
+// R-YGG6-MDXZ R-SHTZ-4D6F R-YIVZ-DXFD R-YOZH-AS4U
 func TestRefusals(t *testing.T) {
 	for _, mode := range []string{"unavailable", "busy", "stopping", "store"} {
 		t.Run(mode, func(t *testing.T) {
@@ -241,7 +263,7 @@ func TestRefusals(t *testing.T) {
 			before := f.list()
 			switch mode {
 			case "busy":
-				_, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "other", Delivery: "other"})
+				_, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "owner"})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -277,7 +299,7 @@ func TestRefusals(t *testing.T) {
 	}
 }
 
-// R-ZQO6-NIBZ R-YMJO-J8NG R-ZT3Z-F1TD R-KP57-KGUO
+// R-ZQO6-NIBZ R-YMJO-J8NG R-ZT3Z-F1TD R-83CI-ZGWB
 func TestSkippedAndHandlers(t *testing.T) {
 	f := newFixture(t, nil, false)
 	handlers := f.eng.Handlers()
@@ -300,13 +322,13 @@ func TestSkippedAndHandlers(t *testing.T) {
 	}
 	r := httptest.NewRecorder()
 	events.DeclarationsHandler(f.em, passes.New(passes.Config{Sources: sources.New(fmcsa.New(), ppp.New())}).Handlers()).ServeHTTP(r, httptest.NewRequest(http.MethodGet, "/declarations", nil))
-	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","status","reason","rows","new","changed","unchanged","gone","created","linked","judged","rescored","unranged","derived","due","fetched","https","http","none"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger"]}],"accepts":["cron.judge_candidates.fired","scrape.finished"]}`
+	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","target","enrich_kind","status","reason","rows","new","changed","unchanged","gone","created","linked","judged","rescored","unranged","derived","due","fetched","https","http","none","runs","runs_failed","pages","cost"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger","target","enrich_kind"]}],"accepts":["cron.judge_candidates.fired","scrape.finished"]}`
 	if r.Code != 200 || r.Body.String() != want {
 		t.Fatal(r.Code, r.Body.String())
 	}
 }
 
-// R-YRFA-2BM8 R-JSZX-9PKC R-1SV7-ZOXI R-YSN6-G3CX
+// R-YRFA-2BM8 R-JSZX-9PKC R-SYWK-H5K5 R-YSN6-G3CX
 func TestDeliveryRecordAndRedelivery(t *testing.T) {
 	for _, mode := range []string{"missing", "unfinished", "unavailable", "malformed", "nil", "done"} {
 		t.Run(mode, func(t *testing.T) {
@@ -388,7 +410,7 @@ func TestDeliveryRecordAndRedelivery(t *testing.T) {
 	}
 }
 
-// R-ZPGA-9QLA R-YWAV-LEL0 R-YXIR-Z6BP R-1U34-DGO7 R-ZDDG-Y6YQ
+// R-ZPGA-9QLA R-YWAV-LEL0 R-YXIR-Z6BP R-SRL6-6J3Z R-ZDDG-Y6YQ
 func TestRebuildBackgroundIdentityAndEvents(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -469,7 +491,7 @@ func TestRebuildBackgroundIdentityAndEvents(t *testing.T) {
 	}
 }
 
-// R-1WIX-505L R-21EI-O34D R-22MF-1UV2 R-Z3M9-W116 R-GU9F-TVQY
+// R-SQD9-SRDA R-SRL6-6J3Z R-SWGR-PM2R R-Z3M9-W116 R-GU9F-TVQY
 func TestResolutionAndRebuild(t *testing.T) {
 	var stateMu sync.Mutex
 	rows := 3
@@ -580,7 +602,7 @@ func TestResolutionAndRebuild(t *testing.T) {
 	}
 }
 
-// R-Z4U6-9SRV R-SF2K-0S3I R-Z9PR-SVQN R-27I0-KXTU
+// R-Z4U6-9SRV R-SF2K-0S3I R-Z9PR-SVQN R-SXOO-3DTG
 func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	released, firstBatch := make(chan struct{}), make(chan struct{})
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -658,7 +680,7 @@ func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	}
 }
 
-// R-Z9PR-SVQN R-SF2K-0S3I R-27I0-KXTU
+// R-Z9PR-SVQN R-SF2K-0S3I R-SXOO-3DTG
 func TestFailedReads(t *testing.T) {
 	for _, mode := range []string{"short", "500", "malformed", "not_done", "missing_current", "dead"} {
 		t.Run(mode, func(t *testing.T) {
@@ -714,7 +736,7 @@ func TestFailedReads(t *testing.T) {
 	}
 }
 
-// R-S08G-6MG8 R-ZH16-3I6T R-27I0-KXTU R-YOZH-AS4U
+// R-T9VN-X38E R-ZH16-3I6T R-SXOO-3DTG R-YOZH-AS4U
 func TestDrainCancelsReadsAndPendingDelivery(t *testing.T) {
 	for _, which := range []string{"rows", "record"} {
 		t.Run(which, func(t *testing.T) {
@@ -843,7 +865,7 @@ func TestRecoverAndUnrecordableEnding(t *testing.T) {
 	})
 }
 
-// R-S2O8-Y5XM R-YGG6-MDXZ R-RGQ2-2AL4 R-1SV7-ZOXI
+// R-TB3K-AUZ3 R-YGG6-MDXZ R-SHTZ-4D6F R-SYWK-H5K5
 func TestConcurrentStarts(t *testing.T) {
 	entered := make(chan struct{}, 32)
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -879,15 +901,15 @@ func TestConcurrentStarts(t *testing.T) {
 		t.Fatal(successes, f.list())
 	}
 	waitSignal(t, entered)
-	if f.delivery("race_event", "other") != events.Fail(passes.Busy) {
-		t.Fatal("busy delivery")
+	if f.delivery("race_event", "other") != events.OK() {
+		t.Fatal("independent ingest refused")
 	}
 	wg.Go(func() { f.eng.Drain(context.Background()) })
 	wg.Go(func() { _ = f.eng.Recover(context.Background()) })
 	wg.Go(func() { _, _ = f.eng.Rebuild(context.Background(), identity.Caller{}) })
 	wg.Go(func() { _ = f.delivery("after", "another") })
 	wg.Wait()
-	if ps := f.list(); len(ps) != 1 || ps[0].Status != store.StatusFailed || ps[0].Reason != store.ReasonInterrupted {
+	if ps := f.list(); len(ps) != 2 || ps[0].Status != store.StatusFailed || ps[0].Reason != store.ReasonInterrupted || ps[1].Status != store.StatusFailed || ps[1].Reason != store.ReasonInterrupted {
 		t.Fatal(ps)
 	}
 }
@@ -905,7 +927,7 @@ func (r *failCandidateRandom) Read(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// R-27I0-KXTU
+// R-SXOO-3DTG
 func TestStoreFailureReason(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/current") {
@@ -916,7 +938,7 @@ func TestStoreFailureReason(t *testing.T) {
 	}, true)
 	f.eng.Drain(context.Background())
 	f.st = store.New(f.d, store.Config{Now: func() time.Time { return time.Unix(100000, 0) }, Rand: &failCandidateRandom{}})
-	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), f.sc, f.w, f.em, nil})
+	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), f.sc, nil, f.w, f.em, nil, nil})
 	p, err := f.eng.Rebuild(context.Background(), identity.Caller{UserID: "owner"})
 	if err != nil {
 		t.Fatal(err)
@@ -927,7 +949,7 @@ func TestStoreFailureReason(t *testing.T) {
 	}
 }
 
-// R-RGQ2-2AL4
+// R-SHTZ-4D6F
 func TestRefusalPrecedence(t *testing.T) {
 	f := newFixture(t, nil, false)
 	_, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "existing", Delivery: "existing_event"})
@@ -948,7 +970,7 @@ func TestRefusalPrecedence(t *testing.T) {
 	}
 }
 
-// R-YWAV-LEL0 R-YXIR-Z6BP R-1SV7-ZOXI
+// R-YWAV-LEL0 R-YXIR-Z6BP R-SYWK-H5K5
 func TestDeliveryOutlivesStartingContext(t *testing.T) {
 	for _, alreadyCancelled := range []bool{false, true} {
 		t.Run(fmt.Sprint(alreadyCancelled), func(t *testing.T) {
@@ -1013,7 +1035,7 @@ func TestDrainDeadlineWhileEndingHeld(t *testing.T) {
 		}
 		return time.Unix(100000, 0)
 	}, Rand: &random{}})
-	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), f.sc, f.w, f.em, nil})
+	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), f.sc, nil, f.w, f.em, nil, nil})
 	p, err := f.eng.Rebuild(context.Background(), identity.Caller{UserID: "owner"})
 	if err != nil {
 		t.Fatal(err)
@@ -1041,7 +1063,7 @@ func TestDrainDeadlineWhileEndingHeld(t *testing.T) {
 	}
 }
 
-// R-ZELD-BYPF R-S2O8-Y5XM
+// R-ZELD-BYPF R-TB3K-AUZ3
 func TestRecoverSettlesActivePass(t *testing.T) {
 	entered := make(chan struct{})
 	f := newFixture(t, func(_ http.ResponseWriter, r *http.Request) { close(entered); <-r.Context().Done() }, true)

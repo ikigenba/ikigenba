@@ -21,10 +21,12 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/prompts"
 	"github.com/ikigenba/ikigenba/appkit/scrapes"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/candidates"
+	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
@@ -32,6 +34,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
 	"github.com/ikigenba/ikigenba/candidates/internal/web"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 // Each read has a distinct base-96 suffix, and every output byte is >= 0xa0.
@@ -194,7 +197,7 @@ func secrecyAbsent(t *testing.T, where string, value any, markers []string) {
 	}
 }
 
-// R-R270-3GN4 R-R72L-MJLW R-R8AI-0BCL
+// R-0EJV-0SK3 R-0GZN-SC1H R-0KNC-XN9K
 func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	markers, phone := secrecyMarkers(t)
@@ -227,13 +230,32 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	writer.Ready()
 	emitter := events.New(events.Config{Service: "candidates", Sink: ec, Now: now, Rand: &secrecyBytes{}, Sleep: sleep, Telemetry: writer, Emits: trail.Emits(), Stderr: io.Discard})
 	client := scrapes.NewClient(scrapes.ClientConfig{Service: services.Entry{Name: "scrapes", Socket: socket}, Telemetry: writer})
-	engine := passes.New(passes.Config{Store: st, Sources: sources.New(fmcsa.New()), Scrapes: client, Telemetry: writer, Events: emitter})
+	promptSocket := filepath.Join(socketDir, "prompts")
+	promptListener, err := net.Listen("unix", promptSocket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	promptSibling := &http.Server{Handler: &webPromptFake{echo: strings.Join(forbidden, " ")}, ReadHeaderTimeout: 5 * time.Second}
+	go func() { _ = promptSibling.Serve(promptListener) }()
+	defer func() { _ = promptSibling.Close() }()
+	checker := &website.Checker{Client: &http.Client{Transport: webTransport(func(r *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(r.URL.Path, "/error") {
+			return nil, fmt.Errorf("fixture fetch failure")
+		}
+		status := 200
+		if strings.HasSuffix(r.URL.Path, "/missing") {
+			status = 404
+		}
+		return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {"text/html"}}, Body: io.NopCloser(strings.NewReader("<title>" + markers[3] + "</title><p>" + markers[4] + "</p>"))}, nil
+	})}, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }}
+	pc := prompts.NewClient(prompts.ClientConfig{Service: services.Entry{Name: "prompts", Socket: promptSocket}, Telemetry: writer})
+	engine := passes.New(passes.Config{After: func(time.Duration) <-chan time.Time { ch := make(chan time.Time, 1); ch <- time.Time{}; return ch }, Website: checker, Prompts: pc, Store: st, Sources: sources.New(fmcsa.New()), Scrapes: client, Telemetry: writer, Events: emitter})
 	defer func() {
 		engine.Drain(context.Background())
 		emitter.Shutdown(context.Background())
 		writer.Shutdown(context.Background(), "fixture-stop")
 	}()
-	cfg := web.Config{Banner: func(page.User) page.Banner { return page.Banner{} }, MCP: mcp.NewServer(mcp.ServerConfig{Name: "candidates", Telemetry: writer}), Store: st, Passes: engine, Telemetry: writer, Events: emitter}
+	cfg := web.Config{Banner: func(page.User) page.Banner { return page.Banner{} }, MCP: mcp.NewServer(mcp.ServerConfig{Name: "candidates", Telemetry: writer}), Store: st, Passes: engine, Telemetry: writer, Events: emitter, Website: checker}
 	handler := web.Handler(cfg)
 	srv := httptest.NewServer(handler)
 	defer srv.Close()
@@ -317,6 +339,8 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 		"create_cohort": map[string]any{"name": markers[2]}, "edit_cohort": map[string]any{"cohort": cohortID, "name": markers[3]},
 		"reject": map[string]any{"cohort": cohortID, "candidate": id, "why": markers[9]}, "unreject": map[string]any{"cohort": cohortID, "candidate": id, "why": markers[9]},
 		"delete_cohort": map[string]any{"cohort": cohortID},
+		"enrich":        map[string]any{"kind": enrichers.KindSiteText, "cohort": cohortID},
+		"add_page":      map[string]any{"candidate": id, "url": "https://" + strings.ToLower(markers[8]) + ".example/"},
 	}
 	for _, name := range []string{"cohorts", "cohort", "candidate", "passes", "pass", "decide", "exclude", "include", "edit_cohort", "reject", "unreject"} {
 		call(name, args[name], false)
@@ -340,6 +364,16 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	secrecyAbsent(t, "baseline failed record answer", recordAnswer.Body.Bytes(), forbidden)
 	f.set("")
 
+	found, _ := json.Marshal(website.Result{State: sources.WebsiteHTTPS, URL: "https://" + strings.ToLower(markers[8]) + ".example"})
+	if _, err := st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Inputs: strings.ToLower(markers[8]) + ".example", Source: strings.ToLower(markers[8]) + ".example", Found: found}}); err != nil {
+		t.Fatal(err)
+	}
+	kept, err := st.AddPage(t.Context(), store.Page{Candidate: id, URL: "https://" + strings.ToLower(markers[8]) + ".example/kept", Title: markers[3], Text: markers[4], UserID: caller.UserID, Fetched: now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	baselinePrompt := call("enrich", args["enrich"], false)
+	wait(text(baselinePrompt, "id"), "")
 	// Hold before the first row, then stream a complete batch and keep the response
 	// open: the sibling's cancellation proves the failed Attach rejected that batch.
 	hold, arrived, written, canceled := make(chan struct{}), make(chan struct{}, 1), make(chan struct{}), make(chan struct{})
@@ -384,7 +418,7 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	}
 	call("candidates", map[string]any{"name": markers[0]}, true)
 	call("candidates", map[string]any{"phone": phone}, true)
-	for _, path := range []string{"/", "/cohorts/" + cohortID, "/candidates/" + id, "/passes/" + passID, "/tools", "/about", "/absent"} {
+	for _, path := range []string{"/", "/cohorts/" + cohortID, "/candidates/" + id, "/passes/" + passID, fmt.Sprintf("/candidates/%s/pages/%d", id, kept.Number), "/tools", "/about", "/absent"} {
 		response := request(handler, "GET", path, "", "reader")
 		secrecyAbsent(t, "failing page", response.Body.Bytes(), forbidden)
 	}
@@ -465,4 +499,62 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	for _, answer := range answers {
 		secrecyAbsent(t, "failing event answer", answer, forbidden)
 	}
+}
+
+type webPromptRequest struct {
+	Tool   string
+	Header http.Header
+}
+type webPromptFake struct {
+	mu    sync.Mutex
+	calls []webPromptRequest
+	mode  string
+	echo  string
+	runs  int
+}
+
+func (f *webPromptFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID     json.RawMessage `json:"id"`
+		Params struct {
+			Name string `json:"name"`
+		} `json:"params"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(400)
+		return
+	}
+	f.mu.Lock()
+	f.calls = append(f.calls, webPromptRequest{req.Params.Name, r.Header.Clone()})
+	mode := f.mode
+	echo := f.echo
+	if req.Params.Name == "run" {
+		f.runs++
+	}
+	runs := f.runs
+	f.mu.Unlock()
+	if mode == "http-"+req.Params.Name {
+		w.WriteHeader(500)
+		_, _ = w.Write([]byte(echo))
+		return
+	}
+	var value any
+	refusal := false
+	switch req.Params.Name {
+	case "show":
+		refusal = mode == "refuse-show"
+		value = map[string]any{"id": "prompt_fixture", "name": "site-text", "model": "fixture", "prompt": "fixture", "system": "fixture", "tools": []string{}}
+	case "run":
+		refusal = mode == "queue" && runs == 1 || mode == "refuse-result" && req.Params.Name == "result"
+		value = map[string]any{"id": "run_prompt", "status": "running"}
+	case "result":
+		refusal = mode == "refuse-result"
+		value = map[string]any{"id": "run_prompt", "prompt": "site-text", "model": "fixture", "status": map[bool]string{true: "failed", false: "exited"}[mode == "failed"], "exit_code": 0, "started": "2026-01-01T00:00:00Z", "finished": "2026-01-01T00:01:00Z"}
+	}
+	result := map[string]any{"content": []any{}, "structuredContent": value}
+	if refusal {
+		result = map[string]any{"content": []any{map[string]any{"type": "text", "text": "fixture refusal"}}, "isError": true}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
 }

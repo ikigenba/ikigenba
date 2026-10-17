@@ -130,7 +130,7 @@ func contractAttach(t *testing.T, f *contractFixture, run string, obs ...store.O
 	return ids
 }
 
-// R-2F2Z-FA6F R-4HN1-A6QB R-4IUX-NYH0
+// R-2F2Z-FA6F R-4HN1-A6QB R-NUUF-5V6M
 func TestContractVocabulary(t *testing.T) {
 	got := []string{store.CandidateIDPrefix, store.PassIDPrefix, store.StatusActive, store.StatusMerged, store.StatusRunning, store.StatusDone, store.StatusFailed, store.ReasonScrapes, store.ReasonInterrupted, store.ReasonStore, store.TriggerRebuild, store.LinkSourceKey, store.LinkMatchKey, store.LinkDecision, store.KindMerge, store.KindSplit, store.KindNotSame, store.KindExclude, store.KindInclude, store.TriggerJudge, store.KindIngest, store.KindJudge, store.KindRebuild, store.OriginRun, store.OriginCron, store.OriginRebuild}
 	contractEqual(t, got, []string{"cand_", "pass_", "active", "merged", "running", "done", "failed", "scrapes", "interrupted", "store", "rebuild", "source_key", "match_key", "decision", "merge", "split", "not_same", "exclude", "include", "judge_candidates", "ingest", "judge", "rebuild", "run", "cron", "rebuild"})
@@ -142,7 +142,7 @@ func TestContractVocabulary(t *testing.T) {
 	if !store.ValidCandidateID("cand_0123456789abcdef") || !store.ValidPassID("pass_0123456789abcdef") || store.ValidCandidateID("pass_0123456789abcdef") || store.ValidPassID("cand_0123456789abcdef") || store.ValidCandidateID("") || store.ValidPassID("") {
 		t.Fatal("id validation")
 	}
-	errs := []error{store.ErrNotFound, store.ErrBusy, store.ErrDelivered, store.ErrEnded, store.ErrInvalid, store.ErrUnreachable}
+	errs := []error{store.ErrNotFound, store.ErrBusy, store.ErrDelivered, store.ErrEnded, store.ErrInvalid, store.ErrPageCap, store.ErrUnreachable}
 	for i, a := range errs {
 		if a == nil {
 			t.Fatal("nil error")
@@ -158,12 +158,12 @@ func TestContractVocabulary(t *testing.T) {
 	}
 }
 
-// R-GIKE-MO91 R-GJSB-0FZQ R-GL07-E7QF R-GM83-RZH4 R-9B0V-6MNK R-4ZXJ-0QUQ R-52DB-SAC4
+// R-NYI4-B6EP R-NZQ0-OY5E R-O25T-GHMS R-O3DP-U9DH R-4ZXJ-0QUQ R-52DB-SAC4
 func TestContractPassLifecyclePersistence(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
 	stamp := f.now.UTC().Truncate(time.Second)
-	input := store.Pass{ID: "ignored", Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, Status: "ignored", Reason: "ignored", Started: f.now.AddDate(-1, 0, 0), Finished: f.now, Rows: 99, New: 99, Changed: 99, Unchanged: 99, Gone: 99, Created: 99, Linked: 99, Judged: 99, Unranged: 99, Derived: 99, Due: 99, Fetched: 99, HTTPS: 99, HTTP: 99, None: 99, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
+	input := store.Pass{ID: "ignored", Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, Status: "ignored", Reason: "ignored", Started: f.now.AddDate(-1, 0, 0), Finished: f.now, Rows: 99, New: 99, Changed: 99, Unchanged: 99, Gone: 99, Created: 99, Linked: 99, Judged: 99, Unranged: 99, Derived: 99, Due: 99, Fetched: 99, HTTPS: 99, HTTP: 99, None: 99, Runs: 99, RunsFailed: 99, Pages: 99, Cost: 99, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
 	p, err := f.s.AddPass(ctx, input)
 	contractOK(t, err)
 	want := store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, ID: store.PassIDPrefix + "0101010101010101", Trigger: input.Trigger, Status: store.StatusRunning, Started: stamp, UserID: input.UserID, UserEmail: input.UserEmail, RequestID: input.RequestID}
@@ -176,7 +176,7 @@ func TestContractPassLifecyclePersistence(t *testing.T) {
 	contractOK(t, err)
 	contractEqual(t, read, p)
 	f.now = f.now.Add(time.Hour)
-	c := store.Counts{Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Derived: 15, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14}
+	c := store.Counts{Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Derived: 15, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14, Runs: 16, RunsFailed: 17, Pages: 18, Cost: 19}
 	ended, err := f.s.FinishPass(ctx, p.ID, c)
 	contractOK(t, err)
 	want.Status = store.StatusDone
@@ -192,6 +192,7 @@ func TestContractPassLifecyclePersistence(t *testing.T) {
 	want.Unranged = c.Unranged
 	want.Derived = c.Derived
 	want.Due, want.Fetched, want.HTTPS, want.HTTP, want.None = c.Due, c.Fetched, c.HTTPS, c.HTTP, c.None
+	want.Runs, want.RunsFailed, want.Pages, want.Cost = c.Runs, c.RunsFailed, c.Pages, c.Cost
 	contractEqual(t, ended, want)
 	f.reopen()
 	read, err = f.s.GetPass(ctx, p.ID)
@@ -202,7 +203,7 @@ func TestContractPassLifecyclePersistence(t *testing.T) {
 	if running == nil || len(running) != 0 {
 		t.Fatal(running)
 	}
-	for _, reason := range []string{store.ReasonScrapes, store.ReasonInterrupted, store.ReasonStore} {
+	for _, reason := range []string{store.ReasonScrapes, store.ReasonInterrupted, store.ReasonStore, store.ReasonPrompts} {
 		p = contractNewPass(t, f, "run-"+reason)
 		f.now = f.now.Add(time.Minute)
 		want = p
@@ -222,7 +223,7 @@ func TestContractPassLifecyclePersistence(t *testing.T) {
 	contractEqual(t, read, store.Pass{})
 }
 
-// R-4SM4-Q4EK R-4XHQ-97DC
+// R-4SM4-Q4EK R-O4LM-8146
 func TestContractPassRefusals(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -242,9 +243,14 @@ func TestContractPassRefusals(t *testing.T) {
 		contractEqual(t, out, store.Pass{})
 	}
 	out, err := f.s.AddPass(ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "owner"})
+	contractOK(t, err)
+	if !store.ValidPassID(out.ID) {
+		t.Fatal(out)
+	}
+	out, err = f.s.AddPass(ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "owner"})
 	contractError(t, err, store.ErrBusy)
 	contractEqual(t, out, store.Pass{})
-	negatives := []store.Counts{{Rows: -1}, {New: -1}, {Changed: -1}, {Unchanged: -1}, {Gone: -1}, {Created: -1}, {Linked: -1}, {Judged: -1}, {Unranged: -1}, {Derived: -1}, {Due: -1}, {Fetched: -1}, {HTTPS: -1}, {HTTP: -1}, {None: -1}}
+	negatives := []store.Counts{{Rows: -1}, {New: -1}, {Changed: -1}, {Unchanged: -1}, {Gone: -1}, {Created: -1}, {Linked: -1}, {Judged: -1}, {Unranged: -1}, {Derived: -1}, {Due: -1}, {Fetched: -1}, {HTTPS: -1}, {HTTP: -1}, {None: -1}, {Runs: -1}, {RunsFailed: -1}, {Pages: -1}, {Cost: -1}}
 	for _, c := range negatives {
 		for _, id := range []string{p.ID, "missing"} {
 			out, err = f.s.FinishPass(ctx, id, c)
@@ -505,7 +511,7 @@ func TestContractZipReplacement(t *testing.T) {
 	}
 }
 
-// R-GM83-RZH4 R-47VU-80SR R-493Q-LSJG R-2GAV-T1X4 R-578X-BDAW R-H4IL-IJLJ R-5AWM-GOIZ R-5C4I-UG9O
+// R-P3YP-BDMB R-47VU-80SR R-493Q-LSJG R-2GAV-T1X4 R-578X-BDAW R-H4IL-IJLJ R-5AWM-GOIZ R-5C4I-UG9O
 func TestContractBusinessRecordsPersistence(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -837,7 +843,7 @@ func contractSeed(t *testing.T, f *contractFixture) string {
 	return id
 }
 
-// R-GJSB-0FZQ R-GL07-E7QF R-53L8-622T R-5610-XLK7
+// R-O25T-GHMS R-O3DP-U9DH R-53L8-622T R-5610-XLK7
 func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -871,7 +877,7 @@ func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	contractEqual(t, after, zipBefore)
 }
 
-// R-O7TK-ORQ5 R-OD8H-2EDG
+// R-P2QS-XLVM R-OD8H-2EDG
 func TestContractAllMethodsUnavailable(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -882,6 +888,14 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 		name string
 		call func(context.Context) error
 	}{
+
+		{"AddPage", func(c context.Context) error { _, e := f.s.AddPage(c, store.Page{}); return e }},
+		{"Pages", func(c context.Context) error { _, e := f.s.Pages(c, "missing"); return e }},
+		{"GetPage", func(c context.Context) error { _, e := f.s.GetPage(c, "missing", -1); return e }},
+		{"CountPages", func(c context.Context) error { _, e := f.s.CountPages(c, "missing"); return e }},
+		{"Subject", func(c context.Context) error { _, e := f.s.Subject(c, "missing"); return e }},
+		{"DueAmong", func(c context.Context) error { _, e := f.s.DueAmong(c, "invalid", []string{id}, true); return e }},
+		{"DeriveAmong", func(c context.Context) error { _, e := f.s.DeriveAmong(c, "invalid", []string{id}, true); return e }},
 		{"AddEnrichments", func(c context.Context) error {
 			_, e := f.s.AddEnrichments(c, []store.Enrichment{{Candidate: "missing", Kind: "invalid"}})
 			return e
@@ -981,7 +995,7 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 	contractEqual(t, contractState(t, f), before)
 }
 
-// R-IQAK-BLG7 R-5N3M-ADXX
+// R-O0XX-2PW3 R-5N3M-ADXX
 func TestContractConcurrentStoreCalls(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -992,7 +1006,7 @@ func TestContractConcurrentStoreCalls(t *testing.T) {
 	for i := range 8 {
 		wg.Go(func() {
 			<-start
-			_, err := f.s.AddPass(ctx, store.Pass{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: fmt.Sprintf("race-%d", i), Delivery: fmt.Sprintf("event-%d", i)})
+			_, err := f.s.AddPass(ctx, store.Pass{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "one-run", Delivery: fmt.Sprintf("event-%d", i)})
 			results <- err
 		})
 	}

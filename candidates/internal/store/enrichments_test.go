@@ -39,7 +39,7 @@ func websiteResult(id, state string) store.Enrichment {
 	return store.Enrichment{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "business.test", Source: "business.test", Found: websiteFound(website.Result{State: state, URL: "https://business.test/", StatusCode: 200}), Cost: .02}
 }
 
-// R-GDOT-3LA9 R-GEWP-HD0Y R-GG4L-V4RN R-GHCI-8WIC
+// R-GDOT-3LA9 R-P56L-P5D0 R-GG4L-V4RN R-GHCI-8WIC
 func TestEnrichmentShapesAndMethods(t *testing.T) {
 	e := websiteResult("candidate", sources.WebsiteHTTPS)
 	contractEqual(t, store.Enrichment(struct {
@@ -80,7 +80,7 @@ func TestEnrichmentShapesAndMethods(t *testing.T) {
 	checkMethods(st.AddEnrichments, st.DueEnrichments, st.Derive)
 }
 
-// R-GONW-JIYI R-GR3P-B2FW R-GSBL-OU6L R-GX77-7X5D R-O1Q2-RX0O R-O2XZ-5ORD
+// R-OLO7-KTHW R-GR3P-B2FW R-GSBL-OU6L R-GX77-7X5D R-OVFE-MZFG R-OWNB-0R65
 func TestEnrichmentAppendAndMark(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -121,7 +121,7 @@ func TestEnrichmentAppendAndMark(t *testing.T) {
 	contractError(t, err, store.ErrNotFound)
 }
 
-// R-GPVS-XAP7
+// R-OMW3-YL8L
 func TestInvalidEnrichmentsAreAtomic(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -145,7 +145,7 @@ func TestInvalidEnrichmentsAreAtomic(t *testing.T) {
 	}
 }
 
-// R-GTJI-2LXA R-GURE-GDNZ R-O45V-JGI2 R-JB0U-TP20
+// R-OO40-CCZA R-P6EI-2X3P R-O45V-JGI2 R-JB0U-TP20
 func TestDueUsesInputs(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -165,7 +165,7 @@ func TestDueUsesInputs(t *testing.T) {
 	contractError(t, err, store.ErrUnreachable)
 }
 
-// R-GYF3-LOW2 R-O5DR-X88R R-IJ2C-94V9 R-GZMZ-ZGMR R-H22S-R045
+// R-OQJT-3WGO R-OPBW-Q4PZ R-M10O-KUCX R-GZMZ-ZGMR R-H22S-R045
 func TestDeriveFactsAndFill(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -227,7 +227,7 @@ func onlyWebsite(es []store.Enrichment) []store.Enrichment {
 	return out
 }
 
-// R-GURE-GDNZ R-GTJI-2LXA R-GYF3-LOW2 R-IJ2C-94V9
+// R-P6EI-2X3P R-OO40-CCZA R-OQJT-3WGO R-M10O-KUCX
 func TestDueWindowsAndDerivedSubject(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -278,7 +278,7 @@ func TestDueWindowsAndDerivedSubject(t *testing.T) {
 	contractOK(t, err)
 	links, err := f.s.Links(ctx, c.ID)
 	contractOK(t, err)
-	su := enrichers.Subject{ID: c.ID, Email: c.Email, Zip: c.Zip, Minutes: ptrInt(0), Links: []enrichers.Link{}}
+	su := enrichers.Subject{ID: c.ID, Name: c.Name, City: c.City, State: c.State, Email: c.Email, Zip: c.Zip, Minutes: ptrInt(0), Links: []enrichers.Link{}}
 	for _, l := range links {
 		su.Links = append(su.Links, enrichers.Link{Scraper: l.Scraper, SourceID: l.SourceID, Gone: l.Gone, Reading: l.Reading})
 	}

@@ -9,7 +9,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/urls"
 )
 
-// R-1VQR-TUMU R-1WYO-7MDJ R-1Y6K-LE48 R-1ZEG-Z5UX
+// R-89G0-WBLS R-1WYO-7MDJ R-1Y6K-LE48 R-1ZEG-Z5UX
 func TestSiblingAddresses(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "services.json")
 	if err := os.WriteFile(path, []byte(`{"services":[{"name":"auth","description":"","socket":"","enabled":true,"mcp":false,"url":"https://accounts.example.test///"},{"name":"scrapes","description":"","socket":"","enabled":true,"mcp":false,"url":"https://records.example.test//"}]} `), 0600); err != nil {
@@ -43,5 +43,23 @@ func TestSiblingAddresses(t *testing.T) {
 	}
 	if urls.RunPage("", "run") != "" || urls.RunPage("base", "") != "" {
 		t.Fatal("empty run")
+	}
+}
+
+// R-8ANX-A3CH
+func TestPagePath(t *testing.T) {
+	for _, tc := range []struct {
+		id     string
+		number int64
+		want   string
+	}{
+		{"cand_5a5a5a5a5a5a5a5a", 7, "/candidates/cand_5a5a5a5a5a5a5a5a/pages/7"},
+		{"arbitrary/path", 12345678901234, "/candidates/arbitrary/path/pages/12345678901234"},
+		{"", -7, "/candidates//pages/-7"},
+		{"anything", 0, "/candidates/anything/pages/0"},
+	} {
+		if got := urls.PagePath(tc.id, tc.number); got != tc.want {
+			t.Fatalf("PagePath = %q, want %q", got, tc.want)
+		}
 	}
 }

@@ -6,9 +6,11 @@ import (
 	"errors"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/prompts"
 	"github.com/ikigenba/ikigenba/appkit/scrapes"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
@@ -23,9 +25,11 @@ type Config struct {
 	Store     *store.Store
 	Sources   *sources.Registry
 	Scrapes   *scrapes.Client
+	Prompts   *prompts.Client
 	Telemetry *telemetry.Writer
 	Events    *events.Emitter
 	Website   *website.Checker
+	After     func(time.Duration) <-chan time.Time
 }
 
 // Engine coordinates cancellable enrichment and resolution passes.
@@ -52,22 +56,22 @@ func (e *Engine) Handlers() events.Handlers {
 // Rebuild records a pass and starts its work without waiting.
 func (e *Engine) Rebuild(ctx context.Context, c identity.Caller) (store.Pass, error) {
 	if e.stopping.Load() {
-		return store.Pass{}, &Refusal{RefusalStopping}
+		return store.Pass{}, &Refusal{Word: RefusalStopping}
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.stopping.Load() {
-		return store.Pass{}, &Refusal{RefusalStopping}
+		return store.Pass{}, &Refusal{Word: RefusalStopping}
 	}
 	if e.cfg.Scrapes == nil {
-		return store.Pass{}, &Refusal{RefusalUnavailable}
+		return store.Pass{}, &Refusal{Word: RefusalUnavailable}
 	}
 	p, err := e.cfg.Store.AddPass(e.ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: c.UserID, UserEmail: c.Email, RequestID: c.RequestID})
 	if err != nil && e.stopping.Load() {
-		return store.Pass{}, &Refusal{RefusalStopping}
+		return store.Pass{}, &Refusal{Word: RefusalStopping}
 	}
 	if errors.Is(err, store.ErrBusy) {
-		return store.Pass{}, &Refusal{RefusalBusy}
+		return store.Pass{}, &Refusal{Word: RefusalBusy}
 	}
 	if err != nil {
 		return store.Pass{}, err
@@ -76,22 +80,24 @@ func (e *Engine) Rebuild(ctx context.Context, c identity.Caller) (store.Pass, er
 	return p, nil
 }
 func (e *Engine) start(ctx context.Context, p store.Pass, c identity.Caller, run *scrapes.Run, kind string) {
+	e.startWork(ctx, p, c, func(workCtx context.Context) (store.Counts, string) {
+		if p.Kind == store.KindEnrich {
+			return e.enrich(workCtx, kind)
+		}
+		return e.resolve(workCtx, run, p.Kind)
+	})
+}
+
+func (e *Engine) startWork(ctx context.Context, p store.Pass, c identity.Caller, job func(context.Context) (store.Counts, string)) {
 	trail.Record(context.WithoutCancel(ctx), e.cfg.Telemetry, e.cfg.Events, trail.Started, p)
 	e.work.Add(1)
 	finishCtx := context.WithoutCancel(ctx)
 	go func() {
 		defer e.work.Done()
-		workCtx := identity.NewContext(e.ctx, c)
-		var totals store.Counts
-		var reason string
-		if p.Kind == store.KindEnrich {
-			totals, reason = e.enrich(workCtx, kind)
-		} else {
-			totals, reason = e.resolve(workCtx, run, p.Kind)
-		}
+		totals, reason := job(identity.NewContext(e.ctx, c))
 		ended, err := e.finish(finishCtx, p.ID, totals, reason)
 		if err == nil {
-			trail.Record(context.WithoutCancel(ctx), e.cfg.Telemetry, e.cfg.Events, trail.Finished, ended)
+			trail.Record(finishCtx, e.cfg.Telemetry, e.cfg.Events, trail.Finished, ended)
 			e.follow(finishCtx, ended)
 		}
 	}()
@@ -314,7 +320,7 @@ func (e *Engine) resolve(ctx context.Context, delivery *scrapes.Run, kind string
 		}
 	}
 	if rebuild {
-		for _, en := range enrichers.New(e.cfg.Website).All() {
+		for _, en := range enrichers.New(enrichers.Config{Website: e.cfg.Website, Prompts: e.cfg.Prompts}).All() {
 			if _, ok := en.(enrichers.Deriver); ok {
 				n, err := e.derive(ctx, en.Kind(), true)
 				if err != nil {

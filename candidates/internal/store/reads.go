@@ -3,9 +3,11 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"sort"
 	"strings"
 
+	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
@@ -172,7 +174,17 @@ func rankedWindow(ctx context.Context, tx *sql.Tx, query string, args ...any) ([
 		if err = assessmentFacts(ctx, tx, &a[0]); err != nil {
 			return nil, err
 		}
-		out = append(out, Ranked{Candidate: c, Assessment: a[0]})
+		member := Ranked{Candidate: c, Assessment: a[0]}
+		f, err := factsKey(ctx, tx, key)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return nil, err
+		}
+		for _, w := range f.Written {
+			if w.Kind == enrichers.KindSiteText {
+				member.SiteText = w.At
+			}
+		}
+		out = append(out, member)
 	}
 	return out, nil
 }

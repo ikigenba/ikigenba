@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -15,7 +16,10 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
+	"github.com/ikigenba/ikigenba/candidates/internal/passes"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 // Each read has a distinct base-96 suffix, and every output byte is >= 0xa0.
@@ -169,7 +173,7 @@ func secrecyAbsent(t *testing.T, where string, value any, markers []string) {
 	}
 }
 
-// R-R0Z3-POWF R-R3EW-H8DT R-R4MS-V04I R-R5UP-8RV7 R-R9IE-E33A
+// R-0DBY-N0TE R-0FRR-EKAS R-0I7K-63S6 R-0JFG-JVIV R-0LV9-BF09
 func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	markers, phone := secrecyMarkers(t)
 	forbidden := append(append([]string{}, markers...), phone)
@@ -203,7 +207,25 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	secondFacts["email"] = markers[8] + "@" + markers[7] + ".example"
 	forbidden = append(forbidden, secondPhone)
 	f := &secrecyFake{rows: []map[string]any{row, second}, echo: strings.Join(forbidden, " ")}
-	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, f)}))
+	pf := &promptFake{echo: strings.Join(forbidden, " ")}
+	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, f), "prompts": runSocket(t, pf)}))
+	h.p.HTTP = &http.Client{Transport: enrichTransport(func(r *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(r.URL.Path, "/error") {
+			return nil, fmt.Errorf("fixture fetch failure")
+		}
+		status := 200
+		if strings.HasSuffix(r.URL.Path, "/missing") {
+			status = 404
+		}
+		return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {"text/html"}}, Body: io.NopCloser(strings.NewReader("<title>" + markers[3] + "</title><p>" + markers[4] + "</p>"))}, nil
+	})}
+	h.p.After = func(d time.Duration) <-chan time.Time {
+		ch := make(chan time.Time, 1)
+		if d == website.Interval || d == passes.PollInterval || d == passes.QueueWait {
+			ch <- time.Time{}
+		}
+		return ch
+	}
 	h.p.Rand = &secrecyBytes{}
 	h.start()
 	caller := identity.Caller{UserID: "reader", Email: "reader@example.test", RequestID: "secrecy-request"}
@@ -236,6 +258,7 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 		return id
 	}
 	doneID := rebuild("")
+	call("pass", map[string]any{"pass": doneID}, false)
 	call("cohorts", map[string]any{}, false)
 	list := call("candidates", map[string]any{"name": markers[0], "phone": phone}, false)
 	var candidates []map[string]json.RawMessage
@@ -248,6 +271,22 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	if !strings.Contains(strings.ToLower(string(b)), strings.ToLower(markers[0])) {
 		t.Fatal("successful answer omitted supplied marker")
 	}
+	websitePass := call("enrich", map[string]any{"kind": "website_check"}, false)
+	websiteID := runText(websitePass, "id")
+	expectedPasses[websiteID] = caller.RequestID
+	h.waitPass(caller, websiteID)
+	siteURL := "https://" + strings.ToLower(markers[8]) + ".example"
+	kept := call("add_page", map[string]any{"candidate": id, "url": siteURL + "/kept"}, false)
+	pagePath := "/candidates/" + id + "/pages/" + string(kept["number"])
+	for _, suffix := range []string{"/missing", "/error"} {
+		rr, _ := h.call(caller, "add_page", map[string]any{"candidate": id, "url": siteURL + suffix})
+		if !rr.IsError() {
+			t.Fatal(rr)
+		}
+		secrecyAbsent(t, "add_page refusal", rr, append(append([]string{}, markers[:8]...), markers[9], phone))
+	}
+	call("enrich", map[string]any{"kind": "absent"}, true)
+	call("add_page", map[string]any{"candidate": "absent", "url": "https://absent.test/"}, true)
 	call("passes", map[string]any{}, false)
 	all := call("candidates", map[string]any{}, false)
 	var active []map[string]json.RawMessage
@@ -308,6 +347,30 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 				t.Fatal("signed-in candidate page omitted marker")
 			}
 		}
+	}
+	for _, mode := range []string{"success", "failed", "refuse-result", "http-show", "http-run", "http-result", "refuse-show"} {
+		pf.mu.Lock()
+		pf.mode = mode
+		pf.mu.Unlock()
+		if mode == "refuse-show" || mode == "http-show" {
+			call("enrich", map[string]any{"kind": enrichers.KindSiteText, "cohort": cohortID, "force": true}, true)
+			continue
+		}
+		v := call("enrich", map[string]any{"kind": enrichers.KindSiteText, "cohort": cohortID, "force": true}, false)
+		pid := runText(v, "id")
+		expectedPasses[pid] = caller.RequestID
+		ended := h.waitPass(caller, pid)
+		if mode == "refuse-result" || strings.HasPrefix(mode, "http-") {
+			if runText(ended, "reason") != store.ReasonPrompts {
+				t.Fatal(ended)
+			}
+		} else if runText(ended, "status") != store.StatusDone {
+			t.Fatal(ended)
+		}
+	}
+	status, body := h.request("GET", pagePath, "kept-page-request", nil)
+	if status != 200 || !strings.Contains(strings.ToLower(string(body)), strings.ToLower(markers[4])) {
+		t.Fatal("kept text page missing", status, pagePath)
 	}
 	call("delete_cohort", map[string]any{"cohort": cohortID}, false)
 	call("create_cohort", map[string]any{"name": markers[3]}, false)

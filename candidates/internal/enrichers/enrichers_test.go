@@ -19,7 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-I9B5-6YXP R-IAJ1-KQOE R-IBQX-YIF3 R-ICYU-CA5S
+// R-I9B5-6YXP R-LR9H-IOFD R-IBQX-YIF3 R-ICYU-CA5S
 func TestDeclaredValues(t *testing.T) {
 	type word string
 	words := []word{enrichers.KindDriveMinutes, enrichers.KindLinkFacts, enrichers.SourceZipDrive, enrichers.SourceLinks}
@@ -34,8 +34,8 @@ func TestDeclaredValues(t *testing.T) {
 	n := int64(84)
 	reading := sources.Reading{Name: "owned"}
 	link := enrichers.Link{"scraper", "source", true, reading}
-	s := enrichers.Subject{"id", "email", "zip", &n, []enrichers.Link{link}}
-	if s.ID != "id" || s.Email != "email" || s.Zip != "zip" || *s.Minutes != 84 || !s.Links[0].Gone || s.Links[0].Scraper != "scraper" || s.Links[0].SourceID != "source" || s.Links[0].Reading.Name != "owned" {
+	s := enrichers.Subject{"id", "name", "city", "state", "email", "zip", "website", &n, []enrichers.Link{link}}
+	if s.ID != "id" || s.Name != "name" || s.City != "city" || s.State != "state" || s.Website != "website" || s.Email != "email" || s.Zip != "zip" || *s.Minutes != 84 || !s.Links[0].Gone || s.Links[0].Scraper != "scraper" || s.Links[0].SourceID != "source" || s.Links[0].Reading.Name != "owned" {
 		t.Fatal(s)
 	}
 	r := enrichers.Result{"origin", json.RawMessage(`{}`), 0.5}
@@ -67,19 +67,22 @@ func TestDeclaredValues(t *testing.T) {
 	}
 }
 
-// R-IE6Q-Q1WH R-IFEN-3TN6 R-IGMJ-HLDV R-IHUF-VD4K R-IKA8-MWLY R-IV9C-2UA7 R-IXP4-UDRL
+// R-IE6Q-Q1WH R-IFEN-3TN6 R-LYKV-TAVJ R-LZSS-72M8 R-M3GH-CDUB R-MFNH-6399 R-IKA8-MWLY R-MGVD-JUZY
 func TestRegistry(t *testing.T) {
-	expected := []string{enrichers.KindDriveMinutes, enrichers.KindLinkFacts, sources.WebsiteCheck}
+	expected := []string{enrichers.KindDriveMinutes, enrichers.KindLinkFacts, sources.WebsiteCheck, enrichers.KindSiteText}
 	first := enrichers.Kinds()
 	first[0] = "changed"
 	if !slices.Equal(enrichers.Kinds(), expected) {
 		t.Fatal("shared kinds")
 	}
 	for _, ck := range []*website.Checker{nil, {}} {
-		reg := enrichers.New(ck)
+		reg := enrichers.New(enrichers.Config{Website: ck})
 		all := reg.All()
+		if len(all) != 4 {
+			t.Fatalf("registry length %d", len(all))
+		}
 		for i, e := range all {
-			if e.Kind() != expected[i] || e.Fetched() != (i == 2) {
+			if e.Kind() != expected[i] || e.Fetched() != (i >= 2) {
 				t.Fatal(i, e)
 			}
 			found, ok := reg.Get(expected[i])
@@ -88,7 +91,8 @@ func TestRegistry(t *testing.T) {
 			}
 			_, derived := e.(enrichers.Deriver)
 			_, fetched := e.(enrichers.Fetcher)
-			if derived != (i < 2) || fetched != (i == 2) {
+			_, prompted := e.(enrichers.Prompter)
+			if derived != (i < 2) || fetched != (i == 2) || prompted != (i == 3) {
 				t.Fatal("interfaces", i)
 			}
 			inputs := e.Inputs(enrichers.Subject{})
@@ -101,7 +105,7 @@ func TestRegistry(t *testing.T) {
 			if fetched && e.(enrichers.Fetcher).Ready() != (ck != nil) {
 				t.Fatal("fetcher interface readiness")
 			}
-			for _, raw := range []string{`{}`, `{"minutes":84}`, `{"categories":[],"fleet_verdict":"unknown"}`, `{"State":"https"}`, `null`, `[]`, ``} {
+			for _, raw := range []string{`{}`, `{"minutes":84}`, `{"categories":[],"fleet_verdict":"unknown"}`, `{"State":"https"}`, `{"run":"run_fixture","status":"exited","exit_code":0,"pages":3,"cost_nanos":0}`, `null`, `[]`, ``} {
 				if reg.Valid(e.Kind(), json.RawMessage(raw)) != e.Valid(json.RawMessage(raw)) {
 					t.Fatal("dispatch", raw)
 				}
@@ -114,7 +118,7 @@ func TestRegistry(t *testing.T) {
 		if reg.All()[0] == nil {
 			t.Fatal("shared registry storage")
 		}
-		for _, bad := range []string{"", "website", "LINK_FACTS"} {
+		for _, bad := range []string{"", "website", "LINK_FACTS", "site-text"} {
 			e, ok := reg.Get(bad)
 			if e != nil || ok || reg.Valid(bad, json.RawMessage(`{}`)) {
 				t.Fatal(bad)
@@ -300,10 +304,10 @@ func TestWebsiteFetch(t *testing.T) {
 	}
 }
 
-// R-UQ92-S831
+// R-MI39-XMQN
 func TestDerivedEncodingAvoidsPreviousWebsiteFields(t *testing.T) {
 	n := int64(1)
-	values := []any{enrichers.LinkFound{KnownSince: "a", NewestFiling: "b", GovernmentMatch: "c", Categories: []enrichers.Category{{Name: "n", Source: "s"}}, FleetVerdict: "pass", PowerUnits: &n, Drivers: &n}, enrichers.MinutesFound{Minutes: &n}}
+	values := []any{enrichers.LinkFound{KnownSince: "a", NewestFiling: "b", GovernmentMatch: "c", Categories: []enrichers.Category{{Name: "n", Source: "s"}}, FleetVerdict: "pass", PowerUnits: &n, Drivers: &n}, enrichers.MinutesFound{Minutes: &n}, enrichers.SiteTextFound{Run: "run", Status: "exited", ExitCode: new(int), Pages: 2, CostNanos: 3}}
 	for _, v := range values {
 		b, err := json.Marshal(v)
 		if err != nil {

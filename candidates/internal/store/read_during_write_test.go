@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-HHXH-Q0R6
+// R-OXV7-EIWU
 func TestContractReadsDuringQueuedWrites(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -59,6 +59,29 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 			name string
 			call func() (any, error)
 		}{"EnrichmentAfter", func() (any, error) { return f.s.EnrichmentAfter(ctx, sources.WebsiteCheck, "read.test", 0) }})
+
+	p, err := f.s.AddPage(ctx, store.Page{Candidate: id, URL: "https://read.test/", Text: "held text", UserID: "owner"})
+	contractOK(t, err)
+	reads = append(reads, struct {
+		name string
+		call func() (any, error)
+	}{"Pages", func() (any, error) { return f.s.Pages(ctx, id) }},
+		struct {
+			name string
+			call func() (any, error)
+		}{"GetPage", func() (any, error) { return f.s.GetPage(ctx, id, p.Number) }},
+		struct {
+			name string
+			call func() (any, error)
+		}{"CountPages", func() (any, error) { return f.s.CountPages(ctx, id) }},
+		struct {
+			name string
+			call func() (any, error)
+		}{"Subject", func() (any, error) { return f.s.Subject(ctx, id) }},
+		struct {
+			name string
+			call func() (any, error)
+		}{"DueAmong", func() (any, error) { return f.s.DueAmong(ctx, sources.WebsiteCheck, []string{id}, true) }})
 	before := make([]any, len(reads))
 	for i, read := range reads {
 		value, err := read.call()

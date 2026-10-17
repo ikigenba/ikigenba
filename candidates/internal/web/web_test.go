@@ -63,7 +63,7 @@ func fixture(t *testing.T) (web.Config, *db.DB, *telemetry.Capture, *events.Capt
 	})
 	return web.Config{func(u page.User) page.Banner {
 		return page.Banner{Service: pages.ServiceName, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
-	}, mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: w}), "", st, eng, w, em}, d, tc, ec
+	}, mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: w}), "", st, eng, w, em, nil}, d, tc, ec
 }
 func request(h http.Handler, method, path, body, user string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, "https://candidates.example.test"+path, strings.NewReader(body))
@@ -82,7 +82,7 @@ type unread struct{ reads int }
 func (u *unread) Read([]byte) (int, error) { u.reads++; return 0, io.EOF }
 func (*unread) Close() error               { return nil }
 
-// R-3RDS-CKCH R-5619-EPCR R-4GZO-DQX2 R-4LV9-WTVU
+// R-4GZO-DQX2 R-4LV9-WTVU
 func TestIdentityGate(t *testing.T) {
 	cfg, d, capture, bus := fixture(t)
 	h := web.Handler(cfg)
@@ -186,7 +186,7 @@ func (t causeTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return t.base.RoundTrip(r)
 }
 
-// R-4DBZ-8FOZ R-NVQL-4X5O
+// R-4DBZ-8FOZ
 func TestMCPContextAndTools(t *testing.T) {
 	cfg, _, capture, _ := fixture(t)
 	type observed struct {
@@ -243,10 +243,11 @@ func TestMCPContextAndTools(t *testing.T) {
 	}
 }
 
-// R-YDTV-I753: a failing store prevents rebuilding before a pass can start.
+// R-TJ66-KD0B: a failing store prevents a pass from starting.
 func TestFailingStoreEmitsNoPassEvent(t *testing.T) {
 	cfg, d, capture, bus := fixture(t)
-	cfg.Passes = passes.New(passes.Config{Store: cfg.Store, Sources: sources.New(fmcsa.New()), Website: &website.Checker{}, Telemetry: cfg.Telemetry, Events: cfg.Events})
+	cfg.Website = &website.Checker{}
+	cfg.Passes = passes.New(passes.Config{Store: cfg.Store, Sources: sources.New(fmcsa.New()), Website: cfg.Website, Telemetry: cfg.Telemetry, Events: cfg.Events})
 	defer cfg.Passes.Drain(context.Background())
 	srv := httptest.NewServer(web.Handler(cfg))
 	defer srv.Close()
@@ -290,13 +291,43 @@ func TestFailingStoreEmitsNoPassEvent(t *testing.T) {
 	}
 }
 
-// R-YBE2-QNNP
+// R-THYA-6L9M
 func TestLifecycleDeclarationsIncludeDerived(t *testing.T) {
 	cfg, _, _, _ := fixture(t)
 	cfg.Passes = passes.New(passes.Config{Store: cfg.Store, Sources: sources.New(fmcsa.New(), ppp.New()), Telemetry: cfg.Telemetry, Events: cfg.Events})
 	r := request(web.Handler(cfg), http.MethodGet, "/declarations", "", "")
-	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","status","reason","rows","new","changed","unchanged","gone","created","linked","judged","rescored","unranged","derived","due","fetched","https","http","none"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger"]}],"accepts":["cron.judge_candidates.fired","scrape.finished"]}`
+	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","target","enrich_kind","status","reason","rows","new","changed","unchanged","gone","created","linked","judged","rescored","unranged","derived","due","fetched","https","http","none","runs","runs_failed","pages","cost"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger","target","enrich_kind"]}],"accepts":["cron.judge_candidates.fired","scrape.finished"]}`
 	if r.Code != http.StatusOK || r.Body.String() != want {
 		t.Fatal(r.Code, r.Body.String())
 	}
 }
+
+// R-8708-4S4E R-JOJI-0XTC R-JQZA-SHAQ
+func TestMCPToolsReceiveConfiguredWebsite(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(map[bool]string{false: "nil", true: "checker"}[enabled], func(t *testing.T) {
+			cfg, _, _, _ := fixture(t)
+			if enabled {
+				cfg.Website = &website.Checker{Client: &http.Client{Transport: webTransport(func(*http.Request) (*http.Response, error) { t.Error("missing candidate fetched"); return nil, io.EOF })}}
+			}
+			cfg.Passes = passes.New(passes.Config{Store: cfg.Store, Sources: sources.New(fmcsa.New()), Telemetry: cfg.Telemetry, Events: cfg.Events, Website: cfg.Website})
+			defer cfg.Passes.Drain(t.Context())
+			srv := httptest.NewServer(web.Handler(cfg))
+			defer srv.Close()
+			client := mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL + "/mcp"})
+			result, err := client.CallTool(t.Context(), identity.Caller{UserID: "owner"}, "add_page", json.RawMessage(`{"candidate":"cand_5a5a5a5a5a5a5a5a","url":"https://acme.test/"}`))
+			want := "unavailable: " + tools.RefuseUnavailable
+			if enabled {
+				want = "not_found: " + tools.RefuseNotFound
+			}
+			b, _ := json.Marshal(result)
+			if err != nil || !result.IsError() || !strings.Contains(string(b), want) {
+				t.Fatal(result, err, want)
+			}
+		})
+	}
+}
+
+type webTransport func(*http.Request) (*http.Response, error)
+
+func (f webTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

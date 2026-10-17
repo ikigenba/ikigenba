@@ -63,7 +63,7 @@ func TestPublishedFiles(t *testing.T) {
 	}
 }
 
-// R-JLLH-JDUS R-101D-VTCS R-3DEC-NR9E R-3EM9-1J03 R-3FU5-FAQS R-3H21-T2HH R-3I9Y-6U86
+// R-101D-VTCS R-3DEC-NR9E R-3EM9-1J03 R-3FU5-FAQS R-3H21-T2HH R-3I9Y-6U86
 func TestCommands(t *testing.T) {
 	if cli.ExitSuccess != 0 || cli.ExitServerFailed != 1 || cli.ExitUsage != 2 {
 		t.Fatal("exit codes")
@@ -216,5 +216,14 @@ func TestDatabaseOpenRefusal(t *testing.T) {
 	}})
 	if code != cli.ExitServerFailed || out.Len() != 0 || stderr.calls != 1 || stderr.String() != "candidates: cannot open database state/candidates.db: "+strings.ReplaceAll(openErr.Error(), "\n", " ")+"\n" {
 		t.Fatal(code, stderr.String(), openErr)
+	}
+}
+
+// R-60KT-WY1K
+func TestProcessFieldsByPosition(t *testing.T) {
+	var out, diagnostics bytes.Buffer
+	p := cli.Process{[]string{"--version"}, nil, nil, 0, &out, &diagnostics, "fixture-display", nil, nil, nil, nil, nil, "", nil, nil, nil, nil, nil}
+	if code := cli.Run(t.Context(), p); code != cli.ExitSuccess || out.String() != p.Version+"\n" || diagnostics.Len() != 0 {
+		t.Fatal(code, out.String(), diagnostics.String())
 	}
 }

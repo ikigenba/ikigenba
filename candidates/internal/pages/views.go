@@ -3,10 +3,13 @@ package pages
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/urls"
@@ -41,6 +44,12 @@ func passRow(p store.Pass) PassRow {
 }
 func passView(p store.Pass, sp string) PassView {
 	v := PassView{ID: p.ID, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Status: p.Status, Reason: p.Reason, Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged, Derived: p.Derived, Due: p.Due, Fetched: p.Fetched, HTTPS: p.HTTPS, HTTP: p.HTTP, None: p.None}
+	v.Target, v.EnrichKind, v.Runs, v.RunsFailed, v.Pages, v.Cost = p.Target, p.EnrichKind, p.Runs, p.RunsFailed, p.Pages, costText(p.Cost)
+	if store.ValidCohortID(p.Target) {
+		v.TargetPage = "/cohorts/" + p.Target
+	} else if store.ValidCandidateID(p.Target) {
+		v.TargetPage = "/candidates/" + p.Target
+	}
 	switch p.Origin {
 	case store.OriginRebuild, store.OriginEnrich:
 		v.StartedBy = p.UserEmail
@@ -58,6 +67,7 @@ func memberRow(e store.Ranked, i int) MemberRow {
 	a := assessmentView(e.Assessment)
 	f := factsView(store.Facts{KnownSince: e.Assessment.KnownSince, NewestFiling: e.Assessment.NewestFiling, Categories: e.Assessment.Categories, GovernmentMatch: e.Assessment.GovernmentMatch, FleetVerdict: e.Assessment.FleetVerdict, PowerUnits: e.Assessment.PowerUnits, Drivers: e.Assessment.Drivers, Minutes: e.Assessment.Minutes})
 	v := MemberRow{Rank: int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, Class: e.Candidate.Class, FleetVerdict: f.FleetVerdict, Website: e.Assessment.Website, WebsiteURL: e.Assessment.WebsiteURL, Minutes: f.Minutes, GovernmentMatch: f.GovernmentMatch, KnownSince: f.KnownSince, KnownSinceText: f.KnownSinceText, NewestFiling: f.NewestFiling, NewestFilingText: f.NewestFilingText, Excluded: a.Excluded}
+	v.SiteText, v.SiteTextText = stamp(e.SiteText, MinuteLayout)
 	seen := map[string]bool{}
 	for _, c := range f.Categories {
 		if !seen[c.Name] {
@@ -237,6 +247,13 @@ func enrichmentRow(x store.Enrichment) EnrichmentRow {
 			v.Found = append(v.Found, FactRow{k, b.String()})
 		}
 	}
+	if n := int64(math.Round(x.Cost * 1e9)); n > 0 {
+		v.Cost = costText(n)
+	}
+	if x.Kind == enrichers.KindSiteText {
+		var f enrichers.SiteTextFound
+		v.Failed = json.Unmarshal(x.Found, &f) == nil && f.Failed()
+	}
 	v.At, v.AtText = stamp(x.At, MinuteLayout)
 	return v
 }
@@ -256,4 +273,23 @@ func setWebsite(v *CandidateView, es []store.Enrichment) {
 		v.WebsiteChecked, v.WebsiteCheckedText = stamp(e.At, SecondLayout)
 		return
 	}
+}
+
+func costText(n int64) string {
+	m := n / 1000
+	if n%1000 >= 500 {
+		m++
+	}
+	fraction := strconv.FormatInt(m%1000000, 10)
+	return "$" + strconv.FormatInt(m/1000000, 10) + "." + strings.Repeat("0", 6-len(fraction)) + fraction
+}
+func pageRow(p store.Page) PageRow {
+	v := PageRow{Number: strconv.FormatInt(p.Number, 10), Path: urls.PagePath(p.Candidate, p.Number), URL: p.URL, Title: p.Title, Size: p.Size, By: p.UserEmail, User: p.UserID}
+	v.Fetched, v.FetchedText = stamp(p.Fetched, MinuteLayout)
+	return v
+}
+func pageView(p store.Page, c store.Candidate) PageView {
+	v := PageView{Candidate: p.Candidate, Name: c.Name, Number: strconv.FormatInt(p.Number, 10), URL: p.URL, Title: p.Title, Size: p.Size, By: p.UserEmail, User: p.UserID, Text: p.Text}
+	v.Fetched, v.FetchedText = stamp(p.Fetched, SecondLayout)
+	return v
 }

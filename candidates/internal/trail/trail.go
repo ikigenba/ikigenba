@@ -20,7 +20,7 @@ const (
 
 // Emits returns independent declarations of the pass lifecycle events.
 func Emits() []events.Emission {
-	return []events.Emission{{Event: Started, Attrs: []string{"pass", "kind", "origin", "trigger"}}, {Event: Finished, Attrs: []string{"pass", "kind", "origin", "trigger", "status", "reason", "rows", "new", "changed", "unchanged", "gone", "created", "linked", "judged", "rescored", "unranged", "derived", "due", "fetched", "https", "http", "none"}}}
+	return []events.Emission{{Event: Started, Attrs: []string{"pass", "kind", "origin", "trigger", "target", "enrich_kind"}}, {Event: Finished, Attrs: []string{"pass", "kind", "origin", "trigger", "target", "enrich_kind", "status", "reason", "rows", "new", "changed", "unchanged", "gone", "created", "linked", "judged", "rescored", "unranged", "derived", "due", "fetched", "https", "http", "none", "runs", "runs_failed", "pages", "cost"}}}
 }
 
 // Record records and emits a lifecycle event as the saved pass starter.
@@ -29,9 +29,10 @@ func Record(ctx context.Context, w *telemetry.Writer, em *events.Emitter, name s
 		return
 	}
 	ctx = identity.NewContext(ctx, identity.Caller{UserID: p.UserID, RequestID: p.RequestID})
-	attrs := telemetry.Attrs{"pass": p.ID, "kind": p.Kind, "origin": p.Origin, "trigger": p.Trigger}
+	attrs := telemetry.Attrs{"pass": p.ID, "kind": p.Kind, "origin": p.Origin, "trigger": p.Trigger, "target": p.Target, "enrich_kind": p.EnrichKind}
 	if name == Finished {
 		attrs["judged"] = p.Judged
+		attrs["runs"], attrs["runs_failed"], attrs["pages"], attrs["cost"] = p.Runs, p.RunsFailed, p.Pages, p.Cost
 		attrs["derived"] = p.Derived
 		attrs["due"], attrs["fetched"], attrs["https"], attrs["http"], attrs["none"] = p.Due, p.Fetched, p.HTTPS, p.HTTP, p.None
 		attrs["status"], attrs["reason"] = p.Status, p.Reason

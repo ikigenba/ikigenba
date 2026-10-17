@@ -20,7 +20,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-1WIX-505L R-21EI-O34D R-22MF-1UV2 R-GU9F-TVQY
+// R-SQD9-SRDA R-SRL6-6J3Z R-SWGR-PM2R R-GU9F-TVQY
 func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 	for _, rebuild := range []bool{false, true} {
 		t.Run(fmt.Sprint(rebuild), func(t *testing.T) {

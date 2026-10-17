@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
+	"github.com/ikigenba/ikigenba/candidates/internal/urls"
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
@@ -36,6 +38,7 @@ const (
 	DescribePasses       string = "Read recorded passes."
 	DescribePass         string = "Read a pass."
 	DescribeEnrich       string = "Enrich candidates whose inputs changed since their last result, for one kind or every kind."
+	DescribeAddPage      string = "Keep a page from a candidate website."
 	DescribeRebuild      string = "Start a resolution pass over current scraper runs."
 	DescribeDecide       string = "Record an owner's ruling and reassess the affected candidates."
 	RefuseNotFound       string = "The requested record was not found."
@@ -43,12 +46,17 @@ const (
 	RefuseBusy           string = "A pass is already running."
 	RefuseStopping       string = "The service is stopping."
 	RefuseUnavailable    string = "The service is unavailable."
+	RefuseNoWebsite      string = "The candidate has no website."
+	RefuseOffSite        string = "The URL is outside the candidate website."
+	RefusePageCap        string = "The candidate already holds 20 distinct URLs."
+	RefuseFetch          string = "The page could not be fetched."
 )
 
 // Config supplies the engine and database.
 type Config struct {
-	Passes *passes.Engine
-	Store  *store.Store
+	Passes  *passes.Engine
+	Store   *store.Store
+	Website *website.Checker
 }
 
 // Entry describes a tool for the tools page.
@@ -56,7 +64,7 @@ type Entry struct{ Name, Description string }
 
 // Catalog returns independent ordered tool metadata.
 func Catalog() []Entry {
-	return []Entry{{"cohorts", DescribeCohorts}, {"cohort", DescribeCohort}, {"candidates", DescribeCandidates}, {"candidate", DescribeCandidate}, {"passes", DescribePasses}, {"pass", DescribePass}, {"rebuild", DescribeRebuild}, {"enrich", DescribeEnrich}, {"decide", DescribeDecide}, {"exclude", DescribeExclude}, {"include", DescribeInclude}, {"create_cohort", DescribeCreateCohort}, {"edit_cohort", DescribeEditCohort}, {"delete_cohort", DescribeDeleteCohort}, {"reject", DescribeReject}, {"unreject", DescribeUnreject}}
+	return []Entry{{"cohorts", DescribeCohorts}, {"cohort", DescribeCohort}, {"candidates", DescribeCandidates}, {"candidate", DescribeCandidate}, {"passes", DescribePasses}, {"pass", DescribePass}, {"rebuild", DescribeRebuild}, {"enrich", DescribeEnrich}, {"add_page", DescribeAddPage}, {"decide", DescribeDecide}, {"exclude", DescribeExclude}, {"include", DescribeInclude}, {"create_cohort", DescribeCreateCohort}, {"edit_cohort", DescribeEditCohort}, {"delete_cohort", DescribeDeleteCohort}, {"reject", DescribeReject}, {"unreject", DescribeUnreject}}
 }
 func refuse(word string) mcp.Result {
 	text := RefuseUnavailable
@@ -102,7 +110,7 @@ func add[A any](srv *mcp.Server, name, description string, effect mcp.Effect, ha
 	mcp.AddRawTool(srv, mcp.RawTool[A]{Name: name, Description: description, Effect: effect, Handler: func(ctx context.Context, c identity.Caller, a A) (mcp.Result, error) { return handler(ctx, c, a), nil }})
 }
 
-// Register installs the sixteen candidate tools on srv.
+// Register installs the seventeen candidate tools on srv.
 func Register(srv *mcp.Server, cfg Config) {
 	add(srv, "cohorts", DescribeCohorts, mcp.Read, func(ctx context.Context, _ identity.Caller, a CohortsArgs) mcp.Result {
 		z, key, id, err := timePosition("cohorts", a.Page, a.Limit)
@@ -204,26 +212,48 @@ func Register(srv *mcp.Server, cfg Config) {
 		if err != nil {
 			var r *passes.Refusal
 			if errors.As(err, &r) {
-				return refuse(r.Word)
+				return engineRefusal(r)
 			}
 			return refuse(passes.RefusalUnavailable)
 		}
 		return answer(passes.RecordOf(p))
 	})
 	add(srv, "enrich", DescribeEnrich, mcp.Additive, func(ctx context.Context, c identity.Caller, a EnrichArgs) mcp.Result {
-		if a.OlderThanDays != nil || a.Kind != "" && !slices.Contains(enrichers.Kinds(), a.Kind) {
+		targeted := a.Cohort != "" || a.Candidate != ""
+		if a.Kind != "" && !slices.Contains(enrichers.Kinds(), a.Kind) || a.Cohort != "" && a.Candidate != "" || a.Force && !targeted || a.Kind == "" && targeted {
 			return refuse(passes.RefusalInvalid)
 		}
-		p, err := cfg.Passes.Enrich(ctx, c, a.Kind)
+		if !targeted {
+			if e, ok := enrichers.New(enrichers.Config{}).Get(a.Kind); ok {
+				if _, prompt := e.(enrichers.Prompter); prompt {
+					return refuse(passes.RefusalInvalid)
+				}
+			}
+		}
+		if a.Cohort != "" && !store.ValidCohortID(a.Cohort) || a.Candidate != "" && !store.ValidCandidateID(a.Candidate) {
+			return refuse(passes.RefusalNotFound)
+		}
+		var p store.Pass
+		var err error
+		if targeted {
+			target := a.Cohort
+			if target == "" {
+				target = a.Candidate
+			}
+			p, err = cfg.Passes.EnrichCohort(ctx, c, a.Kind, target, a.Force)
+		} else {
+			p, err = cfg.Passes.Enrich(ctx, c, a.Kind)
+		}
 		if err != nil {
 			var r *passes.Refusal
 			if errors.As(err, &r) {
-				return refuse(r.Word)
+				return engineRefusal(r)
 			}
 			return refuse(passes.RefusalUnavailable)
 		}
 		return answer(passes.RecordOf(p))
 	})
+	add(srv, "add_page", DescribeAddPage, mcp.Additive, func(ctx context.Context, c identity.Caller, a AddPageArgs) mcp.Result { return addPage(ctx, c, cfg, a) })
 
 	add(srv, "decide", DescribeDecide, mcp.Additive, func(ctx context.Context, c identity.Caller, a DecideArgs) mcp.Result {
 		pair := a.Kind == store.KindMerge || a.Kind == store.KindNotSame
@@ -389,6 +419,10 @@ func assessmentOf(a store.Assessment) Assessment {
 func memberOf(e store.Ranked) Member {
 	a := e.Assessment
 	v := Member{Candidate: candidateOf(e.Candidate), OperatingConfidence: a.Operating, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, FleetVerdict: a.FleetVerdict, Website: a.Website, WebsiteURL: a.WebsiteURL, KnownSince: date(a.KnownSince), NewestFiling: date(a.NewestFiling), Excluded: a.Excluded, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch}
+	if !e.SiteText.IsZero() {
+		t := stamp(e.SiteText)
+		v.SiteText = &t
+	}
 	seen := map[string]bool{}
 	for _, c := range a.Categories {
 		if !seen[c.Name] {
@@ -405,7 +439,7 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 	if err != nil {
 		return failure(err)
 	}
-	out := Detail{Candidate: candidateOf(c), Estimates: []Estimate{}, Links: []Link{}, Rulings: []Ruling{}, Enrichments: []Enrichment{}, Rejects: []Reject{}}
+	out := Detail{Pages: []Page{}, Candidate: candidateOf(c), Estimates: []Estimate{}, Links: []Link{}, Rulings: []Ruling{}, Enrichments: []Enrichment{}, Rejects: []Reject{}}
 	rs, err := cfg.Store.Rulings(ctx, id)
 	if err != nil {
 		return failure(err)
@@ -427,6 +461,13 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 			out.Assessment = &v
 		} else if !errors.Is(err, store.ErrNotFound) {
 			return failure(err)
+		}
+		pages, err := cfg.Store.Pages(ctx, id)
+		if err != nil {
+			return failure(err)
+		}
+		for _, p := range pages {
+			out.Pages = append(out.Pages, pageOf(p))
 		}
 		enrichments, err := cfg.Store.Enrichments(ctx, id)
 		if err != nil {
@@ -528,4 +569,76 @@ func orderOf(a []OrderArgs) []store.CohortOrder {
 }
 func validParts(size *int, filters *FilterArgs, order *[]OrderArgs) bool {
 	return (size == nil || store.ValidCohortSize(int64(*size))) && (filters == nil || store.ValidCohortFilters(filterOf(*filters))) && (order == nil || store.ValidCohortOrder(orderOf(*order)))
+}
+
+func engineRefusal(r *passes.Refusal) mcp.Result {
+	if r.Text != "" {
+		return mcp.ErrorResult(r.Word + ": " + r.Text)
+	}
+	return refuse(r.Word)
+}
+func pageOf(p store.Page) Page {
+	return Page{p.Number, p.URL, p.Title, p.Size, stamp(p.Fetched), p.UserID, p.UserEmail, urls.PagePath(p.Candidate, p.Number)}
+}
+func addPage(ctx context.Context, c identity.Caller, cfg Config, a AddPageArgs) mcp.Result {
+	if !store.ValidCandidateID(a.Candidate) {
+		return refuse(passes.RefusalNotFound)
+	}
+	u, err := url.Parse(a.URL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+		return refuse(passes.RefusalInvalid)
+	}
+	if cfg.Website == nil {
+		return refuse(passes.RefusalUnavailable)
+	}
+	if _, err := cfg.Store.GetCandidate(ctx, a.Candidate); err != nil {
+		return failure(err)
+	}
+	f, err := cfg.Store.GetFacts(ctx, a.Candidate)
+	if errors.Is(err, store.ErrNotFound) || err == nil && f.WebsiteURL == "" {
+		return mcp.ErrorResult(passes.RefusalInvalid + ": " + RefuseNoWebsite)
+	}
+	if err != nil {
+		return failure(err)
+	}
+	if !website.OnSite(f.WebsiteURL, a.URL) {
+		return mcp.ErrorResult(passes.RefusalInvalid + ": " + RefuseOffSite)
+	}
+	n, err := cfg.Store.CountPages(ctx, a.Candidate)
+	if err != nil {
+		return failure(err)
+	}
+	if n.URLs >= store.PageCap {
+		pages, err := cfg.Store.Pages(ctx, a.Candidate)
+		if err != nil {
+			return failure(err)
+		}
+		held := false
+		for _, p := range pages {
+			if p.URL == a.URL {
+				held = true
+			}
+		}
+		if !held {
+			return mcp.ErrorResult(passes.RefusalInvalid + ": " + RefusePageCap)
+		}
+	}
+	pg := cfg.Website.Get(ctx, a.URL)
+	if pg.Error != "" {
+		return mcp.ErrorResult(passes.RefusalUnavailable + ": " + RefuseFetch + " " + pg.Error)
+	}
+	if !website.OnSite(f.WebsiteURL, pg.URL) {
+		return mcp.ErrorResult(passes.RefusalInvalid + ": " + RefuseOffSite)
+	}
+	p, err := cfg.Store.AddPage(ctx, store.Page{Candidate: a.Candidate, URL: pg.URL, Title: pg.Title, Text: pg.Text, Size: pg.Size, UserID: c.UserID, UserEmail: c.Email})
+	if errors.Is(err, store.ErrPageCap) {
+		return mcp.ErrorResult(passes.RefusalInvalid + ": " + RefusePageCap)
+	}
+	if errors.Is(err, store.ErrInvalid) {
+		return mcp.ErrorResult(passes.RefusalInvalid + ": " + RefuseNoWebsite)
+	}
+	if err != nil {
+		return failure(err)
+	}
+	return answer(pageOf(p))
 }

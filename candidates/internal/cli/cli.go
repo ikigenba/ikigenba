@@ -17,6 +17,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/prompts"
 	"github.com/ikigenba/ikigenba/appkit/scrapes"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
@@ -178,6 +179,10 @@ func Run(ctx context.Context, p Process) int {
 	if e, ok := list.Find("scrapes"); ok {
 		sc = scrapes.NewClient(scrapes.ClientConfig{Service: e, Telemetry: w})
 	}
+	var pc *prompts.Client
+	if e, ok := list.Find("prompts"); ok {
+		pc = prompts.NewClient(prompts.ClientConfig{Service: e, Telemetry: w})
+	}
 	st := store.New(d, store.Config{Now: p.Now, Rand: rnd})
 	var checker *website.Checker
 	client := p.HTTP
@@ -193,7 +198,7 @@ func Run(ctx context.Context, p Process) int {
 	if client != nil {
 		checker = &website.Checker{Client: client, After: p.After}
 	}
-	eng := passes.New(passes.Config{Website: checker, Store: st, Sources: sources.New(fmcsa.New(), ppp.New()), Scrapes: sc, Telemetry: w, Events: em})
+	eng := passes.New(passes.Config{Website: checker, Prompts: pc, After: p.After, Store: st, Sources: sources.New(fmcsa.New(), ppp.New()), Scrapes: sc, Telemetry: w, Events: em})
 	w.Ready()
 	err = st.ReplaceZipDrive(bg, candidates.ZipDrive())
 	if err == nil {
@@ -211,7 +216,7 @@ func Run(ctx context.Context, p Process) int {
 		return ExitServerFailed
 	}
 	_, _ = st.PrunePasses(bg, s.KeepPasses)
-	h := web.Handler(web.Config{Banner: p.Banner, MCP: p.MCP(w), ServicesPath: path, Store: st, Passes: eng, Telemetry: w, Events: em})
+	h := web.Handler(web.Config{Banner: p.Banner, MCP: p.MCP(w), ServicesPath: path, Store: st, Passes: eng, Telemetry: w, Events: em, Website: checker})
 	notify, _ := p.LookupEnv("NOTIFY_SOCKET")
 	if notify != "" {
 		if c, e := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: notify, Net: "unixgram"}); e == nil {

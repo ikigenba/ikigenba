@@ -32,7 +32,7 @@ func TestCompleteViewContracts(t *testing.T) {
 		t.Fatalf("merged %#v", got)
 	}
 	p := store.Pass{ID: "pass", Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, Status: store.StatusDone, Reason: "reason", Started: start, Finished: end, Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, UserID: "starter", UserEmail: "starter@example.test"}
-	wantP := PassView{ID: "pass", Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, Status: store.StatusDone, Reason: "reason", StartedBy: "starter@example.test", Started: "2026-10-05T09:00:07Z", StartedText: "2026-10-05 09:00:07 UTC", Finished: "2026-10-05T10:00:07Z", FinishedText: "2026-10-05 10:00:07 UTC", Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9}
+	wantP := PassView{Cost: "$0.000000", ID: "pass", Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, Status: store.StatusDone, Reason: "reason", StartedBy: "starter@example.test", Started: "2026-10-05T09:00:07Z", StartedText: "2026-10-05 09:00:07 UTC", Finished: "2026-10-05T10:00:07Z", FinishedText: "2026-10-05 10:00:07 UTC", Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9}
 	if got := passView(p, ""); !reflect.DeepEqual(got, wantP) {
 		t.Fatalf("pass %#v", got)
 	}
@@ -131,7 +131,7 @@ func TestCompleteViewContracts(t *testing.T) {
 	}
 }
 
-// R-0563-5UGD
+// R-3TJU-KG5A
 func TestExplicitTemplateStates(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -249,7 +249,7 @@ func TestPassOrigins(t *testing.T) {
 	}
 }
 
-// R-0563-5UGD
+// R-3TJU-KG5A
 func TestJudgmentTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()

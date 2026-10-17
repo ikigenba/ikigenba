@@ -90,7 +90,7 @@ func TestWebsiteEvidenceDeduplicatesWithRowEvidence(t *testing.T) {
 	}
 }
 
-// R-H5QH-WBC8 R-H86A-NUTM R-WM8B-03NP
+// R-H5QH-WBC8 R-OSZL-VFY2 R-WM8B-03NP
 func TestMergeTransfersWebsiteResultsAndSplitLeavesThemOnOriginal(t *testing.T) {
 	for _, originalLatest := range []bool{false, true} {
 		t.Run(map[bool]string{false: "other_latest", true: "original_latest"}[originalLatest], func(t *testing.T) {
@@ -151,7 +151,7 @@ func TestMergeTransfersWebsiteResultsAndSplitLeavesThemOnOriginal(t *testing.T) 
 	}
 }
 
-// R-H86A-NUTM
+// R-OSZL-VFY2
 func TestOrdinaryStoreWritesPreserveWebsiteResults(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

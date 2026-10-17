@@ -45,7 +45,7 @@ func (f *fixture) waitEnrich(id string) store.Pass {
 	}
 }
 
-// R-RDYP-P5JC R-RF6M-2XA1 R-RHME-UGRF R-RMI0-DJQ7 R-VJ89-1BN6
+// R-O91I-AOCR R-OBHB-27U5 R-P137-3EEQ R-OW7L-KBFY R-P76P-0947
 func TestEnrichSchemaAndValidation(t *testing.T) {
 	f := newFixture(t)
 	infos, err := f.client.ListTools(t.Context(), caller)
@@ -56,7 +56,7 @@ func TestEnrichSchemaAndValidation(t *testing.T) {
 	for _, info := range infos {
 		if info.Name == "enrich" {
 			found = true
-			if string(info.InputSchema) != `{"type":"object","properties":{"kind":{"type":"string"},"older_than_days":{"type":"integer"}},"additionalProperties":false}` {
+			if string(info.InputSchema) != `{"type":"object","properties":{"kind":{"type":"string"},"cohort":{"type":"string"},"candidate":{"type":"string"},"force":{"type":"boolean"}},"additionalProperties":false}` {
 				t.Fatal(string(info.InputSchema))
 			}
 		}
@@ -64,7 +64,7 @@ func TestEnrichSchemaAndValidation(t *testing.T) {
 	if !found {
 		t.Fatal("missing enrich")
 	}
-	for _, args := range []map[string]any{{"kind": sources.WebsiteCheck, "older_than_days": 1.5}, {"kind": sources.WebsiteCheck, "older_than_days": 1e30}, {"kind": sources.WebsiteCheck, "cohort": "chosen"}} {
+	for _, args := range []map[string]any{{"kind": sources.WebsiteCheck, "older_than_days": 1.5}, {"kind": sources.WebsiteCheck, "older_than_days": 1e30}, {"older_than_days": 0}} {
 		r := f.call("enrich", args)
 		if !r.IsError() {
 			t.Fatal(r)
@@ -76,14 +76,12 @@ func TestEnrichSchemaAndValidation(t *testing.T) {
 			}
 		}
 	}
-	minus := -1
-	zero := 0
 	for _, fail := range []bool{true, false} {
 		f.d.SetFailing(fail)
 		if !fail {
 			f.eng.Drain(context.Background())
 		}
-		for _, args := range []tools.EnrichArgs{{Kind: strings.ToUpper(sources.WebsiteCheck)}, {Kind: enrichers.SourceLinks}, {Kind: sources.WebsiteCheck, OlderThanDays: &zero}, {OlderThanDays: &minus}} {
+		for _, args := range []tools.EnrichArgs{{Kind: strings.ToUpper(sources.WebsiteCheck)}, {Kind: enrichers.SourceLinks}, {Kind: enrichers.KindSiteText}, {Force: true}, {Kind: enrichers.KindLinkFacts, Cohort: "coh_0000000000000000", Candidate: "cand_0000000000000000"}, {Cohort: "coh_0000000000000000"}} {
 			refusal(t, f.call("enrich", args), passes.RefusalInvalid, tools.RefuseInvalid)
 		}
 	}
@@ -93,7 +91,7 @@ func TestEnrichSchemaAndValidation(t *testing.T) {
 	}
 }
 
-// R-RNPW-RBGW R-VXV1-MKJI
+// R-OYNE-BUXC R-P76P-0947
 func TestEnrichDispatchAndRefusals(t *testing.T) {
 	entered := make(chan struct{}, 4)
 	release := make(chan struct{})
@@ -171,7 +169,7 @@ func TestCandidateEnrichmentHistory(t *testing.T) {
 	}
 }
 
-// R-8YDY-8SNX R-RNPW-RBGW
+// R-OUZP-6JP9 R-OYNE-BUXC
 func TestToolsAllowIndependentPassLanes(t *testing.T) {
 	t.Run("rebuild", func(t *testing.T) {
 		f := fixtureWithScrapes(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) }))
@@ -205,7 +203,7 @@ func TestToolsAllowIndependentPassLanes(t *testing.T) {
 	})
 }
 
-// R-RNPW-RBGW
+// R-OYNE-BUXC
 func TestEnrichDerivedAndAllWithoutChecker(t *testing.T) {
 	for _, kind := range []string{enrichers.KindDriveMinutes, enrichers.KindLinkFacts, ""} {
 		t.Run(kind, func(t *testing.T) {

@@ -221,7 +221,7 @@ func TestGivingLinksFillDisplayFields(t *testing.T) {
 	contractEqual(t, c.Phone, a.Reading.Phone)
 }
 
-// R-GIKE-MO91 R-IP2N-XTPI
+// R-NYI4-B6EP R-NZQ0-OY5E
 func TestJudgePassTriggerRepeatsAcrossDeliveries(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

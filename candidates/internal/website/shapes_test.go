@@ -7,7 +7,7 @@ import (
 )
 
 func TestDeclaredShapes(t *testing.T) {
-	// R-HK5A-WQ18 R-HLD7-AHRX
+	// R-HK5A-WQ18 R-2EOR-MW1G
 	result := Result{"state", "url", "title", 201, 123, "error"}
 	if result.State != "state" || result.URL != "url" || result.Title != "title" || result.StatusCode != 201 || result.Size != 123 || result.Error != "error" {
 		t.Fatal(result)

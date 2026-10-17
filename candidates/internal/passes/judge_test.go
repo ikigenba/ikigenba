@@ -31,7 +31,7 @@ func judgeDelivery(id string) events.Delivery {
 	return events.Delivery{Event: events.Event{Name: trail.AcceptedJudge, ID: id, Attrs: events.Attrs{"anything": true}}}
 }
 
-// R-ZRW3-1A2O R-ZVJS-6LAR R-22MF-1UV2 R-23UB-FMLR R-2527-TECG
+// R-ZRW3-1A2O R-T04G-UXAU R-SWGR-PM2R R-SV8V-BUC2 R-SST2-KAUO
 func TestJudgeSeparatesIngestFromAssessment(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/runs/run_a/record" {
@@ -132,7 +132,7 @@ func TestJudgeSeparatesIngestFromAssessment(t *testing.T) {
 	}
 }
 
-// R-ZVJS-6LAR
+// R-T04G-UXAU
 func TestJudgeNeedsNoScrapesAndHonorsRefusals(t *testing.T) {
 	f := newFixture(t, nil, false)
 	if out := f.eng.Deliver(context.Background(), judgeDelivery("nil-client")); out != events.OK() {
@@ -164,7 +164,7 @@ func TestJudgeNeedsNoScrapesAndHonorsRefusals(t *testing.T) {
 	if len(f.list()) != 3 {
 		t.Fatal(f.list())
 	}
-	_, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "owner"})
+	_, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindJudge, Origin: store.OriginCron, Trigger: store.TriggerJudge, Delivery: "held-judge"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestJudgeNeedsNoScrapesAndHonorsRefusals(t *testing.T) {
 	}
 }
 
-// R-ZH16-3I6T R-S08G-6MG8
+// R-ZH16-3I6T R-T9VN-X38E
 func TestDrainDeadlineAfterEndingHasAlreadyBlocked(t *testing.T) {
 	f := newFixture(t, nil, false)
 	f.eng.Drain(context.Background())

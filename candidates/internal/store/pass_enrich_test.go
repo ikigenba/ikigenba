@@ -3,31 +3,37 @@ package store_test
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-GB90-C1SV R-IXLY-M7WD
+// R-NPYT-MS7U R-IXLY-M7WD R-NTMI-S3FX
 func TestEnrichPassShapeAndVocabulary(t *testing.T) {
 	contractEqual(t, []string{store.KindEnrich, store.OriginEnrich, store.OriginPass, store.TriggerEnrich}, []string{"enrich", "enrich", "pass", "enrich"})
 	p := store.Pass{ID: "pass", Kind: store.KindEnrich, Origin: store.OriginPass, Trigger: "parent", Status: store.StatusDone, Reason: "reason", Started: time.Time{}, Finished: time.Time{}, Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14, UserID: "user", UserEmail: "email", RequestID: "request", Delivery: "delivery"}
 	shape := struct {
-		ID, Kind, Origin, Trigger, Status, Reason                                                                        string
-		Started, Finished                                                                                                time.Time
-		Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None int64
-		UserID, UserEmail, RequestID, Delivery                                                                           string
+		ID, Kind, Origin, Trigger, Target, EnrichKind, Status, Reason                                                                                   string
+		Started, Finished                                                                                                                               time.Time
+		Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None, Runs, RunsFailed, Pages, Cost int64
+		UserID, UserEmail, RequestID, Delivery                                                                                                          string
 	}(p)
 	contractEqual(t, store.Pass(shape), p)
+	contractEqual(t, store.KindEnrichCohort, "enrich_cohort")
+	contractEqual(t, store.ReasonPrompts, "prompts")
+	var capValue = store.PageCap
+	contractEqual(t, capValue, 20)
 }
 
 func enrichPass() store.Pass {
 	return store.Pass{Kind: store.KindEnrich, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
 }
 
-// R-ILEY-SIHF R-GIKE-MO91 R-IP2N-XTPI
+// R-NXA7-XEO0 R-NYI4-B6EP R-NZQ0-OY5E
 func TestPassLanesAndOrigins(t *testing.T) {
 	ctx := context.Background()
 	parent := store.PassIDPrefix + "0123456789abcdef"
@@ -87,7 +93,7 @@ func TestPassLanesAndOrigins(t *testing.T) {
 	contractOK(t, err)
 }
 
-// R-ILEY-SIHF
+// R-NXA7-XEO0 R-4SM4-Q4EK
 func TestInvalidEnrichAndFollowOnPasses(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -102,17 +108,34 @@ func TestInvalidEnrichAndFollowOnPasses(t *testing.T) {
 		{Kind: store.KindJudge, Origin: store.OriginPass, Trigger: parent, Delivery: "delivery"},
 		{Kind: store.KindIngest, Origin: store.OriginPass, Trigger: parent},
 	}
+	for _, ordinary := range []store.Pass{enrichPass(), {Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "owner"}, {Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "run", Delivery: "event"}, {Kind: store.KindJudge, Origin: store.OriginCron, Trigger: store.TriggerJudge, Delivery: "event"}, {Kind: store.KindEnrich, Origin: store.OriginPass, Trigger: parent}, {Kind: store.KindJudge, Origin: store.OriginPass, Trigger: parent}} {
+		p := ordinary
+		p.Target = store.CandidateIDPrefix + "0123456789abcdef"
+		bad = append(bad, p)
+		p = ordinary
+		p.EnrichKind = enrichers.Kinds()[0]
+		bad = append(bad, p)
+	}
+	base := targetedPass(store.CohortIDPrefix+"0123456789abcdef", enrichers.Kinds()[0])
+	for _, mutate := range []func(*store.Pass){func(p *store.Pass) { p.Target = "" }, func(p *store.Pass) { p.Target = "bad" }, func(p *store.Pass) { p.EnrichKind = "" }, func(p *store.Pass) { p.EnrichKind = "bad" }, func(p *store.Pass) { p.Origin = store.OriginPass }, func(p *store.Pass) { p.Trigger = "" }, func(p *store.Pass) { p.Trigger = "other" }, func(p *store.Pass) { p.Delivery = "delivery" }, func(p *store.Pass) { p.UserID = "" }} {
+		p := base
+		mutate(&p)
+		bad = append(bad, p)
+	}
+	rnd := f.rnd.(*contractRandom)
+	before := rnd.total
 	for _, p := range bad {
 		out, err := f.s.AddPass(ctx, p)
 		contractError(t, err, store.ErrUnreachable)
 		contractEqual(t, out, store.Pass{})
 	}
+	contractEqual(t, rnd.total, before)
 	ps, err := f.s.ListPasses(ctx, "", "", 10)
 	contractOK(t, err)
 	contractEqual(t, len(ps), 0)
 }
 
-// R-IQAK-BLG7
+// R-O0XX-2PW3
 func TestConcurrentPassLanes(t *testing.T) {
 	ctx := context.Background()
 	for _, sameLane := range []bool{true, false} {
@@ -123,7 +146,7 @@ func TestConcurrentPassLanes(t *testing.T) {
 			var wg sync.WaitGroup
 			count := 8
 			if !sameLane {
-				count = 2
+				count = 3
 			}
 			for i := range count {
 				wg.Go(func() {
@@ -131,6 +154,9 @@ func TestConcurrentPassLanes(t *testing.T) {
 					p := enrichPass()
 					if !sameLane && i == 1 {
 						p = store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "owner"}
+					}
+					if !sameLane && i == 2 {
+						p = targetedPass(store.CohortIDPrefix+"0123456789abcdef", enrichers.Kinds()[0])
 					}
 					_, err := f.s.AddPass(ctx, p)
 					results <- err
@@ -149,9 +175,189 @@ func TestConcurrentPassLanes(t *testing.T) {
 			}
 			want := 1
 			if !sameLane {
-				want = 2
+				want = 3
 			}
 			contractEqual(t, success, want)
 		})
+	}
+}
+
+func targetedPass(target, kind string) store.Pass {
+	return store.Pass{Kind: store.KindEnrichCohort, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, Target: target, EnrichKind: kind, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
+}
+
+// R-NXA7-XEO0 R-NYI4-B6EP R-NZQ0-OY5E
+func TestPassKindScopeMatrix(t *testing.T) {
+	ctx := context.Background()
+	parent := store.PassIDPrefix + "0123456789abcdef"
+	cohort := store.CohortIDPrefix + "0123456789abcdef"
+	cases := []store.Pass{
+		{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "owner"},
+		{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "run-one", Delivery: "event-one"},
+		{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "run-two", Delivery: "event-two"},
+		{Kind: store.KindJudge, Origin: store.OriginCron, Trigger: store.TriggerJudge, Delivery: "judge-event"},
+		{Kind: store.KindJudge, Origin: store.OriginPass, Trigger: parent},
+		enrichPass(),
+		{Kind: store.KindEnrich, Origin: store.OriginPass, Trigger: parent},
+		targetedPass(cohort, enrichers.Kinds()[0]),
+		targetedPass(cohort, enrichers.Kinds()[1]),
+		targetedPass(store.CandidateIDPrefix+"0123456789abcdef", enrichers.Kinds()[0]),
+	}
+	for i, a := range cases {
+		for j, b := range cases {
+			t.Run(fmt.Sprintf("%d/%d", i, j), func(t *testing.T) {
+				f := contractDB(t)
+				one, err := f.s.AddPass(ctx, a)
+				contractOK(t, err)
+				before, e := f.s.ListPasses(ctx, "", "", 100)
+				contractOK(t, e)
+				two, err := f.s.AddPass(ctx, b)
+				duplicate := b.Delivery != "" && b.Delivery == a.Delivery || b.Origin == store.OriginRun && a.Origin == store.OriginRun && a.Trigger == b.Trigger
+				scopeA, scopeB := "", ""
+				if a.Kind == store.KindIngest {
+					scopeA = a.Trigger
+				}
+				if b.Kind == store.KindIngest {
+					scopeB = b.Trigger
+				}
+				if a.Kind == store.KindEnrichCohort {
+					scopeA = a.Target
+				}
+				if b.Kind == store.KindEnrichCohort {
+					scopeB = b.Target
+				}
+				if duplicate || a.Kind == b.Kind && scopeA == scopeB {
+					want := store.ErrBusy
+					if duplicate {
+						want = store.ErrDelivered
+					}
+					contractError(t, err, want)
+					contractEqual(t, two, store.Pass{})
+					after, e := f.s.ListPasses(ctx, "", "", 100)
+					contractOK(t, e)
+					contractEqual(t, after, before)
+				} else {
+					contractOK(t, err)
+					if !store.ValidPassID(two.ID) || two.ID == one.ID {
+						t.Fatal(two)
+					}
+					want := b
+					want.ID = two.ID
+					want.Status = store.StatusRunning
+					want.Started = f.now.UTC().Truncate(time.Second)
+					contractEqual(t, two, want)
+					f.reopen()
+					got, e := f.s.GetPass(ctx, two.ID)
+					contractOK(t, e)
+					contractEqual(t, got, two)
+				}
+			})
+		}
+	}
+}
+
+// R-NYI4-B6EP R-O25T-GHMS R-O3DP-U9DH
+func TestTargetedPassLifecyclePreservesOtherRecords(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	id := contractSeed(t, f)
+	base := targetedPass(id, enrichers.Kinds()[0])
+	base.ID = "ignored"
+	base.Status = "ignored"
+	base.Reason = "ignored"
+	base.Started = f.now.Add(-time.Hour)
+	base.Finished = f.now
+	base.Rows = 99
+	base.New = 99
+	base.Changed = 99
+	base.Unchanged = 99
+	base.Gone = 99
+	base.Created = 99
+	base.Linked = 99
+	base.Judged = 99
+	base.Unranged = 99
+	base.Derived = 99
+	base.Due = 99
+	base.Fetched = 99
+	base.HTTPS = 99
+	base.HTTP = 99
+	base.None = 99
+	base.Runs = 99
+	base.RunsFailed = 99
+	base.Pages = 99
+	base.Cost = 99
+	p, err := f.s.AddPass(ctx, base)
+	contractOK(t, err)
+	want := targetedPass(id, enrichers.Kinds()[0])
+	want.ID = p.ID
+	want.Status = store.StatusRunning
+	want.Started = f.now.UTC().Truncate(time.Second)
+	contractEqual(t, p, want)
+	f.reopen()
+	got, err := f.s.GetPass(ctx, p.ID)
+	contractOK(t, err)
+	contractEqual(t, got, p)
+	other, err := f.s.AddPass(ctx, enrichPass())
+	contractOK(t, err)
+	f.now = f.now.Add(time.Hour)
+	p, err = f.s.FinishPass(ctx, p.ID, store.Counts{Runs: 7, RunsFailed: 2, Pages: 11, Cost: 123456789})
+	contractOK(t, err)
+	want.Status = store.StatusDone
+	want.Finished = f.now.UTC().Truncate(time.Second)
+	want.Runs = 7
+	want.RunsFailed = 2
+	want.Pages = 11
+	want.Cost = 123456789
+	contractEqual(t, p, want)
+	f.reopen()
+	got, err = f.s.GetPass(ctx, p.ID)
+	contractOK(t, err)
+	contractEqual(t, got, p)
+	got, err = f.s.GetPass(ctx, other.ID)
+	contractOK(t, err)
+	contractEqual(t, got, other)
+	q, err := f.s.AddPass(ctx, targetedPass(id, enrichers.Kinds()[0]))
+	contractOK(t, err)
+	before := contractState(t, f)
+	q, err = f.s.FailPass(ctx, q.ID, store.ReasonPrompts)
+	contractOK(t, err)
+	after := contractState(t, f)
+	// Remove the single pass record allowed to change before comparing all other state.
+	before.passes = slices.DeleteFunc(before.passes, func(p store.Pass) bool { return p.ID == q.ID })
+	after.passes = slices.DeleteFunc(after.passes, func(p store.Pass) bool { return p.ID == q.ID })
+	contractEqual(t, after, before)
+	f.reopen()
+	got, err = f.s.GetPass(ctx, q.ID)
+	contractOK(t, err)
+	contractEqual(t, got, q)
+}
+
+// R-NXA7-XEO0 R-NYI4-B6EP
+func TestTargetedPassAcceptsEveryEnrichmentKind(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	for _, kind := range enrichers.Kinds() {
+		p, err := f.s.AddPass(ctx, targetedPass(store.CohortIDPrefix+"0123456789abcdef", kind))
+		contractOK(t, err)
+		contractEqual(t, p.EnrichKind, kind)
+		_, err = f.s.FinishPass(ctx, p.ID, store.Counts{})
+		contractOK(t, err)
+	}
+}
+
+// R-9B0V-6MNK
+func TestPassStoreMethodSignatures(t *testing.T) {
+	f := contractDB(t)
+	methods := struct {
+		add     func(context.Context, store.Pass) (store.Pass, error)
+		finish  func(context.Context, string, store.Counts) (store.Pass, error)
+		fail    func(context.Context, string, string) (store.Pass, error)
+		get     func(context.Context, string) (store.Pass, error)
+		list    func(context.Context, string, string, int) ([]store.Pass, error)
+		running func(context.Context) ([]store.Pass, error)
+		prune   func(context.Context, int64) ([]store.Pass, error)
+	}{add: f.s.AddPass, finish: f.s.FinishPass, fail: f.s.FailPass, get: f.s.GetPass, list: f.s.ListPasses, running: f.s.RunningPasses, prune: f.s.PrunePasses}
+	if methods.add == nil || methods.finish == nil || methods.fail == nil || methods.get == nil || methods.list == nil || methods.running == nil || methods.prune == nil {
+		t.Fatal("missing pass store method")
 	}
 }

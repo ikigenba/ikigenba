@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-H3AP-4RUU R-H9E7-1MKB R-WPW0-5EVS R-WOO3-RN53
+// R-H3AP-4RUU R-OU7I-97OR R-WPW0-5EVS R-WOO3-RN53
 func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -70,7 +70,7 @@ func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 	contractEqual(t, facts.Website, sources.WebsiteUnknown)
 }
 
-// R-MOMA-IP7M R-MR23-A8P0 R-MS9Z-O0FP R-WNG7-DVEE R-MTHW-1S6E
+// R-MOMA-IP7M R-R7HY-562T R-MS9Z-O0FP R-WNG7-DVEE R-MTHW-1S6E
 func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -172,7 +172,7 @@ func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	contractEqual(t, facts, beforeFacts)
 }
 
-// R-H86A-NUTM R-H9E7-1MKB R-WPW0-5EVS R-MTHW-1S6E
+// R-OSZL-VFY2 R-OU7I-97OR R-OECT-A71Q R-WPW0-5EVS R-MTHW-1S6E
 func TestOrdinaryWritesPreserveFactsAndResultHistory(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -180,6 +180,8 @@ func TestOrdinaryWritesPreserveFactsAndResultHistory(t *testing.T) {
 	other := enrichmentCandidate(t, f, "unrelated", "office@unrelated.test")
 	deriveAll(t, f.s)
 	_, err := f.s.AddEnrichments(ctx, []store.Enrichment{websiteResult(id, sources.WebsiteHTTPS)})
+	contractOK(t, err)
+	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{siteTextResult(t, id, "failed")})
 	contractOK(t, err)
 	ids := []string{id, other}
 	savedFacts := map[string]store.Facts{}
@@ -190,6 +192,21 @@ func TestOrdinaryWritesPreserveFactsAndResultHistory(t *testing.T) {
 		savedResults[id], err = f.s.Enrichments(ctx, id)
 		contractOK(t, err)
 	}
+	page, err := f.s.AddPage(ctx, store.Page{Candidate: id, URL: "https://kept.test/", Text: "kept", UserID: "owner"})
+	contractOK(t, err)
+	for _, id := range ids {
+		facts, e := f.s.GetFacts(ctx, id)
+		contractOK(t, e)
+		contractEqual(t, facts, savedFacts[id])
+		results, e := f.s.Enrichments(ctx, id)
+		contractOK(t, e)
+		contractEqual(t, results, savedResults[id])
+	}
+
+	pages, err := f.s.Pages(ctx, id)
+	contractOK(t, err)
+	counts, err := f.s.CountPages(ctx, id)
+	contractOK(t, err)
 	calls := []func() error{
 		func() error {
 			o := contractObservation("one", "Changed", f.now)
@@ -222,6 +239,16 @@ func TestOrdinaryWritesPreserveFactsAndResultHistory(t *testing.T) {
 	}
 	for _, call := range calls {
 		contractOK(t, call())
+		gotPages, e := f.s.Pages(ctx, id)
+		contractOK(t, e)
+		contractEqual(t, gotPages, pages)
+		gotPage, e := f.s.GetPage(ctx, id, page.Number)
+		contractOK(t, e)
+		contractEqual(t, gotPage, page)
+		gotCounts, e := f.s.CountPages(ctx, id)
+		contractOK(t, e)
+		contractEqual(t, gotCounts, counts)
+
 		for _, id := range ids {
 			facts, e := f.s.GetFacts(ctx, id)
 			contractOK(t, e)
@@ -239,7 +266,7 @@ func TestOrdinaryWritesPreserveFactsAndResultHistory(t *testing.T) {
 	}
 }
 
-// R-GZMZ-ZGMR R-GSBL-OU6L R-GONW-JIYI R-GM83-RZH4
+// R-GZMZ-ZGMR R-GSBL-OU6L R-OLO7-KTHW
 func TestFactsProjectionUsesNewestResultOfEveryKind(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

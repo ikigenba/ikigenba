@@ -111,14 +111,14 @@ type Ruling struct {
 
 // Pass records one resolution pass.
 type Pass struct {
-	ID, Kind, Origin, Trigger, Status, Reason                                                                        string
-	Started, Finished                                                                                                time.Time
-	Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None int64
-	UserID, UserEmail, RequestID, Delivery                                                                           string
+	ID, Kind, Origin, Trigger, Target, EnrichKind, Status, Reason                                                                                   string
+	Started, Finished                                                                                                                               time.Time
+	Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None, Runs, RunsFailed, Pages, Cost int64
+	UserID, UserEmail, RequestID, Delivery                                                                                                          string
 }
 
 // Counts contains the results of pass work.
-type Counts struct{ Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None int64 }
+type Counts struct{ Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None, Runs, RunsFailed, Pages, Cost int64 }
 
 // Observation is one source reading to attach.
 type Observation struct {
@@ -133,6 +133,7 @@ type CandidateFilter struct{ Name, Zip, Phone string }
 type Ranked struct {
 	Candidate  Candidate
 	Assessment Assessment
+	SiteText   time.Time
 }
 
 // Record vocabulary and identifier prefixes.
@@ -149,6 +150,9 @@ const (
 	ReasonStore       = "store"
 	TriggerRebuild    = "rebuild"
 	TriggerJudge      = "judge_candidates"
+	KindEnrichCohort  = "enrich_cohort"
+	ReasonPrompts     = "prompts"
+	PageCap           = 20
 	KindEnrich        = "enrich"
 	OriginEnrich      = "enrich"
 	OriginPass        = "pass"
@@ -177,6 +181,7 @@ var (
 	ErrDelivered   = errors.New("already delivered")
 	ErrEnded       = errors.New("pass ended")
 	ErrInvalid     = errors.New("invalid ruling")
+	ErrPageCap     = errors.New("page cap reached")
 	ErrUnreachable = errors.New("database unreachable")
 )
 
@@ -212,7 +217,7 @@ func unreachable(err error) error {
 	if err == nil {
 		return nil
 	}
-	for _, e := range []error{ErrNotFound, ErrBusy, ErrDelivered, ErrEnded, ErrInvalid} {
+	for _, e := range []error{ErrNotFound, ErrBusy, ErrDelivered, ErrEnded, ErrInvalid, ErrPageCap} {
 		if errors.Is(err, e) {
 			return err
 		}
@@ -220,3 +225,16 @@ func unreachable(err error) error {
 	return errors.Join(ErrUnreachable, err)
 }
 func (s *Store) now() time.Time { return s.cfg.Now().UTC().Truncate(time.Second) }
+
+// Page is one kept copy of a candidate's website page.
+type Page struct {
+	Candidate         string
+	Number            int64
+	URL, Title, Text  string
+	Size              int64
+	Fetched           time.Time
+	UserID, UserEmail string
+}
+
+// PageCount counts distinct URLs and all kept copies.
+type PageCount struct{ URLs, Copies int64 }

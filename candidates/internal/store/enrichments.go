@@ -44,7 +44,7 @@ func putEnrichment(ctx context.Context, tx *sql.Tx, e Enrichment) error {
 func (s *Store) AddEnrichments(ctx context.Context, es []Enrichment) ([]Enrichment, error) {
 	var out []Enrichment
 	err := unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		reg := enrichers.New(nil)
+		reg := enrichers.New(enrichers.Config{})
 		for _, e := range es {
 			if !reg.Valid(e.Kind, e.Found) || e.Inputs == "" || e.Cost < 0 || math.IsNaN(e.Cost) || math.IsInf(e.Cost, 0) {
 				return ErrUnreachable
@@ -136,9 +136,15 @@ func subject(ctx context.Context, tx *sql.Tx, c Candidate) (enrichers.Subject, e
 	if err != nil {
 		return enrichers.Subject{}, err
 	}
-	out := enrichers.Subject{ID: c.ID, Email: c.Email, Zip: c.Zip, Links: []enrichers.Link{}}
+	out := enrichers.Subject{ID: c.ID, Name: c.Name, City: c.City, State: c.State, Email: c.Email, Zip: c.Zip, Links: []enrichers.Link{}}
 	for _, l := range linksFor(r, c.ID) {
 		out.Links = append(out.Links, enrichers.Link{Scraper: l.Scraper, SourceID: l.SourceID, Gone: l.Gone, Reading: l.Reading})
+	}
+	f, err := factsKey(ctx, tx, c.ID)
+	if err == nil {
+		out.Website = f.WebsiteURL
+	} else if !errors.Is(err, ErrNotFound) {
+		return out, err
 	}
 	var m int64
 	err = scanSQL(ctx, tx, "SELECT minutes FROM zip_drive WHERE zip=?", []any{c.Zip}, &m)
@@ -161,41 +167,40 @@ func due(ctx context.Context, tx *sql.Tx, id, kind, inputs string) (bool, error)
 func (s *Store) DueEnrichments(ctx context.Context, kind, after string, n int) ([]Due, error) {
 	var out []Due
 	err := unreachable(s.readTx(ctx, func(tx *sql.Tx) error {
-		en, ok := enrichers.New(nil).Get(kind)
+		en, ok := enrichers.New(enrichers.Config{}).Get(kind)
 		if !ok || n < 1 {
 			return ErrUnreachable
 		}
 		out = []Due{}
-		rows, err := querySQL(ctx, tx, "SELECT id,email,zip,COALESCE((SELECT inputs FROM enrichments e WHERE e.candidate=c.id AND e.kind=? ORDER BY seq DESC LIMIT 1),'') FROM candidates c WHERE status=? AND id>? ORDER BY id", kind, StatusActive, after)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = rows.Close() }()
-		for rows.Next() {
-			var id, email, zip, previous string
-			if err = rows.Scan(&id, &email, &zip, &previous); err != nil {
+		cursor := after
+		for len(out) < n {
+			cs, err := readRecords[Candidate](ctx, tx, "candidates", candidateColumns, " WHERE status=? AND id>? ORDER BY id LIMIT ?", StatusActive, cursor, n)
+			if err != nil {
 				return err
 			}
-			su := enrichers.Subject{ID: id, Email: email, Zip: zip}
-			if kind == enrichers.KindLinkFacts {
-				c, err := candidateKey(ctx, tx, id)
-				if err != nil {
-					return err
-				}
-				su, err = subject(ctx, tx, c)
-				if err != nil {
-					return err
-				}
+			if len(cs) == 0 {
+				break
 			}
-			in := en.Inputs(su)
-			if in != "" && in != previous {
-				out = append(out, Due{id, in})
-				if len(out) == n {
-					break
+			for _, c := range cs {
+				cursor = c.ID
+				su, err := subject(ctx, tx, c)
+				if err != nil {
+					return err
+				}
+				in := en.Inputs(su)
+				yes, err := due(ctx, tx, c.ID, kind, in)
+				if err != nil {
+					return err
+				}
+				if yes {
+					out = append(out, Due{c.ID, in})
+					if len(out) == n {
+						break
+					}
 				}
 			}
 		}
-		return rows.Err()
+		return nil
 	}))
 	return out, err
 }
@@ -228,7 +233,7 @@ func (s *Store) Derive(ctx context.Context, kind, after string, force bool, n in
 	var last string
 	var count int64
 	err := unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		en, _ := enrichers.New(nil).Get(kind)
+		en, _ := enrichers.New(enrichers.Config{}).Get(kind)
 		d, ok := en.(enrichers.Deriver)
 		if !ok || n < 1 {
 			return ErrUnreachable
@@ -257,4 +262,112 @@ func (s *Store) Derive(ctx context.Context, kind, after string, force bool, n in
 		return "", 0, err
 	}
 	return last, count, nil
+}
+
+// Subject reads the inputs available to an enrichment for one candidate.
+func (s *Store) Subject(ctx context.Context, id string) (enrichers.Subject, error) {
+	var out enrichers.Subject
+	err := unreachable(s.readTx(ctx, func(tx *sql.Tx) error {
+		c, err := candidateKey(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		out, err = subject(ctx, tx, c)
+		return err
+	}))
+	if err != nil {
+		return enrichers.Subject{}, err
+	}
+	return out, nil
+}
+
+// DueAmong selects distinct due targets, preserving the caller's order.
+func (s *Store) DueAmong(ctx context.Context, kind string, ids []string, force bool) ([]Due, error) {
+	var out []Due
+	err := unreachable(s.readTx(ctx, func(tx *sql.Tx) error {
+		en, ok := enrichers.New(enrichers.Config{}).Get(kind)
+		if !ok {
+			return ErrUnreachable
+		}
+		out = []Due{}
+		seen := map[string]bool{}
+		for _, id := range ids {
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			c, err := candidateKey(ctx, tx, id)
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if c.Status != StatusActive {
+				continue
+			}
+			su, err := subject(ctx, tx, c)
+			if err != nil {
+				return err
+			}
+			in := en.Inputs(su)
+			yes, err := due(ctx, tx, id, kind, in)
+			if err != nil {
+				return err
+			}
+			if in != "" && (force || yes) {
+				out = append(out, Due{id, in})
+			}
+		}
+		return nil
+	}))
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DeriveAmong records local results for distinct targets in caller order.
+func (s *Store) DeriveAmong(ctx context.Context, kind string, ids []string, force bool) (int64, error) {
+	var count int64
+	err := unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		en, _ := enrichers.New(enrichers.Config{}).Get(kind)
+		d, ok := en.(enrichers.Deriver)
+		if !ok {
+			return ErrUnreachable
+		}
+		seen := map[string]bool{}
+		t := s.now()
+		for _, id := range ids {
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			c, err := candidateKey(ctx, tx, id)
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if c.Status != StatusActive {
+				continue
+			}
+			added, err := deriveCandidate(ctx, tx, c, d, force, t)
+			if err != nil {
+				return err
+			}
+			if added {
+				count++
+				if err = projectFacts(ctx, tx, id); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}))
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }

@@ -19,21 +19,24 @@ func (e *Engine) Enrich(ctx context.Context, c identity.Caller, kind string) (st
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.stopping.Load() {
-		return store.Pass{}, &Refusal{RefusalStopping}
+		return store.Pass{}, &Refusal{Word: RefusalStopping}
 	}
-	reg := enrichers.New(e.cfg.Website)
+	reg := enrichers.New(enrichers.Config{Website: e.cfg.Website, Prompts: e.cfg.Prompts})
 	if kind != "" {
 		en, ok := reg.Get(kind)
-		if !ok {
-			return store.Pass{}, &Refusal{RefusalInvalid}
+		if _, promptsKind := en.(enrichers.Prompter); !ok || promptsKind {
+			return store.Pass{}, &Refusal{Word: RefusalInvalid}
 		}
 		if f, ok := en.(enrichers.Fetcher); ok && !f.Ready() {
-			return store.Pass{}, &Refusal{RefusalUnavailable}
+			return store.Pass{}, &Refusal{Word: RefusalUnavailable}
 		}
 	}
 	p, err := e.cfg.Store.AddPass(e.ctx, store.Pass{Kind: store.KindEnrich, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, UserID: c.UserID, UserEmail: c.Email, RequestID: c.RequestID})
+	if err != nil && e.stopping.Load() {
+		return store.Pass{}, &Refusal{Word: RefusalStopping}
+	}
 	if errors.Is(err, store.ErrBusy) {
-		return store.Pass{}, &Refusal{RefusalBusy}
+		return store.Pass{}, &Refusal{Word: RefusalBusy}
 	}
 	if err != nil {
 		return store.Pass{}, err
@@ -52,7 +55,7 @@ func (e *Engine) follow(ctx context.Context, starter store.Pass) {
 	if starter.Kind == store.KindIngest {
 		kind = store.KindEnrich
 	}
-	if starter.Kind == store.KindEnrich && starter.Derived+starter.HTTPS+starter.HTTP+starter.None > 0 {
+	if (starter.Kind == store.KindEnrich || starter.Kind == store.KindEnrichCohort) && starter.Derived+starter.HTTPS+starter.HTTP+starter.None > 0 {
 		kind = store.KindJudge
 	}
 	if kind == "" {
@@ -83,7 +86,7 @@ func (e *Engine) derive(ctx context.Context, kind string, force bool) (int64, er
 
 func (e *Engine) enrich(ctx context.Context, kind string) (store.Counts, string) {
 	var total store.Counts
-	for _, en := range enrichers.New(e.cfg.Website).All() {
+	for _, en := range enrichers.New(enrichers.Config{Website: e.cfg.Website, Prompts: e.cfg.Prompts}).All() {
 		if kind != "" && kind != en.Kind() {
 			continue
 		}
@@ -95,7 +98,10 @@ func (e *Engine) enrich(ctx context.Context, kind string) (store.Counts, string)
 			total.Derived += n
 			continue
 		}
-		fetcher := en.(enrichers.Fetcher)
+		fetcher, fetched := en.(enrichers.Fetcher)
+		if !fetched {
+			continue
+		}
 		if !fetcher.Ready() {
 			continue
 		}

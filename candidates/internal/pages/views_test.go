@@ -48,7 +48,7 @@ func TestFormatting(t *testing.T) {
 	}
 }
 
-// R-AAIJ-2DB7 R-ZZ2L-8ZQW R-02QA-EAYZ R-4VMG-YZTE R-03Y6-S2PO R-4ZA6-4B1H
+// R-AAIJ-2DB7 R-3URQ-Y7VZ R-02QA-EAYZ R-4VMG-YZTE R-3X7J-PRDD R-4ZA6-4B1H
 func TestTemplateDataShape(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -60,7 +60,7 @@ func TestTemplateDataShape(t *testing.T) {
 	ev := EstimateView{"source", "low", "high", "confidence", "", "", 1, []FactRow{{"key", "value"}}}
 	lv := LinkView{"scraper", "source", "run", "", "name", "city", "55072", "reason", "confidence", "", "", "", "", "", "", false}
 	rv := RulingView{"kind", "other", []string{"key"}, "by", "user", "", "", "why"}
-	pv := PassView{"id", store.KindRebuild, store.OriginRebuild, store.TriggerRebuild, "", store.StatusRunning, "", "starter", "", "", "", "", 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 10, 11, 12, 13, 14}
+	pv := PassView{"id", store.KindRebuild, store.OriginRebuild, store.TriggerRebuild, "", store.StatusRunning, "", "starter", "", "", "", "", 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 10, 11, 12, 13, 14, "target", "/cohorts/target", "kind", 15, 16, 17, "$0.000000"}
 	row := CohortRow{"id", "name", 11, "by", "user", "changed", "changed-text"}
 	pass := PassRow{"id", store.KindRebuild, "trigger", "status", "reason", "started", "started-text", "finished", "finished-text", 21, 22, 23}
 	landing := LandingData{b, []CohortRow{row}, "page", "prev", "next", []PassRow{pass}, "page", "prev", "next"}
@@ -73,7 +73,7 @@ func TestTemplateDataShape(t *testing.T) {
 	for _, v := range []struct {
 		name string
 		data any
-	}{{"landing", landing}, {"candidate", CandidateData{b, cv, nil, &av, []EstimateView{ev}, []LinkView{lv}, []RulingView{rv}, []EnrichmentRow{}, []RejectRecordRow{{"kind", "cohort", "cohort-name", "by", "user", "at", "at-text", "why"}}}}, {"pass", PassData{b, pv}}, {"tools", ToolsData{b, []ToolRow{{"name", "description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}} {
+	}{{"landing", landing}, {"candidate", CandidateData{b, cv, nil, &av, []EstimateView{ev}, []LinkView{lv}, []RulingView{rv}, []PageRow{}, []EnrichmentRow{}, []RejectRecordRow{{"kind", "cohort", "cohort-name", "by", "user", "at", "at-text", "why"}}}}, {"pass", PassData{b, pv}}, {"tools", ToolsData{b, []ToolRow{{"name", "description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}} {
 		if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, v.name, v.data); err != nil {
 			t.Fatal(v.name, err)
 		}
