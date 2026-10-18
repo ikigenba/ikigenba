@@ -1027,6 +1027,8 @@ Removed: `gemini-3.7-flash` and `gemini-3.5-flash` (deprecated 2026-10-08, now r
 
 Repriced: every OpenRouter offering from the snapshot as R6's table gives, with new long-context tiers keyed `+1` (`gpt-5.6-*`, `gpt-5.5-pro`, `grok-4.3`) and `minimax-m3`'s 512K tier dropped; write prices zero on every non-Anthropic row. On the vendor hosts: the GPT-5.6 line (Sol `[0,4000,400,0,0,20000]`, Terra `[0,2000,200,0,0,12000]`, Luna `[0,200,20,0,0,1200]`, each with a `272001` tier at 2x input and read and 1.5x output; Luna's context 1,050,000) and `gemini-3.8-flash` (`[0,750,75,0,0,3750]`, introductory). `grok-4.7` on xAI is unchanged. `deepseek-v4-flash` stays: it still answers as itself.
 
+Repriced from the vendor page on 2026-10-18 (https://platform.claude.com/docs/en/about-claude/pricing): `claude-sonnet-5` on Anthropic from `[0,3000,300,3750,6000,15000]` to `[0,2000,200,2500,4000,10000]`, matching its OR rows.
+
 Codex membership after the refresh: `gpt-5.6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-6-astra`, `gpt-6-luna`, `gpt-6-sol`, `gpt-6.1-sol`. `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.5` and `gpt-5.5-pro` are rejected and carry no `codex()`.
 
 Found and deferred:

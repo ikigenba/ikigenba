@@ -206,7 +206,7 @@ var catalogTable = []CatalogEntry{
 	}},
 	{Model: "claude-sonnet-5", Offerings: []Offering{
 		maxOutput(offer(OfferingAnthropicMessages, "claude-sonnet-5", 1_000_000,
-			rates(tier(0, 3000, 300, 3750, 6000, 15000)), effortSpec(lowToMax, EffortMedium, true)), 128000),
+			rates(tier(0, 2000, 200, 2500, 4000, 10000)), effortSpec(lowToMax, EffortMedium, true)), 128000),
 		offer(OfferingOpenRouterChat, "anthropic/claude-sonnet-5", 1_000_000,
 			rates(tier(0, 2000, 200, 2500, 4000, 10000)), effortSpec(lowToMax, EffortMedium, true)),
 		offer(OfferingOpenRouterResponses, "anthropic/claude-sonnet-5", 1_000_000,
