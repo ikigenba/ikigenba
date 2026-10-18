@@ -58,7 +58,8 @@
      unless .Website is "https" or "http"),
      .SiteText and .SiteTextText (when site text was last written for it,
      RFC 3339 UTC to the second, and UTC to the minute, "2026-10-05 09:00";
-     both empty when never),
+     both empty when never), .Brief and .BriefText (when its brief was
+     last written, in .SiteText's two forms; both empty when never),
      .Minutes (drive minutes from the origin as text, "84"; empty when its
      ZIP is not in the table), .GovernmentMatch (the government name
      pattern its name matched, as stored, "COUNTY"; empty when none),
@@ -130,7 +131,7 @@
      switch with the edit_cohort tool.", edit_cohort in a code element),
      or table#member-list whose th read Rank, Name, City, State, Operating
      confidence, Low, High, Revenue confidence, Categories, Class, Fleet,
-     Website, Site text, Minutes, Government, Known since, Newest filing, with one
+     Website, Site text, Brief, Minutes, Government, Known since, Newest filing, with one
      tr[data-candidate=<.ID>] per member holding td.candidate-rank.num
      (.Rank), td.candidate-name (a.candidate-link, href
      "/candidates/<.ID>", text .Name, followed, when .Excluded, by a space
@@ -150,7 +151,8 @@
      .WebsiteURL, text .Website, when .WebsiteURL is set; else .Website,
      in span.muted when "unknown"), td.candidate-site-text
      (time[datetime=<.SiteText>] with .SiteTextText, or when empty
-     span.muted "none"), td.candidate-minutes.num (.Minutes, empty
+     span.muted "none"), td.candidate-brief (time[datetime=<.Brief>] with
+     .BriefText, or when empty span.muted "none"), td.candidate-minutes.num (.Minutes, empty
      when absent), td.candidate-government (.GovernmentMatch in a code
      element, empty when none), td.candidate-known-since and
      td.candidate-filed (each, only when set, a time[datetime] with the
@@ -207,7 +209,7 @@
 <header><div><h2 id="members-title">Members</h2><p>The first of the {{$matching}} matching candidates in the cohort's order, up to its size of {{.Size}}, worked out as this page was read. An unknown value sorts last whatever the direction; the candidate id breaks ties.</p></div></header>
 {{if $members}}<div class="table-scroll">
 <table id="member-list">
-<thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th class="num">Operating confidence</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Class</th><th>Fleet</th><th>Website</th><th>Site text</th><th class="num">Minutes</th><th>Government</th><th>Known since</th><th>Newest filing</th></tr></thead>
+<thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th class="num">Operating confidence</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Class</th><th>Fleet</th><th>Website</th><th>Site text</th><th>Brief</th><th class="num">Minutes</th><th>Government</th><th>Known since</th><th>Newest filing</th></tr></thead>
 <tbody>
 {{range $members}}<tr data-candidate="{{.ID}}">
 <td class="candidate-rank num">{{.Rank}}</td>
@@ -223,6 +225,7 @@
 <td class="candidate-fleet" data-fleet="{{.FleetVerdict}}">{{if eq .FleetVerdict "unknown"}}<span class="muted">{{.FleetVerdict}}</span>{{else}}{{.FleetVerdict}}{{end}}</td>
 <td class="candidate-website" data-website="{{.Website}}">{{if .WebsiteURL}}<a class="website-link" href="{{.WebsiteURL}}">{{.Website}}</a>{{else if eq .Website "unknown"}}<span class="muted">{{.Website}}</span>{{else}}{{.Website}}{{end}}</td>
 <td class="candidate-site-text">{{if .SiteText}}<time datetime="{{.SiteText}}">{{.SiteTextText}}</time>{{else}}<span class="muted">none</span>{{end}}</td>
+<td class="candidate-brief">{{if .Brief}}<time datetime="{{.Brief}}">{{.BriefText}}</time>{{else}}<span class="muted">none</span>{{end}}</td>
 <td class="candidate-minutes num">{{.Minutes}}</td>
 <td class="candidate-government">{{if .GovernmentMatch}}<code>{{.GovernmentMatch}}</code>{{end}}</td>
 <td class="candidate-known-since">{{if .KnownSince}}<time datetime="{{.KnownSince}}">{{.KnownSinceText}}</time>{{end}}</td>

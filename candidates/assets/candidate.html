@@ -1,5 +1,5 @@
 {{/* One candidate at GET /candidates/<id>: its display fields and tags,
-     its facts as the enrichers last wrote them, its assessment with the
+     its facts as the enrichers last wrote them, its brief, its assessment with the
      two judgments as the last judge wrote them, the operating evidence
      behind it, each
      estimate with the facts it used, each link to a scrapes record with
@@ -48,8 +48,19 @@
      (drive minutes from the origin as text, "84"; empty when unknown)
      and .Written (when each kind last wrote the row, one per kind that
      has, in kind name order, each with .Kind, the kind as stored,
-     "drive_minutes", "link_facts", "site_text" or "website_check", and .At and .AtText
-     in .Created's two forms above; empty when none has);
+     "brief", "drive_minutes", "link_facts", "site_text" or
+     "website_check", and .At and .AtText in .Created's two forms above;
+     empty when none has); .Brief (nil when merged or when it has no
+     brief result that did not fail; else its newest brief result that
+     did not fail, the one whose summary the facts row holds; a failed
+     brief result is never shown here, only in the enrichment list), with
+     .Summary (the summary that result gave, as stored), .Categories (the
+     categories that result gave, in the order given, each with .Name,
+     the category word as stored, and .Why, the reason it gave, as
+     stored; may be empty), .Labels (the labels that result gave, free
+     text as stored, in the order given, a slice of strings; may be
+     empty) and .At and .AtText (when that result was found, in
+     .Created's two forms above);
      .Assessment (nil when merged or not yet judged; else the assessment
      the last judge, rebuild or ruling wrote, as stored), with
      .OperatingConfidence (the operating confidence, two decimals,
@@ -101,10 +112,10 @@
      and .User (their user id); .Enrichments, every enrichment result on this
      candidate, of every kind, newest first, empty when merged, each with
      .Kind (its kind as stored, "website_check", "link_facts",
-     "drive_minutes" or "site_text"), .Source (where the result came from,
-     as stored: the domain checked, "example.com", for website_check,
-     "links" for link_facts, "zip_drive" for drive_minutes, "prompts" for
-     site_text), .Found (what it found, in
+     "drive_minutes", "site_text" or "brief"), .Source (where the result
+     came from, as stored: the domain checked, "example.com", for
+     website_check, "links" for link_facts, "zip_drive" for drive_minutes,
+     "prompts" for site_text and brief), .Found (what it found, in
      key order, each with .Key and .Value, the value as compact JSON text
      such as "84" or "\"pass\""; used for every kind but website_check),
      .State ("https", "http" or "none", as stored), .URL (the URL it
@@ -113,8 +124,8 @@
      empty when no response came), .Size (int, the body bytes read) and
      .Error (the last failed attempt's error text, as stored; empty on
      success), these six for website_check only and empty or 0 for any
-     other kind, .Failed (bool, true for a site_text result whose prompts
-     run ended failed, killed or timed_out or exited non-zero; false for
+     other kind, .Failed (bool, true for a site_text or brief result whose
+     prompts run ended failed, killed or timed_out or exited non-zero; false for
      every other result), .Cost (what the result cost as US dollars to six
      decimal places, "$0.023714", as prompts shows a cost; empty when it
      cost nothing) and .At and .AtText (when it was found, RFC 3339 UTC to
@@ -191,7 +202,23 @@
      span.muted "unknown") and dt "Written" then dd#facts-written (one
      div[data-written=<.Kind>] per kind holding .Kind in a code element, a
      space and time[datetime=<.At>] with .AtText, or when empty span.muted
-     "never"). Then, only when .Status is "active",
+     "never"). Then, only when .Status is "active", section#brief-card
+     with h2 "Brief" and a p in its header (text "What the brief
+     enricher's agent made of the business from the pages kept on it: a short
+     summary, the categories it gave with its reason for each, and labels
+     of its own. The newest brief stands."), then either, when .Brief is
+     nil, div#no-brief.empty holding h3 "No brief yet" and a p (text "The
+     brief enricher writes one when the enrich tool runs it on a cohort
+     or a candidate that has pages.", enrich in a code element), or
+     dl#brief.kv holding, in this order, dt "Summary" then dd#brief-summary
+     (.Summary, or when empty span.muted "none"), dt "Categories" then
+     dd#brief-categories (one div[data-brief-category=<.Name>] per
+     category holding .Name in a code element, a space and span.muted
+     with .Why, or when empty span.muted "none"), dt "Labels" then
+     dd#brief-labels (one code[data-label=<label>] per label, separated by
+     spaces, or when empty span.muted "none") and dt "Written" then
+     dd#brief-at (time[datetime=<.At>] with .AtText).
+     Then, only when .Status is "active",
      section#assessment-card with h2 "Assessment" and a p in its header
      (text "Two judgments, whether it is a real business operating today
      and how big it is, as the last judge calculated them from the facts
@@ -288,9 +315,10 @@
      .Enrichments is empty, div#no-enrichments.empty holding h3 "No
      enrichments" and a p (text "A kind needs inputs: the website check
      an email on its own domain, drive minutes a ZIP, link facts a record
-     not gone, site text a website. The enrich pass runs every kind but
-     site text after an ingest; the enrich tool starts one, and runs site
-     text over a cohort or one candidate.", enrich in a code element), or
+     not gone, site text a website, the brief the pages kept on it. The
+     enrich pass runs every kind but site text and the brief after an
+     ingest; the enrich tool starts one, and runs site text and the brief
+     over a cohort or one candidate.", enrich in a code element), or
      table#enrichment-list whose th read Kind, Source, Found, Cost, When,
      with one tr[data-enrichment=<.Kind>] per result, carrying also
      [data-state=<.State>] when .State is set and [data-failed] when
@@ -329,7 +357,7 @@
 <body>
 {{template "banner" .Banner}}
 <main>
-{{$a := .Assessment}}{{$f := .Facts}}{{$estimates := .Estimates}}{{$links := .Links}}{{$rulings := .Rulings}}{{$pages := .Pages}}{{$enrichments := .Enrichments}}{{$rejects := .Rejects}}{{with .Candidate}}<h1>{{.ID}}</h1>
+{{$a := .Assessment}}{{$f := .Facts}}{{$brief := .Brief}}{{$estimates := .Estimates}}{{$links := .Links}}{{$rulings := .Rulings}}{{$pages := .Pages}}{{$enrichments := .Enrichments}}{{$rejects := .Rejects}}{{with .Candidate}}<h1>{{.ID}}</h1>
 <p id="headline" class="cluster">{{if .Name}}{{.Name}} {{end}}<span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "merged"}}info{{else}}ok{{end}}">{{.Status}}</span>{{if $a}}{{if $a.Excluded}} <span class="badge" data-kind="warn">excluded</span>{{end}}{{end}} <span class="muted">updated <time datetime="{{.Updated}}">{{.UpdatedText}}</time></span></p>
 {{if eq .Status "merged"}}<div id="merged" class="alert quiet" data-kind="info"><strong>Merged</strong><p id="merged-into">This candidate was merged into <a class="candidate-link" href="/candidates/{{.MergedInto}}"><code>{{.MergedInto}}</code></a>. Its evidence, estimates and assessment are there now.</p></div>
 {{end}}{{if $a}}{{if $a.Excluded}}<div id="excluded" class="alert quiet" data-kind="warn"><strong>Excluded</strong><p>The owner excluded this candidate, so no cohort shows it unless the cohort shows excluded candidates. The ruling is below; the <code>include</code> tool reverses it.</p></div>
@@ -371,6 +399,18 @@
 </dl>{{else}}<div id="no-facts" class="empty">
 <h3 class="text-md">No facts yet</h3>
 <p>The enrich pass writes them after an ingest, and the <code>enrich</code> tool starts one.</p>
+</div>{{end}}
+</section>
+<section id="brief-card" class="card" aria-labelledby="brief-title">
+<header><h2 id="brief-title">Brief</h2><p>What the brief enricher's agent made of the business from the pages kept on it: a short summary, the categories it gave with its reason for each, and labels of its own. The newest brief stands.</p></header>
+{{with $brief}}<dl id="brief" class="kv">
+<dt>Summary</dt><dd id="brief-summary">{{if .Summary}}{{.Summary}}{{else}}<span class="muted">none</span>{{end}}</dd>
+<dt>Categories</dt><dd id="brief-categories">{{range .Categories}}<div data-brief-category="{{.Name}}"><code>{{.Name}}</code> <span class="muted">{{.Why}}</span></div>{{else}}<span class="muted">none</span>{{end}}</dd>
+<dt>Labels</dt><dd id="brief-labels">{{range $i, $l := .Labels}}{{if $i}} {{end}}<code data-label="{{$l}}">{{$l}}</code>{{else}}<span class="muted">none</span>{{end}}</dd>
+<dt>Written</dt><dd id="brief-at"><time datetime="{{.At}}">{{.AtText}}</time></dd>
+</dl>{{else}}<div id="no-brief" class="empty">
+<h3 class="text-md">No brief yet</h3>
+<p>The brief enricher writes one when the <code>enrich</code> tool runs it on a cohort or a candidate that has pages.</p>
 </div>{{end}}
 </section>
 <section id="assessment-card" class="card" aria-labelledby="assessment-title">
@@ -507,7 +547,7 @@
 </table>
 </div>{{else}}<div id="no-enrichments" class="empty">
 <h3 class="text-md">No enrichments</h3>
-<p>A kind needs inputs: the website check an email on its own domain, drive minutes a ZIP, link facts a record not gone, site text a website. The enrich pass runs every kind but site text after an ingest; the <code>enrich</code> tool starts one, and runs site text over a cohort or one candidate.</p>
+<p>A kind needs inputs: the website check an email on its own domain, drive minutes a ZIP, link facts a record not gone, site text a website, the brief the pages kept on it. The enrich pass runs every kind but site text and the brief after an ingest; the <code>enrich</code> tool starts one, and runs site text and the brief over a cohort or one candidate.</p>
 </div>{{end}}
 </section>
 {{end}}<section id="rejects" class="card flush" aria-labelledby="rejects-title">
