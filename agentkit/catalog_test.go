@@ -897,8 +897,8 @@ func TestCatalogReasoningInvariants(t *testing.T) {
 
 func TestCatalogQueriesReturnDefensiveCopies(t *testing.T) {
 	// R-OIHH-8NZF
-	const model = "claude-sonnet-5"
-	want := expectedClaudeSonnet5()
+	want := mutableCatalogEntry(t)
+	model := want.Model
 
 	entries := Catalog()
 	index := slices.IndexFunc(entries, func(entry CatalogEntry) bool { return entry.Model == model })
@@ -920,62 +920,32 @@ func TestCatalogQueriesReturnDefensiveCopies(t *testing.T) {
 	}
 }
 
-func expectedClaudeSonnet5() CatalogEntry {
-	levels := []Effort{EffortLow, EffortMedium, EffortHigh, EffortXHigh, EffortMax}
-	reasoning := ReasoningSpec{
-		Kind:       ReasoningKindEffort,
-		Term:       "effort",
-		Levels:     levels,
-		CanDisable: true,
-		Default:    ReasoningConfig{Mode: ReasoningEffort, Effort: EffortMedium},
+// mutableCatalogEntry returns a deep copy, taken before any mutation, of the
+// first catalog entry whose default offering has the endpoint, price tier and
+// reasoning level that mutateCatalogEntry writes through.
+func mutableCatalogEntry(t *testing.T) CatalogEntry {
+	t.Helper()
+	for _, entry := range Catalog() {
+		first := entry.Offerings[0]
+		if len(first.Endpoints) > 0 && len(first.Pricing.Tiers) > 0 && len(first.Reasoning.Levels) > 0 {
+			return deepCopyCatalogEntry(entry)
+		}
 	}
-	pricing := Pricing{Tiers: []RateTier{{
-		MinInputTokens: 0,
-		InputUncached:  3000,
-		CacheReadInput: 300,
-		CacheWrite5m:   3750,
-		CacheWrite1h:   6000,
-		Output:         15000,
-	}}}
-	return CatalogEntry{
-		Model: "claude-sonnet-5",
-		Offerings: []Offering{
-			{
-				ID:              OfferingAnthropicMessages,
-				Host:            HostAnthropic,
-				WireName:        WireMessages,
-				WireFormat:      nil,
-				Endpoints:       []EndpointSpec{{AuthMode: AuthModeAPIKey, BaseURL: "https://api.anthropic.com/v1/messages"}},
-				WireModel:       "claude-sonnet-5",
-				Context:         1_000_000,
-				MaxOutputTokens: 128_000,
-				Pricing:         pricing,
-				Reasoning:       reasoning,
-			},
-			{
-				ID:         OfferingOpenRouterChat,
-				Host:       HostOpenRouter,
-				WireName:   WireChat,
-				WireFormat: nil,
-				Endpoints:  []EndpointSpec{{AuthMode: AuthModeAPIKey, BaseURL: "https://openrouter.ai/api/v1/chat/completions"}},
-				WireModel:  "anthropic/claude-sonnet-5",
-				Context:    1_000_000,
-				Pricing:    pricing,
-				Reasoning:  reasoning,
-			},
-			{
-				ID:         OfferingOpenRouterResponses,
-				Host:       HostOpenRouter,
-				WireName:   WireResponses,
-				WireFormat: nil,
-				Endpoints:  []EndpointSpec{{AuthMode: AuthModeAPIKey, BaseURL: "https://openrouter.ai/api/v1/responses"}},
-				WireModel:  "anthropic/claude-sonnet-5",
-				Context:    1_000_000,
-				Pricing:    pricing,
-				Reasoning:  reasoning,
-			},
-		},
+	t.Fatal("Catalog has no entry whose default offering has endpoints, a price tier and a reasoning level")
+	return CatalogEntry{}
+}
+
+// deepCopyCatalogEntry copies every slice an entry holds, so the copy shares
+// no backing array with the value it was taken from.
+func deepCopyCatalogEntry(entry CatalogEntry) CatalogEntry {
+	entry.Offerings = slices.Clone(entry.Offerings)
+	for index := range entry.Offerings {
+		offering := &entry.Offerings[index]
+		offering.Endpoints = slices.Clone(offering.Endpoints)
+		offering.Pricing.Tiers = slices.Clone(offering.Pricing.Tiers)
+		offering.Reasoning.Levels = slices.Clone(offering.Reasoning.Levels)
 	}
+	return entry
 }
 
 func mutateCatalogEntry(entry *CatalogEntry) {
@@ -1007,12 +977,7 @@ func catalogEntryEqual(got, want CatalogEntry) bool {
 }
 
 func offeringEqual(got, want Offering) bool {
-	wireTypes := map[OfferingID]reflect.Type{
-		OfferingAnthropicMessages:   reflect.TypeOf(AnthropicMessagesWire()),
-		OfferingOpenRouterChat:      reflect.TypeOf(ChatWire()),
-		OfferingOpenRouterResponses: reflect.TypeOf(ResponsesWire()),
-	}
-	if reflect.TypeOf(got.WireFormat) != wireTypes[want.ID] {
+	if reflect.TypeOf(got.WireFormat) != reflect.TypeOf(want.WireFormat) {
 		return false
 	}
 	got.WireFormat = nil

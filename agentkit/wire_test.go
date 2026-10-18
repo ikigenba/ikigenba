@@ -727,20 +727,17 @@ func newGeminiCatalogCacheCostFixture(t *testing.T) (*geminiCacheLifecycleFixtur
 	}))
 	t.Cleanup(server.Close)
 
-	offering, err := Lookup("gemini-2.5-flash", HostGemini, WireGenerateContent)
-	if err != nil {
-		t.Fatal(err)
-	}
+	offering := catalogGeminiGenerateContentOffering(t)
 	auth, err := offering.Authenticator(&rotatorStub{mode: AuthModeAPIKey, tokens: []Token{{Bearer: "test-key"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	endpoint, err := NewEndpoint(auth, WithBaseURL(server.URL+"/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse"))
+	endpoint, err := NewEndpoint(auth, WithBaseURL(server.URL+"/v1beta/models/"+offering.WireModel+":streamGenerateContent?alt=sse"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var logOutput bytes.Buffer
-	fixture.conversation, err = New(GeminiGenerateContentWire(), endpoint, "gemini-2.5-flash", Config{
+	fixture.conversation, err = New(GeminiGenerateContentWire(), endpoint, offering.WireModel, Config{
 		Log: NewLog(&logOutput, func() time.Time { return time.Time{} }, ""),
 	})
 	if err != nil {
@@ -750,6 +747,21 @@ func newGeminiCatalogCacheCostFixture(t *testing.T) (*geminiCacheLifecycleFixtur
 		t.Fatal(err)
 	}
 	return fixture, &logOutput
+}
+
+// catalogGeminiGenerateContentOffering returns the gemini-generate-content
+// offering of the first catalog model, by name, that has one.
+func catalogGeminiGenerateContentOffering(t *testing.T) Offering {
+	t.Helper()
+	for _, entry := range Catalog() {
+		for _, offering := range entry.Offerings {
+			if offering.ID == OfferingGeminiGenerateContent {
+				return offering
+			}
+		}
+	}
+	t.Fatalf("Catalog has no %q offering", OfferingGeminiGenerateContent)
+	return Offering{}
 }
 
 // R-L7D0-SSWL
@@ -790,7 +802,10 @@ func TestGeminiCacheLifecycleCostExcludesStorageRent(t *testing.T) {
 	wantRoundUsage := Usage{
 		InputTokens: 400, CachedTokens: 100, OutputTokens: 20, ReasoningTokens: 5,
 	}
-	const wantRoundCost = 185500
+	wantRoundCost := catalogGeminiGenerateContentOffering(t).Pricing.Cost(wantRoundUsage)
+	if wantRoundCost == 0 {
+		t.Fatalf("catalog prices the round's Usage %v at zero; the check would be vacuous", wantRoundUsage)
+	}
 
 	records := decodeLogRecords(t, logOutput.Bytes())
 	usageRecords, turnEndRecords := 0, 0
@@ -817,7 +832,7 @@ func TestGeminiCacheLifecycleCostExcludesStorageRent(t *testing.T) {
 	if usageRecords != 2 || turnEndRecords != 2 {
 		t.Fatalf("usage/turn_end records = %d/%d, want 2/2 (one per Send)", usageRecords, turnEndRecords)
 	}
-	const wantSummaryCost = 371000
+	wantSummaryCost := 2 * wantRoundCost
 	if summary == nil || summary.Cost == nil || *summary.Cost != wantSummaryCost {
 		t.Fatalf("summary cost = %v, want exactly %d (sum of the two turns' Usage-derived cost, no cache storage rent)", summary, wantSummaryCost)
 	}

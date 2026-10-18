@@ -4,18 +4,56 @@ import (
 	"testing"
 )
 
+// catalogResponsesOffering returns the first catalog offering on the
+// openai-responses ID and its first rate tier, which must start at zero
+// input so a small usage prices at it.
+func catalogResponsesOffering(t *testing.T) (Offering, RateTier) {
+	t.Helper()
+	for _, entry := range Catalog() {
+		for _, offering := range entry.Offerings {
+			if offering.ID != OfferingOpenAIResponses {
+				continue
+			}
+			tier := offering.Pricing.Tiers[0]
+			if tier.MinInputTokens != 0 || tier.InputUncached == 0 || tier.Output == 0 {
+				t.Fatalf("offering %q first tier %+v cannot price a small usage", offering.WireModel, tier)
+			}
+			return offering, tier
+		}
+	}
+	t.Fatalf("Catalog has no %q offering", OfferingOpenAIResponses)
+	return Offering{}, RateTier{}
+}
+
+// catalogHasOffering reports whether any catalog offering has this ID and
+// wire model.
+func catalogHasOffering(id OfferingID, wireModel string) bool {
+	for _, entry := range Catalog() {
+		for _, offering := range entry.Offerings {
+			if offering.ID == id && offering.WireModel == wireModel {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func TestResolveCostMatchesOfferingIDAndWireModelExactly(t *testing.T) {
 	// R-KLGQ-PSGW
+	offering, tier := catalogResponsesOffering(t)
 	usage := Usage{InputTokens: 2, OutputTokens: 3}
-	const want = Cost(2*200 + 3*1250)
-	if got := resolveCost(Identity{Endpoint: string(OfferingOpenAIResponses), Model: "gpt-5.4-nano"}, usage, nil); got != want {
+	want := Cost(2*tier.InputUncached + 3*tier.Output)
+	if got := resolveCost(Identity{Endpoint: string(offering.ID), Model: offering.WireModel}, usage, nil); got != want {
 		t.Fatalf("exact offering cost = %d, want %d", got, want)
 	}
 	for _, identity := range []Identity{
-		{Endpoint: string(OfferingXAIResponses), Model: "gpt-5.4-nano"},
-		{Endpoint: string(OfferingOpenAIResponses), Model: "openai/gpt-5.4-nano"},
-		{Endpoint: string(OfferingOpenRouterChat), Model: "gpt-5.4-nano"},
+		{Endpoint: string(OfferingXAIResponses), Model: offering.WireModel},
+		{Endpoint: string(offering.ID), Model: "openai/" + offering.WireModel},
+		{Endpoint: string(OfferingOpenRouterChat), Model: offering.WireModel},
 	} {
+		if catalogHasOffering(OfferingID(identity.Endpoint), identity.Model) {
+			t.Fatalf("identity %+v names a catalog offering; it cannot stand for a mismatched pair", identity)
+		}
 		if got := resolveCost(identity, usage, nil); got != 0 {
 			t.Errorf("mismatched identity %+v cost = %d, want zero", identity, got)
 		}
@@ -82,27 +120,36 @@ func TestPredecodedWireCostPresenceControlsFallback(t *testing.T) {
 	// R-2IY2-WR69
 	const billedMilliUSD = int64(7)
 	convertedNanoUSD := billedMilliUSD * 1_000_000
-	identity := Identity{Endpoint: string(OfferingOpenAIResponses), Model: "gpt-5.4-nano"}
+	offering, tier := catalogResponsesOffering(t)
+	identity := Identity{Endpoint: string(offering.ID), Model: offering.WireModel}
+	wantFallback := Cost(3 * tier.InputUncached)
+	if wantFallback == Cost(convertedNanoUSD) {
+		t.Fatalf("catalog-priced amount %d equals the wire amount; the fallback would be indistinguishable", wantFallback)
+	}
 
 	present := resolveCost(identity, Usage{InputTokens: 3}, &convertedNanoUSD)
 	if present != Cost(7_000_000) {
 		t.Fatalf("present predecoded wire cost = %d, want 7000000 nano-USD", present)
 	}
 	absent := resolveCost(identity, Usage{InputTokens: 3}, nil)
-	if absent != Cost(600) {
-		t.Fatalf("absent wire cost fallback = %d, want catalog-priced amount 600", absent)
+	if absent != wantFallback {
+		t.Fatalf("absent wire cost fallback = %d, want catalog-priced amount %d", absent, wantFallback)
 	}
 }
 
 func TestResolveCostUsesWireThenExactCatalogOffering(t *testing.T) {
 	// R-NP7W-266R
 	usage := Usage{InputTokens: 2, CachedTokens: 3, OutputTokens: 5, ReasoningTokens: 7}
-	identity := Identity{Endpoint: string(OfferingOpenAIResponses), Model: "gpt-5.4-nano"}
+	offering, tier := catalogResponsesOffering(t)
+	identity := Identity{Endpoint: string(offering.ID), Model: offering.WireModel}
+	wantCatalogCost := Cost(2*tier.InputUncached + 3*tier.CacheReadInput + (5+7)*tier.Output)
 	wireAmount := int64(91)
+	if wantCatalogCost == Cost(wireAmount) {
+		t.Fatalf("catalog-priced amount %d equals the wire amount; the two rungs would be indistinguishable", wantCatalogCost)
+	}
 	if got := resolveCost(identity, usage, &wireAmount); got != Cost(91) {
 		t.Fatalf("wire-priced cost = %d, want exact wire amount 91", got)
 	}
-	const wantCatalogCost = Cost(2*200 + 3*20 + (5+7)*1250)
 	if got := resolveCost(identity, usage, nil); got != wantCatalogCost {
 		t.Fatalf("catalog-priced cost = %d, want %d", got, wantCatalogCost)
 	}
