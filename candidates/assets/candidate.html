@@ -125,7 +125,9 @@
      .Error (the last failed attempt's error text, as stored; empty on
      success), these six for website_check only and empty or 0 for any
      other kind, .Failed (bool, true for a site_text or brief result whose
-     prompts run ended failed, killed or timed_out or exited non-zero; false for
+     prompts run ended failed, killed or timed_out or exited non-zero, and
+     for a brief result whose run exited 0 with an empty summary or with
+     standard output that does not decode as the output object; false for
      every other result), .Cost (what the result cost as US dollars to six
      decimal places, "$0.023714", as prompts shows a cost; empty when it
      cost nothing) and .At and .AtText (when it was found, RFC 3339 UTC to

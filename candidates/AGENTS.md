@@ -31,10 +31,11 @@ kinds first, and records a result for each candidate whose inputs for a
 kind differ from those of its newest result, fetching from outside only for
 the website check, and reads nothing from scrapes; a targeted enrich, of
 kind `enrich_cohort`, started by the `enrich` tool naming a cohort or a
-candidate, walks one kind over that target, and for `site_text` runs the
-owner's `site-text` prompt for each due candidate. An ingest or a rebuild reads the run's record and rows from scrapes over its socket through
+candidate, walks one kind over that target, and for `site_text` or `brief`
+runs the owner's prompt named for the kind, `site-text` or `brief`, for each
+due candidate. An ingest or a rebuild reads the run's record and rows from scrapes over its socket through
 appkit's `scrapes` client, as the caller for `rebuild` and as the service
-identity for a delivery; a targeted `site_text` pass runs its prompts
+identity for a delivery; a targeted pass of a prompts kind runs its prompts
 through appkit's `prompts` client over the socket the services file's
 `prompts` entry names, as the caller of the `enrich` that started it;
 candidates calls no other sibling. Outside the suite it fetches nothing but
@@ -84,8 +85,8 @@ build run writes the Go source, the tests, `go.mod`'s requirements and
 `0002_links.sql`, `0003_estimates.sql`, `0004_assessments.sql`,
 `0005_decisions.sql`, `0006_passes.sql`, `0007_zip_drive.sql`,
 `0008_windows.sql`, `0009_judgments.sql`, `0010_cohorts.sql`,
-`0011_enrichments.sql`, `0012_facts.sql` and `0013_site_text.sql`), which
-the root package embeds, and everything under `etc/` (`etc/manifest.toml`
+`0011_enrichments.sql`, `0012_facts.sql`, `0013_site_text.sql` and
+`0014_brief.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
 and the nginx fragment `etc/nginx.conf`). The
 delivery that created candidates seeded `go.mod` on appkit; the build run
 owns it and `go.sum` from then on and changes them as design says. It never
@@ -212,6 +213,7 @@ mints — and tests echo source ids above all, since every link,
 split and candidate page names one, so a test that sends an id-shaped value
 lands one in the test file. No fixture carries one: not a header value, a
 query parameter, a tool argument, a fake scrapes' or fake prompts' answer,
+a fake prompts' standard output (a brief's summary, reasons and labels),
 a row's field, a
 source id, a run id, a candidate id, a pass id, a cohort id, a URL, a services file entry,
 an event's payload, a ruling's or reject's reason, a cohort's name, or an expected body.
@@ -263,11 +265,13 @@ fails on demand, holds an answer open when a test needs it, and records each
 request it receives, identity headers included; a test of the passes or the
 tools hands them appkit's `scrapes` client built over such an entry, as
 design names. A test proves a read by what the fake received. No test reaches
-prompts either. A test that drives a targeted `site_text` pass writes a
-services file whose `prompts` entry names a Unix socket in a short temporary
-directory on which a loopback fake serves prompts' MCP tools `show`, `run`
-and `result` with the prompt, starts and run records the test chooses,
-refuses or fails on demand, holds a run `running` when a test needs it, and
+prompts either. A test that drives a targeted pass of a prompts kind,
+`site_text` or `brief`, writes a services file whose `prompts` entry names a
+Unix socket in a short temporary directory on which a loopback fake serves
+prompts' MCP tools `show`, `run` and `result`: `show` answers the prompt
+named for the kind, `run` the starts and `result` the run records the test
+chooses, with the standard output the test chooses; it refuses or fails on
+demand, holds a run `running` when a test needs it, and
 records each call it receives, arguments and identity headers included; a
 test of the passes or the tools hands them appkit's `prompts` client built
 over such an entry, as design names. The bus and telemetry are captures.
@@ -495,8 +499,9 @@ with every other app, its part of the release holding `bin/candidates`,
 `etc/` and `share/icon.svg`, and `devctl deploy <space> <sha|tag>` deploys
 that release. The host must run events, which candidates emits to and takes
 scrapes' `scrape.finished` and cron's `cron.judge_candidates.fired` from,
-scrapes, which it reads over the socket, and prompts, which a targeted
-`site_text` pass runs the `site-text` prompt through over the socket; its
+scrapes, which it reads over the socket, and prompts, which a targeted pass
+of a prompts kind runs the `site-text` or `brief` prompt through over the
+socket; its
 services file names them, with telemetry and auth. The host needs outbound HTTP and HTTPS to the
 public internet, since the website check and `add_page` fetch candidates'
 own domains;
