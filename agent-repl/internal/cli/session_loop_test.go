@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/agent-repl/internal/cli"
+	"github.com/ikigenba/ikigenba/agentkit"
 )
 
 var sessionTime = time.Date(2031, 2, 3, 4, 5, 6, 0, time.FixedZone("test", -6*60*60))
@@ -253,10 +254,25 @@ func TestRunDecoratedLifecycleIsOrderedAndSummaryMatchesLogSink(t *testing.T) {
 	deps := testDeps(t, home)
 	deps.Root = root
 	var stdout, stderr bytes.Buffer
-	if code := cli.Run(t.Context(), configuredArgs(server.URL), strings.NewReader("one turn\n"), &stdout, &stderr, deps); code != 0 || stderr.Len() != 0 {
+	model, offering := catalogChatOffering(t)
+	args := []string{
+		"-c", "provider=" + string(offering.Host),
+		"-c", "model=" + model,
+		"-c", "wire=" + string(offering.WireName),
+		"-c", "auth=api_key",
+		"-c", "base_url=" + server.URL,
+	}
+	if code := cli.Run(t.Context(), args, strings.NewReader("one turn\n"), &stdout, &stderr, deps); code != 0 || stderr.Len() != 0 {
 		t.Fatalf("Run = code %d stderr %q", code, stderr.String())
 	}
 
+	// The two responses above, as agentkit reads them: fresh input is the
+	// prompt less the cached tokens, output is the completion less reasoning.
+	cost := offering.Pricing.Cost(agentkit.Usage{InputTokens: 9, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}) +
+		offering.Pricing.Cost(agentkit.Usage{InputTokens: 9, CachedTokens: 4, OutputTokens: 4, ReasoningTokens: 1})
+	if cost == 0 {
+		t.Fatalf("offering %q prices the test usage at zero; the summary cost proves nothing", offering.WireModel)
+	}
 	want := "you › \n" +
 		"tool › Read {\"file_path\":\"ordered.txt\"}\n\n" +
 		"result › Read      1\tordered result\n\n" +
@@ -264,10 +280,25 @@ func TestRunDecoratedLifecycleIsOrderedAndSummaryMatchesLogSink(t *testing.T) {
 		"you › \n" +
 		"summary\n" +
 		"· tokens  in=18 cache(r=6 w=0) out=8 reasoning=4 total=36\n" +
-		"· cost     $0.000453 session\n"
+		fmt.Sprintf("· cost     $%.6f session\n", float64(cost)/1_000_000_000)
 	if got := stdout.String(); got != want {
 		t.Fatalf("decorated lifecycle output\ngot:  %q\nwant: %q", got, want)
 	}
+}
+
+// catalogChatOffering returns the first catalog model with an OpenAI chat
+// offering, and that offering.
+func catalogChatOffering(t *testing.T) (string, agentkit.Offering) {
+	t.Helper()
+	for _, entry := range agentkit.Catalog() {
+		for _, offering := range entry.Offerings {
+			if offering.ID == agentkit.OfferingOpenAIChat {
+				return entry.Model, offering
+			}
+		}
+	}
+	t.Fatalf("Catalog has no %q offering", agentkit.OfferingOpenAIChat)
+	return "", agentkit.Offering{}
 }
 
 // R-WUHB-OFUU R-AR4I-H3HA

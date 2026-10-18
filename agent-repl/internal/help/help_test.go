@@ -186,9 +186,10 @@ func TestEveryReasoningVocabularyMarksExactlyItsDefault(t *testing.T) {
 // R-VRGJ-FS4M
 func TestCatalogRegressionRowsUnderRequiredHosts(t *testing.T) {
 	rows := renderedRows(t)
+	geminiModel, geminiRow := catalogGeminiRow(t)
 	wants := map[string]map[string]string{
 		"anthropic":  {"claude-haiku-4-5": "  claude-haiku-4-5          thinking_budget={*off|1024–4096}"},
-		"gemini":     {"gemini-2.5-flash": "  gemini-2.5-flash          thinking_budget={*dynamic|off|0–24576}"},
+		"gemini":     {geminiModel: geminiRow},
 		"openrouter": {"grok-4.20": "  grok-4.20                 thinking={on|*off}"},
 	}
 	for host, models := range wants {
@@ -198,6 +199,45 @@ func TestCatalogRegressionRowsUnderRequiredHosts(t *testing.T) {
 			}
 		}
 	}
+}
+
+// catalogGeminiRow returns the first catalog model with a Gemini
+// generate-content offering and the help row that offering must render.
+func catalogGeminiRow(t *testing.T) (string, string) {
+	t.Helper()
+	for _, entry := range agentkit.Catalog() {
+		for _, offering := range entry.Offerings {
+			if offering.ID != agentkit.OfferingGeminiGenerateContent {
+				continue
+			}
+			if offering.Host != agentkit.HostGemini {
+				t.Fatalf("offering %q is not on host %q", offering.ID, agentkit.HostGemini)
+			}
+			if other, ok := firstOffering(entry, agentkit.HostGemini); !ok || other.ID != offering.ID {
+				t.Fatalf("%s: first gemini offering is not %q", entry.Model, offering.ID)
+			}
+			spec := offering.Reasoning
+			if spec.Kind == agentkit.ReasoningKindNone {
+				t.Fatalf("%s: offering %q has no reasoning vocabulary to render", entry.Model, offering.ID)
+			}
+			marked := defaultEntry(spec)
+			entries := expectedVocabulary(spec)
+			found := false
+			for i, value := range entries {
+				if value == marked {
+					entries[i] = "*" + value
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("%s: default %q is not in vocabulary %q", entry.Model, marked, entries)
+			}
+			return entry.Model, fmt.Sprintf("  %-26s%s={%s}", entry.Model, spec.Term, strings.Join(entries, "|"))
+		}
+	}
+	t.Fatalf("Catalog has no %q offering", agentkit.OfferingGeminiGenerateContent)
+	return "", ""
 }
 
 func hosts() []agentkit.Host {

@@ -70,20 +70,37 @@ func TestSessionAPIContract(_ *testing.T) {
 
 // R-UY6Y-9ABY
 func TestResolveCatalogedOffering(t *testing.T) {
+	model, want := catalogResponsesOffering(t)
 	cfg := resolveConfig(t)
-	cfg.Model = "gpt-5.6-sol"
-	cfg.Wire = "responses"
+	cfg.Model = model
+	cfg.Wire = string(agentkit.WireResponses)
 	got, err := Resolve(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := openAIResponsesOffering("gpt-5.6-sol", 1_050_000, agentkit.Pricing{Tiers: []agentkit.RateTier{
-		{MinInputTokens: 0, InputUncached: 5000, CacheReadInput: 500, Output: 30000},
-	}})
+	want.WireFormat = nil
 	assertOffering(t, got.Offering, want)
-	if got.Model != "gpt-5.6-sol" {
-		t.Fatalf("cataloged model = %q, want %q", got.Model, "gpt-5.6-sol")
+	if got.Model != want.WireModel {
+		t.Fatalf("cataloged model = %q, want %q", got.Model, want.WireModel)
 	}
+}
+
+// catalogResponsesOffering returns the first catalog model with an OpenAI
+// responses offering, and that offering.
+func catalogResponsesOffering(t *testing.T) (string, agentkit.Offering) {
+	t.Helper()
+	for _, entry := range agentkit.Catalog() {
+		for _, offering := range entry.Offerings {
+			if offering.ID == agentkit.OfferingOpenAIResponses {
+				if offering.Host != agentkit.HostOpenAI || offering.WireName != agentkit.WireResponses {
+					t.Fatalf("offering %q is not OpenAI responses: %+v", offering.ID, offering)
+				}
+				return entry.Model, offering
+			}
+		}
+	}
+	t.Fatalf("Catalog has no %q offering", agentkit.OfferingOpenAIResponses)
+	return "", agentkit.Offering{}
 }
 
 // R-UZEU-N22N
