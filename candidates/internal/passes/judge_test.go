@@ -31,7 +31,7 @@ func judgeDelivery(id string) events.Delivery {
 	return events.Delivery{Event: events.Event{Name: trail.AcceptedJudge, ID: id, Attrs: events.Attrs{"anything": true}}}
 }
 
-// R-ZRW3-1A2O R-T04G-UXAU R-SWGR-PM2R R-SV8V-BUC2 R-SST2-KAUO
+// R-ZRW3-1A2O R-T04G-UXAU R-SWGR-PM2R R-SV8V-BUC2 R-ML31-W3H8
 func TestJudgeSeparatesIngestFromAssessment(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/runs/run_a/record" {
@@ -78,7 +78,7 @@ func TestJudgeSeparatesIngestFromAssessment(t *testing.T) {
 			}
 		}
 		p = f.ended(p.ID)
-		if p.Kind != store.KindJudge || p.Origin != store.OriginCron || p.Trigger != store.TriggerJudge || p.Status != store.StatusDone || p.Rows != 0 || p.New != 0 || p.Changed != 0 || p.Unchanged != 0 || p.Gone != 0 || p.Created != 0 || p.Linked != 0 || len(f.requests()) != before {
+		if p.Kind != store.KindJudge || p.Origin != store.OriginCron || p.Trigger != store.TriggerJudge || p.Status != store.StatusDone || p.Rows != 0 || p.New != 0 || p.Changed != 0 || p.Unchanged != 0 || p.Gone != 0 || p.Created != 0 || p.Linked != 0 || p.Derived+p.Due+p.Fetched+p.HTTPS+p.HTTP+p.None+p.Runs+p.RunsFailed+p.Pages+p.Cost != 0 || len(f.requests()) != before {
 			t.Fatal(p, f.requests())
 		}
 		if f.eng.Deliver(context.Background(), judgeDelivery(id)) != events.Skip() {

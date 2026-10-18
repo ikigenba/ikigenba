@@ -62,6 +62,7 @@ type Member struct {
 	Website             string    `json:"website"`
 	WebsiteURL          string    `json:"website_url,omitempty"`
 	SiteText            *string   `json:"site_text"`
+	Brief               *string   `json:"brief"`
 	Minutes             *int64    `json:"minutes,omitempty"`
 	GovernmentMatch     string    `json:"government_match,omitempty"`
 	KnownSince          string    `json:"known_since,omitempty"`
@@ -275,6 +276,7 @@ type Assessment struct {
 	Website             string     `json:"website"`
 	WebsiteURL          string     `json:"website_url,omitempty"`
 	Minutes             *int64     `json:"minutes,omitempty"`
+	Brief               string     `json:"brief,omitempty"`
 	Excluded            bool       `json:"excluded"`
 	Rules               int64      `json:"rules"`
 	Calculated          string     `json:"calculated"`

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
@@ -12,7 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-var factsColumns = columns("candidate:Candidate known_since:KnownSince government_match:GovernmentMatch newest_filing:NewestFiling categories:Categories fleet_verdict:FleetVerdict power_units:PowerUnits drivers:Drivers website:Website website_url:WebsiteURL minutes:Minutes")
+var factsColumns = columns("candidate:Candidate known_since:KnownSince government_match:GovernmentMatch newest_filing:NewestFiling categories:Categories fleet_verdict:FleetVerdict power_units:PowerUnits drivers:Drivers website:Website website_url:WebsiteURL minutes:Minutes brief:Brief")
 
 func unknownFacts(id string) Facts {
 	return Facts{Candidate: id, Categories: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown}
@@ -26,17 +27,17 @@ func factsKey(ctx context.Context, tx *sql.Tx, id string) (Facts, error) {
 		return Facts{}, ErrNotFound
 	}
 	f := fs[0]
-	var d, l, st, w string
-	if err = scanSQL(ctx, tx, "SELECT drive_minutes_at,link_facts_at,site_text_at,website_check_at FROM facts WHERE candidate=?", []any{id}, &d, &l, &st, &w); err != nil {
+	var b, d, l, st, w string
+	if err = scanSQL(ctx, tx, "SELECT brief_at,drive_minutes_at,link_facts_at,site_text_at,website_check_at FROM facts WHERE candidate=?", []any{id}, &b, &d, &l, &st, &w); err != nil {
 		return Facts{}, err
 	}
-	for i, a := range []string{d, l, st, w} {
+	for i, a := range []string{b, d, l, st, w} {
 		if a != "" {
 			t, err := time.Parse(time.RFC3339, a)
 			if err != nil {
 				return Facts{}, err
 			}
-			f.Written = append(f.Written, Written{Kind: []string{enrichers.KindDriveMinutes, enrichers.KindLinkFacts, enrichers.KindSiteText, sources.WebsiteCheck}[i], At: t.UTC()})
+			f.Written = append(f.Written, Written{Kind: []string{enrichers.KindBrief, enrichers.KindDriveMinutes, enrichers.KindLinkFacts, enrichers.KindSiteText, sources.WebsiteCheck}[i], At: t.UTC()})
 		}
 	}
 	return f, nil
@@ -51,8 +52,20 @@ func projectFacts(ctx context.Context, tx *sql.Tx, id string) error {
 	}
 	f := unknownFacts(id)
 	seen := map[string]bool{}
-	extra := map[string]any{"drive_minutes_at": "", "link_facts_at": "", "website_check_at": "", "site_text_at": ""}
+	goodBrief := false
+	extra := map[string]any{"drive_minutes_at": "", "link_facts_at": "", "website_check_at": "", "site_text_at": "", "brief_at": ""}
 	for _, e := range es {
+		if e.Kind == enrichers.KindBrief && !goodBrief && !(enrichers.Brief{}).Failed(e.Found) {
+			var b enrichers.BriefFound
+			if err = json.Unmarshal(e.Found, &b); err != nil {
+				return err
+			}
+			f.Brief = b.Summary
+			for _, c := range b.Categories {
+				f.Categories = append(f.Categories, sources.Category{Name: c.Name, Source: enrichers.KindBrief})
+			}
+			goodBrief = true
+		}
 		if seen[e.Kind] {
 			continue
 		}
@@ -100,6 +113,20 @@ func projectFacts(ctx context.Context, tx *sql.Tx, id string) error {
 		}
 		extra[e.Kind+"_at"] = e.At.Format(time.RFC3339)
 	}
+	sort.Slice(f.Categories, func(i, j int) bool {
+		a, b := f.Categories[i], f.Categories[j]
+		if a.Name != b.Name {
+			return a.Name < b.Name
+		}
+		return a.Source < b.Source
+	})
+	unique := f.Categories[:0]
+	for _, c := range f.Categories {
+		if len(unique) == 0 || unique[len(unique)-1] != c {
+			unique = append(unique, c)
+		}
+	}
+	f.Categories = unique
 	return insertRecord(ctx, tx, "facts", factsColumns, f, extra)
 }
 

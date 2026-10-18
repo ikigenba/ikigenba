@@ -98,11 +98,11 @@ type FiltersView struct {
 
 // MemberRow supplies one cohort member.
 type MemberRow struct {
-	Rank                                                                                                                                                   int64
-	ID, Name, City, State, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence                                                                 string
-	Categories                                                                                                                                             []string
-	Class, FleetVerdict, Website, WebsiteURL, SiteText, SiteTextText, Minutes, GovernmentMatch, KnownSince, KnownSinceText, NewestFiling, NewestFilingText string
-	Excluded                                                                                                                                               bool
+	Rank                                                                                                                                                                     int64
+	ID, Name, City, State, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence                                                                                   string
+	Categories                                                                                                                                                               []string
+	Class, FleetVerdict, Website, WebsiteURL, SiteText, SiteTextText, Brief, BriefText, Minutes, GovernmentMatch, KnownSince, KnownSinceText, NewestFiling, NewestFilingText string
+	Excluded                                                                                                                                                                 bool
 }
 
 // RejectRow supplies a standing reject.
@@ -122,6 +122,7 @@ type CandidateData struct {
 	Banner      page.Banner
 	Candidate   CandidateView
 	Facts       *FactsView
+	Brief       *BriefView
 	Assessment  *AssessmentView
 	Estimates   []EstimateView
 	Links       []LinkView
@@ -258,3 +259,14 @@ type PageView struct {
 	Size                                 int64
 	Fetched, FetchedText, By, User, Text string
 }
+
+// BriefView supplies the newest successful recorded business brief.
+type BriefView struct {
+	Summary    string
+	Categories []BriefCategoryRow
+	Labels     []string
+	At, AtText string
+}
+
+// BriefCategoryRow supplies a brief category and its explanation.
+type BriefCategoryRow struct{ Name, Why string }

@@ -87,7 +87,7 @@ func waitFollowUntil(t *testing.T, f *fixture, id string, end time.Time) store.P
 	}
 }
 
-// R-MQX0-5TXM R-MS4W-JLOB R-N4BW-DB39 R-N6RP-4UKN R-N33Z-ZJCK R-MZGA-U84H R-N97H-WE21 R-T7FV-5JR0 R-T8NR-JBHP R-T502-E09M
+// R-ML31-W3H8 R-MQX0-5TXM R-MS4W-JLOB R-N4BW-DB39 R-N6RP-4UKN R-N33Z-ZJCK R-MZGA-U84H R-N97H-WE21 R-T7FV-5JR0 R-T8NR-JBHP R-T502-E09M
 func TestEnrichCountsDedupAndFollowOn(t *testing.T) {
 	f := newFixture(t, nil, false)
 	var mu sync.Mutex
@@ -105,7 +105,7 @@ func TestEnrichCountsDedupAndFollowOn(t *testing.T) {
 		return []string{"one@acme.test", "two@acme.test", "three@gone.test", "user@gmail.com", ""}[i]
 	})
 	p := f.enrich(sources.WebsiteCheck)
-	if p.Status != store.StatusDone || p.Due != 3 || p.Fetched != 2 || p.HTTPS != 2 || p.HTTP != 0 || p.None != 1 || p.Rows+p.New+p.Changed+p.Unchanged+p.Gone+p.Created+p.Linked+p.Judged+p.Unranged != 0 {
+	if p.Status != store.StatusDone || p.Due != 3 || p.Fetched != 2 || p.HTTPS != 2 || p.HTTP != 0 || p.None != 1 || p.Rows+p.New+p.Changed+p.Unchanged+p.Gone+p.Created+p.Linked+p.Judged+p.Unranged+p.Runs+p.RunsFailed+p.Pages+p.Cost != 0 {
 		t.Fatal(p)
 	}
 	for _, id := range ids {

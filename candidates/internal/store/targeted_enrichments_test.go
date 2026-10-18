@@ -22,12 +22,22 @@ func TestSubjectReadsDisplayLinksAndCurrentFacts(t *testing.T) {
 		contractOK(t, err)
 		links, err := f.s.Links(ctx, id)
 		contractOK(t, err)
-		want := enrichers.Subject{ID: c.ID, Name: c.Name, City: c.City, State: c.State, Email: c.Email, Zip: c.Zip, Links: []enrichers.Link{}}
+		want := enrichers.Subject{ID: c.ID, Name: c.Name, City: c.City, State: c.State, Email: c.Email, Zip: c.Zip, Links: []enrichers.Link{}, Pages: []enrichers.Page{}}
 		if m, e := f.s.ZipMinutes(ctx, c.Zip); e == nil {
 			want.Minutes = &m
 		}
 		if facts, e := f.s.GetFacts(ctx, id); e == nil {
 			want.Website = facts.WebsiteURL
+			want.Facts = &enrichers.LinkFound{GovernmentMatch: facts.GovernmentMatch, FleetVerdict: facts.FleetVerdict, PowerUnits: facts.PowerUnits, Drivers: facts.Drivers, Categories: []enrichers.Category{}}
+			if !facts.KnownSince.IsZero() {
+				want.Facts.KnownSince = facts.KnownSince.UTC().Format("2006-01-02")
+			}
+			if !facts.NewestFiling.IsZero() {
+				want.Facts.NewestFiling = facts.NewestFiling.UTC().Format("2006-01-02")
+			}
+			for _, c := range facts.Categories {
+				want.Facts.Categories = append(want.Facts.Categories, enrichers.Category{Name: c.Name, Source: c.Source})
+			}
 		}
 		for _, l := range links {
 			want.Links = append(want.Links, enrichers.Link{Scraper: l.Scraper, SourceID: l.SourceID, Gone: l.Gone, Reading: l.Reading})
@@ -89,7 +99,7 @@ func TestDueAmongKeepsTargetOrderAndSkipsIneligible(t *testing.T) {
 	}
 }
 
-// R-OJ8E-TA0I R-OKGB-71R7 R-OVFE-MZFG R-OWNB-0R65
+// R-AFQ6-9RT2 R-OKGB-71R7 R-OVFE-MZFG R-OWNB-0R65
 func TestDeriveAmongRecordsOnlyDistinctEligibleTargets(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -160,7 +170,7 @@ func siteTextResult(t *testing.T, id, status string) store.Enrichment {
 	return store.Enrichment{Candidate: id, Kind: enrichers.KindSiteText, Inputs: "https://business.test/", Source: enrichers.SourcePrompts, Found: b, Cost: 1.25}
 }
 
-// R-M2IM-ZS9W R-OLO7-KTHW
+// R-L5GX-B4T3 R-ADAD-I8BO
 func TestSiteTextWrittenProjectsIntoCohortWithoutChangingMembership(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -209,7 +219,7 @@ func TestSiteTextWrittenProjectsIntoCohortWithoutChangingMembership(t *testing.T
 	contractEqual(t, cohortRead(t, f, cohort), got)
 }
 
-// R-OJ8E-TA0I
+// R-AFQ6-9RT2
 func TestDeriveAmongNeverRecordsEmptyInputs(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

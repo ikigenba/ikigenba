@@ -24,6 +24,9 @@ const (
 	KindLinkFacts    = "link_facts"
 	SourceZipDrive   = "zip_drive"
 	SourceLinks      = "links"
+	KindBrief        = "brief"
+	BriefPageBytes   = 12288
+	BriefInputBytes  = 98304
 	KindSiteText     = "site_text"
 	SourcePrompts    = "prompts"
 	RunQueued        = "queued"
@@ -38,11 +41,20 @@ type Link struct {
 	Reading           sources.Reading
 }
 
+// Page holds one kept copy of a web page.
+type Page struct {
+	Number           int64
+	URL, Title, Text string
+	Size             int64
+}
+
 // Subject holds the stored inputs for a candidate.
 type Subject struct {
 	ID, Name, City, State, Email, Zip, Website string
 	Minutes                                    *int64
 	Links                                      []Link
+	Pages                                      []Page
+	Facts                                      *LinkFound
 }
 
 // Result is a kind's finding and its provenance.
@@ -111,6 +123,7 @@ type Prompter interface {
 	Prompt() string
 	Input(s Subject) json.RawMessage
 	Found(out prompts.Outcome, pages int64) Result
+	Failed(found json.RawMessage) bool
 }
 
 // SiteTextInput is the input object sent to the site text prompt.
@@ -150,7 +163,7 @@ type Registry struct{ cfg Config }
 
 // Kinds returns independent storage in processing order.
 func Kinds() []string {
-	return []string{KindDriveMinutes, KindLinkFacts, sources.WebsiteCheck, KindSiteText}
+	return []string{KindDriveMinutes, KindLinkFacts, sources.WebsiteCheck, KindSiteText, KindBrief}
 }
 
 // New constructs the registry, including an unavailable website checker.
@@ -158,7 +171,7 @@ func New(cfg Config) *Registry { return &Registry{cfg: cfg} }
 
 // All returns fresh ordered element storage.
 func (r *Registry) All() []Enricher {
-	return []Enricher{DriveMinutes{}, LinkFacts{}, WebsiteCheck{Checker: r.cfg.Website}, SiteText{Prompts: r.cfg.Prompts}}
+	return []Enricher{DriveMinutes{}, LinkFacts{}, WebsiteCheck{Checker: r.cfg.Website}, SiteText{Prompts: r.cfg.Prompts}, Brief{Prompts: r.cfg.Prompts}}
 }
 
 // Get returns the kind with the exact matching word.
@@ -404,4 +417,10 @@ func (SiteText) Found(out prompts.Outcome, pages int64) Result {
 func (SiteText) Valid(b json.RawMessage) bool {
 	var f SiteTextFound
 	return strictObject(b, &f) && f.Run != "" && f.Status != "" && f.Pages >= 0 && f.CostNanos >= 0
+}
+
+// Failed reports whether a decoded site text result records a failed run.
+func (SiteText) Failed(b json.RawMessage) bool {
+	var f SiteTextFound
+	return json.Unmarshal(b, &f) == nil && f.Failed()
 }

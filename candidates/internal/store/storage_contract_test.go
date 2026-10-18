@@ -511,7 +511,7 @@ func TestContractZipReplacement(t *testing.T) {
 	}
 }
 
-// R-P3YP-BDMB R-47VU-80SR R-493Q-LSJG R-2GAV-T1X4 R-578X-BDAW R-H4IL-IJLJ R-5AWM-GOIZ R-5C4I-UG9O
+// R-P3YP-BDMB R-47VU-80SR R-493Q-LSJG R-2GAV-T1X4 R-578X-BDAW R-APHD-BXQM R-5AWM-GOIZ R-5C4I-UG9O
 func TestContractBusinessRecordsPersistence(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -725,7 +725,7 @@ func TestContractCandidateWindowsAndFilters(t *testing.T) {
 	}
 }
 
-// R-D5D4-WF4O R-H4IL-IJLJ
+// R-D5D4-WF4O R-APHD-BXQM
 func TestContractFreshStoreAndUnknownReads(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

@@ -68,6 +68,7 @@ func memberRow(e store.Ranked, i int) MemberRow {
 	f := factsView(store.Facts{KnownSince: e.Assessment.KnownSince, NewestFiling: e.Assessment.NewestFiling, Categories: e.Assessment.Categories, GovernmentMatch: e.Assessment.GovernmentMatch, FleetVerdict: e.Assessment.FleetVerdict, PowerUnits: e.Assessment.PowerUnits, Drivers: e.Assessment.Drivers, Minutes: e.Assessment.Minutes})
 	v := MemberRow{Rank: int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, Class: e.Candidate.Class, FleetVerdict: f.FleetVerdict, Website: e.Assessment.Website, WebsiteURL: e.Assessment.WebsiteURL, Minutes: f.Minutes, GovernmentMatch: f.GovernmentMatch, KnownSince: f.KnownSince, KnownSinceText: f.KnownSinceText, NewestFiling: f.NewestFiling, NewestFilingText: f.NewestFilingText, Excluded: a.Excluded}
 	v.SiteText, v.SiteTextText = stamp(e.SiteText, MinuteLayout)
+	v.Brief, v.BriefText = stamp(e.Brief, MinuteLayout)
 	seen := map[string]bool{}
 	for _, c := range f.Categories {
 		if !seen[c.Name] {
@@ -250,9 +251,9 @@ func enrichmentRow(x store.Enrichment) EnrichmentRow {
 	if n := int64(math.Round(x.Cost * 1e9)); n > 0 {
 		v.Cost = costText(n)
 	}
-	if x.Kind == enrichers.KindSiteText {
-		var f enrichers.SiteTextFound
-		v.Failed = json.Unmarshal(x.Found, &f) == nil && f.Failed()
+	e, _ := enrichers.New(enrichers.Config{}).Get(x.Kind)
+	if p, ok := e.(enrichers.Prompter); ok {
+		v.Failed = p.Failed(x.Found)
 	}
 	v.At, v.AtText = stamp(x.At, MinuteLayout)
 	return v
@@ -292,4 +293,25 @@ func pageView(p store.Page, c store.Candidate) PageView {
 	v := PageView{Candidate: p.Candidate, Name: c.Name, Number: strconv.FormatInt(p.Number, 10), URL: p.URL, Title: p.Title, Size: p.Size, By: p.UserEmail, User: p.UserID, Text: p.Text}
 	v.Fetched, v.FetchedText = stamp(p.Fetched, SecondLayout)
 	return v
+}
+
+func briefView(es []store.Enrichment) *BriefView {
+	e, _ := enrichers.New(enrichers.Config{}).Get(enrichers.KindBrief)
+	p := e.(enrichers.Prompter)
+	for _, e := range es {
+		if e.Kind != enrichers.KindBrief {
+			continue
+		}
+		var b enrichers.BriefFound
+		if json.Unmarshal(e.Found, &b) != nil || p.Failed(e.Found) {
+			continue
+		}
+		v := &BriefView{Summary: b.Summary, Categories: []BriefCategoryRow{}, Labels: append([]string{}, b.Labels...)}
+		for _, c := range b.Categories {
+			v.Categories = append(v.Categories, BriefCategoryRow{Name: c.Name, Why: c.Why})
+		}
+		v.At, v.AtText = stamp(e.At, SecondLayout)
+		return v
+	}
+	return nil
 }

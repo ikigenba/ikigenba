@@ -245,7 +245,7 @@ func TestAddPageCapCountsURLs(t *testing.T) {
 	}
 }
 
-// R-ORC0-18H6 R-ODX3-TRBJ R-M4RP-XCDE
+// R-ORC0-18H6 R-K79Q-KTII R-M4RP-XCDE
 func TestSiteTextProjection(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]

@@ -423,6 +423,10 @@ func memberOf(e store.Ranked) Member {
 		t := stamp(e.SiteText)
 		v.SiteText = &t
 	}
+	if !e.Brief.IsZero() {
+		t := stamp(e.Brief)
+		v.Brief = &t
+	}
 	seen := map[string]bool{}
 	for _, c := range a.Categories {
 		if !seen[c.Name] {
@@ -458,6 +462,12 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 		a, err := cfg.Store.GetAssessment(ctx, id)
 		if err == nil {
 			v := assessmentOf(a)
+			f, err := cfg.Store.GetFacts(ctx, id)
+			if err == nil {
+				v.Brief = f.Brief
+			} else if !errors.Is(err, store.ErrNotFound) {
+				return failure(err)
+			}
 			out.Assessment = &v
 		} else if !errors.Is(err, store.ErrNotFound) {
 			return failure(err)
@@ -497,12 +507,24 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 
 func enrichmentOf(e store.Enrichment) Enrichment {
 	v := Enrichment{Kind: e.Kind, Source: e.Source, Inputs: e.Inputs, Cost: e.Cost, At: stamp(e.At)}
-	if e.Kind == sources.WebsiteCheck {
+	switch e.Kind {
+	case sources.WebsiteCheck:
 		var r website.Result
 		_ = json.Unmarshal(e.Found, &r)
 		v.State, v.URL, v.Title, v.StatusCode, v.Error, v.Domain = r.State, r.URL, r.Title, r.StatusCode, r.Error, e.Source
 		v.Size = &r.Size
-	} else {
+	case enrichers.KindBrief:
+		var found enrichers.BriefFound
+		if json.Unmarshal(e.Found, &found) == nil {
+			if found.Categories == nil {
+				found.Categories = []enrichers.BriefCategory{}
+			}
+			if found.Labels == nil {
+				found.Labels = []string{}
+			}
+			v.Found, _ = json.Marshal(found)
+		}
+	default:
 		var b bytes.Buffer
 		if len(e.Found) == 0 {
 			v.Found = json.RawMessage(`{}`)

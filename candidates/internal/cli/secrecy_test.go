@@ -18,6 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
+	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
@@ -173,7 +174,7 @@ func secrecyAbsent(t *testing.T, where string, value any, markers []string) {
 	}
 }
 
-// R-0DBY-N0TE R-0FRR-EKAS R-0I7K-63S6 R-0JFG-JVIV R-0LV9-BF09
+// R-0DBY-N0TE R-0FRR-EKAS R-0I7K-63S6 R-0JFG-JVIV R-0LV9-BF09 R-VXPS-X5UC
 func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	markers, phone := secrecyMarkers(t)
 	forbidden := append(append([]string{}, markers...), phone)
@@ -366,6 +367,98 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 			}
 		} else if runText(ended, "status") != store.StatusDone {
 			t.Fatal(ended)
+		}
+	}
+	// Brief output is record text too: provoke decoding, failed-run storage,
+	// facts projection and rendering with every marker in each text field.
+	memberIDs := []string{}
+	for _, member := range members {
+		var candidate map[string]json.RawMessage
+		if err := json.Unmarshal(member["candidate"], &candidate); err != nil {
+			t.Fatal(err)
+		}
+		mid := runText(candidate, "id")
+		memberIDs = append(memberIDs, mid)
+		url := runText(member, "website_url")
+		call("add_page", map[string]any{"candidate": mid, "url": url + "/brief-input"}, false)
+	}
+	marked := strings.Join(forbidden, " ")
+	output, err := json.Marshal(map[string]any{
+		"summary":    marked,
+		"categories": []map[string]string{{"name": sources.Categories()[0], "why": marked}, {"name": marked, "why": marked}},
+		"labels":     []string{marked},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"decoded", "nonzero", "malformed"} {
+		pf.mu.Lock()
+		pf.mode, pf.stdout, pf.exitCode = "success", string(output), 0
+		if mode == "nonzero" {
+			pf.exitCode = 1
+		}
+		if mode == "malformed" {
+			pf.stdout = marked
+		}
+		pf.mu.Unlock()
+		v := call("enrich", map[string]any{"kind": enrichers.KindBrief, "cohort": cohortID, "force": true}, false)
+		pid := runText(v, "id")
+		expectedPasses[pid] = caller.RequestID
+		ended := h.waitPass(caller, pid)
+		if runText(ended, "status") != store.StatusDone {
+			t.Fatal(ended)
+		}
+		db, records := runStore(t, h.p.Dir, h.p.Now)
+		for _, mid := range memberIDs {
+			es, err := records.Enrichments(t.Context(), mid)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var newest *enrichers.BriefFound
+			for _, result := range es {
+				if result.Kind != enrichers.KindBrief {
+					continue
+				}
+				var found enrichers.BriefFound
+				if err := json.Unmarshal(result.Found, &found); err != nil {
+					t.Fatal(err)
+				}
+				newest = &found
+				break
+			}
+			if newest == nil {
+				t.Fatal("brief result missing")
+			}
+			if mode == "malformed" {
+				if newest.Summary != "" || len(newest.Categories) != 0 || len(newest.Labels) != 0 {
+					t.Fatal(newest)
+				}
+			} else if newest.Summary != marked || len(newest.Categories) != 1 || newest.Categories[0].Why != marked || len(newest.Labels) != 2 || newest.Labels[0] != marked || newest.Labels[1] != marked || newest.Failed() != (mode == "nonzero") {
+				t.Fatal("stored brief output mismatch", newest)
+			}
+			facts, err := records.GetFacts(t.Context(), mid)
+			if err != nil || facts.Brief != marked {
+				t.Fatal("facts omitted brief", facts, err)
+			}
+			detail := call("candidate", map[string]any{"candidate": mid}, false)
+			data, err := json.Marshal(detail)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(data), marked) {
+				t.Fatal("brief readback omitted markers")
+			}
+			status, body := h.request("GET", "/candidates/"+mid, "brief-candidate-page", nil)
+			if status != 200 || !strings.Contains(string(body), marked) {
+				t.Fatal("brief candidate page omitted markers")
+			}
+		}
+		if err := db.Close(); err != nil {
+			t.Fatal(err)
+		}
+		call("cohort", map[string]any{"cohort": cohortID}, false)
+		if status, _ := h.request("GET", "/cohorts/"+cohortID, "brief-cohort-page", nil); status != 200 {
+			t.Fatal(status)
 		}
 	}
 	status, body := h.request("GET", pagePath, "kept-page-request", nil)

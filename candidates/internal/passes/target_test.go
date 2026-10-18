@@ -86,10 +86,12 @@ func (f *promptFake) snapshot() []promptCall {
 	defer f.mu.Unlock()
 	return append([]promptCall(nil), f.calls...)
 }
-func promptAnswer(name string, _ map[string]json.RawMessage) (any, bool, int) {
+func promptAnswer(name string, args map[string]json.RawMessage) (any, bool, int) {
 	switch name {
 	case "show":
-		return map[string]any{"id": "catalog", "name": "site-text", "model": "model", "prompt": "instructions", "system": "system", "tools": []string{}}, false, 0
+		var prompt string
+		_ = json.Unmarshal(args["name"], &prompt)
+		return map[string]any{"id": "catalog", "name": prompt, "model": "model", "prompt": "instructions", "system": "system", "tools": []string{}}, false, 0
 	case "run":
 		return map[string]any{"id": "run-one", "status": "queued"}, false, 0
 	default:
@@ -215,7 +217,7 @@ func TestTargetRefusals(t *testing.T) {
 	}
 }
 
-// R-TH72-7POK R-TIEY-LHF9 R-TJMU-Z95Y R-TOIG-IC4Q R-TTE2-1F3I R-TULY-F6U7 R-TY9N-KI2A R-TZHJ-Y9SZ R-T8NR-JBHP
+// R-TH72-7POK R-TIEY-LHF9 R-TJMU-Z95Y R-TOIG-IC4Q R-TTE2-1F3I R-MJV5-IBQJ R-TY9N-KI2A R-TZHJ-Y9SZ R-T8NR-JBHP
 func TestPromptPassResultsAndForce(t *testing.T) {
 	for _, status := range []string{"exited", "failed", "killed", "timed_out"} {
 		t.Run(status, func(t *testing.T) {
@@ -523,7 +525,7 @@ func TestRebuildRequestSequence(t *testing.T) {
 	}
 }
 
-// R-TTE2-1F3I R-TULY-F6U7: distinct URLs are result data; page copies are pass cost.
+// R-TTE2-1F3I R-MJV5-IBQJ: distinct URLs are result data; page copies are pass cost.
 func TestPromptCountsPagesAndOutcome(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := seedTarget(t, f, 1)[0]
@@ -752,13 +754,15 @@ func TestCorpusNeverRunsConfiguredPrompts(t *testing.T) {
 	id := seedTarget(t, f, 1)[0]
 	pc, fake := fakePrompts(t, f, promptAnswer)
 	targetEngine(f, pc, promptAfter)
-	p, err := f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner"}, enrichers.KindSiteText)
-	assertRefusal(t, p, err, passes.RefusalInvalid)
+	for _, kind := range []string{enrichers.KindSiteText, enrichers.KindBrief} {
+		p, err := f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner"}, kind)
+		assertRefusal(t, p, err, passes.RefusalInvalid)
+	}
 	f.flush()
 	if len(f.list()) != 0 || len(fake.snapshot()) != 0 || len(f.ec.Events()) != 0 || len(f.tc.Events()) != 0 {
 		t.Fatal("refusal side effects")
 	}
-	p, err = f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner"}, "")
+	p, err := f.eng.Enrich(context.Background(), identity.Caller{UserID: "owner"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -772,7 +776,7 @@ func TestCorpusNeverRunsConfiguredPrompts(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, e := range es {
-		if e.Kind == enrichers.KindSiteText {
+		if e.Kind == enrichers.KindSiteText || e.Kind == enrichers.KindBrief {
 			t.Fatal(e)
 		}
 	}
@@ -812,4 +816,130 @@ func TestConcurrentTargetStarts(t *testing.T) {
 		t.Fatal(successes, f.list())
 	}
 	f.eng.Drain(context.Background())
+}
+
+// R-MJV5-IBQJ R-ML31-W3H8 R-TTE2-1F3I R-TJMU-Z95Y R-TY9N-KI2A R-TZHJ-Y9SZ
+func TestBriefTargetLifecycleAndCounts(t *testing.T) {
+	f := newFixture(t, nil, false)
+	ctx := context.Background()
+	ids := seedTarget(t, f, 6)
+	inputs := map[string]json.RawMessage{}
+	for _, id := range ids[:5] {
+		if _, err := f.st.AddPage(ctx, store.Page{Candidate: id, URL: "https://pages.test/" + id, Text: "original text", UserID: "owner"}); err != nil {
+			t.Fatal(err)
+		}
+		s, err := f.st.Subject(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		inputs[id] = enrichers.Brief{}.Input(s)
+	}
+	if _, err := f.st.JudgeAll(ctx); err != nil {
+		t.Fatal(err)
+	}
+	cohort, err := f.st.CreateCohort(ctx, store.Cohort{Name: "brief targets", Size: 6, CreatedUserID: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.st.Reject(ctx, store.Reject{Kind: store.KindReject, Cohort: cohort.ID, Candidate: ids[5], Why: "outside", UserID: "owner"}); err != nil {
+		t.Fatal(err)
+	}
+	pc, fake := fakePrompts(t, f, func(name string, args map[string]json.RawMessage) (any, bool, int) {
+		if name == "run" {
+			var prompt string
+			_ = json.Unmarshal(args["name"], &prompt)
+			if prompt != enrichers.PromptName(enrichers.KindBrief) {
+				t.Error("wrong prompt", prompt)
+			}
+			var input struct {
+				Candidate string `json:"candidate"`
+			}
+			_ = json.Unmarshal(args["input"], &input)
+			var got, want any
+			_ = json.Unmarshal(args["input"], &got)
+			_ = json.Unmarshal(inputs[input.Candidate], &want)
+			if !reflect.DeepEqual(got, want) {
+				t.Error("brief input", got, want)
+			}
+			return map[string]any{"id": input.Candidate, "status": enrichers.RunQueued}, false, 0
+		}
+		result, refused, code := promptAnswer(name, args)
+		if name == "result" {
+			var id string
+			_ = json.Unmarshal(args["run"], &id)
+			r := result.(map[string]any)
+			r["id"] = id
+			r["stdout"] = `{"summary":"A working business.","categories":[],"labels":[]}`
+			switch id {
+			case ids[0]:
+				r["stdout"] = `{"summary":"","categories":[],"labels":[]}`
+			case ids[1]:
+				r["stdout"] = "invalid output"
+			case ids[2]:
+				if _, err := f.st.AddPage(ctx, store.Page{Candidate: id, URL: "https://pages.test/additional", Text: "new text", UserID: "owner"}); err != nil {
+					t.Error(err)
+				}
+			case ids[3]:
+				r["status"] = "failed"
+			case ids[4]:
+				r["exit_code"] = 1
+			default:
+				t.Error("unexpected target", id)
+			}
+		}
+		return result, refused, code
+	})
+	targetEngine(f, pc, promptAfter)
+	caller := identity.Caller{UserID: "owner", Email: "owner@example.test", RequestID: "brief-request"}
+	p, err := f.eng.EnrichCohort(ctx, caller, enrichers.KindBrief, cohort.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p = f.ended(p.ID)
+	if p.Status != store.StatusDone || p.EnrichKind != enrichers.KindBrief || p.Due != 5 || p.Runs != 5 || p.RunsFailed != 4 || p.Cost != 5000 || p.Pages != 0 || p.Derived+p.Fetched+p.HTTPS+p.HTTP+p.None+p.Rows+p.New+p.Changed+p.Unchanged+p.Gone+p.Created+p.Linked+p.Judged+p.Unranged != 0 {
+		t.Fatal(p)
+	}
+	for i, id := range ids {
+		es, err := f.st.Enrichments(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		count := 0
+		for _, e := range es {
+			if e.Kind != enrichers.KindBrief {
+				continue
+			}
+			count++
+			var found enrichers.BriefFound
+			if err := json.Unmarshal(e.Found, &found); err != nil || found.Run != id || found.CostNanos != 1000 || found.Failed() != (i != 2) || e.Source != enrichers.SourcePrompts || e.Cost != 0.000001 {
+				t.Fatal(e, found, err)
+			}
+		}
+		want := 1
+		if i == 5 {
+			want = 0
+		}
+		if count != want {
+			t.Fatal(id, count, want)
+		}
+	}
+	for _, call := range fake.snapshot() {
+		if call.user != caller.UserID || call.email != caller.Email || call.request != caller.RequestID {
+			t.Fatal(call)
+		}
+	}
+	for _, other := range f.list() {
+		if other.Trigger == p.ID {
+			t.Fatal("brief started follow-on", other)
+		}
+	}
+	// A failed brief still records its inputs, so it is not run again unchanged.
+	second, err := f.eng.EnrichCohort(ctx, caller, enrichers.KindBrief, ids[0], false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second = f.ended(second.ID)
+	if second.Status != store.StatusDone || second.Due+second.Runs+second.RunsFailed+second.Pages+second.Cost != 0 {
+		t.Fatal(second)
+	}
 }

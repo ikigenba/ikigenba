@@ -240,3 +240,18 @@ func TestWebsiteEvidenceDescription(t *testing.T) {
 		}
 	}
 }
+
+// R-KVPQ-8YVJ R-KWXM-MQM8
+func TestCategories(t *testing.T) {
+	want := []string{sources.CategoryConstruction, sources.CategoryTrucking, sources.CategoryAgriculture, sources.CategoryManufacturing, sources.CategoryWholesale, sources.CategoryMining, sources.CategoryWaste, sources.CategoryUtilities, sources.CategoryRetail, sources.CategoryOtherTransportation, sources.CategoryInformation, sources.CategoryFinance, sources.CategoryRealEstate, sources.CategoryProfessional, sources.CategoryAdministrative, sources.CategoryEducation, sources.CategoryHealthCare, sources.CategoryArts, sources.CategoryFood, sources.CategoryRepair, sources.CategoryReligious, sources.CategoryGovernment, sources.CategoryOther}
+	got := sources.Categories()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatal(got)
+	}
+	for i := range got {
+		got[i] = "changed"
+	}
+	if !reflect.DeepEqual(sources.Categories(), want) {
+		t.Fatal("shared category storage")
+	}
+}

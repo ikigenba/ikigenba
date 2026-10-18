@@ -45,7 +45,7 @@ func TestTargetPassAndCosts(t *testing.T) {
 	}
 }
 
-// R-3VZN-BZMO R-PFQ0-CV67
+// R-3VZN-BZMO R-GRY0-UTBF
 func TestSiteTextResultProjection(t *testing.T) {
 	for _, tc := range []struct {
 		status string
@@ -79,7 +79,7 @@ func TestSiteTextResultProjection(t *testing.T) {
 	}
 }
 
-// R-45QU-E5K8 R-3URQ-Y7VZ R-3ZNC-HAUR
+// R-45QU-E5K8 R-GN2F-BQCN R-3ZNC-HAUR
 func TestKeptPageProjections(t *testing.T) {
 	p := store.Page{Candidate: "cand_0123456789abcdef", Number: 7, URL: "https://fixture.test/", Size: 37, Fetched: fixtureTime(), UserID: "fixture-user", Text: "fixture text"}
 	row := pageRow(p)
@@ -115,7 +115,7 @@ func TestKeptPagePathGrammar(t *testing.T) {
 	}
 }
 
-// R-PKLL-VY4Z R-PGXW-QMWW R-4D28-OS0E R-4GPX-U38H R-4HXU-7UZ6
+// R-GVLQ-04JI R-GT5X-8L24 R-4D28-OS0E R-4GPX-U38H R-4HXU-7UZ6
 func TestKeptPageRoutes(t *testing.T) {
 	cfg, d := pageFixture(t)
 	ctx := t.Context()
@@ -193,7 +193,7 @@ func TestKeptPageRoutes(t *testing.T) {
 	}
 }
 
-// R-43B1-MM2U R-3YFG-3J42
+// R-43B1-MM2U R-GPI8-39U1
 func TestMemberSiteTextStamp(t *testing.T) {
 	for _, at := range []time.Time{{}, fixtureTime()} {
 		v := memberRow(store.Ranked{SiteText: at}, 0)
@@ -254,7 +254,7 @@ func TestAddedTemplateStates(t *testing.T) {
 	}
 }
 
-// R-43B1-MM2U R-PGXW-QMWW R-PFQ0-CV67
+// R-43B1-MM2U R-GT5X-8L24 R-GRY0-UTBF
 func TestSiteTextCandidateAndCohortAgree(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()
@@ -330,9 +330,9 @@ func TestTargetPassPage(t *testing.T) {
 	}
 }
 
-// R-3URQ-Y7VZ R-3VZN-BZMO R-3X7J-PRDD R-3ZNC-HAUR
+// R-GN2F-BQCN R-3VZN-BZMO R-3X7J-PRDD R-3ZNC-HAUR
 func TestAddedViewShapes(t *testing.T) {
-	candidate := CandidateData{page.Banner{}, CandidateView{}, nil, nil, []EstimateView{}, []LinkView{}, []RulingView{}, []PageRow{}, []EnrichmentRow{}, []RejectRecordRow{}}
+	candidate := CandidateData{page.Banner{}, CandidateView{}, nil, nil, nil, []EstimateView{}, []LinkView{}, []RulingView{}, []PageRow{}, []EnrichmentRow{}, []RejectRecordRow{}}
 	if candidate.Pages == nil || candidate.Enrichments == nil {
 		t.Fatal(candidate)
 	}

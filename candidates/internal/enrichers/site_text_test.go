@@ -28,7 +28,7 @@ func TestPromptWords(t *testing.T) {
 	}
 }
 
-// R-LUX6-NZNG R-LW53-1RE5 R-LXCZ-FJ4U R-M28K-YM3M R-M746-HP2E R-M8C2-VGT3
+// R-KZDF-EA3M R-JYLA-O6W0 R-LXCZ-FJ4U R-M28K-YM3M R-M746-HP2E R-M8C2-VGT3
 func TestSiteTextClientAndRegistry(t *testing.T) {
 	writer := telemetry.New(telemetry.Config{Service: "fixture", Sink: &telemetry.Capture{}, Now: func() time.Time { return time.Unix(100, 0) }, Sleep: func(context.Context, time.Duration) {}, Rand: bytes.NewReader(bytes.Repeat([]byte{1}, 256))})
 	defer writer.Shutdown(context.Background(), "fixture")

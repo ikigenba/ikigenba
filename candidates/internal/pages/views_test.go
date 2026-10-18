@@ -48,7 +48,7 @@ func TestFormatting(t *testing.T) {
 	}
 }
 
-// R-AAIJ-2DB7 R-3URQ-Y7VZ R-02QA-EAYZ R-4VMG-YZTE R-3X7J-PRDD R-4ZA6-4B1H
+// R-AAIJ-2DB7 R-GN2F-BQCN R-02QA-EAYZ R-4VMG-YZTE R-3X7J-PRDD R-4ZA6-4B1H
 func TestTemplateDataShape(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -73,7 +73,7 @@ func TestTemplateDataShape(t *testing.T) {
 	for _, v := range []struct {
 		name string
 		data any
-	}{{"landing", landing}, {"candidate", CandidateData{b, cv, nil, &av, []EstimateView{ev}, []LinkView{lv}, []RulingView{rv}, []PageRow{}, []EnrichmentRow{}, []RejectRecordRow{{"kind", "cohort", "cohort-name", "by", "user", "at", "at-text", "why"}}}}, {"pass", PassData{b, pv}}, {"tools", ToolsData{b, []ToolRow{{"name", "description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}} {
+	}{{"landing", landing}, {"candidate", CandidateData{b, cv, nil, nil, &av, []EstimateView{ev}, []LinkView{lv}, []RulingView{rv}, []PageRow{}, []EnrichmentRow{}, []RejectRecordRow{{"kind", "cohort", "cohort-name", "by", "user", "at", "at-text", "why"}}}}, {"pass", PassData{b, pv}}, {"tools", ToolsData{b, []ToolRow{{"name", "description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}} {
 		if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, v.name, v.data); err != nil {
 			t.Fatal(v.name, err)
 		}

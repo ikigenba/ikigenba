@@ -238,6 +238,7 @@ func Handler(cfg Config) http.Handler {
 					d.Pages = append(d.Pages, pageRow(p))
 				}
 				setWebsite(&d.Candidate, enrichments)
+				d.Brief = briefView(enrichments)
 				for _, x := range enrichments {
 					d.Enrichments = append(d.Enrichments, enrichmentRow(x))
 				}

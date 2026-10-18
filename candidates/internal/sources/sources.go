@@ -210,3 +210,8 @@ func GovernmentMatch(k string) string {
 	}
 	return ""
 }
+
+// Categories returns the fixed category words in their declared order.
+func Categories() []string {
+	return []string{CategoryConstruction, CategoryTrucking, CategoryAgriculture, CategoryManufacturing, CategoryWholesale, CategoryMining, CategoryWaste, CategoryUtilities, CategoryRetail, CategoryOtherTransportation, CategoryInformation, CategoryFinance, CategoryRealEstate, CategoryProfessional, CategoryAdministrative, CategoryEducation, CategoryHealthCare, CategoryArts, CategoryFood, CategoryRepair, CategoryReligious, CategoryGovernment, CategoryOther}
+}

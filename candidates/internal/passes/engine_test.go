@@ -491,7 +491,7 @@ func TestRebuildBackgroundIdentityAndEvents(t *testing.T) {
 	}
 }
 
-// R-SQD9-SRDA R-SRL6-6J3Z R-SWGR-PM2R R-Z3M9-W116 R-GU9F-TVQY
+// R-ML31-W3H8 R-SQD9-SRDA R-SRL6-6J3Z R-SWGR-PM2R R-Z3M9-W116 R-GU9F-TVQY
 func TestResolutionAndRebuild(t *testing.T) {
 	var stateMu sync.Mutex
 	rows := 3
@@ -519,7 +519,7 @@ func TestResolutionAndRebuild(t *testing.T) {
 	}
 	first := f.ended(initial.ID)
 	settleCostChain(t, f, first.Trigger, time.Now())
-	if first.Status != store.StatusDone || first.Rows != 3 || first.New != 3 || first.Changed != 0 || first.Unchanged != 0 || first.Gone != 0 || first.Created+first.Linked != 3 || first.Judged != 0 || first.Unranged != 0 {
+	if first.Status != store.StatusDone || first.Rows != 3 || first.New != 3 || first.Changed != 0 || first.Unchanged != 0 || first.Gone != 0 || first.Created+first.Linked != 3 || first.Judged != 0 || first.Unranged != 0 || first.Derived+first.Due+first.Fetched+first.HTTPS+first.HTTP+first.None+first.Runs+first.RunsFailed+first.Pages+first.Cost != 0 {
 		t.Fatal(first)
 	}
 	cs, err := f.st.ListCandidates(context.Background(), store.CandidateFilter{}, "", "", 1000)

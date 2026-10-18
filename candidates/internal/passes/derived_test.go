@@ -16,6 +16,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 // R-SNXH-17VW R-SMPK-NG57 R-SLHO-9OEI R-1QFF-85G4 R-T7FV-5JR0 R-T8NR-JBHP
@@ -254,7 +255,7 @@ func TestWebsiteInputsChangeRecordsAnotherResult(t *testing.T) {
 	}
 }
 
-// R-SU0Y-Y2LD R-SQD9-SRDA R-SWGR-PM2R R-T8NR-JBHP
+// R-MMAY-9V7X R-ML31-W3H8 R-SQD9-SRDA R-SWGR-PM2R R-T8NR-JBHP
 func TestRebuildForcesDerivedResultsBeforeJudging(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/scrapers/fmcsa/current" {
@@ -269,7 +270,8 @@ func TestRebuildForcesDerivedResultsBeforeJudging(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"scraper": "fmcsa", "run": "forced-run", "source_id": string(rune('a' + i)), "digest": "same", "name": string(rune('a' + i)), "collected": "2000-01-01T00:00:00Z", "names": []string{}, "people": []any{}, "facts": map[string]any{}, "raw": map[string]any{}, "address": map[string]any{"state": "MN", "zip": zip}})
 		}
 	}, true)
-	f.checker(func(r *http.Request) (*http.Response, error) { t.Error("rebuild fetched"); return pageResponse(r), nil })
+	pc, fake := fakePrompts(t, f, promptAnswer)
+	f.eng = passes.New(passes.Config{Store: f.st, Sources: sources.New(fmcsa.New()), Scrapes: f.sc, Prompts: pc, Telemetry: f.w, Events: f.em, Website: &website.Checker{Client: &http.Client{Transport: enrichTransport(func(r *http.Request) (*http.Response, error) { t.Error("rebuild fetched"); return pageResponse(r), nil })}}})
 	if err := f.st.ReplaceZipDrive(context.Background(), map[string]int64{"55401": 84}); err != nil {
 		t.Fatal(err)
 	}
@@ -279,8 +281,8 @@ func TestRebuildForcesDerivedResultsBeforeJudging(t *testing.T) {
 			t.Fatal(err)
 		}
 		p = f.ended(p.ID)
-		if p.Status != store.StatusDone || p.Derived != 3 || p.Judged != 2 || p.Due+p.Fetched+p.HTTPS+p.HTTP+p.None != 0 {
-			t.Fatal(p)
+		if p.Status != store.StatusDone || p.Derived != 3 || p.Judged != 2 || p.Due+p.Fetched+p.HTTPS+p.HTTP+p.None+p.Runs+p.RunsFailed+p.Pages+p.Cost != 0 || len(fake.snapshot()) != 0 {
+			t.Fatal(p, fake.snapshot())
 		}
 		cs, err := f.st.ListCandidates(context.Background(), store.CandidateFilter{}, "", "", 10)
 		if err != nil {
@@ -299,7 +301,7 @@ func TestRebuildForcesDerivedResultsBeforeJudging(t *testing.T) {
 				t.Fatal(c, es)
 			}
 			for _, en := range es {
-				if en.Kind == sources.WebsiteCheck {
+				if en.Kind == sources.WebsiteCheck || en.Kind == enrichers.KindSiteText || en.Kind == enrichers.KindBrief {
 					t.Fatal(en)
 				}
 			}
@@ -330,7 +332,7 @@ func equalInt(a, b *int64) bool {
 	return *a == *b
 }
 
-// R-SU0Y-Y2LD
+// R-MMAY-9V7X
 func TestRebuildPersistsDerivedFactsInHistoricalAssessment(t *testing.T) {
 	rows := []scrapes.Row{
 		{Scraper: ppp.Name, Run: "ppp-current", SourceID: "original", Digest: "one", Name: "Original Carrier", Address: scrapes.Address{State: "MN", Zip: "55072"}, Facts: map[string]json.RawMessage{}, Raw: json.RawMessage(`{}`)},

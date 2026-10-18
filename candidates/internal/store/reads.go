@@ -180,6 +180,9 @@ func rankedWindow(ctx context.Context, tx *sql.Tx, query string, args ...any) ([
 			return nil, err
 		}
 		for _, w := range f.Written {
+			if w.Kind == enrichers.KindBrief {
+				member.Brief = w.At
+			}
 			if w.Kind == enrichers.KindSiteText {
 				member.SiteText = w.At
 			}

@@ -267,10 +267,12 @@ func (e *Engine) promptOne(ctx context.Context, pr enrichers.Prompter, d store.D
 		if err != nil {
 			return total, store.ReasonStore
 		}
-		if out.Status != enrichers.RunExited || out.ExitCode == nil || *out.ExitCode != 0 {
+		if pr.Failed(r.Found) {
 			total.RunsFailed = 1
 		}
-		total.Pages = max(int64(0), after.Copies-before.Copies)
+		if pr.Kind() == enrichers.KindSiteText {
+			total.Pages = max(int64(0), after.Copies-before.Copies)
+		}
 		total.Cost = out.CostNanos
 		return total, ""
 	}

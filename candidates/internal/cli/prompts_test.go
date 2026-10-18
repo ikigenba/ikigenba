@@ -25,11 +25,13 @@ type promptRequest struct {
 	Header http.Header
 }
 type promptFake struct {
-	mu    sync.Mutex
-	calls []promptRequest
-	mode  string
-	echo  string
-	runs  int
+	mu       sync.Mutex
+	calls    []promptRequest
+	mode     string
+	echo     string
+	runs     int
+	stdout   string
+	exitCode int
 }
 
 func (f *promptFake) requests() []promptRequest {
@@ -41,7 +43,10 @@ func (f *promptFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ID     json.RawMessage `json:"id"`
 		Params struct {
-			Name string `json:"name"`
+			Name      string `json:"name"`
+			Arguments struct {
+				Name string `json:"name"`
+			} `json:"arguments"`
 		} `json:"params"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -52,6 +57,7 @@ func (f *promptFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.calls = append(f.calls, promptRequest{req.Params.Name, r.Header.Clone()})
 	mode := f.mode
 	echo := f.echo
+	stdout, exitCode := f.stdout, f.exitCode
 	if req.Params.Name == "run" {
 		f.runs++
 	}
@@ -67,13 +73,13 @@ func (f *promptFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch req.Params.Name {
 	case "show":
 		refusal = mode == "refuse-show"
-		value = map[string]any{"id": "prompt_fixture", "name": "site-text", "model": "fixture", "prompt": "fixture", "system": "fixture", "tools": []string{}}
+		value = map[string]any{"id": "prompt_fixture", "name": req.Params.Arguments.Name, "model": "fixture", "prompt": "fixture", "system": "fixture", "tools": []string{}}
 	case "run":
 		refusal = mode == "queue" && runs == 1 || mode == "refuse-result" && req.Params.Name == "result"
 		value = map[string]any{"id": "run_prompt", "status": "running"}
 	case "result":
 		refusal = mode == "refuse-result"
-		value = map[string]any{"id": "run_prompt", "prompt": "site-text", "model": "fixture", "status": map[bool]string{true: "failed", false: "exited"}[mode == "failed"], "exit_code": 0, "started": "2026-01-01T00:00:00Z", "finished": "2026-01-01T00:01:00Z"}
+		value = map[string]any{"id": "run_prompt", "prompt": "site-text", "model": "fixture", "status": map[bool]string{true: "failed", false: "exited"}[mode == "failed"], "exit_code": exitCode, "stdout": stdout, "started": "2026-01-01T00:00:00Z", "finished": "2026-01-01T00:01:00Z"}
 	}
 	result := map[string]any{"content": []any{}, "structuredContent": value}
 	if refusal {

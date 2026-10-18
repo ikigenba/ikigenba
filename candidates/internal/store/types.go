@@ -92,6 +92,7 @@ type Facts struct {
 	PowerUnits, Drivers *int64
 	Website, WebsiteURL string
 	Minutes             *int64
+	Brief               string
 	Written             []Written
 }
 
@@ -134,6 +135,7 @@ type Ranked struct {
 	Candidate  Candidate
 	Assessment Assessment
 	SiteText   time.Time
+	Brief      time.Time
 }
 
 // Record vocabulary and identifier prefixes.

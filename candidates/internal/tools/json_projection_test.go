@@ -83,3 +83,19 @@ func TestFullEnrichmentEncodingAndLegacyWebsiteMembers(t *testing.T) {
 		}
 	}
 }
+
+// R-KAXF-Q4QL
+func TestBriefFoundNormalizesEmptyArrays(t *testing.T) {
+	e := store.Enrichment{Kind: enrichers.KindBrief, Source: enrichers.SourcePrompts, Inputs: "fixture-inputs", Found: encodedJSON(enrichers.BriefFound{Run: "fixture-run", Status: "failed"})}
+	got := enrichmentOf(e)
+	var found map[string]json.RawMessage
+	if err := json.Unmarshal(got.Found, &found); err != nil {
+		t.Fatal(err)
+	}
+	if string(found["categories"]) != "[]" || string(found["labels"]) != "[]" {
+		t.Fatal(string(got.Found))
+	}
+	if _, ok := found["exit_code"]; ok {
+		t.Fatal(string(got.Found))
+	}
+}

@@ -705,7 +705,7 @@ func TestCohortOrderFieldsDirectionsUnknownsAndTies(t *testing.T) {
 	contractEqual(t, cohortIDs(cohortRead(t, f, c).Members), []string{ids[1], ids[3], ids[2], ids[0], ids[4]})
 }
 
-// R-DMFQ-97IE R-6BUH-Z4AZ R-M2IM-ZS9W R-4ZLS-2ZZN
+// R-DMFQ-97IE R-6BUH-Z4AZ R-L5GX-B4T3 R-4ZLS-2ZZN
 func TestCohortMembershipReadsStoredJudgmentsAndStandingRejects(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -943,7 +943,7 @@ func TestCohortCategoryMatchesAnyAssessmentCategory(t *testing.T) {
 	contractEqual(t, cohortIDs(cohortRead(t, f, c).Members), []string{id})
 }
 
-// R-PKTA-MKUR R-PN93-E4C5 R-M2IM-ZS9W
+// R-PKTA-MKUR R-PN93-E4C5 R-L5GX-B4T3
 func TestCohortWebsiteFiltersReadStoredJudgment(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

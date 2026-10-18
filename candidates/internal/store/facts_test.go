@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-H3AP-4RUU R-OU7I-97OR R-WPW0-5EVS R-WOO3-RN53
+// R-AI5Z-1BAG R-OU7I-97OR R-WPW0-5EVS R-WOO3-RN53
 func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -70,7 +70,7 @@ func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 	contractEqual(t, facts.Website, sources.WebsiteUnknown)
 }
 
-// R-MOMA-IP7M R-R7HY-562T R-MS9Z-O0FP R-WNG7-DVEE R-MTHW-1S6E
+// R-MOMA-IP7M R-R7HY-562T R-8HKY-ZEB4 R-WNG7-DVEE R-MTHW-1S6E
 func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -84,6 +84,10 @@ func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	survivor := contractAttach(t, f, "run", b)[0]
 	deriveAll(t, f.s)
 	_, err := f.s.AddEnrichments(ctx, []store.Enrichment{websiteResult(other, sources.WebsiteHTTPS)})
+	contractOK(t, err)
+	_, err = f.s.Judge(ctx, []string{other})
+	contractOK(t, err)
+	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{briefResult(t, other, "merged brief", false, sources.CategoryRetail)})
 	contractOK(t, err)
 	_, err = f.s.Judge(ctx, []string{other})
 	contractOK(t, err)
@@ -139,6 +143,7 @@ func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	facts, err := f.s.GetFacts(ctx, survivor)
 	contractOK(t, err)
 	contractEqual(t, facts.Website, sources.WebsiteHTTPS)
+	contractEqual(t, facts.Brief, "merged brief")
 	split, _, err := f.s.Decide(ctx, store.Ruling{Kind: store.KindSplit, Candidate: survivor, Keys: []string{sources.SourceKey(a.Scraper, a.SourceID)}, Why: "separate", UserID: "owner"})
 	contractOK(t, err)
 	facts, err = f.s.GetFacts(ctx, survivor)
@@ -149,6 +154,8 @@ func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	contractOK(t, err)
 	contractEqual(t, child.FleetVerdict, sources.FleetPass)
 	contractEqual(t, child.Website, sources.WebsiteUnknown)
+	contractEqual(t, facts.Brief, "merged brief")
+	contractEqual(t, child.Brief, "")
 	beforeFacts := facts
 	beforeResults, err := f.s.Enrichments(ctx, survivor)
 	contractOK(t, err)
@@ -266,7 +273,7 @@ func TestOrdinaryWritesPreserveFactsAndResultHistory(t *testing.T) {
 	}
 }
 
-// R-GZMZ-ZGMR R-GSBL-OU6L R-OLO7-KTHW
+// R-KUHT-V74U R-GSBL-OU6L R-ADAD-I8BO
 func TestFactsProjectionUsesNewestResultOfEveryKind(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

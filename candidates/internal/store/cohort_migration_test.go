@@ -72,7 +72,7 @@ func assertPriorJudgment(t *testing.T, s *store.Store, id string) {
 	contractEqual(t, a, store.Assessment{Candidate: id, Operating: &op, OperatingKey: 600000, Evidence: []sources.Evidence{}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &conf, Categories: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)})
 }
 
-// R-HE9S-KPJ3
+// R-AJDV-F315
 func TestPriorJudgmentsAcrossMigration(t *testing.T) {
 	for _, fleet := range []bool{false, true} {
 		t.Run(map[bool]string{false: "false", true: "true"}[fleet], func(t *testing.T) {
@@ -144,7 +144,7 @@ func TestOldAssessmentsClearWhilePassesRetainTheirMeaning(t *testing.T) {
 	contractError(t, err, store.ErrDelivered)
 }
 
-// R-HFHO-YH9S
+// R-AKLR-SURU
 func TestWebsiteMigrationKeepsPreviousJudgments(t *testing.T) {
 	for _, fleet := range []bool{false, true} {
 		t.Run(map[bool]string{false: "false", true: "true"}[fleet], func(t *testing.T) {
