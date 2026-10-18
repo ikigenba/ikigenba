@@ -303,6 +303,45 @@ func TestCohortPagingNameTies(t *testing.T) {
 	}
 }
 
+// R-GM8K-P2AP
+func TestCohortCategoryCreateAndEdit(t *testing.T) {
+	f := newFixture(t)
+	k := f.create("category edits")
+	for _, category := range []string{
+		sources.CategoryConstruction, sources.CategoryTrucking, sources.CategoryAgriculture,
+		sources.CategoryManufacturing, sources.CategoryWholesale, sources.CategoryMining,
+		sources.CategoryWaste, sources.CategoryOther, sources.CategoryUtilities,
+		sources.CategoryRetail, sources.CategoryOtherTransportation, sources.CategoryInformation,
+		sources.CategoryFinance, sources.CategoryRealEstate, sources.CategoryProfessional,
+		sources.CategoryAdministrative, sources.CategoryEducation, sources.CategoryHealthCare,
+		sources.CategoryArts, sources.CategoryFood, sources.CategoryRepair,
+		sources.CategoryReligious, sources.CategoryGovernment,
+	} {
+		t.Run(category, func(t *testing.T) {
+			filters := tools.FilterArgs{Categories: []string{category}}
+			created := f.call("create_cohort", tools.CreateCohortArgs{Name: category, Filters: &filters})
+			if created.IsError() {
+				t.Fatal(decode(t, created))
+			}
+			if got := decodeList[tools.Cohort](t, created); !reflect.DeepEqual(got.Filters.Categories, filters.Categories) {
+				t.Fatal(got.Filters)
+			}
+			edited := f.call("edit_cohort", tools.EditCohortArgs{Cohort: k.ID, Filters: &filters})
+			if edited.IsError() {
+				t.Fatal(decode(t, edited))
+			}
+			if got := decodeList[tools.Cohort](t, edited); !reflect.DeepEqual(got.Filters.Categories, filters.Categories) {
+				t.Fatal(got.Filters)
+			}
+		})
+	}
+	for _, category := range []string{"shops", "Retail", "", "trucking", "retail ", "EDUCATION", "governments"} {
+		filters := tools.FilterArgs{Categories: []string{sources.CategoryGovernment, category}}
+		refusal(t, f.call("create_cohort", tools.CreateCohortArgs{Name: "invalid category", Filters: &filters}), passes.RefusalInvalid, tools.RefuseInvalid)
+		refusal(t, f.call("edit_cohort", tools.EditCohortArgs{Cohort: k.ID, Filters: &filters}), passes.RefusalInvalid, tools.RefuseInvalid)
+	}
+}
+
 // R-BHAU-UK66 R-BJQN-M3NK R-1QW9-DP1Y R-BCF9-BH7E R-B8RK-65ZB R-VWN5-8SST R-OL8I-4DRP R-OMGE-I5IE
 func TestCohortValidationBeforeFailingStore(t *testing.T) {
 	f := newFixture(t)

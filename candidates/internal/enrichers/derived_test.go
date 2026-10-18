@@ -63,7 +63,7 @@ func TestDriveMinutesValid(t *testing.T) {
 	}
 }
 
-// R-UK9O-6ROP
+// R-V369-O6HR
 func TestLinkFactsDerive(t *testing.T) {
 	date := func(v string) time.Time {
 		t.Helper()
@@ -83,6 +83,7 @@ func TestLinkFactsDerive(t *testing.T) {
 		Filed:      time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC),
 	}}
 	noScraper := enrichers.Link{Reading: sources.Reading{Category: sources.CategoryConstruction, GovernmentMatch: "x"}}
+	government := enrichers.Category{Name: sources.CategoryGovernment, Source: "name"}
 	construction := enrichers.Category{Name: sources.CategoryConstruction, Source: ppp.Name}
 	trucking := enrichers.Category{Name: sources.CategoryTrucking, Source: fmcsa.Name}
 	for _, tc := range []struct {
@@ -99,8 +100,8 @@ func TestLinkFactsDerive(t *testing.T) {
 		{"gone ppp", []enrichers.Link{f, pg}, "2015-03-01", "2025-06-01", "", []enrichers.Category{trucking}},
 		{"ignore gone dates", []enrichers.Link{f, p, gone}, "2015-03-01", "2025-06-01", "", []enrichers.Category{construction, trucking}},
 		{"deduplicate", []enrichers.Link{p, p}, "2018-04-09", "2020-04-09", "", []enrichers.Category{construction}},
-		{"government order", []enrichers.Link{{}, {Reading: sources.Reading{GovernmentMatch: "x"}}, {Reading: sources.Reading{GovernmentMatch: "y"}}}, "", "", "x", []enrichers.Category{}},
-		{"gone government", []enrichers.Link{{}, {Gone: true, Reading: sources.Reading{GovernmentMatch: "x"}}, {Reading: sources.Reading{GovernmentMatch: "y"}}}, "", "", "y", []enrichers.Category{}},
+		{"government order", []enrichers.Link{{}, {Reading: sources.Reading{GovernmentMatch: "x"}}, {Reading: sources.Reading{GovernmentMatch: "y"}}}, "", "", "x", []enrichers.Category{government}},
+		{"gone government", []enrichers.Link{{}, {Gone: true, Reading: sources.Reading{GovernmentMatch: "x"}}, {Reading: sources.Reading{GovernmentMatch: "y"}}}, "", "", "y", []enrichers.Category{government}},
 		{"UTC dates", []enrichers.Link{{Reading: sources.Reading{KnownSince: date("2018-04-09T23:30:00-05:00"), Filed: date("2025-06-01T00:30:00+05:00")}}}, "2018-04-10", "2025-05-31", "", []enrichers.Category{}},
 		{"unrepresentable dates", []enrichers.Link{unrepresentable}, "", "", "", []enrichers.Category{}},
 		{"opposite unrepresentable dates", []enrichers.Link{{Reading: sources.Reading{KnownSince: unrepresentable.Reading.Filed, Filed: unrepresentable.Reading.KnownSince}}}, "", "", "", []enrichers.Category{}},
@@ -113,8 +114,8 @@ func TestLinkFactsDerive(t *testing.T) {
 			KnownSince: time.Date(-1, 12, 31, 23, 0, 0, 0, time.FixedZone("west", -5*60*60)),
 			Filed:      time.Date(10000, 1, 1, 0, 30, 0, 0, time.FixedZone("east", 5*60*60)),
 		}}}, "0000-01-01", "9999-12-31", "", []enrichers.Category{}},
-		{"no scraper", []enrichers.Link{noScraper}, "", "", "x", []enrichers.Category{}},
-		{"no scraper beside category", []enrichers.Link{noScraper, p}, "2018-04-09", "2020-04-09", "x", []enrichers.Category{construction}},
+		{"no scraper", []enrichers.Link{noScraper}, "", "", "x", []enrichers.Category{government}},
+		{"no scraper beside category", []enrichers.Link{noScraper, p}, "2018-04-09", "2020-04-09", "x", []enrichers.Category{construction, government}},
 		{"category source order", []enrichers.Link{{Scraper: "z", Reading: sources.Reading{Category: "a"}}, {Scraper: "a", Reading: sources.Reading{Category: "a"}}, {Scraper: "a", Reading: sources.Reading{Category: "B"}}, {}}, "", "", "", []enrichers.Category{{Name: "B", Source: "a"}, {Name: "a", Source: "a"}, {Name: "a", Source: "z"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -133,7 +134,43 @@ func TestLinkFactsDerive(t *testing.T) {
 	}
 }
 
-// R-UMPG-YB63
+// R-V369-O6HR
+func TestLinkFactsGovernmentCategories(t *testing.T) {
+	government := enrichers.Category{Name: sources.CategoryGovernment, Source: "name"}
+	education := enrichers.Category{Name: sources.CategoryEducation, Source: "name"}
+	trucking := enrichers.Category{Name: sources.CategoryTrucking, Source: fmcsa.Name}
+	link := func(scraper, category, match string, gone bool) enrichers.Link {
+		return enrichers.Link{Scraper: scraper, Gone: gone, Reading: sources.Reading{Category: category, GovernmentMatch: match}}
+	}
+	for _, tc := range []struct {
+		name       string
+		links      []enrichers.Link
+		match      string
+		categories []enrichers.Category
+	}{
+		{"county fleet", []enrichers.Link{link(fmcsa.Name, sources.CategoryTrucking, "COUNTY", false)}, "COUNTY", []enrichers.Category{government, trucking}},
+		{"school fleet", []enrichers.Link{link(fmcsa.Name, sources.CategoryTrucking, "SCHOOL DISTRICT", false)}, "SCHOOL DISTRICT", []enrichers.Category{education, trucking}},
+		{"university fleet", []enrichers.Link{link(fmcsa.Name, sources.CategoryTrucking, "UNIVERSITY", false)}, "UNIVERSITY", []enrichers.Category{education, trucking}},
+		{"unmatched fleet", []enrichers.Link{link(fmcsa.Name, sources.CategoryTrucking, "", false)}, "", []enrichers.Category{trucking}},
+		{"two government matches", []enrichers.Link{link(fmcsa.Name, "", "COUNTY", false), link(fmcsa.Name, "", "CITY OF", false)}, "COUNTY", []enrichers.Category{government}},
+		{"different sources", []enrichers.Link{link(ppp.Name, sources.CategoryGovernment, "", false), link(fmcsa.Name, "", "COUNTY", false)}, "COUNTY", []enrichers.Category{government, {Name: sources.CategoryGovernment, Source: ppp.Name}}},
+		{"first match wins", []enrichers.Link{link("", "", "COUNTY", false), link("", "", "UNIVERSITY", false)}, "COUNTY", []enrichers.Category{government}},
+		{"gone match yields next", []enrichers.Link{link("", "", "COUNTY", true), link("", "", "UNIVERSITY", false)}, "UNIVERSITY", []enrichers.Category{education}},
+		{"all matches gone", []enrichers.Link{link("", "", "COUNTY", true), link("", "", "UNIVERSITY", true)}, "", []enrichers.Category{}},
+		{"deduplicate name source", []enrichers.Link{link("name", sources.CategoryGovernment, "COUNTY", false)}, "COUNTY", []enrichers.Category{government}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := enrichers.Subject{Links: tc.links}
+			before := subjectJSON(t, s)
+			assertLinkResult(t, s, enrichers.LinkFound{GovernmentMatch: tc.match, Categories: tc.categories, FleetVerdict: sources.FleetUnknown})
+			if !bytes.Equal(before, subjectJSON(t, s)) {
+				t.Fatal("subject changed")
+			}
+		})
+	}
+}
+
+// R-V4E6-1Y8G
 func TestLinkFactsFleet(t *testing.T) {
 	first := enrichers.Link{Scraper: fmcsa.Name, Reading: sources.Reading{FleetVerdict: sources.FleetFail, PowerUnits: count(1), Drivers: count(2)}}
 	second := enrichers.Link{Scraper: fmcsa.Name, Reading: sources.Reading{FleetVerdict: sources.FleetPass, PowerUnits: count(5), Drivers: count(6)}}

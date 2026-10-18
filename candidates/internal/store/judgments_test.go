@@ -83,7 +83,7 @@ func TestJudgmentsAggregateAndPersist(t *testing.T) {
 	contractEqual(t, got.Evidence, []sources.Evidence{active, activity, domain, loan})
 	contractEqual(t, got.KnownSince, a.Reading.KnownSince)
 	contractEqual(t, got.NewestFiling, a.Reading.Filed)
-	contractEqual(t, got.Categories, []sources.Category{{Name: sources.CategoryConstruction, Source: ppp.Name}, {Name: sources.CategoryTrucking, Source: fmcsa.Name}})
+	contractEqual(t, got.Categories, []sources.Category{{Name: sources.CategoryConstruction, Source: ppp.Name}, {Name: sources.CategoryGovernment, Source: "name"}, {Name: sources.CategoryTrucking, Source: fmcsa.Name}})
 	contractEqual(t, got.GovernmentMatch, b.Reading.GovernmentMatch)
 	contractEqual(t, *got.Minutes, int64(31))
 	contractEqual(t, got.Rules, sources.Rules)
@@ -312,7 +312,7 @@ func TestJudgmentConflictsFollowLinkOrder(t *testing.T) {
 	contractEqual(t, a.FleetVerdict, sources.FleetUnknown)
 	contractEqual(t, a.GovernmentMatch, "newer-pattern")
 	contractEqual(t, a.Evidence, []sources.Evidence{{Name: "maximum", Source: "strongest", Weight: .8}, {Name: "equal", Source: "first", Weight: .4}})
-	contractEqual(t, a.Categories, []sources.Category{{Name: sources.CategoryConstruction, Source: ppp.Name}, {Name: sources.CategoryTrucking, Source: fmcsa.Name}})
+	contractEqual(t, a.Categories, []sources.Category{{Name: sources.CategoryConstruction, Source: ppp.Name}, {Name: sources.CategoryGovernment, Source: "name"}, {Name: sources.CategoryTrucking, Source: fmcsa.Name}})
 	// A different scraper cannot supply an FMCSA fleet verdict.
 	q.Reading.FleetVerdict = sources.FleetPass
 	q.Digest = "fleet-change"

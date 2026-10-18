@@ -93,10 +93,33 @@ func TestDatesAndEstablished(t *testing.T) {
 	}
 }
 
-// R-066R-GSLC R-0EQ2-56S7
+// R-7YF4-SGPW R-0EQ2-56S7
 func TestCategoryGovernment(t *testing.T) {
 	for category, codes := range map[string][]string{
-		sources.CategoryConstruction: {" 236220 ", "23"}, sources.CategoryTrucking: {"484121", "488510", "492110", "493110"}, sources.CategoryAgriculture: {"111150", "112111", "115310"}, sources.CategoryManufacturing: {"311811", "325998", "332710"}, sources.CategoryWholesale: {"423810"}, sources.CategoryMining: {"212321", "213112"}, sources.CategoryWaste: {"562111"}, sources.CategoryOther: {"541330", "481111", "561730", "4", "2"}, "": {"", "   ", "23-6220", "N/A"},
+		sources.CategoryConstruction:        {" 236220 ", "23"},
+		sources.CategoryTrucking:            {"484121", "488510", "492110", "493110"},
+		sources.CategoryAgriculture:         {"11", "111150", "112111", "113310", "114111", "115310", "119000"},
+		sources.CategoryManufacturing:       {"311811", "325998", "332710"},
+		sources.CategoryWholesale:           {"423810"},
+		sources.CategoryMining:              {"21", "211120", "212321", "213112", "219000"},
+		sources.CategoryWaste:               {"562111"},
+		sources.CategoryUtilities:           {"221122"},
+		sources.CategoryRetail:              {"445110", "452311"},
+		sources.CategoryOtherTransportation: {"481111", "482111", "483111", "485111", "486110", "487110", "491110"},
+		sources.CategoryInformation:         {"517311"},
+		sources.CategoryFinance:             {"522110"},
+		sources.CategoryRealEstate:          {"531110"},
+		sources.CategoryProfessional:        {"541330", "551114"},
+		sources.CategoryAdministrative:      {"561730"},
+		sources.CategoryEducation:           {"611110"},
+		sources.CategoryHealthCare:          {"621210"},
+		sources.CategoryArts:                {"713940"},
+		sources.CategoryFood:                {"722511"},
+		sources.CategoryRepair:              {"811111", "812990"},
+		sources.CategoryReligious:           {"813110"},
+		sources.CategoryGovernment:          {"921110"},
+		sources.CategoryOther:               {"814110", "999990", "000000", "489000", "563000", "48", "56", "81", "4", "2"},
+		"":                                  {"", "   ", "48A1", "+236220", "２３６２２０", "23-6220", "N/A"},
 	} {
 		for _, code := range codes {
 			r := row(map[string]string{"naics": code})

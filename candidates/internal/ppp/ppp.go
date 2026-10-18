@@ -55,17 +55,34 @@ func category(s string) string {
 	if !digits(s) {
 		return ""
 	}
+	// Try three-digit prefixes before two-digit prefixes so the first match
+	// always selects the most specific category.
 	for _, group := range []struct {
 		prefixes []string
 		name     string
 	}{
-		{[]string{"23"}, sources.CategoryConstruction},
 		{[]string{"484", "488", "492", "493"}, sources.CategoryTrucking},
-		{[]string{"111", "112", "115"}, sources.CategoryAgriculture},
+		{[]string{"562"}, sources.CategoryWaste},
+		{[]string{"481", "482", "483", "485", "486", "487", "491"}, sources.CategoryOtherTransportation},
+		{[]string{"561"}, sources.CategoryAdministrative},
+		{[]string{"811", "812"}, sources.CategoryRepair},
+		{[]string{"813"}, sources.CategoryReligious},
+		{[]string{"23"}, sources.CategoryConstruction},
+		{[]string{"11"}, sources.CategoryAgriculture},
 		{[]string{"31", "32", "33"}, sources.CategoryManufacturing},
 		{[]string{"42"}, sources.CategoryWholesale},
-		{[]string{"212", "213"}, sources.CategoryMining},
-		{[]string{"562"}, sources.CategoryWaste},
+		{[]string{"21"}, sources.CategoryMining},
+		{[]string{"22"}, sources.CategoryUtilities},
+		{[]string{"44", "45"}, sources.CategoryRetail},
+		{[]string{"51"}, sources.CategoryInformation},
+		{[]string{"52"}, sources.CategoryFinance},
+		{[]string{"53"}, sources.CategoryRealEstate},
+		{[]string{"54", "55"}, sources.CategoryProfessional},
+		{[]string{"61"}, sources.CategoryEducation},
+		{[]string{"62"}, sources.CategoryHealthCare},
+		{[]string{"71"}, sources.CategoryArts},
+		{[]string{"72"}, sources.CategoryFood},
+		{[]string{"92"}, sources.CategoryGovernment},
 	} {
 		for _, p := range group.prefixes {
 			if strings.HasPrefix(s, p) {

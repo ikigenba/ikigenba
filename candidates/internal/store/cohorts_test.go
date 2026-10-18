@@ -18,7 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-DBGM-T9U5 R-DCOJ-71KU R-DDWF-KTBJ R-4B7S-FL5R R-4CFO-TCWG R-4EVH-KWDU R-PJLE-8T42 R-4HBA-CFV8
+// R-DBGM-T9U5 R-DCOJ-71KU R-DDWF-KTBJ R-4B7S-FL5R R-4CFO-TCWG R-4EVH-KWDU R-GM8K-P2AP R-4HBA-CFV8
 func TestCohortValidators(t *testing.T) {
 	contractEqual(t, []string{store.CohortIDPrefix, store.OrderOperatingConfidence, store.OrderRevenueLow, store.OrderRevenueConfidence, store.OrderDriveMinutes, store.OrderNewestFiling, store.OrderKnownSince, store.DirectionDesc, store.DirectionAsc, store.KindReject, store.KindUnreject}, []string{"coh_", "operating_confidence", "revenue_low", "revenue_confidence", "drive_minutes", "newest_filing", "known_since", "desc", "asc", "reject", "unreject"})
 	contractEqual(t, []int{store.CohortSizeMin, store.CohortSizeMax, store.CohortSizeDefault}, []int{1, 100, 30})
@@ -39,7 +39,20 @@ func TestCohortValidators(t *testing.T) {
 	for _, f := range good {
 		contractEqual(t, store.ValidCohortFilters(f), true)
 	}
-	bad := []store.CohortFilters{{RevenueMin: ptrInt(6), RevenueMax: ptrInt(5)}, {Categories: []string{""}}, {Categories: []string{"trucking"}}, {Fleet: sources.FleetUnknown}, {Fleet: "PASS"}, {Class: sources.ClassUnknown}, {Class: "other"}}
+	for _, category := range []string{
+		sources.CategoryConstruction, sources.CategoryTrucking, sources.CategoryAgriculture,
+		sources.CategoryManufacturing, sources.CategoryWholesale, sources.CategoryMining,
+		sources.CategoryWaste, sources.CategoryOther, sources.CategoryUtilities,
+		sources.CategoryRetail, sources.CategoryOtherTransportation, sources.CategoryInformation,
+		sources.CategoryFinance, sources.CategoryRealEstate, sources.CategoryProfessional,
+		sources.CategoryAdministrative, sources.CategoryEducation, sources.CategoryHealthCare,
+		sources.CategoryArts, sources.CategoryFood, sources.CategoryRepair,
+		sources.CategoryReligious, sources.CategoryGovernment,
+	} {
+		contractEqual(t, store.ValidCohortFilters(store.CohortFilters{Categories: []string{category}}), true)
+	}
+	contractEqual(t, store.ValidCohortFilters(store.CohortFilters{Categories: []string{sources.CategoryGovernment, sources.CategoryEducation}}), true)
+	bad := []store.CohortFilters{{RevenueMin: ptrInt(6), RevenueMax: ptrInt(5)}, {Categories: []string{""}}, {Categories: []string{"trucking"}}, {Categories: []string{"shops"}}, {Categories: []string{"Retail"}}, {Fleet: sources.FleetUnknown}, {Fleet: "PASS"}, {Class: sources.ClassUnknown}, {Class: "other"}}
 	for i := 0; i < 4; i++ {
 		f := store.CohortFilters{}
 		fields := []**int64{&f.RevenueMin, &f.RevenueMax, &f.MaxMinutes, &f.MaxFilingAgeDays}

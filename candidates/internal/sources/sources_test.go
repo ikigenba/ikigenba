@@ -128,14 +128,48 @@ func TestCountySourceKey(t *testing.T) {
 	}
 }
 
-// R-JP96-OP2V
+// R-KWKJ-709B
 func TestConstants(t *testing.T) {
 	const rules float64 = sources.Rules
 	const parity = sources.Rules % 2
 	_ = rules
 	_ = parity
-	got := []string{sources.ClassPrivate, sources.ClassForHire, sources.ClassMixed, sources.ClassUnknown, sources.CategoryConstruction, sources.CategoryTrucking, sources.CategoryAgriculture, sources.CategoryManufacturing, sources.CategoryWholesale, sources.CategoryMining, sources.CategoryWaste, sources.CategoryOther, sources.EvidenceFMCSAActive, sources.EvidenceFMCSAActivity, sources.EvidencePPPLoan, sources.EvidenceOwnDomain, sources.EvidenceWebsiteLive}
-	want := []string{"private", "for_hire", "mixed", "unknown", "construction", "trucking and logistics", "agriculture", "manufacturing", "wholesale and distribution", "mining and aggregates", "waste and environmental", "other", "fmcsa_active", "fmcsa_activity", "ppp_loan", "own_domain", "website_live"}
+	const (
+		classPrivate                string = sources.ClassPrivate
+		classForHire                string = sources.ClassForHire
+		classMixed                  string = sources.ClassMixed
+		classUnknown                string = sources.ClassUnknown
+		categoryConstruction        string = sources.CategoryConstruction
+		categoryTrucking            string = sources.CategoryTrucking
+		categoryAgriculture         string = sources.CategoryAgriculture
+		categoryManufacturing       string = sources.CategoryManufacturing
+		categoryWholesale           string = sources.CategoryWholesale
+		categoryMining              string = sources.CategoryMining
+		categoryWaste               string = sources.CategoryWaste
+		categoryUtilities           string = sources.CategoryUtilities
+		categoryRetail              string = sources.CategoryRetail
+		categoryOtherTransportation string = sources.CategoryOtherTransportation
+		categoryInformation         string = sources.CategoryInformation
+		categoryFinance             string = sources.CategoryFinance
+		categoryRealEstate          string = sources.CategoryRealEstate
+		categoryProfessional        string = sources.CategoryProfessional
+		categoryAdministrative      string = sources.CategoryAdministrative
+		categoryEducation           string = sources.CategoryEducation
+		categoryHealthCare          string = sources.CategoryHealthCare
+		categoryArts                string = sources.CategoryArts
+		categoryFood                string = sources.CategoryFood
+		categoryRepair              string = sources.CategoryRepair
+		categoryReligious           string = sources.CategoryReligious
+		categoryGovernment          string = sources.CategoryGovernment
+		categoryOther               string = sources.CategoryOther
+		evidenceFMCSAActive         string = sources.EvidenceFMCSAActive
+		evidenceFMCSAActivity       string = sources.EvidenceFMCSAActivity
+		evidencePPPLoan             string = sources.EvidencePPPLoan
+		evidenceOwnDomain           string = sources.EvidenceOwnDomain
+		evidenceWebsiteLive         string = sources.EvidenceWebsiteLive
+	)
+	got := []string{classPrivate, classForHire, classMixed, classUnknown, categoryConstruction, categoryTrucking, categoryAgriculture, categoryManufacturing, categoryWholesale, categoryMining, categoryWaste, categoryUtilities, categoryRetail, categoryOtherTransportation, categoryInformation, categoryFinance, categoryRealEstate, categoryProfessional, categoryAdministrative, categoryEducation, categoryHealthCare, categoryArts, categoryFood, categoryRepair, categoryReligious, categoryGovernment, categoryOther, evidenceFMCSAActive, evidenceFMCSAActivity, evidencePPPLoan, evidenceOwnDomain, evidenceWebsiteLive}
+	want := []string{"private", "for_hire", "mixed", "unknown", "construction", "trucking and logistics", "agriculture", "manufacturing", "wholesale and distribution", "mining and aggregates", "waste and environmental", "utilities", "retail", "other transportation", "information", "finance and insurance", "real estate", "professional services", "administrative services", "education", "health care", "arts and recreation", "food and lodging", "repair and personal services", "religious and civic", "government", "other", "fmcsa_active", "fmcsa_activity", "ppp_loan", "own_domain", "website_live"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatal(got)
 	}

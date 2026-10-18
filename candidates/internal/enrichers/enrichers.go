@@ -264,6 +264,16 @@ func (LinkFacts) Derive(s Subject) Result {
 	if !filed.IsZero() {
 		f.NewestFiling = filed.UTC().Format(time.DateOnly)
 	}
+	if f.GovernmentMatch != "" {
+		category := sources.CategoryGovernment
+		if f.GovernmentMatch == "SCHOOL DISTRICT" || f.GovernmentMatch == "UNIVERSITY" {
+			category = sources.CategoryEducation
+		}
+		c := Category{Name: category, Source: "name"}
+		if !seen[c] {
+			f.Categories = append(f.Categories, c)
+		}
+	}
 	slices.SortFunc(f.Categories, func(a, b Category) int {
 		if n := strings.Compare(a.Name, b.Name); n != 0 {
 			return n

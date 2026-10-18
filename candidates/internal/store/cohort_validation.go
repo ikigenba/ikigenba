@@ -27,7 +27,12 @@ func ValidCohortFilters(f CohortFilters) bool {
 	}
 	for _, c := range f.Categories {
 		switch c {
-		case sources.CategoryConstruction, sources.CategoryTrucking, sources.CategoryAgriculture, sources.CategoryManufacturing, sources.CategoryWholesale, sources.CategoryMining, sources.CategoryWaste, sources.CategoryOther:
+		case sources.CategoryConstruction, sources.CategoryTrucking, sources.CategoryAgriculture, sources.CategoryManufacturing, sources.CategoryWholesale, sources.CategoryMining, sources.CategoryWaste, sources.CategoryOther,
+			sources.CategoryUtilities, sources.CategoryRetail, sources.CategoryOtherTransportation,
+			sources.CategoryInformation, sources.CategoryFinance, sources.CategoryRealEstate,
+			sources.CategoryProfessional, sources.CategoryAdministrative, sources.CategoryEducation,
+			sources.CategoryHealthCare, sources.CategoryArts, sources.CategoryFood,
+			sources.CategoryRepair, sources.CategoryReligious, sources.CategoryGovernment:
 		default:
 			return false
 		}
