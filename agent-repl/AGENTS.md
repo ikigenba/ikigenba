@@ -70,6 +70,6 @@ Release machinery, the version bump, tags, `install.sh`, `.goreleaser.yaml` and 
 1. Set the version in `internal/cli/version.go` (D4) to `vX.Y.Z`. The binary reports it verbatim, and the release refuses a tag that does not match.
 2. Commit on `main` and push `main`.
 3. Tag the commit `agent-repl/vX.Y.Z` and push the tag. The workflow builds with GoReleaser and publishes linux and darwin amd64 and arm64 archives and checksums; a prerelease tag (`agent-repl/vX.Y.Z-rc.1`) publishes a GitHub prerelease.
-4. Once `gh release view agent-repl/vX.Y.Z` succeeds, install it from this directory with `AGENT_REPL_VERSION=vX.Y.Z sh install.sh`, which puts the binary in `~/.local/bin`. A release is not done until this step is. Plain `sh install.sh` installs the newest stable release.
+4. Once `gh release view agent-repl/vX.Y.Z` succeeds, install it from this directory with `AGENT_REPL_VERSION=vX.Y.Z sh install.sh`, which puts the binary where `go install` would (`$GOBIN`, else `$GOPATH/bin`), the same place as `make install`. A release is not done until this step is. Plain `sh install.sh` installs the newest stable release.
 
 `agent-repl --version` then prints `vX.Y.Z`.

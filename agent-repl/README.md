@@ -15,7 +15,8 @@ curl -fsSL https://raw.githubusercontent.com/ikigenba/ikigenba/main/agent-repl/i
 ```
 
 This installs the newest stable release (Linux and macOS, amd64 and arm64) to
-`~/.local/bin`. Set `AGENT_REPL_VERSION=vX.Y.Z` to pin a version, or `BINDIR`
+the directory `go install` uses: `$GOBIN`, else `$GOPATH/bin`, else
+`~/go/bin`. Set `AGENT_REPL_VERSION=vX.Y.Z` to pin a version, or `BINDIR`
 to change the destination.
 
 ## Using it

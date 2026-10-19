@@ -4,7 +4,21 @@ set -eu
 REPO=ikigenba/ikigenba
 BINARY=agent-repl
 AGENT_REPL_VERSION=${AGENT_REPL_VERSION:-}
-BINDIR=${BINDIR:-${PREFIX:-$HOME/.local}/bin}
+# The destination resolves the way `go install` resolves its own: $BINDIR if
+# set, else $GOBIN, else the first $GOPATH entry's bin, which the go tool
+# defaults to $HOME/go when neither is set. So `make install` (go install) and
+# this script put the binary in the same place.
+if [ -z "${BINDIR:-}" ]; then
+    if command -v go >/dev/null 2>&1; then
+        BINDIR=$(go env GOBIN)
+        [ -n "$BINDIR" ] || BINDIR=$(go env GOPATH | cut -d: -f1)/bin
+    elif [ -n "${GOBIN:-}" ]; then
+        BINDIR=$GOBIN
+    else
+        gopath=${GOPATH:-$HOME/go}
+        BINDIR=${gopath%%:*}/bin
+    fi
+fi
 
 # die <message> [detail-file]: a diagnostic on stderr, then exit 1. Another
 # program's output (the detail file) is quoted after one empty line, every
