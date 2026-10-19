@@ -40,7 +40,7 @@ Develop, deploy, operate:
 Agent runtime, which `prompts` links:
 
 - `agentkit` is a Go library over LLM chat APIs with an agentic tool loop.
-- `toolkit` is agentkit's standard local tools: Bash, Read, Write, Edit, Glob and Grep.
+- `toolkit` is agentkit's standard local tools: Bash, Read, Write, Edit, Glob, Grep, WebSearch and WebFetch.
 - `agent-repl` is a REPL for exercising agentkit by hand.
 - `oauth` is a CLI that runs the OAuth login flow agent-repl's providers need.
 
