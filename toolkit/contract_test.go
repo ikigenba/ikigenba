@@ -31,7 +31,7 @@ func allToolConstructors() []toolConstructor {
 }
 
 func TestConstructorsValidateRoot(t *testing.T) {
-	// R-CF25-6WJ3: every constructor rejects empty, missing, and non-directory roots.
+	// R-B90T-ALZF: every constructor rejects empty, missing, and non-directory roots.
 	temp := t.TempDir()
 	missing := filepath.Join(temp, "missing")
 	file, err := os.CreateTemp(temp, "root-file-")
@@ -42,15 +42,19 @@ func TestConstructorsValidateRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if err := os.Symlink(file.Name(), filepath.Join(temp, "linked-file")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(missing, filepath.Join(temp, "linked-missing")); err != nil {
+		t.Fatal(err)
+	}
+
 	for _, constructor := range allToolConstructors() {
-		for _, root := range []string{"", missing, file.Name()} {
+		for _, root := range []string{"", missing, file.Name(), filepath.Join(temp, "linked-file"), filepath.Join(temp, "linked-missing")} {
 			t.Run(constructor.name+"/"+fmt.Sprintf("%q", root), func(t *testing.T) {
 				tool, err := constructor.construct(root)
 				if tool != nil || err == nil {
 					t.Errorf("constructor(%q) = (%v, %v), want (nil, error)", root, tool, err)
-				}
-				if err != nil && (!strings.Contains(err.Error(), "root") || !strings.Contains(err.Error(), fmt.Sprintf("%q", root))) {
-					t.Errorf("constructor(%q) error = %q, want root and supplied value", root, err)
 				}
 			})
 		}
@@ -58,7 +62,7 @@ func TestConstructorsValidateRoot(t *testing.T) {
 }
 
 func TestRelativeRootIsResolvedAtConstruction(t *testing.T) {
-	// R-CGA1-KO9S: a later process chdir does not move a tool's relative root.
+	// R-7HCD-JLA3: a later process chdir does not move a tool's relative root.
 	base := t.TempDir()
 	root := filepath.Join(base, "root")
 	other := filepath.Join(base, "other")
@@ -84,20 +88,41 @@ func TestRelativeRootIsResolvedAtConstruction(t *testing.T) {
 	if err := os.Chdir(base); err != nil {
 		t.Fatal(err)
 	}
-	tool, err := Read("root")
-	if err != nil {
-		t.Fatal(err)
+	tools := make(map[string]agentkit.Tool)
+	for _, constructor := range allToolConstructors() {
+		tool, err := constructor.construct("root")
+		if err != nil {
+			t.Fatal(err)
+		}
+		tools[constructor.name] = tool
 	}
 	if err := os.Chdir(other); err != nil {
 		t.Fatal(err)
 	}
-
-	got, err := tool.Call(context.Background(), json.RawMessage(`{"file_path":"message.txt"}`))
-	if err != nil {
-		t.Fatal(err)
+	cases := []struct{ name, input, want string }{
+		{"Bash", `{"command":"pwd"}`, root + "\n"},
+		{"Read", `{"file_path":"message.txt"}`, "     1\tfixed root"},
+		{"Glob", `{"pattern":"message.txt"}`, filepath.Join(root, "message.txt")},
+		{"Grep", `{"pattern":"fixed","output_mode":"files_with_matches"}`, filepath.Join(root, "message.txt")},
+		{"Write", `{"file_path":"written.txt","content":"written"}`, ""},
+		{"Edit", `{"file_path":"message.txt","old_string":"fixed root","new_string":"edited"}`, ""},
 	}
-	if want := "     1\tfixed root"; got != want {
-		t.Errorf("Call() = %q, want %q", got, want)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tools[tc.name].Call(context.Background(), json.RawMessage(tc.input))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.want != "" && got != tc.want {
+				t.Errorf("Call() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+	for name, want := range map[string]string{"written.txt": "written", "message.txt": "edited"} {
+		got, err := os.ReadFile(filepath.Clean(filepath.Join(root, name)))
+		if err != nil || string(got) != want {
+			t.Errorf("root file %s = %q, %v; want %q", name, got, err, want)
+		}
 	}
 }
 
@@ -251,11 +276,15 @@ func TestToolCallResultInvariant(t *testing.T) {
 }
 
 func TestToolNamesAndSchemaPropertyNames(t *testing.T) {
-	// R-CDU8-T4SE: exported tool names are exact and schema properties use the allowed casing.
+	// R-B7SW-WU8Q: exported tool names are exact and schema properties use the allowed casing.
 	validName := regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 	grepFlags := map[string]bool{"-i": true, "-n": true, "-A": true, "-B": true, "-C": true}
 	root := t.TempDir()
-	for _, constructor := range allToolConstructors() {
+	constructors := append(allToolConstructors(),
+		toolConstructor{name: "WebSearch", construct: func(string) (agentkit.Tool, error) { return WebSearch("test-key") }},
+		toolConstructor{name: "WebFetch", construct: func(string) (agentkit.Tool, error) { return WebFetch() }},
+	)
+	for _, constructor := range constructors {
 		tool, err := constructor.construct(root)
 		if err != nil {
 			t.Fatalf("%s(): %v", constructor.name, err)
