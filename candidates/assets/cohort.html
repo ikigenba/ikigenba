@@ -40,7 +40,8 @@
      .ChangedText (likewise; .Changed, .ChangedText, .ChangedBy and
      .ChangedUser all empty when the store holds none); .Matching (int,
      how many candidates pass its filters and the exclusion rule and are
-     not rejected from it, before the size cut); .Members, the first
+     not rejected from it, before the size cut); .Classified (int, how
+     many of .Members have .ClassifiedBy "brief"); .Members, the first
      .Size of those, in the cohort's order, each with .Rank (int, its
      position, from 1), .ID (its cand_ id, "cand_" and 16 hex), .Name (its
      display name), .City and .State (its display address's parts; each
@@ -50,7 +51,8 @@
      the sources give only a minimum) and .RevenueConfidence (two
      decimals, "0.40"), all three empty when there is no estimate,
      .Categories (its distinct category words, as stored, a slice of
-     strings; empty when unknown), .Class (its class tag, one of
+     strings; empty when unknown), .ClassifiedBy (what decided its
+     categories, "brief" or "links"; empty when it has none), .Class (its class tag, one of
      "private", "for_hire", "mixed" or "unknown"; empty when it has
      none), .FleetVerdict ("pass", "fail" or "unknown", as stored),
      .Website ("https", "http", "none" or "unknown", as stored),
@@ -81,7 +83,10 @@
      p#headline.cluster holding span#matching.badge[data-kind=info] (text
      "<.Matching> matching"), a space and span.muted holding "changed" and
      time[datetime=<.Changed>] (text .ChangedText) when .Changed is set,
-     else "created" and time[datetime=<.Created>] (text .CreatedText).
+     else "created" and time[datetime=<.Created>] (text .CreatedText),
+     with, between the two and only when .Members is not empty, a space
+     and span#classified.badge[data-kind=info] (text "<.Classified> of
+     <the number of .Members> members classified by brief").
      section#cohort-card with h2 "Cohort" and a p in its header (text "A
      saved search: its members are the active, judged candidates that pass
      every filter, are not rejected from it and are not excluded unless it
@@ -130,7 +135,7 @@
      that does is rejected from the cohort. Loosen a filter or set a
      switch with the edit_cohort tool.", edit_cohort in a code element),
      or table#member-list whose th read Rank, Name, City, State, Operating
-     confidence, Low, High, Revenue confidence, Categories, Class, Fleet,
+     confidence, Low, High, Revenue confidence, Categories, Classified by, Class, Fleet,
      Website, Site text, Brief, Minutes, Government, Known since, Newest filing, with one
      tr[data-candidate=<.ID>] per member holding td.candidate-rank.num
      (.Rank), td.candidate-name (a.candidate-link, href
@@ -143,7 +148,9 @@
      "none"), td.candidate-revenue-confidence.num (.RevenueConfidence,
      empty when absent), td.candidate-categories (one
      code[data-category=<word>] per category, separated by spaces, or when
-     .Categories is empty span.muted "unknown"), td.candidate-class
+     .Categories is empty span.muted "unknown"),
+     td.candidate-classified-by[data-classified-by=<.ClassifiedBy>]
+     (.ClassifiedBy in a code element, empty when absent), td.candidate-class
      (.Class in a code element, empty when absent),
      td.candidate-fleet[data-fleet=<.FleetVerdict>] (.FleetVerdict, in
      span.muted when "unknown"),
@@ -176,8 +183,8 @@
 <body>
 {{template "banner" .Banner}}
 <main>
-{{$matching := .Matching}}{{$members := .Members}}{{$rejects := .Rejects}}{{with .Cohort}}<h1>{{.Name}}</h1>
-<p id="headline" class="cluster"><span id="matching" class="badge" data-kind="info">{{$matching}} matching</span> <span class="muted">{{if .Changed}}changed <time datetime="{{.Changed}}">{{.ChangedText}}</time>{{else}}created <time datetime="{{.Created}}">{{.CreatedText}}</time>{{end}}</span></p>
+{{$matching := .Matching}}{{$classified := .Classified}}{{$members := .Members}}{{$rejects := .Rejects}}{{with .Cohort}}<h1>{{.Name}}</h1>
+<p id="headline" class="cluster"><span id="matching" class="badge" data-kind="info">{{$matching}} matching</span> {{if $members}}<span id="classified" class="badge" data-kind="info">{{$classified}} of {{len $members}} members classified by brief</span> {{end}}<span class="muted">{{if .Changed}}changed <time datetime="{{.Changed}}">{{.ChangedText}}</time>{{else}}created <time datetime="{{.Created}}">{{.CreatedText}}</time>{{end}}</span></p>
 <section id="cohort-card" class="card" aria-labelledby="cohort-title">
 <header><h2 id="cohort-title">Cohort</h2><p>A saved search: its members are the active, judged candidates that pass every filter, are not rejected from it and are not excluded unless it shows excluded ones, in its order, cut to its size. Agents change it with the <code>edit_cohort</code> tool.</p></header>
 <dl id="cohort" class="kv">
@@ -209,7 +216,7 @@
 <header><div><h2 id="members-title">Members</h2><p>The first of the {{$matching}} matching candidates in the cohort's order, up to its size of {{.Size}}, worked out as this page was read. An unknown value sorts last whatever the direction; the candidate id breaks ties.</p></div></header>
 {{if $members}}<div class="table-scroll">
 <table id="member-list">
-<thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th class="num">Operating confidence</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Class</th><th>Fleet</th><th>Website</th><th>Site text</th><th>Brief</th><th class="num">Minutes</th><th>Government</th><th>Known since</th><th>Newest filing</th></tr></thead>
+<thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th class="num">Operating confidence</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Classified by</th><th>Class</th><th>Fleet</th><th>Website</th><th>Site text</th><th>Brief</th><th class="num">Minutes</th><th>Government</th><th>Known since</th><th>Newest filing</th></tr></thead>
 <tbody>
 {{range $members}}<tr data-candidate="{{.ID}}">
 <td class="candidate-rank num">{{.Rank}}</td>
@@ -221,6 +228,7 @@
 <td class="candidate-high num">{{if .RevenueHigh}}{{.RevenueHigh}}{{else}}<span class="muted">none</span>{{end}}</td>
 <td class="candidate-revenue-confidence num">{{.RevenueConfidence}}</td>
 <td class="candidate-categories">{{range $i, $c := .Categories}}{{if $i}} {{end}}<code data-category="{{$c}}">{{$c}}</code>{{else}}<span class="muted">unknown</span>{{end}}</td>
+<td class="candidate-classified-by" data-classified-by="{{.ClassifiedBy}}">{{if .ClassifiedBy}}<code>{{.ClassifiedBy}}</code>{{end}}</td>
 <td class="candidate-class">{{if .Class}}<code>{{.Class}}</code>{{end}}</td>
 <td class="candidate-fleet" data-fleet="{{.FleetVerdict}}">{{if eq .FleetVerdict "unknown"}}<span class="muted">{{.FleetVerdict}}</span>{{else}}{{.FleetVerdict}}{{end}}</td>
 <td class="candidate-website" data-website="{{.Website}}">{{if .WebsiteURL}}<a class="website-link" href="{{.WebsiteURL}}">{{.Website}}</a>{{else if eq .Website "unknown"}}<span class="muted">{{.Website}}</span>{{else}}{{.Website}}{{end}}</td>
