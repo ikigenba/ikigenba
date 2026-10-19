@@ -232,8 +232,7 @@
      only when .Brief.Categories is empty,
      div#brief-no-categories.alert.quiet[data-kind=warn] holding strong
      "No categories" and a p (text "This brief gave no categories, so
-     what the records say stands. Its summary below says why: often the
-     pages were empty, broken or not about this business."), then
+     what the records say stands. Its summary below says why."), then
      dl#brief.kv holding, in this order, dt "Summary" then dd#brief-summary
      (.Summary, or when empty span.muted "none"), dt "Categories" then
      dd#brief-categories (one div[data-brief-category=<.Name>] per
@@ -429,7 +428,7 @@
 </section>
 <section id="brief-card" class="card" aria-labelledby="brief-title">
 <header><h2 id="brief-title">Brief</h2><p>What the brief enricher's agent made of the business from the pages kept on it: a short summary, the categories it gave with its reason for each, and labels of its own. The newest brief stands, and when it gives categories they decide the candidate's categories in place of what the records say.</p></header>
-{{with $brief}}{{if not .Categories}}<div id="brief-no-categories" class="alert quiet" data-kind="warn"><strong>No categories</strong><p>This brief gave no categories, so what the records say stands. Its summary below says why: often the pages were empty, broken or not about this business.</p></div>
+{{with $brief}}{{if not .Categories}}<div id="brief-no-categories" class="alert quiet" data-kind="warn"><strong>No categories</strong><p>This brief gave no categories, so what the records say stands. Its summary below says why.</p></div>
 {{end}}<dl id="brief" class="kv">
 <dt>Summary</dt><dd id="brief-summary">{{if .Summary}}{{.Summary}}{{else}}<span class="muted">none</span>{{end}}</dd>
 <dt>Categories</dt><dd id="brief-categories">{{range .Categories}}<div data-brief-category="{{.Name}}"><code>{{.Name}}</code> <span class="muted">{{.Why}}</span></div>{{else}}<span class="muted">none</span>{{end}}</dd>
