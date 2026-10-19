@@ -5,7 +5,7 @@ An app of the Ikigenba platform: the suite's prompt runner, served at
 descriptor 3 (`/run/ikigenba/prompts.sock` on a host), behind the host's
 nginx. A prompt is a catalog record naming a model in agentkit's catalog and
 the text the model is given, with an optional system prompt, the tool groups
-it allows (`files`, `bash`, `suite`) and an optional output schema; prompts
+it allows (`files`, `bash`, `suite`, `web`) and an optional output schema; prompts
 keeps the catalog and the record of every run in its own SQLite database,
 `state/prompts.db` resolved against the working directory and opened through
 appkit's `db` package, of which it is the only writer. A run is one agent
@@ -129,10 +129,13 @@ build run never writes it. `devctl build` packs it beside `bin/` and `etc/`.
     `NewToolFromSchema`, `OutputContract` and `ValidateOutputSchema`,
     `Limits`, and the JSON Lines log `NewLog`; a release that keeps every
     provider's key out of request URLs, error text and error records.
-  - toolkit `v0.3.0`, set with
-    `go get github.com/ikigenba/ikigenba/toolkit@v0.3.0`: `Bash`, `Read`,
+  - toolkit `v0.4.0`, set with
+    `go get github.com/ikigenba/ikigenba/toolkit@v0.4.0`: `Bash`, `Read`,
     `Write`, `Edit`, `Glob` and `Grep` as agentkit tools rooted at a
-    directory.
+    directory, and the two web tools, `WebSearch(key string, opts ...)`,
+    which takes the Brave API key (the `web` group passes the run's), and
+    `WebFetch(opts ...)`, which takes no required option and whose default
+    client refuses non-public addresses on every hop.
   - `golang.org/x/sys`. It, appkit, agentkit, toolkit and the modules they
     pull in are prompts' only dependencies.
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
@@ -150,7 +153,7 @@ external dependency needs approval first, the user's or a delivery's.
 ### Adopting the libraries
 
 appkit, agentkit and toolkit are required only at a published release, here
-appkit `v0.26.0`, agentkit `v0.14.0` and toolkit `v0.3.0`, fetched through the
+appkit `v0.26.0`, agentkit `v0.14.0` and toolkit `v0.4.0`, fetched through the
 ordinary module proxy and checked against the checksum database (see the root
 `AGENTS.md`), each set with `go get` as above. No `replace` directive, no
 `go.work`, no local module cache stands in for any of them. A change that
@@ -194,7 +197,8 @@ These rules govern the unit tests: everything `go test ./...` runs.
 
 **The run seam carries the process.** prompts binds nothing itself; it serves
 on the listener it is passed. Arguments, environment lookup and removal (the
-`PATH` included, and the five provider keys), the pid, the inherited
+`PATH` included, and the six secrets: the five provider keys and
+`BRAVE_API_KEY`), the pid, the inherited
 listener, the output streams, the clock, the random source and the working
 directory come in through the run seam design declares, `cli.Process`, with
 `ScriptAfter` and `Cgroup`, and tests inject them: a test drives the deadline
@@ -340,7 +344,7 @@ through `/bin/sh -c 'LISTEN_PID=$$ LISTEN_FDS=1 exec "$0"' <binary>`, because
 child runs in a test-owned temporary working directory, where it creates
 `state/prompts.db` and its run directories under `state/runs/`. Its
 environment is one the test composes, never the developer's: a `PATH` the
-test chose, the five provider keys set to values of the test's own, and
+test chose, the six secrets set to values of the test's own, and
 non-empty `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE`; the test computes the
 release and commit it expects with `version.Read()` and the display string with
 `version.Display()` after setting the same two
@@ -420,6 +424,7 @@ temporary directory.
 
 prompts ships in the suite release: `devctl build <sha|tag>` builds it with
 every other app, and `devctl deploy <space> <sha|tag>` deploys that release.
-The five provider keys its manifest names as secrets must exist on the space
+The six secrets its manifest names (the five provider keys and
+`BRAVE_API_KEY`) must exist on the space
 (`devctl secrets push`) or in the shell that runs `sandbox up`, or the app is
 refused.

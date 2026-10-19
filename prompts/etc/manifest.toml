@@ -3,7 +3,7 @@ description = "Prompts run by an agent over the suite's models"
 default = false
 mcp = true
 guests = false
-secrets = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "XAI_API_KEY", "OPENROUTER_API_KEY"]
+secrets = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "XAI_API_KEY", "OPENROUTER_API_KEY", "BRAVE_API_KEY"]
 
 [env]
 PROMPT_SECONDS = "600"
