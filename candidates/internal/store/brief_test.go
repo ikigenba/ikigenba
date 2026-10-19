@@ -36,7 +36,7 @@ func briefResult(t *testing.T, id, summary string, failed bool, names ...string)
 	return store.Enrichment{Candidate: id, Kind: enrichers.KindBrief, Inputs: "page-inputs", Source: enrichers.SourcePrompts, Found: raw}
 }
 
-// R-7UFJ-LULD R-80J1-IPAU R-L5GX-B4T3 R-85EN-1S9M
+// R-7UFJ-LULD R-80J1-IPAU R-BH37-QZVH R-85EN-1S9M
 func TestBriefProjectionKeepsGoodSummaryAndNewestAttempt(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -215,5 +215,44 @@ func TestBriefMigrationAndRollbackWriter(t *testing.T) {
 			contractEqual(t, after.Brief, before.Brief)
 			contractEqual(t, after.Written[0], before.Written[0])
 		})
+	}
+}
+
+// R-BH37-QZVH
+func TestCohortBriefUsesNewestAttemptAndIgnoresOtherKinds(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	id := contractSeed(t, f)
+	other := enrichmentCandidate(t, f, "no-brief", "owner@no-brief.test")
+	_, err := f.s.JudgeAll(ctx)
+	contractOK(t, err)
+	k := cohortCreate(t, f, "newest brief attempts")
+	before := cohortRead(t, f, k)
+	contractEqual(t, len(before.Members), 2)
+	for _, failed := range []bool{false, true} {
+		f.now = f.now.Add(time.Second)
+		_, err = f.s.AddEnrichments(ctx, []store.Enrichment{briefResult(t, id, "summary", failed)})
+		contractOK(t, err)
+		read := cohortRead(t, f, k)
+		contractEqual(t, cohortIDs(read.Members), cohortIDs(before.Members))
+		contractEqual(t, read.Matching, before.Matching)
+		for _, m := range read.Members {
+			if m.Candidate.ID == id {
+				contractEqual(t, m.Brief, f.now.UTC().Truncate(time.Second))
+			} else {
+				contractEqual(t, m.Candidate.ID, other)
+				contractEqual(t, m.Brief, time.Time{})
+			}
+		}
+	}
+	before = cohortRead(t, f, k)
+	f.now = f.now.Add(time.Second)
+	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{siteTextResult(t, id, enrichers.RunExited)})
+	contractOK(t, err)
+	read := cohortRead(t, f, k)
+	contractEqual(t, read.Matching, before.Matching)
+	contractEqual(t, cohortIDs(read.Members), cohortIDs(before.Members))
+	for i, m := range read.Members {
+		contractEqual(t, m.Brief, before.Members[i].Brief)
 	}
 }

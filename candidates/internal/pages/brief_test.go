@@ -49,7 +49,7 @@ func TestBriefViewSelection(t *testing.T) {
 	}
 }
 
-// R-GN2F-BQCN R-GT5X-8L24 R-GUDT-MCST R-BQ7U-1TP0 R-BIWF-R78U
+// R-GN2F-BQCN R-GT5X-8L24 R-GUDT-MCST R-BJJ0-IJCV R-BIWF-R78U
 func TestBriefCandidateAndCohort(t *testing.T) {
 	cfg, db := pageFixture(t)
 	now := fixtureTime()
@@ -89,6 +89,9 @@ func TestBriefCandidateAndCohort(t *testing.T) {
 		t.Fatal(got.Facts)
 	}
 	cohort := pageCohort(t, cfg, co.ID)
+	if len(cohort.Members) != 2 {
+		t.Fatal(cohort)
+	}
 	for _, m := range cohort.Members {
 		if m.ID == ids[0] {
 			if m.Brief != written || m.BriefText != "2026-10-05 09:02" {

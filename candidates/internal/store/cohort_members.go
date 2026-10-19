@@ -32,6 +32,8 @@ func cohortCondition(k Cohort, now time.Time) (string, []any) {
 	if len(f.Categories) > 0 {
 		b, _ := json.Marshal(f.Categories)
 		add(`(EXISTS (SELECT 1 FROM json_each(f.categories) AS ccat JOIN json_each(?) AS wanted ON json_extract(ccat.value,'$.Name')=wanted.value) OR ((f.categories IS NULL OR json_array_length(f.categories)=0) AND ?))`, string(b), f.CategoryUnknown)
+	} else if f.CategoryUnknown {
+		add(`(f.categories IS NULL OR json_array_length(f.categories)=0)`)
 	}
 	if f.Fleet != "" {
 		add(`(coalesce(f.fleet_verdict,'unknown')=? OR (coalesce(f.fleet_verdict,'unknown')=? AND ?))`, f.Fleet, sources.FleetUnknown, f.FleetUnknown)

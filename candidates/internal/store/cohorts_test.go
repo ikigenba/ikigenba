@@ -590,7 +590,7 @@ func cohortPopulation(t *testing.T, f *contractFixture) []string {
 	return ids
 }
 
-// R-4M6V-VIU0 R-4NES-9AKP R-4OMO-N2BE R-4PUL-0U23 R-4R2H-ELSS R-4SAD-SDJH R-4TIA-65A6 R-4UQ6-JX0V R-PN93-E4C5 R-4KYZ-HR3B
+// R-4M6V-VIU0 R-4NES-9AKP R-BENE-ZGE3 R-4PUL-0U23 R-4R2H-ELSS R-4SAD-SDJH R-4TIA-65A6 R-4UQ6-JX0V R-BFVB-D84S R-4KYZ-HR3B
 func TestCohortFilterBoundariesAndUnknownSwitches(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -603,7 +603,9 @@ func TestCohortFilterBoundariesAndUnknownSwitches(t *testing.T) {
 		indices []int
 	}{
 		{"none", store.CohortFilters{}, []int{0, 1, 2, 3, 4}},
-		{"switches alone", store.CohortFilters{RevenueUnknown: true, MinutesUnknown: true, CategoryUnknown: true, FleetUnknown: true, WebsiteUnknown: true, FilingUnknown: true, ClassUnknown: true}, []int{0, 1, 2, 3, 4}},
+		{"other switches alone", store.CohortFilters{RevenueUnknown: true, MinutesUnknown: true, FleetUnknown: true, WebsiteUnknown: true, FilingUnknown: true, ClassUnknown: true}, []int{0, 1, 2, 3, 4}},
+		{"category unknown alone", store.CohortFilters{CategoryUnknown: true}, []int{3, 4}},
+		{"all switches alone", store.CohortFilters{RevenueUnknown: true, MinutesUnknown: true, CategoryUnknown: true, FleetUnknown: true, WebsiteUnknown: true, FilingUnknown: true, ClassUnknown: true}, []int{3, 4}},
 		{"revenue bounds", store.CohortFilters{RevenueMin: ptrInt(5000000), RevenueMax: ptrInt(10000000)}, []int{0, 1}},
 		{"revenue unknown", store.CohortFilters{RevenueMin: ptrInt(5000000), RevenueMax: ptrInt(10000000), RevenueUnknown: true}, []int{0, 1, 4}},
 		{"revenue only max", store.CohortFilters{RevenueMax: ptrInt(10000000)}, []int{0, 1, 2}},
@@ -641,8 +643,26 @@ func TestCohortFilterBoundariesAndUnknownSwitches(t *testing.T) {
 			contractEqual(t, r.Matching, int64(len(want)))
 		})
 	}
+	// Exclusion still applies with no other filter, including unknown-only categories.
+	_, _, e := f.s.Decide(ctx, store.Ruling{Kind: store.KindExclude, Candidate: ids[3], Why: "exclude unknown", UserID: "owner"})
+	contractOK(t, e)
+	for _, tc := range []struct {
+		filters store.CohortFilters
+		count   int64
+	}{
+		{store.CohortFilters{}, 4},
+		{store.CohortFilters{RevenueUnknown: true, MinutesUnknown: true, FleetUnknown: true, WebsiteUnknown: true, FilingUnknown: true, ClassUnknown: true}, 4},
+		{store.CohortFilters{CategoryUnknown: true}, 1},
+		{store.CohortFilters{CategoryUnknown: true, ShowExcluded: true}, 2},
+	} {
+		c, e = f.s.EditCohort(ctx, store.CohortEdit{ID: c.ID, Filters: &tc.filters, UserID: "owner"})
+		contractOK(t, e)
+		contractEqual(t, cohortRead(t, f, c).Matching, tc.count)
+	}
+	_, _, e = f.s.Decide(ctx, store.Ruling{Kind: store.KindInclude, Candidate: ids[3], Why: "restore unknown", UserID: "owner"})
+	contractOK(t, e)
 	filter := store.CohortFilters{MaxFilingAgeDays: ptrInt(730)}
-	c, e := f.s.EditCohort(ctx, store.CohortEdit{ID: c.ID, Filters: &filter, UserID: "editor"})
+	c, e = f.s.EditCohort(ctx, store.CohortEdit{ID: c.ID, Filters: &filter, UserID: "editor"})
 	contractOK(t, e)
 	f.now = time.Date(2026, 10, 15, 23, 59, 59, 0, time.FixedZone("read", -5*60*60))
 	r := cohortRead(t, f, c)
@@ -705,7 +725,7 @@ func TestCohortOrderFieldsDirectionsUnknownsAndTies(t *testing.T) {
 	contractEqual(t, cohortIDs(cohortRead(t, f, c).Members), []string{ids[1], ids[3], ids[2], ids[0], ids[4]})
 }
 
-// R-7WVC-DE2R R-O9NE-3VU4 R-L5GX-B4T3 R-4ZLS-2ZZN
+// R-7WVC-DE2R R-O9NE-3VU4 R-BH37-QZVH R-4ZLS-2ZZN
 func TestCohortMembershipReadsStoredJudgmentsAndStandingRejects(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -920,7 +940,7 @@ func TestCohortOperatingOrderUsesRoundedKey(t *testing.T) {
 	contractEqual(t, cohortIDs(cohortRead(t, f, c).Members), ids)
 }
 
-// R-4OMO-N2BE
+// R-BENE-ZGE3
 func TestCohortCategoryMatchesAnyAssessmentCategory(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -938,13 +958,15 @@ func TestCohortCategoryMatchesAnyAssessmentCategory(t *testing.T) {
 	contractOK(t, e)
 	contractEqual(t, len(a.Categories), 2)
 	c := cohortCreate(t, f, "Categories")
-	filters := store.CohortFilters{Categories: []string{sources.CategoryTrucking}}
-	c, e = f.s.EditCohort(ctx, store.CohortEdit{ID: c.ID, Filters: &filters, UserID: "owner"})
-	contractOK(t, e)
-	contractEqual(t, cohortIDs(cohortRead(t, f, c).Members), []string{id})
+	for _, unknown := range []bool{false, true} {
+		filters := store.CohortFilters{Categories: []string{sources.CategoryTrucking}, CategoryUnknown: unknown}
+		c, e = f.s.EditCohort(ctx, store.CohortEdit{ID: c.ID, Filters: &filters, UserID: "owner"})
+		contractOK(t, e)
+		contractEqual(t, cohortIDs(cohortRead(t, f, c).Members), []string{id})
+	}
 }
 
-// R-PKTA-MKUR R-PN93-E4C5 R-L5GX-B4T3
+// R-PKTA-MKUR R-BFVB-D84S R-BH37-QZVH
 func TestCohortWebsiteFiltersReadStoredJudgment(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

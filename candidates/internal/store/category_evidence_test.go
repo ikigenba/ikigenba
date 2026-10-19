@@ -134,7 +134,7 @@ func TestRecordsReadNewestLinkResultBesidePreviousWriterCategories(t *testing.T)
 	contractEqual(t, got.Records, []sources.Category{})
 }
 
-// R-3EQ7-BLV9 R-O9NE-3VU4
+// R-BIB4-4RM6 R-O9NE-3VU4
 func TestCohortClassifiesOnlyItsSelectedMembersAndReadsNewCategories(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -244,4 +244,48 @@ func TestFillFactsReprojectsMissingCategoryRowsAndPreservesExistingRows(t *testi
 	got, err = f.s.GetFacts(ctx, existing)
 	contractOK(t, err)
 	contractEqual(t, got, before)
+}
+
+// R-BIB4-4RM6
+func TestCohortClassificationUsesBriefDecisionOrRecordFallback(t *testing.T) {
+	for _, tc := range []struct {
+		name, category, source string
+		emptyBrief             bool
+	}{
+		{"empty brief keeps trucking", sources.CategoryTrucking, fmcsa.Name, true},
+		{"brief replaces construction", sources.CategoryConstruction, ppp.Name, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := contractDB(t)
+			ctx := context.Background()
+			id := contractSeed(t, f)
+			_, err := f.s.AddEnrichments(ctx, []store.Enrichment{categoryLinks(t, id, sources.Category{Name: tc.category, Source: tc.source})})
+			contractOK(t, err)
+			_, err = f.s.Judge(ctx, []string{id})
+			contractOK(t, err)
+			k := cohortCreate(t, f, "record fallback")
+			filters := store.CohortFilters{Categories: []string{tc.category}}
+			k, err = f.s.EditCohort(ctx, store.CohortEdit{ID: k.ID, Filters: &filters, UserID: "owner"})
+			contractOK(t, err)
+			read := cohortRead(t, f, k)
+			contractEqual(t, cohortIDs(read.Members), []string{id})
+			contractEqual(t, read.Matching, int64(1))
+			contractEqual(t, read.Classified, int64(0))
+			names := []string{sources.CategoryRetail}
+			if tc.emptyBrief {
+				names = nil
+			}
+			_, err = f.s.AddEnrichments(ctx, []store.Enrichment{briefResult(t, id, "classification", false, names...)})
+			contractOK(t, err)
+			read = cohortRead(t, f, k)
+			contractEqual(t, read.Classified, int64(0))
+			if tc.emptyBrief {
+				contractEqual(t, cohortIDs(read.Members), []string{id})
+				contractEqual(t, read.Matching, int64(1))
+			} else {
+				contractEqual(t, len(read.Members), 0)
+				contractEqual(t, read.Matching, int64(0))
+			}
+		})
+	}
 }
