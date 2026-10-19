@@ -1,8 +1,9 @@
 # D1-scope-and-layout
 
 `toolkit` is a Go library that gives consumers of
-`github.com/ikigenba/ikigenba/agentkit` a standard set of local tools — `Bash`,
-`Read`, `Write`, `Edit`, `Glob`, `Grep` — as ready-made `agentkit.Tool` values.
+`github.com/ikigenba/ikigenba/agentkit` a standard set of tools — the local
+`Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep` and the web tools `WebSearch`,
+`WebFetch` — as ready-made `agentkit.Tool` values.
 It is the sibling agentkit's D0 names for exactly this job: agentkit owns the
 conversation loop and the tool seam, toolkit owns the tools. Module path
 `github.com/ikigenba/ikigenba/toolkit`.
@@ -14,21 +15,16 @@ rather than the tool — the working directory that persists across Bash calls,
 the read-before-write gate on Write and Edit — toolkit deliberately leaves it to
 the consumer. Every toolkit tool is stateless across calls.
 
-## One package, six constructors
+## One package, eight constructors
 
-```go
-package toolkit
+Package `toolkit` has one constructor per tool, each returning `(agentkit.Tool,
+error)`: `Bash`, `Read`, `Write` and `Edit` take a root; `Glob` and `Grep` take a
+root and their options; `WebSearch` takes a Brave subscription key and its
+options; `WebFetch` takes its options alone (D5).
 
-func Bash(root string) (agentkit.Tool, error)
-func Read(root string) (agentkit.Tool, error)
-func Write(root string) (agentkit.Tool, error)
-func Edit(root string) (agentkit.Tool, error)
-func Glob(root string, opts ...GlobOption) (agentkit.Tool, error)
-func Grep(root string, opts ...GrepOption) (agentkit.Tool, error)
-```
-
-Every constructor takes a **root** directory and returns `(agentkit.Tool,
-error)`. The root is explicit — there is no empty-means-cwd sentinel — and it is
+The six local tools take a **root** directory. The web tools touch no local
+path and take none; `WebSearch` validates its key at construction instead, as
+the local tools validate their root. The root is explicit — there is no empty-means-cwd sentinel — and it is
 validated once, at construction, so a bad root is a constructor error the
 consumer sees immediately rather than a per-call failure the model sees. For the
 five file tools the root is a **confinement boundary**: every path argument is
@@ -48,28 +44,24 @@ hands back tools and stops. Consumers compose it with other siblings themselves.
 ## Options are per tool and sealed
 
 Options exist only where a tool has a knob. `Glob` and `Grep` share one:
-`WithSkip`, extra gitignore-syntax patterns added to the walk filter (D3). Each
+`WithSkip`, extra gitignore-syntax patterns added to the walk filter (D3).
+`WebSearch` and `WebFetch` share another: `WithHTTPClient`, the client their
+requests go through (D5). Each
 tool that takes options has its own option interface, sealed by an unexported
 method, so passing an option to a tool it does not apply to is a **compile-time**
 error, never a silent no-op. One option value may satisfy several interfaces —
 `WithSkip` returns a `SkipOption` that is both a `GlobOption` and a `GrepOption`
-— the pattern OpenTelemetry uses for instrument options. Tools without options
-(`Bash`, `Read`, `Write`, `Edit`) take no variadic parameter at all; one is added
-when an option for that tool is designed.
-
-```go
-type GlobOption interface{ applyGlob(*globConfig) }
-type GrepOption interface{ applyGrep(*grepConfig) }
-
-// SkipOption is a GlobOption and a GrepOption.
-type SkipOption struct{ /* unexported */ }
-func WithSkip(patterns ...string) SkipOption
-```
+and `WithHTTPClient` returns an `HTTPClientOption` that is both a
+`WebSearchOption` and a `WebFetchOption` — the pattern OpenTelemetry uses for
+instrument options. Tools without options (`Bash`, `Read`, `Write`, `Edit`) take
+no variadic parameter at all; one is added when an option for that tool is
+designed.
 
 ## Conventions every tool shares
 
-- **Names**: tool names are TitleCase (`Bash`, `Read`, …); schema field names
-  are snake_case (`file_path`, `old_string`, `replace_all`), matching the harness
+- **Names**: tool names are TitleCase (`Bash`, `Read`, `WebFetch`, …); schema
+  field names are snake_case (`file_path`, `old_string`, `allowed_domains`),
+  matching the harness
   tools the model already knows. `Grep` keeps the harness's flag-shaped names
   (`-i`, `-n`, `-A`, `-B`, `-C`).
 - **Validation lives in the schema** where the schema can express it: `required`
@@ -84,13 +76,13 @@ func WithSkip(patterns ...string) SkipOption
   result ends with an explicit marker so the model knows it saw a prefix.
 - **Access is declared per tool** (agentkit D28): every tool passes an access
   function to its agentkit constructor saying what a call blocks while it runs,
-  so agentkit can run the calls of one round concurrently where safe. `Read`
-  blocks nothing; `Write`, `Edit`, `Glob`, and `Grep` block the resolved path
+  so agentkit can run the calls of one round concurrently where safe. `Read`,
+  `WebSearch` and `WebFetch` block nothing; `Write`, `Edit`, `Glob`, and `Grep` block the resolved path
   they touch; `Bash` blocks everything. The access function uses the same path
   resolution as the call; when resolution fails, the tool declares `BlocksAll`,
   since the call is about to fail in-band without touching anything and the
   conservative answer costs nothing.
-- **Root confinement**: a path argument may be absolute or relative. A relative
+- **Root confinement** (the five file tools): a path argument may be absolute or relative. A relative
   path is joined to the root. The result is cleaned and its longest existing
   prefix is resolved through symlinks; the resolved path must equal the root or
   lie beneath it. The existing-prefix rule is what lets `Write` create a file that
@@ -104,6 +96,14 @@ func WithSkip(patterns ...string) SkipOption
   get right and this library is validated against a shared gitignore test suite.
 - `github.com/bmatcuk/doublestar/v4` — `**` glob matching for `Glob`'s pattern
   and `Grep`'s `glob` filter. The standard `filepath.Match` has no `**`.
+- `github.com/JohannesKaufmann/html-to-markdown/v2` — the HTML-to-Markdown
+  conversion behind `WebFetch` (D5). The standard library has no HTML parser,
+  and `golang.org/x/net/html` parses but does not render; writing a renderer
+  that keeps links and tables is a project of its own.
+- `golang.org/x/net` — `html/charset`, the charset detection behind `WebFetch`
+  (D5); already a dependency of the Markdown module.
+- `net/http` from the standard library carries every web request; Brave is
+  reached over its HTTP API, with no client library.
 
 ## REQUIREMENTS
 
@@ -115,9 +115,12 @@ func WithSkip(patterns ...string) SkipOption
 - R-C7QQ-WA2X: Package `toolkit` MUST export `func Glob(root string, opts ...GlobOption) (agentkit.Tool, error)`.
 - R-C8YN-A1TM: Package `toolkit` MUST export `func Grep(root string, opts ...GrepOption) (agentkit.Tool, error)`.
 - R-CBEG-1LB0: Package `toolkit` MUST export `type SkipOption` and `func WithSkip(patterns ...string) SkipOption`, and `SkipOption` MUST satisfy both `GlobOption` and `GrepOption`.
-- R-CDU8-T4SE: The tools' `Name()` values MUST be exactly `Bash`, `Read`, `Write`, `Edit`, `Glob`, and `Grep` respectively, and every property name in every tool's `Schema()` MUST be lowercase snake_case or one of the `Grep` flag names `-i`, `-n`, `-A`, `-B`, `-C`.
-- R-CF25-6WJ3: Every constructor MUST return a non-nil error, and a nil tool, when `root` is empty, does not exist, or is not a directory after symlink resolution.
-- R-CGA1-KO9S: Every constructor MUST accept a relative `root`, resolving it against the process working directory at construction time, so that a later change of the process working directory does not move the tool's root.
+- R-A9NQ-79HA: Package `toolkit` MUST export `func WebSearch(key string, opts ...WebSearchOption) (agentkit.Tool, error)`.
+- R-AAVM-L17Z: Package `toolkit` MUST export `func WebFetch(opts ...WebFetchOption) (agentkit.Tool, error)`.
+- R-AC3I-YSYO: Package `toolkit` MUST export `type HTTPClientOption` and `func WithHTTPClient(client *http.Client) HTTPClientOption`, and `HTTPClientOption` MUST satisfy both `WebSearchOption` and `WebFetchOption`.
+- R-B7SW-WU8Q: The tools' `Name()` values MUST be exactly `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`, `WebSearch`, and `WebFetch` respectively, and every property name in every tool's `Schema()` MUST be lowercase snake_case or one of the `Grep` flag names `-i`, `-n`, `-A`, `-B`, `-C`.
+- R-B90T-ALZF: `Bash`, `Read`, `Write`, `Edit`, `Glob`, and `Grep` MUST each return a non-nil error, and a nil tool, when `root` is empty, does not exist, or is not a directory after symlink resolution.
+- R-7HCD-JLA3: `Bash`, `Read`, `Write`, `Edit`, `Glob`, and `Grep` MUST each accept a relative `root`, resolving it against the process working directory at construction time, so that a later change of the process working directory does not move the tool's root.
 - R-CHHX-YG0H: A path argument given to `Read`, `Write`, `Edit`, `Glob`, or `Grep` MUST be resolved by joining a relative path to the root, cleaning it, and resolving symlinks on its longest existing prefix; a resolved path that is neither the root nor beneath the root MUST make `Call` return an error whose text contains the argument name and the path as given.
 - R-EUUW-QDX3: Every `Call` result string MUST contain at most 30,000 characters (Unicode code points) of tool output; when the output would be longer, the tool MUST return exactly its first 30,000 characters followed by a newline and the marker `[output truncated: showing 30000 of N characters]`, where N is the untruncated length, and nothing else.
 - R-CL5N-3R8K: Every `Call` MUST return `("", err)` with a non-nil `err` on failure and `(text, nil)` on success; a tool MUST NOT return both a non-empty string and a non-nil error.
