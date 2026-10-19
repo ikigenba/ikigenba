@@ -56,7 +56,7 @@ func assertBeforeSiteText(t *testing.T, s *store.Store, id, pid string) {
 	f, err := s.GetFacts(ctx, id)
 	contractOK(t, err)
 	units, drivers, minutes := int64(3), int64(2), int64(42)
-	contractEqual(t, f, store.Facts{Candidate: id, KnownSince: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: "pattern", NewestFiling: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{{Name: "category", Source: "registry"}}, FleetVerdict: sources.FleetPass, PowerUnits: &units, Drivers: &drivers, Website: sources.WebsiteHTTPS, WebsiteURL: "https://old.test", Minutes: &minutes, Written: []store.Written{{Kind: enrichers.KindDriveMinutes, At: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)}, {Kind: sources.WebsiteCheck, At: time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)}}})
+	contractEqual(t, f, store.Facts{Candidate: id, KnownSince: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: "pattern", NewestFiling: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{{Name: "category", Source: "registry"}}, Records: []sources.Category{}, FleetVerdict: sources.FleetPass, PowerUnits: &units, Drivers: &drivers, Website: sources.WebsiteHTTPS, WebsiteURL: "https://old.test", Minutes: &minutes, Written: []store.Written{{Kind: enrichers.KindDriveMinutes, At: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)}, {Kind: sources.WebsiteCheck, At: time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)}}})
 	es, err := s.Enrichments(ctx, id)
 	contractOK(t, err)
 	e := websiteResult(id, sources.WebsiteHTTPS)

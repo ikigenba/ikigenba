@@ -88,6 +88,7 @@ type Facts struct {
 	GovernmentMatch     string
 	NewestFiling        time.Time
 	Categories          []sources.Category
+	Records             []sources.Category
 	FleetVerdict        string
 	PowerUnits, Drivers *int64
 	Website, WebsiteURL string

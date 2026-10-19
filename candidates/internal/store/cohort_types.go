@@ -59,10 +59,11 @@ type Reject struct {
 
 // CohortRead includes the search's present membership and standing rejects.
 type CohortRead struct {
-	Cohort   Cohort
-	Matching int64
-	Members  []Ranked
-	Rejects  []Reject
+	Cohort     Cohort
+	Matching   int64
+	Classified int64
+	Members    []Ranked
+	Rejects    []Reject
 }
 
 // Cohort vocabulary and bounds.

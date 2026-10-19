@@ -58,6 +58,7 @@ type Member struct {
 	RevenueHigh         *int64    `json:"revenue_high,omitempty"`
 	RevenueConfidence   *float64  `json:"revenue_confidence,omitempty"`
 	Categories          []string  `json:"categories"`
+	ClassifiedBy        string    `json:"classified_by"`
 	FleetVerdict        string    `json:"fleet_verdict"`
 	Website             string    `json:"website"`
 	WebsiteURL          string    `json:"website_url,omitempty"`
@@ -132,10 +133,11 @@ type Reject struct {
 
 // CohortRead answers a cohort and its current members.
 type CohortRead struct {
-	Cohort   Cohort   `json:"cohort"`
-	Matching int64    `json:"matching"`
-	Members  []Member `json:"members"`
-	Rejects  []Reject `json:"rejects"`
+	Cohort     Cohort   `json:"cohort"`
+	Matching   int64    `json:"matching"`
+	Classified int64    `json:"classified"`
+	Members    []Member `json:"members"`
+	Rejects    []Reject `json:"rejects"`
 }
 
 // MarshalJSON encodes empty members and rejects as arrays.
@@ -269,6 +271,9 @@ type Assessment struct {
 	KnownSince          string     `json:"known_since,omitempty"`
 	NewestFiling        string     `json:"newest_filing,omitempty"`
 	Categories          []Category `json:"categories"`
+	ClassifiedBy        string     `json:"classified_by"`
+	RecordsDiffer       bool       `json:"records_differ"`
+	RecordCategories    []Category `json:"record_categories"`
 	GovernmentMatch     string     `json:"government_match,omitempty"`
 	FleetVerdict        string     `json:"fleet_verdict"`
 	PowerUnits          *int64     `json:"power_units,omitempty"`
@@ -290,6 +295,9 @@ func (v Assessment) MarshalJSON() ([]byte, error) {
 	}
 	if v.Categories == nil {
 		v.Categories = []Category{}
+	}
+	if v.RecordCategories == nil {
+		v.RecordCategories = []Category{}
 	}
 	return json.Marshal(plain(v))
 }

@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-AI5Z-1BAG R-OU7I-97OR R-WPW0-5EVS R-WOO3-RN53
+// R-85EN-1S9M R-OU7I-97OR R-WPW0-5EVS R-WOO3-RN53
 func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -70,12 +70,14 @@ func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 	contractEqual(t, facts.Website, sources.WebsiteUnknown)
 }
 
-// R-MOMA-IP7M R-R7HY-562T R-8HKY-ZEB4 R-WNG7-DVEE R-MTHW-1S6E
+// R-MOMA-IP7M R-R7HY-562T R-LD70-4W25 R-WNG7-DVEE R-MTHW-1S6E
 func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
 	a := contractObservation("carrier", "Carrier", f.now)
 	a.Scraper = fmcsa.Name
+	a.Reading.Class = sources.ClassForHire
+	a.Reading.Category = sources.CategoryTrucking
 	a.Reading.FleetVerdict = sources.FleetPass
 	a.Reading.PowerUnits = ptrInt(3)
 	b := contractObservation("loan", "Borrower", f.now)
@@ -144,6 +146,8 @@ func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	contractOK(t, err)
 	contractEqual(t, facts.Website, sources.WebsiteHTTPS)
 	contractEqual(t, facts.Brief, "merged brief")
+	contractEqual(t, facts.Categories, []sources.Category{{Name: sources.CategoryRetail, Source: enrichers.KindBrief}})
+	contractEqual(t, store.ClassifiedBy(facts.Categories), enrichers.KindBrief)
 	split, _, err := f.s.Decide(ctx, store.Ruling{Kind: store.KindSplit, Candidate: survivor, Keys: []string{sources.SourceKey(a.Scraper, a.SourceID)}, Why: "separate", UserID: "owner"})
 	contractOK(t, err)
 	facts, err = f.s.GetFacts(ctx, survivor)
@@ -156,6 +160,16 @@ func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	contractEqual(t, child.Website, sources.WebsiteUnknown)
 	contractEqual(t, facts.Brief, "merged brief")
 	contractEqual(t, child.Brief, "")
+	contractEqual(t, facts.Categories, []sources.Category{{Name: sources.CategoryRetail, Source: enrichers.KindBrief}})
+	contractEqual(t, child.Categories, []sources.Category{{Name: sources.CategoryTrucking, Source: fmcsa.Name}})
+	contractEqual(t, store.ClassifiedBy(child.Categories), enrichers.SourceLinks)
+	f.reopen()
+	persistedChild, e := f.s.GetFacts(ctx, split.Other)
+	contractOK(t, e)
+	contractEqual(t, persistedChild, child)
+	persistedSurvivor, e := f.s.GetFacts(ctx, survivor)
+	contractOK(t, e)
+	contractEqual(t, persistedSurvivor, facts)
 	beforeFacts := facts
 	beforeResults, err := f.s.Enrichments(ctx, survivor)
 	contractOK(t, err)
@@ -273,7 +287,7 @@ func TestOrdinaryWritesPreserveFactsAndResultHistory(t *testing.T) {
 	}
 }
 
-// R-KUHT-V74U R-GSBL-OU6L R-ADAD-I8BO
+// R-7UFJ-LULD R-GSBL-OU6L R-80J1-IPAU
 func TestFactsProjectionUsesNewestResultOfEveryKind(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -290,6 +304,7 @@ func TestFactsProjectionUsesNewestResultOfEveryKind(t *testing.T) {
 	contractOK(t, err)
 	stamp := f.now.UTC().Truncate(time.Second)
 	expected := store.Facts{Candidate: id, KnownSince: time.Date(2018, 4, 9, 0, 0, 0, 0, time.UTC), NewestFiling: time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: lf.GovernmentMatch, Categories: []sources.Category{{Name: sources.CategoryConstruction, Source: ppp.Name}, {Name: sources.CategoryTrucking, Source: fmcsa.Name}}, FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, Website: sources.WebsiteHTTPS, WebsiteURL: websiteDecoded(first[2]).URL, Minutes: &low, Written: []store.Written{{Kind: enrichers.KindDriveMinutes, At: stamp}, {Kind: enrichers.KindLinkFacts, At: stamp}, {Kind: sources.WebsiteCheck, At: stamp}}}
+	expected.Records = append([]sources.Category{}, expected.Categories...)
 	got, err := f.s.GetFacts(ctx, id)
 	contractOK(t, err)
 	contractEqual(t, got, expected)
@@ -309,6 +324,7 @@ func TestFactsProjectionUsesNewestResultOfEveryKind(t *testing.T) {
 	expected.NewestFiling = time.Time{}
 	expected.GovernmentMatch = ""
 	expected.Categories = []sources.Category{{Name: sources.CategoryOther, Source: ppp.Name}}
+	expected.Records = append([]sources.Category{}, expected.Categories...)
 	expected.FleetVerdict = sources.FleetUnknown
 	expected.PowerUnits = nil
 	expected.Drivers = nil

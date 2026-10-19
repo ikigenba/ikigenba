@@ -49,7 +49,7 @@ func TestBriefViewSelection(t *testing.T) {
 	}
 }
 
-// R-GN2F-BQCN R-GT5X-8L24 R-GUDT-MCST R-GWTM-DWA7 R-GPI8-39U1
+// R-GN2F-BQCN R-GT5X-8L24 R-GUDT-MCST R-BQ7U-1TP0 R-BIWF-R78U
 func TestBriefCandidateAndCohort(t *testing.T) {
 	cfg, db := pageFixture(t)
 	now := fixtureTime()

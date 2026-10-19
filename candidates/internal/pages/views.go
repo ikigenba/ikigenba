@@ -66,7 +66,7 @@ func passView(p store.Pass, sp string) PassView {
 func memberRow(e store.Ranked, i int) MemberRow {
 	a := assessmentView(e.Assessment)
 	f := factsView(store.Facts{KnownSince: e.Assessment.KnownSince, NewestFiling: e.Assessment.NewestFiling, Categories: e.Assessment.Categories, GovernmentMatch: e.Assessment.GovernmentMatch, FleetVerdict: e.Assessment.FleetVerdict, PowerUnits: e.Assessment.PowerUnits, Drivers: e.Assessment.Drivers, Minutes: e.Assessment.Minutes})
-	v := MemberRow{Rank: int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, Class: e.Candidate.Class, FleetVerdict: f.FleetVerdict, Website: e.Assessment.Website, WebsiteURL: e.Assessment.WebsiteURL, Minutes: f.Minutes, GovernmentMatch: f.GovernmentMatch, KnownSince: f.KnownSince, KnownSinceText: f.KnownSinceText, NewestFiling: f.NewestFiling, NewestFilingText: f.NewestFilingText, Excluded: a.Excluded}
+	v := MemberRow{Rank: int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(e.Assessment.Categories), Class: e.Candidate.Class, FleetVerdict: f.FleetVerdict, Website: e.Assessment.Website, WebsiteURL: e.Assessment.WebsiteURL, Minutes: f.Minutes, GovernmentMatch: f.GovernmentMatch, KnownSince: f.KnownSince, KnownSinceText: f.KnownSinceText, NewestFiling: f.NewestFiling, NewestFilingText: f.NewestFilingText, Excluded: a.Excluded}
 	v.SiteText, v.SiteTextText = stamp(e.SiteText, MinuteLayout)
 	v.Brief, v.BriefText = stamp(e.Brief, MinuteLayout)
 	seen := map[string]bool{}
@@ -123,7 +123,7 @@ func assessmentView(a store.Assessment) AssessmentView {
 	return v
 }
 func factsView(f store.Facts) FactsView {
-	v := FactsView{KnownSince: date(f.KnownSince), KnownSinceText: date(f.KnownSince), NewestFiling: date(f.NewestFiling), NewestFilingText: date(f.NewestFiling), Categories: []CategoryRow{}, GovernmentMatch: f.GovernmentMatch, FleetVerdict: f.FleetVerdict, Written: []WrittenRow{}}
+	v := FactsView{KnownSince: date(f.KnownSince), KnownSinceText: date(f.KnownSince), NewestFiling: date(f.NewestFiling), NewestFilingText: date(f.NewestFiling), Categories: []CategoryRow{}, ClassifiedBy: store.ClassifiedBy(f.Categories), RecordsDiffer: store.RecordsDiffer(f.Categories, f.Records), RecordCategories: []CategoryRow{}, GovernmentMatch: f.GovernmentMatch, FleetVerdict: f.FleetVerdict, Written: []WrittenRow{}}
 	if f.PowerUnits != nil {
 		v.PowerUnits = strconv.FormatInt(*f.PowerUnits, 10)
 	}
@@ -135,6 +135,11 @@ func factsView(f store.Facts) FactsView {
 	}
 	for _, c := range f.Categories {
 		v.Categories = append(v.Categories, CategoryRow{c.Name, c.Source})
+	}
+	if v.RecordsDiffer {
+		for _, c := range f.Records {
+			v.RecordCategories = append(v.RecordCategories, CategoryRow{c.Name, c.Source})
+		}
 	}
 	for _, w := range f.Written {
 		at, txt := stamp(w.At, SecondLayout)

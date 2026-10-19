@@ -17,7 +17,7 @@ func TestJudgmentProjectionFullPrecision(t *testing.T) {
 	power, drivers, minutes := int64(7), int64(9), int64(123)
 	a := store.Assessment{GovernmentMatch: "chosen-government", Minutes: &minutes, FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, Excluded: true, Operating: &op, Evidence: []sources.Evidence{{Name: "signal", Source: "source", Weight: .6123456789, Description: "chosen-description"}}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &rc, KnownSince: time.Date(2018, 4, 9, 0, 0, 0, 0, time.UTC), NewestFiling: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{{Name: sources.CategoryTrucking, Source: "fmcsa"}, {Name: sources.CategoryConstruction, Source: "ppp"}, {Name: sources.CategoryTrucking, Source: "ppp"}}}
 	got := assessmentOf(a)
-	want := Assessment{GovernmentMatch: "chosen-government", Minutes: &minutes, FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, Excluded: true, OperatingConfidence: &op, OperatingEvidence: []Evidence{{"signal", "source", .6123456789, "chosen-description"}}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &rc, KnownSince: "2018-04-09", NewestFiling: "2020-01-01", Categories: []Category{{sources.CategoryTrucking, "fmcsa"}, {sources.CategoryConstruction, "ppp"}, {sources.CategoryTrucking, "ppp"}}, Calculated: stamp(a.Calculated)}
+	want := Assessment{GovernmentMatch: "chosen-government", Minutes: &minutes, FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, Excluded: true, OperatingConfidence: &op, OperatingEvidence: []Evidence{{"signal", "source", .6123456789, "chosen-description"}}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &rc, KnownSince: "2018-04-09", NewestFiling: "2020-01-01", ClassifiedBy: "links", RecordCategories: []Category{}, Categories: []Category{{sources.CategoryTrucking, "fmcsa"}, {sources.CategoryConstruction, "ppp"}, {sources.CategoryTrucking, "ppp"}}, Calculated: stamp(a.Calculated)}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("%+v", got)
 	}
@@ -25,7 +25,7 @@ func TestJudgmentProjectionFullPrecision(t *testing.T) {
 		t.Fatal("missing legacy fleet verdict")
 	}
 	entry := memberOf(store.Ranked{Assessment: a})
-	wantMember := Member{Candidate: candidateOf(store.Candidate{}), OperatingConfidence: &op, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &rc, Categories: []string{sources.CategoryConstruction, sources.CategoryTrucking}, FleetVerdict: sources.FleetPass, Minutes: &minutes, GovernmentMatch: "chosen-government", KnownSince: "2018-04-09", NewestFiling: "2020-01-01", Excluded: true}
+	wantMember := Member{Candidate: candidateOf(store.Candidate{}), OperatingConfidence: &op, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &rc, Categories: []string{sources.CategoryConstruction, sources.CategoryTrucking}, ClassifiedBy: "links", FleetVerdict: sources.FleetPass, Minutes: &minutes, GovernmentMatch: "chosen-government", KnownSince: "2018-04-09", NewestFiling: "2020-01-01", Excluded: true}
 	if !reflect.DeepEqual(entry, wantMember) {
 		t.Fatalf("member got %+v want %+v", entry, wantMember)
 	}

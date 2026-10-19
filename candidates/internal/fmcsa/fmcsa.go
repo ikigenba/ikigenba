@@ -49,7 +49,7 @@ func count(f map[string]json.RawMessage, key string) (int64, bool) {
 
 // Read returns an independent interpretation of r.
 func (*Source) Read(r scrapes.Row) sources.Reading {
-	out := sources.Reading{NameKey: sources.NameKey(r.Name), Name: r.Name, Names: append([]string{}, r.Names...), Street: r.Address.Street, City: r.Address.City, State: r.Address.State, Zip: r.Address.Zip, County: sources.County(r.Address.State, r.Address.County), Phone: stringFact(r.Facts, "phone"), Email: stringFact(r.Facts, "email"), People: make([]sources.Person, 0, len(r.People)), Class: sources.ClassUnknown, Cargo: []string{}, Evidence: []sources.Evidence{}, Category: sources.CategoryTrucking}
+	out := sources.Reading{NameKey: sources.NameKey(r.Name), Name: r.Name, Names: append([]string{}, r.Names...), Street: r.Address.Street, City: r.Address.City, State: r.Address.State, Zip: r.Address.Zip, County: sources.County(r.Address.State, r.Address.County), Phone: stringFact(r.Facts, "phone"), Email: stringFact(r.Facts, "email"), People: make([]sources.Person, 0, len(r.People)), Class: sources.ClassUnknown, Cargo: []string{}, Evidence: []sources.Evidence{}}
 	out.PhoneKey = sources.PhoneKey(out.Phone)
 	out.DomainKey = sources.DomainKey(out.Email)
 	for _, p := range r.People {
@@ -67,6 +67,9 @@ func (*Source) Read(r scrapes.Row) sources.Reading {
 		out.Class = sources.ClassForHire
 	case private:
 		out.Class = sources.ClassPrivate
+	}
+	if out.Class == sources.ClassForHire || out.Class == sources.ClassMixed {
+		out.Category = sources.CategoryTrucking
 	}
 	var cargo []json.RawMessage
 	if json.Unmarshal(r.Facts["cargo"], &cargo) == nil {

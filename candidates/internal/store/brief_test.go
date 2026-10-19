@@ -13,6 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
+	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
@@ -35,7 +36,7 @@ func briefResult(t *testing.T, id, summary string, failed bool, names ...string)
 	return store.Enrichment{Candidate: id, Kind: enrichers.KindBrief, Inputs: "page-inputs", Source: enrichers.SourcePrompts, Found: raw}
 }
 
-// R-KUHT-V74U R-ADAD-I8BO R-L5GX-B4T3 R-AI5Z-1BAG
+// R-7UFJ-LULD R-80J1-IPAU R-L5GX-B4T3 R-85EN-1S9M
 func TestBriefProjectionKeepsGoodSummaryAndNewestAttempt(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -44,7 +45,7 @@ func TestBriefProjectionKeepsGoodSummaryAndNewestAttempt(t *testing.T) {
 	_, err := f.s.Judge(ctx, []string{id})
 	contractOK(t, err)
 	k := cohortCreate(t, f, "brief members")
-	lf, err := json.Marshal(enrichers.LinkFound{Categories: []enrichers.Category{{Name: sources.CategoryTrucking, Source: fmcsa.Name}}, FleetVerdict: sources.FleetPass})
+	lf, err := json.Marshal(enrichers.LinkFound{Categories: []enrichers.Category{{Name: sources.CategoryConstruction, Source: ppp.Name}, {Name: sources.CategoryTrucking, Source: fmcsa.Name}}, FleetVerdict: sources.FleetPass})
 	contractOK(t, err)
 	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{{Candidate: id, Kind: enrichers.KindLinkFacts, Inputs: "replacement-links", Source: enrichers.SourceLinks, Found: lf}})
 	contractOK(t, err)
@@ -54,7 +55,7 @@ func TestBriefProjectionKeepsGoodSummaryAndNewestAttempt(t *testing.T) {
 	good, err := f.s.GetFacts(ctx, id)
 	contractOK(t, err)
 	contractEqual(t, good.Brief, "earlier summary")
-	contractEqual(t, good.Categories, []sources.Category{{Name: sources.CategoryConstruction, Source: enrichers.KindBrief}, {Name: sources.CategoryRetail, Source: enrichers.KindBrief}, {Name: sources.CategoryTrucking, Source: enrichers.KindBrief}, {Name: sources.CategoryTrucking, Source: fmcsa.Name}})
+	contractEqual(t, good.Categories, []sources.Category{{Name: sources.CategoryConstruction, Source: enrichers.KindBrief}, {Name: sources.CategoryRetail, Source: enrichers.KindBrief}, {Name: sources.CategoryTrucking, Source: enrichers.KindBrief}})
 	var briefCategories []sources.Category
 	for _, c := range good.Categories {
 		if c.Source == enrichers.KindBrief {
@@ -88,7 +89,7 @@ func TestBriefProjectionKeepsGoodSummaryAndNewestAttempt(t *testing.T) {
 	replaced, err := f.s.GetFacts(ctx, id)
 	contractOK(t, err)
 	contractEqual(t, replaced.Brief, "replacement summary")
-	contractEqual(t, replaced.Categories, []sources.Category{{Name: sources.CategoryOther, Source: enrichers.KindBrief}, {Name: sources.CategoryTrucking, Source: fmcsa.Name}})
+	contractEqual(t, replaced.Categories, []sources.Category{{Name: sources.CategoryOther, Source: enrichers.KindBrief}})
 	contractEqual(t, replaced.Written[0], store.Written{Kind: enrichers.KindBrief, At: f.now.UTC().Truncate(time.Second)})
 	other := enrichmentCandidate(t, f, "only-failed", "office@failed.test")
 	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{briefResult(t, other, "", true)})
@@ -100,7 +101,7 @@ func TestBriefProjectionKeepsGoodSummaryAndNewestAttempt(t *testing.T) {
 	contractEqual(t, len(only.Written), 1)
 }
 
-// R-KT9X-HFE5
+// R-UADJ-LEIU
 func TestSubjectCarriesNewestPagesInOriginalURLOrderAndFacts(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -117,7 +118,7 @@ func TestSubjectCarriesNewestPagesInOriginalURLOrderAndFacts(t *testing.T) {
 		contractOK(t, e)
 		pages = append(pages, saved)
 	}
-	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{briefResult(t, id, "summary", false, sources.CategoryRetail)})
+	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{briefResult(t, id, "summary", false, sources.CategoryRetail, sources.CategoryAgriculture)})
 	contractOK(t, err)
 	subject, err = f.s.Subject(ctx, id)
 	contractOK(t, err)
@@ -130,17 +131,20 @@ func TestSubjectCarriesNewestPagesInOriginalURLOrderAndFacts(t *testing.T) {
 	if subject.Facts == nil {
 		t.Fatal("missing facts")
 	}
-	contractEqual(t, subject.Facts.Categories, []enrichers.Category{{Name: sources.CategoryRetail, Source: enrichers.KindBrief}})
+	contractEqual(t, subject.Facts.Categories, []enrichers.Category{})
 	units, drivers := int64(3), int64(8)
-	lf := enrichers.LinkFound{KnownSince: "2017-04-05", NewestFiling: "2026-06-07", GovernmentMatch: "government-pattern", FleetVerdict: sources.FleetPass, PowerUnits: &units, Drivers: &drivers, Categories: []enrichers.Category{{Name: sources.CategoryTrucking, Source: fmcsa.Name}}}
+	lf := enrichers.LinkFound{KnownSince: "2017-04-05", NewestFiling: "2026-06-07", GovernmentMatch: "government-pattern", FleetVerdict: sources.FleetPass, PowerUnits: &units, Drivers: &drivers, Categories: []enrichers.Category{{Name: sources.CategoryConstruction, Source: ppp.Name}, {Name: sources.CategoryTrucking, Source: fmcsa.Name}}}
 	raw, e := json.Marshal(lf)
 	contractOK(t, e)
 	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{{Candidate: id, Kind: enrichers.KindLinkFacts, Inputs: "subject-links", Source: enrichers.SourceLinks, Found: raw}})
 	contractOK(t, err)
 	subject, err = f.s.Subject(ctx, id)
 	contractOK(t, err)
-	lf.Categories = []enrichers.Category{{Name: sources.CategoryRetail, Source: enrichers.KindBrief}, {Name: sources.CategoryTrucking, Source: fmcsa.Name}}
+	lf.Categories = []enrichers.Category{{Name: sources.CategoryConstruction, Source: ppp.Name}, {Name: sources.CategoryTrucking, Source: fmcsa.Name}}
 	contractEqual(t, subject.Facts, &lf)
+	facts, e := f.s.GetFacts(ctx, id)
+	contractOK(t, e)
+	contractEqual(t, facts.Categories, []sources.Category{{Name: sources.CategoryAgriculture, Source: enrichers.KindBrief}, {Name: sources.CategoryRetail, Source: enrichers.KindBrief}})
 	due, err := f.s.DueAmong(ctx, enrichers.KindBrief, []string{id}, false)
 	contractOK(t, err)
 	contractEqual(t, due, []store.Due{{Candidate: id, Inputs: (enrichers.Brief{}).Inputs(subject)}})
@@ -196,7 +200,7 @@ func TestBriefMigrationAndRollbackWriter(t *testing.T) {
 			contractEqual(t, len(facts.Written), 3)
 			contractEqual(t, facts.Written, []store.Written{{Kind: enrichers.KindDriveMinutes, At: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)}, {Kind: enrichers.KindSiteText, At: time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC)}, {Kind: sources.WebsiteCheck, At: time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)}})
 			units, drivers, minutes := int64(3), int64(2), int64(42)
-			contractEqual(t, facts, store.Facts{Candidate: id, KnownSince: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: "pattern", NewestFiling: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{}, FleetVerdict: sources.FleetPass, PowerUnits: &units, Drivers: &drivers, Website: sources.WebsiteHTTPS, WebsiteURL: "https://old.test", Minutes: &minutes, Written: []store.Written{{Kind: enrichers.KindDriveMinutes, At: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)}, {Kind: enrichers.KindSiteText, At: time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC)}, {Kind: sources.WebsiteCheck, At: time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)}}})
+			contractEqual(t, facts, store.Facts{Candidate: id, KnownSince: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: "pattern", NewestFiling: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{}, Records: []sources.Category{}, FleetVerdict: sources.FleetPass, PowerUnits: &units, Drivers: &drivers, Website: sources.WebsiteHTTPS, WebsiteURL: "https://old.test", Minutes: &minutes, Written: []store.Written{{Kind: enrichers.KindDriveMinutes, At: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)}, {Kind: enrichers.KindSiteText, At: time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC)}, {Kind: sources.WebsiteCheck, At: time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)}}})
 			es, err := s.Enrichments(ctx, id)
 			contractOK(t, err)
 			e.At = time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)

@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ikigenba/ikigenba/appkit/prompts"
+	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
@@ -32,6 +33,7 @@ type BriefFacts struct {
 	Categories      []Category    `json:"categories,omitempty"`
 	GovernmentMatch string        `json:"government_match,omitempty"`
 	FleetVerdict    string        `json:"fleet_verdict,omitempty"`
+	Class           string        `json:"class,omitempty"`
 	PowerUnits      *int64        `json:"power_units,omitempty"`
 	Drivers         *int64        `json:"drivers,omitempty"`
 	KnownSince      string        `json:"known_since,omitempty"`
@@ -111,6 +113,12 @@ func (Brief) Input(s Subject) json.RawMessage {
 			if c.Source != KindBrief {
 				f.Categories = append(f.Categories, c)
 			}
+		}
+	}
+	for _, l := range s.Links {
+		if !l.Gone && l.Scraper == fmcsa.Name {
+			f.Class = l.Reading.Class
+			break
 		}
 	}
 	seen := map[BriefPerson]bool{}

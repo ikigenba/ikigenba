@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
@@ -195,12 +196,12 @@ func TestExplicitTemplateStates(t *testing.T) {
 	}
 }
 
-// R-ARL4-F5OX
+// R-BK4C-4YZJ
 func TestMemberRowStoredAssessment(t *testing.T) {
 	minutes, low, high, op, rc := int64(84), int64(2400000), int64(3840000), .776, .4
 	c := store.Candidate{ID: "chosen-id", Name: "chosen-name", City: "chosen-city", State: "MN", Class: "chosen-class"}
 	a := store.Assessment{Operating: &op, Minutes: &minutes, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &rc, Categories: []sources.Category{{Name: sources.CategoryTrucking, Source: "fmcsa"}, {Name: sources.CategoryConstruction, Source: "ppp"}, {Name: sources.CategoryTrucking, Source: "ppp"}}, FleetVerdict: sources.FleetPass, GovernmentMatch: "chosen-government", KnownSince: fixtureTime(), NewestFiling: fixtureTime(), Excluded: true}
-	want := MemberRow{Rank: 3, ID: c.ID, Name: c.Name, City: c.City, State: c.State, Class: c.Class, OperatingConfidence: "0.78", Minutes: "84", RevenueLow: "$2,400,000", RevenueHigh: "$3,840,000", RevenueConfidence: "0.40", Categories: []string{sources.CategoryConstruction, sources.CategoryTrucking}, FleetVerdict: sources.FleetPass, GovernmentMatch: "chosen-government", KnownSince: "2026-10-05", KnownSinceText: "2026-10-05", NewestFiling: "2026-10-05", NewestFilingText: "2026-10-05", Excluded: true}
+	want := MemberRow{Rank: 3, ID: c.ID, Name: c.Name, City: c.City, State: c.State, Class: c.Class, OperatingConfidence: "0.78", Minutes: "84", RevenueLow: "$2,400,000", RevenueHigh: "$3,840,000", RevenueConfidence: "0.40", Categories: []string{sources.CategoryConstruction, sources.CategoryTrucking}, ClassifiedBy: enrichers.SourceLinks, FleetVerdict: sources.FleetPass, GovernmentMatch: "chosen-government", KnownSince: "2026-10-05", KnownSinceText: "2026-10-05", NewestFiling: "2026-10-05", NewestFilingText: "2026-10-05", Excluded: true}
 	if got := memberRow(store.Ranked{Candidate: c, Assessment: a}, 2); !reflect.DeepEqual(got, want) {
 		t.Fatalf("%+v", got)
 	}

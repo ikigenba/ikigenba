@@ -66,7 +66,7 @@ func rejectExpected(r store.Reject) tools.Reject {
 }
 func memberExpected(r store.Ranked) tools.Member {
 	a := assessmentExpected(r.Assessment)
-	v := tools.Member{Candidate: candidateOf(r.Candidate), OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, FleetVerdict: a.FleetVerdict, Website: a.Website, WebsiteURL: a.WebsiteURL, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch, KnownSince: a.KnownSince, NewestFiling: a.NewestFiling, Excluded: a.Excluded, Categories: []string{}}
+	v := tools.Member{Candidate: candidateOf(r.Candidate), OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, FleetVerdict: a.FleetVerdict, Website: a.Website, WebsiteURL: a.WebsiteURL, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch, KnownSince: a.KnownSince, NewestFiling: a.NewestFiling, Excluded: a.Excluded, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(r.Assessment.Categories)}
 	seen := map[string]bool{}
 	for _, c := range a.Categories {
 		seen[c.Name] = true
@@ -79,7 +79,7 @@ func memberExpected(r store.Ranked) tools.Member {
 }
 
 func readExpected(r store.CohortRead) tools.CohortRead {
-	v := tools.CohortRead{Cohort: cohortExpected(r.Cohort), Matching: r.Matching}
+	v := tools.CohortRead{Cohort: cohortExpected(r.Cohort), Matching: r.Matching, Classified: r.Classified}
 	for _, m := range r.Members {
 		v.Members = append(v.Members, memberExpected(m))
 	}
@@ -99,7 +99,7 @@ func (f *fixture) create(name string) tools.Cohort {
 }
 
 // R-VRRJ-PPU1
-// R-AFHY-ZO6N R-K79Q-KTII R-AHXR-R7O1 R-AJ5O-4ZEQ R-AXSG-Q8B2 R-BEV2-30OS R-P2HO-Q5JG R-BKYJ-ZVE9 R-1POC-ZXB9 R-1S45-RGSN R-BDN5-P8Y3
+// R-AFHY-ZO6N R-1MHN-WGCE R-AHXR-R7O1 R-1OXG-NZTS R-AXSG-Q8B2 R-BEV2-30OS R-P2HO-Q5JG R-BKYJ-ZVE9 R-1POC-ZXB9 R-1S45-RGSN R-BDN5-P8Y3
 func TestCohortLifecycleRejectAndExclusion(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(5)

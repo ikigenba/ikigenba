@@ -16,7 +16,7 @@ import (
 var factsColumns = columns("candidate:Candidate known_since:KnownSince government_match:GovernmentMatch newest_filing:NewestFiling categories:Categories fleet_verdict:FleetVerdict power_units:PowerUnits drivers:Drivers website:Website website_url:WebsiteURL minutes:Minutes brief:Brief")
 
 func unknownFacts(id string) Facts {
-	return Facts{Candidate: id, Categories: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown}
+	return Facts{Candidate: id, Categories: []sources.Category{}, Records: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown}
 }
 func factsKey(ctx context.Context, tx *sql.Tx, id string) (Facts, error) {
 	fs, err := readRecords[Facts](ctx, tx, "facts", factsColumns, " WHERE candidate=?", id)
@@ -40,7 +40,8 @@ func factsKey(ctx context.Context, tx *sql.Tx, id string) (Facts, error) {
 			f.Written = append(f.Written, Written{Kind: []string{enrichers.KindBrief, enrichers.KindDriveMinutes, enrichers.KindLinkFacts, enrichers.KindSiteText, sources.WebsiteCheck}[i], At: t.UTC()})
 		}
 	}
-	return f, nil
+	f.Records, err = recordCategories(ctx, tx, id)
+	return f, err
 }
 func projectFacts(ctx context.Context, tx *sql.Tx, id string) error {
 	es, err := enrichmentRecords(ctx, tx, " WHERE candidate=? ORDER BY seq DESC", id)
@@ -53,6 +54,7 @@ func projectFacts(ctx context.Context, tx *sql.Tx, id string) error {
 	f := unknownFacts(id)
 	seen := map[string]bool{}
 	goodBrief := false
+	briefCategories := []sources.Category{}
 	extra := map[string]any{"drive_minutes_at": "", "link_facts_at": "", "website_check_at": "", "site_text_at": "", "brief_at": ""}
 	for _, e := range es {
 		if e.Kind == enrichers.KindBrief && !goodBrief && !(enrichers.Brief{}).Failed(e.Found) {
@@ -62,7 +64,7 @@ func projectFacts(ctx context.Context, tx *sql.Tx, id string) error {
 			}
 			f.Brief = b.Summary
 			for _, c := range b.Categories {
-				f.Categories = append(f.Categories, sources.Category{Name: c.Name, Source: enrichers.KindBrief})
+				briefCategories = append(briefCategories, sources.Category{Name: c.Name, Source: enrichers.KindBrief})
 			}
 			goodBrief = true
 		}
@@ -112,6 +114,9 @@ func projectFacts(ctx context.Context, tx *sql.Tx, id string) error {
 			}
 		}
 		extra[e.Kind+"_at"] = e.At.Format(time.RFC3339)
+	}
+	if len(briefCategories) > 0 {
+		f.Categories = briefCategories
 	}
 	sort.Slice(f.Categories, func(i, j int) bool {
 		a, b := f.Categories[i], f.Categories[j]
@@ -180,4 +185,72 @@ func assessmentFacts(ctx context.Context, tx *sql.Tx, a *Assessment) error {
 	}
 	overlayFacts(a, f)
 	return nil
+}
+
+// ClassifiedBy identifies the evidence that supplies the categories.
+func ClassifiedBy(categories []sources.Category) string {
+	if len(categories) == 0 {
+		return ""
+	}
+	for _, c := range categories {
+		if c.Source != enrichers.KindBrief {
+			return enrichers.SourceLinks
+		}
+	}
+	return enrichers.KindBrief
+}
+
+// RecordsDiffer compares a brief classification with record category names.
+func RecordsDiffer(categories, records []sources.Category) bool {
+	if ClassifiedBy(categories) != enrichers.KindBrief {
+		return false
+	}
+	names := map[string]bool{}
+	for _, c := range categories {
+		names[c.Name] = true
+	}
+	other := map[string]bool{}
+	for _, c := range records {
+		other[c.Name] = true
+	}
+	if len(names) != len(other) {
+		return true
+	}
+	for name := range names {
+		if !other[name] {
+			return true
+		}
+	}
+	return false
+}
+
+func recordCategories(ctx context.Context, tx *sql.Tx, id string) ([]sources.Category, error) {
+	es, err := enrichmentRecords(ctx, tx, " WHERE candidate=? AND kind=? ORDER BY seq DESC LIMIT 1", id, enrichers.KindLinkFacts)
+	if err != nil {
+		return nil, err
+	}
+	out := []sources.Category{}
+	if len(es) == 0 {
+		return out, nil
+	}
+	var found enrichers.LinkFound
+	if err = json.Unmarshal(es[0].Found, &found); err != nil {
+		return nil, err
+	}
+	for _, c := range found.Categories {
+		out = append(out, sources.Category{Name: c.Name, Source: c.Source})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].Source < out[j].Source
+	})
+	unique := out[:0]
+	for _, c := range out {
+		if len(unique) == 0 || unique[len(unique)-1] != c {
+			unique = append(unique, c)
+		}
+	}
+	return unique, nil
 }

@@ -407,7 +407,7 @@ func estimateOf(e sources.Estimate) Estimate {
 	return Estimate{e.Source, e.Low, e.High, e.Confidence, e.Facts, date(e.Filed), e.Formula}
 }
 func assessmentOf(a store.Assessment) Assessment {
-	v := Assessment{OperatingConfidence: a.Operating, OperatingEvidence: []Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, KnownSince: date(a.KnownSince), NewestFiling: date(a.NewestFiling), Categories: []Category{}, GovernmentMatch: a.GovernmentMatch, FleetVerdict: a.FleetVerdict, PowerUnits: a.PowerUnits, Drivers: a.Drivers, Website: a.Website, WebsiteURL: a.WebsiteURL, Minutes: a.Minutes, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
+	v := Assessment{OperatingConfidence: a.Operating, OperatingEvidence: []Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, KnownSince: date(a.KnownSince), NewestFiling: date(a.NewestFiling), Categories: []Category{}, ClassifiedBy: store.ClassifiedBy(a.Categories), RecordCategories: []Category{}, GovernmentMatch: a.GovernmentMatch, FleetVerdict: a.FleetVerdict, PowerUnits: a.PowerUnits, Drivers: a.Drivers, Website: a.Website, WebsiteURL: a.WebsiteURL, Minutes: a.Minutes, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
 	for _, e := range a.Evidence {
 		v.OperatingEvidence = append(v.OperatingEvidence, Evidence{e.Name, e.Source, e.Weight, e.Description})
 	}
@@ -418,7 +418,7 @@ func assessmentOf(a store.Assessment) Assessment {
 }
 func memberOf(e store.Ranked) Member {
 	a := e.Assessment
-	v := Member{Candidate: candidateOf(e.Candidate), OperatingConfidence: a.Operating, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, FleetVerdict: a.FleetVerdict, Website: a.Website, WebsiteURL: a.WebsiteURL, KnownSince: date(a.KnownSince), NewestFiling: date(a.NewestFiling), Excluded: a.Excluded, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch}
+	v := Member{Candidate: candidateOf(e.Candidate), OperatingConfidence: a.Operating, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(a.Categories), FleetVerdict: a.FleetVerdict, Website: a.Website, WebsiteURL: a.WebsiteURL, KnownSince: date(a.KnownSince), NewestFiling: date(a.NewestFiling), Excluded: a.Excluded, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch}
 	if !e.SiteText.IsZero() {
 		t := stamp(e.SiteText)
 		v.SiteText = &t
@@ -465,6 +465,12 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 			f, err := cfg.Store.GetFacts(ctx, id)
 			if err == nil {
 				v.Brief = f.Brief
+				v.RecordsDiffer = store.RecordsDiffer(f.Categories, f.Records)
+				if v.RecordsDiffer {
+					for _, c := range f.Records {
+						v.RecordCategories = append(v.RecordCategories, Category{c.Name, c.Source})
+					}
+				}
 			} else if !errors.Is(err, store.ErrNotFound) {
 				return failure(err)
 			}
@@ -552,7 +558,7 @@ func rejectOf(r store.Reject) Reject {
 	return Reject{r.Kind, r.Cohort, r.CohortName, r.Candidate, r.Why, r.UserID, r.UserEmail, at}
 }
 func cohortReadOf(r store.CohortRead) CohortRead {
-	v := CohortRead{Cohort: cohortOf(r.Cohort), Matching: r.Matching, Members: []Member{}, Rejects: []Reject{}}
+	v := CohortRead{Cohort: cohortOf(r.Cohort), Matching: r.Matching, Classified: r.Classified, Members: []Member{}, Rejects: []Reject{}}
 	for _, m := range r.Members {
 		v.Members = append(v.Members, memberOf(m))
 	}

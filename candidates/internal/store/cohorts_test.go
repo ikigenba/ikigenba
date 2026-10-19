@@ -705,7 +705,7 @@ func TestCohortOrderFieldsDirectionsUnknownsAndTies(t *testing.T) {
 	contractEqual(t, cohortIDs(cohortRead(t, f, c).Members), []string{ids[1], ids[3], ids[2], ids[0], ids[4]})
 }
 
-// R-DMFQ-97IE R-6BUH-Z4AZ R-L5GX-B4T3 R-4ZLS-2ZZN
+// R-7WVC-DE2R R-O9NE-3VU4 R-L5GX-B4T3 R-4ZLS-2ZZN
 func TestCohortMembershipReadsStoredJudgmentsAndStandingRejects(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -780,7 +780,7 @@ func TestCohortMembershipReadsStoredJudgmentsAndStandingRejects(t *testing.T) {
 	contractEqual(t, read.Matching, int64(0))
 }
 
-// R-6BUH-Z4AZ
+// R-O9NE-3VU4
 func TestCohortReadUsesOneClockSnapshot(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -796,7 +796,7 @@ func TestCohortReadUsesOneClockSnapshot(t *testing.T) {
 	contractEqual(t, r.Matching, int64(3))
 }
 
-// R-DHK4-Q4JM R-DIS1-3WAB R-DJZX-HO10 R-DMFQ-97IE R-IK72-EQQQ R-DGC8-CCSX
+// R-DHK4-Q4JM R-DIS1-3WAB R-DJZX-HO10 R-7WVC-DE2R R-IK72-EQQQ R-DGC8-CCSX
 func TestCohortRecordShapesByUse(t *testing.T) {
 	type cohort struct {
 		ID, Name                        string
@@ -821,10 +821,11 @@ func TestCohortRecordShapesByUse(t *testing.T) {
 		At                                                          time.Time
 	}
 	type read struct {
-		Cohort   store.Cohort
-		Matching int64
-		Members  []store.Ranked
-		Rejects  []store.Reject
+		Cohort     store.Cohort
+		Matching   int64
+		Classified int64
+		Members    []store.Ranked
+		Rejects    []store.Reject
 	}
 	type order struct{ Field, Direction string }
 	type filters struct {

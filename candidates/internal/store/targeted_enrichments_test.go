@@ -99,7 +99,7 @@ func TestDueAmongKeepsTargetOrderAndSkipsIneligible(t *testing.T) {
 	}
 }
 
-// R-AFQ6-9RT2 R-OKGB-71R7 R-OVFE-MZFG R-OWNB-0R65
+// R-82YU-A8S8 R-OKGB-71R7 R-OVFE-MZFG R-OWNB-0R65
 func TestDeriveAmongRecordsOnlyDistinctEligibleTargets(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -170,7 +170,7 @@ func siteTextResult(t *testing.T, id, status string) store.Enrichment {
 	return store.Enrichment{Candidate: id, Kind: enrichers.KindSiteText, Inputs: "https://business.test/", Source: enrichers.SourcePrompts, Found: b, Cost: 1.25}
 }
 
-// R-L5GX-B4T3 R-ADAD-I8BO
+// R-L5GX-B4T3 R-80J1-IPAU
 func TestSiteTextWrittenProjectsIntoCohortWithoutChangingMembership(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -219,7 +219,7 @@ func TestSiteTextWrittenProjectsIntoCohortWithoutChangingMembership(t *testing.T
 	contractEqual(t, cohortRead(t, f, cohort), got)
 }
 
-// R-AFQ6-9RT2
+// R-82YU-A8S8
 func TestDeriveAmongNeverRecordsEmptyInputs(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

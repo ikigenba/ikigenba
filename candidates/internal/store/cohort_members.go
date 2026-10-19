@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
@@ -92,7 +93,13 @@ func (s *Store) ReadCohort(ctx context.Context, id string) (CohortRead, error) {
 		if err != nil {
 			return err
 		}
-		out = CohortRead{Cohort: k, Matching: count, Members: members, Rejects: rejects}
+		var classified int64
+		for _, member := range members {
+			if ClassifiedBy(member.Assessment.Categories) == enrichers.KindBrief {
+				classified++
+			}
+		}
+		out = CohortRead{Cohort: k, Matching: count, Classified: classified, Members: members, Rejects: rejects}
 		return nil
 	}))
 	if err != nil {

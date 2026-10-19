@@ -193,7 +193,7 @@ func TestKeptPageRoutes(t *testing.T) {
 	}
 }
 
-// R-43B1-MM2U R-GPI8-39U1
+// R-BOZX-O1YB R-BIWF-R78U
 func TestMemberSiteTextStamp(t *testing.T) {
 	for _, at := range []time.Time{{}, fixtureTime()} {
 		v := memberRow(store.Ranked{SiteText: at}, 0)
@@ -254,7 +254,7 @@ func TestAddedTemplateStates(t *testing.T) {
 	}
 }
 
-// R-43B1-MM2U R-GT5X-8L24 R-GRY0-UTBF
+// R-BOZX-O1YB R-GT5X-8L24 R-GRY0-UTBF
 func TestSiteTextCandidateAndCohortAgree(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()

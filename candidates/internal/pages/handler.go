@@ -155,7 +155,7 @@ func Handler(cfg Config) http.Handler {
 				return
 			}
 			b.Trail = []page.Level{{Name: hid, URL: "/cohorts/" + hid}}
-			d := CohortData{Banner: b, Cohort: cohortView(v.Cohort), Matching: v.Matching, Members: []MemberRow{}, Rejects: []RejectRow{}}
+			d := CohortData{Banner: b, Cohort: cohortView(v.Cohort), Matching: v.Matching, Classified: v.Classified, Members: []MemberRow{}, Rejects: []RejectRow{}}
 			for i, m := range v.Members {
 				d.Members = append(d.Members, memberRow(m, i))
 			}

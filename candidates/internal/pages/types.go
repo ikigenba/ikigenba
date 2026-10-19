@@ -57,11 +57,11 @@ type CohortRow struct {
 
 // CohortData supplies a cohort page.
 type CohortData struct {
-	Banner   page.Banner
-	Cohort   CohortView
-	Matching int64
-	Members  []MemberRow
-	Rejects  []RejectRow
+	Banner               page.Banner
+	Cohort               CohortView
+	Matching, Classified int64
+	Members              []MemberRow
+	Rejects              []RejectRow
 }
 
 // CohortView supplies the cohort definition.
@@ -98,11 +98,11 @@ type FiltersView struct {
 
 // MemberRow supplies one cohort member.
 type MemberRow struct {
-	Rank                                                                                                                                                                     int64
-	ID, Name, City, State, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence                                                                                   string
-	Categories                                                                                                                                                               []string
-	Class, FleetVerdict, Website, WebsiteURL, SiteText, SiteTextText, Brief, BriefText, Minutes, GovernmentMatch, KnownSince, KnownSinceText, NewestFiling, NewestFilingText string
-	Excluded                                                                                                                                                                 bool
+	Rank                                                                                                                                                                                   int64
+	ID, Name, City, State, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence                                                                                                 string
+	Categories                                                                                                                                                                             []string
+	ClassifiedBy, Class, FleetVerdict, Website, WebsiteURL, SiteText, SiteTextText, Brief, BriefText, Minutes, GovernmentMatch, KnownSince, KnownSinceText, NewestFiling, NewestFilingText string
+	Excluded                                                                                                                                                                               bool
 }
 
 // RejectRow supplies a standing reject.
@@ -160,6 +160,9 @@ type AssessmentView struct {
 type FactsView struct {
 	KnownSince, KnownSinceText, NewestFiling, NewestFilingText  string
 	Categories                                                  []CategoryRow
+	ClassifiedBy                                                string
+	RecordsDiffer                                               bool
+	RecordCategories                                            []CategoryRow
 	GovernmentMatch, FleetVerdict, PowerUnits, Drivers, Minutes string
 	Written                                                     []WrittenRow
 }

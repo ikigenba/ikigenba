@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/scrapes"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
@@ -280,5 +281,46 @@ func assertFleet(t *testing.T, links []enrichers.Link, verdict string, units, dr
 	}
 	if !bytes.Equal(before, subjectJSON(t, s)) {
 		t.Fatal("subject changed")
+	}
+}
+
+// R-B8ES-OX9S
+func TestSourceCategoriesFollowCarrierAuthority(t *testing.T) {
+	for _, tc := range []struct {
+		name, class  string
+		construction bool
+		want         []enrichers.Category
+	}{
+		{"Pine County Highway Dept.", "PRIVATE PROPERTY", false, []enrichers.Category{{Name: sources.CategoryGovernment, Source: "name"}}},
+		{"Pine County Highway Dept.", "LOCAL GOVERNMENT", false, []enrichers.Category{{Name: sources.CategoryGovernment, Source: "name"}}},
+		{"Acme Freight", "AUTHORIZED FOR HIRE", false, []enrichers.Category{{Name: sources.CategoryTrucking, Source: fmcsa.Name}}},
+		{"Acme Freight", "PRIVATE PROPERTY;AUTHORIZED FOR HIRE", false, []enrichers.Category{{Name: sources.CategoryTrucking, Source: fmcsa.Name}}},
+		{"Acme Freight", "PRIVATE PROPERTY", false, []enrichers.Category{}},
+		{"Acme Freight", "", false, []enrichers.Category{}},
+		{"Acme Builders", "PRIVATE PROPERTY", true, []enrichers.Category{{Name: sources.CategoryConstruction, Source: ppp.Name}}},
+	} {
+		raw, _ := json.Marshal(tc.class)
+		reading := fmcsa.New().Read(scrapes.Row{Name: tc.name, Facts: map[string]json.RawMessage{"class": raw}})
+		s := enrichers.Subject{Links: []enrichers.Link{{Scraper: fmcsa.Name, Reading: reading}}}
+		if tc.construction {
+			s.Links = append(s.Links, enrichers.Link{Scraper: ppp.Name, Reading: ppp.New().Read(scrapes.Row{Name: tc.name, Facts: map[string]json.RawMessage{"naics": json.RawMessage(`"236220"`)}})})
+		}
+		for _, gone := range []bool{false, true} {
+			s.Links[0].Gone = gone
+			var got enrichers.LinkFound
+			if err := json.Unmarshal((enrichers.LinkFacts{}).Derive(s).Found, &got); err != nil {
+				t.Fatal(err)
+			}
+			want := tc.want
+			if gone && !tc.construction {
+				want = []enrichers.Category{}
+			}
+			if !reflect.DeepEqual(got.Categories, want) {
+				t.Fatal(tc, gone, got)
+			}
+			if !gone && tc.name == "Pine County Highway Dept." && got.GovernmentMatch != "COUNTY" {
+				t.Fatal(got)
+			}
+		}
 	}
 }

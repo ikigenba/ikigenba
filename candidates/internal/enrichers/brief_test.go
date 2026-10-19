@@ -88,7 +88,7 @@ func TestBriefFingerprint(t *testing.T) {
 	}
 }
 
-// R-KASA-HWAY
+// R-B5YZ-XDSE
 func TestBriefInputEvidence(t *testing.T) {
 	n := int64(3)
 	s := enrichers.Subject{ID: "candidate", Name: "name", City: "city", State: "state", Website: "site", Facts: &enrichers.LinkFound{Categories: []enrichers.Category{{Name: "retail", Source: enrichers.KindBrief}, {Name: "trucking and logistics", Source: "fmcsa"}}, GovernmentMatch: "match", FleetVerdict: "pass", PowerUnits: &n, Drivers: &n, KnownSince: "2015-03-01", NewestFiling: "2025-01-01"}, Links: []enrichers.Link{
@@ -127,7 +127,7 @@ func TestBriefInputEvidence(t *testing.T) {
 	}
 }
 
-// R-KC06-VO1N
+// R-B76W-B5J3
 func TestBriefPageBudget(t *testing.T) {
 	for _, tc := range []struct {
 		texts []string
@@ -173,7 +173,7 @@ func repeatedTexts(count, size int) []string {
 	return out
 }
 
-// R-K113-FQDE R-L0LB-S1UB
+// R-B4R3-JM1P R-L0LB-S1UB
 func TestBriefRecordEncoding(t *testing.T) {
 	n := int64(7)
 	code := 2
@@ -185,7 +185,7 @@ func TestBriefRecordEncoding(t *testing.T) {
 		{enrichers.BriefPerson{}, `{"name":"","role":""}`},
 		{enrichers.BriefPage{"url", "title", "text"}, `{"url":"url","title":"title","text":"text"}`},
 		{enrichers.BriefPage{}, `{"url":"","title":"","text":""}`},
-		{enrichers.BriefFacts{[]enrichers.Category{{"category", "source"}}, "match", "pass", &n, &n, "known", "filed", []enrichers.BriefPerson{{"person", "role"}}}, `{"categories":[{"name":"category","source":"source"}],"government_match":"match","fleet_verdict":"pass","power_units":7,"drivers":7,"known_since":"known","newest_filing":"filed","people":[{"name":"person","role":"role"}]}`},
+		{enrichers.BriefFacts{[]enrichers.Category{{"category", "source"}}, "match", "pass", "mixed", &n, &n, "known", "filed", []enrichers.BriefPerson{{"person", "role"}}}, `{"categories":[{"name":"category","source":"source"}],"government_match":"match","fleet_verdict":"pass","class":"mixed","power_units":7,"drivers":7,"known_since":"known","newest_filing":"filed","people":[{"name":"person","role":"role"}]}`},
 		{enrichers.BriefFacts{}, `{}`},
 		{enrichers.BriefFacts{Categories: []enrichers.Category{}, People: []enrichers.BriefPerson{}}, `{}`},
 		{enrichers.BriefInput{"c", "n", "city", "state", "site", enrichers.BriefFacts{}, []enrichers.BriefPage{}}, `{"candidate":"c","name":"n","city":"city","state":"state","website":"site","facts":{},"pages":[]}`},
@@ -308,6 +308,34 @@ func TestPrompterFailedDecode(t *testing.T) {
 		var brief enrichers.Prompter = enrichers.Brief{}
 		if site.Failed(json.RawMessage(tc.raw)) != tc.site || brief.Failed(json.RawMessage(tc.raw)) != tc.brief {
 			t.Fatal(tc)
+		}
+	}
+}
+
+// R-B5YZ-XDSE
+func TestBriefInputCarrierClass(t *testing.T) {
+	for _, facts := range []*enrichers.LinkFound{nil, {Categories: []enrichers.Category{{Name: sources.CategoryTrucking, Source: "fmcsa"}}, FleetVerdict: sources.FleetPass}} {
+		s := enrichers.Subject{Facts: facts, Links: []enrichers.Link{
+			{Scraper: "ppp", Reading: sources.Reading{Class: sources.ClassForHire}},
+			{Scraper: "fmcsa", Gone: true, Reading: sources.Reading{Class: sources.ClassForHire}},
+			{Scraper: "fmcsa", Reading: sources.Reading{Class: sources.ClassMixed}},
+			{Scraper: "fmcsa", Reading: sources.Reading{Class: sources.ClassPrivate}},
+		}}
+		before, _ := json.Marshal(s)
+		var got enrichers.BriefInput
+		if err := json.Unmarshal((enrichers.Brief{}).Input(s), &got); err != nil || got.Facts.Class != sources.ClassMixed {
+			t.Fatal(got, err)
+		}
+		after, _ := json.Marshal(s)
+		if !bytes.Equal(before, after) {
+			t.Fatal("mutated subject")
+		}
+		s.Links[2].Gone = true
+		s.Links[3].Gone = true
+		// Decode into fresh storage because absent members do not reset an existing value.
+		got = enrichers.BriefInput{}
+		if err := json.Unmarshal((enrichers.Brief{}).Input(s), &got); err != nil || got.Facts.Class != "" {
+			t.Fatal(got, err)
 		}
 	}
 }

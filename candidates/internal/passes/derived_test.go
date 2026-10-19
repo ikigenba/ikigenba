@@ -255,7 +255,7 @@ func TestWebsiteInputsChangeRecordsAnotherResult(t *testing.T) {
 	}
 }
 
-// R-MMAY-9V7X R-ML31-W3H8 R-SQD9-SRDA R-SWGR-PM2R R-T8NR-JBHP
+// R-UOR9-3XOC R-ML31-W3H8 R-SQD9-SRDA R-SWGR-PM2R R-T8NR-JBHP
 func TestRebuildForcesDerivedResultsBeforeJudging(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/scrapers/fmcsa/current" {
@@ -332,7 +332,7 @@ func equalInt(a, b *int64) bool {
 	return *a == *b
 }
 
-// R-MMAY-9V7X
+// R-UOR9-3XOC
 func TestRebuildPersistsDerivedFactsInHistoricalAssessment(t *testing.T) {
 	rows := []scrapes.Row{
 		{Scraper: ppp.Name, Run: "ppp-current", SourceID: "original", Digest: "one", Name: "Original Carrier", Address: scrapes.Address{State: "MN", Zip: "55072"}, Facts: map[string]json.RawMessage{}, Raw: json.RawMessage(`{}`)},

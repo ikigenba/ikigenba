@@ -39,7 +39,7 @@ func TestSource(t *testing.T) {
 func TestIdentity(t *testing.T) {
 	r := scrapes.Row{Name: "Acme, Inc.", Names: []string{"Other", "Third"}, Address: scrapes.Address{Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "115"}, People: []scrapes.Person{{Name: "Alex", Role: "owner"}}, Facts: facts(map[string]string{"phone": "+1 320 555 0123", "email": "x@ACME.COM"})}
 	got := fmcsa.New().Read(r)
-	want := sources.Reading{NameKey: "ACME", PhoneKey: "3205550123", DomainKey: "acme.com", Name: "Acme, Inc.", Names: []string{"Other", "Third"}, Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "MN-115", Phone: "+1 320 555 0123", Email: "x@ACME.COM", People: []sources.Person{{Name: "Alex", Role: "owner"}}, Class: sources.ClassUnknown, Cargo: []string{}, Filed: time.Time{}, Fleet: false, FleetVerdict: sources.FleetFail, Estimate: nil, Evidence: []sources.Evidence{{Name: sources.EvidenceOwnDomain, Source: fmcsa.Name, Weight: .2, Description: sources.DescribeOwnDomain}}, Category: sources.CategoryTrucking}
+	want := sources.Reading{NameKey: "ACME", PhoneKey: "3205550123", DomainKey: "acme.com", Name: "Acme, Inc.", Names: []string{"Other", "Third"}, Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "MN-115", Phone: "+1 320 555 0123", Email: "x@ACME.COM", People: []sources.Person{{Name: "Alex", Role: "owner"}}, Class: sources.ClassUnknown, Cargo: []string{}, Filed: time.Time{}, Fleet: false, FleetVerdict: sources.FleetFail, Estimate: nil, Evidence: []sources.Evidence{{Name: sources.EvidenceOwnDomain, Source: fmcsa.Name, Weight: .2, Description: sources.DescribeOwnDomain}}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("%+v != %+v", got, want)
 	}
@@ -352,7 +352,7 @@ func TestEstimateCopiesUnreadableFacts(t *testing.T) {
 	}
 }
 
-// R-0039-JXVV R-ZXNG-SEEH
+// R-JJZ1-365H R-JL6X-GXW6 R-ZXNG-SEEH
 func TestAddedCategoryGovernment(t *testing.T) {
 	for _, tc := range []struct {
 		raw  string
@@ -365,9 +365,16 @@ func TestAddedCategoryGovernment(t *testing.T) {
 		if tc.raw != "" {
 			r.Facts["added"] = json.RawMessage(tc.raw)
 		}
-		got := fmcsa.New().Read(r)
-		if got.KnownSince != tc.want || got.Category != sources.CategoryTrucking || got.GovernmentMatch != "COUNTY" {
-			t.Fatal(got)
+		for _, implausible := range []bool{false, true} {
+			if !implausible {
+				delete(r.Facts, "power_units")
+			} else {
+				r.Facts["power_units"] = json.RawMessage(`"199999"`)
+			}
+			got := fmcsa.New().Read(r)
+			if got.KnownSince != tc.want || got.Category != "" || got.GovernmentMatch != "COUNTY" {
+				t.Fatal(got)
+			}
 		}
 	}
 	if got := fmcsa.New().Read(scrapes.Row{Name: "COUNTYLINE TRUCKING INC"}); !got.KnownSince.IsZero() || got.GovernmentMatch != "" {
@@ -462,3 +469,26 @@ func TestFleetVerdictAndReportedCounts(t *testing.T) {
 	}
 }
 func number(n int64) *int64 { return &n }
+
+// R-JL6X-GXW6
+func TestCategoryRequiresForHireAuthority(t *testing.T) {
+	for _, tc := range []struct{ class, tag, category string }{
+		{"AUTHORIZED FOR HIRE", sources.ClassForHire, sources.CategoryTrucking},
+		{"exempt for hire ", sources.ClassForHire, sources.CategoryTrucking},
+		{"PRIVATE PROPERTY;AUTHORIZED FOR HIRE", sources.ClassMixed, sources.CategoryTrucking},
+		{"PRIVATE PROPERTY", sources.ClassPrivate, ""},
+		{"", sources.ClassUnknown, ""},
+		{"LOCAL GOVERNMENT", sources.ClassUnknown, ""},
+	} {
+		for _, implausible := range []bool{false, true} {
+			r := scrapes.Row{Facts: facts(map[string]string{"class": tc.class})}
+			if implausible {
+				r.Facts = facts(map[string]string{"class": tc.class, "power_units": "199999", "total_drivers": "4", "mileage": "0"})
+			}
+			got := fmcsa.New().Read(r)
+			if got.Class != tc.tag || got.Category != tc.category {
+				t.Fatal(tc, implausible, got)
+			}
+		}
+	}
+}

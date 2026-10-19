@@ -150,7 +150,7 @@ func subject(ctx context.Context, tx *sql.Tx, c Candidate, pages bool) (enricher
 		if !f.NewestFiling.IsZero() {
 			out.Facts.NewestFiling = f.NewestFiling.UTC().Format("2006-01-02")
 		}
-		for _, c := range f.Categories {
+		for _, c := range f.Records {
 			out.Facts.Categories = append(out.Facts.Categories, enrichers.Category{Name: c.Name, Source: c.Source})
 		}
 	} else if !errors.Is(err, ErrNotFound) {
