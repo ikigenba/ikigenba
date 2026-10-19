@@ -164,14 +164,14 @@ func spec(t *testing.T, url string) agent.Spec {
 	return agent.Spec{Model: model(t), Prompt: "the author's prompt", Key: "fixture-secret-key", BaseURL: url, MaxToolCalls: 3}
 }
 
-// R-86ER-VBT0 R-8A2H-0N13 R-8BAD-EERS R-8CI9-S6IH R-8DQ6-5Y96 R-8EY2-JPZV R-8HDV-B9H9 R-8ILR-P17Y R-8JTO-2SYN R-8L1K-GKPC R-8M9G-UCG1 R-8NHD-846Q R-8OP9-LVXF R-8PX5-ZNO4
+// R-PS4U-H1UQ R-8A2H-0N13 R-PQWY-3A41 R-8CI9-S6IH R-8DQ6-5Y96 R-8EY2-JPZV R-8HDV-B9H9 R-8ILR-P17Y R-PTCQ-UTLF R-8L1K-GKPC R-8M9G-UCG1 R-8NHD-846Q R-8OP9-LVXF R-8PX5-ZNO4
 func TestPublicHelpers(t *testing.T) {
-	s := agent.Spec{Model: "model", Key: "key", System: "system", Prompt: "prompt", Input: json.RawMessage(`{}`), Tools: []string{agent.GroupFiles, agent.GroupBash, agent.GroupSuite}, Schema: json.RawMessage(`{}`), MaxToolCalls: 1, UserID: "user", Email: "email", RequestID: "request", EventID: "event", EventDepth: 2, BaseURL: "url"}
+	s := agent.Spec{Model: "model", Key: "key", BraveKey: "brave", System: "system", Prompt: "prompt", Input: json.RawMessage(`{}`), Tools: []string{agent.GroupFiles, agent.GroupBash, agent.GroupSuite}, Schema: json.RawMessage(`{}`), MaxToolCalls: 1, UserID: "user", Email: "email", RequestID: "request", EventID: "event", EventDepth: 2, BaseURL: "url"}
 	var fields map[string]json.RawMessage
 	if e := json.Unmarshal(marshal(t, s), &fields); e != nil {
 		t.Fatal(e)
 	}
-	want := []string{"model", "key", "system", "prompt", "input", "tools", "schema", "max_tool_calls", "user_id", "email", "request_id", "event_id", "event_depth", "base_url"}
+	want := []string{"model", "key", "brave_key", "system", "prompt", "input", "tools", "schema", "max_tool_calls", "user_id", "email", "request_id", "event_id", "event_depth", "base_url"}
 	if len(fields) != len(want) {
 		t.Fatal(fields)
 	}
@@ -180,7 +180,10 @@ func TestPublicHelpers(t *testing.T) {
 			t.Fatal(key)
 		}
 	}
-	if agent.ExitAnswered != 0 || agent.ExitFailed != 1 || agent.ExitLimit != 2 || agent.ExitNoOutput != 3 || agent.ExitUnusable != 4 || agent.GroupFiles != "files" || agent.GroupBash != "bash" || agent.GroupSuite != "suite" {
+	if string(fields["brave_key"]) != `"brave"` {
+		t.Fatal(fields)
+	}
+	if agent.ExitAnswered != 0 || agent.ExitFailed != 1 || agent.ExitLimit != 2 || agent.ExitNoOutput != 3 || agent.ExitUnusable != 4 || agent.GroupFiles != "files" || agent.GroupBash != "bash" || agent.GroupSuite != "suite" || agent.GroupWeb != "web" {
 		t.Fatal("constants")
 	}
 	for _, c := range []string{agent.Failed, agent.LimitReached, agent.NoOutput, agent.Unusable} {
@@ -188,12 +191,12 @@ func TestPublicHelpers(t *testing.T) {
 			t.Fatal(c)
 		}
 	}
-	for _, groups := range [][]string{nil, {}, {agent.GroupSuite, agent.GroupFiles}} {
+	for _, groups := range [][]string{nil, {}, {agent.GroupSuite, agent.GroupFiles}, {"web"}, {"files", "bash", "web", "suite"}} {
 		if !agent.ValidGroups(groups) {
 			t.Fatal(groups)
 		}
 	}
-	for _, groups := range [][]string{{"files", "web"}, {"bash", "bash"}, {""}, {"Files"}} {
+	for _, groups := range [][]string{{"files", "shell"}, {"bash", "bash"}, {"web", "web"}, {""}, {"Files"}, {"Web"}} {
 		if agent.ValidGroups(groups) {
 			t.Fatal(groups)
 		}
@@ -230,7 +233,7 @@ func TestPublicHelpers(t *testing.T) {
 	}
 }
 
-// R-8R52-DFET R-8SCY-R75I R-8TKV-4YW7 R-8W0N-WIDL R-8X8K-AA4A R-8YGG-O1UZ R-8ZOD-1TLO R-96ZR-CG1U R-987N-Q7SJ R-9J6R-65GS R-9LMJ-XOY6
+// R-8R52-DFET R-8SCY-R75I R-8TKV-4YW7 R-8W0N-WIDL R-8X8K-AA4A R-8YGG-O1UZ R-8ZOD-1TLO R-PVSJ-MD2T R-987N-Q7SJ R-9J6R-65GS R-PY8C-DWK7
 func TestRefusals(t *testing.T) {
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { requests.Add(1); answer(w, "answer", "", nil) }))
@@ -458,7 +461,7 @@ func jsonEqual(a, b []byte) bool {
 	return json.Unmarshal(a, &av) == nil && json.Unmarshal(b, &bv) == nil && reflect.DeepEqual(av, bv)
 }
 
-// R-94JY-KWKG R-9O2C-P8FK R-KJXC-UTQN R-9Z1G-563T R-A6CU-FSJZ R-ZZAG-7Y11
+// R-QUFG-HBYQ R-9O2C-P8FK R-KJXC-UTQN R-9Z1G-563T R-A6CU-FSJZ R-ZZAG-7Y11
 func TestToolRounds(t *testing.T) {
 	for _, limit := range []int{0, 1, 3} {
 		f := setup(t)
@@ -733,7 +736,7 @@ func child(t *testing.T, f *fixture, s agent.Spec, path string) (int, string, st
 	}
 }
 
-// R-95RU-YOB5 R-TFCS-MOSG R-KMD5-MD81 R-MPCQ-SKBT
+// R-95RU-YOB5 R-TFCS-MOSG R-KMD5-MD81 R-PZG8-ROAW
 func TestRealChildToolsAndCredential(t *testing.T) {
 	bash, e := exec.LookPath("bash")
 	if e != nil {
@@ -741,6 +744,7 @@ func TestRealChildToolsAndCredential(t *testing.T) {
 	}
 	f := setup(t)
 	key := "aZ9!fixture-secret.Mixed_456"
+	brave := "bR4#qN7%vT2@cD8&hW5?eS1+"
 	var n int
 	gateway(t, f, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		data, e := io.ReadAll(r.Body)
@@ -748,9 +752,11 @@ func TestRealChildToolsAndCredential(t *testing.T) {
 			t.Error(e)
 		}
 		noKeyFragment(t, key, data)
+		noKeyFragment(t, brave, data)
 		for _, vs := range r.Header {
 			for _, v := range vs {
 				noKeyFragment(t, key, []byte(v))
+				noKeyFragment(t, brave, []byte(v))
 			}
 		}
 		var req map[string]any
@@ -780,12 +786,14 @@ func TestRealChildToolsAndCredential(t *testing.T) {
 	defer server.Close()
 	s := spec(t, server.URL)
 	s.Key = key
-	s.Tools = []string{agent.GroupSuite, agent.GroupBash, agent.GroupFiles}
+	s.BraveKey = brave
+	s.Tools = []string{agent.GroupSuite, agent.GroupWeb, agent.GroupBash, agent.GroupFiles}
 	code, out, diagnostic := child(t, f, s, filepath.Dir(bash))
 	if code != agent.ExitFailed || out != "" || !strings.Contains(diagnostic, "auth:") {
 		t.Fatal(code, out, diagnostic)
 	}
 	noKeyFragment(t, key, []byte(out), []byte(diagnostic))
+	noKeyFragment(t, brave, []byte(out), []byte(diagnostic))
 	if string(read(t, filepath.Join(f.work, "a.txt"))) != "file content" {
 		t.Fatal("Write root")
 	}
@@ -801,7 +809,10 @@ func TestRealChildToolsAndCredential(t *testing.T) {
 		t.Fatal("tool_use was not durable before dispatch")
 	}
 	rs := records(t, f.dir)
-	names := []string{"Read", "Write", "Edit", "Glob", "Grep", "Bash", "suite_tool"}
+	names := []string{"Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "suite_tool"}
+	if len(rs[0].Conversation.Tools) != len(names) {
+		t.Fatal(rs[0].Conversation.Tools)
+	}
 	for i, tool := range rs[0].Conversation.Tools {
 		if tool.Name != names[i] {
 			t.Fatal(tool)
@@ -825,6 +836,7 @@ func TestRealChildToolsAndCredential(t *testing.T) {
 			if err != nil {
 				return err
 			}
+			noKeyFragment(t, brave, data)
 			for i := 0; i+8 <= len(key); i++ {
 				if bytes.Contains(data, []byte(key[i:i+8])) {
 					return fmt.Errorf("credential in %s", path)
@@ -848,7 +860,7 @@ func noKeyFragment(t *testing.T, key string, data ...[]byte) {
 	}
 }
 
-// R-MPCQ-SKBT
+// R-PZG8-ROAW
 func TestRealChildCredentialTransportFailure(t *testing.T) {
 	models := map[agentkit.Host]string{}
 	for _, entry := range agentkit.Catalog() {
@@ -864,6 +876,7 @@ func TestRealChildCredentialTransportFailure(t *testing.T) {
 		t.Run(string(host), func(t *testing.T) {
 			f := setup(t)
 			key := "aZ9!fixture-secret.Mixed_456"
+			brave := "bR4#qN7%vT2@cD8&hW5?eS1+"
 			var requests atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				requests.Add(1)
@@ -886,18 +899,21 @@ func TestRealChildCredentialTransportFailure(t *testing.T) {
 			}))
 			defer server.Close()
 			s := spec(t, server.URL)
-			s.Model, s.Key = model, key
+			s.Model, s.Key, s.BraveKey = model, key, brave
+			s.Tools = []string{agent.GroupWeb}
 			code, out, diagnostic := child(t, f, s, f.work)
 			if code != agent.ExitFailed || requests.Load() == 0 || diagnostic == "" {
 				t.Fatal(code, requests.Load(), diagnostic)
 			}
 			noKeyFragment(t, key, []byte(out), []byte(diagnostic))
+			noKeyFragment(t, brave, []byte(out), []byte(diagnostic))
 			if err := filepath.WalkDir(f.dir, func(path string, d os.DirEntry, err error) error {
 				if err != nil {
 					return err
 				}
 				if !d.IsDir() {
 					noKeyFragment(t, key, read(t, path))
+					noKeyFragment(t, brave, read(t, path))
 				}
 				return nil
 			}); err != nil {
@@ -907,7 +923,7 @@ func TestRealChildCredentialTransportFailure(t *testing.T) {
 	}
 }
 
-// R-96ZR-CG1U
+// R-PVSJ-MD2T
 func TestMissingBash(t *testing.T) {
 	f := setup(t)
 	s := spec(t, "http://127.0.0.1:1/provider")
@@ -945,4 +961,95 @@ func expectedCost(t *testing.T, model string, usage agentkit.Usage) agentkit.Cos
 		t.Fatal(e)
 	}
 	return off.Pricing.Cost(usage)
+}
+
+// R-PVSJ-MD2T R-PX0G-04TI R-PY8C-DWK7
+func TestWebKeyPresence(t *testing.T) {
+	for _, groups := range [][]string{{agent.GroupWeb}, {agent.GroupFiles}, nil} {
+		for _, key := range []string{"", " \t\n", "bR4#qN7%vT2@cD8&hW5?eS1+"} {
+			for _, absent := range []bool{false, true} {
+				f := setup(t)
+				var requests atomic.Int32
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					requests.Add(1)
+					answer(w, "done", "", nil)
+				}))
+				s := spec(t, server.URL)
+				s.Tools, s.BraveKey = groups, key
+				var fields map[string]json.RawMessage
+				if err := json.Unmarshal(marshal(t, s), &fields); err != nil {
+					t.Fatal(err)
+				}
+				if absent {
+					delete(fields, "brave_key")
+				}
+				if absent && len(groups) == 1 && groups[0] == agent.GroupWeb {
+					write(t, filepath.Join(f.dir, "transcript.jsonl"), []byte("existing transcript"))
+				}
+				code := f.raw(marshal(t, fields))
+				server.Close()
+				refused := len(groups) == 1 && groups[0] == agent.GroupWeb && (absent || strings.TrimSpace(key) == "")
+				if refused {
+					if code != agent.ExitUnusable || requests.Load() != 0 || f.out.Len() != 0 {
+						t.Fatal(groups, absent, code, requests.Load())
+					}
+					if absent {
+						if string(read(t, filepath.Join(f.dir, "transcript.jsonl"))) != "existing transcript" {
+							t.Fatal("refusal changed transcript")
+						}
+					} else if _, err := os.Lstat(filepath.Join(f.dir, "transcript.jsonl")); !errors.Is(err, os.ErrNotExist) {
+						t.Fatal("refusal created transcript", err)
+					}
+				} else if code != agent.ExitAnswered || requests.Load() != 1 || f.out.String() != "done" {
+					t.Fatal(groups, absent, code, requests.Load(), f.diagnostic.String())
+				}
+			}
+		}
+	}
+}
+
+// R-QUFG-HBYQ
+func TestWebToolsUseDefaultClient(t *testing.T) {
+	f := setup(t)
+	var fetched atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fetched.Add(1)
+		_, _ = w.Write([]byte("private response"))
+	}))
+	defer target.Close()
+	round := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		round++
+		if round == 1 {
+			answer(w, "", "WebFetch", map[string]any{"url": target.URL})
+		} else {
+			answer(w, "done", "", nil)
+		}
+	}))
+	defer server.Close()
+	s := spec(t, server.URL)
+	s.Tools, s.BraveKey = []string{agent.GroupWeb}, "test-brave-key"
+	if code := f.run(t, s); code != agent.ExitAnswered || round != 2 || fetched.Load() != 0 {
+		t.Fatal(code, round, fetched.Load(), f.diagnostic.String())
+	}
+	rs := records(t, f.dir)
+	names := []string{}
+	for _, tool := range rs[0].Conversation.Tools {
+		names = append(names, tool.Name)
+	}
+	if !reflect.DeepEqual(names, []string{"WebSearch", "WebFetch"}) {
+		t.Fatal(names)
+	}
+	found := false
+	for _, record := range rs {
+		if record.ToolResult != nil {
+			found = true
+			if !record.ToolResult.IsError {
+				t.Fatal("private fetch was accepted")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("missing fetch result")
+	}
 }

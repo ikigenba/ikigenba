@@ -134,6 +134,10 @@ func serve(ctx context.Context, p Process) int {
 	for _, host := range []agentkit.Host{agentkit.HostAnthropic, agentkit.HostOpenAI, agentkit.HostGemini, agentkit.HostXAI, agentkit.HostOpenRouter} {
 		keys[host], _ = lookup(agent.KeyVariable(host))
 	}
+	braveKey, braveOK := lookup("BRAVE_API_KEY")
+	if !braveOK {
+		braveKey = ""
+	}
 	d, e := db.Open(ctx, db.Config{Path: filepath.Join(p.Dir, "state", "prompts.db"), Migrations: prompts.Migrations(), Now: p.Now, Service: pages.ServiceName, Stderr: stderr})
 	if e != nil {
 		if ctx.Err() != nil {
@@ -167,7 +171,7 @@ func serve(ctx context.Context, p Process) int {
 	gate := &deadlineSink{sink: sink}
 	w := telemetry.New(telemetry.Config{Service: pages.ServiceName, Version: p.Version, Sink: gate, Stderr: stderr, Now: p.Now, Sleep: p.Sleep, Rand: random})
 	defer func() { gate.mu.Lock(); gate.sealed = true; gate.mu.Unlock() }()
-	core := runs.New(runs.Config{Store: st, Writer: w, Runs: runsDir, Path: path, Services: services, Cgroup: cg, Unavailable: why, Keys: keys, BaseURL: p.BaseURL, PromptSeconds: s.PromptSeconds, OutputMaxBytes: s.OutputMaxBytes, MaxToolCalls: s.RunMaxToolCalls, KeepDays: s.RunKeepDays, KeepCount: s.RunKeepCount, RunMemoryMaxBytes: s.RunMemoryMaxBytes, RunPidsMax: s.RunPidsMax, MaxActive: s.RunMaxActive, MaxQueued: s.RunMaxQueued, Now: p.Now, ScriptAfter: p.ScriptAfter, Rand: random})
+	core := runs.New(runs.Config{Store: st, Writer: w, Runs: runsDir, Path: path, Services: services, Cgroup: cg, Unavailable: why, Keys: keys, BraveKey: braveKey, BaseURL: p.BaseURL, PromptSeconds: s.PromptSeconds, OutputMaxBytes: s.OutputMaxBytes, MaxToolCalls: s.RunMaxToolCalls, KeepDays: s.RunKeepDays, KeepCount: s.RunKeepCount, RunMemoryMaxBytes: s.RunMemoryMaxBytes, RunPidsMax: s.RunPidsMax, MaxActive: s.RunMaxActive, MaxQueued: s.RunMaxQueued, Now: p.Now, ScriptAfter: p.ScriptAfter, Rand: random})
 	drain := durationSeconds(s.DrainSeconds)
 	flush := func() {
 		flushCtx, cancel := context.WithTimeout(context.Background(), drain)

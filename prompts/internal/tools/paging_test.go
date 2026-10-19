@@ -54,7 +54,7 @@ func TestPagingMemberDescriptions(t *testing.T) {
 	}
 }
 
-// R-UNIR-JMZ8 R-UPYK-B6GM R-USED-2PY0
+// R-UNIR-JMZ8 R-UPYK-B6GM R-0BVR-OB17
 func TestPagingRefusalOrder(t *testing.T) {
 	f := setup(t)
 	p := f.seed(t, "daily")

@@ -60,7 +60,7 @@ func binaryWait[T any](t *testing.T, ch <-chan T) T {
 	}
 }
 
-// R-MDHX-L3A4 R-MEPT-YV0T R-MFXQ-CMRI R-MH5M-QEI7 R-MIDJ-468W R-LZF8-6HY0 R-M0N4-K9OP R-M1V0-Y1FE R-5O4C-7YOX R-MN94-N97O R-MOH1-10YD R-MPOX-ESP2 R-MQWT-SKFR R-HHBT-L6RK R-91VP-25Q6
+// R-MDHX-L3A4 R-MEPT-YV0T R-MFXQ-CMRI R-MH5M-QEI7 R-Q4FV-OO28 R-LZF8-6HY0 R-M0N4-K9OP R-M1V0-Y1FE R-5O4C-7YOX R-MN94-N97O R-MOH1-10YD R-MPOX-ESP2 R-Q5NS-2FSX R-HHBT-L6RK R-X4CB-NIBT
 func TestBinaryWiring(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	t.Setenv(version.CommitVariable, "abcdef1234567890")
@@ -77,6 +77,7 @@ func TestBinaryWiring(t *testing.T) {
 	for _, host := range []agentkit.Host{agentkit.HostAnthropic, agentkit.HostOpenAI, agentkit.HostGemini, agentkit.HostXAI, agentkit.HostOpenRouter} {
 		env = append(env, agent.KeyVariable(host)+"=binary-fixture-key")
 	}
+	env = append(env, "BRAVE_API_KEY=binary-brave-fixture-key")
 	run := func(args []string, environment []string, input []byte) (string, string, int) {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)

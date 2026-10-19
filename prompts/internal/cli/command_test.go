@@ -113,7 +113,7 @@ func TestProcessAndExitConstants(t *testing.T) {
 	}
 }
 
-// R-XGE7-WB6U R-XHM4-A2XJ R-XIU0-NUO8 R-XNPM-6XN0 R-XOXI-KPDP R-XQ5E-YH4E R-X6N0-U59A
+// R-EWQH-AQW6 R-XGE7-WB6U R-XHM4-A2XJ R-XIU0-NUO8 R-XNPM-6XN0 R-XOXI-KPDP R-XQ5E-YH4E R-X6N0-U59A
 func TestProductsTouchNothing(t *testing.T) {
 	for _, tc := range []struct {
 		args          []string
@@ -164,7 +164,7 @@ func TestUsageErrors(t *testing.T) {
 	}
 }
 
-// R-X2ZB-OU17 R-DDR3-LA3F R-XDYF-4RPG R-XBIM-D882 R-XF6B-IJG5 R-X7UX-7WZZ R-X92T-LOQO R-XAAP-ZGHD
+// R-X2ZB-OU17 R-AF2U-QG24 R-XDYF-4RPG R-XBIM-D882 R-XF6B-IJG5 R-X7UX-7WZZ R-X92T-LOQO R-AGAR-47ST
 func TestContracts(t *testing.T) {
 	const usage = cli.Usage + ""
 	const manifest = cli.Manifest + ""
@@ -185,6 +185,7 @@ func TestContracts(t *testing.T) {
 	for _, host := range []agentkit.Host{agentkit.HostAnthropic, agentkit.HostOpenAI, agentkit.HostGemini, agentkit.HostXAI, agentkit.HostOpenRouter} {
 		keys = append(keys, strconv.Quote(agent.KeyVariable(host)))
 	}
+	keys = append(keys, strconv.Quote("BRAVE_API_KEY"))
 	wantManifest := "app = \"prompts\"\ndescription = " + strconv.Quote(pages.Description) + "\ndefault = false\nmcp = true\nguests = false\nsecrets = [" + strings.Join(keys, ", ") + "]\n\n" + env + "\n[database]\nengine = \"sqlite\"\npath = \"state/prompts.db\"\n\n[resources]\nslice = \"apps\"\nmemory_max = \"896M\"\ngo_memory_limit = \"128M\"\ndelegate = true\n\n[home]\ngroup = \"core\"\n"
 	if manifest != wantManifest {
 		t.Fatalf("manifest mismatch: %s", cli.Manifest)

@@ -110,7 +110,7 @@ func integrationGet(t *testing.T, f *serveFixture, path string) []byte {
 	return b
 }
 
-// R-M2IU-55LV R-M3QQ-IXCK R-M4YM-WP39 R-M66J-AGTY R-M7EF-O8KN R-M9U8-FS21 R-MB24-TJSQ R-MCA1-7BJF
+// R-M2IU-55LV R-M3QQ-IXCK R-M4YM-WP39 R-M66J-AGTY R-Q37Z-AWBJ R-M9U8-FS21 R-MB24-TJSQ R-MCA1-7BJF
 func TestRunProcessSeamsAndStateIsolation(t *testing.T) {
 	f := newServeFixture(t)
 	tree := t.TempDir()
@@ -158,7 +158,7 @@ func TestRunProcessSeamsAndStateIsolation(t *testing.T) {
 	if !reflect.DeepEqual(outside(before), outside(after)) {
 		t.Fatal("writes outside state and cgroup", outside(before), outside(after))
 	}
-	allowed := strings.Fields("DRAIN_SECONDS PROMPT_SECONDS OUTPUT_MAX_BYTES RUN_MAX_TOOL_CALLS RUN_MEMORY_MAX_BYTES RUNS_MEMORY_MAX_BYTES RUNS_CPU_PERCENT RUN_PIDS_MAX RUN_MAX_ACTIVE RUN_MAX_QUEUED RUN_KEEP_DAYS RUN_KEEP_COUNT ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY XAI_API_KEY OPENROUTER_API_KEY IKIGENBA_SERVICES LISTEN_PID LISTEN_FDS NOTIFY_SOCKET PATH")
+	allowed := strings.Fields("DRAIN_SECONDS PROMPT_SECONDS OUTPUT_MAX_BYTES RUN_MAX_TOOL_CALLS RUN_MEMORY_MAX_BYTES RUNS_MEMORY_MAX_BYTES RUNS_CPU_PERCENT RUN_PIDS_MAX RUN_MAX_ACTIVE RUN_MAX_QUEUED RUN_KEEP_DAYS RUN_KEEP_COUNT ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY XAI_API_KEY OPENROUTER_API_KEY BRAVE_API_KEY IKIGENBA_SERVICES LISTEN_PID LISTEN_FDS NOTIFY_SOCKET PATH")
 	for _, key := range f.lookups {
 		found := false
 		for _, a := range allowed {
@@ -668,7 +668,7 @@ func securityToolAnswer(w http.ResponseWriter, name string) {
 	}
 }
 
-// R-1T6I-11M9 R-1UEE-ETCY R-YZAY-8W1G R-Z0IU-MNS5 R-Z1QR-0FIU R-Z2YN-E79J R-Z46J-RZ08 R-Z5EG-5QQX R-Z6MC-JIHM
+// R-1T6I-11M9 R-QKUR-L8O1 R-QM2N-Z0EQ R-QNAK-CS5F R-QOIG-QJW4 R-QPQD-4BMT R-QS65-VV47 R-QTE2-9MUW R-QULY-NELL
 func TestRunCredentialAndProviderKeyIsolation(t *testing.T) {
 	bash, e := exec.LookPath("bash")
 	if e != nil {
@@ -679,7 +679,7 @@ func TestRunCredentialAndProviderKeyIsolation(t *testing.T) {
 	encoded := base64.StdEncoding.EncodeToString([]byte(principal + ":" + bearer))
 	secrets := securityStrings(t, principal, bearer, encoded)
 	hosts := []agentkit.Host{agentkit.HostAnthropic, agentkit.HostOpenAI, agentkit.HostGemini, agentkit.HostXAI, agentkit.HostOpenRouter}
-	keys := []string{"ANTHROPICKEYABCDEFGH", "OPENAIKEYIJKLMNOPQR", "GEMINIKEYSTUVWXYZAB", "XAIKEYCDEFGHIJKLMN", "OPENROUTERKEYOPQRST"}
+	keys := []string{"ANTHROPICKEYABCDEFGH", "OPENAIKEYIJKLMNOPQR", "GEMINIKEYSTUVWXYZAB", "XAIKEYCDEFGHIJKLMN", "OPENROUTERKEYOPQRST", "BRAVESEARCHZXCVBNMQ"}
 	keyStrings := securityStrings(t, keys...)
 	for _, s := range secrets {
 		for _, k := range keyStrings {
@@ -701,6 +701,7 @@ func TestRunCredentialAndProviderKeyIsolation(t *testing.T) {
 			for i, h := range hosts {
 				f.env[agent.KeyVariable(h)] = keys[i]
 			}
+			f.env["BRAVE_API_KEY"] = keys[len(keys)-1]
 			sink := &observedServeSink{events: make(chan telemetry.Event, 4096)}
 			f.p.Sink = securitySink{observed: sink, fail: failSink}
 			transport := &credentialTransport{next: f.http.Transport}
@@ -821,7 +822,7 @@ func TestRunCredentialAndProviderKeyIsolation(t *testing.T) {
 				name := fmt.Sprintf("security-main-%d", pass)
 				other := fmt.Sprintf("security-delete-%d", pass)
 				suiteName := fmt.Sprintf("security-suite-%d", pass)
-				p := create(name, []string{"files", "bash"})
+				p := create(name, []string{"files", "bash", "web"})
 				call("update", map[string]any{"name": name, "system": "supplied security system"})
 				call("show", map[string]any{"name": name})
 				call("list", map[string]any{})
@@ -888,7 +889,7 @@ func TestRunCredentialAndProviderKeyIsolation(t *testing.T) {
 						t.Fatal(path, values)
 					}
 				}
-				deletion := create(other, []string{"files", "bash"})
+				deletion := create(other, []string{"files", "bash", "web"})
 				running := start(other, true, false)
 				serveWait(t, held)
 				if r := result(running.ID); r.Status != store.StatusRunning {

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -301,7 +302,7 @@ func TestDiscovery(t *testing.T) {
 	}
 }
 
-// R-UX9Y-LSWS R-B7FX-DGTX R-BFZ8-1V0S R-MI1C-HXVN R-AV8X-JREZ R-B504-LXCJ
+// R-UX9Y-LSWS R-B7FX-DGTX R-0FJG-TM9A R-0HZ9-L5QO R-AV8X-JREZ R-B504-LXCJ
 // R-9JOU-MPHW R-U589-T2UT R-9UNY-2N65
 func TestCatalogSuccess(t *testing.T) {
 	f := setup(t)
@@ -364,19 +365,19 @@ func TestCatalogSuccess(t *testing.T) {
 	}
 }
 
-// R-B8NT-R8KM R-B9VQ-50BB R-BB3M-IS20 R-BCBI-WJSP R-BDJF-ABJE R-BERB-O3A3 R-BH74-FMRH
-// R-A1ZC-D9MB R-A378-R1D0 R-B2KB-UDV5 R-0KCT-G67E
+// R-0D3O-22RW R-B9VQ-50BB R-BB3M-IS20 R-BCBI-WJSP R-0EBK-FUIL R-BERB-O3A3 R-0GRD-7DZZ
+// R-A1ZC-D9MB R-0ANV-AJAI R-B2KB-UDV5 R-0KCT-G67E
 func TestMutationRefusals(t *testing.T) {
 	f := setup(t)
 	defer assertNoRunFiles(t, f)
 	p := f.seed(t, "taken")
 	rows := []struct{ tool, args, want string }{
 		{"create", `{"name":"events","model":"bad","prompt":""}`, fmt.Sprintf(tools.InvalidName, "events")},
-		{"create", `{"name":"taken","model":"bad","prompt":"","tools":["web"]}`, fmt.Sprintf(tools.NameTaken, "taken")},
-		{"create", `{"name":"new","model":"bad","prompt":"","tools":["web"]}`, fmt.Sprintf(tools.UnknownModel, "bad")},
-		{"update", `{"name":"missing","model":"bad","prompt":""}`, fmt.Sprintf(tools.MissingPrompt, "missing")},
-		{"update", `{"name":"taken","model":"bad","tools":["web"]}`, fmt.Sprintf(tools.UnknownModel, "bad")},
-		{"update", `{"name":"taken","prompt":"","tools":["web"]}`, tools.EmptyPrompt},
+		{"create", `{"name":"taken","model":"bad","prompt":"","tools":["shell"],"schema":{"type":"array"}}`, fmt.Sprintf(tools.NameTaken, "taken")},
+		{"create", `{"name":"new","model":"bad","prompt":"","tools":["shell"],"schema":{"type":"array"}}`, fmt.Sprintf(tools.UnknownModel, "bad")},
+		{"update", `{"name":"missing","model":"bad","prompt":"","tools":["shell"],"schema":{"type":"array"}}`, fmt.Sprintf(tools.MissingPrompt, "missing")},
+		{"update", `{"name":"taken","model":"bad","prompt":"","tools":["shell"],"schema":{"type":"array"}}`, fmt.Sprintf(tools.UnknownModel, "bad")},
+		{"update", `{"name":"taken","prompt":"","tools":["shell"],"schema":{"type":"array"}}`, tools.EmptyPrompt},
 	}
 	for _, r := range rows {
 		refused(t, f.call(t, r.tool, r.args), r.want)
@@ -387,10 +388,10 @@ func TestMutationRefusals(t *testing.T) {
 	}
 	goodModel, _ := json.Marshal(model())
 	refused(t, f.call(t, "create", `{"name":"new","model":`+string(goodModel)+`,"prompt":""}`), tools.EmptyPrompt)
-	for _, groups := range [][]string{{"web"}, {"files", "files"}, {"Files"}, {""}} {
+	for _, groups := range [][]string{{"shell"}, {"files", "shell"}, {"web", "web"}, {"files", "files"}, {"Web"}, {"Files"}, {""}} {
 		b, _ := json.Marshal(groups)
-		refused(t, f.call(t, "update", `{"name":"taken","tools":`+string(b)+`}`), fmt.Sprintf(tools.InvalidTools, string(b)))
-		refused(t, f.call(t, "create", `{"name":"new","model":`+string(goodModel)+`,"prompt":"body","tools":`+string(b)+`}`), fmt.Sprintf(tools.InvalidTools, string(b)))
+		refused(t, f.call(t, "update", `{"name":"taken","tools":`+string(b)+`,"schema":{"type":"array"}}`), fmt.Sprintf(tools.InvalidTools, string(b)))
+		refused(t, f.call(t, "create", `{"name":"new","model":`+string(goodModel)+`,"prompt":"body","tools":`+string(b)+`,"schema":{"type":"array"}}`), fmt.Sprintf(tools.InvalidTools, string(b)))
 	}
 	for _, schema := range []string{`{"type":"array","items":{"type":"string"}}`, `{"type":"object","properties":{"answer":{"type":"string"}}}`} {
 		err := agentkit.ValidateOutputSchema(json.RawMessage(schema))
@@ -416,8 +417,21 @@ func TestMutationRefusals(t *testing.T) {
 	if !reflect.DeepEqual(after, p) {
 		t.Fatalf("refusals changed prompt: %#v", after)
 	}
-	for _, groups := range []string{`[]`, `["suite"]`, `["bash","files","suite"]`} {
-		decode[tools.Prompt](t, f.call(t, "update", `{"name":"taken","tools":`+groups+`}`))
+	for _, groups := range []string{`[]`, `["suite"]`, `["web"]`, `["bash","files","suite"]`, `["files","bash","web","suite"]`} {
+		var want []string
+		if err := json.Unmarshal([]byte(groups), &want); err != nil {
+			t.Fatal(err)
+		}
+		updated := decode[tools.Prompt](t, f.call(t, "update", `{"name":"taken","tools":`+groups+`}`))
+		if !reflect.DeepEqual(updated.Tools, want) {
+			t.Fatal(updated.Tools, want)
+		}
+		made := decode[tools.Prompt](t, f.call(t, "create", `{"name":"accepted","model":`+string(goodModel)+`,"prompt":"body","tools":`+groups+`}`))
+		stored, err := f.st.Find(context.Background(), f.caller.UserID, made.Name)
+		if err != nil || !reflect.DeepEqual(made.Tools, want) || !slices.Equal(stored.Tools, want) {
+			t.Fatal(made, stored, err)
+		}
+		content(t, f.call(t, "delete", `{"name":"accepted"}`))
 	}
 	decode[tools.Prompt](t, f.call(t, "update", `{"name":"taken","schema":{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}}`))
 }
@@ -477,7 +491,7 @@ func TestSubscriptions(t *testing.T) {
 	}
 }
 
-// R-USED-2PY0 R-A378-R1D0 R-0KCT-G67E
+// R-0BVR-OB17 R-0ANV-AJAI R-0KCT-G67E
 func TestCatalogFailure(t *testing.T) {
 	f := setup(t)
 	p := f.seed(t, "daily")
@@ -487,7 +501,7 @@ func TestCatalogFailure(t *testing.T) {
 		{"create", `{"name":"Daily Digest","model":"bad","prompt":""}`, fmt.Sprintf(tools.InvalidName, "Daily Digest")},
 		{"create", `{"name":"new","model":"bad","prompt":""}`, store.Unreachable},
 		{"show", `{"name":"daily"}`, store.Unreachable},
-		{"update", `{"name":"daily","tools":["web"]}`, store.Unreachable},
+		{"update", `{"name":"daily","tools":["shell"]}`, store.Unreachable},
 		{"delete", `{"name":"daily"}`, store.Unreachable},
 		{"subscribe", `{"name":"daily","event":"Repo.Pushed"}`, store.Unreachable},
 		{"unsubscribe", `{"name":"daily","event":"Repo.Pushed"}`, store.Unreachable},
@@ -500,6 +514,13 @@ func TestCatalogFailure(t *testing.T) {
 	}
 	for _, r := range rows {
 		refused(t, f.call(t, r.tool, r.args), r.want)
+	}
+	for _, tool := range []string{"show", "update", "delete", "subscribe", "unsubscribe", "run", "runs"} {
+		args := `{"name":"Daily Digest"}`
+		if tool == "subscribe" || tool == "unsubscribe" {
+			args = `{"name":"Daily Digest","event":"Repo.Pushed"}`
+		}
+		refused(t, f.call(t, tool, args), fmt.Sprintf(tools.MissingPrompt, "Daily Digest"))
 	}
 	f.d.SetFailing(false)
 	after := decode[tools.Prompt](t, f.call(t, "show", `{"name":"daily"}`))
@@ -825,14 +846,14 @@ func rawPromptCall(t *testing.T, f *fixture, tool, args string) (tools.Prompt, s
 	return p, wire.Result.Content[0].Text
 }
 
-// R-BFZ8-1V0S R-MI1C-HXVN R-BCBI-WJSP R-BDJF-ABJE R-BERB-O3A3
+// R-0FJG-TM9A R-0HZ9-L5QO R-BCBI-WJSP R-0EBK-FUIL R-BERB-O3A3
 func TestCreateOptionalFieldsAndModelSchemaUpdate(t *testing.T) {
 	f := setup(t)
 	defer assertNoRunFiles(t, f)
 	m, _ := json.Marshal(model())
 	schema := `{ "type" : "object" }`
-	made, text := rawPromptCall(t, f, "create", `{"name":"configured","model":`+string(m)+`,"prompt":" ","system":"author system","tools":["suite","files","bash"],"schema":`+schema+`}`)
-	if made.System != "author system" || made.Prompt != " " || !reflect.DeepEqual(made.Tools, []string{"suite", "files", "bash"}) || string(made.Schema) != schema || !strings.Contains(text, `"schema":`+schema) {
+	made, text := rawPromptCall(t, f, "create", `{"name":"configured","model":`+string(m)+`,"prompt":" ","system":"author system","tools":["suite","files","web","bash"],"schema":`+schema+`}`)
+	if made.System != "author system" || made.Prompt != " " || !reflect.DeepEqual(made.Tools, []string{"suite", "files", "web", "bash"}) || string(made.Schema) != schema || !strings.Contains(text, `"schema":`+schema) {
 		t.Fatalf("create answer %#v text %s", made, text)
 	}
 	before, err := f.st.Find(context.Background(), f.caller.UserID, made.Name)
@@ -865,7 +886,7 @@ func TestCreateOptionalFieldsAndModelSchemaUpdate(t *testing.T) {
 	}
 }
 
-// R-MI1C-HXVN R-MFLJ-QEE9
+// R-0HZ9-L5QO R-MFLJ-QEE9
 func TestUpdateSchemaNull(t *testing.T) {
 	f := setup(t)
 	defer assertNoRunFiles(t, f)
@@ -911,5 +932,84 @@ func TestUpdateSchemaNull(t *testing.T) {
 	gotOther := decode[tools.Prompt](t, f.call(t, "show", `{"name":"other-null"}`))
 	if !reflect.DeepEqual(gotOther, other) {
 		t.Fatal(gotOther, other)
+	}
+}
+
+// R-0FJG-TM9A R-0HZ9-L5QO
+func TestCatalogEditsPreserveExistingRuns(t *testing.T) {
+	f := runSetup(t, nil)
+	p := f.seedRun(t, "running")
+	other := f.seedRun(t, "untouched")
+	decode[tools.Prompt](t, f.call(t, "subscribe", `{"name":"running","event":"repo.pushed"}`))
+	started := f.start(t, p.Name, `{ "value" : 7 }`)
+	f.entered(t)
+	runBefore := f.record(t, started.ID)
+	promptBefore, err := f.st.Find(context.Background(), f.caller.UserID, p.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foldersBefore := folderSnapshot(t, f.cfg.Runs)
+	made := decode[tools.Prompt](t, f.call(t, "create", strings.TrimSuffix(createArgs("web-enabled"), "}")+`,"tools":["web"]}`))
+	if !reflect.DeepEqual(made.Tools, []string{"web"}) {
+		t.Fatal(made)
+	}
+	all, err := f.st.List(context.Background(), f.caller.UserID, "", 1000)
+	if err != nil || len(all) != 3 {
+		t.Fatal(all, err)
+	}
+	unchanged, err := f.st.Find(context.Background(), f.caller.UserID, p.Name)
+	if err != nil || !reflect.DeepEqual(unchanged, promptBefore) {
+		t.Fatal(unchanged, promptBefore, err)
+	}
+	var replacement string
+	for _, entry := range agentkit.Catalog() {
+		if entry.Model != p.Model {
+			replacement = entry.Model
+			break
+		}
+	}
+	if replacement == "" {
+		t.Fatal("test needs a second model")
+	}
+	args, err := json.Marshal(map[string]any{"name": p.Name, "model": replacement, "prompt": "changed body", "system": "changed system", "tools": []string{"web", "files"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := decode[tools.Prompt](t, f.call(t, "update", string(args)))
+	after, err := f.st.Find(context.Background(), f.caller.UserID, p.Name)
+	expected := promptBefore
+	expected.Model = replacement
+	expected.Prompt = "changed body"
+	expected.System = "changed system"
+	expected.Tools = []string{"web", "files"}
+	if err != nil || !reflect.DeepEqual(after, expected) {
+		t.Fatal(after, expected, err)
+	}
+	shown := decode[tools.Prompt](t, f.call(t, "show", `{"name":"running"}`))
+	if !reflect.DeepEqual(updated, shown) {
+		t.Fatal(updated, shown)
+	}
+	if untouched := decode[tools.Prompt](t, f.call(t, "show", `{"name":"untouched"}`)); !reflect.DeepEqual(untouched, other) {
+		t.Fatal(untouched, other)
+	}
+	if runAfter := f.record(t, started.ID); !reflect.DeepEqual(runAfter, runBefore) {
+		t.Fatal(runAfter, runBefore)
+	}
+	if foldersAfter := folderSnapshot(t, f.cfg.Runs); !reflect.DeepEqual(foldersAfter, foldersBefore) {
+		t.Fatal(foldersAfter, foldersBefore)
+	}
+	for _, id := range []string{p.ID, other.ID, made.ID} {
+		records, err := f.st.Runs(context.Background(), id, "", "", 1000)
+		want := []store.Run{}
+		if id == p.ID {
+			want = append(want, runBefore)
+		}
+		if err != nil || !reflect.DeepEqual(records, want) {
+			t.Fatal(records, want, err)
+		}
+	}
+	close(f.release)
+	if ended := f.ended(t, started.ID); ended.Status != store.StatusExited || ended.ExitCode != 0 || ended.Model != p.Model {
+		t.Fatal(ended)
 	}
 }

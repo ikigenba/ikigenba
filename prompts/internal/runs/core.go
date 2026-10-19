@@ -65,6 +65,7 @@ type Config struct {
 	Writer                                                                                                                *telemetry.Writer
 	Runs, Path, Services, Cgroup, Unavailable                                                                             string
 	Keys                                                                                                                  map[agentkit.Host]string
+	BraveKey                                                                                                              string
 	BaseURL                                                                                                               string
 	PromptSeconds, OutputMaxBytes, MaxToolCalls, KeepDays, KeepCount, RunMemoryMaxBytes, RunPidsMax, MaxActive, MaxQueued int64
 	Now                                                                                                                   func() time.Time
@@ -407,7 +408,7 @@ func (c *Core) launch(ctx context.Context, l *liveRun, input []byte) error {
 	if limit > int64(math.MaxInt) {
 		limit = int64(math.MaxInt)
 	}
-	stdin, e := json.Marshal(agent.Spec{Model: p.Model, Key: key, System: p.System, Prompt: p.Prompt, Tools: p.Tools, Schema: p.Schema, Input: input, MaxToolCalls: int(limit), UserID: req.Caller.UserID, Email: req.Caller.Email, RequestID: req.Caller.RequestID, EventID: req.Cause.ID, EventDepth: req.Cause.Depth, BaseURL: c.cfg.BaseURL})
+	stdin, e := json.Marshal(agent.Spec{Model: p.Model, Key: key, BraveKey: c.cfg.BraveKey, System: p.System, Prompt: p.Prompt, Tools: p.Tools, Schema: p.Schema, Input: input, MaxToolCalls: int(limit), UserID: req.Caller.UserID, Email: req.Caller.Email, RequestID: req.Caller.RequestID, EventID: req.Cause.ID, EventDepth: req.Cause.Depth, BaseURL: c.cfg.BaseURL})
 	if e != nil {
 		return e
 	}

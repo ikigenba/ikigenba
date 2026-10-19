@@ -40,6 +40,7 @@ const (
 const (
 	GroupFiles   = "files"
 	GroupBash    = "bash"
+	GroupWeb     = "web"
 	GroupSuite   = "suite"
 	Failed       = "run failed: %s"
 	LimitReached = "tool limit reached: %s"
@@ -51,6 +52,7 @@ const (
 type Spec struct {
 	Model        string          `json:"model"`
 	Key          string          `json:"key"`
+	BraveKey     string          `json:"brave_key"`
 	System       string          `json:"system"`
 	Prompt       string          `json:"prompt"`
 	Input        json.RawMessage `json:"input"`
@@ -78,7 +80,7 @@ type Process struct {
 func ValidGroups(groups []string) bool {
 	seen := map[string]bool{}
 	for _, g := range groups {
-		if (g != GroupFiles && g != GroupBash && g != GroupSuite) || seen[g] {
+		if (g != GroupFiles && g != GroupBash && g != GroupWeb && g != GroupSuite) || seen[g] {
 			return false
 		}
 		seen[g] = true
@@ -302,6 +304,17 @@ func buildTools(ctx context.Context, p Process, s Spec, root string) ([]agentkit
 			return nil, noop, err
 		}
 		tools = append(tools, t)
+	}
+	if groups[GroupWeb] {
+		search, err := toolkit.WebSearch(s.BraveKey)
+		if err != nil {
+			return nil, noop, err
+		}
+		fetch, err := toolkit.WebFetch()
+		if err != nil {
+			return nil, noop, err
+		}
+		tools = append(tools, search, fetch)
 	}
 	if !groups[GroupSuite] {
 		return tools, noop, nil

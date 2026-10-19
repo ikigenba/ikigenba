@@ -212,7 +212,7 @@ func answer(w http.ResponseWriter, text string) {
 	frame(w, "message_stop", map[string]string{"type": "message_stop"})
 }
 
-// R-NGVH-QLL2 R-NJBA-I52G R-NKJ6-VWT5 R-NMYZ-NGAJ R-NO6W-1818 R-NPES-EZRX R-13V7-KI2I R-NQMO-SRIM
+// R-GPLV-FB40 R-NJBA-I52G R-NKJ6-VWT5 R-NMYZ-NGAJ R-NO6W-1818 R-NPES-EZRX R-13V7-KI2I R-NQMO-SRIM
 func TestCoreContract(t *testing.T) {
 	f := newCoreFixture(t)
 	testEqual(t, []string{InputFile, StdoutFile, StderrFile, TranscriptFile, WorkDir}, []string{"input.json", "stdout", "stderr", "transcript.jsonl", "work"})
@@ -323,7 +323,7 @@ func TestCoreAnswerAndBound(t *testing.T) {
 	}
 }
 
-// R-F2QE-4MBQ R-F566-W5T4 R-O59H-E0EY R-69G3-ONNH R-F2GV-AOSY R-12NB-6QBT R-OA52-X3DQ R-OBCZ-AV4F R-FTK6-JKN0 R-107I-F6UF R-0RO7-QSNK R-PO4Y-LOS7
+// R-F2QE-4MBQ R-F566-W5T4 R-O59H-E0EY R-6LXZ-QMKY R-6S1H-NHAF R-6PLO-VXT1 R-OA52-X3DQ R-OBCZ-AV4F R-FTK6-JKN0 R-6N5W-4EBN R-6QTL-9PJQ R-PO4Y-LOS7
 func TestCoreQueueFIFO(t *testing.T) {
 	f := newCoreFixture(t)
 	f.cfg.MaxActive = 1
@@ -433,10 +433,20 @@ func TestCoreQueueFIFO(t *testing.T) {
 	if len(f.timers) != 3 {
 		t.Fatal("failed start received a timer")
 	}
-	if direct.Status != store.StatusFailed || direct.Reason != store.ReasonStartFailed {
+	if direct.Status != store.StatusFailed || direct.Reason != store.ReasonStartFailed || direct.ExitCode != 0 || direct.StdoutBytes != 0 || direct.StderrBytes != 0 || direct.Truncated() || direct.Usage != (store.Usage{}) || direct.Finished.Before(direct.Started) {
 		t.Fatal(direct)
 	}
 	f.event(t, "run.finished", direct.ID)
+	for _, failed := range []store.Run{direct, stored} {
+		entries, err := os.ReadDir(f.c.Folder(failed))
+		if err != nil || len(entries) != 2 || entries[0].Name() != InputFile || entries[1].Name() != WorkDir {
+			t.Fatal(entries, err)
+		}
+		work, err := os.ReadDir(filepath.Join(f.c.Folder(failed), WorkDir))
+		if err != nil || len(work) != 0 {
+			t.Fatal(work, err)
+		}
+	}
 	if e = f.w.Flush(context.Background()); e != nil {
 		t.Fatal(e)
 	}
@@ -464,7 +474,7 @@ func TestCoreQueueFIFO(t *testing.T) {
 	}
 }
 
-// R-F2GV-AOSY R-FJSZ-HEPG R-FUS2-XCDP R-PT0K-4RQZ R-P8A9-MO56
+// R-6S1H-NHAF R-FJSZ-HEPG R-FUS2-XCDP R-PT0K-4RQZ R-P8A9-MO56
 func TestCoreKillAndTimeout(t *testing.T) {
 	for _, mode := range []string{"cancel", "timer", "race"} {
 		t.Run(mode, func(t *testing.T) {
@@ -668,7 +678,7 @@ func readRecords(t *testing.T, path string) []agentkit.LogRecord {
 	return records
 }
 
-// R-9FUZ-3PNN R-OL46-D11Z R-65SE-JCFE R-OORV-ICA2 R-OPZR-W40R R-MQKN-6C2I R-OXB6-6QGX
+// R-9FUZ-3PNN R-OL46-D11Z R-65SE-JCFE R-OORV-ICA2 R-6KQ3-CUU9 R-6ODS-I62C R-OXB6-6QGX
 func TestCoreEnvironmentSpecAndWork(t *testing.T) {
 	f := newCoreFixture(t)
 	bash, e := exec.LookPath("bash")
@@ -676,6 +686,7 @@ func TestCoreEnvironmentSpecAndWork(t *testing.T) {
 		t.Fatal(e)
 	}
 	f.cfg.Path = filepath.Dir(bash)
+	f.cfg.BraveKey = "bR4#qN7%vT2@cD8&hW5?eS1+"
 	f.cfg.MaxToolCalls = 3
 	f.cfg.OutputMaxBytes = 4
 	f.cfg.Cgroup = filepath.Join(t.TempDir(), "groups")
@@ -867,9 +878,11 @@ func checkRunCredentials(t *testing.T, f *coreFixture, r store.Run) {
 				t.Error("provider credential in run output")
 			}
 		}
-		for i := 0; i+8 <= len(runKey); i++ {
-			if bytes.Contains(b, []byte(runKey[i:i+8])) {
-				t.Error("provider credential fragment in run output")
+		for _, key := range []string{runKey, f.cfg.BraveKey} {
+			for i := 0; i+8 <= len(key); i++ {
+				if bytes.Contains(b, []byte(key[i:i+8])) {
+					t.Error("credential fragment in run output")
+				}
 			}
 		}
 	}
@@ -896,7 +909,7 @@ func checkRunCredentials(t *testing.T, f *coreFixture, r store.Run) {
 	}
 }
 
-// R-MQKN-6C2I
+// R-6ODS-I62C
 func TestCoreCredentialsAfterProviderFailure(t *testing.T) {
 	f := newCoreFixture(t)
 	bash, err := exec.LookPath("bash")
@@ -904,6 +917,7 @@ func TestCoreCredentialsAfterProviderFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.cfg.Path = filepath.Dir(bash)
+	f.cfg.BraveKey = "bR4#qN7%vT2@cD8&hW5?eS1+"
 	f.cfg.OutputMaxBytes = 4096
 	// Keep every host's configured credential distinct, including unused ones.
 	f.cfg.Keys[agentkit.HostGemini] = "gT3!nB6%rV2@jC8&dW5?lS1+"
@@ -926,7 +940,7 @@ func TestCoreCredentialsAfterProviderFailure(t *testing.T) {
 	f.cfg.BaseURL = server.URL
 	f.rebuild()
 	p := f.p
-	p.Tools = []string{agent.GroupFiles, agent.GroupBash}
+	p.Tools = []string{agent.GroupFiles, agent.GroupBash, agent.GroupWeb}
 	r := f.start(t, p, f.request())
 	f.event(t, "run.finished", r.ID)
 	ended, err := f.s.RunByID(context.Background(), r.ID)
@@ -939,7 +953,7 @@ func TestCoreCredentialsAfterProviderFailure(t *testing.T) {
 	checkRunCredentials(t, f, r)
 }
 
-// R-MQKN-6C2I
+// R-6ODS-I62C
 func TestCoreCredentialTransportFailure(t *testing.T) {
 	models := map[agentkit.Host]string{}
 	for _, entry := range agentkit.Catalog() {
@@ -1337,7 +1351,7 @@ func TestFailedEndingsPruneBeforeEvent(t *testing.T) {
 	}
 }
 
-// R-65SE-JCFE R-OORV-ICA2 R-OPZR-W40R R-69G3-ONNH R-F2GV-AOSY
+// R-65SE-JCFE R-OORV-ICA2 R-6KQ3-CUU9 R-6LXZ-QMKY R-6S1H-NHAF
 func TestQueuedSnapshotManualRelativeRun(t *testing.T) {
 	f := newCoreFixture(t)
 	bash, e := exec.LookPath("bash")
@@ -1345,6 +1359,7 @@ func TestQueuedSnapshotManualRelativeRun(t *testing.T) {
 		t.Fatal(e)
 	}
 	f.cfg.Path = filepath.Dir(bash)
+	f.cfg.BraveKey = "bR4#qN7%vT2@cD8&hW5?eS1+"
 	cwd, e := os.Getwd()
 	if e != nil {
 		t.Fatal(e)
@@ -1526,6 +1541,7 @@ func TestCoreExactBashEnvironment(t *testing.T) {
 		t.Run(fmt.Sprint(email != ""), func(t *testing.T) {
 			f := newCoreFixture(t)
 			f.cfg.Path = filepath.Dir(bash)
+			f.cfg.BraveKey = "bR4#qN7%vT2@cD8&hW5?eS1+"
 			if email != "" {
 				f.cfg.Services = filepath.Join(t.TempDir(), "services.json")
 			}
@@ -1573,6 +1589,68 @@ func TestCoreExactBashEnvironment(t *testing.T) {
 						t.Fatal("provider key in environment")
 					}
 				}
+			}
+		})
+	}
+}
+
+// R-6KQ3-CUU9 R-GPLV-FB40
+func TestCoreWebKeyForwarding(t *testing.T) {
+	for _, tc := range []struct {
+		name, brave      string
+		web, providerKey bool
+		want             int
+	}{
+		{"web", "test-brave-key", true, true, agent.ExitAnswered},
+		{"no groups", "test-brave-key", false, true, agent.ExitAnswered},
+		{"empty", "", true, true, agent.ExitUnusable},
+		{"blank", " \t\n", true, true, agent.ExitUnusable},
+		{"no provider key", "test-brave-key", true, false, agent.ExitAnswered},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newCoreFixture(t)
+			f.cfg.BraveKey = tc.brave
+			if !tc.providerKey {
+				f.cfg.Keys = nil
+			}
+			requested := make(chan struct{}, 1)
+			server := provider(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("x-api-key") != f.cfg.Keys[agentkit.HostAnthropic] {
+					t.Error("wrong provider key")
+				}
+				requested <- struct{}{}
+				answer(w, "done")
+			})
+			f.cfg.BaseURL = server.URL
+			f.rebuild()
+			p := f.p
+			if tc.web {
+				p.Tools = []string{agent.GroupWeb}
+			}
+			r := f.start(t, p, f.request())
+			f.event(t, "run.finished", r.ID)
+			ended, err := f.s.RunByID(context.Background(), r.ID)
+			if err != nil || ended.Status != store.StatusExited || ended.ExitCode != tc.want {
+				t.Fatal(ended, err)
+			}
+			if tc.want == agent.ExitUnusable {
+				select {
+				case <-requested:
+					t.Fatal("unusable web run reached provider")
+				default:
+				}
+			} else {
+				testReceive(t, requested)
+				recs := readRecords(t, filepath.Join(f.c.Folder(r), TranscriptFile))
+				var names []string
+				for _, tool := range recs[0].Conversation.Tools {
+					names = append(names, tool.Name)
+				}
+				var want []string
+				if tc.web {
+					want = []string{"WebSearch", "WebFetch"}
+				}
+				testEqual(t, names, want)
 			}
 		})
 	}

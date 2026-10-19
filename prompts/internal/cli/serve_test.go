@@ -81,7 +81,7 @@ func serveRandom() io.Reader {
 
 var serveTime = time.Date(2031, 4, 5, 6, 7, 8, 123456789, time.UTC)
 
-// R-FTKQ-UFFJ R-FUSN-8768 R-FW0J-LYWX R-FX8F-ZQNM R-FYGC-DIEB R-FZO8-RA50 R-G3BX-WLD3 R-8TWS-7UB5 R-HPV4-9KYF
+// R-EWQH-AQW6 R-FTKQ-UFFJ R-FUSN-8768 R-FW0J-LYWX R-FX8F-ZQNM R-FYGC-DIEB R-FZO8-RA50 R-G3BX-WLD3 R-8TWS-7UB5 R-HPV4-9KYF
 func TestServeRefusalsTouchNothing(t *testing.T) {
 	tests := []struct {
 		name    string
