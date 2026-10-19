@@ -1,6 +1,6 @@
 # toolkit
 
-toolkit is agentkit's standard local tools: Bash, Read, Write, Edit, Glob and Grep. It is a Go library that hands consumers of agentkit each tool as a ready-made `agentkit.Tool` built against an explicit root directory, behaving like the Claude Code tool of the same name so a model already knows how to use it. There is no binary; the module path is `github.com/ikigenba/ikigenba/toolkit`. The contract is `specs/design/`; this file restates none of it.
+toolkit is agentkit's standard tools: the local tools Bash, Read, Write, Edit, Glob and Grep, and the web tools WebSearch, which queries the Brave Search API, and WebFetch, which fetches a public URL as text. It is a Go library that hands consumers of agentkit each tool as a ready-made `agentkit.Tool`, the local ones built against an explicit root directory, behaving like the Claude Code tool of the same name so a model already knows how to use it. There is no binary; the module path is `github.com/ikigenba/ikigenba/toolkit`. The contract is `specs/design/`; this file restates none of it.
 
 ## Layout
 
@@ -12,7 +12,7 @@ toolkit is agentkit's standard local tools: Bash, Read, Write, Edit, Glob and Gr
 
 - Go 1.26 or later.
 - `bash` on the `PATH`: the `Bash` tool shells out to it, and its tests run real commands.
-- The modules `go.mod` requires, in the module cache; `go.sum` is committed and the gates run offline. The build run sets each requirement and moves to another release only when this file names one: agentkit at the release `go.mod` requires, `github.com/bmatcuk/doublestar/v4` and `github.com/boyter/gocodewalker`.
+- The modules `go.mod` requires, in the module cache; `go.sum` is committed and the gates run offline. The build run sets each requirement and moves to another release only when this file names one: agentkit at the release `go.mod` requires, `github.com/bmatcuk/doublestar/v4`, `github.com/boyter/gocodewalker`, `github.com/JohannesKaufmann/html-to-markdown/v2`, which turns fetched HTML into Markdown, and `golang.org/x/net`, for the charset decoding behind `WebFetch`.
 - `golangci-lint` v2, configured by `.golangci.yml` here.
 - GNU `make`, for the developer targets; no gate runs through it.
 
@@ -34,7 +34,7 @@ These rules govern everything `go test ./...` runs. Tests are offline (loopback 
 
 ## Live tests
 
-A live test is the only kind that reaches an external service. It is a `*_live_test.go` file behind `//go:build live` with `TestLive*` functions, which `go test ./...` never runs and `make live` runs as `go test -tags live -count=1 -run '^TestLive' ./...`. It proves lightly that the whole is glued together, about one per external service, leaving behavior, edge cases and error paths to the unit tests; it carries the id it proves and the gap counts it; the code under test runs locally and only the external service is real; it reads credentials from the environment, fails rather than skips when one is missing, and no credential appears in the repository or in test output. It runs only as gate 5.
+A live test is the only kind that reaches an external service. It is a `*_live_test.go` file behind `//go:build live` with `TestLive*` functions, which `go test ./...` never runs and `make live` runs as `go test -tags live -count=1 -run '^TestLive' ./...`. It proves lightly that the whole is glued together, about one per external service, leaving behavior, edge cases and error paths to the unit tests; it carries the id it proves and the gap counts it; the code under test runs locally and only the external service is real; it reads credentials from the environment, fails rather than skips when one is missing, and no credential appears in the repository or in test output. It runs only as gate 5. The live tests need `BRAVE_API_KEY` and spend a handful of Brave requests per run.
 
 ## Gates
 
