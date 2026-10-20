@@ -7,13 +7,12 @@
      <.Pass.ID> at /passes/<.Pass.ID>. Data: .Banner (a page.Banner, for
      banner and footer); .Pass, with .ID (its pass_ id, "pass_" and 16
      hex), .Kind (the pass's kind as stored, such as "ingest", "judge",
-     "enrich" or "enrich_cohort"), .Origin (what started it, as stored: "run" for a scrapes
+     "enrich" or "enrich_target"), .Origin (what started it, as stored: "run" for a scrapes
      run a delivery named, "cron" for a fire of the daily cron trigger,
-     "rebuild" for a rebuild, "enrich" for a call of the enrich tool,
+     "ingest", "judge" or "enrich" for a call of the tool of that name,
      "pass" for another pass that finished: an ingest starting an enrich,
      or an enrich starting a judge), .Trigger (the run_ id of that
-     scrapes run, the slug of that cron trigger, "judge_candidates",
-     "rebuild", "enrich", or the pass_ id of that pass), .RunPage (the URL of
+     scrapes run, the slug of that cron trigger, "judge_candidates", "ingest", "judge", "enrich", or the pass_ id of that pass), .RunPage (the URL of
      that run's page at scrapes, "<scrapes URL>/runs/<.Trigger>" built on
      the services entry; empty unless .Origin is "run", and empty when the
      entry has none), .Status ("running", "done" or "failed", as stored),
@@ -21,8 +20,7 @@
      "interrupted", "store" or "prompts"; empty unless .Status is
      "failed"),
      .StartedBy (the starter's email, or the starter's user id when the
-     email is empty; the starter is a rebuild's or an enrich call's
-     caller; empty for any other origin), .Started and
+     email is empty; the starter is an ingest, judge or enrich call's caller; empty for any other origin), .Started and
      .StartedText (RFC 3339 UTC to the second, and the same as shown,
      "2006-01-02 15:04:05 UTC"), .Finished and .FinishedText (likewise;
      both empty while running), .Rows, .New, .Changed, .Unchanged,
@@ -30,11 +28,9 @@
      holds them), and .Derived, .Due, .Fetched, .HTTPS, .HTTP and .None
      (ints, an enrich pass's counts as the record holds them: results the
      derived kinds wrote, then, for the website check, candidates due,
-     domains fetched, and results by state), .Target (the coh_ or cand_
-     id an enrich_cohort pass walks; empty for any other kind),
-     .TargetPage (the path of that cohort's or candidate's page,
-     "/cohorts/<.Target>" or "/candidates/<.Target>"; empty when .Target
-     is), .EnrichKind (the enrichment kind an enrich_cohort pass walks, as
+     domains fetched, and results by state), .Target (the pl_ or cand_ id an enrich_target pass walks; empty for any other kind),
+     .TargetPage (the path of that prospect list's or candidate's page, "/prospect-lists/<.Target>" or "/candidates/<.Target>"; empty when .Target
+     is), .EnrichKind (the enrichment kind an enrich_target pass walks, as
      stored, "site_text"; empty for any other kind), .Runs, .RunsFailed
      and .Pages (ints, as the record holds them: prompts runs started,
      those that ended other than exiting 0, and pages they added) and
@@ -60,9 +56,9 @@
      work."; "prompts" "The prompts service refused or failed a call: the
      prompt was gone or unusable, or a run could not be started or
      read."; then a p (text "What the pass wrote before it failed stays;
-     the next pass or a rebuild repairs it.", rebuild in a code element);
+     the next pass or an ingest repairs it.", ingest in a code element);
      section#pass-card with h2 "Pass" and a p in its header (text "An
-     ingest stores a run's records and judges nothing: rows, new, changed,
+     ingest stores a run's records, and judges only when started by hand over every scraper: rows, new, changed,
      unchanged and gone count the records against what candidates held,
      and created and linked count candidates. A judge judges every
      candidate again: judged counts them and unranged those left with no
@@ -70,7 +66,7 @@
      whose inputs changed, the derived kinds first: derived counts the
      results they wrote. For the website check, due counts the candidates
      due, fetched the domains it fetched, once each, and https, http and
-     none the results by state. An enrich over a cohort or one candidate
+     none the results by state. An enrich over a prospect list or one candidate
      runs one kind over its target, the due ones or, forced, every one;
      for site text, the brief and the website search, runs counts the
      prompts runs it started, runs failed those that failed, pages the
@@ -85,21 +81,19 @@
      dt "Status" then dd#pass-status (the status span), dt "Reason" then
      dd#pass-reason (.Reason in a code element) only when .Reason is set,
      dt "Started by" then dd#pass-by (by .Origin: "run" "scrapes"; "cron"
-     "cron" and a space then .Trigger in a code element; "pass" "pass"
-     and a space then .Trigger in a code element; "rebuild" and "enrich"
-     .StartedBy), dt "Started" then dd#pass-started holding
+     "cron" and a space then .Trigger in a code element; "pass" "pass" and a space then .Trigger in a code element; "ingest", "judge" and "enrich" .StartedBy), dt "Started" then dd#pass-started holding
      time[datetime=<.Started>] (text .StartedText), dt "Finished" then
      dd#pass-finished holding time[datetime=<.Finished>] (text
      .FinishedText) only when .Finished is set, then, when .Kind is
-     "enrich_cohort", dt "Target" then dd#pass-target (a.target-link, href
+     "enrich_target", dt "Target" then dd#pass-target (a.target-link, href
      .TargetPage, holding .Target in a code element) and dt "Enrich kind"
      then dd#pass-enrich-kind (.EnrichKind in a code element), then, when
-     .Kind is "enrich" or "enrich_cohort", dt "Derived" then dd#pass-derived, dt "Due" then
+     .Kind is "enrich" or "enrich_target", dt "Derived" then dd#pass-derived, dt "Due" then
      dd#pass-due, dt "Fetched" then
      dd#pass-fetched, dt "https" then dd#pass-https, dt "http" then
      dd#pass-http and dt "none" then dd#pass-none (each the count; each of
      the three state words in a code element), then, when .Kind is
-     "enrich_cohort", dt "Runs" then dd#pass-runs, dt "Runs failed" then
+     "enrich_target", dt "Runs" then dd#pass-runs, dt "Runs failed" then
      dd#pass-runs-failed, dt "Pages" then dd#pass-pages (each the count)
      and dt "Cost" then dd#pass-cost (.Cost), else dt "Rows" then
      dd#pass-rows, dt "New" then dd#pass-new, dt "Changed" then
@@ -118,27 +112,27 @@
 <p id="headline" class="cluster"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span> <span class="muted">started <time datetime="{{.Started}}">{{.StartedText}}</time>{{if .Finished}} · finished <time datetime="{{.Finished}}">{{.FinishedText}}</time>{{end}}</span></p>
 {{if eq .Status "running"}}<div id="running" class="alert quiet" data-kind="info"><strong id="notice">Running</strong><p>The page does not stream. Reload it to see the outcome.</p></div>
 <p><a id="reload" class="button secondary small" href="/passes/{{.ID}}"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg>Reload</a></p>
-{{end}}{{if eq .Status "failed"}}<div id="failure" class="alert" data-kind="err" role="alert"><strong>The pass failed</strong><p id="failure-reason">{{if eq .Reason "scrapes"}}Reading the run from scrapes failed, or its rows did not match the count its record holds.{{else if eq .Reason "interrupted"}}candidates stopped or restarted while the pass was running, and it does not resume one.{{else if eq .Reason "store"}}The database failed while the pass was storing its work.{{else if eq .Reason "prompts"}}The prompts service refused or failed a call: the prompt was gone or unusable, or a run could not be started or read.{{end}}</p><p>What the pass wrote before it failed stays; the next pass or a <code>rebuild</code> repairs it.</p></div>
+{{end}}{{if eq .Status "failed"}}<div id="failure" class="alert" data-kind="err" role="alert"><strong>The pass failed</strong><p id="failure-reason">{{if eq .Reason "scrapes"}}Reading the run from scrapes failed, or its rows did not match the count its record holds.{{else if eq .Reason "interrupted"}}candidates stopped or restarted while the pass was running, and it does not resume one.{{else if eq .Reason "store"}}The database failed while the pass was storing its work.{{else if eq .Reason "prompts"}}The prompts service refused or failed a call: the prompt was gone or unusable, or a run could not be started or read.{{end}}</p><p>What the pass wrote before it failed stays; the next pass or an <code>ingest</code> repairs it.</p></div>
 {{end}}<section id="pass-card" class="card" aria-labelledby="pass-title">
-<header><h2 id="pass-title">Pass</h2><p>An ingest stores a run's records and judges nothing: rows, new, changed, unchanged and gone count the records against what candidates held, and created and linked count candidates. A judge judges every candidate again: judged counts them and unranged those left with no revenue estimate. An enrich runs every enricher over the candidates whose inputs changed, the derived kinds first: derived counts the results they wrote. For the website check, due counts the candidates due, fetched the domains it fetched, once each, and <code>https</code>, <code>http</code> and <code>none</code> the results by state. An enrich over a cohort or one candidate runs one kind over its target, the due ones or, forced, every one; for site text, the brief and the website search, runs counts the prompts runs it started, runs failed those that failed, pages the pages they kept, none for the brief or the website search, and cost what they spent.</p></header>
+<header><h2 id="pass-title">Pass</h2><p>An ingest stores a run's records, and judges only when started by hand over every scraper: rows, new, changed, unchanged and gone count the records against what candidates held, and created and linked count candidates. A judge judges every candidate again: judged counts them and unranged those left with no revenue estimate. An enrich runs every enricher over the candidates whose inputs changed, the derived kinds first: derived counts the results they wrote. For the website check, due counts the candidates due, fetched the domains it fetched, once each, and <code>https</code>, <code>http</code> and <code>none</code> the results by state. An enrich over a prospect list or one candidate runs one kind over its target, the due ones or, forced, every one; for site text, the brief and the website search, runs counts the prompts runs it started, runs failed those that failed, pages the pages they kept, none for the brief or the website search, and cost what they spent.</p></header>
 <dl id="pass" class="kv">
 <dt>ID</dt><dd id="pass-id"><code>{{.ID}}</code></dd>
 <dt>Kind</dt><dd id="pass-kind"><code>{{.Kind}}</code></dd>
 <dt>Trigger</dt><dd id="pass-trigger">{{if .RunPage}}<a class="run-link" href="{{.RunPage}}"><code>{{.Trigger}}</code></a>{{else if eq .Origin "pass"}}<a class="pass-link" href="/passes/{{.Trigger}}"><code>{{.Trigger}}</code></a>{{else}}<code>{{.Trigger}}</code>{{end}}</dd>
 <dt>Status</dt><dd id="pass-status"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span></dd>
 {{if .Reason}}<dt>Reason</dt><dd id="pass-reason"><code>{{.Reason}}</code></dd>
-{{end}}<dt>Started by</dt><dd id="pass-by">{{if or (eq .Origin "rebuild") (eq .Origin "enrich")}}{{.StartedBy}}{{else if eq .Origin "cron"}}cron <code>{{.Trigger}}</code>{{else if eq .Origin "pass"}}pass <code>{{.Trigger}}</code>{{else}}scrapes{{end}}</dd>
+{{end}}<dt>Started by</dt><dd id="pass-by">{{if or (eq .Origin "ingest") (eq .Origin "judge") (eq .Origin "enrich")}}{{.StartedBy}}{{else if eq .Origin "cron"}}cron <code>{{.Trigger}}</code>{{else if eq .Origin "pass"}}pass <code>{{.Trigger}}</code>{{else}}scrapes{{end}}</dd>
 <dt>Started</dt><dd id="pass-started"><time datetime="{{.Started}}">{{.StartedText}}</time></dd>
 {{if .Finished}}<dt>Finished</dt><dd id="pass-finished"><time datetime="{{.Finished}}">{{.FinishedText}}</time></dd>
-{{end}}{{if eq .Kind "enrich_cohort"}}<dt>Target</dt><dd id="pass-target"><a class="target-link" href="{{.TargetPage}}"><code>{{.Target}}</code></a></dd>
+{{end}}{{if eq .Kind "enrich_target"}}<dt>Target</dt><dd id="pass-target"><a class="target-link" href="{{.TargetPage}}"><code>{{.Target}}</code></a></dd>
 <dt>Enrich kind</dt><dd id="pass-enrich-kind"><code>{{.EnrichKind}}</code></dd>
-{{end}}{{if or (eq .Kind "enrich") (eq .Kind "enrich_cohort")}}<dt>Derived</dt><dd id="pass-derived">{{.Derived}}</dd>
+{{end}}{{if or (eq .Kind "enrich") (eq .Kind "enrich_target")}}<dt>Derived</dt><dd id="pass-derived">{{.Derived}}</dd>
 <dt>Due</dt><dd id="pass-due">{{.Due}}</dd>
 <dt>Fetched</dt><dd id="pass-fetched">{{.Fetched}}</dd>
 <dt><code>https</code></dt><dd id="pass-https">{{.HTTPS}}</dd>
 <dt><code>http</code></dt><dd id="pass-http">{{.HTTP}}</dd>
 <dt><code>none</code></dt><dd id="pass-none">{{.None}}</dd>
-{{if eq .Kind "enrich_cohort"}}<dt>Runs</dt><dd id="pass-runs">{{.Runs}}</dd>
+{{if eq .Kind "enrich_target"}}<dt>Runs</dt><dd id="pass-runs">{{.Runs}}</dd>
 <dt>Runs failed</dt><dd id="pass-runs-failed">{{.RunsFailed}}</dd>
 <dt>Pages</dt><dd id="pass-pages">{{.Pages}}</dd>
 <dt>Cost</dt><dd id="pass-cost">{{.Cost}}</dd>

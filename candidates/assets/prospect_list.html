@@ -1,18 +1,18 @@
-{{/* One cohort at GET /cohorts/<id>: its definition (name, size,
+{{/* One prospect list at GET /prospect-lists/<id>: its definition (name, size,
      filters with their unknown switches, order, who created and last
      changed it and when), how many candidates match, its members in rank
      order as this read works them out, and its standing rejects. Shown
      to any signed-in user; a guest is sent to sign in; an unknown or
-     malformed id, or a deleted cohort's, is the not-found page. Every
-     signed-in user sees every cohort: they are the space's, not a
+     malformed id, or a deleted prospect list's, is the not-found page. Every
+     signed-in user sees every prospect list: they are the space's, not a
      user's. Never shows a phone number or an email of a candidate.
-     Read-only: no form but the banner's sign out; cohorts are made,
+     Read-only: no form but the banner's sign out; prospect lists are made,
      changed and groomed with the tools. One level below the root:
-     .Banner's .Trail is the one level <.Cohort.ID> at
-     /cohorts/<.Cohort.ID>. Data: .Banner (a page.Banner, for banner and
-     footer); .Cohort, with .ID (its coh_ id, "coh_" and 16 hex), .Name
+     .Banner's .Trail is the one level <.ProspectList.ID> at
+     /prospect-lists/<.ProspectList.ID>. Data: .Banner (a page.Banner, for banner and
+     footer); .ProspectList, with .ID (its pl_ id, "pl_" and 16 hex), .Name
      (its name, as given), .Size (int, its size), .Filters (the filters
-     it carries, each part empty or false when the cohort does not carry
+     it carries, each part empty or false when the prospect list does not carry
      it), with .RevenueMin and .RevenueMax (the bounds as shown,
      "$5,000,000"; each empty when absent), .RevenueUnknown (bool, the
      revenue switch), .MaxMinutes (the drive-minutes maximum as text,
@@ -43,7 +43,7 @@
      how many candidates pass its filters and the exclusion rule and are
      not rejected from it, before the size cut); .Classified (int, how
      many of .Members have .ClassifiedBy "brief"); .Members, the first
-     .Size of those, in the cohort's order, each with .Rank (int, its
+     .Size of those, in the prospect list's order, each with .Rank (int, its
      position, from 1), .ID (its cand_ id, "cand_" and 16 hex), .Name (its
      display name), .City and .State (its display address's parts; each
      may be empty), .OperatingConfidence (two decimals, "0.78"; empty when
@@ -73,8 +73,8 @@
      .NewestFiling and .NewestFilingText (the newest filing date among its
      links not gone, "2025-03-18", both the same; empty when none) and
      .Excluded (bool, true when the owner's ruling excludes it; only a
-     cohort that shows excluded candidates has one); .Rejects, the
-     cohort's standing rejects, newest first, each with .Candidate (the
+     prospect list that shows excluded candidates has one); .Rejects, the
+     prospect list's standing rejects, newest first, each with .Candidate (the
      cand_ id rejected), .By (the email of who rejected it; empty when
      none), .User (their user id), .At and .AtText (when, RFC 3339 UTC to
      the second, and UTC to the minute, "2026-10-05 09:00") and .Why (the
@@ -82,7 +82,7 @@
      integer. Names are shown as given; class tags, category words,
      verdicts, website states, patterns, order fields and directions as
      stored.
-     Hooks: title "<.Cohort.Name> · candidates"; h1 with text .Name;
+     Hooks: title "<.ProspectList.Name> · candidates"; h1 with text .Name;
      p#headline.cluster holding span#matching.badge[data-kind=info] (text
      "<.Matching> matching"), a space and span.muted holding "changed" and
      time[datetime=<.Changed>] (text .ChangedText) when .Changed is set,
@@ -90,27 +90,27 @@
      with, between the two and only when .Members is not empty, a space
      and span#classified.badge[data-kind=info] (text "<.Classified> of
      <the number of .Members> members classified by brief").
-     section#cohort-card with h2 "Cohort" and a p in its header (text "A
+     section#prospect-list-card with h2 "Prospect list" and a p in its header (text "A
      saved search: its members are the active, judged candidates that pass
      every filter, are not rejected from it and are not excluded unless it
      shows excluded ones, in its order, cut to its size. Agents change it
-     with the edit_cohort tool.", edit_cohort in a code element), then
-     dl#cohort.kv holding, in this order, dt "ID" then dd#cohort-id (.ID
-     in a code element), dt "Name" then dd#cohort-name (.Name), dt "Size"
-     then dd#cohort-size (.Size), dt "Order" then dd#cohort-order (one
+     with the edit_prospect_list tool.", edit_prospect_list in a code element), then
+     dl#prospect-list.kv holding, in this order, dt "ID" then dd#prospect-list-id (.ID
+     in a code element), dt "Name" then dd#prospect-list-name (.Name), dt "Size"
+     then dd#prospect-list-size (.Size), dt "Order" then dd#prospect-list-order (one
      div[data-order=<.Field>] per entry holding .Field in a code element, a
      space and span.muted with .Direction), dt "Created by" then
-     dd#cohort-created-by (.CreatedBy, or .CreatedUser in a code element
-     when .CreatedBy is empty), dt "Created" then dd#cohort-created (a
+     dd#prospect-list-created-by (.CreatedBy, or .CreatedUser in a code element
+     when .CreatedBy is empty), dt "Created" then dd#prospect-list-created (a
      time[datetime] with the text form), then, only when .Changed is set,
-     dt "Changed by" then dd#cohort-changed-by (as Created by) and dt
-     "Changed" then dd#cohort-changed (a time[datetime] with the text
+     dt "Changed by" then dd#prospect-list-changed-by (as Created by) and dt
+     "Changed" then dd#prospect-list-changed (a time[datetime] with the text
      form). section#filters with h2 "Filters" and a p in its header (text
-     "A filter applies only when the cohort carries it; any means it does
+     "A filter applies only when the prospect list carries it; any means it does
      not. A filter on a fact that can be unknown leaves out the candidates
      whose value is unknown unless its switch lets them in."), then
      dl#filters.kv holding, in this order, each dd showing span.muted
-     "any" when the cohort does not carry that filter's value, and, for
+     "any" when the prospect list does not carry that filter's value, and, for
      the six filters with a switch, followed when the switch is set by a
      space and span.badge[data-kind=info][data-unknown] (text "unknown
      included"): dt "Revenue low" then dd#filter-revenue ("<.RevenueMin>
@@ -133,13 +133,13 @@
      in a code element; switch .ClassUnknown) and dt "Excluded" then
      dd#filter-excluded ("shown" when .ShowExcluded, else "hidden").
      section#members with h2 "Members" and a p in its header (text "The
-     first of the <.Matching> matching candidates in the cohort's order,
+     first of the <.Matching> matching candidates in the prospect list's order,
      up to its size of <.Size>, worked out as this page was read. An unknown value sorts last
      whatever the direction; the candidate id breaks ties."), then either,
      when .Members is empty, div#no-members.empty holding h3 "No members"
      and a p (text "No judged candidate passes the filters, or every one
-     that does is rejected from the cohort. Loosen a filter or set a
-     switch with the edit_cohort tool.", edit_cohort in a code element),
+     that does is rejected from the prospect list. Loosen a filter or set a
+     switch with the edit_prospect_list tool.", edit_prospect_list in a code element),
      or table#member-list whose th read Rank, Name, City, State, Operating
      confidence, Low, High, Revenue confidence, Categories, Classified by, Class, Fleet,
      Website, Site text, Brief, Minutes, Government, Known since, Newest filing, with one
@@ -173,12 +173,12 @@
      element, empty when none), td.candidate-known-since and
      td.candidate-filed (each, only when set, a time[datetime] with the
      text form). section#rejects with h2 "Rejects" and a p in its header
-     (text "Candidates the owner rejected from this cohort, newest first,
+     (text "Candidates the owner rejected from this prospect list, newest first,
      each kept out whether or not it would be a member. The unreject tool
      lets one back.", unreject in a code element), then either, when
      .Rejects is empty, div#no-rejects.empty holding h3 "No rejects" and a
      p (text "Rejects are made by hand with the reject tool, one candidate
-     and one cohort at a time, each with a reason.", reject in a code
+     and one prospect list at a time, each with a reason.", reject in a code
      element), or table#reject-list whose th read Candidate, By, When,
      Why, with one tr[data-reject=<.Candidate>] per reject holding
      td.reject-candidate (a.candidate-link, href
@@ -186,29 +186,29 @@
      td.reject-by (.By, or .User in a code element when .By is empty),
      td.reject-at (time[datetime=<.At>] with .AtText) and td.reject-why
      (.Why). No script but appkit's /_appkit/feedback.js. */}}
-{{define "cohort"}}<!doctype html>
+{{define "prospect_list"}}<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>{{.Cohort.Name}} · candidates</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>{{.ProspectList.Name}} · candidates</title></head>
 <body>
 {{template "banner" .Banner}}
 <main>
-{{$matching := .Matching}}{{$classified := .Classified}}{{$members := .Members}}{{$rejects := .Rejects}}{{with .Cohort}}<h1>{{.Name}}</h1>
+{{$matching := .Matching}}{{$classified := .Classified}}{{$members := .Members}}{{$rejects := .Rejects}}{{with .ProspectList}}<h1>{{.Name}}</h1>
 <p id="headline" class="cluster"><span id="matching" class="badge" data-kind="info">{{$matching}} matching</span> {{if $members}}<span id="classified" class="badge" data-kind="info">{{$classified}} of {{len $members}} members classified by brief</span> {{end}}<span class="muted">{{if .Changed}}changed <time datetime="{{.Changed}}">{{.ChangedText}}</time>{{else}}created <time datetime="{{.Created}}">{{.CreatedText}}</time>{{end}}</span></p>
-<section id="cohort-card" class="card" aria-labelledby="cohort-title">
-<header><h2 id="cohort-title">Cohort</h2><p>A saved search: its members are the active, judged candidates that pass every filter, are not rejected from it and are not excluded unless it shows excluded ones, in its order, cut to its size. Agents change it with the <code>edit_cohort</code> tool.</p></header>
-<dl id="cohort" class="kv">
-<dt>ID</dt><dd id="cohort-id"><code>{{.ID}}</code></dd>
-<dt>Name</dt><dd id="cohort-name">{{.Name}}</dd>
-<dt>Size</dt><dd id="cohort-size">{{.Size}}</dd>
-<dt>Order</dt><dd id="cohort-order">{{range .Order}}<div data-order="{{.Field}}"><code>{{.Field}}</code> <span class="muted">{{.Direction}}</span></div>{{end}}</dd>
-<dt>Created by</dt><dd id="cohort-created-by">{{if .CreatedBy}}{{.CreatedBy}}{{else}}<code>{{.CreatedUser}}</code>{{end}}</dd>
-<dt>Created</dt><dd id="cohort-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></dd>
-{{if .Changed}}<dt>Changed by</dt><dd id="cohort-changed-by">{{if .ChangedBy}}{{.ChangedBy}}{{else}}<code>{{.ChangedUser}}</code>{{end}}</dd>
-<dt>Changed</dt><dd id="cohort-changed"><time datetime="{{.Changed}}">{{.ChangedText}}</time></dd>
+<section id="prospect-list-card" class="card" aria-labelledby="prospect-list-title">
+<header><h2 id="prospect-list-title">Prospect list</h2><p>A saved search: its members are the active, judged candidates that pass every filter, are not rejected from it and are not excluded unless it shows excluded ones, in its order, cut to its size. Agents change it with the <code>edit_prospect_list</code> tool.</p></header>
+<dl id="prospect-list" class="kv">
+<dt>ID</dt><dd id="prospect-list-id"><code>{{.ID}}</code></dd>
+<dt>Name</dt><dd id="prospect-list-name">{{.Name}}</dd>
+<dt>Size</dt><dd id="prospect-list-size">{{.Size}}</dd>
+<dt>Order</dt><dd id="prospect-list-order">{{range .Order}}<div data-order="{{.Field}}"><code>{{.Field}}</code> <span class="muted">{{.Direction}}</span></div>{{end}}</dd>
+<dt>Created by</dt><dd id="prospect-list-created-by">{{if .CreatedBy}}{{.CreatedBy}}{{else}}<code>{{.CreatedUser}}</code>{{end}}</dd>
+<dt>Created</dt><dd id="prospect-list-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></dd>
+{{if .Changed}}<dt>Changed by</dt><dd id="prospect-list-changed-by">{{if .ChangedBy}}{{.ChangedBy}}{{else}}<code>{{.ChangedUser}}</code>{{end}}</dd>
+<dt>Changed</dt><dd id="prospect-list-changed"><time datetime="{{.Changed}}">{{.ChangedText}}</time></dd>
 {{end}}</dl>
 </section>
 {{with .Filters}}<section id="filters" class="card" aria-labelledby="filters-title">
-<header><h2 id="filters-title">Filters</h2><p>A filter applies only when the cohort carries it; any means it does not. A filter on a fact that can be unknown leaves out the candidates whose value is unknown unless its switch lets them in.</p></header>
+<header><h2 id="filters-title">Filters</h2><p>A filter applies only when the prospect list carries it; any means it does not. A filter on a fact that can be unknown leaves out the candidates whose value is unknown unless its switch lets them in.</p></header>
 <dl id="filters" class="kv">
 <dt>Revenue low</dt><dd id="filter-revenue">{{if and .RevenueMin .RevenueMax}}{{.RevenueMin}} to {{.RevenueMax}}{{else if .RevenueMin}}at least {{.RevenueMin}}{{else if .RevenueMax}}at most {{.RevenueMax}}{{else}}<span class="muted">any</span>{{end}}{{if .RevenueUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
 <dt>Drive minutes</dt><dd id="filter-minutes">{{if .MaxMinutes}}at most {{.MaxMinutes}}{{else}}<span class="muted">any</span>{{end}}{{if .MinutesUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
@@ -223,7 +223,7 @@
 </dl>
 </section>
 {{end}}<section id="members" class="card flush" aria-labelledby="members-title">
-<header><div><h2 id="members-title">Members</h2><p>The first of the {{$matching}} matching candidates in the cohort's order, up to its size of {{.Size}}, worked out as this page was read. An unknown value sorts last whatever the direction; the candidate id breaks ties.</p></div></header>
+<header><div><h2 id="members-title">Members</h2><p>The first of the {{$matching}} matching candidates in the prospect list's order, up to its size of {{.Size}}, worked out as this page was read. An unknown value sorts last whatever the direction; the candidate id breaks ties.</p></div></header>
 {{if $members}}<div class="table-scroll">
 <table id="member-list">
 <thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th class="num">Operating confidence</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Classified by</th><th>Class</th><th>Fleet</th><th>Website</th><th>Site text</th><th>Brief</th><th class="num">Minutes</th><th>Government</th><th>Known since</th><th>Newest filing</th></tr></thead>
@@ -254,11 +254,11 @@
 </div>
 {{else}}<div id="no-members" class="empty">
 <h3 class="text-md">No members</h3>
-<p>No judged candidate passes the filters, or every one that does is rejected from the cohort. Loosen a filter or set a switch with the <code>edit_cohort</code> tool.</p>
+<p>No judged candidate passes the filters, or every one that does is rejected from the prospect list. Loosen a filter or set a switch with the <code>edit_prospect_list</code> tool.</p>
 </div>{{end}}
 </section>
 {{end}}<section id="rejects" class="card flush" aria-labelledby="rejects-title">
-<header><div><h2 id="rejects-title">Rejects</h2><p>Candidates the owner rejected from this cohort, newest first, each kept out whether or not it would be a member. The <code>unreject</code> tool lets one back.</p></div></header>
+<header><div><h2 id="rejects-title">Rejects</h2><p>Candidates the owner rejected from this prospect list, newest first, each kept out whether or not it would be a member. The <code>unreject</code> tool lets one back.</p></div></header>
 {{if $rejects}}<div class="table-scroll">
 <table id="reject-list">
 <thead><tr><th>Candidate</th><th>By</th><th>When</th><th>Why</th></tr></thead>
@@ -273,7 +273,7 @@
 </table>
 </div>{{else}}<div id="no-rejects" class="empty">
 <h3 class="text-md">No rejects</h3>
-<p>Rejects are made by hand with the <code>reject</code> tool, one candidate and one cohort at a time, each with a reason.</p>
+<p>Rejects are made by hand with the <code>reject</code> tool, one candidate and one prospect list at a time, each with a reason.</p>
 </div>{{end}}
 </section>
 </main>

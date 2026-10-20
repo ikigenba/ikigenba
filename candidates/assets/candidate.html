@@ -1,8 +1,9 @@
 {{/* One candidate at GET /candidates/<id>: its display fields and tags,
-     its facts as the enrichers last wrote them, its brief, its assessment with the
-     two judgments as the last judge wrote them, the operating evidence
-     behind it, each
-     estimate with the facts it used, each link to a scrapes record with
+     its enrichments, the facts as the enrichers last wrote them, each
+     with where it came from, and its brief, then, apart from them, its
+     two judgments as the last judge wrote them, each with its evidence:
+     the operating evidence behind the one and each estimate, with the
+     facts it used, behind the other; each link to a scrapes record with
      its last seen and gone, the owner's rulings on it, the pages of its
      website kept on it, its enrichment
      results, every reject and unreject naming it, and the campaigns it
@@ -43,7 +44,9 @@
      cargo tags, a slice of strings; may be empty), .Created and
      .CreatedText (RFC 3339 UTC to the second, and the same as shown,
      "2006-01-02 15:04:05 UTC") and .Updated and .UpdatedText (likewise);
-     .Facts (nil when merged or when it has no facts row; else its facts
+     .Enrichments (nil when merged; else what the enrichers produced,
+     apart from the judgments), with .Facts and .Brief:
+     .Facts (nil when it has no facts row; else its facts
      row, as stored), with .KnownSince and .KnownSinceText (the earliest
      date any link not gone shows it existing, "2018-04-09", both the
      same; empty when none), .NewestFiling and .NewestFilingText (the
@@ -70,7 +73,7 @@
      "brief", "drive_minutes", "link_facts", "site_text",
      "website_check" or "website_search", and .At and .AtText in
      .Created's two forms above;
-     empty when none has); .Brief (nil when merged or when it has no
+     empty when none has); .Brief (nil when it has no
      brief result that did not fail; else its newest brief result that
      did not fail, the one whose summary the facts row holds; a failed
      brief result is never shown here, only in the enrichment list), with
@@ -81,8 +84,9 @@
      text as stored, in the order given, a slice of strings; may be
      empty) and .At and .AtText (when that result was found, in
      .Created's two forms above);
-     .Assessment (nil when merged or not yet judged; else the assessment
-     the last judge, rebuild or ruling wrote, as stored), with
+     .Judgments (nil when merged or not yet judged; else the two
+     judgments the last judge, ingest of every scraper or ruling wrote,
+     as stored, apart from the enrichments), with
      .OperatingConfidence (the operating confidence, two decimals,
      "0.78"; empty when there is no evidence), .OperatingEvidence (the
      evidence behind it, in the order stored, each with .Name (its kind
@@ -96,10 +100,11 @@
      there is no estimate, .Excluded (bool, true when the owner's ruling
      excludes it),
      .Rules (int, the rules version) and .Calculated and .CalculatedText
-     (when it was calculated, the timestamp forms above); .Estimates, one per source with evidence on it
+     (when it was calculated, the timestamp forms above); .Estimates, the
+     revenue range's evidence, one per source with evidence on it
      in source name order, empty when merged, each with .Source (the source's
      name, "fmcsa"), .Low, .High, .Confidence, .Filed and .FiledText (as
-     the assessment's, for this source), .Formula (int, the rules version
+     .Judgments' revenue fields, for this source), .Formula (int, the rules version
      it was made under) and .Facts (the facts it used, in key order, each
      with .Key and .Value, the value as compact JSON text such as "52" or
      "\"AUTHORIZED FOR HIRE\""); .Links, every link, empty when merged,
@@ -129,7 +134,7 @@
      when none), .Size (int, the body bytes read), .Fetched and
      .FetchedText (when it was fetched, RFC 3339 UTC to the second, and
      UTC to the minute), .By (the email of who added it; empty when none)
-     and .User (their user id); .Enrichments, every enrichment result on this
+     and .User (their user id); .EnrichmentResults, every enrichment result on this
      candidate, of every kind, newest first, empty when merged, each with
      .Kind (its kind as stored, "website_check", "link_facts",
      "drive_minutes", "site_text", "brief" or "website_search"), .Source
@@ -173,8 +178,9 @@
      cost nothing) and .At and .AtText (when it was found, RFC 3339 UTC to
      the second, and UTC to the minute); .Rejects, every reject and unreject record
      naming this candidate, newest first, each with .Kind ("reject" or
-     "unreject", as stored), .Cohort (the cohort's coh_ id), .CohortName
-     (the cohort's name; empty when the cohort is deleted), .By (the email
+     "unreject", as stored), .ProspectList (the prospect list's pl_ id),
+     .ProspectListName (the prospect list's name; empty when the prospect
+     list is deleted), .By (the email
      of who made it; empty when none), .User (their user id), .At and
      .AtText (when it was made, RFC 3339 UTC to the second, and UTC to the
      minute) and .Why (the sentence given); .Campaigns, one per campaign
@@ -184,11 +190,13 @@
      camp_ id, "camp_" and 16 hex; candidates holds no campaign name),
      .CampaignPage (the URL of that campaign's page at campaigns,
      "<campaigns URL>/campaigns/<.Campaign>" built on the services entry;
-     empty when the services file names no campaigns entry), .Cohort (the
-     coh_ id of the cohort it was added from; empty when it was added by
-     hand, one at a time), .CohortName (that cohort's name; empty when
-     .Cohort is empty or the cohort no longer exists), .CohortPage
-     ("/cohorts/<.Cohort>"; empty when .CohortName is), .Added and
+     empty when the services file names no campaigns entry),
+     .ProspectList (the pl_ id of the prospect list it was added from;
+     empty when it was added by hand, one at a time), .ProspectListName
+     (that prospect list's name; empty when .ProspectList is empty or the
+     prospect list no longer exists), .ProspectListPage
+     ("/prospect-lists/<.ProspectList>"; empty when .ProspectListName
+     is), .Added and
      .AddedText (when it was added, RFC 3339 UTC to the second, and UTC to
      the minute; both empty when the added event has not arrived yet),
      .Rejected (bool, true when the owner rejected it in that campaign),
@@ -201,17 +209,17 @@
      Hooks: title "<.Candidate.ID> · candidates"; h1 with text .ID;
      p#headline.cluster holding, when .Name is set, .Name and a space, then
      span.status[data-status=<.Status>][data-kind=<kind>] (text .Status),
-     then, when .Assessment.Excluded, a space and span.badge[data-kind=warn]
+     then, when .Judgments.Excluded, a space and span.badge[data-kind=warn]
      (text "excluded"), then a space and span.muted holding "updated" and
      time[datetime=<.Updated>] (text .UpdatedText). When .Status is
      "merged": div#merged.alert.quiet[data-kind=info] holding strong
      "Merged" and p#merged-into (text "This candidate was merged into
-     <.MergedInto>. Its evidence, estimates and assessment are there now.",
+     <.MergedInto>. Its evidence, estimates and judgments are there now.",
      .MergedInto as a.candidate-link, href "/candidates/<.MergedInto>",
-     holding .MergedInto in a code element). When .Assessment.Excluded:
+     holding .MergedInto in a code element). When .Judgments.Excluded:
      div#excluded.alert.quiet[data-kind=warn] holding strong "Excluded" and
-     a p (text "The owner excluded this candidate, so no cohort shows it
-     unless the cohort shows excluded candidates. The ruling is below; the
+     a p (text "The owner excluded this candidate, so no prospect list
+     shows it unless the prospect list shows excluded candidates. The ruling is below; the
      include tool reverses it.", include in a code element).
      section#candidate-card with h2 "Candidate" and a p in its header (text
      "Display fields from its freshest evidence: the link not gone with
@@ -242,11 +250,12 @@
      code[data-cargo=<tag>] per tag, separated by spaces); then dt
      "Created" then dd#candidate-created and dt "Updated" then
      dd#candidate-updated (each a time[datetime] with the text form). Only
-     when .Status is "active": section#facts-card with h2 "Facts" and a p
-     in its header (text "What the enrichers found, from the newest result
-     of each kind. A fact is recomputed only when what it was computed
-     from changes, never because it is old, and a cohort reads it at once.
-     None of the facts removes a candidate."), then either, when .Facts is
+     when .Status is "active", from .Enrichments: section#enrichments-card
+     with h2 "Enrichments" and a p in its header (text "What the enrichers
+     found, from the newest result of each kind, apart from the judgments
+     below. A fact is recomputed only when what it was computed from
+     changes, never because it is old, and a prospect list reads it at
+     once. None of the facts removes a candidate."), then either, when .Facts is
      nil, div#no-facts.empty holding h3 "No facts yet" and a p (text "The
      enrich pass writes them after an ingest, and the enrich tool starts
      one.", enrich in a code element), or dl#facts.kv holding, in this
@@ -273,16 +282,15 @@
      span.muted "unknown") and dt "Written" then dd#facts-written (one
      div[data-written=<.Kind>] per kind holding .Kind in a code element, a
      space and time[datetime=<.At>] with .AtText, or when empty span.muted
-     "never"). Then, only when .Status is "active", section#brief-card
-     with h2 "Brief" and a p in its header (text "What the brief
+     "never"); then, in the same card, h3#brief-title "Brief" and a p (text "What the brief
      enricher's agent made of the business from the pages kept on it: a short
      summary, the categories it gave with its reason for each, and labels
      of its own. The newest brief stands, and when it gives categories
      they decide the candidate's categories in place of what the records
      say."), then either, when .Brief is
      nil, div#no-brief.empty holding h3 "No brief yet" and a p (text "The
-     brief enricher writes one when the enrich tool runs it on a cohort
-     or a candidate that has pages.", enrich in a code element), or,
+     brief enricher writes one when the enrich tool runs it on a prospect
+     list or a candidate that has pages.", enrich in a code element), or,
      only when .Brief.Categories is empty,
      div#brief-no-categories.alert.quiet[data-kind=warn] holding strong
      "No categories" and a p (text "This brief gave no categories, so
@@ -295,28 +303,30 @@
      dd#brief-labels (one code[data-label=<label>] per label, separated by
      spaces, or when empty span.muted "none") and dt "Written" then
      dd#brief-at (time[datetime=<.At>] with .AtText).
-     Then, only when .Status is "active",
-     section#assessment-card with h2 "Assessment" and a p in its header
+     Then, only when .Status is "active", from .Judgments:
+     section#judgments-card with h2 "Judgments" and a p in its header
      (text "Two judgments, whether it is a real business operating today
-     and how big it is, as the last judge calculated them from the facts
-     and the records. Nothing decays between judges."), then either, when
-     .Assessment is nil, div#no-assessment.empty holding h3 "Not judged
+     and how big it is, as the last judge calculated them from the
+     enrichments and the records, each with its evidence below. Nothing
+     decays between judges."), then either, when
+     .Judgments is nil, div#no-judgments.empty holding h3 "Not judged
      yet" and a p (text "An ingest stores its records and judges nothing.
-     The daily judge, a rebuild or an owner ruling judges it."), or
-     dl#assessment.kv holding, in this order, dt "Operating confidence"
-     then dd#assessment-operating (.OperatingConfidence, or when empty
+     The daily judge, a judge or ingest started by hand, or an owner
+     ruling judges it."), or
+     dl#judgments.kv holding, in this order, dt "Operating confidence"
+     then dd#judgments-operating (.OperatingConfidence, or when empty
      span.muted "no evidence"), dt "Revenue low" then
-     dd#assessment-revenue-low (.RevenueLow, or when empty span.muted "no
-     estimate"), dt "Revenue high" then dd#assessment-revenue-high
+     dd#judgments-revenue-low (.RevenueLow, or when empty span.muted "no
+     estimate"), dt "Revenue high" then dd#judgments-revenue-high
      (.RevenueHigh; when empty and .RevenueLow is set, span.muted "none: a
      floor only"; when both are empty, span.muted "no estimate"), dt
-     "Revenue confidence" then dd#assessment-revenue-confidence
+     "Revenue confidence" then dd#judgments-revenue-confidence
      (.RevenueConfidence, or when empty span.muted "no estimate"), dt
-     "Excluded" then dd#assessment-excluded ("yes" when .Excluded, else
-     "no"), dt "Rules" then dd#assessment-rules (the version) and dt
-     "Calculated" then dd#assessment-calculated (a time[datetime] with the
+     "Excluded" then dd#judgments-excluded ("yes" when .Excluded, else
+     "no"), dt "Rules" then dd#judgments-rules (the version) and dt
+     "Calculated" then dd#judgments-calculated (a time[datetime] with the
      text form). Then,
-     only when .Assessment is not nil, section#operating with h2
+     only when .Judgments is not nil, section#operating with h2
      "Operating evidence" and a p in its header (text "Each piece closes
      part of the gap to certainty: the operating confidence is 1 minus the
      product of 1 minus each weight. Each kind counts once, from the best
@@ -377,7 +387,7 @@
      one.", add_page in a code element), then either, when .Pages is
      empty, div#no-pages.empty holding h3 "No pages" and a p (text "The
      site text enricher keeps them when the enrich tool runs it over a
-     cohort or this candidate, and add_page keeps one by hand.", enrich and
+     prospect list or this candidate, and add_page keeps one by hand.", enrich and
      add_page each in a code element), or table#page-list whose th read
      URL, Title, Bytes, Fetched, By, with one tr[data-page=<.Number>] per
      page holding td.page-url (a.page-link, href .Path, text .URL),
@@ -385,18 +395,17 @@
      td.page-size.num (.Size), td.page-fetched (time[datetime=<.Fetched>]
      with .FetchedText) and td.page-by (.By, or .User in a code element
      when .By is empty). Then, only when .Status is "active",
-     section#enrichments with h2 "Enrichments" and a p in its header (text
+     section#enrichments with h2 "Enrichment results" and a p in its header (text
      "What each enricher found for this candidate, newest first. A kind is
      recomputed only when its inputs change; the newest result of each
      kind stands and gives the facts above."), then either, when
-     .Enrichments is empty, div#no-enrichments.empty holding h3 "No
+     .EnrichmentResults is empty, div#no-enrichments.empty holding h3 "No
      enrichments" and a p (text "A kind needs inputs: the website check
      an email on its own domain, drive minutes a ZIP, link facts a record
      not gone, site text a website, the brief the pages kept on it, the
      website search no website. The enrich pass runs every kind but site
      text, the brief and the website search after an ingest; the enrich
-     tool starts one, and runs site text, the brief and the website search
-     over a cohort or one candidate.", enrich in a code element), or
+     tool starts one, and runs site text, the brief and the website search over a prospect list or one candidate.", enrich in a code element), or
      table#enrichment-list whose th read Kind, Source, Found, Cost, When,
      with one tr[data-enrichment=<.Kind>] per result, carrying also
      [data-state=<.State>] when .State is set and [data-failed] when
@@ -435,38 +444,37 @@
      td.enrichment-at (time[datetime=<.At>] with
      .AtText). Then, for active and merged alike, section#rejects with h2 "Rejects" and a p in its header (text "Every
      reject and unreject naming this candidate, newest first, each with
-     its cohort, who made it, when and why. The latest on a cohort stands;
-     a deleted cohort's records stay, without its name."), then either,
+     its prospect list, who made it, when and why. The latest on a prospect list stands; a deleted prospect list's records stay, without its name."), then either,
      when .Rejects is empty, div#no-rejects.empty holding h3 "No rejects"
-     and a p (text "Rejects are made by hand with the reject tool, one
-     cohort at a time; unreject reverses one.", reject and unreject each
-     in a code element), or table#reject-list whose th read Kind, Cohort,
-     By, When, Why, with one tr[data-reject=<.Kind>][data-cohort=<.Cohort>]
+     and a p (text "Rejects are made by hand with the reject tool, one prospect list at a time; unreject reverses one.", reject and unreject each
+     in a code element), or table#reject-list whose th read Kind, Prospect list,
+     By, When, Why, with one tr[data-reject=<.Kind>][data-prospect-list=<.ProspectList>]
      per record holding td.reject-kind (.Kind in a code element),
-     td.reject-cohort (when .CohortName is set, a.cohort-link, href
-     "/cohorts/<.Cohort>", text .CohortName, then a space and .Cohort in a
-     code element; else .Cohort in a code element, a space and span.muted
+     td.reject-prospect-list (when .ProspectListName is set,
+     a.prospect-list-link, href "/prospect-lists/<.ProspectList>", text
+     .ProspectListName, then a space and .ProspectList in a code element;
+     else .ProspectList in a code element, a space and span.muted
      "deleted"), td.reject-by (.By, or .User in a code element when .By is
      empty), td.reject-at (time[datetime=<.At>] with .AtText) and
      td.reject-why (.Why). Then, for active and merged alike,
      section#campaigns-card with h2 "Campaigns" and a p in its header (text
      "Every campaign this business was put in, newest added first, as
-     campaigns reported it on the bus: the cohort it came from, when it
+     campaigns reported it on the bus: the prospect list it came from, when it
      was added, when something last reached it and whether the owner
      rejected it there. A merged candidate's campaigns move to the one it
      merged into."), then either, when .Campaigns is empty,
      div#no-campaigns.empty holding h3 "Not in any campaign" and a p (text
-     "campaigns adds a business to a campaign from a cohort or one at a
-     time by hand, and tells candidates on the bus; nothing has named this
+     "campaigns adds a business to a campaign from a prospect list or one at a time by hand, and tells candidates on the bus; nothing has named this
      one."), or table#campaign-list whose th read Campaign, From, Added,
      Delivered, Rejected, with one tr[data-campaign=<.Campaign>] per
      campaign, carrying also [data-rejected] when .Rejected, holding
      td.campaign-id (a.campaign-link, href .CampaignPage, holding .Campaign
      in a code element, when .CampaignPage is set, else the code element
-     alone), td.campaign-from[data-cohort=<.Cohort>] (when .Cohort is
-     empty, span.muted "added by hand"; when .CohortName is set,
-     a.cohort-link, href .CohortPage, text .CohortName, then a space and
-     .Cohort in a code element; else .Cohort in a code element, a space and
+     alone), td.campaign-from[data-prospect-list=<.ProspectList>] (when
+     .ProspectList is empty, span.muted "added by hand"; when
+     .ProspectListName is set, a.prospect-list-link, href
+     .ProspectListPage, text .ProspectListName, then a space and
+     .ProspectList in a code element; else .ProspectList in a code element, a space and
      span.muted "deleted"), td.campaign-added (time[datetime=<.Added>]
      with .AddedText, or when empty span.muted "unknown"),
      td.campaign-delivered (time[datetime=<.Delivered>] with
@@ -482,10 +490,10 @@
 <body>
 {{template "banner" .Banner}}
 <main>
-{{$a := .Assessment}}{{$f := .Facts}}{{$brief := .Brief}}{{$estimates := .Estimates}}{{$links := .Links}}{{$rulings := .Rulings}}{{$pages := .Pages}}{{$enrichments := .Enrichments}}{{$rejects := .Rejects}}{{$campaigns := .Campaigns}}{{with .Candidate}}<h1>{{.ID}}</h1>
-<p id="headline" class="cluster">{{if .Name}}{{.Name}} {{end}}<span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "merged"}}info{{else}}ok{{end}}">{{.Status}}</span>{{if $a}}{{if $a.Excluded}} <span class="badge" data-kind="warn">excluded</span>{{end}}{{end}} <span class="muted">updated <time datetime="{{.Updated}}">{{.UpdatedText}}</time></span></p>
-{{if eq .Status "merged"}}<div id="merged" class="alert quiet" data-kind="info"><strong>Merged</strong><p id="merged-into">This candidate was merged into <a class="candidate-link" href="/candidates/{{.MergedInto}}"><code>{{.MergedInto}}</code></a>. Its evidence, estimates and assessment are there now.</p></div>
-{{end}}{{if $a}}{{if $a.Excluded}}<div id="excluded" class="alert quiet" data-kind="warn"><strong>Excluded</strong><p>The owner excluded this candidate, so no cohort shows it unless the cohort shows excluded candidates. The ruling is below; the <code>include</code> tool reverses it.</p></div>
+{{$e := .Enrichments}}{{$j := .Judgments}}{{$estimates := .Estimates}}{{$links := .Links}}{{$rulings := .Rulings}}{{$pages := .Pages}}{{$results := .EnrichmentResults}}{{$rejects := .Rejects}}{{$campaigns := .Campaigns}}{{with .Candidate}}<h1>{{.ID}}</h1>
+<p id="headline" class="cluster">{{if .Name}}{{.Name}} {{end}}<span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "merged"}}info{{else}}ok{{end}}">{{.Status}}</span>{{if $j}}{{if $j.Excluded}} <span class="badge" data-kind="warn">excluded</span>{{end}}{{end}} <span class="muted">updated <time datetime="{{.Updated}}">{{.UpdatedText}}</time></span></p>
+{{if eq .Status "merged"}}<div id="merged" class="alert quiet" data-kind="info"><strong>Merged</strong><p id="merged-into">This candidate was merged into <a class="candidate-link" href="/candidates/{{.MergedInto}}"><code>{{.MergedInto}}</code></a>. Its evidence, estimates and judgments are there now.</p></div>
+{{end}}{{if $j}}{{if $j.Excluded}}<div id="excluded" class="alert quiet" data-kind="warn"><strong>Excluded</strong><p>The owner excluded this candidate, so no prospect list shows it unless the prospect list shows excluded candidates. The ruling is below; the <code>include</code> tool reverses it.</p></div>
 {{end}}{{end}}<section id="candidate-card" class="card" aria-labelledby="candidate-title">
 <header><h2 id="candidate-title">Candidate</h2><p>Display fields from its freshest evidence: the link not gone with the newest filing.</p></header>
 <dl id="candidate" class="kv">
@@ -509,9 +517,9 @@
 <dt>Updated</dt><dd id="candidate-updated"><time datetime="{{.Updated}}">{{.UpdatedText}}</time></dd>
 </dl>
 </section>
-{{if eq .Status "active"}}<section id="facts-card" class="card" aria-labelledby="facts-title">
-<header><h2 id="facts-title">Facts</h2><p>What the enrichers found, from the newest result of each kind. A fact is recomputed only when what it was computed from changes, never because it is old, and a cohort reads it at once. None of the facts removes a candidate.</p></header>
-{{with $f}}<dl id="facts" class="kv">
+{{if eq .Status "active"}}{{with $e}}<section id="enrichments-card" class="card" aria-labelledby="enrichments-card-title">
+<header><h2 id="enrichments-card-title">Enrichments</h2><p>What the enrichers found, from the newest result of each kind, apart from the judgments below. A fact is recomputed only when what it was computed from changes, never because it is old, and a prospect list reads it at once. None of the facts removes a candidate.</p></header>
+{{with .Facts}}<dl id="facts" class="kv">
 <dt>Categories</dt><dd id="facts-categories">{{range .Categories}}<div data-category="{{.Name}}"><code>{{.Name}}</code> <span class="muted">{{.Source}}</span></div>{{else}}<span class="muted">unknown</span>{{end}}</dd>
 <dt>Classified by</dt><dd id="facts-classified-by" data-classified-by="{{.ClassifiedBy}}">{{if .ClassifiedBy}}<code>{{.ClassifiedBy}}</code>{{else}}<span class="muted">none</span>{{end}}</dd>
 {{if .RecordsDiffer}}<dt>Records say</dt><dd id="facts-record-categories">{{range .RecordCategories}}<div data-record-category="{{.Name}}"><code>{{.Name}}</code> <span class="muted">{{.Source}}</span></div>{{else}}<span class="muted">unknown</span>{{end}}</dd>
@@ -527,10 +535,9 @@
 <h3 class="text-md">No facts yet</h3>
 <p>The enrich pass writes them after an ingest, and the <code>enrich</code> tool starts one.</p>
 </div>{{end}}
-</section>
-<section id="brief-card" class="card" aria-labelledby="brief-title">
-<header><h2 id="brief-title">Brief</h2><p>What the brief enricher's agent made of the business from the pages kept on it: a short summary, the categories it gave with its reason for each, and labels of its own. The newest brief stands, and when it gives categories they decide the candidate's categories in place of what the records say.</p></header>
-{{with $brief}}{{if not .Categories}}<div id="brief-no-categories" class="alert quiet" data-kind="warn"><strong>No categories</strong><p>This brief gave no categories, so what the records say stands. Its summary below says why.</p></div>
+<h3 id="brief-title" class="text-md">Brief</h3>
+<p>What the brief enricher's agent made of the business from the pages kept on it: a short summary, the categories it gave with its reason for each, and labels of its own. The newest brief stands, and when it gives categories they decide the candidate's categories in place of what the records say.</p>
+{{with .Brief}}{{if not .Categories}}<div id="brief-no-categories" class="alert quiet" data-kind="warn"><strong>No categories</strong><p>This brief gave no categories, so what the records say stands. Its summary below says why.</p></div>
 {{end}}<dl id="brief" class="kv">
 <dt>Summary</dt><dd id="brief-summary">{{if .Summary}}{{.Summary}}{{else}}<span class="muted">none</span>{{end}}</dd>
 <dt>Categories</dt><dd id="brief-categories">{{range .Categories}}<div data-brief-category="{{.Name}}"><code>{{.Name}}</code> <span class="muted">{{.Why}}</span></div>{{else}}<span class="muted">none</span>{{end}}</dd>
@@ -538,25 +545,25 @@
 <dt>Written</dt><dd id="brief-at"><time datetime="{{.At}}">{{.AtText}}</time></dd>
 </dl>{{else}}<div id="no-brief" class="empty">
 <h3 class="text-md">No brief yet</h3>
-<p>The brief enricher writes one when the <code>enrich</code> tool runs it on a cohort or a candidate that has pages.</p>
+<p>The brief enricher writes one when the <code>enrich</code> tool runs it on a prospect list or a candidate that has pages.</p>
 </div>{{end}}
 </section>
-<section id="assessment-card" class="card" aria-labelledby="assessment-title">
-<header><h2 id="assessment-title">Assessment</h2><p>Two judgments, whether it is a real business operating today and how big it is, as the last judge calculated them from the facts and the records. Nothing decays between judges.</p></header>
-{{with $a}}<dl id="assessment" class="kv">
-<dt>Operating confidence</dt><dd id="assessment-operating">{{if .OperatingConfidence}}{{.OperatingConfidence}}{{else}}<span class="muted">no evidence</span>{{end}}</dd>
-<dt>Revenue low</dt><dd id="assessment-revenue-low">{{if .RevenueLow}}{{.RevenueLow}}{{else}}<span class="muted">no estimate</span>{{end}}</dd>
-<dt>Revenue high</dt><dd id="assessment-revenue-high">{{if .RevenueHigh}}{{.RevenueHigh}}{{else if .RevenueLow}}<span class="muted">none: a floor only</span>{{else}}<span class="muted">no estimate</span>{{end}}</dd>
-<dt>Revenue confidence</dt><dd id="assessment-revenue-confidence">{{if .RevenueConfidence}}{{.RevenueConfidence}}{{else}}<span class="muted">no estimate</span>{{end}}</dd>
-<dt>Excluded</dt><dd id="assessment-excluded">{{if .Excluded}}yes{{else}}no{{end}}</dd>
-<dt>Rules</dt><dd id="assessment-rules">{{.Rules}}</dd>
-<dt>Calculated</dt><dd id="assessment-calculated"><time datetime="{{.Calculated}}">{{.CalculatedText}}</time></dd>
-</dl>{{else}}<div id="no-assessment" class="empty">
+{{end}}<section id="judgments-card" class="card" aria-labelledby="judgments-title">
+<header><h2 id="judgments-title">Judgments</h2><p>Two judgments, whether it is a real business operating today and how big it is, as the last judge calculated them from the enrichments and the records, each with its evidence below. Nothing decays between judges.</p></header>
+{{with $j}}<dl id="judgments" class="kv">
+<dt>Operating confidence</dt><dd id="judgments-operating">{{if .OperatingConfidence}}{{.OperatingConfidence}}{{else}}<span class="muted">no evidence</span>{{end}}</dd>
+<dt>Revenue low</dt><dd id="judgments-revenue-low">{{if .RevenueLow}}{{.RevenueLow}}{{else}}<span class="muted">no estimate</span>{{end}}</dd>
+<dt>Revenue high</dt><dd id="judgments-revenue-high">{{if .RevenueHigh}}{{.RevenueHigh}}{{else if .RevenueLow}}<span class="muted">none: a floor only</span>{{else}}<span class="muted">no estimate</span>{{end}}</dd>
+<dt>Revenue confidence</dt><dd id="judgments-revenue-confidence">{{if .RevenueConfidence}}{{.RevenueConfidence}}{{else}}<span class="muted">no estimate</span>{{end}}</dd>
+<dt>Excluded</dt><dd id="judgments-excluded">{{if .Excluded}}yes{{else}}no{{end}}</dd>
+<dt>Rules</dt><dd id="judgments-rules">{{.Rules}}</dd>
+<dt>Calculated</dt><dd id="judgments-calculated"><time datetime="{{.Calculated}}">{{.CalculatedText}}</time></dd>
+</dl>{{else}}<div id="no-judgments" class="empty">
 <h3 class="text-md">Not judged yet</h3>
-<p>An ingest stores its records and judges nothing. The daily judge, a rebuild or an owner ruling judges it.</p>
+<p>An ingest stores its records and judges nothing. The daily judge, a judge or ingest started by hand, or an owner ruling judges it.</p>
 </div>{{end}}
 </section>
-{{with $a}}<section id="operating" class="card flush" aria-labelledby="operating-title">
+{{with $j}}<section id="operating" class="card flush" aria-labelledby="operating-title">
 <header><div><h2 id="operating-title">Operating evidence</h2><p>Each piece closes part of the gap to certainty: the operating confidence is 1 minus the product of 1 minus each weight. Each kind counts once, from the best record that gives it.</p></div></header>
 {{if .OperatingEvidence}}<div class="table-scroll">
 <table id="evidence-list">
@@ -655,16 +662,16 @@
 </table>
 </div>{{else}}<div id="no-pages" class="empty">
 <h3 class="text-md">No pages</h3>
-<p>The site text enricher keeps them when the <code>enrich</code> tool runs it over a cohort or this candidate, and <code>add_page</code> keeps one by hand.</p>
+<p>The site text enricher keeps them when the <code>enrich</code> tool runs it over a prospect list or this candidate, and <code>add_page</code> keeps one by hand.</p>
 </div>{{end}}
 </section>
 <section id="enrichments" class="card flush" aria-labelledby="enrichments-title">
-<header><div><h2 id="enrichments-title">Enrichments</h2><p>What each enricher found for this candidate, newest first. A kind is recomputed only when its inputs change; the newest result of each kind stands and gives the facts above.</p></div></header>
-{{if $enrichments}}<div class="table-scroll">
+<header><div><h2 id="enrichments-title">Enrichment results</h2><p>What each enricher found for this candidate, newest first. A kind is recomputed only when its inputs change; the newest result of each kind stands and gives the facts above.</p></div></header>
+{{if $results}}<div class="table-scroll">
 <table id="enrichment-list">
 <thead><tr><th>Kind</th><th>Source</th><th>Found</th><th class="num">Cost</th><th>When</th></tr></thead>
 <tbody>
-{{range $enrichments}}<tr data-enrichment="{{.Kind}}"{{if .State}} data-state="{{.State}}"{{end}}{{if .Failed}} data-failed{{end}}>
+{{range $results}}<tr data-enrichment="{{.Kind}}"{{if .State}} data-state="{{.State}}"{{end}}{{if .Failed}} data-failed{{end}}>
 <td class="enrichment-kind"><code>{{.Kind}}</code>{{if .Failed}} <span class="badge" data-kind="err">failed</span>{{end}}</td>
 <td class="enrichment-source"><code>{{.Source}}</code></td>
 <td class="enrichment-found">{{if eq .Kind "website_check"}}{{.State}}{{if .URL}} <a class="website-link" href="{{.URL}}">{{.URL}}</a>{{end}}{{if .Title}}<div data-website-title>{{.Title}}</div>{{end}}<div class="muted">{{if .StatusCode}}status {{.StatusCode}} · {{end}}{{.Size}} bytes</div>{{if .Error}}<div data-error>{{.Error}}</div>{{end}}{{else if eq .Kind "website_search"}}<dl class="kv">{{with .Answer}}<dt>Named</dt><dd data-search-url>{{if .URL}}<a class="website-link" href="{{.URL}}">{{.URL}}</a>{{else}}<span class="muted">no site</span>{{end}}</dd><dt>Why</dt><dd data-search-why>{{if .Why}}{{.Why}}{{else}}<span class="muted">none</span>{{end}}</dd>{{end}}{{with .Confirmation}}<dt>Loaded</dt><dd data-confirmation="{{.State}}">{{if eq .State "none"}}<span class="badge" data-kind="warn">did not load</span>{{else}}{{.State}}{{if .URL}} <a class="website-link" href="{{.URL}}">{{.URL}}</a>{{end}}{{end}}{{if .Title}}<div data-website-title>{{.Title}}</div>{{end}}<div class="muted">{{if .StatusCode}}status {{.StatusCode}} · {{end}}{{.Size}} bytes</div>{{if .Error}}<div data-error>{{.Error}}</div>{{end}}</dd>{{end}}{{with .Answer}}<dt>Set aside</dt><dd data-search-rejected>{{range .Rejected}}<div data-rejected><a class="website-link" href="{{.URL}}">{{.URL}}</a> <span class="muted">{{.Why}}</span></div>{{else}}<span class="muted">none</span>{{end}}</dd>{{end}}{{with .Run}}<dt>Run</dt><dd data-search-run><code>{{.ID}}</code> <code>{{.Status}}</code>{{if .ExitCode}} <span class="muted">exit {{.ExitCode}}</span>{{end}}</dd>{{end}}</dl>{{else}}<dl class="kv">{{range .Found}}<dt data-found="{{.Key}}"><code>{{.Key}}</code></dt><dd><code>{{.Value}}</code></dd>{{end}}</dl>{{end}}</td>
@@ -675,18 +682,18 @@
 </table>
 </div>{{else}}<div id="no-enrichments" class="empty">
 <h3 class="text-md">No enrichments</h3>
-<p>A kind needs inputs: the website check an email on its own domain, drive minutes a ZIP, link facts a record not gone, site text a website, the brief the pages kept on it, the website search no website. The enrich pass runs every kind but site text, the brief and the website search after an ingest; the <code>enrich</code> tool starts one, and runs site text, the brief and the website search over a cohort or one candidate.</p>
+<p>A kind needs inputs: the website check an email on its own domain, drive minutes a ZIP, link facts a record not gone, site text a website, the brief the pages kept on it, the website search no website. The enrich pass runs every kind but site text, the brief and the website search after an ingest; the <code>enrich</code> tool starts one, and runs site text, the brief and the website search over a prospect list or one candidate.</p>
 </div>{{end}}
 </section>
 {{end}}<section id="rejects" class="card flush" aria-labelledby="rejects-title">
-<header><div><h2 id="rejects-title">Rejects</h2><p>Every reject and unreject naming this candidate, newest first, each with its cohort, who made it, when and why. The latest on a cohort stands; a deleted cohort's records stay, without its name.</p></div></header>
+<header><div><h2 id="rejects-title">Rejects</h2><p>Every reject and unreject naming this candidate, newest first, each with its prospect list, who made it, when and why. The latest on a prospect list stands; a deleted prospect list's records stay, without its name.</p></div></header>
 {{if $rejects}}<div class="table-scroll">
 <table id="reject-list">
-<thead><tr><th>Kind</th><th>Cohort</th><th>By</th><th>When</th><th>Why</th></tr></thead>
+<thead><tr><th>Kind</th><th>Prospect list</th><th>By</th><th>When</th><th>Why</th></tr></thead>
 <tbody>
-{{range $rejects}}<tr data-reject="{{.Kind}}" data-cohort="{{.Cohort}}">
+{{range $rejects}}<tr data-reject="{{.Kind}}" data-prospect-list="{{.ProspectList}}">
 <td class="reject-kind"><code>{{.Kind}}</code></td>
-<td class="reject-cohort">{{if .CohortName}}<a class="cohort-link" href="/cohorts/{{.Cohort}}">{{.CohortName}}</a> <code>{{.Cohort}}</code>{{else}}<code>{{.Cohort}}</code> <span class="muted">deleted</span>{{end}}</td>
+<td class="reject-prospect-list">{{if .ProspectListName}}<a class="prospect-list-link" href="/prospect-lists/{{.ProspectList}}">{{.ProspectListName}}</a> <code>{{.ProspectList}}</code>{{else}}<code>{{.ProspectList}}</code> <span class="muted">deleted</span>{{end}}</td>
 <td class="reject-by">{{if .By}}{{.By}}{{else}}<code>{{.User}}</code>{{end}}</td>
 <td class="reject-at"><time datetime="{{.At}}">{{.AtText}}</time></td>
 <td class="reject-why">{{.Why}}</td>
@@ -695,18 +702,18 @@
 </table>
 </div>{{else}}<div id="no-rejects" class="empty">
 <h3 class="text-md">No rejects</h3>
-<p>Rejects are made by hand with the <code>reject</code> tool, one cohort at a time; <code>unreject</code> reverses one.</p>
+<p>Rejects are made by hand with the <code>reject</code> tool, one prospect list at a time; <code>unreject</code> reverses one.</p>
 </div>{{end}}
 </section>
 <section id="campaigns-card" class="card flush" aria-labelledby="campaigns-title">
-<header><div><h2 id="campaigns-title">Campaigns</h2><p>Every campaign this business was put in, newest added first, as campaigns reported it on the bus: the cohort it came from, when it was added, when something last reached it and whether the owner rejected it there. A merged candidate's campaigns move to the one it merged into.</p></div></header>
+<header><div><h2 id="campaigns-title">Campaigns</h2><p>Every campaign this business was put in, newest added first, as campaigns reported it on the bus: the prospect list it came from, when it was added, when something last reached it and whether the owner rejected it there. A merged candidate's campaigns move to the one it merged into.</p></div></header>
 {{if $campaigns}}<div class="table-scroll">
 <table id="campaign-list">
 <thead><tr><th>Campaign</th><th>From</th><th>Added</th><th>Delivered</th><th>Rejected</th></tr></thead>
 <tbody>
 {{range $campaigns}}<tr data-campaign="{{.Campaign}}"{{if .Rejected}} data-rejected{{end}}>
 <td class="campaign-id">{{if .CampaignPage}}<a class="campaign-link" href="{{.CampaignPage}}"><code>{{.Campaign}}</code></a>{{else}}<code>{{.Campaign}}</code>{{end}}</td>
-<td class="campaign-from" data-cohort="{{.Cohort}}">{{if not .Cohort}}<span class="muted">added by hand</span>{{else if .CohortName}}<a class="cohort-link" href="{{.CohortPage}}">{{.CohortName}}</a> <code>{{.Cohort}}</code>{{else}}<code>{{.Cohort}}</code> <span class="muted">deleted</span>{{end}}</td>
+<td class="campaign-from" data-prospect-list="{{.ProspectList}}">{{if not .ProspectList}}<span class="muted">added by hand</span>{{else if .ProspectListName}}<a class="prospect-list-link" href="{{.ProspectListPage}}">{{.ProspectListName}}</a> <code>{{.ProspectList}}</code>{{else}}<code>{{.ProspectList}}</code> <span class="muted">deleted</span>{{end}}</td>
 <td class="campaign-added">{{if .Added}}<time datetime="{{.Added}}">{{.AddedText}}</time>{{else}}<span class="muted">unknown</span>{{end}}</td>
 <td class="campaign-delivered">{{if .Delivered}}<time datetime="{{.Delivered}}">{{.DeliveredText}}</time>{{else}}<span class="muted">nothing delivered</span>{{end}}</td>
 <td class="campaign-rejected">{{if .Rejected}}<span class="badge" data-kind="warn">rejected</span>{{if .RejectedAt}} <time datetime="{{.RejectedAt}}">{{.RejectedAtText}}</time>{{end}}{{if .Reason}}<div data-reason>{{.Reason}}</div>{{end}}{{end}}</td>
@@ -715,7 +722,7 @@
 </table>
 </div>{{else}}<div id="no-campaigns" class="empty">
 <h3 class="text-md">Not in any campaign</h3>
-<p>campaigns adds a business to a campaign from a cohort or one at a time by hand, and tells candidates on the bus; nothing has named this one.</p>
+<p>campaigns adds a business to a campaign from a prospect list or one at a time by hand, and tells candidates on the bus; nothing has named this one.</p>
 </div>{{end}}
 </section>
 {{end}}</main>
