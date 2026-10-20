@@ -1,0 +1,227 @@
+{{/* One campaign at GET /campaigns/<id>: its definition (name,
+     description, channels, destination, who created it and when), how
+     many of its members have opened anything, its material, and one
+     window (paging.DefaultLimit, 25) of its members, each with its pieces
+     and their engagement. Shown to any signed-in user; a guest is sent to
+     sign in; an unknown or malformed id, or a deleted campaign's, is the
+     not-found page, as is a page value the page cannot decode. Every
+     signed-in user sees every campaign: they are the space's, not a
+     user's. Never shows an address, phone number or email of a business,
+     nor a piece's token or link. Read-only: no form but the banner's sign
+     out; campaigns are changed with the tools. One level below the root:
+     .Banner's .Trail is the one level <.Campaign.ID> at
+     /campaigns/<.Campaign.ID>. Data: .Banner (a page.Banner, for banner
+     and footer); .Campaign, with .ID (its camp_ id, "camp_" and 16 hex),
+     .Name (its name, as given), .Description (its description, as given;
+     empty when none), .Channels (the channels it uses, a slice of
+     strings, "mail", "email" or both, in that order), .Destination (the
+     URL its links forward a visitor to, as given), .CreatedBy (the email
+     of who created it; empty when none), .CreatedUser (their user id),
+     .Created and .CreatedText (RFC 3339 UTC to the second, and the same
+     as shown, "2006-01-02 15:04:05 UTC"), .Members (int, how many members
+     it holds, rejected ones included), .Delivered (int, how many of its
+     pieces are delivered) and .Opened (int, how many of its members have
+     had any piece's link opened at least once); .Material, the material
+     it references, in the order added, each with .Label (its label, as
+     given), .Path (the artifact's path, no leading slash) and
+     .ArtifactPage (the artifact's page on artifacts, the artifacts URL
+     then "/" and the artifact id the reference holds; empty when
+     artifacts is not in the services file); .Members, one window
+     (paging.DefaultLimit, 25) of its members, in the order added, then by
+     candidate id, each with .Candidate (its cand_ id, "cand_" and 16
+     hex, as it was added), .CandidatePage (the candidate's page on
+     candidates, the candidates URL then "/candidates/" and .Candidate;
+     empty when candidates is not in the services file), .Name (the
+     business's display name as candidates answers it when the page is
+     read; empty when candidates does not answer), .Cohort (the coh_ id
+     of the cohort it was added from; empty when it was added by hand),
+     .CohortPage (the cohort's page on candidates, the candidates URL then
+     "/cohorts/" and .Cohort; empty when .Cohort is empty or candidates is
+     not in the services file), .Added and .AddedText (when it was added,
+     RFC 3339 UTC to the second, and UTC to the minute, "2026-10-05
+     09:00"), .Opened (bool, true when any of its pieces' links has been
+     opened), .Rejected (bool), .RejectedBy (the email of who rejected it;
+     empty when none), .RejectedUser (their user id), .RejectedAt and
+     .RejectedAtText (when, in .Added's two forms) and .Why (the sentence
+     given), the last five empty unless .Rejected, and .Pieces, one entry
+     per channel of .Campaign.Channels, in that order, each with .Channel
+     ("mail" or "email"), .State ("planned", "delivered" or "dropped", as
+     stored; empty when the member got no piece for the channel because
+     candidates held no postal address, for mail, or no email address,
+     for email, when it was added), .Delivered and .DeliveredText (when
+     it was marked delivered, in .Added's two forms), .DeliveredBy (the
+     email of who marked it; empty when none), .DeliveredUser (their user
+     id) and .How ("hand" or "system", as stored), these five empty
+     unless .State is "delivered", .Opens (int, how many times its link
+     has been opened, every visit counted) and .First and .FirstText and
+     .Last and .LastText (its first and last visit, in .Added's two forms;
+     all four empty when .Opens is 0); .Page (string, this window's own
+     page token, the ?page= the request carried; empty on the first
+     window), .Prev (string, the page token for the window before this
+     one, carried in the same ?page= parameter; empty on the first window)
+     and .Next (string, the page token the members list carries for the
+     members after these; empty when none remain); .Members is the window
+     .Page names. Counts are shown as the plain integer. Names, labels,
+     paths and the description are shown as given; channel names and
+     piece states as stored; the state's kind is chosen here: "planned"
+     info, "delivered" ok, "dropped" none.
+     Hooks: title "<.Campaign.Name> · campaigns"; h1 with text .Name;
+     p#headline.cluster holding span#opened.badge[data-kind=info] (text
+     "<.Opened> of <.Members> members opened"), a space and span.muted
+     holding "created" and time[datetime=<.Created>] (text .CreatedText).
+     section#campaign-card with h2 "Campaign" and a p in its header (text
+     "The permanent record of who was contacted, with what, when and by
+     which channel. Each piece's link records the visit and sends the
+     visitor on to the destination. Agents change the campaign with the
+     tools."), then dl#campaign.kv holding, in this order, dt "ID" then
+     dd#campaign-id (.ID in a code element), dt "Name" then
+     dd#campaign-name (.Name), dt "Description" then
+     dd#campaign-description (.Description, or span.muted "none" when
+     empty), dt "Channels" then dd#campaign-channels (one
+     code[data-channel=<channel>] per channel, separated by spaces), dt
+     "Destination" then dd#campaign-destination (a.destination-link, href
+     .Destination, text .Destination), dt "Created by" then
+     dd#campaign-created-by (.CreatedBy, or .CreatedUser in a code element
+     when .CreatedBy is empty), dt "Created" then dd#campaign-created (a
+     time[datetime] with the text form), dt "Members" then
+     dd#campaign-members (.Members), dt "Delivered" then
+     dd#campaign-delivered ("<.Delivered> pieces") and dt "Opened" then
+     dd#campaign-opened ("<.Opened> members"). section#material with h2
+     "Material" and a p in its header (text "What the campaign sends,
+     kept in artifacts; the campaign holds a reference and a label for
+     each. Removing a reference leaves the artifact where it is."), then
+     either, when .Material is empty, div#no-material.empty holding h3
+     "No material" and a p (text "Material shows here once an agent adds a
+     reference to an artifact, such as the letter or the email template,
+     with the tools."), or table#material-list whose th read Label, Path,
+     with one tr[data-path=<.Path>] per reference holding td.material-label
+     (.Label) and td.material-path (a.artifact-link, href .ArtifactPage,
+     .Path in a code element, when .ArtifactPage is set; else .Path in a
+     code element). section#members with h2 "Members" and a p in its
+     header (text "Every business in the campaign, in the order it was
+     added, with one piece per channel the campaign uses. A business with
+     no postal address gets no mail piece, and one with no email address
+     no email piece. A rejected member gets nothing further; what was
+     delivered stays delivered and its links keep counting visits. Names
+     are candidates' as this page was read."), then either, when .Members
+     is empty, div#no-members.empty holding h3 "No members yet" and a p
+     (text "Members show here once an agent adds a cohort's members, or
+     one business at a time, with the tools."), or table#member-list whose
+     th read Candidate, Business, From, Added, Opened, then one th per
+     channel of .Campaign.Channels ("Mail" for mail, "Email" for email),
+     then Rejected, with one tr[data-candidate=<.Candidate>] per member,
+     carrying also [data-rejected] when .Rejected, holding
+     td.member-candidate (a.candidate-link, href .CandidatePage,
+     .Candidate in a code element, when .CandidatePage is set; else
+     .Candidate in a code element), td.member-name (.Name, or span.muted
+     "unknown" when empty, followed, when .Rejected, by a space and
+     span.badge[data-kind=warn] (text "rejected")), td.member-from
+     (a.cohort-link, href .CohortPage, .Cohort in a code element, when
+     .CohortPage is set; else .Cohort in a code element when .Cohort is
+     set; else span.muted "added by hand"), td.member-added
+     (time[datetime=<.Added>] with .AddedText),
+     td.member-opened[data-opened=<true or false>] ("yes" when .Opened,
+     else span.muted "no"), then one td.member-piece[data-channel=<.Channel>]
+     per entry of .Pieces, carrying also [data-state=<.State>] when .State
+     is set, holding, when .State is empty, span.muted "no postal address"
+     for mail or "no email address" for email; otherwise
+     span.status[data-status=<.State>] (with [data-kind=<kind>] when the
+     state has one; text .State), then, when .State is "delivered",
+     div.piece-delivered holding time[datetime=<.Delivered>] (text
+     .DeliveredText), " by " and .DeliveredBy (or .DeliveredUser in a code
+     element when .DeliveredBy is empty), ", " and
+     span.muted[data-how=<.How>] ("by hand" for hand, "by the system" for
+     system), then div.piece-opened[data-opens=<.Opens>] holding, when
+     .Opens is 1, "opened once, " and time[datetime=<.First>] (text
+     .FirstText); when .Opens is more, "opened <.Opens> times, first ",
+     time[datetime=<.First>] (text .FirstText), ", last " and
+     time[datetime=<.Last>] (text .LastText); when 0, span.muted "not
+     opened"; then td.member-rejected holding, only when .Rejected, a div
+     holding time[datetime=<.RejectedAt>] (text .RejectedAtText), " by "
+     and .RejectedBy (or .RejectedUser in a code element when .RejectedBy
+     is empty), then div.reject-why (.Why); then, after the card
+     (section#members), nav.paging#paging (aria-label "Pages") whose
+     children are, in order, First, Prev, Next and Last: First (on the
+     first window, .Page empty, a span with aria-current="page" and text
+     "First"; otherwise a link with text "First" to
+     /campaigns/<.Campaign.ID>), then, only when .Prev is not empty, Prev
+     (a link with text "Prev" to /campaigns/<.Campaign.ID>?page=<.Prev>),
+     then, only when .Next is not empty, Next (a link with text "Next" to
+     /campaigns/<.Campaign.ID>?page=<.Next>), then, always, Last (while
+     .Next is not empty, a link with text "Last" to
+     /campaigns/<.Campaign.ID>?page=last, naming the last window; when
+     .Next is empty, a span with aria-current="page" and text "Last", so a
+     single window shows First and Last both as the current item); the
+     nav shows when .Members is not empty or .Page is not empty; on the
+     first window with no members there is no nav. No script but appkit's
+     /_appkit/feedback.js. */}}
+{{define "campaign"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>{{.Campaign.Name}} · campaigns</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+{{$material := .Material}}{{$members := .Members}}{{$page := .Page}}{{$prev := .Prev}}{{$next := .Next}}{{with .Campaign}}{{$id := .ID}}{{$channels := .Channels}}<h1>{{.Name}}</h1>
+<p id="headline" class="cluster"><span id="opened" class="badge" data-kind="info">{{.Opened}} of {{.Members}} members opened</span> <span class="muted">created <time datetime="{{.Created}}">{{.CreatedText}}</time></span></p>
+<section id="campaign-card" class="card" aria-labelledby="campaign-title">
+<header><h2 id="campaign-title">Campaign</h2><p>The permanent record of who was contacted, with what, when and by which channel. Each piece's link records the visit and sends the visitor on to the destination. Agents change the campaign with the tools.</p></header>
+<dl id="campaign" class="kv">
+<dt>ID</dt><dd id="campaign-id"><code>{{.ID}}</code></dd>
+<dt>Name</dt><dd id="campaign-name">{{.Name}}</dd>
+<dt>Description</dt><dd id="campaign-description">{{if .Description}}{{.Description}}{{else}}<span class="muted">none</span>{{end}}</dd>
+<dt>Channels</dt><dd id="campaign-channels">{{range $i, $c := .Channels}}{{if $i}} {{end}}<code data-channel="{{$c}}">{{$c}}</code>{{end}}</dd>
+<dt>Destination</dt><dd id="campaign-destination"><a class="destination-link" href="{{.Destination}}">{{.Destination}}</a></dd>
+<dt>Created by</dt><dd id="campaign-created-by">{{if .CreatedBy}}{{.CreatedBy}}{{else}}<code>{{.CreatedUser}}</code>{{end}}</dd>
+<dt>Created</dt><dd id="campaign-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></dd>
+<dt>Members</dt><dd id="campaign-members">{{.Members}}</dd>
+<dt>Delivered</dt><dd id="campaign-delivered">{{.Delivered}} pieces</dd>
+<dt>Opened</dt><dd id="campaign-opened">{{.Opened}} members</dd>
+</dl>
+</section>
+<section id="material" class="card flush" aria-labelledby="material-title">
+<header><div><h2 id="material-title">Material</h2><p>What the campaign sends, kept in artifacts; the campaign holds a reference and a label for each. Removing a reference leaves the artifact where it is.</p></div></header>
+{{if $material}}<div class="table-scroll">
+<table id="material-list">
+<thead><tr><th>Label</th><th>Path</th></tr></thead>
+<tbody>
+{{range $material}}<tr data-path="{{.Path}}">
+<td class="material-label">{{.Label}}</td>
+<td class="material-path">{{if .ArtifactPage}}<a class="artifact-link" href="{{.ArtifactPage}}"><code>{{.Path}}</code></a>{{else}}<code>{{.Path}}</code>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}<div id="no-material" class="empty">
+<h3 class="text-md">No material</h3>
+<p>Material shows here once an agent adds a reference to an artifact, such as the letter or the email template, with the tools.</p>
+</div>{{end}}
+</section>
+<section id="members" class="card flush" aria-labelledby="members-title">
+<header><div><h2 id="members-title">Members</h2><p>Every business in the campaign, in the order it was added, with one piece per channel the campaign uses. A business with no postal address gets no mail piece, and one with no email address no email piece. A rejected member gets nothing further; what was delivered stays delivered and its links keep counting visits. Names are candidates' as this page was read.</p></div></header>
+{{if $members}}<div class="table-scroll">
+<table id="member-list">
+<thead><tr><th>Candidate</th><th>Business</th><th>From</th><th>Added</th><th>Opened</th>{{range $channels}}<th>{{if eq . "mail"}}Mail{{else}}Email{{end}}</th>{{end}}<th>Rejected</th></tr></thead>
+<tbody>
+{{range $members}}<tr data-candidate="{{.Candidate}}"{{if .Rejected}} data-rejected{{end}}>
+<td class="member-candidate">{{if .CandidatePage}}<a class="candidate-link" href="{{.CandidatePage}}"><code>{{.Candidate}}</code></a>{{else}}<code>{{.Candidate}}</code>{{end}}</td>
+<td class="member-name">{{if .Name}}{{.Name}}{{else}}<span class="muted">unknown</span>{{end}}{{if .Rejected}} <span class="badge" data-kind="warn">rejected</span>{{end}}</td>
+<td class="member-from">{{if .CohortPage}}<a class="cohort-link" href="{{.CohortPage}}"><code>{{.Cohort}}</code></a>{{else if .Cohort}}<code>{{.Cohort}}</code>{{else}}<span class="muted">added by hand</span>{{end}}</td>
+<td class="member-added"><time datetime="{{.Added}}">{{.AddedText}}</time></td>
+<td class="member-opened" data-opened="{{.Opened}}">{{if .Opened}}yes{{else}}<span class="muted">no</span>{{end}}</td>
+{{range .Pieces}}<td class="member-piece" data-channel="{{.Channel}}"{{if .State}} data-state="{{.State}}"{{end}}>{{if not .State}}<span class="muted">{{if eq .Channel "mail"}}no postal address{{else}}no email address{{end}}</span>{{else}}<span class="status" data-status="{{.State}}"{{if eq .State "planned"}} data-kind="info"{{else if eq .State "delivered"}} data-kind="ok"{{end}}>{{.State}}</span>{{if eq .State "delivered"}}<div class="piece-delivered"><time datetime="{{.Delivered}}">{{.DeliveredText}}</time> by {{if .DeliveredBy}}{{.DeliveredBy}}{{else}}<code>{{.DeliveredUser}}</code>{{end}}, <span class="muted" data-how="{{.How}}">{{if eq .How "system"}}by the system{{else}}by hand{{end}}</span></div>{{end}}<div class="piece-opened" data-opens="{{.Opens}}">{{if eq .Opens 1}}opened once, <time datetime="{{.First}}">{{.FirstText}}</time>{{else if .Opens}}opened {{.Opens}} times, first <time datetime="{{.First}}">{{.FirstText}}</time>, last <time datetime="{{.Last}}">{{.LastText}}</time>{{else}}<span class="muted">not opened</span>{{end}}</div>{{end}}</td>
+{{end}}<td class="member-rejected">{{if .Rejected}}<div><time datetime="{{.RejectedAt}}">{{.RejectedAtText}}</time> by {{if .RejectedBy}}{{.RejectedBy}}{{else}}<code>{{.RejectedUser}}</code>{{end}}</div><div class="reject-why">{{.Why}}</div>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}<div id="no-members" class="empty">
+<h3 class="text-md">No members yet</h3>
+<p>Members show here once an agent adds a cohort's members, or one business at a time, with the tools.</p>
+</div>{{end}}
+</section>
+{{if or $members $page}}<nav class="paging" id="paging" aria-label="Pages">{{if $page}}<a href="/campaigns/{{$id}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if $prev}}<a href="/campaigns/{{$id}}?page={{$prev}}">Prev</a>{{end}}{{if $next}}<a href="/campaigns/{{$id}}?page={{$next}}">Next</a>{{end}}{{if $next}}<a href="/campaigns/{{$id}}?page=last">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
+{{end}}{{end}}</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

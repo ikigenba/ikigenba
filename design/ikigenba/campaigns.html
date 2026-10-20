@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>campaigns</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+</head>
+<body>
+<header>
+<a class="mark" href="home.html"><img src="favicon.svg" alt="">Ikigenba</a>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li class="root"><a href="campaigns.html"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a3 3 0 0 1 0 6"/><path d="M10 8v11a1 1 0 0 1 -1 1h-1a1 1 0 0 1 -1 -1v-5"/><path d="M12 8l4.524 -3.77a.9 .9 0 0 1 1.476 .692v12.156a.9 .9 0 0 1 -1.476 .692l-4.524 -3.77h-8a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1h8"/></svg>campaigns</a><button class="menu" type="button" popovertarget="pages" aria-label="campaigns pages" title="campaigns pages"><svg class="chev" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6l6 -6"/></svg></button></li></ol></nav>
+<a class="profile" href="https://auth.acme.ikigenba.com/" aria-label="Profile" title="ada@acme.dev"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855"/></svg></a>
+<form class="inline" method="post" action="https://auth.acme.ikigenba.com/logout"><button class="signout" type="submit" aria-label="Sign out" title="Sign out"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg></button></form>
+<nav class="pages" id="pages" popover aria-label="campaigns pages"><ul><li><a href="campaigns.html" aria-current="page"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a3 3 0 0 1 0 6"/><path d="M10 8v11a1 1 0 0 1 -1 1h-1a1 1 0 0 1 -1 -1v-5"/><path d="M12 8l4.524 -3.77a.9 .9 0 0 1 1.476 .692v12.156a.9 .9 0 0 1 -1.476 .692l-4.524 -3.77h-8a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1h8"/></svg>campaigns<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5l10 -10"/></svg></a></li><li><a href="/tools">Tools</a></li><li><a href="/about">About</a></li></ul></nav>
+</header>
+<main>
+  <h1>campaigns</h1>
+  <p id="summary" class="lede">The permanent record of who was contacted, with what, when and by which channel, and whether they looked. Each piece carries its own link, and every visit to it is kept against the business it was sent to.</p>
+
+  <section id="campaigns" class="card flush" aria-labelledby="campaigns-title">
+    <header>
+      <div>
+        <h2 id="campaigns-title">Campaigns</h2>
+        <p>The space's campaigns, newest first. Agents make and change campaigns, add their members and mark what was delivered with the tools; nothing here sends email or mail.</p>
+      </div>
+    </header>
+    <div class="table-scroll">
+      <table id="campaign-list">
+        <thead><tr><th>Name</th><th>Campaign</th><th>Channels</th><th>Created</th><th class="num">Members</th><th class="num">Delivered</th><th class="num">Opened</th></tr></thead>
+        <tbody>
+          <tr data-campaign="camp_7d3a91e04b6c2f58">
+            <td class="campaign-name"><a class="campaign-link" href="campaigns-campaign.html">Fall letters, trucking within two hours</a></td>
+            <td class="campaign-id"><code>camp_7d3a91e04b6c2f58</code></td>
+            <td class="campaign-channels"><code data-channel="mail">mail</code> <code data-channel="email">email</code></td>
+            <td class="campaign-created"><time datetime="2026-10-20T09:14:36Z">2026-10-20 09:14</time></td>
+            <td class="campaign-members num">30</td>
+            <td class="campaign-delivered num">41</td>
+            <td class="campaign-opened num">6</td>
+          </tr>
+          <tr data-campaign="camp_2c8f5e10a9d47b36">
+            <td class="campaign-name"><a class="campaign-link" href="campaigns-campaign.html">Construction, email only</a></td>
+            <td class="campaign-id"><code>camp_2c8f5e10a9d47b36</code></td>
+            <td class="campaign-channels"><code data-channel="email">email</code></td>
+            <td class="campaign-created"><time datetime="2026-10-18T15:02:11Z">2026-10-18 15:02</time></td>
+            <td class="campaign-members num">12</td>
+            <td class="campaign-delivered num">0</td>
+            <td class="campaign-opened num">0</td>
+          </tr>
+          <tr data-campaign="camp_e4b06d27c1f9853a">
+            <td class="campaign-name"><a class="campaign-link" href="campaigns-campaign.html">Pilot: five carriers by letter</a></td>
+            <td class="campaign-id"><code>camp_e4b06d27c1f9853a</code></td>
+            <td class="campaign-channels"><code data-channel="mail">mail</code></td>
+            <td class="campaign-created"><time datetime="2026-10-06T11:30:05Z">2026-10-06 11:30</time></td>
+            <td class="campaign-members num">5</td>
+            <td class="campaign-delivered num">5</td>
+            <td class="campaign-opened num">2</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <nav class="paging" id="paging" aria-label="Pages"><span aria-current="page">First</span><span aria-current="page">Last</span></nav>
+
+  <p><a id="about-link" href="/about">About campaigns</a></p>
+
+  <section>
+    <div class="section-head">
+      <div>
+        <h2>States</h2>
+        <p>The other shapes this page takes.</p>
+      </div>
+    </div>
+    <div class="stack">
+      <h3 class="text-md">No campaigns</h3>
+      <div class="card flush">
+        <div id="no-campaigns" class="empty">
+          <h3 class="text-md">No campaigns yet</h3>
+          <p>A campaign shows here once an agent creates one with the tools.</p>
+        </div>
+      </div>
+
+      <h3 class="text-md">A later window</h3>
+      <nav class="paging" aria-label="Pages"><a href="campaigns.html">First</a><a href="campaigns.html?page=Xq3vB0mK7dRt2LwPa9Ye">Prev</a><span aria-current="page">Last</span></nav>
+    </div>
+  </section>
+</main>
+<footer>release-17 <span>(8c3d0f2)</span></footer>
+<script src="feedback.js"></script>
+<script src="lab.js"></script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+{{/* The landing page at GET /: what the service is, then one window
+     (paging.DefaultLimit, 25) of the campaigns, newest first. The root of
+     the hierarchy: .Banner's .Trail is empty, so the banner's breadcrumb
+     holds only the service. Shown only to a signed-in user; a guest is
+     sent to sign in. Every signed-in user sees every campaign: they are
+     the space's, not a user's. Never shows an address, phone number or
+     email of a business. Read-only: no form but the banner's sign out;
+     campaigns are made and changed with the tools. Data: .Banner (a
+     page.Banner, for banner and footer); .Campaigns, one window
+     (paging.DefaultLimit, 25) of the campaigns not deleted, newest first
+     by created, then by campaign id, each with .ID (its camp_ id,
+     "camp_" and 16 hex), .Name (its name, as given), .Channels (the
+     channels it uses, a slice of strings, "mail", "email" or both, in
+     that order), .Created and .CreatedText (when it was created, RFC
+     3339 UTC to the second, and UTC to the minute, "2026-10-05 09:00"),
+     .Members (int, how many members it holds, rejected ones included),
+     .Delivered (int, how many of its pieces are delivered) and .Opened
+     (int, how many of its members have had any piece's link opened at
+     least once); .Page (string, this window's own page token, the ?page=
+     the request carried; empty on the first window), .Prev (string, the
+     page token for the window before this one, carried in the same
+     ?page= parameter; empty on the first window) and .Next (string, the
+     page token the list tool's next carries for the campaigns after
+     these, the value to pass as its page; empty when none remain);
+     .Campaigns is the window .Page names. Counts are shown as the plain
+     integer. Names are shown as given; channel names as stored.
+     Hooks: title "campaigns"; h1 with text "campaigns"; p#summary.lede
+     (text "The permanent record of who was contacted, with what, when and
+     by which channel, and whether they looked. Each piece carries its own
+     link, and every visit to it is kept against the business it was sent
+     to."); section#campaigns with h2 "Campaigns" and a p in its header
+     (text "The space's campaigns, newest first. Agents make and change
+     campaigns, add their members and mark what was delivered with the
+     tools; nothing here sends email or mail."), then either, when
+     .Campaigns is empty, div#no-campaigns.empty holding h3 "No campaigns
+     yet" and a p (text "A campaign shows here once an agent creates one
+     with the tools."), or table#campaign-list whose th read Name,
+     Campaign, Channels, Created, Members, Delivered, Opened, with one
+     tr[data-campaign=<.ID>] per campaign holding td.campaign-name >
+     a.campaign-link (href "/campaigns/<.ID>", text .Name), td.campaign-id
+     (.ID in a code element), td.campaign-channels (one
+     code[data-channel=<channel>] per channel, separated by spaces),
+     td.campaign-created holding time[datetime=<.Created>] (text
+     .CreatedText), td.campaign-members.num (.Members),
+     td.campaign-delivered.num (.Delivered) and td.campaign-opened.num
+     (.Opened); then, after the card (section#campaigns),
+     nav.paging#paging (aria-label "Pages") whose children are, in order,
+     First, Prev, Next and Last: First (on the first window, .Page empty,
+     a span with aria-current="page" and text "First"; otherwise a link
+     with text "First" to /), then, only when .Prev is not empty, Prev (a
+     link with text "Prev" to /?page=<.Prev>), then, only when .Next is
+     not empty, Next (a link with text "Next" to /?page=<.Next>), then,
+     always, Last (while .Next is not empty, a link with text "Last" to
+     /?page=last, naming the last window; when .Next is empty, the last
+     window, a span with aria-current="page" and text "Last", so a single
+     window shows First and Last both as the current item); the nav shows
+     when .Campaigns is not empty or .Page is not empty, so an emptied
+     later window still offers First; on the first window with no
+     campaigns there is no nav; a #about-link (text "About campaigns")
+     whose href is "/about". No script but appkit's
+     /_appkit/feedback.js. */}}
+{{define "landing"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>campaigns</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>campaigns</h1>
+<p id="summary" class="lede">The permanent record of who was contacted, with what, when and by which channel, and whether they looked. Each piece carries its own link, and every visit to it is kept against the business it was sent to.</p>
+<section id="campaigns" class="card flush" aria-labelledby="campaigns-title">
+<header><div><h2 id="campaigns-title">Campaigns</h2><p>The space's campaigns, newest first. Agents make and change campaigns, add their members and mark what was delivered with the tools; nothing here sends email or mail.</p></div></header>
+{{if .Campaigns}}<div class="table-scroll">
+<table id="campaign-list">
+<thead><tr><th>Name</th><th>Campaign</th><th>Channels</th><th>Created</th><th class="num">Members</th><th class="num">Delivered</th><th class="num">Opened</th></tr></thead>
+<tbody>
+{{range .Campaigns}}<tr data-campaign="{{.ID}}">
+<td class="campaign-name"><a class="campaign-link" href="/campaigns/{{.ID}}">{{.Name}}</a></td>
+<td class="campaign-id"><code>{{.ID}}</code></td>
+<td class="campaign-channels">{{range $i, $c := .Channels}}{{if $i}} {{end}}<code data-channel="{{$c}}">{{$c}}</code>{{end}}</td>
+<td class="campaign-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></td>
+<td class="campaign-members num">{{.Members}}</td>
+<td class="campaign-delivered num">{{.Delivered}}</td>
+<td class="campaign-opened num">{{.Opened}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}<div id="no-campaigns" class="empty">
+<h3 class="text-md">No campaigns yet</h3>
+<p>A campaign shows here once an agent creates one with the tools.</p>
+</div>{{end}}
+</section>
+{{if or .Campaigns .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .Page}}<a href="/">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .Prev}}<a href="/?page={{.Prev}}">Prev</a>{{end}}{{if .Next}}<a href="/?page={{.Next}}">Next</a>{{end}}{{if .Next}}<a href="/?page=last">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
+{{end}}<p><a id="about-link" href="/about">About campaigns</a></p>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

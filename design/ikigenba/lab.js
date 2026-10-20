@@ -1,7 +1,7 @@
 // Design-lab toolbar for the ikigenba theme: switch page.
 // Lives in a shadow root, isolated from the theme's CSS.
 (() => {
-  const PAGES = ["specimen", "app", "banner", "login", "profile", "scripts", "scripts-script", "scripts-run", "tools", "events", "cron", "prompts", "prompts-prompt", "prompts-run", "artifacts", "artifacts-artifact", "connections", "gdrive", "gdrive-transfer", "gmail", "gmail-draft", "gmail-transfer", "scrapes", "scrapes-run", "scrapes-row", "candidates", "candidates-candidate", "candidates-pass", "webhooks", "home", "icons", "landing", "prose"];
+  const PAGES = ["specimen", "app", "banner", "login", "profile", "scripts", "scripts-script", "scripts-run", "tools", "events", "cron", "prompts", "prompts-prompt", "prompts-run", "artifacts", "artifacts-artifact", "connections", "gdrive", "gdrive-transfer", "gmail", "gmail-draft", "gmail-transfer", "scrapes", "scrapes-run", "scrapes-row", "candidates", "candidates-candidate", "candidates-pass", "campaigns", "campaigns-campaign", "webhooks", "home", "icons", "landing", "prose"];
   const page = (location.pathname.split("/").pop() || "").replace(/\.html$/, "");
 
   const host = document.createElement("div");

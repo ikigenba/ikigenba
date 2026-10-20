@@ -72,6 +72,11 @@ design/
                     standing rejects; showing excluded, and empty
     candidates-pass.html
                     one pass: its record, running and failed
+    campaigns.html  campaigns' landing: the campaigns, newest first,
+                    paged
+    campaigns-campaign.html
+                    one campaign: its definition, material, and
+                    members with their pieces and opens, paged
     webhooks.html   webhooks' landing: the space's webhooks
     home.html       home's landing: every service on the space, as tiles,
                     application services over core services
@@ -676,6 +681,71 @@ Wisconsin.
   `YYYY-MM-DD` in a `time`. Times are UTC in a `time` carrying the RFC 3339
   moment: to the minute on the landing and in tables, to the second with
   `UTC` in the candidate's and the pass's records.
+
+**campaigns.html, campaigns-campaign.html** — campaigns at
+`campaigns.acme.ikigenba.com`, the funnel's record of who was contacted,
+with what, when and by which channel, and whether they looked: a campaign
+has a name, a description, its channels (`mail`, `email` or both) and a
+destination; its members are candidate businesses, added from a cohort or
+one at a time, each with one piece per channel the campaign uses, planned,
+delivered or dropped; each piece carries its own link, and every visit to it
+is kept. The service sends nothing: pieces are marked delivered by hand.
+Every change goes through the tools; the pages are listings only, and the
+tracking route answers a redirect with no page. Campaigns belong to no one:
+every signed-in user sees every campaign. Two levels: the landing page and
+one campaign at `/campaigns/<id>`. Banner and footer as in app.html, the
+service `campaigns` with the Tabler `speakerphone` icon (added to
+`icons/tabler/` on 2026-10-20 for this app). No form but sign out. The
+sample data is made-up carriers from candidates' cohort.
+- The landing: `h1` campaigns, a lede, then `section#campaigns` whose
+  header says the campaigns are the space's, newest first, and that nothing
+  here sends, with `table#campaign-list` of Name / Campaign / Channels /
+  Created / Members / Delivered / Opened, a window of 25 with
+  `nav.paging#paging` below it, `tr[data-campaign=<id>]`: one on both
+  channels, one email only with nothing delivered, one mail only. Each name
+  links to `/campaigns/<id>`; Channels is one `code[data-channel]` per
+  channel; Delivered counts pieces, Opened counts members with any link
+  opened. A link to the about screen. Its tools are on its tools page.
+  States: no campaigns (`div#no-campaigns.empty`), a later window.
+- One campaign, `camp_7d3a91e04b6c2f58`, "Fall letters, trucking within two
+  hours", on both channels: the trail campaigns / the id, the name as the
+  `h1`; `p#headline` with `#opened`, a `.badge` of kind info, "<n> of <m>
+  members opened", and when it was created. `section#campaign-card` with
+  `dl#campaign.kv`: ID, Name, Description (muted "none" when empty),
+  Channels, Destination (an `a.destination-link`), Created by, Created,
+  Members, Delivered (pieces) and Opened (members). `section#material` with
+  `table#material-list` of Label / Path, `tr[data-path=<path>]`, each path
+  linking to the artifact's page on artifacts. `section#members` with
+  `table#member-list` of Candidate / Business / From / Added / Opened, then
+  one column per channel the campaign uses (Mail, Email), then Rejected, in
+  the order added, a window of 25 with `nav.paging#paging` below it,
+  `tr[data-candidate=<id>]` (`[data-rejected]` when rejected): the
+  candidate id linking to its page at candidates; the business name as
+  candidates answers it as the page is read, muted "unknown" when it does
+  not, with a `.badge` rejected of kind warn when rejected; From the cohort
+  id linking to its page at candidates, or muted "added by hand"; Opened
+  yes or muted no. Each piece cell, `td.member-piece[data-channel]
+  [data-state]`, holds the state as a `.status` word, then, when
+  delivered, `div.piece-delivered` with when, by whom and how (muted "by
+  hand" or "by the system", `data-how`), then `div.piece-opened[data-opens]`:
+  "opened once" with the time, "opened <n> times" with the first and last,
+  or muted "not opened". A member with no piece for a channel shows muted
+  "no postal address" or "no email address" in that cell, with no
+  `data-state`. Rejected shows when and by whom, then `div.reject-why`. The
+  sample's members: both pieces delivered and opened, one mail delivered
+  with no email address, one planned and one dropped, one rejected with its
+  pieces still planned, one added by hand with no postal address. No
+  address, phone, email, token or link of a business shows. States: a later
+  window, a member candidates did not answer for (no links, name unknown),
+  no description, no material (`div#no-material.empty`), no members
+  (`div#no-members.empty`). An unknown, malformed or deleted id is the
+  not-found page.
+- Piece state reads as a `.status` word, as stored, carrying `data-status`
+  and, when it has one, `data-kind`: planned is info, delivered is ok,
+  dropped has no kind. Channel names, ids and states are shown as stored;
+  counts are the plain integer. Times are UTC in a `time` carrying the RFC
+  3339 moment: to the minute on the landing and in tables, to the second
+  with `UTC` in the campaign's record and headline.
 
 **webhooks.html** — webhooks at `webhooks.acme.ikigenba.com`, webhooks that
 turn an authenticated delivery from outside into an event on the suite's
