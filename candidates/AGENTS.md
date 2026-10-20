@@ -38,18 +38,23 @@ appkit's `scrapes` client, as the caller for `rebuild` and as the service
 identity for a delivery; a targeted pass of a prompts kind runs its prompts
 through appkit's `prompts` client over the socket the services file's
 `prompts` entry names, as the caller of the `enrich` that started it;
-candidates calls no other sibling. Outside the suite it fetches nothing but
+candidates calls no other sibling. It names campaigns only to link to a
+campaign's page, built on the services file's optional entry `campaigns`. Outside the suite it fetches nothing but
 the websites the website check visits, the pages `add_page` keeps and the
 URL a website search's run names, which it confirms with one `Checker.Get`,
 over outbound HTTP through `cli.Process.HTTP`; when `IKIGENBA_SANDBOX` is
 present it fetches only from an in-process stub on loopback, so nothing a
 sandbox runs reaches outside. It keeps its candidates, links, estimates,
 assessments, enrichment results, facts and kept pages, the owner's rulings, cohorts and rejects, its
-passes and the ZIP drive-time table in its own
+campaign uses, its passes and the ZIP drive-time table in its own
 SQLite database, `state/candidates.db` resolved against the working
 directory and opened through appkit's `db` package; it is the only writer of
 it. It emits an event on the bus for each pass that begins and each that
-ends, and records every scrapes read in the trail. Its manifest sets
+ends, and records every scrapes read in the trail. It takes campaigns'
+`campaign.member.added`, `campaign.member.rejected` and
+`campaign.piece.delivered`, delivered on the bus, and records each as a
+campaign use of the candidate it names, followed through a merge, starting
+no pass and reading no sibling. Its manifest sets
 `guests = false`: nginx lets no request without a credential through, to the
 pages and to `/mcp` alike, and its nginx fragment answers the bus's two paths
 404 at the public name. At `/mcp` it offers the MCP tools `D10-tools`
@@ -87,7 +92,8 @@ build run writes the Go source, the tests, `go.mod`'s requirements and
 `0005_decisions.sql`, `0006_passes.sql`, `0007_zip_drive.sql`,
 `0008_windows.sql`, `0009_judgments.sql`, `0010_cohorts.sql`,
 `0011_enrichments.sql`, `0012_facts.sql`, `0013_site_text.sql`,
-`0014_brief.sql` and `0015_website_search.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
+`0014_brief.sql`, `0015_website_search.sql` and
+`0016_campaign_uses.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
 and the nginx fragment `etc/nginx.conf`). The
 delivery that created candidates seeded `go.mod` on appkit; the build run
 owns it and `go.sum` from then on and changes them as design says. It never
@@ -209,8 +215,9 @@ siblings give it — scrapes' rows and every field of them (DOT numbers,
 loan amounts and dates, business names, addresses, phones, emails, counties,
 people, facts), source ids, scraper names, run ids, user ids and emails,
 request ids, bus event ids, the services file's URLs, ruling text, cohort
-names, reject reasons, and the `cand_`, `pass_` and `coh_` ids candidates
-mints — and tests echo source ids above all, since every link,
+names, reject reasons, campaigns' event payloads (campaign and piece ids,
+`camp_…` and `piece_…`, and a campaign reject's reason), and the `cand_`,
+`pass_` and `coh_` ids candidates mints — and tests echo source ids above all, since every link,
 split and candidate page names one, so a test that sends an id-shaped value
 lands one in the test file. No fixture carries one: not a header value, a
 query parameter, a tool argument, a fake scrapes' or fake prompts' answer,
@@ -218,7 +225,8 @@ a fake prompts' standard output (a brief's summary, reasons and labels, a
 website search's URL, reason and sites set aside),
 a row's field, a
 source id, a run id, a candidate id, a pass id, a cohort id, a URL, a services file entry,
-an event's payload, a ruling's or reject's reason, a cohort's name, or an expected body.
+an event's payload, a campaign or piece id, a ruling's, reject's or campaign
+reject's reason, a cohort's name, or an expected body.
 
 ## Test discipline
 
@@ -393,7 +401,8 @@ where the route takes them, and never follows a redirect.
 **The addresses are the test's own.** The banner's profile and sign-out
 addresses are built on the services file's entry `auth`, and the links to
 scrapes' row pages on its entry `scrapes`, as design names, or, with none,
-on the request's scheme and host. A test chooses them: it writes a services
+on the request's scheme and host; the links to campaigns' campaign pages
+are built on its entry `campaigns`, and with none there is no link. A test chooses them: it writes a services
 file into its own temporary directory whose entry names a URL, or none, and
 hands its path in the config or names it in `IKIGENBA_SERVICES` through the
 `LookupEnv` it gives `Run`. The tools page's `tools.Catalog()` takes no base.
@@ -501,15 +510,19 @@ candidates ships in the suite release: `devctl build <sha|tag>` builds it
 with every other app, its part of the release holding `bin/candidates`,
 `etc/` and `share/icon.svg`, and `devctl deploy <space> <sha|tag>` deploys
 that release. The host must run events, which candidates emits to and takes
-scrapes' `scrape.finished` and cron's `cron.judge_candidates.fired` from,
+scrapes' `scrape.finished`, cron's `cron.judge_candidates.fired` and
+campaigns' `campaign.member.added`, `campaign.member.rejected` and
+`campaign.piece.delivered` from,
 scrapes, which it reads over the socket, and prompts, which a targeted pass
 of a prompts kind runs the `website-search`, `site-text` or `brief` prompt
 through over the socket; its
-services file names them, with telemetry and auth. The host needs outbound HTTP and HTTPS to the
+services file names them, with telemetry and auth, and may name campaigns,
+whose entry candidates uses only to link to a campaign's page. The host needs outbound HTTP and HTTPS to the
 public internet, since the website check and `add_page` fetch candidates'
 own domains and the website search confirms the URL its agent names;
 candidates holds no secret of its own. The host's backup archives `state/`
 whole, so `candidates.db` is taken with it; it holds candidates, their
 evidence copied from public records, their enrichment results, facts and
 kept pages, the owner's
-rulings, cohorts and rejects and the passes, and no secret.
+rulings, cohorts and rejects, the campaign uses and the passes, and no
+secret.
