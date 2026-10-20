@@ -151,7 +151,7 @@ func TestErrorTypes(t *testing.T) {
 	}
 }
 
-// R-YUUI-9EZQ R-YW2E-N6QF R-YXAB-0YH4 R-P9S4-MPBO R-Z5TL-PCNZ R-Z9HA-UNW2 R-ZBX3-M7DG R-ZGSP-5AC8 R-PH3I-XBRU
+// R-YUUI-9EZQ R-YW2E-N6QF R-YXAB-0YH4 R-P9S4-MPBO R-Z5TL-PCNZ R-Z9HA-UNW2 R-ZBX3-M7DG R-ZGSP-5AC8 R-6IIT-3FUX
 func TestWireAndTrail(t *testing.T) {
 	type request struct {
 		method, target, host string
@@ -466,7 +466,7 @@ func TestInvalidHeaders(t *testing.T) {
 	}
 }
 
-// R-PLZ4-GEQM R-PN70-U6HB R-PFVM-JK15 R-PENQ-5SAG
+// R-PLZ4-GEQM R-6JQP-H7LM R-6KYL-UZCB R-PENQ-5SAG
 func TestResponseStatuses(t *testing.T) {
 	statuses := make(chan int, 1)
 	calls := make(chan struct{}, 100)
@@ -515,7 +515,7 @@ func TestResponseStatuses(t *testing.T) {
 	}
 }
 
-// R-PC7X-E8T2 R-PH3I-XBRU R-PENQ-5SAG
+// R-PC7X-E8T2 R-6IIT-3FUX R-PENQ-5SAG
 func TestTransportFailures(t *testing.T) {
 	w, capture := writer(t)
 	c := artifacts.NewClient(artifacts.ClientConfig{services.Entry{Name: "artifacts", Socket: filepath.Join(t.TempDir(), "missing")}, w})
@@ -563,10 +563,25 @@ func TestTransportFailures(t *testing.T) {
 	}
 }
 
-// R-ZWNE-4AZ9
+// R-6M6I-8R30
 func TestConcurrentCalls(t *testing.T) {
 	entry := serve(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-User-Id") != strings.TrimPrefix(r.URL.Path, "/files/") {
+		path := strings.TrimPrefix(r.URL.Path, "/files/")
+		if r.Method == "POST" {
+			root := showRequest(t, r)
+			var params struct{ Arguments map[string]string }
+			if err := json.Unmarshal(root["params"], &params); err != nil {
+				t.Error(err)
+			}
+			path = params.Arguments["path"]
+			if r.Header.Get("X-User-Id") != path {
+				t.Error("caller mixed")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			showRespond(w, root, `{"structuredContent":`+strings.Replace(metadataJSON(), `"artifact-id"`, fmt.Sprintf("%q", path), 1)+`}`)
+			return
+		}
+		if r.Header.Get("X-User-Id") != path {
 			t.Error("caller mixed")
 		}
 		if r.Method == "PUT" {
@@ -585,7 +600,14 @@ func TestConcurrentCalls(t *testing.T) {
 			defer wg.Done()
 			path := fmt.Sprint(n)
 			ctx := identity.NewContext(context.Background(), identity.Caller{UserID: path, RequestID: "request" + path})
-			for _, method := range []string{"PUT", "GET", "HEAD"} {
+			for _, method := range []string{"PUT", "GET", "HEAD", "SHOW"} {
+				if method == "SHOW" {
+					m, err := c.Show(ctx, path)
+					if err != nil || m.ID != path {
+						t.Error(m, err)
+					}
+					continue
+				}
 				if _, err := invoke(ctx, c, method, path); err != nil {
 					t.Error(err)
 				}
@@ -597,11 +619,15 @@ func TestConcurrentCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	trail := capture.Events()
-	if len(trail) != 72 {
+	if len(trail) != 96 {
 		t.Fatal(len(trail))
 	}
 	for _, e := range trail {
-		if e.RequestID != "request"+e.User || e.Attrs["path"] != "/files/"+e.User {
+		wantPath := "/files/" + e.User
+		if e.Attrs["method"] == "POST" {
+			wantPath = "/mcp"
+		}
+		if e.RequestID != "request"+e.User || e.Attrs["path"] != wantPath {
 			t.Fatal(e)
 		}
 	}

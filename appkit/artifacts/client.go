@@ -2,6 +2,7 @@
 package artifacts
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
@@ -27,6 +30,7 @@ type ClientConfig struct {
 type Client struct {
 	service services.Entry
 	http    *http.Client
+	mcp     *mcp.Client
 }
 
 // Metadata describes a stored file.
@@ -67,7 +71,8 @@ func (e *HTTPError) Error() string {
 func NewClient(cfg ClientConfig) *Client {
 	client := telemetry.SiblingClient(cfg.Telemetry, cfg.Service.Name, telemetry.SocketTransport(cfg.Service.Socket))
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &Client{service: cfg.Service, http: client}
+	endpoint := (&url.URL{Scheme: "http", Host: cfg.Service.Name, Path: "/mcp"}).String()
+	return &Client{service: cfg.Service, http: client, mcp: mcp.NewClient(mcp.ClientConfig{Endpoint: endpoint, HTTPClient: client})}
 }
 
 func sendable(path string) bool {
@@ -265,4 +270,76 @@ func (c *Client) Head(ctx context.Context, path string) (Metadata, error) {
 		return Metadata{}, responseError(response)
 	}
 	return c.headers(response, path)
+}
+
+// Refusal carries the tool's refusal text without interpreting it.
+type Refusal struct{ Text string }
+
+func (r *Refusal) Error() string { return "artifacts: " + r.Text }
+
+// Show reads the full metadata through the service's show tool.
+func (c *Client) Show(ctx context.Context, path string) (Metadata, error) {
+	args, err := json.Marshal(map[string]string{"path": path})
+	if err != nil {
+		return Metadata{}, fmt.Errorf("artifacts: encode arguments: %w", err)
+	}
+	caller, _ := identity.FromContext(ctx)
+	result, err := c.mcp.CallTool(ctx, caller, "show", args)
+	if err != nil {
+		var rpc *mcp.RPCError
+		if errors.As(err, &rpc) {
+			return Metadata{}, fmt.Errorf("artifacts: call show: %w", err)
+		}
+		if ctx.Err() != nil {
+			return Metadata{}, fmt.Errorf("artifacts: call show: %w", errors.Join(err, ctx.Err()))
+		}
+		var he *mcp.HTTPError
+		if errors.As(err, &he) {
+			return Metadata{}, &HTTPError{StatusCode: he.StatusCode, Body: he.Body}
+		}
+		return Metadata{}, fmt.Errorf("artifacts: call show: %w", err)
+	}
+	raw, err := result.MarshalJSON()
+	if err != nil {
+		return Metadata{}, showOutputError(ctx, err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return Metadata{}, showOutputError(ctx, err)
+	}
+	if result.IsError() {
+		return Metadata{}, &Refusal{Text: refusalText(fields["content"])}
+	}
+	metadata, err := decodeMetadata(bytes.NewReader(fields["structuredContent"]))
+	if err != nil {
+		return Metadata{}, showOutputError(ctx, err)
+	}
+	return metadata, nil
+}
+
+func showOutputError(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		err = errors.Join(err, ctx.Err())
+	}
+	return fmt.Errorf("artifacts: invalid output: %w", err)
+}
+
+func refusalText(raw json.RawMessage) string {
+	var blocks []json.RawMessage
+	if json.Unmarshal(raw, &blocks) != nil {
+		return ""
+	}
+	var texts []string
+	for _, block := range blocks {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(block, &fields) != nil {
+			continue
+		}
+		var kind, text string
+		typeRaw, textRaw := bytes.TrimSpace(fields["type"]), bytes.TrimSpace(fields["text"])
+		if len(typeRaw) > 0 && typeRaw[0] == '"' && len(textRaw) > 0 && textRaw[0] == '"' && json.Unmarshal(typeRaw, &kind) == nil && kind == "text" && json.Unmarshal(textRaw, &text) == nil {
+			texts = append(texts, text)
+		}
+	}
+	return strings.Join(texts, "\n")
 }

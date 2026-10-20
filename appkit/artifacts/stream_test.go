@@ -104,7 +104,7 @@ func TestGetStreamsAndCloseReleasesConnection(t *testing.T) {
 	<-observedClose
 }
 
-// R-7B3B-TN32 R-PN70-U6HB R-ZMW7-251P R-PENQ-5SAG
+// R-UMZC-7XEH R-6JQP-H7LM R-ZMW7-251P R-PENQ-5SAG
 func TestUnreturnedBodiesAreClosed(t *testing.T) {
 	for _, method := range []string{"PUT", "GET"} {
 		t.Run(method, func(t *testing.T) {
