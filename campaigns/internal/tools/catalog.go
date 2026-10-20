@@ -30,14 +30,14 @@ const (
 
 // Refusal sentences never contain supplied values.
 const (
-	RefuseNotFound    string = "The campaign, member or piece was not found."
-	RefuseNoCandidate string = "The candidate was not found."
-	RefuseNoCohort    string = "The cohort was not found."
-	RefuseNoArtifact  string = "The artifact was not found."
-	RefuseInvalid     string = "A supplied value is invalid."
-	RefuseState       string = "The record does not permit this change."
-	RefuseCandidates  string = "Candidates is unavailable."
-	RefuseArtifacts   string = "Artifacts is unavailable."
+	RefuseNotFound       string = "The campaign, member or piece was not found."
+	RefuseNoCandidate    string = "The candidate was not found."
+	RefuseNoProspectList string = "The prospect list was not found."
+	RefuseNoArtifact     string = "The artifact was not found."
+	RefuseInvalid        string = "A supplied value is invalid."
+	RefuseState          string = "The record does not permit this change."
+	RefuseCandidates     string = "Candidates is unavailable."
+	RefuseArtifacts      string = "Artifacts is unavailable."
 )
 
 // Skip reasons explain why a channel has no piece.
@@ -48,21 +48,21 @@ const (
 
 // Tool descriptions are centralized copy.
 const (
-	DescribeCampaigns      string = "Lists campaigns."
-	DescribeCampaign       string = "Reads a campaign."
-	DescribeCreateCampaign string = "Creates a campaign."
-	DescribeEditCampaign   string = "Edits a campaign."
-	DescribeDeleteCampaign string = "Deletes a campaign."
-	DescribeAddCohort      string = "Adds a cohort to a campaign."
-	DescribeAddMember      string = "Adds one member to a campaign."
-	DescribeReject         string = "Rejects a member."
-	DescribeDrop           string = "Drops a planned piece."
-	DescribeDeliver        string = "Marks a piece delivered by hand."
-	DescribeDeliverChannel string = "Marks a channel delivered by hand."
-	DescribeAddMaterial    string = "Adds a material reference."
-	DescribeRemoveMaterial string = "Removes a material reference."
-	DescribeMergeList      string = "Reads a channel merge list."
-	DescribeEngagement     string = "Reads recorded engagement."
+	DescribeCampaigns       string = "Lists campaigns."
+	DescribeCampaign        string = "Reads a campaign."
+	DescribeCreateCampaign  string = "Creates a campaign."
+	DescribeEditCampaign    string = "Edits a campaign."
+	DescribeDeleteCampaign  string = "Deletes a campaign."
+	DescribeAddProspectList string = "Adds a prospect list to a campaign."
+	DescribeAddMember       string = "Adds one member to a campaign."
+	DescribeReject          string = "Rejects a member."
+	DescribeDrop            string = "Drops a planned piece."
+	DescribeDeliver         string = "Marks a piece delivered by hand."
+	DescribeDeliverChannel  string = "Marks a channel delivered by hand."
+	DescribeAddMaterial     string = "Adds a material reference."
+	DescribeRemoveMaterial  string = "Removes a material reference."
+	DescribeMergeList       string = "Reads a channel merge list."
+	DescribeEngagement      string = "Reads recorded engagement."
 )
 
 // Catalog returns an independent ordered catalog.
@@ -73,7 +73,7 @@ func Catalog() []Entry {
 		{"create_campaign", DescribeCreateCampaign},
 		{"edit_campaign", DescribeEditCampaign},
 		{"delete_campaign", DescribeDeleteCampaign},
-		{"add_cohort", DescribeAddCohort},
+		{"add_prospect_list", DescribeAddProspectList},
 		{"add_member", DescribeAddMember},
 		{"reject", DescribeReject},
 		{"drop", DescribeDrop},
@@ -97,7 +97,7 @@ func Register(srv *mcp.Server, cfg Config) {
 	mcp.AddTool(srv, mcp.Tool[CreateArgs, Campaign]{Name: "create_campaign", Description: DescribeCreateCampaign, Effect: mcp.Additive, Handler: h.createCampaign})
 	mcp.AddTool(srv, mcp.Tool[EditArgs, CampaignChange]{Name: "edit_campaign", Description: DescribeEditCampaign, Effect: mcp.Additive, Handler: h.editCampaign})
 	mcp.AddTool(srv, mcp.Tool[DeleteArgs, CampaignChange]{Name: "delete_campaign", Description: DescribeDeleteCampaign, Effect: mcp.Destructive, Handler: h.deleteCampaign})
-	mcp.AddTool(srv, mcp.Tool[CohortArgs, CohortAdd]{Name: "add_cohort", Description: DescribeAddCohort, Effect: mcp.Additive, Handler: h.addCohort})
+	mcp.AddTool(srv, mcp.Tool[ProspectListArgs, ProspectListAdd]{Name: "add_prospect_list", Description: DescribeAddProspectList, Effect: mcp.Additive, Handler: h.addProspectList})
 	mcp.AddTool(srv, mcp.Tool[MemberArgs, AddedMember]{Name: "add_member", Description: DescribeAddMember, Effect: mcp.Additive, Handler: h.addMember})
 	mcp.AddTool(srv, mcp.Tool[RejectArgs, MemberChange]{Name: "reject", Description: DescribeReject, Effect: mcp.Additive, Handler: h.reject})
 	mcp.AddTool(srv, mcp.Tool[PieceArgs, PieceChange]{Name: "drop", Description: DescribeDrop, Effect: mcp.Additive, Handler: h.drop})

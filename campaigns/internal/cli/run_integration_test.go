@@ -64,15 +64,15 @@ func (r integrationConstant) Read(p []byte) (int, error) {
 
 type integrationRequest struct{ Method, Path, ID, User, Email string }
 type integrationFake struct {
-	failureText string
-	mu          sync.Mutex
-	requests    []integrationRequest
-	fail        bool
-	block       <-chan struct{}
-	entered     chan struct{}
-	business    map[string]any
-	cohort      []string
-	socket      string
+	failureText  string
+	mu           sync.Mutex
+	requests     []integrationRequest
+	fail         bool
+	block        <-chan struct{}
+	entered      chan struct{}
+	business     map[string]any
+	prospectList []string
+	socket       string
 }
 
 func integrationSocketDir(t *testing.T) string {
@@ -103,7 +103,7 @@ func integrationServer(t *testing.T, h http.Handler) string {
 }
 func newIntegrationFake(t *testing.T, artifact bool) *integrationFake {
 	t.Helper()
-	f := &integrationFake{business: map[string]any{"name": "Fixture business", "names": []string{"Fixture alias"}, "street": "100 Test Street", "city": "Test City", "state": "MN", "zip": "55001", "county": "Test County", "phone": "8005550100", "email": "mgreenly+fake00@gmail.com", "people": []map[string]string{{"name": "Fixture Person", "role": "owner"}}}, cohort: []string{"cand_0000000000000001", "cand_0000000000000002", "cand_0000000000000003"}}
+	f := &integrationFake{business: map[string]any{"name": "Fixture business", "names": []string{"Fixture alias"}, "street": "100 Test Street", "city": "Test City", "state": "MN", "zip": "55001", "county": "Test County", "phone": "8005550100", "email": "mgreenly+fake00@gmail.com", "people": []map[string]string{{"name": "Fixture Person", "role": "owner"}}}, prospectList: []string{"cand_0000000000000001", "cand_0000000000000002", "cand_0000000000000003"}}
 	f.socket = integrationServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.requests = append(f.requests, integrationRequest{r.Method, r.URL.Path, r.Header.Get("X-Request-Id"), r.Header.Get("X-User-Id"), r.Header.Get("X-User-Email")})
@@ -156,14 +156,19 @@ func newIntegrationFake(t *testing.T, artifact bool) *integrationFake {
 				}
 				return b
 			}
-			if root.Params.Name == "cohort" {
+			switch root.Params.Name {
+			case "prospect_list":
 				members := []any{}
-				for _, id := range f.cohort {
+				for _, id := range f.prospectList {
 					members = append(members, map[string]any{"candidate": business(id)})
 				}
 				content = map[string]any{"members": members}
-			} else {
+			case "candidate":
 				content = map[string]any{"candidate": business(fmt.Sprint(root.Params.Arguments["candidate"]))}
+			default:
+				t.Errorf("unexpected candidates tool %q", root.Params.Name)
+				w.WriteHeader(http.StatusBadRequest)
+				return
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -771,7 +776,7 @@ func integrationToken(t *testing.T, link string) string {
 	return token
 }
 
-// R-077Z-GMKB R-CZLO-8HOE R-GLK5-Y9SJ R-D21H-015S R-XTLG-35NQ R-GMS2-C1J8 R-D6X2-J44K R-D84Y-WVV9 R-D9CV-ANLY R-XUTC-GXEF R-XW18-UP54 R-XX95-8GVT R-Q4PI-PC2I
+// R-1WI2-L794 R-CZLO-8HOE R-GLK5-Y9SJ R-2PRN-RP1S R-4B2X-QWWF R-GMS2-C1J8 R-D6X2-J44K R-D84Y-WVV9 R-D9CV-ANLY R-4CAU-4ON4 R-4DIQ-IGDT R-4EQM-W84I R-Q4PI-PC2I
 func TestRunIntegrationAllToolsPrivacyAndTrail(t *testing.T) {
 	candidatesFake, artifactsFake := newIntegrationFake(t, false), newIntegrationFake(t, true)
 	markers := []string{}
@@ -818,7 +823,7 @@ func TestRunIntegrationAllToolsPrivacyAndTrail(t *testing.T) {
 	var campaign tools.Campaign
 	r.call("create_campaign", map[string]any{"name": name, "description": desc, "channels": []string{"mail", "email"}, "destination": destination}, &campaign)
 	id := campaign.ID
-	r.call("add_cohort", map[string]any{"campaign": id, "cohort": "coh_0000000000000001"}, nil)
+	r.call("add_prospect_list", map[string]any{"campaign": id, "prospect_list": "pl_0000000000000001"}, nil)
 	r.call("add_member", map[string]any{"campaign": id, "candidate": "cand_0000000000000004"}, nil)
 	var merge tools.MergeList
 	r.call("merge_list", map[string]any{"campaign": id, "channel": "mail", "all": true}, &merge)
@@ -863,7 +868,7 @@ func TestRunIntegrationAllToolsPrivacyAndTrail(t *testing.T) {
 		name string
 		args any
 	}{
-		{"campaigns", map[string]any{"limit": 0}}, {"campaign", map[string]any{"campaign": "bad"}}, {"create_campaign", map[string]any{"name": name, "description": desc, "channels": []string{}, "destination": destination}}, {"edit_campaign", map[string]any{"campaign": "bad", "name": name, "description": desc, "destination": destination}}, {"delete_campaign", map[string]any{"campaign": "bad"}}, {"add_cohort", map[string]any{"campaign": "bad", "cohort": "coh_0000000000000001"}}, {"add_member", map[string]any{"campaign": "bad", "candidate": "cand_0000000000000001"}}, {"reject", map[string]any{"campaign": "bad", "candidate": "cand_0000000000000001", "why": "no"}}, {"drop", map[string]any{"piece": "bad"}}, {"deliver", map[string]any{"piece": "bad"}}, {"deliver_channel", map[string]any{"campaign": "bad", "channel": "mail"}}, {"add_material", map[string]any{"campaign": "bad", "path": "material", "label": label}}, {"remove_material", map[string]any{"campaign": "bad", "path": "material"}}, {"merge_list", map[string]any{"campaign": "bad", "channel": "mail"}}, {"engagement", map[string]any{}},
+		{"campaigns", map[string]any{"limit": 0}}, {"campaign", map[string]any{"campaign": "bad"}}, {"create_campaign", map[string]any{"name": name, "description": desc, "channels": []string{}, "destination": destination}}, {"edit_campaign", map[string]any{"campaign": "bad", "name": name, "description": desc, "destination": destination}}, {"delete_campaign", map[string]any{"campaign": "bad"}}, {"add_prospect_list", map[string]any{"campaign": "bad", "prospect_list": "pl_0000000000000001"}}, {"add_member", map[string]any{"campaign": "bad", "candidate": "cand_0000000000000001"}}, {"reject", map[string]any{"campaign": "bad", "candidate": "cand_0000000000000001", "why": "no"}}, {"drop", map[string]any{"piece": "bad"}}, {"deliver", map[string]any{"piece": "bad"}}, {"deliver_channel", map[string]any{"campaign": "bad", "channel": "mail"}}, {"add_material", map[string]any{"campaign": "bad", "path": "material", "label": label}}, {"remove_material", map[string]any{"campaign": "bad", "path": "material"}}, {"merge_list", map[string]any{"campaign": "bad", "channel": "mail"}}, {"engagement", map[string]any{}},
 	} {
 		r.refuse(tc.name, tc.args, "")
 	}
@@ -871,7 +876,7 @@ func TestRunIntegrationAllToolsPrivacyAndTrail(t *testing.T) {
 	candidatesFake.fail = true
 	candidatesFake.mu.Unlock()
 	r.refuse("add_member", map[string]any{"campaign": id, "candidate": "cand_0000000000000006"}, "unavailable")
-	r.refuse("add_cohort", map[string]any{"campaign": id, "cohort": "coh_0000000000000002"}, "unavailable")
+	r.refuse("add_prospect_list", map[string]any{"campaign": id, "prospect_list": "pl_0000000000000002"}, "unavailable")
 	candidatesFake.mu.Lock()
 	candidatesFake.fail = false
 	candidatesFake.mu.Unlock()
@@ -1031,7 +1036,7 @@ func TestRunIntegrationAllToolsPrivacyAndTrail(t *testing.T) {
 			t.Errorf("tool request pair %+v %+v", first, last)
 		}
 	}
-	changeKeys := map[string][]string{"campaign.member.added": {"campaign", "candidate", "cohort"}, "campaign.member.rejected": {"campaign", "candidate", "reason"}, "campaign.piece.delivered": {"campaign", "candidate", "piece", "channel", "how"}}
+	changeKeys := map[string][]string{"campaign.member.added": {"campaign", "candidate", "prospect_list"}, "campaign.member.rejected": {"campaign", "candidate", "reason"}, "campaign.piece.delivered": {"campaign", "candidate", "piece", "channel", "how"}}
 	changes := []telemetry.Event{}
 	for _, event := range trail {
 		if _, ok := changeKeys[event.Name]; ok {
@@ -1458,7 +1463,7 @@ func TestRunIntegrationBusDrainDeadline(t *testing.T) {
 	sink := &integrationBlockingBus{entered: make(chan struct{})}
 	r := startIntegration(t, integrationOptions{path: path, bus: sink, env: map[string]string{"DRAIN_SECONDS": "1"}})
 	c := r.create("Queued events")
-	r.call("add_cohort", map[string]any{"campaign": c.ID, "cohort": "coh_0000000000000001"}, nil)
+	r.call("add_prospect_list", map[string]any{"campaign": c.ID, "prospect_list": "pl_0000000000000001"}, nil)
 	select {
 	case <-sink.entered:
 	case <-time.After(3 * time.Second):

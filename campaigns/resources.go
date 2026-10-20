@@ -12,7 +12,7 @@ var assets embed.FS
 //go:embed etc/manifest.toml etc/nginx.conf
 var etc embed.FS
 
-//go:embed migrations/0001_campaigns.sql
+//go:embed migrations/0001_campaigns.sql migrations/0002_prospect_lists.sql
 var migrations embed.FS
 
 // Assets returns page templates rooted at their directory.

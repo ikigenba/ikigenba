@@ -73,10 +73,10 @@ type MaterialRow struct{ Label, Path, ArtifactPage string }
 
 // MemberRow describes the public view of a member.
 type MemberRow struct {
-	Candidate, CandidatePage, Name, Cohort, CohortPage, Added, AddedText string
-	Opened, Rejected                                                     bool
-	RejectedBy, RejectedUser, RejectedAt, RejectedAtText, Why            string
-	Pieces                                                               []PieceRow
+	Candidate, CandidatePage, Name, ProspectList, ProspectListPage, Added, AddedText string
+	Opened, Rejected                                                                 bool
+	RejectedBy, RejectedUser, RejectedAt, RejectedAtText, Why                        string
+	Pieces                                                                           []PieceRow
 }
 
 // PieceRow describes a channel's delivery and engagement.

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/base32"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
@@ -108,7 +110,7 @@ func must[T any](t *testing.T, v T, e error) T {
 }
 func stamp(f *fixture) time.Time { return f.now.UTC().Truncate(time.Second) }
 
-// R-60VW-LG5X R-623S-Z7WM R-63BP-CZNB R-64JL-QRE0 R-65RI-4J4P R-66ZE-IAVE R-687A-W2M3 R-69F7-9UCS R-6AN3-NM3H R-6BV0-1DU6
+// R-60VW-LG5X R-623S-Z7WM R-63BP-CZNB R-23TG-VTPA R-65RI-4J4P R-66ZE-IAVE R-687A-W2M3 R-69F7-9UCS R-6AN3-NM3H R-6BV0-1DU6
 func TestPublicRecords(t *testing.T) {
 	f := newFixture(t)
 	c := f.campaign()
@@ -149,12 +151,13 @@ func TestPublicRecords(t *testing.T) {
 	}
 }
 
-// R-6EAS-SXBK R-6FIP-6P29 R-6GQL-KGSY
+// R-251D-9LFZ R-2699-ND6O R-6GQL-KGSY
 func TestValidation(t *testing.T) {
+	eq(t, store.ValidProspectListID("coh_5a5a5a5a5a5a5a5a"), false)
 	for _, v := range []struct {
 		f func(string) bool
 		p string
-	}{{store.ValidCampaignID, "camp_"}, {store.ValidPieceID, "piece_"}, {store.ValidCandidateID, "cand_"}, {store.ValidCohortID, "coh_"}} {
+	}{{store.ValidCampaignID, "camp_"}, {store.ValidPieceID, "piece_"}, {store.ValidCandidateID, "cand_"}, {store.ValidProspectListID, "pl_"}} {
 		for _, s := range []string{"0123456789abcdef", "ffffffffffffffff", "0000000000000000"} {
 			eq(t, v.f(v.p+s), true)
 		}
@@ -300,17 +303,17 @@ func TestCampaignRefusals(t *testing.T) {
 	eq(t, b, false)
 }
 
-// R-6J6E-C0AC R-7A06-QYLM R-911T-F0OD R-72OS-GC5G R-73WO-U3W5 R-7DNV-W9TP R-7HBL-1L1S R-7IJH-FCSH
+// R-6J6E-C0AC R-27H6-14XD R-2B4V-6G5G R-72OS-GC5G R-73WO-U3W5 R-7DNV-W9TP R-7HBL-1L1S R-7IJH-FCSH
 func TestMemberPieceLife(t *testing.T) {
 	f := newFixture(t)
 	c := f.campaign()
 	f.now = f.now.Add(time.Minute)
-	in := store.MemberInput{Campaign: c.ID, Candidate: "cand_0000000000000001", Cohort: "coh_0000000000000001", Channels: []string{"email", "mail"}, UserID: "adder", UserEmail: "mgreenly+fake01@gmail.com"}
+	in := store.MemberInput{Campaign: c.ID, Candidate: "cand_0000000000000001", ProspectList: "pl_0000000000000001", Channels: []string{"email", "mail"}, UserID: "adder", UserEmail: "mgreenly+fake01@gmail.com"}
 	m, b, e := f.s.AddMember(ctx, in)
 	if e != nil || !b {
 		t.Fatal(m, b, e)
 	}
-	eq(t, m.Member, store.Member{Campaign: c.ID, Candidate: in.Candidate, Cohort: in.Cohort, Added: stamp(f), AddedUserID: in.UserID, AddedUserEmail: in.UserEmail})
+	eq(t, m.Member, store.Member{Campaign: c.ID, Candidate: in.Candidate, ProspectList: in.ProspectList, Added: stamp(f), AddedUserID: in.UserID, AddedUserEmail: in.UserEmail})
 	eq(t, len(m.Pieces), 2)
 	for i, ch := range []string{"mail", "email"} {
 		p := m.Pieces[i].Piece
@@ -337,7 +340,7 @@ func TestMemberPieceLife(t *testing.T) {
 		v, e := f.s.GetPiece(ctx, p.Piece.ID)
 		eq(t, must(t, v, e), p)
 	}
-	in.Cohort = "coh_0000000000000002"
+	in.ProspectList = "pl_0000000000000002"
 	in.Channels = nil
 	in.UserEmail = "mgreenly+fake02@gmail.com"
 	got, b, e = f.s.AddMember(ctx, in)
@@ -429,7 +432,7 @@ func TestMemberPieceLife(t *testing.T) {
 	}
 }
 
-// R-7CFZ-II30 R-7EVS-A1KE R-7JRD-T4J6 R-7M76-KO0K R-7OMZ-C7HY
+// R-28P2-EWO2 R-7EVS-A1KE R-7JRD-T4J6 R-7M76-KO0K R-7OMZ-C7HY
 func TestMemberRefusals(t *testing.T) {
 	f := newFixture(t)
 	c := f.campaign("mail")
@@ -438,7 +441,7 @@ func TestMemberRefusals(t *testing.T) {
 		in   store.MemberInput
 		want error
 	}{}
-	for _, kind := range []string{"user", "candidate", "cohort", "duplicate", "channel", "absent", "unused"} {
+	for _, kind := range []string{"user", "candidate", "prospect list", "duplicate", "channel", "absent", "unused"} {
 		v := valid
 		want := store.ErrInvalid
 		switch kind {
@@ -447,8 +450,8 @@ func TestMemberRefusals(t *testing.T) {
 			want = store.ErrUnreachable
 		case "candidate":
 			v.Candidate = "bad"
-		case "cohort":
-			v.Cohort = "bad"
+		case "prospect list":
+			v.ProspectList = "bad"
 		case "duplicate":
 			v.Channels = []string{"mail", "mail"}
 		case "channel":
@@ -464,12 +467,18 @@ func TestMemberRefusals(t *testing.T) {
 			want error
 		}{v, want})
 	}
+	rnd := &failedReader{}
+	f.s = store.New(f.d, store.Config{Now: func() time.Time { return f.now }, Rand: rnd})
 	for _, tc := range cases {
 		r, b, e := f.s.AddMember(ctx, tc.in)
 		errIs(t, e, tc.want)
 		eq(t, r, store.MemberRow{})
 		eq(t, b, false)
 	}
+	eq(t, rnd.reads, 0)
+	counts, e := f.s.Counts(ctx, c.ID)
+	eq(t, must(t, counts, e), store.Counts{})
+	f.s = store.New(f.d, store.Config{Now: func() time.Time { return f.now }, Rand: f.rand})
 	m := f.member(c, 1, "mail")
 	for _, tc := range []struct {
 		in   store.Rejection
@@ -1198,14 +1207,15 @@ func TestWindowStatements(t *testing.T) {
 	}
 }
 
-// R-839R-XGEA
+// R-29WY-SOER
 func TestMigration(t *testing.T) {
 	entries, e := fs.ReadDir(campaigns.Migrations(), ".")
 	if e != nil {
 		t.Fatal(e)
 	}
-	eq(t, len(entries), 1)
+	eq(t, len(entries), 2)
 	eq(t, entries[0].Name(), "0001_campaigns.sql")
+	eq(t, entries[1].Name(), "0002_prospect_lists.sql")
 	b, e := fs.ReadFile(campaigns.Migrations(), entries[0].Name())
 	if e != nil {
 		t.Fatal(e)
@@ -1525,4 +1535,192 @@ func TestCollisionAttemptBounds(t *testing.T) {
 	eq(t, len(rows), 1)
 	co, e := f.s.Counts(ctx, c.ID)
 	eq(t, must(t, co, e), store.Counts{Members: 1})
+}
+
+// R-35MC-QPOT
+func TestProspectListMigrationBytes(t *testing.T) {
+	b, e := fs.ReadFile(campaigns.Migrations(), "0002_prospect_lists.sql")
+	if e != nil {
+		t.Fatal(e)
+	}
+	eq(t, string(b), "ALTER TABLE members ADD COLUMN prospect_list TEXT NOT NULL DEFAULT '';\nUPDATE members SET prospect_list = 'pl_'||substr(cohort,5) WHERE substr(cohort,1,4) = 'coh_';\n")
+}
+
+// R-VLYL-T4R7
+func TestNewMembersLeaveLegacyListEmpty(t *testing.T) {
+	f := newFixture(t)
+	c := f.campaign()
+	for i, list := range []string{"", "pl_5a5a5a5a5a5a5a5a"} {
+		_, _, e := f.s.AddMember(ctx, store.MemberInput{Campaign: c.ID, Candidate: fmt.Sprintf("cand_%016x", i), ProspectList: list, UserID: "owner"})
+		if e != nil {
+			t.Fatal(e)
+		}
+	}
+	e := f.d.Write(ctx, func(tx *sql.Tx) error {
+		_, e := tx.ExecContext(ctx, "UPDATE members SET prospect_list = 'pl_c0c0c0c0c0c0c0c0' WHERE cohort = ''")
+		return e
+	})
+	if e != nil {
+		t.Fatal(e)
+	}
+	for i := range 2 {
+		row, e := f.s.GetMember(ctx, c.ID, fmt.Sprintf("cand_%016x", i))
+		eq(t, must(t, row, e).Member.ProspectList, "pl_c0c0c0c0c0c0c0c0")
+	}
+}
+
+// R-36U9-4HFI R-3825-I967
+func TestPreviousReleaseRecords(t *testing.T) {
+	for _, migrate := range []bool{true, false} {
+		t.Run(fmt.Sprint(migrate), func(t *testing.T) {
+			f := newFixture(t)
+			if e := f.d.Close(); e != nil {
+				t.Fatal(e)
+			}
+			f.path = filepath.Join(t.TempDir(), "old.db")
+			migrations := campaigns.Migrations()
+			if migrate {
+				first, e := fs.ReadFile(migrations, "0001_campaigns.sql")
+				if e != nil {
+					t.Fatal(e)
+				}
+				migrations = fstest.MapFS{"0001_campaigns.sql": &fstest.MapFile{Data: first}}
+			}
+			d, e := db.Open(ctx, db.Config{Path: f.path, Migrations: migrations, Now: func() time.Time { return f.now }, Service: "campaigns", Stderr: io.Discard})
+			if e != nil {
+				t.Fatal(e)
+			}
+			f.d = d
+			c := store.Campaign{ID: "camp_5a5a5a5a5a5a5a5a", Name: "legacy", Description: "stored description", Channels: []string{"mail", "email"}, Destination: "https://legacy.invalid/", Created: stamp(f), CreatedUserID: "creator", CreatedUserEmail: "creator@example.invalid"}
+			material := store.Material{Campaign: c.ID, Path: "legacy/file", Label: "stored label", Artifact: "artifact-id", Added: stamp(f), AddedUserID: "adder", AddedUserEmail: "adder@example.invalid"}
+			rows := []store.MemberRow{}
+			visits := map[string][]store.Visit{}
+			e = d.Write(ctx, func(tx *sql.Tx) error {
+				if _, e := tx.ExecContext(ctx, "INSERT INTO campaigns(id,name,description,channels,destination,created,created_user_id,created_user_email)VALUES(?,?,?,?,?,?,?,?)", c.ID, c.Name, c.Description, "mail,email", c.Destination, c.Created.Format(time.RFC3339), c.CreatedUserID, c.CreatedUserEmail); e != nil {
+					return e
+				}
+				if _, e := tx.ExecContext(ctx, "INSERT INTO materials(campaign,path,label,artifact,added,added_user_id,added_user_email)VALUES(?,?,?,?,?,?,?)", material.Campaign, material.Path, material.Label, material.Artifact, material.Added.Format(time.RFC3339), material.AddedUserID, material.AddedUserEmail); e != nil {
+					return e
+				}
+				for i := range 31 {
+					oldList := "coh_5a5a5a5a5a5a5a5a"
+					list := ""
+					if i == 30 {
+						oldList = ""
+					} else if migrate {
+						list = "pl_5a5a5a5a5a5a5a5a"
+					}
+					m := store.Member{Campaign: c.ID, Candidate: fmt.Sprintf("cand_%016x", i), ProspectList: list, Added: stamp(f), AddedUserID: "adder", AddedUserEmail: "adder@example.invalid"}
+					if i%3 == 0 {
+						m.Rejected = true
+						m.RejectedUserID = "rejecter"
+						m.RejectedUserEmail = "rejecter@example.invalid"
+						m.RejectedAt = stamp(f)
+						m.Why = "reason"
+					}
+					if _, e := tx.ExecContext(ctx, "INSERT INTO members(campaign,candidate,cohort,added,added_user_id,added_user_email,rejected,rejected_user_id,rejected_user_email,rejected_at,why)VALUES(?,?,?,?,?,?,?,?,?,?,?)", m.Campaign, m.Candidate, oldList, m.Added.Format(time.RFC3339), m.AddedUserID, m.AddedUserEmail, m.Rejected, m.RejectedUserID, m.RejectedUserEmail, legacyTime(m.RejectedAt), m.Why); e != nil {
+						return e
+					}
+					row := store.MemberRow{Member: m, Pieces: []store.PieceRow{}, Engagement: store.MemberEngagement{Opened: true, Opens: 1, First: stamp(f), Last: stamp(f)}}
+					for j, ch := range c.Channels {
+						n := i*2 + j + 1
+						p := store.Piece{ID: fmt.Sprintf("piece_%016x", n), Campaign: c.ID, Candidate: m.Candidate, Channel: ch, State: store.StatePlanned, Token: strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(bytes.Repeat([]byte{byte(n)}, 16))), Created: stamp(f)}
+						engagement := store.PieceEngagement{}
+						if j == 0 {
+							p.State = store.StateDelivered
+							p.Delivered = stamp(f)
+							p.DeliveredUserID = "deliverer"
+							p.DeliveredUserEmail = "deliverer@example.invalid"
+							p.How = store.HowHand
+							engagement = store.PieceEngagement{Opens: 1, First: stamp(f), Last: stamp(f)}
+							visit := store.Visit{Seq: int64(i + 1), Piece: p.ID, At: stamp(f), UserAgent: "agent", Referrer: "referrer", Address: "address"}
+							visits[p.ID] = []store.Visit{visit}
+							if _, e := tx.ExecContext(ctx, "INSERT INTO visits(seq,piece,at,user_agent,referrer,address)VALUES(?,?,?,?,?,?)", visit.Seq, visit.Piece, visit.At.Format(time.RFC3339), visit.UserAgent, visit.Referrer, visit.Address); e != nil {
+								return e
+							}
+						} else {
+							visits[p.ID] = []store.Visit{}
+						}
+						if _, e := tx.ExecContext(ctx, "INSERT INTO pieces(id,campaign,candidate,channel,state,token,created,delivered,delivered_user_id,delivered_user_email,how,dropped,dropped_user_id,dropped_user_email)VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", p.ID, p.Campaign, p.Candidate, p.Channel, p.State, p.Token, p.Created.Format(time.RFC3339), legacyTime(p.Delivered), p.DeliveredUserID, p.DeliveredUserEmail, p.How, legacyTime(p.Dropped), p.DroppedUserID, p.DroppedUserEmail); e != nil {
+							return e
+						}
+						row.Pieces = append(row.Pieces, store.PieceRow{Piece: p, Engagement: engagement})
+					}
+					rows = append(rows, row)
+				}
+				return nil
+			})
+			if e != nil {
+				t.Fatal(e)
+			}
+			f.reopen()
+			gotCampaign, e := f.s.GetCampaign(ctx, c.ID)
+			eq(t, must(t, gotCampaign, e), c)
+			counts, e := f.s.Counts(ctx, c.ID)
+			eq(t, must(t, counts, e), store.Counts{Members: 31, Delivered: 31, Opened: 31})
+			gotMaterial, e := f.s.Materials(ctx, c.ID)
+			eq(t, must(t, gotMaterial, e), []store.Material{material})
+			forward, e := f.s.ListMembers(ctx, c.ID, "", "", 100)
+			eq(t, must(t, forward, e), rows)
+			reverse, e := f.s.ListMembersReversed(ctx, c.ID, "", "", 100)
+			wantReverse := append([]store.MemberRow{}, rows...)
+			for i, j := 0, len(wantReverse)-1; i < j; i, j = i+1, j-1 {
+				wantReverse[i], wantReverse[j] = wantReverse[j], wantReverse[i]
+			}
+			eq(t, must(t, reverse, e), wantReverse)
+			for channelIndex, ch := range c.Channels {
+				merged, e := f.s.MergeList(ctx, c.ID, ch, true, "", "", 100)
+				want := []store.MergeRow{}
+				for _, row := range rows {
+					want = append(want, store.MergeRow{Piece: row.Pieces[channelIndex].Piece, Rejected: row.Member.Rejected})
+				}
+				eq(t, must(t, merged, e), want)
+			}
+			for _, row := range rows {
+				got, e := f.s.GetMember(ctx, c.ID, row.Member.Candidate)
+				eq(t, must(t, got, e), row)
+				for _, piece := range row.Pieces {
+					got, e := f.s.GetPiece(ctx, piece.Piece.ID)
+					eq(t, must(t, got, e), piece)
+					gotVisits, e := f.s.ListVisits(ctx, piece.Piece.ID, 0, 100)
+					eq(t, must(t, gotVisits, e), visits[piece.Piece.ID])
+					visited, e := f.s.Visit(ctx, piece.Piece.Token, store.VisitInput{UserAgent: "new agent"})
+					eq(t, must(t, visited, e), store.Visited{Campaign: c.ID, Piece: piece.Piece.ID, Destination: c.Destination})
+				}
+			}
+		})
+	}
+}
+
+func legacyTime(at time.Time) string {
+	if at.IsZero() {
+		return ""
+	}
+	return at.Format(time.RFC3339)
+}
+
+// R-2B4V-6G5G
+func TestPresentMemberKeepsFirstProspectList(t *testing.T) {
+	f := newFixture(t)
+	c := f.campaign("mail")
+	in := store.MemberInput{Campaign: c.ID, Candidate: "cand_5a5a5a5a5a5a5a5a", ProspectList: "pl_5a5a5a5a5a5a5a5a", Channels: []string{"mail"}, UserID: "owner"}
+	first, _, e := f.s.AddMember(ctx, in)
+	if e != nil {
+		t.Fatal(e)
+	}
+	rnd := &failedReader{}
+	f.s = store.New(f.d, store.Config{Now: func() time.Time { return f.now }, Rand: rnd})
+	in.ProspectList = "pl_c0c0c0c0c0c0c0c0"
+	in.Channels = []string{"email"}
+	in.UserEmail = "other@example.invalid"
+	got, changed, e := f.s.AddMember(ctx, in)
+	if e != nil {
+		t.Fatal(e)
+	}
+	eq(t, changed, false)
+	eq(t, got, first)
+	eq(t, rnd.reads, 0)
+	f.reopen()
+	got, e = f.s.GetMember(ctx, c.ID, in.Candidate)
+	eq(t, must(t, got, e), first)
 }

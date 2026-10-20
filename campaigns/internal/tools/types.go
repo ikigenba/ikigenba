@@ -59,10 +59,10 @@ type DeleteArgs struct {
 	Campaign string `json:"campaign" mcp:"required"`
 }
 
-// CohortArgs supplies arguments for the corresponding MCP tool.
-type CohortArgs struct {
-	Campaign string `json:"campaign" mcp:"required"`
-	Cohort   string `json:"cohort" mcp:"required"`
+// ProspectListArgs supplies arguments for the corresponding MCP tool.
+type ProspectListArgs struct {
+	Campaign     string `json:"campaign" mcp:"required"`
+	ProspectList string `json:"prospect_list" mcp:"required"`
 }
 
 // MemberArgs supplies arguments for the corresponding MCP tool.
@@ -157,7 +157,7 @@ type Piece struct {
 type Member struct {
 	Campaign      string  `json:"campaign"`
 	Candidate     string  `json:"candidate"`
-	Cohort        string  `json:"cohort"`
+	ProspectList  string  `json:"prospect_list"`
 	Added         string  `json:"added"`
 	AddedBy       string  `json:"added_by"`
 	AddedEmail    string  `json:"added_email"`
@@ -217,8 +217,8 @@ type AddedMember struct {
 	Skipped []Skip `json:"skipped"`
 }
 
-// CohortAdd reports additions and exclusions from a cohort.
-type CohortAdd struct {
+// ProspectListAdd reports additions and exclusions from a prospect list.
+type ProspectListAdd struct {
 	Added    []AddedMember `json:"added"`
 	Present  int           `json:"present"`
 	Excluded int           `json:"excluded"`

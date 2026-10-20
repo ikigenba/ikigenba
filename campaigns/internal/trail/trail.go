@@ -24,7 +24,7 @@ const EventVisited = "campaign.visited"
 // Emits returns independent declarations for the three bus events.
 func Emits() []events.Emission {
 	return []events.Emission{
-		{Event: EventMemberAdded, Attrs: []string{"campaign", "candidate", "cohort"}},
+		{Event: EventMemberAdded, Attrs: []string{"campaign", "candidate", "prospect_list"}},
 		{Event: EventMemberRejected, Attrs: []string{"campaign", "candidate", "reason"}},
 		{Event: EventPieceDelivered, Attrs: []string{"campaign", "candidate", "piece", "channel", "how"}},
 	}
@@ -39,8 +39,8 @@ func both(ctx context.Context, w *telemetry.Writer, em *events.Emitter, name str
 }
 
 // MemberAdded queues the trail and bus records for a new member.
-func MemberAdded(ctx context.Context, w *telemetry.Writer, em *events.Emitter, campaign, candidate, cohort string) {
-	both(ctx, w, em, EventMemberAdded, telemetry.Attrs{"campaign": campaign, "candidate": candidate, "cohort": cohort})
+func MemberAdded(ctx context.Context, w *telemetry.Writer, em *events.Emitter, campaign, candidate, prospectList string) {
+	both(ctx, w, em, EventMemberAdded, telemetry.Attrs{"campaign": campaign, "candidate": candidate, "prospect_list": prospectList})
 }
 
 // MemberRejected queues the trail and bus records for a rejection.

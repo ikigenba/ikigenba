@@ -88,25 +88,25 @@ func (h handlers) addMember(ctx context.Context, c identity.Caller, in MemberArg
 	}
 	return h.add(ctx, c, k, in.Candidate, "", b)
 }
-func (h handlers) add(ctx context.Context, c identity.Caller, k store.Campaign, id, cohort string, b candidates.Business) (AddedMember, error) {
+func (h handlers) add(ctx context.Context, c identity.Caller, k store.Campaign, id, prospectList string, b candidates.Business) (AddedMember, error) {
 	ch, skip := channels(k, b)
-	r, a, e := h.Store.AddMember(ctx, store.MemberInput{Campaign: k.ID, Candidate: id, Cohort: cohort, Channels: ch, UserID: c.UserID, UserEmail: c.Email})
+	r, a, e := h.Store.AddMember(ctx, store.MemberInput{Campaign: k.ID, Candidate: id, ProspectList: prospectList, Channels: ch, UserID: c.UserID, UserEmail: c.Email})
 	if e != nil {
 		return AddedMember{}, storeError(e, false)
 	}
 	if a {
-		trail.MemberAdded(ctx, h.Telemetry, h.Events, k.ID, id, cohort)
+		trail.MemberAdded(ctx, h.Telemetry, h.Events, k.ID, id, prospectList)
 	} else {
 		skip = []Skip{}
 	}
 	return AddedMember{memberAnswer(r), a, skip}, nil
 }
-func (h handlers) addCohort(ctx context.Context, c identity.Caller, in CohortArgs) (out CohortAdd, err error) {
+func (h handlers) addProspectList(ctx context.Context, c identity.Caller, in ProspectListArgs) (out ProspectListAdd, err error) {
 	if !store.ValidCampaignID(in.Campaign) {
 		return out, missing()
 	}
-	if !store.ValidCohortID(in.Cohort) {
-		return out, refusal(RefusalNotFound, RefuseNoCohort)
+	if !store.ValidProspectListID(in.ProspectList) {
+		return out, refusal(RefusalNotFound, RefuseNoProspectList)
 	}
 	k, e := h.live(ctx, in.Campaign)
 	if e != nil {
@@ -115,9 +115,9 @@ func (h handlers) addCohort(ctx context.Context, c identity.Caller, in CohortArg
 	if h.Candidates == nil {
 		return out, candidateFailure()
 	}
-	ms, e := h.Candidates.Members(ctx, in.Cohort)
+	ms, e := h.Candidates.ProspectList(ctx, in.ProspectList)
 	if errors.Is(e, candidates.ErrNotFound) {
-		return out, refusal(RefusalNotFound, RefuseNoCohort)
+		return out, refusal(RefusalNotFound, RefuseNoProspectList)
 	}
 	if e != nil {
 		return out, candidateFailure()
@@ -133,9 +133,9 @@ func (h handlers) addCohort(ctx context.Context, c identity.Caller, in CohortArg
 			out.Excluded++
 			continue
 		}
-		a, e := h.add(ctx, c, k, m.Business.ID, in.Cohort, m.Business)
+		a, e := h.add(ctx, c, k, m.Business.ID, in.ProspectList, m.Business)
 		if e != nil {
-			return CohortAdd{}, e
+			return ProspectListAdd{}, e
 		}
 		if a.Added {
 			out.Added = append(out.Added, a)

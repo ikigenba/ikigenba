@@ -33,8 +33,8 @@ func ValidPieceID(s string) bool { return validID(s, PieceIDPrefix) }
 // ValidCandidateID accepts candidate ids.
 func ValidCandidateID(s string) bool { return validID(s, "cand_") }
 
-// ValidCohortID accepts cohort ids.
-func ValidCohortID(s string) bool { return validID(s, "coh_") }
+// ValidProspectListID accepts prospect list ids.
+func ValidProspectListID(s string) bool { return validID(s, "pl_") }
 
 // ValidToken accepts a lowercase base32 token of length 26.
 func ValidToken(s string) bool {
@@ -183,7 +183,7 @@ func member(ctx context.Context, tx *sql.Tx, c, id string) (Member, error) {
 	if _, e := campaign(ctx, tx, c); e != nil {
 		return Member{}, e
 	}
-	return one[Member](ctx, tx, "SELECT * FROM members WHERE campaign=? AND candidate=?", c, id)
+	return one[Member](ctx, tx, "SELECT campaign,candidate,prospect_list,added,added_user_id,added_user_email,rejected,rejected_user_id,rejected_user_email,rejected_at,why FROM members WHERE campaign=? AND candidate=?", c, id)
 }
 func (s *Store) mint(ctx context.Context, tx *sql.Tx, table, col, prefix string, size int) (string, error) {
 	for range 8 {

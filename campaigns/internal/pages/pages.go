@@ -215,7 +215,7 @@ func memberRow(cfg Config, r *http.Request, channels []string, m store.MemberRow
 	x := m.Member
 	a, b := stamp(x.Added, MinuteLayout)
 	base := urls.Sibling(cfg.ServicesPath, "candidates")
-	out := MemberRow{Candidate: x.Candidate, CandidatePage: urls.CandidatePage(base, x.Candidate), Cohort: x.Cohort, CohortPage: urls.CohortPage(base, x.Cohort), Added: a, AddedText: b, Opened: m.Engagement.Opened, Rejected: x.Rejected, Pieces: make([]PieceRow, 0, len(channels))}
+	out := MemberRow{Candidate: x.Candidate, CandidatePage: urls.CandidatePage(base, x.Candidate), ProspectList: x.ProspectList, ProspectListPage: urls.ProspectListPage(base, x.ProspectList), Added: a, AddedText: b, Opened: m.Engagement.Opened, Rejected: x.Rejected, Pieces: make([]PieceRow, 0, len(channels))}
 	if cfg.Candidates != nil {
 		business, err := cfg.Candidates.Candidate(r.Context(), x.Candidate)
 		if err == nil {

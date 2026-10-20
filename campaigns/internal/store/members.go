@@ -34,14 +34,14 @@ func (s *Store) AddMember(ctx context.Context, in MemberInput) (MemberRow, bool,
 		if in.UserID == "" {
 			return MemberRow{}, false, ErrUnreachable
 		}
-		if !ValidCandidateID(in.Candidate) || in.Cohort != "" && !ValidCohortID(in.Cohort) || !channelSet(in.Channels) {
+		if !ValidCandidateID(in.Candidate) || in.ProspectList != "" && !ValidProspectListID(in.ProspectList) || !channelSet(in.Channels) {
 			return MemberRow{}, false, ErrInvalid
 		}
 		c, e := campaign(ctx, tx, in.Campaign)
 		if e != nil {
 			return MemberRow{}, false, e
 		}
-		ms, e := query[Member](ctx, tx, "SELECT * FROM members WHERE campaign=? AND candidate=?", in.Campaign, in.Candidate)
+		ms, e := query[Member](ctx, tx, "SELECT campaign,candidate,prospect_list,added,added_user_id,added_user_email,rejected,rejected_user_id,rejected_user_email,rejected_at,why FROM members WHERE campaign=? AND candidate=?", in.Campaign, in.Candidate)
 		if e != nil {
 			return MemberRow{}, false, e
 		}
@@ -54,8 +54,8 @@ func (s *Store) AddMember(ctx context.Context, in MemberInput) (MemberRow, bool,
 				return MemberRow{}, false, ErrInvalid
 			}
 		}
-		m := Member{Campaign: in.Campaign, Candidate: in.Candidate, Cohort: in.Cohort, Added: s.stamp(), AddedUserID: in.UserID, AddedUserEmail: in.UserEmail}
-		if e = exec(ctx, tx, "INSERT INTO members(campaign,candidate,cohort,added,added_user_id,added_user_email)VALUES(?,?,?,?,?,?)", m.Campaign, m.Candidate, m.Cohort, text(m.Added), m.AddedUserID, m.AddedUserEmail); e != nil {
+		m := Member{Campaign: in.Campaign, Candidate: in.Candidate, ProspectList: in.ProspectList, Added: s.stamp(), AddedUserID: in.UserID, AddedUserEmail: in.UserEmail}
+		if e = exec(ctx, tx, "INSERT INTO members(campaign,candidate,cohort,prospect_list,added,added_user_id,added_user_email)VALUES(?,?,'',?,?,?,?)", m.Campaign, m.Candidate, m.ProspectList, text(m.Added), m.AddedUserID, m.AddedUserEmail); e != nil {
 			return MemberRow{}, false, e
 		}
 		for _, ch := range channels(in.Channels) {

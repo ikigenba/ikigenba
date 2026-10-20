@@ -30,8 +30,8 @@ func schemaCases(t *testing.T, list []mcp.ToolInfo) {
 		{"edit_campaign", []string{"campaign", "name", "description", "destination"}, []string{"campaign"}},
 		// R-FCSP-21NU
 		{"delete_campaign", []string{"campaign"}, []string{"campaign"}},
-		// R-FF8H-TL58
-		{"add_cohort", []string{"campaign", "cohort"}, []string{"campaign", "cohort"}},
+		// R-2S7G-J8J6
+		{"add_prospect_list", []string{"campaign", "prospect_list"}, []string{"campaign", "prospect_list"}},
 		// R-FGGE-7CVX
 		{"add_member", []string{"campaign", "candidate"}, []string{"campaign", "candidate"}},
 		// R-FHOA-L4MM
@@ -166,9 +166,9 @@ func TestOutputPiece(t *testing.T) {
 	outputValue(t, Piece{}, []string{"id", "campaign", "candidate", "channel", "state", "created", "delivered", "delivered_by", "delivered_email", "how", "dropped", "dropped_by", "dropped_email", "opens", "first", "last"})
 }
 
-// R-FSNE-12AV
+// R-2TFC-X09V
 func TestOutputMember(t *testing.T) {
-	outputValue(t, Member{}, []string{"campaign", "candidate", "cohort", "added", "added_by", "added_email", "rejected", "rejected_by", "rejected_email", "rejected_at", "why", "opened", "opens", "first", "last", "pieces"})
+	outputValue(t, Member{}, []string{"campaign", "candidate", "prospect_list", "added", "added_by", "added_email", "rejected", "rejected_by", "rejected_email", "rejected_at", "why", "opened", "opens", "first", "last", "pieces"})
 }
 
 // R-FTVA-EU1K
@@ -197,9 +197,9 @@ func TestOutputAddedMember(t *testing.T) {
 	outputValue(t, AddedMember{}, []string{"member", "added", "skipped"})
 }
 
-// R-G2EL-388F
-func TestOutputCohortAdd(t *testing.T) {
-	outputValue(t, CohortAdd{}, []string{"added", "present", "excluded"})
+// R-2UN9-AS0K
+func TestOutputProspectListAdd(t *testing.T) {
+	outputValue(t, ProspectListAdd{}, []string{"added", "present", "excluded"})
 }
 
 // R-G3MH-GZZ4

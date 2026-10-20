@@ -8,6 +8,8 @@ github.com/hashicorp/golang-lru/v2 v2.0.7 h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs
 github.com/hashicorp/golang-lru/v2 v2.0.7/go.mod h1:QeFd9opnmA6QUJc5vARoKUSoFhyfM2/ZepoAG6RGpeM=
 github.com/ikigenba/ikigenba/appkit v0.29.0 h1:+rId+2yIFwaUl/TsgIpsOo3rwjTxFtZy8GV8UR+7s0E=
 github.com/ikigenba/ikigenba/appkit v0.29.0/go.mod h1:mtzrkbEtQsW51jjUBavA/X78DKF/UcEYw+gFqSpwXBA=
+github.com/ikigenba/ikigenba/appkit v0.30.0 h1:6xaWEwcbDz8khoUBlzonyAJmUb01jcUuPsxeJVVt7M8=
+github.com/ikigenba/ikigenba/appkit v0.30.0/go.mod h1:mtzrkbEtQsW51jjUBavA/X78DKF/UcEYw+gFqSpwXBA=
 github.com/mattn/go-isatty v0.0.24 h1:tGZZoVgT/KiqK1c8ocVLeDS8BSWMRd47J3Lbz7vsReI=
 github.com/mattn/go-isatty v0.0.24/go.mod h1:nMCL3Zebbrt45jsMDgnfIwz6ydEQApk5oEI3HqDio6A=
 github.com/ncruces/go-strftime v1.0.0 h1:HMFp8mLCTPp341M/ZnA4qaf7ZlsbTc+miZjCLOFAw7w=

@@ -52,7 +52,7 @@ func memberAnswer(r store.MemberRow) Member {
 	for _, x := range r.Pieces {
 		p = append(p, pieceAnswer(x))
 	}
-	return Member{m.Campaign, m.Candidate, m.Cohort, stamp(m.Added), m.AddedUserID, m.AddedUserEmail, m.Rejected, m.RejectedUserID, m.RejectedUserEmail, stamp(m.RejectedAt), m.Why, e.Opened, e.Opens, stamp(e.First), stamp(e.Last), p}
+	return Member{m.Campaign, m.Candidate, m.ProspectList, stamp(m.Added), m.AddedUserID, m.AddedUserEmail, m.Rejected, m.RejectedUserID, m.RejectedUserEmail, stamp(m.RejectedAt), m.Why, e.Opened, e.Opens, stamp(e.First), stamp(e.Last), p}
 }
 func materialAnswer(m store.Material) Material {
 	return Material{m.Path, m.Label, m.Artifact, stamp(m.Added), m.AddedUserID, m.AddedUserEmail}

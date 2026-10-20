@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ikigenba/ikigenba/appkit/artifacts"
 	"github.com/ikigenba/ikigenba/appkit/candidates"
@@ -207,7 +208,7 @@ func (s *sibling) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			failure = "not_found: absent"
 		}
 		data = map[string]any{"candidate": b}
-	case "cohort":
+	case "prospect_list":
 		data = map[string]any{"members": s.members}
 	case "show":
 		failure = s.showFailure
@@ -243,8 +244,8 @@ func business(n int) map[string]any {
 }
 
 // R-S7WV-1AWD R-F0LP-8C8W R-F1TL-M3ZL R-F31H-ZVQA R-F49E-DNGZ
-// R-SBKK-6M4G R-SCSG-KDV5 R-SE0C-Y5LU R-SF89-BXCJ R-SGG5-PP38
-// R-SHO2-3GTX R-SIVY-H8KM R-SK3U-V0BB R-SQ7C-RV0S
+// R-SBKK-6M4G R-SCSG-KDV5 R-3BPU-NKEA R-SF89-BXCJ R-3CXR-1C4Z
+// R-3E5N-F3VO R-SIVY-H8KM R-3FDJ-SVMD R-3GLG-6ND2
 func TestCatalogAndSchemas(t *testing.T) {
 	f := setup(t)
 	f.start()
@@ -262,12 +263,12 @@ func TestCatalogAndSchemas(t *testing.T) {
 	if len(cat) != 15 || len(list) != 15 || len(f.server.Tools()) != 15 {
 		t.Fatal("catalog length")
 	}
-	names := []string{"campaigns", "campaign", "create_campaign", "edit_campaign", "delete_campaign", "add_cohort", "add_member", "reject", "drop", "deliver", "deliver_channel", "add_material", "remove_material", "merge_list", "engagement"}
-	descriptions := []string{DescribeCampaigns, DescribeCampaign, DescribeCreateCampaign, DescribeEditCampaign, DescribeDeleteCampaign, DescribeAddCohort, DescribeAddMember, DescribeReject, DescribeDrop, DescribeDeliver, DescribeDeliverChannel, DescribeAddMaterial, DescribeRemoveMaterial, DescribeMergeList, DescribeEngagement}
+	names := []string{"campaigns", "campaign", "create_campaign", "edit_campaign", "delete_campaign", "add_prospect_list", "add_member", "reject", "drop", "deliver", "deliver_channel", "add_material", "remove_material", "merge_list", "engagement"}
+	descriptions := []string{DescribeCampaigns, DescribeCampaign, DescribeCreateCampaign, DescribeEditCampaign, DescribeDeleteCampaign, DescribeAddProspectList, DescribeAddMember, DescribeReject, DescribeDrop, DescribeDeliver, DescribeDeliverChannel, DescribeAddMaterial, DescribeRemoveMaterial, DescribeMergeList, DescribeEngagement}
 	seen := map[string]bool{}
 	for i, x := range cat {
 		line := FirstLine(x.Description)
-		if x.Name != names[i] || x.Description != descriptions[i] || line == "" || len([]rune(line)) > 120 || !strings.HasSuffix(line, ".") || strings.Contains(line, ". ") || strings.TrimSpace(line) != line || seen[line] {
+		if x.Name != names[i] || x.Description != descriptions[i] || !utf8.ValidString(x.Description) || line == "" || len([]rune(line)) > 120 || !strings.HasSuffix(line, ".") || strings.Contains(line, ". ") || strings.TrimSpace(line) != line || seen[line] {
 			t.Fatalf("catalog entry %#v", x)
 		}
 		seen[line] = true
@@ -292,7 +293,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 		t.Fatal("machine constants")
 	}
 	seen = map[string]bool{store.Unreachable: true}
-	for _, x := range []string{RefuseNotFound, RefuseNoCandidate, RefuseNoCohort, RefuseNoArtifact, RefuseInvalid, RefuseState, RefuseCandidates, RefuseArtifacts} {
+	for _, x := range []string{RefuseNotFound, RefuseNoCandidate, RefuseNoProspectList, RefuseNoArtifact, RefuseInvalid, RefuseState, RefuseCandidates, RefuseArtifacts} {
 		if x == "" || strings.Contains(x, "\n") || seen[x] {
 			t.Fatal("refusal copy")
 		}
@@ -307,7 +308,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 	}
 }
 
-// R-T2EC-LKFQ R-N4J2-XCHT R-T4U5-D3X4 R-T9PQ-W6VW R-TAXN-9YML
+// R-3J18-Y6UG R-31YN-LEGQ R-T4U5-D3X4 R-3LH1-PQBU R-3MOY-3I2J
 func TestPagingPrecedenceAndUnavailable(t *testing.T) {
 	f := setup(t)
 	f.start()
@@ -334,7 +335,7 @@ func TestPagingPrecedenceAndUnavailable(t *testing.T) {
 	f.refuse("engagement", EngagementArgs{}, RefusalInvalid, RefuseInvalid)
 }
 
-// R-TELC-F9UO R-TFT8-T1LD R-TI91-KL2R R-T621-QVNT R-TC5J-NQDA
+// R-TELC-F9UO R-TFT8-T1LD R-TI91-KL2R R-T621-QVNT R-3P4Q-V1JX
 func TestCampaignLifecycleAndWindows(t *testing.T) {
 	f := setup(t)
 	f.start()
@@ -400,10 +401,10 @@ func TestCampaignLifecycleAndWindows(t *testing.T) {
 	f.refuse("delete_campaign", DeleteArgs{Campaign: "bad"}, RefusalNotFound, RefuseNotFound)
 }
 
-// R-TJGX-YCTG R-TKOU-C4K5 R-T8HU-IF57 R-T79Y-4NEI R-TDDG-1I3Z
-// R-GN4V-LBU8 R-GKP2-TSCU R-GOCR-Z3KX R-TPKF-V7IX R-T16G-7SP1
-// R-U0JJ-B576 R-U2ZC-2OOK R-U478-GGF9 R-TY3Q-JLPS R-TZBM-XDGH
-// R-GQSK-QN2B R-GS0H-4ET0 R-GT8D-I6JP R-N5QZ-B48I R-GVO6-9Q13
+// R-3RKJ-ML1B R-3SSG-0CS0 R-T8HU-IF57 R-3K95-BYL5 R-3QCN-8TAM
+// R-GN4V-LBU8 R-GKP2-TSCU R-GOCR-Z3KX R-3WG5-5O03 R-3HTC-KF3R
+// R-403U-AZ86 R-41BQ-OQYV R-42JN-2IPK R-3XO1-JFQS R-3YVX-X7HH
+// R-2VV5-OJR9 R-2X32-2BHY R-2YAY-G38N R-34EG-CXY4 R-2ZIU-TUZC
 func TestMembersPiecesEngagementAndEvents(t *testing.T) {
 	f := setup(t)
 	s := &sibling{businesses: map[string]map[string]any{id(1): business(1), id(2): business(2), id(3): business(3)}}
@@ -648,8 +649,8 @@ func TestMaterialLifecycleAndRefusals(t *testing.T) {
 	}
 }
 
-// R-TLWQ-PWAU R-TN4N-3O1J R-N3B6-JKR4
-func TestCohortPartialFailureAndRepeat(t *testing.T) {
+// R-3U0C-E4IP R-3V88-RW9E R-30QR-7MQ1
+func TestProspectListPartialFailureAndRepeat(t *testing.T) {
 	f := setup(t)
 	limited := &boundedReader{remaining: 56}
 	f.cfg.Store = store.New(f.d, store.Config{Now: fixtureTime, Rand: limited})
@@ -660,13 +661,16 @@ func TestCohortPartialFailureAndRepeat(t *testing.T) {
 	f.sibling(s, "candidates")
 	f.start()
 	k := f.create("mail")
-	f.refuse("add_cohort", CohortArgs{"bad", "bad"}, RefusalNotFound, RefuseNotFound)
-	f.refuse("add_cohort", CohortArgs{k.ID, "bad"}, RefusalNotFound, RefuseNoCohort)
+	f.refuse("add_prospect_list", ProspectListArgs{"bad", "bad"}, RefusalNotFound, RefuseNotFound)
+	for _, malformed := range []string{"bad", "coh_1111111111111111", "pl_111111111111111", "pl_111111111111111g"} {
+		f.refuse("add_prospect_list", ProspectListArgs{k.ID, malformed}, RefusalNotFound, RefuseNoProspectList)
+	}
+	f.refuse("add_prospect_list", ProspectListArgs{"camp_ffffffffffffffff", "pl_1111111111111111"}, RefusalNotFound, RefuseNotFound)
 	if len(s.records()) != 0 {
 		t.Fatal(s.records())
 	}
-	cohort := "coh_1111111111111111"
-	f.refuse("add_cohort", CohortArgs{k.ID, cohort}, RefusalUnavailable, store.Unreachable)
+	prospectList := "pl_1111111111111111"
+	f.refuse("add_prospect_list", ProspectListArgs{k.ID, prospectList}, RefusalUnavailable, store.Unreachable)
 	rows, e := f.cfg.Store.ListMembers(context.Background(), k.ID, "", "", 10)
 	if e != nil || len(rows) != 2 {
 		t.Fatalf("partial rows %d %v", len(rows), e)
@@ -676,21 +680,21 @@ func TestCohortPartialFailureAndRepeat(t *testing.T) {
 		t.Fatal(f.bus.Events())
 	}
 	for _, e := range f.bus.Events() {
-		if e.Attrs["cohort"] != cohort {
+		if e.Attrs["prospect_list"] != prospectList {
 			t.Fatal(e)
 		}
 	}
 	limited.remaining = 10000
-	out := decode[CohortAdd](t, f.ok("add_cohort", CohortArgs{k.ID, cohort}))
+	out := decode[ProspectListAdd](t, f.ok("add_prospect_list", ProspectListArgs{k.ID, prospectList}))
 	if len(out.Added) != 3 || out.Present != 2 || out.Excluded != 1 {
 		t.Fatalf("%#v", out)
 	}
 	for _, a := range out.Added {
-		if !a.Added || a.Member.Cohort != cohort || len(a.Member.Pieces) != 1 {
+		if !a.Added || a.Member.ProspectList != prospectList || len(a.Member.Pieces) != 1 {
 			t.Fatal(a)
 		}
 	}
-	out = decode[CohortAdd](t, f.ok("add_cohort", CohortArgs{k.ID, cohort}))
+	out = decode[ProspectListAdd](t, f.ok("add_prospect_list", ProspectListArgs{k.ID, prospectList}))
 	if len(out.Added) != 0 || out.Present != 5 || out.Excluded != 1 {
 		t.Fatalf("repeat %#v", out)
 	}
@@ -698,7 +702,7 @@ func TestCohortPartialFailureAndRepeat(t *testing.T) {
 	if len(f.bus.Events()) != 5 {
 		t.Fatal(f.bus.Events())
 	}
-	if !reflect.DeepEqual(s.records(), []string{"cohort", "cohort", "cohort"}) {
+	if !reflect.DeepEqual(s.records(), []string{"prospect_list", "prospect_list", "prospect_list"}) {
 		t.Fatal(s.records())
 	}
 }
@@ -726,7 +730,7 @@ func TestAbsentSiblingsAndValidatedFailures(t *testing.T) {
 	f.start()
 	k := f.create("mail")
 	f.refuse("add_member", MemberArgs{k.ID, id(1)}, RefusalUnavailable, RefuseCandidates)
-	f.refuse("add_cohort", CohortArgs{k.ID, "coh_1111111111111111"}, RefusalUnavailable, RefuseCandidates)
+	f.refuse("add_prospect_list", ProspectListArgs{k.ID, "pl_1111111111111111"}, RefusalUnavailable, RefuseCandidates)
 	f.refuse("merge_list", MergeArgs{Campaign: k.ID, Channel: "mail"}, RefusalUnavailable, RefuseCandidates)
 	f.refuse("merge_list", MergeArgs{Campaign: k.ID, Channel: "email"}, RefusalInvalid, RefuseInvalid)
 	f.refuse("deliver_channel", ChannelArgs{k.ID, "email"}, RefusalInvalid, RefuseInvalid)
@@ -746,7 +750,7 @@ func TestSiblingRefusalsAndBatch(t *testing.T) {
 	f.sibling(s, "candidates")
 	f.start()
 	k := f.create("mail")
-	cohort := "coh_1111111111111111"
+	prospectList := "pl_1111111111111111"
 	for _, failure := range []string{"not_found: absent", "unavailable: failed", "stopping: stop", "arbitrary: text"} {
 		s.mu.Lock()
 		s.failure = failure
@@ -757,18 +761,18 @@ func TestSiblingRefusalsAndBatch(t *testing.T) {
 		}
 		f.refuse("add_member", MemberArgs{k.ID, id(1)}, w, ct)
 		if w == RefusalNotFound {
-			ct = RefuseNoCohort
+			ct = RefuseNoProspectList
 		}
-		f.refuse("add_cohort", CohortArgs{k.ID, cohort}, w, ct)
+		f.refuse("add_prospect_list", ProspectListArgs{k.ID, prospectList}, w, ct)
 	}
 	s.mu.Lock()
 	s.failure = ""
 	s.members = []map[string]any{{"candidate": business(1), "excluded": false}, {"candidate": map[string]any{"id": "malformed", "status": "active", "name": "bad"}, "excluded": true}}
 	s.mu.Unlock()
-	f.refuse("add_cohort", CohortArgs{k.ID, cohort}, RefusalUnavailable, RefuseCandidates)
+	f.refuse("add_prospect_list", ProspectListArgs{k.ID, prospectList}, RefusalUnavailable, RefuseCandidates)
 	w := decode[CampaignRead](t, f.ok("campaign", CampaignArgs{Campaign: k.ID}))
 	if len(w.Members) != 0 {
-		t.Fatal("malformed cohort partially added")
+		t.Fatal("malformed prospect list partially added")
 	}
 	var pieces []string
 	for n := 1; n <= 3; n++ {

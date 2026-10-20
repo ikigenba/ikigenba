@@ -58,9 +58,9 @@ func (r rig) flush(t *testing.T) {
 	}
 }
 
-// R-CC9P-VOA9 R-CDHM-9G0Y R-CKT0-K2H4 R-CM0W-XU7T R-CX00-DRW2
+// R-CC9P-VOA9 R-CDHM-9G0Y R-2KW2-8M30 R-2M3Y-MDTP R-2NBV-05KE
 func TestDeclarations(t *testing.T) {
-	want := []events.Emission{{Event: "campaign.member.added", Attrs: []string{"campaign", "candidate", "cohort"}}, {Event: "campaign.member.rejected", Attrs: []string{"campaign", "candidate", "reason"}}, {Event: "campaign.piece.delivered", Attrs: []string{"campaign", "candidate", "piece", "channel", "how"}}}
+	want := []events.Emission{{Event: "campaign.member.added", Attrs: []string{"campaign", "candidate", "prospect_list"}}, {Event: "campaign.member.rejected", Attrs: []string{"campaign", "candidate", "reason"}}, {Event: "campaign.piece.delivered", Attrs: []string{"campaign", "candidate", "piece", "channel", "how"}}}
 	if trail.EventMemberAdded != want[0].Event || trail.EventMemberRejected != want[1].Event || trail.EventPieceDelivered != want[2].Event || trail.EventVisited != "campaign.visited" {
 		t.Fatal("names")
 	}
@@ -76,13 +76,13 @@ func TestDeclarations(t *testing.T) {
 	r := setup(t, nil, nil)
 	rec := httptest.NewRecorder()
 	events.DeclarationsHandler(r.em, nil).ServeHTTP(rec, httptest.NewRequest("GET", "/declarations", nil))
-	body := `{"emits":[{"event":"campaign.member.added","attrs":["campaign","candidate","cohort"]},{"event":"campaign.member.rejected","attrs":["campaign","candidate","reason"]},{"event":"campaign.piece.delivered","attrs":["campaign","candidate","piece","channel","how"]}],"accepts":[]}`
+	body := `{"emits":[{"event":"campaign.member.added","attrs":["campaign","candidate","prospect_list"]},{"event":"campaign.member.rejected","attrs":["campaign","candidate","reason"]},{"event":"campaign.piece.delivered","attrs":["campaign","candidate","piece","channel","how"]}],"accepts":[]}`
 	if rec.Code != 200 || rec.Header().Get("Content-Type") != "application/json" || rec.Body.String() != body {
 		t.Fatalf("%d %s %q", rec.Code, rec.Header(), rec.Body.String())
 	}
 }
 
-// R-CEPI-N7RN R-CFXF-0ZIC R-CID7-SIZQ R-CJL4-6AQF R-3D0G-0F7B R-3E8C-E6Y0 R-3FG8-RYOP R-CQWI-GX6L R-CVS4-005D
+// R-1XPY-YYZT R-1YXV-CQQI R-2H8D-3AUX R-2IG9-H2LM R-2ESK-BRDJ R-2G0G-PJ48 R-3FG8-RYOP R-CQWI-GX6L R-CVS4-005D
 func TestRecordsAndContexts(t *testing.T) {
 	for _, withCaller := range []bool{false, true} {
 		for _, done := range []bool{false, true} {
@@ -109,7 +109,7 @@ func TestRecordsAndContexts(t *testing.T) {
 				r.w.Emit(ctx, "tool.called", telemetry.Attrs{"tool": "deliver"})
 				r.flush(t)
 				we, ee := r.wc.Events(), r.ec.Events()
-				wants := []telemetry.Attrs{{"campaign": "campaign-a", "candidate": "candidate-a", "cohort": ""}, {"campaign": "", "candidate": "candidate-b", "reason": "why"}, {"campaign": "campaign-a", "candidate": "candidate-a", "piece": "piece-a", "channel": "mail", "how": "hand"}, {"campaign": "campaign-a", "piece": "piece-a"}}
+				wants := []telemetry.Attrs{{"campaign": "campaign-a", "candidate": "candidate-a", "prospect_list": ""}, {"campaign": "", "candidate": "candidate-b", "reason": "why"}, {"campaign": "campaign-a", "candidate": "candidate-a", "piece": "piece-a", "channel": "mail", "how": "hand"}, {"campaign": "campaign-a", "piece": "piece-a"}}
 				names := []string{trail.EventMemberAdded, trail.EventMemberRejected, trail.EventPieceDelivered, trail.EventVisited}
 				if len(we) != 5 || len(ee) != 3 {
 					t.Fatalf("counts %d %d", len(we), len(ee))
@@ -165,10 +165,10 @@ func (s badTelemetry) Deliver(_ context.Context, e telemetry.Event) error {
 	return telemetry.ErrRejected
 }
 
-// R-3GO5-5QFE
+// R-21DO-4A7W
 func TestIndependentHalves(t *testing.T) {
 	ctx := contextWithCaller(context.Background(), "caller-a", "request-a")
-	attrs := telemetry.Attrs{"campaign": "c", "candidate": "b", "cohort": ""}
+	attrs := telemetry.Attrs{"campaign": "c", "candidate": "b", "prospect_list": ""}
 	checkTrail := func(r rig, name string, want telemetry.Attrs) {
 		t.Helper()
 		if err := r.w.Flush(context.Background()); err != nil {
@@ -274,7 +274,7 @@ func TestReturnsWhileSinksBlock(t *testing.T) {
 	}
 }
 
-// R-3HW1-JI63
+// R-22LK-I1YL
 func TestConcurrentCalls(t *testing.T) {
 	r := setup(t, nil, nil)
 	type record struct {
@@ -287,7 +287,7 @@ func TestConcurrentCalls(t *testing.T) {
 	for i := range 40 {
 		id := fmt.Sprint(i)
 		names := []string{trail.EventMemberAdded, trail.EventMemberRejected, trail.EventPieceDelivered, trail.EventVisited}
-		attrs := []telemetry.Attrs{{"campaign": "c" + id, "candidate": "b" + id, "cohort": "h" + id}, {"campaign": "c" + id, "candidate": "b" + id, "reason": "why" + id}, {"campaign": "c" + id, "candidate": "b" + id, "piece": "p" + id, "channel": "mail", "how": "hand"}, {"campaign": "c" + id, "piece": "p" + id}}
+		attrs := []telemetry.Attrs{{"campaign": "c" + id, "candidate": "b" + id, "prospect_list": "h" + id}, {"campaign": "c" + id, "candidate": "b" + id, "reason": "why" + id}, {"campaign": "c" + id, "candidate": "b" + id, "piece": "p" + id, "channel": "mail", "how": "hand"}, {"campaign": "c" + id, "piece": "p" + id}}
 		for j, name := range names {
 			expected := record{Name: name, RequestID: "q" + id, User: "u" + id, Attrs: attrs[j]}
 			if j == 3 {

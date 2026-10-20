@@ -75,7 +75,7 @@ func (f *pageFixture) create(t *testing.T, i int) store.Campaign {
 func (f *pageFixture) add(t *testing.T, id string, i int) store.MemberRow {
 	t.Helper()
 	f.now = f.now.Add(time.Minute)
-	m, _, err := f.st.AddMember(context.Background(), store.MemberInput{Campaign: id, Candidate: fmt.Sprintf("cand_%016x", i+1), Cohort: "coh_2222222222222222", Channels: []string{store.ChannelEmail}, UserID: "adder"})
+	m, _, err := f.st.AddMember(context.Background(), store.MemberInput{Campaign: id, Candidate: fmt.Sprintf("cand_%016x", i+1), ProspectList: "pl_2222222222222222", Channels: []string{store.ChannelEmail}, UserID: "adder"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestConstants(t *testing.T) {
 	}
 }
 
-// R-VZ91-QQ0E R-W0GY-4HR3 R-W1OU-I9HS R-W2WQ-W18H R-W44N-9SZ6 R-W5CJ-NKPV R-W6KG-1CGK
+// R-VZ91-QQ0E R-W0GY-4HR3 R-W1OU-I9HS R-43RJ-GAG9 R-W44N-9SZ6 R-44ZF-U26Y R-W6KG-1CGK
 func TestEmbeddedTemplatesAndData(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
@@ -172,8 +172,8 @@ func TestEmbeddedTemplatesAndData(t *testing.T) {
 										if named {
 											m.CandidatePage = "https://candidate.example/chosen"
 											m.Name = "business-chosen"
-											m.Cohort = "cohort-chosen"
-											m.CohortPage = "https://cohort.example/chosen"
+											m.ProspectList = "prospect_list-chosen"
+											m.ProspectListPage = "https://prospect_list.example/chosen"
 											m.RejectedBy = "mgreenly+fake02@gmail.com"
 											m.Pieces[0].DeliveredBy = "mgreenly+fake03@gmail.com"
 										}
@@ -305,7 +305,7 @@ func TestReferencePages(t *testing.T) {
 
 func expectedMember(m store.MemberRow, channels []string, base, name string) MemberRow {
 	x := m.Member
-	out := MemberRow{Candidate: x.Candidate, CandidatePage: urls.CandidatePage(base, x.Candidate), Name: name, Cohort: x.Cohort, CohortPage: urls.CohortPage(base, x.Cohort), Added: x.Added.UTC().Format(time.RFC3339), AddedText: x.Added.UTC().Format(MinuteLayout), Opened: m.Engagement.Opened, Rejected: x.Rejected, Pieces: []PieceRow{}}
+	out := MemberRow{Candidate: x.Candidate, CandidatePage: urls.CandidatePage(base, x.Candidate), Name: name, ProspectList: x.ProspectList, ProspectListPage: urls.ProspectListPage(base, x.ProspectList), Added: x.Added.UTC().Format(time.RFC3339), AddedText: x.Added.UTC().Format(MinuteLayout), Opened: m.Engagement.Opened, Rejected: x.Rejected, Pieces: []PieceRow{}}
 	if x.Rejected {
 		out.RejectedBy = x.RejectedUserEmail
 		out.RejectedUser = x.RejectedUserID
@@ -367,7 +367,7 @@ func callTool(t *testing.T, client *mcp.Client, name string, args any, out any) 
 	}
 }
 
-// R-WBG1-KFFC R-WCNX-Y761 R-WDVU-BYWQ R-WF3Q-PQNF R-WSIM-X7T2 R-WTQJ-AZJR R-WUYF-ORAG R-WW6C-2J15 R-WXE8-GARU
+// R-WBG1-KFFC R-WCNX-Y761 R-WDVU-BYWQ R-WF3Q-PQNF R-WSIM-X7T2 R-WTQJ-AZJR R-WUYF-ORAG R-47F8-LLOC R-49V1-D55Q
 func TestWindowsAndSharedToolTokens(t *testing.T) {
 	f := pageSetup(t)
 	assertTemplate(t, f, "/", "landing", 200, LandingData{Banner: expectedBanner(f, "/", nil), Campaigns: []CampaignRow{}})
@@ -503,7 +503,7 @@ func TestWindowsAndSharedToolTokens(t *testing.T) {
 	}
 }
 
-// R-W908-SVXY R-WIRF-V1VI R-WJZC-8TM7
+// R-W908-SVXY R-467C-7TXN R-WJZC-8TM7
 func TestRecordFormatting(t *testing.T) {
 	f := pageSetup(t)
 	r := pageRequest(f, "GET", "/", "viewer")
@@ -657,7 +657,7 @@ func snapshot(t *testing.T, f *pageFixture, id, piece string) string {
 	return string(raw)
 }
 
-// R-WGBN-3IE4 R-WIRF-V1VI R-WJZC-8TM7 R-D1SN-LVRE R-DFW6-SFBA R-D30J-ZNI3 R-X8DB-W8G3
+// R-WGBN-3IE4 R-467C-7TXN R-WJZC-8TM7 R-2OJR-DXB3 R-2QZK-5GSH R-D30J-ZNI3 R-X8DB-W8G3
 func TestCandidateNamesPrivacyAndReadOnly(t *testing.T) {
 	f := pageSetup(t)
 	c := f.create(t, 0)
@@ -802,7 +802,7 @@ func randomFixture(seed int) []byte {
 	return out
 }
 
-// R-D1SN-LVRE R-DFW6-SFBA
+// R-2OJR-DXB3 R-2QZK-5GSH
 func TestOnlyShownMembersReachCandidates(t *testing.T) {
 	f := pageSetup(t)
 	c := f.create(t, 0)

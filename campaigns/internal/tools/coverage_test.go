@@ -44,7 +44,7 @@ func expectedMember(r store.MemberRow) Member {
 	}
 	m := r.Member
 	e := r.Engagement
-	return Member{m.Campaign, m.Candidate, m.Cohort, timeText(m.Added), m.AddedUserID, m.AddedUserEmail, m.Rejected, m.RejectedUserID, m.RejectedUserEmail, timeText(m.RejectedAt), m.Why, e.Opened, e.Opens, timeText(e.First), timeText(e.Last), ps}
+	return Member{m.Campaign, m.Candidate, m.ProspectList, timeText(m.Added), m.AddedUserID, m.AddedUserEmail, m.Rejected, m.RejectedUserID, m.RejectedUserEmail, timeText(m.RejectedAt), m.Why, e.Opened, e.Opens, timeText(e.First), timeText(e.Last), ps}
 }
 func memberRow(t *testing.T, f *fixture, c, m string) store.MemberRow {
 	t.Helper()
@@ -66,8 +66,8 @@ func expectBusiness(n int) Business {
 	return Business{fmt.Sprintf("business %d", n), []string{"alias"}, "street", "city", "state", "zip", "county", "phone", "mgreenly+fake01@gmail.com", []Person{{"person", "owner"}}}
 }
 
-// R-T621-QVNT R-T79Y-4NEI R-GKP2-TSCU R-T8HU-IF57 R-TDDG-1I3Z
-// R-U2ZC-2OOK R-U478-GGF9 R-TZBM-XDGH R-GQSK-QN2B R-GS0H-4ET0 R-GT8D-I6JP
+// R-T621-QVNT R-3K95-BYL5 R-GKP2-TSCU R-T8HU-IF57 R-3QCN-8TAM
+// R-41BQ-OQYV R-42JN-2IPK R-3YVX-X7HH R-2VV5-OJR9 R-2X32-2BHY R-2YAY-G38N
 func TestCompleteAnswersVisitsAndTrail(t *testing.T) {
 	f := setup(t)
 	s := &sibling{businesses: map[string]map[string]any{id(1): business(1), id(2): business(2)}}
@@ -184,7 +184,7 @@ func changeTrail(in []telemetry.Event) []telemetry.Event {
 	return out
 }
 
-// R-T9PQ-W6VW R-TAXN-9YML
+// R-3LH1-PQBU R-3MOY-3I2J
 func TestAllPagingForms(t *testing.T) {
 	f := setup(t)
 	f.start()
@@ -217,7 +217,7 @@ func TestAllPagingForms(t *testing.T) {
 	}
 }
 
-// R-TC5J-NQDA
+// R-3P4Q-V1JX
 func TestThirtyCampaignsOrderedWithCounts(t *testing.T) {
 	f := setup(t)
 	s := &sibling{businesses: map[string]map[string]any{id(1): business(1)}}
@@ -264,8 +264,8 @@ func TestThirtyCampaignsOrderedWithCounts(t *testing.T) {
 	equal(t, decode[CampaignList](t, f.ok("campaigns", CampaignsArgs{Page: page.Next})), CampaignList{Campaigns: want[paging.DefaultLimit:]})
 }
 
-// R-T8HU-IF57 R-TKOU-C4K5 R-TN4N-3O1J
-func TestBusinessEligibilityMergedAndCohortOrder(t *testing.T) {
+// R-T8HU-IF57 R-3SSG-0CS0 R-3V88-RW9E
+func TestBusinessEligibilityMergedAndProspectListOrder(t *testing.T) {
 	f := setup(t)
 	s := &sibling{businesses: map[string]map[string]any{}}
 	for n, key := range []string{"street", "city", "state", "zip"} {
@@ -300,27 +300,27 @@ func TestBusinessEligibilityMergedAndCohortOrder(t *testing.T) {
 	equal(t, a.Member.Candidate, id(6))
 	equal(t, a.Skipped, []Skip{{"email", SkipNoEmail}})
 	equal(t, a.Member.Pieces[0].Channel, "mail")
-	cohort := "coh_1111111111111111"
-	second := "coh_2222222222222222"
+	prospectList := "pl_1111111111111111"
+	second := "pl_2222222222222222"
 	k2 := f.create("mail", "email")
 	b1, b2, b3 := business(1), business(2), business(3)
 	b2["email"] = ""
 	s.mu.Lock()
 	s.members = []map[string]any{{"candidate": b3, "excluded": false}, {"candidate": b2, "excluded": false}, {"candidate": b1, "excluded": false}}
 	s.mu.Unlock()
-	out := decode[CohortAdd](t, f.ok("add_cohort", CohortArgs{k2.ID, cohort}))
+	out := decode[ProspectListAdd](t, f.ok("add_prospect_list", ProspectListArgs{k2.ID, prospectList}))
 	equal(t, len(out.Added), 3)
 	for i, a := range out.Added {
 		equal(t, a.Member.Candidate, id(3-i))
-		equal(t, a.Member.Cohort, cohort)
+		equal(t, a.Member.ProspectList, prospectList)
 	}
 	equal(t, out.Added[1].Skipped, []Skip{{"email", SkipNoEmail}})
 	original := out.Added[1].Member
 	s.mu.Lock()
 	s.members = []map[string]any{{"candidate": b3, "excluded": true}, {"candidate": b2, "excluded": false}, {"candidate": b1, "excluded": false}}
 	s.mu.Unlock()
-	out = decode[CohortAdd](t, f.ok("add_cohort", CohortArgs{k2.ID, second}))
-	equal(t, out, CohortAdd{Added: []AddedMember{}, Present: 2, Excluded: 1})
+	out = decode[ProspectListAdd](t, f.ok("add_prospect_list", ProspectListArgs{k2.ID, second}))
+	equal(t, out, ProspectListAdd{Added: []AddedMember{}, Present: 2, Excluded: 1})
 	equal(t, decode[AddedMember](t, f.ok("add_member", MemberArgs{k2.ID, id(2)})), AddedMember{Member: original, Skipped: []Skip{}})
 }
 
@@ -352,7 +352,7 @@ func TestEditValuesAndDeletedDependents(t *testing.T) {
 	f.refuse("merge_list", MergeArgs{Campaign: k.ID, Channel: "mail"}, RefusalNotFound, RefuseNotFound)
 }
 
-// R-GVO6-9Q13
+// R-2ZIU-TUZC
 func TestSiblingIsolationAndArtifactOrder(t *testing.T) {
 	f := setup(t)
 	s := &sibling{businesses: map[string]map[string]any{id(1): business(1), id(2): business(2)}}
@@ -386,8 +386,8 @@ func TestSiblingIsolationAndArtifactOrder(t *testing.T) {
 	}
 }
 
-// R-GQSK-QN2B R-GT8D-I6JP
-func TestCohortAndBatchMatchTrailHelpers(t *testing.T) {
+// R-2VV5-OJR9 R-2YAY-G38N
+func TestProspectListAndBatchMatchTrailHelpers(t *testing.T) {
 	f := setup(t)
 	s := &sibling{}
 	for _, n := range []int{3, 1, 2} {
@@ -396,15 +396,15 @@ func TestCohortAndBatchMatchTrailHelpers(t *testing.T) {
 	f.sibling(s, "candidates")
 	f.start()
 	k := f.create("mail")
-	cohort := "coh_1111111111111111"
-	added := decode[CohortAdd](t, f.ok("add_cohort", CohortArgs{k.ID, cohort}))
+	prospectList := "pl_1111111111111111"
+	added := decode[ProspectListAdd](t, f.ok("add_prospect_list", ProspectListArgs{k.ID, prospectList}))
 	batch := decode[Delivered](t, f.ok("deliver_channel", ChannelArgs{k.ID, "mail"}))
 	equal(t, len(batch.Pieces), 3)
 	expected := setup(t)
 	ctx := identity.NewContext(context.Background(), testCaller)
 	ctx = events.NewContext(ctx, events.Cause{ID: "evt_8c3f1a6e2d9b4075", Depth: 1})
 	for _, a := range added.Added {
-		trail.MemberAdded(ctx, expected.cfg.Telemetry, expected.cfg.Events, k.ID, a.Member.Candidate, cohort)
+		trail.MemberAdded(ctx, expected.cfg.Telemetry, expected.cfg.Events, k.ID, a.Member.Candidate, prospectList)
 	}
 	for _, p := range batch.Pieces {
 		trail.PieceDelivered(ctx, expected.cfg.Telemetry, expected.cfg.Events, p.Campaign, p.Candidate, p.ID, p.Channel, p.How)
@@ -414,5 +414,5 @@ func TestCohortAndBatchMatchTrailHelpers(t *testing.T) {
 	equal(t, f.bus.Events(), expected.bus.Events())
 	equal(t, changeTrail(f.log.Events()), changeTrail(expected.log.Events()))
 	equal(t, len(s.calls()), 1)
-	equal(t, s.calls()[0].Args, map[string]string{"cohort": cohort})
+	equal(t, s.calls()[0].Args, map[string]string{"prospect_list": prospectList})
 }

@@ -69,7 +69,7 @@ type CampaignEdit struct {
 
 // Member is a candidate in one campaign, including its rejection.
 type Member struct {
-	Campaign, Candidate, Cohort       string
+	Campaign, Candidate, ProspectList string
 	Added                             time.Time
 	AddedUserID, AddedUserEmail       string
 	Rejected                          bool
@@ -80,9 +80,9 @@ type Member struct {
 
 // MemberInput supplies a candidate and the channels for its pieces.
 type MemberInput struct {
-	Campaign, Candidate, Cohort string
-	Channels                    []string
-	UserID, UserEmail           string
+	Campaign, Candidate, ProspectList string
+	Channels                          []string
+	UserID, UserEmail                 string
 }
 
 // Rejection records who rejected a member and why.

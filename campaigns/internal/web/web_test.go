@@ -64,7 +64,7 @@ func same(t *testing.T, a, b *httptest.ResponseRecorder) {
 	}
 }
 
-// R-PXE4-EPMC R-PYM0-SHD1 R-Q11T-K0UF R-Q29P-XSL4 R-Q75B-GVJW R-Q8D7-UNAL R-Q9L4-8F1A R-3J3X-X9WS
+// R-PXE4-EPMC R-PYM0-SHD1 R-3AHY-9SNL R-Q29P-XSL4 R-Q75B-GVJW R-Q8D7-UNAL R-Q9L4-8F1A R-3J3X-X9WS
 func TestRouteDispatch(t *testing.T) {
 	cfg, tc, ec := fixture(t)
 	h := web.Handler(cfg)
@@ -178,6 +178,33 @@ func TestMCPRegistrationAndCaller(t *testing.T) {
 	for _, event := range tc.Events() {
 		if event.RequestID != caller.RequestID || event.User != caller.UserID {
 			t.Fatal(event)
+		}
+	}
+}
+
+// R-3AHY-9SNL
+func TestDeclarationsIgnoreRequestInputs(t *testing.T) {
+	cfg, _, _ := fixture(t)
+	h := web.Handler(cfg)
+	expected := events.DeclarationsHandler(cfg.Events, nil)
+	for _, method := range []string{"GET", "HEAD", "POST", "DELETE", "OPTIONS"} {
+		for _, users := range [][]string{nil, {""}, {"owner", "other"}} {
+			for _, target := range []string{"/declarations", "/declarations?query=chosen"} {
+				makeRequest := func() *http.Request {
+					r := httptest.NewRequest(method, target, bytes.NewBufferString("body-chosen"))
+					if users != nil {
+						r.Header["X-User-Id"] = users
+					}
+					r.Header.Set("X-User-Email", "mgreenly+fake00@gmail.com")
+					r.Header.Set("X-Request-Id", "declarations-request")
+					r.Header.Set("X-Custom", "header-chosen")
+					return r
+				}
+				a, b := httptest.NewRecorder(), httptest.NewRecorder()
+				h.ServeHTTP(a, makeRequest())
+				expected.ServeHTTP(b, makeRequest())
+				same(t, a, b)
+			}
 		}
 	}
 }

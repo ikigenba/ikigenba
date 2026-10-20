@@ -10,7 +10,7 @@ import (
 	"github.com/ikigenba/ikigenba/campaigns/internal/urls"
 )
 
-// R-BDR4-6CM6 R-BEZ0-K4CV R-BG6W-XW3K R-BHET-BNU9
+// R-2CCR-K7W5 R-BEZ0-K4CV R-BG6W-XW3K R-BHET-BNU9
 func TestAuthenticationAndSiblingAddresses(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "services.json")
 	body := `{"services":[{"name":"auth","url":"https://identity.example.test///","description":"","socket":"/unused","enabled":true,"mcp":false},{"name":"candidates","url":"https://business.example.test//","description":"","socket":"/unused","enabled":true,"mcp":true}]}`
@@ -57,12 +57,12 @@ func TestAuthenticationAndSiblingAddresses(t *testing.T) {
 	}
 }
 
-// R-BIMP-PFKY
+// R-2DKN-XZMU
 func TestSiblingPages(t *testing.T) {
 	for _, tc := range []struct {
 		build func(string, string) string
 		path  string
-	}{{urls.CandidatePage, "/candidates/"}, {urls.CohortPage, "/cohorts/"}, {urls.ArtifactPage, "/"}} {
+	}{{urls.CandidatePage, "/candidates/"}, {urls.ProspectListPage, "/prospect-lists/"}, {urls.ArtifactPage, "/"}} {
 		if tc.build("", "a") != "" || tc.build("https://example.test", "") != "" {
 			t.Fatal("empty inputs")
 		}

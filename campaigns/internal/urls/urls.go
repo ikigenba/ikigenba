@@ -68,8 +68,10 @@ func CandidatePage(base, candidate string) string {
 	return siblingPage(base, "/candidates/", candidate)
 }
 
-// CohortPage returns a cohort's page address.
-func CohortPage(base, cohort string) string { return siblingPage(base, "/cohorts/", cohort) }
+// ProspectListPage returns a prospect list's page address.
+func ProspectListPage(base, prospectList string) string {
+	return siblingPage(base, "/prospect-lists/", prospectList)
+}
 
 // ArtifactPage returns an artifact's page address.
 func ArtifactPage(base, artifact string) string { return siblingPage(base, "/", artifact) }
