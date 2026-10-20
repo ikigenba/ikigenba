@@ -11,17 +11,17 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-K9PJ-CCZW R-1TT2-72SK R-KAXF-Q4QL R-WO2V-5M7K R-1NPK-A833
+// R-07GQ-W5OL R-7AXF-IAYJ R-QOGD-1UTI R-PRJ2-Q1SR R-O2WP-YA7Z
 func TestBriefAnswers(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
 	co := f.create("brief projection")
-	before := decodeList[tools.CohortRead](t, f.call("cohort", tools.CohortArgs{Cohort: co.ID}))
+	before := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: co.ID}))
 	if len(before.Members) != 1 || before.Members[0].Brief != nil {
 		t.Fatal(before)
 	}
 	detail := decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: id}))
-	if detail.Assessment == nil || detail.Assessment.Brief != "" {
+	if detail.Enrichments == nil || detail.Enrichments.Brief != nil {
 		t.Fatal(detail)
 	}
 	good := enrichers.BriefFound{Run: "fixture-run", Status: "exited", ExitCode: new(0), Summary: "fixture-summary", Categories: []enrichers.BriefCategory{{Name: sources.CategoryRetail, Why: "fixture-why"}, {Name: sources.CategoryOther, Why: "other-why"}}, Labels: []string{"fixture-label"}}
@@ -31,7 +31,7 @@ func TestBriefAnswers(t *testing.T) {
 		if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: enrichers.KindBrief, Source: enrichers.SourcePrompts, Inputs: "brief-input", Found: raw, Cost: .25}}); err != nil {
 			t.Fatal(err)
 		}
-		after := decodeList[tools.CohortRead](t, f.call("cohort", tools.CohortArgs{Cohort: co.ID}))
+		after := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: co.ID}))
 		if after.Matching != before.Matching || after.Members[0].Candidate.ID != id || after.Members[0].Brief == nil || *after.Members[0].Brief != stamp(f.now) || !reflect.DeepEqual(after.Members[0].SiteText, before.Members[0].SiteText) {
 			t.Fatal(after)
 		}
@@ -40,10 +40,10 @@ func TestBriefAnswers(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if detail.Assessment == nil || detail.Assessment.Brief != good.Summary || detail.Assessment.Brief != facts.Brief {
-			t.Fatal(detail.Assessment, facts)
+		if detail.Enrichments == nil || detail.Enrichments.Brief == nil || detail.Enrichments.Brief.Summary != good.Summary || detail.Enrichments.Brief.Summary != facts.Brief {
+			t.Fatal(detail.Judgments, facts)
 		}
-		e := detail.Enrichments[0]
+		e := detail.EnrichmentResults[0]
 		if e.Kind != enrichers.KindBrief || e.Source != enrichers.SourcePrompts || e.Inputs != "brief-input" || string(e.Found) != string(raw) || e.Cost != .25 || e.At != stamp(f.now) {
 			t.Fatal(e)
 		}
@@ -55,7 +55,7 @@ func TestBriefAnswers(t *testing.T) {
 		t.Fatal(err)
 	}
 	detail = decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: id}))
-	if len(detail.Enrichments) != 4 || detail.Enrichments[0].Kind != enrichers.KindSiteText || detail.Enrichments[1].Kind != enrichers.KindBrief {
+	if len(detail.EnrichmentResults) != 4 || detail.EnrichmentResults[0].Kind != enrichers.KindSiteText || detail.EnrichmentResults[1].Kind != enrichers.KindBrief {
 		t.Fatal(detail.Enrichments)
 	}
 	_, ids, err := f.st.Attach(t.Context(), "unjudged", false, []store.Observation{{Scraper: "fixture", SourceID: "unjudged", Digest: "unjudged", Reading: sources.Reading{Name: "unjudged-business", NameKey: "unjudged"}}})
@@ -66,7 +66,7 @@ func TestBriefAnswers(t *testing.T) {
 		t.Fatal(err)
 	}
 	detail = decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: ids[0]}))
-	if detail.Assessment != nil {
+	if detail.Judgments != nil {
 		t.Fatal(detail)
 	}
 }

@@ -170,7 +170,7 @@ func runServices(t *testing.T, entries map[string]string) string {
 	return p
 }
 func runRow() map[string]any {
-	return map[string]any{"scraper": "fmcsa", "run": "run_fixture", "source_id": "101", "collected": "2026-01-01T00:00:00Z", "digest": "fixture-digest", "name": "Fixture Trucks", "names": []string{"Fixture Trucks"}, "address": map[string]any{"street": "Fixture Road", "city": "Fixture City", "state": "MN", "zip": "55072", "county": "115"}, "people": []any{}, "facts": map[string]any{"power_units": 3, "drivers": 4, "class": []string{"Authorized For Hire"}, "cargo": []string{"General Freight"}, "mcs150_date": "2025-01-01"}, "raw": map[string]any{"fixture": true}}
+	return map[string]any{"scraper": "fmcsa", "run": "run_fixture", "source_id": "101", "scraped": "2026-01-01T00:00:00Z", "digest": "fixture-digest", "name": "Fixture Trucks", "names": []string{"Fixture Trucks"}, "address": map[string]any{"street": "Fixture Road", "city": "Fixture City", "state": "MN", "zip": "55072", "county": "115"}, "people": []any{}, "facts": map[string]any{"power_units": 3, "drivers": 4, "class": []string{"Authorized For Hire"}, "cargo": []string{"General Freight"}, "mcs150_date": "2025-01-01"}, "raw": map[string]any{"fixture": true}}
 }
 
 type runHarness struct {
@@ -269,6 +269,7 @@ func (h *runHarness) start() {
 }
 func (h *runHarness) stop() int {
 	h.t.Helper()
+	h.hc.CloseIdleConnections()
 	h.cancel(errors.New("fixture-stop"))
 	select {
 	case code := <-h.done:
@@ -416,10 +417,10 @@ func runOnlyState(t *testing.T, dir string) {
 	}
 }
 
-// R-60KT-WY1K R-119A-9L3H R-13P3-14KV R-14WZ-EWBK R-164V-SO29 R-JMTD-X5LH
+// R-60KT-WY1K R-119A-9L3H R-13P3-14KV R-9NW2-FV7B R-A1AY-NCCY R-JMTD-X5LH
 // R-3TTL-43TV R-42CV-SI0Q R-43KS-69RF R-QR9U-4LFL R-49OA-34GW R-4C42-UNYA
-// R-YF1R-VYVS R-ZY3R-GAKJ R-YG9O-9QMH   R-ZQSD-5O4D
-// R-08GD-3XUM R-06N2-4ORE R-0AW5-VHC0 R-76JM-ZE8M R-7BF8-IH7E
+// R-8S6O-HTX9 R-R335-N3PU R-ZY3R-GAKJ R-R0NC-VK8G   R-ZQSD-5O4D
+// R-08GD-3XUM R-06N2-4ORE R-APOY-AR6U R-76JM-ZE8M
 func TestRunAssembledChain(t *testing.T) {
 	if cli.SweepInterval != time.Hour {
 		t.Fatal("sweep constant")
@@ -437,18 +438,18 @@ func TestRunAssembledChain(t *testing.T) {
 	h := newRunHarness(t, dir, runServices(t, entries))
 	h.start()
 	runOnlyState(t, dir)
-	caller := identity.Caller{UserID: "arbitrary-owner", Email: "arbitrary@example.test", RequestID: "rebuild-request"}
-	r, v := h.call(caller, "rebuild", map[string]any{})
+	caller := identity.Caller{UserID: "arbitrary-owner", Email: "arbitrary@example.test", RequestID: "ingest-request"}
+	r, v := h.call(caller, "ingest", map[string]any{})
 	if r.IsError() {
-		t.Fatal("rebuild refused")
+		t.Fatal("ingest refused")
 	}
 	id := runText(v, "id")
 	if runText(v, "user") != caller.UserID || runText(v, "email") != caller.Email {
-		t.Fatalf("rebuild identity %v", v)
+		t.Fatalf("ingest identity %v", v)
 	}
 	finished := h.waitPass(caller, id)
 	if runText(finished, "status") != store.StatusDone {
-		t.Fatalf("rebuild failed %v", finished)
+		t.Fatalf("ingest failed %v", finished)
 	}
 	runOnlyState(t, dir)
 	_, list := h.call(caller, "candidates", map[string]any{})
@@ -463,7 +464,7 @@ func TestRunAssembledChain(t *testing.T) {
 	if runText(ruling, "user") != "ruler" || runText(ruling, "email") != "ruler@example.test" {
 		t.Fatalf("ruling identity %v", ruling)
 	}
-	for name, args := range map[string]any{"cohorts": map[string]any{}, "candidate": map[string]any{"candidate": cid}, "passes": map[string]any{}, "pass": map[string]any{"pass": id}} {
+	for name, args := range map[string]any{"prospect_lists": map[string]any{}, "candidate": map[string]any{"candidate": cid}, "passes": map[string]any{}, "pass": map[string]any{"pass": id}} {
 		rr, _ := h.call(caller, name, args)
 		if rr.IsError() {
 			t.Fatalf("%s refused", name)
@@ -724,7 +725,7 @@ func TestRunAssembledChain(t *testing.T) {
 		if e.Name != []string{"pass.started", "pass.finished", "pass.started", "pass.finished"}[i] {
 			t.Fatalf("bus order %v", bus)
 		}
-		wantID, wantTrigger, wantRequest, wantUser := id, store.TriggerRebuild, caller.RequestID, caller.UserID
+		wantID, wantTrigger, wantRequest, wantUser := id, store.TriggerIngest, caller.RequestID, caller.UserID
 		if i >= 2 {
 			wantID, wantTrigger, wantRequest, wantUser = deliveryID, "run_fixture", "delivery-request", ""
 		}
@@ -747,7 +748,7 @@ func TestRunAssembledChain(t *testing.T) {
 	d, st := runStore(t, dir, h.p.Now)
 	p, err := st.GetPass(context.Background(), id)
 	if err != nil || p.ID != id || p.UserID != caller.UserID || p.UserEmail != caller.Email || p.RequestID != caller.RequestID {
-		t.Fatalf("persisted rebuild %v %v", p, err)
+		t.Fatalf("persisted ingest %v %v", p, err)
 	}
 	p, err = st.GetPass(context.Background(), deliveryID)
 	if err != nil || p.Delivery != "evt_3333333333333333" || p.UserEmail != "" {
@@ -780,18 +781,18 @@ func runDecodedRow(row map[string]any) scrapes.Row {
 		facts[k] = b
 	}
 	raw, _ := json.Marshal(row["raw"])
-	collected, _ := time.Parse(time.RFC3339, row["collected"].(string))
-	return scrapes.Row{Scraper: row["scraper"].(string), Run: row["run"].(string), SourceID: row["source_id"].(string), Collected: collected, Digest: row["digest"].(string), Name: row["name"].(string), Names: row["names"].([]string), Address: scrapes.Address{Street: address["street"].(string), City: address["city"].(string), State: address["state"].(string), Zip: address["zip"].(string), County: address["county"].(string)}, People: []scrapes.Person{}, Facts: facts, Raw: raw}
+	scraped, _ := time.Parse(time.RFC3339, row["scraped"].(string))
+	return scrapes.Row{Scraper: row["scraper"].(string), Run: row["run"].(string), SourceID: row["source_id"].(string), Scraped: scraped, Digest: row["digest"].(string), Name: row["name"].(string), Names: row["names"].([]string), Address: scrapes.Address{Street: address["street"].(string), City: address["city"].(string), State: address["state"].(string), Zip: address["zip"].(string), County: address["county"].(string)}, People: []scrapes.Person{}, Facts: facts, Raw: raw}
 }
 
-// R-18KO-K7JN R-SHIC-SBKW R-19SK-XZAC
+// R-Y9L9-RE9E R-XXE9-XOUG R-8B43-51JJ
 func TestRunInjectedClockAndBytes(t *testing.T) {
 	fake := &runFake{}
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, fake)}))
 	h.p.Rand = &runBytes{n: 0x5a, fixed: true}
 	h.start()
 	c := identity.Caller{UserID: "fixture-user"}
-	r, v := h.call(c, "rebuild", map[string]any{})
+	r, v := h.call(c, "ingest", map[string]any{})
 	if r.IsError() || runText(v, "id") != "pass_5a5a5a5a5a5a5a5a" {
 		t.Fatalf("injected id %v", v)
 	}
@@ -874,7 +875,7 @@ func TestRunSettlesLoadsAndSweepsBeforeAndAfterReady(t *testing.T) {
 	var oldDone, oldFailed string
 	doneIDs, failedIDs := []string{}, []string{}
 	for i := 0; i < 3; i++ {
-		p, err := st.AddPass(ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "seed"})
+		p, err := st.AddPass(ctx, store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, UserID: "seed"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -887,7 +888,7 @@ func TestRunSettlesLoadsAndSweepsBeforeAndAfterReady(t *testing.T) {
 		}
 	}
 	for i := 0; i < 2; i++ {
-		p, err := st.AddPass(ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "seed"})
+		p, err := st.AddPass(ctx, store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, UserID: "seed"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -940,7 +941,7 @@ func TestRunSettlesLoadsAndSweepsBeforeAndAfterReady(t *testing.T) {
 		runAssertNotFound(t, r)
 	}
 	// A fresh failed pass makes the recovered failed pass old; driving After must prune it.
-	newer, err := st.AddPass(ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "seed"})
+	newer, err := st.AddPass(ctx, store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, UserID: "seed"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1009,7 +1010,7 @@ func TestRunMissingServicesDoesNotRefuseStart(t *testing.T) {
 	}
 }
 
-// R-460K-XT8T
+// R-ADHY-H1RW
 func TestRunKeepsScrapesSocketSelectedAtStart(t *testing.T) {
 	first, second := &runFake{}, &runFake{}
 	path := filepath.Join(t.TempDir(), "services.json")
@@ -1027,10 +1028,10 @@ func TestRunKeepsScrapesSocketSelectedAtStart(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), path)
 	h.start()
 	c := identity.Caller{UserID: "reader"}
-	_, v := h.call(c, "rebuild", map[string]any{})
+	_, v := h.call(c, "ingest", map[string]any{})
 	h.waitPass(c, runText(v, "id"))
 	write(runSocket(t, second))
-	_, v = h.call(c, "rebuild", map[string]any{})
+	_, v = h.call(c, "ingest", map[string]any{})
 	h.waitPass(c, runText(v, "id"))
 	h.stop()
 	if len(first.Requests()) != 6 || len(second.Requests()) != 0 {
@@ -1038,7 +1039,7 @@ func TestRunKeepsScrapesSocketSelectedAtStart(t *testing.T) {
 	}
 }
 
-// R-ZOCK-E4MZ
+// R-2M6B-6WBI
 func TestRunInterruptsHeldScrapesRead(t *testing.T) {
 	hold := make(chan struct{})
 	defer close(hold)
@@ -1048,7 +1049,7 @@ func TestRunInterruptsHeldScrapesRead(t *testing.T) {
 	h.env["DRAIN_SECONDS"] = "1"
 	h.start()
 	c := identity.Caller{UserID: "reader"}
-	_, v := h.call(c, "rebuild", map[string]any{})
+	_, v := h.call(c, "ingest", map[string]any{})
 	id := runText(v, "id")
 	select {
 	case <-arrived:
@@ -1070,8 +1071,8 @@ func TestRunInterruptsHeldScrapesRead(t *testing.T) {
 	}
 }
 
-// R-8OBC-NH29
-func TestRunUnreachableScrapesRebuildAndDelivery(t *testing.T) {
+// R-981D-GUKA
+func TestRunUnreachableScrapesIngestAndDelivery(t *testing.T) {
 	d, err := os.MkdirTemp("", "cand-")
 	if err != nil {
 		t.Fatal(err)
@@ -1080,13 +1081,13 @@ func TestRunUnreachableScrapesRebuildAndDelivery(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": filepath.Join(d, "absent")}))
 	h.start()
 	c := identity.Caller{UserID: "reader"}
-	r, v := h.call(c, "rebuild", map[string]any{})
+	r, v := h.call(c, "ingest", map[string]any{})
 	if r.IsError() || runText(v, "status") != store.StatusRunning {
-		t.Fatalf("rebuild %v", v)
+		t.Fatalf("ingest %v", v)
 	}
 	p := h.waitPass(c, runText(v, "id"))
 	if runText(p, "status") != store.StatusFailed || runText(p, "reason") != store.ReasonScrapes {
-		t.Fatalf("failed rebuild %v", p)
+		t.Fatalf("failed ingest %v", p)
 	}
 	h.deliver("evt_5555555555555555", "delivery", "done", 0)
 	_, l := h.call(c, "passes", map[string]any{})
@@ -1152,7 +1153,7 @@ type runFailBus struct{}
 
 func (runFailBus) Deliver(context.Context, events.Event) error { return errors.New("fixture refusal") }
 
-// R-YHHK-NID6
+// R-QUJU-YPIZ
 func TestRunSinkFailuresDoNotChangePass(t *testing.T) {
 	var answers []map[string]json.RawMessage
 	var initial []map[string]json.RawMessage
@@ -1165,9 +1166,9 @@ func TestRunSinkFailuresDoNotChangePass(t *testing.T) {
 		}
 		h.start()
 		c := identity.Caller{UserID: "reader"}
-		r, v := h.call(c, "rebuild", map[string]any{})
+		r, v := h.call(c, "ingest", map[string]any{})
 		if r.IsError() {
-			t.Fatal("sink failure refused rebuild")
+			t.Fatal("sink failure refused ingest")
 		}
 		passID := runText(v, "id")
 		delete(v, "id")
@@ -1182,7 +1183,7 @@ func TestRunSinkFailuresDoNotChangePass(t *testing.T) {
 		h.stop()
 	}
 	if !reflect.DeepEqual(initial[0], initial[1]) {
-		t.Fatalf("sinks changed initial rebuild %v %v", initial[0], initial[1])
+		t.Fatalf("sinks changed initial ingest %v %v", initial[0], initial[1])
 	}
 	if !reflect.DeepEqual(answers[0], answers[1]) {
 		t.Fatalf("sinks changed pass %v %v", answers[0], answers[1])
@@ -1225,7 +1226,7 @@ func TestRunDefaultsUseWorkingDirectoryAndSocketSinks(t *testing.T) {
 	h.p.EventSink = nil
 	h.start()
 	c := identity.Caller{UserID: "reader"}
-	_, v := h.call(c, "rebuild", map[string]any{})
+	_, v := h.call(c, "ingest", map[string]any{})
 	h.waitPass(c, runText(v, "id"))
 	h.stop()
 	_, st := runStore(t, dir, h.p.Now)
@@ -1294,7 +1295,7 @@ func TestRunConcurrentRequestsWhilePassWorksUseSerializedRandom(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, f)}))
 	h.start()
 	c := identity.Caller{UserID: "reader"}
-	_, v := h.call(c, "rebuild", map[string]any{})
+	_, v := h.call(c, "ingest", map[string]any{})
 	select {
 	case <-arrived:
 	case <-time.After(5 * time.Second):
@@ -1360,7 +1361,7 @@ func TestRunSinkDeadlinePreventsLaterDeliveryCalls(t *testing.T) {
 	h.p.EventSink = es
 	h.env["DRAIN_SECONDS"] = "1"
 	h.start()
-	_, v := h.call(identity.Caller{UserID: "reader"}, "rebuild", map[string]any{})
+	_, v := h.call(identity.Caller{UserID: "reader"}, "ingest", map[string]any{})
 	if runText(v, "id") == "" {
 		t.Fatal("pass missing")
 	}
@@ -1408,22 +1409,22 @@ func TestRunNotificationIsSingleAndOptional(t *testing.T) {
 	}
 }
 
-// R-TJ66-KD0B
+// R-R6QU-SEXX
 func TestRunBusyRefusalsEmitNoPassEvents(t *testing.T) {
 	hold := make(chan struct{})
 	f := &runFake{hold: hold, arrived: make(chan struct{}, 1)}
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, f)}))
 	h.start()
 	c := identity.Caller{UserID: "reader", RequestID: "first"}
-	_, v := h.call(c, "rebuild", map[string]any{})
+	_, v := h.call(c, "ingest", map[string]any{})
 	select {
 	case <-f.arrived:
 	case <-time.After(5 * time.Second):
 		t.Fatal("rows not begun")
 	}
-	r, _ := h.call(identity.Caller{UserID: "reader", RequestID: "refused"}, "rebuild", map[string]any{})
+	r, _ := h.call(identity.Caller{UserID: "reader", RequestID: "refused"}, "ingest", map[string]any{})
 	if !r.IsError() {
-		t.Fatal("busy rebuild accepted")
+		t.Fatal("busy ingest accepted")
 	}
 	e := events.Event{ID: "evt_7777777777777777", Time: h.p.Now(), Service: "scrapes", Name: "scrape.finished", Attrs: events.Attrs{"scraper": "fmcsa", "run": "run_fixture", "status": "running"}, Seq: 1, Received: h.p.Now()}
 	b, err := json.Marshal(e)
@@ -1488,7 +1489,7 @@ func runAssertNotFound(t *testing.T, r mcp.Result) {
 	}
 }
 
-// R-TCBG-OMPS
+// R-1WFQ-0ORB
 func TestRunSweepPrunesDoneAndPreservesRunning(t *testing.T) {
 	f := &runFake{}
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, f)}))
@@ -1497,7 +1498,7 @@ func TestRunSweepPrunesDoneAndPreservesRunning(t *testing.T) {
 	h.p.Now = func() time.Time { return baseNow.Add(time.Duration(offset.Load()) * time.Second) }
 	_, st := runStore(t, h.p.Dir, h.p.Now)
 	ctx := context.Background()
-	seed, err := st.AddPass(ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "seed"})
+	seed, err := st.AddPass(ctx, store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, UserID: "seed"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1509,10 +1510,10 @@ func TestRunSweepPrunesDoneAndPreservesRunning(t *testing.T) {
 	c := identity.Caller{UserID: "reader"}
 	r, _ := h.call(c, "pass", map[string]any{"pass": seed.ID})
 	if r.IsError() {
-		t.Fatal("seed not kept before rebuild")
+		t.Fatal("seed not kept before ingest")
 	}
 	offset.Store(1)
-	_, v := h.call(c, "rebuild", map[string]any{})
+	_, v := h.call(c, "ingest", map[string]any{})
 	doneID := runText(v, "id")
 	h.waitPass(c, doneID)
 	hold := make(chan struct{})
@@ -1522,7 +1523,7 @@ func TestRunSweepPrunesDoneAndPreservesRunning(t *testing.T) {
 	arrived := f.arrived
 	f.mu.Unlock()
 	offset.Store(2)
-	_, v = h.call(c, "rebuild", map[string]any{})
+	_, v = h.call(c, "ingest", map[string]any{})
 	runningID := runText(v, "id")
 	select {
 	case <-arrived:
@@ -1622,7 +1623,7 @@ func runAssertSilent(t *testing.T, h *runHarness) {
 	}
 }
 
-// R-1PTB-OR28 R-7CN4-W8Y3
+// R-YKXK-J639 R-XQ2V-N2EA
 func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	rows := make([]map[string]any, 3)
 	for i := range rows {
@@ -1658,12 +1659,12 @@ func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 		}
 		return v
 	}
-	p := call("rebuild", map[string]any{})
+	p := call("ingest", map[string]any{})
 	passID := runText(p, "id")
 	if runText(h.waitPass(caller, passID), "status") != store.StatusDone {
-		t.Fatal("rebuild failed")
+		t.Fatal("ingest failed")
 	}
-	call("cohorts", map[string]any{})
+	call("prospect_lists", map[string]any{})
 	list := call("candidates", map[string]any{})
 	var active []map[string]json.RawMessage
 	if err := json.Unmarshal(list["candidates"], &active); err != nil || len(active) < 3 {
@@ -1672,8 +1673,14 @@ func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	id, other := runText(active[0], "id"), runText(active[1], "id")
 	call("passes", map[string]any{})
 	call("pass", map[string]any{"pass": passID})
+	judge := call("judge", map[string]any{})
+	if p := h.waitPass(caller, runText(judge, "id")); runText(p, "status") != store.StatusDone {
+		t.Fatalf("judge failed: %v", p)
+	}
 	enrich := call("enrich", tools.EnrichArgs{Kind: sources.WebsiteCheck})
-	h.waitPass(caller, runText(enrich, "id"))
+	if p := h.waitPass(caller, runText(enrich, "id")); runText(p, "status") != store.StatusDone {
+		t.Fatalf("enrich failed: %v", p)
+	}
 	call("candidate", map[string]any{"candidate": id})
 	var email string
 	_ = json.Unmarshal(active[0]["email"], &email)
@@ -1690,20 +1697,20 @@ func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	}
 	call("exclude", map[string]any{"candidate": id, "why": "owner excludes"})
 	call("include", map[string]any{"candidate": id, "why": "owner includes"})
-	co := call("create_cohort", map[string]any{"name": "first cohort"})
-	cohortID := runText(co, "id")
-	call("cohort", map[string]any{"cohort": cohortID})
-	call("edit_cohort", map[string]any{"cohort": cohortID, "name": "renamed cohort"})
-	call("reject", map[string]any{"cohort": cohortID, "candidate": id, "why": "owner rejects"})
-	call("unreject", map[string]any{"cohort": cohortID, "candidate": id, "why": "owner restores"})
+	co := call("create_prospect_list", map[string]any{"name": "first prospect list"})
+	prospectListID := runText(co, "id")
+	call("prospect_list", map[string]any{"prospect_list": prospectListID})
+	call("edit_prospect_list", map[string]any{"prospect_list": prospectListID, "name": "renamed prospect list"})
+	call("reject", map[string]any{"prospect_list": prospectListID, "candidate": id, "why": "owner rejects"})
+	call("unreject", map[string]any{"prospect_list": prospectListID, "candidate": id, "why": "owner restores"})
 	h.campaignDelivery("campaign.member.added", "campaign_fixture", id, "", "", h.p.Now(), "campaign-tool-chain")
-	for _, path := range []string{"/", "/tools", "/about", "/cohorts/" + cohortID, "/candidates/" + id, "/passes/" + passID} {
+	for _, path := range []string{"/", "/tools", "/about", "/prospect-lists/" + prospectListID, "/candidates/" + id, "/passes/" + passID} {
 		status, _ := h.request("GET", path, "all-pages", nil)
 		if status != 200 {
 			t.Fatalf("%s status %d", path, status)
 		}
 	}
-	call("delete_cohort", map[string]any{"cohort": cohortID})
+	call("delete_prospect_list", map[string]any{"prospect_list": prospectListID})
 	h.deliver("evt_4444444444444444", "all-delivery", "done", 2)
 	ps := call("passes", map[string]any{})
 	var records []map[string]json.RawMessage
@@ -1736,5 +1743,49 @@ func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	}
 	if unrelated.Load() != 0 {
 		t.Fatalf("unrelated requests %d", unrelated.Load())
+	}
+}
+
+// R-Z7QG-GZ0U
+func TestRunUnlistedLegacyProspectList(t *testing.T) {
+	h := newRunHarness(t, t.TempDir(), "")
+	makeMCP := h.p.MCP
+	var writers []*telemetry.Writer
+	h.p.MCP = func(w *telemetry.Writer) *mcp.Server {
+		writers = append(writers, w)
+		return makeMCP(w)
+	}
+
+	d, st := runStore(t, h.p.Dir, h.p.Now)
+	pl, err := st.CreateProspectList(t.Context(), store.ProspectList{Name: "legacy fixture", Size: 10, CreatedUserID: "legacy-owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Close(); err != nil {
+		t.Fatal(err)
+	}
+	h.start()
+
+	caller := identity.Caller{UserID: "legacy-owner"}
+	list, err := h.client.ListTools(t.Context(), caller)
+	if err != nil || len(list) != len(tools.Catalog()) {
+		t.Fatal(list, err)
+	}
+	for i, entry := range tools.Catalog() {
+		if list[i].Name != entry.Name {
+			t.Fatal(list)
+		}
+	}
+	normal, err := h.client.CallTool(t.Context(), caller, "prospect_list", json.RawMessage(`{"prospect_list":"`+pl.ID+`"}`))
+	if err != nil || normal.IsError() {
+		t.Fatal(normal, err)
+	}
+	legacy, err := h.client.CallTool(t.Context(), caller, "cohort", json.RawMessage(`{"cohort":"coh_`+strings.TrimPrefix(pl.ID, "pl_")+`"}`))
+	if err != nil || legacy.IsError() || !reflect.DeepEqual(normal, legacy) {
+		t.Fatal(normal, legacy, err)
+	}
+	h.stop()
+	if len(writers) != 2 || writers[0] == nil || writers[0] != writers[1] {
+		t.Fatalf("MCP writer construction: %v", writers)
 	}
 }

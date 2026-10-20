@@ -49,25 +49,17 @@ type Link struct {
 	Gone                                      bool
 }
 
-// Assessment is the last stored score and its evidence.
-type Assessment struct {
-	Candidate                          string
-	Operating                          *float64
-	OperatingKey                       int64
-	Evidence                           []sources.Evidence
-	RevenueLow, RevenueHigh            *int64
-	RevenueConfidence                  *float64
-	KnownSince                         time.Time
-	GovernmentMatch                    string
-	NewestFiling                       time.Time
-	Categories                         []sources.Category
-	FleetVerdict                       string
-	PowerUnits, Drivers                *int64
-	Website, WebsiteURL, WebsiteSource string
-	Minutes                            *int64
-	Excluded                           bool
-	Rules                              int64
-	Calculated                         time.Time
+// Judgments holds the last operating and revenue judgments and their evidence.
+type Judgments struct {
+	Candidate               string
+	Operating               *float64
+	OperatingKey            int64
+	Evidence                []sources.Evidence
+	RevenueLow, RevenueHigh *int64
+	RevenueConfidence       *float64
+	Excluded                bool
+	Rules                   int64
+	Calculated              time.Time
 }
 
 // Enrichment is one recorded result.
@@ -111,9 +103,9 @@ type Ruling struct {
 	At                     time.Time
 }
 
-// Pass records one resolution pass.
+// Pass records one pass.
 type Pass struct {
-	ID, Kind, Origin, Trigger, Target, EnrichKind, Status, Reason                                                                                   string
+	ID, Kind, Origin, Trigger, Target, EnrichKind, Scraper, Status, Reason                                                                          string
 	Started, Finished                                                                                                                               time.Time
 	Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None, Runs, RunsFailed, Pages, Cost int64
 	UserID, UserEmail, RequestID, Delivery                                                                                                          string
@@ -131,12 +123,13 @@ type Observation struct {
 // CandidateFilter selects active candidates.
 type CandidateFilter struct{ Name, Zip, Phone string }
 
-// Ranked contains a candidate and its persisted assessment.
+// Ranked contains a candidate and its persisted judgments.
 type Ranked struct {
-	Candidate  Candidate
-	Assessment Assessment
-	SiteText   time.Time
-	Brief      time.Time
+	Candidate Candidate
+	Judgments Judgments
+	Facts     Facts
+	SiteText  time.Time
+	Brief     time.Time
 }
 
 // Record vocabulary and identifier prefixes.
@@ -153,9 +146,9 @@ const (
 	ReasonScrapes     = "scrapes"
 	ReasonInterrupted = "interrupted"
 	ReasonStore       = "store"
-	TriggerRebuild    = "rebuild"
+	TriggerIngest     = "ingest"
 	TriggerJudge      = "judge_candidates"
-	KindEnrichCohort  = "enrich_cohort"
+	KindEnrichTarget  = "enrich_target"
 	ReasonPrompts     = "prompts"
 	PageCap           = 20
 	KindEnrich        = "enrich"
@@ -164,19 +157,21 @@ const (
 	TriggerEnrich     = "enrich"
 	KindIngest        = "ingest"
 	KindJudge         = "judge"
-	KindRebuild       = "rebuild"
-	OriginRun         = "run"
-	OriginCron        = "cron"
-	OriginRebuild     = "rebuild"
-	LinkSourceKey     = "source_key"
-	LinkMatchKey      = "match_key"
-	LinkDecision      = "decision"
-	KindMerge         = "merge"
-	KindSplit         = "split"
-	KindNotSame       = "not_same"
-	KindExclude       = "exclude"
-	KindInclude       = "include"
-	Unreachable       = "The candidate database is unavailable."
+
+	OriginRun        = "run"
+	OriginCron       = "cron"
+	OriginIngest     = "ingest"
+	OriginJudge      = "judge"
+	TriggerJudgeTool = "judge"
+	LinkSourceKey    = "source_key"
+	LinkMatchKey     = "match_key"
+	LinkDecision     = "decision"
+	KindMerge        = "merge"
+	KindSplit        = "split"
+	KindNotSame      = "not_same"
+	KindExclude      = "exclude"
+	KindInclude      = "include"
+	Unreachable      = "The candidate database is unavailable."
 )
 
 // Errors distinguish record refusals from database failures.

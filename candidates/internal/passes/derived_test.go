@@ -5,21 +5,18 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"slices"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
-	"github.com/ikigenba/ikigenba/appkit/scrapes"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
-	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-2QA9-YIVX R-SMPK-NG57 R-SLHO-9OEI R-1QFF-85G4 R-T7FV-5JR0 R-301H-0OTH
+// R-Q1MW-4Z89 R-01D8-ZAZ4 R-ZQE5-JDAV R-1QFF-85G4 R-3WDS-L5IA R-UYGB-LPQY
 func TestDerivedKindsAndIdempotentAll(t *testing.T) {
 	for _, kind := range []string{"", enrichers.KindDriveMinutes, enrichers.KindLinkFacts} {
 		t.Run(kind, func(t *testing.T) {
@@ -152,7 +149,7 @@ func TestDerivedKindsAndIdempotentAll(t *testing.T) {
 	}
 }
 
-// R-2RI6-CAMM R-SMPK-NG57 R-SLHO-9OEI R-1QFF-85G4
+// R-YYCG-QN8W R-01D8-ZAZ4 R-ZQE5-JDAV R-1QFF-85G4
 func TestDerivedFactsExistBeforeFirstFetch(t *testing.T) {
 	f := newFixture(t, nil, false)
 	ids := seedEmails(t, f, 1, func(int) string { return "owner@derived.test" })
@@ -209,11 +206,11 @@ func TestDerivedFactsExistBeforeFirstFetch(t *testing.T) {
 	}
 }
 
-// R-SK9R-VWNT R-75XG-HDMP
+// R-TI0N-5KV3
 func TestDerivedKindsAvailableWithoutChecker(t *testing.T) {
 	for _, kind := range []string{"", enrichers.KindDriveMinutes, enrichers.KindLinkFacts} {
 		f := newFixture(t, nil, false)
-		blocker, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "owner"})
+		blocker, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, UserID: "owner"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -236,7 +233,7 @@ func TestDerivedKindsAvailableWithoutChecker(t *testing.T) {
 	} = (*passes.Engine)(nil)
 }
 
-// R-N7ZL-IMBC
+// R-XYZD-NAQR
 func TestWebsiteInputsChangeRecordsAnotherResult(t *testing.T) {
 	f := newFixture(t, nil, false)
 	ids := seedEmails(t, f, 1, func(int) string { return "owner@a.test" })
@@ -255,8 +252,8 @@ func TestWebsiteInputsChangeRecordsAnotherResult(t *testing.T) {
 	}
 }
 
-// R-364Y-XJIY R-2TXZ-3U40 R-2SQ2-Q2DB R-SWGR-PM2R R-301H-0OTH
-func TestRebuildForcesDerivedResultsBeforeJudging(t *testing.T) {
+// R-PN03-JQBX R-XU3S-47RZ R-MRCN-18AW R-3QEZ-TBSF R-UYGB-LPQY
+func TestFullIngestForcesDerivedResultsBeforeJudging(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/scrapers/fmcsa/current" {
 			record(w, "forced-run", 2, store.StatusDone)
@@ -267,16 +264,19 @@ func TestRebuildForcesDerivedResultsBeforeJudging(t *testing.T) {
 			if i == 0 {
 				zip = "55401"
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"scraper": "fmcsa", "run": "forced-run", "source_id": string(rune('a' + i)), "digest": "same", "name": string(rune('a' + i)), "collected": "2000-01-01T00:00:00Z", "names": []string{}, "people": []any{}, "facts": map[string]any{}, "raw": map[string]any{}, "address": map[string]any{"state": "MN", "zip": zip}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"scraper": "fmcsa", "run": "forced-run", "source_id": string(rune('a' + i)), "digest": "same", "name": string(rune('a' + i)), "scraped": "2000-01-01T00:00:00Z", "names": []string{}, "people": []any{}, "facts": map[string]any{}, "raw": map[string]any{}, "address": map[string]any{"state": "MN", "zip": zip}})
 		}
 	}, true)
 	pc, fake := fakePrompts(t, f, promptAnswer)
-	f.eng = passes.New(passes.Config{Store: f.st, Sources: sources.New(fmcsa.New()), Scrapes: f.sc, Prompts: pc, Telemetry: f.w, Events: f.em, Website: &website.Checker{Client: &http.Client{Transport: enrichTransport(func(r *http.Request) (*http.Response, error) { t.Error("rebuild fetched"); return pageResponse(r), nil })}}})
+	f.eng = passes.New(passes.Config{Store: f.st, Sources: sources.New(fmcsa.New()), Scrapes: f.sc, Prompts: pc, Telemetry: f.w, Events: f.em, Website: &website.Checker{Client: &http.Client{Transport: enrichTransport(func(r *http.Request) (*http.Response, error) {
+		t.Error("fullIngest fetched")
+		return pageResponse(r), nil
+	})}}})
 	if err := f.st.ReplaceZipDrive(context.Background(), map[string]int64{"55401": 84}); err != nil {
 		t.Fatal(err)
 	}
 	for attempt := 1; attempt <= 2; attempt++ {
-		p, err := f.eng.Rebuild(context.Background(), identity.Caller{UserID: "owner"})
+		p, err := f.eng.Ingest(context.Background(), identity.Caller{UserID: "owner"}, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -306,110 +306,19 @@ func TestRebuildForcesDerivedResultsBeforeJudging(t *testing.T) {
 				}
 			}
 			facts, err := f.st.GetFacts(context.Background(), c.ID)
-			if err != nil {
-				t.Fatal(err)
+			if err != nil || facts.Candidate != c.ID {
+				t.Fatal(facts, err)
 			}
-			a, err := f.st.GetAssessment(context.Background(), c.ID)
-			if err != nil {
-				t.Fatal(err)
+			a, err := f.st.GetJudgments(context.Background(), c.ID)
+			if err != nil || a.Calculated.Before(p.Started) || a.Calculated.After(p.Finished) {
+				t.Fatal(a, err)
 			}
-			if a.KnownSince != facts.KnownSince || a.NewestFiling != facts.NewestFiling || a.GovernmentMatch != facts.GovernmentMatch || a.FleetVerdict != facts.FleetVerdict || a.Website != facts.Website || a.WebsiteURL != facts.WebsiteURL || !slices.Equal(a.Categories, facts.Categories) || !equalInt(a.Minutes, facts.Minutes) || !equalInt(a.PowerUnits, facts.PowerUnits) || !equalInt(a.Drivers, facts.Drivers) {
-				t.Fatal(a, facts)
-			}
+
 		}
 		for _, v := range f.list() {
 			if v.Trigger == p.ID {
-				t.Fatal("rebuild started follow-on", v)
+				t.Fatal("fullIngest started follow-on", v)
 			}
 		}
-	}
-}
-
-func equalInt(a, b *int64) bool {
-	if a == nil || b == nil {
-		return a == nil && b == nil
-	}
-	return *a == *b
-}
-
-// R-364Y-XJIY
-func TestRebuildPersistsDerivedFactsInHistoricalAssessment(t *testing.T) {
-	rows := []scrapes.Row{
-		{Scraper: ppp.Name, Run: "ppp-current", SourceID: "original", Digest: "one", Name: "Original Carrier", Address: scrapes.Address{State: "MN", Zip: "55072"}, Facts: map[string]json.RawMessage{}, Raw: json.RawMessage(`{}`)},
-		{Scraper: ppp.Name, Run: "ppp-current", SourceID: "survivor", Digest: "two", Name: "Surviving Carrier", Address: scrapes.Address{State: "MN", Zip: "55072"}, Facts: map[string]json.RawMessage{}, Raw: json.RawMessage(`{}`)},
-	}
-	carrier := scrapes.Row{Scraper: fmcsa.Name, Run: "fmcsa-current", SourceID: "carrier", Digest: "three", Name: rows[0].Name, Address: rows[0].Address, Facts: map[string]json.RawMessage{"status": json.RawMessage(`"A"`), "power_units": json.RawMessage(`"3"`), "class": json.RawMessage(`"AUTHORIZED FOR HIRE"`)}, Raw: json.RawMessage(`{}`)}
-	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
-		var run, scraper string
-		var rs []scrapes.Row
-		switch r.URL.Path {
-		case "/scrapers/fmcsa/current":
-			run, scraper, rs = "fmcsa-current", fmcsa.Name, []scrapes.Row{carrier}
-		case "/scrapers/ppp/current":
-			run, scraper, rs = "ppp-current", ppp.Name, rows
-		case "/runs/fmcsa-current/rows":
-			rs = []scrapes.Row{carrier}
-		case "/runs/ppp-current/rows":
-			rs = rows
-		default:
-			t.Errorf("unexpected read %s", r.URL.Path)
-			return
-		}
-		if run != "" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"id": run, "scraper": scraper, "status": store.StatusDone, "started": "2000-01-01T00:00:00Z", "rows": len(rs), "new": 0, "changed": 0, "unchanged": 0, "gone": 0})
-			return
-		}
-		for _, row := range rs {
-			_ = json.NewEncoder(w).Encode(map[string]any{"scraper": row.Scraper, "run": row.Run, "source_id": row.SourceID, "digest": row.Digest, "name": row.Name, "collected": "2000-01-01T00:00:00Z", "names": []string{}, "people": []any{}, "facts": row.Facts, "raw": row.Raw, "address": map[string]any{"state": row.Address.State, "zip": row.Address.Zip}})
-		}
-	}, true)
-	ctx := context.Background()
-	var batch []store.Observation
-	for _, row := range rows {
-		batch = append(batch, store.Observation{Scraper: ppp.Name, SourceID: row.SourceID, Digest: row.Digest, Reading: ppp.New().Read(row)})
-	}
-	if _, _, err := f.st.Attach(ctx, "ppp-current", false, batch); err != nil {
-		t.Fatal(err)
-	}
-	for after := ""; ; {
-		next, _, err := f.st.Derive(ctx, enrichers.KindLinkFacts, after, false, passes.BatchSize)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if next == "" {
-			break
-		}
-		after = next
-	}
-	f.eng = passes.New(passes.Config{Store: f.st, Sources: sources.New(fmcsa.New(), ppp.New()), Scrapes: f.sc, Telemetry: f.w, Events: f.em})
-	p, err := f.eng.Rebuild(ctx, identity.Caller{UserID: "owner"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	p = f.ended(p.ID)
-	if p.Status != store.StatusDone {
-		t.Fatal(p)
-	}
-	cs, err := f.st.ListCandidates(ctx, store.CandidateFilter{}, "", "", 10)
-	if err != nil || len(cs) != 2 {
-		t.Fatal(cs, err)
-	}
-	var original, survivor string
-	for _, c := range cs {
-		if c.Name == rows[0].Name {
-			original = c.ID
-		} else {
-			survivor = c.ID
-		}
-	}
-	if original == "" || survivor == "" {
-		t.Fatal(cs)
-	}
-	if _, _, err := f.st.Decide(ctx, store.Ruling{Kind: store.KindMerge, Candidate: survivor, Other: original, UserID: "owner", Why: "historical assessment fixture"}); err != nil {
-		t.Fatal(err)
-	}
-	a, err := f.st.GetAssessment(ctx, original)
-	if err != nil || a.FleetVerdict != sources.FleetPass || a.PowerUnits == nil || *a.PowerUnits != 3 {
-		t.Fatal(a, err)
 	}
 }

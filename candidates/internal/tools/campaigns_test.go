@@ -11,12 +11,12 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-WV7T-7FBP R-WWFP-L72E R-WXNL-YYT3 R-WYVI-CQJS
+// R-3GJ3-M4V9 R-QEP5-ZOVY R-ML95-4DLF R-R3FR-ZV7S
 func TestCampaignAnswerHistory(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
 	id := ids[0]
-	k := f.create("chosen-campaign-cohort")
+	k := f.create("chosen-campaign-prospect_list")
 	at := time.Date(2026, 10, 5, 10, 0, 7, 123456, time.FixedZone("offset", 3600))
 	read := func(id string) tools.Detail {
 		t.Helper()
@@ -35,7 +35,7 @@ func TestCampaignAnswerHistory(t *testing.T) {
 	if err := f.st.AddCampaignUse(t.Context(), id, "chosen-q", "", at.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	want := []tools.CampaignUse{{Campaign: "chosen-q", Added: "2026-10-05T10:00:07Z"}, {Campaign: "chosen-p", Cohort: k.ID, Added: "2026-10-05T09:00:07Z"}}
+	want := []tools.CampaignUse{{Campaign: "chosen-q", Added: "2026-10-05T10:00:07Z"}, {Campaign: "chosen-p", ProspectList: k.ID, Added: "2026-10-05T09:00:07Z"}}
 	if got := read(id); !reflect.DeepEqual(got.Campaigns, want) {
 		t.Fatal(got.Campaigns, want)
 	}
@@ -98,8 +98,8 @@ func TestCampaignAnswerHistory(t *testing.T) {
 		v    tools.CampaignUse
 		want string
 	}{
-		{tools.CampaignUse{}, `{"campaign":"","cohort":""}`},
-		{tools.CampaignUse{"campaign", "cohort", "added", "rejected", "reason", "delivered"}, `{"campaign":"campaign","cohort":"cohort","added":"added","rejected":"rejected","reason":"reason","delivered":"delivered"}`},
+		{tools.CampaignUse{}, `{"campaign":"","prospect_list":""}`},
+		{tools.CampaignUse{"campaign", "prospect_list", "added", "rejected", "reason", "delivered"}, `{"campaign":"campaign","prospect_list":"prospect_list","added":"added","rejected":"rejected","reason":"reason","delivered":"delivered"}`},
 	} {
 		b, err := json.Marshal(tc.v)
 		if err != nil || string(b) != tc.want {
@@ -108,7 +108,7 @@ func TestCampaignAnswerHistory(t *testing.T) {
 	}
 }
 
-// R-X03E-QIAH R-X1BB-4A16
+// R-X5PS-GSY3 R-Y9YH-38F0
 func TestCampaignFilterToolLifecycle(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(7)
@@ -142,14 +142,14 @@ func TestCampaignFilterToolLifecycle(t *testing.T) {
 		}
 	}
 	for _, n := range []uint32{0, 30} {
-		k := decodeList[tools.Cohort](t, f.call("create_cohort", map[string]any{"name": "chosen-age-filter", "filters": map[string]any{"min_campaign_age_days": n}}))
+		k := decodeList[tools.ProspectList](t, f.call("create_prospect_list", map[string]any{"name": "chosen-age-filter", "filters": map[string]any{"min_campaign_age_days": n}}))
 		if k.Filters.MinCampaignAgeDays == nil || *k.Filters.MinCampaignAgeDays != int64(n) {
 			t.Fatal(k)
 		}
 		for _, now := range []time.Time{date, date.Add(23*time.Hour + 58*time.Minute)} {
 			f.now = now
-			got := decodeList[tools.CohortRead](t, f.call("cohort", tools.CohortArgs{Cohort: k.ID}))
-			if got.Cohort.Filters.MinCampaignAgeDays == nil || *got.Cohort.Filters.MinCampaignAgeDays != int64(n) {
+			got := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: k.ID}))
+			if got.ProspectList.Filters.MinCampaignAgeDays == nil || *got.ProspectList.Filters.MinCampaignAgeDays != int64(n) {
 				t.Fatal(got)
 			}
 			want := ids
@@ -167,36 +167,36 @@ func TestCampaignFilterToolLifecycle(t *testing.T) {
 				t.Fatal(members, want)
 			}
 		}
-		for _, args := range []map[string]any{{"cohort": k.ID}, {"cohort": k.ID, "filters": nil}} {
-			got := decodeList[tools.Cohort](t, f.call("edit_cohort", args))
+		for _, args := range []map[string]any{{"prospect_list": k.ID}, {"prospect_list": k.ID, "filters": nil}} {
+			got := decodeList[tools.ProspectList](t, f.call("edit_prospect_list", args))
 			if got.Filters.MinCampaignAgeDays == nil || *got.Filters.MinCampaignAgeDays != int64(n) {
 				t.Fatal(got)
 			}
 		}
 		for _, filters := range []map[string]any{{}, {"min_campaign_age_days": nil}, {"show_excluded": true}} {
-			f.call("edit_cohort", map[string]any{"cohort": k.ID, "filters": map[string]any{"min_campaign_age_days": n}})
-			got := decodeList[tools.Cohort](t, f.call("edit_cohort", map[string]any{"cohort": k.ID, "filters": filters}))
+			f.call("edit_prospect_list", map[string]any{"prospect_list": k.ID, "filters": map[string]any{"min_campaign_age_days": n}})
+			got := decodeList[tools.ProspectList](t, f.call("edit_prospect_list", map[string]any{"prospect_list": k.ID, "filters": filters}))
 			if got.Filters.MinCampaignAgeDays != nil {
 				t.Fatal(got)
 			}
 		}
 	}
 	for _, filters := range []map[string]any{{}, {"min_campaign_age_days": nil}} {
-		got := decodeList[tools.Cohort](t, f.call("create_cohort", map[string]any{"name": "chosen-no-filter", "filters": filters}))
+		got := decodeList[tools.ProspectList](t, f.call("create_prospect_list", map[string]any{"name": "chosen-no-filter", "filters": filters}))
 		if got.Filters.MinCampaignAgeDays != nil {
 			t.Fatal(got)
 		}
-		read := decodeList[tools.CohortRead](t, f.call("cohort", tools.CohortArgs{Cohort: got.ID}))
+		read := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: got.ID}))
 		if len(read.Members) != 7 {
 			t.Fatal(read)
 		}
 	}
-	before := decodeList[tools.CohortList](t, f.call("cohorts", tools.CohortsArgs{}))
-	r := f.call("create_cohort", map[string]any{"name": "chosen-negative", "filters": map[string]any{"min_campaign_age_days": -1}})
+	before := decodeList[tools.ProspectListList](t, f.call("prospect_lists", tools.ProspectListsArgs{}))
+	r := f.call("create_prospect_list", map[string]any{"name": "chosen-negative", "filters": map[string]any{"min_campaign_age_days": -1}})
 	if !r.IsError() || len(decode(t, r).Structured) != 0 {
 		t.Fatal(decode(t, r))
 	}
-	after := decodeList[tools.CohortList](t, f.call("cohorts", tools.CohortsArgs{}))
+	after := decodeList[tools.ProspectListList](t, f.call("prospect_lists", tools.ProspectListsArgs{}))
 	if !reflect.DeepEqual(before, after) {
 		t.Fatal(before, after)
 	}

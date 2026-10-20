@@ -3,7 +3,7 @@ module github.com/ikigenba/ikigenba/candidates
 go 1.26.5
 
 require (
-	github.com/ikigenba/ikigenba/appkit v0.28.0
+	github.com/ikigenba/ikigenba/appkit v0.30.0
 	golang.org/x/net v0.61.0
 )
 

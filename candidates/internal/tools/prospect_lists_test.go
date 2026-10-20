@@ -19,8 +19,8 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-A0V6-EFAB R-WSS0-FVUB R-A3AZ-5YRP R-A4IV-JQIE R-A5QR-XI93 R-A6YO-B9ZS R-A9EH-2TH6 R-WTZW-TNL0 R-AD26-84P9
-func TestCohortExactSchemas(t *testing.T) {
+// R-QJXD-VJCO R-WSS0-FVUB R-A3AZ-5YRP R-QW4D-P8RM R-2S53-YQ1D R-ODVT-E7W8 R-A9EH-2TH6 R-3NUH-WRBF R-MZVX-PMHR
+func TestProspectListExactSchemas(t *testing.T) {
 	f := newFixture(t)
 	infos, err := f.client.ListTools(t.Context(), caller)
 	if err != nil {
@@ -29,17 +29,17 @@ func TestCohortExactSchemas(t *testing.T) {
 	filters := `{"type":"object","properties":{"revenue_min":{"type":"integer","minimum":0},"revenue_max":{"type":"integer","minimum":0},"revenue_unknown":{"type":"boolean"},"max_minutes":{"type":"integer","minimum":0},"minutes_unknown":{"type":"boolean"},"categories":{"type":"array","items":{"type":"string"}},"category_unknown":{"type":"boolean"},"fleet":{"type":"string"},"fleet_unknown":{"type":"boolean"},"website":{"type":"array","items":{"type":"string"}},"website_unknown":{"type":"boolean"},"government":{"type":"boolean"},"max_filing_age_days":{"type":"integer","minimum":0},"filing_unknown":{"type":"boolean"},"min_campaign_age_days":{"type":"integer","minimum":0},"class":{"type":"string"},"class_unknown":{"type":"boolean"},"show_excluded":{"type":"boolean"}},"additionalProperties":false}`
 	order := `{"type":"array","items":{"type":"object","properties":{"field":{"type":"string"},"direction":{"type":"string"}},"required":["field","direction"],"additionalProperties":false}}`
 	want := map[string]string{
-		"create_cohort": `{"type":"object","properties":{"name":{"type":"string"},"filters":` + filters + `,"order":` + order + `,"size":{"type":"integer"}},"required":["name"],"additionalProperties":false}`,
-		"edit_cohort":   `{"type":"object","properties":{"cohort":{"type":"string"},"name":{"type":"string"},"filters":` + filters + `,"order":` + order + `,"size":{"type":"integer"}},"required":["cohort"],"additionalProperties":false}`,
+		"create_prospect_list": `{"type":"object","properties":{"name":{"type":"string"},"filters":` + filters + `,"order":` + order + `,"size":{"type":"integer"}},"required":["name"],"additionalProperties":false}`,
+		"edit_prospect_list":   `{"type":"object","properties":{"prospect_list":{"type":"string"},"name":{"type":"string"},"filters":` + filters + `,"order":` + order + `,"size":{"type":"integer"}},"required":["prospect_list"],"additionalProperties":false}`,
 	}
-	for _, n := range []string{"cohort", "delete_cohort"} {
-		want[n] = `{"type":"object","properties":{"cohort":{"type":"string"}},"required":["cohort"],"additionalProperties":false}`
+	for _, n := range []string{"prospect_list", "delete_prospect_list"} {
+		want[n] = `{"type":"object","properties":{"prospect_list":{"type":"string"}},"required":["prospect_list"],"additionalProperties":false}`
 	}
 	for _, n := range []string{"exclude", "include"} {
 		want[n] = `{"type":"object","properties":{"candidate":{"type":"string"},"why":{"type":"string"}},"required":["candidate","why"],"additionalProperties":false}`
 	}
 	for _, n := range []string{"reject", "unreject"} {
-		want[n] = `{"type":"object","properties":{"cohort":{"type":"string"},"candidate":{"type":"string"},"why":{"type":"string"}},"required":["cohort","candidate","why"],"additionalProperties":false}`
+		want[n] = `{"type":"object","properties":{"prospect_list":{"type":"string"},"candidate":{"type":"string"},"why":{"type":"string"}},"required":["prospect_list","candidate","why"],"additionalProperties":false}`
 	}
 	for _, info := range infos {
 		if expected, ok := want[info.Name]; ok {
@@ -54,21 +54,22 @@ func TestCohortExactSchemas(t *testing.T) {
 	}
 }
 
-func cohortExpected(k store.Cohort) tools.Cohort {
-	return tools.Cohort{ID: k.ID, Name: k.Name, Size: k.Size, Filters: k.Filters, Order: k.Order, CreatedBy: k.CreatedUserID, CreatedEmail: k.CreatedUserEmail, Created: stamp(k.Created), ChangedBy: k.ChangedUserID, ChangedEmail: k.ChangedUserEmail, Changed: stamp(k.Changed)}
+func prospectListExpected(k store.ProspectList) tools.ProspectList {
+	return tools.ProspectList{ID: k.ID, Name: k.Name, Size: k.Size, Filters: k.Filters, Order: k.Order, CreatedBy: k.CreatedUserID, CreatedEmail: k.CreatedUserEmail, Created: stamp(k.Created), ChangedBy: k.ChangedUserID, ChangedEmail: k.ChangedUserEmail, Changed: stamp(k.Changed)}
 }
 func rejectExpected(r store.Reject) tools.Reject {
-	v := tools.Reject{Kind: r.Kind, Cohort: r.Cohort, CohortName: r.CohortName, Candidate: r.Candidate, Why: r.Why, User: r.UserID, Email: r.UserEmail}
+	v := tools.Reject{Kind: r.Kind, ProspectList: r.ProspectList, ProspectListName: r.ProspectListName, Candidate: r.Candidate, Why: r.Why, User: r.UserID, Email: r.UserEmail}
 	if !r.At.IsZero() {
 		v.At = stamp(r.At)
 	}
 	return v
 }
 func memberExpected(r store.Ranked) tools.Member {
-	a := assessmentExpected(r.Assessment)
-	v := tools.Member{Candidate: candidateOf(r.Candidate), OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, FleetVerdict: a.FleetVerdict, Website: a.Website, WebsiteURL: a.WebsiteURL, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch, KnownSince: a.KnownSince, NewestFiling: a.NewestFiling, Excluded: a.Excluded, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(r.Assessment.Categories)}
+	a := judgmentsExpected(r.Judgments)
+	f := r.Facts
+	v := tools.Member{Candidate: candidateOf(r.Candidate), OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, FleetVerdict: f.FleetVerdict, Website: f.Website, WebsiteURL: f.WebsiteURL, Minutes: f.Minutes, GovernmentMatch: f.GovernmentMatch, KnownSince: dateExpected(f.KnownSince), NewestFiling: dateExpected(f.NewestFiling), Excluded: a.Excluded, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(r.Facts.Categories)}
 	seen := map[string]bool{}
-	for _, c := range a.Categories {
+	for _, c := range f.Categories {
 		seen[c.Name] = true
 	}
 	for name := range seen {
@@ -78,8 +79,8 @@ func memberExpected(r store.Ranked) tools.Member {
 	return v
 }
 
-func readExpected(r store.CohortRead) tools.CohortRead {
-	v := tools.CohortRead{Cohort: cohortExpected(r.Cohort), Matching: r.Matching, Classified: r.Classified}
+func readExpected(r store.ProspectListRead) tools.ProspectListRead {
+	v := tools.ProspectListRead{ProspectList: prospectListExpected(r.ProspectList), Matching: r.Matching, Classified: r.Classified}
 	for _, m := range r.Members {
 		v.Members = append(v.Members, memberExpected(m))
 	}
@@ -88,54 +89,54 @@ func readExpected(r store.CohortRead) tools.CohortRead {
 	}
 	return v
 }
-func (f *fixture) create(name string) tools.Cohort {
+func (f *fixture) create(name string) tools.ProspectList {
 	f.t.Helper()
-	r := f.call("create_cohort", tools.CreateCohortArgs{Name: name})
-	k := decodeList[tools.Cohort](f.t, r)
+	r := f.call("create_prospect_list", tools.CreateProspectListArgs{Name: name})
+	k := decodeList[tools.ProspectList](f.t, r)
 	if r.IsError() {
 		f.t.Fatal(decode(f.t, r))
 	}
 	return k
 }
 
-// R-VRRJ-PPU1
-// R-AFHY-ZO6N R-WO2V-5M7K R-AHXR-R7O1 R-WMUY-RUGV R-AXSG-Q8B2 R-BEV2-30OS R-P2HO-Q5JG R-BKYJ-ZVE9 R-1POC-ZXB9 R-1S45-RGSN R-BDN5-P8Y3
-func TestCohortLifecycleRejectAndExclusion(t *testing.T) {
+// R-27ET-GMFK
+// R-VWLI-BAIE R-PRJ2-Q1SR R-MGDJ-LAMN R-WMUY-RUGV R-3LEP-57U1 R-TKGF-X4CH R-Y7IO-BOXM R-3347-ENPM R-TFTB-22NR R-1LGM-KR32 R-WX6H-SER8
+func TestProspectListLifecycleRejectAndExclusion(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(5)
-	k := f.create("  Working cohort  ")
+	k := f.create("  Working prospect_list  ")
 	duplicate := f.create(k.Name)
-	if k.ID == duplicate.ID || k.Size != store.CohortSizeDefault || k.CreatedBy != caller.UserID || k.ChangedBy != caller.UserID || k.CreatedEmail != caller.Email || k.ChangedEmail != caller.Email {
+	if k.ID == duplicate.ID || k.Size != store.ProspectListSizeDefault || k.CreatedBy != caller.UserID || k.ChangedBy != caller.UserID || k.CreatedEmail != caller.Email || k.ChangedEmail != caller.Email {
 		t.Fatal(k, duplicate)
 	}
-	stored, err := f.st.GetCohort(t.Context(), k.ID)
+	stored, err := f.st.GetProspectList(t.Context(), k.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	success(t, f.call("edit_cohort", tools.EditCohortArgs{Cohort: k.ID}), cohortExpected(stored))
+	success(t, f.call("edit_prospect_list", tools.EditProspectListArgs{ProspectList: k.ID}), prospectListExpected(stored))
 	f.now = f.now.Add(time.Hour)
 	size := 2
 	name := "changed-name"
-	result := f.callAs(other, "edit_cohort", tools.EditCohortArgs{Cohort: k.ID, Name: &name, Size: &size})
-	k = decodeList[tools.Cohort](t, result)
-	stored, err = f.st.GetCohort(t.Context(), k.ID)
+	result := f.callAs(other, "edit_prospect_list", tools.EditProspectListArgs{ProspectList: k.ID, Name: &name, Size: &size})
+	k = decodeList[tools.ProspectList](t, result)
+	stored, err = f.st.GetProspectList(t.Context(), k.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	success(t, result, cohortExpected(stored))
+	success(t, result, prospectListExpected(stored))
 	if k.CreatedBy != caller.UserID || k.ChangedBy != other.UserID {
 		t.Fatal(k)
 	}
-	read, err := f.st.ReadCohort(t.Context(), k.ID)
+	read, err := f.st.ReadProspectList(t.Context(), k.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	success(t, f.call("cohort", tools.CohortArgs{Cohort: k.ID}), readExpected(read))
+	success(t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: k.ID}), readExpected(read))
 	if read.Matching != 5 || len(read.Members) != 2 {
 		t.Fatal(read)
 	}
 	id := read.Members[0].Candidate.ID
-	args := tools.RejectArgs{Cohort: k.ID, Candidate: id, Why: "  chosen reason  "}
+	args := tools.RejectArgs{ProspectList: k.ID, Candidate: id, Why: "  chosen reason  "}
 	r := f.call("reject", args)
 	rejected := decodeList[tools.Reject](t, r)
 	xs, err := f.st.Rejects(t.Context(), id)
@@ -144,11 +145,11 @@ func TestCohortLifecycleRejectAndExclusion(t *testing.T) {
 	}
 	success(t, r, rejectExpected(xs[0]))
 	success(t, f.callAs(other, "reject", args), rejected)
-	read, err = f.st.ReadCohort(t.Context(), k.ID)
+	read, err = f.st.ReadProspectList(t.Context(), k.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	success(t, f.call("cohort", tools.CohortArgs{Cohort: k.ID}), readExpected(read))
+	success(t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: k.ID}), readExpected(read))
 	if read.Matching != 4 || len(read.Rejects) != 1 {
 		t.Fatal(read)
 	}
@@ -157,7 +158,7 @@ func TestCohortLifecycleRejectAndExclusion(t *testing.T) {
 		t.Fatal(detail.Rejects)
 	}
 	f.call("unreject", args)
-	success(t, f.call("unreject", args), tools.Reject{Kind: store.KindUnreject, Cohort: k.ID, CohortName: name, Candidate: id})
+	success(t, f.call("unreject", args), tools.Reject{Kind: store.KindUnreject, ProspectList: k.ID, ProspectListName: name, Candidate: id})
 	for _, kind := range []string{store.KindExclude, store.KindInclude} {
 		result = f.callAs(other, kind, tools.RulingArgs{Candidate: id, Why: " reason "})
 		rs, err := f.st.Rulings(t.Context(), id)
@@ -170,27 +171,27 @@ func TestCohortLifecycleRejectAndExclusion(t *testing.T) {
 		}
 		success(t, result, tools.Decision{Ruling: tools.Ruling{Kind: kind, Candidate: id, Why: " reason ", User: other.UserID, Email: other.Email, At: stamp(rs[0].At)}, Candidates: []tools.Candidate{candidateOf(c)}})
 		got := decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: id}))
-		if got.Assessment == nil || got.Assessment.Excluded != (kind == store.KindExclude) {
+		if got.Judgments == nil || got.Judgments.Excluded != (kind == store.KindExclude) {
 			t.Fatal(got)
 		}
-		for _, cohort := range []string{k.ID, duplicate.ID} {
-			cr := decodeList[tools.CohortRead](t, f.call("cohort", tools.CohortArgs{Cohort: cohort}))
+		for _, prospectList := range []string{k.ID, duplicate.ID} {
+			cr := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: prospectList}))
 			for _, m := range cr.Members {
 				if m.Candidate.ID == id && kind == store.KindExclude {
 					t.Fatal(cr)
 				}
 			}
-			if cohort == duplicate.ID && cr.Matching != int64(map[string]int{store.KindExclude: 4, store.KindInclude: 5}[kind]) {
+			if prospectList == duplicate.ID && cr.Matching != int64(map[string]int{store.KindExclude: 4, store.KindInclude: 5}[kind]) {
 				t.Fatal(cr)
 			}
 		}
 	}
-	// Reject history remains for a merged candidate and after its cohort is deleted.
+	// Reject history remains for a merged candidate and after its prospectList is deleted.
 	if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteHTTPS, URL: "https://business.test"}), Source: "business.test"}}); err != nil {
 		t.Fatal(err)
 	}
 	enriched := decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: id}))
-	if len(enriched.Enrichments) != 1 {
+	if len(enriched.EnrichmentResults) != 1 {
 		t.Fatal(enriched)
 	}
 	f.call("reject", args)
@@ -200,32 +201,32 @@ func TestCohortLifecycleRejectAndExclusion(t *testing.T) {
 	}
 	f.call("decide", tools.DecideArgs{Kind: store.KindMerge, Candidate: otherID, Other: id, Why: "merge"})
 	detail = decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: id}))
-	if detail.Candidate.MergedInto != otherID || detail.Assessment != nil || len(detail.Links) != 0 || len(detail.Estimates) != 0 || detail.Enrichments == nil || len(detail.Enrichments) != 0 || len(detail.Rejects) != 3 {
+	if detail.Candidate.MergedInto != otherID || detail.Judgments != nil || len(detail.Links) != 0 || len(detail.Estimates) != 0 || detail.Enrichments != nil || len(detail.EnrichmentResults) != 0 || len(detail.Rejects) != 3 {
 		t.Fatal(detail)
 	}
 	for _, kind := range []string{"reject", "unreject"} {
 		refusal(t, f.call(kind, args), passes.RefusalInvalid, tools.RefuseInvalid)
 	}
-	success(t, f.call("delete_cohort", tools.CohortArgs{Cohort: k.ID}), k)
-	for _, kind := range []string{"cohort", "delete_cohort"} {
-		refusal(t, f.call(kind, tools.CohortArgs{Cohort: k.ID}), passes.RefusalNotFound, tools.RefuseNotFound)
+	success(t, f.call("delete_prospect_list", tools.ProspectListArgs{ProspectList: k.ID}), k)
+	for _, kind := range []string{"prospect_list", "delete_prospect_list"} {
+		refusal(t, f.call(kind, tools.ProspectListArgs{ProspectList: k.ID}), passes.RefusalNotFound, tools.RefuseNotFound)
 	}
-	refusal(t, f.call("edit_cohort", tools.EditCohortArgs{Cohort: k.ID}), passes.RefusalNotFound, tools.RefuseNotFound)
+	refusal(t, f.call("edit_prospect_list", tools.EditProspectListArgs{ProspectList: k.ID}), passes.RefusalNotFound, tools.RefuseNotFound)
 	refusal(t, f.call("reject", args), passes.RefusalNotFound, tools.RefuseNotFound)
 	detail = decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: id}))
 	for _, x := range detail.Rejects {
-		if x.CohortName != "" {
+		if x.ProspectListName != "" {
 			t.Fatal(x)
 		}
 	}
-	list := decodeList[tools.CohortList](t, f.call("cohorts", tools.CohortsArgs{}))
-	if len(list.Cohorts) != 1 || list.Cohorts[0].ID != duplicate.ID {
+	list := decodeList[tools.ProspectListList](t, f.call("prospect_lists", tools.ProspectListsArgs{}))
+	if len(list.ProspectLists) != 1 || list.ProspectLists[0].ID != duplicate.ID {
 		t.Fatal(list)
 	}
 }
 
-// R-BG2Y-GSFH R-P2HO-Q5JG R-BKYJ-ZVE9 R-VWN5-8SST
-func TestCohortFiltersAndReplacement(t *testing.T) {
+// R-O0GX-6QQL R-Y7IO-BOXM R-3347-ENPM R-2H60-ISD4
+func TestProspectListFiltersAndReplacement(t *testing.T) {
 	f := newFixture(t)
 	lo, hi, minutes, days := uint32(0), uint32(20000000), uint32(120), uint32(730)
 	websites := []string{sources.WebsiteHTTP, sources.WebsiteHTTPS}
@@ -233,47 +234,47 @@ func TestCohortFiltersAndReplacement(t *testing.T) {
 	args := tools.FilterArgs{RevenueMin: &lo, RevenueMax: &hi, RevenueUnknown: true, MaxMinutes: &minutes, MinutesUnknown: true, Categories: []string{sources.CategoryTrucking, sources.CategoryOther}, CategoryUnknown: true, Fleet: sources.FleetPass, FleetUnknown: true, Website: &websites, WebsiteUnknown: true, Government: &government, MaxFilingAgeDays: &days, FilingUnknown: true, Class: sources.ClassForHire, ClassUnknown: true, ShowExcluded: true}
 	order := []tools.OrderArgs{{Field: store.OrderRevenueLow, Direction: store.DirectionAsc}, {Field: store.OrderKnownSince, Direction: store.DirectionDesc}}
 	size := 17
-	r := f.call("create_cohort", tools.CreateCohortArgs{Name: "filtered", Filters: &args, Order: &order, Size: &size})
-	k := decodeList[tools.Cohort](t, r)
+	r := f.call("create_prospect_list", tools.CreateProspectListArgs{Name: "filtered", Filters: &args, Order: &order, Size: &size})
+	k := decodeList[tools.ProspectList](t, r)
 	a, b, c, d := int64(lo), int64(hi), int64(minutes), int64(days)
-	want := store.CohortFilters{RevenueMin: &a, RevenueMax: &b, RevenueUnknown: true, MaxMinutes: &c, MinutesUnknown: true, Categories: []string{sources.CategoryOther, sources.CategoryTrucking}, CategoryUnknown: true, Fleet: args.Fleet, FleetUnknown: true, Website: websites, WebsiteUnknown: true, Government: &government, MaxFilingAgeDays: &d, FilingUnknown: true, Class: args.Class, ClassUnknown: true, ShowExcluded: true}
-	if !reflect.DeepEqual(k.Filters, want) || k.Size != int64(size) || !reflect.DeepEqual(k.Order, []store.CohortOrder{{Field: store.OrderRevenueLow, Direction: store.DirectionAsc}, {Field: store.OrderKnownSince, Direction: store.DirectionDesc}}) {
+	want := store.ProspectListFilters{RevenueMin: &a, RevenueMax: &b, RevenueUnknown: true, MaxMinutes: &c, MinutesUnknown: true, Categories: []string{sources.CategoryOther, sources.CategoryTrucking}, CategoryUnknown: true, Fleet: args.Fleet, FleetUnknown: true, Website: websites, WebsiteUnknown: true, Government: &government, MaxFilingAgeDays: &d, FilingUnknown: true, Class: args.Class, ClassUnknown: true, ShowExcluded: true}
+	if !reflect.DeepEqual(k.Filters, want) || k.Size != int64(size) || !reflect.DeepEqual(k.Order, []store.ProspectListOrder{{Field: store.OrderRevenueLow, Direction: store.DirectionAsc}, {Field: store.OrderKnownSince, Direction: store.DirectionDesc}}) {
 		t.Fatal(k)
 	}
-	stored, err := f.st.GetCohort(t.Context(), k.ID)
+	stored, err := f.st.GetProspectList(t.Context(), k.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	success(t, r, cohortExpected(stored))
+	success(t, r, prospectListExpected(stored))
 	f.now = f.now.Add(time.Hour)
 	for _, extra := range []map[string]any{{}, {"filters": nil, "order": nil, "size": nil, "name": nil}} {
-		extra["cohort"] = k.ID
-		success(t, f.call("edit_cohort", extra), k)
+		extra["prospect_list"] = k.ID
+		success(t, f.call("edit_prospect_list", extra), k)
 	}
 	empty := []tools.OrderArgs{}
-	r = f.call("edit_cohort", map[string]any{"cohort": k.ID, "filters": map[string]any{}, "order": empty})
-	cleared := decodeList[tools.Cohort](t, r)
+	r = f.call("edit_prospect_list", map[string]any{"prospect_list": k.ID, "filters": map[string]any{}, "order": empty})
+	cleared := decodeList[tools.ProspectList](t, r)
 	bts, _ := json.Marshal(cleared.Filters)
-	if string(bts) != "{}" || !reflect.DeepEqual(cleared.Order, []store.CohortOrder{{Field: store.OrderOperatingConfidence, Direction: store.DirectionDesc}}) {
+	if string(bts) != "{}" || !reflect.DeepEqual(cleared.Order, []store.ProspectListOrder{{Field: store.OrderOperatingConfidence, Direction: store.DirectionDesc}}) {
 		t.Fatal(cleared)
 	}
 	f.now = f.now.Add(time.Hour)
-	success(t, f.call("edit_cohort", map[string]any{"cohort": k.ID, "filters": map[string]any{}, "order": empty}), cleared)
+	success(t, f.call("edit_prospect_list", map[string]any{"prospect_list": k.ID, "filters": map[string]any{}, "order": empty}), cleared)
 }
 
-// R-B2O2-9B9U R-B1G5-VJJ5 R-AZ0D-401R
-func TestCohortPagingNameTies(t *testing.T) {
+// R-RI2K-L444 R-N8F8-E0OM R-WEW0-1UMT
+func TestProspectListPagingNameTies(t *testing.T) {
 	for _, count := range []int{0, 25, 26, 30} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {
 			f := newFixture(t)
-			success(t, f.call("cohorts", tools.CohortsArgs{}), tools.CohortList{})
+			success(t, f.call("prospect_lists", tools.ProspectListsArgs{}), tools.ProspectListList{})
 			for i := range count {
 				f.create([]string{"a", "A", "a", "z"}[i%4])
 			}
 			if count > paging.DefaultLimit {
-				checkDefaultPage(t, f, "cohorts")
+				checkDefaultPage(t, f, "prospect_lists")
 			}
-			all, err := f.st.ListCohorts(t.Context(), "", "", 100)
+			all, err := f.st.ListProspectLists(t.Context(), "", "", 100)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -282,16 +283,16 @@ func TestCohortPagingNameTies(t *testing.T) {
 				offset := 0
 				for {
 					end := min(offset+limit, len(all))
-					want := tools.CohortList{}
+					want := tools.ProspectListList{}
 					for _, k := range all[offset:end] {
-						want.Cohorts = append(want.Cohorts, cohortExpected(k))
+						want.ProspectLists = append(want.ProspectLists, prospectListExpected(k))
 					}
 					if end < len(all) {
 						last := all[end-1]
-						token := paging.Token{Tool: "cohorts"}.Encode(last.Name, last.ID)
+						token := paging.Token{Tool: "prospect_lists"}.Encode(last.Name, last.ID)
 						want.Next = &token
 					}
-					success(t, f.call("cohorts", tools.CohortsArgs{Page: next, Limit: &limit}), want)
+					success(t, f.call("prospect_lists", tools.ProspectListsArgs{Page: next, Limit: &limit}), want)
 					if want.Next == nil {
 						break
 					}
@@ -303,7 +304,7 @@ func TestCohortPagingNameTies(t *testing.T) {
 	}
 }
 
-func TestCohortCategoryCreateAndEdit(t *testing.T) {
+func TestProspectListCategoryCreateAndEdit(t *testing.T) {
 	f := newFixture(t)
 	k := f.create("category edits")
 	for _, category := range []string{
@@ -318,55 +319,55 @@ func TestCohortCategoryCreateAndEdit(t *testing.T) {
 	} {
 		t.Run(category, func(t *testing.T) {
 			filters := tools.FilterArgs{Categories: []string{category}}
-			created := f.call("create_cohort", tools.CreateCohortArgs{Name: category, Filters: &filters})
+			created := f.call("create_prospect_list", tools.CreateProspectListArgs{Name: category, Filters: &filters})
 			if created.IsError() {
 				t.Fatal(decode(t, created))
 			}
-			if got := decodeList[tools.Cohort](t, created); !reflect.DeepEqual(got.Filters.Categories, filters.Categories) {
+			if got := decodeList[tools.ProspectList](t, created); !reflect.DeepEqual(got.Filters.Categories, filters.Categories) {
 				t.Fatal(got.Filters)
 			}
-			edited := f.call("edit_cohort", tools.EditCohortArgs{Cohort: k.ID, Filters: &filters})
+			edited := f.call("edit_prospect_list", tools.EditProspectListArgs{ProspectList: k.ID, Filters: &filters})
 			if edited.IsError() {
 				t.Fatal(decode(t, edited))
 			}
-			if got := decodeList[tools.Cohort](t, edited); !reflect.DeepEqual(got.Filters.Categories, filters.Categories) {
+			if got := decodeList[tools.ProspectList](t, edited); !reflect.DeepEqual(got.Filters.Categories, filters.Categories) {
 				t.Fatal(got.Filters)
 			}
 		})
 	}
 	for _, category := range []string{"shops", "Retail", "", "trucking", "retail ", "EDUCATION", "governments"} {
 		filters := tools.FilterArgs{Categories: []string{sources.CategoryGovernment, category}}
-		refusal(t, f.call("create_cohort", tools.CreateCohortArgs{Name: "invalid category", Filters: &filters}), passes.RefusalInvalid, tools.RefuseInvalid)
-		refusal(t, f.call("edit_cohort", tools.EditCohortArgs{Cohort: k.ID, Filters: &filters}), passes.RefusalInvalid, tools.RefuseInvalid)
+		refusal(t, f.call("create_prospect_list", tools.CreateProspectListArgs{Name: "invalid category", Filters: &filters}), passes.RefusalInvalid, tools.RefuseInvalid)
+		refusal(t, f.call("edit_prospect_list", tools.EditProspectListArgs{ProspectList: k.ID, Filters: &filters}), passes.RefusalInvalid, tools.RefuseInvalid)
 	}
 }
 
-// R-BHAU-UK66 R-BJQN-M3NK R-1QW9-DP1Y R-BCF9-BH7E R-B8RK-65ZB R-VWN5-8SST R-OL8I-4DRP R-OMGE-I5IE
-func TestCohortValidationBeforeFailingStore(t *testing.T) {
+// R-QYK6-GS90 R-TAP8-UYEX R-Z382-9Q7O R-BCF9-BH7E R-B8RK-65ZB R-2H60-ISD4 R-OL8I-4DRP R-3IYW-DOCN
+func TestProspectListValidationBeforeFailingStore(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
 	k := f.create("validation")
-	unknown := store.CohortIDPrefix + strings.Repeat("0", 16)
+	unknown := store.ProspectListIDPrefix + strings.Repeat("0", 16)
 	unknownCandidate := store.CandidateIDPrefix + strings.Repeat("0", 16)
 	badParts := []map[string]any{{"name": " \t\n"}, {"size": 0}, {"size": 101}, {"size": -1}, {"filters": map[string]any{"revenue_min": 2, "revenue_max": 1}}, {"filters": map[string]any{"website": []string{}}}, {"filters": map[string]any{"fleet": sources.FleetUnknown}}, {"filters": map[string]any{"class": sources.ClassUnknown}}, {"filters": map[string]any{"categories": []string{"invalid"}}}, {"order": []map[string]any{{"field": "invalid", "direction": store.DirectionAsc}}}, {"order": []map[string]any{{"field": store.OrderRevenueLow, "direction": "invalid"}}}, {"order": []map[string]any{{"field": store.OrderRevenueLow, "direction": store.DirectionAsc}, {"field": store.OrderRevenueLow, "direction": store.DirectionDesc}}}}
 	for _, failing := range []bool{false, true} {
 		f.d.SetFailing(failing)
 		for _, part := range badParts {
 			create := map[string]any{"name": "valid"}
-			edit := map[string]any{"cohort": "bad"}
+			edit := map[string]any{"prospect_list": "bad"}
 			for key, v := range part {
 				create[key] = v
 				edit[key] = v
 			}
-			refusal(t, f.call("create_cohort", create), passes.RefusalInvalid, tools.RefuseInvalid)
-			refusal(t, f.call("edit_cohort", edit), passes.RefusalInvalid, tools.RefuseInvalid)
+			refusal(t, f.call("create_prospect_list", create), passes.RefusalInvalid, tools.RefuseInvalid)
+			refusal(t, f.call("edit_prospect_list", edit), passes.RefusalInvalid, tools.RefuseInvalid)
 		}
-		for _, kind := range []string{"cohort", "delete_cohort", "edit_cohort"} {
-			refusal(t, f.call(kind, map[string]any{"cohort": "bad"}), passes.RefusalNotFound, tools.RefuseNotFound)
+		for _, kind := range []string{"prospect_list", "delete_prospect_list", "edit_prospect_list"} {
+			refusal(t, f.call(kind, map[string]any{"prospect_list": "bad"}), passes.RefusalNotFound, tools.RefuseNotFound)
 		}
 		for _, kind := range []string{"reject", "unreject"} {
-			refusal(t, f.call(kind, tools.RejectArgs{Cohort: "bad", Candidate: "bad", Why: " \t\n"}), passes.RefusalInvalid, tools.RefuseInvalid)
-			for _, args := range []tools.RejectArgs{{Cohort: "bad", Candidate: ids[0], Why: "reason"}, {Cohort: k.ID, Candidate: "bad", Why: "reason"}} {
+			refusal(t, f.call(kind, tools.RejectArgs{ProspectList: "bad", Candidate: "bad", Why: " \t\n"}), passes.RefusalInvalid, tools.RefuseInvalid)
+			for _, args := range []tools.RejectArgs{{ProspectList: "bad", Candidate: ids[0], Why: "reason"}, {ProspectList: k.ID, Candidate: "bad", Why: "reason"}} {
 				refusal(t, f.call(kind, args), passes.RefusalNotFound, tools.RefuseNotFound)
 			}
 		}
@@ -383,12 +384,12 @@ func TestCohortValidationBeforeFailingStore(t *testing.T) {
 		}
 		// Typed nested schemas reject malformed values before handlers, even with an unreachable store.
 		for _, part := range []map[string]any{{"filters": map[string]any{"unknown": true}}, {"filters": map[string]any{"revenue_min": -1}}, {"filters": map[string]any{"revenue_max": -1}}, {"filters": map[string]any{"max_minutes": -1}}, {"filters": map[string]any{"max_filing_age_days": -1}}, {"order": []map[string]any{{"field": store.OrderRevenueLow}}}, {"order": []map[string]any{{"direction": store.DirectionAsc}}}, {"order": []map[string]any{{"field": store.OrderRevenueLow, "direction": store.DirectionAsc, "unknown": true}}}} {
-			for _, kind := range []string{"create_cohort", "edit_cohort"} {
+			for _, kind := range []string{"create_prospect_list", "edit_prospect_list"} {
 				args := map[string]any{}
-				if kind == "create_cohort" {
+				if kind == "create_prospect_list" {
 					args["name"] = "schema"
 				} else {
-					args["cohort"] = k.ID
+					args["prospect_list"] = k.ID
 				}
 				for key, v := range part {
 					args[key] = v
@@ -401,11 +402,11 @@ func TestCohortValidationBeforeFailingStore(t *testing.T) {
 		}
 	}
 	f.d.SetFailing(false)
-	for _, kind := range []string{"cohort", "delete_cohort", "edit_cohort"} {
-		refusal(t, f.call(kind, map[string]any{"cohort": unknown}), passes.RefusalNotFound, tools.RefuseNotFound)
+	for _, kind := range []string{"prospect_list", "delete_prospect_list", "edit_prospect_list"} {
+		refusal(t, f.call(kind, map[string]any{"prospect_list": unknown}), passes.RefusalNotFound, tools.RefuseNotFound)
 	}
 	for _, kind := range []string{"reject", "unreject"} {
-		for _, args := range []tools.RejectArgs{{Cohort: unknown, Candidate: ids[0], Why: "reason"}, {Cohort: k.ID, Candidate: unknownCandidate, Why: "reason"}} {
+		for _, args := range []tools.RejectArgs{{ProspectList: unknown, Candidate: ids[0], Why: "reason"}, {ProspectList: k.ID, Candidate: unknownCandidate, Why: "reason"}} {
 			refusal(t, f.call(kind, args), passes.RefusalNotFound, tools.RefuseNotFound)
 		}
 	}
@@ -418,12 +419,12 @@ func TestCohortValidationBeforeFailingStore(t *testing.T) {
 	}
 }
 
-// R-P76P-0947 R-VWN5-8SST
+// R-QQW5-TEAW R-2H60-ISD4
 func TestEveryToolUnavailable(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
 	k := f.create("unavailable")
-	p, err := f.st.AddPass(t.Context(), store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: caller.UserID})
+	p, err := f.st.AddPass(t.Context(), store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, UserID: caller.UserID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +436,7 @@ func TestEveryToolUnavailable(t *testing.T) {
 	calls := []struct {
 		name string
 		args any
-	}{{"cohorts", tools.CohortsArgs{}}, {"cohort", tools.CohortArgs{Cohort: k.ID}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: ids[0]}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}}, {"rebuild", tools.NoArgs{}}, {"decide", tools.DecideArgs{Kind: store.KindNotSame, Candidate: ids[0], Other: ids[1], Why: "reason"}}, {"exclude", tools.RulingArgs{Candidate: ids[0], Why: "reason"}}, {"include", tools.RulingArgs{Candidate: ids[0], Why: "reason"}}, {"create_cohort", tools.CreateCohortArgs{Name: "valid"}}, {"edit_cohort", tools.EditCohortArgs{Cohort: k.ID}}, {"delete_cohort", tools.CohortArgs{Cohort: k.ID}}, {"reject", tools.RejectArgs{Cohort: k.ID, Candidate: ids[0], Why: "reason"}}, {"unreject", tools.RejectArgs{Cohort: k.ID, Candidate: ids[0], Why: "reason"}}}
+	}{{"prospect_lists", tools.ProspectListsArgs{}}, {"prospect_list", tools.ProspectListArgs{ProspectList: k.ID}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: ids[0]}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}}, {"ingest", tools.NoArgs{}}, {"decide", tools.DecideArgs{Kind: store.KindNotSame, Candidate: ids[0], Other: ids[1], Why: "reason"}}, {"exclude", tools.RulingArgs{Candidate: ids[0], Why: "reason"}}, {"include", tools.RulingArgs{Candidate: ids[0], Why: "reason"}}, {"create_prospect_list", tools.CreateProspectListArgs{Name: "valid"}}, {"edit_prospect_list", tools.EditProspectListArgs{ProspectList: k.ID}}, {"delete_prospect_list", tools.ProspectListArgs{ProspectList: k.ID}}, {"reject", tools.RejectArgs{ProspectList: k.ID, Candidate: ids[0], Why: "reason"}}, {"unreject", tools.RejectArgs{ProspectList: k.ID, Candidate: ids[0], Why: "reason"}}}
 	for _, call := range calls {
 		refusal(t, f.call(call.name, call.args), passes.RefusalUnavailable, tools.RefuseUnavailable)
 	}
@@ -443,7 +444,7 @@ func TestEveryToolUnavailable(t *testing.T) {
 
 func ptrInt(n int64) *int64 { return &n }
 
-// R-P8EL-E0UW
+// R-PME2-TQRX
 func TestToolsContactNoSiblingOrStartPass(t *testing.T) {
 	var requests atomic.Int64
 	var fetched, prompted atomic.Int64
@@ -451,7 +452,7 @@ func TestToolsContactNoSiblingOrStartPass(t *testing.T) {
 	ids := f.seed(2)
 	k := f.create("local-only")
 	setSite(t, f, ids[0], "https://acme.test/")
-	p, err := f.st.AddPass(t.Context(), store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: caller.UserID})
+	p, err := f.st.AddPass(t.Context(), store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, UserID: caller.UserID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,10 +463,10 @@ func TestToolsContactNoSiblingOrStartPass(t *testing.T) {
 		name string
 		args any
 	}{
-		{"cohorts", tools.CohortsArgs{}}, {"cohort", tools.CohortArgs{Cohort: k.ID}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: ids[0]}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}},
-		{"cohorts", map[string]any{"page": "bad"}}, {"cohort", tools.CohortArgs{Cohort: "bad"}}, {"candidates", map[string]any{"limit": 0}}, {"candidate", tools.CandidateArgs{Candidate: "bad"}}, {"passes", map[string]any{"page": "bad"}}, {"pass", tools.PassArgs{Pass: "bad"}},
-		{"add_page", tools.AddPageArgs{Candidate: ids[0], URL: "https://acme.test/about"}}, {"create_cohort", tools.CreateCohortArgs{Name: "another"}}, {"decide", tools.DecideArgs{Kind: store.KindNotSame, Candidate: ids[0], Other: ids[1], Why: "separate"}}, {"exclude", tools.RulingArgs{Candidate: ids[0], Why: "excluded"}}, {"include", tools.RulingArgs{Candidate: ids[0], Why: "included"}},
-		{"edit_cohort", tools.EditCohortArgs{Cohort: k.ID}}, {"reject", tools.RejectArgs{Cohort: k.ID, Candidate: ids[0], Why: "reject"}}, {"unreject", tools.RejectArgs{Cohort: k.ID, Candidate: ids[0], Why: "restore"}}, {"delete_cohort", tools.CohortArgs{Cohort: k.ID}},
+		{"prospect_lists", tools.ProspectListsArgs{}}, {"prospect_list", tools.ProspectListArgs{ProspectList: k.ID}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: ids[0]}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}},
+		{"prospect_lists", map[string]any{"page": "bad"}}, {"prospect_list", tools.ProspectListArgs{ProspectList: "bad"}}, {"candidates", map[string]any{"limit": 0}}, {"candidate", tools.CandidateArgs{Candidate: "bad"}}, {"passes", map[string]any{"page": "bad"}}, {"pass", tools.PassArgs{Pass: "bad"}},
+		{"add_page", tools.AddPageArgs{Candidate: ids[0], URL: "https://acme.test/about"}}, {"create_prospect_list", tools.CreateProspectListArgs{Name: "another"}}, {"decide", tools.DecideArgs{Kind: store.KindNotSame, Candidate: ids[0], Other: ids[1], Why: "separate"}}, {"exclude", tools.RulingArgs{Candidate: ids[0], Why: "excluded"}}, {"include", tools.RulingArgs{Candidate: ids[0], Why: "included"}},
+		{"edit_prospect_list", tools.EditProspectListArgs{ProspectList: k.ID}}, {"reject", tools.RejectArgs{ProspectList: k.ID, Candidate: ids[0], Why: "reject"}}, {"unreject", tools.RejectArgs{ProspectList: k.ID, Candidate: ids[0], Why: "restore"}}, {"delete_prospect_list", tools.ProspectListArgs{ProspectList: k.ID}},
 	} {
 		f.call(call.name, call.args)
 		if requests.Load() != 0 || prompted.Load() != 0 {
@@ -487,7 +488,7 @@ func TestToolsContactNoSiblingOrStartPass(t *testing.T) {
 	}
 }
 
-// R-P76P-0947 R-6QOY-0DLL
+// R-QQW5-TEAW R-6QOY-0DLL
 func TestUnjudgedCandidateAndPrunedPass(t *testing.T) {
 	f := newFixture(t)
 	_, ids, err := f.st.Attach(t.Context(), "unjudged", false, []store.Observation{{Scraper: "fixture", SourceID: "unjudged", Digest: "chosen", Reading: sources.Reading{Name: "Unjudged", Names: []string{"Unjudged"}}}})
@@ -496,12 +497,12 @@ func TestUnjudgedCandidateAndPrunedPass(t *testing.T) {
 	}
 	r := f.call("candidate", tools.CandidateArgs{Candidate: ids[0]})
 	detail := decodeList[tools.Detail](t, r)
-	if detail.Assessment != nil || len(detail.Estimates) != 0 || len(detail.Links) != 1 || detail.Links[0].Filed != "" || detail.Links[0].FleetVerdict != sources.FleetUnknown {
+	if detail.Judgments != nil || len(detail.Estimates) != 0 || len(detail.Links) != 1 || detail.Links[0].Filed != "" || detail.Links[0].FleetVerdict != sources.FleetUnknown {
 		t.Fatal(detail)
 	}
 	var first string
 	for range 2 {
-		p, err := f.st.AddPass(t.Context(), store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: caller.UserID})
+		p, err := f.st.AddPass(t.Context(), store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, UserID: caller.UserID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -528,4 +529,11 @@ func checkDefaultPage(t *testing.T, f *fixture, name string) {
 			t.Fatal("default page differs", name, args, decode(t, got))
 		}
 	}
+}
+
+func dateExpected(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format("2006-01-02")
 }

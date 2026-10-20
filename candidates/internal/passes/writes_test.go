@@ -20,13 +20,13 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-2SQ2-Q2DB R-2P2D-KR58 R-SWGR-PM2R R-GU9F-TVQY
+// R-MRCN-18AW R-NI6F-G6M6 R-3QEZ-TBSF R-2G2T-A1M1
 func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
-	for _, rebuild := range []bool{false, true} {
-		t.Run(fmt.Sprint(rebuild), func(t *testing.T) {
+	for _, fullIngest := range []bool{false, true} {
+		t.Run(fmt.Sprint(fullIngest), func(t *testing.T) {
 			rows := make([]scrapes.Row, passes.BatchSize+3)
 			for i := range rows {
-				rows[i] = scrapes.Row{Scraper: "fmcsa", Run: "write-run", Collected: time.Unix(100000, 0).UTC(), SourceID: fmt.Sprintf("source-%d", i), Digest: fmt.Sprintf("digest-%d", i), Name: fmt.Sprintf("Business %d", i), Address: scrapes.Address{State: "MN", Zip: "55072"}, Names: []string{}, People: []scrapes.Person{}, Raw: json.RawMessage(`{}`), Facts: map[string]json.RawMessage{"status": json.RawMessage(`"A"`), "power_units": json.RawMessage(`"100"`), "class": json.RawMessage(`"AUTHORIZED FOR HIRE"`), "mcs150_date": json.RawMessage(`"19700101"`)}}
+				rows[i] = scrapes.Row{Scraper: "fmcsa", Run: "write-run", Scraped: time.Unix(100000, 0).UTC(), SourceID: fmt.Sprintf("source-%d", i), Digest: fmt.Sprintf("digest-%d", i), Name: fmt.Sprintf("Business %d", i), Address: scrapes.Address{State: "MN", Zip: "55072"}, Names: []string{}, People: []scrapes.Person{}, Raw: json.RawMessage(`{}`), Facts: map[string]json.RawMessage{"status": json.RawMessage(`"A"`), "power_units": json.RawMessage(`"100"`), "class": json.RawMessage(`"AUTHORIZED FOR HIRE"`), "mcs150_date": json.RawMessage(`"19700101"`)}}
 			}
 			actual := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/runs/write-run/record" || r.URL.Path == "/scrapers/fmcsa/current" {
@@ -34,14 +34,14 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 					return
 				}
 				for _, row := range rows {
-					wire := map[string]any{"scraper": row.Scraper, "run": row.Run, "source_id": row.SourceID, "digest": row.Digest, "collected": row.Collected, "name": row.Name, "names": row.Names, "people": row.People, "facts": row.Facts, "raw": row.Raw, "address": map[string]string{"state": row.Address.State, "zip": row.Address.Zip}}
+					wire := map[string]any{"scraper": row.Scraper, "run": row.Run, "source_id": row.SourceID, "digest": row.Digest, "scraped": row.Scraped, "name": row.Name, "names": row.Names, "people": row.People, "facts": row.Facts, "raw": row.Raw, "address": map[string]string{"state": row.Address.State, "zip": row.Address.Zip}}
 					if err := json.NewEncoder(w).Encode(wire); err != nil {
 						return
 					}
 				}
 			}, true)
 			expected := newFixture(t, nil, false)
-			if !rebuild {
+			if !fullIngest {
 				for _, f := range []*fixture{actual, expected} {
 					if _, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindEnrich, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, UserID: "blocker"}); err != nil {
 						t.Fatal(err)
@@ -57,10 +57,10 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 				}
 			}
 			trigger, delivery := "write-run", "write-event"
-			if rebuild {
-				trigger, delivery = store.TriggerRebuild, ""
+			if fullIngest {
+				trigger, delivery = store.TriggerIngest, ""
 			}
-			if _, err := expected.st.AddPass(ctx, store.Pass{Kind: map[bool]string{true: store.KindRebuild, false: store.KindIngest}[rebuild], Origin: map[bool]string{true: store.OriginRebuild, false: store.OriginRun}[rebuild], Trigger: trigger, Delivery: delivery, UserID: "owner"}); err != nil {
+			if _, err := expected.st.AddPass(ctx, store.Pass{Kind: map[bool]string{true: store.KindIngest, false: store.KindIngest}[fullIngest], Origin: map[bool]string{true: store.OriginIngest, false: store.OriginRun}[fullIngest], Trigger: trigger, Delivery: delivery, UserID: "owner"}); err != nil {
 				t.Fatal(err)
 			}
 			var total store.Counts
@@ -71,7 +71,7 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 				for i, row := range rows[lo:hi] {
 					batch[i] = store.Observation{Scraper: "fmcsa", SourceID: row.SourceID, Digest: row.Digest, Reading: fmcsa.New().Read(row)}
 				}
-				counts, ids, err := expected.st.Attach(ctx, "write-run", rebuild, batch)
+				counts, ids, err := expected.st.Attach(ctx, "write-run", fullIngest, batch)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -93,7 +93,7 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 				touched[id] = true
 			}
 			total.Rows = int64(len(rows))
-			if rebuild {
+			if fullIngest {
 				for _, kind := range []string{enrichers.KindDriveMinutes, enrichers.KindLinkFacts} {
 					after := ""
 					for {
@@ -116,8 +116,8 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 				total.Unranged = counts.Unranged
 			}
 			var p store.Pass
-			if rebuild {
-				p, err = actual.eng.Rebuild(ctx, identity.Caller{UserID: "owner"})
+			if fullIngest {
+				p, err = actual.eng.Ingest(ctx, identity.Caller{UserID: "owner"}, "")
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -165,13 +165,13 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 				if ge != nil || we != nil || !reflect.DeepEqual(gotEst, wantEst) {
 					t.Fatal("estimate records differ", ge, we)
 				}
-				gotA, ge := actual.st.GetAssessment(ctx, c.ID)
-				wantA, we := expected.st.GetAssessment(ctx, c.ID)
+				gotA, ge := actual.st.GetJudgments(ctx, c.ID)
+				wantA, we := expected.st.GetJudgments(ctx, c.ID)
 				if !errors.Is(ge, we) || !reflect.DeepEqual(gotA, wantA) {
-					t.Fatal("assessment records differ", ge, we)
+					t.Fatal("judgment records differ", ge, we)
 				}
 			}
-			if rebuild && estimateCount == 0 {
+			if fullIngest && estimateCount == 0 {
 				t.Fatal("no estimates were recomputed")
 			}
 		})

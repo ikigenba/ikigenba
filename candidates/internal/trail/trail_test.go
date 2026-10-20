@@ -15,12 +15,12 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
 )
 
-// R-775C-V5DE R-TFIH-F1S8
+// R-775C-V5DE R-PWEO-94RJ
 func TestDeclarations(t *testing.T) {
 	if trail.Started != "pass.started" || trail.Finished != "pass.finished" || trail.Accepted != "scrape.finished" || trail.AcceptedJudge != "cron.judge_candidates.fired" || trail.AcceptedAdded != "campaign.member.added" || trail.AcceptedRejected != "campaign.member.rejected" || trail.AcceptedDelivered != "campaign.piece.delivered" {
 		t.Fatal("names")
 	}
-	want := []events.Emission{{Event: "pass.started", Attrs: []string{"pass", "kind", "origin", "trigger", "target", "enrich_kind"}}, {Event: "pass.finished", Attrs: []string{"pass", "kind", "origin", "trigger", "target", "enrich_kind", "status", "reason", "rows", "new", "changed", "unchanged", "gone", "created", "linked", "judged", "rescored", "unranged", "derived", "due", "fetched", "https", "http", "none", "runs", "runs_failed", "pages", "cost"}}}
+	want := []events.Emission{{Event: "pass.started", Attrs: []string{"pass", "kind", "origin", "trigger", "target", "enrich_kind"}}, {Event: "pass.finished", Attrs: []string{"pass", "kind", "origin", "trigger", "target", "enrich_kind", "status", "reason", "rows", "new", "changed", "unchanged", "gone", "created", "linked", "judged", "unranged", "derived", "due", "fetched", "https", "http", "none", "runs", "runs_failed", "pages", "cost"}}}
 	a, b := trail.Emits(), trail.Emits()
 	if !reflect.DeepEqual(a, want) || !reflect.DeepEqual(b, want) {
 		t.Fatalf("declarations %v", a)
@@ -33,7 +33,7 @@ func TestDeclarations(t *testing.T) {
 	}
 }
 
-// R-TGQD-STIX R-ZUG2-AZCG R-ZVNY-OR35
+// R-QC9D-85EK R-ZUG2-AZCG R-ZVNY-OR35
 func TestRecord(t *testing.T) {
 	t.Setenv("IKIGENBA_SERVICES", "")
 	tc, ec := &telemetry.Capture{}, &events.Capture{}
@@ -43,7 +43,7 @@ func TestRecord(t *testing.T) {
 	em := events.New(events.Config{Service: "candidates", Sink: ec, Now: now, Sleep: pause, Rand: bytes.NewReader(bytes.Repeat([]byte{0x5a}, 256)), Emits: trail.Emits()})
 	defer w.Shutdown(context.Background(), "test")
 	defer em.Shutdown(context.Background())
-	p := store.Pass{ID: "pass_fixture", Trigger: "run_fixture", Status: store.StatusDone, RequestID: "saved_request", UserID: "saved_user", Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Derived: 15, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14, Target: "coh_fixture", EnrichKind: "site_text", Runs: 16, RunsFailed: 17, Pages: 18, Cost: 19}
+	p := store.Pass{ID: "pass_fixture", Trigger: "run_fixture", Status: store.StatusDone, RequestID: "saved_request", UserID: "saved_user", Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Derived: 15, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14, Target: "pl_fixture", EnrichKind: "site_text", Runs: 16, RunsFailed: 17, Pages: 18, Cost: 19}
 	ctx := events.NewContext(identity.NewContext(context.Background(), identity.Caller{UserID: "other", RequestID: "other"}), events.Cause{ID: "evt_0303030303030303", Depth: 4})
 	trail.Record(ctx, w, em, trail.Started, p)
 	trail.Record(ctx, w, em, trail.Finished, p)
@@ -60,7 +60,7 @@ func TestRecord(t *testing.T) {
 	if len(ts) != 2 || len(es) != 2 {
 		t.Fatalf("counts %d %d", len(ts), len(es))
 	}
-	want := []telemetry.Attrs{{"pass": p.ID, "kind": p.Kind, "origin": p.Origin, "trigger": p.Trigger, "target": p.Target, "enrich_kind": p.EnrichKind}, {"pass": p.ID, "kind": p.Kind, "origin": p.Origin, "trigger": p.Trigger, "target": p.Target, "enrich_kind": p.EnrichKind, "status": p.Status, "reason": p.Reason, "rows": int64(1), "new": int64(2), "changed": int64(3), "unchanged": int64(4), "gone": int64(5), "created": int64(6), "linked": int64(7), "judged": int64(8), "rescored": int64(8), "unranged": int64(9), "derived": int64(15), "due": int64(10), "fetched": int64(11), "https": int64(12), "http": int64(13), "none": int64(14), "runs": int64(16), "runs_failed": int64(17), "pages": int64(18), "cost": int64(19)}}
+	want := []telemetry.Attrs{{"pass": p.ID, "kind": p.Kind, "origin": p.Origin, "trigger": p.Trigger, "target": p.Target, "enrich_kind": p.EnrichKind}, {"pass": p.ID, "kind": p.Kind, "origin": p.Origin, "trigger": p.Trigger, "target": p.Target, "enrich_kind": p.EnrichKind, "status": p.Status, "reason": p.Reason, "rows": int64(1), "new": int64(2), "changed": int64(3), "unchanged": int64(4), "gone": int64(5), "created": int64(6), "linked": int64(7), "judged": int64(8), "unranged": int64(9), "derived": int64(15), "due": int64(10), "fetched": int64(11), "https": int64(12), "http": int64(13), "none": int64(14), "runs": int64(16), "runs_failed": int64(17), "pages": int64(18), "cost": int64(19)}}
 	for i := range ts {
 		if ts[i].Name != []string{trail.Started, trail.Finished}[i] || es[i].Name != ts[i].Name || ts[i].RequestID != p.RequestID || ts[i].User != p.UserID || es[i].RequestID != p.RequestID || es[i].User != p.UserID || !reflect.DeepEqual(ts[i].Attrs, want[i]) || !reflect.DeepEqual(es[i].Attrs, events.Attrs(want[i])) || es[i].Cause != "evt_0303030303030303" || es[i].Depth != 5 {
 			t.Fatalf("events %#v %#v", ts[i], es[i])

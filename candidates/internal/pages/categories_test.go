@@ -10,7 +10,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-BGGM-ZNRG R-NCGX-6LX7 R-BK4C-4YZJ R-E0I5-K24P
+// R-BGGM-ZNRG R-WCG7-AB5F R-0JP2-83HN R-E0I5-K24P
 func TestCategoryEvidenceViews(t *testing.T) {
 	records := []sources.Category{{Name: sources.CategoryRetail, Source: "ppp"}, {Name: sources.CategoryTrucking, Source: "fmcsa"}}
 	brief := []sources.Category{{Name: sources.CategoryAgriculture, Source: enrichers.KindBrief}, {Name: sources.CategoryRetail, Source: enrichers.KindBrief}}
@@ -33,14 +33,14 @@ func TestCategoryEvidenceViews(t *testing.T) {
 		if f.ClassifiedBy != tc.by || f.RecordsDiffer != tc.differs || !reflect.DeepEqual(f.RecordCategories, want) {
 			t.Fatal(f, tc)
 		}
-		member := memberRow(store.Ranked{Assessment: store.Assessment{Categories: tc.categories}}, 2)
+		member := memberRow(store.Ranked{Facts: store.Facts{Categories: tc.categories}}, 2)
 		if member.ClassifiedBy != tc.by || member.Rank != 3 || member.Categories == nil {
 			t.Fatal(member)
 		}
 	}
 }
 
-// R-BLC8-IQQ8 R-BHOJ-DFI5 R-NCGX-6LX7 R-ANM6-HRQR
+// R-QMD6-N2U2 R-V9FF-1NF7 R-WCG7-AB5F R-ANM6-HRQR
 func TestCategoryEvidencePages(t *testing.T) {
 	cfg, db := pageFixture(t)
 	now := fixtureTime()
@@ -55,7 +55,7 @@ func TestCategoryEvidencePages(t *testing.T) {
 	if _, err = cfg.Store.JudgeAll(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	co, err := cfg.Store.CreateCohort(t.Context(), store.Cohort{Name: "category-cohort", Size: 10, CreatedUserID: "chosen-owner"})
+	co, err := cfg.Store.CreateProspectList(t.Context(), store.ProspectList{Name: "category-prospect_list", Size: 10, CreatedUserID: "chosen-owner"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,21 +71,21 @@ func TestCategoryEvidencePages(t *testing.T) {
 			t.Fatal(err)
 		}
 		candidate := capturedCandidate(t, cfg, ids[0])
-		cohort := pageCohort(t, cfg, co.ID)
+		prospectList := pageProspectList(t, cfg, co.ID)
 		wantBy, wantCount := enrichers.KindBrief, int64(1)
 		if len(b.Categories) == 0 {
 			wantBy, wantCount = enrichers.SourceLinks, 0
 		}
-		if candidate.Facts.ClassifiedBy != wantBy || candidate.Facts.RecordsDiffer != (len(b.Categories) > 0) || candidate.Brief == nil || len(candidate.Brief.Categories) != len(b.Categories) || cohort.Classified != wantCount || cohort.Matching != 2 {
-			t.Fatal(candidate, cohort)
+		if candidate.Enrichments.Facts.ClassifiedBy != wantBy || candidate.Enrichments.Facts.RecordsDiffer != (len(b.Categories) > 0) || candidate.Enrichments.Brief == nil || len(candidate.Enrichments.Brief.Categories) != len(b.Categories) || prospectList.Classified != wantCount || prospectList.Matching != 2 {
+			t.Fatal(candidate, prospectList)
 		}
-		if len(b.Categories) > 0 && !reflect.DeepEqual(candidate.Facts.RecordCategories, []CategoryRow{{sources.CategoryRetail, "ppp"}, {sources.CategoryTrucking, "fmcsa"}}) {
-			t.Fatal(candidate.Facts)
+		if len(b.Categories) > 0 && !reflect.DeepEqual(candidate.Enrichments.Facts.RecordCategories, []CategoryRow{{sources.CategoryRetail, "ppp"}, {sources.CategoryTrucking, "fmcsa"}}) {
+			t.Fatal(candidate.Enrichments.Facts)
 		}
-		if len(b.Categories) == 0 && (len(candidate.Facts.RecordCategories) != 0 || !reflect.DeepEqual(candidate.Facts.Categories, []CategoryRow{{sources.CategoryRetail, "ppp"}, {sources.CategoryTrucking, "fmcsa"}})) {
-			t.Fatal(candidate.Facts)
+		if len(b.Categories) == 0 && (len(candidate.Enrichments.Facts.RecordCategories) != 0 || !reflect.DeepEqual(candidate.Enrichments.Facts.Categories, []CategoryRow{{sources.CategoryRetail, "ppp"}, {sources.CategoryTrucking, "fmcsa"}})) {
+			t.Fatal(candidate.Enrichments.Facts)
 		}
-		for _, m := range cohort.Members {
+		for _, m := range prospectList.Members {
 			if m.ID == ids[0] && (m.ClassifiedBy != wantBy || m.Brief != now.Format(time.RFC3339)) {
 				t.Fatal(m)
 			}

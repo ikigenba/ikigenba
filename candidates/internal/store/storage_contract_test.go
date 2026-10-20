@@ -110,8 +110,8 @@ func contractError(t *testing.T, err, want error) {
 }
 func contractNewPass(t *testing.T, f *contractFixture, trigger string) store.Pass {
 	t.Helper()
-	p := store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: trigger, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
-	if trigger != store.TriggerRebuild {
+	p := store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: trigger, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
+	if trigger != store.TriggerIngest {
 		p.Kind, p.Origin = store.KindIngest, store.OriginRun
 		p.Delivery = "delivery-" + trigger
 	}
@@ -130,10 +130,10 @@ func contractAttach(t *testing.T, f *contractFixture, run string, obs ...store.O
 	return ids
 }
 
-// R-2F2Z-FA6F R-4HN1-A6QB R-NUUF-5V6M
+// R-YB1R-40PH R-4HN1-A6QB R-NUUF-5V6M
 func TestContractVocabulary(t *testing.T) {
-	got := []string{store.CandidateIDPrefix, store.PassIDPrefix, store.StatusActive, store.StatusMerged, store.StatusRunning, store.StatusDone, store.StatusFailed, store.ReasonScrapes, store.ReasonInterrupted, store.ReasonStore, store.TriggerRebuild, store.LinkSourceKey, store.LinkMatchKey, store.LinkDecision, store.KindMerge, store.KindSplit, store.KindNotSame, store.KindExclude, store.KindInclude, store.TriggerJudge, store.KindIngest, store.KindJudge, store.KindRebuild, store.OriginRun, store.OriginCron, store.OriginRebuild}
-	contractEqual(t, got, []string{"cand_", "pass_", "active", "merged", "running", "done", "failed", "scrapes", "interrupted", "store", "rebuild", "source_key", "match_key", "decision", "merge", "split", "not_same", "exclude", "include", "judge_candidates", "ingest", "judge", "rebuild", "run", "cron", "rebuild"})
+	got := []string{store.CandidateIDPrefix, store.PassIDPrefix, store.StatusActive, store.StatusMerged, store.StatusRunning, store.StatusDone, store.StatusFailed, store.ReasonScrapes, store.ReasonInterrupted, store.ReasonStore, store.TriggerIngest, store.LinkSourceKey, store.LinkMatchKey, store.LinkDecision, store.KindMerge, store.KindSplit, store.KindNotSame, store.KindExclude, store.KindInclude, store.TriggerJudge, store.KindIngest, store.KindJudge, store.KindIngest, store.OriginRun, store.OriginCron, store.OriginIngest, store.OriginJudge, store.TriggerJudgeTool}
+	contractEqual(t, got, []string{"cand_", "pass_", "active", "merged", "running", "done", "failed", "scrapes", "interrupted", "store", "ingest", "source_key", "match_key", "decision", "merge", "split", "not_same", "exclude", "include", "judge_candidates", "ingest", "judge", "ingest", "run", "cron", "ingest", "judge", "judge"})
 	for _, s := range []string{"", "0123456789ABCDEF", "0123456789abcde", "0123456789abcdef0", "0123456789abcdeg", "0123456789abcdeé"} {
 		if store.ValidCandidateID(store.CandidateIDPrefix+s) || store.ValidPassID(store.PassIDPrefix+s) {
 			t.Fatalf("accepted %q", s)
@@ -158,15 +158,15 @@ func TestContractVocabulary(t *testing.T) {
 	}
 }
 
-// R-NYI4-B6EP R-NZQ0-OY5E R-O25T-GHMS R-O3DP-U9DH R-4ZXJ-0QUQ R-52DB-SAC4
+// R-2ATP-W04E R-2EHF-1BCH R-O25T-GHMS R-YID5-EN5N R-4ZXJ-0QUQ R-52DB-SAC4
 func TestContractPassLifecyclePersistence(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
 	stamp := f.now.UTC().Truncate(time.Second)
-	input := store.Pass{ID: "ignored", Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, Status: "ignored", Reason: "ignored", Started: f.now.AddDate(-1, 0, 0), Finished: f.now, Rows: 99, New: 99, Changed: 99, Unchanged: 99, Gone: 99, Created: 99, Linked: 99, Judged: 99, Unranged: 99, Derived: 99, Due: 99, Fetched: 99, HTTPS: 99, HTTP: 99, None: 99, Runs: 99, RunsFailed: 99, Pages: 99, Cost: 99, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
+	input := store.Pass{ID: "ignored", Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Status: "ignored", Reason: "ignored", Started: f.now.AddDate(-1, 0, 0), Finished: f.now, Rows: 99, New: 99, Changed: 99, Unchanged: 99, Gone: 99, Created: 99, Linked: 99, Judged: 99, Unranged: 99, Derived: 99, Due: 99, Fetched: 99, HTTPS: 99, HTTP: 99, None: 99, Runs: 99, RunsFailed: 99, Pages: 99, Cost: 99, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
 	p, err := f.s.AddPass(ctx, input)
 	contractOK(t, err)
-	want := store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, ID: store.PassIDPrefix + "0101010101010101", Trigger: input.Trigger, Status: store.StatusRunning, Started: stamp, UserID: input.UserID, UserEmail: input.UserEmail, RequestID: input.RequestID}
+	want := store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, ID: store.PassIDPrefix + "0101010101010101", Trigger: input.Trigger, Status: store.StatusRunning, Started: stamp, UserID: input.UserID, UserEmail: input.UserEmail, RequestID: input.RequestID}
 	contractEqual(t, p, want)
 	f.reopen()
 	running, err := f.s.RunningPasses(ctx)
@@ -229,7 +229,7 @@ func TestContractPassRefusals(t *testing.T) {
 	ctx := context.Background()
 	p := contractNewPass(t, f, "run-one")
 	rnd := f.rnd.(*contractRandom)
-	for _, input := range []store.Pass{{}, {Trigger: store.TriggerRebuild}, {Trigger: store.TriggerRebuild, UserID: "owner", Delivery: "bad"}, {Trigger: "run"}} {
+	for _, input := range []store.Pass{{}, {Trigger: store.TriggerIngest}, {Trigger: store.TriggerIngest, UserID: "owner", Delivery: "bad"}, {Trigger: "run"}} {
 		before, beforeCalls := rnd.total, rnd.calls
 		out, err := f.s.AddPass(ctx, input)
 		contractError(t, err, store.ErrUnreachable)
@@ -242,12 +242,12 @@ func TestContractPassRefusals(t *testing.T) {
 		contractError(t, err, store.ErrDelivered)
 		contractEqual(t, out, store.Pass{})
 	}
-	out, err := f.s.AddPass(ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "owner"})
+	out, err := f.s.AddPass(ctx, store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, UserID: "owner"})
 	contractOK(t, err)
 	if !store.ValidPassID(out.ID) {
 		t.Fatal(out)
 	}
-	out, err = f.s.AddPass(ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "owner"})
+	out, err = f.s.AddPass(ctx, store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, UserID: "owner"})
 	contractError(t, err, store.ErrBusy)
 	contractEqual(t, out, store.Pass{})
 	negatives := []store.Counts{{Rows: -1}, {New: -1}, {Changed: -1}, {Unchanged: -1}, {Gone: -1}, {Created: -1}, {Linked: -1}, {Judged: -1}, {Unranged: -1}, {Derived: -1}, {Due: -1}, {Fetched: -1}, {HTTPS: -1}, {HTTP: -1}, {None: -1}, {Runs: -1}, {RunsFailed: -1}, {Pages: -1}, {Cost: -1}}
@@ -385,7 +385,7 @@ func TestContractIDMinting(t *testing.T) {
 	}
 }
 
-// R-9EOK-BXVN R-53L8-622T R-54T4-JTTI
+// R-9EOK-BXVN R-YEPG-9BXK R-54T4-JTTI
 func TestContractPassWindowsAndPrune(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -511,7 +511,7 @@ func TestContractZipReplacement(t *testing.T) {
 	}
 }
 
-// R-P3YP-BDMB R-47VU-80SR R-493Q-LSJG R-2GAV-T1X4 R-578X-BDAW R-XFDI-Z5KD R-5AWM-GOIZ R-5C4I-UG9O
+// R-QBE3-755T R-47VU-80SR R-493Q-LSJG R-Z7Z1-FTQ8 R-578X-BDAW R-T3DU-KBYR R-5AWM-GOIZ R-5C4I-UG9O
 func TestContractBusinessRecordsPersistence(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -539,16 +539,15 @@ func TestContractBusinessRecordsPersistence(t *testing.T) {
 	if rs == nil || len(rs) != 0 {
 		t.Fatal(rs)
 	}
-	a, err := f.s.GetAssessment(ctx, id)
+	a, err := f.s.GetJudgments(ctx, id)
 	contractError(t, err, store.ErrNotFound)
-	contractEqual(t, a, store.Assessment{})
+	contractEqual(t, a, store.Judgments{})
 	contractOK(t, f.s.ReplaceZipDrive(ctx, map[string]int64{o.Reading.Zip: 41}))
 	deriveAll(t, f.s)
 	_, err = f.s.Judge(ctx, ids)
 	contractOK(t, err)
-	m := int64(41)
-	wantA := store.Assessment{Candidate: id, OperatingKey: -1, Evidence: []sources.Evidence{}, RevenueLow: &o.Reading.Estimate.Low, RevenueHigh: o.Reading.Estimate.High, RevenueConfidence: &o.Reading.Estimate.Confidence, NewestFiling: time.Date(o.Reading.Filed.Year(), o.Reading.Filed.Month(), o.Reading.Filed.Day(), 0, 0, 0, 0, time.UTC), Categories: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown, Minutes: &m, Rules: sources.Rules, Calculated: stamp}
-	a, err = f.s.GetAssessment(ctx, id)
+	wantA := store.Judgments{Candidate: id, OperatingKey: -1, Evidence: []sources.Evidence{}, RevenueLow: &o.Reading.Estimate.Low, RevenueHigh: o.Reading.Estimate.High, RevenueConfidence: &o.Reading.Estimate.Confidence, Rules: sources.Rules, Calculated: stamp}
+	a, err = f.s.GetJudgments(ctx, id)
 	contractOK(t, err)
 	contractEqual(t, a, wantA)
 	es, err = f.s.Estimates(ctx, id)
@@ -582,7 +581,7 @@ func TestContractBusinessRecordsPersistence(t *testing.T) {
 	contractOK(t, err)
 	links, err = f.s.Links(ctx, id)
 	contractOK(t, err)
-	a, err = f.s.GetAssessment(ctx, id)
+	a, err = f.s.GetJudgments(ctx, id)
 	contractOK(t, err)
 	rs, err = f.s.Rulings(ctx, id)
 	contractOK(t, err)
@@ -596,7 +595,7 @@ func TestContractBusinessRecordsPersistence(t *testing.T) {
 	e2, err := f.s.Estimates(ctx, id)
 	contractOK(t, err)
 	contractEqual(t, e2, es)
-	a2, err := f.s.GetAssessment(ctx, id)
+	a2, err := f.s.GetJudgments(ctx, id)
 	contractOK(t, err)
 	contractEqual(t, a2, a)
 	r3, err := f.s.Rulings(ctx, id)
@@ -656,7 +655,7 @@ func TestContractLinkReadOrder(t *testing.T) {
 	}
 }
 
-// R-4HU1-P3L0 R-CRY8-OXZ1
+// R-4HU1-P3L0 R-419E-48H2
 func TestContractCandidateWindowsAndFilters(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -725,7 +724,7 @@ func TestContractCandidateWindowsAndFilters(t *testing.T) {
 	}
 }
 
-// R-D5D4-WF4O R-XFDI-Z5KD
+// R-RKID-CNLI R-T3DU-KBYR
 func TestContractFreshStoreAndUnknownReads(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -744,22 +743,22 @@ func TestContractFreshStoreAndUnknownReads(t *testing.T) {
 	if cs == nil || len(cs) != 0 {
 		t.Fatal(cs)
 	}
-	rs, err := f.s.ListCohorts(ctx, "", "", 3)
+	rs, err := f.s.ListProspectLists(ctx, "", "", 3)
 	contractOK(t, err)
 	if rs == nil || len(rs) != 0 {
 		t.Fatal(rs)
 	}
-	ks, err := f.s.ListCohortsReversed(ctx, "", "", 3)
+	ks, err := f.s.ListProspectListsReversed(ctx, "", "", 3)
 	contractOK(t, err)
 	if ks == nil || len(ks) != 0 {
 		t.Fatal(ks)
 	}
-	k, err := f.s.GetCohort(ctx, "unknown")
+	k, err := f.s.GetProspectList(ctx, "unknown")
 	contractError(t, err, store.ErrNotFound)
-	contractEqual(t, k, store.Cohort{})
-	cr, err := f.s.ReadCohort(ctx, "unknown")
+	contractEqual(t, k, store.ProspectList{})
+	cr, err := f.s.ReadProspectList(ctx, "unknown")
 	contractError(t, err, store.ErrNotFound)
-	contractEqual(t, cr, store.CohortRead{})
+	contractEqual(t, cr, store.ProspectListRead{})
 	rejects, err := f.s.Rejects(ctx, "unknown")
 	contractError(t, err, store.ErrNotFound)
 	if rejects != nil {
@@ -781,9 +780,9 @@ func TestContractFreshStoreAndUnknownReads(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	a, err := f.s.GetAssessment(ctx, "unknown")
+	a, err := f.s.GetJudgments(ctx, "unknown")
 	contractError(t, err, store.ErrNotFound)
-	contractEqual(t, a, store.Assessment{})
+	contractEqual(t, a, store.Judgments{})
 	r, err := f.s.Rulings(ctx, "unknown")
 	contractError(t, err, store.ErrNotFound)
 	if r != nil {
@@ -801,7 +800,7 @@ type contractSnapshot struct {
 	passes      []store.Pass
 	links       map[string][]store.Link
 	estimates   map[string][]sources.Estimate
-	assessments map[string]store.Assessment
+	judgments   map[string]store.Judgments
 	enrichments map[string][]store.Enrichment
 	rulings     map[string][]store.Ruling
 	minutes     int64
@@ -814,13 +813,13 @@ func contractState(t *testing.T, f *contractFixture) contractSnapshot {
 	contractOK(t, err)
 	ps, err := f.s.ListPasses(ctx, "", "", 100)
 	contractOK(t, err)
-	snap := contractSnapshot{candidates: cs, passes: ps, links: map[string][]store.Link{}, estimates: map[string][]sources.Estimate{}, assessments: map[string]store.Assessment{}, enrichments: map[string][]store.Enrichment{}, rulings: map[string][]store.Ruling{}}
+	snap := contractSnapshot{candidates: cs, passes: ps, links: map[string][]store.Link{}, estimates: map[string][]sources.Estimate{}, judgments: map[string]store.Judgments{}, enrichments: map[string][]store.Enrichment{}, rulings: map[string][]store.Ruling{}}
 	for _, c := range cs {
 		snap.links[c.ID], err = f.s.Links(ctx, c.ID)
 		contractOK(t, err)
 		snap.estimates[c.ID], err = f.s.Estimates(ctx, c.ID)
 		contractOK(t, err)
-		snap.assessments[c.ID], err = f.s.GetAssessment(ctx, c.ID)
+		snap.judgments[c.ID], err = f.s.GetJudgments(ctx, c.ID)
 		contractOK(t, err)
 		snap.enrichments[c.ID], err = f.s.Enrichments(ctx, c.ID)
 		contractOK(t, err)
@@ -843,7 +842,7 @@ func contractSeed(t *testing.T, f *contractFixture) string {
 	return id
 }
 
-// R-O25T-GHMS R-O3DP-U9DH R-53L8-622T R-5610-XLK7
+// R-O25T-GHMS R-YID5-EN5N R-YEPG-9BXK R-5610-XLK7
 func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -877,7 +876,7 @@ func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	contractEqual(t, after, zipBefore)
 }
 
-// R-T94P-4NRC R-OD8H-2EDG
+// R-QEFR-MGTW R-OD8H-2EDG
 func TestContractAllMethodsUnavailable(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -956,15 +955,15 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 		{"GetCandidate", func(c context.Context) error { _, e := f.s.GetCandidate(c, "missing"); return e }},
 		{"Links", func(c context.Context) error { _, e := f.s.Links(c, "missing"); return e }},
 		{"Estimates", func(c context.Context) error { _, e := f.s.Estimates(c, "missing"); return e }},
-		{"GetAssessment", func(c context.Context) error { _, e := f.s.GetAssessment(c, "missing"); return e }},
+		{"GetJudgments", func(c context.Context) error { _, e := f.s.GetJudgments(c, "missing"); return e }},
 		{"Rulings", func(c context.Context) error { _, e := f.s.Rulings(c, "missing"); return e }},
-		{"CreateCohort", func(c context.Context) error { _, e := f.s.CreateCohort(c, store.Cohort{}); return e }},
-		{"EditCohort", func(c context.Context) error { _, e := f.s.EditCohort(c, store.CohortEdit{}); return e }},
-		{"DeleteCohort", func(c context.Context) error { _, e := f.s.DeleteCohort(c, "missing"); return e }},
-		{"GetCohort", func(c context.Context) error { _, e := f.s.GetCohort(c, "missing"); return e }},
-		{"ReadCohort", func(c context.Context) error { _, e := f.s.ReadCohort(c, "missing"); return e }},
-		{"ListCohorts", func(c context.Context) error { _, e := f.s.ListCohorts(c, "", "", 0); return e }},
-		{"ListCohortsReversed", func(c context.Context) error { _, e := f.s.ListCohortsReversed(c, "", "", 0); return e }},
+		{"CreateProspectList", func(c context.Context) error { _, e := f.s.CreateProspectList(c, store.ProspectList{}); return e }},
+		{"EditProspectList", func(c context.Context) error { _, e := f.s.EditProspectList(c, store.ProspectListEdit{}); return e }},
+		{"DeleteProspectList", func(c context.Context) error { _, e := f.s.DeleteProspectList(c, "missing"); return e }},
+		{"GetProspectList", func(c context.Context) error { _, e := f.s.GetProspectList(c, "missing"); return e }},
+		{"ReadProspectList", func(c context.Context) error { _, e := f.s.ReadProspectList(c, "missing"); return e }},
+		{"ListProspectLists", func(c context.Context) error { _, e := f.s.ListProspectLists(c, "", "", 0); return e }},
+		{"ListProspectListsReversed", func(c context.Context) error { _, e := f.s.ListProspectListsReversed(c, "", "", 0); return e }},
 		{"Reject", func(c context.Context) error { _, e := f.s.Reject(c, store.Reject{}); return e }},
 		{"Rejects", func(c context.Context) error { _, e := f.s.Rejects(c, "missing"); return e }},
 		{"ListCandidates", func(c context.Context) error {
@@ -999,7 +998,7 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 	contractEqual(t, contractState(t, f), before)
 }
 
-// R-O0XX-2PW3 R-5N3M-ADXX
+// R-HM7C-HURP R-5N3M-ADXX
 func TestContractConcurrentStoreCalls(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -1055,7 +1054,7 @@ func TestContractConcurrentStoreCalls(t *testing.T) {
 	// exercised by both candidate and pass minting under the race detector.
 	calls := []func() error{
 		func() error {
-			_, e := f.s.AddPass(ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "owner"})
+			_, e := f.s.AddPass(ctx, store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, UserID: "owner"})
 			return e
 		},
 		func() error { _, e := f.s.FinishPass(ctx, p.ID, store.Counts{}); return e },
@@ -1080,7 +1079,7 @@ func TestContractConcurrentStoreCalls(t *testing.T) {
 		func() error { _, e := f.s.GetCandidate(ctx, id); return e },
 		func() error { _, e := f.s.Links(ctx, id); return e },
 		func() error { _, e := f.s.Estimates(ctx, id); return e },
-		func() error { _, e := f.s.GetAssessment(ctx, id); return e },
+		func() error { _, e := f.s.GetJudgments(ctx, id); return e },
 		func() error { _, e := f.s.Rulings(ctx, id); return e },
 		func() error { _, e := f.s.ListCandidates(ctx, store.CandidateFilter{}, "", "", 20); return e },
 	}

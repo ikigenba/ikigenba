@@ -8,13 +8,13 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-YDI7-O1ZN R-YEQ4-1TQC
+// R-YDI7-O1ZN R-YOGN-BHV4
 func TestFindDeliveredUsesNewestMatchingPass(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
 	contractOK(t, f.s.ReplaceZipDrive(ctx, map[string]int64{"55072": 0}))
-	rebuild := contractNewPass(t, f, store.TriggerRebuild)
-	_, err := f.s.FinishPass(ctx, rebuild.ID, store.Counts{})
+	ingest := contractNewPass(t, f, store.TriggerIngest)
+	_, err := f.s.FinishPass(ctx, ingest.ID, store.Counts{})
 	contractOK(t, err)
 	old := contractNewPass(t, f, "older")
 	old, err = f.s.FinishPass(ctx, old.ID, store.Counts{})
@@ -46,7 +46,7 @@ func TestFindDeliveredUsesNewestMatchingPass(t *testing.T) {
 	got, err = f.s.FindDelivered(ctx, tied.Delivery, newest.Trigger)
 	contractOK(t, err)
 	contractEqual(t, got, tied)
-	for _, pair := range [][2]string{{"", store.TriggerRebuild}, {"", ""}, {"missing", "missing"}} {
+	for _, pair := range [][2]string{{"", store.TriggerIngest}, {"", ""}, {"missing", "missing"}} {
 		got, e := f.s.FindDelivered(ctx, pair[0], pair[1])
 		contractError(t, e, store.ErrNotFound)
 		contractEqual(t, got, store.Pass{})

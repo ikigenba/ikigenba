@@ -102,7 +102,7 @@ func seedPromptCandidate(t *testing.T, h *runHarness) string {
 	return id
 }
 
-// R-JUMZ-XSIT R-0C42-992P R-8BVT-NV36
+// R-JUMZ-XSIT R-49SO-SMNX R-8BVT-NV36
 func TestRunPromptsSnapshotIdentityTrailAndTimers(t *testing.T) {
 	for _, mode := range []string{"success", "queue", "refuse-show"} {
 		t.Run(mode, func(t *testing.T) {
@@ -202,7 +202,7 @@ func TestRunPromptsSnapshotIdentityTrailAndTimers(t *testing.T) {
 	}
 }
 
-// R-LXEY-0NUV
+// R-OIRE-XAV0
 func TestRunMissingPromptsRefusesOnlyPromptEnrich(t *testing.T) {
 	for _, mode := range []string{"unset", "missing", "invalid", "no-entry"} {
 		t.Run(mode, func(t *testing.T) {
@@ -241,7 +241,7 @@ func TestRunMissingPromptsRefusesOnlyPromptEnrich(t *testing.T) {
 				}
 			}
 			r, v = h.call(caller, "enrich", tools.EnrichArgs{Kind: enrichers.KindLinkFacts, Candidate: id})
-			if r.IsError() || runText(v, "kind") != store.KindEnrichCohort {
+			if r.IsError() || runText(v, "kind") != store.KindEnrichTarget {
 				t.Fatal(r, v)
 			}
 			h.waitPass(caller, runText(v, "id"))

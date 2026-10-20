@@ -16,7 +16,7 @@ const (
 	startedPreceding windowStatement = store.StartedPreceding
 )
 
-// R-CY1Q-LSOI R-HGY1-G5D8 R-D1PF-R3WL
+// R-CY1Q-LSOI R-HGY1-G5D8 R-VKEI-HL3G
 func TestReversedPassWindows(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -27,7 +27,7 @@ func TestReversedPassWindows(t *testing.T) {
 		if i == 2 {
 			f.now = base.Add(5 * time.Second)
 		}
-		p := contractNewPass(t, f, store.TriggerRebuild)
+		p := contractNewPass(t, f, store.TriggerIngest)
 		if i == 0 {
 			_, err := f.s.FinishPass(ctx, p.ID, store.Counts{Rows: 11, Created: 2})
 			contractOK(t, err)
@@ -79,14 +79,14 @@ func TestReversedPassWindows(t *testing.T) {
 	}
 }
 
-// R-CZ9M-ZKF7
+// R-W7KL-R86N
 func TestReversedWindowsRejectInvalidCounts(t *testing.T) {
 	f := contractDB(t)
 	for _, n := range []int{0, -1, -100} {
-		cohorts, err := f.s.ListCohortsReversed(context.Background(), "", "", n)
+		prospectLists, err := f.s.ListProspectListsReversed(context.Background(), "", "", n)
 		contractError(t, err, store.ErrUnreachable)
-		if cohorts != nil {
-			t.Fatal(cohorts)
+		if prospectLists != nil {
+			t.Fatal(prospectLists)
 		}
 		passes, err := f.s.ListPassesReversed(context.Background(), "", "", n)
 		contractError(t, err, store.ErrUnreachable)
@@ -96,7 +96,7 @@ func TestReversedWindowsRejectInvalidCounts(t *testing.T) {
 	}
 }
 
-// R-D0HJ-DC5W
+// R-2CAE-ZPEC
 func TestReversedStatementParameters(t *testing.T) {
 	f := contractDB(t)
 	for _, tc := range []struct {
@@ -117,7 +117,7 @@ func TestReversedStatementParameters(t *testing.T) {
 	}
 }
 
-// R-D458-INDZ
+// R-PZ73-DFQV
 func TestReversedStatementPlans(t *testing.T) {
 	for _, populated := range []bool{false, true} {
 		f := contractDB(t)

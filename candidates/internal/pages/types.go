@@ -10,7 +10,7 @@ import (
 const ServiceName = "candidates"
 
 // Description supplies description page data.
-const Description = "Candidate businesses resolved from the records scrapes collects, judged and read through the owner's cohorts"
+const Description string = "Candidate businesses ingested from public records, enriched and judged, and read through the owner's prospect lists"
 
 // MinuteLayout supplies minute layout page data.
 const MinuteLayout = "2006-01-02 15:04"
@@ -37,35 +37,35 @@ type Config struct {
 
 // LandingData supplies landing data page data.
 type LandingData struct {
-	Banner      page.Banner
-	Cohorts     []CohortRow
-	CohortsPage string
-	CohortsPrev string
-	CohortsNext string
-	Passes      []PassRow
-	PassesPage  string
-	PassesPrev  string
-	PassesNext  string
+	Banner            page.Banner
+	ProspectLists     []ProspectListRow
+	ProspectListsPage string
+	ProspectListsPrev string
+	ProspectListsNext string
+	Passes            []PassRow
+	PassesPage        string
+	PassesPrev        string
+	PassesNext        string
 }
 
-// CohortRow supplies a landing cohort row.
-type CohortRow struct {
+// ProspectListRow supplies a landing prospectList row.
+type ProspectListRow struct {
 	ID, Name                                     string
 	Size                                         int64
 	CreatedBy, CreatedUser, Changed, ChangedText string
 }
 
-// CohortData supplies a cohort page.
-type CohortData struct {
+// ProspectListData supplies a prospectList page.
+type ProspectListData struct {
 	Banner               page.Banner
-	Cohort               CohortView
+	ProspectList         ProspectListView
 	Matching, Classified int64
 	Members              []MemberRow
 	Rejects              []RejectRow
 }
 
-// CohortView supplies the cohort definition.
-type CohortView struct {
+// ProspectListView supplies the prospectList definition.
+type ProspectListView struct {
 	ID, Name                                                                                   string
 	Size                                                                                       int64
 	Filters                                                                                    FiltersView
@@ -97,7 +97,7 @@ type FiltersView struct {
 	ShowExcluded           bool
 }
 
-// MemberRow supplies one cohort member.
+// MemberRow supplies one prospectList member.
 type MemberRow struct {
 	Rank                                                                                                                                                                                                  int64
 	ID, Name, City, State, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence                                                                                                                string
@@ -110,7 +110,7 @@ type MemberRow struct {
 type RejectRow struct{ Candidate, By, User, At, AtText, Why string }
 
 // RejectRecordRow supplies a candidate's reject history.
-type RejectRecordRow struct{ Kind, Cohort, CohortName, By, User, At, AtText, Why string }
+type RejectRecordRow struct{ Kind, ProspectList, ProspectListName, By, User, At, AtText, Why string }
 
 // PassRow supplies pass row page data.
 type PassRow struct {
@@ -120,18 +120,17 @@ type PassRow struct {
 
 // CandidateData supplies candidate data page data.
 type CandidateData struct {
-	Banner      page.Banner
-	Candidate   CandidateView
-	Facts       *FactsView
-	Brief       *BriefView
-	Assessment  *AssessmentView
-	Estimates   []EstimateView
-	Links       []LinkView
-	Rulings     []RulingView
-	Pages       []PageRow
-	Enrichments []EnrichmentRow
-	Rejects     []RejectRecordRow
-	Campaigns   []CampaignRow
+	Banner            page.Banner
+	Candidate         CandidateView
+	Enrichments       *EnrichmentsView
+	Judgments         *JudgmentsView
+	Estimates         []EstimateView
+	Links             []LinkView
+	Rulings           []RulingView
+	Pages             []PageRow
+	EnrichmentResults []EnrichmentRow
+	Rejects           []RejectRecordRow
+	Campaigns         []CampaignRow
 }
 
 // CandidateView supplies candidate view page data.
@@ -148,8 +147,8 @@ type CandidateView struct {
 // PersonRow supplies person row page data.
 type PersonRow struct{ Name, Role string }
 
-// AssessmentView supplies assessment view page data.
-type AssessmentView struct {
+// JudgmentsView supplies judgments view page data.
+type JudgmentsView struct {
 	OperatingConfidence                        string
 	OperatingEvidence                          []EvidenceRow
 	RevenueLow, RevenueHigh, RevenueConfidence string
@@ -300,7 +299,13 @@ type ConfirmationView struct {
 
 // CampaignRow supplies the candidate's recorded campaign history.
 type CampaignRow struct {
-	Campaign, CampaignPage, Cohort, CohortName, CohortPage, Added, AddedText string
-	Rejected                                                                 bool
-	RejectedAt, RejectedAtText, Reason, Delivered, DeliveredText             string
+	Campaign, CampaignPage, ProspectList, ProspectListName, ProspectListPage, Added, AddedText string
+	Rejected                                                                                   bool
+	RejectedAt, RejectedAtText, Reason, Delivered, DeliveredText                               string
+}
+
+// EnrichmentsView holds the facts and brief.
+type EnrichmentsView struct {
+	Facts *FactsView
+	Brief *BriefView
 }

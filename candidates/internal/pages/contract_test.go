@@ -15,13 +15,11 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-TP14-C8P6 R-WTV0-234V R-08TS-B5OG
+// R-TP14-C8P6 R-06A6-0MC0 R-08PY-S5TE
 func TestCompleteViewContracts(t *testing.T) {
 	start := time.Date(2026, 10, 5, 10, 0, 7, 0, time.FixedZone("offset", 3600))
 	end := start.Add(time.Hour)
 	hi := int64(24000000)
-	minutes := int64(31)
-	power, drivers := int64(12), int64(0)
 	c := store.Candidate{ID: "candidate", Status: store.StatusActive, MergedInto: "survivor", Name: "name", Names: []string{"name", "alias"}, Street: "street", City: "city", State: "MN", Zip: "55072", County: "MN-001", Phone: "phone", Email: "email", People: []sources.Person{{Name: "person", Role: "owner"}, {Name: "other", Role: "officer"}}, Class: "class", Cargo: []string{"cargo", "other"}, Created: start, Updated: end}
 	wantC := CandidateView{ID: "candidate", Status: store.StatusActive, MergedInto: "survivor", Name: "name", Names: []string{"name", "alias"}, Street: "street", City: "city", State: "MN", Zip: "55072", County: "MN-001", Phone: "phone", Email: "email", People: []PersonRow{{"person", "owner"}, {"other", "officer"}}, Class: "class", Cargo: []string{"cargo", "other"}, Created: "2026-10-05T09:00:07Z", CreatedText: "2026-10-05 09:00:07 UTC", Updated: "2026-10-05T10:00:07Z", UpdatedText: "2026-10-05 10:00:07 UTC"}
 	if got := candidateView(c); !reflect.DeepEqual(got, wantC) {
@@ -32,12 +30,12 @@ func TestCompleteViewContracts(t *testing.T) {
 	if got := candidateView(c); !reflect.DeepEqual(got, wantC) {
 		t.Fatalf("merged %#v", got)
 	}
-	p := store.Pass{ID: "pass", Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, Status: store.StatusDone, Reason: "reason", Started: start, Finished: end, Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, UserID: "starter", UserEmail: "starter@example.test"}
-	wantP := PassView{Cost: "$0.000000", ID: "pass", Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, Status: store.StatusDone, Reason: "reason", StartedBy: "starter@example.test", Started: "2026-10-05T09:00:07Z", StartedText: "2026-10-05 09:00:07 UTC", Finished: "2026-10-05T10:00:07Z", FinishedText: "2026-10-05 10:00:07 UTC", Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9}
+	p := store.Pass{ID: "pass", Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Status: store.StatusDone, Reason: "reason", Started: start, Finished: end, Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, UserID: "starter", UserEmail: "starter@example.test"}
+	wantP := PassView{Cost: "$0.000000", ID: "pass", Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Status: store.StatusDone, Reason: "reason", StartedBy: "starter@example.test", Started: "2026-10-05T09:00:07Z", StartedText: "2026-10-05 09:00:07 UTC", Finished: "2026-10-05T10:00:07Z", FinishedText: "2026-10-05 10:00:07 UTC", Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9}
 	if got := passView(p, ""); !reflect.DeepEqual(got, wantP) {
 		t.Fatalf("pass %#v", got)
 	}
-	wantRow := PassRow{ID: "pass", Kind: store.KindRebuild, Trigger: store.TriggerRebuild, Status: store.StatusDone, Reason: "reason", Started: "2026-10-05T09:00:07Z", StartedText: "2026-10-05 09:00", Finished: "2026-10-05T10:00:07Z", FinishedText: "2026-10-05 10:00", Rows: 1, Created: 6, Judged: 8}
+	wantRow := PassRow{ID: "pass", Kind: store.KindIngest, Trigger: store.TriggerIngest, Status: store.StatusDone, Reason: "reason", Started: "2026-10-05T09:00:07Z", StartedText: "2026-10-05 09:00", Finished: "2026-10-05T10:00:07Z", FinishedText: "2026-10-05 10:00", Rows: 1, Created: 6, Judged: 8}
 	if got := passRow(p); !reflect.DeepEqual(got, wantRow) {
 		t.Fatal(got)
 	}
@@ -72,13 +70,14 @@ func TestCompleteViewContracts(t *testing.T) {
 		t.Fatal(got)
 	}
 	op, rc, low := .776, .7, int64(14400000)
-	a := store.Assessment{Operating: &op, Evidence: []sources.Evidence{{Name: "signal", Source: "source", Weight: .6, Description: "detail"}, {Name: "other", Weight: .3}, {Name: "third", Weight: .2}}, RevenueLow: &low, RevenueHigh: &hi, RevenueConfidence: &rc, KnownSince: start, NewestFiling: start, Categories: []sources.Category{{Name: "category", Source: "source"}}, GovernmentMatch: "chosen-government", FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, Minutes: &minutes, Excluded: true, Rules: int64(sources.Rules), Calculated: end}
-	wantA := AssessmentView{OperatingConfidence: "0.78", OperatingEvidence: []EvidenceRow{{"signal", "source", "0.60", "detail"}, {"other", "", "0.30", ""}, {"third", "", "0.20", ""}}, RevenueLow: "$14,400,000", RevenueHigh: "$24,000,000", RevenueConfidence: "0.70", Excluded: true, Rules: int64(sources.Rules), Calculated: "2026-10-05T10:00:07Z", CalculatedText: "2026-10-05 10:00:07 UTC"}
-	if got := assessmentView(a); !reflect.DeepEqual(got, wantA) {
-		t.Fatalf("assessment got %#v want %#v", got, wantA)
+	a := store.Judgments{Operating: &op, Evidence: []sources.Evidence{{Name: "signal", Source: "source", Weight: .6, Description: "detail"}, {Name: "other", Weight: .3}, {Name: "third", Weight: .2}}, RevenueLow: &low, RevenueHigh: &hi, RevenueConfidence: &rc, Excluded: true, Rules: int64(sources.Rules), Calculated: end}
+
+	wantA := JudgmentsView{OperatingConfidence: "0.78", OperatingEvidence: []EvidenceRow{{"signal", "source", "0.60", "detail"}, {"other", "", "0.30", ""}, {"third", "", "0.20", ""}}, RevenueLow: "$14,400,000", RevenueHigh: "$24,000,000", RevenueConfidence: "0.70", Excluded: true, Rules: int64(sources.Rules), Calculated: "2026-10-05T10:00:07Z", CalculatedText: "2026-10-05 10:00:07 UTC"}
+	if got := judgmentsView(a); !reflect.DeepEqual(got, wantA) {
+		t.Fatalf("judgments got %#v want %#v", got, wantA)
 	}
-	if got := assessmentView(store.Assessment{}); !reflect.DeepEqual(got, AssessmentView{OperatingEvidence: []EvidenceRow{}}) {
-		t.Fatalf("empty assessment %#v", got)
+	if got := judgmentsView(store.Judgments{}); !reflect.DeepEqual(got, JudgmentsView{OperatingEvidence: []EvidenceRow{}}) {
+		t.Fatalf("empty judgments %#v", got)
 	}
 	e := sources.Estimate{Source: "source", Low: 14400000, High: &hi, Confidence: .7, Filed: start, Formula: 8, Facts: map[string]json.RawMessage{"z": json.RawMessage(` [1, 2] `), "a": json.RawMessage(` {"k": true} `)}}
 	wantE := EstimateView{Source: "source", Low: "$14,400,000", High: "$24,000,000", Confidence: "0.70", Filed: "2026-10-05", FiledText: "2026-10-05", Formula: 8, Facts: []FactRow{{"a", `{"k":true}`}, {"z", `[1,2]`}}}
@@ -132,14 +131,14 @@ func TestCompleteViewContracts(t *testing.T) {
 	}
 }
 
-// R-3TJU-KG5A
+// R-P8DA-YHFL
 func TestExplicitTemplateStates(t *testing.T) {
 	set, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, starter := range []string{"starter@example.test", "user-id"} {
-		if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "pass", PassData{Pass: PassView{Trigger: store.TriggerRebuild, Status: store.StatusRunning, StartedBy: starter}}); err != nil {
+		if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "pass", PassData{Pass: PassView{Trigger: store.TriggerIngest, Status: store.StatusRunning, StartedBy: starter}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -150,9 +149,9 @@ func TestExplicitTemplateStates(t *testing.T) {
 			}
 			return ""
 		}
-		for _, cohorts := range [][]CohortRow{{}, {{Name: "chosen-name", CreatedBy: "chosen-email", Changed: "chosen-at", ChangedText: "chosen-at-text"}, {CreatedUser: "chosen-user"}}} {
-			for _, passes := range [][]PassRow{{}, {{Status: store.StatusRunning, Trigger: store.TriggerRebuild}}} {
-				data := LandingData{Cohorts: cohorts, CohortsPage: text(0), CohortsPrev: text(4), CohortsNext: text(1), Passes: passes, PassesPage: text(2), PassesPrev: text(5), PassesNext: text(3)}
+		for _, prospectLists := range [][]ProspectListRow{{}, {{Name: "chosen-name", CreatedBy: "chosen-email", Changed: "chosen-at", ChangedText: "chosen-at-text"}, {CreatedUser: "chosen-user"}}} {
+			for _, passes := range [][]PassRow{{}, {{Status: store.StatusRunning, Trigger: store.TriggerIngest}}} {
+				data := LandingData{ProspectLists: prospectLists, ProspectListsPage: text(0), ProspectListsPrev: text(4), ProspectListsNext: text(1), Passes: passes, PassesPage: text(2), PassesPrev: text(5), PassesNext: text(3)}
 				if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "landing", data); err != nil {
 					t.Fatal(bits, err)
 				}
@@ -161,7 +160,7 @@ func TestExplicitTemplateStates(t *testing.T) {
 	}
 	for _, shortPage := range []string{"", "last"} {
 		for _, passPage := range []string{"", "last"} {
-			if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "landing", LandingData{CohortsPage: shortPage, PassesPage: passPage}); err != nil {
+			if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "landing", LandingData{ProspectListsPage: shortPage, PassesPage: passPage}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -174,7 +173,7 @@ func TestExplicitTemplateStates(t *testing.T) {
 					data.Candidate.Names = []string{text}
 					data.Candidate.People = []PersonRow{{Name: text, Role: text}}
 					data.Candidate.Cargo = []string{text}
-					data.Assessment = &AssessmentView{RevenueLow: text, RevenueHigh: text, OperatingConfidence: text, RevenueConfidence: text, OperatingEvidence: []EvidenceRow{{Name: text, Source: text, Weight: text, Description: text}}}
+					data.Judgments = &JudgmentsView{RevenueLow: text, RevenueHigh: text, OperatingConfidence: text, RevenueConfidence: text, OperatingEvidence: []EvidenceRow{{Name: text, Source: text, Weight: text, Description: text}}}
 					data.Estimates = []EstimateView{{High: text, Filed: text, Facts: []FactRow{{Key: text, Value: text}}}}
 					data.Links = []LinkView{{RowPage: text, Filed: text}}
 					data.Rulings = []RulingView{{Other: text, Keys: []string{text}, By: text, User: "chosen-user"}}
@@ -196,18 +195,19 @@ func TestExplicitTemplateStates(t *testing.T) {
 	}
 }
 
-// R-BK4C-4YZJ
-func TestMemberRowStoredAssessment(t *testing.T) {
+// R-0JP2-83HN
+func TestMemberRowStoredJudgments(t *testing.T) {
 	minutes, low, high, op, rc := int64(84), int64(2400000), int64(3840000), .776, .4
 	c := store.Candidate{ID: "chosen-id", Name: "chosen-name", City: "chosen-city", State: "MN", Class: "chosen-class"}
-	a := store.Assessment{Operating: &op, Minutes: &minutes, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &rc, Categories: []sources.Category{{Name: sources.CategoryTrucking, Source: "fmcsa"}, {Name: sources.CategoryConstruction, Source: "ppp"}, {Name: sources.CategoryTrucking, Source: "ppp"}}, FleetVerdict: sources.FleetPass, GovernmentMatch: "chosen-government", KnownSince: fixtureTime(), NewestFiling: fixtureTime(), Excluded: true}
+	a := store.Judgments{Operating: &op, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &rc, Excluded: true}
+	f := store.Facts{Minutes: &minutes, Categories: []sources.Category{{Name: sources.CategoryTrucking, Source: "fmcsa"}, {Name: sources.CategoryConstruction, Source: "ppp"}, {Name: sources.CategoryTrucking, Source: "ppp"}}, FleetVerdict: sources.FleetPass, GovernmentMatch: "chosen-government", KnownSince: fixtureTime(), NewestFiling: fixtureTime()}
 	want := MemberRow{Rank: 3, ID: c.ID, Name: c.Name, City: c.City, State: c.State, Class: c.Class, OperatingConfidence: "0.78", Minutes: "84", RevenueLow: "$2,400,000", RevenueHigh: "$3,840,000", RevenueConfidence: "0.40", Categories: []string{sources.CategoryConstruction, sources.CategoryTrucking}, ClassifiedBy: enrichers.SourceLinks, FleetVerdict: sources.FleetPass, GovernmentMatch: "chosen-government", KnownSince: "2026-10-05", KnownSinceText: "2026-10-05", NewestFiling: "2026-10-05", NewestFilingText: "2026-10-05", Excluded: true}
-	if got := memberRow(store.Ranked{Candidate: c, Assessment: a}, 2); !reflect.DeepEqual(got, want) {
+	if got := memberRow(store.Ranked{Candidate: c, Judgments: a, Facts: f}, 2); !reflect.DeepEqual(got, want) {
 		t.Fatalf("%+v", got)
 	}
 	a.RevenueHigh = nil
 	want.RevenueHigh = ""
-	if got := memberRow(store.Ranked{Candidate: c, Assessment: a}, 2); !reflect.DeepEqual(got, want) {
+	if got := memberRow(store.Ranked{Candidate: c, Judgments: a, Facts: f}, 2); !reflect.DeepEqual(got, want) {
 		t.Fatalf("minimum %+v", got)
 	}
 	want = MemberRow{Rank: 1, ID: c.ID, Name: c.Name, City: c.City, State: c.State, Class: c.Class, Categories: []string{}}
@@ -216,7 +216,7 @@ func TestMemberRowStoredAssessment(t *testing.T) {
 	}
 }
 
-// R-WTV0-234V R-X3M7-492F
+// R-06A6-0MC0 R-0CDN-XH1H
 func TestPassOrigins(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	path := filepath.Join(t.TempDir(), "services.json")
@@ -225,12 +225,12 @@ func TestPassOrigins(t *testing.T) {
 	}
 	cfg.ServicesPath = path
 	for _, tc := range []struct{ kind, origin, trigger, by, run string }{
-		{store.KindRebuild, store.OriginRebuild, store.TriggerRebuild, "starter@example.test", ""},
+		{store.KindIngest, store.OriginIngest, store.TriggerIngest, "starter@example.test", ""},
 		{store.KindJudge, store.OriginCron, store.TriggerJudge, "", ""},
 		{store.KindIngest, store.OriginRun, "run_chosen", "", "https://chosen-records.example.test/runs/run_chosen"},
 	} {
 		input := store.Pass{Kind: tc.kind, Origin: tc.origin, Trigger: tc.trigger, UserID: "starter-id", UserEmail: "starter@example.test"}
-		if tc.origin != store.OriginRebuild {
+		if tc.origin != store.OriginIngest {
 			input.Delivery = "delivery-" + tc.origin
 		}
 		p, err := cfg.Store.AddPass(t.Context(), input)
@@ -250,7 +250,7 @@ func TestPassOrigins(t *testing.T) {
 	}
 }
 
-// R-3TJU-KG5A
+// R-P8DA-YHFL
 func TestJudgmentTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
@@ -267,12 +267,12 @@ func TestJudgmentTemplateStates(t *testing.T) {
 		for _, flag := range []bool{false, true} {
 			for _, categories := range [][]string{{}, {"chosen-one"}, {"chosen-one", "chosen-two"}} {
 				row := MemberRow{City: value, State: value, OperatingConfidence: value, RevenueLow: value, RevenueHigh: value, RevenueConfidence: value, Categories: categories, Class: value, FleetVerdict: sources.FleetUnknown, Minutes: value, GovernmentMatch: value}
-				render("cohort", CohortData{Members: []MemberRow{row}})
+				render("prospect_list", ProspectListData{Members: []MemberRow{row}})
 			}
 			for _, evidence := range [][]EvidenceRow{{}, {{Name: value, Source: value, Weight: value, Description: value}}} {
 				for _, categories := range [][]CategoryRow{{}, {{Name: value, Source: value}}} {
 					for _, high := range []string{"", "chosen-high"} {
-						d := CandidateData{Facts: &FactsView{KnownSince: value, KnownSinceText: value, NewestFiling: value, NewestFilingText: value, Categories: categories, GovernmentMatch: value, FleetVerdict: sources.FleetUnknown, Minutes: value}, Candidate: CandidateView{Status: store.StatusActive}, Assessment: &AssessmentView{OperatingConfidence: value, OperatingEvidence: evidence, RevenueLow: value, RevenueHigh: high, RevenueConfidence: value, Excluded: flag}}
+						d := CandidateData{Candidate: CandidateView{Status: store.StatusActive}, Judgments: &JudgmentsView{OperatingConfidence: value, OperatingEvidence: evidence, RevenueLow: value, RevenueHigh: high, RevenueConfidence: value, Excluded: flag}, Enrichments: &EnrichmentsView{Facts: &FactsView{KnownSince: value, KnownSinceText: value, NewestFiling: value, NewestFilingText: value, Categories: categories, GovernmentMatch: value, FleetVerdict: sources.FleetUnknown, Minutes: value}}}
 						render("candidate", d)
 					}
 				}
@@ -282,7 +282,7 @@ func TestJudgmentTemplateStates(t *testing.T) {
 	for _, status := range []string{store.StatusRunning, store.StatusDone, store.StatusFailed} {
 		for _, reason := range []string{"", store.ReasonScrapes, store.ReasonInterrupted, store.ReasonStore} {
 			for _, finished := range []string{"", "chosen-finished"} {
-				for _, p := range []PassView{{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, StartedBy: "starter@example.test"}, {Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, StartedBy: "starter-id"}, {Kind: store.KindJudge, Origin: store.OriginCron, Trigger: store.TriggerJudge}, {Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "run_chosen"}, {Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "run_chosen", RunPage: "https://chosen-records.example.test/run"}} {
+				for _, p := range []PassView{{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, StartedBy: "starter@example.test"}, {Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, StartedBy: "starter-id"}, {Kind: store.KindJudge, Origin: store.OriginCron, Trigger: store.TriggerJudge}, {Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "run_chosen"}, {Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "run_chosen", RunPage: "https://chosen-records.example.test/run"}} {
 					p.Status, p.Reason, p.Finished = status, reason, finished
 					render("pass", PassData{Pass: p})
 					render("landing", LandingData{Passes: []PassRow{{Kind: p.Kind, Trigger: p.Trigger, Status: status, Reason: reason, Finished: finished}}})

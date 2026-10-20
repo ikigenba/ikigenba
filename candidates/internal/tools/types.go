@@ -50,7 +50,7 @@ func (v Candidate) MarshalJSON() ([]byte, error) {
 	return json.Marshal(plain(v))
 }
 
-// Member is a cohort member's stored judgment.
+// Member is a prospectList member's stored judgment.
 type Member struct {
 	Candidate           Candidate `json:"candidate"`
 	OperatingConfidence *float64  `json:"operating_confidence,omitempty"`
@@ -81,69 +81,69 @@ func (v Member) MarshalJSON() ([]byte, error) {
 	return json.Marshal(plain(v))
 }
 
-// Cohort is a saved search definition.
-type Cohort struct {
-	ID           string              `json:"id"`
-	Name         string              `json:"name"`
-	Size         int64               `json:"size"`
-	Filters      store.CohortFilters `json:"filters"`
-	Order        []store.CohortOrder `json:"order"`
-	CreatedBy    string              `json:"created_by"`
-	CreatedEmail string              `json:"created_email"`
-	Created      string              `json:"created"`
-	ChangedBy    string              `json:"changed_by"`
-	ChangedEmail string              `json:"changed_email"`
-	Changed      string              `json:"changed"`
+// ProspectList is a saved search definition.
+type ProspectList struct {
+	ID           string                    `json:"id"`
+	Name         string                    `json:"name"`
+	Size         int64                     `json:"size"`
+	Filters      store.ProspectListFilters `json:"filters"`
+	Order        []store.ProspectListOrder `json:"order"`
+	CreatedBy    string                    `json:"created_by"`
+	CreatedEmail string                    `json:"created_email"`
+	Created      string                    `json:"created"`
+	ChangedBy    string                    `json:"changed_by"`
+	ChangedEmail string                    `json:"changed_email"`
+	Changed      string                    `json:"changed"`
 }
 
 // MarshalJSON encodes empty order as an array.
-func (v Cohort) MarshalJSON() ([]byte, error) {
-	type plain Cohort
+func (v ProspectList) MarshalJSON() ([]byte, error) {
+	type plain ProspectList
 	if v.Order == nil {
-		v.Order = []store.CohortOrder{}
+		v.Order = []store.ProspectListOrder{}
 	}
 	return json.Marshal(plain(v))
 }
 
-// CohortList is a page of definitions.
-type CohortList struct {
-	Cohorts []Cohort `json:"cohorts"`
-	Next    *string  `json:"next,omitempty" description:"Present when more entries follow; pass it back as page to get them."`
+// ProspectListList is a page of definitions.
+type ProspectListList struct {
+	ProspectLists []ProspectList `json:"prospect_lists"`
+	Next          *string        `json:"next,omitempty" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
-// MarshalJSON encodes empty cohorts as an array.
-func (v CohortList) MarshalJSON() ([]byte, error) {
-	type plain CohortList
-	if v.Cohorts == nil {
-		v.Cohorts = []Cohort{}
+// MarshalJSON encodes empty prospectLists as an array.
+func (v ProspectListList) MarshalJSON() ([]byte, error) {
+	type plain ProspectListList
+	if v.ProspectLists == nil {
+		v.ProspectLists = []ProspectList{}
 	}
 	return json.Marshal(plain(v))
 }
 
-// Reject is an owner's cohort ruling.
+// Reject is an owner's prospectList ruling.
 type Reject struct {
-	Kind       string `json:"kind"`
-	Cohort     string `json:"cohort"`
-	CohortName string `json:"cohort_name,omitempty"`
-	Candidate  string `json:"candidate"`
-	Why        string `json:"why,omitempty"`
-	User       string `json:"user,omitempty"`
-	Email      string `json:"email,omitempty"`
-	At         string `json:"at,omitempty"`
+	Kind             string `json:"kind"`
+	ProspectList     string `json:"prospect_list"`
+	ProspectListName string `json:"prospect_list_name,omitempty"`
+	Candidate        string `json:"candidate"`
+	Why              string `json:"why,omitempty"`
+	User             string `json:"user,omitempty"`
+	Email            string `json:"email,omitempty"`
+	At               string `json:"at,omitempty"`
 }
 
-// CohortRead answers a cohort and its current members.
-type CohortRead struct {
-	Cohort     Cohort   `json:"cohort"`
-	Matching   int64    `json:"matching"`
-	Classified int64    `json:"classified"`
-	Members    []Member `json:"members"`
-	Rejects    []Reject `json:"rejects"`
+// ProspectListRead answers a prospectList and its current members.
+type ProspectListRead struct {
+	ProspectList ProspectList `json:"prospect_list"`
+	Matching     int64        `json:"matching"`
+	Classified   int64        `json:"classified"`
+	Members      []Member     `json:"members"`
+	Rejects      []Reject     `json:"rejects"`
 }
 
 // MarshalJSON encodes empty members and rejects as arrays.
-func (v CohortRead) MarshalJSON() ([]byte, error) {
-	type plain CohortRead
+func (v ProspectListRead) MarshalJSON() ([]byte, error) {
+	type plain ProspectListRead
 	if v.Members == nil {
 		v.Members = []Member{}
 	}
@@ -262,47 +262,97 @@ type Category struct {
 	Source string `json:"source"`
 }
 
-// Assessment is a stored judgment answer.
-type Assessment struct {
+// Judgments contains the judgments from the last judge.
+type Judgments struct {
 	OperatingConfidence *float64   `json:"operating_confidence,omitempty"`
 	OperatingEvidence   []Evidence `json:"operating_evidence"`
 	RevenueLow          *int64     `json:"revenue_low,omitempty"`
 	RevenueHigh         *int64     `json:"revenue_high,omitempty"`
 	RevenueConfidence   *float64   `json:"revenue_confidence,omitempty"`
-	KnownSince          string     `json:"known_since,omitempty"`
-	NewestFiling        string     `json:"newest_filing,omitempty"`
-	Categories          []Category `json:"categories"`
-	ClassifiedBy        string     `json:"classified_by"`
-	RecordsDiffer       bool       `json:"records_differ"`
-	RecordCategories    []Category `json:"record_categories"`
-	GovernmentMatch     string     `json:"government_match,omitempty"`
-	FleetVerdict        string     `json:"fleet_verdict"`
-	PowerUnits          *int64     `json:"power_units,omitempty"`
-	Drivers             *int64     `json:"drivers,omitempty"`
-	Website             string     `json:"website"`
-	WebsiteURL          string     `json:"website_url,omitempty"`
-	WebsiteSource       string     `json:"website_source"`
-	WebsiteSearchAt     string     `json:"website_search_at,omitempty"`
-	Minutes             *int64     `json:"minutes,omitempty"`
-	Brief               string     `json:"brief,omitempty"`
 	Excluded            bool       `json:"excluded"`
 	Rules               int64      `json:"rules"`
 	Calculated          string     `json:"calculated"`
 }
 
-// MarshalJSON encodes empty collections as arrays.
-func (v Assessment) MarshalJSON() ([]byte, error) {
-	type plain Assessment
+// MarshalJSON encodes empty slices as arrays.
+func (v Judgments) MarshalJSON() ([]byte, error) {
+	type plain Judgments
 	if v.OperatingEvidence == nil {
 		v.OperatingEvidence = []Evidence{}
 	}
+	return json.Marshal(plain(v))
+}
+
+// Facts contains the newest recorded facts and their provenance.
+type Facts struct {
+	KnownSince       string     `json:"known_since,omitempty"`
+	NewestFiling     string     `json:"newest_filing,omitempty"`
+	Categories       []Category `json:"categories"`
+	ClassifiedBy     string     `json:"classified_by"`
+	RecordsDiffer    bool       `json:"records_differ"`
+	RecordCategories []Category `json:"record_categories"`
+	GovernmentMatch  string     `json:"government_match,omitempty"`
+	FleetVerdict     string     `json:"fleet_verdict"`
+	PowerUnits       *int64     `json:"power_units,omitempty"`
+	Drivers          *int64     `json:"drivers,omitempty"`
+	Website          string     `json:"website"`
+	WebsiteURL       string     `json:"website_url,omitempty"`
+	WebsiteSource    string     `json:"website_source"`
+	Minutes          *int64     `json:"minutes,omitempty"`
+	Written          []Written  `json:"written"`
+}
+
+// MarshalJSON encodes empty slices as arrays.
+func (v Facts) MarshalJSON() ([]byte, error) {
+	type plain Facts
 	if v.Categories == nil {
 		v.Categories = []Category{}
 	}
 	if v.RecordCategories == nil {
 		v.RecordCategories = []Category{}
 	}
+	if v.Written == nil {
+		v.Written = []Written{}
+	}
 	return json.Marshal(plain(v))
+}
+
+// Written records when a kind last wrote the facts.
+type Written struct {
+	Kind string `json:"kind"`
+	At   string `json:"at"`
+}
+
+// Brief contains the newest successful business brief.
+type Brief struct {
+	Summary    string          `json:"summary"`
+	Categories []BriefCategory `json:"categories"`
+	Labels     []string        `json:"labels"`
+	At         string          `json:"at"`
+}
+
+// BriefCategory contains a category and the reason it was assigned.
+type BriefCategory struct {
+	Name string `json:"name"`
+	Why  string `json:"why"`
+}
+
+// MarshalJSON encodes empty slices as arrays.
+func (v Brief) MarshalJSON() ([]byte, error) {
+	type plain Brief
+	if v.Categories == nil {
+		v.Categories = []BriefCategory{}
+	}
+	if v.Labels == nil {
+		v.Labels = []string{}
+	}
+	return json.Marshal(plain(v))
+}
+
+// Enrichments holds the facts and brief apart from judgments.
+type Enrichments struct {
+	Facts *Facts `json:"facts,omitempty"`
+	Brief *Brief `json:"brief,omitempty"`
 }
 
 // Ruling is a tool answer value.
@@ -328,15 +378,16 @@ func (v Ruling) MarshalJSON() ([]byte, error) {
 
 // Detail is a tool answer value.
 type Detail struct {
-	Candidate   Candidate     `json:"candidate"`
-	Assessment  *Assessment   `json:"assessment,omitempty"`
-	Estimates   []Estimate    `json:"estimates"`
-	Links       []Link        `json:"links"`
-	Rulings     []Ruling      `json:"rulings"`
-	Pages       []Page        `json:"pages"`
-	Enrichments []Enrichment  `json:"enrichments"`
-	Rejects     []Reject      `json:"rejects"`
-	Campaigns   []CampaignUse `json:"campaigns"`
+	Candidate         Candidate          `json:"candidate"`
+	Enrichments       *Enrichments       `json:"enrichments,omitempty"`
+	Judgments         *Judgments         `json:"judgments,omitempty"`
+	Estimates         []Estimate         `json:"estimates"`
+	Links             []Link             `json:"links"`
+	Rulings           []Ruling           `json:"rulings"`
+	Pages             []Page             `json:"pages"`
+	EnrichmentResults []EnrichmentResult `json:"enrichment_results"`
+	Rejects           []Reject           `json:"rejects"`
+	Campaigns         []CampaignUse      `json:"campaigns"`
 }
 
 // MarshalJSON encodes empty collections as arrays or objects.
@@ -360,8 +411,8 @@ func (v Detail) MarshalJSON() ([]byte, error) {
 	if v.Pages == nil {
 		v.Pages = []Page{}
 	}
-	if v.Enrichments == nil {
-		v.Enrichments = []Enrichment{}
+	if v.EnrichmentResults == nil {
+		v.EnrichmentResults = []EnrichmentResult{}
 	}
 	return json.Marshal(plain(v))
 }
@@ -385,18 +436,18 @@ func (v Decision) MarshalJSON() ([]byte, error) {
 type NoArgs struct {
 }
 
-// CohortsArgs holds list paging arguments.
-type CohortsArgs struct {
+// ProspectListsArgs holds list paging arguments.
+type ProspectListsArgs struct {
 	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
 	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
 }
 
-// CohortArgs identifies a cohort.
-type CohortArgs struct {
-	Cohort string `json:"cohort" mcp:"required"`
+// ProspectListArgs identifies a prospectList.
+type ProspectListArgs struct {
+	ProspectList string `json:"prospect_list" mcp:"required"`
 }
 
-// FilterArgs holds a cohort's filters.
+// FilterArgs holds a prospectList's filters.
 type FilterArgs struct {
 	RevenueMin         *uint32   `json:"revenue_min"`
 	RevenueMax         *uint32   `json:"revenue_max"`
@@ -424,28 +475,28 @@ type OrderArgs struct {
 	Direction string `json:"direction" mcp:"required"`
 }
 
-// CreateCohortArgs defines a saved search.
-type CreateCohortArgs struct {
+// CreateProspectListArgs defines a saved search.
+type CreateProspectListArgs struct {
 	Name    string       `json:"name" mcp:"required"`
 	Filters *FilterArgs  `json:"filters"`
 	Order   *[]OrderArgs `json:"order"`
 	Size    *int         `json:"size"`
 }
 
-// EditCohortArgs replaces supplied parts of a saved search.
-type EditCohortArgs struct {
-	Cohort  string       `json:"cohort" mcp:"required"`
-	Name    *string      `json:"name"`
-	Filters *FilterArgs  `json:"filters"`
-	Order   *[]OrderArgs `json:"order"`
-	Size    *int         `json:"size"`
+// EditProspectListArgs replaces supplied parts of a saved search.
+type EditProspectListArgs struct {
+	ProspectList string       `json:"prospect_list" mcp:"required"`
+	Name         *string      `json:"name"`
+	Filters      *FilterArgs  `json:"filters"`
+	Order        *[]OrderArgs `json:"order"`
+	Size         *int         `json:"size"`
 }
 
-// RejectArgs identifies a cohort ruling.
+// RejectArgs identifies a prospectList ruling.
 type RejectArgs struct {
-	Cohort    string `json:"cohort" mcp:"required"`
-	Candidate string `json:"candidate" mcp:"required"`
-	Why       string `json:"why" mcp:"required"`
+	ProspectList string `json:"prospect_list" mcp:"required"`
+	Candidate    string `json:"candidate" mcp:"required"`
+	Why          string `json:"why" mcp:"required"`
 }
 
 // RulingArgs identifies an exclusion or inclusion.
@@ -490,14 +541,14 @@ type DecideArgs struct {
 
 // EnrichArgs selects a website enrichment pass.
 type EnrichArgs struct {
-	Kind      string `json:"kind"`
-	Cohort    string `json:"cohort"`
-	Candidate string `json:"candidate"`
-	Force     bool   `json:"force"`
+	Kind         string `json:"kind"`
+	ProspectList string `json:"prospect_list"`
+	Candidate    string `json:"candidate"`
+	Force        bool   `json:"force"`
 }
 
-// Enrichment is one recorded enrichment result.
-type Enrichment struct {
+// EnrichmentResult is one recorded enrichment result.
+type EnrichmentResult struct {
 	Kind       string          `json:"kind"`
 	Source     string          `json:"source"`
 	Inputs     string          `json:"inputs"`
@@ -533,10 +584,15 @@ type Page struct {
 
 // CampaignUse is a candidate's campaign history answer.
 type CampaignUse struct {
-	Campaign  string `json:"campaign"`
-	Cohort    string `json:"cohort"`
-	Added     string `json:"added,omitempty"`
-	Rejected  string `json:"rejected,omitempty"`
-	Reason    string `json:"reason,omitempty"`
-	Delivered string `json:"delivered,omitempty"`
+	Campaign     string `json:"campaign"`
+	ProspectList string `json:"prospect_list"`
+	Added        string `json:"added,omitempty"`
+	Rejected     string `json:"rejected,omitempty"`
+	Reason       string `json:"reason,omitempty"`
+	Delivered    string `json:"delivered,omitempty"`
+}
+
+// IngestArgs selects one scraper or every source.
+type IngestArgs struct {
+	Scraper string `json:"scraper"`
 }

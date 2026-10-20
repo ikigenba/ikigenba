@@ -110,7 +110,7 @@ func TestDueAmongKeepsTargetOrderAndSkipsIneligible(t *testing.T) {
 	}
 }
 
-// R-XBPT-TUCA R-OKGB-71R7 R-OVFE-MZFG R-OWNB-0R65
+// R-XBPT-TUCA R-OKGB-71R7 R-Q3GO-6J5N R-Q74D-BUDQ
 func TestDeriveAmongRecordsOnlyDistinctEligibleTargets(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -181,8 +181,8 @@ func siteTextResult(t *testing.T, id, status string) store.Enrichment {
 	return store.Enrichment{Candidate: id, Kind: enrichers.KindSiteText, Inputs: "https://business.test/", Source: enrichers.SourcePrompts, Found: b, Cost: 1.25}
 }
 
-// R-NJRO-EC1G R-X9A1-2AUW
-func TestSiteTextWrittenProjectsIntoCohortWithoutChangingMembership(t *testing.T) {
+// R-N7DR-ZBTP R-X9A1-2AUW
+func TestSiteTextWrittenProjectsIntoProspectListWithoutChangingMembership(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
 	a := contractSeed(t, f)
@@ -190,8 +190,8 @@ func TestSiteTextWrittenProjectsIntoCohortWithoutChangingMembership(t *testing.T
 	deriveAll(t, f.s)
 	_, err := f.s.JudgeAll(ctx)
 	contractOK(t, err)
-	cohort := cohortCreate(t, f, "site text stamps")
-	before := cohortRead(t, f, cohort)
+	prospectList := prospectListCreate(t, f, "site text stamps")
+	before := prospectListRead(t, f, prospectList)
 	for _, status := range []string{enrichers.RunExited, "failed"} {
 		f.now = f.now.Add(time.Second)
 		_, err = f.s.AddEnrichments(ctx, []store.Enrichment{siteTextResult(t, a, status)})
@@ -201,12 +201,12 @@ func TestSiteTextWrittenProjectsIntoCohortWithoutChangingMembership(t *testing.T
 	f.now = f.now.Add(time.Second)
 	_, err = f.s.DeriveAmong(ctx, enrichers.KindLinkFacts, []string{a}, true)
 	contractOK(t, err)
-	got := cohortRead(t, f, cohort)
+	got := prospectListRead(t, f, prospectList)
 	contractEqual(t, got.Matching, before.Matching)
-	contractEqual(t, cohortIDs(got.Members), cohortIDs(before.Members))
+	contractEqual(t, prospectListIDs(got.Members), prospectListIDs(before.Members))
 	for i, m := range got.Members {
 		contractEqual(t, m.Candidate, before.Members[i].Candidate)
-		contractEqual(t, m.Assessment, before.Members[i].Assessment)
+		contractEqual(t, m.Judgments, before.Members[i].Judgments)
 		switch m.Candidate.ID {
 		case a:
 			contractEqual(t, m.SiteText, stamp)
@@ -227,7 +227,7 @@ func TestSiteTextWrittenProjectsIntoCohortWithoutChangingMembership(t *testing.T
 		t.Fatal("missing site text written time")
 	}
 	f.reopen()
-	contractEqual(t, cohortRead(t, f, cohort), got)
+	contractEqual(t, prospectListRead(t, f, prospectList), got)
 }
 
 // R-XBPT-TUCA

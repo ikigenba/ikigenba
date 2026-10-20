@@ -20,7 +20,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-I3S3-D7R8 R-IER6-T5FH R-IH6Z-KOWV R-IJMS-C8E9 R-IKUO-Q04Y
+// R-I3S3-D7R8 R-IER6-T5FH R-IH6Z-KOWV R-4C8H-K65B R-IKUO-Q04Y
 func TestWebsiteSearchClient(t *testing.T) {
 	type word string
 	const kind word = enrichers.KindWebsiteSearch
@@ -88,7 +88,7 @@ func TestWebsiteSearchShapes(t *testing.T) {
 	}
 }
 
-// R-IIEV-YGNK R-IM2L-3RVN
+// R-MXG4-Y30D R-IM2L-3RVN
 func TestWebsiteSearchInputs(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	s := enrichers.Subject{ID: "candidate", Name: "Acme", City: "Sandstone", State: "MN", Street: "Main", Zip: "zip", Phone: "phone", Email: "Ops@Acme.test", Links: []enrichers.Link{{Reading: sources.Reading{People: []sources.Person{{Name: "Ann", Role: "owner"}, {Name: "Bob"}, {Name: "Ann", Role: "owner"}}}}, {Gone: true, Reading: sources.Reading{People: []sources.Person{{Name: "Gone"}}}}}, Facts: &enrichers.LinkFound{Categories: []enrichers.Category{{Name: "omit", Source: enrichers.KindBrief}, {Name: "keep", Source: "source"}}}}

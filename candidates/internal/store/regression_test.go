@@ -102,8 +102,8 @@ func regLinks(t *testing.T, f *regFixture, id string) []store.Link {
 }
 func regTime(f *regFixture) time.Time { return f.now.UTC().Truncate(time.Second) }
 
-// R-G7UR-R6WW R-GGE2-FL3R R-GF66-1TD2 R-GHLY-TCUG
-func TestResolutionIdentityAndBatch(t *testing.T) {
+// R-G7UR-R6WW R-7ZGU-8UQ6 R-7N9U-F5B8 R-7KU1-NLTU
+func TestIngestIdentityAndBatch(t *testing.T) {
 	f := regNew(t)
 	a := regObs("first", "Acme Trucking Inc")
 	b := regObs("second", "Acme Trucking LLC")
@@ -145,8 +145,8 @@ func TestResolutionIdentityAndBatch(t *testing.T) {
 	regEqual(t, regLinks(t, f, c.ID), ls)
 }
 
-// R-GBIG-WI4Z R-GHLY-TCUG
-func TestResolutionRefusesWholeInvalidBatch(t *testing.T) {
+// R-7VT5-3JI3 R-7KU1-NLTU
+func TestIngestRefusesWholeInvalidBatch(t *testing.T) {
 	f := regNew(t)
 	for _, tc := range []struct {
 		run string
@@ -173,8 +173,8 @@ func TestResolutionRefusesWholeInvalidBatch(t *testing.T) {
 	regEqual(t, len(cs), 0)
 }
 
-// R-GCQD-A9VO R-GDY9-O1MD R-VFA1-PLHH
-func TestResolutionRefreshAndRebuild(t *testing.T) {
+// R-7DIN-CZDO R-7PPN-6OSM R-VFA1-PLHH
+func TestIngestRefreshAndForce(t *testing.T) {
 	f := regNew(t)
 	a := regObs("one", "First")
 	_, ids := regAttach(t, f, "before", a)
@@ -202,17 +202,17 @@ func TestResolutionRefreshAndRebuild(t *testing.T) {
 	regEqual(t, regCandidate(t, f, ids[0]).Name, a.Reading.Name)
 	regEqual(t, regCandidate(t, f, ids[0]).Updated, regTime(f))
 	a.Reading.Name = "Rebuilt"
-	n, seen, e := f.st.Attach(regCtx, "rebuild", true, []store.Observation{a})
+	n, seen, e := f.st.Attach(regCtx, "ingest", true, []store.Observation{a})
 	regNoErr(t, e)
 	regEqual(t, n, store.Counts{Rows: 1, Changed: 1, Linked: 1})
 	regEqual(t, seen, ids)
 	want.Reading = a.Reading
-	want.Run = "rebuild"
+	want.Run = "ingest"
 	regEqual(t, regLinks(t, f, ids[0])[0], want)
 }
 
 // R-5XOA-44OS R-VFA1-PLHH R-GITV-74L5
-func TestResolutionDisplayAndGone(t *testing.T) {
+func TestIngestDisplayAndGone(t *testing.T) {
 	f := regNew(t)
 	a := regObs("older", "Acme INC")
 	a.Reading.Names = []string{"Alias", "", a.Reading.Name}
@@ -269,7 +269,7 @@ func TestResolutionDisplayAndGone(t *testing.T) {
 }
 
 // R-GL9N-YO2J R-GMHK-CFT8
-func TestResolutionRulingRefusalOrder(t *testing.T) {
+func TestIngestRulingRefusalOrder(t *testing.T) {
 	f := regNew(t)
 	_, ids := regAttach(t, f, "run", regObs("one", "First"), regObs("two", "Second"))
 	id := ids[0]
@@ -294,8 +294,8 @@ func TestResolutionRulingRefusalOrder(t *testing.T) {
 	regEqual(t, len(rs), 0)
 }
 
-// R-GNPG-Q7JX R-GRD5-VIS0 R-GL9N-YO2J R-5JWX-756T
-func TestResolutionSplitAndPersistence(t *testing.T) {
+// R-GNPG-Q7JX R-GRD5-VIS0 R-GL9N-YO2J R-7H6C-IALR
+func TestIngestSplitAndPersistence(t *testing.T) {
 	f := regNew(t)
 	a := regObs("one", "Acme INC")
 	b := regObs("two", "Acme LLC")
@@ -340,9 +340,9 @@ func TestResolutionSplitAndPersistence(t *testing.T) {
 	f.now = f.now.Add(time.Hour)
 	_, seen := regAttach(t, f, "later", regObs("four", "Acme LTD"))
 	regEqual(t, seen, []string{id})
-	_, _, e = f.st.Attach(regCtx, "rebuild", true, []store.Observation{a, b, c})
+	_, _, e = f.st.Attach(regCtx, "ingest", true, []store.Observation{a, b, c})
 	regNoErr(t, e)
-	_, _, e = f.st.MarkGone(regCtx, "fmcsa", "rebuild")
+	_, _, e = f.st.MarkGone(regCtx, "fmcsa", "ingest")
 	regNoErr(t, e)
 	_, e = f.st.JudgeAll(regCtx)
 	regNoErr(t, e)
@@ -356,8 +356,8 @@ func TestResolutionSplitAndPersistence(t *testing.T) {
 	regEqual(t, rs, []store.Ruling{pair, r})
 }
 
-// R-UDKQ-UJBH R-5JWX-756T R-GSL2-9AIP R-GL9N-YO2J R-GMHK-CFT8
-func TestResolutionMergeAndNotSame(t *testing.T) {
+// R-1BPF-IL5I R-7H6C-IALR R-7TDC-C00P R-GL9N-YO2J R-GMHK-CFT8
+func TestIngestMergeAndNotSame(t *testing.T) {
 	f := regNew(t)
 	a := regObs("one", "First")
 	b := regObs("two", "Second")
@@ -367,7 +367,7 @@ func TestResolutionMergeAndNotSame(t *testing.T) {
 	deriveAll(t, f.st)
 	_, e := f.st.JudgeAll(regCtx)
 	regNoErr(t, e)
-	oldAssessment, e := f.st.GetAssessment(regCtx, cb.ID)
+	oldJudgments, e := f.st.GetJudgments(regCtx, cb.ID)
 	regNoErr(t, e)
 	oldEstimates, e := f.st.Estimates(regCtx, cb.ID)
 	regNoErr(t, e)
@@ -397,9 +397,9 @@ func TestResolutionMergeAndNotSame(t *testing.T) {
 			regEqual(t, l, m)
 		}
 	}
-	got, e := f.st.GetAssessment(regCtx, cb.ID)
+	got, e := f.st.GetJudgments(regCtx, cb.ID)
 	regNoErr(t, e)
-	regEqual(t, got, oldAssessment)
+	regEqual(t, got, oldJudgments)
 	es, e := f.st.Estimates(regCtx, cb.ID)
 	regNoErr(t, e)
 	regEqual(t, es, oldEstimates)
@@ -421,13 +421,13 @@ func TestResolutionMergeAndNotSame(t *testing.T) {
 	regEqual(t, regCandidate(t, f, cb.ID), want)
 	regEqual(t, regLinks(t, f, ca.ID)[1].Candidate, ca.ID)
 	regEqual(t, regLinks(t, f, ca.ID)[1].Reason, store.LinkDecision)
-	got, e = f.st.GetAssessment(regCtx, cb.ID)
+	got, e = f.st.GetJudgments(regCtx, cb.ID)
 	regNoErr(t, e)
-	regEqual(t, got, oldAssessment)
+	regEqual(t, got, oldJudgments)
 }
 
-// R-GSL2-9AIP R-GL9N-YO2J R-GNPG-Q7JX
-func TestScoringRulingsTakeEffectImmediately(t *testing.T) {
+// R-7TDC-C00P R-GL9N-YO2J R-GNPG-Q7JX
+func TestJudgingRulingsTakeEffectImmediately(t *testing.T) {
 	f := regNew(t)
 	regNoErr(t, f.st.ReplaceZipDrive(regCtx, map[string]int64{"55072": 0}))
 	a := regObs("one", "Business")
@@ -437,9 +437,9 @@ func TestScoringRulingsTakeEffectImmediately(t *testing.T) {
 	deriveAll(t, f.st)
 	_, e := f.st.JudgeAll(regCtx)
 	regNoErr(t, e)
-	k, e := f.st.CreateCohort(regCtx, store.Cohort{Name: "test", Size: 10, Filters: store.CohortFilters{MaxMinutes: ptrInt(120), RevenueMin: ptrInt(10000000)}, CreatedUserID: "owner"})
+	k, e := f.st.CreateProspectList(regCtx, store.ProspectList{Name: "test", Size: 10, Filters: store.ProspectListFilters{MaxMinutes: ptrInt(120), RevenueMin: ptrInt(10000000)}, CreatedUserID: "owner"})
 	regNoErr(t, e)
-	cr, e := f.st.ReadCohort(regCtx, k.ID)
+	cr, e := f.st.ReadProspectList(regCtx, k.ID)
 	rs := cr.Members
 	regNoErr(t, e)
 	regEqual(t, len(rs), 1)
@@ -452,11 +452,11 @@ func TestScoringRulingsTakeEffectImmediately(t *testing.T) {
 		regEqual(t, r, store.Ruling{Kind: kind, Candidate: id, Keys: []string{}, Why: "owner reason", UserID: "owner", UserEmail: "owner@example.test", At: regTime(f)})
 		regEqual(t, cs, []store.Candidate{before})
 		regEqual(t, regLinks(t, f, id), links)
-		a, e := f.st.GetAssessment(regCtx, id)
+		a, e := f.st.GetJudgments(regCtx, id)
 		regNoErr(t, e)
 		regEqual(t, a.Excluded, kind == store.KindExclude)
 		regEqual(t, a.Calculated, regTime(f))
-		cr, e = f.st.ReadCohort(regCtx, k.ID)
+		cr, e = f.st.ReadProspectList(regCtx, k.ID)
 		rs = cr.Members
 		regNoErr(t, e)
 		want := 1
@@ -471,12 +471,12 @@ func TestScoringRulingsTakeEffectImmediately(t *testing.T) {
 	deriveAll(t, f.st)
 	_, e = f.st.JudgeAll(regCtx)
 	regNoErr(t, e)
-	got, e := f.st.GetAssessment(regCtx, id)
+	got, e := f.st.GetJudgments(regCtx, id)
 	regNoErr(t, e)
 	regEqual(t, got.Excluded, false)
-	regEqual(t, got.GovernmentMatch, a.Reading.GovernmentMatch)
+	regEqual(t, factsAt(regCtx, t, f.st, id).GovernmentMatch, a.Reading.GovernmentMatch)
 	f.reopen(t)
-	got, e = f.st.GetAssessment(regCtx, id)
+	got, e = f.st.GetJudgments(regCtx, id)
 	regNoErr(t, e)
 	regEqual(t, got.Excluded, false)
 	rulings, e := f.st.Rulings(regCtx, id)
@@ -485,8 +485,8 @@ func TestScoringRulingsTakeEffectImmediately(t *testing.T) {
 	regEqual(t, rulings[0].Kind, store.KindInclude)
 }
 
-// R-GF66-1TD2 R-GHLY-TCUG R-VFA1-PLHH
-func TestResolutionOldestTieAndGoneIdentity(t *testing.T) {
+// R-7N9U-F5B8 R-7KU1-NLTU R-VFA1-PLHH
+func TestIngestOldestTieAndGoneIdentity(t *testing.T) {
 	f := regNew(t)
 	a, b := regObs("one", "Acme Inc"), regObs("two", "Acme LLC")
 	_, ids := regAttach(t, f, "run", a, b)
@@ -515,8 +515,8 @@ func TestResolutionOldestTieAndGoneIdentity(t *testing.T) {
 	regEqual(t, touched, wantIDs)
 }
 
-// R-GMHK-CFT8 R-UIGC-DMA9
-func TestScoringMergeAndSplitAssessOnlyActiveSides(t *testing.T) {
+// R-GMHK-CFT8 R-4H43-3943
+func TestJudgingMergeAndSplitAssessOnlyActiveSides(t *testing.T) {
 	f := regNew(t)
 	regNoErr(t, f.st.ReplaceZipDrive(regCtx, map[string]int64{"55072": 18}))
 	a, b := regObs("one", "Acme Inc"), regObs("two", "Acme LLC")
@@ -532,11 +532,11 @@ func TestScoringMergeAndSplitAssessOnlyActiveSides(t *testing.T) {
 	regNoErr(t, e)
 	regEqual(t, f.calls, 1)
 	for i, c := range cs {
-		got, e := f.st.GetAssessment(regCtx, c.ID)
+		got, e := f.st.GetJudgments(regCtx, c.ID)
 		regNoErr(t, e)
 		regEqual(t, got.Calculated, regTime(f))
-		regEqual(t, got.FleetVerdict, sources.FleetUnknown)
-		regEqual(t, *got.Minutes, int64(18))
+		regEqual(t, factsAt(regCtx, t, f.st, c.ID).FleetVerdict, sources.FleetUnknown)
+		regEqual(t, *factsAt(regCtx, t, f.st, c.ID).Minutes, int64(18))
 		want := a.Reading.Estimate
 		if i == 1 {
 			want = b.Reading.Estimate
@@ -547,22 +547,22 @@ func TestScoringMergeAndSplitAssessOnlyActiveSides(t *testing.T) {
 		regEqual(t, *got.RevenueLow, want.Low)
 		regEqual(t, *got.RevenueConfidence, want.Confidence)
 	}
-	mergedBefore, e := f.st.GetAssessment(regCtx, r.Other)
+	mergedBefore, e := f.st.GetJudgments(regCtx, r.Other)
 	regNoErr(t, e)
 	f.now = f.now.Add(time.Hour)
 	_, _, e = f.st.Decide(regCtx, store.Ruling{Kind: store.KindMerge, Candidate: ids[0], Other: r.Other, Why: "merge", UserID: "owner"})
 	regNoErr(t, e)
-	got, e := f.st.GetAssessment(regCtx, r.Other)
+	got, e := f.st.GetJudgments(regCtx, r.Other)
 	regNoErr(t, e)
 	regEqual(t, got, mergedBefore)
-	survivor, e := f.st.GetAssessment(regCtx, ids[0])
+	survivor, e := f.st.GetJudgments(regCtx, ids[0])
 	regNoErr(t, e)
 	regEqual(t, survivor.Calculated, regTime(f))
 	f.now = f.now.Add(time.Hour)
 	counts, e := f.st.Judge(regCtx, []string{r.Other, "absent", ids[0], ids[0]})
 	regNoErr(t, e)
 	regEqual(t, counts, store.Counts{Judged: 1})
-	got, e = f.st.GetAssessment(regCtx, r.Other)
+	got, e = f.st.GetJudgments(regCtx, r.Other)
 	regNoErr(t, e)
 	regEqual(t, got, mergedBefore)
 	// Failure of random input to a valid split leaves every record untouched.
@@ -581,8 +581,8 @@ func TestScoringMergeAndSplitAssessOnlyActiveSides(t *testing.T) {
 	regEqual(t, len(rulings), 0)
 }
 
-// R-GHLY-TCUG
-func TestResolutionBatchPreservesIntermediateDisplayUpdate(t *testing.T) {
+// R-7KU1-NLTU
+func TestIngestBatchPreservesIntermediateDisplayUpdate(t *testing.T) {
 	batch, single := regNew(t), regNew(t)
 	original := regObs("one", "Original business")
 	_, batchIDs := regAttach(t, batch, "initial-run", original)
@@ -615,8 +615,8 @@ func TestResolutionBatchPreservesIntermediateDisplayUpdate(t *testing.T) {
 	regEqual(t, regLinks(t, batch, id), regLinks(t, single, id))
 }
 
-// R-GHLY-TCUG
-func TestResolutionBatchUnchangedDistinctKeysPreservesDisplayUpdate(t *testing.T) {
+// R-7KU1-NLTU
+func TestIngestBatchUnchangedDistinctKeysPreservesDisplayUpdate(t *testing.T) {
 	batch, single := regNew(t), regNew(t)
 	a, b := regObs("a", "Shared business"), regObs("b", "Shared business")
 	a.Reading.Phone = "320-555-0101"
@@ -649,8 +649,8 @@ func TestResolutionBatchUnchangedDistinctKeysPreservesDisplayUpdate(t *testing.T
 	regEqual(t, regLinks(t, batch, id), regLinks(t, single, id))
 }
 
-// R-GHLY-TCUG
-func TestResolutionBatchPreservesTransientNamesAndCargo(t *testing.T) {
+// R-7KU1-NLTU
+func TestIngestBatchPreservesTransientNamesAndCargo(t *testing.T) {
 	for _, kind := range []string{"names", "cargo"} {
 		t.Run(kind, func(t *testing.T) {
 			batch, single := regNew(t), regNew(t)

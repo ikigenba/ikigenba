@@ -21,6 +21,7 @@ import (
 type Config struct {
 	Banner       func(u page.User) page.Banner
 	MCP          *mcp.Server
+	LegacyMCP    *mcp.Server
 	ServicesPath string
 	Store        *store.Store
 	Passes       *passes.Engine
@@ -36,12 +37,17 @@ func Handler(cfg Config) http.Handler {
 		panic(err)
 	}
 	tools.Register(cfg.MCP, tools.Config{Passes: cfg.Passes, Store: cfg.Store, Website: cfg.Website})
+	var mcpHandler http.Handler = cfg.MCP
+	if cfg.LegacyMCP != nil {
+		tools.RegisterLegacy(cfg.LegacyMCP, tools.Config{Passes: cfg.Passes, Store: cfg.Store, Website: cfg.Website})
+		mcpHandler = tools.Dispatch(cfg.MCP, cfg.LegacyMCP)
+	}
 	ph := pages.Handler(pages.Config{Banner: cfg.Banner, Pages: set, ServicesPath: cfg.ServicesPath, Store: cfg.Store})
 	static := page.Static()
 	gated := identity.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/mcp":
-			cfg.MCP.ServeHTTP(w, r)
+			mcpHandler.ServeHTTP(w, r)
 		case strings.HasPrefix(r.URL.Path, "/_appkit/"):
 			static.ServeHTTP(w, r)
 		default:

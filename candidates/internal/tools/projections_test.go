@@ -11,26 +11,27 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-AWKK-CGKD R-AXSG-Q8B2
+// R-R96N-JYFB R-3LEP-57U1
 func TestJudgmentProjectionFullPrecision(t *testing.T) {
 	op, rc, low, high := .776123456789, .456789123, int64(2400000), int64(3840000)
 	power, drivers, minutes := int64(7), int64(9), int64(123)
-	a := store.Assessment{GovernmentMatch: "chosen-government", Minutes: &minutes, FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, Excluded: true, Operating: &op, Evidence: []sources.Evidence{{Name: "signal", Source: "source", Weight: .6123456789, Description: "chosen-description"}}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &rc, KnownSince: time.Date(2018, 4, 9, 0, 0, 0, 0, time.UTC), NewestFiling: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{{Name: sources.CategoryTrucking, Source: "fmcsa"}, {Name: sources.CategoryConstruction, Source: "ppp"}, {Name: sources.CategoryTrucking, Source: "ppp"}}}
-	got := assessmentOf(a)
-	want := Assessment{GovernmentMatch: "chosen-government", Minutes: &minutes, FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, Excluded: true, OperatingConfidence: &op, OperatingEvidence: []Evidence{{"signal", "source", .6123456789, "chosen-description"}}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &rc, KnownSince: "2018-04-09", NewestFiling: "2020-01-01", ClassifiedBy: "links", RecordCategories: []Category{}, Categories: []Category{{sources.CategoryTrucking, "fmcsa"}, {sources.CategoryConstruction, "ppp"}, {sources.CategoryTrucking, "ppp"}}, Calculated: stamp(a.Calculated)}
+	a := store.Judgments{Excluded: true, Operating: &op, Evidence: []sources.Evidence{{Name: "signal", Source: "source", Weight: .6123456789, Description: "chosen-description"}}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &rc}
+	f := store.Facts{GovernmentMatch: "chosen-government", Minutes: &minutes, FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, KnownSince: time.Date(2018, 4, 9, 0, 0, 0, 0, time.UTC), NewestFiling: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{{Name: sources.CategoryTrucking, Source: "fmcsa"}, {Name: sources.CategoryConstruction, Source: "ppp"}, {Name: sources.CategoryTrucking, Source: "ppp"}}}
+	got := judgmentsOf(a)
+	want := Judgments{Excluded: true, OperatingConfidence: &op, OperatingEvidence: []Evidence{{"signal", "source", .6123456789, "chosen-description"}}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &rc, Calculated: stamp(a.Calculated)}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("%+v", got)
 	}
 	if linkOf(store.Link{}).FleetVerdict != sources.FleetUnknown {
 		t.Fatal("missing legacy fleet verdict")
 	}
-	entry := memberOf(store.Ranked{Assessment: a})
+	entry := memberOf(store.Ranked{Judgments: a, Facts: f})
 	wantMember := Member{Candidate: candidateOf(store.Candidate{}), OperatingConfidence: &op, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &rc, Categories: []string{sources.CategoryConstruction, sources.CategoryTrucking}, ClassifiedBy: "links", FleetVerdict: sources.FleetPass, Minutes: &minutes, GovernmentMatch: "chosen-government", KnownSince: "2018-04-09", NewestFiling: "2020-01-01", Excluded: true}
 	if !reflect.DeepEqual(entry, wantMember) {
 		t.Fatalf("member got %+v want %+v", entry, wantMember)
 	}
 
-	if entry.KnownSince != want.KnownSince || entry.NewestFiling != want.NewestFiling || !entry.Excluded || entry.FleetVerdict != sources.FleetPass {
+	if entry.KnownSince != date(f.KnownSince) || entry.NewestFiling != date(f.NewestFiling) || !entry.Excluded || entry.FleetVerdict != sources.FleetPass {
 		t.Fatal(entry)
 	}
 	if !reflect.DeepEqual(entry.Categories, []string{sources.CategoryConstruction, sources.CategoryTrucking}) || *entry.OperatingConfidence != op || *entry.RevenueConfidence != rc {
@@ -40,7 +41,7 @@ func TestJudgmentProjectionFullPrecision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var decoded Assessment
+	var decoded Judgments
 	if err = json.Unmarshal(b, &decoded); err != nil {
 		t.Fatal(err)
 	}
@@ -49,18 +50,18 @@ func TestJudgmentProjectionFullPrecision(t *testing.T) {
 	}
 }
 
-// R-RK27-M08T R-VO3U-KELY
+// R-Q65V-BAP3 R-VXTE-P293
 func TestWebsiteProjections(t *testing.T) {
 	for _, state := range []string{sources.WebsiteUnknown, sources.WebsiteHTTPS} {
 		url := ""
 		if state == sources.WebsiteHTTPS {
 			url = "https://chosen.test"
 		}
-		a := store.Assessment{Website: state, WebsiteURL: url}
-		if got := assessmentOf(a); got.Website != state || got.WebsiteURL != url {
+		a := store.Facts{Website: state, WebsiteURL: url}
+		if got := factsOf(a); got.Website != state || got.WebsiteURL != url {
 			t.Fatal(got)
 		}
-		if got := memberOf(store.Ranked{Assessment: a}); got.Website != state || got.WebsiteURL != url {
+		if got := memberOf(store.Ranked{Facts: a}); got.Website != state || got.WebsiteURL != url {
 			t.Fatal(got)
 		}
 	}
@@ -68,7 +69,7 @@ func TestWebsiteProjections(t *testing.T) {
 	e := store.Enrichment{Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteHTTPS, URL: "https://chosen.test", Title: "chosen", StatusCode: 200, Size: 33, Error: "chosen-error"}), Source: "chosen.test", Cost: .25, At: at}
 	var wr website.Result
 	_ = json.Unmarshal(e.Found, &wr)
-	wantE := Enrichment{Kind: e.Kind, Source: e.Source, Inputs: e.Inputs, State: wr.State, URL: wr.URL, Title: wr.Title, StatusCode: wr.StatusCode, Size: &wr.Size, Error: wr.Error, Domain: e.Source, Cost: e.Cost, At: stamp(at)}
+	wantE := EnrichmentResult{Kind: e.Kind, Source: e.Source, Inputs: e.Inputs, State: wr.State, URL: wr.URL, Title: wr.Title, StatusCode: wr.StatusCode, Size: &wr.Size, Error: wr.Error, Domain: e.Source, Cost: e.Cost, At: stamp(at)}
 	if got := enrichmentOf(e); !reflect.DeepEqual(got, wantE) {
 		t.Fatal(got, wantE)
 	}
@@ -88,7 +89,7 @@ func TestWebsiteProjections(t *testing.T) {
 	}
 }
 
-// R-VWN5-8SST
+// R-2H60-ISD4
 func TestWebsiteFilterPresence(t *testing.T) {
 	for _, raw := range []string{`{}`, `{"website":null}`, `{"website":[]}`, `{"website":["http","https"],"website_unknown":true}`} {
 		var a FilterArgs
@@ -104,7 +105,7 @@ func TestWebsiteFilterPresence(t *testing.T) {
 			if got.Website == nil || !reflect.DeepEqual(got.Website, *a.Website) || got.WebsiteUnknown != a.WebsiteUnknown {
 				t.Fatal(got, a)
 			}
-			if len(*a.Website) == 0 && store.ValidCohortFilters(got) {
+			if len(*a.Website) == 0 && store.ValidProspectListFilters(got) {
 				t.Fatal("empty website filter accepted")
 			}
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-XE5M-LDTO R-OU7I-97OR R-WPW0-5EVS R-XE5M-LDTO
+// R-29UM-85WY R-OU7I-97OR R-WPW0-5EVS
 func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -29,24 +30,32 @@ func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 	contractEqual(t, after, before)
 	_, err = f.s.GetFacts(ctx, id)
 	contractError(t, err, store.ErrNotFound)
+	unknownList := prospectListCreate(t, f, "unknown facts")
+	unknown := prospectListRead(t, f, unknownList).Members
+	contractEqual(t, len(unknown), 1)
+	contractEqual(t, unknown[0].Facts, store.Facts{Candidate: id, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown, Categories: []sources.Category{}, Records: []sources.Category{}})
+	unknownJudgments, err := f.s.GetJudgments(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, unknown[0].Judgments, unknownJudgments)
 	deriveAll(t, f.s)
 	facts, err := f.s.GetFacts(ctx, id)
 	contractOK(t, err)
 	_, err = f.s.Judge(ctx, []string{id})
 	contractOK(t, err)
-	old, err := f.s.GetAssessment(ctx, id)
+	old, err := f.s.GetJudgments(ctx, id)
 	contractOK(t, err)
-	cohort := cohortCreate(t, f, "facts live")
+	prospectList := prospectListCreate(t, f, "facts live")
 	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{websiteResult(id, sources.WebsiteHTTPS)})
 	contractOK(t, err)
-	current, err := f.s.GetAssessment(ctx, id)
+	current, err := f.s.GetJudgments(ctx, id)
 	contractOK(t, err)
-	contractEqual(t, current.Website, sources.WebsiteHTTPS)
+	contractEqual(t, factsAt(ctx, t, f.s, id).Website, sources.WebsiteHTTPS)
 	contractEqual(t, current.Calculated, old.Calculated)
 	contractEqual(t, current.Operating, old.Operating)
-	members := cohortRead(t, f, cohort).Members
+	members := prospectListRead(t, f, prospectList).Members
 	contractEqual(t, len(members), 1)
-	contractEqual(t, members[0].Assessment.Website, sources.WebsiteHTTPS)
+	contractEqual(t, members[0].Facts, factsAt(ctx, t, f.s, id))
+	contractEqual(t, members[0].Judgments, current)
 	// A ZIP replacement and raw enrichment write do not change the facts row.
 	c, err := f.s.GetCandidate(ctx, id)
 	contractOK(t, err)
@@ -60,17 +69,17 @@ func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 	}))
 	_, err = f.s.Judge(ctx, []string{id})
 	contractOK(t, err)
-	judged, err := f.s.GetAssessment(ctx, id)
+	_, err = f.s.GetJudgments(ctx, id)
 	contractOK(t, err)
-	contractEqual(t, judged.Website, sources.WebsiteHTTPS)
-	contractEqual(t, judged.Minutes, saved.Minutes)
+	contractEqual(t, factsAt(ctx, t, f.s, id).Website, sources.WebsiteHTTPS)
+	contractEqual(t, factsAt(ctx, t, f.s, id).Minutes, saved.Minutes)
 	got, err := f.s.GetFacts(ctx, id)
 	contractOK(t, err)
 	contractEqual(t, got, saved)
 	contractEqual(t, facts.Website, sources.WebsiteUnknown)
 }
 
-// R-AZ25-CAGJ R-UKW5-55RN R-R7HY-562T R-LD70-4W25 R-UJO8-RE0Y R-MTHW-1S6E
+// R-PWRA-LW9H R-35K0-6770 R-R7HY-562T R-LD70-4W25 R-MTHW-1S6E
 func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -93,7 +102,7 @@ func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	contractOK(t, err)
 	_, err = f.s.Judge(ctx, []string{other})
 	contractOK(t, err)
-	old, err := f.s.GetAssessment(ctx, other)
+	old, err := f.s.GetJudgments(ctx, other)
 	contractOK(t, err)
 	oldCandidate, err := f.s.GetCandidate(ctx, other)
 	contractOK(t, err)
@@ -114,9 +123,8 @@ func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	oldCandidate.MergedInto = survivor
 	oldCandidate.Updated = f.now.UTC().Truncate(time.Second)
 	contractEqual(t, cs[1], oldCandidate)
-	merged, err := f.s.GetAssessment(ctx, other)
+	merged, err := f.s.GetJudgments(ctx, other)
 	contractOK(t, err)
-	old.WebsiteSource = ""
 	contractEqual(t, merged, old)
 	estimates, err := f.s.Estimates(ctx, other)
 	contractOK(t, err)
@@ -194,7 +202,7 @@ func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	contractEqual(t, facts, beforeFacts)
 }
 
-// R-OSZL-VFY2 R-OU7I-97OR R-OECT-A71Q R-WPW0-5EVS R-MTHW-1S6E
+// R-Z1VJ-IZ0R R-OU7I-97OR R-WNFA-Q8TO R-WPW0-5EVS R-MTHW-1S6E
 func TestOrdinaryWritesPreserveFactsAndResultHistory(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -339,4 +347,14 @@ func TestFactsProjectionUsesNewestResultOfEveryKind(t *testing.T) {
 	got, err = f.s.GetFacts(ctx, id)
 	contractOK(t, err)
 	contractEqual(t, got, expected)
+}
+
+func factsAt(ctx context.Context, t *testing.T, s *store.Store, id string) store.Facts {
+	t.Helper()
+	f, err := s.GetFacts(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.Facts{Candidate: id, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown, Categories: []sources.Category{}, Records: []sources.Category{}}
+	}
+	contractOK(t, err)
+	return f
 }

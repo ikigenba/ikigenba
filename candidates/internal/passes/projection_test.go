@@ -19,8 +19,8 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-37CV-BB9N
-func TestRebuildReprojectsUnchangedLinkFactsBeforeHistoricalJudgment(t *testing.T) {
+// R-VMUB-94KU
+func TestFullIngestReprojectsUnchangedLinkFacts(t *testing.T) {
 	ctx := context.Background()
 	rows := []scrapes.Row{
 		{Scraper: fmcsa.Name, SourceID: "hire", Digest: "hire", Name: "Hire Carrier", Facts: map[string]json.RawMessage{"class": json.RawMessage(`"AUTHORIZED FOR HIRE"`)}},
@@ -47,7 +47,7 @@ func TestRebuildReprojectsUnchangedLinkFactsBeforeHistoricalJudgment(t *testing.
 			return
 		}
 		for _, row := range selected {
-			_ = json.NewEncoder(w).Encode(map[string]any{"scraper": row.Scraper, "run": scraper + "-current", "source_id": row.SourceID, "digest": row.Digest, "name": row.Name, "collected": "2000-01-01T00:00:00Z", "names": []string{}, "people": []any{}, "facts": row.Facts, "raw": map[string]any{}, "address": map[string]any{}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"scraper": row.Scraper, "run": scraper + "-current", "source_id": row.SourceID, "digest": row.Digest, "name": row.Name, "scraped": "2000-01-01T00:00:00Z", "names": []string{}, "people": []any{}, "facts": row.Facts, "raw": map[string]any{}, "address": map[string]any{}})
 		}
 	}, true)
 	ids := map[string]string{}
@@ -94,7 +94,7 @@ func TestRebuildReprojectsUnchangedLinkFactsBeforeHistoricalJudgment(t *testing.
 		t.Fatal(err)
 	}
 	f.eng = passes.New(passes.Config{Store: f.st, Sources: sources.New(fmcsa.New(), ppp.New()), Scrapes: f.sc, Telemetry: f.w, Events: f.em})
-	p, err := f.eng.Rebuild(ctx, identity.Caller{UserID: "owner"})
+	p, err := f.eng.Ingest(ctx, identity.Caller{UserID: "owner"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,10 +111,6 @@ func TestRebuildReprojectsUnchangedLinkFactsBeforeHistoricalJudgment(t *testing.
 		if err != nil || !reflect.DeepEqual(facts.Categories, want) {
 			t.Fatal(key, facts, err)
 		}
-		a, err := f.st.GetAssessment(ctx, ids[key])
-		if err != nil || !reflect.DeepEqual(a.Categories, want) {
-			t.Fatal(key, a, err)
-		}
 	}
 	after, err := f.st.Enrichments(ctx, ids["brief"])
 	if err != nil {
@@ -122,12 +118,5 @@ func TestRebuildReprojectsUnchangedLinkFactsBeforeHistoricalJudgment(t *testing.
 	}
 	if after[0].Kind != enrichers.KindLinkFacts || !bytes.Equal(after[0].Found, original) {
 		t.Fatal("link facts changed", after)
-	}
-	if _, _, err := f.st.Decide(ctx, store.Ruling{Kind: store.KindMerge, Candidate: ids["hire"], Other: ids["brief"], UserID: "owner", Why: "projection history fixture"}); err != nil {
-		t.Fatal(err)
-	}
-	a, err := f.st.GetAssessment(ctx, ids["brief"])
-	if err != nil || !reflect.DeepEqual(a.Categories, []sources.Category{{Name: sources.CategoryRetail, Source: enrichers.KindBrief}}) {
-		t.Fatal(a, err)
 	}
 }

@@ -13,7 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-DUEN-N7F8 R-DVMK-0Z5X R-DWUG-EQWM R-DY2C-SINB R-DZA9-6AE0 R-E2XY-BLM3 R-E45U-PDCS R-NDOT-KDNW
+// R-DUEN-N7F8 R-DVMK-0Z5X R-DWUG-EQWM R-DY2C-SINB R-DZA9-6AE0 R-E2XY-BLM3 R-E45U-PDCS R-PT3L-GL1E
 func TestSearchEnrichmentProjection(t *testing.T) {
 	zero, one := 0, 1
 	full := enrichers.WebsiteSearchFound{Run: enrichers.WebsiteSearchRun{ID: "r1", Status: enrichers.RunExited, ExitCode: &zero}, Answer: &enrichers.WebsiteSearchAnswer{URL: "https://acme.test/", Why: "chosen-why", Rejected: []enrichers.WebsiteSearchSite{{URL: "https://other.test/", Why: "chosen-rejection"}, {URL: "https://third.test/"}}}, Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteHTTPS, URL: "https://www.acme.test/", Title: "chosen-title", StatusCode: 200, Size: 1256}}
@@ -53,7 +53,7 @@ func TestSearchEnrichmentProjection(t *testing.T) {
 	}
 }
 
-// R-N55I-VZH1 R-E1Q1-XTVE R-NB90-SU6I R-EBH8-ZZSY R-E0I5-K24P
+// R-Q5AL-AAGC R-E1Q1-XTVE R-M6MC-J4P3 R-ZAJG-KCNU R-E0I5-K24P
 func TestSearchWebsiteCandidateAndMember(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	_, ids, err := cfg.Store.Attach(t.Context(), "run", false, []store.Observation{{Scraper: "fixture", SourceID: "row", Digest: "digest", Reading: sources.Reading{Name: "search-business", NameKey: "search-business"}}})
@@ -64,7 +64,7 @@ func TestSearchWebsiteCandidateAndMember(t *testing.T) {
 	if _, err = cfg.Store.JudgeAll(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	co, err := cfg.Store.CreateCohort(t.Context(), store.Cohort{Name: "search-cohort", Size: 10, CreatedUserID: "owner"})
+	co, err := cfg.Store.CreateProspectList(t.Context(), store.ProspectList{Name: "search-prospect_list", Size: 10, CreatedUserID: "owner"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,21 +82,21 @@ func TestSearchWebsiteCandidateAndMember(t *testing.T) {
 	if got.Candidate.WebsiteSource != store.WebsiteBySearch || got.Candidate.Website != sources.WebsiteHTTPS || got.Candidate.WebsiteURL != f.Confirmation.URL || got.Candidate.WebsiteTitle != f.Confirmation.Title || got.Candidate.WebsiteWhy != f.Answer.Why || got.Candidate.WebsiteChecked == "" {
 		t.Fatal(got.Candidate)
 	}
-	if len(got.Enrichments) != 2 || got.Enrichments[0].Run.ID != f.Run.ID || got.Enrichments[0].Failed || got.Facts == nil {
+	if len(got.EnrichmentResults) != 2 || got.EnrichmentResults[0].Run.ID != f.Run.ID || got.EnrichmentResults[0].Failed || got.Enrichments.Facts == nil {
 		t.Fatal(got)
 	}
 	written := false
-	for _, w := range got.Facts.Written {
+	for _, w := range got.Enrichments.Facts.Written {
 		if w.Kind == enrichers.KindWebsiteSearch {
 			written = true
 		}
 	}
 	if !written {
-		t.Fatal(got.Facts)
+		t.Fatal(got.Enrichments.Facts)
 	}
 	checkMember := func(source, state, url string) {
 		t.Helper()
-		view := pageCohort(t, cfg, co.ID)
+		view := pageProspectList(t, cfg, co.ID)
 		if len(view.Members) != 1 {
 			t.Fatal(view)
 		}
@@ -126,7 +126,7 @@ func TestSearchWebsiteCandidateAndMember(t *testing.T) {
 	}
 }
 
-// R-EF4Y-5B11
+// R-XRNZ-COAL
 func TestWebsiteSearchTemplateStates(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -141,27 +141,27 @@ func TestWebsiteSearchTemplateStates(t *testing.T) {
 	for _, source := range []string{"", store.WebsiteByCheck, store.WebsiteBySearch} {
 		for _, state := range []string{sources.WebsiteHTTPS, sources.WebsiteHTTP, sources.WebsiteNone, sources.WebsiteUnknown} {
 			for _, text := range []string{"", "chosen-value"} {
-				d := CandidateData{Candidate: CandidateView{Status: store.StatusActive, WebsiteSource: source, Website: state, WebsiteURL: text, WebsiteTitle: text, WebsiteWhy: text, WebsiteChecked: text, WebsiteCheckedText: text}, Facts: &FactsView{Written: []WrittenRow{{Kind: enrichers.KindWebsiteSearch}}}}
+				d := CandidateData{Candidate: CandidateView{Status: store.StatusActive, WebsiteSource: source, Website: state, WebsiteURL: text, WebsiteTitle: text, WebsiteWhy: text, WebsiteChecked: text, WebsiteCheckedText: text}, Enrichments: &EnrichmentsView{Facts: &FactsView{Written: []WrittenRow{{Kind: enrichers.KindWebsiteSearch}}}}}
 				for _, failed := range []bool{false, true} {
 					for n := 0; n < 3; n++ {
 						r := EnrichmentRow{Kind: enrichers.KindWebsiteSearch, Found: []FactRow{}, Failed: failed, Cost: text, Run: &RunView{ID: text, Status: text, ExitCode: text}}
-						render("candidate", CandidateData{Candidate: d.Candidate, Enrichments: []EnrichmentRow{r}})
+						render("candidate", CandidateData{Candidate: d.Candidate, EnrichmentResults: []EnrichmentRow{r}})
 						r.Answer = &AnswerView{URL: text, Why: text, Rejected: []RejectedRow{}}
 						for i := 0; i < n; i++ {
 							r.Answer.Rejected = append(r.Answer.Rejected, RejectedRow{URL: text, Why: text})
 						}
-						d.Enrichments = []EnrichmentRow{r}
+						d.EnrichmentResults = []EnrichmentRow{r}
 						render("candidate", d)
 						r.Confirmation = &ConfirmationView{State: state, URL: text, Title: text, StatusCode: text, Size: 1256, Error: text}
-						d.Enrichments = []EnrichmentRow{r, {Kind: enrichers.KindLinkFacts}, {Kind: sources.WebsiteCheck}}
+						d.EnrichmentResults = []EnrichmentRow{r, {Kind: enrichers.KindLinkFacts}, {Kind: sources.WebsiteCheck}}
 						render("candidate", d)
 					}
 				}
-				render("cohort", CohortData{Members: []MemberRow{{WebsiteSource: source, Website: state, WebsiteURL: text}}})
+				render("prospect_list", ProspectListData{Members: []MemberRow{{WebsiteSource: source, Website: state, WebsiteURL: text}}})
 			}
 		}
 	}
-	render("pass", PassData{Pass: PassView{Kind: store.KindEnrichCohort, EnrichKind: enrichers.KindWebsiteSearch, Runs: 2, RunsFailed: 1, Cost: "$0.023714"}})
+	render("pass", PassData{Pass: PassView{Kind: store.KindEnrichTarget, EnrichKind: enrichers.KindWebsiteSearch, Runs: 2, RunsFailed: 1, Cost: "$0.023714"}})
 }
 
 // R-DVMK-0Z5X R-DWUG-EQWM R-DY2C-SINB R-DZA9-6AE0
@@ -201,21 +201,20 @@ func TestWebsiteSearchDecisionHistory(t *testing.T) {
 	}
 }
 
-// R-N55I-VZH1 R-E0I5-K24P
+// R-Q5AL-AAGC R-E0I5-K24P
 func TestCandidateAndMemberViewShapes(_ *testing.T) {
 	_ = struct {
-		Banner      page.Banner
-		Candidate   CandidateView
-		Facts       *FactsView
-		Brief       *BriefView
-		Assessment  *AssessmentView
-		Estimates   []EstimateView
-		Links       []LinkView
-		Rulings     []RulingView
-		Pages       []PageRow
-		Enrichments []EnrichmentRow
-		Rejects     []RejectRecordRow
-		Campaigns   []CampaignRow
+		Banner            page.Banner
+		Candidate         CandidateView
+		Enrichments       *EnrichmentsView
+		Judgments         *JudgmentsView
+		Estimates         []EstimateView
+		Links             []LinkView
+		Rulings           []RulingView
+		Pages             []PageRow
+		EnrichmentResults []EnrichmentRow
+		Rejects           []RejectRecordRow
+		Campaigns         []CampaignRow
 	}(CandidateData{})
 	_ = struct {
 		ID, Status, MergedInto, Name                                                                                                                     string
@@ -231,7 +230,7 @@ func TestCandidateAndMemberViewShapes(_ *testing.T) {
 		Size                           int64
 		Fetched, FetchedText, By, User string
 	}(PageRow{})
-	_ = struct{ Kind, Cohort, CohortName, By, User, At, AtText, Why string }(RejectRecordRow{})
+	_ = struct{ Kind, ProspectList, ProspectListName, By, User, At, AtText, Why string }(RejectRecordRow{})
 	_ = struct {
 		Rank                                                                                                                                                                                                  int64
 		ID, Name, City, State, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence                                                                                                                string

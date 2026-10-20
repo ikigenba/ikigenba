@@ -114,7 +114,7 @@ func statementPlan(t *testing.T, f *contractFixture, query windowStatement, args
 	return details
 }
 
-// R-CT65-2PPQ R-CUE1-GHGF
+// R-VANB-FF5W R-XWJK-VR9D
 func TestWindowStatementsMatchStoreWindows(t *testing.T) {
 	f := statementFixture(t)
 	ctx := context.Background()
@@ -174,7 +174,7 @@ func TestWindowStatementsMatchStoreWindows(t *testing.T) {
 	}
 }
 
-// R-CT65-2PPQ
+// R-VANB-FF5W
 func TestWindowStatementParameterCounts(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -198,7 +198,7 @@ func TestWindowStatementParameterCounts(t *testing.T) {
 	}
 }
 
-// R-CVLX-U974 R-CWTU-80XT
+// R-RXX9-K4R5 R-U8UF-KJ6D
 func TestWindowStatementsSeekAndAvoidTemporarySorting(t *testing.T) {
 	for _, populated := range []bool{false, true} {
 		t.Run(fmt.Sprint(populated), func(t *testing.T) {

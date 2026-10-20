@@ -31,8 +31,8 @@ func judgeDelivery(id string) events.Delivery {
 	return events.Delivery{Event: events.Event{Name: trail.AcceptedJudge, ID: id, Attrs: events.Attrs{"anything": true}}}
 }
 
-// R-ZRW3-1A2O R-T04G-UXAU R-SWGR-PM2R R-2V5V-HLUP R-2TXZ-3U40
-func TestJudgeSeparatesIngestFromAssessment(t *testing.T) {
+// R-ZRW3-1A2O R-2UPL-VAID R-3QEZ-TBSF R-48KS-EUX8 R-XU3S-47RZ
+func TestJudgeSeparatesIngestFromJudgments(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/runs/run_a/record" {
 			record(w, "run_a", 2, "done")
@@ -51,7 +51,7 @@ func TestJudgeSeparatesIngestFromAssessment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.st.GetAssessment(context.Background(), ids[0]); !errors.Is(err, store.ErrNotFound) {
+	if _, err = f.st.GetJudgments(context.Background(), ids[0]); !errors.Is(err, store.ErrNotFound) {
 		t.Fatal(err)
 	}
 	held := make(chan struct{})
@@ -87,7 +87,7 @@ func TestJudgeSeparatesIngestFromAssessment(t *testing.T) {
 		return p
 	}
 	first := judge("first-fire")
-	a, err := f.st.GetAssessment(context.Background(), ids[0])
+	a, err := f.st.GetJudgments(context.Background(), ids[0])
 	if err != nil || len(a.Evidence) != 1 || a.Evidence[0].Name != sources.EvidenceFMCSAActive || first.Judged != 1 || a.Calculated.Before(first.Started) || a.Calculated.After(first.Finished) {
 		t.Fatal(a, first, err)
 	}
@@ -105,7 +105,7 @@ func TestJudgeSeparatesIngestFromAssessment(t *testing.T) {
 	if ip.Kind != store.KindIngest || ip.Origin != store.OriginRun || ip.Judged != 0 || ip.Unranged != 0 {
 		t.Fatal(ip)
 	}
-	after, err := f.st.GetAssessment(context.Background(), ids[0])
+	after, err := f.st.GetJudgments(context.Background(), ids[0])
 	if err != nil || !reflect.DeepEqual(a, after) {
 		t.Fatal(after, a, err)
 	}
@@ -115,7 +115,7 @@ func TestJudgeSeparatesIngestFromAssessment(t *testing.T) {
 	}
 	for _, c := range cs {
 		if c.ID != ids[0] {
-			if _, err := f.st.GetAssessment(context.Background(), c.ID); !errors.Is(err, store.ErrNotFound) {
+			if _, err := f.st.GetJudgments(context.Background(), c.ID); !errors.Is(err, store.ErrNotFound) {
 				t.Fatal(err)
 			}
 		}
@@ -125,14 +125,14 @@ func TestJudgeSeparatesIngestFromAssessment(t *testing.T) {
 		t.Fatal(second)
 	}
 	for _, c := range cs {
-		a, err := f.st.GetAssessment(context.Background(), c.ID)
+		a, err := f.st.GetJudgments(context.Background(), c.ID)
 		if err != nil || len(a.Evidence) != 0 || !a.Calculated.Equal(second.Started) {
 			t.Fatal(a, err)
 		}
 	}
 }
 
-// R-T04G-UXAU
+// R-2UPL-VAID
 func TestJudgeNeedsNoScrapesAndHonorsRefusals(t *testing.T) {
 	f := newFixture(t, nil, false)
 	if out := f.eng.Deliver(context.Background(), judgeDelivery("nil-client")); out != events.OK() {
@@ -177,7 +177,7 @@ func TestJudgeNeedsNoScrapesAndHonorsRefusals(t *testing.T) {
 	}
 }
 
-// R-ZH16-3I6T R-T9VN-X38E
+// R-ZH16-3I6T R-TD51-MHWB
 func TestDrainDeadlineAfterEndingHasAlreadyBlocked(t *testing.T) {
 	f := newFixture(t, nil, false)
 	f.eng.Drain(context.Background())

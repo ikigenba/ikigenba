@@ -15,8 +15,8 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// EnrichCohort starts one enrichment kind over a fixed cohort or candidate.
-func (e *Engine) EnrichCohort(ctx context.Context, c identity.Caller, kind, target string, force bool) (store.Pass, error) {
+// EnrichTarget starts one enrichment kind over a fixed prospect list or candidate.
+func (e *Engine) EnrichTarget(ctx context.Context, c identity.Caller, kind, target string, force bool) (store.Pass, error) {
 	if e.stopping.Load() {
 		return store.Pass{}, &Refusal{Word: RefusalStopping}
 	}
@@ -26,8 +26,8 @@ func (e *Engine) EnrichCohort(ctx context.Context, c identity.Caller, kind, targ
 	}
 	targets := []string{}
 	switch {
-	case store.ValidCohortID(target):
-		read, err := e.cfg.Store.ReadCohort(e.ctx, target)
+	case store.ValidProspectListID(target):
+		read, err := e.cfg.Store.ReadProspectList(e.ctx, target)
 		if err != nil {
 			return store.Pass{}, targetReadError(err)
 		}
@@ -71,7 +71,7 @@ func (e *Engine) EnrichCohort(ctx context.Context, c identity.Caller, kind, targ
 	if e.stopping.Load() {
 		return store.Pass{}, &Refusal{Word: RefusalStopping}
 	}
-	p, err := e.cfg.Store.AddPass(e.ctx, store.Pass{Kind: store.KindEnrichCohort, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, Target: target, EnrichKind: kind, UserID: c.UserID, UserEmail: c.Email, RequestID: c.RequestID})
+	p, err := e.cfg.Store.AddPass(e.ctx, store.Pass{Kind: store.KindEnrichTarget, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, Target: target, EnrichKind: kind, UserID: c.UserID, UserEmail: c.Email, RequestID: c.RequestID})
 	if err != nil && e.stopping.Load() {
 		return store.Pass{}, &Refusal{Word: RefusalStopping}
 	}

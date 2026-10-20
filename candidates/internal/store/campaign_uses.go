@@ -8,19 +8,19 @@ import (
 
 // CampaignUse records a campaign's use of one business.
 type CampaignUse struct {
-	Candidate, Campaign, Cohort string
-	Added, Rejected             time.Time
-	Reason                      string
-	Delivered                   time.Time
+	Candidate, Campaign, ProspectList string
+	Added, Rejected                   time.Time
+	Reason                            string
+	Delivered                         time.Time
 }
 
-var campaignUseColumns = columns("candidate:Candidate campaign:Campaign cohort:Cohort added:Added rejected:Rejected reason:Reason delivered:Delivered")
+var campaignUseColumns = columns("candidate:Candidate campaign:Campaign prospect_list:ProspectList added:Added rejected:Rejected reason:Reason delivered:Delivered")
 
-// AddCampaignUse keeps the earliest add and its originating cohort.
-func (s *Store) AddCampaignUse(ctx context.Context, candidate, campaign, cohort string, at time.Time) error {
+// AddCampaignUse keeps the earliest add and its originating prospectList.
+func (s *Store) AddCampaignUse(ctx context.Context, candidate, campaign, prospectList string, at time.Time) error {
 	return s.writeCampaignUse(ctx, candidate, campaign, at, func(u *CampaignUse, a time.Time, _ bool) {
 		if u.Added.IsZero() || a.Before(u.Added) {
-			u.Added, u.Cohort = a, cohort
+			u.Added, u.ProspectList = a, prospectList
 		}
 	})
 }
@@ -112,7 +112,7 @@ func mergeCampaignUses(ctx context.Context, tx *sql.Tx, survivor, other string) 
 			u.Candidate = survivor
 		} else {
 			if !v.Added.IsZero() && (u.Added.IsZero() || v.Added.Before(u.Added)) {
-				u.Added, u.Cohort = v.Added, v.Cohort
+				u.Added, u.ProspectList = v.Added, v.ProspectList
 			}
 			if !v.Rejected.IsZero() && (u.Rejected.IsZero() || v.Rejected.Before(u.Rejected)) {
 				u.Rejected, u.Reason = v.Rejected, v.Reason

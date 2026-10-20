@@ -58,7 +58,7 @@ func wantPage(p store.Page) tools.Page {
 	return tools.Page{p.Number, p.URL, p.Title, p.Size, stamp(p.Fetched), p.UserID, p.UserEmail, urls.PagePath(p.Candidate, p.Number)}
 }
 
-// R-OA9E-OG3G R-OCP7-FZKU R-OGCW-LASX R-OK0L-QM10 R-OQ43-NGQH
+// R-OA9E-OG3G R-OCP7-FZKU R-OGCW-LASX R-OK0L-QM10 R-QM0K-ABC4
 func TestPageSchemaAndJSON(t *testing.T) {
 	f := newFixture(t)
 	infos, err := f.client.ListTools(t.Context(), caller)
@@ -91,7 +91,7 @@ func TestPageSchemaAndJSON(t *testing.T) {
 	}
 }
 
-// R-P2B3-H65F R-M3JT-JKMP R-GADH-O9XX R-P76P-0947
+// R-P2B3-H65F R-M3JT-JKMP R-GADH-O9XX R-QQW5-TEAW
 func TestAddPageRefusals(t *testing.T) {
 	var requests atomic.Int64
 	k := pageChecker(&requests)
@@ -148,7 +148,7 @@ func TestAddPageRefusals(t *testing.T) {
 	}
 }
 
-// R-M2BX-5SW0 R-OQ43-NGQH R-OSJW-F07V R-WWFP-L72E
+// R-Q02D-EFZM R-QM0K-ABC4 R-1J0T-T7LO R-QEP5-ZOVY
 func TestAddPageCopiesAndCandidateHistory(t *testing.T) {
 	var requests atomic.Int64
 	k := pageChecker(&requests)
@@ -245,12 +245,12 @@ func TestAddPageCapCountsURLs(t *testing.T) {
 	}
 }
 
-// R-ORC0-18H6 R-WO2V-5M7K R-M4RP-XCDE
+// R-OGBM-5RDM R-PRJ2-Q1SR R-PP39-YIBD
 func TestSiteTextProjection(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
 	co := f.create("site projection")
-	before := decodeList[tools.CohortRead](t, f.call("cohort", tools.CohortArgs{Cohort: co.ID}))
+	before := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: co.ID}))
 	if len(before.Members) != 1 || before.Members[0].SiteText != nil {
 		t.Fatal(before)
 	}
@@ -261,12 +261,12 @@ func TestSiteTextProjection(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		after := decodeList[tools.CohortRead](t, f.call("cohort", tools.CohortArgs{Cohort: co.ID}))
+		after := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: co.ID}))
 		if after.Matching != before.Matching || after.Members[0].Candidate.ID != id || after.Members[0].SiteText == nil || *after.Members[0].SiteText != stamp(f.now) {
 			t.Fatal(after)
 		}
 		detail := decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: id}))
-		e := detail.Enrichments[0]
+		e := detail.EnrichmentResults[0]
 		if e.Kind != enrichers.KindSiteText || e.Source != enrichers.SourcePrompts || e.Inputs != "site-input" || e.Cost != 0.0000001 || string(e.Found) != string(found) || e.At != stamp(f.now) {
 			t.Fatal(e)
 		}

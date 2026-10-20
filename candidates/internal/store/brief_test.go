@@ -36,7 +36,7 @@ func briefResult(t *testing.T, id, summary string, failed bool, names ...string)
 	return store.Enrichment{Candidate: id, Kind: enrichers.KindBrief, Inputs: "page-inputs", Source: enrichers.SourcePrompts, Found: raw}
 }
 
-// R-X5MB-WZMT R-X9A1-2AUW R-NJRO-EC1G R-XE5M-LDTO
+// R-X5MB-WZMT R-X9A1-2AUW R-N7DR-ZBTP R-29UM-85WY
 func TestBriefProjectionKeepsGoodSummaryAndNewestAttempt(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -44,7 +44,7 @@ func TestBriefProjectionKeepsGoodSummaryAndNewestAttempt(t *testing.T) {
 	deriveAll(t, f.s)
 	_, err := f.s.Judge(ctx, []string{id})
 	contractOK(t, err)
-	k := cohortCreate(t, f, "brief members")
+	k := prospectListCreate(t, f, "brief members")
 	lf, err := json.Marshal(enrichers.LinkFound{Categories: []enrichers.Category{{Name: sources.CategoryConstruction, Source: ppp.Name}, {Name: sources.CategoryTrucking, Source: fmcsa.Name}}, FleetVerdict: sources.FleetPass})
 	contractOK(t, err)
 	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{{Candidate: id, Kind: enrichers.KindLinkFacts, Inputs: "replacement-links", Source: enrichers.SourceLinks, Found: lf}})
@@ -71,14 +71,14 @@ func TestBriefProjectionKeepsGoodSummaryAndNewestAttempt(t *testing.T) {
 	contractEqual(t, failed.Brief, good.Brief)
 	contractEqual(t, failed.Categories, good.Categories)
 	contractEqual(t, failed.Written[0], store.Written{Kind: enrichers.KindBrief, At: f.now.UTC().Truncate(time.Second)})
-	members := cohortRead(t, f, k).Members
+	members := prospectListRead(t, f, k).Members
 	contractEqual(t, len(members), 1)
 	contractEqual(t, members[0].Brief, f.now.UTC().Truncate(time.Second))
-	contractEqual(t, members[0].Assessment.Categories, failed.Categories)
-	filters := store.CohortFilters{Categories: []string{sources.CategoryRetail}}
-	k, err = f.s.EditCohort(ctx, store.CohortEdit{ID: k.ID, Filters: &filters, UserID: "owner"})
+	contractEqual(t, members[0].Facts.Categories, failed.Categories)
+	filters := store.ProspectListFilters{Categories: []string{sources.CategoryRetail}}
+	k, err = f.s.EditProspectList(ctx, store.ProspectListEdit{ID: k.ID, Filters: &filters, UserID: "owner"})
 	contractOK(t, err)
-	contractEqual(t, len(cohortRead(t, f, k).Members), 1)
+	contractEqual(t, len(prospectListRead(t, f, k).Members), 1)
 	f.reopen()
 	persisted, err := f.s.GetFacts(ctx, id)
 	contractOK(t, err)
@@ -222,23 +222,23 @@ func TestBriefMigrationAndRollbackWriter(t *testing.T) {
 	}
 }
 
-// R-NJRO-EC1G
-func TestCohortBriefUsesNewestAttemptAndIgnoresOtherKinds(t *testing.T) {
+// R-N7DR-ZBTP
+func TestProspectListBriefUsesNewestAttemptAndIgnoresOtherKinds(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
 	id := contractSeed(t, f)
 	other := enrichmentCandidate(t, f, "no-brief", "owner@no-brief.test")
 	_, err := f.s.JudgeAll(ctx)
 	contractOK(t, err)
-	k := cohortCreate(t, f, "newest brief attempts")
-	before := cohortRead(t, f, k)
+	k := prospectListCreate(t, f, "newest brief attempts")
+	before := prospectListRead(t, f, k)
 	contractEqual(t, len(before.Members), 2)
 	for _, failed := range []bool{false, true} {
 		f.now = f.now.Add(time.Second)
 		_, err = f.s.AddEnrichments(ctx, []store.Enrichment{briefResult(t, id, "summary", failed)})
 		contractOK(t, err)
-		read := cohortRead(t, f, k)
-		contractEqual(t, cohortIDs(read.Members), cohortIDs(before.Members))
+		read := prospectListRead(t, f, k)
+		contractEqual(t, prospectListIDs(read.Members), prospectListIDs(before.Members))
 		contractEqual(t, read.Matching, before.Matching)
 		for _, m := range read.Members {
 			if m.Candidate.ID == id {
@@ -249,13 +249,13 @@ func TestCohortBriefUsesNewestAttemptAndIgnoresOtherKinds(t *testing.T) {
 			}
 		}
 	}
-	before = cohortRead(t, f, k)
+	before = prospectListRead(t, f, k)
 	f.now = f.now.Add(time.Second)
 	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{siteTextResult(t, id, enrichers.RunExited)})
 	contractOK(t, err)
-	read := cohortRead(t, f, k)
+	read := prospectListRead(t, f, k)
 	contractEqual(t, read.Matching, before.Matching)
-	contractEqual(t, cohortIDs(read.Members), cohortIDs(before.Members))
+	contractEqual(t, prospectListIDs(read.Members), prospectListIDs(before.Members))
 	for i, m := range read.Members {
 		contractEqual(t, m.Brief, before.Members[i].Brief)
 	}

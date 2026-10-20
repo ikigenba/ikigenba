@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -63,7 +64,7 @@ func fixture(t *testing.T) (web.Config, *db.DB, *telemetry.Capture, *events.Capt
 	})
 	return web.Config{func(u page.User) page.Banner {
 		return page.Banner{Service: pages.ServiceName, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
-	}, mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: w}), "", st, eng, w, em, nil}, d, tc, ec
+	}, mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: w}), nil, "", st, eng, w, em, nil}, d, tc, ec
 }
 func request(h http.Handler, method, path, body, user string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, "https://candidates.example.test"+path, strings.NewReader(body))
@@ -243,7 +244,7 @@ func TestMCPContextAndTools(t *testing.T) {
 	}
 }
 
-// R-TJ66-KD0B: a failing store prevents a pass from starting.
+// R-R6QU-SEXX: a failing store prevents a pass from starting.
 func TestFailingStoreEmitsNoPassEvent(t *testing.T) {
 	cfg, d, capture, bus := fixture(t)
 	cfg.Website = &website.Checker{}
@@ -253,7 +254,7 @@ func TestFailingStoreEmitsNoPassEvent(t *testing.T) {
 	defer srv.Close()
 	d.SetFailing(true)
 	client := mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL + "/mcp"})
-	result, err := client.CallTool(context.Background(), identity.Caller{UserID: "caller"}, "rebuild", json.RawMessage(`{}`))
+	result, err := client.CallTool(context.Background(), identity.Caller{UserID: "caller"}, "ingest", json.RawMessage(`{}`))
 	if err != nil || !result.IsError() {
 		t.Fatal(result, err)
 	}
@@ -291,18 +292,18 @@ func TestFailingStoreEmitsNoPassEvent(t *testing.T) {
 	}
 }
 
-// R-5I52-WLRP
+// R-Q3Q2-JR7P
 func TestLifecycleDeclarationsIncludeDerived(t *testing.T) {
 	cfg, _, _, _ := fixture(t)
 	cfg.Passes = passes.New(passes.Config{Store: cfg.Store, Sources: sources.New(fmcsa.New(), ppp.New()), Telemetry: cfg.Telemetry, Events: cfg.Events})
 	r := request(web.Handler(cfg), http.MethodGet, "/declarations", "", "")
-	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","target","enrich_kind","status","reason","rows","new","changed","unchanged","gone","created","linked","judged","rescored","unranged","derived","due","fetched","https","http","none","runs","runs_failed","pages","cost"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger","target","enrich_kind"]}],"accepts":["campaign.member.added","campaign.member.rejected","campaign.piece.delivered","cron.judge_candidates.fired","scrape.finished"]}`
+	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","target","enrich_kind","status","reason","rows","new","changed","unchanged","gone","created","linked","judged","unranged","derived","due","fetched","https","http","none","runs","runs_failed","pages","cost"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger","target","enrich_kind"]}],"accepts":["campaign.member.added","campaign.member.rejected","campaign.piece.delivered","cron.judge_candidates.fired","scrape.finished"]}`
 	if r.Code != http.StatusOK || r.Body.String() != want {
 		t.Fatal(r.Code, r.Body.String())
 	}
 }
 
-// R-8708-4S4E R-JOJI-0XTC R-JQZA-SHAQ
+// R-Z42R-BNSR R-JOJI-0XTC
 func TestMCPToolsReceiveConfiguredWebsite(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		t.Run(map[bool]string{false: "nil", true: "checker"}[enabled], func(t *testing.T) {
@@ -331,3 +332,42 @@ func TestMCPToolsReceiveConfiguredWebsite(t *testing.T) {
 type webTransport func(*http.Request) (*http.Response, error)
 
 func (f webTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// R-XTQK-SDMD R-Z42R-BNSR
+func TestLegacyDispatcherConfiguration(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
+			cfg, _, _, _ := fixture(t)
+			pl, err := cfg.Store.CreateProspectList(t.Context(), store.ProspectList{Name: "configured legacy", Size: 10, CreatedUserID: "legacy-owner"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if enabled {
+				cfg.LegacyMCP = mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: cfg.Telemetry})
+			}
+			srv := httptest.NewServer(web.Handler(cfg))
+			defer srv.Close()
+			client := mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL + "/mcp"})
+			caller := identity.Caller{UserID: "legacy-owner"}
+			list, err := client.ListTools(t.Context(), caller)
+			if err != nil || len(list) != len(tools.Catalog()) {
+				t.Fatal(list, err)
+			}
+			for i, entry := range tools.Catalog() {
+				if list[i].Name != entry.Name {
+					t.Fatal(list)
+				}
+			}
+			result, err := client.CallTool(t.Context(), caller, "cohort", json.RawMessage(`{"cohort":"coh_`+strings.TrimPrefix(pl.ID, "pl_")+`"}`))
+			if enabled && (err != nil || result.IsError()) || !enabled && err == nil && !result.IsError() {
+				t.Fatal(result, err)
+			}
+			if enabled {
+				normal, err := client.CallTool(t.Context(), caller, "prospect_list", json.RawMessage(`{"prospect_list":"`+pl.ID+`"}`))
+				if err != nil || !reflect.DeepEqual(normal, result) {
+					t.Fatal(normal, result, err)
+				}
+			}
+		})
+	}
+}

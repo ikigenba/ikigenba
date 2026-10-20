@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-UG0J-M2SV R-UCCU-GRKS R-UDKQ-UJBH R-UESN-8B26
+// R-P3HP-FEGT R-3E3A-ULDV R-1BPF-IL5I R-UW0I-U69K
 func TestJudgmentUsesNewestRecordedWebsiteResult(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -44,30 +44,30 @@ func TestJudgmentUsesNewestRecordedWebsiteResult(t *testing.T) {
 		counts, err := f.s.Judge(ctx, []string{id, id})
 		contractOK(t, err)
 		contractEqual(t, counts, store.Counts{Judged: 1, Unranged: 1})
-		a, err := f.s.GetAssessment(ctx, id)
+		a, err := f.s.GetJudgments(ctx, id)
 		contractOK(t, err)
 		near(t, a.Operating, tc.operating)
 		contractEqual(t, a.Evidence, tc.evidence)
-		contractEqual(t, a.Website, tc.state)
-		contractEqual(t, a.WebsiteURL, tc.url)
+		contractEqual(t, factsAt(ctx, t, f.s, id).Website, tc.state)
+		contractEqual(t, factsAt(ctx, t, f.s, id).WebsiteURL, tc.url)
 		f.reopen()
-		persisted, err := f.s.GetAssessment(ctx, id)
+		persisted, err := f.s.GetJudgments(ctx, id)
 		contractOK(t, err)
 		contractEqual(t, persisted, a)
 	}
 	f.now = f.now.AddDate(10, 0, 0)
 	_, err := f.s.Judge(ctx, []string{id})
 	contractOK(t, err)
-	aged, err := f.s.GetAssessment(ctx, id)
+	aged, err := f.s.GetJudgments(ctx, id)
 	contractOK(t, err)
-	contractEqual(t, aged.Website, sources.WebsiteHTTP)
-	contractEqual(t, aged.WebsiteURL, "http://last.example.test/")
+	contractEqual(t, factsAt(ctx, t, f.s, id).Website, sources.WebsiteHTTP)
+	contractEqual(t, factsAt(ctx, t, f.s, id).WebsiteURL, "http://last.example.test/")
 	contractEqual(t, aged.Evidence, []sources.Evidence{live, domain})
 	near(t, aged.Operating, .6)
 
 }
 
-// R-UDKQ-UJBH R-UCCU-GRKS
+// R-1BPF-IL5I R-3E3A-ULDV
 func TestWebsiteEvidenceDeduplicatesWithRowEvidence(t *testing.T) {
 	for _, weight := range []float64{.4, .5, .7} {
 		f := contractDB(t)
@@ -80,7 +80,7 @@ func TestWebsiteEvidenceDeduplicatesWithRowEvidence(t *testing.T) {
 		contractOK(t, err)
 		_, err = f.s.Judge(ctx, []string{id})
 		contractOK(t, err)
-		a, err := f.s.GetAssessment(ctx, id)
+		a, err := f.s.GetJudgments(ctx, id)
 		contractOK(t, err)
 		expected := row
 		if weight < .5 {
@@ -90,7 +90,7 @@ func TestWebsiteEvidenceDeduplicatesWithRowEvidence(t *testing.T) {
 	}
 }
 
-// R-H5QH-WBC8 R-OSZL-VFY2 R-UIGC-DMA9
+// R-H5QH-WBC8 R-Z1VJ-IZ0R R-4H43-3943
 func TestMergeTransfersWebsiteResultsAndSplitLeavesThemOnOriginal(t *testing.T) {
 	for _, originalLatest := range []bool{false, true} {
 		t.Run(map[bool]string{false: "other_latest", true: "original_latest"}[originalLatest], func(t *testing.T) {
@@ -127,10 +127,10 @@ func TestMergeTransfersWebsiteResultsAndSplitLeavesThemOnOriginal(t *testing.T) 
 			empty, err := f.s.Enrichments(ctx, other)
 			contractOK(t, err)
 			contractEqual(t, onlyWebsite(empty), []store.Enrichment{})
-			assessment, err := f.s.GetAssessment(ctx, original)
+			_, err = f.s.GetJudgments(ctx, original)
 			contractOK(t, err)
-			contractEqual(t, assessment.Website, websiteDecoded(want[0]).State)
-			contractEqual(t, assessment.WebsiteURL, websiteDecoded(want[0]).URL)
+			contractEqual(t, factsAt(ctx, t, f.s, original).Website, websiteDecoded(want[0]).State)
+			contractEqual(t, factsAt(ctx, t, f.s, original).WebsiteURL, websiteDecoded(want[0]).URL)
 			split, _, err := f.s.Decide(ctx, store.Ruling{Kind: store.KindSplit, Candidate: original, Keys: []string{sources.SourceKey(b.Scraper, b.SourceID)}, Why: "separate", UserID: "owner"})
 			contractOK(t, err)
 			results, err = f.s.Enrichments(ctx, original)
@@ -139,10 +139,10 @@ func TestMergeTransfersWebsiteResultsAndSplitLeavesThemOnOriginal(t *testing.T) 
 			empty, err = f.s.Enrichments(ctx, split.Other)
 			contractOK(t, err)
 			contractEqual(t, onlyWebsite(empty), []store.Enrichment{})
-			assessment, err = f.s.GetAssessment(ctx, split.Other)
+			_, err = f.s.GetJudgments(ctx, split.Other)
 			contractOK(t, err)
-			contractEqual(t, assessment.Website, sources.WebsiteUnknown)
-			contractEqual(t, assessment.WebsiteURL, "")
+			contractEqual(t, factsAt(ctx, t, f.s, split.Other).Website, sources.WebsiteUnknown)
+			contractEqual(t, factsAt(ctx, t, f.s, split.Other).WebsiteURL, "")
 			f.reopen()
 			results, err = f.s.Enrichments(ctx, original)
 			contractOK(t, err)
@@ -151,7 +151,7 @@ func TestMergeTransfersWebsiteResultsAndSplitLeavesThemOnOriginal(t *testing.T) 
 	}
 }
 
-// R-OSZL-VFY2
+// R-Z1VJ-IZ0R
 func TestOrdinaryStoreWritesPreserveWebsiteResults(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

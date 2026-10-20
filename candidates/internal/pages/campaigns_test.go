@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-N6DF-9R7Q R-N8T8-1AP4 R-NB90-SU6I R-NG4M-BX5A
+// R-S1KY-PFZ8 R-Z5NV-19P2 R-M6MC-J4P3 R-TPC1-G7B9
 func TestCampaignHistoryPages(t *testing.T) {
 	cfg, db := pageFixture(t)
 	ctx := t.Context()
@@ -29,7 +29,7 @@ func TestCampaignHistoryPages(t *testing.T) {
 	if got := capturedCandidate(t, cfg, id); got.Campaigns == nil || len(got.Campaigns) != 0 {
 		t.Fatal(got.Campaigns)
 	}
-	cohort, err := cfg.Store.CreateCohort(ctx, store.Cohort{Name: "chosen-cohort-name", Size: 10, CreatedUserID: "chosen-owner"})
+	prospectList, err := cfg.Store.CreateProspectList(ctx, store.ProspectList{Name: "chosen-prospect_list-name", Size: 10, CreatedUserID: "chosen-owner"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestCampaignHistoryPages(t *testing.T) {
 	}
 	writeServices("https://chosen-campaigns.test/")
 	at := time.Date(2026, 10, 5, 10, 0, 7, 987, time.FixedZone("offset", 3600))
-	if err := cfg.Store.AddCampaignUse(ctx, id, "chosen-first-campaign", cohort.ID, at); err != nil {
+	if err := cfg.Store.AddCampaignUse(ctx, id, "chosen-first-campaign", prospectList.ID, at); err != nil {
 		t.Fatal(err)
 	}
 	if err := cfg.Store.AddCampaignUse(ctx, id, "chosen-second-campaign", "", at.Add(time.Hour)); err != nil {
@@ -61,7 +61,7 @@ func TestCampaignHistoryPages(t *testing.T) {
 	got := capturedCandidate(t, cfg, id)
 	want := []CampaignRow{
 		{Campaign: "chosen-second-campaign", CampaignPage: "https://chosen-campaigns.test/campaigns/chosen-second-campaign", Added: "2026-10-05T10:00:07Z", AddedText: "2026-10-05 10:00"},
-		{Campaign: "chosen-first-campaign", CampaignPage: "https://chosen-campaigns.test/campaigns/chosen-first-campaign", Cohort: cohort.ID, CohortName: cohort.Name, CohortPage: "/cohorts/" + cohort.ID, Added: "2026-10-05T09:00:07Z", AddedText: "2026-10-05 09:00", Rejected: true, RejectedAt: "2026-10-05T12:00:07Z", RejectedAtText: "2026-10-05 12:00", Reason: "chosen-reason", Delivered: "2026-10-05T13:00:07Z", DeliveredText: "2026-10-05 13:00"},
+		{Campaign: "chosen-first-campaign", CampaignPage: "https://chosen-campaigns.test/campaigns/chosen-first-campaign", ProspectList: prospectList.ID, ProspectListName: prospectList.Name, ProspectListPage: "/prospect-lists/" + prospectList.ID, Added: "2026-10-05T09:00:07Z", AddedText: "2026-10-05 09:00", Rejected: true, RejectedAt: "2026-10-05T12:00:07Z", RejectedAtText: "2026-10-05 12:00", Reason: "chosen-reason", Delivered: "2026-10-05T13:00:07Z", DeliveredText: "2026-10-05 13:00"},
 		{Campaign: "chosen-third-campaign", CampaignPage: "https://chosen-campaigns.test/campaigns/chosen-third-campaign", Delivered: "2026-10-05T11:00:07Z", DeliveredText: "2026-10-05 11:00"},
 	}
 	if !reflect.DeepEqual(got.Campaigns, want) {
@@ -72,11 +72,11 @@ func TestCampaignHistoryPages(t *testing.T) {
 		t.Fatal(row)
 	}
 	cfg.ServicesPath = ""
-	if _, err := cfg.Store.DeleteCohort(ctx, cohort.ID); err != nil {
+	if _, err := cfg.Store.DeleteProspectList(ctx, prospectList.ID); err != nil {
 		t.Fatal(err)
 	}
 	got = capturedCandidate(t, cfg, id)
-	if row := got.Campaigns[1]; row.CampaignPage != "" || row.Cohort != cohort.ID || row.CohortName != "" || row.CohortPage != "" {
+	if row := got.Campaigns[1]; row.CampaignPage != "" || row.ProspectList != prospectList.ID || row.ProspectListName != "" || row.ProspectListPage != "" {
 		t.Fatal(row)
 	}
 	zero, err := campaignRow(ctx, cfg, store.CampaignUse{Campaign: "chosen-zero"})
@@ -96,40 +96,40 @@ func TestCampaignHistoryPages(t *testing.T) {
 		t.Fatal(survivor.Campaigns)
 	}
 	db.SetFailing(true)
-	if _, err := campaignRow(ctx, cfg, store.CampaignUse{Cohort: cohort.ID}); err == nil {
+	if _, err := campaignRow(ctx, cfg, store.CampaignUse{ProspectList: prospectList.ID}); err == nil {
 		t.Fatal("expected store error")
 	}
 	db.SetFailing(false)
 }
 
-// R-N7LB-NIYF R-NA14-F2FT R-NIKF-3GMO
+// R-N7LB-NIYF R-UDQ1-3M55 R-24Z0-P2Y6
 func TestCampaignFiltersAndTemplates(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	for _, n := range []int64{0, 90} {
-		f := store.CohortFilters{MinCampaignAgeDays: &n}
+		f := store.ProspectListFilters{MinCampaignAgeDays: &n}
 		want := strconv.FormatInt(n, 10)
 		if v := filtersView(f); v.MinCampaignAgeDays != want {
 			t.Fatal(v)
 		}
-		c, err := cfg.Store.CreateCohort(t.Context(), store.Cohort{Name: "chosen-filter", Filters: f, Size: 10, CreatedUserID: "owner"})
+		c, err := cfg.Store.CreateProspectList(t.Context(), store.ProspectList{Name: "chosen-filter", Filters: f, Size: 10, CreatedUserID: "owner"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if d := pageCohort(t, cfg, c.ID); d.Cohort.Filters.MinCampaignAgeDays != want {
+		if d := pageProspectList(t, cfg, c.ID); d.ProspectList.Filters.MinCampaignAgeDays != want {
 			t.Fatal(d)
 		}
 	}
-	if v := filtersView(store.CohortFilters{}); v.MinCampaignAgeDays != "" {
+	if v := filtersView(store.ProspectListFilters{}); v.MinCampaignAgeDays != "" {
 		t.Fatal(v)
 	}
 	for _, status := range []string{store.StatusActive, store.StatusMerged} {
-		for _, rows := range [][]CampaignRow{nil, {}, {{Campaign: "chosen-campaign-id", CampaignPage: "https://chosen.test/campaign", Cohort: "chosen-cohort-id", CohortName: "chosen-cohort-name", CohortPage: "/cohorts/chosen-cohort-page", Added: "machine-start-token", AddedText: "display-start-token", Rejected: true, RejectedAt: "machine-rejection-token", RejectedAtText: "display-rejection-token", Reason: "chosen-reason", Delivered: "machine-delivery-token", DeliveredText: "display-delivery-token"}}, {{Campaign: "chosen-no-details", Cohort: "chosen-deleted-cohort"}}, {{Campaign: "chosen-empty-reason", Rejected: true}}} {
+		for _, rows := range [][]CampaignRow{nil, {}, {{Campaign: "chosen-campaign-id", CampaignPage: "https://chosen.test/campaign", ProspectList: "chosen-prospect_list-id", ProspectListName: "chosen-prospect_list-name", ProspectListPage: "/prospect-lists/chosen-prospect_list-page", Added: "machine-start-token", AddedText: "display-start-token", Rejected: true, RejectedAt: "machine-rejection-token", RejectedAtText: "display-rejection-token", Reason: "chosen-reason", Delivered: "machine-delivery-token", DeliveredText: "display-delivery-token"}}, {{Campaign: "chosen-no-details", ProspectList: "chosen-deleted-prospect_list"}}, {{Campaign: "chosen-empty-reason", Rejected: true}}} {
 			var b bytes.Buffer
 			if err := cfg.Pages.templates.ExecuteTemplate(&b, "candidate", CandidateData{Candidate: CandidateView{Status: status}, Campaigns: rows}); err != nil {
 				t.Fatal(err)
 			}
 			for _, r := range rows {
-				for _, s := range []string{r.Campaign, r.CampaignPage, r.Cohort, r.CohortName, r.CohortPage, r.Added, r.AddedText, r.RejectedAt, r.RejectedAtText, r.Reason, r.Delivered, r.DeliveredText} {
+				for _, s := range []string{r.Campaign, r.CampaignPage, r.ProspectList, r.ProspectListName, r.ProspectListPage, r.Added, r.AddedText, r.RejectedAt, r.RejectedAtText, r.Reason, r.Delivered, r.DeliveredText} {
 					if s != "" && !strings.Contains(b.String(), s) {
 						t.Fatal("row value missing", s)
 					}
@@ -139,7 +139,7 @@ func TestCampaignFiltersAndTemplates(t *testing.T) {
 	}
 	for _, value := range []string{"", "78234"} {
 		var b bytes.Buffer
-		if err := cfg.Pages.templates.ExecuteTemplate(&b, "cohort", CohortData{Cohort: CohortView{Filters: FiltersView{MinCampaignAgeDays: value}}}); err != nil {
+		if err := cfg.Pages.templates.ExecuteTemplate(&b, "prospect_list", ProspectListData{ProspectList: ProspectListView{Filters: FiltersView{MinCampaignAgeDays: value}}}); err != nil {
 			t.Fatal(err)
 		}
 		if value != "" && !strings.Contains(b.String(), value) {
@@ -148,11 +148,11 @@ func TestCampaignFiltersAndTemplates(t *testing.T) {
 	}
 }
 
-// R-N6DF-9R7Q
+// R-S1KY-PFZ8
 func TestCampaignRowShape(_ *testing.T) {
 	_ = struct {
-		Campaign, CampaignPage, Cohort, CohortName, CohortPage, Added, AddedText string
-		Rejected                                                                 bool
-		RejectedAt, RejectedAtText, Reason, Delivered, DeliveredText             string
+		Campaign, CampaignPage, ProspectList, ProspectListName, ProspectListPage, Added, AddedText string
+		Rejected                                                                                   bool
+		RejectedAt, RejectedAtText, Reason, Delivered, DeliveredText                               string
 	}(CampaignRow{})
 }

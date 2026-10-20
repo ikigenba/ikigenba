@@ -11,8 +11,8 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
-func cohortCondition(k Cohort, now time.Time) (string, []any) {
-	parts := []string{`c.status='active'`, `NOT EXISTS (SELECT 1 FROM rejects AS r WHERE r.cohort=? AND r.candidate=c.id AND r.kind='reject' AND NOT EXISTS (SELECT 1 FROM rejects AS n WHERE n.cohort=r.cohort AND n.candidate=r.candidate AND n.seq>r.seq))`}
+func prospectListCondition(k ProspectList, now time.Time) (string, []any) {
+	parts := []string{`c.status='active'`, `NOT EXISTS (SELECT 1 FROM rejects AS r WHERE r.prospect_list=? AND r.candidate=c.id AND r.kind='reject' AND NOT EXISTS (SELECT 1 FROM rejects AS n WHERE n.prospect_list=r.prospect_list AND n.candidate=r.candidate AND n.seq>r.seq))`}
 	args := []any{k.ID}
 	f := k.Filters
 	add := func(q string, a ...any) { parts = append(parts, q); args = append(args, a...) }
@@ -60,7 +60,7 @@ func cohortCondition(k Cohort, now time.Time) (string, []any) {
 	}
 	return strings.Join(parts, " AND "), args
 }
-func cohortOrdering(o []CohortOrder) string {
+func prospectListOrdering(o []ProspectListOrder) string {
 	fields := map[string][2]string{
 		OrderOperatingConfidence: {"a.operating", "a.operating_key"}, OrderRevenueLow: {"a.revenue_low", "a.revenue_low"}, OrderRevenueConfidence: {"a.revenue_confidence", "a.revenue_confidence"}, OrderDriveMinutes: {"f.minutes", "f.minutes"}, OrderNewestFiling: {"nullif(f.newest_filing,'')", "f.newest_filing"}, OrderKnownSince: {"nullif(f.known_since,'')", "f.known_since"},
 	}
@@ -76,21 +76,21 @@ func cohortOrdering(o []CohortOrder) string {
 	return strings.Join(append(parts, "c.id ASC"), ",")
 }
 
-// ReadCohort computes a saved search's present members and count.
-func (s *Store) ReadCohort(ctx context.Context, id string) (CohortRead, error) {
-	var out CohortRead
+// ReadProspectList computes a saved search's present members and count.
+func (s *Store) ReadProspectList(ctx context.Context, id string) (ProspectListRead, error) {
+	var out ProspectListRead
 	err := unreachable(s.readTx(ctx, func(tx *sql.Tx) error {
-		k, err := cohortKey(ctx, tx, id)
+		k, err := prospectListKey(ctx, tx, id)
 		if err != nil {
 			return err
 		}
-		condition, args := cohortCondition(k, s.cfg.Now())
-		base := ` FROM assessments AS a JOIN candidates AS c ON c.id=a.candidate LEFT JOIN facts AS f ON f.candidate=c.id WHERE ` + condition
+		condition, args := prospectListCondition(k, s.cfg.Now())
+		base := ` FROM judgments AS a JOIN candidates AS c ON c.id=a.candidate LEFT JOIN facts AS f ON f.candidate=c.id WHERE ` + condition
 		var count int64
 		if err = tx.QueryRowContext(ctx, `SELECT count(*)`+base, args...).Scan(&count); err != nil {
 			return err
 		}
-		members, err := rankedWindow(ctx, tx, `SELECT c.id`+base+` ORDER BY `+cohortOrdering(k.Order)+` LIMIT ?`, append(args, k.Size)...)
+		members, err := rankedWindow(ctx, tx, `SELECT c.id`+base+` ORDER BY `+prospectListOrdering(k.Order)+` LIMIT ?`, append(args, k.Size)...)
 		if err != nil {
 			return err
 		}
@@ -100,15 +100,15 @@ func (s *Store) ReadCohort(ctx context.Context, id string) (CohortRead, error) {
 		}
 		var classified int64
 		for _, member := range members {
-			if ClassifiedBy(member.Assessment.Categories) == enrichers.KindBrief {
+			if ClassifiedBy(member.Facts.Categories) == enrichers.KindBrief {
 				classified++
 			}
 		}
-		out = CohortRead{Cohort: k, Matching: count, Classified: classified, Members: members, Rejects: rejects}
+		out = ProspectListRead{ProspectList: k, Matching: count, Classified: classified, Members: members, Rejects: rejects}
 		return nil
 	}))
 	if err != nil {
-		return CohortRead{}, err
+		return ProspectListRead{}, err
 	}
 	return out, nil
 }

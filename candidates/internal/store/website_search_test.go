@@ -26,14 +26,14 @@ func searchResult(t *testing.T, id, state, url string) store.Enrichment {
 	return store.Enrichment{Candidate: id, Kind: enrichers.KindWebsiteSearch, Inputs: "name-city-state", Source: enrichers.SourcePrompts, Found: b}
 }
 
-// R-X36J-5G5F R-X4EF-J7W4 R-X5MB-WZMT R-X9A1-2AUW R-XE5M-LDTO
+// R-X36J-5G5F R-X4EF-J7W4 R-X5MB-WZMT R-X9A1-2AUW R-29UM-85WY
 func TestWebsiteDecisionKeepsConfirmedSearchAndPrefersWorkingCheck(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
 	id := contractSeed(t, f)
 	_, err := f.s.Judge(ctx, []string{id})
 	contractOK(t, err)
-	k := cohortCreate(t, f, "website decision")
+	k := prospectListCreate(t, f, "website decision")
 	assert := func(state, url, source string) {
 		t.Helper()
 		facts, e := f.s.GetFacts(ctx, id)
@@ -41,13 +41,13 @@ func TestWebsiteDecisionKeepsConfirmedSearchAndPrefersWorkingCheck(t *testing.T)
 		contractEqual(t, facts.Website, state)
 		contractEqual(t, facts.WebsiteURL, url)
 		contractEqual(t, facts.WebsiteSource, source)
-		a, e := f.s.GetAssessment(ctx, id)
+		_, e = f.s.GetJudgments(ctx, id)
 		contractOK(t, e)
-		contractEqual(t, a.WebsiteSource, source)
-		contractEqual(t, a.WebsiteURL, url)
-		read := cohortRead(t, f, k)
+		contractEqual(t, factsAt(ctx, t, f.s, id).WebsiteSource, source)
+		contractEqual(t, factsAt(ctx, t, f.s, id).WebsiteURL, url)
+		read := prospectListRead(t, f, k)
 		contractEqual(t, len(read.Members), 1)
-		contractEqual(t, read.Members[0].Assessment.WebsiteSource, source)
+		contractEqual(t, read.Members[0].Facts.WebsiteSource, source)
 		f.reopen()
 		kept, e := f.s.GetFacts(ctx, id)
 		contractOK(t, e)
@@ -115,7 +115,7 @@ func TestSubjectWebsiteSearchSupplement(t *testing.T) {
 	contractEqual(t, subject.Check, (*website.Result)(nil))
 }
 
-// R-KYT1-1V6T R-UCCU-GRKS R-UDKQ-UJBH R-UKW5-55RN
+// R-2OHE-TETA R-3E3A-ULDV R-1BPF-IL5I R-35K0-6770
 func TestSearchWebsiteDoesNotInflateOperatingConfidence(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -133,11 +133,11 @@ func TestSearchWebsiteDoesNotInflateOperatingConfidence(t *testing.T) {
 		t.Helper()
 		_, e := f.s.Judge(ctx, []string{id})
 		contractOK(t, e)
-		a, e := f.s.GetAssessment(ctx, id)
+		a, e := f.s.GetJudgments(ctx, id)
 		contractOK(t, e)
 		near(t, a.Operating, operating)
 		contractEqual(t, a.Evidence, evidence)
-		contractEqual(t, a.WebsiteSource, source)
+		contractEqual(t, factsAt(ctx, t, f.s, id).WebsiteSource, source)
 	}
 	assert(store.WebsiteBySearch, .68, []sources.Evidence{active, domain})
 	contractOK(t, f.d.Write(ctx, func(tx *sql.Tx) error {
@@ -162,14 +162,14 @@ func TestSearchWebsiteDoesNotInflateOperatingConfidence(t *testing.T) {
 	}))
 	_, err = f.s.Judge(ctx, []string{legacy})
 	contractOK(t, err)
-	a, err := f.s.GetAssessment(ctx, legacy)
+	a, err := f.s.GetJudgments(ctx, legacy)
 	contractOK(t, err)
 	near(t, a.Operating, .84)
 	contractEqual(t, a.Evidence, []sources.Evidence{active, live, domain})
-	contractEqual(t, a.WebsiteSource, "")
+	contractEqual(t, factsAt(ctx, t, f.s, legacy).WebsiteSource, "")
 }
 
-// R-XCXQ-7M2Z R-X5MB-WZMT R-AZ25-CAGJ R-UIGC-DMA9 R-UJO8-RE0Y
+// R-XCXQ-7M2Z R-X5MB-WZMT R-PWRA-LW9H R-4H43-3943
 func TestSearchFactsFillMergeAndSplit(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -196,7 +196,7 @@ func TestSearchFactsFillMergeAndSplit(t *testing.T) {
 	contractEqual(t, filled, before)
 	_, err = f.s.Judge(ctx, []string{other})
 	contractOK(t, err)
-	old, err := f.s.GetAssessment(ctx, other)
+	old, err := f.s.GetJudgments(ctx, other)
 	contractOK(t, err)
 	links, err := f.s.Links(ctx, other)
 	contractOK(t, err)
@@ -206,13 +206,12 @@ func TestSearchFactsFillMergeAndSplit(t *testing.T) {
 	contractOK(t, err)
 	contractEqual(t, moved.WebsiteSource, store.WebsiteBySearch)
 	contractEqual(t, moved.WebsiteURL, "https://moved.test/")
-	merged, err := f.s.GetAssessment(ctx, other)
+	merged, err := f.s.GetJudgments(ctx, other)
 	contractOK(t, err)
-	old.WebsiteSource = ""
 	contractEqual(t, merged, old)
-	a, err := f.s.GetAssessment(ctx, original)
+	a, err := f.s.GetJudgments(ctx, original)
 	contractOK(t, err)
-	contractEqual(t, a.WebsiteSource, store.WebsiteBySearch)
+	contractEqual(t, factsAt(ctx, t, f.s, original).WebsiteSource, store.WebsiteBySearch)
 	for _, e := range a.Evidence {
 		if e.Name == sources.EvidenceWebsiteLive {
 			t.Fatal("search added live website evidence")

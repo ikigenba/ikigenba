@@ -15,11 +15,11 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-9ZNA-0NJM R-AAMD-GL7V R-AEA2-LWFY
+// R-YDM6-8JN3 R-22J7-XJGS R-XFGZ-IYVN
 func TestPagingTagsAndExactSchemas(t *testing.T) {
 	pd, _ := json.Marshal(paging.PageDescription)
 	ld, _ := json.Marshal(paging.LimitDescription)
-	for _, value := range []any{tools.CohortsArgs{}, tools.CandidatesArgs{}, tools.PassesArgs{}} {
+	for _, value := range []any{tools.ProspectListsArgs{}, tools.CandidatesArgs{}, tools.PassesArgs{}} {
 		typ := reflect.TypeOf(value)
 		page, ok := typ.FieldByName("Page")
 		if !ok || page.Type != reflect.TypeFor[*string]() || string(page.Tag) != fmt.Sprintf("json:%q description:%q", "page", paging.PageDescription) {
@@ -33,7 +33,7 @@ func TestPagingTagsAndExactSchemas(t *testing.T) {
 			t.Fatal("argument member order", typ)
 		}
 	}
-	for _, value := range []any{tools.CohortList{}, tools.CandidateList{}, tools.PassList{}} {
+	for _, value := range []any{tools.ProspectListList{}, tools.CandidateList{}, tools.PassList{}} {
 		field, ok := reflect.TypeOf(value).FieldByName("Next")
 		if !ok || field.Type != reflect.TypeFor[*string]() || field.Tag.Get("description") != paging.NextDescription {
 			t.Fatal("next declaration", field)
@@ -46,9 +46,9 @@ func TestPagingTagsAndExactSchemas(t *testing.T) {
 	}
 	suffix := fmt.Sprintf(`"page":{"type":"string","description":%s},"limit":{"type":"integer","description":%s}},"additionalProperties":false}`, pd, ld)
 	want := map[string]string{
-		"cohorts":    `{"type":"object","properties":{` + suffix,
-		"candidates": `{"type":"object","properties":{"name":{"type":"string"},"zip":{"type":"string"},"phone":{"type":"string"},` + suffix,
-		"passes":     `{"type":"object","properties":{` + suffix,
+		"prospect_lists": `{"type":"object","properties":{` + suffix,
+		"candidates":     `{"type":"object","properties":{"name":{"type":"string"},"zip":{"type":"string"},"phone":{"type":"string"},` + suffix,
+		"passes":         `{"type":"object","properties":{` + suffix,
 	}
 	for _, info := range infos {
 		if expected, ok := want[info.Name]; ok && string(info.InputSchema) != expected {
@@ -56,7 +56,7 @@ func TestPagingTagsAndExactSchemas(t *testing.T) {
 		}
 	}
 	token := "opaque"
-	for _, value := range []any{tools.CohortList{Next: &token}, tools.CandidateList{Next: &token}, tools.PassList{Next: &token}} {
+	for _, value := range []any{tools.ProspectListList{Next: &token}, tools.CandidateList{Next: &token}, tools.PassList{Next: &token}} {
 		b, err := json.Marshal(value)
 		if err != nil {
 			t.Fatal(err)
@@ -80,12 +80,12 @@ func textRefusal(t *testing.T, f *fixture, name string, args any, expected strin
 	}
 }
 
-// R-5T7C-OCFY R-AZ0D-401R R-B089-HRSG
+// R-5T7C-OCFY R-WEW0-1UMT R-R5VK-REP6
 func TestPagingRefusalsBeforeStoreAndSchema(t *testing.T) {
 	f := newFixture(t)
 	for _, failing := range []bool{false, true} {
 		f.d.SetFailing(failing)
-		for _, name := range []string{"cohorts", "candidates", "passes"} {
+		for _, name := range []string{"prospect_lists", "candidates", "passes"} {
 			for _, limit := range []int{-1, 0, paging.MaxLimit + 1} {
 				_, err := paging.Window(&limit)
 				textRefusal(t, f, name, map[string]any{"limit": limit, "page": "bogus"}, err.Error())
@@ -110,7 +110,7 @@ func TestPagingRefusalsBeforeStoreAndSchema(t *testing.T) {
 		}
 	}
 	f.d.SetFailing(false)
-	for _, name := range []string{"cohorts", "candidates", "passes"} {
+	for _, name := range []string{"prospect_lists", "candidates", "passes"} {
 		base := f.call(name, map[string]any{})
 		for _, args := range []map[string]any{{"page": nil, "limit": nil}, {"page": ""}, {"limit": paging.DefaultLimit}} {
 			if !reflect.DeepEqual(decode(t, base), decode(t, f.call(name, args))) {
@@ -120,7 +120,7 @@ func TestPagingRefusalsBeforeStoreAndSchema(t *testing.T) {
 	}
 }
 
-// R-RLA3-ZRZI
+// R-VHYP-Q1M2
 func TestStoredJudgmentsChangeOnlyAtJudge(t *testing.T) {
 	f := newFixture(t)
 	f.now = time.Date(2021, 6, 1, 0, 0, 0, 0, time.UTC)
@@ -140,19 +140,19 @@ func TestStoredJudgmentsChangeOnlyAtJudge(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: ids[0]}))
-	a, err := f.st.GetAssessment(t.Context(), ids[0])
+	a, err := f.st.GetJudgments(t.Context(), ids[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Assessment == nil || first.Assessment.OperatingConfidence == nil || *first.Assessment.OperatingConfidence != *a.Operating || *first.Assessment.OperatingConfidence != .776 || first.Assessment.RevenueLow != nil || first.Assessment.RevenueHigh != nil || first.Assessment.RevenueConfidence != nil {
-		t.Fatal(first.Assessment)
+	if first.Judgments == nil || first.Judgments.OperatingConfidence == nil || *first.Judgments.OperatingConfidence != *a.Operating || *first.Judgments.OperatingConfidence != .776 || first.Judgments.RevenueLow != nil || first.Judgments.RevenueHigh != nil || first.Judgments.RevenueConfidence != nil {
+		t.Fatal(first.Judgments)
 	}
-	if len(first.Links) != 1 || first.Links[0].Reason != store.LinkSourceKey || len(first.Assessment.OperatingEvidence) != 3 {
+	if len(first.Links) != 1 || first.Links[0].Reason != store.LinkSourceKey || len(first.Judgments.OperatingEvidence) != 3 {
 		t.Fatal(first)
 	}
 	for i, w := range []float64{.6, .3, .2} {
-		if first.Assessment.OperatingEvidence[i].Name != reading.Evidence[i].Name || math.Abs(first.Assessment.OperatingEvidence[i].Weight-w) > 1e-9 {
-			t.Fatal(first.Assessment)
+		if first.Judgments.OperatingEvidence[i].Name != reading.Evidence[i].Name || math.Abs(first.Judgments.OperatingEvidence[i].Weight-w) > 1e-9 {
+			t.Fatal(first.Judgments)
 		}
 	}
 	f.now = time.Date(2023, 7, 4, 0, 0, 0, 0, time.UTC)
@@ -161,12 +161,12 @@ func TestStoredJudgmentsChangeOnlyAtJudge(t *testing.T) {
 		t.Fatal(err)
 	}
 	updated := decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: ids[0]}))
-	a, err = f.st.GetAssessment(t.Context(), ids[0])
+	a, err = f.st.GetJudgments(t.Context(), ids[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.Assessment == nil || updated.Assessment.OperatingConfidence == nil || *updated.Assessment.OperatingConfidence != *a.Operating || *updated.Assessment.OperatingConfidence != .607693 {
-		t.Fatal(updated.Assessment)
+	if updated.Judgments == nil || updated.Judgments.OperatingConfidence == nil || *updated.Judgments.OperatingConfidence != *a.Operating || *updated.Judgments.OperatingConfidence != .607693 {
+		t.Fatal(updated.Judgments)
 	}
 	activeFound := false
 	var storedActive *sources.Evidence
@@ -175,7 +175,7 @@ func TestStoredJudgmentsChangeOnlyAtJudge(t *testing.T) {
 			storedActive = &a.Evidence[i]
 		}
 	}
-	for _, e := range updated.Assessment.OperatingEvidence {
+	for _, e := range updated.Judgments.OperatingEvidence {
 		if e.Name == sources.EvidenceFMCSAActive {
 			activeFound = true
 			if storedActive == nil || math.Abs(e.Weight-.2994525547) > 1e-9 || e.Weight != storedActive.Weight {
@@ -184,9 +184,9 @@ func TestStoredJudgmentsChangeOnlyAtJudge(t *testing.T) {
 		}
 	}
 	if !activeFound {
-		t.Fatal("missing active evidence", updated.Assessment)
+		t.Fatal("missing active evidence", updated.Judgments)
 	}
-	success(t, f.call("candidate", tools.CandidateArgs{Candidate: ids[0]}), tools.Detail{Candidate: first.Candidate, Assessment: assessmentExpected(a), Estimates: first.Estimates, Links: first.Links, Rulings: first.Rulings})
+	success(t, f.call("candidate", tools.CandidateArgs{Candidate: ids[0]}), tools.Detail{Candidate: first.Candidate, Enrichments: first.Enrichments, Judgments: judgmentsExpected(a), Estimates: first.Estimates, Links: first.Links, Rulings: first.Rulings})
 	reading.Evidence = nil
 	if _, _, err = f.st.Attach(t.Context(), "run-no-evidence", true, []store.Observation{{Scraper: "fmcsa", SourceID: links[0].SourceID, Digest: "no-evidence", Reading: reading}}); err != nil {
 		t.Fatal(err)
@@ -196,18 +196,18 @@ func TestStoredJudgmentsChangeOnlyAtJudge(t *testing.T) {
 	}
 	result := decode(t, f.call("candidate", tools.CandidateArgs{Candidate: ids[0]}))
 	var detail struct {
-		Assessment map[string]json.RawMessage `json:"assessment"`
+		Judgments map[string]json.RawMessage `json:"judgments"`
 	}
 	if err := json.Unmarshal(result.Structured, &detail); err != nil {
 		t.Fatal(err)
 	}
-	if detail.Assessment == nil || detail.Assessment["operating_confidence"] != nil || string(detail.Assessment["operating_evidence"]) != "[]" {
+	if detail.Judgments == nil || detail.Judgments["operating_confidence"] != nil || string(detail.Judgments["operating_evidence"]) != "[]" {
 		t.Fatal(string(result.Structured))
 	}
 }
 
-// R-9ZNA-0NJM R-AAMD-GL7V R-AEA2-LWFY
-// R-B3VY-N30J
+// R-YDM6-8JN3 R-22J7-XJGS R-XFGZ-IYVN
+// R-0PR8-MPT0
 func TestTiePagesAndFullFinalPage(t *testing.T) {
 	for _, count := range []int{25, 26, 30} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {

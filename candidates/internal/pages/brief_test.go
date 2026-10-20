@@ -10,7 +10,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-GOAB-PI3C R-NDOT-KDNW
+// R-GOAB-PI3C R-PT3L-GL1E
 func TestBriefViewSelection(t *testing.T) {
 	good := enrichers.BriefFound{Run: "fixture-run", Status: "exited", ExitCode: new(0), Summary: "fixture-summary", Categories: []enrichers.BriefCategory{{Name: sources.CategoryRetail, Why: "fixture-why"}}, Labels: []string{"fixture-label", "other-label"}}
 	result := func(b enrichers.BriefFound) store.Enrichment {
@@ -49,8 +49,8 @@ func TestBriefViewSelection(t *testing.T) {
 	}
 }
 
-// R-KT9N-S6EG R-N55I-VZH1 R-NB90-SU6I R-NG4M-BX5A R-ANM6-HRQR R-E0I5-K24P
-func TestBriefCandidateAndCohort(t *testing.T) {
+// R-NFX2-NQ0K R-Q5AL-AAGC R-M6MC-J4P3 R-TPC1-G7B9 R-ANM6-HRQR R-E0I5-K24P
+func TestBriefCandidateAndProspectList(t *testing.T) {
 	cfg, db := pageFixture(t)
 	now := fixtureTime()
 	cfg.Store = store.New(db, store.Config{Now: func() time.Time { return now }, Rand: &sequence{}})
@@ -59,11 +59,11 @@ func TestBriefCandidateAndCohort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	co, err := cfg.Store.CreateCohort(ctx, store.Cohort{Name: "fixture-cohort", Size: 10, CreatedUserID: "owner"})
+	co, err := cfg.Store.CreateProspectList(ctx, store.ProspectList{Name: "fixture-prospect_list", Size: 10, CreatedUserID: "owner"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := capturedCandidate(t, cfg, ids[0]); got.Brief != nil {
+	if got := capturedCandidate(t, cfg, ids[0]); got.Enrichments.Brief != nil {
 		t.Fatal(got)
 	}
 	for i, b := range []enrichers.BriefFound{{Run: "fixture-run", Status: "exited", ExitCode: new(0), Summary: "fixture-summary", Categories: []enrichers.BriefCategory{{Name: sources.CategoryRetail, Why: "fixture-why"}}, Labels: []string{"fixture-label"}}, {Run: "failed-run", Status: "failed", Categories: []enrichers.BriefCategory{}, Labels: []string{}}} {
@@ -73,26 +73,26 @@ func TestBriefCandidateAndCohort(t *testing.T) {
 		}
 	}
 	got := capturedCandidate(t, cfg, ids[0])
-	if got.Brief == nil || got.Brief.Summary != "fixture-summary" || got.Brief.At != "2026-10-05T09:00:07Z" || got.Brief.AtText != "2026-10-05 09:00:07 UTC" || len(got.Enrichments) != 2 || !got.Enrichments[0].Failed || got.Enrichments[1].Failed || got.Assessment != nil {
+	if got.Enrichments.Brief == nil || got.Enrichments.Brief.Summary != "fixture-summary" || got.Enrichments.Brief.At != "2026-10-05T09:00:07Z" || got.Enrichments.Brief.AtText != "2026-10-05 09:00:07 UTC" || len(got.EnrichmentResults) != 2 || !got.EnrichmentResults[0].Failed || got.EnrichmentResults[1].Failed || got.Judgments != nil {
 		t.Fatal(got)
 	}
 	if _, err = cfg.Store.JudgeAll(ctx); err != nil {
 		t.Fatal(err)
 	}
 	written := ""
-	for _, w := range got.Facts.Written {
+	for _, w := range got.Enrichments.Facts.Written {
 		if w.Kind == enrichers.KindBrief {
 			written = w.At
 		}
 	}
 	if written != "2026-10-05T09:02:07Z" {
-		t.Fatal(got.Facts)
+		t.Fatal(got.Enrichments.Facts)
 	}
-	cohort := pageCohort(t, cfg, co.ID)
-	if len(cohort.Members) != 2 {
-		t.Fatal(cohort)
+	prospectList := pageProspectList(t, cfg, co.ID)
+	if len(prospectList.Members) != 2 {
+		t.Fatal(prospectList)
 	}
-	for _, m := range cohort.Members {
+	for _, m := range prospectList.Members {
 		if m.ID == ids[0] {
 			if m.Brief != written || m.BriefText != "2026-10-05 09:02" {
 				t.Fatal(m)
@@ -111,7 +111,7 @@ func TestBriefCandidateAndCohort(t *testing.T) {
 	if _, _, err = cfg.Store.Decide(ctx, store.Ruling{Kind: store.KindMerge, Candidate: ids[1], Other: ids[0], UserID: "owner", Why: "fixture-merge"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := capturedCandidate(t, cfg, ids[0]); got.Brief != nil || got.Facts != nil || got.Assessment != nil || len(got.Enrichments) != 0 {
+	if got := capturedCandidate(t, cfg, ids[0]); got.Enrichments != nil || got.Judgments != nil || len(got.EnrichmentResults) != 0 {
 		t.Fatal(got)
 	}
 }

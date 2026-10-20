@@ -76,12 +76,12 @@ func (s *Store) Estimates(ctx context.Context, id string) ([]sources.Estimate, e
 	return out, err
 }
 
-// GetAssessment reads a candidate’s last assessment.
-func (s *Store) GetAssessment(ctx context.Context, id string) (Assessment, error) {
-	var out Assessment
-	err := s.readScope(ctx, "assessment", id, func(r *records) error {
+// GetJudgments reads a candidate’s last judgments.
+func (s *Store) GetJudgments(ctx context.Context, id string) (Judgments, error) {
+	var out Judgments
+	err := s.readScope(ctx, "judgments", id, func(r *records) error {
 		var ok bool
-		out, ok = r.assessments[id]
+		out, ok = r.judgments[id]
 		if !ok {
 			return ErrNotFound
 		}
@@ -167,18 +167,19 @@ func rankedWindow(ctx context.Context, tx *sql.Tx, query string, args ...any) ([
 		if err != nil {
 			return nil, err
 		}
-		a, err := readRecords[Assessment](ctx, tx, "assessments", assessmentColumns, " WHERE candidate=?", key)
+		a, err := readRecords[Judgments](ctx, tx, "judgments", judgmentsColumns, " WHERE candidate=?", key)
 		if err != nil {
 			return nil, err
 		}
-		if err = assessmentFacts(ctx, tx, &a[0]); err != nil {
-			return nil, err
-		}
-		member := Ranked{Candidate: c, Assessment: a[0]}
+		member := Ranked{Candidate: c, Judgments: a[0]}
 		f, err := factsKey(ctx, tx, key)
 		if err != nil && !errors.Is(err, ErrNotFound) {
 			return nil, err
 		}
+		if errors.Is(err, ErrNotFound) {
+			f = unknownFacts(key)
+		}
+		member.Facts = f
 		for _, w := range f.Written {
 			if w.Kind == enrichers.KindBrief {
 				member.Brief = w.At

@@ -9,7 +9,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-R9XQ-WPK7 R-RDLG-20SA R-OECT-A71Q
+// R-R9XQ-WPK7 R-RDLG-20SA R-WNFA-Q8TO
 func TestMergeMovesAllPageCopiesAndSplitPreservesThem(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

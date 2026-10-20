@@ -87,7 +87,7 @@ func waitFollowUntil(t *testing.T, f *fixture, id string, end time.Time) store.P
 	}
 }
 
-// R-2TXZ-3U40 R-MQX0-5TXM R-MS4W-JLOB R-N4BW-DB39 R-N6RP-4UKN R-N33Z-ZJCK R-MZGA-U84H R-N97H-WE21 R-T7FV-5JR0 R-301H-0OTH R-T502-E09M
+// R-XU3S-47RZ R-MQX0-5TXM R-MS4W-JLOB R-N4BW-DB39 R-N6RP-4UKN R-TFKU-E1DP R-MZGA-U84H R-N97H-WE21 R-3WDS-L5IA R-UYGB-LPQY R-SYI9-18ZZ
 func TestEnrichCountsDedupAndFollowOn(t *testing.T) {
 	f := newFixture(t, nil, false)
 	var mu sync.Mutex
@@ -237,7 +237,7 @@ func TestEnrichAcrossBatches(t *testing.T) {
 	}
 }
 
-// R-SK9R-VWNT R-1J40-XIZY R-SGM2-QLFQ
+// R-TI0N-5KV3 R-1J40-XIZY R-2PPB-76JZ
 func TestEnrichRefusals(t *testing.T) {
 	for _, mode := range []string{"unavailable", "invalid", "busy", "store", "stopping"} {
 		t.Run(mode, func(t *testing.T) {
@@ -323,7 +323,7 @@ func TestEnrichRefusals(t *testing.T) {
 	}
 }
 
-// R-1KBX-BAQN R-T1CD-8P1J R-IY56-LBFP R-Q3XB-GX8X R-T9VN-X38E
+// R-338W-JOP8 R-YG1Z-034H R-IY56-LBFP R-Q3XB-GX8X R-TD51-MHWB
 func TestEnrichPersistsCompletedChecksAndDrain(t *testing.T) {
 	f := newFixture(t, nil, false)
 	held := make(chan struct{})
@@ -393,7 +393,7 @@ func TestEnrichPersistsCompletedChecksAndDrain(t *testing.T) {
 	assertRefusal(t, p, err, passes.RefusalStopping)
 }
 
-// R-2YTK-MX2S R-301H-0OTH R-T502-E09M
+// R-NN20-Z9KY R-UYGB-LPQY R-SYI9-18ZZ
 func TestIngestStartsEnrichThenJudgeWithLineage(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/record") {
@@ -511,7 +511,7 @@ func TestEnrichMemoryBound(t *testing.T) {
 	}
 }
 
-// R-TB3K-AUZ3 R-SHTZ-4D6F R-1J40-XIZY R-1KBX-BAQN
+// R-30OE-N488 R-SGG7-YQ5M R-1J40-XIZY R-338W-JOP8
 func TestConcurrentEnrichStartsAndIndependentLanes(t *testing.T) {
 	f := newFixture(t, nil, true)
 	held := make(chan struct{})
@@ -522,7 +522,7 @@ func TestConcurrentEnrichStartsAndIndependentLanes(t *testing.T) {
 		return nil, r.Context().Err()
 	})
 	seedEmails(t, f, 1, func(int) string { return "x@held.test" })
-	rb, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "owner"})
+	rb, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, UserID: "owner"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -559,16 +559,16 @@ func TestConcurrentEnrichStartsAndIndependentLanes(t *testing.T) {
 	if _, err = f.st.FailPass(context.Background(), rb.ID, store.ReasonInterrupted); err != nil {
 		t.Fatal(err)
 	}
-	// The enrich lane does not block rebuild admission; absent scrapes can
-	// fail the rebuild's background work, but its start must be admitted.
-	p, err := f.eng.Rebuild(context.Background(), identity.Caller{UserID: "owner"})
-	if err != nil || p.Kind != store.KindRebuild {
+	// The enrich lane does not block fullIngest admission; absent scrapes can
+	// fail the fullIngest's background work, but its start must be admitted.
+	p, err := f.eng.Ingest(context.Background(), identity.Caller{UserID: "owner"}, "")
+	if err != nil || p.Kind != store.KindIngest {
 		t.Fatal(p, err)
 	}
 	f.eng.Drain(context.Background())
 }
 
-// R-N33Z-ZJCK R-MZGA-U84H R-T7FV-5JR0
+// R-TFKU-E1DP R-MZGA-U84H R-3WDS-L5IA
 func TestEnrichSkipsMergedCandidateAndBlockedFollowOn(t *testing.T) {
 	f := newFixture(t, nil, false)
 	held, release := make(chan struct{}), make(chan struct{})
@@ -647,7 +647,7 @@ func TestEnrichDistinctSuccessfulBatchesWithinBudget(t *testing.T) {
 	}
 }
 
-// R-2YTK-MX2S
+// R-NN20-Z9KY
 func TestIngestSkipsFollowOnWhileEnrichRuns(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/record") {

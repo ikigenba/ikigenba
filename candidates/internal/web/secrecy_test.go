@@ -197,12 +197,12 @@ func secrecyAbsent(t *testing.T, where string, value any, markers []string) {
 	}
 }
 
-// R-0EJV-0SK3 R-0GZN-SC1H R-0KNC-XN9K
+// R-YIHR-RMLV R-T25Y-6K82 R-QCLZ-KWWI
 func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	markers, phone := secrecyMarkers(t)
 	forbidden := append(append([]string{}, markers...), phone)
-	row := map[string]any{"scraper": "fmcsa", "run": "run_fixture", "source_id": "101", "collected": "2026-01-01T00:00:00Z", "digest": "fixture-digest", "name": markers[0], "names": []string{markers[1], markers[2]}, "address": map[string]any{"street": markers[3], "city": markers[4], "state": "MN", "zip": "55072", "county": "115"}, "people": []map[string]string{{"name": markers[5], "role": markers[6]}}, "facts": map[string]any{"phone": phone, "email": markers[7] + "@" + markers[8] + ".example", "power_units": 3, "drivers": 4, "class": []string{"Authorized For Hire"}, "cargo": []string{"General Freight"}, "mcs150_date": "2025-01-01"}, "raw": map[string]any{"private": markers[9]}}
+	row := map[string]any{"scraper": "fmcsa", "run": "run_fixture", "source_id": "101", "scraped": "2026-01-01T00:00:00Z", "digest": "fixture-digest", "name": markers[0], "names": []string{markers[1], markers[2]}, "address": map[string]any{"street": markers[3], "city": markers[4], "state": "MN", "zip": "55072", "county": "115"}, "people": []map[string]string{{"name": markers[5], "role": markers[6]}}, "facts": map[string]any{"phone": phone, "email": markers[7] + "@" + markers[8] + ".example", "power_units": 3, "drivers": 4, "class": []string{"Authorized For Hire"}, "cargo": []string{"General Freight"}, "mcs150_date": "2025-01-01"}, "raw": map[string]any{"private": markers[9]}}
 	f := &secrecyFake{rows: []map[string]any{row}, echo: strings.Join(forbidden, " ")}
 	socketDir, err := os.MkdirTemp("", "cand-")
 	if err != nil {
@@ -313,7 +313,7 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 			}
 		}
 	}
-	first := call("rebuild", map[string]any{}, false)
+	first := call("ingest", map[string]any{}, false)
 	passID := text(first, "id")
 	wait(passID, "")
 	named := call("candidates", map[string]any{"name": markers[0]}, false)
@@ -328,26 +328,26 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	if err != nil || len(ids) != 1 {
 		t.Fatal("second candidate", err)
 	}
-	co := call("create_cohort", map[string]any{"name": markers[0]}, false)
-	cohort := co
-	cohortID := text(cohort, "id")
+	co := call("create_prospect_list", map[string]any{"name": markers[0]}, false)
+	prospectList := co
+	prospectListID := text(prospectList, "id")
 	args := map[string]any{
-		"cohorts": map[string]any{}, "cohort": map[string]any{"cohort": cohortID},
-		"candidate": map[string]any{"candidate": id}, "passes": map[string]any{}, "pass": map[string]any{"pass": passID}, "rebuild": map[string]any{},
+		"prospect_lists": map[string]any{}, "prospect_list": map[string]any{"prospect_list": prospectListID},
+		"candidate": map[string]any{"candidate": id}, "passes": map[string]any{}, "pass": map[string]any{"pass": passID}, "ingest": map[string]any{}, "judge": map[string]any{},
 		"decide":  map[string]any{"kind": store.KindNotSame, "candidate": id, "other": ids[0], "why": markers[9]},
 		"exclude": map[string]any{"candidate": id, "why": markers[9]}, "include": map[string]any{"candidate": id, "why": markers[9]},
-		"create_cohort": map[string]any{"name": markers[2]}, "edit_cohort": map[string]any{"cohort": cohortID, "name": markers[3]},
-		"reject": map[string]any{"cohort": cohortID, "candidate": id, "why": markers[9]}, "unreject": map[string]any{"cohort": cohortID, "candidate": id, "why": markers[9]},
-		"delete_cohort": map[string]any{"cohort": cohortID},
-		"enrich":        map[string]any{"kind": enrichers.KindSiteText, "cohort": cohortID},
-		"add_page":      map[string]any{"candidate": id, "url": "https://" + strings.ToLower(markers[8]) + ".example/"},
+		"create_prospect_list": map[string]any{"name": markers[2]}, "edit_prospect_list": map[string]any{"prospect_list": prospectListID, "name": markers[3]},
+		"reject": map[string]any{"prospect_list": prospectListID, "candidate": id, "why": markers[9]}, "unreject": map[string]any{"prospect_list": prospectListID, "candidate": id, "why": markers[9]},
+		"delete_prospect_list": map[string]any{"prospect_list": prospectListID},
+		"enrich":               map[string]any{"kind": enrichers.KindSiteText, "prospect_list": prospectListID},
+		"add_page":             map[string]any{"candidate": id, "url": "https://" + strings.ToLower(markers[8]) + ".example/"},
 	}
-	for _, name := range []string{"cohorts", "cohort", "candidate", "passes", "pass", "decide", "exclude", "include", "edit_cohort", "reject", "unreject"} {
+	for _, name := range []string{"prospect_lists", "prospect_list", "candidate", "passes", "pass", "decide", "exclude", "include", "edit_prospect_list", "reject", "unreject"} {
 		call(name, args[name], false)
 	}
 	for _, mode := range []string{"rows_failure", "malformed"} {
 		f.set(mode)
-		failed := call("rebuild", map[string]any{}, false)
+		failed := call("ingest", map[string]any{}, false)
 		wait(text(failed, "id"), store.ReasonScrapes)
 	}
 	f.set("record_failure")
@@ -394,7 +394,7 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	f.canceled = canceled
 	f.mu.Unlock()
 	caller.RequestID = "refused-batch-request"
-	active := call("rebuild", map[string]any{}, false)
+	active := call("ingest", map[string]any{}, false)
 	activeID := text(active, "id")
 	caller.RequestID = "failing-tool-request"
 	select {
@@ -418,7 +418,7 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	}
 	call("candidates", map[string]any{"name": markers[0]}, true)
 	call("candidates", map[string]any{"phone": phone}, true)
-	for _, path := range []string{"/", "/cohorts/" + cohortID, "/candidates/" + id, "/passes/" + passID, fmt.Sprintf("/candidates/%s/pages/%d", id, kept.Number), "/tools", "/about", "/absent"} {
+	for _, path := range []string{"/", "/prospect-lists/" + prospectListID, "/candidates/" + id, "/passes/" + passID, fmt.Sprintf("/candidates/%s/pages/%d", id, kept.Number), "/tools", "/about", "/absent"} {
 		response := request(handler, "GET", path, "", "reader")
 		secrecyAbsent(t, "failing page", response.Body.Bytes(), forbidden)
 	}

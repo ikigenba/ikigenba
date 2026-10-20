@@ -15,7 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/urls"
 )
 
-// R-40V8-V2LG R-2EFQ-KTW1 R-3X7J-PRDD
+// R-40V8-V2LG R-O907-V4XG R-3X7J-PRDD
 func TestTargetPassAndCosts(t *testing.T) {
 	for _, tc := range []struct {
 		n    int64
@@ -25,15 +25,15 @@ func TestTargetPassAndCosts(t *testing.T) {
 			t.Fatal(tc, got)
 		}
 	}
-	for _, target := range []string{"coh_0123456789abcdef", "cand_0123456789abcdef", "invalid", ""} {
-		p := store.Pass{Kind: store.KindEnrichCohort, Target: target, EnrichKind: enrichers.KindSiteText, Runs: 2, RunsFailed: 1, Pages: 5, Cost: 23714000}
+	for _, target := range []string{"pl_0123456789abcdef", "cand_0123456789abcdef", "invalid", ""} {
+		p := store.Pass{Kind: store.KindEnrichTarget, Target: target, EnrichKind: enrichers.KindSiteText, Runs: 2, RunsFailed: 1, Pages: 5, Cost: 23714000}
 		v := passView(p, "")
 		path := ""
 		if store.ValidCandidateID(target) {
 			path = "/candidates/" + target
 		}
-		if store.ValidCohortID(target) {
-			path = "/cohorts/" + target
+		if store.ValidProspectListID(target) {
+			path = "/prospect-lists/" + target
 		}
 		if v.Target != target || v.TargetPage != path || v.EnrichKind != p.EnrichKind || v.Runs != 2 || v.RunsFailed != 1 || v.Pages != 5 || v.Cost != "$0.023714" {
 			t.Fatal(v)
@@ -45,7 +45,7 @@ func TestTargetPassAndCosts(t *testing.T) {
 	}
 }
 
-// R-DUEN-N7F8 R-NDOT-KDNW
+// R-DUEN-N7F8 R-PT3L-GL1E
 func TestSiteTextResultProjection(t *testing.T) {
 	for _, tc := range []struct {
 		status string
@@ -79,7 +79,7 @@ func TestSiteTextResultProjection(t *testing.T) {
 	}
 }
 
-// R-45QU-E5K8 R-N55I-VZH1 R-3ZNC-HAUR
+// R-45QU-E5K8 R-Q5AL-AAGC R-3ZNC-HAUR
 func TestKeptPageProjections(t *testing.T) {
 	p := store.Page{Candidate: "cand_0123456789abcdef", Number: 7, URL: "https://fixture.test/", Size: 37, Fetched: fixtureTime(), UserID: "fixture-user", Text: "fixture text"}
 	row := pageRow(p)
@@ -94,7 +94,7 @@ func TestKeptPageProjections(t *testing.T) {
 	}
 }
 
-// R-46YQ-RXAX R-4EA5-2JR3 R-4FI1-GBHS
+// R-46YQ-RXAX R-MITC-CU41 R-O6KF-3LG2
 func TestKeptPagePathGrammar(t *testing.T) {
 	cfg, d := pageFixture(t)
 	d.SetFailing(true)
@@ -104,7 +104,7 @@ func TestKeptPagePathGrammar(t *testing.T) {
 			t.Fatal(n)
 		}
 	}
-	for _, path := range []string{base + "0", base + "01", base + "-1", base + "+1", base + "9223372036854775808", base + "1/", base, strings.TrimSuffix(base, "/"), base + "%31", "/candidates/cand_abcdef012345678/pages/1", "/cohorts/coh_abcdef0123456789/pages/1", "/passes/pass_abcdef0123456789/pages/1", "/candidates/cand_abcdef0123456789/page/1"} {
+	for _, path := range []string{base + "0", base + "01", base + "-1", base + "+1", base + "9223372036854775808", base + "1/", base, strings.TrimSuffix(base, "/"), base + "%31", "/candidates/cand_abcdef012345678/pages/1", "/prospect-lists/pl_abcdef0123456789/pages/1", "/passes/pass_abcdef0123456789/pages/1", "/candidates/cand_abcdef0123456789/page/1"} {
 		for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost} {
 			got := requestPage(cfg, method, path, "reader")
 			want := requestPage(cfg, method, "/unknown", "reader")
@@ -115,7 +115,7 @@ func TestKeptPagePathGrammar(t *testing.T) {
 	}
 }
 
-// R-NEWP-Y5EL R-NB90-SU6I R-4D28-OS0E R-4GPX-U38H R-4HXU-7UZ6
+// R-2M1M-1VBW R-M6MC-J4P3 R-RO62-HYTL R-UM9B-S0C0 R-WUQP-0V9U
 func TestKeptPageRoutes(t *testing.T) {
 	cfg, d := pageFixture(t)
 	ctx := t.Context()
@@ -188,12 +188,12 @@ func TestKeptPageRoutes(t *testing.T) {
 		comparePage(t, cfg, urls.PagePath(ids[1], p.Number), "page", 200, PageData{b, pageView(p, c)})
 	}
 
-	if got := capturedCandidate(t, cfg, ids[0]); got.Pages == nil || len(got.Pages) != 0 || got.Candidate.Status != store.StatusMerged || got.Facts != nil || got.Assessment != nil || len(got.Enrichments) != 0 || len(got.Rulings) != 1 {
+	if got := capturedCandidate(t, cfg, ids[0]); got.Pages == nil || len(got.Pages) != 0 || got.Candidate.Status != store.StatusMerged || got.Enrichments != nil || got.Judgments != nil || len(got.EnrichmentResults) != 0 || len(got.Rulings) != 1 {
 		t.Fatal(got.Pages)
 	}
 }
 
-// R-ECP5-DRJN R-E0I5-K24P
+// R-ZFF2-3FMM R-E0I5-K24P
 func TestMemberSiteTextStamp(t *testing.T) {
 	for _, at := range []time.Time{{}, fixtureTime()} {
 		v := memberRow(store.Ranked{SiteText: at}, 0)
@@ -204,7 +204,7 @@ func TestMemberSiteTextStamp(t *testing.T) {
 	}
 }
 
-// R-3TJU-KG5A
+// R-P8DA-YHFL
 func TestAddedTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	s, err := Load()
@@ -227,35 +227,35 @@ func TestAddedTemplateStates(t *testing.T) {
 			for _, kind := range []string{enrichers.KindSiteText, sources.WebsiteCheck, enrichers.KindDriveMinutes, enrichers.KindLinkFacts} {
 				for _, candidateStatus := range []string{store.StatusActive, store.StatusMerged} {
 					for _, found := range [][]FactRow{{}, {{"a", "1"}}, {{"a", "1"}, {"b", "2"}}} {
-						render("candidate", CandidateData{Candidate: CandidateView{Status: candidateStatus}, Pages: []PageRow{{Number: "7", URL: p.URL, Title: text, By: text, User: p.User}}, Enrichments: []EnrichmentRow{{Kind: kind, Cost: text, Failed: flag, Found: found}}})
+						render("candidate", CandidateData{Candidate: CandidateView{Status: candidateStatus}, Pages: []PageRow{{Number: "7", URL: p.URL, Title: text, By: text, User: p.User}}, EnrichmentResults: []EnrichmentRow{{Kind: kind, Cost: text, Failed: flag, Found: found}}})
 					}
 				}
-				for _, target := range []string{"coh_abcdef0123456789", "cand_abcdef0123456789"} {
+				for _, target := range []string{"pl_abcdef0123456789", "cand_abcdef0123456789"} {
 					for _, status := range []string{store.StatusRunning, store.StatusDone, store.StatusFailed} {
 						for _, reason := range []string{store.ReasonScrapes, store.ReasonStore, store.ReasonInterrupted, store.ReasonPrompts} {
 							for _, by := range []string{"fixture@example.test", "fixture-user"} {
-								path := "/cohorts/" + target
+								path := "/prospect-lists/" + target
 								if store.ValidCandidateID(target) {
 									path = "/candidates/" + target
 								}
-								v := PassView{Kind: store.KindEnrichCohort, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, Status: status, Reason: reason, Finished: text, FinishedText: text, Target: target, TargetPage: path, EnrichKind: kind, StartedBy: by, Cost: "$0.000000"}
+								v := PassView{Kind: store.KindEnrichTarget, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, Status: status, Reason: reason, Finished: text, FinishedText: text, Target: target, TargetPage: path, EnrichKind: kind, StartedBy: by, Cost: "$0.000000"}
 								if flag {
 									v.Derived, v.Due, v.Fetched, v.HTTPS, v.HTTP, v.None, v.Runs, v.RunsFailed, v.Pages, v.Cost = 7, 5, 3, 2, 1, 2, 2, 1, 4, "$0.023714"
 								}
 								render("pass", PassData{Pass: v})
-								render("landing", LandingData{Passes: []PassRow{{Kind: store.KindEnrichCohort, Trigger: store.TriggerEnrich, Status: status, Reason: reason, Finished: text, FinishedText: text}}})
+								render("landing", LandingData{Passes: []PassRow{{Kind: store.KindEnrichTarget, Trigger: store.TriggerEnrich, Status: status, Reason: reason, Finished: text, FinishedText: text}}})
 							}
 						}
 					}
 				}
 			}
-			render("cohort", CohortData{Members: []MemberRow{{SiteText: text, SiteTextText: text}}})
+			render("prospect_list", ProspectListData{Members: []MemberRow{{SiteText: text, SiteTextText: text}}})
 		}
 	}
 }
 
-// R-ECP5-DRJN R-NB90-SU6I R-NDOT-KDNW
-func TestSiteTextCandidateAndCohortAgree(t *testing.T) {
+// R-ZFF2-3FMM R-M6MC-J4P3 R-PT3L-GL1E
+func TestSiteTextCandidateAndProspectListAgree(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()
 	_, ids, err := cfg.Store.Attach(ctx, "fixture-run", false, []store.Observation{
@@ -265,7 +265,7 @@ func TestSiteTextCandidateAndCohortAgree(t *testing.T) {
 	if err != nil || len(ids) != 2 {
 		t.Fatal(ids, err)
 	}
-	h, err := cfg.Store.CreateCohort(ctx, store.Cohort{Name: "fixture", Size: 10, CreatedUserID: "owner"})
+	h, err := cfg.Store.CreateProspectList(ctx, store.ProspectList{Name: "fixture", Size: 10, CreatedUserID: "owner"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,29 +273,29 @@ func TestSiteTextCandidateAndCohortAgree(t *testing.T) {
 		t.Fatal(err)
 	}
 	candidate := capturedCandidate(t, cfg, ids[0])
-	if candidate.Facts == nil || len(candidate.Enrichments) != 1 || !candidate.Enrichments[0].Failed || candidate.Enrichments[0].Cost != "$0.023714" {
+	if candidate.Enrichments.Facts == nil || len(candidate.EnrichmentResults) != 1 || !candidate.EnrichmentResults[0].Failed || candidate.EnrichmentResults[0].Cost != "$0.023714" {
 		t.Fatal(candidate)
 	}
 	written := ""
-	for _, w := range candidate.Facts.Written {
+	for _, w := range candidate.Enrichments.Facts.Written {
 		if w.Kind == enrichers.KindSiteText {
 			written = w.At
 		}
 	}
 	if written == "" {
-		t.Fatal(candidate.Facts)
+		t.Fatal(candidate.Enrichments.Facts)
 	}
 	if _, err := cfg.Store.JudgeAll(ctx); err != nil {
 		t.Fatal(err)
 	}
-	cohort := pageCohort(t, cfg, h.ID)
-	if len(cohort.Members) != 2 {
-		t.Fatal(cohort)
+	prospectList := pageProspectList(t, cfg, h.ID)
+	if len(prospectList.Members) != 2 {
+		t.Fatal(prospectList)
 	}
-	for _, member := range cohort.Members {
+	for _, member := range prospectList.Members {
 		if member.ID == ids[0] {
 			if member.SiteText != written || member.SiteTextText != "2026-10-05 09:00" {
-				t.Fatal(member, candidate.Facts)
+				t.Fatal(member, candidate.Enrichments.Facts)
 			}
 		} else if member.SiteText != "" || member.SiteTextText != "" {
 			t.Fatal(member)
@@ -303,11 +303,11 @@ func TestSiteTextCandidateAndCohortAgree(t *testing.T) {
 	}
 }
 
-// R-2EFQ-KTW1 R-3X7J-PRDD
+// R-O907-V4XG R-3X7J-PRDD
 func TestTargetPassPage(t *testing.T) {
 	cfg, _ := pageFixture(t)
-	for _, target := range []string{"coh_abcdef0123456789", "cand_abcdef0123456789"} {
-		p, err := cfg.Store.AddPass(t.Context(), store.Pass{Kind: store.KindEnrichCohort, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, UserID: "fixture-owner", Target: target, EnrichKind: enrichers.KindSiteText})
+	for _, target := range []string{"pl_abcdef0123456789", "cand_abcdef0123456789"} {
+		p, err := cfg.Store.AddPass(t.Context(), store.Pass{Kind: store.KindEnrichTarget, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, UserID: "fixture-owner", Target: target, EnrichKind: enrichers.KindSiteText})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -330,10 +330,10 @@ func TestTargetPassPage(t *testing.T) {
 	}
 }
 
-// R-N55I-VZH1 R-DUEN-N7F8 R-3X7J-PRDD R-3ZNC-HAUR
+// R-Q5AL-AAGC R-DUEN-N7F8 R-3X7J-PRDD R-3ZNC-HAUR
 func TestAddedViewShapes(t *testing.T) {
-	candidate := CandidateData{page.Banner{}, CandidateView{}, nil, nil, nil, []EstimateView{}, []LinkView{}, []RulingView{}, []PageRow{}, []EnrichmentRow{}, []RejectRecordRow{}, []CampaignRow{}}
-	if candidate.Pages == nil || candidate.Enrichments == nil {
+	candidate := CandidateData{page.Banner{}, CandidateView{}, nil, nil, []EstimateView{}, []LinkView{}, []RulingView{}, []PageRow{}, []EnrichmentRow{}, []RejectRecordRow{}, []CampaignRow{}}
+	if candidate.Pages == nil || candidate.EnrichmentResults == nil {
 		t.Fatal(candidate)
 	}
 	_ = struct {

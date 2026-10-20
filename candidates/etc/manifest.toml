@@ -1,5 +1,5 @@
 app = "candidates"
-description = "Candidate businesses resolved from the records scrapes collects, judged and read through the owner's cohorts"
+description = "Candidate businesses ingested from public records, enriched and judged, and read through the owner's prospect lists"
 default = false
 mcp = true
 guests = false

@@ -76,7 +76,7 @@ func assertEnrichEvents(t *testing.T, h *runHarness, c identity.Caller, done map
 	}
 }
 
-// R-TKE2-Y4R0
+// R-YR12-G0SQ
 func TestRunCorpusEnrichEvents(t *testing.T) {
 	for _, httpMode := range []string{"nil", "injected", "sandbox"} {
 		t.Run(httpMode, func(t *testing.T) {
@@ -100,10 +100,10 @@ func TestRunCorpusEnrichEvents(t *testing.T) {
 	}
 }
 
-// R-TLLZ-BWHP
+// R-X39Z-P9GP
 func TestRunTargetedEnrichEvents(t *testing.T) {
 	for _, kind := range []string{enrichers.KindLinkFacts, sources.WebsiteCheck, enrichers.KindSiteText} {
-		for _, targetType := range []string{"candidate", "cohort"} {
+		for _, targetType := range []string{"candidate", "prospect_list"} {
 			t.Run(kind+"/"+targetType, func(t *testing.T) {
 				fake := &promptFake{}
 				h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"prompts": runSocket(t, fake)}))
@@ -127,14 +127,14 @@ func TestRunTargetedEnrichEvents(t *testing.T) {
 				caller := identity.Caller{UserID: "target-owner", RequestID: "target-request"}
 				target := candidate
 				args := tools.EnrichArgs{Kind: kind, Candidate: candidate, Force: true}
-				if targetType == "cohort" {
-					r, v := h.call(caller, "create_cohort", map[string]any{"name": "fixture cohort", "filters": map[string]any{}, "size": 10})
+				if targetType == "prospect_list" {
+					r, v := h.call(caller, "create_prospect_list", map[string]any{"name": "fixture prospect list", "filters": map[string]any{}, "size": 10})
 					if r.IsError() {
 						t.Fatal(r)
 					}
 					target = runText(v, "id")
 					args.Candidate = ""
-					args.Cohort = target
+					args.ProspectList = target
 				}
 				r, p := h.call(caller, "enrich", args)
 				if r.IsError() {
@@ -145,13 +145,13 @@ func TestRunTargetedEnrichEvents(t *testing.T) {
 					t.Fatal(done)
 				}
 				h.stop()
-				assertEnrichEvents(t, h, caller, done, store.KindEnrichCohort, target, kind)
+				assertEnrichEvents(t, h, caller, done, store.KindEnrichTarget, target, kind)
 			})
 		}
 	}
 }
 
-// R-TCBG-OMPS
+// R-1WFQ-0ORB
 func TestRunPassTimersHavePermittedDurationsAndScope(t *testing.T) {
 	t.Run("add_page", func(t *testing.T) {
 		h := newRunHarness(t, t.TempDir(), "")
@@ -207,9 +207,9 @@ func TestRunPassTimersHavePermittedDurationsAndScope(t *testing.T) {
 					for _, p := range running {
 						switch wait {
 						case website.Interval, website.Timeout:
-							valid = valid || p.Kind == store.KindEnrich || p.Kind == store.KindEnrichCohort
+							valid = valid || p.Kind == store.KindEnrich || p.Kind == store.KindEnrichTarget
 						case passes.PollInterval, passes.QueueWait:
-							valid = valid || p.Kind == store.KindEnrichCohort
+							valid = valid || p.Kind == store.KindEnrichTarget
 						}
 					}
 					if !valid {
@@ -251,7 +251,7 @@ func TestRunPassTimersHavePermittedDurationsAndScope(t *testing.T) {
 	}
 }
 
-// R-TJ66-KD0B
+// R-R6QU-SEXX
 func TestRunBusyJudgeDeliveryEmitsNoPassEvents(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
 	h.start()

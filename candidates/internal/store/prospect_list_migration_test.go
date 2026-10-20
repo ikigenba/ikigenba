@@ -17,7 +17,7 @@ import (
 )
 
 // R-TIPT-NOAU
-func TestCohortMigrationContract(t *testing.T) {
+func TestProspectListMigrationContract(t *testing.T) {
 	b, err := fs.ReadFile(candidates.Migrations(), "0010_cohorts.sql")
 	contractOK(t, err)
 	lines := []string{
@@ -65,14 +65,14 @@ func writePriorJudgment(ctx context.Context, tx *sql.Tx, id string, fleet bool) 
 }
 func assertPriorJudgment(t *testing.T, s *store.Store, id string) {
 	t.Helper()
-	a, err := s.GetAssessment(context.Background(), id)
+	a, err := s.GetJudgments(context.Background(), id)
 	contractOK(t, err)
 	op, conf := 0.6, 0.7
 	low, high := int64(100), int64(200)
-	contractEqual(t, a, store.Assessment{Candidate: id, Operating: &op, OperatingKey: 600000, Evidence: []sources.Evidence{}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &conf, Categories: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)})
+	contractEqual(t, a, store.Judgments{Candidate: id, Operating: &op, OperatingKey: 600000, Evidence: []sources.Evidence{}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &conf, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)})
 }
 
-// R-XHTB-QP1R
+// R-Z5J8-OA8U
 func TestPriorJudgmentsAcrossMigration(t *testing.T) {
 	for _, fleet := range []bool{false, true} {
 		t.Run(map[bool]string{false: "false", true: "true"}[fleet], func(t *testing.T) {
@@ -98,8 +98,8 @@ func TestPriorJudgmentsAcrossMigration(t *testing.T) {
 	}
 }
 
-// R-D6L1-A6VD
-func TestOldAssessmentsClearWhilePassesRetainTheirMeaning(t *testing.T) {
+// R-YM0U-JYDQ
+func TestOldJudgmentsClearWhilePassesRetainTheirMeaning(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "state.db")
 	d, err := db.Open(ctx, db.Config{Path: path, Migrations: earlierMigrations(t, "0008_windows.sql")})
@@ -112,7 +112,7 @@ func TestOldAssessmentsClearWhilePassesRetainTheirMeaning(t *testing.T) {
 		if _, e := tx.ExecContext(ctx, `INSERT INTO assessments(candidate,fleet,low,high,confidence,filed,minutes,exclusions,excluded,base,rules,scored,effective,score,score_key) VALUES (?,1,100,200,0.7,'2026-01-01T00:00:00Z',42,'[]',0,0.7,?,'2026-01-01T00:00:00Z',0.7,0.7,700000)`, id, sources.Rules); e != nil {
 			return e
 		}
-		for i, trigger := range []string{store.TriggerRebuild, "historic-run"} {
+		for i, trigger := range []string{"rebuild", "historic-run"} {
 			delivery := ""
 			if i > 0 {
 				delivery = "historic-delivery"
@@ -128,13 +128,13 @@ func TestOldAssessmentsClearWhilePassesRetainTheirMeaning(t *testing.T) {
 	contractOK(t, err)
 	defer func() { contractOK(t, d.Close()) }()
 	s := store.New(d, store.Config{Now: func() time.Time { return time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC) }, Rand: &contractRandom{next: 1}})
-	a, err := s.GetAssessment(ctx, id)
+	a, err := s.GetJudgments(ctx, id)
 	contractError(t, err, store.ErrNotFound)
-	contractEqual(t, a, store.Assessment{})
+	contractEqual(t, a, store.Judgments{})
 	for i, pid := range []string{"pass_1111111111111111", "pass_2222222222222222"} {
 		p, e := s.GetPass(ctx, pid)
 		contractOK(t, e)
-		kind, origin, trigger, delivery := store.KindRebuild, store.OriginRebuild, store.TriggerRebuild, ""
+		kind, origin, trigger, delivery := store.KindIngest, store.OriginIngest, store.TriggerIngest, ""
 		if i > 0 {
 			kind, origin, trigger, delivery = store.KindIngest, store.OriginRun, "historic-run", "historic-delivery"
 		}
@@ -144,7 +144,7 @@ func TestOldAssessmentsClearWhilePassesRetainTheirMeaning(t *testing.T) {
 	contractError(t, err, store.ErrDelivered)
 }
 
-// R-XJ18-4GSG
+// R-YZFQ-RFJD
 func TestWebsiteMigrationKeepsPreviousJudgments(t *testing.T) {
 	for _, fleet := range []bool{false, true} {
 		t.Run(map[bool]string{false: "false", true: "true"}[fleet], func(t *testing.T) {
@@ -168,14 +168,14 @@ func TestWebsiteMigrationKeepsPreviousJudgments(t *testing.T) {
 			contractOK(t, err)
 			defer func() { contractOK(t, d.Close()) }()
 			s := store.New(d, store.Config{Now: func() time.Time { return time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC) }, Rand: &contractRandom{next: 1}})
-			a, err := s.GetAssessment(ctx, id)
+			a, err := s.GetJudgments(ctx, id)
 			contractOK(t, err)
 			op, conf := 0.6, 0.7
 			low, high := int64(100), int64(200)
-			contractEqual(t, a, store.Assessment{Candidate: id, Operating: &op, OperatingKey: 600000, Evidence: []sources.Evidence{}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &conf, Categories: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)})
+			contractEqual(t, a, store.Judgments{Candidate: id, Operating: &op, OperatingKey: 600000, Evidence: []sources.Evidence{}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &conf, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)})
 			p, err := s.GetPass(ctx, pid)
 			contractOK(t, err)
-			contractEqual(t, p, store.Pass{ID: pid, Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, Status: store.StatusDone, Started: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Finished: time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC), Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, UserID: "owner", UserEmail: "mail", RequestID: "request"})
+			contractEqual(t, p, store.Pass{ID: pid, Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Status: store.StatusDone, Started: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Finished: time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC), Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, UserID: "owner", UserEmail: "mail", RequestID: "request"})
 			es, err := s.Enrichments(ctx, id)
 			contractOK(t, err)
 			contractEqual(t, es, []store.Enrichment{})

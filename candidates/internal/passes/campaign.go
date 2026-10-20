@@ -22,8 +22,12 @@ func (e *Engine) DeliverCampaign(ctx context.Context, d events.Delivery) events.
 	var err error
 	switch d.Event.Name {
 	case trail.AcceptedAdded:
-		cohort, _ := d.Event.Attrs["cohort"].(string)
-		err = e.cfg.Store.AddCampaignUse(ctx, candidate, campaign, cohort, d.Event.Time)
+		list, ok := d.Event.Attrs["prospect_list"].(string)
+		if !ok {
+			legacy, _ := d.Event.Attrs["cohort"].(string)
+			list = store.MapListID(legacy)
+		}
+		err = e.cfg.Store.AddCampaignUse(ctx, candidate, campaign, list, d.Event.Time)
 	case trail.AcceptedRejected:
 		reason, _ := d.Event.Attrs["reason"].(string)
 		err = e.cfg.Store.RejectCampaignUse(ctx, candidate, campaign, reason, d.Event.Time)

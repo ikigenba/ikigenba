@@ -24,32 +24,33 @@ import (
 
 // Tool descriptions and refusal sentences are public copy.
 const (
-	DescribeCohorts      string = "Read the saved cohorts of candidate businesses."
-	DescribeCohort       string = "Read a cohort with its members and standing rejects."
-	DescribeExclude      string = "Exclude a candidate from every cohort."
-	DescribeInclude      string = "Include a candidate in every matching cohort again."
-	DescribeCreateCohort string = "Create a saved search over candidate businesses."
-	DescribeEditCohort   string = "Edit a cohort definition."
-	DescribeDeleteCohort string = "Delete a cohort definition."
-	DescribeReject       string = "Reject a candidate from a cohort."
-	DescribeUnreject     string = "Remove a candidate's standing rejection from a cohort."
-	DescribeCandidates   string = "Find candidate businesses by name, ZIP or phone."
-	DescribeCandidate    string = "Read a candidate with its evidence, assessment and rulings."
-	DescribePasses       string = "Read recorded passes."
-	DescribePass         string = "Read a pass."
-	DescribeEnrich       string = "Enrich candidates whose inputs changed since their last result, for one kind or every kind."
-	DescribeAddPage      string = "Keep a page from a candidate website."
-	DescribeRebuild      string = "Start a resolution pass over current scraper runs."
-	DescribeDecide       string = "Record an owner's ruling and reassess the affected candidates."
-	RefuseNotFound       string = "The requested record was not found."
-	RefuseInvalid        string = "The arguments are invalid."
-	RefuseBusy           string = "A pass is already running."
-	RefuseStopping       string = "The service is stopping."
-	RefuseUnavailable    string = "The service is unavailable."
-	RefuseNoWebsite      string = "The candidate has no website."
-	RefuseOffSite        string = "The URL is outside the candidate website."
-	RefusePageCap        string = "The candidate already holds 20 distinct URLs."
-	RefuseFetch          string = "The page could not be fetched."
+	DescribeProspectLists      string = "Read the saved prospect lists of candidate businesses."
+	DescribeProspectList       string = "Read a prospect list with its members and standing rejects."
+	DescribeExclude            string = "Exclude a candidate from every prospect list."
+	DescribeInclude            string = "Include a candidate in every matching prospect list again."
+	DescribeCreateProspectList string = "Create a saved search over candidate businesses."
+	DescribeEditProspectList   string = "Edit a prospect list definition."
+	DescribeDeleteProspectList string = "Delete a prospect list definition."
+	DescribeReject             string = "Reject a candidate from a prospect list."
+	DescribeUnreject           string = "Remove a candidate's standing rejection from a prospect list."
+	DescribeCandidates         string = "Find candidate businesses by name, ZIP or phone."
+	DescribeCandidate          string = "Read a candidate with its enrichments, judgments, evidence and rulings."
+	DescribePasses             string = "Read recorded passes."
+	DescribePass               string = "Read a pass."
+	DescribeEnrich             string = "Enrich candidates whose inputs changed since their last result, for one kind or every kind."
+	DescribeAddPage            string = "Keep a page from a candidate website."
+	DescribeJudge              string = "Start a judge pass over all candidate businesses."
+	DescribeIngest             string = "Start an ingest over current scraper runs."
+	DescribeDecide             string = "Record an owner's ruling and judge the affected candidates."
+	RefuseNotFound             string = "The requested record was not found."
+	RefuseInvalid              string = "The arguments are invalid."
+	RefuseBusy                 string = "A pass is already running."
+	RefuseStopping             string = "The service is stopping."
+	RefuseUnavailable          string = "The service is unavailable."
+	RefuseNoWebsite            string = "The candidate has no website."
+	RefuseOffSite              string = "The URL is outside the candidate website."
+	RefusePageCap              string = "The candidate already holds 20 distinct URLs."
+	RefuseFetch                string = "The page could not be fetched."
 )
 
 // Config supplies the engine and database.
@@ -64,7 +65,7 @@ type Entry struct{ Name, Description string }
 
 // Catalog returns independent ordered tool metadata.
 func Catalog() []Entry {
-	return []Entry{{"cohorts", DescribeCohorts}, {"cohort", DescribeCohort}, {"candidates", DescribeCandidates}, {"candidate", DescribeCandidate}, {"passes", DescribePasses}, {"pass", DescribePass}, {"rebuild", DescribeRebuild}, {"enrich", DescribeEnrich}, {"add_page", DescribeAddPage}, {"decide", DescribeDecide}, {"exclude", DescribeExclude}, {"include", DescribeInclude}, {"create_cohort", DescribeCreateCohort}, {"edit_cohort", DescribeEditCohort}, {"delete_cohort", DescribeDeleteCohort}, {"reject", DescribeReject}, {"unreject", DescribeUnreject}}
+	return []Entry{{"prospect_lists", DescribeProspectLists}, {"prospect_list", DescribeProspectList}, {"candidates", DescribeCandidates}, {"candidate", DescribeCandidate}, {"passes", DescribePasses}, {"pass", DescribePass}, {"ingest", DescribeIngest}, {"judge", DescribeJudge}, {"enrich", DescribeEnrich}, {"add_page", DescribeAddPage}, {"decide", DescribeDecide}, {"exclude", DescribeExclude}, {"include", DescribeInclude}, {"create_prospect_list", DescribeCreateProspectList}, {"edit_prospect_list", DescribeEditProspectList}, {"delete_prospect_list", DescribeDeleteProspectList}, {"reject", DescribeReject}, {"unreject", DescribeUnreject}}
 }
 func refuse(word string) mcp.Result {
 	text := RefuseUnavailable
@@ -110,40 +111,41 @@ func add[A any](srv *mcp.Server, name, description string, effect mcp.Effect, ha
 	mcp.AddRawTool(srv, mcp.RawTool[A]{Name: name, Description: description, Effect: effect, Handler: func(ctx context.Context, c identity.Caller, a A) (mcp.Result, error) { return handler(ctx, c, a), nil }})
 }
 
-// Register installs the seventeen candidate tools on srv.
+// Register installs the eighteen candidate tools on srv.
 func Register(srv *mcp.Server, cfg Config) {
-	add(srv, "cohorts", DescribeCohorts, mcp.Read, func(ctx context.Context, _ identity.Caller, a CohortsArgs) mcp.Result {
-		z, key, id, err := timePosition("cohorts", a.Page, a.Limit)
+	add(srv, "prospect_lists", DescribeProspectLists, mcp.Read, func(ctx context.Context, _ identity.Caller, a ProspectListsArgs) mcp.Result {
+		z, key, id, err := timePosition("prospect_lists", a.Page, a.Limit)
 		if err != nil {
 			return mcp.ErrorResult(err.Error())
 		}
-		rows, err := cfg.Store.ListCohorts(ctx, key, id, z+1)
+		rows, err := cfg.Store.ListProspectLists(ctx, key, id, z+1)
 		if err != nil {
 			return failure(err)
 		}
-		out := CohortList{Cohorts: []Cohort{}}
+		out := ProspectListList{ProspectLists: []ProspectList{}}
 		for i, c := range rows {
 			if i == z {
 				break
 			}
-			out.Cohorts = append(out.Cohorts, cohortOf(c))
+			out.ProspectLists = append(out.ProspectLists, prospectListOf(c))
 		}
 		if len(rows) > z {
 			last := rows[z-1]
-			token := paging.Token{Tool: "cohorts"}.Encode(last.Name, last.ID)
+			token := paging.Token{Tool: "prospect_lists"}.Encode(last.Name, last.ID)
 			out.Next = &token
 		}
 		return answer(out)
 	})
-	add(srv, "cohort", DescribeCohort, mcp.Read, func(ctx context.Context, _ identity.Caller, a CohortArgs) mcp.Result {
-		if !store.ValidCohortID(a.Cohort) {
+	add(srv, "prospect_list", DescribeProspectList, mcp.Read, func(ctx context.Context, _ identity.Caller, a ProspectListArgs) mcp.Result {
+		a.ProspectList = store.MapListID(a.ProspectList)
+		if !store.ValidProspectListID(a.ProspectList) {
 			return refuse(passes.RefusalNotFound)
 		}
-		r, err := cfg.Store.ReadCohort(ctx, a.Cohort)
+		r, err := cfg.Store.ReadProspectList(ctx, a.ProspectList)
 		if err != nil {
 			return failure(err)
 		}
-		return answer(cohortReadOf(r))
+		return answer(prospectListReadOf(r))
 	})
 	add(srv, "candidates", DescribeCandidates, mcp.Read, func(ctx context.Context, _ identity.Caller, a CandidatesArgs) mcp.Result {
 		z, key, id, err := timePosition("candidates", a.Page, a.Limit)
@@ -207,8 +209,19 @@ func Register(srv *mcp.Server, cfg Config) {
 		}
 		return answer(passes.RecordOf(p))
 	})
-	add(srv, "rebuild", DescribeRebuild, mcp.Additive, func(ctx context.Context, c identity.Caller, _ NoArgs) mcp.Result {
-		p, err := cfg.Passes.Rebuild(ctx, c)
+	add(srv, "ingest", DescribeIngest, mcp.Additive, func(ctx context.Context, c identity.Caller, a IngestArgs) mcp.Result {
+		p, err := cfg.Passes.Ingest(ctx, c, a.Scraper)
+		if err != nil {
+			var r *passes.Refusal
+			if errors.As(err, &r) {
+				return engineRefusal(r)
+			}
+			return refuse(passes.RefusalUnavailable)
+		}
+		return answer(passes.RecordOf(p))
+	})
+	add(srv, "judge", DescribeJudge, mcp.Additive, func(ctx context.Context, c identity.Caller, _ NoArgs) mcp.Result {
+		p, err := cfg.Passes.Judge(ctx, c)
 		if err != nil {
 			var r *passes.Refusal
 			if errors.As(err, &r) {
@@ -219,8 +232,9 @@ func Register(srv *mcp.Server, cfg Config) {
 		return answer(passes.RecordOf(p))
 	})
 	add(srv, "enrich", DescribeEnrich, mcp.Additive, func(ctx context.Context, c identity.Caller, a EnrichArgs) mcp.Result {
-		targeted := a.Cohort != "" || a.Candidate != ""
-		if a.Kind != "" && !slices.Contains(enrichers.Kinds(), a.Kind) || a.Cohort != "" && a.Candidate != "" || a.Force && !targeted || a.Kind == "" && targeted {
+		a.ProspectList = store.MapListID(a.ProspectList)
+		targeted := a.ProspectList != "" || a.Candidate != ""
+		if a.Kind != "" && !slices.Contains(enrichers.Kinds(), a.Kind) || a.ProspectList != "" && a.Candidate != "" || a.Force && !targeted || a.Kind == "" && targeted {
 			return refuse(passes.RefusalInvalid)
 		}
 		if !targeted {
@@ -230,17 +244,17 @@ func Register(srv *mcp.Server, cfg Config) {
 				}
 			}
 		}
-		if a.Cohort != "" && !store.ValidCohortID(a.Cohort) || a.Candidate != "" && !store.ValidCandidateID(a.Candidate) {
+		if a.ProspectList != "" && !store.ValidProspectListID(a.ProspectList) || a.Candidate != "" && !store.ValidCandidateID(a.Candidate) {
 			return refuse(passes.RefusalNotFound)
 		}
 		var p store.Pass
 		var err error
 		if targeted {
-			target := a.Cohort
+			target := a.ProspectList
 			if target == "" {
 				target = a.Candidate
 			}
-			p, err = cfg.Passes.EnrichCohort(ctx, c, a.Kind, target, a.Force)
+			p, err = cfg.Passes.EnrichTarget(ctx, c, a.Kind, target, a.Force)
 		} else {
 			p, err = cfg.Passes.Enrich(ctx, c, a.Kind)
 		}
@@ -295,11 +309,11 @@ func Register(srv *mcp.Server, cfg Config) {
 			return answer(decisionOf(r, cs))
 		})
 	}
-	add(srv, "create_cohort", DescribeCreateCohort, mcp.Additive, func(ctx context.Context, c identity.Caller, a CreateCohortArgs) mcp.Result {
-		if !store.ValidCohortName(a.Name) || !validParts(a.Size, a.Filters, a.Order) {
+	add(srv, "create_prospect_list", DescribeCreateProspectList, mcp.Additive, func(ctx context.Context, c identity.Caller, a CreateProspectListArgs) mcp.Result {
+		if !store.ValidProspectListName(a.Name) || !validParts(a.Size, a.Filters, a.Order) {
 			return refuse(passes.RefusalInvalid)
 		}
-		v := store.Cohort{Name: a.Name, Size: store.CohortSizeDefault, CreatedUserID: c.UserID, CreatedUserEmail: c.Email}
+		v := store.ProspectList{Name: a.Name, Size: store.ProspectListSizeDefault, CreatedUserID: c.UserID, CreatedUserEmail: c.Email}
 		if a.Size != nil {
 			v.Size = int64(*a.Size)
 		}
@@ -309,20 +323,21 @@ func Register(srv *mcp.Server, cfg Config) {
 		if a.Order != nil {
 			v.Order = orderOf(*a.Order)
 		}
-		r, err := cfg.Store.CreateCohort(ctx, v)
+		r, err := cfg.Store.CreateProspectList(ctx, v)
 		if err != nil {
 			return failure(err)
 		}
-		return answer(cohortOf(r))
+		return answer(prospectListOf(r))
 	})
-	add(srv, "edit_cohort", DescribeEditCohort, mcp.Additive, func(ctx context.Context, c identity.Caller, a EditCohortArgs) mcp.Result {
-		if a.Name != nil && !store.ValidCohortName(*a.Name) || !validParts(a.Size, a.Filters, a.Order) {
+	add(srv, "edit_prospect_list", DescribeEditProspectList, mcp.Additive, func(ctx context.Context, c identity.Caller, a EditProspectListArgs) mcp.Result {
+		a.ProspectList = store.MapListID(a.ProspectList)
+		if a.Name != nil && !store.ValidProspectListName(*a.Name) || !validParts(a.Size, a.Filters, a.Order) {
 			return refuse(passes.RefusalInvalid)
 		}
-		if !store.ValidCohortID(a.Cohort) {
+		if !store.ValidProspectListID(a.ProspectList) {
 			return refuse(passes.RefusalNotFound)
 		}
-		v := store.CohortEdit{ID: a.Cohort, Name: a.Name, UserID: c.UserID, UserEmail: c.Email}
+		v := store.ProspectListEdit{ID: a.ProspectList, Name: a.Name, UserID: c.UserID, UserEmail: c.Email}
 		if a.Size != nil {
 			sz := int64(*a.Size)
 			v.Size = &sz
@@ -335,31 +350,33 @@ func Register(srv *mcp.Server, cfg Config) {
 			o := orderOf(*a.Order)
 			v.Order = &o
 		}
-		r, err := cfg.Store.EditCohort(ctx, v)
+		r, err := cfg.Store.EditProspectList(ctx, v)
 		if err != nil {
 			return failure(err)
 		}
-		return answer(cohortOf(r))
+		return answer(prospectListOf(r))
 	})
-	add(srv, "delete_cohort", DescribeDeleteCohort, mcp.Destructive, func(ctx context.Context, _ identity.Caller, a CohortArgs) mcp.Result {
-		if !store.ValidCohortID(a.Cohort) {
+	add(srv, "delete_prospect_list", DescribeDeleteProspectList, mcp.Destructive, func(ctx context.Context, _ identity.Caller, a ProspectListArgs) mcp.Result {
+		a.ProspectList = store.MapListID(a.ProspectList)
+		if !store.ValidProspectListID(a.ProspectList) {
 			return refuse(passes.RefusalNotFound)
 		}
-		r, err := cfg.Store.DeleteCohort(ctx, a.Cohort)
+		r, err := cfg.Store.DeleteProspectList(ctx, a.ProspectList)
 		if err != nil {
 			return failure(err)
 		}
-		return answer(cohortOf(r))
+		return answer(prospectListOf(r))
 	})
 	for _, tool := range []struct{ name, description, kind string }{{"reject", DescribeReject, store.KindReject}, {"unreject", DescribeUnreject, store.KindUnreject}} {
 		add(srv, tool.name, tool.description, mcp.Additive, func(ctx context.Context, c identity.Caller, a RejectArgs) mcp.Result {
+			a.ProspectList = store.MapListID(a.ProspectList)
 			if strings.TrimSpace(a.Why) == "" {
 				return refuse(passes.RefusalInvalid)
 			}
-			if !store.ValidCohortID(a.Cohort) || !store.ValidCandidateID(a.Candidate) {
+			if !store.ValidProspectListID(a.ProspectList) || !store.ValidCandidateID(a.Candidate) {
 				return refuse(passes.RefusalNotFound)
 			}
-			r, err := cfg.Store.Reject(ctx, store.Reject{Kind: tool.kind, Cohort: a.Cohort, Candidate: a.Candidate, Why: a.Why, UserID: c.UserID, UserEmail: c.Email})
+			r, err := cfg.Store.Reject(ctx, store.Reject{Kind: tool.kind, ProspectList: a.ProspectList, Candidate: a.Candidate, Why: a.Why, UserID: c.UserID, UserEmail: c.Email})
 			if err != nil {
 				return failure(err)
 			}
@@ -406,19 +423,49 @@ func linkOf(l store.Link) Link {
 func estimateOf(e sources.Estimate) Estimate {
 	return Estimate{e.Source, e.Low, e.High, e.Confidence, e.Facts, date(e.Filed), e.Formula}
 }
-func assessmentOf(a store.Assessment) Assessment {
-	v := Assessment{OperatingConfidence: a.Operating, OperatingEvidence: []Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, KnownSince: date(a.KnownSince), NewestFiling: date(a.NewestFiling), Categories: []Category{}, ClassifiedBy: store.ClassifiedBy(a.Categories), RecordCategories: []Category{}, GovernmentMatch: a.GovernmentMatch, FleetVerdict: a.FleetVerdict, PowerUnits: a.PowerUnits, Drivers: a.Drivers, Website: a.Website, WebsiteURL: a.WebsiteURL, WebsiteSource: a.WebsiteSource, Minutes: a.Minutes, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
+func judgmentsOf(a store.Judgments) Judgments {
+	v := Judgments{OperatingConfidence: a.Operating, OperatingEvidence: []Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
 	for _, e := range a.Evidence {
 		v.OperatingEvidence = append(v.OperatingEvidence, Evidence{e.Name, e.Source, e.Weight, e.Description})
 	}
-	for _, c := range a.Categories {
+	return v
+}
+func factsOf(f store.Facts) Facts {
+	v := Facts{KnownSince: date(f.KnownSince), NewestFiling: date(f.NewestFiling), Categories: []Category{}, ClassifiedBy: store.ClassifiedBy(f.Categories), RecordsDiffer: store.RecordsDiffer(f.Categories, f.Records), RecordCategories: []Category{}, GovernmentMatch: f.GovernmentMatch, FleetVerdict: f.FleetVerdict, PowerUnits: f.PowerUnits, Drivers: f.Drivers, Website: f.Website, WebsiteURL: f.WebsiteURL, WebsiteSource: f.WebsiteSource, Minutes: f.Minutes, Written: []Written{}}
+	for _, c := range f.Categories {
 		v.Categories = append(v.Categories, Category{c.Name, c.Source})
+	}
+	if v.RecordsDiffer {
+		for _, c := range f.Records {
+			v.RecordCategories = append(v.RecordCategories, Category{c.Name, c.Source})
+		}
+	}
+	for _, w := range f.Written {
+		v.Written = append(v.Written, Written{w.Kind, stamp(w.At)})
 	}
 	return v
 }
+func briefOf(es []store.Enrichment) *Brief {
+	for _, e := range es {
+		if e.Kind != enrichers.KindBrief {
+			continue
+		}
+		var f enrichers.BriefFound
+		if json.Unmarshal(e.Found, &f) != nil || f.Failed() {
+			continue
+		}
+		v := Brief{Summary: f.Summary, Categories: []BriefCategory{}, Labels: f.Labels, At: stamp(e.At)}
+		for _, c := range f.Categories {
+			v.Categories = append(v.Categories, BriefCategory{c.Name, c.Why})
+		}
+		return &v
+	}
+	return nil
+}
 func memberOf(e store.Ranked) Member {
-	a := e.Assessment
-	v := Member{Candidate: candidateOf(e.Candidate), OperatingConfidence: a.Operating, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(a.Categories), FleetVerdict: a.FleetVerdict, Website: a.Website, WebsiteURL: a.WebsiteURL, WebsiteSource: a.WebsiteSource, KnownSince: date(a.KnownSince), NewestFiling: date(a.NewestFiling), Excluded: a.Excluded, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch}
+	a := e.Judgments
+	f := e.Facts
+	v := Member{Candidate: candidateOf(e.Candidate), OperatingConfidence: a.Operating, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(f.Categories), FleetVerdict: f.FleetVerdict, Website: f.Website, WebsiteURL: f.WebsiteURL, WebsiteSource: f.WebsiteSource, KnownSince: date(f.KnownSince), NewestFiling: date(f.NewestFiling), Excluded: a.Excluded, Minutes: f.Minutes, GovernmentMatch: f.GovernmentMatch}
 	if !e.SiteText.IsZero() {
 		t := stamp(e.SiteText)
 		v.SiteText = &t
@@ -428,7 +475,7 @@ func memberOf(e store.Ranked) Member {
 		v.Brief = &t
 	}
 	seen := map[string]bool{}
-	for _, c := range a.Categories {
+	for _, c := range f.Categories {
 		if !seen[c.Name] {
 			v.Categories = append(v.Categories, c.Name)
 			seen[c.Name] = true
@@ -443,7 +490,7 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 	if err != nil {
 		return failure(err)
 	}
-	out := Detail{Pages: []Page{}, Candidate: candidateOf(c), Estimates: []Estimate{}, Links: []Link{}, Rulings: []Ruling{}, Enrichments: []Enrichment{}, Rejects: []Reject{}, Campaigns: []CampaignUse{}}
+	out := Detail{Pages: []Page{}, Candidate: candidateOf(c), Estimates: []Estimate{}, Links: []Link{}, Rulings: []Ruling{}, EnrichmentResults: []EnrichmentResult{}, Rejects: []Reject{}, Campaigns: []CampaignUse{}}
 	rs, err := cfg.Store.Rulings(ctx, id)
 	if err != nil {
 		return failure(err)
@@ -466,27 +513,18 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 		for _, use := range uses {
 			out.Campaigns = append(out.Campaigns, campaignUseOf(use))
 		}
-		a, err := cfg.Store.GetAssessment(ctx, id)
+		out.Enrichments = &Enrichments{}
+		f, err := cfg.Store.GetFacts(ctx, id)
 		if err == nil {
-			v := assessmentOf(a)
-			f, err := cfg.Store.GetFacts(ctx, id)
-			if err == nil {
-				v.Brief = f.Brief
-				for _, w := range f.Written {
-					if w.Kind == enrichers.KindWebsiteSearch {
-						v.WebsiteSearchAt = stamp(w.At)
-					}
-				}
-				v.RecordsDiffer = store.RecordsDiffer(f.Categories, f.Records)
-				if v.RecordsDiffer {
-					for _, c := range f.Records {
-						v.RecordCategories = append(v.RecordCategories, Category{c.Name, c.Source})
-					}
-				}
-			} else if !errors.Is(err, store.ErrNotFound) {
-				return failure(err)
-			}
-			out.Assessment = &v
+			v := factsOf(f)
+			out.Enrichments.Facts = &v
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return failure(err)
+		}
+		a, err := cfg.Store.GetJudgments(ctx, id)
+		if err == nil {
+			v := judgmentsOf(a)
+			out.Judgments = &v
 		} else if !errors.Is(err, store.ErrNotFound) {
 			return failure(err)
 		}
@@ -501,8 +539,9 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 		if err != nil {
 			return failure(err)
 		}
+		out.Enrichments.Brief = briefOf(enrichments)
 		for _, e := range enrichments {
-			out.Enrichments = append(out.Enrichments, enrichmentOf(e))
+			out.EnrichmentResults = append(out.EnrichmentResults, enrichmentOf(e))
 		}
 
 		es, err := cfg.Store.Estimates(ctx, id)
@@ -523,8 +562,8 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 	return answer(out)
 }
 
-func enrichmentOf(e store.Enrichment) Enrichment {
-	v := Enrichment{Kind: e.Kind, Source: e.Source, Inputs: e.Inputs, Cost: e.Cost, At: stamp(e.At)}
+func enrichmentOf(e store.Enrichment) EnrichmentResult {
+	v := EnrichmentResult{Kind: e.Kind, Source: e.Source, Inputs: e.Inputs, Cost: e.Cost, At: stamp(e.At)}
 	switch e.Kind {
 	case sources.WebsiteCheck:
 		var r website.Result
@@ -559,18 +598,18 @@ func fleetOf(v string) string {
 	}
 	return v
 }
-func cohortOf(c store.Cohort) Cohort {
-	return Cohort{c.ID, c.Name, c.Size, c.Filters, c.Order, c.CreatedUserID, c.CreatedUserEmail, stamp(c.Created), c.ChangedUserID, c.ChangedUserEmail, stamp(c.Changed)}
+func prospectListOf(c store.ProspectList) ProspectList {
+	return ProspectList{c.ID, c.Name, c.Size, c.Filters, c.Order, c.CreatedUserID, c.CreatedUserEmail, stamp(c.Created), c.ChangedUserID, c.ChangedUserEmail, stamp(c.Changed)}
 }
 func rejectOf(r store.Reject) Reject {
 	at := ""
 	if !r.At.IsZero() {
 		at = stamp(r.At)
 	}
-	return Reject{r.Kind, r.Cohort, r.CohortName, r.Candidate, r.Why, r.UserID, r.UserEmail, at}
+	return Reject{r.Kind, r.ProspectList, r.ProspectListName, r.Candidate, r.Why, r.UserID, r.UserEmail, at}
 }
-func cohortReadOf(r store.CohortRead) CohortRead {
-	v := CohortRead{Cohort: cohortOf(r.Cohort), Matching: r.Matching, Classified: r.Classified, Members: []Member{}, Rejects: []Reject{}}
+func prospectListReadOf(r store.ProspectListRead) ProspectListRead {
+	v := ProspectListRead{ProspectList: prospectListOf(r.ProspectList), Matching: r.Matching, Classified: r.Classified, Members: []Member{}, Rejects: []Reject{}}
 	for _, m := range r.Members {
 		v.Members = append(v.Members, memberOf(m))
 	}
@@ -593,22 +632,22 @@ func int64Of(p *uint32) *int64 {
 	v := int64(*p)
 	return &v
 }
-func filterOf(a FilterArgs) store.CohortFilters {
+func filterOf(a FilterArgs) store.ProspectListFilters {
 	var websites []string
 	if a.Website != nil {
 		websites = append([]string{}, (*a.Website)...)
 	}
-	return store.CohortFilters{RevenueMin: int64Of(a.RevenueMin), RevenueMax: int64Of(a.RevenueMax), RevenueUnknown: a.RevenueUnknown, MaxMinutes: int64Of(a.MaxMinutes), MinutesUnknown: a.MinutesUnknown, Categories: append([]string(nil), a.Categories...), CategoryUnknown: a.CategoryUnknown, Fleet: a.Fleet, FleetUnknown: a.FleetUnknown, Website: websites, WebsiteUnknown: a.WebsiteUnknown, Government: a.Government, MaxFilingAgeDays: int64Of(a.MaxFilingAgeDays), FilingUnknown: a.FilingUnknown, MinCampaignAgeDays: int64Of(a.MinCampaignAgeDays), Class: a.Class, ClassUnknown: a.ClassUnknown, ShowExcluded: a.ShowExcluded}
+	return store.ProspectListFilters{RevenueMin: int64Of(a.RevenueMin), RevenueMax: int64Of(a.RevenueMax), RevenueUnknown: a.RevenueUnknown, MaxMinutes: int64Of(a.MaxMinutes), MinutesUnknown: a.MinutesUnknown, Categories: append([]string(nil), a.Categories...), CategoryUnknown: a.CategoryUnknown, Fleet: a.Fleet, FleetUnknown: a.FleetUnknown, Website: websites, WebsiteUnknown: a.WebsiteUnknown, Government: a.Government, MaxFilingAgeDays: int64Of(a.MaxFilingAgeDays), FilingUnknown: a.FilingUnknown, MinCampaignAgeDays: int64Of(a.MinCampaignAgeDays), Class: a.Class, ClassUnknown: a.ClassUnknown, ShowExcluded: a.ShowExcluded}
 }
-func orderOf(a []OrderArgs) []store.CohortOrder {
-	v := []store.CohortOrder{}
+func orderOf(a []OrderArgs) []store.ProspectListOrder {
+	v := []store.ProspectListOrder{}
 	for _, o := range a {
-		v = append(v, store.CohortOrder{Field: o.Field, Direction: o.Direction})
+		v = append(v, store.ProspectListOrder{Field: o.Field, Direction: o.Direction})
 	}
 	return v
 }
 func validParts(size *int, filters *FilterArgs, order *[]OrderArgs) bool {
-	return (size == nil || store.ValidCohortSize(int64(*size))) && (filters == nil || store.ValidCohortFilters(filterOf(*filters))) && (order == nil || store.ValidCohortOrder(orderOf(*order)))
+	return (size == nil || store.ValidProspectListSize(int64(*size))) && (filters == nil || store.ValidProspectListFilters(filterOf(*filters))) && (order == nil || store.ValidProspectListOrder(orderOf(*order)))
 }
 
 func engineRefusal(r *passes.Refusal) mcp.Result {
@@ -684,7 +723,7 @@ func addPage(ctx context.Context, c identity.Caller, cfg Config, a AddPageArgs) 
 }
 
 func campaignUseOf(u store.CampaignUse) CampaignUse {
-	v := CampaignUse{Campaign: u.Campaign, Cohort: u.Cohort, Reason: u.Reason}
+	v := CampaignUse{Campaign: u.Campaign, ProspectList: u.ProspectList, Reason: u.Reason}
 	if !u.Added.IsZero() {
 		v.Added = stamp(u.Added)
 	}

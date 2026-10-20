@@ -11,13 +11,13 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-TACL-IFI1
+// R-1364-U6YN
 func TestContractReadsDuringQueuedWrites(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
 	id := contractSeed(t, f)
 	pass := contractNewPass(t, f, "read-while-write")
-	cohort, err := f.s.CreateCohort(ctx, store.Cohort{Name: "read", Size: 100, CreatedUserID: "owner"})
+	prospectList, err := f.s.CreateProspectList(ctx, store.ProspectList{Name: "read", Size: 100, CreatedUserID: "owner"})
 	contractOK(t, err)
 	reads := []struct {
 		name string
@@ -31,13 +31,13 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 		{"Links", func() (any, error) { return f.s.Links(ctx, id) }},
 		{"Estimates", func() (any, error) { return f.s.Estimates(ctx, id) }},
 		{"GetFacts", func() (any, error) { return f.s.GetFacts(ctx, id) }},
-		{"GetAssessment", func() (any, error) { return f.s.GetAssessment(ctx, id) }},
+		{"GetJudgments", func() (any, error) { return f.s.GetJudgments(ctx, id) }},
 		{"Rulings", func() (any, error) { return f.s.Rulings(ctx, id) }},
 		{"ListCandidates", func() (any, error) { return f.s.ListCandidates(ctx, store.CandidateFilter{}, "", "", 100) }},
-		{"ReadCohort", func() (any, error) { return f.s.ReadCohort(ctx, cohort.ID) }},
-		{"GetCohort", func() (any, error) { return f.s.GetCohort(ctx, cohort.ID) }},
-		{"ListCohorts", func() (any, error) { return f.s.ListCohorts(ctx, "", "", 100) }},
-		{"ListCohortsReversed", func() (any, error) { return f.s.ListCohortsReversed(ctx, "", "", 100) }},
+		{"ReadProspectList", func() (any, error) { return f.s.ReadProspectList(ctx, prospectList.ID) }},
+		{"GetProspectList", func() (any, error) { return f.s.GetProspectList(ctx, prospectList.ID) }},
+		{"ListProspectLists", func() (any, error) { return f.s.ListProspectLists(ctx, "", "", 100) }},
+		{"ListProspectListsReversed", func() (any, error) { return f.s.ListProspectListsReversed(ctx, "", "", 100) }},
 		{"Rejects", func() (any, error) { return f.s.Rejects(ctx, id) }},
 		{"ZipMinutes", func() (any, error) { return f.s.ZipMinutes(ctx, "55072") }},
 	}
@@ -82,7 +82,7 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 			name string
 			call func() (any, error)
 		}{"DueAmong", func() (any, error) { return f.s.DueAmong(ctx, sources.WebsiteCheck, []string{id}, true) }})
-	contractOK(t, f.s.AddCampaignUse(ctx, id, "held-campaign", cohort.ID, f.now))
+	contractOK(t, f.s.AddCampaignUse(ctx, id, "held-campaign", prospectList.ID, f.now))
 	reads = append(reads, struct {
 		name string
 		call func() (any, error)

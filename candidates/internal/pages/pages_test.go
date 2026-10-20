@@ -106,7 +106,7 @@ func comparePage(t *testing.T, cfg Config, path, name string, status int, data a
 	}
 }
 
-// R-3TJU-KG5A R-58H2-68U5 R-3TJU-KG5A R-51PY-VUIV
+// R-P8DA-YHFL R-58H2-68U5 R-P8DA-YHFL R-51PY-VUIV
 func TestTemplateSet(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
@@ -130,13 +130,13 @@ func TestTemplateSet(t *testing.T) {
 	}
 	for _, status := range []string{store.StatusRunning, store.StatusDone, store.StatusFailed} {
 		for _, reason := range []string{"", store.ReasonInterrupted, store.ReasonScrapes, store.ReasonStore} {
-			for _, trigger := range []string{store.TriggerRebuild, "run_fixture"} {
+			for _, trigger := range []string{store.TriggerIngest, "run_fixture"} {
 				for _, finished := range []string{"", "2026-10-05T09:00:07Z"} {
 					data := PassData{Pass: PassView{ID: "pass_fixture", Status: status, Reason: reason, Trigger: trigger, Finished: finished, StartedBy: "starter@example.test", RunPage: "https://records.example.test/run"}}
 					if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "pass", data); err != nil {
 						t.Fatal(err)
 					}
-					if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "landing", LandingData{CohortsPage: finished, CohortsNext: finished, PassesPage: finished, PassesNext: finished, Cohorts: []CohortRow{{Name: "name", CreatedBy: "creator", Changed: "value"}, {}}, Passes: []PassRow{{Status: status, Reason: reason, Trigger: trigger, Finished: finished}}}); err != nil {
+					if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "landing", LandingData{ProspectListsPage: finished, ProspectListsNext: finished, PassesPage: finished, PassesNext: finished, ProspectLists: []ProspectListRow{{Name: "name", CreatedBy: "creator", Changed: "value"}, {}}, Passes: []PassRow{{Status: status, Reason: reason, Trigger: trigger, Finished: finished}}}); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -145,7 +145,7 @@ func TestTemplateSet(t *testing.T) {
 	}
 	for _, flag := range []bool{false, true} {
 		for _, text := range []string{"", "value"} {
-			data := CandidateData{Facts: &FactsView{FleetVerdict: sources.FleetUnknown, Minutes: text, NewestFiling: text}, Candidate: CandidateView{Status: store.StatusActive, Name: text, Names: []string{text}, People: []PersonRow{{Name: text, Role: text}}, Cargo: []string{text}}, Assessment: &AssessmentView{Excluded: flag, RevenueLow: text, RevenueHigh: text, OperatingEvidence: []EvidenceRow{{Name: text, Description: text}}}, Estimates: []EstimateView{{High: text, Filed: text, Facts: []FactRow{{Key: text, Value: text}}}}, Links: []LinkView{{RowPage: text, Filed: text, Gone: flag}}, Rulings: []RulingView{{Other: text, Keys: []string{text}, By: text, User: text}}}
+			data := CandidateData{Candidate: CandidateView{Status: store.StatusActive, Name: text, Names: []string{text}, People: []PersonRow{{Name: text, Role: text}}, Cargo: []string{text}}, Judgments: &JudgmentsView{Excluded: flag, RevenueLow: text, RevenueHigh: text, OperatingEvidence: []EvidenceRow{{Name: text, Description: text}}}, Estimates: []EstimateView{{High: text, Filed: text, Facts: []FactRow{{Key: text, Value: text}}}}, Links: []LinkView{{RowPage: text, Filed: text, Gone: flag}}, Rulings: []RulingView{{Other: text, Keys: []string{text}, By: text, User: text}}, Enrichments: &EnrichmentsView{Facts: &FactsView{FleetVerdict: sources.FleetUnknown, Minutes: text, NewestFiling: text}}}
 			if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "candidate", data); err != nil {
 				t.Fatal(err)
 			}
@@ -153,11 +153,11 @@ func TestTemplateSet(t *testing.T) {
 	}
 }
 
-// R-IKZ3-GG4N R-5DCN-PBSX R-ANXF-9UGU R-WV2W-FUVK R-5K0G-MENA R-5L8D-06DZ R-5MG9-DY4O R-4GPX-U38H R-4FI1-GBHS R-4HXU-7UZ6 R-5RBU-X13G R-5UZK-2CBJ
+// R-0B4G-1GWO R-5DCN-PBSX R-464Z-NBFU R-NKM8-7Q3K R-5K0G-MENA R-5L8D-06DZ R-5MG9-DY4O R-UM9B-S0C0 R-O6KF-3LG2 R-WUQP-0V9U R-5RBU-X13G R-0G1D-2S9K
 func TestStaticEmptyAndRefusals(t *testing.T) {
 	cfg, d := pageFixture(t)
 	b := bannerFor(cfg)
-	comparePage(t, cfg, "/", "landing", 200, LandingData{Banner: b, Cohorts: []CohortRow{}, Passes: []PassRow{}})
+	comparePage(t, cfg, "/", "landing", 200, LandingData{Banner: b, ProspectLists: []ProspectListRow{}, Passes: []PassRow{}})
 	b.Trail = []page.Level{AboutLevel}
 	comparePage(t, cfg, "/about", "about", 200, AboutData{b, Description})
 	b.Trail = []page.Level{ToolsLevel}
@@ -169,7 +169,7 @@ func TestStaticEmptyAndRefusals(t *testing.T) {
 	b = bannerFor(cfg)
 	comparePage(t, cfg, "/unknown", "notfound", 404, NotFoundData{b})
 	d.SetFailing(true)
-	for _, p := range []string{"/", "/candidates/cand_0000000000000000", "/passes/pass_0000000000000000", "/cohorts/coh_0000000000000000", "/candidates/cand_0000000000000000/pages/1"} {
+	for _, p := range []string{"/", "/candidates/cand_0000000000000000", "/passes/pass_0000000000000000", "/prospect-lists/pl_0000000000000000", "/candidates/cand_0000000000000000/pages/1"} {
 		for _, method := range []string{"GET", "HEAD"} {
 			w := requestPage(cfg, method, p, "reader")
 			want := store.Unreachable + "\n"
@@ -181,7 +181,7 @@ func TestStaticEmptyAndRefusals(t *testing.T) {
 			}
 		}
 	}
-	for _, p := range []string{"/", "/tools", "/about", "/candidates/cand_0000000000000000", "/passes/pass_0000000000000000", "/cohorts/coh_0000000000000000", "/candidates/cand_0000000000000000/pages/1"} {
+	for _, p := range []string{"/", "/tools", "/about", "/candidates/cand_0000000000000000", "/passes/pass_0000000000000000", "/prospect-lists/pl_0000000000000000", "/candidates/cand_0000000000000000/pages/1"} {
 		w := requestPage(cfg, "POST", p, "reader")
 		if w.Code != 405 || w.Body.Len() != 0 || w.Header().Get("Allow") != "GET, HEAD" {
 			t.Fatal(p, w)
@@ -198,24 +198,24 @@ func TestStaticEmptyAndRefusals(t *testing.T) {
 	}
 }
 
-// R-5BH5-Y0GF R-4D28-OS0E R-4EA5-2JR3
+// R-5BH5-Y0GF R-RO62-HYTL R-MITC-CU41
 func TestInvalidAndMissingPaths(t *testing.T) {
 	cfg, d := pageFixture(t)
 	b := bannerFor(cfg)
 	want := requestPage(cfg, "GET", "/unknown", "reader").Body.String()
-	for _, p := range []string{"/candidates/cand_0000000000000000", "/passes/pass_0000000000000000", "/cohorts/coh_0000000000000000", "/candidates/cand_0000000000000000/pages/1"} {
+	for _, p := range []string{"/candidates/cand_0000000000000000", "/passes/pass_0000000000000000", "/prospect-lists/pl_0000000000000000", "/candidates/cand_0000000000000000/pages/1"} {
 		w := requestPage(cfg, "GET", p, "reader")
 		if w.Code != 404 || w.Body.String() != want {
 			t.Fatal(p)
 		}
 	}
 	d.SetFailing(true)
-	for _, p := range []string{"/candidates/cand_ABCDEF0123456789", "/candidates/cand_abcdef012345678", "/candidates/cand_abcdef01234567890", "/candidates/cand_abcdef0123456789/", "/candidates/%63and_abcdef0123456789", "/cand_abcdef0123456789", "/candidates", "/candidates/", "/passes/cand_abcdef0123456789", "/candidates/pass_abcdef0123456789", "/passes/pass_abcdef012345678", "/passes/pass_abcdef0123456789/", "/passes/", "/cohorts/coh_ABCDEF0123456789", "/cohorts/coh_abcdef012345678", "/cohorts/coh_abcdef01234567890", "/cohorts/coh_abcdef0123456789/", "/cohorts/%63oh_abcdef0123456789", "/coh_abcdef0123456789", "/cohorts", "/cohorts/", "/cohorts/cand_abcdef0123456789", "/candidates/coh_abcdef0123456789"} {
+	for _, p := range []string{"/candidates/cand_ABCDEF0123456789", "/candidates/cand_abcdef012345678", "/candidates/cand_abcdef01234567890", "/candidates/cand_abcdef0123456789/", "/candidates/%63and_abcdef0123456789", "/cand_abcdef0123456789", "/candidates", "/candidates/", "/passes/cand_abcdef0123456789", "/candidates/pass_abcdef0123456789", "/passes/pass_abcdef012345678", "/passes/pass_abcdef0123456789/", "/passes/", "/prospect-lists/pl_ABCDEF0123456789", "/prospect-lists/pl_abcdef012345678", "/prospect-lists/pl_abcdef01234567890", "/prospect-lists/pl_abcdef0123456789/", "/prospect-lists/%63oh_abcdef0123456789", "/pl_abcdef0123456789", "/prospect_lists", "/prospect-lists/", "/prospect-lists/cand_abcdef0123456789", "/candidates/pl_abcdef0123456789"} {
 		comparePage(t, cfg, p, "notfound", 404, NotFoundData{b})
 	}
 }
 
-// R-08TS-B5OG R-X3M7-492F R-08TS-B5OG R-BH70-GC9I R-BIEW-U407
+// R-08PY-S5TE R-0CDN-XH1H R-08PY-S5TE R-XHWS-AID1 R-3XLO-YX8Z
 func TestStoredPages(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := context.Background()
@@ -229,7 +229,7 @@ func TestStoredPages(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := ids[0]
-	p, err := cfg.Store.AddPass(ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "starter", UserEmail: "starter@example.test"})
+	p, err := cfg.Store.AddPass(ctx, store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, UserID: "starter", UserEmail: "starter@example.test"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +237,7 @@ func TestStoredPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := cfg.Store.GetAssessment(ctx, id)
+	a, err := cfg.Store.GetJudgments(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,8 +255,8 @@ func TestStoredPages(t *testing.T) {
 	}
 	b := bannerFor(cfg)
 	b.Trail = []page.Level{{Name: id, URL: "/candidates/" + id}}
-	av := assessmentView(a)
-	cd := CandidateData{Banner: b, Candidate: candidateView(c), Assessment: &av, Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{}}
+	av := judgmentsView(a)
+	cd := CandidateData{Banner: b, Candidate: candidateView(c), Enrichments: &EnrichmentsView{}, Judgments: &av, Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{}}
 	cd.Candidate.Website = sources.WebsiteUnknown
 	for _, e := range est {
 		cd.Estimates = append(cd.Estimates, estimateView(e))
@@ -267,12 +267,12 @@ func TestStoredPages(t *testing.T) {
 	comparePage(t, cfg, "/candidates/"+id, "candidate", 200, cd)
 	b.Trail = []page.Level{{Name: p.ID, URL: "/passes/" + p.ID}}
 	comparePage(t, cfg, "/passes/"+p.ID, "pass", 200, PassData{b, passView(p, "")})
-	cohort, err := cfg.Store.CreateCohort(ctx, store.Cohort{Name: "chosen-cohort", Size: 2, CreatedUserID: "creator"})
+	prospectList, err := cfg.Store.CreateProspectList(ctx, store.ProspectList{Name: "chosen-prospect_list", Size: 2, CreatedUserID: "creator"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	b.Trail = nil
-	comparePage(t, cfg, "/", "landing", 200, LandingData{b, []CohortRow{cohortRow(cohort)}, "", "", "", []PassRow{passRow(p)}, "", "", ""})
+	comparePage(t, cfg, "/", "landing", 200, LandingData{b, []ProspectListRow{prospectListRow(prospectList)}, "", "", "", []PassRow{passRow(p)}, "", "", ""})
 	landing := requestPage(cfg, "GET", "/", "reader").Body.String()
 	for _, value := range []string{c.Phone, c.Email} {
 		if strings.Contains(landing, value) {
@@ -288,7 +288,7 @@ func TestStoredPages(t *testing.T) {
 		}
 	}
 	afterC, _ := cfg.Store.GetCandidate(ctx, id)
-	afterA, _ := cfg.Store.GetAssessment(ctx, id)
+	afterA, _ := cfg.Store.GetJudgments(ctx, id)
 	afterL, _ := cfg.Store.Links(ctx, id)
 	afterE, _ := cfg.Store.Estimates(ctx, id)
 	afterR, _ := cfg.Store.Rulings(ctx, id)
@@ -316,7 +316,7 @@ func TestStoredPages(t *testing.T) {
 	comparePage(t, cfg, "/candidates/"+id, "candidate", 200, CandidateData{Banner: b, Candidate: candidateView(merged), Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{rulingView(r, id)}})
 }
 
-// R-08TS-B5OG R-08TS-B5OG: external links use the caller's configured services file.
+// R-08PY-S5TE R-08PY-S5TE: external links use the caller's configured services file.
 func TestSiblingPageLinks(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	path := filepath.Join(t.TempDir(), "services.json")
@@ -370,12 +370,12 @@ func callPageTool(t *testing.T, client *mcp.Client, name, token string, target a
 	}
 }
 
-// R-ALHM-IAZG R-4J5Q-LMPV R-4HXU-7UZ6
+// R-NFQM-ON4S R-OTQI-D8J9 R-WUQP-0V9U
 func TestLandingTokenRefusals(t *testing.T) {
 	cfg, d := pageFixture(t)
-	short := (paging.Token{Tool: "cohorts"}).Encode("chosen-name", "chosen-candidate")
+	short := (paging.Token{Tool: "prospect_lists"}).Encode("chosen-name", "chosen-candidate")
 	pass := (paging.Token{Tool: "passes"}).Encode("chosen-start", "chosen-pass")
-	invalid := []string{"/?passes_page=LAST", "/?cohorts_page=last/", "/?cohorts_page=last&passes_page=last/", "/?cohorts_page=" + (paging.Token{Tool: "passes-before"}).Encode("start", "id"), "/?passes_page=" + (paging.Token{Tool: "cohorts-before"}).Encode("chosen-name", "id"), "/?cohorts_page=bogus", "/?passes_page=bogus", "/?cohorts_page=bogus&passes_page=bogus", "/?cohorts_page=bogus&cohorts_page=", "/?passes_page=bogus&passes_page=", "/?cohorts_page=bogus&passes_page=" + url.QueryEscape(pass), "/?cohorts_page=" + url.QueryEscape(short) + "&passes_page=bogus", "/?cohorts_page=" + url.QueryEscape(pass), "/?passes_page=" + url.QueryEscape(short)}
+	invalid := []string{"/?passes_page=LAST", "/?prospect_lists_page=last/", "/?prospect_lists_page=last&passes_page=last/", "/?prospect_lists_page=" + (paging.Token{Tool: "passes-before"}).Encode("start", "id"), "/?passes_page=" + (paging.Token{Tool: "prospect_lists-before"}).Encode("chosen-name", "id"), "/?prospect_lists_page=bogus", "/?passes_page=bogus", "/?prospect_lists_page=bogus&passes_page=bogus", "/?prospect_lists_page=bogus&prospect_lists_page=", "/?passes_page=bogus&passes_page=", "/?prospect_lists_page=bogus&passes_page=" + url.QueryEscape(pass), "/?prospect_lists_page=" + url.QueryEscape(short) + "&passes_page=bogus", "/?prospect_lists_page=" + url.QueryEscape(pass), "/?passes_page=" + url.QueryEscape(short)}
 	for _, failing := range []bool{false, true} {
 		d.SetFailing(failing)
 		for _, method := range []string{"GET", "HEAD"} {
@@ -387,7 +387,7 @@ func TestLandingTokenRefusals(t *testing.T) {
 				}
 			}
 			if failing {
-				for _, path := range []string{"/?cohorts_page=last", "/?passes_page=last", "/?cohorts_page=" + (paging.Token{Tool: "cohorts-before"}).Encode("chosen-name", "id"), "/?passes_page=" + (paging.Token{Tool: "passes-before"}).Encode("start", "id"), "/", "/?cohorts_page=" + url.QueryEscape(short), "/?passes_page=" + url.QueryEscape(pass), "/?cohorts_page=" + url.QueryEscape(short) + "&passes_page=" + url.QueryEscape(pass), "/?cohorts_page=&cohorts_page=bogus&passes_page=&passes_page=bogus"} {
+				for _, path := range []string{"/?prospect_lists_page=last", "/?passes_page=last", "/?prospect_lists_page=" + (paging.Token{Tool: "prospect_lists-before"}).Encode("chosen-name", "id"), "/?passes_page=" + (paging.Token{Tool: "passes-before"}).Encode("start", "id"), "/", "/?prospect_lists_page=" + url.QueryEscape(short), "/?passes_page=" + url.QueryEscape(pass), "/?prospect_lists_page=" + url.QueryEscape(short) + "&passes_page=" + url.QueryEscape(pass), "/?prospect_lists_page=&prospect_lists_page=bogus&passes_page=&passes_page=bogus"} {
 					got := requestPage(cfg, method, path, "reader")
 					body := store.Unreachable + "\n"
 					if method == "HEAD" {

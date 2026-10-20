@@ -191,7 +191,7 @@ func record(w http.ResponseWriter, id string, rows int, status string) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "scraper": "fmcsa", "status": status, "started": "2000-01-01T00:00:00Z", "rows": rows, "new": 0, "changed": 0, "unchanged": 0, "gone": 0})
 }
 func row(w io.Writer, i int) {
-	_ = json.NewEncoder(w).Encode(map[string]any{"scraper": "fmcsa", "run": "run_a", "source_id": fmt.Sprint(i), "digest": fmt.Sprint(i), "name": fmt.Sprintf("Business %d", i), "names": []string{}, "collected": "2000-01-01T00:00:00Z", "people": []any{}, "facts": map[string]any{}, "raw": map[string]any{}})
+	_ = json.NewEncoder(w).Encode(map[string]any{"scraper": "fmcsa", "run": "run_a", "source_id": fmt.Sprint(i), "digest": fmt.Sprint(i), "name": fmt.Sprintf("Business %d", i), "names": []string{}, "scraped": "2000-01-01T00:00:00Z", "people": []any{}, "facts": map[string]any{}, "raw": map[string]any{}})
 }
 func waitSignal(t *testing.T, ch <-chan struct{}) {
 	t.Helper()
@@ -209,7 +209,7 @@ func assertRefusal(t *testing.T, p store.Pass, err error, word string) {
 	}
 }
 
-// R-SBQH-7IGY R-84KF-D8N0 R-85SB-R0DP R-SE69-Z1YC R-SFE6-CTP1
+// R-SBQH-7IGY R-84KF-D8N0  R-PKKA-S6UJ R-3AKA-UB5E
 func TestRecordContract(t *testing.T) {
 	if passes.BatchSize != 500 || passes.Busy == "" || passes.Stopping == "" || passes.Busy == passes.Stopping || strings.Contains(passes.Busy+passes.Stopping, "\n") {
 		t.Fatal("constants")
@@ -223,9 +223,9 @@ func TestRecordContract(t *testing.T) {
 		t.Fatal("word")
 	}
 	start := time.Date(2001, 2, 3, 4, 5, 6, 0, time.FixedZone("east", 3600))
-	p := store.Pass{ID: "id", Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, Status: store.StatusDone, Reason: "reason", Started: start, Finished: start.Add(time.Hour), Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Derived: 15, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14, UserID: "user", UserEmail: "email"}
+	p := store.Pass{ID: "id", Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Status: store.StatusDone, Reason: "reason", Started: start, Finished: start.Add(time.Hour), Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Derived: 15, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14, UserID: "user", UserEmail: "email"}
 	r := passes.RecordOf(p)
-	want := passes.Record{"id", store.KindRebuild, store.OriginRebuild, store.TriggerRebuild, "", "", store.StatusDone, "reason", start.UTC().Format(time.RFC3339), p.Finished.UTC().Format(time.RFC3339), 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 10, 11, 12, 13, 14, 0, 0, 0, 0, "user", "email"}
+	want := passes.Record{"id", store.KindIngest, store.OriginIngest, store.TriggerIngest, "", "", "", store.StatusDone, "reason", start.UTC().Format(time.RFC3339), p.Finished.UTC().Format(time.RFC3339), 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 10, 11, 12, 13, 14, 0, 0, 0, 0, "user", "email"}
 	if r != want {
 		t.Fatalf("%#v", r)
 	}
@@ -233,7 +233,7 @@ func TestRecordContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := `{"id":"id","kind":"rebuild","origin":"rebuild","trigger":"rebuild","status":"done","reason":"reason","started":"2001-02-03T03:05:06Z","finished":"2001-02-03T04:05:06Z","rows":1,"new":2,"changed":3,"unchanged":4,"gone":5,"created":6,"linked":7,"judged":8,"unranged":9,"derived":15,"due":10,"fetched":11,"https":12,"http":13,"none":14,"runs":0,"runs_failed":0,"pages":0,"cost":0,"user":"user","email":"email"}`
+	expected := `{"id":"id","kind":"ingest","origin":"ingest","trigger":"ingest","status":"done","reason":"reason","started":"2001-02-03T03:05:06Z","finished":"2001-02-03T04:05:06Z","rows":1,"new":2,"changed":3,"unchanged":4,"gone":5,"created":6,"linked":7,"judged":8,"unranged":9,"derived":15,"due":10,"fetched":11,"https":12,"http":13,"none":14,"runs":0,"runs_failed":0,"pages":0,"cost":0,"user":"user","email":"email"}`
 	if string(got) != expected {
 		t.Fatalf("%s", got)
 	}
@@ -255,7 +255,7 @@ func TestRecordContract(t *testing.T) {
 	}
 }
 
-// R-YGG6-MDXZ R-SHTZ-4D6F R-YIVZ-DXFD R-YOZH-AS4U
+// R-3NZ7-1SB1 R-SGG7-YQ5M R-3SUS-KV9T R-YOZH-AS4U
 func TestRefusals(t *testing.T) {
 	for _, mode := range []string{"unavailable", "busy", "stopping", "store"} {
 		t.Run(mode, func(t *testing.T) {
@@ -263,7 +263,7 @@ func TestRefusals(t *testing.T) {
 			before := f.list()
 			switch mode {
 			case "busy":
-				_, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: "owner"})
+				_, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, UserID: "owner"})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -273,7 +273,7 @@ func TestRefusals(t *testing.T) {
 			case "store":
 				f.d.SetFailing(true)
 			}
-			p, err := f.eng.Rebuild(context.Background(), identity.Caller{UserID: "user"})
+			p, err := f.eng.Ingest(context.Background(), identity.Caller{UserID: "user"}, "")
 			if mode == "store" {
 				var rf *passes.Refusal
 				if !errors.Is(err, store.ErrUnreachable) || errors.As(err, &rf) || p.ID != "" {
@@ -299,14 +299,14 @@ func TestRefusals(t *testing.T) {
 	}
 }
 
-// R-4XES-EI5W R-5I52-WLRP R-YMJO-J8NG R-ZT3Z-F1TD R-75XG-HDMP
+// R-4XES-EI5W R-Q3Q2-JR7P R-2Z7P-JEYA R-ZT3Z-F1TD
 func TestSkippedAndHandlers(t *testing.T) {
 	f := newFixture(t, nil, false)
 	handlers := f.eng.Handlers()
 	if len(handlers) != 5 || handlers[trail.Accepted] == nil || handlers[trail.AcceptedJudge] == nil {
 		t.Fatal(handlers)
 	}
-	variants := []events.Event{{Name: trail.AcceptedJudge}, {Name: "cron.other.fired", ID: "e"}, {ID: "e", Name: "scrape.started"}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "run": "run_a", "status": "failed"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "other", "run": "run_a", "status": "done"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "status": "done"}}, {Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "run": "run_a", "status": "done"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "run": "rebuild", "status": "done"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": 17, "run": "run_a", "status": "done"}}}
+	variants := []events.Event{{Name: trail.AcceptedJudge}, {Name: "cron.other.fired", ID: "e"}, {ID: "e", Name: "scrape.started"}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "run": "run_a", "status": "failed"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "other", "run": "run_a", "status": "done"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "status": "done"}}, {Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "run": "run_a", "status": "done"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": 17, "run": "run_a", "status": "done"}}}
 	for _, event := range variants {
 		d := events.Delivery{Event: event}
 		if f.eng.Deliver(context.Background(), d) != events.Skip() || handlers[trail.Accepted](context.Background(), d) != events.Skip() {
@@ -322,13 +322,13 @@ func TestSkippedAndHandlers(t *testing.T) {
 	}
 	r := httptest.NewRecorder()
 	events.DeclarationsHandler(f.em, passes.New(passes.Config{Sources: sources.New(fmcsa.New(), ppp.New())}).Handlers()).ServeHTTP(r, httptest.NewRequest(http.MethodGet, "/declarations", nil))
-	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","target","enrich_kind","status","reason","rows","new","changed","unchanged","gone","created","linked","judged","rescored","unranged","derived","due","fetched","https","http","none","runs","runs_failed","pages","cost"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger","target","enrich_kind"]}],"accepts":["campaign.member.added","campaign.member.rejected","campaign.piece.delivered","cron.judge_candidates.fired","scrape.finished"]}`
+	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","target","enrich_kind","status","reason","rows","new","changed","unchanged","gone","created","linked","judged","unranged","derived","due","fetched","https","http","none","runs","runs_failed","pages","cost"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger","target","enrich_kind"]}],"accepts":["campaign.member.added","campaign.member.rejected","campaign.piece.delivered","cron.judge_candidates.fired","scrape.finished"]}`
 	if r.Code != 200 || r.Body.String() != want {
 		t.Fatal(r.Code, r.Body.String())
 	}
 }
 
-// R-YRFA-2BM8 R-JSZX-9PKC R-SYWK-H5K5 R-YSN6-G3CX
+// R-YRFA-2BM8 R-JSZX-9PKC R-35OP-B86M R-YSN6-G3CX
 func TestDeliveryRecordAndRedelivery(t *testing.T) {
 	for _, mode := range []string{"missing", "unfinished", "unavailable", "malformed", "nil", "done"} {
 		t.Run(mode, func(t *testing.T) {
@@ -410,8 +410,8 @@ func TestDeliveryRecordAndRedelivery(t *testing.T) {
 	}
 }
 
-// R-ZPGA-9QLA R-YWAV-LEL0 R-YXIR-Z6BP R-2P2D-KR58 R-ZDDG-Y6YQ
-func TestRebuildBackgroundIdentityAndEvents(t *testing.T) {
+// R-3D03-LUMS R-253P-U3XS R-3J3L-IPC9 R-NI6F-G6M6 R-2IIM-1L3F
+func TestFullIngestBackgroundIdentityAndEvents(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/current") {
@@ -427,12 +427,12 @@ func TestRebuildBackgroundIdentityAndEvents(t *testing.T) {
 	}, true)
 	ctx, cancel := context.WithCancel(events.NewContext(context.Background(), events.Cause{ID: "evt_0202020202020202", Depth: 3}))
 	caller := identity.Caller{UserID: "owner", Email: "owner@example.test", RequestID: "request"}
-	p, err := f.eng.Rebuild(ctx, caller)
+	p, err := f.eng.Ingest(ctx, caller, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	waitSignal(t, entered)
-	if p.Kind != store.KindRebuild || p.Origin != store.OriginRebuild || p.Status != store.StatusRunning || p.Trigger != store.TriggerRebuild || p.UserID != caller.UserID || p.UserEmail != caller.Email || p.RequestID != caller.RequestID || p.Delivery != "" {
+	if p.Kind != store.KindIngest || p.Origin != store.OriginIngest || p.Status != store.StatusRunning || p.Trigger != store.TriggerIngest || p.UserID != caller.UserID || p.UserEmail != caller.Email || p.RequestID != caller.RequestID || p.Delivery != "" {
 		t.Fatal(p)
 	}
 	stored, err := f.st.GetPass(context.Background(), p.ID)
@@ -491,8 +491,8 @@ func TestRebuildBackgroundIdentityAndEvents(t *testing.T) {
 	}
 }
 
-// R-2TXZ-3U40 R-2SQ2-Q2DB R-2P2D-KR58 R-SWGR-PM2R R-Z3M9-W116 R-GU9F-TVQY
-func TestResolutionAndRebuild(t *testing.T) {
+// R-XU3S-47RZ R-MRCN-18AW R-NI6F-G6M6 R-3QEZ-TBSF R-Z3M9-W116 R-2G2T-A1M1
+func TestIngestAndFullIngest(t *testing.T) {
 	var stateMu sync.Mutex
 	rows := 3
 	runID := "run_a"
@@ -574,7 +574,7 @@ func TestResolutionAndRebuild(t *testing.T) {
 	rows = 3
 	runID = "run_c"
 	stateMu.Unlock()
-	p, err := f.eng.Rebuild(context.Background(), identity.Caller{UserID: "owner"})
+	p, err := f.eng.Ingest(context.Background(), identity.Caller{UserID: "owner"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -591,7 +591,7 @@ func TestResolutionAndRebuild(t *testing.T) {
 		if ls[0].Gone || ls[0].Run != "run_c" {
 			t.Fatal(ls)
 		}
-		a, err := f.st.GetAssessment(context.Background(), id)
+		a, err := f.st.GetJudgments(context.Background(), id)
 		if err != nil || a.Calculated.Before(p.Started) {
 			t.Fatal(a, err)
 		}
@@ -602,7 +602,7 @@ func TestResolutionAndRebuild(t *testing.T) {
 	}
 }
 
-// R-Z4U6-9SRV R-SF2K-0S3I R-Z9PR-SVQN R-2WDR-VDLE
+// R-Z4U6-9SRV R-3WIH-Q6HW R-384I-2RO0 R-W097-GLQH
 func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	released, firstBatch := make(chan struct{}), make(chan struct{})
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -680,7 +680,7 @@ func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	}
 }
 
-// R-Z9PR-SVQN R-SF2K-0S3I R-2WDR-VDLE
+// R-384I-2RO0 R-3WIH-Q6HW R-W097-GLQH
 func TestFailedReads(t *testing.T) {
 	for _, mode := range []string{"short", "500", "malformed", "not_done", "missing_current", "dead"} {
 		t.Run(mode, func(t *testing.T) {
@@ -714,7 +714,7 @@ func TestFailedReads(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			p, err := f.eng.Rebuild(context.Background(), identity.Caller{UserID: "owner"})
+			p, err := f.eng.Ingest(context.Background(), identity.Caller{UserID: "owner"}, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -736,7 +736,7 @@ func TestFailedReads(t *testing.T) {
 	}
 }
 
-// R-T9VN-X38E R-ZH16-3I6T R-2WDR-VDLE R-YOZH-AS4U
+// R-TD51-MHWB R-ZH16-3I6T R-W097-GLQH R-YOZH-AS4U
 func TestDrainCancelsReadsAndPendingDelivery(t *testing.T) {
 	for _, which := range []string{"rows", "record"} {
 		t.Run(which, func(t *testing.T) {
@@ -757,7 +757,7 @@ func TestDrainCancelsReadsAndPendingDelivery(t *testing.T) {
 			var p store.Pass
 			if which == "rows" {
 				var err error
-				p, err = f.eng.Rebuild(context.Background(), identity.Caller{UserID: "owner"})
+				p, err = f.eng.Ingest(context.Background(), identity.Caller{UserID: "owner"}, "")
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -790,7 +790,7 @@ func TestDrainCancelsReadsAndPendingDelivery(t *testing.T) {
 					t.Fatal("recorded after drain")
 				}
 			}
-			rp, err := f.eng.Rebuild(context.Background(), identity.Caller{})
+			rp, err := f.eng.Ingest(context.Background(), identity.Caller{}, "")
 			assertRefusal(t, rp, err, passes.RefusalStopping)
 			if f.delivery("post", "run_b") != events.Fail(passes.Stopping) {
 				t.Fatal("delivery after drain")
@@ -799,7 +799,7 @@ func TestDrainCancelsReadsAndPendingDelivery(t *testing.T) {
 	}
 }
 
-// R-ZELD-BYPF R-ZC5K-KF81 R-ZH16-3I6T
+// R-2PU0-C7JL R-ZC5K-KF81 R-ZH16-3I6T
 func TestRecoverAndUnrecordableEnding(t *testing.T) {
 	f := newFixture(t, nil, false)
 	original, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "old_run", Delivery: "old_event", UserID: "old_user", RequestID: "old_request"})
@@ -837,7 +837,7 @@ func TestRecoverAndUnrecordableEnding(t *testing.T) {
 				return
 			}
 		}, true)
-		p, err := f.eng.Rebuild(context.Background(), identity.Caller{UserID: "owner"})
+		p, err := f.eng.Ingest(context.Background(), identity.Caller{UserID: "owner"}, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -865,7 +865,7 @@ func TestRecoverAndUnrecordableEnding(t *testing.T) {
 	})
 }
 
-// R-TB3K-AUZ3 R-YGG6-MDXZ R-SHTZ-4D6F R-SYWK-H5K5
+// R-30OE-N488 R-3NZ7-1SB1 R-SGG7-YQ5M R-35OP-B86M
 func TestConcurrentStarts(t *testing.T) {
 	entered := make(chan struct{}, 32)
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -880,7 +880,7 @@ func TestConcurrentStarts(t *testing.T) {
 	results := make(chan error, 20)
 	for i := 0; i < 20; i++ {
 		wg.Go(func() {
-			_, err := f.eng.Rebuild(context.Background(), identity.Caller{UserID: "owner"})
+			_, err := f.eng.Ingest(context.Background(), identity.Caller{UserID: "owner"}, "")
 			results <- err
 		})
 	}
@@ -906,7 +906,7 @@ func TestConcurrentStarts(t *testing.T) {
 	}
 	wg.Go(func() { f.eng.Drain(context.Background()) })
 	wg.Go(func() { _ = f.eng.Recover(context.Background()) })
-	wg.Go(func() { _, _ = f.eng.Rebuild(context.Background(), identity.Caller{}) })
+	wg.Go(func() { _, _ = f.eng.Ingest(context.Background(), identity.Caller{}, "") })
 	wg.Go(func() { _ = f.delivery("after", "another") })
 	wg.Wait()
 	if ps := f.list(); len(ps) != 2 || ps[0].Status != store.StatusFailed || ps[0].Reason != store.ReasonInterrupted || ps[1].Status != store.StatusFailed || ps[1].Reason != store.ReasonInterrupted {
@@ -927,7 +927,7 @@ func (r *failCandidateRandom) Read(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// R-2WDR-VDLE
+// R-W097-GLQH
 func TestStoreFailureReason(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/current") {
@@ -939,7 +939,7 @@ func TestStoreFailureReason(t *testing.T) {
 	f.eng.Drain(context.Background())
 	f.st = store.New(f.d, store.Config{Now: func() time.Time { return time.Unix(100000, 0) }, Rand: &failCandidateRandom{}})
 	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), f.sc, nil, f.w, f.em, nil, nil})
-	p, err := f.eng.Rebuild(context.Background(), identity.Caller{UserID: "owner"})
+	p, err := f.eng.Ingest(context.Background(), identity.Caller{UserID: "owner"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -949,17 +949,17 @@ func TestStoreFailureReason(t *testing.T) {
 	}
 }
 
-// R-SHTZ-4D6F
+// R-SGG7-YQ5M
 func TestRefusalPrecedence(t *testing.T) {
 	f := newFixture(t, nil, false)
 	_, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "existing", Delivery: "existing_event"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := f.eng.Rebuild(context.Background(), identity.Caller{})
+	p, err := f.eng.Ingest(context.Background(), identity.Caller{}, "")
 	assertRefusal(t, p, err, passes.RefusalUnavailable)
 	f.eng.Drain(context.Background())
-	p, err = f.eng.Rebuild(context.Background(), identity.Caller{})
+	p, err = f.eng.Ingest(context.Background(), identity.Caller{}, "")
 	assertRefusal(t, p, err, passes.RefusalStopping)
 	if len(f.list()) != 1 || len(f.requests()) != 0 {
 		t.Fatal("refusal effects")
@@ -970,7 +970,7 @@ func TestRefusalPrecedence(t *testing.T) {
 	}
 }
 
-// R-YWAV-LEL0 R-YXIR-Z6BP R-SYWK-H5K5
+// R-253P-U3XS R-3J3L-IPC9 R-35OP-B86M
 func TestDeliveryOutlivesStartingContext(t *testing.T) {
 	for _, alreadyCancelled := range []bool{false, true} {
 		t.Run(fmt.Sprint(alreadyCancelled), func(t *testing.T) {
@@ -1036,7 +1036,7 @@ func TestDrainDeadlineWhileEndingHeld(t *testing.T) {
 		return time.Unix(100000, 0)
 	}, Rand: &random{}})
 	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), f.sc, nil, f.w, f.em, nil, nil})
-	p, err := f.eng.Rebuild(context.Background(), identity.Caller{UserID: "owner"})
+	p, err := f.eng.Ingest(context.Background(), identity.Caller{UserID: "owner"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1063,11 +1063,11 @@ func TestDrainDeadlineWhileEndingHeld(t *testing.T) {
 	}
 }
 
-// R-ZELD-BYPF R-TB3K-AUZ3
+// R-2PU0-C7JL R-30OE-N488
 func TestRecoverSettlesActivePass(t *testing.T) {
 	entered := make(chan struct{})
 	f := newFixture(t, func(_ http.ResponseWriter, r *http.Request) { close(entered); <-r.Context().Done() }, true)
-	p, err := f.eng.Rebuild(context.Background(), identity.Caller{UserID: "owner", RequestID: "request"})
+	p, err := f.eng.Ingest(context.Background(), identity.Caller{UserID: "owner", RequestID: "request"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}

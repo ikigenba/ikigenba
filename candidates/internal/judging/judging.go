@@ -1,5 +1,5 @@
-// Package scoring computes revenue combinations and their age-adjusted scores.
-package scoring
+// Package judging computes revenue combinations and their age-adjusted scores.
+package judging
 
 import (
 	"math"

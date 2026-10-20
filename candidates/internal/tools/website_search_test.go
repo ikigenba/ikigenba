@@ -14,11 +14,14 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-WPAR-JDY9 R-WQIN-X5OY R-WRQK-AXFN R-WSYG-OP6C
+// R-7AXF-IAYJ R-ZKAN-MILE R-7AXF-IAYJ R-QWZN-Q90D
 func TestSearchAnswersUseStoredResults(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
-	co := f.create("search-cohort")
+	if _, _, err := f.st.Derive(t.Context(), enrichers.KindLinkFacts, "", false, 100); err != nil {
+		t.Fatal(err)
+	}
+	co := f.create("search-prospect_list")
 	read := func() tools.Detail {
 		t.Helper()
 		r := f.call("candidate", tools.CandidateArgs{Candidate: id})
@@ -28,7 +31,7 @@ func TestSearchAnswersUseStoredResults(t *testing.T) {
 		return decodeList[tools.Detail](t, r)
 	}
 	initial := read()
-	if initial.Assessment == nil || initial.Assessment.Website != sources.WebsiteUnknown || initial.Assessment.WebsiteSource != "" || initial.Assessment.WebsiteSearchAt != "" {
+	if initial.Enrichments.Facts == nil || initial.Enrichments.Facts.Website != sources.WebsiteUnknown || initial.Enrichments.Facts.WebsiteSource != "" || len(initial.Enrichments.Facts.Written) != 1 {
 		t.Fatal(initial)
 	}
 	zero := 0
@@ -46,8 +49,8 @@ func TestSearchAnswersUseStoredResults(t *testing.T) {
 			t.Fatal(err)
 		}
 		got := read()
-		a := got.Assessment
-		if a.WebsiteSearchAt != stamp(f.now) {
+		a := got.Enrichments.Facts
+		if a.Written[len(a.Written)-1].At != stamp(f.now) {
 			t.Fatal(a)
 		}
 		source, state, url := "", sources.WebsiteUnknown, ""
@@ -58,7 +61,7 @@ func TestSearchAnswersUseStoredResults(t *testing.T) {
 		if a.WebsiteSource != source || a.Website != state || a.WebsiteURL != url {
 			t.Fatal(i, a)
 		}
-		e := got.Enrichments[0]
+		e := got.EnrichmentResults[0]
 		if e.Kind != input.Kind || e.Source != input.Source || e.Inputs != input.Inputs || e.Cost != input.Cost || !reflect.DeepEqual(e.Found, input.Found) {
 			t.Fatal(e, input)
 		}
@@ -69,7 +72,7 @@ func TestSearchAnswersUseStoredResults(t *testing.T) {
 		if !reflect.DeepEqual(objectKeys(t, encoded), []string{"kind", "source", "inputs", "found", "cost", "at"}) {
 			t.Fatal(string(encoded))
 		}
-		m := decodeList[tools.CohortRead](t, f.call("cohort", tools.CohortArgs{Cohort: co.ID})).Members[0]
+		m := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: co.ID})).Members[0]
 		if m.WebsiteSource != source || m.Website != state || m.WebsiteURL != url {
 			t.Fatal(m)
 		}
@@ -78,23 +81,23 @@ func TestSearchAnswersUseStoredResults(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := read()
-	if got.Enrichments[0].Kind != enrichers.KindSiteText || got.Enrichments[1].Kind != enrichers.KindWebsiteSearch {
-		t.Fatal(got.Enrichments)
+	if got.EnrichmentResults[0].Kind != enrichers.KindSiteText || got.EnrichmentResults[1].Kind != enrichers.KindWebsiteSearch {
+		t.Fatal(got.EnrichmentResults)
 	}
 	if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "chosen-input", Source: "check.test", Found: json.RawMessage(`{"state":"http","url":"http://check.test/"}`)}}); err != nil {
 		t.Fatal(err)
 	}
 	got = read()
-	if got.Assessment.WebsiteSource != store.WebsiteByCheck || got.Assessment.Website != sources.WebsiteHTTP || got.Assessment.WebsiteURL != "http://check.test/" {
-		t.Fatal(got.Assessment)
+	if got.Enrichments.Facts.WebsiteSource != store.WebsiteByCheck || got.Enrichments.Facts.Website != sources.WebsiteHTTP || got.Enrichments.Facts.WebsiteURL != "http://check.test/" {
+		t.Fatal(got.Enrichments.Facts)
 	}
-	m := decodeList[tools.CohortRead](t, f.call("cohort", tools.CohortArgs{Cohort: co.ID})).Members[0]
+	m := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: co.ID})).Members[0]
 	if m.WebsiteSource != store.WebsiteByCheck || m.Website != sources.WebsiteHTTP || m.WebsiteURL != "http://check.test/" {
 		t.Fatal(m)
 	}
 }
 
-// R-WU6D-2GX1
+// R-SUUJ-VXRW
 func TestWebsiteSearchEnrichDispatch(t *testing.T) {
 	for _, reject := range []bool{false, true} {
 		var calls atomic.Int64
@@ -103,7 +106,7 @@ func TestWebsiteSearchEnrichDispatch(t *testing.T) {
 		f := fixtureWithPrompts(t, nil, pageChecker(&fetched), pc)
 		id := f.seed(1)[0]
 		co := f.create("search-target")
-		for _, a := range []tools.EnrichArgs{{Kind: enrichers.KindWebsiteSearch, Cohort: co.ID}, {Kind: enrichers.KindWebsiteSearch, Candidate: id}} {
+		for _, a := range []tools.EnrichArgs{{Kind: enrichers.KindWebsiteSearch, ProspectList: co.ID}, {Kind: enrichers.KindWebsiteSearch, Candidate: id}} {
 			r := f.callAs(other, "enrich", a)
 			if reject {
 				refusal(t, r, passes.RefusalInvalid, passes.NoPrompt+" "+enrichers.PromptName(enrichers.KindWebsiteSearch)+": chosen refusal")
@@ -113,11 +116,11 @@ func TestWebsiteSearchEnrichDispatch(t *testing.T) {
 				t.Fatal(decode(t, r))
 			}
 			p := decodeList[passes.Record](t, r)
-			target := a.Cohort
+			target := a.ProspectList
 			if target == "" {
 				target = a.Candidate
 			}
-			if p.Kind != store.KindEnrichCohort || p.Target != target || p.EnrichKind != enrichers.KindWebsiteSearch || p.Status != store.StatusRunning || p.User != other.UserID {
+			if p.Kind != store.KindEnrichTarget || p.Target != target || p.EnrichKind != enrichers.KindWebsiteSearch || p.Status != store.StatusRunning || p.User != other.UserID {
 				t.Fatal(p)
 			}
 		}
@@ -131,14 +134,14 @@ func TestWebsiteSearchEnrichDispatch(t *testing.T) {
 	var calls atomic.Int64
 	noChecker := fixtureWithPrompts(t, nil, nil, promptClient(t, false, &calls, enrichers.KindWebsiteSearch))
 	co := noChecker.create("no-checker")
-	refusal(t, noChecker.call("enrich", tools.EnrichArgs{Kind: enrichers.KindWebsiteSearch, Cohort: co.ID}), passes.RefusalUnavailable, tools.RefuseUnavailable)
+	refusal(t, noChecker.call("enrich", tools.EnrichArgs{Kind: enrichers.KindWebsiteSearch, ProspectList: co.ID}), passes.RefusalUnavailable, tools.RefuseUnavailable)
 	if calls.Load() != 0 {
 		t.Fatal(calls.Load())
 	}
 	var fetched atomic.Int64
 	noPrompts := fixtureWithWebsite(t, nil, pageChecker(&fetched))
 	co = noPrompts.create("no-prompts")
-	refusal(t, noPrompts.call("enrich", tools.EnrichArgs{Kind: enrichers.KindWebsiteSearch, Cohort: co.ID}), passes.RefusalUnavailable, tools.RefuseUnavailable)
+	refusal(t, noPrompts.call("enrich", tools.EnrichArgs{Kind: enrichers.KindWebsiteSearch, ProspectList: co.ID}), passes.RefusalUnavailable, tools.RefuseUnavailable)
 	noPrompts.d.SetFailing(true)
 	refusal(t, noPrompts.call("enrich", tools.EnrichArgs{Kind: enrichers.KindWebsiteSearch}), passes.RefusalInvalid, tools.RefuseInvalid)
 	noPrompts.d.SetFailing(false)

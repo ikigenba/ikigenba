@@ -23,22 +23,22 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-OZVA-PMO1
+// R-Q7QE-1TXQ
 func TestTargetedDerivedDispatch(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
 	co := f.create("targeted")
-	for i, a := range []tools.EnrichArgs{{Kind: enrichers.KindLinkFacts, Candidate: ids[0]}, {Kind: enrichers.KindLinkFacts, Candidate: ids[0]}, {Kind: enrichers.KindLinkFacts, Candidate: ids[0], Force: true}, {Kind: enrichers.KindLinkFacts, Cohort: co.ID}} {
+	for i, a := range []tools.EnrichArgs{{Kind: enrichers.KindLinkFacts, Candidate: ids[0]}, {Kind: enrichers.KindLinkFacts, Candidate: ids[0]}, {Kind: enrichers.KindLinkFacts, Candidate: ids[0], Force: true}, {Kind: enrichers.KindLinkFacts, ProspectList: co.ID}} {
 		r := f.callAs(other, "enrich", a)
 		if r.IsError() {
 			t.Fatal(decode(t, r))
 		}
 		p := decodeList[passes.Record](t, r)
-		target := a.Cohort
+		target := a.ProspectList
 		if target == "" {
 			target = a.Candidate
 		}
-		if p.Kind != store.KindEnrichCohort || p.Origin != store.OriginEnrich || p.Trigger != store.TriggerEnrich || p.EnrichKind != a.Kind || p.Target != target || p.Status != store.StatusRunning || p.User != other.UserID {
+		if p.Kind != store.KindEnrichTarget || p.Origin != store.OriginEnrich || p.Trigger != store.TriggerEnrich || p.EnrichKind != a.Kind || p.Target != target || p.Status != store.StatusRunning || p.User != other.UserID {
 			t.Fatal(p)
 		}
 		done := f.waitEnrich(p.ID)
@@ -50,13 +50,13 @@ func TestTargetedDerivedDispatch(t *testing.T) {
 			t.Fatal(done, want)
 		}
 	}
-	for _, a := range []tools.EnrichArgs{{Kind: enrichers.KindLinkFacts, Cohort: "coh_0000000000000000"}, {Kind: enrichers.KindLinkFacts, Candidate: "cand_0000000000000000"}} {
+	for _, a := range []tools.EnrichArgs{{Kind: enrichers.KindLinkFacts, ProspectList: "pl_0000000000000000"}, {Kind: enrichers.KindLinkFacts, Candidate: "cand_0000000000000000"}} {
 		refusal(t, f.call("enrich", a), passes.RefusalNotFound, tools.RefuseNotFound)
 	}
-	if r := f.call("delete_cohort", tools.CohortArgs{Cohort: co.ID}); r.IsError() {
+	if r := f.call("delete_prospect_list", tools.ProspectListArgs{ProspectList: co.ID}); r.IsError() {
 		t.Fatal(decode(t, r))
 	}
-	refusal(t, f.call("enrich", tools.EnrichArgs{Kind: enrichers.KindLinkFacts, Cohort: co.ID}), passes.RefusalNotFound, tools.RefuseNotFound)
+	refusal(t, f.call("enrich", tools.EnrichArgs{Kind: enrichers.KindLinkFacts, ProspectList: co.ID}), passes.RefusalNotFound, tools.RefuseNotFound)
 	if r := f.call("decide", tools.DecideArgs{Kind: store.KindMerge, Candidate: ids[0], Other: ids[1], Why: "same fixture"}); r.IsError() {
 		t.Fatal(decode(t, r))
 	}
@@ -125,7 +125,7 @@ func promptClient(t *testing.T, reject bool, calls *atomic.Int64, kinds ...strin
 	return prompts.NewClient(prompts.ClientConfig{Service: services.Entry{Name: "prompts", Socket: socket}, Telemetry: w})
 }
 
-// R-OZVA-PMO1 R-OL8I-4DRP
+// R-Q7QE-1TXQ R-OL8I-4DRP
 func TestTargetedPromptDispatchAndRefusalText(t *testing.T) {
 	for _, reject := range []bool{false, true} {
 		t.Run(map[bool]string{false: "held", true: "refused"}[reject], func(t *testing.T) {
@@ -135,7 +135,7 @@ func TestTargetedPromptDispatchAndRefusalText(t *testing.T) {
 			id := f.seed(1)[0]
 			setSite(t, f, id, "https://acme.test/")
 			a, b := f.create("first"), f.create("second")
-			args := tools.EnrichArgs{Kind: enrichers.KindSiteText, Cohort: a.ID}
+			args := tools.EnrichArgs{Kind: enrichers.KindSiteText, ProspectList: a.ID}
 			r := f.callAs(other, "enrich", args)
 			if reject {
 				refusal(t, r, passes.RefusalInvalid, passes.NoPrompt+" "+enrichers.PromptName(enrichers.KindSiteText)+": chosen refusal")
@@ -149,11 +149,11 @@ func TestTargetedPromptDispatchAndRefusalText(t *testing.T) {
 				t.Fatal(decode(t, r))
 			}
 			p := decodeList[passes.Record](t, r)
-			if p.Target != a.ID || p.EnrichKind != enrichers.KindSiteText || p.User != other.UserID || p.Kind != store.KindEnrichCohort || p.Status != store.StatusRunning {
+			if p.Target != a.ID || p.EnrichKind != enrichers.KindSiteText || p.User != other.UserID || p.Kind != store.KindEnrichTarget || p.Status != store.StatusRunning {
 				t.Fatal(p)
 			}
 			refusal(t, f.callAs(other, "enrich", args), passes.RefusalBusy, tools.RefuseBusy)
-			for _, args := range []tools.EnrichArgs{{Kind: enrichers.KindSiteText, Cohort: b.ID}, {Kind: enrichers.KindSiteText, Candidate: id}} {
+			for _, args := range []tools.EnrichArgs{{Kind: enrichers.KindSiteText, ProspectList: b.ID}, {Kind: enrichers.KindSiteText, Candidate: id}} {
 				r := f.callAs(other, "enrich", args)
 				if r.IsError() {
 					t.Fatal(decode(t, r))
@@ -170,15 +170,15 @@ func TestTargetedPromptDispatchAndRefusalText(t *testing.T) {
 	}
 }
 
-// R-OW7L-KBFY
+// R-050Y-4M77
 func TestMalformedTargetsBeforeStoreAndDrain(t *testing.T) {
 	f := newFixture(t)
 	f.eng.Drain(context.Background())
 	f.d.SetFailing(true)
-	for _, args := range []tools.EnrichArgs{{Kind: enrichers.KindLinkFacts, Cohort: "bogus"}, {Kind: enrichers.KindLinkFacts, Candidate: "bogus"}} {
+	for _, args := range []tools.EnrichArgs{{Kind: enrichers.KindLinkFacts, ProspectList: "bogus"}, {Kind: enrichers.KindLinkFacts, Candidate: "bogus"}} {
 		refusal(t, f.call("enrich", args), passes.RefusalNotFound, tools.RefuseNotFound)
 	}
-	for _, args := range []tools.EnrichArgs{{Kind: strings.ToUpper(enrichers.KindSiteText)}, {Kind: enrichers.KindSiteText}, {Force: true}, {Candidate: "cand_0000000000000000"}, {Kind: enrichers.KindLinkFacts, Cohort: "coh_0000000000000000", Candidate: "cand_0000000000000000"}} {
+	for _, args := range []tools.EnrichArgs{{Kind: strings.ToUpper(enrichers.KindSiteText)}, {Kind: enrichers.KindSiteText}, {Force: true}, {Candidate: "cand_0000000000000000"}, {Kind: enrichers.KindLinkFacts, ProspectList: "pl_0000000000000000", Candidate: "cand_0000000000000000"}} {
 		refusal(t, f.call("enrich", args), passes.RefusalInvalid, tools.RefuseInvalid)
 	}
 	f.d.SetFailing(false)

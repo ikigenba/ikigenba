@@ -17,7 +17,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
 )
 
-// R-GT1J-G409 R-YIPH-1A3V
+// R-2X5E-MTZR R-QZFG-HSHR
 func TestRunJudgeDeliveryMakesNoSiblingRead(t *testing.T) {
 	fake := &runFake{}
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, fake)}))
@@ -76,7 +76,7 @@ func TestRunJudgeDeliveryMakesNoSiblingRead(t *testing.T) {
 	}
 }
 
-// R-ZSRV-9BFP
+// R-YKKD-7BXN
 func TestRunReadsBothFixedSources(t *testing.T) {
 	rows := map[string]map[string]any{"fmcsa": runRow(), "ppp": runRow()}
 	rows["ppp"]["scraper"] = "ppp"
@@ -102,7 +102,7 @@ func TestRunReadsBothFixedSources(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, fake)}))
 	h.start()
 	c := identity.Caller{UserID: "owner"}
-	r, p := h.call(c, "rebuild", map[string]any{})
+	r, p := h.call(c, "ingest", map[string]any{})
 	if r.IsError() {
 		t.Fatal(p)
 	}

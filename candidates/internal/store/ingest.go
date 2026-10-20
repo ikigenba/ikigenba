@@ -85,7 +85,7 @@ func refresh(r *records, t time.Time) {
 }
 
 // Attach attaches a batch of readings atomically.
-func (s *Store) Attach(ctx context.Context, run string, rebuild bool, obs []Observation) (Counts, []string, error) {
+func (s *Store) Attach(ctx context.Context, run string, force bool, obs []Observation) (Counts, []string, error) {
 	var total Counts
 	var ids []string
 	err := unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
@@ -125,7 +125,7 @@ func (s *Store) Attach(ctx context.Context, run string, rebuild bool, obs []Obse
 			var l Link
 			if len(ls) > 0 {
 				l = ls[0]
-				if !rebuild && l.Digest == o.Digest {
+				if !force && l.Digest == o.Digest {
 					total.Unchanged++
 					d, err := view(l.Candidate)
 					if err != nil {

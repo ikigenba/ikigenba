@@ -134,8 +134,8 @@ func TestRecordsReadNewestLinkResultBesidePreviousWriterCategories(t *testing.T)
 	contractEqual(t, got.Records, []sources.Category{})
 }
 
-// R-NKZK-S3S5 R-O9NE-3VU4
-func TestCohortClassifiesOnlyItsSelectedMembersAndReadsNewCategories(t *testing.T) {
+// R-NICV-F9HY R-OQ2T-7XB6
+func TestProspectListClassifiesOnlyItsSelectedMembersAndReadsNewCategories(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
 	first := enrichmentCandidate(t, f, "for-hire", "office@first.test")
@@ -145,49 +145,49 @@ func TestCohortClassifiesOnlyItsSelectedMembersAndReadsNewCategories(t *testing.
 	contractOK(t, err)
 	_, err = f.s.Judge(ctx, []string{first, private, classified})
 	contractOK(t, err)
-	k := cohortCreate(t, f, "category evidence")
-	filters := store.CohortFilters{Categories: []string{sources.CategoryTrucking}}
+	k := prospectListCreate(t, f, "category evidence")
+	filters := store.ProspectListFilters{Categories: []string{sources.CategoryTrucking}}
 	size := int64(100)
-	k, err = f.s.EditCohort(ctx, store.CohortEdit{ID: k.ID, Size: &size, Filters: &filters, UserID: "owner"})
+	k, err = f.s.EditProspectList(ctx, store.ProspectListEdit{ID: k.ID, Size: &size, Filters: &filters, UserID: "owner"})
 	contractOK(t, err)
-	read := cohortRead(t, f, k)
+	read := prospectListRead(t, f, k)
 	contractEqual(t, read.Matching, int64(2))
 	contractEqual(t, read.Classified, int64(1))
-	contractEqual(t, cohortIDs(read.Members), []string{first, classified})
+	contractEqual(t, prospectListIDs(read.Members), []string{first, classified})
 	filters.CategoryUnknown = true
-	k, err = f.s.EditCohort(ctx, store.CohortEdit{ID: k.ID, Filters: &filters, UserID: "owner"})
+	k, err = f.s.EditProspectList(ctx, store.ProspectListEdit{ID: k.ID, Filters: &filters, UserID: "owner"})
 	contractOK(t, err)
-	read = cohortRead(t, f, k)
+	read = prospectListRead(t, f, k)
 	contractEqual(t, read.Matching, int64(3))
 	contractEqual(t, read.Classified, int64(1))
 	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{briefResult(t, private, "builder", false, sources.CategoryConstruction)})
 	contractOK(t, err)
-	read = cohortRead(t, f, k)
+	read = prospectListRead(t, f, k)
 	contractEqual(t, read.Matching, int64(2))
 	contractEqual(t, read.Classified, int64(1))
 	filters.CategoryUnknown = false
 	size = 1
-	k, err = f.s.EditCohort(ctx, store.CohortEdit{ID: k.ID, Filters: &filters, Size: &size, UserID: "owner"})
+	k, err = f.s.EditProspectList(ctx, store.ProspectListEdit{ID: k.ID, Filters: &filters, Size: &size, UserID: "owner"})
 	contractOK(t, err)
-	read = cohortRead(t, f, k)
+	read = prospectListRead(t, f, k)
 	contractEqual(t, read.Matching, int64(2))
 	contractEqual(t, read.Classified, int64(0))
-	contractEqual(t, cohortIDs(read.Members), []string{first})
+	contractEqual(t, prospectListIDs(read.Members), []string{first})
 	// A newest good brief without categories leaves records in charge.
 	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{briefResult(t, first, "unclassified", false)})
 	contractOK(t, err)
-	read = cohortRead(t, f, k)
+	read = prospectListRead(t, f, k)
 	contractEqual(t, read.Classified, int64(0))
 	contractEqual(t, read.Matching, int64(2))
 	// A nonempty good brief replaces a matching record category immediately.
 	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{briefResult(t, first, "retailer", false, sources.CategoryRetail)})
 	contractOK(t, err)
-	read = cohortRead(t, f, k)
+	read = prospectListRead(t, f, k)
 	contractEqual(t, read.Matching, int64(1))
 	contractEqual(t, read.Classified, int64(1))
-	contractEqual(t, cohortIDs(read.Members), []string{classified})
+	contractEqual(t, prospectListIDs(read.Members), []string{classified})
 	f.reopen()
-	contractEqual(t, cohortRead(t, f, k), read)
+	contractEqual(t, prospectListRead(t, f, k), read)
 }
 
 // R-XCXQ-7M2Z
@@ -246,8 +246,8 @@ func TestFillFactsReprojectsMissingCategoryRowsAndPreservesExistingRows(t *testi
 	contractEqual(t, got, before)
 }
 
-// R-NKZK-S3S5
-func TestCohortClassificationUsesBriefDecisionOrRecordFallback(t *testing.T) {
+// R-NICV-F9HY
+func TestProspectListClassificationUsesBriefDecisionOrRecordFallback(t *testing.T) {
 	for _, tc := range []struct {
 		name, category, source string
 		emptyBrief             bool
@@ -263,12 +263,12 @@ func TestCohortClassificationUsesBriefDecisionOrRecordFallback(t *testing.T) {
 			contractOK(t, err)
 			_, err = f.s.Judge(ctx, []string{id})
 			contractOK(t, err)
-			k := cohortCreate(t, f, "record fallback")
-			filters := store.CohortFilters{Categories: []string{tc.category}}
-			k, err = f.s.EditCohort(ctx, store.CohortEdit{ID: k.ID, Filters: &filters, UserID: "owner"})
+			k := prospectListCreate(t, f, "record fallback")
+			filters := store.ProspectListFilters{Categories: []string{tc.category}}
+			k, err = f.s.EditProspectList(ctx, store.ProspectListEdit{ID: k.ID, Filters: &filters, UserID: "owner"})
 			contractOK(t, err)
-			read := cohortRead(t, f, k)
-			contractEqual(t, cohortIDs(read.Members), []string{id})
+			read := prospectListRead(t, f, k)
+			contractEqual(t, prospectListIDs(read.Members), []string{id})
 			contractEqual(t, read.Matching, int64(1))
 			contractEqual(t, read.Classified, int64(0))
 			names := []string{sources.CategoryRetail}
@@ -277,10 +277,10 @@ func TestCohortClassificationUsesBriefDecisionOrRecordFallback(t *testing.T) {
 			}
 			_, err = f.s.AddEnrichments(ctx, []store.Enrichment{briefResult(t, id, "classification", false, names...)})
 			contractOK(t, err)
-			read = cohortRead(t, f, k)
+			read = prospectListRead(t, f, k)
 			contractEqual(t, read.Classified, int64(0))
 			if tc.emptyBrief {
-				contractEqual(t, cohortIDs(read.Members), []string{id})
+				contractEqual(t, prospectListIDs(read.Members), []string{id})
 				contractEqual(t, read.Matching, int64(1))
 			} else {
 				contractEqual(t, len(read.Members), 0)

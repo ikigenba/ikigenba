@@ -143,7 +143,7 @@ func TestPageCapValidationAndConcurrentAdds(t *testing.T) {
 	contractEqual(t, counts, store.PageCount{})
 }
 
-// R-T94P-4NRC R-P3YP-BDMB
+// R-QEFR-MGTW R-QBE3-755T
 func TestPageErrorsAndTimeNormalization(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -186,7 +186,7 @@ func TestPageErrorsAndTimeNormalization(t *testing.T) {
 	contractEqual(t, after, before)
 }
 
-// R-OECT-A71Q
+// R-WNFA-Q8TO
 func TestOrdinaryWritesPreservePageCopies(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

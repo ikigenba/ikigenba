@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"sort"
 	"time"
 
@@ -148,36 +147,6 @@ func (s *Store) FillFacts(ctx context.Context) error {
 		}
 		return nil
 	}))
-}
-func overlayFacts(a *Assessment, f Facts) {
-	a.KnownSince = f.KnownSince
-	a.GovernmentMatch = f.GovernmentMatch
-	a.NewestFiling = f.NewestFiling
-	a.Categories = append([]sources.Category{}, f.Categories...)
-	a.FleetVerdict = f.FleetVerdict
-	a.PowerUnits = f.PowerUnits
-	a.Drivers = f.Drivers
-	a.Website = f.Website
-	a.WebsiteURL = f.WebsiteURL
-	a.WebsiteSource = f.WebsiteSource
-	a.Minutes = f.Minutes
-}
-func assessmentFacts(ctx context.Context, tx *sql.Tx, a *Assessment) error {
-	c, err := candidateKey(ctx, tx, a.Candidate)
-	if err != nil {
-		return err
-	}
-	if c.Status != StatusActive {
-		return nil
-	}
-	f, err := factsKey(ctx, tx, c.ID)
-	if errors.Is(err, ErrNotFound) {
-		f = unknownFacts(c.ID)
-	} else if err != nil {
-		return err
-	}
-	overlayFacts(a, f)
-	return nil
 }
 
 // ClassifiedBy identifies the evidence that supplies the categories.

@@ -82,7 +82,7 @@ func TestEnrichmentShapesAndMethods(t *testing.T) {
 	checkMethods(st.AddEnrichments, st.DueEnrichments, st.Derive)
 }
 
-// R-X9A1-2AUW R-GR3P-B2FW R-GSBL-OU6L R-GX77-7X5D R-OVFE-MZFG R-OWNB-0R65
+// R-X9A1-2AUW R-GR3P-B2FW R-GSBL-OU6L R-GX77-7X5D R-Q3GO-6J5N R-Q74D-BUDQ
 func TestEnrichmentAppendAndMark(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

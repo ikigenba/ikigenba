@@ -9,11 +9,11 @@ import (
 	"github.com/ikigenba/ikigenba/candidates"
 )
 
-// R-80WQ-7XEX
+// R-W54S-ZOP9
 func TestAssets(t *testing.T) {
 	t.Chdir(t.TempDir())
 	checkFiles(t, candidates.Assets, []string{
-		"about.html", "candidate.html", "cohort.html", "landing.html", "notfound.html", "page.html", "pass.html", "tools.html",
+		"about.html", "candidate.html", "landing.html", "notfound.html", "page.html", "pass.html", "prospect_list.html", "tools.html",
 	})
 }
 
@@ -23,12 +23,12 @@ func TestEtc(t *testing.T) {
 	checkFiles(t, candidates.Etc, []string{"manifest.toml", "nginx.conf"})
 }
 
-// R-0X7R-U150
+// R-YXZ9-ET3A
 func TestMigrations(t *testing.T) {
 	t.Chdir(t.TempDir())
 	checkFiles(t, candidates.Migrations, []string{
 		"0001_candidates.sql", "0002_links.sql", "0003_estimates.sql", "0004_assessments.sql",
-		"0005_decisions.sql", "0006_passes.sql", "0007_zip_drive.sql", "0008_windows.sql", "0009_judgments.sql", "0010_cohorts.sql", "0011_enrichments.sql", "0012_facts.sql", "0013_site_text.sql", "0014_brief.sql", "0015_website_search.sql", "0016_campaign_uses.sql",
+		"0005_decisions.sql", "0006_passes.sql", "0007_zip_drive.sql", "0008_windows.sql", "0009_judgments.sql", "0010_cohorts.sql", "0011_enrichments.sql", "0012_facts.sql", "0013_site_text.sql", "0014_brief.sql", "0015_website_search.sql", "0016_campaign_uses.sql", "0017_prospect_lists.sql",
 	})
 }
 

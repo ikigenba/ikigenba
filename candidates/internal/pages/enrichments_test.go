@@ -45,13 +45,13 @@ func TestEnrichmentAndWebsiteViews(t *testing.T) {
 	}
 }
 
-// R-BMK4-WIGX R-EBH8-ZZSY R-N7LB-NIYF R-E0I5-K24P
+// R-S7OG-MAOP R-ZAJG-KCNU R-N7LB-NIYF R-E0I5-K24P
 func TestWebsiteFiltersAndStoredMember(t *testing.T) {
-	f := store.CohortFilters{Website: []string{sources.WebsiteNone, sources.WebsiteHTTP}, WebsiteUnknown: true}
+	f := store.ProspectListFilters{Website: []string{sources.WebsiteNone, sources.WebsiteHTTP}, WebsiteUnknown: true}
 	if got := filtersView(f); !reflect.DeepEqual(got.Website, f.Website) || !got.WebsiteUnknown {
 		t.Fatal(got)
 	}
-	if got := filtersView(store.CohortFilters{}); got.Website == nil || len(got.Website) != 0 || got.WebsiteUnknown {
+	if got := filtersView(store.ProspectListFilters{}); got.Website == nil || len(got.Website) != 0 || got.WebsiteUnknown {
 		t.Fatal(got)
 	}
 	for _, state := range []string{sources.WebsiteHTTPS, sources.WebsiteUnknown} {
@@ -59,7 +59,7 @@ func TestWebsiteFiltersAndStoredMember(t *testing.T) {
 		if state == sources.WebsiteHTTPS {
 			url = "https://fixture.example.test/"
 		}
-		got := memberRow(store.Ranked{Assessment: store.Assessment{Website: state, WebsiteURL: url}}, 0)
+		got := memberRow(store.Ranked{Facts: store.Facts{Website: state, WebsiteURL: url}}, 0)
 		if got.Website != state || got.WebsiteURL != url {
 			t.Fatal(got)
 		}
@@ -88,7 +88,7 @@ func capturedCandidate(t *testing.T, cfg Config, id string) CandidateData {
 	return got
 }
 
-// R-NB90-SU6I R-NG4M-BX5A R-BGGM-ZNRG R-N55I-VZH1 R-EBH8-ZZSY
+// R-M6MC-J4P3 R-TPC1-G7B9 R-BGGM-ZNRG R-Q5AL-AAGC R-ZAJG-KCNU
 func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()
@@ -101,7 +101,7 @@ func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 	}
 	id := ids[0]
 	first := capturedCandidate(t, cfg, id)
-	if first.Facts != nil || first.Assessment != nil || first.Candidate.Website != sources.WebsiteUnknown || first.Candidate.WebsiteURL != "" || first.Candidate.WebsiteTitle != "" || first.Candidate.WebsiteChecked != "" || first.Candidate.WebsiteCheckedText != "" || first.Enrichments == nil || len(first.Enrichments) != 0 {
+	if first.Enrichments.Facts != nil || first.Judgments != nil || first.Candidate.Website != sources.WebsiteUnknown || first.Candidate.WebsiteURL != "" || first.Candidate.WebsiteTitle != "" || first.Candidate.WebsiteChecked != "" || first.Candidate.WebsiteCheckedText != "" || first.EnrichmentResults == nil || len(first.EnrichmentResults) != 0 {
 		t.Fatal(first)
 	}
 	if len(first.Links) != 1 || first.Links[0].RowPage != "" || first.Estimates == nil || first.Rulings == nil || first.Rejects == nil {
@@ -115,12 +115,12 @@ func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 	if _, err = cfg.Store.JudgeAll(ctx); err != nil {
 		t.Fatal(err)
 	}
-	cohort, err := cfg.Store.CreateCohort(ctx, store.Cohort{Name: "fixture-cohort", Size: 10, CreatedUserID: "fixture-owner"})
+	prospectList, err := cfg.Store.CreateProspectList(ctx, store.ProspectList{Name: "fixture-prospect_list", Size: 10, CreatedUserID: "fixture-owner"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, kind := range []string{store.KindReject, store.KindUnreject} {
-		if _, err = cfg.Store.Reject(ctx, store.Reject{Kind: kind, Cohort: cohort.ID, Candidate: id, UserID: "fixture-owner", Why: "fixture-reason"}); err != nil {
+		if _, err = cfg.Store.Reject(ctx, store.Reject{Kind: kind, ProspectList: prospectList.ID, Candidate: id, UserID: "fixture-owner", Why: "fixture-reason"}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -143,21 +143,21 @@ func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 	}
 	expected := candidateView(candidate)
 	setWebsite(&expected, es)
-	if !reflect.DeepEqual(got.Candidate, expected) || len(got.Enrichments) != 2 || len(got.Rejects) != 2 {
+	if !reflect.DeepEqual(got.Candidate, expected) || len(got.EnrichmentResults) != 2 || len(got.Rejects) != 2 {
 		t.Fatal(got)
 	}
 	for i, x := range es {
-		if !reflect.DeepEqual(got.Enrichments[i], enrichmentRow(x)) {
-			t.Fatal(got.Enrichments)
+		if !reflect.DeepEqual(got.EnrichmentResults[i], enrichmentRow(x)) {
+			t.Fatal(got.EnrichmentResults)
 		}
 	}
 	if len(got.Links) != 1 || got.Links[0].RowPage != "https://fixture-records.example.test/runs/fixture-run/rows/first-row" {
 		t.Fatal(got.Links)
 	}
-	if got.Enrichments[0].State != sources.WebsiteHTTPS || got.Enrichments[1].State != sources.WebsiteNone {
-		t.Fatal(got.Enrichments)
+	if got.EnrichmentResults[0].State != sources.WebsiteHTTPS || got.EnrichmentResults[1].State != sources.WebsiteNone {
+		t.Fatal(got.EnrichmentResults)
 	}
-	view := pageCohort(t, cfg, cohort.ID)
+	view := pageProspectList(t, cfg, prospectList.ID)
 	if len(view.Members) != 2 {
 		t.Fatal(view)
 	}
@@ -174,7 +174,7 @@ func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(merged.Candidate, candidateView(c)) || merged.Facts != nil || merged.Assessment != nil || merged.Estimates == nil || len(merged.Estimates) != 0 || merged.Links == nil || len(merged.Links) != 0 || merged.Enrichments == nil || len(merged.Enrichments) != 0 || len(merged.Rulings) != 1 || len(merged.Rejects) != 2 {
+	if !reflect.DeepEqual(merged.Candidate, candidateView(c)) || merged.Enrichments != nil || merged.Judgments != nil || merged.Estimates == nil || len(merged.Estimates) != 0 || merged.Links == nil || len(merged.Links) != 0 || merged.EnrichmentResults == nil || len(merged.EnrichmentResults) != 0 || len(merged.Rulings) != 1 || len(merged.Rejects) != 2 {
 		t.Fatal(merged)
 	}
 	b := bannerFor(cfg)
@@ -184,7 +184,7 @@ func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 	}
 }
 
-// R-3X7J-PRDD R-WTV0-234V R-X3M7-492F
+// R-3X7J-PRDD R-06A6-0MC0 R-0CDN-XH1H
 func TestEnrichPassViews(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	for _, tc := range []struct{ origin, email, user, by string }{
@@ -214,7 +214,7 @@ func TestEnrichPassViews(t *testing.T) {
 	}
 }
 
-// R-3TJU-KG5A
+// R-P8DA-YHFL
 func TestWebsiteTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
@@ -237,14 +237,14 @@ func TestWebsiteTemplateStates(t *testing.T) {
 				for _, full := range []bool{false, true} {
 					d := CandidateData{Candidate: CandidateView{Status: status, Website: state, WebsiteURL: url, WebsiteTitle: text, WebsiteChecked: text, WebsiteCheckedText: text}}
 					if full {
-						d.Enrichments = []EnrichmentRow{{State: state, URL: text, Title: text, StatusCode: text, Error: text, At: text, AtText: text, Source: text}}
+						d.EnrichmentResults = []EnrichmentRow{{State: state, URL: text, Title: text, StatusCode: text, Error: text, At: text, AtText: text, Source: text}}
 					}
 					render("candidate", d)
 				}
 			}
 			for _, websites := range [][]string{{}, {sources.WebsiteHTTP}, {sources.WebsiteNone, sources.WebsiteHTTP}} {
 				for _, unknown := range []bool{false, true} {
-					render("cohort", CohortData{Cohort: CohortView{Filters: FiltersView{Website: websites, WebsiteUnknown: unknown}}, Members: []MemberRow{{Website: state, WebsiteURL: url}}})
+					render("prospect_list", ProspectListData{ProspectList: ProspectListView{Filters: FiltersView{Website: websites, WebsiteUnknown: unknown}}, Members: []MemberRow{{Website: state, WebsiteURL: url}}})
 				}
 			}
 		}

@@ -1,12 +1,14 @@
 // Package cli implements the command and its injected process boundary.
 package cli
 
+import "github.com/ikigenba/ikigenba/candidates/internal/pages"
+
 // Usage is the complete command help.
 const Usage = `Usage: candidates [command]
 
-Candidate businesses for agents: MCP tools at /mcp keep the owner's cohorts,
+Candidate businesses for agents: MCP tools at /mcp keep the owner's prospect lists,
 read each candidate with its evidence and record the owner's rulings,
-with the cohorts and the passes at /, on the socket systemd
+with the prospect lists and the passes at /, on the socket systemd
 passes in.
 With no command, serve.
 
@@ -26,7 +28,7 @@ Exit codes:
 
 // Manifest is the host-readable service manifest.
 const Manifest = `app = "candidates"
-description = "Candidate businesses resolved from the records scrapes collects, judged and read through the owner's cohorts"
+description = "` + pages.Description + `"
 default = false
 mcp = true
 guests = false

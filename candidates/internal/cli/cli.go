@@ -216,7 +216,7 @@ func Run(ctx context.Context, p Process) int {
 		return ExitServerFailed
 	}
 	_, _ = st.PrunePasses(bg, s.KeepPasses)
-	h := web.Handler(web.Config{Banner: p.Banner, MCP: p.MCP(w), ServicesPath: path, Store: st, Passes: eng, Telemetry: w, Events: em, Website: checker})
+	h := web.Handler(web.Config{Banner: p.Banner, MCP: p.MCP(w), LegacyMCP: p.MCP(w), ServicesPath: path, Store: st, Passes: eng, Telemetry: w, Events: em, Website: checker})
 	notify, _ := p.LookupEnv("NOTIFY_SOCKET")
 	if notify != "" {
 		if c, e := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: notify, Net: "unixgram"}); e == nil {

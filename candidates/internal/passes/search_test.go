@@ -38,7 +38,7 @@ func searchAfter(d time.Duration) <-chan time.Time {
 	return ch
 }
 
-// R-33P6-601K R-2NUH-6ZEJ R-38KR-P30C R-301H-0OTH
+// R-TZ38-ID8T R-WKZH-YPCA R-RFMR-TKMQ R-UYGB-LPQY
 func TestWebsiteSearchTargetResultsAndConfirmation(t *testing.T) {
 	f := newFixture(t, nil, false)
 	ids := searchTargets(t, f, 6)
@@ -50,7 +50,7 @@ func TestWebsiteSearchTargetResultsAndConfirmation(t *testing.T) {
 	if _, err := f.st.JudgeAll(ctx); err != nil {
 		t.Fatal(err)
 	}
-	co, err := f.st.CreateCohort(ctx, store.Cohort{Name: "search targets", Size: 6, CreatedUserID: "owner"})
+	co, err := f.st.CreateProspectList(ctx, store.ProspectList{Name: "search targets", Size: 6, CreatedUserID: "owner"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestWebsiteSearchTargetResultsAndConfirmation(t *testing.T) {
 	f.eng.Drain(ctx)
 	f.eng = passes.New(passes.Config{Store: f.st, Prompts: pc, Website: checker, Telemetry: f.w, Events: f.em, After: searchAfter})
 	caller := identity.Caller{UserID: "owner", Email: "owner@example.test", RequestID: "search-request"}
-	p, err := f.eng.EnrichCohort(ctx, caller, enrichers.KindWebsiteSearch, co.ID, true)
+	p, err := f.eng.EnrichTarget(ctx, caller, enrichers.KindWebsiteSearch, co.ID, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestWebsiteSearchTargetResultsAndConfirmation(t *testing.T) {
 	}
 }
 
-// R-3B0K-GMHQ
+// R-U6EM-SZOZ
 func TestWebsiteSearchDrainCancelsConfirmation(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := searchTargets(t, f, 1)[0]
@@ -203,7 +203,7 @@ func TestWebsiteSearchDrainCancelsConfirmation(t *testing.T) {
 	})
 	f.eng.Drain(t.Context())
 	f.eng = passes.New(passes.Config{Store: f.st, Prompts: pc, Website: checker, Telemetry: f.w, Events: f.em, After: searchAfter})
-	p, err := f.eng.EnrichCohort(t.Context(), identity.Caller{UserID: "owner"}, enrichers.KindWebsiteSearch, id, false)
+	p, err := f.eng.EnrichTarget(t.Context(), identity.Caller{UserID: "owner"}, enrichers.KindWebsiteSearch, id, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestWebsiteSearchDrainCancelsConfirmation(t *testing.T) {
 	}
 }
 
-// R-39SO-2UR1
+// R-1E58-A4MW
 func TestWebsiteSearchNeverRunsOverCorpus(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := searchTargets(t, f, 1)[0]

@@ -20,12 +20,12 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-BHOJ-DFI5 R-N7LB-NIYF R-E0I5-K24P R-AQD8-1DY8 R-AK9Q-4J8R R-AST0-SXFM
-func TestCohortViewContracts(t *testing.T) {
+// R-V9FF-1NF7 R-N7LB-NIYF R-E0I5-K24P R-1YVI-S88P R-SNJ5-LBBQ R-SBC5-RLWS
+func TestProspectListViewContracts(t *testing.T) {
 	low, high, minutes, days := int64(5000000), int64(9000000), int64(120), int64(730)
 	government := false
 	at := fixtureTime()
-	f := store.CohortFilters{RevenueMin: &low, RevenueMax: &high, RevenueUnknown: true, MaxMinutes: &minutes, MinutesUnknown: true, Categories: []string{sources.CategoryConstruction, sources.CategoryTrucking}, CategoryUnknown: true, Fleet: sources.FleetPass, FleetUnknown: true, Government: &government, MaxFilingAgeDays: &days, FilingUnknown: true, Class: sources.ClassPrivate, ClassUnknown: true, ShowExcluded: true}
+	f := store.ProspectListFilters{RevenueMin: &low, RevenueMax: &high, RevenueUnknown: true, MaxMinutes: &minutes, MinutesUnknown: true, Categories: []string{sources.CategoryConstruction, sources.CategoryTrucking}, CategoryUnknown: true, Fleet: sources.FleetPass, FleetUnknown: true, Government: &government, MaxFilingAgeDays: &days, FilingUnknown: true, Class: sources.ClassPrivate, ClassUnknown: true, ShowExcluded: true}
 	wantF := FiltersView{"$5,000,000", "$9,000,000", true, "120", true, []string{sources.CategoryConstruction, sources.CategoryTrucking}, true, sources.FleetPass, true, []string{}, false, "false", "730", true, "", sources.ClassPrivate, true, true}
 	if got := filtersView(f); !reflect.DeepEqual(got, wantF) {
 		t.Fatalf("filters got %#v want %#v", got, wantF)
@@ -35,82 +35,82 @@ func TestCohortViewContracts(t *testing.T) {
 	if got := filtersView(f); !reflect.DeepEqual(got, wantF) {
 		t.Fatal(got)
 	}
-	if got := filtersView(store.CohortFilters{}); !reflect.DeepEqual(got, FiltersView{Categories: []string{}, Website: []string{}}) {
+	if got := filtersView(store.ProspectListFilters{}); !reflect.DeepEqual(got, FiltersView{Categories: []string{}, Website: []string{}}) {
 		t.Fatal(got)
 	}
-	c := store.Cohort{ID: "chosen-cohort", Name: "chosen-name", Size: 2, Filters: f, Order: []store.CohortOrder{{Field: store.OrderRevenueLow, Direction: store.DirectionAsc}, {Field: store.OrderKnownSince, Direction: store.DirectionDesc}}, CreatedUserID: "creator", CreatedUserEmail: "creator@example.test", Created: at, ChangedUserID: "editor", ChangedUserEmail: "editor@example.test", Changed: at.Add(time.Hour)}
-	want := CohortView{"chosen-cohort", "chosen-name", 2, wantF, []OrderRow{{store.OrderRevenueLow, store.DirectionAsc}, {store.OrderKnownSince, store.DirectionDesc}}, "creator@example.test", "creator", "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC", "editor@example.test", "editor", "2026-10-05T10:00:07Z", "2026-10-05 10:00:07 UTC"}
-	if got := cohortView(c); !reflect.DeepEqual(got, want) {
-		t.Fatalf("cohort got %#v want %#v", got, want)
+	c := store.ProspectList{ID: "chosen-prospect_list", Name: "chosen-name", Size: 2, Filters: f, Order: []store.ProspectListOrder{{Field: store.OrderRevenueLow, Direction: store.DirectionAsc}, {Field: store.OrderKnownSince, Direction: store.DirectionDesc}}, CreatedUserID: "creator", CreatedUserEmail: "creator@example.test", Created: at, ChangedUserID: "editor", ChangedUserEmail: "editor@example.test", Changed: at.Add(time.Hour)}
+	want := ProspectListView{"chosen-prospect_list", "chosen-name", 2, wantF, []OrderRow{{store.OrderRevenueLow, store.DirectionAsc}, {store.OrderKnownSince, store.DirectionDesc}}, "creator@example.test", "creator", "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC", "editor@example.test", "editor", "2026-10-05T10:00:07Z", "2026-10-05 10:00:07 UTC"}
+	if got := prospectListView(c); !reflect.DeepEqual(got, want) {
+		t.Fatalf("prospect_list got %#v want %#v", got, want)
 	}
-	if got := cohortRow(c); !reflect.DeepEqual(got, CohortRow{"chosen-cohort", "chosen-name", 2, "creator@example.test", "creator", "2026-10-05T10:00:07Z", "2026-10-05 10:00"}) {
+	if got := prospectListRow(c); !reflect.DeepEqual(got, ProspectListRow{"chosen-prospect_list", "chosen-name", 2, "creator@example.test", "creator", "2026-10-05T10:00:07Z", "2026-10-05 10:00"}) {
 		t.Fatal(got)
 	}
 	c.CreatedUserEmail = ""
 	c.Changed = time.Time{}
 	c.Created = time.Time{}
 	c.Order = nil
-	if got := cohortRow(c); got.CreatedBy != "" || got.CreatedUser != "creator" || got.Changed != "" || got.ChangedText != "" {
+	if got := prospectListRow(c); got.CreatedBy != "" || got.CreatedUser != "creator" || got.Changed != "" || got.ChangedText != "" {
 		t.Fatal(got)
 	}
-	if got := cohortView(c); got.Created != "" || got.CreatedText != "" || got.Changed != "" || got.ChangedText != "" || !reflect.DeepEqual(got.Order, []OrderRow{}) {
+	if got := prospectListView(c); got.Created != "" || got.CreatedText != "" || got.Changed != "" || got.ChangedText != "" || !reflect.DeepEqual(got.Order, []OrderRow{}) {
 		t.Fatal(got)
 	}
-	r := store.Reject{Kind: store.KindReject, Cohort: "cohort", CohortName: "cohort-name", Candidate: "candidate", UserID: "user", UserEmail: "email", At: at, Why: "reason"}
+	r := store.Reject{Kind: store.KindReject, ProspectList: "prospect_list", ProspectListName: "prospect_list-name", Candidate: "candidate", UserID: "user", UserEmail: "email", At: at, Why: "reason"}
 	if got := rejectRow(r); !reflect.DeepEqual(got, RejectRow{"candidate", "email", "user", "2026-10-05T09:00:07Z", "2026-10-05 09:00", "reason"}) {
 		t.Fatal(got)
 	}
-	if got := rejectRecordRow(r); !reflect.DeepEqual(got, RejectRecordRow{store.KindReject, "cohort", "cohort-name", "email", "user", "2026-10-05T09:00:07Z", "2026-10-05 09:00", "reason"}) {
+	if got := rejectRecordRow(r); !reflect.DeepEqual(got, RejectRecordRow{store.KindReject, "prospect_list", "prospect_list-name", "email", "user", "2026-10-05T09:00:07Z", "2026-10-05 09:00", "reason"}) {
 		t.Fatal(got)
 	}
 	r.Kind = store.KindUnreject
-	r.CohortName = ""
+	r.ProspectListName = ""
 	r.UserEmail = ""
 	r.At = time.Time{}
-	if got := rejectRecordRow(r); !reflect.DeepEqual(got, RejectRecordRow{store.KindUnreject, "cohort", "", "", "user", "", "", "reason"}) {
+	if got := rejectRecordRow(r); !reflect.DeepEqual(got, RejectRecordRow{store.KindUnreject, "prospect_list", "", "", "user", "", "", "reason"}) {
 		t.Fatal(got)
 	}
 	set, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := CohortData{page.Banner{}, want, 5, 0, []MemberRow{{1, "id", "name", "city", "state", "operating", "low", "high", "confidence", []string{"category"}, "chosen-classifier", "class", "verdict", "chosen-website", "https://chosen.example.test/", "chosen-source", "site-text-at", "site-text-text", "brief-at", "brief-text", "minutes", "government", "since", "since-text", "filing", "filing-text", true}}, []RejectRow{rejectRow(r)}}
+	d := ProspectListData{page.Banner{}, want, 5, 0, []MemberRow{{1, "id", "name", "city", "state", "operating", "low", "high", "confidence", []string{"category"}, "chosen-classifier", "class", "verdict", "chosen-website", "https://chosen.example.test/", "chosen-source", "site-text-at", "site-text-text", "brief-at", "brief-text", "minutes", "government", "since", "since-text", "filing", "filing-text", true}}, []RejectRow{rejectRow(r)}}
 	if d.Members[0].Website != "chosen-website" || d.Members[0].WebsiteURL != "https://chosen.example.test/" {
 		t.Fatal("member positional shape")
 	}
-	if err = set.templates.ExecuteTemplate(&bytes.Buffer{}, "cohort", d); err != nil {
+	if err = set.templates.ExecuteTemplate(&bytes.Buffer{}, "prospect_list", d); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func pageCohort(t *testing.T, cfg Config, id string) CohortData {
+func pageProspectList(t *testing.T, cfg Config, id string) ProspectListData {
 	t.Helper()
-	v, err := cfg.Store.ReadCohort(t.Context(), id)
+	v, err := cfg.Store.ReadProspectList(t.Context(), id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	b := bannerFor(cfg)
-	b.Trail = []page.Level{{Name: id, URL: "/cohorts/" + id}}
-	d := CohortData{Banner: b, Cohort: cohortView(v.Cohort), Matching: v.Matching, Classified: v.Classified, Members: []MemberRow{}, Rejects: []RejectRow{}}
+	b.Trail = []page.Level{{Name: id, URL: "/prospect-lists/" + id}}
+	d := ProspectListData{Banner: b, ProspectList: prospectListView(v.ProspectList), Matching: v.Matching, Classified: v.Classified, Members: []MemberRow{}, Rejects: []RejectRow{}}
 	for i, m := range v.Members {
 		d.Members = append(d.Members, memberRow(m, i))
 	}
 	for _, r := range v.Rejects {
 		d.Rejects = append(d.Rejects, rejectRow(r))
 	}
-	comparePage(t, cfg, "/cohorts/"+id, "cohort", 200, d)
+	comparePage(t, cfg, "/prospect-lists/"+id, "prospect_list", 200, d)
 	return d
 }
 
-// R-AV8T-KGX0 R-BLC8-IQQ8 R-NB90-SU6I R-NG4M-BX5A R-4D28-OS0E R-BIEW-U407 R-BH70-GC9I
-func TestCohortAndRejectHistoryPages(t *testing.T) {
+// R-WPV3-HSB2 R-QMD6-N2U2 R-M6MC-J4P3 R-TPC1-G7B9 R-RO62-HYTL R-3XLO-YX8Z R-XHWS-AID1
+func TestProspectListAndRejectHistoryPages(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()
-	cohort, err := cfg.Store.CreateCohort(ctx, store.Cohort{Name: "chosen-cohort", Size: 2, CreatedUserID: "creator"})
+	prospectList, err := cfg.Store.CreateProspectList(ctx, store.ProspectList{Name: "chosen-prospect_list", Size: 2, CreatedUserID: "creator"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	empty := pageCohort(t, cfg, cohort.ID)
+	empty := pageProspectList(t, cfg, prospectList.ID)
 	if empty.Matching != 0 || len(empty.Members) != 0 || len(empty.Rejects) != 0 {
 		t.Fatal(empty)
 	}
@@ -126,16 +126,16 @@ func TestCohortAndRejectHistoryPages(t *testing.T) {
 	if _, err = cfg.Store.JudgeAll(ctx); err != nil {
 		t.Fatal(err)
 	}
-	full := pageCohort(t, cfg, cohort.ID)
+	full := pageProspectList(t, cfg, prospectList.ID)
 	if full.Matching != 5 || len(full.Members) != 2 || full.Members[0].Rank != 1 || full.Members[1].Rank != 2 {
 		t.Fatal(full)
 	}
 	id := full.Members[0].ID
 	for _, kind := range []string{store.KindReject, store.KindUnreject, store.KindReject} {
-		if _, err = cfg.Store.Reject(ctx, store.Reject{Kind: kind, Cohort: cohort.ID, Candidate: id, Why: "chosen-" + kind, UserID: "owner"}); err != nil {
+		if _, err = cfg.Store.Reject(ctx, store.Reject{Kind: kind, ProspectList: prospectList.ID, Candidate: id, Why: "chosen-" + kind, UserID: "owner"}); err != nil {
 			t.Fatal(err)
 		}
-		pageCohort(t, cfg, cohort.ID)
+		pageProspectList(t, cfg, prospectList.ID)
 	}
 	// Candidate pages retain every record, including after deletion and merge.
 	checkCandidate := func() {
@@ -165,13 +165,14 @@ func TestCohortAndRejectHistoryPages(t *testing.T) {
 			d.Rulings = append(d.Rulings, rulingView(r, id))
 		}
 		if c.Status == store.StatusActive {
+			d.Enrichments = &EnrichmentsView{}
 			d.Candidate.Website = sources.WebsiteUnknown
-			a, e := cfg.Store.GetAssessment(ctx, id)
+			a, e := cfg.Store.GetJudgments(ctx, id)
 			if e != nil {
 				t.Fatal(e)
 			}
-			av := assessmentView(a)
-			d.Assessment = &av
+			av := judgmentsView(a)
+			d.Judgments = &av
 			links, e := cfg.Store.Links(ctx, id)
 			if e != nil {
 				t.Fatal(e)
@@ -183,7 +184,7 @@ func TestCohortAndRejectHistoryPages(t *testing.T) {
 		comparePage(t, cfg, "/candidates/"+id, "candidate", 200, d)
 	}
 	checkCandidate()
-	for _, path := range []string{"/", "/cohorts/" + cohort.ID} {
+	for _, path := range []string{"/", "/prospect-lists/" + prospectList.ID} {
 		body := requestPage(cfg, "GET", path, "reader").Body.String()
 		for i := 0; i < 5; i++ {
 			for _, value := range []string{"private-phone-" + strconv.Itoa(i), "private-email-" + strconv.Itoa(i)} {
@@ -193,7 +194,7 @@ func TestCohortAndRejectHistoryPages(t *testing.T) {
 			}
 		}
 	}
-	before, err := cfg.Store.GetCohort(ctx, cohort.ID)
+	before, err := cfg.Store.GetProspectList(ctx, prospectList.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,12 +202,12 @@ func TestCohortAndRejectHistoryPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cohorts, err := cfg.Store.ListCohorts(ctx, "", "", 100)
+	prospectLists, err := cfg.Store.ListProspectLists(ctx, "", "", 100)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pageCohort(t, cfg, cohort.ID)
-	after, err := cfg.Store.GetCohort(ctx, cohort.ID)
+	pageProspectList(t, cfg, prospectList.ID)
+	after, err := cfg.Store.GetProspectList(ctx, prospectList.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,17 +215,17 @@ func TestCohortAndRejectHistoryPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	afterCohorts, err := cfg.Store.ListCohorts(ctx, "", "", 100)
+	afterProspectLists, err := cfg.Store.ListProspectLists(ctx, "", "", 100)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(before, after) || !reflect.DeepEqual(rejects, afterRejects) || !reflect.DeepEqual(cohorts, afterCohorts) {
-		t.Fatal("page changed cohort records")
+	if !reflect.DeepEqual(before, after) || !reflect.DeepEqual(rejects, afterRejects) || !reflect.DeepEqual(prospectLists, afterProspectLists) {
+		t.Fatal("page changed prospect_list records")
 	}
-	if _, err = cfg.Store.DeleteCohort(ctx, cohort.ID); err != nil {
+	if _, err = cfg.Store.DeleteProspectList(ctx, prospectList.ID); err != nil {
 		t.Fatal(err)
 	}
-	comparePage(t, cfg, "/cohorts/"+cohort.ID, "notfound", 404, NotFoundData{bannerFor(cfg)})
+	comparePage(t, cfg, "/prospect-lists/"+prospectList.ID, "notfound", 404, NotFoundData{bannerFor(cfg)})
 	checkCandidate()
 	survivor := ids[0]
 	if survivor == id {
@@ -236,8 +237,8 @@ func TestCohortAndRejectHistoryPages(t *testing.T) {
 	checkCandidate()
 }
 
-// R-3TJU-KG5A
-func TestCohortAndRejectTemplateStates(t *testing.T) {
+// R-P8DA-YHFL
+func TestProspectListAndRejectTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
 	if err != nil {
@@ -257,16 +258,16 @@ func TestCohortAndRejectTemplateStates(t *testing.T) {
 						for _, high := range []string{"", "chosen-high"} {
 							for _, orders := range [][]OrderRow{{{store.OrderRevenueLow, store.DirectionAsc}}, {{store.OrderRevenueLow, store.DirectionAsc}, {store.OrderKnownSince, store.DirectionDesc}}} {
 								f := FiltersView{RevenueMin: text, RevenueMax: text, RevenueUnknown: flag, MaxMinutes: text, MinutesUnknown: flag, Categories: categories, CategoryUnknown: flag, Fleet: text, FleetUnknown: flag, Government: government, MaxFilingAgeDays: text, FilingUnknown: flag, Class: text, ClassUnknown: flag, ShowExcluded: flag}
-								c := CohortView{ID: "chosen-cohort", Name: text, Size: 2, Filters: f, Order: orders, CreatedBy: text, CreatedUser: "chosen-creator", Created: text, CreatedText: text, ChangedBy: text, ChangedUser: "chosen-editor", Changed: text, ChangedText: text}
-								d := CohortData{Cohort: c, Members: []MemberRow{}, Rejects: []RejectRow{}}
-								render("cohort", d)
+								c := ProspectListView{ID: "chosen-prospect_list", Name: text, Size: 2, Filters: f, Order: orders, CreatedBy: text, CreatedUser: "chosen-creator", Created: text, CreatedText: text, ChangedBy: text, ChangedUser: "chosen-editor", Changed: text, ChangedText: text}
+								d := ProspectListData{ProspectList: c, Members: []MemberRow{}, Rejects: []RejectRow{}}
+								render("prospect_list", d)
 								d.Matching = 5
 								d.Members = []MemberRow{{Rank: 1, ID: "chosen-candidate", Name: text, City: text, State: text, OperatingConfidence: text, RevenueLow: text, RevenueHigh: high, RevenueConfidence: text, Categories: categories, Class: text, FleetVerdict: fleet, Minutes: text, GovernmentMatch: text, KnownSince: text, KnownSinceText: text, NewestFiling: text, NewestFilingText: text, Excluded: flag}}
 								d.Rejects = []RejectRow{{Candidate: "chosen-reject", By: text, User: "chosen-user", At: text, AtText: text, Why: text}}
-								render("cohort", d)
+								render("prospect_list", d)
 								for _, status := range []string{store.StatusActive, store.StatusMerged} {
 									for _, kind := range []string{store.KindReject, store.KindUnreject} {
-										render("candidate", CandidateData{Facts: &FactsView{FleetVerdict: fleet, PowerUnits: text, Drivers: text}, Candidate: CandidateView{Status: status}, Assessment: &AssessmentView{}, Rejects: []RejectRecordRow{{Kind: kind, Cohort: "chosen-cohort", CohortName: text, By: text, User: "chosen-user", At: text, AtText: text, Why: text}}})
+										render("candidate", CandidateData{Candidate: CandidateView{Status: status}, Judgments: &JudgmentsView{}, Rejects: []RejectRecordRow{{Kind: kind, ProspectList: "chosen-prospect_list", ProspectListName: text, By: text, User: "chosen-user", At: text, AtText: text, Why: text}}, Enrichments: &EnrichmentsView{Facts: &FactsView{FleetVerdict: fleet, PowerUnits: text, Drivers: text}}})
 									}
 								}
 							}
@@ -278,7 +279,7 @@ func TestCohortAndRejectTemplateStates(t *testing.T) {
 	}
 }
 
-// R-BH70-GC9I
+// R-XHWS-AID1
 func TestPagesLeaveEveryRecordUnchanged(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	var requests atomic.Int64
@@ -313,11 +314,11 @@ func TestPagesLeaveEveryRecordUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := ids[0]
-	c, err := cfg.Store.CreateCohort(ctx, store.Cohort{Name: "chosen-cohort", Size: 2, CreatedUserID: "creator"})
+	c, err := cfg.Store.CreateProspectList(ctx, store.ProspectList{Name: "chosen-prospect_list", Size: 2, CreatedUserID: "creator"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = cfg.Store.Reject(ctx, store.Reject{Kind: store.KindReject, Cohort: c.ID, Candidate: id, Why: "chosen-why", UserID: "owner"}); err != nil {
+	if _, err = cfg.Store.Reject(ctx, store.Reject{Kind: store.KindReject, ProspectList: c.ID, Candidate: id, Why: "chosen-why", UserID: "owner"}); err != nil {
 		t.Fatal(err)
 	}
 	p, err := cfg.Store.AddPass(ctx, store.Pass{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "chosen-run", Delivery: "chosen-delivery"})
@@ -337,17 +338,17 @@ func TestPagesLeaveEveryRecordUnchanged(t *testing.T) {
 		add(cfg.Store.GetCandidate(ctx, id))
 		add(cfg.Store.Links(ctx, id))
 		add(cfg.Store.Estimates(ctx, id))
-		add(cfg.Store.GetAssessment(ctx, id))
+		add(cfg.Store.GetJudgments(ctx, id))
 		add(cfg.Store.Rulings(ctx, id))
 		add(cfg.Store.Rejects(ctx, id))
-		add(cfg.Store.GetCohort(ctx, c.ID))
-		add(cfg.Store.ListCohorts(ctx, "", "", 100))
+		add(cfg.Store.GetProspectList(ctx, c.ID))
+		add(cfg.Store.ListProspectLists(ctx, "", "", 100))
 		add(cfg.Store.ListPasses(ctx, "", "", 100))
 		add(cfg.Store.GetPass(ctx, p.ID))
 		return out
 	}
 	before := snapshot()
-	for _, path := range []string{"/", "/cohorts/" + c.ID, "/candidates/" + id, "/passes/" + p.ID, "/about", "/tools", "/unknown"} {
+	for _, path := range []string{"/", "/prospect-lists/" + c.ID, "/candidates/" + id, "/passes/" + p.ID, "/about", "/tools", "/unknown"} {
 		for _, method := range []string{"GET", "HEAD"} {
 			got := requestPage(cfg, method, path, "reader")
 			if got.Code != 200 && got.Code != 404 {

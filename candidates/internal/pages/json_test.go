@@ -59,7 +59,7 @@ func TestDerivedProjection(t *testing.T) {
 	}
 }
 
-// R-NB90-SU6I
+// R-M6MC-J4P3
 func TestCandidateFactsWithoutJudgment(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	_, ids, err := cfg.Store.Attach(t.Context(), "run", false, []store.Observation{{Scraper: "fixture", SourceID: "row", Digest: "digest", Reading: sources.Reading{Name: "facts-business", NameKey: "facts-business"}}})
@@ -75,15 +75,15 @@ func TestCandidateFactsWithoutJudgment(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := factsView(facts)
-	if got.Assessment != nil || got.Facts == nil || !reflect.DeepEqual(*got.Facts, want) || len(got.Facts.Written) != 1 || got.Facts.Written[0].Kind != enrichers.KindLinkFacts {
+	if got.Judgments != nil || got.Enrichments.Facts == nil || !reflect.DeepEqual(*got.Enrichments.Facts, want) || len(got.Enrichments.Facts.Written) != 1 || got.Enrichments.Facts.Written[0].Kind != enrichers.KindLinkFacts {
 		t.Fatal(got)
 	}
 	results, err := cfg.Store.Enrichments(t.Context(), ids[0])
 	if err != nil || len(results) != 1 || results[0].Kind != enrichers.KindLinkFacts {
 		t.Fatal(results, err)
 	}
-	if expected := []EnrichmentRow{enrichmentRow(results[0])}; !reflect.DeepEqual(got.Enrichments, expected) || len(got.Enrichments[0].Found) == 0 {
-		t.Fatal(got.Enrichments, expected)
+	if expected := []EnrichmentRow{enrichmentRow(results[0])}; !reflect.DeepEqual(got.EnrichmentResults, expected) || len(got.EnrichmentResults[0].Found) == 0 {
+		t.Fatal(got.EnrichmentResults, expected)
 	}
 	if _, err := cfg.Store.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: ids[0], Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Source: "fixture.test", Found: encodedJSON(website.Result{State: sources.WebsiteHTTPS, URL: "https://fixture.test/"})}}); err != nil {
 		t.Fatal(err)
@@ -94,19 +94,19 @@ func TestCandidateFactsWithoutJudgment(t *testing.T) {
 	}
 	got = capturedCandidate(t, cfg, ids[0])
 	expected := []EnrichmentRow{enrichmentRow(results[0]), enrichmentRow(results[1])}
-	if !reflect.DeepEqual(got.Enrichments, expected) || got.Enrichments[0].Kind != sources.WebsiteCheck || got.Enrichments[1].Kind != enrichers.KindLinkFacts || len(got.Enrichments[1].Found) == 0 {
-		t.Fatal(got.Enrichments, expected)
+	if !reflect.DeepEqual(got.EnrichmentResults, expected) || got.EnrichmentResults[0].Kind != sources.WebsiteCheck || got.EnrichmentResults[1].Kind != enrichers.KindLinkFacts || len(got.EnrichmentResults[1].Found) == 0 {
+		t.Fatal(got.EnrichmentResults, expected)
 	}
 }
 
-// R-3TJU-KG5A R-N55I-VZH1 R-BGGM-ZNRG R-02QA-EAYZ
-func TestIndependentFactsAndAssessmentTemplateStates(t *testing.T) {
+// R-P8DA-YHFL R-Q5AL-AAGC R-BGGM-ZNRG R-02MG-VB3X
+func TestIndependentFactsAndJudgmentsTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, assessment := range []*AssessmentView{nil, {OperatingEvidence: []EvidenceRow{}, Excluded: true}} {
+	for _, judgments := range []*JudgmentsView{nil, {OperatingEvidence: []EvidenceRow{}, Excluded: true}} {
 		for _, facts := range []*FactsView{nil, {Categories: []CategoryRow{}, Written: []WrittenRow{}}} {
 			for _, text := range []string{"", "fixture-value"} {
 				for _, fleet := range []string{sources.FleetPass, sources.FleetFail, sources.FleetUnknown} {
@@ -124,10 +124,10 @@ func TestIndependentFactsAndAssessmentTemplateStates(t *testing.T) {
 							}
 							fv = &v
 						}
-						d := CandidateData{Facts: fv, Assessment: assessment}
+						d := CandidateData{Judgments: judgments, Enrichments: &EnrichmentsView{Facts: fv}}
 						for _, kind := range []string{enrichers.KindDriveMinutes, enrichers.KindLinkFacts} {
 							for _, found := range [][]FactRow{{}, {{"fixture-key", "fixture-value"}}, {{"first", "1"}, {"second", "2"}}} {
-								d.Enrichments = []EnrichmentRow{{Kind: kind, Source: "fixture-source", Found: found}}
+								d.EnrichmentResults = []EnrichmentRow{{Kind: kind, Source: "fixture-source", Found: found}}
 								if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "candidate", d); err != nil {
 									t.Fatal(err)
 								}

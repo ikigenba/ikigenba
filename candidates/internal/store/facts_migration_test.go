@@ -18,7 +18,7 @@ func writeOldWebsite(ctx context.Context, tx *sql.Tx, id string, found []byte) e
 	return err
 }
 
-// R-XK94-I8J5 R-WMLZ-K42F R-XCXQ-7M2Z
+// R-YTC8-UKTW R-WMLZ-K42F R-XCXQ-7M2Z
 func TestFactsMigrationAndRollbackResults(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "facts.db")
@@ -57,7 +57,7 @@ func TestFactsMigrationAndRollbackResults(t *testing.T) {
 	assertPriorJudgment(t, s, id)
 	p, err := s.GetPass(ctx, pid)
 	contractOK(t, err)
-	contractEqual(t, p, store.Pass{ID: pid, Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, Status: store.StatusDone, Started: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Finished: time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC), Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14, UserID: "owner", UserEmail: "mail", RequestID: "request"})
+	contractEqual(t, p, store.Pass{ID: pid, Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Status: store.StatusDone, Started: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Finished: time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC), Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14, UserID: "owner", UserEmail: "mail", RequestID: "request"})
 	contractOK(t, s.FillFacts(ctx))
 	facts, err := s.GetFacts(ctx, id)
 	contractOK(t, err)

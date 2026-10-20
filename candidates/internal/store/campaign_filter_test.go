@@ -9,7 +9,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-NHBV-MSK2 R-STA0-5N4B R-NIJS-0KAR R-NJRO-EC1G R-T7WS-QW0N
+// R-ZNYC-RTTH R-STA0-5N4B R-T89G-3EXJ R-N7DR-ZBTP R-PI4I-0ND5
 func TestCampaignFilterCalendarBoundariesAndEffectiveTimes(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -55,13 +55,13 @@ func TestCampaignFilterCalendarBoundariesAndEffectiveTimes(t *testing.T) {
 	}
 	_, err := f.s.JudgeAll(ctx)
 	contractOK(t, err)
-	k, err := f.s.CreateCohort(ctx, store.Cohort{Name: "campaign filter", Size: 100, CreatedUserID: "owner", Filters: store.CohortFilters{MinCampaignAgeDays: ptrInt(30)}})
+	k, err := f.s.CreateProspectList(ctx, store.ProspectList{Name: "campaign filter", Size: 100, CreatedUserID: "owner", Filters: store.ProspectListFilters{MinCampaignAgeDays: ptrInt(30)}})
 	contractOK(t, err)
 	check := func(expected []string) {
 		t.Helper()
-		r, err := f.s.ReadCohort(ctx, k.ID)
+		r, err := f.s.ReadProspectList(ctx, k.ID)
 		contractOK(t, err)
-		got := cohortIDs(r.Members)
+		got := prospectListIDs(r.Members)
 		contractEqual(t, len(got), len(expected))
 		for _, id := range expected {
 			present := false
@@ -80,11 +80,11 @@ func TestCampaignFilterCalendarBoundariesAndEffectiveTimes(t *testing.T) {
 	f.reopen()
 	check(want)
 	for _, age := range []*int64{ptrInt(0), nil} {
-		k, err = f.s.EditCohort(ctx, store.CohortEdit{ID: k.ID, Filters: &store.CohortFilters{MinCampaignAgeDays: age}, UserID: "owner"})
+		k, err = f.s.EditProspectList(ctx, store.ProspectListEdit{ID: k.ID, Filters: &store.ProspectListFilters{MinCampaignAgeDays: age}, UserID: "owner"})
 		contractOK(t, err)
 		check(ids)
 	}
-	k, err = f.s.EditCohort(ctx, store.CohortEdit{ID: k.ID, Filters: &store.CohortFilters{MinCampaignAgeDays: ptrInt(30)}, UserID: "owner"})
+	k, err = f.s.EditProspectList(ctx, store.ProspectListEdit{ID: k.ID, Filters: &store.ProspectListFilters{MinCampaignAgeDays: ptrInt(30)}, UserID: "owner"})
 	contractOK(t, err)
 	// A local date of October 14 at this offset is the UTC read date October 15.
 	f.now = time.Date(2026, 10, 14, 23, 59, 59, 0, time.FixedZone("local", -5*3600))
@@ -92,27 +92,27 @@ func TestCampaignFilterCalendarBoundariesAndEffectiveTimes(t *testing.T) {
 	f.now = time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
 	check(ids)
 	for _, n := range []int64{0, 1, math.MaxInt64} {
-		contractEqual(t, store.ValidCohortFilters(store.CohortFilters{MinCampaignAgeDays: &n}), true)
+		contractEqual(t, store.ValidProspectListFilters(store.ProspectListFilters{MinCampaignAgeDays: &n}), true)
 	}
-	bad := store.CohortFilters{MinCampaignAgeDays: ptrInt(-1)}
-	contractEqual(t, store.ValidCohortFilters(bad), false)
-	_, err = f.s.CreateCohort(ctx, store.Cohort{Name: "invalid", Size: 1, Filters: bad, CreatedUserID: "owner"})
+	bad := store.ProspectListFilters{MinCampaignAgeDays: ptrInt(-1)}
+	contractEqual(t, store.ValidProspectListFilters(bad), false)
+	_, err = f.s.CreateProspectList(ctx, store.ProspectList{Name: "invalid", Size: 1, Filters: bad, CreatedUserID: "owner"})
 	contractError(t, err, store.ErrInvalid)
-	_, err = f.s.EditCohort(ctx, store.CohortEdit{ID: k.ID, Filters: &bad, UserID: "owner"})
+	_, err = f.s.EditProspectList(ctx, store.ProspectListEdit{ID: k.ID, Filters: &bad, UserID: "owner"})
 	contractError(t, err, store.ErrInvalid)
 }
 
-// R-NHBV-MSK2 R-NJRO-EC1G R-NIJS-0KAR
+// R-ZNYC-RTTH R-N7DR-ZBTP R-T89G-3EXJ
 func TestCampaignFilterReadsLiveHistoryWithoutRejudge(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
 	f.now = time.Date(2026, 10, 15, 0, 0, 1, 0, time.UTC)
 	id := contractSeed(t, f)
-	k, err := f.s.CreateCohort(ctx, store.Cohort{Name: "live history", Size: 100, CreatedUserID: "owner", Filters: store.CohortFilters{MinCampaignAgeDays: ptrInt(30)}})
+	k, err := f.s.CreateProspectList(ctx, store.ProspectList{Name: "live history", Size: 100, CreatedUserID: "owner", Filters: store.ProspectListFilters{MinCampaignAgeDays: ptrInt(30)}})
 	contractOK(t, err)
 	check := func(n int64) {
 		t.Helper()
-		r, err := f.s.ReadCohort(ctx, k.ID)
+		r, err := f.s.ReadProspectList(ctx, k.ID)
 		contractOK(t, err)
 		contractEqual(t, r.Matching, n)
 		contractEqual(t, len(r.Members), int(n))
@@ -126,10 +126,10 @@ func TestCampaignFilterReadsLiveHistoryWithoutRejudge(t *testing.T) {
 	check(0)
 	contractOK(t, f.s.RejectCampaignUse(ctx, id, "campaign", "rejected", f.now))
 	check(0)
-	_, err = f.s.EditCohort(ctx, store.CohortEdit{ID: k.ID, UserID: "owner", Filters: &store.CohortFilters{MinCampaignAgeDays: ptrInt(10)}})
+	_, err = f.s.EditProspectList(ctx, store.ProspectListEdit{ID: k.ID, UserID: "owner", Filters: &store.ProspectListFilters{MinCampaignAgeDays: ptrInt(10)}})
 	contractOK(t, err)
 	check(1)
-	_, err = f.s.EditCohort(ctx, store.CohortEdit{ID: k.ID, UserID: "owner", Filters: &store.CohortFilters{MinCampaignAgeDays: ptrInt(30)}})
+	_, err = f.s.EditProspectList(ctx, store.ProspectListEdit{ID: k.ID, UserID: "owner", Filters: &store.ProspectListFilters{MinCampaignAgeDays: ptrInt(30)}})
 	contractOK(t, err)
 	check(0)
 	f.now = time.Date(2026, 11, 4, 0, 0, 1, 0, time.UTC)

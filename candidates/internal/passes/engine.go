@@ -1,4 +1,4 @@
-// Package passes resolves scraper evidence in background passes.
+// Package passes ingests evidence and coordinates background passes.
 package passes
 
 import (
@@ -32,7 +32,7 @@ type Config struct {
 	After     func(time.Duration) <-chan time.Time
 }
 
-// Engine coordinates cancellable enrichment and resolution passes.
+// Engine coordinates cancellable ingest, judgment and enrichment passes.
 type Engine struct {
 	cfg      Config
 	mu       sync.Mutex
@@ -53,8 +53,8 @@ func (e *Engine) Handlers() events.Handlers {
 	return events.Handlers{trail.Accepted: e.Deliver, trail.AcceptedJudge: e.Deliver, trail.AcceptedAdded: e.DeliverCampaign, trail.AcceptedRejected: e.DeliverCampaign, trail.AcceptedDelivered: e.DeliverCampaign}
 }
 
-// Rebuild records a pass and starts its work without waiting.
-func (e *Engine) Rebuild(ctx context.Context, c identity.Caller) (store.Pass, error) {
+// Ingest records a pass and starts its work without waiting.
+func (e *Engine) Ingest(ctx context.Context, c identity.Caller, scraper string) (store.Pass, error) {
 	if e.stopping.Load() {
 		return store.Pass{}, &Refusal{Word: RefusalStopping}
 	}
@@ -63,10 +63,15 @@ func (e *Engine) Rebuild(ctx context.Context, c identity.Caller) (store.Pass, er
 	if e.stopping.Load() {
 		return store.Pass{}, &Refusal{Word: RefusalStopping}
 	}
+	if scraper != "" {
+		if _, ok := e.cfg.Sources.Get(scraper); !ok {
+			return store.Pass{}, &Refusal{Word: RefusalInvalid}
+		}
+	}
 	if e.cfg.Scrapes == nil {
 		return store.Pass{}, &Refusal{Word: RefusalUnavailable}
 	}
-	p, err := e.cfg.Store.AddPass(e.ctx, store.Pass{Kind: store.KindRebuild, Origin: store.OriginRebuild, Trigger: store.TriggerRebuild, UserID: c.UserID, UserEmail: c.Email, RequestID: c.RequestID})
+	p, err := e.cfg.Store.AddPass(e.ctx, store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Scraper: scraper, UserID: c.UserID, UserEmail: c.Email, RequestID: c.RequestID})
 	if err != nil && e.stopping.Load() {
 		return store.Pass{}, &Refusal{Word: RefusalStopping}
 	}
@@ -79,12 +84,34 @@ func (e *Engine) Rebuild(ctx context.Context, c identity.Caller) (store.Pass, er
 	e.start(ctx, p, c, nil, "")
 	return p, nil
 }
+
+// Judge records a judgment pass without reading scrapes.
+func (e *Engine) Judge(ctx context.Context, c identity.Caller) (store.Pass, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.stopping.Load() {
+		return store.Pass{}, &Refusal{Word: RefusalStopping}
+	}
+	p, err := e.cfg.Store.AddPass(e.ctx, store.Pass{Kind: store.KindJudge, Origin: store.OriginJudge, Trigger: store.TriggerJudgeTool, UserID: c.UserID, UserEmail: c.Email, RequestID: c.RequestID})
+	if err != nil && e.stopping.Load() {
+		return store.Pass{}, &Refusal{Word: RefusalStopping}
+	}
+	if errors.Is(err, store.ErrBusy) {
+		return store.Pass{}, &Refusal{Word: RefusalBusy}
+	}
+	if err != nil {
+		return store.Pass{}, err
+	}
+	e.start(ctx, p, c, nil, "")
+	return p, nil
+}
+
 func (e *Engine) start(ctx context.Context, p store.Pass, c identity.Caller, run *scrapes.Run, kind string) {
 	e.startWork(ctx, p, c, func(workCtx context.Context) (store.Counts, string) {
 		if p.Kind == store.KindEnrich {
 			return e.enrich(workCtx, kind)
 		}
-		return e.resolve(workCtx, run, p.Kind)
+		return e.ingest(workCtx, run, p)
 	})
 }
 
@@ -137,7 +164,7 @@ func (e *Engine) Deliver(ctx context.Context, d events.Delivery) events.Outcome 
 	status, _ := d.Event.Attrs["status"].(string)
 	_, known := e.cfg.Sources.Get(scraper)
 	judge := d.Event.Name == trail.AcceptedJudge && d.Event.ID != ""
-	if !judge && (d.Event.Name != trail.Accepted || d.Event.ID == "" || status != store.StatusDone || !known || runID == "" || runID == store.TriggerRebuild) {
+	if !judge && (d.Event.Name != trail.Accepted || d.Event.ID == "" || status != store.StatusDone || !known || runID == "") {
 		e.mu.Unlock()
 		return events.Skip()
 	}
@@ -253,9 +280,9 @@ func addCounts(a *store.Counts, b store.Counts) {
 	a.Unranged += b.Unranged
 	a.Derived += b.Derived
 }
-func (e *Engine) resolve(ctx context.Context, delivery *scrapes.Run, kind string) (store.Counts, string) {
+func (e *Engine) ingest(ctx context.Context, delivery *scrapes.Run, p store.Pass) (store.Counts, string) {
 	var total store.Counts
-	rebuild := kind == store.KindRebuild
+	full := p.Kind == store.KindIngest && p.Origin == store.OriginIngest && p.Scraper == ""
 	process := func(run scrapes.Run, scraper string) string {
 		if run.Status != store.StatusDone {
 			return store.ReasonScrapes
@@ -265,7 +292,7 @@ func (e *Engine) resolve(ctx context.Context, delivery *scrapes.Run, kind string
 		var rows int64
 		var storeFailure bool
 		flush := func() error {
-			counts, _, err := e.cfg.Store.Attach(ctx, run.ID, rebuild, batch)
+			counts, _, err := e.cfg.Store.Attach(ctx, run.ID, full, batch)
 			if err != nil {
 				storeFailure = true
 				return err
@@ -305,8 +332,12 @@ func (e *Engine) resolve(ctx context.Context, delivery *scrapes.Run, kind string
 		if reason := process(*delivery, delivery.Scraper); reason != "" {
 			return store.Counts{}, reason
 		}
-	} else if rebuild {
-		for _, name := range e.cfg.Sources.Names() {
+	} else if p.Kind == store.KindIngest {
+		names := e.cfg.Sources.Names()
+		if p.Scraper != "" {
+			names = []string{p.Scraper}
+		}
+		for _, name := range names {
 			run, err := e.cfg.Scrapes.Current(ctx, name)
 			if errors.Is(err, scrapes.ErrNotFound) {
 				continue
@@ -319,7 +350,7 @@ func (e *Engine) resolve(ctx context.Context, delivery *scrapes.Run, kind string
 			}
 		}
 	}
-	if rebuild {
+	if full {
 		for _, en := range enrichers.New(enrichers.Config{Website: e.cfg.Website, Prompts: e.cfg.Prompts}).All() {
 			if _, ok := en.(enrichers.Deriver); ok {
 				n, err := e.derive(ctx, en.Kind(), true)
@@ -330,7 +361,7 @@ func (e *Engine) resolve(ctx context.Context, delivery *scrapes.Run, kind string
 			}
 		}
 	}
-	if kind == store.KindRebuild || kind == store.KindJudge {
+	if full || p.Kind == store.KindJudge {
 		counts, err := e.cfg.Store.JudgeAll(ctx)
 		if err != nil {
 			return store.Counts{}, store.ReasonStore

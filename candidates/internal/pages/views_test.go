@@ -2,6 +2,7 @@ package pages
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,10 +11,10 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-IKZ3-GG4N R-59OY-K0KU R-TLDF-6XH3
+// R-0B4G-1GWO R-59OY-K0KU R-TLDF-6XH3
 func TestFormatting(t *testing.T) {
 	const service, description string = ServiceName, Description
-	if service == "" || description == "" {
+	if service != "candidates" || description == "" || strings.ContainsAny(description, "\n\"\\") || strings.TrimSpace(description) != description {
 		t.Fatal("page identity constants")
 	}
 	if MinuteLayout != "2006-01-02 15:04" || SecondLayout != "2006-01-02 15:04:05 UTC" || DateLayout != "2006-01-02" || ToolsLevel.Name != "tools" || ToolsLevel.URL != "/tools" || AboutLevel.Name != "about" || AboutLevel.URL != "/about" {
@@ -48,7 +49,7 @@ func TestFormatting(t *testing.T) {
 	}
 }
 
-// R-AAIJ-2DB7 R-N55I-VZH1 R-02QA-EAYZ R-4VMG-YZTE R-3X7J-PRDD R-4ZA6-4B1H
+// R-1RK4-HLSJ R-Q5AL-AAGC R-02MG-VB3X R-4VMG-YZTE R-3X7J-PRDD R-4ZA6-4B1H
 func TestTemplateDataShape(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -56,24 +57,24 @@ func TestTemplateDataShape(t *testing.T) {
 	}
 	b := page.Banner{Service: ServiceName}
 	cv := CandidateView{"id", store.StatusActive, "", "name", []string{"alias"}, "street", "city", "MN", "55072", "county", "phone", "email", "source", "website", "https://chosen.example.test/", "title", "why", "checked", "checked-text", []PersonRow{{"person", "role"}}, "class", []string{"cargo"}, "", "", "", ""}
-	av := AssessmentView{"operating", []EvidenceRow{{"name", "source", "weight", "description"}}, "low", "high", "confidence", false, int64(sources.Rules), "calculated", "calculated-text"}
+	av := JudgmentsView{"operating", []EvidenceRow{{"name", "source", "weight", "description"}}, "low", "high", "confidence", false, int64(sources.Rules), "calculated", "calculated-text"}
 	ev := EstimateView{"source", "low", "high", "confidence", "", "", 1, []FactRow{{"key", "value"}}}
 	lv := LinkView{"scraper", "source", "run", "", "name", "city", "55072", "reason", "confidence", "", "", "", "", "", "", false}
 	rv := RulingView{"kind", "other", []string{"key"}, "by", "user", "", "", "why"}
-	pv := PassView{"id", store.KindRebuild, store.OriginRebuild, store.TriggerRebuild, "", store.StatusRunning, "", "starter", "", "", "", "", 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 10, 11, 12, 13, 14, "target", "/cohorts/target", "kind", 15, 16, 17, "$0.000000"}
-	row := CohortRow{"id", "name", 11, "by", "user", "changed", "changed-text"}
-	pass := PassRow{"id", store.KindRebuild, "trigger", "status", "reason", "started", "started-text", "finished", "finished-text", 21, 22, 23}
-	landing := LandingData{b, []CohortRow{row}, "page", "prev", "next", []PassRow{pass}, "page", "prev", "next"}
+	pv := PassView{"id", store.KindIngest, store.OriginIngest, store.TriggerIngest, "", store.StatusRunning, "", "starter", "", "", "", "", 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 10, 11, 12, 13, 14, "target", "/prospect-lists/target", "kind", 15, 16, 17, "$0.000000"}
+	row := ProspectListRow{"id", "name", 11, "by", "user", "changed", "changed-text"}
+	pass := PassRow{"id", store.KindIngest, "trigger", "status", "reason", "started", "started-text", "finished", "finished-text", 21, 22, 23}
+	landing := LandingData{b, []ProspectListRow{row}, "page", "prev", "next", []PassRow{pass}, "page", "prev", "next"}
 	if cv.Website != "website" || cv.WebsiteURL != "https://chosen.example.test/" || cv.WebsiteTitle != "title" || cv.WebsiteChecked != "checked" || cv.WebsiteCheckedText != "checked-text" || pv.Due != 10 || pv.Fetched != 11 || pv.HTTPS != 12 || pv.HTTP != 13 || pv.None != 14 {
 		t.Fatal("website positional shape")
 	}
-	if row.Size != 11 || pass.Kind != store.KindRebuild || pass.Judged != 23 || pv.Judged != 8 {
+	if row.Size != 11 || pass.Kind != store.KindIngest || pass.Judged != 23 || pv.Judged != 8 {
 		t.Fatal("positional shape")
 	}
 	for _, v := range []struct {
 		name string
 		data any
-	}{{"landing", landing}, {"candidate", CandidateData{b, cv, nil, nil, &av, []EstimateView{ev}, []LinkView{lv}, []RulingView{rv}, []PageRow{}, []EnrichmentRow{}, []RejectRecordRow{{"kind", "cohort", "cohort-name", "by", "user", "at", "at-text", "why"}}, []CampaignRow{}}}, {"pass", PassData{b, pv}}, {"tools", ToolsData{b, []ToolRow{{"name", "description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}} {
+	}{{"landing", landing}, {"candidate", CandidateData{b, cv, nil, &av, []EstimateView{ev}, []LinkView{lv}, []RulingView{rv}, []PageRow{}, []EnrichmentRow{}, []RejectRecordRow{{"kind", "prospect_list", "prospect_list-name", "by", "user", "at", "at-text", "why"}}, []CampaignRow{}}}, {"pass", PassData{b, pv}}, {"tools", ToolsData{b, []ToolRow{{"name", "description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}} {
 		if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, v.name, v.data); err != nil {
 			t.Fatal(v.name, err)
 		}

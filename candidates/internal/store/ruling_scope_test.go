@@ -9,7 +9,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-B0A1-Q278 R-GSL2-9AIP
+// R-R0ZZ-8BQE R-7TDC-C00P
 func TestRulingLeavesEveryUntouchedCandidateAsStored(t *testing.T) {
 	for _, kind := range []string{store.KindExclude, store.KindInclude, store.KindNotSame, store.KindMerge, store.KindSplit} {
 		t.Run(kind, func(t *testing.T) {
@@ -48,7 +48,7 @@ func TestRulingLeavesEveryUntouchedCandidateAsStored(t *testing.T) {
 			regEqual(t, regLinks(t, f, r.Other)[0].Reading.NameKey, a.Reading.NameKey)
 			beforeC := map[string]store.Candidate{}
 			beforeL := map[string][]store.Link{}
-			beforeA := map[string]store.Assessment{}
+			beforeA := map[string]store.Judgments{}
 			beforeE := map[string][]sources.Estimate{}
 			beforeFacts := map[string]store.Facts{}
 			beforeResults := map[string][]store.Enrichment{}
@@ -59,7 +59,7 @@ func TestRulingLeavesEveryUntouchedCandidateAsStored(t *testing.T) {
 				regNoErr(t, err)
 				beforeC[id] = regCandidate(t, f, id)
 				beforeL[id] = regLinks(t, f, id)
-				beforeA[id], err = f.st.GetAssessment(regCtx, id)
+				beforeA[id], err = f.st.GetJudgments(regCtx, id)
 				regNoErr(t, err)
 				beforeE[id], err = f.st.Estimates(regCtx, id)
 				regNoErr(t, err)
@@ -87,7 +87,7 @@ func TestRulingLeavesEveryUntouchedCandidateAsStored(t *testing.T) {
 					regEqual(t, regLinks(t, f, id), beforeL[id])
 				}
 				if !touched[id] || kind == store.KindNotSame {
-					got, err := f.st.GetAssessment(regCtx, id)
+					got, err := f.st.GetJudgments(regCtx, id)
 					regNoErr(t, err)
 					regEqual(t, got, beforeA[id])
 					es, err := f.st.Estimates(regCtx, id)

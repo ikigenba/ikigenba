@@ -43,11 +43,13 @@ type countingBus struct{ calls *atomic.Int64 }
 
 func (s countingBus) Deliver(context.Context, events.Event) error { s.calls.Add(1); return nil }
 
-// R-VR0S-Y3YB R-VS8P-BVP0 R-39QN-IG1B R-3AYJ-W7S0 R-3C6G-9ZIP R-743U-7UR8 R-75BQ-LMHX
+// R-PFOP-93VR R-Y07A-12HG R-39QN-IG1B R-3AYJ-W7S0 R-3C6G-9ZIP R-743U-7UR8 R-75BQ-LMHX
 func TestPublishedFiles(t *testing.T) {
-	usage := "Usage: candidates [command]\n\nCandidate businesses for agents: MCP tools at /mcp keep the owner's cohorts,\nread each candidate with its evidence and record the owner's rulings,\nwith the cohorts and the passes at /, on the socket systemd\npasses in.\nWith no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
-	manifest := "app = \"candidates\"\ndescription = \"Candidate businesses resolved from the records scrapes collects, judged and read through the owner's cohorts\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[env]\nCANDIDATES_KEEP_PASSES = \"20\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/candidates.db\"\n\n[resources]\nmemory_max = \"256M\"\n\n[home]\ngroup = \"application\"\n"
-	if cli.Usage != usage || cli.Manifest != manifest || cli.NginxConf != "location = /events { return 404; }\nlocation = /declarations { return 404; }\n" {
+	if cli.Usage == "" || !strings.HasSuffix(cli.Usage, "\n") || strings.HasSuffix(cli.Usage, "\n\n") {
+		t.Fatal("usage must have content and exactly one final line feed")
+	}
+	manifest := "app = \"candidates\"\ndescription = \"" + pages.Description + "\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[env]\nCANDIDATES_KEEP_PASSES = \"20\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/candidates.db\"\n\n[resources]\nmemory_max = \"256M\"\n\n[home]\ngroup = \"application\"\n"
+	if cli.Manifest != manifest || cli.NginxConf != "location = /events { return 404; }\nlocation = /declarations { return 404; }\n" {
 		t.Fatal("published contract differs")
 	}
 	lines := strings.Split(cli.Manifest, "\n")

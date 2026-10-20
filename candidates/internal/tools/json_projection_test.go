@@ -19,7 +19,7 @@ func encodedJSON(v any) json.RawMessage {
 	return b
 }
 
-// R-RIUB-88I4 R-RK27-M08T
+// R-Q8LO-2U6H R-Q65V-BAP3
 func TestDerivedAnswers(t *testing.T) {
 	for _, tc := range []struct{ kind, source, found string }{
 		{enrichers.KindLinkFacts, enrichers.SourceLinks, `{ "categories": [], "fleet_verdict": "unknown" }`},
@@ -34,7 +34,7 @@ func TestDerivedAnswers(t *testing.T) {
 		} else if err := json.Compact(compact, []byte(tc.found)); err != nil {
 			t.Fatal(err)
 		}
-		want := Enrichment{tc.kind, tc.source, "chosen-inputs", json.RawMessage(compact.Bytes()), "", "", "", 0, nil, "", "", .25, stamp(e.At)}
+		want := EnrichmentResult{tc.kind, tc.source, "chosen-inputs", json.RawMessage(compact.Bytes()), "", "", "", 0, nil, "", "", .25, stamp(e.At)}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatal(got, want)
 		}
@@ -52,10 +52,10 @@ func TestDerivedAnswers(t *testing.T) {
 	}
 }
 
-// R-RIUB-88I4 R-RK27-M08T
+// R-Q8LO-2U6H R-Q65V-BAP3
 func TestFullEnrichmentEncodingAndLegacyWebsiteMembers(t *testing.T) {
 	size := int64(3)
-	v := Enrichment{"kind", "source", "inputs", json.RawMessage(`{}`), "state", "url", "title", 200, &size, "error", "domain", .25, "at"}
+	v := EnrichmentResult{"kind", "source", "inputs", json.RawMessage(`{}`), "state", "url", "title", 200, &size, "error", "domain", .25, "at"}
 	b, err := json.Marshal(v)
 	if err != nil {
 		t.Fatal(err)
@@ -84,7 +84,7 @@ func TestFullEnrichmentEncodingAndLegacyWebsiteMembers(t *testing.T) {
 	}
 }
 
-// R-KAXF-Q4QL
+// R-QOGD-1UTI
 func TestBriefFoundNormalizesEmptyArrays(t *testing.T) {
 	e := store.Enrichment{Kind: enrichers.KindBrief, Source: enrichers.SourcePrompts, Inputs: "fixture-inputs", Found: encodedJSON(enrichers.BriefFound{Run: "fixture-run", Status: "failed"})}
 	got := enrichmentOf(e)

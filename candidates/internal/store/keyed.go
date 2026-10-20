@@ -19,8 +19,8 @@ func (s *Store) mintKey(ctx context.Context, tx *sql.Tx, prefix string) (string,
 	if prefix == PassIDPrefix {
 		table = "passes"
 	}
-	if prefix == CohortIDPrefix {
-		table = "cohorts"
+	if prefix == ProspectListIDPrefix {
+		table = "prospect_lists"
 	}
 	for range 8 {
 		var b [8]byte
@@ -34,8 +34,8 @@ func (s *Store) mintKey(ctx context.Context, tx *sql.Tx, prefix string) (string,
 		var exists int
 		query := "SELECT 1 FROM " + table + " WHERE id=?"
 		args := []any{id}
-		if prefix == CohortIDPrefix {
-			query += " UNION ALL SELECT 1 FROM rejects WHERE cohort=? LIMIT 1"
+		if prefix == ProspectListIDPrefix {
+			query += " UNION ALL SELECT 1 FROM rejects WHERE prospect_list=? LIMIT 1"
 			args = append(args, id)
 		}
 		err := scanSQL(ctx, tx, query, args, &exists)
@@ -49,7 +49,7 @@ func (s *Store) mintKey(ctx context.Context, tx *sql.Tx, prefix string) (string,
 	return "", ErrUnreachable
 }
 func emptyRecords() *records {
-	return &records{candidates: map[string]Candidate{}, links: map[string]Link{}, estimates: map[string][]sources.Estimate{}, assessments: map[string]Assessment{}, rulings: []Ruling{}, passes: map[string]Pass{}, zips: map[string]int64{}}
+	return &records{candidates: map[string]Candidate{}, links: map[string]Link{}, estimates: map[string][]sources.Estimate{}, judgments: map[string]Judgments{}, rulings: []Ruling{}, passes: map[string]Pass{}, zips: map[string]int64{}}
 }
 func candidateKey(ctx context.Context, tx *sql.Tx, id string) (Candidate, error) {
 	cs, err := readRecords[Candidate](ctx, tx, "candidates", candidateColumns, " WHERE id=?", id)
@@ -137,7 +137,7 @@ func judgeKeys(ctx context.Context, tx *sql.Tx, ids []string, t time.Time) (Coun
 		} else if err != nil {
 			return Counts{}, err
 		}
-		es, a := assessment(r, c, f, t)
+		es, a := judgments(r, c, f, t)
 		if err = deleteRecord(ctx, tx, "estimates", "candidate=?", id); err != nil {
 			return Counts{}, err
 		}
@@ -146,7 +146,7 @@ func judgeKeys(ctx context.Context, tx *sql.Tx, ids []string, t time.Time) (Coun
 				return Counts{}, err
 			}
 		}
-		if err = insertRecord(ctx, tx, "assessments", assessmentColumns, a, nil); err != nil {
+		if err = insertRecord(ctx, tx, "judgments", judgmentsColumns, a, nil); err != nil {
 			return Counts{}, err
 		}
 		out.Judged++
@@ -241,18 +241,15 @@ func (s *Store) readScope(ctx context.Context, scope, id string, fn func(*record
 			for _, v := range es {
 				r.estimates[id] = append(r.estimates[id], v.Estimate)
 			}
-		case "assessment":
+		case "judgments":
 			where = " WHERE candidate=?"
 			args = []any{id}
-			as, e := readRecords[Assessment](ctx, tx, "assessments", assessmentColumns, where, args...)
+			as, e := readRecords[Judgments](ctx, tx, "judgments", judgmentsColumns, where, args...)
 			if e != nil {
 				return e
 			}
 			for _, a := range as {
-				if e = assessmentFacts(ctx, tx, &a); e != nil {
-					return e
-				}
-				r.assessments[a.Candidate] = a
+				r.judgments[a.Candidate] = a
 			}
 		case "rulings":
 			r.rulings, err = readRecords[Ruling](ctx, tx, "decisions", rulingColumns, " WHERE candidate=? OR other=? ORDER BY seq", id, id)

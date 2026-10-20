@@ -128,7 +128,7 @@ func TestCountySourceKey(t *testing.T) {
 	}
 }
 
-// R-KWKJ-709B
+// R-YC12-IXQS
 func TestConstants(t *testing.T) {
 	const rules float64 = sources.Rules
 	const parity = sources.Rules % 2
@@ -205,7 +205,7 @@ func TestGovernmentMatch(t *testing.T) {
 	}
 }
 
-// R-IJR7-2ODY
+// R-YVJG-N9LW
 func TestFleetVerdictConstants(t *testing.T) {
 	const pass string = sources.FleetPass
 	const fail string = sources.FleetFail
@@ -215,7 +215,7 @@ func TestFleetVerdictConstants(t *testing.T) {
 	}
 }
 
-// R-JQH3-2GTK
+// R-Y3HR-UJJX
 func TestWebsiteConstants(t *testing.T) {
 	const check string = sources.WebsiteCheck
 	const secure string = sources.WebsiteHTTPS
@@ -241,7 +241,7 @@ func TestWebsiteEvidenceDescription(t *testing.T) {
 	}
 }
 
-// R-KVPQ-8YVJ R-KWXM-MQM8
+// R-KVPQ-8YVJ R-YO82-CN5Q
 func TestCategories(t *testing.T) {
 	want := []string{sources.CategoryConstruction, sources.CategoryTrucking, sources.CategoryAgriculture, sources.CategoryManufacturing, sources.CategoryWholesale, sources.CategoryMining, sources.CategoryWaste, sources.CategoryUtilities, sources.CategoryRetail, sources.CategoryOtherTransportation, sources.CategoryInformation, sources.CategoryFinance, sources.CategoryRealEstate, sources.CategoryProfessional, sources.CategoryAdministrative, sources.CategoryEducation, sources.CategoryHealthCare, sources.CategoryArts, sources.CategoryFood, sources.CategoryRepair, sources.CategoryReligious, sources.CategoryGovernment, sources.CategoryOther}
 	got := sources.Categories()

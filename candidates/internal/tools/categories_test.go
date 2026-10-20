@@ -11,11 +11,14 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-1Q5D-1RKH R-1RD9-FJB6 R-1SL5-TB1V R-1TT2-72SK
+// R-RIXU-M4CV R-RT1O-11SD R-QR8S-65SU R-7AXF-IAYJ
 func TestCategoryEvidenceAnswers(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(3)
-	co := f.create("category-evidence-cohort")
+	if _, _, err := f.st.Derive(t.Context(), enrichers.KindLinkFacts, "", false, 100); err != nil {
+		t.Fatal(err)
+	}
+	co := f.create("category-evidence-prospect_list")
 	add := func(id, kind string, found any) {
 		t.Helper()
 		f.now = f.now.Add(time.Second)
@@ -23,16 +26,16 @@ func TestCategoryEvidenceAnswers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	read := func() tools.CohortRead {
-		return decodeList[tools.CohortRead](t, f.call("cohort", tools.CohortArgs{Cohort: co.ID}))
+	read := func() tools.ProspectListRead {
+		return decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: co.ID}))
 	}
-	detail := func(id string) *tools.Assessment {
+	detail := func(id string) *tools.Facts {
 		t.Helper()
 		v := decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: id}))
-		if v.Assessment == nil {
+		if v.Enrichments == nil || v.Enrichments.Facts == nil {
 			t.Fatal(v)
 		}
-		return v.Assessment
+		return v.Enrichments.Facts
 	}
 	for _, id := range ids {
 		a := detail(id)
@@ -49,7 +52,7 @@ func TestCategoryEvidenceAnswers(t *testing.T) {
 	good := enrichers.BriefFound{Run: "category-brief", Status: "exited", ExitCode: new(0), Summary: "chosen-category-summary", Labels: []string{}, Categories: []enrichers.BriefCategory{{Name: sources.CategoryRetail, Why: "chosen-retail-reason"}, {Name: sources.CategoryAgriculture, Why: "chosen-agriculture-reason"}}}
 	add(ids[1], enrichers.KindBrief, good)
 	a = detail(ids[1])
-	if a.ClassifiedBy != enrichers.KindBrief || !a.RecordsDiffer || a.Brief != good.Summary || !reflect.DeepEqual(a.RecordCategories, []tools.Category{{Name: sources.CategoryRetail, Source: "ppp"}, {Name: sources.CategoryTrucking, Source: "fmcsa"}}) || !reflect.DeepEqual(a.Categories, []tools.Category{{Name: sources.CategoryAgriculture, Source: enrichers.KindBrief}, {Name: sources.CategoryRetail, Source: enrichers.KindBrief}}) {
+	if a.ClassifiedBy != enrichers.KindBrief || !a.RecordsDiffer || !reflect.DeepEqual(a.RecordCategories, []tools.Category{{Name: sources.CategoryRetail, Source: "ppp"}, {Name: sources.CategoryTrucking, Source: "fmcsa"}}) || !reflect.DeepEqual(a.Categories, []tools.Category{{Name: sources.CategoryAgriculture, Source: enrichers.KindBrief}, {Name: sources.CategoryRetail, Source: enrichers.KindBrief}}) {
 		t.Fatal(a)
 	}
 	r := read()
@@ -73,7 +76,7 @@ func TestCategoryEvidenceAnswers(t *testing.T) {
 		}
 	}
 	add(ids[1], enrichers.KindBrief, enrichers.BriefFound{Run: "chosen-failed-run", Status: "failed", Categories: []enrichers.BriefCategory{}, Labels: []string{}})
-	if a = detail(ids[1]); a.Brief != good.Summary || !a.RecordsDiffer || a.ClassifiedBy != enrichers.KindBrief {
+	if a = detail(ids[1]); !a.RecordsDiffer || a.ClassifiedBy != enrichers.KindBrief {
 		t.Fatal(a)
 	}
 	good.Categories = []enrichers.BriefCategory{{Name: sources.CategoryRetail, Why: "retail"}, {Name: sources.CategoryTrucking, Why: "trucking"}}
@@ -85,13 +88,13 @@ func TestCategoryEvidenceAnswers(t *testing.T) {
 	if a = detail(ids[2]); !a.RecordsDiffer || a.RecordCategories == nil || len(a.RecordCategories) != 0 {
 		t.Fatal(a)
 	}
-	empty := f.create("empty-category-cohort")
+	empty := f.create("empty-category-prospect_list")
 	for _, id := range ids {
-		if _, err := f.st.Reject(t.Context(), store.Reject{Kind: store.KindReject, Cohort: empty.ID, Candidate: id, Why: "chosen-reason", UserID: "chosen-owner"}); err != nil {
+		if _, err := f.st.Reject(t.Context(), store.Reject{Kind: store.KindReject, ProspectList: empty.ID, Candidate: id, Why: "chosen-reason", UserID: "chosen-owner"}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	er := decodeList[tools.CohortRead](t, f.call("cohort", tools.CohortArgs{Cohort: empty.ID}))
+	er := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: empty.ID}))
 	if er.Classified != 0 || len(er.Members) != 0 {
 		t.Fatal(er)
 	}

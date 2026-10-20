@@ -6,14 +6,14 @@ import (
 	"sort"
 	"time"
 
+	"github.com/ikigenba/ikigenba/candidates/internal/judging"
 	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
-	"github.com/ikigenba/ikigenba/candidates/internal/scoring"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
-func assessment(r *records, c Candidate, f Facts, t time.Time) ([]sources.Estimate, Assessment) {
+func judgments(r *records, c Candidate, f Facts, t time.Time) ([]sources.Estimate, Judgments) {
 	t = t.UTC().Truncate(time.Second)
-	a := Assessment{Candidate: c.ID, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown, Evidence: []sources.Evidence{}, Categories: []sources.Category{}, Rules: sources.Rules, Calculated: t}
+	a := Judgments{Candidate: c.ID, Evidence: []sources.Evidence{}, Rules: sources.Rules, Calculated: t}
 	estimates := map[string]sources.Estimate{}
 	seen := map[string]bool{}
 	evidence := map[string]sources.Evidence{}
@@ -34,7 +34,7 @@ func assessment(r *records, c Candidate, f Facts, t time.Time) ([]sources.Estima
 			}
 		}
 		for _, e := range rd.Evidence {
-			e.Weight = scoring.Weight(e, rd.Filed, t)
+			e.Weight = judging.Weight(e, rd.Filed, t)
 			if e.Weight <= 0 {
 				continue
 			}
@@ -44,7 +44,6 @@ func assessment(r *records, c Candidate, f Facts, t time.Time) ([]sources.Estima
 			}
 		}
 	}
-	overlayFacts(&a, f)
 	if (f.Website == sources.WebsiteHTTPS || f.Website == sources.WebsiteHTTP) && f.WebsiteSource != WebsiteBySearch {
 		e := sources.Evidence{Name: sources.EvidenceWebsiteLive, Source: sources.WebsiteCheck, Weight: .5, Description: sources.DescribeWebsiteLive}
 		if old, ok := evidence[e.Name]; !ok || e.Weight > old.Weight {
@@ -65,10 +64,10 @@ func assessment(r *records, c Candidate, f Facts, t time.Time) ([]sources.Estima
 		}
 		return a.Evidence[i].Name < a.Evidence[j].Name
 	})
-	a.Operating = scoring.Operating(a.Evidence)
-	a.OperatingKey = scoring.OperatingKey(a.Operating)
+	a.Operating = judging.Operating(a.Evidence)
+	a.OperatingKey = judging.OperatingKey(a.Operating)
 	if len(es) > 0 {
-		combined := scoring.Combine(es)
+		combined := judging.Combine(es)
 		a.RevenueLow = &combined.Low
 		a.RevenueHigh = combined.High
 		a.RevenueConfidence = &combined.Confidence
@@ -100,6 +99,7 @@ func (s *Store) Judge(ctx context.Context, ids []string) (Counts, error) {
 // JudgeAll replaces every active candidate's judgments.
 func (s *Store) JudgeAll(ctx context.Context) (Counts, error) {
 	var out Counts
+	now := s.now()
 	err := unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		rows, err := querySQL(ctx, tx, "SELECT id FROM candidates WHERE status=?", StatusActive)
 		if err != nil {
@@ -122,7 +122,7 @@ func (s *Store) JudgeAll(ctx context.Context) (Counts, error) {
 		if closeErr != nil {
 			return closeErr
 		}
-		out, err = judgeKeys(ctx, tx, ids, s.now())
+		out, err = judgeKeys(ctx, tx, ids, now)
 		if err != nil {
 			return err
 		}

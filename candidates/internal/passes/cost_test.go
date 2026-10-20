@@ -19,7 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
 )
 
-// R-1XQT-IRWA: both runs have the same generated evidence except Run.
+// R-3LJE-A8TN: both runs have the same generated evidence except Run.
 func generatedRows(t *testing.T, run string) []scrapes.Row {
 	t.Helper()
 	rows := make([]scrapes.Row, 10000)
@@ -36,7 +36,7 @@ func generatedRows(t *testing.T, run string) []scrapes.Row {
 		if k%2 == 0 {
 			zip = "55072"
 		}
-		rows[i] = scrapes.Row{Scraper: "fmcsa", Collected: time.Unix(100000, 0).UTC(), Names: []string{}, People: []scrapes.Person{}, Facts: map[string]json.RawMessage{}, Raw: json.RawMessage(`{}`), Run: run, SourceID: fmt.Sprintf("generated-source-%d", i), Digest: fmt.Sprintf("generated-digest-%d", i), Name: name, Address: scrapes.Address{State: "MN", Zip: zip}}
+		rows[i] = scrapes.Row{Scraper: "fmcsa", Scraped: time.Unix(100000, 0).UTC(), Names: []string{}, People: []scrapes.Person{}, Facts: map[string]json.RawMessage{}, Raw: json.RawMessage(`{}`), Run: run, SourceID: fmt.Sprintf("generated-source-%d", i), Digest: fmt.Sprintf("generated-digest-%d", i), Name: name, Address: scrapes.Address{State: "MN", Zip: zip}}
 	}
 	return rows
 }
@@ -87,7 +87,7 @@ func costEnded(t *testing.T, f *fixture, trigger string, began time.Time) store.
 
 }
 
-// R-00FD-PO9J R-1YYP-WJMZ R-206M-ABDO
+// R-00FD-PO9J R-1YYP-WJMZ R-2S9T-3R0Z
 func TestGeneratedRunCostChain(t *testing.T) {
 	first, second := "generated-first", "generated-second"
 	rows := map[string][]scrapes.Row{first: generatedRows(t, first), second: generatedRows(t, second)}
@@ -114,7 +114,7 @@ func TestGeneratedRunCostChain(t *testing.T) {
 			record(w, parts[2], 10000, store.StatusDone)
 		case "rows":
 			for _, row := range rows[parts[2]] {
-				wire := map[string]any{"scraper": row.Scraper, "run": row.Run, "source_id": row.SourceID, "collected": row.Collected, "digest": row.Digest, "name": row.Name, "names": row.Names, "people": row.People, "facts": row.Facts, "raw": row.Raw, "address": map[string]string{"state": row.Address.State, "zip": row.Address.Zip}}
+				wire := map[string]any{"scraper": row.Scraper, "run": row.Run, "source_id": row.SourceID, "scraped": row.Scraped, "digest": row.Digest, "name": row.Name, "names": row.Names, "people": row.People, "facts": row.Facts, "raw": row.Raw, "address": map[string]string{"state": row.Address.State, "zip": row.Address.Zip}}
 				if err := json.NewEncoder(w).Encode(wire); err != nil {
 					return
 				}
@@ -147,11 +147,11 @@ func TestGeneratedRunCostChain(t *testing.T) {
 	assertCounts(costEnded(t, f, second, began), store.Counts{Rows: 10000, Unchanged: 10000})
 	settleCostChain(t, f, second, began)
 	began = time.Now()
-	_, err := f.eng.Rebuild(context.Background(), identity.Caller{UserID: "cost-owner"})
+	_, err := f.eng.Ingest(context.Background(), identity.Caller{UserID: "cost-owner"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	ended := costEnded(t, f, store.TriggerRebuild, began)
+	ended := costEnded(t, f, store.TriggerIngest, began)
 	var unranged int64
 	cs, err := f.st.ListCandidates(context.Background(), store.CandidateFilter{}, "", "", 10000)
 	if err != nil {
@@ -161,7 +161,7 @@ func TestGeneratedRunCostChain(t *testing.T) {
 		if c.Status != store.StatusActive {
 			continue
 		}
-		a, err := f.st.GetAssessment(context.Background(), c.ID)
+		a, err := f.st.GetJudgments(context.Background(), c.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -176,7 +176,7 @@ func TestGeneratedRunCostChain(t *testing.T) {
 	table := candidates.ZipDrive()
 	ctx := context.Background()
 	var before, after runtime.MemStats
-	// R-HJ5E-3SHV
+	// R-2ZL7-EDH5
 	runtime.ReadMemStats(&before)
 	err = f.st.ReplaceZipDrive(ctx, table)
 	runtime.ReadMemStats(&after)
@@ -188,7 +188,7 @@ func TestGeneratedRunCostChain(t *testing.T) {
 	} else {
 		t.Logf("ReplaceZipDrive allocated %d bytes", allocated)
 	}
-	// R-HKDA-HK8K
+	// R-3GNS-R5UV
 	runtime.ReadMemStats(&before)
 	_, err = f.st.PrunePasses(ctx, 1)
 	runtime.ReadMemStats(&after)

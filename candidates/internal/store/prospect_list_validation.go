@@ -6,17 +6,17 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
-// ValidCohortID recognizes cohort identifiers.
-func ValidCohortID(s string) bool { return validID(s, CohortIDPrefix) }
+// ValidProspectListID recognizes prospectList identifiers.
+func ValidProspectListID(s string) bool { return validID(s, ProspectListIDPrefix) }
 
-// ValidCohortName accepts a name containing non-whitespace text.
-func ValidCohortName(s string) bool { return strings.TrimSpace(s) != "" }
+// ValidProspectListName accepts a name containing non-whitespace text.
+func ValidProspectListName(s string) bool { return strings.TrimSpace(s) != "" }
 
-// ValidCohortSize checks the supported member limit.
-func ValidCohortSize(n int64) bool { return n >= CohortSizeMin && n <= CohortSizeMax }
+// ValidProspectListSize checks the supported member limit.
+func ValidProspectListSize(n int64) bool { return n >= ProspectListSizeMin && n <= ProspectListSizeMax }
 
-// ValidCohortFilters checks the values of all carried filters.
-func ValidCohortFilters(f CohortFilters) bool {
+// ValidProspectListFilters checks the values of all carried filters.
+func ValidProspectListFilters(f ProspectListFilters) bool {
 	for _, p := range []*int64{f.RevenueMin, f.RevenueMax, f.MaxMinutes, f.MaxFilingAgeDays, f.MinCampaignAgeDays} {
 		if p != nil && *p < 0 {
 			return false
@@ -65,8 +65,8 @@ func ValidCohortFilters(f CohortFilters) bool {
 	return true
 }
 
-// ValidCohortOrder checks the ordering fields, directions and uniqueness.
-func ValidCohortOrder(o []CohortOrder) bool {
+// ValidProspectListOrder checks the ordering fields, directions and uniqueness.
+func ValidProspectListOrder(o []ProspectListOrder) bool {
 	seen := make(map[string]bool, len(o))
 	for _, x := range o {
 		switch x.Field {

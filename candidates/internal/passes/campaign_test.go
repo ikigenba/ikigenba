@@ -27,7 +27,7 @@ func campaignCandidate(t *testing.T, f *fixture, key string) string {
 	return ids[0]
 }
 func campaignDelivery(name, candidate string, at time.Time) events.Delivery {
-	return events.Delivery{Event: events.Event{Name: name, Time: at, Attrs: events.Attrs{"campaign": "campaign_fixture", "candidate": candidate, "cohort": "cohort_fixture", "reason": "private reason", "piece": 17, "channel": nil, "how": false}}}
+	return events.Delivery{Event: events.Event{Name: name, Time: at, Attrs: events.Attrs{"campaign": "campaign_fixture", "candidate": candidate, "prospect_list": "pl_fixture", "reason": "private reason", "piece": 17, "channel": nil, "how": false}}}
 }
 func campaignUses(t *testing.T, f *fixture, id string) []store.CampaignUse {
 	t.Helper()
@@ -38,8 +38,8 @@ func campaignUses(t *testing.T, f *fixture, id string) []store.CampaignUse {
 	return uses
 }
 
-// R-KUHK-5Y55 R-8N7G-02BV R-8OFC-DU2K R-8PN8-RLT9 R-5C1K-ZR28 R-MJFF-G5KS
-// R-59LS-87KU R-5FPA-52AB R-4XES-EI5W R-75XG-HDMP
+// R-V6ZM-A3XT R-UJTJ-0GUM R-UTKQ-2MS6 R-ZSTY-AWS9 R-5C1K-ZR28 R-RAR6-AHNY
+// R-59LS-87KU R-V4JT-IKGF R-4XES-EI5W
 func TestCampaignDeliveriesConvergeWithoutPasses(t *testing.T) {
 	orders := [][]int{{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}}
 	names := []string{trail.AcceptedAdded, trail.AcceptedRejected, trail.AcceptedDelivered}
@@ -75,7 +75,7 @@ func TestCampaignDeliveriesConvergeWithoutPasses(t *testing.T) {
 					switch i {
 					case 0:
 						want.Added = stamp.UTC().Truncate(time.Second)
-						want.Cohort = "cohort_fixture"
+						want.ProspectList = "pl_fixture"
 					case 1:
 						want.Rejected = stamp.Add(time.Hour).UTC().Truncate(time.Second)
 						want.Reason = "private reason"
@@ -103,7 +103,7 @@ func TestCampaignDeliveriesConvergeWithoutPasses(t *testing.T) {
 					t.Fatal(uses)
 				}
 				u := uses[0]
-				if u.Campaign != "campaign_fixture" || u.Cohort != "cohort_fixture" || u.Reason != "private reason" || !u.Added.Equal(stamp.UTC().Truncate(time.Second)) || !u.Rejected.Equal(stamp.Add(time.Hour).UTC().Truncate(time.Second)) || !u.Delivered.Equal(stamp.Add(2*time.Hour).UTC().Truncate(time.Second)) {
+				if u.Campaign != "campaign_fixture" || u.ProspectList != "pl_fixture" || u.Reason != "private reason" || !u.Added.Equal(stamp.UTC().Truncate(time.Second)) || !u.Rejected.Equal(stamp.Add(time.Hour).UTC().Truncate(time.Second)) || !u.Delivered.Equal(stamp.Add(2*time.Hour).UTC().Truncate(time.Second)) {
 					t.Fatal(u)
 				}
 				after, err := f.st.GetCandidate(t.Context(), id)
@@ -129,7 +129,7 @@ func TestCampaignDeliveriesConvergeWithoutPasses(t *testing.T) {
 	}
 }
 
-// R-KVPG-JPVU R-52AD-XL4O R-58DV-UFU5 R-4ZUL-61NA R-59LS-87KU
+// R-1TZX-959X R-52AD-XL4O R-58DV-UFU5 R-4ZUL-61NA R-59LS-87KU
 func TestCampaignClassificationFailureAndDrain(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := campaignCandidate(t, f, "business")
@@ -183,7 +183,7 @@ func TestCampaignClassificationFailureAndDrain(t *testing.T) {
 	}
 }
 
-// R-MAN7-94PV R-8N7G-02BV R-8OFC-DU2K R-8PN8-RLT9
+// R-OL77-OUCE R-UJTJ-0GUM R-UTKQ-2MS6 R-ZSTY-AWS9
 func TestCampaignFollowsMergeAndIgnoresEventID(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := campaignCandidate(t, f, "first")
@@ -211,13 +211,13 @@ func TestCampaignFollowsMergeAndIgnoresEventID(t *testing.T) {
 	for _, name := range []string{trail.AcceptedAdded, trail.AcceptedRejected, trail.AcceptedDelivered} {
 		d := campaignDelivery(name, id, stamp.Add(time.Hour))
 		d.Event.Attrs["reason"] = "later"
-		d.Event.Attrs["cohort"] = "later"
+		d.Event.Attrs["prospect_list"] = "later"
 		if out := f.eng.DeliverCampaign(t.Context(), d); out != events.OK() {
 			t.Fatal(out)
 		}
 	}
 	u := campaignUses(t, f, survivor)[0]
-	if !u.Added.Equal(stamp) || !u.Rejected.Equal(stamp) || u.Reason != "private reason" || u.Cohort != "cohort_fixture" || !u.Delivered.Equal(stamp.Add(time.Hour)) {
+	if !u.Added.Equal(stamp) || !u.Rejected.Equal(stamp) || u.Reason != "private reason" || u.ProspectList != "pl_fixture" || !u.Delivered.Equal(stamp.Add(time.Hour)) {
 		t.Fatal(u)
 	}
 	d := campaignDelivery(trail.AcceptedDelivered, id, stamp.Add(-time.Hour))
@@ -235,7 +235,7 @@ func TestCampaignFollowsMergeAndIgnoresEventID(t *testing.T) {
 	}
 }
 
-// R-MBV3-MWGK
+// R-29ZB-D6WK
 func TestConcurrentCampaignDeliveries(t *testing.T) {
 	entered := make(chan struct{}, 8)
 	f := newFixture(t, func(_ http.ResponseWriter, r *http.Request) { entered <- struct{}{}; <-r.Context().Done() }, true)
@@ -254,7 +254,7 @@ func TestConcurrentCampaignDeliveries(t *testing.T) {
 	if len(u) != 1 || !u[0].Added.Equal(time.Unix(100, 0)) {
 		t.Fatal(u)
 	}
-	if _, err := f.eng.Rebuild(t.Context(), identity.Caller{UserID: "owner"}); err != nil {
+	if _, err := f.eng.Ingest(t.Context(), identity.Caller{UserID: "owner"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	waitSignal(t, entered)
@@ -264,23 +264,24 @@ func TestConcurrentCampaignDeliveries(t *testing.T) {
 		})
 	}
 	wg.Go(func() { _ = f.eng.Deliver(t.Context(), events.Delivery{}) })
-	wg.Go(func() { _, _ = f.eng.Rebuild(t.Context(), identity.Caller{UserID: "owner"}) })
+	wg.Go(func() { _, _ = f.eng.Ingest(t.Context(), identity.Caller{UserID: "owner"}, "") })
+	wg.Go(func() { _, _ = f.eng.Judge(t.Context(), identity.Caller{UserID: "owner"}) })
 	wg.Go(func() { f.eng.Drain(t.Context()) })
 	wg.Wait()
 }
 
-// R-KUHK-5Y55 R-5FPA-52AB
-func TestCampaignOptionalAttributesAndCohortState(t *testing.T) {
+// R-V6ZM-A3XT R-V4JT-IKGF
+func TestCampaignOptionalAttributesAndProspectListState(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := campaignCandidate(t, f, "business")
-	co, err := f.st.CreateCohort(t.Context(), store.Cohort{Name: "campaign cohort", Size: 10, CreatedUserID: "owner"})
+	co, err := f.st.CreateProspectList(t.Context(), store.ProspectList{Name: "campaign prospect list", Size: 10, CreatedUserID: "owner"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err = f.st.JudgeAll(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	before, err := f.st.ReadCohort(t.Context(), co.ID)
+	before, err := f.st.ReadProspectList(t.Context(), co.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,17 +291,17 @@ func TestCampaignOptionalAttributesAndCohortState(t *testing.T) {
 	}
 	for _, name := range []string{trail.AcceptedAdded, trail.AcceptedRejected} {
 		d := campaignDelivery(name, id, time.Unix(100, 0))
-		d.Event.Attrs["cohort"] = 7
+		d.Event.Attrs["prospect_list"] = 7
 		delete(d.Event.Attrs, "reason")
 		if out := f.eng.DeliverCampaign(t.Context(), d); out != events.OK() {
 			t.Fatal(out)
 		}
 	}
 	u := campaignUses(t, f, id)
-	if len(u) != 1 || u[0].Cohort != "" || u[0].Reason != "" {
+	if len(u) != 1 || u[0].ProspectList != "" || u[0].Reason != "" {
 		t.Fatal(u)
 	}
-	after, err := f.st.ReadCohort(t.Context(), co.ID)
+	after, err := f.st.ReadProspectList(t.Context(), co.ID)
 	if err != nil || !reflect.DeepEqual(before, after) {
 		t.Fatal(after, err)
 	}

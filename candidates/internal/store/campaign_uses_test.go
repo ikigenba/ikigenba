@@ -21,7 +21,7 @@ func campaignUses(t *testing.T, f *contractFixture, id string) []store.CampaignU
 	return us
 }
 
-// R-SPMB-0BW8 R-SQU7-E3MX R-SUHW-JEV0 R-SVPS-X6LP R-SWXP-AYCE R-SZDI-2HTS R-T0LE-G9KH
+// R-RQLV-9IAZ R-2UKW-Q9IR R-UOP4-JJTE R-SSER-4EAI R-S0D2-BO8J R-SZDI-2HTS R-T0LE-G9KH
 func TestCampaignUseOrdersDuplicatesAndPersistence(t *testing.T) {
 	for _, order := range [][]int{{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}} {
 		t.Run(fmt.Sprint(order), func(t *testing.T) {
@@ -31,13 +31,13 @@ func TestCampaignUseOrdersDuplicatesAndPersistence(t *testing.T) {
 			a := time.Date(2026, 9, 15, 23, 59, 59, 987654321, time.FixedZone("input", -5*3600))
 			b := a.Add(24 * time.Hour)
 			c := b.Add(24 * time.Hour)
-			calls := []func() error{func() error { return f.s.AddCampaignUse(ctx, id, "main", "cohort-first", a) }, func() error { return f.s.RejectCampaignUse(ctx, id, "main", "first reason", b) }, func() error { return f.s.DeliverCampaignUse(ctx, id, "main", c) }}
+			calls := []func() error{func() error { return f.s.AddCampaignUse(ctx, id, "main", "prospectList-first", a) }, func() error { return f.s.RejectCampaignUse(ctx, id, "main", "first reason", b) }, func() error { return f.s.DeliverCampaignUse(ctx, id, "main", c) }}
 			want := store.CampaignUse{Candidate: id, Campaign: "main"}
 			for _, i := range order {
 				contractOK(t, calls[i]())
 				switch i {
 				case 0:
-					want.Cohort = "cohort-first"
+					want.ProspectList = "prospectList-first"
 					want.Added = a.UTC().Truncate(time.Second)
 				case 1:
 					want.Reason = "first reason"
@@ -50,17 +50,17 @@ func TestCampaignUseOrdersDuplicatesAndPersistence(t *testing.T) {
 			for _, i := range order {
 				contractOK(t, calls[i]())
 			}
-			contractOK(t, f.s.AddCampaignUse(ctx, id, "main", "later cohort", b))
-			contractOK(t, f.s.AddCampaignUse(ctx, id, "main", "tie cohort", a.Truncate(time.Second)))
+			contractOK(t, f.s.AddCampaignUse(ctx, id, "main", "later prospectList", b))
+			contractOK(t, f.s.AddCampaignUse(ctx, id, "main", "tie prospectList", a.Truncate(time.Second)))
 			contractOK(t, f.s.RejectCampaignUse(ctx, id, "main", "later reason", c))
 			contractOK(t, f.s.RejectCampaignUse(ctx, id, "main", "tie reason", b.Truncate(time.Second)))
 			contractOK(t, f.s.DeliverCampaignUse(ctx, id, "main", b))
 			contractEqual(t, campaignUses(t, f, id), []store.CampaignUse{want})
 			earlier := a.Add(-24 * time.Hour)
-			contractOK(t, f.s.AddCampaignUse(ctx, id, "main", "earliest cohort", earlier))
+			contractOK(t, f.s.AddCampaignUse(ctx, id, "main", "earliest prospectList", earlier))
 			contractOK(t, f.s.RejectCampaignUse(ctx, id, "main", "earliest reason", earlier))
 			contractOK(t, f.s.DeliverCampaignUse(ctx, id, "main", c.Add(time.Hour)))
-			want.Added, want.Cohort = earlier.UTC().Truncate(time.Second), "earliest cohort"
+			want.Added, want.ProspectList = earlier.UTC().Truncate(time.Second), "earliest prospectList"
 			want.Rejected, want.Reason = want.Added, "earliest reason"
 			want.Delivered = c.Add(time.Hour).UTC().Truncate(time.Second)
 			contractOK(t, f.s.AddCampaignUse(ctx, id, "a", "", earlier))
@@ -75,12 +75,12 @@ func TestCampaignUseOrdersDuplicatesAndPersistence(t *testing.T) {
 	}
 }
 
-// R-SY5L-OQ33 R-T94P-4NRC R-OD8H-2EDG
+// R-SY5L-OQ33 R-QEFR-MGTW R-OD8H-2EDG
 func TestCampaignUseErrorsAreAtomicAndPrioritized(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
 	id := contractSeed(t, f)
-	contractOK(t, f.s.AddCampaignUse(ctx, id, "kept", "cohort", f.now))
+	contractOK(t, f.s.AddCampaignUse(ctx, id, "kept", "prospect_list", f.now))
 	before := campaignUses(t, f, id)
 	calls := []func(context.Context, string, string, time.Time) error{func(c context.Context, id, k string, at time.Time) error { return f.s.AddCampaignUse(c, id, k, "", at) }, func(c context.Context, id, k string, at time.Time) error {
 		return f.s.RejectCampaignUse(c, id, k, "", at)
@@ -114,7 +114,7 @@ func TestCampaignUseErrorsAreAtomicAndPrioritized(t *testing.T) {
 	contractEqual(t, campaignUses(t, f, id), before)
 }
 
-// R-SS23-RVDM R-SMG9-8D98 R-SOW1-ZWQM
+// R-SS23-RVDM R-SDRY-J5E6 R-SOW1-ZWQM
 func TestCampaignUsesMergeUnionTiesChainAndSplit(t *testing.T) {
 	for _, ties := range []bool{false, true} {
 		t.Run(fmt.Sprint(ties), func(t *testing.T) {
@@ -133,19 +133,19 @@ func TestCampaignUsesMergeUnionTiesChainAndSplit(t *testing.T) {
 				otherAdd = t1
 				otherReject = t2
 			}
-			contractOK(t, f.s.AddCampaignUse(ctx, s, "common", "survivor cohort", t1))
+			contractOK(t, f.s.AddCampaignUse(ctx, s, "common", "survivor prospectList", t1))
 			contractOK(t, f.s.RejectCampaignUse(ctx, s, "common", "survivor reason", t2))
 			contractOK(t, f.s.DeliverCampaignUse(ctx, s, "common", t3))
-			contractOK(t, f.s.AddCampaignUse(ctx, o, "common", "other cohort", otherAdd))
+			contractOK(t, f.s.AddCampaignUse(ctx, o, "common", "other prospectList", otherAdd))
 			contractOK(t, f.s.RejectCampaignUse(ctx, o, "common", "other reason", otherReject))
 			contractOK(t, f.s.DeliverCampaignUse(ctx, o, "common", t2))
 			contractOK(t, f.s.DeliverCampaignUse(ctx, o, "other-only", t3))
 			contractOK(t, f.s.RejectCampaignUse(ctx, s, "survivor-only", "s", t0))
 			_, _, err := f.s.Decide(ctx, store.Ruling{Kind: store.KindMerge, Candidate: s, Other: o, Why: "same business", UserID: "owner"})
 			contractOK(t, err)
-			common := store.CampaignUse{Candidate: s, Campaign: "common", Cohort: "other cohort", Added: t0, Rejected: t1, Reason: "other reason", Delivered: t3}
+			common := store.CampaignUse{Candidate: s, Campaign: "common", ProspectList: "other prospectList", Added: t0, Rejected: t1, Reason: "other reason", Delivered: t3}
 			if ties {
-				common.Cohort = "survivor cohort"
+				common.ProspectList = "survivor prospectList"
 				common.Added = t1
 				common.Rejected = t2
 				common.Reason = "survivor reason"
@@ -170,14 +170,14 @@ func TestCampaignUsesMergeUnionTiesChainAndSplit(t *testing.T) {
 			next := contractAttach(t, f, "run", contractObservation("merge-c", "next survivor", f.now))[0]
 			_, _, err = f.s.Decide(ctx, store.Ruling{Kind: store.KindMerge, Candidate: next, Other: s, Why: "same again", UserID: "owner"})
 			contractOK(t, err)
-			contractOK(t, f.s.AddCampaignUse(ctx, o, "chain", "chain cohort", t0))
+			contractOK(t, f.s.AddCampaignUse(ctx, o, "chain", "chain prospectList", t0))
 			contractOK(t, f.s.RejectCampaignUse(ctx, o, "chain", "chain reason", t1))
 			contractOK(t, f.s.DeliverCampaignUse(ctx, o, "chain", t2))
 			found := false
 			for _, u := range campaignUses(t, f, next) {
 				if u.Campaign == "chain" {
 					found = true
-					contractEqual(t, u, store.CampaignUse{Candidate: next, Campaign: "chain", Cohort: "chain cohort", Added: t0, Rejected: t1, Reason: "chain reason", Delivered: t2})
+					contractEqual(t, u, store.CampaignUse{Candidate: next, Campaign: "chain", ProspectList: "chain prospectList", Added: t0, Rejected: t1, Reason: "chain reason", Delivered: t2})
 				}
 			}
 			contractEqual(t, found, true)
@@ -200,7 +200,7 @@ func TestCampaignConcurrentWritesAndMergeAreWhole(t *testing.T) {
 	run := func(call func() error) { wg.Go(func() { <-start; results <- call() }) }
 	for i := range 20 {
 		at := f.now.Add(time.Duration(i) * time.Hour)
-		run(func() error { return f.s.AddCampaignUse(ctx, o, "racing", "cohort", at) })
+		run(func() error { return f.s.AddCampaignUse(ctx, o, "racing", "prospect_list", at) })
 		run(func() error { return f.s.RejectCampaignUse(ctx, o, "racing", "reason", at) })
 		run(func() error { return f.s.DeliverCampaignUse(ctx, o, "racing", at) })
 	}
@@ -234,20 +234,20 @@ func TestCampaignConcurrentWritesAndMergeAreWhole(t *testing.T) {
 	}
 	us := campaignUses(t, f, s)
 	contractEqual(t, len(us), 2)
-	contractEqual(t, us[1], store.CampaignUse{Candidate: s, Campaign: "racing", Cohort: "cohort", Added: f.now.UTC().Truncate(time.Second), Rejected: f.now.UTC().Truncate(time.Second), Reason: "reason", Delivered: f.now.Add(19 * time.Hour).UTC().Truncate(time.Second)})
+	contractEqual(t, us[1], store.CampaignUse{Candidate: s, Campaign: "racing", ProspectList: "prospect_list", Added: f.now.UTC().Truncate(time.Second), Rejected: f.now.UTC().Truncate(time.Second), Reason: "reason", Delivered: f.now.Add(19 * time.Hour).UTC().Truncate(time.Second)})
 	contractEqual(t, campaignUses(t, f, o), []store.CampaignUse{})
 }
 
-// R-NG3Z-90TD R-SUHW-JEV0 R-SVPS-X6LP R-SWXP-AYCE R-SPMB-0BW8
+// R-Y52V-K5G8 R-UOP4-JJTE R-SSER-4EAI R-S0D2-BO8J R-RQLV-9IAZ
 func TestCampaignWritesPreserveOtherRecordsAndOtherWritesPreserveHistory(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
 	id := contractSeed(t, f)
 	type shape struct {
-		Candidate, Campaign, Cohort string
-		Added, Rejected             time.Time
-		Reason                      string
-		Delivered                   time.Time
+		Candidate, Campaign, ProspectList string
+		Added, Rejected                   time.Time
+		Reason                            string
+		Delivered                         time.Time
 	}
 	contractEqual(t, shape(store.CampaignUse{}), shape{})
 	before := contractState(t, f)
@@ -285,17 +285,17 @@ func TestCampaignWritesPreserveOtherRecordsAndOtherWritesPreserveHistory(t *test
 	_, err = f.s.AddPage(ctx, store.Page{Candidate: id, URL: "https://preserved.test/", Text: "preserved", UserID: "owner"})
 	contractOK(t, err)
 	check()
-	k := cohortCreate(t, f, "preserving")
+	k := prospectListCreate(t, f, "preserving")
 	check()
-	_, err = f.s.EditCohort(ctx, store.CohortEdit{ID: k.ID, Filters: &store.CohortFilters{MinCampaignAgeDays: ptrInt(1)}, UserID: "owner"})
+	_, err = f.s.EditProspectList(ctx, store.ProspectListEdit{ID: k.ID, Filters: &store.ProspectListFilters{MinCampaignAgeDays: ptrInt(1)}, UserID: "owner"})
 	contractOK(t, err)
 	check()
 	for _, kind := range []string{store.KindReject, store.KindUnreject} {
-		_, err = f.s.Reject(ctx, store.Reject{Kind: kind, Cohort: k.ID, Candidate: id, Why: "owner", UserID: "owner"})
+		_, err = f.s.Reject(ctx, store.Reject{Kind: kind, ProspectList: k.ID, Candidate: id, Why: "owner", UserID: "owner"})
 		contractOK(t, err)
 		check()
 	}
-	_, err = f.s.DeleteCohort(ctx, k.ID)
+	_, err = f.s.DeleteProspectList(ctx, k.ID)
 	contractOK(t, err)
 	check()
 	for _, kind := range []string{store.KindExclude, store.KindInclude} {
@@ -321,7 +321,7 @@ func TestCampaignWritesPreserveOtherRecordsAndOtherWritesPreserveHistory(t *test
 	check()
 }
 
-// R-SWXP-AYCE R-SUHW-JEV0 R-SVPS-X6LP
+// R-S0D2-BO8J R-UOP4-JJTE R-SSER-4EAI
 func TestCampaignUseValidTimesBeforeZero(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -331,7 +331,7 @@ func TestCampaignUseValidTimesBeforeZero(t *testing.T) {
 	contractOK(t, f.s.AddCampaignUse(ctx, id, "early", "origin", at))
 	contractOK(t, f.s.RejectCampaignUse(ctx, id, "early", "reason", at))
 	contractOK(t, f.s.DeliverCampaignUse(ctx, id, "early", at))
-	contractEqual(t, campaignUses(t, f, id), []store.CampaignUse{{Candidate: id, Campaign: "early", Cohort: "origin", Added: at, Rejected: at, Reason: "reason", Delivered: at}})
+	contractEqual(t, campaignUses(t, f, id), []store.CampaignUse{{Candidate: id, Campaign: "early", ProspectList: "origin", Added: at, Rejected: at, Reason: "reason", Delivered: at}})
 	contractOK(t, f.s.AddCampaignUse(ctx, id, "existing", "", at))
 	contractOK(t, f.s.DeliverCampaignUse(ctx, id, "existing", at))
 	contractEqual(t, campaignUses(t, f, id)[1].Delivered, time.Time{})

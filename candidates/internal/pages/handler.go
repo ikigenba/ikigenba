@@ -23,11 +23,13 @@ func Handler(cfg Config) http.Handler {
 		cid := strings.TrimPrefix(path, "/candidates/")
 		pageID, number, textPage := decodePagePath(path)
 		pid := strings.TrimPrefix(path, "/passes/")
-		hid := strings.TrimPrefix(path, "/cohorts/")
-		cohort := strings.HasPrefix(path, "/cohorts/") && store.ValidCohortID(hid)
+		hid := strings.TrimPrefix(path, "/prospect-lists/")
+		legacyID := strings.TrimPrefix(path, "/cohorts/")
+		legacy := strings.HasPrefix(path, "/cohorts/"+store.LegacyListIDPrefix) && store.ValidProspectListID(store.MapListID(legacyID))
+		prospectList := strings.HasPrefix(path, "/prospect-lists/") && store.ValidProspectListID(hid)
 		candidate := strings.HasPrefix(path, "/candidates/") && store.ValidCandidateID(cid)
 		pass := strings.HasPrefix(path, "/passes/") && store.ValidPassID(pid)
-		known := path == "/" || path == "/tools" || path == "/about" || candidate || pass || cohort || textPage
+		known := path == "/" || path == "/tools" || path == "/about" || candidate || pass || prospectList || legacy || textPage
 		auth := urls.Auth(r, cfg.ServicesPath)
 		b := cfg.Banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: auth + "/", LogoutURL: auth + "/logout"})
 		notfound := func() { cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NotFoundData{Banner: b}) }
@@ -60,8 +62,8 @@ func Handler(cfg Config) http.Handler {
 			cfg.Pages.Write(w, r, 200, "about", AboutData{b, Description})
 		case path == "/":
 			b.Trail = nil
-			sp, pp := r.URL.Query().Get("cohorts_page"), r.URL.Query().Get("passes_page")
-			cohortPos, ok := decodeCohortsPage(sp)
+			sp, pp := r.URL.Query().Get("prospect_lists_page"), r.URL.Query().Get("passes_page")
+			prospectListPos, ok := decodeProspectListsPage(sp)
 			if !ok {
 				notfound()
 				return
@@ -71,25 +73,25 @@ func Handler(cfg Config) http.Handler {
 				notfound()
 				return
 			}
-			d := LandingData{Banner: b, Cohorts: []CohortRow{}, CohortsPage: sp, Passes: []PassRow{}, PassesPage: pp}
-			var cohorts []store.Cohort
+			d := LandingData{Banner: b, ProspectLists: []ProspectListRow{}, ProspectListsPage: sp, Passes: []PassRow{}, PassesPage: pp}
+			var prospectLists []store.ProspectList
 			var err error
-			if cohortPos.reversed {
-				cohorts, err = cfg.Store.ListCohortsReversed(r.Context(), cohortPos.name, cohortPos.id, paging.DefaultLimit+1)
+			if prospectListPos.reversed {
+				prospectLists, err = cfg.Store.ListProspectListsReversed(r.Context(), prospectListPos.name, prospectListPos.id, paging.DefaultLimit+1)
 			} else {
-				cohorts, err = cfg.Store.ListCohorts(r.Context(), cohortPos.name, cohortPos.id, paging.DefaultLimit+1)
+				prospectLists, err = cfg.Store.ListProspectLists(r.Context(), prospectListPos.name, prospectListPos.id, paging.DefaultLimit+1)
 			}
 			if err != nil {
 				fail()
 				return
 			}
-			cohortMore := len(cohorts) > paging.DefaultLimit
-			cohortUnder := cohortPos.reversed && !cohortMore
-			if cohortMore {
-				cohorts = cohorts[:paging.DefaultLimit]
+			prospectListMore := len(prospectLists) > paging.DefaultLimit
+			prospectListUnder := prospectListPos.reversed && !prospectListMore
+			if prospectListMore {
+				prospectLists = prospectLists[:paging.DefaultLimit]
 			}
-			if cohortPos.reversed {
-				slices.Reverse(cohorts)
+			if prospectListPos.reversed {
+				slices.Reverse(prospectLists)
 			}
 			var list []store.Pass
 			if passPos.reversed {
@@ -103,10 +105,10 @@ func Handler(cfg Config) http.Handler {
 			}
 			passMore := len(list) > paging.DefaultLimit
 			passUnder := passPos.reversed && !passMore
-			if cohortUnder || passUnder {
+			if prospectListUnder || passUnder {
 				loc := "/"
-				if !cohortUnder && sp != "" {
-					loc += "?cohorts_page=" + sp
+				if !prospectListUnder && sp != "" {
+					loc += "?prospect_lists_page=" + sp
 				} else if !passUnder && pp != "" {
 					loc += "?passes_page=" + pp
 				}
@@ -120,17 +122,17 @@ func Handler(cfg Config) http.Handler {
 			if passPos.reversed {
 				slices.Reverse(list)
 			}
-			if len(cohorts) > 0 {
-				first, last := cohorts[0], cohorts[len(cohorts)-1]
+			if len(prospectLists) > 0 {
+				first, last := prospectLists[0], prospectLists[len(prospectLists)-1]
 				if sp != "" {
-					d.CohortsPrev = (paging.Token{Tool: "cohorts-before"}).Encode(first.Name, first.ID)
+					d.ProspectListsPrev = (paging.Token{Tool: "prospect_lists-before"}).Encode(first.Name, first.ID)
 				}
-				if !cohortPos.last && (cohortMore || cohortPos.reversed) {
-					d.CohortsNext = (paging.Token{Tool: "cohorts"}).Encode(last.Name, last.ID)
+				if !prospectListPos.last && (prospectListMore || prospectListPos.reversed) {
+					d.ProspectListsNext = (paging.Token{Tool: "prospect_lists"}).Encode(last.Name, last.ID)
 				}
 			}
-			for _, e := range cohorts {
-				d.Cohorts = append(d.Cohorts, cohortRow(e))
+			for _, e := range prospectLists {
+				d.ProspectLists = append(d.ProspectLists, prospectListRow(e))
 			}
 			if len(list) > 0 {
 				first, last := list[0], list[len(list)-1]
@@ -145,8 +147,12 @@ func Handler(cfg Config) http.Handler {
 				d.Passes = append(d.Passes, passRow(p))
 			}
 			cfg.Pages.Write(w, r, 200, "landing", d)
-		case cohort:
-			v, err := cfg.Store.ReadCohort(r.Context(), hid)
+		case legacy:
+			id := store.MapListID(legacyID)
+			w.Header().Set("Location", "/prospect-lists/"+id)
+			w.WriteHeader(http.StatusSeeOther)
+		case prospectList:
+			v, err := cfg.Store.ReadProspectList(r.Context(), hid)
 			if errors.Is(err, store.ErrNotFound) {
 				notfound()
 				return
@@ -155,15 +161,15 @@ func Handler(cfg Config) http.Handler {
 				fail()
 				return
 			}
-			b.Trail = []page.Level{{Name: hid, URL: "/cohorts/" + hid}}
-			d := CohortData{Banner: b, Cohort: cohortView(v.Cohort), Matching: v.Matching, Classified: v.Classified, Members: []MemberRow{}, Rejects: []RejectRow{}}
+			b.Trail = []page.Level{{Name: hid, URL: "/prospect-lists/" + hid}}
+			d := ProspectListData{Banner: b, ProspectList: prospectListView(v.ProspectList), Matching: v.Matching, Classified: v.Classified, Members: []MemberRow{}, Rejects: []RejectRow{}}
 			for i, m := range v.Members {
 				d.Members = append(d.Members, memberRow(m, i))
 			}
 			for _, x := range v.Rejects {
 				d.Rejects = append(d.Rejects, rejectRow(x))
 			}
-			cfg.Pages.Write(w, r, 200, "cohort", d)
+			cfg.Pages.Write(w, r, 200, "prospect_list", d)
 		case pass:
 			p, err := cfg.Store.GetPass(r.Context(), pid)
 			if errors.Is(err, store.ErrNotFound) {
@@ -207,7 +213,7 @@ func Handler(cfg Config) http.Handler {
 				fail()
 				return
 			}
-			d := CandidateData{Candidate: candidateView(c), Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{}, Pages: []PageRow{}, Enrichments: []EnrichmentRow{}, Rejects: []RejectRecordRow{}, Campaigns: []CampaignRow{}}
+			d := CandidateData{Candidate: candidateView(c), Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{}, Pages: []PageRow{}, EnrichmentResults: []EnrichmentRow{}, Rejects: []RejectRecordRow{}, Campaigns: []CampaignRow{}}
 			rulings, err := cfg.Store.Rulings(r.Context(), cid)
 			if err != nil {
 				fail()
@@ -225,6 +231,7 @@ func Handler(cfg Config) http.Handler {
 				d.Rejects = append(d.Rejects, rejectRecordRow(x))
 			}
 			if c.Status != store.StatusMerged {
+				d.Enrichments = &EnrichmentsView{}
 				uses, err := cfg.Store.CampaignUses(r.Context(), cid)
 				if err != nil {
 					fail()
@@ -252,22 +259,22 @@ func Handler(cfg Config) http.Handler {
 					d.Pages = append(d.Pages, pageRow(p))
 				}
 				setWebsite(&d.Candidate, enrichments)
-				d.Brief = briefView(enrichments)
+				d.Enrichments.Brief = briefView(enrichments)
 				for _, x := range enrichments {
-					d.Enrichments = append(d.Enrichments, enrichmentRow(x))
+					d.EnrichmentResults = append(d.EnrichmentResults, enrichmentRow(x))
 				}
 				facts, err := cfg.Store.GetFacts(r.Context(), cid)
 				if err == nil {
 					v := factsView(facts)
-					d.Facts = &v
+					d.Enrichments.Facts = &v
 				} else if !errors.Is(err, store.ErrNotFound) {
 					fail()
 					return
 				}
-				a, err := cfg.Store.GetAssessment(r.Context(), cid)
+				a, err := cfg.Store.GetJudgments(r.Context(), cid)
 				if err == nil {
-					v := assessmentView(a)
-					d.Assessment = &v
+					v := judgmentsView(a)
+					d.Judgments = &v
 				} else if !errors.Is(err, store.ErrNotFound) {
 					fail()
 					return
@@ -302,15 +309,15 @@ type landingPosition struct {
 	reversed, last    bool
 }
 
-func decodeCohortsPage(value string) (landingPosition, bool) {
+func decodeProspectListsPage(value string) (landingPosition, bool) {
 	p := landingPosition{}
 	if value == "" {
 		return p, true
 	}
-	if (paging.Token{Tool: "cohorts"}).Decode(value, &p.name, &p.id) == nil {
+	if (paging.Token{Tool: "prospect_lists"}).Decode(value, &p.name, &p.id) == nil {
 		return p, true
 	}
-	if (paging.Token{Tool: "cohorts-before"}).Decode(value, &p.name, &p.id) == nil {
+	if (paging.Token{Tool: "prospect_lists-before"}).Decode(value, &p.name, &p.id) == nil {
 		p.reversed = true
 		return p, true
 	}
@@ -353,17 +360,17 @@ func decodePagePath(path string) (string, int64, bool) {
 }
 
 func campaignRow(ctx context.Context, cfg Config, u store.CampaignUse) (CampaignRow, error) {
-	v := CampaignRow{Campaign: u.Campaign, CampaignPage: urls.CampaignPage(urls.Campaigns(cfg.ServicesPath), u.Campaign), Cohort: u.Cohort, Reason: u.Reason, Rejected: !u.Rejected.IsZero()}
-	if u.Cohort != "" {
-		c, err := cfg.Store.GetCohort(ctx, u.Cohort)
+	v := CampaignRow{Campaign: u.Campaign, CampaignPage: urls.CampaignPage(urls.Campaigns(cfg.ServicesPath), u.Campaign), ProspectList: u.ProspectList, Reason: u.Reason, Rejected: !u.Rejected.IsZero()}
+	if u.ProspectList != "" {
+		c, err := cfg.Store.GetProspectList(ctx, u.ProspectList)
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return CampaignRow{}, err
 		}
 		if err == nil {
-			v.CohortName = c.Name
+			v.ProspectListName = c.Name
 		}
-		if v.CohortName != "" {
-			v.CohortPage = "/cohorts/" + u.Cohort
+		if v.ProspectListName != "" {
+			v.ProspectListPage = "/prospect-lists/" + u.ProspectList
 		}
 	}
 	v.Added, v.AddedText = stamp(u.Added, MinuteLayout)

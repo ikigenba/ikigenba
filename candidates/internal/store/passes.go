@@ -15,20 +15,31 @@ func validPass(p Pass) bool {
 	if p.Trigger == "" {
 		return false
 	}
-	if p.Kind == KindEnrichCohort {
-		return p.Origin == OriginEnrich && p.Trigger == TriggerEnrich && (ValidCohortID(p.Target) || ValidCandidateID(p.Target)) && slices.Contains(enrichers.Kinds(), p.EnrichKind) && p.Delivery == "" && p.UserID != ""
+	if p.Kind == KindEnrichTarget {
+		return p.Scraper == "" && p.Origin == OriginEnrich && p.Trigger == TriggerEnrich && (ValidProspectListID(p.Target) || ValidCandidateID(p.Target)) && slices.Contains(enrichers.Kinds(), p.EnrichKind) && p.Delivery == "" && p.UserID != ""
 	}
 	if p.Target != "" || p.EnrichKind != "" {
 		return false
 	}
-	return p.Kind == KindRebuild && p.Origin == OriginRebuild && p.Trigger == TriggerRebuild && p.Delivery == "" && p.UserID != "" || p.Kind == KindIngest && p.Origin == OriginRun && p.Trigger != TriggerRebuild && p.Delivery != "" || p.Kind == KindJudge && p.Origin == OriginCron && p.Trigger != TriggerRebuild && p.Delivery != "" || p.Kind == KindEnrich && p.Origin == OriginEnrich && p.Trigger == TriggerEnrich && p.Delivery == "" && p.UserID != "" || (p.Kind == KindEnrich || p.Kind == KindJudge) && p.Origin == OriginPass && ValidPassID(p.Trigger) && p.Delivery == ""
+	if p.Kind != KindIngest && p.Scraper != "" {
+		return false
+	}
+	return p.Kind == KindIngest && p.Origin == OriginIngest && p.Trigger == TriggerIngest && p.Delivery == "" && p.UserID != "" ||
+		p.Kind == KindIngest && p.Origin == OriginRun && p.Scraper == "" && p.Delivery != "" ||
+		p.Kind == KindJudge && p.Origin == OriginJudge && p.Trigger == TriggerJudgeTool && p.Delivery == "" && p.UserID != "" ||
+		p.Kind == KindJudge && p.Origin == OriginCron && p.Trigger != TriggerIngest && p.Trigger != TriggerJudgeTool && p.Delivery != "" ||
+		p.Kind == KindEnrich && p.Origin == OriginEnrich && p.Trigger == TriggerEnrich && p.Delivery == "" && p.UserID != "" ||
+		(p.Kind == KindEnrich || p.Kind == KindJudge) && p.Origin == OriginPass && ValidPassID(p.Trigger) && p.Delivery == ""
 }
 
 func passScope(p Pass) string {
 	switch p.Kind {
 	case KindIngest:
+		if p.Origin == OriginIngest {
+			return p.Scraper
+		}
 		return p.Trigger
-	case KindEnrichCohort:
+	case KindEnrichTarget:
 		return p.Target
 	default:
 		return ""
@@ -58,7 +69,7 @@ func (s *Store) AddPass(ctx context.Context, p Pass) (Pass, error) {
 			}
 		}
 		for _, q := range r.passes {
-			if q.Status == StatusRunning && q.Kind == p.Kind && passScope(q) == passScope(p) {
+			if q.Status == StatusRunning && q.Kind == p.Kind && passScope(q) == passScope(p) && (p.Kind != KindIngest || (q.Origin == OriginIngest) == (p.Origin == OriginIngest)) {
 				return ErrBusy
 			}
 		}
@@ -66,7 +77,7 @@ func (s *Store) AddPass(ctx context.Context, p Pass) (Pass, error) {
 		if e != nil {
 			return e
 		}
-		out = Pass{ID: id, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Target: p.Target, EnrichKind: p.EnrichKind, Status: StatusRunning, Started: s.now(), UserID: p.UserID, UserEmail: p.UserEmail, RequestID: p.RequestID, Delivery: p.Delivery}
+		out = Pass{ID: id, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Target: p.Target, EnrichKind: p.EnrichKind, Scraper: p.Scraper, Status: StatusRunning, Started: s.now(), UserID: p.UserID, UserEmail: p.UserEmail, RequestID: p.RequestID, Delivery: p.Delivery}
 		r.passes[id] = out
 		return nil
 	})

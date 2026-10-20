@@ -52,10 +52,10 @@ func (e *Engine) follow(ctx context.Context, starter store.Pass) {
 		return
 	}
 	kind := ""
-	if starter.Kind == store.KindIngest {
+	if starter.Kind == store.KindIngest && (starter.Origin != store.OriginIngest || starter.Scraper != "") {
 		kind = store.KindEnrich
 	}
-	if (starter.Kind == store.KindEnrich || starter.Kind == store.KindEnrichCohort) && starter.Derived+starter.HTTPS+starter.HTTP+starter.None > 0 {
+	if (starter.Kind == store.KindEnrich || starter.Kind == store.KindEnrichTarget) && starter.Derived+starter.HTTPS+starter.HTTP+starter.None > 0 {
 		kind = store.KindJudge
 	}
 	if kind == "" {

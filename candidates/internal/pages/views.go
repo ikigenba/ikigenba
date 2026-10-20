@@ -45,13 +45,13 @@ func passRow(p store.Pass) PassRow {
 func passView(p store.Pass, sp string) PassView {
 	v := PassView{ID: p.ID, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Status: p.Status, Reason: p.Reason, Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged, Derived: p.Derived, Due: p.Due, Fetched: p.Fetched, HTTPS: p.HTTPS, HTTP: p.HTTP, None: p.None}
 	v.Target, v.EnrichKind, v.Runs, v.RunsFailed, v.Pages, v.Cost = p.Target, p.EnrichKind, p.Runs, p.RunsFailed, p.Pages, costText(p.Cost)
-	if store.ValidCohortID(p.Target) {
-		v.TargetPage = "/cohorts/" + p.Target
+	if store.ValidProspectListID(p.Target) {
+		v.TargetPage = "/prospect-lists/" + p.Target
 	} else if store.ValidCandidateID(p.Target) {
 		v.TargetPage = "/candidates/" + p.Target
 	}
 	switch p.Origin {
-	case store.OriginRebuild, store.OriginEnrich:
+	case store.OriginIngest, store.OriginJudge, store.OriginEnrich:
 		v.StartedBy = p.UserEmail
 		if v.StartedBy == "" {
 			v.StartedBy = p.UserID
@@ -64,9 +64,9 @@ func passView(p store.Pass, sp string) PassView {
 	return v
 }
 func memberRow(e store.Ranked, i int) MemberRow {
-	a := assessmentView(e.Assessment)
-	f := factsView(store.Facts{KnownSince: e.Assessment.KnownSince, NewestFiling: e.Assessment.NewestFiling, Categories: e.Assessment.Categories, GovernmentMatch: e.Assessment.GovernmentMatch, FleetVerdict: e.Assessment.FleetVerdict, PowerUnits: e.Assessment.PowerUnits, Drivers: e.Assessment.Drivers, Minutes: e.Assessment.Minutes})
-	v := MemberRow{Rank: int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(e.Assessment.Categories), Class: e.Candidate.Class, FleetVerdict: f.FleetVerdict, Website: e.Assessment.Website, WebsiteURL: e.Assessment.WebsiteURL, WebsiteSource: e.Assessment.WebsiteSource, Minutes: f.Minutes, GovernmentMatch: f.GovernmentMatch, KnownSince: f.KnownSince, KnownSinceText: f.KnownSinceText, NewestFiling: f.NewestFiling, NewestFilingText: f.NewestFilingText, Excluded: a.Excluded}
+	a := judgmentsView(e.Judgments)
+	f := factsView(e.Facts)
+	v := MemberRow{Rank: int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(e.Facts.Categories), Class: e.Candidate.Class, FleetVerdict: f.FleetVerdict, Website: e.Facts.Website, WebsiteURL: e.Facts.WebsiteURL, WebsiteSource: e.Facts.WebsiteSource, Minutes: f.Minutes, GovernmentMatch: f.GovernmentMatch, KnownSince: f.KnownSince, KnownSinceText: f.KnownSinceText, NewestFiling: f.NewestFiling, NewestFilingText: f.NewestFilingText, Excluded: a.Excluded}
 	v.SiteText, v.SiteTextText = stamp(e.SiteText, MinuteLayout)
 	v.Brief, v.BriefText = stamp(e.Brief, MinuteLayout)
 	seen := map[string]bool{}
@@ -102,8 +102,8 @@ func candidateView(c store.Candidate) CandidateView {
 	}
 	return v
 }
-func assessmentView(a store.Assessment) AssessmentView {
-	v := AssessmentView{OperatingEvidence: []EvidenceRow{}, Excluded: a.Excluded, Rules: a.Rules}
+func judgmentsView(a store.Judgments) JudgmentsView {
+	v := JudgmentsView{OperatingEvidence: []EvidenceRow{}, Excluded: a.Excluded, Rules: a.Rules}
 	if a.Operating != nil {
 		v.OperatingConfidence = two(*a.Operating)
 	}
@@ -182,13 +182,13 @@ func rulingView(r store.Ruling, id string) RulingView {
 	return v
 }
 
-func cohortRow(c store.Cohort) CohortRow {
-	v := CohortRow{ID: c.ID, Name: c.Name, Size: c.Size, CreatedBy: c.CreatedUserEmail, CreatedUser: c.CreatedUserID}
+func prospectListRow(c store.ProspectList) ProspectListRow {
+	v := ProspectListRow{ID: c.ID, Name: c.Name, Size: c.Size, CreatedBy: c.CreatedUserEmail, CreatedUser: c.CreatedUserID}
 	v.Changed, v.ChangedText = stamp(c.Changed, MinuteLayout)
 	return v
 }
 
-func filtersView(f store.CohortFilters) FiltersView {
+func filtersView(f store.ProspectListFilters) FiltersView {
 	v := FiltersView{RevenueUnknown: f.RevenueUnknown, MinutesUnknown: f.MinutesUnknown, Categories: append([]string{}, f.Categories...), CategoryUnknown: f.CategoryUnknown, Fleet: f.Fleet, FleetUnknown: f.FleetUnknown, Website: append([]string{}, f.Website...), WebsiteUnknown: f.WebsiteUnknown, FilingUnknown: f.FilingUnknown, Class: f.Class, ClassUnknown: f.ClassUnknown, ShowExcluded: f.ShowExcluded}
 	if f.RevenueMin != nil {
 		v.RevenueMin = dollars(*f.RevenueMin)
@@ -211,8 +211,8 @@ func filtersView(f store.CohortFilters) FiltersView {
 	return v
 }
 
-func cohortView(c store.Cohort) CohortView {
-	v := CohortView{ID: c.ID, Name: c.Name, Size: c.Size, Filters: filtersView(c.Filters), Order: []OrderRow{}, CreatedBy: c.CreatedUserEmail, CreatedUser: c.CreatedUserID, ChangedBy: c.ChangedUserEmail, ChangedUser: c.ChangedUserID}
+func prospectListView(c store.ProspectList) ProspectListView {
+	v := ProspectListView{ID: c.ID, Name: c.Name, Size: c.Size, Filters: filtersView(c.Filters), Order: []OrderRow{}, CreatedBy: c.CreatedUserEmail, CreatedUser: c.CreatedUserID, ChangedBy: c.ChangedUserEmail, ChangedUser: c.ChangedUserID}
 	for _, o := range c.Order {
 		v.Order = append(v.Order, OrderRow{o.Field, o.Direction})
 	}
@@ -228,7 +228,7 @@ func rejectRow(r store.Reject) RejectRow {
 }
 
 func rejectRecordRow(r store.Reject) RejectRecordRow {
-	v := RejectRecordRow{Kind: r.Kind, Cohort: r.Cohort, CohortName: r.CohortName, By: r.UserEmail, User: r.UserID, Why: r.Why}
+	v := RejectRecordRow{Kind: r.Kind, ProspectList: r.ProspectList, ProspectListName: r.ProspectListName, By: r.UserEmail, User: r.UserID, Why: r.Why}
 	v.At, v.AtText = stamp(r.At, MinuteLayout)
 	return v
 }
