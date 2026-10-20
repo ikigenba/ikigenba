@@ -27,7 +27,7 @@ type Config struct {
 	Sleep    func(ctx context.Context, d time.Duration)
 }
 
-// Phase measures and regulates a collect or load phase.
+// Phase measures and regulates a walk or load phase.
 type Phase struct {
 	cfg     Config
 	started time.Time
