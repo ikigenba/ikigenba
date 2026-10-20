@@ -17,9 +17,10 @@
      delivered nothing can be deleted, and one that has delivered anything
      is kept for good."; "A member is a business, named by its candidate
      id in candidates, and is in a campaign once. Members are added from a
-     cohort, every current member at that moment less its standing rejects
-     and excluded businesses, or one at a time; adding a cohort again adds
-     only the businesses not already in. Each member gets one piece per
+     prospect list, every prospect on it at that moment less its standing
+     rejects and excluded businesses, or one at a time; adding a prospect
+     list again adds only the businesses not already in. Each member gets
+     one piece per
      channel the campaign uses, except that a business with no postal
      address gets no mail piece and one with no email address no email
      piece, and the add says so. A rejected member gets nothing further
@@ -65,7 +66,7 @@
 <section id="how" class="card" aria-labelledby="how-title">
 <header><h2 id="how-title">How it works</h2></header>
 <p>campaigns keeps the permanent record of who was contacted, with what, when and by which channel, and whether they looked. A campaign has a name, a description the owner writes, the channels it uses, mail, email or both, and the destination its links send a visitor on to. It has no status: a campaign that has delivered nothing can be deleted, and one that has delivered anything is kept for good.</p>
-<p>A member is a business, named by its candidate id in candidates, and is in a campaign once. Members are added from a cohort, every current member at that moment less its standing rejects and excluded businesses, or one at a time; adding a cohort again adds only the businesses not already in. Each member gets one piece per channel the campaign uses, except that a business with no postal address gets no mail piece and one with no email address no email piece, and the add says so. A rejected member gets nothing further from the campaign: what was delivered stays delivered, and the rejection records who, when and why and is not undone.</p>
+<p>A member is a business, named by its candidate id in candidates, and is in a campaign once. Members are added from a prospect list, every prospect on it at that moment less its standing rejects and excluded businesses, or one at a time; adding a prospect list again adds only the businesses not already in. Each member gets one piece per channel the campaign uses, except that a business with no postal address gets no mail piece and one with no email address no email piece, and the add says so. A rejected member gets nothing further from the campaign: what was delivered stays delivered, and the rejection records who, when and why and is not undone.</p>
 <p>A piece is planned, delivered or dropped. campaigns sends nothing: the owner sends each letter and each email and marks the piece delivered, one at a time or every planned piece of a channel at once, and a delivered piece never changes again. A planned piece the owner chooses not to send is dropped.</p>
 <p>The material, the letter and email templates and anything else kept with the campaign, lives in artifacts; the campaign holds a labelled reference to each, and removing one leaves the artifact in place. A merge list answers, for one channel, one row per piece with what a template needs: the business's names, address, people, phone, email and the piece's link.</p>
 <p>Every piece has its own link, a random token on the tracking page. Each visit is kept with its time, user agent, referrer and address, nothing deduplicated, and the visitor lands on the campaign's destination; a token that names nothing lands on the default destination and records nothing. Engagement is read off the visits: per piece and per member, whether a link was opened, how many times, first and last; per campaign, how many members opened anything. campaigns tells candidates on the event bus when a member is added or rejected and when a piece is delivered, so a business's page shows the campaigns it was in.</p>

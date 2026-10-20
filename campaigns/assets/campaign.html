@@ -33,10 +33,11 @@
      candidates, the candidates URL then "/candidates/" and .Candidate;
      empty when candidates is not in the services file), .Name (the
      business's display name as candidates answers it when the page is
-     read; empty when candidates does not answer), .Cohort (the coh_ id
-     of the cohort it was added from; empty when it was added by hand),
-     .CohortPage (the cohort's page on candidates, the candidates URL then
-     "/cohorts/" and .Cohort; empty when .Cohort is empty or candidates is
+     read; empty when candidates does not answer), .ProspectList (the pl_
+     id, "pl_" and 16 hex, of the prospect list it was added from; empty
+     when it was added by hand), .ProspectListPage (the prospect list's
+     page on candidates, the candidates URL then "/prospect-lists/" and
+     .ProspectList; empty when .ProspectList is empty or candidates is
      not in the services file), .Added and .AddedText (when it was added,
      RFC 3339 UTC to the second, and UTC to the minute, "2026-10-05
      09:00"), .Opened (bool, true when any of its pieces' links has been
@@ -105,10 +106,10 @@
      delivered stays delivered and its links keep counting visits. Names
      are candidates' as this page was read."), then either, when .Members
      is empty, div#no-members.empty holding h3 "No members yet" and a p
-     (text "Members show here once an agent adds a cohort's members, or
-     one business at a time, with the tools."), or table#member-list whose
-     th read Candidate, Business, From, Added, Opened, then one th per
-     channel of .Campaign.Channels ("Mail" for mail, "Email" for email),
+     (text "Members show here once an agent adds a prospect list's
+     members, or one business at a time, with the tools."), or
+     table#member-list whose th read Candidate, Business, From, Added,
+     Opened, then one th per channel of .Campaign.Channels ("Mail" for mail, "Email" for email),
      then Rejected, with one tr[data-candidate=<.Candidate>] per member,
      carrying also [data-rejected] when .Rejected, holding
      td.member-candidate (a.candidate-link, href .CandidatePage,
@@ -116,10 +117,10 @@
      .Candidate in a code element), td.member-name (.Name, or span.muted
      "unknown" when empty, followed, when .Rejected, by a space and
      span.badge[data-kind=warn] (text "rejected")), td.member-from
-     (a.cohort-link, href .CohortPage, .Cohort in a code element, when
-     .CohortPage is set; else .Cohort in a code element when .Cohort is
-     set; else span.muted "added by hand"), td.member-added
-     (time[datetime=<.Added>] with .AddedText),
+     (a.prospect-list-link, href .ProspectListPage, .ProspectList in a
+     code element, when .ProspectListPage is set; else .ProspectList in a
+     code element when .ProspectList is set; else span.muted "added by
+     hand"), td.member-added (time[datetime=<.Added>] with .AddedText),
      td.member-opened[data-opened=<true or false>] ("yes" when .Opened,
      else span.muted "no"), then one td.member-piece[data-channel=<.Channel>]
      per entry of .Pieces, carrying also [data-state=<.State>] when .State
@@ -205,7 +206,7 @@
 {{range $members}}<tr data-candidate="{{.Candidate}}"{{if .Rejected}} data-rejected{{end}}>
 <td class="member-candidate">{{if .CandidatePage}}<a class="candidate-link" href="{{.CandidatePage}}"><code>{{.Candidate}}</code></a>{{else}}<code>{{.Candidate}}</code>{{end}}</td>
 <td class="member-name">{{if .Name}}{{.Name}}{{else}}<span class="muted">unknown</span>{{end}}{{if .Rejected}} <span class="badge" data-kind="warn">rejected</span>{{end}}</td>
-<td class="member-from">{{if .CohortPage}}<a class="cohort-link" href="{{.CohortPage}}"><code>{{.Cohort}}</code></a>{{else if .Cohort}}<code>{{.Cohort}}</code>{{else}}<span class="muted">added by hand</span>{{end}}</td>
+<td class="member-from">{{if .ProspectListPage}}<a class="prospect-list-link" href="{{.ProspectListPage}}"><code>{{.ProspectList}}</code></a>{{else if .ProspectList}}<code>{{.ProspectList}}</code>{{else}}<span class="muted">added by hand</span>{{end}}</td>
 <td class="member-added"><time datetime="{{.Added}}">{{.AddedText}}</time></td>
 <td class="member-opened" data-opened="{{.Opened}}">{{if .Opened}}yes{{else}}<span class="muted">no</span>{{end}}</td>
 {{range .Pieces}}<td class="member-piece" data-channel="{{.Channel}}"{{if .State}} data-state="{{.State}}"{{end}}>{{if not .State}}<span class="muted">{{if eq .Channel "mail"}}no postal address{{else}}no email address{{end}}</span>{{else}}<span class="status" data-status="{{.State}}"{{if eq .State "planned"}} data-kind="info"{{else if eq .State "delivered"}} data-kind="ok"{{end}}>{{.State}}</span>{{if eq .State "delivered"}}<div class="piece-delivered"><time datetime="{{.Delivered}}">{{.DeliveredText}}</time> by {{if .DeliveredBy}}{{.DeliveredBy}}{{else}}<code>{{.DeliveredUser}}</code>{{end}}, <span class="muted" data-how="{{.How}}">{{if eq .How "system"}}by the system{{else}}by hand{{end}}</span></div>{{end}}<div class="piece-opened" data-opens="{{.Opens}}">{{if eq .Opens 1}}opened once, <time datetime="{{.First}}">{{.FirstText}}</time>{{else if .Opens}}opened {{.Opens}} times, first <time datetime="{{.First}}">{{.FirstText}}</time>, last <time datetime="{{.Last}}">{{.LastText}}</time>{{else}}<span class="muted">not opened</span>{{end}}</div>{{end}}</td>
@@ -216,7 +217,7 @@
 </div>
 {{else}}<div id="no-members" class="empty">
 <h3 class="text-md">No members yet</h3>
-<p>Members show here once an agent adds a cohort's members, or one business at a time, with the tools.</p>
+<p>Members show here once an agent adds a prospect list's members, or one business at a time, with the tools.</p>
 </div>{{end}}
 </section>
 {{if or $members $page}}<nav class="paging" id="paging" aria-label="Pages">{{if $page}}<a href="/campaigns/{{$id}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if $prev}}<a href="/campaigns/{{$id}}?page={{$prev}}">Prev</a>{{end}}{{if $next}}<a href="/campaigns/{{$id}}?page={{$next}}">Next</a>{{end}}{{if $next}}<a href="/campaigns/{{$id}}?page=last">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
