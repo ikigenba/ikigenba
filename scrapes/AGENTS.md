@@ -1,7 +1,7 @@
 # scrapes
 
 An app of the Ikigenba platform: public records about businesses in range,
-collected per source as rows per run, served at `scrapes.<host>`. One Go
+scraped per source as rows per run, served at `scrapes.<host>`. One Go
 binary serves on the listening socket it is passed as descriptor 3
 (`/run/ikigenba/scrapes.sock` on a host), behind the host's nginx. scrapes is
 stage one of the funnel: a scraper is Go code in the service that knows one
@@ -205,10 +205,10 @@ a Unix socket path is limited to 108 bytes and `t.TempDir()` can exceed it),
 names it in `NOTIFY_SOCKET`, and waits for `READY=1` with a deadline that
 fails the test. Drain tests wait on the clock, because the drain deadline is
 the behavior, and they keep that wait to a few seconds. A test proving the
-store's busy refusal (R-O3S6-PHQK) or the engine's retry of a locked
-`FinishRun` or `FailRun` (R-3EFO-IKKR) may hold a real lock and wait out the
+store's busy refusal (R-RBTT-BJPC) or the engine's retry of a locked
+`FinishRun` or `FailRun` (R-PEBJ-IMFR) may hold a real lock and wait out the
 database's five-second busy timeout. The one-load-at-a-time test
-(R-RM57-MTRX) may wait a short real-time grace of its choosing, a fraction of
+(R-S3VI-49RB) may wait a short real-time grace of its choosing, a fraction of
 a second, for a pause that must not come. No other test waits on the clock. The gates run offline as an ordinary user, with no systemd.
 
 **The source is faked, never called.** No test reaches data.transportation.gov,
@@ -246,6 +246,8 @@ a test's own store recorded, including another scraper's, runs left
 regular file at `<Dir>/runs`, a directory at `runs/<id>.db`, a run file
 deleted or part of one overwritten, a symbolic link in `runs/`, a database
 made with `db.Open` without a `rows` table and copied in where a run file
+belongs, a run file as the release before wrote it (R-PQIJ-CBUP), built
+through the test's own `db.OpenBulk` handle and copied in where a run file
 belongs, and a fake pressure file in the temporary directory handed in
 through `Process.Pressure` or the `Pressure` of a config design names);
 nothing touches `/var/opt/ikigenba/scrapes`, the checkout's `state/` or
@@ -255,8 +257,8 @@ handed the server or engine was built over, before a call or from a hook
 design names, never by corrupting the catalog, removing permissions or
 closing the store. Two other ways are admitted. A test may add triggers that
 abort writes through its own catalog handle, as R-OH72-WYW7 does on `runs`
-and R-OTK5-HRD4 on `rows` and `row_names`. The secrecy run of D09
-(R-HZDM-VXTL) injects its failure with a regular file at `<Dir>/runs`, and
+and R-RU4B-23TR on `rows` and `row_names`. The secrecy run of D09
+(R-QDOM-LYXW) injects its failure with a regular file at `<Dir>/runs`, and
 later drops the catalog's `runs` table alone through the test's own handle;
 it is the only test that drops a table. Tests
 prove scrapes' use of the database, its schema, its store and its wiring,
@@ -264,11 +266,13 @@ never SQLite's own guarantees (atomicity, durability, locking) and never
 appkit's `db` contract (opening, migrations, transactions, `db status`),
 which appkit's own tests prove; they prove what a store holds by reopening
 its path, never by reading tables. A store test may also open, decompress and
-decode the chunk files a collection's `Seal` leaves in its own runs
-directory before `Load` (R-6QF7-C764).
+decode the chunk files a build's `Seal` leaves in its own runs
+directory before `Load` (R-PSYC-3VC3). A test may open a run file its own
+store built through `db.OpenImmutable` and read its `rows` and `names`
+tables, as R-PPAM-YK40 states; this is the only read of a run file's tables.
 
 **Time and the sweep are driven, not waited out.** A run's started and
-finished times, a row's collected time, the prune's ordering and the
+finished times, a row's scraped time, the prune's ordering and the
 scraper's retry backoff, and the pacing's pauses for the write budget, the
 latency backoff and I/O pressure, are proved through the injected `Now` and
 `Sleep`: a
