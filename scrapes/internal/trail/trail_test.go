@@ -98,9 +98,9 @@ func TestLifecycle(t *testing.T) {
 	}
 }
 
-// R-4YTC-KHJZ R-5018-Y9AO R-NYYN-Z6UB R-O06K-CYL0 R-O1EG-QQBP
+// R-PKF1-FH58 R-5018-Y9AO R-NYYN-Z6UB R-R6Y7-SGQK R-O1EG-QQBP
 func TestPhases(t *testing.T) {
-	if trail.Collected != "scrape.collected" || trail.Loaded != "scrape.loaded" {
+	if trail.Walked != "scrape.walked" || trail.Loaded != "scrape.loaded" {
 		t.Fatal("phase names")
 	}
 	for _, caller := range []bool{false, true} {
@@ -117,10 +117,10 @@ func TestPhases(t *testing.T) {
 		invoke := func(phase func(context.Context, *telemetry.Writer, string, store.Run, int64, time.Duration, time.Duration), name string) {
 			phase(ctx, w, name, r, 741, 2501*time.Nanosecond, 1901*time.Nanosecond)
 		}
-		for _, name := range []string{trail.Collected, trail.Loaded, trail.Started, trail.Finished, "other"} {
+		for _, name := range []string{trail.Walked, trail.Loaded, trail.Started, trail.Finished, "other"} {
 			invoke(trail.Phase, name)
 		}
-		trail.Record(ctx, w, em, trail.Collected, r)
+		trail.Record(ctx, w, em, trail.Walked, r)
 		trail.Record(ctx, w, em, trail.Loaded, r)
 		deadline, cancel := context.WithTimeout(context.Background(), time.Second)
 		if err := w.Flush(deadline); err != nil {
@@ -134,7 +134,7 @@ func TestPhases(t *testing.T) {
 			t.Fatalf("phase counts: %d, bus %d", len(got), len(bus.Events()))
 		}
 		want := telemetry.Attrs{"scraper": r.Scraper, "run": r.ID, "bytes": int64(741), "duration_us": int64(2), "paused_us": int64(1)}
-		for i, name := range []string{trail.Collected, trail.Loaded} {
+		for i, name := range []string{trail.Walked, trail.Loaded} {
 			if got[i].Name != name || got[i].User != r.UserID || got[i].RequestID != r.RequestID || !reflect.DeepEqual(got[i].Attrs, want) {
 				t.Fatalf("phase: %#v", got[i])
 			}

@@ -29,7 +29,7 @@ import (
 const ServiceName = "scrapes"
 
 // Description is the service description shared with its manifest.
-const Description = "Public records about businesses in range, collected per source as rows per run"
+const Description = "Public records about businesses in range, scraped per source as rows per run"
 
 // MinuteLayout formats stored times on the landing page.
 const MinuteLayout = "2006-01-02 15:04"
@@ -137,12 +137,12 @@ type RowData struct {
 
 // RowView holds the visible envelope and formatted raw record.
 type RowView struct {
-	Scraper, Run, SourceID, Collected, CollectedText, Digest, Name string
-	Names                                                          []string
-	Street, City, State, Zip, County, Lat, Lon                     string
-	People                                                         []PersonRow
-	Facts                                                          []FactRow
-	Raw                                                            string
+	Scraper, Run, SourceID, Scraped, ScrapedText, Digest, Name string
+	Names                                                      []string
+	Street, City, State, Zip, County, Lat, Lon                 string
+	People                                                     []PersonRow
+	Facts                                                      []FactRow
+	Raw                                                        string
 }
 
 // PersonRow describes a party named by a source.
@@ -200,7 +200,7 @@ func rowLine(w source.Row) RowLine {
 }
 func rowView(w source.Row) RowView {
 	v := RowView{Scraper: w.Scraper, Run: w.Run, SourceID: w.SourceID, Digest: w.Digest, Name: w.Name, Names: w.Names, Street: w.Address.Street, City: w.Address.City, State: w.Address.State, Zip: w.Address.Zip, County: w.Address.County, People: []PersonRow{}, Facts: []FactRow{}}
-	v.Collected, v.CollectedText = stamp(w.Collected, SecondLayout)
+	v.Scraped, v.ScrapedText = stamp(w.Scraped, SecondLayout)
 	if w.Lat != nil {
 		v.Lat = strconv.FormatFloat(*w.Lat, 'f', -1, 64)
 	}

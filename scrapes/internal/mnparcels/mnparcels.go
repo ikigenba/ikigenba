@@ -1,4 +1,4 @@
-// Package mnparcels collects Minnesota's public parcel records.
+// Package mnparcels scrapes Minnesota's public parcel records.
 package mnparcels
 
 import (
@@ -99,10 +99,10 @@ func (s *Scraper) Scrape(ctx context.Context, batch func([]source.Row) error) er
 			}
 			bound = cursor
 			if len(features) > 0 {
-				collected := s.cfg.Now()
+				scraped := s.cfg.Now()
 				rows := make([]source.Row, 0, len(features))
 				for _, feature := range features {
-					row, err := RowOf(feature, collected)
+					row, err := RowOf(feature, scraped)
 					if errors.Is(err, errPinless) {
 						continue
 					}
@@ -262,7 +262,7 @@ func joined(a map[string]json.RawMessage, fields ...string) []string {
 }
 
 // RowOf maps a feature to its common envelope, preserving attributes exactly.
-func RowOf(feature json.RawMessage, collected time.Time) (source.Row, error) {
+func RowOf(feature json.RawMessage, scraped time.Time) (source.Row, error) {
 	f, ok := object(feature)
 	if !ok {
 		return source.Row{}, errors.New("invalid source feature")
@@ -328,7 +328,7 @@ func RowOf(feature json.RawMessage, collected time.Time) (source.Row, error) {
 	facts["use_class"] = joined(a, "useclass1", "useclass2", "useclass3", "useclass4")
 	factJSON, _ := json.Marshal(facts)
 	raw := f["attributes"]
-	row := source.Row{Scraper: Name, SourceID: id, Collected: collected.UTC().Truncate(time.Second), Digest: source.Digest(raw), Name: name, Names: names, Address: source.NewAddress(strings.Join(street, " "), city, "MN", stringValue(a["zip"]), stringValue(a["co_name"])), People: people, Facts: factJSON, Raw: raw}
+	row := source.Row{Scraper: Name, SourceID: id, Scraped: scraped.UTC().Truncate(time.Second), Digest: source.Digest(raw), Name: name, Names: names, Address: source.NewAddress(strings.Join(street, " "), city, "MN", stringValue(a["zip"]), stringValue(a["co_name"])), People: people, Facts: factJSON, Raw: raw}
 	if centroid, ok := object(f["centroid"]); ok {
 		x, y := centroid["x"], centroid["y"]
 		numeric := func(raw json.RawMessage) bool {

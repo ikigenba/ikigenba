@@ -305,13 +305,13 @@ func (s *Store) RunningRuns(ctx context.Context) ([]Run, error) {
 	return s.list(ctx, "SELECT "+runCols+" FROM runs WHERE status=? ORDER BY id", StatusRunning)
 }
 
-const rowCols = `"run",source_id,scraper,collected,digest,name,names,street,city,state,zip,county,lat,lon,people,facts,raw`
+const rowCols = `"run",source_id,scraper,scraped,digest,name,names,street,city,state,zip,county,lat,lon,people,facts,raw`
 
 func scanRow(row scanner) (source.Row, error) {
 	var r source.Row
-	var collected, names, people string
+	var scraped, names, people string
 	var facts, raw []byte
-	err := row.Scan(&r.Run, &r.SourceID, &r.Scraper, &collected, &r.Digest, &r.Name, &names, &r.Address.Street, &r.Address.City, &r.Address.State, &r.Address.Zip, &r.Address.County, &r.Lat, &r.Lon, &people, &facts, &raw)
+	err := row.Scan(&r.Run, &r.SourceID, &r.Scraper, &scraped, &r.Digest, &r.Name, &names, &r.Address.Street, &r.Address.City, &r.Address.State, &r.Address.Zip, &r.Address.County, &r.Lat, &r.Lon, &people, &facts, &raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return source.Row{}, ErrNotFound
 	}
@@ -325,7 +325,7 @@ func scanRow(row scanner) (source.Row, error) {
 		return source.Row{}, err
 	}
 	r.Facts, r.Raw = facts, raw
-	r.Collected = decodeTime(collected)
+	r.Scraped = decodeTime(scraped)
 	return r, nil
 }
 

@@ -169,9 +169,9 @@ func expectedCurrent(r store.Run) *CurrentRun {
 	return &CurrentRun{v.ID, v.Status, v.Started, v.StartedText, v.Finished, v.FinishedText, v.Rows, v.New, v.Changed, v.Gone}
 }
 
-// R-0MB6-K2N2 R-F477-FYMY R-5DCO-QWBF R-FRDA-PLQ5
+// R-OZOQ-XDJF R-F477-FYMY R-5DCO-QWBF R-FRDA-PLQ5
 // R-FT41-8YYK R-F6N0-7I4C R-F7UW-L9V1 R-F92S-Z1LQ R-FAAP-CTCF
-// R-5EKL-4O24 R-FCQI-4CTT R-FF6A-VWB7 R-FGE7-9O1W R-FHM3-NFSL
+// R-5EKL-4O24 R-FCQI-4CTT R-FF6A-VWB7 R-FGE7-9O1W R-Q09Q-EHS9
 // R-FIU0-17JA R-FK1W-EZ9Z R-FL9S-SR0O R-FMHP-6IRD R-FNPL-KAI2 R-FOXH-Y28R
 func TestLoadAndWrite(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -204,7 +204,7 @@ func TestLoadAndWrite(t *testing.T) {
 	cases := []struct {
 		name string
 		data any
-	}{{"landing", LandingData{b, []ScraperRow{}, []RunRow{}, "", "", ""}}, {"tools", ToolsData{b, []ToolRow{{"test-tool", "test-description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}, {"row", RowData{b, RowView{}}}, {"row", RowData{b, RowView{"test-scraper", "test-run", "test-source", "collected", "collected-text", "digest", "test-name", []string{"one", "two"}, "street", "city", "state", "zip", "county", "lat", "lon", []PersonRow{{"person", "role"}}, []FactRow{{"key", "value"}}, "raw"}}}}
+	}{{"landing", LandingData{b, []ScraperRow{}, []RunRow{}, "", "", ""}}, {"tools", ToolsData{b, []ToolRow{{"test-tool", "test-description"}}}}, {"about", AboutData{b, Description}}, {"notfound", NotFoundData{b}}, {"row", RowData{b, RowView{}}}, {"row", RowData{b, RowView{"test-scraper", "test-run", "test-source", "scraped", "scraped-text", "digest", "test-name", []string{"one", "two"}, "street", "city", "state", "zip", "county", "lat", "lon", []PersonRow{{"person", "role"}}, []FactRow{{"key", "value"}}, "raw"}}}}
 	for _, status := range []string{store.StatusRunning, store.StatusDone, store.StatusFailed} {
 		for _, reason := range []string{"", store.ReasonSource, store.ReasonInterrupted, store.ReasonStore} {
 			for _, full := range []bool{false, true} {
@@ -311,7 +311,7 @@ func TestLanding(t *testing.T) {
 	assertBody(t, request(f.h, "GET", "/", "first"), 200, "landing", d)
 }
 
-// R-GDUB-R2KD R-GF28-4UB2 R-FV0Z-UWY8 R-EPO9-X5IF R-FZWL-DZX0
+// R-Q55B-XKR1 R-Q6D8-BCHQ R-FV0Z-UWY8 R-PXTX-MYAV R-FZWL-DZX0
 func TestRunPages(t *testing.T) {
 	f := setup(t)
 	callRows := rowsTool(t, f)
@@ -385,18 +385,18 @@ func TestRunPages(t *testing.T) {
 	}
 }
 
-// R-EY7K-LJPA R-EPO9-X5IF R-FZWL-DZX0
+// R-PZ1U-0Q1K R-PXTX-MYAV R-FZWL-DZX0
 func TestRowPage(t *testing.T) {
 	f := setup(t)
 	r := f.add(t, "alpha", "")
 	lat, lon := 46.25, -123.125
-	w := source.Row{SourceID: "part/with space%?", Collected: *f.now, Digest: source.Digest([]byte(`{"first":"one","second":"two"}`)), Name: "test-company", Names: []string{"test-company", "test-alias"}, Address: source.Address{Street: "test-street", City: "test-city", State: "test-state", Zip: "test-zip", County: "test-county"}, Lat: &lat, Lon: &lon, People: []source.Person{{Name: "test-person", Role: "test-role"}}, Facts: []byte(`{"z": null, "a": ["one", "two"], "m": "14"}`), Raw: []byte(`{"first":"one","second":"two"}`)}
+	w := source.Row{SourceID: "part/with space%?", Scraped: *f.now, Digest: source.Digest([]byte(`{"first":"one","second":"two"}`)), Name: "test-company", Names: []string{"test-company", "test-alias"}, Address: source.Address{Street: "test-street", City: "test-city", State: "test-state", Zip: "test-zip", County: "test-county"}, Lat: &lat, Lon: &lon, People: []source.Person{{Name: "test-person", Role: "test-role"}}, Facts: []byte(`{"z": null, "a": ["one", "two"], "m": "14"}`), Raw: []byte(`{"first":"one","second":"two"}`)}
 	r = f.finish(t, r, []source.Row{w})
 	got, err := f.st.GetRow(context.Background(), r.ID, w.SourceID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	v := RowView{r.Scraper, r.ID, w.SourceID, got.Collected.UTC().Format(time.RFC3339), got.Collected.UTC().Format(SecondLayout), got.Digest, w.Name, w.Names, "test-street", "test-city", "test-state", "test-zip", "test-county", "46.25", "-123.125", []PersonRow{{"test-person", "test-role"}}, []FactRow{{"a", `["one","two"]`}, {"m", `"14"`}, {"z", "null"}}, "{\n  \"first\": \"one\",\n  \"second\": \"two\"\n}"}
+	v := RowView{r.Scraper, r.ID, w.SourceID, got.Scraped.UTC().Format(time.RFC3339), got.Scraped.UTC().Format(SecondLayout), got.Digest, w.Name, w.Names, "test-street", "test-city", "test-state", "test-zip", "test-county", "46.25", "-123.125", []PersonRow{{"test-person", "test-role"}}, []FactRow{{"a", `["one","two"]`}, {"m", `"14"`}, {"z", "null"}}, "{\n  \"first\": \"one\",\n  \"second\": \"two\"\n}"}
 	p := "/runs/" + r.ID + "/rows/" + url.PathEscape(w.SourceID)
 	b := baseBanner()
 	b.Trail = []page.Level{{Name: r.ID, URL: "/runs/" + r.ID}, {Name: w.SourceID, URL: p}}
@@ -404,7 +404,7 @@ func TestRowPage(t *testing.T) {
 }
 
 // R-G603-AUMH R-G77Z-OMD6 R-G9NS-G5UK R-GAVO-TXL9 R-GDBH-LH2N
-// R-1AIB-IB7G R-G4S6-X2VS R-G3KA-JB53
+// R-P4KC-GGI7 R-G4S6-X2VS R-G3KA-JB53
 func TestRoutesMethodsAndFailures(t *testing.T) {
 	f := setup(t)
 	r := f.add(t, "alpha", "")
@@ -635,7 +635,7 @@ func TestLandingCursorPageMatchesRunsTool(t *testing.T) {
 	}
 }
 
-// R-FV0Z-UWY8 R-EPO9-X5IF
+// R-FV0Z-UWY8 R-PXTX-MYAV R-Q09Q-EHS9
 func TestViewConversions(t *testing.T) {
 	tm := time.Date(2026, 10, 5, 10, 0, 7, 999, time.FixedZone("test", 3600))
 	r := store.Run{ID: "test-id", Scraper: "test-scraper", Status: store.StatusDone, Started: tm, Finished: tm.Add(3 * time.Second), Rows: 15, New: 4, Changed: 3, Unchanged: 8, Gone: 7, UserEmail: "owner@example.test"}
@@ -649,9 +649,13 @@ func TestViewConversions(t *testing.T) {
 		}
 	}
 	lat, lon := 46.25, -123.125
-	w := source.Row{Scraper: "s", Run: "r", SourceID: "id", Collected: tm, Digest: "digest", Name: "name", Names: []string{"name", "alias"}, Address: source.Address{Street: "street", City: "city", State: "state", Zip: "zip", County: "county"}, Lat: &lat, Lon: &lon, People: []source.Person{{Name: "person", Role: "role"}}, Facts: []byte(`{"z": null,"a": [1, 2]}`), Raw: []byte(`{"second":2,"first":1}`)}
+	w := source.Row{Scraper: "s", Run: "r", SourceID: "id", Scraped: tm, Digest: "digest", Name: "name", Names: []string{"name", "alias"}, Address: source.Address{Street: "street", City: "city", State: "state", Zip: "zip", County: "county"}, Lat: &lat, Lon: &lon, People: []source.Person{{Name: "person", Role: "role"}}, Facts: []byte(`{"z": null,"a": [1, 2]}`), Raw: []byte(`{"second":2,"first":1}`)}
 	expected := RowView{"s", "r", "id", "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC", "digest", "name", []string{"name", "alias"}, "street", "city", "state", "zip", "county", "46.25", "-123.125", []PersonRow{{"person", "role"}}, []FactRow{{"a", "[1,2]"}, {"z", "null"}}, "{\n  \"second\": 2,\n  \"first\": 1\n}"}
-	if !reflect.DeepEqual(rowView(w), expected) || rowLine(w) != (RowLine{"id", "name", "city", "state", "county"}) {
+	view := rowView(w)
+	if view.Scraped != tm.UTC().Format(time.RFC3339) || view.ScrapedText != tm.UTC().Format(SecondLayout) {
+		t.Fatal("scraped timestamp fields", view.Scraped, view.ScrapedText)
+	}
+	if !reflect.DeepEqual(view, expected) || rowLine(w) != (RowLine{"id", "name", "city", "state", "county"}) {
 		t.Fatal("row conversion")
 	}
 	w.Lat = nil
@@ -732,7 +736,7 @@ func rowsTool(t *testing.T, f fixture) func(string, string) tools.RowList {
 	}
 }
 
-// R-FWRQ-EA6N R-G5B1-2ODI R-GGA4-IM1R R-1AIB-IB7G
+// R-FWRQ-EA6N R-G5B1-2ODI R-Q7L4-P48F R-P4KC-GGI7
 func TestPageTokenRefusals(t *testing.T) {
 	f := setup(t)
 	pruned := f.finish(t, f.add(t, "alpha", ""), nil)
@@ -799,7 +803,7 @@ func TestPageTokenRefusals(t *testing.T) {
 	}
 }
 
-// R-FWRQ-EA6N R-FZQJ-VHV8 R-GDUB-R2KD
+// R-FWRQ-EA6N R-FZQJ-VHV8 R-Q55B-XKR1
 func TestPageQuerySelection(t *testing.T) {
 	f := setup(t)
 	done := f.finish(t, f.add(t, "alpha", ""), []source.Row{{SourceID: "one", Name: "chosen", Facts: []byte(`{}`), Raw: []byte(`{}`)}})
@@ -828,7 +832,7 @@ func TestPageQuerySelection(t *testing.T) {
 	}
 }
 
-// R-GDUB-R2KD
+// R-Q55B-XKR1
 func TestNonDoneRunPreservesDecodablePage(t *testing.T) {
 	f := setup(t)
 	for _, token := range []string{(paging.Token{Tool: "rows"}).Encode("position"), (paging.Token{Tool: "rows-before"}).Encode("position"), "last"} {
@@ -1016,7 +1020,7 @@ func TestLandingNavigation(t *testing.T) {
 }
 
 // R-GA6M-LRCA R-GBEI-ZJ2Z R-GCMF-DATO R-GHI0-WDSG
-// R-GJXT-NX9U R-GL5Q-1P0J R-GDUB-R2KD
+// R-Q8T1-2VZ4 R-QA0X-GNPT R-Q55B-XKR1
 func TestRunNavigation(t *testing.T) {
 	for _, count := range []int{0, paging.DefaultLimit, paging.DefaultLimit + 1, paging.DefaultLimit + 2, 2 * paging.DefaultLimit, 3*paging.DefaultLimit + 8} {
 		t.Run(strconv.Itoa(count), func(t *testing.T) {
@@ -1104,7 +1108,7 @@ func TestRunNavigation(t *testing.T) {
 func loadRows(t *testing.T, st *store.Store, id string, rows []source.Row) store.Counts {
 	t.Helper()
 	step := func(context.Context, int64, time.Duration) error { return nil }
-	c, err := st.Collect(t.Context(), id, step)
+	c, err := st.Build(t.Context(), id, step)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1121,7 +1125,7 @@ func loadRows(t *testing.T, st *store.Store, id string, rows []source.Row) store
 	return counts
 }
 
-// R-19AF-4JGR R-5H0D-W7JI R-5I8A-9ZA7
+// R-P3CG-2ORI R-PMUU-70MM R-PO2Q-KSDB
 func TestRunFilePageRefusals(t *testing.T) {
 	f := setup(t)
 	rows := []source.Row{}

@@ -99,7 +99,7 @@ func TestRunAssembly(t *testing.T) {
 	}
 	for _, line := range lines {
 		var row map[string]any
-		if e = json.Unmarshal([]byte(line), &row); e != nil || row["run"] != id || row["raw"] == nil || row["collected"] != fixtureNow().Format(time.RFC3339) {
+		if e = json.Unmarshal([]byte(line), &row); e != nil || row["run"] != id || row["raw"] == nil || row["scraped"] != row["collected"] || row["scraped"] != fixtureNow().Format(time.RFC3339) {
 			t.Fatalf("row %v %v", row, e)
 		}
 	}

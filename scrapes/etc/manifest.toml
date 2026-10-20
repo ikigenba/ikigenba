@@ -1,5 +1,5 @@
 app = "scrapes"
-description = "Public records about businesses in range, collected per source as rows per run"
+description = "Public records about businesses in range, scraped per source as rows per run"
 default = false
 mcp = true
 guests = false

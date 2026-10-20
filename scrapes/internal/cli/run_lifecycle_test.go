@@ -36,19 +36,19 @@ func seedRun(t *testing.T, st *store.Store, scraper, status string) store.Run {
 	}
 	counts := store.Counts{}
 	if status == store.StatusDone {
-		collection, err := st.Collect(ctx, r.ID, nil)
+		build, err := st.Build(ctx, r.ID, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, row := range []source.Row{{SourceID: "seed-one", Raw: []byte(`{"dot_number":"seed-one"}`), Digest: "seed-digest", Collected: fixtureNow()}, {SourceID: "seed-two", Raw: []byte(`{"dot_number":"seed-two"}`), Digest: "seed-digest", Collected: fixtureNow()}} {
-			if err := collection.Add(ctx, []source.Row{row}); err != nil {
+		for _, row := range []source.Row{{SourceID: "seed-one", Raw: []byte(`{"dot_number":"seed-one"}`), Digest: "seed-digest", Scraped: fixtureNow()}, {SourceID: "seed-two", Raw: []byte(`{"dot_number":"seed-two"}`), Digest: "seed-digest", Scraped: fixtureNow()}} {
+			if err := build.Add(ctx, []source.Row{row}); err != nil {
 				t.Fatal(err)
 			}
 		}
-		if err := collection.Seal(ctx); err != nil {
+		if err := build.Seal(ctx); err != nil {
 			t.Fatal(err)
 		}
-		counts, err = collection.Load(ctx, nil)
+		counts, err = build.Load(ctx, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -597,11 +597,11 @@ func awaitDiagnosticEvent(t *testing.T, b *outputBuffer, name string) {
 func loadSeedRows(t *testing.T, st *store.Store, id string) {
 	t.Helper()
 	ctx := context.Background()
-	c, err := st.Collect(ctx, id, nil)
+	c, err := st.Build(ctx, id, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = c.Add(ctx, []source.Row{{SourceID: "seed-one", Raw: []byte(`{"id":"seed-one"}`), Digest: "seed-digest", Collected: fixtureNow()}}); err != nil {
+	if err = c.Add(ctx, []source.Row{{SourceID: "seed-one", Raw: []byte(`{"id":"seed-one"}`), Digest: "seed-digest", Scraped: fixtureNow()}}); err != nil {
 		t.Fatal(err)
 	}
 	if err = c.Seal(ctx); err != nil {

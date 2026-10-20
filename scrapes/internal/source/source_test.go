@@ -17,19 +17,19 @@ func (fake) Scrape(_ context.Context, batch func([]source.Row) error) error {
 	return batch([]source.Row{})
 }
 
-// R-CJDD-W8F4 R-0OXS-TK1T R-0Q5P-7BSI
+// R-PVE4-VETH R-0OXS-TK1T R-P0WN-B5A4
 func TestRowJSON(t *testing.T) {
 	var sc source.Scraper = fake{}
 	if sc.Name() != "test" || sc.Scrape(context.Background(), func([]source.Row) error { return nil }) != nil || source.Called != "source.called" {
 		t.Fatal("interface")
 	}
 	lat, lon := 1.25, -2.5
-	r := source.Row{Scraper: "test", Run: "run_test", SourceID: "17", Collected: time.Date(2024, 1, 2, 3, 4, 5, 0, time.FixedZone("east", 3600)), Digest: "digest", Name: "Test", Names: []string{"Test", "Other"}, Address: source.Address{Street: "Street", City: "City", State: "ST", Zip: "12345", County: "001"}, Lat: &lat, Lon: &lon, People: []source.Person{{Name: "Test LLC", Role: "party"}}, Facts: json.RawMessage(`{"value":"001"}`), Raw: json.RawMessage(`{"dot_number":"17"}`)}
+	r := source.Row{Scraper: "test", Run: "run_test", SourceID: "17", Scraped: time.Date(2024, 1, 2, 3, 4, 5, 0, time.FixedZone("east", 3600)), Digest: "digest", Name: "Test", Names: []string{"Test", "Other"}, Address: source.Address{Street: "Street", City: "City", State: "ST", Zip: "12345", County: "001"}, Lat: &lat, Lon: &lon, People: []source.Person{{Name: "Test LLC", Role: "party"}}, Facts: json.RawMessage(`{"value":"001"}`), Raw: json.RawMessage(`{"dot_number":"17"}`)}
 	got, err := r.MarshalJSON()
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"scraper":"test","run":"run_test","source_id":"17","collected":"2024-01-02T02:04:05Z","digest":"digest","name":"Test","names":["Test","Other"],"address":{"street":"Street","city":"City","state":"ST","zip":"12345","county":"001"},"lat":1.25,"lon":-2.5,"people":[{"name":"Test LLC","role":"party"}],"facts":{"value":"001"},"raw":{"dot_number":"17"}}`
+	want := `{"scraper":"test","run":"run_test","source_id":"17","scraped":"2024-01-02T02:04:05Z","digest":"digest","name":"Test","names":["Test","Other"],"address":{"street":"Street","city":"City","state":"ST","zip":"12345","county":"001"},"lat":1.25,"lon":-2.5,"people":[{"name":"Test LLC","role":"party"}],"facts":{"value":"001"},"raw":{"dot_number":"17"}}`
 	if string(got) != want {
 		t.Fatalf("%s", got)
 	}
@@ -37,7 +37,7 @@ func TestRowJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = `{"scraper":"","run":"","source_id":"","collected":"0001-01-01T00:00:00Z","digest":"","name":"","names":[],"address":{},"people":[],"facts":{}}`
+	want = `{"scraper":"","run":"","source_id":"","scraped":"0001-01-01T00:00:00Z","digest":"","name":"","names":[],"address":{},"people":[],"facts":{}}`
 	if string(got) != want {
 		t.Fatalf("empty: %s", got)
 	}

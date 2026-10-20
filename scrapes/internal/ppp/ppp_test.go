@@ -44,7 +44,7 @@ func csvBody(records ...[]string) string {
 	return b.String()
 }
 
-// R-CKLA-A05T R-CLT6-NRWI R-CO8Z-FBDW
+// R-CKLA-A05T R-PWM1-96K6 R-CO8Z-FBDW
 func TestAPI(t *testing.T) {
 	if ppp.Name != "ppp" || ppp.DefaultBaseURL != "https://data.sba.gov/sites/default/files/distribution/SBA-OCA-2022-07-001/" || ppp.BatchSize != 1000 || ppp.Retries != 3 || ppp.Backoff != time.Second || ppp.HeaderTimeout != 60*time.Second || ppp.BodyTimeout != 20*time.Minute {
 		t.Fatal("constants")
@@ -119,8 +119,8 @@ func TestWalk(t *testing.T) {
 		calls++
 		sizes = append(sizes, len(batch))
 		for _, r := range batch {
-			if !r.Collected.Equal(clock().Add(time.Duration(calls) * time.Hour).UTC().Truncate(time.Second)) {
-				t.Fatal(r.Collected)
+			if !r.Scraped.Equal(clock().Add(time.Duration(calls) * time.Hour).UTC().Truncate(time.Second)) {
+				t.Fatal(r.Scraped)
 			}
 		}
 		rows = append(rows, batch...)
@@ -136,7 +136,7 @@ func TestWalk(t *testing.T) {
 		}
 		decoded := append([]string(nil), r...)
 		decoded[4] = "A,¿\u00a0\u0080"
-		want, e := ppp.RowOf(decoded, rows[index].Collected)
+		want, e := ppp.RowOf(decoded, rows[index].Scraped)
 		if e != nil || !reflect.DeepEqual(rows[index], want) {
 			t.Fatal(index, rows[index], want, e)
 		}
@@ -148,7 +148,7 @@ func TestWalk(t *testing.T) {
 	}
 }
 
-// R-PRZQ-6BXF R-D5BK-S3RM R-PT7M-K3O4
+// R-RVC7-FVKG R-D5BK-S3RM R-PT7M-K3O4
 func TestRowOf(t *testing.T) {
 	r := make([]string, 53)
 	for i := range r {
@@ -191,7 +191,7 @@ func TestRowOf(t *testing.T) {
 		facts[k] = r[indices[i]]
 	}
 	f, _ := json.Marshal(facts)
-	want := source.Row{Scraper: ppp.Name, SourceID: r[0], Collected: clock().UTC().Truncate(time.Second), Digest: source.Digest(raw.Bytes()), Name: "ACME INC", Names: []string{"ACME INC"}, Address: source.Address{Street: "STREET", City: "Test City", State: "WI", Zip: "55401", County: "county"}, People: []source.Person{}, Raw: raw.Bytes(), Facts: f}
+	want := source.Row{Scraper: ppp.Name, SourceID: r[0], Scraped: clock().UTC().Truncate(time.Second), Digest: source.Digest(raw.Bytes()), Name: "ACME INC", Names: []string{"ACME INC"}, Address: source.Address{Street: "STREET", City: "Test City", State: "WI", Zip: "55401", County: "county"}, People: []source.Person{}, Raw: raw.Bytes(), Facts: f}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatal(got, want)
 	}
@@ -446,7 +446,7 @@ func TestBodyFailuresAndSeparateBounds(t *testing.T) {
 	}
 }
 
-// R-D1NV-MSJJ R-CLT6-NRWI
+// R-D1NV-MSJJ R-PWM1-96K6
 func TestCancellation(t *testing.T) {
 	for _, phase := range []string{"headers", "body", "sleep", "defaultsleep", "beforebatch", "initial"} {
 		t.Run(phase, func(t *testing.T) {

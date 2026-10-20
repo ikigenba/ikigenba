@@ -162,11 +162,11 @@ func TestCurrentRefusals(t *testing.T) {
 	}
 }
 
-// R-DWBI-3K05 R-DXJE-HBQU R-WW7P-NGYF R-E2F0-0EPM R-DSNS-Y8S2
+// R-DWBI-3K05 R-DXJE-HBQU R-SB6W-EW7H R-E2F0-0EPM R-DSNS-Y8S2
 func TestReadRecordsAndRows(t *testing.T) {
 	f := setup(t)
 	row := func(id string) source.Row {
-		return source.Row{SourceID: id, Name: "fixture-" + id, Facts: json.RawMessage(`{}`), Raw: json.RawMessage(`{"fixture":true}`)}
+		return source.Row{SourceID: id, Name: "fixture-" + id, Scraped: time.Date(2025, 4, 3, 2, 1, 0, 0, time.FixedZone("fixture", 3600)), Facts: json.RawMessage(`{}`), Raw: json.RawMessage(`{"fixture":true}`)}
 	}
 	old := f.seed(t, store.StatusDone, row("old"))
 	done := f.seed(t, store.StatusDone, row("c"), row("a"), row("b"))
@@ -189,6 +189,12 @@ func TestReadRecordsAndRows(t *testing.T) {
 		var expected bytes.Buffer
 		if err := f.cfg.Store.EachRow(t.Context(), r.ID, func(row source.Row) error {
 			b, e := json.Marshal(row)
+			stamp, stampErr := json.Marshal(row.Scraped.UTC().Format(time.RFC3339))
+			if stampErr != nil {
+				t.Fatal(stampErr)
+			}
+			member := `"scraped":` + string(stamp)
+			b = []byte(strings.Replace(string(b), member, member+`,"collected":`+string(stamp), 1))
 			expected.Write(b)
 			expected.WriteByte('\n')
 			return e
@@ -608,7 +614,7 @@ func TestFailingHandlerEmitsNoRunEvents(t *testing.T) {
 func loadRows(t *testing.T, st *store.Store, id string, rows []source.Row) store.Counts {
 	t.Helper()
 	step := func(context.Context, int64, time.Duration) error { return nil }
-	c, err := st.Collect(t.Context(), id, step)
+	c, err := st.Build(t.Context(), id, step)
 	if err != nil {
 		t.Fatal(err)
 	}

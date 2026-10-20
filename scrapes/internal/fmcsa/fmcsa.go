@@ -109,10 +109,10 @@ func (s *Scraper) Scrape(ctx context.Context, batch func([]source.Row) error) er
 				return err
 			}
 			if len(records) > 0 {
-				collected := s.cfg.Now()
+				scraped := s.cfg.Now()
 				rows := make([]source.Row, len(records))
 				for i, raw := range records {
-					rows[i], err = RowOf(raw, collected)
+					rows[i], err = RowOf(raw, scraped)
 					if err != nil {
 						return err
 					}
@@ -214,7 +214,7 @@ func (s *Scraper) request(ctx context.Context, query url.Values) ([]byte, error)
 }
 
 // RowOf maps an original FMCSA record into a row.
-func RowOf(raw json.RawMessage, collected time.Time) (source.Row, error) {
+func RowOf(raw json.RawMessage, scraped time.Time) (source.Row, error) {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) != nil || fields == nil {
 		return source.Row{}, errors.New("record is not an object")
@@ -257,5 +257,5 @@ func RowOf(raw json.RawMessage, collected time.Time) (source.Row, error) {
 	if err != nil {
 		return source.Row{}, err
 	}
-	return source.Row{Scraper: Name, SourceID: dot, Collected: collected.UTC().Truncate(time.Second), Digest: source.Digest(raw), Name: name, Names: names, Address: source.NewAddress(str("phy_street"), str("phy_city"), str("phy_state"), str("phy_zip"), str("phy_cnty")), People: people, Facts: factJSON, Raw: append(json.RawMessage(nil), raw...)}, nil
+	return source.Row{Scraper: Name, SourceID: dot, Scraped: scraped.UTC().Truncate(time.Second), Digest: source.Digest(raw), Name: name, Names: names, Address: source.NewAddress(str("phy_street"), str("phy_city"), str("phy_state"), str("phy_zip"), str("phy_cnty")), People: people, Facts: factJSON, Raw: append(json.RawMessage(nil), raw...)}, nil
 }

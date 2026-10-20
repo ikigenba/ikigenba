@@ -47,11 +47,11 @@ func (s *retryStore) refuse(op, id string) error {
 	}
 	return nil
 }
-func (s *retryStore) Collect(ctx context.Context, id string, step store.Step) (*store.Collection, error) {
-	if err := s.refuse("Collect", id); err != nil {
+func (s *retryStore) Build(ctx context.Context, id string, step store.Step) (*store.Build, error) {
+	if err := s.refuse("Build", id); err != nil {
 		return nil, err
 	}
-	return s.Store.Collect(ctx, id, step)
+	return s.Store.Build(ctx, id, step)
 }
 func (s *retryStore) TidyFiles(ctx context.Context) error { return s.Store.TidyFiles(ctx) }
 func (s *retryStore) FinishRun(ctx context.Context, id string, counts store.Counts) (store.Run, error) {
@@ -96,7 +96,7 @@ func retryEngine(t *testing.T, f *fixture, s runs.Store, sc source.Scraper, slee
 	return e
 }
 
-// R-2XD3-5S71 R-QKCB-RXSE R-QLK8-5PJ3 R-QMS4-JH9S R-QP7X-B0R6 R-R2MT-IHWT R-R3UP-W9NI R-R52M-A1E7 R-R6AI-NT4W R-3EFO-IKKR R-3FNK-WCBG R-3GVH-A425
+// R-S07S-YYJ8 R-P705-7ZZL R-PEBJ-IMFR R-QLK8-5PJ3 R-QMS4-JH9S R-QP7X-B0R6 R-R2MT-IHWT R-R3UP-W9NI R-RXS0-7F1U R-RYZW-L6SJ R-PFJF-WE6G R-PHZ8-NXNU
 func TestWriteRetriesAndDiagnostics(t *testing.T) {
 	if runs.WriteRetries != 5 || runs.WriteBackoff != time.Second || runs.Retrying == "" || runs.GaveUp == "" || strings.Contains(runs.Retrying+runs.GaveUp, "\n") {
 		t.Fatal("retry declarations")
@@ -511,7 +511,7 @@ func TestSuccessfulEndingCrossingDrainDeadlineEmitsFinished(t *testing.T) {
 	}
 }
 
-// R-QKCB-RXSE
+// R-RXS0-7F1U
 func TestNilSleepBuildPauseEndsOnDrain(t *testing.T) {
 	f := setup(t)
 	now := func() time.Time { return time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC) }
@@ -562,15 +562,15 @@ type observedBuildPause struct {
 	sleeping chan struct{}
 }
 
-func (s *observedBuildPause) Collect(ctx context.Context, id string, step store.Step) (*store.Collection, error) {
+func (s *observedBuildPause) Build(ctx context.Context, id string, step store.Step) (*store.Build, error) {
 	observed := &observedContext{Context: ctx, seen: s.sleeping}
-	return s.Store.Collect(ctx, id, func(ctx context.Context, n int64, took time.Duration) error {
+	return s.Store.Build(ctx, id, func(ctx context.Context, n int64, took time.Duration) error {
 		observed.Context = ctx
 		return step(observed, n, took)
 	})
 }
 
-// R-3I3D-NVSU
+// R-PJ75-1PEJ
 func TestDrainDeadlineWhileStoreCallBlocked(t *testing.T) {
 	for _, op := range []string{"Start", "Deliver", "RunningRuns", "FailRun", "TidyFiles"} {
 		t.Run(op, func(t *testing.T) {
@@ -659,7 +659,7 @@ func (s *heldEngineStore) TidyFiles(ctx context.Context) error {
 	return s.Store.TidyFiles(ctx)
 }
 
-// R-3I3D-NVSU R-2DWR-Y34J
+// R-PJ75-1PEJ R-2DWR-Y34J
 func TestSuccessfulStartCrossingDrainDeadlineIsInterrupted(t *testing.T) {
 	for _, delivery := range []bool{false, true} {
 		t.Run(map[bool]string{false: "Start", true: "Deliver"}[delivery], func(t *testing.T) {
@@ -735,7 +735,7 @@ func (s *heldSuccessfulStart) AddRun(ctx context.Context, r store.Run) (store.Ru
 	return r, err
 }
 
-// R-3I3D-NVSU
+// R-PJ75-1PEJ
 func TestDrainDeadlineWhileDiagnosticBlocked(t *testing.T) {
 	f := setup(t)
 	release := make(chan struct{})
@@ -743,7 +743,7 @@ func TestDrainDeadlineWhileDiagnosticBlocked(t *testing.T) {
 	unblock := func() { once.Do(func() { close(release) }) }
 	defer unblock()
 	out := &heldDiagnostic{entered: make(chan struct{}), release: release, exited: make(chan struct{})}
-	s := &retryStore{Store: f.st, op: "Collect", failures: 1, err: errors.New("chosen error")}
+	s := &retryStore{Store: f.st, op: "Build", failures: 1, err: errors.New("chosen error")}
 	e := runs.New(runs.Config{Store: s, Scrapers: scrapers.New(fake{"fake", func(context.Context, func([]source.Row) error) error {
 		t.Error("refused build walked source")
 		return nil

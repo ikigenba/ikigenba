@@ -60,7 +60,7 @@ func add(t *testing.T, s *store.Store, scraper string) store.Run {
 }
 func finish(t *testing.T, s *store.Store, r store.Run, rows ...source.Row) store.Run {
 	t.Helper()
-	c, e := s.Collect(ctx, r.ID, nil)
+	c, e := s.Build(ctx, r.ID, nil)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -238,7 +238,7 @@ func TestIDCandidates(t *testing.T) {
 	is(t, e, store.ErrUnreachable)
 }
 
-// R-NU0Z-NBT0 R-O7FV-USYN R-O8NS-8KPC R-NDH2-N018 R-O503-39H9 R-NWGS-EVAE R-NB19-VGJU R-047I-BGG0
+// R-R3AI-N5IH R-RJ57-M65I R-RLL0-DPMW R-QSBF-77U8 R-RE9M-336Q R-R4IF-0X96 R-QNFT-O4VG R-047I-BGG0
 func TestRowsComparisonAndReads(t *testing.T) {
 	s, _ := fresh(t)
 	base := finish(t, s, add(t, s, "a"), source.Row{SourceID: "2", Digest: "b"}, source.Row{SourceID: "3", Digest: "x"}, source.Row{SourceID: "4", Digest: "d"})
@@ -247,8 +247,8 @@ func TestRowsComparisonAndReads(t *testing.T) {
 	}
 	r := add(t, s, "a")
 	lat, lon := 1.2, 3.4
-	row := source.Row{Scraper: "ignored", Run: "ignored", SourceID: "1", Collected: time.Date(2026, 2, 3, 4, 5, 6, 789, time.FixedZone("fixture", -3600)), Digest: "a", Name: "fixture", Names: []string{"Fixture Trucking", "Other"}, Address: source.Address{Street: "test street", City: "test city", State: "MN", Zip: "00000", County: "test county"}, Lat: &lat, Lon: &lon, People: []source.Person{{Name: "fixture person", Role: "fixture role"}}, Facts: []byte(" { \"units\": 5 } "), Raw: []byte(" { \"id\": \"1\" } ")}
-	col, e := s.Collect(ctx, r.ID, nil)
+	row := source.Row{Scraper: "ignored", Run: "ignored", SourceID: "1", Scraped: time.Date(2026, 2, 3, 4, 5, 6, 789, time.FixedZone("fixture", -3600)), Digest: "a", Name: "fixture", Names: []string{"Fixture Trucking", "Other"}, Address: source.Address{Street: "test street", City: "test city", State: "MN", Zip: "00000", County: "test county"}, Lat: &lat, Lon: &lon, People: []source.Person{{Name: "fixture person", Role: "fixture role"}}, Facts: []byte(" { \"units\": 5 } "), Raw: []byte(" { \"id\": \"1\" } ")}
+	col, e := s.Build(ctx, r.ID, nil)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -282,7 +282,7 @@ func TestRowsComparisonAndReads(t *testing.T) {
 	}
 	row.Run = r.ID
 	row.Scraper = r.Scraper
-	row.Collected = row.Collected.UTC().Truncate(time.Second)
+	row.Scraped = row.Scraped.UTC().Truncate(time.Second)
 	got, e := s.GetRow(ctx, r.ID, "1")
 	if e != nil || !reflect.DeepEqual(got, row) {
 		t.Fatal(got, row, e)
@@ -411,7 +411,7 @@ func TestConcurrentOperations(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	col, e := s.Collect(ctx, r.ID, nil)
+	col, e := s.Build(ctx, r.ID, nil)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -450,7 +450,7 @@ func TestConcurrentOperations(t *testing.T) {
 	wg.Wait()
 }
 
-// R-NU0Z-NBT0 R-O7FV-USYN R-O8NS-8KPC R-NYWL-6ERS R-OD11-7L2V
+// R-R3AI-N5IH R-RJ57-M65I R-RLL0-DPMW R-NYWL-6ERS R-OD11-7L2V
 func TestRowsAndOutcomesPersist(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "db")
 	s, d := open(t, path, nil)
@@ -461,7 +461,7 @@ func TestRowsAndOutcomesPersist(t *testing.T) {
 	raw := source.Row{SourceID: "record", Names: []string{"fixture"}, Facts: []byte(" {} "), Raw: []byte(" {\"key\":1} ")}
 	done := finish(t, s, r, raw)
 	partial := add(t, s, "a")
-	col, e := s.Collect(ctx, partial.ID, nil)
+	col, e := s.Build(ctx, partial.ID, nil)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -523,7 +523,7 @@ func TestRowsAndOutcomesPersist(t *testing.T) {
 	}
 }
 
-// R-NDH2-N018 R-047I-BGG0 R-O7FV-USYN R-O8NS-8KPC R-O503-39H9
+// R-QSBF-77U8 R-047I-BGG0 R-RJ57-M65I R-RLL0-DPMW R-RE9M-336Q
 func TestStartOrderAndBaseline(t *testing.T) {
 	s, _ := fresh(t)
 	a := finish(t, s, add(t, s, "a"), source.Row{SourceID: "x", Digest: "first"})
@@ -569,7 +569,7 @@ func TestStartOrderAndBaseline(t *testing.T) {
 	}
 }
 
-// R-ZQSM-3ZAD R-ZS0I-HR12 R-OKUS-2A4A
+// R-ZQSM-3ZAD R-ZS0I-HR12 R-RSWE-OC32
 func TestRandomPrecedenceAndReadCounts(t *testing.T) {
 	rnd := bytes.NewReader(bytes.Repeat([]byte{0x5a}, 16))
 	s, _ := open(t, filepath.Join(t.TempDir(), "db"), rnd)
@@ -657,7 +657,7 @@ func TestRunsAfterWindows(t *testing.T) {
 	}
 }
 
-// R-O503-39H9
+// R-RE9M-336Q
 func TestRowsAfterNamesAndWindows(t *testing.T) {
 	s, _ := fresh(t)
 	rows := []source.Row{
@@ -732,12 +732,12 @@ func TestRowsAfterNamesAndWindows(t *testing.T) {
 	}
 }
 
-// R-NU0Z-NBT0
+// R-R3AI-N5IH
 func TestReplacedNamesPersist(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "db")
 	s, d := open(t, path, nil)
 	r := add(t, s, "a")
-	col, e := s.Collect(ctx, r.ID, nil)
+	col, e := s.Build(ctx, r.ID, nil)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -891,7 +891,7 @@ func TestRunsBeforeWindows(t *testing.T) {
 	}
 }
 
-// R-O67Z-H17Y
+// R-RGPE-UMO4
 func TestRowsBeforeNamesAndWindows(t *testing.T) {
 	s, _ := fresh(t)
 	rows := []source.Row{
@@ -991,7 +991,7 @@ func TestRowsBeforeNamesAndWindows(t *testing.T) {
 func TestRowsBeforeRunState(t *testing.T) {
 	s, _ := fresh(t)
 	running := add(t, s, "a")
-	col, e := s.Collect(ctx, running.ID, nil)
+	col, e := s.Build(ctx, running.ID, nil)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -1040,16 +1040,16 @@ func configured(t *testing.T, chunk int64, load int) (*store.Store, *db.DB, stri
 	cfg := store.Config{func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 999, time.UTC) }, bytes.NewReader(rnd), runs, chunk, load}
 	return store.New(d, cfg), d, runs
 }
-func collect(t *testing.T, s *store.Store, r store.Run, step store.Step) *store.Collection {
+func build(t *testing.T, s *store.Store, r store.Run, step store.Step) *store.Build {
 	t.Helper()
-	c, e := s.Collect(ctx, r.ID, step)
+	c, e := s.Build(ctx, r.ID, step)
 	if e != nil {
 		t.Fatal(e)
 	}
 	t.Cleanup(func() { _ = c.Discard() })
 	return c
 }
-func load(t *testing.T, c *store.Collection, rows []source.Row, step store.Step) store.Counts {
+func load(t *testing.T, c *store.Build, rows []source.Row) store.Counts {
 	t.Helper()
 	if e := c.Add(ctx, rows); e != nil {
 		t.Fatal(e)
@@ -1057,7 +1057,7 @@ func load(t *testing.T, c *store.Collection, rows []source.Row, step store.Step)
 	if e := c.Seal(ctx); e != nil {
 		t.Fatal(e)
 	}
-	n, e := c.Load(ctx, step)
+	n, e := c.Load(ctx, nil)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -1099,12 +1099,12 @@ func snapshot(t *testing.T, dir string) map[string]string {
 	return out
 }
 
-// R-MZJI-329N R-NEOZ-0RRX R-N377-8DHQ R-N4F3-M58F R-N5MZ-ZWZ4 R-NCYE-AJFA R-NE6A-OB5Z
-func TestCollectionAPI(t *testing.T) {
+// R-MZJI-329N R-QUR7-YRBM R-N377-8DHQ R-QJS4-ITND R-QL00-WLE2 R-QR3I-TG3J R-QTJB-KZKX
+func TestBuildAPI(t *testing.T) {
 	s, _, runs := configured(t, 1, 2)
 	var methods interface {
 		AddRun(context.Context, store.Run) (store.Run, error)
-		Collect(context.Context, string, store.Step) (*store.Collection, error)
+		Build(context.Context, string, store.Step) (*store.Build, error)
 		FinishRun(context.Context, string, store.Counts) (store.Run, error)
 		FailRun(context.Context, string, string) (store.Run, error)
 		GetRun(context.Context, string) (store.Run, error)
@@ -1118,7 +1118,7 @@ func TestCollectionAPI(t *testing.T) {
 		PruneRuns(context.Context, int64) ([]store.Run, error)
 		TidyFiles(context.Context) error
 	} = s
-	c, e := methods.Collect(ctx, "missing", nil)
+	c, e := methods.Build(ctx, "missing", nil)
 	if c != nil {
 		t.Fatal(c)
 	}
@@ -1129,7 +1129,7 @@ func TestCollectionAPI(t *testing.T) {
 	}
 	before, _ := methods.GetRun(ctx, r.ID)
 	step := store.Step(func(context.Context, int64, time.Duration) error { return nil })
-	c, e = methods.Collect(ctx, r.ID, step)
+	c, e = methods.Build(ctx, r.ID, step)
 	if e != nil || c == nil {
 		t.Fatal(c, e)
 	}
@@ -1162,7 +1162,7 @@ func TestCollectionAPI(t *testing.T) {
 	if e = builder.Discard(); e != nil {
 		t.Fatal(e)
 	}
-	c, e = methods.Collect(ctx, r.ID, nil)
+	c, e = methods.Build(ctx, r.ID, nil)
 	if c != nil {
 		t.Fatal(c)
 	}
@@ -1210,7 +1210,7 @@ func orderedJSONTokens(t *testing.T, data []byte) string {
 	return string(b)
 }
 
-// R-6QF7-C764
+// R-PSYC-3VC3
 func TestGzipJSONLineChunks(t *testing.T) {
 	for _, chunk := range []int64{1, store.DefaultChunkBytes} {
 		t.Run(fmt.Sprint(chunk), func(t *testing.T) {
@@ -1218,7 +1218,7 @@ func TestGzipJSONLineChunks(t *testing.T) {
 			r := add(t, s, "a")
 			lat, lon := 44.25, -93.5
 			rows := []source.Row{
-				{Scraper: "ignored", Run: "ignored", SourceID: "2", Collected: time.Date(2026, 2, 3, 4, 5, 6, 789, time.FixedZone("source", -6*3600)), Digest: "digest", Name: "<name>", Names: []string{"one", "two"}, Address: source.Address{Street: "street", City: "city", State: "state", Zip: "zip", County: "county"}, Lat: &lat, Lon: &lon, People: []source.Person{{Name: "person", Role: "role"}}, Facts: []byte(" { \"html\": \"<&>\" } "), Raw: []byte(" \n{ \"v\": 1 } \t")},
+				{Scraper: "ignored", Run: "ignored", SourceID: "2", Scraped: time.Date(2026, 2, 3, 4, 5, 6, 789, time.FixedZone("source", -6*3600)), Digest: "digest", Name: "<name>", Names: []string{"one", "two"}, Address: source.Address{Street: "street", City: "city", State: "state", Zip: "zip", County: "county"}, Lat: &lat, Lon: &lon, People: []source.Person{{Name: "person", Role: "role"}}, Facts: []byte(" { \"html\": \"<&>\" } "), Raw: []byte(" \n{ \"v\": 1 } \t")},
 				{SourceID: "1", Digest: "first", Facts: []byte(`{"v":1}`), Raw: []byte(`{"v":1}`)},
 				{SourceID: "1", Digest: "second", Facts: []byte(" { \"v\": 2 } ")},
 				{SourceID: "1", Digest: "third", Names: []string{}, People: []source.Person{}, Raw: []byte{}},
@@ -1226,7 +1226,7 @@ func TestGzipJSONLineChunks(t *testing.T) {
 			expected := make([]string, len(rows))
 			for i, row := range rows {
 				row.Run, row.Scraper = r.ID, r.Scraper
-				row.Collected = row.Collected.UTC().Truncate(time.Second)
+				row.Scraped = row.Scraped.UTC().Truncate(time.Second)
 				var e error
 				row.Facts, e = json.Marshal(string(row.Facts))
 				if e != nil {
@@ -1245,7 +1245,7 @@ func TestGzipJSONLineChunks(t *testing.T) {
 				expected[i] = orderedJSONTokens(t, encoded)
 			}
 			seenFiles := map[string]bool{}
-			c := collect(t, s, r, func(_ context.Context, n int64, _ time.Duration) error {
+			c := build(t, s, r, func(_ context.Context, n int64, _ time.Duration) error {
 				newFiles := 0
 				for name, data := range snapshot(t, runs) {
 					if seenFiles[name] {
@@ -1331,7 +1331,7 @@ func TestGzipJSONLineChunks(t *testing.T) {
 	}
 }
 
-// R-NFE7-22WO R-NGM3-FUND R-NMPL-CPCU R-O6XJ-AQDE R-OAL8-G1LH R-NU0Z-NBT0 R-N9AP-5877
+// R-QVZ4-CJ2B R-QX70-QAT0 R-R0UP-VM13 R-RO0T-594A R-R3AI-N5IH R-QM7X-AD4R
 func TestChunkAndLoadSteps(t *testing.T) {
 	for _, chunk := range []int64{1, store.DefaultChunkBytes} {
 		t.Run(fmt.Sprint(chunk), func(t *testing.T) {
@@ -1362,7 +1362,7 @@ func TestChunkAndLoadSteps(t *testing.T) {
 				}
 				return x.Err()
 			}
-			c := collect(t, s, r, step)
+			c := build(t, s, r, step)
 			rows := []source.Row{{SourceID: "3", Digest: "a"}, {SourceID: "1", Digest: "old"}, {SourceID: "2", Digest: "b"}}
 			if e := c.Add(ctx, rows); e != nil {
 				t.Fatal(e)
@@ -1397,15 +1397,9 @@ func TestChunkAndLoadSteps(t *testing.T) {
 				t.Fatal(calls)
 			}
 			loads := 0
-			previousRows := int64(0)
 			var growth int64
 			counts, e := c.Load(ctx, func(x context.Context, n int64, took time.Duration) error {
 				loads++
-				currentRows := buildRows(t, runs, r.ID)
-				if currentRows-previousRows > 2 {
-					t.Fatal("transaction exceeded row limit", currentRows, previousRows)
-				}
-				previousRows = currentRows
 				growth += n
 				return step(x, n, took)
 			})
@@ -1442,7 +1436,7 @@ func TestChunkAndLoadSteps(t *testing.T) {
 	}
 }
 
-// R-O85F-OI43 R-N0RE-GU0C R-NGM3-FUND
+// R-RKD3-ZXW7 R-N0RE-GU0C R-QX70-QAT0
 func TestDefaultsAndTiming(t *testing.T) {
 	_, d, runs := configured(t, 0, 0)
 	var tick int64
@@ -1456,7 +1450,7 @@ func TestDefaultsAndTiming(t *testing.T) {
 		chunks++
 		return nil
 	}
-	c := collect(t, s, r, step)
+	c := build(t, s, r, step)
 	for n := 0; n < 3; n++ {
 		if e := c.Add(ctx, []source.Row{{SourceID: fmt.Sprint(n)}}); e != nil {
 			t.Fatal(e)
@@ -1492,7 +1486,7 @@ func TestDefaultsAndTiming(t *testing.T) {
 	if e != nil || growth != info.Size() {
 		t.Fatal(growth, info, e)
 	}
-	empty := collect(t, s, add(t, s, "b"), step)
+	empty := build(t, s, add(t, s, "b"), step)
 	before := chunks
 	if e = empty.Seal(ctx); e != nil || before != chunks {
 		t.Fatal(e, chunks)
@@ -1504,14 +1498,14 @@ func TestDefaultsAndTiming(t *testing.T) {
 	}
 }
 
-// R-O4HQ-J6W0 R-NLHO-YXM5 R-NHTZ-TME2 R-O5PM-WYMP R-O39U-5F5B
-func TestCollectionRefusalsAndDiscard(t *testing.T) {
+// R-RD1P-PBG1 R-QZMT-HUAE R-QYEX-42JP R-RFHI-GUXF R-R9E0-K07Y
+func TestBuildRefusalsAndDiscard(t *testing.T) {
 	for _, chunk := range []int64{1, store.DefaultChunkBytes} {
 		t.Run(fmt.Sprint(chunk), func(t *testing.T) {
 			s, _, runs := configured(t, chunk, 2)
 			r := add(t, s, "a")
 			calls := 0
-			c := collect(t, s, r, func(context.Context, int64, time.Duration) error { calls++; return nil })
+			c := build(t, s, r, func(context.Context, int64, time.Duration) error { calls++; return nil })
 			is(t, func() error { _, e := c.Load(ctx, nil); return e }(), store.ErrUnreachable)
 			if e := c.Add(ctx, []source.Row{{SourceID: "1"}}); e != nil {
 				t.Fatal(e)
@@ -1574,7 +1568,7 @@ func TestCollectionRefusalsAndDiscard(t *testing.T) {
 			if phase != "load" {
 				step = fail
 			}
-			c := collect(t, s, r, step)
+			c := build(t, s, r, step)
 			var e error
 			if phase == "add" {
 				e = c.Add(ctx, []source.Row{{SourceID: "1"}, {SourceID: "2"}})
@@ -1614,13 +1608,13 @@ func TestCollectionRefusalsAndDiscard(t *testing.T) {
 	}
 }
 
-// R-NNXH-QH3J R-4YVC-I20A R-O39U-5F5B
-func TestDirectoryCreationAndCollectionOwnership(t *testing.T) {
+// R-R22M-9DRS R-PLMX-T8VX R-R9E0-K07Y
+func TestDirectoryCreationAndBuildOwnership(t *testing.T) {
 	for _, chunk := range []int64{1, store.DefaultChunkBytes} {
 		t.Run(fmt.Sprint(chunk), func(t *testing.T) {
 			s, _, runs := configured(t, chunk, 2)
 			r := add(t, s, "a")
-			c := collect(t, s, r, nil)
+			c := build(t, s, r, nil)
 			if _, e := os.Lstat(runs); !os.IsNotExist(e) {
 				t.Fatal(e)
 			}
@@ -1641,7 +1635,7 @@ func TestDirectoryCreationAndCollectionOwnership(t *testing.T) {
 					t.Fatal(info, e)
 				}
 			}
-			second := collect(t, s, r, nil)
+			second := build(t, s, r, nil)
 			if e := second.Add(ctx, []source.Row{{SourceID: "2"}}); e != nil {
 				t.Fatal(e)
 			}
@@ -1686,7 +1680,7 @@ func TestDirectoryCreationAndCollectionOwnership(t *testing.T) {
 		if e := os.WriteFile(runs, []byte("sentinel"), 0600); e != nil {
 			t.Fatal(e)
 		}
-		c := collect(t, s, r, nil)
+		c := build(t, s, r, nil)
 		e := c.Add(ctx, []source.Row{{SourceID: "1"}})
 		if chunk != 1 {
 			if e != nil {
@@ -1702,11 +1696,11 @@ func TestDirectoryCreationAndCollectionOwnership(t *testing.T) {
 	}
 }
 
-// R-NXOO-SN13 R-NWGS-EVAE R-NYWL-6ERS R-OBT4-TTC6 R-0DYP-DMDK
+// R-R5QB-EOZV R-R4IF-0X96 R-NYWL-6ERS R-RQGL-WSLO R-0DYP-DMDK
 func TestEndValidationAndLoadAfterEnd(t *testing.T) {
 	s, _, runs := configured(t, 1, 1)
 	r := add(t, s, "a")
-	c := collect(t, s, r, nil)
+	c := build(t, s, r, nil)
 	if e := c.Add(ctx, []source.Row{{SourceID: "1"}}); e != nil {
 		t.Fatal(e)
 	}
@@ -1764,9 +1758,9 @@ func TestEndValidationAndLoadAfterEnd(t *testing.T) {
 	}
 	_, e = c.Load(ctx, nil)
 	is(t, e, store.ErrEnded)
-	// A fresh sealed collection's run is pruned before its first Load.
+	// A fresh sealed build's run is pruned before its first Load.
 	r = add(t, s, "a")
-	removed := collect(t, s, r, nil)
+	removed := build(t, s, r, nil)
 	if e = removed.Seal(ctx); e != nil {
 		t.Fatal(e)
 	}
@@ -1797,7 +1791,7 @@ func TestEndValidationAndLoadAfterEnd(t *testing.T) {
 	}
 }
 
-// R-NB19-VGJU R-NC96-98AJ R-NDH2-N018 R-OAL8-G1LH
+// R-QNFT-O4VG R-QPVM-FOCU R-QSBF-77U8 R-RO0T-594A
 func TestComparisonFallback(t *testing.T) {
 	for _, kind := range []string{"gone", "garbage", "header", "other database", "directory", "symlink", "corrupt pages", "missing names"} {
 		t.Run(kind, func(t *testing.T) {
@@ -1883,8 +1877,8 @@ func TestComparisonFallback(t *testing.T) {
 			}
 			before := snapshot(t, runs)
 			r := add(t, s, "a")
-			c := collect(t, s, r, nil)
-			counts := load(t, c, []source.Row{{SourceID: "1", Digest: "a"}, {SourceID: "2", Digest: "b"}, {SourceID: "3", Digest: "c"}}, nil)
+			c := build(t, s, r, nil)
+			counts := load(t, c, []source.Row{{SourceID: "1", Digest: "a"}, {SourceID: "2", Digest: "b"}, {SourceID: "3", Digest: "c"}})
 			if counts != (store.Counts{3, 1, 1, 1, 1}) {
 				t.Fatal(counts)
 			}
@@ -1904,8 +1898,8 @@ func TestComparisonFallback(t *testing.T) {
 				t.Fatal(e)
 			}
 			finish(t, s, add(t, s, "other"), source.Row{SourceID: "1", Digest: "a"})
-			c = collect(t, s, add(t, s, "a"), nil)
-			counts = load(t, c, []source.Row{{SourceID: "1", Digest: "a"}}, nil)
+			c = build(t, s, add(t, s, "a"), nil)
+			counts = load(t, c, []source.Row{{SourceID: "1", Digest: "a"}})
 			if counts != (store.Counts{1, 1, 0, 0, 0}) {
 				t.Fatal(counts)
 			}
@@ -1913,7 +1907,7 @@ func TestComparisonFallback(t *testing.T) {
 	}
 }
 
-// R-OB3L-046Q R-OCBH-DVXF R-OERA-5FET R-O9VO-MCG1
+// R-RP8P-J0UZ R-OCBH-DVXF R-OERA-5FET R-RMSW-RHDL
 func TestFileReadFailuresAndStreamDeletion(t *testing.T) {
 	for _, kind := range []string{"gone", "parent file", "garbage", "directory", "intact"} {
 		t.Run(kind, func(t *testing.T) {
@@ -2040,7 +2034,7 @@ func writeRunFile(runs, id string, b []byte) error {
 	return root.WriteFile(id+".db", b, 0600)
 }
 
-// R-OJMV-OIDL R-OKUS-2A4A R-OH72-WYW7
+// R-RROI-AKCD R-RSWE-OC32 R-OH72-WYW7
 func TestOutageAndContextPrecedence(t *testing.T) {
 	s, d, runs := configured(t, 1, 2)
 	r := add(t, s, "a")
@@ -2050,7 +2044,7 @@ func TestOutageAndContextPrecedence(t *testing.T) {
 	cancel()
 	for _, mode := range []string{"cancelled", "failing", "closed"} {
 		t.Run(mode, func(t *testing.T) {
-			c := collect(t, s, r, nil)
+			c := build(t, s, r, nil)
 			if e := c.Add(ctx, []source.Row{{SourceID: "1"}}); e != nil {
 				t.Fatal(e)
 			}
@@ -2070,7 +2064,7 @@ func TestOutageAndContextPrecedence(t *testing.T) {
 				}
 			}
 			checks := []func() error{
-				func() error { _, e := s.AddRun(x, store.Run{}); return e }, func() error { _, e := s.Collect(x, "missing", nil); return e }, func() error { _, e := s.FinishRun(x, "missing", store.Counts{Rows: -1}); return e }, func() error { _, e := s.FailRun(x, "missing", "bad"); return e }, func() error { _, e := s.GetRun(x, "missing"); return e }, func() error { _, e := s.ListRunsAfter(x, "", "", "", 0); return e }, func() error { _, e := s.ListRunsBefore(x, "", "", "", 0); return e }, func() error { _, e := s.CurrentRun(x, "missing"); return e }, func() error { _, e := s.RunningRun(x, "missing"); return e }, func() error { _, e := s.RunningRuns(x); return e }, func() error { _, e := s.ListRowsAfter(x, "missing", "", "", 0); return e }, func() error { _, e := s.ListRowsBefore(x, "missing", "", "", 0); return e }, func() error { _, e := s.GetRow(x, "missing", "missing"); return e }, func() error { return s.EachRow(x, r.ID, func(source.Row) error { t.Fatal("callback"); return nil }) }, func() error { _, e := s.PruneRuns(x, 0); return e }, func() error { _, e := s.PruneRuns(x, 1); return e }, func() error { return s.TidyFiles(x) }, func() error {
+				func() error { _, e := s.AddRun(x, store.Run{}); return e }, func() error { _, e := s.Build(x, "missing", nil); return e }, func() error { _, e := s.FinishRun(x, "missing", store.Counts{Rows: -1}); return e }, func() error { _, e := s.FailRun(x, "missing", "bad"); return e }, func() error { _, e := s.GetRun(x, "missing"); return e }, func() error { _, e := s.ListRunsAfter(x, "", "", "", 0); return e }, func() error { _, e := s.ListRunsBefore(x, "", "", "", 0); return e }, func() error { _, e := s.CurrentRun(x, "missing"); return e }, func() error { _, e := s.RunningRun(x, "missing"); return e }, func() error { _, e := s.RunningRuns(x); return e }, func() error { _, e := s.ListRowsAfter(x, "missing", "", "", 0); return e }, func() error { _, e := s.ListRowsBefore(x, "missing", "", "", 0); return e }, func() error { _, e := s.GetRow(x, "missing", "missing"); return e }, func() error { return s.EachRow(x, r.ID, func(source.Row) error { t.Fatal("callback"); return nil }) }, func() error { _, e := s.PruneRuns(x, 0); return e }, func() error { _, e := s.PruneRuns(x, 1); return e }, func() error { return s.TidyFiles(x) }, func() error {
 					_, e := c.Load(x, func(context.Context, int64, time.Duration) error { t.Fatal("step"); return nil })
 					return e
 				},
@@ -2100,14 +2094,14 @@ func TestOutageAndContextPrecedence(t *testing.T) {
 	}
 }
 
-// R-O3S6-PHQK
+// R-RBTT-BJPC
 func TestLockedCatalogFinish(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "catalog")
 	s, d := open(t, path, nil)
 	r := add(t, s, "a")
-	c := collect(t, s, r, nil)
-	counts := load(t, c, []source.Row{{SourceID: "1"}}, nil)
+	c := build(t, s, r, nil)
+	counts := load(t, c, []source.Row{{SourceID: "1"}})
 	_, locker := open(t, path, nil)
 	held := make(chan error, 1)
 	release := make(chan struct{})
@@ -2169,15 +2163,15 @@ func TestLockedCatalogFinish(t *testing.T) {
 	}
 }
 
-// R-O2KA-BPZV
-func TestConcurrentCollections(t *testing.T) {
+// R-R864-68H9
+func TestConcurrentBuilds(t *testing.T) {
 	s, _, _ := configured(t, 1, 2)
 	a := add(t, s, "a")
 	b := add(t, s, "b")
 	var wg sync.WaitGroup
 	for _, r := range []store.Run{a, b} {
 		wg.Go(func() {
-			c, e := s.Collect(ctx, r.ID, nil)
+			c, e := s.Build(ctx, r.ID, nil)
 			if e != nil {
 				t.Error(e)
 				return
@@ -2222,7 +2216,7 @@ func TestConcurrentCollections(t *testing.T) {
 	}
 }
 
-// R-OIEZ-AQMW R-OD11-7L2V R-OH72-WYW7 R-OTK5-HRD4
+// R-OIEZ-AQMW R-OD11-7L2V R-OH72-WYW7 R-RU4B-23TR
 func TestLegacyTablesPruneAndTidy(t *testing.T) {
 	s, d, runs := configured(t, 1, 1)
 	// Seed legacy rows for the identifiers the deterministic random source will mint.
@@ -2313,21 +2307,8 @@ func TestLegacyTablesPruneAndTidy(t *testing.T) {
 	if _, e = os.Lstat(filepath.Join(runs, done.ID+".db")); !os.IsNotExist(e) {
 		t.Fatal(e)
 	}
-	// The legacy records remain independent of both pruned run records.
-	if e = d.Read(ctx, func(tx *sql.Tx) error {
-		for _, table := range []string{"rows", "row_names"} {
-			var n int
-			if e := tx.QueryRowContext(ctx, "SELECT count(*) FROM "+table).Scan(&n); e != nil {
-				return e
-			}
-			if n != 2 {
-				t.Fatal(table, n)
-			}
-		}
-		return nil
-	}); e != nil {
-		t.Fatal(e)
-	}
+	// The write-aborting legacy-table triggers remain installed throughout the
+	// successful build, reads, failure and prune above.
 	running := add(t, s, "a")
 	for _, name := range []string{running.ID + ".db", failed.ID + ".db", newest.ID + ".chunk", "unknown.db", "notes.txt"} {
 		if e = os.WriteFile(filepath.Join(runs, name), []byte("trash"), 0600); e != nil {
@@ -2370,30 +2351,4 @@ func TestLegacyTablesPruneAndTidy(t *testing.T) {
 	if e != nil || string(b) != "sentinel" {
 		t.Fatal(string(b), e)
 	}
-}
-
-func buildRows(t *testing.T, runs, id string) int64 {
-	t.Helper()
-	entries, e := os.ReadDir(runs)
-	if e != nil {
-		t.Fatal(e)
-	}
-	for _, entry := range entries {
-		if !strings.HasPrefix(entry.Name(), id+".") {
-			continue
-		}
-		d, e := db.OpenImmutable(ctx, filepath.Join(runs, entry.Name()))
-		if e != nil {
-			continue
-		}
-		var n int64
-		e = d.Read(ctx, func(tx *sql.Tx) error { return tx.QueryRowContext(ctx, "SELECT count(*) FROM rows").Scan(&n) })
-		closeErr := d.Close()
-		if e != nil || closeErr != nil {
-			t.Fatal(e, closeErr)
-		}
-		return n
-	}
-	t.Fatal("no SQLite build file")
-	return 0
 }

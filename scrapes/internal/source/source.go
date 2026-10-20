@@ -20,7 +20,7 @@ type Person struct{ Name, Role string }
 // Row holds an envelope and its original source record.
 type Row struct {
 	Scraper, Run, SourceID string
-	Collected              time.Time
+	Scraped                time.Time
 	Digest, Name           string
 	Names                  []string
 	Address                Address
@@ -64,20 +64,20 @@ func (r Row) MarshalJSON() ([]byte, error) {
 		facts = json.RawMessage(`{}`)
 	}
 	return json.Marshal(struct {
-		Scraper   string          `json:"scraper"`
-		Run       string          `json:"run"`
-		SourceID  string          `json:"source_id"`
-		Collected string          `json:"collected"`
-		Digest    string          `json:"digest"`
-		Name      string          `json:"name"`
-		Names     []string        `json:"names"`
-		Address   address         `json:"address"`
-		Lat       *float64        `json:"lat,omitempty"`
-		Lon       *float64        `json:"lon,omitempty"`
-		People    []person        `json:"people"`
-		Facts     json.RawMessage `json:"facts"`
-		Raw       json.RawMessage `json:"raw,omitempty"`
-	}{r.Scraper, r.Run, r.SourceID, r.Collected.UTC().Format(time.RFC3339), r.Digest, r.Name, names, address(r.Address), r.Lat, r.Lon, people, facts, r.Raw})
+		Scraper  string          `json:"scraper"`
+		Run      string          `json:"run"`
+		SourceID string          `json:"source_id"`
+		Scraped  string          `json:"scraped"`
+		Digest   string          `json:"digest"`
+		Name     string          `json:"name"`
+		Names    []string        `json:"names"`
+		Address  address         `json:"address"`
+		Lat      *float64        `json:"lat,omitempty"`
+		Lon      *float64        `json:"lon,omitempty"`
+		People   []person        `json:"people"`
+		Facts    json.RawMessage `json:"facts"`
+		Raw      json.RawMessage `json:"raw,omitempty"`
+	}{r.Scraper, r.Run, r.SourceID, r.Scraped.UTC().Format(time.RFC3339), r.Digest, r.Name, names, address(r.Address), r.Lat, r.Lon, people, facts, r.Raw})
 }
 
 // Names trims and deduplicates names while preserving their order.

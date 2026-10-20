@@ -96,7 +96,7 @@ func TestDefaultFMCSA(t *testing.T) {
 	}
 	if err := sc.Scrape(context.Background(), func(rows []source.Row) error {
 		batches++
-		if len(rows) != 1 || !rows[0].Collected.Equal(now) {
+		if len(rows) != 1 || !rows[0].Scraped.Equal(now) {
 			t.Fatal(rows)
 		}
 		return nil
@@ -187,7 +187,7 @@ func TestDefaultPPP(t *testing.T) {
 				t.Fatal(paths, pauses, rows)
 			}
 			for i, row := range rows {
-				if row.Scraper != "ppp" || row.Address.State != "IA" || !row.Collected.Equal(now) || !strings.HasSuffix(row.SourceID, []string{"a.csv", "b.csv"}[i]) {
+				if row.Scraper != "ppp" || row.Address.State != "IA" || !row.Scraped.Equal(now) || !strings.HasSuffix(row.SourceID, []string{"a.csv", "b.csv"}[i]) {
 					t.Fatal(row)
 				}
 			}
@@ -269,7 +269,7 @@ func TestDefaultMNParcels(t *testing.T) {
 				t.Fatal(requests, pauses, rows)
 			}
 			for _, row := range rows {
-				if row.Scraper != mnparcels.Name || !row.Collected.Equal(now) {
+				if row.Scraper != mnparcels.Name || !row.Scraped.Equal(now) {
 					t.Fatal(row)
 				}
 			}

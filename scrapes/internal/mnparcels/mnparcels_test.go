@@ -51,7 +51,7 @@ func page(n int) string {
 	return `{"features":[` + strings.Join(values, ",\n") + `]}`
 }
 
-// R-K73A-6CZA R-RQ28-62T8 R-RTPX-BE1B
+// R-K73A-6CZA R-S6BA-VT8P R-RTPX-BE1B
 func TestAPI(t *testing.T) {
 	if mnparcels.Name != "mn_parcels" || mnparcels.DefaultBaseURL != "https://enterprise.gisdata.mn.gov/aghost/rest/services/us_mn_state_mngeo/plan_parcels_open/FeatureServer/1/query" || mnparcels.PageSize != 2000 || mnparcels.Retries != 5 || mnparcels.Backoff != 5*time.Second || mnparcels.RequestTimeout != 180*time.Second || mnparcels.OwnerRole != "owner" || mnparcels.TaxpayerRole != "taxpayer" {
 		t.Fatal("constants")
@@ -87,12 +87,12 @@ func TestWhere(t *testing.T) {
 	}
 }
 
-// R-K9J2-XWGO R-IO0Y-X1VN R-IROO-2D3Q R-RYLI-UH03
+// R-QIK8-51WO R-IO0Y-X1VN R-IROO-2D3Q R-RYLI-UH03
 func TestWalk(t *testing.T) {
 	for _, count := range []string{"0", "5000", "2e3", "99999999999999999999999999999999999999999"} {
 		t.Run(count, func(t *testing.T) {
 			requests, batches, reads := 0, 0, 0
-			var collected []source.Row
+			var scraped []source.Row
 			c := config(func(r *http.Request) (*http.Response, error) {
 				i := requests
 				requests++
@@ -143,11 +143,11 @@ func TestWalk(t *testing.T) {
 						t.Error("row differs", i, row, want, err)
 					}
 				}
-				collected = append(collected, rows...)
+				scraped = append(scraped, rows...)
 				return nil
 			})
-			if err != nil || requests != 5 || batches != 3 || reads != 3 || len(collected) != 2004 {
-				t.Fatal(err, requests, batches, reads, len(collected))
+			if err != nil || requests != 5 || batches != 3 || reads != 3 || len(scraped) != 2004 {
+				t.Fatal(err, requests, batches, reads, len(scraped))
 			}
 		})
 	}
@@ -180,7 +180,7 @@ func TestEmptyPageAndExactBoundary(t *testing.T) {
 	}
 }
 
-// R-K9J2-XWGO R-IROO-2D3Q R-S4P0-RBPK R-IO0Y-X1VN
+// R-QIK8-51WO R-IROO-2D3Q R-S4P0-RBPK R-IO0Y-X1VN
 func TestPinlessPages(t *testing.T) {
 	for _, attrs := range []string{`{"state_pin":null,"county_pin":null}`, `{"state_pin":" ","county_pin":""}`, `{}`, `{"state_pin":123,"county_pin":456}`} {
 		for _, size := range []int{3, 2000} {
@@ -189,7 +189,7 @@ func TestPinlessPages(t *testing.T) {
 					pinless := `{"attributes":` + attrs + `}`
 					features := make([]string, size)
 					var wanted []source.Row
-					collected := clock().Add(time.Hour)
+					scraped := clock().Add(time.Hour)
 					for i := range features {
 						features[i] = strings.Replace(pinless, `{}`, `{"objectid":`+strconv.Itoa(i+1)+`}`, 1)
 						if attrs != `{}` {
@@ -197,7 +197,7 @@ func TestPinlessPages(t *testing.T) {
 						}
 						if !all && i != 1 {
 							features[i] = objectFeature(i+1, strconv.Itoa(i))
-							row, err := mnparcels.RowOf(json.RawMessage(features[i]), collected)
+							row, err := mnparcels.RowOf(json.RawMessage(features[i]), scraped)
 							if err != nil {
 								t.Fatal(err)
 							}
@@ -242,7 +242,7 @@ func TestPinlessPages(t *testing.T) {
 						if requests != 2 {
 							t.Error("row clock read before page answer", requests)
 						}
-						return collected
+						return scraped
 					}
 					c.Sleep = func(context.Context, time.Duration) { t.Error("readable page retried") }
 					c.Telemetry = w
@@ -413,7 +413,7 @@ type brokenReader struct{}
 
 func (brokenReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
 
-// R-IP8V-ATMC R-K9J2-XWGO
+// R-IP8V-ATMC R-QIK8-51WO
 func TestTerminalAnswers(t *testing.T) {
 	cases := []struct {
 		name, body string
@@ -466,7 +466,7 @@ func TestRefusedBatch(t *testing.T) {
 	}
 }
 
-// R-S5WX-53G9 R-S74T-IV6Y
+// R-S7J7-9KZE R-S8R3-NCQ3
 func TestRow(t *testing.T) {
 	raw := `{ "state_pin":" state-id ", "county_pin":"local", "co_code":"27145", "owner_name":" ACME ", "owner_more":" LLC ", "tax_name":" JANE DOE ", "anumberpre":" N ","anumber":39583,"anumbersuf":" A ","st_pre_dir":" W ","st_pre_typ":" Old ","st_name":"8th","st_pos_typ":"Avenue","st_pos_dir":" S ","ctu_name":" NORTH BRANCH ","postcomm":"ELSEWHERE","zip":"55056-1234","co_name":" Chisago ","acres_deed":1.07,"acres_poly":2e0,"emv_total":321200,"sale_date":1262304000000,"homestead":"Y","own_add_l1":" one ","own_add_l2":null,"own_add_l3":" ","own_add_l4":" four ","tax_add_l2":" two ","useclass1":"1a/1b/4bb Residential Single Unit","useclass2":" ","abb_legal":{"nested":[1,true]},"exp_date":" raw export ","tax_year":2024,"other":"extra" }`
 	f := `{"geometry":null,"attributes":` + raw + `,"centroid":{"x":-92.98930354451028,"y":45.52238037099128}}`
@@ -477,13 +477,13 @@ func TestRow(t *testing.T) {
 	facts := map[string]any{"acres_deed": json.RawMessage(`1.07`), "acres_poly": json.RawMessage(`2e0`), "co_code": "27145", "county_pin": "local", "emv_bldg": nil, "emv_land": nil, "emv_total": 321200, "exported": " raw export ", "homestead": "Y", "legal": map[string]any{"nested": []any{1, true}}, "owner_address": []string{"one", "four"}, "owner_name": "ACME LLC", "ownership": nil, "plat_name": nil, "sale_date": int64(1262304000000), "sale_value": nil, "state_pin": " state-id ", "tax_address": []string{"two"}, "tax_exempt": nil, "tax_name": " JANE DOE ", "tax_year": 2024, "total_tax": nil, "use_class": []string{"1a/1b/4bb Residential Single Unit"}, "year_built": nil}
 	factJSON, _ := json.Marshal(facts)
 	lat, lon := 45.52238037099128, -92.98930354451028
-	want := source.Row{Scraper: mnparcels.Name, SourceID: " state-id ", Collected: clock().UTC().Truncate(time.Second), Digest: source.Digest([]byte(raw)), Name: "ACME LLC", Names: source.Names("ACME LLC", "JANE DOE"), Address: source.NewAddress("N 39583 A W Old 8th Avenue S", " NORTH BRANCH ", "MN", "55056-1234", " Chisago "), Lat: &lat, Lon: &lon, People: []source.Person{{Name: "ACME LLC", Role: mnparcels.OwnerRole}, {Name: "JANE DOE", Role: mnparcels.TaxpayerRole}}, Facts: factJSON, Raw: json.RawMessage(raw)}
+	want := source.Row{Scraper: mnparcels.Name, SourceID: " state-id ", Scraped: clock().UTC().Truncate(time.Second), Digest: source.Digest([]byte(raw)), Name: "ACME LLC", Names: source.Names("ACME LLC", "JANE DOE"), Address: source.NewAddress("N 39583 A W Old 8th Avenue S", " NORTH BRANCH ", "MN", "55056-1234", " Chisago "), Lat: &lat, Lon: &lon, People: []source.Person{{Name: "ACME LLC", Role: mnparcels.OwnerRole}, {Name: "JANE DOE", Role: mnparcels.TaxpayerRole}}, Facts: factJSON, Raw: json.RawMessage(raw)}
 	if !reflect.DeepEqual(row, want) {
 		t.Fatalf("got %#v facts %s\nwant %#v facts %s", row, row.Facts, want, want.Facts)
 	}
 }
 
-// R-S5WX-53G9 R-S74T-IV6Y
+// R-S7J7-9KZE R-S8R3-NCQ3
 func TestRowFallbacks(t *testing.T) {
 	for _, tc := range []struct {
 		attrs, id, name, city string
@@ -528,7 +528,7 @@ func TestRowFallbacks(t *testing.T) {
 	}
 }
 
-// R-S5WX-53G9
+// R-S7J7-9KZE
 func TestCentroidDoesNotChangeDigestAndLowercaseRoles(t *testing.T) {
 	raw := `{"state_pin":"id","owner_name":"Σ","tax_name":"ς"}`
 	a, err := mnparcels.RowOf(json.RawMessage(`{"attributes":`+raw+`}`), clock())
@@ -544,7 +544,7 @@ func TestCentroidDoesNotChangeDigestAndLowercaseRoles(t *testing.T) {
 	}
 }
 
-// R-S8CP-WMXN
+// R-S9Z0-14GS
 func TestInvalidRows(t *testing.T) {
 	for _, f := range []string{"", `null`, `[]`, `1`, `"a"`, `{}`, `{"attributes":null}`, `{"attributes":[]}`, `{"attributes":{}}`, `{"attributes":{"state_pin":null,"county_pin":null}}`, `{"attributes":{"state_pin":" ","county_pin":""}}`, `{"attributes":{"state_pin":123,"county_pin":456}}`, `{"attributes":{`} {
 		row, err := mnparcels.RowOf(json.RawMessage(f), clock())
@@ -702,7 +702,7 @@ type blockedBody struct{ ctx context.Context }
 func (b blockedBody) Read([]byte) (int, error) { <-b.ctx.Done(); return 0, b.ctx.Err() }
 func (blockedBody) Close() error               { return nil }
 
-// R-KD6S-37OR R-IP8V-ATMC R-RQ28-62T8
+// R-KD6S-37OR R-IP8V-ATMC R-S6BA-VT8P
 func TestAttemptBounds(t *testing.T) {
 	for _, phase := range []string{"headers", "count-body", "page-body", "error-body"} {
 		t.Run(phase, func(t *testing.T) {
@@ -776,7 +776,7 @@ type structReadCloser struct{ io.Reader }
 
 func (structReadCloser) Close() error { return nil }
 
-// R-S3H4-DJYV R-RQ28-62T8
+// R-S3H4-DJYV R-S6BA-VT8P
 func TestCancellation(t *testing.T) {
 	for _, phase := range []string{"initial", "headers", "body", "sleep", "defaultsleep", "beforebatch", "betweenpages"} {
 		t.Run(phase, func(t *testing.T) {
@@ -928,7 +928,7 @@ func TestTelemetryBeforeBodyAndSequentialReading(t *testing.T) {
 	}
 }
 
-// R-K9J2-XWGO R-IO0Y-X1VN R-IROO-2D3Q
+// R-QIK8-51WO R-IO0Y-X1VN R-IROO-2D3Q
 func TestKeysetCursor(t *testing.T) {
 	for _, kind := range []string{"zero", "4001", "reordered", "pinless-max", "int64-max"} {
 		t.Run(kind, func(t *testing.T) {
@@ -1012,7 +1012,7 @@ func TestKeysetCursor(t *testing.T) {
 	}
 }
 
-// R-K9J2-XWGO R-IP8V-ATMC
+// R-QIK8-51WO R-IP8V-ATMC
 func TestInvalidObjectIDs(t *testing.T) {
 	for _, pinless := range []bool{false, true} {
 		for _, value := range []string{"", `null`, `"7"`, "7.5", "7e0", "9223372036854775808", "-1", "2000", "1999"} {

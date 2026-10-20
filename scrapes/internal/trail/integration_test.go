@@ -339,7 +339,7 @@ func trailDB(t *testing.T, dir string) (*store.Store, *db.DB) {
 	return store.New(d, store.Config{Now: trailTime, Rand: &trailRandom{}, Runs: filepath.Join(dir, "runs")}), d
 }
 
-// R-HWXU-4EC7 R-HY5Q-I62W R-UB8G-HTUT
+// R-QB8T-UFGI R-QCGQ-8777 R-UB8G-HTUT
 func TestRunTrailSourceAndDelivery(t *testing.T) {
 	src := &trailSource{}
 	f := startTrail(t, "", src, false)
@@ -411,13 +411,13 @@ func TestRunTrailSourceAndDelivery(t *testing.T) {
 			if e.RequestID == "ignored-delivery" {
 				wantStatus = ignoredStatus
 			}
-			if (e.Name == "scrape.started" || e.Name == "scrape.collected" || e.Name == "scrape.loaded" || e.Name == "scrape.finished") && e.Attrs["run"] != deliveryID {
+			if (e.Name == "scrape.started" || e.Name == "scrape.walked" || e.Name == "scrape.loaded" || e.Name == "scrape.finished") && e.Attrs["run"] != deliveryID {
 				t.Errorf("delivery lifecycle belongs to %v, want %s", e.Attrs["run"], deliveryID)
 			}
 			if e.Name == "request.finished" && fmt.Sprint(e.Attrs["status"]) != fmt.Sprint(wantStatus) {
 				t.Errorf("delivery status %#v", e.Attrs)
 			}
-			if e.Name != "request.started" && e.Name != "request.finished" && e.Name != "scrape.started" && e.Name != "scrape.collected" && e.Name != "scrape.loaded" && e.Name != "scrape.finished" && e.Name != "source.called" {
+			if e.Name != "request.started" && e.Name != "request.finished" && e.Name != "scrape.started" && e.Name != "scrape.walked" && e.Name != "scrape.loaded" && e.Name != "scrape.finished" && e.Name != "source.called" {
 				t.Errorf("delivery extra event %s", e.Name)
 			}
 		}
@@ -472,7 +472,7 @@ func TestRunTrailUsesInjectedClockAndRandom(t *testing.T) {
 	}
 }
 
-// R-HZDM-VXTL R-I0LJ-9PKA R-I1TF-NHAZ R-I31C-191O
+// R-QDOM-LYXW R-QEWI-ZQOL R-QG4F-DIFA R-QHCB-RA5Z
 func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	// A deterministic sequence supplies random-looking markers without process randomness.
 	markerRand := uint64(731)
@@ -715,7 +715,7 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 
 func trailNameAllowed(name string) bool {
 	switch name {
-	case "service.started", "service.stopping", "request.started", "request.finished", "tool.called", "event.lost", "source.called", "scrape.started", "scrape.collected", "scrape.loaded", "scrape.finished":
+	case "service.started", "service.stopping", "request.started", "request.finished", "tool.called", "event.lost", "source.called", "scrape.started", "scrape.walked", "scrape.loaded", "scrape.finished":
 		return true
 	}
 	return false

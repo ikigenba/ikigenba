@@ -24,7 +24,7 @@ import (
 // Store is the persistence seam used by the engine.
 type Store interface {
 	AddRun(context.Context, store.Run) (store.Run, error)
-	Collect(context.Context, string, store.Step) (*store.Collection, error)
+	Build(context.Context, string, store.Step) (*store.Build, error)
 	FinishRun(context.Context, string, store.Counts) (store.Run, error)
 	FailRun(context.Context, string, string) (store.Run, error)
 	RunningRuns(context.Context) ([]store.Run, error)
@@ -104,7 +104,7 @@ func RecordOf(r store.Run) Record {
 type Engine struct {
 	starting  map[uint64]context.CancelFunc
 	nextStart uint64
-	builds    map[string]*store.Collection
+	builds    map[string]*store.Build
 	load      chan struct{}
 	contexts  map[string]context.Context
 	ending    map[string]bool
@@ -135,7 +135,7 @@ func New(cfg Config) *Engine {
 		cfg.Now = time.Now
 	}
 	endctx, endcancel := context.WithCancel(context.Background())
-	return &Engine{cfg: cfg, starting: make(map[uint64]context.CancelFunc), builds: make(map[string]*store.Collection), load: make(chan struct{}, 1), endctx: endctx, endcancel: endcancel, ending: make(map[string]bool), active: make(map[string]context.CancelFunc), contexts: make(map[string]context.Context), changed: make(chan struct{})}
+	return &Engine{cfg: cfg, starting: make(map[uint64]context.CancelFunc), builds: make(map[string]*store.Build), load: make(chan struct{}, 1), endctx: endctx, endcancel: endcancel, ending: make(map[string]bool), active: make(map[string]context.CancelFunc), contexts: make(map[string]context.Context), changed: make(chan struct{})}
 }
 
 // Start records a manual run and starts its work in the background.
@@ -295,13 +295,13 @@ func (e *Engine) phase() *pace.Phase {
 }
 
 func (e *Engine) work(ctx context.Context, sc source.Scraper, r store.Run) {
-	var collect *pace.Phase
-	build, err := e.cfg.Store.Collect(ctx, r.ID, func(ctx context.Context, bytes int64, took time.Duration) error {
-		return collect.Step(ctx, bytes, took)
+	var walk *pace.Phase
+	build, err := e.cfg.Store.Build(ctx, r.ID, func(ctx context.Context, bytes int64, took time.Duration) error {
+		return walk.Step(ctx, bytes, took)
 	})
 	buildFailed := err != nil
 	if err != nil {
-		e.diagnostic(ctx, r.ID, "Collect", GaveUp, err)
+		e.diagnostic(ctx, r.ID, "Build", GaveUp, err)
 	}
 	var counts store.Counts
 	loaded := false
@@ -314,7 +314,7 @@ func (e *Engine) work(ctx context.Context, sc source.Scraper, r store.Run) {
 		}
 		e.builds[r.ID] = build
 		e.mu.Unlock()
-		collect = e.phase()
+		walk = e.phase()
 		var batchErr error
 		err = sc.Scrape(ctx, func(rows []source.Row) error {
 			if batchErr != nil {
@@ -337,8 +337,8 @@ func (e *Engine) work(ctx context.Context, sc source.Scraper, r store.Run) {
 				e.diagnostic(ctx, r.ID, "Seal", GaveUp, err)
 			}
 			if err == nil && ctx.Err() == nil {
-				bytes, elapsed, paused := collect.Totals()
-				trail.Phase(ctx, e.cfg.Telemetry, trail.Collected, r, bytes, elapsed, paused)
+				bytes, elapsed, paused := walk.Totals()
+				trail.Phase(ctx, e.cfg.Telemetry, trail.Walked, r, bytes, elapsed, paused)
 				select {
 				case <-ctx.Done():
 				case e.load <- struct{}{}:
@@ -457,7 +457,7 @@ func (e *Engine) Drain(ctx context.Context) {
 			e.endcancel()
 			e.mu.Lock()
 			pending := make(map[string]context.Context)
-			builds := make(map[string]*store.Collection)
+			builds := make(map[string]*store.Build)
 			for id := range e.active {
 				if !e.ending[id] {
 					pending[id] = e.contexts[id]

@@ -247,7 +247,7 @@ func TestRecord(t *testing.T) {
 
 //	R-1RYL-27S1 R-1T6H-FZIQ R-1WU6-LAQT   R-6IFH-K1FU
 //
-// R-1RYL-27S1 R-1T6H-FZIQ R-1WU6-LAQT R-6IFH-K1FU R-33GL-2MWI R-34OH-GEN7 R-QO00-X90H
+// R-1RYL-27S1 R-1T6H-FZIQ R-1WU6-LAQT R-6IFH-K1FU R-P9FX-ZJGZ R-34OH-GEN7 R-QO00-X90H
 func TestStartAndBatches(t *testing.T) {
 	entered := make(chan context.Context, 1)
 	release := make(chan struct{})
@@ -390,7 +390,7 @@ func testDelivery(t *testing.T, viaHandler bool) {
 	}
 }
 
-// R-RIHI-HIJU R-QSVM-GBZ9
+// R-S2NL-QI0M R-QSVM-GBZ9
 func TestRecover(t *testing.T) {
 	f := setup(t)
 	for _, name := range []string{"first", "second"} {
@@ -466,7 +466,7 @@ func TestRecover(t *testing.T) {
 }
 
 // R-2DWR-Y34J
-// R-QU3I-U3PY R-374A-7Y4L
+// R-QU3I-U3PY R-PBVQ-R2YD
 func TestDrainCancellation(t *testing.T) {
 	entered := make(chan struct{})
 	f := setup(t, fake{"fake", func(ctx context.Context, b func([]source.Row) error) error {
@@ -506,7 +506,7 @@ func (c *observedContext) Done() <-chan struct{} {
 	return c.Context.Done()
 }
 
-// R-3I3D-NVSU
+// R-PJ75-1PEJ
 func TestDrainDeadline(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -574,7 +574,7 @@ func TestConcurrentMethods(t *testing.T) {
 
 //	R-6IFH-K1FU
 //
-// R-34OH-GEN7 R-RH9M-3QT5
+// R-34OH-GEN7 R-S1FP-CQ9X
 func TestBaselineAndLifecycle(t *testing.T) {
 	count := 0
 	observed := make(chan struct{})
@@ -635,7 +635,7 @@ func TestBaselineAndLifecycle(t *testing.T) {
 	}
 }
 
-// R-374A-7Y4L
+// R-PBVQ-R2YD
 func TestFMCSASourceFailure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) }))
 	defer srv.Close()
@@ -728,7 +728,7 @@ func TestRefusedCallsHaveNoEffects(t *testing.T) {
 func loadFixture(t *testing.T, s *store.Store, id string, rows []source.Row) store.Counts {
 	t.Helper()
 	ctx := context.Background()
-	b, err := s.Collect(ctx, id, nil)
+	b, err := s.Build(ctx, id, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -745,7 +745,7 @@ func loadFixture(t *testing.T, s *store.Store, id string, rows []source.Row) sto
 	return c
 }
 
-// R-328O-OV5T R-35WD-U6DW
+// R-P881-LRQA R-PANU-DB7O
 func TestFilePrecedesEnding(t *testing.T) {
 	f := setup(t)
 	s := &fileCheckingStore{Store: f.st, t: t, dir: f.dir}
@@ -776,16 +776,16 @@ func (s *fileCheckingStore) FinishRun(ctx context.Context, id string, c store.Co
 	return s.Store.FinishRun(ctx, id, c)
 }
 
-// R-374A-7Y4L R-3GVH-A425 R-3FNK-WCBG
+// R-PBVQ-R2YD R-PHZ8-NXNU R-PFJF-WE6G
 func TestBuildFailuresDiagnosed(t *testing.T) {
-	for _, op := range []string{"Collect", "Add", "Seal", "Load"} {
+	for _, op := range []string{"Build", "Add", "Seal", "Load"} {
 		t.Run(op, func(t *testing.T) {
 			f := setup(t)
 			out := new(diagnosticCapture)
 			var s runs.Store = f.st
 			switch op {
-			case "Collect":
-				s = &retryStore{Store: f.st, op: "Collect", failures: 1, err: errors.New("chosen\nerror")}
+			case "Build":
+				s = &retryStore{Store: f.st, op: "Build", failures: 1, err: errors.New("chosen\nerror")}
 			case "Load":
 				if err := os.MkdirAll(filepath.Join(f.dir, "run_0101010101010101.db"), 0700); err != nil {
 					t.Fatal(err)
@@ -818,7 +818,7 @@ func TestBuildFailuresDiagnosed(t *testing.T) {
 			if len(lines) != 1 || !strings.HasPrefix(lines[0], "scrapes: "+r.ID+" "+op+": "+runs.GaveUp+": ") || strings.Contains(lines[0], "secret") {
 				t.Fatal(lines)
 			}
-			if op == "Collect" && calls != 0 {
+			if op == "Build" && calls != 0 {
 				t.Fatal("walk called without build")
 			}
 			f.flush(t)
@@ -828,7 +828,7 @@ func TestBuildFailuresDiagnosed(t *testing.T) {
 			}
 			want := []string{trail.Started, trail.Finished}
 			if op == "Load" {
-				want = []string{trail.Started, trail.Collected, trail.Finished}
+				want = []string{trail.Started, trail.Walked, trail.Finished}
 			}
 			if !reflect.DeepEqual(names, want) {
 				t.Fatal(names)
@@ -837,7 +837,7 @@ func TestBuildFailuresDiagnosed(t *testing.T) {
 	}
 }
 
-// R-RM57-MTRX R-RND4-0LIM R-3ARZ-D9CO R-RH9M-3QT5
+// R-S3VI-49RB R-S53E-I1I0 R-PD3N-4UP2 R-S1FP-CQ9X
 func TestSerializedLoadsAndDrain(t *testing.T) {
 	for _, drain := range []bool{false, true} {
 		t.Run(map[bool]string{false: "finish", true: "drain"}[drain], func(t *testing.T) {
@@ -847,10 +847,10 @@ func TestSerializedLoadsAndDrain(t *testing.T) {
 			held := make(chan context.Context, 1)
 			release := make(chan struct{})
 			unexpected := make(chan struct{}, 1)
-			collected := func(id string) bool {
+			walked := func(id string) bool {
 				f.flush(t)
 				for _, ev := range f.tc.Events() {
-					if ev.Name == trail.Collected && ev.RequestID == id {
+					if ev.Name == trail.Walked && ev.RequestID == id {
 						return true
 					}
 				}
@@ -858,7 +858,7 @@ func TestSerializedLoadsAndDrain(t *testing.T) {
 			}
 			sleep := func(ctx context.Context, _ time.Duration) {
 				c, _ := identity.FromContext(ctx)
-				if !collected(c.RequestID) {
+				if !walked(c.RequestID) {
 					return
 				}
 				if c.RequestID == "first-request" {
@@ -896,10 +896,10 @@ func TestSerializedLoadsAndDrain(t *testing.T) {
 			close(secondWalk)
 			deadline, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
-			for !collected(second.RequestID) {
+			for !walked(second.RequestID) {
 				select {
 				case <-deadline.Done():
-					t.Fatal("second collect never completed")
+					t.Fatal("second walk never completed")
 				default:
 					runtime.Gosched()
 				}
@@ -943,6 +943,28 @@ func TestSerializedLoadsAndDrain(t *testing.T) {
 				if err != nil || len(entries) != 0 || len(loaded) != 0 {
 					t.Fatal(entries, loaded, err)
 				}
+				for _, r := range []store.Run{a, b} {
+					trailFinished, busFinished := 0, 0
+					for _, ev := range f.tc.Events() {
+						if ev.Name == trail.Finished && ev.Attrs["run"] == r.ID {
+							trailFinished++
+							if ev.Attrs["status"] != store.StatusFailed || ev.Attrs["reason"] != store.ReasonInterrupted {
+								t.Fatal(ev)
+							}
+						}
+					}
+					for _, ev := range f.ec.Events() {
+						if ev.Name == trail.Finished && ev.Attrs["run"] == r.ID {
+							busFinished++
+							if ev.Attrs["status"] != store.StatusFailed || ev.Attrs["reason"] != store.ReasonInterrupted {
+								t.Fatal(ev)
+							}
+						}
+					}
+					if trailFinished != 1 || busFinished != 1 {
+						t.Fatalf("run %s: finished telemetry %d, bus %d", r.ID, trailFinished, busFinished)
+					}
+				}
 			} else if !reflect.DeepEqual(loaded, []string{first.RequestID, second.RequestID}) {
 				t.Fatal(loaded)
 			}
@@ -950,7 +972,7 @@ func TestSerializedLoadsAndDrain(t *testing.T) {
 	}
 }
 
-// R-3ARZ-D9CO R-RH9M-3QT5
+// R-PD3N-4UP2 R-S1FP-CQ9X
 func TestBuildPacingAndPhaseTotals(t *testing.T) {
 	for _, mode := range []string{"budget", "disabled", "pressure"} {
 		t.Run(mode, func(t *testing.T) {
@@ -996,7 +1018,7 @@ func TestBuildPacingAndPhaseTotals(t *testing.T) {
 			var paused time.Duration
 			for _, ev := range ts {
 				names = append(names, ev.Name)
-				if ev.Name == trail.Collected || ev.Name == trail.Loaded {
+				if ev.Name == trail.Walked || ev.Name == trail.Loaded {
 					if ev.User != caller().UserID || ev.RequestID != caller().RequestID || ev.Attrs["scraper"] != "fake" || ev.Attrs["run"] != r.ID || ev.Attrs["duration_us"] != int64(0) {
 						t.Fatal(ev)
 					}
@@ -1004,7 +1026,7 @@ func TestBuildPacingAndPhaseTotals(t *testing.T) {
 					paused += time.Duration(ev.Attrs["paused_us"].(int64)) * time.Microsecond
 				}
 			}
-			if !reflect.DeepEqual(names, []string{trail.Started, trail.Collected, trail.Loaded, trail.Finished}) || len(f.ec.Events()) != 2 {
+			if !reflect.DeepEqual(names, []string{trail.Started, trail.Walked, trail.Loaded, trail.Finished}) || len(f.ec.Events()) != 2 {
 				t.Fatal(names, f.ec.Events())
 			}
 			total := time.Duration(0)
@@ -1029,7 +1051,7 @@ func TestBuildPacingAndPhaseTotals(t *testing.T) {
 	}
 }
 
-// R-33GL-2MWI R-374A-7Y4L R-3GVH-A425
+// R-P9FX-ZJGZ R-PBVQ-R2YD R-PHZ8-NXNU
 func TestFailedBatchSticks(t *testing.T) {
 	f := setup(t)
 	if err := os.WriteFile(f.dir, []byte("blocked"), 0600); err != nil {

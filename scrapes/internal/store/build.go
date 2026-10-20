@@ -23,8 +23,8 @@ import (
 // Step observes a completed disk write before further work begins.
 type Step func(context.Context, int64, time.Duration) error
 
-// Collection owns the temporary files of a single build.
-type Collection struct {
+// Build owns the temporary files of a single build.
+type Build struct {
 	mu                                sync.Mutex
 	s                                 *Store
 	run                               Run
@@ -36,19 +36,19 @@ type Collection struct {
 	sealed, loaded, discarded, failed bool
 }
 type wireRow struct {
-	Scraper   string       `json:"scraper"`
-	Run       string       `json:"run"`
-	SourceID  string       `json:"source_id"`
-	Collected time.Time    `json:"collected"`
-	Digest    string       `json:"digest"`
-	Name      string       `json:"name"`
-	Names     []string     `json:"names"`
-	Address   wireAddress  `json:"address"`
-	Lat       *float64     `json:"lat,omitempty"`
-	Lon       *float64     `json:"lon,omitempty"`
-	People    []wirePerson `json:"people"`
-	Facts     string       `json:"facts"`
-	Raw       *string      `json:"raw,omitempty"`
+	Scraper  string       `json:"scraper"`
+	Run      string       `json:"run"`
+	SourceID string       `json:"source_id"`
+	Scraped  time.Time    `json:"scraped"`
+	Digest   string       `json:"digest"`
+	Name     string       `json:"name"`
+	Names    []string     `json:"names"`
+	Address  wireAddress  `json:"address"`
+	Lat      *float64     `json:"lat,omitempty"`
+	Lon      *float64     `json:"lon,omitempty"`
+	People   []wirePerson `json:"people"`
+	Facts    string       `json:"facts"`
+	Raw      *string      `json:"raw,omitempty"`
 }
 type wireAddress struct {
 	Street string `json:"street,omitempty"`
@@ -76,7 +76,7 @@ func encodeRow(r source.Row) ([]byte, error) {
 		v := string(r.Raw)
 		raw = &v
 	}
-	b, err := json.Marshal(wireRow{r.Scraper, r.Run, r.SourceID, r.Collected, r.Digest, r.Name, names, wireAddress(r.Address), r.Lat, r.Lon, people, string(r.Facts), raw})
+	b, err := json.Marshal(wireRow{r.Scraper, r.Run, r.SourceID, r.Scraped, r.Digest, r.Name, names, wireAddress(r.Address), r.Lat, r.Lon, people, string(r.Facts), raw})
 	return append(b, '\n'), err
 }
 
@@ -89,7 +89,7 @@ func (r wireRow) sourceRow() source.Row {
 	if r.Raw != nil {
 		raw = json.RawMessage(*r.Raw)
 	}
-	return source.Row{Scraper: r.Scraper, Run: r.Run, SourceID: r.SourceID, Collected: r.Collected, Digest: r.Digest, Name: r.Name, Names: r.Names, Address: source.Address(r.Address), Lat: r.Lat, Lon: r.Lon, People: people, Facts: json.RawMessage(r.Facts), Raw: raw}
+	return source.Row{Scraper: r.Scraper, Run: r.Run, SourceID: r.SourceID, Scraped: r.Scraped, Digest: r.Digest, Name: r.Name, Names: r.Names, Address: source.Address(r.Address), Lat: r.Lat, Lon: r.Lon, People: people, Facts: json.RawMessage(r.Facts), Raw: raw}
 }
 
 type encodedRow struct {
@@ -97,8 +97,8 @@ type encodedRow struct {
 	data []byte
 }
 
-// Collect starts a build without creating files.
-func (s *Store) Collect(ctx context.Context, id string, step Step) (*Collection, error) {
+// Build starts a build without creating files.
+func (s *Store) Build(ctx context.Context, id string, step Step) (*Build, error) {
 	r, e := s.GetRun(ctx, id)
 	if e != nil {
 		return nil, e
@@ -106,9 +106,9 @@ func (s *Store) Collect(ctx context.Context, id string, step Step) (*Collection,
 	if r.Status != StatusRunning {
 		return nil, ErrEnded
 	}
-	return &Collection{s: s, run: r, step: step}, nil
+	return &Build{s: s, run: r, step: step}, nil
 }
-func (c *Collection) check(ctx context.Context, valid bool) error {
+func (c *Build) check(ctx context.Context, valid bool) error {
 	if e := ctx.Err(); e != nil {
 		return c.poison(e)
 	}
@@ -117,20 +117,20 @@ func (c *Collection) check(ctx context.Context, valid bool) error {
 	}
 	return nil
 }
-func (c *Collection) poison(err error) error { c.failed = true; return normalize(err) }
-func (c *Collection) chunkBytes() int64 {
+func (c *Build) poison(err error) error { c.failed = true; return normalize(err) }
+func (c *Build) chunkBytes() int64 {
 	if c.s.cfg.ChunkBytes < 1 {
 		return DefaultChunkBytes
 	}
 	return c.s.cfg.ChunkBytes
 }
-func (c *Collection) loadRows() int {
+func (c *Build) loadRows() int {
 	if c.s.cfg.LoadRows < 1 {
 		return DefaultLoadRows
 	}
 	return c.s.cfg.LoadRows
 }
-func (c *Collection) temp() (string, error) {
+func (c *Build) temp() (string, error) {
 	if e := os.MkdirAll(c.s.cfg.Runs, 0700); e != nil {
 		return "", e
 	}
@@ -142,7 +142,7 @@ func (c *Collection) temp() (string, error) {
 	c.owned = append(c.owned, p)
 	return p, f.Close()
 }
-func (c *Collection) notify(ctx context.Context, step Step, n int64, start time.Time) error {
+func (c *Build) notify(ctx context.Context, step Step, n int64, start time.Time) error {
 	end := c.s.cfg.Now()
 	if step == nil {
 		return nil
@@ -151,7 +151,7 @@ func (c *Collection) notify(ctx context.Context, step Step, n int64, start time.
 }
 
 // Add copies a source page, spilling sorted chunks at the configured threshold.
-func (c *Collection) Add(ctx context.Context, rows []source.Row) error {
+func (c *Build) Add(ctx context.Context, rows []source.Row) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if e := c.check(ctx, !c.sealed); e != nil {
@@ -165,7 +165,7 @@ func (c *Collection) Add(ctx context.Context, rows []source.Row) error {
 	for _, r := range rows {
 		r.Run = c.run.ID
 		r.Scraper = c.run.Scraper
-		r.Collected = stamp(r.Collected)
+		r.Scraped = stamp(r.Scraped)
 		b, e := encodeRow(r)
 		if e != nil {
 			return c.poison(e)
@@ -180,7 +180,7 @@ func (c *Collection) Add(ctx context.Context, rows []source.Row) error {
 	}
 	return nil
 }
-func (c *Collection) flush(ctx context.Context) error {
+func (c *Build) flush(ctx context.Context) error {
 	if len(c.buffer) == 0 {
 		return nil
 	}
@@ -217,7 +217,7 @@ func (c *Collection) flush(ctx context.Context) error {
 }
 
 // Seal writes the final partial chunk.
-func (c *Collection) Seal(ctx context.Context) error {
+func (c *Build) Seal(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if e := c.check(ctx, !c.sealed); e != nil {
@@ -230,8 +230,8 @@ func (c *Collection) Seal(ctx context.Context) error {
 	return nil
 }
 
-// Discard removes this collection's temporary files, retaining its published file.
-func (c *Collection) Discard() error {
+// Discard removes this build's temporary files, retaining its published file.
+func (c *Build) Discard() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, p := range c.owned {
@@ -289,7 +289,7 @@ func (h *mergeHeap) take() (wireRow, error) {
 	return out, nil
 }
 
-const fileSchema = `CREATE TABLE rows ("run" TEXT,source_id TEXT PRIMARY KEY,scraper TEXT,collected TEXT,digest TEXT,name TEXT,names TEXT,street TEXT,city TEXT,state TEXT,zip TEXT,county TEXT,lat REAL,lon REAL,people TEXT,facts BLOB,raw BLOB) WITHOUT ROWID;
+const fileSchema = `CREATE TABLE rows ("run" TEXT,source_id TEXT PRIMARY KEY,scraper TEXT,scraped TEXT,collected TEXT,digest TEXT,name TEXT,names TEXT,street TEXT,city TEXT,state TEXT,zip TEXT,county TEXT,lat REAL,lon REAL,people TEXT,facts BLOB,raw BLOB) WITHOUT ROWID;
 CREATE INDEX rows_source_digest ON rows(source_id,digest);
 CREATE TABLE names(source_id TEXT,seq INTEGER,name_lower TEXT,PRIMARY KEY(source_id,seq)) WITHOUT ROWID;`
 
@@ -302,7 +302,7 @@ func insertRow(ctx context.Context, tx *sql.Tx, r source.Row) error {
 	if e != nil {
 		return e
 	}
-	_, e = tx.ExecContext(ctx, "INSERT INTO rows ("+rowCols+") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", r.Run, r.SourceID, r.Scraper, encodeTime(r.Collected), r.Digest, r.Name, string(names), r.Address.Street, r.Address.City, r.Address.State, r.Address.Zip, r.Address.County, r.Lat, r.Lon, string(people), []byte(r.Facts), []byte(r.Raw))
+	_, e = tx.ExecContext(ctx, "INSERT INTO rows ("+rowCols+",collected) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", r.Run, r.SourceID, r.Scraper, encodeTime(r.Scraped), r.Digest, r.Name, string(names), r.Address.Street, r.Address.City, r.Address.State, r.Address.Zip, r.Address.County, r.Lat, r.Lon, string(people), []byte(r.Facts), []byte(r.Raw), encodeTime(r.Scraped))
 	if e != nil {
 		return e
 	}
@@ -313,7 +313,7 @@ func insertRow(ctx context.Context, tx *sql.Tx, r source.Row) error {
 	}
 	return nil
 }
-func (c *Collection) baseline(ctx context.Context) (*db.Immutable, error) {
+func (c *Build) baseline(ctx context.Context) (*db.Immutable, error) {
 	runs, e := c.s.ListRunsAfter(ctx, c.run.Scraper, "", "", int(^uint(0)>>1))
 	if e != nil {
 		return nil, e
@@ -327,7 +327,11 @@ func (c *Collection) baseline(ctx context.Context) (*db.Immutable, error) {
 			continue
 		}
 		err = d.Read(ctx, func(tx *sql.Tx) error {
-			rows, e := tx.QueryContext(ctx, "SELECT "+rowCols+" FROM rows ORDER BY source_id")
+			queries, e := readRowQueries(ctx, tx)
+			if e != nil {
+				return e
+			}
+			rows, e := tx.QueryContext(ctx, queries.each)
 			if e != nil {
 				return e
 			}
@@ -367,13 +371,13 @@ func (c *Collection) baseline(ctx context.Context) (*db.Immutable, error) {
 }
 
 // Load merges chunks, compares their digests and atomically publishes a run file.
-func (c *Collection) Load(ctx context.Context, step Step) (Counts, error) {
+func (c *Build) Load(ctx context.Context, step Step) (Counts, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if e := ctx.Err(); e != nil {
 		return Counts{}, c.poison(e)
 	}
-	// A failing catalog takes precedence over an invalid collection state.
+	// A failing catalog takes precedence over an invalid build state.
 	if e := c.s.transaction(ctx, false, func(*sql.Tx) error { return nil }); e != nil {
 		return Counts{}, c.poison(e)
 	}
@@ -413,7 +417,7 @@ func (c *Collection) Load(ctx context.Context, step Step) (Counts, error) {
 	}
 	return counts, nil
 }
-func (c *Collection) load(ctx context.Context, step Step, base *sql.Tx) (Counts, error) {
+func (c *Build) load(ctx context.Context, step Step, base *sql.Tx) (Counts, error) {
 	var counts Counts
 	var previous *sql.Rows
 	var prevID, prevDigest string

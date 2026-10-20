@@ -9,7 +9,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
-// R-RQ28-62T8
+// R-S6BA-VT8P
 func TestOrderedConfig(t *testing.T) {
 	client := &http.Client{}
 	writer := &telemetry.Writer{}

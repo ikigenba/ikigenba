@@ -2,10 +2,12 @@
 package web
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
@@ -158,6 +160,10 @@ func read(cfg Config, w http.ResponseWriter, r *http.Request, kind, key string) 
 		if marshalErr != nil {
 			return marshalErr
 		}
+		stamp, _ := json.Marshal(row.Scraped.UTC().Format(time.RFC3339))
+		compat := append([]byte(`,"collected":`), stamp...)
+		compat = append(compat, []byte(`,"digest":`)...)
+		b = bytes.Replace(b, []byte(`,"digest":`), compat, 1)
 		_, writeErr := w.Write(append(b, '\n'))
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()

@@ -189,11 +189,11 @@ func (s *Scraper) read(ctx context.Context, body io.Reader, batch func([]source.
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		collected := s.cfg.Now()
+		scraped := s.cfg.Now()
 		rows := make([]source.Row, len(records))
 		for i, record := range records {
 			var err error
-			rows[i], err = RowOf(record, collected)
+			rows[i], err = RowOf(record, scraped)
 			if err != nil {
 				return errors.New("unreadable source record")
 			}
@@ -246,7 +246,7 @@ func (s *Scraper) read(ctx context.Context, body io.Reader, batch func([]source.
 }
 
 // RowOf maps decoded CSV fields to their envelope and ordered raw JSON.
-func RowOf(record []string, collected time.Time) (source.Row, error) {
+func RowOf(record []string, scraped time.Time) (source.Row, error) {
 	columns := Columns()
 	if len(record) != len(columns) || record[0] == "" {
 		return source.Row{}, errors.New("invalid source record")
@@ -283,5 +283,5 @@ func RowOf(record []string, collected time.Time) (source.Row, error) {
 	if len(names) > 0 {
 		name = names[0]
 	}
-	return source.Row{Scraper: Name, SourceID: record[0], Collected: collected.UTC().Truncate(time.Second), Digest: source.Digest(raw.Bytes()), Name: name, Names: names, Address: source.NewAddress(values["BorrowerAddress"], fallback("BorrowerCity", "ProjectCity"), fallback("BorrowerState", "ProjectState"), fallback("BorrowerZip", "ProjectZip"), values["ProjectCountyName"]), People: []source.Person{}, Facts: factJSON, Raw: raw.Bytes()}, nil
+	return source.Row{Scraper: Name, SourceID: record[0], Scraped: scraped.UTC().Truncate(time.Second), Digest: source.Digest(raw.Bytes()), Name: name, Names: names, Address: source.NewAddress(values["BorrowerAddress"], fallback("BorrowerCity", "ProjectCity"), fallback("BorrowerState", "ProjectState"), fallback("BorrowerZip", "ProjectZip"), values["ProjectCountyName"]), People: []source.Person{}, Facts: factJSON, Raw: raw.Bytes()}, nil
 }

@@ -9,7 +9,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
-// R-CLT6-NRWI
+// R-PWM1-96K6
 func TestOrderedConfigFields(t *testing.T) {
 	client := &http.Client{}
 	writer := &telemetry.Writer{}

@@ -42,15 +42,15 @@ func Record(ctx context.Context, w *telemetry.Writer, em *events.Emitter, name s
 	}
 }
 
-// Collected names a completed collect phase.
-const Collected = "scrape.collected"
+// Walked names a completed walk phase.
+const Walked = "scrape.walked"
 
 // Loaded names a completed load phase.
 const Loaded = "scrape.loaded"
 
 // Phase records successful build phases in telemetry as the stored starter.
 func Phase(ctx context.Context, w *telemetry.Writer, name string, r store.Run, bytes int64, elapsed, paused time.Duration) {
-	if w == nil || (name != Collected && name != Loaded) {
+	if w == nil || (name != Walked && name != Loaded) {
 		return
 	}
 	ctx = identity.NewContext(ctx, identity.Caller{UserID: r.UserID, RequestID: r.RequestID})

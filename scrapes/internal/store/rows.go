@@ -70,8 +70,11 @@ func (s *Store) GetRow(ctx context.Context, run, id string) (source.Row, error) 
 	defer func() { _ = d.Close() }()
 	var out source.Row
 	e = d.Read(ctx, func(tx *sql.Tx) error {
-		var err error
-		out, err = scanRow(tx.QueryRowContext(ctx, "SELECT "+rowCols+" FROM rows WHERE source_id=?", id))
+		queries, err := readRowQueries(ctx, tx)
+		if err != nil {
+			return err
+		}
+		out, err = scanRow(tx.QueryRowContext(ctx, queries.one, id))
 		return err
 	})
 	if e != nil {
@@ -100,8 +103,11 @@ func (s *Store) rowsWindow(ctx context.Context, run, name, pos string, limit int
 	}
 	defer func() { _ = d.Close() }()
 	e = d.Read(ctx, func(tx *sql.Tx) error {
-		const cols = `"run",source_id,scraper,collected,digest,name,names,street,city,state,zip,county,lat,lon,people,facts,NULL`
-		q := "SELECT " + cols + " FROM rows r WHERE 1=1"
+		queries, err := readRowQueries(ctx, tx)
+		if err != nil {
+			return err
+		}
+		q := queries.window
 		args := []any{}
 		if pos != "" {
 			if reverse {
@@ -153,7 +159,11 @@ func (s *Store) EachRow(ctx context.Context, run string, fn func(source.Row) err
 	defer func() { _ = d.Close() }()
 	var callback error
 	e = d.Read(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, "SELECT "+rowCols+" FROM rows ORDER BY source_id")
+		queries, err := readRowQueries(ctx, tx)
+		if err != nil {
+			return err
+		}
+		rows, err := tx.QueryContext(ctx, queries.each)
 		if err != nil {
 			return err
 		}
@@ -173,4 +183,22 @@ func (s *Store) EachRow(ctx context.Context, run string, fn func(source.Row) err
 		return callback
 	}
 	return normalize(e)
+}
+
+type rowQueries struct{ one, window, each string }
+
+// readRowQueries chooses complete statements for the current or previous file format.
+func readRowQueries(ctx context.Context, tx *sql.Tx) (rowQueries, error) {
+	var name string
+	err := tx.QueryRowContext(ctx, "SELECT name FROM pragma_table_info('rows') WHERE name='scraped'").Scan(&name)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return rowQueries{}, err
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		const cols = `"run",source_id,scraper,collected,digest,name,names,street,city,state,zip,county,lat,lon,people,facts,raw`
+		const windowCols = `"run",source_id,scraper,collected,digest,name,names,street,city,state,zip,county,lat,lon,people,facts,NULL`
+		return rowQueries{"SELECT " + cols + " FROM rows WHERE source_id=?", "SELECT " + windowCols + " FROM rows r WHERE 1=1", "SELECT " + cols + " FROM rows ORDER BY source_id"}, nil
+	}
+	const windowCols = `"run",source_id,scraper,scraped,digest,name,names,street,city,state,zip,county,lat,lon,people,facts,NULL`
+	return rowQueries{"SELECT " + rowCols + " FROM rows WHERE source_id=?", "SELECT " + windowCols + " FROM rows r WHERE 1=1", "SELECT " + rowCols + " FROM rows ORDER BY source_id"}, nil
 }

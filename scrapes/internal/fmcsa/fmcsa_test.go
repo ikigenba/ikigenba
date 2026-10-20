@@ -32,7 +32,7 @@ func config(f transport) fmcsa.Config {
 	return fmcsa.Config{HTTP: &http.Client{Transport: f}, Now: clock, States: []string{"MN"}, Status: "A", MinPowerUnits: 5, UserAgent: "test ua", Sleep: func(context.Context, time.Duration) {}}
 }
 
-// R-0XH3-HY8O R-0YOZ-VPZD R-0ZWW-9HQ2 R-114S-N9GR
+// R-0XH3-HY8O R-P24J-OX0T R-0ZWW-9HQ2 R-114S-N9GR
 func TestAPI(t *testing.T) {
 	if fmcsa.Name != "fmcsa" || fmcsa.DefaultBaseURL != "https://data.transportation.gov/resource/az4n-8mr2.json" || fmcsa.PageSize != 10000 || fmcsa.Retries != 3 || fmcsa.Backoff != time.Second || fmcsa.RequestTimeout != 60*time.Second || fmcsa.Role != "company officer" {
 		t.Fatal("constants")
@@ -109,7 +109,7 @@ func TestWalk(t *testing.T) {
 		t.Fatal(received[0])
 	}
 	for i, row := range received[1] {
-		if row.SourceID != fmt.Sprint(i) || !row.Collected.Equal(clock().UTC().Truncate(time.Second)) {
+		if row.SourceID != fmt.Sprint(i) || !row.Scraped.Equal(clock().UTC().Truncate(time.Second)) {
 			t.Fatal(i, row)
 		}
 	}
@@ -382,14 +382,14 @@ func TestTelemetry(t *testing.T) {
 	}
 }
 
-// R-1EJO-UQME R-1FRL-8ID3
+// R-P5S8-U88W R-1FRL-8ID3
 func TestRowOf(t *testing.T) {
 	raw := json.RawMessage(`{ "dot_number":"17","legal_name":" TEST LLC ","dba_name":"OTHER","phy_street":" TEST ROAD ","phy_city":"TEST CITY","phy_state":"mn","phy_zip":"12345-6789","phy_cnty":" 001 ","company_officer_1":" Test LLC ","company_officer_2":" Other LLC ","power_units":"014","hm_ind":"N","crgo_logpole":"X","crgo_bldgmat":"Y","crgo_meat":"N","crgo_cargoothr_desc":"OTHER","phone":123,"safety_rating":null }`)
 	r, err := fmcsa.RowOf(raw, clock())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Scraper != fmcsa.Name || r.Run != "" || r.SourceID != "17" || !r.Collected.Equal(clock().UTC().Truncate(time.Second)) || r.Digest != source.Digest(raw) || r.Name != "TEST LLC" || !reflect.DeepEqual(r.Names, []string{"TEST LLC", "OTHER"}) || r.Address != (source.Address{Street: "TEST ROAD", City: "Test City", State: "MN", Zip: "12345", County: "001"}) || r.Lat != nil || r.Lon != nil || !reflect.DeepEqual(r.People, []source.Person{{Name: "Test LLC", Role: fmcsa.Role}, {Name: "Other LLC", Role: fmcsa.Role}}) || !bytes.Equal(r.Raw, raw) {
+	if r.Scraper != fmcsa.Name || r.Run != "" || r.SourceID != "17" || !r.Scraped.Equal(clock().UTC().Truncate(time.Second)) || r.Digest != source.Digest(raw) || r.Name != "TEST LLC" || !reflect.DeepEqual(r.Names, []string{"TEST LLC", "OTHER"}) || r.Address != (source.Address{Street: "TEST ROAD", City: "Test City", State: "MN", Zip: "12345", County: "001"}) || r.Lat != nil || r.Lon != nil || !reflect.DeepEqual(r.People, []source.Person{{Name: "Test LLC", Role: fmcsa.Role}, {Name: "Other LLC", Role: fmcsa.Role}}) || !bytes.Equal(r.Raw, raw) {
 		t.Fatal(r)
 	}
 	expected := map[string]any{"added": nil, "cargo": []string{"bldgmat", "logpole"}, "class": nil, "dot_number": "17", "email": nil, "hazmat": "N", "mcs150_date": nil, "mileage": nil, "mileage_year": nil, "operation": nil, "org_type": nil, "owned_tractors": nil, "owned_trailers": nil, "owned_trucks": nil, "phone": nil, "power_units": "014", "safety_rating": nil, "status": nil, "total_cdl": nil, "total_drivers": nil, "truck_units": nil}
@@ -429,7 +429,7 @@ func TestBadRecord(t *testing.T) {
 	}
 }
 
-// R-0YOZ-VPZD R-160E-6CFJ
+// R-P24J-OX0T R-160E-6CFJ
 func TestDefaultClientAndPauseCancellation(t *testing.T) {
 	attempts := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -538,8 +538,8 @@ func TestPageClockAfterBody(t *testing.T) {
 			t.Fatal(reads, rows)
 		}
 		for _, row := range rows {
-			if !row.Collected.Equal(pageTime.UTC().Truncate(time.Second)) {
-				t.Fatal(row.Collected, pageTime)
+			if !row.Scraped.Equal(pageTime.UTC().Truncate(time.Second)) {
+				t.Fatal(row.Scraped, pageTime)
 			}
 		}
 		return nil

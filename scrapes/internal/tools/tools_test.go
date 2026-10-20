@@ -175,7 +175,7 @@ func (f *fixture) add(status string, n int) store.Run {
 	}
 	rows := make([]source.Row, n)
 	for i := range rows {
-		rows[i] = source.Row{SourceID: fmt.Sprintf("%03d", i), Collected: f.now, Name: "chosen-business", Names: []string{"Chosen Business", "Alternate"}, Digest: fmt.Sprint(i), Facts: json.RawMessage(`{"chosen":true}`), Raw: json.RawMessage(fmt.Sprintf(`{"number":%d}`, i))}
+		rows[i] = source.Row{SourceID: fmt.Sprintf("%03d", i), Scraped: f.now, Name: "chosen-business", Names: []string{"Chosen Business", "Alternate"}, Digest: fmt.Sprint(i), Facts: json.RawMessage(`{"chosen":true}`), Raw: json.RawMessage(fmt.Sprintf(`{"number":%d}`, i))}
 	}
 
 	switch status {
@@ -549,7 +549,7 @@ func TestReadToolsShareRunStartedByCaller(t *testing.T) {
 	if err := json.Unmarshal(decode(t, started).Structured, &record); err != nil {
 		t.Fatal(err)
 	}
-	row := source.Row{SourceID: "chosen-id", Collected: f.now, Name: "chosen-name", Names: []string{"chosen-name"}, Facts: json.RawMessage(`{}`), Raw: json.RawMessage(`{"chosen":true}`)}
+	row := source.Row{SourceID: "chosen-id", Scraped: f.now, Name: "chosen-name", Names: []string{"chosen-name"}, Facts: json.RawMessage(`{}`), Raw: json.RawMessage(`{"chosen":true}`)}
 	counts := loadRows(t, f.st, record.ID, []source.Row{row})
 	if _, err := f.st.FinishRun(t.Context(), record.ID, counts); err != nil {
 		t.Fatal(err)
@@ -787,7 +787,7 @@ func TestScrapersEmptyRegistry(t *testing.T) {
 func loadRows(t *testing.T, st *store.Store, id string, rows []source.Row) store.Counts {
 	t.Helper()
 	step := func(context.Context, int64, time.Duration) error { return nil }
-	c, err := st.Collect(t.Context(), id, step)
+	c, err := st.Build(t.Context(), id, step)
 	if err != nil {
 		t.Fatal(err)
 	}

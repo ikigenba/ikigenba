@@ -102,7 +102,7 @@ func TestRunForwardsWriteRetryPauseAndDiagnostic(t *testing.T) {
 	}
 }
 
-// R-FPZC-TBXO
+// R-Q1HM-S9IY
 func TestRunSourceFailureWritesNoDiagnostic(t *testing.T) {
 	src := &fakeSource{page: func(r *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 500, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("fixture failure")), Request: r}, nil
@@ -122,7 +122,7 @@ func TestRunSourceFailureWritesNoDiagnostic(t *testing.T) {
 	}
 }
 
-// R-708K-WWT8
+// R-PU68-HN2S
 func TestRunForwardsWriteBudget(t *testing.T) {
 	for _, budget := range []int64{1, 2, 1000} {
 		t.Run(strconv.FormatInt(budget, 10), func(t *testing.T) {
@@ -137,7 +137,7 @@ func TestRunForwardsWriteBudget(t *testing.T) {
 			found := map[string]bool{}
 			positive := false
 			for _, event := range f.Telemetry.Events() {
-				if event.Name != trail.Collected && event.Name != trail.Loaded {
+				if event.Name != trail.Walked && event.Name != trail.Loaded {
 					continue
 				}
 				if event.Attrs["run"] != id {
@@ -151,7 +151,7 @@ func TestRunForwardsWriteBudget(t *testing.T) {
 				positive = positive || bytes > 0
 				found[event.Name] = true
 			}
-			if !found[trail.Collected] || !found[trail.Loaded] || !positive {
+			if !found[trail.Walked] || !found[trail.Loaded] || !positive {
 				t.Fatalf("phases %v positive %v", found, positive)
 			}
 		})
@@ -209,7 +209,7 @@ func TestRunForwardsPressureLimit(t *testing.T) {
 	}
 }
 
-// R-X13B-6JX7 R-FPZC-TBXO
+// R-X13B-6JX7 R-Q1HM-S9IY
 func TestRunMissingRowsKeepCatalogReadable(t *testing.T) {
 	f := startRun(t, runOptions{})
 	id := runID(t, startScrape(t, f, fixtureCaller))

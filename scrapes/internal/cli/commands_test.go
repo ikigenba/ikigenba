@@ -232,9 +232,9 @@ func TestUsageConstant(t *testing.T) {
 	}
 }
 
-// R-G6R5-LSEO
+// R-Q3XF-JT0C
 func TestManifestConstant(t *testing.T) {
-	const want = "app = \"scrapes\"\ndescription = \"Public records about businesses in range, collected per source as rows per run\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[env]\nSCRAPE_KEEP_RUNS = \"2\"\nSCRAPE_WRITE_BUDGET = \"4096000\"\nSCRAPE_PRESSURE_LIMIT = \"10\"\nFMCSA_STATES = \"MN,WI\"\nFMCSA_MIN_POWER_UNITS = \"5\"\nFMCSA_STATUS = \"A\"\nPPP_FILES = \"public_150k_plus_240930.csv\"\nPPP_STATES = \"MN,WI\"\nMN_PARCELS_COUNTIES = \"Carlton,Chisago,Isanti,Mille Lacs,Aitkin,St. Louis,Anoka,Washington,Sherburne,Stearns,Benton,Morrison,Crow Wing\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/scrapes.db\"\n\n[resources]\nmemory_max = \"256M\"\n\n[home]\ngroup = \"application\"\n"
+	const want = "app = \"scrapes\"\ndescription = \"Public records about businesses in range, scraped per source as rows per run\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[env]\nSCRAPE_KEEP_RUNS = \"2\"\nSCRAPE_WRITE_BUDGET = \"4096000\"\nSCRAPE_PRESSURE_LIMIT = \"10\"\nFMCSA_STATES = \"MN,WI\"\nFMCSA_MIN_POWER_UNITS = \"5\"\nFMCSA_STATUS = \"A\"\nPPP_FILES = \"public_150k_plus_240930.csv\"\nPPP_STATES = \"MN,WI\"\nMN_PARCELS_COUNTIES = \"Carlton,Chisago,Isanti,Mille Lacs,Aitkin,St. Louis,Anoka,Washington,Sherburne,Stearns,Benton,Morrison,Crow Wing\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/scrapes.db\"\n\n[resources]\nmemory_max = \"256M\"\n\n[home]\ngroup = \"application\"\n"
 	const got = cli.Manifest
 	if got != want {
 		t.Fatalf("constant mismatch: %q", cli.Manifest)
