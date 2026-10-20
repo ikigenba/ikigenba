@@ -1,6 +1,6 @@
 # appkit
 
-appkit holds what every app shares: page chrome, identity, the MCP server and client, telemetry, the database open path, the clients a connector uses to reach artifacts and connections, the client a service reads scrapes' runs and rows with, and the client a service runs a prompt with. It is a Go library with one concern per package and no package privileged; the module root exports nothing. As a library it has no stories: the design is the record. The module path is `github.com/ikigenba/ikigenba/appkit`. It knows nothing about authentication: nginx and auth establish who the caller is, and appkit only carries it. The contract is `specs/design/`; this file restates none of it.
+appkit holds what every app shares: page chrome, identity, the MCP server and client, telemetry, the database open path, the clients a connector uses to reach artifacts and connections, the client a service reads scrapes' runs and rows with, the client a service runs a prompt with, and the client a service reads candidates' cohorts and businesses with. It is a Go library with one concern per package and no package privileged; the module root exports nothing. As a library it has no stories: the design is the record. The module path is `github.com/ikigenba/ikigenba/appkit`. It knows nothing about authentication: nginx and auth establish who the caller is, and appkit only carries it. The contract is `specs/design/`; this file restates none of it.
 
 ## Layout
 
@@ -16,6 +16,7 @@ appkit holds what every app shares: page chrome, identity, the MCP server and cl
 - `connections` is the client over the connections service's socket: `Token` for a provider's access token, and the typed errors its refusals map to, the reconnect one carrying its URL.
 - `scrapes` is the client over the scrapes service's socket: `Current`, `Record` and `Rows` on its sibling read path, the run record and row as appkit's types, and the typed errors its refusals map to.
 - `prompts` is the client over the prompts service's MCP tools on its socket: `Show`, `Run` and `Result` over its `show`, `run` and `result` tools, the prompt, run start and run outcome as appkit's types, and the one `Refusal` any refused call returns.
+- `candidates` is the client over the candidates service's MCP tools on its socket: `Members` and `Candidate` over its `cohort` and `candidate` tools, the business, person and cohort member as appkit's types, the typed errors its refusal words map to, and the `Refusal` for the rest.
 - `paging` is how a tool pages a list: the opaque token that marks where the next page starts, the reading of a requested page size, and the shared words a tool shows a model.
 - The build run writes the Go source and the tests. `page/assets/`, `Makefile`, `.golangci.yml` and this file are its inputs and read-only to it. See the `spec` and `build-spec` skills.
 
