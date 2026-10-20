@@ -269,7 +269,10 @@ its path, never by reading tables. A store test may also open, decompress and
 decode the chunk files a build's `Seal` leaves in its own runs
 directory before `Load` (R-PSYC-3VC3). A test may open a run file its own
 store built through `db.OpenImmutable` and read its `rows` and `names`
-tables, as R-PPAM-YK40 states; this is the only read of a run file's tables.
+tables, as R-PPAM-YK40 states, and from a build's `step` (R-RHXB-8EET) may
+open through `db.OpenImmutable` the file that build's `Load` is writing in
+its own runs directory and count its `rows`, to prove the rows of each
+write; these are the only reads of a run file's tables.
 
 **Time and the sweep are driven, not waited out.** A run's started and
 finished times, a row's scraped time, the prune's ordering and the
