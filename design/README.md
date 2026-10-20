@@ -64,14 +64,18 @@ design/
     candidates.html candidates' landing: the prospect lists, by name, then
                     the kept passes, each list paged
     candidates-candidate.html
-                    one candidate: its fields, judgments, operating
-                    evidence, estimates, evidence, rulings and rejects;
+                    one candidate: its fields, enrichments, judgments,
+                    operating evidence, estimates, evidence, rulings,
+                    pages, enrichment results, rejects and campaigns;
                     merged and excluded
     candidates-prospect-list.html
                     one prospect list: its definition, filters, members and
                     standing rejects; showing excluded, and empty
     candidates-pass.html
-                    one pass: its record, running and failed
+                    one pass: its record, running and failed, enrich
+    candidates-page.html
+                    one kept page of a candidate's website, two levels
+                    down the trail
     campaigns.html  campaigns' landing: the campaigns, newest first,
                     paged
     campaigns-campaign.html
@@ -540,19 +544,21 @@ for Minnesota and Wisconsin, with made-up carriers.
   to the minute on the landing, where a cell with no time is empty, to the
   second with `UTC` on the run and row pages.
 
-**candidates.html, candidates-candidate.html, candidates-prospect-list.html, candidates-pass.html** —
+**candidates.html, candidates-candidate.html, candidates-prospect-list.html, candidates-pass.html, candidates-page.html** —
 candidates at `candidates.acme.ikigenba.com`, the funnel's judgment over
 scrapes' evidence: an ingest pass turns each scrapes run's records into
 candidate businesses, one per business with every record that describes it
-attached as a link, and a judge makes two separate judgments of each,
-whether it is a real business operating today and how big it is; the owner
+attached as a link, enrichers find facts about each, and a judge makes two
+separate judgments of each from them and the records, whether it is a real
+business operating today and how big it is; the owner
 reads them through prospect lists, saved searches of filters, an order, a size and
 rejects whose members are worked out at each read, and rules on candidates
 with `decide`, `exclude` and `include`. Candidates and prospect lists belong to no
 one: every signed-in user sees every candidate, prospect list, pass, ruling and
-reject. Four pages: the landing page, one candidate at
-`/candidates/<id>`, one prospect list at `/prospect-lists/<id>`, and one pass at
-`/passes/<id>`. Banner and footer as
+reject. Five pages: the landing page, one candidate at
+`/candidates/<id>`, one prospect list at `/prospect-lists/<id>`, one pass at
+`/passes/<id>` and one kept page of a candidate's website at
+`/candidates/<id>/pages/<n>`. Banner and footer as
 in app.html, the service `candidates` with the Tabler `filter` icon (added
 to `icons/tabler/` on 2026-10-12 for this app). No form but sign out. The
 sample data is made-up carriers from FMCSA's census for Minnesota and
@@ -570,7 +576,7 @@ Wisconsin.
   it (parameter `passes_page`), `tr[data-pass=<id>]`: a running judge from a
   hand-started ingest, a judge failed `scrapes`, a judge started by the cron trigger
   `judge_candidates`, two ingests done by a scrapes run. Every pass id links
-  to `/passes/<id>`; Kind is `ingest` or `judge`; Trigger is the run id, the
+  to `/passes/<id>`; Kind is `ingest`, `judge`, `enrich` or `enrich_target`; Trigger is the run id, the
   cron trigger's slug or `ingest` or `judge` when started by hand. A failed row's reason follows its
   status, muted. A link to the about screen. Its tools (`prospect_lists`,
   `prospect_list`, `candidates`, `candidate`, `passes`, `pass`, `ingest`, `judge`,
@@ -585,16 +591,25 @@ Wisconsin.
   `section#candidate-card` with `dl#candidate.kv`: ID, Status, Merged into
   (merged only), then each when set Name, Names, Street, City, State, Zip,
   County, Phone, Email, Website (the state, `https`, `http` or `none`, with the URL it
-  landed on as an `a.website-link`, its title in `div[data-website-title]`
-  and a muted "checked" time; muted `unknown` when it has no result), People (one `div[data-person]` each), Class and
+  landed on as an `a.website-link`, its title in `div[data-website-title]`,
+  the search's reason in `div[data-website-why]` and a muted "checked" or
+  "found by search" time; muted `unknown` when it has no result), People (one `div[data-person]` each), Class and
   Cargo (one `code[data-cargo]` per tag), then Created and Updated.
-  `section#judgments-card` with `dl#judgments.kv`, the two judgments and
-  the facts beside them as the last judge calculated them: Operating
-  confidence, Revenue low, Revenue high, Revenue confidence, Categories
-  (one `div[data-category]` each, its source muted), Known since, Newest
-  filing, Government match, Fleet (the verdict `pass`, `fail` or, muted,
-  `unknown`), Trucks and Drivers (muted "unknown" when FMCSA gives none),
-  Drive minutes, Excluded (yes or no), Rules, Calculated. `section#operating` (Operating evidence) with
+  `section#enrichments-card` (Enrichments, an active candidate only), apart
+  from the judgments: `dl#facts.kv` with Categories (one `div[data-category]`
+  each, its source muted), Classified by (`brief` or `links`, carried in
+  `data-classified-by`), Records say (the categories its records give, only
+  when the brief overrides them), Known since, Newest filing, Government
+  match, Fleet (the verdict `pass`, `fail` or, muted, `unknown`), Trucks,
+  Drivers, Drive minutes and Written (one `div[data-written=<kind>]` per
+  enricher with its time); then, under `h3#brief-title`, the brief,
+  `dl#brief.kv`: Summary, Categories (each with the agent's reason muted),
+  Labels and Written. Empty: `div#no-facts.empty`, `div#no-brief.empty`,
+  and `div#brief-no-categories.alert.quiet` when a brief gave no categories.
+  `section#judgments-card` with `dl#judgments.kv`, the two judgments as the
+  last judge calculated them from the enrichments and the records: Operating
+  confidence, Revenue low, Revenue high, Revenue confidence, Excluded (yes
+  or no), Rules, Calculated. `section#operating` (Operating evidence) with
   `table#evidence-list` of Evidence / Source / Weight / Description,
   `tr[data-evidence=<name>]`. `section#estimates` with one
   `dl.kv[data-estimate=<source>]` per source, its facts in a nested
@@ -604,46 +619,61 @@ Wisconsin.
   `tr[data-link=<scraper>:<source_id>]`, each source id linking to its row
   at scrapes, `/runs/<run>/rows/<source_id>`. `section#rulings` with
   `table#ruling-list` of Kind / With / Records / By / When / Why, newest
-  first, `tr[data-ruling=<kind>]`. `section#enrichments` (Enrichments), on
-  an active candidate only, with `table#enrichment-list` of Kind / State /
-  Landed / Title / Status / Bytes / Error / Domain / When, newest first,
-  `tr[data-enrichment=<kind>][data-state=<state>]`, Landed an
-  `a.website-link` when a URL was reached. `section#rejects` with
+  first, `tr[data-ruling=<kind>]`. `section#pages` (Pages, an active candidate only) with
+  `table#page-list` of URL / Title / Bytes / Fetched / By,
+  `tr[data-page=<n>]`, each URL an `a.page-link` to the page's text.
+  `section#enrichments` (Enrichment results, an active candidate only) with
+  `table#enrichment-list` of Kind / Source / Found / Cost / When, newest
+  first, `tr[data-enrichment=<kind>]` (also `data-state` and, when it
+  failed, `data-failed` and a `.badge` failed of kind err); Found is the
+  state, URL and title of a website check, the `dl.kv` of a website
+  search's answer (`dd[data-search-url]`, `data-search-why`,
+  `data-confirmation`, `data-search-rejected`, `data-search-run`), or one
+  `dt[data-found=<key>]` per entry for any other kind. `section#rejects` with
   `table#reject-list` of Kind / Prospect list / By / When / Why, every reject and
   unreject naming the candidate, newest first,
   `tr[data-reject=<kind>][data-prospect-list=<id>]`, the prospect list's name linking to
   `/prospect-lists/<id>` beside its id, or its id and a muted "deleted" when the
-  prospect list is gone. States: merged (`div#merged.alert.quiet`
+  prospect list is gone. `section#campaigns-card` with `table#campaign-list`
+  of Campaign / From / Added / Delivered / Rejected,
+  `tr[data-campaign=<id>]` (also `data-rejected`), From the prospect list
+  or muted "added by hand". States: merged (`div#merged.alert.quiet`
   of kind info, "Merged", linking to the survivor; the record and the
   rulings and rejects only), a gone record (`.badge` gone of kind warn) and a split's
   moved records, excluded (`div#excluded.alert.quiet` of kind warn; the
-  facts unchanged, Excluded yes, here with an unknown fleet verdict and
-  counts), a ZIP not in the table, no high estimate
-  and no filing (muted words), no evidence, no estimate and no categories
+  judgments unchanged, Excluded yes), facts with a ZIP not in the table, a
+  government match, no filing and an unknown fleet (muted words), unknown
+  categories, an unknown website and one found by search, a failed check
+  and a search's answer, no evidence and no estimate
   (muted words, and `div#no-operating-evidence.empty`), not judged
   (`div#no-judgments.empty`), no estimates (`div#no-estimates.empty`), no
-  rulings (`div#no-rulings.empty`), no enrichments
-  (`div#no-enrichments.empty`), no rejects (`div#no-rejects.empty`).
+  pages (`div#no-pages.empty`), no rulings (`div#no-rulings.empty`), no
+  enrichments (`div#no-enrichments.empty`), no rejects
+  (`div#no-rejects.empty`), no campaigns (`div#no-campaigns.empty`).
 - One prospect list, `pl_d05a3e86b4c17f29`, "Trucking and construction, $5M to
   $10M, 2 hours": the trail candidates / the id, the name as the `h1`;
   `p#headline` with `#matching`, a `.badge` of kind info counting the
-  matching candidates, and when it was changed. `section#prospect-list-card` with
+  matching candidates, `#classified` beside it counting the members the
+  brief classified, and when it was changed. `section#prospect-list-card` with
   `dl#prospect-list.kv`: ID, Name, Size, Order (one `div[data-order]` per field,
   its direction muted), Created by, Created, Changed by, Changed.
   `section#filters` with `dl#filters.kv`: Revenue low, Drive minutes,
-  Categories, Fleet, Website, Government, Filing age, Class and Excluded, each muted
+  Categories, Fleet, Website, Government, Filing age, Campaigns, Class and Excluded, each muted
   "any" when not carried, and a `.badge[data-unknown]` "unknown included"
   of kind info when its switch is set (Fleet and Website each have one;
   Website's states are `code[data-website]`, its switch `website_unknown`).
   `section#members` with
-  `table#member-list`, the landing's old ranked row (Rank / Name / City /
-  State / Operating confidence / Low / High / Revenue confidence /
-  Categories / Class / Fleet / Minutes / Government) plus Website, Known
-  since and Newest filing, `tr[data-candidate=<id>]`, each name linking to
-  `/candidates/<id>`; Fleet is the verdict, muted when `unknown`, carried
+  `table#member-list` (Rank / Name / City / State / Operating confidence /
+  Low / High / Revenue confidence / Categories / Classified by / Class /
+  Fleet / Website / Site text / Brief / Minutes / Government / Known since /
+  Newest filing), `tr[data-candidate=<id>]`, each name linking to
+  `/candidates/<id>`; Classified by is `brief` or `links`, carried in
+  `data-classified-by`; Fleet is the verdict, muted when `unknown`, carried
   in `data-fleet`; Website is the state, an `a.website-link` to the URL it
   landed on when there is one, muted when `unknown`, carried in
-  `data-website`. `section#rejects` with `table#reject-list` of Candidate /
+  `data-website` (and `data-website-source`, with a `.badge` "found by
+  search" when a search decided it); Site text and Brief are the time each
+  was last written, or muted "none". `section#rejects` with `table#reject-list` of Candidate /
   By / When / Why, the standing rejects newest first,
   `tr[data-reject=<cand id>]`. No form: prospect lists change through the tools.
   States: a prospect list showing excluded candidates (a `.badge` excluded of kind
@@ -654,23 +684,34 @@ Wisconsin.
   trail candidates / the id, the id as the `h1`; `p#headline` with the
   status and the started and finished times; `section#pass-card` with
   `dl#pass.kv`: ID, Kind, Trigger (the run id linking to its page at
-  scrapes, the cron trigger's slug or `ingest` or `judge` when started by hand), Status, Reason (failed
-  only), Started by (scrapes, `cron` and the trigger's slug, or the
+  scrapes, the cron trigger's slug, `ingest`, `judge` or `enrich` when started by hand, or
+  the pass that started it), Status, Reason (failed
+  only), Started by (scrapes, `cron` and the trigger's slug, `pass` and the
+  starting pass, or the
   caller's email when started by hand), Started, Finished (once finished), Rows,
   New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged; an
-  enrich pass shows five counts in their place, Due, Fetched, `https`,
-  `http` and `none` (`#pass-due`, `#pass-fetched`, `#pass-https`,
-  `#pass-http`, `#pass-none`). States:
+  enrich pass shows Derived, Due, Fetched, `https`, `http` and `none` in
+  their place (`#pass-derived`, `#pass-due`, `#pass-fetched`, `#pass-https`,
+  `#pass-http`, `#pass-none`), and an enrich over a target (`enrich_target`)
+  adds Target (linking to the prospect list or candidate), Enrich kind, Runs,
+  Runs failed, Pages and Cost. States:
   running (`div#running.alert.quiet`, "Running", a Reload button), failed
   (`div#failure.alert` of kind err, "The pass failed", the reason's
-  sentence chosen from `scrapes`, `interrupted` or `store`, and a line that
-  what it wrote stays), a judge started by cron. An unknown id or a pruned
+  sentence chosen from `scrapes`, `interrupted`, `store` or `prompts`, and a line that
+  what it wrote stays), a judge started by cron, an enrich pass and an
+  enrich over a prospect list. An unknown id or a pruned
   one is the not-found page.
-- The about page's facts paragraph lists the website (https, http, none or
-  unknown) among the facts kept beside the judgments, and a paragraph
-  describes the enrich pass: it follows every ingest that ends done, or
-  starts on a call of `enrich`, fetches each own-domain candidate's domain
-  once and keeps the result, and a judge pass follows when it wrote one.
+- One kept page, number 2 of `cand_4b9e1f07c2d83a65`: the trail candidates /
+  the candidate id / the number, the page's title (or its URL) as the `h1`;
+  `p#headline` with the candidate's name and when it was fetched;
+  `a#back.button.secondary.small`; `section#page-card` with `dl#page.kv`
+  (Candidate, URL, Title, Bytes, Fetched, Added by) and `section#text-card`
+  with the page's text in `p#page-text.prose`, or `div#no-text.empty`.
+- The about page's How it works section describes enrichments and
+  judgments as separate parts of a candidate, the enrich pass (it follows
+  every ingest that ends done, or starts on a call of `enrich`, and a judge
+  pass follows when it wrote a result), site text over a prospect list or
+  one candidate, and prospect lists.
 - Candidate status reads as a `.status` word, as stored: active is ok,
   merged is info; pass status as scrapes' run status: running info, done
   ok, failed err. Class tags, cargo tags, category words, evidence kinds,

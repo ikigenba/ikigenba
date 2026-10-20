@@ -17,7 +17,7 @@
 </header>
 <main>
   <h1>Trucking and construction, $5M to $10M, 2 hours</h1>
-  <p id="headline" class="cluster"><span id="matching" class="badge" data-kind="info">47 matching</span> <span class="muted">changed <time datetime="2026-10-15T10:02:48Z">2026-10-15 10:02:48 UTC</time></span></p>
+  <p id="headline" class="cluster"><span id="matching" class="badge" data-kind="info">47 matching</span> <span id="classified" class="badge" data-kind="info">2 of 3 members classified by brief</span> <span class="muted">changed <time datetime="2026-10-15T10:02:48Z">2026-10-15 10:02:48 UTC</time></span></p>
 
   <section id="prospect-list-card" class="card" aria-labelledby="prospect-list-title">
     <header><h2 id="prospect-list-title">Prospect list</h2><p>A saved search: its members are the active, judged candidates that pass every filter, are not rejected from it and are not excluded unless it shows excluded ones, in its order, cut to its size. Agents change it with the <code>edit_prospect_list</code> tool.</p></header>
@@ -40,6 +40,7 @@
       <dt>Drive minutes</dt><dd id="filter-minutes">at most 120</dd>
       <dt>Categories</dt><dd id="filter-categories"><code data-category="trucking and logistics">trucking and logistics</code> <code data-category="construction">construction</code></dd>
       <dt>Fleet</dt><dd id="filter-fleet"><span class="muted">any</span></dd>
+      <dt>Website</dt><dd id="filter-website"><code data-website="https">https</code> <code data-website="http">http</code> <span class="badge" data-kind="info" data-unknown>unknown included</span></dd>
       <dt>Government</dt><dd id="filter-government">no government match</dd>
       <dt>Filing age</dt><dd id="filter-filing">newest filing at most 2190 days old <span class="badge" data-kind="info" data-unknown>unknown included</span></dd>
       <dt>Campaigns</dt><dd id="filter-campaign">not added to a campaign in the last 90 days <span class="muted">never in a campaign included</span></dd>
@@ -57,7 +58,7 @@
     </header>
     <div class="table-scroll">
       <table id="member-list">
-        <thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th class="num">Operating confidence</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Class</th><th>Fleet</th><th class="num">Minutes</th><th>Government</th><th>Known since</th><th>Newest filing</th></tr></thead>
+        <thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th class="num">Operating confidence</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Classified by</th><th>Class</th><th>Fleet</th><th>Website</th><th>Site text</th><th>Brief</th><th class="num">Minutes</th><th>Government</th><th>Known since</th><th>Newest filing</th></tr></thead>
         <tbody>
           <tr data-candidate="cand_4b9e1f07c2d83a65">
             <td class="candidate-rank num">1</td>
@@ -69,8 +70,12 @@
             <td class="candidate-high num">$13,000,000</td>
             <td class="candidate-revenue-confidence num">0.70</td>
             <td class="candidate-categories"><code data-category="trucking and logistics">trucking and logistics</code></td>
+            <td class="candidate-classified-by" data-classified-by="brief"><code>brief</code></td>
             <td class="candidate-class"><code>for_hire</code></td>
             <td class="candidate-fleet" data-fleet="pass">pass</td>
+            <td class="candidate-website" data-website="https"><a class="website-link" href="https://scvtransport.example/">https</a></td>
+            <td class="candidate-site-text"><time datetime="2026-10-04T09:30:00Z">2026-10-04 09:30</time></td>
+            <td class="candidate-brief"><time datetime="2026-10-04T09:31:00Z">2026-10-04 09:31</time></td>
             <td class="candidate-minutes num">84</td>
             <td class="candidate-government"></td>
             <td class="candidate-known-since"><time datetime="2018-04-09">2018-04-09</time></td>
@@ -86,8 +91,12 @@
             <td class="candidate-high num"><span class="muted">none</span></td>
             <td class="candidate-revenue-confidence num">0.30</td>
             <td class="candidate-categories"><code data-category="construction">construction</code></td>
+            <td class="candidate-classified-by" data-classified-by="links"><code>links</code></td>
             <td class="candidate-class"><code>private</code></td>
             <td class="candidate-fleet" data-fleet="fail">fail</td>
+            <td class="candidate-website" data-website="http" data-website-source="search"><a class="website-link" href="http://pinecityreadymix.example/">http</a> <span class="badge" data-kind="info">found by search</span></td>
+            <td class="candidate-site-text"><time datetime="2026-10-06T14:05:00Z">2026-10-06 14:05</time></td>
+            <td class="candidate-brief"><span class="muted">none</span></td>
             <td class="candidate-minutes num">22</td>
             <td class="candidate-government"></td>
             <td class="candidate-known-since"><time datetime="2011-06-02">2011-06-02</time></td>
@@ -103,8 +112,12 @@
             <td class="candidate-high num">$9,000,000</td>
             <td class="candidate-revenue-confidence num">0.40</td>
             <td class="candidate-categories"><code data-category="construction">construction</code></td>
+            <td class="candidate-classified-by" data-classified-by="brief"><code>brief</code></td>
             <td class="candidate-class"></td>
             <td class="candidate-fleet" data-fleet="unknown"><span class="muted">unknown</span></td>
+            <td class="candidate-website" data-website="unknown"><span class="muted">unknown</span></td>
+            <td class="candidate-site-text"><span class="muted">none</span></td>
+            <td class="candidate-brief"><time datetime="2026-10-07T08:12:00Z">2026-10-07 08:12</time></td>
             <td class="candidate-minutes num">41</td>
             <td class="candidate-government"></td>
             <td class="candidate-known-since"><time datetime="2020-05-04">2020-05-04</time></td>
@@ -149,7 +162,7 @@
       <div class="card flush">
         <div class="table-scroll">
           <table>
-            <thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th class="num">Operating confidence</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Class</th><th>Fleet</th><th class="num">Minutes</th><th>Government</th><th>Known since</th><th>Newest filing</th></tr></thead>
+            <thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th class="num">Operating confidence</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Classified by</th><th>Class</th><th>Fleet</th><th>Website</th><th>Site text</th><th>Brief</th><th class="num">Minutes</th><th>Government</th><th>Known since</th><th>Newest filing</th></tr></thead>
             <tbody>
               <tr data-candidate="cand_5f20b8e41d7a9c36">
                 <td class="candidate-rank num">1</td>
@@ -161,8 +174,12 @@
                 <td class="candidate-high num"><span class="muted">none</span></td>
                 <td class="candidate-revenue-confidence num"></td>
                 <td class="candidate-categories"><span class="muted">unknown</span></td>
+                <td class="candidate-classified-by" data-classified-by=""></td>
                 <td class="candidate-class"></td>
                 <td class="candidate-fleet" data-fleet="unknown"><span class="muted">unknown</span></td>
+                <td class="candidate-website" data-website="none">none</td>
+                <td class="candidate-site-text"><span class="muted">none</span></td>
+                <td class="candidate-brief"><span class="muted">none</span></td>
                 <td class="candidate-minutes num">33</td>
                 <td class="candidate-government"><code>COUNTY</code></td>
                 <td class="candidate-known-since"></td>

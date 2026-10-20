@@ -20,7 +20,7 @@
   <p id="headline" class="cluster"><span class="status" data-status="done" data-kind="ok">done</span> <span class="muted">started <time datetime="2026-10-02T06:02:05Z">2026-10-02 06:02:05 UTC</time> · finished <time datetime="2026-10-02T06:02:19Z">2026-10-02 06:02:19 UTC</time></span></p>
 
   <section id="pass-card" class="card" aria-labelledby="pass-title">
-    <header><h2 id="pass-title">Pass</h2><p>An ingest stores a run's records and judges nothing: rows, new, changed, unchanged and gone count the records against what candidates held, and created and linked count candidates. A judge judges every candidate again: judged counts them and unranged those left with no revenue estimate.</p></header>
+    <header><h2 id="pass-title">Pass</h2><p>An ingest stores a run's records, and judges only when started by hand over every scraper: rows, new, changed, unchanged and gone count the records against what candidates held, and created and linked count candidates. A judge judges every candidate again: judged counts them and unranged those left with no revenue estimate. An enrich runs every enricher over the candidates whose inputs changed, the derived kinds first: derived counts the results they wrote. For the website check, due counts the candidates due, fetched the domains it fetched, once each, and <code>https</code>, <code>http</code> and <code>none</code> the results by state. An enrich over a prospect list or one candidate runs one kind over its target, the due ones or, forced, every one; for site text, the brief and the website search, runs counts the prompts runs it started, runs failed those that failed, pages the pages they kept, none for the brief or the website search, and cost what they spent.</p></header>
     <dl id="pass" class="kv">
       <dt>ID</dt><dd id="pass-id"><code>pass_9a27f6c1e3b40d58</code></dd>
       <dt>Kind</dt><dd id="pass-kind"><code>ingest</code></dd>
@@ -91,12 +91,53 @@
         </dl>
       </div>
 
+      <h3 class="text-md">Done: an enrich over every candidate whose inputs changed</h3>
+      <div class="card">
+        <p class="cluster"><span class="status" data-status="done" data-kind="ok">done</span> <span class="muted">started <time datetime="2026-10-02T06:02:19Z">2026-10-02 06:02:19 UTC</time> · finished <time datetime="2026-10-02T06:03:02Z">2026-10-02 06:03:02 UTC</time></span></p>
+        <dl class="kv">
+          <dt>ID</dt><dd><code>pass_b36e1d8f04a7c295</code></dd>
+          <dt>Kind</dt><dd><code>enrich</code></dd>
+          <dt>Trigger</dt><dd><a class="pass-link" href="candidates-pass.html"><code>pass_9a27f6c1e3b40d58</code></a></dd>
+          <dt>Started by</dt><dd>pass <code>pass_9a27f6c1e3b40d58</code></dd>
+          <dt>Derived</dt><dd>412</dd>
+          <dt>Due</dt><dd>96</dd>
+          <dt>Fetched</dt><dd>88</dd>
+          <dt><code>https</code></dt><dd>71</dd>
+          <dt><code>http</code></dt><dd>6</dd>
+          <dt><code>none</code></dt><dd>11</dd>
+        </dl>
+      </div>
+
+      <h3 class="text-md">Done: one enricher kind over a prospect list, started by hand</h3>
+      <div class="card">
+        <p class="cluster"><span class="status" data-status="done" data-kind="ok">done</span> <span class="muted">started <time datetime="2026-10-16T13:40:11Z">2026-10-16 13:40:11 UTC</time> · finished <time datetime="2026-10-16T13:52:48Z">2026-10-16 13:52:48 UTC</time></span></p>
+        <dl class="kv">
+          <dt>ID</dt><dd><code>pass_4c82a0e7b15d9f36</code></dd>
+          <dt>Kind</dt><dd><code>enrich_target</code></dd>
+          <dt>Trigger</dt><dd><code>enrich</code></dd>
+          <dt>Started by</dt><dd>ada@acme.dev</dd>
+          <dt>Target</dt><dd><a class="target-link" href="candidates-prospect-list.html"><code>pl_d05a3e86b4c17f29</code></a></dd>
+          <dt>Enrich kind</dt><dd><code>brief</code></dd>
+          <dt>Derived</dt><dd>0</dd>
+          <dt>Due</dt><dd>30</dd>
+          <dt>Fetched</dt><dd>0</dd>
+          <dt><code>https</code></dt><dd>0</dd>
+          <dt><code>http</code></dt><dd>0</dd>
+          <dt><code>none</code></dt><dd>0</dd>
+          <dt>Runs</dt><dd>30</dd>
+          <dt>Runs failed</dt><dd>2</dd>
+          <dt>Pages</dt><dd>0</dd>
+          <dt>Cost</dt><dd>$1.841200</dd>
+        </dl>
+      </div>
+
       <h3 class="text-md">Each reason's sentence, shown in the failure alert</h3>
       <div class="card">
         <dl class="kv">
           <dt><code>scrapes</code></dt><dd>Reading the run from scrapes failed, or its rows did not match the count its record holds.</dd>
           <dt><code>interrupted</code></dt><dd>candidates stopped or restarted while the pass was running, and it does not resume one.</dd>
           <dt><code>store</code></dt><dd>The database failed while the pass was storing its work.</dd>
+          <dt><code>prompts</code></dt><dd>The prompts service refused or failed a call: the prompt was gone or unusable, or a run could not be started or read.</dd>
         </dl>
       </div>
     </div>
