@@ -1,0 +1,20 @@
+app = "campaigns"
+description = "Keep outreach campaigns, prepare their pieces and follow engagement."
+default = false
+mcp = true
+guests = true
+secrets = []
+
+[env]
+CAMPAIGNS_DEFAULT_DESTINATION = "https://michaelgreenly.dev/"
+CAMPAIGNS_LINK_PREFIX = "https://michaelgreenly.dev/c/?t="
+
+[database]
+engine = "sqlite"
+path = "state/campaigns.db"
+
+[resources]
+memory_max = "128M"
+
+[home]
+group = "application"

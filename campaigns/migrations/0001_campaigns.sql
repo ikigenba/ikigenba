@@ -1,0 +1,12 @@
+CREATE TABLE campaigns (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, channels TEXT NOT NULL, destination TEXT NOT NULL, created TEXT NOT NULL, created_user_id TEXT NOT NULL, created_user_email TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX campaigns_window ON campaigns(deleted,created,id);
+CREATE TABLE members (campaign TEXT NOT NULL, candidate TEXT NOT NULL, cohort TEXT NOT NULL, added TEXT NOT NULL, added_user_id TEXT NOT NULL, added_user_email TEXT NOT NULL, rejected INTEGER NOT NULL DEFAULT 0, rejected_user_id TEXT NOT NULL DEFAULT '', rejected_user_email TEXT NOT NULL DEFAULT '', rejected_at TEXT NOT NULL DEFAULT '', why TEXT NOT NULL DEFAULT '', PRIMARY KEY (campaign,candidate)) WITHOUT ROWID;
+CREATE INDEX members_window ON members(campaign,added,candidate);
+CREATE TABLE pieces (id TEXT PRIMARY KEY, campaign TEXT NOT NULL, candidate TEXT NOT NULL, channel TEXT NOT NULL, state TEXT NOT NULL, token TEXT NOT NULL, created TEXT NOT NULL, delivered TEXT NOT NULL DEFAULT '', delivered_user_id TEXT NOT NULL DEFAULT '', delivered_user_email TEXT NOT NULL DEFAULT '', how TEXT NOT NULL DEFAULT '', dropped TEXT NOT NULL DEFAULT '', dropped_user_id TEXT NOT NULL DEFAULT '', dropped_user_email TEXT NOT NULL DEFAULT '');
+CREATE UNIQUE INDEX pieces_token ON pieces(token);
+CREATE UNIQUE INDEX pieces_member ON pieces(campaign,candidate,channel);
+CREATE INDEX pieces_merge ON pieces(campaign,channel,created,candidate);
+CREATE TABLE materials (seq INTEGER PRIMARY KEY, campaign TEXT NOT NULL, path TEXT NOT NULL, label TEXT NOT NULL, artifact TEXT NOT NULL, added TEXT NOT NULL, added_user_id TEXT NOT NULL, added_user_email TEXT NOT NULL);
+CREATE UNIQUE INDEX materials_path ON materials(campaign,path);
+CREATE TABLE visits (seq INTEGER PRIMARY KEY, piece TEXT NOT NULL, at TEXT NOT NULL, user_agent TEXT NOT NULL, referrer TEXT NOT NULL, address TEXT NOT NULL);
+CREATE INDEX visits_window ON visits(piece,seq);
