@@ -21,9 +21,10 @@
      .State, .Zip, .County (as stored, "MN-115"), .Phone (ten digits, as
      stored) and .Email (each empty when its freshest evidence gives none,
      and all empty when merged), .WebsiteSource (which result decided the
-     website, as the facts row holds it: "check" when its newest
-     website_check result found a site, else "search" when a
-     website_search result's site was confirmed, the newest such; empty
+     website, the website decision computed from its results, not read
+     from the facts row: "check" when its newest website_check result
+     found a site, else "search" when a website_search result's site was
+     confirmed, the newest such; empty
      when neither did, and when merged), .Website (the state of the result
      .WebsiteSource names, "https" or "http", as stored; when
      .WebsiteSource is empty, the state of its newest website_check
@@ -155,8 +156,9 @@
      when it named no site), .Why (its one sentence on what matched, as
      stored) and .Rejected (the sites it set aside, in the order given,
      each with .URL and .Why, the sentence it gave, as stored; may be
-     empty); .Confirmation (the one fetch of .Answer.URL; nil when .Answer
-     is nil or .Answer.URL is empty) with .State, .URL, .Title,
+     empty); .Confirmation (the one fetch of .Answer.URL; nil when no
+     fetch was made: .Answer is nil, .Answer.URL is empty, or the run
+     failed, which is never confirmed though its .Answer is shown) with .State, .URL, .Title,
      .StatusCode, .Size and .Error as a website_check result's six above,
      .State "none" when the URL did not load. .Failed (bool, true for a
      site_text, brief or website_search result whose

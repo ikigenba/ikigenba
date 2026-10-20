@@ -31,16 +31,17 @@ kinds first, and records a result for each candidate whose inputs for a
 kind differ from those of its newest result, fetching from outside only for
 the website check, and reads nothing from scrapes; a targeted enrich, of
 kind `enrich_cohort`, started by the `enrich` tool naming a cohort or a
-candidate, walks one kind over that target, and for `site_text` or `brief`
-runs the owner's prompt named for the kind, `site-text` or `brief`, for each
-due candidate. An ingest or a rebuild reads the run's record and rows from scrapes over its socket through
+candidate, walks one kind over that target, and for `website_search`,
+`site_text` or `brief` runs the owner's prompt named for the kind,
+`website-search`, `site-text` or `brief`, for each due candidate. An ingest or a rebuild reads the run's record and rows from scrapes over its socket through
 appkit's `scrapes` client, as the caller for `rebuild` and as the service
 identity for a delivery; a targeted pass of a prompts kind runs its prompts
 through appkit's `prompts` client over the socket the services file's
 `prompts` entry names, as the caller of the `enrich` that started it;
 candidates calls no other sibling. Outside the suite it fetches nothing but
-the websites the website check visits and the pages `add_page` keeps, over
-outbound HTTP through `cli.Process.HTTP`; when `IKIGENBA_SANDBOX` is
+the websites the website check visits, the pages `add_page` keeps and the
+URL a website search's run names, which it confirms with one `Checker.Get`,
+over outbound HTTP through `cli.Process.HTTP`; when `IKIGENBA_SANDBOX` is
 present it fetches only from an in-process stub on loopback, so nothing a
 sandbox runs reaches outside. It keeps its candidates, links, estimates,
 assessments, enrichment results, facts and kept pages, the owner's rulings, cohorts and rejects, its
@@ -85,8 +86,8 @@ build run writes the Go source, the tests, `go.mod`'s requirements and
 `0002_links.sql`, `0003_estimates.sql`, `0004_assessments.sql`,
 `0005_decisions.sql`, `0006_passes.sql`, `0007_zip_drive.sql`,
 `0008_windows.sql`, `0009_judgments.sql`, `0010_cohorts.sql`,
-`0011_enrichments.sql`, `0012_facts.sql`, `0013_site_text.sql` and
-`0014_brief.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
+`0011_enrichments.sql`, `0012_facts.sql`, `0013_site_text.sql`,
+`0014_brief.sql` and `0015_website_search.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
 and the nginx fragment `etc/nginx.conf`). The
 delivery that created candidates seeded `go.mod` on appkit; the build run
 owns it and `go.sum` from then on and changes them as design says. It never
@@ -213,7 +214,8 @@ mints — and tests echo source ids above all, since every link,
 split and candidate page names one, so a test that sends an id-shaped value
 lands one in the test file. No fixture carries one: not a header value, a
 query parameter, a tool argument, a fake scrapes' or fake prompts' answer,
-a fake prompts' standard output (a brief's summary, reasons and labels),
+a fake prompts' standard output (a brief's summary, reasons and labels, a
+website search's URL, reason and sites set aside),
 a row's field, a
 source id, a run id, a candidate id, a pass id, a cohort id, a URL, a services file entry,
 an event's payload, a ruling's or reject's reason, a cohort's name, or an expected body.
@@ -266,7 +268,7 @@ request it receives, identity headers included; a test of the passes or the
 tools hands them appkit's `scrapes` client built over such an entry, as
 design names. A test proves a read by what the fake received. No test reaches
 prompts either. A test that drives a targeted pass of a prompts kind,
-`site_text` or `brief`, writes a services file whose `prompts` entry names a
+`website_search`, `site_text` or `brief`, writes a services file whose `prompts` entry names a
 Unix socket in a short temporary directory on which a loopback fake serves
 prompts' MCP tools `show`, `run` and `result`: `show` answers the prompt
 named for the kind, `run` the starts and `result` the run records the test
@@ -280,8 +282,8 @@ one pass it starts is an enrich of `website_check`, which reads nothing from
 either.
 
 **Websites are faked, never fetched.** No test reaches a website outside
-loopback. A test of the check hands `website.Checker` a client over an
-`http.RoundTripper` of its own, which answers by URL, holds or fails a
+loopback. A test of the check, or of the website search's confirmation
+fetch, hands `website.Checker` a client over an `http.RoundTripper` of its own, which answers by URL, holds or fails a
 request on demand and records each it receives, and an `After` whose
 channels it holds, as design names; a test of the stub checks through the
 stub's own client, which dials only its loopback listeners. A `Run`-level
@@ -442,8 +444,9 @@ other test that builds, execs, waits on, or signals a process is a bug.
 
 There are none. No test reaches outside the suite: scrapes and prompts,
 the two siblings candidates calls, are faked in every unit test, so nothing
-reaches a real prompts, and the website check and `add_page` fetch through a
-transport the test holds or the loopback stub. The sandbox
+reaches a real prompts, and the website check, `add_page` and the website
+search's confirmation fetch through a transport the test holds or the
+loopback stub. The sandbox
 fetches only from the stub, and the sandbox check proves the real chain.
 
 ## Gates
@@ -500,11 +503,11 @@ with every other app, its part of the release holding `bin/candidates`,
 that release. The host must run events, which candidates emits to and takes
 scrapes' `scrape.finished` and cron's `cron.judge_candidates.fired` from,
 scrapes, which it reads over the socket, and prompts, which a targeted pass
-of a prompts kind runs the `site-text` or `brief` prompt through over the
-socket; its
+of a prompts kind runs the `website-search`, `site-text` or `brief` prompt
+through over the socket; its
 services file names them, with telemetry and auth. The host needs outbound HTTP and HTTPS to the
 public internet, since the website check and `add_page` fetch candidates'
-own domains;
+own domains and the website search confirms the URL its agent names;
 candidates holds no secret of its own. The host's backup archives `state/`
 whole, so `candidates.db` is taken with it; it holds candidates, their
 evidence copied from public records, their enrichment results, facts and
