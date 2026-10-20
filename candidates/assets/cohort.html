@@ -56,8 +56,10 @@
      "private", "for_hire", "mixed" or "unknown"; empty when it has
      none), .FleetVerdict ("pass", "fail" or "unknown", as stored),
      .Website ("https", "http", "none" or "unknown", as stored),
-     .WebsiteURL (the URL its website check landed on, as stored; empty
-     unless .Website is "https" or "http"),
+     .WebsiteURL (the URL the result that decided its website landed on,
+     as stored; empty unless .Website is "https" or "http"), .WebsiteSource (which
+     result decided its website, as stored: "check" or "search"; empty
+     when neither did),
      .SiteText and .SiteTextText (when site text was last written for it,
      RFC 3339 UTC to the second, and UTC to the minute, "2026-10-05 09:00";
      both empty when never), .Brief and .BriefText (when its brief was
@@ -156,7 +158,10 @@
      span.muted when "unknown"),
      td.candidate-website[data-website=<.Website>] (a.website-link, href
      .WebsiteURL, text .Website, when .WebsiteURL is set; else .Website,
-     in span.muted when "unknown"), td.candidate-site-text
+     in span.muted when "unknown"; then, when .WebsiteSource is "search",
+     a space and span.badge[data-kind=info] (text "found by search"); the
+     td carrying also [data-website-source=<.WebsiteSource>] when
+     .WebsiteSource is set), td.candidate-site-text
      (time[datetime=<.SiteText>] with .SiteTextText, or when empty
      span.muted "none"), td.candidate-brief (time[datetime=<.Brief>] with
      .BriefText, or when empty span.muted "none"), td.candidate-minutes.num (.Minutes, empty
@@ -231,7 +236,7 @@
 <td class="candidate-classified-by" data-classified-by="{{.ClassifiedBy}}">{{if .ClassifiedBy}}<code>{{.ClassifiedBy}}</code>{{end}}</td>
 <td class="candidate-class">{{if .Class}}<code>{{.Class}}</code>{{end}}</td>
 <td class="candidate-fleet" data-fleet="{{.FleetVerdict}}">{{if eq .FleetVerdict "unknown"}}<span class="muted">{{.FleetVerdict}}</span>{{else}}{{.FleetVerdict}}{{end}}</td>
-<td class="candidate-website" data-website="{{.Website}}">{{if .WebsiteURL}}<a class="website-link" href="{{.WebsiteURL}}">{{.Website}}</a>{{else if eq .Website "unknown"}}<span class="muted">{{.Website}}</span>{{else}}{{.Website}}{{end}}</td>
+<td class="candidate-website" data-website="{{.Website}}"{{if .WebsiteSource}} data-website-source="{{.WebsiteSource}}"{{end}}>{{if .WebsiteURL}}<a class="website-link" href="{{.WebsiteURL}}">{{.Website}}</a>{{else if eq .Website "unknown"}}<span class="muted">{{.Website}}</span>{{else}}{{.Website}}{{end}}{{if eq .WebsiteSource "search"}} <span class="badge" data-kind="info">found by search</span>{{end}}</td>
 <td class="candidate-site-text">{{if .SiteText}}<time datetime="{{.SiteText}}">{{.SiteTextText}}</time>{{else}}<span class="muted">none</span>{{end}}</td>
 <td class="candidate-brief">{{if .Brief}}<time datetime="{{.Brief}}">{{.BriefText}}</time>{{else}}<span class="muted">none</span>{{end}}</td>
 <td class="candidate-minutes num">{{.Minutes}}</td>

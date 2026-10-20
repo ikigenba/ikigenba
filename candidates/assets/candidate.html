@@ -20,13 +20,21 @@
      name any link uses, .Name first, a slice of strings), .Street, .City,
      .State, .Zip, .County (as stored, "MN-115"), .Phone (ten digits, as
      stored) and .Email (each empty when its freshest evidence gives none,
-     and all empty when merged), .Website (the state of its newest
-     website_check result, "https", "http" or "none", as stored, or
-     "unknown" when it has none; empty when merged), .WebsiteURL (the URL
-     that result landed on; empty unless .Website is "https" or "http"),
-     .WebsiteTitle (that result's page title, as stored; empty when none)
-     and .WebsiteChecked and .WebsiteCheckedText (when that result was
-     found, in .Created's two forms below; both empty when it has none),
+     and all empty when merged), .WebsiteSource (which result decided the
+     website, as the facts row holds it: "check" when its newest
+     website_check result found a site, else "search" when a
+     website_search result's site was confirmed, the newest such; empty
+     when neither did, and when merged), .Website (the state of the result
+     .WebsiteSource names, "https" or "http", as stored; when
+     .WebsiteSource is empty, the state of its newest website_check
+     result, "none" as stored, or "unknown" when it has none; empty when
+     merged), .WebsiteURL (the URL that result landed on; empty unless
+     .Website is "https" or "http"), .WebsiteTitle (that result's page
+     title, as stored; empty when none), .WebsiteWhy (the sentence the
+     search's agent gave for what matched, as stored; empty unless
+     .WebsiteSource is "search") and .WebsiteChecked and
+     .WebsiteCheckedText (when that result was found, in .Created's two
+     forms below; both empty when it has none),
      .People (each with .Name and .Role, as the
      source gives them; may be empty), .Class (its class tag, "private",
      "for_hire", "mixed" or "unknown"; empty when merged), .Cargo (its
@@ -57,8 +65,9 @@
      (drive minutes from the origin as text, "84"; empty when unknown)
      and .Written (when each kind last wrote the row, one per kind that
      has, in kind name order, each with .Kind, the kind as stored,
-     "brief", "drive_minutes", "link_facts", "site_text" or
-     "website_check", and .At and .AtText in .Created's two forms above;
+     "brief", "drive_minutes", "link_facts", "site_text",
+     "website_check" or "website_search", and .At and .AtText in
+     .Created's two forms above;
      empty when none has); .Brief (nil when merged or when it has no
      brief result that did not fail; else its newest brief result that
      did not fail, the one whose summary the facts row holds; a failed
@@ -121,23 +130,42 @@
      and .User (their user id); .Enrichments, every enrichment result on this
      candidate, of every kind, newest first, empty when merged, each with
      .Kind (its kind as stored, "website_check", "link_facts",
-     "drive_minutes", "site_text" or "brief"), .Source (where the result
-     came from, as stored: the domain checked, "example.com", for
-     website_check, "links" for link_facts, "zip_drive" for drive_minutes,
-     "prompts" for site_text and brief), .Found (what it found, in
+     "drive_minutes", "site_text", "brief" or "website_search"), .Source
+     (where the result came from, as stored: the domain checked,
+     "example.com", for website_check, "links" for link_facts,
+     "zip_drive" for drive_minutes, "prompts" for site_text, brief and
+     website_search), .Found (what it found, in
      key order, each with .Key and .Value, the value as compact JSON text
-     such as "84" or "\"pass\""; used for every kind but website_check),
+     such as "84" or "\"pass\""; used for every kind but website_check
+     and website_search),
      .State ("https", "http" or "none", as stored), .URL (the URL it
      landed on; empty when none), .Title (the page title, as stored; empty
      when none), .StatusCode (the final HTTP status code as text, "200";
      empty when no response came), .Size (int, the body bytes read) and
      .Error (the last failed attempt's error text, as stored; empty on
      success), these six for website_check only and empty or 0 for any
-     other kind, .Failed (bool, true for a site_text or brief result whose
-     prompts run ended failed, killed or timed_out or exited non-zero, and
-     for a brief result whose run exited 0 with an empty summary or with
-     standard output that does not decode as the output object; false for
-     every other result), .Cost (what the result cost as US dollars to six
+     other kind, .Run, .Answer and .Confirmation (the three parts of a
+     website_search result's found value; all three nil for any other
+     kind): .Run (the prompts run, never nil for website_search) with .ID
+     (the prompts run id, as stored), .Status (how it ended, "exited",
+     "failed", "killed" or "timed_out", as stored) and .ExitCode (its exit
+     code as text, "0"; empty when it has none); .Answer (the agent's
+     answer in full; nil when its standard output did not decode as the
+     answer object) with .URL (the URL the agent named, as stored; empty
+     when it named no site), .Why (its one sentence on what matched, as
+     stored) and .Rejected (the sites it set aside, in the order given,
+     each with .URL and .Why, the sentence it gave, as stored; may be
+     empty); .Confirmation (the one fetch of .Answer.URL; nil when .Answer
+     is nil or .Answer.URL is empty) with .State, .URL, .Title,
+     .StatusCode, .Size and .Error as a website_check result's six above,
+     .State "none" when the URL did not load. .Failed (bool, true for a
+     site_text, brief or website_search result whose
+     prompts run ended failed, killed or timed_out or exited non-zero, for
+     a brief result whose run exited 0 with an empty summary or with
+     standard output that does not decode as the output object, and for a
+     website_search result whose .Answer is nil; false for every other
+     result, a website_search that named no site or whose site did not
+     load included), .Cost (what the result cost as US dollars to six
      decimal places, "$0.023714", as prompts shows a cost; empty when it
      cost nothing) and .At and .AtText (when it was found, RFC 3339 UTC to
      the second, and UTC to the minute); .Rejects, every reject and unreject record
@@ -179,9 +207,13 @@
      "unknown", span.muted "unknown"; else a.website-link, href
      .WebsiteURL, text .WebsiteURL, and a space when .WebsiteURL is set,
      then .Website; then, when .WebsiteTitle is set, div[data-website-title]
-     with .WebsiteTitle; then, when .WebsiteChecked is set, div.muted
-     holding "checked" and time[datetime=<.WebsiteChecked>] (text
-     .WebsiteCheckedText)), dt "People"
+     with .WebsiteTitle; then, when .WebsiteWhy is set,
+     div[data-website-why] with .WebsiteWhy; then, when .WebsiteChecked is
+     set, div.muted holding "found by search" when .WebsiteSource is
+     "search", else "checked", then a space and
+     time[datetime=<.WebsiteChecked>] (text .WebsiteCheckedText); the dd
+     carrying also [data-website-source=<.WebsiteSource>] when
+     .WebsiteSource is set), dt "People"
      then dd#candidate-people (one div[data-person] per person, .Name, a
      space, and span.muted with .Role), dt "Class" then dd#candidate-class
      (in a code element) and dt "Cargo" then dd#candidate-cargo (one
@@ -338,9 +370,10 @@
      .Enrichments is empty, div#no-enrichments.empty holding h3 "No
      enrichments" and a p (text "A kind needs inputs: the website check
      an email on its own domain, drive minutes a ZIP, link facts a record
-     not gone, site text a website, the brief the pages kept on it. The
-     enrich pass runs every kind but site text and the brief after an
-     ingest; the enrich tool starts one, and runs site text and the brief
+     not gone, site text a website, the brief the pages kept on it, the
+     website search no website. The enrich pass runs every kind but site
+     text, the brief and the website search after an ingest; the enrich
+     tool starts one, and runs site text, the brief and the website search
      over a cohort or one candidate.", enrich in a code element), or
      table#enrichment-list whose th read Kind, Source, Found, Cost, When,
      with one tr[data-enrichment=<.Kind>] per result, carrying also
@@ -353,7 +386,27 @@
      .URL, then, when .Title is set, div[data-website-title] with .Title,
      then div.muted holding, when .StatusCode is set, "status", a space,
      .StatusCode and " · ", then .Size, a space and "bytes", then, when
-     .Error is set, div[data-error] with .Error; for any other kind,
+     .Error is set, div[data-error] with .Error; when .Kind is
+     "website_search": dl.kv holding, only when .Answer is set, dt "Named"
+     then dd[data-search-url] (a.website-link, href .Answer.URL, text
+     .Answer.URL, or when empty span.muted "no site"), dt "Why" then
+     dd[data-search-why] (.Answer.Why, or when empty span.muted "none"),
+     then, only when .Confirmation is set, dt "Loaded" then
+     dd[data-confirmation=<.Confirmation.State>] (when .State is "none",
+     span.badge[data-kind=warn] (text "did not load"); else .State, then,
+     when .URL is set, a space and a.website-link, href .URL, text .URL;
+     then, when .Title is set, div[data-website-title] with .Title, then
+     div.muted holding, when .StatusCode is set, "status", a space,
+     .StatusCode and " · ", then .Size, a space and "bytes", then, when
+     .Error is set, div[data-error] with .Error), then, only when
+     .Answer is set, dt "Set aside" then
+     dd[data-search-rejected] (one div[data-rejected] per site holding
+     a.website-link, href .URL, text .URL, a space and span.muted with
+     .Why, or when empty span.muted "none"); then dt "Run" then
+     dd[data-search-run] (.Run.ID in a code element, a space and
+     .Run.Status in a code element, then, when .Run.ExitCode is set, a
+     space and span.muted holding "exit", a space and .Run.ExitCode); for
+     any other kind,
      dl.kv with one dt[data-found=<.Key>] per entry of .Found (.Key in a
      code element) followed by a dd (.Value in a code element)),
      td.enrichment-cost.num (.Cost; empty when empty) and
@@ -399,7 +452,7 @@
 {{end}}{{if .County}}<dt>County</dt><dd id="candidate-county"><code>{{.County}}</code></dd>
 {{end}}{{if .Phone}}<dt>Phone</dt><dd id="candidate-phone">{{.Phone}}</dd>
 {{end}}{{if .Email}}<dt>Email</dt><dd id="candidate-email">{{.Email}}</dd>
-{{end}}{{if .Website}}<dt>Website</dt><dd id="candidate-website" data-website="{{.Website}}">{{if eq .Website "unknown"}}<span class="muted">unknown</span>{{else}}{{if .WebsiteURL}}<a class="website-link" href="{{.WebsiteURL}}">{{.WebsiteURL}}</a> {{end}}{{.Website}}{{end}}{{if .WebsiteTitle}}<div data-website-title>{{.WebsiteTitle}}</div>{{end}}{{if .WebsiteChecked}}<div class="muted">checked <time datetime="{{.WebsiteChecked}}">{{.WebsiteCheckedText}}</time></div>{{end}}</dd>
+{{end}}{{if .Website}}<dt>Website</dt><dd id="candidate-website" data-website="{{.Website}}"{{if .WebsiteSource}} data-website-source="{{.WebsiteSource}}"{{end}}>{{if eq .Website "unknown"}}<span class="muted">unknown</span>{{else}}{{if .WebsiteURL}}<a class="website-link" href="{{.WebsiteURL}}">{{.WebsiteURL}}</a> {{end}}{{.Website}}{{end}}{{if .WebsiteTitle}}<div data-website-title>{{.WebsiteTitle}}</div>{{end}}{{if .WebsiteWhy}}<div data-website-why>{{.WebsiteWhy}}</div>{{end}}{{if .WebsiteChecked}}<div class="muted">{{if eq .WebsiteSource "search"}}found by search{{else}}checked{{end}} <time datetime="{{.WebsiteChecked}}">{{.WebsiteCheckedText}}</time></div>{{end}}</dd>
 {{end}}{{if .People}}<dt>People</dt><dd id="candidate-people">{{range .People}}<div data-person>{{.Name}} <span class="muted">{{.Role}}</span></div>{{end}}</dd>
 {{end}}{{if .Class}}<dt>Class</dt><dd id="candidate-class"><code>{{.Class}}</code></dd>
 {{end}}{{if .Cargo}}<dt>Cargo</dt><dd id="candidate-cargo">{{range $i, $c := .Cargo}}{{if $i}} {{end}}<code data-cargo="{{$c}}">{{$c}}</code>{{end}}</dd>
@@ -565,7 +618,7 @@
 {{range $enrichments}}<tr data-enrichment="{{.Kind}}"{{if .State}} data-state="{{.State}}"{{end}}{{if .Failed}} data-failed{{end}}>
 <td class="enrichment-kind"><code>{{.Kind}}</code>{{if .Failed}} <span class="badge" data-kind="err">failed</span>{{end}}</td>
 <td class="enrichment-source"><code>{{.Source}}</code></td>
-<td class="enrichment-found">{{if eq .Kind "website_check"}}{{.State}}{{if .URL}} <a class="website-link" href="{{.URL}}">{{.URL}}</a>{{end}}{{if .Title}}<div data-website-title>{{.Title}}</div>{{end}}<div class="muted">{{if .StatusCode}}status {{.StatusCode}} · {{end}}{{.Size}} bytes</div>{{if .Error}}<div data-error>{{.Error}}</div>{{end}}{{else}}<dl class="kv">{{range .Found}}<dt data-found="{{.Key}}"><code>{{.Key}}</code></dt><dd><code>{{.Value}}</code></dd>{{end}}</dl>{{end}}</td>
+<td class="enrichment-found">{{if eq .Kind "website_check"}}{{.State}}{{if .URL}} <a class="website-link" href="{{.URL}}">{{.URL}}</a>{{end}}{{if .Title}}<div data-website-title>{{.Title}}</div>{{end}}<div class="muted">{{if .StatusCode}}status {{.StatusCode}} · {{end}}{{.Size}} bytes</div>{{if .Error}}<div data-error>{{.Error}}</div>{{end}}{{else if eq .Kind "website_search"}}<dl class="kv">{{with .Answer}}<dt>Named</dt><dd data-search-url>{{if .URL}}<a class="website-link" href="{{.URL}}">{{.URL}}</a>{{else}}<span class="muted">no site</span>{{end}}</dd><dt>Why</dt><dd data-search-why>{{if .Why}}{{.Why}}{{else}}<span class="muted">none</span>{{end}}</dd>{{end}}{{with .Confirmation}}<dt>Loaded</dt><dd data-confirmation="{{.State}}">{{if eq .State "none"}}<span class="badge" data-kind="warn">did not load</span>{{else}}{{.State}}{{if .URL}} <a class="website-link" href="{{.URL}}">{{.URL}}</a>{{end}}{{end}}{{if .Title}}<div data-website-title>{{.Title}}</div>{{end}}<div class="muted">{{if .StatusCode}}status {{.StatusCode}} · {{end}}{{.Size}} bytes</div>{{if .Error}}<div data-error>{{.Error}}</div>{{end}}</dd>{{end}}{{with .Answer}}<dt>Set aside</dt><dd data-search-rejected>{{range .Rejected}}<div data-rejected><a class="website-link" href="{{.URL}}">{{.URL}}</a> <span class="muted">{{.Why}}</span></div>{{else}}<span class="muted">none</span>{{end}}</dd>{{end}}{{with .Run}}<dt>Run</dt><dd data-search-run><code>{{.ID}}</code> <code>{{.Status}}</code>{{if .ExitCode}} <span class="muted">exit {{.ExitCode}}</span>{{end}}</dd>{{end}}</dl>{{else}}<dl class="kv">{{range .Found}}<dt data-found="{{.Key}}"><code>{{.Key}}</code></dt><dd><code>{{.Value}}</code></dd>{{end}}</dl>{{end}}</td>
 <td class="enrichment-cost num">{{.Cost}}</td>
 <td class="enrichment-at"><time datetime="{{.At}}">{{.AtText}}</time></td>
 </tr>
@@ -573,7 +626,7 @@
 </table>
 </div>{{else}}<div id="no-enrichments" class="empty">
 <h3 class="text-md">No enrichments</h3>
-<p>A kind needs inputs: the website check an email on its own domain, drive minutes a ZIP, link facts a record not gone, site text a website, the brief the pages kept on it. The enrich pass runs every kind but site text and the brief after an ingest; the <code>enrich</code> tool starts one, and runs site text and the brief over a cohort or one candidate.</p>
+<p>A kind needs inputs: the website check an email on its own domain, drive minutes a ZIP, link facts a record not gone, site text a website, the brief the pages kept on it, the website search no website. The enrich pass runs every kind but site text, the brief and the website search after an ingest; the <code>enrich</code> tool starts one, and runs site text, the brief and the website search over a cohort or one candidate.</p>
 </div>{{end}}
 </section>
 {{end}}<section id="rejects" class="card flush" aria-labelledby="rejects-title">

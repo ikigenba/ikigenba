@@ -72,9 +72,10 @@
      due, fetched the domains it fetched, once each, and https, http and
      none the results by state. An enrich over a cohort or one candidate
      runs one kind over its target, the due ones or, forced, every one;
-     for site text and the brief, runs counts the prompts runs it
-     started, runs failed those that failed, pages the pages they kept,
-     none for the brief, and cost what they spent.", the three state words each in a code element); then dl#pass.kv holding, in
+     for site text, the brief and the website search, runs counts the
+     prompts runs it started, runs failed those that failed, pages the
+     pages they kept, none for the brief or the website search, and cost
+     what they spent.", the three state words each in a code element); then dl#pass.kv holding, in
      this order, dt "ID" then dd#pass-id (.ID in a code element), dt
      "Kind" then dd#pass-kind (.Kind in a code element), dt "Trigger" then
      dd#pass-trigger (a.run-link, href .RunPage, holding .Trigger in a
@@ -119,7 +120,7 @@
 <p><a id="reload" class="button secondary small" href="/passes/{{.ID}}"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg>Reload</a></p>
 {{end}}{{if eq .Status "failed"}}<div id="failure" class="alert" data-kind="err" role="alert"><strong>The pass failed</strong><p id="failure-reason">{{if eq .Reason "scrapes"}}Reading the run from scrapes failed, or its rows did not match the count its record holds.{{else if eq .Reason "interrupted"}}candidates stopped or restarted while the pass was running, and it does not resume one.{{else if eq .Reason "store"}}The database failed while the pass was storing its work.{{else if eq .Reason "prompts"}}The prompts service refused or failed a call: the prompt was gone or unusable, or a run could not be started or read.{{end}}</p><p>What the pass wrote before it failed stays; the next pass or a <code>rebuild</code> repairs it.</p></div>
 {{end}}<section id="pass-card" class="card" aria-labelledby="pass-title">
-<header><h2 id="pass-title">Pass</h2><p>An ingest stores a run's records and judges nothing: rows, new, changed, unchanged and gone count the records against what candidates held, and created and linked count candidates. A judge judges every candidate again: judged counts them and unranged those left with no revenue estimate. An enrich runs every enricher over the candidates whose inputs changed, the derived kinds first: derived counts the results they wrote. For the website check, due counts the candidates due, fetched the domains it fetched, once each, and <code>https</code>, <code>http</code> and <code>none</code> the results by state. An enrich over a cohort or one candidate runs one kind over its target, the due ones or, forced, every one; for site text and the brief, runs counts the prompts runs it started, runs failed those that failed, pages the pages they kept, none for the brief, and cost what they spent.</p></header>
+<header><h2 id="pass-title">Pass</h2><p>An ingest stores a run's records and judges nothing: rows, new, changed, unchanged and gone count the records against what candidates held, and created and linked count candidates. A judge judges every candidate again: judged counts them and unranged those left with no revenue estimate. An enrich runs every enricher over the candidates whose inputs changed, the derived kinds first: derived counts the results they wrote. For the website check, due counts the candidates due, fetched the domains it fetched, once each, and <code>https</code>, <code>http</code> and <code>none</code> the results by state. An enrich over a cohort or one candidate runs one kind over its target, the due ones or, forced, every one; for site text, the brief and the website search, runs counts the prompts runs it started, runs failed those that failed, pages the pages they kept, none for the brief or the website search, and cost what they spent.</p></header>
 <dl id="pass" class="kv">
 <dt>ID</dt><dd id="pass-id"><code>{{.ID}}</code></dd>
 <dt>Kind</dt><dd id="pass-kind"><code>{{.Kind}}</code></dd>
