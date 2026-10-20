@@ -21,9 +21,9 @@ Platform apps, each one Go binary behind the host's nginx:
 - `connections` is the suite's OAuth broker: a person connects an account at an outside provider once, it keeps the grant, and it hands short-lived access tokens to the suite's connectors on the host; no tool ever returns a credential.
 - `gdrive` is the suite's Google Drive connector: agents pull Drive files into artifacts and push artifacts into Drive, each transfer recorded and its bytes moved on the host.
 - `gmail` is the suite's Gmail connector: agents search and read mail as text, pull attachments into artifacts, compose drafts, push artifacts onto them and send, each transfer recorded and its bytes moved on the host.
-- `scrapes` is the suite's public-records collector: scrapers turn public records into rows, a common envelope plus the raw record, kept per run; agents start runs, cron schedules them, and siblings read a run's rows over the socket.
-- `candidates` is the suite's candidate resolver: it turns the rows `scrapes` collects into candidate businesses with their evidence and keeps cohorts, saved searches over them that the owner grooms; a finished scrape starts a pass over the bus, agents start one with `rebuild`, and the owner rules on merges, splits and exclusions.
-- `campaigns` keeps the suite's outreach campaigns: businesses from candidates' cohorts become members, each gets one piece per channel, mail or email, with a tracking link of its own, and every visit to a link is recorded; the owner marks pieces delivered by hand, and campaigns sends nothing.
+- `scrapes` scrapes public records for the suite: its scrapers turn public records into rows, a common envelope plus the raw record, kept per run; agents start runs, cron schedules them, and siblings read a run's rows over the socket.
+- `candidates` ingests the rows `scrapes` scrapes into candidate businesses with their evidence, enriches and judges them, and keeps prospect lists, saved searches over them that the owner grooms; a finished scrape starts an ingest over the bus, agents start an ingest or a judge by hand, and the owner rules on merges, splits and exclusions.
+- `campaigns` keeps the suite's outreach campaigns: prospects from candidates' prospect lists become members, each gets one piece per channel, mail or email, with a tracking link of its own, and every visit to a link is recorded; the owner marks pieces delivered by hand, and campaigns sends nothing.
 - `dummy` is the reference app: a control panel over in-memory widgets that shows the patterns.
 
 Shared library:

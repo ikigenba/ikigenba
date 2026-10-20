@@ -61,14 +61,14 @@ design/
     scrapes-row.html
                     one row: its envelope and its raw record, two levels
                     down the trail
-    candidates.html candidates' landing: the cohorts, by name, then
+    candidates.html candidates' landing: the prospect lists, by name, then
                     the kept passes, each list paged
     candidates-candidate.html
-                    one candidate: its fields, assessment, operating
+                    one candidate: its fields, judgments, operating
                     evidence, estimates, evidence, rulings and rejects;
                     merged and excluded
-    candidates-cohort.html
-                    one cohort: its definition, filters, members and
+    candidates-prospect-list.html
+                    one prospect list: its definition, filters, members and
                     standing rejects; showing excluded, and empty
     candidates-pass.html
                     one pass: its record, running and failed
@@ -158,10 +158,10 @@ design/
   the same 303 redirect. On the last window `Page` is `last`, `Prev` is the
   before-token of its first entry and `Next` is empty; Last needs no field
   of its own, drawn as the current item exactly when `Next` is empty. A page with two lists (candidates'
-  cohorts and passes, gmail's drafts and transfers) has one nav per list,
-  `nav.paging#paging-<list>` (`#paging-cohorts`, `#paging-passes`,
+  prospect lists and passes, gmail's drafts and transfers) has one nav per list,
+  `nav.paging#paging-<list>` (`#paging-prospect-lists`, `#paging-passes`,
   `#paging-drafts`, `#paging-transfers`), each with its own parameter
-  `<list>_page` (`cohorts_page`, `passes_page`, `drafts_page`,
+  `<list>_page` (`prospect_lists_page`, `passes_page`, `drafts_page`,
   `transfers_page`), its Last link `<list>_page=last`, and its own fields (`<List>Prev` beside `<List>Page`
   and `<List>Next`); each nav's hrefs, Prev's and Last's included, carry the other
   list's current `page` value, so paging one list never resets the other;
@@ -526,8 +526,8 @@ for Minnesota and Wisconsin, with made-up carriers.
   page.
 - One row, `1023916` of that run, a carrier at Sandstone: the trail scrapes
   / the run id / the source id, the source id as the `h1`; `p#headline` with
-  the name, the scraper and when it was collected; `section#row-card` with
-  `dl#row.kv`: Source ID, Scraper, Run (linking to the run), Collected,
+  the name, the scraper and when it was scraped; `section#row-card` with
+  `dl#row.kv`: Source ID, Scraper, Run (linking to the run), Scraped,
   Digest, Name, Names, then each when set Street, City, State, Zip, County,
   Latitude, Longitude, People (one `div[data-person]` each, the role muted)
   and Facts (`dl#facts.kv`, `dt[data-fact=<key>]`, each value as JSON); then
@@ -540,44 +540,44 @@ for Minnesota and Wisconsin, with made-up carriers.
   to the minute on the landing, where a cell with no time is empty, to the
   second with `UTC` on the run and row pages.
 
-**candidates.html, candidates-candidate.html, candidates-pass.html** —
+**candidates.html, candidates-candidate.html, candidates-prospect-list.html, candidates-pass.html** —
 candidates at `candidates.acme.ikigenba.com`, the funnel's judgment over
-scrapes' evidence: a pass resolves each scrapes run's records into
+scrapes' evidence: an ingest pass turns each scrapes run's records into
 candidate businesses, one per business with every record that describes it
 attached as a link, and a judge makes two separate judgments of each,
 whether it is a real business operating today and how big it is; the owner
-reads them through cohorts, saved searches of filters, an order, a size and
+reads them through prospect lists, saved searches of filters, an order, a size and
 rejects whose members are worked out at each read, and rules on candidates
-with `decide`, `exclude` and `include`. Candidates and cohorts belong to no
-one: every signed-in user sees every candidate, cohort, pass, ruling and
+with `decide`, `exclude` and `include`. Candidates and prospect lists belong to no
+one: every signed-in user sees every candidate, prospect list, pass, ruling and
 reject. Four pages: the landing page, one candidate at
-`/candidates/<id>`, one cohort at `/cohorts/<id>`, and one pass at
+`/candidates/<id>`, one prospect list at `/prospect-lists/<id>`, and one pass at
 `/passes/<id>`. Banner and footer as
 in app.html, the service `candidates` with the Tabler `filter` icon (added
 to `icons/tabler/` on 2026-10-12 for this app). No form but sign out. The
 sample data is made-up carriers from FMCSA's census for Minnesota and
 Wisconsin.
-- The landing: `h1` candidates, a lede, then `section#cohorts` whose
-  header says a cohort is a saved search whose members are worked out each
-  time its page is read, with `table#cohort-list` of Name / Cohort / Size /
+- The landing: `h1` candidates, a lede, then `section#prospect-lists` whose
+  header says a prospect list is a saved search whose members are worked out each
+  time its page is read, with `table#prospect-list-list` of Name / Prospect list / Size /
   Created by / Changed, by name then id, a window of 25 with
-  `nav.paging#paging-cohorts` below it (parameter `cohorts_page`),
-  `tr[data-cohort=<id>]`, each name linking to `/cohorts/<id>`; Created by
+  `nav.paging#paging-prospect-lists` below it (parameter `prospect_lists_page`),
+  `tr[data-prospect-list=<id>]`, each name linking to `/prospect-lists/<id>`; Created by
   is the email, or the user id in a `code` when none. No phone or email of
   a candidate shows on this page. Then `section#passes` with `table#pass-list` of Pass / Kind /
   Trigger / Status / Started / Finished / Rows / Created / Judged, the kept
   passes newest first, a window of 25 with `nav.paging#paging-passes` below
   it (parameter `passes_page`), `tr[data-pass=<id>]`: a running judge from a
-  rebuild, a judge failed `scrapes`, a judge started by the cron trigger
+  hand-started ingest, a judge failed `scrapes`, a judge started by the cron trigger
   `judge_candidates`, two ingests done by a scrapes run. Every pass id links
   to `/passes/<id>`; Kind is `ingest` or `judge`; Trigger is the run id, the
-  cron trigger's slug or `rebuild`. A failed row's reason follows its
-  status, muted. A link to the about screen. Its tools (`cohorts`,
-  `cohort`, `candidates`, `candidate`, `passes`, `pass`, `rebuild`,
-  `enrich`, `decide`, `exclude`, `include`, `create_cohort`,
-  `edit_cohort`, `delete_cohort`, `reject`, `unreject`, sixteen in all) are
+  cron trigger's slug or `ingest` or `judge` when started by hand. A failed row's reason follows its
+  status, muted. A link to the about screen. Its tools (`prospect_lists`,
+  `prospect_list`, `candidates`, `candidate`, `passes`, `pass`, `ingest`, `judge`,
+  `enrich`, `decide`, `exclude`, `include`, `create_prospect_list`,
+  `edit_prospect_list`, `delete_prospect_list`, `reject`, `unreject`, seventeen in all) are
   on its tools page. States: no
-  cohorts (`div#no-cohorts.empty`), no passes (`div#no-passes.empty`).
+  prospect lists (`div#no-prospect-lists.empty`), no passes (`div#no-passes.empty`).
 - One candidate, `cand_4b9e1f07c2d83a65`, a for-hire carrier at Hudson, WI,
   with two records, one moved onto it by a merge: the trail candidates /
   the id, the id as the `h1`; `p#headline` with the name, the status and
@@ -588,7 +588,7 @@ Wisconsin.
   landed on as an `a.website-link`, its title in `div[data-website-title]`
   and a muted "checked" time; muted `unknown` when it has no result), People (one `div[data-person]` each), Class and
   Cargo (one `code[data-cargo]` per tag), then Created and Updated.
-  `section#assessment-card` with `dl#assessment.kv`, the two judgments and
+  `section#judgments-card` with `dl#judgments.kv`, the two judgments and
   the facts beside them as the last judge calculated them: Operating
   confidence, Revenue low, Revenue high, Revenue confidence, Categories
   (one `div[data-category]` each, its source muted), Known since, Newest
@@ -609,11 +609,11 @@ Wisconsin.
   Landed / Title / Status / Bytes / Error / Domain / When, newest first,
   `tr[data-enrichment=<kind>][data-state=<state>]`, Landed an
   `a.website-link` when a URL was reached. `section#rejects` with
-  `table#reject-list` of Kind / Cohort / By / When / Why, every reject and
+  `table#reject-list` of Kind / Prospect list / By / When / Why, every reject and
   unreject naming the candidate, newest first,
-  `tr[data-reject=<kind>][data-cohort=<id>]`, the cohort's name linking to
-  `/cohorts/<id>` beside its id, or its id and a muted "deleted" when the
-  cohort is gone. States: merged (`div#merged.alert.quiet`
+  `tr[data-reject=<kind>][data-prospect-list=<id>]`, the prospect list's name linking to
+  `/prospect-lists/<id>` beside its id, or its id and a muted "deleted" when the
+  prospect list is gone. States: merged (`div#merged.alert.quiet`
   of kind info, "Merged", linking to the survivor; the record and the
   rulings and rejects only), a gone record (`.badge` gone of kind warn) and a split's
   moved records, excluded (`div#excluded.alert.quiet` of kind warn; the
@@ -621,14 +621,14 @@ Wisconsin.
   counts), a ZIP not in the table, no high estimate
   and no filing (muted words), no evidence, no estimate and no categories
   (muted words, and `div#no-operating-evidence.empty`), not judged
-  (`div#no-assessment.empty`), no estimates (`div#no-estimates.empty`), no
+  (`div#no-judgments.empty`), no estimates (`div#no-estimates.empty`), no
   rulings (`div#no-rulings.empty`), no enrichments
   (`div#no-enrichments.empty`), no rejects (`div#no-rejects.empty`).
-- One cohort, `coh_d05a3e86b4c17f29`, "Trucking and construction, $5M to
+- One prospect list, `pl_d05a3e86b4c17f29`, "Trucking and construction, $5M to
   $10M, 2 hours": the trail candidates / the id, the name as the `h1`;
   `p#headline` with `#matching`, a `.badge` of kind info counting the
-  matching candidates, and when it was changed. `section#cohort-card` with
-  `dl#cohort.kv`: ID, Name, Size, Order (one `div[data-order]` per field,
+  matching candidates, and when it was changed. `section#prospect-list-card` with
+  `dl#prospect-list.kv`: ID, Name, Size, Order (one `div[data-order]` per field,
   its direction muted), Created by, Created, Changed by, Changed.
   `section#filters` with `dl#filters.kv`: Revenue low, Drive minutes,
   Categories, Fleet, Website, Government, Filing age, Class and Excluded, each muted
@@ -645,8 +645,8 @@ Wisconsin.
   landed on when there is one, muted when `unknown`, carried in
   `data-website`. `section#rejects` with `table#reject-list` of Candidate /
   By / When / Why, the standing rejects newest first,
-  `tr[data-reject=<cand id>]`. No form: cohorts change through the tools.
-  States: a cohort showing excluded candidates (a `.badge` excluded of kind
+  `tr[data-reject=<cand id>]`. No form: prospect lists change through the tools.
+  States: a prospect list showing excluded candidates (a `.badge` excluded of kind
   warn after the name), no members (`div#no-members.empty`), no rejects
   (`div#no-rejects.empty`). An unknown or malformed id is the not-found
   page. An unknown id is the not-found page.
@@ -654,9 +654,9 @@ Wisconsin.
   trail candidates / the id, the id as the `h1`; `p#headline` with the
   status and the started and finished times; `section#pass-card` with
   `dl#pass.kv`: ID, Kind, Trigger (the run id linking to its page at
-  scrapes, the cron trigger's slug or `rebuild`), Status, Reason (failed
+  scrapes, the cron trigger's slug or `ingest` or `judge` when started by hand), Status, Reason (failed
   only), Started by (scrapes, `cron` and the trigger's slug, or the
-  caller's email for a rebuild), Started, Finished (once finished), Rows,
+  caller's email when started by hand), Started, Finished (once finished), Rows,
   New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged; an
   enrich pass shows five counts in their place, Due, Fetched, `https`,
   `http` and `none` (`#pass-due`, `#pass-fetched`, `#pass-https`,
@@ -686,7 +686,7 @@ Wisconsin.
 `campaigns.acme.ikigenba.com`, the funnel's record of who was contacted,
 with what, when and by which channel, and whether they looked: a campaign
 has a name, a description, its channels (`mail`, `email` or both) and a
-destination; its members are candidate businesses, added from a cohort or
+destination; its members are candidate businesses, added from a prospect list or
 one at a time, each with one piece per channel the campaign uses, planned,
 delivered or dropped; each piece carries its own link, and every visit to it
 is kept. The service sends nothing: pieces are marked delivered by hand.
@@ -696,7 +696,7 @@ every signed-in user sees every campaign. Two levels: the landing page and
 one campaign at `/campaigns/<id>`. Banner and footer as in app.html, the
 service `campaigns` with the Tabler `speakerphone` icon (added to
 `icons/tabler/` on 2026-10-20 for this app). No form but sign out. The
-sample data is made-up carriers from candidates' cohort.
+sample data is made-up carriers from candidates' prospect list.
 - The landing: `h1` campaigns, a lede, then `section#campaigns` whose
   header says the campaigns are the space's, newest first, and that nothing
   here sends, with `table#campaign-list` of Name / Campaign / Channels /
@@ -722,7 +722,7 @@ sample data is made-up carriers from candidates' cohort.
   `tr[data-candidate=<id>]` (`[data-rejected]` when rejected): the
   candidate id linking to its page at candidates; the business name as
   candidates answers it as the page is read, muted "unknown" when it does
-  not, with a `.badge` rejected of kind warn when rejected; From the cohort
+  not, with a `.badge` rejected of kind warn when rejected; From the prospect list
   id linking to its page at candidates, or muted "added by hand"; Opened
   yes or muted no. Each piece cell, `td.member-piece[data-channel]
   [data-state]`, holds the state as a `.status` word, then, when
