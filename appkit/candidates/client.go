@@ -38,7 +38,7 @@ type Business struct {
 // Person is a business contact.
 type Person struct{ Name, Role string }
 
-// Member holds a cohort member, including its exclusion state.
+// Member holds a prospect list member, including its exclusion state.
 type Member struct {
 	Business Business
 	Excluded bool
@@ -46,7 +46,7 @@ type Member struct {
 
 // Sentinel errors identify the refusals a reader can act on.
 var (
-	// ErrNotFound means the cohort or candidate cannot be found.
+	// ErrNotFound means the prospect list, cohort or candidate cannot be found.
 	ErrNotFound = errors.New("candidates: not found")
 	// ErrUnavailable means the store cannot be read now.
 	ErrUnavailable = errors.New("candidates: unavailable")
@@ -77,12 +77,33 @@ func NewClient(cfg ClientConfig) *Client {
 	return &Client{mcp: mcp.NewClient(mcp.ClientConfig{Endpoint: endpoint, HTTPClient: client})}
 }
 
+// ProspectList reads every member in the prospect list's order, including excluded members.
+func (c *Client) ProspectList(ctx context.Context, id string) ([]Member, error) {
+	fields, err := c.call(ctx, "prospect_list", map[string]any{"prospect_list": id})
+	var rpc *mcp.RPCError
+	if errors.As(err, &rpc) && rpc.Code == mcp.CodeInvalidParams && rpc.Message == "Unknown tool: prospect_list" {
+		cohort := id
+		if strings.HasPrefix(id, "pl_") {
+			cohort = "coh_" + id[3:]
+		}
+		return c.Members(ctx, cohort)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return decodeMembers(ctx, fields)
+}
+
 // Members reads every member in the cohort's order, including excluded members.
 func (c *Client) Members(ctx context.Context, cohort string) ([]Member, error) {
 	fields, err := c.call(ctx, "cohort", map[string]any{"cohort": cohort})
 	if err != nil {
 		return nil, err
 	}
+	return decodeMembers(ctx, fields)
+}
+
+func decodeMembers(ctx context.Context, fields map[string]json.RawMessage) ([]Member, error) {
 	entries, err := array(fields["members"])
 	if err != nil {
 		return nil, outputError(ctx, err)

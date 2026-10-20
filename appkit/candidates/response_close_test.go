@@ -15,12 +15,12 @@ import (
 
 // R-PZ5Q-AE5I
 func TestResponseBodyClosedBeforeReturn(t *testing.T) {
-	for _, operation := range []string{"cohort", "candidate"} {
+	for _, operation := range []string{"cohort", "candidate", "prospect_list", "fallback"} {
 		for _, outcome := range []string{"success", "refusal", "rpc-error", "protocol-error", "output-error"} {
 			t.Run(operation+"/"+outcome, func(t *testing.T) {
 				returned := make(chan struct{})
 				writeResult := make(chan error, 1)
-				entry := server(t, func(w http.ResponseWriter, r *http.Request) {
+				entry := fallbackServer(t, operation, func(w http.ResponseWriter, r *http.Request) {
 					req := request(t, r)
 					w.Header().Set("Content-Type", "text/event-stream")
 					_, _ = io.WriteString(w, "data: ")

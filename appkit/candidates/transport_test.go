@@ -31,6 +31,9 @@ func transportCall(ctx context.Context, t *testing.T, c *candidates.Client, oper
 	var got, zero any
 	var err error
 	switch operation {
+	case "prospect_list", "fallback":
+		got, err = c.ProspectList(ctx, value)
+		zero = []candidates.Member(nil)
 	case "cohort":
 		got, err = c.Members(ctx, value)
 		zero = []candidates.Member(nil)
@@ -59,7 +62,7 @@ func transportError(t *testing.T, err error) {
 
 // R-PRUB-ZRPC
 func TestRPCFailures(t *testing.T) {
-	for _, operation := range []string{"cohort", "candidate"} {
+	for _, operation := range []string{"cohort", "candidate", "prospect_list"} {
 		for _, status := range []int{200, 201, 302, 400, 500} {
 			for _, media := range []string{"application/json", "text/plain", "text/event-stream"} {
 				if media == "text/event-stream" && status != 200 {
@@ -102,7 +105,7 @@ func TestRPCFailures(t *testing.T) {
 
 // R-PT28-DJG1 R-PUA4-RB6Q R-P4O8-Q4M5 R-Q0DM-O5W7
 func TestHTTPFailuresAndRedirects(t *testing.T) {
-	for _, operation := range []string{"cohort", "candidate"} {
+	for _, operation := range []string{"cohort", "candidate", "prospect_list"} {
 		for _, status := range []int{200, 201, 300, 301, 302, 303, 304, 305, 307, 308, 400, 401, 404, 500, 503} {
 			for _, body := range []string{"", "plain response", `{"jsonrpc":"1.0","result":{}}`, `[]`, strings.Repeat("abcdef", 1000)} {
 				for _, location := range []string{"", "/redirected"} {
@@ -163,7 +166,7 @@ func TestTransportFailures(t *testing.T) {
 	expired, stop := context.WithDeadline(context.Background(), time.Unix(0, 0))
 	defer stop()
 	for _, ctx := range []context.Context{context.Background(), canceled, expired} {
-		for _, operation := range []string{"cohort", "candidate"} {
+		for _, operation := range []string{"cohort", "candidate", "prospect_list"} {
 			_, err := transportCall(ctx, t, c, operation, "id")
 			transportError(t, err)
 			if !strings.HasPrefix(err.Error(), "candidates: ") {
@@ -185,7 +188,7 @@ func TestTransportFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	trail := capture.Events()
-	if len(trail) != 6 {
+	if len(trail) != 9 {
 		t.Fatal(len(trail))
 	}
 	for _, e := range trail {
@@ -197,7 +200,7 @@ func TestTransportFailures(t *testing.T) {
 
 // R-PXXT-WMET
 func TestCancellationWhileReadingResponse(t *testing.T) {
-	for _, operation := range []string{"cohort", "candidate"} {
+	for _, operation := range []string{"cohort", "candidate", "prospect_list", "fallback"} {
 		for _, tc := range []struct {
 			status         int
 			media, partial string
@@ -206,7 +209,7 @@ func TestCancellationWhileReadingResponse(t *testing.T) {
 				flushed := make(chan struct{})
 				release := make(chan struct{})
 				ended := make(chan struct{})
-				entry := server(t, func(w http.ResponseWriter, r *http.Request) {
+				entry := fallbackServer(t, operation, func(w http.ResponseWriter, r *http.Request) {
 					defer close(ended)
 					w.Header().Set("Content-Type", tc.media)
 					w.Header().Set("Location", "/redirected")
@@ -237,8 +240,14 @@ func TestCancellationWhileReadingResponse(t *testing.T) {
 	}
 }
 
-// R-Q1LJ-1XMW R-P9JU-97KX
+// R-E4IM-UD6Q R-P9JU-97KX
 func TestConcurrentCalls(t *testing.T) {
+	t.Run("direct", func(t *testing.T) { concurrentCalls(t, false) })
+	t.Run("fallback", func(t *testing.T) { concurrentCalls(t, true) })
+}
+
+func concurrentCalls(t *testing.T, fallback bool) {
+	t.Helper()
 	var mu sync.Mutex
 	seen := make(map[int64]bool)
 	entry := server(t, func(w http.ResponseWriter, r *http.Request) {
@@ -266,10 +275,14 @@ func TestConcurrentCalls(t *testing.T) {
 		if r.Header.Get("X-User-Id") != id || r.Header.Get("X-Request-Id") != "request"+id {
 			t.Error("caller mixed", id, r.Header)
 		}
+		if fallback && params.Name == "prospect_list" {
+			unknownProspectList(w, req, "application/json", mcp.CodeInvalidParams, "Unknown tool: prospect_list")
+			return
+		}
 		encoded, _ := json.Marshal(id)
 		candidate := `{"id":` + string(encoded) + `,"name":"business","status":"active"}`
 		body := `{"candidate":` + candidate + `}`
-		if params.Name == "cohort" {
+		if params.Name != "candidate" {
 			body = `{"members":[{"candidate":` + candidate + `}]}`
 		}
 
@@ -283,7 +296,7 @@ func TestConcurrentCalls(t *testing.T) {
 		wg.Go(func() {
 			id := fmt.Sprint(i)
 			ctx := identity.NewContext(context.Background(), identity.Caller{UserID: id, RequestID: "request" + id})
-			for _, operation := range []string{"cohort", "candidate"} {
+			for _, operation := range []string{"cohort", "candidate", "prospect_list"} {
 				value, err := transportCall(ctx, t, c, operation, id)
 				if err != nil {
 					t.Error(err)
@@ -308,8 +321,12 @@ func TestConcurrentCalls(t *testing.T) {
 		})
 	}
 	wg.Wait()
+	expected := 96
+	if fallback {
+		expected = 128
+	}
 	mu.Lock()
-	if len(seen) != 64 {
+	if len(seen) != expected {
 		t.Errorf("unique request ids: %d", len(seen))
 	}
 	mu.Unlock()
@@ -317,7 +334,7 @@ func TestConcurrentCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	trail := capture.Events()
-	if len(trail) != 64 {
+	if len(trail) != expected {
 		t.Fatal(len(trail))
 	}
 	for _, e := range trail {
@@ -367,7 +384,7 @@ func TestProcessIndependence(t *testing.T) {
 			}()
 			candidates.NewClient(candidates.ClientConfig{})
 		}()
-		for _, operation := range []string{"cohort", "candidate"} {
+		for _, operation := range []string{"cohort", "candidate", "prospect_list"} {
 			c := answer(t, 200, "application/json", `{"structuredContent":`+output(operation)+`}`)
 			value, err := transportCall(context.Background(), t, c, operation, "id")
 			if err != nil {

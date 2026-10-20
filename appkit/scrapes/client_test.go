@@ -96,7 +96,7 @@ func runCalls(c *scrapes.Client) []func(context.Context, string) (scrapes.Run, e
 	return []func(context.Context, string) (scrapes.Run, error){c.Current, c.Record}
 }
 
-// R-DYKJ-8TZ7 R-CO8C-PJST R-CPG9-3BJI R-CQO5-H3A7 R-CRW1-UV0W R-CT3Y-8MRL R-CUBU-MEIA R-CVJR-068Z R-CXZJ-RPQD
+// R-DYKJ-8TZ7 R-CO8C-PJST R-CPG9-3BJI R-CQO5-H3A7 R-CRW1-UV0W R-E5QJ-84XF R-CUBU-MEIA R-CVJR-068Z R-CXZJ-RPQD
 func TestPublicTypes(t *testing.T) {
 	w, _ := writer(t)
 	constructors := []func(scrapes.ClientConfig) *scrapes.Client{scrapes.NewClient}
@@ -120,10 +120,10 @@ func TestPublicTypes(t *testing.T) {
 	person := scrapes.Person{"name", "role"}
 	var personShape struct{ Name, Role string } = person
 	lat, lon := 1.5, 2.5
-	row := scrapes.Row{"s", "r", "src", time.Unix(3, 0), "d", "n", []string{"alias"}, address, &lat, &lon, []scrapes.Person{person}, map[string]json.RawMessage{"f": json.RawMessage(`1`)}, json.RawMessage(`null`)}
+	row := scrapes.Row{"s", "r", "src", time.Unix(3, 0), time.Unix(4, 0), "d", "n", []string{"alias"}, address, &lat, &lon, []scrapes.Person{person}, map[string]json.RawMessage{"f": json.RawMessage(`1`)}, json.RawMessage(`null`)}
 	var rowShape struct {
 		Scraper, Run, SourceID string
-		Collected              time.Time
+		Collected, Scraped     time.Time
 		Digest, Name           string
 		Names                  []string
 		Address                scrapes.Address
@@ -259,7 +259,7 @@ func TestRequests(t *testing.T) {
 	}
 }
 
-// R-8Q3B-XHKW R-8RB8-B9BL
+// R-E6YF-LWO4 R-E86B-ZOET
 func TestRuns(t *testing.T) {
 	for _, body := range []string{validRun, strings.TrimSuffix(validRun, "}") + `,"reason":"arbitrary","finished":"2030-01-02T08:09:10-03:00","user":"u","email":"e","trigger":"t","extra":true}`, strings.TrimSuffix(validRun, "}") + `,"ID":"ignored","id":null,"id":"id","STATUS":null,"unknown":[1]}`} {
 		for _, call := range runCalls(answer(t, 200, body)) {
@@ -305,7 +305,7 @@ func mutate(t *testing.T, body, key string, value json.RawMessage, remove bool) 
 	return string(result)
 }
 
-// R-8Q3B-XHKW R-8SJ4-P12A R-DBEF-Z6W0
+// R-E6YF-LWO4 R-E9E8-DG5I R-DBEF-Z6W0
 func TestMalformedRuns(t *testing.T) {
 	bodies := []string{"", "null", "[]", "true", "1", "{}", "{", validRun + " {}", validRun + " trailing", string([]byte{123, 34, 120, 34, 58, 34, 255, 34, 125}), strings.Replace(validRun, `"id"`, `"ID"`, 1), strings.TrimSuffix(validRun, "}") + `,"id":null}`, strings.TrimSuffix(validRun, "}") + `,"id":1}`}
 	for _, key := range []string{"id", "scraper", "status", "reason", "started", "finished", "user", "email", "trigger"} {
@@ -338,9 +338,9 @@ func TestMalformedRuns(t *testing.T) {
 	}
 }
 
-// R-8Q3B-XHKW R-8NNJ-5Y3I R-8TR1-2SSZ
+// R-E6YF-LWO4 R-EAM4-R7W7 R-EBU1-4ZMW
 func TestRows(t *testing.T) {
-	full := strings.TrimSuffix(validRow, "}") + `,"names":["alias","other"],"address":{"street":"st","city":"city","state":"state","zip":"zip","county":"county","CITY":"ignore","city":null,"city":"city","extra":false},"lat":1.25,"lon":-2.5,"people":[{"name":"Person","role":"Role","NAME":null},{"role":"secondary"},{}],"facts":{"f":null,"f": { "v" : [1, 2] },"n":1.00},"raw": { "source" : [true, null] },"unknown":1,"NAME":"ignored","name":null,"name":"Name"}`
+	full := strings.TrimSuffix(validRow, "}") + `,"names":["alias","other"],"address":{"street":"st","city":"city","state":"state","zip":"zip","county":"county","CITY":"ignore","city":null,"city":"city","extra":false},"lat":1.25,"lon":-2.5,"people":[{"name":false,"name":"Person","role":null,"role":"Role","NAME":null},{"role":"secondary"},{}],"facts":{"f":null,"f": { "v" : [1, 2] },"n":1.00},"raw": { "source" : [true, null] },"unknown":1,"NAME":"ignored","name":null,"name":"Name"}`
 	for _, body := range []string{"", validRow + "\n", full + "\n" + validRow + "\n", strings.TrimSuffix(validRow, "}") + `,"lat":null,"lon":null,"raw":null}` + "\n"} {
 		var rows []scrapes.Row
 		err := answer(t, 200, body).Rows(context.Background(), "id", func(row scrapes.Row) error { rows = append(rows, row); return nil })
@@ -349,7 +349,7 @@ func TestRows(t *testing.T) {
 		}
 		for i, row := range rows {
 			instant, _ := time.Parse(time.RFC3339, "2030-01-02T03:04:05-03:00")
-			expected := scrapes.Row{Scraper: "collector", Run: "id", SourceID: "source", Collected: instant.UTC(), Digest: "digest", Name: "Name", Names: []string{}, People: []scrapes.Person{}, Facts: map[string]json.RawMessage{}}
+			expected := scrapes.Row{Scraper: "collector", Run: "id", SourceID: "source", Collected: instant.UTC(), Scraped: instant.UTC(), Digest: "digest", Name: "Name", Names: []string{}, People: []scrapes.Person{}, Facts: map[string]json.RawMessage{}}
 			if strings.HasPrefix(body, full) && i == 0 {
 				lat, lon := 1.25, -2.5
 				expected.Names = []string{"alias", "other"}
@@ -381,7 +381,67 @@ func TestRows(t *testing.T) {
 	}
 }
 
-// R-8Q3B-XHKW R-8NNJ-5Y3I R-DHHX-W1LH
+// R-E6YF-LWO4 R-EAM4-R7W7 R-EBU1-4ZMW R-DHHX-W1LH
+func TestRowTimestampSelection(t *testing.T) {
+	const scraped = `"2031-06-07T08:09:10+05:30"`
+	const collected = `"2030-01-02T03:04:05-03:00"`
+	withoutCollected := mutate(t, validRow, "collected", nil, true)
+	appendMembers := func(body, members string) string {
+		return strings.TrimSuffix(body, "}") + "," + members + "}"
+	}
+	cases := []struct {
+		name, body, timestamp string
+	}{
+		{"collected only", validRow, collected},
+		{"scraped only", appendMembers(withoutCollected, `"scraped":`+scraped), scraped},
+		{"both differ", appendMembers(validRow, `"scraped":`+scraped), scraped},
+		{"scraped last valid", appendMembers(validRow, `"scraped":null,"scraped":`+scraped), scraped},
+		{"collected last valid", appendMembers(validRow, `"collected":null,"collected":`+collected), collected},
+		{"scraped wrong case ignored", appendMembers(validRow, `"SCRAPED":null`), collected},
+		{"missing timestamp", withoutCollected, ""},
+		{"wrong case alone", appendMembers(withoutCollected, `"SCRAPED":`+scraped), ""},
+		{"scraped last invalid", appendMembers(validRow, `"scraped":`+scraped+`,"scraped":null`), ""},
+		{"collected last invalid", appendMembers(validRow, `"collected":null`), ""},
+	}
+	for _, value := range []string{`null`, `false`, `1`, `[]`, `{}`, `"bad time"`, `""`} {
+		cases = append(cases, struct{ name, body, timestamp string }{
+			"bad scraped " + value, appendMembers(validRow, `"scraped":`+value), "",
+		})
+		cases = append(cases, struct{ name, body, timestamp string }{
+			"ignored collected " + value, appendMembers(validRow, `"collected":`+value+`,"scraped":`+scraped), scraped,
+		})
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var rows []scrapes.Row
+			callErr := answer(t, 200, tc.body+"\n").Rows(context.Background(), "id", func(row scrapes.Row) error {
+				rows = append(rows, row)
+				return nil
+			})
+			if tc.timestamp == "" {
+				malformed(t, callErr)
+				if len(rows) != 0 {
+					t.Fatalf("invalid timestamp delivered %d rows", len(rows))
+				}
+				return
+			}
+			var stamp string
+			if err := json.Unmarshal([]byte(tc.timestamp), &stamp); err != nil {
+				t.Fatal(err)
+			}
+			instant, err := time.Parse(time.RFC3339, stamp)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expected := scrapes.Row{Scraper: "collector", Run: "id", SourceID: "source", Collected: instant.UTC(), Scraped: instant.UTC(), Digest: "digest", Name: "Name", Names: []string{}, People: []scrapes.Person{}, Facts: map[string]json.RawMessage{}}
+			if callErr != nil || len(rows) != 1 || !reflect.DeepEqual(rows[0], expected) {
+				t.Fatalf("rows=%+v want=%+v error=%v", rows, expected, callErr)
+			}
+		})
+	}
+}
+
+// R-E6YF-LWO4 R-EAM4-R7W7 R-DHHX-W1LH
 func TestMalformedRows(t *testing.T) {
 	bodies := []string{"", "null", "[]", "true", "1", "{}", "{", validRow + " {}", validRow + " trailing", strings.Replace(validRow, `"scraper"`, `"SCRAPER"`, 1), strings.TrimSuffix(validRow, "}") + `,"name":null}`, string([]byte{123, 34, 120, 34, 58, 34, 255, 34, 125})}
 	for _, key := range []string{"scraper", "run", "source_id", "digest", "name", "collected"} {
@@ -653,7 +713,7 @@ func TestStreamFailures(t *testing.T) {
 	})
 }
 
-// R-DL5N-1CTK R-8UYX-GKJO
+// R-DL5N-1CTK R-EE9T-WJ4A
 func TestClosesLargeBodies(t *testing.T) {
 	stop := errors.New("consumer stop")
 	for _, mode := range []string{"current", "record", "rows-status", "rows-invalid", "rows-stop"} {

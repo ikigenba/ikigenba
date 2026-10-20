@@ -95,15 +95,15 @@ func malformed(t *testing.T, err error) {
 const minimalBusiness = `{"id":"id","status":"active","name":"business"}`
 
 func output(operation string) string {
-	if operation == "cohort" {
+	if operation != "candidate" {
 		return `{"members":[{"candidate":` + minimalBusiness + `}]}`
 	}
 	return `{"candidate":` + minimalBusiness + `}`
 }
 
-// R-P8BX-VFU8 R-P9JU-97KX R-PARQ-MZBM R-PBZN-0R2B R-PD7J-EIT0 R-PEFF-SAJP
+// R-E0UX-P1YN R-E3AQ-GLG1 R-P8BX-VFU8 R-P9JU-97KX R-PARQ-MZBM R-PBZN-0R2B R-PD7J-EIT0 R-PEFF-SAJP
 func TestRequests(t *testing.T) {
-	for _, operation := range []string{"cohort", "candidate"} {
+	for _, operation := range []string{"cohort", "candidate", "prospect_list"} {
 		for _, value := range []string{"", "a/b?% 日本\n\""} {
 			for _, caller := range []*identity.Caller{nil, {UserID: "user", Email: "email", RequestID: "request"}, {RequestID: "partial"}} {
 				{
@@ -192,7 +192,7 @@ func TestRequests(t *testing.T) {
 
 // R-PD7J-EIT0
 func TestTelemetryDuration(t *testing.T) {
-	for _, operation := range []string{"cohort", "candidate"} {
+	for _, operation := range []string{"cohort", "candidate", "prospect_list"} {
 		for _, elapsed := range []time.Duration{789*time.Microsecond + 900*time.Nanosecond, -time.Microsecond} {
 			t.Run(operation+elapsed.String(), func(t *testing.T) {
 				start := time.Unix(100, 0)
@@ -264,7 +264,7 @@ func TestConstruction(t *testing.T) {
 
 // R-PPEJ-887Y
 func TestMalformedProtocolResponses(t *testing.T) {
-	for _, operation := range []string{"cohort", "candidate"} {
+	for _, operation := range []string{"cohort", "candidate", "prospect_list"} {
 		for _, media := range []string{"application/json", "text/event-stream"} {
 			for _, mode := range []string{"wrong-id", "result-type", "non-object-result", "no-response", "invalid-event"} {
 				if media == "application/json" && (mode == "no-response" || mode == "invalid-event") {

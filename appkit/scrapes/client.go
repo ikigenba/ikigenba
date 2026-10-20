@@ -40,7 +40,7 @@ type Run struct {
 // Row holds the common envelope and the source record's JSON bytes.
 type Row struct {
 	Scraper, Run, SourceID string
-	Collected              time.Time
+	Collected, Scraped     time.Time
 	Digest, Name           string
 	Names                  []string
 	Address                Address
@@ -279,10 +279,15 @@ func decodeRow(data []byte) (Row, error) {
 			return Row{}, err
 		}
 	}
-	row.Collected, err = instant(fields, "collected", false)
+	timestamp := "scraped"
+	if _, ok := fields[timestamp]; !ok {
+		timestamp = "collected"
+	}
+	row.Scraped, err = instant(fields, timestamp, false)
 	if err != nil {
 		return Row{}, err
 	}
+	row.Collected = row.Scraped
 	names, err := array(fields, "names")
 	if err != nil {
 		return Row{}, err

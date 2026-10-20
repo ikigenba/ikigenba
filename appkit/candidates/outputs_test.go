@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
-// R-P4O8-Q4M5 R-Q2TF-FPDL R-OUX1-NYOL R-OW4Y-1QFA R-OXCU-FI5Z R-OYKQ-T9WO R-OZSN-71ND R-P10J-KTE2 R-P3GC-CCVG
+// R-DYF4-XIH9 R-P4O8-Q4M5 R-Q2TF-FPDL R-OUX1-NYOL R-OW4Y-1QFA R-OXCU-FI5Z R-OYKQ-T9WO R-OZSN-71ND R-P10J-KTE2 R-P3GC-CCVG
 func TestPublicTypes(t *testing.T) {
 	w, _ := writer(t)
 	constructors := []func(candidates.ClientConfig) *candidates.Client{candidates.NewClient}
@@ -24,7 +24,7 @@ func TestPublicTypes(t *testing.T) {
 		Telemetry *telemetry.Writer
 	} = cfg
 	c := constructors[0](cfg)
-	members := []func(context.Context, string) ([]candidates.Member, error){c.Members}
+	members := []func(context.Context, string) ([]candidates.Member, error){c.Members, c.ProspectList}
 	candidate := []func(context.Context, string) (candidates.Business, error){c.Candidate}
 	person := candidates.Person{"person", "role"}
 	var ps struct{ Name, Role string } = person
@@ -50,7 +50,7 @@ func TestPublicTypes(t *testing.T) {
 	}
 	ref := candidates.Refusal{"text"}
 	var rs struct{ Text string } = ref
-	if config.Telemetry != w || c == nil || members[0] == nil || candidate[0] == nil || candidates.Person(ps) != person || !reflect.DeepEqual(candidates.Business(bs), business) || !reflect.DeepEqual(candidates.Member(ms), member) || rs.Text != "text" || ref.Error() == "" {
+	if config.Telemetry != w || c == nil || members[0] == nil || members[1] == nil || candidate[0] == nil || candidates.Person(ps) != person || !reflect.DeepEqual(candidates.Business(bs), business) || !reflect.DeepEqual(candidates.Member(ms), member) || rs.Text != "text" || ref.Error() == "" {
 		t.Fatal("public types do not preserve their fields")
 	}
 }
@@ -85,7 +85,7 @@ func TestSuccess(t *testing.T) {
 	}
 	fullJSON := `{"id":null,"id":"id\n日本","status":"merged","merged_into":"survivor","name":"primary","names":["alias","alias","","日本"],"street":"street","city":"city","state":"state","zip":"zip","county":"county","phone":"phone","email":"email","people":[{"name":"first","role":"owner","future":1},{},{"name":"last"},{"role":"other"}],"ID":null,"STATUS":[],"Names":false,"future":{"data":null}}`
 	for _, media := range []string{"application/json", "text/event-stream"} {
-		for _, op := range []string{"cohort", "candidate"} {
+		for _, op := range []string{"cohort", "candidate", "prospect_list"} {
 			for _, fixture := range []struct {
 				body string
 				want candidates.Business
@@ -95,7 +95,7 @@ func TestSuccess(t *testing.T) {
 			} {
 				body := `{"candidate":` + fixture.body + `,"future":null}`
 				var want any = fixture.want
-				if op == "cohort" {
+				if op != "candidate" {
 					body = `{"members":[{"candidate":` + fixture.body + `,"excluded":true,"future":7},{"candidate":` + minimalBusiness + `},{"candidate":` + fixture.body + `,"excluded":false}],"rejects":null,"matching":"ignored","classified":false}`
 					want = []candidates.Member{{Business: fixture.want, Excluded: true}, {Business: minimal}, {Business: fixture.want}}
 				}
@@ -160,7 +160,7 @@ func TestMalformedOutputs(t *testing.T) {
 		mutate(t, minimalBusiness, "people", json.RawMessage(`[{"role":1}]`), false),
 		strings.TrimSuffix(minimalBusiness, "}")+`,"id":null}`,
 	)
-	for _, op := range []string{"cohort", "candidate"} {
+	for _, op := range []string{"cohort", "candidate", "prospect_list"} {
 		results := []string{`{}`, `{"structuredContent":null}`, `{"structuredContent":[]}`, `{"structuredContent":1}`, `{"structuredContent":true}`, `{"structuredContent":"text"}`,
 			`{"structuredContent":{},"content":[{"type":"text","text":` + fmt.Sprintf("%q", output(op)) + `}]}`,
 			`{"isError":true,"isError":true}`,
@@ -168,13 +168,13 @@ func TestMalformedOutputs(t *testing.T) {
 		}
 		for _, candidate := range invalidCandidates {
 			body := `{"candidate":` + candidate + `}`
-			if op == "cohort" {
+			if op != "candidate" {
 				// A late invalid member must not leak the earlier partial result.
 				body = `{"members":[{"candidate":` + minimalBusiness + `},{"candidate":` + candidate + `}]}`
 			}
 			results = append(results, `{"structuredContent":`+body+`}`)
 		}
-		if op == "cohort" {
+		if op != "candidate" {
 			for _, bad := range []string{"null", "{}", "true", "1", `"text"`, "[null]", "[[]]", "[1]", "[{}]", `[{"Candidate":` + minimalBusiness + `}]`} {
 				results = append(results, `{"structuredContent":{"members":`+bad+`}}`)
 			}
@@ -207,7 +207,7 @@ func TestRefusals(t *testing.T) {
 		fixtures = append(fixtures, struct{ result, text string }{`{"isError":true,"content":[{"type":"text","text":` + string(raw) + `}],"structuredContent":null}`, text})
 	}
 	for _, media := range []string{"application/json", "text/event-stream"} {
-		for _, op := range []string{"cohort", "candidate"} {
+		for _, op := range []string{"cohort", "candidate", "prospect_list"} {
 			for _, f := range fixtures {
 				_, err := transportCall(context.Background(), t, answer(t, 200, media, f.result), op, "id")
 				var want error
