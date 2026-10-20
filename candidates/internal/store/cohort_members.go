@@ -52,6 +52,9 @@ func cohortCondition(k Cohort, now time.Time) (string, []any) {
 	if f.MaxFilingAgeDays != nil {
 		add(`((coalesce(f.newest_filing,'')<>'' AND julianday(?)-julianday(substr(f.newest_filing,1,10))<=?) OR (coalesce(f.newest_filing,'')='' AND ?))`, now.UTC().Format("2006-01-02"), *f.MaxFilingAgeDays, f.FilingUnknown)
 	}
+	if f.MinCampaignAgeDays != nil && *f.MinCampaignAgeDays > 0 {
+		add(`NOT EXISTS (SELECT 1 FROM campaign_uses AS u WHERE u.candidate=c.id AND julianday(?)-julianday(substr(CASE WHEN u.added<>'' THEN u.added WHEN u.rejected='' THEN u.delivered WHEN u.delivered='' THEN u.rejected WHEN u.rejected<u.delivered THEN u.rejected ELSE u.delivered END,1,10))<?)`, now.UTC().Format("2006-01-02"), *f.MinCampaignAgeDays)
+	}
 	if f.Class != "" {
 		add(`(c.class=? OR ((c.class='' OR c.class=?) AND ?))`, f.Class, sources.ClassUnknown, f.ClassUnknown)
 	}

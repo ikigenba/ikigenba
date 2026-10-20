@@ -4,23 +4,24 @@ import "time"
 
 // CohortFilters selects the candidates admitted to a cohort.
 type CohortFilters struct {
-	RevenueMin       *int64   `json:"revenue_min,omitempty"`
-	RevenueMax       *int64   `json:"revenue_max,omitempty"`
-	RevenueUnknown   bool     `json:"revenue_unknown,omitempty"`
-	MaxMinutes       *int64   `json:"max_minutes,omitempty"`
-	MinutesUnknown   bool     `json:"minutes_unknown,omitempty"`
-	Categories       []string `json:"categories,omitempty"`
-	CategoryUnknown  bool     `json:"category_unknown,omitempty"`
-	Fleet            string   `json:"fleet,omitempty"`
-	FleetUnknown     bool     `json:"fleet_unknown,omitempty"`
-	Website          []string `json:"website,omitempty"`
-	WebsiteUnknown   bool     `json:"website_unknown,omitempty"`
-	Government       *bool    `json:"government,omitempty"`
-	MaxFilingAgeDays *int64   `json:"max_filing_age_days,omitempty"`
-	FilingUnknown    bool     `json:"filing_unknown,omitempty"`
-	Class            string   `json:"class,omitempty"`
-	ClassUnknown     bool     `json:"class_unknown,omitempty"`
-	ShowExcluded     bool     `json:"show_excluded,omitempty"`
+	RevenueMin         *int64   `json:"revenue_min,omitempty"`
+	RevenueMax         *int64   `json:"revenue_max,omitempty"`
+	RevenueUnknown     bool     `json:"revenue_unknown,omitempty"`
+	MaxMinutes         *int64   `json:"max_minutes,omitempty"`
+	MinutesUnknown     bool     `json:"minutes_unknown,omitempty"`
+	Categories         []string `json:"categories,omitempty"`
+	CategoryUnknown    bool     `json:"category_unknown,omitempty"`
+	Fleet              string   `json:"fleet,omitempty"`
+	FleetUnknown       bool     `json:"fleet_unknown,omitempty"`
+	Website            []string `json:"website,omitempty"`
+	WebsiteUnknown     bool     `json:"website_unknown,omitempty"`
+	Government         *bool    `json:"government,omitempty"`
+	MaxFilingAgeDays   *int64   `json:"max_filing_age_days,omitempty"`
+	FilingUnknown      bool     `json:"filing_unknown,omitempty"`
+	MinCampaignAgeDays *int64   `json:"min_campaign_age_days,omitempty"`
+	Class              string   `json:"class,omitempty"`
+	ClassUnknown       bool     `json:"class_unknown,omitempty"`
+	ShowExcluded       bool     `json:"show_excluded,omitempty"`
 }
 
 // CohortOrder is one term of a cohort's ordering.

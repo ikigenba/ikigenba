@@ -10,7 +10,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-GOAB-PI3C R-E5DR-353H R-EDX1-RJAC
+// R-GOAB-PI3C R-NDOT-KDNW
 func TestBriefViewSelection(t *testing.T) {
 	good := enrichers.BriefFound{Run: "fixture-run", Status: "exited", ExitCode: new(0), Summary: "fixture-summary", Categories: []enrichers.BriefCategory{{Name: sources.CategoryRetail, Why: "fixture-why"}}, Labels: []string{"fixture-label", "other-label"}}
 	result := func(b enrichers.BriefFound) store.Enrichment {
@@ -49,7 +49,7 @@ func TestBriefViewSelection(t *testing.T) {
 	}
 }
 
-// R-DT6R-9FOJ R-E6LN-GWU6 R-GUDT-MCST R-ANM6-HRQR R-E0I5-K24P
+// R-KT9N-S6EG R-N55I-VZH1 R-NB90-SU6I R-NG4M-BX5A R-ANM6-HRQR R-E0I5-K24P
 func TestBriefCandidateAndCohort(t *testing.T) {
 	cfg, db := pageFixture(t)
 	now := fixtureTime()

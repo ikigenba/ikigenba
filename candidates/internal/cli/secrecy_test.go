@@ -174,7 +174,7 @@ func secrecyAbsent(t *testing.T, where string, value any, markers []string) {
 	}
 }
 
-// R-0DBY-N0TE R-0FRR-EKAS R-0I7K-63S6 R-0JFG-JVIV R-0LV9-BF09 R-VXPS-X5UC R-CDHW-SSLY
+// R-MEAW-EFXY R-0DBY-N0TE R-0FRR-EKAS R-0I7K-63S6 R-0JFG-JVIV R-0LV9-BF09 R-VXPS-X5UC R-CDHW-SSLY
 func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	markers, phone := secrecyMarkers(t)
 	forbidden := append(append([]string{}, markers...), phone)
@@ -525,6 +525,32 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	call("delete_cohort", map[string]any{"cohort": cohortID}, false)
 	call("create_cohort", map[string]any{"name": markers[3]}, false)
 	answers := [][]byte{}
+
+	// Campaign reasons are record text: provoke every delivery, read, and render.
+	for _, campaignCandidate := range []string{id, other, "unknown_campaign_candidate"} {
+		for _, name := range []string{"campaign.member.added", "campaign.member.rejected", "campaign.piece.delivered"} {
+			answer := h.campaignDelivery(name, "campaign_secrecy", campaignCandidate, cohortID, strings.Join(append(append([]string{}, markers...), phone), " "), h.p.Now(), "campaign-secrecy-delivery")
+			answers = append(answers, answer)
+			if campaignCandidate == "unknown_campaign_candidate" {
+				continue
+			}
+			detail := call("candidate", map[string]any{"candidate": campaignCandidate}, false)
+			if name == "campaign.member.rejected" {
+				encoded, err := json.Marshal(detail)
+				if err != nil || !strings.Contains(string(encoded), strings.Join(append(append([]string{}, markers...), phone), " ")) {
+					t.Fatal("campaign reason omitted from detail", err)
+				}
+			}
+			status, body := h.request("GET", "/candidates/"+campaignCandidate, "campaign-secrecy-page", nil)
+			if status != 200 {
+				t.Fatal(status)
+			}
+			if name == "campaign.member.rejected" && !strings.Contains(string(body), strings.Join(append(append([]string{}, markers...), phone), " ")) {
+				t.Fatal("campaign reason omitted from page")
+			}
+		}
+	}
+
 	delivery := func(eventID, runID, status string) {
 		t.Helper()
 		e := events.Event{ID: eventID, Time: h.p.Now(), Service: "scrapes", Name: "scrape.finished", Attrs: events.Attrs{"scraper": "fmcsa", "run": runID, "status": status}, Seq: 1, Received: h.p.Now()}

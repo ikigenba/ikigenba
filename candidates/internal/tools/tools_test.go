@@ -288,7 +288,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 	_ = tools.Assessment{nil, nil, nil, nil, nil, "", "", nil, "", false, nil, "", "", nil, nil, "", "", "", "", nil, "", false, 0, ""}
 	_ = tools.Estimate{"source", 1, nil, .5, nil, "", 1}
 	_ = tools.Ruling{"kind", "candidate", "other", nil, "why", "user", "email", "at"}
-	_ = tools.Detail{tools.Candidate{}, nil, nil, nil, nil, nil, nil, nil}
+	_ = tools.Detail{tools.Candidate{}, nil, nil, nil, nil, nil, nil, nil, nil}
 	_ = tools.Decision{tools.Ruling{}, nil}
 	_ = tools.EnrichArgs{"kind", "cohort", "candidate", false}
 	_ = tools.AddPageArgs{"candidate", "url"}
@@ -301,7 +301,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 	_ = tools.PassesArgs{nil, nil}
 	_ = tools.CohortsArgs{nil, nil}
 	_ = tools.CohortArgs{"id"}
-	_ = tools.FilterArgs{nil, nil, false, nil, false, nil, false, "", false, nil, false, nil, nil, false, "", false, false}
+	_ = tools.FilterArgs{nil, nil, false, nil, false, nil, false, "", false, nil, false, nil, nil, false, nil, "", false, false}
 	_ = tools.OrderArgs{"field", "direction"}
 	_ = tools.CreateCohortArgs{"name", nil, nil, nil}
 	_ = tools.EditCohortArgs{"id", nil, nil, nil, nil}
@@ -332,9 +332,9 @@ func objectKeys(t *testing.T, b []byte) []string {
 	return out
 }
 
-// R-AEA2-LWFY R-AFHY-ZO6N R-WO2V-5M7K R-AHXR-R7O1 R-WMUY-RUGV R-AKDK-IR5F R-1NPK-A833 R-OHKS-Z2JM
+// R-AEA2-LWFY R-AFHY-ZO6N R-WO2V-5M7K R-AHXR-R7O1 R-WMUY-RUGV R-AKDK-IR5F R-1NPK-A833 R-WWFP-L72E
 // R-RIUB-88I4
-// R-6131-Z710 R-AEA2-LWFY R-AFHY-ZO6N R-WO2V-5M7K R-AHXR-R7O1 R-WMUY-RUGV R-AKDK-IR5F R-1NPK-A833 R-OHKS-Z2JM
+// R-6131-Z710 R-AEA2-LWFY R-AFHY-ZO6N R-WO2V-5M7K R-AHXR-R7O1 R-WMUY-RUGV R-AKDK-IR5F R-1NPK-A833 R-WWFP-L72E
 func TestAnswerJSONShapes(t *testing.T) {
 	tests := []struct {
 		v      any
@@ -347,7 +347,7 @@ func TestAnswerJSONShapes(t *testing.T) {
 		{tools.Member{}, "candidate categories classified_by fleet_verdict website website_source site_text brief excluded", "categories", ""}, {tools.CohortList{}, "cohorts", "cohorts", ""}, {tools.Cohort{}, "id name size filters order created_by created_email created changed_by changed_email changed", "order", "filters"}, {tools.Reject{}, "kind cohort candidate", "", ""}, {tools.CohortRead{}, "cohort matching classified members rejects", "members rejects", ""}, {tools.CandidateList{}, "candidates", "candidates", ""}, {tools.PassList{}, "passes", "passes", ""},
 		{tools.Link{}, "scraper source_id run digest name names street city state zip county phone email people class cargo fleet_verdict name_key phone_key domain_key reason confidence first_seen last_seen gone", "names people cargo", ""},
 		{tools.Estimate{}, "source low confidence facts formula", "", "facts"}, {tools.Assessment{}, "operating_evidence categories classified_by records_differ record_categories fleet_verdict website website_source excluded rules calculated", "operating_evidence categories record_categories", ""},
-		{tools.Ruling{}, "kind candidate keys why user email at", "keys", ""}, {tools.Detail{}, "candidate estimates links rulings pages enrichments rejects", "estimates links rulings pages enrichments rejects", ""}, {tools.Decision{}, "ruling candidates", "candidates", ""},
+		{tools.Ruling{}, "kind candidate keys why user email at", "keys", ""}, {tools.Detail{}, "candidate estimates links rulings pages enrichments rejects campaigns", "estimates links rulings pages enrichments rejects campaigns", ""}, {tools.Decision{}, "ruling candidates", "candidates", ""},
 	}
 	for _, tt := range tests {
 		b, err := json.Marshal(tt.v)
@@ -385,7 +385,7 @@ func TestAnswerJSONShapes(t *testing.T) {
 		{tools.Estimate{High: &one, Filed: "2026-01-01"}, "source low high confidence facts filed formula"},
 		{tools.Assessment{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, KnownSince: "chosen-known", NewestFiling: "chosen-newest", GovernmentMatch: "chosen-government", PowerUnits: &one, Drivers: &one, Website: sources.WebsiteHTTPS, WebsiteURL: "https://chosen.test", WebsiteSearchAt: "chosen-search", Minutes: &one, Brief: "fixture-summary"}, "operating_confidence operating_evidence revenue_low revenue_high revenue_confidence known_since newest_filing categories classified_by records_differ record_categories government_match fleet_verdict power_units drivers website website_url website_source website_search_at minutes brief excluded rules calculated"},
 		{tools.Reject{Kind: "reject", Cohort: "cohort", CohortName: "name", Candidate: "candidate", Why: "why", User: "user", Email: "email", At: "at"}, "kind cohort cohort_name candidate why user email at"},
-		{tools.Ruling{Other: "other"}, "kind candidate other keys why user email at"}, {tools.Detail{Assessment: &tools.Assessment{}}, "candidate assessment estimates links rulings pages enrichments rejects"},
+		{tools.Ruling{Other: "other"}, "kind candidate other keys why user email at"}, {tools.Detail{Assessment: &tools.Assessment{}}, "candidate assessment estimates links rulings pages enrichments rejects campaigns"},
 	}
 	for _, tt := range populated {
 		b, err := json.Marshal(tt.v)

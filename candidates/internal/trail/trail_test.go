@@ -15,9 +15,9 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
 )
 
-// R-PFPX-QHGG R-TFIH-F1S8
+// R-775C-V5DE R-TFIH-F1S8
 func TestDeclarations(t *testing.T) {
-	if trail.Started != "pass.started" || trail.Finished != "pass.finished" || trail.Accepted != "scrape.finished" {
+	if trail.Started != "pass.started" || trail.Finished != "pass.finished" || trail.Accepted != "scrape.finished" || trail.AcceptedJudge != "cron.judge_candidates.fired" || trail.AcceptedAdded != "campaign.member.added" || trail.AcceptedRejected != "campaign.member.rejected" || trail.AcceptedDelivered != "campaign.piece.delivered" {
 		t.Fatal("names")
 	}
 	want := []events.Emission{{Event: "pass.started", Attrs: []string{"pass", "kind", "origin", "trigger", "target", "enrich_kind"}}, {Event: "pass.finished", Attrs: []string{"pass", "kind", "origin", "trigger", "target", "enrich_kind", "status", "reason", "rows", "new", "changed", "unchanged", "gone", "created", "linked", "judged", "rescored", "unranged", "derived", "due", "fetched", "https", "http", "none", "runs", "runs_failed", "pages", "cost"}}}

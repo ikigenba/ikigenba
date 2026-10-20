@@ -91,6 +91,7 @@ type FiltersView struct {
 	Government             string
 	MaxFilingAgeDays       string
 	FilingUnknown          bool
+	MinCampaignAgeDays     string
 	Class                  string
 	ClassUnknown           bool
 	ShowExcluded           bool
@@ -130,6 +131,7 @@ type CandidateData struct {
 	Pages       []PageRow
 	Enrichments []EnrichmentRow
 	Rejects     []RejectRecordRow
+	Campaigns   []CampaignRow
 }
 
 // CandidateView supplies candidate view page data.
@@ -294,4 +296,11 @@ type ConfirmationView struct {
 	State, URL, Title, StatusCode string
 	Size                          int64
 	Error                         string
+}
+
+// CampaignRow supplies the candidate's recorded campaign history.
+type CampaignRow struct {
+	Campaign, CampaignPage, Cohort, CohortName, CohortPage, Added, AddedText string
+	Rejected                                                                 bool
+	RejectedAt, RejectedAtText, Reason, Delivered, DeliveredText             string
 }

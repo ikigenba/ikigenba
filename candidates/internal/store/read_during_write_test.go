@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-OXV7-EIWU
+// R-TACL-IFI1
 func TestContractReadsDuringQueuedWrites(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -82,6 +82,11 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 			name string
 			call func() (any, error)
 		}{"DueAmong", func() (any, error) { return f.s.DueAmong(ctx, sources.WebsiteCheck, []string{id}, true) }})
+	contractOK(t, f.s.AddCampaignUse(ctx, id, "held-campaign", cohort.ID, f.now))
+	reads = append(reads, struct {
+		name string
+		call func() (any, error)
+	}{"CampaignUses", func() (any, error) { return f.s.CampaignUses(ctx, id) }})
 	before := make([]any, len(reads))
 	for i, read := range reads {
 		value, err := read.call()
@@ -112,6 +117,9 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 	}
 	defer unblock()
 	writes := []func() error{
+		func() error { return f.s.AddCampaignUse(ctx, id, "queued", "", f.now) },
+		func() error { return f.s.RejectCampaignUse(ctx, id, "held-campaign", "queued reason", f.now) },
+		func() error { return f.s.DeliverCampaignUse(ctx, id, "held-campaign", f.now) },
 		func() error {
 			obs := contractObservation("evidence", "Changed queued display", f.now)
 			obs.Digest = "queued-digest"

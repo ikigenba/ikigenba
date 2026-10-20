@@ -202,6 +202,9 @@ func filtersView(f store.CohortFilters) FiltersView {
 	if f.MaxFilingAgeDays != nil {
 		v.MaxFilingAgeDays = strconv.FormatInt(*f.MaxFilingAgeDays, 10)
 	}
+	if f.MinCampaignAgeDays != nil {
+		v.MinCampaignAgeDays = strconv.FormatInt(*f.MinCampaignAgeDays, 10)
+	}
 	if f.Government != nil {
 		v.Government = strconv.FormatBool(*f.Government)
 	}

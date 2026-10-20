@@ -291,12 +291,12 @@ func TestFailingStoreEmitsNoPassEvent(t *testing.T) {
 	}
 }
 
-// R-THYA-6L9M
+// R-5I52-WLRP
 func TestLifecycleDeclarationsIncludeDerived(t *testing.T) {
 	cfg, _, _, _ := fixture(t)
 	cfg.Passes = passes.New(passes.Config{Store: cfg.Store, Sources: sources.New(fmcsa.New(), ppp.New()), Telemetry: cfg.Telemetry, Events: cfg.Events})
 	r := request(web.Handler(cfg), http.MethodGet, "/declarations", "", "")
-	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","target","enrich_kind","status","reason","rows","new","changed","unchanged","gone","created","linked","judged","rescored","unranged","derived","due","fetched","https","http","none","runs","runs_failed","pages","cost"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger","target","enrich_kind"]}],"accepts":["cron.judge_candidates.fired","scrape.finished"]}`
+	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","target","enrich_kind","status","reason","rows","new","changed","unchanged","gone","created","linked","judged","rescored","unranged","derived","due","fetched","https","http","none","runs","runs_failed","pages","cost"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger","target","enrich_kind"]}],"accepts":["campaign.member.added","campaign.member.rejected","campaign.piece.delivered","cron.judge_candidates.fired","scrape.finished"]}`
 	if r.Code != http.StatusOK || r.Body.String() != want {
 		t.Fatal(r.Code, r.Body.String())
 	}

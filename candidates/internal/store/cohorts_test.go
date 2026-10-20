@@ -18,7 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-DBGM-T9U5 R-DCOJ-71KU R-DDWF-KTBJ R-4B7S-FL5R R-4CFO-TCWG R-4EVH-KWDU R-GM8K-P2AP R-4HBA-CFV8
+// R-DBGM-T9U5 R-DCOJ-71KU R-DDWF-KTBJ R-4B7S-FL5R R-4CFO-TCWG R-4EVH-KWDU R-K3LX-DIGC R-4HBA-CFV8
 func TestCohortValidators(t *testing.T) {
 	contractEqual(t, []string{store.CohortIDPrefix, store.OrderOperatingConfidence, store.OrderRevenueLow, store.OrderRevenueConfidence, store.OrderDriveMinutes, store.OrderNewestFiling, store.OrderKnownSince, store.DirectionDesc, store.DirectionAsc, store.KindReject, store.KindUnreject}, []string{"coh_", "operating_confidence", "revenue_low", "revenue_confidence", "drive_minutes", "newest_filing", "known_since", "desc", "asc", "reject", "unreject"})
 	contractEqual(t, []int{store.CohortSizeMin, store.CohortSizeMax, store.CohortSizeDefault}, []int{1, 100, 30})
@@ -53,9 +53,9 @@ func TestCohortValidators(t *testing.T) {
 	}
 	contractEqual(t, store.ValidCohortFilters(store.CohortFilters{Categories: []string{sources.CategoryGovernment, sources.CategoryEducation}}), true)
 	bad := []store.CohortFilters{{RevenueMin: ptrInt(6), RevenueMax: ptrInt(5)}, {Categories: []string{""}}, {Categories: []string{"trucking"}}, {Categories: []string{"shops"}}, {Categories: []string{"Retail"}}, {Fleet: sources.FleetUnknown}, {Fleet: "PASS"}, {Class: sources.ClassUnknown}, {Class: "other"}}
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 5; i++ {
 		f := store.CohortFilters{}
-		fields := []**int64{&f.RevenueMin, &f.RevenueMax, &f.MaxMinutes, &f.MaxFilingAgeDays}
+		fields := []**int64{&f.RevenueMin, &f.RevenueMax, &f.MaxMinutes, &f.MaxFilingAgeDays, &f.MinCampaignAgeDays}
 		*fields[i] = ptrInt(0)
 		contractEqual(t, store.ValidCohortFilters(f), true)
 		*fields[i] = ptrInt(-1)
@@ -88,12 +88,12 @@ func TestCohortValidators(t *testing.T) {
 	}
 }
 
-// R-IK72-EQQQ R-DGC8-CCSX
+// R-T7WS-QW0N R-DGC8-CCSX
 func TestCohortJSON(t *testing.T) {
 	for _, tc := range []struct {
 		v    any
 		want string
-	}{{store.CohortFilters{}, `{}`}, {store.CohortFilters{Government: new(bool)}, `{"government":false}`}, {store.CohortFilters{RevenueMin: ptrInt(5), Categories: []string{}}, `{"revenue_min":5}`}, {store.CohortOrder{}, `{"field":"","direction":""}`}} {
+	}{{store.CohortFilters{}, `{}`}, {store.CohortFilters{Government: new(bool)}, `{"government":false}`}, {store.CohortFilters{RevenueMin: ptrInt(5), Categories: []string{}}, `{"revenue_min":5}`}, {store.CohortFilters{MinCampaignAgeDays: ptrInt(0)}, `{"min_campaign_age_days":0}`}, {store.CohortOrder{}, `{"field":"","direction":""}`}} {
 		b, e := json.Marshal(tc.v)
 		contractOK(t, e)
 		contractEqual(t, string(b), tc.want)
@@ -590,7 +590,7 @@ func cohortPopulation(t *testing.T, f *contractFixture) []string {
 	return ids
 }
 
-// R-4M6V-VIU0 R-4NES-9AKP R-BENE-ZGE3 R-4PUL-0U23 R-4R2H-ELSS R-4SAD-SDJH R-4TIA-65A6 R-4UQ6-JX0V R-BFVB-D84S R-4KYZ-HR3B
+// R-4M6V-VIU0 R-4NES-9AKP R-BENE-ZGE3 R-4PUL-0U23 R-4R2H-ELSS R-4SAD-SDJH R-4TIA-65A6 R-4UQ6-JX0V R-NIJS-0KAR R-4KYZ-HR3B
 func TestCohortFilterBoundariesAndUnknownSwitches(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -725,7 +725,7 @@ func TestCohortOrderFieldsDirectionsUnknownsAndTies(t *testing.T) {
 	contractEqual(t, cohortIDs(cohortRead(t, f, c).Members), []string{ids[1], ids[3], ids[2], ids[0], ids[4]})
 }
 
-// R-7WVC-DE2R R-O9NE-3VU4 R-BH37-QZVH R-4ZLS-2ZZN
+// R-7WVC-DE2R R-O9NE-3VU4 R-NJRO-EC1G R-4ZLS-2ZZN
 func TestCohortMembershipReadsStoredJudgmentsAndStandingRejects(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -816,7 +816,7 @@ func TestCohortReadUsesOneClockSnapshot(t *testing.T) {
 	contractEqual(t, r.Matching, int64(3))
 }
 
-// R-DHK4-Q4JM R-DIS1-3WAB R-DJZX-HO10 R-7WVC-DE2R R-IK72-EQQQ R-DGC8-CCSX
+// R-DHK4-Q4JM R-DIS1-3WAB R-DJZX-HO10 R-7WVC-DE2R R-T7WS-QW0N R-DGC8-CCSX
 func TestCohortRecordShapesByUse(t *testing.T) {
 	type cohort struct {
 		ID, Name                        string
@@ -862,6 +862,7 @@ func TestCohortRecordShapesByUse(t *testing.T) {
 		Government             *bool
 		MaxFilingAgeDays       *int64
 		FilingUnknown          bool
+		MinCampaignAgeDays     *int64
 		Class                  string
 		ClassUnknown           bool
 		ShowExcluded           bool
@@ -966,7 +967,7 @@ func TestCohortCategoryMatchesAnyAssessmentCategory(t *testing.T) {
 	}
 }
 
-// R-PKTA-MKUR R-BFVB-D84S R-BH37-QZVH
+// R-PKTA-MKUR R-NIJS-0KAR R-NJRO-EC1G
 func TestCohortWebsiteFiltersReadStoredJudgment(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

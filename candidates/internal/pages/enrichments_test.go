@@ -45,7 +45,7 @@ func TestEnrichmentAndWebsiteViews(t *testing.T) {
 	}
 }
 
-// R-BMK4-WIGX R-EBH8-ZZSY R-AJ8K-KIAW R-E0I5-K24P
+// R-BMK4-WIGX R-EBH8-ZZSY R-N7LB-NIYF R-E0I5-K24P
 func TestWebsiteFiltersAndStoredMember(t *testing.T) {
 	f := store.CohortFilters{Website: []string{sources.WebsiteNone, sources.WebsiteHTTP}, WebsiteUnknown: true}
 	if got := filtersView(f); !reflect.DeepEqual(got.Website, f.Website) || !got.WebsiteUnknown {
@@ -88,7 +88,7 @@ func capturedCandidate(t *testing.T, cfg Config, id string) CandidateData {
 	return got
 }
 
-// R-E6LN-GWU6 R-GUDT-MCST R-BGGM-ZNRG R-DT6R-9FOJ R-EBH8-ZZSY
+// R-NB90-SU6I R-NG4M-BX5A R-BGGM-ZNRG R-N55I-VZH1 R-EBH8-ZZSY
 func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()

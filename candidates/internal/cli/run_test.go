@@ -1622,7 +1622,7 @@ func runAssertSilent(t *testing.T, h *runHarness) {
 	}
 }
 
-// R-IBIN-ZJ0W R-7CN4-W8Y3
+// R-1PTB-OR28 R-7CN4-W8Y3
 func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	rows := make([]map[string]any, 3)
 	for i := range rows {
@@ -1640,7 +1640,7 @@ func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 		entries[name] = runSocket(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }))
 	}
 	var unrelated atomic.Int64
-	for _, name := range []string{"auth", "artifacts", "connections", "cron", "gdrive", "prompts"} {
+	for _, name := range []string{"auth", "artifacts", "campaigns", "connections", "cron", "gdrive", "prompts"} {
 		entries[name] = runSocket(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { unrelated.Add(1); w.WriteHeader(500) }))
 	}
 	h := newRunHarness(t, t.TempDir(), runServices(t, entries))
@@ -1696,6 +1696,7 @@ func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	call("edit_cohort", map[string]any{"cohort": cohortID, "name": "renamed cohort"})
 	call("reject", map[string]any{"cohort": cohortID, "candidate": id, "why": "owner rejects"})
 	call("unreject", map[string]any{"cohort": cohortID, "candidate": id, "why": "owner restores"})
+	h.campaignDelivery("campaign.member.added", "campaign_fixture", id, "", "", h.p.Now(), "campaign-tool-chain")
 	for _, path := range []string{"/", "/tools", "/about", "/cohorts/" + cohortID, "/candidates/" + id, "/passes/" + passID} {
 		status, _ := h.request("GET", path, "all-pages", nil)
 		if status != 200 {

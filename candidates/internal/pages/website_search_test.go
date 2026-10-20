@@ -13,7 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-DUEN-N7F8 R-DVMK-0Z5X R-DWUG-EQWM R-DY2C-SINB R-DZA9-6AE0 R-E2XY-BLM3 R-E45U-PDCS R-E5DR-353H
+// R-DUEN-N7F8 R-DVMK-0Z5X R-DWUG-EQWM R-DY2C-SINB R-DZA9-6AE0 R-E2XY-BLM3 R-E45U-PDCS R-NDOT-KDNW
 func TestSearchEnrichmentProjection(t *testing.T) {
 	zero, one := 0, 1
 	full := enrichers.WebsiteSearchFound{Run: enrichers.WebsiteSearchRun{ID: "r1", Status: enrichers.RunExited, ExitCode: &zero}, Answer: &enrichers.WebsiteSearchAnswer{URL: "https://acme.test/", Why: "chosen-why", Rejected: []enrichers.WebsiteSearchSite{{URL: "https://other.test/", Why: "chosen-rejection"}, {URL: "https://third.test/"}}}, Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteHTTPS, URL: "https://www.acme.test/", Title: "chosen-title", StatusCode: 200, Size: 1256}}
@@ -53,7 +53,7 @@ func TestSearchEnrichmentProjection(t *testing.T) {
 	}
 }
 
-// R-DT6R-9FOJ R-E1Q1-XTVE R-E6LN-GWU6 R-EBH8-ZZSY R-E0I5-K24P
+// R-N55I-VZH1 R-E1Q1-XTVE R-NB90-SU6I R-EBH8-ZZSY R-E0I5-K24P
 func TestSearchWebsiteCandidateAndMember(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	_, ids, err := cfg.Store.Attach(t.Context(), "run", false, []store.Observation{{Scraper: "fixture", SourceID: "row", Digest: "digest", Reading: sources.Reading{Name: "search-business", NameKey: "search-business"}}})
@@ -201,7 +201,7 @@ func TestWebsiteSearchDecisionHistory(t *testing.T) {
 	}
 }
 
-// R-DT6R-9FOJ R-E0I5-K24P
+// R-N55I-VZH1 R-E0I5-K24P
 func TestCandidateAndMemberViewShapes(_ *testing.T) {
 	_ = struct {
 		Banner      page.Banner
@@ -215,6 +215,7 @@ func TestCandidateAndMemberViewShapes(_ *testing.T) {
 		Pages       []PageRow
 		Enrichments []EnrichmentRow
 		Rejects     []RejectRecordRow
+		Campaigns   []CampaignRow
 	}(CandidateData{})
 	_ = struct {
 		ID, Status, MergedInto, Name                                                                                                                     string

@@ -328,19 +328,23 @@ func (v Ruling) MarshalJSON() ([]byte, error) {
 
 // Detail is a tool answer value.
 type Detail struct {
-	Candidate   Candidate    `json:"candidate"`
-	Assessment  *Assessment  `json:"assessment,omitempty"`
-	Estimates   []Estimate   `json:"estimates"`
-	Links       []Link       `json:"links"`
-	Rulings     []Ruling     `json:"rulings"`
-	Pages       []Page       `json:"pages"`
-	Enrichments []Enrichment `json:"enrichments"`
-	Rejects     []Reject     `json:"rejects"`
+	Candidate   Candidate     `json:"candidate"`
+	Assessment  *Assessment   `json:"assessment,omitempty"`
+	Estimates   []Estimate    `json:"estimates"`
+	Links       []Link        `json:"links"`
+	Rulings     []Ruling      `json:"rulings"`
+	Pages       []Page        `json:"pages"`
+	Enrichments []Enrichment  `json:"enrichments"`
+	Rejects     []Reject      `json:"rejects"`
+	Campaigns   []CampaignUse `json:"campaigns"`
 }
 
 // MarshalJSON encodes empty collections as arrays or objects.
 func (v Detail) MarshalJSON() ([]byte, error) {
 	type plain Detail
+	if v.Campaigns == nil {
+		v.Campaigns = []CampaignUse{}
+	}
 	if v.Estimates == nil {
 		v.Estimates = []Estimate{}
 	}
@@ -394,23 +398,24 @@ type CohortArgs struct {
 
 // FilterArgs holds a cohort's filters.
 type FilterArgs struct {
-	RevenueMin       *uint32   `json:"revenue_min"`
-	RevenueMax       *uint32   `json:"revenue_max"`
-	RevenueUnknown   bool      `json:"revenue_unknown"`
-	MaxMinutes       *uint32   `json:"max_minutes"`
-	MinutesUnknown   bool      `json:"minutes_unknown"`
-	Categories       []string  `json:"categories"`
-	CategoryUnknown  bool      `json:"category_unknown"`
-	Fleet            string    `json:"fleet"`
-	FleetUnknown     bool      `json:"fleet_unknown"`
-	Website          *[]string `json:"website"`
-	WebsiteUnknown   bool      `json:"website_unknown"`
-	Government       *bool     `json:"government"`
-	MaxFilingAgeDays *uint32   `json:"max_filing_age_days"`
-	FilingUnknown    bool      `json:"filing_unknown"`
-	Class            string    `json:"class"`
-	ClassUnknown     bool      `json:"class_unknown"`
-	ShowExcluded     bool      `json:"show_excluded"`
+	RevenueMin         *uint32   `json:"revenue_min"`
+	RevenueMax         *uint32   `json:"revenue_max"`
+	RevenueUnknown     bool      `json:"revenue_unknown"`
+	MaxMinutes         *uint32   `json:"max_minutes"`
+	MinutesUnknown     bool      `json:"minutes_unknown"`
+	Categories         []string  `json:"categories"`
+	CategoryUnknown    bool      `json:"category_unknown"`
+	Fleet              string    `json:"fleet"`
+	FleetUnknown       bool      `json:"fleet_unknown"`
+	Website            *[]string `json:"website"`
+	WebsiteUnknown     bool      `json:"website_unknown"`
+	Government         *bool     `json:"government"`
+	MaxFilingAgeDays   *uint32   `json:"max_filing_age_days"`
+	FilingUnknown      bool      `json:"filing_unknown"`
+	MinCampaignAgeDays *uint32   `json:"min_campaign_age_days"`
+	Class              string    `json:"class"`
+	ClassUnknown       bool      `json:"class_unknown"`
+	ShowExcluded       bool      `json:"show_excluded"`
 }
 
 // OrderArgs selects one member ordering.
@@ -524,4 +529,14 @@ type Page struct {
 	By      string `json:"by"`
 	Email   string `json:"email,omitempty"`
 	Path    string `json:"path"`
+}
+
+// CampaignUse is a candidate's campaign history answer.
+type CampaignUse struct {
+	Campaign  string `json:"campaign"`
+	Cohort    string `json:"cohort"`
+	Added     string `json:"added,omitempty"`
+	Rejected  string `json:"rejected,omitempty"`
+	Reason    string `json:"reason,omitempty"`
+	Delivered string `json:"delivered,omitempty"`
 }

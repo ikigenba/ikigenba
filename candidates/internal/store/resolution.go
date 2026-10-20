@@ -329,6 +329,9 @@ func (s *Store) Decide(ctx context.Context, d Ruling) (Ruling, []Candidate, erro
 		}
 		switch d.Kind {
 		case KindMerge:
+			if err = mergeCampaignUses(ctx, tx, c.ID, other.ID); err != nil {
+				return err
+			}
 			if err = execSQL(ctx, tx, "UPDATE links SET candidate=?,reason=?,confidence=1 WHERE candidate=?", c.ID, LinkDecision, other.ID); err != nil {
 				return err
 			}

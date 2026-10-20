@@ -59,7 +59,7 @@ func TestDerivedProjection(t *testing.T) {
 	}
 }
 
-// R-E6LN-GWU6
+// R-NB90-SU6I
 func TestCandidateFactsWithoutJudgment(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	_, ids, err := cfg.Store.Attach(t.Context(), "run", false, []store.Observation{{Scraper: "fixture", SourceID: "row", Digest: "digest", Reading: sources.Reading{Name: "facts-business", NameKey: "facts-business"}}})
@@ -99,7 +99,7 @@ func TestCandidateFactsWithoutJudgment(t *testing.T) {
 	}
 }
 
-// R-3TJU-KG5A R-DT6R-9FOJ R-BGGM-ZNRG R-02QA-EAYZ
+// R-3TJU-KG5A R-N55I-VZH1 R-BGGM-ZNRG R-02QA-EAYZ
 func TestIndependentFactsAndAssessmentTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()

@@ -79,3 +79,24 @@ func RunPage(base, run string) string {
 func PagePath(candidate string, number int64) string {
 	return "/candidates/" + candidate + "/pages/" + strconv.FormatInt(number, 10)
 }
+
+// Campaigns returns the campaigns service address.
+func Campaigns(path string) string {
+	list, err := services.Read(path)
+	if err != nil {
+		return ""
+	}
+	entry, ok := list.Find("campaigns")
+	if !ok {
+		return ""
+	}
+	return Base(entry.URL)
+}
+
+// CampaignPage returns the address of one campaign.
+func CampaignPage(base, campaign string) string {
+	if base == "" || campaign == "" {
+		return ""
+	}
+	return base + "/campaigns/" + url.PathEscape(campaign)
+}

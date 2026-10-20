@@ -1,6 +1,7 @@
 package pages
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"slices"
@@ -206,7 +207,7 @@ func Handler(cfg Config) http.Handler {
 				fail()
 				return
 			}
-			d := CandidateData{Candidate: candidateView(c), Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{}, Pages: []PageRow{}, Enrichments: []EnrichmentRow{}, Rejects: []RejectRecordRow{}}
+			d := CandidateData{Candidate: candidateView(c), Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{}, Pages: []PageRow{}, Enrichments: []EnrichmentRow{}, Rejects: []RejectRecordRow{}, Campaigns: []CampaignRow{}}
 			rulings, err := cfg.Store.Rulings(r.Context(), cid)
 			if err != nil {
 				fail()
@@ -224,6 +225,19 @@ func Handler(cfg Config) http.Handler {
 				d.Rejects = append(d.Rejects, rejectRecordRow(x))
 			}
 			if c.Status != store.StatusMerged {
+				uses, err := cfg.Store.CampaignUses(r.Context(), cid)
+				if err != nil {
+					fail()
+					return
+				}
+				for _, use := range uses {
+					row, err := campaignRow(r.Context(), cfg, use)
+					if err != nil {
+						fail()
+						return
+					}
+					d.Campaigns = append(d.Campaigns, row)
+				}
 				enrichments, err := cfg.Store.Enrichments(r.Context(), cid)
 				if err != nil {
 					fail()
@@ -336,4 +350,24 @@ func decodePagePath(path string) (string, int64, bool) {
 	}
 	n, err := strconv.ParseInt(parts[4], 10, 64)
 	return parts[2], n, err == nil
+}
+
+func campaignRow(ctx context.Context, cfg Config, u store.CampaignUse) (CampaignRow, error) {
+	v := CampaignRow{Campaign: u.Campaign, CampaignPage: urls.CampaignPage(urls.Campaigns(cfg.ServicesPath), u.Campaign), Cohort: u.Cohort, Reason: u.Reason, Rejected: !u.Rejected.IsZero()}
+	if u.Cohort != "" {
+		c, err := cfg.Store.GetCohort(ctx, u.Cohort)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return CampaignRow{}, err
+		}
+		if err == nil {
+			v.CohortName = c.Name
+		}
+		if v.CohortName != "" {
+			v.CohortPage = "/cohorts/" + u.Cohort
+		}
+	}
+	v.Added, v.AddedText = stamp(u.Added, MinuteLayout)
+	v.RejectedAt, v.RejectedAtText = stamp(u.Rejected, MinuteLayout)
+	v.Delivered, v.DeliveredText = stamp(u.Delivered, MinuteLayout)
+	return v, nil
 }

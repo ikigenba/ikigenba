@@ -443,7 +443,7 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 	if err != nil {
 		return failure(err)
 	}
-	out := Detail{Pages: []Page{}, Candidate: candidateOf(c), Estimates: []Estimate{}, Links: []Link{}, Rulings: []Ruling{}, Enrichments: []Enrichment{}, Rejects: []Reject{}}
+	out := Detail{Pages: []Page{}, Candidate: candidateOf(c), Estimates: []Estimate{}, Links: []Link{}, Rulings: []Ruling{}, Enrichments: []Enrichment{}, Rejects: []Reject{}, Campaigns: []CampaignUse{}}
 	rs, err := cfg.Store.Rulings(ctx, id)
 	if err != nil {
 		return failure(err)
@@ -459,6 +459,13 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 		out.Rejects = append(out.Rejects, rejectOf(x))
 	}
 	if c.Status == store.StatusActive {
+		uses, err := cfg.Store.CampaignUses(ctx, id)
+		if err != nil {
+			return failure(err)
+		}
+		for _, use := range uses {
+			out.Campaigns = append(out.Campaigns, campaignUseOf(use))
+		}
 		a, err := cfg.Store.GetAssessment(ctx, id)
 		if err == nil {
 			v := assessmentOf(a)
@@ -591,7 +598,7 @@ func filterOf(a FilterArgs) store.CohortFilters {
 	if a.Website != nil {
 		websites = append([]string{}, (*a.Website)...)
 	}
-	return store.CohortFilters{RevenueMin: int64Of(a.RevenueMin), RevenueMax: int64Of(a.RevenueMax), RevenueUnknown: a.RevenueUnknown, MaxMinutes: int64Of(a.MaxMinutes), MinutesUnknown: a.MinutesUnknown, Categories: append([]string(nil), a.Categories...), CategoryUnknown: a.CategoryUnknown, Fleet: a.Fleet, FleetUnknown: a.FleetUnknown, Website: websites, WebsiteUnknown: a.WebsiteUnknown, Government: a.Government, MaxFilingAgeDays: int64Of(a.MaxFilingAgeDays), FilingUnknown: a.FilingUnknown, Class: a.Class, ClassUnknown: a.ClassUnknown, ShowExcluded: a.ShowExcluded}
+	return store.CohortFilters{RevenueMin: int64Of(a.RevenueMin), RevenueMax: int64Of(a.RevenueMax), RevenueUnknown: a.RevenueUnknown, MaxMinutes: int64Of(a.MaxMinutes), MinutesUnknown: a.MinutesUnknown, Categories: append([]string(nil), a.Categories...), CategoryUnknown: a.CategoryUnknown, Fleet: a.Fleet, FleetUnknown: a.FleetUnknown, Website: websites, WebsiteUnknown: a.WebsiteUnknown, Government: a.Government, MaxFilingAgeDays: int64Of(a.MaxFilingAgeDays), FilingUnknown: a.FilingUnknown, MinCampaignAgeDays: int64Of(a.MinCampaignAgeDays), Class: a.Class, ClassUnknown: a.ClassUnknown, ShowExcluded: a.ShowExcluded}
 }
 func orderOf(a []OrderArgs) []store.CohortOrder {
 	v := []store.CohortOrder{}
@@ -674,4 +681,18 @@ func addPage(ctx context.Context, c identity.Caller, cfg Config, a AddPageArgs) 
 		return failure(err)
 	}
 	return answer(pageOf(p))
+}
+
+func campaignUseOf(u store.CampaignUse) CampaignUse {
+	v := CampaignUse{Campaign: u.Campaign, Cohort: u.Cohort, Reason: u.Reason}
+	if !u.Added.IsZero() {
+		v.Added = stamp(u.Added)
+	}
+	if !u.Rejected.IsZero() {
+		v.Rejected = stamp(u.Rejected)
+	}
+	if !u.Delivered.IsZero() {
+		v.Delivered = stamp(u.Delivered)
+	}
+	return v
 }

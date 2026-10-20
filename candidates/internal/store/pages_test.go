@@ -143,7 +143,7 @@ func TestPageCapValidationAndConcurrentAdds(t *testing.T) {
 	contractEqual(t, counts, store.PageCount{})
 }
 
-// R-P2QS-XLVM R-P3YP-BDMB
+// R-T94P-4NRC R-P3YP-BDMB
 func TestPageErrorsAndTimeNormalization(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

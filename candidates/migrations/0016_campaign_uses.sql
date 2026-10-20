@@ -1,0 +1,1 @@
+CREATE TABLE campaign_uses (candidate TEXT NOT NULL, campaign TEXT NOT NULL, cohort TEXT NOT NULL DEFAULT '', added TEXT NOT NULL DEFAULT '', rejected TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '', delivered TEXT NOT NULL DEFAULT '', PRIMARY KEY (candidate, campaign)) WITHOUT ROWID;

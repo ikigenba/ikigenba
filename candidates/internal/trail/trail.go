@@ -12,10 +12,13 @@ import (
 
 // Lifecycle event names and the accepted scraper completion event.
 const (
-	Started       = "pass.started"
-	Finished      = "pass.finished"
-	Accepted      = "scrape.finished"
-	AcceptedJudge = "cron.judge_candidates.fired"
+	Started           = "pass.started"
+	Finished          = "pass.finished"
+	Accepted          = "scrape.finished"
+	AcceptedJudge     = "cron.judge_candidates.fired"
+	AcceptedAdded     = "campaign.member.added"
+	AcceptedRejected  = "campaign.member.rejected"
+	AcceptedDelivered = "campaign.piece.delivered"
 )
 
 // Emits returns independent declarations of the pass lifecycle events.

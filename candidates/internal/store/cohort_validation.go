@@ -17,7 +17,7 @@ func ValidCohortSize(n int64) bool { return n >= CohortSizeMin && n <= CohortSiz
 
 // ValidCohortFilters checks the values of all carried filters.
 func ValidCohortFilters(f CohortFilters) bool {
-	for _, p := range []*int64{f.RevenueMin, f.RevenueMax, f.MaxMinutes, f.MaxFilingAgeDays} {
+	for _, p := range []*int64{f.RevenueMin, f.RevenueMax, f.MaxMinutes, f.MaxFilingAgeDays, f.MinCampaignAgeDays} {
 		if p != nil && *p < 0 {
 			return false
 		}

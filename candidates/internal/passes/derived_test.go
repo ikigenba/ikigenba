@@ -209,7 +209,7 @@ func TestDerivedFactsExistBeforeFirstFetch(t *testing.T) {
 	}
 }
 
-// R-SK9R-VWNT R-83CI-ZGWB
+// R-SK9R-VWNT R-75XG-HDMP
 func TestDerivedKindsAvailableWithoutChecker(t *testing.T) {
 	for _, kind := range []string{"", enrichers.KindDriveMinutes, enrichers.KindLinkFacts} {
 		f := newFixture(t, nil, false)

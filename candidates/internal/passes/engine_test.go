@@ -299,11 +299,11 @@ func TestRefusals(t *testing.T) {
 	}
 }
 
-// R-ZQO6-NIBZ R-YMJO-J8NG R-ZT3Z-F1TD R-83CI-ZGWB
+// R-4XES-EI5W R-5I52-WLRP R-YMJO-J8NG R-ZT3Z-F1TD R-75XG-HDMP
 func TestSkippedAndHandlers(t *testing.T) {
 	f := newFixture(t, nil, false)
 	handlers := f.eng.Handlers()
-	if len(handlers) != 2 || handlers[trail.Accepted] == nil || handlers[trail.AcceptedJudge] == nil {
+	if len(handlers) != 5 || handlers[trail.Accepted] == nil || handlers[trail.AcceptedJudge] == nil {
 		t.Fatal(handlers)
 	}
 	variants := []events.Event{{Name: trail.AcceptedJudge}, {Name: "cron.other.fired", ID: "e"}, {ID: "e", Name: "scrape.started"}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "run": "run_a", "status": "failed"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "other", "run": "run_a", "status": "done"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "status": "done"}}, {Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "run": "run_a", "status": "done"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "run": "rebuild", "status": "done"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": 17, "run": "run_a", "status": "done"}}}
@@ -322,7 +322,7 @@ func TestSkippedAndHandlers(t *testing.T) {
 	}
 	r := httptest.NewRecorder()
 	events.DeclarationsHandler(f.em, passes.New(passes.Config{Sources: sources.New(fmcsa.New(), ppp.New())}).Handlers()).ServeHTTP(r, httptest.NewRequest(http.MethodGet, "/declarations", nil))
-	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","target","enrich_kind","status","reason","rows","new","changed","unchanged","gone","created","linked","judged","rescored","unranged","derived","due","fetched","https","http","none","runs","runs_failed","pages","cost"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger","target","enrich_kind"]}],"accepts":["cron.judge_candidates.fired","scrape.finished"]}`
+	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","target","enrich_kind","status","reason","rows","new","changed","unchanged","gone","created","linked","judged","rescored","unranged","derived","due","fetched","https","http","none","runs","runs_failed","pages","cost"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger","target","enrich_kind"]}],"accepts":["campaign.member.added","campaign.member.rejected","campaign.piece.delivered","cron.judge_candidates.fired","scrape.finished"]}`
 	if r.Code != 200 || r.Body.String() != want {
 		t.Fatal(r.Code, r.Body.String())
 	}

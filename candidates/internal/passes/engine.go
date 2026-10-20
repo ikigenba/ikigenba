@@ -50,7 +50,7 @@ func New(cfg Config) *Engine {
 
 // Handlers declares the engine's accepted event.
 func (e *Engine) Handlers() events.Handlers {
-	return events.Handlers{trail.Accepted: e.Deliver, trail.AcceptedJudge: e.Deliver}
+	return events.Handlers{trail.Accepted: e.Deliver, trail.AcceptedJudge: e.Deliver, trail.AcceptedAdded: e.DeliverCampaign, trail.AcceptedRejected: e.DeliverCampaign, trail.AcceptedDelivered: e.DeliverCampaign}
 }
 
 // Rebuild records a pass and starts its work without waiting.

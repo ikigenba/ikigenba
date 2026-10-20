@@ -20,13 +20,13 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-BHOJ-DFI5 R-AJ8K-KIAW R-E0I5-K24P R-AQD8-1DY8 R-AK9Q-4J8R R-AST0-SXFM
+// R-BHOJ-DFI5 R-N7LB-NIYF R-E0I5-K24P R-AQD8-1DY8 R-AK9Q-4J8R R-AST0-SXFM
 func TestCohortViewContracts(t *testing.T) {
 	low, high, minutes, days := int64(5000000), int64(9000000), int64(120), int64(730)
 	government := false
 	at := fixtureTime()
 	f := store.CohortFilters{RevenueMin: &low, RevenueMax: &high, RevenueUnknown: true, MaxMinutes: &minutes, MinutesUnknown: true, Categories: []string{sources.CategoryConstruction, sources.CategoryTrucking}, CategoryUnknown: true, Fleet: sources.FleetPass, FleetUnknown: true, Government: &government, MaxFilingAgeDays: &days, FilingUnknown: true, Class: sources.ClassPrivate, ClassUnknown: true, ShowExcluded: true}
-	wantF := FiltersView{"$5,000,000", "$9,000,000", true, "120", true, []string{sources.CategoryConstruction, sources.CategoryTrucking}, true, sources.FleetPass, true, []string{}, false, "false", "730", true, sources.ClassPrivate, true, true}
+	wantF := FiltersView{"$5,000,000", "$9,000,000", true, "120", true, []string{sources.CategoryConstruction, sources.CategoryTrucking}, true, sources.FleetPass, true, []string{}, false, "false", "730", true, "", sources.ClassPrivate, true, true}
 	if got := filtersView(f); !reflect.DeepEqual(got, wantF) {
 		t.Fatalf("filters got %#v want %#v", got, wantF)
 	}
@@ -102,7 +102,7 @@ func pageCohort(t *testing.T, cfg Config, id string) CohortData {
 	return d
 }
 
-// R-AV8T-KGX0 R-BLC8-IQQ8 R-E6LN-GWU6 R-GUDT-MCST R-4D28-OS0E R-BIEW-U407 R-BH70-GC9I
+// R-AV8T-KGX0 R-BLC8-IQQ8 R-NB90-SU6I R-NG4M-BX5A R-4D28-OS0E R-BIEW-U407 R-BH70-GC9I
 func TestCohortAndRejectHistoryPages(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()

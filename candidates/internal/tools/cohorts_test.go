@@ -19,14 +19,14 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-A0V6-EFAB R-V9H1-Z5PM R-A3AZ-5YRP R-A4IV-JQIE R-A5QR-XI93 R-A6YO-B9ZS R-A9EH-2TH6 R-VAOY-CXGB R-AD26-84P9
+// R-A0V6-EFAB R-WSS0-FVUB R-A3AZ-5YRP R-A4IV-JQIE R-A5QR-XI93 R-A6YO-B9ZS R-A9EH-2TH6 R-WTZW-TNL0 R-AD26-84P9
 func TestCohortExactSchemas(t *testing.T) {
 	f := newFixture(t)
 	infos, err := f.client.ListTools(t.Context(), caller)
 	if err != nil {
 		t.Fatal(err)
 	}
-	filters := `{"type":"object","properties":{"revenue_min":{"type":"integer","minimum":0},"revenue_max":{"type":"integer","minimum":0},"revenue_unknown":{"type":"boolean"},"max_minutes":{"type":"integer","minimum":0},"minutes_unknown":{"type":"boolean"},"categories":{"type":"array","items":{"type":"string"}},"category_unknown":{"type":"boolean"},"fleet":{"type":"string"},"fleet_unknown":{"type":"boolean"},"website":{"type":"array","items":{"type":"string"}},"website_unknown":{"type":"boolean"},"government":{"type":"boolean"},"max_filing_age_days":{"type":"integer","minimum":0},"filing_unknown":{"type":"boolean"},"class":{"type":"string"},"class_unknown":{"type":"boolean"},"show_excluded":{"type":"boolean"}},"additionalProperties":false}`
+	filters := `{"type":"object","properties":{"revenue_min":{"type":"integer","minimum":0},"revenue_max":{"type":"integer","minimum":0},"revenue_unknown":{"type":"boolean"},"max_minutes":{"type":"integer","minimum":0},"minutes_unknown":{"type":"boolean"},"categories":{"type":"array","items":{"type":"string"}},"category_unknown":{"type":"boolean"},"fleet":{"type":"string"},"fleet_unknown":{"type":"boolean"},"website":{"type":"array","items":{"type":"string"}},"website_unknown":{"type":"boolean"},"government":{"type":"boolean"},"max_filing_age_days":{"type":"integer","minimum":0},"filing_unknown":{"type":"boolean"},"min_campaign_age_days":{"type":"integer","minimum":0},"class":{"type":"string"},"class_unknown":{"type":"boolean"},"show_excluded":{"type":"boolean"}},"additionalProperties":false}`
 	order := `{"type":"array","items":{"type":"object","properties":{"field":{"type":"string"},"direction":{"type":"string"}},"required":["field","direction"],"additionalProperties":false}}`
 	want := map[string]string{
 		"create_cohort": `{"type":"object","properties":{"name":{"type":"string"},"filters":` + filters + `,"order":` + order + `,"size":{"type":"integer"}},"required":["name"],"additionalProperties":false}`,
@@ -303,7 +303,6 @@ func TestCohortPagingNameTies(t *testing.T) {
 	}
 }
 
-// R-GM8K-P2AP
 func TestCohortCategoryCreateAndEdit(t *testing.T) {
 	f := newFixture(t)
 	k := f.create("category edits")

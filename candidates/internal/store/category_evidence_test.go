@@ -134,7 +134,7 @@ func TestRecordsReadNewestLinkResultBesidePreviousWriterCategories(t *testing.T)
 	contractEqual(t, got.Records, []sources.Category{})
 }
 
-// R-BIB4-4RM6 R-O9NE-3VU4
+// R-NKZK-S3S5 R-O9NE-3VU4
 func TestCohortClassifiesOnlyItsSelectedMembersAndReadsNewCategories(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -246,7 +246,7 @@ func TestFillFactsReprojectsMissingCategoryRowsAndPreservesExistingRows(t *testi
 	contractEqual(t, got, before)
 }
 
-// R-BIB4-4RM6
+// R-NKZK-S3S5
 func TestCohortClassificationUsesBriefDecisionOrRecordFallback(t *testing.T) {
 	for _, tc := range []struct {
 		name, category, source string
