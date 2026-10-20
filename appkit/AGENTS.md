@@ -12,7 +12,7 @@ appkit holds what every app shares: page chrome, identity, the MCP server and cl
 - `mcp` is the Model Context Protocol: the server a service mounts at `/mcp` with its tools, and the client the gateway and service tests use.
 - `telemetry` is the suite's event trail: the event contract, the writer that queues and delivers a service's events, its sinks, the wire to the telemetry service, and the request middleware and sibling client that record every request and sibling call.
 - `db` is a service's SQLite database: opening it, reading and writing it through transactions, the failure seam its tests use, and its migrations and their status.
-- `artifacts` is the client over the artifacts service's socket: `Put`, `Get` and `Head` on `/files/<path>`, the metadata object as appkit's type, and the typed errors artifacts' statuses map to.
+- `artifacts` is the client over the artifacts service's socket: `Put`, `Get` and `Head` on `/files/<path>`, `Show` over its `show` tool, the metadata object as appkit's type, the typed errors artifacts' statuses map to, and the `Refusal` a refused `Show` returns.
 - `connections` is the client over the connections service's socket: `Token` for a provider's access token, and the typed errors its refusals map to, the reconnect one carrying its URL.
 - `scrapes` is the client over the scrapes service's socket: `Current`, `Record` and `Rows` on its sibling read path, the run record and row as appkit's types, and the typed errors its refusals map to.
 - `prompts` is the client over the prompts service's MCP tools on its socket: `Show`, `Run` and `Result` over its `show`, `run` and `result` tools, the prompt, run start and run outcome as appkit's types, and the one `Refusal` any refused call returns.
