@@ -70,7 +70,7 @@ Push only `main` and release tags to origin, and only when asked. Commit only to
 
 Investigate outside the tree: a probe or scratch script goes in a temporary directory, or in a throwaway worktree when it must import the code, removed afterwards and never committed. Try the cheapest instrument first; a shell command or a question usually beats a program.
 
-In `rm` commands use literal absolute paths or `"${VAR:?}"` guards, never globs, bare variables or command substitution; the harness stops for approval on those.
+In `rm` commands use literal absolute paths or `"${VAR:?}"` guards, never globs, bare variables or command substitution; the harness stops for approval on those. Never `rm /tmp/scratch.*`: other sessions keep their scratch files there, and a glob removes theirs with yours; remove only the one path you created.
 
 Every agent commit ends with a `Co-Authored-By:` trailer naming the agent. No sub-project AGENTS.md restates this or names a model.
 
