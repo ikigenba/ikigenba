@@ -26,7 +26,8 @@
      .Government ("true" or "false", the government filter as given;
      empty when absent), .MaxFilingAgeDays (the filing-age maximum in
      days as text, "730"; empty when absent), .FilingUnknown (bool),
-     .Class (the class tag it admits, "for_hire", "private" or "mixed";
+     .MinCampaignAgeDays (the campaign-age minimum in days as text, "90";
+     empty when absent), .Class (the class tag it admits, "for_hire", "private" or "mixed";
      empty when absent), .ClassUnknown (bool) and .ShowExcluded (bool,
      true when it shows excluded candidates); .Order (its sort order, in
      the order stored, never empty, each with .Field, as stored, one of
@@ -125,7 +126,10 @@
      dd#filter-government ("a government match only" when .Government is
      "true", "no government match" when "false"), dt "Filing age" then
      dd#filter-filing ("newest filing at most <.MaxFilingAgeDays> days
-     old"; switch .FilingUnknown), dt "Class" then dd#filter-class (.Class
+     old"; switch .FilingUnknown), dt "Campaigns" then dd#filter-campaign
+     ("not added to a campaign in the last <.MinCampaignAgeDays> days" and
+     span.muted "never in a campaign included"; no switch: a business never
+     in a campaign always passes), dt "Class" then dd#filter-class (.Class
      in a code element; switch .ClassUnknown) and dt "Excluded" then
      dd#filter-excluded ("shown" when .ShowExcluded, else "hidden").
      section#members with h2 "Members" and a p in its header (text "The
@@ -213,6 +217,7 @@
 <dt>Website</dt><dd id="filter-website">{{range $i, $w := .Website}}{{if $i}} {{end}}<code data-website="{{$w}}">{{$w}}</code>{{else}}<span class="muted">any</span>{{end}}{{if .WebsiteUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
 <dt>Government</dt><dd id="filter-government">{{if eq .Government "true"}}a government match only{{else if eq .Government "false"}}no government match{{else}}<span class="muted">any</span>{{end}}</dd>
 <dt>Filing age</dt><dd id="filter-filing">{{if .MaxFilingAgeDays}}newest filing at most {{.MaxFilingAgeDays}} days old{{else}}<span class="muted">any</span>{{end}}{{if .FilingUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
+<dt>Campaigns</dt><dd id="filter-campaign">{{if .MinCampaignAgeDays}}not added to a campaign in the last {{.MinCampaignAgeDays}} days <span class="muted">never in a campaign included</span>{{else}}<span class="muted">any</span>{{end}}</dd>
 <dt>Class</dt><dd id="filter-class">{{if .Class}}<code>{{.Class}}</code>{{else}}<span class="muted">any</span>{{end}}{{if .ClassUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
 <dt>Excluded</dt><dd id="filter-excluded">{{if .ShowExcluded}}shown{{else}}hidden{{end}}</dd>
 </dl>
