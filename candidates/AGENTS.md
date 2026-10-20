@@ -1,41 +1,43 @@
 # candidates
 
-An app of the Ikigenba platform: candidate businesses resolved from the
-records scrapes collects, groomed into cohorts, served at
-`candidates.<host>`. One Go binary serves on the listening socket it is
-passed as descriptor 3 (`/run/ikigenba/candidates.sock` on a host), behind
-the host's nginx. candidates is stages two and three of the funnel, resolve
-and qualify: it turns scrapes' rows into candidates, one per real business
-with every row that describes it attached as evidence, and judges each.
-Each candidate is judged twice, under the rules version `D13-scoring`
-names: an operating
+An app of the Ikigenba platform: candidate businesses ingested from the
+rows scrapes takes from public records, gathered into prospect lists,
+served at `candidates.<host>`. One Go binary serves on the listening socket
+it is passed as descriptor 3 (`/run/ikigenba/candidates.sock` on a host),
+behind the host's nginx. candidates is stages two to four of the funnel,
+ingest, enrich and judge: it ingests scrapes' rows into candidates, one per
+real business with every row that describes it attached as evidence,
+enriches each and judges each. Each candidate is judged twice, under the
+rules version `D13-judging` names: an operating
 confidence, how sure candidates is that the business operates today, with
-the evidence behind it, and a revenue range. A cohort is a saved search the
-owner creates and grooms: filters, a sort order, a size and a reject list,
-its members worked out each time it is read; nothing is removed
-automatically, and a candidate leaves every cohort only by the owner's
-exclusion. A source is Go code in the service
+the evidence behind it, and a revenue range. A prospect list is a saved
+search the owner creates and grooms: filters, a sort order, a size and a
+reject list, its members worked out each time it is read; nothing is
+removed automatically, and a candidate leaves every prospect list only by
+the owner's exclusion. A source is Go code in the service
 that knows how one scraper's rows become match keys, tags, a size estimate,
 a filing date, operating evidence and a category, and the fixed registry
-holds two, `fmcsa` and `ppp`. A pass is one ingest, judge, rebuild,
-enrich or targeted enrich, recorded at once and worked in the background: an ingest is started by a
-`scrape.finished` event of a `done` run, delivered on the bus, and resolves
-that run's rows without judging; a judge is started by the daily
-`cron.judge_candidates.fired` event, delivered on the bus, and judges every
-candidate, reading nothing from scrapes; a rebuild, started by the `rebuild`
-tool, ingests every source's current run, records every derived kind of
-enrichment for every candidate and then judges; an enrich, started by an
+holds two, `fmcsa` and `ppp`. A pass is one ingest, judge, enrich or
+targeted enrich, recorded at once and worked in the background: an ingest
+is started by a `scrape.finished` event of a `done` run, delivered on the
+bus, and ingests that run's rows without judging, or by the `ingest` tool,
+which ingests one named scraper's current run the same way or, named none,
+every source's current run, then records every derived kind of enrichment
+for every candidate and then judges; a judge is started by the daily
+`cron.judge_candidates.fired` event, delivered on the bus, or by the `judge`
+tool, and judges every candidate, reading nothing from scrapes; an enrich,
+started by an
 ingest that ends `done` or by the `enrich` tool, walks the registry of
 enrichment kinds `D16-enrichers` names, one kind or every kind, derived
 kinds first, and records a result for each candidate whose inputs for a
 kind differ from those of its newest result, fetching from outside only for
 the website check, and reads nothing from scrapes; a targeted enrich, of
-kind `enrich_cohort`, started by the `enrich` tool naming a cohort or a
-candidate, walks one kind over that target, and for `website_search`,
+kind `enrich_target`, started by the `enrich` tool naming a prospect list
+or a candidate, walks one kind over that target, and for `website_search`,
 `site_text` or `brief` runs the owner's prompt named for the kind,
-`website-search`, `site-text` or `brief`, for each due candidate. An ingest or a rebuild reads the run's record and rows from scrapes over its socket through
-appkit's `scrapes` client, as the caller for `rebuild` and as the service
-identity for a delivery; a targeted pass of a prompts kind runs its prompts
+`website-search`, `site-text` or `brief`, for each due candidate. An ingest reads the run's record and rows from
+scrapes over its socket through appkit's `scrapes` client, as the caller
+for the `ingest` tool and as the service identity for a delivery; a targeted pass of a prompts kind runs its prompts
 through appkit's `prompts` client over the socket the services file's
 `prompts` entry names, as the caller of the `enrich` that started it;
 candidates calls no other sibling. It names campaigns only to link to a
@@ -45,7 +47,8 @@ URL a website search's run names, which it confirms with one `Checker.Get`,
 over outbound HTTP through `cli.Process.HTTP`; when `IKIGENBA_SANDBOX` is
 present it fetches only from an in-process stub on loopback, so nothing a
 sandbox runs reaches outside. It keeps its candidates, links, estimates,
-assessments, enrichment results, facts and kept pages, the owner's rulings, cohorts and rejects, its
+judgments, enrichment results, facts and kept pages, the owner's rulings,
+prospect lists and rejects, its
 campaign uses, its passes and the ZIP drive-time table in its own
 SQLite database, `state/candidates.db` resolved against the working
 directory and opened through appkit's `db` package; it is the only writer of
@@ -57,13 +60,16 @@ campaign use of the candidate it names, followed through a merge, starting
 no pass and reading no sibling. Its manifest sets
 `guests = false`: nginx lets no request without a credential through, to the
 pages and to `/mcp` alike, and its nginx fragment answers the bus's two paths
-404 at the public name. At `/mcp` it offers the MCP tools `D10-tools`
-catalogs, which agents reach through the MCP gateway.
-At `/` it serves a page of the cohorts and the passes, a page per cohort at
-`/cohorts/<id>`, a page per candidate at `/candidates/<id>`, a page per kept page at
-`/candidates/<id>/pages/<n>`, a page per pass
-at `/passes/<id>`, a tools page at `/tools`, an about screen at `/about` and a
-not-found page. On a host it runs as `bin/candidates` of its release with
+404 at the public name. At `/mcp` it offers the eighteen MCP tools
+`D10-tools` catalogs, which agents reach through the MCP gateway, and,
+unlisted, the legacy `cohort` tool a campaigns of the previous release still
+calls. At `/` it serves a page of the prospect lists and the passes, a page
+per prospect list at `/prospect-lists/<id>`, a page per candidate at
+`/candidates/<id>`, a page per kept page at `/candidates/<id>/pages/<n>`, a
+page per pass at `/passes/<id>`, a tools page at `/tools`, an about screen
+at `/about` and a not-found page, and `/cohorts/<id>` redirects a prospect
+list's id of the previous release to its page. On a host it runs as
+`bin/candidates` of its release with
 `/var/opt/ikigenba/candidates` as its working directory and its environment
 from `/etc/opt/ikigenba/candidates/env`; a developer runs the same binary
 from the checkout. The module path is
@@ -92,8 +98,8 @@ build run writes the Go source, the tests, `go.mod`'s requirements and
 `0005_decisions.sql`, `0006_passes.sql`, `0007_zip_drive.sql`,
 `0008_windows.sql`, `0009_judgments.sql`, `0010_cohorts.sql`,
 `0011_enrichments.sql`, `0012_facts.sql`, `0013_site_text.sql`,
-`0014_brief.sql`, `0015_website_search.sql` and
-`0016_campaign_uses.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
+`0014_brief.sql`, `0015_website_search.sql`, `0016_campaign_uses.sql` and
+`0017_prospect_lists.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
 and the nginx fragment `etc/nginx.conf`). The
 delivery that created candidates seeded `go.mod` on appkit; the build run
 owns it and `go.sum` from then on and changes them as design says. It never
@@ -108,7 +114,7 @@ and read-only to it.
 
 `assets/` holds candidates' markup: Go `html/template` files, each opening
 with a comment naming the data it receives: `landing.html`,
-`cohort.html`, `candidate.html`, `page.html`, `pass.html`, `about.html`,
+`prospect_list.html`, `candidate.html`, `page.html`, `pass.html`, `about.html`,
 `tools.html` and `notfound.html`. Every page is shown only to a signed-in user. They are
 written by the user or the delivering agent, following the repository's
 `design/`, and are inputs to the spec: the build run reads them and never
@@ -157,12 +163,15 @@ and the build run never writes either.
   one requirement below, set by the delivery that created candidates; the
   build run sets any other and its `go.sum` lines, and moves to another
   release only when this file names one:
-  - appkit `v0.28.0`, set with
-    `go get github.com/ikigenba/ikigenba/appkit@v0.28.0`: a release that
+  - appkit `v0.30.0`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.30.0`: a release that
     exports the `db`, `paging`, `version`, `scrapes` and `prompts` packages
     and whose
     `page.Banner` carries the trail, the home link and the tools flag the
-    templates use, with `Release` and `Commit`. See Adopting appkit below.
+    templates use, with `Release` and `Commit`. What it adds,
+    `candidates.Client.ProspectList` and `scrapes.Row.Scraped`, candidates
+    does not need; it moves with campaigns, which does. See Adopting appkit
+    below.
   - `golang.org/x/net`, for its `html` package, which the website check
     parses a page's title with and `add_page` strips a page to its text
     with: approved by the delivery of the website
@@ -184,10 +193,10 @@ other external dependency needs approval first, the user's or a delivery's.
 
 ### Adopting appkit
 
-appkit is required only at a published release, here `v0.28.0`, fetched
+appkit is required only at a published release, here `v0.30.0`, fetched
 through the ordinary module proxy and checked against the checksum database
 (see the root `AGENTS.md`); it is set with
-`go get github.com/ikigenba/ikigenba/appkit@v0.28.0`. No `replace` directive,
+`go get github.com/ikigenba/ikigenba/appkit@v0.30.0`. No `replace` directive,
 no `go.work`, no local module cache stands in for it.
 
 ## Test files
@@ -195,7 +204,7 @@ no `go.work`, no local module cache stands in for it.
 The sub-project's tests are all `*_test.go` files in the module: the root
 package, `cmd/candidates` and everything under `internal/` (`internal/cli`,
 `internal/settings`, `internal/server`, `internal/web`, `internal/store`,
-`internal/sources`, `internal/fmcsa`, `internal/ppp`, `internal/scoring`,
+`internal/sources`, `internal/fmcsa`, `internal/ppp`, `internal/judging`,
 `internal/passes`, `internal/website`, `internal/enrichers`,
 `internal/trail`, `internal/urls`,
 `internal/tools` and `internal/pages`).
@@ -214,19 +223,20 @@ file counts as a covered id. candidates echoes back what callers and its
 siblings give it — scrapes' rows and every field of them (DOT numbers,
 loan amounts and dates, business names, addresses, phones, emails, counties,
 people, facts), source ids, scraper names, run ids, user ids and emails,
-request ids, bus event ids, the services file's URLs, ruling text, cohort
-names, reject reasons, campaigns' event payloads (campaign and piece ids,
+request ids, bus event ids, the services file's URLs, ruling text,
+prospect list names, reject reasons, campaigns' event payloads (campaign and piece ids,
 `camp_…` and `piece_…`, and a campaign reject's reason), and the `cand_`,
-`pass_` and `coh_` ids candidates mints — and tests echo source ids above all, since every link,
+`pass_` and `pl_` ids candidates mints and the `coh_` ids of the previous
+release it maps to them — and tests echo source ids above all, since every link,
 split and candidate page names one, so a test that sends an id-shaped value
 lands one in the test file. No fixture carries one: not a header value, a
 query parameter, a tool argument, a fake scrapes' or fake prompts' answer,
 a fake prompts' standard output (a brief's summary, reasons and labels, a
 website search's URL, reason and sites set aside),
 a row's field, a
-source id, a run id, a candidate id, a pass id, a cohort id, a URL, a services file entry,
+source id, a run id, a candidate id, a pass id, a prospect list id, old or new, a URL, a services file entry,
 an event's payload, a campaign or piece id, a ruling's, reject's or campaign
-reject's reason, a cohort's name, or an expected body.
+reject's reason, a prospect list's name, or an expected body.
 
 ## Test discipline
 
@@ -315,7 +325,7 @@ builds the store over that handle with `store.New`. Tests may create
 filesystem fixtures inside that temporary tree (a regular file named
 `state`, a file at `state/candidates.db` that is not a database, a database
 a test's own `db.Open` made and then changed through `DB.Write`, candidates,
-links, rulings, cohorts, rejects, enrichments, pages, ZIP tables and passes a test's
+links, rulings, prospect lists, rejects, enrichments, pages, ZIP tables and passes a test's
 own store recorded, passes left
 `running`, `done` or `failed`); nothing touches
 `/var/opt/ikigenba/candidates`, the checkout's `state/` or a shared file. A
@@ -390,10 +400,13 @@ appkit's `mcp.Client`, passing the caller whose identity headers the client
 forwards. Raw HTTP to `/mcp` is for what the client cannot send (a missing
 identity header, `server/discover`), never a substitute for the client.
 Assertions are on the `mcp.Result` and `mcp.ToolInfo` the client returns.
+A test reaches the unlisted legacy `cohort` tool the same way, through the
+client on the handler that serves `/mcp`, as design names.
 candidates' tests never re-prove appkit's transport.
 
-**Pages are raw HTTP.** A test drives `/`, `/candidates/<id>`,
-`/candidates/<id>/pages/<n>`, `/passes/<id>`, `/tools`, `/about`, the event bus's two paths and any other
+**Pages are raw HTTP.** A test drives `/`, `/prospect-lists/<id>`,
+`/cohorts/<id>`, `/candidates/<id>`, `/candidates/<id>/pages/<n>`,
+`/passes/<id>`, `/tools`, `/about`, the event bus's two paths and any other
 path as a browser or the bus would: raw HTTP requests on the handler it
 built, served with `httptest` or on a Unix socket, with the identity headers
 where the route takes them, and never follows a redirect.
@@ -524,5 +537,5 @@ candidates holds no secret of its own. The host's backup archives `state/`
 whole, so `candidates.db` is taken with it; it holds candidates, their
 evidence copied from public records, their enrichment results, facts and
 kept pages, the owner's
-rulings, cohorts and rejects, the campaign uses and the passes, and no
+rulings, prospect lists and rejects, the campaign uses and the passes, and no
 secret.
