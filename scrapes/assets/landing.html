@@ -30,10 +30,10 @@
      reason words are shown as stored; the status's kind is chosen here:
      "running" info, "done" ok, "failed" err. Hooks: title "scrapes"; h1
      with text "scrapes"; p#summary.lede (text "Public records about
-     businesses in range, collected per source as rows per run. Each run
+     businesses in range, scraped per source as rows per run. Each run
      keeps every record its source answered, raw beside a common envelope,
      for agents to read through their tools."); section#scrapers with h2
-     "Scrapers" and a p in its header (text "Each source scrapes collects
+     "Scrapers" and a p in its header (text "Each source scrapes reads
      from, with its current run, the latest done, and any run in
      progress. New, changed and gone count against the run before."), then
      table#scraper-list whose th read Scraper, Current, Status, Started,
@@ -83,9 +83,9 @@
 {{template "banner" .Banner}}
 <main>
 <h1>scrapes</h1>
-<p id="summary" class="lede">Public records about businesses in range, collected per source as rows per run. Each run keeps every record its source answered, raw beside a common envelope, for agents to read through their tools.</p>
+<p id="summary" class="lede">Public records about businesses in range, scraped per source as rows per run. Each run keeps every record its source answered, raw beside a common envelope, for agents to read through their tools.</p>
 <section id="scrapers" class="card flush" aria-labelledby="scrapers-title">
-<header><div><h2 id="scrapers-title">Scrapers</h2><p>Each source scrapes collects from, with its current run, the latest done, and any run in progress. New, changed and gone count against the run before.</p></div></header>
+<header><div><h2 id="scrapers-title">Scrapers</h2><p>Each source scrapes reads from, with its current run, the latest done, and any run in progress. New, changed and gone count against the run before.</p></div></header>
 <div class="table-scroll">
 <table id="scraper-list">
 <thead><tr><th>Scraper</th><th>Current</th><th>Status</th><th>Started</th><th>Finished</th><th class="num">Rows</th><th class="num">New</th><th class="num">Changed</th><th class="num">Gone</th><th>Running</th></tr></thead>

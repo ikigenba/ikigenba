@@ -7,8 +7,8 @@
      /runs/<.Row.Run>/rows/<.Row.SourceID>. Data: .Banner (a page.Banner,
      for banner and footer); .Row, with .Scraper (the scraper's name, such
      as "fmcsa"), .Run (the run_ id of its run), .SourceID (the record's id
-     at the source, stable across runs, such as "1023916"), .Collected and
-     .CollectedText (when the record was received: RFC 3339 UTC to the
+     at the source, stable across runs, such as "1023916"), .Scraped and
+     .ScrapedText (when the record was received: RFC 3339 UTC to the
      second, and the same as shown, "2006-01-02 15:04:05 UTC"), .Digest (64
      hex, the SHA-256 of the raw record's bytes as the source sent them),
      .Name (the business as the source spells it), .Names (every name the
@@ -23,16 +23,16 @@
      its members in the order the source sent them). Hooks: title
      "<.SourceID> · scrapes"; h1 with text .SourceID; p#headline.cluster
      holding .Name, a space, and span.muted holding
-     "from" and .Scraper in a code element, " · collected" and
-     time[datetime=<.Collected>] (text .CollectedText); section#row-card
+     "from" and .Scraper in a code element, " · scraped" and
+     time[datetime=<.Scraped>] (text .ScrapedText); section#row-card
      with h2 "Row" and a p in its header (text "The common envelope the
      scraper filled from the record, as the source spelled it."); then
      dl#row.kv holding, in this order, dt "Source ID" then dd#row-source
      (.SourceID in a code element), dt "Scraper" then dd#row-scraper
      (.Scraper in a code element), dt "Run" then dd#row-run (a.run-link,
-     href "/runs/<.Run>", .Run in a code element), dt "Collected" then
-     dd#row-collected holding time[datetime=<.Collected>] (text
-     .CollectedText), dt "Digest" then dd#row-digest (.Digest in a code
+     href "/runs/<.Run>", .Run in a code element), dt "Scraped" then
+     dd#row-scraped holding time[datetime=<.Scraped>] (text
+     .ScrapedText), dt "Digest" then dd#row-digest (.Digest in a code
      element), dt "Name" then dd#row-name (.Name), dt "Names" then
      dd#row-names (.Names joined by " · "), then, each only when set, dt
      "Street" then dd#row-street, dt "City" then dd#row-city, dt "State"
@@ -55,14 +55,14 @@
 {{template "banner" .Banner}}
 <main>
 {{with .Row}}<h1>{{.SourceID}}</h1>
-<p id="headline" class="cluster">{{.Name}} <span class="muted">from <code>{{.Scraper}}</code> · collected <time datetime="{{.Collected}}">{{.CollectedText}}</time></span></p>
+<p id="headline" class="cluster">{{.Name}} <span class="muted">from <code>{{.Scraper}}</code> · scraped <time datetime="{{.Scraped}}">{{.ScrapedText}}</time></span></p>
 <section id="row-card" class="card" aria-labelledby="row-title">
 <header><h2 id="row-title">Row</h2><p>The common envelope the scraper filled from the record, as the source spelled it.</p></header>
 <dl id="row" class="kv">
 <dt>Source ID</dt><dd id="row-source"><code>{{.SourceID}}</code></dd>
 <dt>Scraper</dt><dd id="row-scraper"><code>{{.Scraper}}</code></dd>
 <dt>Run</dt><dd id="row-run"><a class="run-link" href="/runs/{{.Run}}"><code>{{.Run}}</code></a></dd>
-<dt>Collected</dt><dd id="row-collected"><time datetime="{{.Collected}}">{{.CollectedText}}</time></dd>
+<dt>Scraped</dt><dd id="row-scraped"><time datetime="{{.Scraped}}">{{.ScrapedText}}</time></dd>
 <dt>Digest</dt><dd id="row-digest"><code>{{.Digest}}</code></dd>
 <dt>Name</dt><dd id="row-name">{{.Name}}</dd>
 <dt>Names</dt><dd id="row-names">{{range $i, $n := .Names}}{{if $i}} · {{end}}{{$n}}{{end}}</dd>

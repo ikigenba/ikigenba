@@ -9,8 +9,8 @@
      (.Banner.Service), dt "Version" then dd#about-version (.Banner.Release
      and .Banner.Commit, present even when empty), and dt "Description"
      then dd#about-description (.Description); then section#how.card with
-     h2 "How it works" and four p: "scrapes collects public records about
-     businesses in range. Each scraper knows one source: where it is, how
+     h2 "How it works" and four p: "scrapes keeps public records about
+     businesses in range, scraped from their sources. Each scraper knows one source: where it is, how
      it pages and how a record becomes a row. A run keeps every record its
      source answers inside the scraper's scope, the raw record beside a
      common envelope of name, names, address, people and facts."; "scrape
@@ -43,7 +43,7 @@
 </section>
 <section id="how" class="card" aria-labelledby="how-title">
 <header><h2 id="how-title">How it works</h2></header>
-<p>scrapes collects public records about businesses in range. Each scraper knows one source: where it is, how it pages and how a record becomes a row. A run keeps every record its source answers inside the scraper's scope, the raw record beside a common envelope of name, names, address, people and facts.</p>
+<p>scrapes keeps public records about businesses in range, scraped from their sources. Each scraper knows one source: where it is, how it pages and how a record becomes a row. A run keeps every record its source answers inside the scraper's scope, the raw record beside a common envelope of name, names, address, people and facts.</p>
 <p><code>scrape</code> starts a run now and answers at once; the run lands in the background, one per scraper at a time. A cron trigger named <code>scrape_&lt;scraper&gt;</code> starts one each time it fires; create it and change its schedule in cron.</p>
 <p><code>scrapers</code> shows each scraper's current run, the latest done. <code>runs</code> and <code>run</code> show the runs, <code>rows</code> pages a run's rows and <code>row</code> answers one with its raw record. A run has rows only once it is done, and counts new, changed, unchanged and gone against the run before it; older runs are pruned.</p>
 <p>Runs belong to no one: every signed-in user sees every run and row. A sibling service reads a whole run as JSON lines at <code>/runs/&lt;id&gt;/rows</code>.</p>
