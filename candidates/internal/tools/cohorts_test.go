@@ -99,7 +99,7 @@ func (f *fixture) create(name string) tools.Cohort {
 }
 
 // R-VRRJ-PPU1
-// R-AFHY-ZO6N R-1MHN-WGCE R-AHXR-R7O1 R-1OXG-NZTS R-AXSG-Q8B2 R-BEV2-30OS R-P2HO-Q5JG R-BKYJ-ZVE9 R-1POC-ZXB9 R-1S45-RGSN R-BDN5-P8Y3
+// R-AFHY-ZO6N R-WO2V-5M7K R-AHXR-R7O1 R-WMUY-RUGV R-AXSG-Q8B2 R-BEV2-30OS R-P2HO-Q5JG R-BKYJ-ZVE9 R-1POC-ZXB9 R-1S45-RGSN R-BDN5-P8Y3
 func TestCohortLifecycleRejectAndExclusion(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(5)

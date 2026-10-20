@@ -282,10 +282,10 @@ func TestCatalogAndSchemas(t *testing.T) {
 		seen[d] = true
 	}
 	_ = tools.Cohort{"id", "name", 1, store.CohortFilters{}, []store.CohortOrder{}, "creator", "email", "created", "changer", "email", "changed"}
-	_ = tools.Member{tools.Candidate{}, nil, nil, nil, nil, nil, "", "", "", "", nil, nil, nil, "", "", "", false}
+	_ = tools.Member{tools.Candidate{}, nil, nil, nil, nil, nil, "", "", "", "", "", nil, nil, nil, "", "", "", false}
 	_ = tools.Reject{"kind", "cohort", "name", "candidate", "why", "user", "email", "at"}
 	_ = tools.CohortRead{tools.Cohort{}, 0, 0, nil, nil}
-	_ = tools.Assessment{nil, nil, nil, nil, nil, "", "", nil, "", false, nil, "", "", nil, nil, "", "", nil, "", false, 0, ""}
+	_ = tools.Assessment{nil, nil, nil, nil, nil, "", "", nil, "", false, nil, "", "", nil, nil, "", "", "", "", nil, "", false, 0, ""}
 	_ = tools.Estimate{"source", 1, nil, .5, nil, "", 1}
 	_ = tools.Ruling{"kind", "candidate", "other", nil, "why", "user", "email", "at"}
 	_ = tools.Detail{tools.Candidate{}, nil, nil, nil, nil, nil, nil, nil}
@@ -332,9 +332,9 @@ func objectKeys(t *testing.T, b []byte) []string {
 	return out
 }
 
-// R-AEA2-LWFY R-AFHY-ZO6N R-1MHN-WGCE R-AHXR-R7O1 R-1OXG-NZTS R-AKDK-IR5F R-1NPK-A833 R-OHKS-Z2JM
+// R-AEA2-LWFY R-AFHY-ZO6N R-WO2V-5M7K R-AHXR-R7O1 R-WMUY-RUGV R-AKDK-IR5F R-1NPK-A833 R-OHKS-Z2JM
 // R-RIUB-88I4
-// R-6131-Z710 R-AEA2-LWFY R-AFHY-ZO6N R-1MHN-WGCE R-AHXR-R7O1 R-1OXG-NZTS R-AKDK-IR5F R-1NPK-A833 R-OHKS-Z2JM
+// R-6131-Z710 R-AEA2-LWFY R-AFHY-ZO6N R-WO2V-5M7K R-AHXR-R7O1 R-WMUY-RUGV R-AKDK-IR5F R-1NPK-A833 R-OHKS-Z2JM
 func TestAnswerJSONShapes(t *testing.T) {
 	tests := []struct {
 		v      any
@@ -344,9 +344,9 @@ func TestAnswerJSONShapes(t *testing.T) {
 	}{
 		{tools.Enrichment{}, "kind source inputs cost at", "", ""},
 		{tools.Person{}, "name role", "", ""}, {tools.Evidence{}, "name source weight description", "", ""}, {tools.Category{}, "name source", "", ""}, {tools.Candidate{}, "id status name names street city state zip county phone email people class cargo created updated", "names people cargo", ""},
-		{tools.Member{}, "candidate categories classified_by fleet_verdict website site_text brief excluded", "categories", ""}, {tools.CohortList{}, "cohorts", "cohorts", ""}, {tools.Cohort{}, "id name size filters order created_by created_email created changed_by changed_email changed", "order", "filters"}, {tools.Reject{}, "kind cohort candidate", "", ""}, {tools.CohortRead{}, "cohort matching classified members rejects", "members rejects", ""}, {tools.CandidateList{}, "candidates", "candidates", ""}, {tools.PassList{}, "passes", "passes", ""},
+		{tools.Member{}, "candidate categories classified_by fleet_verdict website website_source site_text brief excluded", "categories", ""}, {tools.CohortList{}, "cohorts", "cohorts", ""}, {tools.Cohort{}, "id name size filters order created_by created_email created changed_by changed_email changed", "order", "filters"}, {tools.Reject{}, "kind cohort candidate", "", ""}, {tools.CohortRead{}, "cohort matching classified members rejects", "members rejects", ""}, {tools.CandidateList{}, "candidates", "candidates", ""}, {tools.PassList{}, "passes", "passes", ""},
 		{tools.Link{}, "scraper source_id run digest name names street city state zip county phone email people class cargo fleet_verdict name_key phone_key domain_key reason confidence first_seen last_seen gone", "names people cargo", ""},
-		{tools.Estimate{}, "source low confidence facts formula", "", "facts"}, {tools.Assessment{}, "operating_evidence categories classified_by records_differ record_categories fleet_verdict website excluded rules calculated", "operating_evidence categories record_categories", ""},
+		{tools.Estimate{}, "source low confidence facts formula", "", "facts"}, {tools.Assessment{}, "operating_evidence categories classified_by records_differ record_categories fleet_verdict website website_source excluded rules calculated", "operating_evidence categories record_categories", ""},
 		{tools.Ruling{}, "kind candidate keys why user email at", "keys", ""}, {tools.Detail{}, "candidate estimates links rulings pages enrichments rejects", "estimates links rulings pages enrichments rejects", ""}, {tools.Decision{}, "ruling candidates", "candidates", ""},
 	}
 	for _, tt := range tests {
@@ -379,11 +379,11 @@ func TestAnswerJSONShapes(t *testing.T) {
 	}{
 		{tools.Enrichment{URL: "chosen-url", Title: "chosen-title", StatusCode: 200, Error: "chosen-error"}, "kind source inputs url title status_code error cost at"},
 		{tools.Candidate{MergedInto: "survivor"}, "id status merged_into name names street city state zip county phone email people class cargo created updated"},
-		{tools.Member{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, Website: sources.WebsiteHTTPS, WebsiteURL: "https://chosen.test", Minutes: &one, GovernmentMatch: "chosen", KnownSince: "known", NewestFiling: "newest"}, "candidate operating_confidence revenue_low revenue_high revenue_confidence categories classified_by fleet_verdict website website_url site_text brief minutes government_match known_since newest_filing excluded"},
+		{tools.Member{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, Website: sources.WebsiteHTTPS, WebsiteURL: "https://chosen.test", Minutes: &one, GovernmentMatch: "chosen", KnownSince: "known", NewestFiling: "newest"}, "candidate operating_confidence revenue_low revenue_high revenue_confidence categories classified_by fleet_verdict website website_url website_source site_text brief minutes government_match known_since newest_filing excluded"},
 		{tools.CohortList{Next: &continuation}, "cohorts next"}, {tools.CandidateList{Next: &continuation}, "candidates next"}, {tools.PassList{Next: &continuation}, "passes next"},
 		{tools.Link{Filed: "2026-01-01"}, "scraper source_id run digest name names street city state zip county phone email people class cargo filed fleet_verdict name_key phone_key domain_key reason confidence first_seen last_seen gone"},
 		{tools.Estimate{High: &one, Filed: "2026-01-01"}, "source low high confidence facts filed formula"},
-		{tools.Assessment{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, KnownSince: "chosen-known", NewestFiling: "chosen-newest", GovernmentMatch: "chosen-government", PowerUnits: &one, Drivers: &one, Website: sources.WebsiteHTTPS, WebsiteURL: "https://chosen.test", Minutes: &one, Brief: "fixture-summary"}, "operating_confidence operating_evidence revenue_low revenue_high revenue_confidence known_since newest_filing categories classified_by records_differ record_categories government_match fleet_verdict power_units drivers website website_url minutes brief excluded rules calculated"},
+		{tools.Assessment{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, KnownSince: "chosen-known", NewestFiling: "chosen-newest", GovernmentMatch: "chosen-government", PowerUnits: &one, Drivers: &one, Website: sources.WebsiteHTTPS, WebsiteURL: "https://chosen.test", WebsiteSearchAt: "chosen-search", Minutes: &one, Brief: "fixture-summary"}, "operating_confidence operating_evidence revenue_low revenue_high revenue_confidence known_since newest_filing categories classified_by records_differ record_categories government_match fleet_verdict power_units drivers website website_url website_source website_search_at minutes brief excluded rules calculated"},
 		{tools.Reject{Kind: "reject", Cohort: "cohort", CohortName: "name", Candidate: "candidate", Why: "why", User: "user", Email: "email", At: "at"}, "kind cohort cohort_name candidate why user email at"},
 		{tools.Ruling{Other: "other"}, "kind candidate other keys why user email at"}, {tools.Detail{Assessment: &tools.Assessment{}}, "candidate assessment estimates links rulings pages enrichments rejects"},
 	}

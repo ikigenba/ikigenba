@@ -20,18 +20,19 @@ import (
 
 // Kind and source words identify derived enrichment records.
 const (
-	KindDriveMinutes = "drive_minutes"
-	KindLinkFacts    = "link_facts"
-	SourceZipDrive   = "zip_drive"
-	SourceLinks      = "links"
-	KindBrief        = "brief"
-	BriefPageBytes   = 12288
-	BriefInputBytes  = 98304
-	KindSiteText     = "site_text"
-	SourcePrompts    = "prompts"
-	RunQueued        = "queued"
-	RunRunning       = "running"
-	RunExited        = "exited"
+	KindDriveMinutes  = "drive_minutes"
+	KindLinkFacts     = "link_facts"
+	SourceZipDrive    = "zip_drive"
+	SourceLinks       = "links"
+	KindBrief         = "brief"
+	BriefPageBytes    = 12288
+	BriefInputBytes   = 98304
+	KindSiteText      = "site_text"
+	KindWebsiteSearch = "website_search"
+	SourcePrompts     = "prompts"
+	RunQueued         = "queued"
+	RunRunning        = "running"
+	RunExited         = "exited"
 )
 
 // Link is one source reading in the subject's display order.
@@ -50,11 +51,12 @@ type Page struct {
 
 // Subject holds the stored inputs for a candidate.
 type Subject struct {
-	ID, Name, City, State, Email, Zip, Website string
-	Minutes                                    *int64
-	Links                                      []Link
-	Pages                                      []Page
-	Facts                                      *LinkFound
+	ID, Name, City, State, Street, Zip, Phone, Email, Website, WebsiteSource string
+	Check                                                                    *website.Result
+	Minutes                                                                  *int64
+	Links                                                                    []Link
+	Pages                                                                    []Page
+	Facts                                                                    *LinkFound
 }
 
 // Result is a kind's finding and its provenance.
@@ -122,7 +124,7 @@ type Prompter interface {
 	Ready() bool
 	Prompt() string
 	Input(s Subject) json.RawMessage
-	Found(out prompts.Outcome, pages int64) Result
+	Found(ctx context.Context, out prompts.Outcome, pages int64) Result
 	Failed(found json.RawMessage) bool
 }
 
@@ -163,7 +165,7 @@ type Registry struct{ cfg Config }
 
 // Kinds returns independent storage in processing order.
 func Kinds() []string {
-	return []string{KindDriveMinutes, KindLinkFacts, sources.WebsiteCheck, KindSiteText, KindBrief}
+	return []string{KindDriveMinutes, KindLinkFacts, sources.WebsiteCheck, KindWebsiteSearch, KindSiteText, KindBrief}
 }
 
 // New constructs the registry, including an unavailable website checker.
@@ -171,7 +173,7 @@ func New(cfg Config) *Registry { return &Registry{cfg: cfg} }
 
 // All returns fresh ordered element storage.
 func (r *Registry) All() []Enricher {
-	return []Enricher{DriveMinutes{}, LinkFacts{}, WebsiteCheck{Checker: r.cfg.Website}, SiteText{Prompts: r.cfg.Prompts}, Brief{Prompts: r.cfg.Prompts}}
+	return []Enricher{DriveMinutes{}, LinkFacts{}, WebsiteCheck{Checker: r.cfg.Website}, WebsiteSearch{Prompts: r.cfg.Prompts, Checker: r.cfg.Website}, SiteText{Prompts: r.cfg.Prompts}, Brief{Prompts: r.cfg.Prompts}}
 }
 
 // Get returns the kind with the exact matching word.
@@ -407,7 +409,7 @@ func (SiteText) Input(s Subject) json.RawMessage {
 }
 
 // Found records the run's outcome without retaining its output.
-func (SiteText) Found(out prompts.Outcome, pages int64) Result {
+func (SiteText) Found(_ context.Context, out prompts.Outcome, pages int64) Result {
 	r := result(SourcePrompts, SiteTextFound{out.ID, out.Status, out.ExitCode, pages, out.CostNanos})
 	r.Cost = float64(out.CostNanos) / 1e9
 	return r

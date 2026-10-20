@@ -45,7 +45,7 @@ func TestTargetPassAndCosts(t *testing.T) {
 	}
 }
 
-// R-3VZN-BZMO R-GRY0-UTBF
+// R-DUEN-N7F8 R-EDX1-RJAC
 func TestSiteTextResultProjection(t *testing.T) {
 	for _, tc := range []struct {
 		status string
@@ -79,7 +79,7 @@ func TestSiteTextResultProjection(t *testing.T) {
 	}
 }
 
-// R-45QU-E5K8 R-GN2F-BQCN R-3ZNC-HAUR
+// R-45QU-E5K8 R-DT6R-9FOJ R-3ZNC-HAUR
 func TestKeptPageProjections(t *testing.T) {
 	p := store.Page{Candidate: "cand_0123456789abcdef", Number: 7, URL: "https://fixture.test/", Size: 37, Fetched: fixtureTime(), UserID: "fixture-user", Text: "fixture text"}
 	row := pageRow(p)
@@ -115,7 +115,7 @@ func TestKeptPagePathGrammar(t *testing.T) {
 	}
 }
 
-// R-GVLQ-04JI R-GT5X-8L24 R-4D28-OS0E R-4GPX-U38H R-4HXU-7UZ6
+// R-EA9C-M829 R-E6LN-GWU6 R-4D28-OS0E R-4GPX-U38H R-4HXU-7UZ6
 func TestKeptPageRoutes(t *testing.T) {
 	cfg, d := pageFixture(t)
 	ctx := t.Context()
@@ -193,7 +193,7 @@ func TestKeptPageRoutes(t *testing.T) {
 	}
 }
 
-// R-BOZX-O1YB R-BIWF-R78U
+// R-ECP5-DRJN R-E0I5-K24P
 func TestMemberSiteTextStamp(t *testing.T) {
 	for _, at := range []time.Time{{}, fixtureTime()} {
 		v := memberRow(store.Ranked{SiteText: at}, 0)
@@ -254,7 +254,7 @@ func TestAddedTemplateStates(t *testing.T) {
 	}
 }
 
-// R-BOZX-O1YB R-GT5X-8L24 R-GRY0-UTBF
+// R-ECP5-DRJN R-E6LN-GWU6 R-EDX1-RJAC
 func TestSiteTextCandidateAndCohortAgree(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()
@@ -330,7 +330,7 @@ func TestTargetPassPage(t *testing.T) {
 	}
 }
 
-// R-GN2F-BQCN R-3VZN-BZMO R-3X7J-PRDD R-3ZNC-HAUR
+// R-DT6R-9FOJ R-DUEN-N7F8 R-3X7J-PRDD R-3ZNC-HAUR
 func TestAddedViewShapes(t *testing.T) {
 	candidate := CandidateData{page.Banner{}, CandidateView{}, nil, nil, nil, []EstimateView{}, []LinkView{}, []RulingView{}, []PageRow{}, []EnrichmentRow{}, []RejectRecordRow{}}
 	if candidate.Pages == nil || candidate.Enrichments == nil {
@@ -349,6 +349,9 @@ func TestAddedViewShapes(t *testing.T) {
 		State, URL, Title, StatusCode string
 		Size                          int64
 		Error                         string
+		Run                           *RunView
+		Answer                        *AnswerView
+		Confirmation                  *ConfirmationView
 		Failed                        bool
 		Cost, At, AtText              string
 	}(EnrichmentRow{})

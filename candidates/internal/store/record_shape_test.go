@@ -10,28 +10,28 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-7ZB5-4XK5 R-L490-XD2E
+// R-X0QQ-DWO1 R-L490-XD2E
 func TestStoredRecordShapes(t *testing.T) {
 	n, confidence := int64(3), 0.8
 	a := store.Assessment{Candidate: "candidate", Operating: &confidence, OperatingKey: 800000, Evidence: []sources.Evidence{{Weight: confidence}}, RevenueLow: &n, RevenueHigh: &n, RevenueConfidence: &confidence, KnownSince: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: "pattern", NewestFiling: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{{Name: sources.CategoryOther, Source: "source"}}, FleetVerdict: sources.FleetPass, PowerUnits: &n, Drivers: &n, Minutes: &n, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
 	shaped := struct {
-		Candidate               string
-		Operating               *float64
-		OperatingKey            int64
-		Evidence                []sources.Evidence
-		RevenueLow, RevenueHigh *int64
-		RevenueConfidence       *float64
-		KnownSince              time.Time
-		GovernmentMatch         string
-		NewestFiling            time.Time
-		Categories              []sources.Category
-		FleetVerdict            string
-		PowerUnits, Drivers     *int64
-		Website, WebsiteURL     string
-		Minutes                 *int64
-		Excluded                bool
-		Rules                   int64
-		Calculated              time.Time
+		Candidate                          string
+		Operating                          *float64
+		OperatingKey                       int64
+		Evidence                           []sources.Evidence
+		RevenueLow, RevenueHigh            *int64
+		RevenueConfidence                  *float64
+		KnownSince                         time.Time
+		GovernmentMatch                    string
+		NewestFiling                       time.Time
+		Categories                         []sources.Category
+		FleetVerdict                       string
+		PowerUnits, Drivers                *int64
+		Website, WebsiteURL, WebsiteSource string
+		Minutes                            *int64
+		Excluded                           bool
+		Rules                              int64
+		Calculated                         time.Time
 	}(a)
 	contractEqual(t, store.Assessment(shaped), a)
 	counts := store.Counts{Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14}

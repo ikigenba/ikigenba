@@ -174,7 +174,7 @@ func secrecyAbsent(t *testing.T, where string, value any, markers []string) {
 	}
 }
 
-// R-0DBY-N0TE R-0FRR-EKAS R-0I7K-63S6 R-0JFG-JVIV R-0LV9-BF09 R-VXPS-X5UC
+// R-0DBY-N0TE R-0FRR-EKAS R-0I7K-63S6 R-0JFG-JVIV R-0LV9-BF09 R-VXPS-X5UC R-CDHW-SSLY
 func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	markers, phone := secrecyMarkers(t)
 	forbidden := append(append([]string{}, markers...), phone)
@@ -218,7 +218,7 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 		if strings.HasSuffix(r.URL.Path, "/missing") {
 			status = 404
 		}
-		return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {"text/html"}}, Body: io.NopCloser(strings.NewReader("<title>" + markers[3] + "</title><p>" + markers[4] + "</p>"))}, nil
+		return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {"text/html"}}, Body: io.NopCloser(strings.NewReader("<title>" + strings.Join(forbidden, " ") + "</title><p>" + strings.Join(forbidden, " ") + "</p>"))}, nil
 	})}
 	h.p.After = func(d time.Duration) <-chan time.Time {
 		ch := make(chan time.Time, 1)
@@ -458,6 +458,63 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 		}
 		call("cohort", map[string]any{"cohort": cohortID}, false)
 		if status, _ := h.request("GET", "/cohorts/"+cohortID, "brief-cohort-page", nil); status != 200 {
+			t.Fatal(status)
+		}
+	}
+	// Search output, rejected alternatives and confirmation content are private record data.
+	for index, mode := range []string{"confirmed", "missing", "nonzero", "empty", "malformed"} {
+		db, records := runStore(t, h.p.Dir, h.p.Now)
+		_, ids, err := records.Attach(t.Context(), "search-secrecy", false, []store.Observation{{Scraper: "fmcsa", SourceID: fmt.Sprintf("search-%d", index), Digest: "search", Reading: sources.Reading{Name: markers[0] + fmt.Sprint(index), NameKey: fmt.Sprintf("search-secrecy-%d", index)}}})
+		if err != nil || len(ids) != 1 {
+			t.Fatal(ids, err)
+		}
+		if _, err := records.JudgeAll(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Close(); err != nil {
+			t.Fatal(err)
+		}
+		answerURL := "https://" + strings.ToLower(markers[8]) + ".example/"
+		if mode == "missing" {
+			answerURL += "missing"
+		}
+		if mode == "empty" {
+			answerURL = ""
+		}
+		output, err := json.Marshal(map[string]any{"url": answerURL, "why": marked, "rejected": []map[string]string{{"url": "https://" + markers[7] + ".example/", "why": marked}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		pf.mu.Lock()
+		pf.mode, pf.stdout, pf.exitCode = "success", string(output), 0
+		if mode == "nonzero" {
+			pf.exitCode = 1
+		}
+		if mode == "malformed" {
+			pf.stdout = marked
+		}
+		pf.mu.Unlock()
+		v := call("enrich", map[string]any{"kind": enrichers.KindWebsiteSearch, "cohort": cohortID, "force": true}, false)
+		pid := runText(v, "id")
+		expectedPasses[pid] = caller.RequestID
+		ended := h.waitPass(caller, pid)
+		if runText(ended, "status") != store.StatusDone || string(ended["runs"]) == "0" {
+			t.Fatal(ended)
+		}
+		all := call("candidates", map[string]any{}, false)
+		var candidates []map[string]json.RawMessage
+		if err := json.Unmarshal(all["candidates"], &candidates); err != nil {
+			t.Fatal(err)
+		}
+		for _, candidate := range candidates {
+			mid := runText(candidate, "id")
+			call("candidate", map[string]any{"candidate": mid}, false)
+			if status, _ := h.request("GET", "/candidates/"+mid, "search-candidate-page", nil); status != 200 {
+				t.Fatal(status)
+			}
+		}
+		call("cohort", map[string]any{"cohort": cohortID}, false)
+		if status, _ := h.request("GET", "/cohorts/"+cohortID, "search-cohort-page", nil); status != 200 {
 			t.Fatal(status)
 		}
 	}

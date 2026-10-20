@@ -19,7 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-I9B5-6YXP R-JW5H-WNEM R-IBQX-YIF3 R-ICYU-CA5S
+// R-I9B5-6YXP R-I4ZZ-QZHX R-IBQX-YIF3 R-ICYU-CA5S
 func TestDeclaredValues(t *testing.T) {
 	type word string
 	words := []word{enrichers.KindDriveMinutes, enrichers.KindLinkFacts, enrichers.SourceZipDrive, enrichers.SourceLinks}
@@ -34,8 +34,8 @@ func TestDeclaredValues(t *testing.T) {
 	n := int64(84)
 	reading := sources.Reading{Name: "owned"}
 	link := enrichers.Link{"scraper", "source", true, reading}
-	s := enrichers.Subject{"id", "name", "city", "state", "email", "zip", "website", &n, []enrichers.Link{link}, []enrichers.Page{{7, "url", "title", "text", 4}}, &enrichers.LinkFound{KnownSince: "known"}}
-	if s.ID != "id" || s.Name != "name" || s.City != "city" || s.State != "state" || s.Website != "website" || s.Email != "email" || s.Zip != "zip" || *s.Minutes != 84 || !s.Links[0].Gone || s.Links[0].Scraper != "scraper" || s.Links[0].SourceID != "source" || s.Links[0].Reading.Name != "owned" || s.Pages[0] != (enrichers.Page{7, "url", "title", "text", 4}) || s.Facts.KnownSince != "known" {
+	s := enrichers.Subject{"id", "name", "city", "state", "street", "zip", "phone", "email", "website", "source", &website.Result{State: sources.WebsiteNone}, &n, []enrichers.Link{link}, []enrichers.Page{{7, "url", "title", "text", 4}}, &enrichers.LinkFound{KnownSince: "known"}}
+	if s.ID != "id" || s.Name != "name" || s.City != "city" || s.State != "state" || s.Website != "website" || s.Street != "street" || s.Phone != "phone" || s.WebsiteSource != "source" || s.Check.State != sources.WebsiteNone || s.Email != "email" || s.Zip != "zip" || *s.Minutes != 84 || !s.Links[0].Gone || s.Links[0].Scraper != "scraper" || s.Links[0].SourceID != "source" || s.Links[0].Reading.Name != "owned" || s.Pages[0] != (enrichers.Page{7, "url", "title", "text", 4}) || s.Facts.KnownSince != "known" {
 		t.Fatal(s)
 	}
 	r := enrichers.Result{"origin", json.RawMessage(`{}`), 0.5}
@@ -67,9 +67,9 @@ func TestDeclaredValues(t *testing.T) {
 	}
 }
 
-// R-IE6Q-Q1WH R-IFEN-3TN6 R-LYKV-TAVJ R-K28Z-TI43 R-M3GH-CDUB R-K3GW-79US R-IKA8-MWLY R-MGVD-JUZY
+// R-IE6Q-Q1WH R-IFEN-3TN6 R-LYKV-TAVJ R-IFZ3-6X66 R-M3GH-CDUB R-IZHH-B91A R-IKA8-MWLY R-MGVD-JUZY
 func TestRegistry(t *testing.T) {
-	expected := []string{enrichers.KindDriveMinutes, enrichers.KindLinkFacts, sources.WebsiteCheck, enrichers.KindSiteText, enrichers.KindBrief}
+	expected := []string{enrichers.KindDriveMinutes, enrichers.KindLinkFacts, sources.WebsiteCheck, enrichers.KindWebsiteSearch, enrichers.KindSiteText, enrichers.KindBrief}
 	first := enrichers.Kinds()
 	first[0] = "changed"
 	if !slices.Equal(enrichers.Kinds(), expected) {
@@ -78,7 +78,7 @@ func TestRegistry(t *testing.T) {
 	for _, ck := range []*website.Checker{nil, {}} {
 		reg := enrichers.New(enrichers.Config{Website: ck})
 		all := reg.All()
-		if len(all) != 5 {
+		if len(all) != 6 {
 			t.Fatalf("registry length %d", len(all))
 		}
 		for i, e := range all {

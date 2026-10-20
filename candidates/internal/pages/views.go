@@ -66,7 +66,7 @@ func passView(p store.Pass, sp string) PassView {
 func memberRow(e store.Ranked, i int) MemberRow {
 	a := assessmentView(e.Assessment)
 	f := factsView(store.Facts{KnownSince: e.Assessment.KnownSince, NewestFiling: e.Assessment.NewestFiling, Categories: e.Assessment.Categories, GovernmentMatch: e.Assessment.GovernmentMatch, FleetVerdict: e.Assessment.FleetVerdict, PowerUnits: e.Assessment.PowerUnits, Drivers: e.Assessment.Drivers, Minutes: e.Assessment.Minutes})
-	v := MemberRow{Rank: int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(e.Assessment.Categories), Class: e.Candidate.Class, FleetVerdict: f.FleetVerdict, Website: e.Assessment.Website, WebsiteURL: e.Assessment.WebsiteURL, Minutes: f.Minutes, GovernmentMatch: f.GovernmentMatch, KnownSince: f.KnownSince, KnownSinceText: f.KnownSinceText, NewestFiling: f.NewestFiling, NewestFilingText: f.NewestFilingText, Excluded: a.Excluded}
+	v := MemberRow{Rank: int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(e.Assessment.Categories), Class: e.Candidate.Class, FleetVerdict: f.FleetVerdict, Website: e.Assessment.Website, WebsiteURL: e.Assessment.WebsiteURL, WebsiteSource: e.Assessment.WebsiteSource, Minutes: f.Minutes, GovernmentMatch: f.GovernmentMatch, KnownSince: f.KnownSince, KnownSinceText: f.KnownSinceText, NewestFiling: f.NewestFiling, NewestFilingText: f.NewestFilingText, Excluded: a.Excluded}
 	v.SiteText, v.SiteTextText = stamp(e.SiteText, MinuteLayout)
 	v.Brief, v.BriefText = stamp(e.Brief, MinuteLayout)
 	seen := map[string]bool{}
@@ -232,14 +232,17 @@ func rejectRecordRow(r store.Reject) RejectRecordRow {
 
 func enrichmentRow(x store.Enrichment) EnrichmentRow {
 	v := EnrichmentRow{Kind: x.Kind, Source: x.Source, Found: []FactRow{}}
-	if x.Kind == sources.WebsiteCheck {
+	switch x.Kind {
+	case sources.WebsiteCheck:
 		var r website.Result
 		_ = json.Unmarshal(x.Found, &r)
 		v.State, v.URL, v.Title, v.Size, v.Error = r.State, r.URL, r.Title, r.Size, r.Error
 		if r.StatusCode != 0 {
 			v.StatusCode = strconv.Itoa(r.StatusCode)
 		}
-	} else {
+	case enrichers.KindWebsiteSearch:
+		searchViews(&v, x.Found)
+	default:
 		var found map[string]json.RawMessage
 		_ = json.Unmarshal(x.Found, &found)
 		keys := make([]string, 0, len(found))
@@ -265,19 +268,41 @@ func enrichmentRow(x store.Enrichment) EnrichmentRow {
 }
 func setWebsite(v *CandidateView, es []store.Enrichment) {
 	v.Website = sources.WebsiteUnknown
-	for _, e := range es {
+	var check *store.Enrichment
+	var result website.Result
+	for i := range es {
+		e := &es[i]
 		if e.Kind != sources.WebsiteCheck {
 			continue
 		}
-		var r website.Result
-		_ = json.Unmarshal(e.Found, &r)
-		v.Website = r.State
-		if r.State == sources.WebsiteHTTPS || r.State == sources.WebsiteHTTP {
-			v.WebsiteURL = r.URL
+		check = e
+		_ = json.Unmarshal(e.Found, &result)
+		break
+	}
+	if check != nil && (result.State == sources.WebsiteHTTPS || result.State == sources.WebsiteHTTP) {
+		v.WebsiteSource, v.Website, v.WebsiteURL, v.WebsiteTitle = store.WebsiteByCheck, result.State, result.URL, result.Title
+		v.WebsiteChecked, v.WebsiteCheckedText = stamp(check.At, SecondLayout)
+		return
+	}
+	for _, e := range es {
+		if e.Kind != enrichers.KindWebsiteSearch {
+			continue
 		}
-		v.WebsiteTitle = r.Title
+		var r enrichers.WebsiteSearchFound
+		if json.Unmarshal(e.Found, &r) != nil || r.Failed() || r.Answer == nil || r.Answer.URL == "" || r.Confirmation == nil {
+			continue
+		}
+		c := r.Confirmation
+		if c.State != sources.WebsiteHTTPS && c.State != sources.WebsiteHTTP {
+			continue
+		}
+		v.WebsiteSource, v.Website, v.WebsiteURL, v.WebsiteTitle, v.WebsiteWhy = store.WebsiteBySearch, c.State, c.URL, c.Title, r.Answer.Why
 		v.WebsiteChecked, v.WebsiteCheckedText = stamp(e.At, SecondLayout)
 		return
+	}
+	if check != nil {
+		v.Website, v.WebsiteTitle = result.State, result.Title
+		v.WebsiteChecked, v.WebsiteCheckedText = stamp(check.At, SecondLayout)
 	}
 }
 
@@ -319,4 +344,26 @@ func briefView(es []store.Enrichment) *BriefView {
 		return v
 	}
 	return nil
+}
+
+func searchViews(v *EnrichmentRow, found json.RawMessage) {
+	var r enrichers.WebsiteSearchFound
+	_ = json.Unmarshal(found, &r)
+	v.Run = &RunView{ID: r.Run.ID, Status: r.Run.Status}
+	if r.Run.ExitCode != nil {
+		v.Run.ExitCode = strconv.Itoa(*r.Run.ExitCode)
+	}
+	if r.Answer != nil {
+		v.Answer = &AnswerView{URL: r.Answer.URL, Why: r.Answer.Why, Rejected: []RejectedRow{}}
+		for _, x := range r.Answer.Rejected {
+			v.Answer.Rejected = append(v.Answer.Rejected, RejectedRow{URL: x.URL, Why: x.Why})
+		}
+	}
+	if r.Confirmation != nil {
+		c := r.Confirmation
+		v.Confirmation = &ConfirmationView{State: c.State, URL: c.URL, Title: c.Title, Size: c.Size, Error: c.Error}
+		if c.StatusCode != 0 {
+			v.Confirmation.StatusCode = strconv.Itoa(c.StatusCode)
+		}
+	}
 }

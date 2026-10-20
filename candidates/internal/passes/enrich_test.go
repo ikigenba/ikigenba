@@ -87,7 +87,7 @@ func waitFollowUntil(t *testing.T, f *fixture, id string, end time.Time) store.P
 	}
 }
 
-// R-ML31-W3H8 R-MQX0-5TXM R-MS4W-JLOB R-N4BW-DB39 R-N6RP-4UKN R-N33Z-ZJCK R-MZGA-U84H R-N97H-WE21 R-T7FV-5JR0 R-T8NR-JBHP R-T502-E09M
+// R-2TXZ-3U40 R-MQX0-5TXM R-MS4W-JLOB R-N4BW-DB39 R-N6RP-4UKN R-N33Z-ZJCK R-MZGA-U84H R-N97H-WE21 R-T7FV-5JR0 R-301H-0OTH R-T502-E09M
 func TestEnrichCountsDedupAndFollowOn(t *testing.T) {
 	f := newFixture(t, nil, false)
 	var mu sync.Mutex
@@ -393,7 +393,7 @@ func TestEnrichPersistsCompletedChecksAndDrain(t *testing.T) {
 	assertRefusal(t, p, err, passes.RefusalStopping)
 }
 
-// R-T67Y-RS0B R-T8NR-JBHP R-T502-E09M
+// R-2YTK-MX2S R-301H-0OTH R-T502-E09M
 func TestIngestStartsEnrichThenJudgeWithLineage(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/record") {
@@ -647,7 +647,7 @@ func TestEnrichDistinctSuccessfulBatchesWithinBudget(t *testing.T) {
 	}
 }
 
-// R-T67Y-RS0B
+// R-2YTK-MX2S
 func TestIngestSkipsFollowOnWhileEnrichRuns(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/record") {

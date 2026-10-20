@@ -98,11 +98,11 @@ type FiltersView struct {
 
 // MemberRow supplies one cohort member.
 type MemberRow struct {
-	Rank                                                                                                                                                                                   int64
-	ID, Name, City, State, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence                                                                                                 string
-	Categories                                                                                                                                                                             []string
-	ClassifiedBy, Class, FleetVerdict, Website, WebsiteURL, SiteText, SiteTextText, Brief, BriefText, Minutes, GovernmentMatch, KnownSince, KnownSinceText, NewestFiling, NewestFilingText string
-	Excluded                                                                                                                                                                               bool
+	Rank                                                                                                                                                                                                  int64
+	ID, Name, City, State, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence                                                                                                                string
+	Categories                                                                                                                                                                                            []string
+	ClassifiedBy, Class, FleetVerdict, Website, WebsiteURL, WebsiteSource, SiteText, SiteTextText, Brief, BriefText, Minutes, GovernmentMatch, KnownSince, KnownSinceText, NewestFiling, NewestFilingText string
+	Excluded                                                                                                                                                                                              bool
 }
 
 // RejectRow supplies a standing reject.
@@ -134,13 +134,13 @@ type CandidateData struct {
 
 // CandidateView supplies candidate view page data.
 type CandidateView struct {
-	ID, Status, MergedInto, Name                                                                                          string
-	Names                                                                                                                 []string
-	Street, City, State, Zip, County, Phone, Email, Website, WebsiteURL, WebsiteTitle, WebsiteChecked, WebsiteCheckedText string
-	People                                                                                                                []PersonRow
-	Class                                                                                                                 string
-	Cargo                                                                                                                 []string
-	Created, CreatedText, Updated, UpdatedText                                                                            string
+	ID, Status, MergedInto, Name                                                                                                                     string
+	Names                                                                                                                                            []string
+	Street, City, State, Zip, County, Phone, Email, WebsiteSource, Website, WebsiteURL, WebsiteTitle, WebsiteWhy, WebsiteChecked, WebsiteCheckedText string
+	People                                                                                                                                           []PersonRow
+	Class                                                                                                                                            string
+	Cargo                                                                                                                                            []string
+	Created, CreatedText, Updated, UpdatedText                                                                                                       string
 }
 
 // PersonRow supplies person row page data.
@@ -239,6 +239,9 @@ type EnrichmentRow struct {
 	State, URL, Title, StatusCode string
 	Size                          int64
 	Error                         string
+	Run                           *RunView
+	Answer                        *AnswerView
+	Confirmation                  *ConfirmationView
 	Failed                        bool
 	Cost, At, AtText              string
 }
@@ -273,3 +276,22 @@ type BriefView struct {
 
 // BriefCategoryRow supplies a brief category and its explanation.
 type BriefCategoryRow struct{ Name, Why string }
+
+// RunView supplies the website search run.
+type RunView struct{ ID, Status, ExitCode string }
+
+// AnswerView supplies the agent's website answer.
+type AnswerView struct {
+	URL, Why string
+	Rejected []RejectedRow
+}
+
+// RejectedRow supplies a site set aside by the search.
+type RejectedRow struct{ URL, Why string }
+
+// ConfirmationView supplies the fetch that checked a search answer.
+type ConfirmationView struct {
+	State, URL, Title, StatusCode string
+	Size                          int64
+	Error                         string
+}

@@ -52,7 +52,7 @@ func categoryLinks(t *testing.T, id string, categories ...sources.Category) stor
 	return store.Enrichment{Candidate: id, Kind: enrichers.KindLinkFacts, Inputs: "record-inputs", Source: enrichers.SourceLinks, Found: raw}
 }
 
-// R-7UFJ-LULD R-7VNF-ZMC2 R-80J1-IPAU
+// R-X5MB-WZMT R-X1YM-ROEQ R-X9A1-2AUW
 func TestBriefCategoriesReplaceRecordsAndEmptyGoodBriefRestoresThem(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -99,7 +99,7 @@ func TestBriefCategoriesReplaceRecordsAndEmptyGoodBriefRestoresThem(t *testing.T
 	contractEqual(t, got.Records, []sources.Category{})
 }
 
-// R-8F5U-3Y76
+// R-XGLF-CXB2
 func TestRecordsReadNewestLinkResultBesidePreviousWriterCategories(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -190,7 +190,7 @@ func TestCohortClassifiesOnlyItsSelectedMembersAndReadsNewCategories(t *testing.
 	contractEqual(t, cohortRead(t, f, k), read)
 }
 
-// R-846Q-O0IX
+// R-XCXQ-7M2Z
 func TestFillFactsReprojectsMissingCategoryRowsAndPreservesExistingRows(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

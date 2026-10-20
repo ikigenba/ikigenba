@@ -18,7 +18,7 @@ func writeOldWebsite(ctx context.Context, tx *sql.Tx, id string, found []byte) e
 	return err
 }
 
-// R-892C-73HP R-WMLZ-K42F R-846Q-O0IX
+// R-XK94-I8J5 R-WMLZ-K42F R-XCXQ-7M2Z
 func TestFactsMigrationAndRollbackResults(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "facts.db")

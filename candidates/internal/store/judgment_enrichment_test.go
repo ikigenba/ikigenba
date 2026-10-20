@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-WL0E-MBX0 R-WJSI-8K6B R-WHCP-H0OX R-WIKL-USFM
+// R-UG0J-M2SV R-UCCU-GRKS R-UDKQ-UJBH R-UESN-8B26
 func TestJudgmentUsesNewestRecordedWebsiteResult(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -67,7 +67,7 @@ func TestJudgmentUsesNewestRecordedWebsiteResult(t *testing.T) {
 
 }
 
-// R-WHCP-H0OX R-WJSI-8K6B
+// R-UDKQ-UJBH R-UCCU-GRKS
 func TestWebsiteEvidenceDeduplicatesWithRowEvidence(t *testing.T) {
 	for _, weight := range []float64{.4, .5, .7} {
 		f := contractDB(t)
@@ -90,7 +90,7 @@ func TestWebsiteEvidenceDeduplicatesWithRowEvidence(t *testing.T) {
 	}
 }
 
-// R-H5QH-WBC8 R-OSZL-VFY2 R-WM8B-03NP
+// R-H5QH-WBC8 R-OSZL-VFY2 R-UIGC-DMA9
 func TestMergeTransfersWebsiteResultsAndSplitLeavesThemOnOriginal(t *testing.T) {
 	for _, originalLatest := range []bool{false, true} {
 		t.Run(map[bool]string{false: "other_latest", true: "original_latest"}[originalLatest], func(t *testing.T) {

@@ -62,6 +62,7 @@ type Member struct {
 	FleetVerdict        string    `json:"fleet_verdict"`
 	Website             string    `json:"website"`
 	WebsiteURL          string    `json:"website_url,omitempty"`
+	WebsiteSource       string    `json:"website_source"`
 	SiteText            *string   `json:"site_text"`
 	Brief               *string   `json:"brief"`
 	Minutes             *int64    `json:"minutes,omitempty"`
@@ -280,6 +281,8 @@ type Assessment struct {
 	Drivers             *int64     `json:"drivers,omitempty"`
 	Website             string     `json:"website"`
 	WebsiteURL          string     `json:"website_url,omitempty"`
+	WebsiteSource       string     `json:"website_source"`
+	WebsiteSearchAt     string     `json:"website_search_at,omitempty"`
 	Minutes             *int64     `json:"minutes,omitempty"`
 	Brief               string     `json:"brief,omitempty"`
 	Excluded            bool       `json:"excluded"`

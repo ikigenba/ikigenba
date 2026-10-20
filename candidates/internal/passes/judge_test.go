@@ -31,7 +31,7 @@ func judgeDelivery(id string) events.Delivery {
 	return events.Delivery{Event: events.Event{Name: trail.AcceptedJudge, ID: id, Attrs: events.Attrs{"anything": true}}}
 }
 
-// R-ZRW3-1A2O R-T04G-UXAU R-SWGR-PM2R R-SV8V-BUC2 R-ML31-W3H8
+// R-ZRW3-1A2O R-T04G-UXAU R-SWGR-PM2R R-2V5V-HLUP R-2TXZ-3U40
 func TestJudgeSeparatesIngestFromAssessment(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/runs/run_a/record" {

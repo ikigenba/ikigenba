@@ -15,7 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-3VZN-BZMO R-0CHH-GGWJ R-0DPD-U8N8
+// R-DUEN-N7F8 R-E2XY-BLM3 R-E1Q1-XTVE
 func TestEnrichmentAndWebsiteViews(t *testing.T) {
 	at := fixtureTime()
 	x := store.Enrichment{Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteHTTPS, URL: "https://fixture.example.test/", Title: "fixture-title", StatusCode: 200, Size: 1256}), Source: "fixture.example.test", At: at}
@@ -45,7 +45,7 @@ func TestEnrichmentAndWebsiteViews(t *testing.T) {
 	}
 }
 
-// R-BMK4-WIGX R-BNS1-AA7M R-AJ8K-KIAW R-BIWF-R78U
+// R-BMK4-WIGX R-EBH8-ZZSY R-AJ8K-KIAW R-E0I5-K24P
 func TestWebsiteFiltersAndStoredMember(t *testing.T) {
 	f := store.CohortFilters{Website: []string{sources.WebsiteNone, sources.WebsiteHTTP}, WebsiteUnknown: true}
 	if got := filtersView(f); !reflect.DeepEqual(got.Website, f.Website) || !got.WebsiteUnknown {
@@ -88,7 +88,7 @@ func capturedCandidate(t *testing.T, cfg Config, id string) CandidateData {
 	return got
 }
 
-// R-GT5X-8L24 R-GUDT-MCST R-BGGM-ZNRG R-GN2F-BQCN R-BNS1-AA7M
+// R-E6LN-GWU6 R-GUDT-MCST R-BGGM-ZNRG R-DT6R-9FOJ R-EBH8-ZZSY
 func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()

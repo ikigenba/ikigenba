@@ -410,7 +410,7 @@ func TestDeliveryRecordAndRedelivery(t *testing.T) {
 	}
 }
 
-// R-ZPGA-9QLA R-YWAV-LEL0 R-YXIR-Z6BP R-SRL6-6J3Z R-ZDDG-Y6YQ
+// R-ZPGA-9QLA R-YWAV-LEL0 R-YXIR-Z6BP R-2P2D-KR58 R-ZDDG-Y6YQ
 func TestRebuildBackgroundIdentityAndEvents(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -491,7 +491,7 @@ func TestRebuildBackgroundIdentityAndEvents(t *testing.T) {
 	}
 }
 
-// R-ML31-W3H8 R-SQD9-SRDA R-SRL6-6J3Z R-SWGR-PM2R R-Z3M9-W116 R-GU9F-TVQY
+// R-2TXZ-3U40 R-2SQ2-Q2DB R-2P2D-KR58 R-SWGR-PM2R R-Z3M9-W116 R-GU9F-TVQY
 func TestResolutionAndRebuild(t *testing.T) {
 	var stateMu sync.Mutex
 	rows := 3
@@ -602,7 +602,7 @@ func TestResolutionAndRebuild(t *testing.T) {
 	}
 }
 
-// R-Z4U6-9SRV R-SF2K-0S3I R-Z9PR-SVQN R-SXOO-3DTG
+// R-Z4U6-9SRV R-SF2K-0S3I R-Z9PR-SVQN R-2WDR-VDLE
 func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	released, firstBatch := make(chan struct{}), make(chan struct{})
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -680,7 +680,7 @@ func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	}
 }
 
-// R-Z9PR-SVQN R-SF2K-0S3I R-SXOO-3DTG
+// R-Z9PR-SVQN R-SF2K-0S3I R-2WDR-VDLE
 func TestFailedReads(t *testing.T) {
 	for _, mode := range []string{"short", "500", "malformed", "not_done", "missing_current", "dead"} {
 		t.Run(mode, func(t *testing.T) {
@@ -736,7 +736,7 @@ func TestFailedReads(t *testing.T) {
 	}
 }
 
-// R-T9VN-X38E R-ZH16-3I6T R-SXOO-3DTG R-YOZH-AS4U
+// R-T9VN-X38E R-ZH16-3I6T R-2WDR-VDLE R-YOZH-AS4U
 func TestDrainCancelsReadsAndPendingDelivery(t *testing.T) {
 	for _, which := range []string{"rows", "record"} {
 		t.Run(which, func(t *testing.T) {
@@ -927,7 +927,7 @@ func (r *failCandidateRandom) Read(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// R-SXOO-3DTG
+// R-2WDR-VDLE
 func TestStoreFailureReason(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/current") {

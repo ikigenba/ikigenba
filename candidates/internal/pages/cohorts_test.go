@@ -20,7 +20,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-BHOJ-DFI5 R-AJ8K-KIAW R-BIWF-R78U R-AQD8-1DY8 R-AK9Q-4J8R R-AST0-SXFM
+// R-BHOJ-DFI5 R-AJ8K-KIAW R-E0I5-K24P R-AQD8-1DY8 R-AK9Q-4J8R R-AST0-SXFM
 func TestCohortViewContracts(t *testing.T) {
 	low, high, minutes, days := int64(5000000), int64(9000000), int64(120), int64(730)
 	government := false
@@ -74,7 +74,7 @@ func TestCohortViewContracts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := CohortData{page.Banner{}, want, 5, 0, []MemberRow{{1, "id", "name", "city", "state", "operating", "low", "high", "confidence", []string{"category"}, "chosen-classifier", "class", "verdict", "chosen-website", "https://chosen.example.test/", "site-text-at", "site-text-text", "brief-at", "brief-text", "minutes", "government", "since", "since-text", "filing", "filing-text", true}}, []RejectRow{rejectRow(r)}}
+	d := CohortData{page.Banner{}, want, 5, 0, []MemberRow{{1, "id", "name", "city", "state", "operating", "low", "high", "confidence", []string{"category"}, "chosen-classifier", "class", "verdict", "chosen-website", "https://chosen.example.test/", "chosen-source", "site-text-at", "site-text-text", "brief-at", "brief-text", "minutes", "government", "since", "since-text", "filing", "filing-text", true}}, []RejectRow{rejectRow(r)}}
 	if d.Members[0].Website != "chosen-website" || d.Members[0].WebsiteURL != "https://chosen.example.test/" {
 		t.Fatal("member positional shape")
 	}
@@ -102,7 +102,7 @@ func pageCohort(t *testing.T, cfg Config, id string) CohortData {
 	return d
 }
 
-// R-AV8T-KGX0 R-BLC8-IQQ8 R-GT5X-8L24 R-GUDT-MCST R-4D28-OS0E R-BIEW-U407 R-BH70-GC9I
+// R-AV8T-KGX0 R-BLC8-IQQ8 R-E6LN-GWU6 R-GUDT-MCST R-4D28-OS0E R-BIEW-U407 R-BH70-GC9I
 func TestCohortAndRejectHistoryPages(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()

@@ -217,7 +217,7 @@ func TestTargetRefusals(t *testing.T) {
 	}
 }
 
-// R-TH72-7POK R-TIEY-LHF9 R-TJMU-Z95Y R-TOIG-IC4Q R-TTE2-1F3I R-MJV5-IBQJ R-TY9N-KI2A R-TZHJ-Y9SZ R-T8NR-JBHP
+// R-TH72-7POK R-TIEY-LHF9 R-TJMU-Z95Y R-TOIG-IC4Q R-33P6-601K R-2NUH-6ZEJ R-TY9N-KI2A R-38KR-P30C R-301H-0OTH
 func TestPromptPassResultsAndForce(t *testing.T) {
 	for _, status := range []string{"exited", "failed", "killed", "timed_out"} {
 		t.Run(status, func(t *testing.T) {
@@ -288,7 +288,7 @@ func TestPromptPassResultsAndForce(t *testing.T) {
 	}
 }
 
-// R-TVTU-SYKW R-TX1R-6QBL R-SXOO-3DTG R-TQY9-9VM4 R-T1CD-8P1J
+// R-TVTU-SYKW R-34X2-JRS9 R-2WDR-VDLE R-319D-EGK6 R-T1CD-8P1J
 func TestPromptRetriesAndFailures(t *testing.T) {
 	for _, mode := range []string{"retry", "exhausted", "result", "invalid", "show_retry"} {
 		t.Run(mode, func(t *testing.T) {
@@ -363,7 +363,7 @@ func promptAfter(time.Duration) <-chan time.Time {
 	return ch
 }
 
-// R-TKUR-D0WN R-TNAK-4KE1 R-TIEY-LHF9 R-TZHJ-Y9SZ
+// R-TKUR-D0WN R-TNAK-4KE1 R-TIEY-LHF9 R-38KR-P30C
 func TestTargetedDerivedAndWebsite(t *testing.T) {
 	for _, kind := range []string{enrichers.KindLinkFacts, sources.WebsiteCheck} {
 		t.Run(kind, func(t *testing.T) {
@@ -427,7 +427,7 @@ func TestTargetedDerivedAndWebsite(t *testing.T) {
 	}
 }
 
-// R-TPQC-W3VF R-TQY9-9VM4 R-T9VN-X38E R-TB3K-AUZ3 R-TH72-7POK
+// R-TPQC-W3VF R-319D-EGK6 R-T9VN-X38E R-TB3K-AUZ3 R-TH72-7POK
 func TestPromptConcurrencyAndDrain(t *testing.T) {
 	f := newFixture(t, nil, false)
 	ids := seedTarget(t, f, 10)
@@ -525,7 +525,7 @@ func TestRebuildRequestSequence(t *testing.T) {
 	}
 }
 
-// R-TTE2-1F3I R-MJV5-IBQJ: distinct URLs are result data; page copies are pass cost.
+// R-33P6-601K R-2NUH-6ZEJ: distinct URLs are result data; page copies are pass cost.
 func TestPromptCountsPagesAndOutcome(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := seedTarget(t, f, 1)[0]
@@ -574,7 +574,7 @@ func TestPromptCountsPagesAndOutcome(t *testing.T) {
 	}
 }
 
-// R-TS65-NNCT: the default poll reaches a completed run within sixty seconds.
+// R-32H9-S8AV: the default poll reaches a completed run within sixty seconds.
 func TestPromptDefaultPoll(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := seedTarget(t, f, 1)[0]
@@ -590,7 +590,7 @@ func TestPromptDefaultPoll(t *testing.T) {
 	}
 }
 
-// R-TIEY-LHF9 R-TKUR-D0WN R-TNAK-4KE1 R-TOIG-IC4Q R-TZHJ-Y9SZ
+// R-TIEY-LHF9 R-TKUR-D0WN R-TNAK-4KE1 R-TOIG-IC4Q R-38KR-P30C
 func TestCohortSelectionSkipsNoWebsiteAndPreservesOutside(t *testing.T) {
 	f := newFixture(t, nil, false)
 	ids := seedTarget(t, f, 4)
@@ -651,7 +651,7 @@ func TestCohortSelectionSkipsNoWebsiteAndPreservesOutside(t *testing.T) {
 	}
 }
 
-// R-TX1R-6QBL R-TQY9-9VM4: one failed result cancels other held polls without waiting.
+// R-34X2-JRS9 R-319D-EGK6: one failed result cancels other held polls without waiting.
 func TestPromptFailureCancelsOtherRunsAndKeepsPriorResult(t *testing.T) {
 	f := newFixture(t, nil, false)
 	ids := seedTarget(t, f, 6)
@@ -818,7 +818,7 @@ func TestConcurrentTargetStarts(t *testing.T) {
 	f.eng.Drain(context.Background())
 }
 
-// R-MJV5-IBQJ R-ML31-W3H8 R-TTE2-1F3I R-TJMU-Z95Y R-TY9N-KI2A R-TZHJ-Y9SZ
+// R-2NUH-6ZEJ R-2TXZ-3U40 R-33P6-601K R-TJMU-Z95Y R-TY9N-KI2A R-38KR-P30C
 func TestBriefTargetLifecycleAndCounts(t *testing.T) {
 	f := newFixture(t, nil, false)
 	ctx := context.Background()

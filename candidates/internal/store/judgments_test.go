@@ -21,7 +21,7 @@ func near(t *testing.T, p *float64, w float64) {
 	}
 }
 
-// R-WJSI-8K6B R-WIKL-USFM R-EHCU-HV8K R-BN2B-WQID R-WHCP-H0OX
+// R-UCCU-GRKS R-UESN-8B26 R-EHCU-HV8K R-BN2B-WQID R-UDKQ-UJBH
 func TestJudgmentsAggregateAndPersist(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -265,7 +265,7 @@ func TestJudgePassTriggerRepeatsAcrossDeliveries(t *testing.T) {
 	contractEqual(t, got.Unranged, int64(2))
 }
 
-// R-BN2B-WQID R-WHCP-H0OX R-WJSI-8K6B
+// R-BN2B-WQID R-UDKQ-UJBH R-UCCU-GRKS
 func TestJudgmentConflictsFollowLinkOrder(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -325,7 +325,7 @@ func TestJudgmentConflictsFollowLinkOrder(t *testing.T) {
 	contractEqual(t, a.FleetVerdict, sources.FleetUnknown)
 }
 
-// R-WJSI-8K6B R-WIKL-USFM
+// R-UCCU-GRKS R-UESN-8B26
 func TestJudgmentFleetUsesOnlyFreshestLiveFMCSA(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -399,7 +399,7 @@ func TestJudgmentFleetUsesOnlyFreshestLiveFMCSA(t *testing.T) {
 	check(sources.FleetUnknown, nil, nil)
 }
 
-// R-EHCU-HV8K R-WIKL-USFM
+// R-EHCU-HV8K R-UESN-8B26
 func TestJudgeAllAgreesWithExplicitActiveIDs(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -426,7 +426,7 @@ func TestJudgeAllAgreesWithExplicitActiveIDs(t *testing.T) {
 	contractEqual(t, afterRejects, rejects)
 }
 
-// R-WM8B-03NP
+// R-UIGC-DMA9
 func TestRulingJudgmentsUpdateCohortMembership(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -466,7 +466,7 @@ func TestRulingJudgmentsUpdateCohortMembership(t *testing.T) {
 	}
 }
 
-// R-WM8B-03NP
+// R-UIGC-DMA9
 func TestMovingRulingsWriteTheSameJudgmentsAsJudge(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

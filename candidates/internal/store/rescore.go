@@ -45,7 +45,7 @@ func assessment(r *records, c Candidate, f Facts, t time.Time) ([]sources.Estima
 		}
 	}
 	overlayFacts(&a, f)
-	if f.Website == sources.WebsiteHTTPS || f.Website == sources.WebsiteHTTP {
+	if (f.Website == sources.WebsiteHTTPS || f.Website == sources.WebsiteHTTP) && f.WebsiteSource != WebsiteBySearch {
 		e := sources.Evidence{Name: sources.EvidenceWebsiteLive, Source: sources.WebsiteCheck, Weight: .5, Description: sources.DescribeWebsiteLive}
 		if old, ok := evidence[e.Name]; !ok || e.Weight > old.Weight {
 			evidence[e.Name] = e

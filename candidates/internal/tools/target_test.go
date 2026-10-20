@@ -72,7 +72,7 @@ type promptRunArgs struct {
 	Run string `json:"run"`
 }
 
-func promptClient(t *testing.T, reject bool, calls *atomic.Int64) *prompts.Client {
+func promptClient(t *testing.T, reject bool, calls *atomic.Int64, kinds ...string) *prompts.Client {
 	t.Helper()
 	w := telemetry.New(telemetry.Config{Service: "fixture", Sink: &telemetry.Capture{}, Now: func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }, Sleep: func(context.Context, time.Duration) {}, Rand: &random{}})
 	srv := mcp.NewServer(mcp.ServerConfig{Name: "fixture", Telemetry: w})
@@ -89,7 +89,11 @@ func promptClient(t *testing.T, reject bool, calls *atomic.Int64) *prompts.Clien
 		if c.UserID != other.UserID {
 			t.Errorf("prompt caller %v", c)
 		}
-		if a.Name != enrichers.PromptName(enrichers.KindSiteText) {
+		kind := enrichers.KindSiteText
+		if len(kinds) > 0 {
+			kind = kinds[0]
+		}
+		if a.Name != enrichers.PromptName(kind) {
 			t.Errorf("prompt name %s", a.Name)
 		}
 		if reject {

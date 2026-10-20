@@ -17,7 +17,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
-// R-L6OT-OWJS R-JZT7-1YMP R-K5WO-YTC6 R-K8CH-QCTK R-K9KE-44K9
+// R-L6OT-OWJS R-IDJA-FDOS R-K5WO-YTC6 R-K8CH-QCTK R-K9KE-44K9
 func TestBriefClient(t *testing.T) {
 	type word string
 	const kind word = enrichers.KindBrief
@@ -43,11 +43,11 @@ func TestBriefClient(t *testing.T) {
 			t.Fatal("deriver")
 		}
 		reg := enrichers.New(enrichers.Config{Prompts: c})
-		want := []enrichers.Enricher{enrichers.DriveMinutes{}, enrichers.LinkFacts{}, enrichers.WebsiteCheck{}, enrichers.SiteText{Prompts: c}, enrichers.Brief{Prompts: c}}
+		want := []enrichers.Enricher{enrichers.DriveMinutes{}, enrichers.LinkFacts{}, enrichers.WebsiteCheck{}, enrichers.WebsiteSearch{Prompts: c}, enrichers.SiteText{Prompts: c}, enrichers.Brief{Prompts: c}}
 		if !reflect.DeepEqual(reg.All(), want) {
 			t.Fatal(reg.All())
 		}
-		if reg.All()[3].(enrichers.SiteText).Prompts != c || reg.All()[4].(enrichers.Brief).Prompts != c {
+		if reg.All()[4].(enrichers.SiteText).Prompts != c || reg.All()[5].(enrichers.Brief).Prompts != c {
 			t.Fatal("shared client lost")
 		}
 	}
@@ -209,7 +209,7 @@ func TestBriefRecordEncoding(t *testing.T) {
 	}
 }
 
-// R-KD83-9FSC
+// R-IPQA-933Q
 func TestBriefFoundOutput(t *testing.T) {
 	b := enrichers.Brief{}
 	for _, tc := range []struct {
@@ -233,7 +233,7 @@ func TestBriefFoundOutput(t *testing.T) {
 			out := prompts.Outcome{ID: "run_fixture", Status: status, ExitCode: code, CostNanos: 1500000000, Stdout: tc.stdout}
 			want := enrichers.BriefFound{Run: out.ID, Status: status, ExitCode: code, CostNanos: out.CostNanos, Summary: tc.summary, Categories: tc.categories, Labels: tc.labels}
 			encoded, _ := json.Marshal(want)
-			r := b.Found(out, 3)
+			r := b.Found(context.Background(), out, 3)
 			if r.Source != enrichers.SourcePrompts || r.Cost != 1.5 || !bytes.Equal(r.Found, encoded) || !b.Valid(r.Found) {
 				t.Fatal(string(r.Found), string(encoded))
 			}
@@ -246,14 +246,14 @@ func TestBriefFoundOutput(t *testing.T) {
 			out.ReasoningTokens = 6
 			out.Started = time.Unix(10, 0)
 			out.Finished = time.Unix(20, 0)
-			if !reflect.DeepEqual(b.Found(out, 0), r) {
+			if !reflect.DeepEqual(b.Found(context.Background(), out, 0), r) {
 				t.Fatal("unrelated outcome retained")
 			}
 		}
 	}
 }
 
-// R-KFNW-0Z9Q
+// R-IS63-0ML4
 func TestBriefValidation(t *testing.T) {
 	b := enrichers.Brief{}
 	for _, raw := range []string{`{"run":"r","status":"killed","categories":[],"labels":[]}`, ` {"run":"r","status":"killed","categories":[],"labels":[],"exit_code":null,"summary":""} `, `{"run":"r","status":"killed","categories":[{"name":"retail","why":""}],"labels":[]}`} {

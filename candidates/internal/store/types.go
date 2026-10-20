@@ -51,23 +51,23 @@ type Link struct {
 
 // Assessment is the last stored score and its evidence.
 type Assessment struct {
-	Candidate               string
-	Operating               *float64
-	OperatingKey            int64
-	Evidence                []sources.Evidence
-	RevenueLow, RevenueHigh *int64
-	RevenueConfidence       *float64
-	KnownSince              time.Time
-	GovernmentMatch         string
-	NewestFiling            time.Time
-	Categories              []sources.Category
-	FleetVerdict            string
-	PowerUnits, Drivers     *int64
-	Website, WebsiteURL     string
-	Minutes                 *int64
-	Excluded                bool
-	Rules                   int64
-	Calculated              time.Time
+	Candidate                          string
+	Operating                          *float64
+	OperatingKey                       int64
+	Evidence                           []sources.Evidence
+	RevenueLow, RevenueHigh            *int64
+	RevenueConfidence                  *float64
+	KnownSince                         time.Time
+	GovernmentMatch                    string
+	NewestFiling                       time.Time
+	Categories                         []sources.Category
+	FleetVerdict                       string
+	PowerUnits, Drivers                *int64
+	Website, WebsiteURL, WebsiteSource string
+	Minutes                            *int64
+	Excluded                           bool
+	Rules                              int64
+	Calculated                         time.Time
 }
 
 // Enrichment is one recorded result.
@@ -83,18 +83,18 @@ type Due struct{ Candidate, Inputs string }
 
 // Facts records the latest enrichment facts.
 type Facts struct {
-	Candidate           string
-	KnownSince          time.Time
-	GovernmentMatch     string
-	NewestFiling        time.Time
-	Categories          []sources.Category
-	Records             []sources.Category
-	FleetVerdict        string
-	PowerUnits, Drivers *int64
-	Website, WebsiteURL string
-	Minutes             *int64
-	Brief               string
-	Written             []Written
+	Candidate                          string
+	KnownSince                         time.Time
+	GovernmentMatch                    string
+	NewestFiling                       time.Time
+	Categories                         []sources.Category
+	Records                            []sources.Category
+	FleetVerdict                       string
+	PowerUnits, Drivers                *int64
+	Website, WebsiteURL, WebsiteSource string
+	Minutes                            *int64
+	Brief                              string
+	Written                            []Written
 }
 
 // Written records the result time used for one kind.
@@ -141,6 +141,8 @@ type Ranked struct {
 
 // Record vocabulary and identifier prefixes.
 const (
+	WebsiteByCheck    = "check"
+	WebsiteBySearch   = "search"
 	CandidateIDPrefix = "cand_"
 	PassIDPrefix      = "pass_"
 	StatusActive      = "active"

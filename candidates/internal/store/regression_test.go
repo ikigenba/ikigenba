@@ -356,7 +356,7 @@ func TestResolutionSplitAndPersistence(t *testing.T) {
 	regEqual(t, rs, []store.Ruling{pair, r})
 }
 
-// R-WHCP-H0OX R-5JWX-756T R-GSL2-9AIP R-GL9N-YO2J R-GMHK-CFT8
+// R-UDKQ-UJBH R-5JWX-756T R-GSL2-9AIP R-GL9N-YO2J R-GMHK-CFT8
 func TestResolutionMergeAndNotSame(t *testing.T) {
 	f := regNew(t)
 	a := regObs("one", "First")
@@ -515,7 +515,7 @@ func TestResolutionOldestTieAndGoneIdentity(t *testing.T) {
 	regEqual(t, touched, wantIDs)
 }
 
-// R-GMHK-CFT8 R-WM8B-03NP
+// R-GMHK-CFT8 R-UIGC-DMA9
 func TestScoringMergeAndSplitAssessOnlyActiveSides(t *testing.T) {
 	f := regNew(t)
 	regNoErr(t, f.st.ReplaceZipDrive(regCtx, map[string]int64{"55072": 18}))

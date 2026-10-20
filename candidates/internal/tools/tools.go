@@ -407,7 +407,7 @@ func estimateOf(e sources.Estimate) Estimate {
 	return Estimate{e.Source, e.Low, e.High, e.Confidence, e.Facts, date(e.Filed), e.Formula}
 }
 func assessmentOf(a store.Assessment) Assessment {
-	v := Assessment{OperatingConfidence: a.Operating, OperatingEvidence: []Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, KnownSince: date(a.KnownSince), NewestFiling: date(a.NewestFiling), Categories: []Category{}, ClassifiedBy: store.ClassifiedBy(a.Categories), RecordCategories: []Category{}, GovernmentMatch: a.GovernmentMatch, FleetVerdict: a.FleetVerdict, PowerUnits: a.PowerUnits, Drivers: a.Drivers, Website: a.Website, WebsiteURL: a.WebsiteURL, Minutes: a.Minutes, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
+	v := Assessment{OperatingConfidence: a.Operating, OperatingEvidence: []Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, KnownSince: date(a.KnownSince), NewestFiling: date(a.NewestFiling), Categories: []Category{}, ClassifiedBy: store.ClassifiedBy(a.Categories), RecordCategories: []Category{}, GovernmentMatch: a.GovernmentMatch, FleetVerdict: a.FleetVerdict, PowerUnits: a.PowerUnits, Drivers: a.Drivers, Website: a.Website, WebsiteURL: a.WebsiteURL, WebsiteSource: a.WebsiteSource, Minutes: a.Minutes, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
 	for _, e := range a.Evidence {
 		v.OperatingEvidence = append(v.OperatingEvidence, Evidence{e.Name, e.Source, e.Weight, e.Description})
 	}
@@ -418,7 +418,7 @@ func assessmentOf(a store.Assessment) Assessment {
 }
 func memberOf(e store.Ranked) Member {
 	a := e.Assessment
-	v := Member{Candidate: candidateOf(e.Candidate), OperatingConfidence: a.Operating, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(a.Categories), FleetVerdict: a.FleetVerdict, Website: a.Website, WebsiteURL: a.WebsiteURL, KnownSince: date(a.KnownSince), NewestFiling: date(a.NewestFiling), Excluded: a.Excluded, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch}
+	v := Member{Candidate: candidateOf(e.Candidate), OperatingConfidence: a.Operating, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(a.Categories), FleetVerdict: a.FleetVerdict, Website: a.Website, WebsiteURL: a.WebsiteURL, WebsiteSource: a.WebsiteSource, KnownSince: date(a.KnownSince), NewestFiling: date(a.NewestFiling), Excluded: a.Excluded, Minutes: a.Minutes, GovernmentMatch: a.GovernmentMatch}
 	if !e.SiteText.IsZero() {
 		t := stamp(e.SiteText)
 		v.SiteText = &t
@@ -465,6 +465,11 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 			f, err := cfg.Store.GetFacts(ctx, id)
 			if err == nil {
 				v.Brief = f.Brief
+				for _, w := range f.Written {
+					if w.Kind == enrichers.KindWebsiteSearch {
+						v.WebsiteSearchAt = stamp(w.At)
+					}
+				}
 				v.RecordsDiffer = store.RecordsDiffer(f.Categories, f.Records)
 				if v.RecordsDiffer {
 					for _, c := range f.Records {

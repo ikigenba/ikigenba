@@ -256,7 +256,7 @@ func (e *Engine) promptOne(ctx context.Context, pr enrichers.Prompter, d store.D
 		if err != nil {
 			return total, store.ReasonStore
 		}
-		r := pr.Found(out, after.URLs)
+		r := pr.Found(ctx, out, after.URLs)
 		if !pr.Valid(r.Found) {
 			return total, store.ReasonPrompts
 		}

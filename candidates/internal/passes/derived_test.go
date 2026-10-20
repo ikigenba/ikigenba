@@ -19,7 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-SNXH-17VW R-SMPK-NG57 R-SLHO-9OEI R-1QFF-85G4 R-T7FV-5JR0 R-T8NR-JBHP
+// R-2QA9-YIVX R-SMPK-NG57 R-SLHO-9OEI R-1QFF-85G4 R-T7FV-5JR0 R-301H-0OTH
 func TestDerivedKindsAndIdempotentAll(t *testing.T) {
 	for _, kind := range []string{"", enrichers.KindDriveMinutes, enrichers.KindLinkFacts} {
 		t.Run(kind, func(t *testing.T) {
@@ -152,7 +152,7 @@ func TestDerivedKindsAndIdempotentAll(t *testing.T) {
 	}
 }
 
-// R-SP5D-EZML R-SMPK-NG57 R-SLHO-9OEI R-1QFF-85G4
+// R-2RI6-CAMM R-SMPK-NG57 R-SLHO-9OEI R-1QFF-85G4
 func TestDerivedFactsExistBeforeFirstFetch(t *testing.T) {
 	f := newFixture(t, nil, false)
 	ids := seedEmails(t, f, 1, func(int) string { return "owner@derived.test" })
@@ -255,7 +255,7 @@ func TestWebsiteInputsChangeRecordsAnotherResult(t *testing.T) {
 	}
 }
 
-// R-UOR9-3XOC R-ML31-W3H8 R-SQD9-SRDA R-SWGR-PM2R R-T8NR-JBHP
+// R-364Y-XJIY R-2TXZ-3U40 R-2SQ2-Q2DB R-SWGR-PM2R R-301H-0OTH
 func TestRebuildForcesDerivedResultsBeforeJudging(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/scrapers/fmcsa/current" {
@@ -332,7 +332,7 @@ func equalInt(a, b *int64) bool {
 	return *a == *b
 }
 
-// R-UOR9-3XOC
+// R-364Y-XJIY
 func TestRebuildPersistsDerivedFactsInHistoricalAssessment(t *testing.T) {
 	rows := []scrapes.Row{
 		{Scraper: ppp.Name, Run: "ppp-current", SourceID: "original", Digest: "one", Name: "Original Carrier", Address: scrapes.Address{State: "MN", Zip: "55072"}, Facts: map[string]json.RawMessage{}, Raw: json.RawMessage(`{}`)},

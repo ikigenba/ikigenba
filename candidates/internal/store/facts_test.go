@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-85EN-1S9M R-OU7I-97OR R-WPW0-5EVS R-WOO3-RN53
+// R-XE5M-LDTO R-OU7I-97OR R-WPW0-5EVS R-XE5M-LDTO
 func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -70,7 +70,7 @@ func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 	contractEqual(t, facts.Website, sources.WebsiteUnknown)
 }
 
-// R-MOMA-IP7M R-R7HY-562T R-LD70-4W25 R-WNG7-DVEE R-MTHW-1S6E
+// R-AZ25-CAGJ R-UKW5-55RN R-R7HY-562T R-LD70-4W25 R-UJO8-RE0Y R-MTHW-1S6E
 func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -116,6 +116,7 @@ func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	contractEqual(t, cs[1], oldCandidate)
 	merged, err := f.s.GetAssessment(ctx, other)
 	contractOK(t, err)
+	old.WebsiteSource = ""
 	contractEqual(t, merged, old)
 	estimates, err := f.s.Estimates(ctx, other)
 	contractOK(t, err)
@@ -287,7 +288,7 @@ func TestOrdinaryWritesPreserveFactsAndResultHistory(t *testing.T) {
 	}
 }
 
-// R-7UFJ-LULD R-GSBL-OU6L R-80J1-IPAU
+// R-X5MB-WZMT R-GSBL-OU6L R-X9A1-2AUW
 func TestFactsProjectionUsesNewestResultOfEveryKind(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -303,7 +304,7 @@ func TestFactsProjectionUsesNewestResultOfEveryKind(t *testing.T) {
 	_, err := f.s.AddEnrichments(ctx, first)
 	contractOK(t, err)
 	stamp := f.now.UTC().Truncate(time.Second)
-	expected := store.Facts{Candidate: id, KnownSince: time.Date(2018, 4, 9, 0, 0, 0, 0, time.UTC), NewestFiling: time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: lf.GovernmentMatch, Categories: []sources.Category{{Name: sources.CategoryConstruction, Source: ppp.Name}, {Name: sources.CategoryTrucking, Source: fmcsa.Name}}, FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, Website: sources.WebsiteHTTPS, WebsiteURL: websiteDecoded(first[2]).URL, Minutes: &low, Written: []store.Written{{Kind: enrichers.KindDriveMinutes, At: stamp}, {Kind: enrichers.KindLinkFacts, At: stamp}, {Kind: sources.WebsiteCheck, At: stamp}}}
+	expected := store.Facts{Candidate: id, KnownSince: time.Date(2018, 4, 9, 0, 0, 0, 0, time.UTC), NewestFiling: time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: lf.GovernmentMatch, Categories: []sources.Category{{Name: sources.CategoryConstruction, Source: ppp.Name}, {Name: sources.CategoryTrucking, Source: fmcsa.Name}}, FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, Website: sources.WebsiteHTTPS, WebsiteURL: websiteDecoded(first[2]).URL, WebsiteSource: store.WebsiteByCheck, Minutes: &low, Written: []store.Written{{Kind: enrichers.KindDriveMinutes, At: stamp}, {Kind: enrichers.KindLinkFacts, At: stamp}, {Kind: sources.WebsiteCheck, At: stamp}}}
 	expected.Records = append([]sources.Category{}, expected.Categories...)
 	got, err := f.s.GetFacts(ctx, id)
 	contractOK(t, err)
@@ -330,6 +331,7 @@ func TestFactsProjectionUsesNewestResultOfEveryKind(t *testing.T) {
 	expected.Drivers = nil
 	expected.Website = sources.WebsiteNone
 	expected.WebsiteURL = ""
+	expected.WebsiteSource = ""
 	got, err = f.s.GetFacts(ctx, id)
 	contractOK(t, err)
 	contractEqual(t, got, expected)

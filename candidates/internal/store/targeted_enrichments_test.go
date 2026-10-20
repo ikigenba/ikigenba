@@ -9,6 +9,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 // R-M10O-KUCX R-OFKP-NYSF
@@ -22,12 +23,13 @@ func TestSubjectReadsDisplayLinksAndCurrentFacts(t *testing.T) {
 		contractOK(t, err)
 		links, err := f.s.Links(ctx, id)
 		contractOK(t, err)
-		want := enrichers.Subject{ID: c.ID, Name: c.Name, City: c.City, State: c.State, Email: c.Email, Zip: c.Zip, Links: []enrichers.Link{}, Pages: []enrichers.Page{}}
+		want := enrichers.Subject{ID: c.ID, Name: c.Name, Street: c.Street, Phone: c.Phone, City: c.City, State: c.State, Email: c.Email, Zip: c.Zip, Links: []enrichers.Link{}, Pages: []enrichers.Page{}}
 		if m, e := f.s.ZipMinutes(ctx, c.Zip); e == nil {
 			want.Minutes = &m
 		}
 		if facts, e := f.s.GetFacts(ctx, id); e == nil {
 			want.Website = facts.WebsiteURL
+			want.WebsiteSource = facts.WebsiteSource
 			want.Facts = &enrichers.LinkFound{GovernmentMatch: facts.GovernmentMatch, FleetVerdict: facts.FleetVerdict, PowerUnits: facts.PowerUnits, Drivers: facts.Drivers, Categories: []enrichers.Category{}}
 			if !facts.KnownSince.IsZero() {
 				want.Facts.KnownSince = facts.KnownSince.UTC().Format("2006-01-02")
@@ -37,6 +39,15 @@ func TestSubjectReadsDisplayLinksAndCurrentFacts(t *testing.T) {
 			}
 			for _, c := range facts.Categories {
 				want.Facts.Categories = append(want.Facts.Categories, enrichers.Category{Name: c.Name, Source: c.Source})
+			}
+		}
+		results, e := f.s.Enrichments(ctx, id)
+		contractOK(t, e)
+		for _, r := range results {
+			if r.Kind == sources.WebsiteCheck && r.Inputs == website.Domain(c.Email) {
+				want.Check = &website.Result{}
+				contractOK(t, json.Unmarshal(r.Found, want.Check))
+				break
 			}
 		}
 		for _, l := range links {
@@ -99,7 +110,7 @@ func TestDueAmongKeepsTargetOrderAndSkipsIneligible(t *testing.T) {
 	}
 }
 
-// R-82YU-A8S8 R-OKGB-71R7 R-OVFE-MZFG R-OWNB-0R65
+// R-XBPT-TUCA R-OKGB-71R7 R-OVFE-MZFG R-OWNB-0R65
 func TestDeriveAmongRecordsOnlyDistinctEligibleTargets(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -170,7 +181,7 @@ func siteTextResult(t *testing.T, id, status string) store.Enrichment {
 	return store.Enrichment{Candidate: id, Kind: enrichers.KindSiteText, Inputs: "https://business.test/", Source: enrichers.SourcePrompts, Found: b, Cost: 1.25}
 }
 
-// R-BH37-QZVH R-80J1-IPAU
+// R-BH37-QZVH R-X9A1-2AUW
 func TestSiteTextWrittenProjectsIntoCohortWithoutChangingMembership(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -219,7 +230,7 @@ func TestSiteTextWrittenProjectsIntoCohortWithoutChangingMembership(t *testing.T
 	contractEqual(t, cohortRead(t, f, cohort), got)
 }
 
-// R-82YU-A8S8
+// R-XBPT-TUCA
 func TestDeriveAmongNeverRecordsEmptyInputs(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

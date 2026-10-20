@@ -19,7 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-UPZ5-HPF1
+// R-37CV-BB9N
 func TestRebuildReprojectsUnchangedLinkFactsBeforeHistoricalJudgment(t *testing.T) {
 	ctx := context.Background()
 	rows := []scrapes.Row{

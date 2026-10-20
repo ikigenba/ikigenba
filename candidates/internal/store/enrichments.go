@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
+	"github.com/ikigenba/ikigenba/candidates/internal/sources"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 func enrichmentRecords(ctx context.Context, tx *sql.Tx, where string, args ...any) ([]Enrichment, error) {
@@ -136,13 +138,14 @@ func subject(ctx context.Context, tx *sql.Tx, c Candidate, pages bool) (enricher
 	if err != nil {
 		return enrichers.Subject{}, err
 	}
-	out := enrichers.Subject{ID: c.ID, Name: c.Name, City: c.City, State: c.State, Email: c.Email, Zip: c.Zip, Links: []enrichers.Link{}, Pages: []enrichers.Page{}}
+	out := enrichers.Subject{ID: c.ID, Name: c.Name, Street: c.Street, Phone: c.Phone, City: c.City, State: c.State, Email: c.Email, Zip: c.Zip, Links: []enrichers.Link{}, Pages: []enrichers.Page{}}
 	for _, l := range linksFor(r, c.ID) {
 		out.Links = append(out.Links, enrichers.Link{Scraper: l.Scraper, SourceID: l.SourceID, Gone: l.Gone, Reading: l.Reading})
 	}
 	f, err := factsKey(ctx, tx, c.ID)
 	if err == nil {
 		out.Website = f.WebsiteURL
+		out.WebsiteSource = f.WebsiteSource
 		out.Facts = &enrichers.LinkFound{GovernmentMatch: f.GovernmentMatch, FleetVerdict: f.FleetVerdict, PowerUnits: f.PowerUnits, Drivers: f.Drivers, Categories: []enrichers.Category{}}
 		if !f.KnownSince.IsZero() {
 			out.Facts.KnownSince = f.KnownSince.UTC().Format("2006-01-02")
@@ -157,6 +160,19 @@ func subject(ctx context.Context, tx *sql.Tx, c Candidate, pages bool) (enricher
 		return out, err
 	}
 	if pages {
+		domain := website.Domain(c.Email)
+		if domain != "" {
+			checks, e := enrichmentRecords(ctx, tx, " WHERE candidate=? AND kind=? AND inputs=? ORDER BY seq DESC LIMIT 1", c.ID, sources.WebsiteCheck, domain)
+			if e != nil {
+				return out, e
+			}
+			if len(checks) > 0 {
+				out.Check = &website.Result{}
+				if e = json.Unmarshal(checks[0].Found, out.Check); e != nil {
+					return out, e
+				}
+			}
+		}
 		ps, e := readRecords[Page](ctx, tx, "pages", pageColumns, " WHERE candidate=? AND seq IN (SELECT MAX(seq) FROM pages WHERE candidate=? GROUP BY url) ORDER BY (SELECT MIN(p.seq) FROM pages p WHERE p.candidate=pages.candidate AND p.url=pages.url)", c.ID, c.ID)
 		if e != nil {
 			return out, e

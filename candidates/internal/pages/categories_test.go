@@ -10,7 +10,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-BGGM-ZNRG R-BRFQ-FLFP R-BK4C-4YZJ R-BIWF-R78U
+// R-BGGM-ZNRG R-E91G-8GBK R-BK4C-4YZJ R-E0I5-K24P
 func TestCategoryEvidenceViews(t *testing.T) {
 	records := []sources.Category{{Name: sources.CategoryRetail, Source: "ppp"}, {Name: sources.CategoryTrucking, Source: "fmcsa"}}
 	brief := []sources.Category{{Name: sources.CategoryAgriculture, Source: enrichers.KindBrief}, {Name: sources.CategoryRetail, Source: enrichers.KindBrief}}
@@ -40,7 +40,7 @@ func TestCategoryEvidenceViews(t *testing.T) {
 	}
 }
 
-// R-BLC8-IQQ8 R-BHOJ-DFI5 R-BRFQ-FLFP R-BJJ0-IJCV
+// R-BLC8-IQQ8 R-BHOJ-DFI5 R-E91G-8GBK R-ANM6-HRQR
 func TestCategoryEvidencePages(t *testing.T) {
 	cfg, db := pageFixture(t)
 	now := fixtureTime()

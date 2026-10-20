@@ -13,7 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-var factsColumns = columns("candidate:Candidate known_since:KnownSince government_match:GovernmentMatch newest_filing:NewestFiling categories:Categories fleet_verdict:FleetVerdict power_units:PowerUnits drivers:Drivers website:Website website_url:WebsiteURL minutes:Minutes brief:Brief")
+var factsColumns = columns("candidate:Candidate known_since:KnownSince government_match:GovernmentMatch newest_filing:NewestFiling categories:Categories fleet_verdict:FleetVerdict power_units:PowerUnits drivers:Drivers website:Website website_url:WebsiteURL website_source:WebsiteSource minutes:Minutes brief:Brief")
 
 func unknownFacts(id string) Facts {
 	return Facts{Candidate: id, Categories: []sources.Category{}, Records: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown}
@@ -27,17 +27,17 @@ func factsKey(ctx context.Context, tx *sql.Tx, id string) (Facts, error) {
 		return Facts{}, ErrNotFound
 	}
 	f := fs[0]
-	var b, d, l, st, w string
-	if err = scanSQL(ctx, tx, "SELECT brief_at,drive_minutes_at,link_facts_at,site_text_at,website_check_at FROM facts WHERE candidate=?", []any{id}, &b, &d, &l, &st, &w); err != nil {
+	var b, d, l, st, w, ws string
+	if err = scanSQL(ctx, tx, "SELECT brief_at,drive_minutes_at,link_facts_at,site_text_at,website_check_at,website_search_at FROM facts WHERE candidate=?", []any{id}, &b, &d, &l, &st, &w, &ws); err != nil {
 		return Facts{}, err
 	}
-	for i, a := range []string{b, d, l, st, w} {
+	for i, a := range []string{b, d, l, st, w, ws} {
 		if a != "" {
 			t, err := time.Parse(time.RFC3339, a)
 			if err != nil {
 				return Facts{}, err
 			}
-			f.Written = append(f.Written, Written{Kind: []string{enrichers.KindBrief, enrichers.KindDriveMinutes, enrichers.KindLinkFacts, enrichers.KindSiteText, sources.WebsiteCheck}[i], At: t.UTC()})
+			f.Written = append(f.Written, Written{Kind: []string{enrichers.KindBrief, enrichers.KindDriveMinutes, enrichers.KindLinkFacts, enrichers.KindSiteText, sources.WebsiteCheck, enrichers.KindWebsiteSearch}[i], At: t.UTC()})
 		}
 	}
 	f.Records, err = recordCategories(ctx, tx, id)
@@ -55,7 +55,7 @@ func projectFacts(ctx context.Context, tx *sql.Tx, id string) error {
 	seen := map[string]bool{}
 	goodBrief := false
 	briefCategories := []sources.Category{}
-	extra := map[string]any{"drive_minutes_at": "", "link_facts_at": "", "website_check_at": "", "site_text_at": "", "brief_at": ""}
+	extra := map[string]any{"drive_minutes_at": "", "link_facts_at": "", "website_check_at": "", "site_text_at": "", "brief_at": "", "website_search_at": ""}
 	for _, e := range es {
 		if e.Kind == enrichers.KindBrief && !goodBrief && !(enrichers.Brief{}).Failed(e.Found) {
 			var b enrichers.BriefFound
@@ -103,18 +103,10 @@ func projectFacts(ctx context.Context, tx *sql.Tx, id string) error {
 			for _, c := range v.Categories {
 				f.Categories = append(f.Categories, sources.Category{Name: c.Name, Source: c.Source})
 			}
-		case sources.WebsiteCheck:
-			var v website.Result
-			if err = json.Unmarshal(e.Found, &v); err != nil {
-				return err
-			}
-			f.Website = v.State
-			if v.State == sources.WebsiteHTTPS || v.State == sources.WebsiteHTTP {
-				f.WebsiteURL = v.URL
-			}
 		}
 		extra[e.Kind+"_at"] = e.At.Format(time.RFC3339)
 	}
+	f.WebsiteSource, f.Website, f.WebsiteURL = websiteFacts(es)
 	if len(briefCategories) > 0 {
 		f.Categories = briefCategories
 	}
@@ -167,6 +159,7 @@ func overlayFacts(a *Assessment, f Facts) {
 	a.Drivers = f.Drivers
 	a.Website = f.Website
 	a.WebsiteURL = f.WebsiteURL
+	a.WebsiteSource = f.WebsiteSource
 	a.Minutes = f.Minutes
 }
 func assessmentFacts(ctx context.Context, tx *sql.Tx, a *Assessment) error {
@@ -253,4 +246,33 @@ func recordCategories(ctx context.Context, tx *sql.Tx, id string) ([]sources.Cat
 		}
 	}
 	return unique, nil
+}
+
+// websiteFacts chooses a working check before the newest confirmed search.
+func websiteFacts(es []Enrichment) (source, state, url string) {
+	state = sources.WebsiteUnknown
+	checkSeen := false
+	var search *enrichers.WebsiteSearchFound
+	for _, e := range es {
+		if e.Kind == sources.WebsiteCheck && !checkSeen {
+			var v website.Result
+			if json.Unmarshal(e.Found, &v) == nil {
+				checkSeen = true
+				state = v.State
+				if state == sources.WebsiteHTTPS || state == sources.WebsiteHTTP {
+					return WebsiteByCheck, state, v.URL
+				}
+			}
+		}
+		if e.Kind == enrichers.KindWebsiteSearch && search == nil {
+			var v enrichers.WebsiteSearchFound
+			if json.Unmarshal(e.Found, &v) == nil && !v.Failed() && v.Confirmation != nil && (v.Confirmation.State == sources.WebsiteHTTPS || v.Confirmation.State == sources.WebsiteHTTP) {
+				search = &v
+			}
+		}
+	}
+	if search != nil {
+		return WebsiteBySearch, search.Confirmation.State, search.Confirmation.URL
+	}
+	return "", state, ""
 }

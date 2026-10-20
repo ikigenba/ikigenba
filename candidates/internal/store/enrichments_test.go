@@ -39,7 +39,7 @@ func websiteResult(id, state string) store.Enrichment {
 	return store.Enrichment{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "business.test", Source: "business.test", Found: websiteFound(website.Result{State: state, URL: "https://business.test/", StatusCode: 200}), Cost: .02}
 }
 
-// R-GDOT-3LA9 R-P56L-P5D0 R-7VNF-ZMC2 R-GHCI-8WIC
+// R-GDOT-3LA9 R-P56L-P5D0 R-X1YM-ROEQ R-GHCI-8WIC
 func TestEnrichmentShapesAndMethods(t *testing.T) {
 	e := websiteResult("candidate", sources.WebsiteHTTPS)
 	contractEqual(t, store.Enrichment(struct {
@@ -52,18 +52,18 @@ func TestEnrichmentShapesAndMethods(t *testing.T) {
 	contractEqual(t, store.Due(struct{ Candidate, Inputs string }(d)), d)
 	f := store.Facts{Candidate: "candidate", Written: []store.Written{{Kind: sources.WebsiteCheck, At: time.Time{}}}}
 	contractEqual(t, store.Facts(struct {
-		Candidate           string
-		KnownSince          time.Time
-		GovernmentMatch     string
-		NewestFiling        time.Time
-		Categories          []sources.Category
-		Records             []sources.Category
-		FleetVerdict        string
-		PowerUnits, Drivers *int64
-		Website, WebsiteURL string
-		Minutes             *int64
-		Brief               string
-		Written             []store.Written
+		Candidate                          string
+		KnownSince                         time.Time
+		GovernmentMatch                    string
+		NewestFiling                       time.Time
+		Categories                         []sources.Category
+		Records                            []sources.Category
+		FleetVerdict                       string
+		PowerUnits, Drivers                *int64
+		Website, WebsiteURL, WebsiteSource string
+		Minutes                            *int64
+		Brief                              string
+		Written                            []store.Written
 	}(f)), f)
 	contractEqual(t, store.Written(struct {
 		Kind string
@@ -82,7 +82,7 @@ func TestEnrichmentShapesAndMethods(t *testing.T) {
 	checkMethods(st.AddEnrichments, st.DueEnrichments, st.Derive)
 }
 
-// R-80J1-IPAU R-GR3P-B2FW R-GSBL-OU6L R-GX77-7X5D R-OVFE-MZFG R-OWNB-0R65
+// R-X9A1-2AUW R-GR3P-B2FW R-GSBL-OU6L R-GX77-7X5D R-OVFE-MZFG R-OWNB-0R65
 func TestEnrichmentAppendAndMark(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -167,7 +167,7 @@ func TestDueUsesInputs(t *testing.T) {
 	contractError(t, err, store.ErrUnreachable)
 }
 
-// R-81QX-WH1J R-OPBW-Q4PZ R-M10O-KUCX R-7UFJ-LULD R-846Q-O0IX
+// R-XAHX-G2LL R-OPBW-Q4PZ R-M10O-KUCX R-X5MB-WZMT R-XCXQ-7M2Z
 func TestDeriveFactsAndFill(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -229,7 +229,7 @@ func onlyWebsite(es []store.Enrichment) []store.Enrichment {
 	return out
 }
 
-// R-P6EI-2X3P R-OO40-CCZA R-81QX-WH1J R-M10O-KUCX
+// R-P6EI-2X3P R-OO40-CCZA R-XAHX-G2LL R-M10O-KUCX
 func TestDueWindowsAndDerivedSubject(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

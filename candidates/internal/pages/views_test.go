@@ -48,14 +48,14 @@ func TestFormatting(t *testing.T) {
 	}
 }
 
-// R-AAIJ-2DB7 R-GN2F-BQCN R-02QA-EAYZ R-4VMG-YZTE R-3X7J-PRDD R-4ZA6-4B1H
+// R-AAIJ-2DB7 R-DT6R-9FOJ R-02QA-EAYZ R-4VMG-YZTE R-3X7J-PRDD R-4ZA6-4B1H
 func TestTemplateDataShape(t *testing.T) {
 	set, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
 	b := page.Banner{Service: ServiceName}
-	cv := CandidateView{"id", store.StatusActive, "", "name", []string{"alias"}, "street", "city", "MN", "55072", "county", "phone", "email", "website", "https://chosen.example.test/", "title", "checked", "checked-text", []PersonRow{{"person", "role"}}, "class", []string{"cargo"}, "", "", "", ""}
+	cv := CandidateView{"id", store.StatusActive, "", "name", []string{"alias"}, "street", "city", "MN", "55072", "county", "phone", "email", "source", "website", "https://chosen.example.test/", "title", "why", "checked", "checked-text", []PersonRow{{"person", "role"}}, "class", []string{"cargo"}, "", "", "", ""}
 	av := AssessmentView{"operating", []EvidenceRow{{"name", "source", "weight", "description"}}, "low", "high", "confidence", false, int64(sources.Rules), "calculated", "calculated-text"}
 	ev := EstimateView{"source", "low", "high", "confidence", "", "", 1, []FactRow{{"key", "value"}}}
 	lv := LinkView{"scraper", "source", "run", "", "name", "city", "55072", "reason", "confidence", "", "", "", "", "", "", false}

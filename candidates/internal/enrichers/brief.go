@@ -2,6 +2,7 @@ package enrichers
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -156,7 +157,7 @@ func (Brief) Input(s Subject) json.RawMessage {
 }
 
 // Found retains decoded output even when the run itself failed.
-func (Brief) Found(out prompts.Outcome, _ int64) Result {
+func (Brief) Found(_ context.Context, out prompts.Outcome, _ int64) Result {
 	f := BriefFound{Run: out.ID, Status: out.Status, ExitCode: out.ExitCode, CostNanos: out.CostNanos, Categories: []BriefCategory{}, Labels: []string{}}
 	var answer struct {
 		Summary    string          `json:"summary"`
