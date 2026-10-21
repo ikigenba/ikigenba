@@ -35,7 +35,9 @@ the website check, and reads nothing from scrapes; a targeted enrich, of
 kind `enrich_target`, started by the `enrich` tool naming a prospect list
 or a candidate, walks one kind over that target, and for `website_search`,
 `site_text` or `brief` runs the owner's prompt named for the kind,
-`website-search`, `site-text` or `brief`, for each due candidate. An ingest reads the run's record and rows from
+`website-search`, `site-text` or `brief`, for each due candidate, and for
+`drive_route` asks Google's Geocoding and Routes APIs for the drive from the
+origin to each due candidate's street address. An ingest reads the run's record and rows from
 scrapes over its socket through appkit's `scrapes` client, as the caller
 for the `ingest` tool and as the service identity for a delivery; a targeted pass of a prompts kind runs its prompts
 through appkit's `prompts` client over the socket the services file's
@@ -44,9 +46,19 @@ candidates calls no other sibling. It names campaigns only to link to a
 campaign's page, built on the services file's optional entry `campaigns`. Outside the suite it fetches nothing but
 the websites the website check visits, the pages `add_page` keeps and the
 URL a website search's run names, which it confirms with one `Checker.Get`,
-over outbound HTTP through `cli.Process.HTTP`; when `IKIGENBA_SANDBOX` is
-present it fetches only from an in-process stub on loopback, so nothing a
-sandbox runs reaches outside. It keeps its candidates, links, estimates,
+over outbound HTTP through `cli.Process.HTTP`, and the geocoding and routing
+requests of a targeted `drive_route` pass, over HTTPS to Google through the
+same client; when `IKIGENBA_SANDBOX` is present the website fetches go only
+to an in-process stub on loopback, while a `drive_route` pass still reaches
+Google, so nothing a sandbox runs reaches outside but a route a developer
+asked for. It holds two secrets, which its manifest lists and reads from its
+environment at start: `GOOGLE_MAPS_API_KEY`, the key every request to Google
+carries, and `CANDIDATES_ROUTE_ORIGIN`, the address a drive route is measured
+from, an address rather than a credential, listed as a secret so the owner
+can move the base on a space without a release. Unset or empty, the key
+leaves candidates with no routes client and a targeted enrich of
+`drive_route` refused; the origin defaults to Sandstone, MN. The key is
+never written to its database, its trail, a page or a tool's answer. It keeps its candidates, links, estimates,
 judgments, enrichment results, facts and kept pages, the owner's rulings,
 prospect lists and rejects, its
 campaign uses, its passes and the ZIP drive-time table in its own
@@ -98,8 +110,8 @@ build run writes the Go source, the tests, `go.mod`'s requirements and
 `0005_decisions.sql`, `0006_passes.sql`, `0007_zip_drive.sql`,
 `0008_windows.sql`, `0009_judgments.sql`, `0010_cohorts.sql`,
 `0011_enrichments.sql`, `0012_facts.sql`, `0013_site_text.sql`,
-`0014_brief.sql`, `0015_website_search.sql`, `0016_campaign_uses.sql` and
-`0017_prospect_lists.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
+`0014_brief.sql`, `0015_website_search.sql`, `0016_campaign_uses.sql`,
+`0017_prospect_lists.sql` and `0018_drive_route.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
 and the nginx fragment `etc/nginx.conf`). The
 delivery that created candidates seeded `go.mod` on appkit; the build run
 owns it and `go.sum` from then on and changes them as design says. It never
@@ -205,7 +217,7 @@ The sub-project's tests are all `*_test.go` files in the module: the root
 package, `cmd/candidates` and everything under `internal/` (`internal/cli`,
 `internal/settings`, `internal/server`, `internal/web`, `internal/store`,
 `internal/sources`, `internal/fmcsa`, `internal/ppp`, `internal/judging`,
-`internal/passes`, `internal/website`, `internal/enrichers`,
+`internal/passes`, `internal/website`, `internal/routes`, `internal/enrichers`,
 `internal/trail`, `internal/urls`,
 `internal/tools` and `internal/pages`).
 This is the file set the canonical gap greps for requirement ids:
@@ -232,7 +244,9 @@ split and candidate page names one, so a test that sends an id-shaped value
 lands one in the test file. No fixture carries one: not a header value, a
 query parameter, a tool argument, a fake scrapes' or fake prompts' answer,
 a fake prompts' standard output (a brief's summary, reasons and labels, a
-website search's URL, reason and sites set aside),
+website search's URL, reason and sites set aside), a fake Google answer (a
+formatted address, a status), an API key, a route origin or a street
+address,
 a row's field, a
 source id, a run id, a candidate id, a pass id, a prospect list id, old or new, a URL, a services file entry,
 an event's payload, a campaign or piece id, a ruling's, reject's or campaign
@@ -254,9 +268,9 @@ These rules govern the unit tests: everything `go test ./...` runs.
 **The run seam carries the process.** candidates binds nothing itself; it
 serves on the listener it is passed. Arguments, environment lookup and
 removal, the pid, the inherited listener, the output streams, the clock, the
-pause between delivery attempts, the sweeper's and the website check's
-timer, the random source, the working directory and the HTTP client the
-website check fetches through come in through the run seam design declares
+pause between delivery attempts, the sweeper's, the website check's and
+the routes client's timer, the random source, the working directory and the
+HTTP client the website check and the routes client fetch through come in through the run seam design declares
 (`cli.Run` with `cli.Process`), and tests inject them. A `Run`-level test
 sets the version string to one of its own and `Dir` to a temporary directory
 of its own, so the database lands there and never in the checkout. A test
@@ -309,6 +323,18 @@ test leaves `Process.HTTP` nil, so it has no checker, hands in a client over
 such a transport, or names `IKIGENBA_SANDBOX` in the lookup it gives `Run`
 to check against the stub. The real fetcher's refusal of inward addresses is
 proved with addresses it refuses before any connection, never by fetching.
+
+**Google is faked, never reached.** No test reaches Google's Geocoding or
+Routes API, and no test holds a real key. A test of the routes client, or of
+a pass, a tool or a `Run` that routes, hands `routes.Client` an `*http.Client`
+over an `http.RoundTripper` of its own, which answers each request with the
+body the test chooses, fails or holds it on demand and records each it
+receives, a key of the test's own and an `After` whose channels it holds, as
+design names; a `Run`-level test sets `GOOGLE_MAPS_API_KEY` and
+`CANDIDATES_ROUTE_ORIGIN` only through the `LookupEnv` it gives `Run`, and
+hands in `Process.HTTP` over such a transport when it drives a route. There
+is no loopback stub for Google: `IKIGENBA_SANDBOX` selects the website stub
+alone.
 
 **The ZIP table is the embedded one or the test's own.** A test that needs
 the real drive minutes reads the table the root package embeds, through the
@@ -367,8 +393,9 @@ the binary only `main` makes it. A test that reaches such a read, directly or
 through a candidates constructor, first sets that variable with
 `testing.T.Setenv` to a services file it wrote or to the empty string, so the
 developer's environment never decides a result. It is the only variable an
-in-process test sets for candidates' own code; `DRAIN_SECONDS` and
-`CANDIDATES_KEEP_PASSES` reach `Run` through the `LookupEnv` the test gives
+in-process test sets for candidates' own code; `DRAIN_SECONDS`,
+`CANDIDATES_KEEP_PASSES`, `CANDIDATES_ROUTE_ORIGIN` and
+`GOOGLE_MAPS_API_KEY` reach `Run` through the `LookupEnv` the test gives
 it. The exec'ing test also sets `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE` with
 `testing.T.Setenv`, so it may call appkit's `version.Read()` and the
 identity's `String()` under the same two values it composes into the child's
@@ -468,8 +495,10 @@ There are none. No test reaches outside the suite: scrapes and prompts,
 the two siblings candidates calls, are faked in every unit test, so nothing
 reaches a real prompts, and the website check, `add_page` and the website
 search's confirmation fetch through a transport the test holds or the
-loopback stub. The sandbox
-fetches only from the stub, and the sandbox check proves the real chain.
+loopback stub, as the routes client requests through a transport the test
+holds. The sandbox fetches websites only from the stub and reaches Google
+only for a `drive_route` pass a developer starts, and the sandbox check
+proves the real chain, one real route included.
 
 ## Gates
 
@@ -532,8 +561,12 @@ through over the socket; its
 services file names them, with telemetry and auth, and may name campaigns,
 whose entry candidates uses only to link to a campaign's page. The host needs outbound HTTP and HTTPS to the
 public internet, since the website check and `add_page` fetch candidates'
-own domains and the website search confirms the URL its agent names;
-candidates holds no secret of its own. The host's backup archives `state/`
+own domains and the website search confirms the URL its agent names, and
+outbound HTTPS to Google's Geocoding and Routes APIs for `drive_route`. The
+two secrets its manifest lists, `CANDIDATES_ROUTE_ORIGIN` and
+`GOOGLE_MAPS_API_KEY`, must exist on the space (`devctl secrets push`) or in
+the shell that runs `sandbox up`, or the app is refused; a changed value
+takes effect only at the next activation, a push followed by a deploy. The host's backup archives `state/`
 whole, so `candidates.db` is taken with it; it holds candidates, their
 evidence copied from public records, their enrichment results, facts and
 kept pages, the owner's
