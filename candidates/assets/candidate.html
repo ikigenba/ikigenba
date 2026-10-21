@@ -74,7 +74,12 @@
      route's miles to one decimal as text, "61.3"; empty unless
      .MinutesSource is "route"), .RouteAddress (the address the deciding
      drive_route result resolved the request to, as stored; empty unless
-     .MinutesSource is "route")
+     .MinutesSource is "route"), .RoutePlaceURL (the Google Maps link
+     that opens .RouteAddress, built by code; empty unless .MinutesSource
+     is "route" and .RouteAddress is set) and .RouteDirectionsURL (the
+     Google Maps driving directions link from the origin the deciding
+     drive_route result was measured from, as stored, to .RouteAddress,
+     built by code; empty exactly when .RoutePlaceURL is)
      and .Written (when each kind last wrote the row, one per kind that
      has, in kind name order, each with .Kind, the kind as stored,
      "brief", "drive_minutes", "drive_route", "link_facts", "site_text",
@@ -185,7 +190,11 @@
      status, as stored; empty when no answer came), .Why (why nothing was
      routable, as stored; empty when it routed or the result failed) and
      .Error (the failed request's error text, as stored; empty unless the
-     result failed). .Failed (bool, true for a
+     result failed), .PlaceURL (the Google Maps link that opens .Address,
+     built by code; empty unless the result routed, .Minutes and .Address
+     both set) and .DirectionsURL (the Google Maps driving directions link
+     from the origin the result was measured from, as stored, to .Address,
+     built by code; empty exactly when .PlaceURL is). .Failed (bool, true for a
      site_text, brief or website_search result whose
      prompts run ended failed, killed or timed_out or exited non-zero, for
      a brief result whose run exited 0 with an empty summary or with
@@ -304,7 +313,13 @@
      span.muted "unknown"; then, when .MinutesSource is "route", a space
      and span.badge[data-kind=info] (text "routed"), then, when .Miles is
      set, div[data-route-miles] ("<.Miles> miles"), then, when
-     .RouteAddress is set, div[data-route-address] with .RouteAddress;
+     .RouteAddress is set, div[data-route-address] with .RouteAddress,
+     then, when .RoutePlaceURL is set, div[data-route-links] holding
+     a.map-link[data-route-place], href .RoutePlaceURL, text "map", and,
+     when .RouteDirectionsURL is set, " · " and
+     a.map-link[data-route-directions], href .RouteDirectionsURL, text
+     "directions", each link target=_blank rel="noopener noreferrer" so
+     the card stays open;
      when .MinutesSource is "zip", a space and span.muted "ZIP estimate";
      the dd carrying also [data-minutes-source=<.MinutesSource>] when
      .MinutesSource is set) and dt "Written" then dd#facts-written (one
@@ -471,7 +486,10 @@
      dd[data-route-minutes] (.Minutes, or when empty span.muted "none"),
      dt "Miles" then dd[data-route-miles] (.Miles, or when empty
      span.muted "none"), dt "Address" then dd[data-route-address]
-     (.Address, or when empty span.muted "none"), dt "Placed" then
+     (.Address, or when empty span.muted "none"), then, only when
+     .PlaceURL is set, dt "Map" then dd[data-route-links] holding the
+     same two links as the card's, from .PlaceURL and .DirectionsURL,
+     dt "Placed" then
      dd[data-route-precision] (.Precision in a code element, or when
      empty span.muted "none") and dt "Status" then dd[data-route-status]
      (.Status in a code element, or when empty span.muted "none"), then,
@@ -570,7 +588,7 @@
 <dt>Fleet</dt><dd id="facts-fleet" data-fleet="{{.FleetVerdict}}">{{if eq .FleetVerdict "unknown"}}<span class="muted">{{.FleetVerdict}}</span>{{else}}{{.FleetVerdict}}{{end}}</dd>
 <dt>Trucks</dt><dd id="facts-power-units">{{if .PowerUnits}}{{.PowerUnits}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
 <dt>Drivers</dt><dd id="facts-drivers">{{if .Drivers}}{{.Drivers}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
-<dt>Drive minutes</dt><dd id="facts-minutes"{{if .MinutesSource}} data-minutes-source="{{.MinutesSource}}"{{end}}>{{if .Minutes}}{{.Minutes}}{{else}}<span class="muted">unknown</span>{{end}}{{if eq .MinutesSource "route"}} <span class="badge" data-kind="info">routed</span>{{if .Miles}}<div data-route-miles>{{.Miles}} miles</div>{{end}}{{if .RouteAddress}}<div data-route-address>{{.RouteAddress}}</div>{{end}}{{else if eq .MinutesSource "zip"}} <span class="muted">ZIP estimate</span>{{end}}</dd>
+<dt>Drive minutes</dt><dd id="facts-minutes"{{if .MinutesSource}} data-minutes-source="{{.MinutesSource}}"{{end}}>{{if .Minutes}}{{.Minutes}}{{else}}<span class="muted">unknown</span>{{end}}{{if eq .MinutesSource "route"}} <span class="badge" data-kind="info">routed</span>{{if .Miles}}<div data-route-miles>{{.Miles}} miles</div>{{end}}{{if .RouteAddress}}<div data-route-address>{{.RouteAddress}}</div>{{end}}{{if .RoutePlaceURL}}<div data-route-links><a class="map-link" data-route-place href="{{.RoutePlaceURL}}" target="_blank" rel="noopener noreferrer">map</a>{{if .RouteDirectionsURL}} · <a class="map-link" data-route-directions href="{{.RouteDirectionsURL}}" target="_blank" rel="noopener noreferrer">directions</a>{{end}}</div>{{end}}{{else if eq .MinutesSource "zip"}} <span class="muted">ZIP estimate</span>{{end}}</dd>
 <dt>Written</dt><dd id="facts-written">{{range .Written}}<div data-written="{{.Kind}}"><code>{{.Kind}}</code> <time datetime="{{.At}}">{{.AtText}}</time></div>{{else}}<span class="muted">never</span>{{end}}</dd>
 </dl>{{else}}<div id="no-facts" class="empty">
 <h3 class="text-md">No facts yet</h3>
@@ -715,7 +733,7 @@
 {{range $results}}<tr data-enrichment="{{.Kind}}"{{if .State}} data-state="{{.State}}"{{end}}{{if .Failed}} data-failed{{end}}>
 <td class="enrichment-kind"><code>{{.Kind}}</code>{{if .Failed}} <span class="badge" data-kind="err">failed</span>{{end}}</td>
 <td class="enrichment-source"><code>{{.Source}}</code></td>
-<td class="enrichment-found">{{if eq .Kind "website_check"}}{{.State}}{{if .URL}} <a class="website-link" href="{{.URL}}">{{.URL}}</a>{{end}}{{if .Title}}<div data-website-title>{{.Title}}</div>{{end}}<div class="muted">{{if .StatusCode}}status {{.StatusCode}} · {{end}}{{.Size}} bytes</div>{{if .Error}}<div data-error>{{.Error}}</div>{{end}}{{else if eq .Kind "website_search"}}<dl class="kv">{{with .Answer}}<dt>Named</dt><dd data-search-url>{{if .URL}}<a class="website-link" href="{{.URL}}">{{.URL}}</a>{{else}}<span class="muted">no site</span>{{end}}</dd><dt>Why</dt><dd data-search-why>{{if .Why}}{{.Why}}{{else}}<span class="muted">none</span>{{end}}</dd>{{end}}{{with .Confirmation}}<dt>Loaded</dt><dd data-confirmation="{{.State}}">{{if eq .State "none"}}<span class="badge" data-kind="warn">did not load</span>{{else}}{{.State}}{{if .URL}} <a class="website-link" href="{{.URL}}">{{.URL}}</a>{{end}}{{end}}{{if .Title}}<div data-website-title>{{.Title}}</div>{{end}}<div class="muted">{{if .StatusCode}}status {{.StatusCode}} · {{end}}{{.Size}} bytes</div>{{if .Error}}<div data-error>{{.Error}}</div>{{end}}</dd>{{end}}{{with .Answer}}<dt>Set aside</dt><dd data-search-rejected>{{range .Rejected}}<div data-rejected><a class="website-link" href="{{.URL}}">{{.URL}}</a> <span class="muted">{{.Why}}</span></div>{{else}}<span class="muted">none</span>{{end}}</dd>{{end}}{{with .Run}}<dt>Run</dt><dd data-search-run><code>{{.ID}}</code> <code>{{.Status}}</code>{{if .ExitCode}} <span class="muted">exit {{.ExitCode}}</span>{{end}}</dd>{{end}}</dl>{{else if eq .Kind "drive_route"}}{{with .Route}}<dl class="kv"><dt>Minutes</dt><dd data-route-minutes>{{if .Minutes}}{{.Minutes}}{{else}}<span class="muted">none</span>{{end}}</dd><dt>Miles</dt><dd data-route-miles>{{if .Miles}}{{.Miles}}{{else}}<span class="muted">none</span>{{end}}</dd><dt>Address</dt><dd data-route-address>{{if .Address}}{{.Address}}{{else}}<span class="muted">none</span>{{end}}</dd><dt>Placed</dt><dd data-route-precision>{{if .Precision}}<code>{{.Precision}}</code>{{else}}<span class="muted">none</span>{{end}}</dd><dt>Status</dt><dd data-route-status>{{if .Status}}<code>{{.Status}}</code>{{else}}<span class="muted">none</span>{{end}}</dd>{{if .Why}}<dt>Not routable</dt><dd data-route-why><span class="badge" data-kind="warn">no route</span> <code>{{.Why}}</code></dd>{{end}}{{if .Error}}<dt>Error</dt><dd data-error>{{.Error}}</dd>{{end}}</dl>{{end}}{{else}}<dl class="kv">{{range .Found}}<dt data-found="{{.Key}}"><code>{{.Key}}</code></dt><dd><code>{{.Value}}</code></dd>{{end}}</dl>{{end}}</td>
+<td class="enrichment-found">{{if eq .Kind "website_check"}}{{.State}}{{if .URL}} <a class="website-link" href="{{.URL}}">{{.URL}}</a>{{end}}{{if .Title}}<div data-website-title>{{.Title}}</div>{{end}}<div class="muted">{{if .StatusCode}}status {{.StatusCode}} · {{end}}{{.Size}} bytes</div>{{if .Error}}<div data-error>{{.Error}}</div>{{end}}{{else if eq .Kind "website_search"}}<dl class="kv">{{with .Answer}}<dt>Named</dt><dd data-search-url>{{if .URL}}<a class="website-link" href="{{.URL}}">{{.URL}}</a>{{else}}<span class="muted">no site</span>{{end}}</dd><dt>Why</dt><dd data-search-why>{{if .Why}}{{.Why}}{{else}}<span class="muted">none</span>{{end}}</dd>{{end}}{{with .Confirmation}}<dt>Loaded</dt><dd data-confirmation="{{.State}}">{{if eq .State "none"}}<span class="badge" data-kind="warn">did not load</span>{{else}}{{.State}}{{if .URL}} <a class="website-link" href="{{.URL}}">{{.URL}}</a>{{end}}{{end}}{{if .Title}}<div data-website-title>{{.Title}}</div>{{end}}<div class="muted">{{if .StatusCode}}status {{.StatusCode}} · {{end}}{{.Size}} bytes</div>{{if .Error}}<div data-error>{{.Error}}</div>{{end}}</dd>{{end}}{{with .Answer}}<dt>Set aside</dt><dd data-search-rejected>{{range .Rejected}}<div data-rejected><a class="website-link" href="{{.URL}}">{{.URL}}</a> <span class="muted">{{.Why}}</span></div>{{else}}<span class="muted">none</span>{{end}}</dd>{{end}}{{with .Run}}<dt>Run</dt><dd data-search-run><code>{{.ID}}</code> <code>{{.Status}}</code>{{if .ExitCode}} <span class="muted">exit {{.ExitCode}}</span>{{end}}</dd>{{end}}</dl>{{else if eq .Kind "drive_route"}}{{with .Route}}<dl class="kv"><dt>Minutes</dt><dd data-route-minutes>{{if .Minutes}}{{.Minutes}}{{else}}<span class="muted">none</span>{{end}}</dd><dt>Miles</dt><dd data-route-miles>{{if .Miles}}{{.Miles}}{{else}}<span class="muted">none</span>{{end}}</dd><dt>Address</dt><dd data-route-address>{{if .Address}}{{.Address}}{{else}}<span class="muted">none</span>{{end}}</dd>{{if .PlaceURL}}<dt>Map</dt><dd data-route-links><a class="map-link" data-route-place href="{{.PlaceURL}}" target="_blank" rel="noopener noreferrer">map</a>{{if .DirectionsURL}} · <a class="map-link" data-route-directions href="{{.DirectionsURL}}" target="_blank" rel="noopener noreferrer">directions</a>{{end}}</dd>{{end}}<dt>Placed</dt><dd data-route-precision>{{if .Precision}}<code>{{.Precision}}</code>{{else}}<span class="muted">none</span>{{end}}</dd><dt>Status</dt><dd data-route-status>{{if .Status}}<code>{{.Status}}</code>{{else}}<span class="muted">none</span>{{end}}</dd>{{if .Why}}<dt>Not routable</dt><dd data-route-why><span class="badge" data-kind="warn">no route</span> <code>{{.Why}}</code></dd>{{end}}{{if .Error}}<dt>Error</dt><dd data-error>{{.Error}}</dd>{{end}}</dl>{{end}}{{else}}<dl class="kv">{{range .Found}}<dt data-found="{{.Key}}"><code>{{.Key}}</code></dt><dd><code>{{.Value}}</code></dd>{{end}}</dl>{{end}}</td>
 <td class="enrichment-cost num">{{.Cost}}</td>
 <td class="enrichment-at"><time datetime="{{.At}}">{{.AtText}}</time></td>
 </tr>
