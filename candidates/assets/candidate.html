@@ -67,10 +67,17 @@
      when none), .FleetVerdict ("pass", "fail" or "unknown", as stored),
      .PowerUnits and .Drivers (the truck and driver counts the freshest
      FMCSA link gives, as text, "12"; each empty when unknown), .Minutes
-     (drive minutes from the origin as text, "84"; empty when unknown)
+     (drive minutes from the origin as text, "84"; empty when unknown),
+     .MinutesSource (which result decided .Minutes, as the facts row
+     holds it: "route" when a drive_route result routed it, "zip" when
+     the drive_minutes result did; empty when .Minutes is), .Miles (the
+     route's miles to one decimal as text, "61.3"; empty unless
+     .MinutesSource is "route"), .RouteAddress (the address the deciding
+     drive_route result resolved the request to, as stored; empty unless
+     .MinutesSource is "route")
      and .Written (when each kind last wrote the row, one per kind that
      has, in kind name order, each with .Kind, the kind as stored,
-     "brief", "drive_minutes", "link_facts", "site_text",
+     "brief", "drive_minutes", "drive_route", "link_facts", "site_text",
      "website_check" or "website_search", and .At and .AtText in
      .Created's two forms above;
      empty when none has); .Brief (nil when it has no
@@ -137,14 +144,15 @@
      and .User (their user id); .EnrichmentResults, every enrichment result on this
      candidate, of every kind, newest first, empty when merged, each with
      .Kind (its kind as stored, "website_check", "link_facts",
-     "drive_minutes", "site_text", "brief" or "website_search"), .Source
-     (where the result came from, as stored: the domain checked,
-     "example.com", for website_check, "links" for link_facts,
-     "zip_drive" for drive_minutes, "prompts" for site_text, brief and
+     "drive_minutes", "drive_route", "site_text", "brief" or
+     "website_search"), .Source (where the result came from, as stored:
+     the domain checked, "example.com", for website_check, "links" for
+     link_facts, "zip_drive" for drive_minutes, the routing service's
+     name for drive_route, "prompts" for site_text, brief and
      website_search), .Found (what it found, in
      key order, each with .Key and .Value, the value as compact JSON text
-     such as "84" or "\"pass\""; used for every kind but website_check
-     and website_search),
+     such as "84" or "\"pass\""; used for every kind but website_check,
+     website_search and drive_route),
      .State ("https", "http" or "none", as stored), .URL (the URL it
      landed on; empty when none), .Title (the page title, as stored; empty
      when none), .StatusCode (the final HTTP status code as text, "200";
@@ -166,16 +174,30 @@
      fetch was made: .Answer is nil, .Answer.URL is empty, or the run
      failed, which is never confirmed though its .Answer is shown) with .State, .URL, .Title,
      .StatusCode, .Size and .Error as a website_check result's six above,
-     .State "none" when the URL did not load. .Failed (bool, true for a
+     .State "none" when the URL did not load. .Route (a drive_route
+     result's found value; nil for any other kind) with .Minutes (the
+     drive in whole minutes as text, "84"; empty when nothing was
+     routable), .Miles (the drive's miles to one decimal as text, "61.3";
+     empty when .Minutes is), .Address (the address the service resolved
+     the request to, as stored; empty when it placed none), .Precision
+     (how precisely it placed it, as stored, such as "building", "street"
+     or "town"; empty when it placed none), .Status (the service's own
+     status, as stored; empty when no answer came), .Why (why nothing was
+     routable, as stored; empty when it routed or the result failed) and
+     .Error (the failed request's error text, as stored; empty unless the
+     result failed). .Failed (bool, true for a
      site_text, brief or website_search result whose
      prompts run ended failed, killed or timed_out or exited non-zero, for
      a brief result whose run exited 0 with an empty summary or with
      standard output that does not decode as the output object, and for a
-     website_search result whose .Answer is nil; false for every other
-     result, a website_search that named no site or whose site did not
+     website_search result whose .Answer is nil, and for a drive_route
+     result whose request did not complete or whose answer was not the
+     shape expected; false for every other result, a drive_route that
+     found nothing routable included, a website_search that named no site or whose site did not
      load included), .Cost (what the result cost as US dollars to six
-     decimal places, "$0.023714", as prompts shows a cost; empty when it
-     cost nothing) and .At and .AtText (when it was found, RFC 3339 UTC to
+     decimal places, "$0.023714", as prompts shows a cost, a drive_route
+     result's at the service's price per request; empty when it cost
+     nothing) and .At and .AtText (when it was found, RFC 3339 UTC to
      the second, and UTC to the minute); .Rejects, every reject and unreject record
      naming this candidate, newest first, each with .Kind ("reject" or
      "unreject", as stored), .ProspectList (the prospect list's pl_ id),
@@ -279,7 +301,13 @@
      (.PowerUnits, or when empty span.muted "unknown"), dt "Drivers" then
      dd#facts-drivers (.Drivers, or when empty span.muted "unknown"), dt
      "Drive minutes" then dd#facts-minutes (.Minutes, or when empty
-     span.muted "unknown") and dt "Written" then dd#facts-written (one
+     span.muted "unknown"; then, when .MinutesSource is "route", a space
+     and span.badge[data-kind=info] (text "routed"), then, when .Miles is
+     set, div[data-route-miles] ("<.Miles> miles"), then, when
+     .RouteAddress is set, div[data-route-address] with .RouteAddress;
+     when .MinutesSource is "zip", a space and span.muted "ZIP estimate";
+     the dd carrying also [data-minutes-source=<.MinutesSource>] when
+     .MinutesSource is set) and dt "Written" then dd#facts-written (one
      div[data-written=<.Kind>] per kind holding .Kind in a code element, a
      space and time[datetime=<.At>] with .AtText, or when empty span.muted
      "never"); then, in the same card, h3#brief-title "Brief" and a p (text "What the brief
@@ -401,11 +429,13 @@
      kind stands and gives the facts above."), then either, when
      .EnrichmentResults is empty, div#no-enrichments.empty holding h3 "No
      enrichments" and a p (text "A kind needs inputs: the website check
-     an email on its own domain, drive minutes a ZIP, link facts a record
-     not gone, site text a website, the brief the pages kept on it, the
-     website search no website. The enrich pass runs every kind but site
-     text, the brief and the website search after an ingest; the enrich
-     tool starts one, and runs site text, the brief and the website search over a prospect list or one candidate.", enrich in a code element), or
+     an email on its own domain, drive minutes a ZIP, the drive route a
+     street, link facts a record not gone, site text a website, the brief
+     the pages kept on it, the website search no website. The enrich pass
+     runs every kind but site text, the brief, the website search and the
+     drive route after an ingest; the enrich tool starts one, and runs
+     site text, the brief, the website search and the drive route over a
+     prospect list or one candidate.", enrich in a code element), or
      table#enrichment-list whose th read Kind, Source, Found, Cost, When,
      with one tr[data-enrichment=<.Kind>] per result, carrying also
      [data-state=<.State>] when .State is set and [data-failed] when
@@ -436,8 +466,19 @@
      .Why, or when empty span.muted "none"); then dt "Run" then
      dd[data-search-run] (.Run.ID in a code element, a space and
      .Run.Status in a code element, then, when .Run.ExitCode is set, a
-     space and span.muted holding "exit", a space and .Run.ExitCode); for
-     any other kind,
+     space and span.muted holding "exit", a space and .Run.ExitCode); when
+     .Kind is "drive_route", from .Route: dl.kv holding dt "Minutes" then
+     dd[data-route-minutes] (.Minutes, or when empty span.muted "none"),
+     dt "Miles" then dd[data-route-miles] (.Miles, or when empty
+     span.muted "none"), dt "Address" then dd[data-route-address]
+     (.Address, or when empty span.muted "none"), dt "Placed" then
+     dd[data-route-precision] (.Precision in a code element, or when
+     empty span.muted "none") and dt "Status" then dd[data-route-status]
+     (.Status in a code element, or when empty span.muted "none"), then,
+     only when .Why is set, dt "Not routable" then dd[data-route-why]
+     (span.badge[data-kind=warn] (text "no route"), a space and .Why in a
+     code element), then, only when .Error is set, dt "Error" then
+     dd[data-error] with .Error; for any other kind,
      dl.kv with one dt[data-found=<.Key>] per entry of .Found (.Key in a
      code element) followed by a dd (.Value in a code element)),
      td.enrichment-cost.num (.Cost; empty when empty) and
@@ -529,7 +570,7 @@
 <dt>Fleet</dt><dd id="facts-fleet" data-fleet="{{.FleetVerdict}}">{{if eq .FleetVerdict "unknown"}}<span class="muted">{{.FleetVerdict}}</span>{{else}}{{.FleetVerdict}}{{end}}</dd>
 <dt>Trucks</dt><dd id="facts-power-units">{{if .PowerUnits}}{{.PowerUnits}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
 <dt>Drivers</dt><dd id="facts-drivers">{{if .Drivers}}{{.Drivers}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
-<dt>Drive minutes</dt><dd id="facts-minutes">{{if .Minutes}}{{.Minutes}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
+<dt>Drive minutes</dt><dd id="facts-minutes"{{if .MinutesSource}} data-minutes-source="{{.MinutesSource}}"{{end}}>{{if .Minutes}}{{.Minutes}}{{else}}<span class="muted">unknown</span>{{end}}{{if eq .MinutesSource "route"}} <span class="badge" data-kind="info">routed</span>{{if .Miles}}<div data-route-miles>{{.Miles}} miles</div>{{end}}{{if .RouteAddress}}<div data-route-address>{{.RouteAddress}}</div>{{end}}{{else if eq .MinutesSource "zip"}} <span class="muted">ZIP estimate</span>{{end}}</dd>
 <dt>Written</dt><dd id="facts-written">{{range .Written}}<div data-written="{{.Kind}}"><code>{{.Kind}}</code> <time datetime="{{.At}}">{{.AtText}}</time></div>{{else}}<span class="muted">never</span>{{end}}</dd>
 </dl>{{else}}<div id="no-facts" class="empty">
 <h3 class="text-md">No facts yet</h3>
@@ -674,7 +715,7 @@
 {{range $results}}<tr data-enrichment="{{.Kind}}"{{if .State}} data-state="{{.State}}"{{end}}{{if .Failed}} data-failed{{end}}>
 <td class="enrichment-kind"><code>{{.Kind}}</code>{{if .Failed}} <span class="badge" data-kind="err">failed</span>{{end}}</td>
 <td class="enrichment-source"><code>{{.Source}}</code></td>
-<td class="enrichment-found">{{if eq .Kind "website_check"}}{{.State}}{{if .URL}} <a class="website-link" href="{{.URL}}">{{.URL}}</a>{{end}}{{if .Title}}<div data-website-title>{{.Title}}</div>{{end}}<div class="muted">{{if .StatusCode}}status {{.StatusCode}} · {{end}}{{.Size}} bytes</div>{{if .Error}}<div data-error>{{.Error}}</div>{{end}}{{else if eq .Kind "website_search"}}<dl class="kv">{{with .Answer}}<dt>Named</dt><dd data-search-url>{{if .URL}}<a class="website-link" href="{{.URL}}">{{.URL}}</a>{{else}}<span class="muted">no site</span>{{end}}</dd><dt>Why</dt><dd data-search-why>{{if .Why}}{{.Why}}{{else}}<span class="muted">none</span>{{end}}</dd>{{end}}{{with .Confirmation}}<dt>Loaded</dt><dd data-confirmation="{{.State}}">{{if eq .State "none"}}<span class="badge" data-kind="warn">did not load</span>{{else}}{{.State}}{{if .URL}} <a class="website-link" href="{{.URL}}">{{.URL}}</a>{{end}}{{end}}{{if .Title}}<div data-website-title>{{.Title}}</div>{{end}}<div class="muted">{{if .StatusCode}}status {{.StatusCode}} · {{end}}{{.Size}} bytes</div>{{if .Error}}<div data-error>{{.Error}}</div>{{end}}</dd>{{end}}{{with .Answer}}<dt>Set aside</dt><dd data-search-rejected>{{range .Rejected}}<div data-rejected><a class="website-link" href="{{.URL}}">{{.URL}}</a> <span class="muted">{{.Why}}</span></div>{{else}}<span class="muted">none</span>{{end}}</dd>{{end}}{{with .Run}}<dt>Run</dt><dd data-search-run><code>{{.ID}}</code> <code>{{.Status}}</code>{{if .ExitCode}} <span class="muted">exit {{.ExitCode}}</span>{{end}}</dd>{{end}}</dl>{{else}}<dl class="kv">{{range .Found}}<dt data-found="{{.Key}}"><code>{{.Key}}</code></dt><dd><code>{{.Value}}</code></dd>{{end}}</dl>{{end}}</td>
+<td class="enrichment-found">{{if eq .Kind "website_check"}}{{.State}}{{if .URL}} <a class="website-link" href="{{.URL}}">{{.URL}}</a>{{end}}{{if .Title}}<div data-website-title>{{.Title}}</div>{{end}}<div class="muted">{{if .StatusCode}}status {{.StatusCode}} · {{end}}{{.Size}} bytes</div>{{if .Error}}<div data-error>{{.Error}}</div>{{end}}{{else if eq .Kind "website_search"}}<dl class="kv">{{with .Answer}}<dt>Named</dt><dd data-search-url>{{if .URL}}<a class="website-link" href="{{.URL}}">{{.URL}}</a>{{else}}<span class="muted">no site</span>{{end}}</dd><dt>Why</dt><dd data-search-why>{{if .Why}}{{.Why}}{{else}}<span class="muted">none</span>{{end}}</dd>{{end}}{{with .Confirmation}}<dt>Loaded</dt><dd data-confirmation="{{.State}}">{{if eq .State "none"}}<span class="badge" data-kind="warn">did not load</span>{{else}}{{.State}}{{if .URL}} <a class="website-link" href="{{.URL}}">{{.URL}}</a>{{end}}{{end}}{{if .Title}}<div data-website-title>{{.Title}}</div>{{end}}<div class="muted">{{if .StatusCode}}status {{.StatusCode}} · {{end}}{{.Size}} bytes</div>{{if .Error}}<div data-error>{{.Error}}</div>{{end}}</dd>{{end}}{{with .Answer}}<dt>Set aside</dt><dd data-search-rejected>{{range .Rejected}}<div data-rejected><a class="website-link" href="{{.URL}}">{{.URL}}</a> <span class="muted">{{.Why}}</span></div>{{else}}<span class="muted">none</span>{{end}}</dd>{{end}}{{with .Run}}<dt>Run</dt><dd data-search-run><code>{{.ID}}</code> <code>{{.Status}}</code>{{if .ExitCode}} <span class="muted">exit {{.ExitCode}}</span>{{end}}</dd>{{end}}</dl>{{else if eq .Kind "drive_route"}}{{with .Route}}<dl class="kv"><dt>Minutes</dt><dd data-route-minutes>{{if .Minutes}}{{.Minutes}}{{else}}<span class="muted">none</span>{{end}}</dd><dt>Miles</dt><dd data-route-miles>{{if .Miles}}{{.Miles}}{{else}}<span class="muted">none</span>{{end}}</dd><dt>Address</dt><dd data-route-address>{{if .Address}}{{.Address}}{{else}}<span class="muted">none</span>{{end}}</dd><dt>Placed</dt><dd data-route-precision>{{if .Precision}}<code>{{.Precision}}</code>{{else}}<span class="muted">none</span>{{end}}</dd><dt>Status</dt><dd data-route-status>{{if .Status}}<code>{{.Status}}</code>{{else}}<span class="muted">none</span>{{end}}</dd>{{if .Why}}<dt>Not routable</dt><dd data-route-why><span class="badge" data-kind="warn">no route</span> <code>{{.Why}}</code></dd>{{end}}{{if .Error}}<dt>Error</dt><dd data-error>{{.Error}}</dd>{{end}}</dl>{{end}}{{else}}<dl class="kv">{{range .Found}}<dt data-found="{{.Key}}"><code>{{.Key}}</code></dt><dd><code>{{.Value}}</code></dd>{{end}}</dl>{{end}}</td>
 <td class="enrichment-cost num">{{.Cost}}</td>
 <td class="enrichment-at"><time datetime="{{.At}}">{{.AtText}}</time></td>
 </tr>
@@ -682,7 +723,7 @@
 </table>
 </div>{{else}}<div id="no-enrichments" class="empty">
 <h3 class="text-md">No enrichments</h3>
-<p>A kind needs inputs: the website check an email on its own domain, drive minutes a ZIP, link facts a record not gone, site text a website, the brief the pages kept on it, the website search no website. The enrich pass runs every kind but site text, the brief and the website search after an ingest; the <code>enrich</code> tool starts one, and runs site text, the brief and the website search over a prospect list or one candidate.</p>
+<p>A kind needs inputs: the website check an email on its own domain, drive minutes a ZIP, the drive route a street, link facts a record not gone, site text a website, the brief the pages kept on it, the website search no website. The enrich pass runs every kind but site text, the brief, the website search and the drive route after an ingest; the <code>enrich</code> tool starts one, and runs site text, the brief, the website search and the drive route over a prospect list or one candidate.</p>
 </div>{{end}}
 </section>
 {{end}}<section id="rejects" class="card flush" aria-labelledby="rejects-title">

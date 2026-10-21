@@ -65,8 +65,10 @@
      RFC 3339 UTC to the second, and UTC to the minute, "2026-10-05 09:00";
      both empty when never), .Brief and .BriefText (when its brief was
      last written, in .SiteText's two forms; both empty when never),
-     .Minutes (drive minutes from the origin as text, "84"; empty when its
-     ZIP is not in the table), .GovernmentMatch (the government name
+     .Minutes (drive minutes from the origin as text, "84"; empty when
+     no drive_route result routed it and its ZIP is not in the table),
+     .MinutesSource (which result decided .Minutes, as the facts row
+     holds it: "route" or "zip"; empty when .Minutes is), .GovernmentMatch (the government name
      pattern its name matched, as stored, "COUNTY"; empty when none),
      .KnownSince and .KnownSinceText (the earliest date any link not gone
      shows it existing, "2018-04-09", both the same; empty when none),
@@ -168,8 +170,11 @@
      .WebsiteSource is set), td.candidate-site-text
      (time[datetime=<.SiteText>] with .SiteTextText, or when empty
      span.muted "none"), td.candidate-brief (time[datetime=<.Brief>] with
-     .BriefText, or when empty span.muted "none"), td.candidate-minutes.num (.Minutes, empty
-     when absent), td.candidate-government (.GovernmentMatch in a code
+     .BriefText, or when empty span.muted "none"),
+     td.candidate-minutes.num (.Minutes, empty when absent, then, when
+     .MinutesSource is "route", a space and span.badge[data-kind=info]
+     (text "routed"); the td carrying also
+     [data-minutes-source=<.MinutesSource>] when .MinutesSource is set), td.candidate-government (.GovernmentMatch in a code
      element, empty when none), td.candidate-known-since and
      td.candidate-filed (each, only when set, a time[datetime] with the
      text form). section#rejects with h2 "Rejects" and a p in its header
@@ -244,7 +249,7 @@
 <td class="candidate-website" data-website="{{.Website}}"{{if .WebsiteSource}} data-website-source="{{.WebsiteSource}}"{{end}}>{{if .WebsiteURL}}<a class="website-link" href="{{.WebsiteURL}}">{{.Website}}</a>{{else if eq .Website "unknown"}}<span class="muted">{{.Website}}</span>{{else}}{{.Website}}{{end}}{{if eq .WebsiteSource "search"}} <span class="badge" data-kind="info">found by search</span>{{end}}</td>
 <td class="candidate-site-text">{{if .SiteText}}<time datetime="{{.SiteText}}">{{.SiteTextText}}</time>{{else}}<span class="muted">none</span>{{end}}</td>
 <td class="candidate-brief">{{if .Brief}}<time datetime="{{.Brief}}">{{.BriefText}}</time>{{else}}<span class="muted">none</span>{{end}}</td>
-<td class="candidate-minutes num">{{.Minutes}}</td>
+<td class="candidate-minutes num"{{if .MinutesSource}} data-minutes-source="{{.MinutesSource}}"{{end}}>{{.Minutes}}{{if eq .MinutesSource "route"}} <span class="badge" data-kind="info">routed</span>{{end}}</td>
 <td class="candidate-government">{{if .GovernmentMatch}}<code>{{.GovernmentMatch}}</code>{{end}}</td>
 <td class="candidate-known-since">{{if .KnownSince}}<time datetime="{{.KnownSince}}">{{.KnownSinceText}}</time>{{end}}</td>
 <td class="candidate-filed">{{if .NewestFiling}}<time datetime="{{.NewestFiling}}">{{.NewestFilingText}}</time>{{end}}</td>
