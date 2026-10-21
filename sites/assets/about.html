@@ -5,7 +5,15 @@
      description, the manifest's). Hooks: h1 with text "About sites";
      dl#about.kv holding dt "Name" then dd#about-name (.Banner.Service), dt
      "Version" then dd#about-version (.Banner.Release and .Banner.Commit), and dt "Description"
-     then dd#about-description (.Description). No script but appkit's /_appkit/feedback.js. */}}
+     then dd#about-description (.Description); then section#how.card
+     (aria-labelledby "how-title") whose header holds h2#how-title "How it
+     works", then three p: how a site is made and published, with create
+     and publish each in a code element and /<slug>/ in a code element;
+     that a site may name a path, a directory of its repository, and a
+     publish then serves only that directory as the site's root; and that
+     a changed ref or path, or a push, takes effect at the next publish,
+     with publish in a code element. No script but appkit's
+     /_appkit/feedback.js. */}}
 {{define "about"}}<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>About sites</title></head>
@@ -19,6 +27,12 @@
 <dt>Version</dt><dd id="about-version">{{if .Banner.Release}}{{.Banner.Release}}{{if .Banner.Commit}} ({{.Banner.Commit}}){{end}}{{else}}{{.Banner.Commit}}{{end}}</dd>
 <dt>Description</dt><dd id="about-description">{{.Description}}</dd>
 </dl>
+</section>
+<section id="how" class="card" aria-labelledby="how-title">
+<header><h2 id="how-title">How it works</h2></header>
+<p>A site is a repository that repos holds, published at one commit. An agent makes one with <code>create</code>, naming the repository and the ref it tracks, main unless given, and <code>publish</code> resolves that ref and serves the commit's files exactly as git holds them, at <code>/&lt;slug&gt;/</code>.</p>
+<p>A site may name a path, a directory of its repository, such as a build's output. A publish then serves only that directory, as the root of the site, and nothing above it can be reached through the site, so one repository can hold a site's source beside what it serves. A site with no path serves the whole tree.</p>
+<p>What a site serves changes only when it is published: after a push, or a change to its ref or its path, <code>publish</code> again.</p>
 </section>
 </main>
 {{template "footer" .Banner}}

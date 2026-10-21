@@ -6,8 +6,11 @@
      listed site, and the caller's own unlisted ones) by name, the window
      .Page names, each with
      .Slug, .Name, .URL ("<.SitesURL>/<slug>/"), .Visibility ("public" or
-     "private"), .Listed (bool), .Published (bool: a commit is published) and
-     .Mine (bool: the caller owns it); .Page (string, this window's own page
+     "private"), .Listed (bool), .Published (bool: a commit is published),
+     .Mine (bool: the caller owns it), .Ref (string, the ref the site
+     tracks, as stored; never empty) and .Path (string, the directory of
+     its repository the site publishes, as stored; empty when the site
+     publishes from the root); .Page (string, this window's own page
      token, the ?page= the request carried; empty on the first window);
      .Next (string, the page token for the window after this one; empty
      when none remain); .Prev (string, the page token for the window
@@ -20,9 +23,12 @@
      (text .Visibility), td.site-listing holding span.badge[data-kind=unlisted]
      (text "unlisted") only when not .Listed, td.site-state holding
      span.status[data-status=published] (text "published") or
-     span.status[data-status=unpublished] (text "not published"), and
+     span.status[data-status=unpublished] (text "not published"),
      td.site-owner holding span.badge[data-kind=mine] (text "yours") only
-     when .Mine; then, after the card, when .Sites is not empty or .Page
+     when .Mine, td.site-ref holding .Ref in a code element, and
+     td.site-path holding .Path in a code element only when .Path is not
+     empty, the cell empty for a site that publishes from the root; then, after the card,
+     when .Sites is not empty or .Page
      is not empty, nav.paging#paging (aria-label "Pages") whose children are, in order,
      First, Prev, Next and Last: First (on the first window, .Page empty, a span with
      aria-current="page" and text "First"; otherwise a link to / with text
@@ -49,7 +55,7 @@
 <header><h2>Sites</h2><p id="site-url">Every site answers at <code>{{.SitesURL}}/&lt;slug&gt;/</code>, where &lt;slug&gt; is its slug.</p></header>
 {{if .Sites}}<div class="table-scroll">
 <table id="site-list">
-<thead><tr><th>Site</th><th>Visibility</th><th>Listing</th><th>State</th><th>Owner</th></tr></thead>
+<thead><tr><th>Site</th><th>Visibility</th><th>Listing</th><th>State</th><th>Owner</th><th>Ref</th><th>Path</th></tr></thead>
 <tbody>
 {{range .Sites}}<tr data-site="{{.Slug}}">
 <td class="site-name"><a class="site-link" href="{{.URL}}">{{.Name}}</a></td>
@@ -57,6 +63,8 @@
 <td class="site-listing">{{if not .Listed}}<span class="badge" data-kind="unlisted">unlisted</span>{{end}}</td>
 <td class="site-state">{{if .Published}}<span class="status" data-status="published">published</span>{{else}}<span class="status" data-status="unpublished">not published</span>{{end}}</td>
 <td class="site-owner">{{if .Mine}}<span class="badge" data-kind="mine">yours</span>{{end}}</td>
+<td class="site-ref"><code>{{.Ref}}</code></td>
+<td class="site-path">{{if .Path}}<code>{{.Path}}</code>{{end}}</td>
 </tr>
 {{end}}</tbody>
 </table>
