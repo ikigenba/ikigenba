@@ -5,6 +5,8 @@ description: Carry a decisions document through stories, design, build, sandbox 
 
 # Deliver a decisions document
 
+You are the orchestrator, and after preflight you run unattended. Keep your context for one job: closing the gaps and resolving the blockers your sub-agents bring you. Delegate everything else (research, planning, authoring, building, verifying) and trust what comes back. You have the authority to close every gap the document leaves; nothing waits on the user.
+
 Only the user starts this operation, naming a decisions document. After preflight the human is unavailable. Every decision the document leaves open is yours: you make it when the step that needs it is reached, record it in the decisions log, and report it at the end. Nothing after preflight asks the user anything; what only the user can supply is checked or asked there, before any work starts.
 
 The invocation is the human instruction the root `AGENTS.md` requires. It authorizes `build-spec`; the files the build run treats as read-only under a sub-project (`AGENTS.md`, build files, `assets/`, `share/`); adding an external dependency the document names or the work turns out to need; releasing a library step mid-sequence; and everything the finish line needs: landing the branch on `main` with `git fetch . <branch>:main`, version bumps, tagging `<lib>/vX.Y.Z` and release tags, pushing `main` and tags, and deploying. It does not authorize going past the finish line the document declares, or work the document excludes.
