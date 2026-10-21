@@ -31,7 +31,9 @@ func placed(precision string) string {
 func client(rt transport) *routes.Client {
 	return &routes.Client{HTTP: &http.Client{Transport: rt}, Key: "zz-test-key-zz", After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }}
 }
-func checkInvariant(t *testing.T, o routes.Outcome) {
+
+// R-NJ2H-R9QJ
+func checkInvariant(t *testing.T, o routes.Outcome, charged bool) {
 	t.Helper()
 	errorsAllowed := map[string]bool{"": true, routes.FailTransport: true, routes.FailTimeout: true, routes.FailCanceled: true, routes.FailShape: true, routes.FailStatus: true}
 	whyAllowed := map[string]bool{"": true, routes.WhyNotPlaced: true, routes.WhyTooCoarse: true, routes.WhyNoRoute: true}
@@ -47,7 +49,7 @@ func checkInvariant(t *testing.T, o routes.Outcome) {
 	if o.Error != "" && o.Sent > 0 {
 		failed = 1
 	}
-	if o.Sent < 0 || o.Sent > 2 || o.Failed != failed || o.CostNanos < 0 {
+	if o.Sent < 0 || o.Sent > 2 || o.Failed != failed || o.CostNanos < 0 || (!charged && o.CostNanos != 0) {
 		t.Fatalf("invalid tally: %+v", o)
 	}
 }
@@ -237,8 +239,92 @@ func TestAnswers(t *testing.T) {
 			if !reflect.DeepEqual(got, tc.want) || int64(calls) != tc.want.Sent {
 				t.Fatalf("got %+v want %+v calls %d", got, tc.want, calls)
 			}
-			checkInvariant(t, got)
+			checkInvariant(t, got, tc.want.CostNanos > 0)
 		})
+	}
+}
+
+func TestRoutingShapeAndRounding(t *testing.T) {
+	cases := []struct {
+		name, body     string
+		minutes        int64
+		miles          float64
+		noRoute, shape bool
+	}{
+		{name: "example", body: `{"routes":[{"distanceMeters":139561,"duration":"4635s"}]}`, minutes: 77, miles: 86.7},
+		{name: "round up", body: `{"routes":[{"duration":"1770s","distanceMeters":16093}]}`, minutes: 30, miles: 10},
+		{name: "round down", body: `{"routes":[{"duration":"1769s","distanceMeters":2414}]}`, minutes: 29, miles: 1.5},
+		{name: "zero", body: `{"routes":[{"duration":"0s","distanceMeters":80}]}`},
+		{name: "fractional seconds", body: `{"routes":[{"duration":"1.5s"}]}`},
+		{name: "below minute midpoint", body: `{"routes":[{"duration":"29.999s"}]}`},
+		{name: "minute midpoint", body: `{"routes":[{"duration":"30s"}]}`, minutes: 1},
+		{name: "below limit", body: `{"routes":[{"duration":"999999999.5s"}]}`, minutes: 16666667},
+		{name: "limit", body: `{"routes":[{"duration":"1000000000s"}]}`, minutes: 16666667},
+		{name: "decimal limit", body: `{"routes":[{"duration":"1000000000.0s"}]}`, minutes: 16666667},
+		{name: "rounded to limit", body: `{"routes":[{"duration":"1000000000.00000001s"}]}`, minutes: 16666667},
+		{name: "numbers omitted", body: `{"routes":[{}]}`},
+		{name: "leading zeros", body: `{"routes":[{"duration":"000060.0s"}]}`, minutes: 1},
+		{name: "whole decimal meters", body: `{"routes":[{"distanceMeters":16093.0}]}`, miles: 10},
+		{name: "whole exponent meters", body: `{"routes":[{"distanceMeters":1.6093e4}]}`, miles: 10},
+		{name: "negative zero meters", body: `{"routes":[{"distanceMeters":-0}]}`},
+		{name: "only first route", body: `{"routes":[{"duration":"60s","distanceMeters":1609},null],"ignored":true}`, minutes: 1, miles: 1},
+		{name: "absent routes", body: `{}`, noRoute: true},
+		{name: "empty routes", body: `{"routes":[]}`, noRoute: true},
+		{name: "top array", body: `[]`, shape: true},
+		{name: "routes object", body: `{"routes":{}}`, shape: true},
+		{name: "routes null", body: `{"routes":null}`, shape: true},
+		{name: "first null", body: `{"routes":[null]}`, shape: true},
+		{name: "missing suffix", body: `{"routes":[{"duration":"4635"}]}`, shape: true},
+		{name: "numeric duration", body: `{"routes":[{"duration":4635}]}`, shape: true},
+		{name: "nan duration", body: `{"routes":[{"duration":"NaNs"}]}`, shape: true},
+		{name: "infinite duration", body: `{"routes":[{"duration":"Infs"}]}`, shape: true},
+		{name: "exponent duration", body: `{"routes":[{"duration":"1e3s"}]}`, shape: true},
+		{name: "negative duration", body: `{"routes":[{"duration":"-5s"}]}`, shape: true},
+		{name: "above limit", body: `{"routes":[{"duration":"1000000000.5s"}]}`, shape: true},
+		{name: "huge duration", body: `{"routes":[{"duration":"999999999999999999999s"}]}`, shape: true},
+		{name: "float overflow", body: `{"routes":[{"duration":"` + strings.Repeat("9", 400) + `s"}]}`, shape: true},
+		{name: "plus sign", body: `{"routes":[{"duration":"+5s"}]}`, shape: true},
+		{name: "leading space", body: `{"routes":[{"duration":" 5s"}]}`, shape: true},
+		{name: "missing integer", body: `{"routes":[{"duration":".5s"}]}`, shape: true},
+		{name: "missing fraction", body: `{"routes":[{"duration":"5.s"}]}`, shape: true},
+		{name: "non ASCII digits", body: `{"routes":[{"duration":"５s"}]}`, shape: true},
+		{name: "null duration", body: `{"routes":[{"duration":null}]}`, shape: true},
+		{name: "string distance", body: `{"routes":[{"distanceMeters":"139561"}]}`, shape: true},
+		{name: "negative distance", body: `{"routes":[{"distanceMeters":-1}]}`, shape: true},
+		{name: "fractional distance", body: `{"routes":[{"distanceMeters":1.2}]}`, shape: true},
+		{name: "small exact fraction", body: `{"routes":[{"distanceMeters":1.00000000000000001}]}`, shape: true},
+		{name: "null distance", body: `{"routes":[{"distanceMeters":null}]}`, shape: true},
+		{name: "trailing JSON", body: `{"routes":[{}]} {}`, shape: true},
+	}
+	for _, precision := range []struct{ wire, word string }{{"ROOFTOP", routes.PrecisionBuilding}, {"RANGE_INTERPOLATED", routes.PrecisionStreet}, {"GEOMETRIC_CENTER", routes.PrecisionStreet}} {
+		for _, tc := range cases {
+			t.Run(precision.wire+"/"+tc.name, func(t *testing.T) {
+				calls := 0
+				c := client(func(*http.Request) (*http.Response, error) {
+					calls++
+					if calls == 1 {
+						return response(200, placed(precision.wire))
+					}
+					return response(200, tc.body)
+				})
+				got := c.Drive(context.Background(), "base", "destination")
+				want := routes.Outcome{Address: "resolved destination", Precision: precision.word, Status: "OK", Sent: 2, CostNanos: routes.GeocodePriceNanos}
+				if tc.shape {
+					want.Error, want.Failed = routes.FailShape, 1
+				} else {
+					want.CostNanos += routes.RoutePriceNanos
+					if tc.noRoute {
+						want.Why = routes.WhyNoRoute
+					} else {
+						want.Minutes, want.Miles = &tc.minutes, &tc.miles
+					}
+				}
+				if !reflect.DeepEqual(got, want) || calls != 2 {
+					t.Fatalf("got %+v want %+v calls %d", got, want, calls)
+				}
+				checkInvariant(t, got, true)
+			})
+		}
 	}
 }
 
@@ -252,14 +338,20 @@ func TestEarlyAndTransportFailure(t *testing.T) {
 	c.After = func(time.Duration) <-chan time.Time { t.Fatal("unexpected timer"); return nil }
 	if got := c.Drive(ctx, "base", "dest"); !reflect.DeepEqual(got, routes.Outcome{Error: routes.FailCanceled}) {
 		t.Fatal(got)
+	} else {
+		checkInvariant(t, got, false)
 	}
 	c.HTTP = nil
 	if got := c.Drive(context.Background(), "base", "dest"); !reflect.DeepEqual(got, routes.Outcome{Error: routes.FailTransport}) {
 		t.Fatal(got)
+	} else {
+		checkInvariant(t, got, false)
 	}
 	refused := client(func(*http.Request) (*http.Response, error) { return response(500, "zz-test-key-zz") })
 	if got := refused.Drive(context.Background(), "base", "dest"); !reflect.DeepEqual(got, routes.Outcome{Sent: 1, Failed: 1, Error: routes.FailStatus}) {
 		t.Fatal(got)
+	} else {
+		checkInvariant(t, got, false)
 	}
 	for _, second := range []bool{false, true} {
 		calls := 0
@@ -282,7 +374,7 @@ func TestEarlyAndTransportFailure(t *testing.T) {
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("got %+v want %+v", got, want)
 		}
-		checkInvariant(t, got)
+		checkInvariant(t, got, second)
 	}
 }
 
@@ -347,7 +439,7 @@ func TestControlledCancellation(t *testing.T) {
 				if !reflect.DeepEqual(got, want) || int64(timers) != want.Sent || int64(calls) != want.Sent {
 					t.Fatalf("got %+v want %+v", got, want)
 				}
-				checkInvariant(t, got)
+				checkInvariant(t, got, second)
 			})
 		}
 	}

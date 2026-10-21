@@ -251,7 +251,7 @@ func route(obj map[string]any) (seconds, meters float64, found, valid bool) {
 		}
 		var err error
 		seconds, err = strconv.ParseFloat(strings.TrimSuffix(text, "s"), 64)
-		if err != nil {
+		if err != nil || seconds > 1e9 {
 			return 0, 0, false, false
 		}
 	}
