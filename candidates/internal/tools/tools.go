@@ -16,6 +16,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
+	"github.com/ikigenba/ikigenba/candidates/internal/routes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/urls"
@@ -430,8 +431,12 @@ func judgmentsOf(a store.Judgments) Judgments {
 	}
 	return v
 }
-func factsOf(f store.Facts) Facts {
+func factsOf(f store.Facts, origin string) Facts {
 	v := Facts{KnownSince: date(f.KnownSince), NewestFiling: date(f.NewestFiling), Categories: []Category{}, ClassifiedBy: store.ClassifiedBy(f.Categories), RecordsDiffer: store.RecordsDiffer(f.Categories, f.Records), RecordCategories: []Category{}, GovernmentMatch: f.GovernmentMatch, FleetVerdict: f.FleetVerdict, PowerUnits: f.PowerUnits, Drivers: f.Drivers, Website: f.Website, WebsiteURL: f.WebsiteURL, WebsiteSource: f.WebsiteSource, Minutes: f.Minutes, MinutesSource: f.MinutesSource, Miles: f.Miles, RouteAddress: f.RouteAddress, Written: []Written{}}
+	if f.MinutesSource == store.MinutesByRoute && f.RouteAddress != "" {
+		v.PlaceURL = routes.PlaceURL(f.RouteAddress)
+		v.DirectionsURL = routes.DirectionsURL(origin, f.RouteAddress)
+	}
 	for _, c := range f.Categories {
 		v.Categories = append(v.Categories, Category{c.Name, c.Source})
 	}
@@ -506,6 +511,10 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 		out.Rejects = append(out.Rejects, rejectOf(x))
 	}
 	if c.Status == store.StatusActive {
+		subject, err := cfg.Store.Subject(ctx, id)
+		if err != nil {
+			return failure(err)
+		}
 		uses, err := cfg.Store.CampaignUses(ctx, id)
 		if err != nil {
 			return failure(err)
@@ -516,7 +525,7 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 		out.Enrichments = &Enrichments{}
 		f, err := cfg.Store.GetFacts(ctx, id)
 		if err == nil {
-			v := factsOf(f)
+			v := factsOf(f, subject.Origin)
 			out.Enrichments.Facts = &v
 		} else if !errors.Is(err, store.ErrNotFound) {
 			return failure(err)
@@ -541,7 +550,7 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 		}
 		out.Enrichments.Brief = briefOf(enrichments)
 		for _, e := range enrichments {
-			out.EnrichmentResults = append(out.EnrichmentResults, enrichmentOf(e))
+			out.EnrichmentResults = append(out.EnrichmentResults, enrichmentOf(e, subject))
 		}
 
 		es, err := cfg.Store.Estimates(ctx, id)
@@ -562,7 +571,7 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 	return answer(out)
 }
 
-func enrichmentOf(e store.Enrichment) EnrichmentResult {
+func enrichmentOf(e store.Enrichment, subject enrichers.Subject) EnrichmentResult {
 	v := EnrichmentResult{Kind: e.Kind, Source: e.Source, Inputs: e.Inputs, Cost: e.Cost, At: stamp(e.At)}
 	switch e.Kind {
 	case sources.WebsiteCheck:
@@ -587,6 +596,15 @@ func enrichmentOf(e store.Enrichment) EnrichmentResult {
 			v.Found = json.RawMessage(`{}`)
 		} else if json.Compact(&b, e.Found) == nil {
 			v.Found = append(json.RawMessage{}, b.Bytes()...)
+		}
+	}
+	if e.Kind == enrichers.KindDriveRoute {
+		var found enrichers.RouteFound
+		if json.Unmarshal(e.Found, &found) == nil && !found.Failed() && found.Minutes != nil && found.Address != "" {
+			v.PlaceURL = routes.PlaceURL(found.Address)
+			if e.Inputs == (enrichers.DriveRoute{}).Inputs(subject) {
+				v.DirectionsURL = routes.DirectionsURL(subject.Origin, found.Address)
+			}
 		}
 	}
 	return v

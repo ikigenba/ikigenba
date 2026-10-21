@@ -53,7 +53,7 @@ func TestSiteTextResultProjection(t *testing.T) {
 		failed bool
 	}{{"exited", new(0), false}, {"exited", new(1), true}, {"failed", nil, true}, {"timed_out", nil, true}, {"killed", nil, true}} {
 		found := enrichers.SiteTextFound{Run: "fixture-run", Status: tc.status, ExitCode: tc.code, Pages: 3, CostNanos: 23714000}
-		v := enrichmentRow(store.Enrichment{Kind: enrichers.KindSiteText, Source: enrichers.SourcePrompts, Found: encodedJSON(found), Cost: .023714})
+		v := enrichmentRow(store.Enrichment{Kind: enrichers.KindSiteText, Source: enrichers.SourcePrompts, Found: encodedJSON(found), Cost: .023714}, enrichers.Subject{})
 		if v.Failed != tc.failed || v.Cost != "$0.023714" || v.State != "" || v.URL != "" || v.Title != "" || v.StatusCode != "" || v.Error != "" || v.Size != 0 {
 			t.Fatal(v)
 		}
@@ -68,13 +68,13 @@ func TestSiteTextResultProjection(t *testing.T) {
 		want string
 	}{{0, ""}, {.0000325, "$0.000033"}, {.0000004, "$0.000000"}, {.0000000004, ""}} {
 		for _, kind := range []string{sources.WebsiteCheck, enrichers.KindDriveMinutes} {
-			v := enrichmentRow(store.Enrichment{Kind: kind, Cost: tc.cost})
+			v := enrichmentRow(store.Enrichment{Kind: kind, Cost: tc.cost}, enrichers.Subject{})
 			if v.Failed || v.Cost != tc.want {
 				t.Fatal(v)
 			}
 		}
 	}
-	if enrichmentRow(store.Enrichment{Kind: enrichers.KindSiteText, Found: []byte("invalid")}).Failed {
+	if enrichmentRow(store.Enrichment{Kind: enrichers.KindSiteText, Found: []byte("invalid")}, enrichers.Subject{}).Failed {
 		t.Fatal("malformed result marked failed")
 	}
 }

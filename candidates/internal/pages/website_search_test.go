@@ -20,7 +20,7 @@ func TestSearchEnrichmentProjection(t *testing.T) {
 	full := enrichers.WebsiteSearchFound{Run: enrichers.WebsiteSearchRun{ID: "r1", Status: enrichers.RunExited, ExitCode: &zero}, Answer: &enrichers.WebsiteSearchAnswer{URL: "https://acme.test/", Why: "chosen-why", Rejected: []enrichers.WebsiteSearchSite{{URL: "https://other.test/", Why: "chosen-rejection"}, {URL: "https://third.test/"}}}, Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteHTTPS, URL: "https://www.acme.test/", Title: "chosen-title", StatusCode: 200, Size: 1256}}
 	for _, f := range []enrichers.WebsiteSearchFound{full, {Run: full.Run}, {Run: full.Run, Answer: &enrichers.WebsiteSearchAnswer{}}, {Run: full.Run, Answer: full.Answer, Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteNone, Error: "chosen-error"}}, {Run: enrichers.WebsiteSearchRun{Status: "failed"}}, {Run: enrichers.WebsiteSearchRun{Status: enrichers.RunExited, ExitCode: &one}, Answer: full.Answer}, {Run: enrichers.WebsiteSearchRun{Status: "killed"}, Answer: full.Answer}} {
 		x := store.Enrichment{Kind: enrichers.KindWebsiteSearch, Source: enrichers.SourcePrompts, Found: encodedJSON(f), Cost: .023714, At: fixtureTime()}
-		got := enrichmentRow(x)
+		got := enrichmentRow(x, enrichers.Subject{})
 		want := EnrichmentRow{Kind: x.Kind, Source: x.Source, Found: []FactRow{}, Run: &RunView{ID: f.Run.ID, Status: f.Run.Status}, Failed: f.Failed(), Cost: "$0.023714", At: "2026-10-05T09:00:07Z", AtText: "2026-10-05 09:00"}
 		if f.Run.ExitCode != nil {
 			if *f.Run.ExitCode == 0 {
@@ -47,7 +47,7 @@ func TestSearchEnrichmentProjection(t *testing.T) {
 	}
 	// The nested fields are absent on the other result shapes.
 	for _, kind := range []string{sources.WebsiteCheck, enrichers.KindSiteText, enrichers.KindBrief, enrichers.KindLinkFacts} {
-		got := enrichmentRow(store.Enrichment{Kind: kind, Found: json.RawMessage(`{}`)})
+		got := enrichmentRow(store.Enrichment{Kind: kind, Found: json.RawMessage(`{}`)}, enrichers.Subject{})
 		if got.Run != nil || got.Answer != nil || got.Confirmation != nil {
 			t.Fatal(got)
 		}

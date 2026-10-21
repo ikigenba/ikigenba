@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
@@ -58,7 +59,7 @@ func TestWebsiteProjections(t *testing.T) {
 			url = "https://chosen.test"
 		}
 		a := store.Facts{Website: state, WebsiteURL: url}
-		if got := factsOf(a); got.Website != state || got.WebsiteURL != url {
+		if got := factsOf(a, ""); got.Website != state || got.WebsiteURL != url {
 			t.Fatal(got)
 		}
 		if got := memberOf(store.Ranked{Facts: a}); got.Website != state || got.WebsiteURL != url {
@@ -70,11 +71,11 @@ func TestWebsiteProjections(t *testing.T) {
 	var wr website.Result
 	_ = json.Unmarshal(e.Found, &wr)
 	wantE := EnrichmentResult{Kind: e.Kind, Source: e.Source, Inputs: e.Inputs, State: wr.State, URL: wr.URL, Title: wr.Title, StatusCode: wr.StatusCode, Size: &wr.Size, Error: wr.Error, Domain: e.Source, Cost: e.Cost, At: stamp(at)}
-	if got := enrichmentOf(e); !reflect.DeepEqual(got, wantE) {
+	if got := enrichmentOf(e, enrichers.Subject{}); !reflect.DeepEqual(got, wantE) {
 		t.Fatal(got, wantE)
 	}
 
-	b, err := json.Marshal(enrichmentOf(store.Enrichment{Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteNone})}))
+	b, err := json.Marshal(enrichmentOf(store.Enrichment{Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteNone})}, enrichers.Subject{}))
 	if err != nil {
 		t.Fatal(err)
 	}

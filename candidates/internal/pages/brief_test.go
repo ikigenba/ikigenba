@@ -43,7 +43,7 @@ func TestBriefViewSelection(t *testing.T) {
 		t.Fatal(got)
 	}
 	for _, e := range []store.Enrichment{success, failed, empty} {
-		got := enrichmentRow(e)
+		got := enrichmentRow(e, enrichers.Subject{})
 		if got.Failed != (string(e.Found) != string(success.Found)) {
 			t.Fatal(got)
 		}

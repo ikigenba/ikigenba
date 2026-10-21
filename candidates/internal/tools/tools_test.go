@@ -52,6 +52,7 @@ func (r *random) Read(b []byte) (int, error) {
 type fixture struct {
 	t      *testing.T
 	d      *db.DB
+	dbPath string
 	st     *store.Store
 	eng    *passes.Engine
 	client *mcp.Client
@@ -70,7 +71,8 @@ func fixtureWithRoutes(t *testing.T, h http.Handler, k *website.Checker, pc *pro
 	t.Helper()
 	f := &fixture{t: t, now: time.Date(2026, 4, 5, 0, 7, 8, 0, time.FixedZone("fixture", 2*60*60))}
 	now := func() time.Time { return f.now }
-	d, err := db.Open(t.Context(), db.Config{Path: filepath.Join(t.TempDir(), "db"), Migrations: candidates.Migrations(), Now: now, Service: "candidates"})
+	f.dbPath = filepath.Join(t.TempDir(), "db")
+	d, err := db.Open(t.Context(), db.Config{Path: f.dbPath, Migrations: candidates.Migrations(), Now: now, Service: "candidates"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +298,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 	_ = tools.Decision{tools.Ruling{}, nil}
 	_ = tools.EnrichArgs{"kind", "prospect_list", "candidate", false}
 	_ = tools.AddPageArgs{"candidate", "url"}
-	_ = tools.EnrichmentResult{"kind", "source", "inputs", nil, "state", "url", "title", 200, nil, "error", "domain", .2, "at"}
+	_ = tools.EnrichmentResult{"kind", "source", "inputs", nil, "state", "url", "title", 200, nil, "error", "domain", "place", "directions", .2, "at"}
 	_ = tools.NoArgs{}
 	_ = tools.CandidateArgs{"id"}
 	_ = tools.PassArgs{"id"}
@@ -337,7 +339,7 @@ func objectKeys(t *testing.T, b []byte) []string {
 }
 
 // R-XFGZ-IYVN R-VWLI-BAIE R-PRJ2-Q1SR R-MGDJ-LAMN R-AOUV-YTEL R-AKDK-IR5F R-O2WP-YA7Z R-QEP5-ZOVY
-// R-Q8LO-2U6H
+// R-YNDH-GZXV
 // R-6131-Z710 R-XFGZ-IYVN R-VWLI-BAIE R-PRJ2-Q1SR R-MGDJ-LAMN R-AOUV-YTEL R-AKDK-IR5F R-O2WP-YA7Z R-QEP5-ZOVY
 func TestAnswerJSONShapes(t *testing.T) {
 	tests := []struct {

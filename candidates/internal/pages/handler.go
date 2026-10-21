@@ -260,12 +260,17 @@ func Handler(cfg Config) http.Handler {
 				}
 				setWebsite(&d.Candidate, enrichments)
 				d.Enrichments.Brief = briefView(enrichments)
+				subject, err := cfg.Store.Subject(r.Context(), cid)
+				if err != nil {
+					fail()
+					return
+				}
 				for _, x := range enrichments {
-					d.EnrichmentResults = append(d.EnrichmentResults, enrichmentRow(x))
+					d.EnrichmentResults = append(d.EnrichmentResults, enrichmentRow(x, subject))
 				}
 				facts, err := cfg.Store.GetFacts(r.Context(), cid)
 				if err == nil {
-					v := factsView(facts)
+					v := factsView(facts, subject.Origin)
 					d.Enrichments.Facts = &v
 				} else if !errors.Is(err, store.ErrNotFound) {
 					fail()

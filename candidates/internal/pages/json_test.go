@@ -26,11 +26,11 @@ func TestFactsProjection(t *testing.T) {
 	at := fixtureTime()
 	power, minutes := int64(12), int64(84)
 	f := store.Facts{KnownSince: time.Date(2018, 4, 9, 0, 0, 0, 0, time.UTC), NewestFiling: at, Categories: []sources.Category{{Name: sources.CategoryTrucking, Source: "fmcsa"}, {Name: sources.CategoryTrucking, Source: "ppp"}}, GovernmentMatch: "fixture-government", FleetVerdict: sources.FleetPass, PowerUnits: &power, Minutes: &minutes, Written: []store.Written{{Kind: enrichers.KindDriveMinutes, At: at}, {Kind: sources.WebsiteCheck, At: at}}}
-	want := FactsView{"2018-04-09", "2018-04-09", "2026-10-05", "2026-10-05", []CategoryRow{{sources.CategoryTrucking, "fmcsa"}, {sources.CategoryTrucking, "ppp"}}, enrichers.SourceLinks, false, []CategoryRow{}, "fixture-government", sources.FleetPass, "12", "", "84", "", "", "", []WrittenRow{{enrichers.KindDriveMinutes, "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC"}, {sources.WebsiteCheck, "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC"}}}
-	if got := factsView(f); !reflect.DeepEqual(got, want) {
+	want := FactsView{"2018-04-09", "2018-04-09", "2026-10-05", "2026-10-05", []CategoryRow{{sources.CategoryTrucking, "fmcsa"}, {sources.CategoryTrucking, "ppp"}}, enrichers.SourceLinks, false, []CategoryRow{}, "fixture-government", sources.FleetPass, "12", "", "84", "", "", "", "", "", []WrittenRow{{enrichers.KindDriveMinutes, "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC"}, {sources.WebsiteCheck, "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC"}}}
+	if got := factsView(f, ""); !reflect.DeepEqual(got, want) {
 		t.Fatal(got, want)
 	}
-	if got := factsView(store.Facts{}); !reflect.DeepEqual(got, FactsView{Categories: []CategoryRow{}, RecordCategories: []CategoryRow{}, Written: []WrittenRow{}}) {
+	if got := factsView(store.Facts{}, ""); !reflect.DeepEqual(got, FactsView{Categories: []CategoryRow{}, RecordCategories: []CategoryRow{}, Written: []WrittenRow{}}) {
 		t.Fatal(got)
 	}
 }
@@ -47,7 +47,7 @@ func TestDerivedProjection(t *testing.T) {
 		{enrichers.KindLinkFacts, enrichers.SourceLinks, `{"fleet_verdict":"pass", "categories": []}`, []FactRow{{"categories", "[]"}, {"fleet_verdict", `"pass"`}}},
 	} {
 		e := store.Enrichment{Kind: tc.kind, Source: tc.source, Found: json.RawMessage(tc.raw)}
-		got := enrichmentRow(e)
+		got := enrichmentRow(e, enrichers.Subject{})
 		want := EnrichmentRow{Kind: tc.kind, Source: tc.source, Found: tc.want}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatal(got, want)
@@ -75,7 +75,7 @@ func TestCandidateFactsWithoutJudgment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := factsView(facts)
+	want := factsView(facts, "")
 	if got.Judgments != nil || got.Enrichments.Facts == nil || !reflect.DeepEqual(*got.Enrichments.Facts, want) || len(got.Enrichments.Facts.Written) != 1 || got.Enrichments.Facts.Written[0].Kind != enrichers.KindLinkFacts {
 		t.Fatal(got)
 	}
@@ -83,7 +83,7 @@ func TestCandidateFactsWithoutJudgment(t *testing.T) {
 	if err != nil || len(results) != 1 || results[0].Kind != enrichers.KindLinkFacts {
 		t.Fatal(results, err)
 	}
-	if expected := []EnrichmentRow{enrichmentRow(results[0])}; !reflect.DeepEqual(got.EnrichmentResults, expected) || len(got.EnrichmentResults[0].Found) == 0 {
+	if expected := []EnrichmentRow{enrichmentRow(results[0], enrichers.Subject{})}; !reflect.DeepEqual(got.EnrichmentResults, expected) || len(got.EnrichmentResults[0].Found) == 0 {
 		t.Fatal(got.EnrichmentResults, expected)
 	}
 	if _, err := cfg.Store.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: ids[0], Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Source: "fixture.test", Found: encodedJSON(website.Result{State: sources.WebsiteHTTPS, URL: "https://fixture.test/"})}}); err != nil {
@@ -94,7 +94,7 @@ func TestCandidateFactsWithoutJudgment(t *testing.T) {
 		t.Fatal(results, err)
 	}
 	got = capturedCandidate(t, cfg, ids[0])
-	expected := []EnrichmentRow{enrichmentRow(results[0]), enrichmentRow(results[1])}
+	expected := []EnrichmentRow{enrichmentRow(results[0], enrichers.Subject{}), enrichmentRow(results[1], enrichers.Subject{})}
 	if !reflect.DeepEqual(got.EnrichmentResults, expected) || got.EnrichmentResults[0].Kind != sources.WebsiteCheck || got.EnrichmentResults[1].Kind != enrichers.KindLinkFacts || len(got.EnrichmentResults[1].Found) == 0 {
 		t.Fatal(got.EnrichmentResults, expected)
 	}

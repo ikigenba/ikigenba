@@ -11,13 +11,13 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-ANMZ-L1NW R-Q65V-BAP3 R-RE29-31E3 R-RGI1-UKVH R-RIXU-M4CV R-7AXF-IAYJ
+// R-YM5L-3876 R-Q65V-BAP3 R-RE29-31E3 R-RGI1-UKVH R-RIXU-M4CV R-7AXF-IAYJ
 func TestFactsAndBriefAnswers(t *testing.T) {
 	at := time.Date(2026, 10, 5, 9, 0, 7, 0, time.UTC)
 	minutes, power, drivers := int64(31), int64(4), int64(0)
 	f := store.Facts{KnownSince: at, NewestFiling: at, Categories: []sources.Category{{Name: sources.CategoryRetail, Source: enrichers.KindBrief}}, Records: []sources.Category{{Name: sources.CategoryTrucking, Source: "fmcsa"}}, GovernmentMatch: "match", FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, Website: sources.WebsiteHTTPS, WebsiteURL: "https://fixture.test", WebsiteSource: store.WebsiteBySearch, Minutes: &minutes, Written: []store.Written{{Kind: enrichers.KindWebsiteSearch, At: at}}}
-	want := Facts{"2026-10-05", "2026-10-05", []Category{{sources.CategoryRetail, enrichers.KindBrief}}, enrichers.KindBrief, true, []Category{{sources.CategoryTrucking, "fmcsa"}}, "match", sources.FleetPass, &power, &drivers, sources.WebsiteHTTPS, "https://fixture.test", store.WebsiteBySearch, &minutes, "", nil, "", []Written{{enrichers.KindWebsiteSearch, stamp(at)}}}
-	if got := factsOf(f); !reflect.DeepEqual(got, want) {
+	want := Facts{"2026-10-05", "2026-10-05", []Category{{sources.CategoryRetail, enrichers.KindBrief}}, enrichers.KindBrief, true, []Category{{sources.CategoryTrucking, "fmcsa"}}, "match", sources.FleetPass, &power, &drivers, sources.WebsiteHTTPS, "https://fixture.test", store.WebsiteBySearch, &minutes, "", nil, "", "", "", []Written{{enrichers.KindWebsiteSearch, stamp(at)}}}
+	if got := factsOf(f, ""); !reflect.DeepEqual(got, want) {
 		t.Fatal(got, want)
 	}
 	for _, tc := range []struct {
@@ -48,7 +48,7 @@ func TestFactsAndBriefAnswers(t *testing.T) {
 	}
 }
 
-// R-ANMZ-L1NW R-AQ2S-CL5A
+// R-YM5L-3876 R-AQ2S-CL5A
 func TestDriveFactsEncodingAndProjection(t *testing.T) {
 	minutes, miles := int64(17), 12.5
 	for _, f := range []store.Facts{
@@ -56,13 +56,13 @@ func TestDriveFactsEncodingAndProjection(t *testing.T) {
 		{Minutes: &minutes, MinutesSource: store.MinutesByZip},
 		{},
 	} {
-		got := factsOf(f)
+		got := factsOf(f, "")
 		if got.MinutesSource != f.MinutesSource || got.Miles != f.Miles || got.RouteAddress != f.RouteAddress {
 			t.Fatal(got, f)
 		}
 	}
-	got, err := json.Marshal(Facts{Minutes: &minutes, MinutesSource: store.MinutesByRoute, Miles: &miles, RouteAddress: "Fixture address"})
-	want := `{"categories":[],"classified_by":"","records_differ":false,"record_categories":[],"fleet_verdict":"","website":"","website_source":"","minutes":17,"minutes_source":"route","miles":12.5,"route_address":"Fixture address","written":[]}`
+	got, err := json.Marshal(Facts{Minutes: &minutes, MinutesSource: store.MinutesByRoute, Miles: &miles, RouteAddress: "Fixture address", PlaceURL: "chosen-place", DirectionsURL: "chosen-directions"})
+	want := `{"categories":[],"classified_by":"","records_differ":false,"record_categories":[],"fleet_verdict":"","website":"","website_source":"","minutes":17,"minutes_source":"route","miles":12.5,"route_address":"Fixture address","place_url":"chosen-place","directions_url":"chosen-directions","written":[]}`
 	if err != nil || string(got) != want {
 		t.Fatal(string(got), err)
 	}

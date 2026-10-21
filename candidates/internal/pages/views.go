@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
+	"github.com/ikigenba/ikigenba/candidates/internal/routes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/urls"
@@ -65,7 +66,7 @@ func passView(p store.Pass, sp string) PassView {
 }
 func memberRow(e store.Ranked, i int) MemberRow {
 	a := judgmentsView(e.Judgments)
-	f := factsView(e.Facts)
+	f := factsView(e.Facts, "")
 	v := MemberRow{Rank: int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(e.Facts.Categories), Class: e.Candidate.Class, FleetVerdict: f.FleetVerdict, Website: e.Facts.Website, WebsiteURL: e.Facts.WebsiteURL, WebsiteSource: e.Facts.WebsiteSource, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch, KnownSince: f.KnownSince, KnownSinceText: f.KnownSinceText, NewestFiling: f.NewestFiling, NewestFilingText: f.NewestFilingText, Excluded: a.Excluded}
 	v.SiteText, v.SiteTextText = stamp(e.SiteText, MinuteLayout)
 	v.Brief, v.BriefText = stamp(e.Brief, MinuteLayout)
@@ -122,7 +123,7 @@ func judgmentsView(a store.Judgments) JudgmentsView {
 	v.Calculated, v.CalculatedText = stamp(a.Calculated, SecondLayout)
 	return v
 }
-func factsView(f store.Facts) FactsView {
+func factsView(f store.Facts, origin string) FactsView {
 	v := FactsView{KnownSince: date(f.KnownSince), KnownSinceText: date(f.KnownSince), NewestFiling: date(f.NewestFiling), NewestFilingText: date(f.NewestFiling), Categories: []CategoryRow{}, ClassifiedBy: store.ClassifiedBy(f.Categories), RecordsDiffer: store.RecordsDiffer(f.Categories, f.Records), RecordCategories: []CategoryRow{}, GovernmentMatch: f.GovernmentMatch, FleetVerdict: f.FleetVerdict, Written: []WrittenRow{}}
 	if f.PowerUnits != nil {
 		v.PowerUnits = strconv.FormatInt(*f.PowerUnits, 10)
@@ -136,6 +137,8 @@ func factsView(f store.Facts) FactsView {
 	v.MinutesSource = f.MinutesSource
 	if f.MinutesSource == store.MinutesByRoute {
 		v.RouteAddress = f.RouteAddress
+		v.RoutePlaceURL = routes.PlaceURL(f.RouteAddress)
+		v.RouteDirectionsURL = routes.DirectionsURL(origin, f.RouteAddress)
 		if f.Miles != nil {
 			v.Miles = strconv.FormatFloat(*f.Miles, 'f', 1, 64)
 		}
@@ -240,7 +243,7 @@ func rejectRecordRow(r store.Reject) RejectRecordRow {
 	return v
 }
 
-func enrichmentRow(x store.Enrichment) EnrichmentRow {
+func enrichmentRow(x store.Enrichment, subject enrichers.Subject) EnrichmentRow {
 	v := EnrichmentRow{Kind: x.Kind, Source: x.Source, Found: []FactRow{}}
 	switch x.Kind {
 	case sources.WebsiteCheck:
@@ -256,6 +259,12 @@ func enrichmentRow(x store.Enrichment) EnrichmentRow {
 		var r enrichers.RouteFound
 		_ = json.Unmarshal(x.Found, &r)
 		v.Route = &RouteView{Address: r.Address, Precision: r.Precision, Status: r.Status, Why: r.Why, Error: r.Error}
+		if !r.Failed() && r.Minutes != nil && r.Address != "" {
+			v.Route.PlaceURL = routes.PlaceURL(r.Address)
+			if x.Inputs == (enrichers.DriveRoute{}).Inputs(subject) {
+				v.Route.DirectionsURL = routes.DirectionsURL(subject.Origin, r.Address)
+			}
+		}
 		if r.Minutes != nil {
 			v.Route.Minutes = strconv.FormatInt(*r.Minutes, 10)
 		}

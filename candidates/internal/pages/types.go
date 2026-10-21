@@ -159,13 +159,13 @@ type JudgmentsView struct {
 
 // FactsView supplies the newest recorded facts.
 type FactsView struct {
-	KnownSince, KnownSinceText, NewestFiling, NewestFilingText                                      string
-	Categories                                                                                      []CategoryRow
-	ClassifiedBy                                                                                    string
-	RecordsDiffer                                                                                   bool
-	RecordCategories                                                                                []CategoryRow
-	GovernmentMatch, FleetVerdict, PowerUnits, Drivers, Minutes, MinutesSource, Miles, RouteAddress string
-	Written                                                                                         []WrittenRow
+	KnownSince, KnownSinceText, NewestFiling, NewestFilingText                                                                         string
+	Categories                                                                                                                         []CategoryRow
+	ClassifiedBy                                                                                                                       string
+	RecordsDiffer                                                                                                                      bool
+	RecordCategories                                                                                                                   []CategoryRow
+	GovernmentMatch, FleetVerdict, PowerUnits, Drivers, Minutes, MinutesSource, Miles, RouteAddress, RoutePlaceURL, RouteDirectionsURL string
+	Written                                                                                                                            []WrittenRow
 }
 
 // WrittenRow supplies a fact kind's recording time.
@@ -312,4 +312,4 @@ type EnrichmentsView struct {
 }
 
 // RouteView supplies the routing service result.
-type RouteView struct{ Minutes, Miles, Address, Precision, Status, Why, Error string }
+type RouteView struct{ Minutes, Miles, Address, Precision, Status, Why, Error, PlaceURL, DirectionsURL string }

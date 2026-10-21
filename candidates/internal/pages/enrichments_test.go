@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
@@ -21,11 +22,11 @@ func TestEnrichmentAndWebsiteViews(t *testing.T) {
 	at := fixtureTime()
 	x := store.Enrichment{Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteHTTPS, URL: "https://fixture.example.test/", Title: "fixture-title", StatusCode: 200, Size: 1256}), Source: "fixture.example.test", At: at}
 	want := EnrichmentRow{Kind: sources.WebsiteCheck, Source: x.Source, Found: []FactRow{}, State: sources.WebsiteHTTPS, URL: "https://fixture.example.test/", Title: "fixture-title", StatusCode: "200", Size: 1256, At: "2026-10-05T09:00:07Z", AtText: "2026-10-05 09:00"}
-	if got := enrichmentRow(x); !reflect.DeepEqual(got, want) {
+	if got := enrichmentRow(x, enrichers.Subject{}); !reflect.DeepEqual(got, want) {
 		t.Fatal(got, want)
 	}
 	empty := store.Enrichment{Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteNone, Error: "fixture-error"})}
-	if got := enrichmentRow(empty); !reflect.DeepEqual(got, EnrichmentRow{Kind: sources.WebsiteCheck, Found: []FactRow{}, State: sources.WebsiteNone, Error: "fixture-error"}) {
+	if got := enrichmentRow(empty, enrichers.Subject{}); !reflect.DeepEqual(got, EnrichmentRow{Kind: sources.WebsiteCheck, Found: []FactRow{}, State: sources.WebsiteNone, Error: "fixture-error"}) {
 		t.Fatal(got)
 	}
 	for _, tc := range []struct {
@@ -148,7 +149,7 @@ func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 		t.Fatal(got)
 	}
 	for i, x := range es {
-		if !reflect.DeepEqual(got.EnrichmentResults[i], enrichmentRow(x)) {
+		if !reflect.DeepEqual(got.EnrichmentResults[i], enrichmentRow(x, enrichers.Subject{})) {
 			t.Fatal(got.EnrichmentResults)
 		}
 	}

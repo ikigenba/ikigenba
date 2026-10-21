@@ -303,6 +303,8 @@ type Facts struct {
 	MinutesSource    string     `json:"minutes_source"`
 	Miles            *float64   `json:"miles,omitempty"`
 	RouteAddress     string     `json:"route_address,omitempty"`
+	PlaceURL         string     `json:"place_url,omitempty"`
+	DirectionsURL    string     `json:"directions_url,omitempty"`
 	Written          []Written  `json:"written"`
 }
 
@@ -553,19 +555,21 @@ type EnrichArgs struct {
 
 // EnrichmentResult is one recorded enrichment result.
 type EnrichmentResult struct {
-	Kind       string          `json:"kind"`
-	Source     string          `json:"source"`
-	Inputs     string          `json:"inputs"`
-	Found      json.RawMessage `json:"found,omitempty"`
-	State      string          `json:"state,omitempty"`
-	URL        string          `json:"url,omitempty"`
-	Title      string          `json:"title,omitempty"`
-	StatusCode int             `json:"status_code,omitempty"`
-	Size       *int64          `json:"size,omitempty"`
-	Error      string          `json:"error,omitempty"`
-	Domain     string          `json:"domain,omitempty"`
-	Cost       float64         `json:"cost"`
-	At         string          `json:"at"`
+	Kind          string          `json:"kind"`
+	Source        string          `json:"source"`
+	Inputs        string          `json:"inputs"`
+	Found         json.RawMessage `json:"found,omitempty"`
+	State         string          `json:"state,omitempty"`
+	URL           string          `json:"url,omitempty"`
+	Title         string          `json:"title,omitempty"`
+	StatusCode    int             `json:"status_code,omitempty"`
+	Size          *int64          `json:"size,omitempty"`
+	Error         string          `json:"error,omitempty"`
+	Domain        string          `json:"domain,omitempty"`
+	PlaceURL      string          `json:"place_url,omitempty"`
+	DirectionsURL string          `json:"directions_url,omitempty"`
+	Cost          float64         `json:"cost"`
+	At            string          `json:"at"`
 }
 
 // AddPageArgs selects a candidate website page to keep.

@@ -60,7 +60,7 @@ func TestEnrichmentsAreVisibleBeforeAndApartFromJudgments(t *testing.T) {
 	}
 }
 
-// R-AQ2S-CL5A R-ARAO-QCVZ R-FVFN-DL2H
+// R-AQ2S-CL5A R-ARAO-QCVZ R-YS93-02WN
 func TestDriveRouteAnswersAndLiveMemberProjection(t *testing.T) {
 	f := fixtureWithRoutes(t, nil, nil, nil, nil, "Chosen origin")
 	id := f.seed(1)[0]
@@ -162,7 +162,11 @@ func TestDriveRouteAnswersAndLiveMemberProjection(t *testing.T) {
 		if err := json.Unmarshal(encodedJSON(first), &obj); err != nil {
 			t.Fatal(err)
 		}
-		if len(obj) != 6 || first.Source != enrichers.SourceGoogleRoutes || first.Inputs != inputs || first.Cost != .25 || !reflect.DeepEqual(first.Found, encodedJSON(found)) {
+		wantMembers := 6
+		if found.Minutes != nil {
+			wantMembers = 8
+		}
+		if len(obj) != wantMembers || first.Source != enrichers.SourceGoogleRoutes || first.Inputs != inputs || first.Cost != .25 || !reflect.DeepEqual(first.Found, encodedJSON(found)) {
 			t.Fatal(string(encodedJSON(first)))
 		}
 	}

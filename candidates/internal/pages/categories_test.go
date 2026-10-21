@@ -24,7 +24,7 @@ func TestCategoryEvidenceViews(t *testing.T) {
 		{[]sources.Category{{Name: sources.CategoryRetail, Source: enrichers.KindBrief}}, records[:1], enrichers.KindBrief, false},
 		{brief, nil, enrichers.KindBrief, true}, {nil, nil, "", false},
 	} {
-		f := factsView(store.Facts{Categories: tc.categories, Records: tc.records})
+		f := factsView(store.Facts{Categories: tc.categories, Records: tc.records}, "")
 		want := []CategoryRow{}
 		if tc.differs {
 			for _, c := range tc.records {
