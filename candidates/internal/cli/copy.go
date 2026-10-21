@@ -32,7 +32,7 @@ description = "` + pages.Description + `"
 default = false
 mcp = true
 guests = false
-secrets = []
+secrets = ["CANDIDATES_ROUTE_ORIGIN", "GOOGLE_MAPS_API_KEY"]
 
 [env]
 CANDIDATES_KEEP_PASSES = "20"

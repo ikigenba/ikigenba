@@ -20,7 +20,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-MRCN-18AW R-NI6F-G6M6 R-3QEZ-TBSF R-2G2T-A1M1
+// R-K3TN-H10O R-MRCN-18AW R-3QEZ-TBSF R-2G2T-A1M1
 func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 	for _, fullIngest := range []bool{false, true} {
 		t.Run(fmt.Sprint(fullIngest), func(t *testing.T) {
@@ -133,7 +133,7 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 			}
 			p = actual.ended(p.ID)
 			got := store.Counts{Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged, Derived: p.Derived}
-			if p.Status != store.StatusDone || got != total {
+			if p.Status != store.StatusDone || got != total || p.Due+p.Fetched+p.HTTPS+p.HTTP+p.None+p.Runs+p.RunsFailed+p.Pages+p.Cost != 0 {
 				t.Fatal(p, total)
 			}
 			estimateCount := 0

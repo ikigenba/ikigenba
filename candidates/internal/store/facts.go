@@ -12,7 +12,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-var factsColumns = columns("candidate:Candidate known_since:KnownSince government_match:GovernmentMatch newest_filing:NewestFiling categories:Categories fleet_verdict:FleetVerdict power_units:PowerUnits drivers:Drivers website:Website website_url:WebsiteURL website_source:WebsiteSource minutes:Minutes brief:Brief")
+var factsColumns = columns("candidate:Candidate known_since:KnownSince government_match:GovernmentMatch newest_filing:NewestFiling categories:Categories fleet_verdict:FleetVerdict power_units:PowerUnits drivers:Drivers website:Website website_url:WebsiteURL website_source:WebsiteSource minutes:Minutes minutes_source:MinutesSource miles:Miles route_address:RouteAddress brief:Brief")
 
 func unknownFacts(id string) Facts {
 	return Facts{Candidate: id, Categories: []sources.Category{}, Records: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown}
@@ -26,23 +26,23 @@ func factsKey(ctx context.Context, tx *sql.Tx, id string) (Facts, error) {
 		return Facts{}, ErrNotFound
 	}
 	f := fs[0]
-	var b, d, l, st, w, ws string
-	if err = scanSQL(ctx, tx, "SELECT brief_at,drive_minutes_at,link_facts_at,site_text_at,website_check_at,website_search_at FROM facts WHERE candidate=?", []any{id}, &b, &d, &l, &st, &w, &ws); err != nil {
+	var b, d, dr, l, st, w, ws string
+	if err = scanSQL(ctx, tx, "SELECT brief_at,drive_minutes_at,drive_route_at,link_facts_at,site_text_at,website_check_at,website_search_at FROM facts WHERE candidate=?", []any{id}, &b, &d, &dr, &l, &st, &w, &ws); err != nil {
 		return Facts{}, err
 	}
-	for i, a := range []string{b, d, l, st, w, ws} {
+	for i, a := range []string{b, d, dr, l, st, w, ws} {
 		if a != "" {
 			t, err := time.Parse(time.RFC3339, a)
 			if err != nil {
 				return Facts{}, err
 			}
-			f.Written = append(f.Written, Written{Kind: []string{enrichers.KindBrief, enrichers.KindDriveMinutes, enrichers.KindLinkFacts, enrichers.KindSiteText, sources.WebsiteCheck, enrichers.KindWebsiteSearch}[i], At: t.UTC()})
+			f.Written = append(f.Written, Written{Kind: []string{enrichers.KindBrief, enrichers.KindDriveMinutes, enrichers.KindDriveRoute, enrichers.KindLinkFacts, enrichers.KindSiteText, sources.WebsiteCheck, enrichers.KindWebsiteSearch}[i], At: t.UTC()})
 		}
 	}
 	f.Records, err = recordCategories(ctx, tx, id)
 	return f, err
 }
-func projectFacts(ctx context.Context, tx *sql.Tx, id string) error {
+func (s *Store) projectFacts(ctx context.Context, tx *sql.Tx, id string) error {
 	es, err := enrichmentRecords(ctx, tx, " WHERE candidate=? ORDER BY seq DESC", id)
 	if err != nil {
 		return err
@@ -54,7 +54,7 @@ func projectFacts(ctx context.Context, tx *sql.Tx, id string) error {
 	seen := map[string]bool{}
 	goodBrief := false
 	briefCategories := []sources.Category{}
-	extra := map[string]any{"drive_minutes_at": "", "link_facts_at": "", "website_check_at": "", "site_text_at": "", "brief_at": "", "website_search_at": ""}
+	extra := map[string]any{"drive_minutes_at": "", "drive_route_at": "", "link_facts_at": "", "website_check_at": "", "site_text_at": "", "brief_at": "", "website_search_at": ""}
 	for _, e := range es {
 		if e.Kind == enrichers.KindBrief && !goodBrief && !(enrichers.Brief{}).Failed(e.Found) {
 			var b enrichers.BriefFound
@@ -105,6 +105,27 @@ func projectFacts(ctx context.Context, tx *sql.Tx, id string) error {
 		}
 		extra[e.Kind+"_at"] = e.At.Format(time.RFC3339)
 	}
+	if f.Minutes != nil {
+		f.MinutesSource = MinutesByZip
+	}
+	// The address is needed only when a recorded route could decide the drive.
+	if seen[enrichers.KindDriveRoute] && s.cfg.Origin != "" {
+		c, err := candidateKey(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		inputs := (enrichers.DriveRoute{}).Inputs(enrichers.Subject{Street: c.Street, City: c.City, State: c.State, Zip: c.Zip, Origin: s.cfg.Origin})
+		for _, e := range es {
+			if inputs == "" || e.Kind != enrichers.KindDriveRoute || e.Inputs != inputs {
+				continue
+			}
+			var g enrichers.RouteFound
+			if json.Unmarshal(e.Found, &g) == nil && !g.Failed() && g.Minutes != nil {
+				f.Minutes, f.MinutesSource, f.Miles, f.RouteAddress = g.Minutes, MinutesByRoute, g.Miles, g.Address
+				break
+			}
+		}
+	}
 	f.WebsiteSource, f.Website, f.WebsiteURL = websiteFacts(es)
 	if len(briefCategories) > 0 {
 		f.Categories = briefCategories
@@ -136,12 +157,12 @@ func (s *Store) GetFacts(ctx context.Context, candidate string) (Facts, error) {
 // FillFacts fills only missing projections from existing results.
 func (s *Store) FillFacts(ctx context.Context) error {
 	return unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		cs, err := readRecords[Candidate](ctx, tx, "candidates", candidateColumns, " WHERE status=? AND NOT EXISTS (SELECT 1 FROM facts WHERE facts.candidate=candidates.id)", StatusActive)
+		cs, err := readRecords[Candidate](ctx, tx, "candidates", candidateColumns, " WHERE status=? AND (NOT EXISTS (SELECT 1 FROM facts WHERE facts.candidate=candidates.id) OR EXISTS (SELECT 1 FROM enrichments WHERE enrichments.candidate=candidates.id AND enrichments.kind='drive_route') OR EXISTS (SELECT 1 FROM facts WHERE facts.candidate=candidates.id AND ((minutes IS NULL AND minutes_source!='') OR (minutes IS NOT NULL AND minutes_source=''))))", StatusActive)
 		if err != nil {
 			return err
 		}
 		for _, c := range cs {
-			if err = projectFacts(ctx, tx, c.ID); err != nil {
+			if err = s.projectFacts(ctx, tx, c.ID); err != nil {
 				return err
 			}
 		}
@@ -245,3 +266,9 @@ func websiteFacts(es []Enrichment) (source, state, url string) {
 	}
 	return "", state, ""
 }
+
+// MinutesByRoute and MinutesByZip identify the deciding drive result.
+const (
+	MinutesByRoute = "route"
+	MinutesByZip   = "zip"
+)

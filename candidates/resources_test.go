@@ -23,12 +23,12 @@ func TestEtc(t *testing.T) {
 	checkFiles(t, candidates.Etc, []string{"manifest.toml", "nginx.conf"})
 }
 
-// R-YXZ9-ET3A
+// R-XGNV-5RUP
 func TestMigrations(t *testing.T) {
 	t.Chdir(t.TempDir())
 	checkFiles(t, candidates.Migrations, []string{
 		"0001_candidates.sql", "0002_links.sql", "0003_estimates.sql", "0004_assessments.sql",
-		"0005_decisions.sql", "0006_passes.sql", "0007_zip_drive.sql", "0008_windows.sql", "0009_judgments.sql", "0010_cohorts.sql", "0011_enrichments.sql", "0012_facts.sql", "0013_site_text.sql", "0014_brief.sql", "0015_website_search.sql", "0016_campaign_uses.sql", "0017_prospect_lists.sql",
+		"0005_decisions.sql", "0006_passes.sql", "0007_zip_drive.sql", "0008_windows.sql", "0009_judgments.sql", "0010_cohorts.sql", "0011_enrichments.sql", "0012_facts.sql", "0013_site_text.sql", "0014_brief.sql", "0015_website_search.sql", "0016_campaign_uses.sql", "0017_prospect_lists.sql", "0018_drive_route.sql",
 	})
 }
 
@@ -172,5 +172,14 @@ func TestWebsiteSearchMigrationBytes(t *testing.T) {
 	}
 	if string(got) != want {
 		t.Fatal("website search migration differs")
+	}
+}
+
+// R-360R-OG83
+func TestDriveRouteMigrationBytes(t *testing.T) {
+	want := "ALTER TABLE facts ADD COLUMN minutes_source TEXT NOT NULL DEFAULT '';\nALTER TABLE facts ADD COLUMN miles REAL;\nALTER TABLE facts ADD COLUMN route_address TEXT NOT NULL DEFAULT '';\nALTER TABLE facts ADD COLUMN drive_route_at TEXT NOT NULL DEFAULT '';\nUPDATE facts SET minutes_source = 'zip' WHERE minutes IS NOT NULL;\n"
+	got, err := fs.ReadFile(candidates.Migrations(), "0018_drive_route.sql")
+	if err != nil || string(got) != want {
+		t.Fatalf("drive route migration = %q, %v", got, err)
 	}
 }

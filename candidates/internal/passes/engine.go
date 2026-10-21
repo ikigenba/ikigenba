@@ -14,6 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/scrapes"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
+	"github.com/ikigenba/ikigenba/candidates/internal/routes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
@@ -29,6 +30,7 @@ type Config struct {
 	Telemetry *telemetry.Writer
 	Events    *events.Emitter
 	Website   *website.Checker
+	Routes    *routes.Client
 	After     func(time.Duration) <-chan time.Time
 }
 
@@ -351,7 +353,7 @@ func (e *Engine) ingest(ctx context.Context, delivery *scrapes.Run, p store.Pass
 		}
 	}
 	if full {
-		for _, en := range enrichers.New(enrichers.Config{Website: e.cfg.Website, Prompts: e.cfg.Prompts}).All() {
+		for _, en := range enrichers.New(enrichers.Config{Website: e.cfg.Website, Prompts: e.cfg.Prompts, Routes: e.cfg.Routes}).All() {
 			if _, ok := en.(enrichers.Deriver); ok {
 				n, err := e.derive(ctx, en.Kind(), true)
 				if err != nil {

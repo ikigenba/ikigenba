@@ -13,7 +13,8 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-DUEN-N7F8 R-DVMK-0Z5X R-DWUG-EQWM R-DY2C-SINB R-DZA9-6AE0 R-E2XY-BLM3 R-E45U-PDCS R-PT3L-GL1E
+// R-DVMK-0Z5X R-DWUG-EQWM R-DY2C-SINB R-DZA9-6AE0 R-E45U-PDCS
+// R-JQSD-8ZNK R-JT86-0J4Y
 func TestSearchEnrichmentProjection(t *testing.T) {
 	zero, one := 0, 1
 	full := enrichers.WebsiteSearchFound{Run: enrichers.WebsiteSearchRun{ID: "r1", Status: enrichers.RunExited, ExitCode: &zero}, Answer: &enrichers.WebsiteSearchAnswer{URL: "https://acme.test/", Why: "chosen-why", Rejected: []enrichers.WebsiteSearchSite{{URL: "https://other.test/", Why: "chosen-rejection"}, {URL: "https://third.test/"}}}, Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteHTTPS, URL: "https://www.acme.test/", Title: "chosen-title", StatusCode: 200, Size: 1256}}
@@ -53,7 +54,7 @@ func TestSearchEnrichmentProjection(t *testing.T) {
 	}
 }
 
-// R-Q5AL-AAGC R-E1Q1-XTVE R-M6MC-J4P3 R-ZAJG-KCNU R-E0I5-K24P
+// R-Q5AL-AAGC R-E1Q1-XTVE R-ZAJG-KCNU
 func TestSearchWebsiteCandidateAndMember(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	_, ids, err := cfg.Store.Attach(t.Context(), "run", false, []store.Observation{{Scraper: "fixture", SourceID: "row", Digest: "digest", Reading: sources.Reading{Name: "search-business", NameKey: "search-business"}}})
@@ -201,7 +202,8 @@ func TestWebsiteSearchDecisionHistory(t *testing.T) {
 	}
 }
 
-// R-Q5AL-AAGC R-E0I5-K24P
+// R-Q5AL-AAGC
+// R-JLWR-PWOS
 func TestCandidateAndMemberViewShapes(_ *testing.T) {
 	_ = struct {
 		Banner            page.Banner
@@ -232,11 +234,11 @@ func TestCandidateAndMemberViewShapes(_ *testing.T) {
 	}(PageRow{})
 	_ = struct{ Kind, ProspectList, ProspectListName, By, User, At, AtText, Why string }(RejectRecordRow{})
 	_ = struct {
-		Rank                                                                                                                                                                                                  int64
-		ID, Name, City, State, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence                                                                                                                string
-		Categories                                                                                                                                                                                            []string
-		ClassifiedBy, Class, FleetVerdict, Website, WebsiteURL, WebsiteSource, SiteText, SiteTextText, Brief, BriefText, Minutes, GovernmentMatch, KnownSince, KnownSinceText, NewestFiling, NewestFilingText string
-		Excluded                                                                                                                                                                                              bool
+		Rank                                                                                                                                                                                                                 int64
+		ID, Name, City, State, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence                                                                                                                               string
+		Categories                                                                                                                                                                                                           []string
+		ClassifiedBy, Class, FleetVerdict, Website, WebsiteURL, WebsiteSource, SiteText, SiteTextText, Brief, BriefText, Minutes, MinutesSource, GovernmentMatch, KnownSince, KnownSinceText, NewestFiling, NewestFilingText string
+		Excluded                                                                                                                                                                                                             bool
 	}(MemberRow{})
 	_ = struct{ Candidate, By, User, At, AtText, Why string }(RejectRow{})
 }

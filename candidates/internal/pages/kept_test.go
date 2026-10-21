@@ -45,7 +45,7 @@ func TestTargetPassAndCosts(t *testing.T) {
 	}
 }
 
-// R-DUEN-N7F8 R-PT3L-GL1E
+// R-JT86-0J4Y
 func TestSiteTextResultProjection(t *testing.T) {
 	for _, tc := range []struct {
 		status string
@@ -115,7 +115,7 @@ func TestKeptPagePathGrammar(t *testing.T) {
 	}
 }
 
-// R-2M1M-1VBW R-M6MC-J4P3 R-RO62-HYTL R-UM9B-S0C0 R-WUQP-0V9U
+// R-JWVV-5UD1 R-RO62-HYTL R-UM9B-S0C0 R-WUQP-0V9U
 func TestKeptPageRoutes(t *testing.T) {
 	cfg, d := pageFixture(t)
 	ctx := t.Context()
@@ -193,7 +193,7 @@ func TestKeptPageRoutes(t *testing.T) {
 	}
 }
 
-// R-ZFF2-3FMM R-E0I5-K24P
+// R-ZFF2-3FMM
 func TestMemberSiteTextStamp(t *testing.T) {
 	for _, at := range []time.Time{{}, fixtureTime()} {
 		v := memberRow(store.Ranked{SiteText: at}, 0)
@@ -254,7 +254,7 @@ func TestAddedTemplateStates(t *testing.T) {
 	}
 }
 
-// R-ZFF2-3FMM R-M6MC-J4P3 R-PT3L-GL1E
+// R-ZFF2-3FMM
 func TestSiteTextCandidateAndProspectListAgree(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()
@@ -330,7 +330,8 @@ func TestTargetPassPage(t *testing.T) {
 	}
 }
 
-// R-Q5AL-AAGC R-DUEN-N7F8 R-3X7J-PRDD R-3ZNC-HAUR
+// R-Q5AL-AAGC R-3X7J-PRDD R-3ZNC-HAUR
+// R-JN4O-3OFH
 func TestAddedViewShapes(t *testing.T) {
 	candidate := CandidateData{page.Banner{}, CandidateView{}, nil, nil, []EstimateView{}, []LinkView{}, []RulingView{}, []PageRow{}, []EnrichmentRow{}, []RejectRecordRow{}, []CampaignRow{}}
 	if candidate.Pages == nil || candidate.EnrichmentResults == nil {
@@ -352,6 +353,7 @@ func TestAddedViewShapes(t *testing.T) {
 		Run                           *RunView
 		Answer                        *AnswerView
 		Confirmation                  *ConfirmationView
+		Route                         *RouteView
 		Failed                        bool
 		Cost, At, AtText              string
 	}(EnrichmentRow{})

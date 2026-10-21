@@ -21,10 +21,12 @@ func (e *Engine) Enrich(ctx context.Context, c identity.Caller, kind string) (st
 	if e.stopping.Load() {
 		return store.Pass{}, &Refusal{Word: RefusalStopping}
 	}
-	reg := enrichers.New(enrichers.Config{Website: e.cfg.Website, Prompts: e.cfg.Prompts})
+	reg := enrichers.New(enrichers.Config{Website: e.cfg.Website, Prompts: e.cfg.Prompts, Routes: e.cfg.Routes})
 	if kind != "" {
 		en, ok := reg.Get(kind)
-		if _, promptsKind := en.(enrichers.Prompter); !ok || promptsKind {
+		_, promptsKind := en.(enrichers.Prompter)
+		_, routeKind := en.(enrichers.Router)
+		if !ok || promptsKind || routeKind {
 			return store.Pass{}, &Refusal{Word: RefusalInvalid}
 		}
 		if f, ok := en.(enrichers.Fetcher); ok && !f.Ready() {
@@ -86,7 +88,7 @@ func (e *Engine) derive(ctx context.Context, kind string, force bool) (int64, er
 
 func (e *Engine) enrich(ctx context.Context, kind string) (store.Counts, string) {
 	var total store.Counts
-	for _, en := range enrichers.New(enrichers.Config{Website: e.cfg.Website, Prompts: e.cfg.Prompts}).All() {
+	for _, en := range enrichers.New(enrichers.Config{Website: e.cfg.Website, Prompts: e.cfg.Prompts, Routes: e.cfg.Routes}).All() {
 		if kind != "" && kind != en.Kind() {
 			continue
 		}

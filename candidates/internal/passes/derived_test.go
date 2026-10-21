@@ -206,7 +206,7 @@ func TestDerivedFactsExistBeforeFirstFetch(t *testing.T) {
 	}
 }
 
-// R-TI0N-5KV3
+// R-JWI9-6EKI
 func TestDerivedKindsAvailableWithoutChecker(t *testing.T) {
 	for _, kind := range []string{"", enrichers.KindDriveMinutes, enrichers.KindLinkFacts} {
 		f := newFixture(t, nil, false)

@@ -14,17 +14,23 @@ const WantSeconds string = "a positive whole number of seconds"
 const WantPasses string = "a positive whole number of passes"
 
 // Settings holds accepted drain and retention values.
-type Settings struct{ DrainSeconds, KeepPasses int64 }
+type Settings struct {
+	DrainSeconds, KeepPasses int64
+	RouteOrigin, MapsAPIKey  string
+}
 
 // Error identifies the first rejected setting.
 type Error struct{ Name, Value, Want string }
 
 func (e *Error) Error() string { return e.Name + " is '" + e.Value + "', not " + e.Want }
 
-// Defaults returns the settings used for absent values.
-func Defaults() Settings { return Settings{5, 20} }
+// DefaultRouteOrigin is the address used when no route origin is configured.
+const DefaultRouteOrigin = "Sandstone, MN"
 
-// Read validates the two settings through the supplied environment lookup.
+// Defaults returns the settings used for absent values.
+func Defaults() Settings { return Settings{5, 20, DefaultRouteOrigin, ""} }
+
+// Read validates the numeric settings through the supplied environment lookup.
 func Read(lookup func(string) (string, bool)) (Settings, error) {
 	s := Defaults()
 	for _, item := range []struct {
@@ -49,6 +55,12 @@ func Read(lookup func(string) (string, bool)) (Settings, error) {
 			n = math.MaxInt64
 		}
 		*item.value = n
+	}
+	if origin, ok := lookup("CANDIDATES_ROUTE_ORIGIN"); ok && origin != "" {
+		s.RouteOrigin = origin
+	}
+	if key, ok := lookup("GOOGLE_MAPS_API_KEY"); ok {
+		s.MapsAPIKey = key
 	}
 	return s, nil
 }

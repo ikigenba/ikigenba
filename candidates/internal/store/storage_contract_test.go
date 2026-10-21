@@ -62,7 +62,7 @@ type contractFixture struct {
 	s    *store.Store
 }
 
-// R-46NX-U922: construct the published store using its injected dependencies.
+// Construct the published store using its injected dependencies.
 func contractDB(t *testing.T) *contractFixture {
 	t.Helper()
 	f := &contractFixture{t: t, path: filepath.Join(t.TempDir(), "state", "candidates.db"), now: time.Date(2030, 4, 5, 6, 7, 8, 999, time.FixedZone("fixture", 3600)), rnd: &contractRandom{next: 1}}

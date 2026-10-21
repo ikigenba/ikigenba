@@ -43,7 +43,7 @@ func TestBriefClient(t *testing.T) {
 			t.Fatal("deriver")
 		}
 		reg := enrichers.New(enrichers.Config{Prompts: c})
-		want := []enrichers.Enricher{enrichers.DriveMinutes{}, enrichers.LinkFacts{}, enrichers.WebsiteCheck{}, enrichers.WebsiteSearch{Prompts: c}, enrichers.SiteText{Prompts: c}, enrichers.Brief{Prompts: c}}
+		want := []enrichers.Enricher{enrichers.DriveMinutes{}, enrichers.LinkFacts{}, enrichers.WebsiteCheck{}, enrichers.WebsiteSearch{Prompts: c}, enrichers.SiteText{Prompts: c}, enrichers.Brief{Prompts: c}, enrichers.DriveRoute{}}
 		if !reflect.DeepEqual(reg.All(), want) {
 			t.Fatal(reg.All())
 		}

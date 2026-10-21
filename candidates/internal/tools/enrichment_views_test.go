@@ -1,11 +1,13 @@
 package tools_test
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
+	"github.com/ikigenba/ikigenba/candidates/internal/routes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
@@ -55,5 +57,113 @@ func TestEnrichmentsAreVisibleBeforeAndApartFromJudgments(t *testing.T) {
 	after := read()
 	if !reflect.DeepEqual(after.Judgments, judged.Judgments) || !reflect.DeepEqual(after.Enrichments.Brief, before.Enrichments.Brief) || len(after.EnrichmentResults) != 2 || after.Enrichments.Facts.Written[0].At != stamp(f.now) {
 		t.Fatal(after, judged)
+	}
+}
+
+// R-AQ2S-CL5A R-ARAO-QCVZ R-FVFN-DL2H
+func TestDriveRouteAnswersAndLiveMemberProjection(t *testing.T) {
+	f := fixtureWithRoutes(t, nil, nil, nil, nil, "Chosen origin")
+	id := f.seed(1)[0]
+	list := f.create("Drive fixture")
+	member := func() tools.Member {
+		t.Helper()
+		r := f.call("prospect_list", tools.ProspectListArgs{ProspectList: list.ID})
+		if r.IsError() {
+			t.Fatal(decode(t, r))
+		}
+		v := decodeList[tools.ProspectListRead](t, r)
+		if len(v.Members) != 1 {
+			t.Fatal(v)
+		}
+		return v.Members[0]
+	}
+	if m := member(); m.Minutes != nil || m.MinutesSource != "" {
+		t.Fatal(m)
+	}
+	add := func(kind, source, inputs string, found any) {
+		t.Helper()
+		f.now = f.now.Add(time.Second)
+		if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: kind, Source: source, Inputs: inputs, Found: encodedJSON(found), Cost: .25}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	z, m, d := int64(43), int64(17), 12.5
+	add(enrichers.KindDriveMinutes, enrichers.SourceZipDrive, "zip-fixture", enrichers.MinutesFound{Minutes: &z})
+	if got := member(); got.Minutes == nil || *got.Minutes != z || got.MinutesSource != store.MinutesByZip {
+		t.Fatal(got)
+	}
+	subject, err := f.st.Subject(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := (enrichers.DriveRoute{}).Inputs(subject)
+	if inputs == "" {
+		t.Fatal("empty route inputs")
+	}
+	for _, found := range []enrichers.RouteFound{
+		{Why: "No fixture route"},
+		{Minutes: &m, Miles: &d, Address: "Resolved fixture", Precision: routes.PrecisionStreet},
+		{Error: "Fixture request failed"},
+	} {
+		add(enrichers.KindDriveRoute, enrichers.SourceGoogleRoutes, inputs, found)
+		r := f.call("candidate", tools.CandidateArgs{Candidate: id})
+		if r.IsError() {
+			t.Fatal(decode(t, r))
+		}
+		var raw struct {
+			Enrichments struct {
+				Facts map[string]json.RawMessage `json:"facts"`
+			} `json:"enrichments"`
+		}
+		if err := json.Unmarshal(decode(t, r).Structured, &raw); err != nil {
+			t.Fatal(err)
+		}
+		if found.Minutes != nil {
+			if string(raw.Enrichments.Facts["minutes_source"]) != string(encodedJSON(store.MinutesByRoute)) || string(raw.Enrichments.Facts["miles"]) != string(encodedJSON(d)) || string(raw.Enrichments.Facts["route_address"]) != string(encodedJSON(found.Address)) {
+				t.Fatal(raw.Enrichments.Facts)
+			}
+		} else if !found.Failed() {
+			if string(raw.Enrichments.Facts["minutes_source"]) != string(encodedJSON(store.MinutesByZip)) || raw.Enrichments.Facts["miles"] != nil || raw.Enrichments.Facts["route_address"] != nil {
+				t.Fatal(raw.Enrichments.Facts)
+			}
+		}
+		detail := decodeList[tools.Detail](t, r)
+		got := detail.Enrichments.Facts
+		if got == nil {
+			t.Fatal(detail)
+		}
+		if found.Minutes != nil {
+			if got.Minutes == nil || *got.Minutes != m || got.MinutesSource != store.MinutesByRoute || got.Miles == nil || *got.Miles != d || got.RouteAddress != found.Address {
+				t.Fatal(got)
+			}
+			if v := member(); v.Minutes == nil || *v.Minutes != m || v.MinutesSource != store.MinutesByRoute {
+				t.Fatal(v)
+			}
+		} else if !found.Failed() {
+			if got.Minutes == nil || *got.Minutes != z || got.MinutesSource != store.MinutesByZip || got.Miles != nil || got.RouteAddress != "" {
+				t.Fatal(got)
+			}
+		}
+		written := false
+		for _, w := range got.Written {
+			if w.Kind == enrichers.KindDriveRoute {
+				written = true
+			}
+		}
+		if !written {
+			t.Fatal(got)
+		}
+		results := detail.EnrichmentResults
+		if len(results) < 2 || results[0].Kind != enrichers.KindDriveRoute || results[len(results)-1].Kind != enrichers.KindDriveMinutes {
+			t.Fatal(results)
+		}
+		first := results[0]
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(encodedJSON(first), &obj); err != nil {
+			t.Fatal(err)
+		}
+		if len(obj) != 6 || first.Source != enrichers.SourceGoogleRoutes || first.Inputs != inputs || first.Cost != .25 || !reflect.DeepEqual(first.Found, encodedJSON(found)) {
+			t.Fatal(string(encodedJSON(first)))
+		}
 	}
 }

@@ -20,7 +20,7 @@ func (e *Engine) EnrichTarget(ctx context.Context, c identity.Caller, kind, targ
 	if e.stopping.Load() {
 		return store.Pass{}, &Refusal{Word: RefusalStopping}
 	}
-	en, ok := enrichers.New(enrichers.Config{Website: e.cfg.Website, Prompts: e.cfg.Prompts}).Get(kind)
+	en, ok := enrichers.New(enrichers.Config{Website: e.cfg.Website, Prompts: e.cfg.Prompts, Routes: e.cfg.Routes}).Get(kind)
 	if !ok {
 		return store.Pass{}, &Refusal{Word: RefusalInvalid}
 	}
@@ -45,6 +45,9 @@ func (e *Engine) EnrichTarget(ctx context.Context, c identity.Caller, kind, targ
 		targets = append(targets, target)
 	default:
 		return store.Pass{}, &Refusal{Word: RefusalNotFound}
+	}
+	if _, ok := en.(enrichers.Router); ok && e.cfg.Routes == nil {
+		return store.Pass{}, &Refusal{Word: RefusalInvalid, Text: NoRouteKey}
 	}
 	if ready, ok := en.(interface{ Ready() bool }); ok && !ready.Ready() {
 		return store.Pass{}, &Refusal{Word: RefusalUnavailable}
@@ -106,6 +109,9 @@ func (e *Engine) targeted(ctx context.Context, en enrichers.Enricher, targets []
 	}
 	if pr, ok := en.(enrichers.Prompter); ok {
 		return e.promptTargets(ctx, pr, ds)
+	}
+	if rt, ok := en.(enrichers.Router); ok {
+		return e.routeTargets(ctx, rt, ds)
 	}
 	return e.fetchTargets(ctx, en.(enrichers.Fetcher), ds)
 }

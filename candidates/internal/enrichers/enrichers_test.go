@@ -15,11 +15,12 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
+	"github.com/ikigenba/ikigenba/candidates/internal/routes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-I9B5-6YXP R-I4ZZ-QZHX R-IBQX-YIF3 R-ICYU-CA5S
+// R-6HON-D9ZG R-I9B5-6YXP R-IBQX-YIF3 R-ICYU-CA5S
 func TestDeclaredValues(t *testing.T) {
 	type word string
 	words := []word{enrichers.KindDriveMinutes, enrichers.KindLinkFacts, enrichers.SourceZipDrive, enrichers.SourceLinks}
@@ -34,8 +35,8 @@ func TestDeclaredValues(t *testing.T) {
 	n := int64(84)
 	reading := sources.Reading{Name: "owned"}
 	link := enrichers.Link{"scraper", "source", true, reading}
-	s := enrichers.Subject{"id", "name", "city", "state", "street", "zip", "phone", "email", "website", "source", &website.Result{State: sources.WebsiteNone}, &n, []enrichers.Link{link}, []enrichers.Page{{7, "url", "title", "text", 4}}, &enrichers.LinkFound{KnownSince: "known"}}
-	if s.ID != "id" || s.Name != "name" || s.City != "city" || s.State != "state" || s.Website != "website" || s.Street != "street" || s.Phone != "phone" || s.WebsiteSource != "source" || s.Check.State != sources.WebsiteNone || s.Email != "email" || s.Zip != "zip" || *s.Minutes != 84 || !s.Links[0].Gone || s.Links[0].Scraper != "scraper" || s.Links[0].SourceID != "source" || s.Links[0].Reading.Name != "owned" || s.Pages[0] != (enrichers.Page{7, "url", "title", "text", 4}) || s.Facts.KnownSince != "known" {
+	s := enrichers.Subject{"id", "name", "city", "state", "street", "zip", "phone", "email", "website", "source", &website.Result{State: sources.WebsiteNone}, &n, []enrichers.Link{link}, []enrichers.Page{{7, "url", "title", "text", 4}}, &enrichers.LinkFound{KnownSince: "known"}, "origin"}
+	if s.Origin != "origin" || s.ID != "id" || s.Name != "name" || s.City != "city" || s.State != "state" || s.Website != "website" || s.Street != "street" || s.Phone != "phone" || s.WebsiteSource != "source" || s.Check.State != sources.WebsiteNone || s.Email != "email" || s.Zip != "zip" || *s.Minutes != 84 || !s.Links[0].Gone || s.Links[0].Scraper != "scraper" || s.Links[0].SourceID != "source" || s.Links[0].Reading.Name != "owned" || s.Pages[0] != (enrichers.Page{7, "url", "title", "text", 4}) || s.Facts.KnownSince != "known" {
 		t.Fatal(s)
 	}
 	r := enrichers.Result{"origin", json.RawMessage(`{}`), 0.5}
@@ -67,18 +68,23 @@ func TestDeclaredValues(t *testing.T) {
 	}
 }
 
-// R-IE6Q-Q1WH R-IFEN-3TN6 R-LYKV-TAVJ R-IFZ3-6X66 R-M3GH-CDUB R-IZHH-B91A R-IKA8-MWLY R-MGVD-JUZY
+// R-6K4G-4TGU R-6ZZ5-3U3V R-6LCC-IL7J R-6XJC-CAMH R-6IWJ-R1Q5 R-IE6Q-Q1WH R-IFEN-3TN6 R-LYKV-TAVJ R-IKA8-MWLY R-MGVD-JUZY
 func TestRegistry(t *testing.T) {
-	expected := []string{enrichers.KindDriveMinutes, enrichers.KindLinkFacts, sources.WebsiteCheck, enrichers.KindWebsiteSearch, enrichers.KindSiteText, enrichers.KindBrief}
+	expected := []string{enrichers.KindDriveMinutes, enrichers.KindLinkFacts, sources.WebsiteCheck, enrichers.KindWebsiteSearch, enrichers.KindSiteText, enrichers.KindBrief, enrichers.KindDriveRoute}
 	first := enrichers.Kinds()
 	first[0] = "changed"
 	if !slices.Equal(enrichers.Kinds(), expected) {
 		t.Fatal("shared kinds")
 	}
 	for _, ck := range []*website.Checker{nil, {}} {
-		reg := enrichers.New(enrichers.Config{Website: ck})
+		routeClient := &routes.Client{Key: "fixture"}
+		cfg := enrichers.Config{Website: ck, Routes: routeClient}
+		reg := enrichers.New(cfg)
+		if reg.All()[6].(enrichers.DriveRoute).Routes != routeClient {
+			t.Fatal("routes client lost")
+		}
 		all := reg.All()
-		if len(all) != 6 {
+		if len(all) != 7 {
 			t.Fatalf("registry length %d", len(all))
 		}
 		for i, e := range all {
@@ -92,7 +98,12 @@ func TestRegistry(t *testing.T) {
 			_, derived := e.(enrichers.Deriver)
 			_, fetched := e.(enrichers.Fetcher)
 			_, prompted := e.(enrichers.Prompter)
-			if derived != (i < 2) || fetched != (i == 2) || prompted != (i >= 3) {
+			_, routed := e.(enrichers.Router)
+			_, failing := e.(enrichers.Failer)
+			if routed != (i == 6) || failing != (prompted || routed) {
+				t.Fatal("router/failer interfaces", i)
+			}
+			if derived != (i < 2) || fetched != (i == 2) || prompted != (i >= 3 && i <= 5) {
 				t.Fatal("interfaces", i)
 			}
 			inputs := e.Inputs(enrichers.Subject{})
@@ -118,7 +129,7 @@ func TestRegistry(t *testing.T) {
 		if reg.All()[0] == nil {
 			t.Fatal("shared registry storage")
 		}
-		for _, bad := range []string{"", "website", "LINK_FACTS", "site-text", "BRIEF"} {
+		for _, bad := range []string{"", "website", "LINK_FACTS", "site-text", "website-search", "BRIEF", "drive-route", "DRIVE_ROUTE"} {
 			e, ok := reg.Get(bad)
 			if e != nil || ok || reg.Valid(bad, json.RawMessage(`{}`)) {
 				t.Fatal(bad)

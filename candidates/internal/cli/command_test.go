@@ -43,12 +43,12 @@ type countingBus struct{ calls *atomic.Int64 }
 
 func (s countingBus) Deliver(context.Context, events.Event) error { s.calls.Add(1); return nil }
 
-// R-PFOP-93VR R-Y07A-12HG R-39QN-IG1B R-3AYJ-W7S0 R-3C6G-9ZIP R-743U-7UR8 R-75BQ-LMHX
+// R-PFOP-93VR R-XWIK-4SHQ R-39QN-IG1B R-3AYJ-W7S0 R-3C6G-9ZIP R-743U-7UR8 R-75BQ-LMHX
 func TestPublishedFiles(t *testing.T) {
 	if cli.Usage == "" || !strings.HasSuffix(cli.Usage, "\n") || strings.HasSuffix(cli.Usage, "\n\n") {
 		t.Fatal("usage must have content and exactly one final line feed")
 	}
-	manifest := "app = \"candidates\"\ndescription = \"" + pages.Description + "\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[env]\nCANDIDATES_KEEP_PASSES = \"20\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/candidates.db\"\n\n[resources]\nmemory_max = \"256M\"\n\n[home]\ngroup = \"application\"\n"
+	manifest := "app = \"candidates\"\ndescription = \"" + pages.Description + "\"\ndefault = false\nmcp = true\nguests = false\nsecrets = [\"CANDIDATES_ROUTE_ORIGIN\", \"GOOGLE_MAPS_API_KEY\"]\n\n[env]\nCANDIDATES_KEEP_PASSES = \"20\"\n\n[database]\nengine = \"sqlite\"\npath = \"state/candidates.db\"\n\n[resources]\nmemory_max = \"256M\"\n\n[home]\ngroup = \"application\"\n"
 	if cli.Manifest != manifest || cli.NginxConf != "location = /events { return 404; }\nlocation = /declarations { return 404; }\n" {
 		t.Fatal("published contract differs")
 	}

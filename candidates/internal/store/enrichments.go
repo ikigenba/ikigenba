@@ -79,7 +79,7 @@ func (s *Store) AddEnrichments(ctx context.Context, es []Enrichment) ([]Enrichme
 			touched[c.ID] = true
 		}
 		for id := range touched {
-			if err := projectFacts(ctx, tx, id); err != nil {
+			if err := s.projectFacts(ctx, tx, id); err != nil {
 				return err
 			}
 		}
@@ -133,12 +133,12 @@ func (s *Store) EnrichmentAfter(ctx context.Context, kind, inputs string, mark i
 	}))
 	return out, err
 }
-func subject(ctx context.Context, tx *sql.Tx, c Candidate, pages bool) (enrichers.Subject, error) {
+func (s *Store) subject(ctx context.Context, tx *sql.Tx, c Candidate, pages bool) (enrichers.Subject, error) {
 	r, err := candidateRecords(ctx, tx, c)
 	if err != nil {
 		return enrichers.Subject{}, err
 	}
-	out := enrichers.Subject{ID: c.ID, Name: c.Name, Street: c.Street, Phone: c.Phone, City: c.City, State: c.State, Email: c.Email, Zip: c.Zip, Links: []enrichers.Link{}, Pages: []enrichers.Page{}}
+	out := enrichers.Subject{ID: c.ID, Name: c.Name, Street: c.Street, Phone: c.Phone, City: c.City, State: c.State, Email: c.Email, Zip: c.Zip, Links: []enrichers.Link{}, Pages: []enrichers.Page{}, Origin: s.cfg.Origin}
 	for _, l := range linksFor(r, c.ID) {
 		out.Links = append(out.Links, enrichers.Link{Scraper: l.Scraper, SourceID: l.SourceID, Gone: l.Gone, Reading: l.Reading})
 	}
@@ -218,7 +218,7 @@ func (s *Store) DueEnrichments(ctx context.Context, kind, after string, n int) (
 			}
 			for _, c := range cs {
 				cursor = c.ID
-				su, err := subject(ctx, tx, c, isPrompter(en))
+				su, err := s.subject(ctx, tx, c, isPrompter(en))
 				if err != nil {
 					return err
 				}
@@ -239,8 +239,8 @@ func (s *Store) DueEnrichments(ctx context.Context, kind, after string, n int) (
 	}))
 	return out, err
 }
-func deriveCandidate(ctx context.Context, tx *sql.Tx, c Candidate, d enrichers.Deriver, force bool, t time.Time) (bool, error) {
-	su, err := subject(ctx, tx, c, false)
+func (s *Store) deriveCandidate(ctx context.Context, tx *sql.Tx, c Candidate, d enrichers.Deriver, force bool, t time.Time) (bool, error) {
+	su, err := s.subject(ctx, tx, c, false)
 	if err != nil {
 		return false, err
 	}
@@ -280,13 +280,13 @@ func (s *Store) Derive(ctx context.Context, kind, after string, force bool, n in
 		t := s.now()
 		for _, c := range cs {
 			last = c.ID
-			added, err := deriveCandidate(ctx, tx, c, d, force, t)
+			added, err := s.deriveCandidate(ctx, tx, c, d, force, t)
 			if err != nil {
 				return err
 			}
 			if added {
 				count++
-				if err = projectFacts(ctx, tx, c.ID); err != nil {
+				if err = s.projectFacts(ctx, tx, c.ID); err != nil {
 					return err
 				}
 			}
@@ -307,7 +307,7 @@ func (s *Store) Subject(ctx context.Context, id string) (enrichers.Subject, erro
 		if err != nil {
 			return err
 		}
-		out, err = subject(ctx, tx, c, true)
+		out, err = s.subject(ctx, tx, c, true)
 		return err
 	}))
 	if err != nil {
@@ -341,7 +341,7 @@ func (s *Store) DueAmong(ctx context.Context, kind string, ids []string, force b
 			if c.Status != StatusActive {
 				continue
 			}
-			su, err := subject(ctx, tx, c, isPrompter(en))
+			su, err := s.subject(ctx, tx, c, isPrompter(en))
 			if err != nil {
 				return err
 			}
@@ -388,13 +388,13 @@ func (s *Store) DeriveAmong(ctx context.Context, kind string, ids []string, forc
 			if c.Status != StatusActive {
 				continue
 			}
-			added, err := deriveCandidate(ctx, tx, c, d, force, t)
+			added, err := s.deriveCandidate(ctx, tx, c, d, force, t)
 			if err != nil {
 				return err
 			}
 			if added {
 				count++
-				if err = projectFacts(ctx, tx, id); err != nil {
+				if err = s.projectFacts(ctx, tx, id); err != nil {
 					return err
 				}
 			}

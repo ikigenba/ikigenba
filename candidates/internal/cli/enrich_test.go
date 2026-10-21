@@ -4,15 +4,22 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/candidates/internal/cli"
+	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
+	"github.com/ikigenba/ikigenba/candidates/internal/passes"
+	"github.com/ikigenba/ikigenba/candidates/internal/routes"
+	"github.com/ikigenba/ikigenba/candidates/internal/settings"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
@@ -311,6 +318,256 @@ func TestRunAddPageUsesSelectedWebsiteClient(t *testing.T) {
 					t.Fatal(requests)
 				}
 			}
+		})
+	}
+}
+
+func seedRunRoute(t *testing.T, h *runHarness) string {
+	t.Helper()
+	d, st := runStore(t, h.p.Dir, h.p.Now)
+	_, ids, err := st.Attach(t.Context(), "route-fixture", true, []store.Observation{{Scraper: "fmcsa", SourceID: "route", Digest: "route", Reading: sources.Reading{Name: "Route business", NameKey: "route business", Street: "1 Fixture St", City: "Fixture City", State: "MN", Zip: "55072"}}})
+	if err != nil || len(ids) != 1 {
+		t.Fatal(ids, err)
+	}
+	if err = d.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return ids[0]
+}
+
+// R-XRMY-LPIY R-XSUU-ZH9N
+func TestRunRouteAvailability(t *testing.T) {
+	for _, sandbox := range []bool{false, true} {
+		for _, mode := range []string{"unset", "empty", "nil-http"} {
+			t.Run(fmt.Sprintf("sandbox=%v/%s", sandbox, mode), func(t *testing.T) {
+				h := newRunHarness(t, t.TempDir(), "")
+				if sandbox {
+					h.env["IKIGENBA_SANDBOX"] = ""
+				}
+				if mode == "empty" {
+					h.env["GOOGLE_MAPS_API_KEY"] = ""
+				}
+				var requests atomic.Int64
+				h.p.HTTP = &http.Client{Transport: enrichTransport(func(*http.Request) (*http.Response, error) { requests.Add(1); return nil, io.EOF })}
+				if mode == "nil-http" {
+					h.env["GOOGLE_MAPS_API_KEY"] = "chosen-key"
+					h.p.HTTP = nil
+				}
+				id := seedRunRoute(t, h)
+				h.start()
+				r, _ := h.call(identity.Caller{UserID: "owner"}, "enrich", tools.EnrichArgs{Kind: enrichers.KindDriveRoute, Candidate: id})
+				raw, _ := json.Marshal(r)
+				want := passes.RefusalInvalid + ": " + passes.NoRouteKey
+				if mode == "nil-http" {
+					want = passes.RefusalUnavailable + ":"
+				}
+				if !r.IsError() || !strings.Contains(string(raw), want) || requests.Load() != 0 {
+					t.Fatal(string(raw), requests.Load())
+				}
+				h.stop()
+			})
+		}
+	}
+}
+
+type routeRequest struct {
+	Method, URL, Body string
+	Header            http.Header
+}
+
+// R-XQF2-7XS9 R-XU2R-D90C
+func TestRunRouteClientMatchesStandalone(t *testing.T) {
+	for _, sandbox := range []bool{false, true} {
+		for _, origin := range []string{"", "1 Main St, Hinckley, MN"} {
+			t.Run(fmt.Sprintf("sandbox=%v/origin=%s", sandbox, origin), func(t *testing.T) {
+				h := newRunHarness(t, t.TempDir(), "")
+				h.env["GOOGLE_MAPS_API_KEY"] = "fixture-key"
+				if sandbox {
+					h.env["IKIGENBA_SANDBOX"] = ""
+				}
+				h.env["CANDIDATES_ROUTE_ORIGIN"] = origin
+				var mu sync.Mutex
+				var got []routeRequest
+				transport := func(dst *[]routeRequest) enrichTransport {
+					return func(r *http.Request) (*http.Response, error) {
+						var body []byte
+						if r.Body != nil {
+							body, _ = io.ReadAll(r.Body)
+						}
+						mu.Lock()
+						*dst = append(*dst, routeRequest{r.Method, r.URL.String(), string(body), r.Header.Clone()})
+						mu.Unlock()
+						response := `{"status":"OK","results":[{"formatted_address":"Placed fixture","geometry":{"location_type":"ROOFTOP","location":{"lat":46,"lng":-93}}}]}`
+						if r.Method == http.MethodPost {
+							response = `{"routes":[{"duration":"600s","distanceMeters":1609.344}]}`
+						}
+						return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(response)), Request: r}, nil
+					}
+				}
+				h.p.HTTP = &http.Client{Transport: transport(&got)}
+				websiteTimers(t, h, nil)
+				id := seedRunRoute(t, h)
+				h.start()
+				c := identity.Caller{UserID: "owner"}
+				r, p := h.call(c, "enrich", tools.EnrichArgs{Kind: enrichers.KindDriveRoute, Candidate: id})
+				if r.IsError() {
+					t.Fatal(r)
+				}
+				done := h.waitPass(c, runText(p, "id"))
+				if runText(done, "status") != store.StatusDone {
+					t.Fatal(done)
+				}
+				_, candidate := h.call(c, "candidate", map[string]any{"candidate": id})
+				o := origin
+				if o == "" {
+					o = settings.DefaultRouteOrigin
+				}
+				var address tools.Candidate
+				if err := json.Unmarshal(candidate["candidate"], &address); err != nil {
+					t.Fatal(err)
+				}
+				subject := enrichers.Subject{Street: address.Street, City: address.City, State: address.State, Zip: address.Zip, Origin: o}
+				var expected []routeRequest
+				client := routes.Client{HTTP: &http.Client{Transport: transport(&expected)}, Key: "fixture-key", After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }}
+				client.Drive(t.Context(), o, enrichers.Destination(subject))
+				h.stop()
+				mu.Lock()
+				equal := reflect.DeepEqual(got, expected)
+				count := len(got)
+				mu.Unlock()
+				if !equal || count < 2 {
+					t.Fatal(got, expected)
+				}
+				var results []struct{ Kind, Inputs string }
+				if err := json.Unmarshal(candidate["enrichment_results"], &results); err != nil {
+					t.Fatal(err, candidate)
+				}
+				found := false
+				for _, result := range results {
+					if result.Kind == enrichers.KindDriveRoute {
+						found = true
+						if result.Inputs != (enrichers.DriveRoute{}).Inputs(subject) {
+							t.Fatal(result, subject)
+						}
+					}
+				}
+				if !found {
+					t.Fatal("route result missing", candidate)
+				}
+			})
+		}
+	}
+}
+
+// R-XVAN-R0R1 R-8AIP-87V7
+func TestRunRouteTimeoutUsesProcessTimer(t *testing.T) {
+	h := newRunHarness(t, t.TempDir(), "")
+	h.env["GOOGLE_MAPS_API_KEY"] = "fixture-key"
+	id := seedRunRoute(t, h)
+	_, st := runStore(t, h.p.Dir, h.p.Now)
+	timers := make(chan chan time.Time, 4)
+	h.p.After = func(d time.Duration) <-chan time.Time {
+		ch := make(chan time.Time, 1)
+		if d == cli.SweepInterval {
+			return ch
+		}
+		if d != routes.Timeout {
+			t.Errorf("unexpected route timer %v", d)
+		}
+		running, err := st.RunningPasses(t.Context())
+		if err != nil {
+			t.Error(err)
+		}
+		active := false
+		for _, p := range running {
+			active = active || p.Kind == store.KindEnrichTarget
+		}
+		if !active {
+			t.Error("route timer outside targeted pass", running)
+		}
+		timers <- ch
+		return ch
+	}
+	arrived := make(chan struct{}, 1)
+	ended := make(chan struct{}, 1)
+	h.p.HTTP = &http.Client{Transport: enrichTransport(func(r *http.Request) (*http.Response, error) {
+		arrived <- struct{}{}
+		<-r.Context().Done()
+		ended <- struct{}{}
+		return nil, r.Context().Err()
+	})}
+	h.start()
+	c := identity.Caller{UserID: "owner"}
+	r, p := h.call(c, "enrich", tools.EnrichArgs{Kind: enrichers.KindDriveRoute, Candidate: id})
+	if r.IsError() {
+		t.Fatal(r)
+	}
+	select {
+	case <-arrived:
+	case <-time.After(3 * time.Second):
+		t.Fatal("route request missing")
+	}
+	var timer chan time.Time
+	select {
+	case timer = <-timers:
+	case <-time.After(3 * time.Second):
+		t.Fatal("route timer missing")
+	}
+	select {
+	case <-ended:
+		t.Fatal("request ended before timer delivery")
+	default:
+	}
+	timer <- time.Time{}
+	select {
+	case <-ended:
+	case <-time.After(3 * time.Second):
+		t.Fatal("route request not canceled")
+	}
+	if runText(h.waitPass(c, runText(p, "id")), "status") != store.StatusDone {
+		t.Fatal(p)
+	}
+	h.stop()
+}
+
+// R-XQF2-7XS9
+func TestRunRouteFailureKeepsOriginInputs(t *testing.T) {
+	for _, mode := range []string{"unset", "empty", "custom"} {
+		t.Run(mode, func(t *testing.T) {
+			h := newRunHarness(t, t.TempDir(), "")
+			h.env["GOOGLE_MAPS_API_KEY"] = "fixture-key"
+			origin := settings.DefaultRouteOrigin
+			if mode == "empty" {
+				h.env["CANDIDATES_ROUTE_ORIGIN"] = ""
+			}
+			if mode == "custom" {
+				origin = "1 Main St, Hinckley, MN"
+				h.env["CANDIDATES_ROUTE_ORIGIN"] = origin
+			}
+			h.p.HTTP = &http.Client{Transport: enrichTransport(func(*http.Request) (*http.Response, error) { return nil, io.EOF })}
+			websiteTimers(t, h, nil)
+			id := seedRunRoute(t, h)
+			h.start()
+			c := identity.Caller{UserID: "owner"}
+			r, p := h.call(c, "enrich", tools.EnrichArgs{Kind: enrichers.KindDriveRoute, Candidate: id})
+			if r.IsError() {
+				t.Fatal(r)
+			}
+			if runText(h.waitPass(c, runText(p, "id")), "status") != store.StatusDone {
+				t.Fatal(p)
+			}
+			_, answer := h.call(c, "candidate", map[string]any{"candidate": id})
+			raw, _ := json.Marshal(answer)
+			var detail tools.Detail
+			if err := json.Unmarshal(raw, &detail); err != nil {
+				t.Fatal(err)
+			}
+			address := detail.Candidate
+			want := (enrichers.DriveRoute{}).Inputs(enrichers.Subject{Street: address.Street, City: address.City, State: address.State, Zip: address.Zip, Origin: origin})
+			if len(detail.EnrichmentResults) != 1 || detail.EnrichmentResults[0].Kind != enrichers.KindDriveRoute || detail.EnrichmentResults[0].Inputs != want {
+				t.Fatal(detail.EnrichmentResults, want)
+			}
+			h.stop()
 		})
 	}
 }

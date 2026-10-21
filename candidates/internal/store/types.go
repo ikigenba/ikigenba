@@ -14,8 +14,9 @@ import (
 
 // Config supplies the store clock and random reader.
 type Config struct {
-	Now  func() time.Time
-	Rand io.Reader
+	Now    func() time.Time
+	Rand   io.Reader
+	Origin string
 }
 
 // Store owns the persisted service records.
@@ -85,6 +86,9 @@ type Facts struct {
 	PowerUnits, Drivers                *int64
 	Website, WebsiteURL, WebsiteSource string
 	Minutes                            *int64
+	MinutesSource                      string
+	Miles                              *float64
+	RouteAddress                       string
 	Brief                              string
 	Written                            []Written
 }

@@ -312,7 +312,7 @@ func TestFactsProjectionUsesNewestResultOfEveryKind(t *testing.T) {
 	_, err := f.s.AddEnrichments(ctx, first)
 	contractOK(t, err)
 	stamp := f.now.UTC().Truncate(time.Second)
-	expected := store.Facts{Candidate: id, KnownSince: time.Date(2018, 4, 9, 0, 0, 0, 0, time.UTC), NewestFiling: time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: lf.GovernmentMatch, Categories: []sources.Category{{Name: sources.CategoryConstruction, Source: ppp.Name}, {Name: sources.CategoryTrucking, Source: fmcsa.Name}}, FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, Website: sources.WebsiteHTTPS, WebsiteURL: websiteDecoded(first[2]).URL, WebsiteSource: store.WebsiteByCheck, Minutes: &low, Written: []store.Written{{Kind: enrichers.KindDriveMinutes, At: stamp}, {Kind: enrichers.KindLinkFacts, At: stamp}, {Kind: sources.WebsiteCheck, At: stamp}}}
+	expected := store.Facts{Candidate: id, KnownSince: time.Date(2018, 4, 9, 0, 0, 0, 0, time.UTC), NewestFiling: time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: lf.GovernmentMatch, Categories: []sources.Category{{Name: sources.CategoryConstruction, Source: ppp.Name}, {Name: sources.CategoryTrucking, Source: fmcsa.Name}}, FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, Website: sources.WebsiteHTTPS, WebsiteURL: websiteDecoded(first[2]).URL, WebsiteSource: store.WebsiteByCheck, Minutes: &low, MinutesSource: store.MinutesByZip, Written: []store.Written{{Kind: enrichers.KindDriveMinutes, At: stamp}, {Kind: enrichers.KindLinkFacts, At: stamp}, {Kind: sources.WebsiteCheck, At: stamp}}}
 	expected.Records = append([]sources.Category{}, expected.Categories...)
 	got, err := f.s.GetFacts(ctx, id)
 	contractOK(t, err)

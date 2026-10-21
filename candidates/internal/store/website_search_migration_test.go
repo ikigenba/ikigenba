@@ -62,7 +62,7 @@ func TestWebsiteSearchUpgradePreservesPreviousFactsAndResults(t *testing.T) {
 				day := []int{5, 1, 2, 4, 3}[i]
 				written = append(written, store.Written{Kind: kind, At: time.Date(2026, 1, day, 1, 2, 3, 0, time.UTC)})
 			}
-			contractEqual(t, f, store.Facts{Candidate: id, KnownSince: time.Date(2018, 1, 2, 0, 0, 0, 0, time.UTC), GovernmentMatch: "name-pattern", NewestFiling: time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{{Name: sources.CategoryRetail, Source: enrichers.KindBrief}}, Records: []sources.Category{}, FleetVerdict: sources.FleetPass, PowerUnits: &units, Drivers: &drivers, Website: state, WebsiteURL: "https://old.test/", WebsiteSource: source, Minutes: &minutes, Brief: "old summary", Written: written})
+			contractEqual(t, f, store.Facts{Candidate: id, KnownSince: time.Date(2018, 1, 2, 0, 0, 0, 0, time.UTC), GovernmentMatch: "name-pattern", NewestFiling: time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{{Name: sources.CategoryRetail, Source: enrichers.KindBrief}}, Records: []sources.Category{}, FleetVerdict: sources.FleetPass, PowerUnits: &units, Drivers: &drivers, Website: state, WebsiteURL: "https://old.test/", WebsiteSource: source, Minutes: &minutes, MinutesSource: store.MinutesByZip, Brief: "old summary", Written: written})
 			es, err := s.Enrichments(ctx, id)
 			contractOK(t, err)
 			contractEqual(t, es, []store.Enrichment{e})

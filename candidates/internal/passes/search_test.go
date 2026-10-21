@@ -224,7 +224,7 @@ func TestWebsiteSearchDrainCancelsConfirmation(t *testing.T) {
 	}
 }
 
-// R-1E58-A4MW
+// R-JXQ5-K6B7
 func TestWebsiteSearchNeverRunsOverCorpus(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := searchTargets(t, f, 1)[0]

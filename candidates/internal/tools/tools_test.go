@@ -29,6 +29,7 @@ import (
 	candidates "github.com/ikigenba/ikigenba/candidates"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
+	"github.com/ikigenba/ikigenba/candidates/internal/routes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
@@ -63,6 +64,9 @@ func fixtureWithWebsite(t *testing.T, h http.Handler, k *website.Checker) *fixtu
 	return fixtureWithPrompts(t, h, k, nil)
 }
 func fixtureWithPrompts(t *testing.T, h http.Handler, k *website.Checker, pc *prompts.Client) *fixture {
+	return fixtureWithRoutes(t, h, k, pc, nil, "")
+}
+func fixtureWithRoutes(t *testing.T, h http.Handler, k *website.Checker, pc *prompts.Client, rc *routes.Client, origin string) *fixture {
 	t.Helper()
 	f := &fixture{t: t, now: time.Date(2026, 4, 5, 0, 7, 8, 0, time.FixedZone("fixture", 2*60*60))}
 	now := func() time.Time { return f.now }
@@ -76,7 +80,7 @@ func fixtureWithPrompts(t *testing.T, h http.Handler, k *website.Checker, pc *pr
 			t.Error(err)
 		}
 	})
-	f.st = store.New(d, store.Config{Now: now, Rand: &random{}})
+	f.st = store.New(d, store.Config{Now: now, Rand: &random{}, Origin: origin})
 	if err := f.st.ReplaceZipDrive(t.Context(), candidates.ZipDrive()); err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +107,7 @@ func fixtureWithPrompts(t *testing.T, h http.Handler, k *website.Checker, pc *pr
 		t.Cleanup(func() { _ = server.Close() })
 		sc = scrapes.NewClient(scrapes.ClientConfig{Service: services.Entry{Name: "scrapes", Socket: socket}, Telemetry: w})
 	}
-	f.eng = passes.New(passes.Config{Prompts: pc, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Website: k, Store: f.st, Sources: sources.New(fmcsa.New()), Scrapes: sc, Telemetry: w, Events: em})
+	f.eng = passes.New(passes.Config{Routes: rc, Prompts: pc, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Website: k, Store: f.st, Sources: sources.New(fmcsa.New()), Scrapes: sc, Telemetry: w, Events: em})
 	t.Cleanup(func() { f.eng.Drain(context.Background()) })
 	srv := mcp.NewServer(mcp.ServerConfig{Name: "candidates", Telemetry: w})
 	tools.Register(srv, tools.Config{f.eng, f.st, k})
@@ -282,7 +286,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 		seen[d] = true
 	}
 	_ = tools.ProspectList{"id", "name", 1, store.ProspectListFilters{}, []store.ProspectListOrder{}, "creator", "email", "created", "changer", "email", "changed"}
-	_ = tools.Member{tools.Candidate{}, nil, nil, nil, nil, nil, "", "", "", "", "", nil, nil, nil, "", "", "", false}
+	_ = tools.Member{tools.Candidate{}, nil, nil, nil, nil, nil, "", "", "", "", "", nil, nil, nil, "", "", "", "", false}
 	_ = tools.Reject{"kind", "prospect_list", "name", "candidate", "why", "user", "email", "at"}
 	_ = tools.ProspectListRead{tools.ProspectList{}, 0, 0, nil, nil}
 	_ = tools.Judgments{nil, nil, nil, nil, nil, false, 0, ""}
@@ -332,9 +336,9 @@ func objectKeys(t *testing.T, b []byte) []string {
 	return out
 }
 
-// R-XFGZ-IYVN R-VWLI-BAIE R-PRJ2-Q1SR R-MGDJ-LAMN R-WMUY-RUGV R-AKDK-IR5F R-O2WP-YA7Z R-QEP5-ZOVY
+// R-XFGZ-IYVN R-VWLI-BAIE R-PRJ2-Q1SR R-MGDJ-LAMN R-AOUV-YTEL R-AKDK-IR5F R-O2WP-YA7Z R-QEP5-ZOVY
 // R-Q8LO-2U6H
-// R-6131-Z710 R-XFGZ-IYVN R-VWLI-BAIE R-PRJ2-Q1SR R-MGDJ-LAMN R-WMUY-RUGV R-AKDK-IR5F R-O2WP-YA7Z R-QEP5-ZOVY
+// R-6131-Z710 R-XFGZ-IYVN R-VWLI-BAIE R-PRJ2-Q1SR R-MGDJ-LAMN R-AOUV-YTEL R-AKDK-IR5F R-O2WP-YA7Z R-QEP5-ZOVY
 func TestAnswerJSONShapes(t *testing.T) {
 	tests := []struct {
 		v      any
@@ -344,7 +348,7 @@ func TestAnswerJSONShapes(t *testing.T) {
 	}{
 		{tools.EnrichmentResult{}, "kind source inputs cost at", "", ""},
 		{tools.Person{}, "name role", "", ""}, {tools.Evidence{}, "name source weight description", "", ""}, {tools.Category{}, "name source", "", ""}, {tools.Candidate{}, "id status name names street city state zip county phone email people class cargo created updated", "names people cargo", ""},
-		{tools.Member{}, "candidate categories classified_by fleet_verdict website website_source site_text brief excluded", "categories", ""}, {tools.ProspectListList{}, "prospect_lists", "prospect_lists", ""}, {tools.ProspectList{}, "id name size filters order created_by created_email created changed_by changed_email changed", "order", "filters"}, {tools.Reject{}, "kind prospect_list candidate", "", ""}, {tools.ProspectListRead{}, "prospect_list matching classified members rejects", "members rejects", ""}, {tools.CandidateList{}, "candidates", "candidates", ""}, {tools.PassList{}, "passes", "passes", ""},
+		{tools.Member{}, "candidate categories classified_by fleet_verdict website website_source site_text brief minutes_source excluded", "categories", ""}, {tools.ProspectListList{}, "prospect_lists", "prospect_lists", ""}, {tools.ProspectList{}, "id name size filters order created_by created_email created changed_by changed_email changed", "order", "filters"}, {tools.Reject{}, "kind prospect_list candidate", "", ""}, {tools.ProspectListRead{}, "prospect_list matching classified members rejects", "members rejects", ""}, {tools.CandidateList{}, "candidates", "candidates", ""}, {tools.PassList{}, "passes", "passes", ""},
 		{tools.Link{}, "scraper source_id run digest name names street city state zip county phone email people class cargo fleet_verdict name_key phone_key domain_key reason confidence first_seen last_seen gone", "names people cargo", ""},
 		{tools.Estimate{}, "source low confidence facts formula", "", "facts"}, {tools.Judgments{}, "operating_evidence excluded rules calculated", "operating_evidence", ""},
 		{tools.Ruling{}, "kind candidate keys why user email at", "keys", ""}, {tools.Detail{}, "candidate estimates links rulings pages enrichment_results rejects campaigns", "estimates links rulings pages enrichment_results rejects campaigns", ""}, {tools.Decision{}, "ruling candidates", "candidates", ""},
@@ -379,7 +383,7 @@ func TestAnswerJSONShapes(t *testing.T) {
 	}{
 		{tools.EnrichmentResult{URL: "chosen-url", Title: "chosen-title", StatusCode: 200, Error: "chosen-error"}, "kind source inputs url title status_code error cost at"},
 		{tools.Candidate{MergedInto: "survivor"}, "id status merged_into name names street city state zip county phone email people class cargo created updated"},
-		{tools.Member{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, Website: sources.WebsiteHTTPS, WebsiteURL: "https://chosen.test", Minutes: &one, GovernmentMatch: "chosen", KnownSince: "known", NewestFiling: "newest"}, "candidate operating_confidence revenue_low revenue_high revenue_confidence categories classified_by fleet_verdict website website_url website_source site_text brief minutes government_match known_since newest_filing excluded"},
+		{tools.Member{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, Website: sources.WebsiteHTTPS, WebsiteURL: "https://chosen.test", Minutes: &one, GovernmentMatch: "chosen", KnownSince: "known", NewestFiling: "newest"}, "candidate operating_confidence revenue_low revenue_high revenue_confidence categories classified_by fleet_verdict website website_url website_source site_text brief minutes minutes_source government_match known_since newest_filing excluded"},
 		{tools.ProspectListList{Next: &continuation}, "prospect_lists next"}, {tools.CandidateList{Next: &continuation}, "candidates next"}, {tools.PassList{Next: &continuation}, "passes next"},
 		{tools.Link{Filed: "2026-01-01"}, "scraper source_id run digest name names street city state zip county phone email people class cargo filed fleet_verdict name_key phone_key domain_key reason confidence first_seen last_seen gone"},
 		{tools.Estimate{High: &one, Filed: "2026-01-01"}, "source low high confidence facts filed formula"},

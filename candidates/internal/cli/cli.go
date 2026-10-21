@@ -26,6 +26,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/pages"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
 	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
+	"github.com/ikigenba/ikigenba/candidates/internal/routes"
 	"github.com/ikigenba/ikigenba/candidates/internal/server"
 	"github.com/ikigenba/ikigenba/candidates/internal/settings"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
@@ -183,7 +184,7 @@ func Run(ctx context.Context, p Process) int {
 	if e, ok := list.Find("prompts"); ok {
 		pc = prompts.NewClient(prompts.ClientConfig{Service: e, Telemetry: w})
 	}
-	st := store.New(d, store.Config{Now: p.Now, Rand: rnd})
+	st := store.New(d, store.Config{Now: p.Now, Rand: rnd, Origin: s.RouteOrigin})
 	var checker *website.Checker
 	client := p.HTTP
 	if _, sandbox := p.LookupEnv("IKIGENBA_SANDBOX"); sandbox {
@@ -198,7 +199,11 @@ func Run(ctx context.Context, p Process) int {
 	if client != nil {
 		checker = &website.Checker{Client: client, After: p.After}
 	}
-	eng := passes.New(passes.Config{Website: checker, Prompts: pc, After: p.After, Store: st, Sources: sources.New(fmcsa.New(), ppp.New()), Scrapes: sc, Telemetry: w, Events: em})
+	var router *routes.Client
+	if s.MapsAPIKey != "" {
+		router = &routes.Client{HTTP: p.HTTP, Key: s.MapsAPIKey, After: p.After}
+	}
+	eng := passes.New(passes.Config{Routes: router, Website: checker, Prompts: pc, After: p.After, Store: st, Sources: sources.New(fmcsa.New(), ppp.New()), Scrapes: sc, Telemetry: w, Events: em})
 	w.Ready()
 	err = st.ReplaceZipDrive(bg, candidates.ZipDrive())
 	if err == nil {

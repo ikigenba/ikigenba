@@ -387,12 +387,12 @@ func (s *Store) Decide(ctx context.Context, d Ruling) (Ruling, []Candidate, erro
 				}
 				for _, en := range enrichers.New(enrichers.Config{}).All() {
 					if der, ok := en.(enrichers.Deriver); ok {
-						if _, err = deriveCandidate(ctx, tx, c, der, true, t); err != nil {
+						if _, err = s.deriveCandidate(ctx, tx, c, der, true, t); err != nil {
 							return err
 						}
 					}
 				}
-				if err = projectFacts(ctx, tx, id); err != nil {
+				if err = s.projectFacts(ctx, tx, id); err != nil {
 					return err
 				}
 			}

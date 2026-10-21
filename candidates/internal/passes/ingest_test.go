@@ -21,7 +21,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
 )
 
-// R-SGG7-YQ5M R-3D03-LUMS R-3XQE-3Y8L R-ONN0-GDTS R-NN20-Z9KY R-T5TN-BVG5
+// R-SGG7-YQ5M R-3D03-LUMS R-3XQE-3Y8L R-ONN0-GDTS R-NN20-Z9KY
 func TestScraperIngestScopeAndFollowOn(t *testing.T) {
 	entered, release := make(chan struct{}, 2), make(chan struct{})
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +107,7 @@ func TestIngestInvalidPrecedesUnavailable(t *testing.T) {
 	}
 }
 
-// R-4066-VHPZ R-42LZ-N17D R-UYGB-LPQY R-48KS-EUX8 R-T5TN-BVG5
+// R-4066-VHPZ R-42LZ-N17D R-UYGB-LPQY R-48KS-EUX8
 func TestHandJudgeWithoutScrapes(t *testing.T) {
 	f := newFixture(t, nil, false)
 	ids := seedTarget(t, f, 2)

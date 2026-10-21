@@ -85,7 +85,6 @@ type fixture struct {
 
 func newFixture(t *testing.T, h http.HandlerFunc, available bool) *fixture {
 	t.Helper()
-	t.Setenv(services.Variable, "")
 	f := &fixture{t: t, tc: &telemetry.Capture{}, ec: &events.Capture{}, changed: make(chan struct{}, 1)}
 	now := func() time.Time { return time.Unix(100000, 0) }
 	pause := func(context.Context, time.Duration) {}
@@ -122,7 +121,7 @@ func newFixture(t *testing.T, h http.HandlerFunc, available bool) *fixture {
 		sc = scrapes.NewClient(scrapes.ClientConfig{Service: services.Entry{Name: "scrapes", Socket: sock}, Telemetry: f.w})
 	}
 	f.sc = sc
-	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), sc, nil, f.w, f.em, nil, nil})
+	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), sc, nil, f.w, f.em, nil, nil, nil})
 	t.Cleanup(func() {
 		f.eng.Drain(context.Background())
 		f.em.Shutdown(context.Background())
@@ -410,7 +409,7 @@ func TestDeliveryRecordAndRedelivery(t *testing.T) {
 	}
 }
 
-// R-3D03-LUMS R-253P-U3XS R-3J3L-IPC9 R-NI6F-G6M6 R-2IIM-1L3F
+// R-3D03-LUMS R-253P-U3XS R-3J3L-IPC9 R-2IIM-1L3F
 func TestFullIngestBackgroundIdentityAndEvents(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -491,7 +490,7 @@ func TestFullIngestBackgroundIdentityAndEvents(t *testing.T) {
 	}
 }
 
-// R-XU3S-47RZ R-MRCN-18AW R-NI6F-G6M6 R-3QEZ-TBSF R-Z3M9-W116 R-2G2T-A1M1
+// R-XU3S-47RZ R-MRCN-18AW R-3QEZ-TBSF R-Z3M9-W116 R-2G2T-A1M1
 func TestIngestAndFullIngest(t *testing.T) {
 	var stateMu sync.Mutex
 	rows := 3
@@ -938,7 +937,7 @@ func TestStoreFailureReason(t *testing.T) {
 	}, true)
 	f.eng.Drain(context.Background())
 	f.st = store.New(f.d, store.Config{Now: func() time.Time { return time.Unix(100000, 0) }, Rand: &failCandidateRandom{}})
-	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), f.sc, nil, f.w, f.em, nil, nil})
+	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), f.sc, nil, f.w, f.em, nil, nil, nil})
 	p, err := f.eng.Ingest(context.Background(), identity.Caller{UserID: "owner"}, "")
 	if err != nil {
 		t.Fatal(err)
@@ -1035,7 +1034,7 @@ func TestDrainDeadlineWhileEndingHeld(t *testing.T) {
 		}
 		return time.Unix(100000, 0)
 	}, Rand: &random{}})
-	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), f.sc, nil, f.w, f.em, nil, nil})
+	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), f.sc, nil, f.w, f.em, nil, nil, nil})
 	p, err := f.eng.Ingest(context.Background(), identity.Caller{UserID: "owner"}, "")
 	if err != nil {
 		t.Fatal(err)

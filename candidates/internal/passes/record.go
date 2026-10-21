@@ -11,11 +11,15 @@ const BatchSize = 500
 
 // Prompt scheduling bounds and injected timer durations.
 const (
-	RunsInFlight = 4
-	StartTries   = 20
-	PollInterval = 5 * time.Second
-	QueueWait    = 30 * time.Second
+	RunsInFlight   = 4
+	RoutesInFlight = 4
+	StartTries     = 20
+	PollInterval   = 5 * time.Second
+	QueueWait      = 30 * time.Second
 )
+
+// NoRouteKey explains a missing routing client.
+const NoRouteKey string = "A Maps API key is required to route a drive."
 
 // NoPrompt introduces a missing catalog prompt refusal.
 const NoPrompt string = "The required prompt is unavailable:"

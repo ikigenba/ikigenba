@@ -66,6 +66,7 @@ type Member struct {
 	SiteText            *string   `json:"site_text"`
 	Brief               *string   `json:"brief"`
 	Minutes             *int64    `json:"minutes,omitempty"`
+	MinutesSource       string    `json:"minutes_source"`
 	GovernmentMatch     string    `json:"government_match,omitempty"`
 	KnownSince          string    `json:"known_since,omitempty"`
 	NewestFiling        string    `json:"newest_filing,omitempty"`
@@ -299,6 +300,9 @@ type Facts struct {
 	WebsiteURL       string     `json:"website_url,omitempty"`
 	WebsiteSource    string     `json:"website_source"`
 	Minutes          *int64     `json:"minutes,omitempty"`
+	MinutesSource    string     `json:"minutes_source"`
+	Miles            *float64   `json:"miles,omitempty"`
+	RouteAddress     string     `json:"route_address,omitempty"`
 	Written          []Written  `json:"written"`
 }
 

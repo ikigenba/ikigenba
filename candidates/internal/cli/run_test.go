@@ -417,7 +417,7 @@ func runOnlyState(t *testing.T, dir string) {
 	}
 }
 
-// R-60KT-WY1K R-119A-9L3H R-13P3-14KV R-9NW2-FV7B R-A1AY-NCCY R-JMTD-X5LH
+// R-60KT-WY1K R-119A-9L3H R-13P3-14KV R-9NW2-FV7B R-A1AY-NCCY R-XHVR-JJLE
 // R-3TTL-43TV R-42CV-SI0Q R-43KS-69RF R-QR9U-4LFL R-49OA-34GW R-4C42-UNYA
 // R-8S6O-HTX9 R-R335-N3PU R-ZY3R-GAKJ R-R0NC-VK8G   R-ZQSD-5O4D
 // R-08GD-3XUM R-06N2-4ORE R-APOY-AR6U R-76JM-ZE8M
@@ -534,7 +534,7 @@ func TestRunAssembledChain(t *testing.T) {
 	if inherits != 1 || !reflect.DeepEqual(unsets, []string{"LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES"}) {
 		t.Fatalf("socket seam %d %v", inherits, unsets)
 	}
-	allowed := map[string]bool{"DRAIN_SECONDS": true, "CANDIDATES_KEEP_PASSES": true, services.Variable: true, "LISTEN_PID": true, "LISTEN_FDS": true, "NOTIFY_SOCKET": true, "IKIGENBA_SANDBOX": true}
+	allowed := map[string]bool{"DRAIN_SECONDS": true, "CANDIDATES_KEEP_PASSES": true, "CANDIDATES_ROUTE_ORIGIN": true, "GOOGLE_MAPS_API_KEY": true, services.Variable: true, "LISTEN_PID": true, "LISTEN_FDS": true, "NOTIFY_SOCKET": true, "IKIGENBA_SANDBOX": true}
 	for _, k := range lookups {
 		if !allowed[k] {
 			t.Fatalf("environment lookup %s", k)
@@ -1489,7 +1489,7 @@ func runAssertNotFound(t *testing.T, r mcp.Result) {
 	}
 }
 
-// R-1WFQ-0ORB
+// R-8AIP-87V7
 func TestRunSweepPrunesDoneAndPreservesRunning(t *testing.T) {
 	f := &runFake{}
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, f)}))

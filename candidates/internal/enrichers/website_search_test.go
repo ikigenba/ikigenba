@@ -20,7 +20,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-I3S3-D7R8 R-IER6-T5FH R-IH6Z-KOWV R-4C8H-K65B R-IKUO-Q04Y
+// R-6NS5-A4OX R-I3S3-D7R8 R-IER6-T5FH R-IH6Z-KOWV R-IKUO-Q04Y
 func TestWebsiteSearchClient(t *testing.T) {
 	type word string
 	const kind word = enrichers.KindWebsiteSearch

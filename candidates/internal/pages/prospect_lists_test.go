@@ -20,7 +20,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-V9FF-1NF7 R-N7LB-NIYF R-E0I5-K24P R-1YVI-S88P R-SNJ5-LBBQ R-SBC5-RLWS
+// R-V9FF-1NF7 R-N7LB-NIYF R-1YVI-S88P R-SNJ5-LBBQ R-SBC5-RLWS
 func TestProspectListViewContracts(t *testing.T) {
 	low, high, minutes, days := int64(5000000), int64(9000000), int64(120), int64(730)
 	government := false
@@ -74,7 +74,7 @@ func TestProspectListViewContracts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := ProspectListData{page.Banner{}, want, 5, 0, []MemberRow{{1, "id", "name", "city", "state", "operating", "low", "high", "confidence", []string{"category"}, "chosen-classifier", "class", "verdict", "chosen-website", "https://chosen.example.test/", "chosen-source", "site-text-at", "site-text-text", "brief-at", "brief-text", "minutes", "government", "since", "since-text", "filing", "filing-text", true}}, []RejectRow{rejectRow(r)}}
+	d := ProspectListData{page.Banner{}, want, 5, 0, []MemberRow{{1, "id", "name", "city", "state", "operating", "low", "high", "confidence", []string{"category"}, "chosen-classifier", "class", "verdict", "chosen-website", "https://chosen.example.test/", "chosen-source", "site-text-at", "site-text-text", "brief-at", "brief-text", "minutes", "chosen-minutes-source", "government", "since", "since-text", "filing", "filing-text", true}}, []RejectRow{rejectRow(r)}}
 	if d.Members[0].Website != "chosen-website" || d.Members[0].WebsiteURL != "https://chosen.example.test/" {
 		t.Fatal("member positional shape")
 	}
@@ -102,7 +102,7 @@ func pageProspectList(t *testing.T, cfg Config, id string) ProspectListData {
 	return d
 }
 
-// R-WPV3-HSB2 R-QMD6-N2U2 R-M6MC-J4P3 R-TPC1-G7B9 R-RO62-HYTL R-3XLO-YX8Z R-XHWS-AID1
+// R-WPV3-HSB2 R-QMD6-N2U2 R-TPC1-G7B9 R-RO62-HYTL R-3XLO-YX8Z R-XHWS-AID1
 func TestProspectListAndRejectHistoryPages(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()

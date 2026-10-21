@@ -237,7 +237,7 @@ func TestEnrichAcrossBatches(t *testing.T) {
 	}
 }
 
-// R-TI0N-5KV3 R-1J40-XIZY R-2PPB-76JZ
+// R-1J40-XIZY R-JWI9-6EKI R-JVAC-SMTT
 func TestEnrichRefusals(t *testing.T) {
 	for _, mode := range []string{"unavailable", "invalid", "busy", "store", "stopping"} {
 		t.Run(mode, func(t *testing.T) {

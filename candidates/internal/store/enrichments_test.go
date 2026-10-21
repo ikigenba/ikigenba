@@ -39,7 +39,7 @@ func websiteResult(id, state string) store.Enrichment {
 	return store.Enrichment{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "business.test", Source: "business.test", Found: websiteFound(website.Result{State: state, URL: "https://business.test/", StatusCode: 200}), Cost: .02}
 }
 
-// R-GDOT-3LA9 R-P56L-P5D0 R-X1YM-ROEQ R-GHCI-8WIC
+// R-2ZX9-RLIM R-GDOT-3LA9 R-P56L-P5D0 R-GHCI-8WIC
 func TestEnrichmentShapesAndMethods(t *testing.T) {
 	e := websiteResult("candidate", sources.WebsiteHTTPS)
 	contractEqual(t, store.Enrichment(struct {
@@ -62,6 +62,9 @@ func TestEnrichmentShapesAndMethods(t *testing.T) {
 		PowerUnits, Drivers                *int64
 		Website, WebsiteURL, WebsiteSource string
 		Minutes                            *int64
+		MinutesSource                      string
+		Miles                              *float64
+		RouteAddress                       string
 		Brief                              string
 		Written                            []store.Written
 	}(f)), f)
@@ -167,7 +170,7 @@ func TestDueUsesInputs(t *testing.T) {
 	contractError(t, err, store.ErrUnreachable)
 }
 
-// R-XAHX-G2LL R-OPBW-Q4PZ R-M10O-KUCX R-X5MB-WZMT R-XCXQ-7M2Z
+// R-XAHX-G2LL R-OPBW-Q4PZ R-M10O-KUCX R-X5MB-WZMT
 func TestDeriveFactsAndFill(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

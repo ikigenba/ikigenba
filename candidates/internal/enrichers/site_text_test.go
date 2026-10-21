@@ -28,13 +28,13 @@ func TestPromptWords(t *testing.T) {
 	}
 }
 
-// R-IB3H-NU7E R-ICBE-1LY3 R-LXCZ-FJ4U R-M28K-YM3M R-M746-HP2E R-M8C2-VGT3
+// R-IB3H-NU7E R-ICBE-1LY3 R-M28K-YM3M R-M746-HP2E R-M8C2-VGT3
 func TestSiteTextClientAndRegistry(t *testing.T) {
 	writer := telemetry.New(telemetry.Config{Service: "fixture", Sink: &telemetry.Capture{}, Now: func() time.Time { return time.Unix(100, 0) }, Sleep: func(context.Context, time.Duration) {}, Rand: bytes.NewReader(bytes.Repeat([]byte{1}, 256))})
 	defer writer.Shutdown(context.Background(), "fixture")
 	client := prompts.NewClient(prompts.ClientConfig{Telemetry: writer})
 	for _, c := range []*prompts.Client{nil, client} {
-		cfg := enrichers.Config{new(website.Checker), c}
+		cfg := enrichers.Config{new(website.Checker), c, nil}
 		reg := enrichers.New(cfg)
 		e := enrichers.SiteText{c}
 		var p enrichers.Prompter = e

@@ -146,7 +146,7 @@ func TestTargetRecordAndSchedulingValues(t *testing.T) {
 	}
 }
 
-// R-ZHUU-UZ40 R-0H7X-YBM5 R-XALD-ZVWV R-2PPB-76JZ
+// R-JYY1-XY1W R-K05Y-BPSL R-K1DU-PHJA
 func TestTargetRefusals(t *testing.T) {
 	for _, mode := range []string{"kind", "target", "missing", "unavailable", "prompt", "transport", "store", "stopping", "busy"} {
 		t.Run(mode, func(t *testing.T) {
@@ -154,6 +154,9 @@ func TestTargetRefusals(t *testing.T) {
 			ids := seedTarget(t, f, 1)
 			pc, fake := fakePrompts(t, f, func(name string, args map[string]json.RawMessage) (any, bool, int) {
 				if mode == "prompt" {
+					if len(f.list()) != 0 {
+						t.Error("prompt checked after pass recorded")
+					}
 					return "fixture refusal", true, 0
 				}
 				if mode == "transport" {
@@ -206,6 +209,11 @@ func TestTargetRefusals(t *testing.T) {
 			if mode == "prompt" {
 				if err.Error() != passes.RefusalInvalid+": "+passes.NoPrompt+" site-text: fixture refusal" {
 					t.Fatal(err)
+				}
+			}
+			if mode == "prompt" || mode == "transport" {
+				if len(fake.snapshot()) != 1 {
+					t.Fatal("prompt check count", fake.snapshot())
 				}
 			}
 			for _, call := range fake.snapshot() {
@@ -748,7 +756,7 @@ func TestPromptFailureCancelsOtherRunsAndKeepsPriorResult(t *testing.T) {
 	}
 }
 
-// R-TI0N-5KV3 R-01D8-ZAZ4 R-ZQE5-JDAV R-2PPB-76JZ
+// R-01D8-ZAZ4 R-ZQE5-JDAV
 func TestCorpusNeverRunsConfiguredPrompts(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := seedTarget(t, f, 1)[0]
@@ -785,7 +793,7 @@ func TestCorpusNeverRunsConfiguredPrompts(t *testing.T) {
 	}
 }
 
-// R-30OE-N488 R-ZHUU-UZ40: one target's running pass admits exactly one racing start.
+// R-JYY1-XY1W R-30OE-N488: one target's running pass admits exactly one racing start.
 func TestConcurrentTargetStarts(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := seedTarget(t, f, 1)[0]

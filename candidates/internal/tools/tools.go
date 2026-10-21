@@ -431,7 +431,7 @@ func judgmentsOf(a store.Judgments) Judgments {
 	return v
 }
 func factsOf(f store.Facts) Facts {
-	v := Facts{KnownSince: date(f.KnownSince), NewestFiling: date(f.NewestFiling), Categories: []Category{}, ClassifiedBy: store.ClassifiedBy(f.Categories), RecordsDiffer: store.RecordsDiffer(f.Categories, f.Records), RecordCategories: []Category{}, GovernmentMatch: f.GovernmentMatch, FleetVerdict: f.FleetVerdict, PowerUnits: f.PowerUnits, Drivers: f.Drivers, Website: f.Website, WebsiteURL: f.WebsiteURL, WebsiteSource: f.WebsiteSource, Minutes: f.Minutes, Written: []Written{}}
+	v := Facts{KnownSince: date(f.KnownSince), NewestFiling: date(f.NewestFiling), Categories: []Category{}, ClassifiedBy: store.ClassifiedBy(f.Categories), RecordsDiffer: store.RecordsDiffer(f.Categories, f.Records), RecordCategories: []Category{}, GovernmentMatch: f.GovernmentMatch, FleetVerdict: f.FleetVerdict, PowerUnits: f.PowerUnits, Drivers: f.Drivers, Website: f.Website, WebsiteURL: f.WebsiteURL, WebsiteSource: f.WebsiteSource, Minutes: f.Minutes, MinutesSource: f.MinutesSource, Miles: f.Miles, RouteAddress: f.RouteAddress, Written: []Written{}}
 	for _, c := range f.Categories {
 		v.Categories = append(v.Categories, Category{c.Name, c.Source})
 	}
@@ -465,7 +465,7 @@ func briefOf(es []store.Enrichment) *Brief {
 func memberOf(e store.Ranked) Member {
 	a := e.Judgments
 	f := e.Facts
-	v := Member{Candidate: candidateOf(e.Candidate), OperatingConfidence: a.Operating, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(f.Categories), FleetVerdict: f.FleetVerdict, Website: f.Website, WebsiteURL: f.WebsiteURL, WebsiteSource: f.WebsiteSource, KnownSince: date(f.KnownSince), NewestFiling: date(f.NewestFiling), Excluded: a.Excluded, Minutes: f.Minutes, GovernmentMatch: f.GovernmentMatch}
+	v := Member{Candidate: candidateOf(e.Candidate), OperatingConfidence: a.Operating, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(f.Categories), FleetVerdict: f.FleetVerdict, Website: f.Website, WebsiteURL: f.WebsiteURL, WebsiteSource: f.WebsiteSource, KnownSince: date(f.KnownSince), NewestFiling: date(f.NewestFiling), Excluded: a.Excluded, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch}
 	if !e.SiteText.IsZero() {
 		t := stamp(e.SiteText)
 		v.SiteText = &t

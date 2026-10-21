@@ -66,7 +66,7 @@ func passView(p store.Pass, sp string) PassView {
 func memberRow(e store.Ranked, i int) MemberRow {
 	a := judgmentsView(e.Judgments)
 	f := factsView(e.Facts)
-	v := MemberRow{Rank: int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(e.Facts.Categories), Class: e.Candidate.Class, FleetVerdict: f.FleetVerdict, Website: e.Facts.Website, WebsiteURL: e.Facts.WebsiteURL, WebsiteSource: e.Facts.WebsiteSource, Minutes: f.Minutes, GovernmentMatch: f.GovernmentMatch, KnownSince: f.KnownSince, KnownSinceText: f.KnownSinceText, NewestFiling: f.NewestFiling, NewestFilingText: f.NewestFilingText, Excluded: a.Excluded}
+	v := MemberRow{Rank: int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(e.Facts.Categories), Class: e.Candidate.Class, FleetVerdict: f.FleetVerdict, Website: e.Facts.Website, WebsiteURL: e.Facts.WebsiteURL, WebsiteSource: e.Facts.WebsiteSource, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch, KnownSince: f.KnownSince, KnownSinceText: f.KnownSinceText, NewestFiling: f.NewestFiling, NewestFilingText: f.NewestFilingText, Excluded: a.Excluded}
 	v.SiteText, v.SiteTextText = stamp(e.SiteText, MinuteLayout)
 	v.Brief, v.BriefText = stamp(e.Brief, MinuteLayout)
 	seen := map[string]bool{}
@@ -132,6 +132,13 @@ func factsView(f store.Facts) FactsView {
 	}
 	if f.Minutes != nil {
 		v.Minutes = strconv.FormatInt(*f.Minutes, 10)
+	}
+	v.MinutesSource = f.MinutesSource
+	if f.MinutesSource == store.MinutesByRoute {
+		v.RouteAddress = f.RouteAddress
+		if f.Miles != nil {
+			v.Miles = strconv.FormatFloat(*f.Miles, 'f', 1, 64)
+		}
 	}
 	for _, c := range f.Categories {
 		v.Categories = append(v.Categories, CategoryRow{c.Name, c.Source})
@@ -245,6 +252,16 @@ func enrichmentRow(x store.Enrichment) EnrichmentRow {
 		}
 	case enrichers.KindWebsiteSearch:
 		searchViews(&v, x.Found)
+	case enrichers.KindDriveRoute:
+		var r enrichers.RouteFound
+		_ = json.Unmarshal(x.Found, &r)
+		v.Route = &RouteView{Address: r.Address, Precision: r.Precision, Status: r.Status, Why: r.Why, Error: r.Error}
+		if r.Minutes != nil {
+			v.Route.Minutes = strconv.FormatInt(*r.Minutes, 10)
+		}
+		if r.Miles != nil {
+			v.Route.Miles = strconv.FormatFloat(*r.Miles, 'f', 1, 64)
+		}
 	default:
 		var found map[string]json.RawMessage
 		_ = json.Unmarshal(x.Found, &found)
@@ -263,7 +280,7 @@ func enrichmentRow(x store.Enrichment) EnrichmentRow {
 		v.Cost = costText(n)
 	}
 	e, _ := enrichers.New(enrichers.Config{}).Get(x.Kind)
-	if p, ok := e.(enrichers.Prompter); ok {
+	if p, ok := e.(enrichers.Failer); ok {
 		v.Failed = p.Failed(x.Found)
 	}
 	v.At, v.AtText = stamp(x.At, MinuteLayout)

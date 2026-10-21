@@ -14,16 +14,16 @@ func lookup(m map[string]string) func(string) (string, bool) {
 	return func(k string) (string, bool) { v, ok := m[k]; return v, ok }
 }
 
-// R-1B0H-BR11 R-1C8D-PIRQ R-1EO6-H294 R-1KRO-DWYL
+// R-XJ3N-XBC3 R-XLJG-OUTH R-1C8D-PIRQ R-1EO6-H294 R-1KRO-DWYL
 func TestAccepted(t *testing.T) {
-	defaults := settings.Settings{DrainSeconds: 5, KeepPasses: 20}
+	defaults := settings.Settings{5, 20, settings.DefaultRouteOrigin, ""}
 	if settings.Defaults() != defaults {
 		t.Fatal(settings.Defaults())
 	}
 	for _, tc := range []struct {
 		m    map[string]string
 		want settings.Settings
-	}{{nil, defaults}, {map[string]string{"DRAIN_SECONDS": "", "CANDIDATES_KEEP_PASSES": ""}, defaults}, {map[string]string{"DRAIN_SECONDS": "7", "CANDIDATES_KEEP_PASSES": "3", "OTHER": "bad"}, settings.Settings{7, 3}}, {map[string]string{"DRAIN_SECONDS": "999999999999999999999999999", "CANDIDATES_KEEP_PASSES": "999999999999999999999999999"}, settings.Settings{math.MaxInt64, math.MaxInt64}}} {
+	}{{nil, defaults}, {map[string]string{"DRAIN_SECONDS": "", "CANDIDATES_KEEP_PASSES": ""}, defaults}, {map[string]string{"DRAIN_SECONDS": "7", "CANDIDATES_KEEP_PASSES": "3", "OTHER": "bad"}, settings.Settings{7, 3, settings.DefaultRouteOrigin, ""}}, {map[string]string{"DRAIN_SECONDS": "999999999999999999999999999", "CANDIDATES_KEEP_PASSES": "999999999999999999999999999"}, settings.Settings{math.MaxInt64, math.MaxInt64, settings.DefaultRouteOrigin, ""}}} {
 		got, err := settings.Read(lookup(tc.m))
 		if err != nil || got != tc.want {
 			t.Fatalf("%v: %v %v", tc.m, got, err)
@@ -70,5 +70,37 @@ func TestRefused(t *testing.T) {
 func TestCopy(t *testing.T) {
 	if settings.WantSeconds == "" || settings.WantPasses == "" || settings.WantSeconds == settings.WantPasses || strings.ContainsAny(settings.WantSeconds+settings.WantPasses, "\n") {
 		t.Fatal("invalid copy constants")
+	}
+}
+
+// R-XKBK-B32S R-XMRD-2MK6
+func TestRouteSettings(t *testing.T) {
+	if settings.DefaultRouteOrigin != "Sandstone, MN" {
+		t.Fatal(settings.DefaultRouteOrigin)
+	}
+	for _, origin := range []string{"", "1 Main St, Hinckley, MN", " \n"} {
+		for _, key := range []string{"", " chosen key \n"} {
+			values := map[string]string{"CANDIDATES_ROUTE_ORIGIN": origin, "GOOGLE_MAPS_API_KEY": key}
+			got, err := settings.Read(lookup(values))
+			want := origin
+			if want == "" {
+				want = settings.DefaultRouteOrigin
+			}
+			if err != nil || got.RouteOrigin != want || got.MapsAPIKey != key {
+				t.Fatal(got, err)
+			}
+			for _, name := range []string{"DRAIN_SECONDS", "CANDIDATES_KEEP_PASSES"} {
+				invalid := map[string]string{"CANDIDATES_ROUTE_ORIGIN": origin, "GOOGLE_MAPS_API_KEY": key, name: "x"}
+				_, err = settings.Read(lookup(invalid))
+				var e *settings.Error
+				if !errors.As(err, &e) || e.Name != name || e.Value != "x" {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+	got, err := settings.Read(func(string) (string, bool) { return "ignored", false })
+	if err != nil || got != settings.Defaults() {
+		t.Fatal(got, err)
 	}
 }

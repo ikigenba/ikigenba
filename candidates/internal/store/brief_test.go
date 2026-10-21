@@ -201,10 +201,14 @@ func TestBriefMigrationAndRollbackWriter(t *testing.T) {
 			contractEqual(t, facts.Written, []store.Written{{Kind: enrichers.KindDriveMinutes, At: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)}, {Kind: enrichers.KindSiteText, At: time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC)}, {Kind: sources.WebsiteCheck, At: time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)}})
 			units, drivers, minutes := int64(3), int64(2), int64(42)
 			source := ""
+			minutesSource := ""
+			if upgrade {
+				minutesSource = store.MinutesByZip
+			}
 			if upgrade {
 				source = store.WebsiteByCheck
 			}
-			contractEqual(t, facts, store.Facts{Candidate: id, KnownSince: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: "pattern", NewestFiling: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{}, Records: []sources.Category{}, FleetVerdict: sources.FleetPass, PowerUnits: &units, Drivers: &drivers, Website: sources.WebsiteHTTPS, WebsiteURL: "https://old.test", WebsiteSource: source, Minutes: &minutes, Written: []store.Written{{Kind: enrichers.KindDriveMinutes, At: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)}, {Kind: enrichers.KindSiteText, At: time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC)}, {Kind: sources.WebsiteCheck, At: time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)}}})
+			contractEqual(t, facts, store.Facts{Candidate: id, KnownSince: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: "pattern", NewestFiling: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{}, Records: []sources.Category{}, FleetVerdict: sources.FleetPass, PowerUnits: &units, Drivers: &drivers, Website: sources.WebsiteHTTPS, WebsiteURL: "https://old.test", WebsiteSource: source, Minutes: &minutes, MinutesSource: minutesSource, Written: []store.Written{{Kind: enrichers.KindDriveMinutes, At: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)}, {Kind: enrichers.KindSiteText, At: time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC)}, {Kind: sources.WebsiteCheck, At: time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)}}})
 			es, err := s.Enrichments(ctx, id)
 			contractOK(t, err)
 			e.At = time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)

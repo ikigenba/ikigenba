@@ -3,6 +3,7 @@ package tools_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
+	"github.com/ikigenba/ikigenba/candidates/internal/routes"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
@@ -185,5 +187,85 @@ func TestMalformedTargetsBeforeStoreAndDrain(t *testing.T) {
 	ps, err := f.st.ListPasses(t.Context(), "", "", 100)
 	if err != nil || len(ps) != 0 {
 		t.Fatal(ps, err)
+	}
+}
+
+// R-ATQH-HWDD
+func TestDriveRouteCorpusRefusalNeverReadsOrRequests(t *testing.T) {
+	var requests atomic.Int64
+	rc := &routes.Client{Key: "fixture-key", HTTP: &http.Client{Transport: websiteTransport(func(*http.Request) (*http.Response, error) {
+		requests.Add(1)
+		return nil, errors.New("unexpected request")
+	})}}
+	for _, client := range []*routes.Client{nil, rc} {
+		f := fixtureWithRoutes(t, nil, nil, nil, client, "Fixture origin")
+		for _, failing := range []bool{false, true} {
+			f.d.SetFailing(failing)
+			for _, force := range []bool{false, true} {
+				refusal(t, f.call("enrich", tools.EnrichArgs{Kind: enrichers.KindDriveRoute, Force: force}), passes.RefusalInvalid, tools.RefuseInvalid)
+			}
+		}
+		f.d.SetFailing(false)
+		ps, err := f.st.ListPasses(t.Context(), "", "", 100)
+		if err != nil || len(ps) != 0 {
+			t.Fatal(ps, err)
+		}
+	}
+	if requests.Load() != 0 {
+		t.Fatal(requests.Load())
+	}
+}
+
+// R-AUYD-VO42
+func TestDriveRouteTargetRefusalsAndRunningRecords(t *testing.T) {
+	f := fixtureWithRoutes(t, nil, nil, nil, nil, "Fixture origin")
+	ids := f.seed(2)
+	list := f.create("Fixture routes")
+	for _, a := range []tools.EnrichArgs{{Kind: enrichers.KindDriveRoute, ProspectList: list.ID}, {Kind: enrichers.KindDriveRoute, Candidate: ids[0]}} {
+		refusal(t, f.call("enrich", a), passes.RefusalInvalid, passes.NoRouteKey)
+	}
+	refusal(t, f.call("enrich", tools.EnrichArgs{Kind: enrichers.KindDriveRoute, ProspectList: "pl_0000000000000000"}), passes.RefusalNotFound, tools.RefuseNotFound)
+	if r := f.call("decide", tools.DecideArgs{Kind: store.KindMerge, Candidate: ids[0], Other: ids[1], Why: "Fixture duplicate"}); r.IsError() {
+		t.Fatal(decode(t, r))
+	}
+	refusal(t, f.call("enrich", tools.EnrichArgs{Kind: enrichers.KindDriveRoute, Candidate: ids[1]}), passes.RefusalInvalid, tools.RefuseInvalid)
+	ps, err := f.st.ListPasses(t.Context(), "", "", 100)
+	if err != nil || len(ps) != 0 {
+		t.Fatal(ps, err)
+	}
+	g := fixtureWithRoutes(t, nil, nil, nil, &routes.Client{Key: "fixture-key"}, "Fixture origin")
+	gl := g.create("Unready fixture")
+	refusal(t, g.call("enrich", tools.EnrichArgs{Kind: enrichers.KindDriveRoute, ProspectList: gl.ID}), passes.RefusalUnavailable, tools.RefuseUnavailable)
+	ps, err = g.st.ListPasses(t.Context(), "", "", 100)
+	if err != nil || len(ps) != 0 {
+		t.Fatal(ps, err)
+	}
+	entered := make(chan struct{}, 2)
+	rc := &routes.Client{Key: "fixture-key", HTTP: &http.Client{Transport: websiteTransport(func(r *http.Request) (*http.Response, error) {
+		entered <- struct{}{}
+		<-r.Context().Done()
+		return nil, r.Context().Err()
+	})}}
+	h := fixtureWithRoutes(t, nil, nil, nil, rc, "Fixture origin")
+	id := h.seed(1)[0]
+	hl := h.create("Running fixture")
+	for _, a := range []tools.EnrichArgs{{Kind: enrichers.KindDriveRoute, ProspectList: hl.ID}, {Kind: enrichers.KindDriveRoute, Candidate: id}} {
+		r := h.callAs(other, "enrich", a)
+		if r.IsError() {
+			t.Fatal(decode(t, r))
+		}
+		p := decodeList[passes.Record](t, r)
+		target := a.ProspectList
+		if target == "" {
+			target = a.Candidate
+		}
+		if p.Kind != store.KindEnrichTarget || p.Target != target || p.EnrichKind != enrichers.KindDriveRoute || p.Status != store.StatusRunning || p.User != other.UserID {
+			t.Fatal(p)
+		}
+		select {
+		case <-entered:
+		case <-time.After(3 * time.Second):
+			t.Fatal("route did not start")
+		}
 	}
 }
