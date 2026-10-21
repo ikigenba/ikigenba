@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"io"
 	"math"
-	"math/big"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -192,22 +191,22 @@ func object(data []byte) map[string]any {
 	}
 	return obj
 }
-func place(obj map[string]any, o *Outcome) (json.Number, json.Number, bool) {
+func place(obj map[string]any, o *Outcome) (float64, float64, bool) {
 	results, ok := obj["results"].([]any)
 	if !ok || len(results) == 0 {
-		return "", "", false
+		return 0, 0, false
 	}
 	first, _ := results[0].(map[string]any)
 	address, ok := first["formatted_address"].(string)
 	if !ok {
-		return "", "", false
+		return 0, 0, false
 	}
 	geometry, _ := first["geometry"].(map[string]any)
 	location, _ := geometry["location"].(map[string]any)
-	lat, latOK := location["lat"].(json.Number)
-	lng, lngOK := location["lng"].(json.Number)
-	if !latOK || !lngOK {
-		return "", "", false
+	lat, latOK := number(location["lat"])
+	lng, lngOK := number(location["lng"])
+	if !latOK || !lngOK || lat < -90 || lat > 90 || lng < -180 || lng > 180 {
+		return 0, 0, false
 	}
 	switch geometry["location_type"] {
 	case "ROOFTOP":
@@ -217,7 +216,7 @@ func place(obj map[string]any, o *Outcome) (json.Number, json.Number, bool) {
 	case "APPROXIMATE":
 		o.Precision = PrecisionTown
 	default:
-		return "", "", false
+		return 0, 0, false
 	}
 	o.Address = address
 	return lat, lng, true
@@ -257,9 +256,7 @@ func route(obj map[string]any) (seconds, meters float64, found, valid bool) {
 	}
 	if raw, exists := first["distanceMeters"]; exists {
 		meters, ok = number(raw)
-		text, numeric := raw.(json.Number)
-		exact, exactOK := new(big.Rat).SetString(string(text))
-		if !ok || !numeric || !exactOK || exact.Sign() < 0 || !exact.IsInt() {
+		if !ok || meters < 0 || meters > 1e9 || math.Trunc(meters) != meters {
 			return 0, 0, false, false
 		}
 	}

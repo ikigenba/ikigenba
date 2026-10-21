@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -197,7 +196,7 @@ func TestAnswers(t *testing.T) {
 			return ""
 		}()}})
 	}
-	for _, body := range []string{"", `not json`, `[]`, `null`, `{"routes":null}`, `{"routes":{}}`, `{"routes":[null]}`, `{"routes":[{"duration":"4635"}]}`, `{"routes":[{"duration":4635}]}`, `{"routes":[{"duration":"NaNs"}]}`, `{"routes":[{"duration":"Infs"}]}`, `{"routes":[{"duration":"1e3s"}]}`, `{"routes":[{"duration":"-5s"}]}`, `{"routes":[{"distanceMeters":"139561"}]}`, `{"routes":[{"distanceMeters":-1}]}`, `{"routes":[{"distanceMeters":1.2}]}`, `{"routes":[{"distanceMeters":1.00000000000000001}]}`} {
+	for _, body := range []string{"", `not json`, `[]`, `null`, `{"routes":null}`, `{"routes":{}}`, `{"routes":[null]}`, `{"routes":[{"duration":"4635"}]}`, `{"routes":[{"duration":4635}]}`, `{"routes":[{"duration":"NaNs"}]}`, `{"routes":[{"duration":"Infs"}]}`, `{"routes":[{"duration":"1e3s"}]}`, `{"routes":[{"duration":"-5s"}]}`, `{"routes":[{"distanceMeters":"139561"}]}`, `{"routes":[{"distanceMeters":-1}]}`, `{"routes":[{"distanceMeters":1.2}]}`} {
 		want := base
 		want.Error = routes.FailShape
 		want.Failed = 1
@@ -244,6 +243,8 @@ func TestAnswers(t *testing.T) {
 	}
 }
 
+// R-CDXU-VBB3 R-NU1L-77ES
+// R-NHUL-DHZU R-NV9H-KZ5H R-NSTO-TFO3 R-7I7K-1M5R
 func TestRoutingShapeAndRounding(t *testing.T) {
 	cases := []struct {
 		name, body     string
@@ -292,7 +293,15 @@ func TestRoutingShapeAndRounding(t *testing.T) {
 		{name: "string distance", body: `{"routes":[{"distanceMeters":"139561"}]}`, shape: true},
 		{name: "negative distance", body: `{"routes":[{"distanceMeters":-1}]}`, shape: true},
 		{name: "fractional distance", body: `{"routes":[{"distanceMeters":1.2}]}`, shape: true},
-		{name: "small exact fraction", body: `{"routes":[{"distanceMeters":1.00000000000000001}]}`, shape: true},
+		{name: "rounded whole meters", body: `{"routes":[{"distanceMeters":1.00000000000000001}]}`},
+		{name: "distance limit", body: `{"routes":[{"distanceMeters":1000000000}]}`, miles: 621371.2},
+		{name: "exponent distance limit", body: `{"routes":[{"distanceMeters":1e9}]}`, miles: 621371.2},
+		{name: "rounded distance limit", body: `{"routes":[{"distanceMeters":1000000000.00000001}]}`, miles: 621371.2},
+		{name: "zero distance", body: `{"routes":[{"distanceMeters":0}]}`},
+		{name: "distance above limit", body: `{"routes":[{"distanceMeters":1000000001}]}`, shape: true},
+		{name: "distance overflow", body: `{"routes":[{"distanceMeters":1e309}]}`, shape: true},
+		{name: "distance huge exponent", body: `{"routes":[{"distanceMeters":1e999999999}]}`, shape: true},
+		{name: "distance boolean", body: `{"routes":[{"distanceMeters":true}]}`, shape: true},
 		{name: "null distance", body: `{"routes":[{"distanceMeters":null}]}`, shape: true},
 		{name: "trailing JSON", body: `{"routes":[{}]} {}`, shape: true},
 	}
@@ -477,40 +486,73 @@ func TestConcurrentCalls(t *testing.T) {
 	}
 }
 
-// R-O053-4249 R-7JFG-FDWG
-func TestPreserveCoordinateNumbers(t *testing.T) {
-	calls := 0
-	c := client(func(r *http.Request) (*http.Response, error) {
-		calls++
-		if calls == 1 {
-			return response(200, strings.ReplaceAll(placed("ROOFTOP"), `"lat":46.01,"lng":-92.94`, `"lat":46.010000000000000001,"lng":-92.940000000000000001`))
-		}
-		var body struct {
-			Destination struct {
-				Location struct {
-					LatLng struct {
-						Latitude  json.Number
-						Longitude json.Number
+// R-CHLK-0MJ6 R-O053-4249 R-7JFG-FDWG
+// R-NHUL-DHZU R-NRLS-FNXE R-NSTO-TFO3 R-7I7K-1M5R
+func TestCoordinateBounds(t *testing.T) {
+	cases := []struct {
+		name, lat, lng      string
+		latitude, longitude float64
+		shape               bool
+	}{
+		{name: "north west bounds", lat: "90", lng: "-180", latitude: 90, longitude: -180},
+		{name: "south east bounds", lat: "-90", lng: "180", latitude: -90, longitude: 180},
+		{name: "exponent bounds", lat: "9e1", lng: "-1.8e2", latitude: 90, longitude: -180},
+		{name: "zero", lat: "0", lng: "-0"},
+		{name: "parsed coordinates", lat: "46.010000000000000001", lng: "-92.940000000000000001", latitude: 46.01, longitude: -92.94},
+		{name: "rounded bounds", lat: "90.000000000000001", lng: "-180.000000000000001", latitude: 90, longitude: -180},
+		{name: "latitude high", lat: "90.5", lng: "0", shape: true},
+		{name: "latitude low", lat: "-90.5", lng: "0", shape: true},
+		{name: "latitude overflow", lat: "1e400", lng: "0", shape: true},
+		{name: "longitude high", lat: "0", lng: "180.0001", shape: true},
+		{name: "longitude low", lat: "0", lng: "-180.5", shape: true},
+		{name: "longitude overflow", lat: "0", lng: "-1e400", shape: true},
+		{name: "latitude string", lat: `"46"`, lng: "0", shape: true},
+		{name: "longitude null", lat: "0", lng: "null", shape: true},
+	}
+	for _, precision := range []struct{ wire, word string }{{"ROOFTOP", routes.PrecisionBuilding}, {"RANGE_INTERPOLATED", routes.PrecisionStreet}, {"GEOMETRIC_CENTER", routes.PrecisionStreet}, {"APPROXIMATE", routes.PrecisionTown}} {
+		for _, tc := range cases {
+			t.Run(precision.wire+"/"+tc.name, func(t *testing.T) {
+				calls := 0
+				c := client(func(r *http.Request) (*http.Response, error) {
+					calls++
+					if calls == 1 {
+						body := strings.ReplaceAll(placed(precision.wire), `"lat":46.01,"lng":-92.94`, `"lat":`+tc.lat+`,"lng":`+tc.lng)
+						return response(200, body)
+					}
+					var body struct {
+						Destination struct {
+							Location struct {
+								LatLng struct{ Latitude, Longitude float64 }
+							}
+						}
+					}
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						t.Fatal(err)
+					}
+					point := body.Destination.Location.LatLng
+					if point.Latitude != tc.latitude || point.Longitude != tc.longitude {
+						t.Fatalf("coordinates: %+v, want %v %v", point, tc.latitude, tc.longitude)
+					}
+					return response(200, `{}`)
+				})
+				got := c.Drive(context.Background(), "base", "destination")
+				want := routes.Outcome{Status: "OK", Sent: 1}
+				if tc.shape {
+					want.Error, want.Failed = routes.FailShape, 1
+				} else {
+					want.Address, want.Precision = "resolved destination", precision.word
+					want.CostNanos = routes.GeocodePriceNanos
+					want.Why = routes.WhyTooCoarse
+					if precision.word != routes.PrecisionTown {
+						want.Sent = 2
+						want.CostNanos += routes.RoutePriceNanos
+						want.Why = routes.WhyNoRoute
 					}
 				}
-			}
+				if !reflect.DeepEqual(got, want) || int64(calls) != want.Sent {
+					t.Fatalf("got %+v want %+v calls %d", got, want, calls)
+				}
+			})
 		}
-		decoder := json.NewDecoder(r.Body)
-		decoder.UseNumber()
-		if err := decoder.Decode(&body); err != nil {
-			t.Fatal(err)
-		}
-		for _, pair := range [][2]string{{string(body.Destination.Location.LatLng.Latitude), "46.010000000000000001"}, {string(body.Destination.Location.LatLng.Longitude), "-92.940000000000000001"}} {
-			got, ok := new(big.Rat).SetString(pair[0])
-			want, _ := new(big.Rat).SetString(pair[1])
-			if !ok || got.Cmp(want) != 0 {
-				t.Fatalf("coordinate changed: %s", pair[0])
-			}
-		}
-		return response(200, `{}`)
-	})
-	got := c.Drive(context.Background(), "base", "destination")
-	if calls != 2 || got.Why != routes.WhyNoRoute || got.Error != "" {
-		t.Fatal(got)
 	}
 }
