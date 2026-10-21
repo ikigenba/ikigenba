@@ -33,6 +33,10 @@ func mutationObject(t *testing.T, r mcp.Result) tools.Site {
 }
 func expectedSiteWire(s store.Site) string {
 	wire := fmt.Sprintf(`{"id":%q,"name":%q,"slug":%q,"url":%q,"repo":%q,"ref":%q,"visibility":%q,"listed":%t`, s.ID, s.Name, s.Slug, "https://sites.example.invalid/"+s.Slug+"/", s.Repo, s.Ref, s.Visibility, s.Listed)
+	if s.Path != "" {
+		needle := fmt.Sprintf(`,"visibility":%q`, s.Visibility)
+		wire = strings.Replace(wire, needle, fmt.Sprintf(`,"path":%q`, s.Path)+needle, 1)
+	}
 	if s.Commit != "" {
 		wire += fmt.Sprintf(`,"commit":%q`, s.Commit)
 	}
@@ -108,7 +112,7 @@ func makeTreeMarker(t *testing.T, h *harness, s store.Site) {
 	}
 }
 
-// R-0F87-JH63 R-0494-3JHU R-05H0-HB8J
+// R-A5IA-PJBT R-0494-3JHU R-05H0-HB8J
 func TestCreateRulesAndTakenNames(t *testing.T) {
 	h := newHarness(t)
 	repo := "rep_0123456789abcdef"
@@ -172,7 +176,7 @@ func TestConcurrentCreateHasOneWinner(t *testing.T) {
 	}
 }
 
-// R-0GG3-X8WS R-NRDL-0697
+// R-A6Q7-3B2I R-NRDL-0697
 func TestCreateDefaultsAndOverrides(t *testing.T) {
 	for _, overrides := range []bool{false, true} {
 		t.Run(fmt.Sprint(overrides), func(t *testing.T) {
@@ -225,7 +229,7 @@ func TestCreateDefaultsAndOverrides(t *testing.T) {
 	}
 }
 
-// R-0CSE-RXOP
+// R-AGHE-5H02
 func TestUpdateRuleOrder(t *testing.T) {
 	h := newHarness(t)
 	s := h.add(t, "alice", "blog", true)
@@ -239,18 +243,19 @@ func TestUpdateRuleOrder(t *testing.T) {
 		{`{"name":"blog"}`, tools.EmptyUpdate},
 		{`{"name":"blog","visibility":"secret","ref":"..bad"}`, tools.BadVisibility},
 		{`{"name":"blog","visibility":"private","ref":"..bad"}`, fmt.Sprintf(tools.InvalidRef, "..bad")},
+		{`{"name":"blog","visibility":"private","path":"/dist"}`, fmt.Sprintf(tools.InvalidPath, "/dist")},
 		{`{"name":"blog","visibility":"private"}`, tools.ApexNotPublic},
 	} {
 		expectRefusal(t, h, "update", c.args, c.want)
 	}
 }
 
-// R-0LBP-GBVK R-O2CO-G3XG
+// R-AHPA-J8QR R-O2CO-G3XG
 func TestUpdatePreservesFieldsWithoutRepository(t *testing.T) {
 	h := newHarness(t)
 	s := h.add(t, "alice", "blog", false)
 	var err error
-	s, err = h.cfg.Store.Publish(context.Background(), s.ID, strings.Repeat("a", 40))
+	s, err = h.cfg.Store.Publish(context.Background(), s.ID, strings.Repeat("a", 40), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,7 +375,7 @@ func TestApexReadSetClearAndRules(t *testing.T) {
 	for i, args := range []string{`{"name":"blog"}`, `{"name":"blog","clear":false}`} {
 		if i == 1 {
 			var err error
-			s, err = h.cfg.Store.Publish(context.Background(), s.ID, strings.Repeat("b", 40))
+			s, err = h.cfg.Store.Publish(context.Background(), s.ID, strings.Repeat("b", 40), "")
 			if err != nil {
 				t.Fatal(err)
 			}

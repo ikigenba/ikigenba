@@ -121,15 +121,16 @@ func snapshot(t *testing.T, s *store.Store) content {
 }
 
 func TestDeclarationsAndValidation(t *testing.T) {
-	// R-WM78-FJ18 R-0WB5-Q8PG R-0XJ2-40G5 R-0YQY-HS6U R-0ZYU-VJXJ R-ZFV4-G4NY R-12EN-N3EX R-WYE8-98G6
+	// R-WM78-FJ18 R-TP9N-N3I1 R-TQHK-0V8Q R-TRPG-EMZF R-0ZYU-VJXJ R-ZFV4-G4NY R-12EN-N3EX R-WYE8-98G6
 	c := store.Config{Now: func() time.Time { return stamp }, Rand: &counter{}}
 	s := open(t, c)
 	if s == nil {
 		t.Fatal("nil store")
 	}
 	v, l, r := store.Private, false, "next"
-	_ = store.Change{Visibility: &v, Listed: &l, Ref: &r}
-	x := store.Site{ID: "id", Name: "name", Slug: "slug", Owner: "owner", Repo: "repo", Ref: "ref", Visibility: "visibility", Listed: true, Commit: "commit", Created: stamp, Published: stamp}
+	_ = store.Change{&v, &l, &r, &r}
+	_ = store.Draft{"owner", "name", "repo", "ref", "path", store.Public, true}
+	x := store.Site{"id", "name", "slug", "owner", "repo", "ref", "path", "visibility", true, "commit", "published-path", stamp, stamp}
 	equal(t, x.Name, "name")
 	equal(t, store.IDPrefix, "sit_")
 	equal(t, store.Public, "public")
@@ -205,10 +206,14 @@ func assertEmpty(t *testing.T, s *store.Store) {
 	equal(t, a, store.Site{})
 }
 func TestPersistence(t *testing.T) {
-	// R-WPUX-KU9B R-WR2T-YM00 R-2K28-H01H
+	// R-TU59-66GT R-TVD5-JY7I R-2K28-H01H
 	path := filepath.Join(t.TempDir(), "state", "db")
 	s, handle := openAt(t, path, store.Config{})
-	x := create(t, s, draft("docs"))
+	initial := draft("docs")
+	initial.Path = "configured"
+	x := create(t, s, initial)
+	equal(t, x.Path, initial.Path)
+	equal(t, x.PublishedPath, "")
 	equal(t, x.Name, "docs")
 	equal(t, x.Owner, "alice")
 	equal(t, x.Repo, "repository")
@@ -222,8 +227,9 @@ func TestPersistence(t *testing.T) {
 	if !store.ValidID(x.ID) {
 		t.Fatal(x.ID)
 	}
-	y, e := s.Publish(ctx, x.ID, strings.Repeat("a", 40))
+	y, e := s.Publish(ctx, x.ID, strings.Repeat("a", 40), "published")
 	equal(t, e, nil)
+	equal(t, y.PublishedPath, "published")
 	_, e = s.SetApex(ctx, x.ID)
 	equal(t, e, nil)
 	d := draft("draft")
@@ -444,7 +450,7 @@ func TestVisibleBeforeWindows(t *testing.T) {
 }
 
 func TestPublishUpdateAndApex(t *testing.T) {
-	// R-17A9-66DP R-18I5-JY4E R-1ZBX-YWFO R-20JU-CO6D R-22ZN-47NR R-247J-HZEG R-2AB1-EU3X R-2BIX-SLUM R-4QBY-XRV6 R-2CQU-6DLB
+	// R-TSXC-SEQ4 R-18I5-JY4E R-TXSY-BHOW R-TZ0U-P9FL R-U1GN-GSWZ R-247J-HZEG R-2AB1-EU3X R-2BIX-SLUM R-4QBY-XRV6 R-2CQU-6DLB
 	now := stamp
 	s := open(t, store.Config{Now: func() time.Time { return now }})
 	x := create(t, s, draft("docs"))
@@ -478,7 +484,7 @@ func TestPublishUpdateAndApex(t *testing.T) {
 	}
 	for _, commit := range []string{strings.Repeat("a", 40), strings.Repeat("a", 40), strings.Repeat("b", 40)} {
 		now = now.Add(time.Second)
-		got, e := s.Publish(ctx, x.ID, commit)
+		got, e := s.Publish(ctx, x.ID, commit, "")
 		equal(t, e, nil)
 		expected := x
 		expected.Commit = commit
@@ -504,12 +510,12 @@ func TestPublishUpdateAndApex(t *testing.T) {
 	}
 	before = snapshot(t, s)
 	for _, commit := range []string{"", strings.Repeat("a", 39), strings.Repeat("a", 41), strings.Repeat("G", 40)} {
-		got, e := s.Publish(ctx, "missing", commit)
+		got, e := s.Publish(ctx, "missing", commit, "")
 		equal(t, got, store.Site{})
 		catalog(t, e)
 		equal(t, snapshot(t, s), before)
 	}
-	got, e := s.Publish(ctx, "missing", strings.Repeat("a", 40))
+	got, e := s.Publish(ctx, "missing", strings.Repeat("a", 40), "")
 	equal(t, got, store.Site{})
 	checkErr(t, e, store.ErrNotFound)
 	equal(t, snapshot(t, s), before)
@@ -556,7 +562,7 @@ func TestPublishUpdateAndApex(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
-	// R-WSAQ-CDQP R-27V8-NAMJ R-2935-12D8
+	// R-Z0BJ-UP98 R-27V8-NAMJ R-2935-12D8
 	path := filepath.Join(t.TempDir(), "db")
 	s, handle := openAt(t, path, store.Config{})
 	x := create(t, s, draft("docs"))
@@ -639,7 +645,7 @@ func calls(c context.Context, s *store.Store, id string) []error {
 	_, e := s.Visible(c, "alice", "", 10000)
 	_, f := s.Taken(c, "docs")
 	_, g := s.Create(c, draft("new"))
-	_, h := s.Publish(c, id, strings.Repeat("a", 40))
+	_, h := s.Publish(c, id, strings.Repeat("a", 40), "")
 	_, _, i := s.Update(c, id, store.Change{})
 	_, j := s.Delete(c, id)
 	_, _, k := s.Apex(c)
@@ -657,8 +663,8 @@ func calls(c context.Context, s *store.Store, id string) []error {
 	_, missingSlug := s.BySlug(c, "missing")
 	_, invalidCreate := s.Create(c, store.Draft{})
 	_, takenCreate := s.Create(c, draft("docs"))
-	_, invalidPublish := s.Publish(c, "missing", "invalid")
-	_, missingPublish := s.Publish(c, "missing", strings.Repeat("a", 40))
+	_, invalidPublish := s.Publish(c, "missing", "invalid", "")
+	_, missingPublish := s.Publish(c, "missing", strings.Repeat("a", 40), "")
 	bad, private := "invalid", store.Private
 	_, _, invalidUpdate := s.Update(c, "missing", store.Change{Visibility: &bad})
 	_, _, missingUpdate := s.Update(c, "missing", store.Change{})
@@ -668,7 +674,7 @@ func calls(c context.Context, s *store.Store, id string) []error {
 	return []error{a, b, d, e, f, g, h, i, j, k, l, m, zeroList, negativeList, zeroVisible, negativeVisible, before, last, zeroBefore, negativeBefore, missingFind, missingSlug, invalidCreate, takenCreate, invalidPublish, missingPublish, invalidUpdate, missingUpdate, privateApex, missingDelete, missingApex}
 }
 func TestContextCloseAndPrecedence(t *testing.T) {
-	// R-OR3N-86JI R-OSBJ-LYA7 R-OTJF-ZQ0W
+	// R-OR3N-86JI R-OSBJ-LYA7 R-U3WG-8CED
 	path := filepath.Join(t.TempDir(), "db")
 	s, handle := openAt(t, path, store.Config{})
 	x := create(t, s, draft("docs"))
@@ -713,7 +719,7 @@ func TestContextCloseAndPrecedence(t *testing.T) {
 }
 
 func TestStoreRefusalPrecedence(t *testing.T) {
-	// R-OTJF-ZQ0W
+	// R-U3WG-8CED
 	randomFailure := errors.New("test randomness failure")
 	s := open(t, store.Config{})
 	x := create(t, s, draft("docs"))
@@ -725,7 +731,7 @@ func TestStoreRefusalPrecedence(t *testing.T) {
 	d.Visibility = bad
 	_, err = s.Create(ctx, d)
 	catalog(t, err)
-	_, err = s.Publish(ctx, "missing", "invalid")
+	_, err = s.Publish(ctx, "missing", "invalid", "")
 	catalog(t, err)
 	for _, id := range []string{"missing", x.ID} {
 		for _, c := range []store.Change{{Visibility: &bad}, {Visibility: &private, Ref: &empty}} {
@@ -809,13 +815,13 @@ func TestConcurrentCreates(t *testing.T) {
 
 func assertPair(t *testing.T, a store.Site) {
 	t.Helper()
-	if a.Commit != "" && a.Commit != fmt.Sprintf("%040x", a.Published.Unix()) {
+	if a.Commit != "" && (a.Commit != fmt.Sprintf("%040x", a.Published.Unix()) || a.PublishedPath != fmt.Sprint(a.Published.Unix())) {
 		t.Error("mixed publish state")
 	}
 }
 
 func TestConcurrentAtomicPublish(t *testing.T) {
-	// R-21RQ-QFX2 R-WTIM-Q5HE
+	// R-U08R-316A R-WTIM-Q5HE
 	var tick int64
 	s := open(t, store.Config{Now: func() time.Time { tick++; return time.Unix(tick, 0) }})
 	x := create(t, s, draft("docs"))
@@ -827,7 +833,7 @@ func TestConcurrentAtomicPublish(t *testing.T) {
 		<-start
 		for i := int64(2); i < 102; i++ {
 			commit := fmt.Sprintf("%040x", i)
-			_, e := s.Publish(ctx, x.ID, commit)
+			_, e := s.Publish(ctx, x.ID, commit, fmt.Sprint(i))
 			if e != nil {
 				t.Error(e)
 			}
@@ -842,7 +848,7 @@ func TestConcurrentAtomicPublish(t *testing.T) {
 					t.Error(e)
 					return
 				}
-				if a.Commit != "" && a.Commit != fmt.Sprintf("%040x", a.Published.Unix()) {
+				if a.Commit != "" && (a.Commit != fmt.Sprintf("%040x", a.Published.Unix()) || a.PublishedPath != fmt.Sprint(a.Published.Unix())) {
 					t.Error("mixed publish state")
 				}
 				a, e = s.BySlug(ctx, x.Slug)

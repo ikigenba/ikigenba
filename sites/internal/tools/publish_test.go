@@ -71,13 +71,7 @@ func assertPublishedObject(t *testing.T, h *harness, r mcp.Result, original stor
 	if e != nil || !reflect.DeepEqual(expected, actual) {
 		t.Fatalf("record %+v want %+v error %v", actual, expected, e)
 	}
-	created := expected.Created.UTC().Format("2006-01-02T15:04:05Z")
-	published := expected.Published.UTC().Format("2006-01-02T15:04:05Z")
-	want, e := json.Marshal(tools.Site{ID: expected.ID, Name: expected.Name, Slug: expected.Slug, URL: "https://sites.example.invalid/" + expected.Slug + "/", Repo: expected.Repo, Ref: expected.Ref, Visibility: expected.Visibility, Listed: expected.Listed, Commit: &sha, Created: created, Published: &published})
-	if e != nil {
-		t.Fatal(e)
-	}
-	if got := resultObject(t, r); string(got) != string(want) {
+	if got, want := resultObject(t, r), expectedSiteWire(expected); string(got) != want {
 		t.Fatalf("object %s want %s", got, want)
 	}
 }
@@ -93,7 +87,7 @@ func outsideSiteSnapshot(t *testing.T, h *harness, id string) map[string]diskEnt
 }
 
 func TestPublishSuccessPruningAndOwnerIndependence(t *testing.T) {
-	// R-0IVW-OSE6 R-XJWW-Q6D5 R-NXH2-X0YO R-NBIW-15M6
+	// R-ABLS-ME1A R-AIX6-X0HG R-NXH2-X0YO R-NBIW-15M6
 	h := newHarness(t)
 	p := h.repo(t, "rep_0123456789abcdef", "alice")
 	first := commitFile(t, h, p, "old")
@@ -157,7 +151,7 @@ func TestPublishSuccessPruningAndOwnerIndependence(t *testing.T) {
 	if e != nil || len(entries) != 1 || entries[0].Name() != second {
 		t.Fatalf("trees %v %v", entries, e)
 	}
-	b, e := os.ReadFile(filepath.Join(h.cfg.Cache.Dir(s.ID, second), "index.html"))
+	b, e := os.ReadFile(filepath.Join(h.cfg.Cache.Dir(s.ID, second, ""), "index.html"))
 	if e != nil || string(b) != "new" {
 		t.Fatal("wrong installed tree")
 	}
@@ -172,7 +166,7 @@ func TestPublishSuccessPruningAndOwnerIndependence(t *testing.T) {
 }
 
 func TestPublishRefusalOrderLimitsAndDiskFailure(t *testing.T) {
-	// R-06OW-V2Z8 R-07WT-8UPX R-094P-MMGM R-9FGR-O8O7 R-0317-PRR5
+	// R-A7Y3-H2T7 R-A95Z-UUJW R-74WV-C1W8 R-9FGR-O8O7 R-0317-PRR5
 	for _, which := range []string{"missing-site", "missing-repo", "no-ref", "malformed-ref", "large", "resolve-timeout", "archive-timeout", "disk", "archive-git"} {
 		t.Run(which, func(t *testing.T) {
 			h := newHarness(t)
@@ -270,7 +264,7 @@ func TestPublishRefusalOrderLimitsAndDiskFailure(t *testing.T) {
 }
 
 func TestPublishCatalogFailureRollsBackOnlyNewTree(t *testing.T) {
-	// R-566N-WSI7 R-9FGR-O8O7
+	// R-A4AE-BRL4 R-9FGR-O8O7
 	for _, existing := range []bool{false, true} {
 		t.Run(fmt.Sprint(existing), func(t *testing.T) {
 			h := newHarness(t)
@@ -278,7 +272,7 @@ func TestPublishCatalogFailureRollsBackOnlyNewTree(t *testing.T) {
 			sha := commitFile(t, h, p, "body")
 			s := h.add(t, "alice", "blog", true)
 			if existing {
-				if e := h.cfg.Cache.Unpack(context.Background(), s.ID, s.Repo, sha); e != nil {
+				if e := h.cfg.Cache.Unpack(context.Background(), s.ID, s.Repo, sha, ""); e != nil {
 					t.Fatal(e)
 				}
 			}
@@ -367,7 +361,7 @@ func TestHaltedAndCanceledToolsEndWithoutResult(t *testing.T) {
 }
 
 func TestCommittedPublishAndDeleteSucceedDespiteCleanupFailure(t *testing.T) {
-	// R-0MJL-U3M9
+	// R-AF9H-RP9D
 	for _, tool := range []string{"publish", "delete"} {
 		t.Run(tool, func(t *testing.T) {
 			h := newHarness(t)
@@ -375,7 +369,7 @@ func TestCommittedPublishAndDeleteSucceedDespiteCleanupFailure(t *testing.T) {
 			old := commitFile(t, h, p, "old")
 			s := h.add(t, "alice", "blog", true)
 			resultObject(t, h.call(t, "alice", "publish", `{"name":"blog"}`))
-			oldDir := h.cfg.Cache.Dir(s.ID, old)
+			oldDir := h.cfg.Cache.Dir(s.ID, old, "")
 			parent, e := os.OpenRoot(filepath.Dir(oldDir))
 			if e != nil {
 				t.Fatal(e)
@@ -413,7 +407,7 @@ func TestCommittedPublishAndDeleteSucceedDespiteCleanupFailure(t *testing.T) {
 }
 
 func TestPublishRefusesHostileRealGitArchive(t *testing.T) {
-	// R-094P-MMGM
+	// R-74WV-C1W8
 	h := newHarness(t)
 	p := h.repo(t, "rep_0123456789abcdef", "alice")
 	blob := gitInput(t, h, p, "target", "hash-object", "-w", "--stdin")

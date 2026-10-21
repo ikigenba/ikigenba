@@ -21,12 +21,13 @@ func apexResult(s *Site) (mcp.Result, error) {
 			URL        string  `json:"url"`
 			Repo       string  `json:"repo"`
 			Ref        string  `json:"ref"`
+			Path       *string `json:"path,omitempty"`
 			Visibility string  `json:"visibility"`
 			Listed     bool    `json:"listed"`
 			Commit     *string `json:"commit,omitempty"`
 			Created    string  `json:"created"`
 			Published  *string `json:"published,omitempty"`
-		}{s.ID, s.Name, s.Slug, s.URL, s.Repo, s.Ref, s.Visibility, s.Listed, s.Commit, s.Created, s.Published}
+		}{s.ID, s.Name, s.Slug, s.URL, s.Repo, s.Ref, s.Path, s.Visibility, s.Listed, s.Commit, s.Created, s.Published}
 	}
 	object, err := json.Marshal(struct {
 		Apex any `json:"apex"`

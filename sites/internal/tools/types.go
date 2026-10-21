@@ -37,6 +37,7 @@ type CreateArgs struct {
 	Name       string  `json:"name" mcp:"required" description:"The new site's name: 1 to 64 lowercase letters, digits, or '-', starting with a letter or digit, not about, mcp, api, or tools, and not already a site's name in the space."`
 	Repo       string  `json:"repo" mcp:"required" description:"The id of one of your repositories in repos (rep_ and 16 hexadecimal digits)."`
 	Ref        *string `json:"ref" description:"The branch, tag, or commit the site tracks; main unless given."`
+	Path       *string `json:"path" description:"The forward-slash relative directory to serve; the whole tree unless given."`
 	Visibility *string `json:"visibility" description:"public or private; public unless given."`
 	Listed     *bool   `json:"listed" description:"Whether the site is on the landing page and answers at its name; true unless given."`
 }
@@ -45,6 +46,7 @@ type CreateArgs struct {
 type PublishArgs struct {
 	Name string  `json:"name" mcp:"required" description:"The site's name."`
 	Ref  *string `json:"ref" description:"The branch, tag, or commit to publish, for this publish only; the site's own ref unless given."`
+	Path *string `json:"path" description:"The directory to serve for this publish only; the site's configured path unless given."`
 }
 
 // UpdateArgs carries optional changes.
@@ -53,6 +55,7 @@ type UpdateArgs struct {
 	Visibility *string `json:"visibility" description:"public or private."`
 	Listed     *bool   `json:"listed" description:"Whether the site is on the landing page."`
 	Ref        *string `json:"ref" description:"The branch, tag, or commit the site tracks from now on."`
+	Path       *string `json:"path" description:"The directory to serve from now on; empty clears it. This does not publish."`
 }
 
 // ApexArgs reads, sets, or clears the apex.
@@ -69,6 +72,7 @@ type Site struct {
 	URL        string  `json:"url" mcp:"required"`
 	Repo       string  `json:"repo" mcp:"required"`
 	Ref        string  `json:"ref" mcp:"required"`
+	Path       *string `json:"path"`
 	Visibility string  `json:"visibility" mcp:"required"`
 	Listed     bool    `json:"listed" mcp:"required"`
 	Commit     *string `json:"commit"`
@@ -82,6 +86,7 @@ type ListedSite struct {
 	Name       string  `json:"name" mcp:"required"`
 	Slug       string  `json:"slug" mcp:"required"`
 	URL        string  `json:"url" mcp:"required"`
+	Path       *string `json:"path"`
 	Visibility string  `json:"visibility" mcp:"required"`
 	Listed     bool    `json:"listed" mcp:"required"`
 	Commit     *string `json:"commit"`

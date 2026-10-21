@@ -27,7 +27,7 @@ func TestListArgumentFields(t *testing.T) {
 	}
 }
 
-// R-4XND-8EBC R-4YV9-M621 R-6AAS-YA2A R-6BIP-C1SZ
+// R-4XND-8EBC R-9ZES-SOMC R-6AAS-YA2A R-6BIP-C1SZ
 func TestListPagingSurface(t *testing.T) {
 	h := newHarness(t)
 	infos, err := h.client.ListTools(context.Background(), identity.Caller{UserID: "alice"})
@@ -41,7 +41,7 @@ func TestListPagingSurface(t *testing.T) {
 	limit, _ := json.Marshal(paging.LimitDescription)
 	next, _ := json.Marshal(paging.NextDescription)
 	input := `{"type":"object","properties":{"page":{"type":"string","description":` + string(page) + `},"limit":{"type":"integer","description":` + string(limit) + `}},"additionalProperties":false}`
-	output := `{"type":"object","properties":{"sites":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"slug":{"type":"string"},"url":{"type":"string"},"visibility":{"type":"string"},"listed":{"type":"boolean"},"commit":{"type":"string"}},"required":["id","name","slug","url","visibility","listed"],"additionalProperties":false}},"next":{"type":"string","description":` + string(next) + `}},"required":["sites"],"additionalProperties":false}`
+	output := `{"type":"object","properties":{"sites":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"slug":{"type":"string"},"url":{"type":"string"},"path":{"type":"string"},"visibility":{"type":"string"},"listed":{"type":"boolean"},"commit":{"type":"string"}},"required":["id","name","slug","url","visibility","listed"],"additionalProperties":false}},"next":{"type":"string","description":` + string(next) + `}},"required":["sites"],"additionalProperties":false}`
 	if string(infos[0].InputSchema) != input {
 		t.Fatalf("input %s want %s", infos[0].InputSchema, input)
 	}
@@ -50,7 +50,7 @@ func TestListPagingSurface(t *testing.T) {
 	}
 }
 
-// R-5035-ZXSQ R-51B2-DPJF R-566N-WSI7
+// R-5035-ZXSQ R-51B2-DPJF R-A4AE-BRL4
 func TestListRulesBeforeCatalog(t *testing.T) {
 	h := newHarness(t)
 	h.add(t, "alice", "blog", true)

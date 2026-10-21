@@ -3,6 +3,7 @@ package serving
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"io"
 	"net/http"
@@ -72,7 +73,7 @@ func Sites(cfg Config) http.Handler {
 		case site.Commit == "":
 		default:
 			var tree string
-			tree, treeErr = cfg.Cache.Tree(r.Context(), site.ID, site.Repo, site.Commit)
+			tree, treeErr = cfg.Cache.Tree(r.Context(), site.ID, site.Repo, site.Commit, site.PublishedPath)
 			if treeErr != nil {
 				if !errors.Is(treeErr, limits.ErrDraining) && (errors.Is(treeErr, limits.ErrHalted) || (r.Context().Err() != nil && errors.Is(treeErr, context.Cause(r.Context())))) {
 					return
@@ -94,7 +95,7 @@ func Sites(cfg Config) http.Handler {
 				case directory:
 					status, template, location = 301, "", withQuery(r.URL.EscapedPath()+"/", r)
 				case file != "":
-					status, template, tag = 200, "", "\""+site.Commit+"\""
+					status, template, tag = 200, "", entityTag(site)
 					if matching(r, tag) {
 						status = 304
 					}
@@ -284,3 +285,11 @@ func contentType(name string) string {
 
 // Stopping is the response line while the service drains.
 const Stopping string = "sites is stopping; try again later"
+
+func entityTag(s store.Site) string {
+	tag := s.Commit
+	if s.PublishedPath != "" {
+		tag += "-" + hex.EncodeToString([]byte(s.PublishedPath))
+	}
+	return "\"" + tag + "\""
+}

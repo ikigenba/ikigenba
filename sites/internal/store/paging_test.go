@@ -237,14 +237,14 @@ func assertStoredRecord(t *testing.T, d *db.DB, x store.Site) {
 		if err := json.Unmarshal(published, &p); err != nil {
 			return err
 		}
-		equal(t, got, map[string]any{"ID": x.ID, "Name": x.Name, "Slug": x.Slug, "Owner": x.Owner, "Repo": x.Repo, "Ref": x.Ref, "Visibility": x.Visibility, "Commit": x.Commit, "Listed": x.Listed, "Created": c, "Published": p})
+		equal(t, got, map[string]any{"ID": x.ID, "Name": x.Name, "Slug": x.Slug, "Owner": x.Owner, "Repo": x.Repo, "Ref": x.Ref, "Path": x.Path, "PublishedPath": x.PublishedPath, "Visibility": x.Visibility, "Commit": x.Commit, "Listed": x.Listed, "Created": c, "Published": p})
 		return nil
 	})
 	equal(t, err, nil)
 }
 
 func TestStoredListedAndPayload(t *testing.T) {
-	// R-4NW6-68DS R-V51S-AZ1A
+	// R-4NW6-68DS R-TWL1-XPY7
 	s, d := openAt(t, filepath.Join(t.TempDir(), "sites.db"), store.Config{})
 	for _, listed := range []bool{true, false} {
 		draft := draft(map[bool]string{true: "listed", false: "unlisted"}[listed])
@@ -252,7 +252,7 @@ func TestStoredListedAndPayload(t *testing.T) {
 		x := create(t, s, draft)
 		assertStoredRecord(t, d, x)
 		var err error
-		x, err = s.Publish(ctx, x.ID, strings.Repeat("b", 40))
+		x, err = s.Publish(ctx, x.ID, strings.Repeat("b", 40), "")
 		equal(t, err, nil)
 		assertStoredRecord(t, d, x)
 		for _, next := range []bool{!listed, listed} {
@@ -264,7 +264,7 @@ func TestStoredListedAndPayload(t *testing.T) {
 }
 
 func TestColumnListingAndPayloadRecord(t *testing.T) {
-	// R-YJV8-E5KN R-4NW6-68DS R-V51S-AZ1A
+	// R-YJV8-E5KN R-4NW6-68DS R-TWL1-XPY7
 	for _, listed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unlisted", true: "listed"}[listed], func(t *testing.T) {
 			s, d := openAt(t, filepath.Join(t.TempDir(), "sites.db"), store.Config{})
@@ -317,7 +317,7 @@ func TestColumnListingAndPayloadRecord(t *testing.T) {
 				return err
 			})
 			equal(t, err, nil)
-			got, err = s.Publish(ctx, x.ID, strings.Repeat("a", 40))
+			got, err = s.Publish(ctx, x.ID, strings.Repeat("a", 40), "")
 			equal(t, err, nil)
 			equal(t, got.Listed, x.Listed)
 			assertStoredRecord(t, d, got)

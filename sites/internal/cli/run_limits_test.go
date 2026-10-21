@@ -75,7 +75,7 @@ func limitResponse(t *testing.T, f *startFixture, path string, status int, body 
 	}
 }
 
-// R-ZJIT-LFW1 R-YAZ0-C8YJ
+// R-ZJIT-LFW1 R-U4E6-DQIU
 func TestRunLimitsBelongToCurrentRun(t *testing.T) {
 	first := newStartFixture(t)
 	root := filepath.Join(t.TempDir(), "repos")
@@ -158,7 +158,7 @@ func TestRunLimitsBelongToCurrentRun(t *testing.T) {
 	}
 }
 
-// R-YAZ0-C8YJ
+// R-U4E6-DQIU
 func TestRunGitTimerAccounting(t *testing.T) {
 	for _, seconds := range []string{"17", strconv.FormatInt(math.MaxInt64, 10)} {
 		t.Run(seconds, func(t *testing.T) {
@@ -323,7 +323,7 @@ func (h *limitHeldGit) exited(t *testing.T) {
 	}
 }
 
-// R-YAZ0-C8YJ
+// R-U4E6-DQIU
 func TestRunLiveGitDeadlineEndsBeforeAnswer(t *testing.T) {
 	for _, request := range []string{"publish", "rebuild"} {
 		t.Run(request, func(t *testing.T) {

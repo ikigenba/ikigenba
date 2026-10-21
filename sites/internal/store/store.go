@@ -38,16 +38,16 @@ type Config struct {
 
 // Site is the catalog record exposed to consumers.
 type Site struct {
-	ID, Name, Slug, Owner, Repo, Ref, Visibility string
-	Listed                                       bool
-	Commit                                       string
-	Created, Published                           time.Time
+	ID, Name, Slug, Owner, Repo, Ref, Path, Visibility string
+	Listed                                             bool
+	Commit, PublishedPath                              string
+	Created, Published                                 time.Time
 }
 
 // Draft supplies the initial fields of a site.
 type Draft struct {
-	Owner, Name, Repo, Ref, Visibility string
-	Listed                             bool
+	Owner, Name, Repo, Ref, Path, Visibility string
+	Listed                                   bool
 }
 
 // Change contains optional fields to update atomically.
@@ -55,6 +55,7 @@ type Change struct {
 	Visibility *string
 	Listed     *bool
 	Ref        *string
+	Path       *string
 }
 
 // Store provides record operations over one catalog handle.
@@ -326,7 +327,7 @@ func (s *Store) Create(ctx context.Context, d Draft) (Site, error) {
 				}
 			}
 		}
-		x := Site{ID: id, Name: d.Name, Slug: slug, Owner: d.Owner, Repo: d.Repo, Ref: d.Ref, Visibility: d.Visibility, Listed: d.Listed, Created: s.now().UTC().Truncate(time.Second)}
+		x := Site{ID: id, Name: d.Name, Slug: slug, Owner: d.Owner, Repo: d.Repo, Ref: d.Ref, Path: d.Path, Visibility: d.Visibility, Listed: d.Listed, Created: s.now().UTC().Truncate(time.Second)}
 		if err = s.save(ctx, tx, x); err != nil {
 			return Site{}, err
 		}
@@ -335,7 +336,7 @@ func (s *Store) Create(ctx context.Context, d Draft) (Site, error) {
 }
 
 // Publish atomically replaces the published commit and timestamp.
-func (s *Store) Publish(ctx context.Context, id, commit string) (Site, error) {
+func (s *Store) Publish(ctx context.Context, id, commit, path string) (Site, error) {
 	return transact(ctx, s.db.Write, func(tx *sql.Tx) (Site, error) {
 		if !validHex(commit, 40) {
 			return Site{}, errors.New("invalid commit")
@@ -345,6 +346,7 @@ func (s *Store) Publish(ctx context.Context, id, commit string) (Site, error) {
 			return Site{}, err
 		}
 		x.Commit = commit
+		x.PublishedPath = path
 		x.Published = s.now().UTC().Truncate(time.Second)
 		if err = s.save(ctx, tx, x); err != nil {
 			return Site{}, err
@@ -382,6 +384,10 @@ func (s *Store) Update(ctx context.Context, id string, c Change) (Site, []string
 		if c.Ref != nil && *c.Ref != x.Ref {
 			x.Ref = *c.Ref
 			changed = append(changed, "ref")
+		}
+		if c.Path != nil && *c.Path != x.Path {
+			x.Path = *c.Path
+			changed = append(changed, "path")
 		}
 		if err = s.save(ctx, tx, x); err != nil {
 			return updateResult{}, err

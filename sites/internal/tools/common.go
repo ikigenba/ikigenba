@@ -35,6 +35,10 @@ func (cfg Config) find(ctx context.Context, user, name string) (store.Site, erro
 func siteObject(ctx context.Context, s store.Site) Site {
 	base, _ := urls.FromContext(ctx)
 	o := Site{ID: s.ID, Name: s.Name, Slug: s.Slug, URL: urls.SiteURL(base, s.Slug), Repo: s.Repo, Ref: s.Ref, Visibility: s.Visibility, Listed: s.Listed, Created: s.Created.UTC().Format("2006-01-02T15:04:05Z")}
+	if s.Path != "" {
+		path := s.Path
+		o.Path = &path
+	}
 	if s.Commit != "" {
 		commit := s.Commit
 		published := s.Published.UTC().Format("2006-01-02T15:04:05Z")
@@ -93,7 +97,7 @@ func (cfg Config) list(ctx context.Context, c identity.Caller, a ListArgs) (Site
 	}
 	for _, s := range ss {
 		o := siteObject(ctx, s)
-		out.Sites = append(out.Sites, ListedSite{ID: o.ID, Name: o.Name, Slug: o.Slug, URL: o.URL, Visibility: o.Visibility, Listed: o.Listed, Commit: o.Commit})
+		out.Sites = append(out.Sites, ListedSite{ID: o.ID, Name: o.Name, Slug: o.Slug, URL: o.URL, Path: o.Path, Visibility: o.Visibility, Listed: o.Listed, Commit: o.Commit})
 	}
 	return out, nil
 }

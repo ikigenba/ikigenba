@@ -332,7 +332,7 @@ func TestRunNotificationFailure(t *testing.T) {
 	}
 }
 
-// R-XKCF-53SO R-VSZU-EG57 R-XQ8P-U5CQ R-WZM4-N06V R-XO04-AF0R R-WMZ0-I8LW R-XRNT-FQ8U R-YULW-P307 R-YPQB-601F
+// R-XKCF-53SO R-VSZU-EG57 R-XQ8P-U5CQ R-KRGR-L1DT R-KTWK-CKV7 R-WMZ0-I8LW R-KV4G-QCLW R-YULW-P307 R-YPQB-601F
 func TestRunFirstStartComposition(t *testing.T) {
 	for _, services := range []string{"", "missing", "malformed"} {
 		t.Run(services, func(t *testing.T) {
@@ -415,7 +415,7 @@ func startStructured(t *testing.T, r mcp.Result) json.RawMessage {
 	return result["structuredContent"]
 }
 
-func startRepo(t *testing.T, f *startFixture, root string) string {
+func startRepo(t *testing.T, f *startFixture, root string, directory ...string) string {
 	t.Helper()
 	repo := filepath.Join(root, "rep_0123456789abcdef.git")
 	if e := os.MkdirAll(root, 0700); e != nil {
@@ -442,12 +442,15 @@ func startRepo(t *testing.T, f *startFixture, root string) string {
 	run("", "--git-dir="+repo, "config", "ikigenba.owner", "owner")
 	blob := run("hello site", "--git-dir="+repo, "hash-object", "-w", "--stdin")
 	tree := run("100644 blob "+blob+"\tindex.html\n", "--git-dir="+repo, "mktree")
+	if len(directory) != 0 {
+		tree = run("040000 tree "+tree+"\t"+directory[0]+"\n", "--git-dir="+repo, "mktree")
+	}
 	sha := run("fixture\n", "--git-dir="+repo, "commit-tree", tree)
 	run("", "--git-dir="+repo, "update-ref", "refs/heads/main", sha)
 	return sha
 }
 
-// R-VLOG-3TP1 R-2YD6-O8ZF R-YIEW-VDL9 R-2ZL3-20Q4 R-YKUP-MX2N R-YM2M-0OTC R-4AOP-838L R-WVYF-HOYS
+// R-VLOG-3TP1 R-NP4W-DPTP R-YIEW-VDL9 R-2ZL3-20Q4 R-YKUP-MX2N R-YM2M-0OTC R-4AOP-838L R-WVYF-HOYS
 func TestRunRepositoriesAndPaths(t *testing.T) {
 	for _, relative := range []bool{false, true} {
 		t.Run(map[bool]string{true: "relative", false: "absolute"}[relative], func(t *testing.T) {
@@ -472,7 +475,7 @@ func TestRunRepositoriesAndPaths(t *testing.T) {
 			if _, e := os.Stat(root); !os.IsNotExist(e) {
 				t.Fatal("repos created at startup")
 			}
-			sha := startRepo(t, f, root)
+			sha := startRepo(t, f, root, "dist")
 			f.set("REPOS_DIR", filepath.Join(outer, "wrong"))
 			f.set("IKIGENBA_SERVICES", filepath.Join(outer, "wrong-services"))
 			if e := os.WriteFile(services, []byte(`{"services":[{"name":"sites","url":"https://sites.example.test","description":"Sites","socket":"/missing","enabled":true,"mcp":true}]}`), 0600); e != nil {
@@ -481,15 +484,36 @@ func TestRunRepositoriesAndPaths(t *testing.T) {
 			trace := filepath.Join(f.p.Dir, "git-trace")
 			f.set("GIT_TRACE2_EVENT", trace)
 			before := startSnapshot(t, outer, f.p.Dir)
-			site := f.call(t, "create", `{"name":"blog","repo":"rep_0123456789abcdef","visibility":"public","listed":true}`)
+			createArgs := `{"name":"blog","repo":"rep_0123456789abcdef","visibility":"public","listed":true}`
+			if relative {
+				createArgs = `{"name":"blog","repo":"rep_0123456789abcdef","visibility":"public","listed":true,"path":"dist"}`
+			}
+			site := f.call(t, "create", createArgs)
 			if site["id"] != "sit_5a5a5a5a5a5a5a5a" || site["url"] != "https://sites.example.test/blog/" {
 				t.Fatal(site)
 			}
-			published := f.call(t, "publish", `{"name":"blog"}`)
+			publishArgs := `{"name":"blog"}`
+			if !relative {
+				publishArgs = `{"name":"blog","path":"dist"}`
+			}
+			published := f.call(t, "publish", publishArgs)
 			if published["commit"] != sha {
 				t.Fatal(published)
 			}
-			if info, e := os.Stat(filepath.Join(f.p.Dir, "cache/sites", site["id"].(string), sha)); e != nil || !info.IsDir() {
+			g, e := git.Find(f.env["PATH"], f.p.Environ)
+			if e != nil {
+				t.Fatal(e)
+			}
+			trees, e := cache.Open(cache.Config{Root: filepath.Join(f.p.Dir, "cache/sites"), Repos: root, Git: g, Limits: limits.New(settings.Defaults(), limits.Clock{After: f.p.After})})
+			if e != nil {
+				t.Fatal(e)
+			}
+			treeDir := trees.Dir(site["id"].(string), sha, "dist")
+			rel, e := filepath.Rel(filepath.Join(f.p.Dir, "cache/sites"), treeDir)
+			if e != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				t.Fatal("tree outside cache", treeDir, e)
+			}
+			if info, e := os.Stat(treeDir); e != nil || !info.IsDir() {
 				t.Fatal(info, e)
 			}
 			res := f.get(t, "/blog/")
@@ -591,7 +615,7 @@ func startReadFile(path string) ([]byte, error) {
 	return root.ReadFile(filepath.Base(path))
 }
 
-// R-XRNT-FQ8U R-WMZ0-I8LW
+// R-KV4G-QCLW R-WMZ0-I8LW
 func TestRunStartupLeavesTreesAndRecordsOnlyLifecycle(t *testing.T) {
 	f := newStartFixture(t)
 	f.set("REPOS_DIR", filepath.Join(t.TempDir(), "absent"))
@@ -604,7 +628,7 @@ func TestRunStartupLeavesTreesAndRecordsOnlyLifecycle(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if _, e = catalog.Publish(context.Background(), site.ID, strings.Repeat("a", 40)); e != nil {
+	if _, e = catalog.Publish(context.Background(), site.ID, strings.Repeat("a", 40), ""); e != nil {
 		t.Fatal(e)
 	}
 	if e = handle.Close(); e != nil {

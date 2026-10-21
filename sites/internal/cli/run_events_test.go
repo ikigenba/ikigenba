@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/sites/internal/cli"
 )
 
-// R-XRNT-FQ8U
+// R-KV4G-QCLW
 func TestRunEventsFollowTheirActualRequest(t *testing.T) {
 	f := newStartFixture(t)
 	repos := t.TempDir()

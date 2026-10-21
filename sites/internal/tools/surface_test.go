@@ -66,33 +66,33 @@ func TestAdvertisedSurface(t *testing.T) {
 	if schemaWithoutCopy(t, infos[5].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"\"}},\"required\":[\"name\"],\"additionalProperties\":false}" {
 		t.Fatalf("delete inputSchema: %s", infos[5].InputSchema)
 	}
-	// R-ZOEF-4IUT
-	if schemaWithoutCopy(t, infos[2].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"\"},\"repo\":{\"type\":\"string\",\"description\":\"\"},\"ref\":{\"type\":\"string\",\"description\":\"\"},\"visibility\":{\"type\":\"string\",\"description\":\"\"},\"listed\":{\"type\":\"boolean\",\"description\":\"\"}},\"required\":[\"name\",\"repo\"],\"additionalProperties\":false}" {
+	// R-9UJ7-9LNK
+	if schemaWithoutCopy(t, infos[2].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"\"},\"repo\":{\"type\":\"string\",\"description\":\"\"},\"ref\":{\"type\":\"string\",\"description\":\"\"},\"path\":{\"type\":\"string\",\"description\":\"\"},\"visibility\":{\"type\":\"string\",\"description\":\"\"},\"listed\":{\"type\":\"boolean\",\"description\":\"\"}},\"required\":[\"name\",\"repo\"],\"additionalProperties\":false}" {
 		t.Fatalf("create inputSchema: %s", infos[2].InputSchema)
 	}
-	// R-ZPMB-IALI
-	if schemaWithoutCopy(t, infos[3].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"\"},\"ref\":{\"type\":\"string\",\"description\":\"\"}},\"required\":[\"name\"],\"additionalProperties\":false}" {
+	// R-9VR3-NDE9
+	if schemaWithoutCopy(t, infos[3].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"\"},\"ref\":{\"type\":\"string\",\"description\":\"\"},\"path\":{\"type\":\"string\",\"description\":\"\"}},\"required\":[\"name\"],\"additionalProperties\":false}" {
 		t.Fatalf("publish inputSchema: %s", infos[3].InputSchema)
 	}
-	// R-ZQU7-W2C7
-	if schemaWithoutCopy(t, infos[4].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"\"},\"visibility\":{\"type\":\"string\",\"description\":\"\"},\"listed\":{\"type\":\"boolean\",\"description\":\"\"},\"ref\":{\"type\":\"string\",\"description\":\"\"}},\"required\":[\"name\"],\"additionalProperties\":false}" {
+	// R-9WZ0-154Y
+	if schemaWithoutCopy(t, infos[4].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"\"},\"visibility\":{\"type\":\"string\",\"description\":\"\"},\"listed\":{\"type\":\"boolean\",\"description\":\"\"},\"ref\":{\"type\":\"string\",\"description\":\"\"},\"path\":{\"type\":\"string\",\"description\":\"\"}},\"required\":[\"name\"],\"additionalProperties\":false}" {
 		t.Fatalf("update inputSchema: %s", infos[4].InputSchema)
 	}
 	// R-ZS24-9U2W
 	if schemaWithoutCopy(t, infos[6].InputSchema) != "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"\"},\"clear\":{\"type\":\"boolean\",\"description\":\"\"}},\"additionalProperties\":false}" {
 		t.Fatalf("apex inputSchema: %s", infos[6].InputSchema)
 	}
-	// R-MS0H-WTR2
-	if string(infos[1].OutputSchema) != "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"slug\":{\"type\":\"string\"},\"url\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"visibility\":{\"type\":\"string\"},\"listed\":{\"type\":\"boolean\"},\"commit\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"published\":{\"type\":\"string\"}},\"required\":[\"id\",\"name\",\"slug\",\"url\",\"repo\",\"ref\",\"visibility\",\"listed\",\"created\"],\"additionalProperties\":false}" {
+	// R-9Y6W-EWVN
+	if string(infos[1].OutputSchema) != "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"slug\":{\"type\":\"string\"},\"url\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"path\":{\"type\":\"string\"},\"visibility\":{\"type\":\"string\"},\"listed\":{\"type\":\"boolean\"},\"commit\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"published\":{\"type\":\"string\"}},\"required\":[\"id\",\"name\",\"slug\",\"url\",\"repo\",\"ref\",\"visibility\",\"listed\",\"created\"],\"additionalProperties\":false}" {
 		t.Fatalf("show outputSchema: %s", infos[1].OutputSchema)
 	}
-	if string(infos[2].OutputSchema) != "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"slug\":{\"type\":\"string\"},\"url\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"visibility\":{\"type\":\"string\"},\"listed\":{\"type\":\"boolean\"},\"commit\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"published\":{\"type\":\"string\"}},\"required\":[\"id\",\"name\",\"slug\",\"url\",\"repo\",\"ref\",\"visibility\",\"listed\",\"created\"],\"additionalProperties\":false}" {
+	if string(infos[2].OutputSchema) != "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"slug\":{\"type\":\"string\"},\"url\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"path\":{\"type\":\"string\"},\"visibility\":{\"type\":\"string\"},\"listed\":{\"type\":\"boolean\"},\"commit\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"published\":{\"type\":\"string\"}},\"required\":[\"id\",\"name\",\"slug\",\"url\",\"repo\",\"ref\",\"visibility\",\"listed\",\"created\"],\"additionalProperties\":false}" {
 		t.Fatalf("create outputSchema: %s", infos[2].OutputSchema)
 	}
-	if string(infos[3].OutputSchema) != "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"slug\":{\"type\":\"string\"},\"url\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"visibility\":{\"type\":\"string\"},\"listed\":{\"type\":\"boolean\"},\"commit\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"published\":{\"type\":\"string\"}},\"required\":[\"id\",\"name\",\"slug\",\"url\",\"repo\",\"ref\",\"visibility\",\"listed\",\"created\"],\"additionalProperties\":false}" {
+	if string(infos[3].OutputSchema) != "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"slug\":{\"type\":\"string\"},\"url\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"path\":{\"type\":\"string\"},\"visibility\":{\"type\":\"string\"},\"listed\":{\"type\":\"boolean\"},\"commit\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"published\":{\"type\":\"string\"}},\"required\":[\"id\",\"name\",\"slug\",\"url\",\"repo\",\"ref\",\"visibility\",\"listed\",\"created\"],\"additionalProperties\":false}" {
 		t.Fatalf("publish outputSchema: %s", infos[3].OutputSchema)
 	}
-	if string(infos[4].OutputSchema) != "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"slug\":{\"type\":\"string\"},\"url\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"visibility\":{\"type\":\"string\"},\"listed\":{\"type\":\"boolean\"},\"commit\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"published\":{\"type\":\"string\"}},\"required\":[\"id\",\"name\",\"slug\",\"url\",\"repo\",\"ref\",\"visibility\",\"listed\",\"created\"],\"additionalProperties\":false}" {
+	if string(infos[4].OutputSchema) != "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"slug\":{\"type\":\"string\"},\"url\":{\"type\":\"string\"},\"repo\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"},\"path\":{\"type\":\"string\"},\"visibility\":{\"type\":\"string\"},\"listed\":{\"type\":\"boolean\"},\"commit\":{\"type\":\"string\"},\"created\":{\"type\":\"string\"},\"published\":{\"type\":\"string\"}},\"required\":[\"id\",\"name\",\"slug\",\"url\",\"repo\",\"ref\",\"visibility\",\"listed\",\"created\"],\"additionalProperties\":false}" {
 		t.Fatalf("update outputSchema: %s", infos[4].OutputSchema)
 	}
 	// R-MVO7-24Z5
@@ -101,18 +101,18 @@ func TestAdvertisedSurface(t *testing.T) {
 	}
 }
 
-// R-LWB3-YSH0 R-LXJ0-CK7P R-LYQW-QBYE R-LZYT-43P3 R-M16P-HVFS R-M2EL-VN6H
+// R-LWB3-YSH0 R-LXJ0-CK7P R-9KS0-7FQ0 R-9LZW-L7GP R-9N7S-YZ7E R-M2EL-VN6H
 func TestArgumentDeclarations(t *testing.T) {
-	ref, vis, yes := "preview", "private", true
+	ref, vis, yes, path := "preview", "private", true, "site/dist"
 	cases := []struct {
 		v    any
 		want string
 	}{
 		{tools.ShowArgs{Name: "blog"}, `{"name":"blog"}`},
 		{tools.DeleteArgs{Name: "blog"}, `{"name":"blog"}`},
-		{tools.CreateArgs{Name: "blog", Repo: "repository", Ref: &ref, Visibility: &vis, Listed: &yes}, `{"name":"blog","repo":"repository","ref":"preview","visibility":"private","listed":true}`},
-		{tools.PublishArgs{Name: "blog", Ref: &ref}, `{"name":"blog","ref":"preview"}`},
-		{tools.UpdateArgs{Name: "blog", Visibility: &vis, Listed: &yes, Ref: &ref}, `{"name":"blog","visibility":"private","listed":true,"ref":"preview"}`},
+		{tools.CreateArgs{Name: "blog", Repo: "repository", Ref: &ref, Path: &path, Visibility: &vis, Listed: &yes}, `{"name":"blog","repo":"repository","ref":"preview","path":"site/dist","visibility":"private","listed":true}`},
+		{tools.PublishArgs{Name: "blog", Ref: &ref, Path: &path}, `{"name":"blog","ref":"preview","path":"site/dist"}`},
+		{tools.UpdateArgs{Name: "blog", Visibility: &vis, Listed: &yes, Ref: &ref, Path: &path}, `{"name":"blog","visibility":"private","listed":true,"ref":"preview","path":"site/dist"}`},
 		{tools.ApexArgs{Name: &ref, Clear: &yes}, `{"name":"preview","clear":true}`},
 	}
 	for _, c := range cases {
@@ -123,12 +123,12 @@ func TestArgumentDeclarations(t *testing.T) {
 	}
 }
 
-// R-M3MI-9EX6 R-M4UE-N6NV R-4WFG-UMKN R-M7A7-EQ59
+// R-9OFP-CQY3 R-9PNL-QIOS R-4WFG-UMKN R-M7A7-EQ59
 func TestResultDeclarations(t *testing.T) {
-	commit, published := "sha", "date"
-	s := tools.Site{ID: "id", Name: "name", Slug: "slug", URL: "url", Repo: "repo", Ref: "ref", Visibility: "public", Listed: true, Commit: &commit, Created: "created", Published: &published}
+	commit, published, path := "sha", "date", "site/dist"
+	s := tools.Site{ID: "id", Name: "name", Slug: "slug", URL: "url", Repo: "repo", Ref: "ref", Path: &path, Visibility: "public", Listed: true, Commit: &commit, Created: "created", Published: &published}
 	b, _ := json.Marshal(s)
-	want := `{"id":"id","name":"name","slug":"slug","url":"url","repo":"repo","ref":"ref","visibility":"public","listed":true,"commit":"sha","created":"created","published":"date"}`
+	want := `{"id":"id","name":"name","slug":"slug","url":"url","repo":"repo","ref":"ref","path":"site/dist","visibility":"public","listed":true,"commit":"sha","created":"created","published":"date"}`
 	if string(b) != want {
 		t.Fatalf("site %s", b)
 	}
@@ -137,9 +137,9 @@ func TestResultDeclarations(t *testing.T) {
 		t.Fatal(decoded, err)
 	}
 	next := "continuation"
-	l := tools.SiteList{Next: &next, Sites: []tools.ListedSite{{ID: s.ID, Name: s.Name, Slug: s.Slug, URL: s.URL, Visibility: s.Visibility, Listed: s.Listed, Commit: s.Commit}}}
+	l := tools.SiteList{Next: &next, Sites: []tools.ListedSite{{ID: s.ID, Name: s.Name, Slug: s.Slug, URL: s.URL, Path: s.Path, Visibility: s.Visibility, Listed: s.Listed, Commit: s.Commit}}}
 	b, _ = json.Marshal(l)
-	if string(b) != `{"sites":[{"id":"id","name":"name","slug":"slug","url":"url","visibility":"public","listed":true,"commit":"sha"}],"next":"continuation"}` {
+	if string(b) != `{"sites":[{"id":"id","name":"name","slug":"slug","url":"url","path":"site/dist","visibility":"public","listed":true,"commit":"sha"}],"next":"continuation"}` {
 		t.Fatalf("list %s", b)
 	}
 	var dl tools.SiteList
@@ -152,7 +152,7 @@ func TestResultDeclarations(t *testing.T) {
 	}
 }
 
-// R-6DYI-3LAD R-NK26-PJT1 R-N0JS-L7XX R-ZTA0-NLTL R-FC07-11HE R-QSR6-GFOH R-OK16-82FU
+// R-6DYI-3LAD R-NK26-PJT1 R-A0MP-6GD1 R-ZTA0-NLTL R-FC07-11HE R-QSR6-GFOH R-OK16-82FU
 func TestReadCalls(t *testing.T) {
 	h := newHarness(t)
 	z := h.add(t, "alice", "zulu", false)
@@ -160,7 +160,7 @@ func TestReadCalls(t *testing.T) {
 	h.add(t, "bob", "other", true)
 	sha := strings.Repeat("a", 40)
 	h.now = h.now.Add(10 * 1000000000)
-	p, err := h.cfg.Store.Publish(context.Background(), a.ID, sha)
+	p, err := h.cfg.Store.Publish(context.Background(), a.ID, sha, "")
 	if err != nil {
 		t.Fatal(err)
 	}

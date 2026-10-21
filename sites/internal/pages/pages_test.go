@@ -78,17 +78,17 @@ func fixtureSites(t *testing.T, s *store.Store) []store.Site {
 	t.Helper()
 	var xs []store.Site
 	for i, d := range []store.Draft{
-		{Owner: "alice", Name: "z-own-secret", Repo: "repository-own-secret", Ref: "main", Visibility: store.Private, Listed: false},
-		{Owner: "bob", Name: "c-other-secret", Repo: "repository-other-secret", Ref: "main", Visibility: store.Public, Listed: false},
-		{Owner: "alice", Name: "b-private", Repo: "repository-private", Ref: "main", Visibility: store.Private, Listed: true},
-		{Owner: "bob", Name: "a-public", Repo: "repository-public", Ref: "main", Visibility: store.Public, Listed: true},
+		{Owner: "alice", Name: "z-own-secret", Repo: "repository-own-secret", Ref: "configured-ref", Path: "configured/path", Visibility: store.Private, Listed: false},
+		{Owner: "bob", Name: "c-other-secret", Repo: "repository-other-secret", Ref: "configured-ref", Path: "configured/path", Visibility: store.Public, Listed: false},
+		{Owner: "alice", Name: "b-private", Repo: "repository-private", Ref: "configured-ref", Path: "configured/path", Visibility: store.Private, Listed: true},
+		{Owner: "bob", Name: "a-public", Repo: "repository-public", Ref: "configured-ref", Path: "configured/path", Visibility: store.Public, Listed: true},
 	} {
 		x, err := s.Create(context.Background(), d)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if i >= 2 {
-			x, err = s.Publish(context.Background(), x.ID, strings.Repeat("a", 40))
+			x, err = s.Publish(context.Background(), x.ID, strings.Repeat("a", 40), "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -124,7 +124,7 @@ func config(t *testing.T, s *store.Store) pages.Config {
 	return pages.Config{Banner: banner, Pages: load(t), Store: s}
 }
 
-// R-CP7E-TIAG R-CQFB-7A15 R-OURC-DHRL R-CU30-CL98 R-CVAW-QCZX R-CWIT-44QM
+// R-CP7E-TIAG R-CQFB-7A15 R-OURC-DHRL R-4P92-SHZY R-CVAW-QCZX R-CWIT-44QM
 // R-D06I-9FYP R-X3R9-INHK R-X4Z5-WF89 R-X7EY-NYPN R-X8MV-1QGC
 // R-X9UR-FI71 R-XB2N-T9XQ R-XCAK-71OF
 func TestTemplateSetAndWrite(t *testing.T) {
@@ -133,7 +133,7 @@ func TestTemplateSetAndWrite(t *testing.T) {
 	expected := templateSet(t)
 	b := banner(page.User{Email: "a<\"&@example.test", ProfileURL: "https://example.test/?a=<\"&", LogoutURL: "https://example.test/logout?a=<\"&"})
 	// Unkeyed construction proves the entire exported field sequence.
-	row := pages.SiteRow{"odd<slug", "name<\"&", "https://example.test/<\"&", "private<\"&", false, true, true}
+	row := pages.SiteRow{"odd<slug", "name<\"&", "https://example.test/<\"&", "private<\"&", false, true, true, "ref<&", "path<&"}
 	values := []struct {
 		name string
 		data any
@@ -182,7 +182,7 @@ func TestTemplateSetAndWrite(t *testing.T) {
 	}
 }
 
-// R-X2JD-4VQV R-XWC7-R027 R-D7HW-K2EV R-F142-115B R-XEQC-YL5T R-XFY9-CCWI
+// R-X2JD-4VQV R-XWC7-R027 R-D7HW-K2EV R-4QGZ-69QN R-XEQC-YL5T R-XFY9-CCWI
 // R-F2BY-ESW0 R-DCDI-35DN R-P6YC-776J
 func TestHandlerTemplateBytesAndBannerUser(t *testing.T) {
 	s := catalog(t)
@@ -225,7 +225,7 @@ func TestHandlerTemplateBytesAndBannerUser(t *testing.T) {
 						}
 						rows := make([]pages.SiteRow, 0, len(xs))
 						for _, x := range xs {
-							rows = append(rows, pages.SiteRow{Slug: x.Slug, Name: x.Name, URL: urls.SiteURL(base, x.Slug), Visibility: x.Visibility, Listed: x.Listed, Published: x.Commit != "", Mine: x.Owner == user})
+							rows = append(rows, pages.SiteRow{Slug: x.Slug, Name: x.Name, URL: urls.SiteURL(base, x.Slug), Visibility: x.Visibility, Listed: x.Listed, Published: x.Commit != "", Mine: x.Owner == user, Ref: x.Ref, Path: x.Path})
 						}
 						data = pages.LandingData{Banner: b, SitesURL: base, Sites: rows}
 					}
@@ -254,20 +254,20 @@ func TestHandlerTemplateBytesAndBannerUser(t *testing.T) {
 	}
 }
 
-// R-EXGC-VPX8 R-EYO9-9HNX R-EZW5-N9EM R-F142-115B R-F2BY-ESW0 R-F3JU-SKMP R-F8FG-BNLH
+// R-EXGC-VPX8 R-EYO9-9HNX R-EZW5-N9EM R-4QGZ-69QN R-F2BY-ESW0 R-F3JU-SKMP R-4U4O-BKYQ
 func TestLandingWindows(t *testing.T) {
 	for _, count := range []int{0, paging.DefaultLimit - 1, paging.DefaultLimit, paging.DefaultLimit + 1, 2 * paging.DefaultLimit, 2*paging.DefaultLimit + 1} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {
 			s := catalog(t)
 			ctx := context.Background()
 			for _, name := range []string{"a-hidden-before", "z-hidden-after"} {
-				if _, err := s.Create(ctx, store.Draft{Owner: "bob", Name: name, Repo: "hidden-repository", Ref: "main", Visibility: store.Public}); err != nil {
+				if _, err := s.Create(ctx, store.Draft{Owner: "bob", Name: name, Repo: "hidden-repository", Ref: "configured-ref", Path: "configured/path", Visibility: store.Public}); err != nil {
 					t.Fatal(err)
 				}
 			}
 			var visible []store.Site
 			for i := count - 1; i >= 0; i-- {
-				d := store.Draft{Owner: "alice", Name: fmt.Sprintf("site-%06d", i), Repo: fmt.Sprintf("repository-%06d", i), Ref: "main", Visibility: store.Private, Listed: i%3 != 0}
+				d := store.Draft{Owner: "alice", Name: fmt.Sprintf("site-%06d", i), Repo: fmt.Sprintf("repository-%06d", i), Ref: "configured-ref", Path: "configured/path", Visibility: store.Private, Listed: i%3 != 0}
 				if i%3 == 1 {
 					d.Owner = "bob"
 					d.Visibility = store.Public
@@ -277,7 +277,7 @@ func TestLandingWindows(t *testing.T) {
 					t.Fatal(err)
 				}
 				if i%2 == 0 {
-					x, err = s.Publish(ctx, x.ID, strings.Repeat("b", 40))
+					x, err = s.Publish(ctx, x.ID, strings.Repeat("b", 40), "")
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -338,7 +338,7 @@ func TestLandingWindows(t *testing.T) {
 					base := urls.SitesURL(r, cfg.ServicesPath)
 					rows := make([]pages.SiteRow, 0, len(window))
 					for _, x := range window {
-						rows = append(rows, pages.SiteRow{Slug: x.Slug, Name: x.Name, URL: urls.SiteURL(base, x.Slug), Visibility: x.Visibility, Listed: x.Listed, Published: x.Commit != "", Mine: x.Owner == "alice"})
+						rows = append(rows, pages.SiteRow{Slug: x.Slug, Name: x.Name, URL: urls.SiteURL(base, x.Slug), Visibility: x.Visibility, Listed: x.Listed, Published: x.Commit != "", Mine: x.Owner == "alice", Ref: x.Ref, Path: x.Path})
 					}
 					b := banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: urls.AuthProfile(r, cfg.ServicesPath), LogoutURL: urls.AuthLogout(r, cfg.ServicesPath)})
 					b.Trail = nil
@@ -486,14 +486,14 @@ func TestHandlerConcurrent(t *testing.T) {
 	wg.Wait()
 }
 
-// R-F77J-XVUS
+// R-4ROV-K1HC
 func TestLandingForwardBackwardWalk(t *testing.T) {
 	for _, count := range []int{paging.DefaultLimit + 1, 2 * paging.DefaultLimit, 2*paging.DefaultLimit + 7} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {
 			s := catalog(t)
 			visible := make([]store.Site, 0, count)
 			for i := range count {
-				x, err := s.Create(context.Background(), store.Draft{Owner: "alice", Name: fmt.Sprintf("walk-%06d", i), Repo: "walk-repository", Ref: "main", Visibility: store.Private})
+				x, err := s.Create(context.Background(), store.Draft{Owner: "alice", Name: fmt.Sprintf("walk-%06d", i), Repo: "walk-repository", Ref: "configured-ref", Path: "configured/path", Visibility: store.Private})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -509,7 +509,7 @@ func TestLandingForwardBackwardWalk(t *testing.T) {
 				base := urls.SitesURL(r, cfg.ServicesPath)
 				rows := make([]pages.SiteRow, 0, len(window))
 				for _, x := range window {
-					rows = append(rows, pages.SiteRow{Slug: x.Slug, Name: x.Name, URL: urls.SiteURL(base, x.Slug), Visibility: x.Visibility, Listed: x.Listed, Published: x.Commit != "", Mine: x.Owner == "alice"})
+					rows = append(rows, pages.SiteRow{Slug: x.Slug, Name: x.Name, URL: urls.SiteURL(base, x.Slug), Visibility: x.Visibility, Listed: x.Listed, Published: x.Commit != "", Mine: x.Owner == "alice", Ref: x.Ref, Path: x.Path})
 				}
 				want := pages.LandingData{Banner: b, SitesURL: base, Sites: rows, Page: current, Prev: prev, Next: next}
 				w := answer(h, r)

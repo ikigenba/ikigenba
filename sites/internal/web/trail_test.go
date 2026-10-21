@@ -27,10 +27,10 @@ func TestRequestTrails(t *testing.T) {
 	f.repository(t)
 	sha := f.commit(t, "old body")
 	s := f.add(t, "blog", store.Public)
-	if e := f.cfg.Cache.Unpack(context.Background(), s.ID, s.Repo, sha); e != nil {
+	if e := f.cfg.Cache.Unpack(context.Background(), s.ID, s.Repo, sha, ""); e != nil {
 		t.Fatal(e)
 	}
-	if _, e := f.cfg.Store.Publish(context.Background(), s.ID, sha); e != nil {
+	if _, e := f.cfg.Store.Publish(context.Background(), s.ID, sha, ""); e != nil {
 		t.Fatal(e)
 	}
 	f.add(t, "private", store.Private)
@@ -45,7 +45,7 @@ func TestRequestTrails(t *testing.T) {
 	for _, q := range []struct{ name, args string }{{"create", `{"name":"newsite","repo":"rep_0123456789abcdef"}`}, {"publish", `{"name":"newsite"}`}, {"update", `{"name":"newsite","listed":false,"ref":"preview"}`}, {"apex", `{"name":"newsite"}`}, {"delete", `{"name":"newsite"}`}, {"publish", `{"name":"nope"}`}} {
 		f.call(t, q.name, q.args)
 	}
-	if e := os.RemoveAll(f.cfg.Cache.Dir(s.ID, sha)); e != nil {
+	if e := os.RemoveAll(f.cfg.Cache.Dir(s.ID, sha, "")); e != nil {
 		t.Fatal(e)
 	}
 	f.cfg.Limits.Drain()
@@ -243,7 +243,7 @@ func TestIdentityAndRequestIDHeaders(t *testing.T) {
 func TestUnavailableFollowsItsView(t *testing.T) {
 	f := fresh(t)
 	s := f.add(t, "blog", store.Public)
-	if _, e := f.cfg.Store.Publish(context.Background(), s.ID, "0123456789abcdef0123456789abcdef01234567"); e != nil {
+	if _, e := f.cfg.Store.Publish(context.Background(), s.ID, "0123456789abcdef0123456789abcdef01234567", ""); e != nil {
 		t.Fatal(e)
 	}
 	r := f.get(t, "GET", "/blog/", "sites", "", nil)

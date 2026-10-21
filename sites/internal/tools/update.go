@@ -16,7 +16,7 @@ func updateRules(a UpdateArgs) error {
 	if !store.ValidName(a.Name) {
 		return fmt.Errorf(MissingSite, a.Name)
 	}
-	if a.Visibility == nil && a.Listed == nil && a.Ref == nil {
+	if a.Visibility == nil && a.Listed == nil && a.Ref == nil && a.Path == nil {
 		return errors.New(EmptyUpdate)
 	}
 	if a.Visibility != nil && *a.Visibility != store.Public && *a.Visibility != store.Private {
@@ -24,6 +24,9 @@ func updateRules(a UpdateArgs) error {
 	}
 	if a.Ref != nil && !cache.ValidRef(*a.Ref) {
 		return fmt.Errorf(InvalidRef, *a.Ref)
+	}
+	if a.Path != nil && *a.Path != "" && !cache.ValidPath(*a.Path) {
+		return fmt.Errorf(InvalidPath, *a.Path)
 	}
 	return nil
 }
@@ -40,7 +43,7 @@ func (cfg Config) update(ctx context.Context, u identity.Caller, a UpdateArgs) (
 	if rule := updateRules(a); rule != nil {
 		return Site{}, rule
 	}
-	s, changed, err := cfg.Store.Update(ctx, s.ID, store.Change{Visibility: a.Visibility, Listed: a.Listed, Ref: a.Ref})
+	s, changed, err := cfg.Store.Update(ctx, s.ID, store.Change{Visibility: a.Visibility, Listed: a.Listed, Ref: a.Ref, Path: a.Path})
 	if errors.Is(err, store.ErrNotPublic) {
 		return Site{}, errors.New(ApexNotPublic)
 	}
@@ -52,6 +55,8 @@ func (cfg Config) update(ctx context.Context, u identity.Caller, a UpdateArgs) (
 		switch field {
 		case "visibility":
 			value = s.Visibility
+		case "path":
+			value = s.Path
 		case "listed":
 			value = strconv.FormatBool(s.Listed)
 		}

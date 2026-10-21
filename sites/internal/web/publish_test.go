@@ -13,16 +13,16 @@ import (
 	"github.com/ikigenba/ikigenba/sites/internal/tools"
 )
 
-// R-0K3T-2K4V
+// R-AE1L-DXIO
 func TestPublishKeepsOldTreeVisibleUntilInstallation(t *testing.T) {
 	f := fresh(t)
 	f.repository(t)
 	old := f.commit(t, "old body")
 	s := f.add(t, "blog", store.Public)
-	if e := f.cfg.Cache.Unpack(context.Background(), s.ID, s.Repo, old); e != nil {
+	if e := f.cfg.Cache.Unpack(context.Background(), s.ID, s.Repo, old, ""); e != nil {
 		t.Fatal(e)
 	}
-	if _, e := f.cfg.Store.Publish(context.Background(), s.ID, old); e != nil {
+	if _, e := f.cfg.Store.Publish(context.Background(), s.ID, old, ""); e != nil {
 		t.Fatal(e)
 	}
 	before, e := f.cfg.Store.Find(context.Background(), "user", "blog")
@@ -45,10 +45,10 @@ func TestPublishKeepsOldTreeVisibleUntilInstallation(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		if now.Commit != before.Commit || !now.Published.Equal(before.Published) {
+		if now.Commit != before.Commit || now.PublishedPath != before.PublishedPath || !now.Published.Equal(before.Published) {
 			t.Fatal("catalog changed before tree installation")
 		}
-		if st, e := os.Stat(f.cfg.Cache.Dir(s.ID, old)); e != nil || !st.IsDir() {
+		if st, e := os.Stat(f.cfg.Cache.Dir(s.ID, old, "")); e != nil || !st.IsDir() {
 			t.Fatal("old tree removed")
 		}
 		r := f.get(t, "GET", "/blog/", "sites", "", nil)
@@ -71,7 +71,7 @@ func TestPublishKeepsOldTreeVisibleUntilInstallation(t *testing.T) {
 	}
 }
 
-// R-0BKI-E5Y0
+// R-ROWO-XEAP
 func TestRefusedPublishPreservesServing(t *testing.T) {
 	for _, mode := range []string{"missing", "timeout", "git", "size"} {
 		t.Run(mode, func(t *testing.T) {
@@ -79,10 +79,10 @@ func TestRefusedPublishPreservesServing(t *testing.T) {
 			f.repository(t)
 			old := f.commit(t, "old body")
 			s := f.add(t, "blog", store.Public)
-			if e := f.cfg.Cache.Unpack(context.Background(), s.ID, s.Repo, old); e != nil {
+			if e := f.cfg.Cache.Unpack(context.Background(), s.ID, s.Repo, old, ""); e != nil {
 				t.Fatal(e)
 			}
-			if _, e := f.cfg.Store.Publish(context.Background(), s.ID, old); e != nil {
+			if _, e := f.cfg.Store.Publish(context.Background(), s.ID, old, ""); e != nil {
 				t.Fatal(e)
 			}
 			before, e := f.cfg.Store.Find(context.Background(), "user", "blog")
@@ -102,7 +102,7 @@ func TestRefusedPublishPreservesServing(t *testing.T) {
 				}
 			case "git":
 				f.commit(t, "new body")
-				parent := filepath.Dir(f.cfg.Cache.Dir(s.ID, old))
+				parent := filepath.Dir(f.cfg.Cache.Dir(s.ID, old, ""))
 				info, e := os.Stat(parent)
 				if e != nil {
 					t.Fatal(e)
@@ -153,7 +153,7 @@ func TestRefusedPublishPreservesServing(t *testing.T) {
 			if e != nil {
 				t.Fatal(e)
 			}
-			if after.Commit != before.Commit || !after.Published.Equal(before.Published) {
+			if after.Commit != before.Commit || after.PublishedPath != before.PublishedPath || !after.Published.Equal(before.Published) {
 				t.Fatal("refusal changed catalog")
 			}
 			r := f.get(t, "GET", "/blog/", "sites", "", nil)

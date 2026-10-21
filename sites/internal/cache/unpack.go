@@ -28,16 +28,16 @@ func writable(p string) error {
 }
 
 // Unpack atomically installs a bounded archive, retaining an existing tree.
-func (c *Cache) Unpack(ctx context.Context, site, repo, sha string) error {
-	return c.unpack(ctx, site, repo, sha, nil)
+func (c *Cache) Unpack(ctx context.Context, site, repo, sha, path string) error {
+	return c.unpack(ctx, site, repo, sha, path, nil)
 }
 
-func (c *Cache) unpack(ctx context.Context, site, repo, sha string, b *build) error {
-	if err := validTree(site, sha); err != nil {
+func (c *Cache) unpack(ctx context.Context, site, repo, sha, path string, b *build) error {
+	if err := validTree(site, sha, path); err != nil {
 		return err
 	}
 	c.mu.Lock()
-	if isDir(c.Dir(site, sha)) {
+	if isDir(c.Dir(site, sha, path)) {
 		c.mu.Unlock()
 		return nil
 	}
@@ -70,13 +70,22 @@ func (c *Cache) unpack(ctx context.Context, site, repo, sha string, b *build) er
 		c.mu.Unlock()
 		return err
 	}
-	u := &unpack{site: site, sha: sha, stage: stage}
+	u := &unpack{site: site, sha: sha, path: path, stage: stage}
 	if b != nil {
 		u.discard = b.discard
 	}
 	c.active[u] = struct{}{}
 	c.mu.Unlock()
-	err = c.archive(ctx, u, repo)
+	if path != "" {
+		_, err = c.output(ctx, "--git-dir="+c.RepoDir(repo), "rev-parse", "--verify", "-q", "--end-of-options", sha+":"+path+"/")
+		var ge *git.Error
+		if errors.As(err, &ge) && ge.Status == 1 {
+			err = ErrNoDirectory
+		}
+	}
+	if err == nil {
+		err = c.archive(ctx, u, repo)
+	}
 	if err == nil && c.cfg.Unpacked != nil {
 		c.cfg.Unpacked(site, sha)
 	}
@@ -91,7 +100,7 @@ func (c *Cache) unpack(ctx context.Context, site, repo, sha string, b *build) er
 			_ = os.Chtimes(parent, parentInfo.ModTime(), parentInfo.ModTime())
 		}
 	}()
-	if isDir(c.Dir(site, sha)) {
+	if isDir(c.Dir(site, sha, path)) {
 		return nil
 	}
 	if err != nil {
@@ -100,13 +109,17 @@ func (c *Cache) unpack(ctx context.Context, site, repo, sha string, b *build) er
 	if u.discard {
 		return nil
 	}
-	err = os.Rename(stage, c.Dir(site, sha))
+	err = os.Rename(stage, c.Dir(site, sha, path))
 	return err
 }
 func (c *Cache) archive(ctx context.Context, u *unpack, repo string) error {
 	op, cancel := c.cfg.Limits.Operation(ctx)
 	defer cancel()
-	cmd := c.cfg.Git.Command(op, "", "--git-dir="+c.RepoDir(repo), "archive", "--format=tar", u.sha)
+	target := u.sha
+	if u.path != "" {
+		target += ":" + u.path
+	}
+	cmd := c.cfg.Git.Command(op, "", "--git-dir="+c.RepoDir(repo), "archive", "--format=tar", target)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.StdoutPipe()

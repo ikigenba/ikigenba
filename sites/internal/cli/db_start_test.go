@@ -93,7 +93,7 @@ func TestRunReadyCatalogAndMigrationClock(t *testing.T) {
 	}
 }
 
-// R-WJBB-CXDT R-WKJ7-QP4I
+// R-WJBB-CXDT R-KSON-YT4I
 func TestRunUnknownCatalogVersionWarnsAndServes(t *testing.T) {
 	for _, notify := range []bool{true, false} {
 		t.Run(map[bool]string{true: "notify", false: "no-notify"}[notify], func(t *testing.T) {

@@ -18,6 +18,9 @@ func createRules(a CreateArgs) error {
 	if a.Ref != nil && !cache.ValidRef(*a.Ref) {
 		return fmt.Errorf(InvalidRef, *a.Ref)
 	}
+	if a.Path != nil && !cache.ValidPath(*a.Path) {
+		return fmt.Errorf(InvalidPath, *a.Path)
+	}
 	if a.Visibility != nil && *a.Visibility != store.Public && *a.Visibility != store.Private {
 		return errors.New(BadVisibility)
 	}
@@ -53,6 +56,9 @@ func (cfg Config) create(ctx context.Context, u identity.Caller, a CreateArgs) (
 	d := store.Draft{Owner: u.UserID, Name: a.Name, Repo: a.Repo, Ref: "main", Visibility: store.Public, Listed: true}
 	if a.Ref != nil {
 		d.Ref = *a.Ref
+	}
+	if a.Path != nil {
+		d.Path = *a.Path
 	}
 	if a.Visibility != nil {
 		d.Visibility = *a.Visibility

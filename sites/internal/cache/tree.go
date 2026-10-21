@@ -10,12 +10,12 @@ import (
 )
 
 // Tree returns an existing tree or shares a request-independent rebuild.
-func (c *Cache) Tree(ctx context.Context, site, repo, sha string) (string, error) {
-	if err := validTree(site, sha); err != nil {
+func (c *Cache) Tree(ctx context.Context, site, repo, sha, path string) (string, error) {
+	if err := validTree(site, sha, path); err != nil {
 		return "", err
 	}
-	dir := c.Dir(site, sha)
-	key := site + "/" + sha
+	dir := c.Dir(site, sha, path)
+	key := dir
 	c.mu.Lock()
 	if isDir(dir) {
 		c.mu.Unlock()
@@ -27,9 +27,9 @@ func (c *Cache) Tree(ctx context.Context, site, repo, sha string) (string, error
 			c.mu.Unlock()
 			return "", limits.ErrDraining
 		}
-		b = &build{done: make(chan struct{}), site: site, sha: sha}
+		b = &build{done: make(chan struct{}), site: site, sha: sha, path: path}
 		c.builds[key] = b
-		go c.rebuild(context.WithoutCancel(ctx), b, site, repo, sha, key, dir)
+		go c.rebuild(context.WithoutCancel(ctx), b, site, repo, sha, path, key, dir)
 	}
 	c.mu.Unlock()
 	if joined && c.cfg.Joined != nil {
@@ -46,10 +46,10 @@ func (c *Cache) Tree(ctx context.Context, site, repo, sha string) (string, error
 	}
 }
 
-func (c *Cache) rebuild(ctx context.Context, b *build, site, repo, sha, key, dir string) {
+func (c *Cache) rebuild(ctx context.Context, b *build, site, repo, sha, path, key, dir string) {
 	_, err := c.Resolve(ctx, repo, sha)
 	if err == nil {
-		err = c.unpack(ctx, site, repo, sha, b)
+		err = c.unpack(ctx, site, repo, sha, path, b)
 	}
 	c.mu.Lock()
 	if isDir(dir) {
@@ -62,7 +62,9 @@ func (c *Cache) rebuild(ctx context.Context, b *build, site, repo, sha, key, dir
 }
 
 // Prune removes obsolete trees while retaining active staging.
-func (c *Cache) Prune(site, keep string) error { return c.remove(site, keep, false) }
+func (c *Cache) Prune(site, sha, path string) error {
+	return c.remove(site, filepath.Base(c.Dir(site, sha, path)), false)
+}
 
 // Remove removes a site's trees while allowing active unpacks to finish.
 func (c *Cache) Remove(site string) error { return c.remove(site, "", true) }
@@ -74,7 +76,7 @@ func (c *Cache) remove(site, keep string, all bool) error {
 	defer c.mu.Unlock()
 	parent := filepath.Join(c.cfg.Root, site)
 	for _, b := range c.builds {
-		if b.site == site && (all || b.sha != keep) {
+		if b.site == site && (all || filepath.Base(c.Dir(site, b.sha, b.path)) != keep) {
 			b.discard = true
 		}
 	}
@@ -89,7 +91,7 @@ func (c *Cache) remove(site, keep string, all bool) error {
 	for u := range c.active {
 		if u.site == site {
 			live[filepath.Base(u.stage)] = true
-			if all || u.sha != keep {
+			if all || filepath.Base(c.Dir(site, u.sha, u.path)) != keep {
 				u.discard = true
 			}
 		}

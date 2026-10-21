@@ -3,7 +3,9 @@ package cache
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,14 +34,14 @@ type Cache struct {
 	active map[*unpack]struct{}
 }
 type build struct {
-	done      chan struct{}
-	err       error
-	site, sha string
-	discard   bool
+	done            chan struct{}
+	err             error
+	site, sha, path string
+	discard         bool
 }
 type unpack struct {
-	site, sha, stage string
-	discard          bool
+	site, sha, path, stage string
+	discard                bool
 }
 
 // RepoPrefix identifies repository ids.
@@ -49,12 +51,14 @@ const RepoPrefix = "rep_"
 var (
 	ErrRepositoryMissing = errors.New("repository missing")
 	ErrNoCommit          = errors.New("commit missing")
+	ErrNoDirectory       = errors.New("directory missing")
 )
 
 // Unavailable reasons are the event vocabulary.
 const (
 	ReasonRepositoryMissing = "repository_missing"
 	ReasonCommitMissing     = "commit_missing"
+	ReasonDirectoryMissing  = "directory_missing"
 	ReasonTooLarge          = "too_large"
 	ReasonTimedOut          = "timed_out"
 	ReasonGitFailed         = "git_failed"
@@ -72,7 +76,25 @@ func Open(cfg Config) (*Cache, error) {
 func (c *Cache) RepoDir(repo string) string { return filepath.Join(c.cfg.Repos, repo+".git") }
 
 // Dir returns the path of a cached tree without inspecting it.
-func (c *Cache) Dir(site, sha string) string { return filepath.Join(c.cfg.Root, site, sha) }
+func (c *Cache) Dir(site, sha, path string) string {
+	if path != "" {
+		sha += fmt.Sprintf("-%x", sha256.Sum256([]byte(path)))
+	}
+	return filepath.Join(c.cfg.Root, site, sha)
+}
+
+// ValidPath reports whether s has only nonempty, non-dot path segments.
+func ValidPath(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, p := range strings.Split(s, "/") {
+		if p == "" || p == "." || p == ".." {
+			return false
+		}
+	}
+	return true
+}
 func hex(s string, n int) bool {
 	if len(s) != n {
 		return false
@@ -114,12 +136,15 @@ func (c *Cache) repository(repo string) error {
 	}
 	return nil
 }
-func validTree(site, sha string) error {
+func validTree(site, sha, path string) error {
 	if !store.ValidID(site) {
 		return errors.New("invalid site id")
 	}
 	if !hex(sha, 40) {
 		return ErrNoCommit
+	}
+	if path != "" && (!ValidPath(path) || strings.ContainsRune(path, 0)) {
+		return ErrNoDirectory
 	}
 	return nil
 }
@@ -172,6 +197,8 @@ func Reason(err error) string {
 		return ReasonRepositoryMissing
 	case errors.Is(err, ErrNoCommit):
 		return ReasonCommitMissing
+	case errors.Is(err, ErrNoDirectory):
+		return ReasonDirectoryMissing
 	case errors.Is(err, limits.ErrTooLarge):
 		return ReasonTooLarge
 	case errors.Is(err, limits.ErrTimedOut):

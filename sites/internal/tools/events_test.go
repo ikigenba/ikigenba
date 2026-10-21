@@ -84,17 +84,17 @@ func TestCreatedEventMatchesObject(t *testing.T) {
 	checkSiteEvents(t, events, []string{"site.created"}, []telemetry.Attrs{{"site": o.ID, "repo": o.Repo, "visibility": o.Visibility, "listed": o.Listed}})
 }
 
-// R-FIQ4-ZP8X
+// R-URM7-KAGX
 func TestUpdatedEventsOnlyChangedFieldsInOrder(t *testing.T) {
 	h := newHarness(t)
 	h.add(t, "alice", "blog", false)
-	for i, args := range []string{`{"name":"blog","visibility":"private","listed":true,"ref":"future"}`, `{"name":"blog","visibility":"private","listed":true,"ref":"future"}`, `{"name":"blog","visibility":"private","listed":false,"ref":"main"}`} {
+	for i, args := range []string{`{"name":"blog","visibility":"private","listed":true,"ref":"future","path":"dist"}`, `{"name":"blog","visibility":"private","listed":true,"ref":"future","path":"dist"}`, `{"name":"blog","visibility":"private","listed":false,"ref":"main","path":""}`} {
 		old := mutationObject(t, h.call(t, "alice", "show", `{"name":"blog"}`))
 		r, events := eventCall(t, h, fmt.Sprintf("event-update-%d", i), "update", args)
 		o := mutationObject(t, r)
 		names := []string{}
 		attrs := []telemetry.Attrs{}
-		for _, change := range []struct{ field, before, after string }{{"visibility", old.Visibility, o.Visibility}, {"listed", fmt.Sprint(old.Listed), fmt.Sprint(o.Listed)}, {"ref", old.Ref, o.Ref}} {
+		for _, change := range []struct{ field, before, after string }{{"visibility", old.Visibility, o.Visibility}, {"listed", fmt.Sprint(old.Listed), fmt.Sprint(o.Listed)}, {"ref", old.Ref, o.Ref}, {"path", pathValue(old.Path), pathValue(o.Path)}} {
 			if change.before != change.after {
 				names = append(names, "site.updated")
 				attrs = append(attrs, telemetry.Attrs{"site": o.ID, "field": change.field, "value": change.after})
@@ -191,7 +191,7 @@ func TestReadsAndRefusalsHaveNoSiteEvent(t *testing.T) {
 	}
 }
 
-// R-FHI8-LXI8
+// R-UQEB-6IQ8
 func TestPublishedEventUsesRequestedRefAndRepeats(t *testing.T) {
 	h := newHarness(t)
 	repo := "rep_0123456789abcdef"
@@ -209,6 +209,13 @@ func TestPublishedEventUsesRequestedRefAndRepeats(t *testing.T) {
 		if i == 0 {
 			ref = "alternate"
 		}
-		checkSiteEvents(t, events, []string{"site.published"}, []telemetry.Attrs{{"site": o.ID, "commit": *o.Commit, "ref": ref}})
+		checkSiteEvents(t, events, []string{"site.published"}, []telemetry.Attrs{{"site": o.ID, "commit": *o.Commit, "ref": ref, "path": ""}})
 	}
+}
+
+func pathValue(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }

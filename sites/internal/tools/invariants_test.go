@@ -159,7 +159,7 @@ func assertToolTrail(t *testing.T, h *harness, start int, tool, outcome string, 
 }
 
 func TestCatalogFreeRulesAndFailingCatalog(t *testing.T) {
-	// R-ZY5M-6OSD R-566N-WSI7
+	// R-DSIX-66A8 R-A4AE-BRL4
 	h := newHarness(t)
 	h.add(t, "alice", "blog", true)
 	h.db.SetFailing(true)
@@ -240,13 +240,13 @@ func TestInvalidArgumentsAndUnknownTool(t *testing.T) {
 }
 
 func TestToolClockKindsAndRepositoriesUntouched(t *testing.T) {
-	// R-XVCP-61ZC R-9D0Y-WP6T R-NBIW-15M6 R-0ACM-0E7B R-0317-PRR5
+	// R-XVCP-61ZC R-9D0Y-WP6T R-NBIW-15M6 R-ACTP-05RZ R-0317-PRR5
 	h := newHarness(t)
 	repo := h.repo(t, "rep_0123456789abcdef", "alice")
 	h.add(t, "alice", "blog", true)
 	h.add(t, "bob", "foreign", false)
 	before := diskSnapshot(t, h.reposRoot, true)
-	cases := []struct{ tool, args, kind string }{{"list", `{}`, "read"}, {"show", `{"name":"blog"}`, "read"}, {"show", `{"name":"missing"}`, "read"}, {"update", `{"name":"blog","ref":"preview"}`, "additive"}, {"update", `{"name":"blog","visibility":"secret"}`, "additive"}, {"apex", `{}`, "additive"}, {"apex", `{"name":"blog"}`, "additive"}, {"apex", `{"clear":true}`, "additive"}, {"publish", `{"name":"foreign"}`, "additive"}, {"publish", `{"name":"missing"}`, "additive"}, {"publish", `{"name":"blog"}`, "additive"}, {"delete", `{"name":"blog"}`, "destructive"}, {"delete", `{"name":"blog"}`, "destructive"}}
+	cases := []struct{ tool, args, kind string }{{"list", `{}`, "read"}, {"show", `{"name":"blog"}`, "read"}, {"show", `{"name":"missing"}`, "read"}, {"update", `{"name":"blog","ref":"preview"}`, "additive"}, {"update", `{"name":"blog","path":"nope"}`, "additive"}, {"publish", `{"name":"blog","path":"/dist"}`, "additive"}, {"update", `{"name":"blog","visibility":"secret"}`, "additive"}, {"apex", `{}`, "additive"}, {"apex", `{"name":"blog"}`, "additive"}, {"apex", `{"clear":true}`, "additive"}, {"publish", `{"name":"foreign"}`, "additive"}, {"publish", `{"name":"missing"}`, "additive"}, {"publish", `{"name":"blog"}`, "additive"}, {"delete", `{"name":"blog"}`, "destructive"}, {"delete", `{"name":"blog"}`, "destructive"}}
 	trace := filepath.Join(t.TempDir(), "git-trace.json")
 	h.env = append(h.env, "GIT_TRACE2_EVENT="+trace)
 	calls := 0
@@ -323,7 +323,7 @@ func TestCreateLeavesRepositoryUnchanged(t *testing.T) {
 }
 
 func TestLaterCreateCatalogFailureHonorsFreeRules(t *testing.T) {
-	// R-566N-WSI7 R-9FGR-O8O7
+	// R-A4AE-BRL4 R-9FGR-O8O7
 	for _, visibility := range []string{"public", "secret"} {
 		t.Run(visibility, func(t *testing.T) {
 			h := newHarness(t)

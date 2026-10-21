@@ -129,13 +129,13 @@ func wait[T any](t *testing.T, ch <-chan T) T {
 	}
 }
 
-// R-W0UB-LYRE R-ADX7-SQQD R-CFLW-J1N3 R-AW7P-JAUS
+// R-W0UB-LYRE R-02G5-VXUN R-CFLW-J1N3 R-07BR-F0TF
 func TestOpenAndPaths(t *testing.T) {
 	f := newFixture(t, 1024)
 	must(t, os.WriteFile(filepath.Join(f.root, "keep"), []byte("unchanged"), 0600))
 	c, err := cache.Open(cache.Config{Root: f.root, Repos: filepath.Join(f.base, "absent"), Git: f.g, Limits: f.l})
 	must(t, err)
-	if c.RepoDir(repo) != filepath.Join(f.base, "absent", repo+".git") || c.Dir(site, "sha") != filepath.Join(f.root, site, "sha") {
+	if c.RepoDir(repo) != filepath.Join(f.base, "absent", repo+".git") || c.Dir(site, "sha", "") != filepath.Join(f.root, site, "sha") {
 		t.Fatal("paths")
 	}
 	got, err := readFile(filepath.Join(f.root, "keep"))
@@ -178,7 +178,7 @@ func TestValidation(t *testing.T) {
 	}
 }
 
-// R-APOF-7MQ2 R-AIST-BTP5 R-CWOH-VU0T
+// R-04VY-NHC1 R-AIST-BTP5 R-1315-D23H
 func TestReasons(t *testing.T) {
 	cases := []struct {
 		err  error
@@ -201,7 +201,7 @@ func TestReasons(t *testing.T) {
 	}
 }
 
-// R-QRJA-2NXS R-B4R0-7P1N R-B5YW-LGSC R-B76S-Z8J1 R-B8EP-D09Q R-D1K3-EWZL
+// R-6V5O-9VYO R-B4R0-7P1N R-B5YW-LGSC R-B76S-Z8J1 R-B8EP-D09Q R-D1K3-EWZL
 func TestRepositoryReads(t *testing.T) {
 	f := newFixture(t, 1024)
 	ctx := context.Background()
@@ -299,7 +299,7 @@ func snap(t *testing.T, root string) map[string]snapshot {
 	return out
 }
 
-// R-TP37-94N7 R-TNVA-VCWI R-7PSE-YBDY R-TMNE-HL5T
+// R-0AZG-KC1I R-TNVA-VCWI R-7PSE-YBDY R-TMNE-HL5T
 func TestReadsAreBoundedReadOnlyAndSilent(t *testing.T) {
 	f := newFixture(t, 1024)
 	sha := f.file("bytes")
@@ -314,7 +314,7 @@ func TestReadsAreBoundedReadOnlyAndSilent(t *testing.T) {
 	os.Stderr = w
 	_, ownerErr := f.c.Owner(context.Background(), repo)
 	_, resolveErr := f.c.Resolve(context.Background(), repo, "main")
-	unpackErr := f.c.Unpack(context.Background(), site, repo, sha)
+	unpackErr := f.c.Unpack(context.Background(), site, repo, sha, "")
 	os.Stdout = stdout
 	os.Stderr = stderr
 	must(t, w.Close())
@@ -338,118 +338,125 @@ func TestReadsAreBoundedReadOnlyAndSilent(t *testing.T) {
 		t.Fatal(s, f.operations.Load())
 	}
 	n := f.operations.Load()
-	must(t, f.c.Unpack(context.Background(), site, "bad", sha))
-	_, err = f.c.Tree(context.Background(), site, "bad", sha)
+	must(t, f.c.Unpack(context.Background(), site, "bad", sha, ""))
+	_, err = f.c.Tree(context.Background(), site, "bad", sha, "")
 	must(t, err)
 	if f.operations.Load() != n {
 		t.Fatal("cached tree starts git")
 	}
 }
 
-// R-BC2E-IBHT R-BDAA-W38I R-LX6D-TGK3 R-CI1P-AL4H R-CZ4A-NDI7
+// R-0IAU-UYHO R-0LYK-09PR R-10LC-LIM3 R-6WDK-NNPD R-CZ4A-NDI7
 func TestWholeArchiveAndHook(t *testing.T) {
-	f := newFixture(t, 15)
-	blob := f.blob("hello")
-	nested := f.tree("100644 blob " + blob + "\tindex.html\n")
-	link := f.blob("index.html")
-	tree := f.tree("100644 blob " + blob + "\t.env\n040000 tree " + nested + "\tabout\n100644 blob " + blob + "\tindex.html\n120000 blob " + link + "\tlink.html\n")
-	sha := f.commit(tree)
-	trace := filepath.Join(f.base, "trace2")
-	f.env = append(f.env, "GIT_TRACE2_EVENT="+trace)
-	count := 0
-	f.open(nil, func(gotSite, gotSHA string) {
-		count++
-		if gotSite != site || gotSHA != sha {
-			t.Fatal("hook args")
-		}
-		absent(t, f.c.Dir(site, sha))
-		es := entries(t, filepath.Join(f.root, site))
-		if len(es) != 1 || !strings.HasPrefix(es[0].Name(), ".") {
-			t.Fatal("staging", es)
-		}
-		for _, p := range []string{"index.html", ".env", "about/index.html"} {
-			b, e := readFile(filepath.Join(f.root, site, es[0].Name(), p))
-			must(t, e)
-			if string(b) != "hello" {
-				t.Fatal(p)
+	for _, path := range []string{"", "site"} {
+		t.Run(fmt.Sprintf("path=%s", path), func(t *testing.T) {
+			f := newFixture(t, 15)
+			blob := f.blob("hello")
+			nested := f.tree("100644 blob " + blob + "\tindex.html\n")
+			link := f.blob("index.html")
+			tree := f.tree("100644 blob " + blob + "\t.env\n040000 tree " + nested + "\tabout\n100644 blob " + blob + "\tindex.html\n120000 blob " + link + "\tlink.html\n")
+			if path != "" {
+				tree = f.tree("040000 tree " + tree + "\tsite\n100644 blob " + f.blob("outside") + "\toutside\n")
 			}
-		}
-		b, e := readFile(trace)
-		must(t, e)
-		var archiveSID string
-		exits := make(map[string]int)
-		decoder := json.NewDecoder(strings.NewReader(string(b)))
-		for {
-			var event struct {
-				Event string   `json:"event"`
-				SID   string   `json:"sid"`
-				Argv  []string `json:"argv"`
-				Code  int      `json:"code"`
-			}
-			e := decoder.Decode(&event)
-			if errors.Is(e, io.EOF) {
-				break
-			}
-			must(t, e)
-			if event.Event == "start" {
-				for _, arg := range event.Argv {
-					if arg == "archive" {
-						archiveSID = event.SID
+			sha := f.commit(tree)
+			trace := filepath.Join(f.base, "trace2")
+			f.env = append(f.env, "GIT_TRACE2_EVENT="+trace)
+			count := 0
+			f.open(nil, func(gotSite, gotSHA string) {
+				count++
+				if gotSite != site || gotSHA != sha {
+					t.Fatal("hook args")
+				}
+				absent(t, f.c.Dir(site, sha, path))
+				es := entries(t, filepath.Join(f.root, site))
+				if len(es) != 1 || !strings.HasPrefix(es[0].Name(), ".") {
+					t.Fatal("staging", es)
+				}
+				for _, p := range []string{"index.html", ".env", "about/index.html"} {
+					b, e := readFile(filepath.Join(f.root, site, es[0].Name(), p))
+					must(t, e)
+					if string(b) != "hello" {
+						t.Fatal(p)
 					}
 				}
+				b, e := readFile(trace)
+				must(t, e)
+				var archiveSID string
+				exits := make(map[string]int)
+				decoder := json.NewDecoder(strings.NewReader(string(b)))
+				for {
+					var event struct {
+						Event string   `json:"event"`
+						SID   string   `json:"sid"`
+						Argv  []string `json:"argv"`
+						Code  int      `json:"code"`
+					}
+					e := decoder.Decode(&event)
+					if errors.Is(e, io.EOF) {
+						break
+					}
+					must(t, e)
+					if event.Event == "start" {
+						for _, arg := range event.Argv {
+							if arg == "archive" {
+								archiveSID = event.SID
+							}
+						}
+					}
+					if event.Event == "exit" {
+						exits[event.SID] = event.Code
+					}
+				}
+				code, ok := exits[archiveSID]
+				if archiveSID == "" || !ok || code != 0 {
+					t.Fatal("archive not exited", string(b))
+				}
+			})
+			f.l.Drain()
+			must(t, f.c.Unpack(context.Background(), site, repo, sha, path))
+			if count != 1 {
+				t.Fatal(count)
 			}
-			if event.Event == "exit" {
-				exits[event.SID] = event.Code
+			assertTree(t, f.c.Dir(site, sha, path), map[string]treeEntry{".env": {"file", "hello"}, "about": {"dir", ""}, "about/index.html": {"file", "hello"}, "index.html": {"file", "hello"}, "link.html": {"link", "index.html"}})
+			linkname, err := os.Readlink(filepath.Join(f.c.Dir(site, sha, path), "link.html"))
+			must(t, err)
+			if linkname != "index.html" {
+				t.Fatal(linkname)
 			}
-		}
-		code, ok := exits[archiveSID]
-		if archiveSID == "" || !ok || code != 0 {
-			t.Fatal("archive not exited", string(b))
-		}
-	})
-	f.l.Drain()
-	must(t, f.c.Unpack(context.Background(), site, repo, sha))
-	if count != 1 {
-		t.Fatal(count)
-	}
-	assertTree(t, f.c.Dir(site, sha), map[string]treeEntry{".env": {"file", "hello"}, "about": {"dir", ""}, "about/index.html": {"file", "hello"}, "index.html": {"file", "hello"}, "link.html": {"link", "index.html"}})
-	linkname, err := os.Readlink(filepath.Join(f.c.Dir(site, sha), "link.html"))
-	must(t, err)
-	if linkname != "index.html" {
-		t.Fatal(linkname)
-	}
-	before := snap(t, f.c.Dir(site, sha))
-	must(t, f.c.Unpack(context.Background(), site, "invalid", sha))
-	if count != 1 || fmt.Sprint(before) != fmt.Sprint(snap(t, f.c.Dir(site, sha))) {
-		t.Fatal("existing tree changed")
+			before := snap(t, f.c.Dir(site, sha, path))
+			must(t, f.c.Unpack(context.Background(), site, "invalid", sha, path))
+			if count != 1 || fmt.Sprint(before) != fmt.Sprint(snap(t, f.c.Dir(site, sha, path))) {
+				t.Fatal("existing tree changed")
+			}
+		})
 	}
 }
 
-// R-BC2E-IBHT
+// R-0IAU-UYHO
 func TestEmptyTreeAndSubmodule(t *testing.T) {
 	f := newFixture(t, 1024)
 	empty := f.tree("")
 	sha := f.commit(empty)
-	must(t, f.c.Unpack(context.Background(), site, repo, sha))
-	if len(entries(t, f.c.Dir(site, sha))) != 0 {
+	must(t, f.c.Unpack(context.Background(), site, repo, sha, ""))
+	if len(entries(t, f.c.Dir(site, sha, ""))) != 0 {
 		t.Fatal("empty tree")
 	}
 	sub := f.tree("160000 commit " + sha + "\tsubmodule\n")
 	sha = f.commit(sub)
-	must(t, f.c.Unpack(context.Background(), site, repo, sha))
-	es := entries(t, f.c.Dir(site, sha))
-	if len(es) != 1 || !es[0].IsDir() || len(entries(t, filepath.Join(f.c.Dir(site, sha), "submodule"))) != 0 {
+	must(t, f.c.Unpack(context.Background(), site, repo, sha, ""))
+	es := entries(t, f.c.Dir(site, sha, ""))
+	if len(es) != 1 || !es[0].IsDir() || len(entries(t, filepath.Join(f.c.Dir(site, sha, ""), "submodule"))) != 0 {
 		t.Fatal("submodule")
 	}
 }
 
-// R-CKHI-24LV R-XHH3-YMVR R-QQBD-OW73
+// R-0N6G-E1GG R-73OY-YA5J R-6YTD-F76R
 func TestSizeFailuresAndDiskFailure(t *testing.T) {
 	for _, size := range []int{1024, 1025} {
 		t.Run(fmt.Sprint(size), func(t *testing.T) {
 			f := newFixture(t, 1024)
 			sha := f.file(strings.Repeat("x", size))
-			err := f.c.Unpack(context.Background(), site, repo, sha)
+			err := f.c.Unpack(context.Background(), site, repo, sha, "")
 			if size == 1024 {
 				must(t, err)
 			} else {
@@ -463,25 +470,25 @@ func TestSizeFailuresAndDiskFailure(t *testing.T) {
 	f := newFixture(t, 1024)
 	blob := f.blob(strings.Repeat("x", 513))
 	sha := f.commit(f.tree("100644 blob " + blob + "\ta\n100644 blob " + blob + "\tb\n"))
-	if err := f.c.Unpack(context.Background(), site, repo, sha); !errors.Is(err, limits.ErrTooLarge) {
+	if err := f.c.Unpack(context.Background(), site, repo, sha, ""); !errors.Is(err, limits.ErrTooLarge) {
 		t.Fatal(err)
 	}
 	absent(t, filepath.Join(f.root, site))
 	old := f.file("old")
-	must(t, f.c.Unpack(context.Background(), site, repo, old))
+	must(t, f.c.Unpack(context.Background(), site, repo, old, ""))
 	sha = f.file("new")
 	object := f.run(nil, "--git-dir="+f.dir, "rev-parse", sha+":index.html")
 	must(t, os.Remove(filepath.Join(f.dir, "objects", object[:2], object[2:])))
-	err := f.c.Unpack(context.Background(), site, repo, sha)
+	err := f.c.Unpack(context.Background(), site, repo, sha, "")
 	var ge *git.Error
 	if !errors.As(err, &ge) || ge.Status == 0 || ge.Stderr == "" {
 		t.Fatal(err)
 	}
-	absent(t, f.c.Dir(site, sha))
+	absent(t, f.c.Dir(site, sha, ""))
 	if len(entries(t, filepath.Join(f.root, site))) != 1 {
 		t.Fatal("failed unpack debris")
 	}
-	b, e := readFile(filepath.Join(f.c.Dir(site, old), "index.html"))
+	b, e := readFile(filepath.Join(f.c.Dir(site, old, ""), "index.html"))
 	must(t, e)
 	if string(b) != "old" {
 		t.Fatal("old tree changed")
@@ -491,20 +498,20 @@ func TestSizeFailuresAndDiskFailure(t *testing.T) {
 	must(t, chmodDir(parent, 0500))
 	t.Cleanup(func() { _ = chmodDir(parent, 0700) })
 	before := snap(t, f.root)
-	err = f.c.Unpack(context.Background(), site, repo, sha)
+	err = f.c.Unpack(context.Background(), site, repo, sha, "")
 	if err == nil || errors.As(err, &ge) || cache.Reason(err) != cache.ReasonGitFailed || fmt.Sprint(before) != fmt.Sprint(snap(t, f.root)) {
 		t.Fatal("disk failure", err)
 	}
 }
 
-// R-CKHI-24LV
+// R-0N6G-E1GG
 func TestHeaderSizeWinsLaterGitFailure(t *testing.T) {
 	f := newFixture(t, 1024)
 	a := f.blob(strings.Repeat("x", 65536))
 	b := f.blob("missing")
 	sha := f.commit(f.tree("100644 blob " + a + "\ta\n100644 blob " + b + "\tb\n"))
 	must(t, os.Remove(filepath.Join(f.dir, "objects", b[:2], b[2:])))
-	err := f.c.Unpack(context.Background(), site, repo, sha)
+	err := f.c.Unpack(context.Background(), site, repo, sha, "")
 	var ge *git.Error
 	if !errors.Is(err, limits.ErrTooLarge) || errors.As(err, &ge) {
 		t.Fatal(err)
@@ -512,7 +519,7 @@ func TestHeaderSizeWinsLaterGitFailure(t *testing.T) {
 	absent(t, filepath.Join(f.root, site))
 }
 
-// R-V9WH-81V9
+// R-RRCH-OXS3
 func TestHostileTrees(t *testing.T) {
 	for _, kind := range []string{"link-parent", "duplicate"} {
 		t.Run(kind, func(t *testing.T) {
@@ -529,7 +536,7 @@ func TestHostileTrees(t *testing.T) {
 				tree = f.tree("100644 blob " + blob + "\tf\n100644 blob " + blob + "\tf\n")
 			}
 			sha := f.commit(tree)
-			err := f.c.Unpack(context.Background(), site, repo, sha)
+			err := f.c.Unpack(context.Background(), site, repo, sha, "")
 			var ge *git.Error
 			if err == nil || errors.As(err, &ge) || errors.Is(err, cache.ErrNoCommit) || errors.Is(err, limits.ErrTooLarge) {
 				t.Fatal(err)
@@ -540,30 +547,30 @@ func TestHostileTrees(t *testing.T) {
 	}
 }
 
-// R-BJDS-SXXZ R-B9ML-QS0F R-BPHA-PSNG
+// R-0QU5-JCOJ R-B9ML-QS0F R-7019-SYXG
 func TestInvalidAndMissingGit(t *testing.T) {
 	f := newFixture(t, 1024)
 	sha := f.file("hello")
 	for _, bad := range []string{"", "..", "sit_0123456789abcdeF"} {
-		if f.c.Unpack(context.Background(), bad, repo, sha) == nil {
+		if f.c.Unpack(context.Background(), bad, repo, sha, "") == nil {
 			t.Fatal(bad)
 		}
-		if _, err := f.c.Tree(context.Background(), bad, repo, sha); err == nil {
+		if _, err := f.c.Tree(context.Background(), bad, repo, sha, ""); err == nil {
 			t.Fatal(bad)
 		}
-		if f.c.Prune(bad, sha) == nil || f.c.Remove(bad) == nil {
+		if f.c.Prune(bad, sha, "") == nil || f.c.Remove(bad) == nil {
 			t.Fatal(bad)
 		}
 	}
 	for _, bad := range []string{"", sha[:39], strings.ToUpper(sha)} {
-		if !errors.Is(f.c.Unpack(context.Background(), site, repo, bad), cache.ErrNoCommit) {
+		if !errors.Is(f.c.Unpack(context.Background(), site, repo, bad, ""), cache.ErrNoCommit) {
 			t.Fatal(bad)
 		}
-		if _, err := f.c.Tree(context.Background(), site, repo, bad); !errors.Is(err, cache.ErrNoCommit) {
+		if _, err := f.c.Tree(context.Background(), site, repo, bad, ""); !errors.Is(err, cache.ErrNoCommit) {
 			t.Fatal(err)
 		}
 	}
-	must(t, f.c.Unpack(context.Background(), site, repo, sha))
+	must(t, f.c.Unpack(context.Background(), site, repo, sha, ""))
 	bin := filepath.Join(f.base, "bin")
 	must(t, os.Mkdir(bin, 0700))
 	link := filepath.Join(bin, "git")
@@ -575,9 +582,9 @@ func TestInvalidAndMissingGit(t *testing.T) {
 	must(t, os.Remove(link))
 	n := f.operations.Load()
 	f.l.Drain()
-	dir, err := f.c.Tree(context.Background(), site, "invalid", sha)
+	dir, err := f.c.Tree(context.Background(), site, "invalid", sha, "")
 	must(t, err)
-	if dir != f.c.Dir(site, sha) || n != f.operations.Load() {
+	if dir != f.c.Dir(site, sha, "") || n != f.operations.Load() {
 		t.Fatal("existing tree")
 	}
 	_, err = f.c.Owner(context.Background(), repo)
@@ -589,7 +596,7 @@ func TestInvalidAndMissingGit(t *testing.T) {
 		t.Fatal(err)
 	}
 	newSHA := f.file("other")
-	err = f.c.Unpack(context.Background(), site, repo, newSHA)
+	err = f.c.Unpack(context.Background(), site, repo, newSHA, "")
 	if !errors.Is(err, git.ErrNotFound) {
 		t.Fatal(err)
 	}
@@ -612,45 +619,45 @@ func TestRelativeRepositories(t *testing.T) {
 	if got != sha {
 		t.Fatal(got)
 	}
-	must(t, c.Unpack(context.Background(), site, repo, sha))
+	must(t, c.Unpack(context.Background(), site, repo, sha, ""))
 }
 
-// R-CT0S-QISQ R-UQPP-5LCD R-UT5H-X4TR
+// R-7196-6QO5 R-UQPP-5LCD R-UT5H-X4TR
 func TestLazyRebuildAndRecovery(t *testing.T) {
 	f := newFixture(t, 1024)
 	sha := f.file("hello")
 	saved := f.dir + ".saved"
 	must(t, os.Rename(f.dir, saved))
-	_, err := f.c.Tree(context.Background(), site, repo, sha)
+	_, err := f.c.Tree(context.Background(), site, repo, sha, "")
 	if !errors.Is(err, cache.ErrRepositoryMissing) {
 		t.Fatal(err)
 	}
 	must(t, os.Rename(saved, f.dir))
 	for i := 0; i < 3; i++ {
-		dir, e := f.c.Tree(context.Background(), site, repo, sha)
+		dir, e := f.c.Tree(context.Background(), site, repo, sha, "")
 		must(t, e)
-		if dir != f.c.Dir(site, sha) {
+		if dir != f.c.Dir(site, sha, "") {
 			t.Fatal(dir)
 		}
 		n := f.operations.Load()
-		_, e = f.c.Tree(context.Background(), site, repo, sha)
+		_, e = f.c.Tree(context.Background(), site, repo, sha, "")
 		must(t, e)
 		if n != f.operations.Load() {
 			t.Fatal("cached git")
 		}
 		must(t, os.RemoveAll(f.root))
 	}
-	_, err = f.c.Tree(context.Background(), site, repo, strings.Repeat("0", 40))
+	_, err = f.c.Tree(context.Background(), site, repo, strings.Repeat("0", 40), "")
 	if !errors.Is(err, cache.ErrNoCommit) {
 		t.Fatal(err)
 	}
 }
 
-// R-CU8P-4AJF R-CVGL-I2A4 R-BUCW-8VM8 R-BPHA-PSNG
+// R-72H2-KIEU R-0ZDG-7QVE R-11T8-ZACS R-7019-SYXG
 func TestSharedRebuildAndCancellation(t *testing.T) {
 	f := newFixture(t, 1024)
 	old := f.file("old")
-	must(t, f.c.Unpack(context.Background(), site, repo, old))
+	must(t, f.c.Unpack(context.Background(), site, repo, old, ""))
 	sha := f.file("new")
 	held := make(chan struct{})
 	release := make(chan struct{})
@@ -664,11 +671,11 @@ func TestSharedRebuildAndCancellation(t *testing.T) {
 	firstCtx, cancel := context.WithCancelCause(context.Background())
 	cause := errors.New("visitor left")
 	first := make(chan error, 1)
-	go func() { _, e := f.c.Tree(firstCtx, site, repo, sha); first <- e }()
+	go func() { _, e := f.c.Tree(firstCtx, site, repo, sha, ""); first <- e }()
 	wait(t, held)
 	secondCtx, cancelSecond := context.WithCancelCause(context.Background())
 	second := make(chan error, 1)
-	go func() { _, e := f.c.Tree(secondCtx, site, repo, sha); second <- e }()
+	go func() { _, e := f.c.Tree(secondCtx, site, repo, sha, ""); second <- e }()
 	wait(t, joined)
 	cancel(cause)
 	if err := wait(t, first); !errors.Is(err, cause) {
@@ -680,15 +687,15 @@ func TestSharedRebuildAndCancellation(t *testing.T) {
 	}
 	f.l.Drain()
 	third := make(chan error, 1)
-	go func() { _, e := f.c.Tree(context.Background(), site, repo, sha); third <- e }()
+	go func() { _, e := f.c.Tree(context.Background(), site, repo, sha, ""); third <- e }()
 	wait(t, joined)
 	n := f.operations.Load()
-	_, err := f.c.Tree(context.Background(), site, "invalid", old)
+	_, err := f.c.Tree(context.Background(), site, "invalid", old, "")
 	must(t, err)
 	if n != f.operations.Load() {
 		t.Fatal("present tree blocked")
 	}
-	_, err = f.c.Tree(context.Background(), "sit_1111111111111111", repo, sha)
+	_, err = f.c.Tree(context.Background(), "sit_1111111111111111", repo, sha, "")
 	if !errors.Is(err, limits.ErrDraining) {
 		t.Fatal(err)
 	}
@@ -699,13 +706,13 @@ func TestSharedRebuildAndCancellation(t *testing.T) {
 	}
 }
 
-// R-CQKZ-YZBC R-CRSW-CR21 R-VHXY-ASJ4
+// R-0T9Y-AW5X R-CRSW-CR21 R-0H2Y-H6QZ
 func TestPruneRemoveAndCompetingInstall(t *testing.T) {
 	for _, mode := range []string{"prune", "remove", "compete"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newFixture(t, 1024)
 			old := f.file("old")
-			must(t, f.c.Unpack(context.Background(), site, repo, old))
+			must(t, f.c.Unpack(context.Background(), site, repo, old, ""))
 			sha := f.file("new")
 			held := make(chan struct{})
 			release := make(chan struct{})
@@ -716,12 +723,12 @@ func TestPruneRemoveAndCompetingInstall(t *testing.T) {
 				}
 			})
 			result := make(chan error, 1)
-			go func() { result <- f.c.Unpack(context.Background(), site, repo, sha) }()
+			go func() { result <- f.c.Unpack(context.Background(), site, repo, sha, "") }()
 			wait(t, held)
 			switch mode {
 			case "prune":
 				must(t, os.Mkdir(filepath.Join(f.root, site, ".stale"), 0700))
-				must(t, f.c.Prune(site, old))
+				must(t, f.c.Prune(site, old, ""))
 				if len(entries(t, filepath.Join(f.root, site))) != 2 {
 					t.Fatal("prune removed live staging")
 				}
@@ -731,8 +738,8 @@ func TestPruneRemoveAndCompetingInstall(t *testing.T) {
 					t.Fatal("remove live staging")
 				}
 			case "compete":
-				must(t, os.Mkdir(f.c.Dir(site, sha), 0700))
-				must(t, os.WriteFile(filepath.Join(f.c.Dir(site, sha), "winner"), []byte("winner"), 0600))
+				must(t, os.Mkdir(f.c.Dir(site, sha, ""), 0700))
+				must(t, os.WriteFile(filepath.Join(f.c.Dir(site, sha, ""), "winner"), []byte("winner"), 0600))
 			}
 			close(release)
 			must(t, wait(t, result))
@@ -740,12 +747,12 @@ func TestPruneRemoveAndCompetingInstall(t *testing.T) {
 			case "remove":
 				absent(t, filepath.Join(f.root, site))
 			case "prune":
-				absent(t, f.c.Dir(site, sha))
+				absent(t, f.c.Dir(site, sha, ""))
 				if len(entries(t, filepath.Join(f.root, site))) != 1 {
 					t.Fatal("debris")
 				}
 			default:
-				es := entries(t, f.c.Dir(site, sha))
+				es := entries(t, f.c.Dir(site, sha, ""))
 				if len(es) != 1 || es[0].Name() != "winner" {
 					t.Fatal("winner changed")
 				}
@@ -753,14 +760,14 @@ func TestPruneRemoveAndCompetingInstall(t *testing.T) {
 		})
 	}
 	f := newFixture(t, 1024)
-	must(t, f.c.Prune(site, "missing"))
+	must(t, f.c.Prune(site, "missing", ""))
 	must(t, f.c.Remove(site))
 	absent(t, filepath.Join(f.root, site))
 	sha := f.file("old")
-	must(t, f.c.Unpack(context.Background(), site, repo, sha))
+	must(t, f.c.Unpack(context.Background(), site, repo, sha, ""))
 	must(t, chmodDir(filepath.Join(f.root, site), 0500))
 	t.Cleanup(func() { _ = chmodDir(filepath.Join(f.root, site), 0700) })
-	if f.c.Prune(site, "other") == nil || f.c.Remove(site) == nil {
+	if f.c.Prune(site, "other", "") == nil || f.c.Remove(site) == nil {
 		t.Fatal("removal permission")
 	}
 }
@@ -772,7 +779,7 @@ func TestImmediateDeadlinesAndHalt(t *testing.T) {
 	s := settings.Defaults()
 	f.l = limits.New(s, limits.Clock{After: func(time.Duration) <-chan time.Time { ch := make(chan time.Time, 1); ch <- time.Time{}; return ch }})
 	f.open(nil, nil)
-	for _, call := range []func() error{func() error { _, e := f.c.Owner(context.Background(), repo); return e }, func() error { _, e := f.c.Resolve(context.Background(), repo, "main"); return e }, func() error { return f.c.Unpack(context.Background(), site, repo, sha) }, func() error { _, e := f.c.Tree(context.Background(), site, repo, sha); return e }} {
+	for _, call := range []func() error{func() error { _, e := f.c.Owner(context.Background(), repo); return e }, func() error { _, e := f.c.Resolve(context.Background(), repo, "main"); return e }, func() error { return f.c.Unpack(context.Background(), site, repo, sha, "") }, func() error { _, e := f.c.Tree(context.Background(), site, repo, sha, ""); return e }} {
 		if err := call(); !errors.Is(err, limits.ErrTimedOut) {
 			t.Fatal(err)
 		}
@@ -782,7 +789,7 @@ func TestImmediateDeadlinesAndHalt(t *testing.T) {
 	if !errors.Is(err, limits.ErrHalted) {
 		t.Fatal(err)
 	}
-	_, err = f.c.Tree(context.Background(), site, repo, sha)
+	_, err = f.c.Tree(context.Background(), site, repo, sha, "")
 	if !errors.Is(err, limits.ErrHalted) {
 		t.Fatal(err)
 	}
@@ -906,7 +913,7 @@ func (h *heldGit) exited(t *testing.T) {
 	must(t, wait(t, done))
 }
 
-// R-CO57-7FTY R-CPD3-L7KN R-GF0D-G2J5
+// R-CO57-7FTY R-0S21-X4F8 R-GF0D-G2J5
 func TestRunningGitStop(t *testing.T) {
 	for _, method := range []string{"owner", "resolve", "unpack", "rebuild"} {
 		for _, stop := range []string{"deadline", "halt", "cancel"} {
@@ -932,9 +939,9 @@ func TestRunningGitStop(t *testing.T) {
 					case "resolve":
 						_, err = f.c.Resolve(ctx, repo, "main")
 					case "unpack":
-						err = f.c.Unpack(ctx, site, repo, sha)
+						err = f.c.Unpack(ctx, site, repo, sha, "")
 					case "rebuild":
-						_, err = f.c.Tree(ctx, site, repo, sha)
+						_, err = f.c.Tree(ctx, site, repo, sha, "")
 					}
 					result <- err
 				}()
@@ -947,7 +954,7 @@ func TestRunningGitStop(t *testing.T) {
 				}
 				held.started(t, command)
 				if method == "unpack" {
-					absent(t, f.c.Dir(site, sha))
+					absent(t, f.c.Dir(site, sha, ""))
 					for _, e := range entries(t, filepath.Join(f.root, site)) {
 						if !strings.HasPrefix(e.Name(), ".") {
 							t.Fatal("non-staging tree while archive running")
@@ -981,7 +988,7 @@ func TestRunningGitStop(t *testing.T) {
 	}
 }
 
-// R-BUCW-8VM8 R-CVGL-I2A4 R-CU8P-4AJF
+// R-11T8-ZACS R-0ZDG-7QVE R-72H2-KIEU
 func TestCancellationWhileSharedGitRuns(t *testing.T) {
 	f := newFixture(t, 1024)
 	sha := f.file("hello")
@@ -992,12 +999,12 @@ func TestCancellationWhileSharedGitRuns(t *testing.T) {
 	defer cancel(context.Canceled)
 	cause := errors.New("visitor left")
 	first := make(chan error, 1)
-	go func() { _, err := f.c.Tree(ctx, site, repo, sha); first <- err }()
+	go func() { _, err := f.c.Tree(ctx, site, repo, sha, ""); first <- err }()
 	held.started(t, "rev-parse")
 	joinCtx, joinCancel := context.WithCancelCause(context.Background())
 	defer joinCancel(context.Canceled)
 	second := make(chan error, 1)
-	go func() { _, err := f.c.Tree(joinCtx, site, repo, sha); second <- err }()
+	go func() { _, err := f.c.Tree(joinCtx, site, repo, sha, ""); second <- err }()
 	wait(t, joined)
 	cancel(cause)
 	joinCancel(cause)
@@ -1009,7 +1016,7 @@ func TestCancellationWhileSharedGitRuns(t *testing.T) {
 	}
 	f.l.Drain()
 	third := make(chan error, 1)
-	go func() { _, err := f.c.Tree(context.Background(), site, repo, sha); third <- err }()
+	go func() { _, err := f.c.Tree(context.Background(), site, repo, sha, ""); third <- err }()
 	wait(t, joined)
 	held.release(t)
 	must(t, wait(t, third))
@@ -1017,14 +1024,14 @@ func TestCancellationWhileSharedGitRuns(t *testing.T) {
 	if n != 2 {
 		t.Fatal("expected one resolve and one archive", n)
 	}
-	_, err := f.c.Tree(context.Background(), site, repo, sha)
+	_, err := f.c.Tree(context.Background(), site, repo, sha, "")
 	must(t, err)
 	if n != f.operations.Load() {
 		t.Fatal("later request ran git")
 	}
 }
 
-// R-XHH3-YMVR
+// R-73OY-YA5J
 func TestFailedUnpackRetainsExistingEmptyDirectory(t *testing.T) {
 	f := newFixture(t, 1024)
 	sha := f.file("hello")
@@ -1033,7 +1040,7 @@ func TestFailedUnpackRetainsExistingEmptyDirectory(t *testing.T) {
 	parent := filepath.Join(f.root, site)
 	must(t, os.Mkdir(parent, 0710))
 	before := snap(t, f.root)
-	if err := f.c.Unpack(context.Background(), site, repo, sha); err == nil {
+	if err := f.c.Unpack(context.Background(), site, repo, sha, ""); err == nil {
 		t.Fatal("expected damaged archive failure")
 	}
 	if fmt.Sprint(before) != fmt.Sprint(snap(t, f.root)) {
@@ -1041,7 +1048,7 @@ func TestFailedUnpackRetainsExistingEmptyDirectory(t *testing.T) {
 	}
 }
 
-// R-B4R0-7P1N R-B8EP-D09Q R-QRJA-2NXS R-APOF-7MQ2 R-CWOH-VU0T
+// R-B4R0-7P1N R-B8EP-D09Q R-6V5O-9VYO R-04VY-NHC1 R-1315-D23H
 func TestErrorDetailsAndPriorities(t *testing.T) {
 	f := newFixture(t, 1024)
 	sha := f.file("hello")
@@ -1071,7 +1078,7 @@ func TestErrorDetailsAndPriorities(t *testing.T) {
 		if got != "" || !errors.Is(err, cache.ErrRepositoryMissing) {
 			t.Fatal(got, err)
 		}
-		err = f.c.Unpack(ctx, site, r, sha)
+		err = f.c.Unpack(ctx, site, r, sha, "")
 		if !errors.Is(err, cache.ErrRepositoryMissing) {
 			t.Fatal(err)
 		}
@@ -1151,28 +1158,28 @@ func TestFailingCallsAreSilentAndCountAttempts(t *testing.T) {
 	if !errors.Is(err, git.ErrNotFound) {
 		t.Fatal(err)
 	}
-	err = f.c.Unpack(context.Background(), site, repo, sha)
+	err = f.c.Unpack(context.Background(), site, repo, sha, "")
 	if !errors.Is(err, git.ErrNotFound) || f.operations.Load() != n+3 {
 		t.Fatal(err, f.operations.Load()-n)
 	}
-	_, err = f.c.Tree(context.Background(), site, repo, sha)
+	_, err = f.c.Tree(context.Background(), site, repo, sha, "")
 	if !errors.Is(err, git.ErrNotFound) || cache.Reason(err) != cache.ReasonGitFailed || f.operations.Load() != n+4 {
 		t.Fatal("Tree start failure", err, f.operations.Load()-n)
 	}
 	n = f.operations.Load()
-	for _, call := range []func() error{func() error { return f.c.Unpack(context.Background(), "invalid", repo, sha) }, func() error { return f.c.Unpack(context.Background(), site, repo, "invalid") }, func() error { return f.c.Unpack(context.Background(), site, "invalid", sha) }} {
+	for _, call := range []func() error{func() error { return f.c.Unpack(context.Background(), "invalid", repo, sha, "") }, func() error { return f.c.Unpack(context.Background(), site, repo, "invalid", "") }, func() error { return f.c.Unpack(context.Background(), site, "invalid", sha, "") }} {
 		if call() == nil {
 			t.Fatal("invalid call succeeded")
 		}
 	}
 	f.l.Drain()
-	_, err = f.c.Tree(context.Background(), site, repo, sha)
+	_, err = f.c.Tree(context.Background(), site, repo, sha, "")
 	if !errors.Is(err, limits.ErrDraining) || n != f.operations.Load() {
 		t.Fatal("no-op calls started operation", err)
 	}
 }
 
-// R-CT0S-QISQ R-CKHI-24LV R-QQBD-OW73 R-V9WH-81V9 R-LX6D-TGK3
+// R-7196-6QO5 R-0N6G-E1GG R-6YTD-F76R R-RRCH-OXS3 R-10LC-LIM3
 func TestRebuildArchiveFailuresAndHooks(t *testing.T) {
 	for _, kind := range []string{"too-large", "hostile", "disk", "git-failed", "commit-missing", "not-git"} {
 		t.Run(kind, func(t *testing.T) {
@@ -1198,7 +1205,7 @@ func TestRebuildArchiveFailuresAndHooks(t *testing.T) {
 			}
 			var hookCalls atomic.Int64
 			f.open(nil, func(string, string) { hookCalls.Add(1) })
-			path, err := f.c.Tree(context.Background(), site, repo, sha)
+			path, err := f.c.Tree(context.Background(), site, repo, sha, "")
 			if err == nil || path != "" || hookCalls.Load() != 0 {
 				t.Fatal(path, err, hookCalls.Load())
 			}
@@ -1221,7 +1228,7 @@ func TestRebuildArchiveFailuresAndHooks(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			absent(t, f.c.Dir(site, sha))
+			absent(t, f.c.Dir(site, sha, ""))
 			if len(entries(t, filepath.Join(f.root, site))) != 0 {
 				t.Fatal("failure left staging")
 			}
@@ -1237,7 +1244,7 @@ func TestRebuildArchiveFailuresAndHooks(t *testing.T) {
 		if s != site || c != sha {
 			t.Fatal("hook args")
 		}
-		absent(t, f.c.Dir(site, sha))
+		absent(t, f.c.Dir(site, sha, ""))
 		es := entries(t, filepath.Join(f.root, site))
 		if len(es) != 1 || !strings.HasPrefix(es[0].Name(), ".") {
 			t.Fatal("staging")
@@ -1250,7 +1257,7 @@ func TestRebuildArchiveFailuresAndHooks(t *testing.T) {
 			}
 		}
 	})
-	dir, err := f.c.Tree(context.Background(), site, repo, sha)
+	dir, err := f.c.Tree(context.Background(), site, repo, sha, "")
 	must(t, err)
 	if calls != 1 {
 		t.Fatal(calls)
@@ -1266,7 +1273,7 @@ func TestRebuildArchiveFailuresAndHooks(t *testing.T) {
 			t.Fatal(name)
 		}
 	}
-	_, err = f.c.Tree(context.Background(), site, repo, sha)
+	_, err = f.c.Tree(context.Background(), site, repo, sha, "")
 	must(t, err)
 	if calls != 1 {
 		t.Fatal("present Tree called hook")
@@ -1295,8 +1302,8 @@ func TestRelativeRepositoriesFollowCurrentDirectory(t *testing.T) {
 		if sha != step.sha {
 			t.Fatal(sha, step.sha)
 		}
-		must(t, c.Unpack(context.Background(), site, repo, sha))
-		b, e := readFile(filepath.Join(c.Dir(site, sha), "index.html"))
+		must(t, c.Unpack(context.Background(), site, repo, sha, ""))
+		b, e := readFile(filepath.Join(c.Dir(site, sha, ""), "index.html"))
 		must(t, e)
 		if string(b) != step.body {
 			t.Fatal(string(b))
@@ -1304,13 +1311,13 @@ func TestRelativeRepositoriesFollowCurrentDirectory(t *testing.T) {
 	}
 }
 
-// R-CQKZ-YZBC R-CRSW-CR21 R-CVGL-I2A4 R-LX6D-TGK3
+// R-0T9Y-AW5X R-CRSW-CR21 R-0ZDG-7QVE R-10LC-LIM3
 func TestRunningRebuildPruneRemoveAndIndependentKeys(t *testing.T) {
 	for _, mode := range []string{"prune", "remove"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newFixture(t, 1024)
 			old := f.file("old")
-			must(t, f.c.Unpack(context.Background(), site, repo, old))
+			must(t, f.c.Unpack(context.Background(), site, repo, old, ""))
 			sha := f.file("new")
 			held := make(chan struct{})
 			release := make(chan struct{})
@@ -1321,10 +1328,10 @@ func TestRunningRebuildPruneRemoveAndIndependentKeys(t *testing.T) {
 				}
 			})
 			result := make(chan error, 1)
-			go func() { _, err := f.c.Tree(context.Background(), site, repo, sha); result <- err }()
+			go func() { _, err := f.c.Tree(context.Background(), site, repo, sha, ""); result <- err }()
 			wait(t, held)
 			if mode == "prune" {
-				must(t, f.c.Prune(site, old))
+				must(t, f.c.Prune(site, old, ""))
 				if len(entries(t, filepath.Join(f.root, site))) != 2 {
 					t.Fatal("live staging lost")
 				}
@@ -1339,8 +1346,8 @@ func TestRunningRebuildPruneRemoveAndIndependentKeys(t *testing.T) {
 			if mode == "remove" {
 				absent(t, filepath.Join(f.root, site))
 			} else {
-				absent(t, f.c.Dir(site, sha))
-				b, err := readFile(filepath.Join(f.c.Dir(site, old), "index.html"))
+				absent(t, f.c.Dir(site, sha, ""))
+				b, err := readFile(filepath.Join(f.c.Dir(site, old, ""), "index.html"))
 				must(t, err)
 				if string(b) != "old" {
 					t.Fatal("kept tree changed")
@@ -1348,7 +1355,7 @@ func TestRunningRebuildPruneRemoveAndIndependentKeys(t *testing.T) {
 			}
 			// A rebuild beginning after the prune/remove is independent and installs normally.
 			f.open(nil, nil)
-			_, err := f.c.Tree(context.Background(), site, repo, sha)
+			_, err := f.c.Tree(context.Background(), site, repo, sha, "")
 			must(t, err)
 		})
 	}
@@ -1364,18 +1371,18 @@ func TestRunningRebuildPruneRemoveAndIndependentKeys(t *testing.T) {
 		}
 	})
 	first := make(chan error, 1)
-	go func() { _, err := f.c.Tree(context.Background(), site, repo, one); first <- err }()
+	go func() { _, err := f.c.Tree(context.Background(), site, repo, one, ""); first <- err }()
 	wait(t, held)
 	for _, key := range []struct{ site, sha string }{{"sit_1111111111111111", one}, {site, two}} {
 		result := make(chan error, 1)
-		go func() { _, err := f.c.Tree(context.Background(), key.site, repo, key.sha); result <- err }()
+		go func() { _, err := f.c.Tree(context.Background(), key.site, repo, key.sha, ""); result <- err }()
 		must(t, wait(t, result))
 	}
 	close(release)
 	must(t, wait(t, first))
 }
 
-// R-CVGL-I2A4 R-CT0S-QISQ
+// R-0ZDG-7QVE R-7196-6QO5
 func TestSharedFailure(t *testing.T) {
 	f := newFixture(t, 1024)
 	sha := strings.Repeat("0", 40)
@@ -1393,9 +1400,9 @@ func TestSharedFailure(t *testing.T) {
 	f.open(func(string, string) { close(joined) }, nil)
 	one := make(chan error, 1)
 	two := make(chan error, 1)
-	go func() { _, err := f.c.Tree(context.Background(), site, repo, sha); one <- err }()
+	go func() { _, err := f.c.Tree(context.Background(), site, repo, sha, ""); one <- err }()
 	wait(t, entered)
-	go func() { _, err := f.c.Tree(context.Background(), site, repo, sha); two <- err }()
+	go func() { _, err := f.c.Tree(context.Background(), site, repo, sha, ""); two <- err }()
 	wait(t, joined)
 	close(release)
 	first, second := wait(t, one), wait(t, two)
@@ -1404,7 +1411,7 @@ func TestSharedFailure(t *testing.T) {
 	}
 }
 
-// R-VHXY-ASJ4
+// R-0H2Y-H6QZ
 func TestCompetingInstalledTreeWinsOwnGitFailure(t *testing.T) {
 	for _, method := range []string{"unpack", "tree"} {
 		t.Run(method, func(t *testing.T) {
@@ -1415,10 +1422,10 @@ func TestCompetingInstalledTreeWinsOwnGitFailure(t *testing.T) {
 			result := make(chan error, 1)
 			go func() {
 				if method == "unpack" {
-					result <- f.c.Unpack(context.Background(), site, repo, sha)
+					result <- f.c.Unpack(context.Background(), site, repo, sha, "")
 				} else {
-					dir, err := f.c.Tree(context.Background(), site, repo, sha)
-					if err == nil && dir != f.c.Dir(site, sha) {
+					dir, err := f.c.Tree(context.Background(), site, repo, sha, "")
+					if err == nil && dir != f.c.Dir(site, sha, "") {
 						err = errors.New("wrong tree path")
 					}
 					result <- err
@@ -1432,8 +1439,8 @@ func TestCompetingInstalledTreeWinsOwnGitFailure(t *testing.T) {
 			}
 			held.started(t, command)
 			must(t, os.Remove(filepath.Join(f.dir, "objects", object[:2], object[2:])))
-			must(t, os.MkdirAll(f.c.Dir(site, sha), 0700))
-			must(t, os.WriteFile(filepath.Join(f.c.Dir(site, sha), "winner"), []byte("winner"), 0600))
+			must(t, os.MkdirAll(f.c.Dir(site, sha, ""), 0700))
+			must(t, os.WriteFile(filepath.Join(f.c.Dir(site, sha, ""), "winner"), []byte("winner"), 0600))
 			held.release(t)
 			must(t, wait(t, result))
 			held.exited(t)
@@ -1441,7 +1448,7 @@ func TestCompetingInstalledTreeWinsOwnGitFailure(t *testing.T) {
 			if len(es) != 1 || es[0].Name() != sha {
 				t.Fatal("own debris", es)
 			}
-			b, err := readFile(filepath.Join(f.c.Dir(site, sha), "winner"))
+			b, err := readFile(filepath.Join(f.c.Dir(site, sha, ""), "winner"))
 			must(t, err)
 			if string(b) != "winner" {
 				t.Fatal("installed tree modified")
@@ -1450,7 +1457,7 @@ func TestCompetingInstalledTreeWinsOwnGitFailure(t *testing.T) {
 	}
 }
 
-// R-CO57-7FTY R-CPD3-L7KN R-7PSE-YBDY
+// R-CO57-7FTY R-0S21-X4F8 R-7PSE-YBDY
 func TestRebuildArchiveHasOwnDeadline(t *testing.T) {
 	f := newFixture(t, 1024)
 	sha := f.file("hello")
@@ -1470,14 +1477,14 @@ func TestRebuildArchiveHasOwnDeadline(t *testing.T) {
 	joined := make(chan struct{})
 	f.open(func(string, string) { close(joined) }, nil)
 	one, two := make(chan error, 1), make(chan error, 1)
-	go func() { _, err := f.c.Tree(context.Background(), site, repo, sha); one <- err }()
+	go func() { _, err := f.c.Tree(context.Background(), site, repo, sha, ""); one <- err }()
 	held.started(t, "archive")
-	absent(t, f.c.Dir(site, sha))
+	absent(t, f.c.Dir(site, sha, ""))
 	es := entries(t, filepath.Join(f.root, site))
 	if len(es) != 1 || !strings.HasPrefix(es[0].Name(), ".") {
 		t.Fatal("tree visible before whole", es)
 	}
-	go func() { _, err := f.c.Tree(context.Background(), site, repo, sha); two <- err }()
+	go func() { _, err := f.c.Tree(context.Background(), site, repo, sha, ""); two <- err }()
 	wait(t, joined)
 	timer <- time.Time{}
 	if err := wait(t, one); !errors.Is(err, limits.ErrTimedOut) {
@@ -1535,7 +1542,7 @@ func assertTree(t *testing.T, root string, want map[string]treeEntry) {
 	}
 }
 
-// R-TMNE-HL5T R-TNVA-VCWI R-XHH3-YMVR
+// R-TMNE-HL5T R-TNVA-VCWI R-73OY-YA5J
 func TestArchiveFailuresAreSilentAndReadOnly(t *testing.T) {
 	f := newFixture(t, 1024)
 	sha := f.file("hello")
@@ -1547,8 +1554,8 @@ func TestArchiveFailuresAreSilentAndReadOnly(t *testing.T) {
 	must(t, err)
 	os.Stdout = w
 	os.Stderr = w
-	unpackErr := f.c.Unpack(context.Background(), site, repo, sha)
-	_, treeErr := f.c.Tree(context.Background(), site, repo, sha)
+	unpackErr := f.c.Unpack(context.Background(), site, repo, sha, "")
+	_, treeErr := f.c.Tree(context.Background(), site, repo, sha, "")
 	os.Stdout = stdout
 	os.Stderr = stderr
 	must(t, w.Close())
@@ -1565,14 +1572,14 @@ func TestArchiveFailuresAreSilentAndReadOnly(t *testing.T) {
 	absent(t, filepath.Join(f.root, site))
 }
 
-// R-XHH3-YMVR
+// R-73OY-YA5J
 func TestFailedInstallPreservesPreexistingEntries(t *testing.T) {
 	f := newFixture(t, 1024)
 	sha := f.file("hello")
 	must(t, os.Mkdir(filepath.Join(f.root, site), 0700))
-	must(t, os.WriteFile(f.c.Dir(site, sha), []byte("preexisting file"), 0600))
+	must(t, os.WriteFile(f.c.Dir(site, sha, ""), []byte("preexisting file"), 0600))
 	before := snap(t, f.root)
-	err := f.c.Unpack(context.Background(), site, repo, sha)
+	err := f.c.Unpack(context.Background(), site, repo, sha, "")
 	if err == nil {
 		t.Fatal("installed directory over preexisting file")
 	}

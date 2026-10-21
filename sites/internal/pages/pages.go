@@ -49,6 +49,7 @@ type LandingData struct {
 type SiteRow struct {
 	Slug, Name, URL, Visibility string
 	Listed, Published, Mine     bool
+	Ref, Path                   string
 }
 
 // AboutData supplies service identity to the about screen.
@@ -149,7 +150,7 @@ func Handler(cfg Config) http.Handler {
 			base = urls.SitesURL(r, cfg.ServicesPath)
 			rows = make([]SiteRow, 0, len(xs))
 			for _, x := range xs {
-				rows = append(rows, SiteRow{Slug: x.Slug, Name: x.Name, URL: urls.SiteURL(base, x.Slug), Visibility: x.Visibility, Listed: x.Listed, Published: x.Commit != "", Mine: x.Owner == caller.UserID})
+				rows = append(rows, SiteRow{Slug: x.Slug, Name: x.Name, URL: urls.SiteURL(base, x.Slug), Visibility: x.Visibility, Listed: x.Listed, Published: x.Commit != "", Mine: x.Owner == caller.UserID, Ref: x.Ref, Path: x.Path})
 			}
 		}
 		banner := cfg.Banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: urls.AuthProfile(r, cfg.ServicesPath), LogoutURL: urls.AuthLogout(r, cfg.ServicesPath)})

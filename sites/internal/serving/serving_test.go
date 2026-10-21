@@ -102,8 +102,8 @@ func newFixture(t *testing.T, files map[string]string) *fixture {
 		for key, value := range map[string]string{"id": repository, "name": "fixture", "owner": "u_fixture", "created": "2000-01-01T00:00:00Z"} {
 			f.run("config", "--file", filepath.Join(f.c.RepoDir(repository), "config"), "ikigenba."+key, value)
 		}
-		must(t, f.c.Unpack(context.Background(), f.site.ID, repository, f.sha))
-		f.site, err = f.s.Publish(context.Background(), f.site.ID, f.sha)
+		must(t, f.c.Unpack(context.Background(), f.site.ID, repository, f.sha, ""))
+		f.site, err = f.s.Publish(context.Background(), f.site.ID, f.sha, "")
 		must(t, err)
 	}
 	ps, err := pages.Load()
@@ -297,7 +297,7 @@ func TestSiteAnswerOrder(t *testing.T) {
 	}
 }
 
-// R-W6XT-ITGV
+// R-5G2O-7RFC
 func TestPrivateGuestRevealsNoTree(t *testing.T) {
 	f := newFixture(t, map[string]string{"index.html": "secret", "style.css": "private"})
 	v := store.Private
@@ -314,7 +314,7 @@ func TestPrivateGuestRevealsNoTree(t *testing.T) {
 			assertHeader(t, first, "Location", urls.SignIn(r))
 			assertHeader(t, first, "ETag", "")
 			assertHeader(t, first, "Set-Cookie", "")
-			must(t, os.RemoveAll(f.c.Dir(f.site.ID, f.sha)))
+			must(t, os.RemoveAll(f.c.Dir(f.site.ID, f.sha, "")))
 			second := f.answer(r, false)
 			if first.Body.String() != second.Body.String() {
 				t.Fatal("tree leaked")
@@ -324,7 +324,7 @@ func TestPrivateGuestRevealsNoTree(t *testing.T) {
 	if f.operations.Load() != before {
 		t.Fatal("guest started git")
 	}
-	if _, err = os.Stat(f.c.Dir(f.site.ID, f.sha)); !os.IsNotExist(err) {
+	if _, err = os.Stat(f.c.Dir(f.site.ID, f.sha, "")); !os.IsNotExist(err) {
 		t.Fatalf("guest rebuilt tree %v", err)
 	}
 	if len(f.events()) != 0 {
@@ -332,20 +332,20 @@ func TestPrivateGuestRevealsNoTree(t *testing.T) {
 	}
 }
 
-// R-EKSR-YFIG R-EY7O-5WO3 R-EZFK-JOES R-F0NG-XG5H R-EOGH-3QQJ R-F1VD-B7W6 R-F339-OZMV R-F4B6-2RDK
+// R-EKSR-YFIG R-5HAK-LJ61 R-5IIG-ZAWQ R-5JQD-D2NF R-EOGH-3QQJ R-F1VD-B7W6 R-F339-OZMV R-F4B6-2RDK
 func TestTreePathsAndConditionalFiles(t *testing.T) {
 	f := newFixture(t, map[string]string{"index.html": "root\r\nno-final-newline", "404.html": "own missing", "style.css": "private bytes", "about/index.html": "about", "space dir/index.html": "spaced", ".env": "secret", ".gitignore": "secret", ".hidden/config": "secret"})
-	root := f.c.Dir(f.site.ID, f.sha)
+	root := f.c.Dir(f.site.ID, f.sha, "")
 	must(t, os.Symlink("style.css", filepath.Join(root, "link.html")))
 	must(t, os.Symlink("about", filepath.Join(root, "linked")))
 	must(t, os.Symlink(f.base, filepath.Join(root, "outside")))
 	must(t, os.Mkdir(filepath.Join(root, "drafts"), 0700))
 	other, err := f.s.Create(context.Background(), store.Draft{Owner: "u_other", Name: "recipes", Repo: repository, Ref: "main", Visibility: store.Public, Listed: true})
 	must(t, err)
-	must(t, f.c.Unpack(context.Background(), other.ID, repository, f.sha))
-	_, err = f.s.Publish(context.Background(), other.ID, f.sha)
+	must(t, f.c.Unpack(context.Background(), other.ID, repository, f.sha, ""))
+	_, err = f.s.Publish(context.Background(), other.ID, f.sha, "")
 	must(t, err)
-	f.write(filepath.Join(f.c.Dir(other.ID, f.sha), "index.html"), "another site")
+	f.write(filepath.Join(f.c.Dir(other.ID, f.sha, ""), "index.html"), "another site")
 	r := f.req("GET", "/blog/", "")
 	w := f.answer(r, false)
 	assertStatus(t, w, 200)
@@ -475,7 +475,7 @@ func TestHeadParityAndViewCacheControl(t *testing.T) {
 	for _, state := range []string{"unpublished", "unavailable", "stopping"} {
 		if state != "unpublished" {
 			var err error
-			f.site, err = f.s.Publish(context.Background(), f.site.ID, strings.Repeat("a", 40))
+			f.site, err = f.s.Publish(context.Background(), f.site.ID, strings.Repeat("a", 40), "")
 			must(t, err)
 		}
 		if state == "stopping" {
@@ -493,12 +493,12 @@ func TestHeadParityAndViewCacheControl(t *testing.T) {
 	}
 }
 
-// R-FBMK-DDTQ R-Y4VI-FE92 R-FFA9-IP1T
+// R-5KY9-QUE4 R-5M66-4M4T R-FFA9-IP1T
 func TestFreshCatalogAndCachedTreeReadOnly(t *testing.T) {
 	f := newFixture(t, map[string]string{"index.html": "old"})
 	before, _ := f.s.BySlug(context.Background(), "blog")
 	must(t, func() error { _, err := f.s.SetApex(context.Background(), f.site.ID); return err }())
-	root := f.c.Dir(f.site.ID, f.sha)
+	root := f.c.Dir(f.site.ID, f.sha, "")
 	st, err := os.Stat(filepath.Join(root, "index.html"))
 	must(t, err)
 	beforeOps := f.operations.Load()
@@ -551,8 +551,8 @@ func TestFreshCatalogAndCachedTreeReadOnly(t *testing.T) {
 	must(t, err)
 	tree := strings.TrimSpace(string(out))
 	sha := f.run("--git-dir="+f.c.RepoDir(repository), "commit-tree", tree, "-m", "second")
-	must(t, f.c.Unpack(context.Background(), f.site.ID, repository, sha))
-	_, err = f.s.Publish(context.Background(), f.site.ID, sha)
+	must(t, f.c.Unpack(context.Background(), f.site.ID, repository, sha, ""))
+	_, err = f.s.Publish(context.Background(), f.site.ID, sha, "")
 	must(t, err)
 	r := f.req("GET", "/blog/", "")
 	r.Header.Set("If-None-Match", "\""+f.sha+"\"")
@@ -568,18 +568,22 @@ func TestFreshCatalogAndCachedTreeReadOnly(t *testing.T) {
 	assertNotice(t, f.answer(r, false), f.notice(r, 404, "notfound"))
 }
 
-// R-ZIAX-7O5C R-W4I0-R9ZH R-LPUZ-IU3X R-HENR-6828 R-LON3-52D8
+// R-ZIAX-7O5C R-W4I0-R9ZH R-KWCD-44CL R-UP6E-SQZJ R-LON3-52D8
 func TestRebuildFailuresAndDrain(t *testing.T) {
-	for _, reason := range []string{cache.ReasonRepositoryMissing, cache.ReasonCommitMissing, cache.ReasonTooLarge, cache.ReasonTimedOut, cache.ReasonGitFailed, "stopping"} {
+	for _, reason := range []string{cache.ReasonRepositoryMissing, cache.ReasonCommitMissing, cache.ReasonDirectoryMissing, cache.ReasonTooLarge, cache.ReasonTimedOut, cache.ReasonGitFailed, "stopping"} {
 		t.Run(reason, func(t *testing.T) {
 			f := newFixture(t, map[string]string{"index.html": "published bytes"})
-			must(t, os.RemoveAll(f.c.Dir(f.site.ID, f.sha)))
+			must(t, os.RemoveAll(f.c.Dir(f.site.ID, f.sha, "")))
 			switch reason {
 			case cache.ReasonRepositoryMissing:
 				must(t, os.RemoveAll(f.c.RepoDir(repository)))
 			case cache.ReasonCommitMissing:
 				var err error
-				f.site, err = f.s.Publish(context.Background(), f.site.ID, strings.Repeat("a", 40))
+				f.site, err = f.s.Publish(context.Background(), f.site.ID, strings.Repeat("a", 40), "")
+				must(t, err)
+			case cache.ReasonDirectoryMissing:
+				var err error
+				f.site, err = f.s.Publish(context.Background(), f.site.ID, f.sha, "absent")
 				must(t, err)
 			case cache.ReasonTooLarge:
 				s := settings.Defaults()
@@ -673,7 +677,7 @@ func TestCanceledAndHaltedRebuildWritesNothing(t *testing.T) {
 	for _, halt := range []bool{false, true} {
 		t.Run(strconv.FormatBool(halt), func(t *testing.T) {
 			f := newFixture(t, map[string]string{"index.html": "index"})
-			must(t, os.RemoveAll(f.c.Dir(f.site.ID, f.sha)))
+			must(t, os.RemoveAll(f.c.Dir(f.site.ID, f.sha, "")))
 			r := f.req("GET", "/blog/", "")
 			ctx, cancel := context.WithCancel(r.Context())
 			defer cancel()
@@ -689,7 +693,7 @@ func TestCanceledAndHaltedRebuildWritesNothing(t *testing.T) {
 				}
 				f.joined = func(string, string) { close(joined) }
 				direct := make(chan struct{})
-				go func() { defer close(direct); _, _ = f.c.Tree(context.Background(), f.site.ID, repository, f.sha) }()
+				go func() { defer close(direct); _, _ = f.c.Tree(context.Background(), f.site.ID, repository, f.sha, "") }()
 				wait(t, entered)
 				done := make(chan struct{})
 				writer := &recordingWriter{header: make(http.Header)}
@@ -726,7 +730,7 @@ func TestEventsFollowCompletedWriteContext(t *testing.T) {
 			t.Run(fmt.Sprintf("unavailable=%t/canceled=%t", unavailable, canceled), func(t *testing.T) {
 				f := newFixture(t, map[string]string{"index.html": strings.Repeat("x", 65536)})
 				if unavailable {
-					must(t, os.RemoveAll(f.c.Dir(f.site.ID, f.sha)))
+					must(t, os.RemoveAll(f.c.Dir(f.site.ID, f.sha, "")))
 					must(t, os.RemoveAll(f.c.RepoDir(repository)))
 				}
 				r := f.req("GET", "/blog/", "")
@@ -764,7 +768,7 @@ func TestEventsFollowCompletedWriteContext(t *testing.T) {
 	}
 }
 
-// R-FIXY-O09W R-FK5V-1S0L R-W85P-WL7K
+// R-FIXY-O09W R-FK5V-1S0L R-5NE2-IDVI
 func TestApexAnswersWithoutTreeOrMethodGate(t *testing.T) {
 	f := newFixture(t, map[string]string{"index.html": "private"})
 	before := f.operations.Load()
@@ -780,7 +784,7 @@ func TestApexAnswersWithoutTreeOrMethodGate(t *testing.T) {
 	}
 	_, err := f.s.SetApex(context.Background(), f.site.ID)
 	must(t, err)
-	must(t, os.RemoveAll(f.c.Dir(f.site.ID, f.sha)))
+	must(t, os.RemoveAll(f.c.Dir(f.site.ID, f.sha, "")))
 	must(t, os.RemoveAll(f.c.RepoDir(repository)))
 	for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
 		for _, user := range []string{"", "u_other"} {
@@ -803,7 +807,7 @@ func TestApexAnswersWithoutTreeOrMethodGate(t *testing.T) {
 	if f.operations.Load() != before {
 		t.Fatal("apex started git")
 	}
-	if _, err = os.Stat(f.c.Dir(f.site.ID, f.sha)); !os.IsNotExist(err) {
+	if _, err = os.Stat(f.c.Dir(f.site.ID, f.sha, "")); !os.IsNotExist(err) {
 		t.Fatal("apex rebuilt tree")
 	}
 	if len(f.events()) != 0 {
@@ -818,7 +822,7 @@ func TestApexAnswersWithoutTreeOrMethodGate(t *testing.T) {
 	assertHeader(t, f.answer(r, true), "Location", urls.ApexBase(r, "")+"/empty/")
 }
 
-// R-UEU7-2XUB R-UIHW-892E R-LON3-52D8 R-ZZDT-YTVL R-RFVG-0T9A
+// R-UEU7-2XUB R-UIHW-892E R-LON3-52D8 R-PX8N-N4Z0 R-RFVG-0T9A
 func TestViewCookieAndExactAttrs(t *testing.T) {
 	for _, method := range []string{"GET", "HEAD"} {
 		for _, user := range []string{"", "u_fixture"} {
@@ -951,7 +955,7 @@ func treeSnapshot(t *testing.T, root string) map[string]string {
 	return snapshot
 }
 
-// R-FFA9-IP1T R-Y4VI-FE92
+// R-FFA9-IP1T R-5M66-4M4T
 func TestCachedAnswersPreserveEntireTreeAndCatalog(t *testing.T) {
 	f := newFixture(t, map[string]string{"index.html": "index", "404.html": "missing", "about/index.html": "about"})
 	_, err := f.s.SetApex(context.Background(), f.site.ID)
@@ -1029,23 +1033,32 @@ func (w *publishWriter) Write(p []byte) (int, error) {
 	return w.ResponseRecorder.Write(p)
 }
 
-// R-ZZDT-YTVL R-LON3-52D8
+// R-PX8N-N4Z0 R-LON3-52D8
 func TestViewCommitRemainsTheAnsweredCommit(t *testing.T) {
-	f := newFixture(t, map[string]string{"index.html": "old bytes"})
-	r := f.req("GET", "/blog/?private-query=hidden", "")
-	r.Header.Set("Cookie", visitor.CookieName+"="+visitorID)
-	newer := strings.Repeat("b", 40)
-	writer := &publishWriter{ResponseRecorder: httptest.NewRecorder(), publish: func() { _, err := f.s.Publish(context.Background(), f.site.ID, newer); must(t, err) }}
-	f.handler(false).ServeHTTP(writer, r)
-	assertStatus(t, writer.ResponseRecorder, 200)
-	if writer.Body.String() != "old bytes" {
-		t.Fatal("changed body")
-	}
-	assertHeader(t, writer.ResponseRecorder, "ETag", "\""+f.sha+"\"")
-	events := f.events()
-	want := telemetry.Attrs{"site": f.site.ID, "visitor": visitorID, "path": "/blog/", "status": int64(200), "referrer_host": "", "commit": f.sha}
-	if len(events) != 1 || !reflect.DeepEqual(events[0].Attrs, want) {
-		t.Fatalf("wrong response snapshot event %v", events)
+	for _, source := range []string{"", "docs"} {
+		t.Run(source, func(t *testing.T) {
+			f := newFixture(t, map[string]string{"index.html": "root bytes", "docs/index.html": "directory bytes"})
+			f.site = publishPath(t, f, f.site, source)
+			r := f.req("GET", "/blog/?private-query=hidden", "")
+			r.Header.Set("Cookie", visitor.CookieName+"="+visitorID)
+			newer := strings.Repeat("b", 40)
+			writer := &publishWriter{ResponseRecorder: httptest.NewRecorder(), publish: func() { _, err := f.s.Publish(context.Background(), f.site.ID, newer, ""); must(t, err) }}
+			f.handler(false).ServeHTTP(writer, r)
+			assertStatus(t, writer.ResponseRecorder, 200)
+			expectedBody := "root bytes"
+			if source != "" {
+				expectedBody = "directory bytes"
+			}
+			if writer.Body.String() != expectedBody {
+				t.Fatal("changed body")
+			}
+			assertHeader(t, writer.ResponseRecorder, "ETag", publishedTag(f.sha, source))
+			events := f.events()
+			want := telemetry.Attrs{"site": f.site.ID, "visitor": visitorID, "path": "/blog/", "status": int64(200), "referrer_host": "", "commit": f.sha}
+			if len(events) != 1 || events[0].Name != "site.viewed" || events[0].RequestID != r.Header.Get("X-Request-Id") || !reflect.DeepEqual(events[0].Attrs, want) {
+				t.Fatalf("wrong response snapshot event %v", events)
+			}
+		})
 	}
 }
 

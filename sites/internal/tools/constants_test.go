@@ -8,12 +8,14 @@ import (
 	"github.com/ikigenba/ikigenba/sites/internal/tools"
 )
 
-// R-ZKQP-Z7MQ
+// R-9QVI-4AFH
 func TestRefusalCopyConstants(t *testing.T) {
 	const (
 		missing     string = tools.MissingSite
 		name        string = tools.InvalidName
 		ref         string = tools.InvalidRef
+		path        string = tools.InvalidPath
+		directory   string = tools.NoDirectory
 		taken       string = tools.NameTaken
 		repo        string = tools.NoRepository
 		unavailable string = tools.RepoUnavailable
@@ -27,7 +29,7 @@ func TestRefusalCopyConstants(t *testing.T) {
 		git         string = tools.GitFailed
 	)
 	seen := map[string]bool{}
-	all := []string{missing, name, ref, taken, repo, unavailable, commit, timeout, size, visibility, update, both, apex, git}
+	all := []string{missing, name, ref, path, taken, repo, unavailable, commit, directory, timeout, size, visibility, update, both, apex, git}
 	for i, c := range all {
 		if c == "" || strings.Contains(c, "\n") || seen[c] {
 			t.Fatalf("invalid copy constant %d", i)
@@ -35,12 +37,17 @@ func TestRefusalCopyConstants(t *testing.T) {
 		seen[c] = true
 		var result string
 		switch {
-		case i < 7:
+		case i == 8:
+			result = fmt.Sprintf(c, "operand-probe", "ref-probe")
+			if !strings.Contains(result, "operand-probe") || !strings.Contains(result, "ref-probe") {
+				t.Fatalf("directory operands: %s", result)
+			}
+		case i < 8:
 			result = fmt.Sprintf(c, "operand-probe")
 			if strings.Count(result, "operand-probe") != 1 {
 				t.Fatalf("string operand in constant %d", i)
 			}
-		case i < 9:
+		case i < 11:
 			result = fmt.Sprintf(c, 918273)
 			if result == fmt.Sprintf(c, 0) {
 				t.Fatalf("integer operand not used in constant %d", i)

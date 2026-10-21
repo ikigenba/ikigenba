@@ -28,10 +28,10 @@ func TestDeliveryDoesNotChangeAnswers(t *testing.T) {
 	f.repository(t)
 	sha := f.commit(t, "site body")
 	site := f.add(t, "blog", store.Public)
-	if e := f.cfg.Cache.Unpack(context.Background(), site.ID, site.Repo, sha); e != nil {
+	if e := f.cfg.Cache.Unpack(context.Background(), site.ID, site.Repo, sha, ""); e != nil {
 		t.Fatal(e)
 	}
-	if _, e := f.cfg.Store.Publish(context.Background(), site.ID, sha); e != nil {
+	if _, e := f.cfg.Store.Publish(context.Background(), site.ID, sha, ""); e != nil {
 		t.Fatal(e)
 	}
 	baseline := map[string]struct {
