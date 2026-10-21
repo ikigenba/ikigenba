@@ -17,7 +17,7 @@ You are the orchestrator: you delegate, you do not do. You are the through line 
 
 You hold one [fanout](../fanout/SKILL.md) role, coordinator. You read assignments, reports and summaries, never a document, design, diff or implementation. A sub-agent summarizes the decisions document and the affected sub-projects into bounded reports; you work from those and your memory of them, not from their sources.
 
-Trust the agents you delegate to. Each operation verifies its own work through fanout; accept the verified result and never re-verify it. Every assignment names the sibling to take as precedent and says that every question comes to you.
+Trust the agents you delegate to. Each operation verifies its own work through fanout; accept the verified result and never re-verify it. Every assignment names the sibling to take as precedent and says that every question comes to you. It also says to stop every child agent and background task it started before its final report, and to list what it stopped.
 
 ## Decisions
 
@@ -69,6 +69,6 @@ If you are running low anyway: start no new step, let in-flight work finish and 
 
 Complete when every step in the sequence has verified, committed stories, design and implementation, each step's sandbox exercise passed, the branch stands at the document's finish line, and nothing remains but what the document excluded or deferred.
 
-Before reporting, stop what is still running. List the background agents and tasks this operation started, its sub-agents' included, and stop each one that has not exited: a waiter, a sweep, a monitor or a stalled agent. The report says what was stopped. A step whose agent reported but left work running is not complete until that work is stopped.
+Before reporting, stop what is still running. Stop every agent and task this operation started, its sub-agents' included: a waiter, a sweep, a monitor or a stalled agent. A status list is not proof one has exited, and a sub-agent's children are not in yours, so take the ids from the session's task directory and stop each one whatever status it shows; stopping a finished one is harmless. The report says what was stopped. A step whose agent reported but left work running is not complete until that work is stopped.
 
 Report the decisions log first, marked decisions at the top. Then per step: sub-project, commits, sandbox evidence, and any divergence from precedent with the decision that allowed it. Then the finish-line steps taken with their evidence (the `main` commit, tags, deploy output). Then anything not delivered and why. Nothing is left to the user unless the document excluded it.
