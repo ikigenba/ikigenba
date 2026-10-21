@@ -193,8 +193,10 @@
      result failed), .PlaceURL (the Google Maps link that opens .Address,
      built by code; empty unless the result routed, .Minutes and .Address
      both set) and .DirectionsURL (the Google Maps driving directions link
-     from the origin the result was measured from, as stored, to .Address,
-     built by code; empty exactly when .PlaceURL is). .Failed (bool, true for a
+     from the origin to .Address, built by code; set only when that
+     result's origin is known to be the current one, its inputs matching
+     the candidate's current drive_route inputs, so it may be empty while
+     .PlaceURL is set). .Failed (bool, true for a
      site_text, brief or website_search result whose
      prompts run ended failed, killed or timed_out or exited non-zero, for
      a brief result whose run exited 0 with an empty summary or with
