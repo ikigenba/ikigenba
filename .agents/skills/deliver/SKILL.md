@@ -67,4 +67,6 @@ If you are running low anyway: start no new step, let in-flight work finish and 
 
 Complete when every step in the sequence has verified, committed stories, design and implementation, each step's sandbox exercise passed, the branch stands at the document's finish line, and nothing remains but what the document excluded or deferred.
 
+Before reporting, stop what is still running. List the background agents and tasks this operation started, its sub-agents' included, and stop each one that has not exited: a waiter, a sweep, a monitor or a stalled agent. The report says what was stopped. A step whose agent reported but left work running is not complete until that work is stopped.
+
 Report the decisions log first, marked decisions at the top. Then per step: sub-project, commits, sandbox evidence, and any divergence from precedent with the decision that allowed it. Then the finish-line steps taken with their evidence (the `main` commit, tags, deploy output). Then anything not delivered and why. Nothing is left to the user unless the document excluded it.
