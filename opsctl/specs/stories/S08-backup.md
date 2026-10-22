@@ -224,18 +224,21 @@ starts litestream again. Both leave `litestream.service` alone when the regenera
 file is byte for byte the old one. `init` alone enables the unit; the others
 assume it is enabled, because `init` ran before any app reached the host.
 
-The generated file turns litestream's own retention off (`retention:
-enabled: false`). The host's role can write to the bucket but never delete
-from it, and litestream's retention deletes: left on, every retention pass
-would be refused and logged for the life of the host. Off, litestream never
-attempts a delete, and the bucket's expiry is the only retention there is.
-The consequence is that every snapshot and every change file stays until it
-expires, so `restore --at` can name any instant inside the bucket's expiry
-window, not only the last day. Verified against litestream 0.5.17, the
-version first boot installs, where the key guards every path that deletes
-from a replica. The same file tells litestream to address the bucket
-path-style (`force-path-style: true` on every replica), because the bucket's
-name has dots in it.
+The generated file turns litestream's own retention on, and litestream
+prunes its own replicas. A declared database is snapshotted whole every
+`backup.service_db_seconds`, or every 24 hours, litestream's default, when
+that is unset. The file keeps snapshots for two and a half of those periods,
+a duration, as litestream 0.5.17, the version first boot installs, takes it:
+60 hours at the daily period, which keeps three snapshots. litestream deletes
+what is older. There is no setting of its own; it follows from the period.
+How long litestream keeps its level-0 change files is its own default: the
+file sets neither that retention nor how often it is checked. The bucket's
+30-day expiry remains, as a backstop for anything litestream leaves behind.
+The consequence is that `restore --at` reaches back to the oldest kept
+snapshot, about two to three days at the daily period, no longer the
+bucket's whole 30-day window. The same file tells litestream to address
+the bucket path-style (`force-path-style: true` on every replica), because
+the bucket's name has dots in it.
 
 ## An operator asks what `backup` can do
 
@@ -1419,10 +1422,9 @@ Postconditions:
 
 ## An operator asks for a moment with no backup before it
 
-The tarball is the half that can be missing: litestream's objects begin when
-replication began, but the files begin at the first timer run. A moment before
-the first tarball has nothing to restore the files from, and the restore stops
-before it stops anything.
+The tarball is one half that can be missing: the files begin at the first
+timer run. A moment before the first tarball has nothing to restore the files
+from, and the restore stops before it stops anything.
 
 Command:
 
