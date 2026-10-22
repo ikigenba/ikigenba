@@ -60,7 +60,7 @@ leaves candidates with no routes client and a targeted enrich of
 `drive_route` refused; the origin defaults to Sandstone, MN. The key is
 never written to its database, its trail, a page or a tool's answer. It keeps its candidates, links, estimates,
 judgments, enrichment results, facts and kept pages, the owner's rulings,
-prospect lists and rejects, its
+prospect lists, rejects and opens, its
 campaign uses, its passes and the ZIP drive-time table in its own
 SQLite database, `state/candidates.db` resolved against the working
 directory and opened through appkit's `db` package; it is the only writer of
@@ -111,7 +111,7 @@ build run writes the Go source, the tests, `go.mod`'s requirements and
 `0008_windows.sql`, `0009_judgments.sql`, `0010_cohorts.sql`,
 `0011_enrichments.sql`, `0012_facts.sql`, `0013_site_text.sql`,
 `0014_brief.sql`, `0015_website_search.sql`, `0016_campaign_uses.sql`,
-`0017_prospect_lists.sql` and `0018_drive_route.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
+`0017_prospect_lists.sql`, `0018_drive_route.sql` and `0019_opens.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
 and the nginx fragment `etc/nginx.conf`). The
 delivery that created candidates seeded `go.mod` on appkit; the build run
 owns it and `go.sum` from then on and changes them as design says. It never
@@ -351,7 +351,7 @@ builds the store over that handle with `store.New`. Tests may create
 filesystem fixtures inside that temporary tree (a regular file named
 `state`, a file at `state/candidates.db` that is not a database, a database
 a test's own `db.Open` made and then changed through `DB.Write`, candidates,
-links, rulings, prospect lists, rejects, enrichments, pages, ZIP tables and passes a test's
+links, rulings, prospect lists, rejects, opens, enrichments, pages, ZIP tables and passes a test's
 own store recorded, passes left
 `running`, `done` or `failed`); nothing touches
 `/var/opt/ikigenba/candidates`, the checkout's `state/` or a shared file. A
@@ -570,5 +570,5 @@ takes effect only at the next activation, a push followed by a deploy. The host'
 whole, so `candidates.db` is taken with it; it holds candidates, their
 evidence copied from public records, their enrichment results, facts and
 kept pages, the owner's
-rulings, prospect lists and rejects, the campaign uses and the passes, and no
+rulings, prospect lists, rejects and opens, the campaign uses and the passes, and no
 secret.
