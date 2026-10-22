@@ -67,11 +67,12 @@
      members of the previous open that are not members of this one, in
      their rank at the previous open, each with .Candidate (its cand_ id),
      .Name (its display name now), .BasisThen (its basis at the previous open), .BasisNow (its basis
-     now, worked out as a member's is), .Why ("filter" when it now fails
+     now, worked out as a member's is; empty when .Why is "gone"), .Why ("filter" when it now fails
      a filter, "rejected" when it was rejected from this prospect list,
      "excluded" when the owner excluded it everywhere, "cut" when it still
-     passes the filters and the order pushed it below the size cut) and
-     .Filter (the name of the filter it now fails, as the prospect list's
+     passes the filters and the order pushed it below the size cut,
+     "gone" when it is no longer in the corpus, merged away or no longer
+     judged) and .Filter (the name of the filter it now fails, as the prospect list's
      filters name it, "max_minutes"; empty unless .Why is "filter"));
      .Members, the first
      .Size of those, in the prospect list's order, each with .Rank (int, its
@@ -200,11 +201,12 @@
      per row holding td.left-candidate (as td.joined-candidate),
      td.left-basis-then[data-basis=<.BasisThen>] and
      td.left-basis-now[data-basis=<.BasisNow>] (each its basis in a code
-     element) and td.left-why[data-why=<.Why>] (for "filter", "fails the "
+     element; td.left-basis-now empty when .BasisNow is) and td.left-why[data-why=<.Why>] (for "filter", "fails the "
      then .Filter in a code element then " filter", the td carrying also
      [data-filter=<.Filter>]; "rejected from this prospect list" for
      "rejected"; "excluded everywhere" for "excluded"; "still passes,
-     pushed below the size cut by the order" for "cut").
+     pushed below the size cut by the order" for "cut"; "no longer in the
+     corpus: merged away or no longer judged" for "gone").
      section#members with h2 "Members" and a p in its header (text "The
      first of the <.Matching> matching candidates in the prospect list's order,
      up to its size of <.Size>, worked out as this page was read. An unknown value sorts last
@@ -330,8 +332,8 @@
 {{range .Left}}<tr data-left="{{.Candidate}}">
 <td class="left-candidate"><a class="candidate-link" href="/candidates/{{.Candidate}}">{{.Name}}</a><span class="secondary-text"><code>{{.Candidate}}</code></span></td>
 <td class="left-basis-then" data-basis="{{.BasisThen}}"><code>{{.BasisThen}}</code></td>
-<td class="left-basis-now" data-basis="{{.BasisNow}}"><code>{{.BasisNow}}</code></td>
-<td class="left-why" data-why="{{.Why}}"{{if eq .Why "filter"}} data-filter="{{.Filter}}"{{end}}>{{if eq .Why "filter"}}fails the <code>{{.Filter}}</code> filter{{else if eq .Why "rejected"}}rejected from this prospect list{{else if eq .Why "excluded"}}excluded everywhere{{else if eq .Why "cut"}}still passes, pushed below the size cut by the order{{end}}</td>
+<td class="left-basis-now" data-basis="{{.BasisNow}}">{{if .BasisNow}}<code>{{.BasisNow}}</code>{{end}}</td>
+<td class="left-why" data-why="{{.Why}}"{{if eq .Why "filter"}} data-filter="{{.Filter}}"{{end}}>{{if eq .Why "filter"}}fails the <code>{{.Filter}}</code> filter{{else if eq .Why "rejected"}}rejected from this prospect list{{else if eq .Why "excluded"}}excluded everywhere{{else if eq .Why "cut"}}still passes, pushed below the size cut by the order{{else if eq .Why "gone"}}no longer in the corpus: merged away or no longer judged{{end}}</td>
 </tr>
 {{end}}</tbody>
 </table>
