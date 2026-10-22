@@ -53,6 +53,7 @@ func (v Candidate) MarshalJSON() ([]byte, error) {
 // Member is a prospectList member's stored judgment.
 type Member struct {
 	Candidate           Candidate `json:"candidate"`
+	Basis               string    `json:"basis"`
 	OperatingConfidence *float64  `json:"operating_confidence,omitempty"`
 	RevenueLow          *int64    `json:"revenue_low,omitempty"`
 	RevenueHigh         *int64    `json:"revenue_high,omitempty"`
@@ -138,6 +139,8 @@ type ProspectListRead struct {
 	ProspectList ProspectList `json:"prospect_list"`
 	Matching     int64        `json:"matching"`
 	Classified   int64        `json:"classified"`
+	ByBasis      BasisCounts  `json:"by_basis"`
+	Changes      Changes      `json:"changes"`
 	Members      []Member     `json:"members"`
 	Rejects      []Reject     `json:"rejects"`
 }
@@ -355,8 +358,76 @@ func (v Brief) MarshalJSON() ([]byte, error) {
 	return json.Marshal(plain(v))
 }
 
+// BasisCounts counts the returned members at each enrichment basis.
+type BasisCounts struct {
+	Records  int64 `json:"records"`
+	Partial  int64 `json:"partial"`
+	Enriched int64 `json:"enriched"`
+}
+
+// Changes describes membership changes since the previous open.
+type Changes struct {
+	Since             *string  `json:"since"`
+	DefinitionChanged []string `json:"definition_changed"`
+	Joined            []Joined `json:"joined"`
+	Left              []Left   `json:"left"`
+}
+
+// Joined describes a newly returned member.
+type Joined struct {
+	Candidate string `json:"candidate"`
+	Name      string `json:"name"`
+	Basis     string `json:"basis"`
+	Why       string `json:"why"`
+}
+
+// Left describes a previously returned member.
+type Left struct {
+	Candidate string `json:"candidate"`
+	Name      string `json:"name"`
+	BasisThen string `json:"basis_then"`
+	BasisNow  string `json:"basis_now,omitempty"`
+	Why       string `json:"why"`
+	Filter    string `json:"filter,omitempty"`
+}
+
+// MarshalJSON encodes empty change collections as arrays.
+func (v Changes) MarshalJSON() ([]byte, error) {
+	type plain Changes
+	if v.DefinitionChanged == nil {
+		v.DefinitionChanged = []string{}
+	}
+	if v.Joined == nil {
+		v.Joined = []Joined{}
+	}
+	if v.Left == nil {
+		v.Left = []Left{}
+	}
+	return json.Marshal(plain(v))
+}
+
+// Kinds identifies present and missing targeted enrichment kinds.
+type Kinds struct {
+	Present []string `json:"present"`
+	Missing []string `json:"missing"`
+}
+
+// MarshalJSON encodes empty kind collections as arrays.
+func (v Kinds) MarshalJSON() ([]byte, error) {
+	type plain Kinds
+	if v.Present == nil {
+		v.Present = []string{}
+	}
+	if v.Missing == nil {
+		v.Missing = []string{}
+	}
+	return json.Marshal(plain(v))
+}
+
 // Enrichments holds the facts and brief apart from judgments.
 type Enrichments struct {
+	Basis string `json:"basis"`
+	Kinds Kinds  `json:"kinds"`
 	Facts *Facts `json:"facts,omitempty"`
 	Brief *Brief `json:"brief,omitempty"`
 }
@@ -453,6 +524,12 @@ type ProspectListArgs struct {
 	ProspectList string `json:"prospect_list" mcp:"required"`
 }
 
+// ReadProspectListArgs selects a list and whether to record an open.
+type ReadProspectListArgs struct {
+	ProspectList string `json:"prospect_list" mcp:"required"`
+	Peek         bool   `json:"peek"`
+}
+
 // FilterArgs holds a prospectList's filters.
 type FilterArgs struct {
 	RevenueMin         *uint32   `json:"revenue_min"`
@@ -472,6 +549,7 @@ type FilterArgs struct {
 	MinCampaignAgeDays *uint32   `json:"min_campaign_age_days"`
 	Class              string    `json:"class"`
 	ClassUnknown       bool      `json:"class_unknown"`
+	Basis              *[]string `json:"basis"`
 	ShowExcluded       bool      `json:"show_excluded"`
 }
 

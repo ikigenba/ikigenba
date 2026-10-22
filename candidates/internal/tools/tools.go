@@ -137,12 +137,18 @@ func Register(srv *mcp.Server, cfg Config) {
 		}
 		return answer(out)
 	})
-	add(srv, "prospect_list", DescribeProspectList, mcp.Read, func(ctx context.Context, _ identity.Caller, a ProspectListArgs) mcp.Result {
+	add(srv, "prospect_list", DescribeProspectList, mcp.Read, func(ctx context.Context, c identity.Caller, a ReadProspectListArgs) mcp.Result {
 		a.ProspectList = store.MapListID(a.ProspectList)
 		if !store.ValidProspectListID(a.ProspectList) {
 			return refuse(passes.RefusalNotFound)
 		}
-		r, err := cfg.Store.ReadProspectList(ctx, a.ProspectList)
+		var r store.ProspectListRead
+		var err error
+		if a.Peek {
+			r, err = cfg.Store.ReadProspectList(ctx, a.ProspectList)
+		} else {
+			r, err = cfg.Store.OpenProspectList(ctx, a.ProspectList, c.UserID, c.Email)
+		}
 		if err != nil {
 			return failure(err)
 		}
@@ -470,7 +476,7 @@ func briefOf(es []store.Enrichment) *Brief {
 func memberOf(e store.Ranked) Member {
 	a := e.Judgments
 	f := e.Facts
-	v := Member{Candidate: candidateOf(e.Candidate), OperatingConfidence: a.Operating, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(f.Categories), FleetVerdict: f.FleetVerdict, Website: f.Website, WebsiteURL: f.WebsiteURL, WebsiteSource: f.WebsiteSource, KnownSince: date(f.KnownSince), NewestFiling: date(f.NewestFiling), Excluded: a.Excluded, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch}
+	v := Member{Candidate: candidateOf(e.Candidate), Basis: e.Basis, OperatingConfidence: a.Operating, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(f.Categories), FleetVerdict: f.FleetVerdict, Website: f.Website, WebsiteURL: f.WebsiteURL, WebsiteSource: f.WebsiteSource, KnownSince: date(f.KnownSince), NewestFiling: date(f.NewestFiling), Excluded: a.Excluded, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch}
 	if !e.SiteText.IsZero() {
 		t := stamp(e.SiteText)
 		v.SiteText = &t
@@ -548,6 +554,8 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 		if err != nil {
 			return failure(err)
 		}
+		out.Enrichments.Basis = store.BasisOf(enrichments)
+		out.Enrichments.Kinds.Present, out.Enrichments.Kinds.Missing = store.KindsOf(enrichments)
 		out.Enrichments.Brief = briefOf(enrichments)
 		for _, e := range enrichments {
 			out.EnrichmentResults = append(out.EnrichmentResults, enrichmentOf(e, subject))
@@ -628,6 +636,18 @@ func rejectOf(r store.Reject) Reject {
 }
 func prospectListReadOf(r store.ProspectListRead) ProspectListRead {
 	v := ProspectListRead{ProspectList: prospectListOf(r.ProspectList), Matching: r.Matching, Classified: r.Classified, Members: []Member{}, Rejects: []Reject{}}
+	v.ByBasis = BasisCounts{Records: r.ByBasis.Records, Partial: r.ByBasis.Partial, Enriched: r.ByBasis.Enriched}
+	if !r.Changes.Since.IsZero() {
+		t := stamp(r.Changes.Since)
+		v.Changes.Since = &t
+	}
+	v.Changes.DefinitionChanged = append([]string{}, r.Changes.DefinitionChanged...)
+	for _, j := range r.Changes.Joined {
+		v.Changes.Joined = append(v.Changes.Joined, Joined{j.Candidate, j.Name, j.Basis, j.Why})
+	}
+	for _, l := range r.Changes.Left {
+		v.Changes.Left = append(v.Changes.Left, Left{l.Candidate, l.Name, l.BasisThen, l.BasisNow, l.Why, l.Filter})
+	}
 	for _, m := range r.Members {
 		v.Members = append(v.Members, memberOf(m))
 	}
@@ -655,7 +675,11 @@ func filterOf(a FilterArgs) store.ProspectListFilters {
 	if a.Website != nil {
 		websites = append([]string{}, (*a.Website)...)
 	}
-	return store.ProspectListFilters{RevenueMin: int64Of(a.RevenueMin), RevenueMax: int64Of(a.RevenueMax), RevenueUnknown: a.RevenueUnknown, MaxMinutes: int64Of(a.MaxMinutes), MinutesUnknown: a.MinutesUnknown, Categories: append([]string(nil), a.Categories...), CategoryUnknown: a.CategoryUnknown, Fleet: a.Fleet, FleetUnknown: a.FleetUnknown, Website: websites, WebsiteUnknown: a.WebsiteUnknown, Government: a.Government, MaxFilingAgeDays: int64Of(a.MaxFilingAgeDays), FilingUnknown: a.FilingUnknown, MinCampaignAgeDays: int64Of(a.MinCampaignAgeDays), Class: a.Class, ClassUnknown: a.ClassUnknown, ShowExcluded: a.ShowExcluded}
+	var basis []string
+	if a.Basis != nil {
+		basis = append([]string{}, (*a.Basis)...)
+	}
+	return store.ProspectListFilters{Basis: basis, RevenueMin: int64Of(a.RevenueMin), RevenueMax: int64Of(a.RevenueMax), RevenueUnknown: a.RevenueUnknown, MaxMinutes: int64Of(a.MaxMinutes), MinutesUnknown: a.MinutesUnknown, Categories: append([]string(nil), a.Categories...), CategoryUnknown: a.CategoryUnknown, Fleet: a.Fleet, FleetUnknown: a.FleetUnknown, Website: websites, WebsiteUnknown: a.WebsiteUnknown, Government: a.Government, MaxFilingAgeDays: int64Of(a.MaxFilingAgeDays), FilingUnknown: a.FilingUnknown, MinCampaignAgeDays: int64Of(a.MinCampaignAgeDays), Class: a.Class, ClassUnknown: a.ClassUnknown, ShowExcluded: a.ShowExcluded}
 }
 func orderOf(a []OrderArgs) []store.ProspectListOrder {
 	v := []store.ProspectListOrder{}

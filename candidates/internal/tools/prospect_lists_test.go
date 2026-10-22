@@ -19,20 +19,21 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-QJXD-VJCO R-WSS0-FVUB R-A3AZ-5YRP R-QW4D-P8RM R-2S53-YQ1D R-ODVT-E7W8 R-A9EH-2TH6 R-3NUH-WRBF R-MZVX-PMHR
+// R-QJXD-VJCO R-SNEV-M7SS R-A3AZ-5YRP R-QW4D-P8RM R-2S53-YQ1D R-ODVT-E7W8 R-A9EH-2TH6 R-XH5T-2X52 R-SR2K-RJ0V R-SOMR-ZZJH
 func TestProspectListExactSchemas(t *testing.T) {
 	f := newFixture(t)
 	infos, err := f.client.ListTools(t.Context(), caller)
 	if err != nil {
 		t.Fatal(err)
 	}
-	filters := `{"type":"object","properties":{"revenue_min":{"type":"integer","minimum":0},"revenue_max":{"type":"integer","minimum":0},"revenue_unknown":{"type":"boolean"},"max_minutes":{"type":"integer","minimum":0},"minutes_unknown":{"type":"boolean"},"categories":{"type":"array","items":{"type":"string"}},"category_unknown":{"type":"boolean"},"fleet":{"type":"string"},"fleet_unknown":{"type":"boolean"},"website":{"type":"array","items":{"type":"string"}},"website_unknown":{"type":"boolean"},"government":{"type":"boolean"},"max_filing_age_days":{"type":"integer","minimum":0},"filing_unknown":{"type":"boolean"},"min_campaign_age_days":{"type":"integer","minimum":0},"class":{"type":"string"},"class_unknown":{"type":"boolean"},"show_excluded":{"type":"boolean"}},"additionalProperties":false}`
+	filters := `{"type":"object","properties":{"revenue_min":{"type":"integer","minimum":0},"revenue_max":{"type":"integer","minimum":0},"revenue_unknown":{"type":"boolean"},"max_minutes":{"type":"integer","minimum":0},"minutes_unknown":{"type":"boolean"},"categories":{"type":"array","items":{"type":"string"}},"category_unknown":{"type":"boolean"},"fleet":{"type":"string"},"fleet_unknown":{"type":"boolean"},"website":{"type":"array","items":{"type":"string"}},"website_unknown":{"type":"boolean"},"government":{"type":"boolean"},"max_filing_age_days":{"type":"integer","minimum":0},"filing_unknown":{"type":"boolean"},"min_campaign_age_days":{"type":"integer","minimum":0},"class":{"type":"string"},"class_unknown":{"type":"boolean"},"basis":{"type":"array","items":{"type":"string"}},"show_excluded":{"type":"boolean"}},"additionalProperties":false}`
 	order := `{"type":"array","items":{"type":"object","properties":{"field":{"type":"string"},"direction":{"type":"string"}},"required":["field","direction"],"additionalProperties":false}}`
 	want := map[string]string{
 		"create_prospect_list": `{"type":"object","properties":{"name":{"type":"string"},"filters":` + filters + `,"order":` + order + `,"size":{"type":"integer"}},"required":["name"],"additionalProperties":false}`,
 		"edit_prospect_list":   `{"type":"object","properties":{"prospect_list":{"type":"string"},"name":{"type":"string"},"filters":` + filters + `,"order":` + order + `,"size":{"type":"integer"}},"required":["prospect_list"],"additionalProperties":false}`,
 	}
-	for _, n := range []string{"prospect_list", "delete_prospect_list"} {
+	want["prospect_list"] = `{"type":"object","properties":{"prospect_list":{"type":"string"},"peek":{"type":"boolean"}},"required":["prospect_list"],"additionalProperties":false}`
+	for _, n := range []string{"delete_prospect_list"} {
 		want[n] = `{"type":"object","properties":{"prospect_list":{"type":"string"}},"required":["prospect_list"],"additionalProperties":false}`
 	}
 	for _, n := range []string{"exclude", "include"} {
@@ -67,7 +68,7 @@ func rejectExpected(r store.Reject) tools.Reject {
 func memberExpected(r store.Ranked) tools.Member {
 	a := judgmentsExpected(r.Judgments)
 	f := r.Facts
-	v := tools.Member{Candidate: candidateOf(r.Candidate), OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, FleetVerdict: f.FleetVerdict, Website: f.Website, WebsiteURL: f.WebsiteURL, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch, KnownSince: dateExpected(f.KnownSince), NewestFiling: dateExpected(f.NewestFiling), Excluded: a.Excluded, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(r.Facts.Categories)}
+	v := tools.Member{Candidate: candidateOf(r.Candidate), Basis: r.Basis, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, FleetVerdict: f.FleetVerdict, Website: f.Website, WebsiteURL: f.WebsiteURL, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch, KnownSince: dateExpected(f.KnownSince), NewestFiling: dateExpected(f.NewestFiling), Excluded: a.Excluded, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(r.Facts.Categories)}
 	seen := map[string]bool{}
 	for _, c := range f.Categories {
 		seen[c.Name] = true
@@ -80,7 +81,7 @@ func memberExpected(r store.Ranked) tools.Member {
 }
 
 func readExpected(r store.ProspectListRead) tools.ProspectListRead {
-	v := tools.ProspectListRead{ProspectList: prospectListExpected(r.ProspectList), Matching: r.Matching, Classified: r.Classified}
+	v := tools.ProspectListRead{ProspectList: prospectListExpected(r.ProspectList), Matching: r.Matching, Classified: r.Classified, ByBasis: tools.BasisCounts{Records: r.ByBasis.Records, Partial: r.ByBasis.Partial, Enriched: r.ByBasis.Enriched}, Changes: changesExpected(r.Changes)}
 	for _, m := range r.Members {
 		v.Members = append(v.Members, memberExpected(m))
 	}
@@ -100,7 +101,7 @@ func (f *fixture) create(name string) tools.ProspectList {
 }
 
 // R-27ET-GMFK
-// R-VWLI-BAIE R-PRJ2-Q1SR R-MGDJ-LAMN R-3LEP-57U1 R-TKGF-X4CH R-Y7IO-BOXM R-3347-ENPM R-TFTB-22NR R-1LGM-KR32 R-WX6H-SER8
+// R-VWLI-BAIE R-PRJ2-Q1SR R-MGDJ-LAMN R-3LEP-57U1 R-Y7IO-BOXM R-3347-ENPM R-TFTB-22NR R-1LGM-KR32 R-WX6H-SER8
 func TestProspectListLifecycleRejectAndExclusion(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(5)
@@ -131,7 +132,7 @@ func TestProspectListLifecycleRejectAndExclusion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	success(t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: k.ID}), readExpected(read))
+	success(t, f.call("prospect_list", tools.ReadProspectListArgs{ProspectList: k.ID, Peek: true}), readExpected(read))
 	if read.Matching != 5 || len(read.Members) != 2 {
 		t.Fatal(read)
 	}
@@ -149,7 +150,7 @@ func TestProspectListLifecycleRejectAndExclusion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	success(t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: k.ID}), readExpected(read))
+	success(t, f.call("prospect_list", tools.ReadProspectListArgs{ProspectList: k.ID, Peek: true}), readExpected(read))
 	if read.Matching != 4 || len(read.Rejects) != 1 {
 		t.Fatal(read)
 	}
@@ -175,7 +176,7 @@ func TestProspectListLifecycleRejectAndExclusion(t *testing.T) {
 			t.Fatal(got)
 		}
 		for _, prospectList := range []string{k.ID, duplicate.ID} {
-			cr := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: prospectList}))
+			cr := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ReadProspectListArgs{ProspectList: prospectList, Peek: true}))
 			for _, m := range cr.Members {
 				if m.Candidate.ID == id && kind == store.KindExclude {
 					t.Fatal(cr)
@@ -436,7 +437,7 @@ func TestEveryToolUnavailable(t *testing.T) {
 	calls := []struct {
 		name string
 		args any
-	}{{"prospect_lists", tools.ProspectListsArgs{}}, {"prospect_list", tools.ProspectListArgs{ProspectList: k.ID}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: ids[0]}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}}, {"ingest", tools.NoArgs{}}, {"decide", tools.DecideArgs{Kind: store.KindNotSame, Candidate: ids[0], Other: ids[1], Why: "reason"}}, {"exclude", tools.RulingArgs{Candidate: ids[0], Why: "reason"}}, {"include", tools.RulingArgs{Candidate: ids[0], Why: "reason"}}, {"create_prospect_list", tools.CreateProspectListArgs{Name: "valid"}}, {"edit_prospect_list", tools.EditProspectListArgs{ProspectList: k.ID}}, {"delete_prospect_list", tools.ProspectListArgs{ProspectList: k.ID}}, {"reject", tools.RejectArgs{ProspectList: k.ID, Candidate: ids[0], Why: "reason"}}, {"unreject", tools.RejectArgs{ProspectList: k.ID, Candidate: ids[0], Why: "reason"}}}
+	}{{"prospect_lists", tools.ProspectListsArgs{}}, {"prospect_list", tools.ReadProspectListArgs{ProspectList: k.ID, Peek: true}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: ids[0]}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}}, {"ingest", tools.NoArgs{}}, {"decide", tools.DecideArgs{Kind: store.KindNotSame, Candidate: ids[0], Other: ids[1], Why: "reason"}}, {"exclude", tools.RulingArgs{Candidate: ids[0], Why: "reason"}}, {"include", tools.RulingArgs{Candidate: ids[0], Why: "reason"}}, {"create_prospect_list", tools.CreateProspectListArgs{Name: "valid"}}, {"edit_prospect_list", tools.EditProspectListArgs{ProspectList: k.ID}}, {"delete_prospect_list", tools.ProspectListArgs{ProspectList: k.ID}}, {"reject", tools.RejectArgs{ProspectList: k.ID, Candidate: ids[0], Why: "reason"}}, {"unreject", tools.RejectArgs{ProspectList: k.ID, Candidate: ids[0], Why: "reason"}}}
 	for _, call := range calls {
 		refusal(t, f.call(call.name, call.args), passes.RefusalUnavailable, tools.RefuseUnavailable)
 	}
@@ -444,7 +445,7 @@ func TestEveryToolUnavailable(t *testing.T) {
 
 func ptrInt(n int64) *int64 { return &n }
 
-// R-PME2-TQRX
+// R-K0EN-M29C
 func TestToolsContactNoSiblingOrStartPass(t *testing.T) {
 	var requests atomic.Int64
 	var fetched, prompted atomic.Int64
@@ -463,8 +464,8 @@ func TestToolsContactNoSiblingOrStartPass(t *testing.T) {
 		name string
 		args any
 	}{
-		{"prospect_lists", tools.ProspectListsArgs{}}, {"prospect_list", tools.ProspectListArgs{ProspectList: k.ID}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: ids[0]}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}},
-		{"prospect_lists", map[string]any{"page": "bad"}}, {"prospect_list", tools.ProspectListArgs{ProspectList: "bad"}}, {"candidates", map[string]any{"limit": 0}}, {"candidate", tools.CandidateArgs{Candidate: "bad"}}, {"passes", map[string]any{"page": "bad"}}, {"pass", tools.PassArgs{Pass: "bad"}},
+		{"prospect_lists", tools.ProspectListsArgs{}}, {"prospect_list", tools.ReadProspectListArgs{ProspectList: k.ID, Peek: true}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: ids[0]}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}},
+		{"prospect_lists", map[string]any{"page": "bad"}}, {"prospect_list", tools.ReadProspectListArgs{ProspectList: "bad", Peek: true}}, {"candidates", map[string]any{"limit": 0}}, {"candidate", tools.CandidateArgs{Candidate: "bad"}}, {"passes", map[string]any{"page": "bad"}}, {"pass", tools.PassArgs{Pass: "bad"}},
 		{"add_page", tools.AddPageArgs{Candidate: ids[0], URL: "https://acme.test/about"}}, {"create_prospect_list", tools.CreateProspectListArgs{Name: "another"}}, {"decide", tools.DecideArgs{Kind: store.KindNotSame, Candidate: ids[0], Other: ids[1], Why: "separate"}}, {"exclude", tools.RulingArgs{Candidate: ids[0], Why: "excluded"}}, {"include", tools.RulingArgs{Candidate: ids[0], Why: "included"}},
 		{"edit_prospect_list", tools.EditProspectListArgs{ProspectList: k.ID}}, {"reject", tools.RejectArgs{ProspectList: k.ID, Candidate: ids[0], Why: "reject"}}, {"unreject", tools.RejectArgs{ProspectList: k.ID, Candidate: ids[0], Why: "restore"}}, {"delete_prospect_list", tools.ProspectListArgs{ProspectList: k.ID}},
 	} {
@@ -486,6 +487,18 @@ func TestToolsContactNoSiblingOrStartPass(t *testing.T) {
 			t.Fatal(call.name, ps, err)
 		}
 	}
+	result := f.call("judge", tools.NoArgs{})
+	if result.IsError() {
+		t.Fatal(decode(t, result))
+	}
+	record := decodeList[passes.Record](t, result)
+	if got := f.waitEnrich(record.ID); got.Status != store.StatusDone {
+		t.Fatal(got)
+	}
+	if requests.Load() != 0 || prompted.Load() != 0 {
+		t.Fatal("judge contacted sibling", requests.Load(), prompted.Load())
+	}
+
 }
 
 // R-QQW5-TEAW R-6QOY-0DLL
@@ -536,4 +549,19 @@ func dateExpected(t time.Time) string {
 		return ""
 	}
 	return t.UTC().Format("2006-01-02")
+}
+
+func changesExpected(c store.Changes) tools.Changes {
+	v := tools.Changes{DefinitionChanged: c.DefinitionChanged}
+	if !c.Since.IsZero() {
+		at := stamp(c.Since)
+		v.Since = &at
+	}
+	for _, j := range c.Joined {
+		v.Joined = append(v.Joined, tools.Joined{j.Candidate, j.Name, j.Basis, j.Why})
+	}
+	for _, l := range c.Left {
+		v.Left = append(v.Left, tools.Left{l.Candidate, l.Name, l.BasisThen, l.BasisNow, l.Why, l.Filter})
+	}
+	return v
 }

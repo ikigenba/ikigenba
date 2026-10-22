@@ -148,7 +148,7 @@ func TestAddPageRefusals(t *testing.T) {
 	}
 }
 
-// R-Q02D-EFZM R-QM0K-ABC4 R-1J0T-T7LO R-QEP5-ZOVY
+// R-Q02D-EFZM R-QM0K-ABC4 R-TFGK-EXUR R-QEP5-ZOVY
 func TestAddPageCopiesAndCandidateHistory(t *testing.T) {
 	var requests atomic.Int64
 	k := pageChecker(&requests)
@@ -250,7 +250,7 @@ func TestSiteTextProjection(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
 	co := f.create("site projection")
-	before := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: co.ID}))
+	before := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ReadProspectListArgs{ProspectList: co.ID, Peek: true}))
 	if len(before.Members) != 1 || before.Members[0].SiteText != nil {
 		t.Fatal(before)
 	}
@@ -261,7 +261,7 @@ func TestSiteTextProjection(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		after := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: co.ID}))
+		after := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ReadProspectListArgs{ProspectList: co.ID, Peek: true}))
 		if after.Matching != before.Matching || after.Members[0].Candidate.ID != id || after.Members[0].SiteText == nil || *after.Members[0].SiteText != stamp(f.now) {
 			t.Fatal(after)
 		}

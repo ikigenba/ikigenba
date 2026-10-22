@@ -135,7 +135,7 @@ func insertLegacyListRows(ctx context.Context, tx *sql.Tx, suffix string) error 
 	return nil
 }
 
-// R-NM0K-KKQ1
+// R-KV14-69AF
 func TestPreviousReleaseListsAndJudgmentsMigrate(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "state.db")

@@ -57,6 +57,11 @@ func ValidProspectListFilters(f ProspectListFilters) bool {
 		}
 		seen[state] = true
 	}
+	for _, b := range f.Basis {
+		if b != BasisRecords && b != BasisPartial && b != BasisEnriched {
+			return false
+		}
+	}
 	switch f.Class {
 	case "", sources.ClassForHire, sources.ClassPrivate, sources.ClassMixed:
 	default:

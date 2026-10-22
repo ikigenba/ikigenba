@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
@@ -152,7 +153,8 @@ func Handler(cfg Config) http.Handler {
 			w.Header().Set("Location", "/prospect-lists/"+id)
 			w.WriteHeader(http.StatusSeeOther)
 		case prospectList:
-			v, err := cfg.Store.ReadProspectList(r.Context(), hid)
+			caller, _ := identity.FromContext(r.Context())
+			v, err := cfg.Store.OpenProspectList(r.Context(), hid, caller.UserID, caller.Email)
 			if errors.Is(err, store.ErrNotFound) {
 				notfound()
 				return
@@ -162,7 +164,7 @@ func Handler(cfg Config) http.Handler {
 				return
 			}
 			b.Trail = []page.Level{{Name: hid, URL: "/prospect-lists/" + hid}}
-			d := ProspectListData{Banner: b, ProspectList: prospectListView(v.ProspectList), Matching: v.Matching, Classified: v.Classified, Members: []MemberRow{}, Rejects: []RejectRow{}}
+			d := ProspectListData{Banner: b, ProspectList: prospectListView(v.ProspectList), Matching: v.Matching, Classified: v.Classified, ByBasis: basisCountsView(v.ByBasis), Changes: changesView(v.Changes), Members: []MemberRow{}, Rejects: []RejectRow{}}
 			for i, m := range v.Members {
 				d.Members = append(d.Members, memberRow(m, i))
 			}
@@ -258,6 +260,8 @@ func Handler(cfg Config) http.Handler {
 				for _, p := range kept {
 					d.Pages = append(d.Pages, pageRow(p))
 				}
+				d.Enrichments.Basis = store.BasisOf(enrichments)
+				d.Enrichments.Kinds = enrichmentKinds(enrichments)
 				setWebsite(&d.Candidate, enrichments)
 				d.Enrichments.Brief = briefView(enrichments)
 				subject, err := cfg.Store.Subject(r.Context(), cid)

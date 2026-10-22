@@ -79,7 +79,7 @@ func TestSiteTextResultProjection(t *testing.T) {
 	}
 }
 
-// R-45QU-E5K8 R-Q5AL-AAGC R-3ZNC-HAUR
+// R-45QU-E5K8 R-XY08-ASLZ R-3ZNC-HAUR
 func TestKeptPageProjections(t *testing.T) {
 	p := store.Page{Candidate: "cand_0123456789abcdef", Number: 7, URL: "https://fixture.test/", Size: 37, Fetched: fixtureTime(), UserID: "fixture-user", Text: "fixture text"}
 	row := pageRow(p)
@@ -115,7 +115,7 @@ func TestKeptPagePathGrammar(t *testing.T) {
 	}
 }
 
-// R-JWVV-5UD1 R-RO62-HYTL R-UM9B-S0C0 R-WUQP-0V9U
+// R-JWVV-5UD1 R-Y6JI-Z6SU R-UM9B-S0C0 R-WUQP-0V9U
 func TestKeptPageRoutes(t *testing.T) {
 	cfg, d := pageFixture(t)
 	ctx := t.Context()
@@ -193,7 +193,7 @@ func TestKeptPageRoutes(t *testing.T) {
 	}
 }
 
-// R-ZFF2-3FMM
+// R-YCN0-W1IB
 func TestMemberSiteTextStamp(t *testing.T) {
 	for _, at := range []time.Time{{}, fixtureTime()} {
 		v := memberRow(store.Ranked{SiteText: at}, 0)
@@ -254,7 +254,7 @@ func TestAddedTemplateStates(t *testing.T) {
 	}
 }
 
-// R-ZFF2-3FMM
+// R-YCN0-W1IB
 func TestSiteTextCandidateAndProspectListAgree(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()
@@ -330,7 +330,7 @@ func TestTargetPassPage(t *testing.T) {
 	}
 }
 
-// R-Q5AL-AAGC R-3X7J-PRDD R-3ZNC-HAUR
+// R-XY08-ASLZ R-3X7J-PRDD R-3ZNC-HAUR
 // R-JN4O-3OFH
 func TestAddedViewShapes(t *testing.T) {
 	candidate := CandidateData{page.Banner{}, CandidateView{}, nil, nil, []EstimateView{}, []LinkView{}, []RulingView{}, []PageRow{}, []EnrichmentRow{}, []RejectRecordRow{}, []CampaignRow{}}

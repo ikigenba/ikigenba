@@ -21,6 +21,7 @@ type ProspectListFilters struct {
 	MinCampaignAgeDays *int64   `json:"min_campaign_age_days,omitempty"`
 	Class              string   `json:"class,omitempty"`
 	ClassUnknown       bool     `json:"class_unknown,omitempty"`
+	Basis              []string `json:"basis,omitempty"`
 	ShowExcluded       bool     `json:"show_excluded,omitempty"`
 }
 
@@ -63,6 +64,8 @@ type ProspectListRead struct {
 	ProspectList ProspectList
 	Matching     int64
 	Classified   int64
+	ByBasis      BasisCounts
+	Changes      Changes
 	Members      []Ranked
 	Rejects      []Reject
 }
@@ -93,3 +96,54 @@ func MapListID(s string) string {
 	}
 	return s
 }
+
+// Basis, definition and change reason vocabulary.
+const (
+	BasisRecords      = "records"
+	BasisPartial      = "partial"
+	BasisEnriched     = "enriched"
+	DefinitionFilters = "filters"
+	DefinitionOrder   = "order"
+	DefinitionSize    = "size"
+	WhyNew            = "new"
+	WhyPasses         = "passes"
+	WhyMovedUp        = "moved_up"
+	WhyFilter         = "filter"
+	WhyRejected       = "rejected"
+	WhyExcluded       = "excluded"
+	WhyCut            = "cut"
+	WhyGone           = "gone"
+)
+
+// BasisCounts counts members by the evidence supporting their basis.
+type BasisCounts struct{ Records, Partial, Enriched int64 }
+
+// Changes describes membership and definition changes since the previous open.
+type Changes struct {
+	Since             time.Time
+	DefinitionChanged []string
+	Joined            []Joined
+	Left              []Left
+}
+
+// Joined records a member newly present since the previous open.
+type Joined struct{ Candidate, Name, Basis, Why string }
+
+// Left records a previous member absent from the current read.
+type Left struct{ Candidate, Name, BasisThen, BasisNow, Why, Filter string }
+
+// Open records an immutable opening of a prospect list.
+type Open struct {
+	Seq               int64
+	ProspectList      string
+	At                time.Time
+	UserID, UserEmail string
+	Filters           ProspectListFilters
+	Order             []ProspectListOrder
+	Size              int64
+	Members           []OpenMember
+	Passing           []string
+}
+
+// OpenMember keeps one answered member and its basis at opening.
+type OpenMember struct{ Candidate, Basis string }

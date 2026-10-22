@@ -60,6 +60,8 @@ type ProspectListData struct {
 	Banner               page.Banner
 	ProspectList         ProspectListView
 	Matching, Classified int64
+	ByBasis              BasisCountsView
+	Changes              ChangesView
 	Members              []MemberRow
 	Rejects              []RejectRow
 }
@@ -94,13 +96,14 @@ type FiltersView struct {
 	MinCampaignAgeDays     string
 	Class                  string
 	ClassUnknown           bool
+	Basis                  []string
 	ShowExcluded           bool
 }
 
 // MemberRow supplies one prospectList member.
 type MemberRow struct {
 	Rank                                                                                                                                                                                                                 int64
-	ID, Name, City, State, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence                                                                                                                               string
+	ID, Name, City, State, Basis, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence                                                                                                                        string
 	Categories                                                                                                                                                                                                           []string
 	ClassifiedBy, Class, FleetVerdict, Website, WebsiteURL, WebsiteSource, SiteText, SiteTextText, Brief, BriefText, Minutes, MinutesSource, GovernmentMatch, KnownSince, KnownSinceText, NewestFiling, NewestFilingText string
 	Excluded                                                                                                                                                                                                             bool
@@ -307,9 +310,31 @@ type CampaignRow struct {
 
 // EnrichmentsView holds the facts and brief.
 type EnrichmentsView struct {
+	Basis string
+	Kinds KindsView
 	Facts *FactsView
 	Brief *BriefView
 }
 
 // RouteView supplies the routing service result.
 type RouteView struct{ Minutes, Miles, Address, Precision, Status, Why, Error, PlaceURL, DirectionsURL string }
+
+// KindsView separates recorded targeted kinds from absent kinds.
+type KindsView struct{ Present, Missing []string }
+
+// BasisCountsView counts members at each enrichment basis.
+type BasisCountsView struct{ Records, Partial, Enriched int64 }
+
+// ChangesView presents differences from the previous recorded open.
+type ChangesView struct {
+	Since, SinceText  string
+	DefinitionChanged []string
+	Joined            []JoinedRow
+	Left              []LeftRow
+}
+
+// JoinedRow presents a member that joined the list.
+type JoinedRow struct{ Candidate, Name, Basis, Why string }
+
+// LeftRow presents a member that left the list.
+type LeftRow struct{ Candidate, Name, BasisThen, BasisNow, Why, Filter string }

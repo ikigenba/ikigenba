@@ -27,6 +27,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	candidates "github.com/ikigenba/ikigenba/candidates"
+	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
 	"github.com/ikigenba/ikigenba/candidates/internal/routes"
@@ -227,7 +228,7 @@ func (f *fixture) seedWithStep(n int, step time.Duration, tie bool) []string {
 	return ids
 }
 
-// R-8884-IJV3     R-5LVY-DPZS
+// R-8884-IJV3 R-5LVY-DPZS
 // R-0ES5-6S4R R-XMSD-TLBT R-X85L-8CFH R-ZCZ9-BW58
 func TestCatalogAndSchemas(t *testing.T) {
 	f := newFixture(t)
@@ -248,7 +249,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 		t.Fatal(infos)
 	}
 	seen := map[string]bool{}
-	properties := [][]string{{"page", "limit"}, {"prospect_list"}, {"name", "zip", "phone", "page", "limit"}, {"candidate"}, {"page", "limit"}, {"pass"}, {"scraper"}, {}, {"kind", "prospect_list", "candidate", "force"}, {"candidate", "url"}, {"kind", "why", "candidate", "other", "links"}, {"candidate", "why"}, {"candidate", "why"}, {"name", "filters", "order", "size"}, {"prospect_list", "name", "filters", "order", "size"}, {"prospect_list"}, {"prospect_list", "candidate", "why"}, {"prospect_list", "candidate", "why"}}
+	properties := [][]string{{"page", "limit"}, {"prospect_list", "peek"}, {"name", "zip", "phone", "page", "limit"}, {"candidate"}, {"page", "limit"}, {"pass"}, {"scraper"}, {}, {"kind", "prospect_list", "candidate", "force"}, {"candidate", "url"}, {"kind", "why", "candidate", "other", "links"}, {"candidate", "why"}, {"candidate", "why"}, {"name", "filters", "order", "size"}, {"prospect_list", "name", "filters", "order", "size"}, {"prospect_list"}, {"prospect_list", "candidate", "why"}, {"prospect_list", "candidate", "why"}}
 	required := [][]string{nil, {"prospect_list"}, nil, {"candidate"}, nil, {"pass"}, nil, nil, nil, {"candidate", "url"}, {"kind", "why", "candidate"}, {"candidate", "why"}, {"candidate", "why"}, {"name"}, {"prospect_list"}, {"prospect_list"}, {"prospect_list", "candidate", "why"}, {"prospect_list", "candidate", "why"}}
 	for i, info := range infos {
 		if info.Name != want[i].Name || info.Description != want[i].Description || len(info.OutputSchema) != 0 {
@@ -288,9 +289,15 @@ func TestCatalogAndSchemas(t *testing.T) {
 		seen[d] = true
 	}
 	_ = tools.ProspectList{"id", "name", 1, store.ProspectListFilters{}, []store.ProspectListOrder{}, "creator", "email", "created", "changer", "email", "changed"}
-	_ = tools.Member{tools.Candidate{}, nil, nil, nil, nil, nil, "", "", "", "", "", nil, nil, nil, "", "", "", "", false}
+	_ = tools.BasisCounts{0, 0, 0}
+	_ = tools.Changes{nil, nil, nil, nil}
+	_ = tools.Joined{"candidate", "name", "basis", "why"}
+	_ = tools.Left{"candidate", "name", "then", "now", "why", "filter"}
+	_ = tools.Kinds{nil, nil}
+	_ = tools.Enrichments{"basis", tools.Kinds{}, nil, nil}
+	_ = tools.Member{tools.Candidate{}, "", nil, nil, nil, nil, nil, "", "", "", "", "", nil, nil, nil, "", "", "", "", false}
 	_ = tools.Reject{"kind", "prospect_list", "name", "candidate", "why", "user", "email", "at"}
-	_ = tools.ProspectListRead{tools.ProspectList{}, 0, 0, nil, nil}
+	_ = tools.ProspectListRead{tools.ProspectList{}, 0, 0, tools.BasisCounts{}, tools.Changes{}, nil, nil}
 	_ = tools.Judgments{nil, nil, nil, nil, nil, false, 0, ""}
 	_ = tools.Estimate{"source", 1, nil, .5, nil, "", 1}
 	_ = tools.Ruling{"kind", "candidate", "other", nil, "why", "user", "email", "at"}
@@ -307,7 +314,8 @@ func TestCatalogAndSchemas(t *testing.T) {
 	_ = tools.PassesArgs{nil, nil}
 	_ = tools.ProspectListsArgs{nil, nil}
 	_ = tools.ProspectListArgs{"id"}
-	_ = tools.FilterArgs{nil, nil, false, nil, false, nil, false, "", false, nil, false, nil, nil, false, nil, "", false, false}
+	_ = tools.ReadProspectListArgs{"id", false}
+	_ = tools.FilterArgs{nil, nil, false, nil, false, nil, false, "", false, nil, false, nil, nil, false, nil, "", false, nil, false}
 	_ = tools.OrderArgs{"field", "direction"}
 	_ = tools.CreateProspectListArgs{"name", nil, nil, nil}
 	_ = tools.EditProspectListArgs{"id", nil, nil, nil, nil}
@@ -338,9 +346,9 @@ func objectKeys(t *testing.T, b []byte) []string {
 	return out
 }
 
-// R-XFGZ-IYVN R-VWLI-BAIE R-PRJ2-Q1SR R-MGDJ-LAMN R-AOUV-YTEL R-AKDK-IR5F R-O2WP-YA7Z R-QEP5-ZOVY
-// R-YNDH-GZXV
-// R-6131-Z710 R-XFGZ-IYVN R-VWLI-BAIE R-PRJ2-Q1SR R-MGDJ-LAMN R-AOUV-YTEL R-AKDK-IR5F R-O2WP-YA7Z R-QEP5-ZOVY
+// R-XFGZ-IYVN R-VWLI-BAIE R-PRJ2-Q1SR R-MGDJ-LAMN R-SX62-ODQC R-AKDK-IR5F R-STID-J2I9 R-QEP5-ZOVY
+// R-YNDH-GZXV R-SUQ9-WU8Y R-XIDP-GOVR R-SYDZ-25H1
+// R-6131-Z710 R-XFGZ-IYVN R-VWLI-BAIE R-PRJ2-Q1SR R-MGDJ-LAMN R-SX62-ODQC R-AKDK-IR5F R-STID-J2I9 R-QEP5-ZOVY
 func TestAnswerJSONShapes(t *testing.T) {
 	tests := []struct {
 		v      any
@@ -348,9 +356,14 @@ func TestAnswerJSONShapes(t *testing.T) {
 		arrays string
 		object string
 	}{
+		{tools.BasisCounts{}, "records partial enriched", "", ""},
+		{tools.Changes{}, "since definition_changed joined left", "definition_changed joined left", ""},
+		{tools.Joined{}, "candidate name basis why", "", ""},
+		{tools.Left{}, "candidate name basis_then why", "", ""},
+		{tools.Kinds{}, "present missing", "present missing", ""},
 		{tools.EnrichmentResult{}, "kind source inputs cost at", "", ""},
 		{tools.Person{}, "name role", "", ""}, {tools.Evidence{}, "name source weight description", "", ""}, {tools.Category{}, "name source", "", ""}, {tools.Candidate{}, "id status name names street city state zip county phone email people class cargo created updated", "names people cargo", ""},
-		{tools.Member{}, "candidate categories classified_by fleet_verdict website website_source site_text brief minutes_source excluded", "categories", ""}, {tools.ProspectListList{}, "prospect_lists", "prospect_lists", ""}, {tools.ProspectList{}, "id name size filters order created_by created_email created changed_by changed_email changed", "order", "filters"}, {tools.Reject{}, "kind prospect_list candidate", "", ""}, {tools.ProspectListRead{}, "prospect_list matching classified members rejects", "members rejects", ""}, {tools.CandidateList{}, "candidates", "candidates", ""}, {tools.PassList{}, "passes", "passes", ""},
+		{tools.Member{}, "candidate basis categories classified_by fleet_verdict website website_source site_text brief minutes_source excluded", "categories", ""}, {tools.ProspectListList{}, "prospect_lists", "prospect_lists", ""}, {tools.ProspectList{}, "id name size filters order created_by created_email created changed_by changed_email changed", "order", "filters"}, {tools.Reject{}, "kind prospect_list candidate", "", ""}, {tools.ProspectListRead{}, "prospect_list matching classified by_basis changes members rejects", "members rejects", ""}, {tools.CandidateList{}, "candidates", "candidates", ""}, {tools.PassList{}, "passes", "passes", ""},
 		{tools.Link{}, "scraper source_id run digest name names street city state zip county phone email people class cargo fleet_verdict name_key phone_key domain_key reason confidence first_seen last_seen gone", "names people cargo", ""},
 		{tools.Estimate{}, "source low confidence facts formula", "", "facts"}, {tools.Judgments{}, "operating_evidence excluded rules calculated", "operating_evidence", ""},
 		{tools.Ruling{}, "kind candidate keys why user email at", "keys", ""}, {tools.Detail{}, "candidate estimates links rulings pages enrichment_results rejects campaigns", "estimates links rulings pages enrichment_results rejects campaigns", ""}, {tools.Decision{}, "ruling candidates", "candidates", ""},
@@ -383,9 +396,11 @@ func TestAnswerJSONShapes(t *testing.T) {
 		v    any
 		keys string
 	}{
+		{tools.Changes{Since: &continuation}, "since definition_changed joined left"},
+		{tools.Left{BasisNow: "now", Filter: "filter"}, "candidate name basis_then basis_now why filter"},
 		{tools.EnrichmentResult{URL: "chosen-url", Title: "chosen-title", StatusCode: 200, Error: "chosen-error"}, "kind source inputs url title status_code error cost at"},
 		{tools.Candidate{MergedInto: "survivor"}, "id status merged_into name names street city state zip county phone email people class cargo created updated"},
-		{tools.Member{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, Website: sources.WebsiteHTTPS, WebsiteURL: "https://chosen.test", Minutes: &one, GovernmentMatch: "chosen", KnownSince: "known", NewestFiling: "newest"}, "candidate operating_confidence revenue_low revenue_high revenue_confidence categories classified_by fleet_verdict website website_url website_source site_text brief minutes minutes_source government_match known_since newest_filing excluded"},
+		{tools.Member{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, Website: sources.WebsiteHTTPS, WebsiteURL: "https://chosen.test", Minutes: &one, GovernmentMatch: "chosen", KnownSince: "known", NewestFiling: "newest"}, "candidate basis operating_confidence revenue_low revenue_high revenue_confidence categories classified_by fleet_verdict website website_url website_source site_text brief minutes minutes_source government_match known_since newest_filing excluded"},
 		{tools.ProspectListList{Next: &continuation}, "prospect_lists next"}, {tools.CandidateList{Next: &continuation}, "candidates next"}, {tools.PassList{Next: &continuation}, "passes next"},
 		{tools.Link{Filed: "2026-01-01"}, "scraper source_id run digest name names street city state zip county phone email people class cargo filed fleet_verdict name_key phone_key domain_key reason confidence first_seen last_seen gone"},
 		{tools.Estimate{High: &one, Filed: "2026-01-01"}, "source low high confidence facts filed formula"},
@@ -455,7 +470,7 @@ func decodeList[T any](t *testing.T, r mcp.Result) T {
 
 var _ io.Reader = (*random)(nil)
 
-// R-R96N-JYFB R-QQW5-TEAW R-27ET-GMFK R-VHYP-Q1M2 R-WX6H-SER8
+// R-R96N-JYFB R-QQW5-TEAW R-27ET-GMFK R-TE8O-1642 R-WX6H-SER8
 func TestDetailAndRulings(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -476,7 +491,7 @@ func TestDetailAndRulings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := tools.Detail{Candidate: candidateOf(c), Enrichments: &tools.Enrichments{}}
+	expected := tools.Detail{Candidate: candidateOf(c), Enrichments: &tools.Enrichments{Basis: store.BasisRecords, Kinds: tools.Kinds{Missing: []string{enrichers.KindWebsiteSearch, enrichers.KindSiteText, enrichers.KindBrief, enrichers.KindDriveRoute}}}}
 	for _, l := range ls {
 		r := l.Reading
 		expected.Links = append(expected.Links, tools.Link{Scraper: l.Scraper, SourceID: l.SourceID, Run: l.Run, Digest: l.Digest, Name: r.Name, Names: r.Names, Street: r.Street, City: r.City, State: r.State, Zip: r.Zip, County: r.County, Phone: r.Phone, Email: r.Email, People: []tools.Person{{Name: r.People[0].Name, Role: r.People[0].Role}}, Class: r.Class, Cargo: r.Cargo, Filed: r.Filed.UTC().Format("2006-01-02"), FleetVerdict: r.FleetVerdict, NameKey: r.NameKey, PhoneKey: r.PhoneKey, DomainKey: r.DomainKey, Reason: l.Reason, Confidence: l.Confidence, FirstSeen: stamp(l.FirstSeen), LastSeen: stamp(l.LastSeen), Gone: l.Gone})
@@ -619,7 +634,7 @@ func TestPassPages(t *testing.T) {
 	}
 }
 
-// R-3SQ3-FUA7 R-PME2-TQRX
+// R-FKII-PSLY R-K0EN-M29C
 func TestSharedReadAnswersAndNoMutation(t *testing.T) {
 	var websiteRequests, siblingRequests, promptRequests atomic.Int64
 	kWebsite := pageChecker(&websiteRequests)
@@ -645,7 +660,7 @@ func TestSharedReadAnswersAndNoMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot := func() []byte {
+	snapshot := func(ignoreOpen bool) []byte {
 		t.Helper()
 		c, err := f.st.GetCandidate(t.Context(), id)
 		if err != nil {
@@ -695,17 +710,26 @@ func TestSharedReadAnswersAndNoMutation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		b, err := json.Marshal([]any{c, ls, es, a, rs, xs, pages, count, ps, pass, ks, cr})
+		opens, err := f.st.Opens(t.Context(), k.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ignoreOpen {
+			cr.Changes = store.Changes{}
+			opens = nil
+		}
+		b, err := json.Marshal([]any{c, ls, es, a, rs, xs, pages, count, ps, pass, ks, cr, opens})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return b
 	}
-	before := string(snapshot())
+	before := string(snapshot(false))
+	stable := string(snapshot(true))
 	for _, call := range []struct {
 		name string
 		args any
-	}{{"prospect_lists", tools.ProspectListsArgs{}}, {"prospect_list", tools.ProspectListArgs{ProspectList: k.ID}}, {"prospect_list", tools.ProspectListArgs{ProspectList: "bad"}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: id}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}}, {"candidate", tools.CandidateArgs{Candidate: "bad"}}, {"pass", tools.PassArgs{Pass: "bad"}}} {
+	}{{"prospect_lists", tools.ProspectListsArgs{}}, {"prospect_list", tools.ReadProspectListArgs{ProspectList: k.ID, Peek: true}}, {"prospect_list", tools.ReadProspectListArgs{ProspectList: "bad", Peek: true}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: id}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}}, {"candidate", tools.CandidateArgs{Candidate: "bad"}}, {"pass", tools.PassArgs{Pass: "bad"}}} {
 		a, b := decode(t, f.callAs(caller, call.name, call.args)), decode(t, f.callAs(other, call.name, call.args))
 		if !reflect.DeepEqual(a, b) {
 			t.Fatal("caller changes product", call.name)
@@ -715,13 +739,43 @@ func TestSharedReadAnswersAndNoMutation(t *testing.T) {
 	for _, call := range []struct {
 		name string
 		args any
-	}{{"prospect_lists", tools.ProspectListsArgs{}}, {"prospect_list", tools.ProspectListArgs{ProspectList: k.ID}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: id}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}}} {
+	}{{"prospect_lists", tools.ProspectListsArgs{}}, {"prospect_list", tools.ReadProspectListArgs{ProspectList: k.ID, Peek: true}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: id}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}}} {
 		refusal(t, f.call(call.name, call.args), passes.RefusalUnavailable, tools.RefuseUnavailable)
 	}
 	f.d.SetFailing(false)
-	if string(snapshot()) != before {
+	if string(snapshot(false)) != before {
 		t.Fatal("read changed records")
 	}
+	// Recording an open changes only that list's open and the ensuing changes baseline.
+	passive := identity.Caller{UserID: "passive-reader", Email: "passive-reader@fixture.test", RequestID: "passive-request"}
+	peek := decode(t, f.callAs(other, "prospect_list", tools.ReadProspectListArgs{k.ID, true}))
+	opened := decode(t, f.callAs(passive, "prospect_list", tools.ReadProspectListArgs{k.ID, false}))
+	if !reflect.DeepEqual(peek, opened) {
+		t.Fatal("open changed its answer", peek, opened)
+	}
+	if string(snapshot(true)) != stable {
+		t.Fatal("open changed non-open records")
+	}
+	opens, err := f.st.Opens(t.Context(), k.ID)
+	if err != nil || len(opens) != 1 || opens[0].UserID != passive.UserID || opens[0].UserEmail != passive.Email || !opens[0].At.Equal(f.now.UTC().Truncate(time.Second)) {
+		t.Fatal(opens, err)
+	}
+	after := decode(t, f.callAs(other, "prospect_list", tools.ReadProspectListArgs{k.ID, true}))
+	read := decodeList[tools.ProspectListRead](t, f.callAs(other, "prospect_list", tools.ReadProspectListArgs{k.ID, true}))
+	if read.Changes.Since == nil || *read.Changes.Since != stamp(f.now) || len(read.Changes.DefinitionChanged) != 0 || len(read.Changes.Joined) != 0 || len(read.Changes.Left) != 0 || strings.Contains(string(after.Structured), passive.UserID) || strings.Contains(string(after.Structured), passive.Email) {
+		t.Fatal(after)
+	}
+	for _, args := range []tools.ReadProspectListArgs{{"bad", false}, {store.ProspectListIDPrefix + strings.Repeat("0", 16), false}} {
+		refusal(t, f.call("prospect_list", args), passes.RefusalNotFound, tools.RefuseNotFound)
+	}
+	f.d.SetFailing(true)
+	refusal(t, f.call("prospect_list", tools.ReadProspectListArgs{k.ID, false}), passes.RefusalUnavailable, tools.RefuseUnavailable)
+	f.d.SetFailing(false)
+	again, err := f.st.Opens(t.Context(), k.ID)
+	if err != nil || !reflect.DeepEqual(again, opens) {
+		t.Fatal(again, opens, err)
+	}
+
 	ps, err := f.st.ListPasses(t.Context(), "", "", 100)
 	if err != nil || len(ps) != 1 {
 		t.Fatal("unexpected pass", ps, err)
@@ -838,9 +892,7 @@ func TestSplitAndNotSame(t *testing.T) {
 	}
 }
 
-//   R-6QOY-0DLL
-
-//
+// R-6QOY-0DLL
 
 func judgmentsExpected(a store.Judgments) *tools.Judgments {
 	v := &tools.Judgments{OperatingConfidence: a.Operating, OperatingEvidence: []tools.Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
@@ -848,4 +900,72 @@ func judgmentsExpected(a store.Judgments) *tools.Judgments {
 		v.OperatingEvidence = append(v.OperatingEvidence, tools.Evidence{Name: e.Name, Source: e.Source, Weight: e.Weight, Description: e.Description})
 	}
 	return v
+}
+
+// R-SUQ9-WU8Y R-XIDP-GOVR R-SYDZ-25H1 R-SZLV-FX7Q
+func TestBasisChangeAndKindValueEncoding(t *testing.T) {
+	at := "chosen-at"
+	for _, tc := range []struct {
+		value any
+		want  string
+	}{
+		{tools.BasisCounts{1, 2, 3}, `{"records":1,"partial":2,"enriched":3}`},
+		{tools.Changes{}, `{"since":null,"definition_changed":[],"joined":[],"left":[]}`},
+		{tools.Changes{&at, []string{"size", "filters"}, []tools.Joined{{"joined-id", "joined-name", "joined-basis", "joined-why"}}, []tools.Left{{"left-id", "left-name", "then", "now", "left-why", "filter"}}}, `{"since":"chosen-at","definition_changed":["size","filters"],"joined":[{"candidate":"joined-id","name":"joined-name","basis":"joined-basis","why":"joined-why"}],"left":[{"candidate":"left-id","name":"left-name","basis_then":"then","basis_now":"now","why":"left-why","filter":"filter"}]}`},
+		{tools.Left{"left", "name", "then", "", "why", ""}, `{"candidate":"left","name":"name","basis_then":"then","why":"why"}`},
+		{tools.Kinds{}, `{"present":[],"missing":[]}`},
+		{tools.Kinds{[]string{"a", "b"}, []string{"c", "d"}}, `{"present":["a","b"],"missing":["c","d"]}`},
+		{tools.Enrichments{"chosen-basis", tools.Kinds{[]string{"kind"}, nil}, nil, nil}, `{"basis":"chosen-basis","kinds":{"present":["kind"],"missing":[]}}`},
+	} {
+		got, err := json.Marshal(tc.value)
+		if err != nil || string(got) != tc.want {
+			t.Fatalf("%T: %s, %v; want %s", tc.value, got, err, tc.want)
+		}
+	}
+}
+
+// R-FKII-PSLY
+func TestIngestProductsAreSharedAcrossCallers(t *testing.T) {
+	f := fixtureWithScrapes(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/scrapers/fmcsa/current", "/runs/shared-run/record":
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "shared-run", "scraper": "fmcsa", "status": "done", "started": "2000-01-01T00:00:00Z", "rows": 1, "new": 0, "changed": 0, "unchanged": 0, "gone": 0})
+		case "/runs/shared-run/rows":
+			_ = json.NewEncoder(w).Encode(map[string]any{"scraper": "fmcsa", "run": "shared-run", "source_id": "shared-source", "digest": "shared-digest", "scraped": "2000-01-01T00:00:00Z", "name": "Shared business", "names": []string{}, "people": []any{}, "facts": map[string]any{}, "raw": map[string]any{}})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	result := f.call("ingest", tools.IngestArgs{Scraper: "fmcsa"})
+	if result.IsError() {
+		t.Fatal(decode(t, result))
+	}
+	pass := decodeList[passes.Record](t, result)
+	if p := f.waitEnrich(pass.ID); p.Status != store.StatusDone {
+		t.Fatal(p)
+	}
+	candidates := decodeList[tools.CandidateList](t, f.call("candidates", tools.CandidatesArgs{}))
+	if len(candidates.Candidates) != 1 {
+		t.Fatal(candidates)
+	}
+	id := candidates.Candidates[0].ID
+	list := f.create("Shared ingest list")
+	if r := f.call("include", tools.RulingArgs{Candidate: id, Why: "Owner ruling"}); r.IsError() {
+		t.Fatal(decode(t, r))
+	}
+	if r := f.call("reject", tools.RejectArgs{ProspectList: list.ID, Candidate: id, Why: "Owner reject"}); r.IsError() {
+		t.Fatal(decode(t, r))
+	}
+	for _, call := range []struct {
+		name string
+		args any
+	}{
+		{"prospect_lists", tools.ProspectListsArgs{}}, {"prospect_list", tools.ReadProspectListArgs{list.ID, true}},
+		{"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{id}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{pass.ID}},
+	} {
+		a, b := decode(t, f.callAs(caller, call.name, call.args)), decode(t, f.callAs(other, call.name, call.args))
+		if !reflect.DeepEqual(a, b) {
+			t.Fatal(call.name, a, b)
+		}
+	}
 }

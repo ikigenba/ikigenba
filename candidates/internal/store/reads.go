@@ -179,13 +179,23 @@ func rankedWindow(ctx context.Context, tx *sql.Tx, query string, args ...any) ([
 		if errors.Is(err, ErrNotFound) {
 			f = unknownFacts(key)
 		}
+		es, err := enrichmentRecords(ctx, tx, " WHERE candidate=? ORDER BY seq DESC", key)
+		if err != nil {
+			return nil, err
+		}
+		member.Basis = BasisOf(es)
 		member.Facts = f
-		for _, w := range f.Written {
-			if w.Kind == enrichers.KindBrief {
-				member.Brief = w.At
+		seen := map[string]bool{}
+		for _, e := range es {
+			if seen[e.Kind] {
+				continue
 			}
-			if w.Kind == enrichers.KindSiteText {
-				member.SiteText = w.At
+			seen[e.Kind] = true
+			if e.Kind == enrichers.KindBrief {
+				member.Brief = e.At
+			}
+			if e.Kind == enrichers.KindSiteText {
+				member.SiteText = e.At
 			}
 		}
 		out = append(out, member)

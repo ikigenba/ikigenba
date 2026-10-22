@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-1364-U6YN
+// R-DI50-LS7E
 func TestContractReadsDuringQueuedWrites(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -34,6 +34,7 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 		{"GetJudgments", func() (any, error) { return f.s.GetJudgments(ctx, id) }},
 		{"Rulings", func() (any, error) { return f.s.Rulings(ctx, id) }},
 		{"ListCandidates", func() (any, error) { return f.s.ListCandidates(ctx, store.CandidateFilter{}, "", "", 100) }},
+		{"Opens", func() (any, error) { return f.s.Opens(ctx, prospectList.ID) }},
 		{"ReadProspectList", func() (any, error) { return f.s.ReadProspectList(ctx, prospectList.ID) }},
 		{"GetProspectList", func() (any, error) { return f.s.GetProspectList(ctx, prospectList.ID) }},
 		{"ListProspectLists", func() (any, error) { return f.s.ListProspectLists(ctx, "", "", 100) }},

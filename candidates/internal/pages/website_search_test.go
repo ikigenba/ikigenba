@@ -54,7 +54,7 @@ func TestSearchEnrichmentProjection(t *testing.T) {
 	}
 }
 
-// R-Q5AL-AAGC R-E1Q1-XTVE R-ZAJG-KCNU
+// R-XY08-ASLZ R-E1Q1-XTVE R-YBF4-I9RM
 func TestSearchWebsiteCandidateAndMember(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	_, ids, err := cfg.Store.Attach(t.Context(), "run", false, []store.Observation{{Scraper: "fixture", SourceID: "row", Digest: "digest", Reading: sources.Reading{Name: "search-business", NameKey: "search-business"}}})
@@ -202,8 +202,8 @@ func TestWebsiteSearchDecisionHistory(t *testing.T) {
 	}
 }
 
-// R-Q5AL-AAGC
-// R-JLWR-PWOS
+// R-XY08-ASLZ
+// R-XWSB-X0VA
 func TestCandidateAndMemberViewShapes(_ *testing.T) {
 	_ = struct {
 		Banner            page.Banner
@@ -218,6 +218,13 @@ func TestCandidateAndMemberViewShapes(_ *testing.T) {
 		Rejects           []RejectRecordRow
 		Campaigns         []CampaignRow
 	}(CandidateData{})
+	_ = struct {
+		Basis string
+		Kinds KindsView
+		Facts *FactsView
+		Brief *BriefView
+	}(EnrichmentsView{})
+	_ = struct{ Present, Missing []string }(KindsView{})
 	_ = struct {
 		ID, Status, MergedInto, Name                                                                                                                     string
 		Names                                                                                                                                            []string
@@ -235,7 +242,7 @@ func TestCandidateAndMemberViewShapes(_ *testing.T) {
 	_ = struct{ Kind, ProspectList, ProspectListName, By, User, At, AtText, Why string }(RejectRecordRow{})
 	_ = struct {
 		Rank                                                                                                                                                                                                                 int64
-		ID, Name, City, State, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence                                                                                                                               string
+		ID, Name, City, State, Basis, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence                                                                                                                        string
 		Categories                                                                                                                                                                                                           []string
 		ClassifiedBy, Class, FleetVerdict, Website, WebsiteURL, WebsiteSource, SiteText, SiteTextText, Brief, BriefText, Minutes, MinutesSource, GovernmentMatch, KnownSince, KnownSinceText, NewestFiling, NewestFilingText string
 		Excluded                                                                                                                                                                                                             bool

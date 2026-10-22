@@ -18,6 +18,12 @@ func normalFilters(f ProspectListFilters) ProspectListFilters {
 	if len(f.Categories) == 0 {
 		f.Categories = nil
 	}
+	f.Basis = slices.Clone(f.Basis)
+	slices.SortFunc(f.Basis, compareBasis)
+	f.Basis = slices.Compact(f.Basis)
+	if len(f.Basis) == 0 {
+		f.Basis = nil
+	}
 	return f
 }
 func normalOrder(o []ProspectListOrder) []ProspectListOrder {
@@ -34,6 +40,8 @@ func prospectListKey(ctx context.Context, tx *sql.Tx, id string) (ProspectList, 
 	if len(cs) == 0 {
 		return ProspectList{}, ErrNotFound
 	}
+	cs[0].Filters = normalFilters(cs[0].Filters)
+	cs[0].Order = normalOrder(cs[0].Order)
 	return cs[0], nil
 }
 func validProspectList(c ProspectList) bool {
@@ -186,6 +194,10 @@ func (s *Store) prospectListWindow(ctx context.Context, name, id string, n int, 
 		}
 		var err error
 		out, err = readQueryRecords[ProspectList](ctx, tx, prospectListColumns, q, args...)
+		for i := range out {
+			out[i].Filters = normalFilters(out[i].Filters)
+			out[i].Order = normalOrder(out[i].Order)
+		}
 		return err
 	}))
 	if err != nil {

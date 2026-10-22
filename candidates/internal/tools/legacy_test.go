@@ -17,7 +17,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-RP1C-IZ2C R-RRH5-AIJQ R-RV4U-FTRT R-RWCQ-TLII R-CS5Y-61GK
+// R-RP1C-IZ2C R-RRH5-AIJQ R-RV4U-FTRT R-TD0R-NEDD R-CS5Y-61GK
 func TestLegacyListDispatch(t *testing.T) {
 	_ = tools.LegacyArgs{"chosen-id"}
 	d := tools.DescribeLegacy
@@ -76,19 +76,30 @@ func TestLegacyListDispatch(t *testing.T) {
 		}
 		return r
 	}
-	want := f.call("prospect_list", tools.ProspectListArgs{ProspectList: list.ID})
+	want := f.call("prospect_list", tools.ReadProspectListArgs{ProspectList: list.ID, Peek: true})
 	for _, id := range []string{list.ID, store.LegacyListIDPrefix + strings.TrimPrefix(list.ID, store.ProspectListIDPrefix)} {
 		r := call("cohort", tools.LegacyArgs{Cohort: id})
 		if !reflect.DeepEqual(decode(t, r), decode(t, want)) {
 			t.Fatal(decode(t, r), decode(t, want))
 		}
 	}
+	opens, err := f.st.Opens(t.Context(), list.ID)
+	if err != nil || len(opens) != 0 {
+		t.Fatal("legacy recorded an open", opens, err)
+	}
+	// A current open after legacy reads has the same answer as the untouched peek.
+	got := f.call("prospect_list", tools.ReadProspectListArgs{list.ID, false})
+	if !reflect.DeepEqual(decode(t, got), decode(t, want)) {
+		t.Fatal(decode(t, got), decode(t, want))
+	}
 	for _, id := range []string{"", "bogus", "coh_0123456789ABCDEF", "coh_0000000000000000"} {
 		refusal(t, call("cohort", tools.LegacyArgs{Cohort: id}), passes.RefusalNotFound, tools.RefuseNotFound)
 	}
 	f.d.SetFailing(true)
 	refusal(t, call("cohort", tools.LegacyArgs{Cohort: list.ID}), passes.RefusalUnavailable, tools.RefuseUnavailable)
-	refusal(t, call("cohort", tools.LegacyArgs{Cohort: "bogus"}), passes.RefusalNotFound, tools.RefuseNotFound)
+	for _, bad := range []string{"", "bogus", "coh_0123456789ABCDEF"} {
+		refusal(t, call("cohort", tools.LegacyArgs{Cohort: bad}), passes.RefusalNotFound, tools.RefuseNotFound)
+	}
 	f.d.SetFailing(false)
 	// Compare exact transport responses to the selected server, including boundary bodies.
 	base := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"cohort","arguments":{"cohort":"` + list.ID + `"}}}`
@@ -123,13 +134,13 @@ func TestLegacyListDispatch(t *testing.T) {
 	}
 }
 
-// R-TKGF-X4CH R-3347-ENPM R-TFTB-22NR R-1LGM-KR32 R-Q7QE-1TXQ
+// R-3347-ENPM R-TFTB-22NR R-1LGM-KR32 R-Q7QE-1TXQ
 func TestLegacyListArgumentsMapToCurrentIDs(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
 	list := f.create("mapped-list")
 	old := store.LegacyListIDPrefix + strings.TrimPrefix(list.ID, store.ProspectListIDPrefix)
-	success(t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: old}), decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: list.ID})))
+	success(t, f.call("prospect_list", tools.ReadProspectListArgs{ProspectList: old, Peek: true}), decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ReadProspectListArgs{ProspectList: list.ID, Peek: true})))
 	renamed := "renamed-mapped-list"
 	edited := decodeList[tools.ProspectList](t, f.call("edit_prospect_list", tools.EditProspectListArgs{ProspectList: old, Name: &renamed}))
 	if edited.ID != list.ID || edited.Name != renamed {
@@ -154,5 +165,5 @@ func TestLegacyListArgumentsMapToCurrentIDs(t *testing.T) {
 	if deleted.ID != list.ID {
 		t.Fatal(deleted)
 	}
-	refusal(t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: old}), passes.RefusalNotFound, tools.RefuseNotFound)
+	refusal(t, f.call("prospect_list", tools.ReadProspectListArgs{ProspectList: old, Peek: true}), passes.RefusalNotFound, tools.RefuseNotFound)
 }

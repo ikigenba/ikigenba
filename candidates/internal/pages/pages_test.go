@@ -78,6 +78,15 @@ func bannerFor(cfg Config) page.Banner {
 }
 func comparePage(t *testing.T, cfg Config, path, name string, status int, data any) {
 	t.Helper()
+	if d, ok := data.(CandidateData); ok && d.Enrichments != nil {
+		es, e := cfg.Store.Enrichments(t.Context(), d.Candidate.ID)
+		if e != nil {
+			t.Fatal(e)
+		}
+		d.Enrichments.Basis = store.BasisOf(es)
+		d.Enrichments.Kinds = enrichmentKinds(es)
+		data = d
+	}
 	var expected bytes.Buffer
 	set, err := page.Templates().ParseFS(candidates.Assets(), "*.html")
 	if err != nil {
@@ -98,7 +107,21 @@ func comparePage(t *testing.T, cfg Config, path, name string, status int, data a
 		t.Fatal("HEAD differs", path)
 	}
 	other := requestPage(cfg, "GET", path, "other")
-	if other.Body.String() != w.Body.String() {
+	if strings.HasPrefix(path, "/prospect-lists/") && status == 200 {
+		d := data.(ProspectListData)
+		v, e := cfg.Store.ReadProspectList(t.Context(), d.ProspectList.ID)
+		if e != nil {
+			t.Fatal(e)
+		}
+		d.Changes = changesView(v.Changes)
+		expected.Reset()
+		if e = set.ExecuteTemplate(&expected, name, d); e != nil {
+			t.Fatal(e)
+		}
+		if other.Body.String() != expected.String() {
+			t.Fatal("prospect list repeat open differs")
+		}
+	} else if other.Body.String() != w.Body.String() {
 		t.Fatal("user visibility")
 	}
 	if len(w.Header().Values("Set-Cookie")) != 0 {
@@ -198,7 +221,7 @@ func TestStaticEmptyAndRefusals(t *testing.T) {
 	}
 }
 
-// R-5BH5-Y0GF R-RO62-HYTL R-MITC-CU41
+// R-5BH5-Y0GF R-Y6JI-Z6SU R-MITC-CU41
 func TestInvalidAndMissingPaths(t *testing.T) {
 	cfg, d := pageFixture(t)
 	b := bannerFor(cfg)
@@ -215,7 +238,7 @@ func TestInvalidAndMissingPaths(t *testing.T) {
 	}
 }
 
-// R-08PY-S5TE R-0CDN-XH1H R-08PY-S5TE R-XHWS-AID1 R-3XLO-YX8Z
+// R-08PY-S5TE R-0CDN-XH1H R-08PY-S5TE R-Y7RF-CYJJ R-3XLO-YX8Z
 func TestStoredPages(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := context.Background()

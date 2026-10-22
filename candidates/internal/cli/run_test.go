@@ -1746,7 +1746,7 @@ func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	}
 }
 
-// R-Z7QG-GZ0U
+// R-6NGO-W6UC
 func TestRunUnlistedLegacyProspectList(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
 	makeMCP := h.p.MCP
@@ -1776,7 +1776,7 @@ func TestRunUnlistedLegacyProspectList(t *testing.T) {
 			t.Fatal(list)
 		}
 	}
-	normal, err := h.client.CallTool(t.Context(), caller, "prospect_list", json.RawMessage(`{"prospect_list":"`+pl.ID+`"}`))
+	normal, err := h.client.CallTool(t.Context(), caller, "prospect_list", json.RawMessage(`{"prospect_list":"`+pl.ID+`","peek":true}`))
 	if err != nil || normal.IsError() {
 		t.Fatal(normal, err)
 	}

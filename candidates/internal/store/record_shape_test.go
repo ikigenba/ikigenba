@@ -10,7 +10,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-ZFAF-QG6E R-ZV9R-2G9N
+// R-ZFAF-QG6E R-KIU4-CJVH
 func TestStoredRecordShapes(t *testing.T) {
 	n, confidence := int64(3), 0.8
 	a := store.Judgments{Candidate: "candidate", Operating: &confidence, OperatingKey: 800000, Evidence: []sources.Evidence{{Weight: confidence}}, RevenueLow: &n, RevenueHigh: &n, RevenueConfidence: &confidence, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
@@ -42,6 +42,7 @@ func TestStoredRecordShapes(t *testing.T) {
 		Facts     store.Facts
 		SiteText  time.Time
 		Brief     time.Time
+		Basis     string
 	}(r)), r)
 }
 

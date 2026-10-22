@@ -41,7 +41,7 @@ func TestCategoryEvidenceViews(t *testing.T) {
 	}
 }
 
-// R-QMD6-N2U2 R-V9FF-1NF7 R-ANM6-HRQR
+// R-Y43Q-7NBG R-XT4M-RPN7 R-ANM6-HRQR
 // R-JVNY-S2MC
 func TestCategoryEvidencePages(t *testing.T) {
 	cfg, db := pageFixture(t)

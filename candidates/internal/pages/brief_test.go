@@ -50,7 +50,7 @@ func TestBriefViewSelection(t *testing.T) {
 	}
 }
 
-// R-NFX2-NQ0K R-Q5AL-AAGC R-TPC1-G7B9 R-ANM6-HRQR
+// R-YDUX-9T90 R-XY08-ASLZ R-TPC1-G7B9 R-ANM6-HRQR
 func TestBriefCandidateAndProspectList(t *testing.T) {
 	cfg, db := pageFixture(t)
 	now := fixtureTime()

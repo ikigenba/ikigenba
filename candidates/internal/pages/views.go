@@ -67,7 +67,7 @@ func passView(p store.Pass, sp string) PassView {
 func memberRow(e store.Ranked, i int) MemberRow {
 	a := judgmentsView(e.Judgments)
 	f := factsView(e.Facts, "")
-	v := MemberRow{Rank: int64(i) + 1, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(e.Facts.Categories), Class: e.Candidate.Class, FleetVerdict: f.FleetVerdict, Website: e.Facts.Website, WebsiteURL: e.Facts.WebsiteURL, WebsiteSource: e.Facts.WebsiteSource, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch, KnownSince: f.KnownSince, KnownSinceText: f.KnownSinceText, NewestFiling: f.NewestFiling, NewestFilingText: f.NewestFilingText, Excluded: a.Excluded}
+	v := MemberRow{Rank: int64(i) + 1, Basis: e.Basis, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(e.Facts.Categories), Class: e.Candidate.Class, FleetVerdict: f.FleetVerdict, Website: e.Facts.Website, WebsiteURL: e.Facts.WebsiteURL, WebsiteSource: e.Facts.WebsiteSource, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch, KnownSince: f.KnownSince, KnownSinceText: f.KnownSinceText, NewestFiling: f.NewestFiling, NewestFilingText: f.NewestFilingText, Excluded: a.Excluded}
 	v.SiteText, v.SiteTextText = stamp(e.SiteText, MinuteLayout)
 	v.Brief, v.BriefText = stamp(e.Brief, MinuteLayout)
 	seen := map[string]bool{}
@@ -199,7 +199,7 @@ func prospectListRow(c store.ProspectList) ProspectListRow {
 }
 
 func filtersView(f store.ProspectListFilters) FiltersView {
-	v := FiltersView{RevenueUnknown: f.RevenueUnknown, MinutesUnknown: f.MinutesUnknown, Categories: append([]string{}, f.Categories...), CategoryUnknown: f.CategoryUnknown, Fleet: f.Fleet, FleetUnknown: f.FleetUnknown, Website: append([]string{}, f.Website...), WebsiteUnknown: f.WebsiteUnknown, FilingUnknown: f.FilingUnknown, Class: f.Class, ClassUnknown: f.ClassUnknown, ShowExcluded: f.ShowExcluded}
+	v := FiltersView{Basis: append([]string{}, f.Basis...), RevenueUnknown: f.RevenueUnknown, MinutesUnknown: f.MinutesUnknown, Categories: append([]string{}, f.Categories...), CategoryUnknown: f.CategoryUnknown, Fleet: f.Fleet, FleetUnknown: f.FleetUnknown, Website: append([]string{}, f.Website...), WebsiteUnknown: f.WebsiteUnknown, FilingUnknown: f.FilingUnknown, Class: f.Class, ClassUnknown: f.ClassUnknown, ShowExcluded: f.ShowExcluded}
 	if f.RevenueMin != nil {
 		v.RevenueMin = dollars(*f.RevenueMin)
 	}
@@ -395,4 +395,23 @@ func searchViews(v *EnrichmentRow, found json.RawMessage) {
 			v.Confirmation.StatusCode = strconv.Itoa(c.StatusCode)
 		}
 	}
+}
+
+func basisCountsView(b store.BasisCounts) BasisCountsView {
+	return BasisCountsView{b.Records, b.Partial, b.Enriched}
+}
+func changesView(x store.Changes) ChangesView {
+	v := ChangesView{DefinitionChanged: append([]string{}, x.DefinitionChanged...), Joined: []JoinedRow{}, Left: []LeftRow{}}
+	v.Since, v.SinceText = stamp(x.Since, MinuteLayout)
+	for _, j := range x.Joined {
+		v.Joined = append(v.Joined, JoinedRow{j.Candidate, j.Name, j.Basis, j.Why})
+	}
+	for _, l := range x.Left {
+		v.Left = append(v.Left, LeftRow{l.Candidate, l.Name, l.BasisThen, l.BasisNow, l.Why, l.Filter})
+	}
+	return v
+}
+func enrichmentKinds(es []store.Enrichment) KindsView {
+	present, missing := store.KindsOf(es)
+	return KindsView{append([]string{}, present...), append([]string{}, missing...)}
 }

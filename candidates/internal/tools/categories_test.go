@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-RIXU-M4CV R-RT1O-11SD R-QR8S-65SU R-7AXF-IAYJ
+// R-RIXU-M4CV R-RT1O-11SD R-QR8S-65SU R-THWD-6HC5
 func TestCategoryEvidenceAnswers(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(3)
@@ -27,7 +27,7 @@ func TestCategoryEvidenceAnswers(t *testing.T) {
 		}
 	}
 	read := func() tools.ProspectListRead {
-		return decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: co.ID}))
+		return decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ReadProspectListArgs{ProspectList: co.ID, Peek: true}))
 	}
 	detail := func(id string) *tools.Facts {
 		t.Helper()
@@ -94,7 +94,7 @@ func TestCategoryEvidenceAnswers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	er := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: empty.ID}))
+	er := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ReadProspectListArgs{ProspectList: empty.ID, Peek: true}))
 	if er.Classified != 0 || len(er.Members) != 0 {
 		t.Fatal(er)
 	}

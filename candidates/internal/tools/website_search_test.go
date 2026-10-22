@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-7AXF-IAYJ R-ZKAN-MILE R-7AXF-IAYJ R-QWZN-Q90D
+// R-THWD-6HC5 R-ZKAN-MILE R-QWZN-Q90D
 func TestSearchAnswersUseStoredResults(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
@@ -72,7 +72,7 @@ func TestSearchAnswersUseStoredResults(t *testing.T) {
 		if !reflect.DeepEqual(objectKeys(t, encoded), []string{"kind", "source", "inputs", "found", "cost", "at"}) {
 			t.Fatal(string(encoded))
 		}
-		m := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: co.ID})).Members[0]
+		m := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ReadProspectListArgs{ProspectList: co.ID, Peek: true})).Members[0]
 		if m.WebsiteSource != source || m.Website != state || m.WebsiteURL != url {
 			t.Fatal(m)
 		}
@@ -91,7 +91,7 @@ func TestSearchAnswersUseStoredResults(t *testing.T) {
 	if got.Enrichments.Facts.WebsiteSource != store.WebsiteByCheck || got.Enrichments.Facts.Website != sources.WebsiteHTTP || got.Enrichments.Facts.WebsiteURL != "http://check.test/" {
 		t.Fatal(got.Enrichments.Facts)
 	}
-	m := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: co.ID})).Members[0]
+	m := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ReadProspectListArgs{ProspectList: co.ID, Peek: true})).Members[0]
 	if m.WebsiteSource != store.WebsiteByCheck || m.Website != sources.WebsiteHTTP || m.WebsiteURL != "http://check.test/" {
 		t.Fatal(m)
 	}

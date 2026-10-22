@@ -134,6 +134,7 @@ type Ranked struct {
 	Facts     Facts
 	SiteText  time.Time
 	Brief     time.Time
+	Basis     string
 }
 
 // Record vocabulary and identifier prefixes.

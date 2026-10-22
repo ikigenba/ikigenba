@@ -18,7 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-QOSZ-EMBG R-NDAT-X3NE R-1GL1-1O4A R-3GAA-W7C0 R-PPFW-B9TB R-0NBF-V6BM R-WHBS-TE47 R-RLQ9-QFC7
+// R-QOSZ-EMBG R-NDAT-X3NE R-1GL1-1O4A R-3GAA-W7C0 R-PPFW-B9TB R-0NBF-V6BM R-XKDG-B6R4 R-RLQ9-QFC7
 func TestProspectListValidators(t *testing.T) {
 	contractEqual(t, []string{store.ProspectListIDPrefix, store.OrderOperatingConfidence, store.OrderRevenueLow, store.OrderRevenueConfidence, store.OrderDriveMinutes, store.OrderNewestFiling, store.OrderKnownSince, store.DirectionDesc, store.DirectionAsc, store.KindReject, store.KindUnreject}, []string{"pl_", "operating_confidence", "revenue_low", "revenue_confidence", "drive_minutes", "newest_filing", "known_since", "desc", "asc", "reject", "unreject"})
 	contractEqual(t, []int{store.ProspectListSizeMin, store.ProspectListSizeMax, store.ProspectListSizeDefault}, []int{1, 100, 30})
@@ -88,7 +88,7 @@ func TestProspectListValidators(t *testing.T) {
 	}
 }
 
-// R-PI4I-0ND5 R-199M-R1O4
+// R-KK20-QBM6 R-199M-R1O4
 func TestProspectListJSON(t *testing.T) {
 	for _, tc := range []struct {
 		v    any
@@ -131,7 +131,7 @@ func prospectListIDs(rs []store.Ranked) []string {
 	return out
 }
 
-// R-VPA4-0O28 R-N5ZF-MH78 R-RD6Z-215C R-R8BD-IY6K R-RVHG-SL9R R-QHHL-3ZVA R-Z0S9-I6QA R-YB6D-H05P R-U3YU-1G7L R-YM5G-WXTY
+// R-VPA4-0O28 R-N5ZF-MH78 R-RD6Z-215C R-KOXM-9EKY R-KQ5I-N6BN R-3LZI-WM0I R-Z0S9-I6QA R-KRDF-0Y2C R-U3YU-1G7L R-YM5G-WXTY
 func TestProspectListCreateEditPersistence(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -239,7 +239,7 @@ func TestProspectListInvalidArgumentsAndMissingRecords(t *testing.T) {
 	contractEqual(t, got, original)
 }
 
-// R-SINK-28CY R-0S71-E9AE R-MCPU-FZEK R-0UMU-5SRS R-NT5I-W4AF
+// R-SINK-28CY R-MCPU-FZEK R-0UMU-5SRS R-NT5I-W4AF
 func TestProspectListRejectHistoryAndDeletion(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -488,7 +488,7 @@ func TestProspectListWindowsAndPlans(t *testing.T) {
 	}
 }
 
-// R-U1J1-9WQ7
+// R-KTT7-SHJQ
 func TestConcurrentProspectListWrites(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -590,7 +590,7 @@ func prospectListPopulation(t *testing.T, f *contractFixture) []string {
 	return ids
 }
 
-// R-2JLT-ABUI R-37ZS-XQOE R-02L5-D2PT R-ZLIK-0AC3 R-QTOK-XPA8 R-UR4X-B3AS R-PAT3-Q0WZ R-42HA-I07R R-T89G-3EXJ R-4KYZ-HR3B
+// R-2JLT-ABUI R-37ZS-XQOE R-02L5-D2PT R-ZLIK-0AC3 R-QTOK-XPA8 R-UR4X-B3AS R-PAT3-Q0WZ R-42HA-I07R R-XMT9-2Q8I R-4KYZ-HR3B
 func TestProspectListFilterBoundariesAndUnknownSwitches(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -725,7 +725,7 @@ func TestProspectListOrderFieldsDirectionsUnknownsAndTies(t *testing.T) {
 	contractEqual(t, prospectListIDs(prospectListRead(t, f, c).Members), []string{ids[1], ids[3], ids[2], ids[0], ids[4]})
 }
 
-// R-UILM-MP3X R-OQ2T-7XB6 R-N7DR-ZBTP R-NT5I-W4AF
+// R-KL9X-43CV R-OQ2T-7XB6 R-XP91-U9PW R-NT5I-W4AF
 func TestProspectListMembershipReadsStoredJudgmentsAndStandingRejects(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -743,7 +743,7 @@ func TestProspectListMembershipReadsStoredJudgmentsAndStandingRejects(t *testing
 		contractOK(t, e)
 		judgments, e := f.s.GetJudgments(ctx, candidate.ID)
 		contractOK(t, e)
-		contractEqual(t, member, store.Ranked{Candidate: candidate, Judgments: judgments, Facts: factsAt(ctx, t, f.s, candidate.ID)})
+		contractEqual(t, member, store.Ranked{Candidate: candidate, Judgments: judgments, Facts: factsAt(ctx, t, f.s, candidate.ID), Basis: store.BasisRecords})
 	}
 	_ = unjudged
 	request := store.Reject{Kind: store.KindReject, ProspectList: c.ID, Candidate: ids[0], Why: "owner rejected", UserID: "owner"}
@@ -816,7 +816,7 @@ func TestProspectListReadUsesOneClockSnapshot(t *testing.T) {
 	contractEqual(t, r.Matching, int64(3))
 }
 
-// R-VPA4-0O28 R-N5ZF-MH78 R-SINK-28CY R-UILM-MP3X R-PI4I-0ND5 R-199M-R1O4
+// R-VPA4-0O28 R-N5ZF-MH78 R-SINK-28CY R-KL9X-43CV R-KK20-QBM6 R-199M-R1O4
 func TestProspectListRecordShapesByUse(t *testing.T) {
 	type prospectList struct {
 		ID, Name                        string
@@ -844,6 +844,8 @@ func TestProspectListRecordShapesByUse(t *testing.T) {
 		ProspectList store.ProspectList
 		Matching     int64
 		Classified   int64
+		ByBasis      store.BasisCounts
+		Changes      store.Changes
 		Members      []store.Ranked
 		Rejects      []store.Reject
 	}
@@ -865,6 +867,7 @@ func TestProspectListRecordShapesByUse(t *testing.T) {
 		MinCampaignAgeDays     *int64
 		Class                  string
 		ClassUnknown           bool
+		Basis                  []string
 		ShowExcluded           bool
 	}
 	contractEqual(t, filters(store.ProspectListFilters{}), filters{})
@@ -967,7 +970,7 @@ func TestProspectListCategoryMatchesAnyJudgmentsCategory(t *testing.T) {
 	}
 }
 
-// R-V3BX-4SPQ R-T89G-3EXJ R-N7DR-ZBTP
+// R-V3BX-4SPQ R-XMT9-2Q8I R-XP91-U9PW
 func TestProspectListWebsiteFiltersReadStoredJudgment(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

@@ -13,7 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-7AXF-IAYJ R-Q65V-BAP3 R-RIXU-M4CV
+// R-THWD-6HC5 R-Q65V-BAP3 R-RIXU-M4CV
 func TestEnrichmentsAreVisibleBeforeAndApartFromJudgments(t *testing.T) {
 	f := newFixture(t)
 	_, ids, err := f.st.Attach(t.Context(), "new-run", false, []store.Observation{{Scraper: "fmcsa", SourceID: "new-row", Digest: "new-digest", Reading: sources.Reading{Name: "unjudged-business", Names: []string{"unjudged-business"}, NameKey: "unjudged"}}})
@@ -60,14 +60,14 @@ func TestEnrichmentsAreVisibleBeforeAndApartFromJudgments(t *testing.T) {
 	}
 }
 
-// R-AQ2S-CL5A R-ARAO-QCVZ R-YS93-02WN
+// R-AQ2S-CL5A R-ARAO-QCVZ R-OKTB-0E58
 func TestDriveRouteAnswersAndLiveMemberProjection(t *testing.T) {
 	f := fixtureWithRoutes(t, nil, nil, nil, nil, "Chosen origin")
 	id := f.seed(1)[0]
 	list := f.create("Drive fixture")
 	member := func() tools.Member {
 		t.Helper()
-		r := f.call("prospect_list", tools.ProspectListArgs{ProspectList: list.ID})
+		r := f.call("prospect_list", tools.ReadProspectListArgs{ProspectList: list.ID, Peek: true})
 		if r.IsError() {
 			t.Fatal(decode(t, r))
 		}

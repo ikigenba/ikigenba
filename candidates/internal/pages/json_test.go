@@ -100,7 +100,7 @@ func TestCandidateFactsWithoutJudgment(t *testing.T) {
 	}
 }
 
-// R-P8DA-YHFL R-Q5AL-AAGC R-02MG-VB3X
+// R-P8DA-YHFL R-XY08-ASLZ R-02MG-VB3X
 func TestIndependentFactsAndJudgmentsTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()

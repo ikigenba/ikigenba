@@ -49,7 +49,7 @@ func TestFormatting(t *testing.T) {
 	}
 }
 
-// R-1RK4-HLSJ R-Q5AL-AAGC R-02MG-VB3X R-4VMG-YZTE R-3X7J-PRDD R-4ZA6-4B1H
+// R-1RK4-HLSJ R-XY08-ASLZ R-02MG-VB3X R-4VMG-YZTE R-3X7J-PRDD R-4ZA6-4B1H
 func TestTemplateDataShape(t *testing.T) {
 	set, err := Load()
 	if err != nil {

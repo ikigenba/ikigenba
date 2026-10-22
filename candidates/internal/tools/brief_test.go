@@ -11,12 +11,12 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-07GQ-W5OL R-7AXF-IAYJ R-QOGD-1UTI R-PRJ2-Q1SR R-O2WP-YA7Z
+// R-07GQ-W5OL R-THWD-6HC5 R-QOGD-1UTI R-PRJ2-Q1SR R-STID-J2I9
 func TestBriefAnswers(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
 	co := f.create("brief projection")
-	before := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: co.ID}))
+	before := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ReadProspectListArgs{ProspectList: co.ID, Peek: true}))
 	if len(before.Members) != 1 || before.Members[0].Brief != nil {
 		t.Fatal(before)
 	}
@@ -31,7 +31,7 @@ func TestBriefAnswers(t *testing.T) {
 		if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: enrichers.KindBrief, Source: enrichers.SourcePrompts, Inputs: "brief-input", Found: raw, Cost: .25}}); err != nil {
 			t.Fatal(err)
 		}
-		after := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: co.ID}))
+		after := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ReadProspectListArgs{ProspectList: co.ID, Peek: true}))
 		if after.Matching != before.Matching || after.Members[0].Candidate.ID != id || after.Members[0].Brief == nil || *after.Members[0].Brief != stamp(f.now) || !reflect.DeepEqual(after.Members[0].SiteText, before.Members[0].SiteText) {
 			t.Fatal(after)
 		}

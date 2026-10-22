@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-YM5L-3876 R-Q65V-BAP3 R-RE29-31E3 R-RGI1-UKVH R-RIXU-M4CV R-7AXF-IAYJ
+// R-YM5L-3876 R-Q65V-BAP3 R-RE29-31E3 R-SZLV-FX7Q R-RIXU-M4CV R-THWD-6HC5
 func TestFactsAndBriefAnswers(t *testing.T) {
 	at := time.Date(2026, 10, 5, 9, 0, 7, 0, time.UTC)
 	minutes, power, drivers := int64(31), int64(4), int64(0)
@@ -27,8 +27,8 @@ func TestFactsAndBriefAnswers(t *testing.T) {
 		{want, `{"known_since":"2026-10-05","newest_filing":"2026-10-05","categories":[{"name":"retail","source":"brief"}],"classified_by":"brief","records_differ":true,"record_categories":[{"name":"` + sources.CategoryTrucking + `","source":"fmcsa"}],"government_match":"match","fleet_verdict":"pass","power_units":4,"drivers":0,"website":"https","website_url":"https://fixture.test","website_source":"search","minutes":31,"minutes_source":"","written":[{"kind":"website_search","at":"2026-10-05T09:00:07Z"}]}`},
 		{Facts{}, `{"categories":[],"classified_by":"","records_differ":false,"record_categories":[],"fleet_verdict":"","website":"","website_source":"","minutes_source":"","written":[]}`},
 		{Brief{}, `{"summary":"","categories":[],"labels":[],"at":""}`},
-		{Enrichments{}, `{}`},
-		{Enrichments{Facts: &Facts{}, Brief: &Brief{}}, `{"facts":{"categories":[],"classified_by":"","records_differ":false,"record_categories":[],"fleet_verdict":"","website":"","website_source":"","minutes_source":"","written":[]},"brief":{"summary":"","categories":[],"labels":[],"at":""}}`},
+		{Enrichments{}, `{"basis":"","kinds":{"present":[],"missing":[]}}`},
+		{Enrichments{Facts: &Facts{}, Brief: &Brief{}}, `{"basis":"","kinds":{"present":[],"missing":[]},"facts":{"categories":[],"classified_by":"","records_differ":false,"record_categories":[],"fleet_verdict":"","website":"","website_source":"","minutes_source":"","written":[]},"brief":{"summary":"","categories":[],"labels":[],"at":""}}`},
 		{Brief{"chosen-summary", []BriefCategory{{"chosen-category", "chosen-why"}}, []string{"chosen-label"}, stamp(at)}, `{"summary":"chosen-summary","categories":[{"name":"chosen-category","why":"chosen-why"}],"labels":["chosen-label"],"at":"2026-10-05T09:00:07Z"}`},
 	} {
 		b, err := json.Marshal(tc.value)

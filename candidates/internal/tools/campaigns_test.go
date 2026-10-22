@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-3GJ3-M4V9 R-QEP5-ZOVY R-ML95-4DLF R-R3FR-ZV7S
+// R-3GJ3-M4V9 R-QEP5-ZOVY R-ML95-4DLF R-TGOG-SPLG
 func TestCampaignAnswerHistory(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -108,7 +108,7 @@ func TestCampaignAnswerHistory(t *testing.T) {
 	}
 }
 
-// R-X5PS-GSY3 R-Y9YH-38F0
+// R-X5PS-GSY3 R-SSAH-5ARK
 func TestCampaignFilterToolLifecycle(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(7)
@@ -148,7 +148,7 @@ func TestCampaignFilterToolLifecycle(t *testing.T) {
 		}
 		for _, now := range []time.Time{date, date.Add(23*time.Hour + 58*time.Minute)} {
 			f.now = now
-			got := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: k.ID}))
+			got := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ReadProspectListArgs{ProspectList: k.ID, Peek: true}))
 			if got.ProspectList.Filters.MinCampaignAgeDays == nil || *got.ProspectList.Filters.MinCampaignAgeDays != int64(n) {
 				t.Fatal(got)
 			}
@@ -186,7 +186,7 @@ func TestCampaignFilterToolLifecycle(t *testing.T) {
 		if got.Filters.MinCampaignAgeDays != nil {
 			t.Fatal(got)
 		}
-		read := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ProspectListArgs{ProspectList: got.ID}))
+		read := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ReadProspectListArgs{ProspectList: got.ID, Peek: true}))
 		if len(read.Members) != 7 {
 			t.Fatal(read)
 		}

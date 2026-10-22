@@ -58,6 +58,10 @@ func prospectListCondition(k ProspectList, now time.Time) (string, []any) {
 	if f.Class != "" {
 		add(`(c.class=? OR ((c.class='' OR c.class=?) AND ?))`, f.Class, sources.ClassUnknown, f.ClassUnknown)
 	}
+	if len(f.Basis) > 0 {
+		b, _ := json.Marshal(f.Basis)
+		add(basisExpression+` IN (SELECT value FROM json_each(?))`, string(b))
+	}
 	return strings.Join(parts, " AND "), args
 }
 func prospectListOrdering(o []ProspectListOrder) string {
@@ -80,35 +84,69 @@ func prospectListOrdering(o []ProspectListOrder) string {
 func (s *Store) ReadProspectList(ctx context.Context, id string) (ProspectListRead, error) {
 	var out ProspectListRead
 	err := unreachable(s.readTx(ctx, func(tx *sql.Tx) error {
-		k, err := prospectListKey(ctx, tx, id)
-		if err != nil {
-			return err
-		}
-		condition, args := prospectListCondition(k, s.cfg.Now())
-		base := ` FROM judgments AS a JOIN candidates AS c ON c.id=a.candidate LEFT JOIN facts AS f ON f.candidate=c.id WHERE ` + condition
-		var count int64
-		if err = tx.QueryRowContext(ctx, `SELECT count(*)`+base, args...).Scan(&count); err != nil {
-			return err
-		}
-		members, err := rankedWindow(ctx, tx, `SELECT c.id`+base+` ORDER BY `+prospectListOrdering(k.Order)+` LIMIT ?`, append(args, k.Size)...)
-		if err != nil {
-			return err
-		}
-		rejects, err := standingRejects(ctx, tx, id)
-		if err != nil {
-			return err
-		}
-		var classified int64
-		for _, member := range members {
-			if ClassifiedBy(member.Facts.Categories) == enrichers.KindBrief {
-				classified++
-			}
-		}
-		out = ProspectListRead{ProspectList: k, Matching: count, Classified: classified, Members: members, Rejects: rejects}
-		return nil
+		var err error
+		out, _, err = s.readProspectList(ctx, tx, id, s.cfg.Now())
+		return err
 	}))
 	if err != nil {
 		return ProspectListRead{}, err
 	}
 	return out, nil
+}
+
+const basisExpression = `(CASE WHEN EXISTS (SELECT 1 FROM enrichments e WHERE e.candidate=c.id AND e.kind='brief' AND json_extract(e.found,'$.status')='exited' AND json_extract(e.found,'$.exit_code')=0 AND coalesce(json_extract(e.found,'$.summary'),'')<>'') AND EXISTS (SELECT 1 FROM enrichments e WHERE e.candidate=c.id AND e.kind='drive_route' AND json_extract(e.found,'$.minutes') IS NOT NULL) THEN 'enriched' WHEN EXISTS (SELECT 1 FROM enrichments e WHERE e.candidate=c.id AND e.kind IN ('website_search','site_text','brief','drive_route')) THEN 'partial' ELSE 'records' END)`
+
+func (s *Store) readProspectList(ctx context.Context, tx *sql.Tx, id string, now time.Time) (ProspectListRead, []string, error) {
+	k, err := prospectListKey(ctx, tx, id)
+	if err != nil {
+		return ProspectListRead{}, nil, err
+	}
+	condition, args := prospectListCondition(k, now)
+	base := ` FROM judgments AS a JOIN candidates AS c ON c.id=a.candidate LEFT JOIN facts AS f ON f.candidate=c.id WHERE ` + condition
+	rows, err := tx.QueryContext(ctx, strings.Join([]string{`SELECT c.id`, base, ` ORDER BY `, prospectListOrdering(k.Order)}, ""), args...)
+	if err != nil {
+		return ProspectListRead{}, nil, err
+	}
+	passing := []string{}
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			break
+		}
+		passing = append(passing, id)
+	}
+	if err == nil {
+		err = rows.Err()
+	}
+	closeErr := rows.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return ProspectListRead{}, nil, err
+	}
+	members, err := rankedWindow(ctx, tx, `SELECT c.id`+base+` ORDER BY `+prospectListOrdering(k.Order)+` LIMIT ?`, append(args, k.Size)...)
+	if err != nil {
+		return ProspectListRead{}, nil, err
+	}
+	rejects, err := standingRejects(ctx, tx, id)
+	if err != nil {
+		return ProspectListRead{}, nil, err
+	}
+	out := ProspectListRead{ProspectList: k, Matching: int64(len(passing)), Members: members, Rejects: rejects}
+	for _, m := range members {
+		if ClassifiedBy(m.Facts.Categories) == enrichers.KindBrief {
+			out.Classified++
+		}
+		switch m.Basis {
+		case BasisRecords:
+			out.ByBasis.Records++
+		case BasisPartial:
+			out.ByBasis.Partial++
+		case BasisEnriched:
+			out.ByBasis.Enriched++
+		}
+	}
+	out.Changes, err = prospectListChanges(ctx, tx, k, members, now)
+	return out, passing, err
 }
