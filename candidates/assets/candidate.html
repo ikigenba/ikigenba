@@ -45,7 +45,16 @@
      .CreatedText (RFC 3339 UTC to the second, and the same as shown,
      "2006-01-02 15:04:05 UTC") and .Updated and .UpdatedText (likewise);
      .Enrichments (nil when merged; else what the enrichers produced,
-     apart from the judgments), with .Facts and .Brief:
+     apart from the judgments), with .Basis, .Kinds, .Facts and .Brief:
+     .Basis (what its judgments stand on, worked out from its enrichment
+     results as this page was read: "records" when it has no result of
+     any of the four targeted kinds, "enriched" when it has a brief result
+     that did not fail and a drive_route result that routed it, "partial"
+     otherwise); .Kinds (which of the four targeted kinds,
+     "website_search", "site_text", "brief" and "drive_route", it has a
+     result of), with .Present (the kinds it has a result of, in that
+     order, a slice of strings; empty when none) and .Missing (the rest,
+     in the same order; empty when none);
      .Facts (nil when it has no facts row; else its facts
      row, as stored), with .KnownSince and .KnownSinceText (the earliest
      date any link not gone shows it existing, "2018-04-09", both the
@@ -273,7 +282,8 @@
      with .WebsiteTitle; then, when .WebsiteWhy is set,
      div[data-website-why] with .WebsiteWhy; then, when .WebsiteChecked is
      set, div.muted holding "found by search" when .WebsiteSource is
-     "search", else "checked", then a space and
+     "search", "found by check" when it is "check", else "checked", then
+     a space and
      time[datetime=<.WebsiteChecked>] (text .WebsiteCheckedText); the dd
      carrying also [data-website-source=<.WebsiteSource>] when
      .WebsiteSource is set), dt "People"
@@ -288,7 +298,18 @@
      found, from the newest result of each kind, apart from the judgments
      below. A fact is recomputed only when what it was computed from
      changes, never because it is old, and a prospect list reads it at
-     once. None of the facts removes a candidate."), then either, when .Facts is
+     once. None of the facts removes a candidate."), then dl#basis.kv
+     holding dt "Basis" then dd#enrichments-basis[data-basis=<.Basis>]
+     (.Basis in a code element, a space and span.muted holding "judged on
+     records alone: no targeted enrichment yet" when "records", "some
+     targeted enrichment, not yet a brief and a routed drive both" when
+     "partial", "a brief that did not fail and a routed drive" when
+     "enriched"), dt "Kinds present" then dd#kinds-present (one
+     code[data-present=<kind>] per kind of .Kinds.Present, separated by
+     spaces, or when empty span.muted "none") and dt "Kinds missing" then
+     dd#kinds-missing (one code[data-missing=<kind>] per kind of
+     .Kinds.Missing, separated by spaces, or when empty span.muted
+     "none"), then either, when .Facts is
      nil, div#no-facts.empty holding h3 "No facts yet" and a p (text "The
      enrich pass writes them after an ingest, and the enrich tool starts
      one.", enrich in a code element), or dl#facts.kv holding, in this
@@ -570,7 +591,7 @@
 {{end}}{{if .County}}<dt>County</dt><dd id="candidate-county"><code>{{.County}}</code></dd>
 {{end}}{{if .Phone}}<dt>Phone</dt><dd id="candidate-phone">{{.Phone}}</dd>
 {{end}}{{if .Email}}<dt>Email</dt><dd id="candidate-email">{{.Email}}</dd>
-{{end}}{{if .Website}}<dt>Website</dt><dd id="candidate-website" data-website="{{.Website}}"{{if .WebsiteSource}} data-website-source="{{.WebsiteSource}}"{{end}}>{{if eq .Website "unknown"}}<span class="muted">unknown</span>{{else}}{{if .WebsiteURL}}<a class="website-link" href="{{.WebsiteURL}}">{{.WebsiteURL}}</a> {{end}}{{.Website}}{{end}}{{if .WebsiteTitle}}<div data-website-title>{{.WebsiteTitle}}</div>{{end}}{{if .WebsiteWhy}}<div data-website-why>{{.WebsiteWhy}}</div>{{end}}{{if .WebsiteChecked}}<div class="muted">{{if eq .WebsiteSource "search"}}found by search{{else}}checked{{end}} <time datetime="{{.WebsiteChecked}}">{{.WebsiteCheckedText}}</time></div>{{end}}</dd>
+{{end}}{{if .Website}}<dt>Website</dt><dd id="candidate-website" data-website="{{.Website}}"{{if .WebsiteSource}} data-website-source="{{.WebsiteSource}}"{{end}}>{{if eq .Website "unknown"}}<span class="muted">unknown</span>{{else}}{{if .WebsiteURL}}<a class="website-link" href="{{.WebsiteURL}}">{{.WebsiteURL}}</a> {{end}}{{.Website}}{{end}}{{if .WebsiteTitle}}<div data-website-title>{{.WebsiteTitle}}</div>{{end}}{{if .WebsiteWhy}}<div data-website-why>{{.WebsiteWhy}}</div>{{end}}{{if .WebsiteChecked}}<div class="muted">{{if eq .WebsiteSource "search"}}found by search{{else if eq .WebsiteSource "check"}}found by check{{else}}checked{{end}} <time datetime="{{.WebsiteChecked}}">{{.WebsiteCheckedText}}</time></div>{{end}}</dd>
 {{end}}{{if .People}}<dt>People</dt><dd id="candidate-people">{{range .People}}<div data-person>{{.Name}} <span class="muted">{{.Role}}</span></div>{{end}}</dd>
 {{end}}{{if .Class}}<dt>Class</dt><dd id="candidate-class"><code>{{.Class}}</code></dd>
 {{end}}{{if .Cargo}}<dt>Cargo</dt><dd id="candidate-cargo">{{range $i, $c := .Cargo}}{{if $i}} {{end}}<code data-cargo="{{$c}}">{{$c}}</code>{{end}}</dd>
@@ -580,6 +601,11 @@
 </section>
 {{if eq .Status "active"}}{{with $e}}<section id="enrichments-card" class="card" aria-labelledby="enrichments-card-title">
 <header><h2 id="enrichments-card-title">Enrichments</h2><p>What the enrichers found, from the newest result of each kind, apart from the judgments below. A fact is recomputed only when what it was computed from changes, never because it is old, and a prospect list reads it at once. None of the facts removes a candidate.</p></header>
+<dl id="basis" class="kv">
+<dt>Basis</dt><dd id="enrichments-basis" data-basis="{{.Basis}}"><code>{{.Basis}}</code> <span class="muted">{{if eq .Basis "records"}}judged on records alone: no targeted enrichment yet{{else if eq .Basis "partial"}}some targeted enrichment, not yet a brief and a routed drive both{{else if eq .Basis "enriched"}}a brief that did not fail and a routed drive{{end}}</span></dd>
+<dt>Kinds present</dt><dd id="kinds-present">{{range $i, $k := .Kinds.Present}}{{if $i}} {{end}}<code data-present="{{$k}}">{{$k}}</code>{{else}}<span class="muted">none</span>{{end}}</dd>
+<dt>Kinds missing</dt><dd id="kinds-missing">{{range $i, $k := .Kinds.Missing}}{{if $i}} {{end}}<code data-missing="{{$k}}">{{$k}}</code>{{else}}<span class="muted">none</span>{{end}}</dd>
+</dl>
 {{with .Facts}}<dl id="facts" class="kv">
 <dt>Categories</dt><dd id="facts-categories">{{range .Categories}}<div data-category="{{.Name}}"><code>{{.Name}}</code> <span class="muted">{{.Source}}</span></div>{{else}}<span class="muted">unknown</span>{{end}}</dd>
 <dt>Classified by</dt><dd id="facts-classified-by" data-classified-by="{{.ClassifiedBy}}">{{if .ClassifiedBy}}<code>{{.ClassifiedBy}}</code>{{else}}<span class="muted">none</span>{{end}}</dd>

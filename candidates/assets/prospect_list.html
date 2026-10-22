@@ -1,7 +1,10 @@
 {{/* One prospect list at GET /prospect-lists/<id>: its definition (name, size,
      filters with their unknown switches, order, who created and last
      changed it and when), how many candidates match, its members in rank
-     order as this read works them out, and its standing rejects. Shown
+     order as this read works them out, each with its basis, how many
+     stand on each basis, who joined and who left since the previous open
+     of it and why, and its standing rejects. Every open of the page is
+     recorded as an open of the prospect list. Shown
      to any signed-in user; a guest is sent to sign in; an unknown or
      malformed id, or a deleted prospect list's, is the not-found page. Every
      signed-in user sees every prospect list: they are the space's, not a
@@ -28,7 +31,9 @@
      days as text, "730"; empty when absent), .FilingUnknown (bool),
      .MinCampaignAgeDays (the campaign-age minimum in days as text, "90";
      empty when absent), .Class (the class tag it admits, "for_hire", "private" or "mixed";
-     empty when absent), .ClassUnknown (bool) and .ShowExcluded (bool,
+     empty when absent), .ClassUnknown (bool), .Basis (the bases it
+     admits, any of "records", "partial" and "enriched", in that order, a
+     slice of strings; empty when absent, which admits all three) and .ShowExcluded (bool,
      true when it shows excluded candidates); .Order (its sort order, in
      the order stored, never empty, each with .Field, as stored, one of
      "operating_confidence", "revenue_low", "revenue_confidence",
@@ -42,11 +47,39 @@
      .ChangedUser all empty when the store holds none); .Matching (int,
      how many candidates pass its filters and the exclusion rule and are
      not rejected from it, before the size cut); .Classified (int, how
-     many of .Members have .ClassifiedBy "brief"); .Members, the first
+     many of .Members have .ClassifiedBy "brief"); .ByBasis (how many of
+     .Members stand on each basis, with .Records, .Partial and .Enriched,
+     each an int, the three summing to the number of .Members); .Changes
+     (what changed since the previous recorded open of this prospect
+     list, the page's or the prospect_list tool's, a peek aside), with
+     .Since and .SinceText (when that open was, RFC 3339 UTC to the
+     second, and UTC to the minute, "2026-10-05 09:00"; both empty on a
+     first open, and then .DefinitionChanged, .Joined and .Left are
+     empty too), .DefinitionChanged (which parts of the prospect list's
+     own definition changed between the two opens, any of "filters",
+     "order" and "size", in that order, a slice of strings; empty when
+     none), .Joined (the members of this open that were not members of
+     the previous one, in rank order, each with .Candidate (its cand_
+     id), .Basis (its basis now, as a member's) and .Why ("new" when it
+     is new to the corpus since the previous open, "passes" when it was
+     already there and now passes the filters, "moved_up" when it passed
+     them before and moved up into the size cut)) and .Left (the
+     members of the previous open that are not members of this one, in
+     their rank at the previous open, each with .Candidate (its cand_ id),
+     .BasisThen (its basis at the previous open), .BasisNow (its basis
+     now, worked out as a member's is), .Why ("filter" when it now fails
+     a filter, "rejected" when it was rejected from this prospect list,
+     "excluded" when the owner excluded it everywhere, "cut" when it still
+     passes the filters and the order pushed it below the size cut) and
+     .Filter (the name of the filter it now fails, as the prospect list's
+     filters name it, "max_minutes"; empty unless .Why is "filter"));
+     .Members, the first
      .Size of those, in the prospect list's order, each with .Rank (int, its
      position, from 1), .ID (its cand_ id, "cand_" and 16 hex), .Name (its
      display name), .City and .State (its display address's parts; each
-     may be empty), .OperatingConfidence (two decimals, "0.78"; empty when
+     may be empty), .Basis (what its judgments stand on, worked out from
+     its enrichment results at this open: "records", "partial" or
+     "enriched"), .OperatingConfidence (two decimals, "0.78"; empty when
      there is no evidence), .RevenueLow (the combined low as shown,
      "$2,400,000"), .RevenueHigh (the combined high as shown; empty when
      the sources give only a minimum) and .RevenueConfidence (two
@@ -82,8 +115,8 @@
      the second, and UTC to the minute, "2026-10-05 09:00") and .Why (the
      sentence given). Counts, sizes and minutes are shown as the plain
      integer. Names are shown as given; class tags, category words,
-     verdicts, website states, patterns, order fields and directions as
-     stored.
+     verdicts, website states, patterns, order fields, directions, bases
+     and filter names as stored.
      Hooks: title "<.ProspectList.Name> · candidates"; h1 with text .Name;
      p#headline.cluster holding span#matching.badge[data-kind=info] (text
      "<.Matching> matching"), a space and span.muted holding "changed" and
@@ -91,7 +124,13 @@
      else "created" and time[datetime=<.Created>] (text .CreatedText),
      with, between the two and only when .Members is not empty, a space
      and span#classified.badge[data-kind=info] (text "<.Classified> of
-     <the number of .Members> members classified by brief").
+     <the number of .Members> members classified by brief"), then a space
+     and span#by-basis.cluster holding, separated by spaces,
+     span.badge[data-kind=info][data-basis=records] (text "<.ByBasis.Records>
+     on records"), span.badge[data-kind=info][data-basis=partial] (text
+     "<.ByBasis.Partial> partial") and
+     span.badge[data-kind=info][data-basis=enriched] (text
+     "<.ByBasis.Enriched> enriched").
      section#prospect-list-card with h2 "Prospect list" and a p in its header (text "A
      saved search: its members are the active, judged candidates that pass
      every filter, are not rejected from it and are not excluded unless it
@@ -132,24 +171,60 @@
      ("not added to a campaign in the last <.MinCampaignAgeDays> days" and
      span.muted "never in a campaign included"; no switch: a business never
      in a campaign always passes), dt "Class" then dd#filter-class (.Class
-     in a code element; switch .ClassUnknown) and dt "Excluded" then
+     in a code element; switch .ClassUnknown), dt "Basis" then
+     dd#filter-basis (one code[data-basis=<word>] per basis, separated by
+     spaces; no switch) and dt "Excluded" then
      dd#filter-excluded ("shown" when .ShowExcluded, else "hidden").
      section#members with h2 "Members" and a p in its header (text "The
      first of the <.Matching> matching candidates in the prospect list's order,
      up to its size of <.Size>, worked out as this page was read. An unknown value sorts last
-     whatever the direction; the candidate id breaks ties."), then either,
+     whatever the direction; the candidate id breaks ties.") and
+     p#changes (when .Changes.Since is empty, text "This is the first open
+     of this prospect list, so there is nothing to compare it with. The
+     next open shows who joined and who left since this one."; else
+     "Since the last open, " and time[datetime=<.Changes.Since>] (text
+     .Changes.SinceText), then ": <the number of .Changes.Joined>
+     joined and <the number of .Changes.Left> left.", or ": no one joined
+     and no one left." when both are empty), then, only when
+     .Changes.DefinitionChanged is not empty,
+     div#definition-changed.alert.quiet[data-kind=info] holding strong
+     "Definition changed" and a p (text "Between the two opens the
+     prospect list's own definition changed: " then one
+     span[data-changed=<part>] per part holding the part, separated by
+     ", ", then ". Some of these changes are the owner's, not
+     enrichment's."), then, only when
+     .Changes.Joined is not empty, a div.table-scroll holding
+     table#joined-list whose th read Joined, Basis, Why, with one
+     tr[data-joined=<.Candidate>] per row holding td.joined-candidate
+     (a.candidate-link, href "/candidates/<.Candidate>", .Candidate in a
+     code element), td.joined-basis[data-basis=<.Basis>] (.Basis in a code
+     element) and td.joined-why[data-why=<.Why>] ("new since the last
+     open" for "new", "already here, now passes the filters" for
+     "passes", "moved up into the size cut" for "moved_up"), then, only
+     when .Changes.Left is not empty, a div.table-scroll holding
+     table#left-list whose th read Left, Basis then, Basis now, Why, with
+     one tr[data-left=<.Candidate>] per row holding td.left-candidate (as
+     td.joined-candidate), td.left-basis-then[data-basis=<.BasisThen>]
+     and td.left-basis-now[data-basis=<.BasisNow>] (each its basis in a
+     code element) and td.left-why[data-why=<.Why>] (for "filter", "fails
+     the " then .Filter in a code element then " filter", the td carrying
+     also [data-filter=<.Filter>]; "rejected from this prospect list" for
+     "rejected"; "excluded everywhere" for "excluded"; "still passes,
+     pushed below the size cut by the order" for "cut"), then either,
      when .Members is empty, div#no-members.empty holding h3 "No members"
      and a p (text "No judged candidate passes the filters, or every one
      that does is rejected from the prospect list. Loosen a filter or set a
      switch with the edit_prospect_list tool.", edit_prospect_list in a code element),
-     or table#member-list whose th read Rank, Name, City, State, Operating
+     or table#member-list whose th read Rank, Name, City, State, Basis, Operating
      confidence, Low, High, Revenue confidence, Categories, Classified by, Class, Fleet,
      Website, Site text, Brief, Minutes, Government, Known since, Newest filing, with one
      tr[data-candidate=<.ID>] per member holding td.candidate-rank.num
      (.Rank), td.candidate-name (a.candidate-link, href
      "/candidates/<.ID>", text .Name, followed, when .Excluded, by a space
      and span.badge[data-kind=warn] (text "excluded")), td.candidate-city
-     (.City), td.candidate-state (.State), td.candidate-operating.num
+     (.City), td.candidate-state (.State),
+     td.candidate-basis[data-basis=<.Basis>] (.Basis in a code element),
+     td.candidate-operating.num
      (.OperatingConfidence, or when empty span.muted "no evidence"),
      td.candidate-low.num (.RevenueLow, or when empty span.muted "none"),
      td.candidate-high.num (.RevenueHigh, or when empty span.muted
@@ -197,8 +272,8 @@
 <body>
 {{template "banner" .Banner}}
 <main>
-{{$matching := .Matching}}{{$classified := .Classified}}{{$members := .Members}}{{$rejects := .Rejects}}{{with .ProspectList}}<h1>{{.Name}}</h1>
-<p id="headline" class="cluster"><span id="matching" class="badge" data-kind="info">{{$matching}} matching</span> {{if $members}}<span id="classified" class="badge" data-kind="info">{{$classified}} of {{len $members}} members classified by brief</span> {{end}}<span class="muted">{{if .Changed}}changed <time datetime="{{.Changed}}">{{.ChangedText}}</time>{{else}}created <time datetime="{{.Created}}">{{.CreatedText}}</time>{{end}}</span></p>
+{{$matching := .Matching}}{{$classified := .Classified}}{{$byBasis := .ByBasis}}{{$changes := .Changes}}{{$members := .Members}}{{$rejects := .Rejects}}{{with .ProspectList}}<h1>{{.Name}}</h1>
+<p id="headline" class="cluster"><span id="matching" class="badge" data-kind="info">{{$matching}} matching</span> {{if $members}}<span id="classified" class="badge" data-kind="info">{{$classified}} of {{len $members}} members classified by brief</span> <span id="by-basis" class="cluster"><span class="badge" data-kind="info" data-basis="records">{{$byBasis.Records}} on records</span> <span class="badge" data-kind="info" data-basis="partial">{{$byBasis.Partial}} partial</span> <span class="badge" data-kind="info" data-basis="enriched">{{$byBasis.Enriched}} enriched</span></span> {{end}}<span class="muted">{{if .Changed}}changed <time datetime="{{.Changed}}">{{.ChangedText}}</time>{{else}}created <time datetime="{{.Created}}">{{.CreatedText}}</time>{{end}}</span></p>
 <section id="prospect-list-card" class="card" aria-labelledby="prospect-list-title">
 <header><h2 id="prospect-list-title">Prospect list</h2><p>A saved search: its members are the active, judged candidates that pass every filter, are not rejected from it and are not excluded unless it shows excluded ones, in its order, cut to its size. Agents change it with the <code>edit_prospect_list</code> tool.</p></header>
 <dl id="prospect-list" class="kv">
@@ -224,20 +299,49 @@
 <dt>Filing age</dt><dd id="filter-filing">{{if .MaxFilingAgeDays}}newest filing at most {{.MaxFilingAgeDays}} days old{{else}}<span class="muted">any</span>{{end}}{{if .FilingUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
 <dt>Campaigns</dt><dd id="filter-campaign">{{if .MinCampaignAgeDays}}not added to a campaign in the last {{.MinCampaignAgeDays}} days <span class="muted">never in a campaign included</span>{{else}}<span class="muted">any</span>{{end}}</dd>
 <dt>Class</dt><dd id="filter-class">{{if .Class}}<code>{{.Class}}</code>{{else}}<span class="muted">any</span>{{end}}{{if .ClassUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
+<dt>Basis</dt><dd id="filter-basis">{{range $i, $b := .Basis}}{{if $i}} {{end}}<code data-basis="{{$b}}">{{$b}}</code>{{else}}<span class="muted">any</span>{{end}}</dd>
 <dt>Excluded</dt><dd id="filter-excluded">{{if .ShowExcluded}}shown{{else}}hidden{{end}}</dd>
 </dl>
 </section>
 {{end}}<section id="members" class="card flush" aria-labelledby="members-title">
-<header><div><h2 id="members-title">Members</h2><p>The first of the {{$matching}} matching candidates in the prospect list's order, up to its size of {{.Size}}, worked out as this page was read. An unknown value sorts last whatever the direction; the candidate id breaks ties.</p></div></header>
-{{if $members}}<div class="table-scroll">
+<header><div><h2 id="members-title">Members</h2><p>The first of the {{$matching}} matching candidates in the prospect list's order, up to its size of {{.Size}}, worked out as this page was read. An unknown value sorts last whatever the direction; the candidate id breaks ties.</p>
+<p id="changes">{{if $changes.Since}}{{with $changes}}Since the last open, <time datetime="{{.Since}}">{{.SinceText}}</time>{{if or .Joined .Left}}: {{len .Joined}} joined and {{len .Left}} left.{{else}}: no one joined and no one left.{{end}}{{end}}{{else}}This is the first open of this prospect list, so there is nothing to compare it with. The next open shows who joined and who left since this one.{{end}}</p></div></header>
+{{with $changes}}{{if .DefinitionChanged}}<div id="definition-changed" class="alert quiet" data-kind="info"><strong>Definition changed</strong><p>Between the two opens the prospect list's own definition changed: {{range $i, $d := .DefinitionChanged}}{{if $i}}, {{end}}<span data-changed="{{$d}}">{{$d}}</span>{{end}}. Some of these changes are the owner's, not enrichment's.</p></div>
+{{end}}{{if .Joined}}<div class="table-scroll">
+<table id="joined-list">
+<thead><tr><th>Joined</th><th>Basis</th><th>Why</th></tr></thead>
+<tbody>
+{{range .Joined}}<tr data-joined="{{.Candidate}}">
+<td class="joined-candidate"><a class="candidate-link" href="/candidates/{{.Candidate}}"><code>{{.Candidate}}</code></a></td>
+<td class="joined-basis" data-basis="{{.Basis}}"><code>{{.Basis}}</code></td>
+<td class="joined-why" data-why="{{.Why}}">{{if eq .Why "new"}}new since the last open{{else if eq .Why "passes"}}already here, now passes the filters{{else if eq .Why "moved_up"}}moved up into the size cut{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{end}}{{if .Left}}<div class="table-scroll">
+<table id="left-list">
+<thead><tr><th>Left</th><th>Basis then</th><th>Basis now</th><th>Why</th></tr></thead>
+<tbody>
+{{range .Left}}<tr data-left="{{.Candidate}}">
+<td class="left-candidate"><a class="candidate-link" href="/candidates/{{.Candidate}}"><code>{{.Candidate}}</code></a></td>
+<td class="left-basis-then" data-basis="{{.BasisThen}}"><code>{{.BasisThen}}</code></td>
+<td class="left-basis-now" data-basis="{{.BasisNow}}"><code>{{.BasisNow}}</code></td>
+<td class="left-why" data-why="{{.Why}}"{{if eq .Why "filter"}} data-filter="{{.Filter}}"{{end}}>{{if eq .Why "filter"}}fails the <code>{{.Filter}}</code> filter{{else if eq .Why "rejected"}}rejected from this prospect list{{else if eq .Why "excluded"}}excluded everywhere{{else if eq .Why "cut"}}still passes, pushed below the size cut by the order{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{end}}{{end}}{{if $members}}<div class="table-scroll">
 <table id="member-list">
-<thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th class="num">Operating confidence</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Classified by</th><th>Class</th><th>Fleet</th><th>Website</th><th>Site text</th><th>Brief</th><th class="num">Minutes</th><th>Government</th><th>Known since</th><th>Newest filing</th></tr></thead>
+<thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th>Basis</th><th class="num">Operating confidence</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Classified by</th><th>Class</th><th>Fleet</th><th>Website</th><th>Site text</th><th>Brief</th><th class="num">Minutes</th><th>Government</th><th>Known since</th><th>Newest filing</th></tr></thead>
 <tbody>
 {{range $members}}<tr data-candidate="{{.ID}}">
 <td class="candidate-rank num">{{.Rank}}</td>
 <td class="candidate-name"><a class="candidate-link" href="/candidates/{{.ID}}">{{.Name}}</a>{{if .Excluded}} <span class="badge" data-kind="warn">excluded</span>{{end}}</td>
 <td class="candidate-city">{{.City}}</td>
 <td class="candidate-state">{{.State}}</td>
+<td class="candidate-basis" data-basis="{{.Basis}}"><code>{{.Basis}}</code></td>
 <td class="candidate-operating num">{{if .OperatingConfidence}}{{.OperatingConfidence}}{{else}}<span class="muted">no evidence</span>{{end}}</td>
 <td class="candidate-low num">{{if .RevenueLow}}{{.RevenueLow}}{{else}}<span class="muted">none</span>{{end}}</td>
 <td class="candidate-high num">{{if .RevenueHigh}}{{.RevenueHigh}}{{else}}<span class="muted">none</span>{{end}}</td>
