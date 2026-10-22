@@ -60,13 +60,13 @@
      "order" and "size", in that order, a slice of strings; empty when
      none), .Joined (the members of this open that were not members of
      the previous one, in rank order, each with .Candidate (its cand_
-     id), .Basis (its basis now, as a member's) and .Why ("new" when it
+     id), .Name (its display name now), .Basis (its basis now, as a member's) and .Why ("new" when it
      is new to the corpus since the previous open, "passes" when it was
      already there and now passes the filters, "moved_up" when it passed
      them before and moved up into the size cut)) and .Left (the
      members of the previous open that are not members of this one, in
      their rank at the previous open, each with .Candidate (its cand_ id),
-     .BasisThen (its basis at the previous open), .BasisNow (its basis
+     .Name (its display name now), .BasisThen (its basis at the previous open), .BasisNow (its basis
      now, worked out as a member's is), .Why ("filter" when it now fails
      a filter, "rejected" when it was rejected from this prospect list,
      "excluded" when the owner excluded it everywhere, "cut" when it still
@@ -175,42 +175,47 @@
      dd#filter-basis (one code[data-basis=<word>] per basis, separated by
      spaces; no switch) and dt "Excluded" then
      dd#filter-excluded ("shown" when .ShowExcluded, else "hidden").
+     Only when .Changes.Since is set and .Changes.DefinitionChanged,
+     .Changes.Joined or .Changes.Left is not empty, section#changes with
+     h2 "Changes" and a p in its header (text "Who joined and who left
+     since the last open, and why, worked out from the prospect list as
+     it stands now."), then, only when .Changes.DefinitionChanged is not
+     empty, div#definition-changed.alert.quiet[data-kind=info] holding
+     strong "Definition changed" and a p (text "Between the two opens the
+     prospect list's own definition changed: " then one
+     span[data-changed=<part>] per part holding the part, separated by
+     ", ", then ". Some of these changes are the owner's, not
+     enrichment's."), then, only when .Changes.Joined is not empty, a
+     div.table-scroll holding table#joined-list whose th read Joined,
+     Basis, Why, with one tr[data-joined=<.Candidate>] per row holding
+     td.joined-candidate (a.candidate-link, href
+     "/candidates/<.Candidate>", text .Name, then
+     span.secondary-text holding .Candidate in a code element),
+     td.joined-basis[data-basis=<.Basis>] (.Basis in a code element) and
+     td.joined-why[data-why=<.Why>] ("new since the last open" for "new",
+     "already here, now passes the filters" for "passes", "moved up into
+     the size cut" for "moved_up"), then, only when .Changes.Left is not
+     empty, a div.table-scroll holding table#left-list whose th read
+     Left, Basis then, Basis now, Why, with one tr[data-left=<.Candidate>]
+     per row holding td.left-candidate (as td.joined-candidate),
+     td.left-basis-then[data-basis=<.BasisThen>] and
+     td.left-basis-now[data-basis=<.BasisNow>] (each its basis in a code
+     element) and td.left-why[data-why=<.Why>] (for "filter", "fails the "
+     then .Filter in a code element then " filter", the td carrying also
+     [data-filter=<.Filter>]; "rejected from this prospect list" for
+     "rejected"; "excluded everywhere" for "excluded"; "still passes,
+     pushed below the size cut by the order" for "cut").
      section#members with h2 "Members" and a p in its header (text "The
      first of the <.Matching> matching candidates in the prospect list's order,
      up to its size of <.Size>, worked out as this page was read. An unknown value sorts last
      whatever the direction; the candidate id breaks ties.") and
-     p#changes (when .Changes.Since is empty, text "This is the first open
+     p#since-last-open (when .Changes.Since is empty, text "This is the first open
      of this prospect list, so there is nothing to compare it with. The
      next open shows who joined and who left since this one."; else
      "Since the last open, " and time[datetime=<.Changes.Since>] (text
      .Changes.SinceText), then ": <the number of .Changes.Joined>
      joined and <the number of .Changes.Left> left.", or ": no one joined
-     and no one left." when both are empty), then, only when
-     .Changes.DefinitionChanged is not empty,
-     div#definition-changed.alert.quiet[data-kind=info] holding strong
-     "Definition changed" and a p (text "Between the two opens the
-     prospect list's own definition changed: " then one
-     span[data-changed=<part>] per part holding the part, separated by
-     ", ", then ". Some of these changes are the owner's, not
-     enrichment's."), then, only when
-     .Changes.Joined is not empty, a div.table-scroll holding
-     table#joined-list whose th read Joined, Basis, Why, with one
-     tr[data-joined=<.Candidate>] per row holding td.joined-candidate
-     (a.candidate-link, href "/candidates/<.Candidate>", .Candidate in a
-     code element), td.joined-basis[data-basis=<.Basis>] (.Basis in a code
-     element) and td.joined-why[data-why=<.Why>] ("new since the last
-     open" for "new", "already here, now passes the filters" for
-     "passes", "moved up into the size cut" for "moved_up"), then, only
-     when .Changes.Left is not empty, a div.table-scroll holding
-     table#left-list whose th read Left, Basis then, Basis now, Why, with
-     one tr[data-left=<.Candidate>] per row holding td.left-candidate (as
-     td.joined-candidate), td.left-basis-then[data-basis=<.BasisThen>]
-     and td.left-basis-now[data-basis=<.BasisNow>] (each its basis in a
-     code element) and td.left-why[data-why=<.Why>] (for "filter", "fails
-     the " then .Filter in a code element then " filter", the td carrying
-     also [data-filter=<.Filter>]; "rejected from this prospect list" for
-     "rejected"; "excluded everywhere" for "excluded"; "still passes,
-     pushed below the size cut by the order" for "cut"), then either,
+     and no one left." when both are empty), then either,
      when .Members is empty, div#no-members.empty holding h3 "No members"
      and a p (text "No judged candidate passes the filters, or every one
      that does is rejected from the prospect list. Loosen a filter or set a
@@ -303,16 +308,15 @@
 <dt>Excluded</dt><dd id="filter-excluded">{{if .ShowExcluded}}shown{{else}}hidden{{end}}</dd>
 </dl>
 </section>
-{{end}}<section id="members" class="card flush" aria-labelledby="members-title">
-<header><div><h2 id="members-title">Members</h2><p>The first of the {{$matching}} matching candidates in the prospect list's order, up to its size of {{.Size}}, worked out as this page was read. An unknown value sorts last whatever the direction; the candidate id breaks ties.</p>
-<p id="changes">{{if $changes.Since}}{{with $changes}}Since the last open, <time datetime="{{.Since}}">{{.SinceText}}</time>{{if or .Joined .Left}}: {{len .Joined}} joined and {{len .Left}} left.{{else}}: no one joined and no one left.{{end}}{{end}}{{else}}This is the first open of this prospect list, so there is nothing to compare it with. The next open shows who joined and who left since this one.{{end}}</p></div></header>
-{{with $changes}}{{if .DefinitionChanged}}<div id="definition-changed" class="alert quiet" data-kind="info"><strong>Definition changed</strong><p>Between the two opens the prospect list's own definition changed: {{range $i, $d := .DefinitionChanged}}{{if $i}}, {{end}}<span data-changed="{{$d}}">{{$d}}</span>{{end}}. Some of these changes are the owner's, not enrichment's.</p></div>
+{{end}}{{if $changes.Since}}{{with $changes}}{{if or .DefinitionChanged .Joined .Left}}<section id="changes" class="card" aria-labelledby="changes-title">
+<header><h2 id="changes-title">Changes</h2><p>Who joined and who left since the last open, and why, worked out from the prospect list as it stands now.</p></header>
+{{if .DefinitionChanged}}<div id="definition-changed" class="alert quiet" data-kind="info"><strong>Definition changed</strong><p>Between the two opens the prospect list's own definition changed: {{range $i, $d := .DefinitionChanged}}{{if $i}}, {{end}}<span data-changed="{{$d}}">{{$d}}</span>{{end}}. Some of these changes are the owner's, not enrichment's.</p></div>
 {{end}}{{if .Joined}}<div class="table-scroll">
 <table id="joined-list">
 <thead><tr><th>Joined</th><th>Basis</th><th>Why</th></tr></thead>
 <tbody>
 {{range .Joined}}<tr data-joined="{{.Candidate}}">
-<td class="joined-candidate"><a class="candidate-link" href="/candidates/{{.Candidate}}"><code>{{.Candidate}}</code></a></td>
+<td class="joined-candidate"><a class="candidate-link" href="/candidates/{{.Candidate}}">{{.Name}}</a><span class="secondary-text"><code>{{.Candidate}}</code></span></td>
 <td class="joined-basis" data-basis="{{.Basis}}"><code>{{.Basis}}</code></td>
 <td class="joined-why" data-why="{{.Why}}">{{if eq .Why "new"}}new since the last open{{else if eq .Why "passes"}}already here, now passes the filters{{else if eq .Why "moved_up"}}moved up into the size cut{{end}}</td>
 </tr>
@@ -324,7 +328,7 @@
 <thead><tr><th>Left</th><th>Basis then</th><th>Basis now</th><th>Why</th></tr></thead>
 <tbody>
 {{range .Left}}<tr data-left="{{.Candidate}}">
-<td class="left-candidate"><a class="candidate-link" href="/candidates/{{.Candidate}}"><code>{{.Candidate}}</code></a></td>
+<td class="left-candidate"><a class="candidate-link" href="/candidates/{{.Candidate}}">{{.Name}}</a><span class="secondary-text"><code>{{.Candidate}}</code></span></td>
 <td class="left-basis-then" data-basis="{{.BasisThen}}"><code>{{.BasisThen}}</code></td>
 <td class="left-basis-now" data-basis="{{.BasisNow}}"><code>{{.BasisNow}}</code></td>
 <td class="left-why" data-why="{{.Why}}"{{if eq .Why "filter"}} data-filter="{{.Filter}}"{{end}}>{{if eq .Why "filter"}}fails the <code>{{.Filter}}</code> filter{{else if eq .Why "rejected"}}rejected from this prospect list{{else if eq .Why "excluded"}}excluded everywhere{{else if eq .Why "cut"}}still passes, pushed below the size cut by the order{{end}}</td>
@@ -332,7 +336,11 @@
 {{end}}</tbody>
 </table>
 </div>
-{{end}}{{end}}{{if $members}}<div class="table-scroll">
+{{end}}</section>
+{{end}}{{end}}{{end}}<section id="members" class="card flush" aria-labelledby="members-title">
+<header><div><h2 id="members-title">Members</h2><p>The first of the {{$matching}} matching candidates in the prospect list's order, up to its size of {{.Size}}, worked out as this page was read. An unknown value sorts last whatever the direction; the candidate id breaks ties.</p>
+<p id="since-last-open">{{if $changes.Since}}{{with $changes}}Since the last open, <time datetime="{{.Since}}">{{.SinceText}}</time>{{if or .Joined .Left}}: {{len .Joined}} joined and {{len .Left}} left.{{else}}: no one joined and no one left.{{end}}{{end}}{{else}}This is the first open of this prospect list, so there is nothing to compare it with. The next open shows who joined and who left since this one.{{end}}</p></div></header>
+{{if $members}}<div class="table-scroll">
 <table id="member-list">
 <thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th>Basis</th><th class="num">Operating confidence</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Classified by</th><th>Class</th><th>Fleet</th><th>Website</th><th>Site text</th><th>Brief</th><th class="num">Minutes</th><th>Government</th><th>Known since</th><th>Newest filing</th></tr></thead>
 <tbody>

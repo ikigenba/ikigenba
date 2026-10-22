@@ -52,8 +52,9 @@
      that did not fail and a drive_route result that routed it, "partial"
      otherwise); .Kinds (which of the four targeted kinds,
      "website_search", "site_text", "brief" and "drive_route", it has a
-     result of), with .Present (the kinds it has a result of, in that
-     order, a slice of strings; empty when none) and .Missing (the rest,
+     result of), with .Present (the kinds it has any result of, a failed
+     brief or an unroutable drive included, in that order, a slice of
+     strings; empty when none) and .Missing (the rest,
      in the same order; empty when none);
      .Facts (nil when it has no facts row; else its facts
      row, as stored), with .KnownSince and .KnownSinceText (the earliest
