@@ -81,6 +81,6 @@ Release machinery, the version bump, tags, `install.sh`, `.goreleaser.yaml` and 
 1. Set the version in `internal/cli/run.go` to `vX.Y.Z`. The binary reports it verbatim, and the release refuses a tag that does not match.
 2. Commit on `main` and push `main`.
 3. Tag the commit `devctl/vX.Y.Z` and push the tag. The workflow builds with GoReleaser and publishes linux and darwin amd64 and arm64 archives and checksums; a prerelease tag (`devctl/vX.Y.Z-rc.1`) publishes a GitHub prerelease.
-4. Once `gh release view devctl/vX.Y.Z` succeeds, install it from this directory with `DEVCTL_VERSION=vX.Y.Z sh install.sh`, which puts the binary in `~/.local/bin`. A release is not done until this step is. Plain `sh install.sh` installs the newest stable release.
+4. Once `gh release view devctl/vX.Y.Z` succeeds, install it from this directory with `DEVCTL_VERSION=vX.Y.Z sh install.sh`, which puts the binary where `make install` does (`$GOBIN`, else `$GOPATH/bin`). A release is not done until this step is. Plain `sh install.sh` installs the newest stable release.
 
 `devctl --version` then prints `vX.Y.Z`.
