@@ -37,12 +37,12 @@ devctl creates each space's instance profile and role at launch. The role carrie
 
 - SSM read (`GetParameter`, `GetParameters`, `GetParametersByPath`) on `parameter/*.<domain>/*`: every space's every app, nothing else.
 - KMS `Decrypt` and `GenerateDataKey` via SSM in the region.
-- S3 get, put and list on the backup bucket.
+- S3 get, put, delete and list on the backup bucket.
 - Route 53 `ChangeResourceRecordSets` on the one zone, record types `A` and `TXT` only, plus `ListResourceRecordSets` and `GetChange`.
 
-### Hosts write, never delete
+### What hosts may delete
 
-No space role holds `s3:DeleteObject` or `ssm:PutParameter`/`DeleteParameter`, and the boundary does not grant them, so no inline policy can. Bucket expiry is the only way a backup is deleted from the host's side, which is why litestream runs with its own retention off. devctl is the only writer of secrets, and `space destroy --delete-secrets` / `--delete-backups` are the only deletes. Host DNS writes are `A` and `TXT` only, so no host can write an NS record. Accepted caveat: IAM cannot express "one label deep", so a space's `*.<space>` reach is what the per-space policy states; the zone and the state bucket are protected against destruction in Terraform (`prevent_destroy`).
+The boundary grants `s3:DeleteObject` on the backup bucket so that litestream's own retention can prune a space's replicas; each space's inline policy narrows it to the space's own prefix. Bucket expiry stays as the backstop for anything retention leaves behind. No space role holds `ssm:PutParameter`/`DeleteParameter`, and the boundary does not grant them, so no inline policy can. devctl is the only writer of secrets, and `space destroy --delete-secrets` / `--delete-backups` are the only deletes beyond a host's own pruning. Host DNS writes are `A` and `TXT` only, so no host can write an NS record. Accepted caveat: IAM cannot express "one label deep", so a space's `*.<space>` reach is what the per-space policy states; the zone and the state bucket are protected against destruction in Terraform (`prevent_destroy`).
 
 ## Toolchain
 

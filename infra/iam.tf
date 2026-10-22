@@ -36,6 +36,9 @@ resource "aws_iam_policy" "space_boundary" {
         Action = [
           "s3:GetObject",
           "s3:PutObject",
+          # Litestream's own retention prunes a space's replicas; the
+          # per-space policy narrows this to the space's own prefix.
+          "s3:DeleteObject",
         ]
         Resource = "${aws_s3_bucket.backups.arn}/*"
       },
