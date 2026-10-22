@@ -654,7 +654,7 @@ func TestActivateGeneratedConfigurationsAndReloads(t *testing.T) {
 		if servicesBytes != wantServices {
 			t.Fatalf("services %q", servicesBytes)
 		}
-		wantLitestream := "region: 'region'\nsocket:\n  enabled: true\n  path: '" + filepath.Join(f.root, "var/run/litestream.sock") + "'\n  permissions: 0600\nretention:\n  enabled: false\ndbs: []\n"
+		wantLitestream := "region: 'region'\nsnapshot:\n  retention: 216000s\nsocket:\n  enabled: true\n  path: '" + filepath.Join(f.root, "var/run/litestream.sock") + "'\n  permissions: 0600\nretention:\n  enabled: true\ndbs: []\n"
 		if got := f.read("etc/litestream.yml"); got != wantLitestream {
 			t.Fatalf("litestream %q want %q", got, wantLitestream)
 		}

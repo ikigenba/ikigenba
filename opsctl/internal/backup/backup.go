@@ -211,6 +211,9 @@ func replicationPeriod(store config.Store, key string) (string, error) {
 		}
 		return "", fmt.Errorf("%s: must be decimal whole seconds", key)
 	}
+	if seconds == 0 {
+		return "", nil
+	}
 	if seconds > maximumSeconds {
 		return "", fmt.Errorf("%s: must not exceed %d whole seconds", key, maximumSeconds)
 	}
@@ -260,11 +263,15 @@ func renderConfiguration(root string, settings replicationSettings, services []d
 	configuration.WriteString("region: ")
 	configuration.WriteString(yamlString(settings.region))
 	configuration.WriteByte('\n')
+	configuration.WriteString("snapshot:\n")
 	if settings.databaseInterval != "" {
-		configuration.WriteString("snapshot:\n  interval: ")
+		configuration.WriteString("  interval: ")
 		configuration.WriteString(settings.databaseInterval)
 		configuration.WriteByte('\n')
 	}
+	configuration.WriteString("  retention: ")
+	configuration.WriteString(snapshotRetention(settings.databaseInterval))
+	configuration.WriteByte('\n')
 	if settings.walInterval != "" {
 		configuration.WriteString("sync-interval: ")
 		configuration.WriteString(settings.walInterval)
@@ -273,7 +280,7 @@ func renderConfiguration(root string, settings replicationSettings, services []d
 	configuration.WriteString("socket:\n  enabled: true\n  path: ")
 	configuration.WriteString(yamlString(path.Join(root, "/var/run/litestream.sock")))
 	configuration.WriteString("\n  permissions: 0600\n")
-	configuration.WriteString("retention:\n  enabled: false\n")
+	configuration.WriteString("retention:\n  enabled: true\n")
 	if len(services) == 0 {
 		configuration.WriteString("dbs: []\n")
 		return []byte(configuration.String())
@@ -291,6 +298,19 @@ func renderConfiguration(root string, settings replicationSettings, services []d
 		configuration.WriteString("\n      force-path-style: true\n")
 	}
 	return []byte(configuration.String())
+}
+
+func snapshotRetention(interval string) string {
+	if interval == "" {
+		return "216000s"
+	}
+	// replicationPeriod has already validated and normalized the interval.
+	seconds, _ := strconv.ParseUint(strings.TrimSuffix(interval, "s"), 10, 64)
+	retention := strconv.FormatUint(5*seconds/2, 10)
+	if seconds%2 != 0 {
+		retention += ".5"
+	}
+	return retention + "s"
 }
 
 func yamlString(value string) string {

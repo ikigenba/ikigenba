@@ -12,7 +12,7 @@ import (
 )
 
 func TestZeroPeriodsConfigureReplicationWithoutRunningBackups(t *testing.T) {
-	// R-RTJZ-N1L5
+	// R-8TAZ-ROLD
 	for _, test := range []struct {
 		name   string
 		period *string
@@ -47,9 +47,9 @@ func TestZeroPeriodsConfigureReplicationWithoutRunningBackups(t *testing.T) {
 			if err != nil || !changed {
 				t.Fatalf("Regenerate() = %v, %v, want true, nil", changed, err)
 			}
-			wantConfiguration := "region: 'us-west-2'\n" +
+			wantConfiguration := "region: 'us-west-2'\nsnapshot:\n  retention: 216000s\n" +
 				"socket:\n  enabled: true\n  path: '" + filepath.ToSlash(filepath.Join(root, "var/run/litestream.sock")) + "'\n  permissions: 0600\n" +
-				"retention:\n  enabled: false\n" +
+				"retention:\n  enabled: true\n" +
 				"dbs: []\n"
 			if got := readLitestream(t, root); got != wantConfiguration {
 				t.Fatalf("litestream.yml = %q, want %q", got, wantConfiguration)

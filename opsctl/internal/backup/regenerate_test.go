@@ -48,10 +48,10 @@ func TestRegenerateRendersDiscoveredDatabases(t *testing.T) {
 		t.Fatalf("Regenerate() = %v, %v, want true, nil", changed, err)
 	}
 	want := "region: 'us-west-2'\n" +
-		"snapshot:\n  interval: 1s\n" +
+		"snapshot:\n  interval: 1s\n  retention: 2.5s\n" +
 		"sync-interval: 1s\n" +
 		"socket:\n  enabled: true\n  path: '" + filepath.ToSlash(filepath.Join(root, "var/run/litestream.sock")) + "'\n  permissions: 0600\n" +
-		"retention:\n  enabled: false\n" +
+		"retention:\n  enabled: true\n" +
 		"dbs:\n" +
 		"  - path: '" + filepath.ToSlash(filepath.Join(root, "var/opt/ikigenba/alpha/state/nested/alpha.db")) + "'\n" +
 		"    replica:\n      url: 's3://backups.example/hosts/example/alpha/'\n      force-path-style: true\n" +
@@ -74,10 +74,10 @@ func TestRegenerateEmptyDatabaseSequence(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "region: 'us-west-2'\n" +
-		"snapshot:\n  interval: 3600s\n" +
+		"snapshot:\n  interval: 3600s\n  retention: 9000s\n" +
 		"sync-interval: 5s\n" +
 		"socket:\n  enabled: true\n  path: '" + filepath.ToSlash(filepath.Join(root, "var/run/litestream.sock")) + "'\n  permissions: 0600\n" +
-		"retention:\n  enabled: false\n" +
+		"retention:\n  enabled: true\n" +
 		"dbs: []\n"
 	if got := readLitestream(t, root); got != want {
 		t.Fatalf("litestream.yml = %q, want %q", got, want)
@@ -164,10 +164,10 @@ func TestRegenerateAcceptsBucketWithUserinfoOrPort(t *testing.T) {
 				t.Fatalf("Regenerate() = %v, %v, want true, nil", changed, err)
 			}
 			want := "region: 'us-west-2'\n" +
-				"snapshot:\n  interval: 3600s\n" +
+				"snapshot:\n  interval: 3600s\n  retention: 9000s\n" +
 				"sync-interval: 5s\n" +
 				"socket:\n  enabled: true\n  path: '" + filepath.ToSlash(filepath.Join(root, "var/run/litestream.sock")) + "'\n  permissions: 0600\n" +
-				"retention:\n  enabled: false\n" +
+				"retention:\n  enabled: true\n" +
 				"dbs:\n" +
 				"  - path: '" + filepath.ToSlash(filepath.Join(root, "var/opt/ikigenba/notes/state/notes.db")) + "'\n" +
 				"    replica:\n      url: '" + prefix + "notes/'\n      force-path-style: true\n"
@@ -191,16 +191,20 @@ func TestRegenerateAcceptsPeriodLimitAndSafeDatabaseOnlyName(t *testing.T) {
 	if err != nil || !changed {
 		t.Fatalf("Regenerate() = %v, %v, want true, nil", changed, err)
 	}
-	want := "region: 'us-west-2'\n" +
-		"snapshot:\n  interval: 9223372036s\n" +
-		"sync-interval: 9223372036s\n" +
-		"socket:\n  enabled: true\n  path: '" + filepath.ToSlash(filepath.Join(root, "var/run/litestream.sock")) + "'\n  permissions: 0600\n" +
-		"retention:\n  enabled: false\n" +
+	configuration := readLitestream(t, root)
+	// Retention for a database period this large is outside its contract.
+	for _, want := range []string{
+		"region: 'us-west-2'\n",
+		"snapshot:\n  interval: 9223372036s\n",
+		"sync-interval: 9223372036s\n",
+		"socket:\n  enabled: true\n  path: '" + filepath.ToSlash(filepath.Join(root, "var/run/litestream.sock")) + "'\n  permissions: 0600\n",
 		"dbs:\n" +
-		"  - path: '" + filepath.ToSlash(filepath.Join(root, "var/opt/ikigenba/bad_name/state/app.db")) + "'\n" +
-		"    replica:\n      url: 's3://backups/hosts/example/bad_name/'\n      force-path-style: true\n"
-	if got := readLitestream(t, root); got != want {
-		t.Fatalf("litestream.yml = %q, want %q", got, want)
+			"  - path: '" + filepath.ToSlash(filepath.Join(root, "var/opt/ikigenba/bad_name/state/app.db")) + "'\n" +
+			"    replica:\n      url: 's3://backups/hosts/example/bad_name/'\n      force-path-style: true\n",
+	} {
+		if !strings.Contains(configuration, want) {
+			t.Fatalf("litestream.yml = %q; missing %q", configuration, want)
+		}
 	}
 }
 

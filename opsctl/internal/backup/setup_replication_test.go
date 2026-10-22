@@ -15,7 +15,7 @@ import (
 )
 
 func TestSetupReplicationAPIAndSharedService(t *testing.T) {
-	// R-JLOW-YJOY R-JRSE-VEEF
+	// R-JLOW-YJOY R-8QV7-053Z
 	requireSetupReplicationAPI(backup.SetupReplication)
 	root, store := regenerationFixture(t)
 	writeService(t, root, "alpha", "[database]\nengine = \"sqlite\"\npath = \"state/alpha.db\"\n")
@@ -40,8 +40,11 @@ func TestSetupReplicationAPIAndSharedService(t *testing.T) {
 		t.Fatalf("commands = %#v, want %#v", commands, wantCommands)
 	}
 	configuration := readLitestream(t, root)
-	if !strings.Contains(configuration, "retention:\n  enabled: false\n") {
-		t.Fatalf("configuration lacks disabled retention: %q", configuration)
+	if _, err := os.Stat(filepath.Join(root, "etc/systemd/system")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("SetupReplication generated unit files: %v", err)
+	}
+	if !strings.Contains(configuration, "retention:\n  enabled: true\n") {
+		t.Fatalf("configuration lacks enabled retention: %q", configuration)
 	}
 	for _, forbidden := range []string{"credential", "access-key", "secret-key", "alpha.service", "beta.service", "timer", "oneshot"} {
 		if strings.Contains(strings.ToLower(configuration), forbidden) {
