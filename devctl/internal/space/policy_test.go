@@ -61,7 +61,7 @@ func TestPolicyParameterAccess(t *testing.T) {
 }
 
 func TestPolicyObjectAccess(t *testing.T) {
-	// R-RRO8-GLMX
+	// R-MM3E-Y3VK
 	p := samplePolicy(t, false)
 	var actions []string
 	for _, statement := range p.Statement {
@@ -71,6 +71,9 @@ func TestPolicyObjectAccess(t *testing.T) {
 				continue
 			}
 			actions = append(actions, action)
+			if statement.Effect != "Allow" {
+				t.Errorf("S3 effect = %q, want Allow", statement.Effect)
+			}
 			if action == "s3:ListBucket" {
 				if statement.Resource != "arn:aws:s3:::ikigenba.dev" || !reflect.DeepEqual(statement.Condition["StringLike"]["s3:prefix"], []string{"sbx1/", "sbx1/*"}) {
 					t.Errorf("bucket statement = %#v", statement)
@@ -81,7 +84,7 @@ func TestPolicyObjectAccess(t *testing.T) {
 		}
 	}
 	slices.Sort(actions)
-	if want := []string{"s3:GetObject", "s3:ListBucket", "s3:PutObject"}; !reflect.DeepEqual(actions, want) {
+	if want := []string{"s3:DeleteObject", "s3:GetObject", "s3:ListBucket", "s3:PutObject"}; !reflect.DeepEqual(actions, want) {
 		t.Fatalf("S3 actions = %v, want %v", actions, want)
 	}
 	if strings.Contains(string(mustJSON(t, p)), "sbx2/") {
