@@ -3,18 +3,25 @@ package cli
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"math"
 	"net"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/home"
+	"github.com/ikigenba/ikigenba/home/internal/bookmarks"
+	"github.com/ikigenba/ikigenba/home/internal/favicon"
 	"github.com/ikigenba/ikigenba/home/internal/pages"
 	"github.com/ikigenba/ikigenba/home/internal/server"
 )
@@ -24,8 +31,8 @@ const (
 	ExitSuccess      = 0
 	ExitServerFailed = 1
 	ExitUsage        = 2
-	Usage            = "Usage: home [command]\n\nServe the space's front door, a page of every service at /, on the\nsocket systemd passes in. With no command, serve.\n\nCommands:\n  manifest    print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
-	Manifest         = "app = \"home\"\ndescription = \"" + pages.Description + "\"\ndefault = true\nmcp = false\nguests = false\nsecrets = []\n\n[resources]\nmemory_max = \"128M\"\n\n[home]\ngroup = \"core\"\n"
+	Usage            = "Usage: home [command]\n\nServe the space's front door, a page of every service at /, on the\nsocket systemd passes in. With no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
+	Manifest         = "app = \"home\"\ndescription = \"" + pages.Description + "\"\ndefault = true\nmcp = false\nguests = false\nsecrets = []\n\n[database]\nengine = \"sqlite\"\npath = \"state/home.db\"\n\n[resources]\nmemory_max = \"128M\"\n\n[home]\ngroup = \"core\"\n"
 )
 
 // Process supplies the process resources and environment used by Run.
@@ -38,6 +45,10 @@ type Process struct {
 	Stderr    io.Writer
 	Version   string
 	Inherit   func(uintptr) (net.Listener, error)
+	Now       func() time.Time
+	Rand      io.Reader
+	Dir       string
+	HTTP      *http.Client
 	Banner    func(page.User) page.Banner
 	Sink      telemetry.Sink
 }
@@ -65,6 +76,13 @@ func Run(ctx context.Context, p Process) int {
 	diagnostic := func(code int, line string) int { _, _ = stderr.Write([]byte("home: " + line + "\n")); return code }
 	if len(p.Args) > 0 {
 		first := p.Args[0]
+		if first == "db" && len(p.Args) == 2 && p.Args[1] == "status" {
+			err := db.Status(context.Background(), db.Config{Path: filepath.Join(p.Dir, "state", "home.db"), Migrations: home.Migrations()}, p.Stdout)
+			if err != nil {
+				return diagnostic(ExitServerFailed, strings.ReplaceAll(err.Error(), "\n", " "))
+			}
+			return ExitSuccess
+		}
 		known := first == "--version" || first == "--help" || first == "manifest"
 		if known && len(p.Args) == 1 {
 			product := Usage
@@ -80,7 +98,12 @@ func Run(ctx context.Context, p Process) int {
 			return ExitSuccess
 		}
 		arg := first
-		if known {
+		if first == "db" && len(p.Args) > 1 {
+			arg = p.Args[1]
+			if arg == "status" && len(p.Args) > 2 {
+				arg = p.Args[2]
+			}
+		} else if known {
 			arg = p.Args[1]
 		}
 		kind := "command"
@@ -128,6 +151,24 @@ func Run(ctx context.Context, p Process) int {
 	if ctx.Err() != nil {
 		return ExitSuccess
 	}
+	if p.Now == nil {
+		p.Now = time.Now
+	}
+	if p.Rand == nil {
+		p.Rand = rand.Reader
+	}
+	random := &guardedReader{src: p.Rand}
+	database, err := db.Open(ctx, db.Config{Path: filepath.Join(p.Dir, "state", "home.db"), Migrations: home.Migrations(), Now: p.Now, Service: pages.ServiceName, Stderr: stderr})
+	if err != nil {
+		if ctx.Err() != nil {
+			return ExitSuccess
+		}
+		return diagnostic(ExitServerFailed, "cannot open database state/home.db: "+strings.ReplaceAll(err.Error(), "\n", " "))
+	}
+	defer func() { _ = database.Close() }()
+	if ctx.Err() != nil {
+		return ExitSuccess
+	}
 	address, notifyPresent := p.LookupEnv("NOTIFY_SOCKET")
 	if ctx.Err() != nil {
 		return ExitSuccess
@@ -142,13 +183,13 @@ func Run(ctx context.Context, p Process) int {
 			return diagnostic(ExitServerFailed, notifyErr.Error())
 		}
 	}
-	writer := telemetry.New(telemetry.Config{Service: pages.ServiceName, Version: p.Version, Sink: p.Sink, Stderr: stderr})
+	writer := telemetry.New(telemetry.Config{Service: pages.ServiceName, Version: p.Version, Sink: p.Sink, Stderr: stderr, Now: p.Now, Rand: random})
 	writer.Ready()
 	path, pathPresent := p.LookupEnv("IKIGENBA_SERVICES")
 	if !pathPresent {
 		path = ""
 	}
-	h := pages.Handler(pages.Config{Banner: p.Banner, ServicesPath: path, Telemetry: writer})
+	h := pages.Handler(pages.Config{Banner: p.Banner, ServicesPath: path, Telemetry: writer, Store: bookmarks.New(database, bookmarks.Config{Now: p.Now, Rand: random}), Favicon: favicon.New(favicon.Config{HTTP: p.HTTP, UserAgent: pages.ServiceName + " (" + pages.Description + ")"})})
 	stopped := false
 	stop := func(deadline context.Context) { stopped = true; writer.Shutdown(deadline, context.Cause(ctx).Error()) }
 	err = server.Serve(ctx, ln, h, drain, stop)
@@ -180,4 +221,15 @@ func inheritListener(fd uintptr) (net.Listener, error) {
 	}
 	defer func() { _ = file.Close() }()
 	return net.FileListener(file)
+}
+
+type guardedReader struct {
+	mu  sync.Mutex
+	src io.Reader
+}
+
+func (r *guardedReader) Read(b []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.src.Read(b)
 }

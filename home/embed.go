@@ -6,7 +6,7 @@ import (
 	"io/fs"
 )
 
-//go:embed assets/landing.html assets/about.html assets/notfound.html
+//go:embed assets/landing.html assets/about.html assets/notfound.html assets/bookmarks.html
 var assets embed.FS
 
 // Assets returns the embedded page templates at the filesystem root.
@@ -24,6 +24,18 @@ var etc embed.FS
 // Etc returns the embedded host manifest at the filesystem root.
 func Etc() fs.FS {
 	result, err := fs.Sub(etc, "etc")
+	if err != nil {
+		panic(err)
+	}
+	return result
+}
+
+//go:embed migrations/0001_bookmarks.sql
+var migrations embed.FS
+
+// Migrations returns the database migrations at the filesystem root.
+func Migrations() fs.FS {
+	result, err := fs.Sub(migrations, "migrations")
 	if err != nil {
 		panic(err)
 	}

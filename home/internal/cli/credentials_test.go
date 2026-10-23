@@ -7,12 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,11 +27,15 @@ import (
 type credentialSink struct {
 	capture telemetry.Capture
 	reject  bool
+	created chan string
 }
 
 func (s *credentialSink) Deliver(ctx context.Context, event telemetry.Event) error {
 	if err := s.capture.Deliver(ctx, event); err != nil {
 		return err
+	}
+	if event.Name == "bookmark.created" {
+		s.created <- fmt.Sprint(event.Attrs["bookmark"])
 	}
 	if s.reject {
 		return fmt.Errorf("fixture rejection: %w", telemetry.ErrRejected)
@@ -45,9 +52,10 @@ var credentialRequests = []credentialRequest{
 	{"GET", "/", false}, {"HEAD", "/", false}, {"POST", "/about", false},
 	{"GET", "/", true}, {"HEAD", "/", true}, {"GET", "/about", true},
 	{"GET", "/_appkit/theme.css", true}, {"GET", "/missing-fixture", true}, {"POST", "/", true},
+	{"GET", "/bookmarks", true}, {"POST", "/bookmarks", true}, {"GET", "/bookmarks/bmk_5a5a5a5a5a5a5a5a/icon", true}, {"POST", "/bookmarks/bmk_5a5a5a5a5a5a5a5a/delete", true}, {"POST", "/bookmarks", true},
 }
 
-// R-449G-CKT1 R-47X5-HW14 R-4ACY-9FII R-4951-VNRT
+// R-449G-CKT1 R-MCK6-JYLH R-5TU6-1298 R-KT8X-S0TS R-YSFR-NA2O R-SGJQ-S0NK R-MDS2-XQC6
 func TestCredentialSequenceLeavesNoSecrets(t *testing.T) {
 	const username = "ghijklmnopqrstuvwxyzZYXWVUTSRQ"
 	const password = "qrstuvwxyzGHIJKLMNOPQRSTUVWXYZ"
@@ -80,13 +88,20 @@ func TestCredentialSequenceLeavesNoSecrets(t *testing.T) {
 	notifyPath := filepath.Join(dir, "ready.sock")
 	env := map[string]string{"LISTEN_PID": "4242", "LISTEN_FDS": "1", "NOTIFY_SOCKET": notifyPath}
 	for _, reject := range []bool{false, true} {
-		baseline, baselineStderr := runCredentialPasses(t, env, referenceEmail, "", "", reject)
-		assertNoMarkers(t, eventText(baseline)+baselineStderr, fragments)
-		events, stderr := runCredentialPasses(t, env, email, "Bearer "+password, "Basic "+encoded, reject)
+		baseline, baselineStderr, baselineHTTP, baselineTree := runCredentialPasses(t, env, referenceEmail, "", "", reject)
+		assertNoMarkers(t, eventText(baseline)+baselineStderr+baselineHTTP+baselineTree, fragments)
+		events, stderr, requests, tree := runCredentialPasses(t, env, email, "Bearer "+password, "Basic "+encoded, reject)
 		if len(events) == 0 {
 			t.Fatal("sink received no events")
 		}
-		assertNoMarkers(t, eventText(events), fragments)
+		assertNoMarkers(t, eventText(events)+requests+tree, fragments)
+		for _, event := range events {
+			switch event.Name {
+			case "service.started", "service.stopping", "request.started", "request.finished", "bookmark.created", "bookmark.deleted":
+			default:
+				t.Fatal(event)
+			}
+		}
 		if reject {
 			assertNoMarkers(t, stderr, fragments)
 		}
@@ -134,7 +149,7 @@ func eventText(events []telemetry.Event) string {
 	}
 	return result.String()
 }
-func runCredentialPasses(t *testing.T, env map[string]string, email, bearer, basic string, reject bool) ([]telemetry.Event, string) {
+func runCredentialPasses(t *testing.T, env map[string]string, email, bearer, basic string, reject bool) ([]telemetry.Event, string, string, string) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -153,8 +168,23 @@ func runCredentialPasses(t *testing.T, env map[string]string, email, bearer, bas
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(errors.New("fixture cancelled"))
 	var stdout, stderr bytes.Buffer
-	sink := &credentialSink{reject: reject}
-	p := cli.Process{LookupEnv: func(key string) (string, bool) { value, ok := env[key]; return value, ok }, Pid: 4242, Stdout: &stdout, Stderr: &stderr, Version: "fixture-display", Inherit: func(uintptr) (net.Listener, error) { return listener, nil }, Banner: func(user page.User) page.Banner {
+	sink := &credentialSink{reject: reject, created: make(chan string, 8)}
+	root := t.TempDir()
+	runDir := filepath.Join(root, "run")
+	if err := os.Mkdir(runDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	outgoing := &credentialTransport{}
+	servicesPath := filepath.Join(root, "services.json")
+	if err := os.WriteFile(servicesPath, []byte(`{"services":[]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runEnv := map[string]string{}
+	for key, value := range env {
+		runEnv[key] = value
+	}
+	runEnv["IKIGENBA_SERVICES"] = servicesPath
+	p := cli.Process{Dir: runDir, Now: credentialNow, Rand: &credentialRandom{}, HTTP: &http.Client{Transport: outgoing}, LookupEnv: func(key string) (string, bool) { value, ok := runEnv[key]; return value, ok }, Pid: 4242, Stdout: &stdout, Stderr: &stderr, Version: "fixture-display", Inherit: func(uintptr) (net.Listener, error) { return listener, nil }, Banner: func(user page.User) page.Banner {
 		return page.Banner{Email: user.Email, ProfileURL: user.ProfileURL, LogoutURL: user.LogoutURL}
 	}, Sink: sink}
 	done := make(chan int, 1)
@@ -173,14 +203,22 @@ func runCredentialPasses(t *testing.T, env map[string]string, email, bearer, bas
 	}
 	transport := &http.Transport{}
 	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
-	for _, authorization := range []string{bearer, basic} {
+	client := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	bookmarkID := ""
+	for pass, authorization := range []string{bearer, basic} {
 		for i, r := range credentialRequests {
-			request, err := http.NewRequest(r.method, "http://"+listener.Addr().String()+r.path, nil)
+			var body io.Reader
+			if r.method == "POST" && r.path == "/bookmarks" {
+				body = strings.NewReader(url.Values{"name": {fmt.Sprintf("fixture bookmark %d %d", pass, i)}, "url": {"http://fixture-site.test/path"}, "description": {"fixture detail"}}.Encode())
+			}
+			request, err := http.NewRequest(r.method, "http://"+listener.Addr().String()+strings.ReplaceAll(r.path, "bmk_5a5a5a5a5a5a5a5a", bookmarkID), body)
 			if err != nil {
 				t.Fatal(err)
 			}
 			request.Host = "home.fixture.test"
+			if body != nil {
+				request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			}
 			request.Header.Set("X-Forwarded-Proto", "https")
 			request.Header.Set("X-User-Email", email)
 			request.Header.Set("X-Request-Id", "fixture-request-"+strconv.Itoa(i))
@@ -193,6 +231,23 @@ func runCredentialPasses(t *testing.T, env map[string]string, email, bearer, bas
 			response, err := client.Do(request)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if body != nil {
+				if response.StatusCode != 303 {
+					data, _ := io.ReadAll(response.Body)
+					t.Fatalf("credential POST failed %d %s", response.StatusCode, data)
+				}
+				select {
+				case bookmarkID = <-sink.created:
+				case <-time.After(3 * time.Second):
+					t.Fatal("missing creation event")
+				}
+			}
+			if strings.HasSuffix(r.path, "/icon") && response.StatusCode != 200 {
+				t.Fatalf("icon status %d", response.StatusCode)
+			}
+			if strings.HasSuffix(r.path, "/delete") && response.StatusCode != 303 {
+				t.Fatalf("delete status %d", response.StatusCode)
 			}
 			_, readErr := io.Copy(io.Discard, response.Body)
 			closeErr := response.Body.Close()
@@ -213,5 +268,74 @@ func runCredentialPasses(t *testing.T, env map[string]string, email, bearer, bas
 	if stdout.Len() != 0 {
 		t.Fatalf("serve stdout %q", stdout.String())
 	}
-	return sink.capture.Events(), stderr.String()
+	var tree strings.Builder
+	if err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		relative, e := filepath.Rel(root, path)
+		if e != nil {
+			return e
+		}
+		tree.WriteString(relative)
+		if entry.Type().IsRegular() {
+			data, e := fs.ReadFile(os.DirFS(root), relative)
+			if e != nil {
+				return e
+			}
+			tree.Write(data)
+		} else if entry.Type()&os.ModeSymlink != 0 {
+			target, e := os.Readlink(path)
+			if e != nil {
+				return e
+			}
+			tree.WriteString(target)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return sink.capture.Events(), stderr.String(), outgoing.text(), tree.String()
+}
+
+func credentialNow() time.Time { return time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC) }
+
+type credentialRandom struct{ next byte }
+
+func (r *credentialRandom) Read(b []byte) (int, error) {
+	for i := range b {
+		r.next++
+		b[i] = r.next
+	}
+	return len(b), nil
+}
+
+type credentialTransport struct {
+	mu       sync.Mutex
+	requests strings.Builder
+}
+
+func (r *credentialTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.requests.WriteString(req.URL.String())
+	for name, values := range req.Header {
+		r.requests.WriteString(name)
+		for _, value := range values {
+			r.requests.WriteString(value)
+		}
+	}
+	if req.Body != nil {
+		data, err := io.ReadAll(req.Body)
+		if err != nil {
+			return nil, err
+		}
+		r.requests.Write(data)
+	}
+	return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"image/png"}}, Body: io.NopCloser(strings.NewReader("fixture icon"))}, nil
+}
+func (r *credentialTransport) text() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.requests.String()
 }

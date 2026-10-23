@@ -27,7 +27,7 @@ import (
 	"github.com/ikigenba/ikigenba/home/internal/pages"
 )
 
-// R-4F8J-SIHA R-DEQD-NREG R-DFYA-1J55 R-6ZWW-V2U2 R-DH66-FAVU R-JS5F-FUNC R-41TN-L1BN R-72CP-MMBG
+// R-LMHM-3VV9 R-4F8J-SIHA R-DEQD-NREG R-LTT0-EIBF R-6ZWW-V2U2 R-DH66-FAVU R-LV0W-SA24 R-LW8T-61ST R-41TN-L1BN R-72CP-MMBG
 func TestBinary(t *testing.T) {
 	binary := filepath.Join(t.TempDir(), "home")
 	build := exec.Command("go")
@@ -114,7 +114,7 @@ func TestBinary(t *testing.T) {
 			if entry.Group == "core" {
 				data.Core = append(data.Core, tile)
 			} else {
-				data.Application = append(data.Application, tile)
+				data.Backend = append(data.Backend, tile)
 			}
 		}
 		if want := render(t, "landing", data); actual != want {
@@ -127,6 +127,9 @@ func TestBinary(t *testing.T) {
 		}
 	}
 	child.stop(t, syscall.SIGINT)
+	if info, err := os.Stat(filepath.Join(child.cmd.Dir, "state", "home.db")); err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("database missing: %v", err)
+	}
 
 	for _, signal := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT} {
 		capture := new(telemetry.Capture)

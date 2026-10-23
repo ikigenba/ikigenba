@@ -20,9 +20,11 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/page"
-	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/home"
+	"github.com/ikigenba/ikigenba/home/internal/bookmarks"
 	"github.com/ikigenba/ikigenba/home/internal/pages"
 	"github.com/ikigenba/ikigenba/home/internal/server"
 )
@@ -59,7 +61,7 @@ func (w *writes) last() string {
 	return w.calls[len(w.calls)-1]
 }
 
-// R-7AW0-B0IB R-JTDB-TME1 R-5I9C-167I R-4SNF-ZZMX
+// R-KNAS-33FU R-KOIO-GV6J R-5I9C-167I R-4SNF-ZZMX
 func TestConstants(t *testing.T) {
 	const declaredUsage = Usage
 	const declaredManifest = Manifest
@@ -75,7 +77,7 @@ func TestConstants(t *testing.T) {
 	if !reflect.DeepEqual(values, []int{0, 1, 2}) {
 		t.Fatal(values)
 	}
-	want := "Usage: home [command]\n\nServe the space's front door, a page of every service at /, on the\nsocket systemd passes in. With no command, serve.\n\nCommands:\n  manifest    print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
+	want := "Usage: home [command]\n\nServe the space's front door, a page of every service at /, on the\nsocket systemd passes in. With no command, serve.\n\nCommands:\n  manifest    print the app manifest\n  db status   print applied and pending migrations\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  failure\n  2  usage error\n"
 	if declaredUsage != want {
 		t.Fatalf("usage %q", Usage)
 	}
@@ -87,13 +89,13 @@ func TestConstants(t *testing.T) {
 	if pages.Description == "" {
 		t.Fatal("empty description")
 	}
-	want = "app = \"home\"\ndescription = \"" + pages.Description + "\"\ndefault = true\nmcp = false\nguests = false\nsecrets = []\n\n[resources]\nmemory_max = \"128M\"\n\n[home]\ngroup = \"core\"\n"
+	want = "app = \"home\"\ndescription = \"" + pages.Description + "\"\ndefault = true\nmcp = false\nguests = false\nsecrets = []\n\n[database]\nengine = \"sqlite\"\npath = \"state/home.db\"\n\n[resources]\nmemory_max = \"128M\"\n\n[home]\ngroup = \"core\"\n"
 	if declaredManifest != want {
 		t.Fatalf("manifest %q", Manifest)
 	}
 }
 
-// R-6934-G4IS R-6K27-W271 R-6LA4-9TXQ R-7DBT-2JZP R-5H1F-NEGT R-4YQX-WUCE R-7C3W-OS90 R-5N4X-K96A R-4E0N-EQQL R-46P9-44AF R-4TVC-DRDM
+// R-LL9P-Q44K R-6K27-W271 R-6LA4-9TXQ R-7DBT-2JZP R-5H1F-NEGT R-4YQX-WUCE R-KPQK-UMX8 R-KQYH-8ENX R-4E0N-EQQL R-L35H-242V R-KS6D-M6EM R-KTE9-ZY5B
 func TestCommands(t *testing.T) {
 	for _, version := range []string{"", "caller supplied display"} {
 		cases := []struct {
@@ -105,6 +107,7 @@ func TestCommands(t *testing.T) {
 			{[]string{"bogus"}, "", "bogus"}, {[]string{"--bogus"}, "", "--bogus"}, {[]string{""}, "", ""},
 			{[]string{"manifest", "x"}, "", "x"}, {[]string{"--help", "-x"}, "", "-x"}, {[]string{"--version", "manifest"}, "", "manifest"},
 			{[]string{"--bogus", "--help"}, "", "--bogus"},
+			{[]string{"db"}, "", "db"}, {[]string{"db", "bogus"}, "", "bogus"}, {[]string{"db", "status", "extra"}, "", "extra"},
 		}
 		for _, tc := range cases {
 			t.Run(fmt.Sprint(tc.args, version), func(t *testing.T) {
@@ -112,11 +115,15 @@ func TestCommands(t *testing.T) {
 				stderr := &writes{}
 				touched := false
 				touch := func() { touched = true }
-				p := Process{Args: tc.args, Version: version, Stdout: &stdout, Stderr: stderr,
+				p := Process{Dir: t.TempDir(), Now: func() time.Time { touch(); return time.Time{} }, Rand: touchReader{touch}, HTTP: &http.Client{Transport: touchTransport{touch}}, Args: tc.args, Version: version, Stdout: &stdout, Stderr: stderr,
 					LookupEnv: func(string) (string, bool) { touch(); return "unusable", true }, Unsetenv: func(string) error { touch(); return nil },
 					Inherit: func(uintptr) (net.Listener, error) { touch(); return nil, errors.New("forbidden") },
 					Banner:  func(page.User) page.Banner { touch(); return page.Banner{} }, Sink: sinkFunc(func(context.Context, telemetry.Event) error { touch(); return nil })}
 				code := Run(context.Background(), p)
+				entries, e := os.ReadDir(p.Dir)
+				if e != nil || len(entries) != 0 {
+					t.Fatalf("command changed directory: %v %v", entries, e)
+				}
 				if code != ExitSuccess && code != ExitServerFailed && code != ExitUsage {
 					t.Fatal(code)
 				}
@@ -146,14 +153,14 @@ func TestCommands(t *testing.T) {
 	// Commands work with all service resource fields left nil.
 	for _, arg := range []string{"--version", "manifest", "--help", "bogus"} {
 		var out, err bytes.Buffer
-		code := Run(context.Background(), Process{Args: []string{arg}, Stdout: &out, Stderr: &err})
+		code := Run(context.Background(), Process{Args: []string{arg}, Dir: t.TempDir(), Stdout: &out, Stderr: &err})
 		if code == ExitServerFailed {
 			t.Fatal(arg)
 		}
 	}
 }
 
-// R-778B-5PA8 R-4HOC-K1YO R-4LC1-PD6R R-714T-8UKR R-5LX1-6HFL R-5JH8-EXY7 R-79O3-X8RM R-4V38-RJ4B R-5DDQ-I38Q R-5ELM-VUZF R-7FRL-U3H3
+// R-778B-5PA8 R-4HOC-K1YO R-4LC1-PD6R R-714T-8UKR R-5LX1-6HFL R-5JH8-EXY7 R-79O3-X8RM R-4V38-RJ4B R-5DDQ-I38Q R-5ELM-VUZF R-LMHM-3VV9
 func TestStartupChecks(t *testing.T) {
 	badDrain := []string{"0", "-1", "+5", "2.5", "5s", "05", " 5", "5 ", "abc", "１", "5\n"}
 	for _, v := range badDrain {
@@ -180,7 +187,7 @@ func TestStartupChecks(t *testing.T) {
 				stderr := &writes{}
 				keys := []string{}
 				fdCalls := 0
-				p := Process{Pid: 23, Stdout: &out, Stderr: stderr, LookupEnv: lookup(t, env), Inherit: func(fd uintptr) (net.Listener, error) {
+				p := Process{Dir: t.TempDir(), Version: "startup fixture", Now: fixedNow, Rand: repeatReader(0x5a), HTTP: &http.Client{Transport: fixtureTransport{}}, Pid: 23, Stdout: &out, Stderr: stderr, LookupEnv: lookup(t, env), Inherit: func(fd uintptr) (net.Listener, error) {
 					fdCalls++
 					if fd != 3 {
 						t.Fatal(fd)
@@ -231,7 +238,7 @@ func checkRefusal(t *testing.T, env map[string]string, want string) {
 	var stdout bytes.Buffer
 	stderr := &writes{}
 	touch := false
-	p := Process{Pid: 23, Stdout: &stdout, Stderr: stderr, LookupEnv: func(key string) (string, bool) {
+	p := Process{Dir: t.TempDir(), Version: "startup fixture", Now: fixedNow, Rand: repeatReader(0x5a), HTTP: &http.Client{Transport: fixtureTransport{}}, Pid: 23, Stdout: &stdout, Stderr: stderr, LookupEnv: func(key string) (string, bool) {
 		if key == "NOTIFY_SOCKET" || key == "IKIGENBA_SERVICES" {
 			t.Error("late lookup")
 		}
@@ -244,7 +251,7 @@ func checkRefusal(t *testing.T, env map[string]string, want string) {
 	}
 }
 
-// R-4MJY-34XG
+// R-7SBX-KDKV
 func TestAlreadyCancelled(t *testing.T) {
 	for _, during := range []bool{false, true} {
 		ln := &failedListener{err: errors.New("must not accept")}
@@ -256,7 +263,7 @@ func TestAlreadyCancelled(t *testing.T) {
 			cancel()
 		}
 		env := map[string]string{"LISTEN_PID": "23", "LISTEN_FDS": "1", "NOTIFY_SOCKET": "/not/a/notify/socket"}
-		code := Run(ctx, Process{Pid: 23, LookupEnv: lookup(t, env), Stdout: &out, Stderr: &err, Sink: capture, Inherit: func(uintptr) (net.Listener, error) { cancel(); return ln, nil }})
+		code := Run(ctx, Process{Dir: t.TempDir(), Version: "cancel fixture", Now: fixedNow, Rand: repeatReader(0x5a), HTTP: &http.Client{Transport: fixtureTransport{}}, Pid: 23, LookupEnv: lookup(t, env), Stdout: &out, Stderr: &err, Sink: capture, Inherit: func(uintptr) (net.Listener, error) { cancel(); return ln, nil }})
 		if code != ExitSuccess || ln.accepts != 0 || len(capture.Events()) != 0 || out.Len() != 0 || err.Len() != 0 {
 			t.Fatalf("code=%d accepts=%d events=%v out=%q err=%q", code, ln.accepts, capture.Events(), out.String(), err.String())
 		}
@@ -304,7 +311,7 @@ func startRun(t *testing.T, modify func(*Process)) *runFixture {
 	t.Cleanup(func() { _ = ln.Close() })
 	f := &runFixture{result: make(chan int, 1), address: ln.Addr().String(), stderr: &writes{}, stdout: &writes{}, capture: &telemetry.Capture{}}
 	env := map[string]string{"LISTEN_PID": "23", "LISTEN_FDS": "1", "NOTIFY_SOCKET": notify.LocalAddr().String(), "DRAIN_SECONDS": "60"}
-	p := Process{Pid: 23, LookupEnv: lookup(t, env), Stdout: f.stdout, Stderr: f.stderr, Version: "injected display", Sink: f.capture, Inherit: func(fd uintptr) (net.Listener, error) {
+	p := Process{Dir: t.TempDir(), Now: fixedNow, Rand: repeatReader(0x5a), HTTP: &http.Client{Transport: fixtureTransport{}}, Pid: 23, LookupEnv: lookup(t, env), Stdout: f.stdout, Stderr: f.stderr, Version: "injected display", Sink: f.capture, Inherit: func(fd uintptr) (net.Listener, error) {
 		if fd != 3 {
 			t.Errorf("fd %d", fd)
 		}
@@ -368,7 +375,7 @@ func request(t *testing.T, address, path string) (int, http.Header, string) {
 	return response.StatusCode, response.Header, string(body)
 }
 
-// R-7EJP-GBQE R-73KM-0E25 R-6TTE-Y84L R-6YP0-HB3D R-45HC-QCJQ R-760E-RXJJ R-6GEI-QQYY
+// R-1NC5-QZLF R-KMS3-NGR2 R-KGOL-QM1L R-KHWI-4DSA R-1PRY-IJ2T R-KJ4E-I5IZ R-SGJQ-S0NK
 func TestServeAndStop(t *testing.T) {
 	valid := filepath.Join(t.TempDir(), "services.json")
 	if err := os.WriteFile(valid, []byte(`{"services":[{"name":"auth","url":"https://fixture-auth.example.invalid","description":"fixture","socket":"/fixture/auth.sock","enabled":true,"mcp":false}]}`), 0600); err != nil {
@@ -399,8 +406,12 @@ func TestServeAndStop(t *testing.T) {
 					}
 				})
 				// The same handler configured directly must produce exactly the same answer.
-				reference := telemetry.New(telemetry.Config{Service: pages.ServiceName, Sink: &telemetry.Capture{}, Stderr: io.Discard})
-				h := pages.Handler(pages.Config{Banner: func(u page.User) page.Banner {
+				reference := telemetry.New(telemetry.Config{Service: pages.ServiceName, Now: fixedNow, Rand: repeatReader(0x5a), Sink: &telemetry.Capture{}, Stderr: io.Discard})
+				referenceDB, openErr := db.Open(context.Background(), db.Config{Path: filepath.Join(t.TempDir(), "home.db"), Migrations: home.Migrations(), Now: fixedNow})
+				if openErr != nil {
+					t.Fatal(openErr)
+				}
+				h := pages.Handler(pages.Config{Store: bookmarks.New(referenceDB, bookmarks.Config{Now: fixedNow, Rand: repeatReader(0x5a)}), Banner: func(u page.User) page.Banner {
 					return page.Banner{Service: pages.ServiceName, Release: "banner display", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 				}, ServicesPath: func() string {
 					if present {
@@ -418,6 +429,9 @@ func TestServeAndStop(t *testing.T) {
 					}
 				}
 				reference.Shutdown(context.Background(), "reference ended")
+				if err := referenceDB.Close(); err != nil {
+					t.Fatal(err)
+				}
 				f.cancel(errors.New("SIGINT"))
 				select {
 				case code := <-f.result:
@@ -446,7 +460,7 @@ func TestServeAndStop(t *testing.T) {
 						t.Fatal(e)
 					}
 					switch e.Name {
-					case "service.started", "service.stopping", "request.started", "request.finished":
+					case "service.started", "service.stopping", "request.started", "request.finished", "bookmark.created", "bookmark.deleted":
 					default:
 						t.Fatal(e)
 					}
@@ -468,7 +482,7 @@ func referenceRequest(t *testing.T, path string) *http.Request {
 	return r
 }
 
-// R-6HMF-4IPN R-6IUB-IAGC R-3UI9-AEVH
+// R-UA03-1IFR R-6IUB-IAGC R-3UI9-AEVH
 func TestReadinessAndAcceptFailure(t *testing.T) {
 	for _, kind := range []string{"filesystem", "abstract", "unset", "empty", "broken"} {
 		t.Run(kind, func(t *testing.T) {
@@ -521,7 +535,7 @@ func TestReadinessAndAcceptFailure(t *testing.T) {
 			capture := &telemetry.Capture{}
 			var out bytes.Buffer
 			stderr := &writes{}
-			code := Run(context.Background(), Process{Pid: 23, LookupEnv: lookup(t, env), Stdout: &out, Stderr: stderr, Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Sink: capture, Banner: func(page.User) page.Banner { t.Fatal("banner called"); return page.Banner{} }})
+			code := Run(context.Background(), Process{Dir: t.TempDir(), Version: "readiness fixture", Now: fixedNow, Rand: repeatReader(0x5a), HTTP: &http.Client{Transport: fixtureTransport{}}, Pid: 23, LookupEnv: lookup(t, env), Stdout: &out, Stderr: stderr, Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Sink: capture, Banner: func(page.User) page.Banner { t.Fatal("banner called"); return page.Banner{} }})
 			if code != ExitServerFailed || out.Len() != 0 {
 				t.Fatalf("code %d stdout=%q", code, out.String())
 			}
@@ -551,7 +565,7 @@ func (l *callbackListener) Accept() (net.Conn, error) { l.accepts++; return l.ac
 func (*callbackListener) Close() error                { return nil }
 func (*callbackListener) Addr() net.Addr              { return &net.UnixAddr{Name: "test", Net: "unix"} }
 
-// R-78G7-JH0X R-74SI-E5SU
+// R-KKCA-VX9O R-KRNP-6JPU
 func TestRejectedEvents(t *testing.T) {
 	capture := &telemetry.Capture{}
 	f := startRun(t, func(p *Process) {
@@ -595,7 +609,7 @@ func TestRejectedEvents(t *testing.T) {
 	}
 }
 
-// R-TWPU-3772 R-4BKU-N797 R-760E-RXJJ R-4CSR-0YZW
+// R-TWPU-3772 R-4BKU-N797 R-KJ4E-I5IZ R-KP7W-F08G
 func TestDrainCutoff(t *testing.T) {
 	for _, drain := range []struct {
 		value    string
@@ -692,7 +706,7 @@ func TestDrainCutoff(t *testing.T) {
 
 }
 
-// R-TWPU-3772 R-760E-RXJJ
+// R-TWPU-3772 R-KJ4E-I5IZ
 func TestDrainFinishes(t *testing.T) {
 	for _, drain := range []struct {
 		value   string
@@ -802,7 +816,7 @@ func TestNoDefaultLogging(t *testing.T) {
 	}
 }
 
-// R-760E-RXJJ R-78G7-JH0X R-74SI-E5SU
+// R-KJ4E-I5IZ R-KKCA-VX9O R-KRNP-6JPU
 func TestBlockedDeliveryStopsAtDeadline(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -850,21 +864,5 @@ func TestBlockedDeliveryStopsAtDeadline(t *testing.T) {
 	}
 	if f.stderr.text() != text || f.stderr.overlap.Load() {
 		t.Fatal("stderr changed after return or overlapped")
-	}
-}
-
-// R-7FRL-U3H3
-func TestDefaultSocketSink(t *testing.T) {
-	t.Setenv(services.Variable, "")
-	f := startRun(t, func(p *Process) { p.Sink = nil })
-	status, _, _ := request(t, f.address, "/")
-	if status != http.StatusOK {
-		t.Fatal(status)
-	}
-	if code := f.stop(t, "default sink test ended"); code != ExitSuccess {
-		t.Fatal(code)
-	}
-	if f.stderr.count() != 4 || strings.Count(f.stderr.text(), "home: undelivered event: ") != 4 {
-		t.Fatalf("fallback %q", f.stderr.text())
 	}
 }

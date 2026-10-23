@@ -80,10 +80,9 @@ func banner() page.Banner {
 	return page.Banner{Service: pages.ServiceName, Release: "test-release", Commit: "test-commit", Email: "fixed@example.test", ProfileURL: "https://profile.example.test/", LogoutURL: "https://profile.example.test/logout", Home: "https://front.example.test/", Tools: true, Trail: []page.Level{{Name: "injected", URL: "/injected"}}}
 }
 
-// R-65FF-ATAP R-5Y41-06UJ R-DJLZ-6UD8 R-DKTV-KM3X R-5QSM-PKED R-67V8-2CS3
-// R-5VO8-8ND5 R-60JT-RQBX R-6CQT-LFQV R-6DYP-Z7HK R-5ZBX-DYL8
+// R-65FF-ATAP R-5Y41-06UJ R-DJLZ-6UD8 R-JEFO-JQ8C R-JD7S-5YHN R-5QSM-PKED R-67V8-2CS3
+// R-JGVH-B9PQ R-JI3D-P1GF R-6CQT-LFQV R-JJBA-2T74 R-JKJ6-GKXT
 func TestPublicDataAndTemplates(t *testing.T) {
-	t.Setenv(services.Variable, "")
 	const serviceName = pages.ServiceName
 	const description string = pages.Description
 	if serviceName != "home" {
@@ -96,7 +95,7 @@ func TestPublicDataAndTemplates(t *testing.T) {
 	cases := []struct {
 		name string
 		data any
-	}{{"landing", pages.LandingData{b, []pages.Tile{{"provided-name", "https://provided.test", template.HTML("provided-icon"), true}}, []pages.Tile{{"another-name", "https://another.test", template.HTML("another-icon"), false}}}}, {"landing", pages.LandingData{}}, {"about", pages.AboutData{b, pages.Description}}, {"about", pages.AboutData{}}, {"notfound", pages.NoticeData{b}}, {"notfound", pages.NoticeData{}}}
+	}{{"landing", pages.LandingData{b, []pages.BookmarkTile{{"id", "supplied", "https://bookmark.test", true}}, []pages.Tile{{"provided-name", "https://provided.test", template.HTML("provided-icon"), true}}, []pages.Tile{{"another-name", "https://another.test", template.HTML("another-icon"), false}}}}, {"landing", pages.LandingData{}}, {"about", pages.AboutData{b, pages.Description}}, {"about", pages.AboutData{}}, {"notfound", pages.NoticeData{b}}, {"notfound", pages.NoticeData{}}, {"bookmarks", pages.BookmarksData{}}, {"bookmarks", pages.BookmarksData{Banner: b, Bookmarks: []pages.BookmarkRow{{"supplied-id", "supplied-name", "https://supplied.test", true, time.Time{}}}}}}
 	for _, c := range cases {
 		if templateSet(t).Lookup(c.name) == nil {
 			t.Fatal(c.name)
@@ -106,16 +105,15 @@ func TestPublicDataAndTemplates(t *testing.T) {
 	handlers := struct {
 		makeHandler func(pages.Config) http.Handler
 	}{pages.Handler}
-	h := handlers.makeHandler(pages.Config{func(page.User) page.Banner { return b }, "", writer(t, &telemetry.Capture{}, new(bytes.Buffer))})
+	h := handlers.makeHandler(pages.Config{func(page.User) page.Banner { return b }, "", writer(t, &telemetry.Capture{}, new(bytes.Buffer)), newStore(t), newFetcher(nil)})
 	if answer(h, request("GET", "/")).Code != 200 {
 		t.Fatal("handler")
 	}
 }
 
-// R-DM1R-YDUM R-DOHK-PXC0 R-5S0J-3C52 R-66NB-OL1E R-61RQ-5I2M
-// R-5OCT-Y0WZ R-4XJ1-J2LP R-5AXX-QJRC R-4ZYU-AM33
+// R-DM1R-YDUM R-JMYZ-84F7 R-5S0J-3C52 R-JO6V-LW5W R-JPER-ZNWL
+// R-5OCT-Y0WZ R-4XJ1-J2LP R-7R41-6LU6 R-4ZYU-AM33
 func TestRoutesAndPageData(t *testing.T) {
-	t.Setenv(services.Variable, "")
 	for _, empty := range []bool{false, true} {
 		b := banner()
 		if empty {
@@ -125,8 +123,8 @@ func TestRoutesAndPageData(t *testing.T) {
 		root.Trail = nil
 		ab := b
 		ab.Trail = []page.Level{{Name: "about", URL: "/about"}}
-		h := pages.Handler(pages.Config{Banner: func(page.User) page.Banner { return b }, Telemetry: writer(t, &telemetry.Capture{}, new(bytes.Buffer))})
-		for _, path := range []string{"/", "/about", "/nope", "/about/", "/index.html", "/tools", "/mcp", "/events", "/declarations", "/_appkit", "//"} {
+		h := testHandler(t, pages.Config{Banner: func(page.User) page.Banner { return b }, Telemetry: writer(t, &telemetry.Capture{}, new(bytes.Buffer))})
+		for _, path := range []string{"/", "/about", "/nope", "/about/", "/index.html", "/tools", "/mcp", "/events", "/declarations", "/_appkit", "//", "/bookmarks/", "/bookmarks//icon", "/bookmarks/a/b/icon", "/bookmarks/a/icon/", "/bookmarks/a"} {
 			for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"} {
 				r := request(method, path+"?route=/about")
 				r.Header.Set("Location", "/about")
@@ -186,15 +184,14 @@ func TestRoutesAndPageData(t *testing.T) {
 	}
 }
 
-// R-DN9O-C5LB R-DOHK-PXC0 R-DM1R-YDUM R-647I-X1K0
+// R-JLR2-UCOI R-JMYZ-84F7 R-DM1R-YDUM R-647I-X1K0
 func TestLandingTilesFromFreshServices(t *testing.T) {
-	t.Setenv(services.Variable, "")
 	path := filepath.Join(t.TempDir(), "services.json")
 	b := banner()
 	b.Service = "different-service"
 	b.Icon = template.HTML("provided-banner-icon")
 	var gotUser page.User
-	h := pages.Handler(pages.Config{Banner: func(u page.User) page.Banner { gotUser = u; return b }, ServicesPath: path, Telemetry: writer(t, new(telemetry.Capture), new(bytes.Buffer))})
+	h := testHandler(t, pages.Config{Banner: func(u page.User) page.Banner { gotUser = u; return b }, ServicesPath: path, Telemetry: writer(t, new(telemetry.Capture), new(bytes.Buffer))})
 	entryIndex := 0
 	entry := func(name, group string, enabled, icon bool) map[string]any {
 		entryIndex++
@@ -220,7 +217,7 @@ func TestLandingTilesFromFreshServices(t *testing.T) {
 			if e.Group == "core" {
 				want.Core = append(want.Core, tile)
 			} else {
-				want.Application = append(want.Application, tile)
+				want.Backend = append(want.Backend, tile)
 			}
 		}
 		r := request("GET", "/?extra=/about")
@@ -262,16 +259,15 @@ func TestLandingTilesFromFreshServices(t *testing.T) {
 	}
 	check(h, nil)
 	for _, p := range []string{"", filepath.Join(t.TempDir(), "missing.json"), t.TempDir()} {
-		other := pages.Handler(pages.Config{Banner: func(u page.User) page.Banner { gotUser = u; return b }, ServicesPath: p, Telemetry: writer(t, new(telemetry.Capture), new(bytes.Buffer))})
+		other := testHandler(t, pages.Config{Banner: func(u page.User) page.Banner { gotUser = u; return b }, ServicesPath: p, Telemetry: writer(t, new(telemetry.Capture), new(bytes.Buffer))})
 		check(other, nil)
 	}
 }
 
-// R-5AXX-QJRC
+// R-7R41-6LU6
 func TestDecodedPathChoosesRoute(t *testing.T) {
-	t.Setenv(services.Variable, "")
 	b := banner()
-	h := pages.Handler(pages.Config{Banner: func(page.User) page.Banner { return b }, Telemetry: writer(t, new(telemetry.Capture), new(bytes.Buffer))})
+	h := testHandler(t, pages.Config{Banner: func(page.User) page.Banner { return b }, Telemetry: writer(t, new(telemetry.Capture), new(bytes.Buffer))})
 	for _, path := range []string{"/%61bout", "/%2F", "/_appkit/%74heme.css"} {
 		r := request("GET", path+"?path=/about")
 		decoded := r.Clone(r.Context())
@@ -297,10 +293,9 @@ func writeServices(t *testing.T, path, url, socket string) {
 
 // R-647I-X1K0 R-5UGB-UVMG R-6F6M-CZ89
 func TestAuthLinksFreshAndFallback(t *testing.T) {
-	t.Setenv(services.Variable, "")
 	path := filepath.Join(t.TempDir(), "services.json")
 	var got page.User
-	h := pages.Handler(pages.Config{Banner: func(u page.User) page.Banner { got = u; return banner() }, ServicesPath: path, Telemetry: writer(t, &telemetry.Capture{}, new(bytes.Buffer))})
+	h := testHandler(t, pages.Config{Banner: func(u page.User) page.Banner { got = u; return banner() }, ServicesPath: path, Telemetry: writer(t, &telemetry.Capture{}, new(bytes.Buffer))})
 	for _, c := range []struct{ host, proto, base string }{{"home.sbx.ikigenba.dev:443", "https", "https://auth.sbx.ikigenba.dev"}, {"home.sbx.ikigenba.dev", "", "https://auth.sbx.ikigenba.dev"}, {"sbx.ikigenba.dev", "https", "https://auth.sbx.ikigenba.dev"}, {"home.sbx.ikigenba.dev", "http", "http://auth.sbx.ikigenba.dev"}, {"home.sbx.ikigenba.dev", "HTTPS", "https://auth.sbx.ikigenba.dev"}, {"home.sbx.ikigenba.dev", "Http", "https://auth.sbx.ikigenba.dev"}, {"home.sbx.ikigenba.dev", "https, http", "https://auth.sbx.ikigenba.dev"}, {"home.", "https", "https://auth.home."}, {"Home.space:abc", "https", "https://auth.Home.space:abc"}, {"home.space:", "https", "https://auth.space"}} {
 		r := request("GET", "/")
 		r.Host = c.host
@@ -338,7 +333,7 @@ func TestAuthLinksFreshAndFallback(t *testing.T) {
 		t.Fatal(got)
 	}
 	for _, p := range []string{"", t.TempDir()} {
-		h := pages.Handler(pages.Config{Banner: func(u page.User) page.Banner { got = u; return banner() }, ServicesPath: p, Telemetry: writer(t, &telemetry.Capture{}, new(bytes.Buffer))})
+		h := testHandler(t, pages.Config{Banner: func(u page.User) page.Banner { got = u; return banner() }, ServicesPath: p, Telemetry: writer(t, &telemetry.Capture{}, new(bytes.Buffer))})
 		answer(h, request("GET", "/"))
 		if got.ProfileURL != "https://auth.example.test/" {
 			t.Fatal(got)
@@ -348,8 +343,7 @@ func TestAuthLinksFreshAndFallback(t *testing.T) {
 
 // R-5T8F-H3VR
 func TestStaticDelegation(t *testing.T) {
-	t.Setenv(services.Variable, "")
-	h := pages.Handler(pages.Config{Banner: func(page.User) page.Banner { return page.Banner{} }, Telemetry: writer(t, &telemetry.Capture{}, new(bytes.Buffer))})
+	h := testHandler(t, pages.Config{Banner: func(page.User) page.Banner { return page.Banner{} }, Telemetry: writer(t, &telemetry.Capture{}, new(bytes.Buffer))})
 	for _, path := range []string{"/_appkit/theme.css", "/_appkit/nope.css", "/_appkit/../theme.css"} {
 		for _, method := range []string{"GET", "HEAD", "POST"} {
 			r := request(method, path+"?extra=one")
@@ -367,10 +361,9 @@ func TestStaticDelegation(t *testing.T) {
 
 // R-53MJ-FXB6
 func TestIdentityBeforeAllRoutes(t *testing.T) {
-	t.Setenv(services.Variable, "")
-	h := pages.Handler(pages.Config{Banner: func(page.User) page.Banner { t.Fatal("unauthenticated banner"); return page.Banner{} }, Telemetry: writer(t, &telemetry.Capture{}, new(bytes.Buffer))})
+	h := testHandler(t, pages.Config{Banner: func(page.User) page.Banner { t.Fatal("unauthenticated banner"); return page.Banner{} }, Telemetry: writer(t, &telemetry.Capture{}, new(bytes.Buffer))})
 	ref := identity.Require(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("identity accepted") }))
-	for _, path := range []string{"/", "/about", "/nope", "/_appkit/theme.css"} {
+	for _, path := range []string{"/", "/about", "/nope", "/_appkit/theme.css", "/bookmarks", "/bookmarks/unknown/icon", "/bookmarks/unknown/delete"} {
 		for _, method := range []string{"GET", "HEAD", "POST"} {
 			for _, empty := range []bool{false, true} {
 				r := request(method, path)
@@ -388,14 +381,13 @@ func TestIdentityBeforeAllRoutes(t *testing.T) {
 	}
 }
 
-// R-59Q1-CS0N R-52EN-25KH R-516Q-ODTS R-54UF-TP1V R-58I4-Z09Y
+// R-59Q1-CS0N R-KVBE-BUXX R-516Q-ODTS R-SGJQ-S0NK R-THMQ-69G5
 func TestRequestEvents(t *testing.T) {
-	t.Setenv(services.Variable, "")
 	for _, c := range []struct{ method, path, user, id string }{{"GET", "/", "caller", "specified"}, {"POST", "/about", "caller", ""}, {"GET", "/nope", "caller", ""}, {"HEAD", "/_appkit/nope.css", "caller", "specified"}, {"GET", "/", "", ""}} {
 		capture := new(telemetry.Capture)
 		stderr := new(bytes.Buffer)
 		w := writer(t, capture, stderr)
-		h := pages.Handler(pages.Config{Banner: func(page.User) page.Banner { return banner() }, Telemetry: w})
+		h := testHandler(t, pages.Config{Banner: func(page.User) page.Banner { return banner() }, Telemetry: w})
 		r := request(c.method, c.path)
 		r.Header["X-User-Id"] = []string{c.user, "ignored"}
 		r.Header["X-Request-Id"] = []string{c.id, "ignored"}
@@ -440,9 +432,8 @@ type sinkFunc func(context.Context, telemetry.Event) error
 
 func (f sinkFunc) Deliver(ctx context.Context, e telemetry.Event) error { return f(ctx, e) }
 
-// R-5C5U-4BI1
+// R-SK7F-XBVN
 func TestDeliveryCannotDelayAnswers(t *testing.T) {
-	t.Setenv(services.Variable, "")
 	release := make(chan struct{})
 	defer close(release)
 	sinks := []telemetry.Sink{new(telemetry.Capture), sinkFunc(func(context.Context, telemetry.Event) error { return fmt.Errorf("refused: %w", telemetry.ErrRejected) }), sinkFunc(func(ctx context.Context, _ telemetry.Event) error {
@@ -456,7 +447,7 @@ func TestDeliveryCannotDelayAnswers(t *testing.T) {
 	var baseline *httptest.ResponseRecorder
 	for _, sink := range sinks {
 		w := writer(t, sink, new(bytes.Buffer))
-		h := pages.Handler(pages.Config{Banner: func(page.User) page.Banner { return banner() }, Telemetry: w})
+		h := testHandler(t, pages.Config{Banner: func(page.User) page.Banner { return banner() }, Telemetry: w})
 		done := make(chan *httptest.ResponseRecorder, 1)
 		go func() { done <- answer(h, request("GET", "/")) }()
 		var got *httptest.ResponseRecorder
@@ -475,10 +466,9 @@ func TestDeliveryCannotDelayAnswers(t *testing.T) {
 
 // R-4WB5-5AV0
 func TestConcurrentRequests(t *testing.T) {
-	t.Setenv(services.Variable, "")
 	capture := new(telemetry.Capture)
 	w := writer(t, capture, new(bytes.Buffer))
-	h := pages.Handler(pages.Config{Banner: func(u page.User) page.Banner { b := banner(); b.Email = u.Email; return b }, Telemetry: w})
+	h := testHandler(t, pages.Config{Banner: func(u page.User) page.Banner { b := banner(); b.Email = u.Email; return b }, Telemetry: w})
 	var wg sync.WaitGroup
 	for i := range 24 {
 		wg.Go(func() {
@@ -523,9 +513,8 @@ func TestConcurrentRequests(t *testing.T) {
 	}
 }
 
-// R-ZH4K-65HP
+// R-SIZJ-JK4Y
 func TestNoSiblingConnections(t *testing.T) {
-	t.Setenv(services.Variable, "")
 	tcp, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -544,12 +533,13 @@ func TestNoSiblingConnections(t *testing.T) {
 	defer func() { _ = unix.Close() }()
 	path := filepath.Join(t.TempDir(), "services.json")
 	writeServices(t, path, "http://"+tcp.Addr().String(), socket)
-	h := pages.Handler(pages.Config{Banner: func(page.User) page.Banner { return banner() }, ServicesPath: path, Telemetry: writer(t, new(telemetry.Capture), new(bytes.Buffer))})
-	for _, path := range []string{"/", "/about", "/nope", "/_appkit/theme.css"} {
+	h := testHandler(t, pages.Config{Banner: func(page.User) page.Banner { return banner() }, ServicesPath: path, Telemetry: writer(t, new(telemetry.Capture), new(bytes.Buffer))})
+	for _, path := range []string{"/", "/about", "/nope", "/_appkit/theme.css", "/bookmarks", "/bookmarks/unknown/icon", "/bookmarks/unknown/delete"} {
 		for _, method := range []string{"GET", "HEAD", "POST"} {
 			answer(h, request(method, path))
 		}
 	}
+	answer(h, formValues("probe", "https://supplied-site.test"))
 	for _, listener := range []net.Listener{tcp, unix} {
 		conn, ok := listener.(syscall.Conn)
 		if !ok {
@@ -589,12 +579,11 @@ func (w *observingResponse) Write(b []byte) (int, error) {
 	return w.ResponseRecorder.Write(b)
 }
 
-// R-52EN-25KH
+// R-KVBE-BUXX
 func TestStartedBeforeResponseAndFinishedAfter(t *testing.T) {
-	t.Setenv(services.Variable, "")
 	capture := new(telemetry.Capture)
 	w := writer(t, capture, new(bytes.Buffer))
-	h := pages.Handler(pages.Config{Banner: func(page.User) page.Banner { return banner() }, Telemetry: w})
+	h := testHandler(t, pages.Config{Banner: func(page.User) page.Banner { return banner() }, Telemetry: w})
 	out := &observingResponse{ResponseRecorder: httptest.NewRecorder(), before: func() {
 		flush(t, w)
 		events := capture.Events()
@@ -610,16 +599,15 @@ func TestStartedBeforeResponseAndFinishedAfter(t *testing.T) {
 	}
 }
 
-// R-DOHK-PXC0 R-5S0J-3C52 R-66NB-OL1E R-6F6M-CZ89
+// R-JMYZ-84F7 R-5S0J-3C52 R-JO6V-LW5W R-6F6M-CZ89
 func TestEachPageUsesItsRequestBanner(t *testing.T) {
-	t.Setenv(services.Variable, "")
 	type returned struct {
 		user   page.User
 		banner page.Banner
 	}
 	var calls []returned
 	serial := 0
-	h := pages.Handler(pages.Config{Banner: func(u page.User) page.Banner {
+	h := testHandler(t, pages.Config{Banner: func(u page.User) page.Banner {
 		serial++
 		b := banner()
 		b.Release = fmt.Sprintf("supplied-release-%d", serial)

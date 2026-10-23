@@ -5,6 +5,10 @@ mcp = false
 guests = false
 secrets = []
 
+[database]
+engine = "sqlite"
+path = "state/home.db"
+
 [resources]
 memory_max = "128M"
 
