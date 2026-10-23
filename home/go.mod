@@ -2,7 +2,7 @@ module github.com/ikigenba/ikigenba/home
 
 go 1.26.5
 
-require github.com/ikigenba/ikigenba/appkit v0.30.0
+require github.com/ikigenba/ikigenba/appkit v0.31.0
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
