@@ -154,9 +154,10 @@ enter the test side of the grep.
 
 **No id-shaped literal in a fixture.** The grep cannot tell a requirement tag
 from any other string of that shape: such a literal anywhere in a `*_test.go`
-file counts as a covered id. home echoes back what its services file and its
-callers give it — service names, URLs, descriptions, header values — so a test
-that sends an id-shaped value lands one in the test file. No fixture carries
+file counts as a covered id. home echoes back what its services file, its
+callers and the sites it fetches give it — service names, URLs, descriptions,
+header values, bookmark names, bookmark URLs, a fake site's answers — so a
+test that sends an id-shaped value lands one in the test file. No fixture carries
 one: not a service name, a URL, a header value, an event's attribute, or an
 expected body.
 
@@ -187,10 +188,11 @@ descriptor 3. The working directory is one exception: a test that proves what
 an empty `Dir`, or the root package's `Assets`, `Etc` or `Migrations` does
 whatever the working directory is may `t.Chdir` into a temporary directory of
 its own, and such a test does not call `t.Parallel`. The favicon fetch's
-budget is the other: a test of the favicon fetch budget may read the real
-clock immediately before and after calling the fetch and check that the
-deadline the fake transport observes on the request's context lies between
-those instants plus the budget; it never waits on it and nothing sleeps. A test learns that the server is ready the way systemd
+budget is the other: a test of the favicon fetch's budget may read the real
+clock around the call, both to build a caller deadline that lies between now
+and now plus the budget and to check the deadline the fake transport observes
+on the request's context; it never waits on either and nothing sleeps. A test
+learns that the server is ready the way systemd
 does: it binds a Unix datagram socket in a short temporary directory
 (`os.MkdirTemp("", ...)`, since a Unix socket path is limited to 108 bytes and
 `t.TempDir()` can exceed it), names it in `NOTIFY_SOCKET`, and waits for
@@ -306,6 +308,12 @@ serving runs there are and what each one's environment holds. The binary's
 `--version` output and `service.started` all carry that display string, and the
 pages' footer the release and commit. Any
 other test that builds, execs, waits on, or signals a process is a bug.
+
+## Live tests
+
+There are none. home calls one kind of external service, the sites whose
+icons the favicon fetch finds, and design calls for no live test: the unit
+tests stand in for those sites with fakes.
 
 ## Gates
 
