@@ -1,0 +1,82 @@
+{{/* The bookmarks page at GET /bookmarks (and a POST /bookmarks the form
+     turns back): the space's bookmarks in a table beside the add form, one
+     level below the landing page. Shown only to a signed-in user. Data:
+     .Banner (a page.Banner, for banner and footer; its trail is the one
+     level "bookmarks"); .Bookmarks (a slice of bookmarks, in name order,
+     each with .ID, .Name, .URL, .HasIcon, a bool, and .Created, a
+     time.Time); .Submission (the form's values: .Name and .URL, strings,
+     empty on a fresh page); .Errors (the form's errors: .Name and .URL,
+     strings, empty when the field has none); and .NoIcon (bool, true when
+     the page answers the redirect after an add whose icon fetch found
+     nothing). Hooks: title "bookmarks · home"; div.section-head > div
+     holding h1 with text "Bookmarks" and a p (text "Links the space keeps
+     on its front door. Anyone signed in can add or remove one."); then,
+     when .NoIcon, div.alert[data-kind=warn] holding strong "The icon could
+     not be fetched." and a p (text "The bookmark was added with a globe
+     for its icon. Removing it and adding it again fetches once more.");
+     then div.panel holding div.table-scroll > table#bookmark-list whose th
+     read Bookmark, URL, Added and an empty one, with one
+     tr[data-bookmark=<.ID>] per bookmark, in the order of the slice,
+     holding td (img.favicon with src "/bookmarks/<.ID>/icon" and empty alt
+     when .HasIcon, else the Tabler world glyph as svg.ico, then .Name), td
+     holding a with href .URL holding code (.URL), td holding time
+     (datetime .Created in UTC to the minute, RFC 3339; text the same as
+     "YYYY-MM-DD HH:MM") and td.row-actions holding form.inline posting to
+     /bookmarks/<.ID>/delete with button.ghost.small (text "Remove"); with
+     no bookmarks the tbody is empty. Beside the table, section.card with
+     header > h2 "Add bookmark" and a form posting to /bookmarks holding
+     label "Name" for input#bookmark-name (name "name", value
+     .Submission.Name), then, when .Errors.Name, span#name-error (text
+     .Errors.Name) and the input's aria-describedby naming it; label "URL"
+     for input#bookmark-url (name "url", value .Submission.URL), then, when
+     .Errors.URL, span#url-error (text .Errors.URL) and the input's
+     aria-describedby naming it; p.hint (text "The site's icon is fetched
+     from the URL when the bookmark is added; a site without one gets a
+     globe."); and a submit button (the plus glyph, then text "Add
+     bookmark"). No script but appkit's /_appkit/feedback.js. */}}
+{{define "bookmarks"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>bookmarks · home</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<div class="section-head">
+<div>
+<h1>Bookmarks</h1>
+<p>Links the space keeps on its front door. Anyone signed in can add or remove one.</p>
+</div>
+</div>
+{{if .NoIcon}}<div class="alert" data-kind="warn"><strong>The icon could not be fetched.</strong><p>The bookmark was added with a globe for its icon. Removing it and adding it again fetches once more.</p></div>
+{{end}}<div class="panel">
+<div class="table-scroll">
+<table id="bookmark-list">
+<thead><tr><th>Bookmark</th><th>URL</th><th>Added</th><th></th></tr></thead>
+<tbody>{{range .Bookmarks}}
+<tr data-bookmark="{{.ID}}">
+<td>{{if .HasIcon}}<img class="favicon" src="/bookmarks/{{.ID}}/icon" alt="">{{else}}<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M3.6 9h16.8"/><path d="M3.6 15h16.8"/><path d="M11.5 3a17 17 0 0 0 0 18"/><path d="M12.5 3a17 17 0 0 1 0 18"/></svg>{{end}}{{.Name}}</td>
+<td><a href="{{.URL}}"><code>{{.URL}}</code></a></td>
+<td><time datetime="{{.Created.UTC.Format "2006-01-02T15:04Z07:00"}}">{{.Created.UTC.Format "2006-01-02 15:04"}}</time></td>
+<td class="row-actions"><form class="inline" method="post" action="/bookmarks/{{.ID}}/delete"><button class="ghost small" type="submit">Remove</button></form></td>
+</tr>{{end}}
+</tbody>
+</table>
+</div>
+<section class="card">
+<header><h2 class="text-md">Add bookmark</h2></header>
+<form method="post" action="/bookmarks" enctype="application/x-www-form-urlencoded">
+<label for="bookmark-name">Name</label>
+<input id="bookmark-name" type="text" name="name" value="{{.Submission.Name}}"{{if .Errors.Name}} aria-describedby="name-error"{{end}}>
+{{if .Errors.Name}}<span id="name-error">{{.Errors.Name}}</span>{{end}}
+<label for="bookmark-url">URL</label>
+<input id="bookmark-url" type="text" name="url" value="{{.Submission.URL}}"{{if .Errors.URL}} aria-describedby="url-error"{{end}}>
+{{if .Errors.URL}}<span id="url-error">{{.Errors.URL}}</span>{{end}}
+<p class="hint">The site's icon is fetched from the URL when the bookmark is added; a site without one gets a globe.</p>
+<button type="submit"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5l0 14"/><path d="M5 12l14 0"/></svg>Add bookmark</button>
+</form>
+</section>
+</div>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

@@ -1,20 +1,33 @@
-{{/* The landing page at GET /: every service on the space, as tiles,
-     application services over core services. The root of the hierarchy.
-     Shown only to a signed-in user. Data: .Banner (a page.Banner, for
-     banner and footer); .Application and .Core (each a slice of tiles, each
-     with .Name, .URL, .Icon, an HTML value, and .Enabled).
-     Hooks: title "home"; h1 with text "Services", no lede; then, when
-     .Application is not empty, section#application-services, and when
-     .Core is not empty, section#core-services, each holding
-     div.section-head > div > h2 (text "Application Services" or "Core
-     Services") and nav.services labelled with that heading holding a ul
-     with one li per tile, in the order given, each an a holding .Icon
-     verbatim then .Name: with href .URL when .Enabled, else
-     aria-disabled="true" and title "<.Name> is unavailable" and no href.
-     No aria-current. When both are empty, div#no-services.empty holding h3
-     "No services yet" and a p (text "A service installed on this space
-     shows up here."). The tiles' look is the stylesheet's nav.services
-     rules. No search field. No script but appkit's /_appkit/feedback.js. */}}
+{{/* The landing page at GET /: the space's bookmarks, then every service
+     on the space, as tiles, backend services over core services. The root
+     of the hierarchy. Shown only to a signed-in user. Data: .Banner (a
+     page.Banner, for banner and footer); .Bookmarks (a slice of bookmark
+     tiles, in name order, each with .ID, .Name, .URL and .HasIcon, a
+     bool); .Backend and .Core (each a slice of tiles, each with .Name,
+     .URL, .Icon, an HTML value, and .Enabled).
+     Hooks: title "home"; h1 with text "Services", no lede; then, always,
+     section#bookmarks holding div.section-head > div > h2 (text
+     "Bookmarks") beside div.actions holding a.button.secondary.small to
+     /bookmarks (the plus glyph, then text "Add bookmark"); then, when
+     .Bookmarks is not empty, nav.services labelled "Bookmarks" holding a ul
+     with one li per bookmark, in the order given, each an a with href
+     .URL holding, when .HasIcon, img with src "/bookmarks/<.ID>/icon" and
+     empty alt, else the Tabler world glyph as an svg, then .Name; when
+     .Bookmarks is empty, div#no-bookmarks.empty holding h3 "No bookmarks
+     yet", a p (text "A bookmark is a name and a URL; its site's icon is
+     fetched when it is added.") and a.button to /bookmarks (the plus
+     glyph, then text "Add a bookmark"). Then, when .Backend is not empty,
+     section#backend-services, and when .Core is not empty,
+     section#core-services, each holding div.section-head > div > h2 (text
+     "Backend Services" or "Core Services") and nav.services labelled with
+     that heading holding a ul with one li per tile, in the order given,
+     each an a holding .Icon verbatim then .Name: with href .URL when
+     .Enabled, else aria-disabled="true" and title "<.Name> is
+     unavailable" and no href. No aria-current. When .Backend and .Core
+     are both empty, div#no-services.empty holding h3 "No services yet"
+     and a p (text "A service installed on this space shows up here.").
+     The tiles' look is the stylesheet's nav.services rules. No form, no
+     search field. No script but appkit's /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>home</title></head>
@@ -22,15 +35,33 @@
 {{template "banner" .Banner}}
 <main>
 <h1>Services</h1>
-{{if .Application}}<section id="application-services">
+<section id="bookmarks">
 <div class="section-head">
 <div>
-<h2>Application Services</h2>
+<h2>Bookmarks</h2>
 </div>
+<div class="actions"><a class="button secondary small" href="/bookmarks"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5l0 14"/><path d="M5 12l14 0"/></svg>Add bookmark</a></div>
 </div>
-<nav class="services" aria-label="Application Services">
+{{if .Bookmarks}}<nav class="services" aria-label="Bookmarks">
 <ul>
-{{range .Application}}<li><a{{if .Enabled}} href="{{.URL}}"{{else}} aria-disabled="true" title="{{.Name}} is unavailable"{{end}}>{{.Icon}}{{.Name}}</a></li>
+{{range .Bookmarks}}<li><a href="{{.URL}}">{{if .HasIcon}}<img src="/bookmarks/{{.ID}}/icon" alt="">{{else}}<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M3.6 9h16.8"/><path d="M3.6 15h16.8"/><path d="M11.5 3a17 17 0 0 0 0 18"/><path d="M12.5 3a17 17 0 0 1 0 18"/></svg>{{end}}{{.Name}}</a></li>
+{{end}}</ul>
+</nav>
+{{else}}<div id="no-bookmarks" class="empty">
+<h3 class="text-md">No bookmarks yet</h3>
+<p>A bookmark is a name and a URL; its site's icon is fetched when it is added.</p>
+<a class="button" href="/bookmarks"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5l0 14"/><path d="M5 12l14 0"/></svg>Add a bookmark</a>
+</div>
+{{end}}</section>
+{{if .Backend}}<section id="backend-services">
+<div class="section-head">
+<div>
+<h2>Backend Services</h2>
+</div>
+</div>
+<nav class="services" aria-label="Backend Services">
+<ul>
+{{range .Backend}}<li><a{{if .Enabled}} href="{{.URL}}"{{else}} aria-disabled="true" title="{{.Name}} is unavailable"{{end}}>{{.Icon}}{{.Name}}</a></li>
 {{end}}</ul>
 </nav>
 </section>
@@ -46,7 +77,7 @@
 {{end}}</ul>
 </nav>
 </section>
-{{end}}{{if not (or .Application .Core)}}<div id="no-services" class="empty">
+{{end}}{{if not (or .Backend .Core)}}<div id="no-services" class="empty">
 <h3 class="text-md">No services yet</h3>
 <p>A service installed on this space shows up here.</p>
 </div>
