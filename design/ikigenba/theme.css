@@ -266,11 +266,14 @@ nav.services a {
   text-align: center; overflow-wrap: anywhere;
 }
 nav.services a:hover { background: var(--subtle); text-decoration: none; }
-nav.services a > svg {
+nav.services a > svg, nav.services a > img {
   width: 42px; height: 42px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r);
   background: var(--surface); box-shadow: var(--shadow-sm);
 }
-nav.services a:hover > svg { border-color: color-mix(in srgb, var(--line) 60%, var(--fg) 20%); }
+/* A bookmark's tile is the site's own favicon, boxed like a service's icon;
+   a raster icon keeps its aspect inside the box. */
+nav.services a > img { object-fit: contain; }
+nav.services a:hover > svg, nav.services a:hover > img { border-color: color-mix(in srgb, var(--line) 60%, var(--fg) 20%); }
 /* A disabled service keeps its tile, so the grid never reshuffles: faint,
    unlinked, and saying why on hover. */
 nav.services a:not([href]) { color: var(--faint); cursor: default; }
@@ -693,6 +696,8 @@ a.mark:hover { text-decoration: none; }
 .card.flush table { border: 0; border-radius: 0; }
 .card.flush > .table-scroll { border-radius: 0; }
 td.row-actions { text-align: right; white-space: nowrap; }
+/* A bookmark's favicon, or the globe standing in for one, beside its name in a row. */
+td > img.favicon, td > svg.ico { width: 16px; height: 16px; vertical-align: -3px; margin-right: var(--s2); object-fit: contain; }
 td.row-actions > * + * { margin-left: var(--s1); }
 td time, td .muted { white-space: nowrap; }
 .secondary-text { display: block; color: var(--muted); font-size: var(--text-sm); font-weight: 400; }

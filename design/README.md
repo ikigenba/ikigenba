@@ -82,8 +82,12 @@ design/
                     one campaign: its definition, material, and
                     members with their pieces and opens, paged
     webhooks.html   webhooks' landing: the space's webhooks
-    home.html       home's landing: every service on the space, as tiles,
-                    application services over core services
+    home.html       home's landing: the space's bookmarks, then every
+                    service on the space, as tiles, backend services over
+                    core services
+    home-bookmarks.html
+                    home's bookmarks page: the bookmarks in a table beside
+                    the add form
     icons.html      every icon shipped code emits, and what it says
     landing.html    marketing: hero, features, call to action
     prose.html      long-form docs / blog / legal
@@ -817,17 +821,49 @@ trail scripts / tools, the menu's `Tools` row current.
 answers at `acme.ikigenba.com`: the suite's front door, where the product mark
 leads. Banner and footer as in app.html, the service `home` with the Tabler
 `grid-dots` icon (decided 2026-10-09: the launcher's grid, now home's own);
-its menu holds home and About, no Tools.
-- `h1` Services, no lede, then the services of the space in two groups
-  (decided 2026-10-09), each a `main > section` with a `.section-head` `h2`
-  and no subtitle over a `nav.services` grid of tiles, each the service's
-  icon over its name linking to its URL, in the services file's order,
-  entries with an icon only, no search field: `Application Services`
-  (`section#application-services`), today only `dummy`; then `Core
+its menu holds home, Bookmarks and About, no Tools.
+- `h1` Services, no lede, then three `main > section`s, each with a
+  `.section-head` `h2` and no subtitle over a `nav.services` grid of tiles,
+  each an icon over a name linking to a URL, no search field. First
+  `Bookmarks` (`section#bookmarks`; decided 2026-10-23: the space's own
+  links sit above its services, since they are what a person comes to the
+  front door for): the space's bookmarks in name order, each tile the
+  site's favicon as an `img` (decided 2026-10-23: fetched once from the
+  bookmark's URL when it is added and served by home, never hot-linked from
+  the site or a favicon service) over the bookmark's name, linking to its
+  URL; a bookmark whose site had no icon shows the Tabler `world` glyph
+  instead. Its `.section-head` carries, at the right, an `.actions` with an
+  `Add bookmark` button-link to the bookmarks page. The example space keeps
+  `GitHub`, `Grafana`, `Linear`, `Runbook` and `Status page`, the last with
+  the globe. Then the services of the space in two groups (decided
+  2026-10-09), in the services file's order, entries with an icon only:
+  `Backend Services` (`section#backend-services`; renamed 2026-10-23 from
+  `Application Services`, since to a person the suite's own apps are the
+  backend their bookmarks sit in front of), today only `dummy`; then `Core
   Services` (`section#core-services`), every other service. `home` itself
   draws no tile: the banner's mark is the way to it, so no tile is ever
   current. `repos` is disabled, faint and unlinked.
-- State: no services (`div#no-services.empty`).
+- States: no bookmarks (the section stays, with `div#no-bookmarks.empty`
+  holding an `Add a bookmark` button-link, so the way to add one is never
+  hidden); no services (`div#no-services.empty`).
+
+**home-bookmarks.html** — home's bookmarks page at `/bookmarks`, one level
+down the trail (home / bookmarks), the menu's `Bookmarks` row current. The
+page every signed-in user adds and removes the space's bookmarks on;
+bookmarks are the space's, not the user's (decided 2026-10-23: the front
+door is shared, so what it links to is too).
+- `h1` Bookmarks with a lede; then a `.panel` as app.html's: `table#bookmark-list`
+  of Bookmark / URL / Added / actions, one `tr[data-bookmark=<id>]` per
+  bookmark in name order, the first cell the favicon as `img.favicon` (or the
+  `world` glyph as `svg.ico`) then the name, the URL a link in `code`, Added
+  a UTC `time` to the minute, and a `Remove` ghost button in a `form.inline`
+  posting to `/bookmarks/<id>/delete`; beside it the `Add bookmark` card
+  (Name, URL, a hint that the icon is fetched on add, `Add bookmark`
+  button) posting to `/bookmarks`, shown mid-error: Name `GitHub` → "that
+  name is already taken", URL `wiki.acme.dev/ops/oncall` → "the URL must
+  start with http:// or https://".
+- States: no bookmarks (the table with an empty body); the icon could not
+  be fetched (a warn `.alert`: the bookmark was still added, with the globe).
 
 **prompts.html, prompts-prompt.html, prompts-run.html** — prompts at
 `prompts.acme.ikigenba.com`, prompts run by an agent over the suite's models,
