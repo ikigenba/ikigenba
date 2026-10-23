@@ -4,12 +4,17 @@ An app of the Ikigenba platform: the suite's front door, served at
 `home.<host>` and, as the manifest's default app, at the space host itself.
 One Go binary serves on the listening socket it is passed as descriptor 3
 (`/run/ikigenba/home.sock` on a host), behind the host's nginx. home shows
-every service on the space: at `/` it serves a landing page of the services
-the host's services file names, as tiles, and links
-to an about screen at `/about`. It is the home the banner's product mark links
-to on every app's pages. It holds no state, keeps no database, offers no MCP
-tools and records no events of its own beyond appkit's request and service
-events. Every
+the space's bookmarks and every service on the space: at `/` it serves a
+landing page of the bookmarks and of the services the host's services file
+names, as tiles, at `/bookmarks` a page where any signed-in user adds or
+removes a bookmark, and it links to an about screen at `/about`. It is the
+home the banner's product mark links to on every app's pages. home keeps the
+space's bookmarks, each with the icon fetched from the bookmarked site when
+it was added, in its own SQLite database, `state/home.db` resolved against the
+working directory and opened through appkit's `db` package, of which it is the
+only writer. It offers no MCP tools, neither emits nor accepts an event on the
+suite's event bus, and records in the trail, beyond appkit's request and
+service events, only its own `bookmark.created` and `bookmark.deleted`. Every
 page is for a signed-in user of the space; nginx lets no guest through. On a
 host it runs as `/opt/home/bin/home` with `/opt/home` as its working directory
 and its environment from `/opt/home/etc/env`; a developer runs the same binary
@@ -17,10 +22,13 @@ from the checkout. The module path is `github.com/ikigenba/ikigenba/home`. It
 requires appkit (`github.com/ikigenba/ikigenba/appkit`) and uses appkit's
 packages `page` (the banner and footer, and the shared static files under
 `/_appkit/`), `services` (the services
-file, read afresh for auth's links), `version` (the identity `main` reads),
-`identity` (the caller
-nginx authenticated, required on every route), and `telemetry` (the event
-contract, the request middleware, and the writer home's events go through).
+file, read afresh for auth's links and the landing page's tiles), `version`
+(the identity `main` reads), `identity` (the caller
+nginx authenticated, required on every route), `telemetry` (the event
+contract, the request middleware, and the writer home's events go through),
+and `db` (the bookmarks' handle and its migrations). It requires
+`golang.org/x/net` and uses its package `html` (the tokenizer that finds a
+page's icon links).
 The contract is the documents in `specs/design/`. This file restates none of
 it. home is an app, so it has no stories: its intent is the decisions document
 that delivered it, or what was agreed in conversation, together with its
@@ -28,12 +36,14 @@ templates under `assets/`, and the design is the record.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the Go source, the tests, `go.mod`'s requirements and
-`go.sum`, and everything under `etc/` (`etc/manifest.toml`, and the nginx
-fragment `etc/nginx.conf` if design names one). It never writes `assets/`,
-`share/`, this `AGENTS.md`, the `Makefile` or `.golangci.yml`. See the `spec`
-and `build-spec` skills. Everything below is what the build run computes the
-gap and runs the gates against; it is written outside the run and read-only
-to it.
+`go.sum`, the migrations under `migrations/`, which the root package embeds,
+and everything under `etc/` (`etc/manifest.toml`, and the nginx fragment
+`etc/nginx.conf` if design names one). It never writes `assets/`, `share/`,
+this `AGENTS.md`, the `Makefile` or `.golangci.yml`. `state/` is where a
+running home keeps `home.db`; it is created at run time and never committed.
+See the `spec` and `build-spec` skills. Everything below is what the build run
+computes the gap and runs the gates against; it is written outside the run and
+read-only to it.
 
 ## Layout
 
@@ -41,9 +51,19 @@ to it.
 - `assets/` is the page markup, and `share/icon.svg` the service's icon, shown
 in the banner's trail and on home. The
   build run never writes them; the user or the delivering agent changes them.
-- The root package, in the directory holding `go.mod`, embeds `assets/` and
-  `etc/`. `cmd/home` is the binary. `internal/` is everything else, one
-  package per concern.
+- The root package, in the directory holding `go.mod`, embeds `assets/`,
+  `etc/` and `migrations/`: `embed.go` embeds the four templates
+  `landing.html`, `about.html`, `notfound.html` and `bookmarks.html`, and
+  exports them as `Assets()`, `manifest.toml` as `Etc()` and the migrations as
+  `Migrations()`. `cmd/home` is the binary. `internal/` is everything else,
+  one package per concern:
+  - `internal/cli`: the run seam, the commands and the serve path.
+  - `internal/server`: a listener's life, serving and draining.
+  - `internal/pages`: the whole HTTP surface, the bookmarks routes included.
+  - `internal/bookmarks`: the store over the database.
+  - `internal/favicon`: the fetch of a bookmark's icon.
+- `migrations/` is the database's schema, one file per migration named with a
+  four-digit version: `0001_bookmarks.sql`.
 - `etc/` is what the host needs: `manifest.toml`.
 
 ## Assets
@@ -88,26 +108,35 @@ without its class, width, height, or invisible bounding path, as
   committed, and the gates themselves run offline. `go.mod` starts with no
   requirement; the build run sets each one and its `go.sum` lines, and moves
   to another release only when this file names one:
-  - appkit `v0.22.0`, set with
-    `go get github.com/ikigenba/ikigenba/appkit@v0.22.0`: a release whose
-    `page.Banner` carries the home link, the tools flag, the trail's
-    levels, and `Release` and `Commit` but no service launcher. See Adopting appkit below. It and the modules it pulls in are
-    home's only dependencies.
+  - appkit `v0.30.0`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.30.0`: a release that
+    exports the `db` and `version` packages and whose `page.Banner` carries
+    the home link, the tools flag, the trail's levels, and `Release` and
+    `Commit` but no service launcher. See Adopting appkit below.
+  - `golang.org/x/net`, used for its `html` package only, the tokenizer
+    `internal/favicon` reads a page's icon links with. Its release is the one
+    current when the build run sets it, with `go get golang.org/x/net@latest`;
+    this file names none. It, appkit and the modules they pull in are home's
+    only dependencies.
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through
   it (see Test discipline)
 - GNU `make`: the developer targets in the `Makefile` (see Build); no gate
   runs through it
 
-Adding any external dependency needs approval first, the user's or a
-delivery's.
+**The SQLite driver is appkit's.** home stores its bookmarks in SQLite
+through appkit's `db` package, which brings `modernc.org/sqlite`: pure Go, so
+the release build stays cgo-free (gate 3), and already approved for the
+repository. home neither requires nor imports it directly. `golang.org/x/net`
+was approved by the decisions document that delivered bookmarks. Adding any
+other external dependency needs approval first, the user's or a delivery's.
 
 ### Adopting appkit
 
-appkit is required only at a published release, here `v0.22.0`, fetched
+appkit is required only at a published release, here `v0.30.0`, fetched
 through the ordinary module proxy and checked against the checksum database
 (see the root `AGENTS.md`); the build run sets it with
-`go get github.com/ikigenba/ikigenba/appkit@v0.22.0`. No `replace` directive,
+`go get github.com/ikigenba/ikigenba/appkit@v0.30.0`. No `replace` directive,
 no `go.work`, no local module cache stands in for it.
 
 ## Test files
@@ -137,7 +166,8 @@ These rules govern the unit tests: everything `go test ./...` runs.
 
 - Offline: no network beyond loopback and Unix sockets, no real credentials.
 - Deterministic: time, randomness, and environment are injected; no test
-  sleeps to wait for something.
+  sleeps to wait for something. Clocks are injected: a test that opens a
+  database hands it a `Now` it controls.
 - No fixed ports: a test binds `127.0.0.1:0` or a Unix socket in a
   temporary directory.
 - Isolated: a test touches only its own temporary directory, never the
@@ -145,15 +175,22 @@ These rules govern the unit tests: everything `go test ./...` runs.
 
 **The run seam carries the process.** home binds nothing itself; it serves
 on the listener it is passed. Arguments, environment lookup and removal, the
-pid, the inherited listener and the output streams come in through the run
-seam design declares (`cli.Run` with `cli.Process`), and tests inject them. A
-`Run`-level test sets the version string to one of its own. A test never reads
-or changes the real environment, clock, or randomness, and never leaves the
+pid, the inherited listener, the output streams, the clock, the random source,
+the working directory and the HTTP client every request of a favicon fetch
+goes through come in through the run seam design declares (`cli.Run` with
+`cli.Process`), and tests inject them. A `Run`-level test sets the version
+string to one of its own and `Dir` to a temporary directory of its own, so
+the database lands there and never in the checkout. A test never reads or
+changes the real environment, clock, or randomness, and never leaves the
 inherited-listener step unset, since that would take the test process's real
-descriptor 3. The one exception is the working directory: a test that proves
-what the root package's `Assets` or `Etc` does whatever the working directory
-is may `t.Chdir` into a temporary directory of its own, and such a test does
-not call `t.Parallel`. A test learns that the server is ready the way systemd
+descriptor 3. The working directory is one exception: a test that proves what
+an empty `Dir`, or the root package's `Assets`, `Etc` or `Migrations` does
+whatever the working directory is may `t.Chdir` into a temporary directory of
+its own, and such a test does not call `t.Parallel`. The favicon fetch's
+budget is the other: a test of the favicon fetch budget may read the real
+clock immediately before and after calling the fetch and check that the
+deadline the fake transport observes on the request's context lies between
+those instants plus the budget; it never waits on it and nothing sleeps. A test learns that the server is ready the way systemd
 does: it binds a Unix datagram socket in a short temporary directory
 (`os.MkdirTemp("", ...)`, since a Unix socket path is limited to 108 bytes and
 `t.TempDir()` can exceed it), names it in `NOTIFY_SOCKET`, and waits for
@@ -162,6 +199,33 @@ test waits on the clock, because the drain deadline is the behavior, and they
 keep that wait to a few seconds. The gates run offline as an ordinary user,
 with no systemd.
 
+**The sites are faked, never called.** No test reaches a bookmarked site or
+any other host. A `Run`-level test hands `Process.HTTP` a client whose
+transport answers every request as a fake site does, and a test of
+`internal/favicon` or of the bookmarks routes hands `favicon.Config.HTTP` such
+a client, as design names. The fake answers with the pages, redirects, icons
+and errors the test chooses, and records each request it is given, so a test
+proves a request by what the fake received. The exec'ing test never lets the
+binary fetch, since nothing it asks adds a bookmark.
+
+**The state is an isolated directory.** Each test gives home a `Dir` inside a
+test-owned temporary directory, so the database is the test's own. A test
+that needs a store opens its own database with appkit's `db.Open` at a path
+in its own temporary directory, with `home.Migrations()` and a clock it
+controls, closes the handle when it ends, and builds the store over that
+handle with `bookmarks.New`. Tests may create filesystem fixtures inside that
+temporary tree (a regular file named `state`, a file at `state/home.db` that
+is not a database, a database a test's own `db.Open` made and then changed
+through `DB.Write`); nothing touches `/opt/home`, the checkout's `state/` or a
+shared file. A database failure is provoked with `SetFailing(true)` on the
+handle the store the test handed the server was built over, before a call or
+from inside the fake transport, as design names, never by corrupting the
+file, removing permissions or closing the store. Tests prove home's use of the
+database, its schema, its store and its wiring, never SQLite's own guarantees
+(atomicity, durability, locking) and never appkit's `db` contract (opening,
+migrations, transactions, `db status`), which appkit's own tests prove. Every
+test builds its own database.
+
 **The services file is the test's own.** A test that needs services writes a
 services file in its own temporary directory, with whatever entries, icons
 and flags the case needs, and names it as design says; nothing reads the
@@ -169,7 +233,9 @@ host's services file or the developer's. Every test builds its own; no test
 depends on state another test made or on the order the tests run in.
 
 **Nothing is waited out.** Deadlines are proved through the seams design
-names, never by waiting real seconds. A client that goes away is a request the
+names, never by waiting real seconds; the favicon fetch's budget is proved
+through the deadline the fake transport reads on a request's context and a
+fake that answers `context.DeadlineExceeded`. A client that goes away is a request the
 test cancels or a connection it closes. A test that sleeps to age a wait is a
 bug. A test waits for something it started to finish with a deadline that
 fails the test.
@@ -225,7 +291,8 @@ socket in a short temporary directory, passes it as `exec.Cmd.ExtraFiles[0]`
 (descriptor 3 in the child), and starts the child through
 `/bin/sh -c 'LISTEN_PID=$$ LISTEN_FDS=1 exec "$0"' <binary>`, because
 `LISTEN_PID` must be the child's own pid and `exec` keeps the shell's. The
-child runs in a test-owned temporary working directory. Its environment is one
+child runs in a test-owned temporary working directory, where it creates
+`state/home.db`. Its environment is one
 the test composes, never the developer's, with non-empty `IKIGENBA_COMMIT` and
 `IKIGENBA_RELEASE`; the test computes the release and commit it expects with
 `version.Read()` and the display string with `version.Display()` after setting
@@ -252,7 +319,7 @@ one; a finding it cannot fix, or believes is wrong, is filed as an issue.
 2. `go build ./...`
 3. `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/home`
    — the release build, static and cgo-free, the way `devctl build` builds
-   it
+   it, which is why the SQLite driver must be pure Go
 4. `go test -race ./...`
 5. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`
    — the cache lives in this worktree's git directory, so worktrees never
@@ -310,7 +377,7 @@ root.
    `ikigenba-home.socket` (the Unix socket `/run/ikigenba/home.sock`)
    and the `Type=notify` `ikigenba-home.service`, bounded by the manifest's
    `[resources]`, regenerates the host's nginx and litestream configuration,
-   and restarts the service alone.
+   and restarts the service alone. The database is kept across releases.
 
 `home --version` prints the host's display string for the code it runs, built
 by appkit's `version.Display()` from `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE`.
