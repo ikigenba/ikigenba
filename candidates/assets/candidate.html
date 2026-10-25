@@ -150,8 +150,11 @@
      scraper's name), .SourceID (the record's id at the source), .Run (the
      run_ id it was last seen in), .RowPage (the URL of that row's page at
      scrapes, "<scrapes URL>/runs/<.Run>/rows/<.SourceID>" built on the
-     services entry; empty when the entry has none), .Name, .City and .Zip
-     (as last seen), .Reason ("source_key", "match_key" or "decision", as
+     services entry; empty when the entry has none), .EIN (the reading's
+     EIN, nine digits as text; empty when none, as for every source but
+     form5500), .Name, .Names (the reading's names in order, the row's
+     names then its derived names, a slice of strings; may be empty),
+     .City and .Zip (as last seen), .Reason ("source_key", "match_key" or "decision", as
      stored), .Confidence (two decimals), .Filed and .FiledText (the
      filing date its source read; empty when none), .FirstSeen and
      .FirstSeenText and .LastSeen and .LastSeenText (RFC 3339 UTC to the
@@ -453,12 +456,14 @@
      record attached to this candidate, linked to its row in scrapes. A
      gone record was absent from its scraper's latest run; it still counts
      for identity and no longer for the judgments."), then table#link-list
-     whose th read Scraper, Source ID, Name, City, Zip, Reason, Confidence,
+     whose th read Scraper, Source ID, EIN, Name, Names, City, Zip, Reason, Confidence,
      Filed, First seen, Last seen, Gone, with one
      tr[data-link=<.Scraper>:<.SourceID>] per link holding td.link-scraper
      (.Scraper in a code element), td.link-source (a.row-link, href
      .RowPage, holding .SourceID in a code element, when .RowPage is set,
-     else the code element alone), td.link-name, td.link-city, td.link-zip,
+     else the code element alone), td.link-ein (.EIN in a code element,
+     empty when none), td.link-name, td.link-names (.Names joined by
+     " · ", empty when none), td.link-city, td.link-zip,
      td.link-reason (.Reason in a code element), td.link-confidence.num,
      td.link-filed (time with .FiledText, empty when none), td.link-first
      and td.link-last (each a time with the text form), and td.link-gone
@@ -730,12 +735,14 @@
 <header><div><h2 id="links-title">Evidence</h2><p>Each record attached to this candidate, linked to its row in scrapes. A gone record was absent from its scraper's latest run; it still counts for identity and no longer for the judgments.</p></div></header>
 <div class="table-scroll">
 <table id="link-list">
-<thead><tr><th>Scraper</th><th>Source ID</th><th>Name</th><th>City</th><th>Zip</th><th>Reason</th><th class="num">Confidence</th><th>Filed</th><th>First seen</th><th>Last seen</th><th>Gone</th></tr></thead>
+<thead><tr><th>Scraper</th><th>Source ID</th><th>EIN</th><th>Name</th><th>Names</th><th>City</th><th>Zip</th><th>Reason</th><th class="num">Confidence</th><th>Filed</th><th>First seen</th><th>Last seen</th><th>Gone</th></tr></thead>
 <tbody>
 {{range $links}}<tr data-link="{{.Scraper}}:{{.SourceID}}">
 <td class="link-scraper"><code>{{.Scraper}}</code></td>
 <td class="link-source">{{if .RowPage}}<a class="row-link" href="{{.RowPage}}"><code>{{.SourceID}}</code></a>{{else}}<code>{{.SourceID}}</code>{{end}}</td>
+<td class="link-ein">{{if .EIN}}<code>{{.EIN}}</code>{{end}}</td>
 <td class="link-name">{{.Name}}</td>
+<td class="link-names">{{range $i, $n := .Names}}{{if $i}} · {{end}}{{$n}}{{end}}</td>
 <td class="link-city">{{.City}}</td>
 <td class="link-zip">{{.Zip}}</td>
 <td class="link-reason"><code>{{.Reason}}</code></td>
