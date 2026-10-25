@@ -33,6 +33,7 @@ type Build struct {
 	size                              int64
 	chunks                            []string
 	owned                             []string
+	spools                            []string
 	sealed, loaded, discarded, failed bool
 }
 type wireRow struct {
@@ -131,16 +132,48 @@ func (c *Build) loadRows() int {
 	return c.s.cfg.LoadRows
 }
 func (c *Build) temp() (string, error) {
-	if e := os.MkdirAll(c.s.cfg.Runs, 0700); e != nil {
-		return "", e
-	}
-	f, e := os.CreateTemp(c.s.cfg.Runs, c.run.ID+".")
+	f, e := c.createTemp()
 	if e != nil {
 		return "", e
 	}
+	return f.Name(), f.Close()
+}
+func (c *Build) createTemp() (*os.File, error) {
+	if e := os.MkdirAll(c.s.cfg.Runs, 0700); e != nil {
+		return nil, e
+	}
+	f, e := os.CreateTemp(c.s.cfg.Runs, c.run.ID+".")
+	if e != nil {
+		return nil, e
+	}
 	p := f.Name()
 	c.owned = append(c.owned, p)
-	return p, f.Close()
+	return f, nil
+}
+
+// Spool makes an unpaced source file owned by this build until removed.
+func (c *Build) Spool() (*os.File, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.sealed || c.discarded || c.failed {
+		return nil, ErrUnreachable
+	}
+	f, err := c.createTemp()
+	if err != nil {
+		return nil, normalize(err)
+	}
+	c.spools = append(c.spools, f.Name())
+	return f, nil
+}
+
+func (c *Build) removeSpools() error {
+	var errs []error
+	for _, p := range c.spools {
+		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 func (c *Build) notify(ctx context.Context, step Step, n int64, start time.Time) error {
 	end := c.s.cfg.Now()
@@ -220,6 +253,9 @@ func (c *Build) flush(ctx context.Context) error {
 func (c *Build) Seal(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if err := c.removeSpools(); err != nil {
+		return c.poison(err)
+	}
 	if e := c.check(ctx, !c.sealed); e != nil {
 		return e
 	}

@@ -1608,7 +1608,7 @@ func TestBuildRefusalsAndDiscard(t *testing.T) {
 	}
 }
 
-// R-R22M-9DRS R-PLMX-T8VX R-R9E0-K07Y
+// R-M1V7-YLAY R-PLMX-T8VX R-R9E0-K07Y
 func TestDirectoryCreationAndBuildOwnership(t *testing.T) {
 	for _, chunk := range []int64{1, store.DefaultChunkBytes} {
 		t.Run(fmt.Sprint(chunk), func(t *testing.T) {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/scrapes/internal/fmcsa"
+	"github.com/ikigenba/ikigenba/scrapes/internal/form5500"
 	"github.com/ikigenba/ikigenba/scrapes/internal/mnparcels"
 	"github.com/ikigenba/ikigenba/scrapes/internal/ppp"
 	"github.com/ikigenba/ikigenba/scrapes/internal/scrapers"
@@ -57,7 +58,7 @@ func TestRegistry(t *testing.T) {
 	}
 }
 
-// R-SASI-O6F1 R-DBF2-OYH3
+// R-LWZM-FIC6 R-DBF2-OYH3
 func TestDefaultFMCSA(t *testing.T) {
 	attempts, batches, sleeps := 0, 0, 0
 	now := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
@@ -87,7 +88,7 @@ func TestDefaultFMCSA(t *testing.T) {
 		return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
 	})}
 	r := scrapers.Default(scrapers.Config{HTTP: client, Telemetry: writer, Now: func() time.Time { return now }, Sleep: func(context.Context, time.Duration) { sleeps++ }, UserAgent: "registry ua", Settings: settings.Settings{FMCSAStates: states, FMCSAMinPowerUnits: 7, FMCSAStatus: "I"}})
-	if !reflect.DeepEqual(r.Names(), []string{fmcsa.Name, mnparcels.Name, ppp.Name}) {
+	if !reflect.DeepEqual(r.Names(), []string{fmcsa.Name, form5500.Name, mnparcels.Name, ppp.Name}) {
 		t.Fatal(r.Names())
 	}
 	sc, ok := r.Get(fmcsa.Name)

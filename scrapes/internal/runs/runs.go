@@ -316,7 +316,7 @@ func (e *Engine) work(ctx context.Context, sc source.Scraper, r store.Run) {
 		e.mu.Unlock()
 		walk = e.phase()
 		var batchErr error
-		err = sc.Scrape(ctx, func(rows []source.Row) error {
+		err = sc.Scrape(source.WithSpool(ctx, build.Spool), func(rows []source.Row) error {
 			if batchErr != nil {
 				return batchErr
 			}
