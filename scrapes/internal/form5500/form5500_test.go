@@ -157,7 +157,7 @@ func TestColumns(t *testing.T) {
 	}
 }
 
-// R-L4XX-MSA7 R-L65U-0K0W R-L8LM-S3IA R-L9TJ-5V8Z R-LKSM-LSX8
+// R-XFPR-JZLA R-L65U-0K0W R-L8LM-S3IA R-L9TJ-5V8Z R-LKSM-LSX8
 func TestWalk(t *testing.T) {
 	ctx, paths := spoolContext(t)
 	var requests []string
@@ -270,10 +270,77 @@ func TestWalk(t *testing.T) {
 	noFiles(t, *paths)
 }
 
-// R-LB1F-JMZO R-LC9B-XEQD R-LDH8-B6H2 R-LICT-U9FU R-LFX1-2PYG
+// R-XFPR-JZLA R-XJDG-PATD
+func TestArchiveLayoutFiles(t *testing.T) {
+	collect := func(t *testing.T, names []string) [][]source.Row {
+		t.Helper()
+		ctx, paths := spoolContext(t)
+		c := cfg(func(req *http.Request) (*http.Response, error) {
+			f := form5500.Full
+			if strings.Contains(req.URL.Path, "_SF_") {
+				f = form5500.Short
+			}
+			h, r := fixture(f)
+			var b bytes.Buffer
+			w := zip.NewWriter(&b)
+			for _, name := range names {
+				e, err := w.Create(name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				data := []byte("layout documentation, not a CSV record\n")
+				if strings.HasSuffix(strings.ToLower(name), ".csv") {
+					data = csvBytes(h, r)
+				}
+				if _, err := e.Write(data); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := w.Close(); err != nil {
+				t.Fatal(err)
+			}
+			return answer(200, b.Bytes()), nil
+		})
+		var batches [][]source.Row
+		if err := form5500.New(c).Scrape(ctx, func(rows []source.Row) error {
+			batches = append(batches, rows)
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		noFiles(t, *paths)
+		return batches
+	}
+	baseline := collect(t, []string{"f_5500_2024_latest.csv"})
+	var want [][]source.Row
+	for _, f := range []form5500.Form{form5500.Full, form5500.Short} {
+		h, r := fixture(f)
+		row, err := form5500.RowOf(f, h, r, clock())
+		if err != nil {
+			t.Fatal(err)
+		}
+		want = append(want, []source.Row{row})
+	}
+	if !reflect.DeepEqual(baseline, want) {
+		t.Fatal("CSV alone did not yield both forms' rows")
+	}
+	for _, suffix := range []string{"csv", "CSV", "CsV"} {
+		csvName := "f_5500_2024_latest." + suffix
+		layoutName := "f_5500_2024_latest_layout.txt"
+		for _, names := range [][]string{{csvName}, {csvName, layoutName}, {layoutName, csvName}} {
+			t.Run(strings.Join(names, "+"), func(t *testing.T) {
+				if got := collect(t, names); !reflect.DeepEqual(got, baseline) {
+					t.Fatal("archive entries changed the batches")
+				}
+			})
+		}
+	}
+}
+
+// R-LB1F-JMZO R-LC9B-XEQD R-XJDG-PATD R-LICT-U9FU R-LFX1-2PYG
 func TestFailures(t *testing.T) {
 	h, r := fixture(form5500.Full)
-	for _, name := range []string{"missing spool", "failed spool", "404", "bad zip", "zero entries", "two entries", "not csv", "missing column", "duplicate column", "empty header", "bad header", "short record", "empty identifier", "refused batch", "cut body"} {
+	for _, name := range []string{"missing spool", "failed spool", "404", "bad zip", "zero entries", "two CSV entries", "not csv", "missing column", "duplicate column", "empty header", "bad header", "short record", "empty identifier", "refused batch", "cut body"} {
 		t.Run(name, func(t *testing.T) {
 			ctx, paths := spoolContext(t)
 			calls, batches, sleeps := 0, 0, 0
@@ -290,10 +357,10 @@ func TestFailures(t *testing.T) {
 				body = []byte("invalid")
 			case "zero entries":
 				body = archive(t, map[string][]byte{})
-			case "two entries":
+			case "two CSV entries":
 				body = archive(t, map[string][]byte{"a.csv": csvBytes(h, r), "b.CSV": csvBytes(h, r)})
 			case "not csv":
-				body = archive(t, map[string][]byte{"layout.txt": csvBytes(h, r)})
+				body = archive(t, map[string][]byte{"f_5500_2024_latest_layout.txt": csvBytes(h, r)})
 			case "missing column":
 				body = archive(t, map[string][]byte{"a.csv": csvBytes(h[:len(h)-1], r[:len(r)-1])})
 			case "duplicate column":
@@ -653,7 +720,7 @@ func TestFailureSecrecy(t *testing.T) {
 	}
 }
 
-// R-L8LM-S3IA R-LC9B-XEQD R-LDH8-B6H2
+// R-L8LM-S3IA R-LC9B-XEQD R-XJDG-PATD
 func TestScopeEmptyAndStreamingFailure(t *testing.T) {
 	for _, mode := range []string{"empty", "location", "foreign", "exact batch", "partial failure", "reordered"} {
 		t.Run(mode, func(t *testing.T) {

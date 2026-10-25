@@ -294,10 +294,22 @@ func (s *Scraper) file(ctx context.Context, body io.Reader, spool source.Spool, 
 		return errors.New("unreadable source body")
 	}
 	z, err := zip.NewReader(file, n)
-	if err != nil || len(z.File) != 1 || !strings.HasSuffix(strings.ToLower(z.File[0].Name), ".csv") {
+	if err != nil {
 		return errors.New("unreadable source archive")
 	}
-	entry, err := z.File[0].Open()
+	var csvFile *zip.File
+	for _, candidate := range z.File {
+		if strings.HasSuffix(strings.ToLower(candidate.Name), ".csv") {
+			if csvFile != nil {
+				return errors.New("unreadable source archive")
+			}
+			csvFile = candidate
+		}
+	}
+	if csvFile == nil {
+		return errors.New("unreadable source archive")
+	}
+	entry, err := csvFile.Open()
 	if err != nil {
 		return errors.New("unreadable source entry")
 	}
