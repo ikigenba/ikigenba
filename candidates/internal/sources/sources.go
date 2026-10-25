@@ -53,7 +53,7 @@ const (
 	WebsiteHTTP                 = "http"
 	WebsiteNone                 = "none"
 	WebsiteUnknown              = "unknown"
-	Rules                       = 5
+	Rules                       = 6
 )
 
 // Person is a party named by a source record.
@@ -89,6 +89,22 @@ type Estimate struct {
 	Formula    int64
 }
 
+// Headcount is the count reported by one source row.
+type Headcount struct {
+	Scraper, Kind string
+	Count         int64
+	AsOf          time.Time
+}
+
+// Headcount kinds rank independently of their scraper.
+const (
+	HeadcountEmployees    = "employees"
+	HeadcountParticipants = "participants"
+	HeadcountJobs         = "jobs"
+	HeadcountDrivers      = "drivers"
+	HeadcountSnippet      = "snippet"
+)
+
 // Reading is the independent interpretation of one scraped row.
 type Reading struct {
 	NameKey, PhoneKey, DomainKey, Name             string
@@ -101,6 +117,7 @@ type Reading struct {
 	Fleet                                          bool
 	FleetVerdict                                   string
 	PowerUnits, Drivers                            *int64
+	Headcount                                      *Headcount
 	Estimate                                       *Estimate
 	Evidence                                       []Evidence
 	KnownSince                                     time.Time

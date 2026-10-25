@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/candidates/internal/judging"
-	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
@@ -27,11 +26,6 @@ func judgments(r *records, c Candidate, f Facts, t time.Time) ([]sources.Estimat
 			if rd.Estimate != nil {
 				estimates[l.Scraper] = *rd.Estimate
 			}
-		} else if l.Scraper == ppp.Name && rd.Estimate != nil {
-			old, ok := estimates[l.Scraper]
-			if !ok || rd.Estimate.Low > old.Low {
-				estimates[l.Scraper] = *rd.Estimate
-			}
 		}
 		for _, e := range rd.Evidence {
 			e.Weight = judging.Weight(e, rd.Filed, t)
@@ -49,6 +43,12 @@ func judgments(r *records, c Candidate, f Facts, t time.Time) ([]sources.Estimat
 		if old, ok := evidence[e.Name]; !ok || e.Weight > old.Weight {
 			evidence[e.Name] = e
 		}
+	}
+	if e := judging.HeadcountEstimate(f.Headcounts, f.BriefLabels, f.Categories); e != nil {
+		estimates[e.Source] = *e
+	}
+	if staff := judging.PickHeadcount(f.Headcounts); staff != nil {
+		a.HeadcountLow, a.HeadcountHigh, a.HeadcountBasis = &staff.Low, &staff.High, staff.Basis
 	}
 	es := []sources.Estimate{}
 	for _, e := range estimates {

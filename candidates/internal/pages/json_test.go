@@ -26,11 +26,11 @@ func TestFactsProjection(t *testing.T) {
 	at := fixtureTime()
 	power, minutes := int64(12), int64(84)
 	f := store.Facts{KnownSince: time.Date(2018, 4, 9, 0, 0, 0, 0, time.UTC), NewestFiling: at, Categories: []sources.Category{{Name: sources.CategoryTrucking, Source: "fmcsa"}, {Name: sources.CategoryTrucking, Source: "ppp"}}, GovernmentMatch: "fixture-government", FleetVerdict: sources.FleetPass, PowerUnits: &power, Minutes: &minutes, Written: []store.Written{{Kind: enrichers.KindDriveMinutes, At: at}, {Kind: sources.WebsiteCheck, At: at}}}
-	want := FactsView{"2018-04-09", "2018-04-09", "2026-10-05", "2026-10-05", []CategoryRow{{sources.CategoryTrucking, "fmcsa"}, {sources.CategoryTrucking, "ppp"}}, enrichers.SourceLinks, false, []CategoryRow{}, "fixture-government", sources.FleetPass, "12", "", "84", "", "", "", "", "", []WrittenRow{{enrichers.KindDriveMinutes, "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC"}, {sources.WebsiteCheck, "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC"}}}
+	want := FactsView{"2018-04-09", "2018-04-09", "2026-10-05", "2026-10-05", []CategoryRow{{sources.CategoryTrucking, "fmcsa"}, {sources.CategoryTrucking, "ppp"}}, enrichers.SourceLinks, false, []CategoryRow{}, "fixture-government", sources.FleetPass, "12", "", []HeadcountRow{}, []string{}, "84", "", "", "", "", "", []WrittenRow{{enrichers.KindDriveMinutes, "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC"}, {sources.WebsiteCheck, "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC"}}}
 	if got := factsView(f, ""); !reflect.DeepEqual(got, want) {
 		t.Fatal(got, want)
 	}
-	if got := factsView(store.Facts{}, ""); !reflect.DeepEqual(got, FactsView{Categories: []CategoryRow{}, RecordCategories: []CategoryRow{}, Written: []WrittenRow{}}) {
+	if got := factsView(store.Facts{}, ""); !reflect.DeepEqual(got, FactsView{Categories: []CategoryRow{}, RecordCategories: []CategoryRow{}, Headcounts: []HeadcountRow{}, BriefLabels: []string{}, Written: []WrittenRow{}}) {
 		t.Fatal(got)
 	}
 }
@@ -100,7 +100,7 @@ func TestCandidateFactsWithoutJudgment(t *testing.T) {
 	}
 }
 
-// R-P8DA-YHFL R-XY08-ASLZ R-02MG-VB3X
+// R-P8DA-YHFL R-XY08-ASLZ
 func TestIndependentFactsAndJudgmentsTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()

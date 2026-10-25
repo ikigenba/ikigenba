@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
-// R-IIJA-OWN9
+// R-4DF6-QYQA
 func TestRecordShapes(t *testing.T) {
 	// Conversions use the records' complete underlying shapes, including order.
 	type personShape struct{ Name, Role string }
@@ -30,6 +30,14 @@ func TestRecordShapes(t *testing.T) {
 		Filed      time.Time
 		Formula    int64
 	}
+	type headcountShape struct {
+		Scraper, Kind string
+		Count         int64
+		AsOf          time.Time
+	}
+	if headcountShape(sources.Headcount{}) != (headcountShape{}) {
+		t.Fatal("headcount shape")
+	}
 	type readingShape struct {
 		NameKey, PhoneKey, DomainKey, Name             string
 		Names                                          []string
@@ -41,6 +49,7 @@ func TestRecordShapes(t *testing.T) {
 		Fleet                                          bool
 		FleetVerdict                                   string
 		PowerUnits, Drivers                            *int64
+		Headcount                                      *sources.Headcount
 		Estimate                                       *sources.Estimate
 		Evidence                                       []sources.Evidence
 		KnownSince                                     time.Time
@@ -253,5 +262,16 @@ func TestCategories(t *testing.T) {
 	}
 	if !reflect.DeepEqual(sources.Categories(), want) {
 		t.Fatal("shared category storage")
+	}
+}
+
+// R-4EN3-4QGZ
+func TestHeadcountKinds(t *testing.T) {
+	const kinds = sources.HeadcountEmployees + sources.HeadcountParticipants + sources.HeadcountJobs + sources.HeadcountDrivers + sources.HeadcountSnippet
+	if kinds == "" {
+		t.Fatal(kinds)
+	}
+	if got := []string{sources.HeadcountEmployees, sources.HeadcountParticipants, sources.HeadcountJobs, sources.HeadcountDrivers, sources.HeadcountSnippet}; !reflect.DeepEqual(got, []string{"employees", "participants", "jobs", "drivers", "snippet"}) {
+		t.Fatal(got)
 	}
 }

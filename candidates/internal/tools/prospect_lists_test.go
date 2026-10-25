@@ -68,7 +68,7 @@ func rejectExpected(r store.Reject) tools.Reject {
 func memberExpected(r store.Ranked) tools.Member {
 	a := judgmentsExpected(r.Judgments)
 	f := r.Facts
-	v := tools.Member{Candidate: candidateOf(r.Candidate), Basis: r.Basis, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, FleetVerdict: f.FleetVerdict, Website: f.Website, WebsiteURL: f.WebsiteURL, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch, KnownSince: dateExpected(f.KnownSince), NewestFiling: dateExpected(f.NewestFiling), Excluded: a.Excluded, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(r.Facts.Categories)}
+	v := tools.Member{Candidate: candidateOf(r.Candidate), Basis: r.Basis, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, HeadcountLow: a.HeadcountLow, FleetVerdict: f.FleetVerdict, Website: f.Website, WebsiteURL: f.WebsiteURL, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch, KnownSince: dateExpected(f.KnownSince), NewestFiling: dateExpected(f.NewestFiling), Excluded: a.Excluded, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(r.Facts.Categories)}
 	seen := map[string]bool{}
 	for _, c := range f.Categories {
 		seen[c.Name] = true
@@ -101,7 +101,7 @@ func (f *fixture) create(name string) tools.ProspectList {
 }
 
 // R-27ET-GMFK
-// R-VWLI-BAIE R-PRJ2-Q1SR R-MGDJ-LAMN R-3LEP-57U1 R-Y7IO-BOXM R-3347-ENPM R-TFTB-22NR R-1LGM-KR32 R-WX6H-SER8
+// R-VWLI-BAIE R-MGDJ-LAMN R-3LEP-57U1 R-Y7IO-BOXM R-3347-ENPM R-TFTB-22NR R-1LGM-KR32 R-WX6H-SER8
 func TestProspectListLifecycleRejectAndExclusion(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(5)

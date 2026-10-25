@@ -103,7 +103,7 @@ type FiltersView struct {
 // MemberRow supplies one prospectList member.
 type MemberRow struct {
 	Rank                                                                                                                                                                                                                 int64
-	ID, Name, City, State, Basis, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence                                                                                                                        string
+	ID, Name, City, State, Basis, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence, HeadcountLow                                                                                                          string
 	Categories                                                                                                                                                                                                           []string
 	ClassifiedBy, Class, FleetVerdict, Website, WebsiteURL, WebsiteSource, SiteText, SiteTextText, Brief, BriefText, Minutes, MinutesSource, GovernmentMatch, KnownSince, KnownSinceText, NewestFiling, NewestFilingText string
 	Excluded                                                                                                                                                                                                             bool
@@ -152,24 +152,30 @@ type PersonRow struct{ Name, Role string }
 
 // JudgmentsView supplies judgments view page data.
 type JudgmentsView struct {
-	OperatingConfidence                        string
-	OperatingEvidence                          []EvidenceRow
-	RevenueLow, RevenueHigh, RevenueConfidence string
-	Excluded                                   bool
-	Rules                                      int64
-	Calculated, CalculatedText                 string
+	OperatingConfidence                                                                     string
+	OperatingEvidence                                                                       []EvidenceRow
+	RevenueLow, RevenueHigh, RevenueConfidence, HeadcountLow, HeadcountHigh, HeadcountBasis string
+	Excluded                                                                                bool
+	Rules                                                                                   int64
+	Calculated, CalculatedText                                                              string
 }
 
 // FactsView supplies the newest recorded facts.
 type FactsView struct {
-	KnownSince, KnownSinceText, NewestFiling, NewestFilingText                                                                         string
-	Categories                                                                                                                         []CategoryRow
-	ClassifiedBy                                                                                                                       string
-	RecordsDiffer                                                                                                                      bool
-	RecordCategories                                                                                                                   []CategoryRow
-	GovernmentMatch, FleetVerdict, PowerUnits, Drivers, Minutes, MinutesSource, Miles, RouteAddress, RoutePlaceURL, RouteDirectionsURL string
-	Written                                                                                                                            []WrittenRow
+	KnownSince, KnownSinceText, NewestFiling, NewestFilingText                     string
+	Categories                                                                     []CategoryRow
+	ClassifiedBy                                                                   string
+	RecordsDiffer                                                                  bool
+	RecordCategories                                                               []CategoryRow
+	GovernmentMatch, FleetVerdict, PowerUnits, Drivers                             string
+	Headcounts                                                                     []HeadcountRow
+	BriefLabels                                                                    []string
+	Minutes, MinutesSource, Miles, RouteAddress, RoutePlaceURL, RouteDirectionsURL string
+	Written                                                                        []WrittenRow
 }
+
+// HeadcountRow supplies one dated source headcount.
+type HeadcountRow struct{ Scraper, Kind, Count, AsOf, AsOfText string }
 
 // WrittenRow supplies a fact kind's recording time.
 type WrittenRow struct{ Kind, At, AtText string }

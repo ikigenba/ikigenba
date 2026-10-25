@@ -295,10 +295,10 @@ func TestCatalogAndSchemas(t *testing.T) {
 	_ = tools.Left{"candidate", "name", "then", "now", "why", "filter"}
 	_ = tools.Kinds{nil, nil}
 	_ = tools.Enrichments{"basis", tools.Kinds{}, nil, nil}
-	_ = tools.Member{tools.Candidate{}, "", nil, nil, nil, nil, nil, "", "", "", "", "", nil, nil, nil, "", "", "", "", false}
+	_ = tools.Member{tools.Candidate{}, "", nil, nil, nil, nil, nil, nil, "", "", "", "", "", nil, nil, nil, "", "", "", "", false}
 	_ = tools.Reject{"kind", "prospect_list", "name", "candidate", "why", "user", "email", "at"}
 	_ = tools.ProspectListRead{tools.ProspectList{}, 0, 0, tools.BasisCounts{}, tools.Changes{}, nil, nil}
-	_ = tools.Judgments{nil, nil, nil, nil, nil, false, 0, ""}
+	_ = tools.Judgments{nil, nil, nil, nil, nil, nil, nil, "", false, 0, ""}
 	_ = tools.Estimate{"source", 1, nil, .5, nil, "", 1}
 	_ = tools.Ruling{"kind", "candidate", "other", nil, "why", "user", "email", "at"}
 	_ = tools.Detail{tools.Candidate{}, nil, nil, nil, nil, nil, nil, nil, nil, nil}
@@ -346,9 +346,9 @@ func objectKeys(t *testing.T, b []byte) []string {
 	return out
 }
 
-// R-XFGZ-IYVN R-VWLI-BAIE R-PRJ2-Q1SR R-MGDJ-LAMN R-SX62-ODQC R-AKDK-IR5F R-STID-J2I9 R-QEP5-ZOVY
+// R-XFGZ-IYVN R-VWLI-BAIE R-MGDJ-LAMN R-SX62-ODQC R-AKDK-IR5F R-QEP5-ZOVY
 // R-YNDH-GZXV R-SUQ9-WU8Y R-XIDP-GOVR R-SYDZ-25H1
-// R-6131-Z710 R-XFGZ-IYVN R-VWLI-BAIE R-PRJ2-Q1SR R-MGDJ-LAMN R-SX62-ODQC R-AKDK-IR5F R-STID-J2I9 R-QEP5-ZOVY
+// R-6131-Z710 R-XFGZ-IYVN R-VWLI-BAIE R-MGDJ-LAMN R-SX62-ODQC R-AKDK-IR5F R-QEP5-ZOVY
 func TestAnswerJSONShapes(t *testing.T) {
 	tests := []struct {
 		v      any
@@ -895,7 +895,7 @@ func TestSplitAndNotSame(t *testing.T) {
 // R-6QOY-0DLL
 
 func judgmentsExpected(a store.Judgments) *tools.Judgments {
-	v := &tools.Judgments{OperatingConfidence: a.Operating, OperatingEvidence: []tools.Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
+	v := &tools.Judgments{OperatingConfidence: a.Operating, OperatingEvidence: []tools.Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, HeadcountLow: a.HeadcountLow, HeadcountHigh: a.HeadcountHigh, HeadcountBasis: a.HeadcountBasis, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
 	for _, e := range a.Evidence {
 		v.OperatingEvidence = append(v.OperatingEvidence, tools.Evidence{Name: e.Name, Source: e.Source, Weight: e.Weight, Description: e.Description})
 	}

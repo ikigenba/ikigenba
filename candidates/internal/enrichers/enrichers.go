@@ -74,15 +74,24 @@ type Category struct {
 	Source string `json:"source"`
 }
 
+// Headcount records one live link's reported staffing.
+type Headcount struct {
+	Scraper string `json:"scraper"`
+	Kind    string `json:"kind"`
+	Count   int64  `json:"count"`
+	Date    string `json:"date,omitempty"`
+}
+
 // LinkFound is the projection of live source readings.
 type LinkFound struct {
-	KnownSince      string     `json:"known_since,omitempty"`
-	NewestFiling    string     `json:"newest_filing,omitempty"`
-	GovernmentMatch string     `json:"government_match,omitempty"`
-	Categories      []Category `json:"categories"`
-	FleetVerdict    string     `json:"fleet_verdict"`
-	PowerUnits      *int64     `json:"power_units,omitempty"`
-	Drivers         *int64     `json:"drivers,omitempty"`
+	KnownSince      string      `json:"known_since,omitempty"`
+	NewestFiling    string      `json:"newest_filing,omitempty"`
+	GovernmentMatch string      `json:"government_match,omitempty"`
+	Categories      []Category  `json:"categories"`
+	FleetVerdict    string      `json:"fleet_verdict"`
+	PowerUnits      *int64      `json:"power_units,omitempty"`
+	Drivers         *int64      `json:"drivers,omitempty"`
+	Headcounts      []Headcount `json:"headcounts"`
 }
 
 // MinutesFound records a known drive time or its absence.
@@ -242,7 +251,7 @@ func (LinkFacts) Inputs(s Subject) string {
 
 // Derive projects the ordered live readings into one result.
 func (LinkFacts) Derive(s Subject) Result {
-	f := LinkFound{Categories: []Category{}, FleetVerdict: sources.FleetUnknown}
+	f := LinkFound{Categories: []Category{}, FleetVerdict: sources.FleetUnknown, Headcounts: []Headcount{}}
 	seen := map[Category]bool{}
 	fleet := false
 	var known, filed time.Time
@@ -251,6 +260,13 @@ func (LinkFacts) Derive(s Subject) Result {
 			continue
 		}
 		r := l.Reading
+		if h := r.Headcount; h != nil {
+			date := ""
+			if datable(h.AsOf) {
+				date = h.AsOf.UTC().Format(time.DateOnly)
+			}
+			f.Headcounts = append(f.Headcounts, Headcount{Scraper: l.Scraper, Kind: h.Kind, Count: h.Count, Date: date})
+		}
 		if datable(r.KnownSince) && (known.IsZero() || r.KnownSince.Before(known)) {
 			known = r.KnownSince
 		}
@@ -324,6 +340,21 @@ func (LinkFacts) Valid(b json.RawMessage) bool {
 	}
 	if f.FleetVerdict != sources.FleetPass && f.FleetVerdict != sources.FleetFail && f.FleetVerdict != sources.FleetUnknown {
 		return false
+	}
+	var rawHeads []json.RawMessage
+	if h, ok := obj["headcounts"]; ok && json.Unmarshal(h, &rawHeads) != nil {
+		return false
+	}
+	for _, h := range rawHeads {
+		b := bytes.TrimSpace(h)
+		if len(b) == 0 || b[0] != '{' {
+			return false
+		}
+	}
+	for _, h := range f.Headcounts {
+		if !validDate(h.Date) {
+			return false
+		}
 	}
 	for _, c := range f.Categories {
 		if c.Name == "" || c.Source == "" {

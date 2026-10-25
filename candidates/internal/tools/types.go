@@ -58,6 +58,7 @@ type Member struct {
 	RevenueLow          *int64    `json:"revenue_low,omitempty"`
 	RevenueHigh         *int64    `json:"revenue_high,omitempty"`
 	RevenueConfidence   *float64  `json:"revenue_confidence,omitempty"`
+	HeadcountLow        *int64    `json:"headcount_low,omitempty"`
 	Categories          []string  `json:"categories"`
 	ClassifiedBy        string    `json:"classified_by"`
 	FleetVerdict        string    `json:"fleet_verdict"`
@@ -273,6 +274,9 @@ type Judgments struct {
 	RevenueLow          *int64     `json:"revenue_low,omitempty"`
 	RevenueHigh         *int64     `json:"revenue_high,omitempty"`
 	RevenueConfidence   *float64   `json:"revenue_confidence,omitempty"`
+	HeadcountLow        *int64     `json:"headcount_low,omitempty"`
+	HeadcountHigh       *int64     `json:"headcount_high,omitempty"`
+	HeadcountBasis      string     `json:"headcount_basis,omitempty"`
 	Excluded            bool       `json:"excluded"`
 	Rules               int64      `json:"rules"`
 	Calculated          string     `json:"calculated"`
@@ -289,31 +293,39 @@ func (v Judgments) MarshalJSON() ([]byte, error) {
 
 // Facts contains the newest recorded facts and their provenance.
 type Facts struct {
-	KnownSince       string     `json:"known_since,omitempty"`
-	NewestFiling     string     `json:"newest_filing,omitempty"`
-	Categories       []Category `json:"categories"`
-	ClassifiedBy     string     `json:"classified_by"`
-	RecordsDiffer    bool       `json:"records_differ"`
-	RecordCategories []Category `json:"record_categories"`
-	GovernmentMatch  string     `json:"government_match,omitempty"`
-	FleetVerdict     string     `json:"fleet_verdict"`
-	PowerUnits       *int64     `json:"power_units,omitempty"`
-	Drivers          *int64     `json:"drivers,omitempty"`
-	Website          string     `json:"website"`
-	WebsiteURL       string     `json:"website_url,omitempty"`
-	WebsiteSource    string     `json:"website_source"`
-	Minutes          *int64     `json:"minutes,omitempty"`
-	MinutesSource    string     `json:"minutes_source"`
-	Miles            *float64   `json:"miles,omitempty"`
-	RouteAddress     string     `json:"route_address,omitempty"`
-	PlaceURL         string     `json:"place_url,omitempty"`
-	DirectionsURL    string     `json:"directions_url,omitempty"`
-	Written          []Written  `json:"written"`
+	KnownSince       string      `json:"known_since,omitempty"`
+	NewestFiling     string      `json:"newest_filing,omitempty"`
+	Categories       []Category  `json:"categories"`
+	ClassifiedBy     string      `json:"classified_by"`
+	RecordsDiffer    bool        `json:"records_differ"`
+	RecordCategories []Category  `json:"record_categories"`
+	GovernmentMatch  string      `json:"government_match,omitempty"`
+	FleetVerdict     string      `json:"fleet_verdict"`
+	PowerUnits       *int64      `json:"power_units,omitempty"`
+	Drivers          *int64      `json:"drivers,omitempty"`
+	Website          string      `json:"website"`
+	WebsiteURL       string      `json:"website_url,omitempty"`
+	WebsiteSource    string      `json:"website_source"`
+	Minutes          *int64      `json:"minutes,omitempty"`
+	MinutesSource    string      `json:"minutes_source"`
+	Miles            *float64    `json:"miles,omitempty"`
+	RouteAddress     string      `json:"route_address,omitempty"`
+	PlaceURL         string      `json:"place_url,omitempty"`
+	DirectionsURL    string      `json:"directions_url,omitempty"`
+	Written          []Written   `json:"written"`
+	Headcounts       []Headcount `json:"headcounts"`
+	BriefLabels      []string    `json:"brief_labels"`
 }
 
 // MarshalJSON encodes empty slices as arrays.
 func (v Facts) MarshalJSON() ([]byte, error) {
 	type plain Facts
+	if v.Headcounts == nil {
+		v.Headcounts = []Headcount{}
+	}
+	if v.BriefLabels == nil {
+		v.BriefLabels = []string{}
+	}
 	if v.Categories == nil {
 		v.Categories = []Category{}
 	}
@@ -324,6 +336,14 @@ func (v Facts) MarshalJSON() ([]byte, error) {
 		v.Written = []Written{}
 	}
 	return json.Marshal(plain(v))
+}
+
+// Headcount is one source headcount.
+type Headcount struct {
+	Scraper string `json:"scraper"`
+	Kind    string `json:"kind"`
+	Count   int64  `json:"count"`
+	Date    string `json:"date,omitempty"`
 }
 
 // Written records when a kind last wrote the facts.

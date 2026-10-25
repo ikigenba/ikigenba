@@ -31,7 +31,7 @@ type column struct{ name, field string }
 var candidateColumns = columns("id:ID status:Status merged_into:MergedInto name:Name names:Names street:Street city:City state:State zip:Zip county:County phone:Phone email:Email people:People class:Class cargo:Cargo created:Created updated:Updated")
 var linkColumns = columns("candidate:Candidate scraper:Scraper source_id:SourceID run:Run digest:Digest reading:Reading reason:Reason confidence:Confidence first_seen:FirstSeen last_seen:LastSeen gone:Gone")
 var estimateColumns = columns("candidate:Candidate source:Source low:Low high:High confidence:Confidence facts:Facts filed:Filed formula:Formula")
-var judgmentsColumns = columns("candidate:Candidate operating:Operating operating_key:OperatingKey evidence:Evidence revenue_low:RevenueLow revenue_high:RevenueHigh revenue_confidence:RevenueConfidence excluded:Excluded rules:Rules calculated:Calculated")
+var judgmentsColumns = columns("candidate:Candidate operating:Operating operating_key:OperatingKey evidence:Evidence revenue_low:RevenueLow revenue_high:RevenueHigh revenue_confidence:RevenueConfidence headcount_low:HeadcountLow headcount_high:HeadcountHigh headcount_basis:HeadcountBasis excluded:Excluded rules:Rules calculated:Calculated")
 var rulingColumns = columns("kind:Kind candidate:Candidate other:Other keys:Keys why:Why user_id:UserID user_email:UserEmail at:At")
 var passColumns = columns("id:ID kind:Kind origin:Origin trigger:Trigger target:Target enrich_kind:EnrichKind scraper:Scraper status:Status reason:Reason started:Started finished:Finished rows:Rows new:New changed:Changed unchanged:Unchanged gone:Gone created:Created linked:Linked judged:Judged unranged:Unranged derived:Derived due:Due fetched:Fetched https:HTTPS http:HTTP none:None runs:Runs runs_failed:RunsFailed pages:Pages cost:Cost user_id:UserID user_email:UserEmail request_id:RequestID delivery:Delivery")
 
@@ -82,9 +82,41 @@ func readQueryRecords[T any](ctx context.Context, tx *sql.Tx, cs []column, query
 	return out, rows.Err()
 }
 
+type storedHeadcount struct {
+	Scraper string `json:"scraper"`
+	Kind    string `json:"kind"`
+	Count   int64  `json:"count"`
+	Date    string `json:"date,omitempty"`
+}
+
+var headcountsType = reflect.TypeFor[[]sources.Headcount]()
 var timeType = reflect.TypeFor[time.Time]()
 
 func decodeValue(v reflect.Value, x any) error {
+	if v.Type() == headcountsType {
+		text, ok := x.(string)
+		if !ok {
+			return fmt.Errorf("invalid headcounts %T", x)
+		}
+		var rows []storedHeadcount
+		if err := json.Unmarshal([]byte(text), &rows); err != nil {
+			return err
+		}
+		hs := make([]sources.Headcount, 0, len(rows))
+		for _, row := range rows {
+			var at time.Time
+			if row.Date != "" {
+				var err error
+				at, err = time.Parse(time.RFC3339, row.Date)
+				if err != nil {
+					return err
+				}
+			}
+			hs = append(hs, sources.Headcount{Scraper: row.Scraper, Kind: row.Kind, Count: row.Count, AsOf: at.UTC()})
+		}
+		v.Set(reflect.ValueOf(hs))
+		return nil
+	}
 	if x == nil && v.Type() == timeType {
 		return nil
 	}
@@ -159,6 +191,19 @@ func decodeValue(v reflect.Value, x any) error {
 	return nil
 }
 func encodeValue(v reflect.Value) (any, error) {
+	if v.Type() == headcountsType {
+		hs := v.Interface().([]sources.Headcount)
+		rows := make([]storedHeadcount, 0, len(hs))
+		for _, h := range hs {
+			row := storedHeadcount{Scraper: h.Scraper, Kind: h.Kind, Count: h.Count}
+			if !h.AsOf.IsZero() {
+				row.Date = h.AsOf.UTC().Truncate(time.Second).Format(time.RFC3339)
+			}
+			rows = append(rows, row)
+		}
+		b, err := json.Marshal(rows)
+		return string(b), err
+	}
 	if v.Type() == timeType {
 		t := v.Interface().(time.Time)
 		if t.IsZero() {

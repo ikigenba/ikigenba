@@ -67,7 +67,7 @@ func passView(p store.Pass, sp string) PassView {
 func memberRow(e store.Ranked, i int) MemberRow {
 	a := judgmentsView(e.Judgments)
 	f := factsView(e.Facts, "")
-	v := MemberRow{Rank: int64(i) + 1, Basis: e.Basis, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(e.Facts.Categories), Class: e.Candidate.Class, FleetVerdict: f.FleetVerdict, Website: e.Facts.Website, WebsiteURL: e.Facts.WebsiteURL, WebsiteSource: e.Facts.WebsiteSource, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch, KnownSince: f.KnownSince, KnownSinceText: f.KnownSinceText, NewestFiling: f.NewestFiling, NewestFilingText: f.NewestFilingText, Excluded: a.Excluded}
+	v := MemberRow{Rank: int64(i) + 1, Basis: e.Basis, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, HeadcountLow: a.HeadcountLow, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(e.Facts.Categories), Class: e.Candidate.Class, FleetVerdict: f.FleetVerdict, Website: e.Facts.Website, WebsiteURL: e.Facts.WebsiteURL, WebsiteSource: e.Facts.WebsiteSource, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch, KnownSince: f.KnownSince, KnownSinceText: f.KnownSinceText, NewestFiling: f.NewestFiling, NewestFilingText: f.NewestFilingText, Excluded: a.Excluded}
 	v.SiteText, v.SiteTextText = stamp(e.SiteText, MinuteLayout)
 	v.Brief, v.BriefText = stamp(e.Brief, MinuteLayout)
 	seen := map[string]bool{}
@@ -104,7 +104,13 @@ func candidateView(c store.Candidate) CandidateView {
 	return v
 }
 func judgmentsView(a store.Judgments) JudgmentsView {
-	v := JudgmentsView{OperatingEvidence: []EvidenceRow{}, Excluded: a.Excluded, Rules: a.Rules}
+	v := JudgmentsView{HeadcountBasis: a.HeadcountBasis, OperatingEvidence: []EvidenceRow{}, Excluded: a.Excluded, Rules: a.Rules}
+	if a.HeadcountLow != nil {
+		v.HeadcountLow = strconv.FormatInt(*a.HeadcountLow, 10)
+	}
+	if a.HeadcountHigh != nil {
+		v.HeadcountHigh = strconv.FormatInt(*a.HeadcountHigh, 10)
+	}
 	if a.Operating != nil {
 		v.OperatingConfidence = two(*a.Operating)
 	}
@@ -124,7 +130,7 @@ func judgmentsView(a store.Judgments) JudgmentsView {
 	return v
 }
 func factsView(f store.Facts, origin string) FactsView {
-	v := FactsView{KnownSince: date(f.KnownSince), KnownSinceText: date(f.KnownSince), NewestFiling: date(f.NewestFiling), NewestFilingText: date(f.NewestFiling), Categories: []CategoryRow{}, ClassifiedBy: store.ClassifiedBy(f.Categories), RecordsDiffer: store.RecordsDiffer(f.Categories, f.Records), RecordCategories: []CategoryRow{}, GovernmentMatch: f.GovernmentMatch, FleetVerdict: f.FleetVerdict, Written: []WrittenRow{}}
+	v := FactsView{KnownSince: date(f.KnownSince), KnownSinceText: date(f.KnownSince), NewestFiling: date(f.NewestFiling), NewestFilingText: date(f.NewestFiling), Categories: []CategoryRow{}, ClassifiedBy: store.ClassifiedBy(f.Categories), RecordsDiffer: store.RecordsDiffer(f.Categories, f.Records), RecordCategories: []CategoryRow{}, GovernmentMatch: f.GovernmentMatch, FleetVerdict: f.FleetVerdict, Written: []WrittenRow{}, Headcounts: []HeadcountRow{}, BriefLabels: append([]string{}, f.BriefLabels...)}
 	if f.PowerUnits != nil {
 		v.PowerUnits = strconv.FormatInt(*f.PowerUnits, 10)
 	}
@@ -150,6 +156,9 @@ func factsView(f store.Facts, origin string) FactsView {
 		for _, c := range f.Records {
 			v.RecordCategories = append(v.RecordCategories, CategoryRow{c.Name, c.Source})
 		}
+	}
+	for _, h := range f.Headcounts {
+		v.Headcounts = append(v.Headcounts, HeadcountRow{h.Scraper, h.Kind, strconv.FormatInt(h.Count, 10), date(h.AsOf), date(h.AsOf)})
 	}
 	for _, w := range f.Written {
 		at, txt := stamp(w.At, SecondLayout)

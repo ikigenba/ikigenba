@@ -15,12 +15,13 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/scrapes"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
+	"github.com/ikigenba/ikigenba/candidates/internal/judging"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-K3TN-H10O R-MRCN-18AW R-3QEZ-TBSF R-2G2T-A1M1
+// R-K3TN-H10O R-MRCN-18AW R-3QEZ-TBSF R-6535-96IL R-63V8-VERW
 func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 	for _, fullIngest := range []bool{false, true} {
 		t.Run(fmt.Sprint(fullIngest), func(t *testing.T) {
@@ -28,6 +29,8 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 			for i := range rows {
 				rows[i] = scrapes.Row{Scraper: "fmcsa", Run: "write-run", Scraped: time.Unix(100000, 0).UTC(), SourceID: fmt.Sprintf("source-%d", i), Digest: fmt.Sprintf("digest-%d", i), Name: fmt.Sprintf("Business %d", i), Address: scrapes.Address{State: "MN", Zip: "55072"}, Names: []string{}, People: []scrapes.Person{}, Raw: json.RawMessage(`{}`), Facts: map[string]json.RawMessage{"status": json.RawMessage(`"A"`), "power_units": json.RawMessage(`"100"`), "class": json.RawMessage(`"AUTHORIZED FOR HIRE"`), "mcs150_date": json.RawMessage(`"19700101"`)}}
 			}
+			rows[0].Facts["class"] = json.RawMessage(`"PRIVATE PROPERTY"`)
+			rows[0].Facts["total_drivers"] = json.RawMessage(`"10"`)
 			actual := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/runs/write-run/record" || r.URL.Path == "/scrapers/fmcsa/current" {
 					record(w, "write-run", len(rows), store.StatusDone)
@@ -136,7 +139,7 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 			if p.Status != store.StatusDone || got != total || p.Due+p.Fetched+p.HTTPS+p.HTTP+p.None+p.Runs+p.RunsFailed+p.Pages+p.Cost != 0 {
 				t.Fatal(p, total)
 			}
-			estimateCount := 0
+			estimateCount, headcountEstimateCount := 0, 0
 			wantCandidates, err := expected.st.ListCandidates(ctx, store.CandidateFilter{}, "", "", len(rows)+1)
 			if err != nil {
 				t.Fatal(err)
@@ -158,6 +161,9 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 				wantEst, we := expected.st.Estimates(ctx, c.ID)
 				for _, est := range gotEst {
 					estimateCount++
+					if est.Source == judging.HeadcountSource {
+						headcountEstimateCount++
+					}
 					if est.Formula != sources.Rules {
 						t.Fatal(est)
 					}
@@ -171,7 +177,7 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 					t.Fatal("judgment records differ", ge, we)
 				}
 			}
-			if fullIngest && estimateCount == 0 {
+			if fullIngest && (estimateCount == 0 || headcountEstimateCount == 0) {
 				t.Fatal("no estimates were recomputed")
 			}
 		})

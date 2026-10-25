@@ -39,7 +39,7 @@ func websiteResult(id, state string) store.Enrichment {
 	return store.Enrichment{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "business.test", Source: "business.test", Found: websiteFound(website.Result{State: state, URL: "https://business.test/", StatusCode: 200}), Cost: .02}
 }
 
-// R-2ZX9-RLIM R-GDOT-3LA9 R-P56L-P5D0 R-GHCI-8WIC
+// R-LNT7-7XPR R-GDOT-3LA9 R-P56L-P5D0 R-GHCI-8WIC
 func TestEnrichmentShapesAndMethods(t *testing.T) {
 	e := websiteResult("candidate", sources.WebsiteHTTPS)
 	contractEqual(t, store.Enrichment(struct {
@@ -60,12 +60,14 @@ func TestEnrichmentShapesAndMethods(t *testing.T) {
 		Records                            []sources.Category
 		FleetVerdict                       string
 		PowerUnits, Drivers                *int64
+		Headcounts                         []sources.Headcount
 		Website, WebsiteURL, WebsiteSource string
 		Minutes                            *int64
 		MinutesSource                      string
 		Miles                              *float64
 		RouteAddress                       string
 		Brief                              string
+		BriefLabels                        []string
 		Written                            []store.Written
 	}(f)), f)
 	contractEqual(t, store.Written(struct {

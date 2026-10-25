@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"reflect"
 	"sort"
 	"time"
 
@@ -12,10 +14,10 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-var factsColumns = columns("candidate:Candidate known_since:KnownSince government_match:GovernmentMatch newest_filing:NewestFiling categories:Categories fleet_verdict:FleetVerdict power_units:PowerUnits drivers:Drivers website:Website website_url:WebsiteURL website_source:WebsiteSource minutes:Minutes minutes_source:MinutesSource miles:Miles route_address:RouteAddress brief:Brief")
+var factsColumns = columns("candidate:Candidate known_since:KnownSince government_match:GovernmentMatch newest_filing:NewestFiling categories:Categories fleet_verdict:FleetVerdict power_units:PowerUnits drivers:Drivers headcounts:Headcounts website:Website website_url:WebsiteURL website_source:WebsiteSource minutes:Minutes minutes_source:MinutesSource miles:Miles route_address:RouteAddress brief:Brief brief_labels:BriefLabels")
 
 func unknownFacts(id string) Facts {
-	return Facts{Candidate: id, Categories: []sources.Category{}, Records: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown}
+	return Facts{Candidate: id, Categories: []sources.Category{}, Records: []sources.Category{}, Headcounts: []sources.Headcount{}, BriefLabels: []string{}, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown}
 }
 func factsKey(ctx context.Context, tx *sql.Tx, id string) (Facts, error) {
 	fs, err := readRecords[Facts](ctx, tx, "facts", factsColumns, " WHERE candidate=?", id)
@@ -43,12 +45,19 @@ func factsKey(ctx context.Context, tx *sql.Tx, id string) (Facts, error) {
 	return f, err
 }
 func (s *Store) projectFacts(ctx context.Context, tx *sql.Tx, id string) error {
-	es, err := enrichmentRecords(ctx, tx, " WHERE candidate=? ORDER BY seq DESC", id)
-	if err != nil {
+	f, extra, err := s.projectedFacts(ctx, tx, id)
+	if err != nil || f.Candidate == "" {
 		return err
 	}
+	return insertRecord(ctx, tx, "facts", factsColumns, f, extra)
+}
+func (s *Store) projectedFacts(ctx context.Context, tx *sql.Tx, id string) (Facts, map[string]any, error) {
+	es, err := enrichmentRecords(ctx, tx, " WHERE candidate=? ORDER BY seq DESC", id)
+	if err != nil {
+		return Facts{}, nil, err
+	}
 	if len(es) == 0 {
-		return nil
+		return Facts{}, nil, nil
 	}
 	f := unknownFacts(id)
 	seen := map[string]bool{}
@@ -59,9 +68,10 @@ func (s *Store) projectFacts(ctx context.Context, tx *sql.Tx, id string) error {
 		if e.Kind == enrichers.KindBrief && !goodBrief && !(enrichers.Brief{}).Failed(e.Found) {
 			var b enrichers.BriefFound
 			if err = json.Unmarshal(e.Found, &b); err != nil {
-				return err
+				return Facts{}, nil, err
 			}
 			f.Brief = b.Summary
+			f.BriefLabels = append(f.BriefLabels, b.Labels...)
 			for _, c := range b.Categories {
 				briefCategories = append(briefCategories, sources.Category{Name: c.Name, Source: enrichers.KindBrief})
 			}
@@ -75,30 +85,40 @@ func (s *Store) projectFacts(ctx context.Context, tx *sql.Tx, id string) error {
 		case enrichers.KindDriveMinutes:
 			var v enrichers.MinutesFound
 			if err = json.Unmarshal(e.Found, &v); err != nil {
-				return err
+				return Facts{}, nil, err
 			}
 			f.Minutes = v.Minutes
 		case enrichers.KindLinkFacts:
 			var v enrichers.LinkFound
 			if err = json.Unmarshal(e.Found, &v); err != nil {
-				return err
+				return Facts{}, nil, err
 			}
 			if v.KnownSince != "" {
 				f.KnownSince, err = time.Parse("2006-01-02", v.KnownSince)
 				if err != nil {
-					return err
+					return Facts{}, nil, err
 				}
 			}
 			if v.NewestFiling != "" {
 				f.NewestFiling, err = time.Parse("2006-01-02", v.NewestFiling)
 				if err != nil {
-					return err
+					return Facts{}, nil, err
 				}
 			}
 			f.GovernmentMatch = v.GovernmentMatch
 			f.FleetVerdict = v.FleetVerdict
 			f.PowerUnits = v.PowerUnits
 			f.Drivers = v.Drivers
+			for _, h := range v.Headcounts {
+				asOf := time.Time{}
+				if h.Date != "" {
+					asOf, err = time.Parse("2006-01-02", h.Date)
+					if err != nil {
+						return Facts{}, nil, err
+					}
+				}
+				f.Headcounts = append(f.Headcounts, sources.Headcount{Scraper: h.Scraper, Kind: h.Kind, Count: h.Count, AsOf: asOf})
+			}
 			for _, c := range v.Categories {
 				f.Categories = append(f.Categories, sources.Category{Name: c.Name, Source: c.Source})
 			}
@@ -112,7 +132,7 @@ func (s *Store) projectFacts(ctx context.Context, tx *sql.Tx, id string) error {
 	if seen[enrichers.KindDriveRoute] && s.cfg.Origin != "" {
 		c, err := candidateKey(ctx, tx, id)
 		if err != nil {
-			return err
+			return Facts{}, nil, err
 		}
 		inputs := (enrichers.DriveRoute{}).Inputs(enrichers.Subject{Street: c.Street, City: c.City, State: c.State, Zip: c.Zip, Origin: s.cfg.Origin})
 		for _, e := range es {
@@ -144,7 +164,7 @@ func (s *Store) projectFacts(ctx context.Context, tx *sql.Tx, id string) error {
 		}
 	}
 	f.Categories = unique
-	return insertRecord(ctx, tx, "facts", factsColumns, f, extra)
+	return f, extra, nil
 }
 
 // GetFacts reads the materialized enrichment facts.
@@ -154,15 +174,60 @@ func (s *Store) GetFacts(ctx context.Context, candidate string) (Facts, error) {
 	return out, err
 }
 
-// FillFacts fills only missing projections from existing results.
+// FillFacts repairs projections and refreshes the headcount and label columns.
 func (s *Store) FillFacts(ctx context.Context) error {
 	return unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		cs, err := readRecords[Candidate](ctx, tx, "candidates", candidateColumns, " WHERE status=? AND (NOT EXISTS (SELECT 1 FROM facts WHERE facts.candidate=candidates.id) OR EXISTS (SELECT 1 FROM enrichments WHERE enrichments.candidate=candidates.id AND enrichments.kind='drive_route') OR EXISTS (SELECT 1 FROM facts WHERE facts.candidate=candidates.id AND ((minutes IS NULL AND minutes_source!='') OR (minutes IS NOT NULL AND minutes_source=''))))", StatusActive)
+		cs, err := readRecords[Candidate](ctx, tx, "candidates", candidateColumns, " WHERE status=? AND EXISTS (SELECT 1 FROM enrichments WHERE enrichments.candidate=candidates.id)", StatusActive)
 		if err != nil {
 			return err
 		}
 		for _, c := range cs {
-			if err = s.projectFacts(ctx, tx, c.ID); err != nil {
+			old, err := factsKey(ctx, tx, c.ID)
+			if err != nil && !errors.Is(err, ErrNotFound) {
+				return err
+			}
+			missing := errors.Is(err, ErrNotFound)
+			var routes int64
+			if err = scanSQL(ctx, tx, "SELECT COUNT(*) FROM enrichments WHERE candidate=? AND kind=?", []any{c.ID, enrichers.KindDriveRoute}, &routes); err != nil {
+				return err
+			}
+			f, extra, err := s.projectedFacts(ctx, tx, c.ID)
+			if err != nil {
+				return err
+			}
+			repair := missing || (old.Minutes == nil && old.MinutesSource != "") || (old.Minutes != nil && old.MinutesSource == "") || routes > 0
+			if !repair {
+				if reflect.DeepEqual(old.Headcounts, f.Headcounts) && reflect.DeepEqual(old.BriefLabels, f.BriefLabels) {
+					continue
+				}
+				headcounts, err := encodeValue(reflect.ValueOf(f.Headcounts))
+				if err != nil {
+					return err
+				}
+				labels, err := json.Marshal(f.BriefLabels)
+				if err != nil {
+					return err
+				}
+				if err = execSQL(ctx, tx, "UPDATE facts SET headcounts=?,brief_labels=? WHERE candidate=?", headcounts, string(labels), c.ID); err != nil {
+					return err
+				}
+				continue
+			}
+			projected := f
+			projected.Records = old.Records
+			for _, kind := range []string{enrichers.KindBrief, enrichers.KindDriveMinutes, enrichers.KindDriveRoute, enrichers.KindLinkFacts, enrichers.KindSiteText, sources.WebsiteCheck, enrichers.KindWebsiteSearch} {
+				if at, ok := extra[kind+"_at"].(string); ok && at != "" {
+					parsed, err := time.Parse(time.RFC3339, at)
+					if err != nil {
+						return err
+					}
+					projected.Written = append(projected.Written, Written{Kind: kind, At: parsed})
+				}
+			}
+			if !missing && reflect.DeepEqual(old, projected) {
+				continue
+			}
+			if err = insertRecord(ctx, tx, "facts", factsColumns, f, extra); err != nil {
 				return err
 			}
 		}

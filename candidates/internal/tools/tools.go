@@ -431,14 +431,14 @@ func estimateOf(e sources.Estimate) Estimate {
 	return Estimate{e.Source, e.Low, e.High, e.Confidence, e.Facts, date(e.Filed), e.Formula}
 }
 func judgmentsOf(a store.Judgments) Judgments {
-	v := Judgments{OperatingConfidence: a.Operating, OperatingEvidence: []Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
+	v := Judgments{OperatingConfidence: a.Operating, OperatingEvidence: []Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, HeadcountLow: a.HeadcountLow, HeadcountHigh: a.HeadcountHigh, HeadcountBasis: a.HeadcountBasis, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
 	for _, e := range a.Evidence {
 		v.OperatingEvidence = append(v.OperatingEvidence, Evidence{e.Name, e.Source, e.Weight, e.Description})
 	}
 	return v
 }
 func factsOf(f store.Facts, origin string) Facts {
-	v := Facts{KnownSince: date(f.KnownSince), NewestFiling: date(f.NewestFiling), Categories: []Category{}, ClassifiedBy: store.ClassifiedBy(f.Categories), RecordsDiffer: store.RecordsDiffer(f.Categories, f.Records), RecordCategories: []Category{}, GovernmentMatch: f.GovernmentMatch, FleetVerdict: f.FleetVerdict, PowerUnits: f.PowerUnits, Drivers: f.Drivers, Website: f.Website, WebsiteURL: f.WebsiteURL, WebsiteSource: f.WebsiteSource, Minutes: f.Minutes, MinutesSource: f.MinutesSource, Miles: f.Miles, RouteAddress: f.RouteAddress, Written: []Written{}}
+	v := Facts{KnownSince: date(f.KnownSince), NewestFiling: date(f.NewestFiling), Categories: []Category{}, ClassifiedBy: store.ClassifiedBy(f.Categories), RecordsDiffer: store.RecordsDiffer(f.Categories, f.Records), RecordCategories: []Category{}, GovernmentMatch: f.GovernmentMatch, FleetVerdict: f.FleetVerdict, PowerUnits: f.PowerUnits, Drivers: f.Drivers, Website: f.Website, WebsiteURL: f.WebsiteURL, WebsiteSource: f.WebsiteSource, Minutes: f.Minutes, MinutesSource: f.MinutesSource, Miles: f.Miles, RouteAddress: f.RouteAddress, Written: []Written{}, Headcounts: []Headcount{}, BriefLabels: append([]string{}, f.BriefLabels...)}
 	if f.MinutesSource == store.MinutesByRoute && f.RouteAddress != "" {
 		v.PlaceURL = routes.PlaceURL(f.RouteAddress)
 		v.DirectionsURL = routes.DirectionsURL(origin, f.RouteAddress)
@@ -450,6 +450,9 @@ func factsOf(f store.Facts, origin string) Facts {
 		for _, c := range f.Records {
 			v.RecordCategories = append(v.RecordCategories, Category{c.Name, c.Source})
 		}
+	}
+	for _, h := range f.Headcounts {
+		v.Headcounts = append(v.Headcounts, Headcount{h.Scraper, h.Kind, h.Count, date(h.AsOf)})
 	}
 	for _, w := range f.Written {
 		v.Written = append(v.Written, Written{w.Kind, stamp(w.At)})
@@ -476,7 +479,7 @@ func briefOf(es []store.Enrichment) *Brief {
 func memberOf(e store.Ranked) Member {
 	a := e.Judgments
 	f := e.Facts
-	v := Member{Candidate: candidateOf(e.Candidate), Basis: e.Basis, OperatingConfidence: a.Operating, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(f.Categories), FleetVerdict: f.FleetVerdict, Website: f.Website, WebsiteURL: f.WebsiteURL, WebsiteSource: f.WebsiteSource, KnownSince: date(f.KnownSince), NewestFiling: date(f.NewestFiling), Excluded: a.Excluded, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch}
+	v := Member{Candidate: candidateOf(e.Candidate), Basis: e.Basis, OperatingConfidence: a.Operating, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, HeadcountLow: a.HeadcountLow, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(f.Categories), FleetVerdict: f.FleetVerdict, Website: f.Website, WebsiteURL: f.WebsiteURL, WebsiteSource: f.WebsiteSource, KnownSince: date(f.KnownSince), NewestFiling: date(f.NewestFiling), Excluded: a.Excluded, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch}
 	if !e.SiteText.IsZero() {
 		t := stamp(e.SiteText)
 		v.SiteText = &t

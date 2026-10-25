@@ -12,7 +12,7 @@ import (
 
 func ptr(n int64) *int64 { return &n }
 
-// R-WJRL-KXLL
+// R-4FUZ-II7O
 func TestCombinedShape(t *testing.T) {
 	type shape struct {
 		Low        int64
@@ -24,7 +24,7 @@ func TestCombinedShape(t *testing.T) {
 	}
 }
 
-// R-MOWU-9OTI R-WJRL-KXLL
+// R-MOWU-9OTI R-4FUZ-II7O
 func TestCombine(t *testing.T) {
 	cases := []struct {
 		in   []sources.Estimate
@@ -93,7 +93,7 @@ func TestWeight(t *testing.T) {
 	}
 }
 
-// R-YOL9-OHBC R-WJRL-KXLL
+// R-YOL9-OHBC R-4FUZ-II7O
 func TestOperating(t *testing.T) {
 	for _, tc := range []struct {
 		weights []float64

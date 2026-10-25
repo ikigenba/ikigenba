@@ -107,7 +107,7 @@ func TestIngestInvalidPrecedesUnavailable(t *testing.T) {
 	}
 }
 
-// R-4066-VHPZ R-42LZ-N17D R-UYGB-LPQY R-48KS-EUX8
+// R-4066-VHPZ R-42LZ-N17D R-UYGB-LPQY R-63V8-VERW
 func TestHandJudgeWithoutScrapes(t *testing.T) {
 	f := newFixture(t, nil, false)
 	ids := seedTarget(t, f, 2)

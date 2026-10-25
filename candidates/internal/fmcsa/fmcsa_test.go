@@ -98,7 +98,7 @@ func TestFiling(t *testing.T) {
 	}
 }
 
-// R-FT7Z-5Y0K R-EAXM-4HCO R-EDDE-W0U2 R-EFT7-NKBG R-EI90-F3SU
+// R-FT7Z-5Y0K R-EAXM-4HCO R-47BO-U40T R-48JL-7VRI R-49RH-LNI7
 func TestClassEstimate(t *testing.T) {
 	for _, c := range []struct {
 		class, tag string
@@ -108,8 +108,17 @@ func TestClassEstimate(t *testing.T) {
 		r := scrapes.Row{Facts: facts(map[string]string{"class": c.class, "power_units": "14", "mcs150_date": "20250318", "status": "I", "ignored": "extra"})}
 		rd := fmcsa.New().Read(r)
 		e := rd.Estimate
-		if rd.Class != c.tag || e == nil {
+		if rd.Class != c.tag {
 			t.Fatal(c, rd)
+		}
+		if c.tag == sources.ClassPrivate || c.tag == sources.ClassUnknown {
+			if e != nil {
+				t.Fatal(e)
+			}
+			continue
+		}
+		if e == nil {
+			t.Fatal(rd)
 		}
 		want := sources.Estimate{Source: fmcsa.Name, Low: 2100000, High: nil, Confidence: c.confidence, Facts: map[string]json.RawMessage{"class": r.Facts["class"], "power_units": r.Facts["power_units"], "mcs150_date": r.Facts["mcs150_date"]}, Filed: rd.Filed, Formula: sources.Rules}
 		if c.high {
@@ -123,9 +132,7 @@ func TestClassEstimate(t *testing.T) {
 			t.Fatal("inactive fleet")
 		}
 	}
-	r := scrapes.Row{Facts: map[string]json.RawMessage{"power_units": json.RawMessage(`"14"`), "class": json.RawMessage(`null`)}}
-	e := fmcsa.New().Read(r).Estimate
-	if e.Facts == nil || !reflect.DeepEqual(e.Facts, r.Facts) {
+	if e := fmcsa.New().Read(scrapes.Row{Facts: map[string]json.RawMessage{"power_units": json.RawMessage(`"14"`), "class": json.RawMessage(`null`)}}).Estimate; e != nil {
 		t.Fatal(e)
 	}
 }
@@ -219,7 +226,7 @@ func TestMileage(t *testing.T) {
 	}
 }
 
-// R-E4U4-7MN7 R-E79W-Z64L R-EAXM-4HCO R-EDDE-W0U2 R-EFT7-NKBG
+// R-E4U4-7MN7 R-E79W-Z64L R-EAXM-4HCO R-47BO-U40T R-48JL-7VRI
 func TestPlausibility(t *testing.T) {
 	for _, tc := range []struct {
 		units, drivers, mileage string
@@ -275,7 +282,7 @@ func TestPlausibility(t *testing.T) {
 	}
 }
 
-// R-E16F-2BF4 R-E4U4-7MN7 R-E79W-Z64L R-EAXM-4HCO R-EDDE-W0U2 R-EI90-F3SU
+// R-E16F-2BF4 R-E4U4-7MN7 R-E79W-Z64L R-EAXM-4HCO R-47BO-U40T R-49RH-LNI7
 func TestMileageUsesRowKey(t *testing.T) {
 	for _, tc := range []struct {
 		name, mileage, legacy, year string
@@ -289,7 +296,7 @@ func TestMileageUsesRowKey(t *testing.T) {
 		{"positive with conflicting legacy", `"19390412"`, `"5"`, `"2024"`, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r := scrapes.Row{Facts: facts(map[string]string{"power_units": "1828", "total_drivers": "1", "status": "A"})}
+			r := scrapes.Row{Facts: facts(map[string]string{"power_units": "1828", "total_drivers": "1", "status": "A", "class": "AUTHORIZED FOR HIRE"})}
 			for key, raw := range map[string]string{"mileage": tc.mileage, "mcs150_mileage": tc.legacy, "mileage_year": tc.year} {
 				if raw != "" {
 					r.Facts[key] = json.RawMessage(raw)
@@ -302,21 +309,21 @@ func TestMileageUsesRowKey(t *testing.T) {
 				}
 				return
 			}
-			want := map[string]json.RawMessage{"power_units": r.Facts["power_units"], "total_drivers": r.Facts["total_drivers"], "mileage": r.Facts["mileage"], "plausibility": json.RawMessage(`"suspicious"`)}
-			if got.Estimate == nil || got.Estimate.Confidence != .1 || !got.Fleet || !reflect.DeepEqual(got.Estimate.Facts, want) {
+			want := map[string]json.RawMessage{"class": r.Facts["class"], "power_units": r.Facts["power_units"], "total_drivers": r.Facts["total_drivers"], "mileage": r.Facts["mileage"], "plausibility": json.RawMessage(`"suspicious"`)}
+			if got.Estimate == nil || got.Estimate.Confidence != .35 || !got.Fleet || !reflect.DeepEqual(got.Estimate.Facts, want) {
 				t.Fatal(got)
 			}
 		})
 	}
 }
 
-// R-EFT7-NKBG R-EI90-F3SU
+// R-48JL-7VRI R-49RH-LNI7
 func TestSuspiciousEstimate(t *testing.T) {
 	for _, tc := range []struct {
 		class      string
 		confidence float64
 		high       bool
-	}{{"AUTHORIZED FOR HIRE", .35, true}, {"PRIVATE PROPERTY", .15, false}, {"PRIVATE PROPERTY;AUTHORIZED FOR HIRE", .25, false}, {"", .1, false}} {
+	}{{"AUTHORIZED FOR HIRE", .35, true}, {"PRIVATE PROPERTY;AUTHORIZED FOR HIRE", .25, false}} {
 		r := scrapes.Row{Facts: facts(map[string]string{"power_units": "1828", "total_drivers": "1", "mileage": "19390412", "class": tc.class, "mcs150_date": "20250318", "status": "I", "other": "extra", "plausibility": "from row"})}
 		r.Facts["total_drivers"] = json.RawMessage(" \n\"1\" \t")
 		got := fmcsa.New().Read(r)
@@ -333,16 +340,16 @@ func TestSuspiciousEstimate(t *testing.T) {
 			t.Fatalf("got %+v, want %+v", got.Estimate, want)
 		}
 	}
-	r := scrapes.Row{Facts: map[string]json.RawMessage{"power_units": json.RawMessage(`"1828"`), "total_drivers": json.RawMessage(`"1"`), "mileage": json.RawMessage(`"19390412"`)}}
-	want := map[string]json.RawMessage{"power_units": r.Facts["power_units"], "total_drivers": r.Facts["total_drivers"], "mileage": r.Facts["mileage"], "plausibility": json.RawMessage(`"suspicious"`)}
+	r := scrapes.Row{Facts: map[string]json.RawMessage{"class": json.RawMessage(`"AUTHORIZED FOR HIRE"`), "power_units": json.RawMessage(`"1828"`), "total_drivers": json.RawMessage(`"1"`), "mileage": json.RawMessage(`"19390412"`)}}
+	want := map[string]json.RawMessage{"class": r.Facts["class"], "power_units": r.Facts["power_units"], "total_drivers": r.Facts["total_drivers"], "mileage": r.Facts["mileage"], "plausibility": json.RawMessage(`"suspicious"`)}
 	if got := fmcsa.New().Read(r).Estimate; got == nil || !reflect.DeepEqual(got.Facts, want) {
 		t.Fatal(got)
 	}
 }
 
-// R-EI90-F3SU
+// R-49RH-LNI7
 func TestEstimateCopiesUnreadableFacts(t *testing.T) {
-	r := scrapes.Row{Facts: map[string]json.RawMessage{"power_units": json.RawMessage(`"14"`), "class": json.RawMessage(`null`), "mcs150_date": json.RawMessage(`{}`), "total_drivers": json.RawMessage(`4`), "mileage": json.RawMessage(" \nnull\t"), "mcs150_mileage": json.RawMessage(`"847225359"`), "mileage_year": json.RawMessage(`"2024"`), "plausibility": json.RawMessage(`"from row"`)}}
+	r := scrapes.Row{Facts: map[string]json.RawMessage{"power_units": json.RawMessage(`"14"`), "class": json.RawMessage(`"AUTHORIZED FOR HIRE"`), "mcs150_date": json.RawMessage(`{}`), "total_drivers": json.RawMessage(`4`), "mileage": json.RawMessage(" \nnull\t"), "mcs150_mileage": json.RawMessage(`"847225359"`), "mileage_year": json.RawMessage(`"2024"`), "plausibility": json.RawMessage(`"from row"`)}}
 	want := map[string]json.RawMessage{}
 	for _, key := range []string{"power_units", "class", "mcs150_date", "total_drivers", "mileage"} {
 		want[key] = r.Facts[key]
@@ -406,7 +413,7 @@ func TestEvidence(t *testing.T) {
 	}
 }
 
-// R-G0JD-GKGQ
+// R-4AZD-ZF8W
 func TestOwnsReading(t *testing.T) {
 	r := scrapes.Row{Name: "COUNTY HAULING", Names: []string{"alias"}, People: []scrapes.Person{{Name: "Alex", Role: "owner"}}, Facts: facts(map[string]string{"power_units": "14", "class": "AUTHORIZED FOR HIRE", "total_drivers": "1", "mileage": "12"})}
 	r.Facts["cargo"] = json.RawMessage(`["cargo"]`)
@@ -423,6 +430,7 @@ func TestOwnsReading(t *testing.T) {
 		a.Estimate.Facts[key][1] = '9'
 	}
 	*a.Estimate.High = 1
+	a.Headcount.Count = 999
 	a.Estimate.Low = 1
 	after, _ := json.Marshal(r)
 	if string(original) != string(after) || !reflect.DeepEqual(b, fmcsa.New().Read(r)) {

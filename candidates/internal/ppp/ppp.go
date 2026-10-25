@@ -3,7 +3,6 @@ package ppp
 
 import (
 	"encoding/json"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -41,14 +40,6 @@ func digits(s string) bool {
 		}
 	}
 	return true
-}
-func amount(s string) (float64, bool) {
-	parts := strings.Split(s, ".")
-	if len(parts) > 2 || !digits(parts[0]) || len(parts) == 2 && !digits(parts[1]) {
-		return 0, false
-	}
-	a, err := strconv.ParseFloat(s, 64)
-	return a, err == nil && a > 0 && a <= 1000000000
 }
 func category(s string) string {
 	s = strings.TrimSpace(s)
@@ -107,15 +98,10 @@ func (*Source) Read(r scrapes.Row) sources.Reading {
 	if !out.KnownSince.IsZero() && fact(r.Facts, "business_age") == "Existing or more than 2 years old" {
 		out.KnownSince = out.KnownSince.AddDate(-2, 0, 0)
 	}
-	if a, ok := amount(fact(r.Facts, "amount")); ok {
-		high := int64(math.Round(a / 2.5 * 12 / 0.25))
-		est := &sources.Estimate{Source: Name, Low: int64(math.Round(a / 2.5 * 12 / 0.4)), High: &high, Confidence: 0.4, Filed: out.Filed, Formula: sources.Rules, Facts: map[string]json.RawMessage{}}
-		for _, k := range []string{"amount", "naics", "date_approved", "business_age", "jobs_reported"} {
-			if v, exists := r.Facts[k]; exists {
-				est.Facts[k] = append(json.RawMessage(nil), v...)
-			}
-		}
-		out.Estimate = est
+	ns := fact(r.Facts, "jobs_reported")
+	n, err := strconv.ParseInt(ns, 10, 64)
+	if digits(ns) && err == nil && n > 0 && n <= 36893488147419 {
+		out.Headcount = &sources.Headcount{Scraper: Name, Kind: sources.HeadcountJobs, Count: n, AsOf: out.Filed}
 	}
 	return out
 }

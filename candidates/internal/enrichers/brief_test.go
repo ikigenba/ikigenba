@@ -88,7 +88,7 @@ func TestBriefFingerprint(t *testing.T) {
 	}
 }
 
-// R-B5YZ-XDSE
+// R-U7ZG-UH1W
 func TestBriefInputEvidence(t *testing.T) {
 	n := int64(3)
 	s := enrichers.Subject{ID: "candidate", Name: "name", City: "city", State: "state", Website: "site", Facts: &enrichers.LinkFound{Categories: []enrichers.Category{{Name: "retail", Source: enrichers.KindBrief}, {Name: "trucking and logistics", Source: "fmcsa"}}, GovernmentMatch: "match", FleetVerdict: "pass", PowerUnits: &n, Drivers: &n, KnownSince: "2015-03-01", NewestFiling: "2025-01-01"}, Links: []enrichers.Link{
@@ -127,7 +127,7 @@ func TestBriefInputEvidence(t *testing.T) {
 	}
 }
 
-// R-B76W-B5J3
+// R-U97D-88SL
 func TestBriefPageBudget(t *testing.T) {
 	for _, tc := range []struct {
 		texts []string
@@ -312,7 +312,7 @@ func TestPrompterFailedDecode(t *testing.T) {
 	}
 }
 
-// R-B5YZ-XDSE
+// R-U7ZG-UH1W
 func TestBriefInputCarrierClass(t *testing.T) {
 	for _, facts := range []*enrichers.LinkFound{nil, {Categories: []enrichers.Category{{Name: sources.CategoryTrucking, Source: "fmcsa"}}, FleetVerdict: sources.FleetPass}} {
 		s := enrichers.Subject{Facts: facts, Links: []enrichers.Link{

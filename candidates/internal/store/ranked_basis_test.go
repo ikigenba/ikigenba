@@ -2,14 +2,16 @@ package store_test
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
+	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-XO15-GHZ7 R-RYPS-0SO4
+// R-UW50-EWE1 R-RYPS-0SO4
 func TestRankedBasisIncludesMergedHistoryAndWholeSecondStamps(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -48,4 +50,26 @@ func TestRankedBasisIncludesMergedHistoryAndWholeSecondStamps(t *testing.T) {
 	check(store.BasisEnriched)
 	f.reopen()
 	check(store.BasisEnriched)
+}
+
+// R-UW50-EWE1
+func TestRankedMissingFactsUsesCompleteUnknownValue(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	id := enrichmentCandidate(t, f, "missing facts", "owner@unknown.test")
+	_, err := f.s.Judge(ctx, []string{id})
+	contractOK(t, err)
+	contractOK(t, f.d.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "DELETE FROM facts WHERE candidate=?", id)
+		return err
+	}))
+	_, err = f.s.GetFacts(ctx, id)
+	contractError(t, err, store.ErrNotFound)
+	k := prospectListCreate(t, f, "unknown facts")
+	r := prospectListRead(t, f, k)
+	contractEqual(t, len(r.Members), 1)
+	contractEqual(t, r.Members[0].Facts, store.Facts{
+		Candidate: id, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown,
+		Categories: []sources.Category{}, Records: []sources.Category{}, Headcounts: []sources.Headcount{}, BriefLabels: []string{},
+	})
 }

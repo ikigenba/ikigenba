@@ -33,7 +33,7 @@ func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 	unknownList := prospectListCreate(t, f, "unknown facts")
 	unknown := prospectListRead(t, f, unknownList).Members
 	contractEqual(t, len(unknown), 1)
-	contractEqual(t, unknown[0].Facts, store.Facts{Candidate: id, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown, Categories: []sources.Category{}, Records: []sources.Category{}})
+	contractEqual(t, unknown[0].Facts, store.Facts{Headcounts: []sources.Headcount{}, BriefLabels: []string{}, Candidate: id, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown, Categories: []sources.Category{}, Records: []sources.Category{}})
 	unknownJudgments, err := f.s.GetJudgments(ctx, id)
 	contractOK(t, err)
 	contractEqual(t, unknown[0].Judgments, unknownJudgments)
@@ -79,7 +79,7 @@ func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 	contractEqual(t, facts.Website, sources.WebsiteUnknown)
 }
 
-// R-PWRA-LW9H R-35K0-6770 R-R7HY-562T R-LD70-4W25 R-MTHW-1S6E
+// R-PWRA-LW9H R-5QGC-NXM9 R-R7HY-562T R-LD70-4W25 R-MTHW-1S6E
 func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -312,7 +312,7 @@ func TestFactsProjectionUsesNewestResultOfEveryKind(t *testing.T) {
 	_, err := f.s.AddEnrichments(ctx, first)
 	contractOK(t, err)
 	stamp := f.now.UTC().Truncate(time.Second)
-	expected := store.Facts{Candidate: id, KnownSince: time.Date(2018, 4, 9, 0, 0, 0, 0, time.UTC), NewestFiling: time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: lf.GovernmentMatch, Categories: []sources.Category{{Name: sources.CategoryConstruction, Source: ppp.Name}, {Name: sources.CategoryTrucking, Source: fmcsa.Name}}, FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, Website: sources.WebsiteHTTPS, WebsiteURL: websiteDecoded(first[2]).URL, WebsiteSource: store.WebsiteByCheck, Minutes: &low, MinutesSource: store.MinutesByZip, Written: []store.Written{{Kind: enrichers.KindDriveMinutes, At: stamp}, {Kind: enrichers.KindLinkFacts, At: stamp}, {Kind: sources.WebsiteCheck, At: stamp}}}
+	expected := store.Facts{Headcounts: []sources.Headcount{}, BriefLabels: []string{}, Candidate: id, KnownSince: time.Date(2018, 4, 9, 0, 0, 0, 0, time.UTC), NewestFiling: time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: lf.GovernmentMatch, Categories: []sources.Category{{Name: sources.CategoryConstruction, Source: ppp.Name}, {Name: sources.CategoryTrucking, Source: fmcsa.Name}}, FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, Website: sources.WebsiteHTTPS, WebsiteURL: websiteDecoded(first[2]).URL, WebsiteSource: store.WebsiteByCheck, Minutes: &low, MinutesSource: store.MinutesByZip, Written: []store.Written{{Kind: enrichers.KindDriveMinutes, At: stamp}, {Kind: enrichers.KindLinkFacts, At: stamp}, {Kind: sources.WebsiteCheck, At: stamp}}}
 	expected.Records = append([]sources.Category{}, expected.Categories...)
 	got, err := f.s.GetFacts(ctx, id)
 	contractOK(t, err)
@@ -353,7 +353,7 @@ func factsAt(ctx context.Context, t *testing.T, s *store.Store, id string) store
 	t.Helper()
 	f, err := s.GetFacts(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
-		return store.Facts{Candidate: id, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown, Categories: []sources.Category{}, Records: []sources.Category{}}
+		return store.Facts{Headcounts: []sources.Headcount{}, BriefLabels: []string{}, Candidate: id, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown, Categories: []sources.Category{}, Records: []sources.Category{}}
 	}
 	contractOK(t, err)
 	return f

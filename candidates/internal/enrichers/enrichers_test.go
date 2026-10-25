@@ -20,7 +20,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-6HON-D9ZG R-I9B5-6YXP R-IBQX-YIF3 R-ICYU-CA5S
+// R-6HON-D9ZG R-I9B5-6YXP R-IBQX-YIF3 R-Z35R-8FEV
 func TestDeclaredValues(t *testing.T) {
 	type word string
 	words := []word{enrichers.KindDriveMinutes, enrichers.KindLinkFacts, enrichers.SourceZipDrive, enrichers.SourceLinks}
@@ -48,8 +48,8 @@ func TestDeclaredValues(t *testing.T) {
 		want  string
 	}{
 		{enrichers.Category{"n", "s"}, `{"name":"n","source":"s"}`},
-		{enrichers.LinkFound{"a", "b", "c", []enrichers.Category{{"n", "s"}}, "pass", &n, &n}, `{"known_since":"a","newest_filing":"b","government_match":"c","categories":[{"name":"n","source":"s"}],"fleet_verdict":"pass","power_units":84,"drivers":84}`},
-		{enrichers.LinkFound{}, `{"categories":null,"fleet_verdict":""}`},
+		{enrichers.LinkFound{"a", "b", "c", []enrichers.Category{{"n", "s"}}, "pass", &n, &n, []enrichers.Headcount{{"ppp", "jobs", 26, "2020-04-28"}}}, `{"known_since":"a","newest_filing":"b","government_match":"c","categories":[{"name":"n","source":"s"}],"fleet_verdict":"pass","power_units":84,"drivers":84,"headcounts":[{"scraper":"ppp","kind":"jobs","count":26,"date":"2020-04-28"}]}`},
+		{enrichers.LinkFound{}, `{"categories":null,"fleet_verdict":"","headcounts":null}`},
 		{enrichers.MinutesFound{&n}, `{"minutes":84}`}, {enrichers.MinutesFound{}, `{}`},
 	}
 	for _, tc := range cases {
@@ -59,7 +59,7 @@ func TestDeclaredValues(t *testing.T) {
 		}
 	}
 	var lf enrichers.LinkFound
-	if err := json.Unmarshal([]byte(cases[1].want), &lf); err != nil || lf.KnownSince != "a" || lf.NewestFiling != "b" || lf.GovernmentMatch != "c" || lf.Categories[0].Name != "n" || lf.FleetVerdict != "pass" || *lf.PowerUnits != n || *lf.Drivers != n {
+	if err := json.Unmarshal([]byte(cases[1].want), &lf); err != nil || lf.KnownSince != "a" || lf.NewestFiling != "b" || lf.GovernmentMatch != "c" || lf.Categories[0].Name != "n" || len(lf.Headcounts) != 1 || lf.Headcounts[0] != (enrichers.Headcount{"ppp", "jobs", 26, "2020-04-28"}) || lf.FleetVerdict != "pass" || *lf.PowerUnits != n || *lf.Drivers != n {
 		t.Fatal(lf, err)
 	}
 	var mf enrichers.MinutesFound

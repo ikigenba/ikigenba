@@ -52,15 +52,17 @@ type Link struct {
 
 // Judgments holds the last operating and revenue judgments and their evidence.
 type Judgments struct {
-	Candidate               string
-	Operating               *float64
-	OperatingKey            int64
-	Evidence                []sources.Evidence
-	RevenueLow, RevenueHigh *int64
-	RevenueConfidence       *float64
-	Excluded                bool
-	Rules                   int64
-	Calculated              time.Time
+	Candidate                   string
+	Operating                   *float64
+	OperatingKey                int64
+	Evidence                    []sources.Evidence
+	RevenueLow, RevenueHigh     *int64
+	RevenueConfidence           *float64
+	HeadcountLow, HeadcountHigh *int64
+	HeadcountBasis              string
+	Excluded                    bool
+	Rules                       int64
+	Calculated                  time.Time
 }
 
 // Enrichment is one recorded result.
@@ -84,12 +86,14 @@ type Facts struct {
 	Records                            []sources.Category
 	FleetVerdict                       string
 	PowerUnits, Drivers                *int64
+	Headcounts                         []sources.Headcount
 	Website, WebsiteURL, WebsiteSource string
 	Minutes                            *int64
 	MinutesSource                      string
 	Miles                              *float64
 	RouteAddress                       string
 	Brief                              string
+	BriefLabels                        []string
 	Written                            []Written
 }
 

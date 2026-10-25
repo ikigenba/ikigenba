@@ -16,17 +16,21 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-YG23-6DHP R-YH9Z-K58E
+// R-EHDF-O5O0 R-EM91-78MS R-YH9Z-K58E
 func TestDriveViewTypes(_ *testing.T) {
 	_ = struct {
-		KnownSince, KnownSinceText, NewestFiling, NewestFilingText                                                                         string
-		Categories                                                                                                                         []CategoryRow
-		ClassifiedBy                                                                                                                       string
-		RecordsDiffer                                                                                                                      bool
-		RecordCategories                                                                                                                   []CategoryRow
-		GovernmentMatch, FleetVerdict, PowerUnits, Drivers, Minutes, MinutesSource, Miles, RouteAddress, RoutePlaceURL, RouteDirectionsURL string
-		Written                                                                                                                            []WrittenRow
+		KnownSince, KnownSinceText, NewestFiling, NewestFilingText                     string
+		Categories                                                                     []CategoryRow
+		ClassifiedBy                                                                   string
+		RecordsDiffer                                                                  bool
+		RecordCategories                                                               []CategoryRow
+		GovernmentMatch, FleetVerdict, PowerUnits, Drivers                             string
+		Headcounts                                                                     []HeadcountRow
+		BriefLabels                                                                    []string
+		Minutes, MinutesSource, Miles, RouteAddress, RoutePlaceURL, RouteDirectionsURL string
+		Written                                                                        []WrittenRow
 	}(FactsView{})
+	_ = struct{ Scraper, Kind, Count, AsOf, AsOfText string }(HeadcountRow{})
 	_ = struct{ Kind, At, AtText string }(WrittenRow{})
 	_ = struct{ Minutes, Miles, Address, Precision, Status, Why, Error, PlaceURL, DirectionsURL string }(RouteView{})
 }

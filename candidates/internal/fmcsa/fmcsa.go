@@ -108,19 +108,15 @@ func (*Source) Read(r scrapes.Row) sources.Reading {
 			out.Drivers = &drivers
 		}
 	}
-	if unitsRead && !implausible {
+	if unitsRead && !implausible && (out.Class == sources.ClassForHire || out.Class == sources.ClassMixed) {
 		est := &sources.Estimate{Source: Name, Low: 150000 * n, Facts: make(map[string]json.RawMessage), Filed: out.Filed, Formula: sources.Rules}
 		switch out.Class {
 		case sources.ClassForHire:
 			h := 250000 * n
 			est.High = &h
 			est.Confidence = 0.7
-		case sources.ClassPrivate:
-			est.Confidence = 0.3
 		case sources.ClassMixed:
 			est.Confidence = 0.5
-		default:
-			est.Confidence = 0.2
 		}
 		if suspicious {
 			est.Confidence /= 2
@@ -134,6 +130,9 @@ func (*Source) Read(r scrapes.Row) sources.Reading {
 		out.Estimate = est
 	}
 
+	if !implausible && driversRead && drivers > 0 {
+		out.Headcount = &sources.Headcount{Scraper: Name, Kind: sources.HeadcountDrivers, Count: drivers, AsOf: out.Filed}
+	}
 	out.KnownSince = parseDate(stringFact(r.Facts, "added"))
 	out.GovernmentMatch = sources.GovernmentMatch(out.NameKey)
 	if !implausible {

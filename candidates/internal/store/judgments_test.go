@@ -21,7 +21,7 @@ func near(t *testing.T, p *float64, w float64) {
 	}
 }
 
-// R-3E3A-ULDV R-UW0I-U69K R-Q42O-WIPN R-BN2B-WQID R-1BPF-IL5I
+// R-5J4Y-DB63 R-5LKR-4UNH R-Q42O-WIPN R-5HX1-ZJFE R-5KCU-R2WS
 func TestJudgmentsAggregateAndPersist(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -77,8 +77,8 @@ func TestJudgmentsAggregateAndPersist(t *testing.T) {
 	contractOK(t, err)
 	near(t, got.Operating, .8208)
 	contractEqual(t, got.OperatingKey, int64(820800))
-	contractEqual(t, *got.RevenueLow, int64(2209091))
-	contractEqual(t, *got.RevenueHigh, int64(3623636))
+	contractEqual(t, *got.RevenueLow, int64(1772727))
+	contractEqual(t, *got.RevenueHigh, int64(2925455))
 	near(t, got.RevenueConfidence, .7)
 	contractEqual(t, got.Evidence, []sources.Evidence{active, activity, domain, loan})
 	contractEqual(t, factsAt(ctx, t, f.s, id).KnownSince, a.Reading.KnownSince)
@@ -90,7 +90,7 @@ func TestJudgmentsAggregateAndPersist(t *testing.T) {
 	contractEqual(t, got.Calculated, f.now.Truncate(time.Second))
 	es, err := f.s.Estimates(ctx, id)
 	contractOK(t, err)
-	contractEqual(t, es, []sources.Estimate{*a.Reading.Estimate, *b.Reading.Estimate})
+	contractEqual(t, es, []sources.Estimate{*a.Reading.Estimate, *smaller.Reading.Estimate})
 	blank, err := f.s.GetJudgments(ctx, emptyID)
 	contractOK(t, err)
 	contractEqual(t, blank.Operating, (*float64)(nil))
@@ -99,6 +99,9 @@ func TestJudgmentsAggregateAndPersist(t *testing.T) {
 	contractEqual(t, blank.RevenueHigh, (*int64)(nil))
 	contractEqual(t, blank.RevenueConfidence, (*float64)(nil))
 	contractEqual(t, blank.Evidence, []sources.Evidence{})
+	contractEqual(t, blank.HeadcountLow, (*int64)(nil))
+	contractEqual(t, blank.HeadcountHigh, (*int64)(nil))
+	contractEqual(t, blank.HeadcountBasis, "")
 	c, err = f.s.Judge(ctx, nil)
 	contractOK(t, err)
 	contractEqual(t, c, store.Counts{})
@@ -107,7 +110,7 @@ func TestJudgmentsAggregateAndPersist(t *testing.T) {
 	persisted, err := f.s.GetJudgments(ctx, id)
 	contractOK(t, err)
 	contractEqual(t, persisted, got)
-	// Gone PPP evidence and its largest estimate no longer contribute.
+	// Gone PPP evidence and its estimate no longer contribute.
 	_, _, err = f.s.MarkGone(ctx, ppp.Name, "absent")
 	contractOK(t, err)
 	_, err = f.s.JudgeAll(ctx)
@@ -265,7 +268,7 @@ func TestJudgePassTriggerRepeatsAcrossDeliveries(t *testing.T) {
 	contractEqual(t, got.Unranged, int64(2))
 }
 
-// R-BN2B-WQID R-1BPF-IL5I R-3E3A-ULDV
+// R-5HX1-ZJFE R-5KCU-R2WS R-5J4Y-DB63
 func TestJudgmentConflictsFollowLinkOrder(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -286,12 +289,12 @@ func TestJudgmentConflictsFollowLinkOrder(t *testing.T) {
 	oldest.Reading.Filed = f.now.AddDate(-2, 0, 0)
 	oldest.Reading.Evidence = []sources.Evidence{{Name: "maximum", Source: "last-weaker", Weight: .2}}
 	id := contractAttach(t, f, "run", oldest, older, newer)[0]
-	// Equal PPP lows select the first in link order, independent of insertion order.
+	// Every scraper uses its freshest link, even when an older estimate is larger.
 	p := newer
 	p.Scraper = ppp.Name
 	p.SourceID = "loan-old"
 	p.Reading.Filed = f.now.AddDate(-2, 0, 0)
-	p.Reading.Estimate = &sources.Estimate{Source: ppp.Name, Low: 500, Confidence: .3}
+	p.Reading.Estimate = &sources.Estimate{Source: ppp.Name, Low: 1500, Confidence: .3}
 	p.Reading.Evidence = nil
 	p.Reading.GovernmentMatch = "loan-pattern"
 	p.Reading.Category = sources.CategoryConstruction
@@ -325,7 +328,7 @@ func TestJudgmentConflictsFollowLinkOrder(t *testing.T) {
 	contractEqual(t, factsAt(ctx, t, f.s, id).FleetVerdict, sources.FleetUnknown)
 }
 
-// R-3E3A-ULDV R-UW0I-U69K
+// R-5J4Y-DB63 R-5LKR-4UNH
 func TestJudgmentFleetUsesOnlyFreshestLiveFMCSA(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -399,7 +402,7 @@ func TestJudgmentFleetUsesOnlyFreshestLiveFMCSA(t *testing.T) {
 	check(sources.FleetUnknown, nil, nil)
 }
 
-// R-Q42O-WIPN R-UW0I-U69K
+// R-Q42O-WIPN R-5LKR-4UNH
 func TestJudgeAllAgreesWithExplicitActiveIDs(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -426,7 +429,7 @@ func TestJudgeAllAgreesWithExplicitActiveIDs(t *testing.T) {
 	contractEqual(t, afterRejects, rejects)
 }
 
-// R-4H43-3943
+// R-5P8G-A5VK
 func TestRulingJudgmentsUpdateProspectListMembership(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -466,7 +469,7 @@ func TestRulingJudgmentsUpdateProspectListMembership(t *testing.T) {
 	}
 }
 
-// R-4H43-3943
+// R-5P8G-A5VK
 func TestMovingRulingsWriteTheSameJudgmentsAsJudge(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -474,11 +477,13 @@ func TestMovingRulingsWriteTheSameJudgmentsAsJudge(t *testing.T) {
 	a.Scraper = fmcsa.Name
 	a.Reading.FleetVerdict = sources.FleetPass
 	a.Reading.PowerUnits = ptrInt(5)
+	a.Reading.Headcount = &sources.Headcount{Scraper: fmcsa.Name, Kind: sources.HeadcountDrivers, Count: 4, AsOf: a.Reading.Filed}
 	b := a
 	b.SourceID = "b"
 	b.Reading.Filed = f.now.AddDate(0, 1, 0)
 	b.Reading.FleetVerdict = sources.FleetFail
 	b.Reading.PowerUnits = ptrInt(1)
+	b.Reading.Headcount = &sources.Headcount{Scraper: fmcsa.Name, Kind: sources.HeadcountDrivers, Count: 8, AsOf: b.Reading.Filed}
 	id := contractAttach(t, f, "run", a, b)[0]
 	deriveAll(t, f.s)
 	_, e := f.s.JudgeAll(ctx)

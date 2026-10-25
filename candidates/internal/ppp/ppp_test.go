@@ -31,30 +31,36 @@ func TestSource(t *testing.T) {
 	}
 }
 
-// R-02J2-BHD9 R-08MK-8C2Q R-09UG-M3TF
-func TestAmount(t *testing.T) {
+// R-42G3-B121 R-43NZ-OSSQ R-44VW-2KJF
+func TestJobsAndNoEstimate(t *testing.T) {
 	for _, tc := range []struct {
-		s         string
-		low, high int64
-	}{{"200000", 2400000, 3840000}, {"152162.5", 1825950, 2921520}, {"0200000.00", 2400000, 3840000}, {"1.04", 12, 20}, {"0.01", 0, 0}, {"1000000000", 12000000000, 19200000000}} {
-		rd := ppp.New().Read(row(map[string]string{"amount": tc.s, "date_approved": "04/09/2020"}))
-		e := rd.Estimate
-		if e == nil || e.Source != ppp.Name || e.Low != tc.low || e.High == nil || *e.High != tc.high || e.Confidence != .4 || e.Formula != sources.Rules || e.Filed != rd.Filed {
-			t.Fatal(tc, e)
+		s string
+		n int64
+	}{{"26", 26}, {"026", 26}, {"0", 0}, {"36893488147419", 36893488147419}, {"", 0}, {" 26", 0}, {"26 ", 0}, {"12.0", 0}, {"-3", 0}, {"1e2", 0}, {"36893488147420", 0}} {
+		r := row(map[string]string{"jobs_reported": tc.s, "amount": "200000", "date_approved": "04/28/2020"})
+		got := ppp.New().Read(r)
+		if got.Estimate != nil {
+			t.Fatal(got.Estimate)
+		}
+		var want *sources.Headcount
+		if tc.n > 0 {
+			want = &sources.Headcount{Scraper: ppp.Name, Kind: sources.HeadcountJobs, Count: tc.n, AsOf: time.Date(2020, 4, 28, 0, 0, 0, 0, time.UTC)}
+		}
+		if !reflect.DeepEqual(got.Headcount, want) {
+			t.Fatal(tc, got.Headcount, want)
 		}
 	}
-	for _, s := range []string{"0", "0.00", "", " 200000", "200000 ", "200000.", ".5", "-5", "+5", "1,000", "1e5", "1000000000.01", "1.2.3", "NaN", "２", "99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999"} {
-		if got := ppp.New().Read(row(map[string]string{"amount": s})); got.Estimate != nil {
-			t.Fatal(s, got.Estimate)
+	for _, raw := range []string{"26", "null", "true", "{}", "[]"} {
+		if h := ppp.New().Read(scrapes.Row{Facts: map[string]json.RawMessage{"jobs_reported": json.RawMessage(raw)}}).Headcount; h != nil {
+			t.Fatal(raw, h)
 		}
 	}
-	for _, raw := range []string{"200000", "null", "true", "[]", "{}", "bad"} {
-		if got := ppp.New().Read(scrapes.Row{Facts: map[string]json.RawMessage{"amount": json.RawMessage(raw)}}); got.Estimate != nil {
-			t.Fatal(raw, got)
-		}
+	if h := ppp.New().Read(scrapes.Row{}).Headcount; h != nil {
+		t.Fatal(h)
 	}
-	if ppp.New().Read(scrapes.Row{}).Estimate != nil {
-		t.Fatal("absent")
+	h := ppp.New().Read(row(map[string]string{"jobs_reported": "100"})).Headcount
+	if h == nil || h.Count != 100 || !h.AsOf.IsZero() {
+		t.Fatal(h)
 	}
 }
 
@@ -157,44 +163,27 @@ func TestIdentityAndEvidence(t *testing.T) {
 	}
 }
 
-// R-0B2C-ZVK4 R-0FXY-IYIW
+// R-4C7A-D6ZL
 func TestFactsAndOwnership(t *testing.T) {
-	r := row(map[string]string{"amount": "200000", "naics": " 236220 ", "date_approved": "04/09/2020", "business_age": "Existing or more than 2 years old", "jobs_reported": "12", "lender": "First Bank", "business_type": "Corporation"})
+	r := row(map[string]string{"amount": "200000", "jobs_reported": "12"})
 	r.Names = []string{"alias"}
 	before, _ := json.Marshal(r)
 	a, b := ppp.New().Read(r), ppp.New().Read(r)
 	if !reflect.DeepEqual(a, b) {
-		t.Fatal("non-deterministic")
-	}
-	want := map[string]json.RawMessage{}
-	for _, k := range []string{"amount", "naics", "date_approved", "business_age", "jobs_reported"} {
-		want[k] = r.Facts[k]
-	}
-	if !reflect.DeepEqual(a.Estimate.Facts, want) {
-		t.Fatal(a.Estimate.Facts)
+		t.Fatal("nondeterministic")
 	}
 	a.Names[0] = "changed"
 	a.Evidence[0].Description = "changed"
 	a.People = append(a.People, sources.Person{Name: "new"})
 	a.Cargo = append(a.Cargo, "new")
-	*a.Estimate.High = 1
-	a.Estimate.Low = 1
-	for k := range a.Estimate.Facts {
-		a.Estimate.Facts[k][1] = 'X'
-	}
+	a.Headcount.Count = 1
 	after, _ := json.Marshal(r)
 	if string(before) != string(after) || !reflect.DeepEqual(b, ppp.New().Read(r)) {
-		t.Fatal("shares state")
+		t.Fatal("shared state")
 	}
 	r.Names[0] = "row changed"
-	r.Facts["amount"][1] = '9'
-	if b.Names[0] != "alias" || string(b.Estimate.Facts["amount"]) != `"200000"` {
-		t.Fatal("shares row")
-	}
-	sparse := row(map[string]string{"amount": "200000", "naics": " 236220 ", "jobs_reported": "12", "lender": "First Bank"})
-	want = map[string]json.RawMessage{"amount": sparse.Facts["amount"], "naics": sparse.Facts["naics"], "jobs_reported": sparse.Facts["jobs_reported"]}
-	if got := ppp.New().Read(sparse).Estimate.Facts; !reflect.DeepEqual(got, want) {
-		t.Fatal(got)
+	if b.Names[0] != "alias" || b.Headcount.Count != 12 {
+		t.Fatal(b)
 	}
 }
 

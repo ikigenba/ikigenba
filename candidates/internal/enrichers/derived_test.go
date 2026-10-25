@@ -64,7 +64,7 @@ func TestDriveMinutesValid(t *testing.T) {
 	}
 }
 
-// R-V369-O6HR
+// R-Z4DN-M75K
 func TestLinkFactsDerive(t *testing.T) {
 	date := func(v string) time.Time {
 		t.Helper()
@@ -135,7 +135,7 @@ func TestLinkFactsDerive(t *testing.T) {
 	}
 }
 
-// R-V369-O6HR
+// R-Z4DN-M75K
 func TestLinkFactsGovernmentCategories(t *testing.T) {
 	government := enrichers.Category{Name: sources.CategoryGovernment, Source: "name"}
 	education := enrichers.Category{Name: sources.CategoryEducation, Source: "name"}
@@ -171,7 +171,7 @@ func TestLinkFactsGovernmentCategories(t *testing.T) {
 	}
 }
 
-// R-V4E6-1Y8G
+// R-Z5LJ-ZYW9
 func TestLinkFactsFleet(t *testing.T) {
 	first := enrichers.Link{Scraper: fmcsa.Name, Reading: sources.Reading{FleetVerdict: sources.FleetFail, PowerUnits: count(1), Drivers: count(2)}}
 	second := enrichers.Link{Scraper: fmcsa.Name, Reading: sources.Reading{FleetVerdict: sources.FleetPass, PowerUnits: count(5), Drivers: count(6)}}
@@ -215,7 +215,7 @@ func TestLinkFactsFleet(t *testing.T) {
 	assertFleet(t, []enrichers.Link{first, second}, sources.FleetUnknown, nil, nil)
 }
 
-// R-UNTA-0OLN
+// R-JSLE-MUH6
 func TestLinkFactsValid(t *testing.T) {
 	e := enrichers.LinkFacts{}
 	valid := []string{`{"categories":[],"fleet_verdict":"unknown"}`, ` {"categories":[],"fleet_verdict":"pass","power_units":0,"drivers":null} `, `{"categories":[{"name":"construction","source":"ppp"}],"fleet_verdict":"fail","known_since":"2018-04-09","newest_filing":"2025-06-01","government_match":"x","power_units":9223372036854775807,"drivers":4}`, `{"categories":[],"FLEET_VERDICT":"unknown"}`, `{"categories":[],"fleet_verdict":"unknown","known_since":null}`}
@@ -248,6 +248,9 @@ func subjectJSON(t *testing.T, s enrichers.Subject) []byte {
 
 func assertLinkResult(t *testing.T, s enrichers.Subject, want enrichers.LinkFound) {
 	t.Helper()
+	if want.Headcounts == nil {
+		want.Headcounts = []enrichers.Headcount{}
+	}
 	e := enrichers.LinkFacts{}
 	r := e.Derive(s)
 	b, err := json.Marshal(want)
@@ -257,7 +260,7 @@ func assertLinkResult(t *testing.T, s enrichers.Subject, want enrichers.LinkFoun
 	if r.Source != enrichers.SourceLinks || r.Cost != 0 || !bytes.Equal(r.Found, b) {
 		t.Fatalf("result %+v, found %s, want %s", r, r.Found, b)
 	}
-	// R-UNTA-0OLN
+	// R-JSLE-MUH6
 	if !e.Valid(r.Found) {
 		t.Fatalf("invalid derived link facts: %s", r.Found)
 	}
@@ -275,7 +278,7 @@ func assertFleet(t *testing.T, links []enrichers.Link, verdict string, units, dr
 	if got.FleetVerdict != verdict || !reflect.DeepEqual(got.PowerUnits, units) || !reflect.DeepEqual(got.Drivers, drivers) {
 		t.Fatalf("fleet %+v, want %q %v %v", got, verdict, units, drivers)
 	}
-	// R-UNTA-0OLN
+	// R-JSLE-MUH6
 	if !(enrichers.LinkFacts{}).Valid(r.Found) {
 		t.Fatalf("invalid derived fleet facts: %s", r.Found)
 	}
@@ -284,7 +287,7 @@ func assertFleet(t *testing.T, links []enrichers.Link, verdict string, units, dr
 	}
 }
 
-// R-B8ES-OX9S
+// R-Z6TG-DQMY
 func TestSourceCategoriesFollowCarrierAuthority(t *testing.T) {
 	for _, tc := range []struct {
 		name, class  string

@@ -74,7 +74,7 @@ func TestProspectListViewContracts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := ProspectListData{page.Banner{}, want, 5, 0, BasisCountsView{}, ChangesView{}, []MemberRow{{1, "id", "name", "city", "state", "chosen-basis", "operating", "low", "high", "confidence", []string{"category"}, "chosen-classifier", "class", "verdict", "chosen-website", "https://chosen.example.test/", "chosen-source", "site-text-at", "site-text-text", "brief-at", "brief-text", "minutes", "chosen-minutes-source", "government", "since", "since-text", "filing", "filing-text", true}}, []RejectRow{rejectRow(r)}}
+	d := ProspectListData{page.Banner{}, want, 5, 0, BasisCountsView{}, ChangesView{}, []MemberRow{{1, "id", "name", "city", "state", "chosen-basis", "operating", "low", "high", "confidence", "", []string{"category"}, "chosen-classifier", "class", "verdict", "chosen-website", "https://chosen.example.test/", "chosen-source", "site-text-at", "site-text-text", "brief-at", "brief-text", "minutes", "chosen-minutes-source", "government", "since", "since-text", "filing", "filing-text", true}}, []RejectRow{rejectRow(r)}}
 	if d.Members[0].Website != "chosen-website" || d.Members[0].WebsiteURL != "https://chosen.example.test/" {
 		t.Fatal("member positional shape")
 	}

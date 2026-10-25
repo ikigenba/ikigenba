@@ -49,7 +49,7 @@ func TestFormatting(t *testing.T) {
 	}
 }
 
-// R-1RK4-HLSJ R-XY08-ASLZ R-02MG-VB3X R-4VMG-YZTE R-3X7J-PRDD R-4ZA6-4B1H
+// R-1RK4-HLSJ R-XY08-ASLZ R-4VMG-YZTE R-3X7J-PRDD R-4ZA6-4B1H
 func TestTemplateDataShape(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -57,7 +57,7 @@ func TestTemplateDataShape(t *testing.T) {
 	}
 	b := page.Banner{Service: ServiceName}
 	cv := CandidateView{"id", store.StatusActive, "", "name", []string{"alias"}, "street", "city", "MN", "55072", "county", "phone", "email", "source", "website", "https://chosen.example.test/", "title", "why", "checked", "checked-text", []PersonRow{{"person", "role"}}, "class", []string{"cargo"}, "", "", "", ""}
-	av := JudgmentsView{"operating", []EvidenceRow{{"name", "source", "weight", "description"}}, "low", "high", "confidence", false, int64(sources.Rules), "calculated", "calculated-text"}
+	av := JudgmentsView{"operating", []EvidenceRow{{"name", "source", "weight", "description"}}, "low", "high", "confidence", "", "", "", false, int64(sources.Rules), "calculated", "calculated-text"}
 	ev := EstimateView{"source", "low", "high", "confidence", "", "", 1, []FactRow{{"key", "value"}}}
 	lv := LinkView{"scraper", "source", "run", "", "name", "city", "55072", "reason", "confidence", "", "", "", "", "", "", false}
 	rv := RulingView{"kind", "other", []string{"key"}, "by", "user", "", "", "why"}

@@ -356,7 +356,7 @@ func TestIngestSplitAndPersistence(t *testing.T) {
 	regEqual(t, rs, []store.Ruling{pair, r})
 }
 
-// R-1BPF-IL5I R-7H6C-IALR R-7TDC-C00P R-GL9N-YO2J R-GMHK-CFT8
+// R-5KCU-R2WS R-7H6C-IALR R-7TDC-C00P R-GL9N-YO2J R-GMHK-CFT8
 func TestIngestMergeAndNotSame(t *testing.T) {
 	f := regNew(t)
 	a := regObs("one", "First")
@@ -378,6 +378,12 @@ func TestIngestMergeAndNotSame(t *testing.T) {
 	regEqual(t, cs, []store.Candidate{ca, cb})
 	regEqual(t, regLinks(t, f, cb.ID), oldLinks)
 	regEqual(t, regCandidate(t, f, ca.ID), ca)
+	unchangedJudgments, e := f.st.GetJudgments(regCtx, cb.ID)
+	regNoErr(t, e)
+	regEqual(t, unchangedJudgments, oldJudgments)
+	unchangedEstimates, e := f.st.Estimates(regCtx, cb.ID)
+	regNoErr(t, e)
+	regEqual(t, unchangedEstimates, oldEstimates)
 	f.now = f.now.Add(time.Hour)
 	r, cs, e = f.st.Decide(regCtx, store.Ruling{Kind: store.KindMerge, Candidate: ca.ID, Other: cb.ID, Keys: []string{"ignored"}, Why: "merge later", UserID: "user"})
 	regNoErr(t, e)
@@ -515,7 +521,7 @@ func TestIngestOldestTieAndGoneIdentity(t *testing.T) {
 	regEqual(t, touched, wantIDs)
 }
 
-// R-GMHK-CFT8 R-4H43-3943
+// R-GMHK-CFT8 R-5P8G-A5VK
 func TestJudgingMergeAndSplitAssessOnlyActiveSides(t *testing.T) {
 	f := regNew(t)
 	regNoErr(t, f.st.ReplaceZipDrive(regCtx, map[string]int64{"55072": 18}))
