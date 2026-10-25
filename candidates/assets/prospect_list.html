@@ -85,6 +85,8 @@
      "$2,400,000"), .RevenueHigh (the combined high as shown; empty when
      the sources give only a minimum) and .RevenueConfidence (two
      decimals, "0.40"), all three empty when there is no estimate,
+     .HeadcountLow (the low end of the headcount its judge used, as text,
+     "26"; empty when it has no headcount),
      .Categories (its distinct category words, as stored, a slice of
      strings; empty when unknown), .ClassifiedBy (what decided its
      categories, "brief" or "links"; empty when it has none), .Class (its class tag, one of
@@ -223,7 +225,7 @@
      that does is rejected from the prospect list. Loosen a filter or set a
      switch with the edit_prospect_list tool.", edit_prospect_list in a code element),
      or table#member-list whose th read Rank, Name, City, State, Basis, Operating
-     confidence, Low, High, Revenue confidence, Categories, Classified by, Class, Fleet,
+     confidence, Headcount, Low, High, Revenue confidence, Categories, Classified by, Class, Fleet,
      Website, Site text, Brief, Minutes, Government, Known since, Newest filing, with one
      tr[data-candidate=<.ID>] per member holding td.candidate-rank.num
      (.Rank), td.candidate-name (a.candidate-link, href
@@ -233,7 +235,9 @@
      td.candidate-basis[data-basis=<.Basis>] (.Basis in a code element),
      td.candidate-operating.num
      (.OperatingConfidence, or when empty span.muted "no evidence"),
-     td.candidate-low.num (.RevenueLow, or when empty span.muted "none"),
+     td.candidate-headcount.num (.HeadcountLow, or when empty span.muted
+     "none"), td.candidate-low.num (.RevenueLow, or when empty span.muted
+     "none"),
      td.candidate-high.num (.RevenueHigh, or when empty span.muted
      "none"), td.candidate-revenue-confidence.num (.RevenueConfidence,
      empty when absent), td.candidate-categories (one
@@ -344,7 +348,7 @@
 <p id="since-last-open">{{if $changes.Since}}{{with $changes}}Since the last open, <time datetime="{{.Since}}">{{.SinceText}}</time>{{if or .Joined .Left}}: {{len .Joined}} joined and {{len .Left}} left.{{else}}: no one joined and no one left.{{end}}{{end}}{{else}}This is the first open of this prospect list, so there is nothing to compare it with. The next open shows who joined and who left since this one.{{end}}</p></div></header>
 {{if $members}}<div class="table-scroll">
 <table id="member-list">
-<thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th>Basis</th><th class="num">Operating confidence</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Classified by</th><th>Class</th><th>Fleet</th><th>Website</th><th>Site text</th><th>Brief</th><th class="num">Minutes</th><th>Government</th><th>Known since</th><th>Newest filing</th></tr></thead>
+<thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th>Basis</th><th class="num">Operating confidence</th><th class="num">Headcount</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Classified by</th><th>Class</th><th>Fleet</th><th>Website</th><th>Site text</th><th>Brief</th><th class="num">Minutes</th><th>Government</th><th>Known since</th><th>Newest filing</th></tr></thead>
 <tbody>
 {{range $members}}<tr data-candidate="{{.ID}}">
 <td class="candidate-rank num">{{.Rank}}</td>
@@ -353,6 +357,7 @@
 <td class="candidate-state">{{.State}}</td>
 <td class="candidate-basis" data-basis="{{.Basis}}"><code>{{.Basis}}</code></td>
 <td class="candidate-operating num">{{if .OperatingConfidence}}{{.OperatingConfidence}}{{else}}<span class="muted">no evidence</span>{{end}}</td>
+<td class="candidate-headcount num">{{if .HeadcountLow}}{{.HeadcountLow}}{{else}}<span class="muted">none</span>{{end}}</td>
 <td class="candidate-low num">{{if .RevenueLow}}{{.RevenueLow}}{{else}}<span class="muted">none</span>{{end}}</td>
 <td class="candidate-high num">{{if .RevenueHigh}}{{.RevenueHigh}}{{else}}<span class="muted">none</span>{{end}}</td>
 <td class="candidate-revenue-confidence num">{{.RevenueConfidence}}</td>

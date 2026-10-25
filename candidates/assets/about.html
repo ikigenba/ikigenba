@@ -14,7 +14,8 @@
      its source key, else by its normalized name with its state and ZIP;
      when in doubt it starts a new candidate rather than join the wrong
      one."; "Each candidate carries enrichments and two judgments. The enrichments are the facts the enrichers find: drive time from the base, the fleet verdict
-     (pass, fail or unknown), the truck and driver counts, the website
+     (pass, fail or unknown), the truck and driver counts, the headcounts,
+     the website
      (https, http, none or unknown), the government match, the categories
      and the filing dates. Each is recomputed only when what it was
      computed from changes, never because it is old, and none removes a
@@ -22,8 +23,11 @@
      judgments. Its operating confidence, from 0 to 1, says how sure we are
      that it is a real business operating today; each piece of evidence
      closes part of the gap to certainty, and with no evidence it is empty,
-     not 0. Its revenue range, low to high with a confidence, combines the
-     size estimates its sources give."; "An ingest pass starts when scrapes
+     not 0. Its revenue range, low to high with a confidence, combines its
+     size estimates: its headcount times a per-employee band for the kind
+     of business and, for a for-hire or mixed carrier, FMCSA's trucks.
+     PPP gives no estimate of its own; the jobs a loan reported count as
+     a headcount."; "An ingest pass starts when scrapes
      finishes a run: it ingests the run's records and marks gone the
      records the run no longer holds, and judges nothing. A judge pass
      judges every candidate again from its facts and its records not gone,
@@ -82,7 +86,7 @@
 <section id="how" class="card" aria-labelledby="how-title">
 <header><h2 id="how-title">How it works</h2></header>
 <p>candidates ingests the records scrapes scrapes into candidate businesses, one per real business with every record that describes it attached as evidence. A record attaches by its source key, else by its normalized name with its state and ZIP; when in doubt it starts a new candidate rather than join the wrong one.</p>
-<p>Each candidate carries enrichments and two judgments. The enrichments are the facts the enrichers find: drive time from the base, the fleet verdict (pass, fail or unknown), the truck and driver counts, the website (https, http, none or unknown), the government match, the categories and the filing dates. Each is recomputed only when what it was computed from changes, never because it is old, and none removes a candidate. The judge reads the facts and the records and forms the judgments. Its operating confidence, from 0 to 1, says how sure we are that it is a real business operating today; each piece of evidence closes part of the gap to certainty, and with no evidence it is empty, not 0. Its revenue range, low to high with a confidence, combines the size estimates its sources give.</p>
+<p>Each candidate carries enrichments and two judgments. The enrichments are the facts the enrichers find: drive time from the base, the fleet verdict (pass, fail or unknown), the truck and driver counts, the headcounts, the website (https, http, none or unknown), the government match, the categories and the filing dates. Each is recomputed only when what it was computed from changes, never because it is old, and none removes a candidate. The judge reads the facts and the records and forms the judgments. Its operating confidence, from 0 to 1, says how sure we are that it is a real business operating today; each piece of evidence closes part of the gap to certainty, and with no evidence it is empty, not 0. Its revenue range, low to high with a confidence, combines its size estimates: its headcount times a per-employee band for the kind of business and, for a for-hire or mixed carrier, FMCSA's trucks. PPP gives no estimate of its own; the jobs a loan reported count as a headcount.</p>
 <p>An ingest pass starts when scrapes finishes a run: it ingests the run's records and marks gone the records the run no longer holds, and judges nothing. A judge pass judges every candidate again from its facts and its records not gone, once a day when the <code>judge_candidates</code> trigger fires, or when an agent calls <code>judge</code>. <code>ingest</code> starts an ingest by hand: named a scraper, it ingests that scraper's current run as a finished run would; named none, it ingests every scraper's current run, recomputes every fact candidates derives from what it holds, fetching nothing, then judges; it keeps the candidates and the rulings.</p>
 <p>An enrich pass follows every ingest that ends done, or starts when an agent calls <code>enrich</code>. It runs each enricher on the candidates whose inputs changed since its last result: first those candidates derives itself, the facts from the records and the drive time from the ZIP, then the website check, which fetches the domain of an email on its own domain once and keeps whether it serves a site over https, over http or not at all, with the page it landed on. A site that answers is evidence the business operates; a missing one is never held against it. When it writes a result, a judge pass follows unless one is running.</p>
 <p>Site text runs only when an agent calls <code>enrich</code> with a prospect list or one candidate. For each company with a website it runs the caller's <code>site-text</code> prompt in prompts, whose agent reads the company's own site and names the pages that describe the business with <code>add_page</code>; candidates fetches and keeps each page itself. The result records how the run ended and what it cost; a failed run is kept as a result, and <code>force</code> runs a target again. The drive route runs the same way: for each company with a street address it asks Google's Routes API for the drive by car from the base, and the minutes and miles of a route replace the ZIP's estimate while the address and the base stay as they were. Passes run side by side; only a second pass doing the same work, the same kind over the same run, target or corpus, is refused.</p>

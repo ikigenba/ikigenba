@@ -76,7 +76,16 @@
      government name pattern its name matched, as stored, "COUNTY"; empty
      when none), .FleetVerdict ("pass", "fail" or "unknown", as stored),
      .PowerUnits and .Drivers (the truck and driver counts the freshest
-     FMCSA link gives, as text, "12"; each empty when unknown), .Minutes
+     FMCSA link gives, as text, "12"; each empty when unknown),
+     .Headcounts (the headcounts its links not gone carry, one per link
+     that carries one, in link order, each with .Scraper (the scraper's
+     name, "ppp"), .Kind (the headcount's kind word as stored, "jobs" or
+     "drivers"), .Count (the count as text, "26") and .AsOf and .AsOfText
+     (the date it is as of, "2020-04-28", both the same; empty when
+     none); empty when none), .BriefLabels (the labels of the newest
+     brief result that did not fail, as the facts row holds them, free
+     text as stored, in the order given, a slice of strings; empty when
+     none), .Minutes
      (drive minutes from the origin as text, "84"; empty when unknown),
      .MinutesSource (which result decided .Minutes, as the facts row
      holds it: "route" when a drive_route result routed it, "zip" when
@@ -119,17 +128,24 @@
      low as shown, "$2,400,000"), .RevenueHigh (the combined high as
      shown; empty when the sources give only a minimum) and
      .RevenueConfidence (two decimals, "0.40"), all three empty when
-     there is no estimate, .Excluded (bool, true when the owner's ruling
+     there is no estimate, .HeadcountLow and .HeadcountHigh (the
+     headcount the judge used, as text, "26", the two equal when it is
+     not a range) and .HeadcountBasis (the kinds and scrapers that gave
+     it, as stored), all three empty when there is no headcount,
+     .Excluded (bool, true when the owner's ruling
      excludes it),
      .Rules (int, the rules version) and .Calculated and .CalculatedText
      (when it was calculated, the timestamp forms above); .Estimates, the
-     revenue range's evidence, one per source with evidence on it
-     in source name order, empty when merged, each with .Source (the source's
-     name, "fmcsa"), .Low, .High, .Confidence, .Filed and .FiledText (as
+     revenue range's evidence, one per source with evidence on it and
+     one from its headcount, in source name order, empty when merged,
+     each with .Source (the source's name, "fmcsa", or "headcount" for
+     the judge's estimate from the headcount), .Low, .High, .Confidence, .Filed and .FiledText (as
      .Judgments' revenue fields, for this source), .Formula (int, the rules version
      it was made under) and .Facts (the facts it used, in key order, each
      with .Key and .Value, the value as compact JSON text such as "52" or
-     "\"AUTHORIZED FOR HIRE\""); .Links, every link, empty when merged,
+     "\"AUTHORIZED FOR HIRE\""; a headcount estimate's facts name the
+     headcounts used, the band, its per-employee low and high and how the
+     band was chosen); .Links, every link, empty when merged,
      those not gone first, then by newest filing, each with .Scraper (the
      scraper's name), .SourceID (the record's id at the source), .Run (the
      run_ id it was last seen in), .RowPage (the URL of that row's page at
@@ -333,6 +349,13 @@
      span.muted when "unknown"), dt "Trucks" then dd#facts-power-units
      (.PowerUnits, or when empty span.muted "unknown"), dt "Drivers" then
      dd#facts-drivers (.Drivers, or when empty span.muted "unknown"), dt
+     "Headcounts" then dd#facts-headcounts (one
+     div[data-headcount=<.Kind>] per headcount holding .Count, a space,
+     .Kind in a code element, a space and span.muted holding .Scraper
+     and, when .AsOf is set, a space and time[datetime=<.AsOf>] with
+     .AsOfText, or when empty span.muted "none"), dt "Brief labels" then
+     dd#facts-brief-labels (one code[data-brief-label=<label>] per label,
+     separated by spaces, or when empty span.muted "none"), dt
      "Drive minutes" then dd#facts-minutes (.Minutes, or when empty
      span.muted "unknown"; then, when .MinutesSource is "route", a space
      and span.badge[data-kind=info] (text "routed"), then, when .Miles is
@@ -389,6 +412,12 @@
      floor only"; when both are empty, span.muted "no estimate"), dt
      "Revenue confidence" then dd#judgments-revenue-confidence
      (.RevenueConfidence, or when empty span.muted "no estimate"), dt
+     "Headcount low" then dd#judgments-headcount-low (.HeadcountLow, or
+     when empty span.muted "no headcount"), dt "Headcount high" then
+     dd#judgments-headcount-high (.HeadcountHigh, or when empty
+     span.muted "no headcount"), dt "Headcount basis" then
+     dd#judgments-headcount-basis (.HeadcountBasis in a code element, or
+     when empty span.muted "no headcount"), dt
      "Excluded" then dd#judgments-excluded ("yes" when .Excluded, else
      "no"), dt "Rules" then dd#judgments-rules (the version) and dt
      "Calculated" then dd#judgments-calculated (a time[datetime] with the
@@ -408,9 +437,12 @@
      (.Description). Then
      section#estimates with h2 "Estimates" and a p in its header (text "One
      per source with evidence on this candidate, with the facts it used,
-     copied from the source's record."), then either, when .Estimates is
+     copied from the source's record, and one from its headcount, times a
+     per-employee band for the kind of business, with the headcounts and
+     the band it used."), then either, when .Estimates is
      empty, div#no-estimates.empty holding h3 "No estimates" and a p (text
-     "No source gives a size for this candidate."), or one
+     "No source gives a size for this candidate, and it has no
+     headcount."), or one
      dl.kv[data-estimate=<.Source>] per estimate holding dt "Source" then a
      dd (.Source in a code element), dt "Low", dt "High" (span.muted "none:
      a floor only" when empty), dt "Confidence", dt "Filed" (the time, or
@@ -617,6 +649,8 @@
 <dt>Fleet</dt><dd id="facts-fleet" data-fleet="{{.FleetVerdict}}">{{if eq .FleetVerdict "unknown"}}<span class="muted">{{.FleetVerdict}}</span>{{else}}{{.FleetVerdict}}{{end}}</dd>
 <dt>Trucks</dt><dd id="facts-power-units">{{if .PowerUnits}}{{.PowerUnits}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
 <dt>Drivers</dt><dd id="facts-drivers">{{if .Drivers}}{{.Drivers}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
+<dt>Headcounts</dt><dd id="facts-headcounts">{{range .Headcounts}}<div data-headcount="{{.Kind}}">{{.Count}} <code>{{.Kind}}</code> <span class="muted">{{.Scraper}}{{if .AsOf}} <time datetime="{{.AsOf}}">{{.AsOfText}}</time>{{end}}</span></div>{{else}}<span class="muted">none</span>{{end}}</dd>
+<dt>Brief labels</dt><dd id="facts-brief-labels">{{range $i, $l := .BriefLabels}}{{if $i}} {{end}}<code data-brief-label="{{$l}}">{{$l}}</code>{{else}}<span class="muted">none</span>{{end}}</dd>
 <dt>Drive minutes</dt><dd id="facts-minutes"{{if .MinutesSource}} data-minutes-source="{{.MinutesSource}}"{{end}}>{{if .Minutes}}{{.Minutes}}{{else}}<span class="muted">unknown</span>{{end}}{{if eq .MinutesSource "route"}} <span class="badge" data-kind="info">routed</span>{{if .Miles}}<div data-route-miles>{{.Miles}} miles</div>{{end}}{{if .RouteAddress}}<div data-route-address>{{.RouteAddress}}</div>{{end}}{{if .RoutePlaceURL}}<div data-route-links><a class="map-link" data-route-place href="{{.RoutePlaceURL}}" target="_blank" rel="noopener noreferrer">map</a>{{if .RouteDirectionsURL}} · <a class="map-link" data-route-directions href="{{.RouteDirectionsURL}}" target="_blank" rel="noopener noreferrer">directions</a>{{end}}</div>{{end}}{{else if eq .MinutesSource "zip"}} <span class="muted">ZIP estimate</span>{{end}}</dd>
 <dt>Written</dt><dd id="facts-written">{{range .Written}}<div data-written="{{.Kind}}"><code>{{.Kind}}</code> <time datetime="{{.At}}">{{.AtText}}</time></div>{{else}}<span class="muted">never</span>{{end}}</dd>
 </dl>{{else}}<div id="no-facts" class="empty">
@@ -643,6 +677,9 @@
 <dt>Revenue low</dt><dd id="judgments-revenue-low">{{if .RevenueLow}}{{.RevenueLow}}{{else}}<span class="muted">no estimate</span>{{end}}</dd>
 <dt>Revenue high</dt><dd id="judgments-revenue-high">{{if .RevenueHigh}}{{.RevenueHigh}}{{else if .RevenueLow}}<span class="muted">none: a floor only</span>{{else}}<span class="muted">no estimate</span>{{end}}</dd>
 <dt>Revenue confidence</dt><dd id="judgments-revenue-confidence">{{if .RevenueConfidence}}{{.RevenueConfidence}}{{else}}<span class="muted">no estimate</span>{{end}}</dd>
+<dt>Headcount low</dt><dd id="judgments-headcount-low">{{if .HeadcountLow}}{{.HeadcountLow}}{{else}}<span class="muted">no headcount</span>{{end}}</dd>
+<dt>Headcount high</dt><dd id="judgments-headcount-high">{{if .HeadcountHigh}}{{.HeadcountHigh}}{{else}}<span class="muted">no headcount</span>{{end}}</dd>
+<dt>Headcount basis</dt><dd id="judgments-headcount-basis">{{if .HeadcountBasis}}<code>{{.HeadcountBasis}}</code>{{else}}<span class="muted">no headcount</span>{{end}}</dd>
 <dt>Excluded</dt><dd id="judgments-excluded">{{if .Excluded}}yes{{else}}no{{end}}</dd>
 <dt>Rules</dt><dd id="judgments-rules">{{.Rules}}</dd>
 <dt>Calculated</dt><dd id="judgments-calculated"><time datetime="{{.Calculated}}">{{.CalculatedText}}</time></dd>
@@ -672,7 +709,7 @@
 </section>
 {{end}}
 <section id="estimates" class="card" aria-labelledby="estimates-title">
-<header><h2 id="estimates-title">Estimates</h2><p>One per source with evidence on this candidate, with the facts it used, copied from the source's record.</p></header>
+<header><h2 id="estimates-title">Estimates</h2><p>One per source with evidence on this candidate, with the facts it used, copied from the source's record, and one from its headcount, times a per-employee band for the kind of business, with the headcounts and the band it used.</p></header>
 {{range $estimates}}<dl class="kv" data-estimate="{{.Source}}">
 <dt>Source</dt><dd><code>{{.Source}}</code></dd>
 <dt>Low</dt><dd>{{.Low}}</dd>
@@ -686,7 +723,7 @@
 </dl>
 {{else}}<div id="no-estimates" class="empty">
 <h3 class="text-md">No estimates</h3>
-<p>No source gives a size for this candidate.</p>
+<p>No source gives a size for this candidate, and it has no headcount.</p>
 </div>
 {{end}}</section>
 <section id="links" class="card flush" aria-labelledby="links-title">
