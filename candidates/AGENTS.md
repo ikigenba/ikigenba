@@ -17,7 +17,7 @@ removed automatically, and a candidate leaves every prospect list only by
 the owner's exclusion. A source is Go code in the service
 that knows how one scraper's rows become match keys, tags, a size estimate,
 a filing date, operating evidence and a category, and the fixed registry
-holds two, `fmcsa` and `ppp`. A pass is one ingest, judge, enrich or
+holds three, `fmcsa`, `ppp` and `form5500`. A pass is one ingest, judge, enrich or
 targeted enrich, recorded at once and worked in the background: an ingest
 is started by a `scrape.finished` event of a `done` run, delivered on the
 bus, and ingests that run's rows without judging, or by the `ingest` tool,
@@ -111,7 +111,7 @@ build run writes the Go source, the tests, `go.mod`'s requirements and
 `0008_windows.sql`, `0009_judgments.sql`, `0010_cohorts.sql`,
 `0011_enrichments.sql`, `0012_facts.sql`, `0013_site_text.sql`,
 `0014_brief.sql`, `0015_website_search.sql`, `0016_campaign_uses.sql`,
-`0017_prospect_lists.sql`, `0018_drive_route.sql`, `0019_opens.sql` and `0020_headcounts.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
+`0017_prospect_lists.sql`, `0018_drive_route.sql`, `0019_opens.sql`, `0020_headcounts.sql` and `0021_link_keys.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
 and the nginx fragment `etc/nginx.conf`). The
 delivery that created candidates seeded `go.mod` on appkit; the build run
 owns it and `go.sum` from then on and changes them as design says. It never
@@ -216,7 +216,7 @@ no `go.work`, no local module cache stands in for it.
 The sub-project's tests are all `*_test.go` files in the module: the root
 package, `cmd/candidates` and everything under `internal/` (`internal/cli`,
 `internal/settings`, `internal/server`, `internal/web`, `internal/store`,
-`internal/sources`, `internal/fmcsa`, `internal/ppp`, `internal/judging`,
+`internal/sources`, `internal/fmcsa`, `internal/ppp`, `internal/form5500`, `internal/judging`,
 `internal/passes`, `internal/website`, `internal/routes`, `internal/enrichers`,
 `internal/trail`, `internal/urls`,
 `internal/tools` and `internal/pages`).
@@ -233,7 +233,7 @@ design documents never enter the test side of the grep.
 from any other string of that shape: such a literal anywhere in a `*_test.go`
 file counts as a covered id. candidates echoes back what callers and its
 siblings give it — scrapes' rows and every field of them (DOT numbers,
-loan amounts and dates, business names, addresses, phones, emails, counties,
+loan amounts and dates, EINs, business names, addresses, phones, emails, counties,
 people, facts), source ids, scraper names, run ids, user ids and emails,
 request ids, bus event ids, the services file's URLs, ruling text,
 prospect list names, reject reasons, campaigns' event payloads (campaign and piece ids,
