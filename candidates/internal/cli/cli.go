@@ -23,6 +23,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/candidates"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
+	"github.com/ikigenba/ikigenba/candidates/internal/form5500"
 	"github.com/ikigenba/ikigenba/candidates/internal/pages"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
 	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
@@ -203,7 +204,7 @@ func Run(ctx context.Context, p Process) int {
 	if s.MapsAPIKey != "" {
 		router = &routes.Client{HTTP: p.HTTP, Key: s.MapsAPIKey, After: p.After}
 	}
-	eng := passes.New(passes.Config{Routes: router, Website: checker, Prompts: pc, After: p.After, Store: st, Sources: sources.New(fmcsa.New(), ppp.New()), Scrapes: sc, Telemetry: w, Events: em})
+	eng := passes.New(passes.Config{Routes: router, Website: checker, Prompts: pc, After: p.After, Store: st, Sources: sources.New(fmcsa.New(), ppp.New(), form5500.New()), Scrapes: sc, Telemetry: w, Events: em})
 	w.Ready()
 	err = st.ReplaceZipDrive(bg, candidates.ZipDrive())
 	if err == nil {

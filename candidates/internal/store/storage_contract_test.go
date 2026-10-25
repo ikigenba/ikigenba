@@ -130,10 +130,10 @@ func contractAttach(t *testing.T, f *contractFixture, run string, obs ...store.O
 	return ids
 }
 
-// R-YB1R-40PH R-4HN1-A6QB R-NUUF-5V6M
+// R-EDOD-N1K0 R-4HN1-A6QB R-NUUF-5V6M
 func TestContractVocabulary(t *testing.T) {
-	got := []string{store.CandidateIDPrefix, store.PassIDPrefix, store.StatusActive, store.StatusMerged, store.StatusRunning, store.StatusDone, store.StatusFailed, store.ReasonScrapes, store.ReasonInterrupted, store.ReasonStore, store.TriggerIngest, store.LinkSourceKey, store.LinkMatchKey, store.LinkDecision, store.KindMerge, store.KindSplit, store.KindNotSame, store.KindExclude, store.KindInclude, store.TriggerJudge, store.KindIngest, store.KindJudge, store.KindIngest, store.OriginRun, store.OriginCron, store.OriginIngest, store.OriginJudge, store.TriggerJudgeTool}
-	contractEqual(t, got, []string{"cand_", "pass_", "active", "merged", "running", "done", "failed", "scrapes", "interrupted", "store", "ingest", "source_key", "match_key", "decision", "merge", "split", "not_same", "exclude", "include", "judge_candidates", "ingest", "judge", "ingest", "run", "cron", "ingest", "judge", "judge"})
+	got := []string{store.CandidateIDPrefix, store.PassIDPrefix, store.StatusActive, store.StatusMerged, store.StatusRunning, store.StatusDone, store.StatusFailed, store.ReasonScrapes, store.ReasonInterrupted, store.ReasonStore, store.TriggerIngest, store.LinkSourceKey, store.LinkMatchKey, store.LinkDecision, store.LinkEIN, store.KindMerge, store.KindSplit, store.KindNotSame, store.KindExclude, store.KindInclude, store.TriggerJudge, store.KindIngest, store.KindJudge, store.KindIngest, store.OriginRun, store.OriginCron, store.OriginIngest, store.OriginJudge, store.TriggerJudgeTool}
+	contractEqual(t, got, []string{"cand_", "pass_", "active", "merged", "running", "done", "failed", "scrapes", "interrupted", "store", "ingest", "source_key", "match_key", "decision", "ein", "merge", "split", "not_same", "exclude", "include", "judge_candidates", "ingest", "judge", "ingest", "run", "cron", "ingest", "judge", "judge"})
 	for _, s := range []string{"", "0123456789ABCDEF", "0123456789abcde", "0123456789abcdef0", "0123456789abcdeg", "0123456789abcdeé"} {
 		if store.ValidCandidateID(store.CandidateIDPrefix+s) || store.ValidPassID(store.PassIDPrefix+s) {
 			t.Fatalf("accepted %q", s)

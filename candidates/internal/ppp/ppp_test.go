@@ -64,7 +64,7 @@ func TestJobsAndNoEstimate(t *testing.T) {
 	}
 }
 
-// R-03QY-P93Y R-04YV-30UN R-0EQ2-56S7
+// R-03QY-P93Y R-04YV-30UN R-DC2U-P1AA
 func TestDatesAndEstablished(t *testing.T) {
 	approval := time.Date(2020, 4, 9, 0, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {
@@ -99,7 +99,7 @@ func TestDatesAndEstablished(t *testing.T) {
 	}
 }
 
-// R-7YF4-SGPW R-0EQ2-56S7
+// R-DAUY-B9JL R-DC2U-P1AA
 func TestCategoryGovernment(t *testing.T) {
 	for category, codes := range map[string][]string{
 		sources.CategoryConstruction:        {" 236220 ", "23"},
@@ -131,7 +131,7 @@ func TestCategoryGovernment(t *testing.T) {
 			r := row(map[string]string{"naics": code})
 			r.Name = "CITY OF EDINA"
 			got := ppp.New().Read(r)
-			if got.Category != category || got.GovernmentMatch != "CITY OF" {
+			if got.Category != category || sources.NAICSCategory(code) != category || got.GovernmentMatch != "CITY OF" {
 				t.Fatal(code, got)
 			}
 		}
@@ -153,7 +153,7 @@ func TestIdentityAndEvidence(t *testing.T) {
 	r.Names = []string{"Alias", "Other"}
 	r.Address = scrapes.Address{Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "HENNEPIN"}
 	r.People = []scrapes.Person{{Name: "Pat", Role: "owner"}}
-	want := sources.Reading{FleetVerdict: sources.FleetUnknown, NameKey: "ACME BUILDERS", Name: r.Name, Names: []string{"Alias", "Other"}, Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "MN-HENNEPIN", People: []sources.Person{}, Cargo: []string{}, Evidence: []sources.Evidence{{Name: sources.EvidencePPPLoan, Source: ppp.Name, Weight: .2, Description: sources.DescribePPPLoan}}}
+	want := sources.Reading{FleetVerdict: sources.FleetUnknown, NameKey: "ACME BUILDERS", Name: r.Name, Names: []string{"Alias", "Other"}, NameKeys: []string{"ALIAS", "OTHER"}, Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "MN-HENNEPIN", People: []sources.Person{}, Cargo: []string{}, Evidence: []sources.Evidence{{Name: sources.EvidencePPPLoan, Source: ppp.Name, Weight: .2, Description: sources.DescribePPPLoan}}}
 	if got := ppp.New().Read(r); !reflect.DeepEqual(got, want) {
 		t.Fatal(got, want)
 	}

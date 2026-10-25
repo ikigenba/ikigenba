@@ -187,7 +187,7 @@ func estimateView(e sources.Estimate) EstimateView {
 	return v
 }
 func linkView(l store.Link, sp string) LinkView {
-	v := LinkView{Scraper: l.Scraper, SourceID: l.SourceID, Run: l.Run, RowPage: urls.RowPage(urls.Scrapes(sp), l.Run, l.SourceID), Name: l.Reading.Name, City: l.Reading.City, Zip: l.Reading.Zip, Reason: l.Reason, Confidence: two(l.Confidence), Filed: date(l.Reading.Filed), FiledText: date(l.Reading.Filed), Gone: l.Gone}
+	v := LinkView{Scraper: l.Scraper, SourceID: l.SourceID, Run: l.Run, RowPage: urls.RowPage(urls.Scrapes(sp), l.Run, l.SourceID), EIN: l.Reading.EINKey, Names: append([]string{}, l.Reading.Names...), Name: l.Reading.Name, City: l.Reading.City, Zip: l.Reading.Zip, Reason: l.Reason, Confidence: two(l.Confidence), Filed: date(l.Reading.Filed), FiledText: date(l.Reading.Filed), Gone: l.Gone}
 	v.FirstSeen, v.FirstSeenText = stamp(l.FirstSeen, MinuteLayout)
 	v.LastSeen, v.LastSeenText = stamp(l.LastSeen, MinuteLayout)
 	return v

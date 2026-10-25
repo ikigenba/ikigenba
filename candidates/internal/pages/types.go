@@ -198,8 +198,10 @@ type FactRow struct{ Key, Value string }
 
 // LinkView supplies link view page data.
 type LinkView struct {
-	Scraper, SourceID, Run, RowPage, Name, City, Zip, Reason, Confidence, Filed, FiledText, FirstSeen, FirstSeenText, LastSeen, LastSeenText string
-	Gone                                                                                                                                     bool
+	Scraper, SourceID, Run, RowPage, EIN, Name                                                        string
+	Names                                                                                             []string
+	City, Zip, Reason, Confidence, Filed, FiledText, FirstSeen, FirstSeenText, LastSeen, LastSeenText string
+	Gone                                                                                              bool
 }
 
 // RulingView supplies ruling view page data.

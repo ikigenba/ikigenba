@@ -49,7 +49,7 @@ func TestFormatting(t *testing.T) {
 	}
 }
 
-// R-1RK4-HLSJ R-XY08-ASLZ R-4VMG-YZTE R-3X7J-PRDD R-4ZA6-4B1H
+// R-1RK4-HLSJ R-XY08-ASLZ R-QGOL-13S5 R-3X7J-PRDD R-4ZA6-4B1H
 func TestTemplateDataShape(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -59,7 +59,7 @@ func TestTemplateDataShape(t *testing.T) {
 	cv := CandidateView{"id", store.StatusActive, "", "name", []string{"alias"}, "street", "city", "MN", "55072", "county", "phone", "email", "source", "website", "https://chosen.example.test/", "title", "why", "checked", "checked-text", []PersonRow{{"person", "role"}}, "class", []string{"cargo"}, "", "", "", ""}
 	av := JudgmentsView{"operating", []EvidenceRow{{"name", "source", "weight", "description"}}, "low", "high", "confidence", "", "", "", false, int64(sources.Rules), "calculated", "calculated-text"}
 	ev := EstimateView{"source", "low", "high", "confidence", "", "", 1, []FactRow{{"key", "value"}}}
-	lv := LinkView{"scraper", "source", "run", "", "name", "city", "55072", "reason", "confidence", "", "", "", "", "", "", false}
+	lv := LinkView{"scraper", "source", "run", "", "ein", "name", []string{"alias"}, "city", "55072", "reason", "confidence", "", "", "", "", "", "", false}
 	rv := RulingView{"kind", "other", []string{"key"}, "by", "user", "", "", "why"}
 	pv := PassView{"id", store.KindIngest, store.OriginIngest, store.TriggerIngest, "", store.StatusRunning, "", "starter", "", "", "", "", 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 10, 11, 12, 13, 14, "target", "/prospect-lists/target", "kind", 15, 16, 17, "$0.000000"}
 	row := ProspectListRow{"id", "name", 11, "by", "user", "changed", "changed-text"}
@@ -67,6 +67,9 @@ func TestTemplateDataShape(t *testing.T) {
 	landing := LandingData{b, []ProspectListRow{row}, "page", "prev", "next", []PassRow{pass}, "page", "prev", "next"}
 	if cv.Website != "website" || cv.WebsiteURL != "https://chosen.example.test/" || cv.WebsiteTitle != "title" || cv.WebsiteChecked != "checked" || cv.WebsiteCheckedText != "checked-text" || pv.Due != 10 || pv.Fetched != 11 || pv.HTTPS != 12 || pv.HTTP != 13 || pv.None != 14 {
 		t.Fatal("website positional shape")
+	}
+	if lv.EIN != "ein" || lv.Name != "name" || len(lv.Names) != 1 || lv.Names[0] != "alias" {
+		t.Fatal(lv)
 	}
 	if row.Size != 11 || pass.Kind != store.KindIngest || pass.Judged != 23 || pv.Judged != 8 {
 		t.Fatal("positional shape")

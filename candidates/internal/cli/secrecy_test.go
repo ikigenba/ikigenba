@@ -201,7 +201,7 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	second["source_id"], second["digest"] = "102", "second-digest"
-	second["name"], second["names"] = markers[1], []string{markers[1]}
+	second["name"], second["names"] = markers[9], []string{markers[9]}
 	secondFacts := second["facts"].(map[string]any)
 	secondPhone := phone[:9] + string('0'+(phone[9]-'0'+1)%10)
 	secondFacts["phone"] = secondPhone

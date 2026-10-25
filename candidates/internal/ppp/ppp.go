@@ -4,7 +4,6 @@ package ppp
 import (
 	"encoding/json"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/scrapes"
@@ -41,52 +40,11 @@ func digits(s string) bool {
 	}
 	return true
 }
-func category(s string) string {
-	s = strings.TrimSpace(s)
-	if !digits(s) {
-		return ""
-	}
-	// Try three-digit prefixes before two-digit prefixes so the first match
-	// always selects the most specific category.
-	for _, group := range []struct {
-		prefixes []string
-		name     string
-	}{
-		{[]string{"484", "488", "492", "493"}, sources.CategoryTrucking},
-		{[]string{"562"}, sources.CategoryWaste},
-		{[]string{"481", "482", "483", "485", "486", "487", "491"}, sources.CategoryOtherTransportation},
-		{[]string{"561"}, sources.CategoryAdministrative},
-		{[]string{"811", "812"}, sources.CategoryRepair},
-		{[]string{"813"}, sources.CategoryReligious},
-		{[]string{"23"}, sources.CategoryConstruction},
-		{[]string{"11"}, sources.CategoryAgriculture},
-		{[]string{"31", "32", "33"}, sources.CategoryManufacturing},
-		{[]string{"42"}, sources.CategoryWholesale},
-		{[]string{"21"}, sources.CategoryMining},
-		{[]string{"22"}, sources.CategoryUtilities},
-		{[]string{"44", "45"}, sources.CategoryRetail},
-		{[]string{"51"}, sources.CategoryInformation},
-		{[]string{"52"}, sources.CategoryFinance},
-		{[]string{"53"}, sources.CategoryRealEstate},
-		{[]string{"54", "55"}, sources.CategoryProfessional},
-		{[]string{"61"}, sources.CategoryEducation},
-		{[]string{"62"}, sources.CategoryHealthCare},
-		{[]string{"71"}, sources.CategoryArts},
-		{[]string{"72"}, sources.CategoryFood},
-		{[]string{"92"}, sources.CategoryGovernment},
-	} {
-		for _, p := range group.prefixes {
-			if strings.HasPrefix(s, p) {
-				return group.name
-			}
-		}
-	}
-	return sources.CategoryOther
-}
 
 // Read returns a self-contained interpretation of the loan.
 func (*Source) Read(r scrapes.Row) sources.Reading {
-	out := sources.Reading{FleetVerdict: sources.FleetUnknown, NameKey: sources.NameKey(r.Name), Name: r.Name, Names: append([]string{}, r.Names...), Street: r.Address.Street, City: r.Address.City, State: r.Address.State, Zip: r.Address.Zip, County: sources.County(r.Address.State, r.Address.County), People: []sources.Person{}, Cargo: []string{}, Evidence: []sources.Evidence{{Name: sources.EvidencePPPLoan, Source: Name, Weight: 0.2, Description: sources.DescribePPPLoan}}, Category: category(fact(r.Facts, "naics"))}
+	out := sources.Reading{FleetVerdict: sources.FleetUnknown, NameKey: sources.NameKey(r.Name), Name: r.Name, Names: append([]string{}, r.Names...), Street: r.Address.Street, City: r.Address.City, State: r.Address.State, Zip: r.Address.Zip, County: sources.County(r.Address.State, r.Address.County), People: []sources.Person{}, Cargo: []string{}, Evidence: []sources.Evidence{{Name: sources.EvidencePPPLoan, Source: Name, Weight: 0.2, Description: sources.DescribePPPLoan}}, Category: sources.NAICSCategory(fact(r.Facts, "naics"))}
+	out.NameKeys = sources.NameKeys(out.Names)
 	out.GovernmentMatch = sources.GovernmentMatch(out.NameKey)
 	s := fact(r.Facts, "date_approved")
 	if len(s) == 10 {

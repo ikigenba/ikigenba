@@ -11,6 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
+	"github.com/ikigenba/ikigenba/candidates/internal/form5500"
 	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
@@ -76,18 +77,25 @@ func TestRunJudgeDeliveryMakesNoSiblingRead(t *testing.T) {
 	}
 }
 
-// R-YKKD-7BXN
-func TestRunReadsBothFixedSources(t *testing.T) {
-	rows := map[string]map[string]any{"fmcsa": runRow(), "ppp": runRow()}
+// R-0QZA-Q7TO
+func TestRunReadsThreeFixedSources(t *testing.T) {
+	rows := map[string]map[string]any{"fmcsa": runRow(), "ppp": runRow(), "form5500": runRow()}
 	rows["ppp"]["scraper"] = "ppp"
 	rows["ppp"]["run"] = "run_ppp"
 	rows["ppp"]["source_id"] = "ppp-id"
 	rows["ppp"]["name"] = "Separate loan business"
+	rows["ppp"]["names"] = []string{"Separate loan business"}
 	rows["ppp"]["facts"] = map[string]any{"amount": "150000.25", "date_approved": "04/01/2020", "naics": "230000"}
+	rows["form5500"]["scraper"] = "form5500"
+	rows["form5500"]["run"] = "run_form5500"
+	rows["form5500"]["source_id"] = "filing-id"
+	rows["form5500"]["name"] = "Separate filing business"
+	rows["form5500"]["names"] = []string{"Separate filing business"}
+	rows["form5500"]["facts"] = map[string]any{"ein": "410123456"}
 	var paths []string
 	fake := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path)
-		for _, name := range []string{"fmcsa", "ppp"} {
+		for _, name := range []string{"fmcsa", "ppp", "form5500"} {
 			if r.URL.Path == "/scrapers/"+name+"/current" {
 				_ = json.NewEncoder(w).Encode(map[string]any{"id": rows[name]["run"], "scraper": name, "status": "done", "started": "2020-01-01T00:00:00Z", "rows": 1, "new": 1, "changed": 0, "unchanged": 0, "gone": 0})
 				return
@@ -112,13 +120,13 @@ func TestRunReadsBothFixedSources(t *testing.T) {
 	}
 	h.stop()
 	runAssertSilent(t, h)
-	wantPaths := []string{"/scrapers/fmcsa/current", "/runs/" + rows["fmcsa"]["run"].(string) + "/rows", "/scrapers/ppp/current", "/runs/run_ppp/rows"}
+	wantPaths := []string{"/scrapers/fmcsa/current", "/runs/" + rows["fmcsa"]["run"].(string) + "/rows", "/scrapers/ppp/current", "/runs/run_ppp/rows", "/scrapers/form5500/current", "/runs/run_form5500/rows"}
 	if !reflect.DeepEqual(paths, wantPaths) {
 		t.Fatal(paths, wantPaths)
 	}
 	_, st := runStore(t, h.p.Dir, h.p.Now)
 	cs, err := st.ListCandidates(context.Background(), store.CandidateFilter{}, "", "", 10)
-	if err != nil || len(cs) != 2 {
+	if err != nil || len(cs) != 3 {
 		t.Fatal(cs, err)
 	}
 	seen := map[string]bool{}
@@ -133,16 +141,92 @@ func TestRunReadsBothFixedSources(t *testing.T) {
 		if l.Scraper == "ppp" {
 			src = ppp.New()
 		}
+		if l.Scraper == "form5500" {
+			src = form5500.New()
+		}
 		if !reflect.DeepEqual(l.Reading, src.Read(runDecodedRow(rows[l.Scraper]))) {
 			t.Fatal(l)
 		}
 	}
-	if len(seen) != 2 || !seen["fmcsa"] || !seen["ppp"] {
+	if len(seen) != 3 || !seen["fmcsa"] || !seen["ppp"] || !seen["form5500"] {
 		t.Fatal(seen)
 	}
 	for _, p := range paths {
 		if strings.Contains(p, "record") {
 			t.Fatal(p)
 		}
+	}
+}
+
+// R-0QZA-Q7TO
+func TestRunForm5500Delivery(t *testing.T) {
+	row := runRow()
+	row["scraper"], row["run"], row["source_id"] = "form5500", "run_filing_delivery", "filing-delivery-row"
+	row["facts"] = map[string]any{"ein": "410123456"}
+	var paths []string
+	fake := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		switch r.URL.Path {
+		case "/runs/run_filing_delivery/record":
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "run_filing_delivery", "scraper": "form5500", "status": "done", "started": "2020-01-01T00:00:00Z", "rows": 1, "new": 1, "changed": 0, "unchanged": 0, "gone": 0})
+		case "/runs/run_filing_delivery/rows":
+			_ = json.NewEncoder(w).Encode(row)
+		default:
+			w.WriteHeader(500)
+		}
+	})
+	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, fake)}))
+	h.start()
+	event := events.Event{ID: "evt_6666666666666666", Time: h.p.Now(), Service: "scrapes", Name: "scrape.finished", Attrs: events.Attrs{"scraper": "form5500", "run": "run_filing_delivery", "status": "done"}, Seq: 1, Received: h.p.Now()}
+	b, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var env map[string]any
+	if err = json.Unmarshal(b, &env); err != nil {
+		t.Fatal(err)
+	}
+	env["attempt"] = 1
+	b, err = json.Marshal(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, body := h.request("POST", "/events", "filing-delivery-request", b)
+	var outcome map[string]string
+	if err = json.Unmarshal(body, &outcome); err != nil || status != 200 || outcome["outcome"] != events.OutcomeOK {
+		t.Fatal(status, string(body), err)
+	}
+	caller := identity.Caller{UserID: "reader"}
+	_, value := h.call(caller, "passes", map[string]any{})
+	var records []map[string]json.RawMessage
+	if err = json.Unmarshal(value["passes"], &records); err != nil || len(records) == 0 {
+		t.Fatal(value, err)
+	}
+	var passID string
+	for _, record := range records {
+		if runText(record, "kind") == store.KindIngest {
+			passID = runText(record, "id")
+		}
+	}
+	if passID == "" {
+		t.Fatal(records)
+	}
+	done := h.waitPass(caller, passID)
+	if runText(done, "status") != store.StatusDone {
+		t.Fatal(done)
+	}
+	h.stop()
+	runAssertSilent(t, h)
+	if !reflect.DeepEqual(paths, []string{"/runs/run_filing_delivery/record", "/runs/run_filing_delivery/rows"}) {
+		t.Fatal(paths)
+	}
+	_, st := runStore(t, h.p.Dir, h.p.Now)
+	cs, err := st.ListCandidates(t.Context(), store.CandidateFilter{}, "", "", 10)
+	if err != nil || len(cs) != 1 {
+		t.Fatal(cs, err)
+	}
+	links, err := st.Links(t.Context(), cs[0].ID)
+	if err != nil || len(links) != 1 || links[0].Scraper != "form5500" || !reflect.DeepEqual(links[0].Reading, form5500.New().Read(runDecodedRow(row))) {
+		t.Fatal(links, err)
 	}
 }

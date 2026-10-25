@@ -211,6 +211,7 @@ type Link struct {
 	NameKey      string   `json:"name_key"`
 	PhoneKey     string   `json:"phone_key"`
 	DomainKey    string   `json:"domain_key"`
+	EIN          string   `json:"ein"`
 	Reason       string   `json:"reason"`
 	Confidence   float64  `json:"confidence"`
 	FirstSeen    string   `json:"first_seen"`

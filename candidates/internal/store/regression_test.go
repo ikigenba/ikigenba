@@ -102,7 +102,7 @@ func regLinks(t *testing.T, f *regFixture, id string) []store.Link {
 }
 func regTime(f *regFixture) time.Time { return f.now.UTC().Truncate(time.Second) }
 
-// R-G7UR-R6WW R-7ZGU-8UQ6 R-7N9U-F5B8 R-7KU1-NLTU
+// R-IMOL-CZV9 R-INWH-QRLY R-L6L5-HLZB
 func TestIngestIdentityAndBatch(t *testing.T) {
 	f := regNew(t)
 	a := regObs("first", "Acme Trucking Inc")
@@ -145,7 +145,7 @@ func TestIngestIdentityAndBatch(t *testing.T) {
 	regEqual(t, regLinks(t, f, c.ID), ls)
 }
 
-// R-7VT5-3JI3 R-7KU1-NLTU
+// R-7VT5-3JI3 R-L6L5-HLZB
 func TestIngestRefusesWholeInvalidBatch(t *testing.T) {
 	f := regNew(t)
 	for _, tc := range []struct {
@@ -356,7 +356,7 @@ func TestIngestSplitAndPersistence(t *testing.T) {
 	regEqual(t, rs, []store.Ruling{pair, r})
 }
 
-// R-5KCU-R2WS R-7H6C-IALR R-7TDC-C00P R-GL9N-YO2J R-GMHK-CFT8
+// R-5KCU-R2WS R-7H6C-IALR R-RGR7-9XKL R-GL9N-YO2J R-GMHK-CFT8
 func TestIngestMergeAndNotSame(t *testing.T) {
 	f := regNew(t)
 	a := regObs("one", "First")
@@ -432,7 +432,7 @@ func TestIngestMergeAndNotSame(t *testing.T) {
 	regEqual(t, got, oldJudgments)
 }
 
-// R-7TDC-C00P R-GL9N-YO2J R-GNPG-Q7JX
+// R-RGR7-9XKL R-GL9N-YO2J R-GNPG-Q7JX
 func TestJudgingRulingsTakeEffectImmediately(t *testing.T) {
 	f := regNew(t)
 	regNoErr(t, f.st.ReplaceZipDrive(regCtx, map[string]int64{"55072": 0}))
@@ -491,7 +491,7 @@ func TestJudgingRulingsTakeEffectImmediately(t *testing.T) {
 	regEqual(t, rulings[0].Kind, store.KindInclude)
 }
 
-// R-7N9U-F5B8 R-7KU1-NLTU R-VFA1-PLHH
+// R-IMOL-CZV9 R-L6L5-HLZB R-VFA1-PLHH
 func TestIngestOldestTieAndGoneIdentity(t *testing.T) {
 	f := regNew(t)
 	a, b := regObs("one", "Acme Inc"), regObs("two", "Acme LLC")
@@ -587,7 +587,7 @@ func TestJudgingMergeAndSplitAssessOnlyActiveSides(t *testing.T) {
 	regEqual(t, len(rulings), 0)
 }
 
-// R-7KU1-NLTU
+// R-L6L5-HLZB
 func TestIngestBatchPreservesIntermediateDisplayUpdate(t *testing.T) {
 	batch, single := regNew(t), regNew(t)
 	original := regObs("one", "Original business")
@@ -621,7 +621,7 @@ func TestIngestBatchPreservesIntermediateDisplayUpdate(t *testing.T) {
 	regEqual(t, regLinks(t, batch, id), regLinks(t, single, id))
 }
 
-// R-7KU1-NLTU
+// R-L6L5-HLZB
 func TestIngestBatchUnchangedDistinctKeysPreservesDisplayUpdate(t *testing.T) {
 	batch, single := regNew(t), regNew(t)
 	a, b := regObs("a", "Shared business"), regObs("b", "Shared business")
@@ -655,7 +655,7 @@ func TestIngestBatchUnchangedDistinctKeysPreservesDisplayUpdate(t *testing.T) {
 	regEqual(t, regLinks(t, batch, id), regLinks(t, single, id))
 }
 
-// R-7KU1-NLTU
+// R-L6L5-HLZB
 func TestIngestBatchPreservesTransientNamesAndCargo(t *testing.T) {
 	for _, kind := range []string{"names", "cargo"} {
 		t.Run(kind, func(t *testing.T) {

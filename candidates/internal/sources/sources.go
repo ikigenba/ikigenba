@@ -3,7 +3,6 @@ package sources
 
 import (
 	"encoding/json"
-	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -46,6 +45,7 @@ const (
 	EvidenceFMCSAActive         = "fmcsa_active"
 	EvidenceFMCSAActivity       = "fmcsa_activity"
 	EvidencePPPLoan             = "ppp_loan"
+	EvidenceForm5500Filing      = "form5500_filing"
 	EvidenceOwnDomain           = "own_domain"
 	EvidenceWebsiteLive         = "website_live"
 	WebsiteCheck                = "website_check"
@@ -53,7 +53,7 @@ const (
 	WebsiteHTTP                 = "http"
 	WebsiteNone                 = "none"
 	WebsiteUnknown              = "unknown"
-	Rules                       = 6
+	Rules                       = 7
 )
 
 // Person is a party named by a source record.
@@ -71,11 +71,12 @@ type Category struct{ Name, Source string }
 
 // Evidence descriptions are the copy displayed with each evidence kind.
 const (
-	DescribeFMCSAActive   string = "Active FMCSA registration"
-	DescribeFMCSAActivity string = "Reported drivers and mileage"
-	DescribePPPLoan       string = "Recorded PPP loan"
-	DescribeOwnDomain     string = "Email on a business domain"
-	DescribeWebsiteLive   string = "Business website responds"
+	DescribeFMCSAActive    string = "Active FMCSA registration"
+	DescribeFMCSAActivity  string = "Reported drivers and mileage"
+	DescribePPPLoan        string = "Recorded PPP loan"
+	DescribeForm5500Filing string = "Recorded Form 5500 filing"
+	DescribeOwnDomain      string = "Email on a business domain"
+	DescribeWebsiteLive    string = "Business website responds"
 )
 
 // Estimate is one source's revenue estimate and supporting facts.
@@ -107,7 +108,9 @@ const (
 
 // Reading is the independent interpretation of one scraped row.
 type Reading struct {
-	NameKey, PhoneKey, DomainKey, Name             string
+	NameKey                                        string
+	NameKeys                                       []string
+	EINKey, PhoneKey, DomainKey, Name              string
 	Names                                          []string
 	Street, City, State, Zip, County, Phone, Email string
 	People                                         []Person
@@ -131,7 +134,10 @@ type Source interface {
 }
 
 // Registry holds the first source registered for each name.
-type Registry struct{ entries map[string]Source }
+type Registry struct {
+	entries map[string]Source
+	names   []string
+}
 
 // New builds a registry from sources in priority order.
 func New(list ...Source) *Registry {
@@ -140,20 +146,14 @@ func New(list ...Source) *Registry {
 		n := s.Name()
 		if _, ok := r.entries[n]; !ok {
 			r.entries[n] = s
+			r.names = append(r.names, n)
 		}
 	}
 	return r
 }
 
-// Names returns a new sorted slice of the registered names.
-func (r *Registry) Names() []string {
-	out := make([]string, 0, len(r.entries))
-	for n := range r.entries {
-		out = append(out, n)
-	}
-	sort.Strings(out)
-	return out
-}
+// Names returns a new slice in registration order.
+func (r *Registry) Names() []string { return append([]string{}, r.names...) }
 
 // Get looks up a source by its scraper name.
 func (r *Registry) Get(name string) (Source, bool) { s, ok := r.entries[name]; return s, ok }
@@ -231,4 +231,31 @@ func GovernmentMatch(k string) string {
 // Categories returns the fixed category words in their declared order.
 func Categories() []string {
 	return []string{CategoryConstruction, CategoryTrucking, CategoryAgriculture, CategoryManufacturing, CategoryWholesale, CategoryMining, CategoryWaste, CategoryUtilities, CategoryRetail, CategoryOtherTransportation, CategoryInformation, CategoryFinance, CategoryRealEstate, CategoryProfessional, CategoryAdministrative, CategoryEducation, CategoryHealthCare, CategoryArts, CategoryFood, CategoryRepair, CategoryReligious, CategoryGovernment, CategoryOther}
+}
+
+// NameKeys normalizes distinct nonempty names in their original order.
+func NameKeys(names []string) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, n := range names {
+		k := NameKey(n)
+		if k != "" && !seen[k] {
+			out = append(out, k)
+			seen[k] = true
+		}
+	}
+	return out
+}
+
+// EINKey accepts a nonzero nine-digit employer identification number.
+func EINKey(ein string) string {
+	if len(ein) != 9 || ein == "000000000" {
+		return ""
+	}
+	for i := range len(ein) {
+		if ein[i] < '0' || ein[i] > '9' {
+			return ""
+		}
+	}
+	return ein
 }

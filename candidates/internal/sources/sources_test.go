@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
-// R-4DF6-QYQA
+// R-448N-FTDZ
 func TestRecordShapes(t *testing.T) {
 	// Conversions use the records' complete underlying shapes, including order.
 	type personShape struct{ Name, Role string }
@@ -39,7 +39,9 @@ func TestRecordShapes(t *testing.T) {
 		t.Fatal("headcount shape")
 	}
 	type readingShape struct {
-		NameKey, PhoneKey, DomainKey, Name             string
+		NameKey                                        string
+		NameKeys                                       []string
+		EINKey, PhoneKey, DomainKey, Name              string
 		Names                                          []string
 		Street, City, State, Zip, County, Phone, Email string
 		People                                         []sources.Person
@@ -68,13 +70,13 @@ type fake struct{ name string }
 func (f *fake) Name() string                   { return f.name }
 func (*fake) Read(scrapes.Row) sources.Reading { return sources.Reading{} }
 
-// R-FLWK-VBKE R-P9MF-TMQZ
+// R-295U-IVI9 R-0PRE-CG2Z
 func TestRegistry(t *testing.T) {
 	a, b, c := &fake{"z"}, &fake{"a"}, &fake{"z"}
 	r := sources.New(a, b, c)
 	for range 2 {
 		ns := r.Names()
-		if !reflect.DeepEqual(ns, []string{"a", "z"}) {
+		if !reflect.DeepEqual(ns, []string{"z", "a"}) {
 			t.Fatal(ns)
 		}
 		ns[0] = "changed"
@@ -137,7 +139,7 @@ func TestCountySourceKey(t *testing.T) {
 	}
 }
 
-// R-YC12-IXQS
+// R-2ADQ-WN8Y
 func TestConstants(t *testing.T) {
 	const rules float64 = sources.Rules
 	const parity = sources.Rules % 2
@@ -177,21 +179,21 @@ func TestConstants(t *testing.T) {
 		evidenceOwnDomain           string = sources.EvidenceOwnDomain
 		evidenceWebsiteLive         string = sources.EvidenceWebsiteLive
 	)
-	got := []string{classPrivate, classForHire, classMixed, classUnknown, categoryConstruction, categoryTrucking, categoryAgriculture, categoryManufacturing, categoryWholesale, categoryMining, categoryWaste, categoryUtilities, categoryRetail, categoryOtherTransportation, categoryInformation, categoryFinance, categoryRealEstate, categoryProfessional, categoryAdministrative, categoryEducation, categoryHealthCare, categoryArts, categoryFood, categoryRepair, categoryReligious, categoryGovernment, categoryOther, evidenceFMCSAActive, evidenceFMCSAActivity, evidencePPPLoan, evidenceOwnDomain, evidenceWebsiteLive}
-	want := []string{"private", "for_hire", "mixed", "unknown", "construction", "trucking and logistics", "agriculture", "manufacturing", "wholesale and distribution", "mining and aggregates", "waste and environmental", "utilities", "retail", "other transportation", "information", "finance and insurance", "real estate", "professional services", "administrative services", "education", "health care", "arts and recreation", "food and lodging", "repair and personal services", "religious and civic", "government", "other", "fmcsa_active", "fmcsa_activity", "ppp_loan", "own_domain", "website_live"}
+	got := []string{classPrivate, classForHire, classMixed, classUnknown, categoryConstruction, categoryTrucking, categoryAgriculture, categoryManufacturing, categoryWholesale, categoryMining, categoryWaste, categoryUtilities, categoryRetail, categoryOtherTransportation, categoryInformation, categoryFinance, categoryRealEstate, categoryProfessional, categoryAdministrative, categoryEducation, categoryHealthCare, categoryArts, categoryFood, categoryRepair, categoryReligious, categoryGovernment, categoryOther, evidenceFMCSAActive, evidenceFMCSAActivity, evidencePPPLoan, sources.EvidenceForm5500Filing, evidenceOwnDomain, evidenceWebsiteLive}
+	want := []string{"private", "for_hire", "mixed", "unknown", "construction", "trucking and logistics", "agriculture", "manufacturing", "wholesale and distribution", "mining and aggregates", "waste and environmental", "utilities", "retail", "other transportation", "information", "finance and insurance", "real estate", "professional services", "administrative services", "education", "health care", "arts and recreation", "food and lodging", "repair and personal services", "religious and civic", "government", "other", "fmcsa_active", "fmcsa_activity", "ppp_loan", "form5500_filing", "own_domain", "website_live"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatal(got)
 	}
 }
 
-// R-ZTZR-N36E R-ZV7O-0UX3
+// R-62P6-X5Q1 R-ZV7O-0UX3
 func TestDescriptions(t *testing.T) {
 	const a string = sources.DescribeFMCSAActive
 	const b string = sources.DescribeFMCSAActivity
 	const c string = sources.DescribePPPLoan
 	const d string = sources.DescribeOwnDomain
 	seen := map[string]bool{}
-	for _, s := range []string{a, b, c, d} {
+	for _, s := range []string{a, b, c, d, sources.DescribeForm5500Filing} {
 		if s == "" || strings.Contains(s, "\n") || seen[s] {
 			t.Fatal(s)
 		}
@@ -250,7 +252,7 @@ func TestWebsiteEvidenceDescription(t *testing.T) {
 	}
 }
 
-// R-KVPQ-8YVJ R-YO82-CN5Q
+// R-KVPQ-8YVJ R-2BLN-AEZN
 func TestCategories(t *testing.T) {
 	want := []string{sources.CategoryConstruction, sources.CategoryTrucking, sources.CategoryAgriculture, sources.CategoryManufacturing, sources.CategoryWholesale, sources.CategoryMining, sources.CategoryWaste, sources.CategoryUtilities, sources.CategoryRetail, sources.CategoryOtherTransportation, sources.CategoryInformation, sources.CategoryFinance, sources.CategoryRealEstate, sources.CategoryProfessional, sources.CategoryAdministrative, sources.CategoryEducation, sources.CategoryHealthCare, sources.CategoryArts, sources.CategoryFood, sources.CategoryRepair, sources.CategoryReligious, sources.CategoryGovernment, sources.CategoryOther}
 	got := sources.Categories()
@@ -273,5 +275,39 @@ func TestHeadcountKinds(t *testing.T) {
 	}
 	if got := []string{sources.HeadcountEmployees, sources.HeadcountParticipants, sources.HeadcountJobs, sources.HeadcountDrivers, sources.HeadcountSnippet}; !reflect.DeepEqual(got, []string{"employees", "participants", "jobs", "drivers", "snippet"}) {
 		t.Fatal(got)
+	}
+}
+
+// R-IJ0W-7ON6 R-295U-IVI9
+func TestNameKeys(t *testing.T) {
+	for _, names := range [][]string{nil, {""}, {"Brown Hawk LLC", "Northern Lights Steel Fab", "BROWN HAWK, L.L.C.", "...", "Northern Lights Steel Fabrication"}} {
+		before := append([]string{}, names...)
+		got := sources.NameKeys(names)
+		want := []string{}
+		if len(names) > 1 {
+			want = []string{"BROWN HAWK", "NORTHERN LIGHTS STEEL FAB", "NORTHERN LIGHTS STEEL FABRICATION"}
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatal(got)
+		}
+		if len(got) > 0 {
+			got[0] = "changed"
+		}
+		if !reflect.DeepEqual(before, append([]string{}, names...)) {
+			t.Fatal(names)
+		}
+	}
+}
+
+// R-IK8S-LGDV R-295U-IVI9
+func TestEINKey(t *testing.T) {
+	for _, s := range []string{"411234567", "000000001", "000000000", "41123456", "4112345678", "41-1234567", " 411234567", "411234567 ", "41123456A", "４１１２３４５６７", ""} {
+		want := ""
+		if s == "411234567" || s == "000000001" {
+			want = s
+		}
+		if got := sources.EINKey(s); got != want {
+			t.Fatal(s, got)
+		}
 	}
 }

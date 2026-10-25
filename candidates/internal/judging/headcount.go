@@ -148,7 +148,7 @@ func PickHeadcount(hs []sources.Headcount) *Staff {
 	for i, kind := range kinds {
 		var best *sources.Headcount
 		for _, h := range hs {
-			if h.Kind == kind && h.Count > 0 && (best == nil || !h.AsOf.IsZero() && (best.AsOf.IsZero() || h.AsOf.After(best.AsOf))) {
+			if h.Kind == kind && h.Count > 0 && (best == nil || !h.AsOf.IsZero() && (best.AsOf.IsZero() || h.AsOf.After(best.AsOf)) || h.AsOf.Equal(best.AsOf) && h.Count > best.Count) {
 				v := h
 				best = &v
 			}

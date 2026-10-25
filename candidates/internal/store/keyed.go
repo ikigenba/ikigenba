@@ -76,7 +76,20 @@ func putCandidate(ctx context.Context, tx *sql.Tx, c Candidate) error {
 	return nil
 }
 func putLink(ctx context.Context, tx *sql.Tx, l Link) error {
-	return insertRecord(ctx, tx, "links", linkColumns, l, map[string]any{"name_key": l.Reading.NameKey, "state": l.Reading.State, "zip": l.Reading.Zip, "phone_key": l.Reading.PhoneKey, "domain_key": l.Reading.DomainKey})
+	if err := insertRecord(ctx, tx, "links", linkColumns, l, map[string]any{"name_key": l.Reading.NameKey, "state": l.Reading.State, "zip": l.Reading.Zip, "phone_key": l.Reading.PhoneKey, "domain_key": l.Reading.DomainKey, "ein_key": l.Reading.EINKey}); err != nil {
+		return err
+	}
+	if err := execSQL(ctx, tx, "DELETE FROM link_name_keys WHERE scraper=? AND source_id=?", l.Scraper, l.SourceID); err != nil {
+		return err
+	}
+	for position, key := range l.Reading.NameKeys {
+		if key != "" {
+			if err := execSQL(ctx, tx, "INSERT INTO link_name_keys(scraper,source_id,position,name_key) VALUES (?,?,?,?)", l.Scraper, l.SourceID, position, key); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 func candidateRecords(ctx context.Context, tx *sql.Tx, c Candidate) (*records, error) {
 	r := emptyRecords()

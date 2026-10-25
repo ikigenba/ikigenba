@@ -95,7 +95,7 @@ func TestCompleteViewContracts(t *testing.T) {
 		t.Fatal(got)
 	}
 	l := store.Link{Scraper: "scraper", SourceID: "source", Run: "run", Reason: "reason", Confidence: .8, FirstSeen: start, LastSeen: end, Gone: true, Reading: sources.Reading{Name: "name", City: "city", Zip: "55072", Filed: start}}
-	wantL := LinkView{Scraper: "scraper", SourceID: "source", Run: "run", Name: "name", City: "city", Zip: "55072", Reason: "reason", Confidence: "0.80", Filed: "2026-10-05", FiledText: "2026-10-05", FirstSeen: "2026-10-05T09:00:07Z", FirstSeenText: "2026-10-05 09:00", LastSeen: "2026-10-05T10:00:07Z", LastSeenText: "2026-10-05 10:00", Gone: true}
+	wantL := LinkView{Names: []string{}, Scraper: "scraper", SourceID: "source", Run: "run", Name: "name", City: "city", Zip: "55072", Reason: "reason", Confidence: "0.80", Filed: "2026-10-05", FiledText: "2026-10-05", FirstSeen: "2026-10-05T09:00:07Z", FirstSeenText: "2026-10-05 09:00", LastSeen: "2026-10-05T10:00:07Z", LastSeenText: "2026-10-05 10:00", Gone: true}
 	if got := linkView(l, ""); !reflect.DeepEqual(got, wantL) {
 		t.Fatal(got)
 	}

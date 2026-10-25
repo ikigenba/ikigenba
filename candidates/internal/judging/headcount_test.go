@@ -124,7 +124,7 @@ func TestCategoryBands(t *testing.T) {
 	}
 }
 
-// R-60S5-B95I R-6201-P0W7
+// R-OJPZ-AHHX R-OM5S-20ZB
 func TestHeadcountSelection(t *testing.T) {
 	kinds := []string{sources.HeadcountEmployees, sources.HeadcountParticipants, sources.HeadcountJobs, sources.HeadcountDrivers, sources.HeadcountSnippet}
 	for i, k := range kinds {
@@ -144,7 +144,7 @@ func TestHeadcountSelection(t *testing.T) {
 	hs := []sources.Headcount{{Scraper: "a", Kind: sources.HeadcountJobs, Count: 40, AsOf: time.Time{}}, {Scraper: "b", Kind: sources.HeadcountDrivers, Count: 20, AsOf: d2}, {Scraper: "a", Kind: sources.HeadcountJobs, Count: 26, AsOf: d1}, {Scraper: "c", Kind: sources.HeadcountJobs, Count: 27, AsOf: d1}, {Scraper: "a", Kind: sources.HeadcountJobs, Count: 0, AsOf: d2}}
 	before := append([]sources.Headcount{}, hs...)
 	s := judging.PickHeadcount(hs)
-	if s == nil || !reflect.DeepEqual(s.Used, []sources.Headcount{hs[2], hs[1]}) || s.AsOf != d1 || s.Basis != "jobs:a drivers:b" || !reflect.DeepEqual(hs, before) {
+	if s == nil || !reflect.DeepEqual(s.Used, []sources.Headcount{hs[3], hs[1]}) || s.AsOf != d1 || s.Basis != "jobs:c drivers:b" || !reflect.DeepEqual(hs, before) {
 		t.Fatal(s)
 	}
 	hs[4].Count = 50
@@ -169,7 +169,7 @@ func TestHeadcountSelection(t *testing.T) {
 	}
 }
 
-// R-637Y-2SMW R-64FU-GKDL
+// R-ONDO-FSQ0 R-OOLK-TKGP
 func TestHeadcountRevenueAndFacts(t *testing.T) {
 	date := time.Date(2020, 4, 28, 23, 0, 0, 0, time.FixedZone("west", -5*3600))
 	for _, tc := range []struct {
@@ -225,7 +225,7 @@ func TestHeadcountRevenueAndFacts(t *testing.T) {
 }
 func jsonNumber(n int64) string { b, _ := json.Marshal(n); return string(b) }
 
-// R-637Y-2SMW R-64FU-GKDL
+// R-ONDO-FSQ0 R-OOLK-TKGP
 func TestMultipleHeadcountsRevenue(t *testing.T) {
 	d1 := time.Date(2020, 4, 28, 0, 0, 0, 0, time.UTC)
 	d2 := time.Date(2021, 2, 1, 0, 0, 0, 0, time.UTC)
@@ -242,6 +242,65 @@ func TestMultipleHeadcountsRevenue(t *testing.T) {
 		e := judging.HeadcountEstimate(hs, nil, []sources.Category{{Name: sources.CategoryConstruction}})
 		if e == nil || e.Low != tc.low || e.High == nil || *e.High != tc.high || e.Confidence != tc.confidence || e.Filed != d1 || string(e.Facts["headcounts"]) != tc.counts || !reflect.DeepEqual(hs, before) {
 			t.Fatal(tc, e)
+		}
+	}
+}
+
+// R-OJPZ-AHHX R-OM5S-20ZB R-ONDO-FSQ0 R-OOLK-TKGP
+func TestSameKindTies(t *testing.T) {
+	d1 := time.Date(2020, 4, 28, 0, 0, 0, 0, time.UTC)
+	d2 := time.Date(2021, 2, 1, 0, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		a, b  sources.Headcount
+		index int
+	}{
+		{sources.Headcount{Scraper: "a", Kind: sources.HeadcountJobs, Count: 26, AsOf: d1}, sources.Headcount{Scraper: "b", Kind: sources.HeadcountJobs, Count: 27, AsOf: d1}, 1},
+		{sources.Headcount{Scraper: "a", Kind: sources.HeadcountJobs, Count: 27, AsOf: d1}, sources.Headcount{Scraper: "b", Kind: sources.HeadcountJobs, Count: 26, AsOf: d1}, 0},
+		{sources.Headcount{Scraper: "a", Kind: sources.HeadcountJobs, Count: 26, AsOf: d1}, sources.Headcount{Scraper: "b", Kind: sources.HeadcountJobs, Count: 26, AsOf: d1}, 0},
+		{sources.Headcount{Scraper: "a", Kind: sources.HeadcountJobs, Count: 40, AsOf: d1}, sources.Headcount{Scraper: "b", Kind: sources.HeadcountJobs, Count: 26, AsOf: d2}, 1},
+		{sources.Headcount{Scraper: "b", Kind: sources.HeadcountJobs, Count: 26, AsOf: d2}, sources.Headcount{Scraper: "a", Kind: sources.HeadcountJobs, Count: 40, AsOf: d1}, 0},
+		{sources.Headcount{Scraper: "a", Kind: sources.HeadcountParticipants, Count: 12}, sources.Headcount{Scraper: "b", Kind: sources.HeadcountParticipants, Count: 21}, 1},
+		{sources.Headcount{Scraper: "a", Kind: sources.HeadcountJobs, Count: 26, AsOf: d1}, sources.Headcount{Scraper: "b", Kind: sources.HeadcountJobs, Count: 40}, 0},
+	} {
+		hs := []sources.Headcount{tc.a, tc.b}
+		before := append([]sources.Headcount{}, hs...)
+		want := hs[tc.index]
+		got := judging.PickHeadcount(hs)
+		confidence := .4
+		if want.Kind == sources.HeadcountParticipants {
+			confidence = .5
+		}
+		if got == nil || !reflect.DeepEqual(got.Used, []sources.Headcount{want}) || got.Low != want.Count || got.High != want.Count || got.AsOf != want.AsOf || got.Confidence != confidence || got.Basis != want.Kind+":"+want.Scraper || !reflect.DeepEqual(hs, before) {
+			t.Fatal(tc, got)
+		}
+		e := judging.HeadcountEstimate(hs, nil, nil)
+		type fact struct {
+			Scraper string `json:"scraper"`
+			Kind    string `json:"kind"`
+			Count   int64  `json:"count"`
+			Date    string `json:"date,omitempty"`
+		}
+		date := ""
+		if !want.AsOf.IsZero() {
+			date = want.AsOf.UTC().Format(time.DateOnly)
+		}
+		counts, _ := json.Marshal([]fact{{want.Scraper, want.Kind, want.Count, date}})
+		if e.Low != want.Count*100000 || e.High == nil || *e.High != want.Count*250000 || e.Filed != want.AsOf || e.Confidence != confidence || string(e.Facts["headcounts"]) != string(counts) {
+			t.Fatal(tc, e)
+		}
+	}
+	for _, counts := range [][3]int64{{10, 14, 12}, {12, 14, 10}, {30, 25, 50}} {
+		hs := []sources.Headcount{{Kind: sources.HeadcountEmployees, Count: counts[0]}, {Kind: sources.HeadcountParticipants, Count: counts[1]}, {Kind: sources.HeadcountJobs, Count: counts[2]}}
+		got := judging.PickHeadcount(hs)
+		low, high, confidence := int64(10), int64(14), .5
+		if counts[0] == 12 {
+			low, high, confidence = 12, 12, .7
+		}
+		if counts[0] == 30 {
+			low, high = 25, 50
+		}
+		if got.Low != low || got.High != high || got.Confidence != confidence {
+			t.Fatal(counts, got)
 		}
 	}
 }

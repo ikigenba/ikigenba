@@ -173,6 +173,7 @@ const (
 	OriginJudge      = "judge"
 	TriggerJudgeTool = "judge"
 	LinkSourceKey    = "source_key"
+	LinkEIN          = "ein"
 	LinkMatchKey     = "match_key"
 	LinkDecision     = "decision"
 	KindMerge        = "merge"

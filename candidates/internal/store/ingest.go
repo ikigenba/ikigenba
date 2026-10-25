@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"reflect"
 	"sort"
 	"strings"
@@ -147,14 +146,10 @@ func (s *Store) Attach(ctx context.Context, run string, force bool, obs []Observ
 				l.Reading = o.Reading
 			} else {
 				total.New++
-				id := ""
-				if o.Reading.NameKey != "" && o.Reading.State != "" && validZip(o.Reading.Zip) {
-					err = scanSQL(ctx, tx, "SELECT c.id FROM links l JOIN candidates c ON c.id=l.candidate WHERE l.name_key=? AND l.state=? AND l.zip=? AND c.status=? ORDER BY c.created,c.id LIMIT 1", []any{o.Reading.NameKey, o.Reading.State, o.Reading.Zip, StatusActive}, &id)
-					if err != nil && !errors.Is(err, sql.ErrNoRows) {
-						return err
-					}
+				id, reason, confidence, err := matchCandidate(ctx, tx, o.Reading)
+				if err != nil {
+					return err
 				}
-				reason, confidence := LinkMatchKey, 0.8
 				if id == "" {
 					id, err = s.mintKey(ctx, tx, CandidateIDPrefix)
 					if err != nil {
