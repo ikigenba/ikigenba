@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
-// R-SG6E-QN4R
+// R-JNFR-RHJA
 func TestRecordShapes(t *testing.T) {
 	// Conversions use the records' complete underlying shapes, including order.
 	type personShape struct{ Name, Role string }

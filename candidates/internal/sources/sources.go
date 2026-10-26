@@ -110,6 +110,7 @@ const (
 )
 
 // Reading is the independent interpretation of one scraped row.
+// Names holds the names the source takes from the row; NameKeys holds their keys.
 type Reading struct {
 	NameKey                                        string
 	NameKeys                                       []string

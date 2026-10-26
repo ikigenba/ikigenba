@@ -26,33 +26,67 @@ func ptr(n int64) *int64                       { return &n }
 func day(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
 func read(f map[string]any) sources.Reading    { return oshaita.New().Read(row(f)) }
 
-// R-SOPP-F1BM R-1QJV-68NC R-1XV9-GV3I R-20B2-8EKW R-23YR-DPSZ
+// R-SOPP-F1BM R-1QJV-68NC R-VGO7-4B67 R-20B2-8EKW R-23YR-DPSZ
 func TestReading(t *testing.T) {
 	var src sources.Source = oshaita.New()
 	if src.Name() != oshaita.Name || oshaita.Name != "osha_ita" {
 		t.Fatal(src.Name())
 	}
 	r := row(map[string]any{"ein": "10739420", "phone": "6515550100", "email": "ops@example.test", "class": "AUTHORIZED FOR HIRE", "status": "A", "power_units": "14", "total_drivers": "4", "cargo": []string{"genfreight"}})
+	r.Name = "KTM PAVING INC"
 	r.Address.Street = "1 Main"
 	r.Address.City = "Town"
 	r.Address.State = "MN"
 	r.Address.Zip = "55072"
 	r.Address.County = "ANOKA"
 	r.People = append(r.People, scrapes.Person{Name: "Alex", Role: "owner"})
-	want := sources.Reading{NameKey: sources.NameKey(r.Name), NameKeys: sources.NameKeys(r.Names), EINKey: "010739420", Name: r.Name, Names: append([]string{}, r.Names...), Street: r.Address.Street, City: r.Address.City, State: r.Address.State, Zip: r.Address.Zip, People: []sources.Person{}, Cargo: []string{}, FleetVerdict: sources.FleetUnknown, Evidence: []sources.Evidence{{Name: sources.EvidenceOSHAITASummary, Source: oshaita.Name, Weight: .2, Description: sources.DescribeOSHAITASummary}}}
+	want := sources.Reading{NameKey: sources.NameKey(r.Name), NameKeys: sources.NameKeys([]string{r.Name}), EINKey: "010739420", Name: r.Name, Names: []string{r.Name}, Street: r.Address.Street, City: r.Address.City, State: r.Address.State, Zip: r.Address.Zip, People: []sources.Person{}, Cargo: []string{}, FleetVerdict: sources.FleetUnknown, Evidence: []sources.Evidence{{Name: sources.EvidenceOSHAITASummary, Source: oshaita.Name, Weight: .2, Description: sources.DescribeOSHAITASummary}}}
 	if got := src.Read(r); !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %#v; want %#v", got, want)
 	}
-	r.Name = "INDEPENDENT SCHOOL DISTRICT 728"
-	r.Names = nil
-	r.Facts = nil
-	got := src.Read(r)
-	if got.GovernmentMatch != "SCHOOL DISTRICT" || got.Names == nil || got.NameKeys == nil || len(got.Names) != 0 || len(got.NameKeys) != 0 || !reflect.DeepEqual(got.Evidence, want.Evidence) {
-		t.Fatal(got)
+}
+
+// R-VGO7-4B67 R-1Z35-UMU7
+func TestBusinessNames(t *testing.T) {
+	cases := []struct {
+		name, establishment        string
+		names, wantNames, wantKeys []string
+		government                 string
+	}{
+		{"DESIGN READY CONTROLS INC", "Design Ready Controls - BP8", []string{"DESIGN READY CONTROLS INC", "Design Ready Controls - BP8"}, []string{"DESIGN READY CONTROLS INC"}, []string{"DESIGN READY CONTROLS"}, ""},
+		{"MOLIN CONCRETE PRODUCTS CO", "Ramsey", []string{"RAMSEY", "MOLIN CONCRETE PRODUCTS CO"}, []string{"MOLIN CONCRETE PRODUCTS CO"}, []string{"MOLIN CONCRETE PRODUCTS"}, ""},
+		{"", "DC WAREHOUSE", []string{"DC WAREHOUSE"}, []string{}, []string{}, ""},
+		{"DC WAREHOUSE", "DC WAREHOUSE", []string{"DC WAREHOUSE"}, []string{"DC WAREHOUSE"}, []string{"DC WAREHOUSE"}, ""},
+		{"INDEPENDENT SCHOOL DISTRICT 728", "", nil, []string{"INDEPENDENT SCHOOL DISTRICT 728"}, []string{"INDEPENDENT SCHOOL DISTRICT 728"}, "SCHOOL DISTRICT"},
+		{"HJORT EXCAVATING, INC.", "", []string{}, []string{"HJORT EXCAVATING, INC."}, []string{"HJORT EXCAVATING"}, ""},
+		{"...", "", []string{"Other Company"}, []string{"..."}, []string{}, ""},
+		{"  ", "", []string{"Other Company"}, []string{"  "}, []string{}, ""},
 	}
-	r.Names = []string{"DESIGN READY CONTROLS INC", "Design Ready Controls - BP8"}
-	if got := src.Read(r); !reflect.DeepEqual(got.NameKeys, []string{"DESIGN READY CONTROLS", "DESIGN READY CONTROLS BP8"}) {
-		t.Fatal(got.NameKeys)
+	for _, c := range cases {
+		t.Run(c.name+"/"+c.establishment, func(t *testing.T) {
+			for _, names := range [][]string{c.names, nil, {}, {"CITY OF RAMSEY", "Unrelated LLC", c.name, c.name}} {
+				r := row(map[string]any{"establishment_name": c.establishment})
+				r.Name, r.Names = c.name, names
+				got := oshaita.New().Read(r)
+				if got.Name != c.name || got.NameKey != sources.NameKey(c.name) || !reflect.DeepEqual(got.Names, c.wantNames) || !reflect.DeepEqual(got.NameKeys, c.wantKeys) || got.GovernmentMatch != c.government || got.Establishment != c.establishment || got.EINKey != "" {
+					t.Fatalf("row names %q: got %#v", names, got)
+				}
+			}
+		})
+	}
+	for _, facts := range []map[string]any{nil, {"ein": ""}} {
+		r := row(facts)
+		r.Name = "MOLIN CONCRETE PRODUCTS CO"
+		if got := oshaita.New().Read(r).EINKey; got != "" {
+			t.Fatal(got)
+		}
+	}
+	for _, ein := range []string{"10739420", "010739420"} {
+		r := row(map[string]any{"ein": ein})
+		r.Name = "KTM PAVING INC"
+		if got := oshaita.New().Read(r).EINKey; got != "010739420" {
+			t.Fatal(ein, got)
+		}
 	}
 }
 
