@@ -725,7 +725,7 @@ func TestProspectListOrderFieldsDirectionsUnknownsAndTies(t *testing.T) {
 	contractEqual(t, prospectListIDs(prospectListRead(t, f, c).Members), []string{ids[1], ids[3], ids[2], ids[0], ids[4]})
 }
 
-// R-KL9X-43CV R-OQ2T-7XB6 R-UYKT-6FVF R-NT5I-W4AF
+// R-KL9X-43CV R-OQ2T-7XB6 R-BBPG-GY7H R-NT5I-W4AF
 func TestProspectListMembershipReadsStoredJudgmentsAndStandingRejects(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -970,7 +970,7 @@ func TestProspectListCategoryMatchesAnyJudgmentsCategory(t *testing.T) {
 	}
 }
 
-// R-V3BX-4SPQ R-XMT9-2Q8I R-UYKT-6FVF
+// R-V3BX-4SPQ R-XMT9-2Q8I R-BBPG-GY7H
 func TestProspectListWebsiteFiltersReadStoredJudgment(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -980,7 +980,10 @@ func TestProspectListWebsiteFiltersReadStoredJudgment(t *testing.T) {
 		o.Reading.Email = fmt.Sprintf("owner@business%d.example", i)
 		id := contractAttach(t, f, "run", o)[0]
 		ids = append(ids, id)
-		if state != sources.WebsiteUnknown {
+		if state == sources.WebsiteNone {
+			_, e := f.s.AddEnrichments(ctx, []store.Enrichment{searchResult(t, id, "", "")})
+			contractOK(t, e)
+		} else if state != sources.WebsiteUnknown {
 			_, e := f.s.AddEnrichments(ctx, []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Source: fmt.Sprintf("business%d.example", i), Inputs: fmt.Sprintf("business%d.example", i), Found: websiteFound(website.Result{State: state})}})
 			contractOK(t, e)
 		}

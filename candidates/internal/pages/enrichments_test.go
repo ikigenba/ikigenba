@@ -16,7 +16,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-E1Q1-XTVE
+// R-8PAT-SBNM
 // R-JQSD-8ZNK
 func TestEnrichmentAndWebsiteViews(t *testing.T) {
 	at := fixtureTime()
@@ -37,7 +37,7 @@ func TestEnrichmentAndWebsiteViews(t *testing.T) {
 		{[]store.Enrichment{{Kind: "other-check"}}, sources.WebsiteUnknown, "", "", "", ""},
 		{[]store.Enrichment{{Kind: "other-check"}, x, empty}, sources.WebsiteHTTPS, "https://fixture.example.test/", "fixture-title", "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC"},
 		{[]store.Enrichment{{Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteHTTP, URL: "http://fixture.example.test/", Title: "http-title"})}}, sources.WebsiteHTTP, "http://fixture.example.test/", "http-title", "", ""},
-		{[]store.Enrichment{{Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteNone, URL: "https://ignore.example.test/", Title: "fixture-title"}), At: at}, x}, sources.WebsiteNone, "", "fixture-title", "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC"},
+		{[]store.Enrichment{{Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteNone, URL: "https://ignore.example.test/", Title: "fixture-title"}), At: at}, x}, sources.WebsiteUnknown, "", "fixture-title", "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC"},
 	} {
 		var got CandidateView
 		setWebsite(&got, tc.results)
@@ -47,7 +47,7 @@ func TestEnrichmentAndWebsiteViews(t *testing.T) {
 	}
 }
 
-// R-Y8ZB-QQA8 R-YBF4-I9RM R-XVKF-J94L
+// R-Y8ZB-QQA8 R-8QIQ-63EB R-XVKF-J94L
 func TestWebsiteFiltersAndStoredMember(t *testing.T) {
 	f := store.ProspectListFilters{Website: []string{sources.WebsiteNone, sources.WebsiteHTTP}, WebsiteUnknown: true}
 	if got := filtersView(f); !reflect.DeepEqual(got.Website, f.Website) || !got.WebsiteUnknown {
@@ -56,13 +56,14 @@ func TestWebsiteFiltersAndStoredMember(t *testing.T) {
 	if got := filtersView(store.ProspectListFilters{}); got.Website == nil || len(got.Website) != 0 || got.WebsiteUnknown {
 		t.Fatal(got)
 	}
-	for _, state := range []string{sources.WebsiteHTTPS, sources.WebsiteUnknown} {
-		url := ""
-		if state == sources.WebsiteHTTPS {
-			url = "https://fixture.example.test/"
-		}
-		got := memberRow(store.Ranked{Facts: store.Facts{Website: state, WebsiteURL: url}}, 0)
-		if got.Website != state || got.WebsiteURL != url {
+	for _, facts := range []store.Facts{
+		{Website: sources.WebsiteHTTPS, WebsiteURL: "https://fixture.example.test/", WebsiteSource: store.WebsiteByCheck},
+		{Website: sources.WebsiteHTTPS, WebsiteURL: "https://search.example.test/", WebsiteSource: store.WebsiteBySearch},
+		{Website: sources.WebsiteUnknown},
+		{Website: sources.WebsiteNone},
+	} {
+		got := memberRow(store.Ranked{Facts: facts}, 0)
+		if got.Website != facts.Website || got.WebsiteURL != facts.WebsiteURL || got.WebsiteSource != facts.WebsiteSource {
 			t.Fatal(got)
 		}
 	}
@@ -90,7 +91,7 @@ func capturedCandidate(t *testing.T, cfg Config, id string) CandidateData {
 	return got
 }
 
-// R-TPC1-G7B9 R-XY08-ASLZ R-YBF4-I9RM
+// R-TPC1-G7B9 R-XY08-ASLZ R-8QIQ-63EB
 func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()

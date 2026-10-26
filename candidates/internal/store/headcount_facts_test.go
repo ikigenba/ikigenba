@@ -32,7 +32,7 @@ func labeledBrief(t *testing.T, id string, failed bool, labels ...string) store.
 	return e
 }
 
-// R-LQ8Z-ZH75
+// R-IULZ-FNK1
 func TestHeadcountFactsProjectionNewestAndGoodBrief(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -49,21 +49,12 @@ func TestHeadcountFactsProjectionNewestAndGoodBrief(t *testing.T) {
 	got := factsAt(ctx, t, f.s, id)
 	contractEqual(t, got.Headcounts, want)
 	contractEqual(t, got.BriefLabels, []string{"excavating contractor", "snow removal"})
-	var raw, labels string
-	contractOK(t, f.d.Read(ctx, func(tx *sql.Tx) error {
-		return tx.QueryRowContext(ctx, "SELECT headcounts,brief_labels FROM facts WHERE candidate=?", id).Scan(&raw, &labels)
-	}))
-	var stored []map[string]any
-	contractOK(t, json.Unmarshal([]byte(raw), &stored))
-	contractEqual(t, stored, []map[string]any{{"scraper": ppp.Name, "kind": sources.HeadcountJobs, "count": float64(26), "date": "2020-04-28T00:00:00Z"}, {"scraper": fmcsa.Name, "kind": sources.HeadcountDrivers, "count": float64(20)}})
-	var storedLabels []string
-	contractOK(t, json.Unmarshal([]byte(labels), &storedLabels))
-	contractEqual(t, storedLabels, []string{"excavating contractor", "snow removal"})
 	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{labeledBrief(t, id, true)})
 	contractOK(t, err)
 	contractEqual(t, factsAt(ctx, t, f.s, id).BriefLabels, got.BriefLabels)
 	f.reopen()
 	contractEqual(t, factsAt(ctx, t, f.s, id).Headcounts, want)
+	contractEqual(t, factsAt(ctx, t, f.s, id).BriefLabels, got.BriefLabels)
 	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{headcountLinkResult(t, id), labeledBrief(t, id, false)})
 	contractOK(t, err)
 	contractEqual(t, factsAt(ctx, t, f.s, id).Headcounts, []sources.Headcount{})
@@ -76,7 +67,7 @@ func TestHeadcountFactsProjectionNewestAndGoodBrief(t *testing.T) {
 	contractEqual(t, factsAt(ctx, t, f.s, id).Headcounts, []sources.Headcount{})
 }
 
-// R-LRGW-D8XU
+// R-IVTV-TFAQ
 func TestFillFactsRefreshesOnlyHeadcountsAndLabelsAndIsIdempotent(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

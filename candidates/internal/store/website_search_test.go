@@ -26,7 +26,7 @@ func searchResult(t *testing.T, id, state, url string) store.Enrichment {
 	return store.Enrichment{Candidate: id, Kind: enrichers.KindWebsiteSearch, Inputs: "name-city-state", Source: enrichers.SourcePrompts, Found: b}
 }
 
-// R-X36J-5G5F R-X4EF-J7W4 R-X5MB-WZMT R-X9A1-2AUW R-29UM-85WY
+// R-X36J-5G5F R-IOIH-ISUK R-IPQD-WKL9 R-IY9O-KYS4 R-IQYA-ACBY
 func TestWebsiteDecisionKeepsConfirmedSearchAndPrefersWorkingCheck(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -169,7 +169,7 @@ func TestSearchWebsiteDoesNotInflateOperatingConfidence(t *testing.T) {
 	contractEqual(t, factsAt(ctx, t, f.s, legacy).WebsiteSource, "")
 }
 
-// R-X5MB-WZMT R-PWRA-LW9H R-5P8G-A5VK
+// R-IPQD-WKL9 R-PWRA-LW9H R-5P8G-A5VK
 func TestSearchFactsFillMergeAndSplit(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -247,4 +247,67 @@ func TestWebsiteSourceProtocolWords(t *testing.T) {
 	const search word = store.WebsiteBySearch
 	contractEqual(t, check, word("check"))
 	contractEqual(t, search, word("search"))
+}
+
+// R-IOIH-ISUK R-IPQD-WKL9 R-IY9O-KYS4 R-IQYA-ACBY
+func TestWebsiteUnknownAndUnfoundSearchProjection(t *testing.T) {
+	for _, noSite := range []string{"empty_answer", "failed_confirmation"} {
+		t.Run(noSite, func(t *testing.T) {
+			f := contractDB(t)
+			ctx := context.Background()
+			id := contractSeed(t, f)
+			_, err := f.s.Judge(ctx, []string{id})
+			contractOK(t, err)
+			list := prospectListCreate(t, f, "search outcome")
+			add := func(e store.Enrichment, state, url, source string) {
+				t.Helper()
+				f.now = f.now.Add(time.Second)
+				_, eErr := f.s.AddEnrichments(ctx, []store.Enrichment{e})
+				contractOK(t, eErr)
+				facts, eErr := f.s.GetFacts(ctx, id)
+				contractOK(t, eErr)
+				contractEqual(t, facts.Website, state)
+				contractEqual(t, facts.WebsiteURL, url)
+				contractEqual(t, facts.WebsiteSource, source)
+				for _, written := range facts.Written {
+					if written.Kind == e.Kind {
+						contractEqual(t, written.At, f.now.UTC().Truncate(time.Second))
+					}
+				}
+				contractEqual(t, prospectListRead(t, f, list).Members[0].Facts, facts)
+				f.reopen()
+				kept, eErr := f.s.GetFacts(ctx, id)
+				contractOK(t, eErr)
+				contractEqual(t, kept, facts)
+			}
+			add(websiteResult(id, sources.WebsiteNone), sources.WebsiteUnknown, "", "")
+			unfound := searchResult(t, id, "", "")
+			if noSite == "failed_confirmation" {
+				unfound = searchResult(t, id, sources.WebsiteNone, "https://unreachable.test/")
+			}
+			add(unfound, sources.WebsiteNone, "", "")
+			add(websiteResult(id, sources.WebsiteNone), sources.WebsiteNone, "", "")
+			for _, failed := range []bool{true, false} {
+				attempt := searchResult(t, id, sources.WebsiteHTTPS, "https://unconfirmed.test/")
+				var found enrichers.WebsiteSearchFound
+				contractOK(t, json.Unmarshal(attempt.Found, &found))
+				found.Confirmation = nil
+				if failed {
+					found.Run.Status = "failed"
+					found.Run.ExitCode = nil
+				}
+				attempt.Found, err = json.Marshal(found)
+				contractOK(t, err)
+				add(attempt, sources.WebsiteNone, "", "")
+			}
+			working := websiteResult(id, sources.WebsiteHTTP)
+			add(working, sources.WebsiteHTTP, websiteDecoded(working).URL, store.WebsiteByCheck)
+			add(unfound, sources.WebsiteHTTP, websiteDecoded(working).URL, store.WebsiteByCheck)
+			// An older working check no longer decides once the newest check fails.
+			add(websiteResult(id, sources.WebsiteNone), sources.WebsiteNone, "", "")
+			add(searchResult(t, id, sources.WebsiteHTTP, "http://first-found.test/"), sources.WebsiteHTTP, "http://first-found.test/", store.WebsiteBySearch)
+			add(searchResult(t, id, sources.WebsiteHTTPS, "https://newest-found.test/"), sources.WebsiteHTTPS, "https://newest-found.test/", store.WebsiteBySearch)
+			add(unfound, sources.WebsiteHTTPS, "https://newest-found.test/", store.WebsiteBySearch)
+		})
+	}
 }

@@ -15,7 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-29UM-85WY R-OU7I-97OR R-WPW0-5EVS
+// R-IQYA-ACBY R-OU7I-97OR R-WPW0-5EVS
 func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -296,7 +296,7 @@ func TestOrdinaryWritesPreserveFactsAndResultHistory(t *testing.T) {
 	}
 }
 
-// R-X5MB-WZMT R-GSBL-OU6L R-X9A1-2AUW
+// R-IPQD-WKL9 R-GSBL-OU6L R-IY9O-KYS4
 func TestFactsProjectionUsesNewestResultOfEveryKind(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -337,7 +337,7 @@ func TestFactsProjectionUsesNewestResultOfEveryKind(t *testing.T) {
 	expected.FleetVerdict = sources.FleetUnknown
 	expected.PowerUnits = nil
 	expected.Drivers = nil
-	expected.Website = sources.WebsiteNone
+	expected.Website = sources.WebsiteUnknown
 	expected.WebsiteURL = ""
 	expected.WebsiteSource = ""
 	got, err = f.s.GetFacts(ctx, id)

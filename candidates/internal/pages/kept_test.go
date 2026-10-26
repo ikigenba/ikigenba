@@ -45,7 +45,7 @@ func TestTargetPassAndCosts(t *testing.T) {
 	}
 }
 
-// R-JT86-0J4Y
+// R-909X-89BV
 func TestSiteTextResultProjection(t *testing.T) {
 	for _, tc := range []struct {
 		status string
@@ -115,7 +115,7 @@ func TestKeptPagePathGrammar(t *testing.T) {
 	}
 }
 
-// R-JWVV-5UD1 R-Y6JI-Z6SU R-UM9B-S0C0 R-WUQP-0V9U
+// R-92PP-ZST9 R-Y6JI-Z6SU R-UM9B-S0C0 R-WUQP-0V9U
 func TestKeptPageRoutes(t *testing.T) {
 	cfg, d := pageFixture(t)
 	ctx := t.Context()
@@ -193,7 +193,7 @@ func TestKeptPageRoutes(t *testing.T) {
 	}
 }
 
-// R-YCN0-W1IB
+// R-98T7-WNIQ
 func TestMemberSiteTextStamp(t *testing.T) {
 	for _, at := range []time.Time{{}, fixtureTime()} {
 		v := memberRow(store.Ranked{SiteText: at}, 0)
@@ -254,7 +254,7 @@ func TestAddedTemplateStates(t *testing.T) {
 	}
 }
 
-// R-YCN0-W1IB
+// R-98T7-WNIQ
 func TestSiteTextCandidateAndProspectListAgree(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()

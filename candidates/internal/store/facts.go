@@ -303,31 +303,40 @@ func recordCategories(ctx context.Context, tx *sql.Tx, id string) ([]sources.Cat
 	return unique, nil
 }
 
-// websiteFacts chooses a working check before the newest confirmed search.
+// websiteFacts chooses a working newest check, then a confirmed search,
+// then a search that found no site. A failed check alone leaves it unknown.
 func websiteFacts(es []Enrichment) (source, state, url string) {
 	state = sources.WebsiteUnknown
 	checkSeen := false
 	var search *enrichers.WebsiteSearchFound
+	unfound := false
 	for _, e := range es {
 		if e.Kind == sources.WebsiteCheck && !checkSeen {
 			var v website.Result
 			if json.Unmarshal(e.Found, &v) == nil {
 				checkSeen = true
-				state = v.State
-				if state == sources.WebsiteHTTPS || state == sources.WebsiteHTTP {
-					return WebsiteByCheck, state, v.URL
+				if v.State == sources.WebsiteHTTPS || v.State == sources.WebsiteHTTP {
+					return WebsiteByCheck, v.State, v.URL
 				}
 			}
 		}
 		if e.Kind == enrichers.KindWebsiteSearch && search == nil {
 			var v enrichers.WebsiteSearchFound
-			if json.Unmarshal(e.Found, &v) == nil && !v.Failed() && v.Confirmation != nil && (v.Confirmation.State == sources.WebsiteHTTPS || v.Confirmation.State == sources.WebsiteHTTP) {
-				search = &v
+			if json.Unmarshal(e.Found, &v) == nil && !v.Failed() {
+				if v.Confirmation != nil && (v.Confirmation.State == sources.WebsiteHTTPS || v.Confirmation.State == sources.WebsiteHTTP) {
+					search = &v
+				}
+				if v.Answer.URL == "" || v.Confirmation != nil && v.Confirmation.State == sources.WebsiteNone {
+					unfound = true
+				}
 			}
 		}
 	}
 	if search != nil {
 		return WebsiteBySearch, search.Confirmation.State, search.Confirmation.URL
+	}
+	if unfound {
+		return "", sources.WebsiteNone, ""
 	}
 	return "", state, ""
 }

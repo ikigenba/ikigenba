@@ -35,7 +35,7 @@ func TestFactsProjection(t *testing.T) {
 	}
 }
 
-// R-E1Q1-XTVE
+// R-8PAT-SBNM
 // R-JQSD-8ZNK
 func TestDerivedProjection(t *testing.T) {
 	for _, tc := range []struct {
@@ -60,7 +60,7 @@ func TestDerivedProjection(t *testing.T) {
 	}
 }
 
-// R-JUG2-EAVN
+// R-8RQM-JV50
 func TestCandidateFactsWithoutJudgment(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	_, ids, err := cfg.Store.Attach(t.Context(), "run", false, []store.Observation{{Scraper: "fixture", SourceID: "row", Digest: "digest", Reading: sources.Reading{Name: "facts-business", NameKey: "facts-business"}}})

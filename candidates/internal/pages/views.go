@@ -327,7 +327,7 @@ func setWebsite(v *CandidateView, es []store.Enrichment) {
 			continue
 		}
 		var r enrichers.WebsiteSearchFound
-		if json.Unmarshal(e.Found, &r) != nil || r.Failed() || r.Answer == nil || r.Answer.URL == "" || r.Confirmation == nil {
+		if json.Unmarshal(e.Found, &r) != nil || r.Failed() || r.Answer == nil || r.Confirmation == nil {
 			continue
 		}
 		c := r.Confirmation
@@ -338,8 +338,23 @@ func setWebsite(v *CandidateView, es []store.Enrichment) {
 		v.WebsiteChecked, v.WebsiteCheckedText = stamp(e.At, SecondLayout)
 		return
 	}
+	for _, e := range es {
+		if e.Kind != enrichers.KindWebsiteSearch {
+			continue
+		}
+		var r enrichers.WebsiteSearchFound
+		if json.Unmarshal(e.Found, &r) != nil || r.Failed() || r.Answer == nil {
+			continue
+		}
+		if r.Answer.URL != "" && (r.Confirmation == nil || r.Confirmation.State != sources.WebsiteNone) {
+			continue
+		}
+		v.Website, v.WebsiteWhy = sources.WebsiteNone, r.Answer.Why
+		v.WebsiteChecked, v.WebsiteCheckedText = stamp(e.At, SecondLayout)
+		return
+	}
 	if check != nil {
-		v.Website, v.WebsiteTitle = result.State, result.Title
+		v.WebsiteTitle = result.Title
 		v.WebsiteChecked, v.WebsiteCheckedText = stamp(check.At, SecondLayout)
 	}
 }

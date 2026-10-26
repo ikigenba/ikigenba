@@ -133,7 +133,7 @@ func TestEnrichDispatchAndRefusals(t *testing.T) {
 	refusal(t, absent.call("enrich", tools.EnrichArgs{Kind: sources.WebsiteCheck}), passes.RefusalUnavailable, tools.RefuseUnavailable)
 }
 
-// R-TE8O-1642 R-Q65V-BAP3
+// R-KT7C-9O87 R-Q65V-BAP3
 func TestCandidateEnrichmentHistory(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
@@ -240,7 +240,7 @@ func TestEnrichDerivedAndAllWithoutChecker(t *testing.T) {
 	}
 }
 
-// R-TE8O-1642
+// R-KT7C-9O87
 func TestCandidateHistoryIncludesDerivedKinds(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]

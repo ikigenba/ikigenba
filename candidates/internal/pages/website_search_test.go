@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
@@ -14,7 +15,7 @@ import (
 )
 
 // R-DVMK-0Z5X R-DWUG-EQWM R-DY2C-SINB R-DZA9-6AE0 R-E45U-PDCS
-// R-JQSD-8ZNK R-JT86-0J4Y
+// R-JQSD-8ZNK R-909X-89BV
 func TestSearchEnrichmentProjection(t *testing.T) {
 	zero, one := 0, 1
 	full := enrichers.WebsiteSearchFound{Run: enrichers.WebsiteSearchRun{ID: "r1", Status: enrichers.RunExited, ExitCode: &zero}, Answer: &enrichers.WebsiteSearchAnswer{URL: "https://acme.test/", Why: "chosen-why", Rejected: []enrichers.WebsiteSearchSite{{URL: "https://other.test/", Why: "chosen-rejection"}, {URL: "https://third.test/"}}}, Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteHTTPS, URL: "https://www.acme.test/", Title: "chosen-title", StatusCode: 200, Size: 1256}}
@@ -54,7 +55,7 @@ func TestSearchEnrichmentProjection(t *testing.T) {
 	}
 }
 
-// R-XY08-ASLZ R-E1Q1-XTVE R-YBF4-I9RM
+// R-XY08-ASLZ R-8PAT-SBNM R-8QIQ-63EB
 func TestSearchWebsiteCandidateAndMember(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	_, ids, err := cfg.Store.Attach(t.Context(), "run", false, []store.Observation{{Scraper: "fixture", SourceID: "row", Digest: "digest", Reading: sources.Reading{Name: "search-business", NameKey: "search-business"}}})
@@ -180,7 +181,7 @@ func TestSearchViewShapes(_ *testing.T) {
 	}(ConfirmationView{})
 }
 
-// R-E1Q1-XTVE
+// R-8PAT-SBNM
 func TestWebsiteSearchDecisionHistory(t *testing.T) {
 	zero := 0
 	good := enrichers.WebsiteSearchFound{Run: enrichers.WebsiteSearchRun{Status: enrichers.RunExited, ExitCode: &zero}, Answer: &enrichers.WebsiteSearchAnswer{URL: "https://answer.test/", Why: "chosen-why"}, Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteHTTPS, URL: "https://confirmed.test/", Title: "chosen-title"}}
@@ -248,4 +249,133 @@ func TestCandidateAndMemberViewShapes(_ *testing.T) {
 		Excluded                                                                                                                                                                                                             bool
 	}(MemberRow{})
 	_ = struct{ Candidate, By, User, At, AtText, Why string }(RejectRow{})
+}
+
+// R-8PAT-SBNM
+func TestUnfoundWebsiteDecisionFields(t *testing.T) {
+	at := fixtureTime()
+	check := store.Enrichment{Kind: sources.WebsiteCheck, Found: encodedJSON(website.Result{State: sources.WebsiteNone, URL: "https://ignored.test/", Title: "check-title"}), At: at}
+	workingCheck := store.Enrichment{Kind: sources.WebsiteCheck, Found: encodedJSON(website.Result{State: sources.WebsiteHTTP, URL: "http://check.test/", Title: "working-title"}), At: at}
+	empty := enrichers.WebsiteSearchFound{Run: enrichers.WebsiteSearchRun{Status: enrichers.RunExited, ExitCode: new(0)}, Answer: &enrichers.WebsiteSearchAnswer{Why: "search-reason"}}
+	unloaded := empty
+	unloaded.Answer = &enrichers.WebsiteSearchAnswer{URL: "https://unloaded.test/", Why: "search-reason"}
+	unloaded.Confirmation = &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteNone, Title: "ignored-title"}
+	incomplete := unloaded
+	incomplete.Confirmation = nil
+	failed := empty
+	failed.Run.Status = "failed"
+	confirmed := unloaded
+	confirmed.Confirmation = &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteHTTPS, URL: "https://confirmed.test/", Title: "confirmed-title"}
+	search := func(f enrichers.WebsiteSearchFound) store.Enrichment {
+		return store.Enrichment{Kind: enrichers.KindWebsiteSearch, Found: encodedJSON(f), At: at.Add(time.Hour)}
+	}
+	none := CandidateView{Website: sources.WebsiteNone, WebsiteWhy: empty.Answer.Why, WebsiteChecked: "2026-10-05T10:00:07Z", WebsiteCheckedText: "2026-10-05 10:00:07 UTC"}
+	unknown := CandidateView{Website: sources.WebsiteUnknown, WebsiteTitle: "check-title", WebsiteChecked: "2026-10-05T09:00:07Z", WebsiteCheckedText: "2026-10-05 09:00:07 UTC"}
+	found := CandidateView{WebsiteSource: store.WebsiteBySearch, Website: sources.WebsiteHTTPS, WebsiteURL: confirmed.Confirmation.URL, WebsiteTitle: confirmed.Confirmation.Title, WebsiteWhy: confirmed.Answer.Why, WebsiteChecked: none.WebsiteChecked, WebsiteCheckedText: none.WebsiteCheckedText}
+	checked := CandidateView{WebsiteSource: store.WebsiteByCheck, Website: sources.WebsiteHTTP, WebsiteURL: "http://check.test/", WebsiteTitle: "working-title", WebsiteChecked: unknown.WebsiteChecked, WebsiteCheckedText: unknown.WebsiteCheckedText}
+	for _, tc := range []struct {
+		results []store.Enrichment
+		want    CandidateView
+	}{
+		{nil, CandidateView{Website: sources.WebsiteUnknown}},
+		{[]store.Enrichment{{Kind: enrichers.KindLinkFacts}, {Kind: enrichers.KindDriveMinutes}}, CandidateView{Website: sources.WebsiteUnknown}},
+		{[]store.Enrichment{check}, unknown},
+		{[]store.Enrichment{check, workingCheck}, unknown},
+		{[]store.Enrichment{search(empty), check}, none},
+		{[]store.Enrichment{search(unloaded), check}, none},
+		{[]store.Enrichment{check, search(empty)}, none},
+		{[]store.Enrichment{search(incomplete), search(empty)}, none},
+		{[]store.Enrichment{search(failed), search(empty)}, none},
+		{[]store.Enrichment{check, search(empty), workingCheck}, none},
+		{[]store.Enrichment{workingCheck, search(empty)}, checked},
+		{[]store.Enrichment{search(empty), workingCheck}, checked},
+		{[]store.Enrichment{search(empty), search(confirmed), check}, found},
+		{[]store.Enrichment{search(unloaded), search(confirmed), check}, found},
+		{[]store.Enrichment{search(failed), search(confirmed), check}, found},
+		{[]store.Enrichment{search(failed), check}, unknown},
+	} {
+		var got CandidateView
+		setWebsite(&got, tc.results)
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("results %+v: got %+v want %+v", tc.results, got, tc.want)
+		}
+	}
+}
+
+// R-9B90-O704
+func TestUnfoundAndUnknownWebsiteTemplates(t *testing.T) {
+	t.Chdir(t.TempDir())
+	set, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range []string{sources.WebsiteNone, sources.WebsiteUnknown} {
+		for _, detail := range []string{"", "chosen-detail"} {
+			for _, stamp := range []string{"", "chosen-stamp"} {
+				c := CandidateView{Status: store.StatusActive, Website: state, WebsiteChecked: stamp, WebsiteCheckedText: stamp}
+				if state == sources.WebsiteNone {
+					c.WebsiteWhy = detail
+				} else {
+					c.WebsiteTitle = detail
+				}
+				if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "candidate", CandidateData{Candidate: c}); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+}
+
+// R-8RQM-JV50 R-8QIQ-63EB
+func TestUnfoundCandidateAndMemberWithoutJudging(t *testing.T) {
+	for _, emptyURL := range []bool{false, true} {
+		cfg, handle := pageFixture(t)
+		now := fixtureTime()
+		cfg.Store = store.New(handle, store.Config{Now: func() time.Time { return now }, Rand: &sequence{}})
+		_, ids, err := cfg.Store.Attach(t.Context(), "chosen-run", false, []store.Observation{{Scraper: "fixture", SourceID: "chosen-row", Digest: "chosen-digest", Reading: sources.Reading{Name: "chosen-business", NameKey: "chosen-name"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := cfg.Store.JudgeAll(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		pl, err := cfg.Store.CreateProspectList(t.Context(), store.ProspectList{Name: "chosen-list", Size: 10, CreatedUserID: "owner"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := ids[0]
+		check := func(want CandidateView, count int) {
+			t.Helper()
+			got := capturedCandidate(t, cfg, id)
+			c := got.Candidate
+			if c.WebsiteSource != want.WebsiteSource || c.Website != want.Website || c.WebsiteURL != want.WebsiteURL || c.WebsiteTitle != want.WebsiteTitle || c.WebsiteWhy != want.WebsiteWhy || c.WebsiteChecked != want.WebsiteChecked || c.WebsiteCheckedText != want.WebsiteCheckedText || len(got.EnrichmentResults) != count {
+				t.Fatal(got)
+			}
+			members := pageProspectList(t, cfg, pl.ID).Members
+			if len(members) != 1 || members[0].Website != want.Website || members[0].WebsiteURL != want.WebsiteURL || members[0].WebsiteSource != want.WebsiteSource {
+				t.Fatal(members)
+			}
+		}
+		record := func(kind string, found any) {
+			t.Helper()
+			if _, err := cfg.Store.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: kind, Inputs: "chosen-input", Source: "chosen-source", Found: encodedJSON(found)}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		check(CandidateView{Website: sources.WebsiteUnknown}, 0)
+		record(sources.WebsiteCheck, website.Result{State: sources.WebsiteNone, Title: "chosen-check-title"})
+		check(CandidateView{Website: sources.WebsiteUnknown, WebsiteTitle: "chosen-check-title", WebsiteChecked: "2026-10-05T09:00:07Z", WebsiteCheckedText: "2026-10-05 09:00:07 UTC"}, 1)
+		now = now.Add(time.Hour)
+		f := enrichers.WebsiteSearchFound{Run: enrichers.WebsiteSearchRun{ID: "chosen-search", Status: enrichers.RunExited, ExitCode: new(0)}, Answer: &enrichers.WebsiteSearchAnswer{URL: "https://unloaded.test/", Why: "chosen-unfound-reason"}, Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteNone, Title: "ignored-title"}}
+		if emptyURL {
+			f.Answer.URL = ""
+			f.Confirmation = nil
+		}
+		record(enrichers.KindWebsiteSearch, f)
+		check(CandidateView{Website: sources.WebsiteNone, WebsiteWhy: f.Answer.Why, WebsiteChecked: "2026-10-05T10:00:07Z", WebsiteCheckedText: "2026-10-05 10:00:07 UTC"}, 2)
+		got := capturedCandidate(t, cfg, id)
+		if got.EnrichmentResults[0].Kind != enrichers.KindWebsiteSearch || got.EnrichmentResults[0].Failed || got.EnrichmentResults[0].Run.ID != f.Run.ID || got.EnrichmentResults[1].State != sources.WebsiteNone {
+			t.Fatal(got.EnrichmentResults)
+		}
+	}
 }

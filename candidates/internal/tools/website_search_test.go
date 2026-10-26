@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-THWD-6HC5 R-ZKAN-MILE R-QWZN-Q90D
+// R-KVN5-17PL R-ZKAN-MILE R-QWZN-Q90D
 func TestSearchAnswersUseStoredResults(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
@@ -150,5 +150,74 @@ func TestWebsiteSearchEnrichDispatch(t *testing.T) {
 		if err != nil || len(ps) != 0 {
 			t.Fatal(ps, err)
 		}
+	}
+}
+
+// R-KVN5-17PL R-KT7C-9O87
+func TestWebsiteDecisionAnswersDistinguishUncheckedAndUnfound(t *testing.T) {
+	f := newFixture(t)
+	id := f.seed(1)[0]
+	all := f.create("website decisions")
+	none := []string{sources.WebsiteNone}
+	r := f.call("create_prospect_list", tools.CreateProspectListArgs{Name: "unfound sites", Filters: &tools.FilterArgs{Categories: []string{}, Website: &none}})
+	if r.IsError() {
+		t.Fatal(decode(t, r))
+	}
+	unfound := decodeList[tools.ProspectList](t, r)
+	https := []string{sources.WebsiteHTTPS}
+	r = f.call("create_prospect_list", tools.CreateProspectListArgs{Name: "unknown or secure sites", Filters: &tools.FilterArgs{Categories: []string{}, Website: &https, WebsiteUnknown: true}})
+	if r.IsError() {
+		t.Fatal(decode(t, r))
+	}
+	unknownOrSecure := decodeList[tools.ProspectList](t, r)
+	search := func(url string, confirmation *enrichers.WebsiteSearchConfirmation) enrichers.WebsiteSearchFound {
+		return enrichers.WebsiteSearchFound{Run: enrichers.WebsiteSearchRun{ID: "decision-run", Status: enrichers.RunExited, ExitCode: new(0)}, Answer: &enrichers.WebsiteSearchAnswer{URL: url, Why: "decision-reason"}, Confirmation: confirmation}
+	}
+	failed := enrichers.WebsiteSearchFound{Run: enrichers.WebsiteSearchRun{ID: "failed-decision-run", Status: "failed"}}
+	for _, tc := range []struct {
+		name, kind, state, source, url string
+		found                          any
+	}{
+		{name: "check found nothing", kind: sources.WebsiteCheck, found: map[string]string{"state": sources.WebsiteNone}, state: sources.WebsiteUnknown},
+		{name: "failed search is unknown", kind: enrichers.KindWebsiteSearch, found: failed, state: sources.WebsiteUnknown},
+		{name: "unconfirmed answer is unknown", kind: enrichers.KindWebsiteSearch, found: search("https://unconfirmed.test/", nil), state: sources.WebsiteUnknown},
+		{name: "empty answer proves unfound", kind: enrichers.KindWebsiteSearch, found: search("", nil), state: sources.WebsiteNone},
+		{name: "failed search preserves unfound", kind: enrichers.KindWebsiteSearch, found: failed, state: sources.WebsiteNone},
+		{name: "unconfirmed answer preserves unfound", kind: enrichers.KindWebsiteSearch, found: search("https://unconfirmed.test/", nil), state: sources.WebsiteNone},
+		{name: "confirmation found nothing", kind: enrichers.KindWebsiteSearch, found: search("https://missing.test/", &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteNone}), state: sources.WebsiteNone},
+		{name: "check finds site", kind: sources.WebsiteCheck, found: map[string]string{"state": sources.WebsiteHTTPS, "url": "https://checked.test/"}, state: sources.WebsiteHTTPS, source: store.WebsiteByCheck, url: "https://checked.test/"},
+		{name: "new check returns to unfound search", kind: sources.WebsiteCheck, found: map[string]string{"state": sources.WebsiteNone}, state: sources.WebsiteNone},
+		{name: "confirmed search finds site", kind: enrichers.KindWebsiteSearch, found: search("https://chosen.test/", &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteHTTPS, URL: "https://confirmed.test/"}), state: sources.WebsiteHTTPS, source: store.WebsiteBySearch, url: "https://confirmed.test/"},
+		{name: "later check keeps confirmed search", kind: sources.WebsiteCheck, found: map[string]string{"state": sources.WebsiteNone}, state: sources.WebsiteHTTPS, source: store.WebsiteBySearch, url: "https://confirmed.test/"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f.now = f.now.Add(time.Second)
+			if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: tc.kind, Inputs: "decision-input", Found: encodedJSON(tc.found)}}); err != nil {
+				t.Fatal(err)
+			}
+			r := f.call("candidate", tools.CandidateArgs{Candidate: id})
+			if r.IsError() {
+				t.Fatal(decode(t, r))
+			}
+			detail := decodeList[tools.Detail](t, r)
+			facts := detail.Enrichments.Facts
+			if facts == nil || facts.Website != tc.state || facts.WebsiteSource != tc.source || facts.WebsiteURL != tc.url {
+				t.Fatal(facts, tc)
+			}
+			members := peekBasis(t, f, all.ID).Members
+			if len(members) != 1 || members[0].Website != tc.state || members[0].WebsiteSource != tc.source || members[0].WebsiteURL != tc.url {
+				t.Fatal(members, tc)
+			}
+			wantNone := int64(0)
+			if tc.state == sources.WebsiteNone {
+				wantNone = 1
+			}
+			if got := peekBasis(t, f, unfound.ID); got.Matching != wantNone || int64(len(got.Members)) != wantNone {
+				t.Fatal(got, tc)
+			}
+			if got := peekBasis(t, f, unknownOrSecure.ID); got.Matching != 1-wantNone || int64(len(got.Members)) != 1-wantNone {
+				t.Fatal(got, tc)
+			}
+		})
 	}
 }

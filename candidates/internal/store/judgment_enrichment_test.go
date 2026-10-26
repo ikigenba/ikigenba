@@ -48,7 +48,11 @@ func TestJudgmentUsesNewestRecordedWebsiteResult(t *testing.T) {
 		contractOK(t, err)
 		near(t, a.Operating, tc.operating)
 		contractEqual(t, a.Evidence, tc.evidence)
-		contractEqual(t, factsAt(ctx, t, f.s, id).Website, tc.state)
+		expectedState := tc.state
+		if expectedState == sources.WebsiteNone {
+			expectedState = sources.WebsiteUnknown
+		}
+		contractEqual(t, factsAt(ctx, t, f.s, id).Website, expectedState)
 		contractEqual(t, factsAt(ctx, t, f.s, id).WebsiteURL, tc.url)
 		f.reopen()
 		persisted, err := f.s.GetJudgments(ctx, id)

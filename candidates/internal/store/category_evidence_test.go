@@ -52,7 +52,7 @@ func categoryLinks(t *testing.T, id string, categories ...sources.Category) stor
 	return store.Enrichment{Candidate: id, Kind: enrichers.KindLinkFacts, Inputs: "record-inputs", Source: enrichers.SourceLinks, Found: raw}
 }
 
-// R-X5MB-WZMT R-X9A1-2AUW
+// R-IPQD-WKL9 R-IY9O-KYS4
 func TestBriefCategoriesReplaceRecordsAndEmptyGoodBriefRestoresThem(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -99,7 +99,7 @@ func TestBriefCategoriesReplaceRecordsAndEmptyGoodBriefRestoresThem(t *testing.T
 	contractEqual(t, got.Records, []sources.Category{})
 }
 
-// R-XGLF-CXB2
+// R-J1XD-QA07
 func TestRecordsReadNewestLinkResultBesidePreviousWriterCategories(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -134,7 +134,7 @@ func TestRecordsReadNewestLinkResultBesidePreviousWriterCategories(t *testing.T)
 	contractEqual(t, got.Records, []sources.Category{})
 }
 
-// R-V3GE-PIU7 R-OQ2T-7XB6
+// R-BE59-8HOV R-OQ2T-7XB6
 func TestProspectListClassifiesOnlyItsSelectedMembersAndReadsNewCategories(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -245,7 +245,7 @@ func TestFillFactsReprojectsMissingCategoryRowsAndPreservesExistingRows(t *testi
 	contractEqual(t, got, before)
 }
 
-// R-V3GE-PIU7
+// R-BE59-8HOV
 func TestProspectListClassificationUsesBriefDecisionOrRecordFallback(t *testing.T) {
 	for _, tc := range []struct {
 		name, category, source string

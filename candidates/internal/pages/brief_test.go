@@ -11,7 +11,7 @@ import (
 )
 
 // R-GOAB-PI3C
-// R-JT86-0J4Y
+// R-909X-89BV
 func TestBriefViewSelection(t *testing.T) {
 	good := enrichers.BriefFound{Run: "fixture-run", Status: "exited", ExitCode: new(0), Summary: "fixture-summary", Categories: []enrichers.BriefCategory{{Name: sources.CategoryRetail, Why: "fixture-why"}}, Labels: []string{"fixture-label", "other-label"}}
 	result := func(b enrichers.BriefFound) store.Enrichment {
@@ -50,7 +50,7 @@ func TestBriefViewSelection(t *testing.T) {
 	}
 }
 
-// R-YDUX-9T90 R-XY08-ASLZ R-TPC1-G7B9 R-ANM6-HRQR
+// R-9A14-AF9F R-XY08-ASLZ R-TPC1-G7B9 R-ANM6-HRQR
 func TestBriefCandidateAndProspectList(t *testing.T) {
 	cfg, db := pageFixture(t)
 	now := fixtureTime()
