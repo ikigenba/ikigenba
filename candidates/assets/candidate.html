@@ -83,8 +83,10 @@
      FMCSA link gives, as text, "12"; each empty when unknown),
      .Headcounts (the headcounts its links not gone carry, one per link
      that carries one, in link order, each with .Scraper (the scraper's
-     name, "ppp"), .Kind (the headcount's kind word as stored, "jobs" or
-     "drivers"), .Count (the count as text, "26") and .AsOf and .AsOfText
+     name, "ppp"), .Kind (the headcount's kind word as stored, "jobs",
+     "drivers" or "employees"), .Count (the count as text, "26"), .Hours
+     (the hours worked beside the count as text, "47840"; empty when
+     none, as for every scraper but osha_ita) and .AsOf and .AsOfText
      (the date it is as of, "2020-04-28", both the same; empty when
      none); empty when none), .BriefLabels (the labels of the newest
      brief result that did not fail, as the facts row holds them, free
@@ -156,9 +158,16 @@
      scrapes, "<scrapes URL>/runs/<.Run>/rows/<.SourceID>" built on the
      services entry; empty when the entry has none), .EIN (the reading's
      EIN, nine digits as text; empty when none, as for every source but
-     form5500), .Name, .Names (the reading's names in order, the row's
+     form5500 and osha_ita), .Name, .Names (the reading's names in order, the row's
      names then its derived names, a slice of strings; may be empty),
-     .City and .Zip (as last seen), .Reason ("source_key", "match_key", "ein" or "decision", as
+     .Establishment (the reading's establishment name, the site's, as
+     read; empty when none, as for every source but osha_ita), .City
+     and .Zip (as last seen), .Year (the filing year its source read,
+     "2024"; empty when none, as for every source but osha_ita),
+     .Employees (the annual average employees its source read, as text,
+     "23"; empty when none, as for every source but osha_ita) and .Hours
+     (the hours worked its source read, as text, "47840"; empty when
+     none, as for every source but osha_ita), .Reason ("source_key", "match_key", "ein" or "decision", as
      stored), .Confidence (two decimals), .Filed and .FiledText (the
      filing date its source read; empty when none), .FirstSeen and
      .FirstSeenText and .LastSeen and .LastSeenText (RFC 3339 UTC to the
@@ -359,7 +368,8 @@
      dd#facts-drivers (.Drivers, or when empty span.muted "unknown"), dt
      "Headcounts" then dd#facts-headcounts (one
      div[data-headcount=<.Kind>] per headcount holding .Count, a space,
-     .Kind in a code element, a space and span.muted holding .Scraper
+     .Kind in a code element, then, when .Hours is set, " over <.Hours>
+     hours", then a space and span.muted holding .Scraper
      and, when .AsOf is set, a space and time[datetime=<.AsOf>] with
      .AsOfText, or when empty span.muted "none"), dt "Brief labels" then
      dd#facts-brief-labels (one code[data-brief-label=<label>] per label,
@@ -461,14 +471,16 @@
      record attached to this candidate, linked to its row in scrapes. A
      gone record was absent from its scraper's latest run; it still counts
      for identity and no longer for the judgments."), then table#link-list
-     whose th read Scraper, Source ID, EIN, Name, Names, City, Zip, Reason, Confidence,
+     whose th read Scraper, Source ID, EIN, Name, Names, Establishment,
+     City, Zip, Year, Employees, Hours, Reason, Confidence,
      Filed, First seen, Last seen, Gone, with one
      tr[data-link=<.Scraper>:<.SourceID>] per link holding td.link-scraper
      (.Scraper in a code element), td.link-source (a.row-link, href
      .RowPage, holding .SourceID in a code element, when .RowPage is set,
      else the code element alone), td.link-ein (.EIN in a code element,
      empty when none), td.link-name, td.link-names (.Names joined by
-     " · ", empty when none), td.link-city, td.link-zip,
+     " · ", empty when none), td.link-establishment, td.link-city,
+     td.link-zip, td.link-year, td.link-employees.num, td.link-hours.num,
      td.link-reason (.Reason in a code element), td.link-confidence.num,
      td.link-filed (time with .FiledText, empty when none), td.link-first
      and td.link-last (each a time with the text form), and td.link-gone
@@ -659,7 +671,7 @@
 <dt>Fleet</dt><dd id="facts-fleet" data-fleet="{{.FleetVerdict}}">{{if eq .FleetVerdict "unknown"}}<span class="muted">{{.FleetVerdict}}</span>{{else}}{{.FleetVerdict}}{{end}}</dd>
 <dt>Trucks</dt><dd id="facts-power-units">{{if .PowerUnits}}{{.PowerUnits}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
 <dt>Drivers</dt><dd id="facts-drivers">{{if .Drivers}}{{.Drivers}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
-<dt>Headcounts</dt><dd id="facts-headcounts">{{range .Headcounts}}<div data-headcount="{{.Kind}}">{{.Count}} <code>{{.Kind}}</code> <span class="muted">{{.Scraper}}{{if .AsOf}} <time datetime="{{.AsOf}}">{{.AsOfText}}</time>{{end}}</span></div>{{else}}<span class="muted">none</span>{{end}}</dd>
+<dt>Headcounts</dt><dd id="facts-headcounts">{{range .Headcounts}}<div data-headcount="{{.Kind}}">{{.Count}} <code>{{.Kind}}</code>{{if .Hours}} over {{.Hours}} hours{{end}} <span class="muted">{{.Scraper}}{{if .AsOf}} <time datetime="{{.AsOf}}">{{.AsOfText}}</time>{{end}}</span></div>{{else}}<span class="muted">none</span>{{end}}</dd>
 <dt>Brief labels</dt><dd id="facts-brief-labels">{{range $i, $l := .BriefLabels}}{{if $i}} {{end}}<code data-brief-label="{{$l}}">{{$l}}</code>{{else}}<span class="muted">none</span>{{end}}</dd>
 <dt>Drive minutes</dt><dd id="facts-minutes"{{if .MinutesSource}} data-minutes-source="{{.MinutesSource}}"{{end}}>{{if .Minutes}}{{.Minutes}}{{else}}<span class="muted">unknown</span>{{end}}{{if eq .MinutesSource "route"}} <span class="badge" data-kind="info">routed</span>{{if .Miles}}<div data-route-miles>{{.Miles}} miles</div>{{end}}{{if .RouteAddress}}<div data-route-address>{{.RouteAddress}}</div>{{end}}{{if .RoutePlaceURL}}<div data-route-links><a class="map-link" data-route-place href="{{.RoutePlaceURL}}" target="_blank" rel="noopener noreferrer">map</a>{{if .RouteDirectionsURL}} · <a class="map-link" data-route-directions href="{{.RouteDirectionsURL}}" target="_blank" rel="noopener noreferrer">directions</a>{{end}}</div>{{end}}{{else if eq .MinutesSource "zip"}} <span class="muted">ZIP estimate</span>{{end}}</dd>
 <dt>Written</dt><dd id="facts-written">{{range .Written}}<div data-written="{{.Kind}}"><code>{{.Kind}}</code> <time datetime="{{.At}}">{{.AtText}}</time></div>{{else}}<span class="muted">never</span>{{end}}</dd>
@@ -740,7 +752,7 @@
 <header><div><h2 id="links-title">Evidence</h2><p>Each record attached to this candidate, linked to its row in scrapes. A gone record was absent from its scraper's latest run; it still counts for identity and no longer for the judgments.</p></div></header>
 <div class="table-scroll">
 <table id="link-list">
-<thead><tr><th>Scraper</th><th>Source ID</th><th>EIN</th><th>Name</th><th>Names</th><th>City</th><th>Zip</th><th>Reason</th><th class="num">Confidence</th><th>Filed</th><th>First seen</th><th>Last seen</th><th>Gone</th></tr></thead>
+<thead><tr><th>Scraper</th><th>Source ID</th><th>EIN</th><th>Name</th><th>Names</th><th>Establishment</th><th>City</th><th>Zip</th><th>Year</th><th class="num">Employees</th><th class="num">Hours</th><th>Reason</th><th class="num">Confidence</th><th>Filed</th><th>First seen</th><th>Last seen</th><th>Gone</th></tr></thead>
 <tbody>
 {{range $links}}<tr data-link="{{.Scraper}}:{{.SourceID}}">
 <td class="link-scraper"><code>{{.Scraper}}</code></td>
@@ -748,8 +760,12 @@
 <td class="link-ein">{{if .EIN}}<code>{{.EIN}}</code>{{end}}</td>
 <td class="link-name">{{.Name}}</td>
 <td class="link-names">{{range $i, $n := .Names}}{{if $i}} · {{end}}{{$n}}{{end}}</td>
+<td class="link-establishment">{{.Establishment}}</td>
 <td class="link-city">{{.City}}</td>
 <td class="link-zip">{{.Zip}}</td>
+<td class="link-year">{{.Year}}</td>
+<td class="link-employees num">{{.Employees}}</td>
+<td class="link-hours num">{{.Hours}}</td>
 <td class="link-reason"><code>{{.Reason}}</code></td>
 <td class="link-confidence num">{{.Confidence}}</td>
 <td class="link-filed">{{if .Filed}}<time datetime="{{.Filed}}">{{.FiledText}}</time>{{end}}</td>
