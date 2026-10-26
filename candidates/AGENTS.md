@@ -259,7 +259,15 @@ These rules govern the unit tests: everything `go test ./...` runs.
 - Offline: no network beyond loopback and Unix sockets, no real credentials.
 - Deterministic: time, randomness, and environment are injected; no test
   sleeps to wait for something. Clocks and timers are injected: a test hands
-  in a `Now`, a `Sleep`, an `After` and a `Rand` it controls.
+  in a `Now`, a `Sleep`, an `After` and a `Rand` it controls. The one
+  exception is the database's own busy timeout: appkit's `db.Open` sets a
+  fixed five-second `busy_timeout` that no seam shortens, so a test that
+  proves the store's retry of a busy write, by holding a write transaction
+  open on a second handle, waits that timeout out on every busy attempt
+  while the injected `Sleep` records the pauses. The suite holds one such
+  test that exhausts `store.WriteRetries`, about thirty seconds; every other
+  busy-write test releases the lock after the first attempt, about five
+  seconds each.
 - No fixed ports: a test binds `127.0.0.1:0` or a Unix socket in a
   temporary directory.
 - Isolated: a test touches only its own temporary directory, never the
@@ -287,8 +295,9 @@ and `t.TempDir()` can exceed it), names it in `NOTIFY_SOCKET`, and waits for
 `READY=1` with a deadline that fails the test. A test waits on the clock in
 two places only, because there the deadline is the behavior: a drain test,
 which keeps that wait to a few seconds, and a test that a pass reaches `done`
-within the deadline a requirement states. The gates run offline as an
-ordinary user, with no systemd.
+within the deadline a requirement states; a busy-write test's wait on the
+database's busy timeout is the exception the test discipline above names.
+The gates run offline as an ordinary user, with no systemd.
 
 **The siblings are faked on loopback.** No test reaches scrapes. A
 `Run`-level test writes a services file whose `scrapes` entry names a Unix
