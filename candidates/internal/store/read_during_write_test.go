@@ -51,7 +51,10 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 		struct {
 			name string
 			call func() (any, error)
-		}{"DueEnrichments", func() (any, error) { return f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 100) }},
+		}{"DueEnrichments", func() (any, error) {
+			_, due, err := f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 100)
+			return due, err
+		}},
 		struct {
 			name string
 			call func() (any, error)
@@ -132,7 +135,7 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 			return err
 		},
 		func() error { _, err := f.s.Judge(ctx, []string{id}); return err },
-		func() error { return f.s.FillFacts(ctx) },
+		func() error { return func() error { _, e := f.s.FillFacts(ctx, "", 500); return e }() },
 		func() error { _, _, err := f.s.Derive(ctx, "link_facts", "", false, 10); return err },
 		func() error {
 			_, err := f.s.AddEnrichments(ctx, []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "fixture.test", Source: "fixture.test", Found: websiteFound(website.Result{State: sources.WebsiteNone})}})

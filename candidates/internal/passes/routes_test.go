@@ -53,7 +53,7 @@ func routeCandidates(t *testing.T, f *fixture, n int, empty bool) ([]string, str
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.st.JudgeAll(t.Context()); err != nil {
+	if _, _, err = f.st.JudgeAll(t.Context(), "", 10000, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatal(err)
 	}
 	pl, err := f.st.CreateProspectList(t.Context(), store.ProspectList{Name: "Route targets", Size: int64(n), CreatedUserID: "owner"})
@@ -87,7 +87,7 @@ func routeAnswer(r *http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header), Request: r}, nil
 }
 
-// R-XP75-U61K R-K51J-USRD R-K69G-8KI2 R-K7HC-MC8R R-K9X5-DVQ5 R-KB51-RNGU R-KESQ-WYOX R-K3TN-H10O
+// R-D2CS-LXL5 R-K51J-USRD R-K69G-8KI2 R-K7HC-MC8R R-K9X5-DVQ5 R-KB51-RNGU R-KESQ-WYOX R-GJ9Z-6DFI
 func TestRouteTargetsResultsCountsAndRepeat(t *testing.T) {
 	if passes.RoutesInFlight != 4 || passes.NoRouteKey == "" || strings.Contains(passes.NoRouteKey, "\n") || passes.NoRouteKey == passes.NoPrompt {
 		t.Fatal("route scheduling/copy")

@@ -385,7 +385,7 @@ func TestContractIDMinting(t *testing.T) {
 	}
 }
 
-// R-9EOK-BXVN R-YEPG-9BXK R-54T4-JTTI
+// R-9EOK-BXVN
 func TestContractPassWindowsAndPrune(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -434,22 +434,24 @@ func TestContractPassWindowsAndPrune(t *testing.T) {
 		}
 	}
 	for _, k := range []int64{0, -1} {
-		got, err = f.s.PrunePasses(ctx, k)
+		count, e := f.s.PrunePasses(ctx, k, 500)
+		err = e
 		contractError(t, err, store.ErrUnreachable)
-		if got != nil {
-			t.Fatal(got)
+		if count != 0 {
+			t.Fatal(count)
 		}
 	}
-	gone, err := f.s.PrunePasses(ctx, 2)
+	gone, err := f.s.PrunePasses(ctx, 2, 500)
 	contractOK(t, err)
-	contractEqual(t, gone, []store.Pass{ps[1], ps[0]})
+	contractEqual(t, gone, int64(2))
+	removed := []store.Pass{ps[1], ps[0]}
 	f.reopen()
-	for _, p := range gone {
+	for _, p := range removed {
 		_, err = f.s.GetPass(ctx, p.ID)
 		contractError(t, err, store.ErrNotFound)
 	}
 	for _, p := range ps {
-		if !slices.ContainsFunc(gone, func(q store.Pass) bool { return p.ID == q.ID }) {
+		if !slices.ContainsFunc(removed, func(q store.Pass) bool { return p.ID == q.ID }) {
 			retained, e := f.s.GetPass(ctx, p.ID)
 			contractOK(t, e)
 			contractEqual(t, retained, p)
@@ -460,15 +462,15 @@ func TestContractPassWindowsAndPrune(t *testing.T) {
 	contractEqual(t, left, []store.Pass{running})
 	_, err = f.s.FailPass(ctx, running.ID, store.ReasonInterrupted)
 	contractOK(t, err)
-	for _, p := range gone {
+	for _, p := range removed {
 		q, err := f.s.AddPass(ctx, store.Pass{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: p.Trigger, Delivery: p.Delivery})
 		contractOK(t, err)
 		_, err = f.s.FinishPass(ctx, q.ID, store.Counts{})
 		contractOK(t, err)
 	}
-	gone, err = f.s.PrunePasses(ctx, 100)
+	gone, err = f.s.PrunePasses(ctx, 100, 500)
 	contractOK(t, err)
-	if gone == nil || len(gone) != 0 {
+	if gone != 0 {
 		t.Fatal(gone)
 	}
 }
@@ -511,7 +513,7 @@ func TestContractZipReplacement(t *testing.T) {
 	}
 }
 
-// R-QBE3-755T R-47VU-80SR R-493Q-LSJG R-Z7Z1-FTQ8 R-578X-BDAW R-T3DU-KBYR R-5AWM-GOIZ R-5C4I-UG9O
+// R-QBE3-755T R-47VU-80SR R-493Q-LSJG R-578X-BDAW R-T3DU-KBYR R-5AWM-GOIZ R-5C4I-UG9O
 func TestContractBusinessRecordsPersistence(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -572,7 +574,7 @@ func TestContractBusinessRecordsPersistence(t *testing.T) {
 	e.Source = o2.Scraper
 	o2.Reading.Estimate = &e
 	contractAttach(t, f, "run-two", o2)
-	_, err = f.s.JudgeAll(ctx)
+	_, _, err = f.s.JudgeAll(ctx, "", 500, f.now)
 	contractOK(t, err)
 	es, err = f.s.Estimates(ctx, id)
 	contractOK(t, err)
@@ -640,9 +642,10 @@ func TestContractLinkReadOrder(t *testing.T) {
 	id := contractAttach(t, f, "old", obs...)[0]
 	f.now = f.now.Add(time.Minute)
 	contractAttach(t, f, "new", obs[3])
-	_, touched, err := f.s.MarkGone(ctx, "source-e", "new")
+	cursor, count, err := f.s.MarkGone(ctx, "source-e", "new", "", 500)
 	contractOK(t, err)
-	contractEqual(t, touched, []string{id})
+	contractEqual(t, cursor, "gone")
+	contractEqual(t, count, store.Counts{Gone: 1})
 	got, err := f.s.Links(ctx, id)
 	contractOK(t, err)
 	var keys []string
@@ -699,7 +702,7 @@ func TestContractCandidateWindowsAndFilters(t *testing.T) {
 	if page == nil || len(page) != 0 {
 		t.Fatal(page)
 	}
-	_, _, err = f.s.MarkGone(ctx, "source-z", "absent")
+	_, _, err = f.s.MarkGone(ctx, "source-z", "absent", "", 500)
 	contractOK(t, err)
 	page, err = f.s.ListCandidates(ctx, store.CandidateFilter{Phone: "320.555.0101"}, "", "", 20)
 	contractOK(t, err)
@@ -835,14 +838,14 @@ func contractSeed(t *testing.T, f *contractFixture) string {
 	ctx := context.Background()
 	id := contractAttach(t, f, "run-evidence", contractObservation("evidence", "Seed business", f.now.UTC().Truncate(time.Second)))[0]
 	contractOK(t, f.s.ReplaceZipDrive(ctx, map[string]int64{"55072": 42}))
-	_, err := f.s.JudgeAll(ctx)
+	_, _, err := f.s.JudgeAll(ctx, "", 500, f.now)
 	contractOK(t, err)
 	_, _, err = f.s.Decide(ctx, store.Ruling{Kind: store.KindInclude, Candidate: id, Why: "seed ruling", UserID: "owner"})
 	contractOK(t, err)
 	return id
 }
 
-// R-O25T-GHMS R-YID5-EN5N R-YEPG-9BXK R-5610-XLK7
+// R-O25T-GHMS R-YID5-EN5N R-5610-XLK7
 func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -860,7 +863,7 @@ func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 			contractOK(t, err)
 		}
 	}
-	_, err := f.s.PrunePasses(ctx, 1)
+	_, err := f.s.PrunePasses(ctx, 1, 500)
 	contractOK(t, err)
 	after := contractState(t, f)
 	after.passes = before.passes
@@ -876,7 +879,7 @@ func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	contractEqual(t, after, zipBefore)
 }
 
-// R-QEFR-MGTW R-OD8H-2EDG
+// R-LQ3B-JZSS R-OD8H-2EDG
 func TestContractAllMethodsUnavailable(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -909,11 +912,11 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 		}},
 		{"Enrichments", func(c context.Context) error { _, e := f.s.Enrichments(c, "missing"); return e }},
 		{"DueEnrichments", func(c context.Context) error {
-			_, e := f.s.DueEnrichments(c, sources.WebsiteCheck, "", 0)
+			_, _, e := f.s.DueEnrichments(c, sources.WebsiteCheck, "", 0)
 			return e
 		}},
 		{"Derive", func(c context.Context) error { _, _, e := f.s.Derive(c, "invalid", "", false, 0); return e }},
-		{"FillFacts", f.s.FillFacts},
+		{"FillFacts", func(c context.Context) error { _, e := f.s.FillFacts(c, "", 500); return e }},
 		{"GetFacts", func(c context.Context) error { _, e := f.s.GetFacts(c, id); return e }},
 		{"EnrichmentMark", func(c context.Context) error { _, e := f.s.EnrichmentMark(c); return e }},
 		{"EnrichmentAfter", func(c context.Context) error {
@@ -934,21 +937,21 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 		{"FindDelivered", func(c context.Context) error { _, e := f.s.FindDelivered(c, p.Delivery, p.Trigger); return e }},
 		{"ListPasses", func(c context.Context) error { _, e := f.s.ListPasses(c, "", "", 0); return e }},
 		{"RunningPasses", func(c context.Context) error { _, e := f.s.RunningPasses(c); return e }},
-		{"PrunePasses", func(c context.Context) error { _, e := f.s.PrunePasses(c, 0); return e }},
+		{"PrunePasses", func(c context.Context) error { _, e := f.s.PrunePasses(c, 0, 500); return e }},
 		{"Attach", func(c context.Context) error { _, _, e := f.s.Attach(c, "", false, nil); return e }},
 		{"AttachValid", func(c context.Context) error {
 			_, _, e := f.s.Attach(c, "changed", false, []store.Observation{contractObservation("new", "New business", f.now)})
 			return e
 		}},
-		{"MarkGone", func(c context.Context) error { _, _, e := f.s.MarkGone(c, "", ""); return e }},
-		{"MarkGoneValid", func(c context.Context) error { _, _, e := f.s.MarkGone(c, "source-z", "absent"); return e }},
+		{"MarkGone", func(c context.Context) error { _, _, e := f.s.MarkGone(c, "", "", "", 500); return e }},
+		{"MarkGoneValid", func(c context.Context) error { _, _, e := f.s.MarkGone(c, "source-z", "absent", "", 500); return e }},
 		{"Decide", func(c context.Context) error { _, _, e := f.s.Decide(c, store.Ruling{}); return e }},
 		{"DecideValid", func(c context.Context) error {
 			_, _, e := f.s.Decide(c, store.Ruling{Kind: store.KindExclude, Candidate: id, Why: "failure", UserID: "owner"})
 			return e
 		}},
 		{"Judge", func(c context.Context) error { _, e := f.s.Judge(c, []string{id}); return e }},
-		{"JudgeAll", func(c context.Context) error { _, e := f.s.JudgeAll(c); return e }},
+		{"JudgeAll", func(c context.Context) error { _, _, e := f.s.JudgeAll(c, "", 500, f.now); return e }},
 		{"ReplaceZipDrive", func(c context.Context) error { return f.s.ReplaceZipDrive(c, map[string]int64{"bad": -1}) }},
 		{"ReplaceZipDriveValid", func(c context.Context) error { return f.s.ReplaceZipDrive(c, nil) }},
 		{"ZipMinutes", func(c context.Context) error { _, e := f.s.ZipMinutes(c, "missing"); return e }},
@@ -1062,18 +1065,18 @@ func TestContractConcurrentStoreCalls(t *testing.T) {
 		func() error { _, e := f.s.GetPass(ctx, p.ID); return e },
 		func() error { _, e := f.s.ListPasses(ctx, "", "", 20); return e },
 		func() error { _, e := f.s.RunningPasses(ctx); return e },
-		func() error { _, e := f.s.PrunePasses(ctx, 20); return e },
+		func() error { _, e := f.s.PrunePasses(ctx, 20, 500); return e },
 		func() error {
 			_, _, e := f.s.Attach(ctx, "parallel-run", false, []store.Observation{contractObservation("parallel", "Parallel business", f.now.UTC().Truncate(time.Second))})
 			return e
 		},
-		func() error { _, _, e := f.s.MarkGone(ctx, "source-z", "parallel-run"); return e },
+		func() error { _, _, e := f.s.MarkGone(ctx, "source-z", "parallel-run", "", 500); return e },
 		func() error {
 			_, _, e := f.s.Decide(ctx, store.Ruling{Kind: store.KindInclude, Candidate: id, Why: "parallel", UserID: "owner"})
 			return e
 		},
 		func() error { _, e := f.s.Judge(ctx, []string{id}); return e },
-		func() error { _, e := f.s.JudgeAll(ctx); return e },
+		func() error { _, _, e := f.s.JudgeAll(ctx, "", 500, f.now); return e },
 		func() error { return f.s.ReplaceZipDrive(ctx, map[string]int64{"55072": 42}) },
 		func() error { _, e := f.s.ZipMinutes(ctx, "55072"); return e },
 		func() error { _, e := f.s.GetCandidate(ctx, id); return e },

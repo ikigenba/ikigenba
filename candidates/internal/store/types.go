@@ -2,6 +2,7 @@
 package store
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -17,6 +18,7 @@ type Config struct {
 	Now    func() time.Time
 	Rand   io.Reader
 	Origin string
+	Sleep  func(context.Context, time.Duration)
 }
 
 // Store owns the persisted service records.

@@ -229,18 +229,30 @@ func TestRunFollowOnPassKeepsLineage(t *testing.T) {
 	}
 }
 
-// R-GBFU-DOJ9
+// R-NCBD-DXB1
 func TestRunFillsFactsBeforeReady(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
-	id := seedRunWebsite(t, h, "ops@ready.test")
-	d, st := runStore(t, h.p.Dir, h.p.Now)
+	d, _ := runStore(t, h.p.Dir, h.p.Now)
+	st := store.New(d, store.Config{Now: h.p.Now, Rand: &secrecyBytes{}})
+	ids := []string{}
+	for i := 0; i < 2*passes.BatchSize+1; i++ {
+		_, cs, err := st.Attach(t.Context(), "fixture", false, []store.Observation{{Scraper: "fmcsa", SourceID: fmt.Sprint(i), Digest: fmt.Sprint(i), Reading: sources.Reading{Name: fmt.Sprintf("ready business %d", i), Email: "ops@ready.test"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, cs...)
+	}
 	found, err := json.Marshal(website.Result{State: sources.WebsiteHTTPS, URL: "https://ready.test/"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	es, err := st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "ready.test", Source: "ready.test", Found: found}})
-	if err != nil || len(es) != 1 {
-		t.Fatal(es, err)
+	var es []store.Enrichment
+	for _, id := range ids {
+		saved, err := st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "ready.test", Source: "ready.test", Found: found}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		es = append(es, saved...)
 	}
 	if err := d.Write(t.Context(), func(tx *sql.Tx) error { _, err := tx.ExecContext(t.Context(), "DELETE FROM facts"); return err }); err != nil {
 		t.Fatal(err)
@@ -250,9 +262,11 @@ func TestRunFillsFactsBeforeReady(t *testing.T) {
 	}
 	h.start()
 	d, st = runStore(t, h.p.Dir, h.p.Now)
-	f, err := st.GetFacts(t.Context(), id)
-	if err != nil || f.Website != sources.WebsiteHTTPS || f.WebsiteURL != "https://ready.test/" || len(f.Written) != 1 || f.Written[0].Kind != sources.WebsiteCheck || !f.Written[0].At.Equal(es[0].At) {
-		t.Fatal(f, err)
+	for i, id := range ids {
+		f, err := st.GetFacts(t.Context(), id)
+		if err != nil || f.Website != sources.WebsiteHTTPS || f.WebsiteURL != "https://ready.test/" || len(f.Written) != 1 || f.Written[0].Kind != sources.WebsiteCheck || !f.Written[0].At.Equal(es[i].At) {
+			t.Fatal(id, f, err)
+		}
 	}
 	if err := d.Close(); err != nil {
 		t.Fatal(err)
@@ -459,7 +473,7 @@ func TestRunRouteClientMatchesStandalone(t *testing.T) {
 	}
 }
 
-// R-XVAN-R0R1 R-8AIP-87V7
+// R-XVAN-R0R1 R-XQKF-BRHF
 func TestRunRouteTimeoutUsesProcessTimer(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
 	h.env["GOOGLE_MAPS_API_KEY"] = "fixture-key"

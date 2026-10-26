@@ -143,7 +143,7 @@ func TestPageCapValidationAndConcurrentAdds(t *testing.T) {
 	contractEqual(t, counts, store.PageCount{})
 }
 
-// R-QEFR-MGTW R-QBE3-755T
+// R-QBE3-755T
 func TestPageErrorsAndTimeNormalization(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -211,9 +211,9 @@ func TestOrdinaryWritesPreservePageCopies(t *testing.T) {
 	actions := []func() error{
 		func() error { _, e := f.s.AddEnrichments(ctx, []store.Enrichment{websiteResult(id, "none")}); return e },
 		func() error { _, _, e := f.s.Derive(ctx, "link_facts", "", true, 100); return e },
-		func() error { return f.s.FillFacts(ctx) },
+		func() error { return func() error { _, e := f.s.FillFacts(ctx, "", 500); return e }() },
 		func() error { _, e := f.s.Judge(ctx, []string{id}); return e },
-		func() error { _, e := f.s.JudgeAll(ctx); return e },
+		func() error { _, _, e := f.s.JudgeAll(ctx, "", 500, f.now); return e },
 		func() error { return f.s.ReplaceZipDrive(ctx, map[string]int64{"55072": 15}) },
 	}
 	for _, action := range actions {

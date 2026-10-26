@@ -23,7 +23,7 @@ func TestRulingLeavesEveryUntouchedCandidateAsStored(t *testing.T) {
 			r, _, err := f.st.Decide(regCtx, store.Ruling{Kind: store.KindSplit, Candidate: ids[0], Keys: []string{sources.SourceKey(c.Scraper, c.SourceID)}, Why: "separate businesses", UserID: "owner"})
 			regNoErr(t, err)
 			_, others := regAttach(t, f, "initial", regObs("other", "Different business"), regObs("unrelated", "Unrelated business"))
-			_, err = f.st.JudgeAll(regCtx)
+			_, _, err = f.st.JudgeAll(regCtx, "", 500, regTime(f))
 			regNoErr(t, err)
 			all := append([]string{ids[0], r.Other}, others...)
 			deriveAll(t, f.st)
@@ -99,7 +99,7 @@ func TestRulingLeavesEveryUntouchedCandidateAsStored(t *testing.T) {
 	}
 }
 
-// R-VFA1-PLHH
+// R-HYGP-I8LU
 func TestMovingRulingsDeriveEveryDisplayFieldAndStampOnlyChanges(t *testing.T) {
 	for _, kind := range []string{store.KindSplit, store.KindMerge} {
 		t.Run(kind, func(t *testing.T) {

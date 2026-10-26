@@ -148,7 +148,7 @@ func TestSubjectCarriesNewestPagesInOriginalURLOrderAndFacts(t *testing.T) {
 	due, err := f.s.DueAmong(ctx, enrichers.KindBrief, []string{id}, false)
 	contractOK(t, err)
 	contractEqual(t, due, []store.Due{{Candidate: id, Inputs: (enrichers.Brief{}).Inputs(subject)}})
-	window, err := f.s.DueEnrichments(ctx, enrichers.KindBrief, "", 10)
+	_, window, err := f.s.DueEnrichments(ctx, enrichers.KindBrief, "", 10)
 	contractOK(t, err)
 	contractEqual(t, window, due)
 }
@@ -232,7 +232,7 @@ func TestProspectListBriefUsesNewestAttemptAndIgnoresOtherKinds(t *testing.T) {
 	ctx := context.Background()
 	id := contractSeed(t, f)
 	other := enrichmentCandidate(t, f, "no-brief", "owner@no-brief.test")
-	_, err := f.s.JudgeAll(ctx)
+	_, _, err := f.s.JudgeAll(ctx, "", 100, f.now)
 	contractOK(t, err)
 	k := prospectListCreate(t, f, "newest brief attempts")
 	before := prospectListRead(t, f, k)

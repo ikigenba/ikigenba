@@ -99,13 +99,13 @@ func (e *Engine) targeted(ctx context.Context, en enrichers.Enricher, targets []
 	if _, ok := en.(enrichers.Deriver); ok {
 		n, err := e.cfg.Store.DeriveAmong(ctx, en.Kind(), targets, force)
 		if err != nil {
-			return store.Counts{}, store.ReasonStore
+			return store.Counts{}, e.storeFailure(ctx, err)
 		}
 		return store.Counts{Derived: n}, ""
 	}
 	ds, err := e.cfg.Store.DueAmong(ctx, en.Kind(), targets, force)
 	if err != nil {
-		return store.Counts{}, store.ReasonStore
+		return store.Counts{}, e.storeFailure(ctx, err)
 	}
 	if pr, ok := en.(enrichers.Prompter); ok {
 		return e.promptTargets(ctx, pr, ds)
@@ -142,6 +142,7 @@ func (e *Engine) fetchTargets(ctx context.Context, f enrichers.Fetcher, ds []sto
 		saved, err := e.cfg.Store.AddEnrichments(ctx, es)
 		if err != nil {
 			failed = true
+			e.storeFailure(ctx, err)
 			return
 		}
 		for _, v := range saved {
@@ -220,11 +221,11 @@ func (e *Engine) promptOne(ctx context.Context, pr enrichers.Prompter, d store.D
 	var total store.Counts
 	subject, err := e.cfg.Store.Subject(ctx, d.Candidate)
 	if err != nil {
-		return total, store.ReasonStore
+		return total, e.storeFailure(ctx, err)
 	}
 	before, err := e.cfg.Store.CountPages(ctx, d.Candidate)
 	if err != nil {
-		return total, store.ReasonStore
+		return total, e.storeFailure(ctx, err)
 	}
 	var start prompts.Start
 	for attempt := 0; attempt < StartTries; attempt++ {
@@ -260,7 +261,7 @@ func (e *Engine) promptOne(ctx context.Context, pr enrichers.Prompter, d store.D
 		}
 		after, err := e.cfg.Store.CountPages(ctx, d.Candidate)
 		if err != nil {
-			return total, store.ReasonStore
+			return total, e.storeFailure(ctx, err)
 		}
 		r := pr.Found(ctx, out, after.URLs)
 		if !pr.Valid(r.Found) {
@@ -271,7 +272,7 @@ func (e *Engine) promptOne(ctx context.Context, pr enrichers.Prompter, d store.D
 		}
 		_, err = e.cfg.Store.AddEnrichments(ctx, []store.Enrichment{{Candidate: d.Candidate, Kind: pr.Kind(), Inputs: d.Inputs, Source: r.Source, Found: r.Found, Cost: r.Cost}})
 		if err != nil {
-			return total, store.ReasonStore
+			return total, e.storeFailure(ctx, err)
 		}
 		if pr.Failed(r.Found) {
 			total.RunsFailed = 1

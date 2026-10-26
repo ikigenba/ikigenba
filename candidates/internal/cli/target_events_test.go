@@ -151,7 +151,7 @@ func TestRunTargetedEnrichEvents(t *testing.T) {
 	}
 }
 
-// R-8AIP-87V7
+// R-XQKF-BRHF
 func TestRunPassTimersHavePermittedDurationsAndScope(t *testing.T) {
 	t.Run("add_page", func(t *testing.T) {
 		h := newRunHarness(t, t.TempDir(), "")

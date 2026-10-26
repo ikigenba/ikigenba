@@ -120,7 +120,7 @@ func TestPagingRefusalsBeforeStoreAndSchema(t *testing.T) {
 	}
 }
 
-// R-KT7C-9O87
+// R-04L8-FSDL
 func TestStoredJudgmentsChangeOnlyAtJudge(t *testing.T) {
 	f := newFixture(t)
 	f.now = time.Date(2021, 6, 1, 0, 0, 0, 0, time.UTC)
@@ -136,7 +136,8 @@ func TestStoredJudgmentsChangeOnlyAtJudge(t *testing.T) {
 	if _, _, err = f.st.Attach(t.Context(), "run-judged", true, []store.Observation{{Scraper: "fmcsa", SourceID: links[0].SourceID, Digest: "changed-evidence", Reading: reading}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.st.JudgeAll(t.Context()); err != nil {
+	f.now = time.Date(2023, 7, 4, 0, 0, 0, 0, time.UTC)
+	if err = walkJudgments(t.Context(), f.st, time.Date(2021, 6, 1, 0, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatal(err)
 	}
 	first := decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: ids[0]}))
@@ -157,7 +158,8 @@ func TestStoredJudgmentsChangeOnlyAtJudge(t *testing.T) {
 	}
 	f.now = time.Date(2023, 7, 4, 0, 0, 0, 0, time.UTC)
 	success(t, f.call("candidate", tools.CandidateArgs{Candidate: ids[0]}), first)
-	if _, err = f.st.JudgeAll(t.Context()); err != nil {
+	f.now = time.Date(2021, 6, 1, 0, 0, 0, 0, time.UTC)
+	if err = walkJudgments(t.Context(), f.st, time.Date(2023, 7, 4, 0, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatal(err)
 	}
 	updated := decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: ids[0]}))
@@ -191,7 +193,7 @@ func TestStoredJudgmentsChangeOnlyAtJudge(t *testing.T) {
 	if _, _, err = f.st.Attach(t.Context(), "run-no-evidence", true, []store.Observation{{Scraper: "fmcsa", SourceID: links[0].SourceID, Digest: "no-evidence", Reading: reading}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.st.JudgeAll(t.Context()); err != nil {
+	if err = walkJudgments(t.Context(), f.st, f.now); err != nil {
 		t.Fatal(err)
 	}
 	result := decode(t, f.call("candidate", tools.CandidateArgs{Candidate: ids[0]}))

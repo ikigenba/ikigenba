@@ -121,7 +121,7 @@ func newFixture(t *testing.T, h http.HandlerFunc, available bool) *fixture {
 		sc = scrapes.NewClient(scrapes.ClientConfig{Service: services.Entry{Name: "scrapes", Socket: sock}, Telemetry: f.w})
 	}
 	f.sc = sc
-	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), sc, nil, f.w, f.em, nil, nil, nil})
+	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), sc, nil, f.w, f.em, nil, nil, nil, nil})
 	t.Cleanup(func() {
 		f.eng.Drain(context.Background())
 		f.em.Shutdown(context.Background())
@@ -490,7 +490,7 @@ func TestFullIngestBackgroundIdentityAndEvents(t *testing.T) {
 	}
 }
 
-// R-XU3S-47RZ R-MRCN-18AW R-3QEZ-TBSF R-Z3M9-W116 R-6535-96IL
+// R-H1KG-WXJX R-XU84-H2PI R-3QEZ-TBSF R-Z3M9-W116 R-WT12-CHE3
 func TestIngestAndFullIngest(t *testing.T) {
 	var stateMu sync.Mutex
 	rows := 3
@@ -578,7 +578,7 @@ func TestIngestAndFullIngest(t *testing.T) {
 		t.Fatal(err)
 	}
 	end := f.ended(p.ID)
-	if end.Status != store.StatusDone || end.Created != 0 || end.Changed != 3 || end.Rows != 3 {
+	if end.Status != store.StatusDone || end.Created != 0 || end.Changed != 0 || end.Linked != 0 || end.Unchanged != 3 || end.Rows != 3 {
 		t.Fatal(end)
 	}
 	for _, id := range ids {
@@ -601,7 +601,7 @@ func TestIngestAndFullIngest(t *testing.T) {
 	}
 }
 
-// R-Z4U6-9SRV R-3WIH-Q6HW R-384I-2RO0 R-W097-GLQH
+// R-Z4U6-9SRV R-3WIH-Q6HW R-384I-2RO0 R-HG79-I6G9
 func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	released, firstBatch := make(chan struct{}), make(chan struct{})
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -679,7 +679,7 @@ func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	}
 }
 
-// R-384I-2RO0 R-3WIH-Q6HW R-W097-GLQH
+// R-384I-2RO0 R-3WIH-Q6HW R-HG79-I6G9
 func TestFailedReads(t *testing.T) {
 	for _, mode := range []string{"short", "500", "malformed", "not_done", "missing_current", "dead"} {
 		t.Run(mode, func(t *testing.T) {
@@ -735,7 +735,7 @@ func TestFailedReads(t *testing.T) {
 	}
 }
 
-// R-TD51-MHWB R-ZH16-3I6T R-W097-GLQH R-YOZH-AS4U
+// R-TD51-MHWB R-ZH16-3I6T R-HG79-I6G9 R-YOZH-AS4U
 func TestDrainCancelsReadsAndPendingDelivery(t *testing.T) {
 	for _, which := range []string{"rows", "record"} {
 		t.Run(which, func(t *testing.T) {
@@ -926,7 +926,7 @@ func (r *failCandidateRandom) Read(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// R-W097-GLQH
+// R-HG79-I6G9
 func TestStoreFailureReason(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/current") {
@@ -937,7 +937,7 @@ func TestStoreFailureReason(t *testing.T) {
 	}, true)
 	f.eng.Drain(context.Background())
 	f.st = store.New(f.d, store.Config{Now: func() time.Time { return time.Unix(100000, 0) }, Rand: &failCandidateRandom{}})
-	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), f.sc, nil, f.w, f.em, nil, nil, nil})
+	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), f.sc, nil, f.w, f.em, nil, nil, nil, nil})
 	p, err := f.eng.Ingest(context.Background(), identity.Caller{UserID: "owner"}, "")
 	if err != nil {
 		t.Fatal(err)
@@ -1034,7 +1034,7 @@ func TestDrainDeadlineWhileEndingHeld(t *testing.T) {
 		}
 		return time.Unix(100000, 0)
 	}, Rand: &random{}})
-	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), f.sc, nil, f.w, f.em, nil, nil, nil})
+	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), f.sc, nil, f.w, f.em, nil, nil, nil, nil})
 	p, err := f.eng.Ingest(context.Background(), identity.Caller{UserID: "owner"}, "")
 	if err != nil {
 		t.Fatal(err)

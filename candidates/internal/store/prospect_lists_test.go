@@ -585,7 +585,7 @@ func prospectListPopulation(t *testing.T, f *contractFixture) []string {
 		ids = append(ids, contractAttach(t, f, "run", o)[0])
 	}
 	deriveAll(t, f.s)
-	_, e := f.s.JudgeAll(ctx)
+	_, _, e := f.s.JudgeAll(ctx, "", 500, f.now)
 	contractOK(t, e)
 	return ids
 }
@@ -932,7 +932,7 @@ func TestProspectListOperatingOrderUsesRoundedKey(t *testing.T) {
 		ids = append(ids, contractAttach(t, f, "run", o)[0])
 	}
 	deriveAll(t, f.s)
-	_, e := f.s.JudgeAll(ctx)
+	_, _, e := f.s.JudgeAll(ctx, "", 500, f.now)
 	contractOK(t, e)
 	a, e := f.s.GetJudgments(ctx, ids[0])
 	contractOK(t, e)
@@ -956,7 +956,7 @@ func TestProspectListCategoryMatchesAnyJudgmentsCategory(t *testing.T) {
 	o.Reading.Category = sources.CategoryConstruction
 	contractAttach(t, f, "run", o)
 	deriveAll(t, f.s)
-	_, e := f.s.JudgeAll(ctx)
+	_, _, e := f.s.JudgeAll(ctx, "", 500, f.now)
 	contractOK(t, e)
 	_, e = f.s.GetJudgments(ctx, id)
 	contractOK(t, e)
@@ -989,7 +989,7 @@ func TestProspectListWebsiteFiltersReadStoredJudgment(t *testing.T) {
 		}
 	}
 	deriveAll(t, f.s)
-	_, e := f.s.JudgeAll(ctx)
+	_, _, e := f.s.JudgeAll(ctx, "", 500, f.now)
 	contractOK(t, e)
 	c := prospectListCreate(t, f, "Websites")
 	for _, tc := range []struct {

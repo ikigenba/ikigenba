@@ -11,11 +11,14 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-KQRJ-I4QT R-RT1O-11SD R-QR8S-65SU R-KVN5-17PL
+// R-KQRJ-I4QT R-RT1O-11SD R-QR8S-65SU R-0ECF-HYB5
 func TestCategoryEvidenceAnswers(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(3)
 	if _, _, err := f.st.Derive(t.Context(), enrichers.KindLinkFacts, "", false, 100); err != nil {
+		t.Fatal(err)
+	}
+	if err := walkJudgments(t.Context(), f.st, f.now); err != nil {
 		t.Fatal(err)
 	}
 	co := f.create("category-evidence-prospect_list")

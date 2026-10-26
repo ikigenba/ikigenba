@@ -92,7 +92,7 @@ func TestPPPHeadcountRequiresDerivedFacts(t *testing.T) {
 	contractEqual(t, len(estimates), 2)
 	contractEqual(t, estimates[0], *carrier.Reading.Estimate)
 	contractEqual(t, estimates[1].Source, judging.HeadcountSource)
-	_, _, err = f.s.MarkGone(ctx, ppp.Name, "absent")
+	_, _, err = f.s.MarkGone(ctx, ppp.Name, "absent", "", 100)
 	contractOK(t, err)
 	_, _, err = f.s.Derive(ctx, enrichers.KindLinkFacts, "", true, 100)
 	contractOK(t, err)

@@ -115,7 +115,7 @@ func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg.ServicesPath = servicesPath
-	if _, err = cfg.Store.JudgeAll(ctx); err != nil {
+	if err = judgePageFixture(ctx, cfg.Store); err != nil {
 		t.Fatal(err)
 	}
 	prospectList, err := cfg.Store.CreateProspectList(ctx, store.ProspectList{Name: "fixture-prospect_list", Size: 10, CreatedUserID: "fixture-owner"})

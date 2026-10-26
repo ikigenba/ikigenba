@@ -53,7 +53,7 @@ func TestCampaignFilterCalendarBoundariesAndEffectiveTimes(t *testing.T) {
 			}
 		}
 	}
-	_, err := f.s.JudgeAll(ctx)
+	_, _, err := f.s.JudgeAll(ctx, "", 500, f.now)
 	contractOK(t, err)
 	k, err := f.s.CreateProspectList(ctx, store.ProspectList{Name: "campaign filter", Size: 100, CreatedUserID: "owner", Filters: store.ProspectListFilters{MinCampaignAgeDays: ptrInt(30)}})
 	contractOK(t, err)

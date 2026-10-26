@@ -19,7 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-VMUB-94KU
+// R-H8VV-7K03
 func TestFullIngestReprojectsUnchangedLinkFacts(t *testing.T) {
 	ctx := context.Background()
 	rows := []scrapes.Row{

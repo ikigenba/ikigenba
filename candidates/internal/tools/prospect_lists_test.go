@@ -527,7 +527,7 @@ func TestUnjudgedCandidateAndPrunedPass(t *testing.T) {
 		}
 		f.now = f.now.Add(time.Second)
 	}
-	if _, err = f.st.PrunePasses(t.Context(), 1); err != nil {
+	if _, err = f.st.PrunePasses(t.Context(), 1, 500); err != nil {
 		t.Fatal(err)
 	}
 	refusal(t, f.call("pass", tools.PassArgs{Pass: first}), passes.RefusalNotFound, tools.RefuseNotFound)

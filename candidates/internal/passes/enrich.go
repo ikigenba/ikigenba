@@ -95,7 +95,7 @@ func (e *Engine) enrich(ctx context.Context, kind string) (store.Counts, string)
 		if _, ok := en.(enrichers.Deriver); ok {
 			n, err := e.derive(ctx, en.Kind(), false)
 			if err != nil {
-				return total, store.ReasonStore
+				return total, e.storeFailure(ctx, err)
 			}
 			total.Derived += n
 			continue
@@ -124,13 +124,13 @@ func (e *Engine) fetch(ctx context.Context, fetcher enrichers.Fetcher) (store.Co
 	var total store.Counts
 	mark, err := e.cfg.Store.EnrichmentMark(ctx)
 	if err != nil {
-		return total, store.ReasonStore
+		return total, e.storeFailure(ctx, err)
 	}
 	after := ""
 	for {
 		selection, err := e.enrichSelection(ctx, after)
 		if err != nil {
-			return total, store.ReasonStore
+			return total, e.storeFailure(ctx, err)
 		}
 		if selection.after == "" {
 			return total, ""
@@ -155,6 +155,7 @@ func (e *Engine) fetch(ctx context.Context, fetcher enrichers.Fetcher) (store.Co
 			saved, err := e.cfg.Store.AddEnrichments(ctx, es)
 			if err != nil {
 				failed = true
+				e.storeFailure(ctx, err)
 				return
 			}
 			for _, v := range saved {
@@ -178,12 +179,12 @@ func (e *Engine) fetch(ctx context.Context, fetcher enrichers.Fetcher) (store.Co
 				continue
 			}
 			if err != nil {
-				return total, store.ReasonStore
+				return total, e.storeFailure(ctx, err)
 			}
 			write(dom, enrichers.Result{Source: prev.Source, Found: prev.Found, Cost: prev.Cost})
 		}
 		if failed || ctx.Err() != nil {
-			return total, store.ReasonStore
+			return total, e.storeFailure(ctx, err)
 		}
 		total.Fetched += int64(len(unchecked))
 		for start := 0; start < len(unchecked); start += website.Concurrency {
@@ -195,13 +196,13 @@ func (e *Engine) fetch(ctx context.Context, fetcher enrichers.Fetcher) (store.Co
 				select {
 				case <-after(website.Interval):
 				case <-ctx.Done():
-					return total, store.ReasonStore
+					return total, e.storeFailure(ctx, err)
 				}
 			}
 			end := min(start+website.Concurrency, len(unchecked))
 			fetcher.Fetch(ctx, unchecked[start:end], write)
 			if failed || ctx.Err() != nil {
-				return total, store.ReasonStore
+				return total, e.storeFailure(ctx, err)
 			}
 		}
 	}
@@ -217,15 +218,15 @@ type enrichmentSelection struct {
 }
 
 func (e *Engine) enrichSelection(ctx context.Context, after string) (enrichmentSelection, error) {
-	batch, err := e.cfg.Store.DueEnrichments(ctx, sources.WebsiteCheck, after, BatchSize)
+	next, batch, err := e.cfg.Store.DueEnrichments(ctx, sources.WebsiteCheck, after, BatchSize)
 	if err != nil {
 		return enrichmentSelection{}, err
 	}
-	out := enrichmentSelection{groups: make(map[string][]string), domains: make([]string, 0, len(batch))}
+	out := enrichmentSelection{after: next, groups: make(map[string][]string), domains: make([]string, 0, len(batch))}
 	if len(batch) == 0 {
 		return out, nil
 	}
-	out.after = batch[len(batch)-1].Candidate
+
 	for _, c := range batch {
 		dom := c.Inputs
 		if dom == "" {

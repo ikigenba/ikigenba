@@ -21,7 +21,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-K3TN-H10O R-MRCN-18AW R-3QEZ-TBSF R-6535-96IL R-63V8-VERW
+// R-GJ9Z-6DFI R-XU84-H2PI R-3QEZ-TBSF R-WT12-CHE3 R-XWNX-8M6W
 func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 	for _, fullIngest := range []bool{false, true} {
 		t.Run(fmt.Sprint(fullIngest), func(t *testing.T) {
@@ -87,13 +87,16 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 					touched[id] = true
 				}
 			}
-			counts, ids, err := expected.st.MarkGone(ctx, "fmcsa", "write-run")
-			if err != nil {
-				t.Fatal(err)
-			}
-			total.Gone = counts.Gone
-			for _, id := range ids {
-				touched[id] = true
+			for after := ""; ; {
+				next, counts, err := expected.st.MarkGone(ctx, "fmcsa", "write-run", after, passes.BatchSize)
+				if err != nil {
+					t.Fatal(err)
+				}
+				total.Gone += counts.Gone
+				if next == "" {
+					break
+				}
+				after = next
 			}
 			total.Rows = int64(len(rows))
 			if fullIngest {
@@ -111,14 +114,21 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 						after = next
 					}
 				}
-				counts, err = expected.st.JudgeAll(ctx)
-				if err != nil {
-					t.Fatal(err)
+				for after := ""; ; {
+					next, counts, err := expected.st.JudgeAll(ctx, after, passes.BatchSize, time.Unix(100000, 0))
+					if err != nil {
+						t.Fatal(err)
+					}
+					total.Judged += counts.Judged
+					total.Unranged += counts.Unranged
+					if next == "" {
+						break
+					}
+					after = next
 				}
-				total.Judged = counts.Judged
-				total.Unranged = counts.Unranged
 			}
 			var p store.Pass
+			var err error
 			if fullIngest {
 				p, err = actual.eng.Ingest(ctx, identity.Caller{UserID: "owner"}, "")
 				if err != nil {

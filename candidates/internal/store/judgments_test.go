@@ -21,7 +21,7 @@ func near(t *testing.T, p *float64, w float64) {
 	}
 }
 
-// R-5J4Y-DB63 R-5LKR-4UNH R-Q42O-WIPN R-5HX1-ZJFE R-5KCU-R2WS
+// R-5J4Y-DB63 R-5LKR-4UNH R-5HX1-ZJFE R-5KCU-R2WS
 func TestJudgmentsAggregateAndPersist(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -111,9 +111,9 @@ func TestJudgmentsAggregateAndPersist(t *testing.T) {
 	contractOK(t, err)
 	contractEqual(t, persisted, got)
 	// Gone PPP evidence and its estimate no longer contribute.
-	_, _, err = f.s.MarkGone(ctx, ppp.Name, "absent")
+	_, _, err = f.s.MarkGone(ctx, ppp.Name, "absent", "", 500)
 	contractOK(t, err)
-	_, err = f.s.JudgeAll(ctx)
+	_, _, err = f.s.JudgeAll(ctx, "", 500, f.now)
 	contractOK(t, err)
 	got, err = f.s.GetJudgments(ctx, id)
 	contractOK(t, err)
@@ -147,7 +147,7 @@ func TestConcurrentIngestAndJudgments(t *testing.T) {
 		b.SourceID = "extra"
 		_, _, e := f.s.Attach(ctx, "next", false, []store.Observation{b})
 		return e
-	}, func() error { _, _, e := f.s.MarkGone(ctx, a.Scraper, "next"); return e }, func() error { _, e := f.s.Judge(ctx, ids); return e }, func() error { _, e := f.s.JudgeAll(ctx); return e }, func() error { return f.s.FillFacts(ctx) }, func() error { _, _, e := f.s.Derive(ctx, "link_facts", "", false, 10); return e }, func() error {
+	}, func() error { _, _, e := f.s.MarkGone(ctx, a.Scraper, "next", "", 500); return e }, func() error { _, e := f.s.Judge(ctx, ids); return e }, func() error { _, _, e := f.s.JudgeAll(ctx, "", 500, f.now); return e }, func() error { return func() error { _, e := f.s.FillFacts(ctx, "", 500); return e }() }, func() error { _, _, e := f.s.Derive(ctx, "link_facts", "", false, 10); return e }, func() error {
 		results, e := f.s.AddEnrichments(ctx, []store.Enrichment{{Candidate: ids[1], Kind: sources.WebsiteCheck, Inputs: "fixture.test", Source: "fixture.test", Found: websiteFound(website.Result{State: sources.WebsiteHTTPS, URL: "https://race.example.test/"})}})
 		added <- results
 		return e
@@ -183,7 +183,7 @@ func TestConcurrentIngestAndJudgments(t *testing.T) {
 	}
 }
 
-// R-5XOA-44OS R-VFA1-PLHH
+// R-5XOA-44OS
 func TestGivingLinksFillDisplayFields(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -208,7 +208,7 @@ func TestGivingLinksFillDisplayFields(t *testing.T) {
 	contractEqual(t, c.Class, a.Reading.Class)
 	contractEqual(t, c.People, a.Reading.People)
 	contractEqual(t, c.Cargo, a.Reading.Cargo)
-	_, _, e = f.s.MarkGone(ctx, a.Scraper, "absent")
+	_, _, e = f.s.MarkGone(ctx, a.Scraper, "absent", "", 500)
 	contractOK(t, e)
 	c, e = f.s.GetCandidate(ctx, id)
 	contractOK(t, e)
@@ -217,7 +217,7 @@ func TestGivingLinksFillDisplayFields(t *testing.T) {
 	contractEqual(t, c.Class, "")
 	contractEqual(t, c.People, []sources.Person{})
 	contractEqual(t, c.Cargo, a.Reading.Cargo)
-	_, _, e = f.s.MarkGone(ctx, b.Scraper, "absent")
+	_, _, e = f.s.MarkGone(ctx, b.Scraper, "absent", "", 500)
 	contractOK(t, e)
 	c, e = f.s.GetCandidate(ctx, id)
 	contractOK(t, e)
@@ -394,15 +394,15 @@ func TestJudgmentFleetUsesOnlyFreshestLiveFMCSA(t *testing.T) {
 		contractEqual(t, factsAt(ctx, t, f.s, id).Drivers, drivers)
 	}
 	check(sources.FleetFail, ptrInt(1), nil)
-	_, _, e := f.s.MarkGone(ctx, fmcsa.Name, "older")
+	_, _, e := f.s.MarkGone(ctx, fmcsa.Name, "older", "", 500)
 	contractOK(t, e)
 	check(sources.FleetPass, ptrInt(5), ptrInt(6))
-	_, _, e = f.s.MarkGone(ctx, fmcsa.Name, "none")
+	_, _, e = f.s.MarkGone(ctx, fmcsa.Name, "none", "", 500)
 	contractOK(t, e)
 	check(sources.FleetUnknown, nil, nil)
 }
 
-// R-Q42O-WIPN R-5LKR-4UNH
+// R-5LKR-4UNH
 func TestJudgeAllAgreesWithExplicitActiveIDs(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -417,7 +417,7 @@ func TestJudgeAllAgreesWithExplicitActiveIDs(t *testing.T) {
 	explicit, e := f.s.Judge(ctx, ids)
 	contractOK(t, e)
 	before := contractState(t, f)
-	all, e := f.s.JudgeAll(ctx)
+	_, all, e := f.s.JudgeAll(ctx, "", 500, f.now)
 	contractOK(t, e)
 	contractEqual(t, all, explicit)
 	contractEqual(t, contractState(t, f), before)
@@ -435,7 +435,7 @@ func TestRulingJudgmentsUpdateProspectListMembership(t *testing.T) {
 	ctx := context.Background()
 	ids := contractAttach(t, f, "run", contractObservation("a", "Alpha", f.now), contractObservation("b", "Beta", f.now))
 	deriveAll(t, f.s)
-	_, e := f.s.JudgeAll(ctx)
+	_, _, e := f.s.JudgeAll(ctx, "", 500, f.now)
 	contractOK(t, e)
 	prospectList, e := f.s.CreateProspectList(ctx, store.ProspectList{Name: "Membership", Size: store.ProspectListSizeMax, CreatedUserID: "owner"})
 	contractOK(t, e)
@@ -486,7 +486,7 @@ func TestMovingRulingsWriteTheSameJudgmentsAsJudge(t *testing.T) {
 	b.Reading.Headcount = &sources.Headcount{Scraper: fmcsa.Name, Kind: sources.HeadcountDrivers, Count: 8, AsOf: b.Reading.Filed}
 	id := contractAttach(t, f, "run", a, b)[0]
 	deriveAll(t, f.s)
-	_, e := f.s.JudgeAll(ctx)
+	_, _, e := f.s.JudgeAll(ctx, "", 500, f.now)
 	contractOK(t, e)
 	split, cs, e := f.s.Decide(ctx, store.Ruling{Kind: store.KindSplit, Candidate: id, Keys: []string{sources.SourceKey(b.Scraper, b.SourceID)}, Why: "Separate businesses", UserID: "owner"})
 	contractOK(t, e)

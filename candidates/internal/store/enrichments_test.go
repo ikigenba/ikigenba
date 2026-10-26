@@ -39,7 +39,7 @@ func websiteResult(id, state string) store.Enrichment {
 	return store.Enrichment{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "business.test", Source: "business.test", Found: websiteFound(website.Result{State: state, URL: "https://business.test/", StatusCode: 200}), Cost: .02}
 }
 
-// R-ITE3-1VTC R-GDOT-3LA9 R-P56L-P5D0 R-GHCI-8WIC
+// R-GDOT-3LA9 R-P56L-P5D0
 func TestEnrichmentShapesAndMethods(t *testing.T) {
 	e := websiteResult("candidate", sources.WebsiteHTTPS)
 	contractEqual(t, store.Enrichment(struct {
@@ -77,7 +77,7 @@ func TestEnrichmentShapesAndMethods(t *testing.T) {
 	st := contractDB(t).s
 	checkMethods := func(
 		add func(context.Context, []store.Enrichment) ([]store.Enrichment, error),
-		due func(context.Context, string, string, int) ([]store.Due, error),
+		due func(context.Context, string, string, int) (string, []store.Due, error),
 		derive func(context.Context, string, string, bool, int) (string, int64, error),
 	) {
 		if add == nil || due == nil || derive == nil {
@@ -87,7 +87,7 @@ func TestEnrichmentShapesAndMethods(t *testing.T) {
 	checkMethods(st.AddEnrichments, st.DueEnrichments, st.Derive)
 }
 
-// R-IY9O-KYS4 R-GR3P-B2FW R-GSBL-OU6L R-GX77-7X5D R-Q3GO-6J5N R-Q74D-BUDQ
+// R-IY9O-KYS4 R-GR3P-B2FW R-GSBL-OU6L R-GX77-7X5D
 func TestEnrichmentAppendAndMark(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -152,23 +152,23 @@ func TestInvalidEnrichmentsAreAtomic(t *testing.T) {
 	}
 }
 
-// R-OO40-CCZA R-P6EI-2X3P R-O45V-JGI2 R-JB0U-TP20
+// R-OO40-CCZA
 func TestDueUsesInputs(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
 	id := enrichmentCandidate(t, f, "due", "office@business.test")
-	ds, err := f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 1)
+	_, ds, err := f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 1)
 	contractOK(t, err)
 	contractEqual(t, ds, []store.Due{{Candidate: id, Inputs: "business.test"}})
 	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{websiteResult(id, sources.WebsiteHTTPS)})
 	contractOK(t, err)
 	f.now = f.now.AddDate(10, 0, 0)
-	ds, err = f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 1)
+	_, ds, err = f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 1)
 	contractOK(t, err)
 	contractEqual(t, ds, []store.Due{})
-	_, err = f.s.DueEnrichments(ctx, "invalid", "", 1)
+	_, _, err = f.s.DueEnrichments(ctx, "invalid", "", 1)
 	contractError(t, err, store.ErrUnreachable)
-	_, err = f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 0)
+	_, _, err = f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 0)
 	contractError(t, err, store.ErrUnreachable)
 }
 
@@ -206,7 +206,7 @@ func TestDeriveFactsAndFill(t *testing.T) {
 	contractOK(t, err)
 	before, err := f.s.GetFacts(ctx, id)
 	contractOK(t, err)
-	contractOK(t, f.s.FillFacts(ctx))
+	contractOK(t, func() error { _, e := f.s.FillFacts(ctx, "", 500); return e }())
 	after, err := f.s.GetFacts(ctx, id)
 	contractOK(t, err)
 	contractEqual(t, after, before)
@@ -234,7 +234,7 @@ func onlyWebsite(es []store.Enrichment) []store.Enrichment {
 	return out
 }
 
-// R-P6EI-2X3P R-OO40-CCZA R-IZHK-YQIT R-M10O-KUCX
+// R-OO40-CCZA R-IZHK-YQIT R-M10O-KUCX
 func TestDueWindowsAndDerivedSubject(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -245,7 +245,7 @@ func TestDueWindowsAndDerivedSubject(t *testing.T) {
 	all := []store.Due{}
 	cursor := ""
 	for {
-		ds, err := f.s.DueEnrichments(ctx, sources.WebsiteCheck, cursor, 2)
+		_, ds, err := f.s.DueEnrichments(ctx, sources.WebsiteCheck, cursor, 2)
 		contractOK(t, err)
 		if len(ds) == 0 {
 			break
@@ -265,7 +265,7 @@ func TestDueWindowsAndDerivedSubject(t *testing.T) {
 		_, err := f.s.AddEnrichments(ctx, []store.Enrichment{e})
 		contractOK(t, err)
 	}
-	ds, err := f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 10)
+	_, ds, err := f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 10)
 	contractOK(t, err)
 	contractEqual(t, ds, []store.Due{})
 	// The next result's inputs are intentionally obsolete, so only this candidate is due.
@@ -273,7 +273,7 @@ func TestDueWindowsAndDerivedSubject(t *testing.T) {
 	e.Inputs = "previous.test"
 	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{e})
 	contractOK(t, err)
-	ds, err = f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 10)
+	_, ds, err = f.s.DueEnrichments(ctx, sources.WebsiteCheck, "", 10)
 	contractOK(t, err)
 	contractEqual(t, len(ds), 1)
 	contractEqual(t, ds[0].Candidate, ids[0])
@@ -281,7 +281,7 @@ func TestDueWindowsAndDerivedSubject(t *testing.T) {
 	c, err := f.s.GetCandidate(ctx, ids[0])
 	contractOK(t, err)
 	contractOK(t, f.s.ReplaceZipDrive(ctx, map[string]int64{c.Zip: 0}))
-	_, _, err = f.s.MarkGone(ctx, "source-z", "later")
+	_, _, err = f.s.MarkGone(ctx, "source-z", "later", "", 500)
 	contractOK(t, err)
 	links, err := f.s.Links(ctx, c.ID)
 	contractOK(t, err)

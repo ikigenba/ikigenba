@@ -285,7 +285,7 @@ func TestSiteTextCandidateAndProspectListAgree(t *testing.T) {
 	if written == "" {
 		t.Fatal(candidate.Enrichments.Facts)
 	}
-	if _, err := cfg.Store.JudgeAll(ctx); err != nil {
+	if err := judgePageFixture(ctx, cfg.Store); err != nil {
 		t.Fatal(err)
 	}
 	prospectList := pageProspectList(t, cfg, h.ID)

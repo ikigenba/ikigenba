@@ -15,7 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-IQYA-ACBY R-OU7I-97OR R-WPW0-5EVS
+// R-IQYA-ACBY R-OU7I-97OR
 func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -80,6 +80,7 @@ func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 }
 
 // R-PWRA-LW9H R-5QGC-NXM9 R-R7HY-562T R-LD70-4W25 R-MTHW-1S6E
+// R-LNNI-SGBE R-KWTQ-DI04
 func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -202,7 +203,7 @@ func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	contractEqual(t, facts, beforeFacts)
 }
 
-// R-Z1VJ-IZ0R R-OU7I-97OR R-WNFA-Q8TO R-WPW0-5EVS R-MTHW-1S6E
+// R-Z1VJ-IZ0R R-OU7I-97OR R-WNFA-Q8TO  R-MTHW-1S6E
 func TestOrdinaryWritesPreserveFactsAndResultHistory(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -244,11 +245,11 @@ func TestOrdinaryWritesPreserveFactsAndResultHistory(t *testing.T) {
 			_, _, e := f.s.Attach(ctx, "later", true, []store.Observation{o})
 			return e
 		},
-		func() error { _, _, e := f.s.MarkGone(ctx, "source-z", "absent"); return e },
+		func() error { _, _, e := f.s.MarkGone(ctx, "source-z", "absent", "", 100); return e },
 		func() error { _, e := f.s.Judge(ctx, ids); return e },
-		func() error { _, e := f.s.JudgeAll(ctx); return e },
+		func() error { _, _, e := f.s.JudgeAll(ctx, "", 100, f.now); return e },
 		func() error { return f.s.ReplaceZipDrive(ctx, map[string]int64{"55072": 99}) },
-		func() error { return f.s.FillFacts(ctx) },
+		func() error { return fillFactsWalk(ctx, f.s) },
 		func() error {
 			p := contractNewPass(t, f, "ended")
 			_, e := f.s.FinishPass(ctx, p.ID, store.Counts{Derived: 4})
@@ -259,7 +260,7 @@ func TestOrdinaryWritesPreserveFactsAndResultHistory(t *testing.T) {
 			_, e := f.s.FailPass(ctx, p.ID, store.ReasonStore)
 			return e
 		},
-		func() error { _, e := f.s.PrunePasses(ctx, 1); return e },
+		func() error { _, e := f.s.PrunePasses(ctx, 1, 100); return e },
 	}
 	for _, kind := range []string{store.KindExclude, store.KindInclude, store.KindNotSame} {
 		calls = append(calls, func() error {

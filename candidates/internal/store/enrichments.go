@@ -194,50 +194,63 @@ func due(ctx context.Context, tx *sql.Tx, id, kind, inputs string) (bool, error)
 	if inputs == "" {
 		return false, nil
 	}
-	es, err := enrichmentRecords(ctx, tx, " WHERE candidate=? AND kind=? ORDER BY seq DESC LIMIT 1", id, kind)
-	return len(es) == 0 || es[0].Inputs != inputs, err
+	var newest string
+	err := scanSQL(ctx, tx, "SELECT inputs FROM enrichments WHERE candidate=? AND kind=? ORDER BY seq DESC LIMIT 1", []any{id, kind}, &newest)
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, nil
+	}
+	return newest != inputs, err
+}
+
+func (s *Store) dueInputs(ctx context.Context, tx *sql.Tx, c Candidate, en enrichers.Enricher) (string, error) {
+	if en.Kind() == sources.WebsiteCheck {
+		return en.Inputs(enrichers.Subject{Email: c.Email}), nil
+	}
+	su, err := s.subject(ctx, tx, c, isPrompter(en))
+	if err != nil {
+		return "", err
+	}
+	return en.Inputs(su), nil
 }
 
 // DueEnrichments reads an ascending window of candidates with changed inputs.
-func (s *Store) DueEnrichments(ctx context.Context, kind, after string, n int) ([]Due, error) {
+func (s *Store) DueEnrichments(ctx context.Context, kind, after string, n int) (string, []Due, error) {
 	var out []Due
+	var last string
 	err := unreachable(s.readTx(ctx, func(tx *sql.Tx) error {
 		en, ok := enrichers.New(enrichers.Config{}).Get(kind)
 		if !ok || n < 1 {
 			return ErrUnreachable
 		}
 		out = []Due{}
-		cursor := after
-		for len(out) < n {
-			cs, err := readRecords[Candidate](ctx, tx, "candidates", candidateColumns, " WHERE status=? AND id>? ORDER BY id LIMIT ?", StatusActive, cursor, n)
+		cols := candidateColumns
+		if kind == sources.WebsiteCheck {
+			cols = columns("id:ID email:Email")
+		}
+		cs, err := readRecords[Candidate](ctx, tx, "candidates INDEXED BY sqlite_autoindex_candidates_1", cols, " WHERE status=? AND id>? ORDER BY id LIMIT ?", StatusActive, after, n)
+		if err != nil {
+			return err
+		}
+		for _, c := range cs {
+			last = c.ID
+			in, err := s.dueInputs(ctx, tx, c, en)
 			if err != nil {
 				return err
 			}
-			if len(cs) == 0 {
-				break
+			yes, err := due(ctx, tx, c.ID, kind, in)
+			if err != nil {
+				return err
 			}
-			for _, c := range cs {
-				cursor = c.ID
-				su, err := s.subject(ctx, tx, c, isPrompter(en))
-				if err != nil {
-					return err
-				}
-				in := en.Inputs(su)
-				yes, err := due(ctx, tx, c.ID, kind, in)
-				if err != nil {
-					return err
-				}
-				if yes {
-					out = append(out, Due{c.ID, in})
-					if len(out) == n {
-						break
-					}
-				}
+			if yes {
+				out = append(out, Due{c.ID, in})
 			}
 		}
 		return nil
 	}))
-	return out, err
+	if err != nil {
+		return "", nil, err
+	}
+	return last, out, nil
 }
 func (s *Store) deriveCandidate(ctx context.Context, tx *sql.Tx, c Candidate, d enrichers.Deriver, force bool, t time.Time) (bool, error) {
 	su, err := s.subject(ctx, tx, c, false)
@@ -267,13 +280,14 @@ func (s *Store) deriveCandidate(ctx context.Context, tx *sql.Tx, c Candidate, d 
 func (s *Store) Derive(ctx context.Context, kind, after string, force bool, n int) (string, int64, error) {
 	var last string
 	var count int64
-	err := unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := unreachable(s.retryUnit(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		last, count = "", 0
 		en, _ := enrichers.New(enrichers.Config{}).Get(kind)
 		d, ok := en.(enrichers.Deriver)
 		if !ok || n < 1 {
 			return ErrUnreachable
 		}
-		cs, err := readRecords[Candidate](ctx, tx, "candidates", candidateColumns, " WHERE status=? AND id>? ORDER BY id LIMIT ?", StatusActive, after, n)
+		cs, err := readRecords[Candidate](ctx, tx, "candidates INDEXED BY sqlite_autoindex_candidates_1", candidateColumns, " WHERE status=? AND id>? ORDER BY id LIMIT ?", StatusActive, after, n)
 		if err != nil {
 			return err
 		}
@@ -341,11 +355,10 @@ func (s *Store) DueAmong(ctx context.Context, kind string, ids []string, force b
 			if c.Status != StatusActive {
 				continue
 			}
-			su, err := s.subject(ctx, tx, c, isPrompter(en))
+			in, err := s.dueInputs(ctx, tx, c, en)
 			if err != nil {
 				return err
 			}
-			in := en.Inputs(su)
 			yes, err := due(ctx, tx, id, kind, in)
 			if err != nil {
 				return err

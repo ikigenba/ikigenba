@@ -38,7 +38,7 @@ func searchAfter(d time.Duration) <-chan time.Time {
 	return ch
 }
 
-// R-TZ38-ID8T R-WKZH-YPCA R-RFMR-TKMQ R-UYGB-LPQY
+// R-HNIN-SSWF R-HSE9-BVV7 R-RFMR-TKMQ R-HDRG-QMYV
 func TestWebsiteSearchTargetResultsAndConfirmation(t *testing.T) {
 	f := newFixture(t, nil, false)
 	ids := searchTargets(t, f, 6)
@@ -47,7 +47,7 @@ func TestWebsiteSearchTargetResultsAndConfirmation(t *testing.T) {
 	if _, err := f.st.AddEnrichments(ctx, []store.Enrichment{{Candidate: ids[5], Kind: sources.WebsiteCheck, Inputs: "known.test", Source: "fixture", Found: known}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.st.JudgeAll(ctx); err != nil {
+	if _, _, err := f.st.JudgeAll(ctx, "", 10000, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatal(err)
 	}
 	co, err := f.st.CreateProspectList(ctx, store.ProspectList{Name: "search targets", Size: 6, CreatedUserID: "owner"})

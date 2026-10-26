@@ -474,7 +474,7 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 		if err != nil || len(ids) != 1 {
 			t.Fatal(ids, err)
 		}
-		if _, err := records.JudgeAll(t.Context()); err != nil {
+		if _, _, err := records.JudgeAll(t.Context(), "", 10000, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)); err != nil {
 			t.Fatal(err)
 		}
 		if err := db.Close(); err != nil {

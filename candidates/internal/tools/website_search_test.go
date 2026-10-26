@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-KVN5-17PL R-ZKAN-MILE R-QWZN-Q90D
+// R-0ECF-HYB5 R-ZKAN-MILE R-QWZN-Q90D
 func TestSearchAnswersUseStoredResults(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
@@ -42,7 +42,7 @@ func TestSearchAnswersUseStoredResults(t *testing.T) {
 	empty := good
 	empty.Answer = &enrichers.WebsiteSearchAnswer{}
 	empty.Confirmation = nil
-	for i, x := range []enrichers.WebsiteSearchFound{failed, good, noSite, empty} {
+	for i, x := range []enrichers.WebsiteSearchFound{failed, good, failed, noSite, empty} {
 		f.now = f.now.Add(time.Hour)
 		input := store.Enrichment{Candidate: id, Kind: enrichers.KindWebsiteSearch, Source: enrichers.SourcePrompts, Inputs: "chosen-input", Found: encodedJSON(x), Cost: .023714}
 		if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{input}); err != nil {
@@ -153,7 +153,7 @@ func TestWebsiteSearchEnrichDispatch(t *testing.T) {
 	}
 }
 
-// R-KVN5-17PL R-KT7C-9O87
+// R-0ECF-HYB5 R-04L8-FSDL
 func TestWebsiteDecisionAnswersDistinguishUncheckedAndUnfound(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]

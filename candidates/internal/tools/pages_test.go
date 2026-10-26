@@ -1,6 +1,7 @@
 package tools_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -148,7 +149,7 @@ func TestAddPageRefusals(t *testing.T) {
 	}
 }
 
-// R-Q02D-EFZM R-QM0K-ABC4 R-KWV1-EZGA R-QEP5-ZOVY
+// R-Q02D-EFZM R-QM0K-ABC4 R-088X-L3LO R-QEP5-ZOVY
 func TestAddPageCopiesAndCandidateHistory(t *testing.T) {
 	var requests atomic.Int64
 	k := pageChecker(&requests)
@@ -161,7 +162,7 @@ func TestAddPageCopiesAndCandidateHistory(t *testing.T) {
 		t.Fatal(empty)
 	}
 	var numbers []int64
-	for _, u := range []string{"https://acme.test/about", "https://acme.test/about", "https://shop.acme.test/", "https://acme.test/redirect"} {
+	for i, u := range []string{"https://acme.test/about", "https://acme.test/about", "https://shop.acme.test/", "https://acme.test/redirect"} {
 		r := f.callAs(other, "add_page", tools.AddPageArgs{Candidate: id, URL: u})
 		if r.IsError() {
 			t.Fatal(decode(t, r))
@@ -177,6 +178,24 @@ func TestAddPageCopiesAndCandidateHistory(t *testing.T) {
 		}
 		success(t, r, wantPage(stored))
 		numbers = append(numbers, p.Number)
+		if i == 2 {
+			result := f.call("candidate", tools.CandidateArgs{Candidate: id})
+			detail := decodeList[tools.Detail](t, result)
+			if len(detail.Pages) != 2 || detail.Pages[0].URL != u || detail.Pages[1].URL != "https://acme.test/about" || detail.Pages[1].Number != numbers[1] {
+				t.Fatal(detail.Pages)
+			}
+			var wire struct {
+				Pages []map[string]json.RawMessage `json:"pages"`
+			}
+			if err := json.Unmarshal(decode(t, result).Structured, &wire); err != nil {
+				t.Fatal(err)
+			}
+			for _, page := range wire.Pages {
+				if _, exists := page["text"]; exists {
+					t.Fatal(page)
+				}
+			}
+		}
 		if strings.Contains(string(decode(t, r).Structured), `"text":`) {
 			t.Fatal(decode(t, r))
 		}

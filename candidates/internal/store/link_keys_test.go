@@ -53,7 +53,7 @@ func TestLinkKeysOrderPlaceGoneAndReopen(t *testing.T) {
 			assertKeyAttach(t, f, byEIN, newIDs[0], store.LinkEIN, .9)
 			assertKeyAttach(t, f, keyedObservation("ordered", "333333333", "ALIAS", "OLD"), newIDs[0], store.LinkMatchKey, .8)
 			assertKeyAttach(t, f, keyedObservation("later-name", "444444444", "UNHELD", "SHARED"), oldIDs[0], store.LinkMatchKey, .8)
-			_, _, err := f.st.MarkGone(regCtx, "fmcsa", "absent-run")
+			_, _, err := f.st.MarkGone(regCtx, "fmcsa", "absent-run", "", 500)
 			regNoErr(t, err)
 			assertKeyAttach(t, f, keyedObservation("gone-ein", "111111111", "OTHER"), oldIDs[0], store.LinkEIN, .9)
 			assertKeyAttach(t, f, keyedObservation("gone-name", "", "ALIAS"), newIDs[0], store.LinkMatchKey, .8)
@@ -72,7 +72,7 @@ func TestLinkKeysOrderPlaceGoneAndReopen(t *testing.T) {
 	}
 }
 
-// R-IP4E-4JCN R-0XQS-MEOB
+// R-IP4E-4JCN
 func TestLinkKeysLegacyFallbackAndReplacement(t *testing.T) {
 	for _, force := range []bool{false, true} {
 		t.Run(map[bool]string{false: "digest", true: "forced"}[force], func(t *testing.T) {

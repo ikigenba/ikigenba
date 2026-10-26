@@ -52,7 +52,7 @@ func (s *Store) projectFacts(ctx context.Context, tx *sql.Tx, id string) error {
 	return insertRecord(ctx, tx, "facts", factsColumns, f, extra)
 }
 func (s *Store) projectedFacts(ctx context.Context, tx *sql.Tx, id string) (Facts, map[string]any, error) {
-	es, err := enrichmentRecords(ctx, tx, " WHERE candidate=? ORDER BY seq DESC", id)
+	es, err := s.factsResults(ctx, tx, id)
 	if err != nil {
 		return Facts{}, nil, err
 	}
@@ -167,6 +167,124 @@ func (s *Store) projectedFacts(ctx context.Context, tx *sql.Tx, id string) (Fact
 	return f, extra, nil
 }
 
+// factsResults retains each kind's newest result and any older deciding result.
+func (s *Store) factsResults(ctx context.Context, tx *sql.Tx, id string) ([]Enrichment, error) {
+	kinds := []string{sources.WebsiteCheck, enrichers.KindDriveMinutes, enrichers.KindLinkFacts, enrichers.KindSiteText, enrichers.KindBrief, enrichers.KindWebsiteSearch, enrichers.KindDriveRoute}
+	// Each of the fixed seven probes seeks one index entry; no history is grouped or read.
+	rows, err := querySQL(ctx, tx, `WITH kinds(kind) AS (VALUES (?),(?),(?),(?),(?),(?),(?))
+ SELECT e.kind,e.seq,e.found,e.inputs,e.at FROM kinds JOIN enrichments AS e
+ ON e.seq=(SELECT h.seq FROM enrichments AS h WHERE h.candidate=? AND h.kind=kinds.kind ORDER BY h.seq DESC LIMIT 1)`, kinds[0], kinds[1], kinds[2], kinds[3], kinds[4], kinds[5], kinds[6], id)
+	if err != nil {
+		return nil, err
+	}
+	type result struct {
+		seq               int64
+		found, inputs, at string
+	}
+	newest := make(map[string]result, len(kinds))
+	for rows.Next() {
+		var kind string
+		var r result
+		if err = rows.Scan(&kind, &r.seq, &r.found, &r.inputs, &r.at); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		newest[kind] = r
+	}
+	err = rows.Err()
+	closeErr := rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	out := []Enrichment{}
+	var routeInputs string
+	if _, hasRoute := newest[enrichers.KindDriveRoute]; hasRoute && s.cfg.Origin != "" {
+		c, err := candidateKey(ctx, tx, id)
+		if err != nil {
+			return nil, err
+		}
+		routeInputs = (enrichers.DriveRoute{}).Inputs(enrichers.Subject{Street: c.Street, City: c.City, State: c.State, Zip: c.Zip, Origin: s.cfg.Origin})
+	}
+	checkWorks := false
+	for _, kind := range kinds {
+		r, ok := newest[kind]
+		if !ok {
+			continue
+		}
+		first := true
+		for {
+			if !first {
+				before := r.seq
+				err = scanSQL(ctx, tx, "SELECT seq,found,inputs,at FROM enrichments WHERE candidate=? AND kind=? AND seq<? ORDER BY seq DESC LIMIT 1", []any{id, kind, before}, &r.seq, &r.found, &r.inputs, &r.at)
+				if errors.Is(err, sql.ErrNoRows) {
+					break
+				}
+				if err != nil {
+					return nil, err
+				}
+			}
+			e := Enrichment{Candidate: id, Kind: kind, Inputs: r.inputs, Found: json.RawMessage(r.found)}
+			e.At, err = time.Parse(time.RFC3339, r.at)
+			if err != nil {
+				return nil, err
+			}
+			deciding := false
+			done := true
+			switch kind {
+			case sources.WebsiteCheck:
+				var v website.Result
+				if err = json.Unmarshal(e.Found, &v); err != nil {
+					return nil, err
+				}
+				checkWorks = v.State == sources.WebsiteHTTPS || v.State == sources.WebsiteHTTP
+			case enrichers.KindBrief:
+				deciding = !(enrichers.Brief{}).Failed(e.Found)
+				done = deciding
+			case enrichers.KindWebsiteSearch:
+				var v enrichers.WebsiteSearchFound
+				if err = json.Unmarshal(e.Found, &v); err != nil {
+					return nil, err
+				}
+				deciding = !v.Failed() && (v.Answer.URL == "" || v.Confirmation != nil && v.Confirmation.State == sources.WebsiteNone)
+				confirmed := !v.Failed() && v.Confirmation != nil && (v.Confirmation.State == sources.WebsiteHTTPS || v.Confirmation.State == sources.WebsiteHTTP)
+				// Retain only the newest unfound search while looking for a confirmed one.
+				if deciding {
+					for _, prior := range out {
+						if prior.Kind == kind {
+							var p enrichers.WebsiteSearchFound
+							_ = json.Unmarshal(prior.Found, &p)
+							if !p.Failed() && (p.Answer.URL == "" || p.Confirmation != nil && p.Confirmation.State == sources.WebsiteNone) {
+								deciding = false
+								break
+							}
+						}
+					}
+				}
+				deciding = deciding || confirmed
+				done = checkWorks || confirmed
+			case enrichers.KindDriveRoute:
+				var v enrichers.RouteFound
+				if err = json.Unmarshal(e.Found, &v); err != nil {
+					return nil, err
+				}
+				deciding = routeInputs != "" && r.inputs == routeInputs && !v.Failed() && v.Minutes != nil
+				done = routeInputs == "" || deciding
+			}
+			if first || deciding {
+				out = append(out, e)
+			}
+			first = false
+			if done {
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
 // GetFacts reads the materialized enrichment facts.
 func (s *Store) GetFacts(ctx context.Context, candidate string) (Facts, error) {
 	var out Facts
@@ -175,25 +293,34 @@ func (s *Store) GetFacts(ctx context.Context, candidate string) (Facts, error) {
 }
 
 // FillFacts repairs projections and refreshes the headcount and label columns.
-func (s *Store) FillFacts(ctx context.Context) error {
-	return unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		cs, err := readRecords[Candidate](ctx, tx, "candidates", candidateColumns, " WHERE status=? AND EXISTS (SELECT 1 FROM enrichments WHERE enrichments.candidate=candidates.id)", StatusActive)
+func (s *Store) FillFacts(ctx context.Context, after string, n int) (string, error) {
+	var last string
+	err := unreachable(s.retryUnit(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		last = ""
+		if n < 1 {
+			return ErrUnreachable
+		}
+		cs, err := readRecords[Candidate](ctx, tx, "candidates INDEXED BY sqlite_autoindex_candidates_1", candidateColumns, " WHERE status=? AND id>? ORDER BY id LIMIT ?", StatusActive, after, n)
 		if err != nil {
 			return err
 		}
 		for _, c := range cs {
+			last = c.ID
 			old, err := factsKey(ctx, tx, c.ID)
 			if err != nil && !errors.Is(err, ErrNotFound) {
 				return err
 			}
 			missing := errors.Is(err, ErrNotFound)
 			var routes int64
-			if err = scanSQL(ctx, tx, "SELECT COUNT(*) FROM enrichments WHERE candidate=? AND kind=?", []any{c.ID, enrichers.KindDriveRoute}, &routes); err != nil {
+			if err = scanSQL(ctx, tx, "SELECT EXISTS(SELECT 1 FROM enrichments WHERE candidate=? AND kind=?)", []any{c.ID, enrichers.KindDriveRoute}, &routes); err != nil {
 				return err
 			}
 			f, extra, err := s.projectedFacts(ctx, tx, c.ID)
 			if err != nil {
 				return err
+			}
+			if f.Candidate == "" {
+				continue
 			}
 			repair := missing || (old.Minutes == nil && old.MinutesSource != "") || (old.Minutes != nil && old.MinutesSource == "") || routes > 0
 			if !repair {
@@ -233,6 +360,10 @@ func (s *Store) FillFacts(ctx context.Context) error {
 		}
 		return nil
 	}))
+	if err != nil {
+		return "", err
+	}
+	return last, nil
 }
 
 // ClassifiedBy identifies the evidence that supplies the categories.

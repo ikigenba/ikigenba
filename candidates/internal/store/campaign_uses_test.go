@@ -75,7 +75,7 @@ func TestCampaignUseOrdersDuplicatesAndPersistence(t *testing.T) {
 	}
 }
 
-// R-SY5L-OQ33 R-QEFR-MGTW R-OD8H-2EDG
+// R-SY5L-OQ33 R-OD8H-2EDG
 func TestCampaignUseErrorsAreAtomicAndPrioritized(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -260,13 +260,13 @@ func TestCampaignWritesPreserveOtherRecordsAndOtherWritesPreserveHistory(t *test
 	_, _, err := f.s.Attach(ctx, "next-run", false, []store.Observation{contractObservation("evidence", "Seed business", f.now)})
 	contractOK(t, err)
 	check()
-	_, _, err = f.s.MarkGone(ctx, "source-z", "absent")
+	_, _, err = f.s.MarkGone(ctx, "source-z", "absent", "", 500)
 	contractOK(t, err)
 	check()
 	_, err = f.s.Judge(ctx, []string{id})
 	contractOK(t, err)
 	check()
-	_, err = f.s.JudgeAll(ctx)
+	_, _, err = f.s.JudgeAll(ctx, "", 500, f.now)
 	contractOK(t, err)
 	check()
 	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{websiteResult(id, sources.WebsiteHTTPS)})
@@ -278,7 +278,7 @@ func TestCampaignWritesPreserveOtherRecordsAndOtherWritesPreserveHistory(t *test
 	_, err = f.s.DeriveAmong(ctx, "link_facts", []string{id}, true)
 	contractOK(t, err)
 	check()
-	contractOK(t, f.s.FillFacts(ctx))
+	contractOK(t, func() error { _, e := f.s.FillFacts(ctx, "", 500); return e }())
 	check()
 	contractOK(t, f.s.ReplaceZipDrive(ctx, map[string]int64{"55072": 99}))
 	check()
@@ -314,7 +314,7 @@ func TestCampaignWritesPreserveOtherRecordsAndOtherWritesPreserveHistory(t *test
 		contractOK(t, err)
 		check()
 	}
-	_, err = f.s.PrunePasses(ctx, 1)
+	_, err = f.s.PrunePasses(ctx, 1, 500)
 	contractOK(t, err)
 	check()
 	f.reopen()

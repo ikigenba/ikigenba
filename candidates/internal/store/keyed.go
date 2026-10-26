@@ -344,3 +344,28 @@ func scanSQL(ctx context.Context, tx *sql.Tx, query string, args []any, targets 
 	}
 	return tx.QueryRowContext(ctx, query, args...).Scan(targets...)
 }
+
+// WriteRetries and WriteBackoff bound pauses between busy write attempts.
+const WriteRetries = 5
+
+// WriteBackoff is the first pause before retrying a busy unit.
+const WriteBackoff time.Duration = time.Second
+
+func (s *Store) retryUnit(ctx context.Context, fn func(context.Context, *sql.Tx) error) error {
+	for attempt := 0; ; attempt++ {
+		err := s.writeTx(ctx, func(attemptCtx context.Context, tx *sql.Tx) error {
+			if _, err := tx.ExecContext(attemptCtx, "UPDATE candidates SET id=id WHERE 0"); err != nil {
+				return err
+			}
+			return fn(attemptCtx, tx)
+		})
+		var code interface{ Code() int }
+		if err == nil || !errors.As(err, &code) || code.Code()&255 != 5 || s.cfg.Sleep == nil || attempt == WriteRetries {
+			return err
+		}
+		s.cfg.Sleep(ctx, WriteBackoff<<attempt)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+}

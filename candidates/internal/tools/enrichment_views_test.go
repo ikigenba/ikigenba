@@ -13,7 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-KVN5-17PL R-Q65V-BAP3 R-KQRJ-I4QT
+// R-0ECF-HYB5 R-Q65V-BAP3 R-KQRJ-I4QT
 func TestEnrichmentsAreVisibleBeforeAndApartFromJudgments(t *testing.T) {
 	f := newFixture(t)
 	_, ids, err := f.st.Attach(t.Context(), "new-run", false, []store.Observation{{Scraper: "fmcsa", SourceID: "new-row", Digest: "new-digest", Reading: sources.Reading{Name: "unjudged-business", Names: []string{"unjudged-business"}, NameKey: "unjudged"}}})
@@ -46,7 +46,7 @@ func TestEnrichmentsAreVisibleBeforeAndApartFromJudgments(t *testing.T) {
 	if before.Judgments != nil || before.Enrichments.Facts == nil || before.Enrichments.Brief == nil || before.Enrichments.Brief.Summary != good.Summary || before.Enrichments.Facts.ClassifiedBy != enrichers.KindBrief || len(before.Enrichments.Facts.Written) != 1 {
 		t.Fatal(before)
 	}
-	if _, err = f.st.JudgeAll(t.Context()); err != nil {
+	if err = walkJudgments(t.Context(), f.st, f.now); err != nil {
 		t.Fatal(err)
 	}
 	judged := read()
@@ -60,7 +60,7 @@ func TestEnrichmentsAreVisibleBeforeAndApartFromJudgments(t *testing.T) {
 	}
 }
 
-// R-AQ2S-CL5A R-ARAO-QCVZ R-L0IQ-KAOD
+// R-AQ2S-CL5A R-ARAO-QCVZ R-0KFX-ET0M
 func TestDriveRouteAnswersAndLiveMemberProjection(t *testing.T) {
 	f := fixtureWithRoutes(t, nil, nil, nil, nil, "Chosen origin")
 	id := f.seed(1)[0]
@@ -169,5 +169,38 @@ func TestDriveRouteAnswersAndLiveMemberProjection(t *testing.T) {
 		if len(obj) != wantMembers || first.Source != enrichers.SourceGoogleRoutes || first.Inputs != inputs || first.Cost != .25 || !reflect.DeepEqual(first.Found, encodedJSON(found)) {
 			t.Fatal(string(encodedJSON(first)))
 		}
+	}
+}
+
+// R-0ECF-HYB5
+func TestBriefArrivesAfterJudgments(t *testing.T) {
+	f := newFixture(t)
+	id := f.seed(1)[0]
+	if _, _, err := f.st.Derive(t.Context(), enrichers.KindLinkFacts, "", false, 100); err != nil {
+		t.Fatal(err)
+	}
+	read := func() tools.Detail {
+		return decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: id}))
+	}
+	initial := read()
+	if initial.Judgments == nil || initial.Enrichments.Brief != nil || initial.Enrichments.Facts.RecordsDiffer || initial.Enrichments.Facts.RecordCategories == nil || len(initial.Enrichments.Facts.RecordCategories) != 0 {
+		t.Fatal(initial)
+	}
+	good := enrichers.BriefFound{Run: "later-brief", Status: enrichers.RunExited, ExitCode: new(0), Summary: "later-summary", Categories: []enrichers.BriefCategory{{Name: sources.CategoryRetail, Why: "later-why"}}, Labels: []string{"later-label"}}
+	f.now = f.now.Add(time.Second)
+	at := f.now
+	if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: enrichers.KindBrief, Source: enrichers.SourcePrompts, Inputs: "later-input", Found: encodedJSON(good)}}); err != nil {
+		t.Fatal(err)
+	}
+	want := &tools.Brief{Summary: good.Summary, Categories: []tools.BriefCategory{{Name: sources.CategoryRetail, Why: "later-why"}}, Labels: good.Labels, At: stamp(at)}
+	if got := read(); !reflect.DeepEqual(got.Judgments, initial.Judgments) || !reflect.DeepEqual(got.Enrichments.Brief, want) {
+		t.Fatal(got)
+	}
+	f.now = f.now.Add(time.Second)
+	if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: enrichers.KindBrief, Source: enrichers.SourcePrompts, Inputs: "later-input", Found: encodedJSON(enrichers.BriefFound{Run: "failed-later", Status: "failed", Categories: []enrichers.BriefCategory{}, Labels: []string{}})}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(); !reflect.DeepEqual(got.Judgments, initial.Judgments) || !reflect.DeepEqual(got.Enrichments.Brief, want) {
+		t.Fatal(got)
 	}
 }

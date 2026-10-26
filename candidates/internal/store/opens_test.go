@@ -126,9 +126,9 @@ func TestProspectListOpenRefusalsAndEmptySnapshots(t *testing.T) {
 	contractOK(t, err)
 	_, err = f.s.ReadProspectList(ctx, k.ID)
 	contractOK(t, err)
-	_, err = f.s.JudgeAll(ctx)
+	_, _, err = f.s.JudgeAll(ctx, "", 500, f.now)
 	contractOK(t, err)
-	_, err = f.s.PrunePasses(ctx, 1)
+	_, err = f.s.PrunePasses(ctx, 1, 500)
 	contractOK(t, err)
 	contractEqual(t, listOpens(t, f, k.ID), os)
 	_, err = f.s.DeleteProspectList(ctx, k.ID)
@@ -350,7 +350,7 @@ func TestProspectListNewBoundaryPassesAndCut(t *testing.T) {
 	f.now = time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
 	equal := contractAttach(t, f, "equal", contractObservation("equal", "Same second", time.Time{}))[0]
 	deriveAll(t, f.s)
-	_, err := f.s.JudgeAll(ctx)
+	_, _, err := f.s.JudgeAll(ctx, "", 500, f.now)
 	contractOK(t, err)
 	filters := store.ProspectListFilters{Basis: []string{store.BasisEnriched}}
 	k, err := f.s.CreateProspectList(ctx, store.ProspectList{Name: "new boundary", Size: 100, Filters: filters, CreatedUserID: "owner"})
@@ -359,7 +359,7 @@ func TestProspectListNewBoundaryPassesAndCut(t *testing.T) {
 	f.now = f.now.Add(time.Second)
 	newer := contractAttach(t, f, "newer", contractObservation("newer", "Later second", time.Time{}))[0]
 	deriveAll(t, f.s)
-	_, err = f.s.JudgeAll(ctx)
+	_, _, err = f.s.JudgeAll(ctx, "", 500, f.now)
 	contractOK(t, err)
 	filters = store.ProspectListFilters{}
 	k, err = f.s.EditProspectList(ctx, store.ProspectListEdit{ID: k.ID, Filters: &filters, UserID: "owner"})
@@ -397,7 +397,7 @@ func TestProspectListRouteLeavingRetainsThenAndNowBasis(t *testing.T) {
 	deriveAll(t, f.s)
 	_, err := f.s.AddEnrichments(ctx, []store.Enrichment{briefResult(t, id, "good brief", false)})
 	contractOK(t, err)
-	_, err = f.s.JudgeAll(ctx)
+	_, _, err = f.s.JudgeAll(ctx, "", 500, f.now)
 	contractOK(t, err)
 	filters := store.ProspectListFilters{MaxMinutes: ptrInt(100), MinutesUnknown: true}
 	k, err := f.s.CreateProspectList(ctx, store.ProspectList{Name: "route changed", Size: 100, Filters: filters, CreatedUserID: "owner"})

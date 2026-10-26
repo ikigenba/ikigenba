@@ -222,7 +222,7 @@ func (f *fixture) seedWithStep(n int, step time.Duration, tie bool) []string {
 		}
 		ids = append(ids, newIDs...)
 	}
-	if _, err := f.st.JudgeAll(f.t.Context()); err != nil {
+	if err := walkJudgments(f.t.Context(), f.st, f.now); err != nil {
 		f.t.Fatal(err)
 	}
 	return ids
@@ -470,7 +470,7 @@ func decodeList[T any](t *testing.T, r mcp.Result) T {
 
 var _ io.Reader = (*random)(nil)
 
-// R-R96N-JYFB R-QQW5-TEAW R-27ET-GMFK R-KT7C-9O87 R-WX6H-SER8
+// R-R96N-JYFB R-QQW5-TEAW R-27ET-GMFK R-04L8-FSDL R-WX6H-SER8
 func TestDetailAndRulings(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -575,7 +575,7 @@ func TestRefusalsAndPrecedence(t *testing.T) {
 	if _, err := f.st.FinishPass(t.Context(), p.ID, store.Counts{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.st.PrunePasses(t.Context(), 1); err != nil {
+	if _, err := f.st.PrunePasses(t.Context(), 1, 500); err != nil {
 		t.Fatal(err)
 	}
 	f.d.SetFailing(true)

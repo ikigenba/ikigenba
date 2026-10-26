@@ -1,8 +1,10 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"reflect"
 	"sort"
 	"strings"
@@ -87,7 +89,9 @@ func refresh(r *records, t time.Time) {
 func (s *Store) Attach(ctx context.Context, run string, force bool, obs []Observation) (Counts, []string, error) {
 	var total Counts
 	var ids []string
-	err := unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := unreachable(s.retryUnit(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		total = Counts{}
+		ids = nil
 		if run == "" {
 			return ErrUnreachable
 		}
@@ -124,7 +128,19 @@ func (s *Store) Attach(ctx context.Context, run string, force bool, obs []Observ
 			var l Link
 			if len(ls) > 0 {
 				l = ls[0]
-				if !force && l.Digest == o.Digest {
+				unchanged := !force && l.Digest == o.Digest
+				if force {
+					var raw string
+					if err = scanSQL(ctx, tx, "SELECT reading FROM links WHERE scraper=? AND source_id=?", []any{o.Scraper, o.SourceID}, &raw); err != nil {
+						return err
+					}
+					encoded, err := json.Marshal(o.Reading)
+					if err != nil {
+						return err
+					}
+					unchanged = bytes.Equal([]byte(raw), encoded)
+				}
+				if unchanged {
 					total.Unchanged++
 					d, err := view(l.Candidate)
 					if err != nil {
@@ -202,39 +218,33 @@ func (s *Store) Attach(ctx context.Context, run string, force bool, obs []Observ
 	return total, ids, nil
 }
 
-// MarkGone marks rows absent from a scraper’s latest run.
-func (s *Store) MarkGone(ctx context.Context, scraper, run string) (Counts, []string, error) {
-	var c Counts
-	var out []string
-	err := unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		if scraper == "" || run == "" {
+// MarkGone examines one page of the scraper's links.
+func (s *Store) MarkGone(ctx context.Context, scraper, run, after string, n int) (string, Counts, error) {
+	var count Counts
+	var last string
+	err := unreachable(s.retryUnit(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		count, last = Counts{}, ""
+		if scraper == "" || run == "" || n < 1 {
 			return ErrUnreachable
 		}
-		t := s.now()
-		rows, err := tx.QueryContext(ctx, "UPDATE links SET gone=1 WHERE scraper=? AND run<>? AND gone=0 RETURNING candidate", scraper, run)
+		ls, err := readRecords[Link](ctx, tx, "links", linkColumns, " WHERE scraper=? AND source_id>? ORDER BY source_id LIMIT ?", scraper, after, n)
 		if err != nil {
 			return err
 		}
-		ids := map[string]bool{}
-		for rows.Next() {
-			var id string
-			if err = rows.Scan(&id); err != nil {
-				_ = rows.Close()
+		touched := map[string]bool{}
+		t := s.now()
+		for _, l := range ls {
+			last = l.SourceID
+			if l.Run == run || l.Gone {
+				continue
+			}
+			if err = execSQL(ctx, tx, "UPDATE links SET gone=1 WHERE scraper=? AND source_id=?", scraper, l.SourceID); err != nil {
 				return err
 			}
-			ids[id] = true
-			c.Gone++
+			touched[l.Candidate] = true
+			count.Gone++
 		}
-		err = rows.Err()
-		closeErr := rows.Close()
-		if err != nil {
-			return err
-		}
-		if closeErr != nil {
-			return closeErr
-		}
-		out = sortedIDs(ids)
-		for _, id := range out {
+		for id := range touched {
 			if err = refreshKey(ctx, tx, id, t); err != nil {
 				return err
 			}
@@ -242,9 +252,9 @@ func (s *Store) MarkGone(ctx context.Context, scraper, run string) (Counts, []st
 		return nil
 	}))
 	if err != nil {
-		return Counts{}, nil, err
+		return "", Counts{}, err
 	}
-	return c, out, nil
+	return last, count, nil
 }
 func malformed(d Ruling) bool {
 	switch d.Kind {

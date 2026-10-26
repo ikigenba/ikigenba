@@ -134,7 +134,7 @@ func TestHeadcountTemplateStates(t *testing.T) {
 	}
 }
 
-// R-8WM8-2Y3S R-8XU4-GPUH R-955I-RCAN R-HPP6-2JSF
+// R-8WM8-2Y3S R-8XU4-GPUH R-955I-RCAN R-VJ8X-RPW0
 func TestHeadcountCandidateAndProspectListPages(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	high := int64(2500000)
@@ -148,7 +148,7 @@ func TestHeadcountCandidateAndProspectListPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = cfg.Store.JudgeAll(t.Context()); err != nil {
+	if err = judgePageFixture(t.Context(), cfg.Store); err != nil {
 		t.Fatal(err)
 	}
 	c := capturedCandidate(t, cfg, ids[0])

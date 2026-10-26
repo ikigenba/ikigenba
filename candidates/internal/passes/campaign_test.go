@@ -278,7 +278,7 @@ func TestCampaignOptionalAttributesAndProspectListState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.st.JudgeAll(t.Context()); err != nil {
+	if _, _, err = f.st.JudgeAll(t.Context(), "", 10000, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatal(err)
 	}
 	before, err := f.st.ReadProspectList(t.Context(), co.ID)

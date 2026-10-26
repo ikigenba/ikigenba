@@ -77,7 +77,7 @@ func TestBriefCandidateAndProspectList(t *testing.T) {
 	if got.Enrichments.Brief == nil || got.Enrichments.Brief.Summary != "fixture-summary" || got.Enrichments.Brief.At != "2026-10-05T09:00:07Z" || got.Enrichments.Brief.AtText != "2026-10-05 09:00:07 UTC" || len(got.EnrichmentResults) != 2 || !got.EnrichmentResults[0].Failed || got.EnrichmentResults[1].Failed || got.Judgments != nil {
 		t.Fatal(got)
 	}
-	if _, err = cfg.Store.JudgeAll(ctx); err != nil {
+	if err = judgePageFixture(ctx, cfg.Store); err != nil {
 		t.Fatal(err)
 	}
 	written := ""

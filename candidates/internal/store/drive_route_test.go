@@ -22,7 +22,7 @@ func appendRoute(t *testing.T, s *store.Store, id, inputs string, found enricher
 	contractOK(t, err)
 }
 
-// R-2YPD-DTRX R-3156-5D9B R-33KY-WWQP R-IS66-O42N R-39OG-TRG6 R-IVTV-TFAQ
+// R-4C6W-T76H R-3156-5D9B R-4AZ0-FFFS R-L1PB-WKYW R-LCOF-CIN5 R-49R4-1NP3
 func TestDriveRouteProjectionAndOrigin(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -71,17 +71,26 @@ func TestDriveRouteProjectionAndOrigin(t *testing.T) {
 	check(store.MinutesByRoute, 47)
 	// Origin changes make the candidate due and FillFacts repairs its materialized row.
 	f.s = routeStore(f, "other base")
+	su, err = f.s.Subject(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, su.Origin, "other base")
+	if (enrichers.DriveRoute{}).Inputs(su) == inputs {
+		t.Fatal("changed origin kept prior route inputs")
+	}
 	due, err := f.s.DueAmong(ctx, enrichers.KindDriveRoute, []string{id}, false)
 	contractOK(t, err)
 	contractEqual(t, len(due), 1)
-	contractOK(t, f.s.FillFacts(ctx))
+	contractOK(t, fillFactsWalk(ctx, f.s))
 	check(store.MinutesByZip, 80)
 	f.s = routeStore(f, "")
+	su, err = f.s.Subject(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, su.Origin, "")
 	due, err = f.s.DueAmong(ctx, enrichers.KindDriveRoute, []string{id}, true)
 	contractOK(t, err)
 	contractEqual(t, len(due), 0)
 	f.s = routeStore(f, "base")
-	contractOK(t, f.s.FillFacts(ctx))
+	contractOK(t, fillFactsWalk(ctx, f.s))
 	check(store.MinutesByRoute, 47)
 	obs := contractObservation("evidence", "Seed business", f.now.UTC().Truncate(time.Second))
 	obs.Reading.Street = "new street"
@@ -93,14 +102,14 @@ func TestDriveRouteProjectionAndOrigin(t *testing.T) {
 	check(store.MinutesByZip, 80)
 	before, err := f.s.GetFacts(ctx, id)
 	contractOK(t, err)
-	contractOK(t, f.s.FillFacts(ctx))
+	contractOK(t, fillFactsWalk(ctx, f.s))
 	after, err := f.s.GetFacts(ctx, id)
 	contractOK(t, err)
 	contractEqual(t, after, before)
 	// Rollback writers can leave either direction of disagreement.
 	for _, q := range []string{"UPDATE facts SET minutes_source='' WHERE candidate=?", "UPDATE facts SET minutes=NULL,minutes_source='zip' WHERE candidate=?"} {
 		contractOK(t, f.d.Write(ctx, func(tx *sql.Tx) error { _, e := tx.ExecContext(ctx, q, id); return e }))
-		contractOK(t, f.s.FillFacts(ctx))
+		contractOK(t, fillFactsWalk(ctx, f.s))
 		check(store.MinutesByZip, 80)
 	}
 	f.reopen()

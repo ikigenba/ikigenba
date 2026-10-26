@@ -31,7 +31,7 @@ func judgeDelivery(id string) events.Delivery {
 	return events.Delivery{Event: events.Event{Name: trail.AcceptedJudge, ID: id, Attrs: events.Attrs{"anything": true}}}
 }
 
-// R-ZRW3-1A2O R-2UPL-VAID R-3QEZ-TBSF R-63V8-VERW R-XU3S-47RZ
+// R-ZRW3-1A2O R-2UPL-VAID R-3QEZ-TBSF R-XWNX-8M6W R-H1KG-WXJX
 func TestJudgeSeparatesIngestFromJudgments(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/runs/run_a/record" {
@@ -186,7 +186,7 @@ func TestDrainDeadlineAfterEndingHasAlreadyBlocked(t *testing.T) {
 	t.Cleanup(func() { once.Do(func() { close(release) }) })
 	var calls atomic.Int64
 	f.st = store.New(f.d, store.Config{Now: func() time.Time {
-		if calls.Add(1) == 3 {
+		if calls.Add(1) == 2 {
 			close(entered)
 			<-release
 		}

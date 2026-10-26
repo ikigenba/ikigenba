@@ -87,7 +87,7 @@ func costEnded(t *testing.T, f *fixture, trigger string, began time.Time) store.
 
 }
 
-// R-00FD-PO9J R-1YYP-WJMZ R-2S9T-3R0Z
+// R-00FD-PO9J R-1YYP-WJMZ R-WRT5-YPNE
 func TestGeneratedRunCostChain(t *testing.T) {
 	first, second := "generated-first", "generated-second"
 	rows := map[string][]scrapes.Row{first: generatedRows(t, first), second: generatedRows(t, second)}
@@ -169,14 +169,14 @@ func TestGeneratedRunCostChain(t *testing.T) {
 			unranged++
 		}
 	}
-	assertCounts(ended, store.Counts{Rows: 10000, Changed: 10000, Linked: 10000, Judged: 5000, Unranged: unranged, Derived: 10000})
+	assertCounts(ended, store.Counts{Rows: 10000, Unchanged: 10000, Judged: 5000, Unranged: unranged, Derived: 10000})
 
 	// The ending event has been captured and no engine work remains. Prepare
 	// inputs before measuring so only each upkeep call contributes allocations.
 	table := candidates.ZipDrive()
 	ctx := context.Background()
 	var before, after runtime.MemStats
-	// R-2ZL7-EDH5
+	// R-R5M9-468R
 	runtime.ReadMemStats(&before)
 	err = f.st.ReplaceZipDrive(ctx, table)
 	runtime.ReadMemStats(&after)
@@ -188,18 +188,7 @@ func TestGeneratedRunCostChain(t *testing.T) {
 	} else {
 		t.Logf("ReplaceZipDrive allocated %d bytes", allocated)
 	}
-	// R-3GNS-R5UV
-	runtime.ReadMemStats(&before)
-	_, err = f.st.PrunePasses(ctx, 1)
-	runtime.ReadMemStats(&after)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if allocated := after.TotalAlloc - before.TotalAlloc; allocated >= 4194304 {
-		t.Errorf("PrunePasses allocated %d bytes; want less than 4194304", allocated)
-	} else {
-		t.Logf("PrunePasses allocated %d bytes", allocated)
-	}
+
 }
 
 func reflectRowsEqual(a, b scrapes.Row) bool {

@@ -186,7 +186,18 @@ func Run(ctx context.Context, p Process) int {
 	if e, ok := list.Find("prompts"); ok {
 		pc = prompts.NewClient(prompts.ClientConfig{Service: e, Telemetry: w})
 	}
-	st := store.New(d, store.Config{Now: p.Now, Rand: rnd, Origin: s.RouteOrigin})
+	sleep := p.Sleep
+	if sleep == nil {
+		sleep = func(ctx context.Context, d time.Duration) {
+			timer := time.NewTimer(d)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+			case <-timer.C:
+			}
+		}
+	}
+	st := store.New(d, store.Config{Now: p.Now, Rand: rnd, Origin: s.RouteOrigin, Sleep: sleep})
 	var checker *website.Checker
 	client := p.HTTP
 	if _, sandbox := p.LookupEnv("IKIGENBA_SANDBOX"); sandbox {
@@ -205,11 +216,19 @@ func Run(ctx context.Context, p Process) int {
 	if s.MapsAPIKey != "" {
 		router = &routes.Client{HTTP: p.HTTP, Key: s.MapsAPIKey, After: p.After}
 	}
-	eng := passes.New(passes.Config{Routes: router, Website: checker, Prompts: pc, After: p.After, Store: st, Sources: sources.New(fmcsa.New(), ppp.New(), form5500.New(), oshaita.New()), Scrapes: sc, Telemetry: w, Events: em})
+	eng := passes.New(passes.Config{Stderr: p.Stderr, Routes: router, Website: checker, Prompts: pc, After: p.After, Store: st, Sources: sources.New(fmcsa.New(), ppp.New(), form5500.New(), oshaita.New()), Scrapes: sc, Telemetry: w, Events: em})
 	w.Ready()
 	err = st.ReplaceZipDrive(bg, candidates.ZipDrive())
 	if err == nil {
-		err = st.FillFacts(bg)
+		after := ""
+		for {
+			var next string
+			next, err = st.FillFacts(bg, after, passes.BatchSize)
+			if err != nil || next == "" {
+				break
+			}
+			after = next
+		}
 	}
 	if err == nil {
 		err = eng.Recover(bg)
@@ -222,7 +241,7 @@ func Run(ctx context.Context, p Process) int {
 		_ = w.Flush(dc)
 		return ExitServerFailed
 	}
-	_, _ = st.PrunePasses(bg, s.KeepPasses)
+	prune(bg, st, s.KeepPasses)
 	h := web.Handler(web.Config{Banner: p.Banner, MCP: p.MCP(w), LegacyMCP: p.MCP(w), ServicesPath: path, Store: st, Passes: eng, Telemetry: w, Events: em, Website: checker})
 	notify, _ := p.LookupEnv("NOTIFY_SOCKET")
 	if notify != "" {
@@ -248,7 +267,7 @@ func Run(ctx context.Context, p Process) int {
 				return
 			case <-after(SweepInterval):
 				if sweepCtx.Err() == nil {
-					_, _ = st.PrunePasses(bg, s.KeepPasses)
+					prune(bg, st, s.KeepPasses)
 				}
 			}
 		}
@@ -320,4 +339,13 @@ func command(ctx context.Context, p Process) int {
 	}
 	_, _ = p.Stderr.Write([]byte("candidates: unknown " + kind + " '" + arg + "'\n\nsee 'candidates --help' for usage\n"))
 	return ExitUsage
+}
+
+func prune(ctx context.Context, st *store.Store, keep int64) {
+	for {
+		n, err := st.PrunePasses(ctx, keep, passes.BatchSize)
+		if err != nil || n == 0 {
+			return
+		}
+	}
 }

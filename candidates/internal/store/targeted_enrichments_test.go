@@ -63,7 +63,7 @@ func TestSubjectReadsDisplayLinksAndCurrentFacts(t *testing.T) {
 	contractOK(t, f.s.ReplaceZipDrive(ctx, map[string]int64{c.Zip: 0}))
 	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{websiteResult(id, sources.WebsiteHTTPS)})
 	contractOK(t, err)
-	_, _, err = f.s.MarkGone(ctx, "source-z", "absent")
+	_, _, err = f.s.MarkGone(ctx, "source-z", "absent", "", 500)
 	contractOK(t, err)
 	assertSubject(id)
 	survivor := enrichmentCandidate(t, f, "survivor", "owner@survivor.test")
@@ -110,7 +110,7 @@ func TestDueAmongKeepsTargetOrderAndSkipsIneligible(t *testing.T) {
 	}
 }
 
-// R-J0PH-CI9I R-OKGB-71R7 R-Q3GO-6J5N R-Q74D-BUDQ
+// R-J0PH-CI9I R-OKGB-71R7
 func TestDeriveAmongRecordsOnlyDistinctEligibleTargets(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -188,7 +188,7 @@ func TestSiteTextWrittenProjectsIntoProspectListWithoutChangingMembership(t *tes
 	a := contractSeed(t, f)
 	b := enrichmentCandidate(t, f, "site-other", "owner@other.test")
 	deriveAll(t, f.s)
-	_, err := f.s.JudgeAll(ctx)
+	_, _, err := f.s.JudgeAll(ctx, "", 500, f.now)
 	contractOK(t, err)
 	prospectList := prospectListCreate(t, f, "site text stamps")
 	before := prospectListRead(t, f, prospectList)

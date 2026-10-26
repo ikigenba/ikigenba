@@ -173,7 +173,7 @@ func TestIngestRefusesWholeInvalidBatch(t *testing.T) {
 	regEqual(t, len(cs), 0)
 }
 
-// R-7DIN-CZDO R-7PPN-6OSM R-VFA1-PLHH
+// R-7DIN-CZDO
 func TestIngestRefreshAndForce(t *testing.T) {
 	f := regNew(t)
 	a := regObs("one", "First")
@@ -211,7 +211,7 @@ func TestIngestRefreshAndForce(t *testing.T) {
 	regEqual(t, regLinks(t, f, ids[0])[0], want)
 }
 
-// R-5XOA-44OS R-VFA1-PLHH R-GITV-74L5
+// R-HYGP-I8LU R-5XOA-44OS
 func TestIngestDisplayAndGone(t *testing.T) {
 	f := regNew(t)
 	a := regObs("older", "Acme INC")
@@ -237,10 +237,10 @@ func TestIngestDisplayAndGone(t *testing.T) {
 	regEqual(t, c, store.Candidate{ID: id, Status: store.StatusActive, Name: b.Reading.Name, Names: []string{b.Reading.Name, "Alias", "Other", a.Reading.Name}, Street: b.Reading.Street, City: b.Reading.City, State: b.Reading.State, Zip: b.Reading.Zip, County: b.Reading.County, Phone: b.Reading.Phone, Email: b.Reading.Email, People: b.Reading.People, Class: b.Reading.Class, Cargo: []string{"a", "b", "z"}, Created: c.Created, Updated: regTime(f)})
 	before := regLinks(t, f, id)
 	f.now = f.now.Add(time.Hour)
-	n, gone, e := f.st.MarkGone(regCtx, "fmcsa", "old-run")
+	gone, n, e := f.st.MarkGone(regCtx, "fmcsa", "old-run", "", 500)
 	regNoErr(t, e)
 	regEqual(t, n, store.Counts{Gone: 1})
-	regEqual(t, gone, ids)
+	regEqual(t, gone, "older")
 	after := regLinks(t, f, id)
 	regEqual(t, after[0], before[1])
 	want := before[0]
@@ -248,22 +248,25 @@ func TestIngestDisplayAndGone(t *testing.T) {
 	regEqual(t, after[1], want)
 	regEqual(t, regCandidate(t, f, id).Name, a.Reading.Name)
 	regEqual(t, regCandidate(t, f, id).Updated, regTime(f))
-	n, gone, e = f.st.MarkGone(regCtx, "fmcsa", "no-row-run")
+	gone, n, e = f.st.MarkGone(regCtx, "fmcsa", "no-row-run", "", 500)
 	regNoErr(t, e)
 	regEqual(t, n, store.Counts{Gone: 1})
-	regEqual(t, gone, ids)
+	regEqual(t, gone, "older")
 	regEqual(t, regCandidate(t, f, id).Name, b.Reading.Name)
-	n, gone, e = f.st.MarkGone(regCtx, "fmcsa", "no-row-run")
+	beforeNoop := regCandidate(t, f, id)
+	f.now = f.now.Add(time.Hour)
+	gone, n, e = f.st.MarkGone(regCtx, "fmcsa", "no-row-run", "", 500)
 	regNoErr(t, e)
+	regEqual(t, regCandidate(t, f, id), beforeNoop)
 	regEqual(t, n, store.Counts{})
-	if gone == nil || len(gone) != 0 {
+	if gone != "older" {
 		t.Fatal(gone)
 	}
 	for _, x := range []struct{ s, r string }{{"", "run"}, {"fmcsa", ""}} {
-		n, ids, err := f.st.MarkGone(regCtx, x.s, x.r)
+		cursor, n, err := f.st.MarkGone(regCtx, x.s, x.r, "", 500)
 		regEqual(t, n, store.Counts{})
-		if ids != nil || !errors.Is(err, store.ErrUnreachable) {
-			t.Fatal(ids, err)
+		if cursor != "" || !errors.Is(err, store.ErrUnreachable) {
+			t.Fatal(cursor, err)
 		}
 	}
 }
@@ -342,9 +345,9 @@ func TestIngestSplitAndPersistence(t *testing.T) {
 	regEqual(t, seen, []string{id})
 	_, _, e = f.st.Attach(regCtx, "ingest", true, []store.Observation{a, b, c})
 	regNoErr(t, e)
-	_, _, e = f.st.MarkGone(regCtx, "fmcsa", "ingest")
+	_, _, e = f.st.MarkGone(regCtx, "fmcsa", "ingest", "", 500)
 	regNoErr(t, e)
-	_, e = f.st.JudgeAll(regCtx)
+	_, _, e = f.st.JudgeAll(regCtx, "", 500, regTime(f))
 	regNoErr(t, e)
 	for _, l := range regLinks(t, f, r.Other) {
 		if l.Candidate != r.Other || l.Reason != store.LinkDecision || l.Confidence != 1 {
@@ -356,7 +359,7 @@ func TestIngestSplitAndPersistence(t *testing.T) {
 	regEqual(t, rs, []store.Ruling{pair, r})
 }
 
-// R-5KCU-R2WS R-7H6C-IALR R-RGR7-9XKL R-GL9N-YO2J R-GMHK-CFT8
+// R-WPDD-7660 R-5KCU-R2WS R-7H6C-IALR R-RGR7-9XKL R-GL9N-YO2J R-GMHK-CFT8
 func TestIngestMergeAndNotSame(t *testing.T) {
 	f := regNew(t)
 	a := regObs("one", "First")
@@ -365,7 +368,7 @@ func TestIngestMergeAndNotSame(t *testing.T) {
 	ca := regCandidate(t, f, ids[0])
 	cb := regCandidate(t, f, ids[1])
 	deriveAll(t, f.st)
-	_, e := f.st.JudgeAll(regCtx)
+	_, _, e := f.st.JudgeAll(regCtx, "", 500, regTime(f))
 	regNoErr(t, e)
 	oldJudgments, e := f.st.GetJudgments(regCtx, cb.ID)
 	regNoErr(t, e)
@@ -418,15 +421,32 @@ func TestIngestMergeAndNotSame(t *testing.T) {
 		t.Fatal(e)
 	}
 	b.Digest = "fresh"
+	b.Reading.Name = "Reinterpreted moved business"
 	_, _, e = f.st.Attach(regCtx, "later", true, []store.Observation{a, b})
 	regNoErr(t, e)
-	_, _, e = f.st.MarkGone(regCtx, "fmcsa", "later")
+	_, _, e = f.st.MarkGone(regCtx, "fmcsa", "later", "", 500)
 	regNoErr(t, e)
-	_, e = f.st.JudgeAll(regCtx)
+	_, _, e = f.st.JudgeAll(regCtx, "", 500, regTime(f))
 	regNoErr(t, e)
 	regEqual(t, regCandidate(t, f, cb.ID), want)
-	regEqual(t, regLinks(t, f, ca.ID)[1].Candidate, ca.ID)
-	regEqual(t, regLinks(t, f, ca.ID)[1].Reason, store.LinkDecision)
+	movedExpected := oldLinks[0]
+	movedExpected.Candidate = ca.ID
+	movedExpected.Reason = store.LinkDecision
+	movedExpected.Confidence = 1
+	movedExpected.Reading = b.Reading
+	movedExpected.Digest = b.Digest
+	movedExpected.Run = "later"
+	movedExpected.LastSeen = regTime(f)
+	foundMoved := false
+	for _, link := range regLinks(t, f, ca.ID) {
+		if link.SourceID == b.SourceID {
+			regEqual(t, link, movedExpected)
+			foundMoved = true
+		}
+	}
+	if !foundMoved {
+		t.Fatal("moved link missing")
+	}
 	got, e = f.st.GetJudgments(regCtx, cb.ID)
 	regNoErr(t, e)
 	regEqual(t, got, oldJudgments)
@@ -441,7 +461,7 @@ func TestJudgingRulingsTakeEffectImmediately(t *testing.T) {
 	_, ids := regAttach(t, f, "run", a)
 	id := ids[0]
 	deriveAll(t, f.st)
-	_, e := f.st.JudgeAll(regCtx)
+	_, _, e := f.st.JudgeAll(regCtx, "", 500, regTime(f))
 	regNoErr(t, e)
 	k, e := f.st.CreateProspectList(regCtx, store.ProspectList{Name: "test", Size: 10, Filters: store.ProspectListFilters{MaxMinutes: ptrInt(120), RevenueMin: ptrInt(10000000)}, CreatedUserID: "owner"})
 	regNoErr(t, e)
@@ -475,7 +495,7 @@ func TestJudgingRulingsTakeEffectImmediately(t *testing.T) {
 	a.Digest = "excluded-signal"
 	regAttach(t, f, "run-new", a)
 	deriveAll(t, f.st)
-	_, e = f.st.JudgeAll(regCtx)
+	_, _, e = f.st.JudgeAll(regCtx, "", 500, regTime(f))
 	regNoErr(t, e)
 	got, e := f.st.GetJudgments(regCtx, id)
 	regNoErr(t, e)
@@ -491,7 +511,7 @@ func TestJudgingRulingsTakeEffectImmediately(t *testing.T) {
 	regEqual(t, rulings[0].Kind, store.KindInclude)
 }
 
-// R-IMOL-CZV9 R-L6L5-HLZB R-VFA1-PLHH
+// R-IMOL-CZV9 R-L6L5-HLZB
 func TestIngestOldestTieAndGoneIdentity(t *testing.T) {
 	f := regNew(t)
 	a, b := regObs("one", "Acme Inc"), regObs("two", "Acme LLC")
@@ -499,7 +519,7 @@ func TestIngestOldestTieAndGoneIdentity(t *testing.T) {
 	r, cs, e := f.st.Decide(regCtx, store.Ruling{Kind: store.KindSplit, Candidate: ids[0], Keys: []string{sources.SourceKey(b.Scraper, b.SourceID)}, Why: "separate entities", UserID: "owner"})
 	regNoErr(t, e)
 	regEqual(t, cs[0].Created, cs[1].Created)
-	_, _, e = f.st.MarkGone(regCtx, "fmcsa", "empty-run")
+	_, _, e = f.st.MarkGone(regCtx, "fmcsa", "empty-run", "", 500)
 	regNoErr(t, e)
 	// Equal creation times are broken by id even when every matching link is gone.
 	n, touched := regAttach(t, f, "new-run", regObs("three", "Acme Co"))
@@ -530,7 +550,7 @@ func TestJudgingMergeAndSplitAssessOnlyActiveSides(t *testing.T) {
 	b.Reading.Estimate = &sources.Estimate{Source: "fmcsa", Low: 200, Confidence: 0.8, Filed: b.Reading.Filed, Formula: sources.Rules}
 	_, ids := regAttach(t, f, "run", a, b)
 	deriveAll(t, f.st)
-	_, e := f.st.JudgeAll(regCtx)
+	_, _, e := f.st.JudgeAll(regCtx, "", 500, regTime(f))
 	regNoErr(t, e)
 	f.now = f.now.Add(time.Hour)
 	f.calls = 0

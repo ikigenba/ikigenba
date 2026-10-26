@@ -96,12 +96,16 @@ func (s *Store) Judge(ctx context.Context, ids []string) (Counts, error) {
 	return out, nil
 }
 
-// JudgeAll replaces every active candidate's judgments.
-func (s *Store) JudgeAll(ctx context.Context) (Counts, error) {
+// JudgeAll replaces one page's judgments at the caller's time.
+func (s *Store) JudgeAll(ctx context.Context, after string, n int, at time.Time) (string, Counts, error) {
 	var out Counts
-	now := s.now()
-	err := unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		rows, err := querySQL(ctx, tx, "SELECT id FROM candidates WHERE status=?", StatusActive)
+	var last string
+	err := unreachable(s.retryUnit(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		out, last = Counts{}, ""
+		if n < 1 || at.IsZero() {
+			return ErrUnreachable
+		}
+		rows, err := querySQL(ctx, tx, "SELECT id FROM candidates INDEXED BY sqlite_autoindex_candidates_1 WHERE status=? AND id>? ORDER BY id LIMIT ?", StatusActive, after, n)
 		if err != nil {
 			return err
 		}
@@ -113,6 +117,7 @@ func (s *Store) JudgeAll(ctx context.Context) (Counts, error) {
 				return err
 			}
 			ids = append(ids, id)
+			last = id
 		}
 		err = rows.Err()
 		closeErr := rows.Close()
@@ -122,14 +127,11 @@ func (s *Store) JudgeAll(ctx context.Context) (Counts, error) {
 		if closeErr != nil {
 			return closeErr
 		}
-		out, err = judgeKeys(ctx, tx, ids, now)
-		if err != nil {
-			return err
-		}
-		return nil
+		out, err = judgeKeys(ctx, tx, ids, at)
+		return err
 	}))
 	if err != nil {
-		return Counts{}, err
+		return "", Counts{}, err
 	}
-	return out, nil
+	return last, out, nil
 }

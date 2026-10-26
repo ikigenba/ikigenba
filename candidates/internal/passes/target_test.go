@@ -225,7 +225,7 @@ func TestTargetRefusals(t *testing.T) {
 	}
 }
 
-// R-MTSF-SRSA R-08ON-9XFA R-TMW8-ONTV R-OYM3-WBI1 R-TZ38-ID8T R-WKZH-YPCA R-2EQ7-R8VQ R-RFMR-TKMQ R-UYGB-LPQY
+// R-MTSF-SRSA R-08ON-9XFA R-TMW8-ONTV R-OYM3-WBI1 R-HNIN-SSWF R-HSE9-BVV7 R-2EQ7-R8VQ R-RFMR-TKMQ R-HDRG-QMYV
 func TestPromptPassResultsAndForce(t *testing.T) {
 	for _, status := range []string{"exited", "failed", "killed", "timed_out"} {
 		t.Run(status, func(t *testing.T) {
@@ -296,7 +296,7 @@ func TestPromptPassResultsAndForce(t *testing.T) {
 	}
 }
 
-// R-SXAC-NH9A R-VD34-6YNA R-W097-GLQH R-NAV1-5K60 R-YG1Z-034H
+// R-SXAC-NH9A R-HR6C-Y44I R-HG79-I6G9 R-HIN2-9PXN R-YG1Z-034H
 func TestPromptRetriesAndFailures(t *testing.T) {
 	for _, mode := range []string{"retry", "exhausted", "result", "invalid", "show_retry"} {
 		t.Run(mode, func(t *testing.T) {
@@ -435,13 +435,13 @@ func TestTargetedDerivedAndWebsite(t *testing.T) {
 	}
 }
 
-// R-1P4B-Q2B5 R-NAV1-5K60 R-TD51-MHWB R-30OE-N488 R-MTSF-SRSA
+// R-1P4B-Q2B5 R-HIN2-9PXN R-TD51-MHWB R-30OE-N488 R-MTSF-SRSA
 func TestPromptConcurrencyAndDrain(t *testing.T) {
 	f := newFixture(t, nil, false)
 	ids := seedTarget(t, f, 10)
 	ctx := context.Background()
 	// A prospectList with website results becomes populated after a judge.
-	if _, err := f.st.JudgeAll(ctx); err != nil {
+	if _, _, err := f.st.JudgeAll(ctx, "", 10000, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatal(err)
 	}
 	prospectList, err := f.st.CreateProspectList(ctx, store.ProspectList{Name: "targets", Size: 10, CreatedUserID: "owner"})
@@ -533,7 +533,7 @@ func TestFullIngestRequestSequence(t *testing.T) {
 	}
 }
 
-// R-TZ38-ID8T R-WKZH-YPCA: distinct URLs are result data; page copies are pass cost.
+// R-HNIN-SSWF R-HSE9-BVV7: distinct URLs are result data; page copies are pass cost.
 func TestPromptCountsPagesAndOutcome(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := seedTarget(t, f, 1)[0]
@@ -582,7 +582,7 @@ func TestPromptCountsPagesAndOutcome(t *testing.T) {
 	}
 }
 
-// R-SL3C-TRUC: the default poll reaches a completed run within sixty seconds.
+// R-HUU2-3FCL: the default poll reaches a completed run within sixty seconds.
 func TestPromptDefaultPoll(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := seedTarget(t, f, 1)[0]
@@ -608,7 +608,7 @@ func TestProspectListSelectionSkipsNoWebsiteAndPreservesOutside(t *testing.T) {
 	if _, err := f.st.AddEnrichments(ctx, []store.Enrichment{{Candidate: ids[2], Kind: sources.WebsiteCheck, Inputs: "company2.test", Source: "fixture", Found: empty}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.st.JudgeAll(ctx); err != nil {
+	if _, _, err := f.st.JudgeAll(ctx, "", 10000, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatal(err)
 	}
 	prospectList, err := f.st.CreateProspectList(ctx, store.ProspectList{Name: "selected", Size: 3, CreatedUserID: "owner"})
@@ -659,12 +659,12 @@ func TestProspectListSelectionSkipsNoWebsiteAndPreservesOutside(t *testing.T) {
 	}
 }
 
-// R-VD34-6YNA R-NAV1-5K60: one failed result cancels other held polls without waiting.
+// R-HR6C-Y44I R-HIN2-9PXN: one failed result cancels other held polls without waiting.
 func TestPromptFailureCancelsOtherRunsAndKeepsPriorResult(t *testing.T) {
 	f := newFixture(t, nil, false)
 	ids := seedTarget(t, f, 6)
 	ctx := context.Background()
-	if _, err := f.st.JudgeAll(ctx); err != nil {
+	if _, _, err := f.st.JudgeAll(ctx, "", 10000, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatal(err)
 	}
 	prospectList, err := f.st.CreateProspectList(ctx, store.ProspectList{Name: "fail-fast", Size: 6, CreatedUserID: "owner"})
@@ -826,7 +826,7 @@ func TestConcurrentTargetStarts(t *testing.T) {
 	f.eng.Drain(context.Background())
 }
 
-// R-WKZH-YPCA R-XU3S-47RZ R-TZ38-ID8T R-TMW8-ONTV R-2EQ7-R8VQ R-RFMR-TKMQ
+// R-HSE9-BVV7 R-H1KG-WXJX R-HNIN-SSWF R-TMW8-ONTV R-2EQ7-R8VQ R-RFMR-TKMQ
 func TestBriefTargetLifecycleAndCounts(t *testing.T) {
 	f := newFixture(t, nil, false)
 	ctx := context.Background()
@@ -842,7 +842,7 @@ func TestBriefTargetLifecycleAndCounts(t *testing.T) {
 		}
 		inputs[id] = enrichers.Brief{}.Input(s)
 	}
-	if _, err := f.st.JudgeAll(ctx); err != nil {
+	if _, _, err := f.st.JudgeAll(ctx, "", 10000, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatal(err)
 	}
 	prospectList, err := f.st.CreateProspectList(ctx, store.ProspectList{Name: "brief targets", Size: 6, CreatedUserID: "owner"})

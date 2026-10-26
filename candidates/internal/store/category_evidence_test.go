@@ -223,7 +223,7 @@ func TestFillFactsReprojectsMissingCategoryRowsAndPreservesExistingRows(t *testi
 		contractOK(t, err)
 	}
 	for range 2 {
-		contractOK(t, f.s.FillFacts(ctx))
+		contractOK(t, func() error { _, e := f.s.FillFacts(ctx, "", 500); return e }())
 		got, e := f.s.GetFacts(ctx, missing)
 		contractOK(t, e)
 		contractEqual(t, got, expected)

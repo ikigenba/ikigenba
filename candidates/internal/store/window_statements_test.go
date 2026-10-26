@@ -51,7 +51,7 @@ func statementFixture(t *testing.T) *contractFixture {
 		_, err := f.s.FinishPass(ctx, p.ID, store.Counts{})
 		contractOK(t, err)
 	}
-	_, err := f.s.JudgeAll(ctx)
+	_, _, err := f.s.JudgeAll(ctx, "", 500, f.now)
 	contractOK(t, err)
 	_, _, err = f.s.Decide(ctx, store.Ruling{Kind: store.KindMerge, Candidate: ids[0], Other: ids[1], Why: "same business", UserID: "owner"})
 	contractOK(t, err)

@@ -63,7 +63,7 @@ func TestSearchWebsiteCandidateAndMember(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := ids[0]
-	if _, err = cfg.Store.JudgeAll(t.Context()); err != nil {
+	if err = judgePageFixture(t.Context(), cfg.Store); err != nil {
 		t.Fatal(err)
 	}
 	co, err := cfg.Store.CreateProspectList(t.Context(), store.ProspectList{Name: "search-prospect_list", Size: 10, CreatedUserID: "owner"})
@@ -336,7 +336,7 @@ func TestUnfoundCandidateAndMemberWithoutJudging(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := cfg.Store.JudgeAll(t.Context()); err != nil {
+		if err := judgePageFixture(t.Context(), cfg.Store); err != nil {
 			t.Fatal(err)
 		}
 		pl, err := cfg.Store.CreateProspectList(t.Context(), store.ProspectList{Name: "chosen-list", Size: 10, CreatedUserID: "owner"})

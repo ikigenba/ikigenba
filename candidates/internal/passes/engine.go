@@ -4,6 +4,8 @@ package passes
 import (
 	"context"
 	"errors"
+	"io"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -32,6 +34,7 @@ type Config struct {
 	Website   *website.Checker
 	Routes    *routes.Client
 	After     func(time.Duration) <-chan time.Time
+	Stderr    io.Writer
 }
 
 // Engine coordinates cancellable ingest, judgment and enrichment passes.
@@ -42,6 +45,7 @@ type Engine struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	work     sync.WaitGroup
+	judgeID  string
 }
 
 // New creates an idle engine.
@@ -94,6 +98,15 @@ func (e *Engine) Judge(ctx context.Context, c identity.Caller) (store.Pass, erro
 	if e.stopping.Load() {
 		return store.Pass{}, &Refusal{Word: RefusalStopping}
 	}
+	if e.judgeID != "" {
+		running, err := e.cfg.Store.GetPass(e.ctx, e.judgeID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return store.Pass{}, err
+		}
+		if err == nil && running.Status == store.StatusRunning {
+			return store.Pass{}, &Refusal{Word: RefusalBusy}
+		}
+	}
 	p, err := e.cfg.Store.AddPass(e.ctx, store.Pass{Kind: store.KindJudge, Origin: store.OriginJudge, Trigger: store.TriggerJudgeTool, UserID: c.UserID, UserEmail: c.Email, RequestID: c.RequestID})
 	if err != nil && e.stopping.Load() {
 		return store.Pass{}, &Refusal{Word: RefusalStopping}
@@ -118,12 +131,20 @@ func (e *Engine) start(ctx context.Context, p store.Pass, c identity.Caller, run
 }
 
 func (e *Engine) startWork(ctx context.Context, p store.Pass, c identity.Caller, job func(context.Context) (store.Counts, string)) {
+	if p.Kind == store.KindJudge {
+		e.judgeID = p.ID
+	}
 	trail.Record(context.WithoutCancel(ctx), e.cfg.Telemetry, e.cfg.Events, trail.Started, p)
 	e.work.Add(1)
 	finishCtx := context.WithoutCancel(ctx)
 	go func() {
 		defer e.work.Done()
-		totals, reason := job(identity.NewContext(e.ctx, c))
+		failure := &workFailure{}
+		workCtx := context.WithValue(identity.NewContext(e.ctx, c), failureKey{}, failure)
+		totals, reason := job(workCtx)
+		if reason == store.ReasonStore && e.ctx.Err() == nil && e.cfg.Stderr != nil {
+			_, _ = e.cfg.Stderr.Write([]byte("candidates: pass " + p.ID + " failed: store\n\n" + strings.ReplaceAll(failure.text(), "\n", " ") + "\n"))
+		}
 		ended, err := e.finish(finishCtx, p.ID, totals, reason)
 		if err == nil {
 			trail.Record(finishCtx, e.cfg.Telemetry, e.cfg.Events, trail.Finished, ended)
@@ -297,6 +318,7 @@ func (e *Engine) ingest(ctx context.Context, delivery *scrapes.Run, p store.Pass
 			counts, _, err := e.cfg.Store.Attach(ctx, run.ID, full, batch)
 			if err != nil {
 				storeFailure = true
+				e.storeFailure(ctx, err)
 				return err
 			}
 			addCounts(&total, counts)
@@ -323,11 +345,18 @@ func (e *Engine) ingest(ctx context.Context, delivery *scrapes.Run, p store.Pass
 				return store.ReasonStore
 			}
 		}
-		counts, _, err := e.cfg.Store.MarkGone(ctx, scraper, run.ID)
-		if err != nil {
-			return store.ReasonStore
+		after := ""
+		for {
+			next, counts, err := e.cfg.Store.MarkGone(ctx, scraper, run.ID, after, BatchSize)
+			if err != nil {
+				return e.storeFailure(ctx, err)
+			}
+			addCounts(&total, counts)
+			if next == "" {
+				break
+			}
+			after = next
 		}
-		addCounts(&total, counts)
 		return ""
 	}
 	if delivery != nil {
@@ -357,18 +386,51 @@ func (e *Engine) ingest(ctx context.Context, delivery *scrapes.Run, p store.Pass
 			if _, ok := en.(enrichers.Deriver); ok {
 				n, err := e.derive(ctx, en.Kind(), true)
 				if err != nil {
-					return store.Counts{}, store.ReasonStore
+					return store.Counts{}, e.storeFailure(ctx, err)
 				}
 				total.Derived += n
 			}
 		}
 	}
 	if full || p.Kind == store.KindJudge {
-		counts, err := e.cfg.Store.JudgeAll(ctx)
-		if err != nil {
-			return store.Counts{}, store.ReasonStore
+		after := ""
+		for {
+			next, counts, err := e.cfg.Store.JudgeAll(ctx, after, BatchSize, p.Started)
+			if err != nil {
+				return store.Counts{}, e.storeFailure(ctx, err)
+			}
+			addCounts(&total, counts)
+			if next == "" {
+				break
+			}
+			after = next
 		}
-		addCounts(&total, counts)
 	}
 	return total, ""
+}
+
+// workFailure retains only the first store error of one pass, including workers.
+type failureKey struct{}
+type workFailure struct {
+	mu  sync.Mutex
+	err error
+}
+
+func (f *workFailure) text() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err == nil {
+		return store.Unreachable
+	}
+	return f.err.Error()
+}
+func (e *Engine) storeFailure(ctx context.Context, err error) string {
+	if f, ok := ctx.Value(failureKey{}).(*workFailure); ok && err != nil {
+		f.mu.Lock()
+		if f.err == nil {
+			f.err = err
+		}
+		f.mu.Unlock()
+	}
+	return store.ReasonStore
 }

@@ -16,7 +16,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-Q1MW-4Z89 R-01D8-ZAZ4 R-ZQE5-JDAV R-1QFF-85G4 R-3WDS-L5IA R-UYGB-LPQY
+// R-GWOV-DUL5 R-01D8-ZAZ4 R-ZQE5-JDAV R-1QFF-85G4 R-3WDS-L5IA R-HDRG-QMYV
 func TestDerivedKindsAndIdempotentAll(t *testing.T) {
 	for _, kind := range []string{"", enrichers.KindDriveMinutes, enrichers.KindLinkFacts} {
 		t.Run(kind, func(t *testing.T) {
@@ -149,7 +149,7 @@ func TestDerivedKindsAndIdempotentAll(t *testing.T) {
 	}
 }
 
-// R-YYCG-QN8W R-01D8-ZAZ4 R-ZQE5-JDAV R-1QFF-85G4
+// R-GZ4O-5E2J R-01D8-ZAZ4 R-ZQE5-JDAV R-1QFF-85G4
 func TestDerivedFactsExistBeforeFirstFetch(t *testing.T) {
 	f := newFixture(t, nil, false)
 	ids := seedEmails(t, f, 1, func(int) string { return "owner@derived.test" })
@@ -252,7 +252,7 @@ func TestWebsiteInputsChangeRecordsAnotherResult(t *testing.T) {
 	}
 }
 
-// R-PN03-JQBX R-XU3S-47RZ R-MRCN-18AW R-3QEZ-TBSF R-UYGB-LPQY
+// R-H6G2-G0IP R-H1KG-WXJX R-XU84-H2PI R-3QEZ-TBSF R-HDRG-QMYV
 func TestFullIngestForcesDerivedResultsBeforeJudging(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/scrapers/fmcsa/current" {

@@ -54,7 +54,7 @@ func TestCategoryEvidencePages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = cfg.Store.JudgeAll(t.Context()); err != nil {
+	if err = judgePageFixture(t.Context(), cfg.Store); err != nil {
 		t.Fatal(err)
 	}
 	co, err := cfg.Store.CreateProspectList(t.Context(), store.ProspectList{Name: "category-prospect_list", Size: 10, CreatedUserID: "chosen-owner"})

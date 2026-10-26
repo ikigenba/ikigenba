@@ -168,10 +168,10 @@ func TestOrdinaryStoreWritesPreserveWebsiteResults(t *testing.T) {
 	contractOK(t, err)
 	for _, write := range []func() error{
 		func() error { _, _, e := f.s.Attach(ctx, "rebuilt", true, []store.Observation{o}); return e },
-		func() error { _, _, e := f.s.MarkGone(ctx, o.Scraper, "absent"); return e },
+		func() error { _, _, e := f.s.MarkGone(ctx, o.Scraper, "absent", "", 100); return e },
 		func() error { _, e := f.s.Judge(ctx, []string{id}); return e },
-		func() error { _, e := f.s.JudgeAll(ctx); return e },
-		func() error { _, e := f.s.PrunePasses(ctx, 1); return e },
+		func() error { _, _, e := f.s.JudgeAll(ctx, "", 100, f.now); return e },
+		func() error { _, e := f.s.PrunePasses(ctx, 1, 100); return e },
 	} {
 		contractOK(t, write())
 		after, e := f.s.Enrichments(ctx, id)

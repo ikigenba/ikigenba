@@ -235,32 +235,50 @@ func (s *Store) RunningPasses(ctx context.Context) ([]Pass, error) {
 	return out, err
 }
 
-// PrunePasses removes old completed passes independently by status.
-func (s *Store) PrunePasses(ctx context.Context, keep int64) ([]Pass, error) {
-	var out []Pass
-	err := unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		if keep < 1 {
+// PrunePasses removes one page from the oldest passes past keeping.
+func (s *Store) PrunePasses(ctx context.Context, keep int64, n int) (int64, error) {
+	var count int64
+	err := unreachable(s.retryUnit(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		count = 0
+		if keep < 1 || n < 1 {
 			return ErrUnreachable
 		}
-		var err error
-		out, err = readRecords[Pass](ctx, tx, "passes", passColumns, ` WHERE
-            (status=? AND id NOT IN (SELECT id FROM passes WHERE status=? ORDER BY started DESC,id DESC LIMIT ?))
-            OR (status=? AND id NOT IN (SELECT id FROM passes WHERE status=? ORDER BY started DESC,id DESC LIMIT ?))
-            ORDER BY started DESC,id DESC`, StatusDone, StatusDone, keep, StatusFailed, StatusFailed, keep)
+		rows, err := querySQL(ctx, tx, `SELECT id FROM passes WHERE
+   (status=? AND (started,id)<(SELECT started,id FROM passes WHERE status=? ORDER BY started DESC,id DESC LIMIT 1 OFFSET ?)) OR
+   (status=? AND (started,id)<(SELECT started,id FROM passes WHERE status=? ORDER BY started DESC,id DESC LIMIT 1 OFFSET ?))
+   ORDER BY started,id LIMIT ?`, StatusDone, StatusDone, keep-1, StatusFailed, StatusFailed, keep-1, n)
 		if err != nil {
 			return err
 		}
-		for _, p := range out {
-			if err := deleteRecord(ctx, tx, "passes", "id=?", p.ID); err != nil {
+		ids := []string{}
+		for rows.Next() {
+			var id string
+			if err = rows.Scan(&id); err != nil {
+				_ = rows.Close()
 				return err
 			}
+			ids = append(ids, id)
+		}
+		err = rows.Err()
+		closeErr := rows.Close()
+		if err != nil {
+			return err
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		for _, id := range ids {
+			if err = deleteRecord(ctx, tx, "passes", "id=?", id); err != nil {
+				return err
+			}
+			count++
 		}
 		return nil
 	}))
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	return out, nil
+	return count, nil
 }
 
 // ReplaceZipDrive replaces the ZIP drive-time table.

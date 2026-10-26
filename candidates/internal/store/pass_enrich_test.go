@@ -345,9 +345,10 @@ func TestTargetedPassAcceptsEveryEnrichmentKind(t *testing.T) {
 	}
 }
 
-// R-9B0V-6MNK
+// R-PO4D-1YWE
 func TestPassStoreMethodSignatures(t *testing.T) {
 	f := contractDB(t)
+	// R-PO4D-1YWE
 	methods := struct {
 		add     func(context.Context, store.Pass) (store.Pass, error)
 		finish  func(context.Context, string, store.Counts) (store.Pass, error)
@@ -355,7 +356,7 @@ func TestPassStoreMethodSignatures(t *testing.T) {
 		get     func(context.Context, string) (store.Pass, error)
 		list    func(context.Context, string, string, int) ([]store.Pass, error)
 		running func(context.Context) ([]store.Pass, error)
-		prune   func(context.Context, int64) ([]store.Pass, error)
+		prune   func(context.Context, int64, int) (int64, error)
 	}{add: f.s.AddPass, finish: f.s.FinishPass, fail: f.s.FailPass, get: f.s.GetPass, list: f.s.ListPasses, running: f.s.RunningPasses, prune: f.s.PrunePasses}
 	if methods.add == nil || methods.finish == nil || methods.fail == nil || methods.get == nil || methods.list == nil || methods.running == nil || methods.prune == nil {
 		t.Fatal("missing pass store method")

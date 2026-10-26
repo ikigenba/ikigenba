@@ -32,7 +32,7 @@ func labeledBrief(t *testing.T, id string, failed bool, labels ...string) store.
 	return e
 }
 
-// R-IULZ-FNK1
+// R-4DET-6YX6
 func TestHeadcountFactsProjectionNewestAndGoodBrief(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -67,7 +67,7 @@ func TestHeadcountFactsProjectionNewestAndGoodBrief(t *testing.T) {
 	contractEqual(t, factsAt(ctx, t, f.s, id).Headcounts, []sources.Headcount{})
 }
 
-// R-IVTV-TFAQ
+// R-LCOF-CIN5
 func TestFillFactsRefreshesOnlyHeadcountsAndLabelsAndIsIdempotent(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -80,7 +80,7 @@ func TestFillFactsRefreshesOnlyHeadcountsAndLabelsAndIsIdempotent(t *testing.T) 
 		return e
 	}))
 	before := factsAt(ctx, t, f.s, id)
-	contractOK(t, f.s.FillFacts(ctx))
+	contractOK(t, fillFactsWalk(ctx, f.s))
 	got := factsAt(ctx, t, f.s, id)
 	expected := before
 	expected.Headcounts = []sources.Headcount{{Scraper: ppp.Name, Kind: sources.HeadcountJobs, Count: 26, AsOf: time.Date(2020, 4, 28, 0, 0, 0, 0, time.UTC)}}
@@ -89,7 +89,7 @@ func TestFillFactsRefreshesOnlyHeadcountsAndLabelsAndIsIdempotent(t *testing.T) 
 	beforeSecond := contractState(t, f)
 	resultsBefore, err := f.s.Enrichments(ctx, id)
 	contractOK(t, err)
-	contractOK(t, f.s.FillFacts(ctx))
+	contractOK(t, fillFactsWalk(ctx, f.s))
 	contractEqual(t, contractState(t, f), beforeSecond)
 	contractEqual(t, factsAt(ctx, t, f.s, id), expected)
 	resultsAfter, err := f.s.Enrichments(ctx, id)
@@ -99,7 +99,7 @@ func TestFillFactsRefreshesOnlyHeadcountsAndLabelsAndIsIdempotent(t *testing.T) 
 	contractEqual(t, factsAt(ctx, t, f.s, id), expected)
 }
 
-// R-4RAZ-ZN89
+// R-L5D1-1W6Z
 func TestHeadcountHoursPersistenceAndPreviousWriter(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -136,7 +136,7 @@ func TestHeadcountHoursPersistenceAndPreviousWriter(t *testing.T) {
 		return e
 	}))
 	contractEqual(t, factsAt(ctx, t, f.s, id).Headcounts, []sources.Headcount{noHours})
-	contractOK(t, f.s.FillFacts(ctx))
+	contractOK(t, fillFactsWalk(ctx, f.s))
 	contractEqual(t, factsAt(ctx, t, f.s, id).Headcounts, want[:1])
 	f.reopen()
 	contractEqual(t, factsAt(ctx, t, f.s, id).Headcounts, want[:1])

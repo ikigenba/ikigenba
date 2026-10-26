@@ -123,7 +123,7 @@ func TestProspectListAndRejectHistoryPages(t *testing.T) {
 		}
 		ids = append(ids, created[0])
 	}
-	if _, err = cfg.Store.JudgeAll(ctx); err != nil {
+	if err = judgePageFixture(ctx, cfg.Store); err != nil {
 		t.Fatal(err)
 	}
 	full := pageProspectList(t, cfg, prospectList.ID)
@@ -310,7 +310,7 @@ func TestPagesLeaveEveryRecordUnchanged(t *testing.T) {
 	if err != nil || len(ids) != 1 {
 		t.Fatal(ids, err)
 	}
-	if _, err = cfg.Store.JudgeAll(ctx); err != nil {
+	if err = judgePageFixture(ctx, cfg.Store); err != nil {
 		t.Fatal(err)
 	}
 	id := ids[0]

@@ -15,7 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-HJLO-5P2Y R-HKTK-JGTN R-HM1G-X8KC
+// R-HJLO-5P2Y R-VAPN-3BP5 R-VD5F-UV6J
 func TestHeadcountCandidateAndListAnswers(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(4)
@@ -42,7 +42,7 @@ func TestHeadcountCandidateAndListAnswers(t *testing.T) {
 			}
 		}
 	}
-	if _, err := f.st.JudgeAll(t.Context()); err != nil {
+	if err := walkJudgments(t.Context(), f.st, f.now); err != nil {
 		t.Fatal(err)
 	}
 	members := decodeList[tools.ProspectListRead](t, f.call("prospect_list", tools.ReadProspectListArgs{ProspectList: list.ID, Peek: true})).Members
@@ -96,7 +96,7 @@ func TestHeadcountCandidateAndListAnswers(t *testing.T) {
 	}
 }
 
-// R-HN9D-B0B1
+// R-VFL8-MENX
 func TestCandidateAnswersHeadcountEstimate(t *testing.T) {
 	f := newFixture(t)
 	_, ids, err := f.st.Attach(t.Context(), "chosen-run", false, []store.Observation{{Scraper: fmcsa.Name, SourceID: "chosen-row", Digest: "chosen-digest", Reading: sources.Reading{Name: "chosen-business", NameKey: "chosen-business", Estimate: &sources.Estimate{Source: fmcsa.Name, Low: 1500000, High: new(int64(2500000)), Confidence: .7}}}})
@@ -107,7 +107,7 @@ func TestCandidateAnswersHeadcountEstimate(t *testing.T) {
 	if _, err = f.st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: ids[0], Kind: enrichers.KindLinkFacts, Source: enrichers.SourceLinks, Inputs: "chosen-inputs", Found: encodedJSON(found)}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.st.JudgeAll(t.Context()); err != nil {
+	if err = walkJudgments(t.Context(), f.st, f.now); err != nil {
 		t.Fatal(err)
 	}
 	d := decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: ids[0]}))

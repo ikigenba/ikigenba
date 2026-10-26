@@ -48,7 +48,7 @@ func (e *Engine) routeTargets(ctx context.Context, rt enrichers.Router, ds []sto
 func (e *Engine) routeOne(ctx context.Context, rt enrichers.Router, d store.Due) (store.Counts, string) {
 	s, err := e.cfg.Store.Subject(ctx, d.Candidate)
 	if err != nil {
-		return store.Counts{}, store.ReasonStore
+		return store.Counts{}, e.storeFailure(ctx, err)
 	}
 	res, tally := rt.Route(ctx, s)
 	counts := store.Counts{Runs: tally.Sent, RunsFailed: tally.Failed, Cost: tally.CostNanos}
@@ -57,7 +57,7 @@ func (e *Engine) routeOne(ctx context.Context, rt enrichers.Router, d store.Due)
 	}
 	_, err = e.cfg.Store.AddEnrichments(ctx, []store.Enrichment{{Candidate: d.Candidate, Kind: rt.Kind(), Inputs: d.Inputs, Source: res.Source, Found: res.Found, Cost: res.Cost}})
 	if err != nil {
-		return counts, store.ReasonStore
+		return counts, e.storeFailure(ctx, err)
 	}
 	return counts, ""
 }

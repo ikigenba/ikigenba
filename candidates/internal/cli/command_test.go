@@ -221,7 +221,7 @@ func TestDatabaseOpenRefusal(t *testing.T) {
 	}
 }
 
-// R-60KT-WY1K
+// R-U54M-T001
 func TestProcessFieldsByPosition(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	p := cli.Process{[]string{"--version"}, nil, nil, 0, &out, &diagnostics, "fixture-display", nil, nil, nil, nil, nil, "", nil, nil, nil, nil, nil}
