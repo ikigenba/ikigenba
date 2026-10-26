@@ -22,14 +22,14 @@ This directory is where an agent building the next app finds the suite's convent
 
 **Precedent.** `dummy`: a SQL window keyed by `seq`.
 
-## Memory
+## Bounded work
 
-**Rule.** A service's memory is bounded by a batch it chooses, never by the size of its data or the space. It walks a large set by key range through the store, with a cursor or a window, folds each row into its answer as it reads it, keeps the newest result of a kind rather than every result, and never materializes a whole table, a whole run or every id in memory. A write transaction covers one window, not the space.
+**Rule.** Large data is worked in pages, and a service's memory and each unit of its work are bounded by a page it chooses, never by the size of its data or the space. A page is a bounded number of rows, its size a named constant such as `BatchSize`, read by a key cursor with a limit as its own query and written in its own transaction; the service iterates pages until none remain. No statement, transaction or open cursor spans the whole set: the problem is not pushed into the database as one statement either. Within a page it folds each row into its answer as it reads it and keeps the newest result of a kind rather than every result; it never materializes a whole table, a whole run or every id in memory. A read bounded by one key, such as one record's own rows, is one query and says what bounds it.
 
-**Wire shape.** None of its own; this is how a pass over the store is worked, as Storage is how a list is served. The window's key is the walk's order, compared as a row value as in Storage, and the next window starts after the last key the previous one read, never at an offset.
+**Wire shape.** None of its own; this is how a pass over the store is worked, as Storage is how a list is served. The page's key is the walk's order, compared as a row value as in Storage, and the next page starts after the last key the previous one read, never at an offset.
 
-**Shared code.** `appkit/db` for the open path. Contract: the app's own design, which names each walk's key, its batch and what each unit holds.
+**Shared code.** `appkit/db` for the open path. Contract: the app's own design, which names each walk's key, its page size and what each unit holds.
 
-**Precedent.** `candidates`: its ingest, derive, enrich and judge passes each work in windows of `passes.BatchSize` rows, one write transaction per window.
+**Precedent.** `candidates`: its ingest, derive, judge and gone-marking each work in pages of `passes.BatchSize` rows, one query and one write transaction per page.
 
 Later entries, each its own discussion and not written yet: retention by count and age; per-owner against space-wide lists; refusal words.
