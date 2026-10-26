@@ -22,4 +22,14 @@ This directory is where an agent building the next app finds the suite's convent
 
 **Precedent.** `dummy`: a SQL window keyed by `seq`.
 
+## Memory
+
+**Rule.** A service's memory is bounded by a batch it chooses, never by the size of its data or the space. It walks a large set by key range through the store, with a cursor or a window, folds each row into its answer as it reads it, keeps the newest result of a kind rather than every result, and never materializes a whole table, a whole run or every id in memory. A write transaction covers one window, not the space.
+
+**Wire shape.** None of its own; this is how a pass over the store is worked, as Storage is how a list is served. The window's key is the walk's order, compared as a row value as in Storage, and the next window starts after the last key the previous one read, never at an offset.
+
+**Shared code.** `appkit/db` for the open path. Contract: the app's own design, which names each walk's key, its batch and what each unit holds.
+
+**Precedent.** `candidates`: its ingest, derive, enrich and judge passes each work in windows of `passes.BatchSize` rows, one write transaction per window.
+
 Later entries, each its own discussion and not written yet: retention by count and age; per-owner against space-wide lists; refusal words.
