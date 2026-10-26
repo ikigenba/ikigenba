@@ -314,14 +314,14 @@ func TestListEncoding(t *testing.T) {
 	}
 }
 
-// R-M96M-97R4 R-EI90-K3AG
+// R-CC0J-VOZG R-EI90-K3AG
 func TestScrapers(t *testing.T) {
 	f := setupRegistry(t, scrapers.Default(scrapers.Config{Now: func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }}))
-	f.success("scrapers", tools.NoArgs{}, tools.ScraperList{Scrapers: []tools.Scraper{{Name: "fmcsa"}, {Name: "form5500"}, {Name: "mn_parcels"}, {Name: "ppp"}}})
+	f.success("scrapers", tools.NoArgs{}, tools.ScraperList{Scrapers: []tools.Scraper{{Name: "fmcsa"}, {Name: "form5500"}, {Name: "mn_parcels"}, {Name: "osha_ita"}, {Name: "ppp"}}})
 	done := f.add(store.StatusDone, 1)
 	running := f.add(store.StatusRunning, 0)
 	currentRecord, runningRecord := runs.RecordOf(done), runs.RecordOf(running)
-	f.success("scrapers", tools.NoArgs{}, tools.ScraperList{Scrapers: []tools.Scraper{{"fmcsa", &currentRecord, &runningRecord}, {Name: "form5500"}, {Name: "mn_parcels"}, {Name: "ppp"}}})
+	f.success("scrapers", tools.NoArgs{}, tools.ScraperList{Scrapers: []tools.Scraper{{"fmcsa", &currentRecord, &runningRecord}, {Name: "form5500"}, {Name: "mn_parcels"}, {Name: "osha_ita"}, {Name: "ppp"}}})
 	pppDone, err := f.st.AddRun(t.Context(), store.Run{Scraper: "ppp", UserID: "owner"})
 	if err != nil {
 		t.Fatal(err)
@@ -335,7 +335,7 @@ func TestScrapers(t *testing.T) {
 		t.Fatal(err)
 	}
 	pppCurrentRecord, pppRunningRecord := runs.RecordOf(pppDone), runs.RecordOf(pppRunning)
-	f.success("scrapers", tools.NoArgs{}, tools.ScraperList{Scrapers: []tools.Scraper{{"fmcsa", &currentRecord, &runningRecord}, {Name: "form5500"}, {Name: "mn_parcels"}, {"ppp", &pppCurrentRecord, &pppRunningRecord}}})
+	f.success("scrapers", tools.NoArgs{}, tools.ScraperList{Scrapers: []tools.Scraper{{"fmcsa", &currentRecord, &runningRecord}, {Name: "form5500"}, {Name: "mn_parcels"}, {Name: "osha_ita"}, {"ppp", &pppCurrentRecord, &pppRunningRecord}}})
 	parcelDone, err := f.st.AddRun(t.Context(), store.Run{Scraper: "mn_parcels", UserID: "parcel-owner"})
 	if err != nil {
 		t.Fatal(err)
@@ -349,7 +349,7 @@ func TestScrapers(t *testing.T) {
 		t.Fatal(err)
 	}
 	parcelCurrentRecord, parcelRunningRecord := runs.RecordOf(parcelDone), runs.RecordOf(parcelRunning)
-	f.success("scrapers", tools.NoArgs{}, tools.ScraperList{Scrapers: []tools.Scraper{{"fmcsa", &currentRecord, &runningRecord}, {Name: "form5500"}, {"mn_parcels", &parcelCurrentRecord, &parcelRunningRecord}, {"ppp", &pppCurrentRecord, &pppRunningRecord}}})
+	f.success("scrapers", tools.NoArgs{}, tools.ScraperList{Scrapers: []tools.Scraper{{"fmcsa", &currentRecord, &runningRecord}, {Name: "form5500"}, {"mn_parcels", &parcelCurrentRecord, &parcelRunningRecord}, {Name: "osha_ita"}, {"ppp", &pppCurrentRecord, &pppRunningRecord}}})
 }
 
 // R-0HFL-0ZOA
@@ -745,7 +745,7 @@ type namedScraper struct {
 
 func (s *namedScraper) Name() string { return s.name }
 
-// R-M96M-97R4
+// R-CC0J-VOZG
 func TestScrapersInjectedRegistry(t *testing.T) {
 	reg := scrapers.New(&namedScraper{name: "zeta"}, &namedScraper{name: "alpha"}, &namedScraper{name: "middle"})
 	f := setupRegistry(t, reg)
@@ -777,7 +777,7 @@ func TestScrapersInjectedRegistry(t *testing.T) {
 	}})
 }
 
-// R-M96M-97R4
+// R-CC0J-VOZG
 func TestScrapersEmptyRegistry(t *testing.T) {
 	f := setupRegistry(t, scrapers.New())
 	f.add(store.StatusDone, 0)

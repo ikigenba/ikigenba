@@ -19,6 +19,8 @@ type Settings struct {
 	MNParcelsCounties                                  []string
 	Form5500Years                                      []string
 	Form5500States                                     []string
+	OSHAITAFiles                                       []string
+	OSHAITAStates                                      []string
 }
 
 // Error identifies a refused setting.
@@ -36,13 +38,14 @@ const (
 	WantPowerUnits string = "a non-negative whole number of power units"
 	WantStatus     string = "one uppercase status letter"
 	WantFiles      string = "comma-separated file names of letters, digits, underscore, hyphen and dot, not starting with dot"
+	WantPaths      string = "comma-separated relative paths of letters, digits, underscore, hyphen, dot and spaces, with no segment starting with dot or space or ending with space"
 	WantYears      string = "comma-separated four-digit years starting with a non-zero digit"
 	WantCounties   string = "comma-separated county names starting with a letter, containing letters, spaces, dots and apostrophes, and not ending with a space"
 )
 
 // Defaults returns fresh default settings.
 func Defaults() Settings {
-	return Settings{5, 2, 4096000, 10, []string{"MN", "WI"}, 5, "A", []string{"public_150k_plus_240930.csv"}, []string{"MN", "WI"}, []string{"Carlton", "Chisago", "Isanti", "Mille Lacs", "Aitkin", "St. Louis", "Anoka", "Washington", "Sherburne", "Stearns", "Benton", "Morrison", "Crow Wing"}, []string{"2025", "2024", "2023", "2022", "2021", "2020", "2019"}, []string{"MN", "WI"}}
+	return Settings{5, 2, 4096000, 10, []string{"MN", "WI"}, 5, "A", []string{"public_150k_plus_240930.csv"}, []string{"MN", "WI"}, []string{"Carlton", "Chisago", "Isanti", "Mille Lacs", "Aitkin", "St. Louis", "Anoka", "Washington", "Sherburne", "Stearns", "Benton", "Morrison", "Crow Wing"}, []string{"2025", "2024", "2023", "2022", "2021", "2020", "2019"}, []string{"MN", "WI"}, []string{"largefiles/ITA_300A_Summary_Data_2025_through_08-31-2026.csv", "files/ITA_300A_Summary_Data_2024_through_12-31-2025.zip", "files/ITA_300A_Summary_Data_2023_through_12-31-2024.zip", "files/ITA-data-cy2022.zip", "files/ITA-data-cy2021.zip", "files/ITA-Data-CY-2020.zip", "files/ITA Data CY 2019.zip", "files/ITA Data CY 2018.zip", "files/ITA Data CY 2017.zip", "files/ITA Data CY 2016.zip"}, []string{"MN", "WI"}}
 }
 
 // Drain returns the bounded drain duration.
@@ -78,11 +81,11 @@ func capital(v string, n int) bool {
 	return true
 }
 
-// Read validates and reads the twelve settings, stopping at the first refusal.
+// Read validates and reads the fourteen settings, stopping at the first refusal.
 func Read(lookup func(string) (string, bool)) (Settings, error) {
 	s := Defaults()
-	keys := []string{"DRAIN_SECONDS", "SCRAPE_KEEP_RUNS", "SCRAPE_WRITE_BUDGET", "SCRAPE_PRESSURE_LIMIT", "FMCSA_STATES", "FMCSA_MIN_POWER_UNITS", "FMCSA_STATUS", "PPP_FILES", "PPP_STATES", "MN_PARCELS_COUNTIES", "FORM5500_YEARS", "FORM5500_STATES"}
-	wants := []string{WantSeconds, WantRuns, WantBudget, WantPressure, WantStates, WantPowerUnits, WantStatus, WantFiles, WantStates, WantCounties, WantYears, WantStates}
+	keys := []string{"DRAIN_SECONDS", "SCRAPE_KEEP_RUNS", "SCRAPE_WRITE_BUDGET", "SCRAPE_PRESSURE_LIMIT", "FMCSA_STATES", "FMCSA_MIN_POWER_UNITS", "FMCSA_STATUS", "PPP_FILES", "PPP_STATES", "MN_PARCELS_COUNTIES", "FORM5500_YEARS", "FORM5500_STATES", "OSHA_ITA_FILES", "OSHA_ITA_STATES"}
+	wants := []string{WantSeconds, WantRuns, WantBudget, WantPressure, WantStates, WantPowerUnits, WantStatus, WantFiles, WantStates, WantCounties, WantYears, WantStates, WantPaths, WantStates}
 	for i, k := range keys {
 		v, ok := lookup(k)
 		if !ok || v == "" {
@@ -96,7 +99,7 @@ func Read(lookup func(string) (string, bool)) (Settings, error) {
 				n, err := strconv.ParseInt(v, 10, 64)
 				valid = valid && err == nil && n <= 100
 			}
-		case 4, 8, 11:
+		case 4, 8, 11, 13:
 			valid = true
 			for _, code := range strings.Split(v, ",") {
 				if !capital(code, 2) {
@@ -107,6 +110,8 @@ func Read(lookup func(string) (string, bool)) (Settings, error) {
 			valid = capital(v, 1)
 		case 7:
 			valid = fileNames(v)
+		case 12:
+			valid = filePaths(v)
 		case 9:
 			valid = countyNames(v)
 		case 10:
@@ -152,6 +157,10 @@ func Read(lookup func(string) (string, bool)) (Settings, error) {
 			s.Form5500Years = strings.Split(v, ",")
 		case 11:
 			s.Form5500States = strings.Split(v, ",")
+		case 12:
+			s.OSHAITAFiles = strings.Split(v, ",")
+		case 13:
+			s.OSHAITAStates = strings.Split(v, ",")
 		}
 	}
 	return s, nil
@@ -183,6 +192,22 @@ func fileNames(v string) bool {
 			case c >= 'A' && c <= 'Z', c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '_', c == '-', c == '.':
 			default:
 				return false
+			}
+		}
+	}
+	return true
+}
+
+func filePaths(v string) bool {
+	for _, path := range strings.Split(v, ",") {
+		for _, segment := range strings.Split(path, "/") {
+			if segment == "" || segment[0] == '.' || segment[0] == ' ' || segment[len(segment)-1] == ' ' {
+				return false
+			}
+			for _, c := range []byte(segment) {
+				if !letter(c) && (c < '0' || c > '9') && c != '_' && c != '-' && c != '.' && c != ' ' {
+					return false
+				}
 			}
 		}
 	}

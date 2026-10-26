@@ -31,7 +31,7 @@ import (
 
 // TestBinary is the sole process-executing test: the remaining tests use Run.
 func TestBinary(t *testing.T) {
-	// R-Z2EM-GKGH R-Z3MI-UC76 R-KV6Q-KMCN
+	// R-Z2EM-GKGH R-Z3MI-UC76 R-7S8S-MDLN
 	t.Setenv(services.Variable, "")
 	t.Setenv(version.CommitVariable, "123456789abcdef")
 	release := pages.ServiceName + "-binary-fixture"

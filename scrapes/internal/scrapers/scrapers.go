@@ -11,6 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/scrapes/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/scrapes/internal/form5500"
 	"github.com/ikigenba/ikigenba/scrapes/internal/mnparcels"
+	"github.com/ikigenba/ikigenba/scrapes/internal/oshaita"
 	"github.com/ikigenba/ikigenba/scrapes/internal/ppp"
 	"github.com/ikigenba/ikigenba/scrapes/internal/settings"
 	"github.com/ikigenba/ikigenba/scrapes/internal/source"
@@ -47,6 +48,7 @@ func Default(cfg Config) *Registry {
 		fmcsa.New(fmcsa.Config{HTTP: cfg.HTTP, Telemetry: cfg.Telemetry, Now: cfg.Now, Sleep: cfg.Sleep, UserAgent: cfg.UserAgent, States: cfg.Settings.FMCSAStates, MinPowerUnits: cfg.Settings.FMCSAMinPowerUnits, Status: cfg.Settings.FMCSAStatus}),
 		form5500.New(form5500.Config{HTTP: cfg.HTTP, Telemetry: cfg.Telemetry, Now: cfg.Now, Sleep: cfg.Sleep, UserAgent: cfg.UserAgent, Years: cfg.Settings.Form5500Years, States: cfg.Settings.Form5500States}),
 		mnparcels.New(mnparcels.Config{HTTP: cfg.HTTP, Telemetry: cfg.Telemetry, Now: cfg.Now, Sleep: cfg.Sleep, UserAgent: cfg.UserAgent, Counties: cfg.Settings.MNParcelsCounties}),
+		oshaita.New(oshaita.Config{HTTP: cfg.HTTP, Telemetry: cfg.Telemetry, Now: cfg.Now, Sleep: cfg.Sleep, Files: cfg.Settings.OSHAITAFiles, States: cfg.Settings.OSHAITAStates}),
 		ppp.New(ppp.Config{HTTP: cfg.HTTP, Telemetry: cfg.Telemetry, Now: cfg.Now, Sleep: cfg.Sleep, UserAgent: cfg.UserAgent, Files: cfg.Settings.PPPFiles, States: cfg.Settings.PPPStates}),
 	)
 }

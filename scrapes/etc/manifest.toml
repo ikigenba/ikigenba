@@ -17,6 +17,8 @@ PPP_STATES = "MN,WI"
 MN_PARCELS_COUNTIES = "Carlton,Chisago,Isanti,Mille Lacs,Aitkin,St. Louis,Anoka,Washington,Sherburne,Stearns,Benton,Morrison,Crow Wing"
 FORM5500_YEARS = "2025,2024,2023,2022,2021,2020,2019"
 FORM5500_STATES = "MN,WI"
+OSHA_ITA_FILES = "largefiles/ITA_300A_Summary_Data_2025_through_08-31-2026.csv,files/ITA_300A_Summary_Data_2024_through_12-31-2025.zip,files/ITA_300A_Summary_Data_2023_through_12-31-2024.zip,files/ITA-data-cy2022.zip,files/ITA-data-cy2021.zip,files/ITA-Data-CY-2020.zip,files/ITA Data CY 2019.zip,files/ITA Data CY 2018.zip,files/ITA Data CY 2017.zip,files/ITA Data CY 2016.zip"
+OSHA_ITA_STATES = "MN,WI"
 
 [database]
 engine = "sqlite"
