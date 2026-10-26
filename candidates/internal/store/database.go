@@ -87,6 +87,7 @@ type storedHeadcount struct {
 	Kind    string `json:"kind"`
 	Count   int64  `json:"count"`
 	Date    string `json:"date,omitempty"`
+	Hours   *int64 `json:"hours,omitempty"`
 }
 
 var headcountsType = reflect.TypeFor[[]sources.Headcount]()
@@ -112,7 +113,7 @@ func decodeValue(v reflect.Value, x any) error {
 					return err
 				}
 			}
-			hs = append(hs, sources.Headcount{Scraper: row.Scraper, Kind: row.Kind, Count: row.Count, AsOf: at.UTC()})
+			hs = append(hs, sources.Headcount{Scraper: row.Scraper, Kind: row.Kind, Count: row.Count, AsOf: at.UTC(), Hours: row.Hours})
 		}
 		v.Set(reflect.ValueOf(hs))
 		return nil
@@ -195,7 +196,7 @@ func encodeValue(v reflect.Value) (any, error) {
 		hs := v.Interface().([]sources.Headcount)
 		rows := make([]storedHeadcount, 0, len(hs))
 		for _, h := range hs {
-			row := storedHeadcount{Scraper: h.Scraper, Kind: h.Kind, Count: h.Count}
+			row := storedHeadcount{Scraper: h.Scraper, Kind: h.Kind, Count: h.Count, Hours: h.Hours}
 			if !h.AsOf.IsZero() {
 				row.Date = h.AsOf.UTC().Truncate(time.Second).Format(time.RFC3339)
 			}

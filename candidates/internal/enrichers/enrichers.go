@@ -80,6 +80,7 @@ type Headcount struct {
 	Kind    string `json:"kind"`
 	Count   int64  `json:"count"`
 	Date    string `json:"date,omitempty"`
+	Hours   *int64 `json:"hours,omitempty"`
 }
 
 // LinkFound is the projection of live source readings.
@@ -265,7 +266,7 @@ func (LinkFacts) Derive(s Subject) Result {
 			if datable(h.AsOf) {
 				date = h.AsOf.UTC().Format(time.DateOnly)
 			}
-			f.Headcounts = append(f.Headcounts, Headcount{Scraper: l.Scraper, Kind: h.Kind, Count: h.Count, Date: date})
+			f.Headcounts = append(f.Headcounts, Headcount{Scraper: l.Scraper, Kind: h.Kind, Count: h.Count, Date: date, Hours: h.Hours})
 		}
 		if datable(r.KnownSince) && (known.IsZero() || r.KnownSince.Before(known)) {
 			known = r.KnownSince

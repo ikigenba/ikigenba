@@ -425,7 +425,7 @@ func rulingOf(r store.Ruling) Ruling {
 }
 func linkOf(l store.Link) Link {
 	r := l.Reading
-	return Link{l.Scraper, l.SourceID, l.Run, l.Digest, r.Name, r.Names, r.Street, r.City, r.State, r.Zip, r.County, r.Phone, r.Email, peopleOf(r.People), r.Class, r.Cargo, date(r.Filed), fleetOf(r.FleetVerdict), r.NameKey, r.PhoneKey, r.DomainKey, r.EINKey, l.Reason, l.Confidence, stamp(l.FirstSeen), stamp(l.LastSeen), l.Gone}
+	return Link{l.Scraper, l.SourceID, l.Run, l.Digest, r.Name, r.Names, r.Street, r.City, r.State, r.Zip, r.County, r.Phone, r.Email, peopleOf(r.People), r.Class, r.Cargo, date(r.Filed), fleetOf(r.FleetVerdict), r.NameKey, r.PhoneKey, r.DomainKey, r.EINKey, r.Establishment, r.Year, r.Employees, r.Hours, l.Reason, l.Confidence, stamp(l.FirstSeen), stamp(l.LastSeen), l.Gone}
 }
 func estimateOf(e sources.Estimate) Estimate {
 	return Estimate{e.Source, e.Low, e.High, e.Confidence, e.Facts, date(e.Filed), e.Formula}
@@ -452,7 +452,7 @@ func factsOf(f store.Facts, origin string) Facts {
 		}
 	}
 	for _, h := range f.Headcounts {
-		v.Headcounts = append(v.Headcounts, Headcount{h.Scraper, h.Kind, h.Count, date(h.AsOf)})
+		v.Headcounts = append(v.Headcounts, Headcount{h.Scraper, h.Kind, h.Count, date(h.AsOf), h.Hours})
 	}
 	for _, w := range f.Written {
 		v.Written = append(v.Written, Written{w.Kind, stamp(w.At)})

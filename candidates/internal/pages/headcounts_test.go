@@ -35,7 +35,7 @@ func TestHeadcountJudgmentViewShape(_ *testing.T) {
 func TestHeadcountViewProjections(t *testing.T) {
 	f := store.Facts{Headcounts: []sources.Headcount{{Scraper: ppp.Name, Kind: sources.HeadcountJobs, Count: 26, AsOf: time.Date(2020, 4, 28, 0, 0, 0, 0, time.UTC)}, {Scraper: fmcsa.Name, Kind: sources.HeadcountDrivers, Count: 1200}}, BriefLabels: []string{"chosen-label-one", "chosen-label-two"}}
 	v := factsView(f, "")
-	if !reflect.DeepEqual(v.Headcounts, []HeadcountRow{{ppp.Name, sources.HeadcountJobs, "26", "2020-04-28", "2020-04-28"}, {fmcsa.Name, sources.HeadcountDrivers, "1200", "", ""}}) || !reflect.DeepEqual(v.BriefLabels, f.BriefLabels) {
+	if !reflect.DeepEqual(v.Headcounts, []HeadcountRow{{ppp.Name, sources.HeadcountJobs, "26", "", "2020-04-28", "2020-04-28"}, {fmcsa.Name, sources.HeadcountDrivers, "1200", "", "", ""}}) || !reflect.DeepEqual(v.BriefLabels, f.BriefLabels) {
 		t.Fatal(v)
 	}
 	empty := factsView(store.Facts{}, "")
@@ -88,7 +88,7 @@ func TestHeadcountTemplateStates(t *testing.T) {
 						values := []string{}
 						for i := 0; i < n; i++ {
 							suffix := strconv.Itoa(i)
-							h := HeadcountRow{"chosen-scraper-" + suffix, "chosen-kind-" + suffix, "chosen-count-" + suffix, "", ""}
+							h := HeadcountRow{"chosen-scraper-" + suffix, "chosen-kind-" + suffix, "chosen-count-" + suffix, "", "", ""}
 							if dated {
 								h.AsOf = "chosen-asof-" + suffix
 								h.AsOfText = "chosen-date-" + suffix
@@ -153,7 +153,7 @@ func TestHeadcountCandidateAndProspectListPages(t *testing.T) {
 	}
 	c := capturedCandidate(t, cfg, ids[0])
 	f := c.Enrichments.Facts
-	if !reflect.DeepEqual(f.Headcounts, []HeadcountRow{{fmcsa.Name, sources.HeadcountDrivers, "12", "", ""}}) || !reflect.DeepEqual(f.BriefLabels, brief.Labels) {
+	if !reflect.DeepEqual(f.Headcounts, []HeadcountRow{{fmcsa.Name, sources.HeadcountDrivers, "12", "", "", ""}}) || !reflect.DeepEqual(f.BriefLabels, brief.Labels) {
 		t.Fatal(f)
 	}
 	j, err := cfg.Store.GetJudgments(t.Context(), ids[0])
@@ -197,7 +197,7 @@ func TestHeadcountCandidateAndProspectListPages(t *testing.T) {
 		t.Fatal(err)
 	}
 	f = capturedCandidate(t, cfg, ids[0]).Enrichments.Facts
-	if !reflect.DeepEqual(f.Headcounts, []HeadcountRow{{ppp.Name, sources.HeadcountJobs, "26", "2020-04-28", "2020-04-28"}}) || !reflect.DeepEqual(f.BriefLabels, brief.Labels) {
+	if !reflect.DeepEqual(f.Headcounts, []HeadcountRow{{ppp.Name, sources.HeadcountJobs, "26", "", "2020-04-28", "2020-04-28"}}) || !reflect.DeepEqual(f.BriefLabels, brief.Labels) {
 		t.Fatal(f)
 	}
 }

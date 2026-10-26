@@ -117,7 +117,7 @@ func (s *Store) projectedFacts(ctx context.Context, tx *sql.Tx, id string) (Fact
 						return Facts{}, nil, err
 					}
 				}
-				f.Headcounts = append(f.Headcounts, sources.Headcount{Scraper: h.Scraper, Kind: h.Kind, Count: h.Count, AsOf: asOf})
+				f.Headcounts = append(f.Headcounts, sources.Headcount{Scraper: h.Scraper, Kind: h.Kind, Count: h.Count, AsOf: asOf, Hours: h.Hours})
 			}
 			for _, c := range v.Categories {
 				f.Categories = append(f.Categories, sources.Category{Name: c.Name, Source: c.Source})

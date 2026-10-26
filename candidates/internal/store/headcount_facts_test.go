@@ -98,3 +98,46 @@ func TestFillFactsRefreshesOnlyHeadcountsAndLabelsAndIsIdempotent(t *testing.T) 
 	f.reopen()
 	contractEqual(t, factsAt(ctx, t, f.s, id), expected)
 }
+
+// R-4RAZ-ZN89
+func TestHeadcountHoursPersistenceAndPreviousWriter(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	id := contractSeed(t, f)
+	hours, newerHours := int64(715864), int64(47840)
+	hs := []enrichers.Headcount{
+		{Scraper: "osha_ita", Kind: sources.HeadcountEmployees, Count: 23, Date: "2025-12-31", Hours: &newerHours},
+		{Scraper: "osha_ita", Kind: sources.HeadcountEmployees, Count: 357, Date: "2024-12-31", Hours: &hours},
+		{Scraper: "osha_ita", Kind: sources.HeadcountEmployees, Count: 357, Date: "2024-12-31", Hours: &hours},
+		{Scraper: ppp.Name, Kind: sources.HeadcountJobs, Count: 26, Date: "2020-04-28"},
+	}
+	want := []sources.Headcount{}
+	for _, h := range hs {
+		at, err := time.Parse(time.DateOnly, h.Date)
+		contractOK(t, err)
+		want = append(want, sources.Headcount{Scraper: h.Scraper, Kind: h.Kind, Count: h.Count, AsOf: at, Hours: h.Hours})
+	}
+	_, err := f.s.AddEnrichments(ctx, []store.Enrichment{headcountLinkResult(t, id, hs...)})
+	contractOK(t, err)
+	contractEqual(t, factsAt(ctx, t, f.s, id).Headcounts, want)
+	f.reopen()
+	contractEqual(t, factsAt(ctx, t, f.s, id).Headcounts, want)
+	legacy := hs[0]
+	legacy.Hours = nil
+	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{headcountLinkResult(t, id, legacy)})
+	contractOK(t, err)
+	noHours := want[0]
+	noHours.Hours = nil
+	contractEqual(t, factsAt(ctx, t, f.s, id).Headcounts, []sources.Headcount{noHours})
+	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{headcountLinkResult(t, id, hs[0])})
+	contractOK(t, err)
+	contractOK(t, f.d.Write(ctx, func(tx *sql.Tx) error {
+		_, e := tx.ExecContext(ctx, `UPDATE facts SET headcounts=? WHERE candidate=?`, `[{"scraper":"osha_ita","kind":"employees","count":23,"date":"2025-12-31T00:00:00Z"}]`, id)
+		return e
+	}))
+	contractEqual(t, factsAt(ctx, t, f.s, id).Headcounts, []sources.Headcount{noHours})
+	contractOK(t, f.s.FillFacts(ctx))
+	contractEqual(t, factsAt(ctx, t, f.s, id).Headcounts, want[:1])
+	f.reopen()
+	contractEqual(t, factsAt(ctx, t, f.s, id).Headcounts, want[:1])
+}

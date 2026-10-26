@@ -89,7 +89,7 @@ type runFake struct {
 }
 
 func (f *runFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/scrapers/ppp/current" || r.URL.Path == "/scrapers/form5500/current" {
+	if r.URL.Path == "/scrapers/ppp/current" || r.URL.Path == "/scrapers/form5500/current" || r.URL.Path == "/scrapers/osha_ita/current" {
 		f.mu.Lock()
 		f.requests = append(f.requests, runRequest{r.URL.Path, r.Header.Clone()})
 		f.mu.Unlock()
@@ -670,7 +670,7 @@ func TestRunAssembledChain(t *testing.T) {
 		default:
 			t.Fatalf("unexpected sibling request %v", rq)
 		}
-		if strings.HasPrefix(rq.Path, "/scrapers/") && rq.Path != "/scrapers/fmcsa/current" && rq.Path != "/scrapers/ppp/current" && rq.Path != "/scrapers/form5500/current" {
+		if strings.HasPrefix(rq.Path, "/scrapers/") && rq.Path != "/scrapers/fmcsa/current" && rq.Path != "/scrapers/ppp/current" && rq.Path != "/scrapers/form5500/current" && rq.Path != "/scrapers/osha_ita/current" {
 			t.Fatalf("registry requested %s", rq.Path)
 		}
 	}
@@ -1030,11 +1030,15 @@ func TestRunKeepsScrapesSocketSelectedAtStart(t *testing.T) {
 	c := identity.Caller{UserID: "reader"}
 	_, v := h.call(c, "ingest", map[string]any{})
 	h.waitPass(c, runText(v, "id"))
+	firstReads := len(first.Requests())
+	if firstReads == 0 {
+		t.Fatal("first ingest did not reach selected socket")
+	}
 	write(runSocket(t, second))
 	_, v = h.call(c, "ingest", map[string]any{})
 	h.waitPass(c, runText(v, "id"))
 	h.stop()
-	if len(first.Requests()) != 8 || len(second.Requests()) != 0 {
+	if len(first.Requests()) <= firstReads || len(second.Requests()) != 0 {
 		t.Fatalf("socket reads first %d second %d", len(first.Requests()), len(second.Requests()))
 	}
 }

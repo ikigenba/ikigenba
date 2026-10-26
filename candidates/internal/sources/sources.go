@@ -46,6 +46,7 @@ const (
 	EvidenceFMCSAActivity       = "fmcsa_activity"
 	EvidencePPPLoan             = "ppp_loan"
 	EvidenceForm5500Filing      = "form5500_filing"
+	EvidenceOSHAITASummary      = "osha_ita_summary"
 	EvidenceOwnDomain           = "own_domain"
 	EvidenceWebsiteLive         = "website_live"
 	WebsiteCheck                = "website_check"
@@ -53,7 +54,7 @@ const (
 	WebsiteHTTP                 = "http"
 	WebsiteNone                 = "none"
 	WebsiteUnknown              = "unknown"
-	Rules                       = 7
+	Rules                       = 8
 )
 
 // Person is a party named by a source record.
@@ -75,6 +76,7 @@ const (
 	DescribeFMCSAActivity  string = "Reported drivers and mileage"
 	DescribePPPLoan        string = "Recorded PPP loan"
 	DescribeForm5500Filing string = "Recorded Form 5500 filing"
+	DescribeOSHAITASummary string = "Recorded OSHA ITA summary"
 	DescribeOwnDomain      string = "Email on a business domain"
 	DescribeWebsiteLive    string = "Business website responds"
 )
@@ -95,6 +97,7 @@ type Headcount struct {
 	Scraper, Kind string
 	Count         int64
 	AsOf          time.Time
+	Hours         *int64
 }
 
 // Headcount kinds rank independently of their scraper.
@@ -124,7 +127,8 @@ type Reading struct {
 	Estimate                                       *Estimate
 	Evidence                                       []Evidence
 	KnownSince                                     time.Time
-	Category, GovernmentMatch                      string
+	Category, GovernmentMatch, Establishment       string
+	Year, Employees, Hours                         *int64
 }
 
 // Source interprets rows from a named scraper.

@@ -124,7 +124,7 @@ func TestCategoryBands(t *testing.T) {
 	}
 }
 
-// R-OJPZ-AHHX R-OM5S-20ZB
+// R-KDUA-BBUX R-KF26-P3LM
 func TestHeadcountSelection(t *testing.T) {
 	kinds := []string{sources.HeadcountEmployees, sources.HeadcountParticipants, sources.HeadcountJobs, sources.HeadcountDrivers, sources.HeadcountSnippet}
 	for i, k := range kinds {
@@ -169,7 +169,7 @@ func TestHeadcountSelection(t *testing.T) {
 	}
 }
 
-// R-ONDO-FSQ0 R-OOLK-TKGP
+// R-KGA3-2VCB R-KHHZ-GN30
 func TestHeadcountRevenueAndFacts(t *testing.T) {
 	date := time.Date(2020, 4, 28, 23, 0, 0, 0, time.FixedZone("west", -5*3600))
 	for _, tc := range []struct {
@@ -225,7 +225,7 @@ func TestHeadcountRevenueAndFacts(t *testing.T) {
 }
 func jsonNumber(n int64) string { b, _ := json.Marshal(n); return string(b) }
 
-// R-ONDO-FSQ0 R-OOLK-TKGP
+// R-KGA3-2VCB R-KHHZ-GN30
 func TestMultipleHeadcountsRevenue(t *testing.T) {
 	d1 := time.Date(2020, 4, 28, 0, 0, 0, 0, time.UTC)
 	d2 := time.Date(2021, 2, 1, 0, 0, 0, 0, time.UTC)
@@ -246,7 +246,7 @@ func TestMultipleHeadcountsRevenue(t *testing.T) {
 	}
 }
 
-// R-OJPZ-AHHX R-OM5S-20ZB R-ONDO-FSQ0 R-OOLK-TKGP
+// R-KDUA-BBUX R-KF26-P3LM R-KGA3-2VCB R-KHHZ-GN30
 func TestSameKindTies(t *testing.T) {
 	d1 := time.Date(2020, 4, 28, 0, 0, 0, 0, time.UTC)
 	d2 := time.Date(2021, 2, 1, 0, 0, 0, 0, time.UTC)
@@ -302,5 +302,91 @@ func TestSameKindTies(t *testing.T) {
 		if got.Low != low || got.High != high || got.Confidence != confidence {
 			t.Fatal(counts, got)
 		}
+	}
+}
+
+func employee(scraper string, count int64, date time.Time, hours ...int64) sources.Headcount {
+	h := sources.Headcount{Scraper: scraper, Kind: sources.HeadcountEmployees, Count: count, AsOf: date}
+	if len(hours) > 0 {
+		h.Hours = &hours[0]
+	}
+	return h
+}
+
+// R-KDUA-BBUX R-KF26-P3LM R-KGA3-2VCB R-KHHZ-GN30
+func TestEmployeeSiteSums(t *testing.T) {
+	d3 := time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC)
+	d4 := d3.AddDate(1, 0, 0)
+	e := func(n int64, hours ...int64) sources.Headcount { return employee("a", n, d3, hours...) }
+	newer := employee("a", 402, d4, 800000)
+	for _, tc := range []struct {
+		name  string
+		input []sources.Headcount
+		want  sources.Headcount
+	}{
+		{"sites", []sources.Headcount{e(283, 566000), e(120, 240000), e(60, 120000), e(35, 70000), e(25, 50000)}, e(523, 1046000)},
+		{"repeat", []sources.Headcount{e(357, 715864), e(357, 715864)}, e(357, 715864)},
+		{"separated repeat", []sources.Headcount{e(357, 715864), e(40, 80000), e(357, 715864)}, e(397, 795864)},
+		{"different hours", []sources.Headcount{e(50, 100000), e(50, 98000)}, e(100, 198000)},
+		{"nil repeat", []sources.Headcount{e(50), e(50)}, e(100)},
+		{"nil second", []sources.Headcount{e(50, 100000), e(50)}, e(100)},
+		{"nil first", []sources.Headcount{e(20), e(30, 60000)}, e(50)},
+		{"unqualified", []sources.Headcount{e(12, 24000), e(-3, 6000), e(0)}, e(12, 24000)},
+		{"other scraper wins", []sources.Headcount{e(10), employee("b", 12, d3)}, employee("b", 12, d3)},
+		{"interleaved scraper", []sources.Headcount{e(10), employee("b", 12, d3), e(5)}, e(15)},
+		{"newest", []sources.Headcount{e(300, 600000), e(200, 400000), newer}, newer},
+		{"newest first", []sources.Headcount{newer, e(300, 600000), e(200, 400000)}, newer},
+		{"zero date", []sources.Headcount{employee("a", 10, time.Time{}, 20000), employee("a", 15, time.Time{}, 30000)}, employee("a", 15, time.Time{}, 30000)},
+		{"zero repeats", []sources.Headcount{employee("a", 10, time.Time{}), employee("a", 10, time.Time{})}, employee("a", 10, time.Time{})},
+		{"dated beats zero", []sources.Headcount{employee("a", 15, time.Time{}), e(10)}, e(10)},
+		{"positive saturation", []sources.Headcount{e(math.MaxInt64, math.MaxInt64), e(1, 1)}, e(math.MaxInt64, math.MaxInt64)},
+		{"negative saturation", []sources.Headcount{e(1, math.MinInt64), e(2, -1)}, e(3, math.MinInt64)},
+		{"sum exactly before saturation", []sources.Headcount{e(1, math.MaxInt64), e(2, 1), e(3, -1)}, e(6, math.MaxInt64)},
+		{"tie first position", []sources.Headcount{e(6), employee("b", 12, d3), e(6)}, e(12)},
+		{"equal instants", []sources.Headcount{e(10, 20000), employee("a", 13, d3.In(time.FixedZone("east", 3600)), 26000)}, e(23, 46000)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before, _ := json.Marshal(tc.input)
+			got := judging.PickHeadcount(tc.input)
+			if got == nil || !reflect.DeepEqual(got.Used, []sources.Headcount{tc.want}) || got.Low != tc.want.Count || got.High != tc.want.Count || got.Confidence != .5 || !got.AsOf.Equal(tc.want.AsOf) || got.Basis != tc.want.Kind+":"+tc.want.Scraper {
+				t.Fatalf("got %+v, want %+v", got, tc.want)
+			}
+			after, _ := json.Marshal(tc.input)
+			if string(before) != string(after) {
+				t.Fatal("input changed")
+			}
+		})
+	}
+	hs := []sources.Headcount{employee("a", 10, d4, 20000), employee("a", 13, d4, 26000)}
+	for _, participants := range []int64{0, 20, 15} {
+		input := append([]sources.Headcount{}, hs...)
+		if participants > 0 {
+			input = append(input, sources.Headcount{Scraper: "b", Kind: sources.HeadcountParticipants, Count: participants})
+		}
+		got := judging.PickHeadcount(input)
+		low, high, confidence := int64(23), int64(23), .5
+		if participants == 20 {
+			confidence = .7
+		}
+		if participants == 15 {
+			low = 15
+		}
+		if got.Low != low || got.High != high || got.Confidence != confidence {
+			t.Fatal(got)
+		}
+	}
+	categories := []sources.Category{{Name: sources.CategoryConstruction}}
+	estimate := judging.HeadcountEstimate(hs, nil, categories)
+	if estimate.Low != 3450000 || *estimate.High != 8050000 || estimate.Confidence != .5 || estimate.Filed != d4 {
+		t.Fatal(estimate)
+	}
+	expectedCounts := `[{"scraper":"a","kind":"employees","count":23,"date":"2025-12-31","hours":46000}]`
+	if string(estimate.Facts["headcounts"]) != expectedCounts {
+		t.Fatal(string(estimate.Facts["headcounts"]))
+	}
+	hs[1].Hours = nil
+	estimate = judging.HeadcountEstimate(hs, nil, nil)
+	if string(estimate.Facts["headcounts"]) != `[{"scraper":"a","kind":"employees","count":23,"date":"2025-12-31"}]` {
+		t.Fatal(string(estimate.Facts["headcounts"]))
 	}
 }

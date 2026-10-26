@@ -3,6 +3,7 @@ package judging
 import (
 	"encoding/json"
 	"math"
+	"math/big"
 	"slices"
 	"strings"
 	"time"
@@ -145,9 +146,10 @@ func PickHeadcount(hs []sources.Headcount) *Staff {
 	confidences := []float64{.5, .5, .4, .3, .3}
 	staff := &Staff{Used: []sources.Headcount{}}
 	basis := []string{}
+	contenders := headcountContenders(hs)
 	for i, kind := range kinds {
 		var best *sources.Headcount
-		for _, h := range hs {
+		for _, h := range contenders {
 			if h.Kind == kind && h.Count > 0 && (best == nil || !h.AsOf.IsZero() && (best.AsOf.IsZero() || h.AsOf.After(best.AsOf)) || h.AsOf.Equal(best.AsOf) && h.Count > best.Count) {
 				v := h
 				best = &v
@@ -187,6 +189,71 @@ func PickHeadcount(hs []sources.Headcount) *Staff {
 	}
 	return staff
 }
+
+// headcountContenders combines employee sites before choosing among reports.
+func headcountContenders(hs []sources.Headcount) []sources.Headcount {
+	type pair struct{ count, hours int64 }
+	type group struct {
+		at           int
+		count, hours big.Int
+		missingHours bool
+		seen         map[pair]bool
+	}
+	out := []sources.Headcount{}
+	groups := []*group{}
+	for _, h := range hs {
+		if h.Kind != sources.HeadcountEmployees || h.Count <= 0 {
+			out = append(out, h)
+			continue
+		}
+		var g *group
+		if !h.AsOf.IsZero() {
+			for _, candidate := range groups {
+				first := out[candidate.at]
+				if first.Scraper == h.Scraper && first.AsOf.Equal(h.AsOf) {
+					g = candidate
+					break
+				}
+			}
+		}
+		if g == nil {
+			g = &group{at: len(out), seen: map[pair]bool{}}
+			groups = append(groups, g)
+			out = append(out, h)
+		}
+		if h.Hours != nil {
+			key := pair{h.Count, *h.Hours}
+			if g.seen[key] {
+				continue
+			}
+			g.seen[key] = true
+			g.hours.Add(&g.hours, big.NewInt(*h.Hours))
+		} else {
+			g.missingHours = true
+		}
+		g.count.Add(&g.count, big.NewInt(h.Count))
+	}
+	for _, g := range groups {
+		out[g.at].Count = saturatedInt64(&g.count)
+		out[g.at].Hours = nil
+		if !g.missingHours {
+			hours := saturatedInt64(&g.hours)
+			out[g.at].Hours = &hours
+		}
+	}
+	return out
+}
+
+func saturatedInt64(n *big.Int) int64 {
+	if n.IsInt64() {
+		return n.Int64()
+	}
+	if n.Sign() < 0 {
+		return math.MinInt64
+	}
+	return math.MaxInt64
+}
+
 func product(a, b int64) int64 {
 	if a > math.MaxInt64/b {
 		return math.MaxInt64
@@ -209,6 +276,7 @@ func HeadcountEstimate(hs []sources.Headcount, labels []string, categories []sou
 		Kind    string `json:"kind"`
 		Count   int64  `json:"count"`
 		Date    string `json:"date,omitempty"`
+		Hours   *int64 `json:"hours,omitempty"`
 	}
 	counts := []fact{}
 	for _, h := range s.Used {
@@ -216,7 +284,7 @@ func HeadcountEstimate(hs []sources.Headcount, labels []string, categories []sou
 		if !h.AsOf.IsZero() {
 			date = h.AsOf.UTC().Format(time.DateOnly)
 		}
-		counts = append(counts, fact{h.Scraper, h.Kind, h.Count, date})
+		counts = append(counts, fact{h.Scraper, h.Kind, h.Count, date, h.Hours})
 	}
 	put("headcounts", counts)
 	put("band", c.Band.Name)

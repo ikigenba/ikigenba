@@ -49,8 +49,25 @@ func TestFormatting(t *testing.T) {
 	}
 }
 
-// R-1RK4-HLSJ R-XY08-ASLZ R-QGOL-13S5 R-3X7J-PRDD R-4ZA6-4B1H
+// R-1RK4-HLSJ R-XY08-ASLZ R-PI21-M9Z9 R-3X7J-PRDD R-4ZA6-4B1H
 func TestTemplateDataShape(t *testing.T) {
+	_ = struct {
+		Source, Low, High, Confidence, Filed, FiledText string
+		Formula                                         int64
+		Facts                                           []FactRow
+	}(EstimateView{})
+	_ = struct{ Key, Value string }(FactRow{})
+	_ = struct {
+		Scraper, SourceID, Run, RowPage, EIN, Name                                                                                               string
+		Names                                                                                                                                    []string
+		Establishment, City, Zip, Year, Employees, Hours, Reason, Confidence, Filed, FiledText, FirstSeen, FirstSeenText, LastSeen, LastSeenText string
+		Gone                                                                                                                                     bool
+	}(LinkView{})
+	_ = struct {
+		Kind, Other               string
+		Keys                      []string
+		By, User, At, AtText, Why string
+	}(RulingView{})
 	set, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +76,7 @@ func TestTemplateDataShape(t *testing.T) {
 	cv := CandidateView{"id", store.StatusActive, "", "name", []string{"alias"}, "street", "city", "MN", "55072", "county", "phone", "email", "source", "website", "https://chosen.example.test/", "title", "why", "checked", "checked-text", []PersonRow{{"person", "role"}}, "class", []string{"cargo"}, "", "", "", ""}
 	av := JudgmentsView{"operating", []EvidenceRow{{"name", "source", "weight", "description"}}, "low", "high", "confidence", "", "", "", false, int64(sources.Rules), "calculated", "calculated-text"}
 	ev := EstimateView{"source", "low", "high", "confidence", "", "", 1, []FactRow{{"key", "value"}}}
-	lv := LinkView{"scraper", "source", "run", "", "ein", "name", []string{"alias"}, "city", "55072", "reason", "confidence", "", "", "", "", "", "", false}
+	lv := LinkView{"scraper", "source", "run", "", "ein", "name", []string{"alias"}, "establishment", "city", "55072", "2024", "23", "47840", "reason", "confidence", "", "", "", "", "", "", false}
 	rv := RulingView{"kind", "other", []string{"key"}, "by", "user", "", "", "why"}
 	pv := PassView{"id", store.KindIngest, store.OriginIngest, store.TriggerIngest, "", store.StatusRunning, "", "starter", "", "", "", "", 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 10, 11, 12, 13, 14, "target", "/prospect-lists/target", "kind", 15, 16, 17, "$0.000000"}
 	row := ProspectListRow{"id", "name", 11, "by", "user", "changed", "changed-text"}

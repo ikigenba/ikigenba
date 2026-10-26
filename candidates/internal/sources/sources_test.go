@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
-// R-448N-FTDZ
+// R-SG6E-QN4R
 func TestRecordShapes(t *testing.T) {
 	// Conversions use the records' complete underlying shapes, including order.
 	type personShape struct{ Name, Role string }
@@ -34,6 +34,7 @@ func TestRecordShapes(t *testing.T) {
 		Scraper, Kind string
 		Count         int64
 		AsOf          time.Time
+		Hours         *int64
 	}
 	if headcountShape(sources.Headcount{}) != (headcountShape{}) {
 		t.Fatal("headcount shape")
@@ -55,7 +56,8 @@ func TestRecordShapes(t *testing.T) {
 		Estimate                                       *sources.Estimate
 		Evidence                                       []sources.Evidence
 		KnownSince                                     time.Time
-		Category, GovernmentMatch                      string
+		Category, GovernmentMatch, Establishment       string
+		Year, Employees, Hours                         *int64
 	}
 	if personShape(sources.Person{}) != (personShape{}) || evidenceShape(sources.Evidence{}) != (evidenceShape{}) || categoryShape(sources.Category{}) != (categoryShape{}) {
 		t.Fatal("zero record")
@@ -139,7 +141,7 @@ func TestCountySourceKey(t *testing.T) {
 	}
 }
 
-// R-2ADQ-WN8Y
+// R-SIM7-I6M5
 func TestConstants(t *testing.T) {
 	const rules float64 = sources.Rules
 	const parity = sources.Rules % 2
@@ -179,21 +181,21 @@ func TestConstants(t *testing.T) {
 		evidenceOwnDomain           string = sources.EvidenceOwnDomain
 		evidenceWebsiteLive         string = sources.EvidenceWebsiteLive
 	)
-	got := []string{classPrivate, classForHire, classMixed, classUnknown, categoryConstruction, categoryTrucking, categoryAgriculture, categoryManufacturing, categoryWholesale, categoryMining, categoryWaste, categoryUtilities, categoryRetail, categoryOtherTransportation, categoryInformation, categoryFinance, categoryRealEstate, categoryProfessional, categoryAdministrative, categoryEducation, categoryHealthCare, categoryArts, categoryFood, categoryRepair, categoryReligious, categoryGovernment, categoryOther, evidenceFMCSAActive, evidenceFMCSAActivity, evidencePPPLoan, sources.EvidenceForm5500Filing, evidenceOwnDomain, evidenceWebsiteLive}
-	want := []string{"private", "for_hire", "mixed", "unknown", "construction", "trucking and logistics", "agriculture", "manufacturing", "wholesale and distribution", "mining and aggregates", "waste and environmental", "utilities", "retail", "other transportation", "information", "finance and insurance", "real estate", "professional services", "administrative services", "education", "health care", "arts and recreation", "food and lodging", "repair and personal services", "religious and civic", "government", "other", "fmcsa_active", "fmcsa_activity", "ppp_loan", "form5500_filing", "own_domain", "website_live"}
+	got := []string{classPrivate, classForHire, classMixed, classUnknown, categoryConstruction, categoryTrucking, categoryAgriculture, categoryManufacturing, categoryWholesale, categoryMining, categoryWaste, categoryUtilities, categoryRetail, categoryOtherTransportation, categoryInformation, categoryFinance, categoryRealEstate, categoryProfessional, categoryAdministrative, categoryEducation, categoryHealthCare, categoryArts, categoryFood, categoryRepair, categoryReligious, categoryGovernment, categoryOther, evidenceFMCSAActive, evidenceFMCSAActivity, evidencePPPLoan, sources.EvidenceForm5500Filing, sources.EvidenceOSHAITASummary, evidenceOwnDomain, evidenceWebsiteLive}
+	want := []string{"private", "for_hire", "mixed", "unknown", "construction", "trucking and logistics", "agriculture", "manufacturing", "wholesale and distribution", "mining and aggregates", "waste and environmental", "utilities", "retail", "other transportation", "information", "finance and insurance", "real estate", "professional services", "administrative services", "education", "health care", "arts and recreation", "food and lodging", "repair and personal services", "religious and civic", "government", "other", "fmcsa_active", "fmcsa_activity", "ppp_loan", "form5500_filing", "osha_ita_summary", "own_domain", "website_live"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatal(got)
 	}
 }
 
-// R-62P6-X5Q1 R-ZV7O-0UX3
+// R-1PBY-SGWN R-ZV7O-0UX3 R-27MG-J112
 func TestDescriptions(t *testing.T) {
 	const a string = sources.DescribeFMCSAActive
 	const b string = sources.DescribeFMCSAActivity
 	const c string = sources.DescribePPPLoan
 	const d string = sources.DescribeOwnDomain
 	seen := map[string]bool{}
-	for _, s := range []string{a, b, c, d, sources.DescribeForm5500Filing} {
+	for _, s := range []string{a, b, c, d, sources.DescribeForm5500Filing, sources.DescribeOSHAITASummary, sources.DescribeWebsiteLive} {
 		if s == "" || strings.Contains(s, "\n") || seen[s] {
 			t.Fatal(s)
 		}
@@ -252,7 +254,7 @@ func TestWebsiteEvidenceDescription(t *testing.T) {
 	}
 }
 
-// R-KVPQ-8YVJ R-2BLN-AEZN
+// R-KVPQ-8YVJ R-SL20-9Q3J
 func TestCategories(t *testing.T) {
 	want := []string{sources.CategoryConstruction, sources.CategoryTrucking, sources.CategoryAgriculture, sources.CategoryManufacturing, sources.CategoryWholesale, sources.CategoryMining, sources.CategoryWaste, sources.CategoryUtilities, sources.CategoryRetail, sources.CategoryOtherTransportation, sources.CategoryInformation, sources.CategoryFinance, sources.CategoryRealEstate, sources.CategoryProfessional, sources.CategoryAdministrative, sources.CategoryEducation, sources.CategoryHealthCare, sources.CategoryArts, sources.CategoryFood, sources.CategoryRepair, sources.CategoryReligious, sources.CategoryGovernment, sources.CategoryOther}
 	got := sources.Categories()

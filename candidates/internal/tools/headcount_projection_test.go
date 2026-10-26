@@ -12,7 +12,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-E7M8-LZQG R-E8U4-ZRH5 R-EA21-DJ7U R-EB9X-RAYJ
+// R-E7M8-LZQG R-E8U4-ZRH5 R-EA21-DJ7U R-D4PJ-DV3L
 func TestHeadcountAnswerShapesAndEncoding(t *testing.T) {
 	// Conversions enforce the complete ordered public shape by use.
 	_ = struct {
@@ -44,7 +44,7 @@ func TestHeadcountAnswerShapesAndEncoding(t *testing.T) {
 	_ = Judgments{nil, nil, nil, nil, nil, nil, nil, "", false, 0, ""}
 	_ = Facts{"", "", nil, "", false, nil, "", "", nil, nil, "", "", "", nil, "", nil, "", "", "", nil, nil, nil}
 	_ = Written{"kind", "at"}
-	_ = Headcount{"scraper", "kind", 26, "date"}
+	_ = Headcount{"scraper", "kind", 26, "date", nil}
 	candidateJSON, err := json.Marshal(Candidate{})
 	if err != nil {
 		t.Fatal(err)
@@ -55,11 +55,12 @@ func TestHeadcountAnswerShapesAndEncoding(t *testing.T) {
 	}{
 		{Member{OperatingConfidence: new(.8), RevenueLow: new(int64(10)), RevenueHigh: new(int64(20)), RevenueConfidence: new(.3), HeadcountLow: new(int64(40)), Categories: []string{"chosen-category"}, ClassifiedBy: "chosen-classifier", FleetVerdict: "chosen-fleet", Website: "chosen-website", WebsiteURL: "chosen-url", WebsiteSource: "chosen-source", SiteText: new("chosen-site-text"), Brief: new("chosen-brief"), Minutes: new(int64(17)), MinutesSource: "chosen-minutes-source", GovernmentMatch: "chosen-government", KnownSince: "chosen-known", NewestFiling: "chosen-filing", Excluded: true}, `{"candidate":` + string(candidateJSON) + `,"basis":"","operating_confidence":0.8,"revenue_low":10,"revenue_high":20,"revenue_confidence":0.3,"headcount_low":40,"categories":["chosen-category"],"classified_by":"chosen-classifier","fleet_verdict":"chosen-fleet","website":"chosen-website","website_url":"chosen-url","website_source":"chosen-source","site_text":"chosen-site-text","brief":"chosen-brief","minutes":17,"minutes_source":"chosen-minutes-source","government_match":"chosen-government","known_since":"chosen-known","newest_filing":"chosen-filing","excluded":true}`},
 		{Headcount{}, `{"scraper":"","kind":"","count":0}`},
-		{Headcount{"chosen-scraper", "chosen-kind", 26, "2020-04-28"}, `{"scraper":"chosen-scraper","kind":"chosen-kind","count":26,"date":"2020-04-28"}`},
+		{Headcount{Hours: new(int64(0))}, `{"scraper":"","kind":"","count":0,"hours":0}`},
+		{Headcount{"chosen-scraper", "chosen-kind", 26, "2020-04-28", new(int64(47840))}, `{"scraper":"chosen-scraper","kind":"chosen-kind","count":26,"date":"2020-04-28","hours":47840}`},
 		{Judgments{}, `{"operating_evidence":[],"excluded":false,"rules":0,"calculated":""}`},
 		{Judgments{OperatingConfidence: new(.8), OperatingEvidence: []Evidence{{"n", "s", .2, "d"}}, RevenueLow: new(int64(10)), RevenueHigh: new(int64(20)), RevenueConfidence: new(.3), HeadcountLow: new(int64(40)), HeadcountHigh: new(int64(100)), HeadcountBasis: "chosen-basis", Excluded: true, Rules: 7, Calculated: "chosen-time"}, `{"operating_confidence":0.8,"operating_evidence":[{"name":"n","source":"s","weight":0.2,"description":"d"}],"revenue_low":10,"revenue_high":20,"revenue_confidence":0.3,"headcount_low":40,"headcount_high":100,"headcount_basis":"chosen-basis","excluded":true,"rules":7,"calculated":"chosen-time"}`},
 		{Facts{}, `{"categories":[],"classified_by":"","records_differ":false,"record_categories":[],"fleet_verdict":"","website":"","website_source":"","minutes_source":"","written":[],"headcounts":[],"brief_labels":[]}`},
-		{Facts{Headcounts: []Headcount{{"s", "k", 26, ""}}, BriefLabels: []string{"one", "two"}}, `{"categories":[],"classified_by":"","records_differ":false,"record_categories":[],"fleet_verdict":"","website":"","website_source":"","minutes_source":"","written":[],"headcounts":[{"scraper":"s","kind":"k","count":26}],"brief_labels":["one","two"]}`},
+		{Facts{Headcounts: []Headcount{{"s", "k", 26, "", nil}}, BriefLabels: []string{"one", "two"}}, `{"categories":[],"classified_by":"","records_differ":false,"record_categories":[],"fleet_verdict":"","website":"","website_source":"","minutes_source":"","written":[],"headcounts":[{"scraper":"s","kind":"k","count":26}],"brief_labels":["one","two"]}`},
 		{Estimate{}, `{"source":"","low":0,"confidence":0,"facts":{},"formula":0}`},
 		{Estimate{"s", 10, new(int64(20)), .3, map[string]json.RawMessage{"chosen": json.RawMessage(`2`)}, "2020-04-28", 7}, `{"source":"s","low":10,"high":20,"confidence":0.3,"facts":{"chosen":2},"filed":"2020-04-28","formula":7}`},
 	} {
@@ -94,7 +95,7 @@ func TestHeadcountAnswerShapesAndEncoding(t *testing.T) {
 func TestHeadcountAnswerProjections(t *testing.T) {
 	f := store.Facts{Headcounts: []sources.Headcount{{Scraper: ppp.Name, Kind: sources.HeadcountJobs, Count: 26, AsOf: time.Date(2020, 4, 28, 0, 0, 0, 0, time.UTC)}, {Scraper: fmcsa.Name, Kind: sources.HeadcountDrivers, Count: 20}}, BriefLabels: []string{"chosen-label-one", "chosen-label-two"}}
 	got := factsOf(f, "")
-	if !reflect.DeepEqual(got.Headcounts, []Headcount{{ppp.Name, sources.HeadcountJobs, 26, "2020-04-28"}, {fmcsa.Name, sources.HeadcountDrivers, 20, ""}}) || !reflect.DeepEqual(got.BriefLabels, f.BriefLabels) {
+	if !reflect.DeepEqual(got.Headcounts, []Headcount{{ppp.Name, sources.HeadcountJobs, 26, "2020-04-28", nil}, {fmcsa.Name, sources.HeadcountDrivers, 20, "", nil}}) || !reflect.DeepEqual(got.BriefLabels, f.BriefLabels) {
 		t.Fatal(got)
 	}
 	empty := factsOf(store.Facts{}, "")

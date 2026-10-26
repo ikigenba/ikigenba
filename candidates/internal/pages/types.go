@@ -175,7 +175,7 @@ type FactsView struct {
 }
 
 // HeadcountRow supplies one dated source headcount.
-type HeadcountRow struct{ Scraper, Kind, Count, AsOf, AsOfText string }
+type HeadcountRow struct{ Scraper, Kind, Count, Hours, AsOf, AsOfText string }
 
 // WrittenRow supplies a fact kind's recording time.
 type WrittenRow struct{ Kind, At, AtText string }
@@ -198,10 +198,10 @@ type FactRow struct{ Key, Value string }
 
 // LinkView supplies link view page data.
 type LinkView struct {
-	Scraper, SourceID, Run, RowPage, EIN, Name                                                        string
-	Names                                                                                             []string
-	City, Zip, Reason, Confidence, Filed, FiledText, FirstSeen, FirstSeenText, LastSeen, LastSeenText string
-	Gone                                                                                              bool
+	Scraper, SourceID, Run, RowPage, EIN, Name                                                                                               string
+	Names                                                                                                                                    []string
+	Establishment, City, Zip, Year, Employees, Hours, Reason, Confidence, Filed, FiledText, FirstSeen, FirstSeenText, LastSeen, LastSeenText string
+	Gone                                                                                                                                     bool
 }
 
 // RulingView supplies ruling view page data.

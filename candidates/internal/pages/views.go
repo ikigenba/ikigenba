@@ -158,7 +158,7 @@ func factsView(f store.Facts, origin string) FactsView {
 		}
 	}
 	for _, h := range f.Headcounts {
-		v.Headcounts = append(v.Headcounts, HeadcountRow{h.Scraper, h.Kind, strconv.FormatInt(h.Count, 10), date(h.AsOf), date(h.AsOf)})
+		v.Headcounts = append(v.Headcounts, HeadcountRow{h.Scraper, h.Kind, strconv.FormatInt(h.Count, 10), integer(h.Hours), date(h.AsOf), date(h.AsOf)})
 	}
 	for _, w := range f.Written {
 		at, txt := stamp(w.At, SecondLayout)
@@ -187,7 +187,7 @@ func estimateView(e sources.Estimate) EstimateView {
 	return v
 }
 func linkView(l store.Link, sp string) LinkView {
-	v := LinkView{Scraper: l.Scraper, SourceID: l.SourceID, Run: l.Run, RowPage: urls.RowPage(urls.Scrapes(sp), l.Run, l.SourceID), EIN: l.Reading.EINKey, Names: append([]string{}, l.Reading.Names...), Name: l.Reading.Name, City: l.Reading.City, Zip: l.Reading.Zip, Reason: l.Reason, Confidence: two(l.Confidence), Filed: date(l.Reading.Filed), FiledText: date(l.Reading.Filed), Gone: l.Gone}
+	v := LinkView{Scraper: l.Scraper, SourceID: l.SourceID, Run: l.Run, RowPage: urls.RowPage(urls.Scrapes(sp), l.Run, l.SourceID), EIN: l.Reading.EINKey, Names: append([]string{}, l.Reading.Names...), Name: l.Reading.Name, Establishment: l.Reading.Establishment, Year: integer(l.Reading.Year), Employees: integer(l.Reading.Employees), Hours: integer(l.Reading.Hours), City: l.Reading.City, Zip: l.Reading.Zip, Reason: l.Reason, Confidence: two(l.Confidence), Filed: date(l.Reading.Filed), FiledText: date(l.Reading.Filed), Gone: l.Gone}
 	v.FirstSeen, v.FirstSeenText = stamp(l.FirstSeen, MinuteLayout)
 	v.LastSeen, v.LastSeenText = stamp(l.LastSeen, MinuteLayout)
 	return v
@@ -438,4 +438,11 @@ func changesView(x store.Changes) ChangesView {
 func enrichmentKinds(es []store.Enrichment) KindsView {
 	present, missing := store.KindsOf(es)
 	return KindsView{append([]string{}, present...), append([]string{}, missing...)}
+}
+
+func integer(n *int64) string {
+	if n == nil {
+		return ""
+	}
+	return strconv.FormatInt(*n, 10)
 }

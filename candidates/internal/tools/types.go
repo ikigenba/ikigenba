@@ -190,33 +190,37 @@ func (v PassList) MarshalJSON() ([]byte, error) {
 
 // Link is a tool answer value.
 type Link struct {
-	Scraper      string   `json:"scraper"`
-	SourceID     string   `json:"source_id"`
-	Run          string   `json:"run"`
-	Digest       string   `json:"digest"`
-	Name         string   `json:"name"`
-	Names        []string `json:"names"`
-	Street       string   `json:"street"`
-	City         string   `json:"city"`
-	State        string   `json:"state"`
-	Zip          string   `json:"zip"`
-	County       string   `json:"county"`
-	Phone        string   `json:"phone"`
-	Email        string   `json:"email"`
-	People       []Person `json:"people"`
-	Class        string   `json:"class"`
-	Cargo        []string `json:"cargo"`
-	Filed        string   `json:"filed,omitempty"`
-	FleetVerdict string   `json:"fleet_verdict"`
-	NameKey      string   `json:"name_key"`
-	PhoneKey     string   `json:"phone_key"`
-	DomainKey    string   `json:"domain_key"`
-	EIN          string   `json:"ein"`
-	Reason       string   `json:"reason"`
-	Confidence   float64  `json:"confidence"`
-	FirstSeen    string   `json:"first_seen"`
-	LastSeen     string   `json:"last_seen"`
-	Gone         bool     `json:"gone"`
+	Scraper       string   `json:"scraper"`
+	SourceID      string   `json:"source_id"`
+	Run           string   `json:"run"`
+	Digest        string   `json:"digest"`
+	Name          string   `json:"name"`
+	Names         []string `json:"names"`
+	Street        string   `json:"street"`
+	City          string   `json:"city"`
+	State         string   `json:"state"`
+	Zip           string   `json:"zip"`
+	County        string   `json:"county"`
+	Phone         string   `json:"phone"`
+	Email         string   `json:"email"`
+	People        []Person `json:"people"`
+	Class         string   `json:"class"`
+	Cargo         []string `json:"cargo"`
+	Filed         string   `json:"filed,omitempty"`
+	FleetVerdict  string   `json:"fleet_verdict"`
+	NameKey       string   `json:"name_key"`
+	PhoneKey      string   `json:"phone_key"`
+	DomainKey     string   `json:"domain_key"`
+	EIN           string   `json:"ein"`
+	Establishment string   `json:"establishment"`
+	Year          *int64   `json:"year,omitempty"`
+	Employees     *int64   `json:"employees,omitempty"`
+	Hours         *int64   `json:"hours,omitempty"`
+	Reason        string   `json:"reason"`
+	Confidence    float64  `json:"confidence"`
+	FirstSeen     string   `json:"first_seen"`
+	LastSeen      string   `json:"last_seen"`
+	Gone          bool     `json:"gone"`
 }
 
 // MarshalJSON encodes empty collections as arrays or objects.
@@ -345,6 +349,7 @@ type Headcount struct {
 	Kind    string `json:"kind"`
 	Count   int64  `json:"count"`
 	Date    string `json:"date,omitempty"`
+	Hours   *int64 `json:"hours,omitempty"`
 }
 
 // Written records when a kind last wrote the facts.
