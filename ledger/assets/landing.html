@@ -1,0 +1,69 @@
+{{/* The landing page at GET /: what the service is, then the book as it
+     stands. The root of the hierarchy: .Banner's .Trail is empty, so the
+     banner's breadcrumb holds only the service. Shown only to a signed-in
+     user; a guest is sent to sign in. Every signed-in user sees the one
+     book: it is the space's, not a user's. Read-only: no form but the
+     banner's sign out, no table of records, no per-record pages and no
+     paging; the book is kept with the tools. Data: .Banner (a
+     page.Banner, for banner and footer); .Currency (string, the book's
+     currency code, "USD"); .LockDate (string, the lock date, YYYY-MM-DD;
+     empty when none is set); .FiscalYearStart (string, the fiscal year
+     start as MM-DD, "01-01" by default, as set_book takes it);
+     .OpenAccounts (int, how many declared accounts are open, not closed);
+     .Transactions (int, how many transactions are posted, reversals
+     included); .LatestDate (string, the date of the latest-dated
+     transaction, YYYY-MM-DD; empty when no transaction is posted);
+     .FailingAssertions (int, how many unretracted balance assertions
+     dated on or before today fail, as check lists them). Counts are shown
+     as the plain integer; dates and codes as stored.
+     Hooks: title "ledger"; h1 with text "ledger"; p#summary.lede (text
+     "The business's books: a double-entry ledger of accounts,
+     transactions, balance assertions, notes and documents, with its
+     statements. Agents post to it and read it with the tools. Money is
+     append-only: a mistake is corrected by a reversal and a new
+     entry."); section#book-card.card with h2 "The book" and a p in its header
+     (text "The book as it stands. Agents open accounts, post
+     transactions and set the lock date with the tools; nothing here
+     changes the book."), then dl#book.kv holding, in order, dt
+     "Currency" then dd#book-currency (.Currency in a code element); dt
+     "Lock date" then dd#book-lock-date, which when .LockDate is not
+     empty holds time[datetime=<.LockDate>] (text .LockDate) and when it
+     is empty is dd#book-lock-date.muted with text "none, the past is
+     open"; dt "Fiscal year starts" then dd#book-fiscal-year-start
+     (.FiscalYearStart in a code element); dt "Open accounts" then
+     dd#book-open-accounts (.OpenAccounts); dt "Transactions" then
+     dd#book-transactions (.Transactions); dt "Latest transaction" then
+     dd#book-latest-date, which when .LatestDate is not empty holds
+     time[datetime=<.LatestDate>] (text .LatestDate) and when it is empty
+     is dd#book-latest-date.muted with text "no transactions yet"; dt
+     "Failing assertions" then dd#book-failing-assertions
+     (.FailingAssertions); then, after the card, a p holding a
+     #tools-link (text "Tools") whose href is "/tools" and a #about-link
+     (text "About ledger") whose href is "/about", separated by " · ".
+     No script but appkit's /_appkit/feedback.js. */}}
+{{define "landing"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>ledger</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>ledger</h1>
+<p id="summary" class="lede">The business's books: a double-entry ledger of accounts, transactions, balance assertions, notes and documents, with its statements. Agents post to it and read it with the tools. Money is append-only: a mistake is corrected by a reversal and a new entry.</p>
+<section id="book-card" class="card" aria-labelledby="book-title">
+<header><div><h2 id="book-title">The book</h2><p>The book as it stands. Agents open accounts, post transactions and set the lock date with the tools; nothing here changes the book.</p></div></header>
+<dl id="book" class="kv">
+<dt>Currency</dt><dd id="book-currency"><code>{{.Currency}}</code></dd>
+<dt>Lock date</dt>{{if .LockDate}}<dd id="book-lock-date"><time datetime="{{.LockDate}}">{{.LockDate}}</time></dd>{{else}}<dd id="book-lock-date" class="muted">none, the past is open</dd>{{end}}
+<dt>Fiscal year starts</dt><dd id="book-fiscal-year-start"><code>{{.FiscalYearStart}}</code></dd>
+<dt>Open accounts</dt><dd id="book-open-accounts">{{.OpenAccounts}}</dd>
+<dt>Transactions</dt><dd id="book-transactions">{{.Transactions}}</dd>
+<dt>Latest transaction</dt>{{if .LatestDate}}<dd id="book-latest-date"><time datetime="{{.LatestDate}}">{{.LatestDate}}</time></dd>{{else}}<dd id="book-latest-date" class="muted">no transactions yet</dd>{{end}}
+<dt>Failing assertions</dt><dd id="book-failing-assertions">{{.FailingAssertions}}</dd>
+</dl>
+</section>
+<p><a id="tools-link" href="/tools">Tools</a> · <a id="about-link" href="/about">About ledger</a></p>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

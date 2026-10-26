@@ -1,0 +1,16 @@
+app = "ledger"
+description = "Keep the business's books: accounts, transactions and statements."
+default = false
+mcp = true
+guests = false
+secrets = []
+
+[database]
+engine = "sqlite"
+path = "state/ledger.db"
+
+[resources]
+memory_max = "128M"
+
+[home]
+group = "application"
