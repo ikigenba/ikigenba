@@ -17,7 +17,7 @@ removed automatically, and a candidate leaves every prospect list only by
 the owner's exclusion. A source is Go code in the service
 that knows how one scraper's rows become match keys, tags, a size estimate,
 a filing date, operating evidence and a category, and the fixed registry
-holds three, `fmcsa`, `ppp` and `form5500`. A pass is one ingest, judge, enrich or
+holds four, `fmcsa`, `ppp`, `form5500` and `osha_ita`. A pass is one ingest, judge, enrich or
 targeted enrich, recorded at once and worked in the background: an ingest
 is started by a `scrape.finished` event of a `done` run, delivered on the
 bus, and ingests that run's rows without judging, or by the `ingest` tool,
@@ -216,7 +216,7 @@ no `go.work`, no local module cache stands in for it.
 The sub-project's tests are all `*_test.go` files in the module: the root
 package, `cmd/candidates` and everything under `internal/` (`internal/cli`,
 `internal/settings`, `internal/server`, `internal/web`, `internal/store`,
-`internal/sources`, `internal/fmcsa`, `internal/ppp`, `internal/form5500`, `internal/judging`,
+`internal/sources`, `internal/fmcsa`, `internal/ppp`, `internal/form5500`, `internal/oshaita`, `internal/judging`,
 `internal/passes`, `internal/website`, `internal/routes`, `internal/enrichers`,
 `internal/trail`, `internal/urls`,
 `internal/tools` and `internal/pages`).
@@ -233,7 +233,7 @@ design documents never enter the test side of the grep.
 from any other string of that shape: such a literal anywhere in a `*_test.go`
 file counts as a covered id. candidates echoes back what callers and its
 siblings give it — scrapes' rows and every field of them (DOT numbers,
-loan amounts and dates, EINs, business names, addresses, phones, emails, counties,
+loan amounts and dates, EINs, establishment ids and names, filing years, employee counts, hours worked, business names, addresses, phones, emails, counties,
 people, facts), source ids, scraper names, run ids, user ids and emails,
 request ids, bus event ids, the services file's URLs, ruling text,
 prospect list names, reject reasons, campaigns' event payloads (campaign and piece ids,
