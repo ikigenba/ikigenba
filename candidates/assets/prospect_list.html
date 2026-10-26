@@ -92,7 +92,9 @@
      categories, "brief" or "links"; empty when it has none), .Class (its class tag, one of
      "private", "for_hire", "mixed" or "unknown"; empty when it has
      none), .FleetVerdict ("pass", "fail" or "unknown", as stored),
-     .Website ("https", "http", "none" or "unknown", as stored),
+     .Website ("https", "http", "none" or "unknown", as stored; "none"
+     when the website search ran and found no site, "unknown" when no
+     search has run),
      .WebsiteURL (the URL the result that decided its website landed on,
      as stored; empty unless .Website is "https" or "http"), .WebsiteSource (which
      result decided its website, as stored: "check" or "search"; empty
@@ -152,7 +154,9 @@
      form). section#filters with h2 "Filters" and a p in its header (text
      "A filter applies only when the prospect list carries it; any means it does
      not. A filter on a fact that can be unknown leaves out the candidates
-     whose value is unknown unless its switch lets them in."), then
+     whose value is unknown unless its switch lets them in. A website is
+     none when the website search ran and found no site, and unknown when
+     no search has run.", none and unknown each in a code element), then
      dl#filters.kv holding, in this order, each dd showing span.muted
      "any" when the prospect list does not carry that filter's value, and, for
      the six filters with a switch, followed when the switch is set by a
@@ -299,7 +303,7 @@
 {{end}}</dl>
 </section>
 {{with .Filters}}<section id="filters" class="card" aria-labelledby="filters-title">
-<header><h2 id="filters-title">Filters</h2><p>A filter applies only when the prospect list carries it; any means it does not. A filter on a fact that can be unknown leaves out the candidates whose value is unknown unless its switch lets them in.</p></header>
+<header><h2 id="filters-title">Filters</h2><p>A filter applies only when the prospect list carries it; any means it does not. A filter on a fact that can be unknown leaves out the candidates whose value is unknown unless its switch lets them in. A website is <code>none</code> when the website search ran and found no site, and <code>unknown</code> when no search has run.</p></header>
 <dl id="filters" class="kv">
 <dt>Revenue low</dt><dd id="filter-revenue">{{if and .RevenueMin .RevenueMax}}{{.RevenueMin}} to {{.RevenueMax}}{{else if .RevenueMin}}at least {{.RevenueMin}}{{else if .RevenueMax}}at most {{.RevenueMax}}{{else}}<span class="muted">any</span>{{end}}{{if .RevenueUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
 <dt>Drive minutes</dt><dd id="filter-minutes">{{if .MaxMinutes}}at most {{.MaxMinutes}}{{else}}<span class="muted">any</span>{{end}}{{if .MinutesUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>

@@ -29,15 +29,18 @@
      confirmed, the newest such; empty
      when neither did, and when merged), .Website (the state of the result
      .WebsiteSource names, "https" or "http", as stored; when
-     .WebsiteSource is empty, the state of its newest website_check
-     result, "none" as stored, or "unknown" when it has none; empty when
+     .WebsiteSource is empty, "none" when the website search ran and
+     found no site, its agent naming none or naming one that did not
+     load, else "unknown", no search having run; empty when
      merged), .WebsiteURL (the URL that result landed on; empty unless
      .Website is "https" or "http"), .WebsiteTitle (that result's page
      title, as stored; empty when none), .WebsiteWhy (the sentence the
      search's agent gave for what matched, as stored; empty unless
      .WebsiteSource is "search") and .WebsiteChecked and
-     .WebsiteCheckedText (when that result was found, in .Created's two
-     forms below; both empty when it has none),
+     .WebsiteCheckedText (when that result was found: the result
+     .WebsiteSource names, the website_search result that found no site
+     when .Website is "none", else its newest website_check result; in
+     .Created's two forms below; both empty when it has none),
      .People (each with .Name and .Role, as the
      source gives them; may be empty), .Class (its class tag, "private",
      "for_hire", "mixed" or "unknown"; empty when merged), .Cargo (its
@@ -302,7 +305,8 @@
      with .WebsiteTitle; then, when .WebsiteWhy is set,
      div[data-website-why] with .WebsiteWhy; then, when .WebsiteChecked is
      set, div.muted holding "found by search" when .WebsiteSource is
-     "search", "found by check" when it is "check", else "checked", then
+     "search", "found by check" when it is "check", "searched" when
+     .Website is "none", else "checked", then
      a space and
      time[datetime=<.WebsiteChecked>] (text .WebsiteCheckedText); the dd
      carrying also [data-website-source=<.WebsiteSource>] when
@@ -629,7 +633,7 @@
 {{end}}{{if .County}}<dt>County</dt><dd id="candidate-county"><code>{{.County}}</code></dd>
 {{end}}{{if .Phone}}<dt>Phone</dt><dd id="candidate-phone">{{.Phone}}</dd>
 {{end}}{{if .Email}}<dt>Email</dt><dd id="candidate-email">{{.Email}}</dd>
-{{end}}{{if .Website}}<dt>Website</dt><dd id="candidate-website" data-website="{{.Website}}"{{if .WebsiteSource}} data-website-source="{{.WebsiteSource}}"{{end}}>{{if eq .Website "unknown"}}<span class="muted">unknown</span>{{else}}{{if .WebsiteURL}}<a class="website-link" href="{{.WebsiteURL}}">{{.WebsiteURL}}</a> {{end}}{{.Website}}{{end}}{{if .WebsiteTitle}}<div data-website-title>{{.WebsiteTitle}}</div>{{end}}{{if .WebsiteWhy}}<div data-website-why>{{.WebsiteWhy}}</div>{{end}}{{if .WebsiteChecked}}<div class="muted">{{if eq .WebsiteSource "search"}}found by search{{else if eq .WebsiteSource "check"}}found by check{{else}}checked{{end}} <time datetime="{{.WebsiteChecked}}">{{.WebsiteCheckedText}}</time></div>{{end}}</dd>
+{{end}}{{if .Website}}<dt>Website</dt><dd id="candidate-website" data-website="{{.Website}}"{{if .WebsiteSource}} data-website-source="{{.WebsiteSource}}"{{end}}>{{if eq .Website "unknown"}}<span class="muted">unknown</span>{{else}}{{if .WebsiteURL}}<a class="website-link" href="{{.WebsiteURL}}">{{.WebsiteURL}}</a> {{end}}{{.Website}}{{end}}{{if .WebsiteTitle}}<div data-website-title>{{.WebsiteTitle}}</div>{{end}}{{if .WebsiteWhy}}<div data-website-why>{{.WebsiteWhy}}</div>{{end}}{{if .WebsiteChecked}}<div class="muted">{{if eq .WebsiteSource "search"}}found by search{{else if eq .WebsiteSource "check"}}found by check{{else if eq .Website "none"}}searched{{else}}checked{{end}} <time datetime="{{.WebsiteChecked}}">{{.WebsiteCheckedText}}</time></div>{{end}}</dd>
 {{end}}{{if .People}}<dt>People</dt><dd id="candidate-people">{{range .People}}<div data-person>{{.Name}} <span class="muted">{{.Role}}</span></div>{{end}}</dd>
 {{end}}{{if .Class}}<dt>Class</dt><dd id="candidate-class"><code>{{.Class}}</code></dd>
 {{end}}{{if .Cargo}}<dt>Cargo</dt><dd id="candidate-cargo">{{range $i, $c := .Cargo}}{{if $i}} {{end}}<code data-cargo="{{$c}}">{{$c}}</code>{{end}}</dd>
