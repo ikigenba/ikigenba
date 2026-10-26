@@ -1,0 +1,81 @@
+{{/* The about screen at GET /about: the service's name, version and
+     description. One level below the root: .Banner's .Trail is the one
+     level about at /about. Shown only to a signed-in user; a guest is sent
+     to sign in. Data: .Banner (a page.Banner, for banner and footer; its
+     .Service is the name and its .Release and .Commit give the version
+     row); .Description (the service's one-line description, the
+     manifest's). Hooks: title "About ledger"; h1 with text "About ledger";
+     dl#about.kv holding dt "Name" then dd#about-name (.Banner.Service), dt
+     "Version" then dd#about-version (.Banner.Release and .Banner.Commit,
+     present even when empty), and dt "Description" then
+     dd#about-description (.Description); then section#how.card with h2 "How
+     it works" and seven p: "ledger keeps the business's one set of books,
+     by double entry, in one currency, USD. Every amount is kept as a whole
+     number of minor units, cents for USD, never as a floating-point value,
+     and is written as a plain decimal such as 42.17 or -1200, with no more
+     decimal places than the currency has."; "Accounts are declared before
+     they are used, each with an open date and, once closed, a close date. A
+     name is colon-separated segments under one of five roots, Assets,
+     Liabilities, Equity, Income and Expenses, such as Assets:Bank:Checking.
+     Parents are implied by the names, so Assets:Bank has a balance because
+     Assets:Bank:Checking does. An account is never renamed or deleted, and
+     a posting to an account that is not declared is refused."; "A
+     transaction has a date and two or more postings, each an account and an
+     amount, and its postings sum to exactly zero. One posting may leave its
+     amount out and takes the remainder. Money is append-only: once posted,
+     a transaction's date and postings never change. A mistake is corrected
+     by a reversal, a new transaction with every amount negated and linked
+     to the one it reverses, and then a new entry. A caller may give a key,
+     so the same transaction sent twice is posted once."; "The words of a
+     transaction sit beside the money and may be changed: its flag, pending
+     or cleared, its payee, narration, tags, links and metadata. Each change
+     writes a new version, so every version of a transaction's words is
+     kept, with who wrote it and when."; "A balance assertion says what an
+     account's balance, with everything under it, should be at the end of a
+     day. It is checked each time it is read, and the check lists every one
+     that fails. A note records a line of text against an account on a date,
+     and a document ties a file kept in artifacts, such as a receipt or a
+     bank statement, to an account and, if wanted, a transaction.
+     Assertions, notes and documents are retracted, never deleted."; "The
+     lock date closes the past: nothing that carries money or a date may be
+     added on or before it, while the words of a transaction may still be
+     changed. It can be moved either way, and every move is recorded. There
+     are no closing entries."; "The reports are computed from the postings
+     when they are asked for: the journal, an account's register with a
+     running balance, the trial balance, the balance sheet as of a date and
+     the income statement over a range of dates. The balance sheet rolls
+     earnings into equity at report time, using the fiscal year start the
+     book keeps. Balances keep their natural signs: assets are positive, and
+     liabilities, equity and income are negative. Every signed-in user of
+     the space reads and writes the books as themselves, and every record
+     carries who made it.". No section of the landing page's. No script but
+     appkit's /_appkit/feedback.js. */}}
+{{define "about"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>About ledger</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>About ledger</h1>
+<section class="card">
+<dl id="about" class="kv">
+<dt>Name</dt><dd id="about-name">{{.Banner.Service}}</dd>
+<dt>Version</dt><dd id="about-version">{{if .Banner.Release}}{{.Banner.Release}}{{if .Banner.Commit}} ({{.Banner.Commit}}){{end}}{{else}}{{.Banner.Commit}}{{end}}</dd>
+<dt>Description</dt><dd id="about-description">{{.Description}}</dd>
+</dl>
+</section>
+<section id="how" class="card" aria-labelledby="how-title">
+<header><h2 id="how-title">How it works</h2></header>
+<p>ledger keeps the business's one set of books, by double entry, in one currency, USD. Every amount is kept as a whole number of minor units, cents for USD, never as a floating-point value, and is written as a plain decimal such as 42.17 or -1200, with no more decimal places than the currency has.</p>
+<p>Accounts are declared before they are used, each with an open date and, once closed, a close date. A name is colon-separated segments under one of five roots, Assets, Liabilities, Equity, Income and Expenses, such as Assets:Bank:Checking. Parents are implied by the names, so Assets:Bank has a balance because Assets:Bank:Checking does. An account is never renamed or deleted, and a posting to an account that is not declared is refused.</p>
+<p>A transaction has a date and two or more postings, each an account and an amount, and its postings sum to exactly zero. One posting may leave its amount out and takes the remainder. Money is append-only: once posted, a transaction's date and postings never change. A mistake is corrected by a reversal, a new transaction with every amount negated and linked to the one it reverses, and then a new entry. A caller may give a key, so the same transaction sent twice is posted once.</p>
+<p>The words of a transaction sit beside the money and may be changed: its flag, pending or cleared, its payee, narration, tags, links and metadata. Each change writes a new version, so every version of a transaction's words is kept, with who wrote it and when.</p>
+<p>A balance assertion says what an account's balance, with everything under it, should be at the end of a day. It is checked each time it is read, and the check lists every one that fails. A note records a line of text against an account on a date, and a document ties a file kept in artifacts, such as a receipt or a bank statement, to an account and, if wanted, a transaction. Assertions, notes and documents are retracted, never deleted.</p>
+<p>The lock date closes the past: nothing that carries money or a date may be added on or before it, while the words of a transaction may still be changed. It can be moved either way, and every move is recorded. There are no closing entries.</p>
+<p>The reports are computed from the postings when they are asked for: the journal, an account's register with a running balance, the trial balance, the balance sheet as of a date and the income statement over a range of dates. The balance sheet rolls earnings into equity at report time, using the fiscal year start the book keeps. Balances keep their natural signs: assets are positive, and liabilities, equity and income are negative. Every signed-in user of the space reads and writes the books as themselves, and every record carries who made it.</p>
+</section>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}
