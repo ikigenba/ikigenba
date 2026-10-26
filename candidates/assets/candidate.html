@@ -29,14 +29,15 @@
      confirmed, the newest such; empty
      when neither did, and when merged), .Website (the state of the result
      .WebsiteSource names, "https" or "http", as stored; when
-     .WebsiteSource is empty, "none" when the website search ran and
-     found no site, its agent naming none or naming one that did not
-     load, else "unknown", no search having run; empty when
-     merged), .WebsiteURL (the URL that result landed on; empty unless
+     .WebsiteSource is empty, "none" when a website search decided it,
+     its agent naming no site or naming one that did not load, else
+     "unknown", no search having decided (none run, or the only one
+     failed); empty when merged), .WebsiteURL (the URL that result landed on; empty unless
      .Website is "https" or "http"), .WebsiteTitle (that result's page
      title, as stored; empty when none), .WebsiteWhy (the sentence the
-     search's agent gave for what matched, as stored; empty unless
-     .WebsiteSource is "search") and .WebsiteChecked and
+     search's agent gave for what matched, or, for "none", for finding
+     no site, as stored; empty unless .WebsiteSource is "search" or
+     .Website is "none") and .WebsiteChecked and
      .WebsiteCheckedText (when that result was found: the result
      .WebsiteSource names, the website_search result that found no site
      when .Website is "none", else its newest website_check result; in
