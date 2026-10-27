@@ -1,11 +1,14 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"reflect"
 	"slices"
 	"strings"
+
+	"github.com/ikigenba/ikigenba/candidates/internal/judging"
 )
 
 var prospectListColumns = columns("id:ID name:Name filters:Filters ordering:Order size:Size created_user_id:CreatedUserID created_user_email:CreatedUserEmail created:Created changed_user_id:ChangedUserID changed_user_email:ChangedUserEmail changed:Changed")
@@ -24,7 +27,30 @@ func normalFilters(f ProspectListFilters) ProspectListFilters {
 	if len(f.Basis) == 0 {
 		f.Basis = nil
 	}
+	f.Trend = slices.Clone(f.Trend)
+	slices.SortFunc(f.Trend, compareTrend)
+	f.Trend = slices.Compact(f.Trend)
+	if len(f.Trend) == 0 {
+		f.Trend = nil
+	}
 	return f
+}
+func compareTrend(a, b string) int {
+	rank := func(v string) int {
+		switch v {
+		case judging.TrendGrowing:
+			return 0
+		case judging.TrendFlat:
+			return 1
+		case judging.TrendShrinking:
+			return 2
+		}
+		return 3
+	}
+	if n := cmp.Compare(rank(a), rank(b)); n != 0 {
+		return n
+	}
+	return cmp.Compare(a, b)
 }
 func normalOrder(o []ProspectListOrder) []ProspectListOrder {
 	if len(o) == 0 {

@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-B99N-PEQ3 R-RYPS-0SO4
+// R-B99N-PEQ3 R-ZVNB-PFPG
 func TestRankedBasisIncludesMergedHistoryAndWholeSecondStamps(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -72,4 +72,46 @@ func TestRankedMissingFactsUsesCompleteUnknownValue(t *testing.T) {
 		Candidate: id, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown,
 		Categories: []sources.Category{}, Records: []sources.Category{}, Headcounts: []sources.Headcount{}, BriefLabels: []string{},
 	})
+}
+
+// R-ZVNB-PFPG
+func TestCandidateReadsNormalizePreviousWriterTimestamps(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	id := enrichmentCandidate(t, f, "previous timestamps", "previous@test.invalid")
+	_, err := f.s.Judge(ctx, []string{id})
+	contractOK(t, err)
+	k := prospectListCreate(t, f, "previous timestamps")
+	created := time.Date(2025, 2, 3, 4, 5, 6, 123456789, time.FixedZone("previous-created", 19800))
+	updated := time.Date(2026, 3, 4, 5, 6, 7, 987654321, time.FixedZone("previous-updated", -21600))
+	contractOK(t, f.d.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "UPDATE candidates SET created=?,updated=? WHERE id=?", created.Format(time.RFC3339Nano), updated.Format(time.RFC3339Nano), id)
+		return err
+	}))
+	check := func() {
+		t.Helper()
+		candidate, err := f.s.GetCandidate(ctx, id)
+		contractOK(t, err)
+		window, err := f.s.ListCandidates(ctx, store.CandidateFilter{}, "", "", 100)
+		contractOK(t, err)
+		contractEqual(t, len(window), 1)
+		read, err := f.s.ReadProspectList(ctx, k.ID)
+		contractOK(t, err)
+		contractEqual(t, len(read.Members), 1)
+		opened, err := f.s.OpenProspectList(ctx, k.ID, "reader", "reader@test.invalid")
+		contractOK(t, err)
+		contractEqual(t, len(opened.Members), 1)
+		for _, got := range []store.Candidate{candidate, window[0], read.Members[0].Candidate, opened.Members[0].Candidate} {
+			contractEqual(t, got.ID, id)
+			contractEqual(t, got.Created, created.UTC().Truncate(time.Second))
+			contractEqual(t, got.Updated, updated.UTC().Truncate(time.Second))
+			for _, stamp := range []time.Time{got.Created, got.Updated} {
+				contractEqual(t, stamp.Location(), time.UTC)
+				contractEqual(t, stamp.Nanosecond(), 0)
+			}
+		}
+	}
+	check()
+	f.reopen()
+	check()
 }

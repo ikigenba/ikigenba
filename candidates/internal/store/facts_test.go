@@ -79,7 +79,7 @@ func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 	contractEqual(t, facts.Website, sources.WebsiteUnknown)
 }
 
-// R-PWRA-LW9H R-5QGC-NXM9 R-R7HY-562T R-LD70-4W25 R-MTHW-1S6E
+// R-PWRA-LW9H R-NLRN-WHGC R-R7HY-562T R-LD70-4W25 R-MTHW-1S6E
 // R-LNNI-SGBE R-KWTQ-DI04
 func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	f := contractDB(t)

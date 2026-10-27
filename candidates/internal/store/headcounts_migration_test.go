@@ -10,6 +10,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/candidates"
+	"github.com/ikigenba/ikigenba/candidates/internal/judging"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
@@ -65,7 +66,7 @@ func headcountsAssertPrior(t *testing.T, s *store.Store, id, brief string, popul
 	contractOK(t, err)
 	at, err := time.Parse(time.RFC3339, calculated)
 	contractOK(t, err)
-	want := store.Judgments{Candidate: id, OperatingKey: -1, Evidence: []sources.Evidence{}, Rules: 314, Calculated: at.UTC(), HeadcountLow: low, HeadcountHigh: high, HeadcountBasis: basis}
+	want := store.Judgments{Candidate: id, HeadcountSeries: []judging.Series{}, Trend: judging.TrendUnknown, OperatingKey: -1, Evidence: []sources.Evidence{}, Rules: 314, Calculated: at.UTC(), HeadcountLow: low, HeadcountHigh: high, HeadcountBasis: basis}
 	if populated {
 		op, confidence := 0.73, 0.61
 		want.Operating, want.OperatingKey, want.RevenueConfidence = &op, 730000, &confidence

@@ -67,7 +67,7 @@ func passView(p store.Pass, sp string) PassView {
 func memberRow(e store.Ranked, i int) MemberRow {
 	a := judgmentsView(e.Judgments)
 	f := factsView(e.Facts, "")
-	v := MemberRow{Rank: int64(i) + 1, Basis: e.Basis, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, HeadcountLow: a.HeadcountLow, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(e.Facts.Categories), Class: e.Candidate.Class, FleetVerdict: f.FleetVerdict, Website: e.Facts.Website, WebsiteURL: e.Facts.WebsiteURL, WebsiteSource: e.Facts.WebsiteSource, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch, KnownSince: f.KnownSince, KnownSinceText: f.KnownSinceText, NewestFiling: f.NewestFiling, NewestFilingText: f.NewestFilingText, Excluded: a.Excluded}
+	v := MemberRow{Rank: int64(i) + 1, Basis: e.Basis, ID: e.Candidate.ID, Name: e.Candidate.Name, City: e.Candidate.City, State: e.Candidate.State, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, HeadcountLow: a.HeadcountLow, Trend: a.Trend, TrendChange: a.TrendChange, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(e.Facts.Categories), Class: e.Candidate.Class, FleetVerdict: f.FleetVerdict, Website: e.Facts.Website, WebsiteURL: e.Facts.WebsiteURL, WebsiteSource: e.Facts.WebsiteSource, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch, KnownSince: f.KnownSince, KnownSinceText: f.KnownSinceText, NewestFiling: f.NewestFiling, NewestFilingText: f.NewestFilingText, Excluded: a.Excluded}
 	v.SiteText, v.SiteTextText = stamp(e.SiteText, MinuteLayout)
 	v.Brief, v.BriefText = stamp(e.Brief, MinuteLayout)
 	seen := map[string]bool{}
@@ -125,6 +125,13 @@ func judgmentsView(a store.Judgments) JudgmentsView {
 	}
 	for _, e := range a.Evidence {
 		v.OperatingEvidence = append(v.OperatingEvidence, EvidenceRow{e.Name, e.Source, two(e.Weight), e.Description})
+	}
+	v.HeadcountYears, v.HeadcountSeries = seriesView(a)
+	v.Trend, v.TrendKind = a.Trend, a.TrendKind
+	v.TrendFromYear, v.TrendToYear = integer(a.TrendFromYear), integer(a.TrendToYear)
+	v.TrendFrom, v.TrendTo = integer(a.TrendFrom), integer(a.TrendTo)
+	if a.TrendChange != nil {
+		v.TrendChange = changeText(*a.TrendChange)
 	}
 	v.Calculated, v.CalculatedText = stamp(a.Calculated, SecondLayout)
 	return v
@@ -208,7 +215,7 @@ func prospectListRow(c store.ProspectList) ProspectListRow {
 }
 
 func filtersView(f store.ProspectListFilters) FiltersView {
-	v := FiltersView{Basis: append([]string{}, f.Basis...), RevenueUnknown: f.RevenueUnknown, MinutesUnknown: f.MinutesUnknown, Categories: append([]string{}, f.Categories...), CategoryUnknown: f.CategoryUnknown, Fleet: f.Fleet, FleetUnknown: f.FleetUnknown, Website: append([]string{}, f.Website...), WebsiteUnknown: f.WebsiteUnknown, FilingUnknown: f.FilingUnknown, Class: f.Class, ClassUnknown: f.ClassUnknown, ShowExcluded: f.ShowExcluded}
+	v := FiltersView{Basis: append([]string{}, f.Basis...), RevenueUnknown: f.RevenueUnknown, MinutesUnknown: f.MinutesUnknown, Categories: append([]string{}, f.Categories...), CategoryUnknown: f.CategoryUnknown, Fleet: f.Fleet, FleetUnknown: f.FleetUnknown, Website: append([]string{}, f.Website...), WebsiteUnknown: f.WebsiteUnknown, Trend: append([]string{}, f.Trend...), TrendUnknown: f.TrendUnknown, FilingUnknown: f.FilingUnknown, Class: f.Class, ClassUnknown: f.ClassUnknown, ShowExcluded: f.ShowExcluded}
 	if f.RevenueMin != nil {
 		v.RevenueMin = dollars(*f.RevenueMin)
 	}
@@ -445,4 +452,51 @@ func integer(n *int64) string {
 		return ""
 	}
 	return strconv.FormatInt(*n, 10)
+}
+
+func changeText(v int64) string {
+	if v > 0 {
+		return "+" + strconv.FormatInt(v, 10)
+	}
+	return strconv.FormatInt(v, 10)
+}
+
+func seriesView(a store.Judgments) ([]string, []SeriesRow) {
+	years, rows := []string{}, []SeriesRow{}
+	var first, last int64
+	found := false
+	for _, s := range a.HeadcountSeries {
+		for _, f := range s.Figures {
+			if !found || f.Year < first {
+				first = f.Year
+			}
+			if !found || f.Year > last {
+				last = f.Year
+			}
+			found = true
+		}
+	}
+	if found {
+		for y := first; ; y++ {
+			years = append(years, strconv.FormatInt(y, 10))
+			if y == last {
+				break
+			}
+		}
+	}
+	for _, s := range a.HeadcountSeries {
+		row := SeriesRow{Kind: s.Kind, Source: s.Scraper, Figures: []FigureCell{}}
+		for _, year := range years {
+			cell := FigureCell{Year: year}
+			for _, f := range s.Figures {
+				if strconv.FormatInt(f.Year, 10) == year {
+					cell.Count = strconv.FormatInt(f.Count, 10)
+					break
+				}
+			}
+			row.Figures = append(row.Figures, cell)
+		}
+		rows = append(rows, row)
+	}
+	return years, rows
 }

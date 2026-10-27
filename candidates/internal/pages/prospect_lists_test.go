@@ -20,13 +20,13 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-XT4M-RPN7 R-XVKF-J94L R-1YVI-S88P R-SNJ5-LBBQ R-SBC5-RLWS
+// R-XT4M-RPN7 R-4BA8-N4ED R-1YVI-S88P R-SNJ5-LBBQ R-SBC5-RLWS
 func TestProspectListViewContracts(t *testing.T) {
 	low, high, minutes, days := int64(5000000), int64(9000000), int64(120), int64(730)
 	government := false
 	at := fixtureTime()
 	f := store.ProspectListFilters{RevenueMin: &low, RevenueMax: &high, RevenueUnknown: true, MaxMinutes: &minutes, MinutesUnknown: true, Categories: []string{sources.CategoryConstruction, sources.CategoryTrucking}, CategoryUnknown: true, Fleet: sources.FleetPass, FleetUnknown: true, Government: &government, MaxFilingAgeDays: &days, FilingUnknown: true, Class: sources.ClassPrivate, ClassUnknown: true, ShowExcluded: true}
-	wantF := FiltersView{"$5,000,000", "$9,000,000", true, "120", true, []string{sources.CategoryConstruction, sources.CategoryTrucking}, true, sources.FleetPass, true, []string{}, false, "false", "730", true, "", sources.ClassPrivate, true, []string{}, true}
+	wantF := FiltersView{"$5,000,000", "$9,000,000", true, "120", true, []string{sources.CategoryConstruction, sources.CategoryTrucking}, true, sources.FleetPass, true, []string{}, false, []string{}, false, "false", "730", true, "", sources.ClassPrivate, true, []string{}, true}
 	if got := filtersView(f); !reflect.DeepEqual(got, wantF) {
 		t.Fatalf("filters got %#v want %#v", got, wantF)
 	}
@@ -35,7 +35,7 @@ func TestProspectListViewContracts(t *testing.T) {
 	if got := filtersView(f); !reflect.DeepEqual(got, wantF) {
 		t.Fatal(got)
 	}
-	if got := filtersView(store.ProspectListFilters{}); !reflect.DeepEqual(got, FiltersView{Categories: []string{}, Website: []string{}, Basis: []string{}}) {
+	if got := filtersView(store.ProspectListFilters{}); !reflect.DeepEqual(got, FiltersView{Categories: []string{}, Website: []string{}, Trend: []string{}, Basis: []string{}}) {
 		t.Fatal(got)
 	}
 	c := store.ProspectList{ID: "chosen-prospect_list", Name: "chosen-name", Size: 2, Filters: f, Order: []store.ProspectListOrder{{Field: store.OrderRevenueLow, Direction: store.DirectionAsc}, {Field: store.OrderKnownSince, Direction: store.DirectionDesc}}, CreatedUserID: "creator", CreatedUserEmail: "creator@example.test", Created: at, ChangedUserID: "editor", ChangedUserEmail: "editor@example.test", Changed: at.Add(time.Hour)}
@@ -74,7 +74,7 @@ func TestProspectListViewContracts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := ProspectListData{page.Banner{}, want, 5, 0, BasisCountsView{}, ChangesView{}, []MemberRow{{1, "id", "name", "city", "state", "chosen-basis", "operating", "low", "high", "confidence", "", []string{"category"}, "chosen-classifier", "class", "verdict", "chosen-website", "https://chosen.example.test/", "chosen-source", "site-text-at", "site-text-text", "brief-at", "brief-text", "minutes", "chosen-minutes-source", "government", "since", "since-text", "filing", "filing-text", true}}, []RejectRow{rejectRow(r)}}
+	d := ProspectListData{page.Banner{}, want, 5, 0, BasisCountsView{}, ChangesView{}, []MemberRow{{1, "id", "name", "city", "state", "chosen-basis", "operating", "low", "high", "confidence", "", "", "", []string{"category"}, "chosen-classifier", "class", "verdict", "chosen-website", "https://chosen.example.test/", "chosen-source", "site-text-at", "site-text-text", "brief-at", "brief-text", "minutes", "chosen-minutes-source", "government", "since", "since-text", "filing", "filing-text", true}}, []RejectRow{rejectRow(r)}}
 	if d.Members[0].Website != "chosen-website" || d.Members[0].WebsiteURL != "https://chosen.example.test/" {
 		t.Fatal("member positional shape")
 	}

@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-XT4M-RPN7 R-XUCJ-5HDW R-XVKF-J94L R-Y2VT-TVKR
+// R-XT4M-RPN7 R-XUCJ-5HDW R-4BA8-N4ED R-Y2VT-TVKR
 func TestBasisViewShapesAndProjection(t *testing.T) {
 	_ = struct {
 		Banner               page.Banner
@@ -53,6 +53,8 @@ func TestBasisViewShapesAndProjection(t *testing.T) {
 		FleetUnknown           bool
 		Website                []string
 		WebsiteUnknown         bool
+		Trend                  []string
+		TrendUnknown           bool
 		Government             string
 		MaxFilingAgeDays       string
 		FilingUnknown          bool

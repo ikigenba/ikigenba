@@ -59,6 +59,8 @@ type Member struct {
 	RevenueHigh         *int64    `json:"revenue_high,omitempty"`
 	RevenueConfidence   *float64  `json:"revenue_confidence,omitempty"`
 	HeadcountLow        *int64    `json:"headcount_low,omitempty"`
+	Trend               string    `json:"trend"`
+	TrendChange         *int64    `json:"trend_change,omitempty"`
 	Categories          []string  `json:"categories"`
 	ClassifiedBy        string    `json:"classified_by"`
 	FleetVerdict        string    `json:"fleet_verdict"`
@@ -282,6 +284,14 @@ type Judgments struct {
 	HeadcountLow        *int64     `json:"headcount_low,omitempty"`
 	HeadcountHigh       *int64     `json:"headcount_high,omitempty"`
 	HeadcountBasis      string     `json:"headcount_basis,omitempty"`
+	HeadcountSeries     []Series   `json:"headcount_series"`
+	Trend               string     `json:"trend"`
+	TrendKind           string     `json:"trend_kind,omitempty"`
+	TrendFromYear       *int64     `json:"trend_from_year,omitempty"`
+	TrendToYear         *int64     `json:"trend_to_year,omitempty"`
+	TrendFrom           *int64     `json:"trend_from,omitempty"`
+	TrendTo             *int64     `json:"trend_to,omitempty"`
+	TrendChange         *int64     `json:"trend_change,omitempty"`
 	Excluded            bool       `json:"excluded"`
 	Rules               int64      `json:"rules"`
 	Calculated          string     `json:"calculated"`
@@ -290,10 +300,35 @@ type Judgments struct {
 // MarshalJSON encodes empty slices as arrays.
 func (v Judgments) MarshalJSON() ([]byte, error) {
 	type plain Judgments
+	if v.HeadcountSeries == nil {
+		v.HeadcountSeries = []Series{}
+	}
 	if v.OperatingEvidence == nil {
 		v.OperatingEvidence = []Evidence{}
 	}
 	return json.Marshal(plain(v))
+}
+
+// Series holds the figures for one headcount kind.
+type Series struct {
+	Kind    string   `json:"kind"`
+	Scraper string   `json:"scraper"`
+	Figures []Figure `json:"figures"`
+}
+
+// MarshalJSON encodes missing figures as an empty array.
+func (v Series) MarshalJSON() ([]byte, error) {
+	type plain Series
+	if v.Figures == nil {
+		v.Figures = []Figure{}
+	}
+	return json.Marshal(plain(v))
+}
+
+// Figure is a headcount for one calendar year.
+type Figure struct {
+	Year  int64 `json:"year"`
+	Count int64 `json:"count"`
 }
 
 // Facts contains the newest recorded facts and their provenance.
@@ -569,6 +604,8 @@ type FilterArgs struct {
 	FleetUnknown       bool      `json:"fleet_unknown"`
 	Website            *[]string `json:"website"`
 	WebsiteUnknown     bool      `json:"website_unknown"`
+	Trend              *[]string `json:"trend"`
+	TrendUnknown       bool      `json:"trend_unknown"`
 	Government         *bool     `json:"government"`
 	MaxFilingAgeDays   *uint32   `json:"max_filing_age_days"`
 	FilingUnknown      bool      `json:"filing_unknown"`

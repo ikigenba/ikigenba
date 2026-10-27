@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/candidates/internal/judging"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
@@ -54,17 +55,20 @@ type Link struct {
 
 // Judgments holds the last operating and revenue judgments and their evidence.
 type Judgments struct {
-	Candidate                   string
-	Operating                   *float64
-	OperatingKey                int64
-	Evidence                    []sources.Evidence
-	RevenueLow, RevenueHigh     *int64
-	RevenueConfidence           *float64
-	HeadcountLow, HeadcountHigh *int64
-	HeadcountBasis              string
-	Excluded                    bool
-	Rules                       int64
-	Calculated                  time.Time
+	Candidate                                                   string
+	Operating                                                   *float64
+	OperatingKey                                                int64
+	Evidence                                                    []sources.Evidence
+	RevenueLow, RevenueHigh                                     *int64
+	RevenueConfidence                                           *float64
+	HeadcountLow, HeadcountHigh                                 *int64
+	HeadcountBasis                                              string
+	HeadcountSeries                                             []judging.Series
+	Trend, TrendKind                                            string
+	TrendFromYear, TrendToYear, TrendFrom, TrendTo, TrendChange *int64
+	Excluded                                                    bool
+	Rules                                                       int64
+	Calculated                                                  time.Time
 }
 
 // Enrichment is one recorded result.

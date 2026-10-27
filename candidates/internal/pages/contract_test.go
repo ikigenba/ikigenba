@@ -72,11 +72,11 @@ func TestCompleteViewContracts(t *testing.T) {
 	op, rc, low := .776, .7, int64(14400000)
 	a := store.Judgments{Operating: &op, Evidence: []sources.Evidence{{Name: "signal", Source: "source", Weight: .6, Description: "detail"}, {Name: "other", Weight: .3}, {Name: "third", Weight: .2}}, RevenueLow: &low, RevenueHigh: &hi, RevenueConfidence: &rc, Excluded: true, Rules: int64(sources.Rules), Calculated: end}
 
-	wantA := JudgmentsView{OperatingConfidence: "0.78", OperatingEvidence: []EvidenceRow{{"signal", "source", "0.60", "detail"}, {"other", "", "0.30", ""}, {"third", "", "0.20", ""}}, RevenueLow: "$14,400,000", RevenueHigh: "$24,000,000", RevenueConfidence: "0.70", Excluded: true, Rules: int64(sources.Rules), Calculated: "2026-10-05T10:00:07Z", CalculatedText: "2026-10-05 10:00:07 UTC"}
+	wantA := JudgmentsView{OperatingConfidence: "0.78", HeadcountYears: []string{}, HeadcountSeries: []SeriesRow{}, OperatingEvidence: []EvidenceRow{{"signal", "source", "0.60", "detail"}, {"other", "", "0.30", ""}, {"third", "", "0.20", ""}}, RevenueLow: "$14,400,000", RevenueHigh: "$24,000,000", RevenueConfidence: "0.70", Excluded: true, Rules: int64(sources.Rules), Calculated: "2026-10-05T10:00:07Z", CalculatedText: "2026-10-05 10:00:07 UTC"}
 	if got := judgmentsView(a); !reflect.DeepEqual(got, wantA) {
 		t.Fatalf("judgments got %#v want %#v", got, wantA)
 	}
-	if got := judgmentsView(store.Judgments{}); !reflect.DeepEqual(got, JudgmentsView{OperatingEvidence: []EvidenceRow{}}) {
+	if got := judgmentsView(store.Judgments{}); !reflect.DeepEqual(got, JudgmentsView{OperatingEvidence: []EvidenceRow{}, HeadcountYears: []string{}, HeadcountSeries: []SeriesRow{}}) {
 		t.Fatalf("empty judgments %#v", got)
 	}
 	e := sources.Estimate{Source: "source", Low: 14400000, High: &hi, Confidence: .7, Filed: start, Formula: 8, Facts: map[string]json.RawMessage{"z": json.RawMessage(` [1, 2] `), "a": json.RawMessage(` {"k": true} `)}}

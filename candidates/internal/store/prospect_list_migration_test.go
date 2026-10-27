@@ -12,6 +12,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/candidates"
+	"github.com/ikigenba/ikigenba/candidates/internal/judging"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
@@ -69,7 +70,7 @@ func assertPriorJudgment(t *testing.T, s *store.Store, id string) {
 	contractOK(t, err)
 	op, conf := 0.6, 0.7
 	low, high := int64(100), int64(200)
-	contractEqual(t, a, store.Judgments{Candidate: id, Operating: &op, OperatingKey: 600000, Evidence: []sources.Evidence{}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &conf, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)})
+	contractEqual(t, a, store.Judgments{HeadcountSeries: []judging.Series{}, Trend: judging.TrendUnknown, Candidate: id, Operating: &op, OperatingKey: 600000, Evidence: []sources.Evidence{}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &conf, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)})
 }
 
 // R-Z5J8-OA8U
@@ -172,7 +173,7 @@ func TestWebsiteMigrationKeepsPreviousJudgments(t *testing.T) {
 			contractOK(t, err)
 			op, conf := 0.6, 0.7
 			low, high := int64(100), int64(200)
-			contractEqual(t, a, store.Judgments{Candidate: id, Operating: &op, OperatingKey: 600000, Evidence: []sources.Evidence{}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &conf, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)})
+			contractEqual(t, a, store.Judgments{HeadcountSeries: []judging.Series{}, Trend: judging.TrendUnknown, Candidate: id, Operating: &op, OperatingKey: 600000, Evidence: []sources.Evidence{}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &conf, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)})
 			p, err := s.GetPass(ctx, pid)
 			contractOK(t, err)
 			contractEqual(t, p, store.Pass{ID: pid, Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Status: store.StatusDone, Started: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Finished: time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC), Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, UserID: "owner", UserEmail: "mail", RequestID: "request"})

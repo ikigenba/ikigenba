@@ -19,14 +19,14 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-QJXD-VJCO R-SNEV-M7SS R-A3AZ-5YRP R-QW4D-P8RM R-2S53-YQ1D R-ODVT-E7W8 R-A9EH-2TH6 R-XH5T-2X52 R-SR2K-RJ0V R-SOMR-ZZJH
+// R-QJXD-VJCO R-SNEV-M7SS R-A3AZ-5YRP R-QW4D-P8RM R-2S53-YQ1D R-ODVT-E7W8 R-A9EH-2TH6 R-00CZ-DATW R-01KV-R2KL R-SOMR-ZZJH
 func TestProspectListExactSchemas(t *testing.T) {
 	f := newFixture(t)
 	infos, err := f.client.ListTools(t.Context(), caller)
 	if err != nil {
 		t.Fatal(err)
 	}
-	filters := `{"type":"object","properties":{"revenue_min":{"type":"integer","minimum":0},"revenue_max":{"type":"integer","minimum":0},"revenue_unknown":{"type":"boolean"},"max_minutes":{"type":"integer","minimum":0},"minutes_unknown":{"type":"boolean"},"categories":{"type":"array","items":{"type":"string"}},"category_unknown":{"type":"boolean"},"fleet":{"type":"string"},"fleet_unknown":{"type":"boolean"},"website":{"type":"array","items":{"type":"string"}},"website_unknown":{"type":"boolean"},"government":{"type":"boolean"},"max_filing_age_days":{"type":"integer","minimum":0},"filing_unknown":{"type":"boolean"},"min_campaign_age_days":{"type":"integer","minimum":0},"class":{"type":"string"},"class_unknown":{"type":"boolean"},"basis":{"type":"array","items":{"type":"string"}},"show_excluded":{"type":"boolean"}},"additionalProperties":false}`
+	filters := `{"type":"object","properties":{"revenue_min":{"type":"integer","minimum":0},"revenue_max":{"type":"integer","minimum":0},"revenue_unknown":{"type":"boolean"},"max_minutes":{"type":"integer","minimum":0},"minutes_unknown":{"type":"boolean"},"categories":{"type":"array","items":{"type":"string"}},"category_unknown":{"type":"boolean"},"fleet":{"type":"string"},"fleet_unknown":{"type":"boolean"},"website":{"type":"array","items":{"type":"string"}},"website_unknown":{"type":"boolean"},"trend":{"type":"array","items":{"type":"string"}},"trend_unknown":{"type":"boolean"},"government":{"type":"boolean"},"max_filing_age_days":{"type":"integer","minimum":0},"filing_unknown":{"type":"boolean"},"min_campaign_age_days":{"type":"integer","minimum":0},"class":{"type":"string"},"class_unknown":{"type":"boolean"},"basis":{"type":"array","items":{"type":"string"}},"show_excluded":{"type":"boolean"}},"additionalProperties":false}`
 	order := `{"type":"array","items":{"type":"object","properties":{"field":{"type":"string"},"direction":{"type":"string"}},"required":["field","direction"],"additionalProperties":false}}`
 	want := map[string]string{
 		"create_prospect_list": `{"type":"object","properties":{"name":{"type":"string"},"filters":` + filters + `,"order":` + order + `,"size":{"type":"integer"}},"required":["name"],"additionalProperties":false}`,
@@ -68,7 +68,7 @@ func rejectExpected(r store.Reject) tools.Reject {
 func memberExpected(r store.Ranked) tools.Member {
 	a := judgmentsExpected(r.Judgments)
 	f := r.Facts
-	v := tools.Member{Candidate: candidateOf(r.Candidate), Basis: r.Basis, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, HeadcountLow: a.HeadcountLow, FleetVerdict: f.FleetVerdict, Website: f.Website, WebsiteURL: f.WebsiteURL, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch, KnownSince: dateExpected(f.KnownSince), NewestFiling: dateExpected(f.NewestFiling), Excluded: a.Excluded, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(r.Facts.Categories)}
+	v := tools.Member{Candidate: candidateOf(r.Candidate), Basis: r.Basis, OperatingConfidence: a.OperatingConfidence, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, HeadcountLow: a.HeadcountLow, Trend: a.Trend, TrendChange: a.TrendChange, FleetVerdict: f.FleetVerdict, Website: f.Website, WebsiteURL: f.WebsiteURL, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch, KnownSince: dateExpected(f.KnownSince), NewestFiling: dateExpected(f.NewestFiling), Excluded: a.Excluded, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(r.Facts.Categories)}
 	seen := map[string]bool{}
 	for _, c := range f.Categories {
 		seen[c.Name] = true

@@ -13,6 +13,13 @@ import (
 func judgments(r *records, c Candidate, f Facts, t time.Time) ([]sources.Estimate, Judgments) {
 	t = t.UTC().Truncate(time.Second)
 	a := Judgments{Candidate: c.ID, Evidence: []sources.Evidence{}, Rules: sources.Rules, Calculated: t}
+	a.HeadcountSeries = judging.HeadcountSeries(f.Headcounts)
+	trend := judging.HeadcountTrend(a.HeadcountSeries)
+	a.Trend, a.TrendKind = trend.Direction, trend.Kind
+	if trend.Direction != judging.TrendUnknown {
+		a.TrendFromYear, a.TrendToYear = &trend.FromYear, &trend.ToYear
+		a.TrendFrom, a.TrendTo, a.TrendChange = &trend.From, &trend.To, &trend.Change
+	}
 	estimates := map[string]sources.Estimate{}
 	seen := map[string]bool{}
 	evidence := map[string]sources.Evidence{}

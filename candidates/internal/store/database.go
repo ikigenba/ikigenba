@@ -31,7 +31,7 @@ type column struct{ name, field string }
 var candidateColumns = columns("id:ID status:Status merged_into:MergedInto name:Name names:Names street:Street city:City state:State zip:Zip county:County phone:Phone email:Email people:People class:Class cargo:Cargo created:Created updated:Updated")
 var linkColumns = columns("candidate:Candidate scraper:Scraper source_id:SourceID run:Run digest:Digest reading:Reading reason:Reason confidence:Confidence first_seen:FirstSeen last_seen:LastSeen gone:Gone")
 var estimateColumns = columns("candidate:Candidate source:Source low:Low high:High confidence:Confidence facts:Facts filed:Filed formula:Formula")
-var judgmentsColumns = columns("candidate:Candidate operating:Operating operating_key:OperatingKey evidence:Evidence revenue_low:RevenueLow revenue_high:RevenueHigh revenue_confidence:RevenueConfidence headcount_low:HeadcountLow headcount_high:HeadcountHigh headcount_basis:HeadcountBasis excluded:Excluded rules:Rules calculated:Calculated")
+var judgmentsColumns = columns("candidate:Candidate operating:Operating operating_key:OperatingKey evidence:Evidence revenue_low:RevenueLow revenue_high:RevenueHigh revenue_confidence:RevenueConfidence headcount_low:HeadcountLow headcount_high:HeadcountHigh headcount_basis:HeadcountBasis headcount_series:HeadcountSeries trend:Trend trend_kind:TrendKind trend_from_year:TrendFromYear trend_to_year:TrendToYear trend_from:TrendFrom trend_to:TrendTo trend_change:TrendChange excluded:Excluded rules:Rules calculated:Calculated")
 var rulingColumns = columns("kind:Kind candidate:Candidate other:Other keys:Keys why:Why user_id:UserID user_email:UserEmail at:At")
 var passColumns = columns("id:ID kind:Kind origin:Origin trigger:Trigger target:Target enrich_kind:EnrichKind scraper:Scraper status:Status reason:Reason started:Started finished:Finished rows:Rows new:New changed:Changed unchanged:Unchanged gone:Gone created:Created linked:Linked judged:Judged unranged:Unranged derived:Derived due:Due fetched:Fetched https:HTTPS http:HTTP none:None runs:Runs runs_failed:RunsFailed pages:Pages cost:Cost user_id:UserID user_email:UserEmail request_id:RequestID delivery:Delivery")
 
@@ -76,6 +76,10 @@ func readQueryRecords[T any](ctx context.Context, tx *sql.Tx, cs []column, query
 			if err = decodeValue(rv.FieldByName(c.field), vals[i]); err != nil {
 				return nil, err
 			}
+		}
+		if c, ok := any(&v).(*Candidate); ok {
+			c.Created = c.Created.UTC().Truncate(time.Second)
+			c.Updated = c.Updated.UTC().Truncate(time.Second)
 		}
 		out = append(out, v)
 	}

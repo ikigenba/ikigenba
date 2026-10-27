@@ -19,7 +19,7 @@ func TestJudgmentProjectionFullPrecision(t *testing.T) {
 	a := store.Judgments{Excluded: true, Operating: &op, Evidence: []sources.Evidence{{Name: "signal", Source: "source", Weight: .6123456789, Description: "chosen-description"}}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &rc}
 	f := store.Facts{GovernmentMatch: "chosen-government", Minutes: &minutes, FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, KnownSince: time.Date(2018, 4, 9, 0, 0, 0, 0, time.UTC), NewestFiling: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{{Name: sources.CategoryTrucking, Source: "fmcsa"}, {Name: sources.CategoryConstruction, Source: "ppp"}, {Name: sources.CategoryTrucking, Source: "ppp"}}}
 	got := judgmentsOf(a)
-	want := Judgments{Excluded: true, OperatingConfidence: &op, OperatingEvidence: []Evidence{{"signal", "source", .6123456789, "chosen-description"}}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &rc, Calculated: stamp(a.Calculated)}
+	want := Judgments{HeadcountSeries: []Series{}, Excluded: true, OperatingConfidence: &op, OperatingEvidence: []Evidence{{"signal", "source", .6123456789, "chosen-description"}}, RevenueLow: &low, RevenueHigh: &high, RevenueConfidence: &rc, Calculated: stamp(a.Calculated)}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("%+v", got)
 	}

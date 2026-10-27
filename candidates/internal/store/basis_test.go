@@ -95,7 +95,7 @@ func TestKindsOfEverySubset(t *testing.T) {
 	}
 }
 
-// R-KK20-QBM6
+// R-OW5O-5154
 func TestBasisFiltersJSON(t *testing.T) {
 	for _, tc := range []struct {
 		f    store.ProspectListFilters
@@ -125,6 +125,8 @@ func TestBasisFiltersJSON(t *testing.T) {
 		FleetUnknown       bool     `json:"fleet_unknown,omitempty"`
 		Website            []string `json:"website,omitempty"`
 		WebsiteUnknown     bool     `json:"website_unknown,omitempty"`
+		Trend              []string `json:"trend,omitempty"`
+		TrendUnknown       bool     `json:"trend_unknown,omitempty"`
 		Government         *bool    `json:"government,omitempty"`
 		MaxFilingAgeDays   *int64   `json:"max_filing_age_days,omitempty"`
 		FilingUnknown      bool     `json:"filing_unknown,omitempty"`
@@ -143,7 +145,7 @@ func TestBasisFiltersJSON(t *testing.T) {
 	contractEqual(t, got, f)
 }
 
-// R-XKDG-B6R4
+// R-B0HC-R8VK
 func TestBasisFilterValidation(t *testing.T) {
 	// Other filter fields are exercised by TestProspectListValidators; this adds the new basis dimension and its interaction with invalid existing fields.
 	for _, basis := range [][]string{nil, {}, {store.BasisRecords}, {store.BasisPartial}, {store.BasisEnriched}, {store.BasisRecords, store.BasisPartial, store.BasisEnriched}, {store.BasisEnriched, store.BasisEnriched}} {
@@ -157,7 +159,7 @@ func TestBasisFilterValidation(t *testing.T) {
 	}
 }
 
-// R-KMHT-HV3K
+// R-ZPJT-SKZZ
 func TestBasisFilterNormalForm(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

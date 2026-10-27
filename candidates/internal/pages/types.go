@@ -90,6 +90,8 @@ type FiltersView struct {
 	FleetUnknown           bool
 	Website                []string
 	WebsiteUnknown         bool
+	Trend                  []string
+	TrendUnknown           bool
 	Government             string
 	MaxFilingAgeDays       string
 	FilingUnknown          bool
@@ -103,7 +105,7 @@ type FiltersView struct {
 // MemberRow supplies one prospectList member.
 type MemberRow struct {
 	Rank                                                                                                                                                                                                                 int64
-	ID, Name, City, State, Basis, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence, HeadcountLow                                                                                                          string
+	ID, Name, City, State, Basis, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence, HeadcountLow, Trend, TrendChange                                                                                      string
 	Categories                                                                                                                                                                                                           []string
 	ClassifiedBy, Class, FleetVerdict, Website, WebsiteURL, WebsiteSource, SiteText, SiteTextText, Brief, BriefText, Minutes, MinutesSource, GovernmentMatch, KnownSince, KnownSinceText, NewestFiling, NewestFilingText string
 	Excluded                                                                                                                                                                                                             bool
@@ -155,6 +157,9 @@ type JudgmentsView struct {
 	OperatingConfidence                                                                     string
 	OperatingEvidence                                                                       []EvidenceRow
 	RevenueLow, RevenueHigh, RevenueConfidence, HeadcountLow, HeadcountHigh, HeadcountBasis string
+	HeadcountYears                                                                          []string
+	HeadcountSeries                                                                         []SeriesRow
+	Trend, TrendKind, TrendFromYear, TrendToYear, TrendFrom, TrendTo, TrendChange           string
 	Excluded                                                                                bool
 	Rules                                                                                   int64
 	Calculated, CalculatedText                                                              string
@@ -346,3 +351,12 @@ type JoinedRow struct{ Candidate, Name, Basis, Why string }
 
 // LeftRow presents a member that left the list.
 type LeftRow struct{ Candidate, Name, BasisThen, BasisNow, Why, Filter string }
+
+// SeriesRow supplies a headcount series aligned to the displayed years.
+type SeriesRow struct {
+	Kind, Source string
+	Figures      []FigureCell
+}
+
+// FigureCell supplies a count for one year, empty when absent.
+type FigureCell struct{ Year, Count string }

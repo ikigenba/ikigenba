@@ -263,12 +263,14 @@ func TestWalksTouchOnlyTheirPages(t *testing.T) {
 	}
 }
 
-// R-I5S3-SV20 R-I9FS-Y6A3
+// R-NMZK-A971 R-I9FS-Y6A3
 func TestJudgeWalkUsesOneSuppliedTime(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
 	ids := seedBoundedCandidates(t, f, 501)
 	at := f.now
+	clockReads := 0
+	f.s = store.New(f.d, store.Config{Now: func() time.Time { clockReads++; return at.Add(time.Duration(clockReads) * time.Second) }, Rand: f.rnd})
 	before := make([][]store.Enrichment, len(ids))
 	for i, id := range ids {
 		var e error
@@ -288,6 +290,7 @@ func TestJudgeWalkUsesOneSuppliedTime(t *testing.T) {
 		after = next
 	}
 	contractEqual(t, counts, []int64{500, 1, 0})
+	contractEqual(t, clockReads, 0)
 	for i, id := range ids {
 		j, e := f.s.GetJudgments(ctx, id)
 		contractOK(t, e)

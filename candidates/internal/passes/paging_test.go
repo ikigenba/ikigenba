@@ -21,7 +21,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-XWNX-8M6W R-XU84-H2PI
+// R-ESID-FF9Q R-XU84-H2PI
 func TestJudgeWalkUsesPassTimeAcrossPages(t *testing.T) {
 	f := newFixture(t, nil, false)
 	var clock atomic.Int64

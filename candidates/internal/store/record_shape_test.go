@@ -6,26 +6,30 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
+	"github.com/ikigenba/ikigenba/candidates/internal/judging"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-LP13-LPGG R-KIU4-CJVH
+// R-OTPV-DHNQ R-KIU4-CJVH
 func TestStoredRecordShapes(t *testing.T) {
 	n, confidence := int64(3), 0.8
 	a := store.Judgments{Candidate: "candidate", Operating: &confidence, OperatingKey: 800000, Evidence: []sources.Evidence{{Weight: confidence}}, RevenueLow: &n, RevenueHigh: &n, RevenueConfidence: &confidence, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
 	shaped := struct {
-		Candidate                   string
-		Operating                   *float64
-		OperatingKey                int64
-		Evidence                    []sources.Evidence
-		RevenueLow, RevenueHigh     *int64
-		RevenueConfidence           *float64
-		HeadcountLow, HeadcountHigh *int64
-		HeadcountBasis              string
-		Excluded                    bool
-		Rules                       int64
-		Calculated                  time.Time
+		Candidate                                                   string
+		Operating                                                   *float64
+		OperatingKey                                                int64
+		Evidence                                                    []sources.Evidence
+		RevenueLow, RevenueHigh                                     *int64
+		RevenueConfidence                                           *float64
+		HeadcountLow, HeadcountHigh                                 *int64
+		HeadcountBasis                                              string
+		HeadcountSeries                                             []judging.Series
+		Trend, TrendKind                                            string
+		TrendFromYear, TrendToYear, TrendFrom, TrendTo, TrendChange *int64
+		Excluded                                                    bool
+		Rules                                                       int64
+		Calculated                                                  time.Time
 	}(a)
 	contractEqual(t, store.Judgments(shaped), a)
 	counts := store.Counts{Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14}

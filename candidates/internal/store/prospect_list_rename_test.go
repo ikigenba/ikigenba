@@ -13,6 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/candidates"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
+	"github.com/ikigenba/ikigenba/candidates/internal/judging"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
@@ -233,7 +234,7 @@ func TestPreviousReleaseListsAndJudgmentsMigrate(t *testing.T) {
 	contractEqual(t, a.Calculated, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC))
 	stamp := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	op, conf := .6, .7
-	contractEqual(t, a, store.Judgments{Candidate: id, Operating: &op, OperatingKey: 600000, Evidence: []sources.Evidence{}, RevenueLow: ptrInt(100), RevenueHigh: ptrInt(200), RevenueConfidence: &conf, Rules: sources.Rules, Calculated: stamp})
+	contractEqual(t, a, store.Judgments{HeadcountSeries: []judging.Series{}, Trend: judging.TrendUnknown, Candidate: id, Operating: &op, OperatingKey: 600000, Evidence: []sources.Evidence{}, RevenueLow: ptrInt(100), RevenueHigh: ptrInt(200), RevenueConfidence: &conf, Rules: sources.Rules, Calculated: stamp})
 	contractEqual(t, rejects, []store.Reject{
 		{Kind: store.KindReject, ProspectList: "pl_0000000000000099", Candidate: id, Why: "reason", UserID: "owner", UserEmail: "mail", At: stamp},
 		{Kind: store.KindReject, ProspectList: "pl_0000000000000002", ProspectListName: "list-2", Candidate: id, Why: "reason", UserID: "owner", UserEmail: "mail", At: stamp},

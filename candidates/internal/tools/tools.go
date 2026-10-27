@@ -431,7 +431,14 @@ func estimateOf(e sources.Estimate) Estimate {
 	return Estimate{e.Source, e.Low, e.High, e.Confidence, e.Facts, date(e.Filed), e.Formula}
 }
 func judgmentsOf(a store.Judgments) Judgments {
-	v := Judgments{OperatingConfidence: a.Operating, OperatingEvidence: []Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, HeadcountLow: a.HeadcountLow, HeadcountHigh: a.HeadcountHigh, HeadcountBasis: a.HeadcountBasis, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
+	v := Judgments{OperatingConfidence: a.Operating, OperatingEvidence: []Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, HeadcountLow: a.HeadcountLow, HeadcountHigh: a.HeadcountHigh, HeadcountBasis: a.HeadcountBasis, HeadcountSeries: []Series{}, Trend: a.Trend, TrendKind: a.TrendKind, TrendFromYear: a.TrendFromYear, TrendToYear: a.TrendToYear, TrendFrom: a.TrendFrom, TrendTo: a.TrendTo, TrendChange: a.TrendChange, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
+	for _, s := range a.HeadcountSeries {
+		row := Series{Kind: s.Kind, Scraper: s.Scraper, Figures: []Figure{}}
+		for _, f := range s.Figures {
+			row.Figures = append(row.Figures, Figure{f.Year, f.Count})
+		}
+		v.HeadcountSeries = append(v.HeadcountSeries, row)
+	}
 	for _, e := range a.Evidence {
 		v.OperatingEvidence = append(v.OperatingEvidence, Evidence{e.Name, e.Source, e.Weight, e.Description})
 	}
@@ -479,7 +486,7 @@ func briefOf(es []store.Enrichment) *Brief {
 func memberOf(e store.Ranked) Member {
 	a := e.Judgments
 	f := e.Facts
-	v := Member{Candidate: candidateOf(e.Candidate), Basis: e.Basis, OperatingConfidence: a.Operating, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, HeadcountLow: a.HeadcountLow, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(f.Categories), FleetVerdict: f.FleetVerdict, Website: f.Website, WebsiteURL: f.WebsiteURL, WebsiteSource: f.WebsiteSource, KnownSince: date(f.KnownSince), NewestFiling: date(f.NewestFiling), Excluded: a.Excluded, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch}
+	v := Member{Candidate: candidateOf(e.Candidate), Basis: e.Basis, OperatingConfidence: a.Operating, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, HeadcountLow: a.HeadcountLow, Trend: a.Trend, TrendChange: a.TrendChange, Categories: []string{}, ClassifiedBy: store.ClassifiedBy(f.Categories), FleetVerdict: f.FleetVerdict, Website: f.Website, WebsiteURL: f.WebsiteURL, WebsiteSource: f.WebsiteSource, KnownSince: date(f.KnownSince), NewestFiling: date(f.NewestFiling), Excluded: a.Excluded, Minutes: f.Minutes, MinutesSource: f.MinutesSource, GovernmentMatch: f.GovernmentMatch}
 	if !e.SiteText.IsZero() {
 		t := stamp(e.SiteText)
 		v.SiteText = &t
@@ -678,11 +685,15 @@ func filterOf(a FilterArgs) store.ProspectListFilters {
 	if a.Website != nil {
 		websites = append([]string{}, (*a.Website)...)
 	}
+	var trends []string
+	if a.Trend != nil {
+		trends = append([]string{}, (*a.Trend)...)
+	}
 	var basis []string
 	if a.Basis != nil {
 		basis = append([]string{}, (*a.Basis)...)
 	}
-	return store.ProspectListFilters{Basis: basis, RevenueMin: int64Of(a.RevenueMin), RevenueMax: int64Of(a.RevenueMax), RevenueUnknown: a.RevenueUnknown, MaxMinutes: int64Of(a.MaxMinutes), MinutesUnknown: a.MinutesUnknown, Categories: append([]string(nil), a.Categories...), CategoryUnknown: a.CategoryUnknown, Fleet: a.Fleet, FleetUnknown: a.FleetUnknown, Website: websites, WebsiteUnknown: a.WebsiteUnknown, Government: a.Government, MaxFilingAgeDays: int64Of(a.MaxFilingAgeDays), FilingUnknown: a.FilingUnknown, MinCampaignAgeDays: int64Of(a.MinCampaignAgeDays), Class: a.Class, ClassUnknown: a.ClassUnknown, ShowExcluded: a.ShowExcluded}
+	return store.ProspectListFilters{Basis: basis, RevenueMin: int64Of(a.RevenueMin), RevenueMax: int64Of(a.RevenueMax), RevenueUnknown: a.RevenueUnknown, MaxMinutes: int64Of(a.MaxMinutes), MinutesUnknown: a.MinutesUnknown, Categories: append([]string(nil), a.Categories...), CategoryUnknown: a.CategoryUnknown, Fleet: a.Fleet, FleetUnknown: a.FleetUnknown, Website: websites, WebsiteUnknown: a.WebsiteUnknown, Trend: trends, TrendUnknown: a.TrendUnknown, Government: a.Government, MaxFilingAgeDays: int64Of(a.MaxFilingAgeDays), FilingUnknown: a.FilingUnknown, MinCampaignAgeDays: int64Of(a.MinCampaignAgeDays), Class: a.Class, ClassUnknown: a.ClassUnknown, ShowExcluded: a.ShowExcluded}
 }
 func orderOf(a []OrderArgs) []store.ProspectListOrder {
 	v := []store.ProspectListOrder{}

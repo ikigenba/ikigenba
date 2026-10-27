@@ -74,7 +74,7 @@ func TestTemplateDataShape(t *testing.T) {
 	}
 	b := page.Banner{Service: ServiceName}
 	cv := CandidateView{"id", store.StatusActive, "", "name", []string{"alias"}, "street", "city", "MN", "55072", "county", "phone", "email", "source", "website", "https://chosen.example.test/", "title", "why", "checked", "checked-text", []PersonRow{{"person", "role"}}, "class", []string{"cargo"}, "", "", "", ""}
-	av := JudgmentsView{"operating", []EvidenceRow{{"name", "source", "weight", "description"}}, "low", "high", "confidence", "", "", "", false, int64(sources.Rules), "calculated", "calculated-text"}
+	av := JudgmentsView{"operating", []EvidenceRow{{"name", "source", "weight", "description"}}, "low", "high", "confidence", "", "", "", []string{}, []SeriesRow{}, "", "", "", "", "", "", "", false, int64(sources.Rules), "calculated", "calculated-text"}
 	ev := EstimateView{"source", "low", "high", "confidence", "", "", 1, []FactRow{{"key", "value"}}}
 	lv := LinkView{"scraper", "source", "run", "", "ein", "name", []string{"alias"}, "establishment", "city", "55072", "2024", "23", "47840", "reason", "confidence", "", "", "", "", "", "", false}
 	rv := RulingView{"kind", "other", []string{"key"}, "by", "user", "", "", "why"}

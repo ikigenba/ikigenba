@@ -295,10 +295,10 @@ func TestCatalogAndSchemas(t *testing.T) {
 	_ = tools.Left{"candidate", "name", "then", "now", "why", "filter"}
 	_ = tools.Kinds{nil, nil}
 	_ = tools.Enrichments{"basis", tools.Kinds{}, nil, nil}
-	_ = tools.Member{tools.Candidate{}, "", nil, nil, nil, nil, nil, nil, "", "", "", "", "", nil, nil, nil, "", "", "", "", false}
+	_ = tools.Member{tools.Candidate{}, "", nil, nil, nil, nil, nil, "", nil, nil, "", "", "", "", "", nil, nil, nil, "", "", "", "", false}
 	_ = tools.Reject{"kind", "prospect_list", "name", "candidate", "why", "user", "email", "at"}
 	_ = tools.ProspectListRead{tools.ProspectList{}, 0, 0, tools.BasisCounts{}, tools.Changes{}, nil, nil}
-	_ = tools.Judgments{nil, nil, nil, nil, nil, nil, nil, "", false, 0, ""}
+	_ = tools.Judgments{nil, nil, nil, nil, nil, nil, nil, "", nil, "", "", nil, nil, nil, nil, nil, false, 0, ""}
 	_ = tools.Estimate{"source", 1, nil, .5, nil, "", 1}
 	_ = tools.Ruling{"kind", "candidate", "other", nil, "why", "user", "email", "at"}
 	_ = tools.Detail{tools.Candidate{}, nil, nil, nil, nil, nil, nil, nil, nil, nil}
@@ -315,7 +315,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 	_ = tools.ProspectListsArgs{nil, nil}
 	_ = tools.ProspectListArgs{"id"}
 	_ = tools.ReadProspectListArgs{"id", false}
-	_ = tools.FilterArgs{nil, nil, false, nil, false, nil, false, "", false, nil, false, nil, nil, false, nil, "", false, nil, false}
+	_ = tools.FilterArgs{nil, nil, false, nil, false, nil, false, "", false, nil, false, nil, false, nil, nil, false, nil, "", false, nil, false}
 	_ = tools.OrderArgs{"field", "direction"}
 	_ = tools.CreateProspectListArgs{"name", nil, nil, nil}
 	_ = tools.EditProspectListArgs{"id", nil, nil, nil, nil}
@@ -363,9 +363,9 @@ func TestAnswerJSONShapes(t *testing.T) {
 		{tools.Kinds{}, "present missing", "present missing", ""},
 		{tools.EnrichmentResult{}, "kind source inputs cost at", "", ""},
 		{tools.Person{}, "name role", "", ""}, {tools.Evidence{}, "name source weight description", "", ""}, {tools.Category{}, "name source", "", ""}, {tools.Candidate{}, "id status name names street city state zip county phone email people class cargo created updated", "names people cargo", ""},
-		{tools.Member{}, "candidate basis categories classified_by fleet_verdict website website_source site_text brief minutes_source excluded", "categories", ""}, {tools.ProspectListList{}, "prospect_lists", "prospect_lists", ""}, {tools.ProspectList{}, "id name size filters order created_by created_email created changed_by changed_email changed", "order", "filters"}, {tools.Reject{}, "kind prospect_list candidate", "", ""}, {tools.ProspectListRead{}, "prospect_list matching classified by_basis changes members rejects", "members rejects", ""}, {tools.CandidateList{}, "candidates", "candidates", ""}, {tools.PassList{}, "passes", "passes", ""},
+		{tools.Member{}, "candidate basis trend categories classified_by fleet_verdict website website_source site_text brief minutes_source excluded", "categories", ""}, {tools.ProspectListList{}, "prospect_lists", "prospect_lists", ""}, {tools.ProspectList{}, "id name size filters order created_by created_email created changed_by changed_email changed", "order", "filters"}, {tools.Reject{}, "kind prospect_list candidate", "", ""}, {tools.ProspectListRead{}, "prospect_list matching classified by_basis changes members rejects", "members rejects", ""}, {tools.CandidateList{}, "candidates", "candidates", ""}, {tools.PassList{}, "passes", "passes", ""},
 		{tools.Link{}, "scraper source_id run digest name names street city state zip county phone email people class cargo fleet_verdict name_key phone_key domain_key ein establishment reason confidence first_seen last_seen gone", "names people cargo", ""},
-		{tools.Estimate{}, "source low confidence facts formula", "", "facts"}, {tools.Judgments{}, "operating_evidence excluded rules calculated", "operating_evidence", ""},
+		{tools.Estimate{}, "source low confidence facts formula", "", "facts"}, {tools.Judgments{}, "operating_evidence headcount_series trend excluded rules calculated", "operating_evidence headcount_series", ""},
 		{tools.Ruling{}, "kind candidate keys why user email at", "keys", ""}, {tools.Detail{}, "candidate estimates links rulings pages enrichment_results rejects campaigns", "estimates links rulings pages enrichment_results rejects campaigns", ""}, {tools.Decision{}, "ruling candidates", "candidates", ""},
 	}
 	for _, tt := range tests {
@@ -400,11 +400,11 @@ func TestAnswerJSONShapes(t *testing.T) {
 		{tools.Left{BasisNow: "now", Filter: "filter"}, "candidate name basis_then basis_now why filter"},
 		{tools.EnrichmentResult{URL: "chosen-url", Title: "chosen-title", StatusCode: 200, Error: "chosen-error"}, "kind source inputs url title status_code error cost at"},
 		{tools.Candidate{MergedInto: "survivor"}, "id status merged_into name names street city state zip county phone email people class cargo created updated"},
-		{tools.Member{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, Website: sources.WebsiteHTTPS, WebsiteURL: "https://chosen.test", Minutes: &one, GovernmentMatch: "chosen", KnownSince: "known", NewestFiling: "newest"}, "candidate basis operating_confidence revenue_low revenue_high revenue_confidence categories classified_by fleet_verdict website website_url website_source site_text brief minutes minutes_source government_match known_since newest_filing excluded"},
+		{tools.Member{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence, Website: sources.WebsiteHTTPS, WebsiteURL: "https://chosen.test", Minutes: &one, GovernmentMatch: "chosen", KnownSince: "known", NewestFiling: "newest"}, "candidate basis operating_confidence revenue_low revenue_high revenue_confidence trend categories classified_by fleet_verdict website website_url website_source site_text brief minutes minutes_source government_match known_since newest_filing excluded"},
 		{tools.ProspectListList{Next: &continuation}, "prospect_lists next"}, {tools.CandidateList{Next: &continuation}, "candidates next"}, {tools.PassList{Next: &continuation}, "passes next"},
 		{tools.Link{Filed: "2026-01-01", Establishment: "chosen-establishment", Year: &one, Employees: &one, Hours: &one}, "scraper source_id run digest name names street city state zip county phone email people class cargo filed fleet_verdict name_key phone_key domain_key ein establishment year employees hours reason confidence first_seen last_seen gone"},
 		{tools.Estimate{High: &one, Filed: "2026-01-01"}, "source low high confidence facts filed formula"},
-		{tools.Judgments{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence}, "operating_confidence operating_evidence revenue_low revenue_high revenue_confidence excluded rules calculated"},
+		{tools.Judgments{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence}, "operating_confidence operating_evidence revenue_low revenue_high revenue_confidence headcount_series trend excluded rules calculated"},
 		{tools.Reject{Kind: "reject", ProspectList: "prospect_list", ProspectListName: "name", Candidate: "candidate", Why: "why", User: "user", Email: "email", At: "at"}, "kind prospect_list prospect_list_name candidate why user email at"},
 		{tools.Ruling{Other: "other"}, "kind candidate other keys why user email at"}, {tools.Detail{Judgments: &tools.Judgments{}}, "candidate judgments estimates links rulings pages enrichment_results rejects campaigns"},
 	}
@@ -895,7 +895,14 @@ func TestSplitAndNotSame(t *testing.T) {
 // R-6QOY-0DLL
 
 func judgmentsExpected(a store.Judgments) *tools.Judgments {
-	v := &tools.Judgments{OperatingConfidence: a.Operating, OperatingEvidence: []tools.Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, HeadcountLow: a.HeadcountLow, HeadcountHigh: a.HeadcountHigh, HeadcountBasis: a.HeadcountBasis, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
+	v := &tools.Judgments{OperatingConfidence: a.Operating, OperatingEvidence: []tools.Evidence{}, RevenueLow: a.RevenueLow, RevenueHigh: a.RevenueHigh, RevenueConfidence: a.RevenueConfidence, HeadcountLow: a.HeadcountLow, HeadcountHigh: a.HeadcountHigh, HeadcountBasis: a.HeadcountBasis, HeadcountSeries: []tools.Series{}, Trend: a.Trend, TrendKind: a.TrendKind, TrendFromYear: a.TrendFromYear, TrendToYear: a.TrendToYear, TrendFrom: a.TrendFrom, TrendTo: a.TrendTo, TrendChange: a.TrendChange, Excluded: a.Excluded, Rules: a.Rules, Calculated: stamp(a.Calculated)}
+	for _, s := range a.HeadcountSeries {
+		row := tools.Series{Kind: s.Kind, Scraper: s.Scraper, Figures: []tools.Figure{}}
+		for _, f := range s.Figures {
+			row.Figures = append(row.Figures, tools.Figure{f.Year, f.Count})
+		}
+		v.HeadcountSeries = append(v.HeadcountSeries, row)
+	}
 	for _, e := range a.Evidence {
 		v.OperatingEvidence = append(v.OperatingEvidence, tools.Evidence{Name: e.Name, Source: e.Source, Weight: e.Weight, Description: e.Description})
 	}

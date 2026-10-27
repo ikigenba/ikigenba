@@ -21,7 +21,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-GJ9Z-6DFI R-XU84-H2PI R-3QEZ-TBSF R-WT12-CHE3 R-XWNX-8M6W
+// R-GJ9Z-6DFI R-XU84-H2PI R-3QEZ-TBSF R-WT12-CHE3 R-ESID-FF9Q
 func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 	for _, fullIngest := range []bool{false, true} {
 		t.Run(fmt.Sprint(fullIngest), func(t *testing.T) {

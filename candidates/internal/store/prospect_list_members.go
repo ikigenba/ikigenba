@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
+	"github.com/ikigenba/ikigenba/candidates/internal/judging"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
@@ -42,6 +43,10 @@ func prospectListCondition(k ProspectList, now time.Time) (string, []any) {
 		b, _ := json.Marshal(f.Website)
 		add(`(f.website IN (SELECT value FROM json_each(?)) OR (coalesce(f.website,'unknown')=? AND ?))`, string(b), sources.WebsiteUnknown, f.WebsiteUnknown)
 	}
+	if len(f.Trend) > 0 {
+		b, _ := json.Marshal(f.Trend)
+		add(`(a.trend IN (SELECT value FROM json_each(?)) OR (a.trend=? AND ?))`, string(b), judging.TrendUnknown, f.TrendUnknown)
+	}
 	if f.Government != nil {
 		if *f.Government {
 			add(`coalesce(f.government_match,'')<>''`)
@@ -66,6 +71,7 @@ func prospectListCondition(k ProspectList, now time.Time) (string, []any) {
 }
 func prospectListOrdering(o []ProspectListOrder) string {
 	fields := map[string][2]string{
+		OrderTrend:               {"a.trend_change", "a.trend_change"},
 		OrderOperatingConfidence: {"a.operating", "a.operating_key"}, OrderRevenueLow: {"a.revenue_low", "a.revenue_low"}, OrderRevenueConfidence: {"a.revenue_confidence", "a.revenue_confidence"}, OrderDriveMinutes: {"f.minutes", "f.minutes"}, OrderNewestFiling: {"nullif(f.newest_filing,'')", "f.newest_filing"}, OrderKnownSince: {"nullif(f.known_since,'')", "f.known_since"},
 	}
 	parts := []string{}

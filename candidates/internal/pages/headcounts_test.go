@@ -16,12 +16,15 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-EILC-1XEP
+// R-47MJ-HT6A
 func TestHeadcountJudgmentViewShape(_ *testing.T) {
 	_ = struct {
 		OperatingConfidence                                                                     string
 		OperatingEvidence                                                                       []EvidenceRow
 		RevenueLow, RevenueHigh, RevenueConfidence, HeadcountLow, HeadcountHigh, HeadcountBasis string
+		HeadcountYears                                                                          []string
+		HeadcountSeries                                                                         []SeriesRow
+		Trend, TrendKind, TrendFromYear, TrendToYear, TrendFrom, TrendTo, TrendChange           string
 		Excluded                                                                                bool
 		Rules                                                                                   int64
 		Calculated, CalculatedText                                                              string

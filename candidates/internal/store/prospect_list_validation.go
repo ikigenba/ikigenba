@@ -3,6 +3,7 @@ package store
 import (
 	"strings"
 
+	"github.com/ikigenba/ikigenba/candidates/internal/judging"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
@@ -57,6 +58,11 @@ func ValidProspectListFilters(f ProspectListFilters) bool {
 		}
 		seen[state] = true
 	}
+	for _, trend := range f.Trend {
+		if trend != judging.TrendGrowing && trend != judging.TrendFlat && trend != judging.TrendShrinking {
+			return false
+		}
+	}
 	for _, b := range f.Basis {
 		if b != BasisRecords && b != BasisPartial && b != BasisEnriched {
 			return false
@@ -75,7 +81,7 @@ func ValidProspectListOrder(o []ProspectListOrder) bool {
 	seen := make(map[string]bool, len(o))
 	for _, x := range o {
 		switch x.Field {
-		case OrderOperatingConfidence, OrderRevenueLow, OrderRevenueConfidence, OrderDriveMinutes, OrderNewestFiling, OrderKnownSince:
+		case OrderOperatingConfidence, OrderRevenueLow, OrderRevenueConfidence, OrderDriveMinutes, OrderTrend, OrderNewestFiling, OrderKnownSince:
 		default:
 			return false
 		}

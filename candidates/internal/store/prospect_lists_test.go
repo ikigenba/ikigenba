@@ -18,7 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-QOSZ-EMBG R-NDAT-X3NE R-1GL1-1O4A R-3GAA-W7C0 R-PPFW-B9TB R-0NBF-V6BM R-XKDG-B6R4 R-RLQ9-QFC7
+// R-QOSZ-EMBG R-NDAT-X3NE R-1GL1-1O4A R-3GAA-W7C0 R-PPFW-B9TB R-0NBF-V6BM R-B0HC-R8VK R-B1P9-50M9
 func TestProspectListValidators(t *testing.T) {
 	contractEqual(t, []string{store.ProspectListIDPrefix, store.OrderOperatingConfidence, store.OrderRevenueLow, store.OrderRevenueConfidence, store.OrderDriveMinutes, store.OrderNewestFiling, store.OrderKnownSince, store.DirectionDesc, store.DirectionAsc, store.KindReject, store.KindUnreject}, []string{"pl_", "operating_confidence", "revenue_low", "revenue_confidence", "drive_minutes", "newest_filing", "known_since", "desc", "asc", "reject", "unreject"})
 	contractEqual(t, []int{store.ProspectListSizeMin, store.ProspectListSizeMax, store.ProspectListSizeDefault}, []int{1, 100, 30})
@@ -35,7 +35,7 @@ func TestProspectListValidators(t *testing.T) {
 	for _, n := range []int64{-1, 0, 1, 30, 100, 101} {
 		contractEqual(t, store.ValidProspectListSize(n), n >= 1 && n <= 100)
 	}
-	good := []store.ProspectListFilters{{}, {RevenueUnknown: true, MinutesUnknown: true, CategoryUnknown: true, FleetUnknown: true, WebsiteUnknown: true, FilingUnknown: true, ClassUnknown: true, ShowExcluded: true}, {RevenueMin: ptrInt(5), RevenueMax: ptrInt(5)}, {Categories: []string{sources.CategoryConstruction, sources.CategoryTrucking, sources.CategoryAgriculture, sources.CategoryManufacturing, sources.CategoryWholesale, sources.CategoryMining, sources.CategoryWaste, sources.CategoryOther, sources.CategoryOther}}}
+	good := []store.ProspectListFilters{{}, {RevenueUnknown: true, MinutesUnknown: true, CategoryUnknown: true, FleetUnknown: true, WebsiteUnknown: true, TrendUnknown: true, FilingUnknown: true, ClassUnknown: true, ShowExcluded: true}, {RevenueMin: ptrInt(5), RevenueMax: ptrInt(5)}, {Categories: []string{sources.CategoryConstruction, sources.CategoryTrucking, sources.CategoryAgriculture, sources.CategoryManufacturing, sources.CategoryWholesale, sources.CategoryMining, sources.CategoryWaste, sources.CategoryOther, sources.CategoryOther}}}
 	for _, f := range good {
 		contractEqual(t, store.ValidProspectListFilters(f), true)
 	}
@@ -77,7 +77,7 @@ func TestProspectListValidators(t *testing.T) {
 		contractEqual(t, store.ValidProspectListFilters(store.ProspectListFilters{Class: class}), true)
 	}
 	all := []store.ProspectListOrder{}
-	for _, field := range []string{store.OrderOperatingConfidence, store.OrderRevenueLow, store.OrderRevenueConfidence, store.OrderDriveMinutes, store.OrderNewestFiling, store.OrderKnownSince} {
+	for _, field := range []string{store.OrderOperatingConfidence, store.OrderRevenueLow, store.OrderRevenueConfidence, store.OrderDriveMinutes, store.OrderTrend, store.OrderNewestFiling, store.OrderKnownSince} {
 		all = append(all, store.ProspectListOrder{Field: field, Direction: store.DirectionAsc})
 	}
 	for _, o := range [][]store.ProspectListOrder{nil, {}, all, {{Field: store.OrderRevenueLow, Direction: store.DirectionDesc}}} {
@@ -88,7 +88,7 @@ func TestProspectListValidators(t *testing.T) {
 	}
 }
 
-// R-KK20-QBM6 R-199M-R1O4
+// R-OW5O-5154 R-199M-R1O4
 func TestProspectListJSON(t *testing.T) {
 	for _, tc := range []struct {
 		v    any
@@ -131,7 +131,7 @@ func prospectListIDs(rs []store.Ranked) []string {
 	return out
 }
 
-// R-VPA4-0O28 R-N5ZF-MH78 R-RD6Z-215C R-KOXM-9EKY R-KQ5I-N6BN R-3LZI-WM0I R-Z0S9-I6QA R-KRDF-0Y2C R-U3YU-1G7L R-YM5G-WXTY
+// R-VPA4-0O28 R-N5ZF-MH78 R-RD6Z-215C R-ZQRQ-6CQO R-ZRZM-K4HD R-3LZI-WM0I R-Z0S9-I6QA R-ZUFF-BNYR R-U3YU-1G7L R-YM5G-WXTY
 func TestProspectListCreateEditPersistence(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -590,7 +590,7 @@ func prospectListPopulation(t *testing.T, f *contractFixture) []string {
 	return ids
 }
 
-// R-2JLT-ABUI R-37ZS-XQOE R-02L5-D2PT R-ZLIK-0AC3 R-QTOK-XPA8 R-UR4X-B3AS R-PAT3-Q0WZ R-42HA-I07R R-XMT9-2Q8I R-4KYZ-HR3B
+// R-2JLT-ABUI R-37ZS-XQOE R-02L5-D2PT R-ZLIK-0AC3 R-QTOK-XPA8 R-UR4X-B3AS R-PAT3-Q0WZ R-42HA-I07R R-B2X5-ISCY R-4KYZ-HR3B
 func TestProspectListFilterBoundariesAndUnknownSwitches(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -603,9 +603,9 @@ func TestProspectListFilterBoundariesAndUnknownSwitches(t *testing.T) {
 		indices []int
 	}{
 		{"none", store.ProspectListFilters{}, []int{0, 1, 2, 3, 4}},
-		{"other switches alone", store.ProspectListFilters{RevenueUnknown: true, MinutesUnknown: true, FleetUnknown: true, WebsiteUnknown: true, FilingUnknown: true, ClassUnknown: true}, []int{0, 1, 2, 3, 4}},
+		{"other switches alone", store.ProspectListFilters{RevenueUnknown: true, MinutesUnknown: true, FleetUnknown: true, WebsiteUnknown: true, TrendUnknown: true, FilingUnknown: true, ClassUnknown: true}, []int{0, 1, 2, 3, 4}},
 		{"category unknown alone", store.ProspectListFilters{CategoryUnknown: true}, []int{3, 4}},
-		{"all switches alone", store.ProspectListFilters{RevenueUnknown: true, MinutesUnknown: true, CategoryUnknown: true, FleetUnknown: true, WebsiteUnknown: true, FilingUnknown: true, ClassUnknown: true}, []int{3, 4}},
+		{"all switches alone", store.ProspectListFilters{RevenueUnknown: true, MinutesUnknown: true, CategoryUnknown: true, FleetUnknown: true, WebsiteUnknown: true, TrendUnknown: true, FilingUnknown: true, ClassUnknown: true}, []int{3, 4}},
 		{"revenue bounds", store.ProspectListFilters{RevenueMin: ptrInt(5000000), RevenueMax: ptrInt(10000000)}, []int{0, 1}},
 		{"revenue unknown", store.ProspectListFilters{RevenueMin: ptrInt(5000000), RevenueMax: ptrInt(10000000), RevenueUnknown: true}, []int{0, 1, 4}},
 		{"revenue only max", store.ProspectListFilters{RevenueMax: ptrInt(10000000)}, []int{0, 1, 2}},
@@ -651,7 +651,7 @@ func TestProspectListFilterBoundariesAndUnknownSwitches(t *testing.T) {
 		count   int64
 	}{
 		{store.ProspectListFilters{}, 4},
-		{store.ProspectListFilters{RevenueUnknown: true, MinutesUnknown: true, FleetUnknown: true, WebsiteUnknown: true, FilingUnknown: true, ClassUnknown: true}, 4},
+		{store.ProspectListFilters{RevenueUnknown: true, MinutesUnknown: true, FleetUnknown: true, WebsiteUnknown: true, TrendUnknown: true, FilingUnknown: true, ClassUnknown: true}, 4},
 		{store.ProspectListFilters{CategoryUnknown: true}, 1},
 		{store.ProspectListFilters{CategoryUnknown: true, ShowExcluded: true}, 2},
 	} {
@@ -684,7 +684,7 @@ func TestProspectListFilterBoundariesAndUnknownSwitches(t *testing.T) {
 	contractOK(t, e)
 }
 
-// R-SG7R-AOVK R-YM5G-WXTY
+// R-B5CY-ABUC R-YM5G-WXTY
 func TestProspectListOrderFieldsDirectionsUnknownsAndTies(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -725,7 +725,7 @@ func TestProspectListOrderFieldsDirectionsUnknownsAndTies(t *testing.T) {
 	contractEqual(t, prospectListIDs(prospectListRead(t, f, c).Members), []string{ids[1], ids[3], ids[2], ids[0], ids[4]})
 }
 
-// R-KL9X-43CV R-OQ2T-7XB6 R-BBPG-GY7H R-NT5I-W4AF
+// R-KL9X-43CV R-OQ2T-7XB6 R-B6KU-O3L1 R-NT5I-W4AF
 func TestProspectListMembershipReadsStoredJudgmentsAndStandingRejects(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -816,7 +816,7 @@ func TestProspectListReadUsesOneClockSnapshot(t *testing.T) {
 	contractEqual(t, r.Matching, int64(3))
 }
 
-// R-VPA4-0O28 R-N5ZF-MH78 R-SINK-28CY R-KL9X-43CV R-KK20-QBM6 R-199M-R1O4
+// R-VPA4-0O28 R-N5ZF-MH78 R-SINK-28CY R-KL9X-43CV R-OW5O-5154 R-199M-R1O4
 func TestProspectListRecordShapesByUse(t *testing.T) {
 	type prospectList struct {
 		ID, Name                        string
@@ -861,6 +861,8 @@ func TestProspectListRecordShapesByUse(t *testing.T) {
 		FleetUnknown           bool
 		Website                []string
 		WebsiteUnknown         bool
+		Trend                  []string
+		TrendUnknown           bool
 		Government             *bool
 		MaxFilingAgeDays       *int64
 		FilingUnknown          bool
@@ -920,7 +922,7 @@ func TestProspectListExportedWindowStatements(t *testing.T) {
 	}
 }
 
-// R-SG7R-AOVK
+// R-B5CY-ABUC
 func TestProspectListOperatingOrderUsesRoundedKey(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -970,7 +972,7 @@ func TestProspectListCategoryMatchesAnyJudgmentsCategory(t *testing.T) {
 	}
 }
 
-// R-V3BX-4SPQ R-XMT9-2Q8I R-BBPG-GY7H
+// R-V3BX-4SPQ R-B2X5-ISCY R-B6KU-O3L1
 func TestProspectListWebsiteFiltersReadStoredJudgment(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

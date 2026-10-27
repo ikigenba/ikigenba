@@ -204,7 +204,7 @@ func TestWebsiteSearchDecisionHistory(t *testing.T) {
 }
 
 // R-XY08-ASLZ
-// R-EJT8-FP5E
+// R-4A2C-9CNO
 func TestCandidateAndMemberViewShapes(_ *testing.T) {
 	_ = struct {
 		Banner            page.Banner
@@ -243,7 +243,7 @@ func TestCandidateAndMemberViewShapes(_ *testing.T) {
 	_ = struct{ Kind, ProspectList, ProspectListName, By, User, At, AtText, Why string }(RejectRecordRow{})
 	_ = struct {
 		Rank                                                                                                                                                                                                                 int64
-		ID, Name, City, State, Basis, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence, HeadcountLow                                                                                                          string
+		ID, Name, City, State, Basis, OperatingConfidence, RevenueLow, RevenueHigh, RevenueConfidence, HeadcountLow, Trend, TrendChange                                                                                      string
 		Categories                                                                                                                                                                                                           []string
 		ClassifiedBy, Class, FleetVerdict, Website, WebsiteURL, WebsiteSource, SiteText, SiteTextText, Brief, BriefText, Minutes, MinutesSource, GovernmentMatch, KnownSince, KnownSinceText, NewestFiling, NewestFilingText string
 		Excluded                                                                                                                                                                                                             bool

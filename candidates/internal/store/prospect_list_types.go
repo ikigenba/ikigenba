@@ -15,6 +15,8 @@ type ProspectListFilters struct {
 	FleetUnknown       bool     `json:"fleet_unknown,omitempty"`
 	Website            []string `json:"website,omitempty"`
 	WebsiteUnknown     bool     `json:"website_unknown,omitempty"`
+	Trend              []string `json:"trend,omitempty"`
+	TrendUnknown       bool     `json:"trend_unknown,omitempty"`
 	Government         *bool    `json:"government,omitempty"`
 	MaxFilingAgeDays   *int64   `json:"max_filing_age_days,omitempty"`
 	FilingUnknown      bool     `json:"filing_unknown,omitempty"`
@@ -78,6 +80,7 @@ const (
 	OrderRevenueLow          = "revenue_low"
 	OrderRevenueConfidence   = "revenue_confidence"
 	OrderDriveMinutes        = "drive_minutes"
+	OrderTrend               = "trend"
 	OrderNewestFiling        = "newest_filing"
 	OrderKnownSince          = "known_since"
 	DirectionDesc            = "desc"

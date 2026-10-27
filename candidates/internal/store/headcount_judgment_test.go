@@ -16,7 +16,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-5HX1-ZJFE R-5J4Y-DB63 R-5KCU-R2WS R-5LKR-4UNH
+// R-5HX1-ZJFE R-5J4Y-DB63 R-NEG9-LV06 R-NFO5-ZMQV
 func TestPPPHeadcountRequiresDerivedFacts(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -123,7 +123,7 @@ func assertHeadcountJudgment(t *testing.T, j store.Judgments, low, high int64, c
 	contractEqual(t, j.Rules, sources.Rules)
 }
 
-// R-62NC-HN17 R-5HX1-ZJFE R-5KCU-R2WS
+// R-NGW2-DEHK R-5HX1-ZJFE R-NEG9-LV06
 func TestHeadcountRevenueNumericalCases(t *testing.T) {
 	for _, tc := range []struct {
 		name              string
@@ -219,7 +219,7 @@ func TestHeadcountRevenueNumericalCases(t *testing.T) {
 	}
 }
 
-// R-5QGC-NXM9
+// R-NLRN-WHGC
 func TestJudgeUsesStoredFactsWithChangedZipAndRawWebsite(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

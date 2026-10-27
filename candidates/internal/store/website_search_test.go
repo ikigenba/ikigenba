@@ -115,7 +115,7 @@ func TestSubjectWebsiteSearchSupplement(t *testing.T) {
 	contractEqual(t, subject.Check, (*website.Result)(nil))
 }
 
-// R-5O0J-WE4V R-5J4Y-DB63 R-5KCU-R2WS R-5QGC-NXM9
+// R-NJBV-4XYY R-5J4Y-DB63 R-NEG9-LV06 R-NLRN-WHGC
 func TestSearchWebsiteDoesNotInflateOperatingConfidence(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -169,7 +169,7 @@ func TestSearchWebsiteDoesNotInflateOperatingConfidence(t *testing.T) {
 	contractEqual(t, factsAt(ctx, t, f.s, legacy).WebsiteSource, "")
 }
 
-// R-IPQD-WKL9 R-PWRA-LW9H R-5P8G-A5VK
+// R-IPQD-WKL9 R-PWRA-LW9H R-NKJR-IPPN
 func TestSearchFactsFillMergeAndSplit(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

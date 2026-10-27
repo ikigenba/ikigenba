@@ -9,7 +9,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-ZNYC-RTTH R-STA0-5N4B R-XMT9-2Q8I R-BBPG-GY7H R-KK20-QBM6
+// R-ZNYC-RTTH R-STA0-5N4B R-B2X5-ISCY R-B6KU-O3L1 R-OW5O-5154
 func TestCampaignFilterCalendarBoundariesAndEffectiveTimes(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -102,7 +102,7 @@ func TestCampaignFilterCalendarBoundariesAndEffectiveTimes(t *testing.T) {
 	contractError(t, err, store.ErrInvalid)
 }
 
-// R-ZNYC-RTTH R-BBPG-GY7H R-XMT9-2Q8I
+// R-ZNYC-RTTH R-B6KU-O3L1 R-B2X5-ISCY
 func TestCampaignFilterReadsLiveHistoryWithoutRejudge(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

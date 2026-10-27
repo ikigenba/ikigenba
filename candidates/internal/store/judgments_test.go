@@ -21,7 +21,7 @@ func near(t *testing.T, p *float64, w float64) {
 	}
 }
 
-// R-5J4Y-DB63 R-5LKR-4UNH R-5HX1-ZJFE R-5KCU-R2WS
+// R-5J4Y-DB63 R-NFO5-ZMQV R-5HX1-ZJFE R-NEG9-LV06
 func TestJudgmentsAggregateAndPersist(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -268,7 +268,7 @@ func TestJudgePassTriggerRepeatsAcrossDeliveries(t *testing.T) {
 	contractEqual(t, got.Unranged, int64(2))
 }
 
-// R-5HX1-ZJFE R-5KCU-R2WS R-5J4Y-DB63
+// R-5HX1-ZJFE R-NEG9-LV06 R-5J4Y-DB63
 func TestJudgmentConflictsFollowLinkOrder(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -328,7 +328,7 @@ func TestJudgmentConflictsFollowLinkOrder(t *testing.T) {
 	contractEqual(t, factsAt(ctx, t, f.s, id).FleetVerdict, sources.FleetUnknown)
 }
 
-// R-5J4Y-DB63 R-5LKR-4UNH
+// R-5J4Y-DB63 R-NFO5-ZMQV
 func TestJudgmentFleetUsesOnlyFreshestLiveFMCSA(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -402,7 +402,7 @@ func TestJudgmentFleetUsesOnlyFreshestLiveFMCSA(t *testing.T) {
 	check(sources.FleetUnknown, nil, nil)
 }
 
-// R-5LKR-4UNH
+// R-NFO5-ZMQV
 func TestJudgeAllAgreesWithExplicitActiveIDs(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -429,7 +429,7 @@ func TestJudgeAllAgreesWithExplicitActiveIDs(t *testing.T) {
 	contractEqual(t, afterRejects, rejects)
 }
 
-// R-5P8G-A5VK
+// R-NKJR-IPPN
 func TestRulingJudgmentsUpdateProspectListMembership(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -469,7 +469,7 @@ func TestRulingJudgmentsUpdateProspectListMembership(t *testing.T) {
 	}
 }
 
-// R-5P8G-A5VK
+// R-NKJR-IPPN
 func TestMovingRulingsWriteTheSameJudgmentsAsJudge(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

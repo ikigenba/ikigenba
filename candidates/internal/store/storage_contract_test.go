@@ -17,6 +17,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/candidates"
+	"github.com/ikigenba/ikigenba/candidates/internal/judging"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
@@ -548,7 +549,7 @@ func TestContractBusinessRecordsPersistence(t *testing.T) {
 	deriveAll(t, f.s)
 	_, err = f.s.Judge(ctx, ids)
 	contractOK(t, err)
-	wantA := store.Judgments{Candidate: id, OperatingKey: -1, Evidence: []sources.Evidence{}, RevenueLow: &o.Reading.Estimate.Low, RevenueHigh: o.Reading.Estimate.High, RevenueConfidence: &o.Reading.Estimate.Confidence, Rules: sources.Rules, Calculated: stamp}
+	wantA := store.Judgments{HeadcountSeries: []judging.Series{}, Trend: judging.TrendUnknown, Candidate: id, OperatingKey: -1, Evidence: []sources.Evidence{}, RevenueLow: &o.Reading.Estimate.Low, RevenueHigh: o.Reading.Estimate.High, RevenueConfidence: &o.Reading.Estimate.Confidence, Rules: sources.Rules, Calculated: stamp}
 	a, err = f.s.GetJudgments(ctx, id)
 	contractOK(t, err)
 	contractEqual(t, a, wantA)

@@ -47,7 +47,7 @@ func TestEnrichmentAndWebsiteViews(t *testing.T) {
 	}
 }
 
-// R-Y8ZB-QQA8 R-8QIQ-63EB R-XVKF-J94L
+// R-Y8ZB-QQA8 R-8QIQ-63EB
 func TestWebsiteFiltersAndStoredMember(t *testing.T) {
 	f := store.ProspectListFilters{Website: []string{sources.WebsiteNone, sources.WebsiteHTTP}, WebsiteUnknown: true}
 	if got := filtersView(f); !reflect.DeepEqual(got.Website, f.Website) || !got.WebsiteUnknown {

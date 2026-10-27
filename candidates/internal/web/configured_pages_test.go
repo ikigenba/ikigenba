@@ -14,6 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/candidates"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
+	"github.com/ikigenba/ikigenba/candidates/internal/judging"
 	"github.com/ikigenba/ikigenba/candidates/internal/pages"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
@@ -69,7 +70,7 @@ func TestConfiguredJudgedAndUnjudgedPage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want.Judgments = &pages.JudgmentsView{OperatingEvidence: []pages.EvidenceRow{}, RevenueLow: "$14,400,000", RevenueHigh: "$24,000,000", RevenueConfidence: "0.70", Rules: int64(sources.Rules), Calculated: a.Calculated.UTC().Format(time.RFC3339), CalculatedText: a.Calculated.UTC().Format(pages.SecondLayout)}
+			want.Judgments = &pages.JudgmentsView{HeadcountYears: []string{}, HeadcountSeries: []pages.SeriesRow{}, Trend: judging.TrendUnknown, OperatingEvidence: []pages.EvidenceRow{}, RevenueLow: "$14,400,000", RevenueHigh: "$24,000,000", RevenueConfidence: "0.70", Rules: int64(sources.Rules), Calculated: a.Calculated.UTC().Format(time.RFC3339), CalculatedText: a.Calculated.UTC().Format(pages.SecondLayout)}
 		}
 		set, err := page.Templates().ParseFS(candidates.Assets(), "*.html")
 		if err != nil {
