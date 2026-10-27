@@ -24,39 +24,53 @@ func TestCombinedShape(t *testing.T) {
 	}
 }
 
-// R-MOWU-9OTI R-4FUZ-II7O
+// R-H0XA-BQJO R-4FUZ-II7O
 func TestCombine(t *testing.T) {
 	cases := []struct {
-		in   []sources.Estimate
-		want judging.Combined
-	}{{nil, judging.Combined{}}, {[]sources.Estimate{{Low: 2100000, High: ptr(3500000), Confidence: .7}}, judging.Combined{Low: 2100000, High: ptr(3500000), Confidence: .7}}, {[]sources.Estimate{{Low: 100, Confidence: .25}, {Low: 400, High: ptr(800), Confidence: .75}}, judging.Combined{Low: 325, High: ptr(800), Confidence: .75}}, {[]sources.Estimate{{Low: 1, High: ptr(-1)}, {Low: 2, High: ptr(-2)}}, judging.Combined{Low: 2, High: ptr(-2), Confidence: 0}}, {[]sources.Estimate{{Low: math.MaxInt64, High: ptr(math.MaxInt64), Confidence: 1}, {Low: math.MaxInt64, High: ptr(math.MaxInt64), Confidence: 1}}, judging.Combined{Low: math.MaxInt64, High: ptr(math.MaxInt64), Confidence: 1}}, {[]sources.Estimate{{Low: math.MinInt64, High: ptr(math.MinInt64), Confidence: 1}}, judging.Combined{Low: math.MinInt64, High: ptr(math.MinInt64), Confidence: 1}}, {[]sources.Estimate{{Low: 100, High: ptr(200), Confidence: 0}, {Low: 400, Confidence: 1}}, judging.Combined{Low: 400, High: ptr(200), Confidence: 1}}}
-	cases = append(cases, struct {
+		name string
 		in   []sources.Estimate
 		want judging.Combined
 	}{
-		in:   []sources.Estimate{{Low: 100, High: ptr(200), Confidence: .75}, {Low: 400, High: ptr(800), Confidence: .25}},
-		want: judging.Combined{Low: 175, High: ptr(350), Confidence: .75},
-	})
+		{"nil", nil, judging.Combined{}},
+		{"empty", []sources.Estimate{}, judging.Combined{}},
+		{"single", []sources.Estimate{{Low: 2100000, High: ptr(3500000), Confidence: .7}}, judging.Combined{Low: 2100000, High: ptr(3500000), Confidence: .7}},
+		{"exclude low only", []sources.Estimate{{Low: 100, Confidence: .25}, {Low: 400, High: ptr(800), Confidence: .75}}, judging.Combined{Low: 400, High: ptr(800), Confidence: .75}},
+		{"exclude highest confidence", []sources.Estimate{{Low: 1000, Confidence: .9}, {Low: 400, High: ptr(800), Confidence: .75}}, judging.Combined{Low: 400, High: ptr(800), Confidence: .75}},
+		{"bounded weighted means", []sources.Estimate{{Low: 100, High: ptr(200), Confidence: .75}, {Low: 400, High: ptr(800), Confidence: .25}, {Low: 1000, Confidence: .9}}, judging.Combined{Low: 175, High: ptr(350), Confidence: .75}},
+		{"unbounded weighted mean", []sources.Estimate{{Low: 100, Confidence: .25}, {Low: 400, Confidence: .75}}, judging.Combined{Low: 325, Confidence: .75}},
+		{"bounded zero weights", []sources.Estimate{{Low: 1, High: ptr(-1)}, {Low: 2, High: ptr(-2)}}, judging.Combined{Low: 2, High: ptr(-2)}},
+		{"exclude positive weight from zero sum", []sources.Estimate{{Low: 100, High: ptr(200)}, {Low: 400, Confidence: 1}}, judging.Combined{Low: 100, High: ptr(200)}},
+		{"bounded cancelling weights", []sources.Estimate{{Low: 1, High: ptr(4), Confidence: -1}, {Low: 2, High: ptr(5), Confidence: 1}, {Low: 1000, Confidence: .9}}, judging.Combined{Low: 2, High: ptr(5), Confidence: 1}},
+		{"unbounded zero weights", []sources.Estimate{{Low: 1}, {Low: 2}}, judging.Combined{Low: 2}},
+		{"unbounded negative weights", []sources.Estimate{{Low: -1, Confidence: -2}, {Low: -2, Confidence: -1}}, judging.Combined{Low: -2, Confidence: -1}},
+		{"bounded weighted rounding", []sources.Estimate{{Low: 1, High: ptr(-1), Confidence: .5}, {Low: 2, High: ptr(-2), Confidence: .5}}, judging.Combined{Low: 2, High: ptr(-2), Confidence: .5}},
+		{"unbounded weighted rounding", []sources.Estimate{{Low: -1, Confidence: .5}, {Low: -2, Confidence: .5}}, judging.Combined{Low: -2, Confidence: .5}},
+		{"positive saturation", []sources.Estimate{{Low: math.MaxInt64, High: ptr(math.MaxInt64), Confidence: 1}, {Low: math.MaxInt64, High: ptr(math.MaxInt64), Confidence: 1}}, judging.Combined{Low: math.MaxInt64, High: ptr(math.MaxInt64), Confidence: 1}},
+		{"negative boundary", []sources.Estimate{{Low: math.MinInt64, High: ptr(math.MinInt64), Confidence: 1}}, judging.Combined{Low: math.MinInt64, High: ptr(math.MinInt64), Confidence: 1}},
+		{"negative saturation", []sources.Estimate{{Low: math.MinInt64, High: ptr(math.MinInt64), Confidence: 2}, {Low: math.MaxInt64, High: ptr(math.MaxInt64), Confidence: -1}}, judging.Combined{Low: math.MinInt64, High: ptr(math.MinInt64), Confidence: 2}},
+	}
 	for _, c := range cases {
-		var original []sources.Estimate
-		if c.in != nil {
-			original = append([]sources.Estimate{}, c.in...)
-			for i, e := range original {
-				if e.High != nil {
-					original[i].High = ptr(*e.High)
+		t.Run(c.name, func(t *testing.T) {
+			var original []sources.Estimate
+			if c.in != nil {
+				original = append([]sources.Estimate{}, c.in...)
+				for i, e := range original {
+					if e.High != nil {
+						original[i].High = ptr(*e.High)
+					}
 				}
 			}
-		}
-		got := judging.Combine(c.in)
-		if !reflect.DeepEqual(got, c.want) {
-			t.Errorf("%+v != %+v", got, c.want)
-		}
-		if got.High != nil {
-			*got.High = 12345
-		}
-		if !reflect.DeepEqual(c.in, original) {
-			t.Fatal("changed or shared estimates")
-		}
+			got := judging.Combine(c.in)
+			if !reflect.DeepEqual(got, c.want) {
+				t.Errorf("got %+v, want %+v", got, c.want)
+			}
+			if got.High != nil {
+				*got.High = 12345
+			}
+			if !reflect.DeepEqual(c.in, original) {
+				t.Fatal("changed or shared estimates")
+			}
+		})
 	}
 }
 

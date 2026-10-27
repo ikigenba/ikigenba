@@ -98,20 +98,18 @@ func TestFiling(t *testing.T) {
 	}
 }
 
-// R-FT7Z-5Y0K R-EAXM-4HCO R-47BO-U40T R-48JL-7VRI R-49RH-LNI7
+// R-FT7Z-5Y0K R-EAXM-4HCO R-KM4M-6GR0 R-KNCI-K8HP R-KOKE-Y08E
 func TestClassEstimate(t *testing.T) {
 	for _, c := range []struct {
 		class, tag string
-		confidence float64
-		high       bool
-	}{{"PRIVATE PROPERTY", sources.ClassPrivate, .3, false}, {"AUTHORIZED FOR HIRE;EXEMPT FOR HIRE", sources.ClassForHire, .7, true}, {" exempt for hire ", sources.ClassForHire, .7, true}, {" PRIVATE PROPERTY ; authorized for hire ", sources.ClassMixed, .5, false}, {"PRIVATE PASSENGER, BUSINESS", sources.ClassUnknown, .2, false}, {"STATE GOVERNMENT", sources.ClassUnknown, .2, false}, {"", sources.ClassUnknown, .2, false}} {
+	}{{"PRIVATE PROPERTY", sources.ClassPrivate}, {"AUTHORIZED FOR HIRE;EXEMPT FOR HIRE", sources.ClassForHire}, {" exempt for hire ", sources.ClassForHire}, {" PRIVATE PROPERTY ; authorized for hire ", sources.ClassMixed}, {"PRIVATE PASSENGER, BUSINESS", sources.ClassUnknown}, {"STATE GOVERNMENT", sources.ClassUnknown}, {"", sources.ClassUnknown}} {
 		r := scrapes.Row{Facts: facts(map[string]string{"class": c.class, "power_units": "14", "mcs150_date": "20250318", "status": "I", "ignored": "extra"})}
 		rd := fmcsa.New().Read(r)
 		e := rd.Estimate
 		if rd.Class != c.tag {
 			t.Fatal(c, rd)
 		}
-		if c.tag == sources.ClassPrivate || c.tag == sources.ClassUnknown {
+		if c.tag != sources.ClassForHire {
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -120,11 +118,9 @@ func TestClassEstimate(t *testing.T) {
 		if e == nil {
 			t.Fatal(rd)
 		}
-		want := sources.Estimate{Source: fmcsa.Name, Low: 2100000, High: nil, Confidence: c.confidence, Facts: map[string]json.RawMessage{"class": r.Facts["class"], "power_units": r.Facts["power_units"], "mcs150_date": r.Facts["mcs150_date"]}, Filed: rd.Filed, Formula: sources.Rules}
-		if c.high {
-			h := int64(3500000)
-			want.High = &h
-		}
+		want := sources.Estimate{Source: fmcsa.Name, Low: 2100000, High: nil, Confidence: .7, Facts: map[string]json.RawMessage{"class": r.Facts["class"], "power_units": r.Facts["power_units"], "mcs150_date": r.Facts["mcs150_date"]}, Filed: rd.Filed, Formula: sources.Rules}
+		h := int64(3500000)
+		want.High = &h
 		if !reflect.DeepEqual(*e, want) {
 			t.Fatalf("%+v != %+v", *e, want)
 		}
@@ -134,6 +130,36 @@ func TestClassEstimate(t *testing.T) {
 	}
 	if e := fmcsa.New().Read(scrapes.Row{Facts: map[string]json.RawMessage{"power_units": json.RawMessage(`"14"`), "class": json.RawMessage(`null`)}}).Estimate; e != nil {
 		t.Fatal(e)
+	}
+}
+
+// R-KM4M-6GR0
+func TestEstimateRequiresForHireClassAndPlausibleUnits(t *testing.T) {
+	for _, class := range []string{"AUTHORIZED FOR HIRE", "EXEMPT FOR HIRE", "PRIVATE PROPERTY;AUTHORIZED FOR HIRE", "exempt for hire ; private property", "PRIVATE PROPERTY", "LOCAL GOVERNMENT", ""} {
+		for _, tc := range []struct {
+			units, drivers, mileage string
+			estimate                bool
+		}{
+			{"14", "20", "10000", true},
+			{"5", "20", "10000", true},
+			{"0", "0", "0", true},
+			{"510", "", "0", true},
+			{"1828", "1", "19390412", true},
+			{"199999", "4", "0", false},
+			{"forty", "4", "10000", false},
+			{"", "4", "10000", false},
+		} {
+			for _, status := range []string{"A", "I", ""} {
+				r := scrapes.Row{Facts: facts(map[string]string{"class": class, "status": status, "power_units": tc.units, "mileage": tc.mileage})}
+				if tc.drivers != "" {
+					r.Facts["total_drivers"] = facts(map[string]string{"total_drivers": tc.drivers})["total_drivers"]
+				}
+				want := tc.estimate && (class == "AUTHORIZED FOR HIRE" || class == "EXEMPT FOR HIRE")
+				if got := fmcsa.New().Read(r).Estimate; (got != nil) != want {
+					t.Fatalf("class=%q status=%q row=%+v: estimate=%+v, want present=%t", class, status, tc, got, want)
+				}
+			}
+		}
 	}
 }
 
@@ -226,7 +252,7 @@ func TestMileage(t *testing.T) {
 	}
 }
 
-// R-E4U4-7MN7 R-E79W-Z64L R-EAXM-4HCO R-47BO-U40T R-48JL-7VRI
+// R-E4U4-7MN7 R-E79W-Z64L R-EAXM-4HCO R-KM4M-6GR0 R-KNCI-K8HP
 func TestPlausibility(t *testing.T) {
 	for _, tc := range []struct {
 		units, drivers, mileage string
@@ -240,7 +266,7 @@ func TestPlausibility(t *testing.T) {
 		{"199999", "4", "12", .35}, {"510", "", "0", .7},
 		{"1828", "1", "19390412", .35}, {"41", "4", "0", .35},
 		{"11", "0", "", .35}, {"40", "4", "", .7},
-		{"10", "0", "", .7}, {"2", "1", "", .7},
+		{"10", "0", "", .7}, {"10", "12", "", .7}, {"2", "1", "", .7},
 		{"9866", "11335", "847225359", .7}, {"forty", "4", "0", 0},
 		{"", "4", "12", 0}, {"0", "0", "0", .7},
 	} {
@@ -282,7 +308,7 @@ func TestPlausibility(t *testing.T) {
 	}
 }
 
-// R-E16F-2BF4 R-E4U4-7MN7 R-E79W-Z64L R-EAXM-4HCO R-47BO-U40T R-49RH-LNI7
+// R-E16F-2BF4 R-E4U4-7MN7 R-E79W-Z64L R-EAXM-4HCO R-KM4M-6GR0 R-KOKE-Y08E
 func TestMileageUsesRowKey(t *testing.T) {
 	for _, tc := range []struct {
 		name, mileage, legacy, year string
@@ -317,25 +343,21 @@ func TestMileageUsesRowKey(t *testing.T) {
 	}
 }
 
-// R-48JL-7VRI R-49RH-LNI7
+// R-KNCI-K8HP R-KOKE-Y08E
 func TestSuspiciousEstimate(t *testing.T) {
 	for _, tc := range []struct {
-		class      string
-		confidence float64
-		high       bool
-	}{{"AUTHORIZED FOR HIRE", .35, true}, {"PRIVATE PROPERTY;AUTHORIZED FOR HIRE", .25, false}} {
+		class string
+	}{{"AUTHORIZED FOR HIRE"}, {"EXEMPT FOR HIRE"}} {
 		r := scrapes.Row{Facts: facts(map[string]string{"power_units": "1828", "total_drivers": "1", "mileage": "19390412", "class": tc.class, "mcs150_date": "20250318", "status": "I", "other": "extra", "plausibility": "from row"})}
 		r.Facts["total_drivers"] = json.RawMessage(" \n\"1\" \t")
 		got := fmcsa.New().Read(r)
-		want := sources.Estimate{Source: fmcsa.Name, Low: 274200000, Confidence: tc.confidence, Filed: time.Date(2025, 3, 18, 0, 0, 0, 0, time.UTC), Formula: sources.Rules, Facts: map[string]json.RawMessage{}}
+		want := sources.Estimate{Source: fmcsa.Name, Low: 274200000, Confidence: .35, Filed: time.Date(2025, 3, 18, 0, 0, 0, 0, time.UTC), Formula: sources.Rules, Facts: map[string]json.RawMessage{}}
 		for _, key := range []string{"power_units", "class", "mcs150_date", "total_drivers", "mileage"} {
 			want.Facts[key] = r.Facts[key]
 		}
 		want.Facts["plausibility"] = json.RawMessage(`"suspicious"`)
-		if tc.high {
-			h := int64(457000000)
-			want.High = &h
-		}
+		h := int64(457000000)
+		want.High = &h
 		if got.Estimate == nil || !reflect.DeepEqual(*got.Estimate, want) || got.Fleet {
 			t.Fatalf("got %+v, want %+v", got.Estimate, want)
 		}
@@ -347,8 +369,12 @@ func TestSuspiciousEstimate(t *testing.T) {
 	}
 }
 
-// R-49RH-LNI7
+// R-KOKE-Y08E
 func TestEstimateCopiesUnreadableFacts(t *testing.T) {
+	minimal := scrapes.Row{Facts: facts(map[string]string{"power_units": "14", "class": "AUTHORIZED FOR HIRE"})}
+	if got := fmcsa.New().Read(minimal).Estimate; got == nil || !reflect.DeepEqual(got.Facts, minimal.Facts) {
+		t.Fatal(got)
+	}
 	r := scrapes.Row{Facts: map[string]json.RawMessage{"power_units": json.RawMessage(`"14"`), "class": json.RawMessage(`"AUTHORIZED FOR HIRE"`), "mcs150_date": json.RawMessage(`{}`), "total_drivers": json.RawMessage(`4`), "mileage": json.RawMessage(" \nnull\t"), "mcs150_mileage": json.RawMessage(`"847225359"`), "mileage_year": json.RawMessage(`"2024"`), "plausibility": json.RawMessage(`"from row"`)}}
 	want := map[string]json.RawMessage{}
 	for _, key := range []string{"power_units", "class", "mcs150_date", "total_drivers", "mileage"} {

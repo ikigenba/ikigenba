@@ -109,16 +109,9 @@ func (*Source) Read(r scrapes.Row) sources.Reading {
 			out.Drivers = &drivers
 		}
 	}
-	if unitsRead && !implausible && (out.Class == sources.ClassForHire || out.Class == sources.ClassMixed) {
-		est := &sources.Estimate{Source: Name, Low: 150000 * n, Facts: make(map[string]json.RawMessage), Filed: out.Filed, Formula: sources.Rules}
-		switch out.Class {
-		case sources.ClassForHire:
-			h := 250000 * n
-			est.High = &h
-			est.Confidence = 0.7
-		case sources.ClassMixed:
-			est.Confidence = 0.5
-		}
+	if unitsRead && !implausible && out.Class == sources.ClassForHire {
+		h := 250000 * n
+		est := &sources.Estimate{Source: Name, Low: 150000 * n, High: &h, Confidence: 0.7, Facts: make(map[string]json.RawMessage), Filed: out.Filed, Formula: sources.Rules}
 		if suspicious {
 			est.Confidence /= 2
 			est.Facts["plausibility"] = json.RawMessage(`"suspicious"`)

@@ -26,37 +26,46 @@ func rounded(m float64) int64 {
 	return int64(m)
 }
 
-// Combine weights bounds independently and retains the highest confidence.
+// Combine weights bounds and confidence over estimates with a high, if any.
 func Combine(estimates []sources.Estimate) Combined {
-	if len(estimates) == 0 {
-		return Combined{}
+	var bounded bool
+	for _, e := range estimates {
+		if e.High != nil {
+			bounded = true
+			break
+		}
 	}
-	out := Combined{Confidence: estimates[0].Confidence}
-	var low, lowPlain, weight, high, highPlain, highWeight float64
+	var out Combined
+	var low, lowPlain, weight, high, highPlain float64
 	var count int
 	for _, e := range estimates {
+		if bounded && e.High == nil {
+			continue
+		}
 		low += e.Confidence * float64(e.Low)
 		lowPlain += float64(e.Low)
 		weight += e.Confidence
-		if e.Confidence > out.Confidence {
+		if count == 0 || e.Confidence > out.Confidence {
 			out.Confidence = e.Confidence
 		}
-		if e.High != nil {
+		if bounded {
 			high += e.Confidence * float64(*e.High)
 			highPlain += float64(*e.High)
-			highWeight += e.Confidence
-			count++
 		}
+		count++
+	}
+	if count == 0 {
+		return out
 	}
 	if weight > 0 {
 		out.Low = rounded(low / weight)
 	} else {
-		out.Low = rounded(lowPlain / float64(len(estimates)))
+		out.Low = rounded(lowPlain / float64(count))
 	}
-	if count > 0 {
+	if bounded {
 		var h int64
-		if highWeight > 0 {
-			h = rounded(high / highWeight)
+		if weight > 0 {
+			h = rounded(high / weight)
 		} else {
 			h = rounded(highPlain / float64(count))
 		}
