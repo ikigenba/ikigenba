@@ -17,8 +17,9 @@ removed automatically, and a candidate leaves every prospect list only by
 the owner's exclusion. A source is Go code in the service
 that knows how one scraper's rows become match keys, tags, a size estimate,
 a filing date, operating evidence and a category, and the fixed registry
-holds four, `fmcsa`, `ppp`, `form5500` and `osha_ita`. A pass is one ingest, judge, enrich or
-targeted enrich, recorded at once and worked in the background: an ingest
+holds four, `fmcsa`, `ppp`, `form5500` and `osha_ita`; the scraper
+`mn_parcels`, whose rows parks are derived from, is not one. A pass is one
+ingest, judge, enrich, targeted enrich or parks pass, recorded at once and worked in the background: an ingest
 is started by a `scrape.finished` event of a `done` run, delivered on the
 bus, and ingests that run's rows without judging, or by the `ingest` tool,
 which ingests one named scraper's current run the same way or, named none,
@@ -37,9 +38,17 @@ or a candidate, walks one kind over that target, and for `website_search`,
 `site_text` or `brief` runs the owner's prompt named for the kind,
 `website-search`, `site-text` or `brief`, for each due candidate, and for
 `drive_route` asks Google's Geocoding and Routes APIs for the drive from the
-origin to each due candidate's street address. An ingest reads the run's record and rows from
+origin to each due candidate's street address; a parks pass reads the
+parcel rows of a `mn_parcels` run and derives from them industrial parks,
+places the owner can name for a later walk and never candidates, and is
+started by a `scrape.finished` of `mn_parcels` delivered on the bus, by the
+`edit_park_rules` tool, or at start, when scrapes' current `mn_parcels` run
+is not the one the parks were last derived from. An ingest or a parks pass
+reads the run's record and rows from
 scrapes over its socket through appkit's `scrapes` client, as the caller
-for the `ingest` tool and as the service identity for a delivery; a targeted pass of a prompts kind runs its prompts
+for the `ingest` or `edit_park_rules` tool and as the service identity for a
+delivery or a start, and the start itself asks scrapes once, as the service
+identity and in the background, for the current `mn_parcels` run; a targeted pass of a prompts kind runs its prompts
 through appkit's `prompts` client over the socket the services file's
 `prompts` entry names, as the caller of the `enrich` that started it;
 candidates calls no other sibling. It names campaigns only to link to a
@@ -61,7 +70,8 @@ leaves candidates with no routes client and a targeted enrich of
 never written to its database, its trail, a page or a tool's answer. It keeps its candidates, links, estimates,
 judgments, enrichment results, facts and kept pages, the owner's rulings,
 prospect lists, rejects and opens, its
-campaign uses, its passes and the ZIP drive-time table in its own
+campaign uses, its passes, its parks with their parcels, the park rules and
+the ZIP drive-time table in its own
 SQLite database, `state/candidates.db` resolved against the working
 directory and opened through appkit's `db` package; it is the only writer of
 it. It emits an event on the bus for each pass that begins and each that
@@ -72,13 +82,14 @@ campaign use of the candidate it names, followed through a merge, starting
 no pass and reading no sibling. Its manifest sets
 `guests = false`: nginx lets no request without a credential through, to the
 pages and to `/mcp` alike, and its nginx fragment answers the bus's two paths
-404 at the public name. At `/mcp` it offers the eighteen MCP tools
+404 at the public name. At `/mcp` it offers the twenty-two MCP tools
 `D10-tools` catalogs, which agents reach through the MCP gateway, and,
 unlisted, the legacy `cohort` tool a campaigns of the previous release still
 calls. At `/` it serves a page of the prospect lists and the passes, a page
 per prospect list at `/prospect-lists/<id>`, a page per candidate at
 `/candidates/<id>`, a page per kept page at `/candidates/<id>/pages/<n>`, a
-page per pass at `/passes/<id>`, a tools page at `/tools`, an about screen
+page per pass at `/passes/<id>`, a page of the parks at `/parks`, a page
+per park at `/parks/<id>`, a tools page at `/tools`, an about screen
 at `/about` and a not-found page, and `/cohorts/<id>` redirects a prospect
 list's id of the previous release to its page. On a host it runs as
 `bin/candidates` of its release with
@@ -111,7 +122,7 @@ build run writes the Go source, the tests, `go.mod`'s requirements and
 `0008_windows.sql`, `0009_judgments.sql`, `0010_cohorts.sql`,
 `0011_enrichments.sql`, `0012_facts.sql`, `0013_site_text.sql`,
 `0014_brief.sql`, `0015_website_search.sql`, `0016_campaign_uses.sql`,
-`0017_prospect_lists.sql`, `0018_drive_route.sql`, `0019_opens.sql`, `0020_headcounts.sql`, `0021_link_keys.sql` and `0022_headcount_trend.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
+`0017_prospect_lists.sql`, `0018_drive_route.sql`, `0019_opens.sql`, `0020_headcounts.sql`, `0021_link_keys.sql`, `0022_headcount_trend.sql` and `0023_parks.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
 and the nginx fragment `etc/nginx.conf`). The
 delivery that created candidates seeded `go.mod` on appkit; the build run
 owns it and `go.sum` from then on and changes them as design says. It never
@@ -126,8 +137,8 @@ and read-only to it.
 
 `assets/` holds candidates' markup: Go `html/template` files, each opening
 with a comment naming the data it receives: `landing.html`,
-`prospect_list.html`, `candidate.html`, `page.html`, `pass.html`, `about.html`,
-`tools.html` and `notfound.html`. Every page is shown only to a signed-in user. They are
+`prospect_list.html`, `candidate.html`, `page.html`, `pass.html`, `parks.html`,
+`park.html`, `about.html`, `tools.html` and `notfound.html`. Every page is shown only to a signed-in user. They are
 written by the user or the delivering agent, following the repository's
 `design/`, and are inputs to the spec: the build run reads them and never
 writes them. The code parses them into the set appkit's `page.Templates`
@@ -217,7 +228,7 @@ The sub-project's tests are all `*_test.go` files in the module: the root
 package, `cmd/candidates` and everything under `internal/` (`internal/cli`,
 `internal/settings`, `internal/server`, `internal/web`, `internal/store`,
 `internal/sources`, `internal/fmcsa`, `internal/ppp`, `internal/form5500`, `internal/oshaita`, `internal/judging`,
-`internal/passes`, `internal/website`, `internal/routes`, `internal/enrichers`,
+`internal/parks`, `internal/passes`, `internal/website`, `internal/routes`, `internal/enrichers`,
 `internal/trail`, `internal/urls`,
 `internal/tools` and `internal/pages`).
 This is the file set the canonical gap greps for requirement ids:
@@ -234,11 +245,13 @@ from any other string of that shape: such a literal anywhere in a `*_test.go`
 file counts as a covered id. candidates echoes back what callers and its
 siblings give it — scrapes' rows and every field of them (DOT numbers,
 loan amounts and dates, EINs, establishment ids and names, filing years, employee counts, hours worked, business names, addresses, phones, emails, counties,
-people, facts), source ids, scraper names, run ids, user ids and emails,
+people, facts, and of parcel rows PINs, owner and taxpayer names, site
+addresses, towns, counties and use classes), source ids, scraper names, run ids, user ids and emails,
 request ids, bus event ids, the services file's URLs, ruling text,
-prospect list names, reject reasons, campaigns' event payloads (campaign and piece ids,
+prospect list names, reject reasons, the park rules' counties and labels,
+park names, campaigns' event payloads (campaign and piece ids,
 `camp_…` and `piece_…`, and a campaign reject's reason), and the `cand_`,
-`pass_` and `pl_` ids candidates mints and the `coh_` ids of the previous
+`pass_`, `pl_` and `park_` ids candidates mints and the `coh_` ids of the previous
 release it maps to them — and tests echo source ids above all, since every link,
 split and candidate page names one, so a test that sends an id-shaped value
 lands one in the test file. No fixture carries one: not a header value, a
@@ -248,7 +261,7 @@ website search's URL, reason and sites set aside), a fake Google answer (a
 formatted address, a status), an API key, a route origin or a street
 address,
 a row's field, a
-source id, a run id, a candidate id, a pass id, a prospect list id, old or new, a URL, a services file entry,
+source id, a run id, a candidate id, a pass id, a prospect list id, old or new, a park id, a parcel's PIN, a park rule's county or label, a URL, a services file entry,
 an event's payload, a campaign or piece id, a ruling's, reject's or campaign
 reject's reason, a prospect list's name, or an expected body.
 
@@ -305,8 +318,10 @@ socket in a short temporary directory on which a loopback fake serves
 scrapes' three read paths (`/scrapers/<name>/current`, `/runs/<id>/record`
 and `/runs/<id>/rows`) with the runs and rows the test chooses, refuses or
 fails on demand, holds an answer open when a test needs it, and records each
-request it receives, identity headers included; a test of the passes or the
-tools hands them appkit's `scrapes` client built over such an entry, as
+request it receives, identity headers included; since a `Run` with a
+`scrapes` entry makes the start read of the current `mn_parcels` run, the
+fake answers that read too, with 404 where the test wants no parks pass; a
+test of the passes or the tools hands them appkit's `scrapes` client built over such an entry, as
 design names. A test proves a read by what the fake received. No test reaches
 prompts either. A test that drives a targeted pass of a prompts kind,
 `website_search`, `site_text` or `brief`, writes a services file whose `prompts` entry names a
@@ -442,7 +457,7 @@ candidates' tests never re-prove appkit's transport.
 
 **Pages are raw HTTP.** A test drives `/`, `/prospect-lists/<id>`,
 `/cohorts/<id>`, `/candidates/<id>`, `/candidates/<id>/pages/<n>`,
-`/passes/<id>`, `/tools`, `/about`, the event bus's two paths and any other
+`/passes/<id>`, `/parks`, `/parks/<id>`, `/tools`, `/about`, the event bus's two paths and any other
 path as a browser or the bus would: raw HTTP requests on the handler it
 built, served with `httptest` or on a Unix socket, with the identity headers
 where the route takes them, and never follows a redirect.
@@ -564,7 +579,8 @@ that release. The host must run events, which candidates emits to and takes
 scrapes' `scrape.finished`, cron's `cron.judge_candidates.fired` and
 campaigns' `campaign.member.added`, `campaign.member.rejected` and
 `campaign.piece.delivered` from,
-scrapes, which it reads over the socket, and prompts, which a targeted pass
+scrapes, which it reads over the socket, in a pass and once at start, and
+prompts, which a targeted pass
 of a prompts kind runs the `website-search`, `site-text` or `brief` prompt
 through over the socket; its
 services file names them, with telemetry and auth, and may name campaigns,
@@ -579,5 +595,6 @@ takes effect only at the next activation, a push followed by a deploy. The host'
 whole, so `candidates.db` is taken with it; it holds candidates, their
 evidence copied from public records, their enrichment results, facts and
 kept pages, the owner's
-rulings, prospect lists, rejects and opens, the campaign uses and the passes, and no
-secret.
+rulings, prospect lists, rejects and opens, the campaign uses, the passes,
+the parks derived from parcel rows with their parcels' PINs, owners, site
+addresses and building values, and the park rules, and no secret.
