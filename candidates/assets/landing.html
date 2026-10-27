@@ -40,7 +40,8 @@
      empty on the first window) and .PassesNext (string, the page token
      passes's next carries for the passes after these, the value to pass
      as its page; empty when none remain); .Passes is the window
-     .PassesPage names. Two lists share the page, so each has its own nav
+     .PassesPage names; .Parks, with .Count (int, the industrial parks
+     not gone). Two lists share the page, so each has its own nav
      and parameter, nav#paging-prospect-lists with prospect_lists_page and
      nav#paging-passes with passes_page, where a page with one list uses
      nav#paging and page; each nav's hrefs carry the other list's current
@@ -127,7 +128,13 @@
      "Last", so a single window shows First and Last both as the current
      item); the nav shows when .Passes is not empty or .PassesPage is not
      empty, so an emptied later window still offers First; on the first
-     window with no passes there is no nav; a #about-link (text "About
+     window with no passes there is no nav; then section#parks.card with h2
+     "Parks" and a p in its header (text "Industrial parks drawn from the
+     county parcel records scrapes holds, places to walk later for the
+     businesses in them. A park is a place, never a candidate."), then
+     p#parks-summary holding a#parks-link (href "/parks", text "See the
+     parks"), a space and span#parks-count.muted (text "<.Parks.Count>
+     active"); a #about-link (text "About
      candidates") whose href is "/about". No script but appkit's
      /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
@@ -186,7 +193,11 @@
 </div>{{end}}
 </section>
 {{if or .Passes .PassesPage}}<nav class="paging" id="paging-passes" aria-label="Pages">{{if .PassesPage}}<a href="/{{if .ProspectListsPage}}?prospect_lists_page={{.ProspectListsPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .PassesPrev}}<a href="/?passes_page={{.PassesPrev}}{{if .ProspectListsPage}}&amp;prospect_lists_page={{.ProspectListsPage}}{{end}}">Prev</a>{{end}}{{if .PassesNext}}<a href="/?passes_page={{.PassesNext}}{{if .ProspectListsPage}}&amp;prospect_lists_page={{.ProspectListsPage}}{{end}}">Next</a>{{end}}{{if .PassesNext}}<a href="/?passes_page=last{{if .ProspectListsPage}}&amp;prospect_lists_page={{.ProspectListsPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
-{{end}}<p><a id="about-link" href="/about">About candidates</a></p>
+{{end}}<section id="parks" class="card" aria-labelledby="parks-title">
+<header><h2 id="parks-title">Parks</h2><p>Industrial parks drawn from the county parcel records scrapes holds, places to walk later for the businesses in them. A park is a place, never a candidate.</p></header>
+<p id="parks-summary"><a id="parks-link" href="/parks">See the parks</a> <span id="parks-count" class="muted">{{.Parks.Count}} active</span></p>
+</section>
+<p><a id="about-link" href="/about">About candidates</a></p>
 </main>
 {{template "footer" .Banner}}
 </body>

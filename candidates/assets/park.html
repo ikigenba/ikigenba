@@ -1,0 +1,148 @@
+{{/* One park at GET /parks/<id>: everything candidates holds of an
+     industrial park derived from the county parcel records scrapes holds,
+     where it is, how big it is, whether it has been walked, the run it was
+     derived from, and its parcels, each with the rule that picked it. A
+     park is a place to walk later, never a candidate. Shown to any
+     signed-in user; a guest is sent to sign in; an unknown or malformed id
+     is the not-found page; a gone park is shown, marked gone. Read-only:
+     no form but the banner's sign out. Two levels below the root:
+     .Banner's .Trail is parks at /parks then <.Park.ID> at
+     /parks/<.Park.ID>. Data: .Banner (a page.Banner, for banner and
+     footer); .Park, with .ID (its park_ id, "park_" and 16 hex), .Name (its
+     town, with a number when the town holds more than one park, "North
+     Branch", "Wyoming 2"), .County and .Town (as stored), .State ("active"
+     or "gone", as stored), .Lat and .Lon (its center's latitude and
+     longitude in degrees as text, "45.4741", "-92.9783"), .MapURL (a
+     Google Maps URL at the center, built by the code), .Radius (its radius
+     in meters as text, "420"), .ParcelCount (int, its parcels), .BuildingValue
+     (the sum of its parcels' building values as shown, "$12,400,000"),
+     .Minutes (the drive minutes from the base by the ZIP table as text,
+     "42"; empty when its ZIP is not in the table), .GrownFrom (int, the
+     parcel count it grew from; 0 when it has not grown), .Walked and
+     .WalkedText (when it was walked, RFC 3339 UTC to the second, and UTC to
+     the day, "2026-10-05"; both empty while unwalked), .WalkRun (the id of
+     the run that walked it, as stored; empty while unwalked), .Found (int,
+     the places that walk found; 0 while unwalked), .Run (the run_ id of
+     the scrapes parcel run it was derived from), .RunPage (the URL of that
+     run's page at scrapes, "<scrapes URL>/runs/<.Run>" built on the
+     services entry; empty when the entry has none), .Created and
+     .CreatedText, .Updated and .UpdatedText (RFC 3339 UTC to the second,
+     and the same as shown, "2006-01-02 15:04:05 UTC"); .Parcels, its
+     parcels, by building value, largest first, then by parcel id, each
+     with .PIN (the parcel id, the state pin, as stored), .Owners (the owner
+     names, as stored, a slice of strings; empty when the record holds
+     none), .Street, .City and .Zip (its site address, as stored; each
+     empty when the record holds none), .BuildingValue (its building value
+     as shown, "$1,850,000") and .Rule (the rule that picked it, one of
+     "label", "value" and "candidate", as stored). Counts are shown as the
+     plain integer, names and addresses as given. The state's kind is
+     chosen here: "active" ok, "gone" warn. Hooks: title "<.Park.Name> ·
+     candidates"; h1 with text .Name; p#headline.cluster holding
+     span.status[data-status=<.State>][data-kind=<kind>] (text .State), a
+     space, then, when .Walked is set, span#walked.badge[data-kind=ok]
+     (text "walked"), else span#unwalked.badge[data-kind=info] (text
+     "unwalked"), then, when .GrownFrom is not 0, a space and
+     span#grown.badge[data-kind=info] (text "grown from <.GrownFrom>"),
+     then a space and span.muted holding "updated" and
+     time[datetime=<.Updated>] (text .UpdatedText); when .State is "gone",
+     div#gone.alert.quiet[data-kind=warn] (strong "Gone", then p "Its
+     parcels no longer form a park under the rules. The park keeps its id
+     and what is known of it, and comes back if they form one again.");
+     p holding a#map-link.button.secondary.small (href .MapURL, text "Open
+     the map"); section#park-card with h2 "Park" and a p in its header
+     (text "An industrial park: industrial parcels near one another in one
+     county, drawn from the parcel records scrapes holds. Its center and
+     radius are those of its parcels, and its drive minutes come from the
+     ZIP table."), then dl#park.kv holding, in this order, dt "ID" then
+     dd#park-id (.ID in a code element), dt "Name" then dd#park-name
+     (.Name), dt "County" then dd#park-county (.County), dt "Town" then
+     dd#park-town (.Town), dt "Status" then dd#park-state (the status
+     span), dt "Center" then dd#park-center (.Lat, ", " and .Lon), dt
+     "Radius" then dd#park-radius (.Radius, a space and "m"), dt "Parcels"
+     then dd#park-parcels (.ParcelCount), dt "Grown from" then dd#park-grown
+     (.GrownFrom, a space and "parcels") only when .GrownFrom is not 0, dt
+     "Building value" then dd#park-value (.BuildingValue), dt "Drive
+     minutes" then dd#park-minutes (.Minutes, or span.muted "unknown" when
+     empty), dt "Walked" then dd#park-walked (when .Walked is set,
+     time[datetime=<.Walked>] (text .WalkedText), then " by run" and a
+     space and .WalkRun in a code element, then ", " and .Found and "
+     places found"; else span.muted "not walked yet"), dt "Derived from"
+     then dd#park-run (a.run-link, href .RunPage, holding .Run in a code
+     element, when .RunPage is set; else .Run in a code element), dt
+     "Created" then dd#park-created holding time[datetime=<.Created>]
+     (text .CreatedText) and dt "Updated" then dd#park-updated holding
+     time[datetime=<.Updated>] (text .UpdatedText); section#parcels.card.flush
+     with h2 "Parcels" and a p in its header (text "The parcels the park
+     was drawn from, largest building first. The rule says why each counts
+     as industrial: label, its county's use class is an industrial label;
+     value, it is not a homestead and its building is worth more than the
+     threshold; candidate, its address matches a candidate's.", each rule
+     word in a code element), then either, when .Parcels is empty,
+     div#no-parcels.empty holding h3 "No parcels" and a p (text "No parcel
+     stands in this park under the rules as they are."), or
+     table#parcel-list whose th read Parcel, Owner, Street, City, ZIP,
+     Building value, Rule, with one tr[data-parcel=<.PIN>]
+     [data-rule=<.Rule>] per parcel holding td.parcel-pin (.PIN in a code
+     element), td.parcel-owner (one div[data-owner] per owner, holding the
+     name; when .Owners is empty, span.muted "none"), td.parcel-street
+     (.Street), td.parcel-city (.City), td.parcel-zip (.Zip),
+     td.parcel-value.num (.BuildingValue) and td.parcel-rule (.Rule in a
+     code element). No script but appkit's /_appkit/feedback.js. */}}
+{{define "park"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>{{.Park.Name}} · candidates</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+{{$parcels := .Parcels}}{{with .Park}}<h1>{{.Name}}</h1>
+<p id="headline" class="cluster"><span class="status" data-status="{{.State}}" data-kind="{{if eq .State "gone"}}warn{{else}}ok{{end}}">{{.State}}</span> {{if .Walked}}<span id="walked" class="badge" data-kind="ok">walked</span>{{else}}<span id="unwalked" class="badge" data-kind="info">unwalked</span>{{end}}{{if .GrownFrom}} <span id="grown" class="badge" data-kind="info">grown from {{.GrownFrom}}</span>{{end}} <span class="muted">updated <time datetime="{{.Updated}}">{{.UpdatedText}}</time></span></p>
+{{if eq .State "gone"}}<div id="gone" class="alert quiet" data-kind="warn"><strong>Gone</strong><p>Its parcels no longer form a park under the rules. The park keeps its id and what is known of it, and comes back if they form one again.</p></div>
+{{end}}<p><a id="map-link" class="button secondary small" href="{{.MapURL}}">Open the map</a></p>
+<section id="park-card" class="card" aria-labelledby="park-title">
+<header><h2 id="park-title">Park</h2><p>An industrial park: industrial parcels near one another in one county, drawn from the parcel records scrapes holds. Its center and radius are those of its parcels, and its drive minutes come from the ZIP table.</p></header>
+<dl id="park" class="kv">
+<dt>ID</dt><dd id="park-id"><code>{{.ID}}</code></dd>
+<dt>Name</dt><dd id="park-name">{{.Name}}</dd>
+<dt>County</dt><dd id="park-county">{{.County}}</dd>
+<dt>Town</dt><dd id="park-town">{{.Town}}</dd>
+<dt>Status</dt><dd id="park-state"><span class="status" data-status="{{.State}}" data-kind="{{if eq .State "gone"}}warn{{else}}ok{{end}}">{{.State}}</span></dd>
+<dt>Center</dt><dd id="park-center">{{.Lat}}, {{.Lon}}</dd>
+<dt>Radius</dt><dd id="park-radius">{{.Radius}} m</dd>
+<dt>Parcels</dt><dd id="park-parcels">{{.ParcelCount}}</dd>
+{{if .GrownFrom}}<dt>Grown from</dt><dd id="park-grown">{{.GrownFrom}} parcels</dd>
+{{end}}<dt>Building value</dt><dd id="park-value">{{.BuildingValue}}</dd>
+<dt>Drive minutes</dt><dd id="park-minutes">{{if .Minutes}}{{.Minutes}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
+<dt>Walked</dt><dd id="park-walked">{{if .Walked}}<time datetime="{{.Walked}}">{{.WalkedText}}</time> by run <code>{{.WalkRun}}</code>, {{.Found}} places found{{else}}<span class="muted">not walked yet</span>{{end}}</dd>
+<dt>Derived from</dt><dd id="park-run">{{if .RunPage}}<a class="run-link" href="{{.RunPage}}"><code>{{.Run}}</code></a>{{else}}<code>{{.Run}}</code>{{end}}</dd>
+<dt>Created</dt><dd id="park-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></dd>
+<dt>Updated</dt><dd id="park-updated"><time datetime="{{.Updated}}">{{.UpdatedText}}</time></dd>
+</dl>
+</section>
+{{end}}<section id="parcels" class="card flush" aria-labelledby="parcels-title">
+<header><div><h2 id="parcels-title">Parcels</h2><p>The parcels the park was drawn from, largest building first. The rule says why each counts as industrial: <code>label</code>, its county's use class is an industrial label; <code>value</code>, it is not a homestead and its building is worth more than the threshold; <code>candidate</code>, its address matches a candidate's.</p></div></header>
+{{if $parcels}}<div class="table-scroll">
+<table id="parcel-list">
+<thead><tr><th>Parcel</th><th>Owner</th><th>Street</th><th>City</th><th>ZIP</th><th class="num">Building value</th><th>Rule</th></tr></thead>
+<tbody>
+{{range $parcels}}<tr data-parcel="{{.PIN}}" data-rule="{{.Rule}}">
+<td class="parcel-pin"><code>{{.PIN}}</code></td>
+<td class="parcel-owner">{{range .Owners}}<div data-owner>{{.}}</div>{{else}}<span class="muted">none</span>{{end}}</td>
+<td class="parcel-street">{{.Street}}</td>
+<td class="parcel-city">{{.City}}</td>
+<td class="parcel-zip">{{.Zip}}</td>
+<td class="parcel-value num">{{.BuildingValue}}</td>
+<td class="parcel-rule"><code>{{.Rule}}</code></td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}<div id="no-parcels" class="empty">
+<h3 class="text-md">No parcels</h3>
+<p>No parcel stands in this park under the rules as they are.</p>
+</div>{{end}}
+</section>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

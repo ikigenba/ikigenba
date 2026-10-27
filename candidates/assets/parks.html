@@ -1,0 +1,206 @@
+{{/* The parks at GET /parks: the industrial parks candidates derives from
+     the county parcel records scrapes holds, one window (paging.DefaultLimit,
+     25) of them as the view the query names, how many there are and the run
+     they were derived from, and the rules they were derived by. A park is a
+     place to walk later, never a candidate. Shown to any signed-in user; a
+     guest is sent to sign in. Every signed-in user sees every park: they are
+     the space's, not a user's. Read-only: no form but the banner's sign out;
+     the view is chosen by links, and the rules are changed with the tools.
+     A page token or a view value the page cannot decode is the not-found
+     page. One level below the root: .Banner's .Trail is the one level parks
+     at /parks. Data: .Banner (a page.Banner, for banner and footer);
+     .Summary, with .Count (int, the parks not gone), .Gone (int, the parks
+     marked gone), .Run (the run_ id of the scrapes parcel run the parks were
+     last derived from; empty when none has been derived) and .RunPage (the
+     URL of that run's page at scrapes, "<scrapes URL>/runs/<.Run>" built on
+     the services entry; empty when .Run is, or when the entry has none);
+     .View, the choices of the view, each choice with .Href (the path and
+     query of /parks showing that choice with every other part of the view
+     as it stands and no page token, built by the code) and .Current (bool,
+     the choice this view shows; exactly one per part): .Counties (the "all
+     counties" choice first, then one per county that holds a park, by name,
+     each with .County, the county's name as stored, empty for the "all"
+     choice), .Walked (each with .Value, one of "all", "unwalked" and
+     "walked"; "all" is the default), .Gone (each with .Value, one of
+     "active", "gone" and "all"; "active", the parks not gone, is the
+     default) and .Sorts (each with .Value, one of "minutes", nearest first
+     with an unknown drive time last, the default, "value", largest
+     building value first, and "parcels", most parcels first); .Parks, one
+     window (paging.DefaultLimit, 25) of the parks the view admits, in its
+     order, the park id breaking ties, each with .ID (its park_ id, "park_"
+     and 16 hex), .Name (its town, with a number when the town holds more
+     than one park, "North Branch", "Wyoming 2"), .County (its county, as
+     stored), .State ("active" or "gone", as stored), .Parcels (int, its
+     parcels), .BuildingValue (the sum of its parcels' building values as
+     shown, "$12,400,000"), .Minutes (the drive minutes from the base by
+     the ZIP table as text, "42"; empty when its ZIP is not in the table),
+     .Walked and .WalkedText (when it was walked, RFC 3339 UTC to the
+     second, and UTC to the day, "2026-10-05"; both empty while unwalked)
+     and .GrownFrom (int, the parcel count it grew from; 0 when it has not
+     grown); .Page (string, this window's own page token, the ?page= the
+     request carried; empty on the first window); and the paging hrefs,
+     each the path and query of /parks carrying the view as it stands,
+     built by the code: .FirstHref (no page token; empty on the first
+     window), .PrevHref (the before-token of this window's first park;
+     empty on the first window), .NextHref (the token of this window's last
+     park; empty when none follow) and .LastHref (with "page=last"; drawn
+     only while .NextHref is set); .Rules, the rules the parks were derived by, as they
+     stand, with .Distance (the greatest distance between neighboring
+     parcels of a park in meters, as text, "600"), .MinParcels (int, the
+     least number of parcels a park holds), .ValueThreshold (the building
+     value above which a non-homestead parcel counts under the fallback
+     rules, as shown, "$1,000,000") and .Counties (one per county the
+     parcel records hold, by name, each with .County, its name as stored,
+     and .Labels, the use-class labels that mean industrial in it, as
+     stored, a slice of strings, empty when the county uses the fallback
+     rules). Counts are shown as the plain integer, names and labels as
+     given. The state's kind is chosen here: "active" ok, "gone" warn.
+     Hooks: title "parks · candidates"; h1 with text "Parks";
+     p#summary.lede (text "Industrial parks drawn from the county parcel
+     records scrapes holds: industrial parcels near one another, county by
+     county, named for their town. A park is a place to walk later for the
+     businesses in it, never a candidate."); p#headline.cluster holding
+     span#park-count.badge[data-kind=info] (text "<.Summary.Count>
+     active"), then, when .Summary.Gone is not 0, a space and
+     span#gone-count.badge[data-kind=warn] (text "<.Summary.Gone> gone"),
+     then a space and span.muted holding, when .Summary.Run is set,
+     "derived from run" and a space and the run (a.run-link, href
+     .Summary.RunPage, holding .Summary.Run in a code element, when
+     .Summary.RunPage is set; else .Summary.Run in a code element), else
+     "not derived yet"; section#view-card.card with h2 "View" and a p in its
+     header (text "Which parks show and in what order."), then dl#view.kv
+     holding dt "County" then dd#view-county, dt "Walked" then
+     dd#view-walked, dt "Gone" then dd#view-gone and dt "Order" then
+     dd#view-sort, each holding a nav.tabs (aria-label "County", "Walked",
+     "Gone" and "Order") with one a per choice, in the order of its slice,
+     href .Href, aria-current="true" when .Current, and data-county=<.County>,
+     data-walked=<.Value>, data-gone=<.Value> or data-sort=<.Value>; the
+     text: a county choice .County, or "All" when .County is empty; walked
+     "all" "All", "unwalked" "Unwalked", "walked" "Walked"; gone "active"
+     "Not gone", "gone" "Gone", "all" "All"; sort "minutes" "Nearest
+     first", "value" "Building value", "parcels" "Parcels";
+     section#parks.card.flush with h2 "Parks" and a p in its header (text
+     "The parks this view admits. Drive minutes come from the ZIP table and
+     an unknown one sorts last. A grown park holds more parcels than it was
+     first derived with; a gone one no longer stands under the rules and
+     keeps its id."), then either, when .Parks is empty, div#no-parks.empty
+     holding h3 "No parks" and a p (text "No park matches this view. Parks
+     are derived again whenever scrapes finishes a parcel run or the rules
+     change."), or table#park-list whose th read Name, County, Parcels,
+     Building value, Minutes, Walked, with one tr[data-park=<.ID>]
+     [data-state=<.State>] per park holding td.park-name holding
+     a.park-link (href "/parks/<.ID>", text .Name), then, when .GrownFrom
+     is not 0, a space and span.badge[data-kind=info][data-grown] (text
+     "grown from <.GrownFrom>"), then, when .State is "gone", a space and
+     span.badge[data-kind=warn][data-gone] (text "gone");
+     td.park-county (.County); td.park-parcels.num (.Parcels);
+     td.park-value.num (.BuildingValue); td.park-minutes.num (.Minutes, or
+     span.muted "unknown" when empty); td.park-walked holding, when .Walked
+     is set, time[datetime=<.Walked>] (text .WalkedText), else span.muted
+     "unwalked"; then, after the card (section#parks), nav.paging#paging
+     (aria-label "Pages") whose children are, in order, First, Prev, Next
+     and Last: First (a link with text "First" to .FirstHref when it is
+     set; else a span with aria-current="page" and text "First"), then,
+     only when .PrevHref is set, Prev (a link with text "Prev" to
+     .PrevHref), then, only when .NextHref is set, Next (a link with text
+     "Next" to .NextHref), then, always, Last (while .NextHref is set, a link
+     with text "Last" to .LastHref; else a span with aria-current="page" and
+     text "Last", so a single window shows First and Last both as the
+     current item); the nav shows when .Parks is not empty or .Page is not
+     empty, so an emptied later window still offers First; on the first
+     window with no parks there is no nav. Then section#rules-card.card with h2
+     "Rules" and a p in its header (text "The rules the parks are derived
+     by. A parcel counts as industrial when its county's use class is one
+     of the county's labels; in a county with no labels it counts when it
+     is not a homestead and its building is worth more than the threshold,
+     or when its address matches a candidate's. Industrial parcels within
+     the distance of one another form a park when there are at least the
+     minimum number of them. Agents change the rules with the tools, and the
+     parks are derived again."), then dl#rules.kv holding dt "Distance"
+     then dd#rule-distance (.Rules.Distance, a space and "m"), dt "Minimum
+     parcels" then dd#rule-min-parcels (.Rules.MinParcels) and dt
+     "Building value over" then dd#rule-value (.Rules.ValueThreshold), each
+     dt in that order; then section#county-rules.card.flush with h2
+     "Industrial labels" and a p in its header (text "The use-class labels
+     that mean industrial in each county. A county with none uses the
+     fallback rules."), then either, when .Rules.Counties is empty,
+     div#no-counties.empty holding h3 "No counties" and a p (text "A county
+     shows here once scrapes holds its parcel records."), or
+     table#county-rule-list whose th read County, Labels, with one
+     tr[data-county=<.County>] per county holding td.county-name (.County)
+     and td.county-labels holding one code[data-label=<label>] per label,
+     each separated by a space, or, when .Labels is empty,
+     span.badge[data-kind=info][data-fallback] (text "fallback rules").
+     No script but appkit's /_appkit/feedback.js. */}}
+{{define "parks"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>parks · candidates</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>Parks</h1>
+<p id="summary" class="lede">Industrial parks drawn from the county parcel records scrapes holds: industrial parcels near one another, county by county, named for their town. A park is a place to walk later for the businesses in it, never a candidate.</p>
+{{with .Summary}}<p id="headline" class="cluster"><span id="park-count" class="badge" data-kind="info">{{.Count}} active</span> {{if .Gone}}<span id="gone-count" class="badge" data-kind="warn">{{.Gone}} gone</span> {{end}}<span class="muted">{{if .Run}}derived from run {{if .RunPage}}<a class="run-link" href="{{.RunPage}}"><code>{{.Run}}</code></a>{{else}}<code>{{.Run}}</code>{{end}}{{else}}not derived yet{{end}}</span></p>
+{{end}}{{with .View}}<section id="view-card" class="card" aria-labelledby="view-title">
+<header><h2 id="view-title">View</h2><p>Which parks show and in what order.</p></header>
+<dl id="view" class="kv">
+<dt>County</dt><dd id="view-county"><nav class="tabs" aria-label="County">{{range .Counties}}<a href="{{.Href}}" data-county="{{.County}}"{{if .Current}} aria-current="true"{{end}}>{{if .County}}{{.County}}{{else}}All{{end}}</a>{{end}}</nav></dd>
+<dt>Walked</dt><dd id="view-walked"><nav class="tabs" aria-label="Walked">{{range .Walked}}<a href="{{.Href}}" data-walked="{{.Value}}"{{if .Current}} aria-current="true"{{end}}>{{if eq .Value "unwalked"}}Unwalked{{else if eq .Value "walked"}}Walked{{else}}All{{end}}</a>{{end}}</nav></dd>
+<dt>Gone</dt><dd id="view-gone"><nav class="tabs" aria-label="Gone">{{range .Gone}}<a href="{{.Href}}" data-gone="{{.Value}}"{{if .Current}} aria-current="true"{{end}}>{{if eq .Value "active"}}Not gone{{else if eq .Value "gone"}}Gone{{else}}All{{end}}</a>{{end}}</nav></dd>
+<dt>Order</dt><dd id="view-sort"><nav class="tabs" aria-label="Order">{{range .Sorts}}<a href="{{.Href}}" data-sort="{{.Value}}"{{if .Current}} aria-current="true"{{end}}>{{if eq .Value "value"}}Building value{{else if eq .Value "parcels"}}Parcels{{else}}Nearest first{{end}}</a>{{end}}</nav></dd>
+</dl>
+</section>
+{{end}}<section id="parks" class="card flush" aria-labelledby="parks-title">
+<header><div><h2 id="parks-title">Parks</h2><p>The parks this view admits. Drive minutes come from the ZIP table and an unknown one sorts last. A grown park holds more parcels than it was first derived with; a gone one no longer stands under the rules and keeps its id.</p></div></header>
+{{if .Parks}}<div class="table-scroll">
+<table id="park-list">
+<thead><tr><th>Name</th><th>County</th><th class="num">Parcels</th><th class="num">Building value</th><th class="num">Minutes</th><th>Walked</th></tr></thead>
+<tbody>
+{{range .Parks}}<tr data-park="{{.ID}}" data-state="{{.State}}">
+<td class="park-name"><a class="park-link" href="/parks/{{.ID}}">{{.Name}}</a>{{if .GrownFrom}} <span class="badge" data-kind="info" data-grown>grown from {{.GrownFrom}}</span>{{end}}{{if eq .State "gone"}} <span class="badge" data-kind="warn" data-gone>gone</span>{{end}}</td>
+<td class="park-county">{{.County}}</td>
+<td class="park-parcels num">{{.Parcels}}</td>
+<td class="park-value num">{{.BuildingValue}}</td>
+<td class="park-minutes num">{{if .Minutes}}{{.Minutes}}{{else}}<span class="muted">unknown</span>{{end}}</td>
+<td class="park-walked">{{if .Walked}}<time datetime="{{.Walked}}">{{.WalkedText}}</time>{{else}}<span class="muted">unwalked</span>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}<div id="no-parks" class="empty">
+<h3 class="text-md">No parks</h3>
+<p>No park matches this view. Parks are derived again whenever scrapes finishes a parcel run or the rules change.</p>
+</div>{{end}}
+</section>
+{{if or .Parks .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .FirstHref}}<a href="{{.FirstHref}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .PrevHref}}<a href="{{.PrevHref}}">Prev</a>{{end}}{{if .NextHref}}<a href="{{.NextHref}}">Next</a>{{end}}{{if .NextHref}}<a href="{{.LastHref}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
+{{end}}{{with .Rules}}<section id="rules-card" class="card" aria-labelledby="rules-title">
+<header><h2 id="rules-title">Rules</h2><p>The rules the parks are derived by. A parcel counts as industrial when its county's use class is one of the county's labels; in a county with no labels it counts when it is not a homestead and its building is worth more than the threshold, or when its address matches a candidate's. Industrial parcels within the distance of one another form a park when there are at least the minimum number of them. Agents change the rules with the tools, and the parks are derived again.</p></header>
+<dl id="rules" class="kv">
+<dt>Distance</dt><dd id="rule-distance">{{.Distance}} m</dd>
+<dt>Minimum parcels</dt><dd id="rule-min-parcels">{{.MinParcels}}</dd>
+<dt>Building value over</dt><dd id="rule-value">{{.ValueThreshold}}</dd>
+</dl>
+</section>
+<section id="county-rules" class="card flush" aria-labelledby="county-rules-title">
+<header><div><h2 id="county-rules-title">Industrial labels</h2><p>The use-class labels that mean industrial in each county. A county with none uses the fallback rules.</p></div></header>
+{{if .Counties}}<div class="table-scroll">
+<table id="county-rule-list">
+<thead><tr><th>County</th><th>Labels</th></tr></thead>
+<tbody>
+{{range .Counties}}<tr data-county="{{.County}}">
+<td class="county-name">{{.County}}</td>
+<td class="county-labels">{{range $i, $l := .Labels}}{{if $i}} {{end}}<code data-label="{{$l}}">{{$l}}</code>{{else}}<span class="badge" data-kind="info" data-fallback>fallback rules</span>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}<div id="no-counties" class="empty">
+<h3 class="text-md">No counties</h3>
+<p>A county shows here once scrapes holds its parcel records.</p>
+</div>{{end}}
+</section>
+{{end}}</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}
