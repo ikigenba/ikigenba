@@ -25,7 +25,7 @@ func prospectListCondition(k ProspectList, now time.Time) (string, []any) {
 		if f.RevenueMin != nil {
 			lo = *f.RevenueMin
 		}
-		add(`((a.revenue_low>=? AND (? IS NULL OR a.revenue_low<=?)) OR (a.revenue_low IS NULL AND ?))`, lo, f.RevenueMax, f.RevenueMax, f.RevenueUnknown)
+		add(`((a.revenue_low>=? AND (? IS NULL OR a.revenue_high<=? OR (a.revenue_high IS NULL AND ?))) OR (a.revenue_low IS NULL AND ?))`, lo, f.RevenueMax, f.RevenueMax, f.RevenueUnknown, f.RevenueUnknown)
 	}
 	if f.MaxMinutes != nil {
 		add(`(f.minutes<=? OR (f.minutes IS NULL AND ?))`, *f.MaxMinutes, f.MinutesUnknown)
