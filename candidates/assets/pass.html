@@ -11,7 +11,10 @@
      run a delivery named, "cron" for a fire of the daily cron trigger,
      "ingest", "judge" or "enrich" for a call of the tool of that name,
      "pass" for another pass that finished: an ingest starting an enrich,
-     or an enrich starting a judge), .Trigger (the run_ id of that
+     or an enrich starting a judge, "rules" for a parks pass started by
+     a call of edit_park_rules, "start" for a parks pass candidates
+     started at start on finding the newest done parcel run underived),
+     .Trigger (the run_ id of that
      scrapes run, the slug of that cron trigger, "judge_candidates", "ingest", "judge", "enrich", or the pass_ id of that pass), .RunPage (the URL of
      that run's page at scrapes, "<scrapes URL>/runs/<.Trigger>" built on
      the services entry; empty unless .Origin is "run", and empty when the
@@ -20,7 +23,7 @@
      "interrupted", "store" or "prompts"; empty unless .Status is
      "failed"),
      .StartedBy (the starter's email, or the starter's user id when the
-     email is empty; the starter is an ingest, judge or enrich call's caller; empty for any other origin), .Started and
+     email is empty; the starter is an ingest, judge, enrich or edit_park_rules call's caller; empty for any other origin), .Started and
      .StartedText (RFC 3339 UTC to the second, and the same as shown,
      "2006-01-02 15:04:05 UTC"), .Finished and .FinishedText (likewise;
      both empty while running), .Rows, .New, .Changed, .Unchanged,
@@ -97,7 +100,7 @@
      dt "Status" then dd#pass-status (the status span), dt "Reason" then
      dd#pass-reason (.Reason in a code element) only when .Reason is set,
      dt "Started by" then dd#pass-by (by .Origin: "run" "scrapes"; "cron"
-     "cron" and a space then .Trigger in a code element; "pass" "pass" and a space then .Trigger in a code element; "ingest", "judge" and "enrich" .StartedBy), dt "Started" then dd#pass-started holding
+     "cron" and a space then .Trigger in a code element; "pass" "pass" and a space then .Trigger in a code element; "ingest", "judge" and "enrich" .StartedBy; "rules" .StartedBy, a space, "with" and a space then edit_park_rules in a code element; "start" "candidates at start"), dt "Started" then dd#pass-started holding
      time[datetime=<.Started>] (text .StartedText), dt "Finished" then
      dd#pass-finished holding time[datetime=<.Finished>] (text
      .FinishedText) only when .Finished is set, then, when .Kind is
@@ -143,7 +146,7 @@
 <dt>Trigger</dt><dd id="pass-trigger">{{if .RunPage}}<a class="run-link" href="{{.RunPage}}"><code>{{.Trigger}}</code></a>{{else if eq .Origin "pass"}}<a class="pass-link" href="/passes/{{.Trigger}}"><code>{{.Trigger}}</code></a>{{else}}<code>{{.Trigger}}</code>{{end}}</dd>
 <dt>Status</dt><dd id="pass-status"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span></dd>
 {{if .Reason}}<dt>Reason</dt><dd id="pass-reason"><code>{{.Reason}}</code></dd>
-{{end}}<dt>Started by</dt><dd id="pass-by">{{if or (eq .Origin "ingest") (eq .Origin "judge") (eq .Origin "enrich")}}{{.StartedBy}}{{else if eq .Origin "cron"}}cron <code>{{.Trigger}}</code>{{else if eq .Origin "pass"}}pass <code>{{.Trigger}}</code>{{else}}scrapes{{end}}</dd>
+{{end}}<dt>Started by</dt><dd id="pass-by">{{if or (eq .Origin "ingest") (eq .Origin "judge") (eq .Origin "enrich")}}{{.StartedBy}}{{else if eq .Origin "cron"}}cron <code>{{.Trigger}}</code>{{else if eq .Origin "pass"}}pass <code>{{.Trigger}}</code>{{else if eq .Origin "rules"}}{{.StartedBy}} with <code>edit_park_rules</code>{{else if eq .Origin "start"}}candidates at start{{else}}scrapes{{end}}</dd>
 <dt>Started</dt><dd id="pass-started"><time datetime="{{.Started}}">{{.StartedText}}</time></dd>
 {{if .Finished}}<dt>Finished</dt><dd id="pass-finished"><time datetime="{{.Finished}}">{{.FinishedText}}</time></dd>
 {{end}}{{if eq .Kind "enrich_target"}}<dt>Target</dt><dd id="pass-target"><a class="target-link" href="{{.TargetPage}}"><code>{{.Target}}</code></a></dd>
