@@ -179,6 +179,21 @@ design/
   the app's existing not-found page, never quietly the first window; a URL
   carrying a token the page never issued names no page. An empty list shows its empty state and
   no nav. scrapes-run.html is the worked example.
+  A third form (decided 2026-10-27) is for a list whose every link must
+  carry more than the page: candidates' parks, whose view (a county, the
+  walked and gone states, an order) rides on the query string. There the
+  code builds each href and the template only draws them, so no template
+  and no `Prev` or `Next` token field stands in for a link: `.FirstHref`,
+  `.PrevHref`, `.NextHref` and `.LastHref` are the paths and queries to
+  link to, and each choice of the view has its own `.Href`, every one
+  keeping the rest of the view and none a page token. The nav is the same
+  `nav.paging#paging` in the same order with the same items; First is the
+  current item when `.FirstHref` is empty, Prev shows only when
+  `.PrevHref` is set, Next only when `.NextHref` is set, and Last is the
+  current item exactly when `.NextHref` is empty. Tokens, the 303
+  redirect, the `last` word and the 404 for a token or view value the page
+  cannot decode are as above. A page with a view of its own uses this
+  form; one without keeps the first two.
 - Every page ends with the feedback script (`ikigenba/feedback.js`), then the
   lab toolbar script (`ikigenba/lab.js`).
 
@@ -559,10 +574,11 @@ reads them through prospect lists, saved searches of filters, an order, a size a
 rejects whose members are worked out at each read, and rules on candidates
 with `decide`, `exclude` and `include`. Candidates and prospect lists belong to no
 one: every signed-in user sees every candidate, prospect list, pass, ruling and
-reject. Five pages: the landing page, one candidate at
+reject. Seven pages: the landing page, one candidate at
 `/candidates/<id>`, one prospect list at `/prospect-lists/<id>`, one pass at
 `/passes/<id>` and one kept page of a candidate's website at
-`/candidates/<id>/pages/<n>`. Banner and footer as
+`/candidates/<id>/pages/<n>`, the parks at `/parks` and one park at
+`/parks/<id>`. Banner and footer as
 in app.html, the service `candidates` with the Tabler `filter` icon (added
 to `icons/tabler/` on 2026-10-12 for this app). No form but sign out. The
 sample data is made-up carriers from FMCSA's census for Minnesota and
@@ -580,14 +596,19 @@ Wisconsin.
   it (parameter `passes_page`), `tr[data-pass=<id>]`: a running judge from a
   hand-started ingest, a judge failed `scrapes`, a judge started by the cron trigger
   `judge_candidates`, two ingests done by a scrapes run. Every pass id links
-  to `/passes/<id>`; Kind is `ingest`, `judge`, `enrich` or `enrich_target`; Trigger is the run id, the
-  cron trigger's slug or `ingest` or `judge` when started by hand. A failed row's reason follows its
+  to `/passes/<id>`; Kind is `ingest`, `judge`, `enrich`, `enrich_target` or `parks`; Trigger is the run id, the
+  cron trigger's slug or `ingest` or `judge` when started by hand, or `rules` or `start` for a parks pass. A failed row's reason follows its
   status, muted. A link to the about screen. Its tools (`prospect_lists`,
   `prospect_list`, `candidates`, `candidate`, `passes`, `pass`, `ingest`, `judge`,
   `enrich`, `decide`, `exclude`, `include`, `create_prospect_list`,
   `edit_prospect_list`, `delete_prospect_list`, `reject`, `unreject`, seventeen in all) are
   on its tools page. States: no
   prospect lists (`div#no-prospect-lists.empty`), no passes (`div#no-passes.empty`).
+  Between the passes and the about link, `section#parks` (Parks) says the
+  industrial parks are drawn from the county parcel records scrapes holds,
+  places to walk later, never candidates, with `p#parks-summary`: a link
+  `a#parks-link` to `/parks` and `span#parks-count`, the count of parks not
+  gone.
 - One candidate, `cand_4b9e1f07c2d83a65`, a for-hire carrier at Hudson, WI,
   with two records, one moved onto it by a merge: the trail candidates /
   the id, the id as the `h1`; `p#headline` with the name, the status and
@@ -684,6 +705,36 @@ Wisconsin.
   warn after the name), no members (`div#no-members.empty`), no rejects
   (`div#no-rejects.empty`). An unknown or malformed id is the not-found
   page. An unknown id is the not-found page.
+- The parks, at `/parks`: the trail candidates / parks; `h1` Parks, a lede
+  saying a park is a place to walk later, never a candidate;
+  `p#headline` with `#park-count`, a `.badge` of kind info counting the
+  parks not gone, `#gone-count` beside it when any are gone, and the scrapes
+  parcel run they were derived from, linking to its page at scrapes, or muted
+  "not derived yet". `section#view-card` chooses the view by links, no form:
+  a county (all, or one of the counties that hold a park), walked (all,
+  unwalked, walked), gone (not gone, gone, all) and the order (nearest
+  first, the default, building value, parcels), each choice an `a` carrying
+  its `.Href` and `aria-current` when it is the view's. `section#parks`
+  holds `table#park-list` of the parks the view admits, a window of 25 with
+  `nav.paging#paging` below it, `tr[data-park=<id>]`, each name linking to
+  `/parks/<id>`, with `.badge` "grown from <n>" and a `.badge` gone of kind
+  warn when they apply; the paging is the third form. Then
+  `section#rules-card` with `dl#rules.kv` (Distance, Minimum parcels,
+  Building value over) and `section#county-rules` with the use-class labels
+  that mean industrial in each county: the owner's rules, read-only, changed
+  with the tools. States: no parks (`div#no-parks.empty`), a later window. A
+  token or view value the page cannot decode is the not-found page.
+- One park, `park_` and 16 hex: the trail candidates / parks / the id,
+  the park's name (its town, numbered when the town holds more than one) as
+  the `h1`; `section#park-card` with `dl#park.kv`: ID, Name, County, Town,
+  State (a `.status` word, active ok and gone warn), Center (latitude and
+  longitude, with an `a.map-link` to Google Maps at the center), Radius in
+  meters, Parcels, Building value, Minutes (muted when the ZIP is not in the
+  table), Grown from (when it has grown), Walked, Walk run and Found (once
+  walked), Derived from (the run, linking to its page at scrapes), Created
+  and Updated; then `section#parcels` with `table#parcel-list`, each parcel
+  with the rule that picked it (label, value or candidate). States: gone,
+  unwalked, no parcels. An unknown or malformed id is the not-found page.
 - One pass, `pass_9a27f6c1e3b40d58`, an ingest done over a scrapes run: the
   trail candidates / the id, the id as the `h1`; `p#headline` with the
   status and the started and finished times; `section#pass-card` with
@@ -698,7 +749,10 @@ Wisconsin.
   their place (`#pass-derived`, `#pass-due`, `#pass-fetched`, `#pass-https`,
   `#pass-http`, `#pass-none`), and an enrich over a target (`enrich_target`)
   adds Target (linking to the prospect list or candidate), Enrich kind, Runs,
-  Runs failed, Pages and Cost. States:
+  Runs failed, Pages and Cost; a parks pass (`parks`) shows Parcels read,
+  By label, By value, By candidate, Parks created, Parks updated, Parks gone
+  and Parks grown, and its Started by is `candidates at start` or the
+  caller's email with `edit_park_rules` when the rules were changed. States:
   running (`div#running.alert.quiet`, "Running", a Reload button), failed
   (`div#failure.alert` of kind err, "The pass failed", the reason's
   sentence chosen from `scrapes`, `interrupted`, `store` or `prompts`, and a line that
