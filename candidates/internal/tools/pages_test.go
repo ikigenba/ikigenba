@@ -92,7 +92,7 @@ func TestPageSchemaAndJSON(t *testing.T) {
 	}
 }
 
-// R-P2B3-H65F R-M3JT-JKMP R-GADH-O9XX R-QQW5-TEAW
+// R-P2B3-H65F R-M3JT-JKMP R-GADH-O9XX R-F2F5-1EX8
 func TestAddPageRefusals(t *testing.T) {
 	var requests atomic.Int64
 	k := pageChecker(&requests)

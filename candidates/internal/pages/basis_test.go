@@ -99,7 +99,7 @@ func TestBasisFiltersAndMemberProjection(t *testing.T) {
 	}
 }
 
-// R-LH3F-T4R6
+// R-5N5I-3NS7
 func TestBasisTemplateStatesAndValues(t *testing.T) {
 	set, e := Load()
 	if e != nil {
@@ -191,7 +191,7 @@ func assertListBody(t *testing.T, cfg Config, method, id string, want store.Pros
 	}
 }
 
-// R-Y43Q-7NBG R-Y5BM-LF25 R-Y7RF-CYJJ
+// R-Y43Q-7NBG R-6F76-WDU6 R-6HMZ-NXBK
 func TestProspectListRequestsRecordOneOpen(t *testing.T) {
 	cfg, handle := pageFixture(t)
 	now := fixtureTime()
@@ -404,7 +404,7 @@ func TestCandidateBasisAndKindsOnPages(t *testing.T) {
 	check(ids[0], store.BasisEnriched, all, []string{})
 }
 
-// R-Y7RF-CYJJ
+// R-6HMZ-NXBK
 func TestUnrelatedPageRequestsNeverRecordOpens(t *testing.T) {
 	cfg, handle := pageFixture(t)
 	now := fixtureTime()

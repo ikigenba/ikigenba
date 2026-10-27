@@ -187,7 +187,7 @@ func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 	}
 }
 
-// R-3X7J-PRDD R-06A6-0MC0 R-0CDN-XH1H
+// R-5EM7-F9LC R-5UGW-EA8D R-5WWP-5TPR
 func TestEnrichPassViews(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	for _, tc := range []struct{ origin, email, user, by string }{
@@ -217,7 +217,7 @@ func TestEnrichPassViews(t *testing.T) {
 	}
 }
 
-// R-P8DA-YHFL
+// R-5FU3-T1C1
 func TestWebsiteTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()

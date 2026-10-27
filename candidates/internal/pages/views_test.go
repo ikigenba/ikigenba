@@ -49,7 +49,7 @@ func TestFormatting(t *testing.T) {
 	}
 }
 
-// R-1RK4-HLSJ R-XY08-ASLZ R-PI21-M9Z9 R-3X7J-PRDD R-4ZA6-4B1H
+// R-5DEB-1HUN R-XY08-ASLZ R-PI21-M9Z9 R-5EM7-F9LC R-4ZA6-4B1H
 func TestTemplateDataShape(t *testing.T) {
 	_ = struct {
 		Source, Low, High, Confidence, Filed, FiledText string
@@ -78,10 +78,10 @@ func TestTemplateDataShape(t *testing.T) {
 	ev := EstimateView{"source", "low", "high", "confidence", "", "", 1, []FactRow{{"key", "value"}}}
 	lv := LinkView{"scraper", "source", "run", "", "ein", "name", []string{"alias"}, "establishment", "city", "55072", "2024", "23", "47840", "reason", "confidence", "", "", "", "", "", "", false}
 	rv := RulingView{"kind", "other", []string{"key"}, "by", "user", "", "", "why"}
-	pv := PassView{"id", store.KindIngest, store.OriginIngest, store.TriggerIngest, "", store.StatusRunning, "", "starter", "", "", "", "", 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 10, 11, 12, 13, 14, "target", "/prospect-lists/target", "kind", 15, 16, 17, "$0.000000"}
+	pv := PassView{"id", store.KindIngest, store.OriginIngest, store.TriggerIngest, "", store.StatusRunning, "", "starter", "", "", "", "", 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 10, 11, 12, 13, 14, "target", "/prospect-lists/target", "kind", 15, 16, 17, "$0.000000", 0, 0, 0, 0, 0, 0, 0, 0}
 	row := ProspectListRow{"id", "name", 11, "by", "user", "changed", "changed-text"}
 	pass := PassRow{"id", store.KindIngest, "trigger", "status", "reason", "started", "started-text", "finished", "finished-text", 21, 22, 23}
-	landing := LandingData{b, []ProspectListRow{row}, "page", "prev", "next", []PassRow{pass}, "page", "prev", "next"}
+	landing := LandingData{b, []ProspectListRow{row}, "page", "prev", "next", []PassRow{pass}, "page", "prev", "next", LandingParks{}}
 	if cv.Website != "website" || cv.WebsiteURL != "https://chosen.example.test/" || cv.WebsiteTitle != "title" || cv.WebsiteChecked != "checked" || cv.WebsiteCheckedText != "checked-text" || pv.Due != 10 || pv.Fetched != 11 || pv.HTTPS != 12 || pv.HTTP != 13 || pv.None != 14 {
 		t.Fatal("website positional shape")
 	}

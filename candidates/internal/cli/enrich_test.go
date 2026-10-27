@@ -173,7 +173,7 @@ func TestRunNoHTTPRefusesEnrichWithoutPass(t *testing.T) {
 	}
 }
 
-// R-YF73-UM6K
+// R-S4D6-TT8H
 func TestRunFollowOnPassKeepsLineage(t *testing.T) {
 	fake := &runFake{rows: []map[string]any{runRow()}}
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, fake)}))

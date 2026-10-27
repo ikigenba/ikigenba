@@ -18,6 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/candidates"
 	"github.com/ikigenba/ikigenba/candidates/internal/judging"
+	"github.com/ikigenba/ikigenba/candidates/internal/parks"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
@@ -55,12 +56,13 @@ func (r *contractMeter) Read(p []byte) (int, error) {
 }
 
 type contractFixture struct {
-	t    *testing.T
-	path string
-	now  time.Time
-	rnd  io.Reader
-	d    *db.DB
-	s    *store.Store
+	parkPassID string
+	t          *testing.T
+	path       string
+	now        time.Time
+	rnd        io.Reader
+	d          *db.DB
+	s          *store.Store
 }
 
 // Construct the published store using its injected dependencies.
@@ -159,12 +161,13 @@ func TestContractVocabulary(t *testing.T) {
 	}
 }
 
-// R-2ATP-W04E R-2EHF-1BCH R-O25T-GHMS R-YID5-EN5N R-4ZXJ-0QUQ R-52DB-SAC4
+// R-4ZG4-R3HF R-50O1-4V84 R-533T-WEPI R-54BQ-A6G7 R-4ZXJ-0QUQ R-52DB-SAC4
 func TestContractPassLifecyclePersistence(t *testing.T) {
+	t.Parallel()
 	f := contractDB(t)
 	ctx := context.Background()
 	stamp := f.now.UTC().Truncate(time.Second)
-	input := store.Pass{ID: "ignored", Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Status: "ignored", Reason: "ignored", Started: f.now.AddDate(-1, 0, 0), Finished: f.now, Rows: 99, New: 99, Changed: 99, Unchanged: 99, Gone: 99, Created: 99, Linked: 99, Judged: 99, Unranged: 99, Derived: 99, Due: 99, Fetched: 99, HTTPS: 99, HTTP: 99, None: 99, Runs: 99, RunsFailed: 99, Pages: 99, Cost: 99, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
+	input := store.Pass{ID: "ignored", Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Status: "ignored", Reason: "ignored", Started: f.now.AddDate(-1, 0, 0), Finished: f.now, Rows: 99, New: 99, Changed: 99, Unchanged: 99, Gone: 99, Created: 99, Linked: 99, Judged: 99, Unranged: 99, Derived: 99, Due: 99, Fetched: 99, HTTPS: 99, HTTP: 99, None: 99, Runs: 99, RunsFailed: 99, Pages: 99, Cost: 99, ParcelRun: "ignored", ParcelsRead: 99, ByLabel: 99, ByValue: 99, ByCandidate: 99, ParksCreated: 99, ParksUpdated: 99, ParksGone: 99, ParksGrown: 99, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
 	p, err := f.s.AddPass(ctx, input)
 	contractOK(t, err)
 	want := store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, ID: store.PassIDPrefix + "0101010101010101", Trigger: input.Trigger, Status: store.StatusRunning, Started: stamp, UserID: input.UserID, UserEmail: input.UserEmail, RequestID: input.RequestID}
@@ -177,7 +180,7 @@ func TestContractPassLifecyclePersistence(t *testing.T) {
 	contractOK(t, err)
 	contractEqual(t, read, p)
 	f.now = f.now.Add(time.Hour)
-	c := store.Counts{Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Derived: 15, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14, Runs: 16, RunsFailed: 17, Pages: 18, Cost: 19}
+	c := store.Counts{Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Derived: 15, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14, Runs: 16, RunsFailed: 17, Pages: 18, Cost: 19, ParcelsRead: 20, ByLabel: 21, ByValue: 22, ByCandidate: 23, ParksCreated: 24, ParksUpdated: 25, ParksGone: 26, ParksGrown: 27}
 	ended, err := f.s.FinishPass(ctx, p.ID, c)
 	contractOK(t, err)
 	want.Status = store.StatusDone
@@ -194,6 +197,14 @@ func TestContractPassLifecyclePersistence(t *testing.T) {
 	want.Derived = c.Derived
 	want.Due, want.Fetched, want.HTTPS, want.HTTP, want.None = c.Due, c.Fetched, c.HTTPS, c.HTTP, c.None
 	want.Runs, want.RunsFailed, want.Pages, want.Cost = c.Runs, c.RunsFailed, c.Pages, c.Cost
+	want.ParcelsRead = c.ParcelsRead
+	want.ByLabel = c.ByLabel
+	want.ByValue = c.ByValue
+	want.ByCandidate = c.ByCandidate
+	want.ParksCreated = c.ParksCreated
+	want.ParksUpdated = c.ParksUpdated
+	want.ParksGone = c.ParksGone
+	want.ParksGrown = c.ParksGrown
 	contractEqual(t, ended, want)
 	f.reopen()
 	read, err = f.s.GetPass(ctx, p.ID)
@@ -226,6 +237,7 @@ func TestContractPassLifecyclePersistence(t *testing.T) {
 
 // R-4SM4-Q4EK R-O4LM-8146
 func TestContractPassRefusals(t *testing.T) {
+	t.Parallel()
 	f := contractDB(t)
 	ctx := context.Background()
 	p := contractNewPass(t, f, "run-one")
@@ -251,7 +263,7 @@ func TestContractPassRefusals(t *testing.T) {
 	out, err = f.s.AddPass(ctx, store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, UserID: "owner"})
 	contractError(t, err, store.ErrBusy)
 	contractEqual(t, out, store.Pass{})
-	negatives := []store.Counts{{Rows: -1}, {New: -1}, {Changed: -1}, {Unchanged: -1}, {Gone: -1}, {Created: -1}, {Linked: -1}, {Judged: -1}, {Unranged: -1}, {Derived: -1}, {Due: -1}, {Fetched: -1}, {HTTPS: -1}, {HTTP: -1}, {None: -1}, {Runs: -1}, {RunsFailed: -1}, {Pages: -1}, {Cost: -1}}
+	negatives := []store.Counts{{Rows: -1}, {New: -1}, {Changed: -1}, {Unchanged: -1}, {Gone: -1}, {Created: -1}, {Linked: -1}, {Judged: -1}, {Unranged: -1}, {Derived: -1}, {Due: -1}, {Fetched: -1}, {HTTPS: -1}, {HTTP: -1}, {None: -1}, {Runs: -1}, {RunsFailed: -1}, {Pages: -1}, {Cost: -1}, {ParcelsRead: -1}, {ByLabel: -1}, {ByValue: -1}, {ByCandidate: -1}, {ParksCreated: -1}, {ParksUpdated: -1}, {ParksGone: -1}, {ParksGrown: -1}}
 	for _, c := range negatives {
 		for _, id := range []string{p.ID, "missing"} {
 			out, err = f.s.FinishPass(ctx, id, c)
@@ -293,10 +305,12 @@ func TestContractPassRefusals(t *testing.T) {
 	contractEqual(t, read, done)
 }
 
-// R-5AB2-LACZ
+// R-56RJ-1PXL
 func TestContractIDMinting(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"pass", "candidate"} {
 		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
 			f := contractDB(t)
 			ctx := context.Background()
 			seed := bytes.Repeat([]byte{0x5a}, 8)
@@ -514,8 +528,9 @@ func TestContractZipReplacement(t *testing.T) {
 	}
 }
 
-// R-QBE3-755T R-47VU-80SR R-493Q-LSJG R-578X-BDAW R-T3DU-KBYR R-5AWM-GOIZ R-5C4I-UG9O
+// R-55JM-NY6W R-47VU-80SR R-493Q-LSJG R-578X-BDAW R-T3DU-KBYR R-5AWM-GOIZ R-5C4I-UG9O
 func TestContractBusinessRecordsPersistence(t *testing.T) {
+	t.Parallel()
 	f := contractDB(t)
 	ctx := context.Background()
 	o := contractObservation("one", "ACME TRUCKING INC", f.now.UTC().Truncate(time.Second))
@@ -728,8 +743,9 @@ func TestContractCandidateWindowsAndFilters(t *testing.T) {
 	}
 }
 
-// R-RKID-CNLI R-T3DU-KBYR
+// R-57ZF-FHOA R-T3DU-KBYR
 func TestContractFreshStoreAndUnknownReads(t *testing.T) {
+	t.Parallel()
 	f := contractDB(t)
 	ctx := context.Background()
 	ps, err := f.s.ListPasses(ctx, "", "", 5)
@@ -846,8 +862,9 @@ func contractSeed(t *testing.T, f *contractFixture) string {
 	return id
 }
 
-// R-O25T-GHMS R-YID5-EN5N R-5610-XLK7
+// R-533T-WEPI R-54BQ-A6G7 R-5610-XLK7
 func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
+	t.Parallel()
 	f := contractDB(t)
 	ctx := context.Background()
 	id := contractSeed(t, f)
@@ -880,8 +897,9 @@ func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	contractEqual(t, after, zipBefore)
 }
 
-// R-LQ3B-JZSS R-OD8H-2EDG
+// R-25AU-BG4E R-OD8H-2EDG
 func TestContractAllMethodsUnavailable(t *testing.T) {
+	t.Parallel()
 	f := contractDB(t)
 	ctx := context.Background()
 	id := contractSeed(t, f)
@@ -891,6 +909,29 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 		name string
 		call func(context.Context) error
 	}{
+
+		{"ParkRules", func(c context.Context) error { _, _, e := f.s.ParkRules(c); return e }},
+		{"SetParkRules", func(c context.Context) error {
+			_, e := f.s.SetParkRules(c, store.ParkRulesEdit{Distance: i64(0)}, store.Pass{})
+			return e
+		}},
+		{"ActiveAddressKeys", func(c context.Context) error { _, _, e := f.s.ActiveAddressKeys(c, "", 0); return e }},
+		{"PriorParks", func(c context.Context) error { _, e := f.s.PriorParks(c); return e }},
+		{"ApplyParks", func(c context.Context) error {
+			_, e := f.s.ApplyParks(c, "", "", nil, parks.Plan{}, store.Counts{})
+			return e
+		}},
+		{"ListParks", func(c context.Context) error { _, e := f.s.ListParks(c, store.ParkFilter{}, "", "", "", 0); return e }},
+		{"ListParksReversed", func(c context.Context) error {
+			_, e := f.s.ListParksReversed(c, store.ParkFilter{}, "", "", "", 0)
+			return e
+		}},
+		{"GetPark", func(c context.Context) error { _, e := f.s.GetPark(c, "missing"); return e }},
+		{"ParkParcels", func(c context.Context) error { _, e := f.s.ParkParcels(c, "missing"); return e }},
+		{"CountParks", func(c context.Context) error { _, _, e := f.s.CountParks(c); return e }},
+		{"ParkCountiesHeld", func(c context.Context) error { _, e := f.s.ParkCountiesHeld(c); return e }},
+		{"ParkCountiesRead", func(c context.Context) error { _, e := f.s.ParkCountiesRead(c); return e }},
+		{"ParksRun", func(c context.Context) error { _, e := f.s.ParksRun(c); return e }},
 
 		{"AddCampaignUse", func(c context.Context) error { return f.s.AddCampaignUse(c, "", "", "", time.Time{}) }},
 		{"RejectCampaignUse", func(c context.Context) error { return f.s.RejectCampaignUse(c, "", "", "", time.Time{}) }},
@@ -1002,8 +1043,9 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 	contractEqual(t, contractState(t, f), before)
 }
 
-// R-HM7C-HURP R-5N3M-ADXX
+// R-242X-XODP R-5N3M-ADXX
 func TestContractConcurrentStoreCalls(t *testing.T) {
+	t.Parallel()
 	f := contractDB(t)
 	ctx := context.Background()
 	id := contractSeed(t, f)
@@ -1111,8 +1153,9 @@ func (r *contractErrorReader) Read(p []byte) (int, error) {
 	return 0, r.err
 }
 
-// R-5AB2-LACZ
+// R-56RJ-1PXL
 func TestContractMintReaderRecordErrorsAreUnreachable(t *testing.T) {
+	t.Parallel()
 	recordErrors := []struct {
 		name string
 		err  error
@@ -1127,6 +1170,7 @@ func TestContractMintReaderRecordErrorsAreUnreachable(t *testing.T) {
 		for _, sentinel := range recordErrors {
 			for _, wrapped := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%s/%s/wrapped_%t", kind, sentinel.name, wrapped), func(t *testing.T) {
+					t.Parallel()
 					f := contractDB(t)
 					ctx := context.Background()
 					contractSeed(t, f)

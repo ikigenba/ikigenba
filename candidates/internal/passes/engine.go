@@ -16,6 +16,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/scrapes"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
+	"github.com/ikigenba/ikigenba/candidates/internal/parks"
 	"github.com/ikigenba/ikigenba/candidates/internal/routes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
@@ -122,6 +123,16 @@ func (e *Engine) Judge(ctx context.Context, c identity.Caller) (store.Pass, erro
 }
 
 func (e *Engine) start(ctx context.Context, p store.Pass, c identity.Caller, run *scrapes.Run, kind string) {
+	if p.Kind == store.KindParks {
+		snapshot, err := e.parkSnapshot(e.ctx)
+		e.startWork(ctx, p, c, func(workCtx context.Context) (store.Counts, string) {
+			if err != nil {
+				return store.Counts{}, e.storeFailure(workCtx, err)
+			}
+			return e.parks(workCtx, run, p, snapshot)
+		})
+		return
+	}
 	e.startWork(ctx, p, c, func(workCtx context.Context) (store.Counts, string) {
 		if p.Kind == store.KindEnrich {
 			return e.enrich(workCtx, kind)
@@ -145,7 +156,13 @@ func (e *Engine) startWork(ctx context.Context, p store.Pass, c identity.Caller,
 		if reason == store.ReasonStore && e.ctx.Err() == nil && e.cfg.Stderr != nil {
 			_, _ = e.cfg.Stderr.Write([]byte("candidates: pass " + p.ID + " failed: store\n\n" + strings.ReplaceAll(failure.text(), "\n", " ") + "\n"))
 		}
-		ended, err := e.finish(finishCtx, p.ID, totals, reason)
+		var ended store.Pass
+		var err error
+		if p.Kind == store.KindParks && reason == "" {
+			ended, err = e.cfg.Store.GetPass(finishCtx, p.ID)
+		} else {
+			ended, err = e.finish(finishCtx, p.ID, totals, reason)
+		}
 		if err == nil {
 			trail.Record(finishCtx, e.cfg.Telemetry, e.cfg.Events, trail.Finished, ended)
 			e.follow(finishCtx, ended)
@@ -186,8 +203,9 @@ func (e *Engine) Deliver(ctx context.Context, d events.Delivery) events.Outcome 
 	runID, _ := d.Event.Attrs["run"].(string)
 	status, _ := d.Event.Attrs["status"].(string)
 	_, known := e.cfg.Sources.Get(scraper)
+	parcel := scraper == parks.Scraper
 	judge := d.Event.Name == trail.AcceptedJudge && d.Event.ID != ""
-	if !judge && (d.Event.Name != trail.Accepted || d.Event.ID == "" || status != store.StatusDone || !known || runID == "") {
+	if !judge && (d.Event.Name != trail.Accepted || d.Event.ID == "" || status != store.StatusDone || (!known && !parcel) || runID == "") {
 		e.mu.Unlock()
 		return events.Skip()
 	}
@@ -195,6 +213,9 @@ func (e *Engine) Deliver(ctx context.Context, d events.Delivery) events.Outcome 
 		runID = ""
 	}
 	_, err := e.cfg.Store.FindDelivered(context.WithoutCancel(ctx), d.Event.ID, runID)
+	if parcel && errors.Is(err, store.ErrNotFound) && runID == store.TriggerIngest {
+		err = e.parcelTriggerRecorded(context.WithoutCancel(ctx), runID)
+	}
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		e.mu.Unlock()
 		return events.Fail(store.Unreachable)
@@ -220,10 +241,22 @@ func (e *Engine) Deliver(ctx context.Context, d events.Delivery) events.Outcome 
 	if e.stopping.Load() {
 		return events.Fail(Stopping)
 	}
+	if parcel && runID == store.TriggerIngest {
+		lookup := e.parcelTriggerRecorded(context.WithoutCancel(ctx), runID)
+		if lookup == nil {
+			return events.Skip()
+		}
+		if !errors.Is(lookup, store.ErrNotFound) {
+			return events.Fail(store.Unreachable)
+		}
+	}
 	if !judge && (errors.Is(err, scrapes.ErrNotFound) || (err == nil && run.Status != store.StatusDone)) {
 		return events.Skip()
 	}
 	kind, origin, trigger := store.KindIngest, store.OriginRun, runID
+	if parcel {
+		kind = store.KindParks
+	}
 	if judge {
 		kind, origin, trigger = store.KindJudge, store.OriginCron, store.TriggerJudge
 	}

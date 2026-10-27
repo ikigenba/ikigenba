@@ -10,6 +10,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/candidates"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
+	"github.com/ikigenba/ikigenba/candidates/internal/parks"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
@@ -90,6 +91,11 @@ func retryCalls(f *contractFixture) []struct {
 			n, e := f.s.PrunePasses(ctx, 1, 500)
 			return retryAnswer{N: n}, e
 		}},
+
+		{"ApplyParks", func(ctx context.Context) (retryAnswer, error) {
+			p, e := f.s.ApplyParks(ctx, f.parkPassID, "retry-parcel-run", []string{"county"}, parks.Plan{News: []parks.New{{Cluster: parkCluster("retry-pin", "Town", "county", "", 5), Number: 1}}}, store.Counts{ParcelsRead: 1, ParksCreated: 1})
+			return retryAnswer{N: p.ParksCreated}, e
+		}},
 	}
 }
 
@@ -104,13 +110,16 @@ func seedRetryStore(t *testing.T) *contractFixture {
 		_, e = f.s.FinishPass(context.Background(), p.ID, store.Counts{})
 		contractOK(t, e)
 	}
+	p, e := f.s.AddPass(context.Background(), parkPass(store.OriginStart))
+	f.parkPassID = p.ID
+	contractOK(t, e)
 	return f
 }
 
-// R-47BB-A47P R-4IAE-Q1VY R-QW0Q-TPLE R-XYZB-B2Z3 R-FY9H-O2CY
+// R-47BB-A47P R-4IAE-Q1VY R-5CV0-YKN2 R-5E2X-CCDR R-5IYI-VFCJ
 func TestEachWriteUnitRetriesBusyTransaction(t *testing.T) {
-	for index := range 6 {
-		t.Run([]string{"Attach", "MarkGone", "Derive", "JudgeAll", "FillFacts", "PrunePasses"}[index], func(t *testing.T) {
+	for index := range 7 {
+		t.Run([]string{"Attach", "MarkGone", "Derive", "JudgeAll", "FillFacts", "PrunePasses", "ApplyParks"}[index], func(t *testing.T) {
 			t.Parallel()
 			f := seedRetryStore(t)
 			control := seedRetryStore(t)
@@ -121,6 +130,7 @@ func TestEachWriteUnitRetriesBusyTransaction(t *testing.T) {
 			wantAnswer, e := retryCalls(control)[index].call(ctx)
 			contractOK(t, e)
 			want := contractState(t, control)
+			wantParks := parkState(t, control)
 			wantFacts, e := control.s.GetFacts(ctx, original[0].ID)
 			contractOK(t, e)
 			unlock := holdStoreWriter(t, f)
@@ -137,10 +147,16 @@ func TestEachWriteUnitRetriesBusyTransaction(t *testing.T) {
 			contractEqual(t, gotAnswer, wantAnswer)
 			contractEqual(t, pauses, []time.Duration{store.WriteBackoff})
 			contractEqual(t, contractState(t, f), want)
+			contractEqual(t, parkState(t, f), wantParks)
 			facts, e := f.s.GetFacts(ctx, wantFacts.Candidate)
 			contractOK(t, e)
 			contractEqual(t, facts, wantFacts)
 			pauses = nil
+			if index == 6 {
+				p, e := f.s.AddPass(ctx, parkPass(store.OriginStart))
+				contractOK(t, e)
+				f.parkPassID = p.ID
+			}
 			_, e = call.call(ctx)
 			contractOK(t, e)
 			if len(pauses) != 0 {
@@ -161,7 +177,7 @@ func TestEachWriteUnitRetriesBusyTransaction(t *testing.T) {
 	contractEqual(t, store.WriteBackoff, time.Second)
 }
 
-// R-Y2N0-GE76 R-FVTO-WIVK R-R87Q-NF0C
+// R-5FAT-Q44G R-5GIQ-3VV5 R-5HQM-HNLU
 func TestAttachBusyExhaustionCancellationAndNoSleeper(t *testing.T) {
 	for _, mode := range []string{"exhaust", "cancel", "nil"} {
 		t.Run(mode, func(t *testing.T) {

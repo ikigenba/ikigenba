@@ -29,6 +29,7 @@ import (
 	candidates "github.com/ikigenba/ikigenba/candidates"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
+	"github.com/ikigenba/ikigenba/candidates/internal/parks"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
 	"github.com/ikigenba/ikigenba/candidates/internal/routes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
@@ -229,10 +230,10 @@ func (f *fixture) seedWithStep(n int, step time.Duration, tie bool) []string {
 }
 
 // R-8884-IJV3 R-5LVY-DPZS
-// R-0ES5-6S4R R-XMSD-TLBT R-X85L-8CFH R-ZCZ9-BW58
+// R-EV3Q-QSH2 R-EWBN-4K7R R-EXJJ-IBYG R-ZCZ9-BW58
 func TestCatalogAndSchemas(t *testing.T) {
 	f := newFixture(t)
-	want := []tools.Entry{{"prospect_lists", tools.DescribeProspectLists}, {"prospect_list", tools.DescribeProspectList}, {"candidates", tools.DescribeCandidates}, {"candidate", tools.DescribeCandidate}, {"passes", tools.DescribePasses}, {"pass", tools.DescribePass}, {"ingest", tools.DescribeIngest}, {"judge", tools.DescribeJudge}, {"enrich", tools.DescribeEnrich}, {"add_page", tools.DescribeAddPage}, {"decide", tools.DescribeDecide}, {"exclude", tools.DescribeExclude}, {"include", tools.DescribeInclude}, {"create_prospect_list", tools.DescribeCreateProspectList}, {"edit_prospect_list", tools.DescribeEditProspectList}, {"delete_prospect_list", tools.DescribeDeleteProspectList}, {"reject", tools.DescribeReject}, {"unreject", tools.DescribeUnreject}}
+	want := []tools.Entry{{"prospect_lists", tools.DescribeProspectLists}, {"prospect_list", tools.DescribeProspectList}, {"candidates", tools.DescribeCandidates}, {"candidate", tools.DescribeCandidate}, {"passes", tools.DescribePasses}, {"pass", tools.DescribePass}, {"ingest", tools.DescribeIngest}, {"judge", tools.DescribeJudge}, {"enrich", tools.DescribeEnrich}, {"add_page", tools.DescribeAddPage}, {"decide", tools.DescribeDecide}, {"exclude", tools.DescribeExclude}, {"include", tools.DescribeInclude}, {"create_prospect_list", tools.DescribeCreateProspectList}, {"edit_prospect_list", tools.DescribeEditProspectList}, {"delete_prospect_list", tools.DescribeDeleteProspectList}, {"reject", tools.DescribeReject}, {"unreject", tools.DescribeUnreject}, {"parks", tools.DescribeParks}, {"park", tools.DescribePark}, {"park_rules", tools.DescribeParkRules}, {"edit_park_rules", tools.DescribeEditParkRules}}
 	if !reflect.DeepEqual(tools.Catalog(), want) {
 		t.Fatal(tools.Catalog())
 	}
@@ -249,8 +250,8 @@ func TestCatalogAndSchemas(t *testing.T) {
 		t.Fatal(infos)
 	}
 	seen := map[string]bool{}
-	properties := [][]string{{"page", "limit"}, {"prospect_list", "peek"}, {"name", "zip", "phone", "page", "limit"}, {"candidate"}, {"page", "limit"}, {"pass"}, {"scraper"}, {}, {"kind", "prospect_list", "candidate", "force"}, {"candidate", "url"}, {"kind", "why", "candidate", "other", "links"}, {"candidate", "why"}, {"candidate", "why"}, {"name", "filters", "order", "size"}, {"prospect_list", "name", "filters", "order", "size"}, {"prospect_list"}, {"prospect_list", "candidate", "why"}, {"prospect_list", "candidate", "why"}}
-	required := [][]string{nil, {"prospect_list"}, nil, {"candidate"}, nil, {"pass"}, nil, nil, nil, {"candidate", "url"}, {"kind", "why", "candidate"}, {"candidate", "why"}, {"candidate", "why"}, {"name"}, {"prospect_list"}, {"prospect_list"}, {"prospect_list", "candidate", "why"}, {"prospect_list", "candidate", "why"}}
+	properties := [][]string{{"page", "limit"}, {"prospect_list", "peek"}, {"name", "zip", "phone", "page", "limit"}, {"candidate"}, {"page", "limit"}, {"pass"}, {"scraper"}, {}, {"kind", "prospect_list", "candidate", "force"}, {"candidate", "url"}, {"kind", "why", "candidate", "other", "links"}, {"candidate", "why"}, {"candidate", "why"}, {"name", "filters", "order", "size"}, {"prospect_list", "name", "filters", "order", "size"}, {"prospect_list"}, {"prospect_list", "candidate", "why"}, {"prospect_list", "candidate", "why"}, {"county", "walked", "gone", "sort", "page", "limit"}, {"park"}, {}, {"distance", "min_parcels", "value_threshold", "county", "labels"}}
+	required := [][]string{nil, {"prospect_list"}, nil, {"candidate"}, nil, {"pass"}, nil, nil, nil, {"candidate", "url"}, {"kind", "why", "candidate"}, {"candidate", "why"}, {"candidate", "why"}, {"name"}, {"prospect_list"}, {"prospect_list"}, {"prospect_list", "candidate", "why"}, {"prospect_list", "candidate", "why"}, nil, {"park"}, nil, nil}
 	for i, info := range infos {
 		if info.Name != want[i].Name || info.Description != want[i].Description || len(info.OutputSchema) != 0 {
 			t.Fatal(info)
@@ -261,7 +262,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 		}
 		seen[d] = true
 		effect := mcp.Additive
-		if i < 6 {
+		if i < 6 || i >= 18 && i < 21 {
 			effect = mcp.Read
 		}
 		if info.Name == "delete_prospect_list" {
@@ -470,7 +471,7 @@ func decodeList[T any](t *testing.T, r mcp.Result) T {
 
 var _ io.Reader = (*random)(nil)
 
-// R-R96N-JYFB R-QQW5-TEAW R-27ET-GMFK R-04L8-FSDL R-WX6H-SER8
+// R-R96N-JYFB R-F2F5-1EX8 R-27ET-GMFK R-04L8-FSDL R-WX6H-SER8
 func TestDetailAndRulings(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -634,7 +635,7 @@ func TestPassPages(t *testing.T) {
 	}
 }
 
-// R-FKII-PSLY R-K0EN-M29C
+// R-F3N1-F6NX R-YCLM-RES0 R-KQVS-KMMF
 func TestSharedReadAnswersAndNoMutation(t *testing.T) {
 	var websiteRequests, siblingRequests, promptRequests atomic.Int64
 	kWebsite := pageChecker(&websiteRequests)
@@ -643,6 +644,7 @@ func TestSharedReadAnswersAndNoMutation(t *testing.T) {
 		siblingRequests.Add(1)
 		w.WriteHeader(http.StatusNotFound)
 	}), kWebsite, pc)
+	parkRows := seedParks(t, f, 2)
 	ids := f.seed(1)
 	id := ids[0]
 	k := f.create("shared")
@@ -718,7 +720,36 @@ func TestSharedReadAnswersAndNoMutation(t *testing.T) {
 			cr.Changes = store.Changes{}
 			opens = nil
 		}
-		b, err := json.Marshal([]any{c, ls, es, a, rs, xs, pages, count, ps, pass, ks, cr, opens})
+
+		parkRules, parkCounties, e := f.st.ParkRules(t.Context())
+		if e != nil {
+			t.Fatal(e)
+		}
+		parksAll, e := f.st.ListParks(t.Context(), store.ParkFilter{Gone: parks.GoneAll}, parks.SortMinutes, "", "", 100)
+		if e != nil {
+			t.Fatal(e)
+		}
+		parkDetails := []any{}
+		for _, x := range parksAll {
+			detail, e := f.st.GetPark(t.Context(), x.ID)
+			if e != nil {
+				t.Fatal(e)
+			}
+			parcels, e := f.st.ParkParcels(t.Context(), x.ID)
+			if e != nil {
+				t.Fatal(e)
+			}
+			parkDetails = append(parkDetails, detail, parcels)
+		}
+		active, gone, e := f.st.CountParks(t.Context())
+		if e != nil {
+			t.Fatal(e)
+		}
+		run, e := f.st.ParksRun(t.Context())
+		if e != nil {
+			t.Fatal(e)
+		}
+		b, err := json.Marshal([]any{c, ls, es, a, rs, xs, pages, count, ps, pass, ks, cr, opens, parkRules, parkCounties, parksAll, parkDetails, active, gone, run})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -729,7 +760,7 @@ func TestSharedReadAnswersAndNoMutation(t *testing.T) {
 	for _, call := range []struct {
 		name string
 		args any
-	}{{"prospect_lists", tools.ProspectListsArgs{}}, {"prospect_list", tools.ReadProspectListArgs{ProspectList: k.ID, Peek: true}}, {"prospect_list", tools.ReadProspectListArgs{ProspectList: "bad", Peek: true}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: id}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}}, {"candidate", tools.CandidateArgs{Candidate: "bad"}}, {"pass", tools.PassArgs{Pass: "bad"}}} {
+	}{{"prospect_lists", tools.ProspectListsArgs{}}, {"prospect_list", tools.ReadProspectListArgs{ProspectList: k.ID, Peek: true}}, {"prospect_list", tools.ReadProspectListArgs{ProspectList: "bad", Peek: true}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: id}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}}, {"candidate", tools.CandidateArgs{Candidate: "bad"}}, {"pass", tools.PassArgs{Pass: "bad"}}, {"parks", tools.ParksArgs{}}, {"park", tools.ParkArgs{parkRows[0].ID}}, {"park", tools.ParkArgs{"bad"}}, {"park_rules", tools.NoArgs{}}} {
 		a, b := decode(t, f.callAs(caller, call.name, call.args)), decode(t, f.callAs(other, call.name, call.args))
 		if !reflect.DeepEqual(a, b) {
 			t.Fatal("caller changes product", call.name)
@@ -739,7 +770,7 @@ func TestSharedReadAnswersAndNoMutation(t *testing.T) {
 	for _, call := range []struct {
 		name string
 		args any
-	}{{"prospect_lists", tools.ProspectListsArgs{}}, {"prospect_list", tools.ReadProspectListArgs{ProspectList: k.ID, Peek: true}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: id}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}}} {
+	}{{"prospect_lists", tools.ProspectListsArgs{}}, {"prospect_list", tools.ReadProspectListArgs{ProspectList: k.ID, Peek: true}}, {"candidates", tools.CandidatesArgs{}}, {"candidate", tools.CandidateArgs{Candidate: id}}, {"passes", tools.PassesArgs{}}, {"pass", tools.PassArgs{Pass: p.ID}}, {"parks", tools.ParksArgs{}}, {"park", tools.ParkArgs{parkRows[0].ID}}, {"park_rules", tools.NoArgs{}}} {
 		refusal(t, f.call(call.name, call.args), passes.RefusalUnavailable, tools.RefuseUnavailable)
 	}
 	f.d.SetFailing(false)
@@ -777,7 +808,7 @@ func TestSharedReadAnswersAndNoMutation(t *testing.T) {
 	}
 
 	ps, err := f.st.ListPasses(t.Context(), "", "", 100)
-	if err != nil || len(ps) != 1 {
+	if err != nil || len(ps) != 2 {
 		t.Fatal("unexpected pass", ps, err)
 	}
 	if websiteRequests.Load() != 0 || siblingRequests.Load() != 0 || promptRequests.Load() != 0 {
@@ -931,7 +962,7 @@ func TestBasisChangeAndKindValueEncoding(t *testing.T) {
 	}
 }
 
-// R-FKII-PSLY
+// R-F3N1-F6NX
 func TestIngestProductsAreSharedAcrossCallers(t *testing.T) {
 	f := fixtureWithScrapes(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

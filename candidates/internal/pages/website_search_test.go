@@ -128,7 +128,7 @@ func TestSearchWebsiteCandidateAndMember(t *testing.T) {
 	}
 }
 
-// R-XRNZ-COAL
+// R-5H20-6T2Q
 func TestWebsiteSearchTemplateStates(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -302,7 +302,7 @@ func TestUnfoundWebsiteDecisionFields(t *testing.T) {
 	}
 }
 
-// R-9B90-O704
+// R-5I9W-KKTF
 func TestUnfoundAndUnknownWebsiteTemplates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()

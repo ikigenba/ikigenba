@@ -343,7 +343,7 @@ func TestProspectListCategoryCreateAndEdit(t *testing.T) {
 	}
 }
 
-// R-QYK6-GS90 R-TAP8-UYEX R-Z382-9Q7O R-BCF9-BH7E R-B8RK-65ZB R-2H60-ISD4 R-OL8I-4DRP R-3IYW-DOCN
+// R-QYK6-GS90 R-TAP8-UYEX R-Z382-9Q7O R-BCF9-BH7E R-B8RK-65ZB R-2H60-ISD4 R-OL8I-4DRP R-EYRF-W3P5
 func TestProspectListValidationBeforeFailingStore(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -420,7 +420,7 @@ func TestProspectListValidationBeforeFailingStore(t *testing.T) {
 	}
 }
 
-// R-QQW5-TEAW R-2H60-ISD4
+// R-F2F5-1EX8 R-2H60-ISD4
 func TestEveryToolUnavailable(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -445,7 +445,7 @@ func TestEveryToolUnavailable(t *testing.T) {
 
 func ptrInt(n int64) *int64 { return &n }
 
-// R-K0EN-M29C
+// R-YCLM-RES0
 func TestToolsContactNoSiblingOrStartPass(t *testing.T) {
 	var requests atomic.Int64
 	var fetched, prompted atomic.Int64
@@ -501,7 +501,7 @@ func TestToolsContactNoSiblingOrStartPass(t *testing.T) {
 
 }
 
-// R-QQW5-TEAW R-6QOY-0DLL
+// R-F2F5-1EX8 R-6QOY-0DLL
 func TestUnjudgedCandidateAndPrunedPass(t *testing.T) {
 	f := newFixture(t)
 	_, ids, err := f.st.Attach(t.Context(), "unjudged", false, []store.Observation{{Scraper: "fixture", SourceID: "unjudged", Digest: "chosen", Reading: sources.Reading{Name: "Unjudged", Names: []string{"Unjudged"}}}})

@@ -31,8 +31,9 @@ func TestMapLegacyListID(t *testing.T) {
 	}
 }
 
-// R-2760-QOWB R-2ATP-W04E R-2EHF-1BCH
+// R-4Y88-DBQQ R-4ZG4-R3HF R-50O1-4V84
 func TestIngestPassScopesDistinguishToolAndDelivery(t *testing.T) {
+	t.Parallel()
 	f := contractDB(t)
 	ctx := context.Background()
 	tool := func(scraper string) store.Pass {

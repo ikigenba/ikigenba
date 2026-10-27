@@ -23,7 +23,7 @@ const (
 
 // Emits returns independent declarations of the pass lifecycle events.
 func Emits() []events.Emission {
-	return []events.Emission{{Event: Started, Attrs: []string{"pass", "kind", "origin", "trigger", "target", "enrich_kind"}}, {Event: Finished, Attrs: []string{"pass", "kind", "origin", "trigger", "target", "enrich_kind", "status", "reason", "rows", "new", "changed", "unchanged", "gone", "created", "linked", "judged", "unranged", "derived", "due", "fetched", "https", "http", "none", "runs", "runs_failed", "pages", "cost"}}}
+	return []events.Emission{{Event: Started, Attrs: []string{"pass", "kind", "origin", "trigger", "target", "enrich_kind"}}, {Event: Finished, Attrs: []string{"pass", "kind", "origin", "trigger", "target", "enrich_kind", "status", "reason", "parcel_run", "rows", "new", "changed", "unchanged", "gone", "created", "linked", "judged", "unranged", "derived", "due", "fetched", "https", "http", "none", "runs", "runs_failed", "pages", "cost", "parcels_read", "by_label", "by_value", "by_candidate", "parks_created", "parks_updated", "parks_gone", "parks_grown"}}}
 }
 
 // Record records and emits a lifecycle event as the saved pass starter.
@@ -34,6 +34,9 @@ func Record(ctx context.Context, w *telemetry.Writer, em *events.Emitter, name s
 	ctx = identity.NewContext(ctx, identity.Caller{UserID: p.UserID, RequestID: p.RequestID})
 	attrs := telemetry.Attrs{"pass": p.ID, "kind": p.Kind, "origin": p.Origin, "trigger": p.Trigger, "target": p.Target, "enrich_kind": p.EnrichKind}
 	if name == Finished {
+		attrs["parcel_run"] = p.ParcelRun
+		attrs["parcels_read"], attrs["by_label"], attrs["by_value"], attrs["by_candidate"] = p.ParcelsRead, p.ByLabel, p.ByValue, p.ByCandidate
+		attrs["parks_created"], attrs["parks_updated"], attrs["parks_gone"], attrs["parks_grown"] = p.ParksCreated, p.ParksUpdated, p.ParksGone, p.ParksGrown
 		attrs["judged"] = p.Judged
 		attrs["runs"], attrs["runs_failed"], attrs["pages"], attrs["cost"] = p.Runs, p.RunsFailed, p.Pages, p.Cost
 		attrs["derived"] = p.Derived

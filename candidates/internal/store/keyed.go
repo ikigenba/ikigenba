@@ -16,6 +16,9 @@ func (s *Store) mintKey(ctx context.Context, tx *sql.Tx, prefix string) (string,
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	table := "candidates"
+	if prefix == ParkIDPrefix {
+		table = "parks"
+	}
 	if prefix == PassIDPrefix {
 		table = "passes"
 	}

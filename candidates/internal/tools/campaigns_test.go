@@ -108,7 +108,7 @@ func TestCampaignAnswerHistory(t *testing.T) {
 	}
 }
 
-// R-X5PS-GSY3 R-040O-IM1Z
+// R-X5PS-GSY3 R-F178-NN6J
 func TestCampaignFilterToolLifecycle(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(7)

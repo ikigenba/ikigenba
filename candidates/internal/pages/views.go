@@ -45,6 +45,8 @@ func passRow(p store.Pass) PassRow {
 }
 func passView(p store.Pass, sp string) PassView {
 	v := PassView{ID: p.ID, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Status: p.Status, Reason: p.Reason, Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged, Derived: p.Derived, Due: p.Due, Fetched: p.Fetched, HTTPS: p.HTTPS, HTTP: p.HTTP, None: p.None}
+	v.ParcelsRead, v.ByLabel, v.ByValue, v.ByCandidate = p.ParcelsRead, p.ByLabel, p.ByValue, p.ByCandidate
+	v.ParksCreated, v.ParksUpdated, v.ParksGone, v.ParksGrown = p.ParksCreated, p.ParksUpdated, p.ParksGone, p.ParksGrown
 	v.Target, v.EnrichKind, v.Runs, v.RunsFailed, v.Pages, v.Cost = p.Target, p.EnrichKind, p.Runs, p.RunsFailed, p.Pages, costText(p.Cost)
 	if store.ValidProspectListID(p.Target) {
 		v.TargetPage = "/prospect-lists/" + p.Target
@@ -52,7 +54,7 @@ func passView(p store.Pass, sp string) PassView {
 		v.TargetPage = "/candidates/" + p.Target
 	}
 	switch p.Origin {
-	case store.OriginIngest, store.OriginJudge, store.OriginEnrich:
+	case store.OriginIngest, store.OriginJudge, store.OriginEnrich, store.OriginRules:
 		v.StartedBy = p.UserEmail
 		if v.StartedBy == "" {
 			v.StartedBy = p.UserID

@@ -23,6 +23,8 @@ func Handler(cfg Config) http.Handler {
 		path := r.URL.EscapedPath()
 		cid := strings.TrimPrefix(path, "/candidates/")
 		pageID, number, textPage := decodePagePath(path)
+		parkID := strings.TrimPrefix(path, "/parks/")
+		park := strings.HasPrefix(path, "/parks/") && store.ValidParkID(parkID)
 		pid := strings.TrimPrefix(path, "/passes/")
 		hid := strings.TrimPrefix(path, "/prospect-lists/")
 		legacyID := strings.TrimPrefix(path, "/cohorts/")
@@ -30,7 +32,7 @@ func Handler(cfg Config) http.Handler {
 		prospectList := strings.HasPrefix(path, "/prospect-lists/") && store.ValidProspectListID(hid)
 		candidate := strings.HasPrefix(path, "/candidates/") && store.ValidCandidateID(cid)
 		pass := strings.HasPrefix(path, "/passes/") && store.ValidPassID(pid)
-		known := path == "/" || path == "/tools" || path == "/about" || candidate || pass || prospectList || legacy || textPage
+		known := path == "/" || path == "/tools" || path == "/about" || path == "/parks" || park || candidate || pass || prospectList || legacy || textPage
 		auth := urls.Auth(r, cfg.ServicesPath)
 		b := cfg.Banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: auth + "/", LogoutURL: auth + "/logout"})
 		notfound := func() { cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NotFoundData{Banner: b}) }
@@ -51,6 +53,10 @@ func Handler(cfg Config) http.Handler {
 			}
 		}
 		switch {
+		case path == "/parks":
+			drawParks(w, r, cfg, b, notfound, fail)
+		case park:
+			drawPark(w, r, cfg, b, parkID, notfound, fail)
 		case path == "/tools":
 			b.Trail = []page.Level{ToolsLevel}
 			d := ToolsData{Banner: b, Tools: []ToolRow{}}
@@ -146,6 +152,11 @@ func Handler(cfg Config) http.Handler {
 			}
 			for _, p := range list {
 				d.Passes = append(d.Passes, passRow(p))
+			}
+			d.Parks.Count, _, err = cfg.Store.CountParks(r.Context())
+			if err != nil {
+				fail()
+				return
 			}
 			cfg.Pages.Write(w, r, 200, "landing", d)
 		case legacy:

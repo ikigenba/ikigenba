@@ -197,7 +197,7 @@ func secrecyAbsent(t *testing.T, where string, value any, markers []string) {
 	}
 }
 
-// R-YIHR-RMLV R-T25Y-6K82 R-QCLZ-KWWI
+// R-YIHR-RMLV R-T25Y-6K82 R-QCLZ-KWWI R-MKD3-4CYX
 func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	markers, phone := secrecyMarkers(t)
@@ -214,7 +214,8 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sibling := &http.Server{Handler: f, ReadHeaderTimeout: 5 * time.Second}
+	parkFake := newParkSecrecyFake(t, f, row, markers)
+	sibling := &http.Server{Handler: parkFake, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = sibling.Serve(ln) }()
 	defer func() { _ = sibling.Close() }()
 	now := func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 123456000, time.UTC) }
@@ -249,7 +250,8 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 		return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {"text/html"}}, Body: io.NopCloser(strings.NewReader("<title>" + markers[3] + "</title><p>" + markers[4] + "</p>"))}, nil
 	})}, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }}
 	pc := prompts.NewClient(prompts.ClientConfig{Service: services.Entry{Name: "prompts", Socket: promptSocket}, Telemetry: writer})
-	engine := passes.New(passes.Config{After: func(time.Duration) <-chan time.Time { ch := make(chan time.Time, 1); ch <- time.Time{}; return ch }, Website: checker, Prompts: pc, Store: st, Sources: sources.New(fmcsa.New()), Scrapes: client, Telemetry: writer, Events: emitter})
+	parkDiagnostics := &parkSecrecyDiagnostics{writes: make(chan string, 8)}
+	engine := passes.New(passes.Config{Stderr: parkDiagnostics, After: func(time.Duration) <-chan time.Time { ch := make(chan time.Time, 1); ch <- time.Time{}; return ch }, Website: checker, Prompts: pc, Store: st, Sources: sources.New(fmcsa.New()), Scrapes: client, Telemetry: writer, Events: emitter})
 	defer func() {
 		engine.Drain(context.Background())
 		emitter.Shutdown(context.Background())
@@ -374,6 +376,8 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	}
 	baselinePrompt := call("enrich", args["enrich"], false)
 	wait(text(baselinePrompt, "id"), "")
+	parkState := beginHandlerParkSecrecy(t, parkFake, markers, call, wait)
+	args["parks"], args["park"], args["park_rules"], args["edit_park_rules"] = map[string]any{}, map[string]any{"park": parkState.parkID}, map[string]any{}, map[string]any{"county": "LabelCounty", "labels": []string{markers[9]}}
 	// Hold before the first row, then stream a complete batch and keep the response
 	// open: the sibling's cancellation proves the failed Attach rejected that batch.
 	hold, arrived, written, canceled := make(chan struct{}), make(chan struct{}, 1), make(chan struct{}), make(chan struct{})
@@ -411,6 +415,7 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 			t.Fatal("failed batch was not sent and rejected")
 		}
 	}
+	parkState.releaseAndWait(t, parkDiagnostics)
 	for _, entry := range tools.Catalog() {
 		if entry.Name != "candidates" {
 			call(entry.Name, args[entry.Name], true)
@@ -418,7 +423,7 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	}
 	call("candidates", map[string]any{"name": markers[0]}, true)
 	call("candidates", map[string]any{"phone": phone}, true)
-	for _, path := range []string{"/", "/prospect-lists/" + prospectListID, "/candidates/" + id, "/passes/" + passID, fmt.Sprintf("/candidates/%s/pages/%d", id, kept.Number), "/tools", "/about", "/absent"} {
+	for _, path := range []string{"/", "/prospect-lists/" + prospectListID, "/candidates/" + id, "/passes/" + passID, fmt.Sprintf("/candidates/%s/pages/%d", id, kept.Number), "/tools", "/about", "/absent", "/parks", "/parks/" + parkState.parkID} {
 		response := request(handler, "GET", path, "", "reader")
 		secrecyAbsent(t, "failing page", response.Body.Bytes(), forbidden)
 	}
@@ -436,6 +441,7 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 		}
 		answers = append(answers, response.Body.Bytes())
 	}
+	answers = append(answers, parkState.delivery(t, handler, now))
 	for _, method := range []string{"GET", "POST"} {
 		response := request(handler, method, "/declarations", "", "")
 		answers = append(answers, response.Body.Bytes())
@@ -493,6 +499,7 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 		}
 	}
 
+	parkState.checkCaptures(t, tc.Events(), ec.Events())
 	for _, r := range refusals {
 		secrecyAbsent(t, "failing refused tool", r, forbidden)
 	}

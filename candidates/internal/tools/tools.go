@@ -66,7 +66,7 @@ type Entry struct{ Name, Description string }
 
 // Catalog returns independent ordered tool metadata.
 func Catalog() []Entry {
-	return []Entry{{"prospect_lists", DescribeProspectLists}, {"prospect_list", DescribeProspectList}, {"candidates", DescribeCandidates}, {"candidate", DescribeCandidate}, {"passes", DescribePasses}, {"pass", DescribePass}, {"ingest", DescribeIngest}, {"judge", DescribeJudge}, {"enrich", DescribeEnrich}, {"add_page", DescribeAddPage}, {"decide", DescribeDecide}, {"exclude", DescribeExclude}, {"include", DescribeInclude}, {"create_prospect_list", DescribeCreateProspectList}, {"edit_prospect_list", DescribeEditProspectList}, {"delete_prospect_list", DescribeDeleteProspectList}, {"reject", DescribeReject}, {"unreject", DescribeUnreject}}
+	return []Entry{{"prospect_lists", DescribeProspectLists}, {"prospect_list", DescribeProspectList}, {"candidates", DescribeCandidates}, {"candidate", DescribeCandidate}, {"passes", DescribePasses}, {"pass", DescribePass}, {"ingest", DescribeIngest}, {"judge", DescribeJudge}, {"enrich", DescribeEnrich}, {"add_page", DescribeAddPage}, {"decide", DescribeDecide}, {"exclude", DescribeExclude}, {"include", DescribeInclude}, {"create_prospect_list", DescribeCreateProspectList}, {"edit_prospect_list", DescribeEditProspectList}, {"delete_prospect_list", DescribeDeleteProspectList}, {"reject", DescribeReject}, {"unreject", DescribeUnreject}, {"parks", DescribeParks}, {"park", DescribePark}, {"park_rules", DescribeParkRules}, {"edit_park_rules", DescribeEditParkRules}}
 }
 func refuse(word string) mcp.Result {
 	text := RefuseUnavailable
@@ -112,7 +112,7 @@ func add[A any](srv *mcp.Server, name, description string, effect mcp.Effect, ha
 	mcp.AddRawTool(srv, mcp.RawTool[A]{Name: name, Description: description, Effect: effect, Handler: func(ctx context.Context, c identity.Caller, a A) (mcp.Result, error) { return handler(ctx, c, a), nil }})
 }
 
-// Register installs the eighteen candidate tools on srv.
+// Register installs the twenty-two candidate tools on srv.
 func Register(srv *mcp.Server, cfg Config) {
 	add(srv, "prospect_lists", DescribeProspectLists, mcp.Read, func(ctx context.Context, _ identity.Caller, a ProspectListsArgs) mcp.Result {
 		z, key, id, err := timePosition("prospect_lists", a.Page, a.Limit)
@@ -391,6 +391,7 @@ func Register(srv *mcp.Server, cfg Config) {
 		})
 	}
 
+	registerParks(srv, cfg)
 }
 func timePosition(tool string, page *string, limit *int) (int, string, string, error) {
 	z, err := paging.Window(limit)

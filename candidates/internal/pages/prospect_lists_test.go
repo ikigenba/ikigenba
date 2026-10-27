@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/candidates/internal/parks"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
@@ -102,7 +103,7 @@ func pageProspectList(t *testing.T, cfg Config, id string) ProspectListData {
 	return d
 }
 
-// R-WPV3-HSB2 R-Y43Q-7NBG R-TPC1-G7B9 R-Y6JI-Z6SU R-3XLO-YX8Z R-Y7RF-CYJJ
+// R-WPV3-HSB2 R-Y43Q-7NBG R-TPC1-G7B9 R-6BJH-R2M3 R-3XLO-YX8Z R-6HMZ-NXBK
 func TestProspectListAndRejectHistoryPages(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()
@@ -237,7 +238,7 @@ func TestProspectListAndRejectHistoryPages(t *testing.T) {
 	checkCandidate()
 }
 
-// R-P8DA-YHFL
+// R-5FU3-T1C1
 func TestProspectListAndRejectTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
@@ -279,9 +280,9 @@ func TestProspectListAndRejectTemplateStates(t *testing.T) {
 	}
 }
 
-// R-Y7RF-CYJJ
+// R-6HMZ-NXBK
 func TestPagesLeaveEveryRecordUnchanged(t *testing.T) {
-	cfg, _ := pageFixture(t)
+	cfg, parkRows := parksFixture(t, 2)
 	var requests atomic.Int64
 	sibling := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requests.Add(1)
@@ -345,10 +346,26 @@ func TestPagesLeaveEveryRecordUnchanged(t *testing.T) {
 		add(cfg.Store.ListProspectLists(ctx, "", "", 100))
 		add(cfg.Store.ListPasses(ctx, "", "", 100))
 		add(cfg.Store.GetPass(ctx, p.ID))
+		r, cs, e := cfg.Store.ParkRules(ctx)
+		if e != nil {
+			t.Fatal(e)
+		}
+		out = append(out, r, cs)
+		add(cfg.Store.ListParks(ctx, store.ParkFilter{Gone: parks.GoneAll}, parks.SortMinutes, "", "", 100))
+		for _, x := range parkRows {
+			add(cfg.Store.GetPark(ctx, x.ID))
+			add(cfg.Store.ParkParcels(ctx, x.ID))
+		}
+		a, g, e := cfg.Store.CountParks(ctx)
+		if e != nil {
+			t.Fatal(e)
+		}
+		out = append(out, a, g)
+		add(cfg.Store.ParksRun(ctx))
 		return out
 	}
 	before := snapshot()
-	for _, path := range []string{"/", "/prospect-lists/" + c.ID, "/candidates/" + id, "/passes/" + p.ID, "/about", "/tools", "/unknown"} {
+	for _, path := range []string{"/", "/prospect-lists/" + c.ID, "/candidates/" + id, "/passes/" + p.ID, "/about", "/tools", "/parks", "/parks/" + parkRows[0].ID, "/unknown"} {
 		for _, method := range []string{"GET", "HEAD"} {
 			got := requestPage(cfg, method, path, "reader")
 			if got.Code != 200 && got.Code != 404 {

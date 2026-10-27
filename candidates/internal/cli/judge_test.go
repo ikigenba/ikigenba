@@ -19,7 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
 )
 
-// R-2X5E-MTZR R-QZFG-HSHR
+// R-DWD7-5IFI R-QZFG-HSHR
 func TestRunJudgeDeliveryMakesNoSiblingRead(t *testing.T) {
 	fake := &runFake{}
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, fake)}))
@@ -55,7 +55,7 @@ func TestRunJudgeDeliveryMakesNoSiblingRead(t *testing.T) {
 	}
 	h.stop()
 	runAssertSilent(t, h)
-	if len(fake.Requests()) != 0 {
+	if len(fake.Requests()) != 1 || fake.Requests()[0].Path != "/scrapers/mn_parcels/current" {
 		t.Fatal(fake.Requests())
 	}
 	bus := h.bus.Events()
@@ -101,6 +101,10 @@ func TestRunReadsFourFixedSources(t *testing.T) {
 	rows["osha_ita"]["facts"] = map[string]any{"ein": "410123457", "establishment_name": "Summary Site", "annual_average_employees": "23", "total_hours_worked": "47840", "year_filing_for": "2025"}
 	var paths []string
 	fake := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/scrapers/mn_parcels/current" {
+			w.WriteHeader(404)
+			return
+		}
 		paths = append(paths, r.URL.Path)
 		for _, name := range []string{"fmcsa", "ppp", "form5500", "osha_ita"} {
 			if r.URL.Path == "/scrapers/"+name+"/current" {
@@ -180,9 +184,13 @@ func runFilingDelivery(t *testing.T, src sources.Source) {
 	row["scraper"], row["run"], row["source_id"] = src.Name(), "run_filing_delivery", "filing-delivery-row"
 	row["facts"] = map[string]any{"ein": "410123456", "establishment_name": "Delivery Site", "annual_average_employees": "23", "total_hours_worked": "47840", "year_filing_for": "2025"}
 	var paths []string
+	currentSeen := make(chan struct{})
 	fake := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path)
 		switch r.URL.Path {
+		case "/scrapers/mn_parcels/current":
+			w.WriteHeader(404)
+			close(currentSeen)
 		case "/runs/run_filing_delivery/record":
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "run_filing_delivery", "scraper": src.Name(), "status": "done", "started": "2020-01-01T00:00:00Z", "rows": 1, "new": 1, "changed": 0, "unchanged": 0, "gone": 0})
 		case "/runs/run_filing_delivery/rows":
@@ -193,6 +201,7 @@ func runFilingDelivery(t *testing.T, src sources.Source) {
 	})
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, fake)}))
 	h.start()
+	parcelSignal(t, currentSeen)
 	event := events.Event{ID: "evt_6666666666666666", Time: h.p.Now(), Service: "scrapes", Name: "scrape.finished", Attrs: events.Attrs{"scraper": src.Name(), "run": "run_filing_delivery", "status": "done"}, Seq: 1, Received: h.p.Now()}
 	b, err := json.Marshal(event)
 	if err != nil {
@@ -233,7 +242,7 @@ func runFilingDelivery(t *testing.T, src sources.Source) {
 	}
 	h.stop()
 	runAssertSilent(t, h)
-	if !reflect.DeepEqual(paths, []string{"/runs/run_filing_delivery/record", "/runs/run_filing_delivery/rows"}) {
+	if !reflect.DeepEqual(paths, []string{"/scrapers/mn_parcels/current", "/runs/run_filing_delivery/record", "/runs/run_filing_delivery/rows"}) {
 		t.Fatal(paths)
 	}
 	_, st := runStore(t, h.p.Dir, h.p.Now)

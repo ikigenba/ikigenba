@@ -129,7 +129,7 @@ func comparePage(t *testing.T, cfg Config, path, name string, status int, data a
 	}
 }
 
-// R-P8DA-YHFL R-58H2-68U5 R-P8DA-YHFL R-51PY-VUIV
+// R-5FU3-T1C1 R-58H2-68U5 R-5FU3-T1C1 R-51PY-VUIV
 func TestTemplateSet(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
@@ -176,7 +176,7 @@ func TestTemplateSet(t *testing.T) {
 	}
 }
 
-// R-0B4G-1GWO R-5DCN-PBSX R-464Z-NBFU R-NKM8-7Q3K R-5K0G-MENA R-5L8D-06DZ R-5MG9-DY4O R-UM9B-S0C0 R-O6KF-3LG2 R-WUQP-0V9U R-5RBU-X13G R-0G1D-2S9K
+// R-0B4G-1GWO R-5DCN-PBSX R-464Z-NBFU R-5Y4L-JLGG R-5K0G-MENA R-5L8D-06DZ R-5MG9-DY4O R-6GF3-A5KV R-66NW-7ZNB R-6DZA-IM3H R-5RBU-X13G R-0G1D-2S9K
 func TestStaticEmptyAndRefusals(t *testing.T) {
 	cfg, d := pageFixture(t)
 	b := bannerFor(cfg)
@@ -221,7 +221,7 @@ func TestStaticEmptyAndRefusals(t *testing.T) {
 	}
 }
 
-// R-5BH5-Y0GF R-Y6JI-Z6SU R-MITC-CU41
+// R-5BH5-Y0GF R-6BJH-R2M3 R-6CRE-4UCS
 func TestInvalidAndMissingPaths(t *testing.T) {
 	cfg, d := pageFixture(t)
 	b := bannerFor(cfg)
@@ -238,7 +238,7 @@ func TestInvalidAndMissingPaths(t *testing.T) {
 	}
 }
 
-// R-08PY-S5TE R-0CDN-XH1H R-08PY-S5TE R-Y7RF-CYJJ R-3XLO-YX8Z
+// R-08PY-S5TE R-5WWP-5TPR R-08PY-S5TE R-6HMZ-NXBK R-3XLO-YX8Z
 func TestStoredPages(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := context.Background()
@@ -295,7 +295,7 @@ func TestStoredPages(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.Trail = nil
-	comparePage(t, cfg, "/", "landing", 200, LandingData{b, []ProspectListRow{prospectListRow(prospectList)}, "", "", "", []PassRow{passRow(p)}, "", "", ""})
+	comparePage(t, cfg, "/", "landing", 200, LandingData{b, []ProspectListRow{prospectListRow(prospectList)}, "", "", "", []PassRow{passRow(p)}, "", "", "", LandingParks{}})
 	landing := requestPage(cfg, "GET", "/", "reader").Body.String()
 	for _, value := range []string{c.Phone, c.Email} {
 		if strings.Contains(landing, value) {
@@ -393,7 +393,7 @@ func callPageTool(t *testing.T, client *mcp.Client, name, token string, target a
 	}
 }
 
-// R-NFQM-ON4S R-OTQI-D8J9 R-WUQP-0V9U
+// R-NFQM-ON4S R-67VS-LRE0 R-6DZA-IM3H
 func TestLandingTokenRefusals(t *testing.T) {
 	cfg, d := pageFixture(t)
 	short := (paging.Token{Tool: "prospect_lists"}).Encode("chosen-name", "chosen-candidate")

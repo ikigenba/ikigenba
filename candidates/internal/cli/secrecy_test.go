@@ -174,7 +174,7 @@ func secrecyAbsent(t *testing.T, where string, value any, markers []string) {
 	}
 }
 
-// R-3QAA-OAST R-21BB-JRQ3 R-W2P0-857V R-VFIW-YI4O R-OW6B-4S0N R-YTGV-7KA4 R-WYEE-66HX R-NY14-F797
+// R-3QAA-OAST R-21BB-JRQ3 R-W2P0-857V R-VFIW-YI4O R-OW6B-4S0N R-YTGV-7KA4 R-WYEE-66HX R-NY14-F797 R-MJ56-QL88
 func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	markers, phone := secrecyMarkers(t)
 	forbidden := append(append([]string{}, markers...), phone)
@@ -209,7 +209,8 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	forbidden = append(forbidden, secondPhone)
 	f := &secrecyFake{rows: []map[string]any{row, second}, echo: strings.Join(forbidden, " ")}
 	pf := &promptFake{echo: strings.Join(forbidden, " ")}
-	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, f), "prompts": runSocket(t, pf)}))
+	parkFake := newParkSecrecyFake(t, f, row, markers)
+	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, parkFake), "prompts": runSocket(t, pf)}))
 	h.p.HTTP = &http.Client{Transport: enrichTransport(func(r *http.Request) (*http.Response, error) {
 		if strings.HasSuffix(r.URL.Path, "/error") {
 			return nil, fmt.Errorf("fixture fetch failure")
@@ -626,6 +627,7 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 			expectedPasses[runText(p, "id")] = "delivery-request"
 		}
 	}
+	exerciseRunParkSecrecy(t, h, parkFake, markers, &forbidden, call, expectedPasses, &answers)
 	hold := make(chan struct{})
 	arrived := make(chan struct{}, 1)
 	f.mu.Lock()

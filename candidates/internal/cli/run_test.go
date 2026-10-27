@@ -30,6 +30,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates"
 	"github.com/ikigenba/ikigenba/candidates/internal/cli"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
+	"github.com/ikigenba/ikigenba/candidates/internal/parks"
 	"github.com/ikigenba/ikigenba/candidates/internal/server"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
@@ -89,7 +90,7 @@ type runFake struct {
 }
 
 func (f *runFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/scrapers/ppp/current" || r.URL.Path == "/scrapers/form5500/current" || r.URL.Path == "/scrapers/osha_ita/current" {
+	if r.URL.Path == "/scrapers/mn_parcels/current" || r.URL.Path == "/scrapers/ppp/current" || r.URL.Path == "/scrapers/form5500/current" || r.URL.Path == "/scrapers/osha_ita/current" {
 		f.mu.Lock()
 		f.requests = append(f.requests, runRequest{r.URL.Path, r.Header.Clone()})
 		f.mu.Unlock()
@@ -418,9 +419,9 @@ func runOnlyState(t *testing.T, dir string) {
 }
 
 // R-U54M-T001 R-119A-9L3H R-13P3-14KV R-9NW2-FV7B R-A1AY-NCCY R-XHVR-JJLE
-// R-3TTL-43TV R-42CV-SI0Q R-43KS-69RF R-QR9U-4LFL R-49OA-34GW R-KDES-2YHL
-// R-8S6O-HTX9 R-R335-N3PU R-ZY3R-GAKJ R-R0NC-VK8G   R-ZQSD-5O4D
-// R-08GD-3XUM R-06N2-4ORE R-APOY-AR6U R-76JM-ZE8M
+// R-3TTL-43TV R-42CV-SI0Q R-7797-KNZO R-QR9U-4LFL R-49OA-34GW R-KDES-2YHL
+// R-8S6O-HTX9 R-R335-N3PU R-ZY3R-GAKJ R-R0NC-VK8G   R-DV5A-RQOT
+// R-08GD-3XUM R-06N2-4ORE R-MD1O-TQIR R-76JM-ZE8M
 func TestRunAssembledChain(t *testing.T) {
 	if cli.SweepInterval != time.Hour {
 		t.Fatal("sweep constant")
@@ -668,9 +669,11 @@ func TestRunAssembledChain(t *testing.T) {
 				t.Fatalf("caller identity %v", rq)
 			}
 		default:
-			t.Fatalf("unexpected sibling request %v", rq)
+			if rq.Path != "/scrapers/mn_parcels/current" || rq.Header.Get("X-User-Id") != "candidates" || rq.Header.Get("X-User-Email") != "" || len(rq.Header.Get("X-Request-Id")) != 32 {
+				t.Fatalf("unexpected sibling request %v", rq)
+			}
 		}
-		if strings.HasPrefix(rq.Path, "/scrapers/") && rq.Path != "/scrapers/fmcsa/current" && rq.Path != "/scrapers/ppp/current" && rq.Path != "/scrapers/form5500/current" && rq.Path != "/scrapers/osha_ita/current" {
+		if strings.HasPrefix(rq.Path, "/scrapers/") && rq.Path != "/scrapers/fmcsa/current" && rq.Path != "/scrapers/ppp/current" && rq.Path != "/scrapers/form5500/current" && rq.Path != "/scrapers/osha_ita/current" && rq.Path != "/scrapers/mn_parcels/current" {
 			t.Fatalf("registry requested %s", rq.Path)
 		}
 	}
@@ -785,7 +788,7 @@ func runDecodedRow(row map[string]any) scrapes.Row {
 	return scrapes.Row{Scraper: row["scraper"].(string), Run: row["run"].(string), SourceID: row["source_id"].(string), Scraped: scraped, Digest: row["digest"].(string), Name: row["name"].(string), Names: row["names"].([]string), Address: scrapes.Address{Street: address["street"].(string), City: address["city"].(string), State: address["state"].(string), Zip: address["zip"].(string), County: address["county"].(string)}, People: []scrapes.Person{}, Facts: facts, Raw: raw}
 }
 
-// R-Y9L9-RE9E R-XXE9-XOUG R-8B43-51JJ
+// R-Y9L9-RE9E R-XXE9-XOUG R-M9OH-4L1U
 func TestRunInjectedClockAndBytes(t *testing.T) {
 	fake := &runFake{}
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, fake)}))
@@ -819,7 +822,7 @@ func TestRunInjectedClockAndBytes(t *testing.T) {
 	}
 }
 
-// R-7Q2A-VGJ0
+// R-8IF1-FDSB
 func TestRunFreshDeliveryCounts(t *testing.T) {
 	row := runRow()
 	second := runRow()
@@ -1010,7 +1013,7 @@ func TestRunMissingServicesDoesNotRefuseStart(t *testing.T) {
 	}
 }
 
-// R-ADHY-H1RW
+// R-78H3-YFQD
 func TestRunKeepsScrapesSocketSelectedAtStart(t *testing.T) {
 	first, second := &runFake{}, &runFake{}
 	path := filepath.Join(t.TempDir(), "services.json")
@@ -1413,7 +1416,7 @@ func TestRunNotificationIsSingleAndOptional(t *testing.T) {
 	}
 }
 
-// R-R6QU-SEXX
+// R-S35A-G1HS
 func TestRunBusyRefusalsEmitNoPassEvents(t *testing.T) {
 	hold := make(chan struct{})
 	f := &runFake{hold: hold, arrived: make(chan struct{}, 1)}
@@ -1627,7 +1630,7 @@ func runAssertSilent(t *testing.T, h *runHarness) {
 	}
 }
 
-// R-YKXK-J639 R-XQ2V-N2EA
+// R-LFE5-HICE R-XQ2V-N2EA
 func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	rows := make([]map[string]any, 3)
 	for i := range rows {
@@ -1640,7 +1643,14 @@ func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 		facts["email"] = fmt.Sprintf("owner@independent%d.example", i)
 	}
 	fake := &runFake{rows: rows}
-	entries := map[string]string{"scrapes": runSocket(t, fake)}
+	parcelFake := &runParcelFake{rows: runParcelRows(t), current: true}
+	entries := map[string]string{"scrapes": runSocket(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "mn_parcels") || strings.Contains(r.URL.Path, "parcel_run") {
+			parcelFake.ServeHTTP(w, r)
+		} else {
+			fake.ServeHTTP(w, r)
+		}
+	}))}
 	for _, name := range []string{"events", "telemetry"} {
 		entries[name] = runSocket(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }))
 	}
@@ -1715,6 +1725,27 @@ func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 		}
 	}
 	call("delete_prospect_list", map[string]any{"prospect_list": prospectListID})
+	parcelPass(t, h, store.OriginStart)
+	call("parks", map[string]any{})
+	call("park_rules", map[string]any{})
+	edited := call("edit_park_rules", map[string]any{"min_parcels": parks.SeedMinParcels})
+	var parkPass map[string]json.RawMessage
+	_ = json.Unmarshal(edited["pass"], &parkPass)
+	h.waitPass(caller, runText(parkPass, "id"))
+	parkList := call("parks", map[string]any{})
+	var allParks []map[string]json.RawMessage
+	_ = json.Unmarshal(parkList["parks"], &allParks)
+	if len(allParks) == 0 {
+		t.Fatal("parks missing")
+	}
+	parkID := runText(allParks[0], "id")
+	call("park", map[string]any{"park": parkID})
+	for _, path := range []string{"/parks", "/parks/" + parkID} {
+		if status, _ := h.request("GET", path, "park_pages", nil); status != 200 {
+			t.Fatal(path, status)
+		}
+	}
+
 	h.deliver("evt_4444444444444444", "all-delivery", "done", 2)
 	ps := call("passes", map[string]any{})
 	var records []map[string]json.RawMessage
@@ -1750,7 +1781,7 @@ func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	}
 }
 
-// R-6NGO-W6UC
+// R-CYUH-5YL9
 func TestRunUnlistedLegacyProspectList(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
 	makeMCP := h.p.MCP

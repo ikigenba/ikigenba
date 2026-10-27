@@ -87,8 +87,9 @@ func routeAnswer(r *http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header), Request: r}, nil
 }
 
-// R-D2CS-LXL5 R-K51J-USRD R-K69G-8KI2 R-K7HC-MC8R R-K9X5-DVQ5 R-KB51-RNGU R-KESQ-WYOX R-GJ9Z-6DFI
+// R-3EF4-GYK3 R-K51J-USRD R-K69G-8KI2 R-K7HC-MC8R R-K9X5-DVQ5 R-KB51-RNGU R-KESQ-WYOX R-2HHU-55JC
 func TestRouteTargetsResultsCountsAndRepeat(t *testing.T) {
+	t.Parallel()
 	if passes.RoutesInFlight != 4 || passes.NoRouteKey == "" || strings.Contains(passes.NoRouteKey, "\n") || passes.NoRouteKey == passes.NoPrompt {
 		t.Fatal("route scheduling/copy")
 	}
@@ -199,8 +200,9 @@ func TestRouteTargetsResultsCountsAndRepeat(t *testing.T) {
 	}
 }
 
-// R-K8P9-03ZG R-KDKU-J6Y8
+// R-K8P9-03ZG R-2YKF-HXX2
 func TestRouteWorkersAdvanceAndDrainCancels(t *testing.T) {
+	t.Parallel()
 	type held struct {
 		r       *http.Request
 		release chan struct{}

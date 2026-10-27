@@ -181,7 +181,7 @@ func TestBasisFilterNormalForm(t *testing.T) {
 	contractEqual(t, edited.Filters, store.ProspectListFilters{})
 }
 
-// R-XLLC-OYHT R-KIU4-CJVH
+// R-XLLC-OYHT R-4X0B-ZK01
 func TestProspectListBasisMembership(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -297,10 +297,10 @@ func TestOpenProspectListErrorsLeaveNoOpen(t *testing.T) {
 
 }
 
-// R-KIU4-CJVH
+// R-4X0B-ZK01
 func TestBasisRecordShapes(t *testing.T) {
 	counts := store.Counts{Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Derived: 10, Due: 11, Fetched: 12, HTTPS: 13, HTTP: 14, None: 15, Runs: 16, RunsFailed: 17, Pages: 18, Cost: 19}
-	contractEqual(t, store.Counts(struct{ Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None, Runs, RunsFailed, Pages, Cost int64 }(counts)), counts)
+	contractEqual(t, store.Counts(struct{ Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None, Runs, RunsFailed, Pages, Cost, ParcelsRead, ByLabel, ByValue, ByCandidate, ParksCreated, ParksUpdated, ParksGone, ParksGrown int64 }(counts)), counts)
 	observation := store.Observation{Scraper: "scraper", SourceID: "row", Digest: "digest", Reading: sources.Reading{Name: "sample business"}}
 	contractEqual(t, store.Observation(struct {
 		Scraper, SourceID, Digest string

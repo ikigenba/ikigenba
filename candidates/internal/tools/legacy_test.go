@@ -17,7 +17,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-RP1C-IZ2C R-RRH5-AIJQ R-RV4U-FTRT R-TD0R-NEDD R-CS5Y-61GK
+// R-RP1C-IZ2C R-RRH5-AIJQ R-RV4U-FTRT R-TD0R-NEDD R-F62U-6Q5B
 func TestLegacyListDispatch(t *testing.T) {
 	_ = tools.LegacyArgs{"chosen-id"}
 	d := tools.DescribeLegacy

@@ -8,7 +8,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-0M4U-ZMZ1 R-0PSK-4Y74
+// R-0M4U-ZMZ1 R-693O-ZJ4P
 func TestLegacyListPathRedirectsWithoutStoreRead(t *testing.T) {
 	cfg, db := pageFixture(t)
 	list, err := cfg.Store.CreateProspectList(t.Context(), store.ProspectList{Name: "redirect-list", Size: store.ProspectListSizeDefault, CreatedUserID: "owner"})

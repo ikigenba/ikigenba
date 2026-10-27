@@ -15,7 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-TP14-C8P6 R-06A6-0MC0 R-08PY-S5TE
+// R-TP14-C8P6 R-5UGW-EA8D R-08PY-S5TE
 func TestCompleteViewContracts(t *testing.T) {
 	start := time.Date(2026, 10, 5, 10, 0, 7, 0, time.FixedZone("offset", 3600))
 	end := start.Add(time.Hour)
@@ -131,7 +131,7 @@ func TestCompleteViewContracts(t *testing.T) {
 	}
 }
 
-// R-P8DA-YHFL
+// R-5FU3-T1C1
 func TestExplicitTemplateStates(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -216,7 +216,7 @@ func TestMemberRowStoredJudgments(t *testing.T) {
 	}
 }
 
-// R-06A6-0MC0 R-0CDN-XH1H
+// R-5UGW-EA8D R-5WWP-5TPR
 func TestPassOrigins(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	path := filepath.Join(t.TempDir(), "services.json")
@@ -250,7 +250,7 @@ func TestPassOrigins(t *testing.T) {
 	}
 }
 
-// R-P8DA-YHFL
+// R-5FU3-T1C1
 func TestJudgmentTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()

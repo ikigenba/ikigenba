@@ -21,8 +21,9 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
 )
 
-// R-SGG7-YQ5M R-3D03-LUMS R-3XQE-3Y8L R-ONN0-GDTS R-HBBN-Z3HH
+// R-SGG7-YQ5M R-3D03-LUMS R-3XQE-3Y8L R-34NX-ESMJ R-2NLC-208T
 func TestScraperIngestScopeAndFollowOn(t *testing.T) {
+	t.Parallel()
 	entered, release := make(chan struct{}, 2), make(chan struct{})
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/scrapers/fmcsa/current" {
@@ -107,8 +108,9 @@ func TestIngestInvalidPrecedesUnavailable(t *testing.T) {
 	}
 }
 
-// R-4066-VHPZ R-42LZ-N17D R-HDRG-QMYV R-ESID-FF9Q
+// R-4066-VHPZ R-42LZ-N17D R-33G1-10VU R-2G9X-RDSN
 func TestHandJudgeWithoutScrapes(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil, false)
 	ids := seedTarget(t, f, 2)
 	caller := identity.Caller{UserID: "owner", Email: "owner@example.test", RequestID: "judge-request"}
@@ -137,8 +139,9 @@ func TestHandJudgeWithoutScrapes(t *testing.T) {
 	assertRefusal(t, q, err, passes.RefusalStopping)
 }
 
-// R-4066-VHPZ R-30OE-N488 R-3SUS-KV9T
+// R-4066-VHPZ R-DTXE-DYY4 R-3SUS-KV9T
 func TestHandJudgeBusyAndStoreFailure(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil, false)
 	if _, err := f.st.AddPass(t.Context(), store.Pass{Kind: store.KindJudge, Origin: store.OriginCron, Trigger: store.TriggerJudge, Delivery: "pending"}); err != nil {
 		t.Fatal(err)
@@ -194,8 +197,9 @@ func TestCampaignProspectListPrecedenceAndLegacyMapping(t *testing.T) {
 	}
 }
 
-// R-PKKA-S6UJ R-3AKA-UB5E R-YT3N-VQ4I
+// R-DK67-BT0K R-DMM0-3CHY R-M78O-D1KG
 func TestHandRecordCarriesScraperAndJudgeCaller(t *testing.T) {
+	t.Parallel()
 	for _, origin := range []string{store.OriginIngest, store.OriginJudge, store.OriginEnrich, store.OriginRun, store.OriginCron, store.OriginPass} {
 		p := store.Pass{Origin: origin, Target: "target", EnrichKind: "kind", Scraper: "fmcsa", UserID: "owner", UserEmail: "owner@example.test"}
 		r := passes.RecordOf(p)
@@ -232,8 +236,9 @@ func TestHandRecordCarriesScraperAndJudgeCaller(t *testing.T) {
 	f.ended(p.ID)
 }
 
-// R-42LZ-N17D R-4066-VHPZ R-30OE-N488
+// R-42LZ-N17D R-4066-VHPZ R-DTXE-DYY4
 func TestConcurrentHandJudgeStartsReturnBeforeWorkEnds(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil, false)
 	entered, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once

@@ -224,8 +224,9 @@ func TestGivingLinksFillDisplayFields(t *testing.T) {
 	contractEqual(t, c.Phone, a.Reading.Phone)
 }
 
-// R-2ATP-W04E R-2EHF-1BCH
+// R-4ZG4-R3HF R-50O1-4V84
 func TestJudgePassTriggerRepeatsAcrossDeliveries(t *testing.T) {
+	t.Parallel()
 	f := contractDB(t)
 	ctx := context.Background()
 	input := store.Pass{Kind: store.KindJudge, Origin: store.OriginCron, Trigger: store.TriggerJudge, Delivery: "day-one", UserID: "service", UserEmail: "service@example.test", RequestID: "request"}
@@ -243,8 +244,9 @@ func TestJudgePassTriggerRepeatsAcrossDeliveries(t *testing.T) {
 	next, e := f.s.AddPass(ctx, input)
 	contractOK(t, e)
 	contractEqual(t, next.Trigger, p.Trigger)
-	_, e = f.s.FindDelivered(ctx, "", store.TriggerJudge)
-	contractError(t, e, store.ErrNotFound)
+	found, e := f.s.FindDelivered(ctx, "", store.TriggerJudge)
+	contractOK(t, e)
+	contractEqual(t, found, next)
 	_, e = f.s.AddPass(ctx, input)
 	contractError(t, e, store.ErrDelivered)
 	_, e = f.s.FinishPass(ctx, next.ID, store.Counts{})

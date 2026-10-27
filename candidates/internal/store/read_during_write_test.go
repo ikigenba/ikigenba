@@ -3,19 +3,26 @@ package store_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"runtime"
 	"testing"
 
+	"github.com/ikigenba/ikigenba/candidates/internal/parks"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-DI50-LS7E
+// R-5BN4-KSWD
 func TestContractReadsDuringQueuedWrites(t *testing.T) {
+	t.Parallel()
 	f := contractDB(t)
 	ctx := context.Background()
 	id := contractSeed(t, f)
+	parkRows := seedParks(t, f)
+	parkID := parkRows[0].ID
+	parkPassRow, e := f.s.AddPass(ctx, parkPass(store.OriginStart))
+	contractOK(t, e)
 	pass := contractNewPass(t, f, "read-while-write")
 	prospectList, err := f.s.CreateProspectList(ctx, store.ProspectList{Name: "read", Size: 100, CreatedUserID: "owner"})
 	contractOK(t, err)
@@ -23,6 +30,30 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 		name string
 		call func() (any, error)
 	}{
+
+		{"ParkRules", func() (any, error) {
+			r, c, e := f.s.ParkRules(ctx)
+			return struct {
+				Rules    any
+				Counties []string
+			}{r, c}, e
+		}},
+		{"ActiveAddressKeys", func() (any, error) {
+			k, c, e := f.s.ActiveAddressKeys(ctx, "", 10)
+			return struct {
+				Keys   []string
+				Cursor string
+			}{k, c}, e
+		}},
+		{"PriorParks", func() (any, error) { return f.s.PriorParks(ctx) }},
+		{"ListParks", func() (any, error) { return f.s.ListParks(ctx, store.ParkFilter{}, "", "", "", 10) }},
+		{"ListParksReversed", func() (any, error) { return f.s.ListParksReversed(ctx, store.ParkFilter{}, "", "", "", 10) }},
+		{"GetPark", func() (any, error) { return f.s.GetPark(ctx, parkID) }},
+		{"ParkParcels", func() (any, error) { return f.s.ParkParcels(ctx, parkID) }},
+		{"CountParks", func() (any, error) { a, g, e := f.s.CountParks(ctx); return []int64{a, g}, e }},
+		{"ParkCountiesHeld", func() (any, error) { return f.s.ParkCountiesHeld(ctx) }},
+		{"ParkCountiesRead", func() (any, error) { return f.s.ParkCountiesRead(ctx) }},
+		{"ParksRun", func() (any, error) { return f.s.ParksRun(ctx) }},
 		{"GetPass", func() (any, error) { return f.s.GetPass(ctx, pass.ID) }},
 		{"FindDelivered", func() (any, error) { return f.s.FindDelivered(ctx, pass.Delivery, pass.Trigger) }},
 		{"ListPasses", func() (any, error) { return f.s.ListPasses(ctx, "", "", 100) }},
@@ -121,6 +152,18 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 	}
 	defer unblock()
 	writes := []func() error{
+		func() error {
+			_, e := f.s.ApplyParks(ctx, parkPassRow.ID, "queued-parcel-run", []string{"county"}, parks.Plan{}, store.Counts{})
+			return e
+		},
+		func() error {
+			_, e := f.s.SetParkRules(ctx, store.ParkRulesEdit{Distance: i64(800)}, parkPass(store.OriginRules))
+			if errors.Is(e, store.ErrBusy) {
+				return nil
+			}
+			return e
+		},
+
 		func() error { return f.s.AddCampaignUse(ctx, id, "queued", "", f.now) },
 		func() error { return f.s.RejectCampaignUse(ctx, id, "held-campaign", "queued reason", f.now) },
 		func() error { return f.s.DeliverCampaignUse(ctx, id, "held-campaign", f.now) },

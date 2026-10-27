@@ -16,8 +16,9 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-GWOV-DUL5 R-01D8-ZAZ4 R-ZQE5-JDAV R-1QFF-85G4 R-3WDS-L5IA R-HDRG-QMYV
+// R-2IPQ-IXA1 R-01D8-ZAZ4 R-ZQE5-JDAV R-1QFF-85G4 R-3WDS-L5IA R-33G1-10VU
 func TestDerivedKindsAndIdempotentAll(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"", enrichers.KindDriveMinutes, enrichers.KindLinkFacts} {
 		t.Run(kind, func(t *testing.T) {
 			f := newFixture(t, nil, false)
@@ -149,8 +150,9 @@ func TestDerivedKindsAndIdempotentAll(t *testing.T) {
 	}
 }
 
-// R-GZ4O-5E2J R-01D8-ZAZ4 R-ZQE5-JDAV R-1QFF-85G4
+// R-2JXM-WP0Q R-01D8-ZAZ4 R-ZQE5-JDAV R-1QFF-85G4
 func TestDerivedFactsExistBeforeFirstFetch(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil, false)
 	ids := seedEmails(t, f, 1, func(int) string { return "owner@derived.test" })
 	held, release := make(chan struct{}), make(chan struct{})
@@ -252,8 +254,9 @@ func TestWebsiteInputsChangeRecordsAnotherResult(t *testing.T) {
 	}
 }
 
-// R-H6G2-G0IP R-H1KG-WXJX R-XU84-H2PI R-3QEZ-TBSF R-HDRG-QMYV
+// R-2L5J-AGRF R-2ZSB-VPNR R-3284-N955 R-3QEZ-TBSF R-33G1-10VU
 func TestFullIngestForcesDerivedResultsBeforeJudging(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/scrapers/fmcsa/current" {
 			record(w, "forced-run", 2, store.StatusDone)

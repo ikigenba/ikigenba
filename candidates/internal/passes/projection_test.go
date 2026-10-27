@@ -19,8 +19,9 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-H8VV-7K03
+// R-2MDF-O8I4
 func TestFullIngestReprojectsUnchangedLinkFacts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	rows := []scrapes.Row{
 		{Scraper: fmcsa.Name, SourceID: "hire", Digest: "hire", Name: "Hire Carrier", Facts: map[string]json.RawMessage{"class": json.RawMessage(`"AUTHORIZED FOR HIRE"`)}},

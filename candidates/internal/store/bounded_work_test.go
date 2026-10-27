@@ -58,7 +58,7 @@ func seedBoundedCandidates(t *testing.T, f *contractFixture, n int) []string {
 	return ids
 }
 
-// R-LTR0-PB0V
+// R-5LEB-MYTX
 func TestPagedWorkAllocationBound(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -67,6 +67,7 @@ func TestPagedWorkAllocationBound(t *testing.T) {
 		name string
 		call func() error
 	}{
+		{"ActiveAddressKeys", func() error { _, _, e := f.s.ActiveAddressKeys(ctx, "", 10); return e }},
 		{"JudgeAll", func() error { _, _, e := f.s.JudgeAll(ctx, "", 10, f.now); return e }},
 		{"FillFacts", func() error { _, e := f.s.FillFacts(ctx, "", 10); return e }},
 		{"DueEnrichments", func() error { _, _, e := f.s.DueEnrichments(ctx, enrichers.KindLinkFacts, "", 10); return e }},
@@ -87,8 +88,9 @@ func TestPagedWorkAllocationBound(t *testing.T) {
 	}
 }
 
-// R-KUDX-LYIQ R-LF48-424J R-LA8M-KZ5R R-RPQ4-8ONN R-L7ST-TFOD R-PU7U-YTLV R-QM9J-RJNU R-QHDY-8GP2 R-HYGP-I8LU
+// R-KUDX-LYIQ R-5K6F-9738 R-LA8M-KZ5R R-RPQ4-8ONN R-L7ST-TFOD R-PU7U-YTLV R-QM9J-RJNU R-QHDY-8GP2 R-HYGP-I8LU
 func TestWalksTouchOnlyTheirPages(t *testing.T) {
+	t.Parallel()
 	f := contractDB(t)
 	ctx := context.Background()
 	contractOK(t, f.s.ReplaceZipDrive(ctx, map[string]int64{"55072": 42}))
@@ -153,6 +155,10 @@ func TestWalksTouchOnlyTheirPages(t *testing.T) {
 		due, ds, e := f.s.DueEnrichments(ctx, enrichers.KindLinkFacts, after, 2)
 		contractOK(t, e)
 		contractEqual(t, due, want)
+		keys, cursor, e := f.s.ActiveAddressKeys(ctx, after, 2)
+		contractOK(t, e)
+		contractEqual(t, cursor, want)
+		contractEqual(t, keys, []string{})
 		contractEqual(t, len(ds), end-start)
 		for i, d := range ds {
 			su, e := f.s.Subject(ctx, ids[start+i])

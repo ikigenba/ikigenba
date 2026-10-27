@@ -123,8 +123,9 @@ func targetEngine(f *fixture, pc *prompts.Client, after func(time.Duration) <-ch
 	f.eng = passes.New(passes.Config{Store: f.st, Scrapes: f.sc, Prompts: pc, Telemetry: f.w, Events: f.em, After: after})
 }
 
-// R-Z83N-ST6G R-84KF-D8N0  R-PKKA-S6UJ R-3AKA-UB5E
+// R-Z83N-ST6G R-84KF-D8N0  R-DK67-BT0K R-DMM0-3CHY
 func TestTargetRecordAndSchedulingValues(t *testing.T) {
+	t.Parallel()
 	if passes.RunsInFlight != 4 || passes.StartTries != 20 || passes.PollInterval != 5*time.Second || passes.QueueWait != 30*time.Second || passes.NoPrompt == "" || strings.Contains(passes.NoPrompt, "\n") {
 		t.Fatal("scheduling values")
 	}
@@ -225,8 +226,9 @@ func TestTargetRefusals(t *testing.T) {
 	}
 }
 
-// R-MTSF-SRSA R-08ON-9XFA R-TMW8-ONTV R-OYM3-WBI1 R-HNIN-SSWF R-HSE9-BVV7 R-2EQ7-R8VQ R-RFMR-TKMQ R-HDRG-QMYV
+// R-MTSF-SRSA R-08ON-9XFA R-TMW8-ONTV R-OYM3-WBI1 R-2Q14-TJQ7 R-2SGX-L37L R-2EQ7-R8VQ R-RFMR-TKMQ R-33G1-10VU
 func TestPromptPassResultsAndForce(t *testing.T) {
+	t.Parallel()
 	for _, status := range []string{"exited", "failed", "killed", "timed_out"} {
 		t.Run(status, func(t *testing.T) {
 			f := newFixture(t, nil, false)
@@ -296,8 +298,9 @@ func TestPromptPassResultsAndForce(t *testing.T) {
 	}
 }
 
-// R-SXAC-NH9A R-HR6C-Y44I R-HG79-I6G9 R-HIN2-9PXN R-YG1Z-034H
+// R-SXAC-NH9A R-2R91-7BGW R-3108-9HEG R-2OT8-FRZI R-YG1Z-034H
 func TestPromptRetriesAndFailures(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"retry", "exhausted", "result", "invalid", "show_retry"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newFixture(t, nil, false)
@@ -435,8 +438,9 @@ func TestTargetedDerivedAndWebsite(t *testing.T) {
 	}
 }
 
-// R-1P4B-Q2B5 R-HIN2-9PXN R-TD51-MHWB R-30OE-N488 R-MTSF-SRSA
+// R-1P4B-Q2B5 R-2OT8-FRZI R-373Q-6C3X R-DTXE-DYY4 R-MTSF-SRSA
 func TestPromptConcurrencyAndDrain(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil, false)
 	ids := seedTarget(t, f, 10)
 	ctx := context.Background()
@@ -513,8 +517,9 @@ func TestPromptConcurrencyAndDrain(t *testing.T) {
 	}
 }
 
-// R-ONN0-GDTS: fullIngest requests current then rows for its registered source.
+// R-34NX-ESMJ: fullIngest requests current then rows for its registered source.
 func TestFullIngestRequestSequence(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/current") {
 			record(w, "run_a", 1, store.StatusDone)
@@ -533,8 +538,9 @@ func TestFullIngestRequestSequence(t *testing.T) {
 	}
 }
 
-// R-HNIN-SSWF R-HSE9-BVV7: distinct URLs are result data; page copies are pass cost.
+// R-2Q14-TJQ7 R-2SGX-L37L: distinct URLs are result data; page copies are pass cost.
 func TestPromptCountsPagesAndOutcome(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil, false)
 	id := seedTarget(t, f, 1)[0]
 	ctx := context.Background()
@@ -582,7 +588,7 @@ func TestPromptCountsPagesAndOutcome(t *testing.T) {
 	}
 }
 
-// R-HUU2-3FCL: the default poll reaches a completed run within sixty seconds.
+// R-2TOT-YUYA: the default poll reaches a completed run within sixty seconds.
 func TestPromptDefaultPoll(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := seedTarget(t, f, 1)[0]
@@ -659,8 +665,9 @@ func TestProspectListSelectionSkipsNoWebsiteAndPreservesOutside(t *testing.T) {
 	}
 }
 
-// R-HR6C-Y44I R-HIN2-9PXN: one failed result cancels other held polls without waiting.
+// R-2R91-7BGW R-2OT8-FRZI: one failed result cancels other held polls without waiting.
 func TestPromptFailureCancelsOtherRunsAndKeepsPriorResult(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil, false)
 	ids := seedTarget(t, f, 6)
 	ctx := context.Background()
@@ -793,8 +800,9 @@ func TestCorpusNeverRunsConfiguredPrompts(t *testing.T) {
 	}
 }
 
-// R-JYY1-XY1W R-30OE-N488: one target's running pass admits exactly one racing start.
+// R-JYY1-XY1W R-DTXE-DYY4: one target's running pass admits exactly one racing start.
 func TestConcurrentTargetStarts(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil, false)
 	id := seedTarget(t, f, 1)[0]
 	pc, _ := fakePrompts(t, f, promptAnswer)
@@ -826,8 +834,9 @@ func TestConcurrentTargetStarts(t *testing.T) {
 	f.eng.Drain(context.Background())
 }
 
-// R-HSE9-BVV7 R-H1KG-WXJX R-HNIN-SSWF R-TMW8-ONTV R-2EQ7-R8VQ R-RFMR-TKMQ
+// R-2SGX-L37L R-2ZSB-VPNR R-2Q14-TJQ7 R-TMW8-ONTV R-2EQ7-R8VQ R-RFMR-TKMQ
 func TestBriefTargetLifecycleAndCounts(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil, false)
 	ctx := context.Background()
 	ids := seedTarget(t, f, 6)

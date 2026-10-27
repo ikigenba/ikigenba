@@ -38,8 +38,9 @@ func searchAfter(d time.Duration) <-chan time.Time {
 	return ch
 }
 
-// R-HNIN-SSWF R-HSE9-BVV7 R-RFMR-TKMQ R-HDRG-QMYV
+// R-2Q14-TJQ7 R-2SGX-L37L R-RFMR-TKMQ R-33G1-10VU
 func TestWebsiteSearchTargetResultsAndConfirmation(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil, false)
 	ids := searchTargets(t, f, 6)
 	ctx := context.Background()
@@ -183,8 +184,9 @@ func TestWebsiteSearchTargetResultsAndConfirmation(t *testing.T) {
 	}
 }
 
-// R-U6EM-SZOZ
+// R-2W4M-QEFO
 func TestWebsiteSearchDrainCancelsConfirmation(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil, false)
 	id := searchTargets(t, f, 1)[0]
 	arrived, cancelled := make(chan struct{}), make(chan struct{})

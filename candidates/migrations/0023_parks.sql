@@ -1,0 +1,17 @@
+CREATE TABLE parks (id TEXT PRIMARY KEY, county TEXT NOT NULL, town TEXT NOT NULL, number INTEGER NOT NULL, state TEXT NOT NULL, zip TEXT NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL, radius REAL NOT NULL, parcels INTEGER NOT NULL, building_value INTEGER NOT NULL, grown_from INTEGER NOT NULL DEFAULT 0, walked TEXT NOT NULL DEFAULT '', walk_run TEXT NOT NULL DEFAULT '', found INTEGER NOT NULL DEFAULT 0, run TEXT NOT NULL, created TEXT NOT NULL, updated TEXT NOT NULL);
+CREATE INDEX parks_town ON parks(county,town);
+CREATE TABLE park_parcels (park TEXT NOT NULL, pin TEXT NOT NULL, owners TEXT NOT NULL, street TEXT NOT NULL, city TEXT NOT NULL, zip TEXT NOT NULL, building_value INTEGER, rule TEXT NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL, PRIMARY KEY(park,pin)) WITHOUT ROWID;
+CREATE TABLE park_rules (id INTEGER PRIMARY KEY CHECK (id = 1), distance INTEGER NOT NULL, min_parcels INTEGER NOT NULL, value_threshold INTEGER NOT NULL, derived_run TEXT NOT NULL);
+CREATE TABLE park_labels (county TEXT NOT NULL, position INTEGER NOT NULL, label TEXT NOT NULL, PRIMARY KEY(county,position)) WITHOUT ROWID;
+CREATE TABLE park_counties (county TEXT PRIMARY KEY) WITHOUT ROWID;
+INSERT INTO park_rules (id, distance, min_parcels, value_threshold, derived_run) VALUES (1, 600, 3, 1000000, '');
+INSERT INTO park_labels (county, position, label) VALUES ('Chisago', 1, '3a Industrial Land And Building'), ('Stearns', 1, '3a Industrial Land And Building'), ('Anoka', 1, '3a INDUSTIAL PREFERENTIAL'), ('Aitkin', 1, 'Industrial Preferred'), ('St. Louis', 1, 'Industrial Preferred'), ('St. Louis', 2, 'Industrial Non-Preferred'), ('Sherburne', 1, 'Industrial Preferred'), ('Sherburne', 2, 'Industrial Non-Preferred'), ('Sherburne', 3, 'INDUSTRIAL (with Buildings)'), ('Sherburne', 4, 'Industrial - Bare Land'), ('Mille Lacs', 1, 'Indust Land/Building'), ('Isanti', 1, '3A-Commercial/Industrial/Public Utility'), ('Morrison', 1, '3A-Commercial/Industrial/Public Utility');
+ALTER TABLE passes ADD COLUMN parcel_run TEXT NOT NULL DEFAULT '';
+ALTER TABLE passes ADD COLUMN parcels_read INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE passes ADD COLUMN by_label INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE passes ADD COLUMN by_value INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE passes ADD COLUMN by_candidate INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE passes ADD COLUMN parks_created INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE passes ADD COLUMN parks_updated INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE passes ADD COLUMN parks_gone INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE passes ADD COLUMN parks_grown INTEGER NOT NULL DEFAULT 0;

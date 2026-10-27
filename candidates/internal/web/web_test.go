@@ -145,7 +145,7 @@ func TestEventRoutes(t *testing.T) {
 	}
 }
 
-// R-4JFH-5AEG R-NWYH-IOWD R-4N36-ALMJ
+// R-4JFH-5AEG R-D02D-JQBY R-4N36-ALMJ
 func TestPageAndStaticRoutes(t *testing.T) {
 	cfg, d, _, _ := fixture(t)
 	h := web.Handler(cfg)
@@ -154,7 +154,7 @@ func TestPageAndStaticRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	ph := identity.Require(pages.Handler(pages.Config{Banner: cfg.Banner, Pages: set, Store: cfg.Store}))
-	for _, path := range []string{"/", "/about", "/tools", "/candidates/cand_5a5a5a5a5a5a5a5a", "/passes/pass_5a5a5a5a5a5a5a5a", "/nope", "/candidates", "/candidates/", "/passes/", "/mcp/", "/events/", "/declarations/", "/_appkit"} {
+	for _, path := range []string{"/", "/about", "/tools", "/candidates/cand_5a5a5a5a5a5a5a5a", "/passes/pass_5a5a5a5a5a5a5a5a", "/nope", "/candidates", "/candidates/", "/parks", "/parks/missing", "/parks/", "/passes/", "/mcp/", "/events/", "/declarations/", "/_appkit"} {
 		a := request(h, "GET", path, "", "reader")
 		b := request(ph, "GET", path, "", "reader")
 		if a.Code != b.Code || a.Body.String() != b.Body.String() || !reflect.DeepEqual(a.Header(), b.Header()) {
@@ -244,7 +244,7 @@ func TestMCPContextAndTools(t *testing.T) {
 	}
 }
 
-// R-R6QU-SEXX: a failing store prevents a pass from starting.
+// R-S35A-G1HS: a failing store prevents a pass from starting.
 func TestFailingStoreEmitsNoPassEvent(t *testing.T) {
 	cfg, d, capture, bus := fixture(t)
 	cfg.Website = &website.Checker{}
@@ -292,18 +292,18 @@ func TestFailingStoreEmitsNoPassEvent(t *testing.T) {
 	}
 }
 
-// R-Q3Q2-JR7P
+// R-3GUX-8I1H
 func TestLifecycleDeclarationsIncludeDerived(t *testing.T) {
 	cfg, _, _, _ := fixture(t)
 	cfg.Passes = passes.New(passes.Config{Store: cfg.Store, Sources: sources.New(fmcsa.New(), ppp.New()), Telemetry: cfg.Telemetry, Events: cfg.Events})
 	r := request(web.Handler(cfg), http.MethodGet, "/declarations", "", "")
-	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","target","enrich_kind","status","reason","rows","new","changed","unchanged","gone","created","linked","judged","unranged","derived","due","fetched","https","http","none","runs","runs_failed","pages","cost"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger","target","enrich_kind"]}],"accepts":["campaign.member.added","campaign.member.rejected","campaign.piece.delivered","cron.judge_candidates.fired","scrape.finished"]}`
+	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","target","enrich_kind","status","reason","parcel_run","rows","new","changed","unchanged","gone","created","linked","judged","unranged","derived","due","fetched","https","http","none","runs","runs_failed","pages","cost","parcels_read","by_label","by_value","by_candidate","parks_created","parks_updated","parks_gone","parks_grown"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger","target","enrich_kind"]}],"accepts":["campaign.member.added","campaign.member.rejected","campaign.piece.delivered","cron.judge_candidates.fired","scrape.finished"]}`
 	if r.Code != http.StatusOK || r.Body.String() != want {
 		t.Fatal(r.Code, r.Body.String())
 	}
 }
 
-// R-Z42R-BNSR R-JOJI-0XTC
+// R-CXMK-S6UK R-JOJI-0XTC
 func TestMCPToolsReceiveConfiguredWebsite(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		t.Run(map[bool]string{false: "nil", true: "checker"}[enabled], func(t *testing.T) {
@@ -333,7 +333,7 @@ type webTransport func(*http.Request) (*http.Response, error)
 
 func (f webTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-// R-XTQK-SDMD R-Z42R-BNSR
+// R-XTQK-SDMD R-CXMK-S6UK
 func TestLegacyDispatcherConfiguration(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {

@@ -27,6 +27,9 @@ var ToolsLevel = page.Level{Name: "tools", URL: "/tools"}
 // AboutLevel supplies about level page data.
 var AboutLevel = page.Level{Name: "about", URL: "/about"}
 
+// ParksLevel supplies the parks breadcrumb.
+var ParksLevel = page.Level{Name: "parks", URL: "/parks"}
+
 // Config supplies the handler dependencies.
 type Config struct {
 	Banner       func(u page.User) page.Banner
@@ -46,6 +49,7 @@ type LandingData struct {
 	PassesPage        string
 	PassesPrev        string
 	PassesNext        string
+	Parks             LandingParks
 }
 
 // ProspectListRow supplies a landing prospectList row.
@@ -229,6 +233,7 @@ type PassView struct {
 	Target, TargetPage, EnrichKind                                                                                   string
 	Runs, RunsFailed, Pages                                                                                          int64
 	Cost                                                                                                             string
+	ParcelsRead, ByLabel, ByValue, ByCandidate, ParksCreated, ParksUpdated, ParksGone, ParksGrown                    int64
 }
 
 // ToolsData supplies tools data page data.
@@ -360,3 +365,87 @@ type SeriesRow struct {
 
 // FigureCell supplies a count for one year, empty when absent.
 type FigureCell struct{ Year, Count string }
+
+// LandingParks supplies the active park count.
+type LandingParks struct{ Count int64 }
+
+// ParksData supplies one window of parks and its view.
+type ParksData struct {
+	Banner                                        page.Banner
+	Summary                                       ParksSummary
+	View                                          ParksView
+	Parks                                         []ParkRow
+	Page, FirstHref, PrevHref, NextHref, LastHref string
+	Rules                                         RulesView
+}
+
+// ParksSummary supplies totals and the last derivation run.
+type ParksSummary struct {
+	Count, Gone  int64
+	Run, RunPage string
+}
+
+// ParkRow supplies a park in the listing.
+type ParkRow struct {
+	ID, Name, County, State                    string
+	Parcels                                    int64
+	BuildingValue, Minutes, Walked, WalkedText string
+	GrownFrom                                  int64
+}
+
+// ParksView supplies the filter and ordering choices.
+type ParksView struct {
+	Counties            []CountyChoice
+	Walked, Gone, Sorts []ViewChoice
+}
+
+// CountyChoice supplies one county link.
+type CountyChoice struct {
+	County, Href string
+	Current      bool
+}
+
+// ViewChoice supplies one filter or sort link.
+type ViewChoice struct {
+	Value, Href string
+	Current     bool
+}
+
+// RulesView supplies formatted derivation rules.
+type RulesView struct {
+	Distance       string
+	MinParcels     int64
+	ValueThreshold string
+	Counties       []CountyLabels
+}
+
+// CountyLabels supplies a county's industrial labels.
+type CountyLabels struct {
+	County string
+	Labels []string
+}
+
+// ParkData supplies one park and its parcels.
+type ParkData struct {
+	Banner  page.Banner
+	Park    ParkView
+	Parcels []ParcelRow
+}
+
+// ParkView supplies formatted park detail.
+type ParkView struct {
+	ID, Name, County, Town, State, Lat, Lon, MapURL, Radius  string
+	ParcelCount                                              int64
+	BuildingValue, Minutes                                   string
+	GrownFrom                                                int64
+	Walked, WalkedText, WalkRun                              string
+	Found                                                    int64
+	Run, RunPage, Created, CreatedText, Updated, UpdatedText string
+}
+
+// ParcelRow supplies one parcel of a park.
+type ParcelRow struct {
+	PIN                                    string
+	Owners                                 []string
+	Street, City, Zip, BuildingValue, Rule string
+}

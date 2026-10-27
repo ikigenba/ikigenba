@@ -15,7 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/urls"
 )
 
-// R-40V8-V2LG R-O907-V4XG R-3X7J-PRDD
+// R-40V8-V2LG R-5VOS-S1Z2 R-5EM7-F9LC
 func TestTargetPassAndCosts(t *testing.T) {
 	for _, tc := range []struct {
 		n    int64
@@ -94,7 +94,7 @@ func TestKeptPageProjections(t *testing.T) {
 	}
 }
 
-// R-46YQ-RXAX R-MITC-CU41 R-O6KF-3LG2
+// R-46YQ-RXAX R-6CRE-4UCS R-66NW-7ZNB
 func TestKeptPagePathGrammar(t *testing.T) {
 	cfg, d := pageFixture(t)
 	d.SetFailing(true)
@@ -115,7 +115,7 @@ func TestKeptPagePathGrammar(t *testing.T) {
 	}
 }
 
-// R-92PP-ZST9 R-Y6JI-Z6SU R-UM9B-S0C0 R-WUQP-0V9U
+// R-92PP-ZST9 R-6BJH-R2M3 R-6GF3-A5KV R-6DZA-IM3H
 func TestKeptPageRoutes(t *testing.T) {
 	cfg, d := pageFixture(t)
 	ctx := t.Context()
@@ -204,7 +204,7 @@ func TestMemberSiteTextStamp(t *testing.T) {
 	}
 }
 
-// R-P8DA-YHFL
+// R-5FU3-T1C1
 func TestAddedTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	s, err := Load()
@@ -230,7 +230,7 @@ func TestAddedTemplateStates(t *testing.T) {
 						render("candidate", CandidateData{Candidate: CandidateView{Status: candidateStatus}, Pages: []PageRow{{Number: "7", URL: p.URL, Title: text, By: text, User: p.User}}, EnrichmentResults: []EnrichmentRow{{Kind: kind, Cost: text, Failed: flag, Found: found}}})
 					}
 				}
-				for _, target := range []string{"pl_abcdef0123456789", "cand_abcdef0123456789"} {
+				for _, target := range []string{store.ProspectListIDPrefix + strings.Repeat("a", 16), store.CandidateIDPrefix + strings.Repeat("a", 16)} {
 					for _, status := range []string{store.StatusRunning, store.StatusDone, store.StatusFailed} {
 						for _, reason := range []string{store.ReasonScrapes, store.ReasonStore, store.ReasonInterrupted, store.ReasonPrompts} {
 							for _, by := range []string{"fixture@example.test", "fixture-user"} {
@@ -303,10 +303,18 @@ func TestSiteTextCandidateAndProspectListAgree(t *testing.T) {
 	}
 }
 
-// R-O907-V4XG R-3X7J-PRDD
+// R-5VOS-S1Z2 R-5EM7-F9LC
 func TestTargetPassPage(t *testing.T) {
 	cfg, _ := pageFixture(t)
-	for _, target := range []string{"pl_abcdef0123456789", "cand_abcdef0123456789"} {
+	_, ids, err := cfg.Store.Attach(t.Context(), "chosen-run", false, []store.Observation{{Scraper: "fixture", SourceID: "target-source", Digest: "target-digest", Reading: sources.Reading{Name: "target-name"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, err := cfg.Store.CreateProspectList(t.Context(), store.ProspectList{Name: "target-list", Size: 2, CreatedUserID: "fixture-owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{list.ID, ids[0]} {
 		p, err := cfg.Store.AddPass(t.Context(), store.Pass{Kind: store.KindEnrichTarget, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, UserID: "fixture-owner", Target: target, EnrichKind: enrichers.KindSiteText})
 		if err != nil {
 			t.Fatal(err)
@@ -330,7 +338,7 @@ func TestTargetPassPage(t *testing.T) {
 	}
 }
 
-// R-XY08-ASLZ R-3X7J-PRDD R-3ZNC-HAUR
+// R-XY08-ASLZ R-5EM7-F9LC R-3ZNC-HAUR
 // R-JN4O-3OFH
 func TestAddedViewShapes(t *testing.T) {
 	candidate := CandidateData{page.Banner{}, CandidateView{}, nil, nil, []EstimateView{}, []LinkView{}, []RulingView{}, []PageRow{}, []EnrichmentRow{}, []RejectRecordRow{}, []CampaignRow{}}
@@ -343,6 +351,7 @@ func TestAddedViewShapes(t *testing.T) {
 		Target, TargetPage, EnrichKind                                                                                   string
 		Runs, RunsFailed, Pages                                                                                          int64
 		Cost                                                                                                             string
+		ParcelsRead, ByLabel, ByValue, ByCandidate, ParksCreated, ParksUpdated, ParksGone, ParksGrown                    int64
 	}(PassView{})
 	_ = struct {
 		Kind, Source                  string

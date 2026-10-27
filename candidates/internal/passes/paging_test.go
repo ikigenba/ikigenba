@@ -21,8 +21,9 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-ESID-FF9Q R-XU84-H2PI
+// R-2G9X-RDSN R-3284-N955
 func TestJudgeWalkUsesPassTimeAcrossPages(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, nil, false)
 	var clock atomic.Int64
 	f.st = store.New(f.d, store.Config{Now: func() time.Time { return time.Unix(100000+clock.Add(1), 0) }, Rand: &random{}})
@@ -80,8 +81,9 @@ func (w *diagnosticWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// R-HMAR-F15Q R-D2CS-LXL5
+// R-2UWQ-CMOZ R-3EF4-GYK3
 func TestStoreFailureDiagnosticPrecedesEnding(t *testing.T) {
+	t.Parallel()
 
 	var f *fixture
 	var failingText string
@@ -116,8 +118,9 @@ func TestStoreFailureDiagnosticPrecedesEnding(t *testing.T) {
 	}
 }
 
-// R-XU84-H2PI R-GJ9Z-6DFI
+// R-3284-N955 R-2HHU-55JC
 func TestIngestMarksGoneAcrossAllPages(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/record") {
 			record(w, "run_a", 1, store.StatusDone)
@@ -147,8 +150,9 @@ func TestIngestMarksGoneAcrossAllPages(t *testing.T) {
 	}
 }
 
-// R-HMAR-F15Q
+// R-2UWQ-CMOZ
 func TestStoreDiagnosticSurvivesUnrecordableEnding(t *testing.T) {
+	t.Parallel()
 	var f *fixture
 	f = newFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/current") {
@@ -174,8 +178,9 @@ func TestStoreDiagnosticSurvivesUnrecordableEnding(t *testing.T) {
 	}
 }
 
-// R-HMAR-F15Q
+// R-2UWQ-CMOZ
 func TestNonStoreEndingsLeaveDiagnosticWriterSilent(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"done", "scrapes", "interrupted", "prompts"} {
 		t.Run(mode, func(t *testing.T) {
 			entered := make(chan struct{})

@@ -202,7 +202,7 @@ func TestRunPromptsSnapshotIdentityTrailAndTimers(t *testing.T) {
 	}
 }
 
-// R-OIRE-XAV0
+// R-79P0-C7H2
 func TestRunMissingPromptsRefusesOnlyPromptEnrich(t *testing.T) {
 	for _, mode := range []string{"unset", "missing", "invalid", "no-entry"} {
 		t.Run(mode, func(t *testing.T) {

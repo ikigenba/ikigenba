@@ -3,6 +3,7 @@ package cli
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -242,6 +243,17 @@ func Run(ctx context.Context, p Process) int {
 		return ExitServerFailed
 	}
 	prune(bg, st, s.KeepPasses)
+	startCtx, startCancel := context.WithCancel(ctx)
+	defer startCancel()
+	startDone := make(chan struct{})
+	if sc != nil {
+		var draw [16]byte
+		_, _ = io.ReadFull(rnd, draw[:])
+		requestID := hex.EncodeToString(draw[:])
+		go func() { defer close(startDone); _, _ = eng.StartParks(startCtx, requestID) }()
+	} else {
+		close(startDone)
+	}
 	h := web.Handler(web.Config{Banner: p.Banner, MCP: p.MCP(w), LegacyMCP: p.MCP(w), ServicesPath: path, Store: st, Passes: eng, Telemetry: w, Events: em, Website: checker})
 	notify, _ := p.LookupEnv("NOTIFY_SOCKET")
 	if notify != "" {
@@ -275,7 +287,9 @@ func Run(ctx context.Context, p Process) int {
 	err = server.Serve(ctx, ln, h, s.Drain(), func(dc context.Context) {
 		sweepCancel()
 		<-sweepDone
+		startCancel()
 		eng.Drain(dc)
+		<-startDone
 	})
 	sweepCancel()
 	<-sweepDone
