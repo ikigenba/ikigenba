@@ -139,6 +139,25 @@
      headcount the judge used, as text, "26", the two equal when it is
      not a range) and .HeadcountBasis (the kinds and scrapers that gave
      it, as stored), all three empty when there is no headcount,
+     .HeadcountYears (the years the headcount series spans, oldest
+     first, every calendar year from its oldest figure's to its newest's
+     of any kind, each as text, "2021", a slice of strings; empty when the
+     series is), .HeadcountSeries (the headcount series, one per kind
+     with at least one figure, best kind first by the headcount ranking,
+     each with .Kind (the kind word as stored, "employees",
+     "participants" or "jobs"), .Source (the scraper behind its figures,
+     "osha_ita", "form5500" or "ppp") and .Figures (one per year of
+     .HeadcountYears, in that order, each with .Year (the year as text,
+     "2021") and .Count (the figure as text, "131"; empty when the kind
+     has no figure that year)); empty when no headcount is dated), .Trend
+     (the trend, "growing", "flat", "shrinking" or "unknown", as stored;
+     never empty), .TrendKind (the kind it was read in, as stored,
+     "employees"), .TrendFromYear and .TrendToYear (the comparison year
+     and the newest year, as text, "2021" and "2025"), .TrendFrom and
+     .TrendTo (the figures of those years, as text, "100" and "131") and
+     .TrendChange (the newest figure less the comparison figure, as text
+     with its sign, "+31" or "-20", "0" when equal), all six empty when
+     .Trend is "unknown",
      .Excluded (bool, true when the owner's ruling
      excludes it),
      .Rules (int, the rules version) and .Calculated and .CalculatedText
@@ -467,7 +486,31 @@
      a floor only" when empty), dt "Confidence", dt "Filed" (the time, or
      span.muted "none"), dt "Rules" (.Formula) and dt "Facts" then a dd
      holding dl.kv with one dt[data-fact=<.Key>] per fact (.Key in a code
-     element) followed by a dd (.Value in a code element). Then
+     element) followed by a dd (.Value in a code element). Then,
+     only when .Judgments is not nil, section#headcount-series with h2
+     "Headcount series" and a p in its header (text "The headcount of
+     each kind by year, as the last judge read it from the records, with
+     an empty cell where a year has no figure. The trend compares the
+     newest year of the best kind with an earlier year of the same kind,
+     three years back when there is one, two at the least and four at the
+     most: growing or shrinking when the change is at least a fifth and at
+     least five people, otherwise flat, and unknown when no kind has two
+     such years."), then dl#trend.kv holding dt "Trend" then
+     dd#trend-value[data-trend=<.Trend>] (.Trend, in span.muted when
+     "unknown"), then, only when .TrendKind is set, dt "Kind" then
+     dd#trend-kind (.TrendKind in a code element), dt "Years" then
+     dd#trend-years ("<.TrendFromYear> to <.TrendToYear>"), dt "Headcounts"
+     then dd#trend-figures ("<.TrendFrom> to <.TrendTo>") and dt "Change"
+     then dd#trend-change (.TrendChange); then either, when
+     .HeadcountSeries is empty, div#no-series.empty holding h3 "No series"
+     and a p (text "No record not gone gives this candidate a dated
+     headcount. A driver count is a floor, not a count, and stays out of
+     the series."), or table#series-list whose th read Kind, then one
+     th.num per year of .HeadcountYears (the year), with one
+     tr[data-series=<.Kind>] per kind holding td.series-kind (.Kind in a
+     code element, a space and span.muted holding .Source), then one
+     td.series-figure.num[data-year=<.Year>] per figure (.Count, empty for
+     a gap). Then
      section#links with h2 "Evidence" and a p in its header (text "Each
      record attached to this candidate, linked to its row in scrapes. A
      gone record was absent from its scraper's latest run; it still counts
@@ -749,7 +792,31 @@
 <p>No source gives a size for this candidate, and it has no headcount.</p>
 </div>
 {{end}}</section>
-<section id="links" class="card flush" aria-labelledby="links-title">
+{{with $j}}<section id="headcount-series" class="card" aria-labelledby="headcount-series-title">
+<header><h2 id="headcount-series-title">Headcount series</h2><p>The headcount of each kind by year, as the last judge read it from the records, with an empty cell where a year has no figure. The trend compares the newest year of the best kind with an earlier year of the same kind, three years back when there is one, two at the least and four at the most: growing or shrinking when the change is at least a fifth and at least five people, otherwise flat, and unknown when no kind has two such years.</p></header>
+<dl id="trend" class="kv">
+<dt>Trend</dt><dd id="trend-value" data-trend="{{.Trend}}">{{if eq .Trend "unknown"}}<span class="muted">{{.Trend}}</span>{{else}}{{.Trend}}{{end}}</dd>
+{{if .TrendKind}}<dt>Kind</dt><dd id="trend-kind"><code>{{.TrendKind}}</code></dd>
+<dt>Years</dt><dd id="trend-years">{{.TrendFromYear}} to {{.TrendToYear}}</dd>
+<dt>Headcounts</dt><dd id="trend-figures">{{.TrendFrom}} to {{.TrendTo}}</dd>
+<dt>Change</dt><dd id="trend-change">{{.TrendChange}}</dd>
+{{end}}</dl>
+{{if .HeadcountSeries}}<div class="table-scroll">
+<table id="series-list">
+<thead><tr><th>Kind</th>{{range .HeadcountYears}}<th class="num">{{.}}</th>{{end}}</tr></thead>
+<tbody>
+{{range .HeadcountSeries}}<tr data-series="{{.Kind}}">
+<td class="series-kind"><code>{{.Kind}}</code> <span class="muted">{{.Source}}</span></td>
+{{range .Figures}}<td class="series-figure num" data-year="{{.Year}}">{{.Count}}</td>
+{{end}}</tr>
+{{end}}</tbody>
+</table>
+</div>{{else}}<div id="no-series" class="empty">
+<h3 class="text-md">No series</h3>
+<p>No record not gone gives this candidate a dated headcount. A driver count is a floor, not a count, and stays out of the series.</p>
+</div>{{end}}
+</section>
+{{end}}<section id="links" class="card flush" aria-labelledby="links-title">
 <header><div><h2 id="links-title">Evidence</h2><p>Each record attached to this candidate, linked to its row in scrapes. A gone record was absent from its scraper's latest run; it still counts for identity and no longer for the judgments.</p></div></header>
 <div class="table-scroll">
 <table id="link-list">

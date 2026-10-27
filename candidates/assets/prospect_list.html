@@ -25,7 +25,9 @@
      admits, "pass" or "fail"; empty when absent), .FleetUnknown (bool),
      .Website (the website states it admits, as stored, any of "https",
      "http" and "none", a slice of strings; empty when absent),
-     .WebsiteUnknown (bool),
+     .WebsiteUnknown (bool), .Trend (the trends it admits, as stored,
+     any of "growing", "flat" and "shrinking", in that order, a slice of
+     strings; empty when absent), .TrendUnknown (bool),
      .Government ("true" or "false", the government filter as given;
      empty when absent), .MaxFilingAgeDays (the filing-age maximum in
      days as text, "730"; empty when absent), .FilingUnknown (bool),
@@ -37,7 +39,7 @@
      true when it shows excluded candidates); .Order (its sort order, in
      the order stored, never empty, each with .Field, as stored, one of
      "operating_confidence", "revenue_low", "revenue_confidence",
-     "drive_minutes", "newest_filing" and "known_since", and .Direction,
+     "drive_minutes", "newest_filing", "known_since" and "trend", and .Direction,
      "desc" or "asc"), .CreatedBy (the email of who created it; empty
      when none), .CreatedUser (their user id), .Created and .CreatedText
      (RFC 3339 UTC to the second, and the same as shown, "2006-01-02
@@ -86,7 +88,11 @@
      the sources give only a minimum) and .RevenueConfidence (two
      decimals, "0.40"), all three empty when there is no estimate,
      .HeadcountLow (the low end of the headcount its judge used, as text,
-     "26"; empty when it has no headcount),
+     "26"; empty when it has no headcount), .Trend (its headcount
+     trend, "growing", "flat", "shrinking" or "unknown", as stored; never
+     empty), .TrendChange (the change behind it, the newest figure less
+     the comparison figure, as text with its sign, "+31" or "-20", "0"
+     when equal; empty when .Trend is "unknown"),
      .Categories (its distinct category words, as stored, a slice of
      strings; empty when unknown), .ClassifiedBy (what decided its
      categories, "brief" or "links"; empty when it has none), .Class (its class tag, one of
@@ -159,7 +165,7 @@
      no search has run.", none and unknown each in a code element), then
      dl#filters.kv holding, in this order, each dd showing span.muted
      "any" when the prospect list does not carry that filter's value, and, for
-     the six filters with a switch, followed when the switch is set by a
+     the eight filters with a switch, followed when the switch is set by a
      space and span.badge[data-kind=info][data-unknown] (text "unknown
      included"): dt "Revenue low" then dd#filter-revenue ("<.RevenueMin>
      to <.RevenueMax>" when both are set, "at least <.RevenueMin>" or "at
@@ -170,7 +176,9 @@
      .CategoryUnknown), dt "Fleet" then dd#filter-fleet (.Fleet in a code
      element; switch .FleetUnknown), dt "Website" then dd#filter-website
      (one code[data-website=<state>] per state, separated by spaces;
-     switch .WebsiteUnknown), dt "Government" then
+     switch .WebsiteUnknown), dt "Trend" then dd#filter-trend (one
+     code[data-trend=<trend>] per trend, separated by spaces; switch
+     .TrendUnknown), dt "Government" then
      dd#filter-government ("a government match only" when .Government is
      "true", "no government match" when "false"), dt "Filing age" then
      dd#filter-filing ("newest filing at most <.MaxFilingAgeDays> days
@@ -229,7 +237,7 @@
      that does is rejected from the prospect list. Loosen a filter or set a
      switch with the edit_prospect_list tool.", edit_prospect_list in a code element),
      or table#member-list whose th read Rank, Name, City, State, Basis, Operating
-     confidence, Headcount, Low, High, Revenue confidence, Categories, Classified by, Class, Fleet,
+     confidence, Headcount, Trend, Low, High, Revenue confidence, Categories, Classified by, Class, Fleet,
      Website, Site text, Brief, Minutes, Government, Known since, Newest filing, with one
      tr[data-candidate=<.ID>] per member holding td.candidate-rank.num
      (.Rank), td.candidate-name (a.candidate-link, href
@@ -240,7 +248,10 @@
      td.candidate-operating.num
      (.OperatingConfidence, or when empty span.muted "no evidence"),
      td.candidate-headcount.num (.HeadcountLow, or when empty span.muted
-     "none"), td.candidate-low.num (.RevenueLow, or when empty span.muted
+     "none"), td.candidate-trend[data-trend=<.Trend>] (.Trend, in
+     span.muted when "unknown", then, when .TrendChange is set, a space
+     and span[data-trend-change] holding .TrendChange),
+     td.candidate-low.num (.RevenueLow, or when empty span.muted
      "none"),
      td.candidate-high.num (.RevenueHigh, or when empty span.muted
      "none"), td.candidate-revenue-confidence.num (.RevenueConfidence,
@@ -310,6 +321,7 @@
 <dt>Categories</dt><dd id="filter-categories">{{if .Categories}}{{range $i, $c := .Categories}}{{if $i}} {{end}}<code data-category="{{$c}}">{{$c}}</code>{{end}}{{if .CategoryUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}{{else if .CategoryUnknown}}<span data-unknown>no category only</span>{{else}}<span class="muted">any</span>{{end}}</dd>
 <dt>Fleet</dt><dd id="filter-fleet">{{if .Fleet}}<code>{{.Fleet}}</code>{{else}}<span class="muted">any</span>{{end}}{{if .FleetUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
 <dt>Website</dt><dd id="filter-website">{{range $i, $w := .Website}}{{if $i}} {{end}}<code data-website="{{$w}}">{{$w}}</code>{{else}}<span class="muted">any</span>{{end}}{{if .WebsiteUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
+<dt>Trend</dt><dd id="filter-trend">{{range $i, $w := .Trend}}{{if $i}} {{end}}<code data-trend="{{$w}}">{{$w}}</code>{{else}}<span class="muted">any</span>{{end}}{{if .TrendUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
 <dt>Government</dt><dd id="filter-government">{{if eq .Government "true"}}a government match only{{else if eq .Government "false"}}no government match{{else}}<span class="muted">any</span>{{end}}</dd>
 <dt>Filing age</dt><dd id="filter-filing">{{if .MaxFilingAgeDays}}newest filing at most {{.MaxFilingAgeDays}} days old{{else}}<span class="muted">any</span>{{end}}{{if .FilingUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
 <dt>Campaigns</dt><dd id="filter-campaign">{{if .MinCampaignAgeDays}}not added to a campaign in the last {{.MinCampaignAgeDays}} days <span class="muted">never in a campaign included</span>{{else}}<span class="muted">any</span>{{end}}</dd>
@@ -352,7 +364,7 @@
 <p id="since-last-open">{{if $changes.Since}}{{with $changes}}Since the last open, <time datetime="{{.Since}}">{{.SinceText}}</time>{{if or .Joined .Left}}: {{len .Joined}} joined and {{len .Left}} left.{{else}}: no one joined and no one left.{{end}}{{end}}{{else}}This is the first open of this prospect list, so there is nothing to compare it with. The next open shows who joined and who left since this one.{{end}}</p></div></header>
 {{if $members}}<div class="table-scroll">
 <table id="member-list">
-<thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th>Basis</th><th class="num">Operating confidence</th><th class="num">Headcount</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Classified by</th><th>Class</th><th>Fleet</th><th>Website</th><th>Site text</th><th>Brief</th><th class="num">Minutes</th><th>Government</th><th>Known since</th><th>Newest filing</th></tr></thead>
+<thead><tr><th class="num">Rank</th><th>Name</th><th>City</th><th>State</th><th>Basis</th><th class="num">Operating confidence</th><th class="num">Headcount</th><th>Trend</th><th class="num">Low</th><th class="num">High</th><th class="num">Revenue confidence</th><th>Categories</th><th>Classified by</th><th>Class</th><th>Fleet</th><th>Website</th><th>Site text</th><th>Brief</th><th class="num">Minutes</th><th>Government</th><th>Known since</th><th>Newest filing</th></tr></thead>
 <tbody>
 {{range $members}}<tr data-candidate="{{.ID}}">
 <td class="candidate-rank num">{{.Rank}}</td>
@@ -362,6 +374,7 @@
 <td class="candidate-basis" data-basis="{{.Basis}}"><code>{{.Basis}}</code></td>
 <td class="candidate-operating num">{{if .OperatingConfidence}}{{.OperatingConfidence}}{{else}}<span class="muted">no evidence</span>{{end}}</td>
 <td class="candidate-headcount num">{{if .HeadcountLow}}{{.HeadcountLow}}{{else}}<span class="muted">none</span>{{end}}</td>
+<td class="candidate-trend" data-trend="{{.Trend}}">{{if eq .Trend "unknown"}}<span class="muted">{{.Trend}}</span>{{else}}{{.Trend}}{{end}}{{if .TrendChange}} <span data-trend-change>{{.TrendChange}}</span>{{end}}</td>
 <td class="candidate-low num">{{if .RevenueLow}}{{.RevenueLow}}{{else}}<span class="muted">none</span>{{end}}</td>
 <td class="candidate-high num">{{if .RevenueHigh}}{{.RevenueHigh}}{{else}}<span class="muted">none</span>{{end}}</td>
 <td class="candidate-revenue-confidence num">{{.RevenueConfidence}}</td>
