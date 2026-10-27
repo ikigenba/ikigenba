@@ -76,6 +76,10 @@ design/
     candidates-page.html
                     one kept page of a candidate's website, two levels
                     down the trail
+    candidates-parks.html
+                    the parks: the view, the parks, paged, and the rules
+    candidates-park.html
+                    one park: its record and its parcels; gone, unwalked
     campaigns.html  campaigns' landing: the campaigns, newest first,
                     paged
     campaigns-campaign.html
@@ -563,7 +567,7 @@ for Minnesota and Wisconsin, with made-up carriers.
   to the minute on the landing, where a cell with no time is empty, to the
   second with `UTC` on the run and row pages.
 
-**candidates.html, candidates-candidate.html, candidates-prospect-list.html, candidates-pass.html, candidates-page.html** —
+**candidates.html, candidates-candidate.html, candidates-prospect-list.html, candidates-pass.html, candidates-page.html, candidates-parks.html, candidates-park.html** —
 candidates at `candidates.acme.ikigenba.com`, the funnel's judgment over
 scrapes' evidence: an ingest pass turns each scrapes run's records into
 candidate businesses, one per business with every record that describes it
@@ -600,8 +604,9 @@ Wisconsin.
   cron trigger's slug or `ingest` or `judge` when started by hand, or `rules` or `start` for a parks pass. A failed row's reason follows its
   status, muted. A link to the about screen. Its tools (`prospect_lists`,
   `prospect_list`, `candidates`, `candidate`, `passes`, `pass`, `ingest`, `judge`,
-  `enrich`, `decide`, `exclude`, `include`, `create_prospect_list`,
-  `edit_prospect_list`, `delete_prospect_list`, `reject`, `unreject`, seventeen in all) are
+  `enrich`, `add_page`, `decide`, `exclude`, `include`, `create_prospect_list`,
+  `edit_prospect_list`, `delete_prospect_list`, `reject`, `unreject`, `parks`,
+  `park`, `park_rules`, `edit_park_rules`, twenty-two in all) are
   on its tools page. States: no
   prospect lists (`div#no-prospect-lists.empty`), no passes (`div#no-passes.empty`).
   Between the passes and the about link, `section#parks` (Parks) says the

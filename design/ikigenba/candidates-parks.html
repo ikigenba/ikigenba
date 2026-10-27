@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>parks · candidates</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+</head>
+<body>
+<header>
+<a class="mark" href="home.html"><img src="favicon.svg" alt="">Ikigenba</a>
+<nav class="crumbs" aria-label="Breadcrumb"><ol><li class="root"><a href="candidates.html"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v2.172a2 2 0 0 1 -.586 1.414l-4.414 4.414v7l-6 2v-8.5l-4.48 -4.928a2 2 0 0 1 -.52 -1.345v-2.227"/></svg>candidates</a><button class="menu" type="button" popovertarget="pages" aria-label="candidates pages" title="candidates pages"><svg class="chev" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6l6 -6"/></svg></button></li><li aria-current="page"><span>parks</span></li></ol></nav>
+<a class="profile" href="https://auth.acme.ikigenba.com/" aria-label="Profile" title="ada@acme.dev"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855"/></svg></a>
+<form class="inline" method="post" action="https://auth.acme.ikigenba.com/logout"><button class="signout" type="submit" aria-label="Sign out" title="Sign out"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg></button></form>
+<nav class="pages" id="pages" popover aria-label="candidates pages"><ul><li><a href="candidates.html"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v2.172a2 2 0 0 1 -.586 1.414l-4.414 4.414v7l-6 2v-8.5l-4.48 -4.928a2 2 0 0 1 -.52 -1.345v-2.227"/></svg>candidates</a></li><li><a href="/tools">Tools</a></li><li><a href="/about">About</a></li></ul></nav>
+</header>
+<main>
+  <h1>Parks</h1>
+  <p id="summary" class="lede">Industrial parks drawn from the county parcel records scrapes holds: industrial parcels near one another, county by county, named for their town. A park is a place to walk later for the businesses in it, never a candidate.</p>
+  <p id="headline" class="cluster"><span id="park-count" class="badge" data-kind="info">4 active</span> <span id="gone-count" class="badge" data-kind="warn">1 gone</span> <span class="muted">derived from run <a class="run-link" href="scrapes-run.html"><code>run_5e8b2c70d41a9f36</code></a></span></p>
+  <section id="view-card" class="card" aria-labelledby="view-title">
+    <header><h2 id="view-title">View</h2><p>Which parks show and in what order.</p></header>
+    <dl id="view" class="kv">
+      <dt>County</dt><dd id="view-county"><nav class="tabs" aria-label="County"><a href="candidates-parks.html" data-county="" aria-current="true">All</a><a href="candidates-parks.html" data-county="Carlton">Carlton</a><a href="candidates-parks.html" data-county="Chisago">Chisago</a><a href="candidates-parks.html" data-county="Pine">Pine</a></nav></dd>
+      <dt>Walked</dt><dd id="view-walked"><nav class="tabs" aria-label="Walked"><a href="candidates-parks.html" data-walked="all" aria-current="true">All</a><a href="candidates-parks.html" data-walked="unwalked">Unwalked</a><a href="candidates-parks.html" data-walked="walked">Walked</a></nav></dd>
+      <dt>Gone</dt><dd id="view-gone"><nav class="tabs" aria-label="Gone"><a href="candidates-parks.html" data-gone="active">Not gone</a><a href="candidates-parks.html" data-gone="gone">Gone</a><a href="candidates-parks.html" data-gone="all" aria-current="true">All</a></nav></dd>
+      <dt>Order</dt><dd id="view-sort"><nav class="tabs" aria-label="Order"><a href="candidates-parks.html" data-sort="minutes" aria-current="true">Nearest first</a><a href="candidates-parks.html" data-sort="value">Building value</a><a href="candidates-parks.html" data-sort="parcels">Parcels</a></nav></dd>
+    </dl>
+  </section>
+  <section id="parks" class="card flush" aria-labelledby="parks-title">
+    <header><div><h2 id="parks-title">Parks</h2><p>The parks this view admits. Drive minutes come from the ZIP table and an unknown one sorts last. A grown park holds more parcels than it was first derived with; a gone one no longer stands under the rules and keeps its id.</p></div></header>
+    <div class="table-scroll">
+      <table id="park-list">
+        <thead><tr><th>Name</th><th>County</th><th class="num">Parcels</th><th class="num">Building value</th><th class="num">Minutes</th><th>Walked</th></tr></thead>
+        <tbody>
+          <tr data-park="park_3c7a91e0b5d24f68" data-state="active">
+            <td class="park-name"><a class="park-link" href="candidates-park.html">North Branch</a></td>
+            <td class="park-county">Chisago</td>
+            <td class="park-parcels num">12</td>
+            <td class="park-value num">$14,820,000</td>
+            <td class="park-minutes num">38</td>
+            <td class="park-walked"><time datetime="2026-10-05T09:12:40Z">2026-10-05 09:12:40 UTC</time></td>
+          </tr>
+          <tr data-park="park_a14e6d0278bc3f95" data-state="active">
+            <td class="park-name"><a class="park-link" href="candidates-park.html">Wyoming 2</a> <span class="badge" data-kind="info" data-grown>grown from 5</span></td>
+            <td class="park-county">Chisago</td>
+            <td class="park-parcels num">7</td>
+            <td class="park-value num">$6,310,000</td>
+            <td class="park-minutes num">42</td>
+            <td class="park-walked"><span class="muted">unwalked</span></td>
+          </tr>
+          <tr data-park="park_8f20b5c4e9a17d36" data-state="active">
+            <td class="park-name"><a class="park-link" href="candidates-park.html">Rush City</a></td>
+            <td class="park-county">Chisago</td>
+            <td class="park-parcels num">9</td>
+            <td class="park-value num">$8,975,000</td>
+            <td class="park-minutes num">61</td>
+            <td class="park-walked"><time datetime="2026-10-06T14:03:11Z">2026-10-06 14:03:11 UTC</time></td>
+          </tr>
+          <tr data-park="park_d6b3071fa8e24c59" data-state="active">
+            <td class="park-name"><a class="park-link" href="candidates-park.html">Cloquet</a></td>
+            <td class="park-county">Carlton</td>
+            <td class="park-parcels num">15</td>
+            <td class="park-value num">$21,440,000</td>
+            <td class="park-minutes num">97</td>
+            <td class="park-walked"><span class="muted">unwalked</span></td>
+          </tr>
+          <tr data-park="park_47e9c2b80a5d1f63" data-state="gone">
+            <td class="park-name"><a class="park-link" href="candidates-park.html">Moose Lake</a> <span class="badge" data-kind="warn" data-gone>gone</span></td>
+            <td class="park-county">Carlton</td>
+            <td class="park-parcels num">6</td>
+            <td class="park-value num">$2,260,000</td>
+            <td class="park-minutes num"><span class="muted">unknown</span></td>
+            <td class="park-walked"><span class="muted">unwalked</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <nav class="paging" id="paging" aria-label="Pages"><span aria-current="page">First</span><span aria-current="page">Last</span></nav>
+
+  <section id="rules-card" class="card" aria-labelledby="rules-title">
+    <header><h2 id="rules-title">Rules</h2><p>The rules the parks are derived by. A parcel counts as industrial when its county's use class is one of the county's labels; in a county with no labels it counts when it is not a homestead and its building is worth more than the threshold, or when its address matches a candidate's. Industrial parcels within the distance of one another form a park when there are at least the minimum number of them. Agents change the rules with the tools, and the parks are derived again.</p></header>
+    <dl id="rules" class="kv">
+      <dt>Distance</dt><dd id="rule-distance">600 m</dd>
+      <dt>Minimum parcels</dt><dd id="rule-min-parcels">5</dd>
+      <dt>Building value over</dt><dd id="rule-value">$1,000,000</dd>
+    </dl>
+  </section>
+  <section id="county-rules" class="card flush" aria-labelledby="county-rules-title">
+    <header><div><h2 id="county-rules-title">Industrial labels</h2><p>The use-class labels that mean industrial in each county. A county with none uses the fallback rules.</p></div></header>
+    <div class="table-scroll">
+      <table id="county-rule-list">
+        <thead><tr><th>County</th><th>Labels</th></tr></thead>
+        <tbody>
+          <tr data-county="Carlton">
+            <td class="county-name">Carlton</td>
+            <td class="county-labels"><span class="badge" data-kind="info" data-fallback>fallback rules</span></td>
+          </tr>
+          <tr data-county="Chisago">
+            <td class="county-name">Chisago</td>
+            <td class="county-labels"><code data-label="Industrial">Industrial</code> <code data-label="Warehouse">Warehouse</code></td>
+          </tr>
+          <tr data-county="Pine">
+            <td class="county-name">Pine</td>
+            <td class="county-labels"><code data-label="Industrial-Commercial">Industrial-Commercial</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <div>
+        <h2>States</h2>
+        <p>The other shapes this page takes.</p>
+      </div>
+    </div>
+    <div class="stack">
+      <h3 class="text-md">A later window</h3>
+      <div class="card">
+        <nav class="paging" id="paging-later" aria-label="Pages"><a href="candidates-parks.html">First</a><a href="candidates-parks.html">Prev</a><a href="candidates-parks.html">Next</a><a href="candidates-parks.html">Last</a></nav>
+      </div>
+      <h3 class="text-md">No parks</h3>
+      <div class="card flush">
+        <div id="no-parks" class="empty">
+          <h3 class="text-md">No parks</h3>
+          <p>No park matches this view. Parks are derived again whenever scrapes finishes a parcel run or the rules change.</p>
+        </div>
+      </div>
+      <h3 class="text-md">Not derived yet, and no counties</h3>
+      <div class="card">
+        <p class="cluster"><span class="badge" data-kind="info">0 active</span> <span class="muted">not derived yet</span></p>
+        <div id="no-counties" class="empty">
+          <h3 class="text-md">No counties</h3>
+          <p>A county shows here once scrapes holds its parcel records.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<footer>release-17 <span>(8c3d0f2)</span></footer>
+<script src="feedback.js"></script>
+<script src="lab.js"></script>
+</body>
+</html>
