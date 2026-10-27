@@ -167,7 +167,7 @@
      "any" when the prospect list does not carry that filter's value, and, for
      the eight filters with a switch, followed when the switch is set by a
      space and span.badge[data-kind=info][data-unknown] (text "unknown
-     included"): dt "Revenue low" then dd#filter-revenue ("<.RevenueMin>
+     included"): dt "Revenue" then dd#filter-revenue ("<.RevenueMin>
      to <.RevenueMax>" when both are set, "at least <.RevenueMin>" or "at
      most <.RevenueMax>" when one is; switch .RevenueUnknown), dt "Drive
      minutes" then dd#filter-minutes ("at most <.MaxMinutes>"; switch
@@ -316,7 +316,7 @@
 {{with .Filters}}<section id="filters" class="card" aria-labelledby="filters-title">
 <header><h2 id="filters-title">Filters</h2><p>A filter applies only when the prospect list carries it; any means it does not. A filter on a fact that can be unknown leaves out the candidates whose value is unknown unless its switch lets them in. A website is <code>none</code> when the website search ran and found no site, and <code>unknown</code> when no search has run.</p></header>
 <dl id="filters" class="kv">
-<dt>Revenue low</dt><dd id="filter-revenue">{{if and .RevenueMin .RevenueMax}}{{.RevenueMin}} to {{.RevenueMax}}{{else if .RevenueMin}}at least {{.RevenueMin}}{{else if .RevenueMax}}at most {{.RevenueMax}}{{else}}<span class="muted">any</span>{{end}}{{if .RevenueUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
+<dt>Revenue</dt><dd id="filter-revenue">{{if and .RevenueMin .RevenueMax}}{{.RevenueMin}} to {{.RevenueMax}}{{else if .RevenueMin}}at least {{.RevenueMin}}{{else if .RevenueMax}}at most {{.RevenueMax}}{{else}}<span class="muted">any</span>{{end}}{{if .RevenueUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
 <dt>Drive minutes</dt><dd id="filter-minutes">{{if .MaxMinutes}}at most {{.MaxMinutes}}{{else}}<span class="muted">any</span>{{end}}{{if .MinutesUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
 <dt>Categories</dt><dd id="filter-categories">{{if .Categories}}{{range $i, $c := .Categories}}{{if $i}} {{end}}<code data-category="{{$c}}">{{$c}}</code>{{end}}{{if .CategoryUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}{{else if .CategoryUnknown}}<span data-unknown>no category only</span>{{else}}<span class="muted">any</span>{{end}}</dd>
 <dt>Fleet</dt><dd id="filter-fleet">{{if .Fleet}}<code>{{.Fleet}}</code>{{else}}<span class="muted">any</span>{{end}}{{if .FleetUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
