@@ -725,7 +725,7 @@ func TestProspectListOrderFieldsDirectionsUnknownsAndTies(t *testing.T) {
 	contractEqual(t, prospectListIDs(prospectListRead(t, f, c).Members), []string{ids[1], ids[3], ids[2], ids[0], ids[4]})
 }
 
-// R-KL9X-43CV R-OQ2T-7XB6 R-M29W-S4W4 R-NT5I-W4AF
+// R-KL9X-43CV R-OQ2T-7XB6 R-UP2C-5BPC R-NT5I-W4AF
 func TestProspectListMembershipReadsStoredJudgmentsAndStandingRejects(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -972,7 +972,7 @@ func TestProspectListCategoryMatchesAnyJudgmentsCategory(t *testing.T) {
 	}
 }
 
-// R-V3BX-4SPQ R-LYM7-MTO1 R-M29W-S4W4
+// R-V3BX-4SPQ R-LYM7-MTO1 R-UP2C-5BPC
 func TestProspectListWebsiteFiltersReadStoredJudgment(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

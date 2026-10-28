@@ -212,6 +212,9 @@ func (e *Engine) promptTargets(ctx context.Context, pr enrichers.Prompter, ds []
 			total.RunsFailed += r.counts.RunsFailed
 			total.Pages += r.counts.Pages
 			total.Cost += r.counts.Cost
+			total.SearchDifferent += r.counts.SearchDifferent
+			total.SearchStands += r.counts.SearchStands
+			total.SearchNone += r.counts.SearchNone
 		}
 	}
 	return total, ""
@@ -263,7 +266,7 @@ func (e *Engine) promptOne(ctx context.Context, pr enrichers.Prompter, d store.D
 		if err != nil {
 			return total, e.storeFailure(ctx, err)
 		}
-		r := pr.Found(ctx, out, after.URLs)
+		r := pr.Found(ctx, subject, out, after.URLs)
 		if !pr.Valid(r.Found) {
 			return total, store.ReasonPrompts
 		}
@@ -273,6 +276,18 @@ func (e *Engine) promptOne(ctx context.Context, pr enrichers.Prompter, d store.D
 		_, err = e.cfg.Store.AddEnrichments(ctx, []store.Enrichment{{Candidate: d.Candidate, Kind: pr.Kind(), Inputs: d.Inputs, Source: r.Source, Found: r.Found, Cost: r.Cost}})
 		if err != nil {
 			return total, e.storeFailure(ctx, err)
+		}
+		if pr.Kind() == enrichers.KindWebsiteSearch {
+			var found enrichers.WebsiteSearchFound
+			_ = json.Unmarshal(r.Found, &found)
+			switch found.Case {
+			case enrichers.SearchCaseDifferent:
+				total.SearchDifferent = 1
+			case enrichers.SearchCaseStands:
+				total.SearchStands = 1
+			case enrichers.SearchCaseNone:
+				total.SearchNone = 1
+			}
 		}
 		if pr.Failed(r.Found) {
 			total.RunsFailed = 1

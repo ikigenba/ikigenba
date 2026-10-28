@@ -23,7 +23,7 @@ func previousSearchFacts(ctx context.Context, tx *sql.Tx, id, state, searchAt st
 	return err
 }
 
-// R-J35A-41QW
+// R-VGPF-BXO7
 func TestWebsiteSearchUpgradePreservesPreviousFactsAndResults(t *testing.T) {
 	ctx := context.Background()
 	for _, state := range []string{sources.WebsiteHTTPS, sources.WebsiteHTTP, sources.WebsiteNone, sources.WebsiteUnknown} {

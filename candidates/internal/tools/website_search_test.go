@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-0ECF-HYB5 R-ZKAN-MILE R-QWZN-Q90D
+// R-VKSM-XZQL R-ZKAN-MILE R-WTON-8TMG
 func TestSearchAnswersUseStoredResults(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
@@ -153,7 +153,7 @@ func TestWebsiteSearchEnrichDispatch(t *testing.T) {
 	}
 }
 
-// R-0ECF-HYB5 R-04L8-FSDL
+// R-VKSM-XZQL R-VJKQ-K7ZW
 func TestWebsiteDecisionAnswersDistinguishUncheckedAndUnfound(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
@@ -219,5 +219,39 @@ func TestWebsiteDecisionAnswersDistinguishUncheckedAndUnfound(t *testing.T) {
 				t.Fatal(got, tc)
 			}
 		})
+	}
+}
+
+// R-WTON-8TMG
+func TestSearchAnswersPreserveRecordedContext(t *testing.T) {
+	f := newFixture(t)
+	id := f.seed(1)[0]
+	good := enrichers.WebsiteSearchRun{ID: "context-run", Status: enrichers.RunExited, ExitCode: new(0)}
+	for _, found := range []enrichers.WebsiteSearchFound{
+		{Run: good, Answer: &enrichers.WebsiteSearchAnswer{URL: "https://answer.test/", Why: "chosen-why", Rejected: []enrichers.WebsiteSearchSite{{URL: "https://first.test/", Why: "first-why"}, {URL: "https://second.test/", Why: "second-why"}}}, Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteNone, Error: "chosen-error"}},
+		{Run: good, Answer: &enrichers.WebsiteSearchAnswer{}},
+		{Run: enrichers.WebsiteSearchRun{ID: "failed-run", Status: "failed"}},
+		{Run: good, Answer: &enrichers.WebsiteSearchAnswer{URL: "https://answer.test/"}, Reason: enrichers.SearchReasonEmptySite, Website: "https://recorded.test/", WebsiteFrom: store.WebsiteByCheck, SiteText: &enrichers.WebsiteSearchSiteText{Status: "failed", Pages: 0}, Case: enrichers.SearchCaseDifferent},
+		{Run: good, Answer: &enrichers.WebsiteSearchAnswer{URL: "https://recorded.test/"}, Reason: enrichers.SearchReasonAgain, Website: "https://recorded.test/", WebsiteFrom: store.WebsiteBySearch, SiteText: &enrichers.WebsiteSearchSiteText{Status: enrichers.RunExited, Pages: 4}, Case: enrichers.SearchCaseStands},
+		{Run: good, Answer: &enrichers.WebsiteSearchAnswer{}, Reason: enrichers.SearchReasonNoWebsite, Case: enrichers.SearchCaseNone},
+		{Run: enrichers.WebsiteSearchRun{ID: "failed-run", Status: "failed"}, Reason: enrichers.SearchReasonNoWebsite},
+	} {
+		f.now = f.now.Add(time.Minute)
+		input := store.Enrichment{Candidate: id, Kind: enrichers.KindWebsiteSearch, Inputs: "context-input", Source: enrichers.SourcePrompts, Found: encodedJSON(found), Cost: .023714}
+		if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{input}); err != nil {
+			t.Fatal(err, string(input.Found))
+		}
+		result := f.call("candidate", tools.CandidateArgs{Candidate: id})
+		if result.IsError() {
+			t.Fatal(decode(t, result))
+		}
+		got := decodeList[tools.Detail](t, result).EnrichmentResults[0]
+		if got.Kind != input.Kind || got.Source != input.Source || got.Inputs != input.Inputs || got.Cost != input.Cost || got.At != stamp(f.now) || !reflect.DeepEqual(got.Found, input.Found) {
+			t.Fatal(got, input)
+		}
+		encoded := encodedJSON(got)
+		if !reflect.DeepEqual(objectKeys(t, encoded), []string{"kind", "source", "inputs", "found", "cost", "at"}) {
+			t.Fatal(string(encoded))
+		}
 	}
 }

@@ -45,7 +45,7 @@ func TestTargetPassAndCosts(t *testing.T) {
 	}
 }
 
-// R-909X-89BV
+// R-ZV9J-LB64
 func TestSiteTextResultProjection(t *testing.T) {
 	for _, tc := range []struct {
 		status string
@@ -115,7 +115,7 @@ func TestKeptPagePathGrammar(t *testing.T) {
 	}
 }
 
-// R-92PP-ZST9 R-6BJH-R2M3 R-6GF3-A5KV R-6DZA-IM3H
+// R-01D1-I5VL R-6BJH-R2M3 R-6GF3-A5KV R-6DZA-IM3H
 func TestKeptPageRoutes(t *testing.T) {
 	cfg, d := pageFixture(t)
 	ctx := t.Context()
@@ -339,7 +339,7 @@ func TestTargetPassPage(t *testing.T) {
 }
 
 // R-QORQ-ADJO R-QCKQ-GO4Q R-3ZNC-HAUR
-// R-JN4O-3OFH
+// R-U5TU-I2XQ
 func TestAddedViewShapes(t *testing.T) {
 	candidate := CandidateData{page.Banner{}, CandidateView{}, nil, nil, []EstimateView{}, []LinkView{}, []RulingView{}, []PageRow{}, []EnrichmentRow{}, []RejectRecordRow{}, []CampaignRow{}}
 	if candidate.Pages == nil || candidate.EnrichmentResults == nil {
@@ -365,6 +365,9 @@ func TestAddedViewShapes(t *testing.T) {
 		Run                           *RunView
 		Answer                        *AnswerView
 		Confirmation                  *ConfirmationView
+		Reason, Website, WebsiteFrom  string
+		SiteText                      *SearchSiteTextView
+		Case                          string
 		Route                         *RouteView
 		Failed                        bool
 		Cost, At, AtText              string

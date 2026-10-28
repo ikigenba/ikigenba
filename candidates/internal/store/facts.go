@@ -146,7 +146,7 @@ func (s *Store) projectedFacts(ctx context.Context, tx *sql.Tx, id string) (Fact
 			}
 		}
 	}
-	f.WebsiteSource, f.Website, f.WebsiteURL = websiteFacts(es)
+	f.WebsiteSource, f.Website, f.WebsiteURL, _, _, _ = WebsiteDecisionOf(es)
 	if len(briefCategories) > 0 {
 		f.Categories = briefCategories
 	}
@@ -208,6 +208,19 @@ func (s *Store) factsResults(ctx context.Context, tx *sql.Tx, id string) ([]Enri
 		}
 		routeInputs = (enrichers.DriveRoute{}).Inputs(enrichers.Subject{Street: c.Street, City: c.City, State: c.State, Zip: c.Zip, Origin: s.cfg.Origin})
 	}
+	var takeover []Enrichment
+	if check, ok := newest[sources.WebsiteCheck]; ok {
+		var w website.Result
+		if err := json.Unmarshal([]byte(check.found), &w); err != nil {
+			return nil, err
+		}
+		if w.State == sources.WebsiteHTTPS || w.State == sources.WebsiteHTTP {
+			takeover, err = enrichmentRecords(ctx, tx, ` WHERE candidate=? AND kind=? AND json_extract(found,'$.case')=? AND json_extract(found,'$.website')=? AND json_extract(found,'$.website')<>'' AND json_extract(found,'$.run.status')=? AND json_extract(found,'$.run.exit_code')=0 AND json_type(found,'$.answer')='object' AND json_extract(found,'$.confirmation.state') IN (?,?) ORDER BY seq DESC LIMIT 1`, id, enrichers.KindWebsiteSearch, enrichers.SearchCaseDifferent, w.URL, enrichers.RunExited, sources.WebsiteHTTPS, sources.WebsiteHTTP)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
 	checkWorks := false
 	for _, kind := range kinds {
 		r, ok := newest[kind]
@@ -248,15 +261,15 @@ func (s *Store) factsResults(ctx context.Context, tx *sql.Tx, id string) ([]Enri
 				if err = json.Unmarshal(e.Found, &v); err != nil {
 					return nil, err
 				}
-				deciding = !v.Failed() && (v.Answer.URL == "" || v.Confirmation != nil && v.Confirmation.State == sources.WebsiteNone)
-				confirmed := !v.Failed() && v.Confirmation != nil && (v.Confirmation.State == sources.WebsiteHTTPS || v.Confirmation.State == sources.WebsiteHTTP)
+				deciding = !inertSearch(v) && !v.Failed() && (v.Answer.URL == "" || v.Confirmation != nil && v.Confirmation.State == sources.WebsiteNone)
+				confirmed := !inertSearch(v) && !v.Failed() && v.Confirmation != nil && (v.Confirmation.State == sources.WebsiteHTTPS || v.Confirmation.State == sources.WebsiteHTTP)
 				// Retain only the newest unfound search while looking for a confirmed one.
 				if deciding {
 					for _, prior := range out {
 						if prior.Kind == kind {
 							var p enrichers.WebsiteSearchFound
 							_ = json.Unmarshal(prior.Found, &p)
-							if !p.Failed() && (p.Answer.URL == "" || p.Confirmation != nil && p.Confirmation.State == sources.WebsiteNone) {
+							if !inertSearch(p) && !p.Failed() && (p.Answer.URL == "" || p.Confirmation != nil && p.Confirmation.State == sources.WebsiteNone) {
 								deciding = false
 								break
 							}
@@ -264,7 +277,7 @@ func (s *Store) factsResults(ctx context.Context, tx *sql.Tx, id string) ([]Enri
 					}
 				}
 				deciding = deciding || confirmed
-				done = checkWorks || confirmed
+				done = checkWorks && len(takeover) == 0 || confirmed
 			case enrichers.KindDriveRoute:
 				var v enrichers.RouteFound
 				if err = json.Unmarshal(e.Found, &v); err != nil {
@@ -282,6 +295,7 @@ func (s *Store) factsResults(ctx context.Context, tx *sql.Tx, id string) ([]Enri
 			}
 		}
 	}
+	out = append(out, takeover...)
 	return out, nil
 }
 
@@ -434,42 +448,64 @@ func recordCategories(ctx context.Context, tx *sql.Tx, id string) ([]sources.Cat
 	return unique, nil
 }
 
-// websiteFacts chooses a working newest check, then a confirmed search,
-// then a search that found no site. A failed check alone leaves it unknown.
-func websiteFacts(es []Enrichment) (source, state, url string) {
+// WebsiteDecisionOf returns the website selected by the recorded evidence.
+func WebsiteDecisionOf(es []Enrichment) (source, state, url, title, why string, at time.Time) {
 	state = sources.WebsiteUnknown
-	checkSeen := false
-	var search *enrichers.WebsiteSearchFound
-	unfound := false
+	var check *website.Result
+	var checkAt time.Time
+	var confirmed, unfound *enrichers.WebsiteSearchFound
+	var confirmedAt, unfoundAt time.Time
+	takeovers := map[string]bool{}
 	for _, e := range es {
-		if e.Kind == sources.WebsiteCheck && !checkSeen {
-			var v website.Result
-			if json.Unmarshal(e.Found, &v) == nil {
-				checkSeen = true
-				if v.State == sources.WebsiteHTTPS || v.State == sources.WebsiteHTTP {
-					return WebsiteByCheck, v.State, v.URL
-				}
+		if e.Kind == sources.WebsiteCheck && check == nil {
+			var w website.Result
+			if json.Unmarshal(e.Found, &w) == nil {
+				check = &w
+				checkAt = e.At
 			}
 		}
-		if e.Kind == enrichers.KindWebsiteSearch && search == nil {
-			var v enrichers.WebsiteSearchFound
-			if json.Unmarshal(e.Found, &v) == nil && !v.Failed() {
-				if v.Confirmation != nil && (v.Confirmation.State == sources.WebsiteHTTPS || v.Confirmation.State == sources.WebsiteHTTP) {
-					search = &v
-				}
-				if v.Answer.URL == "" || v.Confirmation != nil && v.Confirmation.State == sources.WebsiteNone {
-					unfound = true
-				}
-			}
+		if e.Kind != enrichers.KindWebsiteSearch {
+			continue
+		}
+		var v enrichers.WebsiteSearchFound
+		if json.Unmarshal(e.Found, &v) != nil || v.Failed() {
+			continue
+		}
+		working := v.Confirmation != nil && (v.Confirmation.State == sources.WebsiteHTTPS || v.Confirmation.State == sources.WebsiteHTTP)
+		if working && v.Case == enrichers.SearchCaseDifferent && v.Website != "" {
+			takeovers[v.Website] = true
+		}
+		if inertSearch(v) {
+			continue
+		}
+		if working && confirmed == nil {
+			confirmed = &v
+			confirmedAt = e.At
+		}
+		if unfound == nil && (v.Answer.URL == "" || v.Confirmation != nil && v.Confirmation.State == sources.WebsiteNone) {
+			unfound = &v
+			unfoundAt = e.At
 		}
 	}
-	if search != nil {
-		return WebsiteBySearch, search.Confirmation.State, search.Confirmation.URL
+	if check != nil && (check.State == sources.WebsiteHTTPS || check.State == sources.WebsiteHTTP) && !takeovers[check.URL] {
+		return WebsiteByCheck, check.State, check.URL, check.Title, "", checkAt
 	}
-	if unfound {
-		return "", sources.WebsiteNone, ""
+	if confirmed != nil {
+		c := confirmed.Confirmation
+		return WebsiteBySearch, c.State, c.URL, c.Title, confirmed.Answer.Why, confirmedAt
 	}
-	return "", state, ""
+	if unfound != nil {
+		return "", sources.WebsiteNone, "", "", unfound.Answer.Why, unfoundAt
+	}
+	if check != nil {
+		title = check.Title
+		at = checkAt
+	}
+	return
+}
+
+func inertSearch(v enrichers.WebsiteSearchFound) bool {
+	return v.Website != "" && (v.Case == enrichers.SearchCaseStands || v.Case == enrichers.SearchCaseNone || v.Confirmation != nil && v.Confirmation.State == sources.WebsiteNone)
 }
 
 // MinutesByRoute and MinutesByZip identify the deciding drive result.

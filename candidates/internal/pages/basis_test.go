@@ -77,7 +77,7 @@ func TestBasisViewShapesAndProjection(t *testing.T) {
 	}
 }
 
-// R-XZ84-OKCO R-93XM-DKJY
+// R-XZ84-OKCO R-ZQDY-287C
 func TestBasisFiltersAndMemberProjection(t *testing.T) {
 	for _, basis := range [][]string{nil, {store.BasisRecords, store.BasisEnriched}} {
 		got := filtersView(store.ProspectListFilters{Basis: basis})
@@ -296,7 +296,7 @@ func TestProspectListRequestsRecordOneOpen(t *testing.T) {
 	assertListBody(t, cfg, "GET", virgin.ID, v)
 }
 
-// R-91HT-M12K R-93XM-DKJY R-Y43Q-7NBG
+// R-0055-4E4W R-ZQDY-287C R-Y43Q-7NBG
 func TestCandidateBasisAndKindsOnPages(t *testing.T) {
 	cfg, handle := pageFixture(t)
 	now := fixtureTime()

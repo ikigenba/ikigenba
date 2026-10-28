@@ -11,7 +11,7 @@ import (
 )
 
 // R-0JP2-83HN
-// R-8SYI-XMVP
+// R-ZBR5-GZB0
 func TestCategoryEvidenceViews(t *testing.T) {
 	records := []sources.Category{{Name: sources.CategoryRetail, Source: "ppp"}, {Name: sources.CategoryTrucking, Source: "fmcsa"}}
 	brief := []sources.Category{{Name: sources.CategoryAgriculture, Source: enrichers.KindBrief}, {Name: sources.CategoryRetail, Source: enrichers.KindBrief}}
@@ -41,8 +41,8 @@ func TestCategoryEvidenceViews(t *testing.T) {
 	}
 }
 
-// R-Y43Q-7NBG R-XT4M-RPN7 R-ANM6-HRQR
-// R-8SYI-XMVP
+// R-Y43Q-7NBG R-XT4M-RPN7 R-UKGN-3BU2
+// R-ZBR5-GZB0
 func TestCategoryEvidencePages(t *testing.T) {
 	cfg, db := pageFixture(t)
 	now := fixtureTime()

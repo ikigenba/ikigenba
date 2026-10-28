@@ -60,6 +60,8 @@ type Subject struct {
 	Pages                                                                    []Page
 	Facts                                                                    *LinkFound
 	Origin                                                                   string
+	SiteText                                                                 *SiteTextFound
+	SearchInputs                                                             string
 }
 
 // Result is a kind's finding and its provenance.
@@ -137,7 +139,7 @@ type Prompter interface {
 	Ready() bool
 	Prompt() string
 	Input(s Subject) json.RawMessage
-	Found(ctx context.Context, out prompts.Outcome, pages int64) Result
+	Found(ctx context.Context, s Subject, out prompts.Outcome, pages int64) Result
 	Failed(found json.RawMessage) bool
 }
 
@@ -446,7 +448,7 @@ func (SiteText) Input(s Subject) json.RawMessage {
 }
 
 // Found records the run's outcome without retaining its output.
-func (SiteText) Found(_ context.Context, out prompts.Outcome, pages int64) Result {
+func (SiteText) Found(_ context.Context, _ Subject, out prompts.Outcome, pages int64) Result {
 	r := result(SourcePrompts, SiteTextFound{out.ID, out.Status, out.ExitCode, pages, out.CostNanos})
 	r.Cost = float64(out.CostNanos) / 1e9
 	return r

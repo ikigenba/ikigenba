@@ -128,7 +128,7 @@ func TestPlacesLinksKeepRecordDisplayAndNeverBecomeGone(t *testing.T) {
 	}
 }
 
-// R-OCMN-W7DR R-OXCY-EAZK R-ONLR-C520
+// R-W9Z0-IFGV R-W3VI-LKRE R-ONLR-C520
 func TestGetParkReadsNewestWalkIncludingCeiling(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -166,7 +166,7 @@ func TestGetParkReadsNewestWalkIncludingCeiling(t *testing.T) {
 	contractEqual(t, got, want)
 }
 
-// R-OBER-IFN2 R-OR9G-HGA3 R-OW52-0J8V R-OQ1K-3OJE
+// R-W07T-G9JB R-OR9G-HGA3 R-64U1-LEO8 R-OQ1K-3OJE
 func TestWalkCeilingRuleEditsAreAtomicAndPersistent(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -205,7 +205,7 @@ func TestWalkCeilingRuleEditsAreAtomicAndPersistent(t *testing.T) {
 	contractEqual(t, p.Kind, store.KindParks)
 }
 
-// R-OJY2-6TTX R-OL5Y-KLKM R-OMDU-YDBB
+// R-VROI-RVCG R-VU4B-JETU R-VWK4-AYB8
 func TestGenericPassEndingsPreserveWalkAndParkRecords(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -284,7 +284,7 @@ func TestGenericPassEndingsPreserveWalkAndParkRecords(t *testing.T) {
 	}
 }
 
-// R-OMDU-YDBB
+// R-VWK4-AYB8
 func TestWalkPassReturnedRecordsKeepStatusInvariants(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -335,7 +335,7 @@ func TestWalkPassReturnedRecordsKeepStatusInvariants(t *testing.T) {
 	contractEqual(t, got, []store.Pass{})
 }
 
-// R-S1JP-L77G R-OW52-0J8V R-OYKU-S2Q9
+// R-EP8R-Z5D9 R-64U1-LEO8 R-W7J7-QVZH
 func TestKnownCountiesFollowLatestDerivationAndStoredLabels(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)

@@ -120,15 +120,15 @@ type Ruling struct {
 
 // Pass records one pass.
 type Pass struct {
-	ID, Kind, Origin, Trigger, Target, EnrichKind, Scraper, ParcelRun, Status, Reason                                                                                                                                                                                                                    string
-	Started, Finished                                                                                                                                                                                                                                                                                    time.Time
-	Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None, Runs, RunsFailed, Pages, Cost, ParcelsRead, ByLabel, ByValue, ByCandidate, ParksCreated, ParksUpdated, ParksGone, ParksGrown, ParksWalked, Circles, Requests, Found, NewCandidates int64
-	CeilingReached                                                                                                                                                                                                                                                                                       bool
-	UserID, UserEmail, RequestID, Delivery                                                                                                                                                                                                                                                               string
+	ID, Kind, Origin, Trigger, Target, EnrichKind, Scraper, ParcelRun, Status, Reason                                                                                                                                                                                                                                                               string
+	Started, Finished                                                                                                                                                                                                                                                                                                                               time.Time
+	Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None, Runs, RunsFailed, Pages, Cost, ParcelsRead, ByLabel, ByValue, ByCandidate, ParksCreated, ParksUpdated, ParksGone, ParksGrown, ParksWalked, Circles, Requests, Found, NewCandidates, SearchDifferent, SearchStands, SearchNone int64
+	CeilingReached                                                                                                                                                                                                                                                                                                                                  bool
+	UserID, UserEmail, RequestID, Delivery                                                                                                                                                                                                                                                                                                          string
 }
 
 // Counts contains the results of pass work.
-type Counts struct{ Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None, Runs, RunsFailed, Pages, Cost, ParcelsRead, ByLabel, ByValue, ByCandidate, ParksCreated, ParksUpdated, ParksGone, ParksGrown, ParksWalked, Circles, Requests, Found, NewCandidates int64 }
+type Counts struct{ Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None, Runs, RunsFailed, Pages, Cost, ParcelsRead, ByLabel, ByValue, ByCandidate, ParksCreated, ParksUpdated, ParksGone, ParksGrown, ParksWalked, Circles, Requests, Found, NewCandidates, SearchDifferent, SearchStands, SearchNone int64 }
 
 // Observation is one source reading to attach.
 type Observation struct {

@@ -128,7 +128,7 @@ func targetEngine(f *fixture, pc *prompts.Client, after func(time.Duration) <-ch
 	f.eng = passes.New(passes.Config{Store: f.st, Scrapes: f.sc, Prompts: pc, Telemetry: f.w, Events: f.em, After: after})
 }
 
-// R-Z83N-ST6G R-84KF-D8N0  R-F517-U54R R-PJB5-A6C2
+// R-Z83N-ST6G R-84KF-D8N0  R-SOKW-PW7E R-SS8L-V7FH
 func TestTargetRecordAndSchedulingValues(t *testing.T) {
 	t.Parallel()
 	if passes.RunsInFlight != 4 || passes.StartTries != 20 || passes.PollInterval != 5*time.Second || passes.QueueWait != 30*time.Second || passes.NoPrompt == "" || strings.Contains(passes.NoPrompt, "\n") {
@@ -231,7 +231,7 @@ func TestTargetRefusals(t *testing.T) {
 	}
 }
 
-// R-MTSF-SRSA R-08ON-9XFA R-TMW8-ONTV R-OYM3-WBI1 R-PXXX-VF8E R-Q0DQ-MYPS R-2EQ7-R8VQ R-RFMR-TKMQ R-PGVC-IMUO
+// R-MTSF-SRSA R-08ON-9XFA R-TMW8-ONTV R-OYM3-WBI1 R-T83A-U82I R-TAJ3-LRJW R-2EQ7-R8VQ R-RFMR-TKMQ R-UCBZ-GNJF
 func TestPromptPassResultsAndForce(t *testing.T) {
 	t.Parallel()
 	for _, status := range []string{"exited", "failed", "killed", "timed_out"} {
@@ -341,7 +341,7 @@ func TestPromptPassResultsAndForce(t *testing.T) {
 	}
 }
 
-// R-SXAC-NH9A R-PZ5U-96Z3 R-PEFJ-R3DA R-PWQ1-HNHP R-YG1Z-034H
+// R-SXAC-NH9A R-T1ZS-XDD1 R-U50L-6139 R-TE6S-R2RZ R-YG1Z-034H
 func TestPromptRetriesAndFailures(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"retry", "exhausted", "result", "invalid", "show_retry"} {
@@ -481,7 +481,7 @@ func TestTargetedDerivedAndWebsite(t *testing.T) {
 	}
 }
 
-// R-1P4B-Q2B5 R-PWQ1-HNHP R-373Q-6C3X R-DTXE-DYY4 R-MTSF-SRSA
+// R-1P4B-Q2B5 R-TE6S-R2RZ R-373Q-6C3X R-DTXE-DYY4 R-MTSF-SRSA
 func TestPromptConcurrencyAndDrain(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -560,7 +560,7 @@ func TestPromptConcurrencyAndDrain(t *testing.T) {
 	}
 }
 
-// R-Q2TJ-EI76: fullIngest requests current then rows for its registered source.
+// R-TKAA-NXHG: fullIngest requests current then rows for its registered source.
 func TestFullIngestRequestSequence(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -581,7 +581,7 @@ func TestFullIngestRequestSequence(t *testing.T) {
 	}
 }
 
-// R-PXXX-VF8E R-Q0DQ-MYPS: distinct URLs are result data; page copies are pass cost.
+// R-T83A-U82I R-TAJ3-LRJW: distinct URLs are result data; page copies are pass cost.
 func TestPromptCountsPagesAndOutcome(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -631,7 +631,7 @@ func TestPromptCountsPagesAndOutcome(t *testing.T) {
 	}
 }
 
-// R-Q1LN-0QGH: the default poll reaches a completed run within sixty seconds.
+// R-T5NI-2OL4: the default poll reaches a completed run within sixty seconds.
 func TestPromptDefaultPoll(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := seedTarget(t, f, 1)[0]
@@ -708,7 +708,7 @@ func TestProspectListSelectionSkipsNoWebsiteAndPreservesOutside(t *testing.T) {
 	}
 }
 
-// R-PZ5U-96Z3 R-PWQ1-HNHP: one failed result cancels other held polls without waiting.
+// R-T1ZS-XDD1 R-TE6S-R2RZ: one failed result cancels other held polls without waiting.
 func TestPromptFailureCancelsOtherRunsAndKeepsPriorResult(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -877,7 +877,7 @@ func TestConcurrentTargetStarts(t *testing.T) {
 	f.eng.Drain(context.Background())
 }
 
-// R-Q0DQ-MYPS R-PD7N-DBML R-PXXX-VF8E R-TMW8-ONTV R-2EQ7-R8VQ R-RFMR-TKMQ
+// R-TAJ3-LRJW R-TQDS-KS6X R-T83A-U82I R-TMW8-ONTV R-2EQ7-R8VQ R-RFMR-TKMQ
 func TestBriefTargetLifecycleAndCounts(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -1004,7 +1004,7 @@ func TestBriefTargetLifecycleAndCounts(t *testing.T) {
 	}
 }
 
-// R-PWQ1-HNHP R-PEFJ-R3DA
+// R-TE6S-R2RZ R-U50L-6139
 func TestPromptAdditionalFailuresPreserveEvidence(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"result_refused", "empty_status", "socket_loss", "run_error"} {

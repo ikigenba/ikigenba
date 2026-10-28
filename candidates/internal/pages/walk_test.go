@@ -98,7 +98,7 @@ func captureWalkData[T any](t *testing.T, cfg Config, path, name string) T {
 	return got
 }
 
-// R-ON6O-ADSL R-1O8P-IM4N R-QMBX-IU2A R-QPZM-O5AD R-OPMH-1X9Z R-OQUD-FP0O
+// R-ON6O-ADSL R-1O8P-IM4N R-QMBX-IU2A R-QPZM-O5AD R-K6JN-48A9 R-K7RJ-I00Y
 func TestWalkPageData(t *testing.T) {
 	cfg, ps := parksFixture(t, 3)
 	for _, p := range ps {

@@ -352,4 +352,7 @@ func setCounts(p *Pass, c Counts) {
 	p.Requests = c.Requests
 	p.Found = c.Found
 	p.NewCandidates = c.NewCandidates
+	p.SearchDifferent = c.SearchDifferent
+	p.SearchStands = c.SearchStands
+	p.SearchNone = c.SearchNone
 }

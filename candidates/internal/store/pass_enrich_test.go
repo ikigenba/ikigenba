@@ -14,16 +14,16 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-OF2G-NQV5 R-IXLY-M7WD R-ZYXG-7RHQ
+// R-VJ58-3H5L R-IXLY-M7WD R-ZYXG-7RHQ
 func TestEnrichPassShapeAndVocabulary(t *testing.T) {
 	contractEqual(t, []string{store.KindEnrich, store.OriginEnrich, store.OriginPass, store.TriggerEnrich}, []string{"enrich", "enrich", "pass", "enrich"})
 	p := store.Pass{ID: "pass", Kind: store.KindEnrich, Origin: store.OriginPass, Trigger: "parent", Status: store.StatusDone, Reason: "reason", Started: time.Time{}, Finished: time.Time{}, Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14, UserID: "user", UserEmail: "email", RequestID: "request", Delivery: "delivery"}
 	shape := struct {
-		ID, Kind, Origin, Trigger, Target, EnrichKind, Scraper, ParcelRun, Status, Reason                                                                                                                                                                                                                    string
-		Started, Finished                                                                                                                                                                                                                                                                                    time.Time
-		Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None, Runs, RunsFailed, Pages, Cost, ParcelsRead, ByLabel, ByValue, ByCandidate, ParksCreated, ParksUpdated, ParksGone, ParksGrown, ParksWalked, Circles, Requests, Found, NewCandidates int64
-		CeilingReached                                                                                                                                                                                                                                                                                       bool
-		UserID, UserEmail, RequestID, Delivery                                                                                                                                                                                                                                                               string
+		ID, Kind, Origin, Trigger, Target, EnrichKind, Scraper, ParcelRun, Status, Reason                                                                                                                                                                                                                                                               string
+		Started, Finished                                                                                                                                                                                                                                                                                                                               time.Time
+		Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None, Runs, RunsFailed, Pages, Cost, ParcelsRead, ByLabel, ByValue, ByCandidate, ParksCreated, ParksUpdated, ParksGone, ParksGrown, ParksWalked, Circles, Requests, Found, NewCandidates, SearchDifferent, SearchStands, SearchNone int64
+		CeilingReached                                                                                                                                                                                                                                                                                                                                  bool
+		UserID, UserEmail, RequestID, Delivery                                                                                                                                                                                                                                                                                                          string
 	}(p)
 	contractEqual(t, store.Pass(shape), p)
 	contractEqual(t, store.KindEnrichTarget, "enrich_target")
@@ -36,7 +36,7 @@ func enrichPass() store.Pass {
 	return store.Pass{Kind: store.KindEnrich, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
 }
 
-// R-OHI9-FACJ R-OIQ5-T238 R-P28J-XDYC
+// R-OHI9-FACJ R-VP8Q-0BV2 R-P28J-XDYC
 func TestPassLanesAndOrigins(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -145,7 +145,7 @@ func TestInvalidEnrichAndFollowOnPasses(t *testing.T) {
 	contractEqual(t, len(ps), 0)
 }
 
-// R-OUX5-MRI6
+// R-W2NM-7T0P
 func TestConcurrentPassLanes(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -198,7 +198,7 @@ func targetedPass(target, kind string) store.Pass {
 	return store.Pass{Kind: store.KindEnrichTarget, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, Target: target, EnrichKind: kind, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
 }
 
-// R-OHI9-FACJ R-OIQ5-T238 R-P28J-XDYC
+// R-OHI9-FACJ R-VP8Q-0BV2 R-P28J-XDYC
 func TestPassKindScopeMatrix(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -307,7 +307,7 @@ func TestPassKindScopeMatrix(t *testing.T) {
 	}
 }
 
-// R-OIQ5-T238 R-OJY2-6TTX R-OL5Y-KLKM
+// R-VP8Q-0BV2 R-VROI-RVCG R-VU4B-JETU
 func TestTargetedPassLifecyclePreservesOtherRecords(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -384,7 +384,7 @@ func TestTargetedPassLifecyclePreservesOtherRecords(t *testing.T) {
 	contractEqual(t, got, q)
 }
 
-// R-OHI9-FACJ R-OIQ5-T238
+// R-OHI9-FACJ R-VP8Q-0BV2
 func TestTargetedPassAcceptsEveryEnrichmentKind(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)

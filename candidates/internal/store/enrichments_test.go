@@ -87,7 +87,7 @@ func TestEnrichmentShapesAndMethods(t *testing.T) {
 	checkMethods(st.AddEnrichments, st.DueEnrichments, st.Derive)
 }
 
-// R-IY9O-KYS4 R-GR3P-B2FW R-GSBL-OU6L R-GX77-7X5D
+// R-USBF-OIUB R-GR3P-B2FW R-GSBL-OU6L R-GX77-7X5D
 func TestEnrichmentAppendAndMark(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -172,7 +172,7 @@ func TestDueUsesInputs(t *testing.T) {
 	contractError(t, err, store.ErrUnreachable)
 }
 
-// R-IZHK-YQIT R-OPBW-Q4PZ R-M10O-KUCX R-IPQD-WKL9
+// R-UUR8-G2BP R-OPBW-Q4PZ R-M10O-KUCX R-UM7X-RO4U
 func TestDeriveFactsAndFill(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -234,7 +234,7 @@ func onlyWebsite(es []store.Enrichment) []store.Enrichment {
 	return out
 }
 
-// R-OO40-CCZA R-IZHK-YQIT R-M10O-KUCX
+// R-OO40-CCZA R-UUR8-G2BP R-M10O-KUCX
 func TestDueWindowsAndDerivedSubject(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

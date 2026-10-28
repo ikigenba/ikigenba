@@ -124,7 +124,7 @@ func TestParksDedupeIgnoresPassKindOriginAndStatus(t *testing.T) {
 	})
 }
 
-// R-PKJ1-NY2R R-E4WH-TWMD
+// R-TJ2E-A5QR R-E4WH-TWMD
 func TestParksLaneIndependentOfAllCandidateLanes(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -422,7 +422,7 @@ func candidateReadSnapshot(t *testing.T, st *store.Store) []byte {
 	return b
 }
 
-// R-TQ38-2EBU R-3D78-36TE R-PFNG-4V3Z
+// R-TQ38-2EBU R-3D78-36TE R-TSTL-CBOB
 func TestParksComposesClassificationClustersAndMixedPlan(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

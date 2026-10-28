@@ -28,7 +28,7 @@ func TestPromptWords(t *testing.T) {
 	}
 }
 
-// R-IB3H-NU7E R-ICBE-1LY3 R-M28K-YM3M R-M746-HP2E R-M8C2-VGT3
+// R-7NKZ-ZJ2M R-7Q0S-R2K0 R-M28K-YM3M R-M746-HP2E R-M8C2-VGT3
 func TestSiteTextClientAndRegistry(t *testing.T) {
 	writer := telemetry.New(telemetry.Config{Service: "fixture", Sink: &telemetry.Capture{}, Now: func() time.Time { return time.Unix(100, 0) }, Sleep: func(context.Context, time.Duration) {}, Rand: bytes.NewReader(bytes.Repeat([]byte{1}, 256))})
 	defer writer.Shutdown(context.Background(), "fixture")
@@ -90,13 +90,13 @@ func TestSiteTextInput(t *testing.T) {
 	}
 }
 
-// R-LTPA-A7WR R-INAH-HJMC
+// R-LTPA-A7WR R-7TOH-WDS3
 func TestSiteTextFound(t *testing.T) {
 	e := enrichers.SiteText{}
 	for _, code := range []*int{nil, new(int), func() *int { v := 2; return &v }()} {
 		for _, status := range []string{enrichers.RunExited, "failed"} {
 			out := prompts.Outcome{ID: "run_fixture", Status: status, ExitCode: code, CostNanos: 1500000000}
-			r := e.Found(context.Background(), out, 3)
+			r := e.Found(context.Background(), enrichers.Subject{}, out, 3)
 			f := enrichers.SiteTextFound{out.ID, out.Status, code, 3, out.CostNanos}
 			want, _ := json.Marshal(f)
 			if r.Source != enrichers.SourcePrompts || r.Cost != 1.5 || !bytes.Equal(r.Found, want) {
@@ -116,12 +116,12 @@ func TestSiteTextFound(t *testing.T) {
 			out.ReasoningTokens = 6
 			out.Started = time.Unix(10, 0)
 			out.Finished = time.Unix(20, 0)
-			if !reflect.DeepEqual(e.Found(context.Background(), out, 3), r) {
+			if !reflect.DeepEqual(e.Found(context.Background(), enrichers.Subject{}, out, 3), r) {
 				t.Fatal("retained unrelated output")
 			}
 		}
 	}
-	r := e.Found(context.Background(), prompts.Outcome{ID: "run_fixture", Status: "failed"}, 0)
+	r := e.Found(context.Background(), enrichers.Subject{}, prompts.Outcome{ID: "run_fixture", Status: "failed"}, 0)
 	if string(r.Found) != `{"run":"run_fixture","status":"failed","pages":0,"cost_nanos":0}` || r.Cost != 0 {
 		t.Fatal(r)
 	}
@@ -131,7 +131,7 @@ func TestSiteTextFound(t *testing.T) {
 	}
 }
 
-// R-IOID-VBD1
+// R-7UWE-A5IS
 func TestSiteTextValidation(t *testing.T) {
 	e := enrichers.SiteText{}
 	for _, raw := range []string{`{"run":"r","status":"killed"}`, ` {"run":"r","status":"exited","exit_code":null} `, `{"run":"r","status":"exited","exit_code":0,"pages":3,"cost_nanos":7}`} {

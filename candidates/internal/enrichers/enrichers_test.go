@@ -20,7 +20,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-6HON-D9ZG R-I9B5-6YXP R-IBQX-YIF3 R-BQOQ-UMXX
+// R-7HHI-2OD5 R-I9B5-6YXP R-IBQX-YIF3 R-BQOQ-UMXX
 func TestDeclaredValues(t *testing.T) {
 	type word string
 	words := []word{enrichers.KindDriveMinutes, enrichers.KindLinkFacts, enrichers.SourceZipDrive, enrichers.SourceLinks}
@@ -35,8 +35,8 @@ func TestDeclaredValues(t *testing.T) {
 	n := int64(84)
 	reading := sources.Reading{Name: "owned"}
 	link := enrichers.Link{"scraper", "source", true, reading}
-	s := enrichers.Subject{"id", "name", "city", "state", "street", "zip", "phone", "email", "website", "source", &website.Result{State: sources.WebsiteNone}, &n, []enrichers.Link{link}, []enrichers.Page{{7, "url", "title", "text", 4}}, &enrichers.LinkFound{KnownSince: "known"}, "origin"}
-	if s.Origin != "origin" || s.ID != "id" || s.Name != "name" || s.City != "city" || s.State != "state" || s.Website != "website" || s.Street != "street" || s.Phone != "phone" || s.WebsiteSource != "source" || s.Check.State != sources.WebsiteNone || s.Email != "email" || s.Zip != "zip" || *s.Minutes != 84 || !s.Links[0].Gone || s.Links[0].Scraper != "scraper" || s.Links[0].SourceID != "source" || s.Links[0].Reading.Name != "owned" || s.Pages[0] != (enrichers.Page{7, "url", "title", "text", 4}) || s.Facts.KnownSince != "known" {
+	s := enrichers.Subject{"id", "name", "city", "state", "street", "zip", "phone", "email", "website", "source", &website.Result{State: sources.WebsiteNone}, &n, []enrichers.Link{link}, []enrichers.Page{{7, "url", "title", "text", 4}}, &enrichers.LinkFound{KnownSince: "known"}, "origin", &enrichers.SiteTextFound{Run: "site_run"}, "search_inputs"}
+	if s.SiteText.Run != "site_run" || s.SearchInputs != "search_inputs" || s.Origin != "origin" || s.ID != "id" || s.Name != "name" || s.City != "city" || s.State != "state" || s.Website != "website" || s.Street != "street" || s.Phone != "phone" || s.WebsiteSource != "source" || s.Check.State != sources.WebsiteNone || s.Email != "email" || s.Zip != "zip" || *s.Minutes != 84 || !s.Links[0].Gone || s.Links[0].Scraper != "scraper" || s.Links[0].SourceID != "source" || s.Links[0].Reading.Name != "owned" || s.Pages[0] != (enrichers.Page{7, "url", "title", "text", 4}) || s.Facts.KnownSince != "known" {
 		t.Fatal(s)
 	}
 	r := enrichers.Result{"origin", json.RawMessage(`{}`), 0.5}

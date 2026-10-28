@@ -57,7 +57,7 @@ func assertParkZeroOtherCounts(t *testing.T, p store.Pass) {
 	}
 }
 
-// R-DXL3-JA67 R-E00W-ATNL R-PKJ1-NY2R R-DYSZ-X1WW R-3BZB-PF2P R-3D78-36TE R-PFNG-4V3Z R-Q2TJ-EI76 R-DP1S-UVZC R-PGVC-IMUO R-PD7N-DBML
+// R-DXL3-JA67 R-E00W-ATNL R-TJ2E-A5QR R-DYSZ-X1WW R-3BZB-PF2P R-3D78-36TE R-TSTL-CBOB R-TKAA-NXHG R-DP1S-UVZC R-UCBZ-GNJF R-TQDS-KS6X
 func TestParksDeliveryDerivesAndDoesNotIngest(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -172,7 +172,7 @@ func TestParksDeliveryDerivesAndDoesNotIngest(t *testing.T) {
 	}
 }
 
-// R-E18S-OLEA R-DNTW-H48N R-PKJ1-NY2R R-E3OL-G4VO R-E4WH-TWMD R-QBCU-2WE1
+// R-E18S-OLEA R-DNTW-H48N R-TJ2E-A5QR R-E3OL-G4VO R-E4WH-TWMD R-QBCU-2WE1
 func TestParksDeliveryAndRuleRefusals(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"missing", "unfinished", "unavailable", "malformed", "nil", "done"} {
@@ -269,7 +269,7 @@ func TestParksDeliveryAndRuleRefusals(t *testing.T) {
 	}
 }
 
-// R-E64E-7OD2 R-EENO-W2JX R-EDFS-IAT8 R-DP1S-UVZC R-O2VG-U1G7 R-PEFJ-R3DA
+// R-E64E-7OD2 R-EENO-W2JX R-EDFS-IAT8 R-DP1S-UVZC R-O2VG-U1G7 R-U50L-6139
 func TestParkRulesPassOutlivesCallerAndUsesItsIdentity(t *testing.T) {
 	t.Parallel()
 	entered, release := make(chan struct{}), make(chan struct{})
@@ -409,7 +409,7 @@ func TestStartParksCurrentRunAndNoops(t *testing.T) {
 	}
 }
 
-// R-EIBE-1DS0 R-373Q-6C3X R-PEFJ-R3DA
+// R-EIBE-1DS0 R-373Q-6C3X R-U50L-6139
 func TestParksFailureLeavesPriorParks(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"short", "drain", "no_current"} {
@@ -566,7 +566,7 @@ waitForEnding:
 	}
 }
 
-// R-O6J5-ZCOA R-F517-U54R R-PJB5-A6C2
+// R-8WDK-MWRK R-SOKW-PW7E R-SS8L-V7FH
 func TestParksRecordCarriesEveryCountAndRulesStarter(t *testing.T) {
 	t.Parallel()
 	p := store.Pass{Kind: store.KindParks, Origin: store.OriginRules, ParcelRun: "parcels", ParcelsRead: 1, ByLabel: 2, ByValue: 3, ByCandidate: 4, ParksCreated: 5, ParksUpdated: 6, ParksGone: 7, ParksGrown: 8, UserID: "owner", UserEmail: "owner@example.test"}
@@ -578,7 +578,7 @@ func TestParksRecordCarriesEveryCountAndRulesStarter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := `{"id":"","kind":"parks","origin":"rules","trigger":"","parcel_run":"parcels","status":"","started":"0001-01-01T00:00:00Z","rows":0,"new":0,"changed":0,"unchanged":0,"gone":0,"created":0,"linked":0,"judged":0,"unranged":0,"derived":0,"due":0,"fetched":0,"https":0,"http":0,"none":0,"runs":0,"runs_failed":0,"pages":0,"cost":0,"parcels_read":1,"by_label":2,"by_value":3,"by_candidate":4,"parks_created":5,"parks_updated":6,"parks_gone":7,"parks_grown":8,"parks_walked":0,"circles":0,"requests":0,"found":0,"new_candidates":0,"ceiling_reached":false,"user":"owner","email":"owner@example.test"}`
+	expected := `{"id":"","kind":"parks","origin":"rules","trigger":"","parcel_run":"parcels","status":"","started":"0001-01-01T00:00:00Z","rows":0,"new":0,"changed":0,"unchanged":0,"gone":0,"created":0,"linked":0,"judged":0,"unranged":0,"derived":0,"due":0,"fetched":0,"https":0,"http":0,"none":0,"runs":0,"runs_failed":0,"pages":0,"cost":0,"parcels_read":1,"by_label":2,"by_value":3,"by_candidate":4,"parks_created":5,"parks_updated":6,"parks_gone":7,"parks_grown":8,"parks_walked":0,"circles":0,"requests":0,"found":0,"new_candidates":0,"search_different":0,"search_stands":0,"search_none":0,"ceiling_reached":false,"user":"owner","email":"owner@example.test"}`
 	if string(b) != expected {
 		t.Fatal(string(b))
 	}
@@ -601,7 +601,7 @@ func (w *parkRestoreWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// R-PEFJ-R3DA R-F2LF-2LND
+// R-U50L-6139 R-U68H-JSTY
 func TestParksStoreFailureRestoresForFailedEnding(t *testing.T) {
 	t.Parallel()
 	var f *fixture

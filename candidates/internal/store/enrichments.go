@@ -160,6 +160,25 @@ func (s *Store) subject(ctx context.Context, tx *sql.Tx, c Candidate, pages bool
 		return out, err
 	}
 	if pages {
+		if out.Website != "" {
+			results, err := enrichmentRecords(ctx, tx, " WHERE candidate=? AND kind=? AND inputs=? ORDER BY seq DESC LIMIT 1", c.ID, enrichers.KindSiteText, out.Website)
+			if err != nil {
+				return out, err
+			}
+			if len(results) > 0 {
+				out.SiteText = &enrichers.SiteTextFound{}
+				if err = json.Unmarshal(results[0].Found, out.SiteText); err != nil {
+					return out, err
+				}
+			}
+		}
+		searches, err := enrichmentRecords(ctx, tx, " WHERE candidate=? AND kind=? ORDER BY seq DESC LIMIT 1", c.ID, enrichers.KindWebsiteSearch)
+		if err != nil {
+			return out, err
+		}
+		if len(searches) > 0 {
+			out.SearchInputs = searches[0].Inputs
+		}
 		domain := website.Domain(c.Email)
 		if domain != "" {
 			checks, e := enrichmentRecords(ctx, tx, " WHERE candidate=? AND kind=? AND inputs=? ORDER BY seq DESC LIMIT 1", c.ID, sources.WebsiteCheck, domain)

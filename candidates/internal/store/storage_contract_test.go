@@ -209,13 +209,13 @@ func TestContractVocabulary(t *testing.T) {
 	}
 }
 
-// R-OIQ5-T238 R-P28J-XDYC R-OJY2-6TTX R-OL5Y-KLKM R-4ZXJ-0QUQ R-52DB-SAC4
+// R-VP8Q-0BV2 R-P28J-XDYC R-VROI-RVCG R-VU4B-JETU R-4ZXJ-0QUQ R-52DB-SAC4
 func TestContractPassLifecyclePersistence(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
 	ctx := context.Background()
 	stamp := f.now.UTC().Truncate(time.Second)
-	input := store.Pass{ID: "ignored", Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Status: "ignored", Reason: "ignored", Started: f.now.AddDate(-1, 0, 0), Finished: f.now, Rows: 99, New: 99, Changed: 99, Unchanged: 99, Gone: 99, Created: 99, Linked: 99, Judged: 99, Unranged: 99, Derived: 99, Due: 99, Fetched: 99, HTTPS: 99, HTTP: 99, None: 99, Runs: 99, RunsFailed: 99, Pages: 99, Cost: 99, ParcelRun: "ignored", ParcelsRead: 99, ByLabel: 99, ByValue: 99, ByCandidate: 99, ParksCreated: 99, ParksUpdated: 99, ParksGone: 99, ParksGrown: 99, ParksWalked: 99, Circles: 99, Requests: 99, Found: 99, NewCandidates: 99, CeilingReached: true, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
+	input := store.Pass{ID: "ignored", Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Status: "ignored", Reason: "ignored", Started: f.now.AddDate(-1, 0, 0), Finished: f.now, Rows: 99, New: 99, Changed: 99, Unchanged: 99, Gone: 99, Created: 99, Linked: 99, Judged: 99, Unranged: 99, Derived: 99, Due: 99, Fetched: 99, HTTPS: 99, HTTP: 99, None: 99, Runs: 99, RunsFailed: 99, Pages: 99, Cost: 99, ParcelRun: "ignored", ParcelsRead: 99, ByLabel: 99, ByValue: 99, ByCandidate: 99, ParksCreated: 99, ParksUpdated: 99, ParksGone: 99, ParksGrown: 99, ParksWalked: 99, Circles: 99, Requests: 99, Found: 99, NewCandidates: 99, SearchDifferent: 99, SearchStands: 99, SearchNone: 99, CeilingReached: true, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
 	p, err := f.s.AddPass(ctx, input)
 	contractOK(t, err)
 	want := store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, ID: store.PassIDPrefix + "0101010101010101", Trigger: input.Trigger, Status: store.StatusRunning, Started: stamp, UserID: input.UserID, UserEmail: input.UserEmail, RequestID: input.RequestID}
@@ -228,7 +228,7 @@ func TestContractPassLifecyclePersistence(t *testing.T) {
 	contractOK(t, err)
 	contractEqual(t, read, p)
 	f.now = f.now.Add(time.Hour)
-	c := store.Counts{Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Derived: 15, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14, Runs: 16, RunsFailed: 17, Pages: 18, Cost: 19, ParcelsRead: 20, ByLabel: 21, ByValue: 22, ByCandidate: 23, ParksCreated: 24, ParksUpdated: 25, ParksGone: 26, ParksGrown: 27, ParksWalked: 28, Circles: 29, Requests: 30, Found: 31, NewCandidates: 32}
+	c := store.Counts{Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Derived: 15, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14, Runs: 16, RunsFailed: 17, Pages: 18, Cost: 19, ParcelsRead: 20, ByLabel: 21, ByValue: 22, ByCandidate: 23, ParksCreated: 24, ParksUpdated: 25, ParksGone: 26, ParksGrown: 27, ParksWalked: 28, Circles: 29, Requests: 30, Found: 31, NewCandidates: 32, SearchDifferent: 33, SearchStands: 34, SearchNone: 35}
 	ended, err := f.s.FinishPass(ctx, p.ID, c)
 	contractOK(t, err)
 	want.Status = store.StatusDone
@@ -254,6 +254,7 @@ func TestContractPassLifecyclePersistence(t *testing.T) {
 	want.ParksGone = c.ParksGone
 	want.ParksGrown = c.ParksGrown
 	want.ParksWalked, want.Circles, want.Requests, want.Found, want.NewCandidates = c.ParksWalked, c.Circles, c.Requests, c.Found, c.NewCandidates
+	want.SearchDifferent, want.SearchStands, want.SearchNone = c.SearchDifferent, c.SearchStands, c.SearchNone
 	contractEqual(t, ended, want)
 	f.reopen()
 	read, err = f.s.GetPass(ctx, p.ID)
@@ -312,7 +313,7 @@ func TestContractPassRefusals(t *testing.T) {
 	out, err = f.s.AddPass(ctx, store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, UserID: "owner"})
 	contractError(t, err, store.ErrBusy)
 	contractEqual(t, out, store.Pass{})
-	negatives := []store.Counts{{Rows: -1}, {New: -1}, {Changed: -1}, {Unchanged: -1}, {Gone: -1}, {Created: -1}, {Linked: -1}, {Judged: -1}, {Unranged: -1}, {Derived: -1}, {Due: -1}, {Fetched: -1}, {HTTPS: -1}, {HTTP: -1}, {None: -1}, {Runs: -1}, {RunsFailed: -1}, {Pages: -1}, {Cost: -1}, {ParcelsRead: -1}, {ByLabel: -1}, {ByValue: -1}, {ByCandidate: -1}, {ParksCreated: -1}, {ParksUpdated: -1}, {ParksGone: -1}, {ParksGrown: -1}, {ParksWalked: -1}, {Circles: -1}, {Requests: -1}, {Found: -1}, {NewCandidates: -1}}
+	negatives := []store.Counts{{Rows: -1}, {New: -1}, {Changed: -1}, {Unchanged: -1}, {Gone: -1}, {Created: -1}, {Linked: -1}, {Judged: -1}, {Unranged: -1}, {Derived: -1}, {Due: -1}, {Fetched: -1}, {HTTPS: -1}, {HTTP: -1}, {None: -1}, {Runs: -1}, {RunsFailed: -1}, {Pages: -1}, {Cost: -1}, {ParcelsRead: -1}, {ByLabel: -1}, {ByValue: -1}, {ByCandidate: -1}, {ParksCreated: -1}, {ParksUpdated: -1}, {ParksGone: -1}, {ParksGrown: -1}, {ParksWalked: -1}, {Circles: -1}, {Requests: -1}, {Found: -1}, {NewCandidates: -1}, {SearchDifferent: -1}, {SearchStands: -1}, {SearchNone: -1}}
 	for _, c := range negatives {
 		for _, id := range []string{p.ID, "missing"} {
 			out, err = f.s.FinishPass(ctx, id, c)
@@ -577,7 +578,7 @@ func TestContractZipReplacement(t *testing.T) {
 	}
 }
 
-// R-OMDU-YDBB R-47VU-80SR R-F1DI-OTWO R-578X-BDAW R-T3DU-KBYR R-5AWM-GOIZ R-5C4I-UG9O
+// R-VWK4-AYB8 R-47VU-80SR R-F1DI-OTWO R-578X-BDAW R-T3DU-KBYR R-5AWM-GOIZ R-5C4I-UG9O
 func TestContractBusinessRecordsPersistence(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -911,7 +912,7 @@ func contractSeed(t *testing.T, f *contractFixture) string {
 	return id
 }
 
-// R-OJY2-6TTX R-OL5Y-KLKM R-5610-XLK7
+// R-VROI-RVCG R-VU4B-JETU R-5610-XLK7
 func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -946,7 +947,7 @@ func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	contractEqual(t, after, zipBefore)
 }
 
-// R-OA6V-4NWD R-OD8H-2EDG
+// R-WDMP-NQOY R-OD8H-2EDG
 func TestContractAllMethodsUnavailable(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -1105,7 +1106,7 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 	contractEqual(t, contractState(t, f), before)
 }
 
-// R-OUX5-MRI6 R-5N3M-ADXX
+// R-W2NM-7T0P R-5N3M-ADXX
 func TestContractConcurrentStoreCalls(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)

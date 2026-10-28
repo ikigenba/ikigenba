@@ -314,58 +314,9 @@ func enrichmentRow(x store.Enrichment, subject enrichers.Subject) EnrichmentRow 
 	return v
 }
 func setWebsite(v *CandidateView, es []store.Enrichment) {
-	v.Website = sources.WebsiteUnknown
-	var check *store.Enrichment
-	var result website.Result
-	for i := range es {
-		e := &es[i]
-		if e.Kind != sources.WebsiteCheck {
-			continue
-		}
-		check = e
-		_ = json.Unmarshal(e.Found, &result)
-		break
-	}
-	if check != nil && (result.State == sources.WebsiteHTTPS || result.State == sources.WebsiteHTTP) {
-		v.WebsiteSource, v.Website, v.WebsiteURL, v.WebsiteTitle = store.WebsiteByCheck, result.State, result.URL, result.Title
-		v.WebsiteChecked, v.WebsiteCheckedText = stamp(check.At, SecondLayout)
-		return
-	}
-	for _, e := range es {
-		if e.Kind != enrichers.KindWebsiteSearch {
-			continue
-		}
-		var r enrichers.WebsiteSearchFound
-		if json.Unmarshal(e.Found, &r) != nil || r.Failed() || r.Answer == nil || r.Confirmation == nil {
-			continue
-		}
-		c := r.Confirmation
-		if c.State != sources.WebsiteHTTPS && c.State != sources.WebsiteHTTP {
-			continue
-		}
-		v.WebsiteSource, v.Website, v.WebsiteURL, v.WebsiteTitle, v.WebsiteWhy = store.WebsiteBySearch, c.State, c.URL, c.Title, r.Answer.Why
-		v.WebsiteChecked, v.WebsiteCheckedText = stamp(e.At, SecondLayout)
-		return
-	}
-	for _, e := range es {
-		if e.Kind != enrichers.KindWebsiteSearch {
-			continue
-		}
-		var r enrichers.WebsiteSearchFound
-		if json.Unmarshal(e.Found, &r) != nil || r.Failed() || r.Answer == nil {
-			continue
-		}
-		if r.Answer.URL != "" && (r.Confirmation == nil || r.Confirmation.State != sources.WebsiteNone) {
-			continue
-		}
-		v.Website, v.WebsiteWhy = sources.WebsiteNone, r.Answer.Why
-		v.WebsiteChecked, v.WebsiteCheckedText = stamp(e.At, SecondLayout)
-		return
-	}
-	if check != nil {
-		v.WebsiteTitle = result.Title
-		v.WebsiteChecked, v.WebsiteCheckedText = stamp(check.At, SecondLayout)
-	}
+	var at time.Time
+	v.WebsiteSource, v.Website, v.WebsiteURL, v.WebsiteTitle, v.WebsiteWhy, at = store.WebsiteDecisionOf(es)
+	v.WebsiteChecked, v.WebsiteCheckedText = stamp(at, SecondLayout)
 }
 
 func costText(n int64) string {
@@ -414,6 +365,10 @@ func searchViews(v *EnrichmentRow, found json.RawMessage) {
 	v.Run = &RunView{ID: r.Run.ID, Status: r.Run.Status}
 	if r.Run.ExitCode != nil {
 		v.Run.ExitCode = strconv.Itoa(*r.Run.ExitCode)
+	}
+	v.Reason, v.Website, v.WebsiteFrom, v.Case = r.Reason, r.Website, r.WebsiteFrom, r.Case
+	if r.SiteText != nil {
+		v.SiteText = &SearchSiteTextView{Status: r.SiteText.Status, Pages: r.SiteText.Pages}
 	}
 	if r.Answer != nil {
 		v.Answer = &AnswerView{URL: r.Answer.URL, Why: r.Answer.Why, Rejected: []RejectedRow{}}

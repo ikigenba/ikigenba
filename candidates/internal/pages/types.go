@@ -271,6 +271,9 @@ type EnrichmentRow struct {
 	Run                           *RunView
 	Answer                        *AnswerView
 	Confirmation                  *ConfirmationView
+	Reason, Website, WebsiteFrom  string
+	SiteText                      *SearchSiteTextView
+	Case                          string
 	Route                         *RouteView
 	Failed                        bool
 	Cost, At, AtText              string
@@ -339,6 +342,12 @@ type EnrichmentsView struct {
 	Kinds KindsView
 	Facts *FactsView
 	Brief *BriefView
+}
+
+// SearchSiteTextView supplies the site text recorded when a search ran.
+type SearchSiteTextView struct {
+	Status string
+	Pages  int64
 }
 
 // RouteView supplies the routing service result.

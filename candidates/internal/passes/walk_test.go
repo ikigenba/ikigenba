@@ -358,7 +358,7 @@ func TestWalkRefusalsLeaveNoWork(t *testing.T) {
 	}
 }
 
-// R-18E0-JLHM R-HT9C-7JEF R-BJYG-BQS8 R-UF5P-F79H R-PD7N-DBML R-PFNG-4V3Z
+// R-18E0-JLHM R-HT9C-7JEF R-BJYG-BQS8 R-UF5P-F79H R-TQDS-KS6X R-TSTL-CBOB
 func TestWalkAccountingAndFollowOn(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"done", "exact_ceiling", "cut", "cut_after_first", "first_failure", "second_failure"} {
@@ -560,7 +560,7 @@ func TestWalkOutlivesCallerConcurrentAdmissionAndDrain(t *testing.T) {
 	assertRefusal(t, p, err, passes.RefusalStopping)
 }
 
-// R-Q6H8-JTF9 R-F2LF-2LND R-PEFJ-R3DA
+// R-UERS-870T R-U68H-JSTY R-U50L-6139
 func TestWalkDiagnosticsPrecedeEnding(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"places", "store", "nil"} {
@@ -612,7 +612,7 @@ func TestWalkDiagnosticsPrecedeEnding(t *testing.T) {
 	}
 }
 
-// R-OFV9-ZRCF R-OH36-DJ34 R-PGVC-IMUO
+// R-OFV9-ZRCF R-OH36-DJ34 R-UCBZ-GNJF
 func TestOtherEngineMethodsNeverWalk(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -737,16 +737,16 @@ func TestOtherEngineMethodsNeverWalk(t *testing.T) {
 	}
 }
 
-// R-F517-U54R R-O6J5-ZCOA R-PJB5-A6C2
+// R-SOKW-PW7E R-8WDK-MWRK R-SS8L-V7FH
 func TestWalkRecordEveryFieldAndOrigin(t *testing.T) {
 	start := time.Date(2004, 3, 2, 1, 0, 0, 0, time.FixedZone("fixture", 3600))
-	p := store.Pass{ID: "pass", Kind: store.KindWalk, Origin: store.OriginWalk, Trigger: store.TriggerWalk, Target: "target", EnrichKind: "kind", Scraper: "scraper", ParcelRun: "parcel", Status: store.StatusDone, Reason: "reason", Started: start, Finished: start.Add(time.Hour), Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Derived: 10, Due: 11, Fetched: 12, HTTPS: 13, HTTP: 14, None: 15, Runs: 16, RunsFailed: 17, Pages: 18, Cost: 19, ParcelsRead: 20, ByLabel: 21, ByValue: 22, ByCandidate: 23, ParksCreated: 24, ParksUpdated: 25, ParksGone: 26, ParksGrown: 27, ParksWalked: 28, Circles: 29, Requests: 30, Found: 31, NewCandidates: 32, CeilingReached: true, UserID: "owner", UserEmail: "owner@example.test"}
-	want := passes.Record{"pass", store.KindWalk, store.OriginWalk, store.TriggerWalk, "target", "kind", "scraper", "parcel", store.StatusDone, "reason", start.UTC().Format(time.RFC3339), p.Finished.UTC().Format(time.RFC3339), 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, true, "owner", "owner@example.test"}
+	p := store.Pass{ID: "pass", Kind: store.KindWalk, Origin: store.OriginWalk, Trigger: store.TriggerWalk, Target: "target", EnrichKind: "kind", Scraper: "scraper", ParcelRun: "parcel", Status: store.StatusDone, Reason: "reason", Started: start, Finished: start.Add(time.Hour), Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Derived: 10, Due: 11, Fetched: 12, HTTPS: 13, HTTP: 14, None: 15, Runs: 16, RunsFailed: 17, Pages: 18, Cost: 19, ParcelsRead: 20, ByLabel: 21, ByValue: 22, ByCandidate: 23, ParksCreated: 24, ParksUpdated: 25, ParksGone: 26, ParksGrown: 27, ParksWalked: 28, Circles: 29, Requests: 30, Found: 31, NewCandidates: 32, SearchDifferent: 33, SearchStands: 34, SearchNone: 35, CeilingReached: true, UserID: "owner", UserEmail: "owner@example.test"}
+	want := passes.Record{"pass", store.KindWalk, store.OriginWalk, store.TriggerWalk, "target", "kind", "scraper", "parcel", store.StatusDone, "reason", start.UTC().Format(time.RFC3339), p.Finished.UTC().Format(time.RFC3339), 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, true, "owner", "owner@example.test"}
 	if got := passes.RecordOf(p); got != want {
 		t.Fatal(got, want)
 	}
 	raw, err := json.Marshal(want)
-	expected := `{"id":"pass","kind":"walk","origin":"walk","trigger":"walk","target":"target","enrich_kind":"kind","scraper":"scraper","parcel_run":"parcel","status":"done","reason":"reason","started":"2004-03-02T00:00:00Z","finished":"2004-03-02T01:00:00Z","rows":1,"new":2,"changed":3,"unchanged":4,"gone":5,"created":6,"linked":7,"judged":8,"unranged":9,"derived":10,"due":11,"fetched":12,"https":13,"http":14,"none":15,"runs":16,"runs_failed":17,"pages":18,"cost":19,"parcels_read":20,"by_label":21,"by_value":22,"by_candidate":23,"parks_created":24,"parks_updated":25,"parks_gone":26,"parks_grown":27,"parks_walked":28,"circles":29,"requests":30,"found":31,"new_candidates":32,"ceiling_reached":true,"user":"owner","email":"owner@example.test"}`
+	expected := `{"id":"pass","kind":"walk","origin":"walk","trigger":"walk","target":"target","enrich_kind":"kind","scraper":"scraper","parcel_run":"parcel","status":"done","reason":"reason","started":"2004-03-02T00:00:00Z","finished":"2004-03-02T01:00:00Z","rows":1,"new":2,"changed":3,"unchanged":4,"gone":5,"created":6,"linked":7,"judged":8,"unranged":9,"derived":10,"due":11,"fetched":12,"https":13,"http":14,"none":15,"runs":16,"runs_failed":17,"pages":18,"cost":19,"parcels_read":20,"by_label":21,"by_value":22,"by_candidate":23,"parks_created":24,"parks_updated":25,"parks_gone":26,"parks_grown":27,"parks_walked":28,"circles":29,"requests":30,"found":31,"new_candidates":32,"search_different":33,"search_stands":34,"search_none":35,"ceiling_reached":true,"user":"owner","email":"owner@example.test"}`
 	if err != nil || string(raw) != expected {
 		t.Fatal(string(raw), err)
 	}

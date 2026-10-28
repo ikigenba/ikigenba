@@ -20,7 +20,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-6NS5-A4OX R-I3S3-D7R8 R-IER6-T5FH R-IH6Z-KOWV R-IKUO-Q04Y
+// R-6NS5-A4OX R-I3S3-D7R8 R-7SGL-IM1E R-IH6Z-KOWV R-IKUO-Q04Y
 func TestWebsiteSearchClient(t *testing.T) {
 	type word string
 	const kind word = enrichers.KindWebsiteSearch
@@ -47,21 +47,21 @@ func TestWebsiteSearchClient(t *testing.T) {
 	}
 }
 
-// R-I67W-4R8M R-I7FS-IIZB R-SDQ1-5H81 R-SEXX-J8YQ R-SG5T-X0PF R-I9VL-A2GP
+// R-TYNE-CTYH R-I7FS-IIZB R-SDQ1-5H81 R-SEXX-J8YQ R-SG5T-X0PF R-MBII-JU3W
 func TestWebsiteSearchShapes(t *testing.T) {
 	zero := 0
-	input := enrichers.WebsiteSearchInput{"c", "n", "ci", "st", "street", "zip", "phone", "domain", "check", "error", []enrichers.BriefPerson{{"person", "role"}}, []enrichers.Category{{"cat", "origin"}}}
+	input := enrichers.WebsiteSearchInput{"c", "n", "ci", "st", "street", "zip", "phone", "domain", "check", "error", "website", "check", &enrichers.WebsiteSearchSiteText{"failed", 0}, []enrichers.BriefPerson{{"person", "role"}}, []enrichers.Category{{"cat", "origin"}}}
 	run := enrichers.WebsiteSearchRun{"r", "status", &zero, 3}
 	answer := enrichers.WebsiteSearchAnswer{"u", "w", []enrichers.WebsiteSearchSite{{"r", "why"}}}
 	confirm := enrichers.WebsiteSearchConfirmation{"s", "u", "t", 200, 10, "e"}
-	found := enrichers.WebsiteSearchFound{run, &answer, &confirm}
+	found := enrichers.WebsiteSearchFound{run, &answer, &confirm, "again", "website", "check", &enrichers.WebsiteSearchSiteText{"failed", 0}, "different"}
 	cases := []struct {
 		v    any
 		want string
 		dst  any
 	}{
-		{input, `{"candidate":"c","name":"n","city":"ci","state":"st","street":"street","zip":"zip","phone":"phone","domain":"domain","domain_check":"check","domain_error":"error","people":[{"name":"person","role":"role"}],"categories":[{"name":"cat","source":"origin"}]}`, &enrichers.WebsiteSearchInput{}},
-		{enrichers.WebsiteSearchInput{}, `{"candidate":"","name":"","city":"","state":"","street":"","zip":"","phone":"","domain":"","domain_check":"","domain_error":"","people":[],"categories":[]}`, &enrichers.WebsiteSearchInput{}},
+		{input, `{"candidate":"c","name":"n","city":"ci","state":"st","street":"street","zip":"zip","phone":"phone","domain":"domain","domain_check":"check","domain_error":"error","website":"website","website_from":"check","site_text":{"status":"failed","pages":0},"people":[{"name":"person","role":"role"}],"categories":[{"name":"cat","source":"origin"}]}`, &enrichers.WebsiteSearchInput{}},
+		{enrichers.WebsiteSearchInput{}, `{"candidate":"","name":"","city":"","state":"","street":"","zip":"","phone":"","domain":"","domain_check":"","domain_error":"","website":"","website_from":"","site_text":null,"people":[],"categories":[]}`, &enrichers.WebsiteSearchInput{}},
 		{run, `{"id":"r","status":"status","exit_code":0,"cost_nanos":3}`, &enrichers.WebsiteSearchRun{}},
 		{enrichers.WebsiteSearchRun{}, `{"id":"","status":"","cost_nanos":0}`, &enrichers.WebsiteSearchRun{}},
 		{answer.Rejected[0], `{"url":"r","why":"why"}`, &enrichers.WebsiteSearchSite{}},
@@ -70,7 +70,7 @@ func TestWebsiteSearchShapes(t *testing.T) {
 		{enrichers.WebsiteSearchAnswer{}, `{"url":"","why":"","rejected":[]}`, &enrichers.WebsiteSearchAnswer{}},
 		{confirm, `{"state":"s","url":"u","title":"t","status_code":200,"size":10,"error":"e"}`, &enrichers.WebsiteSearchConfirmation{}},
 		{enrichers.WebsiteSearchConfirmation{}, `{"state":"","url":"","title":"","status_code":0,"size":0,"error":""}`, &enrichers.WebsiteSearchConfirmation{}},
-		{found, `{"run":{"id":"r","status":"status","exit_code":0,"cost_nanos":3},"answer":{"url":"u","why":"w","rejected":[{"url":"r","why":"why"}]},"confirmation":{"state":"s","url":"u","title":"t","status_code":200,"size":10,"error":"e"}}`, &enrichers.WebsiteSearchFound{}},
+		{found, `{"run":{"id":"r","status":"status","exit_code":0,"cost_nanos":3},"answer":{"url":"u","why":"w","rejected":[{"url":"r","why":"why"}]},"confirmation":{"state":"s","url":"u","title":"t","status_code":200,"size":10,"error":"e"},"reason":"again","website":"website","website_from":"check","site_text":{"status":"failed","pages":0},"case":"different"}`, &enrichers.WebsiteSearchFound{}},
 		{enrichers.WebsiteSearchFound{}, `{"run":{"id":"","status":"","cost_nanos":0}}`, &enrichers.WebsiteSearchFound{}},
 	}
 	for _, tc := range cases {
@@ -88,7 +88,7 @@ func TestWebsiteSearchShapes(t *testing.T) {
 	}
 }
 
-// R-MXG4-Y30D R-FCCM-4RKX
+// R-7YK3-FGQV R-MCQE-XLUL
 func TestWebsiteSearchInputs(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	s := enrichers.Subject{ID: "candidate", Name: "Acme", City: "Sandstone", State: "MN", Street: "Main", Zip: "zip", Phone: "phone", Email: "Ops@Acme.test", Links: []enrichers.Link{{Reading: sources.Reading{People: []sources.Person{{Name: "Ann", Role: "owner"}, {Name: "Bob"}, {Name: "Ann", Role: "owner"}}}}, {Gone: true, Reading: sources.Reading{People: []sources.Person{{Name: "Gone"}}}}}, Facts: &enrichers.LinkFound{Categories: []enrichers.Category{{Name: "omit", Source: enrichers.KindBrief}, {Name: "keep", Source: "source"}}}}
@@ -121,7 +121,7 @@ func TestWebsiteSearchInputs(t *testing.T) {
 	if err := json.Unmarshal(e.Input(s), &input); err != nil {
 		t.Fatal(err)
 	}
-	expected := enrichers.WebsiteSearchInput{s.ID, s.Name, s.City, s.State, s.Street, s.Zip, s.Phone, "acme.test", sources.WebsiteUnknown, "", []enrichers.BriefPerson{{"Ann", "owner"}, {"Bob", ""}}, []enrichers.Category{{"keep", "source"}}}
+	expected := enrichers.WebsiteSearchInput{s.ID, s.Name, s.City, s.State, s.Street, s.Zip, s.Phone, "acme.test", sources.WebsiteUnknown, "", "", "", nil, []enrichers.BriefPerson{{"Ann", "owner"}, {"Bob", ""}}, []enrichers.Category{{"keep", "source"}}}
 	if !reflect.DeepEqual(input, expected) {
 		t.Fatal(input)
 	}
@@ -171,7 +171,7 @@ func TestWebsiteSearchInputs(t *testing.T) {
 	}
 }
 
-// R-ITDZ-EEBT R-IX1O-JPJW R-IY9K-XHAL R-J0PD-P0RZ
+// R-MDYB-BDLA R-IX1O-JPJW R-IY9K-XHAL R-85VH-Q371
 func TestWebsiteSearchFoundAndFailure(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	valid := `{"url":"https://acme.test/","why":"match","rejected":[{"url":"https://other.test/","why":"different","x":1},{"url":"https://third.test/","why":"another"}],"x":2}`
@@ -180,7 +180,7 @@ func TestWebsiteSearchFoundAndFailure(t *testing.T) {
 		for _, status := range []string{enrichers.RunExited, "failed", "killed", "timed_out", enrichers.RunRunning, "EXITED", ""} {
 			for _, code := range []*int{nil, new(int), func() *int { v := 1; return &v }()} {
 				out := prompts.Outcome{ID: "run", Status: status, ExitCode: code, CostNanos: 250000000, Stdout: stdout}
-				r := e.Found(context.Background(), out, 99)
+				r := e.Found(context.Background(), enrichers.Subject{}, out, 99)
 				var got enrichers.WebsiteSearchFound
 				if err := json.Unmarshal(r.Found, &got); err != nil {
 					t.Fatal(err)
@@ -208,7 +208,7 @@ func TestWebsiteSearchFoundAndFailure(t *testing.T) {
 				out.ReasoningTokens = 96
 				out.Started = time.Unix(1, 0)
 				out.Finished = time.Unix(2, 0)
-				if !reflect.DeepEqual(r, e.Found(context.Background(), out, -1)) {
+				if !reflect.DeepEqual(r, e.Found(context.Background(), enrichers.Subject{}, out, -1)) {
 					t.Fatal("ignored fields")
 				}
 			}
@@ -222,7 +222,7 @@ func TestWebsiteSearchFoundAndFailure(t *testing.T) {
 	if !e.Failed(json.RawMessage(`{"run":{"status":"failed"},"x":1}`)) || !e.Failed(json.RawMessage(`{}`)) {
 		t.Fatal("decoded failure")
 	}
-	v := enrichers.WebsiteSearchFound{Run: enrichers.WebsiteSearchRun{Status: enrichers.RunExited, ExitCode: new(int)}, Answer: &enrichers.WebsiteSearchAnswer{}, Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteNone}}
+	v := enrichers.WebsiteSearchFound{Run: enrichers.WebsiteSearchRun{Status: enrichers.RunExited, ExitCode: new(int)}, Answer: &enrichers.WebsiteSearchAnswer{}, Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteNone}, Reason: enrichers.SearchReasonAgain, Website: "https://before.test", WebsiteFrom: "check", SiteText: &enrichers.WebsiteSearchSiteText{Status: "failed"}, Case: enrichers.SearchCaseDifferent}
 	if v.Failed() {
 		t.Fatal(v)
 	}
@@ -238,7 +238,7 @@ func TestWebsiteSearchFoundAndFailure(t *testing.T) {
 	}
 }
 
-// R-IVTS-5XT7
+// R-TZVA-QLP6
 func TestWebsiteSearchValidation(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	run := `"run":{"id":"run","status":"killed","cost_nanos":0}`
@@ -262,7 +262,7 @@ func TestWebsiteSearchValidation(t *testing.T) {
 	}
 }
 
-// R-IULV-S62I
+// R-MF67-P5BZ
 func TestWebsiteSearchConfirmation(t *testing.T) {
 	for _, address := range []string{"https://acme.test/", "https://secure.test/", "http://acme.test/", "https://missing.test/", "acme.test/about"} {
 		requests := []string{}
@@ -282,7 +282,7 @@ func TestWebsiteSearchConfirmation(t *testing.T) {
 		out := prompts.Outcome{ID: "run", Status: enrichers.RunExited, ExitCode: new(int)}
 		a, _ := json.Marshal(enrichers.WebsiteSearchAnswer{URL: address, Why: "match"})
 		out.Stdout = string(a)
-		r := e.Found(context.Background(), out, 0)
+		r := e.Found(context.Background(), enrichers.Subject{}, out, 0)
 		var f enrichers.WebsiteSearchFound
 		if err := json.Unmarshal(r.Found, &f); err != nil {
 			t.Fatal(err)
@@ -325,7 +325,7 @@ func TestWebsiteSearchConfirmation(t *testing.T) {
 			timers = nil
 			o := out
 			change(&o)
-			r = e.Found(context.Background(), o, 0)
+			r = e.Found(context.Background(), enrichers.Subject{}, o, 0)
 			_ = json.Unmarshal(r.Found, &f)
 			var decoded enrichers.WebsiteSearchFound
 			_ = json.Unmarshal(r.Found, &decoded)
@@ -336,7 +336,7 @@ func TestWebsiteSearchConfirmation(t *testing.T) {
 	}
 }
 
-// R-IULV-S62I
+// R-MF67-P5BZ
 func TestWebsiteSearchConfirmationCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -345,21 +345,297 @@ func TestWebsiteSearchConfirmationCancellation(t *testing.T) {
 		<-r.Context().Done()
 		return nil, r.Context().Err()
 	})}, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }}
-	r := (enrichers.WebsiteSearch{Checker: ck}).Found(ctx, prompts.Outcome{ID: "run", Status: enrichers.RunExited, ExitCode: new(int), Stdout: `{"url":"https://acme.test/","why":"match","rejected":[]}`}, 0)
+	r := (enrichers.WebsiteSearch{Checker: ck}).Found(ctx, enrichers.Subject{}, prompts.Outcome{ID: "run", Status: enrichers.RunExited, ExitCode: new(int), Stdout: `{"url":"https://acme.test/","why":"match","rejected":[]}`}, 0)
 	var f enrichers.WebsiteSearchFound
 	if err := json.Unmarshal(r.Found, &f); err != nil || f.Confirmation == nil || f.Confirmation.State != sources.WebsiteNone || f.Confirmation.Error == "" {
 		t.Fatal(string(r.Found), err)
 	}
 }
 
-// R-INAH-HJMC R-IPQA-933Q R-IB3H-NU7E
+// R-7TOH-WDS3 R-7W4A-NX9H R-7NKZ-ZJ2M
 func TestOtherPrompterContextsIgnored(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	out := prompts.Outcome{ID: "run", Status: enrichers.RunExited, ExitCode: new(int), CostNanos: 12, Stdout: `{"summary":"owned","categories":[],"labels":[]}`}
 	for _, p := range []enrichers.Prompter{enrichers.SiteText{}, enrichers.Brief{}} {
-		if !reflect.DeepEqual(p.Found(ctx, out, 3), p.Found(context.Background(), out, 3)) {
+		if !reflect.DeepEqual(p.Found(ctx, enrichers.Subject{ID: "ignored", SiteText: &enrichers.SiteTextFound{Run: "ignored"}, SearchInputs: "ignored"}, out, 3), p.Found(context.Background(), enrichers.Subject{}, out, 3)) {
 			t.Fatal(p.Kind())
+		}
+	}
+}
+
+// R-M92P-SAMI R-7L57-7ZL8
+func TestWebsiteSearchContextDeclarations(t *testing.T) {
+	type word string
+	const reasons word = enrichers.SearchReasonNoWebsite + ":" + enrichers.SearchReasonEmptySite + ":" + enrichers.SearchReasonAgain
+	const cases word = enrichers.SearchCaseDifferent + ":" + enrichers.SearchCaseStands + ":" + enrichers.SearchCaseNone
+	if reasons != "no_website:empty_site:again" || cases != "different:stands:none" {
+		t.Fatal(reasons, cases)
+	}
+	for _, v := range []enrichers.WebsiteSearchSiteText{{}, {"failed", 3}} {
+		b, err := json.Marshal(v)
+		want := `{"status":"","pages":0}`
+		if v.Status != "" {
+			want = `{"status":"failed","pages":3}`
+		}
+		var got enrichers.WebsiteSearchSiteText
+		if err != nil || string(b) != want || json.Unmarshal(b, &got) != nil || got != v {
+			t.Fatal(string(b), got, err)
+		}
+	}
+}
+
+// R-7YK3-FGQV
+func TestWebsiteSearchEmptySiteFingerprint(t *testing.T) {
+	e := enrichers.WebsiteSearch{}
+	hash := func(v string) string { sum := sha256.Sum256([]byte(v)); return hex.EncodeToString(sum[:]) }
+	base := enrichers.Subject{Name: "Company", City: "Town", State: "ST"}
+	b := hash("Company\tTown\tST")
+	for _, source := range []string{"", "check", "search", "Search"} {
+		s := base
+		s.Website = "https://prior.test/home"
+		s.WebsiteSource = source
+		s.SiteText = &enrichers.SiteTextFound{Run: "run_old", Status: "failed"}
+		want := b + "/" + hash(s.Website+"\t"+s.SiteText.Run)
+		before, _ := json.Marshal(s)
+		if e.Inputs(s) != want {
+			t.Fatal(source, e.Inputs(s), want)
+		}
+		after, _ := json.Marshal(s)
+		if !bytes.Equal(before, after) {
+			t.Fatal("subject mutation")
+		}
+		for _, change := range []func(*enrichers.Subject){func(v *enrichers.Subject) { v.Name += "x" }, func(v *enrichers.Subject) { v.City += "x" }, func(v *enrichers.Subject) { v.State += "x" }} {
+			changed := s
+			change(&changed)
+			if e.Inputs(changed) == want {
+				t.Fatal("identity not fingerprinted")
+			}
+		}
+		s.SearchInputs = "ignored"
+		s.SiteText.Status = "timed_out"
+		s.SiteText.ExitCode = new(int)
+		s.SiteText.CostNanos = 99
+		s.ID = "other"
+		s.Origin = "elsewhere"
+		if e.Inputs(s) != want {
+			t.Fatal("unrelated inputs")
+		}
+		s.SiteText.Run = "run_new"
+		if e.Inputs(s) == want {
+			t.Fatal("new site text not due")
+		}
+		s.SiteText.Run = "run_old"
+		s.Website += "/other"
+		if e.Inputs(s) == want {
+			t.Fatal("new website not due")
+		}
+		s.Website = "https://prior.test/home"
+		s.Pages = []enrichers.Page{{URL: "kept"}}
+		expected := ""
+		if source == "search" {
+			expected = b
+		}
+		if e.Inputs(s) != expected {
+			t.Fatal("kept page", source, e.Inputs(s))
+		}
+		s.Pages = nil
+		s.SiteText.Pages = 2
+		if e.Inputs(s) != expected {
+			t.Fatal("nonempty text", source, e.Inputs(s))
+		}
+	}
+	s := base
+	s.Website = "https://found.test/"
+	s.WebsiteSource = "search"
+	for _, prior := range []string{"", b, hash("changed") + "/suffix", b + "/suffix"} {
+		s.SearchInputs = prior
+		want := b
+		if strings.HasPrefix(prior, b+"/") {
+			want = prior
+		}
+		for _, text := range []*enrichers.SiteTextFound{nil, {Run: "r", Pages: 3}} {
+			s.SiteText = text
+			if e.Inputs(s) != want {
+				t.Fatal(prior, e.Inputs(s), want)
+			}
+		}
+	}
+	s.Website = ""
+	s.SiteText = &enrichers.SiteTextFound{Pages: 0}
+	if e.Inputs(s) != b {
+		t.Fatal("empty website")
+	}
+}
+
+// R-MCQE-XLUL R-TYNE-CTYH
+func TestWebsiteSearchEmptySiteInput(t *testing.T) {
+	e := enrichers.WebsiteSearch{}
+	for _, source := range []string{"", "check", "Search", "search"} {
+		s := enrichers.Subject{ID: "c", Name: "Company", Website: "https://prior.test/", WebsiteSource: source, SiteText: &enrichers.SiteTextFound{Run: "r", Status: "timed_out"}, SearchInputs: "ignored"}
+		want := enrichers.WebsiteSearchInput{Candidate: s.ID, Name: s.Name, Website: s.Website, WebsiteFrom: "check", SiteText: &enrichers.WebsiteSearchSiteText{Status: "timed_out"}}
+		if source == "search" {
+			want.WebsiteFrom = "search"
+		}
+		before, _ := json.Marshal(s)
+		encoded, _ := json.Marshal(want)
+		if !bytes.Equal(e.Input(s), encoded) {
+			t.Fatal(string(e.Input(s)), string(encoded))
+		}
+		after, _ := json.Marshal(s)
+		if !bytes.Equal(before, after) {
+			t.Fatal("subject mutation")
+		}
+		for _, change := range []func(*enrichers.Subject){func(s *enrichers.Subject) { s.Website = "" }, func(s *enrichers.Subject) { s.SiteText = nil }, func(s *enrichers.Subject) { s.SiteText = &enrichers.SiteTextFound{Pages: 2} }, func(s *enrichers.Subject) { s.Pages = []enrichers.Page{{URL: "kept"}} }} {
+			changed := s
+			change(&changed)
+			want.Website = ""
+			want.WebsiteFrom = ""
+			want.SiteText = nil
+			encoded, _ = json.Marshal(want)
+			if !bytes.Equal(e.Input(changed), encoded) {
+				t.Fatal(string(e.Input(changed)))
+			}
+		}
+	}
+}
+
+// R-MGE4-2X2O R-MDYB-BDLA
+func TestWebsiteSearchReasonsAndCases(t *testing.T) {
+	e := enrichers.WebsiteSearch{}
+	for _, s := range []enrichers.Subject{
+		{}, {SiteText: &enrichers.SiteTextFound{Status: "failed"}, WebsiteSource: "search"},
+		{Website: "https://www.acme.test/home"},
+		{Website: "https://www.acme.test/home", WebsiteSource: "Search", SiteText: &enrichers.SiteTextFound{Status: "failed"}},
+		{Website: "https://www.acme.test/home", WebsiteSource: "search", SiteText: &enrichers.SiteTextFound{Status: "exited", Pages: 4}},
+		{Website: "https://www.acme.test/home", WebsiteSource: "check", SiteText: &enrichers.SiteTextFound{Status: "failed"}, Pages: []enrichers.Page{{URL: "kept"}}},
+	} {
+		for _, address := range []string{"", "https://other.test/", "http://acme.test", "https://acme.test:8443/about", "HTTPS://WWW.ACME.TEST./contact", "acme.test", "https://shop.acme.test/", "https://acme.test.example/", "://bad"} {
+			for _, failed := range []bool{false, true} {
+				out := prompts.Outcome{ID: "run", Status: enrichers.RunExited, ExitCode: new(int), CostNanos: 5}
+				if failed {
+					out.Status = "failed"
+				}
+				answer := enrichers.WebsiteSearchAnswer{URL: address, Why: "fixture"}
+				stdout, _ := json.Marshal(answer)
+				out.Stdout = string(stdout)
+				before, _ := json.Marshal(s)
+				r := e.Found(context.Background(), s, out, 99)
+				after, _ := json.Marshal(s)
+				if !bytes.Equal(before, after) {
+					t.Fatal("subject mutation")
+				}
+				var f enrichers.WebsiteSearchFound
+				if err := json.Unmarshal(r.Found, &f); err != nil {
+					t.Fatal(err)
+				}
+				reason := enrichers.SearchReasonAgain
+				from := "check"
+				var text *enrichers.WebsiteSearchSiteText
+				if s.Website == "" {
+					reason = enrichers.SearchReasonNoWebsite
+					from = ""
+				} else {
+					if s.WebsiteSource == "search" {
+						from = "search"
+					}
+					if s.SiteText != nil {
+						text = &enrichers.WebsiteSearchSiteText{Status: s.SiteText.Status, Pages: s.SiteText.Pages}
+						if s.SiteText.Pages == 0 && len(s.Pages) == 0 {
+							reason = enrichers.SearchReasonEmptySite
+						}
+					}
+				}
+				wantCase := enrichers.SearchCaseDifferent
+				switch {
+				case failed:
+					wantCase = ""
+				case address == "":
+					wantCase = enrichers.SearchCaseNone
+				case s.Website != "" && slices.Contains([]string{"http://acme.test", "https://acme.test:8443/about", "HTTPS://WWW.ACME.TEST./contact", "acme.test"}, address):
+					wantCase = enrichers.SearchCaseStands
+				}
+				if f.Reason != reason || f.Website != s.Website || f.WebsiteFrom != from || !reflect.DeepEqual(f.SiteText, text) || f.Case != wantCase || !e.Valid(r.Found) {
+					t.Fatal(s, address, string(r.Found), wantCase)
+				}
+				out.Stdout = "not an answer"
+				r = e.Found(context.Background(), s, out, 0)
+				var missing enrichers.WebsiteSearchFound
+				_ = json.Unmarshal(r.Found, &missing)
+				if missing.Case != "" || missing.Reason != reason || !missing.Failed() || !e.Valid(r.Found) {
+					t.Fatal(string(r.Found))
+				}
+			}
+		}
+	}
+}
+
+// R-TZVA-QLP6
+func TestWebsiteSearchContextValidation(t *testing.T) {
+	e := enrichers.WebsiteSearch{}
+	killed := `"run":{"id":"r","status":"killed","cost_nanos":0}`
+	exited := `"run":{"id":"r","status":"exited","exit_code":0,"cost_nanos":0},"answer":{"url":"http://acme.test","why":"w","rejected":[]}`
+	valid := []string{
+		"{" + killed + `,"reason":"no_website"}`,
+		"{" + killed + `,"reason":"empty_site","website":"https://acme.test","website_from":"check","site_text":{"status":"failed","pages":0}}`,
+		"{" + killed + `,"reason":"again","website":"https://acme.test","website_from":"search","site_text":{"status":"exited","pages":4}}`,
+		"{" + killed + `,"reason":"again","website":"https://acme.test","website_from":"check","site_text":{"status":"failed","pages":0}}`,
+		"{" + killed + `,"reason":"again","website":"https://acme.test","website_from":"check"}`,
+		"{" + exited + `,"reason":"no_website","case":"different"}`,
+		"{" + exited + `,"reason":"again","website":"https://www.acme.test/home","website_from":"check","case":"stands"}`,
+		strings.Replace("{"+exited+`,"reason":"no_website","case":"none"}`, `"url":"http://acme.test"`, `"url":""`, 1),
+	}
+	valid = append(valid, "{"+exited+"}")
+	for _, raw := range valid {
+		if !e.Valid(json.RawMessage(raw)) {
+			t.Fatal(raw)
+		}
+	}
+	invalid := []string{
+		`"reason":""`, `"reason":"other"`, `"reason":null`, `"case":"none"`, `"website":"https://acme.test"`,
+		`"reason":"no_website","case":"different"`,
+		`"reason":"no_website","website":"","website_from":"check"`,
+		`"reason":"no_website","website":"https://acme.test","website_from":"check"`,
+		`"reason":"no_website","website":"https://acme.test"`, `"reason":"no_website","website_from":"check"`,
+		`"reason":"no_website","site_text":{"status":"exited","pages":0}`, `"reason":"empty_site"`, `"reason":"again"`,
+		`"reason":"again","website":5,"website_from":"check"`, `"reason":"again","website":null,"website_from":"check"`,
+		`"reason":"again","website":"u","website_from":"Check"`, `"reason":"again","website":"u","website_from":""`,
+		`"reason":"again","website":"u","website_from":"check","site_text":null`,
+	}
+	for _, extra := range invalid {
+		raw := "{" + killed + "," + extra + "}"
+		if e.Valid(json.RawMessage(raw)) {
+			t.Fatal(raw)
+		}
+	}
+	for _, text := range []string{`{"pages":0}`, `{"status":"failed"}`, `{"status":"","pages":0}`, `{"status":"failed","pages":-1}`, `{"status":"failed","pages":"0"}`, `{"status":"failed","pages":0,"x":1}`, `{"status":"failed","pages":0,"Pages":0}`} {
+		raw := "{" + killed + `,"reason":"empty_site","website":"u","website_from":"check","site_text":` + text + "}"
+		if e.Valid(json.RawMessage(raw)) {
+			t.Fatal(raw)
+		}
+	}
+	for _, extra := range []string{`"reason":"no_website"`, `"reason":"no_website","case":"stands"`, `"reason":"no_website","case":"none"`, `"case":"different"`, `"reason":"no_website","case":"same"`, `"reason":"no_website","case":""`} {
+		raw := "{" + exited + "," + extra + "}"
+		if e.Valid(json.RawMessage(raw)) {
+			t.Fatal(raw)
+		}
+	}
+	for name, raw := range map[string]string{
+		"nonempty extraction":         "{" + killed + `,"reason":"empty_site","website":"https://acme.test","website_from":"check","site_text":{"status":"exited","pages":2}}`,
+		"different site cannot stand": "{" + exited + `,"reason":"again","website":"https://other.test","website_from":"check","case":"stands"}`,
+		"empty answer cannot differ":  strings.Replace("{"+exited+`,"reason":"no_website","case":"different"}`, `"url":"http://acme.test"`, `"url":""`, 1),
+		"same site cannot differ":     "{" + exited + `,"reason":"again","website":"https://www.acme.test/home","website_from":"check","case":"different"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if e.Valid(json.RawMessage(raw)) {
+				t.Fatal(raw)
+			}
+		})
+	}
+	for _, key := range []string{"reason", "website", "website_from", "site_text", "case"} {
+		raw := strings.Replace(valid[6], `"`+key+`":`, `"`+strings.ToUpper(key)+`":`, 1)
+		if raw != valid[6] && e.Valid(json.RawMessage(raw)) {
+			t.Fatal(raw)
 		}
 	}
 }

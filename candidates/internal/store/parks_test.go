@@ -96,7 +96,7 @@ func seedRules() parks.Rules {
 	return parks.Rules{Distance: parks.SeedDistance, MinParcels: parks.SeedMinParcels, ValueThreshold: parks.SeedValueThreshold, Labels: map[string][]string{"Chisago": {"3a Industrial Land And Building"}, "Stearns": {"3a Industrial Land And Building"}, "Anoka": {"3a INDUSTIAL PREFERENTIAL"}, "Aitkin": {"Industrial Preferred"}, "St. Louis": {"Industrial Preferred", "Industrial Non-Preferred"}, "Sherburne": {"Industrial Preferred", "Industrial Non-Preferred", "INDUSTRIAL (with Buildings)", "Industrial - Bare Land"}, "Mille Lacs": {"Indust Land/Building"}, "Isanti": {"3A-Commercial/Industrial/Public Utility"}, "Morrison": {"3A-Commercial/Industrial/Public Utility"}}}
 }
 
-// R-OW52-0J8V R-TRB4-G62J R-OBER-IFN2 R-OR9G-HGA3 R-S1JP-L77G R-57ZF-FHOA
+// R-64U1-LEO8 R-TRB4-G62J R-W07T-G9JB R-OR9G-HGA3 R-EP8R-Z5D9 R-57ZF-FHOA
 func TestParkRulesSeedEditAndRefusal(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -163,7 +163,7 @@ func TestParkRulesSeedEditAndRefusal(t *testing.T) {
 	contractEqual(t, p.Kind, store.KindParks)
 }
 
-// R-OXCY-EAZK R-OYKU-S2Q9 R-OCMN-W7DR R-6014-87Q9 R-OZSR-5UGY R-6B07-O5EI R-S1JP-L77G
+// R-W3VI-LKRE R-W7J7-QVZH R-W9Z0-IFGV R-6014-87Q9 R-WCET-9YY9 R-6B07-O5EI R-EP8R-Z5D9
 func TestParkDerivationPersistenceAndReads(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -408,7 +408,7 @@ func TestParkWindows(t *testing.T) {
 	}
 }
 
-// R-62GW-ZR7N R-OA6V-4NWD R-56RJ-1PXL
+// R-62GW-ZR7N R-WDMP-NQOY R-56RJ-1PXL
 func TestApplyParksRefusalsAndAtomicMint(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -472,7 +472,7 @@ func TestApplyParksRefusalsAndAtomicMint(t *testing.T) {
 	contractEqual(t, after, before)
 }
 
-// R-OUX5-MRI6 R-OHI9-FACJ R-OIQ5-T238 R-P28J-XDYC R-OL5Y-KLKM R-OMDU-YDBB
+// R-W2NM-7T0P R-OHI9-FACJ R-VP8Q-0BV2 R-P28J-XDYC R-VU4B-JETU R-VWK4-AYB8
 func TestParkPassConcurrencyAndOrigins(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -795,7 +795,7 @@ func parkState(t *testing.T, f *contractFixture) heldParkState {
 	return s
 }
 
-// R-P10N-JM7N
+// R-68HQ-QPWB
 func TestParkStateSurvivesOtherWrites(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)

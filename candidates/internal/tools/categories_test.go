@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-KQRJ-I4QT R-RT1O-11SD R-QR8S-65SU R-0ECF-HYB5
+// R-VH4X-SOII R-RT1O-11SD R-QR8S-65SU R-VKSM-XZQL
 func TestCategoryEvidenceAnswers(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(3)

@@ -16,7 +16,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-PPEN-711J R-01D8-ZAZ4 R-ZQE5-JDAV R-1QFF-85G4 R-3WDS-L5IA R-PGVC-IMUO
+// R-SVWB-0INK R-01D8-ZAZ4 R-ZQE5-JDAV R-1QFF-85G4 R-3WDS-L5IA R-UCBZ-GNJF
 func TestDerivedKindsAndIdempotentAll(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []string{"", enrichers.KindDriveMinutes, enrichers.KindLinkFacts} {
@@ -150,7 +150,7 @@ func TestDerivedKindsAndIdempotentAll(t *testing.T) {
 	}
 }
 
-// R-PQMJ-KSS8 R-01D8-ZAZ4 R-ZQE5-JDAV R-1QFF-85G4
+// R-SZK0-5TVN R-01D8-ZAZ4 R-ZQE5-JDAV R-1QFF-85G4
 func TestDerivedFactsExistBeforeFirstFetch(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -254,7 +254,7 @@ func TestWebsiteInputsChangeRecordsAnotherResult(t *testing.T) {
 	}
 }
 
-// R-PRUF-YKIX R-PD7N-DBML R-PFNG-4V3Z R-3QEZ-TBSF R-PGVC-IMUO
+// R-TXP6-VEN3 R-TQDS-KS6X R-TSTL-CBOB R-3QEZ-TBSF R-UCBZ-GNJF
 func TestFullIngestForcesDerivedResultsBeforeJudging(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {

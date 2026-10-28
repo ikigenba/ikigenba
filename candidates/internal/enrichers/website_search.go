@@ -7,26 +7,46 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/url"
+	"strings"
 
 	"github.com/ikigenba/ikigenba/appkit/prompts"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
+// Search reasons and cases record why a search ran and how its answer compares.
+const (
+	SearchReasonNoWebsite = "no_website"
+	SearchReasonEmptySite = "empty_site"
+	SearchReasonAgain     = "again"
+	SearchCaseDifferent   = "different"
+	SearchCaseStands      = "stands"
+	SearchCaseNone        = "none"
+)
+
+// WebsiteSearchSiteText records the latest extraction against the recorded site.
+type WebsiteSearchSiteText struct {
+	Status string `json:"status"`
+	Pages  int64  `json:"pages"`
+}
+
 // WebsiteSearchInput supplies identity and source evidence to a website search.
 type WebsiteSearchInput struct {
-	Candidate   string        `json:"candidate"`
-	Name        string        `json:"name"`
-	City        string        `json:"city"`
-	State       string        `json:"state"`
-	Street      string        `json:"street"`
-	Zip         string        `json:"zip"`
-	Phone       string        `json:"phone"`
-	Domain      string        `json:"domain"`
-	DomainCheck string        `json:"domain_check"`
-	DomainError string        `json:"domain_error"`
-	People      []BriefPerson `json:"people"`
-	Categories  []Category    `json:"categories"`
+	Candidate   string                 `json:"candidate"`
+	Name        string                 `json:"name"`
+	City        string                 `json:"city"`
+	State       string                 `json:"state"`
+	Street      string                 `json:"street"`
+	Zip         string                 `json:"zip"`
+	Phone       string                 `json:"phone"`
+	Domain      string                 `json:"domain"`
+	DomainCheck string                 `json:"domain_check"`
+	DomainError string                 `json:"domain_error"`
+	Website     string                 `json:"website"`
+	WebsiteFrom string                 `json:"website_from"`
+	SiteText    *WebsiteSearchSiteText `json:"site_text"`
+	People      []BriefPerson          `json:"people"`
+	Categories  []Category             `json:"categories"`
 }
 
 // MarshalJSON encodes absent collections as empty arrays.
@@ -86,6 +106,11 @@ type WebsiteSearchFound struct {
 	Run          WebsiteSearchRun           `json:"run"`
 	Answer       *WebsiteSearchAnswer       `json:"answer,omitempty"`
 	Confirmation *WebsiteSearchConfirmation `json:"confirmation,omitempty"`
+	Reason       string                     `json:"reason,omitempty"`
+	Website      string                     `json:"website,omitempty"`
+	WebsiteFrom  string                     `json:"website_from,omitempty"`
+	SiteText     *WebsiteSearchSiteText     `json:"site_text,omitempty"`
+	Case         string                     `json:"case,omitempty"`
 }
 
 // Failed reports an unsuccessful run or a missing answer.
@@ -113,11 +138,61 @@ func (WebsiteSearch) Prompt() string { return PromptName(KindWebsiteSearch) }
 
 // Inputs fingerprints identity unless another source already found a website.
 func (WebsiteSearch) Inputs(s Subject) string {
+	b := searchHash(s.Name + "\t" + s.City + "\t" + s.State)
+	if emptySite(s) {
+		return b + "/" + searchHash(s.Website+"\t"+s.SiteText.Run)
+	}
 	if s.Website != "" && s.WebsiteSource != "search" {
 		return ""
 	}
-	sum := sha256.Sum256([]byte(s.Name + "\t" + s.City + "\t" + s.State))
+	if s.Website != "" && strings.HasPrefix(s.SearchInputs, b+"/") {
+		return s.SearchInputs
+	}
+	return b
+}
+
+func searchHash(s string) string {
+	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])
+}
+func emptySite(s Subject) bool {
+	return s.Website != "" && s.SiteText != nil && s.SiteText.Pages == 0 && len(s.Pages) == 0
+}
+func websiteFrom(s Subject) string {
+	if s.Website == "" {
+		return ""
+	}
+	if s.WebsiteSource == "search" {
+		return "search"
+	}
+	return "check"
+}
+func searchSiteText(s Subject) *WebsiteSearchSiteText {
+	if s.Website == "" || s.SiteText == nil {
+		return nil
+	}
+	return &WebsiteSearchSiteText{Status: s.SiteText.Status, Pages: s.SiteText.Pages}
+}
+func siteKey(address string) string {
+	for _, raw := range []string{address, "http://" + address} {
+		u, err := url.Parse(raw)
+		if err == nil && u.Hostname() != "" {
+			return strings.TrimPrefix(strings.TrimSuffix(strings.ToLower(u.Hostname()), "."), "www.")
+		}
+	}
+	return ""
+}
+func searchCase(f WebsiteSearchFound) string {
+	if f.Failed() {
+		return ""
+	}
+	if f.Answer.URL == "" {
+		return SearchCaseNone
+	}
+	if key := siteKey(f.Answer.URL); key != "" && key == siteKey(f.Website) {
+		return SearchCaseStands
+	}
+	return SearchCaseDifferent
 }
 
 // Input supplies identity, own-domain check and source evidence.
@@ -129,6 +204,11 @@ func (WebsiteSearch) Input(s Subject) json.RawMessage {
 			v.DomainCheck = s.Check.State
 			v.DomainError = s.Check.Error
 		}
+	}
+	if emptySite(s) {
+		v.Website = s.Website
+		v.WebsiteFrom = websiteFrom(s)
+		v.SiteText = searchSiteText(s)
 	}
 	var brief BriefInput
 	_ = json.Unmarshal((Brief{}).Input(s), &brief)
@@ -195,13 +275,19 @@ func searchAnswer(b json.RawMessage) *WebsiteSearchAnswer {
 }
 
 // Found retains the run and answer and confirms a successful proposed URL.
-func (w WebsiteSearch) Found(ctx context.Context, out prompts.Outcome, _ int64) Result {
+func (w WebsiteSearch) Found(ctx context.Context, s Subject, out prompts.Outcome, _ int64) Result {
 	run := WebsiteSearchRun{ID: out.ID, Status: out.Status, CostNanos: out.CostNanos}
 	if out.ExitCode != nil {
 		code := *out.ExitCode
 		run.ExitCode = &code
 	}
-	f := WebsiteSearchFound{Run: run, Answer: searchAnswer(json.RawMessage(out.Stdout))}
+	f := WebsiteSearchFound{Run: run, Answer: searchAnswer(json.RawMessage(out.Stdout)), Website: s.Website, WebsiteFrom: websiteFrom(s), SiteText: searchSiteText(s), Reason: SearchReasonAgain}
+	if s.Website == "" {
+		f.Reason = SearchReasonNoWebsite
+	} else if emptySite(s) {
+		f.Reason = SearchReasonEmptySite
+	}
+	f.Case = searchCase(f)
 	if !f.Failed() && f.Answer.URL != "" && w.Checker != nil {
 		pg := w.Checker.Get(ctx, f.Answer.URL)
 		state := sources.WebsiteNone
@@ -226,20 +312,35 @@ func (WebsiteSearch) Valid(b json.RawMessage) bool {
 	if !ok {
 		return false
 	}
+	contextual := false
+	for key, raw := range m {
+		switch key {
+		case "run", "answer", "confirmation", "site_text":
+			nested, valid := object(raw)
+			if !valid {
+				return false
+			}
+			if key == "answer" && !array(nested["rejected"]) {
+				return false
+			}
+			if key == "site_text" {
+				if len(nested) != 2 || nested["status"] == nil || nested["pages"] == nil {
+					return false
+				}
+				contextual = true
+			}
+		case "reason", "website", "website_from", "case":
+			raw = bytes.TrimSpace(raw)
+			if len(raw) == 0 || raw[0] != '"' {
+				return false
+			}
+			contextual = true
+		default:
+			return false
+		}
+	}
 	if _, ok = object(m["run"]); !ok {
 		return false
-	}
-	for key, raw := range m {
-		if key != "run" && key != "answer" && key != "confirmation" {
-			return false
-		}
-		nested, valid := object(raw)
-		if !valid {
-			return false
-		}
-		if key == "answer" && !array(nested["rejected"]) {
-			return false
-		}
 	}
 	var f WebsiteSearchFound
 	if !strictObject(b, &f) || f.Run.ID == "" || f.Run.Status == "" || f.Run.CostNanos < 0 {
@@ -250,7 +351,29 @@ func (WebsiteSearch) Valid(b json.RawMessage) bool {
 			return false
 		}
 	}
-	return true
+	if !contextual {
+		return true
+	}
+	if f.Reason != SearchReasonNoWebsite && f.Reason != SearchReasonEmptySite && f.Reason != SearchReasonAgain {
+		return false
+	}
+	hasWebsite, hasFrom := m["website"] != nil, m["website_from"] != nil
+	if hasWebsite != hasFrom || hasWebsite == (f.Reason == SearchReasonNoWebsite) {
+		return false
+	}
+	if hasWebsite && (f.Website == "" || (f.WebsiteFrom != "check" && f.WebsiteFrom != "search")) {
+		return false
+	}
+	if f.SiteText != nil && (!hasWebsite || f.SiteText.Status == "" || f.SiteText.Pages < 0) {
+		return false
+	}
+	if f.Reason == SearchReasonEmptySite && (f.SiteText == nil || f.SiteText.Pages != 0) {
+		return false
+	}
+	if (m["case"] != nil) == f.Failed() {
+		return false
+	}
+	return f.Case == searchCase(f)
 }
 
 // Failed applies the decoded record's failure rule.

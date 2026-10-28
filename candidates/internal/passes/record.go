@@ -61,58 +61,61 @@ func (r *Refusal) Error() string {
 
 // Record is the public JSON representation of a pass.
 type Record struct {
-	ID             string `json:"id"`
-	Kind           string `json:"kind"`
-	Origin         string `json:"origin"`
-	Trigger        string `json:"trigger"`
-	Target         string `json:"target,omitempty"`
-	EnrichKind     string `json:"enrich_kind,omitempty"`
-	Scraper        string `json:"scraper,omitempty"`
-	ParcelRun      string `json:"parcel_run,omitempty"`
-	Status         string `json:"status"`
-	Reason         string `json:"reason,omitempty"`
-	Started        string `json:"started"`
-	Finished       string `json:"finished,omitempty"`
-	Rows           int64  `json:"rows"`
-	New            int64  `json:"new"`
-	Changed        int64  `json:"changed"`
-	Unchanged      int64  `json:"unchanged"`
-	Gone           int64  `json:"gone"`
-	Created        int64  `json:"created"`
-	Linked         int64  `json:"linked"`
-	Judged         int64  `json:"judged"`
-	Unranged       int64  `json:"unranged"`
-	Derived        int64  `json:"derived"`
-	Due            int64  `json:"due"`
-	Fetched        int64  `json:"fetched"`
-	HTTPS          int64  `json:"https"`
-	HTTP           int64  `json:"http"`
-	None           int64  `json:"none"`
-	Runs           int64  `json:"runs"`
-	RunsFailed     int64  `json:"runs_failed"`
-	Pages          int64  `json:"pages"`
-	Cost           int64  `json:"cost"`
-	ParcelsRead    int64  `json:"parcels_read"`
-	ByLabel        int64  `json:"by_label"`
-	ByValue        int64  `json:"by_value"`
-	ByCandidate    int64  `json:"by_candidate"`
-	ParksCreated   int64  `json:"parks_created"`
-	ParksUpdated   int64  `json:"parks_updated"`
-	ParksGone      int64  `json:"parks_gone"`
-	ParksGrown     int64  `json:"parks_grown"`
-	ParksWalked    int64  `json:"parks_walked"`
-	Circles        int64  `json:"circles"`
-	Requests       int64  `json:"requests"`
-	Found          int64  `json:"found"`
-	NewCandidates  int64  `json:"new_candidates"`
-	CeilingReached bool   `json:"ceiling_reached"`
-	User           string `json:"user,omitempty"`
-	Email          string `json:"email,omitempty"`
+	ID              string `json:"id"`
+	Kind            string `json:"kind"`
+	Origin          string `json:"origin"`
+	Trigger         string `json:"trigger"`
+	Target          string `json:"target,omitempty"`
+	EnrichKind      string `json:"enrich_kind,omitempty"`
+	Scraper         string `json:"scraper,omitempty"`
+	ParcelRun       string `json:"parcel_run,omitempty"`
+	Status          string `json:"status"`
+	Reason          string `json:"reason,omitempty"`
+	Started         string `json:"started"`
+	Finished        string `json:"finished,omitempty"`
+	Rows            int64  `json:"rows"`
+	New             int64  `json:"new"`
+	Changed         int64  `json:"changed"`
+	Unchanged       int64  `json:"unchanged"`
+	Gone            int64  `json:"gone"`
+	Created         int64  `json:"created"`
+	Linked          int64  `json:"linked"`
+	Judged          int64  `json:"judged"`
+	Unranged        int64  `json:"unranged"`
+	Derived         int64  `json:"derived"`
+	Due             int64  `json:"due"`
+	Fetched         int64  `json:"fetched"`
+	HTTPS           int64  `json:"https"`
+	HTTP            int64  `json:"http"`
+	None            int64  `json:"none"`
+	Runs            int64  `json:"runs"`
+	RunsFailed      int64  `json:"runs_failed"`
+	Pages           int64  `json:"pages"`
+	Cost            int64  `json:"cost"`
+	ParcelsRead     int64  `json:"parcels_read"`
+	ByLabel         int64  `json:"by_label"`
+	ByValue         int64  `json:"by_value"`
+	ByCandidate     int64  `json:"by_candidate"`
+	ParksCreated    int64  `json:"parks_created"`
+	ParksUpdated    int64  `json:"parks_updated"`
+	ParksGone       int64  `json:"parks_gone"`
+	ParksGrown      int64  `json:"parks_grown"`
+	ParksWalked     int64  `json:"parks_walked"`
+	Circles         int64  `json:"circles"`
+	Requests        int64  `json:"requests"`
+	Found           int64  `json:"found"`
+	NewCandidates   int64  `json:"new_candidates"`
+	SearchDifferent int64  `json:"search_different"`
+	SearchStands    int64  `json:"search_stands"`
+	SearchNone      int64  `json:"search_none"`
+	CeilingReached  bool   `json:"ceiling_reached"`
+	User            string `json:"user,omitempty"`
+	Email           string `json:"email,omitempty"`
 }
 
 // RecordOf renders a pass with UTC timestamps and its public starter.
 func RecordOf(p store.Pass) Record {
-	r := Record{ID: p.ID, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Target: p.Target, EnrichKind: p.EnrichKind, Scraper: p.Scraper, ParcelRun: p.ParcelRun, Status: p.Status, Reason: p.Reason, Started: p.Started.UTC().Format(time.RFC3339), Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged, Derived: p.Derived, Due: p.Due, Fetched: p.Fetched, HTTPS: p.HTTPS, HTTP: p.HTTP, None: p.None, Runs: p.Runs, RunsFailed: p.RunsFailed, Pages: p.Pages, Cost: p.Cost, ParcelsRead: p.ParcelsRead, ByLabel: p.ByLabel, ByValue: p.ByValue, ByCandidate: p.ByCandidate, ParksCreated: p.ParksCreated, ParksUpdated: p.ParksUpdated, ParksGone: p.ParksGone, ParksGrown: p.ParksGrown, ParksWalked: p.ParksWalked, Circles: p.Circles, Requests: p.Requests, Found: p.Found, NewCandidates: p.NewCandidates, CeilingReached: p.CeilingReached}
+	r := Record{ID: p.ID, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Target: p.Target, EnrichKind: p.EnrichKind, Scraper: p.Scraper, ParcelRun: p.ParcelRun, Status: p.Status, Reason: p.Reason, Started: p.Started.UTC().Format(time.RFC3339), Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged, Derived: p.Derived, Due: p.Due, Fetched: p.Fetched, HTTPS: p.HTTPS, HTTP: p.HTTP, None: p.None, Runs: p.Runs, RunsFailed: p.RunsFailed, Pages: p.Pages, Cost: p.Cost, ParcelsRead: p.ParcelsRead, ByLabel: p.ByLabel, ByValue: p.ByValue, ByCandidate: p.ByCandidate, ParksCreated: p.ParksCreated, ParksUpdated: p.ParksUpdated, ParksGone: p.ParksGone, ParksGrown: p.ParksGrown, ParksWalked: p.ParksWalked, Circles: p.Circles, Requests: p.Requests, Found: p.Found, NewCandidates: p.NewCandidates, SearchDifferent: p.SearchDifferent, SearchStands: p.SearchStands, SearchNone: p.SearchNone, CeilingReached: p.CeilingReached}
 	if !p.Finished.IsZero() {
 		r.Finished = p.Finished.UTC().Format(time.RFC3339)
 	}

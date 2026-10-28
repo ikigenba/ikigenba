@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-PKHU-DTGN
+// R-ZNY5-AOPY
 func TestOSHALinkView(t *testing.T) {
 	for _, tc := range []struct {
 		scraper                               string
@@ -32,7 +32,7 @@ func TestOSHALinkView(t *testing.T) {
 	}
 }
 
-// R-PMXN-5CY1
+// R-ZHUN-DU0H
 func TestOSHAHeadcountViews(t *testing.T) {
 	facts := store.Facts{Headcounts: []sources.Headcount{{Scraper: oshaita.Name, Kind: sources.HeadcountEmployees, Count: 23, AsOf: time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC), Hours: new(int64(47840))}, {Scraper: ppp.Name, Kind: sources.HeadcountJobs, Count: 26, AsOf: time.Date(2020, 4, 28, 0, 0, 0, 0, time.UTC)}}}
 	want := []HeadcountRow{{oshaita.Name, sources.HeadcountEmployees, "23", "47840", "2024-12-31", "2024-12-31"}, {ppp.Name, sources.HeadcountJobs, "26", "", "2020-04-28", "2020-04-28"}}

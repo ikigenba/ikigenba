@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
+	"github.com/ikigenba/ikigenba/candidates/internal/trail"
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
@@ -38,7 +40,7 @@ func searchAfter(d time.Duration) <-chan time.Time {
 	return ch
 }
 
-// R-PXXX-VF8E R-Q0DQ-MYPS R-RFMR-TKMQ R-PGVC-IMUO
+// R-T83A-U82I R-TAJ3-LRJW R-RFMR-TKMQ R-UCBZ-GNJF
 func TestWebsiteSearchTargetResultsAndConfirmation(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -64,6 +66,7 @@ func TestWebsiteSearchTargetResultsAndConfirmation(t *testing.T) {
 		inputs[id] = enrichers.WebsiteSearch{}.Input(s)
 	}
 	var mu sync.Mutex
+	var repeat atomic.Bool
 	fetched := []string{}
 	checker := &website.Checker{After: searchAfter, Client: &http.Client{Transport: enrichTransport(func(r *http.Request) (*http.Response, error) {
 		mu.Lock()
@@ -94,6 +97,13 @@ func TestWebsiteSearchTargetResultsAndConfirmation(t *testing.T) {
 			_ = json.Unmarshal(args["run"], &id)
 			r := result.(map[string]any)
 			r["id"] = id
+			if repeat.Load() {
+				r["stdout"] = "malformed"
+				if id == ids[0] {
+					r["stdout"] = `{"url":"","why":"no match this time","rejected":[]}`
+				}
+				return result, refused, code
+			}
 			r["stdout"] = `{"url":"https://confirmed.test/","why":"matches","rejected":[]}`
 			switch id {
 			case ids[1]:
@@ -118,7 +128,7 @@ func TestWebsiteSearchTargetResultsAndConfirmation(t *testing.T) {
 		t.Fatal(err)
 	}
 	p = f.ended(p.ID)
-	if p.Status != store.StatusDone || p.Due != 5 || p.Runs != 5 || p.RunsFailed != 2 || p.Pages != 0 || p.Cost != 5000 || p.Derived+p.Fetched+p.HTTPS+p.HTTP+p.None+p.Rows+p.New+p.Changed+p.Unchanged+p.Gone+p.Created+p.Linked+p.Judged+p.Unranged != 0 {
+	if p.Status != store.StatusDone || p.Due != 5 || p.Runs != 5 || p.RunsFailed != 2 || p.Pages != 0 || p.Cost != 5000 || p.SearchDifferent != 2 || p.SearchStands != 0 || p.SearchNone != 1 || p.Derived+p.Fetched+p.HTTPS+p.HTTP+p.None+p.Rows+p.New+p.Changed+p.Unchanged+p.Gone+p.Created+p.Linked+p.Judged+p.Unranged != 0 {
 		t.Fatal(p)
 	}
 	mu.Lock()
@@ -180,6 +190,138 @@ func TestWebsiteSearchTargetResultsAndConfirmation(t *testing.T) {
 	for _, other := range f.list() {
 		if other.Trigger == p.ID {
 			t.Fatal("unexpected search follow-on", other)
+		}
+	}
+	for _, event := range f.ec.Events() {
+		if event.Name == trail.Finished && event.Attrs["pass"] == p.ID {
+			if event.Attrs["search_different"] != p.SearchDifferent || event.Attrs["search_stands"] != p.SearchStands || event.Attrs["search_none"] != p.SearchNone {
+				t.Fatal(event.Attrs, p)
+			}
+		}
+	}
+	// A later pass counts only its own outcomes, while retaining the first results.
+	for _, id := range ids {
+		s, err := f.st.Subject(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		inputs[id] = enrichers.WebsiteSearch{}.Input(s)
+	}
+	repeat.Store(true)
+	second, err := f.eng.EnrichTarget(ctx, caller, enrichers.KindWebsiteSearch, co.ID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second = f.ended(second.ID)
+	if second.Status != store.StatusDone || second.Due != 5 || second.Runs != 5 || second.RunsFailed != 4 || second.SearchDifferent != 0 || second.SearchStands != 0 || second.SearchNone != 1 {
+		t.Fatal(second)
+	}
+	for _, id := range ids[:5] {
+		es, err := f.st.Enrichments(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		count := 0
+		for _, e := range es {
+			if e.Kind == enrichers.KindWebsiteSearch {
+				count++
+			}
+		}
+		if count != 2 {
+			t.Fatal(id, es)
+		}
+	}
+}
+
+// R-T83A-U82I R-TAJ3-LRJW R-UCBZ-GNJF
+func TestWebsiteSearchKeepsInputSubjectThroughOutcome(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, nil, false)
+	ctx := t.Context()
+	id := seedTarget(t, f, 1)[0]
+	subject, err := f.st.Subject(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := 0
+	text := enrichers.SiteTextFound{Run: "empty-extraction", Status: enrichers.RunExited, ExitCode: &code, Pages: 0}
+	found, err := json.Marshal(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.st.AddEnrichments(ctx, []store.Enrichment{{Candidate: id, Kind: enrichers.KindSiteText, Inputs: subject.Website, Source: enrichers.SourcePrompts, Found: found}}); err != nil {
+		t.Fatal(err)
+	}
+	subject, err = f.st.Subject(ctx, id)
+	if err != nil || subject.SiteText == nil || subject.SiteText.Pages != 0 {
+		t.Fatal(subject, err)
+	}
+	input := (enrichers.WebsiteSearch{}).Input(subject)
+	inputs := (enrichers.WebsiteSearch{}).Inputs(subject)
+	pc, fake := fakePrompts(t, f, func(name string, args map[string]json.RawMessage) (any, bool, int) {
+		result, refused, status := promptAnswer(name, args)
+		if name == "run" {
+			var got, want any
+			_ = json.Unmarshal(args["input"], &got)
+			_ = json.Unmarshal(input, &want)
+			if !reflect.DeepEqual(got, want) {
+				t.Error(got, want)
+			}
+		}
+		if name == "result" {
+			// Both the website and kept-page context change while the run is in flight.
+			changed, _ := json.Marshal(website.Result{State: sources.WebsiteHTTPS, URL: "https://changed.test/"})
+			if _, err := f.st.AddEnrichments(ctx, []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "changed.test", Source: "fixture", Found: changed}}); err != nil {
+				t.Error(err)
+			}
+			if _, err := f.st.AddPage(ctx, store.Page{Candidate: id, URL: "https://changed.test/page", Text: "kept during search", UserID: "owner"}); err != nil {
+				t.Error(err)
+			}
+			result.(map[string]any)["stdout"] = `{"url":"https://www.company0.test./about","why":"same business","rejected":[]}`
+		}
+		return result, refused, status
+	})
+	checker := &website.Checker{After: searchAfter, Client: &http.Client{Transport: enrichTransport(func(r *http.Request) (*http.Response, error) {
+		return pageResponse(r), nil
+	})}}
+	f.eng.Drain(ctx)
+	f.eng = passes.New(passes.Config{Store: f.st, Prompts: pc, Website: checker, Telemetry: f.w, Events: f.em, After: searchAfter})
+	p, err := f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindWebsiteSearch, id, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p = f.ended(p.ID)
+	if p.Status != store.StatusDone || p.Due != 1 || p.Runs != 1 || p.RunsFailed != 0 || p.SearchStands != 1 || p.SearchDifferent != 0 || p.SearchNone != 0 || p.Pages != 0 {
+		t.Fatal(p)
+	}
+	es, err := f.st.Enrichments(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	searches := 0
+	for _, e := range es {
+		if e.Kind != enrichers.KindWebsiteSearch {
+			continue
+		}
+		searches++
+		var v enrichers.WebsiteSearchFound
+		if err := json.Unmarshal(e.Found, &v); err != nil {
+			t.Fatal(err)
+		}
+		if e.Inputs != inputs || v.Reason != enrichers.SearchReasonEmptySite || v.Website != subject.Website || v.WebsiteFrom != subject.WebsiteSource || v.SiteText == nil || v.SiteText.Status != text.Status || v.SiteText.Pages != 0 || v.Case != enrichers.SearchCaseStands || v.Confirmation == nil || v.Confirmation.State != sources.WebsiteHTTPS {
+			t.Fatal(e, v, subject)
+		}
+	}
+	if searches != 1 || len(fake.snapshot()) != 3 {
+		t.Fatal(searches, fake.snapshot())
+	}
+	pages, err := f.st.CountPages(ctx, id)
+	if err != nil || pages.URLs != 1 {
+		t.Fatal(pages, err)
+	}
+	for _, other := range f.list() {
+		if other.Trigger == p.ID {
+			t.Fatal(other)
 		}
 	}
 }
