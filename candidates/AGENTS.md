@@ -19,7 +19,7 @@ that knows how one scraper's rows become match keys, tags, a size estimate,
 a filing date, operating evidence and a category, and the fixed registry
 holds four, `fmcsa`, `ppp`, `form5500` and `osha_ita`; the scraper
 `mn_parcels`, whose rows parks are derived from, is not one. A pass is one
-ingest, judge, enrich, targeted enrich or parks pass, recorded at once and worked in the background: an ingest
+ingest, judge, enrich, targeted enrich, parks pass or walk, recorded at once and worked in the background: an ingest
 is started by a `scrape.finished` event of a `done` run, delivered on the
 bus, and ingests that run's rows without judging, or by the `ingest` tool,
 which ingests one named scraper's current run the same way or, named none,
@@ -28,7 +28,7 @@ for every candidate and then judges; a judge is started by the daily
 `cron.judge_candidates.fired` event, delivered on the bus, or by the `judge`
 tool, and judges every candidate, reading nothing from scrapes; an enrich,
 started by an
-ingest that ends `done` or by the `enrich` tool, walks the registry of
+ingest or a walk that ends `done` or by the `enrich` tool, walks the registry of
 enrichment kinds `D16-enrichers` names, one kind or every kind, derived
 kinds first, and records a result for each candidate whose inputs for a
 kind differ from those of its newest result, fetching from outside only for
@@ -43,7 +43,10 @@ parcel rows of a `mn_parcels` run and derives from them industrial parks,
 places the owner can name for a later walk and never candidates, and is
 started by a `scrape.finished` of `mn_parcels` delivered on the bus, by the
 `edit_park_rules` tool, or at start, when scrapes' current `mn_parcels` run
-is not the one the parks were last derived from. An ingest or a parks pass
+is not the one the parks were last derived from. A walk, started only by the
+`walk` tool naming parks, searches them with Google Places Nearby Search in
+circles up to the walk ceiling and matches or creates a candidate for each
+place found. An ingest or a parks pass
 reads the run's record and rows from
 scrapes over its socket through appkit's `scrapes` client, as the caller
 for the `ingest` or `edit_park_rules` tool and as the service identity for a
@@ -56,22 +59,23 @@ campaign's page, built on the services file's optional entry `campaigns`. Outsid
 the websites the website check visits, the pages `add_page` keeps and the
 URL a website search's run names, which it confirms with one `Checker.Get`,
 over outbound HTTP through `cli.Process.HTTP`, and the geocoding and routing
-requests of a targeted `drive_route` pass, over HTTPS to Google through the
-same client; when `IKIGENBA_SANDBOX` is present the website fetches go only
-to an in-process stub on loopback, while a `drive_route` pass still reaches
-Google, so nothing a sandbox runs reaches outside but a route a developer
-asked for. It holds two secrets, which its manifest lists and reads from its
+requests of a targeted `drive_route` pass and the Nearby Search requests of a
+walk, over HTTPS to Google through the same client; when `IKIGENBA_SANDBOX` is
+present the website fetches go only to an in-process stub on loopback and a
+walk's requests to an in-process fake, while a `drive_route` pass still
+reaches Google, so nothing a sandbox runs reaches outside but a route a
+developer asked for. It holds two secrets, which its manifest lists and reads from its
 environment at start: `GOOGLE_MAPS_API_KEY`, the key every request to Google
 carries, and `CANDIDATES_ROUTE_ORIGIN`, the address a drive route is measured
 from, an address rather than a credential, listed as a secret so the owner
 can move the base on a space without a release. Unset or empty, the key
 leaves candidates with no routes client and a targeted enrich of
-`drive_route` refused; the origin defaults to Sandstone, MN. The key is
+`drive_route` refused and no Places client, a walk refused; the origin defaults to Sandstone, MN. The key is
 never written to its database, its trail, a page or a tool's answer. It keeps its candidates, links, estimates,
 judgments, enrichment results, facts and kept pages, the owner's rulings,
 prospect lists, rejects and opens, its
-campaign uses, its passes, its parks with their parcels, the park rules and
-the ZIP drive-time table in its own
+campaign uses, its passes, its parks with their parcels, the places its walks
+found and each park's walks, the park rules and the ZIP drive-time table in its own
 SQLite database, `state/candidates.db` resolved against the working
 directory and opened through appkit's `db` package; it is the only writer of
 it. It emits an event on the bus for each pass that begins and each that
@@ -82,7 +86,7 @@ campaign use of the candidate it names, followed through a merge, starting
 no pass and reading no sibling. Its manifest sets
 `guests = false`: nginx lets no request without a credential through, to the
 pages and to `/mcp` alike, and its nginx fragment answers the bus's two paths
-404 at the public name. At `/mcp` it offers the twenty-two MCP tools
+404 at the public name. At `/mcp` it offers the twenty-three MCP tools
 `D10-tools` catalogs, which agents reach through the MCP gateway, and,
 unlisted, the legacy `cohort` tool a campaigns of the previous release still
 calls. At `/` it serves a page of the prospect lists and the passes, a page
@@ -122,7 +126,7 @@ build run writes the Go source, the tests, `go.mod`'s requirements and
 `0008_windows.sql`, `0009_judgments.sql`, `0010_cohorts.sql`,
 `0011_enrichments.sql`, `0012_facts.sql`, `0013_site_text.sql`,
 `0014_brief.sql`, `0015_website_search.sql`, `0016_campaign_uses.sql`,
-`0017_prospect_lists.sql`, `0018_drive_route.sql`, `0019_opens.sql`, `0020_headcounts.sql`, `0021_link_keys.sql`, `0022_headcount_trend.sql` and `0023_parks.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
+`0017_prospect_lists.sql`, `0018_drive_route.sql`, `0019_opens.sql`, `0020_headcounts.sql`, `0021_link_keys.sql`, `0022_headcount_trend.sql`, `0023_parks.sql` and `0024_walk.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
 and the nginx fragment `etc/nginx.conf`). The
 delivery that created candidates seeded `go.mod` on appkit; the build run
 owns it and `go.sum` from then on and changes them as design says. It never
@@ -228,7 +232,7 @@ The sub-project's tests are all `*_test.go` files in the module: the root
 package, `cmd/candidates` and everything under `internal/` (`internal/cli`,
 `internal/settings`, `internal/server`, `internal/web`, `internal/store`,
 `internal/sources`, `internal/fmcsa`, `internal/ppp`, `internal/form5500`, `internal/oshaita`, `internal/judging`,
-`internal/parks`, `internal/passes`, `internal/website`, `internal/routes`, `internal/enrichers`,
+`internal/parks`, `internal/places`, `internal/passes`, `internal/website`, `internal/routes`, `internal/enrichers`,
 `internal/trail`, `internal/urls`,
 `internal/tools` and `internal/pages`).
 This is the file set the canonical gap greps for requirement ids:
@@ -261,7 +265,7 @@ website search's URL, reason and sites set aside), a fake Google answer (a
 formatted address, a status), an API key, a route origin or a street
 address,
 a row's field, a
-source id, a run id, a candidate id, a pass id, a prospect list id, old or new, a park id, a parcel's PIN, a park rule's county or label, a URL, a services file entry,
+source id, a run id, a candidate id, a pass id, a prospect list id, old or new, a park id, a Place ID, a place's name, address, website or phone, a parcel's PIN, a park rule's county or label, a URL, a services file entry,
 an event's payload, a campaign or piece id, a ruling's, reject's or campaign
 reject's reason, a prospect list's name, or an expected body.
 
@@ -290,8 +294,9 @@ These rules govern the unit tests: everything `go test ./...` runs.
 serves on the listener it is passed. Arguments, environment lookup and
 removal, the pid, the inherited listener, the output streams, the clock, the
 pause between delivery attempts, the sweeper's, the website check's and
-the routes client's timer, the random source, the working directory and the
-HTTP client the website check and the routes client fetch through come in through the run seam design declares
+the routes client's and the Places client's timer, the random source, the
+working directory and the HTTP client the website check, the routes client and
+the Places client fetch through come in through the run seam design declares
 (`cli.Run` with `cli.Process`), and tests inject them. A `Run`-level test
 sets the version string to one of its own and `Dir` to a temporary directory
 of its own, so the database lands there and never in the checkout. A test
@@ -348,17 +353,19 @@ such a transport, or names `IKIGENBA_SANDBOX` in the lookup it gives `Run`
 to check against the stub. The real fetcher's refusal of inward addresses is
 proved with addresses it refuses before any connection, never by fetching.
 
-**Google is faked, never reached.** No test reaches Google's Geocoding or
-Routes API, and no test holds a real key. A test of the routes client, or of
+**Google is faked, never reached.** No test reaches Google's Geocoding,
+Routes or Places API, and no test holds a real key. A test of the routes client, or of
 a pass, a tool or a `Run` that routes, hands `routes.Client` an `*http.Client`
 over an `http.RoundTripper` of its own, which answers each request with the
 body the test chooses, fails or holds it on demand and records each it
 receives, a key of the test's own and an `After` whose channels it holds, as
 design names; a `Run`-level test sets `GOOGLE_MAPS_API_KEY` and
 `CANDIDATES_ROUTE_ORIGIN` only through the `LookupEnv` it gives `Run`, and
-hands in `Process.HTTP` over such a transport when it drives a route. There
-is no loopback stub for Google: `IKIGENBA_SANDBOX` selects the website stub
-alone.
+hands in `Process.HTTP` over such a transport when it drives a route. A test
+of the Places client, or of a walk, hands `places.Client` the same kind of
+client, key and `After`, as design names. There is no loopback stub for
+Google's routing: `IKIGENBA_SANDBOX` selects the website stub and the walk's
+in-process Places fake (`places.Fake`).
 
 **The ZIP table is the embedded one or the test's own.** A test that needs
 the real drive minutes reads the table the root package embeds, through the
@@ -396,7 +403,8 @@ seconds. The sweeper waits on `Process.After`; a test hands in an `After`
 whose channels it holds and delivers on one to make the next prune happen.
 The website check's attempt timeouts and its pace between checks wait on the
 same `After`, told apart by duration, and a test delivers on or holds those
-channels the same way. A test that sleeps to age a pass or a filing or to let a sweep come round is a
+channels the same way. The Places client's request timeout waits on the same
+`After`, with `places.Timeout`. A test that sleeps to age a pass or a filing or to let a sweep come round is a
 bug. The judgment formulas live once, in Go: no pass and no start rewrites
 the stored judgments in SQL, so no test compares SQL with Go. A test waits
 for something it started to finish (a pass reaching `done` or `failed`, a
@@ -519,9 +527,10 @@ There are none. No test reaches outside the suite: scrapes and prompts,
 the two siblings candidates calls, are faked in every unit test, so nothing
 reaches a real prompts, and the website check, `add_page` and the website
 search's confirmation fetch through a transport the test holds or the
-loopback stub, as the routes client requests through a transport the test
-holds. The sandbox fetches websites only from the stub and reaches Google
-only for a `drive_route` pass a developer starts, and the sandbox check
+loopback stub, as the routes client and the Places client request through a
+transport the test holds. The sandbox fetches websites only from the stub,
+walks only against the Places fake, and reaches Google only for a
+`drive_route` pass a developer starts, and the sandbox check
 proves the real chain, one real route included.
 
 ## Gates
@@ -587,7 +596,8 @@ services file names them, with telemetry and auth, and may name campaigns,
 whose entry candidates uses only to link to a campaign's page. The host needs outbound HTTP and HTTPS to the
 public internet, since the website check and `add_page` fetch candidates'
 own domains and the website search confirms the URL its agent names, and
-outbound HTTPS to Google's Geocoding and Routes APIs for `drive_route`. The
+outbound HTTPS to Google's Geocoding and Routes APIs for `drive_route` and to
+Places API (New) for a walk. The
 two secrets its manifest lists, `CANDIDATES_ROUTE_ORIGIN` and
 `GOOGLE_MAPS_API_KEY`, must exist on the space (`devctl secrets push`) or in
 the shell that runs `sandbox up`, or the app is refused; a changed value
@@ -597,4 +607,6 @@ evidence copied from public records, their enrichment results, facts and
 kept pages, the owner's
 rulings, prospect lists, rejects and opens, the campaign uses, the passes,
 the parks derived from parcel rows with their parcels' PINs, owners, site
-addresses and building values, and the park rules, and no secret.
+addresses and building values, the places each walk found in a park with
+their names, addresses, websites and phones, each park's walks with what
+they found and cost, and the park rules, and no secret.
