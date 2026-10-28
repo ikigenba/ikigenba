@@ -6,7 +6,7 @@ Decisions cited by number are the decisions document that delivered candidates; 
 
 ## The registry
 
-The registry is fixed: `Run` builds it as `sources.New(fmcsa.New(), ppp.New(), form5500.New(), oshaita.New())` (Form 5500 decision 12, OSHA ITA outcome 9), so its names are `fmcsa`, `ppp`, `form5500` and `osha_ita`, in the order the call lists them, which is the order in which an `ingest` reads the current run of each, and a `scrape.finished` for any other scraper is skipped (`D06-passes`). A test builds a registry of its own sources with `sources.New`. A source's name is the name of the scraper whose rows it reads, so a link's scraper, an estimate's source, an evidence's source and the registry's name are one word.
+The registry is fixed: `Run` builds it as `sources.New(fmcsa.New(), ppp.New(), form5500.New(), oshaita.New())` (Form 5500 decision 12, OSHA ITA outcome 9), so its names are `fmcsa`, `ppp`, `form5500` and `osha_ita`, in the order the call lists them, which is the order in which an `ingest` reads the current run of each, and a `scrape.finished` for any other scraper is skipped (`D06-passes`). A test builds a registry of its own sources with `sources.New`. A source's name is the name of the scraper whose rows it reads, so a link's scraper, an estimate's source, an evidence's source and the registry's name are one word. A place a walk found is no scrapes row and no source reads it: `places.Reading` (`D19-walk`) reads it, outside the registry, as the parcel scraper is outside it (`D18-parks`).
 
 ## What every source gives
 
