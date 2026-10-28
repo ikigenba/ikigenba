@@ -32,7 +32,7 @@ func labeledBrief(t *testing.T, id string, failed bool, labels ...string) store.
 	return e
 }
 
-// R-7F5X-C28V
+// R-H1TL-HQJG
 func TestHeadcountFactsProjectionNewestAndGoodBrief(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -67,7 +67,7 @@ func TestHeadcountFactsProjectionNewestAndGoodBrief(t *testing.T) {
 	contractEqual(t, factsAt(ctx, t, f.s, id).Headcounts, []sources.Headcount{})
 }
 
-// R-7ITM-HDGY
+// R-H5HA-N1RJ
 func TestFillFactsRefreshesOnlyHeadcountsAndLabelsAndIsIdempotent(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -99,7 +99,7 @@ func TestFillFactsRefreshesOnlyHeadcountsAndLabelsAndIsIdempotent(t *testing.T) 
 	contractEqual(t, factsAt(ctx, t, f.s, id), expected)
 }
 
-// R-7GDT-PTZK
+// R-H31H-VIA5
 func TestHeadcountHoursPersistenceAndPreviousWriter(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

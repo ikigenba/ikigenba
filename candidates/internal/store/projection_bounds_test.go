@@ -29,7 +29,7 @@ func fillFactsWalk(ctx context.Context, s *store.Store) error {
 	}
 }
 
-// R-LNNI-SGBE R-KWTQ-DI04 R-75EQ-9WBB
+// R-LNNI-SGBE R-KWTQ-DI04 R-GUI7-743A
 func TestFactsRowExistsOnlyAfterProjection(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

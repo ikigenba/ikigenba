@@ -13,7 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-6Q7A-NW06 R-Q65V-BAP3 R-6IVW-D9K0
+// R-FRU8-Z4M1 R-Q65V-BAP3 R-FKIU-OI5V
 func TestEnrichmentsAreVisibleBeforeAndApartFromJudgments(t *testing.T) {
 	f := newFixture(t)
 	_, ids, err := f.st.Attach(t.Context(), "new-run", false, []store.Observation{{Scraper: "fmcsa", SourceID: "new-row", Digest: "new-digest", Reading: sources.Reading{Name: "unjudged-business", Names: []string{"unjudged-business"}, NameKey: "unjudged"}}})
@@ -32,7 +32,7 @@ func TestEnrichmentsAreVisibleBeforeAndApartFromJudgments(t *testing.T) {
 	if initial.Enrichments == nil || initial.Enrichments.Facts != nil || initial.Enrichments.Brief != nil || initial.Judgments != nil {
 		t.Fatal(initial)
 	}
-	good := enrichers.BriefFound{Run: "chosen-run", Status: "exited", ExitCode: new(0), Summary: "chosen-summary", Categories: []enrichers.BriefCategory{{Name: sources.CategoryRetail, Why: "chosen-why"}}, Labels: []string{"chosen-label"}}
+	good := enrichers.BriefFound{Run: "chosen-run", Status: "exited", ExitCode: new(0), Summary: "chosen-summary", Categories: []enrichers.BriefCategory{{Name: sources.CategoryRetail, Why: "chosen-why"}, {Name: sources.CategoryAgriculture, Why: "other-why"}}, Labels: []string{"chosen-label", "other-label"}}
 	add := func(found enrichers.BriefFound) {
 		t.Helper()
 		f.now = f.now.Add(time.Hour)
@@ -41,9 +41,14 @@ func TestEnrichmentsAreVisibleBeforeAndApartFromJudgments(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
+	add(enrichers.BriefFound{Run: "first-failed-run", Status: "failed", Categories: []enrichers.BriefCategory{}, Labels: []string{}})
+	if failed := read(); failed.Enrichments.Brief != nil || failed.Judgments != nil {
+		t.Fatal(failed)
+	}
 	add(good)
 	before := read()
-	if before.Judgments != nil || before.Enrichments.Facts == nil || before.Enrichments.Brief == nil || before.Enrichments.Brief.Summary != good.Summary || before.Enrichments.Facts.ClassifiedBy != enrichers.KindBrief || len(before.Enrichments.Facts.Written) != 1 {
+	wantBrief := &tools.Brief{Summary: good.Summary, Categories: []tools.BriefCategory{{Name: good.Categories[0].Name, Why: good.Categories[0].Why}, {Name: good.Categories[1].Name, Why: good.Categories[1].Why}}, Labels: good.Labels, At: stamp(f.now)}
+	if before.Judgments != nil || before.Enrichments.Facts == nil || !reflect.DeepEqual(before.Enrichments.Brief, wantBrief) || before.Enrichments.Facts.ClassifiedBy != enrichers.KindBrief || len(before.Enrichments.Facts.Written) != 1 {
 		t.Fatal(before)
 	}
 	if err = walkJudgments(t.Context(), f.st, f.now); err != nil {
@@ -55,12 +60,18 @@ func TestEnrichmentsAreVisibleBeforeAndApartFromJudgments(t *testing.T) {
 	}
 	add(enrichers.BriefFound{Run: "failed-run", Status: "failed", Categories: []enrichers.BriefCategory{}, Labels: []string{}})
 	after := read()
-	if !reflect.DeepEqual(after.Judgments, judged.Judgments) || !reflect.DeepEqual(after.Enrichments.Brief, before.Enrichments.Brief) || len(after.EnrichmentResults) != 2 || after.Enrichments.Facts.Written[0].At != stamp(f.now) {
+	if !reflect.DeepEqual(after.Judgments, judged.Judgments) || !reflect.DeepEqual(after.Enrichments.Brief, before.Enrichments.Brief) || len(after.EnrichmentResults) != 3 || after.Enrichments.Facts.Written[0].At != stamp(f.now) {
 		t.Fatal(after, judged)
+	}
+	good.Summary = "newest-good-summary"
+	add(good)
+	wantBrief.Summary, wantBrief.At = good.Summary, stamp(f.now)
+	if newest := read(); !reflect.DeepEqual(newest.Enrichments.Brief, wantBrief) || !reflect.DeepEqual(newest.Judgments, judged.Judgments) {
+		t.Fatal(newest)
 	}
 }
 
-// R-AQ2S-CL5A R-ARAO-QCVZ R-6TUZ-T789
+// R-AQ2S-CL5A R-ARAO-QCVZ R-FUA1-QO3F R-FT25-CWCQ
 func TestDriveRouteAnswersAndLiveMemberProjection(t *testing.T) {
 	f := fixtureWithRoutes(t, nil, nil, nil, nil, "Chosen origin")
 	id := f.seed(1)[0]
@@ -114,6 +125,7 @@ func TestDriveRouteAnswersAndLiveMemberProjection(t *testing.T) {
 			Enrichments struct {
 				Facts map[string]json.RawMessage `json:"facts"`
 			} `json:"enrichments"`
+			EnrichmentResults []json.RawMessage `json:"enrichment_results"`
 		}
 		if err := json.Unmarshal(decode(t, r).Structured, &raw); err != nil {
 			t.Fatal(err)
@@ -158,21 +170,17 @@ func TestDriveRouteAnswersAndLiveMemberProjection(t *testing.T) {
 			t.Fatal(results)
 		}
 		first := results[0]
-		var obj map[string]json.RawMessage
-		if err := json.Unmarshal(encodedJSON(first), &obj); err != nil {
-			t.Fatal(err)
-		}
-		wantMembers := 6
+		wantMembers := []string{"kind", "source", "inputs", "found", "cost", "at"}
 		if found.Minutes != nil {
-			wantMembers = 8
+			wantMembers = []string{"kind", "source", "inputs", "found", "place_url", "directions_url", "cost", "at"}
 		}
-		if len(obj) != wantMembers || first.Source != enrichers.SourceGoogleRoutes || first.Inputs != inputs || first.Cost != .25 || !reflect.DeepEqual(first.Found, encodedJSON(found)) {
+		if len(raw.EnrichmentResults) != len(results) || !reflect.DeepEqual(objectKeys(t, raw.EnrichmentResults[0]), wantMembers) || first.Source != enrichers.SourceGoogleRoutes || first.Inputs != inputs || first.Cost != .25 || first.At != stamp(f.now) || !reflect.DeepEqual(first.Found, encodedJSON(found)) {
 			t.Fatal(string(encodedJSON(first)))
 		}
 	}
 }
 
-// R-6Q7A-NW06
+// R-FRU8-Z4M1
 func TestBriefArrivesAfterJudgments(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]

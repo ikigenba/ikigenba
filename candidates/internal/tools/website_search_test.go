@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-6Q7A-NW06 R-ZKAN-MILE R-6RF7-1NQV
+// R-FRU8-Z4M1 R-ZKAN-MILE R-6RF7-1NQV
 func TestSearchAnswersUseStoredResults(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
@@ -153,7 +153,7 @@ func TestWebsiteSearchEnrichDispatch(t *testing.T) {
 	}
 }
 
-// R-6Q7A-NW06 R-6MJL-IKS3
+// R-FRU8-Z4M1 R-FO6J-TTDY
 func TestWebsiteDecisionAnswersDistinguishUncheckedAndUnfound(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
@@ -257,7 +257,7 @@ func TestSearchAnswersPreserveRecordedContext(t *testing.T) {
 	}
 }
 
-// R-6RF7-1NQV R-6Q7A-NW06
+// R-6RF7-1NQV R-FRU8-Z4M1
 func TestSearchAnswersKeepRecordedCaseWhileFactsUseLanding(t *testing.T) {
 	const checked = "https://www.riverhaul.test/"
 	for _, tc := range []struct {
@@ -300,5 +300,137 @@ func TestSearchAnswersKeepRecordedCaseWhileFactsUseLanding(t *testing.T) {
 				t.Fatal(facts, tc)
 			}
 		})
+	}
+}
+
+// R-FRU8-Z4M1 R-FO6J-TTDY
+func TestCandidateWebsiteTakeoversUseRecordedSiteAndOrigin(t *testing.T) {
+	const checked = "https://www.acme.test/"
+	const landing = "https://acme-trucking.test/"
+	for _, tc := range []struct {
+		name, recorded, from, recordedCase string
+		takeover                           bool
+	}{
+		{"same site key", "https://acme.test/", store.WebsiteByCheck, enrichers.SearchCaseDifferent, true},
+		{"query differs", "https://www.acme.test/?token=2", store.WebsiteByCheck, enrichers.SearchCaseDifferent, true},
+		{"normalized host", "https://WWW.Acme.test./contact", store.WebsiteByCheck, enrichers.SearchCaseDifferent, true},
+		{"another check site", "https://earlier.test/", store.WebsiteByCheck, enrichers.SearchCaseDifferent, false},
+		{"another search site", "https://earlier.test/", store.WebsiteBySearch, enrichers.SearchCaseDifferent, true},
+		{"legacy search has no recorded site", "", "", "", false},
+	} {
+		for _, checkLast := range []bool{false, true} {
+			t.Run(tc.name+"/check-last="+map[bool]string{false: "false", true: "true"}[checkLast], func(t *testing.T) {
+				f := newFixture(t)
+				id := f.seed(1)[0]
+				list := f.create("takeover projection")
+				found := enrichers.WebsiteSearchFound{
+					Run:          enrichers.WebsiteSearchRun{ID: "takeover-run", Status: enrichers.RunExited, ExitCode: new(0)},
+					Answer:       &enrichers.WebsiteSearchAnswer{URL: "https://proposed.test/", Why: "chosen-takeover-reason"},
+					Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteHTTPS, URL: landing, Title: "chosen-title"},
+					Website:      tc.recorded,
+					WebsiteFrom:  tc.from,
+					Case:         tc.recordedCase,
+				}
+				if tc.recorded != "" {
+					found.Reason = enrichers.SearchReasonAgain
+				}
+				check := store.Enrichment{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "checked-input", Found: encodedJSON(map[string]string{"state": sources.WebsiteHTTPS, "url": checked})}
+				search := store.Enrichment{Candidate: id, Kind: enrichers.KindWebsiteSearch, Inputs: "search-input", Source: enrichers.SourcePrompts, Found: encodedJSON(found)}
+				results := []store.Enrichment{check, search}
+				if checkLast {
+					results = []store.Enrichment{search, check}
+				}
+				for _, result := range results {
+					f.now = f.now.Add(time.Second)
+					if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{result}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				wantURL, wantSource := checked, store.WebsiteByCheck
+				if tc.takeover {
+					wantURL, wantSource = landing, store.WebsiteBySearch
+				}
+				assertWebsiteAnswer(t, f, id, list.ID, wantURL, wantSource)
+				if tc.from == store.WebsiteByCheck {
+					// A new check host ends a takeover that ran against the old check.
+					const replacement = "https://new-check.test/"
+					f.now = f.now.Add(time.Second)
+					check.Found = encodedJSON(map[string]string{"state": sources.WebsiteHTTPS, "url": replacement})
+					if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{check}); err != nil {
+						t.Fatal(err)
+					}
+					assertWebsiteAnswer(t, f, id, list.ID, replacement, store.WebsiteByCheck)
+				}
+			})
+		}
+	}
+}
+
+// R-FRU8-Z4M1 R-FO6J-TTDY
+func TestCandidateWebsiteSearchChainSurvivesLaterChecksAndInertSearches(t *testing.T) {
+	f := newFixture(t)
+	id := f.seed(1)[0]
+	list := f.create("chained website projection")
+	const checked = "https://www.acme.test/"
+	const first = "https://acme-trucking.test/"
+	const second = "https://acme-haulers.test/"
+	add := func(kind string, found any) {
+		t.Helper()
+		f.now = f.now.Add(time.Second)
+		if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: kind, Inputs: "chain-input", Found: encodedJSON(found)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	search := func(recorded, from, url, recordedCase string) enrichers.WebsiteSearchFound {
+		return enrichers.WebsiteSearchFound{
+			Run:          enrichers.WebsiteSearchRun{ID: "chain-run", Status: enrichers.RunExited, ExitCode: new(0)},
+			Answer:       &enrichers.WebsiteSearchAnswer{URL: url, Why: "chosen-chain-reason"},
+			Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteHTTPS, URL: url},
+			Website:      recorded,
+			WebsiteFrom:  from,
+			Reason:       enrichers.SearchReasonAgain,
+			Case:         recordedCase,
+		}
+	}
+	add(sources.WebsiteCheck, map[string]string{"state": sources.WebsiteHTTPS, "url": checked})
+	add(enrichers.KindWebsiteSearch, search("https://acme.test/", store.WebsiteByCheck, first, enrichers.SearchCaseDifferent))
+	assertWebsiteAnswer(t, f, id, list.ID, first, store.WebsiteBySearch)
+	add(sources.WebsiteCheck, map[string]string{"state": sources.WebsiteHTTPS, "url": checked})
+	assertWebsiteAnswer(t, f, id, list.ID, first, store.WebsiteBySearch)
+	add(enrichers.KindWebsiteSearch, search(first, store.WebsiteBySearch, second, enrichers.SearchCaseDifferent))
+	assertWebsiteAnswer(t, f, id, list.ID, second, store.WebsiteBySearch)
+	add(sources.WebsiteCheck, map[string]string{"state": sources.WebsiteHTTPS, "url": "https://another-check.test/"})
+	assertWebsiteAnswer(t, f, id, list.ID, second, store.WebsiteBySearch)
+	stands := search(second, store.WebsiteBySearch, second+"about", enrichers.SearchCaseStands)
+	none := search(second, store.WebsiteBySearch, "", enrichers.SearchCaseNone)
+	none.Confirmation = nil
+	failed := search(second, store.WebsiteBySearch, "https://failed.test/", enrichers.SearchCaseDifferent)
+	failed.Run.Status = "failed"
+	failed.Case = ""
+	unloaded := search(second, store.WebsiteBySearch, "https://unloaded.test/", enrichers.SearchCaseDifferent)
+	unloaded.Confirmation.State = sources.WebsiteNone
+	for _, found := range []enrichers.WebsiteSearchFound{stands, none, failed, unloaded} {
+		add(enrichers.KindWebsiteSearch, found)
+		assertWebsiteAnswer(t, f, id, list.ID, second, store.WebsiteBySearch)
+	}
+}
+
+func assertWebsiteAnswer(t *testing.T, f *fixture, id, list, url, source string) {
+	t.Helper()
+	r := f.call("candidate", tools.CandidateArgs{Candidate: id})
+	if r.IsError() {
+		t.Fatal(decode(t, r))
+	}
+	detail := decodeList[tools.Detail](t, r)
+	if detail.Enrichments == nil || detail.Enrichments.Facts == nil {
+		t.Fatal(detail)
+	}
+	facts := detail.Enrichments.Facts
+	if facts.Website != sources.WebsiteHTTPS || facts.WebsiteURL != url || facts.WebsiteSource != source {
+		t.Fatal(facts, url, source)
+	}
+	members := peekBasis(t, f, list).Members
+	if len(members) != 1 || members[0].Website != facts.Website || members[0].WebsiteURL != url || members[0].WebsiteSource != source {
+		t.Fatal(members, facts)
 	}
 }

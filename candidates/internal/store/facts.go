@@ -303,10 +303,7 @@ func (s *Store) factsResults(ctx context.Context, tx *sql.Tx, id string) ([]Enri
 
 // takeoverSearch folds matching searches without retaining their history.
 func (s *Store) takeoverSearch(ctx context.Context, tx *sql.Tx, id, websiteURL string) ([]Enrichment, error) {
-	if websiteURL == "" {
-		return nil, nil
-	}
-	rows, err := querySQL(ctx, tx, `SELECT seq,coalesce(json_extract(found,'$.confirmation.url'),'') FROM enrichments WHERE candidate=? AND kind=? AND json_extract(found,'$.website')=? AND json_extract(found,'$.run.status')=? AND json_extract(found,'$.run.exit_code')=0 AND json_type(found,'$.answer')='object' AND json_extract(found,'$.confirmation.state') IN (?,?) ORDER BY seq DESC`, id, enrichers.KindWebsiteSearch, websiteURL, enrichers.RunExited, sources.WebsiteHTTPS, sources.WebsiteHTTP)
+	rows, err := querySQL(ctx, tx, `SELECT seq,json_extract(found,'$.website'),coalesce(json_extract(found,'$.website_from'),''),coalesce(json_extract(found,'$.confirmation.url'),'') FROM enrichments WHERE candidate=? AND kind=? AND coalesce(json_extract(found,'$.website'),'')<>'' AND json_extract(found,'$.run.status')=? AND json_extract(found,'$.run.exit_code')=0 AND json_type(found,'$.answer')='object' AND json_extract(found,'$.confirmation.state') IN (?,?) ORDER BY seq DESC`, id, enrichers.KindWebsiteSearch, enrichers.RunExited, sources.WebsiteHTTPS, sources.WebsiteHTTP)
 	if err != nil {
 		return nil, err
 	}
@@ -314,11 +311,15 @@ func (s *Store) takeoverSearch(ctx context.Context, tx *sql.Tx, id, websiteURL s
 	websiteKey := websiteSiteKey(websiteURL)
 	for rows.Next() {
 		var seq int64
-		var landing string
-		if err = rows.Scan(&seq, &landing); err != nil {
+		var searched, from, landing string
+		if err = rows.Scan(&seq, &searched, &from, &landing); err != nil {
 			return nil, err
 		}
-		if key := websiteSiteKey(landing); key != "" && key == websiteKey {
+		searchedKey := websiteSiteKey(searched)
+		if from != WebsiteBySearch && (searchedKey == "" || searchedKey != websiteKey) {
+			continue
+		}
+		if key := websiteSiteKey(landing); key != "" && key == searchedKey {
 			continue
 		}
 		if err = rows.Close(); err != nil {
@@ -486,6 +487,7 @@ func WebsiteDecisionOf(es []Enrichment) (source, state, url, title, why string, 
 	var confirmed, unfound *enrichers.WebsiteSearchFound
 	var confirmedAt, unfoundAt time.Time
 	takeovers := map[string]bool{}
+	searchTakeover := false
 	for _, e := range es {
 		if e.Kind == sources.WebsiteCheck && check == nil {
 			var w website.Result
@@ -503,7 +505,10 @@ func WebsiteDecisionOf(es []Enrichment) (source, state, url, title, why string, 
 		}
 		working := v.Confirmation != nil && (v.Confirmation.State == sources.WebsiteHTTPS || v.Confirmation.State == sources.WebsiteHTTP)
 		if working && !searchLandsOn(v) && v.Website != "" {
-			takeovers[v.Website] = true
+			if key := websiteSiteKey(v.Website); key != "" {
+				takeovers[key] = true
+			}
+			searchTakeover = searchTakeover || v.WebsiteFrom == WebsiteBySearch
 		}
 		if inertSearch(v) {
 			continue
@@ -517,7 +522,7 @@ func WebsiteDecisionOf(es []Enrichment) (source, state, url, title, why string, 
 			unfoundAt = e.At
 		}
 	}
-	if check != nil && (check.State == sources.WebsiteHTTPS || check.State == sources.WebsiteHTTP) && !takeovers[check.URL] {
+	if check != nil && (check.State == sources.WebsiteHTTPS || check.State == sources.WebsiteHTTP) && !searchTakeover && !takeovers[websiteSiteKey(check.URL)] {
 		return WebsiteByCheck, check.State, check.URL, check.Title, "", checkAt
 	}
 	if confirmed != nil {

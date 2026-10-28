@@ -17,7 +17,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-6SN3-FFHK R-6K3S-R1AP R-6TUZ-T789
+// R-FT25-CWCQ R-FLQR-29WK R-FUA1-QO3F
 func TestCandidateRouteLinksFollowResolvedResultsAndCurrentOrigin(t *testing.T) {
 	const origin = "Chosen origin & base"
 	const address = "42 Resolved St, Town"

@@ -10,7 +10,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-LW6E-VA6N R-LYM7-MTO1 R-F6SN-SU22 R-LXEB-91XC R-FCW5-PORJ
+// R-LW6E-VA6N R-LYM7-MTO1 R-12DZ-6K3F R-LXEB-91XC R-19PD-H6JL
 func TestProspectListRevenueContainmentAndDepartures(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

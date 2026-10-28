@@ -45,7 +45,7 @@ func TestTargetPassAndCosts(t *testing.T) {
 	}
 }
 
-// R-4M7S-2T0Y
+// R-T3RK-LIFY
 func TestSiteTextResultProjection(t *testing.T) {
 	for _, tc := range []struct {
 		status string
@@ -115,7 +115,7 @@ func TestKeptPagePathGrammar(t *testing.T) {
 	}
 }
 
-// R-4ONK-UCIC R-6BJH-R2M3 R-6GF3-A5KV R-6DZA-IM3H
+// R-T67D-D1XC R-6BJH-R2M3 R-6GF3-A5KV R-6DZA-IM3H
 func TestKeptPageRoutes(t *testing.T) {
 	cfg, d := pageFixture(t)
 	ctx := t.Context()

@@ -34,7 +34,7 @@ func decision(es []store.Enrichment) decisionValue {
 	return decisionValue{a, b, c, d, e, f}
 }
 
-// R-7BI8-6R0S
+// R-GTAA-TCCL
 func TestWebsiteDecisionTakeoversAndInertSearches(t *testing.T) {
 	stamp := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	check := websiteResult("candidate", sources.WebsiteHTTPS)
@@ -61,6 +61,26 @@ func TestWebsiteDecisionTakeoversAndInertSearches(t *testing.T) {
 	failed := searchVariant(t, takeover, func(v *enrichers.WebsiteSearchFound) { v.Run.Status = "failed"; v.Run.ExitCode = nil })
 	unconfirmed := searchVariant(t, takeover, func(v *enrichers.WebsiteSearchFound) { v.Confirmation = nil })
 	otherBytes := searchVariant(t, takeover, func(v *enrichers.WebsiteSearchFound) { v.Website = "https://www.acme.test/" })
+	queryBytes := searchVariant(t, takeover, func(v *enrichers.WebsiteSearchFound) { v.Website = "https://www.acme.test/?token=2" })
+	otherSite := searchVariant(t, takeover, func(v *enrichers.WebsiteSearchFound) { v.Website = "https://unrelated.test/" })
+	chained := searchVariant(t, newer, func(v *enrichers.WebsiteSearchFound) {
+		v.Case = enrichers.SearchCaseDifferent
+		v.Website = "https://acme-trucking.test/"
+		v.WebsiteFrom = store.WebsiteBySearch
+		v.Reason = enrichers.SearchReasonAgain
+		v.Answer.Why = "later confirmed business"
+		v.Confirmation.Title = "later confirmed title"
+	})
+	chainFromCheck := searchVariant(t, chained, func(v *enrichers.WebsiteSearchFound) { v.WebsiteFrom = store.WebsiteByCheck })
+	chainStands := searchVariant(t, chained, func(v *enrichers.WebsiteSearchFound) {
+		v.Case = enrichers.SearchCaseStands
+		v.Confirmation.URL = "https://acme-trucking.test/about"
+	})
+	chainNone := searchVariant(t, chained, func(v *enrichers.WebsiteSearchFound) {
+		v.Case = enrichers.SearchCaseNone
+		v.Answer.URL = ""
+		v.Confirmation = nil
+	})
 	noWebsite := searchVariant(t, takeover, func(v *enrichers.WebsiteSearchFound) { v.Website = "" })
 	historicStands := searchVariant(t, takeover, func(v *enrichers.WebsiteSearchFound) {
 		v.Case = enrichers.SearchCaseStands
@@ -72,6 +92,7 @@ func TestWebsiteDecisionTakeoversAndInertSearches(t *testing.T) {
 	})
 	expectedCheck := decisionValue{store.WebsiteByCheck, sources.WebsiteHTTPS, checked.URL, checked.Title, "", stamp}
 	expectedSearch := decisionValue{store.WebsiteBySearch, sources.WebsiteHTTPS, "https://acme-trucking.test/", "confirmed title", "owner's business", search.At}
+	expectedChain := decisionValue{store.WebsiteBySearch, sources.WebsiteHTTP, "http://newer-search.test/", "later confirmed title", "later confirmed business", newer.At}
 	expectedNone := decisionValue{"", sources.WebsiteNone, "", "", "owner's business", unfound.At}
 	cases := []struct {
 		name string
@@ -88,7 +109,19 @@ func TestWebsiteDecisionTakeoversAndInertSearches(t *testing.T) {
 		{"historic stands takeover oldest", []store.Enrichment{check, historicStands}, expectedSearch},
 		{"historic different redirect back newest", []store.Enrichment{redirectsBack, check}, expectedCheck},
 		{"historic different redirect back oldest", []store.Enrichment{check, redirectsBack}, expectedCheck},
-		{"different bytes", []store.Enrichment{otherBytes, check}, expectedCheck},
+		{"same site different bytes", []store.Enrichment{otherBytes, check}, expectedSearch},
+		{"same site different bytes check newer", []store.Enrichment{check, otherBytes}, expectedSearch},
+		{"same site query", []store.Enrichment{queryBytes, check}, expectedSearch},
+		{"other checked site", []store.Enrichment{otherSite, check}, expectedCheck},
+		{"chained search newest", []store.Enrichment{chained, takeover, check}, expectedChain},
+		{"chained search check between", []store.Enrichment{chained, check, takeover}, expectedChain},
+		{"chained search check newest", []store.Enrichment{check, chained, takeover}, expectedChain},
+		{"search origin alone newest", []store.Enrichment{chained, check}, expectedChain},
+		{"search origin alone oldest", []store.Enrichment{check, chained}, expectedChain},
+		{"other check origin newest", []store.Enrichment{chainFromCheck, check}, expectedCheck},
+		{"other check origin oldest", []store.Enrichment{check, chainFromCheck}, expectedCheck},
+		{"newer stands keeps takeover", []store.Enrichment{chainStands, check, takeover}, expectedSearch},
+		{"newer none keeps takeover", []store.Enrichment{chainNone, takeover, check}, expectedSearch},
 		{"absent searched website", []store.Enrichment{noWebsite, check}, expectedCheck},
 		{"failed takeover", []store.Enrichment{failed, check}, expectedCheck},
 		{"unconfirmed takeover", []store.Enrichment{unconfirmed, check}, expectedCheck},
@@ -131,7 +164,7 @@ func TestWebsiteDecisionTakeoversAndInertSearches(t *testing.T) {
 	}
 }
 
-// R-7CQ4-KIRH R-77UJ-1FSP R-7K1I-V57N
+// R-GZDS-Q722 R-GVQ3-KVTZ R-H6P7-0TI8
 func TestWebsiteTakeoverProjectionPersistsAndSurvivesInertSearch(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -179,7 +212,98 @@ func TestWebsiteTakeoverProjectionPersistsAndSurvivesInertSearch(t *testing.T) {
 	contractEqual(t, factsAt(ctx, t, f.s, id).WebsiteSource, store.WebsiteByCheck)
 }
 
-// R-7BI8-6R0S R-7CQ4-KIRH R-77UJ-1FSP
+// R-GTAA-TCCL R-GZDS-Q722 R-GVQ3-KVTZ R-H6P7-0TI8
+func TestWebsiteProjectionMatchesSiteKeysAndSearchProvenance(t *testing.T) {
+	for _, scenario := range []string{"alias", "query", "chain", "chain stands", "chain none", "search origin alone", "check origin alone"} {
+		for _, checkAt := range []int{0, 1, 2} {
+			t.Run(scenario+map[int]string{0: "/check-first", 1: "/check-between", 2: "/check-last"}[checkAt], func(t *testing.T) {
+				f := contractDB(t)
+				ctx := context.Background()
+				id := contractSeed(t, f)
+				_, err := f.s.Judge(ctx, []string{id})
+				contractOK(t, err)
+				list := prospectListCreate(t, f, "search lineage")
+				check := websiteResult(id, sources.WebsiteHTTPS)
+				checked := websiteDecoded(check)
+				checked.URL = "https://www.acme.test/"
+				check.Found = websiteFound(checked)
+				first := searchVariant(t, searchResult(t, id, sources.WebsiteHTTPS, "https://acme-trucking.test/"), func(v *enrichers.WebsiteSearchFound) {
+					v.Website = "https://acme.test/"
+					if scenario == "query" {
+						v.Website = "https://www.acme.test/?token=2"
+					}
+					v.WebsiteFrom, v.Reason, v.Case = store.WebsiteByCheck, enrichers.SearchReasonAgain, enrichers.SearchCaseDifferent
+				})
+				second := searchVariant(t, searchResult(t, id, sources.WebsiteHTTP, "http://acme-haulers.test/"), func(v *enrichers.WebsiteSearchFound) {
+					v.Website, v.WebsiteFrom, v.Reason, v.Case = "https://acme-trucking.test/", store.WebsiteBySearch, enrichers.SearchReasonAgain, enrichers.SearchCaseDifferent
+					if scenario == "check origin alone" {
+						v.WebsiteFrom = store.WebsiteByCheck
+					}
+					if scenario == "chain stands" {
+						v.Case = enrichers.SearchCaseStands
+						v.Confirmation.URL = "https://www.acme-trucking.test/about"
+					}
+					if scenario == "chain none" {
+						v.Case, v.Answer.URL, v.Confirmation = enrichers.SearchCaseNone, "", nil
+					}
+				})
+				searches := []store.Enrichment{first}
+				wantState, wantURL, wantSource := sources.WebsiteHTTPS, "https://acme-trucking.test/", store.WebsiteBySearch
+				switch scenario {
+				case "chain", "chain stands", "chain none":
+					searches = append(searches, second)
+					if scenario == "chain" {
+						wantState, wantURL = sources.WebsiteHTTP, "http://acme-haulers.test/"
+					}
+				case "search origin alone":
+					searches = []store.Enrichment{second}
+					wantState, wantURL = sources.WebsiteHTTP, "http://acme-haulers.test/"
+				case "check origin alone":
+					searches = []store.Enrichment{second}
+					wantURL, wantSource = checked.URL, store.WebsiteByCheck
+				}
+				position := min(checkAt, len(searches))
+				ordered := append([]store.Enrichment{}, searches[:position]...)
+				ordered = append(ordered, check)
+				ordered = append(ordered, searches[position:]...)
+				for _, e := range ordered {
+					f.now = f.now.Add(time.Second)
+					_, err = f.s.AddEnrichments(ctx, []store.Enrichment{e})
+					contractOK(t, err)
+				}
+				assert := func() {
+					t.Helper()
+					facts := factsAt(ctx, t, f.s, id)
+					contractEqual(t, facts.Website, wantState)
+					contractEqual(t, facts.WebsiteURL, wantURL)
+					contractEqual(t, facts.WebsiteSource, wantSource)
+					contractEqual(t, prospectListRead(t, f, list).Members[0].Facts, facts)
+					es, e := f.s.Enrichments(ctx, id)
+					contractOK(t, e)
+					got := decision(es)
+					contractEqual(t, got.source, wantSource)
+					contractEqual(t, got.state, wantState)
+					contractEqual(t, got.url, wantURL)
+				}
+				assert()
+				// A later unrelated write must retain the deciding search through projection.
+				_, err = f.s.AddEnrichments(ctx, []store.Enrichment{headcountLinkResult(t, id)})
+				contractOK(t, err)
+				assert()
+				f.reopen()
+				assert()
+				contractOK(t, f.d.Write(ctx, func(tx *sql.Tx) error {
+					_, e := tx.ExecContext(ctx, "DELETE FROM facts WHERE candidate=?", id)
+					return e
+				}))
+				contractOK(t, fillFactsWalk(ctx, f.s))
+				assert()
+			})
+		}
+	}
+}
+
+// R-GTAA-TCCL R-GZDS-Q722 R-GVQ3-KVTZ
 func TestWebsiteProjectionUsesHistoricalConfirmationLanding(t *testing.T) {
 	for _, tc := range []struct {
 		name, recordedCase, answer, landing, source, url string
@@ -250,7 +374,7 @@ func TestWebsiteProjectionUsesHistoricalConfirmationLanding(t *testing.T) {
 	}
 }
 
-// R-7BI8-6R0S R-77UJ-1FSP
+// R-GTAA-TCCL R-GVQ3-KVTZ
 func TestWebsiteProjectionWithAbsentConfirmationURL(t *testing.T) {
 	for _, confirmation := range []string{`{"state":"https"}`, `{"state":"https","url":null}`, `{"state":"https","url":""}`} {
 		t.Run(confirmation, func(t *testing.T) {
