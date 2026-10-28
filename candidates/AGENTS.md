@@ -393,7 +393,11 @@ closing the store. Tests prove candidates' use of the database, its schema,
 its store and its wiring, never SQLite's own guarantees (atomicity,
 durability, locking) and never appkit's `db` contract (opening, migrations,
 transactions, `db status`), which appkit's own tests prove; they prove what
-a store holds by reopening its path, never by reading tables.
+a store holds by reopening its path, never by reading tables. The one
+exception is a design's rollback-compatibility requirement that names
+`DB.Read` or `DB.Write` and "the previous release's store": it is proved
+by running that release's SQL through those calls, the only seam a
+rollback observes.
 
 **Time and the sweep are driven, not waited out.** A pass's started and
 finished times, a link's first and last seen, a ruling's time, a judge's
