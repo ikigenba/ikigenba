@@ -18,11 +18,23 @@
      page.Banner, for banner and footer); .Candidate, with .ID (its cand_
      id, "cand_" and 16 hex), .Status ("active" or "merged", as stored),
      .MergedInto (the cand_ id it was merged into; empty unless .Status is
-     "merged"), .Name (its display name; empty when merged), .Names (every
-     name any link uses, .Name first, a slice of strings), .Street, .City,
+     "merged"), .Name (its display name; empty when merged), .Street, .City,
      .State, .Zip, .County (as stored, "MN-115"), .Phone (ten digits, as
      stored) and .Email (each empty when its freshest evidence gives none,
-     and all empty when merged), .Park (the park it was found in: nil
+     and all empty when merged); beside them the source each fact was
+     taken from, by the fact's order of sources: .NameSource,
+     .AddressSource (the source of the whole address, .Street, .City,
+     .State and .Zip together), .PhoneSource and .EmailSource, each one
+     source identifier, "fmcsa", "ppp",
+     "form5500", "osha_ita", "places", "check", "search", "owner",
+     "brief" or "route", empty when its fact is, and all empty when
+     merged; .OtherNames, .OtherAddresses and .OtherPhones (every other
+     value the candidate's sources hold for the display name, the address
+     and the phone, the chosen one left out, each with .Value (the name as
+     the source gives it; the address as one line, "12 Main St, Duluth, MN
+     55802"; the phone as ten digits, as stored) and .Source (the source
+     identifier that holds it, as above); each may be empty, all empty
+     when merged), .Park (the park it was found in: nil
      when no link of it was found by a walk, and when merged; else the
      park of the newest such link, with .ID, its park_ id, and .Name, its
      name as the park page shows it), .WebsiteSource (which result decided the
@@ -50,8 +62,14 @@
      .WebsiteSource names, the website_search result that found no site
      when .Website is "none", else its newest website_check result; in
      .Created's two forms below; both empty when it has none),
+     .WebsiteCheckedURL (the URL the website check was given and began
+     from, the Places URL or the email domain's, when the result
+     .WebsiteChecked names is a website_check result and that URL
+     differs from .WebsiteURL; else empty); .WebsiteSource may also be
+     "owner" or "places" by the website's order of sources,
      .People (each with .Name and .Role, as the
-     source gives them; may be empty), .Class (its class tag, "private",
+     source gives them, and .Source, the source identifier it was taken
+     from, as .NameSource's; may be empty), .Class (its class tag, "private",
      "for_hire", "mixed" or "unknown"; empty when merged), .Cargo (its
      cargo tags, a slice of strings; may be empty), .Created and
      .CreatedText (RFC 3339 UTC to the second, and the same as shown,
@@ -71,9 +89,11 @@
      .Facts (nil when it has no facts row; else its facts
      row, as stored), with .KnownSince and .KnownSinceText (the earliest
      date any link not gone shows it existing, "2018-04-09", both the
-     same; empty when none), .NewestFiling and .NewestFilingText (the
-     newest filing date among its links not gone, "2025-03-18", both the
-     same; empty when none), .Categories (the categories that decide,
+     same; empty when none), .KnownSinceSource (the source identifier it
+     was taken from, as .NameSource's; empty when .KnownSince is),
+     .NewestFiling and .NewestFilingText (the newest filing date among
+     its links not gone, "2025-03-18", both the same; empty when none),
+     .NewestFilingSource (likewise, for .NewestFiling), .Categories (the categories that decide,
      each with .Name, the category word as stored, and .Source, the
      source that gave it, "brief" for every one when the brief decided,
      else "fmcsa", "ppp", "form5500", "osha_ita" or "name", one per
@@ -354,29 +374,44 @@
      "ID" then dd#candidate-id (.ID in a code element), dt "Status" then
      dd#candidate-status (the status span), dt "Merged into" then
      dd#candidate-merged (the a.candidate-link above) only when merged,
-     then, each only when set, dt "Name" then dd#candidate-name, dt "Names"
-     then dd#candidate-names (.Names joined by " · "), dt "Street" then
-     dd#candidate-street, dt "City" then dd#candidate-city, dt "State" then
-     dd#candidate-state, dt "Zip" then dd#candidate-zip, dt "County" then
+     then, each only when set, dt "Name" then dd#candidate-name (.Name and
+     the source mark of .NameSource), dt "Other names" then
+     dd#candidate-other-names (one div[data-other-name] per entry, .Value
+     and the source mark of .Source), dt "Street" then dd#candidate-street
+     (.Street and the source mark of .AddressSource), dt "City" then
+     dd#candidate-city (.City, and the source mark of .AddressSource when
+     .Street is empty), dt "State" then dd#candidate-state, dt "Zip" then
+     dd#candidate-zip, dt "Other addresses" then
+     dd#candidate-other-addresses (one div[data-other-address] per entry,
+     as the other names), dt "County" then
      dd#candidate-county (in a code element), dt "Park" then
      dd#candidate-park (a.park-link, href "/parks/<.Park.ID>", text
      .Park.Name), dt "Phone" then
-     dd#candidate-phone, dt "Email" then dd#candidate-email, dt "Website"
+     dd#candidate-phone (.Phone and the source mark of .PhoneSource), dt
+     "Other phones" then dd#candidate-other-phones (one
+     div[data-other-phone] per entry, as the other names), dt "Email" then
+     dd#candidate-email (.Email and the source mark of .EmailSource), dt
+     "Website"
      then dd#candidate-website[data-website=<.Website>] (when .Website is
      "unknown", span.muted "unknown"; else a.website-link, href
      .WebsiteURL, text .WebsiteURL, and a space when .WebsiteURL is set,
-     then .Website; then, when .WebsiteTitle is set, div[data-website-title]
+     then .Website; then, when .WebsiteSource is set and neither "check"
+     nor "search", the source mark of .WebsiteSource; then, when .WebsiteTitle is set, div[data-website-title]
      with .WebsiteTitle; then, when .WebsiteWhy is set,
      div[data-website-why] with .WebsiteWhy; then, when .WebsiteChecked is
      set, div.muted holding "found by search" when .WebsiteSource is
      "search", "found by check" when it is "check", "searched" when
      .Website is "none", else "checked", then
      a space and
-     time[datetime=<.WebsiteChecked>] (text .WebsiteCheckedText); the dd
+     time[datetime=<.WebsiteChecked>] (text .WebsiteCheckedText); then, when
+     .WebsiteCheckedURL is set, div.muted[data-website-checked-url]
+     holding "the check began at", a space and a.website-link, href
+     .WebsiteCheckedURL, text .WebsiteCheckedURL; the dd
      carrying also [data-website-source=<.WebsiteSource>] when
      .WebsiteSource is set), dt "People"
      then dd#candidate-people (one div[data-person] per person, .Name, a
-     space, and span.muted with .Role), dt "Class" then dd#candidate-class
+     space, span.muted with .Role and the source mark of .Source), dt
+     "Class" then dd#candidate-class
      (in a code element) and dt "Cargo" then dd#candidate-cargo (one
      code[data-cargo=<tag>] per tag, separated by spaces); then dt
      "Created" then dd#candidate-created and dt "Updated" then
@@ -411,10 +446,11 @@
      dd#facts-record-categories (one div[data-record-category=<.Name>]
      per category holding .Name in a code element, a space and span.muted
      with .Source, or when empty span.muted "unknown"), dt "Known since" then dd#facts-known-since
-     (time[datetime=<.KnownSince>] with .KnownSinceText, or when empty
-     span.muted "none"), dt "Newest filing" then dd#facts-filed
-     (time[datetime=<.NewestFiling>] with .NewestFilingText, or when empty
-     span.muted "none"), dt "Government match" then dd#facts-government
+     (time[datetime=<.KnownSince>] with .KnownSinceText and the source
+     mark of .KnownSinceSource, or when empty span.muted "none"), dt
+     "Newest filing" then dd#facts-filed (time[datetime=<.NewestFiling>]
+     with .NewestFilingText and the source mark of .NewestFilingSource,
+     or when empty span.muted "none"), dt "Government match" then dd#facts-government
      (.GovernmentMatch in a code element, or "no" when empty), dt "Fleet"
      then dd#facts-fleet[data-fleet=<.FleetVerdict>] (.FleetVerdict, in
      span.muted when "unknown"), dt "Trucks" then dd#facts-power-units
@@ -722,7 +758,15 @@
      td.campaign-rejected (empty unless .Rejected; then
      span.badge[data-kind=warn] (text "rejected"), then, when .RejectedAt
      is set, a space and time[datetime=<.RejectedAt>] with .RejectedAtText,
-     then, when .Reason is set, div[data-reason] with .Reason). No script
+     then, when .Reason is set, div[data-reason] with .Reason). A source
+     mark, from the "candidate-from" template, is nothing when its source
+     is empty, else a space and span.muted[data-source=<source>] holding
+     "from", a space and the source label. A source label, from the
+     "candidate-source" template, names the source in words: "fmcsa"
+     "FMCSA", "ppp" "PPP", "form5500" "Form 5500", "osha_ita" "OSHA",
+     "places" "Places", "check" "the website check", "search" "the
+     website search", "owner" "the owner", "brief" "the brief", "route"
+     "the routed address", and any other identifier as itself. No script
      but appkit's /_appkit/feedback.js. */}}
 {{define "candidate"}}<!doctype html>
 <html lang="en">
@@ -740,18 +784,20 @@
 <dt>ID</dt><dd id="candidate-id"><code>{{.ID}}</code></dd>
 <dt>Status</dt><dd id="candidate-status"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "merged"}}info{{else}}ok{{end}}">{{.Status}}</span></dd>
 {{if eq .Status "merged"}}<dt>Merged into</dt><dd id="candidate-merged"><a class="candidate-link" href="/candidates/{{.MergedInto}}"><code>{{.MergedInto}}</code></a></dd>
-{{end}}{{if .Name}}<dt>Name</dt><dd id="candidate-name">{{.Name}}</dd>
-{{end}}{{if .Names}}<dt>Names</dt><dd id="candidate-names">{{range $i, $n := .Names}}{{if $i}} · {{end}}{{$n}}{{end}}</dd>
-{{end}}{{if .Street}}<dt>Street</dt><dd id="candidate-street">{{.Street}}</dd>
-{{end}}{{if .City}}<dt>City</dt><dd id="candidate-city">{{.City}}</dd>
+{{end}}{{if .Name}}<dt>Name</dt><dd id="candidate-name">{{.Name}}{{template "candidate-from" .NameSource}}</dd>
+{{end}}{{if .OtherNames}}<dt>Other names</dt><dd id="candidate-other-names">{{range .OtherNames}}<div data-other-name>{{.Value}}{{template "candidate-from" .Source}}</div>{{end}}</dd>
+{{end}}{{if .Street}}<dt>Street</dt><dd id="candidate-street">{{.Street}}{{template "candidate-from" .AddressSource}}</dd>
+{{end}}{{if .City}}<dt>City</dt><dd id="candidate-city">{{.City}}{{if not .Street}}{{template "candidate-from" .AddressSource}}{{end}}</dd>
 {{end}}{{if .State}}<dt>State</dt><dd id="candidate-state">{{.State}}</dd>
 {{end}}{{if .Zip}}<dt>Zip</dt><dd id="candidate-zip">{{.Zip}}</dd>
+{{end}}{{if .OtherAddresses}}<dt>Other addresses</dt><dd id="candidate-other-addresses">{{range .OtherAddresses}}<div data-other-address>{{.Value}}{{template "candidate-from" .Source}}</div>{{end}}</dd>
 {{end}}{{if .County}}<dt>County</dt><dd id="candidate-county"><code>{{.County}}</code></dd>
 {{end}}{{with .Park}}<dt>Park</dt><dd id="candidate-park"><a class="park-link" href="/parks/{{.ID}}">{{.Name}}</a></dd>
-{{end}}{{if .Phone}}<dt>Phone</dt><dd id="candidate-phone">{{.Phone}}</dd>
-{{end}}{{if .Email}}<dt>Email</dt><dd id="candidate-email">{{.Email}}</dd>
-{{end}}{{if .Website}}<dt>Website</dt><dd id="candidate-website" data-website="{{.Website}}"{{if .WebsiteSource}} data-website-source="{{.WebsiteSource}}"{{end}}>{{if eq .Website "unknown"}}<span class="muted">unknown</span>{{else}}{{if .WebsiteURL}}<a class="website-link" href="{{.WebsiteURL}}">{{.WebsiteURL}}</a> {{end}}{{.Website}}{{end}}{{if .WebsiteTitle}}<div data-website-title>{{.WebsiteTitle}}</div>{{end}}{{if .WebsiteWhy}}<div data-website-why>{{.WebsiteWhy}}</div>{{end}}{{if .WebsiteChecked}}<div class="muted">{{if eq .WebsiteSource "search"}}found by search{{else if eq .WebsiteSource "check"}}found by check{{else if eq .Website "none"}}searched{{else}}checked{{end}} <time datetime="{{.WebsiteChecked}}">{{.WebsiteCheckedText}}</time></div>{{end}}</dd>
-{{end}}{{if .People}}<dt>People</dt><dd id="candidate-people">{{range .People}}<div data-person>{{.Name}} <span class="muted">{{.Role}}</span></div>{{end}}</dd>
+{{end}}{{if .Phone}}<dt>Phone</dt><dd id="candidate-phone">{{.Phone}}{{template "candidate-from" .PhoneSource}}</dd>
+{{end}}{{if .OtherPhones}}<dt>Other phones</dt><dd id="candidate-other-phones">{{range .OtherPhones}}<div data-other-phone>{{.Value}}{{template "candidate-from" .Source}}</div>{{end}}</dd>
+{{end}}{{if .Email}}<dt>Email</dt><dd id="candidate-email">{{.Email}}{{template "candidate-from" .EmailSource}}</dd>
+{{end}}{{if .Website}}<dt>Website</dt><dd id="candidate-website" data-website="{{.Website}}"{{if .WebsiteSource}} data-website-source="{{.WebsiteSource}}"{{end}}>{{if eq .Website "unknown"}}<span class="muted">unknown</span>{{else}}{{if .WebsiteURL}}<a class="website-link" href="{{.WebsiteURL}}">{{.WebsiteURL}}</a> {{end}}{{.Website}}{{end}}{{if and .WebsiteSource (ne .WebsiteSource "check") (ne .WebsiteSource "search")}}{{template "candidate-from" .WebsiteSource}}{{end}}{{if .WebsiteTitle}}<div data-website-title>{{.WebsiteTitle}}</div>{{end}}{{if .WebsiteWhy}}<div data-website-why>{{.WebsiteWhy}}</div>{{end}}{{if .WebsiteChecked}}<div class="muted">{{if eq .WebsiteSource "search"}}found by search{{else if eq .WebsiteSource "check"}}found by check{{else if eq .Website "none"}}searched{{else}}checked{{end}} <time datetime="{{.WebsiteChecked}}">{{.WebsiteCheckedText}}</time></div>{{end}}{{if .WebsiteCheckedURL}}<div class="muted" data-website-checked-url>the check began at <a class="website-link" href="{{.WebsiteCheckedURL}}">{{.WebsiteCheckedURL}}</a></div>{{end}}</dd>
+{{end}}{{if .People}}<dt>People</dt><dd id="candidate-people">{{range .People}}<div data-person>{{.Name}} <span class="muted">{{.Role}}</span>{{template "candidate-from" .Source}}</div>{{end}}</dd>
 {{end}}{{if .Class}}<dt>Class</dt><dd id="candidate-class"><code>{{.Class}}</code></dd>
 {{end}}{{if .Cargo}}<dt>Cargo</dt><dd id="candidate-cargo">{{range $i, $c := .Cargo}}{{if $i}} {{end}}<code data-cargo="{{$c}}">{{$c}}</code>{{end}}</dd>
 {{end}}<dt>Created</dt><dd id="candidate-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></dd>
@@ -769,8 +815,8 @@
 <dt>Categories</dt><dd id="facts-categories">{{range .Categories}}<div data-category="{{.Name}}"><code>{{.Name}}</code> <span class="muted">{{.Source}}</span></div>{{else}}<span class="muted">unknown</span>{{end}}</dd>
 <dt>Classified by</dt><dd id="facts-classified-by" data-classified-by="{{.ClassifiedBy}}">{{if .ClassifiedBy}}<code>{{.ClassifiedBy}}</code>{{else}}<span class="muted">none</span>{{end}}</dd>
 {{if .RecordsDiffer}}<dt>Records say</dt><dd id="facts-record-categories">{{range .RecordCategories}}<div data-record-category="{{.Name}}"><code>{{.Name}}</code> <span class="muted">{{.Source}}</span></div>{{else}}<span class="muted">unknown</span>{{end}}</dd>
-{{end}}<dt>Known since</dt><dd id="facts-known-since">{{if .KnownSince}}<time datetime="{{.KnownSince}}">{{.KnownSinceText}}</time>{{else}}<span class="muted">none</span>{{end}}</dd>
-<dt>Newest filing</dt><dd id="facts-filed">{{if .NewestFiling}}<time datetime="{{.NewestFiling}}">{{.NewestFilingText}}</time>{{else}}<span class="muted">none</span>{{end}}</dd>
+{{end}}<dt>Known since</dt><dd id="facts-known-since">{{if .KnownSince}}<time datetime="{{.KnownSince}}">{{.KnownSinceText}}</time>{{template "candidate-from" .KnownSinceSource}}{{else}}<span class="muted">none</span>{{end}}</dd>
+<dt>Newest filing</dt><dd id="facts-filed">{{if .NewestFiling}}<time datetime="{{.NewestFiling}}">{{.NewestFilingText}}</time>{{template "candidate-from" .NewestFilingSource}}{{else}}<span class="muted">none</span>{{end}}</dd>
 <dt>Government match</dt><dd id="facts-government">{{if .GovernmentMatch}}<code>{{.GovernmentMatch}}</code>{{else}}no{{end}}</dd>
 <dt>Fleet</dt><dd id="facts-fleet" data-fleet="{{.FleetVerdict}}">{{if eq .FleetVerdict "unknown"}}<span class="muted">{{.FleetVerdict}}</span>{{else}}{{.FleetVerdict}}{{end}}</dd>
 <dt>Trucks</dt><dd id="facts-power-units">{{if .PowerUnits}}{{.PowerUnits}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
@@ -1011,3 +1057,5 @@
 </body>
 </html>
 {{end}}
+{{define "candidate-from"}}{{if .}} <span class="muted" data-source="{{.}}">from {{template "candidate-source" .}}</span>{{end}}{{end}}
+{{define "candidate-source"}}{{if eq . "fmcsa"}}FMCSA{{else if eq . "ppp"}}PPP{{else if eq . "form5500"}}Form 5500{{else if eq . "osha_ita"}}OSHA{{else if eq . "places"}}Places{{else if eq . "check"}}the website check{{else if eq . "search"}}the website search{{else if eq . "owner"}}the owner{{else if eq . "brief"}}the brief{{else if eq . "route"}}the routed address{{else}}{{.}}{{end}}{{end}}
