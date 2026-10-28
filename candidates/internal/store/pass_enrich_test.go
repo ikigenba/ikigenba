@@ -3,6 +3,8 @@ package store_test
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
@@ -12,15 +14,16 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-4VSF-LS9C R-IXLY-M7WD R-ZYXG-7RHQ
+// R-OF2G-NQV5 R-IXLY-M7WD R-ZYXG-7RHQ
 func TestEnrichPassShapeAndVocabulary(t *testing.T) {
 	contractEqual(t, []string{store.KindEnrich, store.OriginEnrich, store.OriginPass, store.TriggerEnrich}, []string{"enrich", "enrich", "pass", "enrich"})
 	p := store.Pass{ID: "pass", Kind: store.KindEnrich, Origin: store.OriginPass, Trigger: "parent", Status: store.StatusDone, Reason: "reason", Started: time.Time{}, Finished: time.Time{}, Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14, UserID: "user", UserEmail: "email", RequestID: "request", Delivery: "delivery"}
 	shape := struct {
-		ID, Kind, Origin, Trigger, Target, EnrichKind, Scraper, ParcelRun, Status, Reason                                                                                                                                                              string
-		Started, Finished                                                                                                                                                                                                                              time.Time
-		Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None, Runs, RunsFailed, Pages, Cost, ParcelsRead, ByLabel, ByValue, ByCandidate, ParksCreated, ParksUpdated, ParksGone, ParksGrown int64
-		UserID, UserEmail, RequestID, Delivery                                                                                                                                                                                                         string
+		ID, Kind, Origin, Trigger, Target, EnrichKind, Scraper, ParcelRun, Status, Reason                                                                                                                                                                                                                    string
+		Started, Finished                                                                                                                                                                                                                                                                                    time.Time
+		Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None, Runs, RunsFailed, Pages, Cost, ParcelsRead, ByLabel, ByValue, ByCandidate, ParksCreated, ParksUpdated, ParksGone, ParksGrown, ParksWalked, Circles, Requests, Found, NewCandidates int64
+		CeilingReached                                                                                                                                                                                                                                                                                       bool
+		UserID, UserEmail, RequestID, Delivery                                                                                                                                                                                                                                                               string
 	}(p)
 	contractEqual(t, store.Pass(shape), p)
 	contractEqual(t, store.KindEnrichTarget, "enrich_target")
@@ -33,7 +36,7 @@ func enrichPass() store.Pass {
 	return store.Pass{Kind: store.KindEnrich, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
 }
 
-// R-4Y88-DBQQ R-4ZG4-R3HF R-50O1-4V84
+// R-OHI9-FACJ R-OIQ5-T238 R-P28J-XDYC
 func TestPassLanesAndOrigins(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -95,13 +98,17 @@ func TestPassLanesAndOrigins(t *testing.T) {
 	contractOK(t, err)
 }
 
-// R-4Y88-DBQQ R-4SM4-Q4EK
+// R-OHI9-FACJ R-4SM4-Q4EK
 func TestInvalidEnrichAndFollowOnPasses(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
 	ctx := context.Background()
 	parent := store.PassIDPrefix + "0123456789abcdef"
 	bad := []store.Pass{
+		{Kind: store.KindWalk, Origin: store.OriginWalk, Trigger: store.TriggerWalk},
+		{Kind: store.KindWalk, Origin: store.OriginWalk, Trigger: "wrong", UserID: "owner"},
+		{Kind: store.KindWalk, Origin: store.OriginWalk, Trigger: store.TriggerWalk, UserID: "owner", Delivery: "delivery"},
+		{Kind: store.KindWalk, Origin: store.OriginWalk, Trigger: store.TriggerWalk, UserID: "owner", Scraper: "fmcsa"},
 		{Kind: store.KindEnrich, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich},
 		{Kind: store.KindEnrich, Origin: store.OriginEnrich, Trigger: "other", UserID: "owner"},
 		{Kind: store.KindEnrich, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, UserID: "owner", Delivery: "delivery"},
@@ -111,7 +118,7 @@ func TestInvalidEnrichAndFollowOnPasses(t *testing.T) {
 		{Kind: store.KindJudge, Origin: store.OriginPass, Trigger: parent, Delivery: "delivery"},
 		{Kind: store.KindIngest, Origin: store.OriginPass, Trigger: parent},
 	}
-	for _, ordinary := range []store.Pass{enrichPass(), {Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, UserID: "owner"}, {Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "run", Delivery: "event"}, {Kind: store.KindJudge, Origin: store.OriginCron, Trigger: store.TriggerJudge, Delivery: "event"}, {Kind: store.KindEnrich, Origin: store.OriginPass, Trigger: parent}, {Kind: store.KindJudge, Origin: store.OriginPass, Trigger: parent}} {
+	for _, ordinary := range []store.Pass{baseWalkPass(), enrichPass(), {Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, UserID: "owner"}, {Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "run", Delivery: "event"}, {Kind: store.KindJudge, Origin: store.OriginCron, Trigger: store.TriggerJudge, Delivery: "event"}, {Kind: store.KindEnrich, Origin: store.OriginPass, Trigger: parent}, {Kind: store.KindJudge, Origin: store.OriginPass, Trigger: parent}} {
 		p := ordinary
 		p.Target = store.CandidateIDPrefix + "0123456789abcdef"
 		bad = append(bad, p)
@@ -138,7 +145,7 @@ func TestInvalidEnrichAndFollowOnPasses(t *testing.T) {
 	contractEqual(t, len(ps), 0)
 }
 
-// R-242X-XODP
+// R-OUX5-MRI6
 func TestConcurrentPassLanes(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -191,7 +198,7 @@ func targetedPass(target, kind string) store.Pass {
 	return store.Pass{Kind: store.KindEnrichTarget, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, Target: target, EnrichKind: kind, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
 }
 
-// R-4Y88-DBQQ R-4ZG4-R3HF R-50O1-4V84
+// R-OHI9-FACJ R-OIQ5-T238 R-P28J-XDYC
 func TestPassKindScopeMatrix(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -208,12 +215,39 @@ func TestPassKindScopeMatrix(t *testing.T) {
 		targetedPass(prospectList, enrichers.Kinds()[0]),
 		targetedPass(prospectList, enrichers.Kinds()[1]),
 		targetedPass(store.CandidateIDPrefix+"0123456789abcdef", enrichers.Kinds()[0]),
+		{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Scraper: "fmcsa", UserID: "owner"},
+		{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Scraper: "ppp", UserID: "owner"},
+		{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "fmcsa", Delivery: "scraper-named-run"},
+		{Kind: store.KindJudge, Origin: store.OriginJudge, Trigger: store.TriggerJudgeTool, UserID: "owner"},
+		parkPass(store.OriginStart), parkPass(store.OriginRules), parkPass(store.OriginRun), baseWalkPass(),
+	}
+	template := contractDB(t)
+	contractOK(t, template.d.Close())
+	for _, suffix := range []string{"-wal", "-shm"} {
+		if _, err := os.Stat(template.path + suffix); !os.IsNotExist(err) {
+			t.Fatalf("closed fixture sidecar %s: %v", suffix, err)
+		}
+	}
+	templateBytes, err := os.ReadFile(template.path)
+	contractOK(t, err)
+	fixture := func(t *testing.T) *contractFixture {
+		t.Helper()
+		dir := t.TempDir()
+		root, err := os.OpenRoot(dir)
+		contractOK(t, err)
+		contractOK(t, root.WriteFile("candidates.db", templateBytes, 0600))
+		contractOK(t, root.Close())
+		path := filepath.Join(dir, "candidates.db")
+		f := &contractFixture{t: t, path: path, now: template.now, rnd: &contractRandom{next: 1}}
+		f.open()
+		t.Cleanup(func() { contractOK(t, f.d.Close()) })
+		return f
 	}
 	for i, a := range cases {
 		for j, b := range cases {
 			t.Run(fmt.Sprintf("%d/%d", i, j), func(t *testing.T) {
 				t.Parallel()
-				f := contractDB(t)
+				f := fixture(t)
 				one, err := f.s.AddPass(ctx, a)
 				contractOK(t, err)
 				before, e := f.s.ListPasses(ctx, "", "", 100)
@@ -223,9 +257,15 @@ func TestPassKindScopeMatrix(t *testing.T) {
 				scopeA, scopeB := "", ""
 				if a.Kind == store.KindIngest {
 					scopeA = a.Trigger
+					if a.Origin == store.OriginIngest {
+						scopeA = a.Scraper
+					}
 				}
 				if b.Kind == store.KindIngest {
 					scopeB = b.Trigger
+					if b.Origin == store.OriginIngest {
+						scopeB = b.Scraper
+					}
 				}
 				if a.Kind == store.KindEnrichTarget {
 					scopeA = a.Target
@@ -233,7 +273,11 @@ func TestPassKindScopeMatrix(t *testing.T) {
 				if b.Kind == store.KindEnrichTarget {
 					scopeB = b.Target
 				}
-				if duplicate || a.Kind == b.Kind && scopeA == scopeB {
+				sameLane := a.Kind == b.Kind && scopeA == scopeB
+				if a.Kind == store.KindIngest && b.Kind == store.KindIngest && (a.Origin == store.OriginIngest) != (b.Origin == store.OriginIngest) {
+					sameLane = false
+				}
+				if duplicate || sameLane {
 					want := store.ErrBusy
 					if duplicate {
 						want = store.ErrDelivered
@@ -263,7 +307,7 @@ func TestPassKindScopeMatrix(t *testing.T) {
 	}
 }
 
-// R-4ZG4-R3HF R-533T-WEPI R-54BQ-A6G7
+// R-OIQ5-T238 R-OJY2-6TTX R-OL5Y-KLKM
 func TestTargetedPassLifecyclePreservesOtherRecords(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -340,7 +384,7 @@ func TestTargetedPassLifecyclePreservesOtherRecords(t *testing.T) {
 	contractEqual(t, got, q)
 }
 
-// R-4Y88-DBQQ R-4ZG4-R3HF
+// R-OHI9-FACJ R-OIQ5-T238
 func TestTargetedPassAcceptsEveryEnrichmentKind(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)

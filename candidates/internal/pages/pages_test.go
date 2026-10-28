@@ -129,7 +129,7 @@ func comparePage(t *testing.T, cfg Config, path, name string, status int, data a
 	}
 }
 
-// R-5FU3-T1C1 R-58H2-68U5 R-5FU3-T1C1 R-51PY-VUIV
+// R-INPY-9LWV R-58H2-68U5 R-INPY-9LWV R-51PY-VUIV
 func TestTemplateSet(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
@@ -176,7 +176,7 @@ func TestTemplateSet(t *testing.T) {
 	}
 }
 
-// R-0B4G-1GWO R-5DCN-PBSX R-464Z-NBFU R-5Y4L-JLGG R-5K0G-MENA R-5L8D-06DZ R-5MG9-DY4O R-6GF3-A5KV R-66NW-7ZNB R-6DZA-IM3H R-5RBU-X13G R-0G1D-2S9K
+// R-0B4G-1GWO R-5DCN-PBSX R-464Z-NBFU R-QR7J-1X12 R-5K0G-MENA R-5L8D-06DZ R-5MG9-DY4O R-6GF3-A5KV R-66NW-7ZNB R-6DZA-IM3H R-5RBU-X13G R-0G1D-2S9K
 func TestStaticEmptyAndRefusals(t *testing.T) {
 	cfg, d := pageFixture(t)
 	b := bannerFor(cfg)
@@ -238,7 +238,7 @@ func TestInvalidAndMissingPaths(t *testing.T) {
 	}
 }
 
-// R-08PY-S5TE R-5WWP-5TPR R-08PY-S5TE R-6HMZ-NXBK R-3XLO-YX8Z
+// R-08PY-S5TE R-QPZM-O5AD R-08PY-S5TE R-6HMZ-NXBK R-3XLO-YX8Z
 func TestStoredPages(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := context.Background()

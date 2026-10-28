@@ -66,7 +66,7 @@ type Entry struct{ Name, Description string }
 
 // Catalog returns independent ordered tool metadata.
 func Catalog() []Entry {
-	return []Entry{{"prospect_lists", DescribeProspectLists}, {"prospect_list", DescribeProspectList}, {"candidates", DescribeCandidates}, {"candidate", DescribeCandidate}, {"passes", DescribePasses}, {"pass", DescribePass}, {"ingest", DescribeIngest}, {"judge", DescribeJudge}, {"enrich", DescribeEnrich}, {"add_page", DescribeAddPage}, {"decide", DescribeDecide}, {"exclude", DescribeExclude}, {"include", DescribeInclude}, {"create_prospect_list", DescribeCreateProspectList}, {"edit_prospect_list", DescribeEditProspectList}, {"delete_prospect_list", DescribeDeleteProspectList}, {"reject", DescribeReject}, {"unreject", DescribeUnreject}, {"parks", DescribeParks}, {"park", DescribePark}, {"park_rules", DescribeParkRules}, {"edit_park_rules", DescribeEditParkRules}}
+	return []Entry{{"prospect_lists", DescribeProspectLists}, {"prospect_list", DescribeProspectList}, {"candidates", DescribeCandidates}, {"candidate", DescribeCandidate}, {"passes", DescribePasses}, {"pass", DescribePass}, {"ingest", DescribeIngest}, {"judge", DescribeJudge}, {"enrich", DescribeEnrich}, {"add_page", DescribeAddPage}, {"decide", DescribeDecide}, {"exclude", DescribeExclude}, {"include", DescribeInclude}, {"create_prospect_list", DescribeCreateProspectList}, {"edit_prospect_list", DescribeEditProspectList}, {"delete_prospect_list", DescribeDeleteProspectList}, {"reject", DescribeReject}, {"unreject", DescribeUnreject}, {"parks", DescribeParks}, {"park", DescribePark}, {"park_rules", DescribeParkRules}, {"edit_park_rules", DescribeEditParkRules}, {"walk", DescribeWalk}}
 }
 func refuse(word string) mcp.Result {
 	text := RefuseUnavailable
@@ -112,7 +112,7 @@ func add[A any](srv *mcp.Server, name, description string, effect mcp.Effect, ha
 	mcp.AddRawTool(srv, mcp.RawTool[A]{Name: name, Description: description, Effect: effect, Handler: func(ctx context.Context, c identity.Caller, a A) (mcp.Result, error) { return handler(ctx, c, a), nil }})
 }
 
-// Register installs the twenty-two candidate tools on srv.
+// Register installs the twenty-three candidate tools on srv.
 func Register(srv *mcp.Server, cfg Config) {
 	add(srv, "prospect_lists", DescribeProspectLists, mcp.Read, func(ctx context.Context, _ identity.Caller, a ProspectListsArgs) mcp.Result {
 		z, key, id, err := timePosition("prospect_lists", a.Page, a.Limit)
@@ -214,7 +214,7 @@ func Register(srv *mcp.Server, cfg Config) {
 		if err != nil {
 			return failure(err)
 		}
-		return answer(passes.RecordOf(p))
+		return passAnswer(ctx, cfg.Store, p)
 	})
 	add(srv, "ingest", DescribeIngest, mcp.Additive, func(ctx context.Context, c identity.Caller, a IngestArgs) mcp.Result {
 		p, err := cfg.Passes.Ingest(ctx, c, a.Scraper)
@@ -392,6 +392,7 @@ func Register(srv *mcp.Server, cfg Config) {
 	}
 
 	registerParks(srv, cfg)
+	registerWalk(srv, cfg)
 }
 func timePosition(tool string, page *string, limit *int) (int, string, string, error) {
 	z, err := paging.Window(limit)
@@ -426,7 +427,7 @@ func rulingOf(r store.Ruling) Ruling {
 }
 func linkOf(l store.Link) Link {
 	r := l.Reading
-	return Link{l.Scraper, l.SourceID, l.Run, l.Digest, r.Name, r.Names, r.Street, r.City, r.State, r.Zip, r.County, r.Phone, r.Email, peopleOf(r.People), r.Class, r.Cargo, date(r.Filed), fleetOf(r.FleetVerdict), r.NameKey, r.PhoneKey, r.DomainKey, r.EINKey, r.Establishment, r.Year, r.Employees, r.Hours, l.Reason, l.Confidence, stamp(l.FirstSeen), stamp(l.LastSeen), l.Gone}
+	return Link{l.Scraper, l.SourceID, l.Run, l.Digest, r.Name, r.Names, r.Street, r.City, r.State, r.Zip, r.County, r.Phone, r.Email, peopleOf(r.People), r.Class, r.Cargo, date(r.Filed), fleetOf(r.FleetVerdict), r.NameKey, r.PhoneKey, r.DomainKey, r.EINKey, r.Establishment, r.Year, r.Employees, r.Hours, l.Reason, l.Confidence, stamp(l.FirstSeen), stamp(l.LastSeen), l.Gone, l.Walk, l.Park}
 }
 func estimateOf(e sources.Estimate) Estimate {
 	return Estimate{e.Source, e.Low, e.High, e.Confidence, e.Facts, date(e.Filed), e.Formula}
@@ -528,6 +529,17 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 		out.Rejects = append(out.Rejects, rejectOf(x))
 	}
 	if c.Status == store.StatusActive {
+		park, err := cfg.Store.CandidatePark(ctx, id)
+		if err != nil {
+			return failure(err)
+		}
+		if park != "" {
+			p, err := cfg.Store.GetPark(ctx, park)
+			if err != nil {
+				return failure(err)
+			}
+			out.Park = &ParkRef{park, p.Name}
+		}
 		subject, err := cfg.Store.Subject(ctx, id)
 		if err != nil {
 			return failure(err)

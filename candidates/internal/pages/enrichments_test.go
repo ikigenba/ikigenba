@@ -91,7 +91,7 @@ func capturedCandidate(t *testing.T, cfg Config, id string) CandidateData {
 	return got
 }
 
-// R-TPC1-G7B9 R-XY08-ASLZ R-8QIQ-63EB
+// R-TPC1-G7B9 R-QORQ-ADJO R-8QIQ-63EB
 func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()
@@ -187,7 +187,7 @@ func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 	}
 }
 
-// R-5EM7-F9LC R-5UGW-EA8D R-5WWP-5TPR
+// R-QCKQ-GO4Q R-QF0J-87M4 R-QPZM-O5AD
 func TestEnrichPassViews(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	for _, tc := range []struct{ origin, email, user, by string }{
@@ -217,7 +217,7 @@ func TestEnrichPassViews(t *testing.T) {
 	}
 }
 
-// R-5FU3-T1C1
+// R-INPY-9LWV
 func TestWebsiteTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()

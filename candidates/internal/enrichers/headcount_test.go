@@ -10,7 +10,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
-// R-Z999-5A4C R-Z4DN-M75K R-BQOQ-UMXX
+// R-FG0B-A2T0 R-F7H0-LOM5 R-BQOQ-UMXX
 func TestLinkHeadcounts(t *testing.T) {
 	d := time.Date(2020, 4, 28, 23, 30, 0, 0, time.FixedZone("west", -5*3600))
 	links := []enrichers.Link{
@@ -92,7 +92,7 @@ func TestHeadcountsValidation(t *testing.T) {
 	}
 }
 
-// R-BQOQ-UMXX R-BRWN-8EOM
+// R-BQOQ-UMXX R-F8OW-ZGCU
 func TestLinkHoursPreservedWithoutCombining(t *testing.T) {
 	date := time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC)
 	for _, tc := range []struct{ counts, hours []int64 }{

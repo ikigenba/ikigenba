@@ -1,6 +1,7 @@
 package pages
 
 import (
+	"context"
 	"errors"
 	"math"
 	"net/http"
@@ -35,7 +36,7 @@ func parkRow(p store.Park) ParkRow {
 	return v
 }
 func parkView(p store.Park, sp string) ParkView {
-	v := ParkView{ID: p.ID, Name: p.Name, County: p.County, Town: p.Town, State: p.State, Lat: strconv.FormatFloat(p.Lat, 'f', 4, 64), Lon: strconv.FormatFloat(p.Lon, 'f', 4, 64), MapURL: parks.MapURL(p.Lat, p.Lon), Radius: strconv.FormatInt(int64(math.Round(p.Radius)), 10), ParcelCount: p.Parcels, BuildingValue: valueText(p.BuildingValue), GrownFrom: p.GrownFrom, WalkRun: p.WalkRun, Found: p.Found, Run: p.Run, RunPage: urls.RunPage(urls.Scrapes(sp), p.Run)}
+	v := ParkView{ID: p.ID, Name: p.Name, County: p.County, Town: p.Town, State: p.State, Lat: strconv.FormatFloat(p.Lat, 'f', 4, 64), Lon: strconv.FormatFloat(p.Lon, 'f', 4, 64), MapURL: parks.MapURL(p.Lat, p.Lon), Radius: strconv.FormatInt(int64(math.Round(p.Radius)), 10), ParcelCount: p.Parcels, BuildingValue: valueText(p.BuildingValue), GrownFrom: p.GrownFrom, Walk: p.WalkRun, Found: p.Found, NewCandidates: p.NewCandidates, CeilingReached: p.CeilingReached, Run: p.Run, RunPage: urls.RunPage(urls.Scrapes(sp), p.Run)}
 	if p.Minutes != nil {
 		v.Minutes = strconv.FormatInt(*p.Minutes, 10)
 	}
@@ -143,7 +144,31 @@ func drawPark(w http.ResponseWriter, r *http.Request, cfg Config, b page.Banner,
 		return
 	}
 	b.Trail = []page.Level{ParksLevel, {Name: id, URL: "/parks/" + id}}
-	d := ParkData{Banner: b, Park: parkView(p, cfg.ServicesPath), Parcels: []ParcelRow{}}
+	d := ParkData{Banner: b, Park: parkView(p, cfg.ServicesPath), Walks: []WalkRow{}, Places: []PlaceRow{}, FoundCandidates: []FoundCandidateRow{}, Parcels: []ParcelRow{}}
+	walks, err := cfg.Store.ParkWalks(r.Context(), id)
+	if err != nil {
+		fail()
+		return
+	}
+	for _, x := range walks {
+		d.Walks = append(d.Walks, walkRow(x))
+	}
+	places, err := cfg.Store.ParkPlaces(r.Context(), id)
+	if err != nil {
+		fail()
+		return
+	}
+	for _, x := range places {
+		d.Places = append(d.Places, placeRow(x))
+	}
+	found, err := cfg.Store.ParkCandidates(r.Context(), id)
+	if err != nil {
+		fail()
+		return
+	}
+	for _, x := range found {
+		d.FoundCandidates = append(d.FoundCandidates, FoundCandidateRow{x.ID, x.Name, x.Status, x.New})
+	}
 	for _, q := range qs {
 		d.Parcels = append(d.Parcels, parcelRow(q))
 	}
@@ -213,6 +238,11 @@ func drawParks(w http.ResponseWriter, r *http.Request, cfg Config, b page.Banner
 		return
 	}
 	d.Rules = RulesView{Distance: strconv.FormatInt(rules.Distance, 10), MinParcels: rules.MinParcels, ValueThreshold: valueText(rules.ValueThreshold), Counties: []CountyLabels{}}
+	d.Rules.WalkCeiling, err = cfg.Store.WalkCeiling(r.Context())
+	if err != nil {
+		fail()
+		return
+	}
 	for _, x := range read {
 		d.Rules.Counties = append(d.Rules.Counties, CountyLabels{x, append([]string{}, rules.Labels[x]...)})
 	}
@@ -247,4 +277,26 @@ func drawParks(w http.ResponseWriter, r *http.Request, cfg Config, b page.Banner
 		}
 	}
 	cfg.Pages.Write(w, r, 200, "parks", d)
+}
+
+func walkRow(w store.ParkWalk) WalkRow {
+	v := WalkRow{Pass: w.Pass, Found: w.Found, NewCandidates: w.NewCandidates, Requests: w.Requests, Cost: costText(w.Cost), CeilingReached: w.CeilingReached}
+	v.Walked, v.WalkedText = stamp(w.Walked, DateLayout)
+	return v
+}
+func walkParkRow(w store.ParkWalk) WalkParkRow {
+	return WalkParkRow{w.Park, w.Name, w.Found, w.NewCandidates, w.Requests, costText(w.Cost), w.CeilingReached}
+}
+func placeRow(x store.Place) PlaceRow {
+	return PlaceRow{x.PlaceID, x.Name, x.Address, x.PrimaryType, x.Website, x.Phone, x.Walk, x.Candidate, x.New}
+}
+func parkLink(ctx context.Context, st *store.Store, id string) *ParkLink {
+	if id == "" {
+		return nil
+	}
+	p, err := st.GetPark(ctx, id)
+	if err != nil {
+		return nil
+	}
+	return &ParkLink{id, p.Name}
 }

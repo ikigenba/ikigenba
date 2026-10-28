@@ -49,7 +49,7 @@ func TestFormatting(t *testing.T) {
 	}
 }
 
-// R-5DEB-1HUN R-XY08-ASLZ R-PI21-M9Z9 R-5EM7-F9LC R-4ZA6-4B1H
+// R-5DEB-1HUN R-QORQ-ADJO R-QNJT-WLSZ R-QCKQ-GO4Q R-4ZA6-4B1H
 func TestTemplateDataShape(t *testing.T) {
 	_ = struct {
 		Source, Low, High, Confidence, Filed, FiledText string
@@ -62,6 +62,8 @@ func TestTemplateDataShape(t *testing.T) {
 		Names                                                                                                                                    []string
 		Establishment, City, Zip, Year, Employees, Hours, Reason, Confidence, Filed, FiledText, FirstSeen, FirstSeenText, LastSeen, LastSeenText string
 		Gone                                                                                                                                     bool
+		Walk                                                                                                                                     string
+		Park                                                                                                                                     *ParkLink
 	}(LinkView{})
 	_ = struct {
 		Kind, Other               string
@@ -73,12 +75,12 @@ func TestTemplateDataShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := page.Banner{Service: ServiceName}
-	cv := CandidateView{"id", store.StatusActive, "", "name", []string{"alias"}, "street", "city", "MN", "55072", "county", "phone", "email", "source", "website", "https://chosen.example.test/", "title", "why", "checked", "checked-text", []PersonRow{{"person", "role"}}, "class", []string{"cargo"}, "", "", "", ""}
+	cv := CandidateView{"id", store.StatusActive, "", "name", []string{"alias"}, "street", "city", "MN", "55072", "county", "phone", "email", nil, "source", "website", "https://chosen.example.test/", "title", "why", "checked", "checked-text", []PersonRow{{"person", "role"}}, "class", []string{"cargo"}, "", "", "", ""}
 	av := JudgmentsView{"operating", []EvidenceRow{{"name", "source", "weight", "description"}}, "low", "high", "confidence", "", "", "", []string{}, []SeriesRow{}, "", "", "", "", "", "", "", false, int64(sources.Rules), "calculated", "calculated-text"}
 	ev := EstimateView{"source", "low", "high", "confidence", "", "", 1, []FactRow{{"key", "value"}}}
-	lv := LinkView{"scraper", "source", "run", "", "ein", "name", []string{"alias"}, "establishment", "city", "55072", "2024", "23", "47840", "reason", "confidence", "", "", "", "", "", "", false}
+	lv := LinkView{"scraper", "source", "run", "", "ein", "name", []string{"alias"}, "establishment", "city", "55072", "2024", "23", "47840", "reason", "confidence", "", "", "", "", "", "", false, "", nil}
 	rv := RulingView{"kind", "other", []string{"key"}, "by", "user", "", "", "why"}
-	pv := PassView{"id", store.KindIngest, store.OriginIngest, store.TriggerIngest, "", store.StatusRunning, "", "starter", "", "", "", "", 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 10, 11, 12, 13, 14, "target", "/prospect-lists/target", "kind", 15, 16, 17, "$0.000000", 0, 0, 0, 0, 0, 0, 0, 0}
+	pv := PassView{"id", store.KindIngest, store.OriginIngest, store.TriggerIngest, "", store.StatusRunning, "", "starter", "", "", "", "", 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 10, 11, 12, 13, 14, "target", "/prospect-lists/target", "kind", 15, 16, 17, "$0.000000", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, []WalkParkRow{}}
 	row := ProspectListRow{"id", "name", 11, "by", "user", "changed", "changed-text"}
 	pass := PassRow{"id", store.KindIngest, "trigger", "status", "reason", "started", "started-text", "finished", "finished-text", 21, 22, 23}
 	landing := LandingData{b, []ProspectListRow{row}, "page", "prev", "next", []PassRow{pass}, "page", "prev", "next", LandingParks{}}

@@ -238,7 +238,7 @@ func TestProspectListAndRejectHistoryPages(t *testing.T) {
 	checkCandidate()
 }
 
-// R-5FU3-T1C1
+// R-INPY-9LWV
 func TestProspectListAndRejectTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()

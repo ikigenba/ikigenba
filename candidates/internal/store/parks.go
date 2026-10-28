@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/candidates/internal/parks"
+	"github.com/ikigenba/ikigenba/candidates/internal/places"
 )
 
 // Constants define the parks vocabulary and limits.
@@ -33,7 +34,8 @@ type Park struct {
 	GrownFrom                          int64
 	Walked                             time.Time
 	WalkRun                            string
-	Found                              int64
+	Found, NewCandidates               int64
+	CeilingReached                     bool
 	Run                                string
 	Created, Updated                   time.Time
 }
@@ -56,6 +58,7 @@ type ParkRulesEdit struct {
 	Distance, MinParcels, ValueThreshold *int64
 	County                               *string
 	Labels                               []string
+	WalkCeiling                          *int64
 }
 
 var parkColumns = columns("id:ID county:County town:Town number:Number state:State zip:Zip lat:Lat lon:Lon radius:Radius parcels:Parcels building_value:BuildingValue grown_from:GrownFrom walked:Walked walk_run:WalkRun found:Found run:Run created:Created updated:Updated")
@@ -122,7 +125,7 @@ func (s *Store) SetParkRules(ctx context.Context, e ParkRulesEdit, p Pass) (Pass
 		if !validPass(p) || p.Kind != KindParks || p.Origin != OriginRules {
 			return ErrUnreachable
 		}
-		if e.Distance != nil && !parks.ValidDistance(*e.Distance) || e.MinParcels != nil && !parks.ValidMinParcels(*e.MinParcels) || e.ValueThreshold != nil && !parks.ValidValueThreshold(*e.ValueThreshold) || e.County != nil && !parks.ValidCounty(*e.County) || e.County == nil && len(e.Labels) > 0 || !parks.ValidLabels(e.Labels) {
+		if e.Distance != nil && !parks.ValidDistance(*e.Distance) || e.MinParcels != nil && !parks.ValidMinParcels(*e.MinParcels) || e.ValueThreshold != nil && !parks.ValidValueThreshold(*e.ValueThreshold) || e.County != nil && !parks.ValidCounty(*e.County) || e.County == nil && len(e.Labels) > 0 || !parks.ValidLabels(e.Labels) || e.WalkCeiling != nil && !places.ValidCeiling(*e.WalkCeiling) {
 			return ErrInvalid
 		}
 		var err error
@@ -145,6 +148,11 @@ func (s *Store) SetParkRules(ctx context.Context, e ParkRulesEdit, p Pass) (Pass
 		}
 		if err = execSQL(ctx, tx, "UPDATE park_rules SET distance=?,min_parcels=?,value_threshold=? WHERE id=1", r.Distance, r.MinParcels, r.ValueThreshold); err != nil {
 			return err
+		}
+		if e.WalkCeiling != nil {
+			if err = execSQL(ctx, tx, "UPDATE park_rules SET walk_ceiling=? WHERE id=1", *e.WalkCeiling); err != nil {
+				return err
+			}
 		}
 		if e.County != nil {
 			if err = execSQL(ctx, tx, "DELETE FROM park_labels WHERE county=?", *e.County); err != nil {
@@ -385,6 +393,25 @@ func readParks(ctx context.Context, tx *sql.Tx) ([]Park, error) {
 	for i := range ps {
 		p := &ps[i]
 		p.Name = parks.Name(p.Town, p.Number, counts[town{p.County, p.Town}])
+		walks, err := readRecords[ParkWalk](ctx, tx, "park_walks", parkWalkColumns, " WHERE park=? ORDER BY walked DESC,seq DESC LIMIT 1", p.ID)
+		if err != nil {
+			return nil, err
+		}
+		if len(walks) > 0 {
+			w := walks[0]
+			p.Walked = w.Walked
+			p.WalkRun = w.Pass
+			p.Found = w.Found
+			p.NewCandidates = w.NewCandidates
+			p.CeilingReached = w.CeilingReached
+		} else {
+			p.Walked = time.Time{}
+			p.WalkRun = ""
+			p.Found = 0
+			p.NewCandidates = 0
+			p.CeilingReached = false
+		}
+
 		if p.Zip != "" {
 			var n int64
 			e = scanSQL(ctx, tx, "SELECT minutes FROM zip_drive WHERE zip=?", []any{p.Zip}, &n)

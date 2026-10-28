@@ -38,7 +38,7 @@ func searchAfter(d time.Duration) <-chan time.Time {
 	return ch
 }
 
-// R-2Q14-TJQ7 R-2SGX-L37L R-RFMR-TKMQ R-33G1-10VU
+// R-PXXX-VF8E R-Q0DQ-MYPS R-RFMR-TKMQ R-PGVC-IMUO
 func TestWebsiteSearchTargetResultsAndConfirmation(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)

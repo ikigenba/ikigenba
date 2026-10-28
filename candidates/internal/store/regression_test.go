@@ -211,7 +211,7 @@ func TestIngestRefreshAndForce(t *testing.T) {
 	regEqual(t, regLinks(t, f, ids[0])[0], want)
 }
 
-// R-HYGP-I8LU R-5XOA-44OS
+// R-HYGP-I8LU R-RQKM-59J7
 func TestIngestDisplayAndGone(t *testing.T) {
 	f := regNew(t)
 	a := regObs("older", "Acme INC")

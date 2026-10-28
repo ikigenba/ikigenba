@@ -28,6 +28,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/oshaita"
 	"github.com/ikigenba/ikigenba/candidates/internal/pages"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
+	"github.com/ikigenba/ikigenba/candidates/internal/places"
 	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
 	"github.com/ikigenba/ikigenba/candidates/internal/routes"
 	"github.com/ikigenba/ikigenba/candidates/internal/server"
@@ -214,10 +215,16 @@ func Run(ctx context.Context, p Process) int {
 		checker = &website.Checker{Client: client, After: p.After}
 	}
 	var router *routes.Client
+	var nearby *places.Client
 	if s.MapsAPIKey != "" {
 		router = &routes.Client{HTTP: p.HTTP, Key: s.MapsAPIKey, After: p.After}
+		placesHTTP := p.HTTP
+		if _, sandbox := p.LookupEnv("IKIGENBA_SANDBOX"); sandbox {
+			placesHTTP = &http.Client{Transport: places.Fake{}}
+		}
+		nearby = &places.Client{HTTP: placesHTTP, Key: s.MapsAPIKey, After: p.After}
 	}
-	eng := passes.New(passes.Config{Stderr: p.Stderr, Routes: router, Website: checker, Prompts: pc, After: p.After, Store: st, Sources: sources.New(fmcsa.New(), ppp.New(), form5500.New(), oshaita.New()), Scrapes: sc, Telemetry: w, Events: em})
+	eng := passes.New(passes.Config{Stderr: p.Stderr, Routes: router, Places: nearby, Website: checker, Prompts: pc, After: p.After, Store: st, Sources: sources.New(fmcsa.New(), ppp.New(), form5500.New(), oshaita.New()), Scrapes: sc, Telemetry: w, Events: em})
 	w.Ready()
 	err = st.ReplaceZipDrive(bg, candidates.ZipDrive())
 	if err == nil {

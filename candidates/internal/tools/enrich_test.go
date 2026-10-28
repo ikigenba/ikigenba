@@ -45,7 +45,7 @@ func (f *fixture) waitEnrich(id string) store.Pass {
 	}
 }
 
-// R-ZCZ9-BW58 R-2ZGI-9CHJ R-EZZC-9VFU R-050Y-4M77 R-F2F5-1EX8
+// R-ZCZ9-BW58 R-2ZGI-9CHJ R-EXPT-JIOL R-050Y-4M77 R-F05M-B25Z
 func TestEnrichSchemaAndValidation(t *testing.T) {
 	f := newFixture(t)
 	infos, err := f.client.ListTools(t.Context(), caller)
@@ -64,14 +64,14 @@ func TestEnrichSchemaAndValidation(t *testing.T) {
 	if !found {
 		t.Fatal("missing enrich")
 	}
-	for _, args := range []map[string]any{{"kind": sources.WebsiteCheck, "older_than_days": 1.5}, {"kind": sources.WebsiteCheck, "older_than_days": 1e30}, {"older_than_days": 0}} {
+	for _, args := range []map[string]any{{"kind": sources.WebsiteCheck, "older_than_days": 1.5}, {"kind": sources.WebsiteCheck, "older_than_days": 1e30}, {"older_than_days": 0}, {"older_than_days": 1}} {
 		r := f.call("enrich", args)
 		if !r.IsError() {
 			t.Fatal(r)
 		}
 		text := decode(t, r).Content[0].Text
 		for _, word := range []string{passes.RefusalBusy, passes.RefusalInvalid, passes.RefusalNotFound, passes.RefusalStopping, passes.RefusalUnavailable} {
-			if strings.HasPrefix(text, word+":") {
+			if text == word || strings.HasPrefix(text, word+":") {
 				t.Fatal(text)
 			}
 		}
@@ -91,7 +91,7 @@ func TestEnrichSchemaAndValidation(t *testing.T) {
 	}
 }
 
-// R-UZO7-ZHHN R-F2F5-1EX8
+// R-UZO7-ZHHN R-F05M-B25Z
 func TestEnrichDispatchAndRefusals(t *testing.T) {
 	entered := make(chan struct{}, 4)
 	release := make(chan struct{})

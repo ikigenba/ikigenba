@@ -48,7 +48,7 @@ func seedParks(t *testing.T, f *contractFixture) []store.Park {
 	return ps
 }
 
-// R-5MM8-0QKM R-SVLQ-I4SH R-5NU4-EIBB R-5P20-SA20 R-5Q9X-61SP R-5RHT-JTJE
+// R-5MM8-0QKM R-SVLQ-I4SH R-ONLR-C520 R-5P20-SA20 R-5Q9X-61SP R-OQ1K-3OJE
 func TestParkRecordShapesAndVocabulary(t *testing.T) {
 	t.Parallel()
 	contractEqual(t, []string{store.KindParks, store.OriginRules, store.OriginStart, store.TriggerParkRules, store.ParkIDPrefix}, []string{"parks", "rules", "start", "edit_park_rules", "park_"})
@@ -67,7 +67,8 @@ func TestParkRecordShapesAndVocabulary(t *testing.T) {
 		GrownFrom                          int64
 		Walked                             time.Time
 		WalkRun                            string
-		Found                              int64
+		Found, NewCandidates               int64
+		CeilingReached                     bool
 		Run                                string
 		Created, Updated                   time.Time
 	}(p)), p)
@@ -88,13 +89,14 @@ func TestParkRecordShapesAndVocabulary(t *testing.T) {
 		Distance, MinParcels, ValueThreshold *int64
 		County                               *string
 		Labels                               []string
+		WalkCeiling                          *int64
 	}(e)), e)
 }
 func seedRules() parks.Rules {
 	return parks.Rules{Distance: parks.SeedDistance, MinParcels: parks.SeedMinParcels, ValueThreshold: parks.SeedValueThreshold, Labels: map[string][]string{"Chisago": {"3a Industrial Land And Building"}, "Stearns": {"3a Industrial Land And Building"}, "Anoka": {"3a INDUSTIAL PREFERENTIAL"}, "Aitkin": {"Industrial Preferred"}, "St. Louis": {"Industrial Preferred", "Industrial Non-Preferred"}, "Sherburne": {"Industrial Preferred", "Industrial Non-Preferred", "INDUSTRIAL (with Buildings)", "Industrial - Bare Land"}, "Mille Lacs": {"Indust Land/Building"}, "Isanti": {"3A-Commercial/Industrial/Public Utility"}, "Morrison": {"3A-Commercial/Industrial/Public Utility"}}}
 }
 
-// R-26IQ-P7V3 R-TRB4-G62J R-27QN-2ZLS R-3JAQ-01IV R-5XLB-GO8V R-57ZF-FHOA
+// R-OW52-0J8V R-TRB4-G62J R-OBER-IFN2 R-OR9G-HGA3 R-S1JP-L77G R-57ZF-FHOA
 func TestParkRulesSeedEditAndRefusal(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -161,7 +163,7 @@ func TestParkRulesSeedEditAndRefusal(t *testing.T) {
 	contractEqual(t, p.Kind, store.KindParks)
 }
 
-// R-28YJ-GRCH R-2BEC-8ATV R-2DU4-ZUB9 R-6014-87Q9 R-2A6F-UJ36 R-6B07-O5EI R-6C84-1X57 R-3JAQ-01IV
+// R-OXCY-EAZK R-OYKU-S2Q9 R-OCMN-W7DR R-6014-87Q9 R-OZSR-5UGY R-6B07-O5EI R-S1JP-L77G
 func TestParkDerivationPersistenceAndReads(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -209,6 +211,8 @@ func TestParkDerivationPersistenceAndReads(t *testing.T) {
 	contractEqual(t, p.Walked, time.Time{})
 	contractEqual(t, p.WalkRun, "")
 	contractEqual(t, p.Found, int64(0))
+	contractEqual(t, p.NewCandidates, int64(0))
+	contractEqual(t, p.CeilingReached, false)
 	contractEqual(t, store.ValidParkID(p.ID), true)
 	parcels, e := f.s.ParkParcels(ctx, id)
 	contractOK(t, e)
@@ -404,7 +408,7 @@ func TestParkWindows(t *testing.T) {
 	}
 }
 
-// R-62GW-ZR7N R-25AU-BG4E R-56RJ-1PXL
+// R-62GW-ZR7N R-OA6V-4NWD R-56RJ-1PXL
 func TestApplyParksRefusalsAndAtomicMint(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -468,7 +472,7 @@ func TestApplyParksRefusalsAndAtomicMint(t *testing.T) {
 	contractEqual(t, after, before)
 }
 
-// R-242X-XODP R-4Y88-DBQQ R-4ZG4-R3HF R-50O1-4V84 R-54BQ-A6G7 R-55JM-NY6W
+// R-OUX5-MRI6 R-OHI9-FACJ R-OIQ5-T238 R-P28J-XDYC R-OL5Y-KLKM R-OMDU-YDBB
 func TestParkPassConcurrencyAndOrigins(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -791,7 +795,7 @@ func parkState(t *testing.T, f *contractFixture) heldParkState {
 	return s
 }
 
-// R-2F21-DM1Y
+// R-P10N-JM7N
 func TestParkStateSurvivesOtherWrites(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)

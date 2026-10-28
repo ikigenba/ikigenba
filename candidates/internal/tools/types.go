@@ -223,6 +223,8 @@ type Link struct {
 	FirstSeen     string   `json:"first_seen"`
 	LastSeen      string   `json:"last_seen"`
 	Gone          bool     `json:"gone"`
+	Walk          string   `json:"walk"`
+	Park          string   `json:"park"`
 }
 
 // MarshalJSON encodes empty collections as arrays or objects.
@@ -517,6 +519,7 @@ func (v Ruling) MarshalJSON() ([]byte, error) {
 // Detail is a tool answer value.
 type Detail struct {
 	Candidate         Candidate          `json:"candidate"`
+	Park              *ParkRef           `json:"park,omitempty"`
 	Enrichments       *Enrichments       `json:"enrichments,omitempty"`
 	Judgments         *Judgments         `json:"judgments,omitempty"`
 	Estimates         []Estimate         `json:"estimates"`

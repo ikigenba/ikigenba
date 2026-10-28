@@ -19,7 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-2MDF-O8I4
+// R-PUA8-Q40B
 func TestFullIngestReprojectsUnchangedLinkFacts(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

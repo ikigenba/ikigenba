@@ -21,6 +21,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/candidates/internal/parks"
+	"github.com/ikigenba/ikigenba/candidates/internal/places"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
@@ -84,7 +85,7 @@ func captureParks(t *testing.T, cfg Config, path string) ParksData {
 	return got
 }
 
-// R-6IUW-1P29 R-6K2S-FGSY R-6LAO-T8JN R-6MIL-70AC R-6NQH-KS11
+// R-6IUW-1P29 R-6K2S-FGSY R-6LAO-T8JN R-QHGB-ZR3I R-QIO8-DIU7
 func TestParkDataShapes(t *testing.T) {
 	if ParksLevel != (page.Level{Name: "parks", URL: "/parks"}) {
 		t.Fatal(ParksLevel)
@@ -123,6 +124,7 @@ func TestParkDataShapes(t *testing.T) {
 		Distance       string
 		MinParcels     int64
 		ValueThreshold string
+		WalkCeiling    int64
 		Counties       []CountyLabels
 	}(RulesView{})
 	_ = struct {
@@ -130,17 +132,21 @@ func TestParkDataShapes(t *testing.T) {
 		Labels []string
 	}(CountyLabels{})
 	_ = struct {
-		Banner  page.Banner
-		Park    ParkView
-		Parcels []ParcelRow
+		Banner          page.Banner
+		Park            ParkView
+		Walks           []WalkRow
+		Places          []PlaceRow
+		FoundCandidates []FoundCandidateRow
+		Parcels         []ParcelRow
 	}(ParkData{})
 	_ = struct {
 		ID, Name, County, Town, State, Lat, Lon, MapURL, Radius  string
 		ParcelCount                                              int64
 		BuildingValue, Minutes                                   string
 		GrownFrom                                                int64
-		Walked, WalkedText, WalkRun                              string
-		Found                                                    int64
+		Walked, WalkedText, Walk                                 string
+		Found, NewCandidates                                     int64
+		CeilingReached                                           bool
 		Run, RunPage, Created, CreatedText, Updated, UpdatedText string
 	}(ParkView{})
 	_ = struct {
@@ -150,7 +156,7 @@ func TestParkDataShapes(t *testing.T) {
 	}(ParcelRow{})
 }
 
-// R-6OYD-YJRQ R-6Q6A-CBIF R-GBIC-0TKZ
+// R-6OYD-YJRQ R-6Q6A-CBIF R-QL41-52BL
 func TestParkFormatting(t *testing.T) {
 	for _, tc := range []struct {
 		n    int64
@@ -168,7 +174,7 @@ func TestParkFormatting(t *testing.T) {
 		t.Fatal(got, want)
 	}
 	v := parkView(p, "")
-	wantView := ParkView{ID: "chosen-id", Name: "chosen-name", County: "chosen-county", Town: "chosen-town", State: parks.StateGone, Lat: "45.4741", Lon: "-92.9783", MapURL: parks.MapURL(45.47412, -92.97826), Radius: "549", ParcelCount: 3, BuildingValue: "$21,400,000", Minutes: "42", GrownFrom: 2, Walked: "2026-10-05T09:00:07Z", WalkedText: "2026-10-05", WalkRun: "chosen-walk", Found: 4, Run: "chosen-run", Created: "2026-10-05T09:00:07Z", CreatedText: "2026-10-05 09:00:07 UTC", Updated: "2026-10-05T09:00:07Z", UpdatedText: "2026-10-05 09:00:07 UTC"}
+	wantView := ParkView{ID: "chosen-id", Name: "chosen-name", County: "chosen-county", Town: "chosen-town", State: parks.StateGone, Lat: "45.4741", Lon: "-92.9783", MapURL: parks.MapURL(45.47412, -92.97826), Radius: "549", ParcelCount: 3, BuildingValue: "$21,400,000", Minutes: "42", GrownFrom: 2, Walked: "2026-10-05T09:00:07Z", WalkedText: "2026-10-05", Walk: "chosen-walk", Found: 4, Run: "chosen-run", Created: "2026-10-05T09:00:07Z", CreatedText: "2026-10-05 09:00:07 UTC", Updated: "2026-10-05T09:00:07Z", UpdatedText: "2026-10-05 09:00:07 UTC"}
 	if !reflect.DeepEqual(v, wantView) {
 		t.Fatal(v, wantView)
 	}
@@ -338,7 +344,7 @@ func TestParksWindows(t *testing.T) {
 	}
 }
 
-// R-78GS-2VMU R-GDY4-SD2D R-715D-S96O R-72DA-60XD R-6BJH-R2M3 R-6CRE-4UCS R-6GF3-A5KV R-6DZA-IM3H R-66NW-7ZNB
+// R-78GS-2VMU R-QMBX-IU2A R-715D-S96O R-72DA-60XD R-6BJH-R2M3 R-6CRE-4UCS R-6GF3-A5KV R-6DZA-IM3H R-66NW-7ZNB
 func TestParkRoutes(t *testing.T) {
 	cfg, ps := parksFixture(t, 2)
 	p := ps[0]
@@ -395,7 +401,7 @@ func TestParkRoutes(t *testing.T) {
 	}
 }
 
-// R-5UGW-EA8D R-5VOS-S1Z2 R-5WWP-5TPR R-5Y4L-JLGG R-5DEB-1HUN
+// R-QF0J-87M4 R-QG8F-LZCT R-QPZM-O5AD R-QR7J-1X12 R-5DEB-1HUN
 func TestParkLandingAndPass(t *testing.T) {
 	cfg, ps := parksFixture(t, 2)
 	passes, err := cfg.Store.ListPasses(t.Context(), "", "", 100)
@@ -457,7 +463,7 @@ func TestParkLandingAndPass(t *testing.T) {
 	}
 }
 
-// R-7AWK-UF48 R-5FU3-T1C1
+// R-J2CQ-UUT7 R-INPY-9LWV
 func TestParksTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
@@ -489,7 +495,7 @@ func TestParksTemplateStates(t *testing.T) {
 	for _, state := range []string{parks.StateActive, parks.StateGone} {
 		for _, text := range []string{"", "optional-value"} {
 			for _, n := range []int64{0, 3} {
-				d := ParksData{Summary: ParksSummary{Count: n, Gone: n, Run: "summary-run", RunPage: "https://unique-run.test/"}, View: ParksView{Counties: []CountyChoice{{"", "/unique-all", true}, {"unique-choice-county", "/unique-county", false}}, Walked: []ViewChoice{{parks.WalkedAll, "/unique-walk", true}}, Gone: []ViewChoice{{parks.GoneAll, "/unique-gone", true}}, Sorts: []ViewChoice{{parks.SortMinutes, "/unique-sort", true}}}, Parks: []ParkRow{{"unique-park-id", "unique-park-name", "unique-park-county", state, 3, "unique-building-value", text, text, text, n}}, Page: text, FirstHref: "/unique-first", PrevHref: "/unique-prev", NextHref: "/unique-next", LastHref: "/unique-last", Rules: RulesView{"unique-distance", 3, "unique-threshold", []CountyLabels{{"unique-rules-county", []string{"unique-label-one", "unique-label-two"}}, {"no-labels", nil}}}}
+				d := ParksData{Summary: ParksSummary{Count: n, Gone: n, Run: "summary-run", RunPage: "https://unique-run.test/"}, View: ParksView{Counties: []CountyChoice{{"", "/unique-all", true}, {"unique-choice-county", "/unique-county", false}}, Walked: []ViewChoice{{parks.WalkedAll, "/unique-walk", true}}, Gone: []ViewChoice{{parks.GoneAll, "/unique-gone", true}}, Sorts: []ViewChoice{{parks.SortMinutes, "/unique-sort", true}}}, Parks: []ParkRow{{"unique-park-id", "unique-park-name", "unique-park-county", state, 3, "unique-building-value", text, text, text, n}}, Page: text, FirstHref: "/unique-first", PrevHref: "/unique-prev", NextHref: "/unique-next", LastHref: "/unique-last", Rules: RulesView{"unique-distance", 3, "unique-threshold", 0, []CountyLabels{{"unique-rules-county", []string{"unique-label-one", "unique-label-two"}}, {"no-labels", nil}}}}
 				body := render("parks", d)
 				for _, v := range []string{d.Summary.Run, d.Summary.RunPage, d.Parks[0].ID, d.Parks[0].Name, d.Parks[0].County, d.Parks[0].BuildingValue, d.FirstHref, d.PrevHref, d.NextHref, d.LastHref, d.Rules.Distance, d.Rules.ValueThreshold, "unique-rules-county", "unique-label-one", "unique-label-two", "unique-choice-county", "/unique-all", "/unique-county", "/unique-walk", "/unique-gone", "/unique-sort"} {
 					if !strings.Contains(body, v) {
@@ -503,7 +509,7 @@ func TestParksTemplateStates(t *testing.T) {
 				d.NextHref = ""
 				d.LastHref = ""
 				render("parks", d)
-				pv := ParkView{ID: "detail-id", Name: "detail-name", County: "detail-county", Town: "detail-town", State: state, Lat: "detail-lat", Lon: "detail-lon", MapURL: "https://detail-map.test/", Radius: "detail-radius", BuildingValue: "detail-value", Minutes: text, GrownFrom: n, Walked: text, WalkedText: text, WalkRun: text, Found: n, Run: "detail-run", RunPage: text, CreatedText: "detail-created", UpdatedText: "detail-updated"}
+				pv := ParkView{ID: "detail-id", Name: "detail-name", County: "detail-county", Town: "detail-town", State: state, Lat: "detail-lat", Lon: "detail-lon", MapURL: "https://detail-map.test/", Radius: "detail-radius", BuildingValue: "detail-value", Minutes: text, GrownFrom: n, Walked: text, WalkedText: text, Walk: text, Found: n, Run: "detail-run", RunPage: text, CreatedText: "detail-created", UpdatedText: "detail-updated"}
 				for _, owners := range [][]string{nil, {"unique-owner-one"}, {"unique-owner-one", "unique-owner-two"}} {
 					for _, rule := range []string{parks.RuleLabel, parks.RuleValue, parks.RuleCandidate} {
 						pd := ParkData{Park: pv, Parcels: []ParcelRow{{"detail-pin", owners, "detail-street", "detail-city", "detail-zip", "detail-parcel-value", rule}}}
@@ -527,7 +533,7 @@ func TestParksTemplateStates(t *testing.T) {
 	}
 }
 
-// R-7AWK-UF48
+// R-J2CQ-UUT7
 func TestParkTemplateDistinctOptionalValues(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -597,7 +603,7 @@ func TestParkTemplateDistinctOptionalValues(t *testing.T) {
 				if walked {
 					v.Walked = "2001-01-02T03:04:05Z"
 					v.WalkedText = "unique-walked-date"
-					v.WalkRun = "unique-walking-run"
+					v.Walk = "unique-walking-run"
 				}
 				for _, found := range []int64{0, 5} {
 					v.Found = found
@@ -606,11 +612,22 @@ func TestParkTemplateDistinctOptionalValues(t *testing.T) {
 					}
 					for _, q := range []ParcelRow{{}, {PIN: "unique-parcel-pin", Owners: []string{"unique-parcel-owner"}, Street: "unique-parcel-street", City: "unique-parcel-city", Zip: "unique-parcel-zip", BuildingValue: "unique-parcel-value", Rule: parks.RuleLabel}} {
 						body := render("park", ParkData{Park: v, Parcels: []ParcelRow{q}})
-						includes(body, v.ID, v.Name, v.County, v.Town, v.Lat, v.Lon, v.MapURL, v.Radius, v.BuildingValue, v.Run, v.CreatedText, v.UpdatedText, v.Minutes, v.RunPage, v.WalkedText, v.WalkRun, q.PIN, q.Street, q.City, q.Zip, q.BuildingValue)
+						includes(body, v.ID, v.Name, v.County, v.Town, v.Lat, v.Lon, v.MapURL, v.Radius, v.BuildingValue, v.Run, v.CreatedText, v.UpdatedText, v.Minutes, v.RunPage, v.WalkedText, v.Walk, q.PIN, q.Street, q.City, q.Zip, q.BuildingValue)
 						for _, x := range q.Owners {
 							includes(body, x)
 						}
 					}
+				}
+			}
+		}
+	}
+	for _, state := range []string{parks.StateActive, parks.StateGone} {
+		for _, found := range []int64{0, 193847} {
+			for _, newCandidates := range []int64{0, 284759} {
+				for _, ceiling := range []bool{false, true} {
+					v := ParkView{State: state, Walked: "chosen-walked-stamp", WalkedText: "unique-rendered-walk-date", Walk: "unique-rendered-walk-pass", Found: found, NewCandidates: newCandidates, CeilingReached: ceiling}
+					body := render("park", ParkData{Park: v})
+					includes(body, v.WalkedText, v.Walk)
 				}
 			}
 		}
@@ -672,7 +689,7 @@ func TestInvalidParkViewsNeverReadStore(t *testing.T) {
 	}
 }
 
-// R-7AWK-UF48
+// R-J2CQ-UUT7
 func TestExactParksPassAndNavigationTemplateStates(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -705,7 +722,7 @@ func TestExactParksPassAndNavigationTemplateStates(t *testing.T) {
 	}
 }
 
-// R-6TTZ-HMQI R-GCQ8-ELBO R-GF61-64T2 R-GK1M-P7RU R-GDY4-SD2D
+// R-6TTZ-HMQI R-GCQ8-ELBO R-GF61-64T2 R-GK1M-P7RU R-QMBX-IU2A
 func TestParksExplicitViewAndGoneStates(t *testing.T) {
 	cfg, ps := parksFixture(t, paging.DefaultLimit+2)
 	pass, err := cfg.Store.AddPass(t.Context(), store.Pass{Kind: store.KindParks, Origin: store.OriginStart, Trigger: "gone-run"})
@@ -818,7 +835,7 @@ func TestParksLinkedSummaryAndExactRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantRules := RulesView{Distance: fmt.Sprint(rules.Distance), MinParcels: rules.MinParcels, ValueThreshold: valueText(rules.ValueThreshold), Counties: []CountyLabels{}}
+	wantRules := RulesView{WalkCeiling: places.SeedCeiling, Distance: fmt.Sprint(rules.Distance), MinParcels: rules.MinParcels, ValueThreshold: valueText(rules.ValueThreshold), Counties: []CountyLabels{}}
 	nonempty := false
 	for _, county := range counties {
 		labels := append([]string{}, rules.Labels[county]...)

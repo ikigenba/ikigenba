@@ -31,7 +31,7 @@ func judgeDelivery(id string) events.Delivery {
 	return events.Delivery{Event: events.Event{Name: trail.AcceptedJudge, ID: id, Attrs: events.Attrs{"anything": true}}}
 }
 
-// R-ZRW3-1A2O R-2UPL-VAID R-3QEZ-TBSF R-2G9X-RDSN R-2ZSB-VPNR
+// R-ZRW3-1A2O R-2UPL-VAID R-3QEZ-TBSF R-PMYU-FHK5 R-PD7N-DBML
 func TestJudgeSeparatesIngestFromJudgments(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {

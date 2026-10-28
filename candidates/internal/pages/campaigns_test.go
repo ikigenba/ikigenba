@@ -102,7 +102,7 @@ func TestCampaignHistoryPages(t *testing.T) {
 	db.SetFailing(false)
 }
 
-// R-YA78-4I0X R-5JHS-YCK4
+// R-YA78-4I0X R-IRDN-EX4Y
 func TestCampaignFiltersAndTemplates(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	for _, n := range []int64{0, 90} {

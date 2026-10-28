@@ -91,7 +91,7 @@ func TestRouteResultProjection(t *testing.T) {
 	}
 }
 
-// R-5KPP-C4AT
+// R-ISLJ-SOVN
 func TestDriveRouteTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()
@@ -228,7 +228,7 @@ func TestCandidateAndListDriveDecision(t *testing.T) {
 	}
 }
 
-// R-5LXL-PW1I
+// R-ITTG-6GMC
 func TestDriveRouteLinkTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()

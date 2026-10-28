@@ -29,6 +29,7 @@ func validPass(p Pass) bool {
 		p.Kind == KindJudge && p.Origin == OriginJudge && p.Trigger == TriggerJudgeTool && p.Delivery == "" && p.UserID != "" ||
 		p.Kind == KindJudge && p.Origin == OriginCron && p.Trigger != TriggerIngest && p.Trigger != TriggerJudgeTool && p.Delivery != "" ||
 		p.Kind == KindEnrich && p.Origin == OriginEnrich && p.Trigger == TriggerEnrich && p.Delivery == "" && p.UserID != "" ||
+		p.Kind == KindWalk && p.Origin == OriginWalk && p.Trigger == TriggerWalk && p.Delivery == "" && p.UserID != "" ||
 		p.Kind == KindParks && p.Origin == OriginRun && p.Delivery != "" ||
 		p.Kind == KindParks && p.Origin == OriginStart && p.Delivery == "" ||
 		p.Kind == KindParks && p.Origin == OriginRules && p.Trigger == TriggerParkRules && p.Delivery == "" && p.UserID != "" ||
@@ -128,7 +129,7 @@ func (s *Store) FinishPass(ctx context.Context, id string, c Counts) (Pass, erro
 func (s *Store) FailPass(ctx context.Context, id, reason string) (Pass, error) {
 	var out Pass
 	err := s.passWrite(ctx, " WHERE id=?", []any{id}, func(_ *sql.Tx, r *records) error {
-		if reason != ReasonScrapes && reason != ReasonInterrupted && reason != ReasonStore && reason != ReasonPrompts {
+		if reason != ReasonScrapes && reason != ReasonInterrupted && reason != ReasonStore && reason != ReasonPrompts && reason != ReasonPlaces {
 			return ErrUnreachable
 		}
 		p, ok := r.passes[id]
@@ -346,4 +347,9 @@ func setCounts(p *Pass, c Counts) {
 	p.ParksUpdated = c.ParksUpdated
 	p.ParksGone = c.ParksGone
 	p.ParksGrown = c.ParksGrown
+	p.ParksWalked = c.ParksWalked
+	p.Circles = c.Circles
+	p.Requests = c.Requests
+	p.Found = c.Found
+	p.NewCandidates = c.NewCandidates
 }

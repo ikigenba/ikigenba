@@ -14,6 +14,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/prompts"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
+	"github.com/ikigenba/ikigenba/candidates/internal/places"
 	"github.com/ikigenba/ikigenba/candidates/internal/routes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
@@ -254,6 +255,7 @@ func (LinkFacts) Inputs(s Subject) string {
 func (LinkFacts) Derive(s Subject) Result {
 	f := LinkFound{Categories: []Category{}, FleetVerdict: sources.FleetUnknown, Headcounts: []Headcount{}}
 	seen := map[Category]bool{}
+	allPlaces := !slices.ContainsFunc(s.Links, func(l Link) bool { return l.Scraper != places.Name })
 	fleet := false
 	var known, filed time.Time
 	for _, l := range s.Links {
@@ -277,7 +279,7 @@ func (LinkFacts) Derive(s Subject) Result {
 		if f.GovernmentMatch == "" {
 			f.GovernmentMatch = r.GovernmentMatch
 		}
-		if r.Category != "" && l.Scraper != "" {
+		if r.Category != "" && l.Scraper != "" && (l.Scraper != places.Name || allPlaces) {
 			c := Category{Name: r.Category, Source: l.Scraper}
 			if !seen[c] {
 				seen[c] = true

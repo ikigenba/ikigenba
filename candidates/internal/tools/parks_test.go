@@ -59,13 +59,13 @@ func parkAnswer(p store.Park) tools.Park {
 	if !p.Walked.IsZero() {
 		walked = stamp(p.Walked)
 	}
-	return tools.Park{p.ID, p.Name, p.County, p.Town, p.Zip, p.State, p.Lat, p.Lon, p.Radius, p.Parcels, p.BuildingValue, p.Minutes, p.GrownFrom, walked, p.WalkRun, p.Found, p.Run, parks.MapURL(p.Lat, p.Lon), stamp(p.Created), stamp(p.Updated)}
+	return tools.Park{p.ID, p.Name, p.County, p.Town, p.Zip, p.State, p.Lat, p.Lon, p.Radius, p.Parcels, p.BuildingValue, p.Minutes, p.GrownFrom, walked, p.WalkRun, p.Found, p.NewCandidates, p.CeilingReached, p.Run, parks.MapURL(p.Lat, p.Lon), stamp(p.Created), stamp(p.Updated)}
 }
 func parcelAnswer(p store.ParkParcel) tools.ParkParcel {
 	return tools.ParkParcel{p.PIN, p.Owners, p.Street, p.City, p.Zip, p.BuildingValue, p.Rule, p.Lat, p.Lon}
 }
 
-// R-E49Y-BU5S R-E5HU-PLWH R-E6PR-3DN6 R-E7XN-H5DV
+// R-E49Y-BU5S R-E5HU-PLWH R-R5UB-N5XE R-R728-0XO3
 func TestParkSchemas(t *testing.T) {
 	f := newFixture(t)
 	infos, err := f.client.ListTools(t.Context(), caller)
@@ -74,7 +74,7 @@ func TestParkSchemas(t *testing.T) {
 	}
 	dp, _ := json.Marshal(paging.PageDescription)
 	dl, _ := json.Marshal(paging.LimitDescription)
-	want := map[string]string{"parks": fmt.Sprintf(`{"type":"object","properties":{"county":{"type":"string"},"walked":{"type":"string"},"gone":{"type":"string"},"sort":{"type":"string"},"page":{"type":"string","description":%s},"limit":{"type":"integer","description":%s}},"additionalProperties":false}`, dp, dl), "park": `{"type":"object","properties":{"park":{"type":"string"}},"required":["park"],"additionalProperties":false}`, "edit_park_rules": `{"type":"object","properties":{"distance":{"type":"integer","minimum":0},"min_parcels":{"type":"integer","minimum":0},"value_threshold":{"type":"integer","minimum":0},"county":{"type":"string"},"labels":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`}
+	want := map[string]string{"parks": fmt.Sprintf(`{"type":"object","properties":{"county":{"type":"string"},"walked":{"type":"string"},"gone":{"type":"string"},"sort":{"type":"string"},"page":{"type":"string","description":%s},"limit":{"type":"integer","description":%s}},"additionalProperties":false}`, dp, dl), "park": `{"type":"object","properties":{"park":{"type":"string"}},"required":["park"],"additionalProperties":false}`, "edit_park_rules": `{"type":"object","properties":{"distance":{"type":"integer","minimum":0},"min_parcels":{"type":"integer","minimum":0},"value_threshold":{"type":"integer","minimum":0},"county":{"type":"string"},"labels":{"type":"array","items":{"type":"string"}},"walk_ceiling":{"type":"integer","minimum":0}},"additionalProperties":false}`}
 	var judge, rule json.RawMessage
 	for _, info := range infos {
 		if x, ok := want[info.Name]; ok && string(info.InputSchema) != x {
@@ -93,24 +93,27 @@ func TestParkSchemas(t *testing.T) {
 	// Positional construction proves argument field order without reflection.
 	_ = tools.ParksArgs{"county", "walked", "gone", "sort", nil, nil}
 	_ = tools.ParkArgs{"park"}
-	_ = tools.EditParkRulesArgs{nil, nil, nil, nil, nil}
+	distance, minParcels, valueThreshold, walkCeiling := uint32(1), uint32(2), uint32(3), uint32(4)
+	county, labels := "county", []string{"label"}
+	_ = tools.EditParkRulesArgs{&distance, &minParcels, &valueThreshold, &county, &labels, &walkCeiling}
 }
 
-// R-E95J-UX4K R-EBLC-MGLY R-ECT9-08CN R-EE15-E03C R-EF91-RRU1 R-EGGY-5JKQ
+// R-R8A4-EPES R-EBLC-MGLY R-ECT9-08CN R-R9I0-SH5H R-RAPX-68W6 R-EGGY-5JKQ
 func TestParkAnswerJSON(t *testing.T) {
 	nextField, ok := reflect.TypeFor[tools.ParkList]().FieldByName("Next")
 	if !ok || nextField.Tag.Get("description") != paging.NextDescription {
 		t.Fatal(nextField)
 	}
-	p := tools.Park{"id", "name", "county", "town", "zip", "state", 1, 2, 3, 4, 5, nil, 6, "walked", "walk-run", 7, "run", "map", "created", "updated"}
+	p := tools.Park{"id", "name", "county", "town", "zip", "state", 1, 2, 3, 4, 5, nil, 6, "walked", "walk-run", 7, 8, true, "run", "map", "created", "updated"}
 	q := tools.ParkParcel{"pin", nil, "street", "city", "zip", nil, "rule", 8, 9}
 	for _, tc := range []struct {
 		v    any
 		want string
 	}{
-		{p, `{"id":"id","name":"name","county":"county","town":"town","zip":"zip","state":"state","lat":1,"lon":2,"radius":3,"parcels":4,"building_value":5,"minutes":null,"grown_from":6,"walked":"walked","walk_run":"walk-run","found":7,"run":"run","map_url":"map","created":"created","updated":"updated"}`},
+		{tools.Park{}, `{"id":"","name":"","county":"","town":"","zip":"","state":"","lat":0,"lon":0,"radius":0,"parcels":0,"building_value":0,"minutes":null,"grown_from":0,"walked":"","walk_run":"","found":0,"new_candidates":0,"ceiling_reached":false,"run":"","map_url":"","created":"","updated":""}`},
+		{p, `{"id":"id","name":"name","county":"county","town":"town","zip":"zip","state":"state","lat":1,"lon":2,"radius":3,"parcels":4,"building_value":5,"minutes":null,"grown_from":6,"walked":"walked","walk_run":"walk-run","found":7,"new_candidates":8,"ceiling_reached":true,"run":"run","map_url":"map","created":"created","updated":"updated"}`},
 		{q, `{"pin":"pin","owners":[],"street":"street","city":"city","zip":"zip","building_value":null,"rule":"rule","lat":8,"lon":9}`},
-		{tools.ParkList{}, `{"parks":[]}`}, {tools.CountyLabels{}, `{"county":"","labels":[]}`}, {tools.ParkRules{}, `{"distance":0,"min_parcels":0,"value_threshold":0,"counties":[]}`},
+		{tools.ParkList{}, `{"parks":[]}`}, {tools.CountyLabels{}, `{"county":"","labels":[]}`}, {tools.ParkRules{}, `{"distance":0,"min_parcels":0,"value_threshold":0,"walk_ceiling":0,"counties":[]}`},
 	} {
 		b, err := json.Marshal(tc.v)
 		if err != nil || string(b) != tc.want {
@@ -119,10 +122,34 @@ func TestParkAnswerJSON(t *testing.T) {
 	}
 	one := int64(1)
 	p.Minutes = &one
+	numbered, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var numberFields map[string]json.RawMessage
+	if err := json.Unmarshal(numbered, &numberFields); err != nil || string(numberFields["minutes"]) != "1" {
+		t.Fatal(string(numbered), err)
+	}
 	q.BuildingValue = &one
 	q.Owners = []string{"a", "b"}
+	walks := []tools.ParkWalk{{"first-pass", "first-time", 1, 2, 3, 4, 5, true}, {"second-pass", "second-time", 6, 7, 8, 9, 10, false}}
+	places := []tools.Place{{"first-place", "first-name", "first-address", "first-type", "first-website", "first-phone", "first-walk", "first-candidate", true}, {"second-place", "second-name", "second-address", "second-type", "second-website", "second-phone", "second-walk", "second-candidate", false}}
+	found := []tools.FoundCandidate{{"first-candidate", "first-name", "first-status", true}, {"second-candidate", "second-name", "second-status", false}}
+	populated := tools.ParkDetail{p, walks, places, found, []tools.ParkParcel{q}}
+	encoded, err := json.Marshal(populated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var collections struct {
+		Walks           []tools.ParkWalk       `json:"walks"`
+		Places          []tools.Place          `json:"places"`
+		FoundCandidates []tools.FoundCandidate `json:"found_candidates"`
+	}
+	if err := json.Unmarshal(encoded, &collections); err != nil || !reflect.DeepEqual(collections.Walks, walks) || !reflect.DeepEqual(collections.Places, places) || !reflect.DeepEqual(collections.FoundCandidates, found) {
+		t.Fatal(string(encoded), collections, err)
+	}
 	next := "next"
-	for _, v := range []any{tools.ParkList{[]tools.Park{p}, &next}, tools.ParkDetail{p, []tools.ParkParcel{q}}, tools.ParkDetail{}, tools.ParkRules{1, 2, 3, []tools.CountyLabels{{"county", []string{"label"}}}}, tools.EditedParkRules{tools.ParkRules{}, passes.Record{}}} {
+	for _, v := range []any{tools.ParkList{[]tools.Park{p}, &next}, tools.ParkDetail{p, nil, nil, nil, []tools.ParkParcel{q}}, tools.ParkDetail{}, populated, tools.ParkRules{1, 2, 3, 4, []tools.CountyLabels{{"county", []string{"label"}}}}, tools.EditedParkRules{tools.ParkRules{}, passes.Record{}}} {
 		b, err := json.Marshal(v)
 		if err != nil {
 			t.Fatal(err)
@@ -137,7 +164,7 @@ func TestParkAnswerJSON(t *testing.T) {
 				t.Fatal(string(b))
 			}
 		case tools.ParkDetail:
-			if !reflect.DeepEqual(objectKeys(t, b), []string{"park", "parcels"}) || strings.Contains(string(b), `"parcels":null`) {
+			if !reflect.DeepEqual(objectKeys(t, b), []string{"park", "walks", "places", "found_candidates", "parcels"}) || strings.Contains(string(b), `"parcels":null`) || strings.Contains(string(b), `"walks":null`) || strings.Contains(string(b), `"places":null`) || strings.Contains(string(b), `"found_candidates":null`) {
 				t.Fatal(string(b))
 			}
 		case tools.EditedParkRules:
@@ -245,7 +272,7 @@ func TestParkReadTools(t *testing.T) {
 	}
 }
 
-// R-EIWQ-X324 R-ELCJ-OMJI R-EMKG-2EA7 R-ERG1-LH8Z R-EYRF-W3P5 R-F2F5-1EX8 R-EP08-TXRL
+// R-EIWQ-X324 R-ELCJ-OMJI R-EMKG-2EA7 R-RBXT-K0MV R-F05M-B25Z R-EP08-TXRL
 func TestParkValidationPrecedence(t *testing.T) {
 	f := newFixture(t)
 	ps := seedParks(t, f, 1)
@@ -277,8 +304,27 @@ func TestParkValidationPrecedence(t *testing.T) {
 		for _, a := range []tools.ParksArgs{{Walked: "none"}, {Gone: "Active"}, {Sort: "name"}, {County: " Anoka"}} {
 			refusal(t, f.call("parks", a), passes.RefusalInvalid, tools.RefuseInvalid)
 		}
-		for _, a := range []map[string]any{{"distance": 0}, {"distance": 5001}, {"min_parcels": 1}, {"value_threshold": 1000000001}, {"labels": []string{"industrial"}}, {"county": "Carlton"}, {"county": "Carlton", "labels": nil}, {"county": "", "labels": []string{}}, {"county": "Carlton", "labels": []string{""}}, {"county": "Carlton", "labels": []string{"label", "label"}}} {
+
+		var beforeRules tools.ParkRules
+		var beforePasses []store.Pass
+		if !failing {
+			beforeRules = decodeList[tools.ParkRules](t, f.call("park_rules", tools.NoArgs{}))
+			var err error
+			beforePasses, err = f.st.ListPasses(t.Context(), "", "", 100)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, a := range []map[string]any{{"walk_ceiling": 0}, {"walk_ceiling": 5001}, {"distance": 0}, {"distance": 5001}, {"min_parcels": 1}, {"value_threshold": 1000000001}, {"labels": []string{"industrial"}}, {"county": "Carlton"}, {"county": "Carlton", "labels": nil}, {"county": "", "labels": []string{}}, {"county": "Carlton", "labels": []string{""}}, {"county": "Carlton", "labels": []string{"label", "label"}}} {
 			refusal(t, f.call("edit_park_rules", a), passes.RefusalInvalid, tools.RefuseInvalid)
+		}
+
+		if !failing {
+			success(t, f.call("park_rules", tools.NoArgs{}), beforeRules)
+			after, err := f.st.ListPasses(t.Context(), "", "", 100)
+			if err != nil || !reflect.DeepEqual(after, beforePasses) {
+				t.Fatal(after, beforePasses, err)
+			}
 		}
 		for _, bad := range []string{"bad", store.ParkIDPrefix + strings.Repeat("A", 16), store.ProspectListIDPrefix + strings.Repeat("a", 16)} {
 			refusal(t, f.call("park", tools.ParkArgs{bad}), passes.RefusalNotFound, tools.RefuseNotFound)
@@ -306,7 +352,7 @@ func TestParkValidationPrecedence(t *testing.T) {
 	success(t, f.call("parks", tools.ParksArgs{Page: &unknown}), tools.ParkList{})
 }
 
-// R-YBDQ-DN1B R-YCLM-RES0
+// R-RJ97-UN31 R-YCLM-RES0
 func TestEditParkRulesTool(t *testing.T) {
 	entered, release := make(chan struct{}, 1), make(chan struct{})
 	headers := make(chan identity.Caller, 16)
@@ -411,13 +457,19 @@ func TestEditParkRulesTool(t *testing.T) {
 		t.Fatal(ended)
 	}
 	before = decodeList[tools.ParkRules](t, f.call("park_rules", tools.NoArgs{}))
-	for _, a := range []map[string]any{{}, {"distance": 321, "value_threshold": 987}, {"county": "Carlton", "labels": []string{"Industrial Preferred"}}, {"county": "Chisago", "labels": []string{}}} {
+	for _, a := range []map[string]any{{}, {"distance": 321, "value_threshold": 987}, {"county": "Carlton", "labels": []string{"Industrial Preferred"}}, {"county": "Chisago", "labels": []string{}}, {"walk_ceiling": 250}} {
 		out := decodeList[tools.EditedParkRules](t, f.call("edit_park_rules", a))
 		if out.Pass.Status != store.StatusRunning || out.Pass.Kind != store.KindParks {
 			t.Fatal(out)
 		}
 		if distance, ok := a["distance"].(int); ok {
 			before.Distance = int64(distance)
+		}
+		if ceiling, ok := a["walk_ceiling"].(int); ok {
+			before.WalkCeiling = int64(ceiling)
+		}
+		if out.Rules.WalkCeiling != before.WalkCeiling {
+			t.Fatal(out.Rules, before)
 		}
 		if threshold, ok := a["value_threshold"].(int); ok {
 			before.ValueThreshold = int64(threshold)
@@ -442,6 +494,7 @@ func TestEditParkRulesTool(t *testing.T) {
 		} else if !reflect.DeepEqual(out.Rules, before) {
 			t.Fatal(out.Rules, before)
 		}
+		before = out.Rules
 		f.waitEnrich(out.Pass.ID)
 	}
 

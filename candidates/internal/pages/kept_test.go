@@ -15,7 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/urls"
 )
 
-// R-40V8-V2LG R-5VOS-S1Z2 R-5EM7-F9LC
+// R-40V8-V2LG R-QG8F-LZCT R-QCKQ-GO4Q
 func TestTargetPassAndCosts(t *testing.T) {
 	for _, tc := range []struct {
 		n    int64
@@ -79,7 +79,7 @@ func TestSiteTextResultProjection(t *testing.T) {
 	}
 }
 
-// R-45QU-E5K8 R-XY08-ASLZ R-3ZNC-HAUR
+// R-45QU-E5K8 R-QORQ-ADJO R-3ZNC-HAUR
 func TestKeptPageProjections(t *testing.T) {
 	p := store.Page{Candidate: "cand_0123456789abcdef", Number: 7, URL: "https://fixture.test/", Size: 37, Fetched: fixtureTime(), UserID: "fixture-user", Text: "fixture text"}
 	row := pageRow(p)
@@ -204,7 +204,7 @@ func TestMemberSiteTextStamp(t *testing.T) {
 	}
 }
 
-// R-5FU3-T1C1
+// R-INPY-9LWV
 func TestAddedTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	s, err := Load()
@@ -303,7 +303,7 @@ func TestSiteTextCandidateAndProspectListAgree(t *testing.T) {
 	}
 }
 
-// R-5VOS-S1Z2 R-5EM7-F9LC
+// R-QG8F-LZCT R-QCKQ-GO4Q
 func TestTargetPassPage(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	_, ids, err := cfg.Store.Attach(t.Context(), "chosen-run", false, []store.Observation{{Scraper: "fixture", SourceID: "target-source", Digest: "target-digest", Reading: sources.Reading{Name: "target-name"}}})
@@ -338,7 +338,7 @@ func TestTargetPassPage(t *testing.T) {
 	}
 }
 
-// R-XY08-ASLZ R-5EM7-F9LC R-3ZNC-HAUR
+// R-QORQ-ADJO R-QCKQ-GO4Q R-3ZNC-HAUR
 // R-JN4O-3OFH
 func TestAddedViewShapes(t *testing.T) {
 	candidate := CandidateData{page.Banner{}, CandidateView{}, nil, nil, []EstimateView{}, []LinkView{}, []RulingView{}, []PageRow{}, []EnrichmentRow{}, []RejectRecordRow{}, []CampaignRow{}}
@@ -352,6 +352,9 @@ func TestAddedViewShapes(t *testing.T) {
 		Runs, RunsFailed, Pages                                                                                          int64
 		Cost                                                                                                             string
 		ParcelsRead, ByLabel, ByValue, ByCandidate, ParksCreated, ParksUpdated, ParksGone, ParksGrown                    int64
+		Circles, Requests, Found, NewCandidates                                                                          int64
+		CeilingReached                                                                                                   bool
+		Parks                                                                                                            []WalkParkRow
 	}(PassView{})
 	_ = struct {
 		Kind, Source                  string

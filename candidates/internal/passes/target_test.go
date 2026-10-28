@@ -49,7 +49,8 @@ func fakePrompts(t *testing.T, f *fixture, answer func(string, map[string]json.R
 		t.Fatal(err)
 	}
 	fake := &promptFake{answer: answer}
-	server := &http.Server{ReadHeaderTimeout: time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var server *http.Server
+	server = &http.Server{ReadHeaderTimeout: time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
 			ID     json.RawMessage `json:"id"`
 			Method string          `json:"method"`
@@ -66,6 +67,10 @@ func fakePrompts(t *testing.T, f *fixture, answer func(string, map[string]json.R
 		fake.calls = append(fake.calls, promptCall{request.Params.Name, request.Params.Arguments, r.Header.Get("X-User-Id"), r.Header.Get("X-User-Email"), r.Header.Get("X-Request-Id")})
 		fake.mu.Unlock()
 		result, refused, status := answer(request.Params.Name, request.Params.Arguments)
+		if status == -1 {
+			_ = server.Close()
+			return
+		}
 		if status != 0 {
 			w.WriteHeader(status)
 			return
@@ -123,7 +128,7 @@ func targetEngine(f *fixture, pc *prompts.Client, after func(time.Duration) <-ch
 	f.eng = passes.New(passes.Config{Store: f.st, Scrapes: f.sc, Prompts: pc, Telemetry: f.w, Events: f.em, After: after})
 }
 
-// R-Z83N-ST6G R-84KF-D8N0  R-DK67-BT0K R-DMM0-3CHY
+// R-Z83N-ST6G R-84KF-D8N0  R-F517-U54R R-PJB5-A6C2
 func TestTargetRecordAndSchedulingValues(t *testing.T) {
 	t.Parallel()
 	if passes.RunsInFlight != 4 || passes.StartTries != 20 || passes.PollInterval != 5*time.Second || passes.QueueWait != 30*time.Second || passes.NoPrompt == "" || strings.Contains(passes.NoPrompt, "\n") {
@@ -226,7 +231,7 @@ func TestTargetRefusals(t *testing.T) {
 	}
 }
 
-// R-MTSF-SRSA R-08ON-9XFA R-TMW8-ONTV R-OYM3-WBI1 R-2Q14-TJQ7 R-2SGX-L37L R-2EQ7-R8VQ R-RFMR-TKMQ R-33G1-10VU
+// R-MTSF-SRSA R-08ON-9XFA R-TMW8-ONTV R-OYM3-WBI1 R-PXXX-VF8E R-Q0DQ-MYPS R-2EQ7-R8VQ R-RFMR-TKMQ R-PGVC-IMUO
 func TestPromptPassResultsAndForce(t *testing.T) {
 	t.Parallel()
 	for _, status := range []string{"exited", "failed", "killed", "timed_out"} {
@@ -242,6 +247,7 @@ func TestPromptPassResultsAndForce(t *testing.T) {
 			})
 			targetEngine(f, pc, promptAfter)
 			caller := identity.Caller{UserID: "owner", Email: "owner@example.test", RequestID: "request"}
+			var firstResult store.Enrichment
 			for i, force := range []bool{false, false, true} {
 				p, err := f.eng.EnrichTarget(context.Background(), caller, enrichers.KindSiteText, id, force)
 				if err != nil {
@@ -261,6 +267,20 @@ func TestPromptPassResultsAndForce(t *testing.T) {
 				if status != "exited" && p.RunsFailed != want {
 					t.Fatal(p)
 				}
+				if i == 0 {
+					retained, err := f.st.Enrichments(context.Background(), id)
+					if err != nil {
+						t.Fatal(err)
+					}
+					for _, e := range retained {
+						if e.Kind == enrichers.KindSiteText {
+							firstResult = e
+						}
+					}
+					if firstResult.Kind == "" {
+						t.Fatal("first result not recorded")
+					}
+				}
 				for _, other := range f.list() {
 					if other.Trigger == p.ID {
 						t.Fatal("unexpected follow-on", other)
@@ -276,6 +296,29 @@ func TestPromptPassResultsAndForce(t *testing.T) {
 				t.Fatal(err)
 			}
 			expected := enrichers.SiteText{}.Input(subject)
+			recorded := 0
+			retainedFirst := false
+			for _, e := range es {
+				if e.Kind != enrichers.KindSiteText {
+					continue
+				}
+				recorded++
+				var found enrichers.SiteTextFound
+				if err := json.Unmarshal(e.Found, &found); err != nil {
+					t.Fatal(err)
+				}
+				code := 0
+				want := enrichers.SiteTextFound{Run: "run-one", Status: status, ExitCode: &code, Pages: 0, CostNanos: 1000}
+				if !reflect.DeepEqual(found, want) || e.Inputs != (enrichers.SiteText{}).Inputs(subject) || e.Source != enrichers.SourcePrompts || e.Cost != 0.000001 {
+					t.Fatal(e, found, want)
+				}
+				if reflect.DeepEqual(e, firstResult) {
+					retainedFirst = true
+				}
+			}
+			if recorded != 2 || !retainedFirst {
+				t.Fatal("forced pass replaced first result", es, firstResult)
+			}
 			starts := 0
 			for _, call := range fake.snapshot() {
 				if call.user != caller.UserID || call.email != caller.Email || call.request != caller.RequestID {
@@ -298,7 +341,7 @@ func TestPromptPassResultsAndForce(t *testing.T) {
 	}
 }
 
-// R-SXAC-NH9A R-2R91-7BGW R-3108-9HEG R-2OT8-FRZI R-YG1Z-034H
+// R-SXAC-NH9A R-PZ5U-96Z3 R-PEFJ-R3DA R-PWQ1-HNHP R-YG1Z-034H
 func TestPromptRetriesAndFailures(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"retry", "exhausted", "result", "invalid", "show_retry"} {
@@ -438,7 +481,7 @@ func TestTargetedDerivedAndWebsite(t *testing.T) {
 	}
 }
 
-// R-1P4B-Q2B5 R-2OT8-FRZI R-373Q-6C3X R-DTXE-DYY4 R-MTSF-SRSA
+// R-1P4B-Q2B5 R-PWQ1-HNHP R-373Q-6C3X R-DTXE-DYY4 R-MTSF-SRSA
 func TestPromptConcurrencyAndDrain(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -517,7 +560,7 @@ func TestPromptConcurrencyAndDrain(t *testing.T) {
 	}
 }
 
-// R-34NX-ESMJ: fullIngest requests current then rows for its registered source.
+// R-Q2TJ-EI76: fullIngest requests current then rows for its registered source.
 func TestFullIngestRequestSequence(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -538,7 +581,7 @@ func TestFullIngestRequestSequence(t *testing.T) {
 	}
 }
 
-// R-2Q14-TJQ7 R-2SGX-L37L: distinct URLs are result data; page copies are pass cost.
+// R-PXXX-VF8E R-Q0DQ-MYPS: distinct URLs are result data; page copies are pass cost.
 func TestPromptCountsPagesAndOutcome(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -588,7 +631,7 @@ func TestPromptCountsPagesAndOutcome(t *testing.T) {
 	}
 }
 
-// R-2TOT-YUYA: the default poll reaches a completed run within sixty seconds.
+// R-Q1LN-0QGH: the default poll reaches a completed run within sixty seconds.
 func TestPromptDefaultPoll(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := seedTarget(t, f, 1)[0]
@@ -665,7 +708,7 @@ func TestProspectListSelectionSkipsNoWebsiteAndPreservesOutside(t *testing.T) {
 	}
 }
 
-// R-2R91-7BGW R-2OT8-FRZI: one failed result cancels other held polls without waiting.
+// R-PZ5U-96Z3 R-PWQ1-HNHP: one failed result cancels other held polls without waiting.
 func TestPromptFailureCancelsOtherRunsAndKeepsPriorResult(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -834,7 +877,7 @@ func TestConcurrentTargetStarts(t *testing.T) {
 	f.eng.Drain(context.Background())
 }
 
-// R-2SGX-L37L R-2ZSB-VPNR R-2Q14-TJQ7 R-TMW8-ONTV R-2EQ7-R8VQ R-RFMR-TKMQ
+// R-Q0DQ-MYPS R-PD7N-DBML R-PXXX-VF8E R-TMW8-ONTV R-2EQ7-R8VQ R-RFMR-TKMQ
 func TestBriefTargetLifecycleAndCounts(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -958,5 +1001,108 @@ func TestBriefTargetLifecycleAndCounts(t *testing.T) {
 	second = f.ended(second.ID)
 	if second.Status != store.StatusDone || second.Due+second.Runs+second.RunsFailed+second.Pages+second.Cost != 0 {
 		t.Fatal(second)
+	}
+}
+
+// R-PWQ1-HNHP R-PEFJ-R3DA
+func TestPromptAdditionalFailuresPreserveEvidence(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"result_refused", "empty_status", "socket_loss", "run_error"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newFixture(t, nil, false)
+			id := seedTarget(t, f, 1)[0]
+			ctx := context.Background()
+			code := 0
+			priorFound, err := json.Marshal(enrichers.SiteTextFound{Run: "prior-run", Status: enrichers.RunExited, ExitCode: &code, Pages: 1, CostNanos: 500})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = f.st.AddEnrichments(ctx, []store.Enrichment{{Candidate: id, Kind: enrichers.KindSiteText, Inputs: "prior-input", Source: enrichers.SourcePrompts, Found: priorFound, Cost: 0.0000005}}); err != nil {
+				t.Fatal(err)
+			}
+			before, err := f.st.Enrichments(ctx, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			priorPage, err := f.st.AddPage(ctx, store.Page{Candidate: id, URL: "https://company0.test/prior", Text: "prior page", UserID: "owner"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			pages := []store.Page{priorPage}
+			var pagesMu sync.Mutex
+			pc, fake := fakePrompts(t, f, func(name string, args map[string]json.RawMessage) (any, bool, int) {
+				if name == "run" && mode == "run_error" {
+					return nil, false, 500
+				}
+				if name == "result" {
+					page, err := f.st.AddPage(ctx, store.Page{Candidate: id, URL: "https://company0.test/during", Text: "during run", UserID: "owner"})
+					if err != nil {
+						t.Error(err)
+					} else {
+						pagesMu.Lock()
+						pages = append(pages, page)
+						pagesMu.Unlock()
+					}
+					switch mode {
+					case "result_refused":
+						return "refused", true, 0
+					case "socket_loss":
+						return nil, false, -1
+					case "empty_status":
+						result, refused, status := promptAnswer(name, args)
+						result.(map[string]any)["status"] = ""
+						return result, refused, status
+					}
+				}
+				return promptAnswer(name, args)
+			})
+			targetEngine(f, pc, promptAfter)
+			p, err := f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindSiteText, id, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p = f.ended(p.ID)
+			if p.Status != store.StatusFailed || p.Reason != store.ReasonPrompts || failedCounts(p) != (store.Counts{}) {
+				t.Fatal(p)
+			}
+			after, err := f.st.Enrichments(ctx, id)
+			if err != nil || !reflect.DeepEqual(after, before) {
+				t.Fatal("failure changed enrichments", after, before, err)
+			}
+			pagesMu.Lock()
+			keptPages := append([]store.Page(nil), pages...)
+			pagesMu.Unlock()
+			for _, page := range keptPages {
+				got, err := f.st.GetPage(ctx, id, page.Number)
+				if err != nil || !reflect.DeepEqual(got, page) {
+					t.Fatal("failure changed kept page", got, page, err)
+				}
+			}
+			counts, err := f.st.CountPages(ctx, id)
+			if err != nil || counts.Copies != int64(len(keptPages)) {
+				t.Fatal(counts, keptPages, err)
+			}
+			calls := fake.snapshot()
+			sawRun, sawResult := false, false
+			for _, call := range calls {
+				if call.name == "run" {
+					sawRun = true
+				}
+				if call.name == "result" {
+					sawResult = true
+				}
+			}
+			if !sawRun || mode != "run_error" && !sawResult || mode == "run_error" && sawResult {
+				t.Fatal(mode, calls)
+			}
+			f.eng.Drain(ctx)
+			if !reflect.DeepEqual(fake.snapshot(), calls) {
+				t.Fatal("request after failed ending")
+			}
+			final, err := f.st.Enrichments(ctx, id)
+			if err != nil || !reflect.DeepEqual(final, before) {
+				t.Fatal("enrichment after failed ending", final, err)
+			}
+		})
 	}
 }

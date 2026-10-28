@@ -25,6 +25,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/candidates/internal/pages"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
+	"github.com/ikigenba/ikigenba/candidates/internal/places"
 	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
@@ -244,11 +245,11 @@ func TestMCPContextAndTools(t *testing.T) {
 	}
 }
 
-// R-S35A-G1HS: a failing store prevents a pass from starting.
+// R-QBCU-2WE1: a failing store prevents a pass from starting.
 func TestFailingStoreEmitsNoPassEvent(t *testing.T) {
 	cfg, d, capture, bus := fixture(t)
 	cfg.Website = &website.Checker{}
-	cfg.Passes = passes.New(passes.Config{Store: cfg.Store, Sources: sources.New(fmcsa.New()), Website: cfg.Website, Telemetry: cfg.Telemetry, Events: cfg.Events})
+	cfg.Passes = passes.New(passes.Config{Store: cfg.Store, Sources: sources.New(fmcsa.New()), Places: &places.Client{}, Website: cfg.Website, Telemetry: cfg.Telemetry, Events: cfg.Events})
 	defer cfg.Passes.Drain(context.Background())
 	srv := httptest.NewServer(web.Handler(cfg))
 	defer srv.Close()
@@ -265,6 +266,16 @@ func TestFailingStoreEmitsNoPassEvent(t *testing.T) {
 	encoded, err := json.Marshal(result)
 	if err != nil || !strings.Contains(string(encoded), "unavailable: "+tools.RefuseUnavailable) {
 		t.Fatal(result, err)
+	}
+	result, err = client.CallTool(context.Background(), identity.Caller{UserID: "caller"}, "walk", json.RawMessage(`{"parks":["park_5a5a5a5a5a5a5a5a"]}`))
+	if err != nil || !result.IsError() || !strings.Contains(stringMustMarshal(t, result), "unavailable: "+tools.RefuseUnavailable) {
+		t.Fatal(result, err)
+	}
+	for _, name := range []string{"judge", "edit_park_rules"} {
+		result, err = client.CallTool(context.Background(), identity.Caller{UserID: "caller"}, name, json.RawMessage(`{}`))
+		if err != nil || !result.IsError() || !strings.Contains(stringMustMarshal(t, result), "unavailable: "+tools.RefuseUnavailable) {
+			t.Fatal(name, result, err)
+		}
 	}
 	event := events.Event{ID: "evt_0000000000000000", Time: fixtureTime(), Received: fixtureTime(), Seq: 1, Service: "scrapes", Name: trail.Accepted, Attrs: events.Attrs{"run": "run_fixture", "scraper": "fmcsa", "status": "done"}}
 	resultDelivery, err := events.Send(context.Background(), srv.Client(), strings.TrimPrefix(srv.URL, "http://"), events.Delivery{Event: event, Attempt: 1})
@@ -292,18 +303,17 @@ func TestFailingStoreEmitsNoPassEvent(t *testing.T) {
 	}
 }
 
-// R-3GUX-8I1H
 func TestLifecycleDeclarationsIncludeDerived(t *testing.T) {
 	cfg, _, _, _ := fixture(t)
 	cfg.Passes = passes.New(passes.Config{Store: cfg.Store, Sources: sources.New(fmcsa.New(), ppp.New()), Telemetry: cfg.Telemetry, Events: cfg.Events})
 	r := request(web.Handler(cfg), http.MethodGet, "/declarations", "", "")
-	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","target","enrich_kind","status","reason","parcel_run","rows","new","changed","unchanged","gone","created","linked","judged","unranged","derived","due","fetched","https","http","none","runs","runs_failed","pages","cost","parcels_read","by_label","by_value","by_candidate","parks_created","parks_updated","parks_gone","parks_grown"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger","target","enrich_kind"]}],"accepts":["campaign.member.added","campaign.member.rejected","campaign.piece.delivered","cron.judge_candidates.fired","scrape.finished"]}`
+	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","target","enrich_kind","status","reason","parcel_run","rows","new","changed","unchanged","gone","created","linked","judged","unranged","derived","due","fetched","https","http","none","runs","runs_failed","pages","cost","parcels_read","by_label","by_value","by_candidate","parks_created","parks_updated","parks_gone","parks_grown","parks_walked","circles","requests","found","new_candidates"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger","target","enrich_kind"]}],"accepts":["campaign.member.added","campaign.member.rejected","campaign.piece.delivered","cron.judge_candidates.fired","scrape.finished"]}`
 	if r.Code != http.StatusOK || r.Body.String() != want {
 		t.Fatal(r.Code, r.Body.String())
 	}
 }
 
-// R-CXMK-S6UK R-JOJI-0XTC
+// R-O7R2-D4EZ R-JOJI-0XTC
 func TestMCPToolsReceiveConfiguredWebsite(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		t.Run(map[bool]string{false: "nil", true: "checker"}[enabled], func(t *testing.T) {
@@ -333,7 +343,7 @@ type webTransport func(*http.Request) (*http.Response, error)
 
 func (f webTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-// R-XTQK-SDMD R-CXMK-S6UK
+// R-XTQK-SDMD R-O7R2-D4EZ
 func TestLegacyDispatcherConfiguration(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
@@ -370,4 +380,13 @@ func TestLegacyDispatcherConfiguration(t *testing.T) {
 			}
 		})
 	}
+}
+
+func stringMustMarshal(t *testing.T, v any) string {
+	t.Helper()
+	b, e := json.Marshal(v)
+	if e != nil {
+		t.Fatal(e)
+	}
+	return string(b)
 }

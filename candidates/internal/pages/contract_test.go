@@ -15,7 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-TP14-C8P6 R-5UGW-EA8D R-08PY-S5TE
+// R-TP14-C8P6 R-QF0J-87M4 R-08PY-S5TE
 func TestCompleteViewContracts(t *testing.T) {
 	start := time.Date(2026, 10, 5, 10, 0, 7, 0, time.FixedZone("offset", 3600))
 	end := start.Add(time.Hour)
@@ -31,7 +31,7 @@ func TestCompleteViewContracts(t *testing.T) {
 		t.Fatalf("merged %#v", got)
 	}
 	p := store.Pass{ID: "pass", Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Status: store.StatusDone, Reason: "reason", Started: start, Finished: end, Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, UserID: "starter", UserEmail: "starter@example.test"}
-	wantP := PassView{Cost: "$0.000000", ID: "pass", Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Status: store.StatusDone, Reason: "reason", StartedBy: "starter@example.test", Started: "2026-10-05T09:00:07Z", StartedText: "2026-10-05 09:00:07 UTC", Finished: "2026-10-05T10:00:07Z", FinishedText: "2026-10-05 10:00:07 UTC", Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9}
+	wantP := PassView{Parks: []WalkParkRow{}, Cost: "$0.000000", ID: "pass", Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Status: store.StatusDone, Reason: "reason", StartedBy: "starter@example.test", Started: "2026-10-05T09:00:07Z", StartedText: "2026-10-05 09:00:07 UTC", Finished: "2026-10-05T10:00:07Z", FinishedText: "2026-10-05 10:00:07 UTC", Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9}
 	if got := passView(p, ""); !reflect.DeepEqual(got, wantP) {
 		t.Fatalf("pass %#v", got)
 	}
@@ -131,7 +131,7 @@ func TestCompleteViewContracts(t *testing.T) {
 	}
 }
 
-// R-5FU3-T1C1
+// R-INPY-9LWV
 func TestExplicitTemplateStates(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -216,7 +216,7 @@ func TestMemberRowStoredJudgments(t *testing.T) {
 	}
 }
 
-// R-5UGW-EA8D R-5WWP-5TPR
+// R-QF0J-87M4 R-QPZM-O5AD
 func TestPassOrigins(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	path := filepath.Join(t.TempDir(), "services.json")
@@ -250,7 +250,7 @@ func TestPassOrigins(t *testing.T) {
 	}
 }
 
-// R-5FU3-T1C1
+// R-INPY-9LWV
 func TestJudgmentTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()

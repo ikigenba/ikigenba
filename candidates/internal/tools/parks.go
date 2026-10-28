@@ -11,6 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/candidates/internal/parks"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
+	"github.com/ikigenba/ikigenba/candidates/internal/places"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
@@ -20,6 +21,7 @@ const (
 	DescribePark          string = "Read an industrial park and its parcels."
 	DescribeParkRules     string = "Read the rules used to derive industrial parks."
 	DescribeEditParkRules string = "Change park rules and start a new derivation."
+	DescribeWalk          string = "Search industrial parks for candidate businesses."
 )
 
 // ParksArgs selects a positioned window of parks.
@@ -44,30 +46,33 @@ type EditParkRulesArgs struct {
 	ValueThreshold *uint32   `json:"value_threshold"`
 	County         *string   `json:"county"`
 	Labels         *[]string `json:"labels"`
+	WalkCeiling    *uint32   `json:"walk_ceiling"`
 }
 
 // Park is one industrial park answer.
 type Park struct {
-	ID            string  `json:"id"`
-	Name          string  `json:"name"`
-	County        string  `json:"county"`
-	Town          string  `json:"town"`
-	Zip           string  `json:"zip"`
-	State         string  `json:"state"`
-	Lat           float64 `json:"lat"`
-	Lon           float64 `json:"lon"`
-	Radius        float64 `json:"radius"`
-	Parcels       int64   `json:"parcels"`
-	BuildingValue int64   `json:"building_value"`
-	Minutes       *int64  `json:"minutes"`
-	GrownFrom     int64   `json:"grown_from"`
-	Walked        string  `json:"walked"`
-	WalkRun       string  `json:"walk_run"`
-	Found         int64   `json:"found"`
-	Run           string  `json:"run"`
-	MapURL        string  `json:"map_url"`
-	Created       string  `json:"created"`
-	Updated       string  `json:"updated"`
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
+	County         string  `json:"county"`
+	Town           string  `json:"town"`
+	Zip            string  `json:"zip"`
+	State          string  `json:"state"`
+	Lat            float64 `json:"lat"`
+	Lon            float64 `json:"lon"`
+	Radius         float64 `json:"radius"`
+	Parcels        int64   `json:"parcels"`
+	BuildingValue  int64   `json:"building_value"`
+	Minutes        *int64  `json:"minutes"`
+	GrownFrom      int64   `json:"grown_from"`
+	Walked         string  `json:"walked"`
+	WalkRun        string  `json:"walk_run"`
+	Found          int64   `json:"found"`
+	NewCandidates  int64   `json:"new_candidates"`
+	CeilingReached bool    `json:"ceiling_reached"`
+	Run            string  `json:"run"`
+	MapURL         string  `json:"map_url"`
+	Created        string  `json:"created"`
+	Updated        string  `json:"updated"`
 }
 
 // ParkList is a window of parks.
@@ -109,13 +114,25 @@ func (v ParkParcel) MarshalJSON() ([]byte, error) {
 
 // ParkDetail includes the park and its parcels.
 type ParkDetail struct {
-	Park    Park         `json:"park"`
-	Parcels []ParkParcel `json:"parcels"`
+	Park            Park             `json:"park"`
+	Walks           []ParkWalk       `json:"walks"`
+	Places          []Place          `json:"places"`
+	FoundCandidates []FoundCandidate `json:"found_candidates"`
+	Parcels         []ParkParcel     `json:"parcels"`
 }
 
 // MarshalJSON keeps parcels an array.
 func (v ParkDetail) MarshalJSON() ([]byte, error) {
 	type plain ParkDetail
+	if v.Walks == nil {
+		v.Walks = []ParkWalk{}
+	}
+	if v.Places == nil {
+		v.Places = []Place{}
+	}
+	if v.FoundCandidates == nil {
+		v.FoundCandidates = []FoundCandidate{}
+	}
 	if v.Parcels == nil {
 		v.Parcels = []ParkParcel{}
 	}
@@ -142,6 +159,7 @@ type ParkRules struct {
 	Distance       int64          `json:"distance"`
 	MinParcels     int64          `json:"min_parcels"`
 	ValueThreshold int64          `json:"value_threshold"`
+	WalkCeiling    int64          `json:"walk_ceiling"`
 	Counties       []CountyLabels `json:"counties"`
 }
 
@@ -170,7 +188,7 @@ func parkOf(p store.Park) Park {
 		v := *p.Minutes
 		minutes = &v
 	}
-	return Park{p.ID, p.Name, p.County, p.Town, p.Zip, p.State, p.Lat, p.Lon, p.Radius, p.Parcels, p.BuildingValue, minutes, p.GrownFrom, walked, p.WalkRun, p.Found, p.Run, parks.MapURL(p.Lat, p.Lon), stamp(p.Created), stamp(p.Updated)}
+	return Park{p.ID, p.Name, p.County, p.Town, p.Zip, p.State, p.Lat, p.Lon, p.Radius, p.Parcels, p.BuildingValue, minutes, p.GrownFrom, walked, p.WalkRun, p.Found, p.NewCandidates, p.CeilingReached, p.Run, parks.MapURL(p.Lat, p.Lon), stamp(p.Created), stamp(p.Updated)}
 }
 func parkParcelOf(q store.ParkParcel) ParkParcel {
 	var value *int64
@@ -180,8 +198,8 @@ func parkParcelOf(q store.ParkParcel) ParkParcel {
 	}
 	return ParkParcel{q.PIN, append([]string{}, q.Owners...), q.Street, q.City, q.Zip, value, q.Rule, q.Lat, q.Lon}
 }
-func parkRulesOf(r parks.Rules, cs []string) ParkRules {
-	v := ParkRules{r.Distance, r.MinParcels, r.ValueThreshold, []CountyLabels{}}
+func parkRulesOf(r parks.Rules, cs []string, ceiling int64) ParkRules {
+	v := ParkRules{r.Distance, r.MinParcels, r.ValueThreshold, ceiling, []CountyLabels{}}
 	for _, c := range cs {
 		v.Counties = append(v.Counties, CountyLabels{c, append([]string{}, r.Labels[c]...)})
 	}
@@ -261,20 +279,24 @@ func registerParks(srv *mcp.Server, cfg Config) {
 		for _, q := range qs {
 			out.Parcels = append(out.Parcels, parkParcelOf(q))
 		}
-		return answer(out)
+		return parkDetailAnswer(ctx, cfg.Store, out)
 	})
 	add(srv, "park_rules", DescribeParkRules, mcp.Read, func(ctx context.Context, _ identity.Caller, _ NoArgs) mcp.Result {
 		r, cs, err := cfg.Store.ParkRules(ctx)
 		if err != nil {
 			return failure(err)
 		}
-		return answer(parkRulesOf(r, cs))
+		ceiling, err := cfg.Store.WalkCeiling(ctx)
+		if err != nil {
+			return failure(err)
+		}
+		return answer(parkRulesOf(r, cs, ceiling))
 	})
 	add(srv, "edit_park_rules", DescribeEditParkRules, mcp.Additive, func(ctx context.Context, c identity.Caller, a EditParkRulesArgs) mcp.Result {
-		if a.Distance != nil && !parks.ValidDistance(int64(*a.Distance)) || a.MinParcels != nil && !parks.ValidMinParcels(int64(*a.MinParcels)) || a.ValueThreshold != nil && !parks.ValidValueThreshold(int64(*a.ValueThreshold)) || a.County != nil && !parks.ValidCounty(*a.County) || a.County == nil && a.Labels != nil || a.County != nil && a.Labels == nil || a.Labels != nil && !parks.ValidLabels(*a.Labels) {
+		if a.Distance != nil && !parks.ValidDistance(int64(*a.Distance)) || a.MinParcels != nil && !parks.ValidMinParcels(int64(*a.MinParcels)) || a.ValueThreshold != nil && !parks.ValidValueThreshold(int64(*a.ValueThreshold)) || a.County != nil && !parks.ValidCounty(*a.County) || a.County == nil && a.Labels != nil || a.County != nil && a.Labels == nil || a.Labels != nil && !parks.ValidLabels(*a.Labels) || a.WalkCeiling != nil && !places.ValidCeiling(int64(*a.WalkCeiling)) {
 			return refuse(passes.RefusalInvalid)
 		}
-		e := store.ParkRulesEdit{Distance: int64Of(a.Distance), MinParcels: int64Of(a.MinParcels), ValueThreshold: int64Of(a.ValueThreshold), County: a.County}
+		e := store.ParkRulesEdit{Distance: int64Of(a.Distance), MinParcels: int64Of(a.MinParcels), ValueThreshold: int64Of(a.ValueThreshold), County: a.County, WalkCeiling: int64Of(a.WalkCeiling)}
 		if a.Labels != nil {
 			e.Labels = append([]string{}, (*a.Labels)...)
 		}
@@ -290,6 +312,10 @@ func registerParks(srv *mcp.Server, cfg Config) {
 		if err != nil {
 			return refuse(passes.RefusalUnavailable)
 		}
-		return answer(EditedParkRules{parkRulesOf(r, cs), passes.RecordOf(p)})
+		ceiling, err := cfg.Store.WalkCeiling(ctx)
+		if err != nil {
+			return failure(err)
+		}
+		return answer(EditedParkRules{parkRulesOf(r, cs, ceiling), passes.RecordOf(p)})
 	})
 }

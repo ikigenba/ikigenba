@@ -92,7 +92,7 @@ func TestPageSchemaAndJSON(t *testing.T) {
 	}
 }
 
-// R-P2B3-H65F R-M3JT-JKMP R-GADH-O9XX R-F2F5-1EX8
+// R-P2B3-H65F R-M3JT-JKMP R-GADH-O9XX R-F05M-B25Z
 func TestAddPageRefusals(t *testing.T) {
 	var requests atomic.Int64
 	k := pageChecker(&requests)
@@ -149,7 +149,7 @@ func TestAddPageRefusals(t *testing.T) {
 	}
 }
 
-// R-Q02D-EFZM R-QM0K-ABC4 R-088X-L3LO R-QEP5-ZOVY
+// R-Q02D-EFZM R-QM0K-ABC4 R-088X-L3LO
 func TestAddPageCopiesAndCandidateHistory(t *testing.T) {
 	var requests atomic.Int64
 	k := pageChecker(&requests)

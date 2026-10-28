@@ -1416,7 +1416,7 @@ func TestRunNotificationIsSingleAndOptional(t *testing.T) {
 	}
 }
 
-// R-S35A-G1HS
+// R-QBCU-2WE1
 func TestRunBusyRefusalsEmitNoPassEvents(t *testing.T) {
 	hold := make(chan struct{})
 	f := &runFake{hold: hold, arrived: make(chan struct{}, 1)}
@@ -1452,6 +1452,16 @@ func TestRunBusyRefusalsEmitNoPassEvents(t *testing.T) {
 	if !r.IsError() {
 		t.Fatal("unknown enrich accepted")
 	}
+	for _, name := range []string{"judge", "edit_park_rules", "walk"} {
+		r, _ := h.call(identity.Caller{UserID: "reader", RequestID: "refused-" + name}, name, []any{})
+		if !r.IsError() {
+			t.Fatal(name, "invalid call accepted")
+		}
+	}
+	for _, name := range []string{"parks", "park_rules"} {
+		h.call(identity.Caller{UserID: "reader", RequestID: "non-pass-tool"}, name, map[string]any{})
+	}
+	h.call(identity.Caller{UserID: "reader", RequestID: "non-pass-tool"}, "park", map[string]any{"park": "absent"})
 	h.call(c, "passes", tools.PassesArgs{})
 	h.request("GET", "/", "page-request", nil)
 	close(hold)
@@ -1459,7 +1469,7 @@ func TestRunBusyRefusalsEmitNoPassEvents(t *testing.T) {
 	h.stop()
 	runAssertSilent(t, h)
 	for _, e := range h.telemetry.Events() {
-		if (e.Name == "pass.started" || e.Name == "pass.finished") && (e.RequestID == "refused" || e.RequestID == "skipped-delivery" || e.RequestID == "refused-enrich" || e.RequestID == "page-request") {
+		if (e.Name == "pass.started" || e.Name == "pass.finished") && (strings.HasPrefix(e.RequestID, "refused") || e.RequestID == "skipped-delivery" || e.RequestID == "non-pass-tool" || e.RequestID == "page-request") {
 			t.Fatalf("refusal emitted %v", e)
 		}
 	}
@@ -1781,7 +1791,7 @@ func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	}
 }
 
-// R-CYUH-5YL9
+// R-O8YY-QW5O
 func TestRunUnlistedLegacyProspectList(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
 	makeMCP := h.p.MCP
@@ -1803,7 +1813,7 @@ func TestRunUnlistedLegacyProspectList(t *testing.T) {
 
 	caller := identity.Caller{UserID: "legacy-owner"}
 	list, err := h.client.ListTools(t.Context(), caller)
-	if err != nil || len(list) != len(tools.Catalog()) {
+	if err != nil || len(list) != 23 || len(list) != len(tools.Catalog()) {
 		t.Fatal(list, err)
 	}
 	for i, entry := range tools.Catalog() {

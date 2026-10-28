@@ -144,13 +144,15 @@ type CandidateData struct {
 
 // CandidateView supplies candidate view page data.
 type CandidateView struct {
-	ID, Status, MergedInto, Name                                                                                                                     string
-	Names                                                                                                                                            []string
-	Street, City, State, Zip, County, Phone, Email, WebsiteSource, Website, WebsiteURL, WebsiteTitle, WebsiteWhy, WebsiteChecked, WebsiteCheckedText string
-	People                                                                                                                                           []PersonRow
-	Class                                                                                                                                            string
-	Cargo                                                                                                                                            []string
-	Created, CreatedText, Updated, UpdatedText                                                                                                       string
+	ID, Status, MergedInto, Name                                                                     string
+	Names                                                                                            []string
+	Street, City, State, Zip, County, Phone, Email                                                   string
+	Park                                                                                             *ParkLink
+	WebsiteSource, Website, WebsiteURL, WebsiteTitle, WebsiteWhy, WebsiteChecked, WebsiteCheckedText string
+	People                                                                                           []PersonRow
+	Class                                                                                            string
+	Cargo                                                                                            []string
+	Created, CreatedText, Updated, UpdatedText                                                       string
 }
 
 // PersonRow supplies person row page data.
@@ -211,6 +213,8 @@ type LinkView struct {
 	Names                                                                                                                                    []string
 	Establishment, City, Zip, Year, Employees, Hours, Reason, Confidence, Filed, FiledText, FirstSeen, FirstSeenText, LastSeen, LastSeenText string
 	Gone                                                                                                                                     bool
+	Walk                                                                                                                                     string
+	Park                                                                                                                                     *ParkLink
 }
 
 // RulingView supplies ruling view page data.
@@ -234,6 +238,9 @@ type PassView struct {
 	Runs, RunsFailed, Pages                                                                                          int64
 	Cost                                                                                                             string
 	ParcelsRead, ByLabel, ByValue, ByCandidate, ParksCreated, ParksUpdated, ParksGone, ParksGrown                    int64
+	Circles, Requests, Found, NewCandidates                                                                          int64
+	CeilingReached                                                                                                   bool
+	Parks                                                                                                            []WalkParkRow
 }
 
 // ToolsData supplies tools data page data.
@@ -416,6 +423,7 @@ type RulesView struct {
 	Distance       string
 	MinParcels     int64
 	ValueThreshold string
+	WalkCeiling    int64
 	Counties       []CountyLabels
 }
 
@@ -427,9 +435,12 @@ type CountyLabels struct {
 
 // ParkData supplies one park and its parcels.
 type ParkData struct {
-	Banner  page.Banner
-	Park    ParkView
-	Parcels []ParcelRow
+	Banner          page.Banner
+	Park            ParkView
+	Walks           []WalkRow
+	Places          []PlaceRow
+	FoundCandidates []FoundCandidateRow
+	Parcels         []ParcelRow
 }
 
 // ParkView supplies formatted park detail.
@@ -438,8 +449,9 @@ type ParkView struct {
 	ParcelCount                                              int64
 	BuildingValue, Minutes                                   string
 	GrownFrom                                                int64
-	Walked, WalkedText, WalkRun                              string
-	Found                                                    int64
+	Walked, WalkedText, Walk                                 string
+	Found, NewCandidates                                     int64
+	CeilingReached                                           bool
 	Run, RunPage, Created, CreatedText, Updated, UpdatedText string
 }
 
@@ -449,3 +461,34 @@ type ParcelRow struct {
 	Owners                                 []string
 	Street, City, Zip, BuildingValue, Rule string
 }
+
+// WalkRow supplies one recorded walk of a park.
+type WalkRow struct {
+	Pass, Walked, WalkedText       string
+	Found, NewCandidates, Requests int64
+	Cost                           string
+	CeilingReached                 bool
+}
+
+// WalkParkRow supplies one park in a walk pass.
+type WalkParkRow struct {
+	ID, Name                       string
+	Found, NewCandidates, Requests int64
+	Cost                           string
+	CeilingReached                 bool
+}
+
+// PlaceRow supplies one place returned by a walk.
+type PlaceRow struct {
+	PlaceID, Name, Address, PrimaryType, Website, Phone, Walk, Candidate string
+	New                                                                  bool
+}
+
+// FoundCandidateRow supplies a candidate found in a park.
+type FoundCandidateRow struct {
+	ID, Name, Status string
+	New              bool
+}
+
+// ParkLink links a candidate or places link to its park.
+type ParkLink struct{ ID, Name string }

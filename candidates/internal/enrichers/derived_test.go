@@ -11,6 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/scrapes"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
+	"github.com/ikigenba/ikigenba/candidates/internal/places"
 	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
@@ -64,7 +65,7 @@ func TestDriveMinutesValid(t *testing.T) {
 	}
 }
 
-// R-Z4DN-M75K
+// R-F7H0-LOM5
 func TestLinkFactsDerive(t *testing.T) {
 	date := func(v string) time.Time {
 		t.Helper()
@@ -84,6 +85,10 @@ func TestLinkFactsDerive(t *testing.T) {
 		Filed:      time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC),
 	}}
 	noScraper := enrichers.Link{Reading: sources.Reading{Category: sources.CategoryConstruction, GovernmentMatch: "x"}}
+	pl := enrichers.Link{Scraper: places.Name, Reading: sources.Reading{Category: sources.CategoryRetail}}
+	plGone := pl
+	plGone.Gone = true
+	retail := enrichers.Category{Name: sources.CategoryRetail, Source: places.Name}
 	government := enrichers.Category{Name: sources.CategoryGovernment, Source: "name"}
 	construction := enrichers.Category{Name: sources.CategoryConstruction, Source: ppp.Name}
 	trucking := enrichers.Category{Name: sources.CategoryTrucking, Source: fmcsa.Name}
@@ -94,6 +99,15 @@ func TestLinkFactsDerive(t *testing.T) {
 		categories               []enrichers.Category
 	}{
 		{"none", nil, "", "", "", []enrichers.Category{}},
+		{"places only", []enrichers.Link{pl}, "", "", "", []enrichers.Category{retail}},
+		{"places duplicate", []enrichers.Link{pl, pl}, "", "", "", []enrichers.Category{retail}},
+		{"places gone", []enrichers.Link{plGone}, "", "", "", []enrichers.Category{}},
+		{"live and gone places", []enrichers.Link{pl, plGone}, "", "", "", []enrichers.Category{retail}},
+		{"places beside ppp", []enrichers.Link{pl, p}, "2018-04-09", "2020-04-09", "", []enrichers.Category{construction}},
+		{"places beside gone ppp", []enrichers.Link{pl, pg}, "", "", "", []enrichers.Category{}},
+		{"gone ppp before places", []enrichers.Link{pg, pl}, "", "", "", []enrichers.Category{}},
+		{"places beside unclassified fmcsa", []enrichers.Link{{Scraper: fmcsa.Name}, pl}, "", "", "", []enrichers.Category{}},
+		{"places beside unknown scraper", []enrichers.Link{pl, {}}, "", "", "", []enrichers.Category{}},
 		{"gone only", []enrichers.Link{gone}, "", "", "", []enrichers.Category{}},
 		{"ppp", []enrichers.Link{p}, "2018-04-09", "2020-04-09", "", []enrichers.Category{construction}},
 		{"mixed", []enrichers.Link{f, p}, "2015-03-01", "2025-06-01", "", []enrichers.Category{construction, trucking}},
@@ -135,7 +149,7 @@ func TestLinkFactsDerive(t *testing.T) {
 	}
 }
 
-// R-Z4DN-M75K
+// R-F7H0-LOM5
 func TestLinkFactsGovernmentCategories(t *testing.T) {
 	government := enrichers.Category{Name: sources.CategoryGovernment, Source: "name"}
 	education := enrichers.Category{Name: sources.CategoryEducation, Source: "name"}
@@ -171,7 +185,7 @@ func TestLinkFactsGovernmentCategories(t *testing.T) {
 	}
 }
 
-// R-Z5LJ-ZYW9
+// R-FDKI-IJBM
 func TestLinkFactsFleet(t *testing.T) {
 	first := enrichers.Link{Scraper: fmcsa.Name, Reading: sources.Reading{FleetVerdict: sources.FleetFail, PowerUnits: count(1), Drivers: count(2)}}
 	second := enrichers.Link{Scraper: fmcsa.Name, Reading: sources.Reading{FleetVerdict: sources.FleetPass, PowerUnits: count(5), Drivers: count(6)}}
@@ -287,7 +301,7 @@ func assertFleet(t *testing.T, links []enrichers.Link, verdict string, units, dr
 	}
 }
 
-// R-Z6TG-DQMY
+// R-FESE-WB2B
 func TestSourceCategoriesFollowCarrierAuthority(t *testing.T) {
 	for _, tc := range []struct {
 		name, class  string

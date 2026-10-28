@@ -251,7 +251,7 @@ func TestRunPassTimersHavePermittedDurationsAndScope(t *testing.T) {
 	}
 }
 
-// R-S35A-G1HS
+// R-QBCU-2WE1
 func TestRunBusyJudgeDeliveryEmitsNoPassEvents(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
 	h.start()

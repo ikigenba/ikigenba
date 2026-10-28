@@ -44,7 +44,7 @@ func passRow(p store.Pass) PassRow {
 	return v
 }
 func passView(p store.Pass, sp string) PassView {
-	v := PassView{ID: p.ID, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Status: p.Status, Reason: p.Reason, Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged, Derived: p.Derived, Due: p.Due, Fetched: p.Fetched, HTTPS: p.HTTPS, HTTP: p.HTTP, None: p.None}
+	v := PassView{Parks: []WalkParkRow{}, Circles: p.Circles, Requests: p.Requests, Found: p.Found, NewCandidates: p.NewCandidates, CeilingReached: p.CeilingReached, ID: p.ID, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Status: p.Status, Reason: p.Reason, Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged, Derived: p.Derived, Due: p.Due, Fetched: p.Fetched, HTTPS: p.HTTPS, HTTP: p.HTTP, None: p.None}
 	v.ParcelsRead, v.ByLabel, v.ByValue, v.ByCandidate = p.ParcelsRead, p.ByLabel, p.ByValue, p.ByCandidate
 	v.ParksCreated, v.ParksUpdated, v.ParksGone, v.ParksGrown = p.ParksCreated, p.ParksUpdated, p.ParksGone, p.ParksGrown
 	v.Target, v.EnrichKind, v.Runs, v.RunsFailed, v.Pages, v.Cost = p.Target, p.EnrichKind, p.Runs, p.RunsFailed, p.Pages, costText(p.Cost)
@@ -54,7 +54,7 @@ func passView(p store.Pass, sp string) PassView {
 		v.TargetPage = "/candidates/" + p.Target
 	}
 	switch p.Origin {
-	case store.OriginIngest, store.OriginJudge, store.OriginEnrich, store.OriginRules:
+	case store.OriginIngest, store.OriginJudge, store.OriginEnrich, store.OriginRules, store.OriginWalk:
 		v.StartedBy = p.UserEmail
 		if v.StartedBy == "" {
 			v.StartedBy = p.UserID
@@ -196,7 +196,7 @@ func estimateView(e sources.Estimate) EstimateView {
 	return v
 }
 func linkView(l store.Link, sp string) LinkView {
-	v := LinkView{Scraper: l.Scraper, SourceID: l.SourceID, Run: l.Run, RowPage: urls.RowPage(urls.Scrapes(sp), l.Run, l.SourceID), EIN: l.Reading.EINKey, Names: append([]string{}, l.Reading.Names...), Name: l.Reading.Name, Establishment: l.Reading.Establishment, Year: integer(l.Reading.Year), Employees: integer(l.Reading.Employees), Hours: integer(l.Reading.Hours), City: l.Reading.City, Zip: l.Reading.Zip, Reason: l.Reason, Confidence: two(l.Confidence), Filed: date(l.Reading.Filed), FiledText: date(l.Reading.Filed), Gone: l.Gone}
+	v := LinkView{Walk: l.Walk, Scraper: l.Scraper, SourceID: l.SourceID, Run: l.Run, RowPage: urls.RowPage(urls.Scrapes(sp), l.Run, l.SourceID), EIN: l.Reading.EINKey, Names: append([]string{}, l.Reading.Names...), Name: l.Reading.Name, Establishment: l.Reading.Establishment, Year: integer(l.Reading.Year), Employees: integer(l.Reading.Employees), Hours: integer(l.Reading.Hours), City: l.Reading.City, Zip: l.Reading.Zip, Reason: l.Reason, Confidence: two(l.Confidence), Filed: date(l.Reading.Filed), FiledText: date(l.Reading.Filed), Gone: l.Gone}
 	v.FirstSeen, v.FirstSeenText = stamp(l.FirstSeen, MinuteLayout)
 	v.LastSeen, v.LastSeenText = stamp(l.LastSeen, MinuteLayout)
 	return v

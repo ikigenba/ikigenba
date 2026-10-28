@@ -24,16 +24,20 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/prompts"
 	"github.com/ikigenba/ikigenba/appkit/scrapes"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	candidates "github.com/ikigenba/ikigenba/candidates"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
+	"github.com/ikigenba/ikigenba/candidates/internal/places"
 	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
+	"github.com/ikigenba/ikigenba/candidates/internal/routes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 type random struct{ n uint64 }
@@ -83,13 +87,66 @@ type fixture struct {
 	changed chan struct{}
 }
 
+// Tests copy this closed, empty database into their own temporary directories.
+var fixtureDatabase []byte
+
+func TestMain(m *testing.M) {
+	var err error
+	fixtureDatabase, err = prepareFixtureDatabase()
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
+
+func prepareFixtureDatabase() (data []byte, err error) {
+	dir, err := os.MkdirTemp("", "scratch.")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, os.RemoveAll(dir)) }()
+	path := filepath.Join(dir, "candidates.db")
+	d, err := db.Open(context.Background(), db.Config{Path: path, Migrations: candidates.Migrations(), Now: func() time.Time { return time.Unix(100000, 0) }, Service: "candidates"})
+	if err != nil {
+		return nil, err
+	}
+	if err = d.Close(); err != nil {
+		return nil, err
+	}
+	for _, suffix := range []string{"-wal", "-shm"} {
+		_, err = os.Stat(path + suffix)
+		if err == nil {
+			return nil, fmt.Errorf("closed fixture sidecar %s still exists", suffix)
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	data, err = root.ReadFile("candidates.db")
+	return data, errors.Join(err, root.Close())
+}
+
+// R-O2VG-U1G7: the positional Config uses the whole declared client seam.
 func newFixture(t *testing.T, h http.HandlerFunc, available bool) *fixture {
 	t.Helper()
 	f := &fixture{t: t, tc: &telemetry.Capture{}, ec: &events.Capture{}, changed: make(chan struct{}, 1)}
 	now := func() time.Time { return time.Unix(100000, 0) }
 	pause := func(context.Context, time.Duration) {}
-	var err error
-	f.d, err = db.Open(context.Background(), db.Config{Path: filepath.Join(t.TempDir(), "candidates.db"), Migrations: candidates.Migrations(), Now: now, Service: "candidates"})
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeErr := root.WriteFile("candidates.db", fixtureDatabase, 0600)
+	if err = errors.Join(writeErr, root.Close()); err != nil {
+		t.Fatal(err)
+	}
+	f.d, err = db.Open(context.Background(), db.Config{Path: filepath.Join(dir, "candidates.db"), Migrations: candidates.Migrations(), Now: now, Service: "candidates"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +178,7 @@ func newFixture(t *testing.T, h http.HandlerFunc, available bool) *fixture {
 		sc = scrapes.NewClient(scrapes.ClientConfig{Service: services.Entry{Name: "scrapes", Socket: sock}, Telemetry: f.w})
 	}
 	f.sc = sc
-	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), sc, nil, f.w, f.em, nil, nil, nil, nil})
+	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), sc, (*prompts.Client)(nil), f.w, f.em, (*website.Checker)(nil), (*routes.Client)(nil), (*places.Client)(nil), (func(time.Duration) <-chan time.Time)(nil), io.Writer(nil)})
 	t.Cleanup(func() {
 		f.eng.Drain(context.Background())
 		f.em.Shutdown(context.Background())
@@ -172,6 +229,10 @@ func (f *fixture) endedWithin(id string, budget time.Duration) store.Pass {
 			if p.Status == store.StatusRunning {
 				f.t.Fatal("ending event preceded stored ending")
 			}
+			// R-PFNG-4V3Z: successful non-walk passes spend no walk work.
+			if p.Status == store.StatusDone && p.Kind != store.KindWalk && (p.ParksWalked != 0 || p.Circles != 0 || p.Requests != 0 || p.Found != 0 || p.NewCandidates != 0) {
+				f.t.Fatal("non-walk pass carried walk counts", p)
+			}
 			f.flush()
 			return p
 		}
@@ -208,7 +269,7 @@ func assertRefusal(t *testing.T, p store.Pass, err error, word string) {
 	}
 }
 
-// R-SBQH-7IGY R-84KF-D8N0  R-DK67-BT0K R-DMM0-3CHY
+// R-SBQH-7IGY R-84KF-D8N0  R-F517-U54R R-PJB5-A6C2
 func TestRecordContract(t *testing.T) {
 	t.Parallel()
 	if passes.BatchSize != 500 || passes.Busy == "" || passes.Stopping == "" || passes.Busy == passes.Stopping || strings.Contains(passes.Busy+passes.Stopping, "\n") {
@@ -225,7 +286,7 @@ func TestRecordContract(t *testing.T) {
 	start := time.Date(2001, 2, 3, 4, 5, 6, 0, time.FixedZone("east", 3600))
 	p := store.Pass{ID: "id", Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Status: store.StatusDone, Reason: "reason", Started: start, Finished: start.Add(time.Hour), Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Derived: 15, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14, UserID: "user", UserEmail: "email"}
 	r := passes.RecordOf(p)
-	want := passes.Record{"id", store.KindIngest, store.OriginIngest, store.TriggerIngest, "", "", "", "", store.StatusDone, "reason", start.UTC().Format(time.RFC3339), p.Finished.UTC().Format(time.RFC3339), 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 10, 11, 12, 13, 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "user", "email"}
+	want := passes.Record{"id", store.KindIngest, store.OriginIngest, store.TriggerIngest, "", "", "", "", store.StatusDone, "reason", start.UTC().Format(time.RFC3339), p.Finished.UTC().Format(time.RFC3339), 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 10, 11, 12, 13, 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, "user", "email"}
 	if r != want {
 		t.Fatalf("%#v", r)
 	}
@@ -233,7 +294,7 @@ func TestRecordContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := `{"id":"id","kind":"ingest","origin":"ingest","trigger":"ingest","status":"done","reason":"reason","started":"2001-02-03T03:05:06Z","finished":"2001-02-03T04:05:06Z","rows":1,"new":2,"changed":3,"unchanged":4,"gone":5,"created":6,"linked":7,"judged":8,"unranged":9,"derived":15,"due":10,"fetched":11,"https":12,"http":13,"none":14,"runs":0,"runs_failed":0,"pages":0,"cost":0,"parcels_read":0,"by_label":0,"by_value":0,"by_candidate":0,"parks_created":0,"parks_updated":0,"parks_gone":0,"parks_grown":0,"user":"user","email":"email"}`
+	expected := `{"id":"id","kind":"ingest","origin":"ingest","trigger":"ingest","status":"done","reason":"reason","started":"2001-02-03T03:05:06Z","finished":"2001-02-03T04:05:06Z","rows":1,"new":2,"changed":3,"unchanged":4,"gone":5,"created":6,"linked":7,"judged":8,"unranged":9,"derived":15,"due":10,"fetched":11,"https":12,"http":13,"none":14,"runs":0,"runs_failed":0,"pages":0,"cost":0,"parcels_read":0,"by_label":0,"by_value":0,"by_candidate":0,"parks_created":0,"parks_updated":0,"parks_gone":0,"parks_grown":0,"parks_walked":0,"circles":0,"requests":0,"found":0,"new_candidates":0,"ceiling_reached":false,"user":"user","email":"email"}`
 	if string(got) != expected {
 		t.Fatalf("%s", got)
 	}
@@ -299,7 +360,7 @@ func TestRefusals(t *testing.T) {
 	}
 }
 
-// R-4XES-EI5W R-3GUX-8I1H R-2Z7P-JEYA R-DNTW-H48N
+// R-4XES-EI5W R-Q8X1-BCWN R-2Z7P-JEYA R-DNTW-H48N
 func TestSkippedAndHandlers(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -323,13 +384,13 @@ func TestSkippedAndHandlers(t *testing.T) {
 	}
 	r := httptest.NewRecorder()
 	events.DeclarationsHandler(f.em, passes.New(passes.Config{Sources: sources.New(fmcsa.New(), ppp.New())}).Handlers()).ServeHTTP(r, httptest.NewRequest(http.MethodGet, "/declarations", nil))
-	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","target","enrich_kind","status","reason","parcel_run","rows","new","changed","unchanged","gone","created","linked","judged","unranged","derived","due","fetched","https","http","none","runs","runs_failed","pages","cost","parcels_read","by_label","by_value","by_candidate","parks_created","parks_updated","parks_gone","parks_grown"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger","target","enrich_kind"]}],"accepts":["campaign.member.added","campaign.member.rejected","campaign.piece.delivered","cron.judge_candidates.fired","scrape.finished"]}`
+	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","target","enrich_kind","status","reason","parcel_run","rows","new","changed","unchanged","gone","created","linked","judged","unranged","derived","due","fetched","https","http","none","runs","runs_failed","pages","cost","parcels_read","by_label","by_value","by_candidate","parks_created","parks_updated","parks_gone","parks_grown","parks_walked","circles","requests","found","new_candidates"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger","target","enrich_kind"]}],"accepts":["campaign.member.added","campaign.member.rejected","campaign.piece.delivered","cron.judge_candidates.fired","scrape.finished"]}`
 	if r.Code != 200 || r.Body.String() != want {
 		t.Fatal(r.Code, r.Body.String())
 	}
 }
 
-// R-YRFA-2BM8 R-JSZX-9PKC R-WH41-WVSF R-YSN6-G3CX
+// R-YRFA-2BM8 R-JSZX-9PKC R-PLQY-1PTG R-YSN6-G3CX
 func TestDeliveryRecordAndRedelivery(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"missing", "unfinished", "unavailable", "malformed", "nil", "done"} {
@@ -494,7 +555,7 @@ func TestFullIngestBackgroundIdentityAndEvents(t *testing.T) {
 	}
 }
 
-// R-2ZSB-VPNR R-3284-N955 R-3QEZ-TBSF R-Z3M9-W116 R-WT12-CHE3
+// R-PD7N-DBML R-PFNG-4V3Z R-3QEZ-TBSF R-Z3M9-W116 R-WT12-CHE3
 func TestIngestAndFullIngest(t *testing.T) {
 	t.Parallel()
 	var stateMu sync.Mutex
@@ -606,7 +667,7 @@ func TestIngestAndFullIngest(t *testing.T) {
 	}
 }
 
-// R-35VT-SKD8 R-3WIH-Q6HW R-384I-2RO0 R-3108-9HEG
+// R-Q41F-S9XV R-3WIH-Q6HW R-384I-2RO0 R-PEFJ-R3DA
 func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	t.Parallel()
 	released, firstBatch := make(chan struct{}), make(chan struct{})
@@ -658,6 +719,30 @@ func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	if still.Status != store.StatusRunning {
 		t.Fatal(still)
 	}
+	attached := map[string]store.Link{}
+	streamed, err := f.st.ListCandidates(context.Background(), store.CandidateFilter{}, "", "", 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range streamed {
+		links, err := f.st.Links(context.Background(), c.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, l := range links {
+			if l.SourceID != "prior" {
+				if l.Scraper != "fmcsa" || l.Run != "run_a" {
+					t.Fatal("link not attached while rows held", l)
+				}
+				attached[l.SourceID] = l
+			}
+		}
+	}
+	for i := 0; i < passes.BatchSize; i++ {
+		if _, ok := attached[fmt.Sprint(i)]; !ok {
+			t.Fatal("streamed row lacks link before release", i)
+		}
+	}
 	close(released)
 	end := f.ended(p.ID)
 	if end.Status != store.StatusFailed || end.Reason != store.ReasonScrapes || failedCounts(end) != (store.Counts{}) {
@@ -685,7 +770,7 @@ func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	}
 }
 
-// R-384I-2RO0 R-3WIH-Q6HW R-3108-9HEG
+// R-384I-2RO0 R-3WIH-Q6HW R-PEFJ-R3DA
 func TestFailedReads(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"short", "500", "malformed", "not_done", "missing_current", "dead"} {
@@ -742,7 +827,7 @@ func TestFailedReads(t *testing.T) {
 	}
 }
 
-// R-373Q-6C3X R-ZH16-3I6T R-3108-9HEG R-YOZH-AS4U
+// R-373Q-6C3X R-ZH16-3I6T R-PEFJ-R3DA R-YOZH-AS4U
 func TestDrainCancelsReadsAndPendingDelivery(t *testing.T) {
 	t.Parallel()
 	for _, which := range []string{"rows", "record"} {
@@ -872,7 +957,7 @@ func TestRecoverAndUnrecordableEnding(t *testing.T) {
 	})
 }
 
-// R-DTXE-DYY4 R-3NZ7-1SB1 R-SGG7-YQ5M R-WH41-WVSF
+// R-DTXE-DYY4 R-3NZ7-1SB1 R-SGG7-YQ5M R-PLQY-1PTG
 func TestConcurrentStarts(t *testing.T) {
 	t.Parallel()
 	entered := make(chan struct{}, 32)
@@ -935,7 +1020,7 @@ func (r *failCandidateRandom) Read(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// R-3108-9HEG
+// R-PEFJ-R3DA
 func TestStoreFailureReason(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -947,7 +1032,7 @@ func TestStoreFailureReason(t *testing.T) {
 	}, true)
 	f.eng.Drain(context.Background())
 	f.st = store.New(f.d, store.Config{Now: func() time.Time { return time.Unix(100000, 0) }, Rand: &failCandidateRandom{}})
-	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), f.sc, nil, f.w, f.em, nil, nil, nil, nil})
+	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), f.sc, nil, f.w, f.em, nil, nil, nil, nil, nil})
 	p, err := f.eng.Ingest(context.Background(), identity.Caller{UserID: "owner"}, "")
 	if err != nil {
 		t.Fatal(err)
@@ -979,7 +1064,7 @@ func TestRefusalPrecedence(t *testing.T) {
 	}
 }
 
-// R-253P-U3XS R-DP1S-UVZC R-WH41-WVSF
+// R-253P-U3XS R-DP1S-UVZC R-PLQY-1PTG
 func TestDeliveryOutlivesStartingContext(t *testing.T) {
 	t.Parallel()
 	for _, alreadyCancelled := range []bool{false, true} {
@@ -1045,7 +1130,7 @@ func TestDrainDeadlineWhileEndingHeld(t *testing.T) {
 		}
 		return time.Unix(100000, 0)
 	}, Rand: &random{}})
-	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), f.sc, nil, f.w, f.em, nil, nil, nil, nil})
+	f.eng = passes.New(passes.Config{f.st, sources.New(fmcsa.New()), f.sc, nil, f.w, f.em, nil, nil, nil, nil, nil})
 	p, err := f.eng.Ingest(context.Background(), identity.Caller{UserID: "owner"}, "")
 	if err != nil {
 		t.Fatal(err)
@@ -1103,5 +1188,5 @@ func TestRecoverSettlesActivePass(t *testing.T) {
 }
 
 func failedCounts(p store.Pass) store.Counts {
-	return store.Counts{Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged, Derived: p.Derived, Due: p.Due, Fetched: p.Fetched, HTTPS: p.HTTPS, HTTP: p.HTTP, None: p.None}
+	return store.Counts{Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged, Derived: p.Derived, Due: p.Due, Fetched: p.Fetched, HTTPS: p.HTTPS, HTTP: p.HTTP, None: p.None, Runs: p.Runs, RunsFailed: p.RunsFailed, Pages: p.Pages, Cost: p.Cost, ParcelsRead: p.ParcelsRead, ByLabel: p.ByLabel, ByValue: p.ByValue, ByCandidate: p.ByCandidate, ParksCreated: p.ParksCreated, ParksUpdated: p.ParksUpdated, ParksGone: p.ParksGone, ParksGrown: p.ParksGrown, ParksWalked: p.ParksWalked, Circles: p.Circles, Requests: p.Requests, Found: p.Found, NewCandidates: p.NewCandidates}
 }

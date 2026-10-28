@@ -102,7 +102,7 @@ func TestTrendFiltersProjection(t *testing.T) {
 	}
 }
 
-// R-5T90-0IHO
+// R-J14U-H32I
 func TestTrendTemplateStatesAndValues(t *testing.T) {
 	set, err := Load()
 	if err != nil {

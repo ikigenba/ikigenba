@@ -54,7 +54,7 @@ func (e *Engine) follow(ctx context.Context, starter store.Pass) {
 		return
 	}
 	kind := ""
-	if starter.Kind == store.KindIngest && (starter.Origin != store.OriginIngest || starter.Scraper != "") {
+	if starter.Kind == store.KindWalk || starter.Kind == store.KindIngest && (starter.Origin != store.OriginIngest || starter.Scraper != "") {
 		kind = store.KindEnrich
 	}
 	if (starter.Kind == store.KindEnrich || starter.Kind == store.KindEnrichTarget) && starter.Derived+starter.HTTPS+starter.HTTP+starter.None > 0 {

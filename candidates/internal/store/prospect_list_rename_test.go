@@ -31,7 +31,7 @@ func TestMapLegacyListID(t *testing.T) {
 	}
 }
 
-// R-4Y88-DBQQ R-4ZG4-R3HF R-50O1-4V84
+// R-OHI9-FACJ R-OIQ5-T238 R-P28J-XDYC
 func TestIngestPassScopesDistinguishToolAndDelivery(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)

@@ -194,7 +194,16 @@ func Handler(cfg Config) http.Handler {
 				return
 			}
 			b.Trail = []page.Level{{Name: pid, URL: "/passes/" + pid}}
-			cfg.Pages.Write(w, r, 200, "pass", PassData{b, passView(p, cfg.ServicesPath)})
+			v := passView(p, cfg.ServicesPath)
+			walks, err := cfg.Store.PassWalks(r.Context(), p.ID)
+			if err != nil {
+				fail()
+				return
+			}
+			for _, x := range walks {
+				v.Parks = append(v.Parks, walkParkRow(x))
+			}
+			cfg.Pages.Write(w, r, 200, "pass", PassData{b, v})
 		case textPage:
 			c, err := cfg.Store.GetCandidate(r.Context(), pageID)
 			if errors.Is(err, store.ErrNotFound) {
@@ -245,6 +254,12 @@ func Handler(cfg Config) http.Handler {
 			}
 			if c.Status != store.StatusMerged {
 				d.Enrichments = &EnrichmentsView{}
+				park, err := cfg.Store.CandidatePark(r.Context(), cid)
+				if err != nil {
+					fail()
+					return
+				}
+				d.Candidate.Park = parkLink(r.Context(), cfg.Store, park)
 				uses, err := cfg.Store.CampaignUses(r.Context(), cid)
 				if err != nil {
 					fail()
@@ -313,7 +328,9 @@ func Handler(cfg Config) http.Handler {
 					return
 				}
 				for _, v := range links {
-					d.Links = append(d.Links, linkView(v, cfg.ServicesPath))
+					row := linkView(v, cfg.ServicesPath)
+					row.Park = parkLink(r.Context(), cfg.Store, v.Park)
+					d.Links = append(d.Links, row)
 				}
 			}
 			b.Trail = []page.Level{{Name: cid, URL: "/candidates/" + cid}}

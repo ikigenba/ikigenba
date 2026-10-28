@@ -88,7 +88,7 @@ func TestWebsiteSearchShapes(t *testing.T) {
 	}
 }
 
-// R-MXG4-Y30D R-UAF9-M0JA
+// R-MXG4-Y30D R-FCCM-4RKX
 func TestWebsiteSearchInputs(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	s := enrichers.Subject{ID: "candidate", Name: "Acme", City: "Sandstone", State: "MN", Street: "Main", Zip: "zip", Phone: "phone", Email: "Ops@Acme.test", Links: []enrichers.Link{{Reading: sources.Reading{People: []sources.Person{{Name: "Ann", Role: "owner"}, {Name: "Bob"}, {Name: "Ann", Role: "owner"}}}}, {Gone: true, Reading: sources.Reading{People: []sources.Person{{Name: "Gone"}}}}}, Facts: &enrichers.LinkFound{Categories: []enrichers.Category{{Name: "omit", Source: enrichers.KindBrief}, {Name: "keep", Source: "source"}}}}

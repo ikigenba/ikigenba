@@ -33,10 +33,10 @@ func TestCandidateLinkEIN(t *testing.T) {
 	}
 }
 
-// R-D3HN-03CW
+// R-R4MF-9E6P
 func TestLinkPositionalShape(t *testing.T) {
-	v := tools.Link{"scraper", "source", "run", "digest", "name", []string{"alias"}, "street", "city", "state", "zip", "county", "phone", "email", []tools.Person{{Name: "person", Role: "role"}}, "class", []string{"cargo"}, "filed", "fleet", "name-key", "phone-key", "domain-key", "ein", "establishment", new(int64(2024)), new(int64(23)), new(int64(47840)), "reason", .75, "first", "last", true}
-	if v.Scraper != "scraper" || v.SourceID != "source" || v.Run != "run" || v.Digest != "digest" || v.Name != "name" || v.Names[0] != "alias" || v.Street != "street" || v.City != "city" || v.State != "state" || v.Zip != "zip" || v.County != "county" || v.Phone != "phone" || v.Email != "email" || v.People[0].Name != "person" || v.Class != "class" || v.Cargo[0] != "cargo" || v.Filed != "filed" || v.FleetVerdict != "fleet" || v.NameKey != "name-key" || v.PhoneKey != "phone-key" || v.DomainKey != "domain-key" || v.EIN != "ein" || v.Establishment != "establishment" || *v.Year != 2024 || *v.Employees != 23 || *v.Hours != 47840 || v.Reason != "reason" || v.Confidence != .75 || v.FirstSeen != "first" || v.LastSeen != "last" || !v.Gone {
+	v := tools.Link{"scraper", "source", "run", "digest", "name", []string{"alias"}, "street", "city", "state", "zip", "county", "phone", "email", []tools.Person{{Name: "person", Role: "role"}}, "class", []string{"cargo"}, "filed", "fleet", "name-key", "phone-key", "domain-key", "ein", "establishment", new(int64(2024)), new(int64(23)), new(int64(47840)), "reason", .75, "first", "last", true, "walk", "park"}
+	if v.Scraper != "scraper" || v.SourceID != "source" || v.Run != "run" || v.Digest != "digest" || v.Name != "name" || v.Names[0] != "alias" || v.Street != "street" || v.City != "city" || v.State != "state" || v.Zip != "zip" || v.County != "county" || v.Phone != "phone" || v.Email != "email" || v.People[0].Name != "person" || v.Class != "class" || v.Cargo[0] != "cargo" || v.Filed != "filed" || v.FleetVerdict != "fleet" || v.NameKey != "name-key" || v.PhoneKey != "phone-key" || v.DomainKey != "domain-key" || v.EIN != "ein" || v.Establishment != "establishment" || *v.Year != 2024 || *v.Employees != 23 || *v.Hours != 47840 || v.Reason != "reason" || v.Confidence != .75 || v.FirstSeen != "first" || v.LastSeen != "last" || !v.Gone || v.Walk != "walk" || v.Park != "park" {
 		t.Fatal(v)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
+	"github.com/ikigenba/ikigenba/candidates/internal/places"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
@@ -27,7 +28,7 @@ func refresh(r *records, t time.Time) {
 		if c.Status != StatusActive {
 			continue
 		}
-		ls := linksFor(r, id)
+		ls := displayLinks(linksFor(r, id))
 		if len(ls) == 0 {
 			continue
 		}
@@ -224,7 +225,7 @@ func (s *Store) MarkGone(ctx context.Context, scraper, run, after string, n int)
 	var last string
 	err := unreachable(s.retryUnit(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		count, last = Counts{}, ""
-		if scraper == "" || run == "" || n < 1 {
+		if scraper == "" || scraper == places.Name || run == "" || n < 1 {
 			return ErrUnreachable
 		}
 		ls, err := readRecords[Link](ctx, tx, "links", linkColumns, " WHERE scraper=? AND source_id>? ORDER BY source_id LIMIT ?", scraper, after, n)
@@ -421,4 +422,17 @@ func (s *Store) Decide(ctx context.Context, d Ruling) (Ruling, []Candidate, erro
 		return Ruling{}, nil, err
 	}
 	return out, cs, nil
+}
+
+func displayLinks(ls []Link) []Link {
+	out := []Link{}
+	for _, l := range ls {
+		if l.Scraper != places.Name {
+			out = append(out, l)
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	return ls
 }

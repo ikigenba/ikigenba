@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-OTPV-DHNQ R-4X0B-ZK01
+// R-OTPV-DHNQ R-OGAD-1ILU
 func TestStoredRecordShapes(t *testing.T) {
 	n, confidence := int64(3), 0.8
 	a := store.Judgments{Candidate: "candidate", Operating: &confidence, OperatingKey: 800000, Evidence: []sources.Evidence{{Weight: confidence}}, RevenueLow: &n, RevenueHigh: &n, RevenueConfidence: &confidence, Excluded: true, Rules: sources.Rules, Calculated: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
@@ -33,7 +33,7 @@ func TestStoredRecordShapes(t *testing.T) {
 	}(a)
 	contractEqual(t, store.Judgments(shaped), a)
 	counts := store.Counts{Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14}
-	contractEqual(t, store.Counts(struct{ Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None, Runs, RunsFailed, Pages, Cost, ParcelsRead, ByLabel, ByValue, ByCandidate, ParksCreated, ParksUpdated, ParksGone, ParksGrown int64 }(counts)), counts)
+	contractEqual(t, store.Counts(struct{ Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None, Runs, RunsFailed, Pages, Cost, ParcelsRead, ByLabel, ByValue, ByCandidate, ParksCreated, ParksUpdated, ParksGone, ParksGrown, ParksWalked, Circles, Requests, Found, NewCandidates int64 }(counts)), counts)
 	o := store.Observation{Scraper: "source", SourceID: "row", Digest: "digest", Reading: sources.Reading{Name: "business"}}
 	contractEqual(t, store.Observation(struct {
 		Scraper, SourceID, Digest string

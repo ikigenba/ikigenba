@@ -17,6 +17,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/parks"
+	"github.com/ikigenba/ikigenba/candidates/internal/places"
 	"github.com/ikigenba/ikigenba/candidates/internal/routes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
@@ -34,6 +35,7 @@ type Config struct {
 	Events    *events.Emitter
 	Website   *website.Checker
 	Routes    *routes.Client
+	Places    *places.Client
 	After     func(time.Duration) <-chan time.Time
 	Stderr    io.Writer
 }

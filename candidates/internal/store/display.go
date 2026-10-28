@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/ikigenba/ikigenba/candidates/internal/places"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
@@ -184,11 +185,20 @@ type displayTracker struct {
 	cargo        map[string]int
 	changed      bool
 	fields       displayFields
+	ordinary     bool
 }
 
 func newDisplayTracker(r *records, id string) *displayTracker {
 	d := &displayTracker{records: r, id: id, mentions: map[string]*displayTree{}, cargo: map[string]int{}, fields: fieldsCandidate(r.candidates[id])}
 	for _, l := range r.links {
+		if l.Scraper != places.Name {
+			d.ordinary = true
+		}
+	}
+	for _, l := range r.links {
+		if d.ordinary && l.Scraper == places.Name {
+			continue
+		}
 		d.links = treeInsert(d.links, orderLink(l))
 		d.updateGiving(l, true)
 		for name, key := range readingNames(l) {
@@ -204,6 +214,26 @@ func newDisplayTracker(r *records, id string) *displayTracker {
 	return d
 }
 func (d *displayTracker) apply(l Link) {
+	if d.ordinary && l.Scraper == places.Name {
+		d.records.links[sources.SourceKey(l.Scraper, l.SourceID)] = l
+		return
+	}
+	if !d.ordinary && l.Scraper != places.Name && len(d.records.links) > 0 {
+		d.records.links[sources.SourceKey(l.Scraper, l.SourceID)] = l
+		next := newDisplayTracker(d.records, d.id)
+		old := d.records.candidates[d.id]
+		refresh(d.records, old.Updated)
+		current := d.records.candidates[d.id]
+		d.records.candidates[d.id] = old
+		next.fields = fieldsCandidate(current)
+		next.changed = d.changed || !reflect.DeepEqual(old, current)
+		*d = *next
+		return
+	}
+	if l.Scraper != places.Name {
+		d.ordinary = true
+	}
+
 	source := sources.SourceKey(l.Scraper, l.SourceID)
 	old, exists := d.records.links[source]
 	oldNames, newNames := readingNames(old), readingNames(l)

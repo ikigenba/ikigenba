@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -65,10 +66,57 @@ type contractFixture struct {
 	s          *store.Store
 }
 
+var contractTemplateBytes []byte
+
+func TestMain(m *testing.M) {
+	if err := prepareContractTemplate(); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "store tests: prepare database fixture:", err)
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
+
+func prepareContractTemplate() (err error) {
+	dir, err := os.MkdirTemp("", "scratch.")
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, os.RemoveAll(dir)) }()
+	path := filepath.Join(dir, "candidates.db")
+	d, err := db.Open(context.Background(), db.Config{Path: path, Migrations: candidates.Migrations(), Now: func() time.Time {
+		return time.Date(2030, 4, 5, 6, 7, 8, 999, time.FixedZone("fixture", 3600))
+	}})
+	if err != nil {
+		return err
+	}
+	if err = d.Close(); err != nil {
+		return err
+	}
+	for _, suffix := range []string{"-wal", "-shm"} {
+		if _, err = os.Stat(path + suffix); err == nil {
+			return fmt.Errorf("closed fixture sidecar %s remains", suffix)
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("closed fixture sidecar %s: %w", suffix, err)
+		}
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	contractTemplateBytes, err = root.ReadFile("candidates.db")
+	return errors.Join(err, root.Close())
+}
+
 // Construct the published store using its injected dependencies.
 func contractDB(t *testing.T) *contractFixture {
 	t.Helper()
-	f := &contractFixture{t: t, path: filepath.Join(t.TempDir(), "state", "candidates.db"), now: time.Date(2030, 4, 5, 6, 7, 8, 999, time.FixedZone("fixture", 3600)), rnd: &contractRandom{next: 1}}
+	dir := t.TempDir()
+	f := &contractFixture{t: t, path: filepath.Join(dir, "state", "candidates.db"), now: time.Date(2030, 4, 5, 6, 7, 8, 999, time.FixedZone("fixture", 3600)), rnd: &contractRandom{next: 1}}
+	root, err := os.OpenRoot(dir)
+	contractOK(t, err)
+	contractOK(t, root.Mkdir("state", 0700))
+	contractOK(t, root.WriteFile("state/candidates.db", contractTemplateBytes, 0600))
+	contractOK(t, root.Close())
 	f.open()
 	t.Cleanup(func() {
 		if err := f.d.Close(); err != nil {
@@ -161,13 +209,13 @@ func TestContractVocabulary(t *testing.T) {
 	}
 }
 
-// R-4ZG4-R3HF R-50O1-4V84 R-533T-WEPI R-54BQ-A6G7 R-4ZXJ-0QUQ R-52DB-SAC4
+// R-OIQ5-T238 R-P28J-XDYC R-OJY2-6TTX R-OL5Y-KLKM R-4ZXJ-0QUQ R-52DB-SAC4
 func TestContractPassLifecyclePersistence(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
 	ctx := context.Background()
 	stamp := f.now.UTC().Truncate(time.Second)
-	input := store.Pass{ID: "ignored", Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Status: "ignored", Reason: "ignored", Started: f.now.AddDate(-1, 0, 0), Finished: f.now, Rows: 99, New: 99, Changed: 99, Unchanged: 99, Gone: 99, Created: 99, Linked: 99, Judged: 99, Unranged: 99, Derived: 99, Due: 99, Fetched: 99, HTTPS: 99, HTTP: 99, None: 99, Runs: 99, RunsFailed: 99, Pages: 99, Cost: 99, ParcelRun: "ignored", ParcelsRead: 99, ByLabel: 99, ByValue: 99, ByCandidate: 99, ParksCreated: 99, ParksUpdated: 99, ParksGone: 99, ParksGrown: 99, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
+	input := store.Pass{ID: "ignored", Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Status: "ignored", Reason: "ignored", Started: f.now.AddDate(-1, 0, 0), Finished: f.now, Rows: 99, New: 99, Changed: 99, Unchanged: 99, Gone: 99, Created: 99, Linked: 99, Judged: 99, Unranged: 99, Derived: 99, Due: 99, Fetched: 99, HTTPS: 99, HTTP: 99, None: 99, Runs: 99, RunsFailed: 99, Pages: 99, Cost: 99, ParcelRun: "ignored", ParcelsRead: 99, ByLabel: 99, ByValue: 99, ByCandidate: 99, ParksCreated: 99, ParksUpdated: 99, ParksGone: 99, ParksGrown: 99, ParksWalked: 99, Circles: 99, Requests: 99, Found: 99, NewCandidates: 99, CeilingReached: true, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
 	p, err := f.s.AddPass(ctx, input)
 	contractOK(t, err)
 	want := store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, ID: store.PassIDPrefix + "0101010101010101", Trigger: input.Trigger, Status: store.StatusRunning, Started: stamp, UserID: input.UserID, UserEmail: input.UserEmail, RequestID: input.RequestID}
@@ -180,7 +228,7 @@ func TestContractPassLifecyclePersistence(t *testing.T) {
 	contractOK(t, err)
 	contractEqual(t, read, p)
 	f.now = f.now.Add(time.Hour)
-	c := store.Counts{Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Derived: 15, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14, Runs: 16, RunsFailed: 17, Pages: 18, Cost: 19, ParcelsRead: 20, ByLabel: 21, ByValue: 22, ByCandidate: 23, ParksCreated: 24, ParksUpdated: 25, ParksGone: 26, ParksGrown: 27}
+	c := store.Counts{Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Derived: 15, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14, Runs: 16, RunsFailed: 17, Pages: 18, Cost: 19, ParcelsRead: 20, ByLabel: 21, ByValue: 22, ByCandidate: 23, ParksCreated: 24, ParksUpdated: 25, ParksGone: 26, ParksGrown: 27, ParksWalked: 28, Circles: 29, Requests: 30, Found: 31, NewCandidates: 32}
 	ended, err := f.s.FinishPass(ctx, p.ID, c)
 	contractOK(t, err)
 	want.Status = store.StatusDone
@@ -205,6 +253,7 @@ func TestContractPassLifecyclePersistence(t *testing.T) {
 	want.ParksUpdated = c.ParksUpdated
 	want.ParksGone = c.ParksGone
 	want.ParksGrown = c.ParksGrown
+	want.ParksWalked, want.Circles, want.Requests, want.Found, want.NewCandidates = c.ParksWalked, c.Circles, c.Requests, c.Found, c.NewCandidates
 	contractEqual(t, ended, want)
 	f.reopen()
 	read, err = f.s.GetPass(ctx, p.ID)
@@ -215,7 +264,7 @@ func TestContractPassLifecyclePersistence(t *testing.T) {
 	if running == nil || len(running) != 0 {
 		t.Fatal(running)
 	}
-	for _, reason := range []string{store.ReasonScrapes, store.ReasonInterrupted, store.ReasonStore, store.ReasonPrompts} {
+	for _, reason := range []string{store.ReasonScrapes, store.ReasonInterrupted, store.ReasonStore, store.ReasonPrompts, store.ReasonPlaces} {
 		p = contractNewPass(t, f, "run-"+reason)
 		f.now = f.now.Add(time.Minute)
 		want = p
@@ -235,7 +284,7 @@ func TestContractPassLifecyclePersistence(t *testing.T) {
 	contractEqual(t, read, store.Pass{})
 }
 
-// R-4SM4-Q4EK R-O4LM-8146
+// R-4SM4-Q4EK R-OTP9-8ZRH
 func TestContractPassRefusals(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -263,7 +312,7 @@ func TestContractPassRefusals(t *testing.T) {
 	out, err = f.s.AddPass(ctx, store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, UserID: "owner"})
 	contractError(t, err, store.ErrBusy)
 	contractEqual(t, out, store.Pass{})
-	negatives := []store.Counts{{Rows: -1}, {New: -1}, {Changed: -1}, {Unchanged: -1}, {Gone: -1}, {Created: -1}, {Linked: -1}, {Judged: -1}, {Unranged: -1}, {Derived: -1}, {Due: -1}, {Fetched: -1}, {HTTPS: -1}, {HTTP: -1}, {None: -1}, {Runs: -1}, {RunsFailed: -1}, {Pages: -1}, {Cost: -1}, {ParcelsRead: -1}, {ByLabel: -1}, {ByValue: -1}, {ByCandidate: -1}, {ParksCreated: -1}, {ParksUpdated: -1}, {ParksGone: -1}, {ParksGrown: -1}}
+	negatives := []store.Counts{{Rows: -1}, {New: -1}, {Changed: -1}, {Unchanged: -1}, {Gone: -1}, {Created: -1}, {Linked: -1}, {Judged: -1}, {Unranged: -1}, {Derived: -1}, {Due: -1}, {Fetched: -1}, {HTTPS: -1}, {HTTP: -1}, {None: -1}, {Runs: -1}, {RunsFailed: -1}, {Pages: -1}, {Cost: -1}, {ParcelsRead: -1}, {ByLabel: -1}, {ByValue: -1}, {ByCandidate: -1}, {ParksCreated: -1}, {ParksUpdated: -1}, {ParksGone: -1}, {ParksGrown: -1}, {ParksWalked: -1}, {Circles: -1}, {Requests: -1}, {Found: -1}, {NewCandidates: -1}}
 	for _, c := range negatives {
 		for _, id := range []string{p.ID, "missing"} {
 			out, err = f.s.FinishPass(ctx, id, c)
@@ -528,7 +577,7 @@ func TestContractZipReplacement(t *testing.T) {
 	}
 }
 
-// R-55JM-NY6W R-47VU-80SR R-493Q-LSJG R-578X-BDAW R-T3DU-KBYR R-5AWM-GOIZ R-5C4I-UG9O
+// R-OMDU-YDBB R-47VU-80SR R-F1DI-OTWO R-578X-BDAW R-T3DU-KBYR R-5AWM-GOIZ R-5C4I-UG9O
 func TestContractBusinessRecordsPersistence(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -862,7 +911,7 @@ func contractSeed(t *testing.T, f *contractFixture) string {
 	return id
 }
 
-// R-533T-WEPI R-54BQ-A6G7 R-5610-XLK7
+// R-OJY2-6TTX R-OL5Y-KLKM R-5610-XLK7
 func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -897,7 +946,7 @@ func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	contractEqual(t, after, zipBefore)
 }
 
-// R-25AU-BG4E R-OD8H-2EDG
+// R-OA6V-4NWD R-OD8H-2EDG
 func TestContractAllMethodsUnavailable(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -911,6 +960,19 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 	}{
 
 		{"ParkRules", func(c context.Context) error { _, _, e := f.s.ParkRules(c); return e }},
+		{"WalkCeiling", func(c context.Context) error { _, e := f.s.WalkCeiling(c); return e }},
+		{"PassWalks", func(c context.Context) error { _, e := f.s.PassWalks(c, "missing"); return e }},
+		{"ParkWalks", func(c context.Context) error { _, e := f.s.ParkWalks(c, "missing"); return e }},
+		{"ParkPlaces", func(c context.Context) error { _, e := f.s.ParkPlaces(c, "missing"); return e }},
+		{"ParkCandidates", func(c context.Context) error { _, e := f.s.ParkCandidates(c, "missing"); return e }},
+		{"CandidatePark", func(c context.Context) error { _, e := f.s.CandidatePark(c, "missing"); return e }},
+		{"RecordSweep", func(c context.Context) error { _, e := f.s.RecordSweep(c, store.Sweep{}); return e }},
+		{"FinishWalk", func(c context.Context) error {
+			_, e := f.s.FinishWalk(c, "missing", store.Counts{Found: -1}, true)
+			return e
+		}},
+		{"FailWalk", func(c context.Context) error { _, e := f.s.FailWalk(c, "missing", "bad", store.Counts{}); return e }},
+
 		{"SetParkRules", func(c context.Context) error {
 			_, e := f.s.SetParkRules(c, store.ParkRulesEdit{Distance: i64(0)}, store.Pass{})
 			return e
@@ -1043,7 +1105,7 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 	contractEqual(t, contractState(t, f), before)
 }
 
-// R-242X-XODP R-5N3M-ADXX
+// R-OUX5-MRI6 R-5N3M-ADXX
 func TestContractConcurrentStoreCalls(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)

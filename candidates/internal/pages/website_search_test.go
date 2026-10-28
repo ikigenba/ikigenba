@@ -55,7 +55,7 @@ func TestSearchEnrichmentProjection(t *testing.T) {
 	}
 }
 
-// R-XY08-ASLZ R-8PAT-SBNM R-8QIQ-63EB
+// R-QORQ-ADJO R-8PAT-SBNM R-8QIQ-63EB
 func TestSearchWebsiteCandidateAndMember(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	_, ids, err := cfg.Store.Attach(t.Context(), "run", false, []store.Observation{{Scraper: "fixture", SourceID: "row", Digest: "digest", Reading: sources.Reading{Name: "search-business", NameKey: "search-business"}}})
@@ -128,7 +128,7 @@ func TestSearchWebsiteCandidateAndMember(t *testing.T) {
 	}
 }
 
-// R-5H20-6T2Q
+// R-IOXU-NDNK
 func TestWebsiteSearchTemplateStates(t *testing.T) {
 	set, err := Load()
 	if err != nil {
@@ -203,7 +203,7 @@ func TestWebsiteSearchDecisionHistory(t *testing.T) {
 	}
 }
 
-// R-XY08-ASLZ
+// R-QORQ-ADJO
 // R-4A2C-9CNO
 func TestCandidateAndMemberViewShapes(_ *testing.T) {
 	_ = struct {
@@ -227,13 +227,15 @@ func TestCandidateAndMemberViewShapes(_ *testing.T) {
 	}(EnrichmentsView{})
 	_ = struct{ Present, Missing []string }(KindsView{})
 	_ = struct {
-		ID, Status, MergedInto, Name                                                                                                                     string
-		Names                                                                                                                                            []string
-		Street, City, State, Zip, County, Phone, Email, WebsiteSource, Website, WebsiteURL, WebsiteTitle, WebsiteWhy, WebsiteChecked, WebsiteCheckedText string
-		People                                                                                                                                           []PersonRow
-		Class                                                                                                                                            string
-		Cargo                                                                                                                                            []string
-		Created, CreatedText, Updated, UpdatedText                                                                                                       string
+		ID, Status, MergedInto, Name                                                                     string
+		Names                                                                                            []string
+		Street, City, State, Zip, County, Phone, Email                                                   string
+		Park                                                                                             *ParkLink
+		WebsiteSource, Website, WebsiteURL, WebsiteTitle, WebsiteWhy, WebsiteChecked, WebsiteCheckedText string
+		People                                                                                           []PersonRow
+		Class                                                                                            string
+		Cargo                                                                                            []string
+		Created, CreatedText, Updated, UpdatedText                                                       string
 	}(CandidateView{})
 	_ = struct {
 		Number, Path, URL, Title       string
@@ -302,7 +304,7 @@ func TestUnfoundWebsiteDecisionFields(t *testing.T) {
 	}
 }
 
-// R-5I9W-KKTF
+// R-IQ5R-15E9
 func TestUnfoundAndUnknownWebsiteTemplates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()

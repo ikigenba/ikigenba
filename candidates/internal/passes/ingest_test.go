@@ -21,7 +21,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
 )
 
-// R-SGG7-YQ5M R-3D03-LUMS R-3XQE-3Y8L R-34NX-ESMJ R-2NLC-208T
+// R-SGG7-YQ5M R-3D03-LUMS R-3XQE-3Y8L R-Q2TJ-EI76 R-PVI5-3VR0
 func TestScraperIngestScopeAndFollowOn(t *testing.T) {
 	t.Parallel()
 	entered, release := make(chan struct{}, 2), make(chan struct{})
@@ -108,7 +108,7 @@ func TestIngestInvalidPrecedesUnavailable(t *testing.T) {
 	}
 }
 
-// R-4066-VHPZ R-42LZ-N17D R-33G1-10VU R-2G9X-RDSN
+// R-4066-VHPZ R-42LZ-N17D R-PGVC-IMUO R-PMYU-FHK5
 func TestHandJudgeWithoutScrapes(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -197,7 +197,7 @@ func TestCampaignProspectListPrecedenceAndLegacyMapping(t *testing.T) {
 	}
 }
 
-// R-DK67-BT0K R-DMM0-3CHY R-M78O-D1KG
+// R-F517-U54R R-PJB5-A6C2 R-O6J5-ZCOA
 func TestHandRecordCarriesScraperAndJudgeCaller(t *testing.T) {
 	t.Parallel()
 	for _, origin := range []string{store.OriginIngest, store.OriginJudge, store.OriginEnrich, store.OriginRun, store.OriginCron, store.OriginPass} {

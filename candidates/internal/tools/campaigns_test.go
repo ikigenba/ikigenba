@@ -4,14 +4,16 @@ import (
 	"encoding/json"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/candidates/internal/passes"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-3GJ3-M4V9 R-QEP5-ZOVY R-ML95-4DLF R-0BWM-QETR
+// R-3GJ3-M4V9 R-ML95-4DLF R-0BWM-QETR
 func TestCampaignAnswerHistory(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -108,7 +110,7 @@ func TestCampaignAnswerHistory(t *testing.T) {
 	}
 }
 
-// R-X5PS-GSY3 R-F178-NN6J
+// R-X5PS-GSY3 R-EYXP-XAFA
 func TestCampaignFilterToolLifecycle(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(7)
@@ -195,6 +197,12 @@ func TestCampaignFilterToolLifecycle(t *testing.T) {
 	r := f.call("create_prospect_list", map[string]any{"name": "chosen-negative", "filters": map[string]any{"min_campaign_age_days": -1}})
 	if !r.IsError() || len(decode(t, r).Structured) != 0 {
 		t.Fatal(decode(t, r))
+	}
+	text := decode(t, r).Content[0].Text
+	for _, word := range []string{passes.RefusalBusy, passes.RefusalInvalid, passes.RefusalNotFound, passes.RefusalStopping, passes.RefusalUnavailable} {
+		if text == word || strings.HasPrefix(text, word+":") {
+			t.Fatal(text)
+		}
 	}
 	after := decodeList[tools.ProspectListList](t, f.call("prospect_lists", tools.ProspectListsArgs{}))
 	if !reflect.DeepEqual(before, after) {

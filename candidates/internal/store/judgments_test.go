@@ -183,7 +183,7 @@ func TestConcurrentIngestAndJudgments(t *testing.T) {
 	}
 }
 
-// R-5XOA-44OS
+// R-RQKM-59J7
 func TestGivingLinksFillDisplayFields(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -224,7 +224,7 @@ func TestGivingLinksFillDisplayFields(t *testing.T) {
 	contractEqual(t, c.Phone, a.Reading.Phone)
 }
 
-// R-4ZG4-R3HF R-50O1-4V84
+// R-OIQ5-T238 R-P28J-XDYC
 func TestJudgePassTriggerRepeatsAcrossDeliveries(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)

@@ -107,7 +107,7 @@ func (r *failNextBytes) Read(p []byte) (int, error) {
 	return r.bytes.Read(p)
 }
 
-// R-KDES-2YHL R-2UWQ-CMOZ
+// R-KDES-2YHL
 func TestRunForwardsStoreFailureDiagnostic(t *testing.T) {
 	rnd := &failNextBytes{}
 	fake := &runFake{rows: []map[string]any{runRow()}}
