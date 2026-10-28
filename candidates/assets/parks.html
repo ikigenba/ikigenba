@@ -49,7 +49,8 @@
      parcels of a park in meters, as text, "600"), .MinParcels (int, the
      least number of parcels a park holds), .ValueThreshold (the building
      value above which a non-homestead parcel counts under the fallback
-     rules, as shown, "$1,000,000") and .Counties (one per county the
+     rules, as shown, "$1,000,000"), .WalkCeiling (int, the most Places
+     requests one walk may make) and .Counties (one per county the
      parcel records hold, by name, each with .County, its name as stored,
      and .Labels, the use-class labels that mean industrial in it, as
      stored, a slice of strings, empty when the county uses the fallback
@@ -115,12 +116,14 @@
      is not a homestead and its building is worth more than the threshold,
      or when its address matches a candidate's. Industrial parcels within
      the distance of one another form a park when there are at least the
-     minimum number of them. Agents change the rules with the tools, and the
-     parks are derived again."), then dl#rules.kv holding dt "Distance"
+     minimum number of them. A walk stops when it has made as many Places
+     requests as the walk ceiling. Agents change the rules with the tools,
+     and the parks are derived again."), then dl#rules.kv holding dt "Distance"
      then dd#rule-distance (.Rules.Distance, a space and "m"), dt "Minimum
      parcels" then dd#rule-min-parcels (.Rules.MinParcels) and dt
-     "Building value over" then dd#rule-value (.Rules.ValueThreshold), each
-     dt in that order; then section#county-rules.card.flush with h2
+     "Building value over" then dd#rule-value (.Rules.ValueThreshold) and
+     dt "Walk ceiling" then dd#rule-walk-ceiling (.Rules.WalkCeiling, a
+     space and "requests"), each dt in that order; then section#county-rules.card.flush with h2
      "Industrial labels" and a p in its header (text "The use-class labels
      that mean industrial in each county. A county with none uses the
      fallback rules."), then either, when .Rules.Counties is empty,
@@ -174,11 +177,12 @@
 </section>
 {{if or .Parks .Page}}<nav class="paging" id="paging" aria-label="Pages">{{if .FirstHref}}<a href="{{.FirstHref}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .PrevHref}}<a href="{{.PrevHref}}">Prev</a>{{end}}{{if .NextHref}}<a href="{{.NextHref}}">Next</a>{{end}}{{if .NextHref}}<a href="{{.LastHref}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
 {{end}}{{with .Rules}}<section id="rules-card" class="card" aria-labelledby="rules-title">
-<header><h2 id="rules-title">Rules</h2><p>The rules the parks are derived by. A parcel counts as industrial when its county's use class is one of the county's labels; in a county with no labels it counts when it is not a homestead and its building is worth more than the threshold, or when its address matches a candidate's. Industrial parcels within the distance of one another form a park when there are at least the minimum number of them. Agents change the rules with the tools, and the parks are derived again.</p></header>
+<header><h2 id="rules-title">Rules</h2><p>The rules the parks are derived by. A parcel counts as industrial when its county's use class is one of the county's labels; in a county with no labels it counts when it is not a homestead and its building is worth more than the threshold, or when its address matches a candidate's. Industrial parcels within the distance of one another form a park when there are at least the minimum number of them. A walk stops when it has made as many Places requests as the walk ceiling. Agents change the rules with the tools, and the parks are derived again.</p></header>
 <dl id="rules" class="kv">
 <dt>Distance</dt><dd id="rule-distance">{{.Distance}} m</dd>
 <dt>Minimum parcels</dt><dd id="rule-min-parcels">{{.MinParcels}}</dd>
 <dt>Building value over</dt><dd id="rule-value">{{.ValueThreshold}}</dd>
+<dt>Walk ceiling</dt><dd id="rule-walk-ceiling">{{.WalkCeiling}} requests</dd>
 </dl>
 </section>
 <section id="county-rules" class="card flush" aria-labelledby="county-rules-title">

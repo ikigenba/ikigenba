@@ -22,7 +22,10 @@
      name any link uses, .Name first, a slice of strings), .Street, .City,
      .State, .Zip, .County (as stored, "MN-115"), .Phone (ten digits, as
      stored) and .Email (each empty when its freshest evidence gives none,
-     and all empty when merged), .WebsiteSource (which result decided the
+     and all empty when merged), .Park (the park it was found in: nil
+     when no link of it was found by a walk, and when merged; else the
+     park of the newest such link, with .ID, its park_ id, and .Name, its
+     name as the park page shows it), .WebsiteSource (which result decided the
      website, the website decision computed from its results, not read
      from the facts row: "check" when its newest website_check result
      found a site, else "search" when a website_search result's site was
@@ -173,10 +176,15 @@
      headcounts used, the band, its per-employee low and high and how the
      band was chosen); .Links, every link, empty when merged,
      those not gone first, then by newest filing, each with .Scraper (the
-     scraper's name), .SourceID (the record's id at the source), .Run (the
-     run_ id it was last seen in), .RowPage (the URL of that row's page at
-     scrapes, "<scrapes URL>/runs/<.Run>/rows/<.SourceID>" built on the
-     services entry; empty when the entry has none), .EIN (the reading's
+     scraper's name, or "places" for a place a walk found), .SourceID (the
+     record's id at the source, a place's Place ID), .Run (the run_ id it
+     was last seen in; empty for a places link), .RowPage (the URL of that
+     row's page at scrapes, "<scrapes URL>/runs/<.Run>/rows/<.SourceID>"
+     built on the services entry; empty when the entry has none, and for
+     a places link, which has no row in scrapes), .Walk (the pass_ id of
+     the walk that found it; empty unless .Scraper is "places"), .Park
+     (the park that walk found it in, nil unless .Scraper is "places",
+     with .ID and .Name as .Candidate.Park's), .EIN (the reading's
      EIN, nine digits as text; empty when none, as for every source but
      form5500 and osha_ita), .Name, .Names (the reading's names in order, the row's
      names then its derived names, a slice of strings; may be empty),
@@ -326,7 +334,9 @@
      then dd#candidate-names (.Names joined by " · "), dt "Street" then
      dd#candidate-street, dt "City" then dd#candidate-city, dt "State" then
      dd#candidate-state, dt "Zip" then dd#candidate-zip, dt "County" then
-     dd#candidate-county (in a code element), dt "Phone" then
+     dd#candidate-county (in a code element), dt "Park" then
+     dd#candidate-park (a.park-link, href "/parks/<.Park.ID>", text
+     .Park.Name), dt "Phone" then
      dd#candidate-phone, dt "Email" then dd#candidate-email, dt "Website"
      then dd#candidate-website[data-website=<.Website>] (when .Website is
      "unknown", span.muted "unknown"; else a.website-link, href
@@ -514,14 +524,20 @@
      section#links with h2 "Evidence" and a p in its header (text "Each
      record attached to this candidate, linked to its row in scrapes. A
      gone record was absent from its scraper's latest run; it still counts
-     for identity and no longer for the judgments."), then table#link-list
+     for identity and no longer for the judgments. A places record was
+     found by a walk of a park with Google Places; it has no row in
+     scrapes, and no later walk makes it gone."), then table#link-list
      whose th read Scraper, Source ID, EIN, Name, Names, Establishment,
      City, Zip, Year, Employees, Hours, Reason, Confidence,
      Filed, First seen, Last seen, Gone, with one
      tr[data-link=<.Scraper>:<.SourceID>] per link holding td.link-scraper
      (.Scraper in a code element), td.link-source (a.row-link, href
      .RowPage, holding .SourceID in a code element, when .RowPage is set,
-     else the code element alone), td.link-ein (.EIN in a code element,
+     else the code element alone; then, when .Walk is set,
+     div.muted[data-found-by] holding "found by Places in walk", a space,
+     a.pass-link (href "/passes/<.Walk>", holding .Walk in a code
+     element), then, when .Park is set, " at" and a space and a.park-link
+     (href "/parks/<.Park.ID>", text .Park.Name)), td.link-ein (.EIN in a code element,
      empty when none), td.link-name, td.link-names (.Names joined by
      " · ", empty when none), td.link-establishment, td.link-city,
      td.link-zip, td.link-year, td.link-employees.num, td.link-hours.num,
@@ -688,6 +704,7 @@
 {{end}}{{if .State}}<dt>State</dt><dd id="candidate-state">{{.State}}</dd>
 {{end}}{{if .Zip}}<dt>Zip</dt><dd id="candidate-zip">{{.Zip}}</dd>
 {{end}}{{if .County}}<dt>County</dt><dd id="candidate-county"><code>{{.County}}</code></dd>
+{{end}}{{with .Park}}<dt>Park</dt><dd id="candidate-park"><a class="park-link" href="/parks/{{.ID}}">{{.Name}}</a></dd>
 {{end}}{{if .Phone}}<dt>Phone</dt><dd id="candidate-phone">{{.Phone}}</dd>
 {{end}}{{if .Email}}<dt>Email</dt><dd id="candidate-email">{{.Email}}</dd>
 {{end}}{{if .Website}}<dt>Website</dt><dd id="candidate-website" data-website="{{.Website}}"{{if .WebsiteSource}} data-website-source="{{.WebsiteSource}}"{{end}}>{{if eq .Website "unknown"}}<span class="muted">unknown</span>{{else}}{{if .WebsiteURL}}<a class="website-link" href="{{.WebsiteURL}}">{{.WebsiteURL}}</a> {{end}}{{.Website}}{{end}}{{if .WebsiteTitle}}<div data-website-title>{{.WebsiteTitle}}</div>{{end}}{{if .WebsiteWhy}}<div data-website-why>{{.WebsiteWhy}}</div>{{end}}{{if .WebsiteChecked}}<div class="muted">{{if eq .WebsiteSource "search"}}found by search{{else if eq .WebsiteSource "check"}}found by check{{else if eq .Website "none"}}searched{{else}}checked{{end}} <time datetime="{{.WebsiteChecked}}">{{.WebsiteCheckedText}}</time></div>{{end}}</dd>
@@ -817,14 +834,14 @@
 </div>{{end}}
 </section>
 {{end}}<section id="links" class="card flush" aria-labelledby="links-title">
-<header><div><h2 id="links-title">Evidence</h2><p>Each record attached to this candidate, linked to its row in scrapes. A gone record was absent from its scraper's latest run; it still counts for identity and no longer for the judgments.</p></div></header>
+<header><div><h2 id="links-title">Evidence</h2><p>Each record attached to this candidate, linked to its row in scrapes. A gone record was absent from its scraper's latest run; it still counts for identity and no longer for the judgments. A places record was found by a walk of a park with Google Places; it has no row in scrapes, and no later walk makes it gone.</p></div></header>
 <div class="table-scroll">
 <table id="link-list">
 <thead><tr><th>Scraper</th><th>Source ID</th><th>EIN</th><th>Name</th><th>Names</th><th>Establishment</th><th>City</th><th>Zip</th><th>Year</th><th class="num">Employees</th><th class="num">Hours</th><th>Reason</th><th class="num">Confidence</th><th>Filed</th><th>First seen</th><th>Last seen</th><th>Gone</th></tr></thead>
 <tbody>
 {{range $links}}<tr data-link="{{.Scraper}}:{{.SourceID}}">
 <td class="link-scraper"><code>{{.Scraper}}</code></td>
-<td class="link-source">{{if .RowPage}}<a class="row-link" href="{{.RowPage}}"><code>{{.SourceID}}</code></a>{{else}}<code>{{.SourceID}}</code>{{end}}</td>
+<td class="link-source">{{if .RowPage}}<a class="row-link" href="{{.RowPage}}"><code>{{.SourceID}}</code></a>{{else}}<code>{{.SourceID}}</code>{{end}}{{if .Walk}}<div class="muted" data-found-by>found by Places in walk <a class="pass-link" href="/passes/{{.Walk}}"><code>{{.Walk}}</code></a>{{with .Park}} at <a class="park-link" href="/parks/{{.ID}}">{{.Name}}</a>{{end}}</div>{{end}}</td>
 <td class="link-ein">{{if .EIN}}<code>{{.EIN}}</code>{{end}}</td>
 <td class="link-name">{{.Name}}</td>
 <td class="link-names">{{range $i, $n := .Names}}{{if $i}} · {{end}}{{$n}}{{end}}</td>

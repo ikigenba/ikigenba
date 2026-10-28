@@ -1,8 +1,10 @@
 {{/* One park at GET /parks/<id>: everything candidates holds of an
      industrial park derived from the county parcel records scrapes holds,
      where it is, how big it is, whether it has been walked, the run it was
-     derived from, and its parcels, each with the rule that picked it. A
-     park is a place to walk later, never a candidate. Shown to any
+     derived from, its walks, newest first, the places they found and the
+     candidates found in it, and its parcels, each with the rule that
+     picked it. A park is a place to walk, never a candidate; a walk
+     starts only from the walk tool, and the page offers none. Shown to any
      signed-in user; a guest is sent to sign in; an unknown or malformed id
      is the not-found page; a gone park is shown, marked gone. Read-only:
      no form but the banner's sign out. Two levels below the root:
@@ -20,9 +22,13 @@
      "42"; empty when its ZIP is not in the table), .GrownFrom (int, the
      parcel count it grew from; 0 when it has not grown), .Walked and
      .WalkedText (when it was walked, RFC 3339 UTC to the second, and UTC to
-     the day, "2026-10-05"; both empty while unwalked), .WalkRun (the id of
-     the run that walked it, as stored; empty while unwalked), .Found (int,
-     the places that walk found; 0 while unwalked), .Run (the run_ id of
+     the day, "2026-10-05"; both empty while unwalked; those of its newest
+     walk), .Walk (the pass_ id of its newest walk; empty while unwalked),
+     .Found (int, the places its newest walk found in it; 0 while
+     unwalked), .NewCandidates (int, how many of those became new
+     candidates; 0 while unwalked), .CeilingReached (bool, true when its
+     newest walk stopped at the walk ceiling before every circle over the
+     park was searched), .Run (the run_ id of
      the scrapes parcel run it was derived from), .RunPage (the URL of that
      run's page at scrapes, "<scrapes URL>/runs/<.Run>" built on the
      services entry; empty when the entry has none), .Created and
@@ -34,7 +40,27 @@
      none), .Street, .City and .Zip (its site address, as stored; each
      empty when the record holds none), .BuildingValue (its building value
      as shown, "$1,850,000") and .Rule (the rule that picked it, one of
-     "label", "value" and "candidate", as stored). Counts are shown as the
+     "label", "value" and "candidate", as stored); .Walks, every walk of
+     this park, newest first, each with .Pass (the walk's pass_ id),
+     .Walked and .WalkedText (when it walked the park, in .Park.Walked's
+     two forms), .Found (int, the places it found in the park),
+     .NewCandidates (int, how many of those became new candidates),
+     .Requests (int, the Places requests it made over the park), .Cost
+     (what those requests cost as US dollars to six decimal places,
+     "$0.032000", as a pass shows a cost) and .CeilingReached (bool, true
+     when it stopped at the walk ceiling before every circle over the park
+     was searched); empty while unwalked; .Places, every place a walk of
+     this park found, as Google sent it, the newest walk's first, then by
+     name, then by Place ID, each with .PlaceID (its Place ID, as
+     stored), .Name, .Address, .PrimaryType, .Website and .Phone (as
+     stored; each but .PlaceID empty when Google sent none), .Walk (the
+     pass_ id of the walk that found it), .Candidate (the cand_ id it was
+     matched to or created as) and .New (bool, true when that walk created
+     .Candidate); empty while unwalked; .FoundCandidates, every candidate
+     a place found in this park is linked to, once each, by name, then by
+     id, each with .ID (its cand_ id), .Name (its display name; empty when
+     merged), .Status ("active" or "merged", as stored) and .New (bool,
+     true when a walk of this park created it). Counts are shown as the
      plain integer, names and addresses as given. The state's kind is
      chosen here: "active" ok, "gone" warn. Hooks: title "<.Park.Name> ·
      candidates"; h1 with text .Name; p#headline.cluster holding
@@ -49,7 +75,12 @@
      parcels no longer form a park under the rules. The park keeps its id
      and what is known of it, and comes back if they form one again.");
      p holding a#map-link.button.secondary.small (href .MapURL, text "Open
-     the map"); section#park-card with h2 "Park" and a p in its header
+     the map"); when .CeilingReached,
+     div#ceiling-reached.alert.quiet[data-kind=warn] (strong "Stopped at
+     the ceiling", then p "The newest walk made as many requests as the
+     walk ceiling allows and stopped before every circle over this park
+     was searched. Raise the ceiling or shorten the distance in the rules,
+     then walk the park again."); section#park-card with h2 "Park" and a p in its header
      (text "An industrial park: industrial parcels near one another in one
      county, drawn from the parcel records scrapes holds. Its center and
      radius are those of its parcels, and its drive minutes come from the
@@ -64,14 +95,70 @@
      "Building value" then dd#park-value (.BuildingValue), dt "Drive
      minutes" then dd#park-minutes (.Minutes, or span.muted "unknown" when
      empty), dt "Walked" then dd#park-walked (when .Walked is set,
-     time[datetime=<.Walked>] (text .WalkedText), then " by run" and a
-     space and .WalkRun in a code element, then ", " and .Found and "
-     places found"; else span.muted "not walked yet"), dt "Derived from"
+     time[datetime=<.Walked>] (text .WalkedText), then " by walk" and a
+     space and a.pass-link (href "/passes/<.Walk>", holding .Walk in a
+     code element), then ", " and .Found and " places found, " and
+     .NewCandidates and " new candidates"; else span.muted "not walked
+     yet"), dt "Derived from"
      then dd#park-run (a.run-link, href .RunPage, holding .Run in a code
      element, when .RunPage is set; else .Run in a code element), dt
      "Created" then dd#park-created holding time[datetime=<.Created>]
      (text .CreatedText) and dt "Updated" then dd#park-updated holding
-     time[datetime=<.Updated>] (text .UpdatedText); section#parcels.card.flush
+     time[datetime=<.Updated>] (text .UpdatedText); section#walks.card.flush
+     with h2 "Walks" and a p in its header (text "Each walk of this park,
+     newest first: a walk searches the park with Google Places in circles,
+     one over the whole park first and smaller ones inside any circle that
+     came back full. Requests and cost are this park's share of the walk.
+     A walk starts only when the owner names the park, with the walk
+     tool.", walk in a code element), then either, when .Walks is empty,
+     div#no-walks.empty holding h3 "Not walked yet" and a p (text "Nothing
+     walks a park on its own. The walk tool walks it when the owner names
+     it.", walk in a code element), or table#walk-list whose th read
+     Walked, Walk, Places, New candidates, Requests, Cost, with one
+     tr[data-walk=<.Pass>] per walk, carrying also [data-ceiling] when
+     .CeilingReached, holding td.walk-walked (time[datetime=<.Walked>]
+     with .WalkedText, then, when .CeilingReached, a space and
+     span.badge[data-kind=warn] (text "ceiling reached")), td.walk-pass
+     (a.pass-link, href "/passes/<.Pass>", holding .Pass in a code
+     element), td.walk-found.num (.Found), td.walk-new.num
+     (.NewCandidates), td.walk-requests.num (.Requests) and td.walk-cost.num
+     (.Cost); then, only when .Walks is not empty, section#places.card.flush
+     with h2 "Places found" and a p in its header (text "Every place a walk
+     found in this park, as Google sent it, the newest walk's first. Each
+     is matched to a candidate by its phone, its website's domain, or its
+     name and town, or becomes a new one. A walk again adds its places
+     beside the earlier ones; none is removed."), then either, when
+     .Places is empty, div#no-places.empty holding h3 "No places" and a p
+     (text "No walk of this park found a place in it."), or
+     table#place-list whose th read Name, Address, Type, Website, Phone,
+     Candidate, Walk, with one tr[data-place=<.PlaceID>][data-walk=<.Walk>]
+     per place holding td.place-name (.Name, then div.muted holding .PlaceID
+     in a code element), td.place-address (.Address, or when empty
+     span.muted "none"), td.place-type (.PrimaryType in a code element, or
+     when empty span.muted "none"), td.place-website (a.website-link, href
+     .Website, text .Website, or when empty span.muted "none"),
+     td.place-phone (.Phone, or when empty span.muted "none"),
+     td.place-candidate (a.candidate-link, href "/candidates/<.Candidate>",
+     holding .Candidate in a code element, then, when .New, a space and
+     span.badge[data-kind=info][data-new] (text "new"); or when .Candidate
+     is empty span.muted "none") and td.place-walk (a.pass-link, href
+     "/passes/<.Walk>", holding .Walk in a code element); then, only when
+     .Walks is not empty, section#found-candidates.card.flush with h2
+     "Candidates found here" and a p in its header (text "The candidates
+     the places found in this park are linked to, each once. A new one was
+     made by a walk of this park; the others were already candidates and
+     gained only the link and the park."), then either, when
+     .FoundCandidates is empty, div#no-found-candidates.empty holding h3
+     "No candidates" and a p (text "No place found in this park is linked
+     to a candidate."), or table#found-candidate-list whose th read
+     Candidate, Name, Status, Found, with one tr[data-candidate=<.ID>] per
+     candidate holding td.found-id (a.candidate-link, href
+     "/candidates/<.ID>", holding .ID in a code element), td.found-name
+     (.Name, or when empty span.muted "none"), td.found-status
+     (span.status[data-status=<.Status>][data-kind=<kind>], text .Status,
+     "active" ok, "merged" info) and td.found-new (when .New
+     span.badge[data-kind=info] (text "new"), else span.muted "matched");
+     then section#parcels.card.flush
      with h2 "Parcels" and a p in its header (text "The parcels the park
      was drawn from, largest building first. The rule says why each counts
      as industrial: label, its county's use class is an industrial label;
@@ -94,9 +181,10 @@
 <body>
 {{template "banner" .Banner}}
 <main>
-{{$parcels := .Parcels}}{{with .Park}}<h1>{{.Name}}</h1>
+{{$parcels := .Parcels}}{{$walks := .Walks}}{{$places := .Places}}{{$found := .FoundCandidates}}{{with .Park}}<h1>{{.Name}}</h1>
 <p id="headline" class="cluster"><span class="status" data-status="{{.State}}" data-kind="{{if eq .State "gone"}}warn{{else}}ok{{end}}">{{.State}}</span> {{if .Walked}}<span id="walked" class="badge" data-kind="ok">walked</span>{{else}}<span id="unwalked" class="badge" data-kind="info">unwalked</span>{{end}}{{if .GrownFrom}} <span id="grown" class="badge" data-kind="info">grown from {{.GrownFrom}}</span>{{end}} <span class="muted">updated <time datetime="{{.Updated}}">{{.UpdatedText}}</time></span></p>
 {{if eq .State "gone"}}<div id="gone" class="alert quiet" data-kind="warn"><strong>Gone</strong><p>Its parcels no longer form a park under the rules. The park keeps its id and what is known of it, and comes back if they form one again.</p></div>
+{{end}}{{if .CeilingReached}}<div id="ceiling-reached" class="alert quiet" data-kind="warn"><strong>Stopped at the ceiling</strong><p>The newest walk made as many requests as the walk ceiling allows and stopped before every circle over this park was searched. Raise the ceiling or shorten the distance in the rules, then walk the park again.</p></div>
 {{end}}<p><a id="map-link" class="button secondary small" href="{{.MapURL}}">Open the map</a></p>
 <section id="park-card" class="card" aria-labelledby="park-title">
 <header><h2 id="park-title">Park</h2><p>An industrial park: industrial parcels near one another in one county, drawn from the parcel records scrapes holds. Its center and radius are those of its parcels, and its drive minutes come from the ZIP table.</p></header>
@@ -112,11 +200,76 @@
 {{if .GrownFrom}}<dt>Grown from</dt><dd id="park-grown">{{.GrownFrom}} parcels</dd>
 {{end}}<dt>Building value</dt><dd id="park-value">{{.BuildingValue}}</dd>
 <dt>Drive minutes</dt><dd id="park-minutes">{{if .Minutes}}{{.Minutes}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
-<dt>Walked</dt><dd id="park-walked">{{if .Walked}}<time datetime="{{.Walked}}">{{.WalkedText}}</time> by run <code>{{.WalkRun}}</code>, {{.Found}} places found{{else}}<span class="muted">not walked yet</span>{{end}}</dd>
+<dt>Walked</dt><dd id="park-walked">{{if .Walked}}<time datetime="{{.Walked}}">{{.WalkedText}}</time> by walk <a class="pass-link" href="/passes/{{.Walk}}"><code>{{.Walk}}</code></a>, {{.Found}} places found, {{.NewCandidates}} new candidates{{else}}<span class="muted">not walked yet</span>{{end}}</dd>
 <dt>Derived from</dt><dd id="park-run">{{if .RunPage}}<a class="run-link" href="{{.RunPage}}"><code>{{.Run}}</code></a>{{else}}<code>{{.Run}}</code>{{end}}</dd>
 <dt>Created</dt><dd id="park-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></dd>
 <dt>Updated</dt><dd id="park-updated"><time datetime="{{.Updated}}">{{.UpdatedText}}</time></dd>
 </dl>
+</section>
+{{end}}<section id="walks" class="card flush" aria-labelledby="walks-title">
+<header><div><h2 id="walks-title">Walks</h2><p>Each walk of this park, newest first: a walk searches the park with Google Places in circles, one over the whole park first and smaller ones inside any circle that came back full. Requests and cost are this park's share of the walk. A walk starts only when the owner names the park, with the <code>walk</code> tool.</p></div></header>
+{{if $walks}}<div class="table-scroll">
+<table id="walk-list">
+<thead><tr><th>Walked</th><th>Walk</th><th class="num">Places</th><th class="num">New candidates</th><th class="num">Requests</th><th class="num">Cost</th></tr></thead>
+<tbody>
+{{range $walks}}<tr data-walk="{{.Pass}}"{{if .CeilingReached}} data-ceiling{{end}}>
+<td class="walk-walked"><time datetime="{{.Walked}}">{{.WalkedText}}</time>{{if .CeilingReached}} <span class="badge" data-kind="warn">ceiling reached</span>{{end}}</td>
+<td class="walk-pass"><a class="pass-link" href="/passes/{{.Pass}}"><code>{{.Pass}}</code></a></td>
+<td class="walk-found num">{{.Found}}</td>
+<td class="walk-new num">{{.NewCandidates}}</td>
+<td class="walk-requests num">{{.Requests}}</td>
+<td class="walk-cost num">{{.Cost}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}<div id="no-walks" class="empty">
+<h3 class="text-md">Not walked yet</h3>
+<p>Nothing walks a park on its own. The <code>walk</code> tool walks it when the owner names it.</p>
+</div>{{end}}
+</section>
+{{if $walks}}<section id="places" class="card flush" aria-labelledby="places-title">
+<header><div><h2 id="places-title">Places found</h2><p>Every place a walk found in this park, as Google sent it, the newest walk's first. Each is matched to a candidate by its phone, its website's domain, or its name and town, or becomes a new one. A walk again adds its places beside the earlier ones; none is removed.</p></div></header>
+{{if $places}}<div class="table-scroll">
+<table id="place-list">
+<thead><tr><th>Name</th><th>Address</th><th>Type</th><th>Website</th><th>Phone</th><th>Candidate</th><th>Walk</th></tr></thead>
+<tbody>
+{{range $places}}<tr data-place="{{.PlaceID}}" data-walk="{{.Walk}}">
+<td class="place-name">{{.Name}}<div class="muted"><code>{{.PlaceID}}</code></div></td>
+<td class="place-address">{{if .Address}}{{.Address}}{{else}}<span class="muted">none</span>{{end}}</td>
+<td class="place-type">{{if .PrimaryType}}<code>{{.PrimaryType}}</code>{{else}}<span class="muted">none</span>{{end}}</td>
+<td class="place-website">{{if .Website}}<a class="website-link" href="{{.Website}}">{{.Website}}</a>{{else}}<span class="muted">none</span>{{end}}</td>
+<td class="place-phone">{{if .Phone}}{{.Phone}}{{else}}<span class="muted">none</span>{{end}}</td>
+<td class="place-candidate">{{if .Candidate}}<a class="candidate-link" href="/candidates/{{.Candidate}}"><code>{{.Candidate}}</code></a>{{if .New}} <span class="badge" data-kind="info" data-new>new</span>{{end}}{{else}}<span class="muted">none</span>{{end}}</td>
+<td class="place-walk"><a class="pass-link" href="/passes/{{.Walk}}"><code>{{.Walk}}</code></a></td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}<div id="no-places" class="empty">
+<h3 class="text-md">No places</h3>
+<p>No walk of this park found a place in it.</p>
+</div>{{end}}
+</section>
+<section id="found-candidates" class="card flush" aria-labelledby="found-candidates-title">
+<header><div><h2 id="found-candidates-title">Candidates found here</h2><p>The candidates the places found in this park are linked to, each once. A new one was made by a walk of this park; the others were already candidates and gained only the link and the park.</p></div></header>
+{{if $found}}<div class="table-scroll">
+<table id="found-candidate-list">
+<thead><tr><th>Candidate</th><th>Name</th><th>Status</th><th>Found</th></tr></thead>
+<tbody>
+{{range $found}}<tr data-candidate="{{.ID}}">
+<td class="found-id"><a class="candidate-link" href="/candidates/{{.ID}}"><code>{{.ID}}</code></a></td>
+<td class="found-name">{{if .Name}}{{.Name}}{{else}}<span class="muted">none</span>{{end}}</td>
+<td class="found-status"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "merged"}}info{{else}}ok{{end}}">{{.Status}}</span></td>
+<td class="found-new">{{if .New}}<span class="badge" data-kind="info">new</span>{{else}}<span class="muted">matched</span>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}<div id="no-found-candidates" class="empty">
+<h3 class="text-md">No candidates</h3>
+<p>No place found in this park is linked to a candidate.</p>
+</div>{{end}}
 </section>
 {{end}}<section id="parcels" class="card flush" aria-labelledby="parcels-title">
 <header><div><h2 id="parcels-title">Parcels</h2><p>The parcels the park was drawn from, largest building first. The rule says why each counts as industrial: <code>label</code>, its county's use class is an industrial label; <code>value</code>, it is not a homestead and its building is worth more than the threshold; <code>candidate</code>, its address matches a candidate's.</p></div></header>

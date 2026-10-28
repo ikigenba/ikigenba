@@ -7,23 +7,24 @@
      <.Pass.ID> at /passes/<.Pass.ID>. Data: .Banner (a page.Banner, for
      banner and footer); .Pass, with .ID (its pass_ id, "pass_" and 16
      hex), .Kind (the pass's kind as stored, such as "ingest", "judge",
-     "enrich", "enrich_target" or "parks"), .Origin (what started it, as stored: "run" for a scrapes
+     "enrich", "enrich_target", "parks" or "walk"), .Origin (what started it, as stored: "run" for a scrapes
      run a delivery named, "cron" for a fire of the daily cron trigger,
      "ingest", "judge" or "enrich" for a call of the tool of that name,
      "pass" for another pass that finished: an ingest starting an enrich,
      or an enrich starting a judge, "rules" for a parks pass started by
      a call of edit_park_rules, "start" for a parks pass candidates
-     started at start on finding the newest done parcel run underived),
+     started at start on finding the newest done parcel run underived,
+     "walk" for a call of the walk tool),
      .Trigger (the run_ id of that
-     scrapes run, the slug of that cron trigger, "judge_candidates", "ingest", "judge", "enrich", or the pass_ id of that pass), .RunPage (the URL of
+     scrapes run, the slug of that cron trigger, "judge_candidates", "ingest", "judge", "enrich", "walk", or the pass_ id of that pass), .RunPage (the URL of
      that run's page at scrapes, "<scrapes URL>/runs/<.Trigger>" built on
      the services entry; empty unless .Origin is "run", and empty when the
      entry has none), .Status ("running", "done" or "failed", as stored),
      .Reason (the failure reason as stored, one of "scrapes",
-     "interrupted", "store" or "prompts"; empty unless .Status is
+     "interrupted", "store", "prompts" or "places"; empty unless .Status is
      "failed"),
      .StartedBy (the starter's email, or the starter's user id when the
-     email is empty; the starter is an ingest, judge, enrich or edit_park_rules call's caller; empty for any other origin), .Started and
+     email is empty; the starter is an ingest, judge, enrich, walk or edit_park_rules call's caller; empty for any other origin), .Started and
      .StartedText (RFC 3339 UTC to the second, and the same as shown,
      "2006-01-02 15:04:05 UTC"), .Finished and .FinishedText (likewise;
      both empty while running), .Rows, .New, .Changed, .Unchanged,
@@ -39,13 +40,23 @@
      prompts runs started, those that ended other than exiting 0, and
      pages they added; for drive_route, requests made to the routing
      service, those that failed, and 0) and .Cost (the runs' or requests'
-     total cost as US dollars to six decimal places, "$0.023714", as
+     total cost, a walk's Places requests' included, as US dollars to six decimal places, "$0.023714", as
      prompts shows a cost), and .ParcelsRead, .ByLabel, .ByValue,
      .ByCandidate, .ParksCreated, .ParksUpdated, .ParksGone and
      .ParksGrown (ints, a parks pass's counts as the record holds them:
      parcel records read, the industrial parcels by the rule that picked
      each, label, value or candidate, then parks created, updated, marked
-     gone and grown). Counts are shown as the plain integer. Kind, status and
+     gone and grown), and .Circles, .Requests, .Found and .NewCandidates
+     (ints, a walk pass's counts as the record holds them: circles
+     searched, Places requests made, places found and how many of them
+     became new candidates), .CeilingReached (bool, true when the walk
+     stopped at the walk ceiling) and .Parks (the parks the walk covered,
+     in the order it walked them, empty for any other kind, each with .ID
+     (its park_ id), .Name (its name, as the park page shows it), .Found,
+     .NewCandidates and .Requests (ints, the walk's counts over that park),
+     .Cost (those requests' cost, as .Cost) and .CeilingReached (bool, true
+     when the walk stopped at the ceiling before every circle over that
+     park was searched)). Counts are shown as the plain integer. Kind, status and
      reason words are shown as stored; the status's kind is chosen here:
      "running" info, "done" ok, "failed" err; the failure's sentence is
      chosen from .Reason. Hooks: title "<.ID> · candidates"; h1 with text
@@ -65,10 +76,19 @@
      one."; "store" "The database failed while the pass was storing its
      work."; "prompts" "The prompts service refused or failed a call: the
      prompt was gone or unusable, or a run could not be started or
-     read."; then a p (text "What the pass wrote before it failed stays;
+     read."; "places" "Google Places refused or failed a request, or its
+     answer was not the shape expected."; then a p (text "What the pass wrote before it failed stays;
      the next pass or an ingest repairs it.", ingest in a code element;
      for a pass of kind "parks" instead a p with text "What the pass
-     wrote before it failed stays; the next parks pass repairs it.");
+     wrote before it failed stays; the next parks pass repairs it.", and
+     for a pass of kind "walk" instead a p with text "What the walk found
+     before it failed stays; the walk tool walks a park again when the
+     owner says to.", walk in a code element); when .CeilingReached,
+     div#ceiling-reached.alert.quiet[data-kind=warn] (strong "Stopped at
+     the ceiling", then p "The walk made as many requests as the walk
+     ceiling allows and stopped. The parks below say how far it got: raise
+     the ceiling or shorten the distance in the park rules, then walk
+     again.");
      section#pass-card with h2 "Pass" and a p in its header (text "An
      ingest stores a run's records, and judges only when started by hand over every scraper: rows, new, changed,
      unchanged and gone count the records against what candidates held,
@@ -89,7 +109,11 @@
      what they cost. A parks pass derives the industrial parks from the
      county parcel records: parcels read counts the records, by label, by
      value and by candidate the industrial parcels by the rule that picked
-     each, and created, updated, gone and grown count the parks.", each
+     each, and created, updated, gone and grown count the parks. A walk
+     searches the parks the owner named with Google Places, in circles:
+     circles counts the circles searched, requests the requests made,
+     places found the places they returned, new candidates those that
+     became new candidates, and cost what the requests cost.", each
      state word in a code element); then dl#pass.kv holding, in
      this order, dt "ID" then dd#pass-id (.ID in a code element), dt
      "Kind" then dd#pass-kind (.Kind in a code element), dt "Trigger" then
@@ -100,7 +124,7 @@
      dt "Status" then dd#pass-status (the status span), dt "Reason" then
      dd#pass-reason (.Reason in a code element) only when .Reason is set,
      dt "Started by" then dd#pass-by (by .Origin: "run" "scrapes"; "cron"
-     "cron" and a space then .Trigger in a code element; "pass" "pass" and a space then .Trigger in a code element; "ingest", "judge" and "enrich" .StartedBy; "rules" .StartedBy, a space, "with" and a space then edit_park_rules in a code element; "start" "candidates at start"), dt "Started" then dd#pass-started holding
+     "cron" and a space then .Trigger in a code element; "pass" "pass" and a space then .Trigger in a code element; "ingest", "judge", "enrich" and "walk" .StartedBy; "rules" .StartedBy, a space, "with" and a space then edit_park_rules in a code element; "start" "candidates at start"), dt "Started" then dd#pass-started holding
      time[datetime=<.Started>] (text .StartedText), dt "Finished" then
      dd#pass-finished holding time[datetime=<.Finished>] (text
      .FinishedText) only when .Finished is set, then, when .Kind is
@@ -120,12 +144,31 @@
      candidate" then dd#pass-by-candidate, dt "Parks created" then
      dd#pass-parks-created, dt "Parks updated" then dd#pass-parks-updated,
      dt "Parks gone" then dd#pass-parks-gone and dt "Parks grown" then
-     dd#pass-parks-grown (each the count), else dt "Rows" then
+     dd#pass-parks-grown (each the count); else, when .Kind is "walk", dt
+     "Circles" then dd#pass-circles, dt "Requests" then dd#pass-requests,
+     dt "Places found" then dd#pass-found, dt "New candidates" then
+     dd#pass-new-candidates (each the count), dt "Cost" then dd#pass-cost
+     (.Cost) and dt "Ceiling reached" then dd#pass-ceiling ("yes" when
+     .CeilingReached, else "no"); else dt "Rows" then
      dd#pass-rows, dt "New" then dd#pass-new, dt "Changed" then
      dd#pass-changed, dt "Unchanged" then dd#pass-unchanged,
      dt "Gone" then dd#pass-gone, dt "Created" then dd#pass-created, dt
      "Linked" then dd#pass-linked, dt "Judged" then dd#pass-judged and
-     dt "Unranged" then dd#pass-unranged (each the count). No script but
+     dt "Unranged" then dd#pass-unranged (each the count). Then, only when
+     .Kind is "walk", section#walk-parks.card.flush with h2 "Parks
+     covered" and a p in its header (text "The parks this walk searched,
+     in the order it walked them, each with what the walk found there and
+     what its requests over it cost."), then either, when .Parks is empty,
+     div#no-walk-parks.empty holding h3 "No parks" and a p (text "The walk
+     covered no park before it stopped."), or table#walk-park-list whose
+     th read Park, Places, New candidates, Requests, Cost, with one
+     tr[data-park=<.ID>] per park, carrying also [data-ceiling] when
+     .CeilingReached, holding td.walk-park-name (a.park-link, href
+     "/parks/<.ID>", text .Name, then, when .CeilingReached, a space and
+     span.badge[data-kind=warn] (text "ceiling reached")),
+     td.walk-park-found.num (.Found), td.walk-park-new.num
+     (.NewCandidates), td.walk-park-requests.num (.Requests) and
+     td.walk-park-cost.num (.Cost). No script but
      appkit's /_appkit/feedback.js. */}}
 {{define "pass"}}<!doctype html>
 <html lang="en">
@@ -137,16 +180,17 @@
 <p id="headline" class="cluster"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span> <span class="muted">started <time datetime="{{.Started}}">{{.StartedText}}</time>{{if .Finished}} · finished <time datetime="{{.Finished}}">{{.FinishedText}}</time>{{end}}</span></p>
 {{if eq .Status "running"}}<div id="running" class="alert quiet" data-kind="info"><strong id="notice">Running</strong><p>The page does not stream. Reload it to see the outcome.</p></div>
 <p><a id="reload" class="button secondary small" href="/passes/{{.ID}}"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg>Reload</a></p>
-{{end}}{{if eq .Status "failed"}}<div id="failure" class="alert" data-kind="err" role="alert"><strong>The pass failed</strong><p id="failure-reason">{{if eq .Reason "scrapes"}}Reading the run from scrapes failed, or its rows did not match the count its record holds.{{else if eq .Reason "interrupted"}}candidates stopped or restarted while the pass was running, and it does not resume one.{{else if eq .Reason "store"}}The database failed while the pass was storing its work.{{else if eq .Reason "prompts"}}The prompts service refused or failed a call: the prompt was gone or unusable, or a run could not be started or read.{{end}}</p>{{if eq .Kind "parks"}}<p>What the pass wrote before it failed stays; the next parks pass repairs it.</p>{{else}}<p>What the pass wrote before it failed stays; the next pass or an <code>ingest</code> repairs it.</p>{{end}}</div>
+{{end}}{{if eq .Status "failed"}}<div id="failure" class="alert" data-kind="err" role="alert"><strong>The pass failed</strong><p id="failure-reason">{{if eq .Reason "scrapes"}}Reading the run from scrapes failed, or its rows did not match the count its record holds.{{else if eq .Reason "interrupted"}}candidates stopped or restarted while the pass was running, and it does not resume one.{{else if eq .Reason "store"}}The database failed while the pass was storing its work.{{else if eq .Reason "prompts"}}The prompts service refused or failed a call: the prompt was gone or unusable, or a run could not be started or read.{{else if eq .Reason "places"}}Google Places refused or failed a request, or its answer was not the shape expected.{{end}}</p>{{if eq .Kind "parks"}}<p>What the pass wrote before it failed stays; the next parks pass repairs it.</p>{{else if eq .Kind "walk"}}<p>What the walk found before it failed stays; the <code>walk</code> tool walks a park again when the owner says to.</p>{{else}}<p>What the pass wrote before it failed stays; the next pass or an <code>ingest</code> repairs it.</p>{{end}}</div>
+{{end}}{{if .CeilingReached}}<div id="ceiling-reached" class="alert quiet" data-kind="warn"><strong>Stopped at the ceiling</strong><p>The walk made as many requests as the walk ceiling allows and stopped. The parks below say how far it got: raise the ceiling or shorten the distance in the park rules, then walk again.</p></div>
 {{end}}<section id="pass-card" class="card" aria-labelledby="pass-title">
-<header><h2 id="pass-title">Pass</h2><p>An ingest stores a run's records, and judges only when started by hand over every scraper: rows, new, changed, unchanged and gone count the records against what candidates held, and created and linked count candidates. A judge judges every candidate again: judged counts them and unranged those left with no revenue estimate. An enrich runs every enricher over the candidates whose inputs changed, the derived kinds first: derived counts the results they wrote. For the website check, due counts the candidates due, fetched the domains it fetched, once each, and <code>https</code>, <code>http</code> and <code>none</code> the results by state, <code>none</code> where the check reached no site, which leaves the website unknown. An enrich over a prospect list or one candidate runs one kind over its target, the due ones or, forced, every one; for site text, the brief and the website search, runs counts the prompts runs it started, runs failed those that failed, pages the pages they kept, none for the brief or the website search, and cost what they spent; for the drive route, runs counts the requests it made to the routing service, runs failed those that failed, and cost what they cost. A parks pass derives the industrial parks from the county parcel records: parcels read counts the records, by label, by value and by candidate the industrial parcels by the rule that picked each, and created, updated, gone and grown count the parks.</p></header>
+<header><h2 id="pass-title">Pass</h2><p>An ingest stores a run's records, and judges only when started by hand over every scraper: rows, new, changed, unchanged and gone count the records against what candidates held, and created and linked count candidates. A judge judges every candidate again: judged counts them and unranged those left with no revenue estimate. An enrich runs every enricher over the candidates whose inputs changed, the derived kinds first: derived counts the results they wrote. For the website check, due counts the candidates due, fetched the domains it fetched, once each, and <code>https</code>, <code>http</code> and <code>none</code> the results by state, <code>none</code> where the check reached no site, which leaves the website unknown. An enrich over a prospect list or one candidate runs one kind over its target, the due ones or, forced, every one; for site text, the brief and the website search, runs counts the prompts runs it started, runs failed those that failed, pages the pages they kept, none for the brief or the website search, and cost what they spent; for the drive route, runs counts the requests it made to the routing service, runs failed those that failed, and cost what they cost. A parks pass derives the industrial parks from the county parcel records: parcels read counts the records, by label, by value and by candidate the industrial parcels by the rule that picked each, and created, updated, gone and grown count the parks. A walk searches the parks the owner named with Google Places, in circles: circles counts the circles searched, requests the requests made, places found the places they returned, new candidates those that became new candidates, and cost what the requests cost.</p></header>
 <dl id="pass" class="kv">
 <dt>ID</dt><dd id="pass-id"><code>{{.ID}}</code></dd>
 <dt>Kind</dt><dd id="pass-kind"><code>{{.Kind}}</code></dd>
 <dt>Trigger</dt><dd id="pass-trigger">{{if .RunPage}}<a class="run-link" href="{{.RunPage}}"><code>{{.Trigger}}</code></a>{{else if eq .Origin "pass"}}<a class="pass-link" href="/passes/{{.Trigger}}"><code>{{.Trigger}}</code></a>{{else}}<code>{{.Trigger}}</code>{{end}}</dd>
 <dt>Status</dt><dd id="pass-status"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "done"}}ok{{else if eq .Status "failed"}}err{{else}}info{{end}}">{{.Status}}</span></dd>
 {{if .Reason}}<dt>Reason</dt><dd id="pass-reason"><code>{{.Reason}}</code></dd>
-{{end}}<dt>Started by</dt><dd id="pass-by">{{if or (eq .Origin "ingest") (eq .Origin "judge") (eq .Origin "enrich")}}{{.StartedBy}}{{else if eq .Origin "cron"}}cron <code>{{.Trigger}}</code>{{else if eq .Origin "pass"}}pass <code>{{.Trigger}}</code>{{else if eq .Origin "rules"}}{{.StartedBy}} with <code>edit_park_rules</code>{{else if eq .Origin "start"}}candidates at start{{else}}scrapes{{end}}</dd>
+{{end}}<dt>Started by</dt><dd id="pass-by">{{if or (eq .Origin "ingest") (eq .Origin "judge") (eq .Origin "enrich") (eq .Origin "walk")}}{{.StartedBy}}{{else if eq .Origin "cron"}}cron <code>{{.Trigger}}</code>{{else if eq .Origin "pass"}}pass <code>{{.Trigger}}</code>{{else if eq .Origin "rules"}}{{.StartedBy}} with <code>edit_park_rules</code>{{else if eq .Origin "start"}}candidates at start{{else}}scrapes{{end}}</dd>
 <dt>Started</dt><dd id="pass-started"><time datetime="{{.Started}}">{{.StartedText}}</time></dd>
 {{if .Finished}}<dt>Finished</dt><dd id="pass-finished"><time datetime="{{.Finished}}">{{.FinishedText}}</time></dd>
 {{end}}{{if eq .Kind "enrich_target"}}<dt>Target</dt><dd id="pass-target"><a class="target-link" href="{{.TargetPage}}"><code>{{.Target}}</code></a></dd>
@@ -169,6 +213,12 @@
 <dt>Parks updated</dt><dd id="pass-parks-updated">{{.ParksUpdated}}</dd>
 <dt>Parks gone</dt><dd id="pass-parks-gone">{{.ParksGone}}</dd>
 <dt>Parks grown</dt><dd id="pass-parks-grown">{{.ParksGrown}}</dd>
+{{else if eq .Kind "walk"}}<dt>Circles</dt><dd id="pass-circles">{{.Circles}}</dd>
+<dt>Requests</dt><dd id="pass-requests">{{.Requests}}</dd>
+<dt>Places found</dt><dd id="pass-found">{{.Found}}</dd>
+<dt>New candidates</dt><dd id="pass-new-candidates">{{.NewCandidates}}</dd>
+<dt>Cost</dt><dd id="pass-cost">{{.Cost}}</dd>
+<dt>Ceiling reached</dt><dd id="pass-ceiling">{{if .CeilingReached}}yes{{else}}no{{end}}</dd>
 {{else}}<dt>Rows</dt><dd id="pass-rows">{{.Rows}}</dd>
 <dt>New</dt><dd id="pass-new">{{.New}}</dd>
 <dt>Changed</dt><dd id="pass-changed">{{.Changed}}</dd>
@@ -181,7 +231,28 @@
 {{end}}
 </dl>
 </section>
-{{end}}</main>
+{{if eq .Kind "walk"}}<section id="walk-parks" class="card flush" aria-labelledby="walk-parks-title">
+<header><div><h2 id="walk-parks-title">Parks covered</h2><p>The parks this walk searched, in the order it walked them, each with what the walk found there and what its requests over it cost.</p></div></header>
+{{if .Parks}}<div class="table-scroll">
+<table id="walk-park-list">
+<thead><tr><th>Park</th><th class="num">Places</th><th class="num">New candidates</th><th class="num">Requests</th><th class="num">Cost</th></tr></thead>
+<tbody>
+{{range .Parks}}<tr data-park="{{.ID}}"{{if .CeilingReached}} data-ceiling{{end}}>
+<td class="walk-park-name"><a class="park-link" href="/parks/{{.ID}}">{{.Name}}</a>{{if .CeilingReached}} <span class="badge" data-kind="warn">ceiling reached</span>{{end}}</td>
+<td class="walk-park-found num">{{.Found}}</td>
+<td class="walk-park-new num">{{.NewCandidates}}</td>
+<td class="walk-park-requests num">{{.Requests}}</td>
+<td class="walk-park-cost num">{{.Cost}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}<div id="no-walk-parks" class="empty">
+<h3 class="text-md">No parks</h3>
+<p>The walk covered no park before it stopped.</p>
+</div>{{end}}
+</section>
+{{end}}{{end}}</main>
 {{template "footer" .Banner}}
 </body>
 </html>
