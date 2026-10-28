@@ -171,7 +171,7 @@ func TestWebsiteSearchInputs(t *testing.T) {
 	}
 }
 
-// R-MDYB-BDLA R-IX1O-JPJW R-IY9K-XHAL R-85VH-Q371
+// R-CQYU-IUP8 R-IX1O-JPJW R-IY9K-XHAL R-85VH-Q371
 func TestWebsiteSearchFoundAndFailure(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	valid := `{"url":"https://acme.test/","why":"match","rejected":[{"url":"https://other.test/","why":"different","x":1},{"url":"https://third.test/","why":"another"}],"x":2}`
@@ -238,7 +238,7 @@ func TestWebsiteSearchFoundAndFailure(t *testing.T) {
 	}
 }
 
-// R-TZVA-QLP6
+// R-CUMJ-O5XB
 func TestWebsiteSearchValidation(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	run := `"run":{"id":"run","status":"killed","cost_nanos":0}`
@@ -262,7 +262,7 @@ func TestWebsiteSearchValidation(t *testing.T) {
 	}
 }
 
-// R-MF67-P5BZ
+// R-CS6Q-WMFX
 func TestWebsiteSearchConfirmation(t *testing.T) {
 	for _, address := range []string{"https://acme.test/", "https://secure.test/", "http://acme.test/", "https://missing.test/", "acme.test/about"} {
 		requests := []string{}
@@ -336,7 +336,7 @@ func TestWebsiteSearchConfirmation(t *testing.T) {
 	}
 }
 
-// R-MF67-P5BZ
+// R-CS6Q-WMFX
 func TestWebsiteSearchConfirmationCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -500,7 +500,7 @@ func TestWebsiteSearchEmptySiteInput(t *testing.T) {
 	}
 }
 
-// R-MGE4-2X2O R-MDYB-BDLA
+// R-CTEN-AE6M R-CQYU-IUP8
 func TestWebsiteSearchReasonsAndCases(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	for _, s := range []enrichers.Subject{
@@ -570,7 +570,140 @@ func TestWebsiteSearchReasonsAndCases(t *testing.T) {
 	}
 }
 
-// R-TZVA-QLP6
+// R-CTEN-AE6M R-CQYU-IUP8 R-CS6Q-WMFX R-CUMJ-O5XB
+func TestWebsiteSearchRedirectCases(t *testing.T) {
+	const proposed = "https://acme-trucking.test/"
+	const prior = "https://www.social.test/acme"
+	const body = "<title>Landing</title>fixture"
+	for _, tc := range []struct {
+		name, website, answer, landing, wantCase string
+		status                                   int
+	}{
+		{"landing matches", prior, proposed, "https://social.test/acme?ref=fixture", enrichers.SearchCaseStands, http.StatusOK},
+		{"landing normalizes", prior, proposed, "https://WWW.Social.test./acme?ref=fixture", enrichers.SearchCaseStands, http.StatusOK},
+		{"http landing matches", prior, proposed, "http://social.test:8080/elsewhere", enrichers.SearchCaseStands, http.StatusOK},
+		{"failed landing falls back", prior, proposed, "https://social.test/acme", enrichers.SearchCaseDifferent, http.StatusNotFound},
+		{"direct answer differs", prior, proposed, "", enrichers.SearchCaseDifferent, http.StatusOK},
+		{"matching answer redirects away", prior, "https://social.test/acme", "https://login.portal.test/?next=fixture", enrichers.SearchCaseDifferent, http.StatusOK},
+		{"failed redirect keeps matching answer", prior, "https://social.test/acme", "https://login.portal.test/?next=fixture", enrichers.SearchCaseStands, http.StatusNotFound},
+		{"no prior website", "", proposed, "https://social.test/acme", enrichers.SearchCaseDifferent, http.StatusOK},
+		{"subdomain differs", prior, proposed, "https://shop.social.test/acme", enrichers.SearchCaseDifferent, http.StatusOK},
+		{"suffix differs", prior, proposed, "https://social.test.example/acme", enrichers.SearchCaseDifferent, http.StatusOK},
+		{"one www removed", prior, proposed, "https://www.www.social.test/acme", enrichers.SearchCaseDifferent, http.StatusOK},
+		{"one trailing dot removed", prior, proposed, "https://social.test../acme", enrichers.SearchCaseDifferent, http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			requests := []string{}
+			timers := []time.Duration{}
+			ck := &website.Checker{Client: &http.Client{Transport: transport(func(r *http.Request) (*http.Response, error) {
+				requests = append(requests, r.URL.String())
+				if len(requests) == 1 && tc.landing != "" {
+					return &http.Response{StatusCode: http.StatusFound, Header: http.Header{"Location": []string{tc.landing}}, Body: io.NopCloser(strings.NewReader(""))}, nil
+				}
+				return &http.Response{StatusCode: tc.status, Header: http.Header{"Content-Type": []string{"text/html"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
+			})}, After: func(d time.Duration) <-chan time.Time { timers = append(timers, d); return make(chan time.Time) }}
+			e := enrichers.WebsiteSearch{Checker: ck}
+			s := enrichers.Subject{Website: tc.website, WebsiteSource: "check", SiteText: &enrichers.SiteTextFound{Run: "old", Status: "failed"}}
+			answer := enrichers.WebsiteSearchAnswer{URL: tc.answer, Why: "fixture", Rejected: []enrichers.WebsiteSearchSite{{URL: "https://alternative.test/", Why: "fixture alternative"}}}
+			stdout, err := json.Marshal(answer)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out := prompts.Outcome{ID: "run", Status: enrichers.RunExited, ExitCode: new(int), CostNanos: 250000000, Stdout: string(stdout)}
+			r := e.Found(context.Background(), s, out, 99)
+			var f enrichers.WebsiteSearchFound
+			if err := json.Unmarshal(r.Found, &f); err != nil {
+				t.Fatal(err)
+			}
+			landed := tc.landing
+			if landed == "" {
+				landed = tc.answer
+			}
+			wantRequests := []string{tc.answer}
+			if tc.landing != "" {
+				wantRequests = append(wantRequests, tc.landing)
+			}
+			state, title, failure, size := sources.WebsiteHTTPS, "Landing", "", int64(len(body))
+			if strings.HasPrefix(landed, "http:") {
+				state = sources.WebsiteHTTP
+			}
+			if tc.status != http.StatusOK {
+				state, title, failure, size = sources.WebsiteNone, "", website.FailStatus, 0
+			}
+			want := enrichers.WebsiteSearchFound{
+				Run:          enrichers.WebsiteSearchRun{ID: out.ID, Status: out.Status, ExitCode: out.ExitCode, CostNanos: out.CostNanos},
+				Answer:       &answer,
+				Confirmation: &enrichers.WebsiteSearchConfirmation{State: state, URL: landed, Title: title, StatusCode: tc.status, Size: size, Error: failure},
+				Reason:       enrichers.SearchReasonEmptySite,
+				Website:      tc.website,
+				WebsiteFrom:  "check",
+				SiteText:     &enrichers.WebsiteSearchSiteText{Status: s.SiteText.Status, Pages: s.SiteText.Pages},
+				Case:         tc.wantCase,
+			}
+			if tc.website == "" {
+				want.Reason, want.WebsiteFrom, want.SiteText = enrichers.SearchReasonNoWebsite, "", nil
+			}
+			encoded, err := json.Marshal(want)
+			if err != nil || !bytes.Equal(r.Found, encoded) || !reflect.DeepEqual(f, want) || r.Source != enrichers.SourcePrompts || r.Cost != 0.25 || !e.Valid(r.Found) || f.Failed() {
+				t.Fatalf("found %s, want %s, error %v", r.Found, encoded, err)
+			}
+			if !slices.Equal(requests, wantRequests) || !slices.Equal(timers, []time.Duration{website.Timeout}) {
+				t.Fatal(requests, timers)
+			}
+		})
+	}
+}
+
+// R-CUMJ-O5XB
+func TestWebsiteSearchConfirmationCaseValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name, answer, landed, state, caseWord string
+		confirmation, valid                   bool
+	}{
+		{"https landing stands", "https://other.test/", "https://acme.test/x?ref=fixture", sources.WebsiteHTTPS, enrichers.SearchCaseStands, true, true},
+		{"normalized landing stands", "https://other.test/", "https://WWW.Acme.test./x", sources.WebsiteHTTPS, enrichers.SearchCaseStands, true, true},
+		{"http landing stands", "https://other.test/", "http://acme.test:8080/x", sources.WebsiteHTTP, enrichers.SearchCaseStands, true, true},
+		{"successful landing cannot differ", "https://other.test/", "https://acme.test/", sources.WebsiteHTTPS, enrichers.SearchCaseDifferent, true, false},
+		{"failed landing uses answer", "https://other.test/", "https://acme.test/", sources.WebsiteNone, enrichers.SearchCaseDifferent, true, true},
+		{"failed landing cannot stand", "https://other.test/", "https://acme.test/", sources.WebsiteNone, enrichers.SearchCaseStands, true, false},
+		{"http landing overrides matching answer", "http://acme.test/", "http://other.test/", sources.WebsiteHTTP, enrichers.SearchCaseDifferent, true, true},
+		{"http landing cannot keep answer case", "http://acme.test/", "http://other.test/", sources.WebsiteHTTP, enrichers.SearchCaseStands, true, false},
+		{"failed landing keeps matching answer", "http://acme.test/", "http://other.test/", sources.WebsiteNone, enrichers.SearchCaseStands, true, true},
+		{"no confirmation falls back", "http://acme.test/", "", "", enrichers.SearchCaseStands, false, true},
+		{"no confirmation differs", "https://other.test/", "", "", enrichers.SearchCaseDifferent, false, true},
+		{"empty successful landing differs", "http://acme.test/", "", sources.WebsiteHTTPS, enrichers.SearchCaseDifferent, true, true},
+		{"empty successful landing cannot fall back", "http://acme.test/", "", sources.WebsiteHTTPS, enrichers.SearchCaseStands, true, false},
+		{"empty answer has none", "", "", "", enrichers.SearchCaseNone, false, true},
+		{"empty answer forbids confirmation", "", "https://acme.test/", sources.WebsiteHTTPS, enrichers.SearchCaseNone, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := enrichers.WebsiteSearchFound{
+				Run:         enrichers.WebsiteSearchRun{ID: "run", Status: enrichers.RunExited, ExitCode: new(int)},
+				Answer:      &enrichers.WebsiteSearchAnswer{URL: tc.answer, Why: "fixture"},
+				Reason:      enrichers.SearchReasonAgain,
+				Website:     "https://www.acme.test/home",
+				WebsiteFrom: "check",
+				Case:        tc.caseWord,
+			}
+			if tc.confirmation {
+				f.Confirmation = &enrichers.WebsiteSearchConfirmation{State: tc.state, URL: tc.landed, StatusCode: 200, Size: 9}
+			}
+			raw, err := json.Marshal(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, p := range []*prompts.Client{nil, {}} {
+				for _, c := range []*website.Checker{nil, {}} {
+					if got := (enrichers.WebsiteSearch{Prompts: p, Checker: c}).Valid(append(append([]byte(" \n"), raw...), '\t')); got != tc.valid {
+						t.Fatalf("valid = %v, want %v for %s", got, tc.valid, raw)
+					}
+				}
+			}
+		})
+	}
+}
+
+// R-CUMJ-O5XB
 func TestWebsiteSearchContextValidation(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	killed := `"run":{"id":"r","status":"killed","cost_nanos":0}`

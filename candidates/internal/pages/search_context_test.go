@@ -20,7 +20,7 @@ func TestSearchSiteTextViewShape(_ *testing.T) {
 	}(SearchSiteTextView{})
 }
 
-// R-ZU1N-7JFF
+// R-4KZV-P1A9
 func TestSearchContextProjection(t *testing.T) {
 	good := enrichers.WebsiteSearchRun{ID: "context-run", Status: enrichers.RunExited, ExitCode: new(0)}
 	for _, tc := range []struct {
@@ -82,7 +82,7 @@ func TestSearchContextTemplateStates(t *testing.T) {
 	}
 }
 
-// R-ZWHF-Z2WT
+// R-4556-Q0N8
 func TestTakeoverWebsiteFields(t *testing.T) {
 	at := fixtureTime()
 	check := store.Enrichment{Kind: sources.WebsiteCheck, At: at.Add(time.Hour), Found: encodedJSON(website.Result{State: sources.WebsiteHTTPS, URL: "https://recorded.test/", Title: "check-title"})}
@@ -130,7 +130,7 @@ func TestTakeoverWebsiteFields(t *testing.T) {
 	}
 }
 
-// R-ZXPC-CUNI R-ZU1N-7JFF R-ZWHF-Z2WT
+// R-46D3-3SDX R-4KZV-P1A9 R-4556-Q0N8
 func TestCandidatePageShowsSearchTakeoverContext(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	_, ids, err := cfg.Store.Attach(t.Context(), "context-run", false, []store.Observation{{Scraper: "fixture", SourceID: "context-row", Digest: "context-digest", Reading: sources.Reading{Name: "context-business", NameKey: "context-business"}}})

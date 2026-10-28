@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"reflect"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
@@ -215,7 +217,7 @@ func (s *Store) factsResults(ctx context.Context, tx *sql.Tx, id string) ([]Enri
 			return nil, err
 		}
 		if w.State == sources.WebsiteHTTPS || w.State == sources.WebsiteHTTP {
-			takeover, err = enrichmentRecords(ctx, tx, ` WHERE candidate=? AND kind=? AND json_extract(found,'$.case')=? AND json_extract(found,'$.website')=? AND json_extract(found,'$.website')<>'' AND json_extract(found,'$.run.status')=? AND json_extract(found,'$.run.exit_code')=0 AND json_type(found,'$.answer')='object' AND json_extract(found,'$.confirmation.state') IN (?,?) ORDER BY seq DESC LIMIT 1`, id, enrichers.KindWebsiteSearch, enrichers.SearchCaseDifferent, w.URL, enrichers.RunExited, sources.WebsiteHTTPS, sources.WebsiteHTTP)
+			takeover, err = s.takeoverSearch(ctx, tx, id, w.URL)
 			if err != nil {
 				return nil, err
 			}
@@ -297,6 +299,34 @@ func (s *Store) factsResults(ctx context.Context, tx *sql.Tx, id string) ([]Enri
 	}
 	out = append(out, takeover...)
 	return out, nil
+}
+
+// takeoverSearch folds matching searches without retaining their history.
+func (s *Store) takeoverSearch(ctx context.Context, tx *sql.Tx, id, websiteURL string) ([]Enrichment, error) {
+	if websiteURL == "" {
+		return nil, nil
+	}
+	rows, err := querySQL(ctx, tx, `SELECT seq,coalesce(json_extract(found,'$.confirmation.url'),'') FROM enrichments WHERE candidate=? AND kind=? AND json_extract(found,'$.website')=? AND json_extract(found,'$.run.status')=? AND json_extract(found,'$.run.exit_code')=0 AND json_type(found,'$.answer')='object' AND json_extract(found,'$.confirmation.state') IN (?,?) ORDER BY seq DESC`, id, enrichers.KindWebsiteSearch, websiteURL, enrichers.RunExited, sources.WebsiteHTTPS, sources.WebsiteHTTP)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	websiteKey := websiteSiteKey(websiteURL)
+	for rows.Next() {
+		var seq int64
+		var landing string
+		if err = rows.Scan(&seq, &landing); err != nil {
+			return nil, err
+		}
+		if key := websiteSiteKey(landing); key != "" && key == websiteKey {
+			continue
+		}
+		if err = rows.Close(); err != nil {
+			return nil, err
+		}
+		return enrichmentRecords(ctx, tx, " WHERE candidate=? AND seq=?", id, seq)
+	}
+	return nil, rows.Err()
 }
 
 // GetFacts reads the materialized enrichment facts.
@@ -472,7 +502,7 @@ func WebsiteDecisionOf(es []Enrichment) (source, state, url, title, why string, 
 			continue
 		}
 		working := v.Confirmation != nil && (v.Confirmation.State == sources.WebsiteHTTPS || v.Confirmation.State == sources.WebsiteHTTP)
-		if working && v.Case == enrichers.SearchCaseDifferent && v.Website != "" {
+		if working && !searchLandsOn(v) && v.Website != "" {
 			takeovers[v.Website] = true
 		}
 		if inertSearch(v) {
@@ -505,7 +535,30 @@ func WebsiteDecisionOf(es []Enrichment) (source, state, url, title, why string, 
 }
 
 func inertSearch(v enrichers.WebsiteSearchFound) bool {
-	return v.Website != "" && (v.Case == enrichers.SearchCaseStands || v.Case == enrichers.SearchCaseNone || v.Confirmation != nil && v.Confirmation.State == sources.WebsiteNone)
+	if v.Website == "" {
+		return false
+	}
+	if v.Confirmation == nil {
+		return v.Case == enrichers.SearchCaseStands || v.Case == enrichers.SearchCaseNone
+	}
+	return v.Confirmation.State == sources.WebsiteNone || (v.Confirmation.State == sources.WebsiteHTTPS || v.Confirmation.State == sources.WebsiteHTTP) && searchLandsOn(v)
+}
+
+func searchLandsOn(v enrichers.WebsiteSearchFound) bool {
+	if v.Confirmation == nil {
+		return false
+	}
+	key := websiteSiteKey(v.Confirmation.URL)
+	return key != "" && key == websiteSiteKey(v.Website)
+}
+
+func websiteSiteKey(address string) string {
+	for _, raw := range []string{address, "http://" + address} {
+		if u, err := url.Parse(raw); err == nil && u.Hostname() != "" {
+			return strings.TrimPrefix(strings.TrimSuffix(strings.ToLower(u.Hostname()), "."), "www.")
+		}
+	}
+	return ""
 }
 
 // MinutesByRoute and MinutesByZip identify the deciding drive result.

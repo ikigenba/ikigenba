@@ -15,7 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-VE9M-KE6T R-OU7I-97OR
+// R-7K1I-V57N R-OU7I-97OR
 func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -297,7 +297,7 @@ func TestOrdinaryWritesPreserveFactsAndResultHistory(t *testing.T) {
 	}
 }
 
-// R-UM7X-RO4U R-GSBL-OU6L R-USBF-OIUB
+// R-7CQ4-KIRH R-GSBL-OU6L R-77UJ-1FSP
 func TestFactsProjectionUsesNewestResultOfEveryKind(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

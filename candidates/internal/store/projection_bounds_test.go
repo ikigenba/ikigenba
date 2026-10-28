@@ -29,7 +29,7 @@ func fillFactsWalk(ctx context.Context, s *store.Store) error {
 	}
 }
 
-// R-LNNI-SGBE R-KWTQ-DI04 R-UPVM-WZCX
+// R-LNNI-SGBE R-KWTQ-DI04 R-75EQ-9WBB
 func TestFactsRowExistsOnlyAfterProjection(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -83,7 +83,7 @@ func TestFactsProjectionAllocationBound(t *testing.T) {
 	failed.Summary = pad
 	bad.Found, err = json.Marshal(failed)
 	contractOK(t, err)
-	searchBytes, err := json.Marshal(enrichers.WebsiteSearchFound{Run: enrichers.WebsiteSearchRun{ID: "search-run", Status: enrichers.RunExited, ExitCode: new(int)}, Answer: &enrichers.WebsiteSearchAnswer{Why: pad}})
+	searchBytes, err := json.Marshal(enrichers.WebsiteSearchFound{Run: enrichers.WebsiteSearchRun{ID: "search-run", Status: enrichers.RunExited, ExitCode: new(int)}, Answer: &enrichers.WebsiteSearchAnswer{URL: "https://other.test/", Why: pad, Rejected: []enrichers.WebsiteSearchSite{}}, Reason: enrichers.SearchReasonAgain, Website: "https://business.test", WebsiteFrom: store.WebsiteByCheck, Case: enrichers.SearchCaseStands, Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteHTTPS, URL: "https://www.business.test/contact"}})
 	contractOK(t, err)
 	groups := []struct {
 		n int

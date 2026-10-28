@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-Q65V-BAP3 R-RE29-31E3 R-SZLV-FX7Q R-VH4X-SOII R-VKSM-XZQL
+// R-Q65V-BAP3 R-RE29-31E3 R-SZLV-FX7Q R-6IVW-D9K0 R-6Q7A-NW06
 func TestFactsAndBriefAnswers(t *testing.T) {
 	at := time.Date(2026, 10, 5, 9, 0, 7, 0, time.UTC)
 	minutes, power, drivers := int64(31), int64(4), int64(0)

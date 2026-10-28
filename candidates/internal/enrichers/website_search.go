@@ -189,7 +189,11 @@ func searchCase(f WebsiteSearchFound) string {
 	if f.Answer.URL == "" {
 		return SearchCaseNone
 	}
-	if key := siteKey(f.Answer.URL); key != "" && key == siteKey(f.Website) {
+	address := f.Answer.URL
+	if c := f.Confirmation; c != nil && (c.State == sources.WebsiteHTTPS || c.State == sources.WebsiteHTTP) {
+		address = c.URL
+	}
+	if key := siteKey(address); key != "" && key == siteKey(f.Website) {
 		return SearchCaseStands
 	}
 	return SearchCaseDifferent
@@ -287,7 +291,6 @@ func (w WebsiteSearch) Found(ctx context.Context, s Subject, out prompts.Outcome
 	} else if emptySite(s) {
 		f.Reason = SearchReasonEmptySite
 	}
-	f.Case = searchCase(f)
 	if !f.Failed() && f.Answer.URL != "" && w.Checker != nil {
 		pg := w.Checker.Get(ctx, f.Answer.URL)
 		state := sources.WebsiteNone
@@ -301,6 +304,7 @@ func (w WebsiteSearch) Found(ctx context.Context, s Subject, out prompts.Outcome
 		}
 		f.Confirmation = &WebsiteSearchConfirmation{state, pg.URL, pg.Title, pg.StatusCode, pg.Size, pg.Error}
 	}
+	f.Case = searchCase(f)
 	r := result(SourcePrompts, f)
 	r.Cost = float64(out.CostNanos) / 1e9
 	return r

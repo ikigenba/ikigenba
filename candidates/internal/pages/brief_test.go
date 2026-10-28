@@ -11,7 +11,7 @@ import (
 )
 
 // R-GOAB-PI3C R-UKGN-3BU2
-// R-ZV9J-LB64
+// R-4M7S-2T0Y
 func TestBriefViewSelection(t *testing.T) {
 	good := enrichers.BriefFound{Run: "fixture-run", Status: "exited", ExitCode: new(0), Summary: "fixture-summary", Categories: []enrichers.BriefCategory{{Name: sources.CategoryRetail, Why: "fixture-why"}}, Labels: []string{"fixture-label", "other-label"}}
 	result := func(b enrichers.BriefFound) store.Enrichment {

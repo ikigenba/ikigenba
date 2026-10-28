@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-VKSM-XZQL R-ZKAN-MILE R-WTON-8TMG
+// R-6Q7A-NW06 R-ZKAN-MILE R-6RF7-1NQV
 func TestSearchAnswersUseStoredResults(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
@@ -153,7 +153,7 @@ func TestWebsiteSearchEnrichDispatch(t *testing.T) {
 	}
 }
 
-// R-VKSM-XZQL R-VJKQ-K7ZW
+// R-6Q7A-NW06 R-6MJL-IKS3
 func TestWebsiteDecisionAnswersDistinguishUncheckedAndUnfound(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
@@ -222,7 +222,7 @@ func TestWebsiteDecisionAnswersDistinguishUncheckedAndUnfound(t *testing.T) {
 	}
 }
 
-// R-WTON-8TMG
+// R-6RF7-1NQV
 func TestSearchAnswersPreserveRecordedContext(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
@@ -232,6 +232,7 @@ func TestSearchAnswersPreserveRecordedContext(t *testing.T) {
 		{Run: good, Answer: &enrichers.WebsiteSearchAnswer{}},
 		{Run: enrichers.WebsiteSearchRun{ID: "failed-run", Status: "failed"}},
 		{Run: good, Answer: &enrichers.WebsiteSearchAnswer{URL: "https://answer.test/"}, Reason: enrichers.SearchReasonEmptySite, Website: "https://recorded.test/", WebsiteFrom: store.WebsiteByCheck, SiteText: &enrichers.WebsiteSearchSiteText{Status: "failed", Pages: 0}, Case: enrichers.SearchCaseDifferent},
+		{Run: good, Answer: &enrichers.WebsiteSearchAnswer{URL: "https://answer.test/"}, Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteHTTPS, URL: "https://www.recorded.test/contact?ref=search"}, Reason: enrichers.SearchReasonEmptySite, Website: "https://recorded.test/", WebsiteFrom: store.WebsiteByCheck, SiteText: &enrichers.WebsiteSearchSiteText{Status: "failed", Pages: 0}, Case: enrichers.SearchCaseStands},
 		{Run: good, Answer: &enrichers.WebsiteSearchAnswer{URL: "https://recorded.test/"}, Reason: enrichers.SearchReasonAgain, Website: "https://recorded.test/", WebsiteFrom: store.WebsiteBySearch, SiteText: &enrichers.WebsiteSearchSiteText{Status: enrichers.RunExited, Pages: 4}, Case: enrichers.SearchCaseStands},
 		{Run: good, Answer: &enrichers.WebsiteSearchAnswer{}, Reason: enrichers.SearchReasonNoWebsite, Case: enrichers.SearchCaseNone},
 		{Run: enrichers.WebsiteSearchRun{ID: "failed-run", Status: "failed"}, Reason: enrichers.SearchReasonNoWebsite},
@@ -253,5 +254,51 @@ func TestSearchAnswersPreserveRecordedContext(t *testing.T) {
 		if !reflect.DeepEqual(objectKeys(t, encoded), []string{"kind", "source", "inputs", "found", "cost", "at"}) {
 			t.Fatal(string(encoded))
 		}
+	}
+}
+
+// R-6RF7-1NQV R-6Q7A-NW06
+func TestSearchAnswersKeepRecordedCaseWhileFactsUseLanding(t *testing.T) {
+	const checked = "https://www.riverhaul.test/"
+	for _, tc := range []struct {
+		name, answer, landing, recordedCase, source, decidedURL string
+	}{
+		{"redirect returns to recorded site", "https://riverhaul-transport.test/", "https://riverhaul.test/contact?ref=search", enrichers.SearchCaseStands, store.WebsiteByCheck, checked},
+		{"redirect leaves recorded site", "https://riverhaul.test/", "https://fleetportal.test/riverhaul", enrichers.SearchCaseDifferent, store.WebsiteBySearch, "https://fleetportal.test/riverhaul"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			id := f.seed(1)[0]
+			if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: sources.WebsiteCheck, Source: "riverhaul.test", Inputs: "checked-email", Found: encodedJSON(map[string]string{"state": sources.WebsiteHTTPS, "url": checked})}}); err != nil {
+				t.Fatal(err)
+			}
+			f.now = f.now.Add(time.Hour)
+			found := enrichers.WebsiteSearchFound{
+				Run:          enrichers.WebsiteSearchRun{ID: "riverhaul-search", Status: enrichers.RunExited, ExitCode: new(0)},
+				Answer:       &enrichers.WebsiteSearchAnswer{URL: tc.answer, Why: "Business name and address match"},
+				Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteHTTPS, URL: tc.landing, Title: "River Haul", StatusCode: 200},
+				Reason:       enrichers.SearchReasonEmptySite,
+				Website:      checked,
+				WebsiteFrom:  store.WebsiteByCheck,
+				SiteText:     &enrichers.WebsiteSearchSiteText{Status: enrichers.RunExited, Pages: 0},
+				Case:         tc.recordedCase,
+			}
+			raw := encodedJSON(found)
+			if _, err := f.st.AddEnrichments(t.Context(), []store.Enrichment{{Candidate: id, Kind: enrichers.KindWebsiteSearch, Source: enrichers.SourcePrompts, Inputs: "riverhaul-search-inputs", Found: raw}}); err != nil {
+				t.Fatal(err)
+			}
+			r := f.call("candidate", tools.CandidateArgs{Candidate: id})
+			if r.IsError() {
+				t.Fatal(decode(t, r))
+			}
+			detail := decodeList[tools.Detail](t, r)
+			if len(detail.EnrichmentResults) != 2 || detail.EnrichmentResults[0].Kind != enrichers.KindWebsiteSearch || !reflect.DeepEqual(detail.EnrichmentResults[0].Found, raw) {
+				t.Fatal(detail.EnrichmentResults, string(raw))
+			}
+			facts := detail.Enrichments.Facts
+			if facts == nil || facts.Website != sources.WebsiteHTTPS || facts.WebsiteSource != tc.source || facts.WebsiteURL != tc.decidedURL {
+				t.Fatal(facts, tc)
+			}
+		})
 	}
 }

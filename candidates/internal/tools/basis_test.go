@@ -43,7 +43,7 @@ func peekBasis(t *testing.T, f *fixture, id string) tools.ProspectListRead {
 	return decodeList[tools.ProspectListRead](t, r)
 }
 
-// R-T39K-L8FT R-T4HG-Z06I R-VICU-6G97
+// R-T39K-L8FT R-T4HG-Z06I R-6LBP-4T1E
 func TestBasisAnswersFollowNewestResultsWithoutJudging(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(3)
