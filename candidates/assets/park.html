@@ -228,7 +228,7 @@
 <p>Nothing walks a park on its own. The <code>walk</code> tool walks it when the owner names it.</p>
 </div>{{end}}
 </section>
-{{if $walks}}<section id="places" class="card flush" aria-labelledby="places-title">
+{{if or $walks $places}}<section id="places" class="card flush" aria-labelledby="places-title">
 <header><div><h2 id="places-title">Places found</h2><p>Every place a walk found in this park, as Google sent it, the newest walk's first. Each is matched to a candidate by its phone, its website's domain, or its name and town, or becomes a new one. A walk again adds its places beside the earlier ones; none is removed.</p></div></header>
 {{if $places}}<div class="table-scroll">
 <table id="place-list">
@@ -251,7 +251,7 @@
 <p>No walk of this park found a place in it.</p>
 </div>{{end}}
 </section>
-<section id="found-candidates" class="card flush" aria-labelledby="found-candidates-title">
+{{end}}{{if or $walks $found}}<section id="found-candidates" class="card flush" aria-labelledby="found-candidates-title">
 <header><div><h2 id="found-candidates-title">Candidates found here</h2><p>The candidates the places found in this park are linked to, each once. A new one was made by a walk of this park; the others were already candidates and gained only the link and the park.</p></div></header>
 {{if $found}}<div class="table-scroll">
 <table id="found-candidate-list">
