@@ -266,14 +266,13 @@ func TestWalkCeilingOnParksPage(t *testing.T) {
 	}
 }
 
-// Places and candidates are visible in the asset only when walk history is present.
-// These cases exercise that supported subset, not every independently populated slice.
-func TestWalkTemplateStatesWithHistory(t *testing.T) {
+// R-J3KN-8MJW
+func TestWalkTemplateStates(t *testing.T) {
 	set, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	render := func(name string, data any, values ...string) {
+	render := func(t *testing.T, name string, data any, values ...string) {
 		t.Helper()
 		var out bytes.Buffer
 		if err := set.templates.ExecuteTemplate(&out, name, data); err != nil {
@@ -286,56 +285,72 @@ func TestWalkTemplateStatesWithHistory(t *testing.T) {
 		}
 	}
 	for _, ceiling := range []bool{false, true} {
-		for _, mask := range []int{0, 1, 3, 5, 7} {
-			d := ParkData{Park: ParkView{CeilingReached: ceiling}}
-			values := []string{}
-			if mask&1 != 0 {
-				d.Walks = []WalkRow{{Pass: "unique-history-pass", WalkedText: "unique-history-date", Cost: "unique-history-cost", CeilingReached: ceiling}}
-				values = append(values, "unique-history-pass", "unique-history-date", "unique-history-cost")
-			}
-			if mask&2 != 0 {
-				d.Places = []PlaceRow{{PlaceID: "unique-place-id", Name: "unique-place-name", Walk: "unique-place-walk"}}
-				values = append(values, "unique-place-id", "unique-place-name", "unique-place-walk")
-			}
-			if mask&4 != 0 {
-				d.FoundCandidates = []FoundCandidateRow{{ID: "unique-found-id", Name: "unique-found-name", Status: store.StatusActive, New: ceiling}}
-				values = append(values, "unique-found-id", "unique-found-name")
-			}
-			render("park", d, values...)
-		}
-		for optional := range 32 {
-			p := PlaceRow{PlaceID: "unique-option-place", Name: "unique-option-name", Walk: "unique-option-walk", New: ceiling}
-			values := []string{p.PlaceID, p.Name, p.Walk}
-			for i, f := range []*string{&p.Address, &p.PrimaryType, &p.Website, &p.Phone, &p.Candidate} {
-				if optional&(1<<i) != 0 {
-					*f = "unique-option-" + strconv.Itoa(i)
-					values = append(values, *f)
+		for mask := range 8 {
+			for optional := range 32 {
+				d := ParkData{Park: ParkView{CeilingReached: ceiling}}
+				values := []string{}
+				if mask&1 != 0 {
+					for i, reached := range []bool{false, true} {
+						suffix := strconv.Itoa(i)
+						row := WalkRow{Pass: "history-pass-token-" + suffix, WalkedText: "history-date-token-" + suffix, Cost: "history-cost-token-" + suffix, CeilingReached: reached}
+						d.Walks = append(d.Walks, row)
+						values = append(values, row.Pass, row.WalkedText, row.Cost)
+					}
 				}
-			}
-			for _, status := range []string{store.StatusActive, store.StatusMerged} {
-				for _, name := range []string{"", "unique-found-optional-name"} {
-					d := ParkData{Park: ParkView{CeilingReached: ceiling}, Walks: []WalkRow{{}}, Places: []PlaceRow{p}, FoundCandidates: []FoundCandidateRow{{ID: "unique-optional-found", Name: name, Status: status, New: ceiling}}}
-					render("park", d, append(append([]string{}, values...), "unique-optional-found", name)...)
+				if mask&2 != 0 {
+					for i, isNew := range []bool{false, true} {
+						suffix := strconv.Itoa(i)
+						row := PlaceRow{PlaceID: "place-identifier-token-" + suffix, Name: "place-name-token-" + suffix, Walk: "place-walk-token-" + suffix, New: isNew}
+						values = append(values, row.PlaceID, row.Name, row.Walk)
+						for field, value := range []*string{&row.Address, &row.PrimaryType, &row.Website, &row.Phone, &row.Candidate} {
+							if optional&(1<<field) != 0 {
+								*value = "place-option-token-" + suffix + "-" + strconv.Itoa(field)
+								values = append(values, *value)
+							}
+						}
+						d.Places = append(d.Places, row)
+					}
 				}
+				if mask&4 != 0 {
+					for _, status := range []string{store.StatusActive, store.StatusMerged} {
+						for _, isNew := range []bool{false, true} {
+							for _, hasName := range []bool{false, true} {
+								suffix := strconv.Itoa(len(d.FoundCandidates))
+								row := FoundCandidateRow{ID: "found-identifier-token-" + suffix, Status: status, New: isNew}
+								if hasName {
+									row.Name = "found-name-token-" + suffix
+								}
+								d.FoundCandidates = append(d.FoundCandidates, row)
+								values = append(values, row.ID, row.Name)
+							}
+						}
+					}
+				}
+				t.Run("park/ceiling="+strconv.FormatBool(ceiling)+"/slices="+strconv.Itoa(mask)+"/optional="+strconv.Itoa(optional), func(t *testing.T) {
+					render(t, "park", d, values...)
+				})
 			}
 		}
 		for _, status := range []string{store.StatusRunning, store.StatusDone, store.StatusFailed} {
-			for _, rows := range [][]WalkParkRow{nil, {{ID: "unique-pass-park", Name: "unique-pass-park-name", Cost: "unique-pass-cost", CeilingReached: ceiling}}} {
+			for _, rows := range [][]WalkParkRow{nil, {
+				{ID: "pass-park-identifier-first", Name: "pass-park-name-alpha", Cost: "pass-park-cost-one", CeilingReached: false},
+				{ID: "pass-park-identifier-second", Name: "pass-park-name-beta", Cost: "pass-park-cost-two", CeilingReached: true},
+			}} {
 				p := PassView{Kind: store.KindWalk, Origin: store.OriginWalk, Trigger: store.TriggerWalk, StartedBy: "unique-walker", Status: status, CeilingReached: ceiling, Parks: rows}
 				if status == store.StatusFailed {
 					p.Reason = store.ReasonPlaces
 				}
 				values := []string{}
-				if len(rows) > 0 {
-					values = []string{rows[0].ID, rows[0].Name, rows[0].Cost}
+				for _, row := range rows {
+					values = append(values, row.ID, row.Name, row.Cost)
 				}
-				render("pass", PassData{Pass: p}, values...)
+				render(t, "pass", PassData{Pass: p}, values...)
 			}
 		}
 	}
-	render("pass", PassData{Pass: PassView{Kind: store.KindJudge}})
-	for _, candidatePark := range []*ParkLink{nil, {ID: "unique-card-park", Name: "unique-card-park-name"}} {
-		for _, linkPark := range []*ParkLink{nil, {ID: "unique-link-park", Name: "unique-link-park-name"}} {
+	render(t, "pass", PassData{Pass: PassView{Kind: store.KindJudge}})
+	for _, candidatePark := range []*ParkLink{nil, {ID: "card-park-identifier", Name: "card-park-name"}} {
+		for _, linkPark := range []*ParkLink{nil, {ID: "link-park-identifier", Name: "link-park-name"}} {
 			d := CandidateData{Candidate: CandidateView{Status: store.StatusActive, Park: candidatePark}, Links: []LinkView{{Scraper: places.Name, Walk: "unique-link-walk", Park: linkPark}, {}}}
 			values := []string{"unique-link-walk"}
 			if candidatePark != nil {
@@ -344,8 +359,8 @@ func TestWalkTemplateStatesWithHistory(t *testing.T) {
 			if linkPark != nil {
 				values = append(values, linkPark.ID, linkPark.Name)
 			}
-			render("candidate", d, values...)
+			render(t, "candidate", d, values...)
 		}
 	}
-	render("parks", ParksData{Rules: RulesView{WalkCeiling: 3827}}, "3827")
+	render(t, "parks", ParksData{Rules: RulesView{WalkCeiling: 3827}}, "3827")
 }

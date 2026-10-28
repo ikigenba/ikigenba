@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/ikigenba/ikigenba/candidates/internal/places"
@@ -220,6 +221,89 @@ func TestRefusalAndSecrecy(t *testing.T) {
 	p := places.Place{ID: "synthetic-key", Name: places.NearbyURL, Address: "synthetic-key", PrimaryType: "synthetic-key", Website: places.NearbyURL, Phone: "synthetic-key"}
 	cl = client(func(*http.Request) (*http.Response, error) { return response(200, wire(p)) })
 	requireAnswer(t, cl.Nearby(context.Background(), places.Circle{}), places.Answer{Places: []places.Place{p}, Sent: 1, CostNanos: places.PriceNanos})
+}
+
+// R-Y3PK-VAFC
+func TestAnswerAndSweepSecrecy(t *testing.T) {
+	for _, key := range []string{"zz-test-key-zz", "DENIED", "A"} {
+		for _, mode := range []string{"transport", "body-read", "raw-refusal", "status-key", "status-containing-key", "status-url", "shape", "empty", "place-key", "place-url", "timeout", "canceled", "already-canceled"} {
+			for _, call := range []string{"nearby", "sweep"} {
+				t.Run(key+"/"+mode+"/"+call, func(t *testing.T) {
+					ctx, cancel := context.WithCancel(context.Background())
+					defer cancel()
+					if mode == "already-canceled" {
+						cancel()
+					}
+					timer := make(chan time.Time, 1)
+					requestURL := make(chan string, 1)
+					cl := client(func(r *http.Request) (*http.Response, error) {
+						url := r.URL.String()
+						requestURL <- url
+						diagnostic := key + " " + url
+						switch mode {
+						case "transport":
+							return nil, errors.New(diagnostic)
+						case "body-read":
+							return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(iotest.ErrReader(errors.New(diagnostic)))}, nil
+						case "raw-refusal":
+							return response(http.StatusForbidden, diagnostic)
+						case "status-key", "status-containing-key", "status-url":
+							status := key
+							switch mode {
+							case "status-containing-key":
+								status = "PREFIX_" + key + "_SUFFIX"
+							case "status-url":
+								status = url
+							}
+							body, err := json.Marshal(map[string]any{"error": map[string]string{"status": status, "message": diagnostic}})
+							if err != nil {
+								t.Error(err)
+							}
+							return response(http.StatusForbidden, string(body))
+						case "shape":
+							return response(http.StatusOK, diagnostic)
+						case "place-key", "place-url":
+							value := key
+							if mode == "place-url" {
+								value = url
+							}
+							return response(http.StatusOK, wire(places.Place{ID: value, Name: value, Address: value, PrimaryType: value, Website: value, Phone: value}))
+						case "timeout", "canceled":
+							if mode == "timeout" {
+								timer <- time.Time{}
+							} else {
+								cancel()
+							}
+							<-r.Context().Done()
+							return nil, errors.New(diagnostic)
+						default:
+							return response(http.StatusOK, "{}")
+						}
+					})
+					cl.Key = key
+					cl.After = func(time.Duration) <-chan time.Time { return timer }
+					var status, failure string
+					if call == "nearby" {
+						a := cl.Nearby(ctx, places.Circle{})
+						status, failure = a.Status, a.Error
+					} else {
+						s := cl.Sweep(ctx, places.Circle{}, 5)
+						status, failure = s.Status, s.Error
+					}
+					var url string
+					select {
+					case url = <-requestURL:
+					default:
+					}
+					for _, word := range []string{status, failure} {
+						if word == key || (url != "" && word == url) {
+							t.Fatal("answer exposed a credential or request URL")
+						}
+					}
+				})
+			}
+		}
+	}
 }
 
 func await[T any](t *testing.T, ch <-chan T) T {

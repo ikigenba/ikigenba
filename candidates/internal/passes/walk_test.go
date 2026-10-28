@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/fmcsa"
 	"github.com/ikigenba/ikigenba/candidates/internal/form5500"
@@ -26,6 +28,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/ppp"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
+	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
 )
 
@@ -83,6 +86,165 @@ func setWalkCeiling(t *testing.T, f *fixture, n int64) {
 	}
 	if _, err = f.st.FailPass(t.Context(), p.ID, store.ReasonInterrupted); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func walkToolClient(t *testing.T, f *fixture) *mcp.Client {
+	t.Helper()
+	srv := mcp.NewServer(mcp.ServerConfig{Name: "candidates", Telemetry: f.w})
+	tools.Register(srv, tools.Config{Passes: f.eng, Store: f.st})
+	host := httptest.NewServer(identity.Require(srv))
+	t.Cleanup(host.Close)
+	// Cancel held Places requests before closing a possibly blocked tool handler.
+	t.Cleanup(func() { f.eng.Drain(context.Background()) })
+	return mcp.NewClient(mcp.ClientConfig{Endpoint: host.URL, HTTPClient: host.Client()})
+}
+
+// R-Y65D-MTWQ
+func TestWalkToolAnswersWhileNearbyRequestsRemainOpen(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"one", "several", "again", "walked", "no_key", "unknown", "malformed", "gone", "empty", "too_many", "duplicate"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newFixture(t, nil, false)
+			parkCount := 2
+			if mode == "too_many" {
+				parkCount = passes.MaxWalkParks + 1
+			}
+			ks := seedWalkParks(t, f, parkCount)
+			ids := []string{ks[0].ID}
+			again := mode == "again"
+			if again || mode == "walked" {
+				prior, err := f.st.AddPass(t.Context(), store.Pass{Kind: store.KindWalk, Origin: store.OriginWalk, Trigger: store.TriggerWalk, UserID: "owner"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = f.st.RecordSweep(t.Context(), store.Sweep{Pass: prior.ID, Park: ids[0], Circles: 1, Requests: 1, Cost: places.PriceNanos}); err != nil {
+					t.Fatal(err)
+				}
+				if _, err = f.st.FinishWalk(t.Context(), prior.ID, store.Counts{}, false); err != nil {
+					t.Fatal(err)
+				}
+			}
+			switch mode {
+			case "several":
+				ids = parkIDs(ks)
+			case "unknown":
+				ids = []string{"park_0123456789abcdef"}
+			case "malformed":
+				ids = []string{"unknown-park"}
+			case "gone":
+				p, err := f.st.AddPass(t.Context(), store.Pass{Kind: store.KindParks, Origin: store.OriginStart, Trigger: "gone-fixture"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = f.st.ApplyParks(t.Context(), p.ID, "gone-fixture", nil, parks.Plan{Gone: ids}, store.Counts{ParksGone: 1}); err != nil {
+					t.Fatal(err)
+				}
+			case "empty":
+				ids = []string{}
+			case "too_many":
+				ids = parkIDs(ks)
+			case "duplicate":
+				ids = []string{ids[0], ids[0]}
+			}
+			var mu sync.Mutex
+			var requests []string
+			entered := make(chan struct{}, 1)
+			cl := walkClient(func(r *http.Request) (*http.Response, error) {
+				mu.Lock()
+				requests = append(requests, r.URL.String())
+				mu.Unlock()
+				if r.URL.String() != places.NearbyURL {
+					return nil, errors.New("unexpected Places request")
+				}
+				select {
+				case entered <- struct{}{}:
+				default:
+				}
+				<-r.Context().Done()
+				return nil, r.Context().Err()
+			})
+			if mode == "no_key" {
+				cl = nil
+			}
+			configureWalk(f, cl)
+			beforePasses := f.list()
+			beforeWalks := make([][]store.ParkWalk, len(ks))
+			beforeParks := make([]store.Park, len(ks))
+			for i, k := range ks {
+				var err error
+				beforeWalks[i], err = f.st.ParkWalks(t.Context(), k.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				beforeParks[i], err = f.st.GetPark(t.Context(), k.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			client := walkToolClient(t, f)
+			args, err := json.Marshal(tools.WalkArgs{Parks: ids, Again: again})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+			defer cancel()
+			result, err := client.CallTool(ctx, identity.Caller{UserID: "owner"}, "walk", args)
+			if err != nil {
+				t.Fatal("walk did not answer while Places requests were held open:", err)
+			}
+			if mode == "one" || mode == "several" || again {
+				if result.IsError() {
+					t.Fatal("walk refused:", result)
+				}
+				raw, err := json.Marshal(result)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var wire struct {
+					Structured passes.Record `json:"structuredContent"`
+					Content    []struct{ Type, Text string }
+				}
+				if err = json.Unmarshal(raw, &wire); err != nil {
+					t.Fatal(err)
+				}
+				waitSignal(t, entered)
+				p, err := f.st.GetPass(t.Context(), wire.Structured.ID)
+				if err != nil || p.Status != store.StatusRunning || wire.Structured != passes.RecordOf(p) {
+					t.Fatal(wire.Structured, p, err)
+				}
+				want, err := json.Marshal(passes.RecordOf(p))
+				if err != nil || len(wire.Content) != 1 || wire.Content[0].Type != "text" || wire.Content[0].Text != string(want) {
+					t.Fatal(wire.Content, err)
+				}
+				return
+			}
+			if !result.IsError() {
+				t.Fatal("walk accepted invalid selection:", result)
+			}
+			f.eng.Drain(context.Background())
+			mu.Lock()
+			made := append([]string(nil), requests...)
+			mu.Unlock()
+			for _, url := range made {
+				if url == places.NearbyURL {
+					t.Fatal("refused walk sent a Nearby request")
+				}
+			}
+			if !reflect.DeepEqual(f.list(), beforePasses) {
+				t.Fatal("refused walk changed passes")
+			}
+			for i, k := range ks {
+				ws, err := f.st.ParkWalks(t.Context(), k.ID)
+				if err != nil || !reflect.DeepEqual(ws, beforeWalks[i]) {
+					t.Fatal("refused walk changed park walks:", k.ID, ws, err)
+				}
+				p, err := f.st.GetPark(t.Context(), k.ID)
+				if err != nil || !reflect.DeepEqual(p, beforeParks[i]) {
+					t.Fatal("refused walk changed park:", k.ID, p, err)
+				}
+			}
+		})
 	}
 }
 
