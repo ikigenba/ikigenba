@@ -120,9 +120,10 @@
      .NewestFilingSource (likewise, for .NewestFiling), .Categories (the categories that decide,
      each with .Name, the category word as stored, and .Source, the
      source that gave it, "brief" for every one when the brief decided,
+     "owner" for the one category when the owner's category decided,
      else "fmcsa", "ppp", "form5500", "osha_ita" or "name", one per
      category and source; empty
-     when unknown), .ClassifiedBy (what decided them, "brief" or "links",
+     when unknown), .ClassifiedBy (what decided them, "brief", "owner" or "links",
      as derived from their sources; empty when .Categories is empty),
      .RecordsDiffer (bool, true when .ClassifiedBy is "brief" and the
      newest link_facts result's categories differ from .Categories),
