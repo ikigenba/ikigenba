@@ -27,11 +27,11 @@ resource "aws_security_group" "space" {
   }
 
   ingress {
-    description = "SSH (admin IP only)"
+    description = "SSH"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = [local.ssh_admin_cidr]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
