@@ -69,7 +69,23 @@
      "owner" or "places" by the website's order of sources,
      .People (each with .Name and .Role, as the
      source gives them, and .Source, the source identifier it was taken
-     from, as .NameSource's; may be empty), .Class (its class tag, "private",
+     from, as .NameSource's; may be empty), .EIN (the EIN the owner set,
+     nine digits as text; empty unless the owner's value decides the EIN,
+     and when merged), .Founded (nil unless the owner founded this
+     candidate; else the owner record that founded it, with .Note, .At and
+     .AtText as an .OwnerRecords entry's), .OwnerSet (the facts whose
+     value the owner's record decides as this page was read, keyed by the
+     fact word, "name", "headcount", "revenue", "category", "website",
+     "address", "phone", "email", "people", "known_since", "ein" or
+     "fleet", each value the newest owner record that set it, with .Note,
+     .At and .AtText as an .OwnerRecords entry's; a fact the owner never
+     set or last cleared has no key; empty when none, and when merged;
+     the value the owner set is the fact's value wherever the card shows
+     it, .Name, the address fields, .Phone, .Email, .Website and
+     .WebsiteURL, .People, .EIN, .Facts' .Categories, .KnownSince and
+     .PowerUnits (the trucks) and .Judgments' .RevenueLow, .RevenueHigh,
+     .HeadcountLow and .HeadcountHigh, its source "owner" wherever a
+     source is given), .Class (its class tag, "private",
      "for_hire", "mixed" or "unknown"; empty when merged), .Cargo (its
      cargo tags, a slice of strings; may be empty), .Created and
      .CreatedText (RFC 3339 UTC to the second, and the same as shown,
@@ -233,7 +249,17 @@
      slice of strings; empty for other kinds), .By (the email of who made
      it; empty when none), .User (their user id), .At and .AtText (when it
      was made, RFC 3339 UTC to the second, and UTC to the minute) and .Why
-     (the sentence given); .Pages, the pages kept on it, the newest copy
+     (the sentence given); .OwnerRecords, every owner record linked to
+     this candidate, sets and clears alike, newest first, empty when
+     merged, each with .Founded (bool, true for the record that founded
+     the candidate), .Note (the note in the owner's words, as stored), .At
+     and .AtText (the record's date, RFC 3339 UTC to the second, and UTC
+     to the minute) and .Facts (the facts it set or cleared, in the fact
+     word order of .OwnerSet's keys, each with .Fact (the fact word, as
+     .OwnerSet's keys), .Cleared (bool, true when the record says the fact
+     is unset) and .Value (the value it set as compact JSON text, such as
+     "\"North Star Hauling\"" or "{\"count\":26,\"year\":2024}";
+     empty when .Cleared)); .Pages, the pages kept on it, the newest copy
      of each URL, newest first, empty when merged, each with .Number (the
      page's number as text, the <n> of its text page's path), .Path (that
      path, "/candidates/<.Candidate.ID>/pages/<.Number>"), .URL (the URL it
@@ -377,6 +403,8 @@
      "ID" then dd#candidate-id (.ID in a code element), dt "Status" then
      dd#candidate-status (the status span), dt "Merged into" then
      dd#candidate-merged (the a.candidate-link above) only when merged,
+     then, only when .Founded is set, dt "Founded" then
+     dd#candidate-founded ("by the owner" and the owner mark of .Founded),
      then, each only when set, dt "Name" then dd#candidate-name (.Name and
      the source mark of .NameSource), dt "Other names" then
      dd#candidate-other-names (one div[data-other-name] per entry, .Value
@@ -394,6 +422,8 @@
      "Other phones" then dd#candidate-other-phones (one
      div[data-other-phone] per entry, as the other names), dt "Email" then
      dd#candidate-email (.Email and the source mark of .EmailSource), dt
+     "EIN" then dd#candidate-ein (.EIN in a code element and the owner's
+     source mark of the "ein" entry), dt
      "Website"
      then dd#candidate-website[data-website=<.Website>] (when .Website is
      "unknown", span.muted "unknown"; else a.website-link, href
@@ -517,7 +547,8 @@
      dl#judgments.kv holding, in this order, dt "Operating confidence"
      then dd#judgments-operating (.OperatingConfidence, or when empty
      span.muted "no evidence"), dt "Revenue low" then
-     dd#judgments-revenue-low (.RevenueLow, or when empty span.muted "no
+     dd#judgments-revenue-low (.RevenueLow, or when empty span.muted "none:
+     a ceiling only" when .RevenueHigh is set, else span.muted "no
      estimate"), dt "Revenue high" then dd#judgments-revenue-high
      (.RevenueHigh; when empty and .RevenueLow is set, span.muted "none: a
      floor only"; when both are empty, span.muted "no estimate"), dt
@@ -775,7 +806,45 @@
      "FMCSA", "ppp" "PPP", "form5500" "Form 5500", "osha_ita" "OSHA",
      "places" "Places", "check" "the website check", "search" "the
      website search", "owner" "the owner", "brief" "the brief", "route"
-     "the routed address", and any other identifier as itself. No script
+     "the routed address", and any other identifier as itself. Beside
+     each fact the owner's record decides, after the fact's own source
+     mark where it has one: dd#candidate-name, dd#candidate-street (or
+     dd#candidate-city when .Street is empty), dd#candidate-phone,
+     dd#candidate-email and dd#candidate-website from the "name",
+     "address", "phone", "email" and "website" entries of .OwnerSet, at
+     the end of dd#candidate-people from "people", and dd#facts-known-since
+     from "known_since", the owner mark; at the end of dd#candidate-ein,
+     dd#facts-categories, dd#facts-power-units (when .PowerUnits is set),
+     dd#judgments-revenue-low and dd#judgments-headcount-low, from "ein",
+     "category", "fleet", "revenue" and "headcount", the owner's source
+     mark. An owner mark, from the "candidate-owner" template, is nothing
+     when its record is nil or has no .At, else a space and
+     span.muted[data-owner-set] holding "on", a space and
+     time[datetime=<.At>] (text .AtText), then div[data-owner-note] with
+     .Note. The owner's source mark, from the "candidate-owner-mark"
+     template, is nothing likewise, else the source mark of "owner" and
+     the owner mark. When .Links is empty, section#links holds, in place
+     of its table, div#no-links.empty holding h3 "No records" and a p
+     (text "No source holds this business yet: the owner added it by
+     hand. A scraped record that matches it by the usual rules links
+     here."). Only when .OwnerRecords is not empty, after section#links,
+     section#owner-records with h2 "Owner records" and a p in its header
+     (text "What the owner set or cleared on this candidate by hand,
+     newest first, each with the owner's note. The owner's value comes
+     first in every fact's order; a newer record sets a fact again or
+     clears it, and a cleared fact goes back to the sources. No record is
+     ever deleted."), then table#owner-record-list whose th read When,
+     Facts, Note, with one tr[data-owner-record] per record, carrying also
+     [data-founded] when .Founded, holding td.owner-at
+     (time[datetime=<.At>] with .AtText, then, when .Founded, a space and
+     span.badge[data-kind=info] (text "founded")), td.owner-facts (one
+     div[data-owner-fact=<.Fact>] per fact, carrying also [data-cleared]
+     when .Cleared, holding the fact label, a space and, when .Cleared,
+     span.badge[data-kind=info] (text "cleared"), else .Value in a code
+     element) and td.owner-note (.Note). A fact label, from the
+     "candidate-fact" template, names the fact in words: "name" "display
+     name", "known_since" "known since", "ein" "EIN", "fleet" "trucks",
+     and any other word as itself. No script
      but appkit's /_appkit/feedback.js. */}}
 {{define "candidate"}}<!doctype html>
 <html lang="en">
@@ -783,7 +852,7 @@
 <body>
 {{template "banner" .Banner}}
 <main>
-{{$e := .Enrichments}}{{$j := .Judgments}}{{$estimates := .Estimates}}{{$links := .Links}}{{$rulings := .Rulings}}{{$pages := .Pages}}{{$results := .EnrichmentResults}}{{$rejects := .Rejects}}{{$campaigns := .Campaigns}}{{with .Candidate}}<h1>{{.ID}}</h1>
+{{$e := .Enrichments}}{{$j := .Judgments}}{{$estimates := .Estimates}}{{$links := .Links}}{{$rulings := .Rulings}}{{$pages := .Pages}}{{$results := .EnrichmentResults}}{{$rejects := .Rejects}}{{$campaigns := .Campaigns}}{{$ownerRecords := .OwnerRecords}}{{$owner := .Candidate.OwnerSet}}{{with .Candidate}}<h1>{{.ID}}</h1>
 <p id="headline" class="cluster">{{if .Name}}{{.Name}} {{end}}<span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "merged"}}info{{else}}ok{{end}}">{{.Status}}</span>{{if $j}}{{if $j.Excluded}} <span class="badge" data-kind="warn">excluded</span>{{end}}{{end}} <span class="muted">updated <time datetime="{{.Updated}}">{{.UpdatedText}}</time></span></p>
 {{if eq .Status "merged"}}<div id="merged" class="alert quiet" data-kind="info"><strong>Merged</strong><p id="merged-into">This candidate was merged into <a class="candidate-link" href="/candidates/{{.MergedInto}}"><code>{{.MergedInto}}</code></a>. Its evidence, estimates and judgments are there now.</p></div>
 {{end}}{{if $j}}{{if $j.Excluded}}<div id="excluded" class="alert quiet" data-kind="warn"><strong>Excluded</strong><p>The owner excluded this candidate, so no prospect list shows it unless the prospect list shows excluded candidates. The ruling is below; the <code>include</code> tool reverses it.</p></div>
@@ -793,20 +862,22 @@
 <dt>ID</dt><dd id="candidate-id"><code>{{.ID}}</code></dd>
 <dt>Status</dt><dd id="candidate-status"><span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "merged"}}info{{else}}ok{{end}}">{{.Status}}</span></dd>
 {{if eq .Status "merged"}}<dt>Merged into</dt><dd id="candidate-merged"><a class="candidate-link" href="/candidates/{{.MergedInto}}"><code>{{.MergedInto}}</code></a></dd>
-{{end}}{{if .Name}}<dt>Name</dt><dd id="candidate-name">{{.Name}}{{template "candidate-from" .NameSource}}</dd>
+{{end}}{{with .Founded}}<dt>Founded</dt><dd id="candidate-founded">by the owner{{template "candidate-owner" .}}</dd>
+{{end}}{{if .Name}}<dt>Name</dt><dd id="candidate-name">{{.Name}}{{template "candidate-from" .NameSource}}{{template "candidate-owner" (index $owner "name")}}</dd>
 {{end}}{{if .OtherNames}}<dt>Other names</dt><dd id="candidate-other-names">{{range .OtherNames}}<div data-other-name>{{.Value}}{{template "candidate-from" .Source}}</div>{{end}}</dd>
-{{end}}{{if .Street}}<dt>Street</dt><dd id="candidate-street">{{.Street}}{{template "candidate-from" .AddressSource}}</dd>
-{{end}}{{if .City}}<dt>City</dt><dd id="candidate-city">{{.City}}{{if not .Street}}{{template "candidate-from" .AddressSource}}{{end}}</dd>
+{{end}}{{if .Street}}<dt>Street</dt><dd id="candidate-street">{{.Street}}{{template "candidate-from" .AddressSource}}{{template "candidate-owner" (index $owner "address")}}</dd>
+{{end}}{{if .City}}<dt>City</dt><dd id="candidate-city">{{.City}}{{if not .Street}}{{template "candidate-from" .AddressSource}}{{template "candidate-owner" (index $owner "address")}}{{end}}</dd>
 {{end}}{{if .State}}<dt>State</dt><dd id="candidate-state">{{.State}}</dd>
 {{end}}{{if .Zip}}<dt>Zip</dt><dd id="candidate-zip">{{.Zip}}</dd>
 {{end}}{{if .OtherAddresses}}<dt>Other addresses</dt><dd id="candidate-other-addresses">{{range .OtherAddresses}}<div data-other-address>{{.Value}}{{template "candidate-from" .Source}}</div>{{end}}</dd>
 {{end}}{{if .County}}<dt>County</dt><dd id="candidate-county"><code>{{.County}}</code></dd>
 {{end}}{{with .Park}}<dt>Park</dt><dd id="candidate-park"><a class="park-link" href="/parks/{{.ID}}">{{.Name}}</a></dd>
-{{end}}{{if .Phone}}<dt>Phone</dt><dd id="candidate-phone">{{.Phone}}{{template "candidate-from" .PhoneSource}}</dd>
+{{end}}{{if .Phone}}<dt>Phone</dt><dd id="candidate-phone">{{.Phone}}{{template "candidate-from" .PhoneSource}}{{template "candidate-owner" (index $owner "phone")}}</dd>
 {{end}}{{if .OtherPhones}}<dt>Other phones</dt><dd id="candidate-other-phones">{{range .OtherPhones}}<div data-other-phone>{{.Value}}{{template "candidate-from" .Source}}</div>{{end}}</dd>
-{{end}}{{if .Email}}<dt>Email</dt><dd id="candidate-email">{{.Email}}{{template "candidate-from" .EmailSource}}</dd>
-{{end}}{{if .Website}}<dt>Website</dt><dd id="candidate-website" data-website="{{.Website}}"{{if .WebsiteSource}} data-website-source="{{.WebsiteSource}}"{{end}}>{{if eq .Website "unknown"}}<span class="muted">unknown</span>{{else}}{{if .WebsiteURL}}<a class="website-link" href="{{.WebsiteURL}}">{{.WebsiteURL}}</a> {{end}}{{.Website}}{{end}}{{if and .WebsiteSource (ne .WebsiteSource "check") (ne .WebsiteSource "search")}}{{template "candidate-from" .WebsiteSource}}{{end}}{{if .WebsiteTitle}}<div data-website-title>{{.WebsiteTitle}}</div>{{end}}{{if .WebsiteWhy}}<div data-website-why>{{.WebsiteWhy}}</div>{{end}}{{if .WebsiteChecked}}<div class="muted">{{if eq .WebsiteSource "search"}}found by search{{else if eq .WebsiteSource "check"}}found by check{{else if eq .Website "none"}}searched{{else}}checked{{end}} <time datetime="{{.WebsiteChecked}}">{{.WebsiteCheckedText}}</time></div>{{end}}{{if .WebsiteCheckedURL}}<div class="muted" data-website-checked-url>the check began at <a class="website-link" href="{{.WebsiteCheckedURL}}">{{.WebsiteCheckedURL}}</a></div>{{end}}</dd>
-{{end}}{{if .People}}<dt>People</dt><dd id="candidate-people">{{range .People}}<div data-person>{{.Name}} <span class="muted">{{.Role}}</span>{{template "candidate-from" .Source}}</div>{{end}}</dd>
+{{end}}{{if .Email}}<dt>Email</dt><dd id="candidate-email">{{.Email}}{{template "candidate-from" .EmailSource}}{{template "candidate-owner" (index $owner "email")}}</dd>
+{{end}}{{if .EIN}}<dt>EIN</dt><dd id="candidate-ein"><code>{{.EIN}}</code>{{template "candidate-owner-mark" (index $owner "ein")}}</dd>
+{{end}}{{if .Website}}<dt>Website</dt><dd id="candidate-website" data-website="{{.Website}}"{{if .WebsiteSource}} data-website-source="{{.WebsiteSource}}"{{end}}>{{if eq .Website "unknown"}}<span class="muted">unknown</span>{{else}}{{if .WebsiteURL}}<a class="website-link" href="{{.WebsiteURL}}">{{.WebsiteURL}}</a> {{end}}{{.Website}}{{end}}{{if and .WebsiteSource (ne .WebsiteSource "check") (ne .WebsiteSource "search")}}{{template "candidate-from" .WebsiteSource}}{{end}}{{template "candidate-owner" (index $owner "website")}}{{if .WebsiteTitle}}<div data-website-title>{{.WebsiteTitle}}</div>{{end}}{{if .WebsiteWhy}}<div data-website-why>{{.WebsiteWhy}}</div>{{end}}{{if .WebsiteChecked}}<div class="muted">{{if eq .WebsiteSource "search"}}found by search{{else if eq .WebsiteSource "check"}}found by check{{else if eq .Website "none"}}searched{{else}}checked{{end}} <time datetime="{{.WebsiteChecked}}">{{.WebsiteCheckedText}}</time></div>{{end}}{{if .WebsiteCheckedURL}}<div class="muted" data-website-checked-url>the check began at <a class="website-link" href="{{.WebsiteCheckedURL}}">{{.WebsiteCheckedURL}}</a></div>{{end}}</dd>
+{{end}}{{if .People}}<dt>People</dt><dd id="candidate-people">{{range .People}}<div data-person>{{.Name}} <span class="muted">{{.Role}}</span>{{template "candidate-from" .Source}}</div>{{end}}{{template "candidate-owner" (index $owner "people")}}</dd>
 {{end}}{{if .Class}}<dt>Class</dt><dd id="candidate-class"><code>{{.Class}}</code></dd>
 {{end}}{{if .Cargo}}<dt>Cargo</dt><dd id="candidate-cargo">{{range $i, $c := .Cargo}}{{if $i}} {{end}}<code data-cargo="{{$c}}">{{$c}}</code>{{end}}</dd>
 {{end}}<dt>Created</dt><dd id="candidate-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></dd>
@@ -821,14 +892,14 @@
 <dt>Kinds missing</dt><dd id="kinds-missing">{{range $i, $k := .Kinds.Missing}}{{if $i}} {{end}}<code data-missing="{{$k}}">{{$k}}</code>{{else}}<span class="muted">none</span>{{end}}</dd>
 </dl>
 {{with .Facts}}<dl id="facts" class="kv">
-<dt>Categories</dt><dd id="facts-categories">{{range .Categories}}<div data-category="{{.Name}}"><code>{{.Name}}</code> <span class="muted">{{.Source}}</span></div>{{else}}<span class="muted">unknown</span>{{end}}</dd>
+<dt>Categories</dt><dd id="facts-categories">{{range .Categories}}<div data-category="{{.Name}}"><code>{{.Name}}</code> <span class="muted">{{.Source}}</span></div>{{else}}<span class="muted">unknown</span>{{end}}{{template "candidate-owner-mark" (index $owner "category")}}</dd>
 <dt>Classified by</dt><dd id="facts-classified-by" data-classified-by="{{.ClassifiedBy}}">{{if .ClassifiedBy}}<code>{{.ClassifiedBy}}</code>{{else}}<span class="muted">none</span>{{end}}</dd>
 {{if .RecordsDiffer}}<dt>Records say</dt><dd id="facts-record-categories">{{range .RecordCategories}}<div data-record-category="{{.Name}}"><code>{{.Name}}</code> <span class="muted">{{.Source}}</span></div>{{else}}<span class="muted">unknown</span>{{end}}</dd>
-{{end}}<dt>Known since</dt><dd id="facts-known-since">{{if .KnownSince}}<time datetime="{{.KnownSince}}">{{.KnownSinceText}}</time>{{template "candidate-from" .KnownSinceSource}}{{else}}<span class="muted">none</span>{{end}}</dd>
+{{end}}<dt>Known since</dt><dd id="facts-known-since">{{if .KnownSince}}<time datetime="{{.KnownSince}}">{{.KnownSinceText}}</time>{{template "candidate-from" .KnownSinceSource}}{{template "candidate-owner" (index $owner "known_since")}}{{else}}<span class="muted">none</span>{{end}}</dd>
 <dt>Newest filing</dt><dd id="facts-filed">{{if .NewestFiling}}<time datetime="{{.NewestFiling}}">{{.NewestFilingText}}</time>{{template "candidate-from" .NewestFilingSource}}{{else}}<span class="muted">none</span>{{end}}</dd>
 <dt>Government match</dt><dd id="facts-government">{{if .GovernmentMatch}}<code>{{.GovernmentMatch}}</code>{{else}}no{{end}}</dd>
 <dt>Fleet</dt><dd id="facts-fleet" data-fleet="{{.FleetVerdict}}">{{if eq .FleetVerdict "unknown"}}<span class="muted">{{.FleetVerdict}}</span>{{else}}{{.FleetVerdict}}{{end}}</dd>
-<dt>Trucks</dt><dd id="facts-power-units">{{if .PowerUnits}}{{.PowerUnits}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
+<dt>Trucks</dt><dd id="facts-power-units">{{if .PowerUnits}}{{.PowerUnits}}{{template "candidate-owner-mark" (index $owner "fleet")}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
 <dt>Drivers</dt><dd id="facts-drivers">{{if .Drivers}}{{.Drivers}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
 <dt>Headcounts</dt><dd id="facts-headcounts">{{range .Headcounts}}<div data-headcount="{{.Kind}}">{{.Count}} <code>{{.Kind}}</code>{{if .Hours}} over {{.Hours}} hours{{end}} <span class="muted">{{.Scraper}}{{if .AsOf}} <time datetime="{{.AsOf}}">{{.AsOfText}}</time>{{end}}</span></div>{{else}}<span class="muted">none</span>{{end}}</dd>
 <dt>Brief labels</dt><dd id="facts-brief-labels">{{range $i, $l := .BriefLabels}}{{if $i}} {{end}}<code data-brief-label="{{$l}}">{{$l}}</code>{{else}}<span class="muted">none</span>{{end}}</dd>
@@ -855,10 +926,10 @@
 <header><h2 id="judgments-title">Judgments</h2><p>Two judgments, whether it is a real business operating today and how big it is, as the last judge calculated them from the enrichments and the records, each with its evidence below. Nothing decays between judges.</p></header>
 {{with $j}}<dl id="judgments" class="kv">
 <dt>Operating confidence</dt><dd id="judgments-operating">{{if .OperatingConfidence}}{{.OperatingConfidence}}{{else}}<span class="muted">no evidence</span>{{end}}</dd>
-<dt>Revenue low</dt><dd id="judgments-revenue-low">{{if .RevenueLow}}{{.RevenueLow}}{{else}}<span class="muted">no estimate</span>{{end}}</dd>
+<dt>Revenue low</dt><dd id="judgments-revenue-low">{{if .RevenueLow}}{{.RevenueLow}}{{else if .RevenueHigh}}<span class="muted">none: a ceiling only</span>{{else}}<span class="muted">no estimate</span>{{end}}{{template "candidate-owner-mark" (index $owner "revenue")}}</dd>
 <dt>Revenue high</dt><dd id="judgments-revenue-high">{{if .RevenueHigh}}{{.RevenueHigh}}{{else if .RevenueLow}}<span class="muted">none: a floor only</span>{{else}}<span class="muted">no estimate</span>{{end}}</dd>
 <dt>Revenue confidence</dt><dd id="judgments-revenue-confidence">{{if .RevenueConfidence}}{{.RevenueConfidence}}{{else}}<span class="muted">no estimate</span>{{end}}</dd>
-<dt>Headcount low</dt><dd id="judgments-headcount-low">{{if .HeadcountLow}}{{.HeadcountLow}}{{else}}<span class="muted">no headcount</span>{{end}}</dd>
+<dt>Headcount low</dt><dd id="judgments-headcount-low">{{if .HeadcountLow}}{{.HeadcountLow}}{{else}}<span class="muted">no headcount</span>{{end}}{{template "candidate-owner-mark" (index $owner "headcount")}}</dd>
 <dt>Headcount high</dt><dd id="judgments-headcount-high">{{if .HeadcountHigh}}{{.HeadcountHigh}}{{else}}<span class="muted">no headcount</span>{{end}}</dd>
 <dt>Headcount basis</dt><dd id="judgments-headcount-basis">{{if .HeadcountBasis}}<code>{{.HeadcountBasis}}</code>{{else}}<span class="muted">no headcount</span>{{end}}</dd>
 <dt>Excluded</dt><dd id="judgments-excluded">{{if .Excluded}}yes{{else}}no{{end}}</dd>
@@ -933,7 +1004,7 @@
 </section>
 {{end}}<section id="links" class="card flush" aria-labelledby="links-title">
 <header><div><h2 id="links-title">Evidence</h2><p>Each record attached to this candidate, linked to its row in scrapes. A gone record was absent from its scraper's latest run; it still counts for identity and no longer for the judgments. A places record was found by a walk of a park with Google Places; it has no row in scrapes, and no later walk makes it gone.</p></div></header>
-<div class="table-scroll">
+{{if $links}}<div class="table-scroll">
 <table id="link-list">
 <thead><tr><th>Scraper</th><th>Source ID</th><th>EIN</th><th>Name</th><th>Names</th><th>Establishment</th><th>City</th><th>Zip</th><th>Year</th><th class="num">Employees</th><th class="num">Hours</th><th>Reason</th><th class="num">Confidence</th><th>Filed</th><th>First seen</th><th>Last seen</th><th>Gone</th></tr></thead>
 <tbody>
@@ -959,8 +1030,27 @@
 {{end}}</tbody>
 </table>
 </div>
+{{else}}<div id="no-links" class="empty">
+<h3 class="text-md">No records</h3>
+<p>No source holds this business yet: the owner added it by hand. A scraped record that matches it by the usual rules links here.</p>
+</div>
+{{end}}</section>
+{{if $ownerRecords}}<section id="owner-records" class="card flush" aria-labelledby="owner-records-title">
+<header><div><h2 id="owner-records-title">Owner records</h2><p>What the owner set or cleared on this candidate by hand, newest first, each with the owner's note. The owner's value comes first in every fact's order; a newer record sets a fact again or clears it, and a cleared fact goes back to the sources. No record is ever deleted.</p></div></header>
+<div class="table-scroll">
+<table id="owner-record-list">
+<thead><tr><th>When</th><th>Facts</th><th>Note</th></tr></thead>
+<tbody>
+{{range $ownerRecords}}<tr data-owner-record{{if .Founded}} data-founded{{end}}>
+<td class="owner-at"><time datetime="{{.At}}">{{.AtText}}</time>{{if .Founded}} <span class="badge" data-kind="info">founded</span>{{end}}</td>
+<td class="owner-facts">{{range .Facts}}<div data-owner-fact="{{.Fact}}"{{if .Cleared}} data-cleared{{end}}>{{template "candidate-fact" .Fact}} {{if .Cleared}}<span class="badge" data-kind="info">cleared</span>{{else}}<code>{{.Value}}</code>{{end}}</div>{{end}}</td>
+<td class="owner-note">{{.Note}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
 </section>
-{{end}}<section id="rulings" class="card flush" aria-labelledby="rulings-title">
+{{end}}{{end}}<section id="rulings" class="card flush" aria-labelledby="rulings-title">
 <header><div><h2 id="rulings-title">Rulings</h2><p>The owner's rulings on this candidate, newest first, each with who made it, when and why. Every pass reapplies them.</p></div></header>
 {{if $rulings}}<div class="table-scroll">
 <table id="ruling-list">
@@ -1067,4 +1157,7 @@
 </html>
 {{end}}
 {{define "candidate-from"}}{{if .}} <span class="muted" data-source="{{.}}">from {{template "candidate-source" .}}</span>{{end}}{{end}}
+{{define "candidate-owner"}}{{with .}}{{if .At}} <span class="muted" data-owner-set>on <time datetime="{{.At}}">{{.AtText}}</time></span><div data-owner-note>{{.Note}}</div>{{end}}{{end}}{{end}}
+{{define "candidate-owner-mark"}}{{with .}}{{if .At}}{{template "candidate-from" "owner"}}{{template "candidate-owner" .}}{{end}}{{end}}{{end}}
+{{define "candidate-fact"}}{{if eq . "name"}}display name{{else if eq . "headcount"}}headcount{{else if eq . "revenue"}}revenue{{else if eq . "category"}}category{{else if eq . "website"}}website{{else if eq . "address"}}address{{else if eq . "phone"}}phone{{else if eq . "email"}}email{{else if eq . "people"}}people{{else if eq . "known_since"}}known since{{else if eq . "ein"}}EIN{{else if eq . "fleet"}}trucks{{else}}{{.}}{{end}}{{end}}
 {{define "candidate-source"}}{{if eq . "fmcsa"}}FMCSA{{else if eq . "ppp"}}PPP{{else if eq . "form5500"}}Form 5500{{else if eq . "osha_ita"}}OSHA{{else if eq . "places"}}Places{{else if eq . "check"}}the website check{{else if eq . "search"}}the website search{{else if eq . "owner"}}the owner{{else if eq . "brief"}}the brief{{else if eq . "route"}}the routed address{{else}}{{.}}{{end}}{{end}}
