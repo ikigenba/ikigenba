@@ -126,7 +126,7 @@ build run writes the Go source, the tests, `go.mod`'s requirements and
 `0008_windows.sql`, `0009_judgments.sql`, `0010_cohorts.sql`,
 `0011_enrichments.sql`, `0012_facts.sql`, `0013_site_text.sql`,
 `0014_brief.sql`, `0015_website_search.sql`, `0016_campaign_uses.sql`,
-`0017_prospect_lists.sql`, `0018_drive_route.sql`, `0019_opens.sql`, `0020_headcounts.sql`, `0021_link_keys.sql`, `0022_headcount_trend.sql`, `0023_parks.sql`, `0024_walk.sql`, `0025_search_cases.sql` and `0026_fact_sources.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
+`0017_prospect_lists.sql`, `0018_drive_route.sql`, `0019_opens.sql`, `0020_headcounts.sql`, `0021_link_keys.sql`, `0022_headcount_trend.sql`, `0023_parks.sql`, `0024_walk.sql`, `0025_search_cases.sql`, `0026_fact_sources.sql` and `0027_page_reasons.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
 and the nginx fragment `etc/nginx.conf`). The
 delivery that created candidates seeded `go.mod` on appkit; the build run
 owns it and `go.sum` from then on and changes them as design says. It never
@@ -314,7 +314,10 @@ and `t.TempDir()` can exceed it), names it in `NOTIFY_SOCKET`, and waits for
 changes then waits the same way, with a deadline that fails it, for the
 fill's end: the line `candidates: facts filled` or the line `candidates:
 facts fill failed` and its error (`D06-passes`), read from the injected
-`Stderr`; it never sleeps for a fixed time. A test waits on the clock in
+`Stderr`; a test of what the page refetch changes waits the same way for
+its line, `candidates: pages refetched: ` and the five counts, or
+`candidates: pages refetch failed` and its error (`D06-passes`); it never
+sleeps for a fixed time. A test waits on the clock in
 two places only, because there the deadline is the behavior: a drain test,
 which keeps that wait to a few seconds, and a test that a pass reaches `done`
 within the deadline a requirement states; a busy-write test's wait on the
