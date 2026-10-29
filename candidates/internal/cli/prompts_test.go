@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -102,11 +101,11 @@ func seedPromptCandidate(t *testing.T, h *runHarness) string {
 	return id
 }
 
-// R-JUMZ-XSIT R-49SO-SMNX R-8BVT-NV36
-func TestRunPromptsSnapshotIdentityTrailAndTimers(t *testing.T) {
+// R-49SO-SMNX R-8BVT-NV36
+func TestRunPromptsTrailAndTimers(t *testing.T) {
 	for _, mode := range []string{"success", "queue", "refuse-show"} {
 		t.Run(mode, func(t *testing.T) {
-			f, second := &promptFake{mode: mode}, &promptFake{}
+			f := &promptFake{mode: mode}
 			path := runServices(t, map[string]string{"prompts": runSocket(t, f)})
 			h := newRunHarness(t, t.TempDir(), path)
 			id := seedPromptCandidate(t, h)
@@ -123,23 +122,8 @@ func TestRunPromptsSnapshotIdentityTrailAndTimers(t *testing.T) {
 				return ch
 			}
 			h.start()
-			raw, err := json.Marshal(map[string]any{"services": []map[string]any{{"name": "prompts", "socket": runSocket(t, second), "url": "https://prompts.example.test", "description": "fixture", "enabled": true, "mcp": false}}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			root, err := os.OpenRoot(filepath.Dir(path))
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer func() {
-				if err := root.Close(); err != nil {
-					t.Error(err)
-				}
-			}()
-			if err = root.WriteFile(filepath.Base(path), raw, 0600); err != nil {
-				t.Fatal(err)
-			}
-			caller := identity.Caller{UserID: "prompt-owner", Email: "prompt-owner@example.test", RequestID: "prompt-request"}
+			h.filled()
+			caller := identity.Caller{UserID: "prompt-owner", RequestID: "prompt-request"}
 			r, p := h.call(caller, "enrich", tools.EnrichArgs{Kind: enrichers.KindSiteText, Candidate: id})
 			if mode == "refuse-show" {
 				if !r.IsError() {
@@ -178,15 +162,7 @@ func TestRunPromptsSnapshotIdentityTrailAndTimers(t *testing.T) {
 			}
 			h.stop()
 			calls := f.requests()
-			if len(second.requests()) != 0 || len(calls) == 0 {
-				t.Fatal(calls, second.requests())
-			}
 			count := 0
-			for _, q := range calls {
-				if q.Header.Get("X-User-Id") != caller.UserID || q.Header.Get("X-User-Email") != caller.Email {
-					t.Fatal(q)
-				}
-			}
 			for _, e := range h.telemetry.Events() {
 				if e.Name == "sibling.called" && e.Attrs["target"] == "prompts" {
 					count++
@@ -202,7 +178,55 @@ func TestRunPromptsSnapshotIdentityTrailAndTimers(t *testing.T) {
 	}
 }
 
-// R-79P0-C7H2
+// R-DXKT-82UF
+func TestRunPromptsKeepsInitialSocketAfterFill(t *testing.T) {
+	first, second := &promptFake{}, &promptFake{}
+	path := runServices(t, map[string]string{"prompts": runSocket(t, first)})
+	h := newRunHarness(t, t.TempDir(), path)
+	id := seedPromptCandidate(t, h)
+	h.p.After = func(d time.Duration) <-chan time.Time {
+		ch := make(chan time.Time, 1)
+		if d == passes.PollInterval {
+			ch <- time.Time{}
+		}
+		return ch
+	}
+	h.start()
+	h.filled()
+	caller := identity.Caller{UserID: "snapshot-owner", Email: "snapshot@example.test"}
+	enrich := func() {
+		t.Helper()
+		r, p := h.call(caller, "enrich", tools.EnrichArgs{Kind: enrichers.KindSiteText, Candidate: id, Force: true})
+		if r.IsError() || runText(h.waitPass(caller, runText(p, "id")), "status") != store.StatusDone {
+			t.Fatal(r, p)
+		}
+	}
+	enrich()
+	before := len(first.requests())
+	if before == 0 {
+		t.Fatal("first enrich made no prompts request")
+	}
+	raw, err := json.Marshal(map[string]any{"services": []map[string]any{{"name": "prompts", "socket": runSocket(t, second), "url": "https://prompts.example.test", "description": "fixture", "enabled": true, "mcp": false}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	enrich()
+	h.stop()
+	calls := first.requests()
+	if len(calls) <= before || len(second.requests()) != 0 {
+		t.Fatal(calls, second.requests())
+	}
+	for _, q := range calls {
+		if q.Header.Get("X-User-Id") != caller.UserID || q.Header.Get("X-User-Email") != caller.Email {
+			t.Fatal(q)
+		}
+	}
+}
+
+// R-DYSP-LUL4
 func TestRunMissingPromptsRefusesOnlyPromptEnrich(t *testing.T) {
 	for _, mode := range []string{"unset", "missing", "invalid", "no-entry"} {
 		t.Run(mode, func(t *testing.T) {

@@ -107,7 +107,7 @@ func (r *failNextBytes) Read(p []byte) (int, error) {
 	return r.bytes.Read(p)
 }
 
-// R-KDES-2YHL
+// R-E00L-ZMBT
 func TestRunForwardsStoreFailureDiagnostic(t *testing.T) {
 	rnd := &failNextBytes{}
 	fake := &runFake{rows: []map[string]any{runRow()}}
@@ -129,7 +129,8 @@ func TestRunForwardsStoreFailureDiagnostic(t *testing.T) {
 	}
 	h.stop()
 	text := h.err.String()
-	if h.out.String() != "" || h.err.writes != 1 || !strings.HasPrefix(text, "candidates: pass "+id+" failed: store\n\n") || strings.Count(text, "\n") != 3 || !strings.Contains(text, store.ErrUnreachable.Error()) {
+	text = strings.TrimPrefix(text, "candidates: facts filled\n")
+	if h.out.String() != "" || h.err.writes != 2 || !strings.HasPrefix(text, "candidates: pass "+id+" failed: store\n\n") || strings.Count(text, "\n") != 3 || !strings.Contains(text, store.ErrUnreachable.Error()) {
 		t.Fatal(text, h.err.writes)
 	}
 }

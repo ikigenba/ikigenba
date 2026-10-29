@@ -9,6 +9,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/scrapes"
 	"github.com/ikigenba/ikigenba/candidates/internal/parks"
+	"github.com/ikigenba/ikigenba/candidates/internal/places"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
@@ -21,6 +22,12 @@ func (e *Engine) EditParkRules(ctx context.Context, c identity.Caller, edit stor
 	}
 	if e.cfg.Scrapes == nil {
 		return store.Pass{}, &Refusal{Word: RefusalUnavailable}
+	}
+	if e.filling {
+		if edit.Distance != nil && !parks.ValidDistance(*edit.Distance) || edit.MinParcels != nil && !parks.ValidMinParcels(*edit.MinParcels) || edit.ValueThreshold != nil && !parks.ValidValueThreshold(*edit.ValueThreshold) || edit.County != nil && !parks.ValidCounty(*edit.County) || edit.County == nil && len(edit.Labels) > 0 || !parks.ValidLabels(edit.Labels) || edit.WalkCeiling != nil && !places.ValidCeiling(*edit.WalkCeiling) {
+			return store.Pass{}, &Refusal{Word: RefusalInvalid}
+		}
+		return store.Pass{}, &Refusal{Word: RefusalBusy}
 	}
 	p, err := e.cfg.Store.SetParkRules(e.ctx, edit, store.Pass{Kind: store.KindParks, Origin: store.OriginRules, Trigger: store.TriggerParkRules, UserID: c.UserID, UserEmail: c.Email, RequestID: c.RequestID})
 	if err != nil {
@@ -41,7 +48,10 @@ func (e *Engine) EditParkRules(ctx context.Context, c identity.Caller, edit stor
 
 // StartParks starts a derivation only when the current parcel run differs.
 func (e *Engine) StartParks(ctx context.Context, requestID string) (store.Pass, bool) {
-	if e.stopping.Load() || e.cfg.Scrapes == nil {
+	e.mu.Lock()
+	blocked := e.stopping.Load() || e.filling || e.cfg.Scrapes == nil
+	e.mu.Unlock()
+	if blocked {
 		return store.Pass{}, false
 	}
 	c := identity.Caller{UserID: "candidates", RequestID: requestID}
@@ -55,7 +65,7 @@ func (e *Engine) StartParks(ctx context.Context, requestID string) (store.Pass, 
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.stopping.Load() {
+	if e.stopping.Load() || e.filling {
 		return store.Pass{}, false
 	}
 	last, err := e.cfg.Store.ParksRun(e.ctx)

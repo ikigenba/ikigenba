@@ -42,19 +42,21 @@ type Config struct {
 
 // Engine coordinates cancellable ingest, judgment and enrichment passes.
 type Engine struct {
-	cfg      Config
-	mu       sync.Mutex
-	stopping atomic.Bool
-	ctx      context.Context
-	cancel   context.CancelFunc
-	work     sync.WaitGroup
-	judgeID  string
+	cfg       Config
+	mu        sync.Mutex
+	stopping  atomic.Bool
+	ctx       context.Context
+	cancel    context.CancelFunc
+	work      sync.WaitGroup
+	judgeID   string
+	unsettled map[string]struct{}
+	filling   bool
 }
 
 // New creates an idle engine.
 func New(cfg Config) *Engine {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Engine{cfg: cfg, ctx: ctx, cancel: cancel}
+	return &Engine{cfg: cfg, ctx: ctx, cancel: cancel, unsettled: make(map[string]struct{})}
 }
 
 // Handlers declares the engine's accepted event.
@@ -80,6 +82,9 @@ func (e *Engine) Ingest(ctx context.Context, c identity.Caller, scraper string) 
 	if e.cfg.Scrapes == nil {
 		return store.Pass{}, &Refusal{Word: RefusalUnavailable}
 	}
+	if e.filling {
+		return store.Pass{}, &Refusal{Word: RefusalBusy}
+	}
 	p, err := e.cfg.Store.AddPass(e.ctx, store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Scraper: scraper, UserID: c.UserID, UserEmail: c.Email, RequestID: c.RequestID})
 	if err != nil && e.stopping.Load() {
 		return store.Pass{}, &Refusal{Word: RefusalStopping}
@@ -100,6 +105,9 @@ func (e *Engine) Judge(ctx context.Context, c identity.Caller) (store.Pass, erro
 	defer e.mu.Unlock()
 	if e.stopping.Load() {
 		return store.Pass{}, &Refusal{Word: RefusalStopping}
+	}
+	if e.filling {
+		return store.Pass{}, &Refusal{Word: RefusalBusy}
 	}
 	if e.judgeID != "" {
 		running, err := e.cfg.Store.GetPass(e.ctx, e.judgeID)
@@ -148,10 +156,11 @@ func (e *Engine) startWork(ctx context.Context, p store.Pass, c identity.Caller,
 		e.judgeID = p.ID
 	}
 	trail.Record(context.WithoutCancel(ctx), e.cfg.Telemetry, e.cfg.Events, trail.Started, p)
+	e.unsettled[p.ID] = struct{}{}
 	e.work.Add(1)
 	finishCtx := context.WithoutCancel(ctx)
 	go func() {
-		defer e.work.Done()
+		defer e.passSettled(p.ID)
 		failure := &workFailure{}
 		workCtx := context.WithValue(identity.NewContext(e.ctx, c), failureKey{}, failure)
 		totals, reason := job(workCtx)
@@ -255,6 +264,16 @@ func (e *Engine) Deliver(ctx context.Context, d events.Delivery) events.Outcome 
 	if !judge && (errors.Is(err, scrapes.ErrNotFound) || (err == nil && run.Status != store.StatusDone)) {
 		return events.Skip()
 	}
+	if e.filling {
+		_, lookup := e.cfg.Store.FindDelivered(context.WithoutCancel(ctx), d.Event.ID, runID)
+		if lookup == nil {
+			return events.Skip()
+		}
+		if !errors.Is(lookup, store.ErrNotFound) {
+			return events.Fail(store.Unreachable)
+		}
+		return events.Fail(Busy)
+	}
 	kind, origin, trigger := store.KindIngest, store.OriginRun, runID
 	if parcel {
 		kind = store.KindParks
@@ -304,6 +323,7 @@ func (e *Engine) Recover(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		delete(e.unsettled, p.ID)
 		trail.Record(context.Background(), e.cfg.Telemetry, e.cfg.Events, trail.Finished, ended)
 	}
 	return nil
@@ -479,4 +499,54 @@ func (e *Engine) storeFailure(ctx context.Context, err error) string {
 		f.mu.Unlock()
 	}
 	return store.ReasonStore
+}
+
+// passSettled keeps admission barred through the last follow-on attempt.
+func (e *Engine) passSettled(id string) {
+	e.mu.Lock()
+	delete(e.unsettled, id)
+	e.mu.Unlock()
+	e.work.Done()
+}
+
+// StartFill repairs the facts projections without recording a pass.
+func (e *Engine) StartFill(ctx context.Context) <-chan struct{} {
+	done := make(chan struct{})
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.stopping.Load() || e.filling || len(e.unsettled) != 0 {
+		close(done)
+		return done
+	}
+	e.filling = true
+	e.work.Add(1)
+	fillCtx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(e.ctx, cancel)
+	go func() {
+		defer close(done)
+		defer cancel()
+		defer stop()
+		after := ""
+		var err error
+		for fillCtx.Err() == nil {
+			after, err = e.cfg.Store.FillFacts(fillCtx, after, BatchSize)
+			if err != nil || after == "" {
+				break
+			}
+		}
+		e.mu.Lock()
+		cut := fillCtx.Err() != nil || e.stopping.Load()
+		e.filling = false
+		e.work.Done()
+		e.mu.Unlock()
+		if cut || e.cfg.Stderr == nil {
+			return
+		}
+		line := "candidates: facts filled\n"
+		if err != nil {
+			line = "candidates: facts fill failed\n\n" + strings.ReplaceAll(err.Error(), "\n", " ") + "\n"
+		}
+		_, _ = e.cfg.Stderr.Write([]byte(line))
+	}()
+	return done
 }

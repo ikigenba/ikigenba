@@ -178,7 +178,7 @@ func TestJudgeNeedsNoScrapesAndHonorsRefusals(t *testing.T) {
 	}
 }
 
-// R-ZH16-3I6T R-373Q-6C3X
+// R-3XYL-7XAN R-373Q-6C3X
 func TestDrainDeadlineAfterEndingHasAlreadyBlocked(t *testing.T) {
 	f := newFixture(t, nil, false)
 	f.eng.Drain(context.Background())

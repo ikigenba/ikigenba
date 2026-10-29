@@ -228,17 +228,6 @@ func Run(ctx context.Context, p Process) int {
 	w.Ready()
 	err = st.ReplaceZipDrive(bg, candidates.ZipDrive())
 	if err == nil {
-		after := ""
-		for {
-			var next string
-			next, err = st.FillFacts(bg, after, passes.BatchSize)
-			if err != nil || next == "" {
-				break
-			}
-			after = next
-		}
-	}
-	if err == nil {
 		err = eng.Recover(bg)
 	}
 	if err != nil {
@@ -253,14 +242,20 @@ func Run(ctx context.Context, p Process) int {
 	startCtx, startCancel := context.WithCancel(ctx)
 	defer startCancel()
 	startDone := make(chan struct{})
+	requestID := ""
 	if sc != nil {
 		var draw [16]byte
 		_, _ = io.ReadFull(rnd, draw[:])
-		requestID := hex.EncodeToString(draw[:])
-		go func() { defer close(startDone); _, _ = eng.StartParks(startCtx, requestID) }()
-	} else {
-		close(startDone)
+		requestID = hex.EncodeToString(draw[:])
 	}
+	filled := eng.StartFill(startCtx)
+	go func() {
+		defer close(startDone)
+		<-filled
+		if sc != nil {
+			_, _ = eng.StartParks(startCtx, requestID)
+		}
+	}()
 	h := web.Handler(web.Config{Banner: p.Banner, MCP: p.MCP(w), LegacyMCP: p.MCP(w), ServicesPath: path, Store: st, Passes: eng, Telemetry: w, Events: em, Website: checker})
 	notify, _ := p.LookupEnv("NOTIFY_SOCKET")
 	if notify != "" {
@@ -308,6 +303,9 @@ func Run(ctx context.Context, p Process) int {
 		dc, cancel = context.WithTimeout(bg, s.Drain())
 		defer cancel()
 	}
+	startCancel()
+	eng.Drain(dc)
+	<-startDone
 	_ = em.Flush(dc)
 	reason := "stopped"
 	if cause := context.Cause(ctx); cause != nil {

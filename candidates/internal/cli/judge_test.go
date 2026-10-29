@@ -19,7 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
 )
 
-// R-DWD7-5IFI R-QZFG-HSHR
+// R-46HV-WBHI R-QZFG-HSHR
 func TestRunJudgeDeliveryMakesNoSiblingRead(t *testing.T) {
 	fake := &runFake{}
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, fake)}))
@@ -78,7 +78,7 @@ func TestRunJudgeDeliveryMakesNoSiblingRead(t *testing.T) {
 	}
 }
 
-// R-1O42-EP5Y
+// R-3MZH-RZME
 func TestRunReadsFourFixedSources(t *testing.T) {
 	rows := map[string]map[string]any{"fmcsa": runRow(), "ppp": runRow(), "form5500": runRow(), "osha_ita": runRow()}
 	rows["ppp"]["scraper"] = "ppp"
@@ -172,7 +172,7 @@ func TestRunReadsFourFixedSources(t *testing.T) {
 	}
 }
 
-// R-1O42-EP5Y
+// R-3MZH-RZME
 func TestRunFilingDeliveries(t *testing.T) {
 	for _, src := range []sources.Source{form5500.New(), oshaita.New()} {
 		t.Run(src.Name(), func(t *testing.T) { runFilingDelivery(t, src) })

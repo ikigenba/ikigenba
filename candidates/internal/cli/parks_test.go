@@ -522,7 +522,7 @@ func TestRunRulesLifecycleAfterStart(t *testing.T) {
 	assertParcelLifecycle(t, h, p, c.RequestID, c.UserID, "", 0)
 }
 
-// R-LE69-3QLP
+// R-4F16-KPOD
 func TestRunParcelDeliveryUnavailableStillAcknowledges(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": missingParcelSocket(t)}))
 	h.start()
@@ -562,7 +562,36 @@ func parcelStoredPass(t *testing.T, h *runHarness, origin string) map[string]jso
 	}
 }
 
-// R-LCYC-PYV0 R-3KIM-DT9K R-TQ38-2EBU
+// R-3QN6-XAUH
+func TestRunEmptyParcelDeliveryStartsOnlyParks(t *testing.T) {
+	f := &runParcelFake{}
+	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, f)}))
+	h.start()
+	parcelDeliver(t, h, "evt_cacacacacacacaca", "empty_parcels", 0)
+	r, v := h.call(identity.Caller{UserID: "reader"}, "passes", map[string]any{})
+	var ps []passes.Record
+	if err := json.Unmarshal(v["passes"], &ps); err != nil || r.IsError() {
+		t.Fatal(r, err)
+	}
+	matched := 0
+	for _, p := range ps {
+		if p.Kind == store.KindIngest {
+			t.Fatal("parcel delivery recorded an ingest", p)
+		}
+		if p.Trigger == "parcel_run" {
+			matched++
+			if p.Kind != store.KindParks || p.Origin != store.OriginRun {
+				t.Fatal(p)
+			}
+		}
+	}
+	if matched != 1 {
+		t.Fatal("parcel delivery pass count", matched, ps)
+	}
+	h.stop()
+}
+
+// R-4DTA-6XXO R-TQ38-2EBU
 func TestRunFreshNoncurrentParcelDeliveryExactDerivation(t *testing.T) {
 	rows := runParcelRows(t)
 	noPoint := runParcelRows(t)[0]

@@ -33,6 +33,9 @@ func (e *Engine) Enrich(ctx context.Context, c identity.Caller, kind string) (st
 			return store.Pass{}, &Refusal{Word: RefusalUnavailable}
 		}
 	}
+	if e.filling {
+		return store.Pass{}, &Refusal{Word: RefusalBusy}
+	}
 	p, err := e.cfg.Store.AddPass(e.ctx, store.Pass{Kind: store.KindEnrich, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, UserID: c.UserID, UserEmail: c.Email, RequestID: c.RequestID})
 	if err != nil && e.stopping.Load() {
 		return store.Pass{}, &Refusal{Word: RefusalStopping}

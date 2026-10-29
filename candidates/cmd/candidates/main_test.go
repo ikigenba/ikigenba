@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -29,6 +30,32 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
+
+type binaryBuffer struct {
+	mu     sync.Mutex
+	buf    bytes.Buffer
+	filled chan struct{}
+}
+
+func (b *binaryBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n, err := b.buf.Write(p)
+	if b.filled != nil && bytes.Contains(b.buf.Bytes(), []byte("candidates: facts filled\n")) {
+		select {
+		case <-b.filled:
+		default:
+			close(b.filled)
+		}
+	}
+	return n, err
+}
+
+func (b *binaryBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
 
 // R-1N7H-5GFZ R-1OFD-J86O R-1PN9-WZXD R-1QV6-ARO2 R-1S32-OJER R-1TAZ-2B5G R-LAIK-RNO1 R-LCYD-J75F
 func TestBinary(t *testing.T) {
@@ -95,7 +122,8 @@ func TestBinary(t *testing.T) {
 			}
 			defer func() { _ = file.Close() }()
 			dir := t.TempDir()
-			var out, stderr bytes.Buffer
+			var out bytes.Buffer
+			stderr := binaryBuffer{filled: make(chan struct{})}
 			env := append(append([]string{}, baseEnv...), "NOTIFY_SOCKET="+notify.LocalAddr().String())
 			capture := &telemetry.Capture{}
 			var ingest *http.Server
@@ -145,6 +173,11 @@ func TestBinary(t *testing.T) {
 			n, _, err := notify.ReadFromUnix(ready)
 			if err != nil || string(ready[:n]) != "READY=1" {
 				t.Fatal("ready", err)
+			}
+			select {
+			case <-stderr.filled:
+			case <-time.After(10 * time.Second):
+				t.Fatalf("facts fill did not complete: %s", stderr.String())
 			}
 			info, err := os.Stat(filepath.Join(dir, "state", "candidates.db"))
 			if err != nil || !info.Mode().IsRegular() {
@@ -257,7 +290,7 @@ func TestBinary(t *testing.T) {
 				t.Fatal(out.String())
 			}
 			if signal == syscall.SIGTERM {
-				if stderr.Len() != 0 {
+				if stderr.String() != "candidates: facts filled\n" {
 					t.Fatal(stderr.String())
 				}
 				events := capture.Events()

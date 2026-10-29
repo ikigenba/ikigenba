@@ -65,12 +65,20 @@ type runBuffer struct {
 	mu     sync.Mutex
 	b      bytes.Buffer
 	writes int
+	filled chan struct{}
 }
 
 func (b *runBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.writes++
+	if b.filled != nil && bytes.Equal(p, []byte("candidates: facts filled\n")) {
+		select {
+		case <-b.filled:
+		default:
+			close(b.filled)
+		}
+	}
 	return b.b.Write(p)
 }
 func (b *runBuffer) String() string { b.mu.Lock(); defer b.mu.Unlock(); return b.b.String() }
@@ -199,7 +207,7 @@ type runHarness struct {
 func newRunHarness(t *testing.T, dir, path string) *runHarness {
 	t.Helper()
 	t.Setenv(services.Variable, "")
-	h := &runHarness{t: t, env: map[string]string{"LISTEN_PID": "777", "LISTEN_FDS": "1", services.Variable: path}, telemetry: &telemetry.Capture{}, bus: &events.Capture{}, out: &runBuffer{}, err: &runBuffer{}, timers: make(chan chan time.Time, 10), done: make(chan int, 1)}
+	h := &runHarness{t: t, env: map[string]string{"LISTEN_PID": "777", "LISTEN_FDS": "1", services.Variable: path}, telemetry: &telemetry.Capture{}, bus: &events.Capture{}, out: &runBuffer{}, err: &runBuffer{filled: make(chan struct{})}, timers: make(chan chan time.Time, 10), done: make(chan int, 1)}
 	var err error
 	h.ln, err = net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -281,8 +289,17 @@ func (h *runHarness) stop() int {
 		return -1
 	}
 }
+func (h *runHarness) filled() {
+	h.t.Helper()
+	select {
+	case <-h.err.filled:
+	case <-time.After(5 * time.Second):
+		h.t.Fatalf("facts fill did not complete: %s", h.err.String())
+	}
+}
 func (h *runHarness) call(c identity.Caller, name string, args any) (mcp.Result, map[string]json.RawMessage) {
 	h.t.Helper()
+	h.filled()
 	b, err := json.Marshal(args)
 	if err != nil {
 		h.t.Fatal(err)
@@ -331,6 +348,9 @@ func (h *runHarness) waitPass(c identity.Caller, id string) map[string]json.RawM
 }
 func (h *runHarness) request(method, path, q string, body []byte) (int, []byte) {
 	h.t.Helper()
+	if path == "/events" {
+		h.filled()
+	}
 	r, err := http.NewRequest(method, "http://"+h.ln.Addr().String()+path, bytes.NewReader(body))
 	if err != nil {
 		h.t.Fatal(err)
@@ -419,8 +439,8 @@ func runOnlyState(t *testing.T, dir string) {
 }
 
 // R-U54M-T001 R-119A-9L3H R-13P3-14KV R-9NW2-FV7B R-A1AY-NCCY R-XHVR-JJLE
-// R-3TTL-43TV R-42CV-SI0Q R-7797-KNZO R-QR9U-4LFL R-49OA-34GW R-KDES-2YHL
-// R-8S6O-HTX9 R-R335-N3PU R-ZY3R-GAKJ R-R0NC-VK8G   R-DV5A-RQOT
+// R-3TTL-43TV R-42CV-SI0Q R-7797-KNZO R-QR9U-4LFL R-49OA-34GW R-E00L-ZMBT
+// R-459Z-IJQT R-R335-N3PU R-ZY3R-GAKJ R-R0NC-VK8G   R-4BDH-FEGA
 // R-08GD-3XUM R-06N2-4ORE R-MD1O-TQIR R-76JM-ZE8M
 func TestRunAssembledChain(t *testing.T) {
 	if cli.SweepInterval != time.Hour {
@@ -541,9 +561,7 @@ func TestRunAssembledChain(t *testing.T) {
 			t.Fatalf("environment lookup %s", k)
 		}
 	}
-	if h.out.String() != "" || h.err.String() != "" {
-		t.Fatalf("streams stdout %q stderr %q", h.out.String(), h.err.String())
-	}
+	runAssertSilent(t, h)
 	evs := h.telemetry.Events()
 	if len(evs) < 2 || evs[0].Name != "service.started" || evs[len(evs)-1].Name != "service.stopping" {
 		t.Fatalf("lifecycle events %v", evs)
@@ -822,7 +840,7 @@ func TestRunInjectedClockAndBytes(t *testing.T) {
 	}
 }
 
-// R-8IF1-FDSB
+// R-4A5L-1MPL
 func TestRunFreshDeliveryCounts(t *testing.T) {
 	row := runRow()
 	second := runRow()
@@ -1046,7 +1064,7 @@ func TestRunKeepsScrapesSocketSelectedAtStart(t *testing.T) {
 	}
 }
 
-// R-2M6B-6WBI
+// R-4423-4S04
 func TestRunInterruptsHeldScrapesRead(t *testing.T) {
 	hold := make(chan struct{})
 	defer close(hold)
@@ -1078,7 +1096,7 @@ func TestRunInterruptsHeldScrapesRead(t *testing.T) {
 	}
 }
 
-// R-981D-GUKA
+// R-4CLD-T66Z
 func TestRunUnreachableScrapesIngestAndDelivery(t *testing.T) {
 	d, err := os.MkdirTemp("", "cand-")
 	if err != nil {
@@ -1160,7 +1178,7 @@ type runFailBus struct{}
 
 func (runFailBus) Deliver(context.Context, events.Event) error { return errors.New("fixture refusal") }
 
-// R-QUJU-YPIZ
+// R-48XO-NUYW
 func TestRunSinkFailuresDoNotChangePass(t *testing.T) {
 	var answers []map[string]json.RawMessage
 	var initial []map[string]json.RawMessage
@@ -1383,7 +1401,7 @@ func TestRunSinkDeadlinePreventsLaterDeliveryCalls(t *testing.T) {
 	if ts.calls.Load() != 1 || es.calls.Load() != 1 {
 		t.Fatalf("sink began later calls %d %d", ts.calls.Load(), es.calls.Load())
 	}
-	if h.err.String() == "" {
+	if strings.ReplaceAll(h.err.String(), "candidates: facts filled\n", "") == "" {
 		t.Fatal("lost events produced no diagnostic")
 	}
 }
@@ -1635,12 +1653,12 @@ func TestRunSendsReadyBeforeActualAccept(t *testing.T) {
 
 func runAssertSilent(t *testing.T, h *runHarness) {
 	t.Helper()
-	if h.out.String() != "" || h.err.String() != "" {
+	if text := h.err.String(); h.out.String() != "" || (text != "" && text != "candidates: facts filled\n") {
 		t.Fatalf("streams stdout=%q stderr=%q", h.out.String(), h.err.String())
 	}
 }
 
-// R-LFE5-HICE R-XQ2V-N2EA
+// R-4G92-YHF2 R-XQ2V-N2EA
 func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	rows := make([]map[string]any, 3)
 	for i := range rows {

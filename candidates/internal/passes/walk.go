@@ -75,6 +75,9 @@ func (e *Engine) Walk(ctx context.Context, c identity.Caller, ids []string, agai
 	if e.stopping.Load() {
 		return store.Pass{}, refuse(RefusalStopping, "")
 	}
+	if e.filling {
+		return store.Pass{}, refuse(RefusalBusy, "")
+	}
 	p, err := e.cfg.Store.AddPass(e.ctx, store.Pass{Kind: store.KindWalk, Origin: store.OriginWalk, Trigger: store.TriggerWalk, UserID: c.UserID, UserEmail: c.Email, RequestID: c.RequestID})
 	if err != nil {
 		if e.stopping.Load() {
@@ -92,9 +95,10 @@ func (e *Engine) Walk(ctx context.Context, c identity.Caller, ids []string, agai
 func (e *Engine) startWalk(ctx context.Context, p store.Pass, c identity.Caller, selected []store.Park, ceiling int64) {
 	finishCtx := context.WithoutCancel(ctx)
 	trail.Record(finishCtx, e.cfg.Telemetry, e.cfg.Events, trail.Started, p)
+	e.unsettled[p.ID] = struct{}{}
 	e.work.Add(1)
 	go func() {
-		defer e.work.Done()
+		defer e.passSettled(p.ID)
 		failure := &workFailure{}
 		workCtx := context.WithValue(identity.NewContext(e.ctx, c), failureKey{}, failure)
 		totals, cut, reason, detail := e.walk(workCtx, p.ID, selected, ceiling)

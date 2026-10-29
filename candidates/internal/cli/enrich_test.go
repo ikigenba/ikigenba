@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/candidates/internal/cli"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
@@ -61,7 +62,7 @@ func websiteTimers(t *testing.T, h *runHarness, timeout chan chan time.Time) {
 	}
 }
 
-// R-N0O7-7ZV6
+// R-4HGZ-C95R
 func TestRunSandboxSelectsStub(t *testing.T) {
 	for _, supplied := range []bool{false, true} {
 		t.Run(map[bool]string{false: "nil", true: "injected"}[supplied], func(t *testing.T) {
@@ -98,7 +99,7 @@ func TestRunSandboxSelectsStub(t *testing.T) {
 	}
 }
 
-// R-N1W3-LRLV
+// R-4IOV-Q0WG
 func TestRunInjectedHTTPAndTimeouts(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
 	arrived := make(chan string, 4)
@@ -229,9 +230,18 @@ func TestRunFollowOnPassKeepsLineage(t *testing.T) {
 	}
 }
 
-// R-NCBD-DXB1
-func TestRunFillsFactsBeforeReady(t *testing.T) {
+// R-DV50-GJD1
+func TestRunFillsFactsBeforeStartRead(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
+	read := make(chan struct{}, 1)
+	fake := &runFake{}
+	h.env[services.Variable] = runServices(t, map[string]string{"scrapes": runSocket(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := h.err.String(); got != "candidates: facts filled\n" {
+			t.Errorf("start read before fill completion: %q", got)
+		}
+		fake.ServeHTTP(w, r)
+		read <- struct{}{}
+	}))})
 	d, _ := runStore(t, h.p.Dir, h.p.Now)
 	st := store.New(d, store.Config{Now: h.p.Now, Rand: &secrecyBytes{}})
 	ids := []string{}
@@ -261,6 +271,12 @@ func TestRunFillsFactsBeforeReady(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.start()
+	h.filled()
+	select {
+	case <-read:
+	case <-time.After(5 * time.Second):
+		t.Fatal("start read did not arrive")
+	}
 	d, st = runStore(t, h.p.Dir, h.p.Now)
 	for i, id := range ids {
 		f, err := st.GetFacts(t.Context(), id)
@@ -272,6 +288,12 @@ func TestRunFillsFactsBeforeReady(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.stop()
+	if got := h.err.String(); got != "candidates: facts filled\n" {
+		t.Fatalf("fill completion must occur exactly once: %q", got)
+	}
+	if requests := fake.Requests(); len(requests) != 1 || requests[0].Path != "/scrapers/mn_parcels/current" {
+		t.Fatal(requests)
+	}
 }
 
 // R-V2ER-KG1T R-V3MN-Y7SI R-V4UK-BZJ7
