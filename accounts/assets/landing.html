@@ -3,23 +3,40 @@
      is empty, so the banner's breadcrumb holds only the service. Shown
      only to a signed-in user; a guest is sent to sign in. Every signed-in
      user sees the same groups and users: they are the space's, not a
-     user's. Read-only: no form but the banner's sign out, no per-record
-     pages and no paging; groups and users are kept with the tools. Data:
-     .Banner (a page.Banner, for banner and footer); .Groups (a slice, every
-     group, sorted by slug), each with .Slug (string, the group's slug,
+     user's. Read-only: no form but the banner's sign out and no per-record
+     pages; groups and users are kept with the tools. Data: .Banner (a
+     page.Banner, for banner and footer); .Groups (a slice, one window of
+     up to 25 groups, sorted by slug), each with .Slug (string, the group's slug,
      which names its Linux group, its service account and its folder),
      .MemberCount (int, how many users belong to it), .Members ([]string,
      the login names of its members, sorted; empty when it has none),
      .Created and .CreatedText (string, when the group was created, RFC 3339
      UTC to the second and UTC to the minute, "2026-10-29 14:05");
-     .Users (a slice, every user, sorted by login name), each with .Login
+     .GroupsPage (string, this window's own groups page token, the
+     ?groups_page= the request carried; empty on the first window),
+     .GroupsPrev (string, the page token for the groups window before this
+     one, in the same groups_page parameter as .GroupsNext; empty on the
+     first window) and .GroupsNext (string, the page token the groups list
+     tool's next carries for the groups after these; empty when none
+     remain); .Groups is the window .GroupsPage names; .Users (a slice, one
+     window of up to 25 users, sorted by login name), each with .Login
      (string, the login name), .State (string, "active" or "locked"),
      .Groups ([]string, the slugs of the groups the user belongs to,
      sorted; empty when none), .KeyCount (int, how many public keys the
      user has), .LastSignIn and .LastSignInText (string, the user's last
      sign-in, in the same two forms as .Created and .CreatedText; both
-     empty when the user has never signed in). Counts are shown as the
-     plain integer.
+     empty when the user has never signed in); .UsersPage (string, this
+     window's own users page token, the ?users_page= the request carried;
+     empty on the first window), .UsersPrev (string, the page token for the
+     users window before this one, in the same users_page parameter as
+     .UsersNext; empty on the first window) and .UsersNext (string, the
+     page token the users list tool's next carries for the users after
+     these; empty when none remain); .Users is the window .UsersPage names.
+     Two lists share the page, so each has its own nav and parameter,
+     nav#paging-groups with groups_page and nav#paging-users with
+     users_page; each nav's hrefs carry the other list's current token,
+     Prev's and Last's included, so paging one list never resets the
+     other. Counts are shown as the plain integer.
      Hooks: title "accounts"; h1 with text "accounts"; p#summary.lede (text
      "The SSH accounts on this space: business groups, each with a shared
      folder, and the people who sign in to work in them. Agents create
@@ -37,7 +54,26 @@
      .Members, in order, holding the login, separated by ", "),
      td.group-folder (/srv/ followed by .Slug, in a code element) and
      td.group-created holding time[datetime=<.Created>] (text
-     .CreatedText); then section#users.card.flush with h2 "Users" and a p
+     .CreatedText); then, after the card (section#groups),
+     nav.paging#paging-groups (aria-label "Pages") whose children are, in
+     order, First, Prev, Next and Last: First (on the first window,
+     .GroupsPage empty, a span with aria-current="page" and text "First";
+     otherwise a link with text "First" to / when .UsersPage is empty, else
+     to /?users_page=<.UsersPage>), then, only when .GroupsPrev is not
+     empty, Prev (a link with text "Prev" to /?groups_page=<.GroupsPrev>,
+     followed by &users_page=<.UsersPage> when .UsersPage is not empty),
+     then, only when .GroupsNext is not empty, Next (a link with text
+     "Next" to /?groups_page=<.GroupsNext>, followed by
+     &users_page=<.UsersPage> when .UsersPage is not empty), then, always,
+     Last (while .GroupsNext is not empty, a link with text "Last" to
+     /?groups_page=last, followed by &users_page=<.UsersPage> when
+     .UsersPage is not empty, groups_page=last naming the last groups
+     window; when .GroupsNext is empty, the last window, a span with
+     aria-current="page" and text "Last", so a single window shows First
+     and Last both as the current item); the nav shows when .Groups is not
+     empty or .GroupsPage is not empty, so an emptied later window still
+     offers First; on the first window with no groups there is no nav;
+     then section#users.card.flush with h2 "Users" and a p
      in its header (text "The people who sign in over SSH. A locked user
      cannot sign in. Nothing here changes a user."), then either, when
      .Users is empty, div#no-users.empty holding h3 "No users yet" and a p
@@ -52,7 +88,25 @@
      (.KeyCount) and td.user-last-sign-in, which when .LastSignIn is not
      empty holds time[datetime=<.LastSignIn>] (text .LastSignInText) and
      when it is empty is td.user-last-sign-in.muted with text "never";
-     then, after the cards, a p holding a #tools-link (text "Tools") whose
+     then, after the card (section#users), nav.paging#paging-users
+     (aria-label "Pages") whose children are, in order, First, Prev, Next
+     and Last: First (on the first window, .UsersPage empty, a span with
+     aria-current="page" and text "First"; otherwise a link with text
+     "First" to / when .GroupsPage is empty, else to
+     /?groups_page=<.GroupsPage>), then, only when .UsersPrev is not empty,
+     Prev (a link with text "Prev" to /?users_page=<.UsersPrev>, followed
+     by &groups_page=<.GroupsPage> when .GroupsPage is not empty), then,
+     only when .UsersNext is not empty, Next (a link with text "Next" to
+     /?users_page=<.UsersNext>, followed by &groups_page=<.GroupsPage> when
+     .GroupsPage is not empty), then, always, Last (while .UsersNext is not
+     empty, a link with text "Last" to /?users_page=last, followed by
+     &groups_page=<.GroupsPage> when .GroupsPage is not empty,
+     users_page=last naming the last users window; when .UsersNext is
+     empty, the last window, a span with aria-current="page" and text
+     "Last", so a single window shows First and Last both as the current
+     item); the nav shows when .Users is not empty or .UsersPage is not
+     empty, so an emptied later window still offers First; on the first
+     window with no users there is no nav; then a p holding a #tools-link (text "Tools") whose
      href is "/tools" and a #about-link (text "About accounts") whose href
      is "/about", separated by " · ". No script but appkit's
      /_appkit/feedback.js. */}}
@@ -84,7 +138,8 @@
 <p>A group an agent creates with the tools shows up here.</p>
 </div>{{end}}
 </section>
-<section id="users" class="card flush" aria-labelledby="users-title">
+{{if or .Groups .GroupsPage}}<nav class="paging" id="paging-groups" aria-label="Pages">{{if .GroupsPage}}<a href="/{{if .UsersPage}}?users_page={{.UsersPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .GroupsPrev}}<a href="/?groups_page={{.GroupsPrev}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}">Prev</a>{{end}}{{if .GroupsNext}}<a href="/?groups_page={{.GroupsNext}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}">Next</a>{{end}}{{if .GroupsNext}}<a href="/?groups_page=last{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
+{{end}}<section id="users" class="card flush" aria-labelledby="users-title">
 <header><div><h2 id="users-title">Users</h2><p>The people who sign in over SSH. A locked user cannot sign in. Nothing here changes a user.</p></div></header>
 {{if .Users}}<div class="table-scroll">
 <table id="user-list">
@@ -105,7 +160,8 @@
 <p>A user an agent adds with the tools shows up here.</p>
 </div>{{end}}
 </section>
-<p><a id="tools-link" href="/tools">Tools</a> · <a id="about-link" href="/about">About accounts</a></p>
+{{if or .Users .UsersPage}}<nav class="paging" id="paging-users" aria-label="Pages">{{if .UsersPage}}<a href="/{{if .GroupsPage}}?groups_page={{.GroupsPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .UsersPrev}}<a href="/?users_page={{.UsersPrev}}{{if .GroupsPage}}&amp;groups_page={{.GroupsPage}}{{end}}">Prev</a>{{end}}{{if .UsersNext}}<a href="/?users_page={{.UsersNext}}{{if .GroupsPage}}&amp;groups_page={{.GroupsPage}}{{end}}">Next</a>{{end}}{{if .UsersNext}}<a href="/?users_page=last{{if .GroupsPage}}&amp;groups_page={{.GroupsPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
+{{end}}<p><a id="tools-link" href="/tools">Tools</a> · <a id="about-link" href="/about">About accounts</a></p>
 </main>
 {{template "footer" .Banner}}
 </body>
