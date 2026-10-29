@@ -24,7 +24,7 @@ const (
 
 const sshConfig = "PubkeyAuthentication yes\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin no\nLoginGraceTime 30\nMaxAuthTries 3\nClientAliveInterval 300\nClientAliveCountMax 2\nAllowGroups " + AdminAccount + " " + ShellGroup + "\nUsePAM yes\n\nMatch Group " + ShellGroup + "\n  AllowTcpForwarding no\n  AllowStreamLocalForwarding no\n  AllowAgentForwarding no\n  X11Forwarding no\n  PermitTunnel no\n  AuthorizedKeysFile " + KeysDir + "/%u\n"
 const journalConfig = "[Journal]\nStorage=persistent\n"
-const jailConfig = "[sshd]\nenabled = true\nbackend = systemd\nbanaction = nftables-multiport\nmaxretry = 5\nfindtime = 10m\nbantime = 10m\nbantime.increment = true\nbantime.maxtime = 1w\n"
+const jailConfig = "[sshd]\nenabled = true\nbackend = systemd\nmode = aggressive\nbanaction = nftables-multiport\nmaxretry = 5\nfindtime = 10m\nbantime = 10m\nbantime.increment = true\nbantime.maxtime = 1w\n"
 const sudoConfig = "ikigenba ALL=(root) NOPASSWD: /usr/local/bin/opsctl group *, /usr/local/bin/opsctl user *\n"
 
 type operation struct {
