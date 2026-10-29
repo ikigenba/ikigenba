@@ -6,7 +6,7 @@
 - **The group `shell`** exists. `ec2-user` is not a member of it and may still sign in.
 - **fail2ban**, with a jail for sshd, bans a source that fails to sign in again and again. The first ban lasts 10 minutes; each repeated ban lasts longer; every ban lifts on its own.
 - **dnf-automatic** applies security updates, and only those, unattended, on its timer.
-- **The packages** `fail2ban` and `dnf-automatic` are installed with dnf when either is missing; when both are present dnf is not run. `init`'s preflight does not check for them.
+- **The packages** `fail2ban-server` and `dnf-automatic` are installed with dnf when either is missing; when both are present dnf is not run. `init`'s preflight does not check for them.
 - **The resource pool**: `/etc/systemd/system/user.slice.d/ikigenba.conf` sets `MemoryHigh`, `MemoryMax`, `CPUWeight` and `TasksMax` for all login sessions together, `ec2-user`'s included, and `/etc/systemd/system/user-.slice.d/ikigenba.conf` sets `MemoryHigh`, `MemoryMax` and `TasksMax` for each person's own sessions, each below the pool's, leaving the CPU weight at systemd's default. The values are the same on every host, whatever its memory, and no configuration key changes them. When either file changed, the step reloads systemd itself. The suite's own slices and nginx's drop-in (`S04-init.md`) are not touched.
 - **The suite's state is closed**: on each of `/etc/ikigenba`, `/etc/opt/ikigenba`, `/var/opt/ikigenba`, `/var/lib/ikigenba` and `/run/ikigenba` that exists, no path at or under it grants any permission to others. Every app still answers, nginx still serves, and Litestream still backs up. A path opsctl itself creates under one of them later in the same command, or in any later command, such as `init`'s `/run/ikigenba/services.json` or `activate`'s environment files and app directories under `/etc/opt/ikigenba` and `/var/opt/ikigenba`, is created granting nothing to others, so the rule holds once the whole command has run, even where a directory did not exist when the step ran. `/opt/ikigenba`, the release code, `/etc/opt` itself, and the system's own directories stay readable.
 - **The sudo rule** `/etc/sudoers.d/ikigenba-accounts`, owned by root with mode `0440`, lets the user `ikigenba`, which every app runs as and which `init` creates if it is missing, run `/usr/local/bin/opsctl group ...` and `/usr/local/bin/opsctl user ...` (`S12-groups.md`, `S13-users.md`) as root without a password, and nothing else. It is checked with `visudo -c` before it is installed; a file that fails the check is not installed.
@@ -30,12 +30,12 @@ Exits 0. The lines are on stdout; stderr is empty.
 Preconditions:
 
 - The host is the fresh host of "An agent initialises a fresh host before its first activate" (`S04-init.md`), and every preflight check passes.
-- Neither `fail2ban` nor `dnf-automatic` is installed, and the host's package repositories can be reached.
+- Neither `fail2ban-server` nor `dnf-automatic` is installed, and the host's package repositories can be reached.
 - There is no group `shell`, no drop-in of opsctl's under `/etc/ssh/sshd_config.d/`, `/etc/systemd/system/user.slice.d/` or `/etc/systemd/system/user-.slice.d/`, and no `/etc/sudoers.d/ikigenba-accounts`.
 
 Postconditions:
 
-- `fail2ban` and `dnf-automatic` are installed. fail2ban is running with its sshd jail, and dnf-automatic's timer is enabled, set to apply security updates only.
+- `fail2ban-server` and `dnf-automatic` are installed. fail2ban is running with its sshd jail, and dnf-automatic's timer is enabled, set to apply security updates only.
 - The group `shell` exists and has no members; `ec2-user` is not in it.
 - sshd runs with opsctl's drop-in, which passed `sshd -t`, and was reloaded: it accepts public keys only, refuses root, gives a short grace period and a small number of attempts per connection, drops idle sessions, and lets in only `ec2-user` and members of `shell`, with no forwarding or tunnels for members of `shell`. `ec2-user` signs in with its key as before.
 - `/etc/systemd/system/user.slice.d/ikigenba.conf` and `/etc/systemd/system/user-.slice.d/ikigenba.conf` are written and systemd was reloaded, so `ec2-user`'s next session runs inside the pool.
@@ -86,7 +86,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 Preconditions:
 
 - The host is the one of "An agent activates a release on a host that runs releases" (`S10-releases.md`): it runs `1a2b3c4`, whose opsctl has no `hardening` step, and `c604e32` is unpacked whole.
-- The host holds none of the rules: no `fail2ban`, no `dnf-automatic`, no group `shell`, none of opsctl's drop-ins and no `/etc/sudoers.d/ikigenba-accounts`. Some files under `/var/opt/ikigenba` and `/etc/ikigenba` are readable by others.
+- The host holds none of the rules: no `fail2ban-server`, no `dnf-automatic`, no group `shell`, none of opsctl's drop-ins and no `/etc/sudoers.d/ikigenba-accounts`. Some files under `/var/opt/ikigenba` and `/etc/ikigenba` are readable by others.
 
 Postconditions:
 
@@ -204,12 +204,12 @@ Exits 1. The `ok` lines and the `exit` line are on stdout; the `opsctl:` line an
 Preconditions:
 
 - Every preflight check passes, and the host's certificate is not due for renewal.
-- `fail2ban` is not installed, and the host's package repositories cannot be reached.
+- `fail2ban-server` is not installed, and the host's package repositories cannot be reached.
 
 Postconditions:
 
 - The `certificate` and `slices` steps ran as on any host.
-- `fail2ban` is still not installed. Nothing from `nginx.conf` on ran: the nginx file, the services file, `/etc/litestream.yml`, the timers and every app are as they were.
+- `fail2ban-server` is still not installed. Nothing from `nginx.conf` on ran: the nginx file, the services file, `/etc/litestream.yml`, the timers and every app are as they were.
 - Running `init` again once the repositories can be reached runs to the end.
 
 ## An agent initialises a host whose sshd configuration fails its check
@@ -322,7 +322,7 @@ Preconditions:
 Postconditions:
 
 - The release is not activated: `/opt/ikigenba/current` still names `releases/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d` and `/opt/ikigenba/previous` is not moved, no step after `hardening` ran, no label, environment file or unit was written, and every app keeps running `1a2b3c4`.
-- The failed install installed nothing: `fail2ban` and `dnf-automatic` are still not installed.
+- The failed install installed nothing: `fail2ban-server` and `dnf-automatic` are still not installed.
 - Activating `c604e32` again once the repositories can be reached runs the whole activate.
 
 ## An agent activates a release on a host whose sshd configuration fails its check
