@@ -140,6 +140,34 @@ Postconditions:
 
 - Nothing has changed. The existing account or group, and `/srv/acme`, are as they were.
 
+## The accounts app adds a group whose folder path is not a directory
+
+A folder left behind is adopted, but only a directory can be one. When `/srv/<slug>` exists and is anything else, a plain file for instance, adding the group is refused before anything changes.
+
+Command:
+
+```
+$ sudo opsctl group add acme
+```
+
+Output:
+
+```
+opsctl: not a directory: /srv/acme
+```
+
+Exits 4. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- `opsctl` is running as root.
+- No account or group named `acme` exists on the host.
+- `/srv/acme` exists and is a plain file.
+
+Postconditions:
+
+- Nothing has changed. No group or account `acme` was created, and `/srv/acme` is as it was.
+
 ## The accounts app adds a group with a slug that is not a valid name
 
 Command:
