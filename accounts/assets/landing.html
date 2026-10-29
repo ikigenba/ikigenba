@@ -1,0 +1,113 @@
+{{/* The landing page at GET /: what the service is, then every group and
+     every user on the space. The root of the hierarchy: .Banner's .Trail
+     is empty, so the banner's breadcrumb holds only the service. Shown
+     only to a signed-in user; a guest is sent to sign in. Every signed-in
+     user sees the same groups and users: they are the space's, not a
+     user's. Read-only: no form but the banner's sign out, no per-record
+     pages and no paging; groups and users are kept with the tools. Data:
+     .Banner (a page.Banner, for banner and footer); .Groups (a slice, every
+     group, sorted by slug), each with .Slug (string, the group's slug,
+     which names its Linux group, its service account and its folder),
+     .MemberCount (int, how many users belong to it), .Members ([]string,
+     the login names of its members, sorted; empty when it has none),
+     .Created and .CreatedText (string, when the group was created, RFC 3339
+     UTC to the second and UTC to the minute, "2026-10-29 14:05");
+     .Users (a slice, every user, sorted by login name), each with .Login
+     (string, the login name), .State (string, "active" or "locked"),
+     .Groups ([]string, the slugs of the groups the user belongs to,
+     sorted; empty when none), .KeyCount (int, how many public keys the
+     user has), .LastSignIn and .LastSignInText (string, the user's last
+     sign-in, in the same two forms as .Created and .CreatedText; both
+     empty when the user has never signed in). Counts are shown as the
+     plain integer.
+     Hooks: title "accounts"; h1 with text "accounts"; p#summary.lede (text
+     "The SSH accounts on this space: business groups, each with a shared
+     folder, and the people who sign in to work in them. Agents create
+     groups, add users and their keys, and lock or delete them with the
+     tools."); section#groups.card.flush with h2 "Groups" and a p in its
+     header (text "Each group is a business and its folder, /srv/<slug>.
+     Nothing here changes a group.", /srv/<slug> in a code element), then
+     either, when .Groups is empty, div#no-groups.empty holding h3 "No
+     groups yet" and a p (text "A group an agent creates with the tools
+     shows up here."), or div.table-scroll holding table#group-list whose th
+     read Group, Members, Folder, Created, with one tr[data-group=<.Slug>]
+     per group, in the order of .Groups, holding td.group-slug (.Slug in a
+     code element), td.group-members (.MemberCount, then, when .Members is
+     not empty, ": " and one code[data-member=<login>] per element of
+     .Members, in order, holding the login, separated by ", "),
+     td.group-folder (/srv/ followed by .Slug, in a code element) and
+     td.group-created holding time[datetime=<.Created>] (text
+     .CreatedText); then section#users.card.flush with h2 "Users" and a p
+     in its header (text "The people who sign in over SSH. A locked user
+     cannot sign in. Nothing here changes a user."), then either, when
+     .Users is empty, div#no-users.empty holding h3 "No users yet" and a p
+     (text "A user an agent adds with the tools shows up here."), or
+     div.table-scroll holding table#user-list whose th read Login, State,
+     Groups, Keys (th.num), Last sign-in, with one tr[data-user=<.Login>] per user,
+     in the order of .Users, holding td.user-login (.Login in a code
+     element), td.user-state holding span.status[data-status=<.State>]
+     (text .State), td.user-groups (one code[data-group=<slug>] per element
+     of .Groups, in order, holding the slug, separated by ", "; when .Groups
+     is empty, td.user-groups.muted with text "none"), td.user-keys.num
+     (.KeyCount) and td.user-last-sign-in, which when .LastSignIn is not
+     empty holds time[datetime=<.LastSignIn>] (text .LastSignInText) and
+     when it is empty is td.user-last-sign-in.muted with text "never";
+     then, after the cards, a p holding a #tools-link (text "Tools") whose
+     href is "/tools" and a #about-link (text "About accounts") whose href
+     is "/about", separated by " · ". No script but appkit's
+     /_appkit/feedback.js. */}}
+{{define "landing"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>accounts</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>accounts</h1>
+<p id="summary" class="lede">The SSH accounts on this space: business groups, each with a shared folder, and the people who sign in to work in them. Agents create groups, add users and their keys, and lock or delete them with the tools.</p>
+<section id="groups" class="card flush" aria-labelledby="groups-title">
+<header><div><h2 id="groups-title">Groups</h2><p>Each group is a business and its folder, <code>/srv/&lt;slug&gt;</code>. Nothing here changes a group.</p></div></header>
+{{if .Groups}}<div class="table-scroll">
+<table id="group-list">
+<thead><tr><th>Group</th><th>Members</th><th>Folder</th><th>Created</th></tr></thead>
+<tbody>
+{{range .Groups}}<tr data-group="{{.Slug}}">
+<td class="group-slug"><code>{{.Slug}}</code></td>
+<td class="group-members">{{.MemberCount}}{{if .Members}}: {{range $i, $m := .Members}}{{if $i}}, {{end}}<code data-member="{{$m}}">{{$m}}</code>{{end}}{{end}}</td>
+<td class="group-folder"><code>/srv/{{.Slug}}</code></td>
+<td class="group-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}<div id="no-groups" class="empty">
+<h3 class="text-md">No groups yet</h3>
+<p>A group an agent creates with the tools shows up here.</p>
+</div>{{end}}
+</section>
+<section id="users" class="card flush" aria-labelledby="users-title">
+<header><div><h2 id="users-title">Users</h2><p>The people who sign in over SSH. A locked user cannot sign in. Nothing here changes a user.</p></div></header>
+{{if .Users}}<div class="table-scroll">
+<table id="user-list">
+<thead><tr><th>Login</th><th>State</th><th>Groups</th><th class="num">Keys</th><th>Last sign-in</th></tr></thead>
+<tbody>
+{{range .Users}}<tr data-user="{{.Login}}">
+<td class="user-login"><code>{{.Login}}</code></td>
+<td class="user-state"><span class="status" data-status="{{.State}}">{{.State}}</span></td>
+{{if .Groups}}<td class="user-groups">{{range $i, $g := .Groups}}{{if $i}}, {{end}}<code data-group="{{$g}}">{{$g}}</code>{{end}}</td>{{else}}<td class="user-groups muted">none</td>{{end}}
+<td class="user-keys num">{{.KeyCount}}</td>
+{{if .LastSignIn}}<td class="user-last-sign-in"><time datetime="{{.LastSignIn}}">{{.LastSignInText}}</time></td>{{else}}<td class="user-last-sign-in muted">never</td>{{end}}
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}<div id="no-users" class="empty">
+<h3 class="text-md">No users yet</h3>
+<p>A user an agent adds with the tools shows up here.</p>
+</div>{{end}}
+</section>
+<p><a id="tools-link" href="/tools">Tools</a> · <a id="about-link" href="/about">About accounts</a></p>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}
