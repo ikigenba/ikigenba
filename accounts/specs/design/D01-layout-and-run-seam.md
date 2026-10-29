@@ -105,7 +105,7 @@ A test of the run seam builds a `cli.Process` with a temporary `Dir`, a `LookupE
 - R-CUQ9-GP6V: The `internal/settings` package MUST export `func Read(lookup func(key string) (string, bool)) (Settings, error)`.
 - R-CX62-88O9: The `internal/settings` package MUST export `type Error struct { Name, Value, Want string }`, with exactly these fields in this order, with the method `func (e *Error) Error() string`.
 - R-CYDY-M0EY: The `internal/settings` package MUST export the method `func (s Settings) Drain() time.Duration`.
-- R-CZLU-ZS5N: The `internal/settings` package MUST export `const WantSeconds string`, a non-empty copy constant holding no newline: what `DRAIN_SECONDS` must be, said after `not ` in a refusal.
+- R-CZ10-4RU5: The `internal/settings` package MUST export the string constant `WantSeconds`, a non-empty copy constant holding no newline: what `DRAIN_SECONDS` must be, said after `not ` in a refusal.
 - R-D0TR-DJWC: The `internal/settings` package MUST export the method `func (s Settings) HostFields() []string`.
 - R-D21N-RBN1: `settings.Defaults` MUST return, on every call, a `Settings` whose `DrainSeconds` is 5, whose `HostCommand` is empty and whose `Sandbox` is false.
 - R-D39K-53DQ: `settings.Read` MUST accept the value `lookup` returns for `DRAIN_SECONDS` if and only if `lookup` returns false for it, returns an empty value, or returns one or more ASCII decimal digits the first of which is not `0` and no other characters; so that `0`, `00`, `-1`, `+5`, `2.5`, `5s`, `1e9`, `05`, ` 5`, `5 ` and `abc` are refused, and no value is refused for being large.

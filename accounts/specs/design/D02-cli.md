@@ -41,7 +41,7 @@ A test builds a `cli.Process` with only `Args`, `Stdout` and `Stderr` (two `byte
 
 ## REQUIREMENTS
 
-- R-RZFT-8RE5: The `internal/cli` package MUST export `const Usage string`, a non-empty copy constant whose last byte is a newline: the help text `--help` writes.
+- R-D08W-IJKU: The `internal/cli` package MUST export the string constant `Usage`, a non-empty copy constant whose last byte is a newline: the help text `--help` writes.
 - R-V4V6-OD81: The `internal/cli` package MUST export `Manifest` as a string constant whose value is exactly the manifest text `D09-on-a-space` states.
 - R-V633-24YQ: The contents of `manifest.toml` in the file system the root package's `Etc` returns (`D01-layout-and-run-seam`) MUST be exactly the bytes of `cli.Manifest`.
 - R-S0NP-MJ4U: The `internal/cli` package MUST export `ExitSuccess` as an untyped integer constant with the value 0.
