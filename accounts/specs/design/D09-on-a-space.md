@@ -75,7 +75,7 @@ Each row is an outcome the walk checks and the documents that own it. A row nami
 | `/events` and `/declarations` at the public name answer 404, with or without the token | the fragment (R-M6FC-GN0B, R-M7N8-UER0), included by the sandbox's and opsctl's nginx |
 | the gateway's `describe` lists the thirteen tools in catalog order with their effects, and a call's result carries accounts' `serverInfo` | `D07-tools`; mounting `D03-serve`; `D01-layout-and-run-seam` (R-DJ49-440R); the relay: the gateway |
 | the sandbox's tools reach the in-memory host, empty at the start | `D01-layout-and-run-seam` (R-CPUN-XM83); `D05-host` (R-IOTC-IHO4) |
-| `create_group` makes the group; again it succeeds and keeps the first created time; an invalid name is refused with the host's diagnostic | `D07-tools`; `D04-store` (R-XEL7-LJKZ, R-OXHX-BIIQ); `D05-host` (R-ISH1-NSW7, R-IQ18-W9ET) |
+| `create_group` makes the group; again it succeeds and keeps the first created time; an invalid name is refused with the host's diagnostic | `D07-tools`; `D04-store` (R-XEL7-LJKZ, R-OXHX-BIIQ); `D05-host` (R-ISH1-NSW7, R-D9PT-VML3) |
 | `add_user` makes the user active in the group with the key; a bad key and a taken name are refused with the host's diagnostic | `D07-tools`; `D04-store` (R-XFT3-ZBBO); `D05-host` (R-IYKJ-KNLO, R-IR95-A15I) |
 | `add_key` and `remove_key` change the user's keys; removing the last answers that no key is left and keeps the user | `D07-tools`; `D05-host` (R-J10C-C732, R-J288-PYTR) |
 | `add_member`, `remove_member` and `remove_group` of an empty group succeed; `remove_group` of a group with members is refused | `D07-tools`; `D04-store` (R-OZXQ-3204); `D05-host` (R-J3G5-3QKG, R-SXVL-IZ6F) |
