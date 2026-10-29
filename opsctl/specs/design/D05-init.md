@@ -70,8 +70,9 @@ manifest. It prints no line, whether it changed the host or found every rule
 in place, as no step of the sequence does, and the preflight does not look
 for the packages it installs. It reaches outside the generated files: it
 installs packages, writes under `/etc/ssh`, `/etc/sudoers.d`, `/etc/fail2ban`,
-`/etc/dnf` and `/etc/systemd/system`, ensures the `ikigenba` account and the
-`shell` group, and closes the suite's state directories to others (D19). A
+`/etc/dnf`, `/etc/systemd/system` and `/etc/systemd/journald.conf.d`, creates
+`/var/log/journal` and restarts journald, ensures the `ikigenba` account and
+the `shell` group, and closes the suite's state directories to others (D19). A
 failure, such as a failed dnf install or a check `sshd -t` or `visudo -c`
 refuses, stops `init` like any other step: the tool's output quoted on stderr
 (D02), exit 1, nothing from `nginx.conf` on run, and what `certificate`,
