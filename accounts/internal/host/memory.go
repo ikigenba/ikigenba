@@ -71,14 +71,14 @@ func cloneUser(u User) User {
 	return u
 }
 
-// GroupAdd creates an empty group, or keeps an existing one.
+// GroupAdd creates an empty group when no group or user holds its name.
 func (m *Memory) GroupAdd(ctx context.Context, slug string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := check(ctx, slug); err != nil {
 		return err
 	}
-	if _, ok := m.users[slug]; ok {
+	if _, ok := m.users[slug]; ok || m.groups[slug] {
 		return refusal(RefuseNameTaken)
 	}
 	m.groups[slug] = true

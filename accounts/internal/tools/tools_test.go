@@ -329,7 +329,7 @@ func checkRequired(t *testing.T, s schema) {
 	}
 }
 
-// R-505N-G1QB R-51DJ-TTH0 R-52LG-7L7P R-5518-Z4P3 R-59WU-I7NV R-5B4Q-VZEK R-5CCN-9R59 R-5DKJ-NIVY R-5ESG-1AMN R-5G0C-F2DC R-5H88-SU41 R-5IG5-6LUQ R-5VV1-E30D R-636F-OPGJ R-64EC-2H78
+// R-505N-G1QB R-51DJ-TTH0 R-52LG-7L7P R-5518-Z4P3 R-59WU-I7NV R-5B4Q-VZEK R-5CCN-9R59 R-5DKJ-NIVY R-5ESG-1AMN R-5G0C-F2DC R-5H88-SU41 R-5IG5-6LUQ R-5VV1-E30D R-636F-OPGJ R-64EC-2H78 R-A1G1-Z73V
 func TestCatalogAndSchemas(t *testing.T) {
 	f := setup(t)
 	names := []string{tools.ToolGroups, tools.ToolGroup, tools.ToolCreateGroup, tools.ToolRemoveGroup, tools.ToolUsers, tools.ToolAddUser, tools.ToolAddKey, tools.ToolRemoveKey, tools.ToolAddMember, tools.ToolRemoveMember, tools.ToolLockUser, tools.ToolUnlockUser, tools.ToolDeleteUser}
@@ -466,7 +466,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 	answer[tools.UserList](t, f.call(tools.ToolUsers, tools.UsersArgs{Page: &page, Limit: &limit}))
 }
 
-// R-5JO1-KDLF R-5KVX-Y5C4 R-5NBQ-POTI R-5OJN-3GK7 R-5PRJ-H8AW R-5QZF-V01L R-5S7C-8RSA R-5TF8-MJIZ R-5UN5-0B9O R-5X2X-RUR2 R-5YAU-5MHR R-5ZIQ-JE8G R-60QM-X5Z5 R-6GLB-W6M6 R-6HT8-9YCV R-6QCI-YCJQ
+// R-5JO1-KDLF R-5KVX-Y5C4 R-5NBQ-POTI R-5OJN-3GK7 R-5PRJ-H8AW R-5QZF-V01L R-5S7C-8RSA R-5TF8-MJIZ R-5UN5-0B9O R-5X2X-RUR2 R-5YAU-5MHR R-5ZIQ-JE8G R-60QM-X5Z5 R-9WKG-G453 R-9XSC-TVVS R-6QCI-YCJQ
 func TestMemoryLifecycleAndPersistence(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
@@ -478,7 +478,7 @@ func TestMemoryLifecycleAndPersistence(t *testing.T) {
 	first := f.now.UTC().Truncate(time.Second).Format(time.RFC3339)
 	f.now = f.now.Add(time.Hour)
 	f.caller.UserID = "second-caller"
-	answer[tools.GroupDone](t, f.call(tools.ToolCreateGroup, tools.GroupArgs{Group: "acme"}))
+	refusal(t, f.call(tools.ToolCreateGroup, tools.GroupArgs{Group: "acme"}), host.RefuseNameTaken)
 	if got := answer[tools.MemberDone](t, f.call(tools.ToolAddUser, tools.AddUserArgs{User: "alice", Group: "acme", Key: k})); got != (tools.MemberDone{User: "alice", Group: "acme"}) {
 		t.Fatal(got)
 	}
@@ -516,9 +516,11 @@ func TestMemoryLifecycleAndPersistence(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tool := range []string{tools.ToolLockUser, tools.ToolUnlockUser} {
-		got := answer[tools.UserDone](t, f.call(tool, tools.UserArgs{User: "alice"}))
-		if got.User != "alice" {
-			t.Fatal(got)
+		for range 2 {
+			got := answer[tools.UserDone](t, f.call(tool, tools.UserArgs{User: "alice"}))
+			if got.User != "alice" {
+				t.Fatal(got)
+			}
 		}
 		u := answer[tools.UserList](t, f.call(tools.ToolUsers, tools.UsersArgs{}))
 		state := host.StateLocked
@@ -531,17 +533,35 @@ func TestMemoryLifecycleAndPersistence(t *testing.T) {
 	}
 	refusal(t, f.call(tools.ToolRemoveGroup, tools.GroupArgs{Group: "acme"}), host.RefuseGroupNotEmpty)
 	refusal(t, f.call(tools.ToolDeleteUser, tools.UserArgs{User: "alice"}), host.RefuseUserNotLocked)
-	answer[tools.UserDone](t, f.call(tools.ToolAddKey, tools.KeyArgs{User: "alice", Key: k2}))
-	if got := answer[tools.KeyRemoved](t, f.call(tools.ToolRemoveKey, tools.KeyArgs{User: "alice", Key: k})); got.User != "alice" || got.NoKeyLeft {
+	for range 2 {
+		answer[tools.UserDone](t, f.call(tools.ToolAddKey, tools.KeyArgs{User: "alice", Key: k2}))
+	}
+	if got := answer[tools.UserList](t, f.call(tools.ToolUsers, tools.UsersArgs{})); !reflect.DeepEqual(got.Users[0].Keys, []string{k, k2}) {
 		t.Fatal(got)
 	}
-	if got := answer[tools.KeyRemoved](t, f.call(tools.ToolRemoveKey, tools.KeyArgs{User: "alice", Key: k2})); !got.NoKeyLeft {
-		t.Fatal(got)
+	for range 2 {
+		if got := answer[tools.KeyRemoved](t, f.call(tools.ToolRemoveKey, tools.KeyArgs{User: "alice", Key: k})); got.User != "alice" || got.NoKeyLeft {
+			t.Fatal(got)
+		}
+	}
+	for range 2 {
+		if got := answer[tools.KeyRemoved](t, f.call(tools.ToolRemoveKey, tools.KeyArgs{User: "alice", Key: k2})); !got.NoKeyLeft {
+			t.Fatal(got)
+		}
 	}
 	answer[tools.GroupDone](t, f.call(tools.ToolCreateGroup, tools.GroupArgs{Group: "other"}))
 	for _, tool := range []string{tools.ToolAddMember, tools.ToolRemoveMember} {
-		got := answer[tools.MemberDone](t, f.call(tool, tools.MemberArgs{User: "alice", Group: "other"}))
-		if got != (tools.MemberDone{User: "alice", Group: "other"}) {
+		for range 2 {
+			got := answer[tools.MemberDone](t, f.call(tool, tools.MemberArgs{User: "alice", Group: "other"}))
+			if got != (tools.MemberDone{User: "alice", Group: "other"}) {
+				t.Fatal(got)
+			}
+		}
+		wantGroups := []string{"acme"}
+		if tool == tools.ToolAddMember {
+			wantGroups = append(wantGroups, "other")
+		}
+		if got := answer[tools.UserList](t, f.call(tools.ToolUsers, tools.UsersArgs{})); !reflect.DeepEqual(got.Users[0].Groups, wantGroups) {
 			t.Fatal(got)
 		}
 	}
@@ -566,7 +586,69 @@ func TestMemoryLifecycleAndPersistence(t *testing.T) {
 	}
 }
 
-// R-61YJ-AXPU R-AI7O-JCMY R-ADC3-09O6 R-AEJZ-E1EV R-AFRV-RT5K R-6FDF-IEVH R-AGZS-5KW9 R-AC46-MHXH
+// R-6BPQ-D3NE R-A085-LFD6
+func TestNameTakenRefusalsDoNotRecordCreations(t *testing.T) {
+	for _, tc := range []struct {
+		tool, method, group, user string
+		args                      any
+	}{
+		{tools.ToolCreateGroup, "GroupAdd", "occupied-group", "", tools.GroupArgs{Group: "occupied-group"}},
+		{tools.ToolCreateGroup, "GroupAdd", "occupied-user", "", tools.GroupArgs{Group: "occupied-user"}},
+		{tools.ToolAddUser, "UserAdd", "occupied-group", "occupied-group", tools.AddUserArgs{User: "occupied-group", Group: "occupied-group", Key: key(2)}},
+		{tools.ToolAddUser, "UserAdd", "occupied-group", "occupied-user", tools.AddUserArgs{User: "occupied-user", Group: "occupied-group", Key: key(2)}},
+	} {
+		t.Run(tc.tool+"/"+tc.group+"/"+tc.user, func(t *testing.T) {
+			f := setup(t)
+			ctx := context.Background()
+			// The host owns these names, but accounts has never recorded them.
+			if err := f.h.Host.GroupAdd(ctx, "occupied-group"); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.h.Host.UserAdd(ctx, "occupied-user", "occupied-group", key(1)); err != nil {
+				t.Fatal(err)
+			}
+			groupsBefore, err := f.h.Host.GroupList(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			usersBefore, err := f.h.Host.UserList(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, failing := range []bool{false, true} {
+				f.d.SetFailing(failing)
+				calls, events := len(f.h.calls), len(f.changes())
+				refusal(t, f.call(tc.tool, tc.args), host.RefuseNameTaken)
+				if len(f.h.calls) != calls+1 || f.h.calls[calls].name != tc.method {
+					t.Fatal(f.h.calls[calls:])
+				}
+				changes := f.changes()
+				if len(changes) != events+1 || changes[events].User != f.caller.UserID || changes[events].RequestID != f.caller.RequestID || !reflect.DeepEqual(changes[events].Attrs, telemetry.Attrs{"tool": tc.tool, "group": tc.group, "user": tc.user, "result": trail.ResultRefused}) {
+					t.Fatal(changes[events:])
+				}
+				f.d.SetFailing(false)
+				groups, err := f.st.Groups(ctx, []string{"occupied-group", "occupied-user"})
+				if err != nil || len(groups) != 0 {
+					t.Fatal(groups, err)
+				}
+				users, err := f.st.Users(ctx, []string{"occupied-group", "occupied-user"})
+				if err != nil || len(users) != 0 {
+					t.Fatal(users, err)
+				}
+				groupsAfter, err := f.h.Host.GroupList(ctx)
+				if err != nil || !reflect.DeepEqual(groupsAfter, groupsBefore) {
+					t.Fatal(groupsAfter, err)
+				}
+				usersAfter, err := f.h.Host.UserList(ctx)
+				if err != nil || !reflect.DeepEqual(usersAfter, usersBefore) {
+					t.Fatal(usersAfter, err)
+				}
+			}
+		})
+	}
+}
+
+// R-61YJ-AXPU R-AI7O-JCMY R-ADC3-09O6 R-AEJZ-E1EV R-AFRV-RT5K R-6FDF-IEVH R-AGZS-5KW9 R-A1G1-Z73V
 func TestPagingAndReadFailures(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
@@ -717,7 +799,7 @@ func changeCases() []changeCase {
 	}
 }
 
-// R-6BPQ-D3NE R-6CXM-QVE3 R-6E5J-4N4S R-6J14-NQ3K R-AAWA-8Q6S
+// R-6BPQ-D3NE R-6CXM-QVE3 R-6E5J-4N4S R-9WKG-G453 R-9XSC-TVVS R-9Z09-7NMH R-A085-LFD6
 func TestChangingOutcomesAndTrail(t *testing.T) {
 	for _, tc := range changeCases() {
 		t.Run(tc.tool, func(t *testing.T) {
@@ -739,10 +821,12 @@ func TestChangingOutcomesAndTrail(t *testing.T) {
 			} {
 				// Seed entries so a refusal must preserve both records.
 				f.d.SetFailing(false)
-				if _, _, err := f.st.AddGroup(context.Background(), " raw group ", "original"); err != nil {
+				group, _, err := f.st.AddGroup(context.Background(), " raw group ", "original")
+				if err != nil {
 					t.Fatal(err)
 				}
-				if _, _, err := f.st.AddUser(context.Background(), " raw user ", "original"); err != nil {
+				user, _, err := f.st.AddUser(context.Background(), " raw user ", "original")
+				if err != nil {
 					t.Fatal(err)
 				}
 				f.h.err = outcome.err
@@ -761,13 +845,19 @@ func TestChangingOutcomesAndTrail(t *testing.T) {
 				} else {
 					switch tc.tool {
 					case tools.ToolCreateGroup, tools.ToolRemoveGroup:
-						answer[tools.GroupDone](t, r)
+						if got := answer[tools.GroupDone](t, r); got != (tools.GroupDone{Group: tc.group}) {
+							t.Fatal(got)
+						}
 					case tools.ToolAddUser, tools.ToolAddMember, tools.ToolRemoveMember:
-						answer[tools.MemberDone](t, r)
+						if got := answer[tools.MemberDone](t, r); got != (tools.MemberDone{User: tc.user, Group: tc.group}) {
+							t.Fatal(got)
+						}
 					case tools.ToolRemoveKey:
 						answer[tools.KeyRemoved](t, r)
 					default:
-						answer[tools.UserDone](t, r)
+						if got := answer[tools.UserDone](t, r); got != (tools.UserDone{User: tc.user}) {
+							t.Fatal(got)
+						}
 					}
 				}
 				calls := f.h.calls[before:]
@@ -790,22 +880,30 @@ func TestChangingOutcomesAndTrail(t *testing.T) {
 					t.Fatalf("change %+v", e)
 				}
 				f.d.SetFailing(false)
-				if outcome.err != nil || !records {
-					g, err := f.st.Groups(context.Background(), []string{" raw group "})
-					if err != nil || g[" raw group "].CreatedUserID != "original" {
-						t.Fatal(g, err)
+				wantGroups := map[string]store.Group{group.Slug: group}
+				wantUsers := map[string]store.User{user.Name: user}
+				if outcome.err == nil && !outcome.failing {
+					if tc.tool == tools.ToolRemoveGroup {
+						delete(wantGroups, group.Slug)
 					}
-					u, err := f.st.Users(context.Background(), []string{" raw user "})
-					if err != nil || u[" raw user "].CreatedUserID != "original" {
-						t.Fatal(u, err)
+					if tc.tool == tools.ToolDeleteUser {
+						delete(wantUsers, user.Name)
 					}
+				}
+				g, err := f.st.Groups(context.Background(), []string{group.Slug})
+				if err != nil || !reflect.DeepEqual(g, wantGroups) {
+					t.Fatal(g, err, wantGroups)
+				}
+				u, err := f.st.Users(context.Background(), []string{user.Name})
+				if err != nil || !reflect.DeepEqual(u, wantUsers) {
+					t.Fatal(u, err, wantUsers)
 				}
 			}
 		})
 	}
 }
 
-// R-6LGX-F9KY
+// R-6LGX-F9KY R-A085-LFD6
 func TestRemainingKeysAndFailedFollowup(t *testing.T) {
 	f := setup(t)
 	f.h.passthrough = true
@@ -820,14 +918,15 @@ func TestRemainingKeysAndFailedFollowup(t *testing.T) {
 	for _, err := range []error{&host.RefusedError{Status: 4, Diagnostic: "refused list"}, &host.FailedError{Status: 1}, errors.New("list failed")} {
 		f.h.readErr = err
 		before := len(f.h.calls)
+		beforeEvents := len(f.changes())
 		refusal(t, f.call(tools.ToolRemoveKey, tools.KeyArgs{User: "alice", Key: "opaque"}), tools.KeysUnread)
 		calls := f.h.calls[before:]
 		if len(calls) != 2 || calls[0].name != "UserKeyRemove" || calls[1].name != "UserList" {
 			t.Fatal(calls)
 		}
 		events := f.changes()
-		if events[len(events)-1].Attrs["result"] != trail.ResultFailed {
-			t.Fatal(events)
+		if len(events) != beforeEvents+1 || events[beforeEvents].User != f.caller.UserID || events[beforeEvents].RequestID != f.caller.RequestID || !reflect.DeepEqual(events[beforeEvents].Attrs, telemetry.Attrs{"tool": tools.ToolRemoveKey, "group": "", "user": "alice", "result": trail.ResultFailed}) {
+			t.Fatal(events[beforeEvents:])
 		}
 	}
 }
@@ -883,7 +982,7 @@ func TestOutputWireMembersAndOrder(t *testing.T) {
 	}
 }
 
-// R-6BPQ-D3NE R-6CXM-QVE3 R-6J14-NQ3K R-AGZS-5KW9 R-6E5J-4N4S R-AC46-MHXH
+// R-6BPQ-D3NE R-6CXM-QVE3 R-9Z09-7NMH R-AGZS-5KW9 R-6E5J-4N4S R-A1G1-Z73V
 func TestRefusalsAndHostChangeSurvivesRecordFailure(t *testing.T) {
 	f := setup(t)
 	f.d.SetFailing(true)

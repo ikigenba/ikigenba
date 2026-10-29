@@ -241,7 +241,37 @@ func TestMemoryValidationAndCancellation(t *testing.T) {
 	}
 }
 
-// R-ISH1-NSW7 R-SXVL-IZ6F R-IUWU-FCDL R-IXCN-6VUZ R-IYKJ-KNLO R-IZSF-YFCD
+// R-9VCK-2CEE
+func TestMemoryGroupAdd(t *testing.T) {
+	m := host.NewMemory()
+	requireOK(t, m.GroupAdd(background, "business"))
+	if got := snap(t, m); !reflect.DeepEqual(got.groups, []host.Group{{"business", 0}}) {
+		t.Fatal(got)
+	}
+	before := snap(t, m)
+	requireRefused(t, m.GroupAdd(background, "business"), 4, host.RefuseNameTaken)
+	unchanged(t, m, before)
+
+	requireOK(t, m.UserAdd(background, "person", "business", publicKey(1)))
+	before = snap(t, m)
+	for _, name := range []string{"business", "person"} {
+		requireRefused(t, m.GroupAdd(background, name), 4, host.RefuseNameTaken)
+		unchanged(t, m, before)
+	}
+	requireOK(t, m.UserLock(background, "person"))
+	before = snap(t, m)
+	requireRefused(t, m.GroupAdd(background, "person"), 4, host.RefuseNameTaken)
+	unchanged(t, m, before)
+
+	requireOK(t, m.GroupAdd(background, "another"))
+	members, err := m.GroupMembers(background, "another")
+	requireOK(t, err)
+	if members.Group != "another" || len(members.Members) != 0 {
+		t.Fatal(members)
+	}
+}
+
+// R-SXVL-IZ6F R-IUWU-FCDL R-IXCN-6VUZ R-IYKJ-KNLO R-IZSF-YFCD
 // R-J10C-C732 R-J288-PYTR R-J3G5-3QKG R-J4O1-HIB5 R-SZ3H-WQX4
 func TestMemoryAccountLifecycle(t *testing.T) {
 	m := host.NewMemory()
@@ -250,8 +280,6 @@ func TestMemoryAccountLifecycle(t *testing.T) {
 		requireOK(t, m.GroupAdd(background, g))
 	}
 	before := snap(t, m)
-	requireOK(t, m.GroupAdd(background, "alpha"))
-	unchanged(t, m, before)
 	members, e := m.GroupMembers(background, "empty")
 	requireOK(t, e)
 	if members.Group != "empty" || members.Members == nil || len(members.Members) != 0 {
