@@ -408,7 +408,7 @@ func TestParkWindows(t *testing.T) {
 	}
 }
 
-// R-62GW-ZR7N R-BEML-00BG R-56RJ-1PXL
+// R-62GW-ZR7N R-S06S-YWNM R-56RJ-1PXL
 func TestApplyParksRefusalsAndAtomicMint(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -616,7 +616,7 @@ func TestParkPassConcurrencyAndOrigins(t *testing.T) {
 	}
 }
 
-// R-5YT7-UFZK R-TOVB-OML5 R-HQXA-9FD2
+// R-5YT7-UFZK R-TOVB-OML5 R-EN4W-HQ09
 func TestActiveAddressKeysPages(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)

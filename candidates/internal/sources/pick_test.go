@@ -57,7 +57,7 @@ func TestFactOrders(t *testing.T) {
 }
 func on(s string) time.Time { t, _ := time.Parse(time.DateOnly, s); return t }
 
-// R-2EG3-Y82U R-4SIO-NOT5 R-4TQL-1GJU
+// R-2EG3-Y82U R-W0JO-MJZG R-W1RL-0BQ5
 func TestPickedFactsFromIndependentOrders(t *testing.T) {
 	p := sources.Record{Source: places.Name, SourceID: "ChIJ1", Reading: sources.Reading{Name: "Northern Lights Steel", Street: "38945 Forest Blvd", City: "North Branch", State: "MN", Zip: "55056", Phone: "6516744440"}}
 	f := sources.Record{Source: fmcsa.Name, SourceID: "1023916", Reading: sources.Reading{Name: "BROWN HAWK LLC", Names: []string{"BROWN HAWK LLC", "NORTHERN LIGHTS STEEL FAB"}, TradeNames: []string{"NORTHERN LIGHTS STEEL FAB"}, Street: "5 Main St", City: "Rush City", State: "MN", Zip: "55069", Phone: "3205550100", Email: "ops@nlsteelfab.com", People: []sources.Person{{Name: "JANE DOE", Role: "company officer"}}, KnownSince: on("2004-01-15"), Filed: on("2025-03-18")}}
@@ -108,7 +108,7 @@ func routeAddress(r sources.Record) sources.Address {
 	return sources.Address{Street: r.Reading.Street, City: r.Reading.City, State: r.Reading.State, Zip: r.Reading.Zip, County: r.Reading.County}
 }
 
-// R-4SIO-NOT5 R-4TQL-1GJU
+// R-W0JO-MJZG R-W1RL-0BQ5
 func TestCustomOrdersAndGoneFallback(t *testing.T) {
 	orders := []sources.Order{{sources.FactPhone, []sources.Slot{{[]string{"x"}, sources.ValuePhone}, {[]string{"y"}, sources.ValuePhone}}}}
 	links := []sources.Record{{Source: "y", SourceID: "1", Reading: sources.Reading{Phone: "6515550100", Filed: on("2025-01-01")}}, {Source: "x", SourceID: "1", Reading: sources.Reading{Phone: "6515550199", Filed: on("2020-01-01")}}, {Source: "x", SourceID: "2", Reading: sources.Reading{Phone: "6515550100", Filed: on("2024-01-01")}}}
@@ -140,9 +140,9 @@ func TestCustomOrdersAndGoneFallback(t *testing.T) {
 	}
 }
 
-// R-4SIO-NOT5 R-4TQL-1GJU
+// R-W0JO-MJZG R-W1RL-0BQ5
 func TestRecordOrderAndValueKinds(t *testing.T) {
-	// Date, seen, source, source id, then original order decide the provenance.
+	// Filing date, source, source id, then original order decide the provenance; Seen decides nothing.
 	base := sources.Record{Source: "x", SourceID: "1", Seen: on("2025-01-01"), Reading: sources.Reading{Name: "base", Filed: on("2025-01-01")}}
 	order := []sources.Order{{sources.FactName, []sources.Slot{{[]string{"x", "y"}, sources.ValueName}}}}
 	for _, tc := range []struct {
@@ -150,10 +150,10 @@ func TestRecordOrderAndValueKinds(t *testing.T) {
 		want string
 	}{
 		{sources.Record{Source: "x", SourceID: "2", Seen: on("2026-01-01"), Reading: sources.Reading{Name: "newer", Filed: on("2026-01-01")}}, "newer"},
-		{sources.Record{Source: "x", SourceID: "2", Seen: on("2026-01-01"), Reading: sources.Reading{Name: "seen", Filed: base.Reading.Filed}}, "seen"},
-		{sources.Record{Source: "y", SourceID: "0", Seen: base.Seen, Reading: sources.Reading{Name: "y", Filed: base.Reading.Filed}}, "base"},
-		{sources.Record{Source: "x", SourceID: "0", Seen: base.Seen, Reading: sources.Reading{Name: "id", Filed: base.Reading.Filed}}, "id"},
-		{sources.Record{Source: "x", SourceID: "1", Seen: base.Seen, Reading: sources.Reading{Name: "tie", Filed: base.Reading.Filed}}, "base"},
+		{sources.Record{Source: "x", SourceID: "2", Seen: on("2026-01-01"), Reading: sources.Reading{Name: "seen", Filed: base.Reading.Filed}}, "base"},
+		{sources.Record{Source: "y", SourceID: "0", Seen: on("2030-01-01"), Reading: sources.Reading{Name: "y", Filed: base.Reading.Filed}}, "base"},
+		{sources.Record{Source: "x", SourceID: "0", Seen: on("2020-01-01"), Reading: sources.Reading{Name: "id", Filed: base.Reading.Filed}}, "id"},
+		{sources.Record{Source: "x", SourceID: "1", Seen: on("2030-01-01"), Reading: sources.Reading{Name: "tie", Filed: base.Reading.Filed}}, "base"},
 	} {
 		for _, reverse := range []bool{false, true} {
 			rs := []sources.Record{base, tc.r}
@@ -188,7 +188,7 @@ func TestRecordOrderAndValueKinds(t *testing.T) {
 	}
 }
 
-// R-4SIO-NOT5 R-4TQL-1GJU
+// R-W0JO-MJZG R-W1RL-0BQ5
 func TestDateSlotsAndEquality(t *testing.T) {
 	o := []sources.Order{{sources.FactKnownSince, []sources.Slot{{[]string{"o"}, sources.ValueKnownSince}, {[]string{"x", "y"}, sources.ValueKnownSince}}}, {sources.FactNewestFiling, []sources.Slot{{[]string{"x", "y"}, sources.ValueFiled}}}}
 	links := []sources.Record{{Source: "x", SourceID: "1", Reading: sources.Reading{KnownSince: on("2004-01-15"), Filed: on("2025-03-18")}}, {Source: "y", SourceID: "1", Reading: sources.Reading{KnownSince: on("1995-01-01"), Filed: on("2020-01-01")}}}
@@ -218,5 +218,137 @@ func TestDateSlotsAndEquality(t *testing.T) {
 				t.Fatal(fact, kind, p)
 			}
 		}
+	}
+}
+
+// R-W0JO-MJZG R-W1RL-0BQ5
+func TestDuplicateIdentityKeepsLinkThenGivenOrder(t *testing.T) {
+	order := []sources.Order{{sources.FactName, []sources.Slot{{[]string{"x"}, sources.ValueName}}}}
+	record := func(name, seen string) sources.Record {
+		return sources.Record{Source: "x", SourceID: "1", Seen: on(seen), Reading: sources.Reading{Name: name, Filed: on("2024-01-01")}}
+	}
+	a := record("first", "2020-01-01")
+	b := record("second", "2030-01-01")
+	c := record("third", "2040-01-01")
+	for _, tc := range []struct {
+		name         string
+		links, given []sources.Record
+		want         []string
+	}{
+		{"links before given", []sources.Record{a, b}, []sources.Record{c}, []string{"first", "second", "third"}},
+		{"reversed links", []sources.Record{b, a}, []sources.Record{c}, []string{"second", "first", "third"}},
+		{"given order", nil, []sources.Record{a, b, c}, []string{"first", "second", "third"}},
+		{"reversed given", nil, []sources.Record{c, b, a}, []string{"third", "second", "first"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := sources.Pick(order, tc.links, tc.given)
+			values := []string{got.Name.Value}
+			for _, other := range got.OtherNames {
+				values = append(values, other.Value)
+			}
+			if !slices.Equal(values, tc.want) {
+				t.Fatalf("got %v, want %v", values, tc.want)
+			}
+		})
+	}
+}
+
+// R-W5FA-5MY8
+func TestSameFilingChoosesSourceIDRegardlessOfSeen(t *testing.T) {
+	orders := []sources.Order{{sources.FactName, []sources.Slot{{[]string{"x"}, sources.ValueName}}}}
+	record := func(id, name, seen string) sources.Record {
+		return sources.Record{Source: "x", SourceID: id, Seen: on(seen), Reading: sources.Reading{Name: name, Filed: on("2024-01-01")}}
+	}
+	wantName := sources.Sourced[string]{Value: "ALPHA FREIGHT", Source: "x", Key: "x:1"}
+	wantOthers := []sources.Sourced[string]{{Value: "BETA FREIGHT", Source: "x", Key: "x:2"}, {Value: "GAMMA FREIGHT", Source: "x", Key: "x:3"}}
+	for _, links := range [][]sources.Record{
+		{record("3", "GAMMA FREIGHT", "2025-03-01"), record("1", "ALPHA FREIGHT", "2025-01-01"), record("2", "BETA FREIGHT", "2025-02-01")},
+		{record("2", "BETA FREIGHT", "2025-02-01"), record("3", "GAMMA FREIGHT", "2025-01-01"), record("1", "ALPHA FREIGHT", "2025-03-01")},
+	} {
+		got := sources.Pick(orders, links, nil)
+		if got.Name != wantName || !reflect.DeepEqual(got.OtherNames, wantOthers) {
+			t.Fatalf("got name %+v and alternatives %+v", got.Name, got.OtherNames)
+		}
+	}
+}
+
+// R-W2ZH-E3GU
+func TestPickInvariantUnderPermutationsAndSeen(t *testing.T) {
+	group := []string{"x", "y", "z"}
+	orders := []sources.Order{
+		{sources.FactName, []sources.Slot{{group, sources.ValueNames}, {group, sources.ValueTradeNames}}},
+		{sources.FactAddress, []sources.Slot{{group, sources.ValueLocation}, {group, sources.ValueMailing}}},
+		{sources.FactPhone, []sources.Slot{{group, sources.ValuePhone}}},
+		{sources.FactEmail, []sources.Slot{{group, sources.ValueEmail}}},
+		{sources.FactPeople, []sources.Slot{{group, sources.ValuePeople}}},
+		{sources.FactKnownSince, []sources.Slot{{group, sources.ValueKnownSince}}},
+		{sources.FactNewestFiling, []sources.Slot{{group, sources.ValueFiled}}},
+	}
+	record := func(source, id, value string) sources.Record {
+		return sources.Record{Source: source, SourceID: id, Seen: on("2025-01-01"), Reading: sources.Reading{
+			Name: value, Names: []string{value, "shared alias"}, TradeNames: []string{"trade " + value},
+			Street: value, MailingAddress: &sources.Address{Street: "mail " + value}, Phone: "phone " + value, Email: "mail@" + value,
+			People:     []sources.Person{{Name: value, Role: "officer"}, {Name: "shared person", Role: "signer"}},
+			KnownSince: on("2000-01-01"), Filed: on("2024-01-01"),
+		}}
+	}
+	links := []sources.Record{record("y", "1", "beta"), record("x", "2", "gamma"), record("x", "1", "alpha")}
+	given := []sources.Record{record("z", "1", "delta"), record("y", "2", "alpha")}
+	given[0].Gone = true
+	given[1].Reading.Filed = on("2023-01-01")
+	given[1].Reading.KnownSince = on("1990-01-01")
+	for _, gone := range []string{"none", "some", "all"} {
+		for i := range links {
+			links[i].Gone = gone == "all" || gone == "some" && i == 0
+		}
+		want := sources.Pick(orders, links, given)
+		for li, l := range recordPermutations(links) {
+			for gi, g := range recordPermutations(given) {
+				for _, seen := range []string{"unchanged", "ascending", "descending", "zero"} {
+					l, g := slices.Clone(l), slices.Clone(g)
+					for i := range l {
+						l[i].Seen = permutedSeen(l[i].Seen, seen, i)
+					}
+					for i := range g {
+						g[i].Seen = permutedSeen(g[i].Seen, seen, i+len(l))
+					}
+					if got := sources.Pick(orders, l, g); !reflect.DeepEqual(got, want) {
+						t.Fatalf("gone=%s links=%d given=%d seen=%s: got %+v, want %+v", gone, li, gi, seen, got, want)
+					}
+				}
+			}
+		}
+	}
+}
+
+func recordPermutations(records []sources.Record) [][]sources.Record {
+	permutations := [][]sources.Record{}
+	var visit func(int)
+	items := slices.Clone(records)
+	visit = func(at int) {
+		if at == len(items) {
+			permutations = append(permutations, slices.Clone(items))
+			return
+		}
+		for i := at; i < len(items); i++ {
+			items[at], items[i] = items[i], items[at]
+			visit(at + 1)
+			items[at], items[i] = items[i], items[at]
+		}
+	}
+	visit(0)
+	return permutations
+}
+
+func permutedSeen(original time.Time, mode string, at int) time.Time {
+	switch mode {
+	case "ascending":
+		return time.Unix(int64(at+1), 0)
+	case "descending":
+		return time.Unix(-int64(at+1), 0)
+	case "zero":
+		return time.Time{}
+	default:
+		return original
 	}
 }

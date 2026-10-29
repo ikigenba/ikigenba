@@ -36,7 +36,7 @@ func briefResult(t *testing.T, id, summary string, failed bool, names ...string)
 	return store.Enrichment{Candidate: id, Kind: enrichers.KindBrief, Inputs: "page-inputs", Source: enrichers.SourcePrompts, Found: raw}
 }
 
-// R-AZZS-ERF4 R-HS56-N73R R-IITT-5P49 R-BC6S-8GU2
+// R-D1TM-II5M R-E8I3-WH3X R-HSJK-2DYU R-ELX0-3Y9K
 func TestBriefProjectionKeepsGoodSummaryAndNewestAttempt(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -226,7 +226,7 @@ func TestBriefMigrationAndRollbackWriter(t *testing.T) {
 	}
 }
 
-// R-IITT-5P49
+// R-HSJK-2DYU
 func TestProspectListBriefUsesNewestAttemptAndIgnoresOtherKinds(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

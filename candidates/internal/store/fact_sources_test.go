@@ -38,7 +38,7 @@ func withProvenance(c store.Candidate, obs ...store.Observation) store.Candidate
 	return c
 }
 
-// R-2BTS-XFVR R-HTD3-0YUG R-HUKZ-EQL5 R-TXVV-5HDI R-2GVW-PRK8
+// R-2BTS-XFVR R-HTD3-0YUG R-HUKZ-EQL5 R-DCSP-YFTV R-2GVW-PRK8
 func TestRecordChosenAddressAndRoutedDisplay(t *testing.T) {
 	ctx := context.Background()
 	f := contractDB(t)
@@ -53,14 +53,14 @@ func TestRecordChosenAddressAndRoutedDisplay(t *testing.T) {
 	b.Digest = "b"
 	b.Reading.Street = "9 Older St"
 	id := contractAttach(t, f, "one", a, b)[0]
-	// Reverse FirstSeen and LastSeen ordering: the address must follow LastSeen.
+	// Reverse timestamps: the record identity still chooses the address.
 	contractOK(t, f.d.Write(ctx, func(tx *sql.Tx) error {
 		_, e := tx.ExecContext(ctx, `UPDATE links SET first_seen=CASE source_id WHEN 'a' THEN ? ELSE ? END,last_seen=CASE source_id WHEN 'a' THEN ? ELSE ? END`, f.now.Add(time.Hour).UTC().Format(time.RFC3339), f.now.UTC().Format(time.RFC3339), f.now.UTC().Format(time.RFC3339), f.now.Add(time.Hour).UTC().Format(time.RFC3339))
 		return e
 	}))
 	su, e := f.s.Subject(ctx, id)
 	contractOK(t, e)
-	contractEqual(t, su.RecordAddress, sources.Sourced[sources.Address]{Value: sources.Address{Street: "9 Older St", City: "Rush City", State: "MN", Zip: "55069", County: "MN-025"}, Source: "fmcsa", Key: "fmcsa:b"})
+	contractEqual(t, su.RecordAddress, sources.Sourced[sources.Address]{Value: sources.Address{Street: "5 Main St", City: "Rush City", State: "MN", Zip: "55069", County: "MN-025"}, Source: "fmcsa", Key: "fmcsa:a"})
 	for _, l := range su.Links {
 		want := f.now
 		if l.SourceID == "b" {
@@ -175,7 +175,7 @@ func TestRecordChosenAddressAndRoutedDisplay(t *testing.T) {
 	contractEqual(t, get().AddressSource, "fmcsa")
 }
 
-// R-BFUH-DS25 R-BH2D-RJSU R-AP0O-YTQV R-2EHW-W3N9 R-ARGH-QD89 R-TXVV-5HDI R-QZ2H-X82S R-QGS0-6NYD
+// R-BFUH-DS25 R-D0LQ-4QEX R-RYYW-L4WX R-D6P8-1L4E R-CZDT-QYO8 R-DCSP-YFTV R-QZ2H-X82S R-QGS0-6NYD
 func TestPlacesURLCurrentRecordAndSubjectChecks(t *testing.T) {
 	var _ interface {
 		PlacesURL(context.Context, string) (string, error)
@@ -359,7 +359,7 @@ func TestCandidateFactSourcesDeclaration(t *testing.T) {
 	}(c)), c)
 }
 
-// R-AP0O-YTQV R-QZ2H-X82S
+// R-RYYW-L4WX R-QZ2H-X82S
 func TestPlacesURLUsesLinksOrderAndCandidateReturnSlices(t *testing.T) {
 	ctx := context.Background()
 	f := contractDB(t)
@@ -379,7 +379,7 @@ func TestPlacesURLUsesLinksOrderAndCandidateReturnSlices(t *testing.T) {
 	u, e := f.s.PlacesURL(ctx, id)
 	contractOK(t, e)
 	contractEqual(t, u, "https://first.test/")
-	// A later walk makes c the first link; clearing its offer then falls back to b.
+	// Refreshing c in a later walk preserves the identity order and b's offer.
 	_, e = f.s.FinishWalk(ctx, p.ID, store.Counts{}, false)
 	contractOK(t, e)
 	f.now = f.now.Add(time.Hour)
@@ -387,10 +387,10 @@ func TestPlacesURLUsesLinksOrderAndCandidateReturnSlices(t *testing.T) {
 	walkSweep(t, f, p, ks[0], walkFound("c", "Last URL", "3205550991", "https://last.test/"))
 	ls, e = f.s.Links(ctx, id)
 	contractOK(t, e)
-	contractEqual(t, ls[0].SourceID, "c")
+	contractEqual(t, ls[0].SourceID, "a")
 	u, e = f.s.PlacesURL(ctx, id)
 	contractOK(t, e)
-	contractEqual(t, u, "https://last.test/")
+	contractEqual(t, u, "https://first.test/")
 	_, e = f.s.FinishWalk(ctx, p.ID, store.Counts{}, false)
 	contractOK(t, e)
 	p = walkPass(t, f)
@@ -415,7 +415,7 @@ func TestPlacesURLUsesLinksOrderAndCandidateReturnSlices(t *testing.T) {
 	}
 }
 
-// R-IITT-5P49 R-AZZS-ERF4 R-QGS0-6NYD
+// R-HSJK-2DYU R-D1TM-II5M R-QGS0-6NYD
 func TestPlacesUnknownListAndFactsProvenance(t *testing.T) {
 	type protocol string
 	var placesSource protocol = store.WebsiteByPlaces

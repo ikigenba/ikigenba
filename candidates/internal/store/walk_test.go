@@ -74,7 +74,7 @@ func TestWalkPublicShapes(t *testing.T) {
 	} = (*store.Store)(nil)
 }
 
-// R-UWXV-8JOI R-UY5R-MBF7 R-UZDO-035W R-V1TG-RMNA R-V31D-5EDZ R-0YMT-HFK2 R-0ZUP-V7AR R-112M-8Z1G R-OSHC-V80S
+// R-UWXV-8JOI R-UY5R-MBF7 R-UZDO-035W R-V1TG-RMNA R-V31D-5EDZ R-0YMT-HFK2 R-0ZUP-V7AR R-VIOF-L0A2 R-OSHC-V80S
 func TestWalkRecordingAndReadOrderPersist(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -479,7 +479,7 @@ func TestWalkSweepRefusalsAndUnansweredSweep(t *testing.T) {
 	f.d.SetFailing(false)
 }
 
-// R-12AI-MQS5 R-O8JV-P4W9 R-O9RS-2WMY R-112M-8Z1G R-0ZUP-V7AR
+// R-12AI-MQS5 R-O8JV-P4W9 R-O9RS-2WMY R-VIOF-L0A2 R-0ZUP-V7AR
 func TestWalkHistorySurvivesOtherWrites(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -598,8 +598,8 @@ func TestWalkSweepAndFailureSerialize(t *testing.T) {
 	}
 }
 
-// R-112M-8Z1G R-V31D-5EDZ R-V1TG-RMNA R-0YMT-HFK2 R-O3OA-61XH
-func TestWalkNewestAndTieOrder(t *testing.T) {
+// R-VIOF-L0A2 R-V31D-5EDZ R-V1TG-RMNA R-0YMT-HFK2 R-O3OA-61XH
+func TestWalkStableCandidateParkAndHistoryOrder(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	f := contractDB(t)
@@ -620,7 +620,7 @@ func TestWalkNewestAndTieOrder(t *testing.T) {
 	w3 := walkSweep(t, f, p2, ks[0], walkFound("z-key", "Updated Same", "3205550160", ""))
 	k, e = f.s.CandidatePark(ctx, id)
 	contractOK(t, e)
-	contractEqual(t, k, ks[0].ID)
+	contractEqual(t, k, ks[1].ID)
 	// Two records at one time use sequence; places preserve distinct walk snapshots.
 	w4 := walkSweep(t, f, p2, ks[0], walkFound("b-key", "Beta", "3205550160", ""))
 	f.reopen()

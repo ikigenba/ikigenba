@@ -60,7 +60,7 @@ func TestDerivedProjection(t *testing.T) {
 	}
 }
 
-// R-EX8R-S3N1
+// R-D7X4-FCV3
 func TestCandidateFactsWithoutJudgment(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	_, ids, err := cfg.Store.Attach(t.Context(), "run", false, []store.Observation{{Scraper: "fixture", SourceID: "row", Digest: "digest", Reading: sources.Reading{Name: "facts-business", NameKey: "facts-business"}}})

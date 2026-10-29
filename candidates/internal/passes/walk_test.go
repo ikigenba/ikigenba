@@ -358,7 +358,7 @@ func TestWalkRefusalsLeaveNoWork(t *testing.T) {
 	}
 }
 
-// R-18E0-JLHM R-HT9C-7JEF R-BJYG-BQS8 R-UF5P-F79H R-YC9K-YJVL R-YDHH-CBMA
+// R-18E0-JLHM R-HT9C-7JEF R-BJYG-BQS8 R-UF5P-F79H R-HBGY-PLL4 R-HCOV-3DBT
 func TestWalkAccountingAndFollowOn(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"done", "exact_ceiling", "cut", "cut_after_first", "first_failure", "second_failure"} {
@@ -560,7 +560,7 @@ func TestWalkOutlivesCallerConcurrentAdmissionAndDrain(t *testing.T) {
 	assertRefusal(t, p, err, passes.RefusalStopping)
 }
 
-// R-ZCUK-FO4F R-ZAER-O4N1 R-Z96V-ACWC
+// R-LSFP-7BGS R-LR7S-TJQ3 R-JNM1-3RR1
 func TestWalkDiagnosticsPrecedeEnding(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"places", "store", "nil"} {
@@ -612,7 +612,7 @@ func TestWalkDiagnosticsPrecedeEnding(t *testing.T) {
 	}
 }
 
-// R-OFV9-ZRCF R-OH36-DJ34 R-ZBMO-1WDQ
+// R-OFV9-ZRCF R-OH36-DJ34 R-JOTX-HJHQ
 func TestOtherEngineMethodsNeverWalk(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {

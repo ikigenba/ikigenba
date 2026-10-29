@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-07GQ-W5OL R-2RMT-3281 R-QOGD-1UTI
+// R-07GQ-W5OL R-FIUA-FRAB R-QOGD-1UTI
 func TestBriefAnswers(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]

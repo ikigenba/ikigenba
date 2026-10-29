@@ -70,7 +70,7 @@ func TestInputProvenanceEncoding(t *testing.T) {
 	}
 }
 
-// R-B8FZ-WBAW
+// R-ZV8W-PNJN
 func TestLinkDateProvenance(t *testing.T) {
 	date := func(s string) time.Time {
 		d, e := time.Parse(time.RFC3339, s)
@@ -128,10 +128,18 @@ func TestLinkDateProvenance(t *testing.T) {
 			if reverse {
 				links = []enrichers.Link{b, a}
 			}
+			s := enrichers.Subject{Links: links}
+			before, _ := json.Marshal(s)
 			var got enrichers.LinkFound
-			_ = json.Unmarshal((enrichers.LinkFacts{}).Derive(enrichers.Subject{Links: links}).Found, &got)
-			if got.KnownSinceSource != newer || got.NewestFilingSource != newer {
+			if err := json.Unmarshal((enrichers.LinkFacts{}).Derive(s).Found, &got); err != nil {
+				t.Fatal(err)
+			}
+			if got.KnownSince != "2010-01-01" || got.NewestFiling != "2020-01-01" || got.KnownSinceSource != fmcsa.Name || got.NewestFilingSource != fmcsa.Name {
 				t.Fatal(got)
+			}
+			after, _ := json.Marshal(s)
+			if !bytes.Equal(before, after) {
+				t.Fatal("mutated links")
 			}
 		}
 	}
@@ -223,7 +231,7 @@ func TestRouteInputProvenance(t *testing.T) {
 	}
 }
 
-// R-BDBL-FE9O
+// R-ZJ0T-1MHM
 func TestProvenanceValidation(t *testing.T) {
 	cases := []struct {
 		e              enrichers.Enricher

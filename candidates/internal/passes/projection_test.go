@@ -7,7 +7,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"reflect"
+	"slices"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/scrapes"
@@ -19,7 +22,96 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-YH56-HMUD
+// R-HRBN-OM85
+func TestFullIngestUnchangedRowsPreserveCandidate(t *testing.T) {
+	t.Parallel()
+	for _, reverse := range []bool{false, true} {
+		name := "same order"
+		if reverse {
+			name = "reverse order"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			var second atomic.Bool
+			f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/scrapers/fmcsa/current":
+					record(w, "stable-run", 3, store.StatusDone)
+				case "/runs/stable-run/rows":
+					ids := []string{"c", "a", "b"}
+					if second.Load() && reverse {
+						slices.Reverse(ids)
+					}
+					for _, id := range ids {
+						_ = json.NewEncoder(w).Encode(map[string]any{
+							"scraper": fmcsa.Name, "run": "stable-run", "source_id": id, "digest": id,
+							"name": "Carrier " + id, "names": []string{"Shared Carrier", "Carrier " + id},
+							"scraped": "2000-01-01T00:00:00Z", "people": []any{}, "raw": map[string]any{},
+							"address": map[string]any{"street": "12 Main St", "city": "Duluth", "state": "MN", "zip": "55802"},
+							"facts":   map[string]string{"mcs150_date": "20250318", "added": "20100301", "status": "A", "class": "AUTHORIZED FOR HIRE", "power_units": "3", "total_drivers": map[string]string{"a": "3", "b": "4", "c": "5"}[id]},
+						})
+					}
+				default:
+					t.Errorf("unexpected request %s", r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}, true)
+			firstTime := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+			f.st = store.New(f.d, store.Config{Now: func() time.Time {
+				if second.Load() {
+					return firstTime.Add(time.Second)
+				}
+				return firstTime
+			}, Rand: &random{}})
+			f.eng = passes.New(passes.Config{Store: f.st, Sources: sources.New(fmcsa.New()), Scrapes: f.sc, Telemetry: f.w, Events: f.em})
+			ingest := func() store.Pass {
+				t.Helper()
+				p, err := f.eng.Ingest(ctx, identity.Caller{UserID: "owner"}, "")
+				if err != nil {
+					t.Fatal(err)
+				}
+				p = f.ended(p.ID)
+				if p.Status != store.StatusDone || p.Rows != 3 {
+					t.Fatal(p)
+				}
+				return p
+			}
+			ingest()
+			cs, err := f.st.ListCandidates(ctx, store.CandidateFilter{}, "", "", 10)
+			if err != nil || len(cs) != 1 {
+				t.Fatal(cs, err)
+			}
+			before, err := f.st.GetCandidate(ctx, cs[0].ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			links, err := f.st.Links(ctx, before.ID)
+			if err != nil || len(links) != 3 {
+				t.Fatal(links, err)
+			}
+			second.Store(true)
+			p := ingest()
+			if p.Unchanged != 3 || p.Changed != 0 || !p.Started.Equal(firstTime.Add(time.Second)) {
+				t.Fatal(p)
+			}
+			after, err := f.st.GetCandidate(ctx, before.ID)
+			if err != nil || !reflect.DeepEqual(after, before) {
+				t.Fatalf("candidate changed after unchanged ingest: before=%+v after=%+v error=%v", before, after, err)
+			}
+			links, err = f.st.Links(ctx, before.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, link := range links {
+				if !link.LastSeen.Equal(firstTime.Add(time.Second)) {
+					t.Fatal("link not refreshed", link)
+				}
+			}
+		})
+	}
+}
+
+// R-HGCK-8OJW
 func TestFullIngestReprojectsUnchangedLinkFacts(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

@@ -3,6 +3,7 @@ package store_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -690,7 +691,7 @@ func TestContractBusinessRecordsPersistence(t *testing.T) {
 	contractEqual(t, c2, merged)
 }
 
-// R-59OQ-2WSA
+// R-2HQL-5ILH
 func TestContractLinkReadOrder(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -700,7 +701,7 @@ func TestContractLinkReadOrder(t *testing.T) {
 	for _, key := range []struct {
 		scraper, id string
 		filed       time.Time
-	}{{"source-b", "b", filed}, {"source-a", "b", filed}, {"source-a", "a", filed}, {"source-a", "newer-seen", filed}, {"source-c", "newer-filed", filed.Add(time.Hour)}, {"source-d", "undated", time.Time{}}, {"source-e", "gone", filed.Add(2 * time.Hour)}} {
+	}{{"source-b", "b", filed}, {"source-a", "b", filed}, {"source-a", "a", filed}, {"source-a", "newer-seen", filed}, {"source-c", "newer-filed", filed.Add(time.Hour)}, {"source-d", "undated", time.Time{}}, {"source-d", "early-date", time.Date(0, 1, 1, 0, 0, 0, 0, time.UTC)}, {"source-e", "gone", filed.Add(2 * time.Hour)}, {"source-e", "a-gone", filed.Add(2 * time.Hour)}, {"source-e", "undated", time.Time{}}} {
 		o := contractObservation(key.id, "ACME", key.filed)
 		o.Scraper = key.scraper
 		obs = append(obs, o)
@@ -708,20 +709,25 @@ func TestContractLinkReadOrder(t *testing.T) {
 	id := contractAttach(t, f, "old", obs...)[0]
 	f.now = f.now.Add(time.Minute)
 	contractAttach(t, f, "new", obs[3])
-	cursor, count, err := f.s.MarkGone(ctx, "source-e", "new", "", 500)
+	_, _, err := f.s.MarkGone(ctx, "source-e", "new", "", 500)
 	contractOK(t, err)
-	contractEqual(t, cursor, "gone")
-	contractEqual(t, count, store.Counts{Gone: 1})
 	got, err := f.s.Links(ctx, id)
 	contractOK(t, err)
 	var keys []string
 	for _, l := range got {
 		keys = append(keys, sources.SourceKey(l.Scraper, l.SourceID))
 	}
-	contractEqual(t, keys, []string{"source-c:newer-filed", "source-a:newer-seen", "source-a:a", "source-a:b", "source-b:b", "source-d:undated", "source-e:gone"})
-	if !got[len(got)-1].Gone {
-		t.Fatal("gone link must follow live evidence")
+	contractEqual(t, keys, []string{"source-c:newer-filed", "source-a:a", "source-a:b", "source-a:newer-seen", "source-b:b", "source-d:early-date", "source-d:undated", "source-e:a-gone", "source-e:gone", "source-e:undated"})
+	for i, l := range got {
+		contractEqual(t, l.Gone, i >= len(got)-3)
 	}
+	contractOK(t, f.d.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "DELETE FROM links WHERE candidate=?", id)
+		return err
+	}))
+	got, err = f.s.Links(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, got, []store.Link{})
 }
 
 // R-4HU1-P3L0 R-419E-48H2
@@ -947,7 +953,7 @@ func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	contractEqual(t, after, zipBefore)
 }
 
-// R-BEML-00BG R-OD8H-2EDG
+// R-S06S-YWNM R-OD8H-2EDG
 func TestContractAllMethodsUnavailable(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)

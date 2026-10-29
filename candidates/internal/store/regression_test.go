@@ -642,7 +642,7 @@ func TestIngestBatchPreservesIntermediateDisplayUpdate(t *testing.T) {
 }
 
 // R-L6L5-HLZB
-func TestIngestBatchUnchangedDistinctKeysPreservesDisplayUpdate(t *testing.T) {
+func TestIngestBatchUnchangedDistinctKeysPreservesCandidate(t *testing.T) {
 	batch, single := regNew(t), regNew(t)
 	a, b := regObs("a", "Shared business"), regObs("b", "Shared business")
 	a.Reading.Phone = "320-555-0101"
@@ -657,14 +657,13 @@ func TestIngestBatchUnchangedDistinctKeysPreservesDisplayUpdate(t *testing.T) {
 	single.now = batch.now
 	counts, touched := regAttach(t, batch, "next-run", b, a)
 	first, firstTouched := regAttach(t, single, "next-run", b)
-	regEqual(t, regCandidate(t, single, id).Phone, b.Reading.Phone)
+	regEqual(t, regCandidate(t, single, id), before)
 	second, secondTouched := regAttach(t, single, "next-run", a)
 	regEqual(t, counts, store.Counts{Rows: first.Rows + second.Rows, Unchanged: first.Unchanged + second.Unchanged})
 	regEqual(t, counts, store.Counts{Rows: 2, Unchanged: 2})
 	regEqual(t, touched, firstTouched)
 	regEqual(t, touched, secondTouched)
 	want := before
-	want.Updated = regTime(batch)
 	regEqual(t, regCandidate(t, batch, id), want)
 	regEqual(t, regCandidate(t, batch, id), regCandidate(t, single, id))
 	regEqual(t, regLinks(t, batch, id), regLinks(t, single, id))
@@ -676,7 +675,7 @@ func TestIngestBatchUnchangedDistinctKeysPreservesDisplayUpdate(t *testing.T) {
 }
 
 // R-L6L5-HLZB
-func TestIngestBatchPreservesTransientNamesAndCargo(t *testing.T) {
+func TestIngestBatchPreservesNamesAndTransientCargo(t *testing.T) {
 	for _, kind := range []string{"names", "cargo"} {
 		t.Run(kind, func(t *testing.T) {
 			batch, single := regNew(t), regNew(t)
@@ -703,15 +702,21 @@ func TestIngestBatchPreservesTransientNamesAndCargo(t *testing.T) {
 			}
 			counts, touched := regAttach(t, batch, "next-run", b, a)
 			first, firstTouched := regAttach(t, single, "next-run", b)
-			if reflect.DeepEqual(regCandidate(t, single, id), before) {
-				t.Fatal("first observation produced no transient display change")
+			if kind == "cargo" {
+				if reflect.DeepEqual(regCandidate(t, single, id), before) {
+					t.Fatal("first observation produced no transient display change")
+				}
+			} else {
+				regEqual(t, regCandidate(t, single, id), before)
 			}
 			second, secondTouched := regAttach(t, single, "next-run", a)
 			regEqual(t, counts, store.Counts{Rows: first.Rows + second.Rows, Changed: first.Changed + second.Changed, Unchanged: first.Unchanged + second.Unchanged, Linked: first.Linked + second.Linked})
 			regEqual(t, touched, firstTouched)
 			regEqual(t, touched, secondTouched)
 			want := before
-			want.Updated = regTime(batch)
+			if kind == "cargo" {
+				want.Updated = regTime(batch)
+			}
 			regEqual(t, regCandidate(t, batch, id), want)
 			regEqual(t, regCandidate(t, batch, id), regCandidate(t, single, id))
 			regEqual(t, regLinks(t, batch, id), regLinks(t, single, id))

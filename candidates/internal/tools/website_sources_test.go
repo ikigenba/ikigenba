@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-2NZ3-XQZY R-32LW-IZWA
+// R-FBIW-54U5 R-FCQS-IWKU
 func TestCandidateWebsiteFollowsPlaceAndShowsCheckOrigin(t *testing.T) {
 	f := newFixture(t)
 	park := seedParks(t, f, 1)[0]

@@ -15,7 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-BC6S-8GU2 R-ATWA-HWPN
+// R-ELX0-3Y9K R-D49F-A1N0
 func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -80,7 +80,7 @@ func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 }
 
 // R-PWRA-LW9H R-NLRN-WHGC R-R7HY-562T R-LD70-4W25 R-MTHW-1S6E
-// R-AXJZ-N7XQ R-ASOE-44YY
+// R-EI9A-YN1H R-D31I-W9WB
 func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -203,7 +203,7 @@ func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	contractEqual(t, facts, beforeFacts)
 }
 
-// R-Z1VJ-IZ0R R-ATWA-HWPN R-WNFA-Q8TO  R-MTHW-1S6E
+// R-Z1VJ-IZ0R R-D49F-A1N0 R-WNFA-Q8TO  R-MTHW-1S6E
 func TestOrdinaryWritesPreserveFactsAndResultHistory(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -297,7 +297,7 @@ func TestOrdinaryWritesPreserveFactsAndResultHistory(t *testing.T) {
 	}
 }
 
-// R-AZZS-ERF4 R-GSBL-OU6L R-HS56-N73R
+// R-D1TM-II5M R-GSBL-OU6L R-E8I3-WH3X
 func TestFactsProjectionUsesNewestResultOfEveryKind(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

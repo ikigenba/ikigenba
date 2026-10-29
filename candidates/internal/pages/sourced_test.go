@@ -49,7 +49,7 @@ func TestCandidateSourcedValues(t *testing.T) {
 	}
 }
 
-// R-F4K6-2Q37
+// R-EY3Z-XNOI
 func TestFactsKeepDateSourcesOnlyBesideDates(t *testing.T) {
 	for _, known := range []time.Time{{}, time.Date(2018, 4, 9, 0, 0, 0, 0, time.UTC)} {
 		for _, newest := range []time.Time{{}, time.Date(2025, 3, 18, 0, 0, 0, 0, time.UTC)} {
@@ -68,7 +68,7 @@ func TestFactsKeepDateSourcesOnlyBesideDates(t *testing.T) {
 	}
 }
 
-// R-EW0V-EBWC
+// R-F7V6-ZTM2
 func TestWebsiteCheckedURLAndPlacesFields(t *testing.T) {
 	at := fixtureTime()
 	for _, tc := range []struct{ offered, inputs, from, landed, checked string }{{"https://acme.test/", website.Inputs("https://acme.test/", "ops@acme-mail.test"), "https://acme.test/", "https://www.acme.test/", "https://acme.test/"}, {"https://acme.test/", website.Inputs("https://acme.test/", "ops@acme-mail.test"), "https://acme.test/", "https://acme.test/", ""}, {"", "acme-mail.test", "acme-mail.test", "https://acme-mail.test/", ""}, {"", "acme-mail.test", "acme-mail.test", "https://acme-mail.test", ""}, {"", "acme-mail.test", "acme-mail.test", "https://www.acme-mail.test/", "https://acme-mail.test"}, {"", website.Inputs("http://www.acme.test/", ""), "http://www.acme.test/", "https://acme.test/", "http://www.acme.test/"}} {

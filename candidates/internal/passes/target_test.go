@@ -231,7 +231,7 @@ func TestTargetRefusals(t *testing.T) {
 	}
 }
 
-// R-MTSF-SRSA R-08ON-9XFA R-YM0S-0PT5 R-OYM3-WBI1 R-Z4B9-R9XK R-Z5J6-51O9 R-2EQ7-R8VQ R-F1RS-E0WZ R-ZBMO-1WDQ
+// R-MTSF-SRSA R-08ON-9XFA R-YM0S-0PT5 R-OYM3-WBI1 R-NR5V-E0H2 R-PSBU-C8YQ R-2EQ7-R8VQ R-F1RS-E0WZ R-JOTX-HJHQ
 func TestPromptPassResultsAndForce(t *testing.T) {
 	t.Parallel()
 	for _, status := range []string{"exited", "failed", "killed", "timed_out"} {
@@ -341,7 +341,7 @@ func TestPromptPassResultsAndForce(t *testing.T) {
 	}
 }
 
-// R-SXAC-NH9A R-Z1VG-ZQG6 R-Z96V-ACWC R-Z6R2-ITEY R-YG1Z-034H
+// R-SXAC-NH9A R-PR3X-YH81 R-JNM1-3RR1 R-LPZW-FRZE R-YG1Z-034H
 func TestPromptRetriesAndFailures(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"retry", "exhausted", "result", "invalid", "show_retry"} {
@@ -481,7 +481,7 @@ func TestTargetedDerivedAndWebsite(t *testing.T) {
 	}
 }
 
-// R-YQWD-JSRX R-Z6R2-ITEY R-373Q-6C3X R-DTXE-DYY4 R-MTSF-SRSA
+// R-YQWD-JSRX R-LPZW-FRZE R-373Q-6C3X R-DTXE-DYY4 R-MTSF-SRSA
 func TestPromptConcurrencyAndDrain(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -581,7 +581,7 @@ func TestFullIngestRequestSequence(t *testing.T) {
 	}
 }
 
-// R-Z4B9-R9XK R-Z5J6-51O9: distinct URLs are result data; page copies are pass cost.
+// R-NR5V-E0H2 R-PSBU-C8YQ: distinct URLs are result data; page copies are pass cost.
 func TestPromptCountsPagesAndOutcome(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -631,7 +631,7 @@ func TestPromptCountsPagesAndOutcome(t *testing.T) {
 	}
 }
 
-// R-Z33D-DI6V: the default poll reaches a completed run within sixty seconds.
+// R-RS9W-WPPP: the default poll reaches a completed run within sixty seconds.
 func TestPromptDefaultPoll(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := seedTarget(t, f, 1)[0]
@@ -708,7 +708,7 @@ func TestProspectListSelectionSkipsNoWebsiteAndPreservesOutside(t *testing.T) {
 	}
 }
 
-// R-Z1VG-ZQG6 R-Z6R2-ITEY: one failed result cancels other held polls without waiting.
+// R-PR3X-YH81 R-LPZW-FRZE: one failed result cancels other held polls without waiting.
 func TestPromptFailureCancelsOtherRunsAndKeepsPriorResult(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -877,7 +877,7 @@ func TestConcurrentTargetStarts(t *testing.T) {
 	f.eng.Drain(context.Background())
 }
 
-// R-Z5J6-51O9 R-YC9K-YJVL R-Z4B9-R9XK R-YM0S-0PT5 R-2EQ7-R8VQ R-F1RS-E0WZ
+// R-PSBU-C8YQ R-HBGY-PLL4 R-NR5V-E0H2 R-YM0S-0PT5 R-2EQ7-R8VQ R-F1RS-E0WZ
 func TestBriefTargetLifecycleAndCounts(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -1004,7 +1004,7 @@ func TestBriefTargetLifecycleAndCounts(t *testing.T) {
 	}
 }
 
-// R-Z6R2-ITEY R-Z96V-ACWC
+// R-LPZW-FRZE R-JNM1-3RR1
 func TestPromptAdditionalFailuresPreserveEvidence(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"result_refused", "empty_status", "socket_loss", "run_error"} {

@@ -172,7 +172,7 @@ func (s *Store) ParkCandidates(ctx context.Context, park string) ([]FoundCandida
 	return out, nil
 }
 
-// CandidatePark reads the most recently encountered park of an active candidate.
+// CandidatePark reads an active candidate's park from its lowest eligible Place ID.
 func (s *Store) CandidatePark(ctx context.Context, candidate string) (string, error) {
 	var out string
 	err := unreachable(s.readTx(ctx, func(tx *sql.Tx) error {
@@ -183,7 +183,7 @@ func (s *Store) CandidatePark(ctx context.Context, candidate string) (string, er
 		if c.Status != StatusActive {
 			return nil
 		}
-		err = scanSQL(ctx, tx, "SELECT park FROM links WHERE candidate=? AND scraper=? AND park<>'' ORDER BY last_seen DESC,source_id LIMIT 1", []any{candidate, places.Name}, &out)
+		err = scanSQL(ctx, tx, "SELECT park FROM links WHERE candidate=? AND scraper=? AND park<>'' ORDER BY source_id LIMIT 1", []any{candidate, places.Name}, &out)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}

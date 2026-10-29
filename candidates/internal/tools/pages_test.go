@@ -149,7 +149,7 @@ func TestAddPageRefusals(t *testing.T) {
 	}
 }
 
-// R-Q02D-EFZM R-QM0K-ABC4 R-2SUP-GTYQ
+// R-Q02D-EFZM R-QM0K-ABC4 R-FF6L-AG28
 func TestAddPageCopiesAndCandidateHistory(t *testing.T) {
 	var requests atomic.Int64
 	k := pageChecker(&requests)

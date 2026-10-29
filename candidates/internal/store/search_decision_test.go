@@ -164,7 +164,7 @@ func TestWebsiteDecisionTakeoversAndInertSearches(t *testing.T) {
 	}
 }
 
-// R-AZZS-ERF4 R-HS56-N73R R-BC6S-8GU2
+// R-D1TM-II5M R-E8I3-WH3X R-ELX0-3Y9K
 func TestWebsiteTakeoverProjectionPersistsAndSurvivesInertSearch(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -212,7 +212,7 @@ func TestWebsiteTakeoverProjectionPersistsAndSurvivesInertSearch(t *testing.T) {
 	contractEqual(t, factsAt(ctx, t, f.s, id).WebsiteSource, store.WebsiteByCheck)
 }
 
-// R-QJ7S-Y7FR R-AZZS-ERF4 R-HS56-N73R R-BC6S-8GU2
+// R-QJ7S-Y7FR R-D1TM-II5M R-E8I3-WH3X R-ELX0-3Y9K
 func TestWebsiteProjectionMatchesSiteKeysAndSearchProvenance(t *testing.T) {
 	for _, scenario := range []string{"alias", "query", "chain", "chain stands", "chain none", "search origin alone", "check origin alone"} {
 		for _, checkAt := range []int{0, 1, 2} {
@@ -303,7 +303,7 @@ func TestWebsiteProjectionMatchesSiteKeysAndSearchProvenance(t *testing.T) {
 	}
 }
 
-// R-QJ7S-Y7FR R-AZZS-ERF4 R-HS56-N73R
+// R-QJ7S-Y7FR R-D1TM-II5M R-E8I3-WH3X
 func TestWebsiteProjectionUsesHistoricalConfirmationLanding(t *testing.T) {
 	for _, tc := range []struct {
 		name, recordedCase, answer, landing, source, url string
@@ -374,7 +374,7 @@ func TestWebsiteProjectionUsesHistoricalConfirmationLanding(t *testing.T) {
 	}
 }
 
-// R-QJ7S-Y7FR R-HS56-N73R
+// R-QJ7S-Y7FR R-E8I3-WH3X
 func TestWebsiteProjectionWithAbsentConfirmationURL(t *testing.T) {
 	for _, confirmation := range []string{`{"state":"https"}`, `{"state":"https","url":null}`, `{"state":"https","url":""}`} {
 		t.Run(confirmation, func(t *testing.T) {
@@ -404,7 +404,7 @@ func TestWebsiteProjectionWithAbsentConfirmationURL(t *testing.T) {
 	}
 }
 
-// R-AWC3-9G71
+// R-EDDP-FK2P
 func TestSubjectUsesMatchingSiteTextAndNewestSearchInputs(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

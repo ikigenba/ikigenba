@@ -15,7 +15,7 @@ import (
 )
 
 // R-DVMK-0Z5X R-DWUG-EQWM R-DY2C-SINB R-DZA9-6AE0 R-E45U-PDCS
-// R-HM0W-RKUQ R-FEBD-4W0R
+// R-HM0W-RKUQ R-F6NA-M1VD
 func TestSearchEnrichmentProjection(t *testing.T) {
 	zero, one := 0, 1
 	full := enrichers.WebsiteSearchFound{Run: enrichers.WebsiteSearchRun{ID: "r1", Status: enrichers.RunExited, ExitCode: &zero}, Answer: &enrichers.WebsiteSearchAnswer{URL: "https://acme.test/", Why: "chosen-why", Rejected: []enrichers.WebsiteSearchSite{{URL: "https://other.test/", Why: "chosen-rejection"}, {URL: "https://third.test/"}}}, Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteHTTPS, URL: "https://www.acme.test/", Title: "chosen-title", StatusCode: 200, Size: 1256}}
@@ -329,7 +329,7 @@ func TestUnfoundAndUnknownWebsiteTemplates(t *testing.T) {
 	}
 }
 
-// R-EX8R-S3N1 R-8QIQ-63EB
+// R-D7X4-FCV3 R-8QIQ-63EB
 func TestUnfoundCandidateAndMemberWithoutJudging(t *testing.T) {
 	for _, emptyURL := range []bool{false, true} {
 		cfg, handle := pageFixture(t)

@@ -22,7 +22,7 @@ func appendRoute(t *testing.T, s *store.Store, id, inputs string, found enricher
 	contractOK(t, err)
 }
 
-// R-AYRW-0ZOF R-3156-5D9B R-B4VD-XUDW R-L1PB-WKYW R-HVSV-SIBU R-AV46-VOGC
+// R-3156-5D9B R-EFTI-73K3 R-L1PB-WKYW R-EKP3-Q6IV R-EC5T-1SC0
 func TestDriveRouteProjectionAndOrigin(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

@@ -104,12 +104,6 @@ func Pick(orders []Order, links, given []Record) Picked {
 			}
 			return 1
 		}
-		if !a.Seen.Equal(b.Seen) {
-			if a.Seen.After(b.Seen) {
-				return -1
-			}
-			return 1
-		}
 		if n := strings.Compare(a.Source, b.Source); n != 0 {
 			return n
 		}

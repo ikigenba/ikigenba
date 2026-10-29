@@ -13,7 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-3GJ3-M4V9 R-ML95-4DLF R-2VAI-8DG4
+// R-3GJ3-M4V9 R-ML95-4DLF R-FGEH-O7SX
 func TestCampaignAnswerHistory(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)

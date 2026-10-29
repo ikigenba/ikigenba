@@ -10,7 +10,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-FANN-ZKSO R-IYP1-PJL4
+// R-F2ZL-GQNA R-IYP1-PJL4
 func TestLinkEINAndNames(t *testing.T) {
 	set, err := Load()
 	if err != nil {

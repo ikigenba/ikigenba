@@ -120,7 +120,7 @@ func TestPagingRefusalsBeforeStoreAndSchema(t *testing.T) {
 	}
 }
 
-// R-2QEW-PAHC
+// R-DACX-6WCH
 func TestStoredJudgmentsChangeOnlyAtJudge(t *testing.T) {
 	f := newFixture(t)
 	f.now = time.Date(2021, 6, 1, 0, 0, 0, 0, time.UTC)

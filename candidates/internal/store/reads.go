@@ -36,11 +36,11 @@ func linksFor(r *records, id string) []Link {
 		if a.Gone != b.Gone {
 			return !a.Gone
 		}
+		if a.Reading.Filed.IsZero() != b.Reading.Filed.IsZero() {
+			return !a.Reading.Filed.IsZero()
+		}
 		if !a.Reading.Filed.Equal(b.Reading.Filed) {
 			return a.Reading.Filed.After(b.Reading.Filed)
-		}
-		if !a.LastSeen.Equal(b.LastSeen) {
-			return a.LastSeen.After(b.LastSeen)
 		}
 		if a.Scraper != b.Scraper {
 			return a.Scraper < b.Scraper

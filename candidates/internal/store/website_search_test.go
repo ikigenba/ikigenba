@@ -26,7 +26,7 @@ func searchResult(t *testing.T, id, state, url string) store.Enrichment {
 	return store.Enrichment{Candidate: id, Kind: enrichers.KindWebsiteSearch, Inputs: "name-city-state", Source: enrichers.SourcePrompts, Found: b}
 }
 
-// R-X36J-5G5F R-QJ7S-Y7FR R-AZZS-ERF4 R-HS56-N73R R-BC6S-8GU2
+// R-X36J-5G5F R-QJ7S-Y7FR R-D1TM-II5M R-E8I3-WH3X R-ELX0-3Y9K
 func TestWebsiteDecisionKeepsConfirmedSearchAndPrefersWorkingCheck(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -86,7 +86,7 @@ func TestWebsiteDecisionKeepsConfirmedSearchAndPrefersWorkingCheck(t *testing.T)
 	assert(sources.WebsiteHTTPS, "https://later-search.test/", store.WebsiteBySearch)
 }
 
-// R-ARGH-QD89
+// R-CZDT-QYO8
 func TestSubjectWebsiteSearchSupplement(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -169,7 +169,7 @@ func TestSearchWebsiteDoesNotInflateOperatingConfidence(t *testing.T) {
 	contractEqual(t, factsAt(ctx, t, f.s, legacy).WebsiteSource, "")
 }
 
-// R-AZZS-ERF4 R-PWRA-LW9H R-NKJR-IPPN
+// R-D1TM-II5M R-PWRA-LW9H R-NKJR-IPPN
 func TestSearchFactsFillMergeAndSplit(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -249,7 +249,7 @@ func TestWebsiteSourceProtocolWords(t *testing.T) {
 	contractEqual(t, search, word("search"))
 }
 
-// R-QJ7S-Y7FR R-AZZS-ERF4 R-HS56-N73R R-BC6S-8GU2
+// R-QJ7S-Y7FR R-D1TM-II5M R-E8I3-WH3X R-ELX0-3Y9K
 func TestWebsiteUnknownAndUnfoundSearchProjection(t *testing.T) {
 	for _, noSite := range []string{"empty_answer", "failed_confirmation"} {
 		t.Run(noSite, func(t *testing.T) {

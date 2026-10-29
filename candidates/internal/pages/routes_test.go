@@ -35,7 +35,7 @@ func TestDriveViewTypes(_ *testing.T) {
 	_ = struct{ Minutes, Miles, Address, Precision, Status, Why, Error, PlaceURL, DirectionsURL string }(RouteView{})
 }
 
-// R-EZOK-JN4F R-FLMR-FIGX R-F0WG-XEV4
+// R-ES0I-0SZ1 R-HISD-081A R-EUGA-SCGF
 func TestDriveFactsAndMemberViews(t *testing.T) {
 	for _, tc := range []struct {
 		f                               store.Facts
@@ -70,7 +70,7 @@ func TestDriveFactsAndMemberViews(t *testing.T) {
 	}
 }
 
-// R-HKT0-DT41 R-HM0W-RKUQ R-FEBD-4W0R
+// R-HKT0-DT41 R-HM0W-RKUQ R-F6NA-M1VD
 func TestRouteResultProjection(t *testing.T) {
 	for _, tc := range []struct {
 		found  enrichers.RouteFound
@@ -157,7 +157,7 @@ func TestDriveRouteTemplateStates(t *testing.T) {
 	render("pass", PassData{Pass: PassView{Kind: store.KindEnrichTarget, EnrichKind: enrichers.KindDriveRoute, Runs: 2, RunsFailed: 1, Cost: "$0.010000"}})
 }
 
-// R-EX8R-S3N1 R-EZOK-JN4F R-FLMR-FIGX R-F0WG-XEV4
+// R-D7X4-FCV3 R-ES0I-0SZ1 R-HISD-081A R-EUGA-SCGF
 func TestCandidateAndListDriveDecision(t *testing.T) {
 	for i, result := range []enrichers.RouteFound{{Minutes: new(int64(47)), Miles: new(38.2), Address: "chosen-address"}, {Why: routes.WhyTooCoarse}, {Error: "chosen-error"}, {Minutes: new(int64(12)), Address: "old-address"}} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
