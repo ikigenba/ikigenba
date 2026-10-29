@@ -63,10 +63,11 @@ func (r *runBytes) Read(p []byte) (int, error) {
 }
 
 type runBuffer struct {
-	mu     sync.Mutex
-	b      bytes.Buffer
-	writes int
-	filled chan struct{}
+	mu        sync.Mutex
+	b         bytes.Buffer
+	writes    int
+	filled    chan struct{}
+	refetched chan struct{}
 }
 
 func (b *runBuffer) Write(p []byte) (int, error) {
@@ -78,6 +79,13 @@ func (b *runBuffer) Write(p []byte) (int, error) {
 		case <-b.filled:
 		default:
 			close(b.filled)
+		}
+	}
+	if b.refetched != nil && (bytes.HasPrefix(p, []byte("candidates: pages refetched: ")) || bytes.HasPrefix(p, []byte("candidates: pages refetch failed"))) {
+		select {
+		case <-b.refetched:
+		default:
+			close(b.refetched)
 		}
 	}
 	return b.b.Write(p)
@@ -440,7 +448,7 @@ func runOnlyState(t *testing.T, dir string) {
 }
 
 // R-U54M-T001 R-119A-9L3H R-13P3-14KV R-9NW2-FV7B R-A1AY-NCCY R-XHVR-JJLE
-// R-3TTL-43TV R-42CV-SI0Q R-7797-KNZO R-QR9U-4LFL R-49OA-34GW R-E00L-ZMBT
+// R-3TTL-43TV R-42CV-SI0Q R-7797-KNZO R-QR9U-4LFL R-49OA-34GW R-GC07-H8O0
 // R-459Z-IJQT R-R335-N3PU R-ZY3R-GAKJ R-R0NC-VK8G   R-4BDH-FEGA
 // R-08GD-3XUM R-06N2-4ORE R-MD1O-TQIR R-76JM-ZE8M
 func TestRunAssembledChain(t *testing.T) {
@@ -1525,7 +1533,7 @@ func runAssertNotFound(t *testing.T, r mcp.Result) {
 	}
 }
 
-// R-XQKF-BRHF
+// R-XWMU-PTF3
 func TestRunSweepPrunesDoneAndPreservesRunning(t *testing.T) {
 	f := &runFake{}
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, f)}))
@@ -1654,12 +1662,19 @@ func TestRunSendsReadyBeforeActualAccept(t *testing.T) {
 
 func runAssertSilent(t *testing.T, h *runHarness) {
 	t.Helper()
-	if text := h.err.String(); h.out.String() != "" || (text != "" && text != "candidates: facts filled\n") {
+	text := h.err.String()
+	for _, line := range []string{"candidates: facts filled\n", "candidates: pages refetched: 0 read, 0 scripted, 0 redirect, 0 empty, 0 failed\n"} {
+		if strings.Count(text, line) > 1 {
+			t.Fatalf("repeated startup diagnostic: %q", text)
+		}
+		text = strings.ReplaceAll(text, line, "")
+	}
+	if h.out.String() != "" || text != "" {
 		t.Fatalf("streams stdout=%q stderr=%q", h.out.String(), h.err.String())
 	}
 }
 
-// R-4G92-YHF2 R-XQ2V-N2EA
+// R-VYUS-NGEI R-XQ2V-N2EA
 func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	rows := make([]map[string]any, 3)
 	for i := range rows {

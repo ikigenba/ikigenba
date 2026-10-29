@@ -249,6 +249,7 @@ func Run(ctx context.Context, p Process) int {
 		requestID = hex.EncodeToString(draw[:])
 	}
 	filled := eng.StartFill(startCtx)
+	refetched := eng.StartRefetch(startCtx)
 	go func() {
 		defer close(startDone)
 		<-filled
@@ -292,6 +293,7 @@ func Run(ctx context.Context, p Process) int {
 		startCancel()
 		eng.Drain(dc)
 		<-startDone
+		<-refetched
 	})
 	sweepCancel()
 	<-sweepDone
@@ -306,6 +308,7 @@ func Run(ctx context.Context, p Process) int {
 	startCancel()
 	eng.Drain(dc)
 	<-startDone
+	<-refetched
 	_ = em.Flush(dc)
 	reason := "stopped"
 	if cause := context.Cause(ctx); cause != nil {

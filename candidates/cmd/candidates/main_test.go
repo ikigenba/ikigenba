@@ -32,20 +32,31 @@ import (
 )
 
 type binaryBuffer struct {
-	mu     sync.Mutex
-	buf    bytes.Buffer
-	filled chan struct{}
+	mu        sync.Mutex
+	buf       bytes.Buffer
+	filled    chan struct{}
+	refetched chan struct{}
 }
+
+const binaryFactsFilled = "candidates: facts filled\n"
+const binaryPagesRefetched = "candidates: pages refetched: 0 read, 0 scripted, 0 redirect, 0 empty, 0 failed\n"
 
 func (b *binaryBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	n, err := b.buf.Write(p)
-	if b.filled != nil && bytes.Contains(b.buf.Bytes(), []byte("candidates: facts filled\n")) {
+	if b.filled != nil && bytes.Contains(b.buf.Bytes(), []byte(binaryFactsFilled)) {
 		select {
 		case <-b.filled:
 		default:
 			close(b.filled)
+		}
+	}
+	if b.refetched != nil && bytes.Contains(b.buf.Bytes(), []byte(binaryPagesRefetched)) {
+		select {
+		case <-b.refetched:
+		default:
+			close(b.refetched)
 		}
 	}
 	return n, err
@@ -123,7 +134,7 @@ func TestBinary(t *testing.T) {
 			defer func() { _ = file.Close() }()
 			dir := t.TempDir()
 			var out bytes.Buffer
-			stderr := binaryBuffer{filled: make(chan struct{})}
+			stderr := binaryBuffer{filled: make(chan struct{}), refetched: make(chan struct{})}
 			env := append(append([]string{}, baseEnv...), "NOTIFY_SOCKET="+notify.LocalAddr().String())
 			capture := &telemetry.Capture{}
 			var ingest *http.Server
@@ -178,6 +189,15 @@ func TestBinary(t *testing.T) {
 			case <-stderr.filled:
 			case <-time.After(10 * time.Second):
 				t.Fatalf("facts fill did not complete: %s", stderr.String())
+			}
+			select {
+			case <-stderr.refetched:
+			case <-time.After(10 * time.Second):
+				t.Fatalf("pages refetch did not complete: %s", stderr.String())
+			}
+			startup := stderr.String()
+			if signal == syscall.SIGTERM && startup != binaryFactsFilled+binaryPagesRefetched && startup != binaryPagesRefetched+binaryFactsFilled {
+				t.Fatalf("startup stderr: %q", startup)
 			}
 			info, err := os.Stat(filepath.Join(dir, "state", "candidates.db"))
 			if err != nil || !info.Mode().IsRegular() {
@@ -290,7 +310,7 @@ func TestBinary(t *testing.T) {
 				t.Fatal(out.String())
 			}
 			if signal == syscall.SIGTERM {
-				if stderr.String() != "candidates: facts filled\n" {
+				if stderr.String() != startup {
 					t.Fatal(stderr.String())
 				}
 				events := capture.Events()

@@ -15,7 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-GPDH-384Z R-XQKF-BRHF
+// R-GPDH-384Z R-XWMU-PTF3
 func TestRunPrunesEveryPageBeforeReadyAndAtSweep(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
 	h.env["CANDIDATES_KEEP_PASSES"] = "1"
@@ -107,7 +107,7 @@ func (r *failNextBytes) Read(p []byte) (int, error) {
 	return r.bytes.Read(p)
 }
 
-// R-E00L-ZMBT
+// R-GC07-H8O0
 func TestRunForwardsStoreFailureDiagnostic(t *testing.T) {
 	rnd := &failNextBytes{}
 	fake := &runFake{rows: []map[string]any{runRow()}}
