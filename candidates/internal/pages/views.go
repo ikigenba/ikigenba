@@ -84,11 +84,15 @@ func memberRow(e store.Ranked, i int) MemberRow {
 	return v
 }
 func candidateView(c store.Candidate) CandidateView {
-	v := CandidateView{ID: c.ID, Status: c.Status, MergedInto: c.MergedInto, OtherNames: []OtherRow{}, OtherAddresses: []OtherRow{}, OtherPhones: []OtherRow{}, People: []PersonRow{}, Cargo: []string{}}
+	v := CandidateView{ID: c.ID, Status: c.Status, MergedInto: c.MergedInto, OtherEmails: []OtherRow{}, OwnerSet: map[string]OwnerNoteView{}, OtherNames: []OtherRow{}, OtherAddresses: []OtherRow{}, OtherPhones: []OtherRow{}, People: []PersonRow{}, Cargo: []string{}}
 	v.Created, v.CreatedText = stamp(c.Created, SecondLayout)
 	v.Updated, v.UpdatedText = stamp(c.Updated, SecondLayout)
 	if c.Status == store.StatusMerged {
 		return v
+	}
+	v.EIN, v.EINSource = c.EIN, c.EINSource
+	for _, x := range c.OtherEmails {
+		v.OtherEmails = append(v.OtherEmails, OtherRow{x.Value, x.Source})
 	}
 	v.Name = c.Name
 	v.NameSource, v.AddressSource, v.PhoneSource, v.EmailSource = c.NameSource, c.AddressSource, c.PhoneSource, c.EmailSource
@@ -155,6 +159,14 @@ func judgmentsView(a store.Judgments) JudgmentsView {
 }
 func factsView(f store.Facts, origin string) FactsView {
 	v := FactsView{KnownSince: date(f.KnownSince), KnownSinceText: date(f.KnownSince), KnownSinceSource: f.KnownSinceSource, NewestFiling: date(f.NewestFiling), NewestFilingText: date(f.NewestFiling), NewestFilingSource: f.NewestFilingSource, Categories: []CategoryRow{}, ClassifiedBy: store.ClassifiedBy(f.Categories), RecordsDiffer: store.RecordsDiffer(f.Categories, f.Records), RecordCategories: []CategoryRow{}, GovernmentMatch: f.GovernmentMatch, FleetVerdict: f.FleetVerdict, Written: []WrittenRow{}, Headcounts: []HeadcountRow{}, BriefLabels: append([]string{}, f.BriefLabels...)}
+	v.OtherKnownSince = []OtherRow{}
+	v.OtherPowerUnits = []OtherRow{}
+	for _, x := range f.OtherKnownSince {
+		v.OtherKnownSince = append(v.OtherKnownSince, OtherRow{date(x.Value), x.Source})
+	}
+	for _, x := range f.OtherPowerUnits {
+		v.OtherPowerUnits = append(v.OtherPowerUnits, OtherRow{strconv.FormatInt(x.Value, 10), x.Source})
+	}
 	if f.KnownSince.IsZero() {
 		v.KnownSinceSource = ""
 	}
@@ -334,10 +346,10 @@ func enrichmentRow(x store.Enrichment, subject enrichers.Subject) EnrichmentRow 
 	v.At, v.AtText = stamp(x.At, MinuteLayout)
 	return v
 }
-func setWebsite(v *CandidateView, es []store.Enrichment, placesURL string) {
+func setWebsite(v *CandidateView, es []store.Enrichment, placesURL, ownerURL string) {
 	var at time.Time
 	var checked string
-	v.WebsiteSource, v.Website, v.WebsiteURL, v.WebsiteTitle, v.WebsiteWhy, checked, at = store.WebsiteDecisionOf(es, placesURL)
+	v.WebsiteSource, v.Website, v.WebsiteURL, v.WebsiteTitle, v.WebsiteWhy, checked, at = store.WebsiteDecisionOf(es, placesURL, ownerURL)
 	v.WebsiteChecked, v.WebsiteCheckedText = stamp(at, SecondLayout)
 	v.WebsiteCheckedURL = ""
 	if checked != "" {

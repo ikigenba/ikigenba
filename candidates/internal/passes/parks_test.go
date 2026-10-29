@@ -57,7 +57,7 @@ func assertParkZeroOtherCounts(t *testing.T, p store.Pass) {
 	}
 }
 
-// R-DXL3-JA67 R-E00W-ATNL R-TJ2E-A5QR R-DYSZ-X1WW R-3BZB-PF2P R-3D78-36TE R-HCOV-3DBT R-TKAA-NXHG R-DP1S-UVZC R-JOTX-HJHQ R-HBGY-PLL4
+// R-DXL3-JA67 R-E00W-ATNL R-TJ2E-A5QR R-DYSZ-X1WW R-3BZB-PF2P R-3D78-36TE R-128R-PYXF R-TKAA-NXHG R-DP1S-UVZC R-1D7V-5WLO R-18C9-MTMW
 func TestParksDeliveryDerivesAndDoesNotIngest(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -269,7 +269,7 @@ func TestParksDeliveryAndRuleRefusals(t *testing.T) {
 	}
 }
 
-// R-E64E-7OD2 R-EENO-W2JX R-EDFS-IAT8 R-DP1S-UVZC R-2PIS-RSYP R-JNM1-3RR1
+// R-E64E-7OD2 R-EENO-W2JX R-EDFS-IAT8 R-DP1S-UVZC R-2PIS-RSYP R-1BZY-S4UZ
 func TestParkRulesPassOutlivesCallerAndUsesItsIdentity(t *testing.T) {
 	t.Parallel()
 	entered, release := make(chan struct{}), make(chan struct{})
@@ -409,7 +409,7 @@ func TestStartParksCurrentRunAndNoops(t *testing.T) {
 	}
 }
 
-// R-EIBE-1DS0 R-373Q-6C3X R-JNM1-3RR1
+// R-EIBE-1DS0 R-373Q-6C3X R-1BZY-S4UZ
 func TestParksFailureLeavesPriorParks(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"short", "drain", "no_current"} {
@@ -601,7 +601,7 @@ func (w *parkRestoreWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// R-JNM1-3RR1 R-LR7S-TJQ3
+// R-1BZY-S4UZ R-1FNN-XG32
 func TestParksStoreFailureRestoresForFailedEnding(t *testing.T) {
 	t.Parallel()
 	var f *fixture

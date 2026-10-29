@@ -89,9 +89,9 @@ func Freshness(filed, now time.Time) float64 {
 	return float64(t5.Sub(now)) / float64(t5.Sub(t2))
 }
 
-// Weight applies freshness only to active registration evidence.
+// Weight ages active registrations and the owner's observations.
 func Weight(e sources.Evidence, filed, now time.Time) float64 {
-	if e.Name == sources.EvidenceFMCSAActive {
+	if e.Name == sources.EvidenceFMCSAActive || e.Name == sources.EvidenceOwnerRecord {
 		return e.Weight * Freshness(filed, now)
 	}
 	return e.Weight

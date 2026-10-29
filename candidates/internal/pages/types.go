@@ -136,6 +136,7 @@ type CandidateData struct {
 	Estimates         []EstimateView
 	Links             []LinkView
 	Rulings           []RulingView
+	OwnerRecords      []OwnerRecordRow
 	Pages             []PageRow
 	EnrichmentResults []EnrichmentRow
 	Rejects           []RejectRecordRow
@@ -151,6 +152,10 @@ type CandidateView struct {
 	Park                                                                                                                *ParkLink
 	WebsiteSource, Website, WebsiteURL, WebsiteTitle, WebsiteWhy, WebsiteChecked, WebsiteCheckedText, WebsiteCheckedURL string
 	People                                                                                                              []PersonRow
+	EIN, EINSource                                                                                                      string
+	OtherEmails                                                                                                         []OtherRow
+	Founded                                                                                                             *OwnerNoteView
+	OwnerSet                                                                                                            map[string]OwnerNoteView
 	Class                                                                                                               string
 	Cargo                                                                                                               []string
 	Created, CreatedText, Updated, UpdatedText                                                                          string
@@ -177,16 +182,19 @@ type JudgmentsView struct {
 
 // FactsView supplies the newest recorded facts.
 type FactsView struct {
-	KnownSince, KnownSinceText, KnownSinceSource, NewestFiling, NewestFilingText, NewestFilingSource string
-	Categories                                                                                       []CategoryRow
-	ClassifiedBy                                                                                     string
-	RecordsDiffer                                                                                    bool
-	RecordCategories                                                                                 []CategoryRow
-	GovernmentMatch, FleetVerdict, PowerUnits, Drivers                                               string
-	Headcounts                                                                                       []HeadcountRow
-	BriefLabels                                                                                      []string
-	Minutes, MinutesSource, Miles, RouteAddress, RoutePlaceURL, RouteDirectionsURL                   string
-	Written                                                                                          []WrittenRow
+	KnownSince, KnownSinceText, KnownSinceSource                                   string
+	OtherKnownSince                                                                []OtherRow
+	NewestFiling, NewestFilingText, NewestFilingSource                             string
+	Categories                                                                     []CategoryRow
+	ClassifiedBy                                                                   string
+	RecordsDiffer                                                                  bool
+	RecordCategories                                                               []CategoryRow
+	GovernmentMatch, FleetVerdict, PowerUnits, Drivers                             string
+	OtherPowerUnits                                                                []OtherRow
+	Headcounts                                                                     []HeadcountRow
+	BriefLabels                                                                    []string
+	Minutes, MinutesSource, Miles, RouteAddress, RoutePlaceURL, RouteDirectionsURL string
+	Written                                                                        []WrittenRow
 }
 
 // HeadcountRow supplies one dated source headcount.
@@ -505,3 +513,20 @@ type FoundCandidateRow struct {
 
 // ParkLink links a candidate or places link to its park.
 type ParkLink struct{ ID, Name string }
+
+// OwnerRecordRow presents one owner record.
+type OwnerRecordRow struct {
+	Founded          bool
+	Note, At, AtText string
+	Facts            []OwnerFactRow
+}
+
+// OwnerFactRow presents one fact set or cleared.
+type OwnerFactRow struct {
+	Fact    string
+	Cleared bool
+	Value   string
+}
+
+// OwnerNoteView presents the note and time deciding a fact.
+type OwnerNoteView struct{ Note, At, AtText string }

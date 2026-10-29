@@ -118,7 +118,7 @@ func fixtureWithPlaces(t *testing.T, h http.Handler, k *website.Checker, pc *pro
 	f.eng = passes.New(passes.Config{Places: placesClient, Routes: rc, Prompts: pc, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Website: k, Store: f.st, Sources: sources.New(fmcsa.New()), Scrapes: sc, Telemetry: w, Events: em})
 	t.Cleanup(func() { f.eng.Drain(context.Background()) })
 	srv := mcp.NewServer(mcp.ServerConfig{Name: "candidates", Telemetry: w})
-	tools.Register(srv, tools.Config{f.eng, f.st, k})
+	tools.Register(srv, tools.Config{f.eng, f.st, k, w})
 	host := httptest.NewServer(identity.Require(srv))
 	t.Cleanup(host.Close)
 	f.client = mcp.NewClient(mcp.ClientConfig{Endpoint: host.URL, HTTPClient: host.Client()})
@@ -138,6 +138,23 @@ func (f *fixture) callAs(c identity.Caller, name string, args any) mcp.Result {
 	if a, ok := args.(tools.DecideArgs); ok && a.Links == nil {
 		a.Links = []string{}
 		args = a
+	}
+	switch args.(type) {
+	case tools.AddBusinessArgs, tools.SetFactsArgs:
+		b, e := json.Marshal(args)
+		if e != nil {
+			f.t.Fatal(e)
+		}
+		var fields map[string]any
+		if e = json.Unmarshal(b, &fields); e != nil {
+			f.t.Fatal(e)
+		}
+		for k, v := range fields {
+			if v == nil {
+				delete(fields, k)
+			}
+		}
+		args = fields
 	}
 	b, err := json.Marshal(args)
 	if err != nil {
@@ -233,8 +250,8 @@ func (f *fixture) seedWithStep(n int, step time.Duration, tie bool) []string {
 	return ids
 }
 
-// R-8884-IJV3 R-5LVY-DPZS
-// R-RD5P-XSDK R-REDM-BK49 R-RFLI-PBUY R-ZCZ9-BW58
+// R-Y0OZ-AZ3O R-5LVY-DPZS
+// R-VTTA-2KUO R-VOXO-JHVW R-VQ5K-X9ML R-ZCZ9-BW58
 func TestCatalogAndSchemas(t *testing.T) {
 	const (
 		_ string = tools.DescribeProspectLists
@@ -259,10 +276,12 @@ func TestCatalogAndSchemas(t *testing.T) {
 		_ string = tools.DescribePark
 		_ string = tools.DescribeParkRules
 		_ string = tools.DescribeEditParkRules
+		_ string = tools.DescribeAddBusiness
+		_ string = tools.DescribeSetFacts
 		_ string = tools.DescribeWalk
 	)
 	f := newFixture(t)
-	want := []tools.Entry{{"prospect_lists", tools.DescribeProspectLists}, {"prospect_list", tools.DescribeProspectList}, {"candidates", tools.DescribeCandidates}, {"candidate", tools.DescribeCandidate}, {"passes", tools.DescribePasses}, {"pass", tools.DescribePass}, {"ingest", tools.DescribeIngest}, {"judge", tools.DescribeJudge}, {"enrich", tools.DescribeEnrich}, {"add_page", tools.DescribeAddPage}, {"decide", tools.DescribeDecide}, {"exclude", tools.DescribeExclude}, {"include", tools.DescribeInclude}, {"create_prospect_list", tools.DescribeCreateProspectList}, {"edit_prospect_list", tools.DescribeEditProspectList}, {"delete_prospect_list", tools.DescribeDeleteProspectList}, {"reject", tools.DescribeReject}, {"unreject", tools.DescribeUnreject}, {"parks", tools.DescribeParks}, {"park", tools.DescribePark}, {"park_rules", tools.DescribeParkRules}, {"edit_park_rules", tools.DescribeEditParkRules}, {"walk", tools.DescribeWalk}}
+	want := []tools.Entry{{"prospect_lists", tools.DescribeProspectLists}, {"prospect_list", tools.DescribeProspectList}, {"candidates", tools.DescribeCandidates}, {"candidate", tools.DescribeCandidate}, {"passes", tools.DescribePasses}, {"pass", tools.DescribePass}, {"ingest", tools.DescribeIngest}, {"judge", tools.DescribeJudge}, {"enrich", tools.DescribeEnrich}, {"add_page", tools.DescribeAddPage}, {"decide", tools.DescribeDecide}, {"exclude", tools.DescribeExclude}, {"include", tools.DescribeInclude}, {"create_prospect_list", tools.DescribeCreateProspectList}, {"edit_prospect_list", tools.DescribeEditProspectList}, {"delete_prospect_list", tools.DescribeDeleteProspectList}, {"reject", tools.DescribeReject}, {"unreject", tools.DescribeUnreject}, {"parks", tools.DescribeParks}, {"park", tools.DescribePark}, {"park_rules", tools.DescribeParkRules}, {"edit_park_rules", tools.DescribeEditParkRules}, {"walk", tools.DescribeWalk}, {"add_business", tools.DescribeAddBusiness}, {"set_facts", tools.DescribeSetFacts}}
 	if !reflect.DeepEqual(tools.Catalog(), want) {
 		t.Fatal(tools.Catalog())
 	}
@@ -279,8 +298,8 @@ func TestCatalogAndSchemas(t *testing.T) {
 		t.Fatal(infos)
 	}
 	seen := map[string]bool{}
-	properties := [][]string{{"page", "limit"}, {"prospect_list", "peek"}, {"name", "zip", "phone", "page", "limit"}, {"candidate"}, {"page", "limit"}, {"pass"}, {"scraper"}, {}, {"kind", "prospect_list", "candidate", "force"}, {"candidate", "url"}, {"kind", "why", "candidate", "other", "links"}, {"candidate", "why"}, {"candidate", "why"}, {"name", "filters", "order", "size"}, {"prospect_list", "name", "filters", "order", "size"}, {"prospect_list"}, {"prospect_list", "candidate", "why"}, {"prospect_list", "candidate", "why"}, {"county", "walked", "gone", "sort", "page", "limit"}, {"park"}, {}, {"distance", "min_parcels", "value_threshold", "county", "labels", "walk_ceiling"}, {"parks", "again"}}
-	required := [][]string{nil, {"prospect_list"}, nil, {"candidate"}, nil, {"pass"}, nil, nil, nil, {"candidate", "url"}, {"kind", "why", "candidate"}, {"candidate", "why"}, {"candidate", "why"}, {"name"}, {"prospect_list"}, {"prospect_list"}, {"prospect_list", "candidate", "why"}, {"prospect_list", "candidate", "why"}, nil, {"park"}, nil, nil, {"parks"}}
+	properties := [][]string{{"page", "limit"}, {"prospect_list", "peek"}, {"name", "zip", "phone", "page", "limit"}, {"candidate"}, {"page", "limit"}, {"pass"}, {"scraper"}, {}, {"kind", "prospect_list", "candidate", "force"}, {"candidate", "url"}, {"kind", "why", "candidate", "other", "links"}, {"candidate", "why"}, {"candidate", "why"}, {"name", "filters", "order", "size"}, {"prospect_list", "name", "filters", "order", "size"}, {"prospect_list"}, {"prospect_list", "candidate", "why"}, {"prospect_list", "candidate", "why"}, {"county", "walked", "gone", "sort", "page", "limit"}, {"park"}, {}, {"distance", "min_parcels", "value_threshold", "county", "labels", "walk_ceiling"}, {"parks", "again"}, {"name", "headcount", "revenue", "category", "website", "address", "phone", "email", "people", "known_since", "ein", "fleet", "note"}, {"candidate", "name", "headcount", "revenue", "category", "website", "address", "phone", "email", "people", "known_since", "ein", "fleet", "clear", "note"}}
+	required := [][]string{nil, {"prospect_list"}, nil, {"candidate"}, nil, {"pass"}, nil, nil, nil, {"candidate", "url"}, {"kind", "why", "candidate"}, {"candidate", "why"}, {"candidate", "why"}, {"name"}, {"prospect_list"}, {"prospect_list"}, {"prospect_list", "candidate", "why"}, {"prospect_list", "candidate", "why"}, nil, {"park"}, nil, nil, {"parks"}, {"name", "note"}, {"candidate", "note"}}
 	for i, info := range infos {
 		if info.Name != want[i].Name || info.Description != want[i].Description || len(info.OutputSchema) != 0 {
 			t.Fatal(info)
@@ -331,7 +350,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 	_ = tools.Judgments{nil, nil, nil, nil, nil, nil, nil, "", nil, "", "", nil, nil, nil, nil, nil, false, 0, ""}
 	_ = tools.Estimate{"source", 1, nil, .5, nil, "", 1}
 	_ = tools.Ruling{"kind", "candidate", "other", nil, "why", "user", "email", "at"}
-	_ = tools.Detail{tools.Candidate{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil}
+	_ = tools.Detail{tools.Candidate{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil}
 	_ = tools.Decision{tools.Ruling{}, nil}
 	_ = tools.EnrichArgs{"kind", "prospect_list", "candidate", false}
 	_ = tools.AddPageArgs{"candidate", "url"}
@@ -376,9 +395,9 @@ func objectKeys(t *testing.T, b []byte) []string {
 	return out
 }
 
-// R-XFGZ-IYVN R-VWLI-BAIE R-MGDJ-LAMN R-SX62-ODQC R-R4MF-9E6P R-2MR7-JZ99
+// R-XFGZ-IYVN R-VWLI-BAIE R-MGDJ-LAMN R-SX62-ODQC R-R4MF-9E6P R-VZWR-ZFK5
 // R-YNDH-GZXV R-SUQ9-WU8Y R-XIDP-GOVR R-SYDZ-25H1
-// R-2KBE-SFRV R-XFGZ-IYVN R-VWLI-BAIE R-MGDJ-LAMN R-SX62-ODQC R-R4MF-9E6P R-2MR7-JZ99
+// R-2KBE-SFRV R-XFGZ-IYVN R-VWLI-BAIE R-MGDJ-LAMN R-SX62-ODQC R-R4MF-9E6P R-VZWR-ZFK5
 func TestAnswerJSONShapes(t *testing.T) {
 	tests := []struct {
 		v      any
@@ -396,7 +415,7 @@ func TestAnswerJSONShapes(t *testing.T) {
 		{tools.Member{}, "candidate basis trend categories classified_by fleet_verdict website website_source site_text brief minutes_source excluded", "categories", ""}, {tools.ProspectListList{}, "prospect_lists", "prospect_lists", ""}, {tools.ProspectList{}, "id name size filters order created_by created_email created changed_by changed_email changed", "order", "filters"}, {tools.Reject{}, "kind prospect_list candidate", "", ""}, {tools.ProspectListRead{}, "prospect_list matching classified by_basis changes members rejects", "members rejects", ""}, {tools.CandidateList{}, "candidates", "candidates", ""}, {tools.PassList{}, "passes", "passes", ""},
 		{tools.Link{}, "scraper source_id run digest name names street city state zip county phone email people class cargo fleet_verdict name_key phone_key domain_key ein establishment reason confidence first_seen last_seen gone walk park", "names people cargo", ""},
 		{tools.Estimate{}, "source low confidence facts formula", "", "facts"}, {tools.Judgments{}, "operating_evidence headcount_series trend excluded rules calculated", "operating_evidence headcount_series", ""},
-		{tools.Ruling{}, "kind candidate keys why user email at", "keys", ""}, {tools.Detail{}, "candidate estimates links rulings pages enrichment_results rejects campaigns", "estimates links rulings pages enrichment_results rejects campaigns", ""}, {tools.Decision{}, "ruling candidates", "candidates", ""},
+		{tools.Ruling{}, "kind candidate keys why user email at", "keys", ""}, {tools.Detail{}, "candidate estimates links rulings pages enrichment_results rejects campaigns owner_set owner_records", "estimates links rulings pages enrichment_results rejects campaigns owner_records", "owner_set"}, {tools.Decision{}, "ruling candidates", "candidates", ""},
 	}
 	for _, tt := range tests {
 		b, err := json.Marshal(tt.v)
@@ -436,7 +455,7 @@ func TestAnswerJSONShapes(t *testing.T) {
 		{tools.Estimate{High: &one, Filed: "2026-01-01"}, "source low high confidence facts filed formula"},
 		{tools.Judgments{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence}, "operating_confidence operating_evidence revenue_low revenue_high revenue_confidence headcount_series trend excluded rules calculated"},
 		{tools.Reject{Kind: "reject", ProspectList: "prospect_list", ProspectListName: "name", Candidate: "candidate", Why: "why", User: "user", Email: "email", At: "at"}, "kind prospect_list prospect_list_name candidate why user email at"},
-		{tools.Ruling{Other: "other"}, "kind candidate other keys why user email at"}, {tools.Detail{Park: &tools.ParkRef{"chosen-id", "chosen-name"}}, "candidate park estimates links rulings pages enrichment_results rejects campaigns"}, {tools.Detail{Judgments: &tools.Judgments{}}, "candidate judgments estimates links rulings pages enrichment_results rejects campaigns"},
+		{tools.Ruling{Other: "other"}, "kind candidate other keys why user email at"}, {tools.Detail{Park: &tools.ParkRef{"chosen-id", "chosen-name"}}, "candidate park estimates links rulings pages enrichment_results rejects campaigns owner_set owner_records"}, {tools.Detail{Judgments: &tools.Judgments{}}, "candidate judgments estimates links rulings pages enrichment_results rejects campaigns owner_set owner_records"},
 	}
 	for _, tt := range populated {
 		b, err := json.Marshal(tt.v)
@@ -500,7 +519,7 @@ func decodeList[T any](t *testing.T, r mcp.Result) T {
 
 var _ io.Reader = (*random)(nil)
 
-// R-R96N-JYFB R-F05M-B25Z R-27ET-GMFK R-DACX-6WCH R-WX6H-SER8
+// R-R96N-JYFB R-VSLD-OT3Z R-27ET-GMFK R-136A-70EB R-WX6H-SER8
 func TestDetailAndRulings(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -577,7 +596,7 @@ func TestDetailAndRulings(t *testing.T) {
 	}
 }
 
-// R-6LTC-HAMT R-XMPP-SFN7
+// R-6LTC-HAMT R-VRDH-B1DA
 func TestRefusalsAndPrecedence(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)

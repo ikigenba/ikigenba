@@ -243,7 +243,7 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 		t.Helper()
 		r, v := h.call(caller, name, args)
 		if r.IsError() != wantError {
-			t.Fatalf("%s error=%v want=%v", name, r.IsError(), wantError)
+			t.Fatalf("%s error=%v want=%v: %+v", name, r.IsError(), wantError, r)
 		}
 		if r.IsError() {
 			refusals = append(refusals, r)
@@ -635,6 +635,7 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	}
 	exerciseRunParkSecrecy(t, h, parkFake, markers, &forbidden, call, expectedPasses, &answers)
 	exerciseRunWalkSecrecy(t, h, walkFake, call, expectedPasses)
+	exerciseRunOwnerSecrecy(t, h, markers, phone, id, &forbidden, call)
 	hold := make(chan struct{})
 	arrived := make(chan struct{}, 1)
 	f.mu.Lock()

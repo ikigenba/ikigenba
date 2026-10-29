@@ -45,7 +45,7 @@ func (f *fixture) waitEnrich(id string) store.Pass {
 	}
 }
 
-// R-ZCZ9-BW58 R-2ZGI-9CHJ R-XQDE-XQVA R-050Y-4M77 R-F05M-B25Z
+// R-ZCZ9-BW58 R-2ZGI-9CHJ R-VW92-U4C2 R-050Y-4M77 R-VSLD-OT3Z
 func TestEnrichSchemaAndValidation(t *testing.T) {
 	f := newFixture(t)
 	infos, err := f.client.ListTools(t.Context(), caller)
@@ -91,7 +91,7 @@ func TestEnrichSchemaAndValidation(t *testing.T) {
 	}
 }
 
-// R-UZO7-ZHHN R-F05M-B25Z
+// R-UZO7-ZHHN R-VSLD-OT3Z
 func TestEnrichDispatchAndRefusals(t *testing.T) {
 	entered := make(chan struct{}, 4)
 	release := make(chan struct{})
@@ -133,7 +133,7 @@ func TestEnrichDispatchAndRefusals(t *testing.T) {
 	refusal(t, absent.call("enrich", tools.EnrichArgs{Kind: sources.WebsiteCheck}), passes.RefusalUnavailable, tools.RefuseUnavailable)
 }
 
-// R-DACX-6WCH R-Q65V-BAP3
+// R-136A-70EB R-Q65V-BAP3
 func TestCandidateEnrichmentHistory(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
@@ -240,7 +240,7 @@ func TestEnrichDerivedAndAllWithoutChecker(t *testing.T) {
 	}
 }
 
-// R-DACX-6WCH
+// R-136A-70EB
 func TestCandidateHistoryIncludesDerivedKinds(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]

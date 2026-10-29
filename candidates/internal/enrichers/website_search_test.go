@@ -47,7 +47,7 @@ func TestWebsiteSearchClient(t *testing.T) {
 	}
 }
 
-// R-ASLA-XANV R-I7FS-IIZB R-SDQ1-5H81 R-SEXX-J8YQ R-SG5T-X0PF R-AV13-OU59
+// R-WGBU-VP1U R-I7FS-IIZB R-SDQ1-5H81 R-SEXX-J8YQ R-SG5T-X0PF R-AV13-OU59
 func TestWebsiteSearchShapes(t *testing.T) {
 	zero := 0
 	input := enrichers.WebsiteSearchInput{"c", "n", "ci", "st", "street", "zip", "phone", "domain", "check", "error", "website", "check", &enrichers.WebsiteSearchSiteText{"failed", 0}, []enrichers.BriefPerson{{"person", "role"}}, []enrichers.Category{{"cat", "origin"}}}
@@ -88,7 +88,7 @@ func TestWebsiteSearchShapes(t *testing.T) {
 	}
 }
 
-// R-7YK3-FGQV R-T4IA-Y6HA
+// R-WF3Y-HXB5 R-M9NX-E3ED
 func TestWebsiteSearchInputs(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	s := enrichers.Subject{People: []sources.Sourced[sources.Person]{{Value: sources.Person{Name: "Ann", Role: "owner"}}, {Value: sources.Person{Name: "Bob"}}, {Value: sources.Person{Name: "Ann", Role: "owner"}}}, ID: "candidate", Name: "Acme", City: "Sandstone", State: "MN", Street: "Main", Zip: "zip", Phone: "phone", Email: "Ops@Acme.test", Links: []enrichers.Link{{Reading: sources.Reading{People: []sources.Person{{Name: "Ann", Role: "owner"}, {Name: "Bob"}, {Name: "Ann", Role: "owner"}}}}, {Gone: true, Reading: sources.Reading{People: []sources.Person{{Name: "Gone"}}}}}, Facts: &enrichers.LinkFound{Categories: []enrichers.Category{{Name: "omit", Source: enrichers.KindBrief}, {Name: "keep", Source: "source"}}}}
@@ -171,7 +171,7 @@ func TestWebsiteSearchInputs(t *testing.T) {
 	}
 }
 
-// R-CQYU-IUP8 R-IX1O-JPJW R-IY9K-XHAL R-85VH-Q371
+// R-WL7G-ES0M R-IX1O-JPJW R-IY9K-XHAL R-85VH-Q371
 func TestWebsiteSearchFoundAndFailure(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	valid := `{"url":"https://acme.test/","why":"match","rejected":[{"url":"https://other.test/","why":"different","x":1},{"url":"https://third.test/","why":"another"}],"x":2}`
@@ -238,7 +238,7 @@ func TestWebsiteSearchFoundAndFailure(t *testing.T) {
 	}
 }
 
-// R-B2CH-ZGLF
+// R-WOV5-K38P
 func TestWebsiteSearchValidation(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	run := `"run":{"id":"run","status":"killed","cost_nanos":0}`
@@ -262,7 +262,7 @@ func TestWebsiteSearchValidation(t *testing.T) {
 	}
 }
 
-// R-CS6Q-WMFX
+// R-WNN9-6BI0
 func TestWebsiteSearchConfirmation(t *testing.T) {
 	for _, address := range []string{"https://acme.test/", "https://secure.test/", "http://acme.test/", "https://missing.test/", "acme.test/about"} {
 		requests := []string{}
@@ -336,7 +336,7 @@ func TestWebsiteSearchConfirmation(t *testing.T) {
 	}
 }
 
-// R-CS6Q-WMFX
+// R-WNN9-6BI0
 func TestWebsiteSearchConfirmationCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -385,7 +385,7 @@ func TestWebsiteSearchContextDeclarations(t *testing.T) {
 	}
 }
 
-// R-7YK3-FGQV
+// R-WF3Y-HXB5
 func TestWebsiteSearchEmptySiteFingerprint(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	hash := func(v string) string { sum := sha256.Sum256([]byte(v)); return hex.EncodeToString(sum[:]) }
@@ -468,7 +468,7 @@ func TestWebsiteSearchEmptySiteFingerprint(t *testing.T) {
 	}
 }
 
-// R-T4IA-Y6HA R-ASLA-XANV
+// R-M9NX-E3ED R-WGBU-VP1U
 func TestWebsiteSearchEmptySiteInput(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	for _, source := range []string{"", "check", "Search", "search"} {
@@ -500,7 +500,7 @@ func TestWebsiteSearchEmptySiteInput(t *testing.T) {
 	}
 }
 
-// R-CTEN-AE6M R-CQYU-IUP8
+// R-WJZK-109X R-WL7G-ES0M
 func TestWebsiteSearchReasonsAndCases(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	for _, s := range []enrichers.Subject{
@@ -570,7 +570,7 @@ func TestWebsiteSearchReasonsAndCases(t *testing.T) {
 	}
 }
 
-// R-CTEN-AE6M R-CQYU-IUP8 R-CS6Q-WMFX R-B2CH-ZGLF
+// R-WJZK-109X R-WL7G-ES0M R-WNN9-6BI0 R-WOV5-K38P
 func TestWebsiteSearchRedirectCases(t *testing.T) {
 	const proposed = "https://acme-trucking.test/"
 	const prior = "https://www.social.test/acme"
@@ -654,7 +654,7 @@ func TestWebsiteSearchRedirectCases(t *testing.T) {
 	}
 }
 
-// R-B2CH-ZGLF
+// R-WOV5-K38P
 func TestWebsiteSearchConfirmationCaseValidation(t *testing.T) {
 	for _, tc := range []struct {
 		name, answer, landed, state, caseWord string
@@ -703,7 +703,7 @@ func TestWebsiteSearchConfirmationCaseValidation(t *testing.T) {
 	}
 }
 
-// R-B2CH-ZGLF
+// R-WOV5-K38P
 func TestWebsiteSearchContextValidation(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	killed := `"run":{"id":"r","status":"killed","cost_nanos":0}`

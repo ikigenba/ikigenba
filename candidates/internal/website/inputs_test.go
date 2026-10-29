@@ -13,7 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-6G1F-J3ZX R-LWDG-BRJU R-LXLC-PJAJ R-LTXN-K82G
+// R-W3JY-9HST R-LWDG-BRJU R-W5ZR-11A7 R-LTXN-K82G
 func TestOfferedInputsAndElements(t *testing.T) {
 	inputs := website.Inputs
 	urls := website.URLs
@@ -122,5 +122,33 @@ func TestOfferedAttemptsAndMisses(t *testing.T) {
 	got := k.Check(context.Background(), "https://shop.test/\nacme.test")
 	if got.StatusCode != 0 || got.Size != 0 || !strings.Contains(got.Error, "boom") || len(got.Misses) != 2 || got.Misses[0].Error != website.FailStatus || got.Misses[1].Error != got.Error {
 		t.Fatal(got)
+	}
+}
+
+// R-H7NN-NKHB R-W3JY-9HST R-W5ZR-11A7
+func TestOwnerInputsAndMultipleElements(t *testing.T) {
+	ownerInputs := website.OwnerInputs
+	for _, tc := range []struct{ owner, site, email, want string }{
+		{"", " https://www.acme.test/ ", "ops@acme.test", "https://www.acme.test/\nacme.test"},
+		{" http://owner-co.test/ ", "https://places.test/", "ops@acme.test", "http://owner-co.test/\nhttps://places.test/\nacme.test"},
+		{"http://owner-co.test/", "", "", "http://owner-co.test/"},
+		{"https://places.test/", " https://places.test/ ", "ops@acme.test", "https://places.test/\nacme.test"},
+		{"http://acme.test/", "https://acme.test/", "", "http://acme.test/\nhttps://acme.test/"},
+	} {
+		if got := ownerInputs(tc.owner, tc.site, tc.email); got != tc.want {
+			t.Fatal(got, tc.want)
+		}
+	}
+	for _, tc := range []struct {
+		in   string
+		want []string
+	}{
+		{"http://owner-co.test/\nhttps://places.test/\nacme.test", []string{"http://owner-co.test/", "https://places.test/", "acme.test"}},
+		{"http://owner-co.test/\nhttps://places.test/\n", []string{"http://owner-co.test/", "https://places.test/\n"}},
+		{"http://owner-co.test/\na\nb", []string{"http://owner-co.test/", "a\nb"}},
+	} {
+		if got := website.URLs(tc.in); !reflect.DeepEqual(got, tc.want) {
+			t.Fatal(got, tc.want)
+		}
 	}
 }

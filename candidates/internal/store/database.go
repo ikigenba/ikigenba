@@ -14,6 +14,7 @@ import (
 )
 
 type records struct {
+	owners     []OwnerRecord
 	candidates map[string]Candidate
 	links      map[string]Link
 	estimates  map[string][]sources.Estimate
@@ -95,7 +96,25 @@ func readQueryRecords[T any](ctx context.Context, tx *sql.Tx, cs []column, query
 		}
 		out = append(out, v)
 	}
-	return out, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	if err = rows.Close(); err != nil {
+		return nil, err
+	}
+	if len(out) > 0 {
+		if _, ok := any(&out[0]).(*Candidate); ok {
+			ctx = ownerReadContext(ctx)
+		}
+	}
+	for i := range out {
+		if c, ok := any(&out[i]).(*Candidate); ok {
+			if err = withCandidateEIN(ctx, tx, c); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return out, nil
 }
 
 type storedHeadcount struct {
@@ -200,7 +219,7 @@ func decodeValue(v reflect.Value, x any) error {
 			return fmt.Errorf("invalid string %T", x)
 		}
 		v.SetString(s)
-	case reflect.Int64:
+	case reflect.Int, reflect.Int64:
 		n, ok := x.(int64)
 		if !ok {
 			return fmt.Errorf("invalid integer %T", x)
@@ -267,7 +286,7 @@ func encodeValue(v reflect.Value) (any, error) {
 		return encodeValue(v.Elem())
 	}
 	switch v.Kind() {
-	case reflect.String, reflect.Int64, reflect.Float64, reflect.Bool:
+	case reflect.String, reflect.Int, reflect.Int64, reflect.Float64, reflect.Bool:
 		return v.Interface(), nil
 	default:
 		b, err := json.Marshal(v.Interface())

@@ -61,7 +61,7 @@ func TestForcedAttachComparesStoredReadingBytes(t *testing.T) {
 	contractEqual(t, links, []store.Link{want})
 }
 
-// R-WQL9-KXWP
+// R-F3YE-6IN3
 func TestForcedAttachReplacesHeldMatchKeys(t *testing.T) {
 	f := regNew(t)
 	o := keyedObservation("one", "old-ein", "A", "B")

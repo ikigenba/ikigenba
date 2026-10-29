@@ -27,7 +27,7 @@ func sourceAnswer(c store.Candidate) *tools.Sources {
 	return out
 }
 
-// R-FHME-1ZJM R-31E0-585L R-2MR7-JZ99
+// R-16TZ-CBME R-31E0-585L R-VZWR-ZFK5
 func TestCandidateSourcesAndMemberPeopleThroughMCP(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)

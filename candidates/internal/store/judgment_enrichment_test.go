@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-NI3Y-R689 R-5J4Y-DB63 R-NEG9-LV06 R-NFO5-ZMQV
+// R-0MW2-UEZT R-0GSK-XKAC R-0I0H-BC11 R-0J8D-P3RQ
 func TestJudgmentUsesNewestRecordedWebsiteResult(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -71,7 +71,7 @@ func TestJudgmentUsesNewestRecordedWebsiteResult(t *testing.T) {
 
 }
 
-// R-NEG9-LV06 R-5J4Y-DB63
+// R-0I0H-BC11 R-0GSK-XKAC
 func TestWebsiteEvidenceDeduplicatesWithRowEvidence(t *testing.T) {
 	for _, weight := range []float64{.4, .5, .7} {
 		f := contractDB(t)
@@ -94,7 +94,7 @@ func TestWebsiteEvidenceDeduplicatesWithRowEvidence(t *testing.T) {
 	}
 }
 
-// R-H5QH-WBC8 R-Z1VJ-IZ0R R-NKJR-IPPN
+// R-H5QH-WBC8 R-M2GU-CA8V R-0QJR-ZQ7W
 func TestMergeTransfersWebsiteResultsAndSplitLeavesThemOnOriginal(t *testing.T) {
 	for _, originalLatest := range []bool{false, true} {
 		t.Run(map[bool]string{false: "other_latest", true: "original_latest"}[originalLatest], func(t *testing.T) {
@@ -156,7 +156,7 @@ func TestMergeTransfersWebsiteResultsAndSplitLeavesThemOnOriginal(t *testing.T) 
 	}
 }
 
-// R-Z1VJ-IZ0R
+// R-M2GU-CA8V
 func TestOrdinaryStoreWritesPreserveWebsiteResults(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

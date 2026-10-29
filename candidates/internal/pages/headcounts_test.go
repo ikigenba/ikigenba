@@ -35,7 +35,7 @@ func TestHeadcountJudgmentViewShape(_ *testing.T) {
 	_ = struct{ Name, Source string }(CategoryRow{})
 }
 
-// R-EVO7-6474 R-EZBW-BFF7 R-HL85-RRIO
+// R-09WP-0ILN R-0DKE-5TTQ R-0S76-R2Q2
 func TestHeadcountViewProjections(t *testing.T) {
 	f := store.Facts{Headcounts: []sources.Headcount{{Scraper: ppp.Name, Kind: sources.HeadcountJobs, Count: 26, AsOf: time.Date(2020, 4, 28, 0, 0, 0, 0, time.UTC)}, {Scraper: fmcsa.Name, Kind: sources.HeadcountDrivers, Count: 1200}}, BriefLabels: []string{"chosen-label-one", "chosen-label-two"}}
 	v := factsView(f, "")
@@ -138,7 +138,7 @@ func TestHeadcountTemplateStates(t *testing.T) {
 	}
 }
 
-// R-EVO7-6474 R-EZBW-BFF7 R-HL85-RRIO R-VJ8X-RPW0
+// R-09WP-0ILN R-0DKE-5TTQ R-0S76-R2Q2 R-VJ8X-RPW0
 func TestHeadcountCandidateAndProspectListPages(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	high := int64(2500000)

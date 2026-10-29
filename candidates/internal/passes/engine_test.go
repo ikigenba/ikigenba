@@ -231,11 +231,11 @@ func (f *fixture) endedWithin(id string, budget time.Duration) store.Pass {
 			if p.Status == store.StatusRunning {
 				f.t.Fatal("ending event preceded stored ending")
 			}
-			// R-HCOV-3DBT: successful non-walk passes spend no walk work.
+			// R-128R-PYXF: successful non-walk passes spend no walk work.
 			if p.Status == store.StatusDone && p.Kind != store.KindWalk && (p.ParksWalked != 0 || p.Circles != 0 || p.Requests != 0 || p.Found != 0 || p.NewCandidates != 0) {
 				f.t.Fatal("non-walk pass carried walk counts", p)
 			}
-			// R-HCOV-3DBT R-JNM1-3RR1: cases belong only to successful search passes.
+			// R-128R-PYXF R-1BZY-S4UZ: cases belong only to successful search passes.
 			if (p.Status == store.StatusFailed || p.Kind != store.KindEnrichTarget || p.EnrichKind != "website_search") && (p.SearchDifferent != 0 || p.SearchStands != 0 || p.SearchNone != 0) {
 				f.t.Fatal("unexpected search counts", p)
 			}
@@ -275,7 +275,7 @@ func assertRefusal(t *testing.T, p store.Pass, err error, word string) {
 	}
 }
 
-// R-42U6-R09F R-2QQP-5KPE  R-SOKW-PW7E R-SS8L-V7FH
+// R-2MC5-BF1D R-2QQP-5KPE  R-SOKW-PW7E R-SS8L-V7FH
 func TestRecordContract(t *testing.T) {
 	t.Parallel()
 	const batch16 uint16 = passes.BatchSize
@@ -563,7 +563,7 @@ func TestFullIngestBackgroundIdentityAndEvents(t *testing.T) {
 	}
 }
 
-// R-HBGY-PLL4 R-HCOV-3DBT R-3QEZ-TBSF R-Z3M9-W116 R-WT12-CHE3
+// R-18C9-MTMW R-128R-PYXF R-4YYI-MBWJ R-Z3M9-W116 R-WT12-CHE3
 func TestIngestAndFullIngest(t *testing.T) {
 	t.Parallel()
 	var stateMu sync.Mutex
@@ -675,7 +675,7 @@ func TestIngestAndFullIngest(t *testing.T) {
 	}
 }
 
-// R-U2KS-EHLV R-3WIH-Q6HW R-384I-2RO0 R-JNM1-3RR1
+// R-U2KS-EHLV R-3WIH-Q6HW R-384I-2RO0 R-1BZY-S4UZ
 func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	t.Parallel()
 	released, firstBatch := make(chan struct{}), make(chan struct{})
@@ -778,7 +778,7 @@ func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	}
 }
 
-// R-384I-2RO0 R-3WIH-Q6HW R-JNM1-3RR1
+// R-384I-2RO0 R-3WIH-Q6HW R-1BZY-S4UZ
 func TestFailedReads(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"short", "500", "malformed", "not_done", "missing_current", "dead"} {
@@ -835,7 +835,7 @@ func TestFailedReads(t *testing.T) {
 	}
 }
 
-// R-373Q-6C3X R-XVEY-C1OE R-JNM1-3RR1 R-YOZH-AS4U
+// R-373Q-6C3X R-2TNJ-M1HJ R-1BZY-S4UZ R-YOZH-AS4U
 func TestDrainCancelsReadsAndPendingDelivery(t *testing.T) {
 	t.Parallel()
 	for _, which := range []string{"rows", "record"} {
@@ -899,7 +899,7 @@ func TestDrainCancelsReadsAndPendingDelivery(t *testing.T) {
 	}
 }
 
-// R-2PU0-C7JL R-ZC5K-KF81 R-XVEY-C1OE
+// R-2PU0-C7JL R-ZC5K-KF81 R-2TNJ-M1HJ
 func TestRecoverAndUnrecordableEnding(t *testing.T) {
 	f := newFixture(t, nil, false)
 	original, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "old_run", Delivery: "old_event", UserID: "old_user", RequestID: "old_request"})
@@ -1028,7 +1028,7 @@ func (r *failCandidateRandom) Read(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// R-JNM1-3RR1
+// R-1BZY-S4UZ
 func TestStoreFailureReason(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -1122,7 +1122,7 @@ func TestDeliveryOutlivesStartingContext(t *testing.T) {
 	}
 }
 
-// R-XVEY-C1OE
+// R-2TNJ-M1HJ
 func TestDrainDeadlineWhileEndingHeld(t *testing.T) {
 	entered := make(chan struct{})
 	f := newFixture(t, func(_ http.ResponseWriter, r *http.Request) { close(entered); <-r.Context().Done() }, true)

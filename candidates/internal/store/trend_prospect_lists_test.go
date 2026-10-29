@@ -13,7 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-AZ9G-DH4V R-LYM7-MTO1 R-HSJK-2DYU R-B0HC-R8VK R-OUXR-R9EF
+// R-AZ9G-DH4V R-LYM7-MTO1 R-6XO5-XRXE R-B0HC-R8VK R-OUXR-R9EF
 func TestProspectListTrendFilterMatrix(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -112,7 +112,7 @@ func TestProspectListTrendOrderChangesUnknownsAndTies(t *testing.T) {
 	contractEqual(t, store.ValidProspectListOrder([]store.ProspectListOrder{{Field: store.OrderTrend, Direction: store.DirectionAsc}, {Field: store.OrderTrend, Direction: store.DirectionDesc}}), false)
 }
 
-// R-OW5O-5154 R-ZPJT-SKZZ R-ZRZM-K4HD R-JSHM-MUPT R-ZT7I-XW82
+// R-OW5O-5154 R-ZPJT-SKZZ R-ZRZM-K4HD R-72JR-GUW6 R-ZT7I-XW82
 func TestProspectListTrendJSONNormalFormAndOpening(t *testing.T) {
 	for _, tc := range []struct {
 		f    store.ProspectListFilters
@@ -146,7 +146,7 @@ func TestProspectListTrendJSONNormalFormAndOpening(t *testing.T) {
 	contractEqual(t, k.Filters.Trend, []string(nil))
 }
 
-// R-LXEB-91XC R-HTRG-G5PJ
+// R-LXEB-91XC R-74ZK-8EDK
 func TestProspectListTrendDeparturePrecedence(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

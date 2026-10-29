@@ -13,7 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-5BN4-KSWD
+// R-M18X-YII6
 func TestContractReadsDuringQueuedWrites(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -31,6 +31,7 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 		call func() (any, error)
 	}{
 
+		{"OwnerRecords", func() (any, error) { return f.s.OwnerRecords(ctx, id) }},
 		{"ParkRules", func() (any, error) {
 			r, c, e := f.s.ParkRules(ctx)
 			return struct {

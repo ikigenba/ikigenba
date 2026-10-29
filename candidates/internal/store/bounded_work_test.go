@@ -88,7 +88,7 @@ func TestPagedWorkAllocationBound(t *testing.T) {
 	}
 }
 
-// R-KUDX-LYIQ R-EN4W-HQ09 R-LA8M-KZ5R R-F694-7WVG R-L7ST-TFOD R-PU7U-YTLV R-QM9J-RJNU R-QHDY-8GP2 R-2E9L-OZD5
+// R-KUDX-LYIQ R-1PEU-ZM0M R-LA8M-KZ5R R-F694-7WVG R-L7ST-TFOD R-PU7U-YTLV R-QM9J-RJNU R-QHDY-8GP2 R-FCHO-UWTY
 func TestWalksTouchOnlyTheirPages(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -269,7 +269,7 @@ func TestWalksTouchOnlyTheirPages(t *testing.T) {
 	}
 }
 
-// R-NMZK-A971 R-I9FS-Y6A3
+// R-0PBV-LYH7 R-I9FS-Y6A3
 func TestJudgeWalkUsesOneSuppliedTime(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

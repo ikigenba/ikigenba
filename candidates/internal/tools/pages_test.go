@@ -92,7 +92,7 @@ func TestPageSchemaAndJSON(t *testing.T) {
 	}
 }
 
-// R-P2B3-H65F R-M3JT-JKMP R-GADH-O9XX R-F05M-B25Z
+// R-P2B3-H65F R-M3JT-JKMP R-GADH-O9XX R-VSLD-OT3Z
 func TestAddPageRefusals(t *testing.T) {
 	var requests atomic.Int64
 	k := pageChecker(&requests)
@@ -149,7 +149,7 @@ func TestAddPageRefusals(t *testing.T) {
 	}
 }
 
-// R-XRLB-BILZ R-XNXM-67DW R-XP5I-JZ4L
+// R-XRLB-BILZ R-XNXM-67DW R-14E6-KS50
 func TestAddPageCopiesAndCandidateHistory(t *testing.T) {
 	var requests atomic.Int64
 	k := pageChecker(&requests)
@@ -295,7 +295,7 @@ func TestSiteTextProjection(t *testing.T) {
 	}
 }
 
-// R-XLHT-ENWI R-57N2-LEHE R-XRLB-BILZ R-XNXM-67DW R-XP5I-JZ4L R-XMPP-SFN7
+// R-XLHT-ENWI R-57N2-LEHE R-XRLB-BILZ R-XNXM-67DW R-14E6-KS50 R-VRDH-B1DA
 func TestAddUnreadablePageKeepsCopyAndLaterReplacesIt(t *testing.T) {
 	if tools.RefuseUnreadable == "" || strings.TrimSpace(tools.RefuseUnreadable) != tools.RefuseUnreadable || strings.ContainsAny(tools.RefuseUnreadable, "\r\n") {
 		t.Fatal("unreadable copy")

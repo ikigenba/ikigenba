@@ -87,7 +87,7 @@ func routeAnswer(r *http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header), Request: r}, nil
 }
 
-// R-2PIS-RSYP R-K51J-USRD R-YN8O-EHJU R-YUK2-P400 R-YWZV-GNHE R-YY7R-UF83 R-Z0NK-LYPH R-EOCS-VHQY
+// R-2PIS-RSYP R-K51J-USRD R-YN8O-EHJU R-YUK2-P400 R-YWZV-GNHE R-YY7R-UF83 R-Z0NK-LYPH R-13GO-3QO4
 func TestRouteTargetsResultsCountsAndRepeat(t *testing.T) {
 	t.Parallel()
 	if passes.RoutesInFlight != 4 || passes.NoRouteKey == "" || strings.Contains(passes.NoRouteKey, "\n") || passes.NoRouteKey == passes.NoPrompt {
@@ -364,7 +364,7 @@ func TestRouteRefusalsPreserveRecords(t *testing.T) {
 	}
 }
 
-// R-YZFO-86YS
+// R-PSSW-TGR8
 func TestOtherPassKindsNeverRoute(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) }, true)
 	f.eng.Drain(t.Context())

@@ -197,13 +197,24 @@ func secrecyAbsent(t *testing.T, where string, value any, markers []string) {
 	}
 }
 
-// R-YIHR-RMLV R-T25Y-6K82 R-QCLZ-KWWI R-MKD3-4CYX
+// R-YIHR-RMLV R-T25Y-6K82 R-QCLZ-KWWI R-MKD3-4CYX R-UMAW-9NPZ R-UIN7-4CHW
 func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	markers, phone := secrecyMarkers(t)
 	forbidden := append(append([]string{}, markers...), phone)
+	eins := []string{"812345671", "823456782", "834567893", "845678904", "856789015"}
+	for _, ein := range eins {
+		if strings.Contains(phone, ein) {
+			t.Fatal("overlapping EIN fixture")
+		}
+	}
+	forbidden = append(forbidden, eins...)
+	ownerArgs := func() map[string]any {
+		return map[string]any{"name": markers[0], "note": strings.Join(append(append([]string{}, markers...), phone), " "), "address": map[string]any{"street": markers[3], "city": markers[4], "state": "MN", "zip": "55072"}, "phone": phone, "email": markers[7] + "@" + markers[8] + ".example", "website": "https://" + markers[8] + ".example/", "people": []map[string]any{{"name": markers[5], "role": markers[6]}}, "ein": eins[0], "headcount": map[string]any{"count": 823456782, "year": 2024}, "revenue": map[string]any{"low": 834567893, "high": 845678904}, "fleet": 856789015}
+	}
+
 	row := map[string]any{"scraper": "fmcsa", "run": "run_fixture", "source_id": "101", "scraped": "2026-01-01T00:00:00Z", "digest": "fixture-digest", "name": markers[0], "names": []string{markers[1], markers[2]}, "address": map[string]any{"street": markers[3], "city": markers[4], "state": "MN", "zip": "55072", "county": "115"}, "people": []map[string]string{{"name": markers[5], "role": markers[6]}}, "facts": map[string]any{"phone": phone, "email": markers[7] + "@" + markers[8] + ".example", "power_units": 3, "drivers": 4, "class": []string{"Authorized For Hire"}, "cargo": []string{"General Freight"}, "mcs150_date": "2025-01-01"}, "raw": map[string]any{"private": markers[9]}}
-	f := &secrecyFake{rows: []map[string]any{row}, echo: strings.Join(forbidden, " ")}
+	f := &secrecyFake{rows: []map[string]any{row}, echo: strings.Join(append(append([]string{}, markers...), phone), " ")}
 	socketDir, err := os.MkdirTemp("", "cand-")
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +247,7 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	promptSibling := &http.Server{Handler: &webPromptFake{echo: strings.Join(forbidden, " ")}, ReadHeaderTimeout: 5 * time.Second}
+	promptSibling := &http.Server{Handler: &webPromptFake{echo: strings.Join(append(append([]string{}, markers...), phone), " ")}, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = promptSibling.Serve(promptListener) }()
 	defer func() { _ = promptSibling.Close() }()
 	checker := &website.Checker{Client: &http.Client{Transport: webTransport(func(r *http.Request) (*http.Response, error) {
@@ -378,6 +389,37 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	wait(text(baselinePrompt, "id"), "")
 	parkState := beginHandlerParkSecrecy(t, parkFake, markers, call, wait)
 	args["parks"], args["park"], args["park_rules"], args["edit_park_rules"] = map[string]any{}, map[string]any{"park": parkState.parkID}, map[string]any{}, map[string]any{"county": "LabelCounty", "labels": []string{markers[9]}}
+
+	addOwner := ownerArgs()
+	addOwner["phone"] = "8776655443"
+	forbidden = append(forbidden, "8776655443")
+	addOwner["note"] = addOwner["note"].(string) + " 8776655443"
+	addOwner["name"] = "owner business " + markers[2]
+	addOwner["email"] = markers[7] + "@" + markers[8] + "owner.example"
+	addOwner["website"] = "https://" + markers[8] + "owner.example/"
+	createdOwner := call("add_business", addOwner, false)
+	var createdRecord map[string]json.RawMessage
+	if err = json.Unmarshal(createdOwner["record"], &createdRecord); err != nil {
+		t.Fatal(err)
+	}
+	ownerID := text(createdRecord, "candidate")
+	if string(createdRecord["founded"]) != "true" || ownerID == id {
+		t.Fatal("owner fixture did not found a distinct candidate")
+	}
+	var baselineOwner tools.OwnerRecord
+	if err = json.Unmarshal(createdOwner["record"], &baselineOwner); err != nil || baselineOwner.Note != addOwner["note"] || baselineOwner.Set.EIN == nil || *baselineOwner.Set.EIN != eins[0] {
+		t.Fatal("owner fixture record mismatch", err)
+	}
+	setOwner := ownerArgs()
+	setOwner["candidate"] = id
+	call("set_facts", setOwner, false)
+	args["add_business"], args["set_facts"] = ownerArgs(), setOwner
+	for _, oid := range []string{id, ownerID} {
+		call("candidate", map[string]any{"candidate": oid}, false)
+		if response := request(handler, "GET", "/candidates/"+oid, "", "reader"); response.Code != 200 {
+			t.Fatal(response.Code)
+		}
+	}
 	// Hold before the first row, then stream a complete batch and keep the response
 	// open: the sibling's cancellation proves the failed Attach rejected that batch.
 	hold, arrived, written, canceled := make(chan struct{}), make(chan struct{}, 1), make(chan struct{}), make(chan struct{})
@@ -421,6 +463,22 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 			call(entry.Name, args[entry.Name], true)
 		}
 	}
+
+	failedSet := ownerArgs()
+	failedSet["candidate"] = ownerID
+	call("set_facts", failedSet, true)
+	for _, bad := range []map[string]any{{"note": " "}, {"category": markers[0]}, {"phone": markers[0]}, {"website": markers[0]}, {"email": markers[0]}, {"ein": eins[0] + "0"}, {"people": []map[string]any{{"name": " ", "role": markers[6]}}}, {"address": map[string]any{"street": markers[3], "state": markers[4]}}, {"revenue": map[string]any{"low": 845678904, "high": 834567893}}, {"headcount": map[string]any{"count": 823456782, "year": 0}}} {
+		a := ownerArgs()
+		for k, v := range bad {
+			a[k] = v
+		}
+		call("add_business", a, true)
+	}
+	for _, oid := range []string{id, ownerID} {
+		call("candidate", map[string]any{"candidate": oid}, true)
+		response := request(handler, "GET", "/candidates/"+oid, "", "reader")
+		secrecyAbsent(t, "failing owner page", response.Body.Bytes(), forbidden)
+	}
 	call("candidates", map[string]any{"name": markers[0]}, true)
 	call("candidates", map[string]any{"phone": phone}, true)
 	for _, path := range []string{"/", "/prospect-lists/" + prospectListID, "/candidates/" + id, "/passes/" + passID, fmt.Sprintf("/candidates/%s/pages/%d", id, kept.Number), "/tools", "/about", "/absent", "/parks", "/parks/" + parkState.parkID} {
@@ -451,7 +509,15 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	writer.Shutdown(context.Background(), "fixture-stop")
 	trailPasses, busPasses, activeRequests, activeReads := map[string]int{}, map[string]int{}, map[string]int{}, map[string]int{}
 	stamp := now().UTC().Truncate(time.Microsecond)
+	ownerEvents := 0
 	for _, e := range tc.Events() {
+		if e.Name == tools.EventOwnerRecordWritten {
+			ownerEvents++
+			if e.RequestID == "failing-tool-request" {
+				t.Fatal("failed owner write emitted event")
+			}
+		}
+
 		secrecyAbsent(t, "failing trail event", e, forbidden)
 		if !e.Time.Equal(stamp) {
 			t.Fatal("handler trail clock mismatch")
@@ -470,6 +536,9 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 				activeReads[path]++
 			}
 		}
+	}
+	if ownerEvents != 2 {
+		t.Fatal("owner events", ownerEvents)
 	}
 	for _, e := range ec.Events() {
 		secrecyAbsent(t, "failing bus event", e, forbidden)

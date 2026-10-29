@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-FMHZ-L2IE R-ZVNB-PFPG
+// R-6WG9-K06P R-ZVNB-PFPG
 func TestRankedBasisIncludesMergedHistoryAndWholeSecondStamps(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -52,7 +52,7 @@ func TestRankedBasisIncludesMergedHistoryAndWholeSecondStamps(t *testing.T) {
 	check(store.BasisEnriched)
 }
 
-// R-FMHZ-L2IE
+// R-6WG9-K06P
 func TestRankedMissingFactsUsesCompleteUnknownValue(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -69,7 +69,7 @@ func TestRankedMissingFactsUsesCompleteUnknownValue(t *testing.T) {
 	r := prospectListRead(t, f, k)
 	contractEqual(t, len(r.Members), 1)
 	contractEqual(t, r.Members[0].Facts, store.Facts{
-		Candidate: id, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown,
+		OtherKnownSince: []sources.Sourced[time.Time]{}, OtherPowerUnits: []sources.Sourced[int64]{}, Candidate: id, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown,
 		Categories: []sources.Category{}, Records: []sources.Category{}, Headcounts: []sources.Headcount{}, BriefLabels: []string{},
 	})
 }

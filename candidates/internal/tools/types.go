@@ -382,36 +382,44 @@ type Figure struct {
 
 // Facts contains the newest recorded facts and their provenance.
 type Facts struct {
-	KnownSince         string      `json:"known_since,omitempty"`
-	KnownSinceSource   string      `json:"known_since_source,omitempty"`
-	NewestFiling       string      `json:"newest_filing,omitempty"`
-	NewestFilingSource string      `json:"newest_filing_source,omitempty"`
-	Categories         []Category  `json:"categories"`
-	ClassifiedBy       string      `json:"classified_by"`
-	RecordsDiffer      bool        `json:"records_differ"`
-	RecordCategories   []Category  `json:"record_categories"`
-	GovernmentMatch    string      `json:"government_match,omitempty"`
-	FleetVerdict       string      `json:"fleet_verdict"`
-	PowerUnits         *int64      `json:"power_units,omitempty"`
-	Drivers            *int64      `json:"drivers,omitempty"`
-	Website            string      `json:"website"`
-	WebsiteURL         string      `json:"website_url,omitempty"`
-	WebsiteSource      string      `json:"website_source"`
-	WebsiteCheckedURL  string      `json:"website_checked_url,omitempty"`
-	Minutes            *int64      `json:"minutes,omitempty"`
-	MinutesSource      string      `json:"minutes_source"`
-	Miles              *float64    `json:"miles,omitempty"`
-	RouteAddress       string      `json:"route_address,omitempty"`
-	PlaceURL           string      `json:"place_url,omitempty"`
-	DirectionsURL      string      `json:"directions_url,omitempty"`
-	Written            []Written   `json:"written"`
-	Headcounts         []Headcount `json:"headcounts"`
-	BriefLabels        []string    `json:"brief_labels"`
+	KnownSince         string         `json:"known_since,omitempty"`
+	KnownSinceSource   string         `json:"known_since_source,omitempty"`
+	NewestFiling       string         `json:"newest_filing,omitempty"`
+	NewestFilingSource string         `json:"newest_filing_source,omitempty"`
+	Categories         []Category     `json:"categories"`
+	ClassifiedBy       string         `json:"classified_by"`
+	RecordsDiffer      bool           `json:"records_differ"`
+	RecordCategories   []Category     `json:"record_categories"`
+	GovernmentMatch    string         `json:"government_match,omitempty"`
+	FleetVerdict       string         `json:"fleet_verdict"`
+	PowerUnits         *int64         `json:"power_units,omitempty"`
+	Drivers            *int64         `json:"drivers,omitempty"`
+	Website            string         `json:"website"`
+	WebsiteURL         string         `json:"website_url,omitempty"`
+	WebsiteSource      string         `json:"website_source"`
+	WebsiteCheckedURL  string         `json:"website_checked_url,omitempty"`
+	Minutes            *int64         `json:"minutes,omitempty"`
+	MinutesSource      string         `json:"minutes_source"`
+	Miles              *float64       `json:"miles,omitempty"`
+	RouteAddress       string         `json:"route_address,omitempty"`
+	PlaceURL           string         `json:"place_url,omitempty"`
+	DirectionsURL      string         `json:"directions_url,omitempty"`
+	Written            []Written      `json:"written"`
+	Headcounts         []Headcount    `json:"headcounts"`
+	BriefLabels        []string       `json:"brief_labels"`
+	OtherKnownSince    []Sourced      `json:"other_known_since"`
+	OtherPowerUnits    []SourcedCount `json:"other_power_units"`
 }
 
 // MarshalJSON encodes empty slices as arrays.
 func (v Facts) MarshalJSON() ([]byte, error) {
 	type plain Facts
+	if v.OtherKnownSince == nil {
+		v.OtherKnownSince = []Sourced{}
+	}
+	if v.OtherPowerUnits == nil {
+		v.OtherPowerUnits = []SourcedCount{}
+	}
 	if v.Headcounts == nil {
 		v.Headcounts = []Headcount{}
 	}
@@ -568,23 +576,33 @@ func (v Ruling) MarshalJSON() ([]byte, error) {
 
 // Detail is a tool answer value.
 type Detail struct {
-	Candidate         Candidate          `json:"candidate"`
-	Sources           *Sources           `json:"sources,omitempty"`
-	Park              *ParkRef           `json:"park,omitempty"`
-	Enrichments       *Enrichments       `json:"enrichments,omitempty"`
-	Judgments         *Judgments         `json:"judgments,omitempty"`
-	Estimates         []Estimate         `json:"estimates"`
-	Links             []Link             `json:"links"`
-	Rulings           []Ruling           `json:"rulings"`
-	Pages             []Page             `json:"pages"`
-	EnrichmentResults []EnrichmentResult `json:"enrichment_results"`
-	Rejects           []Reject           `json:"rejects"`
-	Campaigns         []CampaignUse      `json:"campaigns"`
+	Candidate         Candidate             `json:"candidate"`
+	Sources           *Sources              `json:"sources,omitempty"`
+	Park              *ParkRef              `json:"park,omitempty"`
+	Enrichments       *Enrichments          `json:"enrichments,omitempty"`
+	Judgments         *Judgments            `json:"judgments,omitempty"`
+	Estimates         []Estimate            `json:"estimates"`
+	Links             []Link                `json:"links"`
+	Rulings           []Ruling              `json:"rulings"`
+	Pages             []Page                `json:"pages"`
+	EnrichmentResults []EnrichmentResult    `json:"enrichment_results"`
+	Rejects           []Reject              `json:"rejects"`
+	Campaigns         []CampaignUse         `json:"campaigns"`
+	EIN               *Sourced              `json:"ein,omitempty"`
+	Founded           *OwnerRecord          `json:"founded,omitempty"`
+	OwnerSet          map[string]OwnerSetBy `json:"owner_set"`
+	OwnerRecords      []OwnerRecord         `json:"owner_records"`
 }
 
 // MarshalJSON encodes empty collections as arrays or objects.
 func (v Detail) MarshalJSON() ([]byte, error) {
 	type plain Detail
+	if v.OwnerSet == nil {
+		v.OwnerSet = map[string]OwnerSetBy{}
+	}
+	if v.OwnerRecords == nil {
+		v.OwnerRecords = []OwnerRecord{}
+	}
 	if v.Campaigns == nil {
 		v.Campaigns = []CampaignUse{}
 	}

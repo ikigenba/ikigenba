@@ -35,7 +35,7 @@ func assertKeyAttach(t *testing.T, f *regFixture, o store.Observation, id, reaso
 	t.Fatal("attached link missing")
 }
 
-// R-ILGO-Z84K R-IMOL-CZV9 R-INWH-QRLY R-106L-DY5P
+// R-EZ2S-NFOB R-F0AP-17F0 R-F1IL-EZ5P R-F6E6-Y24H
 func TestLinkKeysOrderPlaceGoneAndReopen(t *testing.T) {
 	for _, reopen := range []bool{false, true} {
 		t.Run(map[bool]string{false: "live", true: "reopen"}[reopen], func(t *testing.T) {
@@ -72,7 +72,7 @@ func TestLinkKeysOrderPlaceGoneAndReopen(t *testing.T) {
 	}
 }
 
-// R-IP4E-4JCN
+// R-F2QH-SQWE
 func TestLinkKeysLegacyFallbackAndReplacement(t *testing.T) {
 	for _, force := range []bool{false, true} {
 		t.Run(map[bool]string{false: "digest", true: "forced"}[force], func(t *testing.T) {
@@ -103,7 +103,7 @@ func TestLinkKeysLegacyFallbackAndReplacement(t *testing.T) {
 	}
 }
 
-// R-0YYP-06F0 R-RGR7-9XKL R-ILGO-Z84K R-IMOL-CZV9
+// R-F56A-KADS R-F7M3-BTV6 R-EZ2S-NFOB R-F0AP-17F0
 func TestLinkKeysMoveWithRulingsAndNotSameDoesNotVeto(t *testing.T) {
 	f := regNew(t)
 	a := keyedObservation("a", "111111111", "A", "ALIAS")
@@ -130,7 +130,7 @@ func TestLinkKeysMoveWithRulingsAndNotSameDoesNotVeto(t *testing.T) {
 	assertKeyAttach(t, f, keyedObservation("merged-name", "", "ALIAS"), ids[0], store.LinkMatchKey, .8)
 }
 
-// R-IHSZ-TWWH R-IMOL-CZV9
+// R-IHSZ-TWWH R-F0AP-17F0
 func TestLinkKeysIncomingOrderAndHeldPrimary(t *testing.T) {
 	f := regNew(t)
 	held := keyedObservation("held", "", "ALIAS")

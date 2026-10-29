@@ -30,11 +30,11 @@ type decisionValue struct {
 }
 
 func decision(es []store.Enrichment) decisionValue {
-	a, b, c, d, e, _, f := store.WebsiteDecisionOf(es, "")
+	a, b, c, d, e, _, f := store.WebsiteDecisionOf(es, "", "")
 	return decisionValue{a, b, c, d, e, f}
 }
 
-// R-QJ7S-Y7FR
+// R-LXL8-T7A3
 func TestWebsiteDecisionTakeoversAndInertSearches(t *testing.T) {
 	stamp := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	check := websiteResult("candidate", sources.WebsiteHTTPS)
@@ -164,7 +164,7 @@ func TestWebsiteDecisionTakeoversAndInertSearches(t *testing.T) {
 	}
 }
 
-// R-D1TM-II5M R-E8I3-WH3X R-ELX0-3Y9K
+// R-SQMN-OZ0R R-4LXP-TXPQ R-T1LR-4WP0
 func TestWebsiteTakeoverProjectionPersistsAndSurvivesInertSearch(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -212,7 +212,7 @@ func TestWebsiteTakeoverProjectionPersistsAndSurvivesInertSearch(t *testing.T) {
 	contractEqual(t, factsAt(ctx, t, f.s, id).WebsiteSource, store.WebsiteByCheck)
 }
 
-// R-QJ7S-Y7FR R-D1TM-II5M R-E8I3-WH3X R-ELX0-3Y9K
+// R-LXL8-T7A3 R-SQMN-OZ0R R-4LXP-TXPQ R-T1LR-4WP0
 func TestWebsiteProjectionMatchesSiteKeysAndSearchProvenance(t *testing.T) {
 	for _, scenario := range []string{"alias", "query", "chain", "chain stands", "chain none", "search origin alone", "check origin alone"} {
 		for _, checkAt := range []int{0, 1, 2} {
@@ -303,7 +303,7 @@ func TestWebsiteProjectionMatchesSiteKeysAndSearchProvenance(t *testing.T) {
 	}
 }
 
-// R-QJ7S-Y7FR R-D1TM-II5M R-E8I3-WH3X
+// R-LXL8-T7A3 R-SQMN-OZ0R R-4LXP-TXPQ
 func TestWebsiteProjectionUsesHistoricalConfirmationLanding(t *testing.T) {
 	for _, tc := range []struct {
 		name, recordedCase, answer, landing, source, url string
@@ -374,7 +374,7 @@ func TestWebsiteProjectionUsesHistoricalConfirmationLanding(t *testing.T) {
 	}
 }
 
-// R-QJ7S-Y7FR R-E8I3-WH3X
+// R-LXL8-T7A3 R-4LXP-TXPQ
 func TestWebsiteProjectionWithAbsentConfirmationURL(t *testing.T) {
 	for _, confirmation := range []string{`{"state":"https"}`, `{"state":"https","url":null}`, `{"state":"https","url":""}`} {
 		t.Run(confirmation, func(t *testing.T) {
@@ -404,7 +404,7 @@ func TestWebsiteProjectionWithAbsentConfirmationURL(t *testing.T) {
 	}
 }
 
-// R-EDDP-FK2P
+// R-4IA0-OMHN
 func TestSubjectUsesMatchingSiteTextAndNewestSearchInputs(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

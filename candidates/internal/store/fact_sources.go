@@ -24,7 +24,7 @@ func sourceRecords(ls []Link) []sources.Record {
 	return out
 }
 func recordAddress(r *records, id string) sources.Sourced[sources.Address] {
-	return sources.Pick(sources.Orders(), sourceRecords(linksFor(r, id)), nil).Address
+	return sources.Pick(sources.Orders(), sourceRecords(linksFor(r, id)), ownerGiven(r.owners)).Address
 }
 func (s *Store) routeInputs(ctx context.Context, tx *sql.Tx, id string) (string, error) {
 	c, err := candidateKey(ctx, tx, id)
@@ -67,11 +67,12 @@ func (s *Store) standingRoute(ctx context.Context, tx *sql.Tx, id string, a sour
 func (s *Store) refreshRecords(ctx context.Context, tx *sql.Tx, r *records, id string, t time.Time) error {
 	c := r.candidates[id]
 	ls := linksFor(r, id)
-	if c.Status != StatusActive || len(ls) == 0 {
+	if c.Status != StatusActive || len(ls) == 0 && len(r.owners) == 0 {
 		return nil
 	}
 	rs := sourceRecords(ls)
-	p := sources.Pick(sources.Orders(), rs, nil)
+	given := ownerGiven(r.owners)
+	p := sources.Pick(sources.Orders(), rs, given)
 	e, g, err := s.standingRoute(ctx, tx, id, p.Address)
 	if err != nil {
 		return err
@@ -84,7 +85,7 @@ func (s *Store) refreshRecords(ctx context.Context, tx *sql.Tx, r *records, id s
 			if state == p.Address.Value.State && zip == p.Address.Value.Zip {
 				county = p.Address.Value.County
 			}
-			p = sources.Pick(sources.Orders(), rs, []sources.Record{{Source: sources.Route, SourceID: e.Inputs, Seen: e.At, Reading: sources.Reading{Street: street, City: city, State: state, Zip: zip, County: county}}})
+			p = sources.Pick(sources.Orders(), rs, append(given, sources.Record{Source: sources.Route, SourceID: e.Inputs, Seen: e.At, Reading: sources.Reading{Street: street, City: city, State: state, Zip: zip, County: county}}))
 		}
 	}
 	old := c

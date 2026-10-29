@@ -240,7 +240,7 @@ func TestPageReasonsPreviousWriter(t *testing.T) {
 	contractEqual(t, pending, []store.Page{})
 }
 
-// R-ZP7M-ICO4 R-ZQFI-W4ET R-2ZZI-ZG6K
+// R-ZP7M-ICO4 R-ZQFI-W4ET R-WHJR-9GSJ
 func TestUnreadablePageStorageAndSubject(t *testing.T) {
 	f := contractDB(t)
 	ctx := t.Context()

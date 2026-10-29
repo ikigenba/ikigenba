@@ -89,15 +89,17 @@ func TestFreshness(t *testing.T) {
 
 }
 
-// R-PUBH-UCS3
+// R-0BWZ-EHBK
 func TestWeight(t *testing.T) {
 	filed := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {
 		filed, now time.Time
 		want       float64
 	}{{filed, filed.AddDate(1, 0, 0), .6}, {filed, time.Date(2023, 7, 3, 0, 0, 0, 0, time.UTC), .3}, {filed, filed.AddDate(5, 0, 0), 0}, {time.Time{}, filed, 0}} {
-		if got := judging.Weight(sources.Evidence{Name: sources.EvidenceFMCSAActive, Weight: .6}, tc.filed, tc.now); got != tc.want {
-			t.Fatal(got)
+		for _, name := range []string{sources.EvidenceFMCSAActive, sources.EvidenceOwnerRecord} {
+			if got := judging.Weight(sources.Evidence{Name: name, Weight: .6}, tc.filed, tc.now); got != tc.want {
+				t.Fatal(name, got)
+			}
 		}
 		for _, name := range []string{sources.EvidenceOwnDomain, sources.EvidenceFMCSAActivity, sources.EvidencePPPLoan, "future"} {
 			if got := judging.Weight(sources.Evidence{Name: name, Weight: .2}, tc.filed, tc.now); got != .2 {

@@ -38,7 +38,7 @@ func withProvenance(c store.Candidate, obs ...store.Observation) store.Candidate
 	return c
 }
 
-// R-2BTS-XFVR R-HTD3-0YUG R-HUKZ-EQL5 R-DCSP-YFTV R-2GVW-PRK8
+// R-F8TZ-PLLV R-4H24-AUQY R-4JHX-2E8C R-KRB2-I81N R-U50K-RZSN
 func TestRecordChosenAddressAndRoutedDisplay(t *testing.T) {
 	ctx := context.Background()
 	f := contractDB(t)
@@ -175,7 +175,7 @@ func TestRecordChosenAddressAndRoutedDisplay(t *testing.T) {
 	contractEqual(t, get().AddressSource, "fmcsa")
 }
 
-// R-BFUH-DS25 R-D0LQ-4QEX R-RYYW-L4WX R-D6P8-1L4E R-CZDT-QYO8 R-DCSP-YFTV R-QZ2H-X82S R-QGS0-6NYD
+// R-BFUH-DS25 R-D0LQ-4QEX R-RYYW-L4WX R-SRUK-2QRG R-CZDT-QYO8 R-KRB2-I81N R-QZ2H-X82S R-QGS0-6NYD
 func TestPlacesURLCurrentRecordAndSubjectChecks(t *testing.T) {
 	var _ interface {
 		PlacesURL(context.Context, string) (string, error)
@@ -302,7 +302,7 @@ func TestPlacesURLCurrentRecordAndSubjectChecks(t *testing.T) {
 	}
 }
 
-// R-QJ7S-Y7FR
+// R-LXL8-T7A3
 func TestWebsiteDecisionPlacesAndCheckedURL(t *testing.T) {
 	p := "https://acme.test/"
 	at := time.Date(2031, 1, 2, 3, 4, 5, 0, time.UTC)
@@ -320,7 +320,7 @@ func TestWebsiteDecisionPlacesAndCheckedURL(t *testing.T) {
 	} {
 		raw, e := json.Marshal(tc.w)
 		contractOK(t, e)
-		src, state, u, title, why, checked, tm := store.WebsiteDecisionOf([]store.Enrichment{{Kind: sources.WebsiteCheck, Inputs: tc.in, Found: raw, At: at}}, p)
+		src, state, u, title, why, checked, tm := store.WebsiteDecisionOf([]store.Enrichment{{Kind: sources.WebsiteCheck, Inputs: tc.in, Found: raw, At: at}}, p, "")
 		contractEqual(t, src, tc.source)
 		contractEqual(t, checked, tc.checked)
 		contractEqual(t, title, tc.w.Title)
@@ -334,14 +334,14 @@ func TestWebsiteDecisionPlacesAndCheckedURL(t *testing.T) {
 			contractEqual(t, u, tc.w.URL)
 		}
 	}
-	src, state, u, title, why, checked, tm := store.WebsiteDecisionOf(nil, p)
+	src, state, u, title, why, checked, tm := store.WebsiteDecisionOf(nil, p, "")
 	contractEqual(t, src, store.WebsiteByPlaces)
 	contractEqual(t, state, sources.WebsiteUnknown)
 	contractEqual(t, []string{u, title, why, checked}, []string{"", "", "", ""})
 	contractEqual(t, tm, time.Time{})
 }
 
-// R-QEC7-F4GZ
+// R-SLR2-5W1Z
 func TestCandidateFactSourcesDeclaration(t *testing.T) {
 	c := store.Candidate{}
 	contractEqual(t, store.Candidate(struct {
@@ -356,6 +356,7 @@ func TestCandidateFactSourcesDeclaration(t *testing.T) {
 		OtherNames                                                                                               []sources.Sourced[string]
 		OtherAddresses                                                                                           []sources.Sourced[sources.Address]
 		OtherPhones, OtherEmails                                                                                 []sources.Sourced[string]
+		EIN, EINSource, EINRecord                                                                                string
 	}(c)), c)
 }
 
@@ -415,7 +416,7 @@ func TestPlacesURLUsesLinksOrderAndCandidateReturnSlices(t *testing.T) {
 	}
 }
 
-// R-HSJK-2DYU R-D1TM-II5M R-QGS0-6NYD
+// R-6XO5-XRXE R-SQMN-OZ0R R-QGS0-6NYD
 func TestPlacesUnknownListAndFactsProvenance(t *testing.T) {
 	type protocol string
 	var placesSource protocol = store.WebsiteByPlaces

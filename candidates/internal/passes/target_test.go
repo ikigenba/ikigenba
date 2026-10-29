@@ -231,7 +231,7 @@ func TestTargetRefusals(t *testing.T) {
 	}
 }
 
-// R-MTSF-SRSA R-08ON-9XFA R-YM0S-0PT5 R-OYM3-WBI1 R-NR5V-E0H2 R-PSBU-C8YQ R-2EQ7-R8VQ R-F1RS-E0WZ R-JOTX-HJHQ
+// R-MTSF-SRSA R-08ON-9XFA R-YM0S-0PT5 R-OYM3-WBI1 R-1I3G-OZKG R-110V-C76Q R-2EQ7-R8VQ R-PRL0-FP0J R-1D7V-5WLO
 func TestPromptPassResultsAndForce(t *testing.T) {
 	t.Parallel()
 	for _, status := range []string{"exited", "failed", "killed", "timed_out"} {
@@ -341,7 +341,7 @@ func TestPromptPassResultsAndForce(t *testing.T) {
 	}
 }
 
-// R-SXAC-NH9A R-PR3X-YH81 R-JNM1-3RR1 R-LPZW-FRZE R-YG1Z-034H
+// R-SXAC-NH9A R-1JBD-2RB5 R-1BZY-S4UZ R-1EFR-JOCD R-YG1Z-034H
 func TestPromptRetriesAndFailures(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"retry", "exhausted", "result", "invalid", "show_retry"} {
@@ -417,7 +417,7 @@ func promptAfter(time.Duration) <-chan time.Time {
 	return ch
 }
 
-// R-PD8W-HKED R-YOGK-S9AJ R-08ON-9XFA R-F1RS-E0WZ
+// R-PD8W-HKED R-YOGK-S9AJ R-08ON-9XFA R-PRL0-FP0J
 func TestTargetedDerivedAndWebsite(t *testing.T) {
 	for _, kind := range []string{enrichers.KindLinkFacts, sources.WebsiteCheck} {
 		t.Run(kind, func(t *testing.T) {
@@ -481,7 +481,7 @@ func TestTargetedDerivedAndWebsite(t *testing.T) {
 	}
 }
 
-// R-YQWD-JSRX R-LPZW-FRZE R-373Q-6C3X R-DTXE-DYY4 R-MTSF-SRSA
+// R-YQWD-JSRX R-1EFR-JOCD R-373Q-6C3X R-DTXE-DYY4 R-MTSF-SRSA
 func TestPromptConcurrencyAndDrain(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -581,7 +581,7 @@ func TestFullIngestRequestSequence(t *testing.T) {
 	}
 }
 
-// R-NR5V-E0H2 R-PSBU-C8YQ: distinct URLs are result data; page copies are pass cost.
+// R-1I3G-OZKG R-110V-C76Q: distinct URLs are result data; page copies are pass cost.
 func TestPromptCountsPagesAndOutcome(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -631,7 +631,7 @@ func TestPromptCountsPagesAndOutcome(t *testing.T) {
 	}
 }
 
-// R-RS9W-WPPP: the default poll reaches a completed run within sixty seconds.
+// R-1KJ9-GJ1U: the default poll reaches a completed run within sixty seconds.
 func TestPromptDefaultPoll(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := seedTarget(t, f, 1)[0]
@@ -647,7 +647,7 @@ func TestPromptDefaultPoll(t *testing.T) {
 	}
 }
 
-// R-08ON-9XFA R-PD8W-HKED R-YOGK-S9AJ R-OYM3-WBI1 R-F1RS-E0WZ
+// R-08ON-9XFA R-PD8W-HKED R-YOGK-S9AJ R-OYM3-WBI1 R-PRL0-FP0J
 func TestProspectListSelectionSkipsNoWebsiteAndPreservesOutside(t *testing.T) {
 	f := newFixture(t, nil, false)
 	ids := seedTarget(t, f, 4)
@@ -708,7 +708,7 @@ func TestProspectListSelectionSkipsNoWebsiteAndPreservesOutside(t *testing.T) {
 	}
 }
 
-// R-PR3X-YH81 R-LPZW-FRZE: one failed result cancels other held polls without waiting.
+// R-1JBD-2RB5 R-1EFR-JOCD: one failed result cancels other held polls without waiting.
 func TestPromptFailureCancelsOtherRunsAndKeepsPriorResult(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -771,8 +771,12 @@ func TestPromptFailureCancelsOtherRunsAndKeepsPriorResult(t *testing.T) {
 		<-started
 	}
 	// Release every initial poll once: all four outcomes remain running.
-	for range passes.RunsInFlight {
-		(<-polls) <- time.Time{}
+	initial := make([]chan time.Time, passes.RunsInFlight)
+	for i := range initial {
+		initial[i] = <-polls
+	}
+	for _, poll := range initial {
+		poll <- time.Time{}
 	}
 	// Each old run now has a second poll; finish one, admitting the fifth.
 	second := <-polls
@@ -877,7 +881,7 @@ func TestConcurrentTargetStarts(t *testing.T) {
 	f.eng.Drain(context.Background())
 }
 
-// R-PSBU-C8YQ R-HBGY-PLL4 R-NR5V-E0H2 R-YM0S-0PT5 R-2EQ7-R8VQ R-F1RS-E0WZ
+// R-110V-C76Q R-18C9-MTMW R-1I3G-OZKG R-YM0S-0PT5 R-2EQ7-R8VQ R-PRL0-FP0J
 func TestBriefTargetLifecycleAndCounts(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -1004,7 +1008,7 @@ func TestBriefTargetLifecycleAndCounts(t *testing.T) {
 	}
 }
 
-// R-LPZW-FRZE R-JNM1-3RR1
+// R-1EFR-JOCD R-1BZY-S4UZ
 func TestPromptAdditionalFailuresPreserveEvidence(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"result_refused", "empty_status", "socket_loss", "run_error"} {

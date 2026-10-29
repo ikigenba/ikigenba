@@ -13,7 +13,22 @@ import (
 func judgments(r *records, c Candidate, f Facts, t time.Time) ([]sources.Estimate, Judgments) {
 	t = t.UTC().Truncate(time.Second)
 	a := Judgments{Candidate: c.ID, Evidence: []sources.Evidence{}, Rules: sources.Rules, Calculated: t}
-	a.HeadcountSeries = judging.HeadcountSeries(f.Headcounts)
+	owners := sortedOwners(r.owners)
+	set := OwnerSet(owners)
+	pick, series := f.Headcounts, f.Headcounts
+	var ownerHeadcount *sources.Headcount
+	if record, ok := set[sources.FactHeadcount]; ok {
+		h := record.Set.Headcount
+		ownerHeadcount = &sources.Headcount{Scraper: sources.Owner, Kind: sources.HeadcountEmployees, Count: int64(h.Count), AsOf: time.Date(h.Year, 12, 31, 0, 0, 0, 0, time.UTC)}
+		pick = []sources.Headcount{*ownerHeadcount}
+		series = []sources.Headcount{*ownerHeadcount}
+		for _, h := range f.Headcounts {
+			if h.Kind != sources.HeadcountEmployees || h.AsOf.IsZero() || h.AsOf.UTC().Year() != ownerHeadcount.AsOf.Year() {
+				series = append(series, h)
+			}
+		}
+	}
+	a.HeadcountSeries = judging.HeadcountSeries(series)
 	trend := judging.HeadcountTrend(a.HeadcountSeries)
 	a.Trend, a.TrendKind = trend.Direction, trend.Kind
 	if trend.Direction != judging.TrendUnknown {
@@ -51,11 +66,21 @@ func judgments(r *records, c Candidate, f Facts, t time.Time) ([]sources.Estimat
 			evidence[e.Name] = e
 		}
 	}
-	if e := judging.HeadcountEstimate(f.Headcounts, f.BriefLabels, f.Categories); e != nil {
+	if len(owners) > 0 {
+		e := sources.Evidence{Name: sources.EvidenceOwnerRecord, Source: sources.Owner, Weight: .6, Description: sources.DescribeOwnerRecord}
+		e.Weight = judging.Weight(e, owners[0].At, t)
+		if old, ok := evidence[e.Name]; e.Weight > 0 && (!ok || e.Weight > old.Weight) {
+			evidence[e.Name] = e
+		}
+	}
+	if e := judging.HeadcountEstimate(pick, f.BriefLabels, f.Categories); e != nil {
 		estimates[e.Source] = *e
 	}
-	if staff := judging.PickHeadcount(f.Headcounts); staff != nil {
+	if staff := judging.PickHeadcount(pick); staff != nil {
 		a.HeadcountLow, a.HeadcountHigh, a.HeadcountBasis = &staff.Low, &staff.High, staff.Basis
+	} else if ownerHeadcount != nil {
+		a.HeadcountLow, a.HeadcountHigh = &ownerHeadcount.Count, &ownerHeadcount.Count
+		a.HeadcountBasis = ownerHeadcount.Kind + ":" + ownerHeadcount.Scraper
 	}
 	es := []sources.Estimate{}
 	for _, e := range estimates {
@@ -78,6 +103,10 @@ func judgments(r *records, c Candidate, f Facts, t time.Time) ([]sources.Estimat
 		a.RevenueLow = &combined.Low
 		a.RevenueHigh = combined.High
 		a.RevenueConfidence = &combined.Confidence
+	}
+	if record, ok := set[sources.FactRevenue]; ok {
+		v, confidence := record.Set.Revenue, 1.0
+		a.RevenueLow, a.RevenueHigh, a.RevenueConfidence = v.Low, v.High, &confidence
 	}
 	for i := len(r.rulings) - 1; i >= 0; i-- {
 		d := r.rulings[i]

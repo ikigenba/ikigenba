@@ -155,15 +155,36 @@ func Inputs(site, email string) string {
 	return s + d
 }
 
+// OwnerInputs offers the owner's website before source websites and email.
+func OwnerInputs(owner, site, email string) string {
+	o := strings.TrimSpace(owner)
+	if o == "" {
+		return Inputs(site, email)
+	}
+	if strings.TrimSpace(site) == o {
+		site = ""
+	}
+	i := Inputs(site, email)
+	if i == "" {
+		return o
+	}
+	return o + "\n" + i
+}
+
 // URLs returns the elements of website-check inputs.
 func URLs(in string) []string {
+	out := []string{}
 	if in == "" {
-		return []string{}
+		return out
 	}
-	if a, b, ok := strings.Cut(in, "\n"); ok && offered(a) && b != "" {
-		return []string{a, b}
+	for {
+		a, b, ok := strings.Cut(in, "\n")
+		if !ok || !offered(a) || b == "" {
+			return append(out, in)
+		}
+		out = append(out, a)
+		in = b
 	}
-	return []string{in}
 }
 func offered(s string) bool {
 	u, err := url.Parse(s)

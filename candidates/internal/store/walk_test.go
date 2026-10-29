@@ -74,7 +74,7 @@ func TestWalkPublicShapes(t *testing.T) {
 	} = (*store.Store)(nil)
 }
 
-// R-UWXV-8JOI R-UY5R-MBF7 R-UZDO-035W R-V1TG-RMNA R-V31D-5EDZ R-0YMT-HFK2 R-0ZUP-V7AR R-VIOF-L0A2 R-OSHC-V80S
+// R-2UVF-ZT88 R-2W3C-DKYX R-2XB8-RCPM R-2YJ5-54GB R-2ZR1-IW70 R-0YMT-HFK2 R-0ZUP-V7AR R-VIOF-L0A2 R-OSHC-V80S
 func TestWalkRecordingAndReadOrderPersist(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -294,7 +294,7 @@ func TestWalkEndingsAndFailures(t *testing.T) {
 	contractError(t, e, store.ErrEnded)
 }
 
-// R-0L7X-9YEF R-UWXV-8JOI R-V0LK-DUWL R-O3OA-61XH
+// R-28X9-3XVQ R-2UVF-ZT88 R-7RO0-4OVO R-O3OA-61XH
 func TestWalkMatchingPriorityAndDisplay(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -418,7 +418,7 @@ func TestWalkMatchingPriorityAndDisplay(t *testing.T) {
 	contractEqual(t, rulings[0].Kind, store.KindExclude)
 }
 
-// R-0Q3I-T1D7 R-UZDO-035W R-UY5R-MBF7
+// R-0Q3I-T1D7 R-2XB8-RCPM R-2W3C-DKYX
 func TestWalkSweepRefusalsAndUnansweredSweep(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -598,7 +598,7 @@ func TestWalkSweepAndFailureSerialize(t *testing.T) {
 	}
 }
 
-// R-VIOF-L0A2 R-V31D-5EDZ R-V1TG-RMNA R-0YMT-HFK2 R-O3OA-61XH
+// R-VIOF-L0A2 R-2ZR1-IW70 R-2YJ5-54GB R-0YMT-HFK2 R-O3OA-61XH
 func TestWalkStableCandidateParkAndHistoryOrder(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -724,7 +724,7 @@ func TestWalkFoundCandidatesAndPlaceFinalOrder(t *testing.T) {
 	contractEqual(t, byID["beta-joined"].New, false)
 }
 
-// R-V1TG-RMNA R-V31D-5EDZ
+// R-2YJ5-54GB R-2ZR1-IW70
 func TestWalkHistoryReadsCurrentParkName(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -746,7 +746,7 @@ func TestWalkHistoryReadsCurrentParkName(t *testing.T) {
 	contractEqual(t, kw, []store.ParkWalk{want})
 }
 
-// R-UWXV-8JOI R-0Q3I-T1D7
+// R-2UVF-ZT88 R-0Q3I-T1D7
 func TestWalkSecondCandidateMintFailureRollsBackSweep(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -798,7 +798,7 @@ func TestWalkSecondCandidateMintFailureRollsBackSweep(t *testing.T) {
 	contractEqual(t, retried.NewCandidates, int64(2))
 }
 
-// R-0L7X-9YEF
+// R-28X9-3XVQ
 func TestWalkNameMatchRequiresPlaceAndIncludesAlias(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

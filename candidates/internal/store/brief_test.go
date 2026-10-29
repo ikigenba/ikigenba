@@ -36,7 +36,7 @@ func briefResult(t *testing.T, id, summary string, failed bool, names ...string)
 	return store.Enrichment{Candidate: id, Kind: enrichers.KindBrief, Inputs: "page-inputs", Source: enrichers.SourcePrompts, Found: raw}
 }
 
-// R-D1TM-II5M R-E8I3-WH3X R-HSJK-2DYU R-ELX0-3Y9K
+// R-SQMN-OZ0R R-4LXP-TXPQ R-6XO5-XRXE R-T1LR-4WP0
 func TestBriefProjectionKeepsGoodSummaryAndNewestAttempt(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -208,7 +208,7 @@ func TestBriefMigrationAndRollbackWriter(t *testing.T) {
 			if upgrade {
 				source = store.WebsiteByCheck
 			}
-			contractEqual(t, facts, store.Facts{Headcounts: []sources.Headcount{}, BriefLabels: []string{}, Candidate: id, KnownSince: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: "pattern", NewestFiling: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{}, Records: []sources.Category{}, FleetVerdict: sources.FleetPass, PowerUnits: &units, Drivers: &drivers, Website: sources.WebsiteHTTPS, WebsiteURL: "https://old.test", WebsiteSource: source, Minutes: &minutes, MinutesSource: minutesSource, Written: []store.Written{{Kind: enrichers.KindDriveMinutes, At: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)}, {Kind: enrichers.KindSiteText, At: time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC)}, {Kind: sources.WebsiteCheck, At: time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)}}})
+			contractEqual(t, facts, store.Facts{OtherKnownSince: []sources.Sourced[time.Time]{}, OtherPowerUnits: []sources.Sourced[int64]{}, Headcounts: []sources.Headcount{}, BriefLabels: []string{}, Candidate: id, KnownSince: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), GovernmentMatch: "pattern", NewestFiling: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Categories: []sources.Category{}, Records: []sources.Category{}, FleetVerdict: sources.FleetPass, PowerUnits: &units, Drivers: &drivers, Website: sources.WebsiteHTTPS, WebsiteURL: "https://old.test", WebsiteSource: source, Minutes: &minutes, MinutesSource: minutesSource, Written: []store.Written{{Kind: enrichers.KindDriveMinutes, At: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)}, {Kind: enrichers.KindSiteText, At: time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC)}, {Kind: sources.WebsiteCheck, At: time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)}}})
 			es, err := s.Enrichments(ctx, id)
 			contractOK(t, err)
 			e.At = time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)
@@ -226,7 +226,7 @@ func TestBriefMigrationAndRollbackWriter(t *testing.T) {
 	}
 }
 
-// R-HSJK-2DYU
+// R-6XO5-XRXE
 func TestProspectListBriefUsesNewestAttemptAndIgnoresOtherKinds(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

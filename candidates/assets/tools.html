@@ -3,22 +3,25 @@
      is the one level tools at /tools. Shown only to a signed-in user; a
      guest is sent to sign in. Data: .Banner (a page.Banner, for banner and
      footer); .Tools (a slice of items, each with .Name, the tool's name,
-     and .Description, the first line of its description), the twenty-three
+     and .Description, the first line of its description), the twenty-five
      tools in catalog order: prospect_lists, prospect_list, candidates,
      candidate, passes, pass, ingest, judge, enrich, add_page, decide,
      exclude, include, create_prospect_list, edit_prospect_list,
      delete_prospect_list, reject, unreject, parks, park, park_rules,
-     edit_park_rules and walk.
+     edit_park_rules, walk, add_business and set_facts.
      Hooks: title "tools · candidates"; h1 with text "Tools";
      p#summary.lede (text "Agents keep and read the owner's prospect lists, read
      each candidate and the evidence behind it, and record the owner's
-     rulings and rejects, with these tools, through the MCP gateway's call
+     rulings, rejects and facts, with these tools, through the MCP gateway's call
      and mutate. ingest, judge, enrich and walk start a pass by hand,
      answering at once while the pass lands in the background; decide, exclude and include record rulings that every
      pass reapplies; reject keeps a candidate out of one prospect list; add_page
-     keeps a page of a candidate's website, fetched by candidates itself.",
-     call, mutate, ingest, judge, enrich, walk, decide, exclude, include, reject and
-     add_page each in a code element);
+     keeps a page of a candidate's website, fetched by candidates itself;
+     add_business adds a business no source holds, and set_facts sets or
+     clears facts on a candidate, each with the owner's note, the owner's
+     value first in every fact's order.",
+     call, mutate, ingest, judge, enrich, walk, decide, exclude, include, reject,
+     add_page, add_business and set_facts each in a code element);
      a section.card holding dl#tools.kv with one dt[data-tool=<.Name>] per
      tool, in the order of .Tools, holding .Name in a code element and
      followed by a dd holding .Description. No script but appkit's
@@ -30,7 +33,7 @@
 {{template "banner" .Banner}}
 <main>
 <h1>Tools</h1>
-<p id="summary" class="lede">Agents keep and read the owner's prospect lists, read each candidate and the evidence behind it, and record the owner's rulings and rejects, with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>. <code>ingest</code>, <code>judge</code>, <code>enrich</code> and <code>walk</code> start a pass by hand, answering at once while the pass lands in the background; <code>decide</code>, <code>exclude</code> and <code>include</code> record rulings that every pass reapplies; <code>reject</code> keeps a candidate out of one prospect list; <code>add_page</code> keeps a page of a candidate's website, fetched by candidates itself.</p>
+<p id="summary" class="lede">Agents keep and read the owner's prospect lists, read each candidate and the evidence behind it, and record the owner's rulings, rejects and facts, with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>. <code>ingest</code>, <code>judge</code>, <code>enrich</code> and <code>walk</code> start a pass by hand, answering at once while the pass lands in the background; <code>decide</code>, <code>exclude</code> and <code>include</code> record rulings that every pass reapplies; <code>reject</code> keeps a candidate out of one prospect list; <code>add_page</code> keeps a page of a candidate's website, fetched by candidates itself; <code>add_business</code> adds a business no source holds, and <code>set_facts</code> sets or clears facts on a candidate, each with the owner's note, the owner's value first in every fact's order.</p>
 <section class="card">
 <dl id="tools" class="kv">
 {{range .Tools}}<dt data-tool="{{.Name}}"><code>{{.Name}}</code></dt><dd>{{.Description}}</dd>

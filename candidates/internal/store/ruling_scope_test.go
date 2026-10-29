@@ -9,7 +9,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-ETQ9-T70F R-RGR7-9XKL
+// R-A6J7-UP2I R-F7M3-BTV6
 func TestRulingLeavesEveryUntouchedCandidateAsStored(t *testing.T) {
 	for _, kind := range []string{store.KindExclude, store.KindInclude, store.KindNotSame, store.KindMerge, store.KindSplit} {
 		t.Run(kind, func(t *testing.T) {
@@ -99,7 +99,7 @@ func TestRulingLeavesEveryUntouchedCandidateAsStored(t *testing.T) {
 	}
 }
 
-// R-2E9L-OZD5
+// R-FCHO-UWTY
 func TestMovingRulingsDeriveEveryDisplayFieldAndStampOnlyChanges(t *testing.T) {
 	for _, kind := range []string{store.KindSplit, store.KindMerge} {
 		t.Run(kind, func(t *testing.T) {

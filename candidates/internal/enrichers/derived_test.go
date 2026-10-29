@@ -65,7 +65,7 @@ func TestDriveMinutesValid(t *testing.T) {
 	}
 }
 
-// R-F7H0-LOM5
+// R-LYOT-Y5Q4
 func TestLinkFactsDerive(t *testing.T) {
 	date := func(v string) time.Time {
 		t.Helper()
@@ -161,7 +161,7 @@ func TestLinkFactsDerive(t *testing.T) {
 	}
 }
 
-// R-F7H0-LOM5
+// R-LYOT-Y5Q4
 func TestLinkFactsGovernmentCategories(t *testing.T) {
 	government := enrichers.Category{Name: sources.CategoryGovernment, Source: "name"}
 	education := enrichers.Category{Name: sources.CategoryEducation, Source: "name"}
@@ -197,10 +197,10 @@ func TestLinkFactsGovernmentCategories(t *testing.T) {
 	}
 }
 
-// R-FDKI-IJBM
+// R-LXGX-KDZF
 func TestLinkFactsFleet(t *testing.T) {
-	first := enrichers.Link{Scraper: fmcsa.Name, Reading: sources.Reading{FleetVerdict: sources.FleetFail, PowerUnits: count(1), Drivers: count(2)}}
-	second := enrichers.Link{Scraper: fmcsa.Name, Reading: sources.Reading{FleetVerdict: sources.FleetPass, PowerUnits: count(5), Drivers: count(6)}}
+	first := enrichers.Link{Scraper: fmcsa.Name, SourceID: "1", Reading: sources.Reading{FleetVerdict: sources.FleetFail, PowerUnits: count(1), Drivers: count(2)}}
+	second := enrichers.Link{Scraper: fmcsa.Name, SourceID: "2", Reading: sources.Reading{FleetVerdict: sources.FleetPass, PowerUnits: count(5), Drivers: count(6)}}
 	for _, tc := range []struct {
 		name           string
 		verdict        string
@@ -218,12 +218,15 @@ func TestLinkFactsFleet(t *testing.T) {
 		{"nil counts", sources.FleetPass, nil, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			l := enrichers.Link{Scraper: fmcsa.Name, Reading: sources.Reading{Fleet: true, FleetVerdict: tc.verdict, PowerUnits: tc.units, Drivers: tc.drivers}}
+			l := enrichers.Link{Scraper: fmcsa.Name, SourceID: "1", Reading: sources.Reading{Fleet: true, FleetVerdict: tc.verdict, PowerUnits: tc.units, Drivers: tc.drivers}}
 			verdict := tc.verdict
 			if verdict == "" || verdict == "maybe" || verdict == "PASS" {
 				verdict = sources.FleetUnknown
 			}
 			units, drivers := tc.units, tc.drivers
+			if units == nil {
+				units = count(5)
+			}
 			if units != nil && *units < 0 {
 				units = nil
 			}
@@ -238,7 +241,7 @@ func TestLinkFactsFleet(t *testing.T) {
 	first.Gone = true
 	assertFleet(t, []enrichers.Link{first, second}, sources.FleetPass, count(5), count(6))
 	second.Gone = true
-	assertFleet(t, []enrichers.Link{first, second}, sources.FleetUnknown, nil, nil)
+	assertFleet(t, []enrichers.Link{first, second}, sources.FleetUnknown, count(1), nil)
 }
 
 // R-JSLE-MUH6
@@ -313,7 +316,7 @@ func assertFleet(t *testing.T, links []enrichers.Link, verdict string, units, dr
 	}
 }
 
-// R-FESE-WB2B
+// R-M4SB-V0FL
 func TestSourceCategoriesFollowCarrierAuthority(t *testing.T) {
 	for _, tc := range []struct {
 		name, class  string
@@ -352,4 +355,21 @@ func TestSourceCategoriesFollowCarrierAuthority(t *testing.T) {
 			}
 		}
 	}
+}
+
+// R-LXGX-KDZF
+func TestLinkFactsFleetCountFollowsPick(t *testing.T) {
+	first := enrichers.Link{Scraper: fmcsa.Name, SourceID: "1", Reading: sources.Reading{Filed: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), FleetVerdict: sources.FleetPass, Drivers: count(4)}}
+	older := enrichers.Link{Scraper: fmcsa.Name, SourceID: "2", Reading: sources.Reading{Filed: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), FleetVerdict: sources.FleetFail, PowerUnits: count(7), Drivers: count(9)}}
+	assertFleet(t, []enrichers.Link{first, older}, sources.FleetPass, count(7), count(4))
+	older.Gone = true
+	assertFleet(t, []enrichers.Link{first, older}, sources.FleetPass, nil, count(4))
+	first.Gone = true
+	assertFleet(t, []enrichers.Link{first, older}, sources.FleetUnknown, count(7), nil)
+	assertFleet(t, []enrichers.Link{older, {Scraper: ppp.Name}}, sources.FleetUnknown, nil, nil)
+	first.Gone, older.Gone = false, false
+	first.Reading.PowerUnits = count(3)
+	older.Reading.Filed = first.Reading.Filed.AddDate(1, 0, 0)
+	assertFleet(t, []enrichers.Link{first, older}, sources.FleetPass, count(7), count(4))
+	assertFleet(t, []enrichers.Link{older, first}, sources.FleetFail, count(7), count(9))
 }

@@ -85,7 +85,7 @@ func factSourcesPriorCandidate(id string, populated bool) (store.Candidate, []an
 }
 
 func factSourcesPriorFacts(id string, populated bool) (store.Facts, []any) {
-	f := store.Facts{Candidate: id, Categories: []sources.Category{}, Records: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Headcounts: []sources.Headcount{}, Website: sources.WebsiteUnknown, BriefLabels: []string{}}
+	f := store.Facts{OtherKnownSince: []sources.Sourced[time.Time]{}, OtherPowerUnits: []sources.Sourced[int64]{}, Candidate: id, Categories: []sources.Category{}, Records: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Headcounts: []sources.Headcount{}, Website: sources.WebsiteUnknown, BriefLabels: []string{}}
 	var known, newest any = "", ""
 	var units, drivers, minutes, miles any
 	ats := []string{"", "", "", "", "", "", ""}
