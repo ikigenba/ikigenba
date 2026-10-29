@@ -132,7 +132,7 @@ func prepareFixtureDatabase() (data []byte, err error) {
 	return data, errors.Join(err, root.Close())
 }
 
-// R-LNIY-W6RA: the positional Config uses the whole declared client seam.
+// R-2PIS-RSYP: the positional Config uses the whole declared client seam.
 func newFixture(t *testing.T, h http.HandlerFunc, available bool) *fixture {
 	t.Helper()
 	f := &fixture{t: t, tc: &telemetry.Capture{}, ec: &events.Capture{}, changed: make(chan struct{}, 1)}
@@ -835,7 +835,7 @@ func TestFailedReads(t *testing.T) {
 	}
 }
 
-// R-373Q-6C3X R-3XYL-7XAN R-JNM1-3RR1 R-YOZH-AS4U
+// R-373Q-6C3X R-XVEY-C1OE R-JNM1-3RR1 R-YOZH-AS4U
 func TestDrainCancelsReadsAndPendingDelivery(t *testing.T) {
 	t.Parallel()
 	for _, which := range []string{"rows", "record"} {
@@ -899,7 +899,7 @@ func TestDrainCancelsReadsAndPendingDelivery(t *testing.T) {
 	}
 }
 
-// R-2PU0-C7JL R-ZC5K-KF81 R-3XYL-7XAN
+// R-2PU0-C7JL R-ZC5K-KF81 R-XVEY-C1OE
 func TestRecoverAndUnrecordableEnding(t *testing.T) {
 	f := newFixture(t, nil, false)
 	original, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "old_run", Delivery: "old_event", UserID: "old_user", RequestID: "old_request"})
@@ -1122,7 +1122,7 @@ func TestDeliveryOutlivesStartingContext(t *testing.T) {
 	}
 }
 
-// R-3XYL-7XAN
+// R-XVEY-C1OE
 func TestDrainDeadlineWhileEndingHeld(t *testing.T) {
 	entered := make(chan struct{})
 	f := newFixture(t, func(_ http.ResponseWriter, r *http.Request) { close(entered); <-r.Context().Done() }, true)

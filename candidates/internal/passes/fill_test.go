@@ -208,7 +208,7 @@ func TestFillFailureAndNilDiagnostics(t *testing.T) {
 	}
 }
 
-// R-3T2Z-OUBV R-12GP-CNA5 R-3XYL-7XAN R-3Z6H-LP1C
+// R-3T2Z-OUBV R-12GP-CNA5 R-XVEY-C1OE R-3Z6H-LP1C
 func TestFillCancellationAndDrainWhileWriterHeld(t *testing.T) {
 	t.Parallel()
 	for _, drain := range []bool{false, true} {
@@ -622,7 +622,7 @@ func TestFillRacesJudge(t *testing.T) {
 	}
 }
 
-// R-3WQO-U5JY R-3XYL-7XAN
+// R-3WQO-U5JY R-XVEY-C1OE
 func TestFillDiagnosticDoesNotKeepDrainWaiting(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)

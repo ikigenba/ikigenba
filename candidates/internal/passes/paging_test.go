@@ -81,7 +81,7 @@ func (w *diagnosticWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// R-LR7S-TJQ3 R-LNIY-W6RA
+// R-LR7S-TJQ3 R-2PIS-RSYP
 func TestStoreFailureDiagnosticPrecedesEnding(t *testing.T) {
 	t.Parallel()
 

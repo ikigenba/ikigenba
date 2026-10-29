@@ -45,15 +45,16 @@ type Config struct {
 
 // Engine coordinates cancellable ingest, judgment and enrichment passes.
 type Engine struct {
-	cfg       Config
-	mu        sync.Mutex
-	stopping  atomic.Bool
-	ctx       context.Context
-	cancel    context.CancelFunc
-	work      sync.WaitGroup
-	judgeID   string
-	unsettled map[string]struct{}
-	filling   bool
+	cfg        Config
+	mu         sync.Mutex
+	stopping   atomic.Bool
+	ctx        context.Context
+	cancel     context.CancelFunc
+	work       sync.WaitGroup
+	judgeID    string
+	unsettled  map[string]struct{}
+	filling    bool
+	refetching bool
 }
 
 // New creates an idle engine.
