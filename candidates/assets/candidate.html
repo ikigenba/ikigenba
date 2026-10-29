@@ -238,7 +238,10 @@
      page's number as text, the <n> of its text page's path), .Path (that
      path, "/candidates/<.Candidate.ID>/pages/<.Number>"), .URL (the URL it
      was fetched from, as stored), .Title (its title, as stored; empty
-     when none), .Size (int, the body bytes read), .Fetched and
+     when none), .Size (int, the body bytes read), .Reason (why the page
+     is unreadable, its fetch having yielded fewer than 200 characters
+     beyond the title, as stored: "scripted", "redirect" or "empty";
+     empty when it is readable), .Fetched and
      .FetchedText (when it was fetched, RFC 3339 UTC to the second, and
      UTC to the minute), .By (the email of who added it; empty when none)
      and .User (their user id); .EnrichmentResults, every enrichment result on this
@@ -632,7 +635,13 @@
      add_page each in a code element), or table#page-list whose th read
      URL, Title, Bytes, Fetched, By, with one tr[data-page=<.Number>] per
      page holding td.page-url (a.page-link, href .Path, text .URL),
-     td.page-title (.Title, or when empty span.muted "none"),
+     td.page-title (.Title, or when empty span.muted "none"; then, when
+     .Reason is set, a div holding
+     span.badge[data-kind=warn] with the reason's text: "Unreadable: built
+     by scripts, the server sent no text" for "scripted", "Unreadable: a
+     frame or a redirect" for "redirect", "Unreadable: the page says
+     nothing" for "empty", else "Unreadable: <.Reason>"; the tr carrying
+     also [data-unreadable=<.Reason>] when .Reason is set),
      td.page-size.num (.Size), td.page-fetched (time[datetime=<.Fetched>]
      with .FetchedText) and td.page-by (.By, or .User in a code element
      when .By is empty). Then, only when .Status is "active",
@@ -978,9 +987,9 @@
 <table id="page-list">
 <thead><tr><th>URL</th><th>Title</th><th class="num">Bytes</th><th>Fetched</th><th>By</th></tr></thead>
 <tbody>
-{{range $pages}}<tr data-page="{{.Number}}">
+{{range $pages}}<tr data-page="{{.Number}}"{{if .Reason}} data-unreadable="{{.Reason}}"{{end}}>
 <td class="page-url"><a class="page-link" href="{{.Path}}">{{.URL}}</a></td>
-<td class="page-title">{{if .Title}}{{.Title}}{{else}}<span class="muted">none</span>{{end}}</td>
+<td class="page-title">{{if .Title}}{{.Title}}{{else}}<span class="muted">none</span>{{end}}{{if .Reason}}<div><span class="badge" data-kind="warn">{{if eq .Reason "scripted"}}Unreadable: built by scripts, the server sent no text{{else if eq .Reason "redirect"}}Unreadable: a frame or a redirect{{else if eq .Reason "empty"}}Unreadable: the page says nothing{{else}}Unreadable: {{.Reason}}{{end}}</span></div>{{end}}</td>
 <td class="page-size num">{{.Size}}</td>
 <td class="page-fetched"><time datetime="{{.Fetched}}">{{.FetchedText}}</time></td>
 <td class="page-by">{{if .By}}{{.By}}{{else}}<code>{{.User}}</code>{{end}}</td>

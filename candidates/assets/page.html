@@ -14,7 +14,10 @@
      (that candidate's display name; empty when none), .Number (the page's
      number, the <n> of its path, as text), .URL (the URL it was fetched
      from, as stored), .Title (its title, as stored; empty when none),
-     .Size (int, the body bytes read), .Fetched and .FetchedText (when it
+     .Size (int, the body bytes read), .Reason (why the page is
+     unreadable, its fetch having yielded fewer than 200 characters beyond
+     the title, as stored: "scripted", "redirect" or "empty"; empty when it
+     is readable), .Fetched and .FetchedText (when it
      was fetched, RFC 3339 UTC to the second, and the same as shown,
      "2006-01-02 15:04:05 UTC"), .By (the email of who added it; empty
      when none), .User (their user id) and .Text (its text, as stored:
@@ -38,10 +41,15 @@
      dd#page-by (.By, or .User in a code element when .By is empty);
      section#text-card with h2 "Text" and a p in its header (text "The
      page as candidates read it, with script, style and markup removed and
-     white space collapsed."), then either, when .Text is empty,
-     div#no-text.empty holding h3 "No text" and a p (text "The page held
-     no text once its markup was removed."), or p#page-text.prose holding
-     .Text. No script but appkit's /_appkit/feedback.js. */}}
+     white space collapsed."), then, when .Reason is set,
+     div#unreadable.alert.quiet[data-kind=warn][data-reason=<.Reason>]
+     holding strong with the reason's text: "Unreadable: built by scripts,
+     the server sent no text" for "scripted", "Unreadable: a frame or a
+     redirect" for "redirect", "Unreadable: the page says nothing" for
+     "empty", else "Unreadable: <.Reason>", and no text; else either, when
+     .Text is empty, div#no-text.empty holding h3 "No text" and a p (text
+     "The page held no text once its markup was removed."), or
+     p#page-text.prose holding .Text. No script but appkit's /_appkit/feedback.js. */}}
 {{define "page"}}<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>{{.Page.Candidate}} page {{.Page.Number}} · candidates</title></head>
@@ -64,7 +72,7 @@
 </section>
 <section id="text-card" class="card" aria-labelledby="text-title">
 <header><h2 id="text-title">Text</h2><p>The page as candidates read it, with script, style and markup removed and white space collapsed.</p></header>
-{{if .Text}}<p id="page-text" class="prose">{{.Text}}</p>{{else}}<div id="no-text" class="empty">
+{{if .Reason}}<div id="unreadable" class="alert quiet" data-kind="warn" data-reason="{{.Reason}}"><strong>{{if eq .Reason "scripted"}}Unreadable: built by scripts, the server sent no text{{else if eq .Reason "redirect"}}Unreadable: a frame or a redirect{{else if eq .Reason "empty"}}Unreadable: the page says nothing{{else}}Unreadable: {{.Reason}}{{end}}</strong></div>{{else if .Text}}<p id="page-text" class="prose">{{.Text}}</p>{{else}}<div id="no-text" class="empty">
 <h3 class="text-md">No text</h3>
 <p>The page held no text once its markup was removed.</p>
 </div>{{end}}
