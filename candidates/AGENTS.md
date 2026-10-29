@@ -310,7 +310,11 @@ call `t.Parallel`. A test learns that the server is ready the way systemd
 does: it binds a Unix datagram socket in a short temporary directory
 (`os.MkdirTemp("", ...)`, since a Unix socket path is limited to 108 bytes
 and `t.TempDir()` can exceed it), names it in `NOTIFY_SOCKET`, and waits for
-`READY=1` with a deadline that fails the test. A test waits on the clock in
+`READY=1` with a deadline that fails the test. A test of what the fill
+changes then waits the same way, with a deadline that fails it, for the
+fill's end: the line `candidates: facts filled` or the line `candidates:
+facts fill failed` and its error (`D06-passes`), read from the injected
+`Stderr`; it never sleeps for a fixed time. A test waits on the clock in
 two places only, because there the deadline is the behavior: a drain test,
 which keeps that wait to a few seconds, and a test that a pass reaches `done`
 within the deadline a requirement states; a busy-write test's wait on the
