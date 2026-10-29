@@ -77,8 +77,7 @@ type serviceRestoreSource struct {
 
 // Restore selects and validates the requested service backup before any host
 // state is changed.
-func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config.Store, service string, at *time.Time, from string, own *release.Release, regenerateNginx NginxRegenerator) (RestoreReport, error) {
-	var report RestoreReport
+func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config.Store, service string, at *time.Time, from string, own *release.Release, regenerateNginx NginxRegenerator) (report RestoreReport, runErr error) {
 	if invalidFileServiceName(service) {
 		return report, fmt.Errorf("invalid service %q", service)
 	}
@@ -240,6 +239,12 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 	report.Steps = append(report.Steps, RestoreStep{Name: "stop", Detail: stopDetail})
 	stopped := restoreStoppedUnits(socket, serviceUnit, activationIntent, litestreamActive)
 
+	originalModes := restoreExistingPaths(env.Root)
+	defer func() {
+		if err := closeRestorePaths(env.Root, originalModes); err != nil {
+			runErr = errors.Join(runErr, err)
+		}
+	}()
 	identity, err := prepareRestoreIdentity(ctx, env)
 	if err != nil {
 		return failRestoreStep(report, service, "files", "ownership", err, stopped)
@@ -269,7 +274,7 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 		if walErr := setRestoredDatabaseWAL(env.Root, service, database.Path); walErr != nil {
 			return failRestoreStep(report, service, "db", "wal mode", walErr, stopped)
 		}
-		if ownershipErr := applyRestoredDatabaseOwnership(env.Root, service, database.Path, identity); ownershipErr != nil {
+		if ownershipErr := applyRestoredDatabaseOwnership(env.Root, service, database.Path, identity, from != "", source.entries); ownershipErr != nil {
 			return failRestoreStep(report, service, "db", "database ownership", ownershipErr, stopped)
 		}
 		detail := apps.DataRoot + "/" + service + "/" + database.Path
@@ -442,7 +447,7 @@ func setRestoredDatabaseWAL(rootName, service, databasePath string) error {
 	return nil
 }
 
-func applyRestoredDatabaseOwnership(rootName, service, databasePath string, identity restoreIdentity) error {
+func applyRestoredDatabaseOwnership(rootName, service, databasePath string, identity restoreIdentity, archived bool, entries []serviceRestoreEntry) error {
 	if !identity.needed {
 		return nil
 	}
@@ -463,11 +468,20 @@ func applyRestoredDatabaseOwnership(rootName, service, databasePath string, iden
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("database path %q is not a regular file", name)
 		}
-		if err := filesystem.Chmod(name, 0o600); err != nil {
-			return fmt.Errorf("set database mode: %w", err)
+		mode := os.FileMode(0o600)
+		if archived {
+			for _, entry := range entries {
+				if entry.name == databasePath+strings.TrimPrefix(name, base) && entry.typeflag == tar.TypeReg {
+					mode = entry.mode
+					break
+				}
+			}
 		}
 		if err := filesystem.Chown(name, identity.uid, identity.gid); err != nil {
 			return fmt.Errorf("set database ownership: %w", err)
+		}
+		if err := filesystem.Chmod(name, mode); err != nil {
+			return fmt.Errorf("set database mode: %w", err)
 		}
 	}
 	return nil
@@ -635,7 +649,7 @@ func validateServiceRestoreArchive(archive []byte) ([]serviceRestoreEntry, error
 			return nil, fmt.Errorf("duplicate archive entry %q", header.Name)
 		}
 		entry := serviceRestoreEntry{
-			name: name, typeflag: header.Typeflag, mode: restoredFileMode(header.Mode), linkname: header.Linkname,
+			name: name, typeflag: header.Typeflag, mode: restoredFileMode(header.Mode) &^ 0o007, linkname: header.Linkname,
 			uid: header.Uid, gid: header.Gid, uname: header.Uname, gname: header.Gname,
 		}
 		switch header.Typeflag {
@@ -775,10 +789,13 @@ func publishRestoreActivationMarker(rootName, service string) error {
 	}
 	defer func() { _ = root.Close() }()
 	for _, directory := range []string{"run", "run/opsctl", "run/opsctl/restore"} {
-		if err := root.MkdirAll(directory, 0o700); err != nil {
+		created := false
+		if err := root.Mkdir(directory, 0o700); err == nil {
+			created = true
+		} else if !errors.Is(err, os.ErrExist) {
 			return err
 		}
-		if directory != "run" {
+		if directory != "run" || created {
 			if err := root.Chmod(directory, 0o700); err != nil {
 				return err
 			}
@@ -852,6 +869,9 @@ func replaceServiceRestoreTrees(ctx context.Context, env host.Env, service strin
 		return 0, err
 	}
 	stage := path.Base(stageName)
+	if err := root.Chmod(stage, 0o700); err != nil {
+		return 0, err
+	}
 	defer func() { _ = root.RemoveAll(stage) }()
 	if err := populateServiceRestoreStage(root, rootName, stage, entries, identity); err != nil {
 		return 0, err
@@ -904,12 +924,15 @@ func populateServiceRestoreStage(root *os.Root, rootName, stage string, entries 
 	var directories []serviceRestoreEntry
 	for _, entry := range ordered {
 		name := path.Join(stage, entry.name)
-		if err := root.MkdirAll(path.Dir(name), 0o700); err != nil {
+		if err := mkdirHostRestoreParents(root, path.Dir(name)); err != nil {
 			return err
 		}
 		switch entry.typeflag {
 		case tar.TypeDir:
 			if err := root.MkdirAll(name, 0o700); err != nil {
+				return err
+			}
+			if err := root.Chmod(name, 0o700); err != nil {
 				return err
 			}
 			directories = append(directories, entry)
@@ -923,9 +946,6 @@ func populateServiceRestoreStage(root *os.Root, rootName, stage string, entries 
 			if err := errors.Join(writeErr, closeErr); err != nil {
 				return err
 			}
-			if err := root.Chmod(name, entry.mode); err != nil {
-				return err
-			}
 		case tar.TypeSymlink:
 			if err := root.Symlink(entry.linkname, name); err != nil {
 				return err
@@ -934,6 +954,11 @@ func populateServiceRestoreStage(root *os.Root, rootName, stage string, entries 
 		uid, gid := mappedServiceRestoreOwnership(entry, identity)
 		if err := os.Lchown(filepath.Join(rootName, filepath.FromSlash(name)), uid, gid); err != nil {
 			return fmt.Errorf("set ownership on %q: %w", entry.name, err)
+		}
+		if entry.typeflag == tar.TypeReg {
+			if err := root.Chmod(name, entry.mode); err != nil {
+				return err
+			}
 		}
 	}
 	for i := len(directories) - 1; i >= 0; i-- {
@@ -1005,4 +1030,49 @@ func loadSnapshotRestoreSource(ctx context.Context, env host.Env, client cloud.C
 		return serviceRestoreSource{}, err
 	}
 	return serviceRestoreSource{size: int64(len(compressed)), entries: entries}, nil
+}
+
+func restoreExistingPaths(rootName string) map[string]os.FileInfo {
+	paths := map[string]os.FileInfo{}
+	root, err := os.OpenRoot(rootName)
+	if err != nil {
+		return paths
+	}
+	defer func() { _ = root.Close() }()
+	_ = fs.WalkDir(root.FS(), strings.TrimPrefix(apps.DataRoot, "/"), func(name string, entry fs.DirEntry, err error) error {
+		if err == nil {
+			paths[name], _ = entry.Info()
+		}
+		return nil
+	})
+	return paths
+}
+func closeRestorePaths(rootName string, previous map[string]os.FileInfo) error {
+	root, err := os.OpenRoot(rootName)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	return fs.WalkDir(root.FS(), strings.TrimPrefix(apps.DataRoot, "/"), func(name string, entry fs.DirEntry, err error) error {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if before := previous[name]; before != nil && os.SameFile(before, info) {
+			return nil
+		}
+		if info.Mode().Perm()&0o007 != 0 {
+			return root.Chmod(name, info.Mode()&^0o007)
+		}
+		return nil
+	})
 }

@@ -45,7 +45,7 @@ func restoreReleaseFixture(t *testing.T, root string, released, database bool) r
 }
 
 func TestRestoreReleaseEnvironmentAndFreshUnitLifecycle(t *testing.T) {
-	// R-GSZD-5A23 R-D7ZI-NGE1 R-TOAS-TJ2V R-TPIP-7ATK R-FZPR-YS9F R-G4LD-HV87 R-G5T9-VMYW R-G3DH-43HI R-GAOV-EPXO R-LC1T-L8RR R-TLV0-1ZLH
+	// R-GSZD-5A23 R-D7ZI-NGE1 R-TOAS-TJ2V R-RP29-000R R-FZPR-YS9F R-G4LD-HV87 R-G5T9-VMYW R-G3DH-43HI R-GAOV-EPXO R-LC1T-L8RR R-TLV0-1ZLH
 	for _, released := range []bool{false, true} {
 		for _, database := range []bool{false, true} {
 			t.Run(map[bool]string{false: "fresh", true: "released"}[released]+map[bool]string{false: "opaque", true: "database"}[database], func(t *testing.T) {
@@ -254,7 +254,7 @@ func TestRestoreReleaseMembershipAndManifestFaultsAreInert(t *testing.T) {
 }
 
 func TestRestoreReleaseSecretsValidationPrecedesUnits(t *testing.T) {
-	// R-TOAS-TJ2V R-TPIP-7ATK
+	// R-TOAS-TJ2V R-RP29-000R
 	for _, failure := range []bool{false, true} {
 		t.Run(map[bool]string{false: "values", true: "missing"}[failure], func(t *testing.T) {
 			root := t.TempDir()

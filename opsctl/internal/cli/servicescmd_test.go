@@ -24,10 +24,13 @@ func servicesFixtureCommand(command host.Command) (host.Result, bool) {
 	if command.Name == "id" && strings.Join(command.Args, " ") == "--group --name ikigenba" {
 		return host.Result{Stdout: []byte("ikigenba\n")}, true
 	}
-	if command.Name == "chown" && command.Args[0] == "root:ikigenba" && (len(command.Args) == 2 || len(command.Args) == 3 && strings.HasSuffix(command.Args[1], "/var/lib/ikigenba")) {
+	if command.Name == "chown" && command.Args[0] == "root:ikigenba" && (len(command.Args) == 2 || len(command.Args) == 3 && (strings.HasSuffix(command.Args[1], "/var/lib/ikigenba") || strings.HasSuffix(command.Args[1], "/run/ikigenba"))) {
 		return host.Result{}, true
 	}
-	return host.Result{}, false
+	if command.Name == "setfacl" {
+		return host.Result{}, true
+	}
+	return hardeningFixtureQuery(command)
 }
 
 func TestNginxServicesPublicationAfterSuccessOnly(t *testing.T) {
@@ -222,13 +225,11 @@ func TestInitServicesPublicationOrdersSetupAndPassesDependencies(t *testing.T) {
 					if args == "reload-or-restart nginx" {
 						nginxDone = true
 					}
-					if c.Name == "id" && args == "--user ikigenba" {
+					if c.Name == "chown" && len(c.Args) == 3 && strings.HasSuffix(c.Args[1], "/var/lib/ikigenba") {
 						calls++
 						if !nginxDone {
 							t.Fatal("services before nginx")
 						}
-					}
-					if c.Name == "chown" && len(c.Args) == 3 && strings.HasSuffix(c.Args[1], "/var/lib/ikigenba") {
 						if failure == "services" {
 							return host.Result{}, errors.New("services blocked")
 						}

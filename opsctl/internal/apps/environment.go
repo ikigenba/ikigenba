@@ -50,10 +50,14 @@ func PublishEnvironment(root, service string, data []byte) error {
 		if !os.IsNotExist(err) {
 			return err
 		}
-		if err := filesystem.Mkdir(name, 0o755); err != nil {
+		mode := os.FileMode(0o755)
+		if name == strings.TrimPrefix(EnvRoot, "/") || name == directory {
+			mode = 0o700
+		}
+		if err := filesystem.Mkdir(name, mode); err != nil {
 			return err
 		}
-		if err := filesystem.Chmod(name, 0o755); err != nil {
+		if err := filesystem.Chmod(name, mode); err != nil {
 			return err
 		}
 	}

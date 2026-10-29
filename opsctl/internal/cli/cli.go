@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ikigenba/ikigenba/opsctl/internal/accounts"
 	"github.com/ikigenba/ikigenba/opsctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/opsctl/internal/dns"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
@@ -22,10 +23,11 @@ import (
 type exitCode int
 
 const (
-	exitOK      exitCode = 0
-	exitFail    exitCode = 1
-	exitUsage   exitCode = 2
-	exitRefused exitCode = 3
+	exitOK           exitCode = 0
+	exitFail         exitCode = 1
+	exitUsage        exitCode = 2
+	exitRefused      exitCode = 3
+	exitStateRefused exitCode = 4
 )
 
 // usageText is the top-level usage, byte for byte from D2.
@@ -41,6 +43,7 @@ Commands:
   disable   stop an installed app and keep it from starting
   dns       manage DNS records in the zones opsctl owns
   enable    let a disabled app start again, and start it
+  group     manage business groups and their folders
   host      back up and restore the host's own configuration
   init      run the setup sequence behind one preflight
   nginx     generate the platform's nginx configuration
@@ -51,6 +54,7 @@ Commands:
   services  regenerate the services file
   snapshot  copy a service's files and database to S3 as one tarball
   status    print every service, its release and its state
+  user      manage SSH users, their keys and groups
   version   print the release this opsctl belongs to
 
 Options:
@@ -62,6 +66,7 @@ Exit codes:
   1  the operation failed
   2  usage error, or a preflight check failed
   3  refused: opsctl must run as root
+  4  refused: the host's state does not allow it
 
 Run 'opsctl <command> --help' for details on a command.
 `
@@ -223,6 +228,10 @@ func diagnosticArg(s string) string {
 
 func dispatch(name string, args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	switch name {
+	case "group":
+		return runGroup(args, stdout, stderr, deps)
+	case "user":
+		return runUser(args, stdout, stderr, deps)
 	case "activate":
 		return runActivate(args, stdout, stderr, deps)
 	case "rollback":
@@ -355,4 +364,14 @@ func releaseVersion(deps Deps) string {
 		return ""
 	}
 	return r.Display()
+}
+
+func accountActionError(stderr io.Writer, err error) exitCode {
+	var refused *accounts.RefusedError
+	if errors.As(err, &refused) {
+		_, _ = io.WriteString(stderr, "opsctl: "+refused.Reason+"\n")
+		return exitStateRefused
+	}
+	writeDiagnostic(stderr, err)
+	return exitFail
 }

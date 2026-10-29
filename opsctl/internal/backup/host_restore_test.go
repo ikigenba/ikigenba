@@ -144,7 +144,7 @@ func TestHostRestoreRejectsInvalidArchivesBeforeChanges(t *testing.T) {
 }
 
 func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
-	// R-FKFT-QIVZ R-HUTO-NMJ7 R-9JTU-C7U1
+	// R-76AM-ZRLD R-HUTO-NMJ7 R-9JTU-C7U1
 	root := t.TempDir()
 	store := configuredHostStore(t, root)
 	writeFile(t, root, "etc/ikigenba/stale", "remove", 0o600)
@@ -170,8 +170,9 @@ func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
 	}
 	body := hostRestoreArchive(t,
 		restoreMember{name: "etc/ikigenba", typeflag: tar.TypeDir, mode: 0o750},
-		restoreMember{name: "etc/ikigenba/nested", typeflag: tar.TypeDir, mode: 0o710},
-		restoreMember{name: "etc/ikigenba/nested/settings", data: []byte("restored settings\n"), mode: 0o640},
+		restoreMember{name: "etc/ikigenba/nested", typeflag: tar.TypeDir, mode: 0o777},
+		restoreMember{name: "etc/ikigenba/nested/settings", data: []byte("restored settings\n"), mode: 0o647},
+		restoreMember{name: "etc/ikigenba/implied/settings", data: []byte("implied"), mode: 0o644},
 		restoreMember{name: "etc/ikigenba/current", typeflag: tar.TypeSymlink, linkname: "nested/settings"},
 		restoreMember{name: "etc/letsencrypt", typeflag: tar.TypeDir, mode: 0o711},
 		restoreMember{name: "etc/letsencrypt/archive", typeflag: tar.TypeDir, mode: 0o700},
@@ -182,13 +183,19 @@ func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
 	forbidden := newFileAccessWatch(t, filepath.Join(root, "opt"), filepath.Join(root, "etc/opt"), filepath.Join(root, "var/opt"))
 	result, err := backup.HostRestore(context.Background(), restoreHostEnv(t, root), cloud.Env{Open: client.open}, store)
 	forbidden.assertQuiet(t)
-	if err != nil || !result.SourceReady || !result.FilesRestored || result.Files != 3 || result.FailedStep != "" {
+	if err != nil || !result.SourceReady || !result.FilesRestored || result.Files != 4 || result.FailedStep != "" {
 		t.Fatalf("HostRestore() = %+v, %v", result, err)
 	}
 	if data := readHostRestoreFile(t, root, "etc/ikigenba/nested/settings"); string(data) != "restored settings\n" {
 		t.Fatalf("restored file = %q", data)
 	}
-	if info, err := os.Stat(filepath.Join(root, "etc/ikigenba/nested")); err != nil || info.Mode().Perm() != 0o710 {
+	if info, err := os.Lstat(filepath.Join(root, "etc/ikigenba/implied")); err != nil || info.Mode().Perm() != 0o700 {
+		t.Fatalf("implied directory: %v %v", info, err)
+	}
+	if info, err := os.Lstat(filepath.Join(root, "etc/ikigenba/implied/settings")); err != nil || info.Mode().Perm() != 0o640 {
+		t.Fatalf("implied file: %v %v", info, err)
+	}
+	if info, err := os.Stat(filepath.Join(root, "etc/ikigenba/nested")); err != nil || info.Mode().Perm() != 0o770 {
 		t.Fatalf("restored directory mode = %v, %v", info, err)
 	}
 	if info, err := os.Stat(filepath.Join(root, "etc/ikigenba/nested/settings")); err != nil || info.Mode().Perm() != 0o640 {
@@ -197,7 +204,7 @@ func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
 	if target, err := os.Readlink(filepath.Join(root, "etc/ikigenba/current")); err != nil || target != "nested/settings" {
 		t.Fatalf("restored symlink = %q, %v", target, err)
 	}
-	if info, err := os.Lstat(filepath.Join(root, "etc/ikigenba")); err != nil || info.Mode().Perm() != 0o750 {
+	if info, err := os.Lstat(filepath.Join(root, "etc/ikigenba")); err != nil || info.Mode().Perm() != 0o700 {
 		t.Fatalf("restored configuration root mode = %v, %v", info, err)
 	}
 	if info, err := os.Lstat(filepath.Join(root, "etc/letsencrypt")); err != nil || info.Mode().Perm() != 0o711 {

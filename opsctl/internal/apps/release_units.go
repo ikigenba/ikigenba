@@ -21,7 +21,7 @@ func WriteReleaseUnits(env host.Env, app string, m Manifest, t Timeouts) error {
 	service := "[Unit]\nDescription=Ikigenba " + app + " app\nRequires=" + socket + "\nAfter=" + socket + " " + ServicesUnit + "\nWants=" + ServicesUnit + "\n\n" +
 		"[Service]\nType=notify\nExecStart=" + rootedHostPath(env.Root, release.CurrentLink, app, "bin", app) + "\n" +
 		"WorkingDirectory=" + rootedHostPath(env.Root, DataRoot, app) + "\nEnvironmentFile=" + rootedHostPath(env.Root, EnvRoot, app, "env") + "\n" +
-		"User=ikigenba\nRuntimeDirectory=ikigenba/" + app + "\nPrivateTmp=yes\nRestart=on-failure\nTimeoutStopSec=" + strconv.FormatInt(t.StopSeconds, 10) + "\n" +
+		"User=ikigenba\nRuntimeDirectory=ikigenba/" + app + "\nRuntimeDirectoryMode=0750\nPrivateTmp=yes\nRestart=on-failure\nTimeoutStopSec=" + strconv.FormatInt(t.StopSeconds, 10) + "\n" +
 		resourceUnitLines(m.Resources) + "\n[Install]\nWantedBy=multi-user.target\n"
 
 	return writeReleaseUnitFiles(env, []releaseUnitFile{{socketUnitName(app), socketUnitBytes(env.Root, app)}, {appUnitName(app), []byte(service)}})

@@ -19,7 +19,7 @@ import (
 )
 
 func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
-	// R-DAFB-EZVF R-TPIP-7ATK R-G8TT-DXPV
+	// R-RHQU-PDKL R-RP29-000R R-RK6N-GX1Z
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -161,7 +161,7 @@ func TestRestoreAppGuardAndStopDetails(t *testing.T) {
 
 func TestRestoreStopFailuresPreserveCauseStoppedUnitsAndTargets(t *testing.T) {
 	// R-YBI2-GUY1
-	// R-DAFB-EZVF R-G7FZ-2AO2 R-FMVM-I2DD
+	// R-RHQU-PDKL R-G7FZ-2AO2 R-FMVM-I2DD
 	transport := errors.New("system bus unavailable")
 	for _, test := range []struct {
 		name         string
@@ -239,7 +239,7 @@ func TestRestoreStopFailuresPreserveCauseStoppedUnitsAndTargets(t *testing.T) {
 }
 
 func TestRestoreCreatesAccountBeforePublishingAndRetainsMarkerOnFailure(t *testing.T) {
-	// R-G8TT-DXPV
+	// R-RK6N-GX1Z
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -268,7 +268,7 @@ func TestRestoreCreatesAccountBeforePublishingAndRetainsMarkerOnFailure(t *testi
 }
 
 func TestRestoreEnsureAccountFailurePreventsReplacement(t *testing.T) {
-	// R-G8TT-DXPV
+	// R-RK6N-GX1Z
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -293,7 +293,7 @@ func TestRestoreEnsureAccountFailurePreventsReplacement(t *testing.T) {
 }
 
 func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
-	// R-G8TT-DXPV
+	// R-RK6N-GX1Z
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -326,7 +326,7 @@ func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
 }
 
 func TestRestoreOwnershipApplicationFailurePreservesPublishedTrees(t *testing.T) {
-	// R-G8TT-DXPV R-TPIP-7ATK R-G7FZ-2AO2 R-FMVM-I2DD
+	// R-RK6N-GX1Z R-RP29-000R R-G7FZ-2AO2 R-FMVM-I2DD
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -366,7 +366,7 @@ func TestRestoreOwnershipApplicationFailurePreservesPublishedTrees(t *testing.T)
 }
 
 func TestRestoreManifestAppAloneTriggersAccountPreparation(t *testing.T) {
-	// R-G8TT-DXPV
+	// R-RK6N-GX1Z
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -390,7 +390,7 @@ func TestRestoreManifestAppAloneTriggersAccountPreparation(t *testing.T) {
 }
 
 func TestRestoreRejectsWrongAccountPrimaryGroupBeforePublishing(t *testing.T) {
-	// R-G8TT-DXPV
+	// R-RK6N-GX1Z
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -445,6 +445,9 @@ func (executor *restoreStageExecutor) execute(_ context.Context, command host.Co
 	}
 	switch command.Name {
 	case "chown":
+		if len(command.Args) == 2 && command.Args[0] == "root:ikigenba" && command.Args[1] == filepath.Join(executor.root, "var/opt/ikigenba") {
+			return host.Result{}, nil
+		}
 		if len(command.Args) != 2 || command.Args[0] != "ikigenba:ikigenba" || !strings.HasPrefix(command.Args[1], filepath.Join(executor.root, "var/opt/ikigenba")+"/") {
 			executor.t.Fatalf("unexpected data-directory ownership command: %v", command.Args)
 		}

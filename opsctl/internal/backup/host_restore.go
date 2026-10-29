@@ -202,6 +202,11 @@ func validateHostArchive(archive []byte) ([]hostRestoreEntry, error) {
 			return nil, fmt.Errorf("duplicate archive entry %q", header.Name)
 		}
 		entry := hostRestoreEntry{name: name, typeflag: header.Typeflag, mode: restoredFileMode(header.Mode), linkname: header.Linkname}
+		if name == "etc/ikigenba" {
+			entry.mode = 0o700
+		} else if strings.HasPrefix(name, "etc/ikigenba/") {
+			entry.mode &^= 0o007
+		}
 		switch header.Typeflag {
 		case tar.TypeReg, byte(0):
 			entry.typeflag = tar.TypeReg
@@ -297,8 +302,11 @@ func replaceHostTrees(ctx context.Context, rootName string, entries []hostRestor
 		return 0, err
 	}
 	stageBase := path.Base(stageName)
+	if err := root.Chmod(stageBase, 0o700); err != nil {
+		return 0, err
+	}
 	defer func() { _ = root.RemoveAll(stageBase) }()
-	if err := root.MkdirAll(path.Join(stageBase, "etc"), 0o700); err != nil {
+	if err := mkdirHostRestoreParents(root, path.Join(stageBase, "etc")); err != nil {
 		return 0, err
 	}
 	if err := populateHostRestoreStage(root, stageBase, entries); err != nil {
@@ -351,13 +359,16 @@ func populateHostRestoreStage(root *os.Root, stageBase string, entries []hostRes
 	directories := make([]hostRestoreEntry, 0)
 	for _, entry := range ordered {
 		name := path.Join(stageBase, entry.name)
-		if err := root.MkdirAll(path.Dir(name), 0o700); err != nil {
+		if err := mkdirHostRestoreParents(root, path.Dir(name)); err != nil {
 			return fmt.Errorf("create parent for %q: %w", entry.name, err)
 		}
 		switch entry.typeflag {
 		case tar.TypeDir:
 			if err := root.MkdirAll(name, 0o700); err != nil {
 				return fmt.Errorf("create directory %q: %w", entry.name, err)
+			}
+			if err := root.Chmod(name, 0o700); err != nil {
+				return err
 			}
 			directories = append(directories, entry)
 		case tar.TypeReg:
@@ -410,4 +421,22 @@ func hostTreeFileCount(entries []hostRestoreEntry, tree string) int {
 		}
 	}
 	return count
+}
+
+func mkdirHostRestoreParents(root *os.Root, name string) error {
+	if name == "." {
+		return nil
+	}
+	if _, err := root.Lstat(name); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := mkdirHostRestoreParents(root, path.Dir(name)); err != nil {
+		return err
+	}
+	if err := root.Mkdir(name, 0o700); err != nil {
+		return err
+	}
+	return root.Chmod(name, 0o700)
 }

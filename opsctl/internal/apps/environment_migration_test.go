@@ -12,7 +12,7 @@ import (
 )
 
 func TestEnvironmentPublicationCreatesDirectoriesAndReplacesWholeFile(t *testing.T) {
-	// R-02XL-DHW4 R-T9O0-8A6J R-9571-QYXP
+	// R-02XL-DHW4 R-EY2Y-RZA8 R-9571-QYXP
 	root := t.TempDir()
 	if apps.EnvRoot != "/etc/opt/ikigenba" {
 		t.Fatalf("EnvRoot %q", apps.EnvRoot)
@@ -24,7 +24,11 @@ func TestEnvironmentPublicationCreatesDirectoriesAndReplacesWholeFile(t *testing
 		t.Fatal(err)
 	}
 	for _, directory := range []string{"etc/opt", "etc/opt/ikigenba", "etc/opt/ikigenba/notes"} {
-		assertMode(t, filepath.Join(root, directory), 0o755)
+		mode := os.FileMode(0o700)
+		if directory == "etc/opt" {
+			mode = 0o755
+		}
+		assertMode(t, filepath.Join(root, directory), mode)
 	}
 	before, err := os.Lstat(destination)
 	if err != nil {

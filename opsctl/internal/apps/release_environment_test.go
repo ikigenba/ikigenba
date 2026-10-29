@@ -166,7 +166,7 @@ func TestReleaseEnvironmentErrorIsPure(t *testing.T) {
 }
 
 func TestWriteReleaseEnvironmentAtomicAndNameValidation(t *testing.T) {
-	// R-AGR4-O0US R-SV82-4IER
+	// R-AGR4-O0US R-7A14-SSRA
 	mask := syscall.Umask(0o077)
 	defer syscall.Umask(mask)
 	root := t.TempDir()
@@ -183,7 +183,11 @@ func TestWriteReleaseEnvironmentAtomicAndNameValidation(t *testing.T) {
 	}
 	destination := filepath.Join(root, apps.EnvRoot, "notes", "env")
 	for _, dir := range []string{"etc/opt", "etc/opt/ikigenba", "etc/opt/ikigenba/notes"} {
-		assertMode(t, filepath.Join(root, dir), 0755)
+		mode := os.FileMode(0o700)
+		if dir == "etc/opt" {
+			mode = 0o755
+		}
+		assertMode(t, filepath.Join(root, dir), mode)
 	}
 	old, err := os.Lstat(destination)
 	if err != nil {

@@ -52,7 +52,7 @@ func TestRestoreDatabaseRequiresRegionBeforeHostOrCloudAccess(t *testing.T) {
 }
 
 func TestRestoreDatabaseLifecycleUsesIndependentHistoryAndOrdersStarts(t *testing.T) {
-	// R-DE30-KB3I R-G3DH-43HI R-FZPR-YS9F R-G4LD-HV87 R-G564-8MHS R-GA1P-RPGK R-D97F-184Q
+	// R-DE30-KB3I R-G3DH-43HI R-FZPR-YS9F R-G4LD-HV87 R-G564-8MHS R-RLEJ-UOSO R-D97F-184Q
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	writeFile(t, root, "opt/notes/etc/manifest.toml", "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/nested/app.db\"\n", 0600)
@@ -314,7 +314,7 @@ func TestRestoreDatabaseRejectsNonSQLiteBeforeRegenerationOrStarts(t *testing.T)
 }
 
 func TestRestoreDatabaseOwnershipFailurePreventsLaterLifecycle(t *testing.T) {
-	// R-GA1P-RPGK
+	// R-RLEJ-UOSO
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -331,7 +331,7 @@ func TestRestoreDatabaseOwnershipFailurePreventsLaterLifecycle(t *testing.T) {
 }
 
 func TestRestoreDatabaseOwnershipUsesSymbolicArchiveMemberWithoutManifestApp(t *testing.T) {
-	// R-GA1P-RPGK
+	// R-RLEJ-UOSO
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -374,6 +374,9 @@ func (executor *databaseRestoreExecutor) execute(_ context.Context, command host
 	executor.events = append(executor.events, text)
 	switch command.Name {
 	case "chown":
+		if len(command.Args) == 2 && command.Args[0] == "root:ikigenba" && command.Args[1] == filepath.Join(executor.root, "var/opt/ikigenba") {
+			return host.Result{}, nil
+		}
 		if len(command.Args) != 2 || command.Args[0] != "ikigenba:ikigenba" || !strings.HasPrefix(command.Args[1], filepath.Join(executor.root, "var/opt/ikigenba")+"/") {
 			executor.t.Fatalf("unexpected data-directory ownership command: %v", command.Args)
 		}

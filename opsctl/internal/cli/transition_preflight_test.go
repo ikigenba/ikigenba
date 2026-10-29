@@ -181,7 +181,7 @@ func seedPreflightHost(f *transitionFixture, layout string) {
 }
 
 func TestReleasePreflightMutationBoundary(t *testing.T) {
-	// R-4A4N-LJX5
+	// R-95LZ-2GZV
 	for _, command := range []string{"activate", "rollback"} {
 		for _, layout := range []string{"fresh", "released", "per-app"} {
 			for _, failure := range []string{"release", "chown", "layout", "disabled", "manifests", "secrets", "resources", "resources success"} {
@@ -236,6 +236,7 @@ func TestReleasePreflightMutationBoundary(t *testing.T) {
 
 func runPreflightBoundary(t *testing.T, f *transitionFixture, command, failure string, snapshot bool) {
 	t.Helper()
+	seedHardeningRules(t, f.root)
 	before, err := preflightTree(f.root, "opt/ikigenba/releases/"+transitionSHA, false)
 	if err != nil {
 		t.Fatal(err)
@@ -253,7 +254,9 @@ func runPreflightBoundary(t *testing.T, f *transitionFixture, command, failure s
 	}
 	baseExecute := f.deps.Execute
 	f.deps.Execute = func(ctx context.Context, c host.Command) (host.Result, error) {
-		if !allowedPreflightCommand(f.root, c, snapshotStarted) {
+		_, hardeningQuery := hardeningFixtureQuery(c)
+		permitted := allowedPreflightCommand(f.root, c, snapshotStarted) || snapshot && hardeningQuery
+		if !permitted {
 			t.Fatalf("forbidden preflight command %+v", c)
 		}
 		check(snapshotStarted)

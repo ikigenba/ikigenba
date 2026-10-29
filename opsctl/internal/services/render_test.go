@@ -74,7 +74,7 @@ func renderWriteEnv(t *testing.T, root string, disabled map[string]bool, command
 			return host.Result{Stdout: []byte("1000\n")}, nil
 		case command.Name == "id" && reflect.DeepEqual(command.Args, []string{"--group", "--name", "ikigenba"}):
 			return host.Result{Stdout: []byte("ikigenba\n")}, nil
-		case command.Name == "chown":
+		case command.Name == "chown" || command.Name == "setfacl":
 			return host.Result{}, nil
 		default:
 			t.Fatalf("unexpected command: %+v", command)

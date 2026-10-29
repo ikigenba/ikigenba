@@ -13,7 +13,7 @@ import (
 
 func TestBinaryHelp(t *testing.T) {
 	// R-N0T5-G71B
-	// R-SW94-0T0W
+	// R-HE1E-EY3A
 	stdout, stderr, code := runBinary(t, buildOpsctl(t), exec.Command("./opsctl", "--help"))
 	if code != 0 {
 		t.Errorf("exit code = %d, want 0", code)
@@ -33,6 +33,7 @@ Commands:
   disable   stop an installed app and keep it from starting
   dns       manage DNS records in the zones opsctl owns
   enable    let a disabled app start again, and start it
+  group     manage business groups and their folders
   host      back up and restore the host's own configuration
   init      run the setup sequence behind one preflight
   nginx     generate the platform's nginx configuration
@@ -43,6 +44,7 @@ Commands:
   services  regenerate the services file
   snapshot  copy a service's files and database to S3 as one tarball
   status    print every service, its release and its state
+  user      manage SSH users, their keys and groups
   version   print the release this opsctl belongs to
 
 Options:
@@ -54,6 +56,7 @@ Exit codes:
   1  the operation failed
   2  usage error, or a preflight check failed
   3  refused: opsctl must run as root
+  4  refused: the host's state does not allow it
 
 Run 'opsctl <command> --help' for details on a command.
 `

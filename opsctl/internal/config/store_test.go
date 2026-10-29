@@ -947,3 +947,54 @@ func snapshotStore(t *testing.T, s config.Store) []storeSnapshotEntry {
 
 // typed returns v as a T; the call compiles only when v is assignable to T.
 func typed[T any](v T) T { return v }
+
+func TestLockAndTemporaryPublicationsArePrivate(t *testing.T) {
+	// R-UVUL-6EER R-JWJ9-GLGJ
+	root := t.TempDir()
+	store := config.Store{Root: root}
+	if err := store.Set("first", "value"); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(root, config.Dir, config.LockName)
+	file := filepath.Join(root, config.Dir, config.FileName)
+	for _, name := range []string{lock, file} {
+		info, err := os.Lstat(name)
+		if err != nil || info.Mode().Perm() != 0o600 {
+			t.Fatalf("private publication %s: %v %v", name, info, err)
+		}
+	}
+	filesystem, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = filesystem.Close() }()
+	if err := filesystem.Chmod("etc/ikigenba/config.lock", 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := filesystem.Chmod("etc/ikigenba/config.json", 0o666); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Del("first"); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]os.FileMode{lock: 0o640, file: 0o600} {
+		info, err := os.Lstat(name)
+		if err != nil || info.Mode().Perm() != want {
+			t.Fatalf("kept lock/new file %s: %v %v", name, info, err)
+		}
+	}
+	entries, err := os.ReadDir(filepath.Dir(file))
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("temporary remains: %v %v", entries, err)
+	}
+	if err := os.Remove(lock); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Del("absent"); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat(lock)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("Del lock: %v %v", info, err)
+	}
+}

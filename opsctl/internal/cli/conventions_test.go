@@ -26,6 +26,7 @@ Commands:
   disable   stop an installed app and keep it from starting
   dns       manage DNS records in the zones opsctl owns
   enable    let a disabled app start again, and start it
+  group     manage business groups and their folders
   host      back up and restore the host's own configuration
   init      run the setup sequence behind one preflight
   nginx     generate the platform's nginx configuration
@@ -36,6 +37,7 @@ Commands:
   services  regenerate the services file
   snapshot  copy a service's files and database to S3 as one tarball
   status    print every service, its release and its state
+  user      manage SSH users, their keys and groups
   version   print the release this opsctl belongs to
 
 Options:
@@ -47,6 +49,7 @@ Exit codes:
   1  the operation failed
   2  usage error, or a preflight check failed
   3  refused: opsctl must run as root
+  4  refused: the host's state does not allow it
 
 Run 'opsctl <command> --help' for details on a command.
 `
@@ -195,10 +198,10 @@ func TestTopLevelGrammar(t *testing.T) {
 }
 
 func TestCommandSet(t *testing.T) {
-	// R-SV17-N1A7
+	// R-HCTI-16CL
 	user := depsAt(t, 1)
 
-	wantCommands := []string{"activate", "backup", "cert", "config", "disable", "dns", "enable", "host", "init", "nginx", "restart", "restore", "retire", "rollback", "services", "snapshot", "status", "version"}
+	wantCommands := []string{"activate", "backup", "cert", "config", "disable", "dns", "enable", "group", "host", "init", "nginx", "restart", "restore", "retire", "rollback", "services", "snapshot", "status", "user", "version"}
 	for _, name := range wantCommands {
 		_, stderr, _ := invoke([]string{name}, user)
 		if strings.Contains(stderr, "unknown command") {
@@ -242,7 +245,7 @@ func TestCommandSet(t *testing.T) {
 }
 
 func TestTopLevelHelp(t *testing.T) {
-	// R-SW94-0T0W
+	// R-HE1E-EY3A
 	user := depsAt(t, 1)
 	for _, args := range [][]string{{"--help"}, {"-h"}} {
 		stdout, stderr, code := invoke(args, user)

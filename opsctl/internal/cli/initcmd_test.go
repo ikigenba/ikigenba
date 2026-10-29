@@ -41,6 +41,11 @@ Sequence:
                ikigenba-apps.slice, sized from the host's memory, and the
                drop-in that puts nginx in ikigenba-core.slice; restart nginx
                when the drop-in changed
+  hardening    bring the host to its rules: sshd, the shell group, fail2ban,
+               dnf-automatic, the login sessions' slice drop-ins, the suite's
+               state closed to others, and the sudo rule for opsctl's group
+               and user commands; install fail2ban and dnf-automatic when
+               missing
   nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx; an
                app whose manifest is no longer valid, or on a host without
                releases an installed app whose state/ is still under
@@ -70,7 +75,7 @@ Configuration keys:
 `
 
 func TestInitHelp(t *testing.T) {
-	// R-SXH0-EKRL
+	// R-DI8L-3Q08
 	for _, uid := range []int{0, 1000} {
 		for _, args := range [][]string{{"init", "--help"}, {"init", "-h"}} {
 			deps, assertNoAccess := inertDeps(t, uid)
@@ -351,7 +356,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL
 	// R-ZIB1-SI40
 	// R-8LON-MN2L
-	// R-SYOW-SCIA
+	// R-DJGH-HHQX
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZA": {
 			{Name: "example.com", Type: "SOA"},
@@ -427,6 +432,9 @@ func TestInitHealthyPreflight(t *testing.T) {
 	}
 	var commands []string
 	deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+		if result, ok := hardeningFixtureQuery(command); ok {
+			return result, nil
+		}
 		if result, handled := servicesFixtureCommand(command); handled {
 			return result, nil
 		}
@@ -620,6 +628,9 @@ func TestInitStopsAtFirstSetupFailure(t *testing.T) {
 
 			var commands []string
 			deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+				if result, ok := hardeningFixtureQuery(command); ok {
+					return result, nil
+				}
 				if result, handled := servicesFixtureCommand(command); handled {
 					return result, nil
 				}
@@ -1247,6 +1258,9 @@ func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
 	active := map[string]bool{}
 	var appCommands []string
 	deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+		if result, ok := hardeningFixtureQuery(command); ok {
+			return result, nil
+		}
 		if result, handled := servicesFixtureCommand(command); handled {
 			return result, nil
 		}
@@ -1361,6 +1375,7 @@ func cloneBoolMap(source map[string]bool) map[string]bool {
 func initDeps(t *testing.T, values map[string]string) cli.Deps {
 	t.Helper()
 	deps := depsAt(t, 0)
+	seedHardeningRules(t, deps.Root)
 	executable := filepath.Join(deps.Root, "bin/opsctl")
 	writeCLIInstallFile(t, executable, "fixture")
 	deps.Executable = func() (string, error) { return executable, nil }
@@ -1426,7 +1441,7 @@ func treeState(t *testing.T, root string) map[string]treeEntry {
 	return state
 }
 
-// R-CKTF-DTAU
+// R-DKOD-V9HM
 func TestInitRefusesUnmovedInstalledStateBeforeManifestValidation(t *testing.T) {
 	for _, stateKind := range []string{"directory", "file", "dangling symlink"} {
 		t.Run(stateKind, func(t *testing.T) {
@@ -1466,9 +1481,13 @@ func TestInitRefusesUnmovedInstalledStateBeforeManifestValidation(t *testing.T) 
 					t.Fatal(err)
 				}
 			}
+			seedHardeningRules(t, deps.Root)
 			var afterSlices map[string]treeEntry
 			var commands []string
 			deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+				if result, ok := hardeningFixtureQuery(command); ok {
+					return result, nil
+				}
 				commands = append(commands, command.Name+" "+strings.Join(command.Args, " "))
 				if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"restart", "nginx"}) {
 					afterSlices = treeState(t, deps.Root)
@@ -1489,7 +1508,7 @@ func TestInitRefusesUnmovedInstalledStateBeforeManifestValidation(t *testing.T) 
 	}
 }
 
-// R-CKTF-DTAU
+// R-DKOD-V9HM
 func TestInitStateGuardIgnoresServicesWithoutInstalledState(t *testing.T) {
 	for _, kind := range []string{"cache only", "no binary", "directory binary", "invalid name", "not discovered"} {
 		t.Run(kind, func(t *testing.T) {
@@ -1520,6 +1539,9 @@ func TestInitStateGuardIgnoresServicesWithoutInstalledState(t *testing.T) {
 			}
 			reachedNginx := false
 			deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+				if result, ok := hardeningFixtureQuery(command); ok {
+					return result, nil
+				}
 				if command.Name == "nginx" {
 					reachedNginx = true
 					return host.Result{}, errors.New("stop at nginx")
@@ -1534,7 +1556,7 @@ func TestInitStateGuardIgnoresServicesWithoutInstalledState(t *testing.T) {
 	}
 }
 
-// R-CKTF-DTAU
+// R-DKOD-V9HM
 func TestInitStateGuardPropagatesDiscoveryFailureAfterSlices(t *testing.T) {
 	deps := readyStateGuardDeps(t)
 	writeCLIInstallFile(t, filepath.Join(deps.Root, "usr/local/bin/opsctl"), "already installed")
@@ -1543,6 +1565,9 @@ func TestInitStateGuardPropagatesDiscoveryFailureAfterSlices(t *testing.T) {
 	}
 	var afterSlices map[string]treeEntry
 	deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+		if result, ok := hardeningFixtureQuery(command); ok {
+			return result, nil
+		}
 		if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"restart", "nginx"}) {
 			afterSlices = treeState(t, deps.Root)
 		}
@@ -1588,7 +1613,7 @@ func makeStateGuardApp(t *testing.T, root, name string, binary bool) {
 	}
 }
 
-// R-CKTF-DTAU
+// R-DKOD-V9HM
 func TestInitRefusesMissingEnvironmentBeforeManifestsWithoutCreatingDirectories(t *testing.T) {
 	for _, earlierState := range []bool{false, true} {
 		t.Run(map[bool]string{false: "environment first", true: "state wins"}[earlierState], func(t *testing.T) {
@@ -1610,9 +1635,13 @@ func TestInitRefusesMissingEnvironmentBeforeManifestsWithoutCreatingDirectories(
 			for _, relative := range []string{"etc/nginx/conf.d/ikigenba.conf", "var/lib/ikigenba/services.json", "etc/litestream.yml", "etc/systemd/system/ikigenba-backup-host.timer", "etc/systemd/system/ikigenba-alpha.service"} {
 				writeCLIInstallFile(t, filepath.Join(deps.Root, relative), "preserved\n")
 			}
+			seedHardeningRules(t, deps.Root)
 			var afterSlices map[string]treeEntry
 			var commands []string
 			deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+				if result, ok := hardeningFixtureQuery(command); ok {
+					return result, nil
+				}
 				commands = append(commands, command.Name+" "+strings.Join(command.Args, " "))
 				if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"restart", "nginx"}) {
 					afterSlices = treeState(t, deps.Root)
@@ -1638,7 +1667,7 @@ func TestInitRefusesMissingEnvironmentBeforeManifestsWithoutCreatingDirectories(
 	}
 }
 
-// R-CKTF-DTAU
+// R-DKOD-V9HM
 func TestInitEnvironmentGuardJudgesEntryWithoutFollowingSymlinks(t *testing.T) {
 	for _, kind := range []string{"regular", "dangling symlink", "directory"} {
 		t.Run(kind, func(t *testing.T) {
@@ -1664,6 +1693,9 @@ func TestInitEnvironmentGuardJudgesEntryWithoutFollowingSymlinks(t *testing.T) {
 			var afterSlices map[string]treeEntry
 			reachedNginx := false
 			deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+				if result, ok := hardeningFixtureQuery(command); ok {
+					return result, nil
+				}
 				if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"restart", "nginx"}) {
 					afterSlices = treeState(t, deps.Root)
 				}
@@ -1688,13 +1720,16 @@ func TestInitEnvironmentGuardJudgesEntryWithoutFollowingSymlinks(t *testing.T) {
 	}
 }
 
-// R-CKTF-DTAU
-func TestInitEnvironmentGuardPropagatesFilesystemFailureAfterSlices(t *testing.T) {
+// R-DJGH-HHQX
+func TestInitHardeningFilesystemFailureStopsBeforeEnvironmentGuard(t *testing.T) {
 	deps := readyStateGuardDeps(t)
 	makeStateGuardApp(t, deps.Root, "notes", true)
 	writeCLIInstallFile(t, filepath.Join(deps.Root, "etc/opt"), "not a directory\n")
 	var afterSlices map[string]treeEntry
 	deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+		if result, ok := hardeningFixtureQuery(command); ok {
+			return result, nil
+		}
 		if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"restart", "nginx"}) {
 			afterSlices = treeState(t, deps.Root)
 		}
@@ -1704,7 +1739,7 @@ func TestInitEnvironmentGuardPropagatesFilesystemFailureAfterSlices(t *testing.T
 		return host.Result{}, nil
 	}
 	stdout, stderr, code := invoke([]string{"init"}, deps)
-	if code != 1 || !strings.HasPrefix(stderr, "opsctl: ") || !strings.Contains(stderr, "etc/opt/ikigenba/notes/env") || !strings.Contains(stderr, "not a directory") || !strings.HasSuffix(stdout, "wildcard api.example.com: ok (192.0.2.10)\n") {
+	if code != 1 || !strings.HasPrefix(stderr, "opsctl: ") || !strings.Contains(stderr, "/etc/opt/ikigenba") || !strings.Contains(stderr, "not a directory") || !strings.HasSuffix(stdout, "wildcard api.example.com: ok (192.0.2.10)\n") {
 		t.Fatalf("init = %d, %q, %q", code, stdout, stderr)
 	}
 	if afterSlices == nil || !reflect.DeepEqual(afterSlices, treeState(t, deps.Root)) {
