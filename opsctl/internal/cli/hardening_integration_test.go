@@ -10,7 +10,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/accounts"
 	"github.com/ikigenba/ikigenba/opsctl/internal/hardening"
@@ -135,42 +134,90 @@ func TestReleaseHardeningFailureKeepsEarlierRulesAndHostInputs(t *testing.T) {
 }
 
 func TestRunStateRefusalRecognizesWrappedTypeAndOverridesCapture(t *testing.T) {
+	// R-7RE1-VBNQ
 	reason := "fixture host state refuses this operation"
 	capture := host.Result{Stdout: []byte("captured stdout\n"), Stderr: []byte("captured stderr\n")}
 	refused := &accounts.RefusedError{Reason: reason}
-	cases := []struct {
-		name       string
-		cause      error
-		code       int
-		diagnostic string
-	}{
-		{"wrapped", fmt.Errorf("outer: %w", refused), 4, "opsctl: " + reason + "\n"},
-		{"joined", errors.Join(&host.CommandError{Label: "inner", Result: capture}, fmt.Errorf("outer: %w", refused)), 4, "opsctl: " + reason + "\n"},
-		{"same words without type", errors.New(reason), 1, "opsctl: groupadd: " + reason + "\n\n> captured stdout\n> captured stderr\n"},
+	for _, action := range []string{"group", "user"} {
+		tool := "groupadd"
+		args := []string{"group", "add", "example"}
+		if action == "user" {
+			tool = "useradd"
+			args = []string{"user", "add", "carol", "acme", cliUserKey}
+		}
+		cases := []struct {
+			name       string
+			cause      error
+			code       int
+			diagnostic string
+		}{
+			{"direct", refused, 4, "opsctl: " + reason + "\n"},
+			{"wrapped", fmt.Errorf("outer: %w", refused), 4, "opsctl: " + reason + "\n"},
+			{"joined", errors.Join(&host.CommandError{Label: "inner", Result: capture}, fmt.Errorf("outer: %w", refused)), 4, "opsctl: " + reason + "\n"},
+			{"same words without type", errors.New(reason), 1, "opsctl: " + tool + ": " + reason + "\n\n> captured stdout\n> captured stderr\n"},
+		}
+		for _, test := range cases {
+			t.Run(action+"/"+test.name, func(t *testing.T) {
+				f := newUserCLI(t)
+				f.run = func(command host.Command) (host.Result, error) {
+					if command.Name != tool {
+						t.Fatalf("unexpected command %+v", command)
+					}
+					return capture, test.cause
+				}
+				var out, diagnostic bytes.Buffer
+				code := Run(args, nil, &out, &diagnostic, f.deps)
+				if len(f.calls) != 1 || code != test.code || out.Len() != 0 || diagnostic.String() != test.diagnostic {
+					t.Fatalf("calls %d code %d out %q diagnostic %q", len(f.calls), code, out.String(), diagnostic.String())
+				}
+			})
+		}
 	}
-	for _, test := range cases {
-		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
-			for _, name := range []string{"passwd", "group"} {
-				path := filepath.Join(root, "etc", name)
-				if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(path, nil, 0600); err != nil {
-					t.Fatal(err)
-				}
+}
+
+func TestRunOtherCommandsKeepTheirErrorContractForRefusedTypes(t *testing.T) {
+	// R-7RE1-VBNQ
+	cause := fmt.Errorf("outer: %w", &accounts.RefusedError{Reason: "fixture refusal"})
+	capture := host.Result{Stdout: []byte("captured stdout\n"), Stderr: []byte("captured stderr\n")}
+	t.Run("nginx", func(t *testing.T) {
+		root := t.TempDir()
+		groupCLIWrite(t, root, "/etc/ikigenba/config.json", `{"host.name":"example.test"}`)
+		groupCLIWrite(t, root, "/etc/nginx/conf.d/ikigenba.conf", "previous")
+		calls := 0
+		deps := Deps{Root: root, EUID: 0, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+			calls++
+			if command.Name != "nginx" || !reflect.DeepEqual(command.Args, []string{"-t"}) {
+				t.Fatalf("unexpected command %+v", command)
 			}
-			calls := 0
-			var out, diagnostic bytes.Buffer
-			code := Run([]string{"group", "add", "example"}, nil, &out, &diagnostic, Deps{Root: root, EUID: 0, Now: func() time.Time { return time.Unix(1, 0) }, Getenv: func(string) string { return "" }, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
-				calls++
-				if command.Name != "groupadd" {
-					t.Fatalf("unexpected command %+v", command)
+			return capture, cause
+		}}
+		var out, diagnostic bytes.Buffer
+		code := Run([]string{"nginx", "apply"}, nil, &out, &diagnostic, deps)
+		want := "opsctl: nginx -t: outer: fixture refusal\n\n> captured stdout\n> captured stderr\n"
+		if calls != 1 || code != 1 || out.Len() != 0 || diagnostic.String() != want {
+			t.Fatalf("calls %d code %d out %q diagnostic %q", calls, code, out.String(), diagnostic.String())
+		}
+	})
+	for _, action := range []string{"activate", "rollback"} {
+		t.Run(action, func(t *testing.T) {
+			f, args := prepareHardeningTransition(t, action)
+			seedHardeningRules(t, f.root)
+			base := f.deps.Execute
+			failures := 0
+			f.deps.Execute = func(ctx context.Context, command host.Command) (host.Result, error) {
+				if command.Name == "rpm" && reflect.DeepEqual(command.Args, []string{"-q", "fail2ban-server"}) {
+					return host.Result{ExitCode: 1}, nil
 				}
-				return capture, test.cause
-			}})
-			if calls != 1 || code != test.code || out.Len() != 0 || diagnostic.String() != test.diagnostic {
-				t.Fatalf("calls %d code %d out %q diagnostic %q", calls, code, out.String(), diagnostic.String())
+				if command.Name == "dnf" {
+					failures++
+					return capture, cause
+				}
+				return base(ctx, command)
+			}
+			code, out, diagnostic := f.run(args...)
+			want := "opsctl: " + action + " failed\n\n> captured stdout\n> captured stderr\n"
+			if failures != 1 || code != 1 || !strings.HasSuffix(out, "hardening: failed: dnf install: outer: fixture refusal\n") || diagnostic != want {
+				t.Fatalf("failures %d code %d out %q diagnostic %q", failures, code, out, diagnostic)
 			}
 		})
 	}

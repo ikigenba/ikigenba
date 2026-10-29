@@ -151,12 +151,21 @@ func TestUserGrammar(t *testing.T) {
 }
 
 func TestUserActions(t *testing.T) {
-	// R-BEWG-RIKJ R-BONN-TOI3 R-5TBN-BU6G
+	// R-BEWG-RIKJ R-BONN-TOI3 R-7V1R-0MVT
 	for _, args := range [][]string{{"add", "carol", "acme", "  " + cliUserKey + "  "}, {"key", "add", "alice", "  " + cliUserKey + "  "}, {"key", "remove", "alice", cliUserKey}, {"join", "bob", "acme"}, {"leave", "alice", "acme"}, {"lock", "alice"}, {"unlock", "bob"}, {"delete", "bob"}} {
 		f := newUserCLI(t)
+		if args[0] == "key" && args[1] == "remove" {
+			f.write("/etc/ssh/authorized_keys/alice", cliUserKey+"\n")
+		}
 		code, out, err := f.invoke(args...)
 		if code != 0 || out != "" || err != "" {
 			t.Fatal(args, code, out, err)
+		}
+		if args[0] == "key" && args[1] == "remove" {
+			data, readErr := os.ReadFile(filepath.Join(f.deps.Root, "/etc/ssh/authorized_keys/alice"))
+			if readErr != nil || len(data) != 0 {
+				t.Fatal(string(data), readErr)
+			}
 		}
 		if args[0] == "add" || args[0] == "key" && args[1] == "add" {
 			name := "alice"
@@ -178,14 +187,22 @@ func TestUserActions(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestUserStateRefusals(t *testing.T) {
+	// R-7V1R-0MVT
 	for _, tc := range []struct {
 		args   []string
 		reason string
 	}{{[]string{"add", "acme", "acme", cliUserKey}, "name taken: acme"}, {[]string{"join", "alice", "shell"}, "no group 'shell'"}, {[]string{"lock", "carol"}, "no user 'carol'"}, {[]string{"delete", "alice"}, "user not locked: alice"}} {
 		f := newUserCLI(t)
+		before := groupCLISnapshot(t, f.deps.Root)
 		code, out, err := f.invoke(tc.args...)
 		if code != 4 || out != "" || err != "opsctl: "+tc.reason+"\n" || len(f.calls) != 0 {
 			t.Fatal(code, out, err)
+		}
+		if after := groupCLISnapshot(t, f.deps.Root); !reflect.DeepEqual(before, after) {
+			t.Fatal("refusal changed files")
 		}
 	}
 }

@@ -37,26 +37,37 @@ func TestTakenNamesRefused(t *testing.T) {
 }
 
 func TestAddGroupRejectsNonDirectories(t *testing.T) {
-	// R-Y3X5-Q18Y
-	for _, symlink := range []bool{false, true} {
-		f := newGroupFixture(t, "", "")
-		f.write("/srv/keep", "preserved")
-		if symlink {
-			if err := os.Symlink(f.path("/srv/keep"), f.path("/srv/acme")); err != nil {
-				t.Fatal(err)
+	// R-7SLY-93EF
+	for _, kind := range []string{"file", "directory symlink", "file symlink", "dangling symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newGroupFixture(t, "", "")
+			f.write("/srv/keep/file", "preserved")
+			var target string
+			switch kind {
+			case "file":
+				f.write("/srv/acme", "preserved")
+			case "directory symlink":
+				target = f.path("/srv/keep")
+			case "file symlink":
+				target = f.path("/srv/keep/file")
+			case "dangling symlink":
+				target = f.path("/srv/missing")
 			}
-		} else {
-			f.write("/srv/acme", "preserved")
-		}
-		err := accounts.AddGroup(context.Background(), f.env(), "acme")
-		assertGroupRefusal(t, err, "not a directory: /srv/acme")
-		if len(f.commands) != 0 {
-			t.Fatal(f.commands)
-		}
-		data, err := os.ReadFile(f.path("/srv/keep"))
-		if err != nil || string(data) != "preserved" {
-			t.Fatal(string(data), err)
-		}
+			if target != "" {
+				if err := os.Symlink(target, f.path("/srv/acme")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := groupTreeState(t, f.root)
+			err := accounts.AddGroup(context.Background(), f.env(), "acme")
+			assertGroupRefusal(t, err, "not a directory: /srv/acme")
+			if len(f.commands) != 0 {
+				t.Fatal(f.commands)
+			}
+			if after := groupTreeState(t, f.root); !reflect.DeepEqual(before, after) {
+				t.Fatalf("refusal changed root: before %#v after %#v", before, after)
+			}
+		})
 	}
 }
 

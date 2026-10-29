@@ -172,23 +172,38 @@ func TestGroupJSONAndSilentSuccess(t *testing.T) {
 }
 
 func TestGroupStateRefusals(t *testing.T) {
-	// R-YDOC-S76I R-Y3X5-Q18Y
+	// R-7TTU-MV54 R-7SLY-93EF
 	for _, tc := range []struct {
 		args                   []string
 		passwd, groups, reason string
-		nondir                 bool
+		pathKind               string
 	}{
-		{[]string{"add", "acme"}, "acme:x:1:1::/else:/no\n", "", "name taken: acme", false},
-		{[]string{"members", "shell"}, "", "shell:x:1:\n", "no group 'shell'", false},
-		{[]string{"remove", "wheel"}, "", "wheel:x:1:\n", "no group 'wheel'", false},
-		{[]string{"remove", "acme"}, "acme:x:1:1::/srv/acme:/no\nalice:x:2:2::/home/alice:/bin/bash\n", "acme:x:1:alice\nshell:x:2:alice\n", "group not empty: acme", false},
-		{[]string{"add", "acme"}, "", "", "not a directory: /srv/acme", true},
+		{[]string{"add", "acme"}, "acme:x:1:1::/else:/no\n", "", "name taken: acme", ""},
+		{[]string{"members", "shell"}, "", "shell:x:1:\n", "no group 'shell'", ""},
+		{[]string{"remove", "wheel"}, "", "wheel:x:1:\n", "no group 'wheel'", ""},
+		{[]string{"remove", "acme"}, "acme:x:1:1::/srv/acme:/no\nalice:x:2:2::/home/alice:/bin/bash\n", "acme:x:1:alice\nshell:x:2:alice\n", "group not empty: acme", ""},
+		{[]string{"add", "acme"}, "", "", "not a directory: /srv/acme", "file"},
+		{[]string{"add", "acme"}, "", "", "not a directory: /srv/acme", "directory symlink"},
+		{[]string{"add", "acme"}, "", "", "not a directory: /srv/acme", "file symlink"},
+		{[]string{"add", "acme"}, "", "", "not a directory: /srv/acme", "dangling symlink"},
 	} {
 		root := t.TempDir()
 		groupCLIWrite(t, root, "/etc/passwd", tc.passwd)
 		groupCLIWrite(t, root, "/etc/group", tc.groups)
-		if tc.nondir {
+		if tc.pathKind == "file" {
 			groupCLIWrite(t, root, "/srv/acme", "keep")
+		} else if tc.pathKind != "" {
+			groupCLIWrite(t, root, "/srv/keep/file", "preserved")
+			target := filepath.Join(root, "srv/keep")
+			switch tc.pathKind {
+			case "file symlink":
+				target = filepath.Join(target, "file")
+			case "dangling symlink":
+				target = filepath.Join(root, "srv/missing")
+			}
+			if err := os.Symlink(target, filepath.Join(root, "srv/acme")); err != nil {
+				t.Fatal(err)
+			}
 		}
 		before := groupCLISnapshot(t, root)
 		got := invokeGroupCLI(tc.args, Deps{Root: root, EUID: 0, Execute: func(context.Context, host.Command) (host.Result, error) {
@@ -288,8 +303,15 @@ func groupCLISnapshot(t *testing.T, root string) map[string]string {
 		if err != nil {
 			return err
 		}
-		entries[path] = fmt.Sprint(info.Mode())
-		if !d.IsDir() {
+		stat := info.Sys().(*syscall.Stat_t)
+		entries[path] = fmt.Sprint(info.Mode(), stat.Uid, stat.Gid, info.ModTime().UnixNano())
+		if d.Type()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			entries[path] += target
+		} else if !d.IsDir() {
 			rel, err := filepath.Rel(root, path)
 			if err != nil {
 				return err
