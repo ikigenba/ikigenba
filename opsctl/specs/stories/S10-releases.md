@@ -1,6 +1,6 @@
 # Stories — releases
 
-A suite release reaches a host as one folder, `/opt/ikigenba/releases/<sha>/`, named by the full 40-character lowercase commit sha it was built from: `release.json` (`{"sha":...,"built":...,"devctl":...}`), `opsctl/bin/opsctl`, and for each app `<app>/` holding only `bin/`, `libexec/`, `lib/`, `share/` and `etc/`, with `bin/` holding exactly `bin/<app>` and `etc/` the app's `manifest.toml` and its `nginx.conf*`. Unpacking the folder is devctl's; `opsctl activate <sha> [label]`, run by the opsctl inside that folder, makes it the release the host runs, and `opsctl rollback` goes back to the one before. Two symlinks beside `releases/` are the only record of what the host runs: `/opt/ikigenba/current` names the running release's folder and `/opt/ikigenba/previous` the one before it, and nothing else on the host or anywhere else says which release is running. `/usr/local/bin/opsctl` is a symlink to `/opt/ikigenba/current/opsctl/bin/opsctl`, so plain `opsctl` is always current's. A release's label lives in `releases/<sha>/label`, present only when the last activate of that sha gave one; a release is shown as `r142 (c604e32)` with a label and `c604e32` without, the short sha being the first 7 characters. Both commands report in step lines: one `<step>: ok (<detail>)` line on stdout per step that succeeded, or `<step>: failed: <reason>` for the one that did not, after which nothing more runs, `opsctl: activate failed` (or `rollback failed`) is on stderr, with the journal quoted `> ` after an empty line when a service failed, and the exit is 1. Every activate checks before it changes anything: the release tree, the host's layout, every manifest, every app's secrets and the slices' room for the release; then it writes the label, every app's environment file and units, points `previous` at what `current` named and `current` at the new folder, reloads systemd, regenerates nginx, `/run/ikigenba/services.json` and `/etc/litestream.yml`, restarts every app one at a time, core apps first and each `active` before the next is touched, and, only when all of that succeeded, removes the releases neither link names.
+A suite release reaches a host as one folder, `/opt/ikigenba/releases/<sha>/`, named by the full 40-character lowercase commit sha it was built from: `release.json` (`{"sha":...,"built":...,"devctl":...}`), `opsctl/bin/opsctl`, and for each app `<app>/` holding only `bin/`, `libexec/`, `lib/`, `share/` and `etc/`, with `bin/` holding exactly `bin/<app>` and `etc/` the app's `manifest.toml` and its `nginx.conf*`. Unpacking the folder is devctl's; `opsctl activate <sha> [label]`, run by the opsctl inside that folder, makes it the release the host runs, and `opsctl rollback` goes back to the one before. Two symlinks beside `releases/` are the only record of what the host runs: `/opt/ikigenba/current` names the running release's folder and `/opt/ikigenba/previous` the one before it, and nothing else on the host or anywhere else says which release is running. `/usr/local/bin/opsctl` is a symlink to `/opt/ikigenba/current/opsctl/bin/opsctl`, so plain `opsctl` is always current's. A release's label lives in `releases/<sha>/label`, present only when the last activate of that sha gave one; a release is shown as `r142 (c604e32)` with a label and `c604e32` without, the short sha being the first 7 characters. Both commands report in step lines: one `<step>: ok (<detail>)` line on stdout per step that succeeded, or `<step>: failed: <reason>` for the one that did not, after which nothing more runs, `opsctl: activate failed` (or `rollback failed`) is on stderr, with the journal quoted `> ` after an empty line when a service failed, or the failing tool's output when `hardening` did, and the exit is 1. Every activate checks before it changes anything: the release tree, the host's layout, every manifest, every app's secrets and the slices' room for the release; then it brings the host to the rules of `S11-hardening.md`, writes the label, every app's environment file and units, points `previous` at what `current` named and `current` at the new folder, reloads systemd, regenerates nginx, `/run/ikigenba/services.json` and `/etc/litestream.yml`, restarts every app one at a time, core apps first and each `active` before the next is touched, and, only when all of that succeeded, removes the releases neither link names.
 
 The top-level usage gains two lines under `Commands:`:
 
@@ -18,6 +18,7 @@ The steps, in order, and what each reports on success:
 | `manifests` | `8 apps` | every app's manifest is valid by the rules of `S07-apps.md` |
 | `secrets` | `2 keys` | every name every manifest lists is in `/<host.name>/<app>`; the count is across all apps |
 | `resources` | `8 apps` | the slice and memory checks of `S07-apps.md` for the whole release, with their `; warning: ...` clauses |
+| `hardening` | `unchanged`, or `updated` | brings the host to the rules of `S11-hardening.md`, as `init` does: sshd, the `shell` group, fail2ban, dnf-automatic, the login sessions' slices, the suite's directories closed to others, and the accounts sudo rule |
 | `snapshot` | `8 services` | cutover only: snapshots every service, as `opsctl snapshot` does |
 | `cutover` | `removed 8 apps from /opt` | cutover only: removes the per-app units, `/opt/<app>/` and `/var/lib/ikigenba/services.json` |
 | `label` | `r142`, or `none` | writes `releases/<sha>/label`, or removes it |
@@ -61,15 +62,18 @@ Must be run by the opsctl inside that release,
 
 Every check runs before anything outside the release changes: the release
 tree, the host's layout, every app's manifest, its secrets in
-/<host.name>/<app>, and the slices' room for the release. Then every app's
-environment file and units are written, previous is pointed at what current
-named and current at the release, nginx, /run/ikigenba/services.json and
-/etc/litestream.yml are regenerated, and every app is restarted one at a
+/<host.name>/<app>, and the slices' room for the release. Then the host's
+rules are put in place as 'opsctl init' puts them: sshd, the shell group,
+fail2ban, unattended security updates, the login sessions' slices, the
+suite's directories closed to others, and the accounts sudo rule. Then every
+app's environment file and units are written, previous is pointed at what
+current named and current at the release, nginx, /run/ikigenba/services.json
+and /etc/litestream.yml are regenerated, and every app is restarted one at a
 time, core apps first, each active before the next. A disabled app stays
 disabled and is not started. An app the host runs that the release lacks is
-stopped and its units removed; its data under /var/opt/ikigenba/APP/ is kept.
-The first failure stops the run. After a run that succeeds, every release
-neither current nor previous names is removed.
+stopped and its units removed; its data under /var/opt/ikigenba/APP/ is
+kept. The first failure stops the run. After a run that succeeds, every
+release neither current nor previous names is removed.
 
 On a host whose apps were installed one by one, every service is snapshotted
 and the apps' units and /opt/APP/ removed before the release's are written.
@@ -113,6 +117,7 @@ layout: ok (releases)
 manifests: ok (8 apps)
 secrets: ok (2 keys)
 resources: ok (8 apps)
+hardening: ok (unchanged)
 label: ok (r142)
 env: ok (8 apps)
 units: ok (8 apps)
@@ -152,6 +157,7 @@ Postconditions:
 - `/etc/litestream.yml` is byte for byte as it was, and `litestream.service` was not restarted.
 - Every app's service was restarted once, in the order the lines show, each `active` before the next was restarted; no socket was stopped, so a request that arrived during an app's restart waited and was answered by the new process. `status` shows `auth c604e32 r142 active active wal`, and the same for every app with a database.
 - `/var/opt/ikigenba/<app>/` is untouched for every app.
+- The host rules of `S11-hardening.md` are in place; `hardening` wrote nothing, because `init` had already put them there.
 
 ## An agent activates a release without a label
 
@@ -171,6 +177,7 @@ layout: ok (releases)
 manifests: ok (8 apps)
 secrets: ok (2 keys)
 resources: ok (8 apps)
+hardening: ok (unchanged)
 label: ok (none)
 env: ok (8 apps)
 units: ok (8 apps)
@@ -218,6 +225,7 @@ layout: ok (per app; cutover of 8 apps)
 manifests: ok (8 apps)
 secrets: ok (2 keys)
 resources: ok (8 apps)
+hardening: ok (unchanged)
 snapshot: ok (8 services)
 cutover: ok (removed 8 apps from /opt)
 label: ok (r142)
@@ -247,7 +255,7 @@ Preconditions:
 - Every app's `state/` is under `/var/opt/ikigenba/<app>/` and its environment file is `/etc/opt/ikigenba/<app>/env`; no `/opt/<app>/` holds `state/` or `etc/env`.
 - `dummy` is disabled; every other app is `active`.
 - litestream has replicated every declared database under `<backup.s3_uri><app>/`, and the host's role can write under `<backup.s3_uri>snapshots/`.
-- `init` has reported the host ready, and `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/` is unpacked whole.
+- `init` has reported the host ready, run by an opsctl whose release carries the `hardening` step, so the host already holds its rules; and `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/` is unpacked whole.
 
 Postconditions:
 
@@ -277,6 +285,7 @@ layout: ok (fresh host)
 manifests: ok (8 apps)
 secrets: ok (2 keys)
 resources: ok (8 apps)
+hardening: ok (unchanged)
 label: ok (r142)
 env: ok (8 apps)
 units: ok (8 apps)
@@ -329,6 +338,7 @@ layout: ok (releases)
 manifests: ok (8 apps)
 secrets: ok (2 keys)
 resources: ok (8 apps)
+hardening: ok (unchanged)
 label: ok (r142)
 env: ok (8 apps)
 units: ok (8 apps)
@@ -379,6 +389,7 @@ layout: ok (releases)
 manifests: ok (8 apps)
 secrets: ok (2 keys)
 resources: ok (8 apps)
+hardening: ok (unchanged)
 label: ok (none)
 env: ok (8 apps)
 units: ok (8 apps)
@@ -428,6 +439,7 @@ layout: ok (releases)
 manifests: ok (8 apps)
 secrets: ok (2 keys)
 resources: ok (8 apps)
+hardening: ok (unchanged)
 label: ok (r141)
 env: ok (8 apps)
 units: ok (8 apps)
@@ -476,6 +488,7 @@ layout: ok (releases)
 manifests: ok (8 apps)
 secrets: ok (2 keys)
 resources: ok (8 apps)
+hardening: ok (unchanged)
 label: ok (r142)
 env: ok (8 apps)
 units: ok (8 apps)
@@ -525,6 +538,7 @@ layout: ok (releases)
 manifests: ok (8 apps)
 secrets: ok (2 keys)
 resources: ok (8 apps)
+hardening: ok (unchanged)
 label: ok (r142)
 env: ok (8 apps)
 units: ok (8 apps; gmail stopped and removed, state kept)
@@ -578,6 +592,7 @@ layout: ok (releases)
 manifests: ok (8 apps)
 secrets: ok (2 keys)
 resources: ok (8 apps)
+hardening: ok (unchanged)
 label: ok (r142)
 env: ok (8 apps)
 units: ok (8 apps)
@@ -629,6 +644,7 @@ layout: ok (releases)
 manifests: ok (8 apps)
 secrets: ok (2 keys)
 resources: ok (8 apps)
+hardening: ok (unchanged)
 label: ok (r142)
 env: ok (8 apps)
 units: ok (8 apps)
@@ -933,6 +949,7 @@ layout: ok (per app; cutover of 8 apps)
 manifests: ok (8 apps)
 secrets: ok (2 keys)
 resources: ok (8 apps)
+hardening: ok (unchanged)
 snapshot: failed: repos: no replica under the prefix
 opsctl: activate failed
 ```
@@ -941,7 +958,7 @@ Exits 1. The step outcome lines are on stdout; the last line is on stderr. Any r
 
 Preconditions:
 
-- As for "An agent moves a host from the per-app layout to releases", except that `<backup.s3_uri>repos/` holds nothing litestream wrote.
+- As for "An agent moves a host from the per-app layout to releases", except that `<backup.s3_uri>repos/` holds nothing litestream wrote. As there, the host already holds the `hardening` rules.
 
 Postconditions:
 
@@ -965,8 +982,9 @@ Output:
 ```
 Usage: opsctl rollback
 
-Make the release previous names the one this host runs again. current is
-pointed at it and previous removed, then every app's environment file and
+Make the release previous names the one this host runs again. The host's
+rules are put in place as 'opsctl activate' puts them, current is pointed at
+the release and previous removed, then every app's environment file and
 units are written from it, nginx, /run/ikigenba/services.json and
 /etc/litestream.yml are regenerated, and every app is restarted as 'opsctl
 activate' does. The release keeps the label it last had. Run by the opsctl
@@ -1010,6 +1028,7 @@ release: ok (1a2b3c4, r141)
 manifests: ok (8 apps)
 secrets: ok (2 keys)
 resources: ok (8 apps)
+hardening: ok (unchanged)
 env: ok (8 apps)
 units: ok (8 apps)
 links: ok (current 1a2b3c4, previous none)
@@ -1143,6 +1162,7 @@ release: ok (1a2b3c4, r141)
 manifests: ok (8 apps)
 secrets: ok (2 keys)
 resources: ok (8 apps)
+hardening: ok (unchanged)
 env: ok (8 apps)
 units: ok (8 apps)
 links: ok (current 1a2b3c4, previous none)

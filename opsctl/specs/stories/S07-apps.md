@@ -306,12 +306,13 @@ from the manifest, the parameter, the store, and the release
 (`S10-releases.md`); `restore` writes it whole the same way (see
 `S08-backup.md`); and `init` rewrites it (see `S04-init.md`). It is never
 backed up: it is generated, so a host writes it again rather than carrying a
-stale copy forward. Writing it whole creates `/etc/opt/` and
-`/etc/opt/ikigenba/` owned `root:root` with mode `0755` if they are missing,
-and `/etc/opt/ikigenba/<app>/` the same way; that directory holds the `env`
-file and nothing else. A per-app host laid out before the file lived there
-may still hold an app's file at `/opt/<app>/etc/env`; nothing reads it there
-except a unit written in those days.
+stale copy forward. Writing it whole creates `/etc/opt/` owned `root:root`
+with mode `0755` if it is missing, and `/etc/opt/ikigenba/` and
+`/etc/opt/ikigenba/<app>/` owned by root, granting nothing to others, if they
+are missing; that directory holds the `env` file and nothing else. A per-app
+host laid out before the file lived there may still hold an app's file at
+`/opt/<app>/etc/env`; nothing reads it there except a unit written in those
+days.
 
 Each app runs as two systemd units, written by `activate`
 (`S10-releases.md`) and never backed up:
@@ -352,14 +353,15 @@ Besides its environment file, an app keeps its files in two places. Its
 package directory holds what its release brought: `bin/`, `etc/`, and
 `share/`. `/var/opt/ikigenba/<app>/`, its working directory, holds what the
 app writes as it runs: `state/`, its data, and `cache/`, which it can lose.
-`activate` creates `/var/opt/ikigenba/` owned `root:root` with mode `0755` if
-it is missing, and `/var/opt/ikigenba/<app>/`, owned `ikigenba:ikigenba` with
-mode `0750`, for an app that has none (`S10-releases.md`). It never creates
-`state/` or `cache/`: the app creates them when it starts. A relative path in
-a manifest resolves against the working directory, so `state/crm.db` is
-`/var/opt/ikigenba/crm/state/crm.db`. Every app's working directory is a
-sibling under `/var/opt/ikigenba/`, so a path one app gives into another's
-data, such as `../repos/state/repos`, reaches it.
+`activate` creates `/var/opt/ikigenba/` owned by root, granting nothing to
+others, if it is missing, and `/var/opt/ikigenba/<app>/`, owned
+`ikigenba:ikigenba` with mode `0750`, for an app that has none
+(`S10-releases.md`). It never creates `state/` or `cache/`: the app creates
+them when it starts. A relative path in a manifest resolves against the
+working directory, so `state/crm.db` is `/var/opt/ikigenba/crm/state/crm.db`.
+Every app's working directory is a sibling under `/var/opt/ikigenba/`, so a
+path one app gives into another's data, such as `../repos/state/repos`,
+reaches it.
 
 A per-app host laid out before the data lived there may still hold an app's
 `state/` under `/opt/<app>/`. No command moves it; the commands that would
