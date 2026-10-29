@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-S1KY-PFZ8 R-Z5NV-19P2 R-TPC1-G7B9
+// R-S1KY-PFZ8 R-Z5NV-19P2 R-9SBD-VETV
 func TestCampaignHistoryPages(t *testing.T) {
 	cfg, db := pageFixture(t)
 	ctx := t.Context()

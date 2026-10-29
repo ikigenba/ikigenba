@@ -153,7 +153,7 @@ func TestIdentityAndEvidence(t *testing.T) {
 	r.Names = []string{"Alias", "Other"}
 	r.Address = scrapes.Address{Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "HENNEPIN"}
 	r.People = []scrapes.Person{{Name: "Pat", Role: "owner"}}
-	want := sources.Reading{FleetVerdict: sources.FleetUnknown, NameKey: "ACME BUILDERS", Name: r.Name, Names: []string{"Alias", "Other"}, NameKeys: []string{"ALIAS", "OTHER"}, Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "MN-HENNEPIN", People: []sources.Person{}, Cargo: []string{}, Evidence: []sources.Evidence{{Name: sources.EvidencePPPLoan, Source: ppp.Name, Weight: .2, Description: sources.DescribePPPLoan}}}
+	want := sources.Reading{TradeNames: []string{}, FleetVerdict: sources.FleetUnknown, NameKey: "ACME BUILDERS", Name: r.Name, Names: []string{"Alias", "Other"}, NameKeys: []string{"ALIAS", "OTHER"}, Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "MN-HENNEPIN", People: []sources.Person{}, Cargo: []string{}, Evidence: []sources.Evidence{{Name: sources.EvidencePPPLoan, Source: ppp.Name, Weight: .2, Description: sources.DescribePPPLoan}}}
 	if got := ppp.New().Read(r); !reflect.DeepEqual(got, want) {
 		t.Fatal(got, want)
 	}

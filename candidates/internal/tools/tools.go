@@ -415,12 +415,61 @@ func date(t time.Time) string {
 func peopleOf(ps []sources.Person) []Person {
 	out := []Person{}
 	for _, p := range ps {
-		out = append(out, Person{p.Name, p.Role})
+		out = append(out, Person{Name: p.Name, Role: p.Role})
 	}
 	return out
 }
+func sourcedPeopleOf(ps []sources.Sourced[sources.Person]) []Person {
+	out := []Person{}
+	for _, p := range ps {
+		out = append(out, Person{Name: p.Value.Name, Role: p.Value.Role, Source: p.Source})
+	}
+	return out
+}
+func sourcesOf(c store.Candidate) Sources {
+	out := Sources{Name: c.NameSource, Address: c.AddressSource, Phone: c.PhoneSource, Email: c.EmailSource, OtherNames: []Sourced{}, OtherAddresses: []SourcedAddress{}, OtherPhones: []Sourced{}, OtherEmails: []Sourced{}}
+	for _, x := range c.OtherNames {
+		out.OtherNames = append(out.OtherNames, Sourced{Value: x.Value, Source: x.Source})
+	}
+	for _, x := range c.OtherAddresses {
+		a := x.Value
+		out.OtherAddresses = append(out.OtherAddresses, SourcedAddress{Street: a.Street, City: a.City, State: a.State, Zip: a.Zip, County: a.County, Source: x.Source})
+	}
+	for _, x := range c.OtherPhones {
+		out.OtherPhones = append(out.OtherPhones, Sourced{Value: x.Value, Source: x.Source})
+	}
+	for _, x := range c.OtherEmails {
+		out.OtherEmails = append(out.OtherEmails, Sourced{Value: x.Value, Source: x.Source})
+	}
+	return out
+}
+func checkedURL(checked, landed string) string {
+	if checked == "" {
+		return ""
+	}
+	if website.Inputs(checked, "") == "" {
+		checked = "https://" + checked
+	}
+	if checked == landed {
+		return ""
+	}
+	a, ea := url.Parse(checked)
+	b, eb := url.Parse(landed)
+	if ea == nil && eb == nil {
+		if a.Path == "" {
+			a.Path = "/"
+		}
+		if b.Path == "" {
+			b.Path = "/"
+		}
+		if a.String() == b.String() {
+			return ""
+		}
+	}
+	return checked
+}
 func candidateOf(c store.Candidate) Candidate {
-	return Candidate{c.ID, c.Status, c.MergedInto, c.Name, c.Names, c.Street, c.City, c.State, c.Zip, c.County, c.Phone, c.Email, peopleOf(c.People), c.Class, c.Cargo, stamp(c.Created), stamp(c.Updated)}
+	return Candidate{c.ID, c.Status, c.MergedInto, c.Name, c.Names, c.Street, c.City, c.State, c.Zip, c.County, c.Phone, c.Email, sourcedPeopleOf(c.People), c.Class, c.Cargo, stamp(c.Created), stamp(c.Updated)}
 }
 func rulingOf(r store.Ruling) Ruling {
 	return Ruling{r.Kind, r.Candidate, r.Other, r.Keys, r.Why, r.UserID, r.UserEmail, stamp(r.At)}
@@ -448,6 +497,13 @@ func judgmentsOf(a store.Judgments) Judgments {
 }
 func factsOf(f store.Facts, origin string) Facts {
 	v := Facts{KnownSince: date(f.KnownSince), NewestFiling: date(f.NewestFiling), Categories: []Category{}, ClassifiedBy: store.ClassifiedBy(f.Categories), RecordsDiffer: store.RecordsDiffer(f.Categories, f.Records), RecordCategories: []Category{}, GovernmentMatch: f.GovernmentMatch, FleetVerdict: f.FleetVerdict, PowerUnits: f.PowerUnits, Drivers: f.Drivers, Website: f.Website, WebsiteURL: f.WebsiteURL, WebsiteSource: f.WebsiteSource, Minutes: f.Minutes, MinutesSource: f.MinutesSource, Miles: f.Miles, RouteAddress: f.RouteAddress, Written: []Written{}, Headcounts: []Headcount{}, BriefLabels: append([]string{}, f.BriefLabels...)}
+	if !f.KnownSince.IsZero() {
+		v.KnownSinceSource = f.KnownSinceSource
+	}
+	if !f.NewestFiling.IsZero() {
+		v.NewestFilingSource = f.NewestFilingSource
+	}
+	v.WebsiteCheckedURL = checkedURL(f.WebsiteCheckedURL, f.WebsiteURL)
 	if f.MinutesSource == store.MinutesByRoute && f.RouteAddress != "" {
 		v.PlaceURL = routes.PlaceURL(f.RouteAddress)
 		v.DirectionsURL = routes.DirectionsURL(origin, f.RouteAddress)
@@ -529,6 +585,8 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 		out.Rejects = append(out.Rejects, rejectOf(x))
 	}
 	if c.Status == store.StatusActive {
+		s := sourcesOf(c)
+		out.Sources = &s
 		park, err := cfg.Store.CandidatePark(ctx, id)
 		if err != nil {
 			return failure(err)
@@ -576,6 +634,17 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 		enrichments, err := cfg.Store.Enrichments(ctx, id)
 		if err != nil {
 			return failure(err)
+		}
+		if out.Enrichments.Facts != nil {
+			p, err := cfg.Store.PlacesURL(ctx, id)
+			if err != nil {
+				return failure(err)
+			}
+			source, state, landed, _, _, checked, _ := store.WebsiteDecisionOf(enrichments, p)
+			out.Enrichments.Facts.WebsiteSource = source
+			out.Enrichments.Facts.Website = state
+			out.Enrichments.Facts.WebsiteURL = landed
+			out.Enrichments.Facts.WebsiteCheckedURL = checkedURL(checked, landed)
 		}
 		out.Enrichments.Basis = store.BasisOf(enrichments)
 		out.Enrichments.Kinds.Present, out.Enrichments.Kinds.Missing = store.KindsOf(enrichments)

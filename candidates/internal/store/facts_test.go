@@ -15,7 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-H6P7-0TI8 R-OU7I-97OR
+// R-BC6S-8GU2 R-ATWA-HWPN
 func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -80,7 +80,7 @@ func TestFactsRefreshIndependentlyFromOpinions(t *testing.T) {
 }
 
 // R-PWRA-LW9H R-NLRN-WHGC R-R7HY-562T R-LD70-4W25 R-MTHW-1S6E
-// R-LNNI-SGBE R-KWTQ-DI04
+// R-AXJZ-N7XQ R-ASOE-44YY
 func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -203,7 +203,7 @@ func TestMovingRulingsRefreshDerivedFactsAndKeepMergedJudgments(t *testing.T) {
 	contractEqual(t, facts, beforeFacts)
 }
 
-// R-Z1VJ-IZ0R R-OU7I-97OR R-WNFA-Q8TO  R-MTHW-1S6E
+// R-Z1VJ-IZ0R R-ATWA-HWPN R-WNFA-Q8TO  R-MTHW-1S6E
 func TestOrdinaryWritesPreserveFactsAndResultHistory(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -245,7 +245,7 @@ func TestOrdinaryWritesPreserveFactsAndResultHistory(t *testing.T) {
 			_, _, e := f.s.Attach(ctx, "later", true, []store.Observation{o})
 			return e
 		},
-		func() error { _, _, e := f.s.MarkGone(ctx, "source-z", "absent", "", 100); return e },
+		func() error { _, _, e := f.s.MarkGone(ctx, "fmcsa", "absent", "", 100); return e },
 		func() error { _, e := f.s.Judge(ctx, ids); return e },
 		func() error { _, _, e := f.s.JudgeAll(ctx, "", 100, f.now); return e },
 		func() error { return f.s.ReplaceZipDrive(ctx, map[string]int64{"55072": 99}) },
@@ -297,7 +297,7 @@ func TestOrdinaryWritesPreserveFactsAndResultHistory(t *testing.T) {
 	}
 }
 
-// R-GZDS-Q722 R-GSBL-OU6L R-GVQ3-KVTZ
+// R-AZZS-ERF4 R-GSBL-OU6L R-HS56-N73R
 func TestFactsProjectionUsesNewestResultOfEveryKind(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

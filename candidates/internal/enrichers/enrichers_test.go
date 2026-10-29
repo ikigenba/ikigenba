@@ -20,7 +20,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-7HHI-2OD5 R-I9B5-6YXP R-IBQX-YIF3 R-BQOQ-UMXX
+// R-AOXL-RZFS R-I9B5-6YXP R-IBQX-YIF3 R-AQ5I-5R6H
 func TestDeclaredValues(t *testing.T) {
 	type word string
 	words := []word{enrichers.KindDriveMinutes, enrichers.KindLinkFacts, enrichers.SourceZipDrive, enrichers.SourceLinks}
@@ -34,9 +34,9 @@ func TestDeclaredValues(t *testing.T) {
 	}
 	n := int64(84)
 	reading := sources.Reading{Name: "owned"}
-	link := enrichers.Link{"scraper", "source", true, reading}
-	s := enrichers.Subject{"id", "name", "city", "state", "street", "zip", "phone", "email", "website", "source", &website.Result{State: sources.WebsiteNone}, &n, []enrichers.Link{link}, []enrichers.Page{{7, "url", "title", "text", 4}}, &enrichers.LinkFound{KnownSince: "known"}, "origin", &enrichers.SiteTextFound{Run: "site_run"}, "search_inputs"}
-	if s.SiteText.Run != "site_run" || s.SearchInputs != "search_inputs" || s.Origin != "origin" || s.ID != "id" || s.Name != "name" || s.City != "city" || s.State != "state" || s.Website != "website" || s.Street != "street" || s.Phone != "phone" || s.WebsiteSource != "source" || s.Check.State != sources.WebsiteNone || s.Email != "email" || s.Zip != "zip" || *s.Minutes != 84 || !s.Links[0].Gone || s.Links[0].Scraper != "scraper" || s.Links[0].SourceID != "source" || s.Links[0].Reading.Name != "owned" || s.Pages[0] != (enrichers.Page{7, "url", "title", "text", 4}) || s.Facts.KnownSince != "known" {
+	link := enrichers.Link{"scraper", "source", true, reading, time.Time{}}
+	s := enrichers.Subject{"id", "name", "city", "state", "street", "zip", "phone", "email", "website", "source", &website.Result{State: sources.WebsiteNone}, &n, []enrichers.Link{link}, []enrichers.Page{{7, "url", "title", "text", 4}}, &enrichers.LinkFound{KnownSince: "known"}, "origin", &enrichers.SiteTextFound{Run: "site_run"}, "search_inputs", "ns", "nr", "as", "ar", "ps", "pr", "es", "er", []sources.Sourced[sources.Person]{{Value: sources.Person{Name: "chosen"}}}, "https://places.test/", sources.Sourced[sources.Address]{Value: sources.Address{Street: "record"}}, &website.Result{State: sources.WebsiteHTTP}}
+	if s.NameSource != "ns" || s.NameRecord != "nr" || s.AddressSource != "as" || s.AddressRecord != "ar" || s.PhoneSource != "ps" || s.PhoneRecord != "pr" || s.EmailSource != "es" || s.EmailRecord != "er" || s.People[0].Value.Name != "chosen" || s.PlacesURL != "https://places.test/" || s.RecordAddress.Value.Street != "record" || s.EmailCheck.State != sources.WebsiteHTTP || s.SiteText.Run != "site_run" || s.SearchInputs != "search_inputs" || s.Origin != "origin" || s.ID != "id" || s.Name != "name" || s.City != "city" || s.State != "state" || s.Website != "website" || s.Street != "street" || s.Phone != "phone" || s.WebsiteSource != "source" || s.Check.State != sources.WebsiteNone || s.Email != "email" || s.Zip != "zip" || *s.Minutes != 84 || !s.Links[0].Gone || s.Links[0].Scraper != "scraper" || s.Links[0].SourceID != "source" || s.Links[0].Reading.Name != "owned" || s.Pages[0] != (enrichers.Page{7, "url", "title", "text", 4}) || s.Facts.KnownSince != "known" {
 		t.Fatal(s)
 	}
 	r := enrichers.Result{"origin", json.RawMessage(`{}`), 0.5}
@@ -48,9 +48,9 @@ func TestDeclaredValues(t *testing.T) {
 		want  string
 	}{
 		{enrichers.Category{"n", "s"}, `{"name":"n","source":"s"}`},
-		{enrichers.LinkFound{"a", "b", "c", []enrichers.Category{{"n", "s"}}, "pass", &n, &n, []enrichers.Headcount{{"ppp", "jobs", 26, "2020-04-28", nil}}}, `{"known_since":"a","newest_filing":"b","government_match":"c","categories":[{"name":"n","source":"s"}],"fleet_verdict":"pass","power_units":84,"drivers":84,"headcounts":[{"scraper":"ppp","kind":"jobs","count":26,"date":"2020-04-28"}]}`},
+		{enrichers.LinkFound{"a", "b", "c", []enrichers.Category{{"n", "s"}}, "pass", &n, &n, []enrichers.Headcount{{"ppp", "jobs", 26, "2020-04-28", nil}}, "", ""}, `{"known_since":"a","newest_filing":"b","government_match":"c","categories":[{"name":"n","source":"s"}],"fleet_verdict":"pass","power_units":84,"drivers":84,"headcounts":[{"scraper":"ppp","kind":"jobs","count":26,"date":"2020-04-28"}]}`},
 		{enrichers.LinkFound{}, `{"categories":null,"fleet_verdict":"","headcounts":null}`},
-		{enrichers.MinutesFound{&n}, `{"minutes":84}`}, {enrichers.MinutesFound{}, `{}`},
+		{enrichers.MinutesFound{&n, nil}, `{"minutes":84}`}, {enrichers.MinutesFound{}, `{}`},
 	}
 	for _, tc := range cases {
 		b, err := json.Marshal(tc.value)
@@ -182,7 +182,7 @@ func TestLinkFingerprint(t *testing.T) {
 	}
 }
 
-// R-ISTJ-BAST R-UP16-EGCC R-NBNA-NXJF
+// R-B607-4RTI R-UP16-EGCC R-NBNA-NXJF
 func TestWebsiteInputsAndValidation(t *testing.T) {
 	for _, ck := range []*website.Checker{nil, {}} {
 		e := enrichers.WebsiteCheck{Checker: ck}
@@ -269,7 +269,7 @@ func TestWebsiteFetch(t *testing.T) {
 		if !ok || r.Source != in || r.Cost != 0 {
 			t.Error("result", in, r)
 		}
-		want := website.Result{State: sources.WebsiteHTTPS, URL: "https://" + in, Title: "subject", StatusCode: 200, Size: 22}
+		want := website.Result{From: in, State: sources.WebsiteHTTPS, URL: "https://" + in, Title: "subject", StatusCode: 200, Size: 22}
 		b, _ := json.Marshal(want)
 		if string(r.Found) != string(b) {
 			t.Errorf("found %s want %s", r.Found, b)

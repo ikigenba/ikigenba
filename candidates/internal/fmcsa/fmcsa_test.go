@@ -39,7 +39,7 @@ func TestSource(t *testing.T) {
 func TestIdentity(t *testing.T) {
 	r := scrapes.Row{Name: "Acme, Inc.", Names: []string{"Other", "Third"}, Address: scrapes.Address{Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "115"}, People: []scrapes.Person{{Name: "Alex", Role: "owner"}}, Facts: facts(map[string]string{"phone": "+1 320 555 0123", "email": "x@ACME.COM"})}
 	got := fmcsa.New().Read(r)
-	want := sources.Reading{NameKey: "ACME", NameKeys: []string{"OTHER", "THIRD"}, PhoneKey: "3205550123", DomainKey: "acme.com", Name: "Acme, Inc.", Names: []string{"Other", "Third"}, Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "MN-115", Phone: "+1 320 555 0123", Email: "x@ACME.COM", People: []sources.Person{{Name: "Alex", Role: "owner"}}, Class: sources.ClassUnknown, Cargo: []string{}, Filed: time.Time{}, Fleet: false, FleetVerdict: sources.FleetFail, Estimate: nil, Evidence: []sources.Evidence{{Name: sources.EvidenceOwnDomain, Source: fmcsa.Name, Weight: .2, Description: sources.DescribeOwnDomain}}}
+	want := sources.Reading{TradeNames: []string{"Third"}, NameKey: "ACME", NameKeys: []string{"OTHER", "THIRD"}, PhoneKey: "3205550123", DomainKey: "acme.com", Name: "Acme, Inc.", Names: []string{"Other", "Third"}, Street: "1 Road", City: "Town", State: "MN", Zip: "55072", County: "MN-115", Phone: "+1 320 555 0123", Email: "x@ACME.COM", People: []sources.Person{{Name: "Alex", Role: "owner"}}, Class: sources.ClassUnknown, Cargo: []string{}, Filed: time.Time{}, Fleet: false, FleetVerdict: sources.FleetFail, Estimate: nil, Evidence: []sources.Evidence{{Name: sources.EvidenceOwnDomain, Source: fmcsa.Name, Weight: .2, Description: sources.DescribeOwnDomain}}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("%+v != %+v", got, want)
 	}

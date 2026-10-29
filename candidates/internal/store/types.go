@@ -34,13 +34,17 @@ func New(d *db.DB, cfg Config) *Store { return &Store{d: d, cfg: cfg} }
 
 // Candidate is the display and identity of a business.
 type Candidate struct {
-	ID, Status, MergedInto, Name                   string
-	Names                                          []string
-	Street, City, State, Zip, County, Phone, Email string
-	People                                         []sources.Person
-	Class                                          string
-	Cargo                                          []string
-	Created, Updated                               time.Time
+	ID, Status, MergedInto, Name                                                                             string
+	Names                                                                                                    []string
+	Street, City, State, Zip, County, Phone, Email                                                           string
+	People                                                                                                   []sources.Sourced[sources.Person]
+	Class                                                                                                    string
+	Cargo                                                                                                    []string
+	Created, Updated                                                                                         time.Time
+	NameSource, NameRecord, AddressSource, AddressRecord, PhoneSource, PhoneRecord, EmailSource, EmailRecord string
+	OtherNames                                                                                               []sources.Sourced[string]
+	OtherAddresses                                                                                           []sources.Sourced[sources.Address]
+	OtherPhones, OtherEmails                                                                                 []sources.Sourced[string]
 }
 
 // Link attaches a source row to a candidate.
@@ -85,23 +89,24 @@ type Due struct{ Candidate, Inputs string }
 
 // Facts records the latest enrichment facts.
 type Facts struct {
-	Candidate                          string
-	KnownSince                         time.Time
-	GovernmentMatch                    string
-	NewestFiling                       time.Time
-	Categories                         []sources.Category
-	Records                            []sources.Category
-	FleetVerdict                       string
-	PowerUnits, Drivers                *int64
-	Headcounts                         []sources.Headcount
-	Website, WebsiteURL, WebsiteSource string
-	Minutes                            *int64
-	MinutesSource                      string
-	Miles                              *float64
-	RouteAddress                       string
-	Brief                              string
-	BriefLabels                        []string
-	Written                            []Written
+	Candidate                                             string
+	KnownSince                                            time.Time
+	KnownSinceSource, GovernmentMatch                     string
+	NewestFiling                                          time.Time
+	NewestFilingSource                                    string
+	Categories                                            []sources.Category
+	Records                                               []sources.Category
+	FleetVerdict                                          string
+	PowerUnits, Drivers                                   *int64
+	Headcounts                                            []sources.Headcount
+	Website, WebsiteURL, WebsiteSource, WebsiteCheckedURL string
+	Minutes                                               *int64
+	MinutesSource                                         string
+	Miles                                                 *float64
+	RouteAddress                                          string
+	Brief                                                 string
+	BriefLabels                                           []string
+	Written                                               []Written
 }
 
 // Written records the result time used for one kind.
@@ -151,6 +156,8 @@ type Ranked struct {
 
 // Record vocabulary and identifier prefixes.
 const (
+	WebsiteByPlaces   = "places"
+	WebsiteByOwner    = "owner"
 	WebsiteByCheck    = "check"
 	WebsiteBySearch   = "search"
 	CandidateIDPrefix = "cand_"

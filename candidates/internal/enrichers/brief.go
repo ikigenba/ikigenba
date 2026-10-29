@@ -123,18 +123,14 @@ func (Brief) Input(s Subject) json.RawMessage {
 		}
 	}
 	seen := map[BriefPerson]bool{}
-	for _, l := range s.Links {
-		if l.Gone {
-			continue
-		}
-		for _, p := range l.Reading.People {
-			v := BriefPerson{p.Name, p.Role}
-			if p.Name != "" && !seen[v] {
-				seen[v] = true
-				f.People = append(f.People, v)
-			}
+	for _, p := range s.People {
+		v := BriefPerson{p.Value.Name, p.Value.Role}
+		if v.Name != "" && !seen[v] {
+			seen[v] = true
+			f.People = append(f.People, v)
 		}
 	}
+
 	pages := []BriefPage{}
 	used := 0
 	for _, p := range s.Pages {

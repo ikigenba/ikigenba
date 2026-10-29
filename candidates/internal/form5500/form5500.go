@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/ikigenba/ikigenba/appkit/scrapes"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
@@ -98,16 +99,33 @@ outer:
 
 // Read returns an independent interpretation of the filing.
 func (*Source) Read(r scrapes.Row) sources.Reading {
-	out := sources.Reading{NameKey: sources.NameKey(r.Name), Name: r.Name, Names: append([]string{}, r.Names...), Street: r.Address.Street, City: r.Address.City, State: r.Address.State, Zip: r.Address.Zip, Phone: fact(r, "phone"), People: []sources.Person{}, Cargo: []string{}, FleetVerdict: sources.FleetUnknown, Filed: date(fact(r, "received")), KnownSince: date(fact(r, "plan_effective")), Category: sources.NAICSCategory(fact(r, "business_code")), EINKey: sources.EINKey(fact(r, "ein")), Evidence: []sources.Evidence{{Name: sources.EvidenceForm5500Filing, Source: Name, Weight: .2, Description: sources.DescribeForm5500Filing}}}
+	out := sources.Reading{TradeNames: []string{}, NameKey: sources.NameKey(r.Name), Name: r.Name, Names: append([]string{}, r.Names...), Street: r.Address.Street, City: r.Address.City, State: r.Address.State, Zip: r.Address.Zip, Phone: fact(r, "phone"), People: []sources.Person{}, Cargo: []string{}, FleetVerdict: sources.FleetUnknown, Filed: date(fact(r, "received")), KnownSince: date(fact(r, "plan_effective")), Category: sources.NAICSCategory(fact(r, "business_code")), EINKey: sources.EINKey(fact(r, "ein")), Evidence: []sources.Evidence{{Name: sources.EvidenceForm5500Filing, Source: Name, Weight: .2, Description: sources.DescribeForm5500Filing}}}
+	out.Mailing = fact(r, "loc_state") == ""
+	for _, n := range r.Names[min(1, len(r.Names)):] {
+		if n != "" {
+			out.TradeNames = append(out.TradeNames, n)
+		}
+	}
+	if !out.Mailing {
+		a := sources.Address{Street: strings.TrimSpace(fact(r, "mail_street")), City: titleCase(strings.TrimSpace(fact(r, "mail_city"))), State: strings.ToUpper(strings.TrimSpace(fact(r, "mail_state")))}
+		z := []rune(strings.TrimSpace(fact(r, "mail_zip")))
+		a.Zip = string(z[:min(5, len(z))])
+		if a.Street != "" || a.City != "" || a.State != "" || a.Zip != "" {
+			out.MailingAddress = &a
+		}
+	}
 	seen := map[string]bool{}
 	for _, n := range out.Names {
 		seen[sources.NameKey(n)] = true
 	}
 	derived := append(dba(fact(r, "sponsor_name")), planName(fact(r, "plan_name")))
-	for _, n := range derived {
+	for i, n := range derived {
 		k := sources.NameKey(n)
 		if k != "" && !seen[k] {
 			out.Names = append(out.Names, n)
+			if i > 0 || len(derived) == 1 {
+				out.TradeNames = append(out.TradeNames, n)
+			}
 			seen[k] = true
 		}
 	}
@@ -128,4 +146,20 @@ func (*Source) Read(r scrapes.Row) sources.Reading {
 		}
 	}
 	return out
+}
+
+func titleCase(s string) string {
+	previous := false
+	return strings.Map(func(r rune) rune {
+		letter := unicode.IsLetter(r)
+		if letter {
+			if previous {
+				r = unicode.ToLower(r)
+			} else {
+				r = unicode.ToUpper(r)
+			}
+		}
+		previous = letter
+		return r
+	}, s)
 }

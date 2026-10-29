@@ -111,6 +111,7 @@ type WebsiteSearchFound struct {
 	WebsiteFrom  string                     `json:"website_from,omitempty"`
 	SiteText     *WebsiteSearchSiteText     `json:"site_text,omitempty"`
 	Case         string                     `json:"case,omitempty"`
+	InputSources []InputSource              `json:"input_sources,omitempty"`
 }
 
 // Failed reports an unsuccessful run or a missing answer.
@@ -204,9 +205,9 @@ func (WebsiteSearch) Input(s Subject) json.RawMessage {
 	v := WebsiteSearchInput{Candidate: s.ID, Name: s.Name, City: s.City, State: s.State, Street: s.Street, Zip: s.Zip, Phone: s.Phone, Domain: website.Domain(s.Email), People: []BriefPerson{}, Categories: []Category{}}
 	if v.Domain != "" {
 		v.DomainCheck = sources.WebsiteUnknown
-		if s.Check != nil {
-			v.DomainCheck = s.Check.State
-			v.DomainError = s.Check.Error
+		if s.EmailCheck != nil {
+			v.DomainCheck = s.EmailCheck.State
+			v.DomainError = s.EmailCheck.Error
 		}
 	}
 	if emptySite(s) {
@@ -304,6 +305,10 @@ func (w WebsiteSearch) Found(ctx context.Context, s Subject, out prompts.Outcome
 		}
 		f.Confirmation = &WebsiteSearchConfirmation{state, pg.URL, pg.Title, pg.StatusCode, pg.Size, pg.Error}
 	}
+	f.InputSources = append(f.InputSources, inputSource(sources.FactName, s.NameSource, s.NameRecord)...)
+	f.InputSources = append(f.InputSources, inputSource(sources.FactAddress, s.AddressSource, s.AddressRecord)...)
+	f.InputSources = append(f.InputSources, inputSource(sources.FactPhone, s.PhoneSource, s.PhoneRecord)...)
+	f.InputSources = append(f.InputSources, inputSource(sources.FactEmail, s.EmailSource, s.EmailRecord)...)
 	f.Case = searchCase(f)
 	r := result(SourcePrompts, f)
 	r.Cost = float64(out.CostNanos) / 1e9
@@ -332,6 +337,10 @@ func (WebsiteSearch) Valid(b json.RawMessage) bool {
 					return false
 				}
 				contextual = true
+			}
+		case "input_sources":
+			if !validInputSources(b) {
+				return false
 			}
 		case "reason", "website", "website_from", "case":
 			raw = bytes.TrimSpace(raw)

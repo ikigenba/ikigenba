@@ -16,26 +16,26 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-EHDF-O5O0 R-PJ9Y-01PY R-YH9Z-K58E
+// R-9KZZ-KSDP R-PJ9Y-01PY R-YH9Z-K58E
 func TestDriveViewTypes(_ *testing.T) {
 	_ = struct {
-		KnownSince, KnownSinceText, NewestFiling, NewestFilingText                     string
-		Categories                                                                     []CategoryRow
-		ClassifiedBy                                                                   string
-		RecordsDiffer                                                                  bool
-		RecordCategories                                                               []CategoryRow
-		GovernmentMatch, FleetVerdict, PowerUnits, Drivers                             string
-		Headcounts                                                                     []HeadcountRow
-		BriefLabels                                                                    []string
-		Minutes, MinutesSource, Miles, RouteAddress, RoutePlaceURL, RouteDirectionsURL string
-		Written                                                                        []WrittenRow
+		KnownSince, KnownSinceText, KnownSinceSource, NewestFiling, NewestFilingText, NewestFilingSource string
+		Categories                                                                                       []CategoryRow
+		ClassifiedBy                                                                                     string
+		RecordsDiffer                                                                                    bool
+		RecordCategories                                                                                 []CategoryRow
+		GovernmentMatch, FleetVerdict, PowerUnits, Drivers                                               string
+		Headcounts                                                                                       []HeadcountRow
+		BriefLabels                                                                                      []string
+		Minutes, MinutesSource, Miles, RouteAddress, RoutePlaceURL, RouteDirectionsURL                   string
+		Written                                                                                          []WrittenRow
 	}(FactsView{})
 	_ = struct{ Scraper, Kind, Count, Hours, AsOf, AsOfText string }(HeadcountRow{})
 	_ = struct{ Kind, At, AtText string }(WrittenRow{})
 	_ = struct{ Minutes, Miles, Address, Precision, Status, Why, Error, PlaceURL, DirectionsURL string }(RouteView{})
 }
 
-// R-SRKK-RT10 R-T7F9-QTO1 R-SSSH-5KRP
+// R-EZOK-JN4F R-FLMR-FIGX R-F0WG-XEV4
 func TestDriveFactsAndMemberViews(t *testing.T) {
 	for _, tc := range []struct {
 		f                               store.Facts
@@ -70,7 +70,7 @@ func TestDriveFactsAndMemberViews(t *testing.T) {
 	}
 }
 
-// R-JS09-MRE9 R-JQSD-8ZNK R-T3RK-LIFY
+// R-HKT0-DT41 R-HM0W-RKUQ R-FEBD-4W0R
 func TestRouteResultProjection(t *testing.T) {
 	for _, tc := range []struct {
 		found  enrichers.RouteFound
@@ -157,13 +157,13 @@ func TestDriveRouteTemplateStates(t *testing.T) {
 	render("pass", PassData{Pass: PassView{Kind: store.KindEnrichTarget, EnrichKind: enrichers.KindDriveRoute, Runs: 2, RunsFailed: 1, Cost: "$0.010000"}})
 }
 
-// R-SNWV-MHSX R-SRKK-RT10 R-T7F9-QTO1 R-SSSH-5KRP
+// R-EX8R-S3N1 R-EZOK-JN4F R-FLMR-FIGX R-F0WG-XEV4
 func TestCandidateAndListDriveDecision(t *testing.T) {
 	for i, result := range []enrichers.RouteFound{{Minutes: new(int64(47)), Miles: new(38.2), Address: "chosen-address"}, {Why: routes.WhyTooCoarse}, {Error: "chosen-error"}, {Minutes: new(int64(12)), Address: "old-address"}} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			cfg, db := pageFixture(t)
 			cfg.Store = store.New(db, store.Config{Now: fixtureTime, Rand: &sequence{}, Origin: "chosen-origin"})
-			_, ids, err := cfg.Store.Attach(t.Context(), "chosen-run", false, []store.Observation{{Scraper: "fixture", SourceID: "chosen-row", Digest: "chosen-digest", Reading: sources.Reading{Street: "chosen-street", City: "chosen-city", State: "MN", Zip: "55072"}}})
+			_, ids, err := cfg.Store.Attach(t.Context(), "chosen-run", false, []store.Observation{{Scraper: "fmcsa", SourceID: "chosen-row", Digest: "chosen-digest", Reading: sources.Reading{Street: "chosen-street", City: "chosen-city", State: "MN", Zip: "55072"}}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -175,7 +175,7 @@ func TestCandidateAndListDriveDecision(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			routeInputs := (enrichers.DriveRoute{}).Inputs(enrichers.Subject{Street: "chosen-street", City: "chosen-city", State: "MN", Zip: "55072", Origin: "chosen-origin"})
+			routeInputs := (enrichers.DriveRoute{}).Inputs(enrichers.Subject{RecordAddress: sources.Sourced[sources.Address]{Value: sources.Address{Street: "chosen-street", City: "chosen-city", State: "MN", Zip: "55072"}}, Origin: "chosen-origin"})
 			if i == 3 {
 				routeInputs = "stale-inputs"
 			}
@@ -274,7 +274,7 @@ func TestDriveRouteLinkTemplateStates(t *testing.T) {
 	}
 }
 
-// R-YJPS-BOPS
+// R-HN8T-5CLF
 func TestCandidateRouteLinksUseCurrentStoreInputs(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	path := filepath.Join(t.TempDir(), "routes.db")
@@ -295,7 +295,7 @@ func TestCandidateRouteLinksUseCurrentStoreInputs(t *testing.T) {
 			}
 		}
 	})
-	_, ids, err := cfg.Store.Attach(t.Context(), "chosen-run", false, []store.Observation{{Scraper: "fixture", SourceID: "chosen-row", Digest: "chosen-digest", Reading: sources.Reading{Street: "chosen-street", City: "chosen-city", State: "MN", Zip: "55072"}}})
+	_, ids, err := cfg.Store.Attach(t.Context(), "chosen-run", false, []store.Observation{{Scraper: "fmcsa", SourceID: "chosen-row", Digest: "chosen-digest", Reading: sources.Reading{Street: "chosen-street", City: "chosen-city", State: "MN", Zip: "55072"}}})
 	if err != nil {
 		t.Fatal(err)
 	}

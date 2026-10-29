@@ -13,7 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-FRU8-Z4M1 R-Q65V-BAP3 R-FKIU-OI5V
+// R-2RMT-3281 R-Q65V-BAP3 R-2NZ3-XQZY
 func TestEnrichmentsAreVisibleBeforeAndApartFromJudgments(t *testing.T) {
 	f := newFixture(t)
 	_, ids, err := f.st.Attach(t.Context(), "new-run", false, []store.Observation{{Scraper: "fmcsa", SourceID: "new-row", Digest: "new-digest", Reading: sources.Reading{Name: "unjudged-business", Names: []string{"unjudged-business"}, NameKey: "unjudged"}}})
@@ -71,7 +71,7 @@ func TestEnrichmentsAreVisibleBeforeAndApartFromJudgments(t *testing.T) {
 	}
 }
 
-// R-AQ2S-CL5A R-ARAO-QCVZ R-FUA1-QO3F R-FT25-CWCQ
+// R-AQ2S-CL5A R-ARAO-QCVZ R-2WIE-M56T R-2XQA-ZWXI
 func TestDriveRouteAnswersAndLiveMemberProjection(t *testing.T) {
 	f := fixtureWithRoutes(t, nil, nil, nil, nil, "Chosen origin")
 	id := f.seed(1)[0]
@@ -180,7 +180,7 @@ func TestDriveRouteAnswersAndLiveMemberProjection(t *testing.T) {
 	}
 }
 
-// R-FRU8-Z4M1
+// R-2RMT-3281
 func TestBriefArrivesAfterJudgments(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]

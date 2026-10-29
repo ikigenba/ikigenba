@@ -16,7 +16,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-var factsColumns = columns("candidate:Candidate known_since:KnownSince government_match:GovernmentMatch newest_filing:NewestFiling categories:Categories fleet_verdict:FleetVerdict power_units:PowerUnits drivers:Drivers headcounts:Headcounts website:Website website_url:WebsiteURL website_source:WebsiteSource minutes:Minutes minutes_source:MinutesSource miles:Miles route_address:RouteAddress brief:Brief brief_labels:BriefLabels")
+var factsColumns = columns("candidate:Candidate known_since:KnownSince government_match:GovernmentMatch newest_filing:NewestFiling categories:Categories fleet_verdict:FleetVerdict power_units:PowerUnits drivers:Drivers headcounts:Headcounts website:Website website_url:WebsiteURL website_source:WebsiteSource minutes:Minutes minutes_source:MinutesSource miles:Miles route_address:RouteAddress brief:Brief brief_labels:BriefLabels known_since_source:KnownSinceSource newest_filing_source:NewestFilingSource website_checked_url:WebsiteCheckedURL")
 
 func unknownFacts(id string) Facts {
 	return Facts{Candidate: id, Categories: []sources.Category{}, Records: []sources.Category{}, Headcounts: []sources.Headcount{}, BriefLabels: []string{}, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown}
@@ -54,12 +54,22 @@ func (s *Store) projectFacts(ctx context.Context, tx *sql.Tx, id string) error {
 	return insertRecord(ctx, tx, "facts", factsColumns, f, extra)
 }
 func (s *Store) projectedFacts(ctx context.Context, tx *sql.Tx, id string) (Facts, map[string]any, error) {
-	es, err := s.factsResults(ctx, tx, id)
+	places, err := placesURL(ctx, tx, id)
 	if err != nil {
 		return Facts{}, nil, err
 	}
-	if len(es) == 0 {
-		return Facts{}, nil, nil
+	es, err := s.factsResults(ctx, tx, id, places)
+	if err != nil {
+		return Facts{}, nil, err
+	}
+	if len(es) == 0 && places == "" {
+		var exists int
+		if err = scanSQL(ctx, tx, "SELECT EXISTS(SELECT 1 FROM facts WHERE candidate=?)", []any{id}, &exists); err != nil {
+			return Facts{}, nil, err
+		}
+		if exists == 0 {
+			return Facts{}, nil, nil
+		}
 	}
 	f := unknownFacts(id)
 	seen := map[string]bool{}
@@ -107,6 +117,7 @@ func (s *Store) projectedFacts(ctx context.Context, tx *sql.Tx, id string) (Fact
 					return Facts{}, nil, err
 				}
 			}
+			f.KnownSinceSource, f.NewestFilingSource = v.KnownSinceSource, v.NewestFilingSource
 			f.GovernmentMatch = v.GovernmentMatch
 			f.FleetVerdict = v.FleetVerdict
 			f.PowerUnits = v.PowerUnits
@@ -132,11 +143,10 @@ func (s *Store) projectedFacts(ctx context.Context, tx *sql.Tx, id string) (Fact
 	}
 	// The address is needed only when a recorded route could decide the drive.
 	if seen[enrichers.KindDriveRoute] && s.cfg.Origin != "" {
-		c, err := candidateKey(ctx, tx, id)
+		inputs, err := s.routeInputs(ctx, tx, id)
 		if err != nil {
 			return Facts{}, nil, err
 		}
-		inputs := (enrichers.DriveRoute{}).Inputs(enrichers.Subject{Street: c.Street, City: c.City, State: c.State, Zip: c.Zip, Origin: s.cfg.Origin})
 		for _, e := range es {
 			if inputs == "" || e.Kind != enrichers.KindDriveRoute || e.Inputs != inputs {
 				continue
@@ -148,7 +158,7 @@ func (s *Store) projectedFacts(ctx context.Context, tx *sql.Tx, id string) (Fact
 			}
 		}
 	}
-	f.WebsiteSource, f.Website, f.WebsiteURL, _, _, _ = WebsiteDecisionOf(es)
+	f.WebsiteSource, f.Website, f.WebsiteURL, _, _, f.WebsiteCheckedURL, _ = WebsiteDecisionOf(es, places)
 	if len(briefCategories) > 0 {
 		f.Categories = briefCategories
 	}
@@ -170,7 +180,7 @@ func (s *Store) projectedFacts(ctx context.Context, tx *sql.Tx, id string) (Fact
 }
 
 // factsResults retains each kind's newest result and any older deciding result.
-func (s *Store) factsResults(ctx context.Context, tx *sql.Tx, id string) ([]Enrichment, error) {
+func (s *Store) factsResults(ctx context.Context, tx *sql.Tx, id, p string) ([]Enrichment, error) {
 	kinds := []string{sources.WebsiteCheck, enrichers.KindDriveMinutes, enrichers.KindLinkFacts, enrichers.KindSiteText, enrichers.KindBrief, enrichers.KindWebsiteSearch, enrichers.KindDriveRoute}
 	// Each of the fixed seven probes seeks one index entry; no history is grouped or read.
 	rows, err := querySQL(ctx, tx, `WITH kinds(kind) AS (VALUES (?),(?),(?),(?),(?),(?),(?))
@@ -204,11 +214,10 @@ func (s *Store) factsResults(ctx context.Context, tx *sql.Tx, id string) ([]Enri
 	out := []Enrichment{}
 	var routeInputs string
 	if _, hasRoute := newest[enrichers.KindDriveRoute]; hasRoute && s.cfg.Origin != "" {
-		c, err := candidateKey(ctx, tx, id)
+		routeInputs, err = s.routeInputs(ctx, tx, id)
 		if err != nil {
 			return nil, err
 		}
-		routeInputs = (enrichers.DriveRoute{}).Inputs(enrichers.Subject{Street: c.Street, City: c.City, State: c.State, Zip: c.Zip, Origin: s.cfg.Origin})
 	}
 	var takeover []Enrichment
 	if check, ok := newest[sources.WebsiteCheck]; ok {
@@ -298,6 +307,15 @@ func (s *Store) factsResults(ctx context.Context, tx *sql.Tx, id string) ([]Enri
 		}
 	}
 	out = append(out, takeover...)
+	if p != "" {
+		matched, err := matchingCheck(ctx, tx, id, p, "")
+		if err != nil {
+			return nil, err
+		}
+		if matched != nil {
+			out = append(out, *matched)
+		}
+	}
 	return out, nil
 }
 
@@ -349,8 +367,16 @@ func (s *Store) FillFacts(ctx context.Context, after string, n int) (string, err
 		if err != nil {
 			return err
 		}
+		t := s.now()
 		for _, c := range cs {
 			last = c.ID
+			var results int
+			if err = scanSQL(ctx, tx, "SELECT EXISTS(SELECT 1 FROM enrichments WHERE candidate=?)", []any{c.ID}, &results); err != nil {
+				return err
+			}
+			if results == 0 {
+				continue
+			}
 			old, err := factsKey(ctx, tx, c.ID)
 			if err != nil && !errors.Is(err, ErrNotFound) {
 				return err
@@ -359,6 +385,11 @@ func (s *Store) FillFacts(ctx context.Context, after string, n int) (string, err
 			var routes int64
 			if err = scanSQL(ctx, tx, "SELECT EXISTS(SELECT 1 FROM enrichments WHERE candidate=? AND kind=?)", []any{c.ID, enrichers.KindDriveRoute}, &routes); err != nil {
 				return err
+			}
+			if routes > 0 {
+				if err = s.refreshKey(ctx, tx, c.ID, t); err != nil {
+					return err
+				}
 			}
 			f, extra, err := s.projectedFacts(ctx, tx, c.ID)
 			if err != nil {
@@ -480,7 +511,7 @@ func recordCategories(ctx context.Context, tx *sql.Tx, id string) ([]sources.Cat
 }
 
 // WebsiteDecisionOf returns the website selected by the recorded evidence.
-func WebsiteDecisionOf(es []Enrichment) (source, state, url, title, why string, at time.Time) {
+func WebsiteDecisionOf(es []Enrichment, placesURL string) (source, state, url, title, why, checkedURL string, at time.Time) {
 	state = sources.WebsiteUnknown
 	var check *website.Result
 	var checkAt time.Time
@@ -488,7 +519,15 @@ func WebsiteDecisionOf(es []Enrichment) (source, state, url, title, why string, 
 	var confirmedAt, unfoundAt time.Time
 	takeovers := map[string]bool{}
 	searchTakeover := false
+	placeChecked := false
 	for _, e := range es {
+		if e.Kind == sources.WebsiteCheck {
+			for _, u := range website.URLs(e.Inputs) {
+				if u == placesURL {
+					placeChecked = true
+				}
+			}
+		}
 		if e.Kind == sources.WebsiteCheck && check == nil {
 			var w website.Result
 			if json.Unmarshal(e.Found, &w) == nil {
@@ -523,14 +562,20 @@ func WebsiteDecisionOf(es []Enrichment) (source, state, url, title, why string, 
 		}
 	}
 	if check != nil && (check.State == sources.WebsiteHTTPS || check.State == sources.WebsiteHTTP) && !searchTakeover && !takeovers[websiteSiteKey(check.URL)] {
-		return WebsiteByCheck, check.State, check.URL, check.Title, "", checkAt
+		return WebsiteByCheck, check.State, check.URL, check.Title, "", check.From, checkAt
 	}
 	if confirmed != nil {
 		c := confirmed.Confirmation
-		return WebsiteBySearch, c.State, c.URL, c.Title, confirmed.Answer.Why, confirmedAt
+		return WebsiteBySearch, c.State, c.URL, c.Title, confirmed.Answer.Why, "", confirmedAt
+	}
+	if placesURL != "" && !placeChecked {
+		if check != nil {
+			title, at = check.Title, checkAt
+		}
+		return WebsiteByPlaces, sources.WebsiteUnknown, "", title, "", "", at
 	}
 	if unfound != nil {
-		return "", sources.WebsiteNone, "", "", unfound.Answer.Why, unfoundAt
+		return "", sources.WebsiteNone, "", "", unfound.Answer.Why, "", unfoundAt
 	}
 	if check != nil {
 		title = check.Title

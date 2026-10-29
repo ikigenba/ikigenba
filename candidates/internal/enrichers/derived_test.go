@@ -141,6 +141,18 @@ func TestLinkFactsDerive(t *testing.T) {
 			}
 			before.Minutes = count(*s.Minutes)
 			want := enrichers.LinkFound{KnownSince: tc.known, NewestFiling: tc.filed, GovernmentMatch: tc.government, Categories: tc.categories, FleetVerdict: sources.FleetUnknown}
+			if tc.known == "2018-04-09" {
+				want.KnownSinceSource = ppp.Name
+			}
+			if tc.known == "2015-03-01" {
+				want.KnownSinceSource = fmcsa.Name
+			}
+			if tc.filed == "2020-04-09" {
+				want.NewestFilingSource = ppp.Name
+			}
+			if tc.filed == "2025-06-01" {
+				want.NewestFilingSource = fmcsa.Name
+			}
 			assertLinkResult(t, s, want)
 			if !reflect.DeepEqual(before, s) {
 				t.Fatal("subject changed")

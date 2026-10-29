@@ -86,7 +86,7 @@ func failureCopy() []string {
 }
 
 func TestAttemptsAndResult(t *testing.T) {
-	// R-HK5A-WQ18 R-HQ8S-TKQP R-HRGP-7CHE R-HV4E-CNPH R-HWCA-QFG6
+	// R-6DLM-RKIJ R-HQ8S-TKQP R-LYT9-3B18 R-6NCT-TQG3 R-6M4X-FYPE
 	urls := []string{"https://acme.test", "https://www.acme.test", "http://acme.test", "http://www.acme.test"}
 	for success := -1; success < 4; success++ {
 		t.Run(fmt.Sprint(success), func(t *testing.T) {
@@ -116,15 +116,15 @@ func TestAttemptsAndResult(t *testing.T) {
 					t.Error("unexpected wait", d)
 				}
 			}
-			want := website.Result{State: sources.WebsiteNone, StatusCode: 404, Error: website.FailStatus}
+			want := website.Result{State: sources.WebsiteNone, StatusCode: 404, Error: website.FailStatus, Misses: []website.Miss{{From: "acme.test", StatusCode: 404, Error: website.FailStatus}}}
 			if success >= 0 {
 				scheme := "https"
 				if success >= 2 {
 					scheme = "http"
 				}
-				want = website.Result{State: scheme, URL: urls[success], Title: "own title", StatusCode: 200, Size: int64(len("<title> own title </title>"))}
+				want = website.Result{From: "acme.test", State: scheme, URL: urls[success], Title: "own title", StatusCode: 200, Size: int64(len("<title> own title </title>"))}
 			}
-			if got != want {
+			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("got %+v want %+v", got, want)
 			}
 		})
@@ -168,7 +168,7 @@ func (b *failedBody) Read(p []byte) (int, error) {
 func (*failedBody) Close() error { return nil }
 
 func TestBodyClassification(t *testing.T) {
-	// R-HTWH-YVYS R-HV4E-CNPH R-HWCA-QFG6 R-HQ8S-TKQP
+	// R-HTWH-YVYS R-6NCT-TQG3 R-6M4X-FYPE R-HQ8S-TKQP
 	tests := []struct {
 		typ, body, err string
 		status         int
@@ -250,7 +250,7 @@ func TestTitleParsing(t *testing.T) {
 }
 
 func TestRedirects(t *testing.T) {
-	// R-HSOL-L483 R-HV4E-CNPH R-HWCA-QFG6
+	// R-HSOL-L483 R-6NCT-TQG3 R-6M4X-FYPE
 	for _, status := range []int{301, 302, 303, 307, 308} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
 			var urls []string

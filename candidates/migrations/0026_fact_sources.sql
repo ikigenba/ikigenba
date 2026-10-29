@@ -1,0 +1,15 @@
+ALTER TABLE candidates ADD COLUMN name_source TEXT NOT NULL DEFAULT '';
+ALTER TABLE candidates ADD COLUMN name_record TEXT NOT NULL DEFAULT '';
+ALTER TABLE candidates ADD COLUMN address_source TEXT NOT NULL DEFAULT '';
+ALTER TABLE candidates ADD COLUMN address_record TEXT NOT NULL DEFAULT '';
+ALTER TABLE candidates ADD COLUMN phone_source TEXT NOT NULL DEFAULT '';
+ALTER TABLE candidates ADD COLUMN phone_record TEXT NOT NULL DEFAULT '';
+ALTER TABLE candidates ADD COLUMN email_source TEXT NOT NULL DEFAULT '';
+ALTER TABLE candidates ADD COLUMN email_record TEXT NOT NULL DEFAULT '';
+ALTER TABLE candidates ADD COLUMN other_names TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE candidates ADD COLUMN other_addresses TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE candidates ADD COLUMN other_phones TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE candidates ADD COLUMN other_emails TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE facts ADD COLUMN known_since_source TEXT NOT NULL DEFAULT '';
+ALTER TABLE facts ADD COLUMN newest_filing_source TEXT NOT NULL DEFAULT '';
+ALTER TABLE facts ADD COLUMN website_checked_url TEXT NOT NULL DEFAULT '';

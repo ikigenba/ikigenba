@@ -168,7 +168,7 @@ func TestTemplateSet(t *testing.T) {
 	}
 	for _, flag := range []bool{false, true} {
 		for _, text := range []string{"", "value"} {
-			data := CandidateData{Candidate: CandidateView{Status: store.StatusActive, Name: text, Names: []string{text}, People: []PersonRow{{Name: text, Role: text}}, Cargo: []string{text}}, Judgments: &JudgmentsView{Excluded: flag, RevenueLow: text, RevenueHigh: text, OperatingEvidence: []EvidenceRow{{Name: text, Description: text}}}, Estimates: []EstimateView{{High: text, Filed: text, Facts: []FactRow{{Key: text, Value: text}}}}, Links: []LinkView{{RowPage: text, Filed: text, Gone: flag}}, Rulings: []RulingView{{Other: text, Keys: []string{text}, By: text, User: text}}, Enrichments: &EnrichmentsView{Facts: &FactsView{FleetVerdict: sources.FleetUnknown, Minutes: text, NewestFiling: text}}}
+			data := CandidateData{Candidate: CandidateView{Status: store.StatusActive, Name: text, OtherNames: []OtherRow{{Value: text}}, People: []PersonRow{{Name: text, Role: text}}, Cargo: []string{text}}, Judgments: &JudgmentsView{Excluded: flag, RevenueLow: text, RevenueHigh: text, OperatingEvidence: []EvidenceRow{{Name: text, Description: text}}}, Estimates: []EstimateView{{High: text, Filed: text, Facts: []FactRow{{Key: text, Value: text}}}}, Links: []LinkView{{RowPage: text, Filed: text, Gone: flag}}, Rulings: []RulingView{{Other: text, Keys: []string{text}, By: text, User: text}}, Enrichments: &EnrichmentsView{Facts: &FactsView{FleetVerdict: sources.FleetUnknown, Minutes: text, NewestFiling: text}}}
 			if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, "candidate", data); err != nil {
 				t.Fatal(err)
 			}
@@ -243,7 +243,7 @@ func TestStoredPages(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := context.Background()
 	hi := int64(24000000)
-	obs := []store.Observation{{Scraper: "fixture", SourceID: "row/a", Digest: "digest", Reading: sources.Reading{Name: "unique-business", Names: []string{"unique-business"}, Street: "unique-street", City: "unique-city", State: "MN", Zip: "55072", Phone: "unique-phone", Email: "unique-email", People: []sources.Person{{Name: "unique-person", Role: "owner"}}, Class: sources.ClassPrivate, Fleet: true, Filed: fixtureTime(), Estimate: &sources.Estimate{Source: "fixture", Low: 14400000, High: &hi, Confidence: .7, Filed: fixtureTime(), Formula: 1, Facts: map[string]json.RawMessage{"z": json.RawMessage(`1`)}}}}}
+	obs := []store.Observation{{Scraper: "fmcsa", SourceID: "row/a", Digest: "digest", Reading: sources.Reading{Name: "unique-business", Names: []string{"unique-business"}, Street: "unique-street", City: "unique-city", State: "MN", Zip: "55072", Phone: "unique-phone", Email: "unique-email", People: []sources.Person{{Name: "unique-person", Role: "owner"}}, Class: sources.ClassPrivate, Fleet: true, Filed: fixtureTime(), Estimate: &sources.Estimate{Source: "fixture", Low: 14400000, High: &hi, Confidence: .7, Filed: fixtureTime(), Formula: 1, Facts: map[string]json.RawMessage{"z": json.RawMessage(`1`)}}}}}
 	_, ids, err := cfg.Store.Attach(ctx, "run_fixture", false, obs)
 	if err != nil || len(ids) != 1 {
 		t.Fatal(ids, err)
@@ -304,7 +304,7 @@ func TestStoredPages(t *testing.T) {
 	}
 	for _, path := range []string{"/about", "/tools", "/unknown"} {
 		body := requestPage(cfg, "GET", path, "reader").Body.String()
-		for _, value := range []string{c.Name, c.Street, c.City, c.Phone, c.Email, c.People[0].Name} {
+		for _, value := range []string{c.Name, c.Street, c.City, c.Phone, c.Email, c.People[0].Value.Name} {
 			if strings.Contains(body, value) {
 				t.Fatal("private value", path)
 			}

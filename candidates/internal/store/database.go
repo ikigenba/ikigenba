@@ -28,7 +28,7 @@ type estimateRecord struct {
 }
 type column struct{ name, field string }
 
-var candidateColumns = columns("id:ID status:Status merged_into:MergedInto name:Name names:Names street:Street city:City state:State zip:Zip county:County phone:Phone email:Email people:People class:Class cargo:Cargo created:Created updated:Updated")
+var candidateColumns = columns("id:ID status:Status merged_into:MergedInto name:Name names:Names street:Street city:City state:State zip:Zip county:County phone:Phone email:Email people:People class:Class cargo:Cargo created:Created updated:Updated name_source:NameSource name_record:NameRecord address_source:AddressSource address_record:AddressRecord phone_source:PhoneSource phone_record:PhoneRecord email_source:EmailSource email_record:EmailRecord other_names:OtherNames other_addresses:OtherAddresses other_phones:OtherPhones other_emails:OtherEmails")
 var linkColumns = columns("candidate:Candidate scraper:Scraper source_id:SourceID run:Run digest:Digest reading:Reading reason:Reason confidence:Confidence first_seen:FirstSeen last_seen:LastSeen gone:Gone walk:Walk park:Park")
 var estimateColumns = columns("candidate:Candidate source:Source low:Low high:High confidence:Confidence facts:Facts filed:Filed formula:Formula")
 var judgmentsColumns = columns("candidate:Candidate operating:Operating operating_key:OperatingKey evidence:Evidence revenue_low:RevenueLow revenue_high:RevenueHigh revenue_confidence:RevenueConfidence headcount_low:HeadcountLow headcount_high:HeadcountHigh headcount_basis:HeadcountBasis headcount_series:HeadcountSeries trend:Trend trend_kind:TrendKind trend_from_year:TrendFromYear trend_to_year:TrendToYear trend_from:TrendFrom trend_to:TrendTo trend_change:TrendChange excluded:Excluded rules:Rules calculated:Calculated")
@@ -80,6 +80,18 @@ func readQueryRecords[T any](ctx context.Context, tx *sql.Tx, cs []column, query
 		if c, ok := any(&v).(*Candidate); ok {
 			c.Created = c.Created.UTC().Truncate(time.Second)
 			c.Updated = c.Updated.UTC().Truncate(time.Second)
+			if c.OtherNames == nil {
+				c.OtherNames = []sources.Sourced[string]{}
+			}
+			if c.OtherAddresses == nil {
+				c.OtherAddresses = []sources.Sourced[sources.Address]{}
+			}
+			if c.OtherPhones == nil {
+				c.OtherPhones = []sources.Sourced[string]{}
+			}
+			if c.OtherEmails == nil {
+				c.OtherEmails = []sources.Sourced[string]{}
+			}
 		}
 		out = append(out, v)
 	}
@@ -94,10 +106,33 @@ type storedHeadcount struct {
 	Hours   *int64 `json:"hours,omitempty"`
 }
 
+type storedPerson struct {
+	Name, Role, Source, Key string
+}
+
+var peopleType = reflect.TypeFor[[]sources.Sourced[sources.Person]]()
+
 var headcountsType = reflect.TypeFor[[]sources.Headcount]()
 var timeType = reflect.TypeFor[time.Time]()
 
 func decodeValue(v reflect.Value, x any) error {
+	if v.Type() == peopleType {
+		text, ok := x.(string)
+		if !ok {
+			return fmt.Errorf("invalid people %T", x)
+		}
+		var rows []storedPerson
+		if err := json.Unmarshal([]byte(text), &rows); err != nil {
+			return err
+		}
+		out := make([]sources.Sourced[sources.Person], 0, len(rows))
+		for _, row := range rows {
+			out = append(out, sources.Sourced[sources.Person]{Value: sources.Person{Name: row.Name, Role: row.Role}, Source: row.Source, Key: row.Key})
+		}
+		v.Set(reflect.ValueOf(out))
+		return nil
+	}
+
 	if v.Type() == headcountsType {
 		text, ok := x.(string)
 		if !ok {
@@ -196,6 +231,15 @@ func decodeValue(v reflect.Value, x any) error {
 	return nil
 }
 func encodeValue(v reflect.Value) (any, error) {
+	if v.Type() == peopleType {
+		rows := []storedPerson{}
+		for _, person := range v.Interface().([]sources.Sourced[sources.Person]) {
+			rows = append(rows, storedPerson{Name: person.Value.Name, Role: person.Value.Role, Source: person.Source, Key: person.Key})
+		}
+		b, err := json.Marshal(rows)
+		return string(b), err
+	}
+
 	if v.Type() == headcountsType {
 		hs := v.Interface().([]sources.Headcount)
 		rows := make([]storedHeadcount, 0, len(hs))

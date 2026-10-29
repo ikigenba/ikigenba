@@ -211,7 +211,7 @@ func TestIngestRefreshAndForce(t *testing.T) {
 	regEqual(t, regLinks(t, f, ids[0])[0], want)
 }
 
-// R-HYGP-I8LU R-RQKM-59J7
+// R-2E9L-OZD5 R-2D1P-B7MG
 func TestIngestDisplayAndGone(t *testing.T) {
 	f := regNew(t)
 	a := regObs("older", "Acme INC")
@@ -234,7 +234,7 @@ func TestIngestDisplayAndGone(t *testing.T) {
 	regAttach(t, f, "new-run", b)
 	id := ids[0]
 	c := regCandidate(t, f, id)
-	regEqual(t, c, store.Candidate{ID: id, Status: store.StatusActive, Name: b.Reading.Name, Names: []string{b.Reading.Name, "Alias", "Other", a.Reading.Name}, Street: b.Reading.Street, City: b.Reading.City, State: b.Reading.State, Zip: b.Reading.Zip, County: b.Reading.County, Phone: b.Reading.Phone, Email: b.Reading.Email, People: b.Reading.People, Class: b.Reading.Class, Cargo: []string{"a", "b", "z"}, Created: c.Created, Updated: regTime(f)})
+	regEqual(t, c, withProvenance(store.Candidate{ID: id, Status: store.StatusActive, Name: b.Reading.Name, Names: []string{b.Reading.Name, "Alias", "Other", a.Reading.Name}, Street: b.Reading.Street, City: b.Reading.City, State: b.Reading.State, Zip: b.Reading.Zip, County: b.Reading.County, Phone: b.Reading.Phone, Email: b.Reading.Email, People: sourcedPeople(b.Reading.People, b.Scraper, b.SourceID), Class: b.Reading.Class, Cargo: []string{"a", "b", "z"}, Created: c.Created, Updated: regTime(f)}, a, b))
 	before := regLinks(t, f, id)
 	f.now = f.now.Add(time.Hour)
 	gone, n, e := f.st.MarkGone(regCtx, "fmcsa", "old-run", "", 500)

@@ -336,10 +336,15 @@ func TestRunAddPageUsesSelectedWebsiteClient(t *testing.T) {
 	}
 }
 
+func runRouteAddress() sources.Address {
+	return sources.Address{Street: "1 Fixture St", City: "Fixture City", State: "MN", Zip: "55072"}
+}
+
 func seedRunRoute(t *testing.T, h *runHarness) string {
 	t.Helper()
 	d, st := runStore(t, h.p.Dir, h.p.Now)
-	_, ids, err := st.Attach(t.Context(), "route-fixture", true, []store.Observation{{Scraper: "fmcsa", SourceID: "route", Digest: "route", Reading: sources.Reading{Name: "Route business", NameKey: "route business", Street: "1 Fixture St", City: "Fixture City", State: "MN", Zip: "55072"}}})
+	a := runRouteAddress()
+	_, ids, err := st.Attach(t.Context(), "route-fixture", true, []store.Observation{{Scraper: "fmcsa", SourceID: "route", Digest: "route", Reading: sources.Reading{Name: "Route business", NameKey: "route business", Street: a.Street, City: a.City, State: a.State, Zip: a.Zip}}})
 	if err != nil || len(ids) != 1 {
 		t.Fatal(ids, err)
 	}
@@ -436,11 +441,7 @@ func TestRunRouteClientMatchesStandalone(t *testing.T) {
 				if o == "" {
 					o = settings.DefaultRouteOrigin
 				}
-				var address tools.Candidate
-				if err := json.Unmarshal(candidate["candidate"], &address); err != nil {
-					t.Fatal(err)
-				}
-				subject := enrichers.Subject{Street: address.Street, City: address.City, State: address.State, Zip: address.Zip, Origin: o}
+				subject := enrichers.Subject{RecordAddress: sources.Sourced[sources.Address]{Value: runRouteAddress()}, Origin: o}
 				var expected []routeRequest
 				client := routes.Client{HTTP: &http.Client{Transport: transport(&expected)}, Key: "fixture-key", After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }}
 				client.Drive(t.Context(), o, enrichers.Destination(subject))
@@ -576,8 +577,7 @@ func TestRunRouteFailureKeepsOriginInputs(t *testing.T) {
 			if err := json.Unmarshal(raw, &detail); err != nil {
 				t.Fatal(err)
 			}
-			address := detail.Candidate
-			want := (enrichers.DriveRoute{}).Inputs(enrichers.Subject{Street: address.Street, City: address.City, State: address.State, Zip: address.Zip, Origin: origin})
+			want := (enrichers.DriveRoute{}).Inputs(enrichers.Subject{RecordAddress: sources.Sourced[sources.Address]{Value: runRouteAddress()}, Origin: origin})
 			if len(detail.EnrichmentResults) != 1 || detail.EnrichmentResults[0].Kind != enrichers.KindDriveRoute || detail.EnrichmentResults[0].Inputs != want {
 				t.Fatal(detail.EnrichmentResults, want)
 			}

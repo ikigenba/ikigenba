@@ -260,7 +260,7 @@ func TestCampaignWritesPreserveOtherRecordsAndOtherWritesPreserveHistory(t *test
 	_, _, err := f.s.Attach(ctx, "next-run", false, []store.Observation{contractObservation("evidence", "Seed business", f.now)})
 	contractOK(t, err)
 	check()
-	_, _, err = f.s.MarkGone(ctx, "source-z", "absent", "", 500)
+	_, _, err = f.s.MarkGone(ctx, "fmcsa", "absent", "", 500)
 	contractOK(t, err)
 	check()
 	_, err = f.s.Judge(ctx, []string{id})

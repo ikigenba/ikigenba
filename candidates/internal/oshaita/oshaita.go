@@ -77,7 +77,7 @@ func submitted(s string) time.Time {
 
 // Read returns an independent interpretation, retaining figures even when implausible.
 func (*Source) Read(r scrapes.Row) sources.Reading {
-	out := sources.Reading{NameKey: sources.NameKey(r.Name), Name: r.Name, Names: []string{}, Street: r.Address.Street, City: r.Address.City, State: r.Address.State, Zip: r.Address.Zip, People: []sources.Person{}, Cargo: []string{}, FleetVerdict: sources.FleetUnknown, Establishment: fact(r, "establishment_name"), Year: figure(fact(r, "year_filing_for")), Employees: figure(fact(r, "annual_average_employees")), Hours: figure(fact(r, "total_hours_worked")), Filed: submitted(fact(r, "date_submitted")), Category: sources.NAICSCategory(integral(strings.TrimSpace(fact(r, "naics_code")))), Evidence: []sources.Evidence{{Name: sources.EvidenceOSHAITASummary, Source: Name, Weight: .2, Description: sources.DescribeOSHAITASummary}}}
+	out := sources.Reading{TradeNames: []string{}, NameKey: sources.NameKey(r.Name), Name: r.Name, Names: []string{}, Street: r.Address.Street, City: r.Address.City, State: r.Address.State, Zip: r.Address.Zip, People: []sources.Person{}, Cargo: []string{}, FleetVerdict: sources.FleetUnknown, Establishment: fact(r, "establishment_name"), Year: figure(fact(r, "year_filing_for")), Employees: figure(fact(r, "annual_average_employees")), Hours: figure(fact(r, "total_hours_worked")), Filed: submitted(fact(r, "date_submitted")), Category: sources.NAICSCategory(integral(strings.TrimSpace(fact(r, "naics_code")))), Evidence: []sources.Evidence{{Name: sources.EvidenceOSHAITASummary, Source: Name, Weight: .2, Description: sources.DescribeOSHAITASummary}}}
 	if r.Name != "" {
 		out.Names = append(out.Names, r.Name)
 	}

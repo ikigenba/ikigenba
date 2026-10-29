@@ -87,7 +87,7 @@ func waitFollowUntil(t *testing.T, f *fixture, id string, end time.Time) store.P
 	}
 }
 
-// R-TQDS-KS6X R-MQX0-5TXM R-MS4W-JLOB R-N4BW-DB39 R-N6RP-4UKN R-W9OP-JMRU R-MZGA-U84H R-N97H-WE21 R-3WDS-L5IA R-UCBZ-GNJF R-SYI9-18ZZ
+// R-YC9K-YJVL R-6OKQ-7I6S R-6PSM-L9XH R-M015-H2RX R-M191-UUIM R-W9OP-JMRU R-MZGA-U84H R-N97H-WE21 R-3WDS-L5IA R-ZBMO-1WDQ R-SYI9-18ZZ
 func TestEnrichCountsDedupAndFollowOn(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -161,7 +161,7 @@ func TestEnrichCountsDedupAndFollowOn(t *testing.T) {
 	}
 }
 
-// R-N4BW-DB39 R-MTCS-XDF0 R-MUKP-B55P R-NAFE-A5SQ
+// R-M015-H2RX R-MTCS-XDF0 R-MUKP-B55P R-NAFE-A5SQ
 func TestEnrichAcrossBatches(t *testing.T) {
 	for _, same := range []bool{true, false} {
 		t.Run(fmt.Sprint(same), func(t *testing.T) {
@@ -395,7 +395,7 @@ func TestEnrichPersistsCompletedChecksAndDrain(t *testing.T) {
 	assertRefusal(t, p, err, passes.RefusalStopping)
 }
 
-// R-U9W6-P421 R-UCBZ-GNJF R-SYI9-18ZZ
+// R-YID2-VEL2 R-ZBMO-1WDQ R-SYI9-18ZZ
 func TestIngestStartsEnrichThenJudgeWithLineage(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -651,7 +651,7 @@ func TestEnrichDistinctSuccessfulBatchesWithinBudget(t *testing.T) {
 	}
 }
 
-// R-U9W6-P421
+// R-YID2-VEL2
 func TestIngestSkipsFollowOnWhileEnrichRuns(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {

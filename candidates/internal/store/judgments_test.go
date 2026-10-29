@@ -183,7 +183,7 @@ func TestConcurrentIngestAndJudgments(t *testing.T) {
 	}
 }
 
-// R-RQKM-59J7
+// R-2D1P-B7MG
 func TestGivingLinksFillDisplayFields(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -206,7 +206,7 @@ func TestGivingLinksFillDisplayFields(t *testing.T) {
 	contractEqual(t, c.Phone, a.Reading.Phone)
 	contractEqual(t, c.Email, a.Reading.Email)
 	contractEqual(t, c.Class, a.Reading.Class)
-	contractEqual(t, c.People, a.Reading.People)
+	contractEqual(t, c.People, sourcedPeople(a.Reading.People, a.Scraper, a.SourceID))
 	contractEqual(t, c.Cargo, a.Reading.Cargo)
 	_, _, e = f.s.MarkGone(ctx, a.Scraper, "absent", "", 500)
 	contractOK(t, e)
@@ -215,7 +215,7 @@ func TestGivingLinksFillDisplayFields(t *testing.T) {
 	contractEqual(t, c.Phone, "")
 	contractEqual(t, c.Email, "")
 	contractEqual(t, c.Class, "")
-	contractEqual(t, c.People, []sources.Person{})
+	contractEqual(t, c.People, []sources.Sourced[sources.Person]{})
 	contractEqual(t, c.Cargo, a.Reading.Cargo)
 	_, _, e = f.s.MarkGone(ctx, b.Scraper, "absent", "", 500)
 	contractOK(t, e)

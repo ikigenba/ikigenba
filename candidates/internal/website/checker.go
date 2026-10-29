@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
@@ -39,6 +40,16 @@ type Result struct {
 	StatusCode        int
 	Size              int64
 	Error             string
+	From              string
+	Misses            []Miss
+}
+
+// Miss records the last failure of one offered element.
+type Miss struct {
+	From       string
+	StatusCode int
+	Size       int64
+	Error      string
 }
 
 // Checker uses an injected HTTP client and timers for all checks and pacing.
@@ -64,55 +75,126 @@ func (k *Checker) Check(ctx context.Context, domain string) Result {
 	return k.check(ctx, domain, nil)
 }
 
-func (k *Checker) check(ctx context.Context, domain string, started chan struct{}) Result {
+func (k *Checker) check(ctx context.Context, in string, started chan struct{}) Result {
 	if started != nil {
 		close(started)
 	}
 	r := Result{State: sources.WebsiteNone}
-	for _, address := range []string{"https://" + domain, "https://www." + domain, "http://" + domain, "http://www." + domain} {
-		if ctx.Err() != nil {
-			return r
+	var misses []Miss
+	for _, element := range URLs(in) {
+		for _, address := range attemptURLs(element) {
+			if ctx.Err() != nil {
+				r.Misses = misses
+				return r
+			}
+			r = k.timedAttempt(ctx, address)
+			if ctx.Err() != nil {
+				r.Misses = misses
+				return r
+			}
+			if r.Error == "" {
+				r.From = element
+				r.Misses = misses
+				return r
+			}
 		}
-		attemptCtx, cancel := context.WithCancel(ctx)
-		timer := k.after(Timeout)
-		done := make(chan Result, 1)
+		misses = append(misses, Miss{element, r.StatusCode, r.Size, r.Error})
+	}
+	r.Misses = misses
+	return r
+}
+
+func (k *Checker) timedAttempt(ctx context.Context, address string) Result {
+	attemptCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	timer := k.after(Timeout)
+	select {
+	case <-timer:
+		return Result{State: sources.WebsiteNone, Error: FailTimeout}
+	default:
+	}
+	done := make(chan Result, 1)
+	go func() { done <- k.attempt(attemptCtx, address) }()
+	var r Result
+	select {
+	case r = <-done:
 		select {
 		case <-timer:
-			cancel()
-			r = Result{State: sources.WebsiteNone, Error: FailTimeout}
-			continue
+			r.Error = FailTimeout
 		default:
 		}
-		go func() { done <- k.attempt(attemptCtx, address) }()
-		select {
-		case r = <-done:
-			select {
-			case <-timer:
-				r.Error = FailTimeout
-				r.State = sources.WebsiteNone
-				r.URL = ""
-				r.Title = ""
-			default:
-			}
-		case <-timer:
-			cancel()
-			r = <-done
-			r.State = sources.WebsiteNone
-			r.URL = ""
-			r.Title = ""
-			r.Error = FailTimeout
-		case <-ctx.Done():
-			cancel()
-			r = <-done
-			cancel()
-			return r
-		}
+	case <-timer:
 		cancel()
-		if r.Error == "" {
-			return r
-		}
+		r = <-done
+		r.Error = FailTimeout
+	case <-ctx.Done():
+		cancel()
+		r = <-done
+	}
+	if r.Error != "" {
+		r.State = sources.WebsiteNone
+		r.URL = ""
+		r.Title = ""
 	}
 	return r
+}
+
+// Inputs combines a source website with the email's own domain.
+func Inputs(site, email string) string {
+	s := strings.TrimSpace(site)
+	if !offered(s) {
+		s = ""
+	}
+	d := Domain(email)
+	if s != "" && d != "" {
+		return s + "\n" + d
+	}
+	return s + d
+}
+
+// URLs returns the elements of website-check inputs.
+func URLs(in string) []string {
+	if in == "" {
+		return []string{}
+	}
+	if a, b, ok := strings.Cut(in, "\n"); ok && offered(a) && b != "" {
+		return []string{a, b}
+	}
+	return []string{in}
+}
+func offered(s string) bool {
+	u, err := url.Parse(s)
+	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") || siteHost(s) == "" {
+		return false
+	}
+	_, err = netip.ParseAddr(u.Hostname())
+	return err != nil
+}
+func attemptURLs(element string) []string {
+	hosts := []string{element, "www." + element, element, "www." + element}
+	schemes := []string{"https", "https", "http", "http"}
+	if !offered(element) {
+		out := []string{}
+		for i, h := range hosts {
+			out = append(out, schemes[i]+"://"+h)
+		}
+		return out
+	}
+	u, _ := url.Parse(element)
+	base := siteHost(element)
+	out := []string{}
+	for i := range schemes {
+		host := base
+		if i%2 == 1 {
+			host = "www." + base
+		}
+		if u.Port() != "" {
+			host += ":" + u.Port()
+		}
+		x := url.URL{Scheme: schemes[i], Host: host, Path: u.Path, RawPath: u.RawPath, RawQuery: u.RawQuery}
+		out = append(out, x.String())
+	}
+	return out
 }
 
 func (k *Checker) attempt(ctx context.Context, address string) Result {

@@ -106,7 +106,7 @@ func candidateRecords(ctx context.Context, tx *sql.Tx, c Candidate) (*records, e
 	}
 	return r, nil
 }
-func refreshKey(ctx context.Context, tx *sql.Tx, id string, t time.Time) error {
+func (s *Store) refreshKey(ctx context.Context, tx *sql.Tx, id string, t time.Time) error {
 	c, err := candidateKey(ctx, tx, id)
 	if err != nil {
 		return err
@@ -118,8 +118,7 @@ func refreshKey(ctx context.Context, tx *sql.Tx, id string, t time.Time) error {
 	if err != nil {
 		return err
 	}
-	refresh(r, t)
-	return putCandidate(ctx, tx, r.candidates[id])
+	return s.refreshRecords(ctx, tx, r, id, t)
 }
 func judgeKeys(ctx context.Context, tx *sql.Tx, ids []string, t time.Time) (Counts, error) {
 	out := Counts{}

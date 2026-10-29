@@ -417,6 +417,17 @@ func (e *Engine) ingest(ctx context.Context, delivery *scrapes.Run, p store.Pass
 		}
 	}
 	if full {
+		after := ""
+		for {
+			next, err := e.cfg.Store.Rebuild(ctx, after, BatchSize)
+			if err != nil {
+				return store.Counts{}, e.storeFailure(ctx, err)
+			}
+			if next == "" {
+				break
+			}
+			after = next
+		}
 		for _, en := range enrichers.New(enrichers.Config{Website: e.cfg.Website, Prompts: e.cfg.Prompts, Routes: e.cfg.Routes}).All() {
 			if _, ok := en.(enrichers.Deriver); ok {
 				n, err := e.derive(ctx, en.Kind(), true)

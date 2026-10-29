@@ -52,23 +52,24 @@ func TestEnrichmentShapesAndMethods(t *testing.T) {
 	contractEqual(t, store.Due(struct{ Candidate, Inputs string }(d)), d)
 	f := store.Facts{Candidate: "candidate", Written: []store.Written{{Kind: sources.WebsiteCheck, At: time.Time{}}}}
 	contractEqual(t, store.Facts(struct {
-		Candidate                          string
-		KnownSince                         time.Time
-		GovernmentMatch                    string
-		NewestFiling                       time.Time
-		Categories                         []sources.Category
-		Records                            []sources.Category
-		FleetVerdict                       string
-		PowerUnits, Drivers                *int64
-		Headcounts                         []sources.Headcount
-		Website, WebsiteURL, WebsiteSource string
-		Minutes                            *int64
-		MinutesSource                      string
-		Miles                              *float64
-		RouteAddress                       string
-		Brief                              string
-		BriefLabels                        []string
-		Written                            []store.Written
+		Candidate                                             string
+		KnownSince                                            time.Time
+		KnownSinceSource, GovernmentMatch                     string
+		NewestFiling                                          time.Time
+		NewestFilingSource                                    string
+		Categories                                            []sources.Category
+		Records                                               []sources.Category
+		FleetVerdict                                          string
+		PowerUnits, Drivers                                   *int64
+		Headcounts                                            []sources.Headcount
+		Website, WebsiteURL, WebsiteSource, WebsiteCheckedURL string
+		Minutes                                               *int64
+		MinutesSource                                         string
+		Miles                                                 *float64
+		RouteAddress                                          string
+		Brief                                                 string
+		BriefLabels                                           []string
+		Written                                               []store.Written
 	}(f)), f)
 	contractEqual(t, store.Written(struct {
 		Kind string
@@ -87,7 +88,7 @@ func TestEnrichmentShapesAndMethods(t *testing.T) {
 	checkMethods(st.AddEnrichments, st.DueEnrichments, st.Derive)
 }
 
-// R-GVQ3-KVTZ R-GR3P-B2FW R-GSBL-OU6L R-GX77-7X5D
+// R-HS56-N73R R-GR3P-B2FW R-GSBL-OU6L R-GX77-7X5D
 func TestEnrichmentAppendAndMark(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -172,7 +173,7 @@ func TestDueUsesInputs(t *testing.T) {
 	contractError(t, err, store.ErrUnreachable)
 }
 
-// R-GWXZ-YNKO R-OPBW-Q4PZ R-M10O-KUCX R-GZDS-Q722
+// R-B2FL-6AWI R-OPBW-Q4PZ R-M10O-KUCX R-AZZS-ERF4
 func TestDeriveFactsAndFill(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -234,7 +235,7 @@ func onlyWebsite(es []store.Enrichment) []store.Enrichment {
 	return out
 }
 
-// R-OO40-CCZA R-GWXZ-YNKO R-M10O-KUCX
+// R-OO40-CCZA R-B2FL-6AWI R-M10O-KUCX
 func TestDueWindowsAndDerivedSubject(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -281,13 +282,13 @@ func TestDueWindowsAndDerivedSubject(t *testing.T) {
 	c, err := f.s.GetCandidate(ctx, ids[0])
 	contractOK(t, err)
 	contractOK(t, f.s.ReplaceZipDrive(ctx, map[string]int64{c.Zip: 0}))
-	_, _, err = f.s.MarkGone(ctx, "source-z", "later", "", 500)
+	_, _, err = f.s.MarkGone(ctx, "fmcsa", "later", "", 500)
 	contractOK(t, err)
 	links, err := f.s.Links(ctx, c.ID)
 	contractOK(t, err)
-	su := enrichers.Subject{ID: c.ID, Name: c.Name, City: c.City, State: c.State, Email: c.Email, Zip: c.Zip, Minutes: ptrInt(0), Links: []enrichers.Link{}}
+	su := enrichers.Subject{ID: c.ID, Name: c.Name, City: c.City, State: c.State, Email: c.Email, Zip: c.Zip, Minutes: ptrInt(0), AddressSource: c.AddressSource, AddressRecord: c.AddressRecord, Links: []enrichers.Link{}}
 	for _, l := range links {
-		su.Links = append(su.Links, enrichers.Link{Scraper: l.Scraper, SourceID: l.SourceID, Gone: l.Gone, Reading: l.Reading})
+		su.Links = append(su.Links, enrichers.Link{Scraper: l.Scraper, SourceID: l.SourceID, Gone: l.Gone, Reading: l.Reading, Seen: l.LastSeen})
 	}
 	for _, der := range []enrichers.Deriver{enrichers.DriveMinutes{}, enrichers.LinkFacts{}} {
 		_, _, err = f.s.Derive(ctx, der.Kind(), "", true, 10)

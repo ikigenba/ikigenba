@@ -142,32 +142,81 @@ func (e *Engine) fetch(ctx context.Context, fetcher enrichers.Fetcher) (store.Co
 		// earlier batches are read back through the store's recording mark.
 		var resultMu sync.Mutex
 		failed := false
+		writing := false
+		type completedCheck struct {
+			input  string
+			result enrichers.Result
+			done   chan struct{}
+		}
+		var pending []completedCheck
 		write := func(dom string, r enrichers.Result) {
+			job := completedCheck{input: dom, result: r, done: make(chan struct{})}
 			resultMu.Lock()
-			defer resultMu.Unlock()
-			if failed {
+			if failed || ctx.Err() != nil {
+				resultMu.Unlock()
 				return
 			}
-			es := make([]store.Enrichment, 0, len(groups[dom]))
-			for _, id := range groups[dom] {
-				es = append(es, store.Enrichment{Candidate: id, Kind: sources.WebsiteCheck, Inputs: dom, Source: r.Source, Found: r.Found, Cost: r.Cost})
-			}
-			saved, err := e.cfg.Store.AddEnrichments(ctx, es)
-			if err != nil {
-				failed = true
-				e.storeFailure(ctx, err)
+			pending = append(pending, job)
+			if writing {
+				resultMu.Unlock()
+				<-job.done
 				return
 			}
-			for _, v := range saved {
-				var found website.Result
-				_ = json.Unmarshal(v.Found, &found)
-				switch found.State {
-				case sources.WebsiteHTTPS:
-					total.HTTPS++
-				case sources.WebsiteHTTP:
-					total.HTTP++
-				case sources.WebsiteNone:
-					total.None++
+			writing = true
+			resultMu.Unlock()
+			// The first completed check writes immediately. Other completed
+			// checks queue while that write runs and share the next transaction;
+			// a check still fetching never holds back a completed result.
+			for {
+				resultMu.Lock()
+				batch := pending
+				pending = nil
+				if len(batch) == 0 {
+					writing = false
+					resultMu.Unlock()
+					return
+				}
+				stop := failed || ctx.Err() != nil
+				resultMu.Unlock()
+				if !stop {
+					n := 0
+					for _, check := range batch {
+						n += len(groups[check.input])
+					}
+					es := make([]store.Enrichment, 0, n)
+					for _, check := range batch {
+						for _, id := range groups[check.input] {
+							r := check.result
+							es = append(es, store.Enrichment{Candidate: id, Kind: sources.WebsiteCheck, Inputs: check.input, Source: r.Source, Found: r.Found, Cost: r.Cost})
+						}
+					}
+					var saved []store.Enrichment
+					var err error
+					if ctx.Err() == nil {
+						saved, err = e.cfg.Store.AddEnrichments(ctx, es)
+					}
+					resultMu.Lock()
+					if err != nil {
+						failed = true
+						e.storeFailure(ctx, err)
+					} else {
+						for _, v := range saved {
+							var found website.Result
+							_ = json.Unmarshal(v.Found, &found)
+							switch found.State {
+							case sources.WebsiteHTTPS:
+								total.HTTPS++
+							case sources.WebsiteHTTP:
+								total.HTTP++
+							case sources.WebsiteNone:
+								total.None++
+							}
+						}
+					}
+					resultMu.Unlock()
+				}
+				for _, check := range batch {
+					close(check.done)
 				}
 			}
 		}

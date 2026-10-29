@@ -7,9 +7,9 @@ import (
 )
 
 func TestDeclaredShapes(t *testing.T) {
-	// R-HK5A-WQ18 R-2EOR-MW1G
-	result := Result{"state", "url", "title", 201, 123, "error"}
-	if result.State != "state" || result.URL != "url" || result.Title != "title" || result.StatusCode != 201 || result.Size != 123 || result.Error != "error" {
+	// R-6DLM-RKIJ R-6ETJ-5C98 R-2EOR-MW1G
+	result := Result{"state", "url", "title", 201, 123, "error", "input", []Miss{{"miss", 404, 0, FailStatus}}}
+	if result.State != "state" || result.URL != "url" || result.Title != "title" || result.StatusCode != 201 || result.Size != 123 || result.Error != "error" || result.From != "input" || len(result.Misses) != 1 || result.Misses[0] != (Miss{"miss", 404, 0, FailStatus}) {
 		t.Fatal(result)
 	}
 	client := &http.Client{}

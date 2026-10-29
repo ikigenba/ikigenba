@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"math"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -83,14 +84,28 @@ func memberRow(e store.Ranked, i int) MemberRow {
 	return v
 }
 func candidateView(c store.Candidate) CandidateView {
-	v := CandidateView{ID: c.ID, Status: c.Status, MergedInto: c.MergedInto, Names: []string{}, People: []PersonRow{}, Cargo: []string{}}
+	v := CandidateView{ID: c.ID, Status: c.Status, MergedInto: c.MergedInto, OtherNames: []OtherRow{}, OtherAddresses: []OtherRow{}, OtherPhones: []OtherRow{}, People: []PersonRow{}, Cargo: []string{}}
 	v.Created, v.CreatedText = stamp(c.Created, SecondLayout)
 	v.Updated, v.UpdatedText = stamp(c.Updated, SecondLayout)
 	if c.Status == store.StatusMerged {
 		return v
 	}
 	v.Name = c.Name
-	v.Names = append(v.Names, c.Names...)
+	v.NameSource, v.AddressSource, v.PhoneSource, v.EmailSource = c.NameSource, c.AddressSource, c.PhoneSource, c.EmailSource
+	for _, o := range c.OtherNames {
+		v.OtherNames = append(v.OtherNames, OtherRow{Value: o.Value, Source: o.Source})
+	}
+	for _, o := range c.OtherPhones {
+		v.OtherPhones = append(v.OtherPhones, OtherRow{Value: o.Value, Source: o.Source})
+	}
+	seen := map[string]bool{addressLine(sources.Address{Street: c.Street, City: c.City, State: c.State, Zip: c.Zip, County: c.County}): true}
+	for _, o := range c.OtherAddresses {
+		line := addressLine(o.Value)
+		if !seen[line] {
+			v.OtherAddresses = append(v.OtherAddresses, OtherRow{Value: line, Source: o.Source})
+			seen[line] = true
+		}
+	}
 	v.Street = c.Street
 	v.City = c.City
 	v.State = c.State
@@ -101,7 +116,7 @@ func candidateView(c store.Candidate) CandidateView {
 	v.Class = c.Class
 	v.Cargo = append(v.Cargo, c.Cargo...)
 	for _, p := range c.People {
-		v.People = append(v.People, PersonRow{p.Name, p.Role})
+		v.People = append(v.People, PersonRow{p.Value.Name, p.Value.Role, p.Source})
 	}
 	return v
 }
@@ -139,7 +154,13 @@ func judgmentsView(a store.Judgments) JudgmentsView {
 	return v
 }
 func factsView(f store.Facts, origin string) FactsView {
-	v := FactsView{KnownSince: date(f.KnownSince), KnownSinceText: date(f.KnownSince), NewestFiling: date(f.NewestFiling), NewestFilingText: date(f.NewestFiling), Categories: []CategoryRow{}, ClassifiedBy: store.ClassifiedBy(f.Categories), RecordsDiffer: store.RecordsDiffer(f.Categories, f.Records), RecordCategories: []CategoryRow{}, GovernmentMatch: f.GovernmentMatch, FleetVerdict: f.FleetVerdict, Written: []WrittenRow{}, Headcounts: []HeadcountRow{}, BriefLabels: append([]string{}, f.BriefLabels...)}
+	v := FactsView{KnownSince: date(f.KnownSince), KnownSinceText: date(f.KnownSince), KnownSinceSource: f.KnownSinceSource, NewestFiling: date(f.NewestFiling), NewestFilingText: date(f.NewestFiling), NewestFilingSource: f.NewestFilingSource, Categories: []CategoryRow{}, ClassifiedBy: store.ClassifiedBy(f.Categories), RecordsDiffer: store.RecordsDiffer(f.Categories, f.Records), RecordCategories: []CategoryRow{}, GovernmentMatch: f.GovernmentMatch, FleetVerdict: f.FleetVerdict, Written: []WrittenRow{}, Headcounts: []HeadcountRow{}, BriefLabels: append([]string{}, f.BriefLabels...)}
+	if f.KnownSince.IsZero() {
+		v.KnownSinceSource = ""
+	}
+	if f.NewestFiling.IsZero() {
+		v.NewestFilingSource = ""
+	}
 	if f.PowerUnits != nil {
 		v.PowerUnits = strconv.FormatInt(*f.PowerUnits, 10)
 	}
@@ -313,10 +334,52 @@ func enrichmentRow(x store.Enrichment, subject enrichers.Subject) EnrichmentRow 
 	v.At, v.AtText = stamp(x.At, MinuteLayout)
 	return v
 }
-func setWebsite(v *CandidateView, es []store.Enrichment) {
+func setWebsite(v *CandidateView, es []store.Enrichment, placesURL string) {
 	var at time.Time
-	v.WebsiteSource, v.Website, v.WebsiteURL, v.WebsiteTitle, v.WebsiteWhy, at = store.WebsiteDecisionOf(es)
+	var checked string
+	v.WebsiteSource, v.Website, v.WebsiteURL, v.WebsiteTitle, v.WebsiteWhy, checked, at = store.WebsiteDecisionOf(es, placesURL)
 	v.WebsiteChecked, v.WebsiteCheckedText = stamp(at, SecondLayout)
+	v.WebsiteCheckedURL = ""
+	if checked != "" {
+		if website.Inputs(checked, "") == "" {
+			checked = "https://" + checked
+		}
+		if !sameURL(checked, v.WebsiteURL) {
+			v.WebsiteCheckedURL = checked
+		}
+	}
+}
+func sameURL(a, b string) bool {
+	if a == b {
+		return true
+	}
+	x, err := url.Parse(a)
+	if err != nil {
+		return false
+	}
+	y, err := url.Parse(b)
+	if err != nil {
+		return false
+	}
+	if x.Path == "" {
+		x.Path = "/"
+	}
+	if y.Path == "" {
+		y.Path = "/"
+	}
+	return x.String() == y.String()
+}
+func addressLine(a sources.Address) string {
+	nonempty := func(vs ...string) []string {
+		out := []string{}
+		for _, v := range vs {
+			if v != "" {
+				out = append(out, v)
+			}
+		}
+		return out
+	}
+	return strings.Join(nonempty(a.Street, a.City, strings.Join(nonempty(a.State, a.Zip), " ")), ", ")
 }
 
 func costText(n int64) string {

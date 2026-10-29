@@ -87,7 +87,7 @@ func routeAnswer(r *http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header), Request: r}, nil
 }
 
-// R-O2VG-U1G7 R-K51J-USRD R-K69G-8KI2 R-K7HC-MC8R R-K9X5-DVQ5 R-KB51-RNGU R-KESQ-WYOX R-TMQ3-FGYU
+// R-O2VG-U1G7 R-K51J-USRD R-YN8O-EHJU R-YUK2-P400 R-YWZV-GNHE R-YY7R-UF83 R-Z0NK-LYPH R-Y8LV-T8NI
 func TestRouteTargetsResultsCountsAndRepeat(t *testing.T) {
 	t.Parallel()
 	if passes.RoutesInFlight != 4 || passes.NoRouteKey == "" || strings.Contains(passes.NoRouteKey, "\n") || passes.NoRouteKey == passes.NoPrompt {
@@ -200,7 +200,7 @@ func TestRouteTargetsResultsCountsAndRepeat(t *testing.T) {
 	}
 }
 
-// R-K8P9-03ZG R-2YKF-HXX2
+// R-YVRZ-2VQP R-YTC6-BC9B
 func TestRouteWorkersAdvanceAndDrainCancels(t *testing.T) {
 	t.Parallel()
 	type held struct {
@@ -364,7 +364,7 @@ func TestRouteRefusalsPreserveRecords(t *testing.T) {
 	}
 }
 
-// R-KCCY-5F7J
+// R-YZFO-86YS
 func TestOtherPassKindsNeverRoute(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) }, true)
 	f.eng.Drain(t.Context())

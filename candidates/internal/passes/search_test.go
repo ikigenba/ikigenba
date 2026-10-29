@@ -40,7 +40,7 @@ func searchAfter(d time.Duration) <-chan time.Time {
 	return ch
 }
 
-// R-T83A-U82I R-TAJ3-LRJW R-RFMR-TKMQ R-UCBZ-GNJF
+// R-Z4B9-R9XK R-Z5J6-51O9 R-F1RS-E0WZ R-ZBMO-1WDQ
 func TestWebsiteSearchTargetResultsAndConfirmation(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -233,7 +233,7 @@ func TestWebsiteSearchTargetResultsAndConfirmation(t *testing.T) {
 	}
 }
 
-// R-T83A-U82I R-TAJ3-LRJW R-UCBZ-GNJF
+// R-Z4B9-R9XK R-Z5J6-51O9 R-ZBMO-1WDQ
 func TestWebsiteSearchKeepsInputSubjectThroughOutcome(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -326,7 +326,7 @@ func TestWebsiteSearchKeepsInputSubjectThroughOutcome(t *testing.T) {
 	}
 }
 
-// R-2W4M-QEFO
+// R-YS49-XKIM
 func TestWebsiteSearchDrainCancelsConfirmation(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)

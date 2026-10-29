@@ -88,10 +88,10 @@ func TestBriefFingerprint(t *testing.T) {
 	}
 }
 
-// R-F9WT-D83J
+// R-AYOS-U5DC
 func TestBriefInputEvidence(t *testing.T) {
 	n := int64(3)
-	s := enrichers.Subject{ID: "candidate", Name: "name", City: "city", State: "state", Website: "site", Facts: &enrichers.LinkFound{Categories: []enrichers.Category{{Name: "retail", Source: enrichers.KindBrief}, {Name: "trucking and logistics", Source: "fmcsa"}}, GovernmentMatch: "match", FleetVerdict: "pass", PowerUnits: &n, Drivers: &n, KnownSince: "2015-03-01", NewestFiling: "2025-01-01"}, Links: []enrichers.Link{
+	s := enrichers.Subject{People: []sources.Sourced[sources.Person]{{Value: sources.Person{Name: "Ann", Role: "owner"}}, {Value: sources.Person{Name: "Bob"}}, {Value: sources.Person{Name: "Ann", Role: "owner"}}, {Value: sources.Person{Role: "manager"}}, {Value: sources.Person{Name: "Ann", Role: "president"}}}, ID: "candidate", Name: "name", City: "city", State: "state", Website: "site", Facts: &enrichers.LinkFound{Categories: []enrichers.Category{{Name: "retail", Source: enrichers.KindBrief}, {Name: "trucking and logistics", Source: "fmcsa"}}, GovernmentMatch: "match", FleetVerdict: "pass", PowerUnits: &n, Drivers: &n, KnownSince: "2015-03-01", NewestFiling: "2025-01-01"}, Links: []enrichers.Link{
 		{Reading: sources.Reading{People: []sources.Person{{Name: "Ann", Role: "owner"}, {Name: "Bob"}}}},
 		{Gone: true, Reading: sources.Reading{People: []sources.Person{{Name: "Cy"}}}},
 		{Reading: sources.Reading{People: []sources.Person{{Name: "Ann", Role: "owner"}, {Role: "manager"}, {Name: "Ann", Role: "president"}}}},
@@ -127,7 +127,7 @@ func TestBriefInputEvidence(t *testing.T) {
 	}
 }
 
-// R-FB4P-QZU8
+// R-AZWP-7X41
 func TestBriefPageBudget(t *testing.T) {
 	for _, tc := range []struct {
 		texts []string
@@ -173,7 +173,7 @@ func repeatedTexts(count, size int) []string {
 	return out
 }
 
-// R-B4R3-JM1P R-L0LB-S1UB
+// R-ATT7-B2EK R-L0LB-S1UB
 func TestBriefRecordEncoding(t *testing.T) {
 	n := int64(7)
 	code := 2
@@ -312,7 +312,7 @@ func TestPrompterFailedDecode(t *testing.T) {
 	}
 }
 
-// R-F9WT-D83J
+// R-AYOS-U5DC
 func TestBriefInputCarrierClass(t *testing.T) {
 	for _, facts := range []*enrichers.LinkFound{nil, {Categories: []enrichers.Category{{Name: sources.CategoryTrucking, Source: "fmcsa"}}, FleetVerdict: sources.FleetPass}} {
 		s := enrichers.Subject{Facts: facts, Links: []enrichers.Link{

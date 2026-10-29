@@ -72,7 +72,7 @@ func retryCalls(f *contractFixture) []struct {
 			return retryAnswer{Counts: counts, IDs: ids}, e
 		}},
 		{"MarkGone", func(ctx context.Context) (retryAnswer, error) {
-			cursor, counts, e := f.s.MarkGone(ctx, "source-z", "new", "", 500)
+			cursor, counts, e := f.s.MarkGone(ctx, "fmcsa", "new", "", 500)
 			return retryAnswer{Cursor: cursor, Counts: counts}, e
 		}},
 		{"Derive", func(ctx context.Context) (retryAnswer, error) {
@@ -90,6 +90,11 @@ func retryCalls(f *contractFixture) []struct {
 		{"PrunePasses", func(ctx context.Context) (retryAnswer, error) {
 			n, e := f.s.PrunePasses(ctx, 1, 500)
 			return retryAnswer{N: n}, e
+		}},
+
+		{"Rebuild", func(ctx context.Context) (retryAnswer, error) {
+			cursor, e := f.s.Rebuild(ctx, "", 500)
+			return retryAnswer{Cursor: cursor}, e
 		}},
 
 		{"ApplyParks", func(ctx context.Context) (retryAnswer, error) {
@@ -116,10 +121,10 @@ func seedRetryStore(t *testing.T) *contractFixture {
 	return f
 }
 
-// R-47BB-A47P R-4IAE-Q1VY R-5CV0-YKN2 R-5E2X-CCDR R-5IYI-VFCJ
+// R-47BB-A47P R-4IAE-Q1VY R-DS8O-A9S0 R-DTGK-O1IP R-DYC6-74HH
 func TestEachWriteUnitRetriesBusyTransaction(t *testing.T) {
-	for index := range 7 {
-		t.Run([]string{"Attach", "MarkGone", "Derive", "JudgeAll", "FillFacts", "PrunePasses", "ApplyParks"}[index], func(t *testing.T) {
+	for index := range 8 {
+		t.Run([]string{"Attach", "MarkGone", "Derive", "JudgeAll", "FillFacts", "PrunePasses", "Rebuild", "ApplyParks"}[index], func(t *testing.T) {
 			t.Parallel()
 			f := seedRetryStore(t)
 			control := seedRetryStore(t)
@@ -152,7 +157,7 @@ func TestEachWriteUnitRetriesBusyTransaction(t *testing.T) {
 			contractOK(t, e)
 			contractEqual(t, facts, wantFacts)
 			pauses = nil
-			if index == 6 {
+			if index == 7 {
 				p, e := f.s.AddPass(ctx, parkPass(store.OriginStart))
 				contractOK(t, e)
 				f.parkPassID = p.ID
@@ -177,46 +182,51 @@ func TestEachWriteUnitRetriesBusyTransaction(t *testing.T) {
 	contractEqual(t, store.WriteBackoff, time.Second)
 }
 
-// R-5FAT-Q44G R-5GIQ-3VV5 R-5HQM-HNLU
+// R-DUOH-1T9E R-DVWD-FL03 R-DX49-TCQS
 func TestAttachBusyExhaustionCancellationAndNoSleeper(t *testing.T) {
-	for _, mode := range []string{"exhaust", "cancel", "nil"} {
-		t.Run(mode, func(t *testing.T) {
-			t.Parallel()
-			f := seedRetryStore(t)
-			before := contractState(t, f)
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			unlock := holdStoreWriter(t, f)
-			pauses := []time.Duration{}
-			var sleep func(context.Context, time.Duration)
-			if mode != "nil" {
-				sleep = func(got context.Context, d time.Duration) {
-					contractEqual(t, got, ctx)
-					pauses = append(pauses, d)
-					if mode == "cancel" {
-						cancel()
+	for _, operation := range []int{0, 6} {
+		for _, mode := range []string{"exhaust", "cancel", "nil"} {
+			if operation == 6 && mode == "exhaust" {
+				continue
+			}
+			t.Run([]string{"Attach", "Rebuild"}[operation/6]+"/"+mode, func(t *testing.T) {
+				t.Parallel()
+				f := seedRetryStore(t)
+				before := contractState(t, f)
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				unlock := holdStoreWriter(t, f)
+				pauses := []time.Duration{}
+				var sleep func(context.Context, time.Duration)
+				if mode != "nil" {
+					sleep = func(got context.Context, d time.Duration) {
+						contractEqual(t, got, ctx)
+						pauses = append(pauses, d)
+						if mode == "cancel" {
+							cancel()
+						}
 					}
 				}
-			}
-			f.s = store.New(f.d, store.Config{Now: func() time.Time { return f.now }, Rand: f.rnd, Sleep: sleep})
-			answer, err := retryCalls(f)[0].call(ctx)
-			contractEqual(t, answer, retryAnswer{})
-			contractError(t, err, store.ErrUnreachable)
-			if mode == "cancel" && !errors.Is(err, context.Canceled) {
-				t.Fatal(err)
-			}
-			want := []time.Duration{}
-			if mode == "cancel" {
-				want = []time.Duration{store.WriteBackoff}
-			}
-			if mode == "exhaust" {
-				for i := range store.WriteRetries {
-					want = append(want, store.WriteBackoff<<i)
+				f.s = store.New(f.d, store.Config{Now: func() time.Time { return f.now }, Rand: f.rnd, Sleep: sleep})
+				answer, err := retryCalls(f)[operation].call(ctx)
+				contractEqual(t, answer, retryAnswer{})
+				contractError(t, err, store.ErrUnreachable)
+				if mode == "cancel" && !errors.Is(err, context.Canceled) {
+					t.Fatal(err)
 				}
-			}
-			contractEqual(t, pauses, want)
-			unlock()
-			contractEqual(t, contractState(t, f), before)
-		})
+				want := []time.Duration{}
+				if mode == "cancel" {
+					want = []time.Duration{store.WriteBackoff}
+				}
+				if mode == "exhaust" {
+					for i := range store.WriteRetries {
+						want = append(want, store.WriteBackoff<<i)
+					}
+				}
+				contractEqual(t, pauses, want)
+				unlock()
+				contractEqual(t, contractState(t, f), before)
+			})
+		}
 	}
 }

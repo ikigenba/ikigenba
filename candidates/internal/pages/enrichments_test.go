@@ -17,7 +17,7 @@ import (
 )
 
 // R-8PAT-SBNM
-// R-JQSD-8ZNK
+// R-HM0W-RKUQ
 func TestEnrichmentAndWebsiteViews(t *testing.T) {
 	at := fixtureTime()
 	x := store.Enrichment{Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteHTTPS, URL: "https://fixture.example.test/", Title: "fixture-title", StatusCode: 200, Size: 1256}), Source: "fixture.example.test", At: at}
@@ -40,7 +40,7 @@ func TestEnrichmentAndWebsiteViews(t *testing.T) {
 		{[]store.Enrichment{{Kind: sources.WebsiteCheck, Inputs: "fixture-inputs", Found: encodedJSON(website.Result{State: sources.WebsiteNone, URL: "https://ignore.example.test/", Title: "fixture-title"}), At: at}, x}, sources.WebsiteUnknown, "", "fixture-title", "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC"},
 	} {
 		var got CandidateView
-		setWebsite(&got, tc.results)
+		setWebsite(&got, tc.results, "")
 		if got.Website != tc.state || got.WebsiteURL != tc.url || got.WebsiteTitle != tc.title || got.WebsiteChecked != tc.checked || got.WebsiteCheckedText != tc.text {
 			t.Fatal(got, tc)
 		}
@@ -91,7 +91,7 @@ func capturedCandidate(t *testing.T, cfg Config, id string) CandidateData {
 	return got
 }
 
-// R-TPC1-G7B9 R-QORQ-ADJO R-8QIQ-63EB
+// R-9SBD-VETV R-9IK6-T8WB R-8QIQ-63EB
 func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()
@@ -145,7 +145,7 @@ func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := candidateView(candidate)
-	setWebsite(&expected, es)
+	setWebsite(&expected, es, "")
 	if !reflect.DeepEqual(got.Candidate, expected) || len(got.EnrichmentResults) != 2 || len(got.Rejects) != 2 {
 		t.Fatal(got)
 	}

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 
 	"github.com/ikigenba/ikigenba/candidates/internal/routes"
+	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
 // KindDriveRoute and SourceGoogleRoutes identify requested drives.
@@ -17,14 +18,15 @@ const (
 
 // RouteFound records a drive and the outcome of its requests.
 type RouteFound struct {
-	Minutes   *int64   `json:"minutes,omitempty"`
-	Miles     *float64 `json:"miles,omitempty"`
-	Address   string   `json:"address"`
-	Precision string   `json:"precision"`
-	Status    string   `json:"status"`
-	Why       string   `json:"why"`
-	Error     string   `json:"request_error"`
-	CostNanos int64    `json:"cost_nanos"`
+	Minutes      *int64        `json:"minutes,omitempty"`
+	Miles        *float64      `json:"miles,omitempty"`
+	Address      string        `json:"address"`
+	Precision    string        `json:"precision"`
+	Status       string        `json:"status"`
+	Why          string        `json:"why"`
+	Error        string        `json:"request_error"`
+	CostNanos    int64         `json:"cost_nanos"`
+	InputSources []InputSource `json:"input_sources,omitempty"`
 }
 
 // Failed reports whether a request failed.
@@ -57,24 +59,26 @@ func (DriveRoute) Fetched() bool { return true }
 
 // Inputs fingerprints the address and origin without normalization.
 func (DriveRoute) Inputs(s Subject) string {
-	if s.Street == "" || s.Origin == "" {
+	a := s.RecordAddress.Value
+	if a.Street == "" || s.Origin == "" {
 		return ""
 	}
-	sum := sha256.Sum256([]byte(s.Street + "\t" + s.City + "\t" + s.State + "\t" + s.Zip + "\t" + s.Origin))
+	sum := sha256.Sum256([]byte(a.Street + "\t" + a.City + "\t" + a.State + "\t" + a.Zip + "\t" + s.Origin))
 	return hex.EncodeToString(sum[:])
 }
 
-// Destination constructs the destination address.
+// Destination constructs the record-chosen destination address.
 func Destination(s Subject) string {
-	out := s.Street
-	if s.City != "" {
-		out += ", " + s.City
+	a := s.RecordAddress.Value
+	out := a.Street
+	if a.City != "" {
+		out += ", " + a.City
 	}
-	if s.State != "" {
-		out += ", " + s.State
+	if a.State != "" {
+		out += ", " + a.State
 	}
-	if s.Zip != "" {
-		out += " " + s.Zip
+	if a.Zip != "" {
+		out += " " + a.Zip
 	}
 	return out
 }
@@ -85,7 +89,7 @@ func (d DriveRoute) Ready() bool { return d.Routes != nil && d.Routes.HTTP != ni
 // Route records exactly one drive outcome.
 func (d DriveRoute) Route(ctx context.Context, s Subject) (Result, Tally) {
 	o := d.Routes.Drive(ctx, s.Origin, Destination(s))
-	r := result(SourceGoogleRoutes, RouteFound{o.Minutes, o.Miles, o.Address, o.Precision, o.Status, o.Why, o.Error, o.CostNanos})
+	r := result(SourceGoogleRoutes, RouteFound{o.Minutes, o.Miles, o.Address, o.Precision, o.Status, o.Why, o.Error, o.CostNanos, inputSource(sources.FactAddress, s.RecordAddress.Source, s.RecordAddress.Key)})
 	r.Cost = float64(o.CostNanos) / 1e9
 	return r, Tally{o.Sent, o.Failed, o.CostNanos}
 }

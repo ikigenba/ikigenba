@@ -99,7 +99,7 @@ func TestRulingLeavesEveryUntouchedCandidateAsStored(t *testing.T) {
 	}
 }
 
-// R-HYGP-I8LU
+// R-2E9L-OZD5
 func TestMovingRulingsDeriveEveryDisplayFieldAndStampOnlyChanges(t *testing.T) {
 	for _, kind := range []string{store.KindSplit, store.KindMerge} {
 		t.Run(kind, func(t *testing.T) {
@@ -133,7 +133,12 @@ func TestMovingRulingsDeriveEveryDisplayFieldAndStampOnlyChanges(t *testing.T) {
 			regEqual(t, f.calls, 1)
 			display := func(c store.Candidate, o store.Observation, names, cargo []string) store.Candidate {
 				rd := o.Reading
-				return store.Candidate{ID: c.ID, Status: store.StatusActive, Name: rd.Name, Names: names, Street: rd.Street, City: rd.City, State: rd.State, Zip: rd.Zip, County: rd.County, Phone: rd.Phone, Email: rd.Email, People: rd.People, Class: rd.Class, Cargo: cargo, Created: c.Created, Updated: regTime(f)}
+				return withProvenance(store.Candidate{ID: c.ID, Status: store.StatusActive, Name: rd.Name, Names: names, Street: rd.Street, City: rd.City, State: rd.State, Zip: rd.Zip, County: rd.County, Phone: rd.Phone, Email: rd.Email, People: sourcedPeople(rd.People, o.Scraper, o.SourceID), Class: rd.Class, Cargo: cargo, Created: c.Created, Updated: regTime(f)}, func() []store.Observation {
+					if kind == store.KindMerge {
+						return []store.Observation{b, a}
+					}
+					return []store.Observation{o}
+				}()...)
 			}
 			if kind == store.KindSplit {
 				regEqual(t, cs[0], display(cs[0], a, []string{a.Reading.Name, a.Reading.Names[0]}, a.Reading.Cargo))

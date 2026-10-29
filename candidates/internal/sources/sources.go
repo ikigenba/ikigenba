@@ -130,6 +130,9 @@ type Reading struct {
 	KnownSince                                     time.Time
 	Category, GovernmentMatch, Establishment       string
 	Year, Employees, Hours                         *int64
+	TradeNames                                     []string
+	Mailing                                        bool
+	MailingAddress                                 *Address
 }
 
 // Source interprets rows from a named scraper.

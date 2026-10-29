@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-FRU8-Z4M1 R-ZKAN-MILE R-6RF7-1NQV
+// R-2RMT-3281 R-2YY7-DOO7 R-6RF7-1NQV
 func TestSearchAnswersUseStoredResults(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
@@ -153,7 +153,7 @@ func TestWebsiteSearchEnrichDispatch(t *testing.T) {
 	}
 }
 
-// R-FRU8-Z4M1 R-FO6J-TTDY
+// R-2RMT-3281 R-2QEW-PAHC
 func TestWebsiteDecisionAnswersDistinguishUncheckedAndUnfound(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
@@ -257,7 +257,7 @@ func TestSearchAnswersPreserveRecordedContext(t *testing.T) {
 	}
 }
 
-// R-6RF7-1NQV R-FRU8-Z4M1
+// R-6RF7-1NQV R-2RMT-3281
 func TestSearchAnswersKeepRecordedCaseWhileFactsUseLanding(t *testing.T) {
 	const checked = "https://www.riverhaul.test/"
 	for _, tc := range []struct {
@@ -303,7 +303,7 @@ func TestSearchAnswersKeepRecordedCaseWhileFactsUseLanding(t *testing.T) {
 	}
 }
 
-// R-FRU8-Z4M1 R-FO6J-TTDY
+// R-2RMT-3281 R-2QEW-PAHC
 func TestCandidateWebsiteTakeoversUseRecordedSiteAndOrigin(t *testing.T) {
 	const checked = "https://www.acme.test/"
 	const landing = "https://acme-trucking.test/"
@@ -366,7 +366,7 @@ func TestCandidateWebsiteTakeoversUseRecordedSiteAndOrigin(t *testing.T) {
 	}
 }
 
-// R-FRU8-Z4M1 R-FO6J-TTDY
+// R-2RMT-3281 R-2QEW-PAHC
 func TestCandidateWebsiteSearchChainSurvivesLaterChecksAndInertSearches(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]

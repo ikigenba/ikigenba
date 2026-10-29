@@ -29,7 +29,7 @@ func fillFactsWalk(ctx context.Context, s *store.Store) error {
 	}
 }
 
-// R-LNNI-SGBE R-KWTQ-DI04 R-GUI7-743A
+// R-AXJZ-N7XQ R-ASOE-44YY R-AYRW-0ZOF
 func TestFactsRowExistsOnlyAfterProjection(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -47,7 +47,7 @@ func TestFactsRowExistsOnlyAfterProjection(t *testing.T) {
 	contractOK(t, err)
 	got, err := f.s.GetFacts(ctx, id)
 	contractOK(t, err)
-	contractEqual(t, got, store.Facts{id, time.Time{}, "", time.Time{}, []sources.Category{}, []sources.Category{}, sources.FleetUnknown, nil, nil, []sources.Headcount{}, sources.WebsiteUnknown, "", "", nil, "", nil, "", "", []string{}, []store.Written{{Kind: enrichers.KindLinkFacts, At: f.now.UTC().Truncate(time.Second)}}})
+	contractEqual(t, got, store.Facts{Candidate: id, Categories: []sources.Category{}, Records: []sources.Category{}, FleetVerdict: sources.FleetUnknown, Headcounts: []sources.Headcount{}, Website: sources.WebsiteUnknown, BriefLabels: []string{}, Written: []store.Written{{Kind: enrichers.KindLinkFacts, At: f.now.UTC().Truncate(time.Second)}}})
 }
 
 // R-Y053-JMWZ

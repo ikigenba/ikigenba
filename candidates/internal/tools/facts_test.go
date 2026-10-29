@@ -11,12 +11,12 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-Q65V-BAP3 R-RE29-31E3 R-SZLV-FX7Q R-FKIU-OI5V R-FRU8-Z4M1
+// R-Q65V-BAP3 R-RE29-31E3 R-SZLV-FX7Q R-2NZ3-XQZY R-2RMT-3281
 func TestFactsAndBriefAnswers(t *testing.T) {
 	at := time.Date(2026, 10, 5, 9, 0, 7, 0, time.UTC)
 	minutes, power, drivers := int64(31), int64(4), int64(0)
 	f := store.Facts{KnownSince: at, NewestFiling: at, Categories: []sources.Category{{Name: sources.CategoryRetail, Source: enrichers.KindBrief}}, Records: []sources.Category{{Name: sources.CategoryTrucking, Source: "fmcsa"}}, GovernmentMatch: "match", FleetVerdict: sources.FleetPass, PowerUnits: &power, Drivers: &drivers, Website: sources.WebsiteHTTPS, WebsiteURL: "https://fixture.test", WebsiteSource: store.WebsiteBySearch, Minutes: &minutes, Written: []store.Written{{Kind: enrichers.KindWebsiteSearch, At: at}}}
-	want := Facts{"2026-10-05", "2026-10-05", []Category{{sources.CategoryRetail, enrichers.KindBrief}}, enrichers.KindBrief, true, []Category{{sources.CategoryTrucking, "fmcsa"}}, "match", sources.FleetPass, &power, &drivers, sources.WebsiteHTTPS, "https://fixture.test", store.WebsiteBySearch, &minutes, "", nil, "", "", "", []Written{{enrichers.KindWebsiteSearch, stamp(at)}}, []Headcount{}, []string{}}
+	want := Facts{"2026-10-05", "", "2026-10-05", "", []Category{{sources.CategoryRetail, enrichers.KindBrief}}, enrichers.KindBrief, true, []Category{{sources.CategoryTrucking, "fmcsa"}}, "match", sources.FleetPass, &power, &drivers, sources.WebsiteHTTPS, "https://fixture.test", store.WebsiteBySearch, "", &minutes, "", nil, "", "", "", []Written{{enrichers.KindWebsiteSearch, stamp(at)}}, []Headcount{}, []string{}}
 	if got := factsOf(f, ""); !reflect.DeepEqual(got, want) {
 		t.Fatal(got, want)
 	}

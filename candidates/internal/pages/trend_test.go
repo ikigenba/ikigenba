@@ -23,7 +23,7 @@ func TestSeriesRowShapes(_ *testing.T) {
 	_ = struct{ Year, Count string }(FigureCell{})
 }
 
-// R-4CI5-0W52 R-SYVZ-2FH6 R-TB2Y-W4W4
+// R-4CI5-0W52 R-F87V-81BA R-FJ6Y-NYZJ
 func TestTrendProjections(t *testing.T) {
 	for _, tc := range []struct {
 		trend            string
@@ -56,7 +56,7 @@ func TestTrendProjections(t *testing.T) {
 	}
 }
 
-// R-SXO2-ONQH
+// R-F6ZY-U9KL
 func TestSeriesProjection(t *testing.T) {
 	for _, tc := range []struct {
 		in    []judging.Series
@@ -169,7 +169,7 @@ func TestTrendTemplateStatesAndValues(t *testing.T) {
 	}
 }
 
-// R-SXO2-ONQH R-SYVZ-2FH6 R-TB2Y-W4W4
+// R-F6ZY-U9KL R-F87V-81BA R-FJ6Y-NYZJ
 func TestJudgedTrendOnCandidateAndProspectList(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	_, ids, err := cfg.Store.Attach(t.Context(), "chosen-trend-run", false, []store.Observation{{Scraper: "chosen", SourceID: "chosen-trend-row", Digest: "chosen-trend-digest", Reading: sources.Reading{Name: "chosen-trend-business", NameKey: "chosen-trend-business"}}})

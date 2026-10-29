@@ -14,6 +14,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/routes"
+	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
 // R-695C-OVSL R-6AD9-2NJA R-6BL5-GF9Z R-6CT1-U70O R-6F8U-LQI2 R-6MK8-WCY8 R-6P01-NWFM
@@ -52,17 +53,17 @@ func TestDriveRouteSurfaceAndReadiness(t *testing.T) {
 	}
 }
 
-// R-6Q7Y-1O6B R-6RFU-FFX0
+// R-B3KE-D8C4 R-B4SA-R02T
 func TestRouteInputsAndDestination(t *testing.T) {
 	d := enrichers.DriveRoute{}
-	s := enrichers.Subject{Street: "12 Main St", City: "Sandstone", State: "MN", Zip: "55072", Origin: "Sandstone, MN"}
+	s := enrichers.Subject{RecordAddress: sources.Sourced[sources.Address]{Value: sources.Address{Street: "12 Main St", City: "Sandstone", State: "MN", Zip: "55072"}}, Origin: "Sandstone, MN"}
 	before := s
 	sum := sha256.Sum256([]byte("12 Main St\tSandstone\tMN\t55072\tSandstone, MN"))
 	want := hex.EncodeToString(sum[:])
 	if d.Inputs(s) != want || enrichers.Destination(s) != "12 Main St, Sandstone, MN 55072" || !reflect.DeepEqual(s, before) {
 		t.Fatal(s)
 	}
-	for _, change := range []func(*enrichers.Subject){func(v *enrichers.Subject) { v.Street = "12 main St" }, func(v *enrichers.Subject) { v.City = "" }, func(v *enrichers.Subject) { v.State = "" }, func(v *enrichers.Subject) { v.Zip = "" }, func(v *enrichers.Subject) { v.Origin = "other" }} {
+	for _, change := range []func(*enrichers.Subject){func(v *enrichers.Subject) { v.RecordAddress.Value.Street = "12 main St" }, func(v *enrichers.Subject) { v.RecordAddress.Value.City = "" }, func(v *enrichers.Subject) { v.RecordAddress.Value.State = "" }, func(v *enrichers.Subject) { v.RecordAddress.Value.Zip = "" }, func(v *enrichers.Subject) { v.Origin = "other" }} {
 		v := s
 		change(&v)
 		if d.Inputs(v) == "" || d.Inputs(v) == want {
@@ -70,6 +71,13 @@ func TestRouteInputsAndDestination(t *testing.T) {
 		}
 	}
 	v := s
+	v.Street = "display"
+	v.City = "different"
+	v.State = "X"
+	v.Zip = "99999"
+	v.RecordAddress.Source = "other"
+	v.RecordAddress.Key = "key"
+	v.RecordAddress.Value.County = "county"
 	v.ID = "other"
 	v.Name = "other"
 	v.Phone = "other"
@@ -79,7 +87,7 @@ func TestRouteInputsAndDestination(t *testing.T) {
 	if d.Inputs(v) != want {
 		t.Fatal("unrelated fields")
 	}
-	for _, v := range []enrichers.Subject{{Street: s.Street}, {Origin: s.Origin}, {}} {
+	for _, v := range []enrichers.Subject{{RecordAddress: s.RecordAddress}, {Origin: s.Origin}, {}} {
 		if d.Inputs(v) != "" {
 			t.Fatal(v)
 		}
@@ -87,17 +95,17 @@ func TestRouteInputsAndDestination(t *testing.T) {
 	for _, tc := range []struct {
 		s    enrichers.Subject
 		want string
-	}{{enrichers.Subject{Street: "s", State: "MN", Zip: "z"}, "s, MN z"}, {enrichers.Subject{Street: "s", Zip: "z"}, "s z"}, {enrichers.Subject{Street: "s", City: "c", State: "MN"}, "s, c, MN"}, {enrichers.Subject{}, ""}} {
+	}{{enrichers.Subject{RecordAddress: sources.Sourced[sources.Address]{Value: sources.Address{Street: "s", State: "MN", Zip: "z"}}}, "s, MN z"}, {enrichers.Subject{RecordAddress: sources.Sourced[sources.Address]{Value: sources.Address{Street: "s", Zip: "z"}}}, "s z"}, {enrichers.Subject{RecordAddress: sources.Sourced[sources.Address]{Value: sources.Address{Street: "s", City: "c", State: "MN"}}}, "s, c, MN"}, {enrichers.Subject{}, ""}} {
 		if enrichers.Destination(tc.s) != tc.want {
 			t.Fatal(tc)
 		}
 	}
 }
 
-// R-6GGQ-ZI8R R-6TVN-6ZEE R-6V3J-KR53 R-6WBF-YIVS R-7171-HLUK
+// R-AXGW-GDMN R-6TVN-6ZEE R-6V3J-KR53 R-6WBF-YIVS R-7171-HLUK
 func TestRouteFoundEncodingValidationAndFailure(t *testing.T) {
 	n, m := int64(47), 38.2
-	f := enrichers.RouteFound{&n, &m, "a", "building", "s", "", "", 0}
+	f := enrichers.RouteFound{&n, &m, "a", "building", "s", "", "", 0, nil}
 	b, err := json.Marshal(f)
 	if err != nil || string(b) != `{"minutes":47,"miles":38.2,"address":"a","precision":"building","status":"s","why":"","request_error":"","cost_nanos":0}` {
 		t.Fatal(string(b), err)
@@ -153,7 +161,7 @@ func TestDriveRouteRelaysClientOutcome(t *testing.T) {
 		t.Run(precision, func(t *testing.T) {
 			calls := 0
 			timers := 0
-			s := enrichers.Subject{Street: "12 Main St", City: "Sandstone", State: "MN", Zip: "55072", Origin: "base"}
+			s := enrichers.Subject{RecordAddress: sources.Sourced[sources.Address]{Value: sources.Address{Street: "12 Main St", City: "Sandstone", State: "MN", Zip: "55072"}}, Origin: "base"}
 			before := s
 			c := &routes.Client{Key: "fixture", After: func(time.Duration) <-chan time.Time { timers++; return make(chan time.Time) }, HTTP: &http.Client{Transport: routeTransport(func(r *http.Request) (*http.Response, error) {
 				calls++
@@ -219,7 +227,7 @@ func TestDriveRouteRelaysTimedOutRequest(t *testing.T) {
 		t enrichers.Tally
 	}, 1)
 	go func() {
-		r, tally := (enrichers.DriveRoute{Routes: c}).Route(context.Background(), enrichers.Subject{Street: "street", Origin: "base"})
+		r, tally := (enrichers.DriveRoute{Routes: c}).Route(context.Background(), enrichers.Subject{RecordAddress: sources.Sourced[sources.Address]{Value: sources.Address{Street: "street"}}, Origin: "base"})
 		done <- struct {
 			r enrichers.Result
 			t enrichers.Tally

@@ -74,7 +74,7 @@ func TestWalkPublicShapes(t *testing.T) {
 	} = (*store.Store)(nil)
 }
 
-// R-O18H-EIG3 R-BGAR-6FK5 R-O642-XLEV R-BHIN-K7AU R-BIQJ-XZ1J R-0YMT-HFK2 R-0ZUP-V7AR R-112M-8Z1G R-OSHC-V80S
+// R-UWXV-8JOI R-UY5R-MBF7 R-UZDO-035W R-V1TG-RMNA R-V31D-5EDZ R-0YMT-HFK2 R-0ZUP-V7AR R-112M-8Z1G R-OSHC-V80S
 func TestWalkRecordingAndReadOrderPersist(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -294,7 +294,7 @@ func TestWalkEndingsAndFailures(t *testing.T) {
 	contractError(t, e, store.ErrEnded)
 }
 
-// R-0L7X-9YEF R-O18H-EIG3 R-O2GD-SA6S R-O3OA-61XH
+// R-0L7X-9YEF R-UWXV-8JOI R-V0LK-DUWL R-O3OA-61XH
 func TestWalkMatchingPriorityAndDisplay(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -343,7 +343,10 @@ func TestWalkMatchingPriorityAndDisplay(t *testing.T) {
 	contractEqual(t, byID[social1.Place.ID].Candidate != byID[social2.Place.ID].Candidate, true)
 	after, e := f.s.GetCandidate(ctx, older)
 	contractOK(t, e)
-	contractEqual(t, after, before)
+	contractEqual(t, after.Name, a.Place.Name)
+	contractEqual(t, after.AddressSource, places.Name)
+	contractEqual(t, after.Created, before.Created)
+	contractEqual(t, after.Updated, f.now.UTC().Truncate(time.Second))
 	for _, pair := range []struct {
 		id, source, reason string
 		confidence         float64
@@ -397,7 +400,11 @@ func TestWalkMatchingPriorityAndDisplay(t *testing.T) {
 	}
 	after, e = f.s.GetCandidate(ctx, older)
 	contractOK(t, e)
-	contractEqual(t, after, before)
+	contractEqual(t, after.Name, a.Place.Name)
+	contractEqual(t, after.Phone, a.Place.Phone)
+	contractEqual(t, after.NameSource, places.Name)
+	contractEqual(t, after.Created, before.Created)
+	contractEqual(t, after.Updated, f.now.UTC().Truncate(time.Second))
 	// Places-only candidates use their place's display.
 	made, e := f.s.GetCandidate(ctx, byID[c.Place.ID].Candidate)
 	contractOK(t, e)
@@ -411,7 +418,7 @@ func TestWalkMatchingPriorityAndDisplay(t *testing.T) {
 	contractEqual(t, rulings[0].Kind, store.KindExclude)
 }
 
-// R-0Q3I-T1D7 R-O642-XLEV R-BGAR-6FK5
+// R-0Q3I-T1D7 R-UZDO-035W R-UY5R-MBF7
 func TestWalkSweepRefusalsAndUnansweredSweep(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -591,7 +598,7 @@ func TestWalkSweepAndFailureSerialize(t *testing.T) {
 	}
 }
 
-// R-112M-8Z1G R-BIQJ-XZ1J R-BHIN-K7AU R-0YMT-HFK2 R-O3OA-61XH
+// R-112M-8Z1G R-V31D-5EDZ R-V1TG-RMNA R-0YMT-HFK2 R-O3OA-61XH
 func TestWalkNewestAndTieOrder(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -710,14 +717,14 @@ func TestWalkFoundCandidatesAndPlaceFinalOrder(t *testing.T) {
 	beta := byID["beta-new"].Candidate
 	cs, e := f.s.ParkCandidates(ctx, k.ID)
 	contractOK(t, e)
-	contractEqual(t, cs, []store.FoundCandidate{{ID: ids[3], Name: "Alpha", Status: store.StatusActive}, {ID: beta, Name: "Beta second", Status: store.StatusActive, New: true}, {ID: ids[1], Name: "Same", Status: store.StatusActive}, {ID: ids[2], Name: "Same", Status: store.StatusActive}, {ID: ids[0], Name: "Zeta", Status: store.StatusActive}})
+	contractEqual(t, cs, []store.FoundCandidate{{ID: beta, Name: "Beta second", Status: store.StatusActive, New: true}, {ID: ids[0], Name: "Equal place name", Status: store.StatusActive}, {ID: ids[1], Name: "Other one", Status: store.StatusActive}, {ID: ids[3], Name: "Other three", Status: store.StatusActive}, {ID: ids[2], Name: "Other two", Status: store.StatusActive}})
 	contractEqual(t, byID["z-last-key"].New, false)
 	contractEqual(t, byID["a-first-key"].New, false)
 	contractEqual(t, byID["beta-new"].New, true)
 	contractEqual(t, byID["beta-joined"].New, false)
 }
 
-// R-BHIN-K7AU R-BIQJ-XZ1J
+// R-V1TG-RMNA R-V31D-5EDZ
 func TestWalkHistoryReadsCurrentParkName(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -739,7 +746,7 @@ func TestWalkHistoryReadsCurrentParkName(t *testing.T) {
 	contractEqual(t, kw, []store.ParkWalk{want})
 }
 
-// R-O18H-EIG3 R-0Q3I-T1D7
+// R-UWXV-8JOI R-0Q3I-T1D7
 func TestWalkSecondCandidateMintFailureRollsBackSweep(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

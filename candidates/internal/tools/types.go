@@ -10,8 +10,55 @@ import (
 
 // Person is a tool answer value.
 type Person struct {
-	Name string `json:"name"`
-	Role string `json:"role"`
+	Name   string `json:"name"`
+	Role   string `json:"role"`
+	Source string `json:"source,omitempty"`
+}
+
+// Sourced identifies the source of one alternative value.
+type Sourced struct {
+	Value  string `json:"value"`
+	Source string `json:"source"`
+}
+
+// SourcedAddress identifies the source of one alternative postal address.
+type SourcedAddress struct {
+	Street string `json:"street"`
+	City   string `json:"city"`
+	State  string `json:"state"`
+	Zip    string `json:"zip"`
+	County string `json:"county"`
+	Source string `json:"source"`
+}
+
+// Sources records the provenance and alternatives of a candidate's display facts.
+type Sources struct {
+	Name           string           `json:"name"`
+	Address        string           `json:"address"`
+	Phone          string           `json:"phone"`
+	Email          string           `json:"email"`
+	OtherNames     []Sourced        `json:"other_names"`
+	OtherAddresses []SourcedAddress `json:"other_addresses"`
+	OtherPhones    []Sourced        `json:"other_phones"`
+	OtherEmails    []Sourced        `json:"other_emails"`
+}
+
+// MarshalJSON encodes missing alternatives as empty arrays.
+func (v Sources) MarshalJSON() ([]byte, error) {
+	type plain Sources
+	if v.OtherNames == nil {
+		v.OtherNames = []Sourced{}
+	}
+	if v.OtherAddresses == nil {
+		v.OtherAddresses = []SourcedAddress{}
+	}
+	if v.OtherPhones == nil {
+		v.OtherPhones = []Sourced{}
+	}
+	if v.OtherEmails == nil {
+		v.OtherEmails = []Sourced{}
+	}
+	return json.Marshal(plain(v))
 }
 
 // Candidate is a tool answer value.
@@ -335,28 +382,31 @@ type Figure struct {
 
 // Facts contains the newest recorded facts and their provenance.
 type Facts struct {
-	KnownSince       string      `json:"known_since,omitempty"`
-	NewestFiling     string      `json:"newest_filing,omitempty"`
-	Categories       []Category  `json:"categories"`
-	ClassifiedBy     string      `json:"classified_by"`
-	RecordsDiffer    bool        `json:"records_differ"`
-	RecordCategories []Category  `json:"record_categories"`
-	GovernmentMatch  string      `json:"government_match,omitempty"`
-	FleetVerdict     string      `json:"fleet_verdict"`
-	PowerUnits       *int64      `json:"power_units,omitempty"`
-	Drivers          *int64      `json:"drivers,omitempty"`
-	Website          string      `json:"website"`
-	WebsiteURL       string      `json:"website_url,omitempty"`
-	WebsiteSource    string      `json:"website_source"`
-	Minutes          *int64      `json:"minutes,omitempty"`
-	MinutesSource    string      `json:"minutes_source"`
-	Miles            *float64    `json:"miles,omitempty"`
-	RouteAddress     string      `json:"route_address,omitempty"`
-	PlaceURL         string      `json:"place_url,omitempty"`
-	DirectionsURL    string      `json:"directions_url,omitempty"`
-	Written          []Written   `json:"written"`
-	Headcounts       []Headcount `json:"headcounts"`
-	BriefLabels      []string    `json:"brief_labels"`
+	KnownSince         string      `json:"known_since,omitempty"`
+	KnownSinceSource   string      `json:"known_since_source,omitempty"`
+	NewestFiling       string      `json:"newest_filing,omitempty"`
+	NewestFilingSource string      `json:"newest_filing_source,omitempty"`
+	Categories         []Category  `json:"categories"`
+	ClassifiedBy       string      `json:"classified_by"`
+	RecordsDiffer      bool        `json:"records_differ"`
+	RecordCategories   []Category  `json:"record_categories"`
+	GovernmentMatch    string      `json:"government_match,omitempty"`
+	FleetVerdict       string      `json:"fleet_verdict"`
+	PowerUnits         *int64      `json:"power_units,omitempty"`
+	Drivers            *int64      `json:"drivers,omitempty"`
+	Website            string      `json:"website"`
+	WebsiteURL         string      `json:"website_url,omitempty"`
+	WebsiteSource      string      `json:"website_source"`
+	WebsiteCheckedURL  string      `json:"website_checked_url,omitempty"`
+	Minutes            *int64      `json:"minutes,omitempty"`
+	MinutesSource      string      `json:"minutes_source"`
+	Miles              *float64    `json:"miles,omitempty"`
+	RouteAddress       string      `json:"route_address,omitempty"`
+	PlaceURL           string      `json:"place_url,omitempty"`
+	DirectionsURL      string      `json:"directions_url,omitempty"`
+	Written            []Written   `json:"written"`
+	Headcounts         []Headcount `json:"headcounts"`
+	BriefLabels        []string    `json:"brief_labels"`
 }
 
 // MarshalJSON encodes empty slices as arrays.
@@ -519,6 +569,7 @@ func (v Ruling) MarshalJSON() ([]byte, error) {
 // Detail is a tool answer value.
 type Detail struct {
 	Candidate         Candidate          `json:"candidate"`
+	Sources           *Sources           `json:"sources,omitempty"`
 	Park              *ParkRef           `json:"park,omitempty"`
 	Enrichments       *Enrichments       `json:"enrichments,omitempty"`
 	Judgments         *Judgments         `json:"judgments,omitempty"`

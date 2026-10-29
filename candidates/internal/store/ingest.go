@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -22,68 +21,6 @@ func sortedIDs(m map[string]bool) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-func refresh(r *records, t time.Time) {
-	for id, c := range r.candidates {
-		if c.Status != StatusActive {
-			continue
-		}
-		ls := displayLinks(linksFor(r, id))
-		if len(ls) == 0 {
-			continue
-		}
-		old := c
-		d := ls[0].Reading
-		c.Name = d.Name
-		c.Street = d.Street
-		c.City = d.City
-		c.State = d.State
-		c.Zip = d.Zip
-		c.County = d.County
-		c.Phone, c.Email, c.Class = "", "", ""
-		c.People = []sources.Person{}
-		for _, l := range ls {
-			if l.Gone && !ls[0].Gone {
-				continue
-			}
-			if c.Phone == "" {
-				c.Phone = l.Reading.Phone
-			}
-			if c.Email == "" {
-				c.Email = l.Reading.Email
-			}
-			if c.Class == "" {
-				c.Class = l.Reading.Class
-			}
-			if len(c.People) == 0 {
-				c.People = append([]sources.Person{}, l.Reading.People...)
-			}
-		}
-		c.Names = []string{}
-		names := map[string]bool{}
-		add := func(n string) {
-			if n != "" && !names[n] {
-				names[n] = true
-				c.Names = append(c.Names, n)
-			}
-		}
-		add(d.Name)
-		cargo := map[string]bool{}
-		for _, l := range ls {
-			add(l.Reading.Name)
-			for _, n := range l.Reading.Names {
-				add(n)
-			}
-			for _, v := range l.Reading.Cargo {
-				cargo[v] = true
-			}
-		}
-		c.Cargo = sortedIDs(cargo)
-		if !reflect.DeepEqual(old, c) {
-			c.Updated = t
-		}
-		r.candidates[id] = c
-	}
 }
 
 // Attach attaches a batch of readings atomically.
@@ -155,6 +92,9 @@ func (s *Store) Attach(ctx context.Context, run string, force bool, obs []Observ
 					l.Gone = false
 					touched[l.Candidate] = true
 					d.apply(l)
+					if err = s.refreshRecords(ctx, tx, d.records, l.Candidate, t); err != nil {
+						return err
+					}
 					continue
 				}
 				total.Changed++
@@ -172,7 +112,7 @@ func (s *Store) Attach(ctx context.Context, run string, force bool, obs []Observ
 					if err != nil {
 						return err
 					}
-					c := Candidate{ID: id, Status: StatusActive, Names: []string{}, People: []sources.Person{}, Cargo: []string{}, Created: t, Updated: t}
+					c := Candidate{ID: id, Status: StatusActive, Names: []string{}, People: []sources.Sourced[sources.Person]{}, Cargo: []string{}, Created: t, Updated: t}
 					r := emptyRecords()
 					r.candidates[id] = c
 					views[id] = newDisplayTracker(r, id)
@@ -198,16 +138,14 @@ func (s *Store) Attach(ctx context.Context, run string, force bool, obs []Observ
 			}
 			touched[l.Candidate] = true
 			d.apply(l)
+			if err = s.refreshRecords(ctx, tx, d.records, l.Candidate, t); err != nil {
+				return err
+			}
 		}
 		ids = sortedIDs(touched)
 		for _, id := range ids {
 			d := views[id]
-			refresh(d.records, t)
-			c := d.records.candidates[id]
-			if d.changed && c.Status == StatusActive {
-				c.Updated = t
-			}
-			if err := putCandidate(ctx, tx, c); err != nil {
+			if err := s.refreshRecords(ctx, tx, d.records, id, t); err != nil {
 				return err
 			}
 		}
@@ -246,7 +184,7 @@ func (s *Store) MarkGone(ctx context.Context, scraper, run, after string, n int)
 			count.Gone++
 		}
 		for id := range touched {
-			if err = refreshKey(ctx, tx, id, t); err != nil {
+			if err = s.refreshKey(ctx, tx, id, t); err != nil {
 				return err
 			}
 		}
@@ -357,7 +295,7 @@ func (s *Store) Decide(ctx context.Context, d Ruling) (Ruling, []Candidate, erro
 				return err
 			}
 		case KindSplit:
-			n := Candidate{ID: out.Other, Status: StatusActive, Names: []string{}, People: []sources.Person{}, Cargo: []string{}, Created: t, Updated: t}
+			n := Candidate{ID: out.Other, Status: StatusActive, Names: []string{}, People: []sources.Sourced[sources.Person]{}, Cargo: []string{}, Created: t, Updated: t}
 			if err = putCandidate(ctx, tx, n); err != nil {
 				return err
 			}
@@ -377,7 +315,7 @@ func (s *Store) Decide(ctx context.Context, d Ruling) (Ruling, []Candidate, erro
 		}
 		if d.Kind == KindMerge || d.Kind == KindSplit {
 			for _, id := range ids {
-				if err = refreshKey(ctx, tx, id, t); err != nil {
+				if err = s.refreshKey(ctx, tx, id, t); err != nil {
 					return err
 				}
 			}

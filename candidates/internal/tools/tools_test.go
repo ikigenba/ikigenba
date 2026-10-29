@@ -197,7 +197,7 @@ func stamp(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 func candidateOf(c store.Candidate) tools.Candidate {
 	ps := []tools.Person{}
 	for _, p := range c.People {
-		ps = append(ps, tools.Person{Name: p.Name, Role: p.Role})
+		ps = append(ps, tools.Person{Name: p.Value.Name, Role: p.Value.Role, Source: p.Source})
 	}
 	return tools.Candidate{ID: c.ID, Status: c.Status, MergedInto: c.MergedInto, Name: c.Name, Names: c.Names, Street: c.Street, City: c.City, State: c.State, Zip: c.Zip, County: c.County, Phone: c.Phone, Email: c.Email, People: ps, Class: c.Class, Cargo: c.Cargo, Created: stamp(c.Created), Updated: stamp(c.Updated)}
 }
@@ -331,7 +331,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 	_ = tools.Judgments{nil, nil, nil, nil, nil, nil, nil, "", nil, "", "", nil, nil, nil, nil, nil, false, 0, ""}
 	_ = tools.Estimate{"source", 1, nil, .5, nil, "", 1}
 	_ = tools.Ruling{"kind", "candidate", "other", nil, "why", "user", "email", "at"}
-	_ = tools.Detail{tools.Candidate{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil}
+	_ = tools.Detail{tools.Candidate{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil}
 	_ = tools.Decision{tools.Ruling{}, nil}
 	_ = tools.EnrichArgs{"kind", "prospect_list", "candidate", false}
 	_ = tools.AddPageArgs{"candidate", "url"}
@@ -376,9 +376,9 @@ func objectKeys(t *testing.T, b []byte) []string {
 	return out
 }
 
-// R-XFGZ-IYVN R-VWLI-BAIE R-MGDJ-LAMN R-SX62-ODQC R-R4MF-9E6P R-RI1B-GVCC
+// R-XFGZ-IYVN R-VWLI-BAIE R-MGDJ-LAMN R-SX62-ODQC R-R4MF-9E6P R-2MR7-JZ99
 // R-YNDH-GZXV R-SUQ9-WU8Y R-XIDP-GOVR R-SYDZ-25H1
-// R-6131-Z710 R-XFGZ-IYVN R-VWLI-BAIE R-MGDJ-LAMN R-SX62-ODQC R-R4MF-9E6P R-RI1B-GVCC
+// R-2KBE-SFRV R-XFGZ-IYVN R-VWLI-BAIE R-MGDJ-LAMN R-SX62-ODQC R-R4MF-9E6P R-2MR7-JZ99
 func TestAnswerJSONShapes(t *testing.T) {
 	tests := []struct {
 		v      any
@@ -500,7 +500,7 @@ func decodeList[T any](t *testing.T, r mcp.Result) T {
 
 var _ io.Reader = (*random)(nil)
 
-// R-R96N-JYFB R-F05M-B25Z R-27ET-GMFK R-FO6J-TTDY R-WX6H-SER8
+// R-R96N-JYFB R-F05M-B25Z R-27ET-GMFK R-2QEW-PAHC R-WX6H-SER8
 func TestDetailAndRulings(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -521,7 +521,7 @@ func TestDetailAndRulings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := tools.Detail{Candidate: candidateOf(c), Enrichments: &tools.Enrichments{Basis: store.BasisRecords, Kinds: tools.Kinds{Missing: []string{enrichers.KindWebsiteSearch, enrichers.KindSiteText, enrichers.KindBrief, enrichers.KindDriveRoute}}}}
+	expected := tools.Detail{Candidate: candidateOf(c), Sources: sourceAnswer(c), Enrichments: &tools.Enrichments{Basis: store.BasisRecords, Kinds: tools.Kinds{Missing: []string{enrichers.KindWebsiteSearch, enrichers.KindSiteText, enrichers.KindBrief, enrichers.KindDriveRoute}}}}
 	for _, l := range ls {
 		r := l.Reading
 		expected.Links = append(expected.Links, tools.Link{Scraper: l.Scraper, SourceID: l.SourceID, Run: l.Run, Digest: l.Digest, Name: r.Name, Names: r.Names, Street: r.Street, City: r.City, State: r.State, Zip: r.Zip, County: r.County, Phone: r.Phone, Email: r.Email, People: []tools.Person{{Name: r.People[0].Name, Role: r.People[0].Role}}, Class: r.Class, Cargo: r.Cargo, Filed: r.Filed.UTC().Format("2006-01-02"), FleetVerdict: r.FleetVerdict, NameKey: r.NameKey, PhoneKey: r.PhoneKey, DomainKey: r.DomainKey, EIN: r.EINKey, Reason: l.Reason, Confidence: l.Confidence, FirstSeen: stamp(l.FirstSeen), LastSeen: stamp(l.LastSeen), Gone: l.Gone})

@@ -144,19 +144,23 @@ type CandidateData struct {
 
 // CandidateView supplies candidate view page data.
 type CandidateView struct {
-	ID, Status, MergedInto, Name                                                                     string
-	Names                                                                                            []string
-	Street, City, State, Zip, County, Phone, Email                                                   string
-	Park                                                                                             *ParkLink
-	WebsiteSource, Website, WebsiteURL, WebsiteTitle, WebsiteWhy, WebsiteChecked, WebsiteCheckedText string
-	People                                                                                           []PersonRow
-	Class                                                                                            string
-	Cargo                                                                                            []string
-	Created, CreatedText, Updated, UpdatedText                                                       string
+	ID, Status, MergedInto, Name                                                                                        string
+	Street, City, State, Zip, County, Phone, Email                                                                      string
+	NameSource, AddressSource, PhoneSource, EmailSource                                                                 string
+	OtherNames, OtherAddresses, OtherPhones                                                                             []OtherRow
+	Park                                                                                                                *ParkLink
+	WebsiteSource, Website, WebsiteURL, WebsiteTitle, WebsiteWhy, WebsiteChecked, WebsiteCheckedText, WebsiteCheckedURL string
+	People                                                                                                              []PersonRow
+	Class                                                                                                               string
+	Cargo                                                                                                               []string
+	Created, CreatedText, Updated, UpdatedText                                                                          string
 }
 
 // PersonRow supplies person row page data.
-type PersonRow struct{ Name, Role string }
+type PersonRow struct{ Name, Role, Source string }
+
+// OtherRow supplies an alternative fact and its source.
+type OtherRow struct{ Value, Source string }
 
 // JudgmentsView supplies judgments view page data.
 type JudgmentsView struct {
@@ -173,16 +177,16 @@ type JudgmentsView struct {
 
 // FactsView supplies the newest recorded facts.
 type FactsView struct {
-	KnownSince, KnownSinceText, NewestFiling, NewestFilingText                     string
-	Categories                                                                     []CategoryRow
-	ClassifiedBy                                                                   string
-	RecordsDiffer                                                                  bool
-	RecordCategories                                                               []CategoryRow
-	GovernmentMatch, FleetVerdict, PowerUnits, Drivers                             string
-	Headcounts                                                                     []HeadcountRow
-	BriefLabels                                                                    []string
-	Minutes, MinutesSource, Miles, RouteAddress, RoutePlaceURL, RouteDirectionsURL string
-	Written                                                                        []WrittenRow
+	KnownSince, KnownSinceText, KnownSinceSource, NewestFiling, NewestFilingText, NewestFilingSource string
+	Categories                                                                                       []CategoryRow
+	ClassifiedBy                                                                                     string
+	RecordsDiffer                                                                                    bool
+	RecordCategories                                                                                 []CategoryRow
+	GovernmentMatch, FleetVerdict, PowerUnits, Drivers                                               string
+	Headcounts                                                                                       []HeadcountRow
+	BriefLabels                                                                                      []string
+	Minutes, MinutesSource, Miles, RouteAddress, RoutePlaceURL, RouteDirectionsURL                   string
+	Written                                                                                          []WrittenRow
 }
 
 // HeadcountRow supplies one dated source headcount.

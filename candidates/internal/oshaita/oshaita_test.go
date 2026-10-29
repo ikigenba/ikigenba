@@ -40,7 +40,7 @@ func TestReading(t *testing.T) {
 	r.Address.Zip = "55072"
 	r.Address.County = "ANOKA"
 	r.People = append(r.People, scrapes.Person{Name: "Alex", Role: "owner"})
-	want := sources.Reading{NameKey: sources.NameKey(r.Name), NameKeys: sources.NameKeys([]string{r.Name}), EINKey: "010739420", Name: r.Name, Names: []string{r.Name}, Street: r.Address.Street, City: r.Address.City, State: r.Address.State, Zip: r.Address.Zip, People: []sources.Person{}, Cargo: []string{}, FleetVerdict: sources.FleetUnknown, Evidence: []sources.Evidence{{Name: sources.EvidenceOSHAITASummary, Source: oshaita.Name, Weight: .2, Description: sources.DescribeOSHAITASummary}}}
+	want := sources.Reading{TradeNames: []string{}, NameKey: sources.NameKey(r.Name), NameKeys: sources.NameKeys([]string{r.Name}), EINKey: "010739420", Name: r.Name, Names: []string{r.Name}, Street: r.Address.Street, City: r.Address.City, State: r.Address.State, Zip: r.Address.Zip, People: []sources.Person{}, Cargo: []string{}, FleetVerdict: sources.FleetUnknown, Evidence: []sources.Evidence{{Name: sources.EvidenceOSHAITASummary, Source: oshaita.Name, Weight: .2, Description: sources.DescribeOSHAITASummary}}}
 	if got := src.Read(r); !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %#v; want %#v", got, want)
 	}

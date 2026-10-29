@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
-// R-JNFR-RHJA
+// R-NBNK-AFBO
 func TestRecordShapes(t *testing.T) {
 	// Conversions use the records' complete underlying shapes, including order.
 	type personShape struct{ Name, Role string }
@@ -58,6 +58,9 @@ func TestRecordShapes(t *testing.T) {
 		KnownSince                                     time.Time
 		Category, GovernmentMatch, Establishment       string
 		Year, Employees, Hours                         *int64
+		TradeNames                                     []string
+		Mailing                                        bool
+		MailingAddress                                 *sources.Address
 	}
 	if personShape(sources.Person{}) != (personShape{}) || evidenceShape(sources.Evidence{}) != (evidenceShape{}) || categoryShape(sources.Category{}) != (categoryShape{}) {
 		t.Fatal("zero record")

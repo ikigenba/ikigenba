@@ -229,6 +229,7 @@ func (s *Store) RecordSweep(ctx context.Context, sw Sweep) (ParkWalk, error) {
 		}
 		out = ParkWalk{Pass: sw.Pass, Park: sw.Park, Name: name, Circles: sw.Circles, Requests: sw.Requests, Cost: sw.Cost}
 		touched := map[string]bool{}
+		oldURLs := map[string]string{}
 		for _, f := range sw.Found {
 			if err = scanSQL(ctx, tx, "SELECT count(*) FROM places WHERE walk=? AND place_id=?", []any{sw.Pass, f.Place.ID}, &n); err != nil {
 				return err
@@ -256,7 +257,7 @@ func (s *Store) RecordSweep(ctx context.Context, sw Sweep) (ParkWalk, error) {
 					if err != nil {
 						return err
 					}
-					c := Candidate{ID: id, Status: StatusActive, Names: []string{}, People: []sources.Person{}, Cargo: []string{}, Created: now, Updated: now}
+					c := Candidate{ID: id, Status: StatusActive, Names: []string{}, People: []sources.Sourced[sources.Person]{}, Cargo: []string{}, Created: now, Updated: now}
 					if err = putCandidate(ctx, tx, c); err != nil {
 						return err
 					}
@@ -264,6 +265,12 @@ func (s *Store) RecordSweep(ctx context.Context, sw Sweep) (ParkWalk, error) {
 					out.NewCandidates++
 				}
 				l = Link{Candidate: id, Scraper: places.Name, SourceID: f.Place.ID, Reading: reading, Reason: reason, Confidence: confidence, FirstSeen: now}
+			}
+			if !touched[l.Candidate] {
+				oldURLs[l.Candidate], err = placesURL(ctx, tx, l.Candidate)
+				if err != nil {
+					return err
+				}
 			}
 			l.LastSeen = now
 			l.Gone = false
@@ -280,8 +287,21 @@ func (s *Store) RecordSweep(ctx context.Context, sw Sweep) (ParkWalk, error) {
 			out.Found++
 		}
 		for id := range touched {
-			if err = refreshKey(ctx, tx, id, now); err != nil {
+			if err = s.refreshKey(ctx, tx, id, now); err != nil {
 				return err
+			}
+			c, err := candidateKey(ctx, tx, id)
+			if err != nil {
+				return err
+			}
+			u, err := placesURL(ctx, tx, id)
+			if err != nil {
+				return err
+			}
+			if c.Status == StatusActive && u != oldURLs[id] {
+				if err = s.projectFacts(ctx, tx, id); err != nil {
+					return err
+				}
 			}
 		}
 		if sw.Circles > 0 {

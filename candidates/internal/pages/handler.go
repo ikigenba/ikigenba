@@ -288,7 +288,12 @@ func Handler(cfg Config) http.Handler {
 				}
 				d.Enrichments.Basis = store.BasisOf(enrichments)
 				d.Enrichments.Kinds = enrichmentKinds(enrichments)
-				setWebsite(&d.Candidate, enrichments)
+				placesURL, err := cfg.Store.PlacesURL(r.Context(), cid)
+				if err != nil {
+					fail()
+					return
+				}
+				setWebsite(&d.Candidate, enrichments, placesURL)
 				d.Enrichments.Brief = briefView(enrichments)
 				subject, err := cfg.Store.Subject(r.Context(), cid)
 				if err != nil {

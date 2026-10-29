@@ -172,7 +172,7 @@ func contractNewPass(t *testing.T, f *contractFixture, trigger string) store.Pas
 }
 func contractObservation(id, name string, filed time.Time) store.Observation {
 	high := int64(20000000)
-	return store.Observation{Scraper: "source-z", SourceID: id, Digest: "digest-" + id, Reading: sources.Reading{NameKey: sources.NameKey(name), PhoneKey: "3205550101", DomainKey: "business.test", Name: name, Names: []string{name, "Trading alias"}, Street: "12 Test Road", City: "Test city", State: "MN", Zip: "55072", County: "MN-115", Phone: "320-555-0101", Email: "office@business.test", People: []sources.Person{{Name: "Pat Test", Role: "owner"}}, Class: sources.ClassForHire, Cargo: []string{"grain"}, Filed: filed, Fleet: true, Estimate: &sources.Estimate{Source: "source-z", Low: 10000000, High: &high, Confidence: 0.8, Facts: map[string]json.RawMessage{"units": json.RawMessage(`3`)}, Filed: filed, Formula: sources.Rules}}}
+	return store.Observation{Scraper: "fmcsa", SourceID: id, Digest: "digest-" + id, Reading: sources.Reading{NameKey: sources.NameKey(name), PhoneKey: "3205550101", DomainKey: "business.test", Name: name, Names: []string{name, "Trading alias"}, Street: "12 Test Road", City: "Test city", State: "MN", Zip: "55072", County: "MN-115", Phone: "320-555-0101", Email: "office@business.test", People: []sources.Person{{Name: "Pat Test", Role: "owner"}}, Class: sources.ClassForHire, Cargo: []string{"grain"}, Filed: filed, Fleet: true, Estimate: &sources.Estimate{Source: "fmcsa", Low: 10000000, High: &high, Confidence: 0.8, Facts: map[string]json.RawMessage{"units": json.RawMessage(`3`)}, Filed: filed, Formula: sources.Rules}}}
 }
 func contractAttach(t *testing.T, f *contractFixture, run string, obs ...store.Observation) []string {
 	t.Helper()
@@ -578,7 +578,7 @@ func TestContractZipReplacement(t *testing.T) {
 	}
 }
 
-// R-VWK4-AYB8 R-47VU-80SR R-F1DI-OTWO R-578X-BDAW R-T3DU-KBYR R-5AWM-GOIZ R-5C4I-UG9O
+// R-VWK4-AYB8 R-QEC7-F4GZ R-F1DI-OTWO R-578X-BDAW R-T3DU-KBYR R-5AWM-GOIZ R-5C4I-UG9O
 func TestContractBusinessRecordsPersistence(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -587,7 +587,7 @@ func TestContractBusinessRecordsPersistence(t *testing.T) {
 	ids := contractAttach(t, f, "run-one", o)
 	id := ids[0]
 	stamp := f.now.UTC().Truncate(time.Second)
-	want := store.Candidate{ID: id, Status: store.StatusActive, Name: o.Reading.Name, Names: o.Reading.Names, Street: o.Reading.Street, City: o.Reading.City, State: o.Reading.State, Zip: o.Reading.Zip, County: o.Reading.County, Phone: o.Reading.Phone, Email: o.Reading.Email, People: o.Reading.People, Class: o.Reading.Class, Cargo: o.Reading.Cargo, Created: stamp, Updated: stamp}
+	want := withProvenance(store.Candidate{ID: id, Status: store.StatusActive, Name: o.Reading.Name, Names: o.Reading.Names, Street: o.Reading.Street, City: o.Reading.City, State: o.Reading.State, Zip: o.Reading.Zip, County: o.Reading.County, Phone: o.Reading.Phone, Email: o.Reading.Email, People: sourcedPeople(o.Reading.People, o.Scraper, o.SourceID), Class: o.Reading.Class, Cargo: o.Reading.Cargo, Created: stamp, Updated: stamp}, o)
 	c, err := f.s.GetCandidate(ctx, id)
 	contractOK(t, err)
 	contractEqual(t, c, want)
@@ -644,7 +644,7 @@ func TestContractBusinessRecordsPersistence(t *testing.T) {
 	contractOK(t, err)
 	es, err = f.s.Estimates(ctx, id)
 	contractOK(t, err)
-	contractEqual(t, es, []sources.Estimate{e, *o.Reading.Estimate})
+	contractEqual(t, es, []sources.Estimate{*o.Reading.Estimate, e})
 	c, err = f.s.GetCandidate(ctx, id)
 	contractOK(t, err)
 	links, err = f.s.Links(ctx, id)
@@ -768,7 +768,7 @@ func TestContractCandidateWindowsAndFilters(t *testing.T) {
 	if page == nil || len(page) != 0 {
 		t.Fatal(page)
 	}
-	_, _, err = f.s.MarkGone(ctx, "source-z", "absent", "", 500)
+	_, _, err = f.s.MarkGone(ctx, "fmcsa", "absent", "", 500)
 	contractOK(t, err)
 	page, err = f.s.ListCandidates(ctx, store.CandidateFilter{Phone: "320.555.0101"}, "", "", 20)
 	contractOK(t, err)
@@ -947,7 +947,7 @@ func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	contractEqual(t, after, zipBefore)
 }
 
-// R-WDMP-NQOY R-OD8H-2EDG
+// R-BEML-00BG R-OD8H-2EDG
 func TestContractAllMethodsUnavailable(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -1049,7 +1049,7 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 			return e
 		}},
 		{"MarkGone", func(c context.Context) error { _, _, e := f.s.MarkGone(c, "", "", "", 500); return e }},
-		{"MarkGoneValid", func(c context.Context) error { _, _, e := f.s.MarkGone(c, "source-z", "absent", "", 500); return e }},
+		{"MarkGoneValid", func(c context.Context) error { _, _, e := f.s.MarkGone(c, "fmcsa", "absent", "", 500); return e }},
 		{"Decide", func(c context.Context) error { _, _, e := f.s.Decide(c, store.Ruling{}); return e }},
 		{"DecideValid", func(c context.Context) error {
 			_, _, e := f.s.Decide(c, store.Ruling{Kind: store.KindExclude, Candidate: id, Why: "failure", UserID: "owner"})
@@ -1176,7 +1176,7 @@ func TestContractConcurrentStoreCalls(t *testing.T) {
 			_, _, e := f.s.Attach(ctx, "parallel-run", false, []store.Observation{contractObservation("parallel", "Parallel business", f.now.UTC().Truncate(time.Second))})
 			return e
 		},
-		func() error { _, _, e := f.s.MarkGone(ctx, "source-z", "parallel-run", "", 500); return e },
+		func() error { _, _, e := f.s.MarkGone(ctx, "fmcsa", "parallel-run", "", 500); return e },
 		func() error {
 			_, _, e := f.s.Decide(ctx, store.Ruling{Kind: store.KindInclude, Candidate: id, Why: "parallel", UserID: "owner"})
 			return e

@@ -23,7 +23,7 @@ func TestSubjectReadsDisplayLinksAndCurrentFacts(t *testing.T) {
 		contractOK(t, err)
 		links, err := f.s.Links(ctx, id)
 		contractOK(t, err)
-		want := enrichers.Subject{ID: c.ID, Name: c.Name, Street: c.Street, Phone: c.Phone, City: c.City, State: c.State, Email: c.Email, Zip: c.Zip, Links: []enrichers.Link{}, Pages: []enrichers.Page{}}
+		want := enrichers.Subject{ID: c.ID, Name: c.Name, Street: c.Street, Phone: c.Phone, City: c.City, State: c.State, Email: c.Email, Zip: c.Zip, Links: []enrichers.Link{}, Pages: []enrichers.Page{}, NameSource: c.NameSource, NameRecord: c.NameRecord, AddressSource: c.AddressSource, AddressRecord: c.AddressRecord, PhoneSource: c.PhoneSource, PhoneRecord: c.PhoneRecord, EmailSource: c.EmailSource, EmailRecord: c.EmailRecord, People: append([]sources.Sourced[sources.Person]{}, c.People...)}
 		if m, e := f.s.ZipMinutes(ctx, c.Zip); e == nil {
 			want.Minutes = &m
 		}
@@ -47,12 +47,18 @@ func TestSubjectReadsDisplayLinksAndCurrentFacts(t *testing.T) {
 			if r.Kind == sources.WebsiteCheck && r.Inputs == website.Domain(c.Email) {
 				want.Check = &website.Result{}
 				contractOK(t, json.Unmarshal(r.Found, want.Check))
+				want.EmailCheck = want.Check
 				break
 			}
 		}
 		for _, l := range links {
-			want.Links = append(want.Links, enrichers.Link{Scraper: l.Scraper, SourceID: l.SourceID, Gone: l.Gone, Reading: l.Reading})
+			want.Links = append(want.Links, enrichers.Link{Scraper: l.Scraper, SourceID: l.SourceID, Gone: l.Gone, Reading: l.Reading, Seen: l.LastSeen})
 		}
+		rs := []sources.Record{}
+		for _, l := range links {
+			rs = append(rs, sources.Record{Source: l.Scraper, SourceID: l.SourceID, Gone: l.Gone, Seen: l.LastSeen, Reading: l.Reading})
+		}
+		want.RecordAddress = sources.Pick(sources.Orders(), rs, nil).Address
 		got, err := f.s.Subject(ctx, id)
 		contractOK(t, err)
 		contractEqual(t, got, want)
@@ -63,7 +69,7 @@ func TestSubjectReadsDisplayLinksAndCurrentFacts(t *testing.T) {
 	contractOK(t, f.s.ReplaceZipDrive(ctx, map[string]int64{c.Zip: 0}))
 	_, err = f.s.AddEnrichments(ctx, []store.Enrichment{websiteResult(id, sources.WebsiteHTTPS)})
 	contractOK(t, err)
-	_, _, err = f.s.MarkGone(ctx, "source-z", "absent", "", 500)
+	_, _, err = f.s.MarkGone(ctx, "fmcsa", "absent", "", 500)
 	contractOK(t, err)
 	assertSubject(id)
 	survivor := enrichmentCandidate(t, f, "survivor", "owner@survivor.test")
@@ -110,7 +116,7 @@ func TestDueAmongKeepsTargetOrderAndSkipsIneligible(t *testing.T) {
 	}
 }
 
-// R-GY5W-CFBD R-OKGB-71R7
+// R-B3NH-K2N7 R-OKGB-71R7
 func TestDeriveAmongRecordsOnlyDistinctEligibleTargets(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -181,7 +187,7 @@ func siteTextResult(t *testing.T, id, status string) store.Enrichment {
 	return store.Enrichment{Candidate: id, Kind: enrichers.KindSiteText, Inputs: "https://business.test/", Source: enrichers.SourcePrompts, Found: b, Cost: 1.25}
 }
 
-// R-12DZ-6K3F R-GVQ3-KVTZ
+// R-IITT-5P49 R-HS56-N73R
 func TestSiteTextWrittenProjectsIntoProspectListWithoutChangingMembership(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -230,7 +236,7 @@ func TestSiteTextWrittenProjectsIntoProspectListWithoutChangingMembership(t *tes
 	contractEqual(t, prospectListRead(t, f, prospectList), got)
 }
 
-// R-GY5W-CFBD
+// R-B3NH-K2N7
 func TestDeriveAmongNeverRecordsEmptyInputs(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

@@ -15,18 +15,18 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-TP14-C8P6 R-QF0J-87M4 R-08PY-S5TE
+// R-9M7V-YK4E R-QF0J-87M4 R-08PY-S5TE
 func TestCompleteViewContracts(t *testing.T) {
 	start := time.Date(2026, 10, 5, 10, 0, 7, 0, time.FixedZone("offset", 3600))
 	end := start.Add(time.Hour)
 	hi := int64(24000000)
-	c := store.Candidate{ID: "candidate", Status: store.StatusActive, MergedInto: "survivor", Name: "name", Names: []string{"name", "alias"}, Street: "street", City: "city", State: "MN", Zip: "55072", County: "MN-001", Phone: "phone", Email: "email", People: []sources.Person{{Name: "person", Role: "owner"}, {Name: "other", Role: "officer"}}, Class: "class", Cargo: []string{"cargo", "other"}, Created: start, Updated: end}
-	wantC := CandidateView{ID: "candidate", Status: store.StatusActive, MergedInto: "survivor", Name: "name", Names: []string{"name", "alias"}, Street: "street", City: "city", State: "MN", Zip: "55072", County: "MN-001", Phone: "phone", Email: "email", People: []PersonRow{{"person", "owner"}, {"other", "officer"}}, Class: "class", Cargo: []string{"cargo", "other"}, Created: "2026-10-05T09:00:07Z", CreatedText: "2026-10-05 09:00:07 UTC", Updated: "2026-10-05T10:00:07Z", UpdatedText: "2026-10-05 10:00:07 UTC"}
+	c := store.Candidate{ID: "candidate", Status: store.StatusActive, MergedInto: "survivor", Name: "name", Street: "street", City: "city", State: "MN", Zip: "55072", County: "MN-001", Phone: "phone", Email: "email", People: []sources.Sourced[sources.Person]{{Value: sources.Person{Name: "person", Role: "owner"}}, {Value: sources.Person{Name: "other", Role: "officer"}}}, Class: "class", Cargo: []string{"cargo", "other"}, Created: start, Updated: end}
+	wantC := CandidateView{ID: "candidate", Status: store.StatusActive, MergedInto: "survivor", Name: "name", Street: "street", City: "city", State: "MN", Zip: "55072", County: "MN-001", Phone: "phone", Email: "email", OtherNames: []OtherRow{}, OtherAddresses: []OtherRow{}, OtherPhones: []OtherRow{}, People: []PersonRow{{"person", "owner", ""}, {"other", "officer", ""}}, Class: "class", Cargo: []string{"cargo", "other"}, Created: "2026-10-05T09:00:07Z", CreatedText: "2026-10-05 09:00:07 UTC", Updated: "2026-10-05T10:00:07Z", UpdatedText: "2026-10-05 10:00:07 UTC"}
 	if got := candidateView(c); !reflect.DeepEqual(got, wantC) {
 		t.Fatalf("candidate got %#v want %#v", got, wantC)
 	}
 	c.Status = store.StatusMerged
-	wantC = CandidateView{ID: "candidate", Status: store.StatusMerged, MergedInto: "survivor", Names: []string{}, People: []PersonRow{}, Cargo: []string{}, Created: "2026-10-05T09:00:07Z", CreatedText: "2026-10-05 09:00:07 UTC", Updated: "2026-10-05T10:00:07Z", UpdatedText: "2026-10-05 10:00:07 UTC"}
+	wantC = CandidateView{ID: "candidate", Status: store.StatusMerged, MergedInto: "survivor", OtherNames: []OtherRow{}, OtherAddresses: []OtherRow{}, OtherPhones: []OtherRow{}, People: []PersonRow{}, Cargo: []string{}, Created: "2026-10-05T09:00:07Z", CreatedText: "2026-10-05 09:00:07 UTC", Updated: "2026-10-05T10:00:07Z", UpdatedText: "2026-10-05 10:00:07 UTC"}
 	if got := candidateView(c); !reflect.DeepEqual(got, wantC) {
 		t.Fatalf("merged %#v", got)
 	}
@@ -170,7 +170,7 @@ func TestExplicitTemplateStates(t *testing.T) {
 			for _, full := range []bool{false, true} {
 				data := CandidateData{Candidate: CandidateView{ID: text, Status: status, MergedInto: text, Name: text, Street: text, City: text, State: text, Zip: text, County: text, Phone: text, Email: text, Class: text, Created: text, CreatedText: text, Updated: text, UpdatedText: text}}
 				if full {
-					data.Candidate.Names = []string{text}
+					data.Candidate.OtherNames = []OtherRow{{Value: text}}
 					data.Candidate.People = []PersonRow{{Name: text, Role: text}}
 					data.Candidate.Cargo = []string{text}
 					data.Judgments = &JudgmentsView{RevenueLow: text, RevenueHigh: text, OperatingConfidence: text, RevenueConfidence: text, OperatingEvidence: []EvidenceRow{{Name: text, Source: text, Weight: text, Description: text}}}

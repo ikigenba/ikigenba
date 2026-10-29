@@ -30,7 +30,7 @@ func baseSweep(t *testing.T, f *contractFixture, park string, found ...places.Pl
 	return p, w
 }
 
-// R-F1DI-OTWO R-RQKM-59J7 R-F694-7WVG
+// R-F1DI-OTWO R-2D1P-B7MG R-F694-7WVG
 func TestPlacesLinksKeepRecordDisplayAndNeverBecomeGone(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -44,8 +44,11 @@ func TestPlacesLinksKeepRecordDisplayAndNeverBecomeGone(t *testing.T) {
 	p, _ := baseSweep(t, f, k.ID, x, places.Place{ID: "sole-place", Name: "Places only business", Address: "1 Solo Street, Solo, MN 55092, USA", Phone: "3205550123"})
 	got, err := f.s.GetCandidate(ctx, id)
 	contractOK(t, err)
-	before.Updated = got.Updated
-	contractEqual(t, got, before)
+	contractEqual(t, got.Name, x.Name)
+	contractEqual(t, got.NameSource, places.Name)
+	contractEqual(t, got.Names, append([]string{x.Name}, before.Names...))
+	contractEqual(t, got.Email, before.Email)
+	contractEqual(t, got.Updated, f.now.UTC().Truncate(time.Second))
 	links, err := f.s.Links(ctx, id)
 	contractOK(t, err)
 	var placeLink store.Link
@@ -88,7 +91,7 @@ func TestPlacesLinksKeepRecordDisplayAndNeverBecomeGone(t *testing.T) {
 		contractEqual(t, c.Street, "1 Solo Street")
 	}
 	contractEqual(t, soleFound, true)
-	// The first public-record link takes over a Places-only candidate's display.
+	// Public records supply email and tags while the place still supplies the name and location.
 	f.now = f.now.Add(time.Hour)
 	o := contractObservation("government-row", "PLACES ONLY BUSINESS LLC", f.now)
 	o.Reading.Zip = "55092"
@@ -97,10 +100,10 @@ func TestPlacesLinksKeepRecordDisplayAndNeverBecomeGone(t *testing.T) {
 	contractEqual(t, ids, []string{soleID})
 	c, err := f.s.GetCandidate(ctx, soleID)
 	contractOK(t, err)
-	contractEqual(t, c.Name, o.Reading.Name)
-	contractEqual(t, c.Names, o.Reading.Names)
-	contractEqual(t, c.Street, o.Reading.Street)
-	contractEqual(t, c.Phone, o.Reading.Phone)
+	contractEqual(t, c.Name, "Places only business")
+	contractEqual(t, c.Names, append([]string{"Places only business"}, o.Reading.Names...))
+	contractEqual(t, c.Street, "1 Solo Street")
+	contractEqual(t, c.Phone, "3205550123")
 	contractEqual(t, c.Updated, f.now.UTC().Truncate(time.Second))
 	// A later record update cannot take missing fields from the Places link.
 	f.now = f.now.Add(time.Hour)
@@ -110,14 +113,14 @@ func TestPlacesLinksKeepRecordDisplayAndNeverBecomeGone(t *testing.T) {
 	contractEqual(t, contractAttach(t, f, "later-government-run", o), ids)
 	c, err = f.s.GetCandidate(ctx, soleID)
 	contractOK(t, err)
-	contractEqual(t, c.Name, o.Reading.Name)
-	contractEqual(t, c.Names, o.Reading.Names)
-	contractEqual(t, c.Phone, "")
+	contractEqual(t, c.Name, "Places only business")
+	contractEqual(t, c.Names, append([]string{"Places only business"}, o.Reading.Names...))
+	contractEqual(t, c.Phone, "3205550123")
 	contractEqual(t, c.Email, "")
 	contractEqual(t, c.Class, "")
-	contractEqual(t, c.People, []sources.Person{})
+	contractEqual(t, c.People, []sources.Sourced[sources.Person]{})
 	contractEqual(t, c.Cargo, []string{})
-	for _, args := range [][2]string{{places.Name, "any-run"}, {"", "any-run"}, {"source-z", ""}} {
+	for _, args := range [][2]string{{places.Name, "any-run"}, {"", "any-run"}, {"fmcsa", ""}} {
 		cursor, c, err := f.s.MarkGone(ctx, args[0], args[1], "", 100)
 		contractError(t, err, store.ErrUnreachable)
 		contractEqual(t, cursor, "")

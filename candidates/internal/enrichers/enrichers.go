@@ -42,6 +42,7 @@ type Link struct {
 	Scraper, SourceID string
 	Gone              bool
 	Reading           sources.Reading
+	Seen              time.Time
 }
 
 // Page holds one kept copy of a web page.
@@ -53,15 +54,20 @@ type Page struct {
 
 // Subject holds the stored inputs for a candidate.
 type Subject struct {
-	ID, Name, City, State, Street, Zip, Phone, Email, Website, WebsiteSource string
-	Check                                                                    *website.Result
-	Minutes                                                                  *int64
-	Links                                                                    []Link
-	Pages                                                                    []Page
-	Facts                                                                    *LinkFound
-	Origin                                                                   string
-	SiteText                                                                 *SiteTextFound
-	SearchInputs                                                             string
+	ID, Name, City, State, Street, Zip, Phone, Email, Website, WebsiteSource                                 string
+	Check                                                                                                    *website.Result
+	Minutes                                                                                                  *int64
+	Links                                                                                                    []Link
+	Pages                                                                                                    []Page
+	Facts                                                                                                    *LinkFound
+	Origin                                                                                                   string
+	SiteText                                                                                                 *SiteTextFound
+	SearchInputs                                                                                             string
+	NameSource, NameRecord, AddressSource, AddressRecord, PhoneSource, PhoneRecord, EmailSource, EmailRecord string
+	People                                                                                                   []sources.Sourced[sources.Person]
+	PlacesURL                                                                                                string
+	RecordAddress                                                                                            sources.Sourced[sources.Address]
+	EmailCheck                                                                                               *website.Result
 }
 
 // Result is a kind's finding and its provenance.
@@ -88,19 +94,29 @@ type Headcount struct {
 
 // LinkFound is the projection of live source readings.
 type LinkFound struct {
-	KnownSince      string      `json:"known_since,omitempty"`
-	NewestFiling    string      `json:"newest_filing,omitempty"`
-	GovernmentMatch string      `json:"government_match,omitempty"`
-	Categories      []Category  `json:"categories"`
-	FleetVerdict    string      `json:"fleet_verdict"`
-	PowerUnits      *int64      `json:"power_units,omitempty"`
-	Drivers         *int64      `json:"drivers,omitempty"`
-	Headcounts      []Headcount `json:"headcounts"`
+	KnownSince         string      `json:"known_since,omitempty"`
+	NewestFiling       string      `json:"newest_filing,omitempty"`
+	GovernmentMatch    string      `json:"government_match,omitempty"`
+	Categories         []Category  `json:"categories"`
+	FleetVerdict       string      `json:"fleet_verdict"`
+	PowerUnits         *int64      `json:"power_units,omitempty"`
+	Drivers            *int64      `json:"drivers,omitempty"`
+	Headcounts         []Headcount `json:"headcounts"`
+	KnownSinceSource   string      `json:"known_since_source,omitempty"`
+	NewestFilingSource string      `json:"newest_filing_source,omitempty"`
 }
 
 // MinutesFound records a known drive time or its absence.
 type MinutesFound struct {
-	Minutes *int64 `json:"minutes,omitempty"`
+	Minutes      *int64        `json:"minutes,omitempty"`
+	InputSources []InputSource `json:"input_sources,omitempty"`
+}
+
+// InputSource identifies the record supplying one input fact.
+type InputSource struct {
+	Fact   string `json:"fact"`
+	Source string `json:"source"`
+	Record string `json:"record"`
 }
 
 // Enricher identifies and validates one kind of result.
@@ -219,7 +235,7 @@ func (DriveMinutes) Inputs(s Subject) string { return s.Zip }
 
 // Derive records the table value, including an unknown ZIP.
 func (DriveMinutes) Derive(s Subject) Result {
-	return result(SourceZipDrive, MinutesFound{Minutes: knownCount(s.Minutes)})
+	return result(SourceZipDrive, MinutesFound{Minutes: knownCount(s.Minutes), InputSources: inputSource(sources.FactAddress, s.AddressSource, s.AddressRecord)})
 }
 
 // Valid checks the strict drive-time JSON shape.
@@ -296,6 +312,27 @@ func (LinkFacts) Derive(s Subject) Result {
 			f.PowerUnits = knownCount(r.PowerUnits)
 			f.Drivers = knownCount(r.Drivers)
 		}
+	}
+	records := []sources.Record{}
+	for _, l := range s.Links {
+		if l.Gone {
+			continue
+		}
+		r := l.Reading
+		if !datable(r.KnownSince) {
+			r.KnownSince = time.Time{}
+		}
+		if !datable(r.Filed) {
+			r.Filed = time.Time{}
+		}
+		records = append(records, sources.Record{Source: l.Scraper, SourceID: l.SourceID, Seen: l.Seen, Reading: r})
+	}
+	p := sources.Pick(sources.Orders(), records, nil)
+	if !known.IsZero() && known.UTC().Format(time.DateOnly) == p.KnownSince.Value.UTC().Format(time.DateOnly) {
+		f.KnownSinceSource = p.KnownSince.Source
+	}
+	if !filed.IsZero() && filed.UTC().Format(time.DateOnly) == p.NewestFiling.Value.UTC().Format(time.DateOnly) {
+		f.NewestFilingSource = p.NewestFiling.Source
 	}
 	if !known.IsZero() {
 		f.KnownSince = known.UTC().Format(time.DateOnly)
@@ -406,7 +443,7 @@ func (WebsiteCheck) Kind() string { return sources.WebsiteCheck }
 func (WebsiteCheck) Fetched() bool { return true }
 
 // Inputs returns the checked own domain.
-func (WebsiteCheck) Inputs(s Subject) string { return website.Domain(s.Email) }
+func (WebsiteCheck) Inputs(s Subject) string { return website.Inputs(s.PlacesURL, s.Email) }
 
 // Valid accepts website results, including earlier records' extra members.
 func (WebsiteCheck) Valid(b json.RawMessage) bool {
@@ -464,4 +501,34 @@ func (SiteText) Valid(b json.RawMessage) bool {
 func (SiteText) Failed(b json.RawMessage) bool {
 	var f SiteTextFound
 	return json.Unmarshal(b, &f) == nil && f.Failed()
+}
+
+func inputSource(fact, source, record string) []InputSource {
+	if source == "" {
+		return nil
+	}
+	return []InputSource{{fact, source, record}}
+}
+func validInputSources(b json.RawMessage) bool {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(b, &m) != nil {
+		return false
+	}
+	raw, ok := m["input_sources"]
+	if !ok {
+		return true
+	}
+	if !array(raw) {
+		return false
+	}
+	var entries []json.RawMessage
+	if json.Unmarshal(raw, &entries) != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if _, ok := object(entry); !ok {
+			return false
+		}
+	}
+	return true
 }

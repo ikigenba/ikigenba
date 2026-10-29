@@ -30,11 +30,11 @@ type decisionValue struct {
 }
 
 func decision(es []store.Enrichment) decisionValue {
-	a, b, c, d, e, f := store.WebsiteDecisionOf(es)
+	a, b, c, d, e, _, f := store.WebsiteDecisionOf(es, "")
 	return decisionValue{a, b, c, d, e, f}
 }
 
-// R-GTAA-TCCL
+// R-QJ7S-Y7FR
 func TestWebsiteDecisionTakeoversAndInertSearches(t *testing.T) {
 	stamp := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	check := websiteResult("candidate", sources.WebsiteHTTPS)
@@ -164,7 +164,7 @@ func TestWebsiteDecisionTakeoversAndInertSearches(t *testing.T) {
 	}
 }
 
-// R-GZDS-Q722 R-GVQ3-KVTZ R-H6P7-0TI8
+// R-AZZS-ERF4 R-HS56-N73R R-BC6S-8GU2
 func TestWebsiteTakeoverProjectionPersistsAndSurvivesInertSearch(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -212,7 +212,7 @@ func TestWebsiteTakeoverProjectionPersistsAndSurvivesInertSearch(t *testing.T) {
 	contractEqual(t, factsAt(ctx, t, f.s, id).WebsiteSource, store.WebsiteByCheck)
 }
 
-// R-GTAA-TCCL R-GZDS-Q722 R-GVQ3-KVTZ R-H6P7-0TI8
+// R-QJ7S-Y7FR R-AZZS-ERF4 R-HS56-N73R R-BC6S-8GU2
 func TestWebsiteProjectionMatchesSiteKeysAndSearchProvenance(t *testing.T) {
 	for _, scenario := range []string{"alias", "query", "chain", "chain stands", "chain none", "search origin alone", "check origin alone"} {
 		for _, checkAt := range []int{0, 1, 2} {
@@ -303,7 +303,7 @@ func TestWebsiteProjectionMatchesSiteKeysAndSearchProvenance(t *testing.T) {
 	}
 }
 
-// R-GTAA-TCCL R-GZDS-Q722 R-GVQ3-KVTZ
+// R-QJ7S-Y7FR R-AZZS-ERF4 R-HS56-N73R
 func TestWebsiteProjectionUsesHistoricalConfirmationLanding(t *testing.T) {
 	for _, tc := range []struct {
 		name, recordedCase, answer, landing, source, url string
@@ -374,7 +374,7 @@ func TestWebsiteProjectionUsesHistoricalConfirmationLanding(t *testing.T) {
 	}
 }
 
-// R-GTAA-TCCL R-GVQ3-KVTZ
+// R-QJ7S-Y7FR R-HS56-N73R
 func TestWebsiteProjectionWithAbsentConfirmationURL(t *testing.T) {
 	for _, confirmation := range []string{`{"state":"https"}`, `{"state":"https","url":null}`, `{"state":"https","url":""}`} {
 		t.Run(confirmation, func(t *testing.T) {
@@ -404,7 +404,7 @@ func TestWebsiteProjectionWithAbsentConfirmationURL(t *testing.T) {
 	}
 }
 
-// R-WG2I-FA6C
+// R-AWC3-9G71
 func TestSubjectUsesMatchingSiteTextAndNewestSearchInputs(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

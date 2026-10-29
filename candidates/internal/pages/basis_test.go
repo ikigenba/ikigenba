@@ -77,7 +77,7 @@ func TestBasisViewShapesAndProjection(t *testing.T) {
 	}
 }
 
-// R-XZ84-OKCO R-TCAV-9WMT
+// R-XZ84-OKCO R-FHZ2-A78U
 func TestBasisFiltersAndMemberProjection(t *testing.T) {
 	for _, basis := range [][]string{nil, {store.BasisRecords, store.BasisEnriched}} {
 		got := filtersView(store.ProspectListFilters{Basis: basis})
@@ -296,7 +296,7 @@ func TestProspectListRequestsRecordOneOpen(t *testing.T) {
 	assertListBody(t, cfg, "GET", virgin.ID, v)
 }
 
-// R-T4ZG-ZA6N R-TCAV-9WMT R-Y43Q-7NBG
+// R-FFJ9-INRG R-FHZ2-A78U R-Y43Q-7NBG
 func TestCandidateBasisAndKindsOnPages(t *testing.T) {
 	cfg, handle := pageFixture(t)
 	now := fixtureTime()
@@ -327,7 +327,7 @@ func TestCandidateBasisAndKindsOnPages(t *testing.T) {
 		b := bannerFor(cfg)
 		b.Trail = []page.Level{{Name: id, URL: "/candidates/" + id}}
 		d := CandidateData{Banner: b, Candidate: candidateView(c), Enrichments: &EnrichmentsView{Basis: basis, Kinds: KindsView{present, missing}, Brief: briefView(es)}, Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{}, Pages: []PageRow{}, EnrichmentResults: []EnrichmentRow{}, Rejects: []RejectRecordRow{}, Campaigns: []CampaignRow{}}
-		setWebsite(&d.Candidate, es)
+		setWebsite(&d.Candidate, es, "")
 		subject, e := cfg.Store.Subject(ctx, id)
 		if e != nil {
 			t.Fatal(e)

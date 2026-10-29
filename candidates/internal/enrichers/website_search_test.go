@@ -47,14 +47,14 @@ func TestWebsiteSearchClient(t *testing.T) {
 	}
 }
 
-// R-TYNE-CTYH R-I7FS-IIZB R-SDQ1-5H81 R-SEXX-J8YQ R-SG5T-X0PF R-MBII-JU3W
+// R-ASLA-XANV R-I7FS-IIZB R-SDQ1-5H81 R-SEXX-J8YQ R-SG5T-X0PF R-AV13-OU59
 func TestWebsiteSearchShapes(t *testing.T) {
 	zero := 0
 	input := enrichers.WebsiteSearchInput{"c", "n", "ci", "st", "street", "zip", "phone", "domain", "check", "error", "website", "check", &enrichers.WebsiteSearchSiteText{"failed", 0}, []enrichers.BriefPerson{{"person", "role"}}, []enrichers.Category{{"cat", "origin"}}}
 	run := enrichers.WebsiteSearchRun{"r", "status", &zero, 3}
 	answer := enrichers.WebsiteSearchAnswer{"u", "w", []enrichers.WebsiteSearchSite{{"r", "why"}}}
 	confirm := enrichers.WebsiteSearchConfirmation{"s", "u", "t", 200, 10, "e"}
-	found := enrichers.WebsiteSearchFound{run, &answer, &confirm, "again", "website", "check", &enrichers.WebsiteSearchSiteText{"failed", 0}, "different"}
+	found := enrichers.WebsiteSearchFound{run, &answer, &confirm, "again", "website", "check", &enrichers.WebsiteSearchSiteText{"failed", 0}, "different", nil}
 	cases := []struct {
 		v    any
 		want string
@@ -88,10 +88,10 @@ func TestWebsiteSearchShapes(t *testing.T) {
 	}
 }
 
-// R-7YK3-FGQV R-MCQE-XLUL
+// R-7YK3-FGQV R-U0BN-X0UW
 func TestWebsiteSearchInputs(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
-	s := enrichers.Subject{ID: "candidate", Name: "Acme", City: "Sandstone", State: "MN", Street: "Main", Zip: "zip", Phone: "phone", Email: "Ops@Acme.test", Links: []enrichers.Link{{Reading: sources.Reading{People: []sources.Person{{Name: "Ann", Role: "owner"}, {Name: "Bob"}, {Name: "Ann", Role: "owner"}}}}, {Gone: true, Reading: sources.Reading{People: []sources.Person{{Name: "Gone"}}}}}, Facts: &enrichers.LinkFound{Categories: []enrichers.Category{{Name: "omit", Source: enrichers.KindBrief}, {Name: "keep", Source: "source"}}}}
+	s := enrichers.Subject{People: []sources.Sourced[sources.Person]{{Value: sources.Person{Name: "Ann", Role: "owner"}}, {Value: sources.Person{Name: "Bob"}}, {Value: sources.Person{Name: "Ann", Role: "owner"}}}, ID: "candidate", Name: "Acme", City: "Sandstone", State: "MN", Street: "Main", Zip: "zip", Phone: "phone", Email: "Ops@Acme.test", Links: []enrichers.Link{{Reading: sources.Reading{People: []sources.Person{{Name: "Ann", Role: "owner"}, {Name: "Bob"}, {Name: "Ann", Role: "owner"}}}}, {Gone: true, Reading: sources.Reading{People: []sources.Person{{Name: "Gone"}}}}}, Facts: &enrichers.LinkFound{Categories: []enrichers.Category{{Name: "omit", Source: enrichers.KindBrief}, {Name: "keep", Source: "source"}}}}
 	before, _ := json.Marshal(s)
 	sum := sha256.Sum256([]byte(s.Name + "\t" + s.City + "\t" + s.State))
 	want := hex.EncodeToString(sum[:])
@@ -125,7 +125,7 @@ func TestWebsiteSearchInputs(t *testing.T) {
 	if !reflect.DeepEqual(input, expected) {
 		t.Fatal(input)
 	}
-	s.Check = &website.Result{State: sources.WebsiteNone, Error: website.FailStatus}
+	s.EmailCheck = &website.Result{State: sources.WebsiteNone, Error: website.FailStatus}
 	expected.DomainCheck = sources.WebsiteNone
 	expected.DomainError = website.FailStatus
 	b, _ := json.Marshal(expected)
@@ -141,7 +141,7 @@ func TestWebsiteSearchInputs(t *testing.T) {
 		t.Fatal(string(e.Input(s)))
 	}
 	s.Email = "Ops@Acme.test"
-	s.Check = nil
+	s.EmailCheck = nil
 	after, _ := json.Marshal(s)
 	if !bytes.Equal(before, after) {
 		t.Fatal("mutated subject")
@@ -238,7 +238,7 @@ func TestWebsiteSearchFoundAndFailure(t *testing.T) {
 	}
 }
 
-// R-CUMJ-O5XB
+// R-B2CH-ZGLF
 func TestWebsiteSearchValidation(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	run := `"run":{"id":"run","status":"killed","cost_nanos":0}`
@@ -468,7 +468,7 @@ func TestWebsiteSearchEmptySiteFingerprint(t *testing.T) {
 	}
 }
 
-// R-MCQE-XLUL R-TYNE-CTYH
+// R-U0BN-X0UW R-ASLA-XANV
 func TestWebsiteSearchEmptySiteInput(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	for _, source := range []string{"", "check", "Search", "search"} {
@@ -570,7 +570,7 @@ func TestWebsiteSearchReasonsAndCases(t *testing.T) {
 	}
 }
 
-// R-CTEN-AE6M R-CQYU-IUP8 R-CS6Q-WMFX R-CUMJ-O5XB
+// R-CTEN-AE6M R-CQYU-IUP8 R-CS6Q-WMFX R-B2CH-ZGLF
 func TestWebsiteSearchRedirectCases(t *testing.T) {
 	const proposed = "https://acme-trucking.test/"
 	const prior = "https://www.social.test/acme"
@@ -654,7 +654,7 @@ func TestWebsiteSearchRedirectCases(t *testing.T) {
 	}
 }
 
-// R-CUMJ-O5XB
+// R-B2CH-ZGLF
 func TestWebsiteSearchConfirmationCaseValidation(t *testing.T) {
 	for _, tc := range []struct {
 		name, answer, landed, state, caseWord string
@@ -703,7 +703,7 @@ func TestWebsiteSearchConfirmationCaseValidation(t *testing.T) {
 	}
 }
 
-// R-CUMJ-O5XB
+// R-B2CH-ZGLF
 func TestWebsiteSearchContextValidation(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	killed := `"run":{"id":"r","status":"killed","cost_nanos":0}`

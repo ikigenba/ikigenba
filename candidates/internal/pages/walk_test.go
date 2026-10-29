@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ikigenba/ikigenba/candidates/internal/places"
+	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
@@ -98,7 +99,7 @@ func captureWalkData[T any](t *testing.T, cfg Config, path, name string) T {
 	return got
 }
 
-// R-ON6O-ADSL R-1O8P-IM4N R-QMBX-IU2A R-QPZM-O5AD R-TTJB-PVBH R-TUR8-3N26
+// R-ON6O-ADSL R-1O8P-IM4N R-QMBX-IU2A R-QPZM-O5AD R-FW8O-AZXJ R-FXGK-ORO8 R-EX8R-S3N1
 func TestWalkPageData(t *testing.T) {
 	cfg, ps := parksFixture(t, 3)
 	for _, p := range ps {
@@ -171,6 +172,9 @@ func TestWalkPageData(t *testing.T) {
 		}
 		for _, c := range candidates {
 			cd := captureWalkData[CandidateData](t, cfg, "/candidates/"+c.ID, "candidate")
+			if cd.Candidate.Name != c.Name || cd.Candidate.NameSource != places.Name || cd.Candidate.AddressSource != places.Name || cd.Candidate.WebsiteSource != store.WebsiteByPlaces || cd.Candidate.WebsiteURL != "" || cd.Candidate.Website != sources.WebsiteUnknown {
+				t.Fatal(cd.Candidate)
+			}
 			if cd.Candidate.Park == nil || *cd.Candidate.Park != (ParkLink{p.ID, p.Name}) {
 				t.Fatal(cd.Candidate.Park)
 			}

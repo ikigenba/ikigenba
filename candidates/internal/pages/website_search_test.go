@@ -15,7 +15,7 @@ import (
 )
 
 // R-DVMK-0Z5X R-DWUG-EQWM R-DY2C-SINB R-DZA9-6AE0 R-E45U-PDCS
-// R-JQSD-8ZNK R-T3RK-LIFY
+// R-HM0W-RKUQ R-FEBD-4W0R
 func TestSearchEnrichmentProjection(t *testing.T) {
 	zero, one := 0, 1
 	full := enrichers.WebsiteSearchFound{Run: enrichers.WebsiteSearchRun{ID: "r1", Status: enrichers.RunExited, ExitCode: &zero}, Answer: &enrichers.WebsiteSearchAnswer{URL: "https://acme.test/", Why: "chosen-why", Rejected: []enrichers.WebsiteSearchSite{{URL: "https://other.test/", Why: "chosen-rejection"}, {URL: "https://third.test/"}}}, Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteHTTPS, URL: "https://www.acme.test/", Title: "chosen-title", StatusCode: 200, Size: 1256}}
@@ -55,7 +55,7 @@ func TestSearchEnrichmentProjection(t *testing.T) {
 	}
 }
 
-// R-QORQ-ADJO R-8PAT-SBNM R-8QIQ-63EB
+// R-9IK6-T8WB R-8PAT-SBNM R-8QIQ-63EB
 func TestSearchWebsiteCandidateAndMember(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	_, ids, err := cfg.Store.Attach(t.Context(), "run", false, []store.Observation{{Scraper: "fixture", SourceID: "row", Digest: "digest", Reading: sources.Reading{Name: "search-business", NameKey: "search-business"}}})
@@ -188,7 +188,7 @@ func TestWebsiteSearchDecisionHistory(t *testing.T) {
 	search := store.Enrichment{Kind: enrichers.KindWebsiteSearch, Found: encodedJSON(good), At: fixtureTime()}
 	for _, bad := range []enrichers.WebsiteSearchFound{{Run: enrichers.WebsiteSearchRun{Status: "failed"}, Answer: good.Answer, Confirmation: good.Confirmation}, {Run: good.Run, Answer: good.Answer, Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteNone}}, {Run: good.Run, Answer: &enrichers.WebsiteSearchAnswer{}}} {
 		var got CandidateView
-		setWebsite(&got, []store.Enrichment{{Kind: enrichers.KindWebsiteSearch, Found: encodedJSON(bad), At: fixtureTime().Add(1)}, search})
+		setWebsite(&got, []store.Enrichment{{Kind: enrichers.KindWebsiteSearch, Found: encodedJSON(bad), At: fixtureTime().Add(1)}, search}, "")
 		if got.WebsiteSource != store.WebsiteBySearch || got.Website != sources.WebsiteHTTPS || got.WebsiteURL != good.Confirmation.URL || got.WebsiteTitle != good.Confirmation.Title || got.WebsiteWhy != good.Answer.Why || got.WebsiteChecked != "2026-10-05T09:00:07Z" || got.WebsiteCheckedText != "2026-10-05 09:00:07 UTC" {
 			t.Fatal(got)
 		}
@@ -196,14 +196,14 @@ func TestWebsiteSearchDecisionHistory(t *testing.T) {
 	check := store.Enrichment{Kind: sources.WebsiteCheck, Found: encodedJSON(website.Result{State: sources.WebsiteHTTP, URL: "http://check.test/", Title: "check-title"}), At: fixtureTime()}
 	for _, es := range [][]store.Enrichment{{search, check}, {check, search}} {
 		var got CandidateView
-		setWebsite(&got, es)
+		setWebsite(&got, es, "")
 		if got.WebsiteSource != store.WebsiteByCheck || got.Website != sources.WebsiteHTTP || got.WebsiteURL != "http://check.test/" || got.WebsiteTitle != "check-title" || got.WebsiteWhy != "" {
 			t.Fatal(got)
 		}
 	}
 }
 
-// R-QORQ-ADJO
+// R-9IK6-T8WB
 // R-4A2C-9CNO
 func TestCandidateAndMemberViewShapes(_ *testing.T) {
 	_ = struct {
@@ -227,15 +227,16 @@ func TestCandidateAndMemberViewShapes(_ *testing.T) {
 	}(EnrichmentsView{})
 	_ = struct{ Present, Missing []string }(KindsView{})
 	_ = struct {
-		ID, Status, MergedInto, Name                                                                     string
-		Names                                                                                            []string
-		Street, City, State, Zip, County, Phone, Email                                                   string
-		Park                                                                                             *ParkLink
-		WebsiteSource, Website, WebsiteURL, WebsiteTitle, WebsiteWhy, WebsiteChecked, WebsiteCheckedText string
-		People                                                                                           []PersonRow
-		Class                                                                                            string
-		Cargo                                                                                            []string
-		Created, CreatedText, Updated, UpdatedText                                                       string
+		ID, Status, MergedInto, Name                                                                                        string
+		Street, City, State, Zip, County, Phone, Email                                                                      string
+		NameSource, AddressSource, PhoneSource, EmailSource                                                                 string
+		OtherNames, OtherAddresses, OtherPhones                                                                             []OtherRow
+		Park                                                                                                                *ParkLink
+		WebsiteSource, Website, WebsiteURL, WebsiteTitle, WebsiteWhy, WebsiteChecked, WebsiteCheckedText, WebsiteCheckedURL string
+		People                                                                                                              []PersonRow
+		Class                                                                                                               string
+		Cargo                                                                                                               []string
+		Created, CreatedText, Updated, UpdatedText                                                                          string
 	}(CandidateView{})
 	_ = struct {
 		Number, Path, URL, Title       string
@@ -297,7 +298,7 @@ func TestUnfoundWebsiteDecisionFields(t *testing.T) {
 		{[]store.Enrichment{search(failed), check}, unknown},
 	} {
 		var got CandidateView
-		setWebsite(&got, tc.results)
+		setWebsite(&got, tc.results, "")
 		if !reflect.DeepEqual(got, tc.want) {
 			t.Fatalf("results %+v: got %+v want %+v", tc.results, got, tc.want)
 		}
@@ -328,7 +329,7 @@ func TestUnfoundAndUnknownWebsiteTemplates(t *testing.T) {
 	}
 }
 
-// R-SNWV-MHSX R-8QIQ-63EB
+// R-EX8R-S3N1 R-8QIQ-63EB
 func TestUnfoundCandidateAndMemberWithoutJudging(t *testing.T) {
 	for _, emptyURL := range []bool{false, true} {
 		cfg, handle := pageFixture(t)

@@ -229,11 +229,11 @@ func (f *fixture) endedWithin(id string, budget time.Duration) store.Pass {
 			if p.Status == store.StatusRunning {
 				f.t.Fatal("ending event preceded stored ending")
 			}
-			// R-TSTL-CBOB: successful non-walk passes spend no walk work.
+			// R-YDHH-CBMA: successful non-walk passes spend no walk work.
 			if p.Status == store.StatusDone && p.Kind != store.KindWalk && (p.ParksWalked != 0 || p.Circles != 0 || p.Requests != 0 || p.Found != 0 || p.NewCandidates != 0) {
 				f.t.Fatal("non-walk pass carried walk counts", p)
 			}
-			// R-TSTL-CBOB R-U50L-6139: cases belong only to successful search passes.
+			// R-YDHH-CBMA R-Z96V-ACWC: cases belong only to successful search passes.
 			if (p.Status == store.StatusFailed || p.Kind != store.KindEnrichTarget || p.EnrichKind != "website_search") && (p.SearchDifferent != 0 || p.SearchStands != 0 || p.SearchNone != 0) {
 				f.t.Fatal("unexpected search counts", p)
 			}
@@ -559,7 +559,7 @@ func TestFullIngestBackgroundIdentityAndEvents(t *testing.T) {
 	}
 }
 
-// R-TQDS-KS6X R-TSTL-CBOB R-3QEZ-TBSF R-Z3M9-W116 R-WT12-CHE3
+// R-YC9K-YJVL R-YDHH-CBMA R-3QEZ-TBSF R-Z3M9-W116 R-WT12-CHE3
 func TestIngestAndFullIngest(t *testing.T) {
 	t.Parallel()
 	var stateMu sync.Mutex
@@ -671,7 +671,7 @@ func TestIngestAndFullIngest(t *testing.T) {
 	}
 }
 
-// R-U2KS-EHLV R-3WIH-Q6HW R-384I-2RO0 R-U50L-6139
+// R-U2KS-EHLV R-3WIH-Q6HW R-384I-2RO0 R-Z96V-ACWC
 func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	t.Parallel()
 	released, firstBatch := make(chan struct{}), make(chan struct{})
@@ -774,7 +774,7 @@ func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	}
 }
 
-// R-384I-2RO0 R-3WIH-Q6HW R-U50L-6139
+// R-384I-2RO0 R-3WIH-Q6HW R-Z96V-ACWC
 func TestFailedReads(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"short", "500", "malformed", "not_done", "missing_current", "dead"} {
@@ -831,7 +831,7 @@ func TestFailedReads(t *testing.T) {
 	}
 }
 
-// R-373Q-6C3X R-ZH16-3I6T R-U50L-6139 R-YOZH-AS4U
+// R-373Q-6C3X R-ZH16-3I6T R-Z96V-ACWC R-YOZH-AS4U
 func TestDrainCancelsReadsAndPendingDelivery(t *testing.T) {
 	t.Parallel()
 	for _, which := range []string{"rows", "record"} {
@@ -1024,7 +1024,7 @@ func (r *failCandidateRandom) Read(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// R-U50L-6139
+// R-Z96V-ACWC
 func TestStoreFailureReason(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {

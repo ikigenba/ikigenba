@@ -11,6 +11,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/candidates"
+	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
@@ -59,14 +60,12 @@ func TestParksUpgradeExistingRows(t *testing.T) {
 		}
 		return insertPriorParksPass(ctx, tx, pid)
 	}))
-	st := store.New(d, store.Config{})
-	candidate, e := st.GetCandidate(ctx, id)
-	contractOK(t, e)
+	candidate := store.Candidate{ID: id, Status: store.StatusActive, Name: "old", Names: []string{"old"}, People: []sources.Sourced[sources.Person]{}, Cargo: []string{}, Created: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Updated: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), OtherNames: []sources.Sourced[string]{}, OtherAddresses: []sources.Sourced[sources.Address]{}, OtherPhones: []sources.Sourced[string]{}, OtherEmails: []sources.Sourced[string]{}}
 	contractOK(t, d.Close())
 	d, e = db.Open(ctx, db.Config{Path: path, Migrations: candidates.Migrations()})
 	contractOK(t, e)
 	defer func() { contractOK(t, d.Close()) }()
-	st = store.New(d, store.Config{})
+	st := store.New(d, store.Config{})
 	got, e := st.GetCandidate(ctx, id)
 	contractOK(t, e)
 	contractEqual(t, got, candidate)

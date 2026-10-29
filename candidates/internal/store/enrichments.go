@@ -38,6 +38,42 @@ func enrichmentRecords(ctx context.Context, tx *sql.Tx, where string, args ...an
 	}
 	return out, rows.Err()
 }
+
+// matchingCheck filters in SQL, then validates the exact protocol tokens in Go.
+// Streaming keeps historical results outside the retained working set.
+func matchingCheck(ctx context.Context, tx *sql.Tx, id, a, b string) (*Enrichment, error) {
+	rows, err := querySQL(ctx, tx, "SELECT candidate,kind,inputs,source,found,cost,at FROM enrichments WHERE candidate=? AND kind=? AND ((?<>'' AND instr(char(10)||inputs||char(10),char(10)||?||char(10))>0) OR (?<>'' AND instr(char(10)||inputs||char(10),char(10)||?||char(10))>0)) ORDER BY seq DESC", id, sources.WebsiteCheck, a, a, b, b)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var e Enrichment
+		var at, found string
+		if err = rows.Scan(&e.Candidate, &e.Kind, &e.Inputs, &e.Source, &found, &e.Cost, &at); err != nil {
+			return nil, err
+		}
+		matched := false
+		for _, u := range website.URLs(e.Inputs) {
+			if u != "" && (u == a || u == b) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		e.Found = json.RawMessage(found)
+		e.At, err = time.Parse(time.RFC3339, at)
+		if err != nil {
+			return nil, err
+		}
+		e.At = e.At.UTC()
+		return &e, nil
+	}
+	return nil, rows.Err()
+}
+
 func putEnrichment(ctx context.Context, tx *sql.Tx, e Enrichment) error {
 	return execSQL(ctx, tx, "INSERT INTO enrichments(candidate,kind,inputs,source,found,cost,at) VALUES (?,?,?,?,?,?,?)", e.Candidate, e.Kind, e.Inputs, e.Source, string(e.Found), e.Cost, e.At.Format(time.RFC3339))
 }
@@ -55,15 +91,17 @@ func (s *Store) AddEnrichments(ctx context.Context, es []Enrichment) ([]Enrichme
 		t := s.now()
 		out = []Enrichment{}
 		touched := map[string]bool{}
+		routed := map[string]bool{}
 		for _, e := range es {
-			c, err := candidateKey(ctx, tx, e.Candidate)
-			if errors.Is(err, ErrNotFound) {
+			var status string
+			err := scanSQL(ctx, tx, "SELECT status FROM candidates WHERE id=?", []any{e.Candidate}, &status)
+			if errors.Is(err, sql.ErrNoRows) {
 				continue
 			}
 			if err != nil {
 				return err
 			}
-			if c.Status != StatusActive {
+			if status != StatusActive {
 				continue
 			}
 			var b bytes.Buffer
@@ -76,9 +114,17 @@ func (s *Store) AddEnrichments(ctx context.Context, es []Enrichment) ([]Enrichme
 				return err
 			}
 			out = append(out, e)
-			touched[c.ID] = true
+			touched[e.Candidate] = true
+			if e.Kind == enrichers.KindDriveRoute {
+				routed[e.Candidate] = true
+			}
 		}
 		for id := range touched {
+			if routed[id] {
+				if err := s.refreshKey(ctx, tx, id, t); err != nil {
+					return err
+				}
+			}
 			if err := s.projectFacts(ctx, tx, id); err != nil {
 				return err
 			}
@@ -138,9 +184,44 @@ func (s *Store) subject(ctx context.Context, tx *sql.Tx, c Candidate, pages bool
 	if err != nil {
 		return enrichers.Subject{}, err
 	}
-	out := enrichers.Subject{ID: c.ID, Name: c.Name, Street: c.Street, Phone: c.Phone, City: c.City, State: c.State, Email: c.Email, Zip: c.Zip, Links: []enrichers.Link{}, Pages: []enrichers.Page{}, Origin: s.cfg.Origin}
+	out := enrichers.Subject{ID: c.ID, Name: c.Name, Street: c.Street, Phone: c.Phone, City: c.City, State: c.State, Email: c.Email, Zip: c.Zip, Links: []enrichers.Link{}, Pages: []enrichers.Page{}, Origin: s.cfg.Origin, NameSource: c.NameSource, NameRecord: c.NameRecord, AddressSource: c.AddressSource, AddressRecord: c.AddressRecord, PhoneSource: c.PhoneSource, PhoneRecord: c.PhoneRecord, EmailSource: c.EmailSource, EmailRecord: c.EmailRecord, People: append([]sources.Sourced[sources.Person]{}, c.People...), RecordAddress: recordAddress(r, c.ID)}
 	for _, l := range linksFor(r, c.ID) {
-		out.Links = append(out.Links, enrichers.Link{Scraper: l.Scraper, SourceID: l.SourceID, Gone: l.Gone, Reading: l.Reading})
+		out.Links = append(out.Links, enrichers.Link{Scraper: l.Scraper, SourceID: l.SourceID, Gone: l.Gone, Reading: l.Reading, Seen: l.LastSeen})
+	}
+	out.PlacesURL, err = placesURL(ctx, tx, c.ID)
+	if err != nil {
+		return out, err
+	}
+	current := website.URLs(website.Inputs(out.PlacesURL, c.Email))
+	domain := website.Domain(c.Email)
+	checkFor := func(a, b string) (*website.Result, error) {
+		if a == "" && b == "" {
+			return nil, nil
+		}
+		e, err := matchingCheck(ctx, tx, c.ID, a, b)
+		if err != nil || e == nil {
+			return nil, err
+		}
+		var w website.Result
+		if err = json.Unmarshal(e.Found, &w); err != nil {
+			return nil, err
+		}
+		return &w, nil
+	}
+	a, b := "", ""
+	if len(current) > 0 {
+		a = current[0]
+	}
+	if len(current) > 1 {
+		b = current[1]
+	}
+	out.Check, err = checkFor(a, b)
+	if err != nil {
+		return out, err
+	}
+	out.EmailCheck, err = checkFor(domain, "")
+	if err != nil {
+		return out, err
 	}
 	f, err := factsKey(ctx, tx, c.ID)
 	if err == nil {
@@ -179,19 +260,6 @@ func (s *Store) subject(ctx context.Context, tx *sql.Tx, c Candidate, pages bool
 		if len(searches) > 0 {
 			out.SearchInputs = searches[0].Inputs
 		}
-		domain := website.Domain(c.Email)
-		if domain != "" {
-			checks, e := enrichmentRecords(ctx, tx, " WHERE candidate=? AND kind=? AND inputs=? ORDER BY seq DESC LIMIT 1", c.ID, sources.WebsiteCheck, domain)
-			if e != nil {
-				return out, e
-			}
-			if len(checks) > 0 {
-				out.Check = &website.Result{}
-				if e = json.Unmarshal(checks[0].Found, out.Check); e != nil {
-					return out, e
-				}
-			}
-		}
 		ps, e := readRecords[Page](ctx, tx, "pages", pageColumns, " WHERE candidate=? AND seq IN (SELECT MAX(seq) FROM pages WHERE candidate=? GROUP BY url) ORDER BY (SELECT MIN(p.seq) FROM pages p WHERE p.candidate=pages.candidate AND p.url=pages.url)", c.ID, c.ID)
 		if e != nil {
 			return out, e
@@ -223,7 +291,11 @@ func due(ctx context.Context, tx *sql.Tx, id, kind, inputs string) (bool, error)
 
 func (s *Store) dueInputs(ctx context.Context, tx *sql.Tx, c Candidate, en enrichers.Enricher) (string, error) {
 	if en.Kind() == sources.WebsiteCheck {
-		return en.Inputs(enrichers.Subject{Email: c.Email}), nil
+		p, err := placesURL(ctx, tx, c.ID)
+		if err != nil {
+			return "", err
+		}
+		return en.Inputs(enrichers.Subject{PlacesURL: p, Email: c.Email}), nil
 	}
 	su, err := s.subject(ctx, tx, c, isPrompter(en))
 	if err != nil {

@@ -16,7 +16,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-47MJ-HT6A
+// R-9JS3-70N0
 func TestHeadcountJudgmentViewShape(_ *testing.T) {
 	_ = struct {
 		OperatingConfidence                                                                     string
@@ -29,12 +29,13 @@ func TestHeadcountJudgmentViewShape(_ *testing.T) {
 		Rules                                                                                   int64
 		Calculated, CalculatedText                                                              string
 	}(JudgmentsView{})
-	_ = struct{ Name, Role string }(PersonRow{})
+	_ = struct{ Name, Role, Source string }(PersonRow{})
+	_ = struct{ Value, Source string }(OtherRow{})
 	_ = struct{ Name, Source, Weight, Description string }(EvidenceRow{})
 	_ = struct{ Name, Source string }(CategoryRow{})
 }
 
-// R-SU0D-JCIE R-SWG6-AVZS R-T8N6-4LEQ
+// R-F24D-B6LT R-F5S2-GHTW R-FKEV-1QQ8
 func TestHeadcountViewProjections(t *testing.T) {
 	f := store.Facts{Headcounts: []sources.Headcount{{Scraper: ppp.Name, Kind: sources.HeadcountJobs, Count: 26, AsOf: time.Date(2020, 4, 28, 0, 0, 0, 0, time.UTC)}, {Scraper: fmcsa.Name, Kind: sources.HeadcountDrivers, Count: 1200}}, BriefLabels: []string{"chosen-label-one", "chosen-label-two"}}
 	v := factsView(f, "")
@@ -137,7 +138,7 @@ func TestHeadcountTemplateStates(t *testing.T) {
 	}
 }
 
-// R-SU0D-JCIE R-SWG6-AVZS R-T8N6-4LEQ R-VJ8X-RPW0
+// R-F24D-B6LT R-F5S2-GHTW R-FKEV-1QQ8 R-VJ8X-RPW0
 func TestHeadcountCandidateAndProspectListPages(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	high := int64(2500000)

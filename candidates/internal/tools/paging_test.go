@@ -120,7 +120,7 @@ func TestPagingRefusalsBeforeStoreAndSchema(t *testing.T) {
 	}
 }
 
-// R-FO6J-TTDY
+// R-2QEW-PAHC
 func TestStoredJudgmentsChangeOnlyAtJudge(t *testing.T) {
 	f := newFixture(t)
 	f.now = time.Date(2021, 6, 1, 0, 0, 0, 0, time.UTC)
@@ -188,7 +188,7 @@ func TestStoredJudgmentsChangeOnlyAtJudge(t *testing.T) {
 	if !activeFound {
 		t.Fatal("missing active evidence", updated.Judgments)
 	}
-	success(t, f.call("candidate", tools.CandidateArgs{Candidate: ids[0]}), tools.Detail{Candidate: first.Candidate, Enrichments: first.Enrichments, Judgments: judgmentsExpected(a), Estimates: first.Estimates, Links: first.Links, Rulings: first.Rulings})
+	success(t, f.call("candidate", tools.CandidateArgs{Candidate: ids[0]}), tools.Detail{Candidate: first.Candidate, Sources: first.Sources, Enrichments: first.Enrichments, Judgments: judgmentsExpected(a), Estimates: first.Estimates, Links: first.Links, Rulings: first.Rulings})
 	reading.Evidence = nil
 	if _, _, err = f.st.Attach(t.Context(), "run-no-evidence", true, []store.Observation{{Scraper: "fmcsa", SourceID: links[0].SourceID, Digest: "no-evidence", Reading: reading}}); err != nil {
 		t.Fatal(err)

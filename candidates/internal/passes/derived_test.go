@@ -16,7 +16,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-SVWB-0INK R-01D8-ZAZ4 R-ZQE5-JDAV R-1QFF-85G4 R-3WDS-L5IA R-UCBZ-GNJF
+// R-Y9TS-70E7 R-YJKZ-96BR R-ZQE5-JDAV R-YKSV-MY2G R-3WDS-L5IA R-ZBMO-1WDQ
 func TestDerivedKindsAndIdempotentAll(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []string{"", enrichers.KindDriveMinutes, enrichers.KindLinkFacts} {
@@ -91,16 +91,9 @@ func TestDerivedKindsAndIdempotentAll(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					subject := enrichers.Subject{ID: c.ID, Email: c.Email, Zip: c.Zip}
-					if m, err := f.st.ZipMinutes(ctx, c.Zip); err == nil {
-						subject.Minutes = &m
-					}
-					links, err := f.st.Links(ctx, id)
+					subject, err := f.st.Subject(ctx, c.ID)
 					if err != nil {
 						t.Fatal(err)
-					}
-					for _, l := range links {
-						subject.Links = append(subject.Links, enrichers.Link{Scraper: l.Scraper, SourceID: l.SourceID, Gone: l.Gone, Reading: l.Reading})
 					}
 					regEn, _ := enrichers.New(enrichers.Config{}).Get(en.Kind)
 					deriver := regEn.(enrichers.Deriver)
@@ -150,7 +143,7 @@ func TestDerivedKindsAndIdempotentAll(t *testing.T) {
 	}
 }
 
-// R-SZK0-5TVN R-01D8-ZAZ4 R-ZQE5-JDAV R-1QFF-85G4
+// R-YB1O-KS4W R-YJKZ-96BR R-ZQE5-JDAV R-YKSV-MY2G
 func TestDerivedFactsExistBeforeFirstFetch(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -254,7 +247,7 @@ func TestWebsiteInputsChangeRecordsAnotherResult(t *testing.T) {
 	}
 }
 
-// R-TXP6-VEN3 R-TQDS-KS6X R-TSTL-CBOB R-3QEZ-TBSF R-UCBZ-GNJF
+// R-YFXA-3V3O R-YC9K-YJVL R-YDHH-CBMA R-3QEZ-TBSF R-ZBMO-1WDQ
 func TestFullIngestForcesDerivedResultsBeforeJudging(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {

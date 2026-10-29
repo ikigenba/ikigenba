@@ -12,7 +12,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-ZVHD-U7V4 R-ZWPA-7ZLT R-ZZ52-ZJ37 R-EA21-DJ7U R-D4PJ-DV3L
+// R-ZVHD-U7V4 R-ZWPA-7ZLT R-ZZ52-ZJ37 R-2LJB-67IK R-D4PJ-DV3L
 func TestHeadcountAnswerShapesAndEncoding(t *testing.T) {
 	// Conversions enforce the complete ordered public shape by use.
 	_ = struct {
@@ -44,7 +44,7 @@ func TestHeadcountAnswerShapesAndEncoding(t *testing.T) {
 	_ = Evidence{"name", "source", .2, "description"}
 	_ = Category{"name", "source"}
 	_ = Judgments{nil, nil, nil, nil, nil, nil, nil, "", nil, "", "", nil, nil, nil, nil, nil, false, 0, ""}
-	_ = Facts{"", "", nil, "", false, nil, "", "", nil, nil, "", "", "", nil, "", nil, "", "", "", nil, nil, nil}
+	_ = Facts{"", "", "", "", nil, "", false, nil, "", "", nil, nil, "", "", "", "", nil, "", nil, "", "", "", nil, nil, nil}
 	_ = Written{"kind", "at"}
 	_ = Headcount{"scraper", "kind", 26, "date", nil}
 	candidateJSON, err := json.Marshal(Candidate{})

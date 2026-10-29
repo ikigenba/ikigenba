@@ -19,7 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-U04Z-MY4H
+// R-YH56-HMUD
 func TestFullIngestReprojectsUnchangedLinkFacts(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

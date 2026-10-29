@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-1162-SSCQ R-ZVNB-PFPG
+// R-IHLW-RXDK R-ZVNB-PFPG
 func TestRankedBasisIncludesMergedHistoryAndWholeSecondStamps(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -52,7 +52,7 @@ func TestRankedBasisIncludesMergedHistoryAndWholeSecondStamps(t *testing.T) {
 	check(store.BasisEnriched)
 }
 
-// R-1162-SSCQ
+// R-IHLW-RXDK
 func TestRankedMissingFactsUsesCompleteUnknownValue(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

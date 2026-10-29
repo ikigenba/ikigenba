@@ -45,7 +45,7 @@ func TestTargetPassAndCosts(t *testing.T) {
 	}
 }
 
-// R-T3RK-LIFY
+// R-FEBD-4W0R
 func TestSiteTextResultProjection(t *testing.T) {
 	for _, tc := range []struct {
 		status string
@@ -79,7 +79,7 @@ func TestSiteTextResultProjection(t *testing.T) {
 	}
 }
 
-// R-45QU-E5K8 R-QORQ-ADJO R-3ZNC-HAUR
+// R-45QU-E5K8 R-9IK6-T8WB R-3ZNC-HAUR
 func TestKeptPageProjections(t *testing.T) {
 	p := store.Page{Candidate: "cand_0123456789abcdef", Number: 7, URL: "https://fixture.test/", Size: 37, Fetched: fixtureTime(), UserID: "fixture-user", Text: "fixture text"}
 	row := pageRow(p)
@@ -115,7 +115,7 @@ func TestKeptPagePathGrammar(t *testing.T) {
 	}
 }
 
-// R-T67D-D1XC R-6BJH-R2M3 R-6GF3-A5KV R-6DZA-IM3H
+// R-FGR5-WFI5 R-6BJH-R2M3 R-6GF3-A5KV R-6DZA-IM3H
 func TestKeptPageRoutes(t *testing.T) {
 	cfg, d := pageFixture(t)
 	ctx := t.Context()
@@ -338,7 +338,7 @@ func TestTargetPassPage(t *testing.T) {
 	}
 }
 
-// R-QORQ-ADJO R-QCKQ-GO4Q R-3ZNC-HAUR
+// R-9IK6-T8WB R-QCKQ-GO4Q R-3ZNC-HAUR
 // R-U5TU-I2XQ
 func TestAddedViewShapes(t *testing.T) {
 	candidate := CandidateData{page.Banner{}, CandidateView{}, nil, nil, []EstimateView{}, []LinkView{}, []RulingView{}, []PageRow{}, []EnrichmentRow{}, []RejectRecordRow{}, []CampaignRow{}}

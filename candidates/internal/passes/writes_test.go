@@ -21,7 +21,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-TMQ3-FGYU R-TSTL-CBOB R-3QEZ-TBSF R-WT12-CHE3 R-TV9E-3V5P
+// R-Y8LV-T8NI R-YDHH-CBMA R-3QEZ-TBSF R-WT12-CHE3 R-YEPD-Q3CZ
 func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 	t.Parallel()
 	for _, fullIngest := range []bool{false, true} {
@@ -101,6 +101,16 @@ func TestPassWritesMatchDeclaredStoreSequence(t *testing.T) {
 			}
 			total.Rows = int64(len(rows))
 			if fullIngest {
+				for after := ""; ; {
+					next, err := expected.st.Rebuild(ctx, after, passes.BatchSize)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if next == "" {
+						break
+					}
+					after = next
+				}
 				for _, kind := range []string{enrichers.KindDriveMinutes, enrichers.KindLinkFacts} {
 					after := ""
 					for {
