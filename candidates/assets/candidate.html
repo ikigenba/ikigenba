@@ -392,9 +392,11 @@
      .Rejected (bool, true when the owner rejected it in that campaign),
      .RejectedAt and .RejectedAtText (when, in .Added's two forms; both
      empty unless .Rejected), .Reason (the sentence the owner gave, as
-     stored; empty unless .Rejected) and .Delivered and .DeliveredText
+     stored; empty unless .Rejected), .Delivered and .DeliveredText
      (when something was last delivered to it in that campaign, in
-     .Added's two forms; both empty when nothing has been). Words and tags are shown as stored; the
+     .Added's two forms; both empty when nothing has been) and .Opened
+     and .OpenedText (when it first opened a link from that campaign, in
+     .Added's two forms; both empty when it never has). Words and tags are shown as stored; the
      candidate status's kind is chosen here: "active" ok, "merged" info.
      Hooks: title "<.Candidate.ID> · candidates"; h1 with text .ID;
      p#headline.cluster holding, when .Name is set, .Name and a space, then
@@ -804,7 +806,7 @@
      div#no-campaigns.empty holding h3 "Not in any campaign" and a p (text
      "campaigns adds a business to a campaign from a prospect list or one at a time by hand, and tells candidates on the bus; nothing has named this
      one."), or table#campaign-list whose th read Campaign, From, Added,
-     Delivered, Rejected, with one tr[data-campaign=<.Campaign>] per
+     Delivered, Opened, Rejected, with one tr[data-campaign=<.Campaign>] per
      campaign, carrying also [data-rejected] when .Rejected, holding
      td.campaign-id (a.campaign-link, href .CampaignPage, holding .Campaign
      in a code element, when .CampaignPage is set, else the code element
@@ -816,8 +818,9 @@
      span.muted "deleted"), td.campaign-added (time[datetime=<.Added>]
      with .AddedText, or when empty span.muted "unknown"),
      td.campaign-delivered (time[datetime=<.Delivered>] with
-     .DeliveredText, or when empty span.muted "nothing delivered") and
-     td.campaign-rejected (empty unless .Rejected; then
+     .DeliveredText, or when empty span.muted "nothing delivered"),
+     td.campaign-opened (time[datetime=<.Opened>] with .OpenedText, or
+     when empty span.muted "never opened") and td.campaign-rejected (empty unless .Rejected; then
      span.badge[data-kind=warn] (text "rejected"), then, when .RejectedAt
      is set, a space and time[datetime=<.RejectedAt>] with .RejectedAtText,
      then, when .Reason is set, div[data-reason] with .Reason). A source
@@ -1161,13 +1164,14 @@
 <header><div><h2 id="campaigns-title">Campaigns</h2><p>Every campaign this business was put in, newest added first, as campaigns reported it on the bus: the prospect list it came from, when it was added, when something last reached it and whether the owner rejected it there. A merged candidate's campaigns move to the one it merged into.</p></div></header>
 {{if $campaigns}}<div class="table-scroll">
 <table id="campaign-list">
-<thead><tr><th>Campaign</th><th>From</th><th>Added</th><th>Delivered</th><th>Rejected</th></tr></thead>
+<thead><tr><th>Campaign</th><th>From</th><th>Added</th><th>Delivered</th><th>Opened</th><th>Rejected</th></tr></thead>
 <tbody>
 {{range $campaigns}}<tr data-campaign="{{.Campaign}}"{{if .Rejected}} data-rejected{{end}}>
 <td class="campaign-id">{{if .CampaignPage}}<a class="campaign-link" href="{{.CampaignPage}}"><code>{{.Campaign}}</code></a>{{else}}<code>{{.Campaign}}</code>{{end}}</td>
 <td class="campaign-from" data-prospect-list="{{.ProspectList}}">{{if not .ProspectList}}<span class="muted">added by hand</span>{{else if .ProspectListName}}<a class="prospect-list-link" href="{{.ProspectListPage}}">{{.ProspectListName}}</a> <code>{{.ProspectList}}</code>{{else}}<code>{{.ProspectList}}</code> <span class="muted">deleted</span>{{end}}</td>
 <td class="campaign-added">{{if .Added}}<time datetime="{{.Added}}">{{.AddedText}}</time>{{else}}<span class="muted">unknown</span>{{end}}</td>
 <td class="campaign-delivered">{{if .Delivered}}<time datetime="{{.Delivered}}">{{.DeliveredText}}</time>{{else}}<span class="muted">nothing delivered</span>{{end}}</td>
+<td class="campaign-opened">{{if .Opened}}<time datetime="{{.Opened}}">{{.OpenedText}}</time>{{else}}<span class="muted">never opened</span>{{end}}</td>
 <td class="campaign-rejected">{{if .Rejected}}<span class="badge" data-kind="warn">rejected</span>{{if .RejectedAt}} <time datetime="{{.RejectedAt}}">{{.RejectedAtText}}</time>{{end}}{{if .Reason}}<div data-reason>{{.Reason}}</div>{{end}}{{end}}</td>
 </tr>
 {{end}}</tbody>

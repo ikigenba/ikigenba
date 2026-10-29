@@ -32,7 +32,15 @@
      empty when absent), .MaxFilingAgeDays (the filing-age maximum in
      days as text, "730"; empty when absent), .FilingUnknown (bool),
      .MinCampaignAgeDays (the campaign-age minimum in days as text, "90";
-     empty when absent), .Class (the class tag it admits, "for_hire", "private" or "mixed";
+     empty when absent), .CampaignAny ("yes" or "no", whether a member
+     must be in some campaign or in none, in meaning added there and not
+     rejected there; empty when absent, which admits either), .Campaign
+     (the camp_ id of the one campaign it names, "camp_" and 16 hex;
+     empty when absent), .CampaignNot (bool, true when a member must not
+     be in .Campaign, false when it must be in it; false when .Campaign
+     is empty), .Opened ("yes" or "no", whether a member must have
+     opened a link, from .Campaign when .Campaign is set, else from any
+     campaign; empty when absent, which admits either), .Class (the class tag it admits, "for_hire", "private" or "mixed";
      empty when absent), .ClassUnknown (bool), .Basis (the bases it
      admits, any of "records", "partial" and "enriched", in that order, a
      slice of strings; empty when absent, which admits all three) and .ShowExcluded (bool,
@@ -185,7 +193,12 @@
      old"; switch .FilingUnknown), dt "Campaigns" then dd#filter-campaign
      ("not added to a campaign in the last <.MinCampaignAgeDays> days" and
      span.muted "never in a campaign included"; no switch: a business never
-     in a campaign always passes), dt "Class" then dd#filter-class (.Class
+     in a campaign always passes), dt "In any campaign" then
+     dd#filter-campaign-any ("yes" when .CampaignAny is "yes", "no" when
+     "no"), dt "In campaign" then dd#filter-campaign-in ("not " when
+     .CampaignNot, then .Campaign in a code element), dt "Opened a link"
+     then dd#filter-opened ("yes" when .Opened is "yes", "no" when "no"),
+     dt "Class" then dd#filter-class (.Class
      in a code element; switch .ClassUnknown), dt "Basis" then
      dd#filter-basis (one code[data-basis=<word>] per basis, separated by
      spaces; no switch) and dt "Excluded" then
@@ -325,6 +338,9 @@
 <dt>Government</dt><dd id="filter-government">{{if eq .Government "true"}}a government match only{{else if eq .Government "false"}}no government match{{else}}<span class="muted">any</span>{{end}}</dd>
 <dt>Filing age</dt><dd id="filter-filing">{{if .MaxFilingAgeDays}}newest filing at most {{.MaxFilingAgeDays}} days old{{else}}<span class="muted">any</span>{{end}}{{if .FilingUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
 <dt>Campaigns</dt><dd id="filter-campaign">{{if .MinCampaignAgeDays}}not added to a campaign in the last {{.MinCampaignAgeDays}} days <span class="muted">never in a campaign included</span>{{else}}<span class="muted">any</span>{{end}}</dd>
+<dt>In any campaign</dt><dd id="filter-campaign-any">{{if eq .CampaignAny "yes"}}yes{{else if eq .CampaignAny "no"}}no{{else}}<span class="muted">any</span>{{end}}</dd>
+<dt>In campaign</dt><dd id="filter-campaign-in">{{if .Campaign}}{{if .CampaignNot}}not {{end}}<code>{{.Campaign}}</code>{{else}}<span class="muted">any</span>{{end}}</dd>
+<dt>Opened a link</dt><dd id="filter-opened">{{if eq .Opened "yes"}}yes{{else if eq .Opened "no"}}no{{else}}<span class="muted">any</span>{{end}}</dd>
 <dt>Class</dt><dd id="filter-class">{{if .Class}}<code>{{.Class}}</code>{{else}}<span class="muted">any</span>{{end}}{{if .ClassUnknown}} <span class="badge" data-kind="info" data-unknown>unknown included</span>{{end}}</dd>
 <dt>Basis</dt><dd id="filter-basis">{{range $i, $b := .Basis}}{{if $i}} {{end}}<code data-basis="{{$b}}">{{$b}}</code>{{else}}<span class="muted">any</span>{{end}}</dd>
 <dt>Excluded</dt><dd id="filter-excluded">{{if .ShowExcluded}}shown{{else}}hidden{{end}}</dd>
