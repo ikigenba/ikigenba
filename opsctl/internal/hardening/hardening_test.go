@@ -33,7 +33,7 @@ type fixture struct {
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	f := &fixture{t: t, root: t.TempDir(), packages: map[string]bool{}, services: map[string]bool{}, owners: map[string]string{}, fault: host.Result{ExitCode: 9, Stdout: []byte("out\n"), Stderr: []byte("err\n")}}
-	for _, dir := range []string{"etc/ssh/sshd_config.d", "etc/sudoers.d", "etc/dnf", "etc/systemd/system", "etc/fail2ban"} {
+	for _, dir := range []string{"etc/ssh/sshd_config.d", "etc/sudoers.d", "etc/dnf", "etc/systemd/system", "etc/fail2ban", "var"} {
 		f.mkdir(dir, 0o755)
 	}
 	f.write("etc/dnf/automatic.conf", "# packaged\n[commands]\nupgrade_type = default\napply_updates = no\ndownload_updates = yes\n[emitters]\nemit_via = stdio\n", 0o640)
@@ -149,7 +149,7 @@ func (f *fixture) execute(_ context.Context, c host.Command) (host.Result, error
 		}
 	case "setfacl":
 		f.acl = true
-	case "sshd", "visudo":
+	case "sshd", "visudo", "systemd-tmpfiles", "journalctl":
 	default:
 		f.t.Fatalf("unexpected command %s", text)
 	}
@@ -177,9 +177,9 @@ func (f *fixture) noTemporary() {
 }
 
 func TestApplyContractAndIdempotence(t *testing.T) {
-	// R-QP1Z-BOQ4 R-QQ9V-PGGT R-ZC9B-Q97J R-ZB1F-CHGU R-SALL-UGL5 R-QV5H-8JFL R-QWDD-MB6A
-	// R-3929-UROK R-3AA6-8JF9 R-3BI2-MB5Y R-3CPZ-02WN R-SD1E-M02J R-3DXV-DUNC R-R4WO-APD5 R-SE9A-ZRT8
-	// R-R7CH-28UJ R-98VK-1BB5 R-RC82-LBTB R-3HLK-J5VF R-3ITG-WXM4 R-SLKP-AE9E
+	// R-QP1Z-BOQ4 R-QQ9V-PGGT R-WRRY-UGG8 R-ZB1F-CHGU R-SALL-UGL5 R-QV5H-8JFL R-QWDD-MB6A
+	// R-RMIF-CFGA R-RNQB-Q76Z R-3BI2-MB5Y R-3CPZ-02WN R-SD1E-M02J R-3DXV-DUNC R-R4WO-APD5 R-SE9A-ZRT8
+	// R-R7CH-28UJ R-98VK-1BB5 R-RC82-LBTB R-ZFZE-PCKV R-ZH7B-34BK R-SLKP-AE9E
 	if ShellGroup != "shell" || KeysDir != "/etc/ssh/authorized_keys" || AdminAccount != "ec2-user" {
 		t.Fatal("public constants")
 	}
@@ -188,7 +188,7 @@ func TestApplyContractAndIdempotence(t *testing.T) {
 	f.write("opt/release/keep", "release", 0o644)
 	f.hook = func(c host.Command) {
 		if c.Name == "sshd" {
-			if f.read("etc/ssh/sshd_config.d/10-ikigenba.conf") != "PubkeyAuthentication yes\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin no\nLoginGraceTime 30\nMaxAuthTries 3\nClientAliveInterval 300\nClientAliveCountMax 2\nAllowGroups ec2-user shell\nUsePAM yes\n\nMatch Group shell\n  AllowTcpForwarding no\n  AllowAgentForwarding no\n  X11Forwarding no\n  PermitTunnel no\n  AuthorizedKeysFile /etc/ssh/authorized_keys/%u\n" {
+			if f.read("etc/ssh/sshd_config.d/10-ikigenba.conf") != "PubkeyAuthentication yes\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin no\nLoginGraceTime 30\nMaxAuthTries 3\nClientAliveInterval 300\nClientAliveCountMax 2\nAllowGroups ec2-user shell\nUsePAM yes\n\nMatch Group shell\n  AllowTcpForwarding no\n  AllowStreamLocalForwarding no\n  AllowAgentForwarding no\n  X11Forwarding no\n  PermitTunnel no\n  AuthorizedKeysFile /etc/ssh/authorized_keys/%u\n" {
 				t.Fatal("sshd candidate not installed")
 			}
 		}
@@ -203,17 +203,17 @@ func TestApplyContractAndIdempotence(t *testing.T) {
 	}
 	f.requireApply()
 	f.noTemporary()
-	for name, want := range map[string]string{"etc/systemd/system/user.slice.d/ikigenba.conf": "[Slice]\nMemoryHigh=1.5G\nMemoryMax=2G\nTasksMax=512\nCPUWeight=50\n", "etc/systemd/system/user-.slice.d/ikigenba.conf": "[Slice]\nMemoryHigh=600M\nMemoryMax=1G\nTasksMax=256\n", "etc/fail2ban/jail.d/ikigenba.local": "[sshd]\nenabled = true\nbackend = systemd\nbanaction = nftables-multiport\nmaxretry = 5\nfindtime = 10m\nbantime = 10m\nbantime.increment = true\nbantime.maxtime = 1w\n", "etc/dnf/vars/releasever": "latest\n", "etc/dnf/automatic.conf": "# packaged\n[commands]\nupgrade_type = security\napply_updates = yes\ndownload_updates = yes\n[emitters]\nemit_via = stdio\n"} {
+	for name, want := range map[string]string{"etc/systemd/system/user.slice.d/ikigenba.conf": "[Slice]\nMemoryHigh=1.5G\nMemoryMax=2G\nTasksMax=512\nCPUWeight=50\n", "etc/systemd/system/user-.slice.d/ikigenba.conf": "[Slice]\nMemoryHigh=600M\nMemoryMax=1G\nTasksMax=256\n", "etc/systemd/journald.conf.d/ikigenba.conf": "[Journal]\nStorage=persistent\n", "etc/fail2ban/jail.d/ikigenba.local": "[sshd]\nenabled = true\nbackend = systemd\nbanaction = nftables-multiport\nmaxretry = 5\nfindtime = 10m\nbantime = 10m\nbantime.increment = true\nbantime.maxtime = 1w\n", "etc/dnf/vars/releasever": "latest\n", "etc/dnf/automatic.conf": "# packaged\n[commands]\nupgrade_type = security\napply_updates = yes\ndownload_updates = yes\n[emitters]\nemit_via = stdio\n"} {
 		if got := f.read(name); got != want {
 			t.Fatalf("%s = %q", name, got)
 		}
 	}
-	for name, mode := range map[string]os.FileMode{"etc/systemd/system/user.slice.d": 0o755, "etc/systemd/system/user.slice.d/ikigenba.conf": 0o644, "etc/systemd/system/user-.slice.d/ikigenba.conf": 0o644, "etc/ssh/authorized_keys": 0o755, "etc/ssh/sshd_config.d/10-ikigenba.conf": 0o600, "etc/fail2ban/jail.d/ikigenba.local": 0o644, "etc/dnf/vars/releasever": 0o644, "etc/dnf/automatic.conf": 0o640, "etc/sudoers.d/ikigenba-accounts": 0o440} {
+	for name, mode := range map[string]os.FileMode{"etc/systemd/journald.conf.d": 0o755, "etc/systemd/journald.conf.d/ikigenba.conf": 0o644, "var/log": 0o755, "var/log/journal": 0o755, "etc/systemd/system/user.slice.d": 0o755, "etc/systemd/system/user.slice.d/ikigenba.conf": 0o644, "etc/systemd/system/user-.slice.d/ikigenba.conf": 0o644, "etc/ssh/authorized_keys": 0o755, "etc/ssh/sshd_config.d/10-ikigenba.conf": 0o600, "etc/fail2ban/jail.d/ikigenba.local": 0o644, "etc/dnf/vars/releasever": 0o644, "etc/dnf/automatic.conf": 0o640, "etc/sudoers.d/ikigenba-accounts": 0o440} {
 		if got := f.mode(name); got != mode {
 			t.Fatalf("%s mode %o", name, got)
 		}
 	}
-	wantCommands := []string{"id --user ikigenba", "id --user ikigenba", "useradd --system --no-create-home --shell /usr/sbin/nologin --user-group ikigenba", "systemctl daemon-reload", "getent group shell", "groupadd --system shell", "sshd -t -f " + filepath.Join(f.root, "etc/ssh/sshd_config"), "systemctl reload sshd.service", "rpm -q fail2ban-server", "rpm -q dnf-automatic", "dnf install -y fail2ban-server dnf-automatic", "systemctl is-enabled fail2ban.service", "systemctl is-active fail2ban.service", "systemctl enable --now fail2ban.service", "systemctl is-enabled dnf-automatic.timer", "systemctl is-active dnf-automatic.timer", "systemctl enable --now dnf-automatic.timer", "visudo -c -f " + filepath.Join(f.root, "etc/sudoers.d/ikigenba-accounts.new")}
+	wantCommands := []string{"id --user ikigenba", "id --user ikigenba", "useradd --system --no-create-home --shell /usr/sbin/nologin --user-group ikigenba", "systemctl daemon-reload", "systemd-tmpfiles --create --prefix " + filepath.Join(f.root, "var/log/journal"), "systemctl restart systemd-journald.service", "journalctl --flush", "getent group shell", "groupadd --system shell", "sshd -t -f " + filepath.Join(f.root, "etc/ssh/sshd_config"), "systemctl reload sshd.service", "rpm -q fail2ban-server", "rpm -q dnf-automatic", "dnf install -y fail2ban-server dnf-automatic", "systemctl is-enabled fail2ban.service", "systemctl is-active fail2ban.service", "systemctl enable --now fail2ban.service", "systemctl is-enabled dnf-automatic.timer", "systemctl is-active dnf-automatic.timer", "systemctl enable --now dnf-automatic.timer", "visudo -c -f " + filepath.Join(f.root, "etc/sudoers.d/ikigenba-accounts.new")}
 	// EnsureAccount's shell is a program setting rather than a filesystem operand.
 	if !reflect.DeepEqual(f.commands, wantCommands) {
 		t.Fatalf("commands = %q", f.commands)
@@ -234,7 +234,7 @@ func TestApplyContractAndIdempotence(t *testing.T) {
 }
 
 func TestApplyRollbackAndCommandErrors(t *testing.T) {
-	// R-SALL-UGL5 R-3AA6-8JF9 R-SD1E-M02J R-SE9A-ZRT8 R-98VK-1BB5 R-RFVR-QN1E R-RC82-LBTB
+	// R-SALL-UGL5 R-RNQB-Q76Z R-SD1E-M02J R-SE9A-ZRT8 R-98VK-1BB5 R-RV1Q-0TN5 R-RC82-LBTB
 	for _, test := range []struct{ command, file, label string }{{"systemctl daemon-reload", "etc/systemd/system/user.slice.d/ikigenba.conf", "systemctl daemon-reload"}, {"sshd -t -f ROOT/etc/ssh/sshd_config", "etc/ssh/sshd_config.d/10-ikigenba.conf", "sshd -t"}, {"systemctl reload sshd.service", "etc/ssh/sshd_config.d/10-ikigenba.conf", "systemctl reload"}, {"systemctl enable --now fail2ban.service", "etc/fail2ban/jail.d/ikigenba.local", "systemctl enable"}, {"systemctl reload fail2ban.service", "etc/fail2ban/jail.d/ikigenba.local", "systemctl reload"}, {"systemctl enable --now dnf-automatic.timer", "etc/dnf/automatic.conf", "systemctl enable"}, {"visudo -c -f ROOT/etc/sudoers.d/ikigenba-accounts.new", "etc/sudoers.d/ikigenba-accounts", "visudo -c"}} {
 		for _, exists := range []bool{false, true} {
 			t.Run(test.label+fmt.Sprint(exists)+test.file, func(t *testing.T) {
@@ -272,7 +272,7 @@ func TestApplyRollbackAndCommandErrors(t *testing.T) {
 }
 
 func TestApplyStateDirectoryPermissionsOwnershipAndACL(t *testing.T) {
-	// R-R9S9-TSBX R-YEOK-DJ3V R-3HLK-J5VF R-3ITG-WXM4
+	// R-R9S9-TSBX R-YEOK-DJ3V R-ZFZE-PCKV R-ZH7B-34BK
 	f := newFixture(t)
 	for _, name := range []string{"etc/ikigenba", "etc/opt/ikigenba/zulu", "etc/opt/ikigenba/alpha", "var/opt/ikigenba", "var/lib/ikigenba", "run/ikigenba"} {
 		f.mkdir(name, 0o777)
@@ -350,11 +350,11 @@ func TestAutomaticSectionEditing(t *testing.T) {
 }
 
 func TestApplyModeOnlyKeepsInodesAndRunsNoReload(t *testing.T) {
-	// R-SALL-UGL5 R-QWDD-MB6A R-3AA6-8JF9 R-3CPZ-02WN R-3DXV-DUNC R-98VK-1BB5 R-3ITG-WXM4
+	// R-SALL-UGL5 R-QWDD-MB6A R-RNQB-Q76Z R-3CPZ-02WN R-3DXV-DUNC R-98VK-1BB5 R-ZH7B-34BK
 	f := newFixture(t)
 	f.requireApply()
 	var infos = map[string]os.FileInfo{}
-	for _, name := range []string{"etc/systemd/system/user.slice.d/ikigenba.conf", "etc/systemd/system/user-.slice.d/ikigenba.conf", "etc/ssh/sshd_config.d/10-ikigenba.conf", "etc/fail2ban/jail.d/ikigenba.local", "etc/dnf/vars/releasever", "etc/sudoers.d/ikigenba-accounts"} {
+	for _, name := range []string{"etc/systemd/system/user.slice.d/ikigenba.conf", "etc/systemd/system/user-.slice.d/ikigenba.conf", "etc/systemd/journald.conf.d/ikigenba.conf", "etc/ssh/sshd_config.d/10-ikigenba.conf", "etc/fail2ban/jail.d/ikigenba.local", "etc/dnf/vars/releasever", "etc/sudoers.d/ikigenba-accounts"} {
 		p := filepath.Join(f.root, name)
 		info, err := os.Lstat(p)
 		if err != nil {
@@ -389,7 +389,7 @@ func TestApplyModeOnlyKeepsInodesAndRunsNoReload(t *testing.T) {
 }
 
 func TestApplyStopsOnUnexpectedQueryAndFilesystemFailure(t *testing.T) {
-	// R-RFVR-QN1E R-RH3O-4ES3 R-ZB1F-CHGU R-3BI2-MB5Y
+	// R-RV1Q-0TN5 R-RH3O-4ES3 R-ZB1F-CHGU R-3BI2-MB5Y
 	for _, command := range []string{"id --user ikigenba", "getent group shell", "rpm -q fail2ban-server", "rpm -q dnf-automatic", "dnf install -y fail2ban-server dnf-automatic"} {
 		for _, spawn := range []bool{false, true} {
 			t.Run(command+fmt.Sprint(spawn), func(t *testing.T) {
@@ -430,7 +430,7 @@ func TestApplyStopsOnUnexpectedQueryAndFilesystemFailure(t *testing.T) {
 }
 
 func TestPoolFilesystemFailureRestoresCandidatesAndRetainedModesCount(t *testing.T) {
-	// R-RH3O-4ES3 R-SALL-UGL5 R-3ITG-WXM4 R-RFVR-QN1E R-3HLK-J5VF
+	// R-RH3O-4ES3 R-SALL-UGL5 R-ZH7B-34BK R-RV1Q-0TN5 R-ZFZE-PCKV
 	for _, modeOnly := range []bool{false, true} {
 		t.Run(fmt.Sprint(modeOnly), func(t *testing.T) {
 			f := newFixture(t)
@@ -489,7 +489,7 @@ func TestPoolFilesystemFailureRestoresCandidatesAndRetainedModesCount(t *testing
 }
 
 func TestFail2banModeOnlyFailureReportsRetainedChange(t *testing.T) {
-	// R-3ITG-WXM4 R-RFVR-QN1E R-SD1E-M02J
+	// R-ZH7B-34BK R-RV1Q-0TN5 R-SD1E-M02J
 	f := newFixture(t)
 	f.requireApply()
 	root, err := os.OpenRoot(f.root)
@@ -510,10 +510,10 @@ func TestFail2banModeOnlyFailureReportsRetainedChange(t *testing.T) {
 }
 
 func TestApplyReplacesWholeFilesWithoutChangingOpenReaders(t *testing.T) {
-	// R-RC82-LBTB R-SALL-UGL5 R-3AA6-8JF9 R-3CPZ-02WN R-3DXV-DUNC R-R4WO-APD5 R-98VK-1BB5
+	// R-RC82-LBTB R-SALL-UGL5 R-RNQB-Q76Z R-3CPZ-02WN R-3DXV-DUNC R-R4WO-APD5 R-98VK-1BB5
 	f := newFixture(t)
 	f.requireApply()
-	names := []string{"etc/systemd/system/user.slice.d/ikigenba.conf", "etc/systemd/system/user-.slice.d/ikigenba.conf", "etc/ssh/sshd_config.d/10-ikigenba.conf", "etc/fail2ban/jail.d/ikigenba.local", "etc/dnf/vars/releasever", "etc/dnf/automatic.conf", "etc/sudoers.d/ikigenba-accounts"}
+	names := []string{"etc/systemd/system/user.slice.d/ikigenba.conf", "etc/systemd/system/user-.slice.d/ikigenba.conf", "etc/systemd/journald.conf.d/ikigenba.conf", "etc/ssh/sshd_config.d/10-ikigenba.conf", "etc/fail2ban/jail.d/ikigenba.local", "etc/dnf/vars/releasever", "etc/dnf/automatic.conf", "etc/sudoers.d/ikigenba-accounts"}
 	readers := map[string]*os.File{}
 	previous := map[string]os.FileInfo{}
 	filesystem, err := os.OpenRoot(f.root)
@@ -572,7 +572,7 @@ func TestApplyReplacesWholeFilesWithoutChangingOpenReaders(t *testing.T) {
 }
 
 func TestEnsureAccountErrorIsReturnedDirectlyAndStatRejectsMalformedOutput(t *testing.T) {
-	// R-ZB1F-CHGU R-RFVR-QN1E R-RH3O-4ES3
+	// R-ZB1F-CHGU R-RV1Q-0TN5 R-RH3O-4ES3
 	f := newFixture(t)
 	f.account = true
 	calls := 0

@@ -2,6 +2,7 @@ package accounts
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -141,7 +142,7 @@ func undoAddUser(ctx context.Context, env host.Env, name, home string, homeExist
 	}
 }
 
-// ListUsers reads the host's SSH users and last-login records.
+// ListUsers reads the host's SSH users and accepted SSH sign-ins.
 func ListUsers(ctx context.Context, env host.Env) (UserList, error) {
 	result := UserList{Users: []User{}}
 	db, err := loadAccounts(env.Root)
@@ -171,11 +172,7 @@ func ListUsers(ctx context.Context, env host.Env) (UserList, error) {
 		if keyErr != nil {
 			return result, keyErr
 		}
-		command, execErr := execute(ctx, env, host.Command{Name: "lastlog", Args: []string{"-u", name}, Env: []string{"LC_ALL=C"}})
-		if execErr != nil {
-			return result, execErr
-		}
-		last, parseErr := parseLastLog(command.Stdout)
+		last, parseErr := lastSignIn(ctx, env, name)
 		if parseErr != nil {
 			return result, parseErr
 		}
@@ -190,10 +187,8 @@ func readStates(env host.Env) (map[string]bool, error) {
 		return nil, err
 	}
 	states := map[string]bool{}
-	today := env.Now().UTC().Unix() / 86400
 	for _, entry := range entries {
-		day, parseErr := strconv.ParseInt(entry[7], 10, 64)
-		states[entry[0]] = parseErr == nil && day >= 1 && day <= today
+		states[entry[0]] = entry[7] != ""
 	}
 	return states, nil
 }
@@ -205,25 +200,47 @@ func userState(states map[string]bool, name string) string {
 	return StateActive
 }
 
-func parseLastLog(data []byte) (*time.Time, error) {
-	last := ""
-	for _, line := range strings.Split(string(data), "\n") {
-		if line != "" {
-			last = line
+func lastSignIn(ctx context.Context, env host.Env, name string) (*time.Time, error) {
+	var quoted strings.Builder
+	for _, char := range name {
+		asciiWord := char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' || char == '_'
+		if !asciiWord {
+			quoted.WriteByte('\\')
+		}
+		quoted.WriteRune(char)
+	}
+	result, err := execute(ctx, env, host.Command{Name: "journalctl", Args: []string{"--unit=sshd.service", "--output=json", "--reverse", "--lines=1", "--quiet", "--no-pager", "--case-sensitive", "--grep=^Accepted publickey for " + quoted.String() + " from "}})
+	if err != nil {
+		var command *host.CommandError
+		if errors.As(err, &command) && command.Err == nil && result.ExitCode == 1 && len(result.Stdout) == 0 && len(result.Stderr) == 0 {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var record map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(strings.TrimSuffix(string(result.Stdout), "\n")), &record); err != nil {
+		return nil, fmt.Errorf("invalid journalctl output: %w", err)
+	}
+	var timestamp string
+	if err := json.Unmarshal(record["__REALTIME_TIMESTAMP"], &timestamp); err != nil || timestamp == "" {
+		return nil, errors.New("invalid journalctl timestamp")
+	}
+	for _, digit := range timestamp {
+		if digit < '0' || digit > '9' {
+			return nil, errors.New("invalid journalctl timestamp")
 		}
 	}
-	if strings.HasSuffix(last, "**Never logged in**") {
-		return nil, nil
+	// Drop the fractional microseconds before parsing, so large second values
+	// are not constrained by the range of an integer number of microseconds.
+	seconds := "0"
+	if len(timestamp) > 6 {
+		seconds = timestamp[:len(timestamp)-6]
 	}
-	fields := strings.FieldsFunc(last, func(r rune) bool { return r == ' ' })
-	if len(fields) < 6 {
-		return nil, errors.New("invalid lastlog output")
-	}
-	parsed, err := time.Parse("Mon Jan 2 15:04:05 -0700 2006", strings.Join(fields[len(fields)-6:], " "))
+	whole, err := strconv.ParseInt(seconds, 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("invalid lastlog output: %w", err)
+		return nil, fmt.Errorf("invalid journalctl timestamp: %w", err)
 	}
-	parsed = parsed.UTC()
+	parsed := time.Unix(whole, 0).UTC()
 	return &parsed, nil
 }
 
@@ -310,7 +327,7 @@ func LockUser(ctx context.Context, env host.Env, name string) error {
 		return err
 	}
 	if !states[name] {
-		if _, err = execute(ctx, env, host.Command{Name: "usermod", Args: []string{"--lock", "--expiredate", "1", name}}); err != nil {
+		if _, err = execute(ctx, env, host.Command{Name: "usermod", Args: []string{"--expiredate", "1", name}}); err != nil {
 			return err
 		}
 	}
@@ -328,7 +345,7 @@ func LockUser(ctx context.Context, env host.Env, name string) error {
 	return nil
 }
 
-// UnlockUser clears account expiration and the password lock when locked.
+// UnlockUser clears account expiration when locked.
 func UnlockUser(ctx context.Context, env host.Env, name string) error {
 	if _, err := userDB(env, name); err != nil {
 		return err
@@ -340,7 +357,7 @@ func UnlockUser(ctx context.Context, env host.Env, name string) error {
 	if !states[name] {
 		return nil
 	}
-	_, err = execute(ctx, env, host.Command{Name: "usermod", Args: []string{"--unlock", "--expiredate", "", name}})
+	_, err = execute(ctx, env, host.Command{Name: "usermod", Args: []string{"--expiredate", "", name}})
 	return err
 }
 

@@ -22,7 +22,8 @@ const (
 	AdminAccount = "ec2-user"
 )
 
-const sshConfig = "PubkeyAuthentication yes\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin no\nLoginGraceTime 30\nMaxAuthTries 3\nClientAliveInterval 300\nClientAliveCountMax 2\nAllowGroups " + AdminAccount + " " + ShellGroup + "\nUsePAM yes\n\nMatch Group " + ShellGroup + "\n  AllowTcpForwarding no\n  AllowAgentForwarding no\n  X11Forwarding no\n  PermitTunnel no\n  AuthorizedKeysFile " + KeysDir + "/%u\n"
+const sshConfig = "PubkeyAuthentication yes\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin no\nLoginGraceTime 30\nMaxAuthTries 3\nClientAliveInterval 300\nClientAliveCountMax 2\nAllowGroups " + AdminAccount + " " + ShellGroup + "\nUsePAM yes\n\nMatch Group " + ShellGroup + "\n  AllowTcpForwarding no\n  AllowStreamLocalForwarding no\n  AllowAgentForwarding no\n  X11Forwarding no\n  PermitTunnel no\n  AuthorizedKeysFile " + KeysDir + "/%u\n"
+const journalConfig = "[Journal]\nStorage=persistent\n"
 const jailConfig = "[sshd]\nenabled = true\nbackend = systemd\nbanaction = nftables-multiport\nmaxretry = 5\nfindtime = 10m\nbantime = 10m\nbantime.increment = true\nbantime.maxtime = 1w\n"
 const sudoConfig = "ikigenba ALL=(root) NOPASSWD: /usr/local/bin/opsctl group *, /usr/local/bin/opsctl user *\n"
 
@@ -49,7 +50,7 @@ func Apply(ctx context.Context, env host.Env) (bool, error) {
 	}
 	defer func() { _ = root.Close() }()
 	o := operation{ctx: ctx, env: env, root: root}
-	for _, part := range []func() error{o.account, o.pool, o.shell, o.keys, o.sshd, o.packages, o.fail2ban, o.releaseLock, o.automatic, o.sudo, o.state} {
+	for _, part := range []func() error{o.account, o.pool, o.journal, o.shell, o.keys, o.sshd, o.packages, o.fail2ban, o.releaseLock, o.automatic, o.sudo, o.state} {
 		if err := part(); err != nil {
 			return o.changed, err
 		}
@@ -239,6 +240,55 @@ func (o *operation) pool() (runErr error) {
 	}
 	if saved[0].contentChanged || saved[1].contentChanged {
 		return o.run("systemctl daemon-reload", "systemctl", "daemon-reload")
+	}
+	return nil
+}
+
+func (o *operation) journal() (runErr error) {
+	if err := o.directory("etc/systemd/journald.conf.d", false); err != nil {
+		return err
+	}
+	s, err := o.put("etc/systemd/journald.conf.d/ikigenba.conf", []byte(journalConfig), 0o644)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if runErr != nil && s.contentChanged {
+			_ = o.restore(s)
+		} else {
+			o.keep(s)
+		}
+	}()
+	_, err = o.root.Lstat("var/log/journal")
+	created := errors.Is(err, os.ErrNotExist)
+	if err != nil && !created {
+		return fileError("var/log/journal", err)
+	}
+	if created {
+		if err := o.directory("var/log", false); err != nil {
+			return err
+		}
+		if err := o.directory("var/log/journal", false); err != nil {
+			return err
+		}
+	}
+	if !s.contentChanged && !created {
+		return nil
+	}
+	for _, command := range []struct {
+		label, name string
+		args        []string
+	}{
+		{"systemd-tmpfiles --create", "systemd-tmpfiles", []string{"--create", "--prefix", o.path("var/log/journal")}},
+		{"systemctl restart", "systemctl", []string{"restart", "systemd-journald.service"}},
+		{"journalctl --flush", "journalctl", []string{"--flush"}},
+	} {
+		if err := o.run(command.label, command.name, command.args...); err != nil {
+			if !s.contentChanged {
+				_ = o.root.Remove(s.name)
+			}
+			return err
+		}
 	}
 	return nil
 }

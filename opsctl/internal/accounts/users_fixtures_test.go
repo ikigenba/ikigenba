@@ -33,7 +33,10 @@ func newUserFixture(t *testing.T) *userFixture {
 		if f.run != nil {
 			return f.run(c)
 		}
-		return host.Result{Stdout: []byte("user **Never logged in**\n")}, nil
+		if c.Name == "journalctl" {
+			return host.Result{ExitCode: 1}, nil
+		}
+		return host.Result{}, nil
 	}
 	f.write("/etc/passwd", userAccountRows, 0600)
 	f.write("/etc/group", userGroups, 0600)

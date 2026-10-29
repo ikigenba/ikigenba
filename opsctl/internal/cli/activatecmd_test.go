@@ -1030,7 +1030,7 @@ func TestActivateRepairsOpsctlLink(t *testing.T) {
 // fixture to an already hardened state before the operation under test.
 func seedHardeningRules(t *testing.T, root string) {
 	t.Helper()
-	for _, name := range []string{"etc/ssh/sshd_config.d", "etc/sudoers.d", "etc/systemd/system", "etc/fail2ban", "etc/dnf"} {
+	for _, name := range []string{"etc/ssh/sshd_config.d", "etc/sudoers.d", "etc/systemd/system", "etc/fail2ban", "etc/dnf", "var"} {
 		if err := os.MkdirAll(filepath.Join(root, name), 0o700); err != nil {
 			t.Fatal(err)
 		}

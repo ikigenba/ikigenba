@@ -173,26 +173,31 @@ func TestAddUserUndo(t *testing.T) {
 }
 
 func TestSSHUserList(t *testing.T) {
-	// R-A87Z-DJM8 R-A9FV-RBCX R-ARQD-HVHC R-5N85-EZGZ
+	// R-A87Z-DJM8 R-A9FV-RBCX R-U996-6SDT R-UBOY-YBV7
 	if StateActive != "active" || StateLocked != "locked" {
 		t.Fatal(StateActive, StateLocked)
 	}
 	f := newUserFixture(t)
 	f.write("/etc/ssh/authorized_keys/alice", f.key().Line()+"\n\n"+KeyType+" "+secondKeyBody+" desktop", 0644)
 	f.run = func(c host.Command) (host.Result, error) {
-		if !reflect.DeepEqual(c.Env, []string{"LC_ALL=C"}) || c.Name != "lastlog" || c.Args[0] != "-u" {
+		if c.Name != "journalctl" {
 			t.Fatal(c)
 		}
-		if c.Args[1] == "alice" {
-			return host.Result{Stdout: []byte("Header\nalice pts/0 host Thu Oct 29 09:03:00 -0500 2026\n\n"), Stderr: []byte("ignored")}, nil
+		if c.Args[7] == "--grep=^Accepted publickey for alice from " {
+			return host.Result{Stdout: []byte("{\"__REALTIME_TIMESTAMP\":\"1793282580123456\",\"MESSAGE\":\"Accepted publickey for alice from 192.0.2.1\"}\n")}, nil
 		}
-		return host.Result{Stdout: []byte("bob **Never logged in**\n")}, nil
+		return host.Result{ExitCode: 1}, nil
 	}
 	got, err := ListUsers(context.Background(), f.env)
 	last := time.Date(2026, 10, 29, 14, 3, 0, 0, time.UTC)
 	want := UserList{Users: []User{{Name: "alice", Groups: []string{"acme", "beta"}, Keys: []string{f.key().Line(), KeyType + " " + secondKeyBody + " desktop"}, State: StateActive, LastSignIn: &last}, {Name: "bob", Groups: []string{"acme"}, Keys: []string{}, State: StateLocked}}}
-	if err != nil || !reflect.DeepEqual(got, want) || len(f.commands) != 2 {
+	if err != nil || !reflect.DeepEqual(got, want) || len(f.commands) != 2 || f.read("/etc/passwd") != userAccountRows || f.read("/etc/group") != userGroups || f.read("/etc/shadow") != userShadow || f.read("/etc/ssh/authorized_keys/alice") != f.key().Line()+"\n\n"+KeyType+" "+secondKeyBody+" desktop" {
 		t.Fatalf("%+v %v", got, err)
+	}
+	f.write("/etc/group", "shell:x:400:alice\n", 0600)
+	got, err = ListUsers(context.Background(), f.env)
+	if err != nil || len(got.Users) != 1 || got.Users[0].Groups == nil || len(got.Users[0].Groups) != 0 {
+		t.Fatal(got, err)
 	}
 	f.write("/etc/group", "shell:x:400:\n", 0600)
 	f.commands = nil
@@ -202,21 +207,32 @@ func TestSSHUserList(t *testing.T) {
 	}
 }
 
-func TestExpirationAndLastlogErrors(t *testing.T) {
-	// R-ASY9-VN81 R-5ZF5-8OVX
+func TestExpirationState(t *testing.T) {
+	// R-U6TD-F8WF
 	f := newUserFixture(t)
-	today := f.env.Now().Unix() / 86400
+	f.env.Now = nil
 	for _, tc := range []struct {
 		value  string
 		locked bool
-	}{{"", false}, {"-1", false}, {"0", false}, {"1", true}, {strconv.FormatInt(today, 10), true}, {strconv.FormatInt(today+1, 10), false}, {"oops", false}} {
-		f.write("/etc/shadow", "alice:!:1:0:99999:7::"+tc.value+":\n", 0600)
+	}{{"", false}, {"-1", true}, {"0", true}, {"1", true}, {"99999999", true}, {"oops", true}, {" ", true}} {
+		f.write("/etc/shadow", "unrelated:!!:1:0:99999:7::1:\nalice:!!:1:0:99999:7::"+tc.value+":\n", 0600)
 		list, err := ListUsers(context.Background(), f.env)
 		if err != nil || (list.Users[0].State == StateLocked) != tc.locked || list.Users[1].State != StateActive {
 			t.Fatal(tc, list, err)
 		}
 	}
-	for _, output := range []string{"", "\n", "header only", "alice wrong time", "alice host Thu\tOct\t29\t09:03:00\t-0500\t2026\n", "alice host Thu\u2003Oct\u200329\u200309:03:00\u2003-0500\u20032026\n", "alice host Thu Oct 29 09:03:00 -0500 2026\n \n"} {
+	// A password lock alone is irrelevant, and a missing shadow entry is active.
+	f.write("/etc/shadow", "alice:!:1:0:99999:7:::\n", 0600)
+	list, err := ListUsers(context.Background(), f.env)
+	if err != nil || list.Users[0].State != StateActive || list.Users[1].State != StateActive {
+		t.Fatal(list, err)
+	}
+}
+
+func TestJournalSignInErrors(t *testing.T) {
+	// R-UBOY-YBV7
+	f := newUserFixture(t)
+	for _, output := range []string{"", "\n", "not json", "{}", "null", "[]", "{\"__REALTIME_TIMESTAMP\":0}", "{\"__REALTIME_TIMESTAMP\":null}", "{\"__REALTIME_TIMESTAMP\":\"\"}", "{\"__REALTIME_TIMESTAMP\":\"-1\"}", "{\"__REALTIME_TIMESTAMP\":\"+1\"}", "{\"__REALTIME_TIMESTAMP\":\"1.0\"}", "{\"__REALTIME_TIMESTAMP\":\" 1\"}", "{\"__REALTIME_TIMESTAMP\":\"1e6\"}", "{\"__REALTIME_TIMESTAMP\":\"１\"}", "{\"__REALTIME_TIMESTAMP\":\"1\"}\n{\"__REALTIME_TIMESTAMP\":\"2\"}"} {
 		f.run = func(host.Command) (host.Result, error) { return host.Result{Stdout: []byte(output)}, nil }
 		_, err := ListUsers(context.Background(), f.env)
 		var refused *RefusedError
@@ -224,11 +240,72 @@ func TestExpirationAndLastlogErrors(t *testing.T) {
 			t.Fatal(output, err)
 		}
 	}
-	f.run = func(host.Command) (host.Result, error) { return host.Result{ExitCode: 2}, nil }
-	_, err := ListUsers(context.Background(), f.env)
-	var command *host.CommandError
-	if !errors.As(err, &command) || command.Label != "lastlog" {
+	for _, result := range []host.Result{{ExitCode: 1, Stdout: []byte("\n")}, {ExitCode: 1, Stderr: []byte("error")}, {ExitCode: 2}, {ExitCode: 7, Stdout: []byte("out"), Stderr: []byte("err")}} {
+		f.run = func(host.Command) (host.Result, error) { return result, nil }
+		_, err := ListUsers(context.Background(), f.env)
+		var command *host.CommandError
+		if !errors.As(err, &command) || command.Label != "journalctl" || !reflect.DeepEqual(command.Result, result) {
+			t.Fatal(err)
+		}
+	}
+	sentinel := errors.New("cannot start journal")
+	f.run = func(host.Command) (host.Result, error) { return host.Result{ExitCode: 1}, sentinel }
+	if _, err := ListUsers(context.Background(), f.env); !errors.Is(err, sentinel) {
 		t.Fatal(err)
+	}
+}
+
+func TestJournalSignInCommand(t *testing.T) {
+	// R-UAH2-KK4I R-UBOY-YBV7
+	for _, tc := range []struct{ name, quoted string }{
+		{"al", "al"},
+		{"al-ice", `al\-ice`},
+		{"A1_b", "A1_b"},
+		{`a.$[\é`, `a\.\$\[\\\é`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newUserFixture(t)
+			f.write("/etc/passwd", tc.name+":x:1001:1001::/home/fixture:/bin/bash\n", 0600)
+			f.write("/etc/group", "shell:x:400:"+tc.name+"\n", 0600)
+			f.run = func(c host.Command) (host.Result, error) {
+				want := userCall("journalctl", "--unit=sshd.service", "--output=json", "--reverse", "--lines=1", "--quiet", "--no-pager", "--case-sensitive", "--grep=^Accepted publickey for "+tc.quoted+" from ")
+				if !reflect.DeepEqual(c, want) {
+					t.Fatal(c, want)
+				}
+				return host.Result{ExitCode: 1}, nil
+			}
+			list, err := ListUsers(context.Background(), f.env)
+			if err != nil || len(f.commands) != 1 || len(list.Users) != 1 || list.Users[0].LastSignIn != nil {
+				t.Fatal(list, err, f.commands)
+			}
+		})
+	}
+}
+
+func TestJournalTimestamp(t *testing.T) {
+	// R-UBOY-YBV7
+	for _, tc := range []struct{ timestamp, want string }{
+		{"0", "1970-01-01T00:00:00Z"},
+		{"999999", "1970-01-01T00:00:00Z"},
+		{"1000000", "1970-01-01T00:00:01Z"},
+		{"000001000001", "1970-01-01T00:00:01Z"},
+		{"1793282580123456", "2026-10-29T14:03:00Z"},
+	} {
+		for _, suffix := range []string{"", "\n"} {
+			f := newUserFixture(t)
+			f.run = func(host.Command) (host.Result, error) {
+				return host.Result{Stdout: []byte(`{"__REALTIME_TIMESTAMP":"` + tc.timestamp + `"}` + suffix)}, nil
+			}
+			list, err := ListUsers(context.Background(), f.env)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, user := range list.Users {
+				if user.LastSignIn == nil || user.LastSignIn.Format(time.RFC3339Nano) != tc.want || user.LastSignIn.Location() != time.UTC {
+					t.Fatal(tc, user)
+				}
+			}
+		}
 	}
 }
 
@@ -275,7 +352,7 @@ func TestUserRefusalsAndShadowErrors(t *testing.T) {
 }
 
 func TestMembershipAndLocking(t *testing.T) {
-	// R-UUU8-P79R R-UW25-2Z0G R-60N1-MGMM R-B3XD-BKWA
+	// R-UUU8-P79R R-UW25-2Z0G R-UCWV-C3LW R-UE4R-PVCL
 	f := newUserFixture(t)
 	ctx := context.Background()
 	if err := JoinGroup(ctx, f.env, "alice", "acme"); err != nil || len(f.commands) != 0 {
@@ -314,7 +391,7 @@ func TestMembershipAndLocking(t *testing.T) {
 			}
 			want := []host.Command{}
 			if name == "alice" {
-				want = append(want, userCall("usermod", "--lock", "--expiredate", "1", name))
+				want = append(want, userCall("usermod", "--expiredate", "1", name))
 			}
 			want = append(want, userCall("loginctl", "list-users", "--no-legend"))
 			if sessions {
@@ -329,7 +406,7 @@ func TestMembershipAndLocking(t *testing.T) {
 	if err := UnlockUser(ctx, f.env, "alice"); err != nil || len(f.commands) != 0 {
 		t.Fatal(err)
 	}
-	if err := UnlockUser(ctx, f.env, "bob"); err != nil || !reflect.DeepEqual(f.commands, []host.Command{userCall("usermod", "--unlock", "--expiredate", "", "bob")}) {
+	if err := UnlockUser(ctx, f.env, "bob"); err != nil || !reflect.DeepEqual(f.commands, []host.Command{userCall("usermod", "--expiredate", "", "bob")}) {
 		t.Fatal(err, f.commands)
 	}
 	for step := 0; step < 3; step++ {
@@ -342,6 +419,82 @@ func TestMembershipAndLocking(t *testing.T) {
 		}
 		err := LockUser(ctx, f.env, "alice")
 		if err == nil || len(f.commands) != step+1 {
+			t.Fatal(err, f.commands)
+		}
+	}
+}
+
+func TestExpiryOnlyLockLifecycle(t *testing.T) {
+	// R-U6TD-F8WF R-UCWV-C3LW R-UE4R-PVCL
+	ctx := context.Background()
+	for _, expiry := range []string{"", "0", "-1", "99999999", "invalid"} {
+		f := newUserFixture(t)
+		f.write("/etc/shadow", "alice:!!:1:0:99999:7::"+expiry+":\n", 0600)
+		f.run = func(c host.Command) (host.Result, error) {
+			switch {
+			case reflect.DeepEqual(c, userCall("usermod", "--expiredate", "1", "alice")):
+				f.write("/etc/shadow", "alice:!!:1:0:99999:7::1:\n", 0600)
+			case reflect.DeepEqual(c, userCall("usermod", "--expiredate", "", "alice")):
+				f.write("/etc/shadow", "alice:!!:1:0:99999:7:::\n", 0600)
+			case reflect.DeepEqual(c, userCall("loginctl", "list-users", "--no-legend")):
+				return host.Result{Stdout: []byte("alice other\n1001 alice-long\n1002 other alice\nalice\n")}, nil
+			default:
+				t.Fatal(c)
+			}
+			return host.Result{}, nil
+		}
+		if err := LockUser(ctx, f.env, "alice"); err != nil {
+			t.Fatal(expiry, err)
+		}
+		want := []host.Command{userCall("loginctl", "list-users", "--no-legend")}
+		wantShadow := "alice:!!:1:0:99999:7::" + expiry + ":\n"
+		if expiry == "" {
+			want = append([]host.Command{userCall("usermod", "--expiredate", "1", "alice")}, want...)
+			wantShadow = "alice:!!:1:0:99999:7::1:\n"
+		}
+		if !reflect.DeepEqual(f.commands, want) || f.read("/etc/shadow") != wantShadow {
+			t.Fatal(expiry, f.commands, f.read("/etc/shadow"))
+		}
+		f.commands = nil
+		if err := UnlockUser(ctx, f.env, "alice"); err != nil || !reflect.DeepEqual(f.commands, []host.Command{userCall("usermod", "--expiredate", "", "alice")}) || f.read("/etc/shadow") != "alice:!!:1:0:99999:7:::\n" {
+			t.Fatal(expiry, err, f.commands)
+		}
+		f.commands = nil
+		if err := UnlockUser(ctx, f.env, "alice"); err != nil || len(f.commands) != 0 || f.read("/etc/shadow") != "alice:!!:1:0:99999:7:::\n" {
+			t.Fatal(err, f.commands)
+		}
+	}
+}
+
+func TestLockRetryAfterExpiry(t *testing.T) {
+	// R-UCWV-C3LW
+	for _, failedStep := range []string{"list-users", "terminate-user"} {
+		f := newUserFixture(t)
+		fail := true
+		f.run = func(c host.Command) (host.Result, error) {
+			if c.Name == "usermod" {
+				f.write("/etc/shadow", "alice:!!:1:0:99999:7::1:\n", 0600)
+			}
+			if fail && c.Name == "loginctl" && c.Args[0] == failedStep {
+				return host.Result{ExitCode: 8, Stderr: []byte("failed")}, nil
+			}
+			return host.Result{Stdout: []byte("1001\talice\tfixture\n")}, nil
+		}
+		err := LockUser(context.Background(), f.env, "alice")
+		var command *host.CommandError
+		if !errors.As(err, &command) || command.Label != "loginctl" || command.Result.ExitCode != 8 || f.read("/etc/shadow") != "alice:!!:1:0:99999:7::1:\n" {
+			t.Fatal(err)
+		}
+		want := []host.Command{userCall("usermod", "--expiredate", "1", "alice"), userCall("loginctl", "list-users", "--no-legend")}
+		if failedStep == "terminate-user" {
+			want = append(want, userCall("loginctl", "terminate-user", "alice"))
+		}
+		if !reflect.DeepEqual(f.commands, want) {
+			t.Fatal(f.commands, want)
+		}
+		fail = false
+		f.commands = nil
+		if err := LockUser(context.Background(), f.env, "alice"); err != nil || !reflect.DeepEqual(f.commands, []host.Command{userCall("loginctl", "list-users", "--no-legend"), userCall("loginctl", "terminate-user", "alice")}) {
 			t.Fatal(err, f.commands)
 		}
 	}
@@ -427,7 +580,7 @@ func TestDeleteUserReassignAndOrder(t *testing.T) {
 }
 
 func TestDeleteRetriesAndFailure(t *testing.T) {
-	// R-61UY-08DB R-52RP-A5AF
+	// R-UGKK-HETZ R-52RP-A5AF
 	for _, stage := range []string{"chown", "userdel", "groupdel"} {
 		f := newUserFixture(t)
 		f.write("/etc/passwd", strings.Replace(userAccountRows, "bob:x:1002:", fmt.Sprintf("bob:x:%d:", os.Getuid()), 1), 0600)
@@ -505,7 +658,7 @@ func TestDeleteRetriesAndFailure(t *testing.T) {
 }
 
 func TestUserCommandErrors(t *testing.T) {
-	// R-5S3Q-Y2FR
+	// R-UFCO-3N3A
 	for _, startFailure := range []bool{false, true} {
 		for _, op := range []struct {
 			label string
@@ -515,7 +668,7 @@ func TestUserCommandErrors(t *testing.T) {
 			{"gpasswd", func(f *userFixture) error { return JoinGroup(context.Background(), f.env, "bob", "beta") }},
 			{"usermod", func(f *userFixture) error { return UnlockUser(context.Background(), f.env, "bob") }},
 			{"loginctl", func(f *userFixture) error { return LockUser(context.Background(), f.env, "bob") }},
-			{"lastlog", func(f *userFixture) error { _, err := ListUsers(context.Background(), f.env); return err }},
+			{"journalctl", func(f *userFixture) error { _, err := ListUsers(context.Background(), f.env); return err }},
 			{"userdel", func(f *userFixture) error { return DeleteUser(context.Background(), f.env, "bob") }},
 			{"groupdel", func(f *userFixture) error { return DeleteUser(context.Background(), f.env, "bob") }},
 			{"chown", func(f *userFixture) error {
@@ -547,6 +700,82 @@ func TestUserCommandErrors(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestDeleteFailureProgress(t *testing.T) {
+	// R-UGKK-HETZ
+	for _, stage := range []string{"userdel-before-removal", "userdel-after-removal", "groupdel"} {
+		t.Run(stage, func(t *testing.T) {
+			f := newUserFixture(t)
+			f.write("/etc/ssh/authorized_keys/bob", "held key\n", 0644)
+			f.write("/home/bob/kept", "home contents", 0600)
+			failed := false
+			f.run = func(c host.Command) (host.Result, error) {
+				switch c.Name {
+				case "userdel":
+					if stage != "userdel-before-removal" || failed {
+						f.write("/etc/passwd", strings.Replace(userAccountRows, "bob:x:1002:1002::/home/bob:/bin/bash\n", "", 1), 0600)
+						f.write("/etc/group", strings.ReplaceAll(userGroups, "alice,bob", "alice"), 0600)
+					}
+					if stage != "groupdel" && !failed {
+						failed = true
+						return host.Result{ExitCode: 9, Stderr: []byte("original failure")}, nil
+					}
+				case "groupdel":
+					if stage == "groupdel" && !failed {
+						failed = true
+						return host.Result{ExitCode: 9, Stderr: []byte("original failure")}, nil
+					}
+					f.write("/etc/group", strings.Replace(f.read("/etc/group"), "bob:x:1002:\n", "", 1), 0600)
+				default:
+					t.Fatal(c)
+				}
+				return host.Result{}, nil
+			}
+			err := DeleteUser(context.Background(), f.env, "bob")
+			var command *host.CommandError
+			label := "userdel"
+			want := []host.Command{userCall("userdel", "--remove", "bob")}
+			if stage == "groupdel" {
+				label = "groupdel"
+				want = append(want, userCall("groupdel", "bob"))
+			}
+			if !errors.As(err, &command) || command.Label != label || command.Result.ExitCode != 9 || string(command.Result.Stderr) != "original failure" || !reflect.DeepEqual(f.commands, want) {
+				t.Fatal(err, f.commands)
+			}
+			if _, err := os.Lstat(keyPath(f.env.Root, "bob")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("removed key was restored", err)
+			}
+			if !strings.Contains(f.read("/etc/group"), "bob:x:1002:\n") || f.read("/home/bob/kept") != "home contents" {
+				t.Fatal("failure undid or ran a later step")
+			}
+			f.commands = nil
+			err = DeleteUser(context.Background(), f.env, "bob")
+			if stage == "userdel-before-removal" {
+				if err != nil || !reflect.DeepEqual(f.commands, []host.Command{userCall("userdel", "--remove", "bob"), userCall("groupdel", "bob")}) || strings.Contains(f.read("/etc/group"), "bob:x:1002:\n") {
+					t.Fatal(err, f.commands)
+				}
+			} else {
+				var refused *RefusedError
+				if !errors.As(err, &refused) || refused.Reason != "no user 'bob'" || len(f.commands) != 0 {
+					t.Fatal(err, f.commands)
+				}
+			}
+		})
+	}
+	f := newUserFixture(t)
+	f.write("/etc/ssh/authorized_keys/bob/obstruction", "kept", 0600)
+	err := DeleteUser(context.Background(), f.env, "bob")
+	var pathError *os.PathError
+	if !errors.As(err, &pathError) || pathError.Path != keyPath(f.env.Root, "bob") || len(f.commands) != 0 || f.read("/etc/passwd") != userAccountRows || f.read("/etc/group") != userGroups || f.read("/etc/ssh/authorized_keys/bob/obstruction") != "kept" {
+		t.Fatal(err, f.commands)
+	}
+	if err := os.Remove(rootPath(f.env.Root, "/etc/ssh/authorized_keys/bob/obstruction")); err != nil {
+		t.Fatal(err)
+	}
+	if err := DeleteUser(context.Background(), f.env, "bob"); err != nil || !reflect.DeepEqual(f.commands, []host.Command{userCall("userdel", "--remove", "bob"), userCall("groupdel", "bob")}) {
+		t.Fatal(err, f.commands)
 	}
 }
 

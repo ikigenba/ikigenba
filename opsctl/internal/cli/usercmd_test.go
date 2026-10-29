@@ -54,7 +54,10 @@ func newUserCLI(t *testing.T) *userCLIFixture {
 		if f.run != nil {
 			return f.run(c)
 		}
-		return host.Result{Stdout: []byte("name **Never logged in**\n")}, nil
+		if c.Name == "journalctl" {
+			return host.Result{ExitCode: 1}, nil
+		}
+		return host.Result{}, nil
 	}
 	f.write("/etc/passwd", "acme:x:301:301::/srv/acme:/usr/sbin/nologin\nalice:x:1001:1001::/home/alice:/bin/bash\nbob:x:1002:1002::/home/bob:/bin/bash\n")
 	f.write("/etc/group", "shell:x:400:alice,bob\nacme:x:301:alice\nalice:x:1001:\nbob:x:1002:\n")
@@ -211,12 +214,18 @@ func TestUserListJSON(t *testing.T) {
 	// R-5PNY-6IYD R-A9FV-RBCX
 	f := newUserCLI(t)
 	f.write("/etc/ssh/authorized_keys/alice", cliUserKey)
-	for _, fraction := range []string{"", ".125"} {
+	for _, timestamp := range []string{"1793282580000000", "1793282580123456"} {
 		f.run = func(c host.Command) (host.Result, error) {
-			if reflect.DeepEqual(c.Args, []string{"-u", "alice"}) {
-				return host.Result{Stdout: []byte("alice pts/0 host Thu Oct 29 09:03:00" + fraction + " -0500 2026\n")}, nil
+			if c.Name != "journalctl" {
+				t.Fatalf("unexpected command %+v", c)
 			}
-			return host.Result{Stdout: []byte("bob **Never logged in**\n")}, nil
+			if reflect.DeepEqual(c.Args, []string{"--unit=sshd.service", "--output=json", "--reverse", "--lines=1", "--quiet", "--no-pager", "--case-sensitive", "--grep=^Accepted publickey for alice from "}) {
+				return host.Result{Stdout: []byte("{\"__REALTIME_TIMESTAMP\":\"" + timestamp + "\"}\n")}, nil
+			}
+			if !reflect.DeepEqual(c.Args, []string{"--unit=sshd.service", "--output=json", "--reverse", "--lines=1", "--quiet", "--no-pager", "--case-sensitive", "--grep=^Accepted publickey for bob from "}) {
+				t.Fatalf("unexpected journal arguments %+v", c.Args)
+			}
+			return host.Result{ExitCode: 1}, nil
 		}
 		code, out, err := f.invoke("list")
 		want := "{\"users\":[{\"name\":\"alice\",\"groups\":[\"acme\"],\"keys\":[\"" + cliUserKey + "\"],\"state\":\"" + accounts.StateActive + "\",\"last_sign_in\":\"2026-10-29T14:03:00Z\"},{\"name\":\"bob\",\"groups\":[],\"keys\":[],\"state\":\"" + accounts.StateLocked + "\",\"last_sign_in\":null}]}\n"
