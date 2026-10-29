@@ -51,6 +51,7 @@ const (
 	RefuseNoWebsite            string = "The candidate has no website."
 	RefuseOffSite              string = "The URL is outside the candidate website."
 	RefusePageCap              string = "The candidate already holds 20 distinct URLs."
+	RefuseUnreadable           string = "The page yielded no readable text."
 	RefuseFetch                string = "The page could not be fetched."
 )
 
@@ -795,7 +796,7 @@ func engineRefusal(r *passes.Refusal) mcp.Result {
 	return refuse(r.Word)
 }
 func pageOf(p store.Page) Page {
-	return Page{p.Number, p.URL, p.Title, p.Size, stamp(p.Fetched), p.UserID, p.UserEmail, urls.PagePath(p.Candidate, p.Number)}
+	return Page{p.Number, p.URL, p.Title, p.Size, p.Reason, stamp(p.Fetched), p.UserID, p.UserEmail, urls.PagePath(p.Candidate, p.Number)}
 }
 func addPage(ctx context.Context, c identity.Caller, cfg Config, a AddPageArgs) mcp.Result {
 	if !store.ValidCandidateID(a.Candidate) {
@@ -847,7 +848,7 @@ func addPage(ctx context.Context, c identity.Caller, cfg Config, a AddPageArgs) 
 	if !website.OnSite(f.WebsiteURL, pg.URL) {
 		return mcp.ErrorResult(passes.RefusalInvalid + ": " + RefuseOffSite)
 	}
-	p, err := cfg.Store.AddPage(ctx, store.Page{Candidate: a.Candidate, URL: pg.URL, Title: pg.Title, Text: pg.Text, Size: pg.Size, UserID: c.UserID, UserEmail: c.Email})
+	p, err := cfg.Store.AddPage(ctx, store.Page{Candidate: a.Candidate, URL: pg.URL, Title: pg.Title, Text: pg.Text, Reason: pg.Reason, Size: pg.Size, UserID: c.UserID, UserEmail: c.Email})
 	if errors.Is(err, store.ErrPageCap) {
 		return mcp.ErrorResult(passes.RefusalInvalid + ": " + RefusePageCap)
 	}
@@ -856,6 +857,9 @@ func addPage(ctx context.Context, c identity.Caller, cfg Config, a AddPageArgs) 
 	}
 	if err != nil {
 		return failure(err)
+	}
+	if pg.Reason != "" {
+		return mcp.ErrorResult(passes.RefusalUnreadable + ": " + RefuseUnreadable + " " + pg.Reason)
 	}
 	return answer(pageOf(p))
 }

@@ -45,7 +45,7 @@ func (f *fixture) waitEnrich(id string) store.Pass {
 	}
 }
 
-// R-ZCZ9-BW58 R-2ZGI-9CHJ R-EXPT-JIOL R-050Y-4M77 R-F05M-B25Z
+// R-ZCZ9-BW58 R-2ZGI-9CHJ R-XQDE-XQVA R-050Y-4M77 R-F05M-B25Z
 func TestEnrichSchemaAndValidation(t *testing.T) {
 	f := newFixture(t)
 	infos, err := f.client.ListTools(t.Context(), caller)
@@ -70,7 +70,7 @@ func TestEnrichSchemaAndValidation(t *testing.T) {
 			t.Fatal(r)
 		}
 		text := decode(t, r).Content[0].Text
-		for _, word := range []string{passes.RefusalBusy, passes.RefusalInvalid, passes.RefusalNotFound, passes.RefusalStopping, passes.RefusalUnavailable} {
+		for _, word := range []string{passes.RefusalBusy, passes.RefusalInvalid, passes.RefusalNotFound, passes.RefusalStopping, passes.RefusalUnavailable, passes.RefusalUnreadable} {
 			if text == word || strings.HasPrefix(text, word+":") {
 				t.Fatal(text)
 			}

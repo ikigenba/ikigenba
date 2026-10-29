@@ -285,9 +285,9 @@ type EnrichmentRow struct {
 
 // PageRow supplies a candidate's newest copy of one URL.
 type PageRow struct {
-	Number, Path, URL, Title       string
-	Size                           int64
-	Fetched, FetchedText, By, User string
+	Number, Path, URL, Title               string
+	Size                                   int64
+	Reason, Fetched, FetchedText, By, User string
 }
 
 // PageData supplies one kept page's text.
@@ -298,9 +298,9 @@ type PageData struct {
 
 // PageView supplies a kept page's stored contents.
 type PageView struct {
-	Candidate, Name, Number, URL, Title  string
-	Size                                 int64
-	Fetched, FetchedText, By, User, Text string
+	Candidate, Name, Number, URL, Title          string
+	Size                                         int64
+	Reason, Fetched, FetchedText, By, User, Text string
 }
 
 // BriefView supplies the newest successful recorded business brief.

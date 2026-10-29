@@ -7,9 +7,10 @@ import (
 
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-R9XQ-WPK7 R-RDLG-20SA R-WNFA-Q8TO
+// R-WDZY-GZR8 R-RDLG-20SA R-WNFA-Q8TO
 func TestMergeMovesAllPageCopiesAndSplitPreservesThem(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -20,7 +21,7 @@ func TestMergeMovesAllPageCopiesAndSplitPreservesThem(t *testing.T) {
 	saved := []store.Page{}
 	for _, id := range []string{survivor, other} {
 		for i := 0; i < store.PageCap; i++ {
-			p, err := f.s.AddPage(ctx, store.Page{Candidate: id, URL: fmt.Sprintf("https://%s.test/%d", id, i), Title: fmt.Sprint(i), Text: "preserved text " + id, Size: 123, UserID: "owner", UserEmail: "owner@example.test"})
+			p, err := f.s.AddPage(ctx, store.Page{Candidate: id, URL: fmt.Sprintf("https://%s.test/%d", id, i), Title: fmt.Sprint(i), Reason: website.ReasonScripted, Size: 123, UserID: "owner", UserEmail: "owner@example.test"})
 			contractOK(t, err)
 			saved = append(saved, p)
 		}
@@ -83,7 +84,7 @@ func TestMergeMovesAllPageCopiesAndSplitPreservesThem(t *testing.T) {
 	contractEqual(t, got, before)
 }
 
-// R-R9XQ-WPK7
+// R-WDZY-GZR8
 func TestMergeChoosesNewestSharedURLWithoutDiscardingCopies(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

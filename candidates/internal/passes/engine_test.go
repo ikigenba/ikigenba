@@ -275,7 +275,7 @@ func assertRefusal(t *testing.T, p store.Pass, err error, word string) {
 	}
 }
 
-// R-42U6-R09F R-84KF-D8N0  R-SOKW-PW7E R-SS8L-V7FH
+// R-42U6-R09F R-2QQP-5KPE  R-SOKW-PW7E R-SS8L-V7FH
 func TestRecordContract(t *testing.T) {
 	t.Parallel()
 	const batch16 uint16 = passes.BatchSize
@@ -283,12 +283,12 @@ func TestRecordContract(t *testing.T) {
 	if batch16 != 500 || batch64 != 500 || passes.BatchSize != 500 || passes.Busy == "" || passes.Stopping == "" || passes.Busy == passes.Stopping || strings.Contains(passes.Busy+passes.Stopping, "\n") {
 		t.Fatal("constants")
 	}
-	for _, word := range []string{passes.RefusalNotFound, passes.RefusalInvalid, passes.RefusalBusy, passes.RefusalStopping, passes.RefusalUnavailable} {
+	for _, word := range []string{passes.RefusalNotFound, passes.RefusalInvalid, passes.RefusalBusy, passes.RefusalStopping, passes.RefusalUnavailable, passes.RefusalUnreadable} {
 		if (&passes.Refusal{Word: word}).Error() != word {
 			t.Fatal(word)
 		}
 	}
-	if !reflect.DeepEqual([]string{passes.RefusalNotFound, passes.RefusalInvalid, passes.RefusalBusy, passes.RefusalStopping, passes.RefusalUnavailable}, []string{"not_found", "invalid", "busy", "stopping", "unavailable"}) {
+	if !reflect.DeepEqual([]string{passes.RefusalNotFound, passes.RefusalInvalid, passes.RefusalBusy, passes.RefusalStopping, passes.RefusalUnavailable, passes.RefusalUnreadable}, []string{"not_found", "invalid", "busy", "stopping", "unavailable", "unreadable"}) {
 		t.Fatal("word")
 	}
 	start := time.Date(2001, 2, 3, 4, 5, 6, 0, time.FixedZone("east", 3600))

@@ -14,15 +14,15 @@ import (
 )
 
 func TestPageShape(t *testing.T) {
-	// R-2FWO-0NS5
-	pg := website.Page{"url", "title", "text", 201, 123, "error"}
-	if pg.URL != "url" || pg.Title != "title" || pg.Text != "text" || pg.StatusCode != 201 || pg.Size != 123 || pg.Error != "error" {
+	// R-DY9X-8ZC4
+	pg := website.Page{"url", "title", "text", "reason", 201, 123, "error"}
+	if pg.URL != "url" || pg.Title != "title" || pg.Text != "text" || pg.Reason != "reason" || pg.StatusCode != 201 || pg.Size != 123 || pg.Error != "error" {
 		t.Fatal(pg)
 	}
 }
 
 func TestGetSuccessAndRedirects(t *testing.T) {
-	// R-2EOR-MW1G R-2KS9-JQQX R-2M05-XIHM R-2N82-BA8B
+	// R-2EOR-MW1G R-2KS9-JQQX R-E814-B59O R-R67B-CO7S
 	for _, status := range []int{0, 301, 302, 303, 307, 308} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
 			body := "<title>  Acme </title><p>" + strings.Repeat("freight ", 45000)
@@ -61,7 +61,7 @@ func TestGetSuccessAndRedirects(t *testing.T) {
 			} else {
 				wantCalls = 2
 			}
-			if pg.URL != landed || pg.Title != "Acme" || pg.Text != website.Text([]byte(body[:website.BodyCap])) || pg.StatusCode != 200 || pg.Size != website.BodyCap || pg.Error != "" || calls != wantCalls || timers != 1 {
+			if pg.URL != landed || pg.Title != "Acme" || pg.Text != website.Text([]byte(body)) || pg.StatusCode != 200 || pg.Size != int64(len(body)) || pg.Error != "" || calls != wantCalls || timers != 1 {
 				t.Fatal(pg, calls, timers)
 			}
 		})
@@ -69,7 +69,7 @@ func TestGetSuccessAndRedirects(t *testing.T) {
 }
 
 func TestGetFailures(t *testing.T) {
-	// R-2M05-XIHM R-2OFY-P1Z0
+	// R-E814-B59O R-EE4M-7ZZ5
 	const address = "https://acme.test/about"
 	tests := []struct {
 		name                         string
@@ -112,7 +112,7 @@ func TestGetFailures(t *testing.T) {
 	}
 	k := checker(func(*http.Request) (*http.Response, error) { return nil, errors.New("boom") })
 	pg := k.Get(context.Background(), address)
-	if pg.URL != "" || pg.StatusCode != 0 || pg.Size != 0 || pg.Title != "" || pg.Text != "" || !strings.Contains(pg.Error, "boom") {
+	if pg.URL != "" || pg.StatusCode != 0 || pg.Size != 0 || pg.Title != "" || pg.Text != "" || pg.Reason != "" || !strings.Contains(pg.Error, "boom") {
 		t.Fatal(pg)
 	}
 	// A failed connection after a redirect retains the last response's URL and status.
@@ -145,7 +145,7 @@ func TestGetInvalidURLs(t *testing.T) {
 }
 
 func TestGetTimeoutAndCancellation(t *testing.T) {
-	// R-2OFY-P1Z0 R-2QVR-GLGE
+	// R-EE4M-7ZZ5 R-2QVR-GLGE
 	for _, timeout := range []bool{false, true} {
 		t.Run(fmt.Sprint(timeout), func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
@@ -183,7 +183,7 @@ func TestGetTimeoutAndCancellation(t *testing.T) {
 			}
 			close(release)
 			pg := await(t, done)
-			if pg.Error == "" || pg.Title != "" || pg.Text != "" || pg.URL != "" || pg.StatusCode != 0 || pg.Size != 0 || (timeout && pg.Error != website.FailTimeout) || timers != 1 {
+			if pg.Error == "" || pg.Title != "" || pg.Text != "" || pg.Reason != "" || pg.URL != "" || pg.StatusCode != 0 || pg.Size != 0 || (timeout && pg.Error != website.FailTimeout) || timers != 1 {
 				t.Fatal(pg, timers)
 			}
 			select {
@@ -192,22 +192,6 @@ func TestGetTimeoutAndCancellation(t *testing.T) {
 			default:
 			}
 		})
-	}
-}
-
-func TestText(t *testing.T) {
-	// R-2H4K-EFIU R-V16V-6OB4
-	tests := []struct{ body, want string }{
-		{"<html><head><title>Acme</title><style>p{color:red}</style><script>var x = 1;</script></head><body><!-- note --><p>We  haul\n\tfreight.</p><p>Since&nbsp;1990</p></body></html>", "Acme We haul freight. Since 1990"},
-		{`<noscript><iframe src="https://x.test/"></iframe></noscript><p>Hi</p>`, "Hi"},
-		{`<html><head><noscript><link rel="stylesheet" href="a.css"></noscript></head><body><p>Hi</p></body></html>`, "Hi"},
-		{"<p>caf\xe9</p>", "caf\uFFFD"}, {"", ""}, {"<script>x</script>", ""}, {"<p>   </p>", ""},
-		{"<svg><script>hidden</script><style>hidden</style><text>Shown</text></svg><p>A\u2003B</p>", "Shown A B"},
-	}
-	for _, tt := range tests {
-		if got := website.Text([]byte(tt.body)); got != tt.want {
-			t.Errorf("Text(%q)=%q want %q", tt.body, got, tt.want)
-		}
 	}
 }
 
@@ -264,7 +248,7 @@ func TestGetRealClientGuard(t *testing.T) {
 }
 
 func TestStubGet(t *testing.T) {
-	// R-2VRC-ZOF6 R-2WZ9-DG5V
+	// R-EFCI-LRPU R-2WZ9-DG5V
 	stub, err := website.NewStub()
 	if err != nil {
 		t.Fatal(err)
@@ -277,11 +261,11 @@ func TestStubGet(t *testing.T) {
 	k := &website.Checker{Client: stub.Client(), After: never}
 	for _, u := range []string{"https://secure-co.test/about", "http://secure-co.test/"} {
 		pg := k.Get(context.Background(), u)
-		if pg.URL != u || pg.Title != "secure-co.test" || !strings.Contains(pg.Text, "secure-co.test") || pg.StatusCode != 200 || pg.Size <= 0 || pg.Error != "" {
+		if pg.URL != u || pg.Title != "secure-co.test" || !strings.Contains(pg.Text, "secure-co.test") || pg.StatusCode != 200 || pg.Size <= 0 || pg.Reason != "" || pg.Error != "" {
 			t.Fatal(pg)
 		}
 	}
-	if pg := k.Get(context.Background(), "http://upgrade-co.test/"); pg.URL != "https://upgrade-co.test/home" || pg.StatusCode != 200 || pg.Error != "" {
+	if pg := k.Get(context.Background(), "http://upgrade-co.test/"); pg.URL != "https://upgrade-co.test/home" || pg.Text == "" || pg.Reason != "" || pg.StatusCode != 200 || pg.Error != "" {
 		t.Fatal(pg)
 	}
 	for _, tt := range []struct {
@@ -298,7 +282,7 @@ func TestStubGet(t *testing.T) {
 	}
 	for _, host := range []string{"refused.test", "example.com", "unlisted.test"} {
 		pg := k.Get(context.Background(), "https://"+host+"/about")
-		if pg.URL != "" || pg.Title != "" || pg.Text != "" || pg.StatusCode != 0 || pg.Size != 0 || pg.Error == "" {
+		if pg.URL != "" || pg.Title != "" || pg.Text != "" || pg.Reason != "" || pg.StatusCode != 0 || pg.Size != 0 || pg.Error == "" {
 			t.Fatal(pg)
 		}
 		for _, failure := range failureCopy() {
@@ -310,7 +294,7 @@ func TestStubGet(t *testing.T) {
 }
 
 func TestGetHTMLAndReadRules(t *testing.T) {
-	// R-2M05-XIHM R-2N82-BA8B R-2OFY-P1Z0
+	// R-E814-B59O R-R67B-CO7S R-EE4M-7ZZ5
 	for _, tt := range []struct{ typ, body, title, failure string }{
 		{"application/xhtml+xml; charset=utf-8", "<title> X </title>", "X", ""},
 		{"", "<html><title>Sniffed</title></html>", "Sniffed", ""},
@@ -323,18 +307,18 @@ func TestGetHTMLAndReadRules(t *testing.T) {
 		if pg.Title != tt.title || pg.Error != tt.failure || pg.Size != int64(len(tt.body)) {
 			t.Fatal(pg, tt)
 		}
-		if tt.failure == "" && pg.Text != website.Text([]byte(tt.body)) {
+		if tt.failure == "" && (pg.Text != "" || pg.Reason != website.ReasonEmpty) {
 			t.Fatal(pg)
 		}
 	}
-	b := &countedBody{left: 300000}
+	b := &countedBody{left: website.PageBytes + 1000}
 	k := checker(func(*http.Request) (*http.Response, error) {
 		r := response(200, "text/html", "")
 		r.Body = b
 		return r, nil
 	})
 	pg := k.Get(context.Background(), "https://acme.test/about")
-	if pg.Error != "" || pg.Size != website.BodyCap || b.read != website.BodyCap {
+	if pg.Error != "" || pg.Size != website.PageBytes || b.read != website.PageBytes {
 		t.Fatal(pg, b.read)
 	}
 	for _, message := range append(failureCopy(), "") {

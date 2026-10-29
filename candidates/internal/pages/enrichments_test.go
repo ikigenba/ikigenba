@@ -91,7 +91,7 @@ func capturedCandidate(t *testing.T, cfg Config, id string) CandidateData {
 	return got
 }
 
-// R-9SBD-VETV R-9IK6-T8WB R-8QIQ-63EB
+// R-9SBD-VETV R-ARMU-FANF R-8QIQ-63EB
 func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()

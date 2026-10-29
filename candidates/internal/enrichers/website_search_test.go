@@ -88,7 +88,7 @@ func TestWebsiteSearchShapes(t *testing.T) {
 	}
 }
 
-// R-7YK3-FGQV R-U0BN-X0UW
+// R-7YK3-FGQV R-T4IA-Y6HA
 func TestWebsiteSearchInputs(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	s := enrichers.Subject{People: []sources.Sourced[sources.Person]{{Value: sources.Person{Name: "Ann", Role: "owner"}}, {Value: sources.Person{Name: "Bob"}}, {Value: sources.Person{Name: "Ann", Role: "owner"}}}, ID: "candidate", Name: "Acme", City: "Sandstone", State: "MN", Street: "Main", Zip: "zip", Phone: "phone", Email: "Ops@Acme.test", Links: []enrichers.Link{{Reading: sources.Reading{People: []sources.Person{{Name: "Ann", Role: "owner"}, {Name: "Bob"}, {Name: "Ann", Role: "owner"}}}}, {Gone: true, Reading: sources.Reading{People: []sources.Person{{Name: "Gone"}}}}}, Facts: &enrichers.LinkFound{Categories: []enrichers.Category{{Name: "omit", Source: enrichers.KindBrief}, {Name: "keep", Source: "source"}}}}
@@ -468,7 +468,7 @@ func TestWebsiteSearchEmptySiteFingerprint(t *testing.T) {
 	}
 }
 
-// R-U0BN-X0UW R-ASLA-XANV
+// R-T4IA-Y6HA R-ASLA-XANV
 func TestWebsiteSearchEmptySiteInput(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	for _, source := range []string{"", "check", "Search", "search"} {

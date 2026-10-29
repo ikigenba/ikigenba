@@ -252,7 +252,7 @@ func TestParkRulesWalkCeiling(t *testing.T) {
 	}
 }
 
-// R-EWHX-5QXW R-F05M-B25Z R-OLYR-WM1W
+// R-XMPP-SFN7 R-F05M-B25Z R-OLYR-WM1W
 func TestAllToolsNormalizeStoreFailureWithoutPlaces(t *testing.T) {
 	var requests atomic.Int64
 	pc := &places.Client{HTTP: &http.Client{Transport: websiteTransport(func(*http.Request) (*http.Response, error) { requests.Add(1); return nil, nil })}, Key: "fixture-key", After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }}

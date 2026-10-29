@@ -55,7 +55,7 @@ func TestSearchEnrichmentProjection(t *testing.T) {
 	}
 }
 
-// R-9IK6-T8WB R-8PAT-SBNM R-8QIQ-63EB
+// R-ARMU-FANF R-8PAT-SBNM R-8QIQ-63EB
 func TestSearchWebsiteCandidateAndMember(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	_, ids, err := cfg.Store.Attach(t.Context(), "run", false, []store.Observation{{Scraper: "fixture", SourceID: "row", Digest: "digest", Reading: sources.Reading{Name: "search-business", NameKey: "search-business"}}})
@@ -203,7 +203,7 @@ func TestWebsiteSearchDecisionHistory(t *testing.T) {
 	}
 }
 
-// R-9IK6-T8WB
+// R-ARMU-FANF
 // R-4A2C-9CNO
 func TestCandidateAndMemberViewShapes(_ *testing.T) {
 	_ = struct {
@@ -239,9 +239,9 @@ func TestCandidateAndMemberViewShapes(_ *testing.T) {
 		Created, CreatedText, Updated, UpdatedText                                                                          string
 	}(CandidateView{})
 	_ = struct {
-		Number, Path, URL, Title       string
-		Size                           int64
-		Fetched, FetchedText, By, User string
+		Number, Path, URL, Title               string
+		Size                                   int64
+		Reason, Fetched, FetchedText, By, User string
 	}(PageRow{})
 	_ = struct{ Kind, ProspectList, ProspectListName, By, User, At, AtText, Why string }(RejectRecordRow{})
 	_ = struct {

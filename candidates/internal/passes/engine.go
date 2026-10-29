@@ -25,6 +25,9 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
+// RefusalUnreadable reports a kept page without readable text.
+const RefusalUnreadable = "unreadable"
+
 // Config supplies the state, source registry, and sibling and event clients.
 type Config struct {
 	Store     *store.Store

@@ -49,7 +49,7 @@ func TestFormatting(t *testing.T) {
 	}
 }
 
-// R-5DEB-1HUN R-9IK6-T8WB R-QNJT-WLSZ R-QCKQ-GO4Q R-4ZA6-4B1H
+// R-5DEB-1HUN R-ARMU-FANF R-QNJT-WLSZ R-QCKQ-GO4Q R-4ZA6-4B1H
 func TestTemplateDataShape(t *testing.T) {
 	_ = struct {
 		Source, Low, High, Confidence, Filed, FiledText string

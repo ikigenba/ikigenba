@@ -128,7 +128,7 @@ func targetEngine(f *fixture, pc *prompts.Client, after func(time.Duration) <-ch
 	f.eng = passes.New(passes.Config{Store: f.st, Scrapes: f.sc, Prompts: pc, Telemetry: f.w, Events: f.em, After: after})
 }
 
-// R-Z83N-ST6G R-84KF-D8N0  R-SOKW-PW7E R-SS8L-V7FH
+// R-Z83N-ST6G R-2QQP-5KPE  R-SOKW-PW7E R-SS8L-V7FH
 func TestTargetRecordAndSchedulingValues(t *testing.T) {
 	t.Parallel()
 	if passes.RunsInFlight != 4 || passes.StartTries != 20 || passes.PollInterval != 5*time.Second || passes.QueueWait != 30*time.Second || passes.NoPrompt == "" || strings.Contains(passes.NoPrompt, "\n") {

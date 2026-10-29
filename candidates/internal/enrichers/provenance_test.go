@@ -251,7 +251,7 @@ func TestProvenanceValidation(t *testing.T) {
 	}
 }
 
-// R-B607-4RTI R-U0BN-X0UW R-AYOS-U5DC
+// R-B607-4RTI R-T4IA-Y6HA R-T3AE-KEQL
 func TestPickedSubjectInputs(t *testing.T) {
 	for _, k := range []*website.Checker{nil, {}} {
 		w := enrichers.WebsiteCheck{Checker: k}

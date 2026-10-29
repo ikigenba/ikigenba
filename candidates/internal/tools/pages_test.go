@@ -25,7 +25,7 @@ func pageChecker(requests *atomic.Int64) *website.Checker {
 	return &website.Checker{Client: &http.Client{Transport: websiteTransport(func(r *http.Request) (*http.Response, error) {
 		requests.Add(1)
 		h := http.Header{"Content-Type": []string{"text/html"}}
-		code, body := 200, "<html><head><title>fixture title</title></head><body>fixture content</body></html>"
+		code, body := 200, "<html><head><title>fixture title</title></head><body>"+strings.Repeat("fixture content ", 30)+"</body></html>"
 		switch r.URL.Path {
 		case "/missing":
 			code = 404
@@ -56,10 +56,10 @@ func setSite(t *testing.T, f *fixture, id, site string) {
 	}
 }
 func wantPage(p store.Page) tools.Page {
-	return tools.Page{p.Number, p.URL, p.Title, p.Size, stamp(p.Fetched), p.UserID, p.UserEmail, urls.PagePath(p.Candidate, p.Number)}
+	return tools.Page{p.Number, p.URL, p.Title, p.Size, p.Reason, stamp(p.Fetched), p.UserID, p.UserEmail, urls.PagePath(p.Candidate, p.Number)}
 }
 
-// R-OA9E-OG3G R-OCP7-FZKU R-OGCW-LASX R-OK0L-QM10 R-QM0K-ABC4
+// R-OA9E-OG3G R-OCP7-FZKU R-XK9X-0W5T R-OK0L-QM10 R-XNXM-67DW
 func TestPageSchemaAndJSON(t *testing.T) {
 	f := newFixture(t)
 	infos, err := f.client.ListTools(t.Context(), caller)
@@ -76,13 +76,13 @@ func TestPageSchemaAndJSON(t *testing.T) {
 	if !strings.Contains(capSentence, capText) || strings.TrimSpace(tools.RefuseFetch) != tools.RefuseFetch {
 		t.Fatal("invalid refusal copy")
 	}
-	p := tools.Page{1, "u", "", 2, "f", "b", "", "p"}
+	p := tools.Page{1, "u", "", 2, "", "f", "b", "", "p"}
 	b := encodedJSON(p)
 	if !reflect.DeepEqual(objectKeys(t, b), []string{"number", "url", "size", "fetched", "by", "path"}) {
 		t.Fatal(string(b))
 	}
-	p.Title, p.Email = "chosen-title", "chosen-email"
-	if !reflect.DeepEqual(objectKeys(t, encodedJSON(p)), []string{"number", "url", "title", "size", "fetched", "by", "email", "path"}) {
+	p.Title, p.Email, p.Reason = "chosen-title", "chosen-email", website.ReasonScripted
+	if !reflect.DeepEqual(objectKeys(t, encodedJSON(p)), []string{"number", "url", "title", "size", "reason", "fetched", "by", "email", "path"}) {
 		t.Fatal(p)
 	}
 	for _, a := range []map[string]any{{"candidate": "c"}, {"url": "u"}, {"candidate": "c", "url": "u", "extra": true}} {
@@ -149,7 +149,7 @@ func TestAddPageRefusals(t *testing.T) {
 	}
 }
 
-// R-Q02D-EFZM R-QM0K-ABC4 R-FF6L-AG28
+// R-XRLB-BILZ R-XNXM-67DW R-XP5I-JZ4L
 func TestAddPageCopiesAndCandidateHistory(t *testing.T) {
 	var requests atomic.Int64
 	k := pageChecker(&requests)
@@ -292,5 +292,122 @@ func TestSiteTextProjection(t *testing.T) {
 		if !reflect.DeepEqual(objectKeys(t, encodedJSON(e)), []string{"kind", "source", "inputs", "found", "cost", "at"}) {
 			t.Fatal(e)
 		}
+	}
+}
+
+// R-XLHT-ENWI R-57N2-LEHE R-XRLB-BILZ R-XNXM-67DW R-XP5I-JZ4L R-XMPP-SFN7
+func TestAddUnreadablePageKeepsCopyAndLaterReplacesIt(t *testing.T) {
+	if tools.RefuseUnreadable == "" || strings.TrimSpace(tools.RefuseUnreadable) != tools.RefuseUnreadable || strings.ContainsAny(tools.RefuseUnreadable, "\r\n") {
+		t.Fatal("unreadable copy")
+	}
+	for _, copy := range []string{tools.RefuseNotFound, tools.RefuseInvalid, tools.RefuseBusy, tools.RefuseStopping, tools.RefuseUnavailable, tools.RefuseNoWebsite, tools.RefuseOffSite, tools.RefusePageCap, tools.RefuseFetch} {
+		if tools.RefuseUnreadable == copy {
+			t.Fatal("duplicate refusal copy")
+		}
+	}
+	for _, reason := range []string{website.ReasonScripted, website.ReasonRedirect, website.ReasonEmpty} {
+		t.Run(reason, func(t *testing.T) {
+			readable := false
+			body := "<html><head><title>Unreadable title</title></head><body>short</body></html>"
+			if reason == website.ReasonScripted {
+				body = "<html><head><title>Unreadable title</title></head><body><script>application()</script></body></html>"
+			}
+			if reason == website.ReasonRedirect {
+				body = `<html><head><title>Unreadable title</title><meta http-equiv="refresh" content="0;url=/next"></head><body>short</body></html>`
+			}
+			checker := &website.Checker{Client: &http.Client{Transport: websiteTransport(func(r *http.Request) (*http.Response, error) {
+				content := body
+				if readable {
+					content = "<html><head><title>Readable title</title></head><body>" + strings.Repeat("Readable business content. ", 20) + "</body></html>"
+				}
+				header := http.Header{"Content-Type": []string{"text/html"}}
+				code := http.StatusOK
+				if r.URL.Path == "/off" {
+					code = http.StatusFound
+					header.Set("Location", "https://other.test/landed")
+				}
+				return &http.Response{StatusCode: code, Header: header, Body: io.NopCloser(strings.NewReader(content)), Request: r}, nil
+			})}, After: immediateWebsite}
+			f := fixtureWithWebsite(t, nil, checker)
+			id := f.seed(1)[0]
+			setSite(t, f, id, "https://acme.test/")
+			url := "https://acme.test/unreadable"
+			pg := checker.Get(t.Context(), url)
+			if pg.Reason != reason || pg.Text != "" || pg.Error != "" {
+				t.Fatal(pg)
+			}
+			refusal(t, f.callAs(other, "add_page", tools.AddPageArgs{Candidate: id, URL: url}), passes.RefusalUnreadable, tools.RefuseUnreadable+" "+reason)
+			pages, err := f.st.Pages(t.Context(), id)
+			if err != nil || len(pages) != 1 {
+				t.Fatal(pages, err)
+			}
+			p := pages[0]
+			if p.URL != url || p.Title != pg.Title || p.Size != pg.Size || p.Reason != reason || p.Text != "" || p.UserID != other.UserID || p.UserEmail != other.Email {
+				t.Fatal(p, pg)
+			}
+			stored, err := f.st.GetPage(t.Context(), id, p.Number)
+			if err != nil || stored.Text != "" || stored.Reason != reason {
+				t.Fatal(stored, err)
+			}
+			detail := decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: id}))
+			if len(detail.Pages) != 1 || detail.Pages[0] != wantPage(p) {
+				t.Fatal(detail.Pages)
+			}
+			refusal(t, f.call("add_page", tools.AddPageArgs{Candidate: id, URL: "https://acme.test/off"}), passes.RefusalInvalid, tools.RefuseOffSite)
+			pages, err = f.st.Pages(t.Context(), id)
+			if err != nil || len(pages) != 1 {
+				t.Fatal(pages, err)
+			}
+			readable = true
+			result := f.call("add_page", tools.AddPageArgs{Candidate: id, URL: url})
+			newer := decodeList[tools.Page](t, result)
+			if result.IsError() || newer.Reason != "" || newer.Number <= p.Number {
+				t.Fatal(newer)
+			}
+			detail = decodeList[tools.Detail](t, f.call("candidate", tools.CandidateArgs{Candidate: id}))
+			if len(detail.Pages) != 1 || detail.Pages[0].Reason != "" || detail.Pages[0].Number != newer.Number {
+				t.Fatal(detail.Pages)
+			}
+			var wire map[string]json.RawMessage
+			if err := json.Unmarshal(encodedJSON(detail.Pages[0]), &wire); err != nil {
+				t.Fatal(err)
+			}
+			if _, exists := wire["reason"]; exists {
+				t.Fatal("readable reason present")
+			}
+			passesHeld, err := f.st.ListPasses(t.Context(), "", "", 100)
+			if err != nil || len(passesHeld) != 0 {
+				t.Fatal(passesHeld, err)
+			}
+		})
+	}
+}
+
+// R-XV90-GTU2
+func TestUnreadablePageCountsTowardCap(t *testing.T) {
+	var requests atomic.Int64
+	checker := &website.Checker{Client: &http.Client{Transport: websiteTransport(func(r *http.Request) (*http.Response, error) {
+		requests.Add(1)
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/html"}}, Body: io.NopCloser(strings.NewReader("<html><body>short</body></html>")), Request: r}, nil
+	})}, After: immediateWebsite}
+	f := fixtureWithWebsite(t, nil, checker)
+	id := f.seed(1)[0]
+	setSite(t, f, id, "https://acme.test/")
+	for i := range store.PageCap - 1 {
+		_, err := f.st.AddPage(t.Context(), store.Page{Candidate: id, URL: fmt.Sprintf("https://acme.test/%d", i), UserID: "owner"})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	args := tools.AddPageArgs{Candidate: id, URL: "https://acme.test/unreadable"}
+	refusal(t, f.call("add_page", args), passes.RefusalUnreadable, tools.RefuseUnreadable+" "+website.ReasonEmpty)
+	count := requests.Load()
+	refusal(t, f.call("add_page", tools.AddPageArgs{Candidate: id, URL: "https://acme.test/overflow"}), passes.RefusalInvalid, tools.RefusePageCap)
+	if requests.Load() != count {
+		t.Fatal("overflow fetched")
+	}
+	refusal(t, f.call("add_page", args), passes.RefusalUnreadable, tools.RefuseUnreadable+" "+website.ReasonEmpty)
+	if requests.Load() != count+1 {
+		t.Fatal("held URL not fetched")
 	}
 }

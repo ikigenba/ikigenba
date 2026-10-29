@@ -14,7 +14,7 @@ func keptPage(id, url string) store.Page {
 	return store.Page{Candidate: id, URL: url, Title: "a title", Text: "page content", Size: 123, UserID: "owner", UserEmail: "owner@example.test"}
 }
 
-// R-NSEM-EBP8 R-O5TI-LSUV R-OAP4-4VTN R-OBX0-INKC R-OD4W-WFB1
+// R-ZLJX-D1G1 R-ZP7M-ICO4 R-OAP4-4VTN R-OBX0-INKC R-OD4W-WFB1
 func TestPageCopiesPersistAndListNewest(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -34,12 +34,12 @@ func TestPageCopiesPersistAndListNewest(t *testing.T) {
 	p.Fetched = f.now.UTC().Truncate(time.Second)
 	contractEqual(t, a, p)
 	contractEqual(t, store.Page(struct {
-		Candidate         string
-		Number            int64
-		URL, Title, Text  string
-		Size              int64
-		Fetched           time.Time
-		UserID, UserEmail string
+		Candidate                string
+		Number                   int64
+		URL, Title, Text, Reason string
+		Size                     int64
+		Fetched                  time.Time
+		UserID, UserEmail        string
 	}(a)), a)
 	b, err := f.s.AddPage(ctx, keptPage(id, "https://business.test/b"))
 	contractOK(t, err)
@@ -87,7 +87,7 @@ func TestPageCopiesPersistAndListNewest(t *testing.T) {
 	contractEqual(t, counts, store.PageCount{})
 }
 
-// R-O71E-ZKLK R-O9H7-R42Y
+// R-ZQFI-W4ET R-O9H7-R42Y
 func TestPageCapValidationAndConcurrentAdds(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

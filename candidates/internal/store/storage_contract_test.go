@@ -953,7 +953,7 @@ func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	contractEqual(t, after, zipBefore)
 }
 
-// R-S06S-YWNM R-OD8H-2EDG
+// R-03UF-3LKG R-OD8H-2EDG
 func TestContractAllMethodsUnavailable(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -1010,6 +1010,8 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 		{"Pages", func(c context.Context) error { _, e := f.s.Pages(c, "missing"); return e }},
 		{"GetPage", func(c context.Context) error { _, e := f.s.GetPage(c, "missing", -1); return e }},
 		{"CountPages", func(c context.Context) error { _, e := f.s.CountPages(c, "missing"); return e }},
+		{"PendingRefetches", func(c context.Context) error { _, e := f.s.PendingRefetches(c, 0, 0); return e }},
+		{"SettleRefetch", func(c context.Context) error { return f.s.SettleRefetch(c, 0, "bad") }},
 		{"Subject", func(c context.Context) error { _, e := f.s.Subject(c, "missing"); return e }},
 		{"DueAmong", func(c context.Context) error { _, e := f.s.DueAmong(c, "invalid", []string{id}, true); return e }},
 		{"DeriveAmong", func(c context.Context) error { _, e := f.s.DeriveAmong(c, "invalid", []string{id}, true); return e }},

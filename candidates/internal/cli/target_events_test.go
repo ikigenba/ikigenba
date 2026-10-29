@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -169,7 +170,7 @@ func TestRunPassTimersHavePermittedDurationsAndScope(t *testing.T) {
 			return ch
 		}
 		h.p.HTTP = &http.Client{Transport: enrichTransport(func(r *http.Request) (*http.Response, error) {
-			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/html"}}, Body: io.NopCloser(bytes.NewBufferString("<p>fixture page</p>")), Request: r}, nil
+			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/html"}}, Body: io.NopCloser(bytes.NewBufferString("<p>" + strings.Repeat("x", website.MinChars) + "</p>")), Request: r}, nil
 		})}
 		h.start()
 		caller := identity.Caller{UserID: "page-owner"}

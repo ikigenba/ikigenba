@@ -92,12 +92,15 @@ func (Brief) Prompt() string { return PromptName(KindBrief) }
 
 // Inputs fingerprints page URLs and copy numbers without changing page order.
 func (Brief) Inputs(s Subject) string {
-	if len(s.Pages) == 0 {
-		return ""
-	}
 	lines := make([]string, 0, len(s.Pages))
 	for _, p := range s.Pages {
+		if p.Reason != "" {
+			continue
+		}
 		lines = append(lines, p.URL+"\t"+strconv.FormatInt(p.Number, 10)+"\n")
+	}
+	if len(lines) == 0 {
+		return ""
 	}
 	slices.Sort(lines)
 	sum := sha256.Sum256([]byte(strings.Join(lines, "")))
@@ -134,6 +137,9 @@ func (Brief) Input(s Subject) json.RawMessage {
 	pages := []BriefPage{}
 	used := 0
 	for _, p := range s.Pages {
+		if p.Reason != "" {
+			continue
+		}
 		text := p.Text
 		if len(text) > BriefPageBytes {
 			n := BriefPageBytes

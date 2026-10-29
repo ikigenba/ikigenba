@@ -25,6 +25,9 @@ const (
 	Timeout              = 10_000_000_000
 	BodyCap              = 262144
 	Redirects            = 5
+	PageBytes            = 8388608
+	TextBytes            = 65536
+	MinChars             = 200
 	UserAgent     string = "Mozilla/5.0 (compatible; Ikigenba website checker)"
 	FailStatus    string = "Website returned an unsuccessful status"
 	FailEmpty     string = "Website returned an empty page"
@@ -198,7 +201,7 @@ func attemptURLs(element string) []string {
 }
 
 func (k *Checker) attempt(ctx context.Context, address string) Result {
-	pg := k.fetch(ctx, address)
+	pg := k.fetch(ctx, address, BodyCap, false)
 	r := Result{State: sources.WebsiteNone, StatusCode: pg.StatusCode, Size: pg.Size, Error: pg.Error}
 	if pg.Error == "" {
 		u, _ := url.Parse(pg.URL)
@@ -207,7 +210,7 @@ func (k *Checker) attempt(ctx context.Context, address string) Result {
 	return r
 }
 
-func (k *Checker) fetch(ctx context.Context, address string) Page {
+func (k *Checker) fetch(ctx context.Context, address string, limit int64, pageText bool) Page {
 	r := Page{}
 	client := *k.Client
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
@@ -252,7 +255,7 @@ func (k *Checker) fetch(ctx context.Context, address string) Page {
 			r.Error = FailStatus
 			return r
 		}
-		body, readErr := io.ReadAll(io.LimitReader(resp.Body, BodyCap))
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, limit))
 		_ = resp.Body.Close()
 		r.Size = int64(len(body))
 		typ := resp.Header.Get("Content-Type")
@@ -270,7 +273,13 @@ func (k *Checker) fetch(ctx context.Context, address string) Page {
 		default:
 			r.URL = req.URL.String()
 			r.Title = title(body)
-			r.Text = Text(body)
+			if pageText {
+				r.Text = Text(body)
+				if beyondTitle(r.Text, r.Title) < MinChars {
+					r.Text = ""
+					r.Reason = unreadableReason(body)
+				}
+			}
 		}
 		return r
 	}

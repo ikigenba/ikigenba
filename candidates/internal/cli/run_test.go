@@ -35,6 +35,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 type runBytes struct {
@@ -1688,7 +1689,7 @@ func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	}
 	h := newRunHarness(t, t.TempDir(), runServices(t, entries))
 	h.p.HTTP = &http.Client{Transport: enrichTransport(func(*http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/html"}}, Body: io.NopCloser(strings.NewReader("<html><title>fixture</title><p>fixture page</p></html>"))}, nil
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/html"}}, Body: io.NopCloser(strings.NewReader("<html><title>fixture</title><p>" + strings.Repeat("x", website.MinChars) + "</p></html>"))}, nil
 	})}
 	websiteTimers(t, h, nil)
 	h.start()

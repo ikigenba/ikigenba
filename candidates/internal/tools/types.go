@@ -779,6 +779,7 @@ type Page struct {
 	URL     string `json:"url"`
 	Title   string `json:"title,omitempty"`
 	Size    int64  `json:"size"`
+	Reason  string `json:"reason,omitempty"`
 	Fetched string `json:"fetched"`
 	By      string `json:"by"`
 	Email   string `json:"email,omitempty"`

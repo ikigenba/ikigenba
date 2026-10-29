@@ -15,6 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 // R-L6OT-OWJS R-7R8P-4UAP R-K5WO-YTC6 R-K8CH-QCTK R-K9KE-44K9
@@ -53,7 +54,7 @@ func TestBriefClient(t *testing.T) {
 	}
 }
 
-// R-K74L-CL2V
+// R-317F-D7X9
 func TestBriefFingerprint(t *testing.T) {
 	b := enrichers.Brief{}
 	if b.Inputs(enrichers.Subject{Website: "website"}) != "" {
@@ -88,7 +89,7 @@ func TestBriefFingerprint(t *testing.T) {
 	}
 }
 
-// R-AYOS-U5DC
+// R-T3AE-KEQL
 func TestBriefInputEvidence(t *testing.T) {
 	n := int64(3)
 	s := enrichers.Subject{People: []sources.Sourced[sources.Person]{{Value: sources.Person{Name: "Ann", Role: "owner"}}, {Value: sources.Person{Name: "Bob"}}, {Value: sources.Person{Name: "Ann", Role: "owner"}}, {Value: sources.Person{Role: "manager"}}, {Value: sources.Person{Name: "Ann", Role: "president"}}}, ID: "candidate", Name: "name", City: "city", State: "state", Website: "site", Facts: &enrichers.LinkFound{Categories: []enrichers.Category{{Name: "retail", Source: enrichers.KindBrief}, {Name: "trucking and logistics", Source: "fmcsa"}}, GovernmentMatch: "match", FleetVerdict: "pass", PowerUnits: &n, Drivers: &n, KnownSince: "2015-03-01", NewestFiling: "2025-01-01"}, Links: []enrichers.Link{
@@ -127,7 +128,7 @@ func TestBriefInputEvidence(t *testing.T) {
 	}
 }
 
-// R-AZWP-7X41
+// R-T22I-6MZW
 func TestBriefPageBudget(t *testing.T) {
 	for _, tc := range []struct {
 		texts []string
@@ -312,7 +313,7 @@ func TestPrompterFailedDecode(t *testing.T) {
 	}
 }
 
-// R-AYOS-U5DC
+// R-T3AE-KEQL
 func TestBriefInputCarrierClass(t *testing.T) {
 	for _, facts := range []*enrichers.LinkFound{nil, {Categories: []enrichers.Category{{Name: sources.CategoryTrucking, Source: "fmcsa"}}, FleetVerdict: sources.FleetPass}} {
 		s := enrichers.Subject{Facts: facts, Links: []enrichers.Link{
@@ -336,6 +337,60 @@ func TestBriefInputCarrierClass(t *testing.T) {
 		got = enrichers.BriefInput{}
 		if err := json.Unmarshal((enrichers.Brief{}).Input(s), &got); err != nil || got.Facts.Class != "" {
 			t.Fatal(got, err)
+		}
+	}
+}
+
+// R-317F-D7X9 R-T22I-6MZW R-T3AE-KEQL
+func TestBriefIgnoresUnreadablePages(t *testing.T) {
+	b := enrichers.Brief{}
+	readable := enrichers.Page{Number: 1, URL: "https://a.test", Title: "kept title", Text: strings.Repeat("a", 12000)}
+	unreadable := enrichers.Page{Number: 2, URL: "https://b.test", Title: "unread title", Text: strings.Repeat("b", 20000), Reason: website.ReasonScripted}
+	base := enrichers.Subject{Pages: []enrichers.Page{readable}}
+	want := b.Inputs(base)
+	s := enrichers.Subject{Pages: []enrichers.Page{unreadable, readable}}
+	before, _ := json.Marshal(s)
+	if b.Inputs(s) != want || !bytes.Equal(b.Input(s), b.Input(base)) {
+		t.Fatal("unreadable page changed brief")
+	}
+	after, _ := json.Marshal(s)
+	if !bytes.Equal(before, after) {
+		t.Fatal("subject mutated")
+	}
+	s.Pages[0].Reason = website.ReasonEmpty
+	if b.Inputs(s) != want {
+		t.Fatal("unreadable reason changed fingerprint")
+	}
+	for _, pages := range [][]enrichers.Page{nil, {unreadable}} {
+		sub := enrichers.Subject{Pages: pages}
+		var got enrichers.BriefInput
+		if b.Inputs(sub) != "" || json.Unmarshal(b.Input(sub), &got) != nil || got.Pages == nil || len(got.Pages) != 0 {
+			t.Fatal("unreadable-only subject")
+		}
+	}
+	s.Pages[0].Reason = ""
+	if b.Inputs(s) == want {
+		t.Fatal("readability change ignored")
+	}
+	s.Pages = []enrichers.Page{}
+	for i := range 8 {
+		p := readable
+		p.Number = int64(i + 10)
+		s.Pages = append(s.Pages, p)
+		if i == 3 {
+			s.Pages = append(s.Pages, unreadable)
+		}
+	}
+	var got enrichers.BriefInput
+	if err := json.Unmarshal(b.Input(s), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Pages) != 8 {
+		t.Fatal(len(got.Pages))
+	}
+	for _, p := range got.Pages {
+		if p.URL != readable.URL || p.Title != readable.Title || p.Text != readable.Text {
+			t.Fatal(p)
 		}
 	}
 }

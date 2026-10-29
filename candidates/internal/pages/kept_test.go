@@ -13,6 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/urls"
+	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
 // R-40V8-V2LG R-QG8F-LZCT R-QCKQ-GO4Q
@@ -79,16 +80,16 @@ func TestSiteTextResultProjection(t *testing.T) {
 	}
 }
 
-// R-45QU-E5K8 R-9IK6-T8WB R-3ZNC-HAUR
+// R-45QU-E5K8 R-ARMU-FANF R-ASUQ-T2E4
 func TestKeptPageProjections(t *testing.T) {
 	p := store.Page{Candidate: "cand_0123456789abcdef", Number: 7, URL: "https://fixture.test/", Size: 37, Fetched: fixtureTime(), UserID: "fixture-user", Text: "fixture text"}
 	row := pageRow(p)
-	wantRow := PageRow{"7", "/candidates/" + p.Candidate + "/pages/7", p.URL, "", 37, "2026-10-05T09:00:07Z", "2026-10-05 09:00", "", p.UserID}
+	wantRow := PageRow{"7", "/candidates/" + p.Candidate + "/pages/7", p.URL, "", 37, "", "2026-10-05T09:00:07Z", "2026-10-05 09:00", "", p.UserID}
 	if !reflect.DeepEqual(row, wantRow) {
 		t.Fatal(row, wantRow)
 	}
 	view := pageView(p, store.Candidate{Name: "fixture-name"})
-	wantView := PageView{p.Candidate, "fixture-name", "7", p.URL, "", 37, "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC", "", p.UserID, p.Text}
+	wantView := PageView{p.Candidate, "fixture-name", "7", p.URL, "", 37, "", "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC", "", p.UserID, p.Text}
 	if !reflect.DeepEqual(view, wantView) {
 		t.Fatal(view, wantView)
 	}
@@ -338,7 +339,7 @@ func TestTargetPassPage(t *testing.T) {
 	}
 }
 
-// R-9IK6-T8WB R-QCKQ-GO4Q R-3ZNC-HAUR
+// R-ARMU-FANF R-QCKQ-GO4Q R-ASUQ-T2E4
 // R-U5TU-I2XQ
 func TestAddedViewShapes(t *testing.T) {
 	candidate := CandidateData{page.Banner{}, CandidateView{}, nil, nil, []EstimateView{}, []LinkView{}, []RulingView{}, []PageRow{}, []EnrichmentRow{}, []RejectRecordRow{}, []CampaignRow{}}
@@ -372,5 +373,34 @@ func TestAddedViewShapes(t *testing.T) {
 		Failed                        bool
 		Cost, At, AtText              string
 	}(EnrichmentRow{})
-	_ = PageData{page.Banner{}, PageView{"candidate", "name", "1", "url", "title", 3, "fetched", "fetched text", "by", "user", "text"}}
+	_ = PageData{page.Banner{}, PageView{"candidate", "name", "1", "url", "title", 3, "", "fetched", "fetched text", "by", "user", "text"}}
+}
+
+// R-AU2N-6U4T R-AVAJ-KLVI
+func TestUnreadablePageProjectionsAndTemplates(t *testing.T) {
+	set, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, reason := range []string{website.ReasonScripted, website.ReasonRedirect, website.ReasonEmpty, "future-reason", ""} {
+		for _, text := range []string{"", "readable text"} {
+			if reason != "" && text != "" {
+				continue
+			}
+			p := store.Page{Candidate: "cand_0123456789abcdef", Number: 4, URL: "https://fixture.test/", Title: "title", Reason: reason, Text: text, Size: 35, UserID: "owner"}
+			row := pageRow(p)
+			view := pageView(p, store.Candidate{Name: "fixture"})
+			if row.Reason != reason || view.Reason != reason || view.Text != text {
+				t.Fatal(row, view)
+			}
+			for _, render := range []struct {
+				name string
+				data any
+			}{{"candidate", CandidateData{Candidate: CandidateView{Status: store.StatusActive}, Pages: []PageRow{row}}}, {"page", PageData{Page: view}}} {
+				if err := set.templates.ExecuteTemplate(&bytes.Buffer{}, render.name, render.data); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
 }

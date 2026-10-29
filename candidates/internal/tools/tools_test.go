@@ -577,7 +577,7 @@ func TestDetailAndRulings(t *testing.T) {
 	}
 }
 
-// R-6LTC-HAMT R-EWHX-5QXW
+// R-6LTC-HAMT R-XMPP-SFN7
 func TestRefusalsAndPrecedence(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)

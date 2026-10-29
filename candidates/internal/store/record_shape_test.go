@@ -106,7 +106,7 @@ func TestRulingRecordShape(t *testing.T) {
 	contractEqual(t, store.Ruling(shaped), r)
 }
 
-// R-NW2B-JMXB
+// R-ZMRT-QT6Q
 func TestTargetedStoreMethodSignatures(t *testing.T) {
 	f := contractDB(t)
 	check := func(
@@ -114,13 +114,15 @@ func TestTargetedStoreMethodSignatures(t *testing.T) {
 		pages func(context.Context, string) ([]store.Page, error),
 		page func(context.Context, string, int64) (store.Page, error),
 		count func(context.Context, string) (store.PageCount, error),
+		pending func(context.Context, int64, int) ([]store.Page, error),
+		settle func(context.Context, int64, string) error,
 		subject func(context.Context, string) (enrichers.Subject, error),
 		due func(context.Context, string, []string, bool) ([]store.Due, error),
 		derive func(context.Context, string, []string, bool) (int64, error),
 	) {
-		if add == nil || pages == nil || page == nil || count == nil || subject == nil || due == nil || derive == nil {
+		if add == nil || pages == nil || page == nil || count == nil || pending == nil || settle == nil || subject == nil || due == nil || derive == nil {
 			t.Fatal("missing targeted method")
 		}
 	}
-	check(f.s.AddPage, f.s.Pages, f.s.GetPage, f.s.CountPages, f.s.Subject, f.s.DueAmong, f.s.DeriveAmong)
+	check(f.s.AddPage, f.s.Pages, f.s.GetPage, f.s.CountPages, f.s.PendingRefetches, f.s.SettleRefetch, f.s.Subject, f.s.DueAmong, f.s.DeriveAmong)
 }

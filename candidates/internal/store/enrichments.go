@@ -260,12 +260,12 @@ func (s *Store) subject(ctx context.Context, tx *sql.Tx, c Candidate, pages bool
 		if len(searches) > 0 {
 			out.SearchInputs = searches[0].Inputs
 		}
-		ps, e := readRecords[Page](ctx, tx, "pages", pageColumns, " WHERE candidate=? AND seq IN (SELECT MAX(seq) FROM pages WHERE candidate=? GROUP BY url) ORDER BY (SELECT MIN(p.seq) FROM pages p WHERE p.candidate=pages.candidate AND p.url=pages.url)", c.ID, c.ID)
+		ps, e := readQueryRecords[Page](ctx, tx, pageColumns, "SELECT candidate,seq,url,title,text,COALESCE(reason,'') AS reason,size,fetched,user_id,user_email FROM pages WHERE candidate=? AND seq IN (SELECT MAX(seq) FROM pages WHERE candidate=? GROUP BY url) ORDER BY (SELECT MIN(p.seq) FROM pages p WHERE p.candidate=pages.candidate AND p.url=pages.url)", c.ID, c.ID)
 		if e != nil {
 			return out, e
 		}
 		for _, p := range ps {
-			out.Pages = append(out.Pages, enrichers.Page{Number: p.Number, URL: p.URL, Title: p.Title, Text: p.Text, Size: p.Size})
+			out.Pages = append(out.Pages, enrichers.Page{Number: p.Number, URL: p.URL, Title: p.Title, Text: p.Text, Reason: p.Reason, Size: p.Size})
 		}
 	}
 	var m int64

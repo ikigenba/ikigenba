@@ -391,12 +391,12 @@ func costText(n int64) string {
 	return "$" + strconv.FormatInt(m/1000000, 10) + "." + strings.Repeat("0", 6-len(fraction)) + fraction
 }
 func pageRow(p store.Page) PageRow {
-	v := PageRow{Number: strconv.FormatInt(p.Number, 10), Path: urls.PagePath(p.Candidate, p.Number), URL: p.URL, Title: p.Title, Size: p.Size, By: p.UserEmail, User: p.UserID}
+	v := PageRow{Number: strconv.FormatInt(p.Number, 10), Path: urls.PagePath(p.Candidate, p.Number), URL: p.URL, Title: p.Title, Size: p.Size, Reason: p.Reason, By: p.UserEmail, User: p.UserID}
 	v.Fetched, v.FetchedText = stamp(p.Fetched, MinuteLayout)
 	return v
 }
 func pageView(p store.Page, c store.Candidate) PageView {
-	v := PageView{Candidate: p.Candidate, Name: c.Name, Number: strconv.FormatInt(p.Number, 10), URL: p.URL, Title: p.Title, Size: p.Size, By: p.UserEmail, User: p.UserID, Text: p.Text}
+	v := PageView{Candidate: p.Candidate, Name: c.Name, Number: strconv.FormatInt(p.Number, 10), URL: p.URL, Title: p.Title, Size: p.Size, Reason: p.Reason, By: p.UserEmail, User: p.UserID, Text: p.Text}
 	v.Fetched, v.FetchedText = stamp(p.Fetched, SecondLayout)
 	return v
 }

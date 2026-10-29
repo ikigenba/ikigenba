@@ -47,9 +47,9 @@ type Link struct {
 
 // Page holds one kept copy of a web page.
 type Page struct {
-	Number           int64
-	URL, Title, Text string
-	Size             int64
+	Number                   int64
+	URL, Title, Text, Reason string
+	Size                     int64
 }
 
 // Subject holds the stored inputs for a candidate.

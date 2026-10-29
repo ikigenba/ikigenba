@@ -154,7 +154,7 @@ func stubPage(w http.ResponseWriter, r *http.Request) {
 	if key == "empty" {
 		return
 	}
-	body := "<html><head><title>" + html.EscapeString(host) + "</title></head><body></body></html>"
+	body := "<html><head><title>" + html.EscapeString(host) + "</title></head><body><p>" + html.EscapeString(host) + " " + strings.Repeat("Fixture business services. ", 12) + "</p></body></html>"
 	if key == "big" {
 		body += strings.Repeat(" ", 300000-len(body))
 	}

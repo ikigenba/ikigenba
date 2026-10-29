@@ -408,7 +408,7 @@ func TestParkWindows(t *testing.T) {
 	}
 }
 
-// R-62GW-ZR7N R-S06S-YWNM R-56RJ-1PXL
+// R-62GW-ZR7N R-03UF-3LKG R-56RJ-1PXL
 func TestApplyParksRefusalsAndAtomicMint(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)

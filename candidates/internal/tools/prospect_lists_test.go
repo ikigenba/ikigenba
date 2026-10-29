@@ -501,7 +501,7 @@ func TestToolsContactNoSiblingOrStartPass(t *testing.T) {
 
 }
 
-// R-F05M-B25Z R-EWHX-5QXW
+// R-F05M-B25Z R-XMPP-SFN7
 func TestUnjudgedCandidateAndPrunedPass(t *testing.T) {
 	f := newFixture(t)
 	_, ids, err := f.st.Attach(t.Context(), "unjudged", false, []store.Observation{{Scraper: "fixture", SourceID: "unjudged", Digest: "chosen", Reading: sources.Reading{Name: "Unjudged", Names: []string{"Unjudged"}}}})

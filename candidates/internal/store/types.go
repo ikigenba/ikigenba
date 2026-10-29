@@ -259,12 +259,12 @@ func (s *Store) now() time.Time { return s.cfg.Now().UTC().Truncate(time.Second)
 
 // Page is one kept copy of a candidate's website page.
 type Page struct {
-	Candidate         string
-	Number            int64
-	URL, Title, Text  string
-	Size              int64
-	Fetched           time.Time
-	UserID, UserEmail string
+	Candidate                string
+	Number                   int64
+	URL, Title, Text, Reason string
+	Size                     int64
+	Fetched                  time.Time
+	UserID, UserEmail        string
 }
 
 // PageCount counts distinct URLs and all kept copies.

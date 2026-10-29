@@ -110,7 +110,7 @@ func TestCampaignAnswerHistory(t *testing.T) {
 	}
 }
 
-// R-X5PS-GSY3 R-EYXP-XAFA
+// R-X5PS-GSY3 R-XWGW-ULKR
 func TestCampaignFilterToolLifecycle(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(7)
@@ -199,7 +199,7 @@ func TestCampaignFilterToolLifecycle(t *testing.T) {
 		t.Fatal(decode(t, r))
 	}
 	text := decode(t, r).Content[0].Text
-	for _, word := range []string{passes.RefusalBusy, passes.RefusalInvalid, passes.RefusalNotFound, passes.RefusalStopping, passes.RefusalUnavailable} {
+	for _, word := range []string{passes.RefusalBusy, passes.RefusalInvalid, passes.RefusalNotFound, passes.RefusalStopping, passes.RefusalUnavailable, passes.RefusalUnreadable} {
 		if text == word || strings.HasPrefix(text, word+":") {
 			t.Fatal(text)
 		}
