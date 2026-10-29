@@ -126,7 +126,7 @@ build run writes the Go source, the tests, `go.mod`'s requirements and
 `0008_windows.sql`, `0009_judgments.sql`, `0010_cohorts.sql`,
 `0011_enrichments.sql`, `0012_facts.sql`, `0013_site_text.sql`,
 `0014_brief.sql`, `0015_website_search.sql`, `0016_campaign_uses.sql`,
-`0017_prospect_lists.sql`, `0018_drive_route.sql`, `0019_opens.sql`, `0020_headcounts.sql`, `0021_link_keys.sql`, `0022_headcount_trend.sql`, `0023_parks.sql`, `0024_walk.sql` and `0025_search_cases.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
+`0017_prospect_lists.sql`, `0018_drive_route.sql`, `0019_opens.sql`, `0020_headcounts.sql`, `0021_link_keys.sql`, `0022_headcount_trend.sql`, `0023_parks.sql`, `0024_walk.sql`, `0025_search_cases.sql` and `0026_fact_sources.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
 and the nginx fragment `etc/nginx.conf`). The
 delivery that created candidates seeded `go.mod` on appkit; the build run
 owns it and `go.sum` from then on and changes them as design says. It never
