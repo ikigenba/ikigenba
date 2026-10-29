@@ -73,7 +73,7 @@ leaves candidates with no routes client and a targeted enrich of
 `drive_route` refused and no Places client, a walk refused; the origin defaults to Sandstone, MN. The key is
 never written to its database, its trail, a page or a tool's answer. It keeps its candidates, links, estimates,
 judgments, enrichment results, facts and kept pages, the owner's rulings,
-prospect lists, rejects and opens, its
+records, prospect lists, rejects and opens, its
 campaign uses, its passes, its parks with their parcels, the places its walks
 found and each park's walks, the park rules and the ZIP drive-time table in its own
 SQLite database, `state/candidates.db` resolved against the working
@@ -86,7 +86,7 @@ campaign use of the candidate it names, followed through a merge, starting
 no pass and reading no sibling. Its manifest sets
 `guests = false`: nginx lets no request without a credential through, to the
 pages and to `/mcp` alike, and its nginx fragment answers the bus's two paths
-404 at the public name. At `/mcp` it offers the twenty-three MCP tools
+404 at the public name. At `/mcp` it offers the twenty-five MCP tools
 `D10-tools` catalogs, which agents reach through the MCP gateway, and,
 unlisted, the legacy `cohort` tool a campaigns of the previous release still
 calls. At `/` it serves a page of the prospect lists and the passes, a page
@@ -126,7 +126,7 @@ build run writes the Go source, the tests, `go.mod`'s requirements and
 `0008_windows.sql`, `0009_judgments.sql`, `0010_cohorts.sql`,
 `0011_enrichments.sql`, `0012_facts.sql`, `0013_site_text.sql`,
 `0014_brief.sql`, `0015_website_search.sql`, `0016_campaign_uses.sql`,
-`0017_prospect_lists.sql`, `0018_drive_route.sql`, `0019_opens.sql`, `0020_headcounts.sql`, `0021_link_keys.sql`, `0022_headcount_trend.sql`, `0023_parks.sql`, `0024_walk.sql`, `0025_search_cases.sql`, `0026_fact_sources.sql` and `0027_page_reasons.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
+`0017_prospect_lists.sql`, `0018_drive_route.sql`, `0019_opens.sql`, `0020_headcounts.sql`, `0021_link_keys.sql`, `0022_headcount_trend.sql`, `0023_parks.sql`, `0024_walk.sql`, `0025_search_cases.sql`, `0026_fact_sources.sql`, `0027_page_reasons.sql` and `0028_owner_records.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
 and the nginx fragment `etc/nginx.conf`). The
 delivery that created candidates seeded `go.mod` on appkit; the build run
 owns it and `go.sum` from then on and changes them as design says. It never
@@ -251,11 +251,11 @@ siblings give it — scrapes' rows and every field of them (DOT numbers,
 loan amounts and dates, EINs, establishment ids and names, filing years, employee counts, hours worked, business names, addresses, phones, emails, counties,
 people, facts, and of parcel rows PINs, owner and taxpayer names, site
 addresses, towns, counties and use classes), source ids, scraper names, run ids, user ids and emails,
-request ids, bus event ids, the services file's URLs, ruling text,
+request ids, bus event ids, the services file's URLs, ruling text, owner records' notes and values,
 prospect list names, reject reasons, the park rules' counties and labels,
 park names, campaigns' event payloads (campaign and piece ids,
 `camp_…` and `piece_…`, and a campaign reject's reason), and the `cand_`,
-`pass_`, `pl_` and `park_` ids candidates mints and the `coh_` ids of the previous
+`pass_`, `pl_`, `park_` and `own_` ids candidates mints and the `coh_` ids of the previous
 release it maps to them — and tests echo source ids above all, since every link,
 split and candidate page names one, so a test that sends an id-shaped value
 lands one in the test file. No fixture carries one: not a header value, a
@@ -265,7 +265,7 @@ website search's URL, reason and sites set aside), a fake Google answer (a
 formatted address, a status), an API key, a route origin or a street
 address,
 a row's field, a
-source id, a run id, a candidate id, a pass id, a prospect list id, old or new, a park id, a Place ID, a place's name, address, website or phone, a parcel's PIN, a park rule's county or label, a URL, a services file entry,
+source id, a run id, a candidate id, a pass id, a prospect list id, old or new, a park id, an owner record id or an owner record's note or value, a Place ID, a place's name, address, website or phone, a parcel's PIN, a park rule's county or label, a URL, a services file entry,
 an event's payload, a campaign or piece id, a ruling's, reject's or campaign
 reject's reason, a prospect list's name, or an expected body.
 
@@ -389,7 +389,7 @@ builds the store over that handle with `store.New`. Tests may create
 filesystem fixtures inside that temporary tree (a regular file named
 `state`, a file at `state/candidates.db` that is not a database, a database
 a test's own `db.Open` made and then changed through `DB.Write`, candidates,
-links, rulings, prospect lists, rejects, opens, enrichments, pages, ZIP tables and passes a test's
+links, rulings, owner records, prospect lists, rejects, opens, enrichments, pages, ZIP tables and passes a test's
 own store recorded, passes left
 `running`, `done` or `failed`); nothing touches
 `/var/opt/ikigenba/candidates`, the checkout's `state/` or a shared file. A
@@ -616,7 +616,7 @@ takes effect only at the next activation, a push followed by a deploy. The host'
 whole, so `candidates.db` is taken with it; it holds candidates, their
 evidence copied from public records, their enrichment results, facts and
 kept pages, the owner's
-rulings, prospect lists, rejects and opens, the campaign uses, the passes,
+rulings and records, prospect lists, rejects and opens, the campaign uses, the passes,
 the parks derived from parcel rows with their parcels' PINs, owners, site
 addresses and building values, the places each walk found in a park with
 their names, addresses, websites and phones, each park's walks with what
