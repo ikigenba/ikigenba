@@ -69,9 +69,13 @@
      "owner" or "places" by the website's order of sources,
      .People (each with .Name and .Role, as the
      source gives them, and .Source, the source identifier it was taken
-     from, as .NameSource's; may be empty), .EIN (the EIN the owner set,
-     nine digits as text; empty unless the owner's value decides the EIN,
-     and when merged), .Founded (nil unless the owner founded this
+     from, as .NameSource's; may be empty), .EIN (the EIN the order
+     decides, nine digits as text; empty when none, and when merged) and
+     .EINSource (the source it was taken from, as .NameSource's; empty
+     when .EIN is), .OtherEmails (every other email the candidate's
+     sources hold, the chosen one left out, each with .Value, the email
+     as the source gives it, and .Source, as .OtherPhones' entries; may
+     be empty, empty when merged), .Founded (nil unless the owner founded this
      candidate; else the owner record that founded it, with .Note, .At and
      .AtText as an .OwnerRecords entry's), .OwnerSet (the facts whose
      value the owner's record decides as this page was read, keyed by the
@@ -107,6 +111,10 @@
      date any link not gone shows it existing, "2018-04-09", both the
      same; empty when none), .KnownSinceSource (the source identifier it
      was taken from, as .NameSource's; empty when .KnownSince is),
+     .OtherKnownSince (every other known-since date the candidate's
+     sources hold, the chosen one left out, each with .Value, the date
+     as "2018-04-09", and .Source, as .OtherPhones' entries; may be
+     empty),
      .NewestFiling and .NewestFilingText (the newest filing date among
      its links not gone, "2025-03-18", both the same; empty when none),
      .NewestFilingSource (likewise, for .NewestFiling), .Categories (the categories that decide,
@@ -125,7 +133,12 @@
      government name pattern its name matched, as stored, "COUNTY"; empty
      when none), .FleetVerdict ("pass", "fail" or "unknown", as stored),
      .PowerUnits and .Drivers (the truck and driver counts the freshest
-     FMCSA link gives, as text, "12"; each empty when unknown),
+     FMCSA link gives, as text, "12"; each empty when unknown; .PowerUnits
+     is the owner's truck count when the owner's value decides the
+     fleet), .OtherPowerUnits (every other truck count the candidate's
+     sources hold, the chosen one left out, each with .Value, the count
+     as text, "12", and .Source, as .OtherPhones' entries; may be
+     empty),
      .Headcounts (the headcounts its links not gone carry, one per link
      that carries one, in link order, each with .Scraper (the scraper's
      name, "ppp"), .Kind (the headcount's kind word as stored, "jobs",
@@ -422,8 +435,10 @@
      "Other phones" then dd#candidate-other-phones (one
      div[data-other-phone] per entry, as the other names), dt "Email" then
      dd#candidate-email (.Email and the source mark of .EmailSource), dt
-     "EIN" then dd#candidate-ein (.EIN in a code element and the owner's
-     source mark of the "ein" entry), dt
+     "Other emails" then dd#candidate-other-emails (one
+     div[data-other-email] per entry, as the other names), dt "EIN" then
+     dd#candidate-ein (.EIN in a code element and the source mark of
+     .EINSource), dt
      "Website"
      then dd#candidate-website[data-website=<.Website>] (when .Website is
      "unknown", span.muted "unknown"; else a.website-link, href
@@ -480,14 +495,20 @@
      per category holding .Name in a code element, a space and span.muted
      with .Source, or when empty span.muted "unknown"), dt "Known since" then dd#facts-known-since
      (time[datetime=<.KnownSince>] with .KnownSinceText and the source
-     mark of .KnownSinceSource, or when empty span.muted "none"), dt
+     mark of .KnownSinceSource, or when empty span.muted "none"), then,
+     only when .OtherKnownSince is not empty, dt "Other known since" then
+     dd#facts-other-known-since (one div[data-other-known-since] per
+     entry, .Value and the source mark of .Source), dt
      "Newest filing" then dd#facts-filed (time[datetime=<.NewestFiling>]
      with .NewestFilingText and the source mark of .NewestFilingSource,
      or when empty span.muted "none"), dt "Government match" then dd#facts-government
      (.GovernmentMatch in a code element, or "no" when empty), dt "Fleet"
      then dd#facts-fleet[data-fleet=<.FleetVerdict>] (.FleetVerdict, in
      span.muted when "unknown"), dt "Trucks" then dd#facts-power-units
-     (.PowerUnits, or when empty span.muted "unknown"), dt "Drivers" then
+     (.PowerUnits, or when empty span.muted "unknown"), then, only when
+     .OtherPowerUnits is not empty, dt "Other trucks" then
+     dd#facts-other-power-units (one div[data-other-power-units] per
+     entry, .Value and the source mark of .Source), dt "Drivers" then
      dd#facts-drivers (.Drivers, or when empty span.muted "unknown"), dt
      "Headcounts" then dd#facts-headcounts (one
      div[data-headcount=<.Kind>] per headcount holding .Count, a space,
@@ -810,12 +831,13 @@
      each fact the owner's record decides, after the fact's own source
      mark where it has one: dd#candidate-name, dd#candidate-street (or
      dd#candidate-city when .Street is empty), dd#candidate-phone,
-     dd#candidate-email and dd#candidate-website from the "name",
-     "address", "phone", "email" and "website" entries of .OwnerSet, at
+     dd#candidate-email, dd#candidate-ein and dd#candidate-website from
+     the "name", "ein", "address", "phone", "email" and "website" entries
+     of .OwnerSet, at
      the end of dd#candidate-people from "people", and dd#facts-known-since
-     from "known_since", the owner mark; at the end of dd#candidate-ein,
+     from "known_since", the owner mark; at the end of
      dd#facts-categories, dd#facts-power-units (when .PowerUnits is set),
-     dd#judgments-revenue-low and dd#judgments-headcount-low, from "ein",
+     dd#judgments-revenue-low and dd#judgments-headcount-low, from
      "category", "fleet", "revenue" and "headcount", the owner's source
      mark. An owner mark, from the "candidate-owner" template, is nothing
      when its record is nil or has no .At, else a space and
@@ -875,7 +897,8 @@
 {{end}}{{if .Phone}}<dt>Phone</dt><dd id="candidate-phone">{{.Phone}}{{template "candidate-from" .PhoneSource}}{{template "candidate-owner" (index $owner "phone")}}</dd>
 {{end}}{{if .OtherPhones}}<dt>Other phones</dt><dd id="candidate-other-phones">{{range .OtherPhones}}<div data-other-phone>{{.Value}}{{template "candidate-from" .Source}}</div>{{end}}</dd>
 {{end}}{{if .Email}}<dt>Email</dt><dd id="candidate-email">{{.Email}}{{template "candidate-from" .EmailSource}}{{template "candidate-owner" (index $owner "email")}}</dd>
-{{end}}{{if .EIN}}<dt>EIN</dt><dd id="candidate-ein"><code>{{.EIN}}</code>{{template "candidate-owner-mark" (index $owner "ein")}}</dd>
+{{end}}{{if .OtherEmails}}<dt>Other emails</dt><dd id="candidate-other-emails">{{range .OtherEmails}}<div data-other-email>{{.Value}}{{template "candidate-from" .Source}}</div>{{end}}</dd>
+{{end}}{{if .EIN}}<dt>EIN</dt><dd id="candidate-ein"><code>{{.EIN}}</code>{{template "candidate-from" .EINSource}}{{template "candidate-owner" (index $owner "ein")}}</dd>
 {{end}}{{if .Website}}<dt>Website</dt><dd id="candidate-website" data-website="{{.Website}}"{{if .WebsiteSource}} data-website-source="{{.WebsiteSource}}"{{end}}>{{if eq .Website "unknown"}}<span class="muted">unknown</span>{{else}}{{if .WebsiteURL}}<a class="website-link" href="{{.WebsiteURL}}">{{.WebsiteURL}}</a> {{end}}{{.Website}}{{end}}{{if and .WebsiteSource (ne .WebsiteSource "check") (ne .WebsiteSource "search")}}{{template "candidate-from" .WebsiteSource}}{{end}}{{template "candidate-owner" (index $owner "website")}}{{if .WebsiteTitle}}<div data-website-title>{{.WebsiteTitle}}</div>{{end}}{{if .WebsiteWhy}}<div data-website-why>{{.WebsiteWhy}}</div>{{end}}{{if .WebsiteChecked}}<div class="muted">{{if eq .WebsiteSource "search"}}found by search{{else if eq .WebsiteSource "check"}}found by check{{else if eq .Website "none"}}searched{{else}}checked{{end}} <time datetime="{{.WebsiteChecked}}">{{.WebsiteCheckedText}}</time></div>{{end}}{{if .WebsiteCheckedURL}}<div class="muted" data-website-checked-url>the check began at <a class="website-link" href="{{.WebsiteCheckedURL}}">{{.WebsiteCheckedURL}}</a></div>{{end}}</dd>
 {{end}}{{if .People}}<dt>People</dt><dd id="candidate-people">{{range .People}}<div data-person>{{.Name}} <span class="muted">{{.Role}}</span>{{template "candidate-from" .Source}}</div>{{end}}{{template "candidate-owner" (index $owner "people")}}</dd>
 {{end}}{{if .Class}}<dt>Class</dt><dd id="candidate-class"><code>{{.Class}}</code></dd>
@@ -896,11 +919,13 @@
 <dt>Classified by</dt><dd id="facts-classified-by" data-classified-by="{{.ClassifiedBy}}">{{if .ClassifiedBy}}<code>{{.ClassifiedBy}}</code>{{else}}<span class="muted">none</span>{{end}}</dd>
 {{if .RecordsDiffer}}<dt>Records say</dt><dd id="facts-record-categories">{{range .RecordCategories}}<div data-record-category="{{.Name}}"><code>{{.Name}}</code> <span class="muted">{{.Source}}</span></div>{{else}}<span class="muted">unknown</span>{{end}}</dd>
 {{end}}<dt>Known since</dt><dd id="facts-known-since">{{if .KnownSince}}<time datetime="{{.KnownSince}}">{{.KnownSinceText}}</time>{{template "candidate-from" .KnownSinceSource}}{{template "candidate-owner" (index $owner "known_since")}}{{else}}<span class="muted">none</span>{{end}}</dd>
-<dt>Newest filing</dt><dd id="facts-filed">{{if .NewestFiling}}<time datetime="{{.NewestFiling}}">{{.NewestFilingText}}</time>{{template "candidate-from" .NewestFilingSource}}{{else}}<span class="muted">none</span>{{end}}</dd>
+{{if .OtherKnownSince}}<dt>Other known since</dt><dd id="facts-other-known-since">{{range .OtherKnownSince}}<div data-other-known-since>{{.Value}}{{template "candidate-from" .Source}}</div>{{end}}</dd>
+{{end}}<dt>Newest filing</dt><dd id="facts-filed">{{if .NewestFiling}}<time datetime="{{.NewestFiling}}">{{.NewestFilingText}}</time>{{template "candidate-from" .NewestFilingSource}}{{else}}<span class="muted">none</span>{{end}}</dd>
 <dt>Government match</dt><dd id="facts-government">{{if .GovernmentMatch}}<code>{{.GovernmentMatch}}</code>{{else}}no{{end}}</dd>
 <dt>Fleet</dt><dd id="facts-fleet" data-fleet="{{.FleetVerdict}}">{{if eq .FleetVerdict "unknown"}}<span class="muted">{{.FleetVerdict}}</span>{{else}}{{.FleetVerdict}}{{end}}</dd>
 <dt>Trucks</dt><dd id="facts-power-units">{{if .PowerUnits}}{{.PowerUnits}}{{template "candidate-owner-mark" (index $owner "fleet")}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
-<dt>Drivers</dt><dd id="facts-drivers">{{if .Drivers}}{{.Drivers}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
+{{if .OtherPowerUnits}}<dt>Other trucks</dt><dd id="facts-other-power-units">{{range .OtherPowerUnits}}<div data-other-power-units>{{.Value}}{{template "candidate-from" .Source}}</div>{{end}}</dd>
+{{end}}<dt>Drivers</dt><dd id="facts-drivers">{{if .Drivers}}{{.Drivers}}{{else}}<span class="muted">unknown</span>{{end}}</dd>
 <dt>Headcounts</dt><dd id="facts-headcounts">{{range .Headcounts}}<div data-headcount="{{.Kind}}">{{.Count}} <code>{{.Kind}}</code>{{if .Hours}} over {{.Hours}} hours{{end}} <span class="muted">{{.Scraper}}{{if .AsOf}} <time datetime="{{.AsOf}}">{{.AsOfText}}</time>{{end}}</span></div>{{else}}<span class="muted">none</span>{{end}}</dd>
 <dt>Brief labels</dt><dd id="facts-brief-labels">{{range $i, $l := .BriefLabels}}{{if $i}} {{end}}<code data-brief-label="{{$l}}">{{$l}}</code>{{else}}<span class="muted">none</span>{{end}}</dd>
 <dt>Drive minutes</dt><dd id="facts-minutes"{{if .MinutesSource}} data-minutes-source="{{.MinutesSource}}"{{end}}>{{if .Minutes}}{{.Minutes}}{{else}}<span class="muted">unknown</span>{{end}}{{if eq .MinutesSource "route"}} <span class="badge" data-kind="info">routed</span>{{if .Miles}}<div data-route-miles>{{.Miles}} miles</div>{{end}}{{if .RouteAddress}}<div data-route-address>{{.RouteAddress}}</div>{{end}}{{if .RoutePlaceURL}}<div data-route-links><a class="map-link" data-route-place href="{{.RoutePlaceURL}}" target="_blank" rel="noopener noreferrer">map</a>{{if .RouteDirectionsURL}} · <a class="map-link" data-route-directions href="{{.RouteDirectionsURL}}" target="_blank" rel="noopener noreferrer">directions</a>{{end}}</div>{{end}}{{else if eq .MinutesSource "zip"}} <span class="muted">ZIP estimate</span>{{end}}</dd>
