@@ -246,7 +246,7 @@ Postconditions:
 
 ## The accounts app lists the users
 
-The list is read from the host alone, so it is what the host enforces, whatever the app believes. It is one JSON document: users sorted by name; `groups` the user's business groups sorted by name, never `shell`; `keys` each line of `/etc/ssh/authorized_keys/NAME`, comment included; `state` `active` or `locked`; `last_sign_in` the user's last successful SSH sign-in in UTC as RFC 3339, read from the host's login records, or `null` when they have never signed in.
+The list is read from the host alone, so it is what the host enforces, whatever the app believes. It is one JSON document: users sorted by name; `groups` the user's business groups sorted by name, never `shell`; `keys` each line of `/etc/ssh/authorized_keys/NAME`, comment included; `state` `active` or `locked`; `last_sign_in` the time of the newest public-key sign-in sshd accepted for the user, read from sshd's records in the host's journal and given in UTC as RFC 3339 to the second, or `null` when the journal holds no such record: the user has never signed in, or every sign-in is older than what the journal keeps. A sign-in that only runs a command, git over ssh or scp, counts.
 
 Command:
 

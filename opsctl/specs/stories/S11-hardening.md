@@ -2,7 +2,8 @@
 
 `hardening` is the setup step that brings the host to the rules people who sign in to it live under. It is one idempotent step, run by `init` (`S04-init.md`) after `slices` and before `nginx.conf`, and by `activate` and `rollback` (`S10-releases.md`) right after `resources`: after every check, and before `snapshot` and `cutover` on a per-app host and before `label`. It brings the host to these rules, and nothing in them names a space:
 
-- **sshd** takes public keys only: no password or keyboard-interactive authentication and no root login, a short grace period to sign in, a small number of authentication attempts per connection, and idle sessions dropped. Only the admin account `ec2-user` and members of the group `shell` may sign in. A member of `shell` signs in only with a key held in `/etc/ssh/authorized_keys/<name>`, owned by root and not writable by them (`S13-users.md`); a key in their own `~/.ssh/authorized_keys` is ignored. `ec2-user` keeps signing in with the keys in its own `~/.ssh/authorized_keys`. A member of `shell` gets no TCP or port forwarding, no agent or X11 forwarding, and no tunnels. The rules are a drop-in under `/etc/ssh/sshd_config.d/`, checked with `sshd -t` before sshd is reloaded; a configuration that fails the check is not installed, so the admin's access is kept.
+- **sshd** takes public keys only: no password or keyboard-interactive authentication and no root login, a short grace period to sign in, a small number of authentication attempts per connection, and idle sessions dropped. Only the admin account `ec2-user` and members of the group `shell` may sign in. A member of `shell` signs in only with a key held in `/etc/ssh/authorized_keys/<name>`, owned by root and not writable by them (`S13-users.md`); a key in their own `~/.ssh/authorized_keys` is ignored. `ec2-user` keeps signing in with the keys in its own `~/.ssh/authorized_keys`. A member of `shell` gets no TCP or port forwarding, no Unix-socket (stream-local) forwarding, no agent or X11 forwarding, and no tunnels. The rules are a drop-in under `/etc/ssh/sshd_config.d/`, checked with `sshd -t` before sshd is reloaded; a configuration that fails the check is not installed, so the admin's access is kept.
+- **The journal is persistent**: the drop-in `/etc/systemd/journald.conf.d/ikigenba.conf` sets `Storage=persistent` and `/var/log/journal` exists, so sshd's record of each sign-in, from which `opsctl user list` reads a person's last sign-in (`S13-users.md`), survives a reboot. When the drop-in or the directory was new, the step restarts journald and flushes what it held into `/var/log/journal`; otherwise journald is not restarted.
 - **The group `shell`** exists. `ec2-user` is not a member of it and may still sign in.
 - **fail2ban**, with a jail for sshd, bans a source that fails to sign in again and again. The first ban lasts 10 minutes; each repeated ban lasts longer; every ban lifts on its own.
 - **dnf-automatic** applies security updates, and only those, unattended, on its timer.
@@ -31,14 +32,15 @@ Preconditions:
 
 - The host is the fresh host of "An agent initialises a fresh host before its first activate" (`S04-init.md`), and every preflight check passes.
 - Neither `fail2ban-server` nor `dnf-automatic` is installed, and the host's package repositories can be reached.
-- There is no group `shell`, no drop-in of opsctl's under `/etc/ssh/sshd_config.d/`, `/etc/systemd/system/user.slice.d/` or `/etc/systemd/system/user-.slice.d/`, and no `/etc/sudoers.d/ikigenba-accounts`.
+- There is no group `shell`, no drop-in of opsctl's under `/etc/ssh/sshd_config.d/`, `/etc/systemd/journald.conf.d/`, `/etc/systemd/system/user.slice.d/` or `/etc/systemd/system/user-.slice.d/`, no `/var/log/journal`, and no `/etc/sudoers.d/ikigenba-accounts`.
 
 Postconditions:
 
 - `fail2ban-server` and `dnf-automatic` are installed. fail2ban is running with its sshd jail, and dnf-automatic's timer is enabled, set to apply security updates only.
 - The group `shell` exists and has no members; `ec2-user` is not in it.
-- sshd runs with opsctl's drop-in, which passed `sshd -t`, and was reloaded: it accepts public keys only, refuses root, gives a short grace period and a small number of attempts per connection, drops idle sessions, and lets in only `ec2-user` and members of `shell`, with no forwarding or tunnels for members of `shell`. `ec2-user` signs in with its key as before.
+- sshd runs with opsctl's drop-in, which passed `sshd -t`, and was reloaded: it accepts public keys only, refuses root, gives a short grace period and a small number of attempts per connection, drops idle sessions, and lets in only `ec2-user` and members of `shell`, with no forwarding of any kind, Unix sockets included, and no tunnels for members of `shell`. `ec2-user` signs in with its key as before.
 - `/etc/systemd/system/user.slice.d/ikigenba.conf` and `/etc/systemd/system/user-.slice.d/ikigenba.conf` are written and systemd was reloaded, so `ec2-user`'s next session runs inside the pool.
+- `/etc/systemd/journald.conf.d/ikigenba.conf` sets `Storage=persistent`, `/var/log/journal` exists, and journald was restarted and its records flushed there, so they survive a reboot.
 - Once `init` has finished, no path at or under any of the five state directories that exists grants any permission to others, `/run/ikigenba/services.json`, which `init` writes after the step, included. nginx still serves the host's names.
 - `/etc/sudoers.d/ikigenba-accounts` is owned by root with mode `0440` and passed `visudo -c`. With the account `ikigenba` that `init` creates, it lets `ikigenba` run `/usr/local/bin/opsctl group ...` and `/usr/local/bin/opsctl user ...` as root without a password, and nothing else.
 - The steps after `hardening` ran as on any fresh host.
@@ -86,11 +88,11 @@ Exits 0. The lines are on stdout; stderr is empty.
 Preconditions:
 
 - The host is the one of "An agent activates a release on a host that runs releases" (`S10-releases.md`): it runs `1a2b3c4`, whose opsctl has no `hardening` step, and `c604e32` is unpacked whole.
-- The host holds none of the rules: no `fail2ban-server`, no `dnf-automatic`, no group `shell`, none of opsctl's drop-ins and no `/etc/sudoers.d/ikigenba-accounts`. Some files under `/var/opt/ikigenba` and `/etc/ikigenba` are readable by others.
+- The host holds none of the rules: no `fail2ban-server`, no `dnf-automatic`, no group `shell`, none of opsctl's drop-ins, no `/var/log/journal`, and no `/etc/sudoers.d/ikigenba-accounts`. Some files under `/var/opt/ikigenba` and `/etc/ikigenba` are readable by others.
 
 Postconditions:
 
-- The host holds every rule, as the first init leaves them: the packages installed, fail2ban banning, dnf-automatic's timer enabled, the group `shell`, sshd checked and reloaded with opsctl's drop-in, both slice drop-ins written and systemd reloaded for them, the five state directories closed to others, and the sudo rule installed. The environment files and app directories `activate` writes after the step under `/etc/opt/ikigenba` and `/var/opt/ikigenba` grant others nothing either, so once the command has finished no path under the five directories grants others any permission.
+- The host holds every rule, as the first init leaves them: the packages installed, fail2ban banning, dnf-automatic's timer enabled, the group `shell`, sshd checked and reloaded with opsctl's drop-in, both slice drop-ins written and systemd reloaded for them, the journal made persistent with journald restarted and flushed, the five state directories closed to others, and the sudo rule installed. The environment files and app directories `activate` writes after the step under `/etc/opt/ikigenba` and `/var/opt/ikigenba` grant others nothing either, so once the command has finished no path under the five directories grants others any permission.
 - `ec2-user`, signed in over ssh while the command ran, is still signed in and can sign in again.
 - Every app answers on `c604e32`, and Litestream still replicates every database. Everything else is as "An agent activates a release on a host that runs releases" leaves it.
 
@@ -114,7 +116,7 @@ Preconditions:
 
 Postconditions:
 
-- dnf was not run. Not one file of the step's was rewritten, no mode, owner or ACL was changed, and neither sshd nor systemd was reloaded for the step. fail2ban's bans stand.
+- dnf was not run. Not one file of the step's was rewritten, no mode, owner or ACL was changed, neither sshd nor systemd was reloaded for the step, and journald was not restarted. fail2ban's bans stand.
 
 ## An agent activates a release on a host that holds the rules
 
@@ -140,7 +142,7 @@ Preconditions:
 
 Postconditions:
 
-- dnf was not run, no file of the step's was rewritten, no mode, owner or ACL was changed, and neither sshd nor systemd was reloaded for the step.
+- dnf was not run, no file of the step's was rewritten, no mode, owner or ACL was changed, neither sshd nor systemd was reloaded for the step, and journald was not restarted.
 - Everything else is as "An agent activates a release on a host that runs releases" (`S10-releases.md`) leaves it.
 
 ## An agent activates a release on a host whose rules have drifted
@@ -166,7 +168,7 @@ Postconditions:
 
 - `/var/opt/ikigenba/repos/state/repos.db` grants others no permission; `repos` still answers.
 - `/etc/systemd/system/user-.slice.d/ikigenba.conf` holds what the step writes again, and systemd was reloaded.
-- dnf was not run, sshd was not reloaded, and no other file of the step's was rewritten.
+- dnf was not run, sshd was not reloaded, journald was not restarted, and no other file of the step's was rewritten.
 
 ## An agent initialises a host where dnf cannot install the packages
 
@@ -394,7 +396,7 @@ Postconditions:
 
 ## A shell user asks for a port forward and is refused
 
-A person signs in to work in a shell, not to reach the host's own ports or to carry traffic through it. sshd lets them in and refuses every channel that would forward: a local or remote port forward, a dynamic (SOCKS) forward, the agent, X11, and a tunnel device. `ec2-user`, who is not in `shell`, is not limited this way.
+A person signs in to work in a shell, not to reach the host's own ports or to carry traffic through it. sshd lets them in and refuses every channel that would forward: a local or remote port forward, a dynamic (SOCKS) forward, a Unix-socket (stream-local) forward, the agent, X11, and a tunnel device. `ec2-user`, who is not in `shell`, is not limited this way.
 
 Command:
 
