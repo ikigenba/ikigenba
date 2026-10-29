@@ -89,7 +89,7 @@ func TestBriefFingerprint(t *testing.T) {
 	}
 }
 
-// R-T3AE-KEQL
+// R-M784-MJWZ
 func TestBriefInputEvidence(t *testing.T) {
 	n := int64(3)
 	s := enrichers.Subject{People: []sources.Sourced[sources.Person]{{Value: sources.Person{Name: "Ann", Role: "owner"}}, {Value: sources.Person{Name: "Bob"}}, {Value: sources.Person{Name: "Ann", Role: "owner"}}, {Value: sources.Person{Role: "manager"}}, {Value: sources.Person{Name: "Ann", Role: "president"}}}, ID: "candidate", Name: "name", City: "city", State: "state", Website: "site", Facts: &enrichers.LinkFound{Categories: []enrichers.Category{{Name: "retail", Source: enrichers.KindBrief}, {Name: "trucking and logistics", Source: "fmcsa"}}, GovernmentMatch: "match", FleetVerdict: "pass", PowerUnits: &n, Drivers: &n, KnownSince: "2015-03-01", NewestFiling: "2025-01-01"}, Links: []enrichers.Link{
@@ -128,7 +128,7 @@ func TestBriefInputEvidence(t *testing.T) {
 	}
 }
 
-// R-T22I-6MZW
+// R-M8G1-0BNO
 func TestBriefPageBudget(t *testing.T) {
 	for _, tc := range []struct {
 		texts []string
@@ -313,7 +313,7 @@ func TestPrompterFailedDecode(t *testing.T) {
 	}
 }
 
-// R-T3AE-KEQL
+// R-M784-MJWZ
 func TestBriefInputCarrierClass(t *testing.T) {
 	for _, facts := range []*enrichers.LinkFound{nil, {Categories: []enrichers.Category{{Name: sources.CategoryTrucking, Source: "fmcsa"}}, FleetVerdict: sources.FleetPass}} {
 		s := enrichers.Subject{Facts: facts, Links: []enrichers.Link{
@@ -341,7 +341,7 @@ func TestBriefInputCarrierClass(t *testing.T) {
 	}
 }
 
-// R-317F-D7X9 R-T22I-6MZW R-T3AE-KEQL
+// R-317F-D7X9 R-M8G1-0BNO R-M784-MJWZ
 func TestBriefIgnoresUnreadablePages(t *testing.T) {
 	b := enrichers.Brief{}
 	readable := enrichers.Page{Number: 1, URL: "https://a.test", Title: "kept title", Text: strings.Repeat("a", 12000)}

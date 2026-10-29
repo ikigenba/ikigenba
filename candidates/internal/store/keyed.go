@@ -16,6 +16,9 @@ func (s *Store) mintKey(ctx context.Context, tx *sql.Tx, prefix string) (string,
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	table := "candidates"
+	if prefix == OwnerRecordIDPrefix {
+		table = "owner_records"
+	}
 	if prefix == ParkIDPrefix {
 		table = "parks"
 	}
@@ -82,6 +85,11 @@ func putLink(ctx context.Context, tx *sql.Tx, l Link) error {
 	if err := insertRecord(ctx, tx, "links", linkColumns, l, map[string]any{"name_key": l.Reading.NameKey, "state": l.Reading.State, "zip": l.Reading.Zip, "phone_key": l.Reading.PhoneKey, "domain_key": l.Reading.DomainKey, "ein_key": l.Reading.EINKey}); err != nil {
 		return err
 	}
+	if l.Scraper == "form5500" || l.Scraper == "osha_ita" {
+		if cache, _ := ctx.Value(ownerPresenceKey{}).(*ownerPresence); cache != nil {
+			cache.einChecked, cache.einPresent = true, true
+		}
+	}
 	if err := execSQL(ctx, tx, "DELETE FROM link_name_keys WHERE scraper=? AND source_id=?", l.Scraper, l.SourceID); err != nil {
 		return err
 	}
@@ -103,6 +111,10 @@ func candidateRecords(ctx context.Context, tx *sql.Tx, c Candidate) (*records, e
 	}
 	for _, l := range ls {
 		r.links[sources.SourceKey(l.Scraper, l.SourceID)] = l
+	}
+	r.owners, err = ownerRecordsKey(ctx, tx, c.ID)
+	if err != nil {
+		return nil, err
 	}
 	return r, nil
 }
@@ -146,7 +158,7 @@ func judgeKeys(ctx context.Context, tx *sql.Tx, ids []string, t time.Time) (Coun
 		if err != nil {
 			return Counts{}, err
 		}
-		f, err := factsKey(ctx, tx, id)
+		f, err := storedFactsKey(ctx, tx, id)
 		if errors.Is(err, ErrNotFound) {
 			f = unknownFacts(id)
 		} else if err != nil {
@@ -230,12 +242,24 @@ func (s *Store) readScope(ctx context.Context, scope, id string, fn func(*record
 		}
 		where := " WHERE id=?"
 		args := []any{id}
-		cs, err := readRecords[Candidate](ctx, tx, "candidates", candidateColumns, where, args...)
+		var err error
+		if scope == "candidate" {
+			var cs []Candidate
+			cs, err = readRecords[Candidate](ctx, tx, "candidates", candidateColumns, where, args...)
+			for _, c := range cs {
+				r.candidates[c.ID] = c
+			}
+		} else {
+			var key string
+			err = scanSQL(ctx, tx, "SELECT id FROM candidates WHERE id=?", args, &key)
+			if err == nil {
+				r.candidates[key] = Candidate{ID: key}
+			} else if errors.Is(err, sql.ErrNoRows) {
+				err = nil
+			}
+		}
 		if err != nil {
 			return err
-		}
-		for _, c := range cs {
-			r.candidates[c.ID] = c
 		}
 		switch scope {
 		case "links":
@@ -287,7 +311,9 @@ func (s *Store) writeTx(ctx context.Context, fn func(context.Context, *sql.Tx) e
 				_ = stmt.Close()
 			}
 		}()
-		return fn(context.WithValue(ctx, statementCacheKey{}, cache), tx)
+		ctx = context.WithValue(ctx, statementCacheKey{}, cache)
+		ctx = context.WithValue(ctx, ownerPresenceKey{}, &ownerPresence{})
+		return fn(ctx, tx)
 	})
 }
 func (s *Store) readTx(ctx context.Context, fn func(*sql.Tx) error) error {

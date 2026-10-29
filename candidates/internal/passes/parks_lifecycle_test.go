@@ -422,7 +422,7 @@ func candidateReadSnapshot(t *testing.T, st *store.Store) []byte {
 	return b
 }
 
-// R-TQ38-2EBU R-3D78-36TE R-HCOV-3DBT
+// R-TQ38-2EBU R-3D78-36TE R-128R-PYXF
 func TestParksComposesClassificationClustersAndMixedPlan(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

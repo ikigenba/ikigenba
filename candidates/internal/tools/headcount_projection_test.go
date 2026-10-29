@@ -12,7 +12,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-ZVHD-U7V4 R-ZWPA-7ZLT R-ZZ52-ZJ37 R-2LJB-67IK R-D4PJ-DV3L
+// R-ZVHD-U7V4 R-ZWPA-7ZLT R-ZZ52-ZJ37 R-VYOV-LNTG R-D4PJ-DV3L
 func TestHeadcountAnswerShapesAndEncoding(t *testing.T) {
 	// Conversions enforce the complete ordered public shape by use.
 	_ = struct {
@@ -44,7 +44,7 @@ func TestHeadcountAnswerShapesAndEncoding(t *testing.T) {
 	_ = Evidence{"name", "source", .2, "description"}
 	_ = Category{"name", "source"}
 	_ = Judgments{nil, nil, nil, nil, nil, nil, nil, "", nil, "", "", nil, nil, nil, nil, nil, false, 0, ""}
-	_ = Facts{"", "", "", "", nil, "", false, nil, "", "", nil, nil, "", "", "", "", nil, "", nil, "", "", "", nil, nil, nil}
+	_ = Facts{"", "", "", "", nil, "", false, nil, "", "", nil, nil, "", "", "", "", nil, "", nil, "", "", "", nil, nil, nil, nil, nil}
 	_ = Written{"kind", "at"}
 	_ = Headcount{"scraper", "kind", 26, "date", nil}
 	candidateJSON, err := json.Marshal(Candidate{})
@@ -61,8 +61,8 @@ func TestHeadcountAnswerShapesAndEncoding(t *testing.T) {
 		{Headcount{"chosen-scraper", "chosen-kind", 26, "2020-04-28", new(int64(47840))}, `{"scraper":"chosen-scraper","kind":"chosen-kind","count":26,"date":"2020-04-28","hours":47840}`},
 		{Judgments{}, `{"operating_evidence":[],"headcount_series":[],"trend":"","excluded":false,"rules":0,"calculated":""}`},
 		{Judgments{OperatingConfidence: new(.8), OperatingEvidence: []Evidence{{"n", "s", .2, "d"}}, RevenueLow: new(int64(10)), RevenueHigh: new(int64(20)), RevenueConfidence: new(.3), HeadcountLow: new(int64(40)), HeadcountHigh: new(int64(100)), HeadcountBasis: "chosen-basis", Excluded: true, Rules: 7, Calculated: "chosen-time"}, `{"operating_confidence":0.8,"operating_evidence":[{"name":"n","source":"s","weight":0.2,"description":"d"}],"revenue_low":10,"revenue_high":20,"revenue_confidence":0.3,"headcount_low":40,"headcount_high":100,"headcount_basis":"chosen-basis","headcount_series":[],"trend":"","excluded":true,"rules":7,"calculated":"chosen-time"}`},
-		{Facts{}, `{"categories":[],"classified_by":"","records_differ":false,"record_categories":[],"fleet_verdict":"","website":"","website_source":"","minutes_source":"","written":[],"headcounts":[],"brief_labels":[]}`},
-		{Facts{Headcounts: []Headcount{{"s", "k", 26, "", nil}}, BriefLabels: []string{"one", "two"}}, `{"categories":[],"classified_by":"","records_differ":false,"record_categories":[],"fleet_verdict":"","website":"","website_source":"","minutes_source":"","written":[],"headcounts":[{"scraper":"s","kind":"k","count":26}],"brief_labels":["one","two"]}`},
+		{Facts{}, `{"categories":[],"classified_by":"","records_differ":false,"record_categories":[],"fleet_verdict":"","website":"","website_source":"","minutes_source":"","written":[],"headcounts":[],"brief_labels":[],"other_known_since":[],"other_power_units":[]}`},
+		{Facts{Headcounts: []Headcount{{"s", "k", 26, "", nil}}, BriefLabels: []string{"one", "two"}}, `{"categories":[],"classified_by":"","records_differ":false,"record_categories":[],"fleet_verdict":"","website":"","website_source":"","minutes_source":"","written":[],"headcounts":[{"scraper":"s","kind":"k","count":26}],"brief_labels":["one","two"],"other_known_since":[],"other_power_units":[]}`},
 		{Estimate{}, `{"source":"","low":0,"confidence":0,"facts":{},"formula":0}`},
 		{Estimate{"s", 10, new(int64(20)), .3, map[string]json.RawMessage{"chosen": json.RawMessage(`2`)}, "2020-04-28", 7}, `{"source":"s","low":10,"high":20,"confidence":0.3,"facts":{"chosen":2},"filed":"2020-04-28","formula":7}`},
 	} {

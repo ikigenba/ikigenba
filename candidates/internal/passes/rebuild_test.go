@@ -20,7 +20,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-FLA3-7ARP R-SODA-05AS R-EOCS-VHQY R-EPKP-99HN
+// R-2BD1-VHD4 R-SODA-05AS R-13GO-3QO4 R-0YL2-KNPC
 func TestFullIngestRebuildsEveryPageBeforeDerivingAndStaysStable(t *testing.T) {
 	t.Parallel()
 	for _, advance := range []bool{false, true} {

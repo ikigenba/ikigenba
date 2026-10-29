@@ -39,7 +39,7 @@ func websiteResult(id, state string) store.Enrichment {
 	return store.Enrichment{Candidate: id, Kind: sources.WebsiteCheck, Inputs: "business.test", Source: "business.test", Found: websiteFound(website.Result{State: state, URL: "https://business.test/", StatusCode: 200}), Cost: .02}
 }
 
-// R-GDOT-3LA9 R-P56L-P5D0 R-H5DG-SQVN
+// R-GDOT-3LA9 R-P56L-P5D0 R-SO6U-XFJD
 func TestEnrichmentShapesAndMethods(t *testing.T) {
 	e := websiteResult("candidate", sources.WebsiteHTTPS)
 	contractEqual(t, store.Enrichment(struct {
@@ -70,6 +70,8 @@ func TestEnrichmentShapesAndMethods(t *testing.T) {
 		Brief                                                 string
 		BriefLabels                                           []string
 		Written                                               []store.Written
+		OtherKnownSince                                       []sources.Sourced[time.Time]
+		OtherPowerUnits                                       []sources.Sourced[int64]
 	}(f)), f)
 	contractEqual(t, store.Written(struct {
 		Kind string
@@ -88,7 +90,7 @@ func TestEnrichmentShapesAndMethods(t *testing.T) {
 	checkMethods(st.AddEnrichments, st.DueEnrichments, st.Derive)
 }
 
-// R-E8I3-WH3X R-GR3P-B2FW R-GSBL-OU6L R-GX77-7X5D
+// R-4LXP-TXPQ R-GR3P-B2FW R-GSBL-OU6L R-GX77-7X5D
 func TestEnrichmentAppendAndMark(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -173,7 +175,7 @@ func TestDueUsesInputs(t *testing.T) {
 	contractError(t, err, store.ErrUnreachable)
 }
 
-// R-EAXW-O0LB R-OPBW-Q4PZ R-M10O-KUCX R-D1TM-II5M
+// R-SUAC-UA8U R-OPBW-Q4PZ R-M10O-KUCX R-SQMN-OZ0R
 func TestDeriveFactsAndFill(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -235,7 +237,7 @@ func onlyWebsite(es []store.Enrichment) []store.Enrichment {
 	return out
 }
 
-// R-OO40-CCZA R-EAXW-O0LB R-M10O-KUCX
+// R-OO40-CCZA R-SUAC-UA8U R-M10O-KUCX
 func TestDueWindowsAndDerivedSubject(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

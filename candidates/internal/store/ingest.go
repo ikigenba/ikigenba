@@ -247,7 +247,13 @@ func (s *Store) Decide(ctx context.Context, d Ruling) (Ruling, []Candidate, erro
 				}
 				keys[key] = true
 			}
-			if len(keys) == len(split.links) {
+			founded := false
+			for _, o := range split.owners {
+				if o.Candidate == c.ID && o.Founded {
+					founded = true
+				}
+			}
+			if len(keys) == len(split.links) && !founded {
 				return ErrInvalid
 			}
 		}

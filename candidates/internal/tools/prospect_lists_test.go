@@ -420,7 +420,7 @@ func TestProspectListValidationBeforeFailingStore(t *testing.T) {
 	}
 }
 
-// R-F05M-B25Z R-2H60-ISD4
+// R-VSLD-OT3Z R-2H60-ISD4
 func TestEveryToolUnavailable(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -501,7 +501,7 @@ func TestToolsContactNoSiblingOrStartPass(t *testing.T) {
 
 }
 
-// R-F05M-B25Z R-XMPP-SFN7
+// R-VSLD-OT3Z R-VRDH-B1DA
 func TestUnjudgedCandidateAndPrunedPass(t *testing.T) {
 	f := newFixture(t)
 	_, ids, err := f.st.Attach(t.Context(), "unjudged", false, []store.Observation{{Scraper: "fixture", SourceID: "unjudged", Digest: "chosen", Reading: sources.Reading{Name: "Unjudged", Names: []string{"Unjudged"}}}})

@@ -14,6 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/paging"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
 	"github.com/ikigenba/ikigenba/candidates/internal/routes"
@@ -57,9 +58,10 @@ const (
 
 // Config supplies the engine and database.
 type Config struct {
-	Passes  *passes.Engine
-	Store   *store.Store
-	Website *website.Checker
+	Passes    *passes.Engine
+	Store     *store.Store
+	Website   *website.Checker
+	Telemetry *telemetry.Writer
 }
 
 // Entry describes a tool for the tools page.
@@ -67,7 +69,7 @@ type Entry struct{ Name, Description string }
 
 // Catalog returns independent ordered tool metadata.
 func Catalog() []Entry {
-	return []Entry{{"prospect_lists", DescribeProspectLists}, {"prospect_list", DescribeProspectList}, {"candidates", DescribeCandidates}, {"candidate", DescribeCandidate}, {"passes", DescribePasses}, {"pass", DescribePass}, {"ingest", DescribeIngest}, {"judge", DescribeJudge}, {"enrich", DescribeEnrich}, {"add_page", DescribeAddPage}, {"decide", DescribeDecide}, {"exclude", DescribeExclude}, {"include", DescribeInclude}, {"create_prospect_list", DescribeCreateProspectList}, {"edit_prospect_list", DescribeEditProspectList}, {"delete_prospect_list", DescribeDeleteProspectList}, {"reject", DescribeReject}, {"unreject", DescribeUnreject}, {"parks", DescribeParks}, {"park", DescribePark}, {"park_rules", DescribeParkRules}, {"edit_park_rules", DescribeEditParkRules}, {"walk", DescribeWalk}}
+	return []Entry{{"prospect_lists", DescribeProspectLists}, {"prospect_list", DescribeProspectList}, {"candidates", DescribeCandidates}, {"candidate", DescribeCandidate}, {"passes", DescribePasses}, {"pass", DescribePass}, {"ingest", DescribeIngest}, {"judge", DescribeJudge}, {"enrich", DescribeEnrich}, {"add_page", DescribeAddPage}, {"decide", DescribeDecide}, {"exclude", DescribeExclude}, {"include", DescribeInclude}, {"create_prospect_list", DescribeCreateProspectList}, {"edit_prospect_list", DescribeEditProspectList}, {"delete_prospect_list", DescribeDeleteProspectList}, {"reject", DescribeReject}, {"unreject", DescribeUnreject}, {"parks", DescribeParks}, {"park", DescribePark}, {"park_rules", DescribeParkRules}, {"edit_park_rules", DescribeEditParkRules}, {"walk", DescribeWalk}, {"add_business", DescribeAddBusiness}, {"set_facts", DescribeSetFacts}}
 }
 func refuse(word string) mcp.Result {
 	text := RefuseUnavailable
@@ -113,7 +115,7 @@ func add[A any](srv *mcp.Server, name, description string, effect mcp.Effect, ha
 	mcp.AddRawTool(srv, mcp.RawTool[A]{Name: name, Description: description, Effect: effect, Handler: func(ctx context.Context, c identity.Caller, a A) (mcp.Result, error) { return handler(ctx, c, a), nil }})
 }
 
-// Register installs the twenty-three candidate tools on srv.
+// Register installs the twenty-five candidate tools on srv.
 func Register(srv *mcp.Server, cfg Config) {
 	add(srv, "prospect_lists", DescribeProspectLists, mcp.Read, func(ctx context.Context, _ identity.Caller, a ProspectListsArgs) mcp.Result {
 		z, key, id, err := timePosition("prospect_lists", a.Page, a.Limit)
@@ -394,6 +396,7 @@ func Register(srv *mcp.Server, cfg Config) {
 
 	registerParks(srv, cfg)
 	registerWalk(srv, cfg)
+	registerOwners(srv, cfg)
 }
 func timePosition(tool string, page *string, limit *int) (int, string, string, error) {
 	z, err := paging.Window(limit)
@@ -497,7 +500,7 @@ func judgmentsOf(a store.Judgments) Judgments {
 	return v
 }
 func factsOf(f store.Facts, origin string) Facts {
-	v := Facts{KnownSince: date(f.KnownSince), NewestFiling: date(f.NewestFiling), Categories: []Category{}, ClassifiedBy: store.ClassifiedBy(f.Categories), RecordsDiffer: store.RecordsDiffer(f.Categories, f.Records), RecordCategories: []Category{}, GovernmentMatch: f.GovernmentMatch, FleetVerdict: f.FleetVerdict, PowerUnits: f.PowerUnits, Drivers: f.Drivers, Website: f.Website, WebsiteURL: f.WebsiteURL, WebsiteSource: f.WebsiteSource, Minutes: f.Minutes, MinutesSource: f.MinutesSource, Miles: f.Miles, RouteAddress: f.RouteAddress, Written: []Written{}, Headcounts: []Headcount{}, BriefLabels: append([]string{}, f.BriefLabels...)}
+	v := Facts{OtherKnownSince: []Sourced{}, OtherPowerUnits: []SourcedCount{}, KnownSince: date(f.KnownSince), NewestFiling: date(f.NewestFiling), Categories: []Category{}, ClassifiedBy: store.ClassifiedBy(f.Categories), RecordsDiffer: store.RecordsDiffer(f.Categories, f.Records), RecordCategories: []Category{}, GovernmentMatch: f.GovernmentMatch, FleetVerdict: f.FleetVerdict, PowerUnits: f.PowerUnits, Drivers: f.Drivers, Website: f.Website, WebsiteURL: f.WebsiteURL, WebsiteSource: f.WebsiteSource, Minutes: f.Minutes, MinutesSource: f.MinutesSource, Miles: f.Miles, RouteAddress: f.RouteAddress, Written: []Written{}, Headcounts: []Headcount{}, BriefLabels: append([]string{}, f.BriefLabels...)}
 	if !f.KnownSince.IsZero() {
 		v.KnownSinceSource = f.KnownSinceSource
 	}
@@ -508,6 +511,12 @@ func factsOf(f store.Facts, origin string) Facts {
 	if f.MinutesSource == store.MinutesByRoute && f.RouteAddress != "" {
 		v.PlaceURL = routes.PlaceURL(f.RouteAddress)
 		v.DirectionsURL = routes.DirectionsURL(origin, f.RouteAddress)
+	}
+	for _, x := range f.OtherKnownSince {
+		v.OtherKnownSince = append(v.OtherKnownSince, Sourced{date(x.Value), x.Source})
+	}
+	for _, x := range f.OtherPowerUnits {
+		v.OtherPowerUnits = append(v.OtherPowerUnits, SourcedCount{x.Value, x.Source})
 	}
 	for _, c := range f.Categories {
 		v.Categories = append(v.Categories, Category{c.Name, c.Source})
@@ -566,46 +575,73 @@ func memberOf(e store.Ranked) Member {
 }
 
 func detail(ctx context.Context, cfg Config, id string) mcp.Result {
-	c, err := cfg.Store.GetCandidate(ctx, id)
+	v, err := detailValue(ctx, cfg, id)
 	if err != nil {
 		return failure(err)
 	}
-	out := Detail{Pages: []Page{}, Candidate: candidateOf(c), Estimates: []Estimate{}, Links: []Link{}, Rulings: []Ruling{}, EnrichmentResults: []EnrichmentResult{}, Rejects: []Reject{}, Campaigns: []CampaignUse{}}
+	return answer(v)
+}
+
+func detailValue(ctx context.Context, cfg Config, id string) (Detail, error) {
+	c, err := cfg.Store.GetCandidate(ctx, id)
+	if err != nil {
+		return Detail{}, err
+	}
+	out := Detail{OwnerRecords: []OwnerRecord{}, OwnerSet: map[string]OwnerSetBy{}, Pages: []Page{}, Candidate: candidateOf(c), Estimates: []Estimate{}, Links: []Link{}, Rulings: []Ruling{}, EnrichmentResults: []EnrichmentResult{}, Rejects: []Reject{}, Campaigns: []CampaignUse{}}
 	rs, err := cfg.Store.Rulings(ctx, id)
 	if err != nil {
-		return failure(err)
+		return Detail{}, err
 	}
 	for _, r := range rs {
 		out.Rulings = append(out.Rulings, rulingOf(r))
 	}
 	xs, err := cfg.Store.Rejects(ctx, id)
 	if err != nil {
-		return failure(err)
+		return Detail{}, err
 	}
 	for _, x := range xs {
 		out.Rejects = append(out.Rejects, rejectOf(x))
 	}
 	if c.Status == store.StatusActive {
+		owners, err := cfg.Store.OwnerRecords(ctx, id)
+		if err != nil {
+			return Detail{}, err
+		}
+		out.OwnerRecords = []OwnerRecord{}
+		out.OwnerSet = map[string]OwnerSetBy{}
+		for _, r := range owners {
+			v := ownerRecordOf(r, id)
+			out.OwnerRecords = append(out.OwnerRecords, v)
+			if v.Founded {
+				out.Founded = &v
+			}
+		}
+		for w, r := range store.OwnerSet(owners) {
+			out.OwnerSet[w] = OwnerSetBy{r.ID, r.Note, stamp(r.At)}
+		}
+		if c.EIN != "" {
+			out.EIN = &Sourced{c.EIN, c.EINSource}
+		}
 		s := sourcesOf(c)
 		out.Sources = &s
 		park, err := cfg.Store.CandidatePark(ctx, id)
 		if err != nil {
-			return failure(err)
+			return Detail{}, err
 		}
 		if park != "" {
 			p, err := cfg.Store.GetPark(ctx, park)
 			if err != nil {
-				return failure(err)
+				return Detail{}, err
 			}
 			out.Park = &ParkRef{park, p.Name}
 		}
 		subject, err := cfg.Store.Subject(ctx, id)
 		if err != nil {
-			return failure(err)
+			return Detail{}, err
 		}
 		uses, err := cfg.Store.CampaignUses(ctx, id)
 		if err != nil {
-			return failure(err)
+			return Detail{}, err
 		}
 		for _, use := range uses {
 			out.Campaigns = append(out.Campaigns, campaignUseOf(use))
@@ -616,32 +652,32 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 			v := factsOf(f, subject.Origin)
 			out.Enrichments.Facts = &v
 		} else if !errors.Is(err, store.ErrNotFound) {
-			return failure(err)
+			return Detail{}, err
 		}
 		a, err := cfg.Store.GetJudgments(ctx, id)
 		if err == nil {
 			v := judgmentsOf(a)
 			out.Judgments = &v
 		} else if !errors.Is(err, store.ErrNotFound) {
-			return failure(err)
+			return Detail{}, err
 		}
 		pages, err := cfg.Store.Pages(ctx, id)
 		if err != nil {
-			return failure(err)
+			return Detail{}, err
 		}
 		for _, p := range pages {
 			out.Pages = append(out.Pages, pageOf(p))
 		}
 		enrichments, err := cfg.Store.Enrichments(ctx, id)
 		if err != nil {
-			return failure(err)
+			return Detail{}, err
 		}
 		if out.Enrichments.Facts != nil {
 			p, err := cfg.Store.PlacesURL(ctx, id)
 			if err != nil {
-				return failure(err)
+				return Detail{}, err
 			}
-			source, state, landed, _, _, checked, _ := store.WebsiteDecisionOf(enrichments, p)
+			source, state, landed, _, _, checked, _ := store.WebsiteDecisionOf(enrichments, p, ownerURL(owners))
 			out.Enrichments.Facts.WebsiteSource = source
 			out.Enrichments.Facts.Website = state
 			out.Enrichments.Facts.WebsiteURL = landed
@@ -656,20 +692,20 @@ func detail(ctx context.Context, cfg Config, id string) mcp.Result {
 
 		es, err := cfg.Store.Estimates(ctx, id)
 		if err != nil {
-			return failure(err)
+			return Detail{}, err
 		}
 		for _, e := range es {
 			out.Estimates = append(out.Estimates, estimateOf(e))
 		}
 		ls, err := cfg.Store.Links(ctx, id)
 		if err != nil {
-			return failure(err)
+			return Detail{}, err
 		}
 		for _, l := range ls {
 			out.Links = append(out.Links, linkOf(l))
 		}
 	}
-	return answer(out)
+	return out, nil
 }
 
 func enrichmentOf(e store.Enrichment, subject enrichers.Subject) EnrichmentResult {

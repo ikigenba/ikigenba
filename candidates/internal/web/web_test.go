@@ -313,7 +313,7 @@ func TestLifecycleDeclarationsIncludeDerived(t *testing.T) {
 	}
 }
 
-// R-O7R2-D4EZ R-JOJI-0XTC
+// R-IM0L-0QVS R-JOJI-0XTC
 func TestMCPToolsReceiveConfiguredWebsite(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		t.Run(map[bool]string{false: "nil", true: "checker"}[enabled], func(t *testing.T) {
@@ -343,7 +343,7 @@ type webTransport func(*http.Request) (*http.Response, error)
 
 func (f webTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-// R-XTQK-SDMD R-O7R2-D4EZ
+// R-XTQK-SDMD R-IM0L-0QVS
 func TestLegacyDispatcherConfiguration(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {

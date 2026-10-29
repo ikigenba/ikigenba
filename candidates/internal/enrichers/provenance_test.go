@@ -70,7 +70,7 @@ func TestInputProvenanceEncoding(t *testing.T) {
 	}
 }
 
-// R-ZV8W-PNJN
+// R-LZWQ-BXGT
 func TestLinkDateProvenance(t *testing.T) {
 	date := func(s string) time.Time {
 		d, e := time.Parse(time.RFC3339, s)
@@ -145,7 +145,7 @@ func TestLinkDateProvenance(t *testing.T) {
 	}
 }
 
-// R-BAVS-NUSA R-B2CH-ZGLF
+// R-WQ31-XUZE R-WOV5-K38P
 func TestSearchInputProvenance(t *testing.T) {
 	s := enrichers.Subject{Name: "name", NameSource: "places", NameRecord: "places:ChIJ1", AddressSource: "places", AddressRecord: "places:ChIJ1", EmailSource: "fmcsa", EmailRecord: "fmcsa:1023916"}
 	want := []enrichers.InputSource{{sources.FactName, "places", "places:ChIJ1"}, {sources.FactAddress, "places", "places:ChIJ1"}, {sources.FactEmail, "fmcsa", "fmcsa:1023916"}}
@@ -231,7 +231,7 @@ func TestRouteInputProvenance(t *testing.T) {
 	}
 }
 
-// R-ZJ0T-1MHM
+// R-M608-8S6A
 func TestProvenanceValidation(t *testing.T) {
 	cases := []struct {
 		e              enrichers.Enricher
@@ -251,7 +251,7 @@ func TestProvenanceValidation(t *testing.T) {
 	}
 }
 
-// R-B607-4RTI R-T4IA-Y6HA R-T3AE-KEQL
+// R-PU0T-78HX R-M9NX-E3ED R-M784-MJWZ
 func TestPickedSubjectInputs(t *testing.T) {
 	for _, k := range []*website.Checker{nil, {}} {
 		w := enrichers.WebsiteCheck{Checker: k}
@@ -295,5 +295,35 @@ func TestPickedSubjectInputs(t *testing.T) {
 	_ = json.Unmarshal((enrichers.Brief{}).Input(s), &brief)
 	if len(brief.Facts.People) != 0 {
 		t.Fatal("brief re-read link people")
+	}
+}
+
+// R-PU0T-78HX R-WF3Y-HXB5
+func TestOwnerWebsiteControlsCheckAndSearchInputs(t *testing.T) {
+	for _, checker := range []*website.Checker{nil, {}} {
+		check := enrichers.WebsiteCheck{Checker: checker}
+		search := enrichers.WebsiteSearch{Checker: checker}
+		for _, siteText := range []*enrichers.SiteTextFound{nil, {Run: "run", Pages: 0}, {Run: "run", Pages: 2}} {
+			s := enrichers.Subject{Name: "Name", City: "City", State: "MN", Website: "http://owner.test/", WebsiteSource: sources.Owner, PlacesURL: "https://places.test/", Email: "ops@acme.test", SiteText: siteText, SearchInputs: "old"}
+			before := subjectJSON(t, s)
+			if got := check.Inputs(s); got != "http://owner.test/\nhttps://places.test/\nacme.test" {
+				t.Fatal(got)
+			}
+			if got := search.Inputs(s); got != "" {
+				t.Fatal(got)
+			}
+			s.Website = ""
+			if got := search.Inputs(s); got != "" {
+				t.Fatal(got)
+			}
+			s.Website = "http://owner.test/"
+			if !bytes.Equal(before, subjectJSON(t, s)) {
+				t.Fatal("subject changed")
+			}
+			s.WebsiteSource = "Owner"
+			if got := check.Inputs(s); got != website.Inputs(s.PlacesURL, s.Email) {
+				t.Fatal(got)
+			}
+		}
 	}
 }

@@ -182,7 +182,7 @@ func TestLinkFingerprint(t *testing.T) {
 	}
 }
 
-// R-B607-4RTI R-UP16-EGCC R-NBNA-NXJF
+// R-PU0T-78HX R-UP16-EGCC R-NBNA-NXJF
 func TestWebsiteInputsAndValidation(t *testing.T) {
 	for _, ck := range []*website.Checker{nil, {}} {
 		e := enrichers.WebsiteCheck{Checker: ck}

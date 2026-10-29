@@ -327,30 +327,16 @@ func (s *Store) RecordSweep(ctx context.Context, sw Sweep) (ParkWalk, error) {
 }
 
 func matchPlace(ctx context.Context, tx *sql.Tx, r sources.Reading) (string, string, float64, error) {
-	for _, m := range []struct {
-		key, column, reason string
-		confidence          float64
-	}{{r.PhoneKey, "phone_key", LinkPhone, .85}, {r.DomainKey, "domain_key", LinkDomain, .85}} {
-		if m.key == "" {
-			continue
-		}
-		var id string
-		err := scanSQL(ctx, tx, "SELECT c.id FROM candidates c JOIN links l ON l.candidate=c.id WHERE c.status=? AND l."+m.column+"=? ORDER BY c.created,c.id LIMIT 1", []any{StatusActive, m.key}, &id)
-		if err == nil {
-			return id, m.reason, m.confidence, nil
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return "", "", 0, err
+	for _, m := range []struct{ key, reason string }{{r.PhoneKey, LinkPhone}, {r.DomainKey, LinkDomain}} {
+		id, err := matchKeyCandidates(ctx, tx, m.reason, m.key, "", "")
+		if err != nil || id != "" {
+			return id, m.reason, .85, err
 		}
 	}
 	if r.State != "" && validZip(r.Zip) && r.NameKey != "" {
-		var id string
-		err := scanSQL(ctx, tx, "SELECT c.id FROM candidates c JOIN links l ON l.candidate=c.id WHERE c.status=? AND l.state=? AND l.zip=? AND (l.name_key=? OR EXISTS(SELECT 1 FROM link_name_keys k WHERE k.scraper=l.scraper AND k.source_id=l.source_id AND k.name_key=?)) ORDER BY c.created,c.id LIMIT 1", []any{StatusActive, r.State, r.Zip, r.NameKey, r.NameKey}, &id)
-		if err == nil {
-			return id, LinkMatchKey, .8, nil
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return "", "", 0, err
+		id, err := matchKeyCandidates(ctx, tx, LinkMatchKey, r.NameKey, r.State, r.Zip)
+		if err != nil || id != "" {
+			return id, LinkMatchKey, .8, err
 		}
 	}
 	return "", LinkSourceKey, 1, nil

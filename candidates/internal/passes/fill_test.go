@@ -113,7 +113,7 @@ func holdFillWriter(t *testing.T, f *fixture) (<-chan struct{}, func()) {
 	return asleep, unlock
 }
 
-// R-3T2Z-OUBV R-3RV3-B2L6 R-3WQO-U5JY
+// R-2DSU-N0UI R-2CKY-993T R-2HGJ-SC2L
 func TestFillRepairsWholeCorpusAndEndsBeforeDiagnostic(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, true)
@@ -169,7 +169,7 @@ func TestFillRepairsWholeCorpusAndEndsBeforeDiagnostic(t *testing.T) {
 	f.ended(judge.ID)
 }
 
-// R-3O7E-5RD3 R-3WQO-U5JY
+// R-3O7E-5RD3 R-2HGJ-SC2L
 func TestFillFailureAndNilDiagnostics(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"failure", "failure nil", "success nil"} {
@@ -208,7 +208,7 @@ func TestFillFailureAndNilDiagnostics(t *testing.T) {
 	}
 }
 
-// R-3T2Z-OUBV R-12GP-CNA5 R-XVEY-C1OE R-3Z6H-LP1C
+// R-2DSU-N0UI R-12GP-CNA5 R-2TNJ-M1HJ R-2IOG-63TA
 func TestFillCancellationAndDrainWhileWriterHeld(t *testing.T) {
 	t.Parallel()
 	for _, drain := range []bool{false, true} {
@@ -245,7 +245,7 @@ func TestFillCancellationAndDrainWhileWriterHeld(t *testing.T) {
 	}
 }
 
-// R-3UAW-2M2K R-40ED-ZGS1 R-3RV3-B2L6
+// R-2F0R-0SL7 R-2JWC-JVJZ R-2CKY-993T
 func TestFillBusyRefusalOrderingAndNoStartParksRead(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -313,7 +313,7 @@ func TestFillBusyRefusalOrderingAndNoStartParksRead(t *testing.T) {
 	f.ended(p.ID)
 }
 
-// R-3UAW-2M2K
+// R-2F0R-0SL7
 func TestFillKeepsMissingScrapesRefusalAheadOfBusy(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -330,7 +330,7 @@ func TestFillKeepsMissingScrapesRefusalAheadOfBusy(t *testing.T) {
 	unlock()
 }
 
-// R-3VIS-GDT9
+// R-2G8N-EKBW
 func TestFillDeliveryClassificationDedupeAndRecordReadBeforeBusy(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"done", "missing", "unfinished", "socket failure", "no client", "duplicate", "store failure", "parks missing", "parks done", "parks unfinished"} {
@@ -424,7 +424,7 @@ func TestFillDeliveryClassificationDedupeAndRecordReadBeforeBusy(t *testing.T) {
 	}
 }
 
-// R-3Z6H-LP1C R-3RV3-B2L6 R-41MA-D8IQ
+// R-2IOG-63TA R-2CKY-993T R-2L48-XNAO
 func TestFillCannotInterruptRunningIngestOrItsFollowOn(t *testing.T) {
 	t.Parallel()
 	entered, release := make(chan struct{}), make(chan struct{})
@@ -468,7 +468,7 @@ func TestFillCannotInterruptRunningIngestOrItsFollowOn(t *testing.T) {
 	}
 }
 
-// R-41MA-D8IQ R-3Z6H-LP1C
+// R-2L48-XNAO R-2IOG-63TA
 func TestConcurrentFillAdmissionAndEngineMethods(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, true)
@@ -544,7 +544,7 @@ func TestConcurrentFillAdmissionAndEngineMethods(t *testing.T) {
 	assertClosed(t, f.eng.StartFill(t.Context()))
 }
 
-// R-41MA-D8IQ
+// R-2L48-XNAO
 func TestFillRacesIngestWithoutLosingFollowOn(t *testing.T) {
 	t.Parallel()
 	for range 12 {
@@ -589,7 +589,7 @@ func TestFillRacesIngestWithoutLosingFollowOn(t *testing.T) {
 	}
 }
 
-// R-41MA-D8IQ
+// R-2L48-XNAO
 func TestFillRacesJudge(t *testing.T) {
 	t.Parallel()
 	for range 12 {
@@ -622,7 +622,7 @@ func TestFillRacesJudge(t *testing.T) {
 	}
 }
 
-// R-3WQO-U5JY R-XVEY-C1OE
+// R-2HGJ-SC2L R-2TNJ-M1HJ
 func TestFillDiagnosticDoesNotKeepDrainWaiting(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -638,7 +638,7 @@ func TestFillDiagnosticDoesNotKeepDrainWaiting(t *testing.T) {
 	waitSignal(t, f.eng.StartFill(t.Context()))
 }
 
-// R-3T2Z-OUBV R-3RV3-B2L6 R-3Z6H-LP1C
+// R-2DSU-N0UI R-2CKY-993T R-2IOG-63TA
 func TestFillAdmitsRecoveredPassWhileItsReadStillWaits(t *testing.T) {
 	t.Parallel()
 	readStarted, readEnded := make(chan struct{}), make(chan struct{})

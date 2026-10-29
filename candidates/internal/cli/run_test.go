@@ -449,8 +449,8 @@ func runOnlyState(t *testing.T, dir string) {
 
 // R-U54M-T001 R-119A-9L3H R-13P3-14KV R-9NW2-FV7B R-A1AY-NCCY R-XHVR-JJLE
 // R-3TTL-43TV R-42CV-SI0Q R-7797-KNZO R-QR9U-4LFL R-49OA-34GW R-GC07-H8O0
-// R-459Z-IJQT R-R335-N3PU R-ZY3R-GAKJ R-R0NC-VK8G   R-4BDH-FEGA
-// R-08GD-3XUM R-06N2-4ORE R-MD1O-TQIR R-76JM-ZE8M
+// R-2PZU-GQ9G R-R335-N3PU R-ZY3R-GAKJ R-R0NC-VK8G   R-1XY5-O07H
+// R-UG7E-CT0I R-06N2-4ORE R-MD1O-TQIR R-76JM-ZE8M
 func TestRunAssembledChain(t *testing.T) {
 	if cli.SweepInterval != time.Hour {
 		t.Fatal("sweep constant")
@@ -592,7 +592,7 @@ func TestRunAssembledChain(t *testing.T) {
 		t.Fatalf("stop %v", last)
 	}
 	allowedEvents := map[string]bool{}
-	for _, name := range []string{"service.started", "service.stopping", "request.started", "request.finished", "tool.called", "event.lost", "sibling.called", "pass.started", "pass.finished"} {
+	for _, name := range []string{"service.started", "service.stopping", "request.started", "request.finished", "tool.called", "event.lost", "sibling.called", "pass.started", "pass.finished", "owner_record.written"} {
 		allowedEvents[name] = true
 	}
 	calls := fake.Requests()
@@ -849,7 +849,7 @@ func TestRunInjectedClockAndBytes(t *testing.T) {
 	}
 }
 
-// R-4A5L-1MPL
+// R-1WQ9-A8GS
 func TestRunFreshDeliveryCounts(t *testing.T) {
 	row := runRow()
 	second := runRow()
@@ -1073,7 +1073,7 @@ func TestRunKeepsScrapesSocketSelectedAtStart(t *testing.T) {
 	}
 }
 
-// R-4423-4S04
+// R-2NK1-P6S2
 func TestRunInterruptsHeldScrapesRead(t *testing.T) {
 	hold := make(chan struct{})
 	defer close(hold)
@@ -1105,7 +1105,7 @@ func TestRunInterruptsHeldScrapesRead(t *testing.T) {
 	}
 }
 
-// R-4CLD-T66Z
+// R-1Z62-1RY6
 func TestRunUnreachableScrapesIngestAndDelivery(t *testing.T) {
 	d, err := os.MkdirTemp("", "cand-")
 	if err != nil {
@@ -1187,7 +1187,7 @@ type runFailBus struct{}
 
 func (runFailBus) Deliver(context.Context, events.Event) error { return errors.New("fixture refusal") }
 
-// R-48XO-NUYW
+// R-1VIC-WGQ3
 func TestRunSinkFailuresDoNotChangePass(t *testing.T) {
 	var answers []map[string]json.RawMessage
 	var initial []map[string]json.RawMessage
@@ -1674,7 +1674,7 @@ func runAssertSilent(t *testing.T, h *runHarness) {
 	}
 }
 
-// R-VYUS-NGEI R-XQ2V-N2EA
+// R-22TR-7369 R-XQ2V-N2EA
 func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	rows := make([]map[string]any, 3)
 	for i := range rows {
@@ -1825,7 +1825,7 @@ func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	}
 }
 
-// R-O8YY-QW5O
+// R-8KIU-1TFM
 func TestRunUnlistedLegacyProspectList(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
 	makeMCP := h.p.MCP
@@ -1847,7 +1847,7 @@ func TestRunUnlistedLegacyProspectList(t *testing.T) {
 
 	caller := identity.Caller{UserID: "legacy-owner"}
 	list, err := h.client.ListTools(t.Context(), caller)
-	if err != nil || len(list) != 23 || len(list) != len(tools.Catalog()) {
+	if err != nil || len(list) != 25 || len(list) != len(tools.Catalog()) {
 		t.Fatal(list, err)
 	}
 	for i, entry := range tools.Catalog() {

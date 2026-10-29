@@ -309,7 +309,6 @@ func (LinkFacts) Derive(s Subject) Result {
 			if r.FleetVerdict == sources.FleetPass || r.FleetVerdict == sources.FleetFail || r.FleetVerdict == sources.FleetUnknown {
 				f.FleetVerdict = r.FleetVerdict
 			}
-			f.PowerUnits = knownCount(r.PowerUnits)
 			f.Drivers = knownCount(r.Drivers)
 		}
 	}
@@ -328,6 +327,15 @@ func (LinkFacts) Derive(s Subject) Result {
 		records = append(records, sources.Record{Source: l.Scraper, SourceID: l.SourceID, Seen: l.Seen, Reading: r})
 	}
 	p := sources.Pick(sources.Orders(), records, nil)
+	fleetRecords := make([]sources.Record, 0, len(s.Links))
+	for _, l := range s.Links {
+		fleetRecords = append(fleetRecords, sources.Record{Source: l.Scraper, SourceID: l.SourceID, Gone: l.Gone, Seen: l.Seen, Reading: l.Reading})
+	}
+	fleetPick := sources.Pick(sources.Orders(), fleetRecords, nil)
+	if fleetPick.PowerUnits.Source != "" {
+		n := fleetPick.PowerUnits.Value
+		f.PowerUnits = knownCount(&n)
+	}
 	if !known.IsZero() && known.UTC().Format(time.DateOnly) == p.KnownSince.Value.UTC().Format(time.DateOnly) {
 		f.KnownSinceSource = p.KnownSince.Source
 	}
@@ -442,8 +450,14 @@ func (WebsiteCheck) Kind() string { return sources.WebsiteCheck }
 // Fetched reports whether this kind reaches outside.
 func (WebsiteCheck) Fetched() bool { return true }
 
-// Inputs returns the checked own domain.
-func (WebsiteCheck) Inputs(s Subject) string { return website.Inputs(s.PlacesURL, s.Email) }
+// Inputs offers the owner website before source websites and the own domain.
+func (WebsiteCheck) Inputs(s Subject) string {
+	owner := ""
+	if s.WebsiteSource == sources.Owner {
+		owner = s.Website
+	}
+	return website.OwnerInputs(owner, s.PlacesURL, s.Email)
+}
 
 // Valid accepts website results, including earlier records' extra members.
 func (WebsiteCheck) Valid(b json.RawMessage) bool {

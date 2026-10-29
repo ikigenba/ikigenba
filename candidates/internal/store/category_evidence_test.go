@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-8BI4-YMZ3 R-8CQ1-CEPS R-8DXX-Q6GH
+// R-8BI4-YMZ3 R-4ODI-LH74 R-8DXX-Q6GH
 func TestCategoryEvidenceHelpers(t *testing.T) {
 	brief := []sources.Category{{Name: sources.CategoryAgriculture, Source: enrichers.KindBrief}, {Name: sources.CategoryRetail, Source: enrichers.KindBrief}}
 	records := []sources.Category{{Name: sources.CategoryConstruction, Source: ppp.Name}, {Name: sources.CategoryTrucking, Source: fmcsa.Name}}
@@ -52,7 +52,7 @@ func categoryLinks(t *testing.T, id string, categories ...sources.Category) stor
 	return store.Enrichment{Candidate: id, Kind: enrichers.KindLinkFacts, Inputs: "record-inputs", Source: enrichers.SourceLinks, Found: raw}
 }
 
-// R-D1TM-II5M R-E8I3-WH3X
+// R-SQMN-OZ0R R-4LXP-TXPQ
 func TestBriefCategoriesReplaceRecordsAndEmptyGoodBriefRestoresThem(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -99,7 +99,7 @@ func TestBriefCategoriesReplaceRecordsAndEmptyGoodBriefRestoresThem(t *testing.T
 	contractEqual(t, got.Records, []sources.Category{})
 }
 
-// R-EJH7-CES6
+// R-SZ5Y-DD7M
 func TestRecordsReadNewestLinkResultBesidePreviousWriterCategories(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -134,7 +134,7 @@ func TestRecordsReadNewestLinkResultBesidePreviousWriterCategories(t *testing.T)
 	contractEqual(t, got.Records, []sources.Category{})
 }
 
-// R-JQ1T-VB8F R-OQ2T-7XB6
+// R-703Y-PBES R-OQ2T-7XB6
 func TestProspectListClassifiesOnlyItsSelectedMembersAndReadsNewCategories(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -245,7 +245,7 @@ func TestFillFactsReprojectsMissingCategoryRowsAndPreservesExistingRows(t *testi
 	contractEqual(t, got, before)
 }
 
-// R-JQ1T-VB8F
+// R-703Y-PBES
 func TestProspectListClassificationUsesBriefDecisionOrRecordFallback(t *testing.T) {
 	for _, tc := range []struct {
 		name, category, source string

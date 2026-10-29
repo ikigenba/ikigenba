@@ -102,7 +102,7 @@ func regLinks(t *testing.T, f *regFixture, id string) []store.Link {
 }
 func regTime(f *regFixture) time.Time { return f.now.UTC().Truncate(time.Second) }
 
-// R-IMOL-CZV9 R-INWH-QRLY R-L6L5-HLZB
+// R-F0AP-17F0 R-F1IL-EZ5P R-L6L5-HLZB
 func TestIngestIdentityAndBatch(t *testing.T) {
 	f := regNew(t)
 	a := regObs("first", "Acme Trucking Inc")
@@ -211,7 +211,7 @@ func TestIngestRefreshAndForce(t *testing.T) {
 	regEqual(t, regLinks(t, f, ids[0])[0], want)
 }
 
-// R-2E9L-OZD5 R-2D1P-B7MG
+// R-FCHO-UWTY R-FA1W-3DCK
 func TestIngestDisplayAndGone(t *testing.T) {
 	f := regNew(t)
 	a := regObs("older", "Acme INC")
@@ -359,7 +359,7 @@ func TestIngestSplitAndPersistence(t *testing.T) {
 	regEqual(t, rs, []store.Ruling{pair, r})
 }
 
-// R-WPDD-7660 R-NEG9-LV06 R-7H6C-IALR R-RGR7-9XKL R-GL9N-YO2J R-GMHK-CFT8
+// R-WPDD-7660 R-0I0H-BC11 R-7H6C-IALR R-F7M3-BTV6 R-GL9N-YO2J R-GMHK-CFT8
 func TestIngestMergeAndNotSame(t *testing.T) {
 	f := regNew(t)
 	a := regObs("one", "First")
@@ -452,7 +452,7 @@ func TestIngestMergeAndNotSame(t *testing.T) {
 	regEqual(t, got, oldJudgments)
 }
 
-// R-RGR7-9XKL R-GL9N-YO2J R-GNPG-Q7JX
+// R-F7M3-BTV6 R-GL9N-YO2J R-GNPG-Q7JX
 func TestJudgingRulingsTakeEffectImmediately(t *testing.T) {
 	f := regNew(t)
 	regNoErr(t, f.st.ReplaceZipDrive(regCtx, map[string]int64{"55072": 0}))
@@ -511,7 +511,7 @@ func TestJudgingRulingsTakeEffectImmediately(t *testing.T) {
 	regEqual(t, rulings[0].Kind, store.KindInclude)
 }
 
-// R-IMOL-CZV9 R-L6L5-HLZB
+// R-F0AP-17F0 R-L6L5-HLZB
 func TestIngestOldestTieAndGoneIdentity(t *testing.T) {
 	f := regNew(t)
 	a, b := regObs("one", "Acme Inc"), regObs("two", "Acme LLC")
@@ -541,7 +541,7 @@ func TestIngestOldestTieAndGoneIdentity(t *testing.T) {
 	regEqual(t, touched, wantIDs)
 }
 
-// R-GMHK-CFT8 R-NKJR-IPPN
+// R-GMHK-CFT8 R-0QJR-ZQ7W
 func TestJudgingMergeAndSplitAssessOnlyActiveSides(t *testing.T) {
 	f := regNew(t)
 	regNoErr(t, f.st.ReplaceZipDrive(regCtx, map[string]int64{"55072": 18}))

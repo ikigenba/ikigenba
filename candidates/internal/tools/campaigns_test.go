@@ -13,7 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-3GJ3-M4V9 R-ML95-4DLF R-FGEH-O7SX
+// R-3GJ3-M4V9 R-ML95-4DLF R-15M2-YJVP
 func TestCampaignAnswerHistory(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -110,7 +110,7 @@ func TestCampaignAnswerHistory(t *testing.T) {
 	}
 }
 
-// R-X5PS-GSY3 R-XWGW-ULKR
+// R-X5PS-GSY3 R-VXGZ-7W2R
 func TestCampaignFilterToolLifecycle(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(7)

@@ -21,7 +21,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-HDWR-H52I R-HCOV-3DBT
+// R-0ZSY-YFG1 R-128R-PYXF
 func TestJudgeWalkUsesPassTimeAcrossPages(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -81,7 +81,7 @@ func (w *diagnosticWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// R-LR7S-TJQ3 R-2PIS-RSYP
+// R-1FNN-XG32 R-2PIS-RSYP
 func TestStoreFailureDiagnosticPrecedesEnding(t *testing.T) {
 	t.Parallel()
 
@@ -118,7 +118,7 @@ func TestStoreFailureDiagnosticPrecedesEnding(t *testing.T) {
 	}
 }
 
-// R-HCOV-3DBT R-EOCS-VHQY
+// R-128R-PYXF R-13GO-3QO4
 func TestIngestMarksGoneAcrossAllPages(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -150,7 +150,7 @@ func TestIngestMarksGoneAcrossAllPages(t *testing.T) {
 	}
 }
 
-// R-LR7S-TJQ3
+// R-1FNN-XG32
 func TestStoreDiagnosticSurvivesUnrecordableEnding(t *testing.T) {
 	t.Parallel()
 	var f *fixture
@@ -178,7 +178,7 @@ func TestStoreDiagnosticSurvivesUnrecordableEnding(t *testing.T) {
 	}
 }
 
-// R-LR7S-TJQ3
+// R-1FNN-XG32
 func TestNonStoreEndingsLeaveDiagnosticWriterSilent(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"done", "scrapes", "interrupted", "prompts"} {

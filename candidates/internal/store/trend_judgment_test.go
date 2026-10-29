@@ -62,7 +62,7 @@ func assertTrend(t *testing.T, got store.Judgments, hs []sources.Headcount) {
 	}
 }
 
-// R-P74R-KYTD R-P5WV-772O R-NEG9-LV06
+// R-P74R-KYTD R-P5WV-772O R-0I0H-BC11
 func TestJudgePersistsSeriesAndTrendFromStoredFacts(t *testing.T) {
 	cases := [][]sources.Headcount{
 		{trendCount(oshaita.Name, sources.HeadcountEmployees, 100, 2021), trendCount(oshaita.Name, sources.HeadcountEmployees, 131, 2025), trendCount(ppp.Name, sources.HeadcountJobs, 90, 2020)},
@@ -107,7 +107,7 @@ func setTrendFacts(t *testing.T, f *contractFixture, id string, hs []sources.Hea
 	}))
 }
 
-// R-NPFD-1SOF
+// R-0LO6-GN94
 func TestJudgeSeriesRequiresDerivedHeadcountsAndSumsSites(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -215,7 +215,7 @@ func TestTrendPreviousWriterDefaultsAndPreservesAcrossReopen(t *testing.T) {
 	check()
 }
 
-// R-NPFD-1SOF
+// R-0LO6-GN94
 func TestJudgeSeriesDerivedNumericalCases(t *testing.T) {
 	for _, tc := range []struct {
 		hs        []sources.Headcount

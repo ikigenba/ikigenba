@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"net/url"
+	neturl "net/url"
 	"reflect"
 	"sort"
 	"strings"
@@ -19,9 +19,16 @@ import (
 var factsColumns = columns("candidate:Candidate known_since:KnownSince government_match:GovernmentMatch newest_filing:NewestFiling categories:Categories fleet_verdict:FleetVerdict power_units:PowerUnits drivers:Drivers headcounts:Headcounts website:Website website_url:WebsiteURL website_source:WebsiteSource minutes:Minutes minutes_source:MinutesSource miles:Miles route_address:RouteAddress brief:Brief brief_labels:BriefLabels known_since_source:KnownSinceSource newest_filing_source:NewestFilingSource website_checked_url:WebsiteCheckedURL")
 
 func unknownFacts(id string) Facts {
-	return Facts{Candidate: id, Categories: []sources.Category{}, Records: []sources.Category{}, Headcounts: []sources.Headcount{}, BriefLabels: []string{}, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown}
+	return Facts{Candidate: id, Categories: []sources.Category{}, Records: []sources.Category{}, Headcounts: []sources.Headcount{}, BriefLabels: []string{}, OtherKnownSince: []sources.Sourced[time.Time]{}, OtherPowerUnits: []sources.Sourced[int64]{}, FleetVerdict: sources.FleetUnknown, Website: sources.WebsiteUnknown}
 }
 func factsKey(ctx context.Context, tx *sql.Tx, id string) (Facts, error) {
+	f, err := storedFactsKey(ctx, tx, id)
+	if err == nil {
+		err = factAlternatives(ctx, tx, &f)
+	}
+	return f, err
+}
+func storedFactsKey(ctx context.Context, tx *sql.Tx, id string) (Facts, error) {
 	fs, err := readRecords[Facts](ctx, tx, "facts", factsColumns, " WHERE candidate=?", id)
 	if err != nil {
 		return Facts{}, err
@@ -62,7 +69,11 @@ func (s *Store) projectedFacts(ctx context.Context, tx *sql.Tx, id string) (Fact
 	if err != nil {
 		return Facts{}, nil, err
 	}
-	if len(es) == 0 && places == "" {
+	os, err := ownerRecordsKey(ctx, tx, id)
+	if err != nil {
+		return Facts{}, nil, err
+	}
+	if len(es) == 0 && places == "" && len(os) == 0 {
 		var exists int
 		if err = scanSQL(ctx, tx, "SELECT EXISTS(SELECT 1 FROM facts WHERE candidate=?)", []any{id}, &exists); err != nil {
 			return Facts{}, nil, err
@@ -158,7 +169,7 @@ func (s *Store) projectedFacts(ctx context.Context, tx *sql.Tx, id string) (Fact
 			}
 		}
 	}
-	f.WebsiteSource, f.Website, f.WebsiteURL, _, _, f.WebsiteCheckedURL, _ = WebsiteDecisionOf(es, places)
+	f.WebsiteSource, f.Website, f.WebsiteURL, _, _, f.WebsiteCheckedURL, _ = WebsiteDecisionOf(es, places, ownerURL(os))
 	if len(briefCategories) > 0 {
 		f.Categories = briefCategories
 	}
@@ -176,6 +187,9 @@ func (s *Store) projectedFacts(ctx context.Context, tx *sql.Tx, id string) (Fact
 		}
 	}
 	f.Categories = unique
+	if err = ownerFacts(ctx, tx, &f, es, places); err != nil {
+		return Facts{}, nil, err
+	}
 	return f, extra, nil
 }
 
@@ -316,6 +330,38 @@ func (s *Store) factsResults(ctx context.Context, tx *sql.Tx, id, p string) ([]E
 			out = append(out, *matched)
 		}
 	}
+	os, err := ownerRecordsKey(ctx, tx, id)
+	if err != nil {
+		return nil, err
+	}
+	if q := ownerURL(os); q != "" {
+		checks, err := enrichmentRecords(ctx, tx, " WHERE candidate=? AND kind=? AND (json_extract(found,'$.from')=? OR EXISTS(SELECT 1 FROM json_each(found,'$.misses') AS m WHERE json_extract(m.value,'$.from')=?)) ORDER BY seq DESC LIMIT 1", id, sources.WebsiteCheck, q, q)
+		if err != nil {
+			return nil, err
+		}
+		// Keep the newest global check first for Written, but do not let an older
+		// Places match decide the owner URL before its newest attempted check.
+		kept := out[:0]
+		firstCheck := true
+		for _, e := range out {
+			var w website.Result
+			if e.Kind != sources.WebsiteCheck || json.Unmarshal(e.Found, &w) != nil {
+				kept = append(kept, e)
+				continue
+			}
+			preserve := firstCheck
+			firstCheck = false
+			matches := w.From == q
+			for _, m := range w.Misses {
+				matches = matches || m.From == q
+			}
+			if !matches || preserve {
+				kept = append(kept, e)
+			}
+		}
+		kept = append(kept, checks...)
+		out = kept
+	}
 	return out, nil
 }
 
@@ -377,7 +423,7 @@ func (s *Store) FillFacts(ctx context.Context, after string, n int) (string, err
 			if results == 0 {
 				continue
 			}
-			old, err := factsKey(ctx, tx, c.ID)
+			old, err := storedFactsKey(ctx, tx, c.ID)
 			if err != nil && !errors.Is(err, ErrNotFound) {
 				return err
 			}
@@ -418,6 +464,8 @@ func (s *Store) FillFacts(ctx context.Context, after string, n int) (string, err
 			}
 			projected := f
 			projected.Records = old.Records
+			projected.OtherKnownSince = old.OtherKnownSince
+			projected.OtherPowerUnits = old.OtherPowerUnits
 			for _, kind := range []string{enrichers.KindBrief, enrichers.KindDriveMinutes, enrichers.KindDriveRoute, enrichers.KindLinkFacts, enrichers.KindSiteText, sources.WebsiteCheck, enrichers.KindWebsiteSearch} {
 				if at, ok := extra[kind+"_at"].(string); ok && at != "" {
 					parsed, err := time.Parse(time.RFC3339, at)
@@ -447,12 +495,16 @@ func ClassifiedBy(categories []sources.Category) string {
 	if len(categories) == 0 {
 		return ""
 	}
+	source := categories[0].Source
+	if source != enrichers.KindBrief && source != sources.Owner {
+		return enrichers.SourceLinks
+	}
 	for _, c := range categories {
-		if c.Source != enrichers.KindBrief {
+		if c.Source != source {
 			return enrichers.SourceLinks
 		}
 	}
-	return enrichers.KindBrief
+	return source
 }
 
 // RecordsDiffer compares a brief classification with record category names.
@@ -511,7 +563,31 @@ func recordCategories(ctx context.Context, tx *sql.Tx, id string) ([]sources.Cat
 }
 
 // WebsiteDecisionOf returns the website selected by the recorded evidence.
-func WebsiteDecisionOf(es []Enrichment, placesURL string) (source, state, url, title, why, checkedURL string, at time.Time) {
+func WebsiteDecisionOf(es []Enrichment, placesURL, ownerURL string) (source, state, url, title, why, checkedURL string, at time.Time) {
+	if ownerURL != "" {
+		state = sources.WebsiteHTTP
+		if u, err := neturl.Parse(ownerURL); err == nil && strings.EqualFold(u.Scheme, "https") {
+			state = sources.WebsiteHTTPS
+		}
+		for _, e := range es {
+			if e.Kind != sources.WebsiteCheck {
+				continue
+			}
+			var w website.Result
+			if json.Unmarshal(e.Found, &w) != nil {
+				continue
+			}
+			if w.From == ownerURL {
+				return WebsiteByOwner, w.State, ownerURL, w.Title, "", "", e.At
+			}
+			for _, miss := range w.Misses {
+				if miss.From == ownerURL {
+					return WebsiteByOwner, state, ownerURL, "", "", "", e.At
+				}
+			}
+		}
+		return WebsiteByOwner, state, ownerURL, "", "", "", time.Time{}
+	}
 	state = sources.WebsiteUnknown
 	var check *website.Result
 	var checkAt time.Time
@@ -604,7 +680,7 @@ func searchLandsOn(v enrichers.WebsiteSearchFound) bool {
 
 func websiteSiteKey(address string) string {
 	for _, raw := range []string{address, "http://" + address} {
-		if u, err := url.Parse(raw); err == nil && u.Hostname() != "" {
+		if u, err := neturl.Parse(raw); err == nil && u.Hostname() != "" {
 			return strings.TrimPrefix(strings.TrimSuffix(strings.ToLower(u.Hostname()), "."), "www.")
 		}
 	}

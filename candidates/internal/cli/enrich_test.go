@@ -62,7 +62,7 @@ func websiteTimers(t *testing.T, h *runHarness, timeout chan chan time.Time) {
 	}
 }
 
-// R-4HGZ-C95R
+// R-241N-KUWY
 func TestRunSandboxSelectsStub(t *testing.T) {
 	for _, supplied := range []bool{false, true} {
 		t.Run(map[bool]string{false: "nil", true: "injected"}[supplied], func(t *testing.T) {
@@ -99,7 +99,7 @@ func TestRunSandboxSelectsStub(t *testing.T) {
 	}
 }
 
-// R-4IOV-Q0WG
+// R-259J-YMNN
 func TestRunInjectedHTTPAndTimeouts(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
 	arrived := make(chan string, 4)

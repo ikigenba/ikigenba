@@ -16,26 +16,29 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-9KZZ-KSDP R-PJ9Y-01PY R-YH9Z-K58E
+// R-RV9G-OPNR R-PJ9Y-01PY R-YH9Z-K58E
 func TestDriveViewTypes(_ *testing.T) {
 	_ = struct {
-		KnownSince, KnownSinceText, KnownSinceSource, NewestFiling, NewestFilingText, NewestFilingSource string
-		Categories                                                                                       []CategoryRow
-		ClassifiedBy                                                                                     string
-		RecordsDiffer                                                                                    bool
-		RecordCategories                                                                                 []CategoryRow
-		GovernmentMatch, FleetVerdict, PowerUnits, Drivers                                               string
-		Headcounts                                                                                       []HeadcountRow
-		BriefLabels                                                                                      []string
-		Minutes, MinutesSource, Miles, RouteAddress, RoutePlaceURL, RouteDirectionsURL                   string
-		Written                                                                                          []WrittenRow
+		KnownSince, KnownSinceText, KnownSinceSource                                   string
+		OtherKnownSince                                                                []OtherRow
+		NewestFiling, NewestFilingText, NewestFilingSource                             string
+		Categories                                                                     []CategoryRow
+		ClassifiedBy                                                                   string
+		RecordsDiffer                                                                  bool
+		RecordCategories                                                               []CategoryRow
+		GovernmentMatch, FleetVerdict, PowerUnits, Drivers                             string
+		OtherPowerUnits                                                                []OtherRow
+		Headcounts                                                                     []HeadcountRow
+		BriefLabels                                                                    []string
+		Minutes, MinutesSource, Miles, RouteAddress, RoutePlaceURL, RouteDirectionsURL string
+		Written                                                                        []WrittenRow
 	}(FactsView{})
 	_ = struct{ Scraper, Kind, Count, Hours, AsOf, AsOfText string }(HeadcountRow{})
 	_ = struct{ Kind, At, AtText string }(WrittenRow{})
 	_ = struct{ Minutes, Miles, Address, Precision, Status, Why, Error, PlaceURL, DirectionsURL string }(RouteView{})
 }
 
-// R-ES0I-0SZ1 R-HISD-081A R-EUGA-SCGF
+// R-07GW-8Z49 R-0PRD-ZJ8O R-08OS-MQUY
 func TestDriveFactsAndMemberViews(t *testing.T) {
 	for _, tc := range []struct {
 		f                               store.Facts
@@ -70,7 +73,7 @@ func TestDriveFactsAndMemberViews(t *testing.T) {
 	}
 }
 
-// R-HKT0-DT41 R-HM0W-RKUQ R-F6NA-M1VD
+// R-HKT0-DT41 R-HM0W-RKUQ R-0M3O-U80L
 func TestRouteResultProjection(t *testing.T) {
 	for _, tc := range []struct {
 		found  enrichers.RouteFound
@@ -157,7 +160,7 @@ func TestDriveRouteTemplateStates(t *testing.T) {
 	render("pass", PassData{Pass: PassView{Kind: store.KindEnrichTarget, EnrichKind: enrichers.KindDriveRoute, Runs: 2, RunsFailed: 1, Cost: "$0.010000"}})
 }
 
-// R-D7X4-FCV3 R-ES0I-0SZ1 R-HISD-081A R-EUGA-SCGF
+// R-03T7-3NW6 R-07GW-8Z49 R-0PRD-ZJ8O R-08OS-MQUY
 func TestCandidateAndListDriveDecision(t *testing.T) {
 	for i, result := range []enrichers.RouteFound{{Minutes: new(int64(47)), Miles: new(38.2), Address: "chosen-address"}, {Why: routes.WhyTooCoarse}, {Error: "chosen-error"}, {Minutes: new(int64(12)), Address: "old-address"}} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {

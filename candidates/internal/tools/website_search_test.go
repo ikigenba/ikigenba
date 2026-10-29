@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-FIUA-FRAB R-D950-T4LS R-6RF7-1NQV
+// R-181V-Q3D3 R-D950-T4LS R-WN6X-B7B1
 func TestSearchAnswersUseStoredResults(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
@@ -153,7 +153,7 @@ func TestWebsiteSearchEnrichDispatch(t *testing.T) {
 	}
 }
 
-// R-FIUA-FRAB R-DACX-6WCH
+// R-181V-Q3D3 R-136A-70EB
 func TestWebsiteDecisionAnswersDistinguishUncheckedAndUnfound(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
@@ -222,7 +222,7 @@ func TestWebsiteDecisionAnswersDistinguishUncheckedAndUnfound(t *testing.T) {
 	}
 }
 
-// R-6RF7-1NQV
+// R-WN6X-B7B1
 func TestSearchAnswersPreserveRecordedContext(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
@@ -257,7 +257,7 @@ func TestSearchAnswersPreserveRecordedContext(t *testing.T) {
 	}
 }
 
-// R-6RF7-1NQV R-FIUA-FRAB
+// R-WN6X-B7B1 R-181V-Q3D3
 func TestSearchAnswersKeepRecordedCaseWhileFactsUseLanding(t *testing.T) {
 	const checked = "https://www.riverhaul.test/"
 	for _, tc := range []struct {
@@ -303,7 +303,7 @@ func TestSearchAnswersKeepRecordedCaseWhileFactsUseLanding(t *testing.T) {
 	}
 }
 
-// R-FIUA-FRAB R-DACX-6WCH
+// R-181V-Q3D3 R-136A-70EB
 func TestCandidateWebsiteTakeoversUseRecordedSiteAndOrigin(t *testing.T) {
 	const checked = "https://www.acme.test/"
 	const landing = "https://acme-trucking.test/"
@@ -366,7 +366,7 @@ func TestCandidateWebsiteTakeoversUseRecordedSiteAndOrigin(t *testing.T) {
 	}
 }
 
-// R-FIUA-FRAB R-DACX-6WCH
+// R-181V-Q3D3 R-136A-70EB
 func TestCandidateWebsiteSearchChainSurvivesLaterChecksAndInertSearches(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]

@@ -45,6 +45,7 @@ type Candidate struct {
 	OtherNames                                                                                               []sources.Sourced[string]
 	OtherAddresses                                                                                           []sources.Sourced[sources.Address]
 	OtherPhones, OtherEmails                                                                                 []sources.Sourced[string]
+	EIN, EINSource, EINRecord                                                                                string
 }
 
 // Link attaches a source row to a candidate.
@@ -107,6 +108,8 @@ type Facts struct {
 	Brief                                                 string
 	BriefLabels                                           []string
 	Written                                               []Written
+	OtherKnownSince                                       []sources.Sourced[time.Time]
+	OtherPowerUnits                                       []sources.Sourced[int64]
 }
 
 // Written records the result time used for one kind.

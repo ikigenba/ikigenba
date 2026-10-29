@@ -464,7 +464,7 @@ func TestRefetchStoreFailureAndNilDiagnostics(t *testing.T) {
 	}
 }
 
-// R-XMVN-NNHJ R-XVEY-C1OE R-XO3K-1F88
+// R-XMVN-NNHJ R-2TNJ-M1HJ R-XO3K-1F88
 func TestRefetchCutOffDuringFetchAndPace(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"cancel fetch", "drain fetch", "drain pace"} {
@@ -597,7 +597,7 @@ func TestRefetchLeavesPassesFactsAndEnrichmentsAlone(t *testing.T) {
 	}
 }
 
-// R-XRR9-6QGB
+// R-2SFN-89QU
 func TestRefetchAdmitsJudgeAndFillAndRunsBesideFill(t *testing.T) {
 	t.Parallel()
 	f, _ := refetchFixture(t, 1)
@@ -731,7 +731,7 @@ func TestConcurrentRefetchAdmissionAndEngineMethods(t *testing.T) {
 	}
 }
 
-// R-XRR9-6QGB
+// R-2SFN-89QU
 func TestRefetchDoesNotBlockAnyPassOrCampaignDelivery(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"ingest", "judge", "enrich", "target", "rules", "walk", "start parks", "deliver ingest", "deliver judge", "deliver parks", "campaign"} {

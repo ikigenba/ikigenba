@@ -8,7 +8,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-ZYWL-UYRQ
+// R-FG5E-0821
 func TestUnchangedAttachPreservesCompleteCandidate(t *testing.T) {
 	for _, force := range []bool{false, true} {
 		for _, reverse := range []bool{false, true} {

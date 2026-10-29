@@ -31,7 +31,7 @@ func seedRunRefetch(t *testing.T, h *runHarness, count int) (string, []string) {
 		t.Fatal(err)
 	}
 	for _, file := range files {
-		if file.Name() == "0027_page_reasons.sql" {
+		if file.Name() >= "0027_page_reasons.sql" {
 			continue
 		}
 		body, e := fs.ReadFile(candidates.Migrations(), file.Name())

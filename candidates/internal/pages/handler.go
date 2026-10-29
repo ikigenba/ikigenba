@@ -235,7 +235,7 @@ func Handler(cfg Config) http.Handler {
 				fail()
 				return
 			}
-			d := CandidateData{Candidate: candidateView(c), Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{}, Pages: []PageRow{}, EnrichmentResults: []EnrichmentRow{}, Rejects: []RejectRecordRow{}, Campaigns: []CampaignRow{}}
+			d := CandidateData{Candidate: candidateView(c), Estimates: []EstimateView{}, Links: []LinkView{}, Rulings: []RulingView{}, Pages: []PageRow{}, EnrichmentResults: []EnrichmentRow{}, Rejects: []RejectRecordRow{}, Campaigns: []CampaignRow{}, OwnerRecords: []OwnerRecordRow{}}
 			rulings, err := cfg.Store.Rulings(r.Context(), cid)
 			if err != nil {
 				fail()
@@ -253,6 +253,12 @@ func Handler(cfg Config) http.Handler {
 				d.Rejects = append(d.Rejects, rejectRecordRow(x))
 			}
 			if c.Status != store.StatusMerged {
+				owners, err := cfg.Store.OwnerRecords(r.Context(), cid)
+				if err != nil {
+					fail()
+					return
+				}
+				d.OwnerRecords, d.Candidate.OwnerSet, d.Candidate.Founded = ownerViews(cid, owners)
 				d.Enrichments = &EnrichmentsView{}
 				park, err := cfg.Store.CandidatePark(r.Context(), cid)
 				if err != nil {
@@ -293,7 +299,7 @@ func Handler(cfg Config) http.Handler {
 					fail()
 					return
 				}
-				setWebsite(&d.Candidate, enrichments, placesURL)
+				setWebsite(&d.Candidate, enrichments, placesURL, ownerURL(owners))
 				d.Enrichments.Brief = briefView(enrichments)
 				subject, err := cfg.Store.Subject(r.Context(), cid)
 				if err != nil {

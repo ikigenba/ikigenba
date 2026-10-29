@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
@@ -41,8 +43,19 @@ func enrichmentRecords(ctx context.Context, tx *sql.Tx, where string, args ...an
 
 // matchingCheck filters in SQL, then validates the exact protocol tokens in Go.
 // Streaming keeps historical results outside the retained working set.
-func matchingCheck(ctx context.Context, tx *sql.Tx, id, a, b string) (*Enrichment, error) {
-	rows, err := querySQL(ctx, tx, "SELECT candidate,kind,inputs,source,found,cost,at FROM enrichments WHERE candidate=? AND kind=? AND ((?<>'' AND instr(char(10)||inputs||char(10),char(10)||?||char(10))>0) OR (?<>'' AND instr(char(10)||inputs||char(10),char(10)||?||char(10))>0)) ORDER BY seq DESC", id, sources.WebsiteCheck, a, a, b, b)
+func matchingCheck(ctx context.Context, tx *sql.Tx, id string, elements ...string) (*Enrichment, error) {
+	conditions := []string{}
+	args := []any{id, sources.WebsiteCheck}
+	for _, u := range elements {
+		if u != "" {
+			conditions = append(conditions, "instr(char(10)||inputs||char(10),char(10)||?||char(10))>0")
+			args = append(args, u)
+		}
+	}
+	if len(conditions) == 0 {
+		return nil, nil
+	}
+	rows, err := querySQL(ctx, tx, "SELECT candidate,kind,inputs,source,found,cost,at FROM enrichments WHERE candidate=? AND kind=? AND ("+strings.Join(conditions, " OR ")+") ORDER BY seq DESC", args...)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +68,7 @@ func matchingCheck(ctx context.Context, tx *sql.Tx, id, a, b string) (*Enrichmen
 		}
 		matched := false
 		for _, u := range website.URLs(e.Inputs) {
-			if u != "" && (u == a || u == b) {
+			if u != "" && slices.Contains(elements, u) {
 				matched = true
 				break
 			}
@@ -192,13 +205,10 @@ func (s *Store) subject(ctx context.Context, tx *sql.Tx, c Candidate, pages bool
 	if err != nil {
 		return out, err
 	}
-	current := website.URLs(website.Inputs(out.PlacesURL, c.Email))
+	current := website.URLs(website.OwnerInputs(ownerURL(r.owners), out.PlacesURL, c.Email))
 	domain := website.Domain(c.Email)
-	checkFor := func(a, b string) (*website.Result, error) {
-		if a == "" && b == "" {
-			return nil, nil
-		}
-		e, err := matchingCheck(ctx, tx, c.ID, a, b)
+	checkFor := func(elements ...string) (*website.Result, error) {
+		e, err := matchingCheck(ctx, tx, c.ID, elements...)
 		if err != nil || e == nil {
 			return nil, err
 		}
@@ -208,14 +218,7 @@ func (s *Store) subject(ctx context.Context, tx *sql.Tx, c Candidate, pages bool
 		}
 		return &w, nil
 	}
-	a, b := "", ""
-	if len(current) > 0 {
-		a = current[0]
-	}
-	if len(current) > 1 {
-		b = current[1]
-	}
-	out.Check, err = checkFor(a, b)
+	out.Check, err = checkFor(current...)
 	if err != nil {
 		return out, err
 	}
@@ -223,7 +226,7 @@ func (s *Store) subject(ctx context.Context, tx *sql.Tx, c Candidate, pages bool
 	if err != nil {
 		return out, err
 	}
-	f, err := factsKey(ctx, tx, c.ID)
+	f, err := storedFactsKey(ctx, tx, c.ID)
 	if err == nil {
 		out.Website = f.WebsiteURL
 		out.WebsiteSource = f.WebsiteSource
@@ -295,7 +298,11 @@ func (s *Store) dueInputs(ctx context.Context, tx *sql.Tx, c Candidate, en enric
 		if err != nil {
 			return "", err
 		}
-		return en.Inputs(enrichers.Subject{PlacesURL: p, Email: c.Email}), nil
+		os, err := ownerRecordsKey(ctx, tx, c.ID)
+		if err != nil {
+			return "", err
+		}
+		return en.Inputs(enrichers.Subject{PlacesURL: p, Email: c.Email, Website: ownerURL(os), WebsiteSource: sources.Owner}), nil
 	}
 	su, err := s.subject(ctx, tx, c, isPrompter(en))
 	if err != nil {
@@ -306,6 +313,7 @@ func (s *Store) dueInputs(ctx context.Context, tx *sql.Tx, c Candidate, en enric
 
 // DueEnrichments reads an ascending window of candidates with changed inputs.
 func (s *Store) DueEnrichments(ctx context.Context, kind, after string, n int) (string, []Due, error) {
+	ctx = ownerReadContext(ctx)
 	var out []Due
 	var last string
 	err := unreachable(s.readTx(ctx, func(tx *sql.Tx) error {
@@ -406,6 +414,7 @@ func (s *Store) Derive(ctx context.Context, kind, after string, force bool, n in
 
 // Subject reads the inputs available to an enrichment for one candidate.
 func (s *Store) Subject(ctx context.Context, id string) (enrichers.Subject, error) {
+	ctx = ownerReadContext(ctx)
 	var out enrichers.Subject
 	err := unreachable(s.readTx(ctx, func(tx *sql.Tx) error {
 		c, err := candidateKey(ctx, tx, id)
@@ -423,6 +432,7 @@ func (s *Store) Subject(ctx context.Context, id string) (enrichers.Subject, erro
 
 // DueAmong selects distinct due targets, preserving the caller's order.
 func (s *Store) DueAmong(ctx context.Context, kind string, ids []string, force bool) ([]Due, error) {
+	ctx = ownerReadContext(ctx)
 	var out []Due
 	err := unreachable(s.readTx(ctx, func(tx *sql.Tx) error {
 		en, ok := enrichers.New(enrichers.Config{}).Get(kind)

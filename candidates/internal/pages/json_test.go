@@ -26,11 +26,11 @@ func TestFactsProjection(t *testing.T) {
 	at := fixtureTime()
 	power, minutes := int64(12), int64(84)
 	f := store.Facts{KnownSince: time.Date(2018, 4, 9, 0, 0, 0, 0, time.UTC), NewestFiling: at, Categories: []sources.Category{{Name: sources.CategoryTrucking, Source: "fmcsa"}, {Name: sources.CategoryTrucking, Source: "ppp"}}, GovernmentMatch: "fixture-government", FleetVerdict: sources.FleetPass, PowerUnits: &power, Minutes: &minutes, Written: []store.Written{{Kind: enrichers.KindDriveMinutes, At: at}, {Kind: sources.WebsiteCheck, At: at}}}
-	want := FactsView{"2018-04-09", "2018-04-09", "", "2026-10-05", "2026-10-05", "", []CategoryRow{{sources.CategoryTrucking, "fmcsa"}, {sources.CategoryTrucking, "ppp"}}, enrichers.SourceLinks, false, []CategoryRow{}, "fixture-government", sources.FleetPass, "12", "", []HeadcountRow{}, []string{}, "84", "", "", "", "", "", []WrittenRow{{enrichers.KindDriveMinutes, "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC"}, {sources.WebsiteCheck, "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC"}}}
+	want := FactsView{"2018-04-09", "2018-04-09", "", []OtherRow{}, "2026-10-05", "2026-10-05", "", []CategoryRow{{sources.CategoryTrucking, "fmcsa"}, {sources.CategoryTrucking, "ppp"}}, enrichers.SourceLinks, false, []CategoryRow{}, "fixture-government", sources.FleetPass, "12", "", []OtherRow{}, []HeadcountRow{}, []string{}, "84", "", "", "", "", "", []WrittenRow{{enrichers.KindDriveMinutes, "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC"}, {sources.WebsiteCheck, "2026-10-05T09:00:07Z", "2026-10-05 09:00:07 UTC"}}}
 	if got := factsView(f, ""); !reflect.DeepEqual(got, want) {
 		t.Fatal(got, want)
 	}
-	if got := factsView(store.Facts{}, ""); !reflect.DeepEqual(got, FactsView{Categories: []CategoryRow{}, RecordCategories: []CategoryRow{}, Headcounts: []HeadcountRow{}, BriefLabels: []string{}, Written: []WrittenRow{}}) {
+	if got := factsView(store.Facts{}, ""); !reflect.DeepEqual(got, FactsView{OtherKnownSince: []OtherRow{}, OtherPowerUnits: []OtherRow{}, Categories: []CategoryRow{}, RecordCategories: []CategoryRow{}, Headcounts: []HeadcountRow{}, BriefLabels: []string{}, Written: []WrittenRow{}}) {
 		t.Fatal(got)
 	}
 }
@@ -53,14 +53,14 @@ func TestDerivedProjection(t *testing.T) {
 			t.Fatal(got, want)
 		}
 		var c CandidateView
-		setWebsite(&c, []store.Enrichment{e}, "")
+		setWebsite(&c, []store.Enrichment{e}, "", "")
 		if c.Website != sources.WebsiteUnknown || c.WebsiteURL != "" || c.WebsiteTitle != "" || c.WebsiteChecked != "" || c.WebsiteCheckedText != "" {
 			t.Fatal(c)
 		}
 	}
 }
 
-// R-D7X4-FCV3
+// R-03T7-3NW6
 func TestCandidateFactsWithoutJudgment(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	_, ids, err := cfg.Store.Attach(t.Context(), "run", false, []store.Observation{{Scraper: "fixture", SourceID: "row", Digest: "digest", Reading: sources.Reading{Name: "facts-business", NameKey: "facts-business"}}})
@@ -100,7 +100,7 @@ func TestCandidateFactsWithoutJudgment(t *testing.T) {
 	}
 }
 
-// R-INPY-9LWV R-ARMU-FANF
+// R-INPY-9LWV R-RU1K-AXX2
 func TestIndependentFactsAndJudgmentsTemplateStates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	set, err := Load()

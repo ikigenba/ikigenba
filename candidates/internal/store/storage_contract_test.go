@@ -579,7 +579,7 @@ func TestContractZipReplacement(t *testing.T) {
 	}
 }
 
-// R-VWK4-AYB8 R-QEC7-F4GZ R-F1DI-OTWO R-578X-BDAW R-T3DU-KBYR R-5AWM-GOIZ R-5C4I-UG9O
+// R-VWK4-AYB8 R-SLR2-5W1Z R-F1DI-OTWO R-578X-BDAW R-T3DU-KBYR R-5AWM-GOIZ R-5C4I-UG9O
 func TestContractBusinessRecordsPersistence(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -953,7 +953,7 @@ func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	contractEqual(t, after, zipBefore)
 }
 
-// R-03UF-3LKG R-OD8H-2EDG
+// R-XQ4X-NJ1E R-OD8H-2EDG
 func TestContractAllMethodsUnavailable(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)

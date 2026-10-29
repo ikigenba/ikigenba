@@ -49,6 +49,7 @@ const (
 	EvidenceOSHAITASummary      = "osha_ita_summary"
 	EvidenceOwnDomain           = "own_domain"
 	EvidenceWebsiteLive         = "website_live"
+	EvidenceOwnerRecord         = "owner_record"
 	WebsiteCheck                = "website_check"
 	WebsiteHTTPS                = "https"
 	WebsiteHTTP                 = "http"
@@ -79,6 +80,7 @@ const (
 	DescribeOSHAITASummary string = "Recorded OSHA ITA summary"
 	DescribeOwnDomain      string = "Email on a business domain"
 	DescribeWebsiteLive    string = "Business website responds"
+	DescribeOwnerRecord    string = "Business observed by the owner"
 )
 
 // Estimate is one source's revenue estimate and supporting facts.

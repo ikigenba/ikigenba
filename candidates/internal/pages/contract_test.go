@@ -21,12 +21,12 @@ func TestCompleteViewContracts(t *testing.T) {
 	end := start.Add(time.Hour)
 	hi := int64(24000000)
 	c := store.Candidate{ID: "candidate", Status: store.StatusActive, MergedInto: "survivor", Name: "name", Street: "street", City: "city", State: "MN", Zip: "55072", County: "MN-001", Phone: "phone", Email: "email", People: []sources.Sourced[sources.Person]{{Value: sources.Person{Name: "person", Role: "owner"}}, {Value: sources.Person{Name: "other", Role: "officer"}}}, Class: "class", Cargo: []string{"cargo", "other"}, Created: start, Updated: end}
-	wantC := CandidateView{ID: "candidate", Status: store.StatusActive, MergedInto: "survivor", Name: "name", Street: "street", City: "city", State: "MN", Zip: "55072", County: "MN-001", Phone: "phone", Email: "email", OtherNames: []OtherRow{}, OtherAddresses: []OtherRow{}, OtherPhones: []OtherRow{}, People: []PersonRow{{"person", "owner", ""}, {"other", "officer", ""}}, Class: "class", Cargo: []string{"cargo", "other"}, Created: "2026-10-05T09:00:07Z", CreatedText: "2026-10-05 09:00:07 UTC", Updated: "2026-10-05T10:00:07Z", UpdatedText: "2026-10-05 10:00:07 UTC"}
+	wantC := CandidateView{OtherEmails: []OtherRow{}, OwnerSet: map[string]OwnerNoteView{}, ID: "candidate", Status: store.StatusActive, MergedInto: "survivor", Name: "name", Street: "street", City: "city", State: "MN", Zip: "55072", County: "MN-001", Phone: "phone", Email: "email", OtherNames: []OtherRow{}, OtherAddresses: []OtherRow{}, OtherPhones: []OtherRow{}, People: []PersonRow{{"person", "owner", ""}, {"other", "officer", ""}}, Class: "class", Cargo: []string{"cargo", "other"}, Created: "2026-10-05T09:00:07Z", CreatedText: "2026-10-05 09:00:07 UTC", Updated: "2026-10-05T10:00:07Z", UpdatedText: "2026-10-05 10:00:07 UTC"}
 	if got := candidateView(c); !reflect.DeepEqual(got, wantC) {
 		t.Fatalf("candidate got %#v want %#v", got, wantC)
 	}
 	c.Status = store.StatusMerged
-	wantC = CandidateView{ID: "candidate", Status: store.StatusMerged, MergedInto: "survivor", OtherNames: []OtherRow{}, OtherAddresses: []OtherRow{}, OtherPhones: []OtherRow{}, People: []PersonRow{}, Cargo: []string{}, Created: "2026-10-05T09:00:07Z", CreatedText: "2026-10-05 09:00:07 UTC", Updated: "2026-10-05T10:00:07Z", UpdatedText: "2026-10-05 10:00:07 UTC"}
+	wantC = CandidateView{OtherEmails: []OtherRow{}, OwnerSet: map[string]OwnerNoteView{}, ID: "candidate", Status: store.StatusMerged, MergedInto: "survivor", OtherNames: []OtherRow{}, OtherAddresses: []OtherRow{}, OtherPhones: []OtherRow{}, People: []PersonRow{}, Cargo: []string{}, Created: "2026-10-05T09:00:07Z", CreatedText: "2026-10-05 09:00:07 UTC", Updated: "2026-10-05T10:00:07Z", UpdatedText: "2026-10-05 10:00:07 UTC"}
 	if got := candidateView(c); !reflect.DeepEqual(got, wantC) {
 		t.Fatalf("merged %#v", got)
 	}
@@ -168,7 +168,7 @@ func TestExplicitTemplateStates(t *testing.T) {
 	for _, status := range []string{store.StatusActive, store.StatusMerged} {
 		for _, text := range []string{"", "chosen-value"} {
 			for _, full := range []bool{false, true} {
-				data := CandidateData{Candidate: CandidateView{ID: text, Status: status, MergedInto: text, Name: text, Street: text, City: text, State: text, Zip: text, County: text, Phone: text, Email: text, Class: text, Created: text, CreatedText: text, Updated: text, UpdatedText: text}}
+				data := CandidateData{Candidate: CandidateView{OtherEmails: []OtherRow{}, OwnerSet: map[string]OwnerNoteView{}, ID: text, Status: status, MergedInto: text, Name: text, Street: text, City: text, State: text, Zip: text, County: text, Phone: text, Email: text, Class: text, Created: text, CreatedText: text, Updated: text, UpdatedText: text}}
 				if full {
 					data.Candidate.OtherNames = []OtherRow{{Value: text}}
 					data.Candidate.People = []PersonRow{{Name: text, Role: text}}

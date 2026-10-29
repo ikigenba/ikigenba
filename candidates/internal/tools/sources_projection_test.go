@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
@@ -45,7 +46,7 @@ func TestSourceAnswerShapesAndProjection(t *testing.T) {
 	}
 }
 
-// R-FCQS-IWKU R-2LJB-67IK
+// R-0YAO-NXFJ R-VYOV-LNTG
 func TestFactsSourceDatesAndCheckedURL(t *testing.T) {
 	d := time.Date(2018, 4, 9, 0, 0, 0, 0, time.UTC)
 	for _, tc := range []struct{ checked, landed, want string }{
@@ -90,11 +91,11 @@ func TestFactsSourceDatesAndCheckedURL(t *testing.T) {
 	}
 }
 
-// R-2LJB-67IK R-2MR7-JZ99
+// R-VYOV-LNTG R-VZWR-ZFK5
 func TestPopulatedFactsAndDetailSourceEncoding(t *testing.T) {
 	facts := Facts{KnownSince: "known", KnownSinceSource: "known-source", NewestFiling: "filed", NewestFilingSource: "filed-source", WebsiteCheckedURL: "https://checked.test/"}
 	b, err := json.Marshal(facts)
-	want := `{"known_since":"known","known_since_source":"known-source","newest_filing":"filed","newest_filing_source":"filed-source","categories":[],"classified_by":"","records_differ":false,"record_categories":[],"fleet_verdict":"","website":"","website_source":"","website_checked_url":"https://checked.test/","minutes_source":"","written":[],"headcounts":[],"brief_labels":[]}`
+	want := `{"known_since":"known","known_since_source":"known-source","newest_filing":"filed","newest_filing_source":"filed-source","categories":[],"classified_by":"","records_differ":false,"record_categories":[],"fleet_verdict":"","website":"","website_source":"","website_checked_url":"https://checked.test/","minutes_source":"","written":[],"headcounts":[],"brief_labels":[],"other_known_since":[],"other_power_units":[]}`
 	if err != nil || string(b) != want {
 		t.Fatal(string(b), want, err)
 	}
@@ -103,8 +104,44 @@ func TestPopulatedFactsAndDetailSourceEncoding(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, err = json.Marshal(Detail{Sources: &Sources{Name: "name-source", Address: "address-source", Phone: "phone-source", Email: "email-source"}})
-	want = `{"candidate":` + string(candidate) + `,"sources":{"name":"name-source","address":"address-source","phone":"phone-source","email":"email-source","other_names":[],"other_addresses":[],"other_phones":[],"other_emails":[]},"estimates":[],"links":[],"rulings":[],"pages":[],"enrichment_results":[],"rejects":[],"campaigns":[]}`
+	want = `{"candidate":` + string(candidate) + `,"sources":{"name":"name-source","address":"address-source","phone":"phone-source","email":"email-source","other_names":[],"other_addresses":[],"other_phones":[],"other_emails":[]},"estimates":[],"links":[],"rulings":[],"pages":[],"enrichment_results":[],"rejects":[],"campaigns":[],"owner_set":{},"owner_records":[]}`
 	if err != nil || string(b) != want {
 		t.Fatal(string(b), want, err)
+	}
+}
+
+// R-1BPK-VEL6
+func TestOwnerFactAlternativeAnswers(t *testing.T) {
+	f := store.Facts{OtherKnownSince: []sources.Sourced[time.Time]{{Value: time.Date(1995, 1, 1, 0, 0, 0, 0, time.UTC), Source: "form5500"}}, OtherPowerUnits: []sources.Sourced[int64]{{Value: 12, Source: "fmcsa"}}}
+	got := factsOf(f, "")
+	if !reflect.DeepEqual(got.OtherKnownSince, []Sourced{{"1995-01-01", "form5500"}}) || !reflect.DeepEqual(got.OtherPowerUnits, []SourcedCount{{12, "fmcsa"}}) {
+		t.Fatal(got)
+	}
+	b, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var obj map[string]json.RawMessage
+	if err = json.Unmarshal(b, &obj); err != nil || string(obj["other_known_since"]) != `[{"value":"1995-01-01","source":"form5500"}]` || string(obj["other_power_units"]) != `[{"value":12,"source":"fmcsa"}]` {
+		t.Fatal(string(b), err)
+	}
+	empty := factsOf(store.Facts{}, "")
+	if empty.OtherKnownSince == nil || empty.OtherPowerUnits == nil || len(empty.OtherKnownSince)+len(empty.OtherPowerUnits) != 0 {
+		t.Fatal(empty)
+	}
+}
+
+// R-WGZD-C7XV
+func TestOwnerWriteRequiresCallerBeforeStoreAccess(t *testing.T) {
+	for _, r := range []store.OwnerRecord{{Note: "note", Set: store.OwnerValues{Name: new("new business")}}, {Candidate: "cand_0000000000000000", Note: "note", Set: store.OwnerValues{Name: new("renamed")}}} {
+		// The published MCP server rejects an empty caller before dispatch. Exercise
+		// the write operation directly with no store, proving refusal precedes access.
+		got := writeOwner(t.Context(), identity.Caller{}, Config{}, r)
+		want := refuse("unavailable")
+		a, _ := json.Marshal(got)
+		b, _ := json.Marshal(want)
+		if !reflect.DeepEqual(a, b) || !got.IsError() {
+			t.Fatal(string(a), string(b))
+		}
 	}
 }

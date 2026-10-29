@@ -18,7 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-E7A7-IPD8
+// R-1O6Y-LU9X
 func TestRebuildMethod(t *testing.T) {
 	f := contractDB(t)
 	var api interface {
@@ -215,7 +215,7 @@ func seedRebuild(t *testing.T) rebuildFixture {
 	return r
 }
 
-// R-DBKT-KO36 R-EN4W-HQ09
+// R-2A55-HPMF R-1PEU-ZM0M
 func TestRebuildRepairsOnlyItsPageAndPersistsIdempotently(t *testing.T) {
 	r := seedRebuild(t)
 	f := r.f
@@ -262,7 +262,7 @@ func TestRebuildRepairsOnlyItsPageAndPersistsIdempotently(t *testing.T) {
 	contractEqual(t, readRebuildState(t, f, r.all, r.parks), want)
 }
 
-// R-DBKT-KO36
+// R-2A55-HPMF
 func TestRebuildRestoresAllPlaceMatchingKeys(t *testing.T) {
 	r := seedRebuild(t)
 	f := r.f

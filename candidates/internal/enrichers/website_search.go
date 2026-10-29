@@ -139,6 +139,9 @@ func (WebsiteSearch) Prompt() string { return PromptName(KindWebsiteSearch) }
 
 // Inputs fingerprints identity unless another source already found a website.
 func (WebsiteSearch) Inputs(s Subject) string {
+	if s.WebsiteSource == sources.Owner {
+		return ""
+	}
 	b := searchHash(s.Name + "\t" + s.City + "\t" + s.State)
 	if emptySite(s) {
 		return b + "/" + searchHash(s.Website+"\t"+s.SiteText.Run)

@@ -15,7 +15,7 @@ import (
 )
 
 // R-DVMK-0Z5X R-DWUG-EQWM R-DY2C-SINB R-DZA9-6AE0 R-E45U-PDCS
-// R-HM0W-RKUQ R-F6NA-M1VD
+// R-HM0W-RKUQ R-0M3O-U80L
 func TestSearchEnrichmentProjection(t *testing.T) {
 	zero, one := 0, 1
 	full := enrichers.WebsiteSearchFound{Run: enrichers.WebsiteSearchRun{ID: "r1", Status: enrichers.RunExited, ExitCode: &zero}, Answer: &enrichers.WebsiteSearchAnswer{URL: "https://acme.test/", Why: "chosen-why", Rejected: []enrichers.WebsiteSearchSite{{URL: "https://other.test/", Why: "chosen-rejection"}, {URL: "https://third.test/"}}}, Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteHTTPS, URL: "https://www.acme.test/", Title: "chosen-title", StatusCode: 200, Size: 1256}}
@@ -55,7 +55,7 @@ func TestSearchEnrichmentProjection(t *testing.T) {
 	}
 }
 
-// R-ARMU-FANF R-8PAT-SBNM R-8QIQ-63EB
+// R-RU1K-AXX2 R-8PAT-SBNM R-8QIQ-63EB
 func TestSearchWebsiteCandidateAndMember(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	_, ids, err := cfg.Store.Attach(t.Context(), "run", false, []store.Observation{{Scraper: "fixture", SourceID: "row", Digest: "digest", Reading: sources.Reading{Name: "search-business", NameKey: "search-business"}}})
@@ -188,7 +188,7 @@ func TestWebsiteSearchDecisionHistory(t *testing.T) {
 	search := store.Enrichment{Kind: enrichers.KindWebsiteSearch, Found: encodedJSON(good), At: fixtureTime()}
 	for _, bad := range []enrichers.WebsiteSearchFound{{Run: enrichers.WebsiteSearchRun{Status: "failed"}, Answer: good.Answer, Confirmation: good.Confirmation}, {Run: good.Run, Answer: good.Answer, Confirmation: &enrichers.WebsiteSearchConfirmation{State: sources.WebsiteNone}}, {Run: good.Run, Answer: &enrichers.WebsiteSearchAnswer{}}} {
 		var got CandidateView
-		setWebsite(&got, []store.Enrichment{{Kind: enrichers.KindWebsiteSearch, Found: encodedJSON(bad), At: fixtureTime().Add(1)}, search}, "")
+		setWebsite(&got, []store.Enrichment{{Kind: enrichers.KindWebsiteSearch, Found: encodedJSON(bad), At: fixtureTime().Add(1)}, search}, "", "")
 		if got.WebsiteSource != store.WebsiteBySearch || got.Website != sources.WebsiteHTTPS || got.WebsiteURL != good.Confirmation.URL || got.WebsiteTitle != good.Confirmation.Title || got.WebsiteWhy != good.Answer.Why || got.WebsiteChecked != "2026-10-05T09:00:07Z" || got.WebsiteCheckedText != "2026-10-05 09:00:07 UTC" {
 			t.Fatal(got)
 		}
@@ -196,14 +196,14 @@ func TestWebsiteSearchDecisionHistory(t *testing.T) {
 	check := store.Enrichment{Kind: sources.WebsiteCheck, Found: encodedJSON(website.Result{State: sources.WebsiteHTTP, URL: "http://check.test/", Title: "check-title"}), At: fixtureTime()}
 	for _, es := range [][]store.Enrichment{{search, check}, {check, search}} {
 		var got CandidateView
-		setWebsite(&got, es, "")
+		setWebsite(&got, es, "", "")
 		if got.WebsiteSource != store.WebsiteByCheck || got.Website != sources.WebsiteHTTP || got.WebsiteURL != "http://check.test/" || got.WebsiteTitle != "check-title" || got.WebsiteWhy != "" {
 			t.Fatal(got)
 		}
 	}
 }
 
-// R-ARMU-FANF
+// R-RU1K-AXX2
 // R-4A2C-9CNO
 func TestCandidateAndMemberViewShapes(_ *testing.T) {
 	_ = struct {
@@ -214,6 +214,7 @@ func TestCandidateAndMemberViewShapes(_ *testing.T) {
 		Estimates         []EstimateView
 		Links             []LinkView
 		Rulings           []RulingView
+		OwnerRecords      []OwnerRecordRow
 		Pages             []PageRow
 		EnrichmentResults []EnrichmentRow
 		Rejects           []RejectRecordRow
@@ -234,6 +235,10 @@ func TestCandidateAndMemberViewShapes(_ *testing.T) {
 		Park                                                                                                                *ParkLink
 		WebsiteSource, Website, WebsiteURL, WebsiteTitle, WebsiteWhy, WebsiteChecked, WebsiteCheckedText, WebsiteCheckedURL string
 		People                                                                                                              []PersonRow
+		EIN, EINSource                                                                                                      string
+		OtherEmails                                                                                                         []OtherRow
+		Founded                                                                                                             *OwnerNoteView
+		OwnerSet                                                                                                            map[string]OwnerNoteView
 		Class                                                                                                               string
 		Cargo                                                                                                               []string
 		Created, CreatedText, Updated, UpdatedText                                                                          string
@@ -298,7 +303,7 @@ func TestUnfoundWebsiteDecisionFields(t *testing.T) {
 		{[]store.Enrichment{search(failed), check}, unknown},
 	} {
 		var got CandidateView
-		setWebsite(&got, tc.results, "")
+		setWebsite(&got, tc.results, "", "")
 		if !reflect.DeepEqual(got, tc.want) {
 			t.Fatalf("results %+v: got %+v want %+v", tc.results, got, tc.want)
 		}
@@ -329,7 +334,7 @@ func TestUnfoundAndUnknownWebsiteTemplates(t *testing.T) {
 	}
 }
 
-// R-D7X4-FCV3 R-8QIQ-63EB
+// R-03T7-3NW6 R-8QIQ-63EB
 func TestUnfoundCandidateAndMemberWithoutJudging(t *testing.T) {
 	for _, emptyURL := range []bool{false, true} {
 		cfg, handle := pageFixture(t)

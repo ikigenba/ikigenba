@@ -30,7 +30,7 @@ func baseSweep(t *testing.T, f *contractFixture, park string, found ...places.Pl
 	return p, w
 }
 
-// R-F1DI-OTWO R-2D1P-B7MG R-F694-7WVG
+// R-F1DI-OTWO R-FA1W-3DCK R-F694-7WVG
 func TestPlacesLinksKeepRecordDisplayAndNeverBecomeGone(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)

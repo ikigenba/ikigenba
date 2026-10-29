@@ -140,6 +140,7 @@ func (s *Store) ListCandidates(ctx context.Context, f CandidateFilter, created, 
 }
 
 func rankedWindow(ctx context.Context, tx *sql.Tx, query string, args ...any) ([]Ranked, error) {
+	ctx = ownerReadContext(ctx)
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err

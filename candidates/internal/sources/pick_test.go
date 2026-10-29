@@ -15,7 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 )
 
-// R-274P-NLMO R-28CM-1DDD R-29KI-F542 R-2ASE-SWUR
+// R-TV9D-PTV3 R-5459-FUWD R-29KI-F542 R-U04Z-8WTV
 func TestFactOrders(t *testing.T) {
 	type word string
 	words := []word{sources.Owner, sources.Brief, sources.Route, sources.FactName, sources.FactAddress, sources.FactPhone, sources.FactEmail, sources.FactPeople, sources.FactKnownSince, sources.FactNewestFiling, sources.ValueName, sources.ValueNames, sources.ValueTradeNames, sources.ValueLocation, sources.ValueMailing, sources.ValuePhone, sources.ValueEmail, sources.ValuePeople, sources.ValueKnownSince, sources.ValueFiled}
@@ -27,7 +27,7 @@ func TestFactOrders(t *testing.T) {
 	pick := sources.Pick
 	p := pick(nil, nil, nil)
 	// Positional construction proves the complete declared fields, including order.
-	zero := sources.Picked{sources.Sourced[string]{"", "", ""}, []sources.Sourced[string]{}, sources.Sourced[sources.Address]{sources.Address{"", "", "", "", ""}, "", ""}, []sources.Sourced[sources.Address]{}, sources.Sourced[string]{"", "", ""}, []sources.Sourced[string]{}, sources.Sourced[string]{"", "", ""}, []sources.Sourced[string]{}, []sources.Sourced[sources.Person]{}, sources.Sourced[time.Time]{time.Time{}, "", ""}, sources.Sourced[time.Time]{time.Time{}, "", ""}}
+	zero := sources.Picked{sources.Sourced[string]{"", "", ""}, []sources.Sourced[string]{}, sources.Sourced[sources.Address]{sources.Address{"", "", "", "", ""}, "", ""}, []sources.Sourced[sources.Address]{}, sources.Sourced[string]{"", "", ""}, []sources.Sourced[string]{}, sources.Sourced[string]{"", "", ""}, []sources.Sourced[string]{}, []sources.Sourced[sources.Person]{}, sources.Sourced[time.Time]{time.Time{}, "", ""}, []sources.Sourced[time.Time]{}, sources.Sourced[time.Time]{time.Time{}, "", ""}, sources.Sourced[string]{}, sources.Sourced[int64]{}, []sources.Sourced[int64]{}}
 	if !reflect.DeepEqual(p, zero) {
 		t.Fatal(p)
 	}
@@ -36,13 +36,15 @@ func TestFactOrders(t *testing.T) {
 		t.Fatal(r)
 	}
 	want := []sources.Order{
-		{sources.FactName, []sources.Slot{{[]string{places.Name}, sources.ValueName}, {[]string{fmcsa.Name}, sources.ValueTradeNames}, {[]string{form5500.Name}, sources.ValueTradeNames}, {[]string{fmcsa.Name, ppp.Name, form5500.Name, oshaita.Name}, sources.ValueNames}}},
-		{sources.FactAddress, []sources.Slot{{[]string{sources.Route}, sources.ValueLocation}, {[]string{places.Name}, sources.ValueLocation}, {[]string{oshaita.Name}, sources.ValueLocation}, {[]string{form5500.Name}, sources.ValueLocation}, {[]string{fmcsa.Name}, sources.ValueLocation}, {[]string{ppp.Name}, sources.ValueLocation}, {[]string{form5500.Name}, sources.ValueMailing}}},
-		{sources.FactPhone, []sources.Slot{{[]string{places.Name}, sources.ValuePhone}, {[]string{form5500.Name}, sources.ValuePhone}, {[]string{fmcsa.Name}, sources.ValuePhone}}},
-		{sources.FactEmail, []sources.Slot{{[]string{fmcsa.Name}, sources.ValueEmail}}},
-		{sources.FactPeople, []sources.Slot{{[]string{sources.Brief}, sources.ValuePeople}, {[]string{form5500.Name}, sources.ValuePeople}, {[]string{fmcsa.Name}, sources.ValuePeople}}},
+		{sources.FactName, []sources.Slot{{[]string{sources.Owner}, sources.ValueName}, {[]string{places.Name}, sources.ValueName}, {[]string{fmcsa.Name}, sources.ValueTradeNames}, {[]string{form5500.Name}, sources.ValueTradeNames}, {[]string{fmcsa.Name, ppp.Name, form5500.Name, oshaita.Name}, sources.ValueNames}}},
+		{sources.FactAddress, []sources.Slot{{[]string{sources.Owner}, sources.ValueLocation}, {[]string{sources.Route}, sources.ValueLocation}, {[]string{places.Name}, sources.ValueLocation}, {[]string{oshaita.Name}, sources.ValueLocation}, {[]string{form5500.Name}, sources.ValueLocation}, {[]string{fmcsa.Name}, sources.ValueLocation}, {[]string{ppp.Name}, sources.ValueLocation}, {[]string{form5500.Name}, sources.ValueMailing}}},
+		{sources.FactPhone, []sources.Slot{{[]string{sources.Owner}, sources.ValuePhone}, {[]string{places.Name}, sources.ValuePhone}, {[]string{form5500.Name}, sources.ValuePhone}, {[]string{fmcsa.Name}, sources.ValuePhone}}},
+		{sources.FactEmail, []sources.Slot{{[]string{sources.Owner}, sources.ValueEmail}, {[]string{fmcsa.Name}, sources.ValueEmail}}},
+		{sources.FactPeople, []sources.Slot{{[]string{sources.Owner}, sources.ValuePeople}, {[]string{sources.Brief}, sources.ValuePeople}, {[]string{form5500.Name}, sources.ValuePeople}, {[]string{fmcsa.Name}, sources.ValuePeople}}},
 		{sources.FactKnownSince, []sources.Slot{{[]string{sources.Owner}, sources.ValueKnownSince}, {[]string{sources.Brief}, sources.ValueKnownSince}, {[]string{fmcsa.Name, ppp.Name, form5500.Name, oshaita.Name, places.Name}, sources.ValueKnownSince}}},
 		{sources.FactNewestFiling, []sources.Slot{{[]string{fmcsa.Name, ppp.Name, form5500.Name, oshaita.Name, places.Name}, sources.ValueFiled}}},
+		{sources.FactEIN, []sources.Slot{{[]string{sources.Owner}, sources.ValueEIN}, {[]string{form5500.Name, oshaita.Name}, sources.ValueEIN}}},
+		{sources.FactFleet, []sources.Slot{{[]string{sources.Owner}, sources.ValuePowerUnits}, {[]string{fmcsa.Name}, sources.ValuePowerUnits}}},
 	}
 	if !reflect.DeepEqual(orders(), want) {
 		t.Fatal(orders())
@@ -57,7 +59,7 @@ func TestFactOrders(t *testing.T) {
 }
 func on(s string) time.Time { t, _ := time.Parse(time.DateOnly, s); return t }
 
-// R-2EG3-Y82U R-W0JO-MJZG R-W1RL-0BQ5
+// R-U3SO-E81Y R-55D5-TMN2 R-56L2-7EDR
 func TestPickedFactsFromIndependentOrders(t *testing.T) {
 	p := sources.Record{Source: places.Name, SourceID: "ChIJ1", Reading: sources.Reading{Name: "Northern Lights Steel", Street: "38945 Forest Blvd", City: "North Branch", State: "MN", Zip: "55056", Phone: "6516744440"}}
 	f := sources.Record{Source: fmcsa.Name, SourceID: "1023916", Reading: sources.Reading{Name: "BROWN HAWK LLC", Names: []string{"BROWN HAWK LLC", "NORTHERN LIGHTS STEEL FAB"}, TradeNames: []string{"NORTHERN LIGHTS STEEL FAB"}, Street: "5 Main St", City: "Rush City", State: "MN", Zip: "55069", Phone: "3205550100", Email: "ops@nlsteelfab.com", People: []sources.Person{{Name: "JANE DOE", Role: "company officer"}}, KnownSince: on("2004-01-15"), Filed: on("2025-03-18")}}
@@ -66,7 +68,7 @@ func TestPickedFactsFromIndependentOrders(t *testing.T) {
 		Name: sources.Sourced[string]{"Northern Lights Steel", places.Name, "places:ChIJ1"}, OtherNames: []sources.Sourced[string]{{"NORTHERN LIGHTS STEEL FAB", fmcsa.Name, "fmcsa:1023916"}, {"BROWN HAWK LLC", form5500.Name, "form5500:20250612001"}},
 		Address: sources.Sourced[sources.Address]{sources.Address{Street: "38945 Forest Blvd", City: "North Branch", State: "MN", Zip: "55056"}, places.Name, "places:ChIJ1"}, OtherAddresses: []sources.Sourced[sources.Address]{{sources.Address{Street: "5 Main St", City: "Rush City", State: "MN", Zip: "55069"}, fmcsa.Name, "fmcsa:1023916"}, {sources.Address{Street: "PO BOX 7", City: "Rush City", State: "MN", Zip: "55069"}, form5500.Name, "form5500:20250612001"}},
 		Phone: sources.Sourced[string]{"6516744440", places.Name, "places:ChIJ1"}, OtherPhones: []sources.Sourced[string]{{"3205550111", form5500.Name, "form5500:20250612001"}, {"3205550100", fmcsa.Name, "fmcsa:1023916"}}, Email: sources.Sourced[string]{"ops@nlsteelfab.com", fmcsa.Name, "fmcsa:1023916"}, OtherEmails: []sources.Sourced[string]{},
-		People: []sources.Sourced[sources.Person]{{sources.Person{"JOHN ROE", "sponsor signer"}, form5500.Name, "form5500:20250612001"}, {sources.Person{"JANE DOE", "company officer"}, fmcsa.Name, "fmcsa:1023916"}}, KnownSince: sources.Sourced[time.Time]{on("1995-01-01"), form5500.Name, "form5500:20250612001"}, NewestFiling: sources.Sourced[time.Time]{on("2025-06-12"), form5500.Name, "form5500:20250612001"},
+		People: []sources.Sourced[sources.Person]{{sources.Person{"JOHN ROE", "sponsor signer"}, form5500.Name, "form5500:20250612001"}, {sources.Person{"JANE DOE", "company officer"}, fmcsa.Name, "fmcsa:1023916"}}, KnownSince: sources.Sourced[time.Time]{on("1995-01-01"), form5500.Name, "form5500:20250612001"}, OtherKnownSince: []sources.Sourced[time.Time]{{on("2004-01-15"), fmcsa.Name, "fmcsa:1023916"}}, NewestFiling: sources.Sourced[time.Time]{on("2025-06-12"), form5500.Name, "form5500:20250612001"}, OtherPowerUnits: []sources.Sourced[int64]{},
 	}
 	links := []sources.Record{p, f, x}
 	orders := sources.Orders()
@@ -108,11 +110,11 @@ func routeAddress(r sources.Record) sources.Address {
 	return sources.Address{Street: r.Reading.Street, City: r.Reading.City, State: r.Reading.State, Zip: r.Reading.Zip, County: r.Reading.County}
 }
 
-// R-W0JO-MJZG R-W1RL-0BQ5
+// R-55D5-TMN2 R-56L2-7EDR
 func TestCustomOrdersAndGoneFallback(t *testing.T) {
 	orders := []sources.Order{{sources.FactPhone, []sources.Slot{{[]string{"x"}, sources.ValuePhone}, {[]string{"y"}, sources.ValuePhone}}}}
 	links := []sources.Record{{Source: "y", SourceID: "1", Reading: sources.Reading{Phone: "6515550100", Filed: on("2025-01-01")}}, {Source: "x", SourceID: "1", Reading: sources.Reading{Phone: "6515550199", Filed: on("2020-01-01")}}, {Source: "x", SourceID: "2", Reading: sources.Reading{Phone: "6515550100", Filed: on("2024-01-01")}}}
-	want := sources.Picked{Phone: sources.Sourced[string]{"6515550100", "x", "x:2"}, OtherPhones: []sources.Sourced[string]{{"6515550199", "x", "x:1"}}, OtherNames: []sources.Sourced[string]{}, OtherAddresses: []sources.Sourced[sources.Address]{}, OtherEmails: []sources.Sourced[string]{}, People: []sources.Sourced[sources.Person]{}}
+	want := sources.Picked{Phone: sources.Sourced[string]{"6515550100", "x", "x:2"}, OtherPhones: []sources.Sourced[string]{{"6515550199", "x", "x:1"}}, OtherNames: []sources.Sourced[string]{}, OtherAddresses: []sources.Sourced[sources.Address]{}, OtherEmails: []sources.Sourced[string]{}, People: []sources.Sourced[sources.Person]{}, OtherKnownSince: []sources.Sourced[time.Time]{}, OtherPowerUnits: []sources.Sourced[int64]{}}
 	if got := sources.Pick(orders, links, nil); !reflect.DeepEqual(got, want) {
 		t.Fatal(got)
 	}
@@ -140,7 +142,7 @@ func TestCustomOrdersAndGoneFallback(t *testing.T) {
 	}
 }
 
-// R-W0JO-MJZG R-W1RL-0BQ5
+// R-55D5-TMN2 R-56L2-7EDR
 func TestRecordOrderAndValueKinds(t *testing.T) {
 	// Filing date, source, source id, then original order decide the provenance; Seen decides nothing.
 	base := sources.Record{Source: "x", SourceID: "1", Seen: on("2025-01-01"), Reading: sources.Reading{Name: "base", Filed: on("2025-01-01")}}
@@ -188,7 +190,7 @@ func TestRecordOrderAndValueKinds(t *testing.T) {
 	}
 }
 
-// R-W0JO-MJZG R-W1RL-0BQ5
+// R-55D5-TMN2 R-56L2-7EDR
 func TestDateSlotsAndEquality(t *testing.T) {
 	o := []sources.Order{{sources.FactKnownSince, []sources.Slot{{[]string{"o"}, sources.ValueKnownSince}, {[]string{"x", "y"}, sources.ValueKnownSince}}}, {sources.FactNewestFiling, []sources.Slot{{[]string{"x", "y"}, sources.ValueFiled}}}}
 	links := []sources.Record{{Source: "x", SourceID: "1", Reading: sources.Reading{KnownSince: on("2004-01-15"), Filed: on("2025-03-18")}}, {Source: "y", SourceID: "1", Reading: sources.Reading{KnownSince: on("1995-01-01"), Filed: on("2020-01-01")}}}
@@ -221,7 +223,7 @@ func TestDateSlotsAndEquality(t *testing.T) {
 	}
 }
 
-// R-W0JO-MJZG R-W1RL-0BQ5
+// R-55D5-TMN2 R-56L2-7EDR
 func TestDuplicateIdentityKeepsLinkThenGivenOrder(t *testing.T) {
 	order := []sources.Order{{sources.FactName, []sources.Slot{{[]string{"x"}, sources.ValueName}}}}
 	record := func(name, seen string) sources.Record {
