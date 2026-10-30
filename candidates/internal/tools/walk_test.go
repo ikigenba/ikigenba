@@ -252,7 +252,7 @@ func TestParkRulesWalkCeiling(t *testing.T) {
 	}
 }
 
-// R-VRDH-B1DA R-VSLD-OT3Z R-OLYR-WM1W
+// R-7UGX-TDMN R-7T91-FLVY R-OLYR-WM1W
 func TestAllToolsNormalizeStoreFailureWithoutPlaces(t *testing.T) {
 	var requests atomic.Int64
 	pc := &places.Client{HTTP: &http.Client{Transport: websiteTransport(func(*http.Request) (*http.Response, error) { requests.Add(1); return nil, nil })}, Key: "fixture-key", After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }}
@@ -267,7 +267,7 @@ func TestAllToolsNormalizeStoreFailureWithoutPlaces(t *testing.T) {
 	f.d.SetFailing(true)
 	args := map[string]any{
 		"add_business": tools.AddBusinessArgs{Name: "fixture-business", Note: "note"}, "set_facts": tools.SetFactsArgs{Candidate: id, Name: new("fixture-business"), Note: "note"},
-		"prospect_lists": tools.ProspectListsArgs{}, "prospect_list": tools.ReadProspectListArgs{list.ID, true}, "candidates": tools.CandidatesArgs{}, "candidate": tools.CandidateArgs{id}, "passes": tools.PassesArgs{}, "pass": tools.PassArgs{p.ID}, "ingest": tools.IngestArgs{}, "judge": tools.NoArgs{}, "enrich": tools.EnrichArgs{Kind: "link_facts"}, "add_page": tools.AddPageArgs{id, "https://fixture.test/"}, "decide": tools.DecideArgs{Kind: store.KindMerge, Candidate: id, Other: "cand_0000000000000000", Why: "fixture reason"}, "exclude": tools.RulingArgs{id, "reason"}, "include": tools.RulingArgs{id, "reason"}, "create_prospect_list": tools.CreateProspectListArgs{Name: "fixture-created"}, "edit_prospect_list": tools.EditProspectListArgs{ProspectList: list.ID}, "delete_prospect_list": tools.ProspectListArgs{list.ID}, "reject": tools.RejectArgs{list.ID, id, "reason"}, "unreject": tools.RejectArgs{list.ID, id, "reason"}, "parks": tools.ParksArgs{}, "park": tools.ParkArgs{park.ID}, "park_rules": tools.NoArgs{}, "edit_park_rules": tools.EditParkRulesArgs{}, "walk": tools.WalkArgs{[]string{park.ID}, false},
+		"prospect_lists": tools.ProspectListsArgs{}, "prospect_list": tools.ReadProspectListArgs{list.ID, true}, "candidates": tools.CandidatesArgs{}, "search": tools.SearchArgs{Q: "business"}, "candidate": tools.CandidateArgs{id}, "passes": tools.PassesArgs{}, "pass": tools.PassArgs{p.ID}, "ingest": tools.IngestArgs{}, "judge": tools.NoArgs{}, "enrich": tools.EnrichArgs{Kind: "link_facts"}, "add_page": tools.AddPageArgs{id, "https://fixture.test/"}, "decide": tools.DecideArgs{Kind: store.KindMerge, Candidate: id, Other: "cand_0000000000000000", Why: "fixture reason"}, "exclude": tools.RulingArgs{id, "reason"}, "include": tools.RulingArgs{id, "reason"}, "create_prospect_list": tools.CreateProspectListArgs{Name: "fixture-created"}, "edit_prospect_list": tools.EditProspectListArgs{ProspectList: list.ID}, "delete_prospect_list": tools.ProspectListArgs{list.ID}, "reject": tools.RejectArgs{list.ID, id, "reason"}, "unreject": tools.RejectArgs{list.ID, id, "reason"}, "parks": tools.ParksArgs{}, "park": tools.ParkArgs{park.ID}, "park_rules": tools.NoArgs{}, "edit_park_rules": tools.EditParkRulesArgs{}, "walk": tools.WalkArgs{[]string{park.ID}, false},
 	}
 	for _, entry := range tools.Catalog() {
 		a, ok := args[entry.Name]

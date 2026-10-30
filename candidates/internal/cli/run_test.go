@@ -1825,7 +1825,7 @@ func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	}
 }
 
-// R-8KIU-1TFM
+// R-JDDZ-6HD8
 func TestRunUnlistedLegacyProspectList(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
 	makeMCP := h.p.MCP
@@ -1847,7 +1847,7 @@ func TestRunUnlistedLegacyProspectList(t *testing.T) {
 
 	caller := identity.Caller{UserID: "legacy-owner"}
 	list, err := h.client.ListTools(t.Context(), caller)
-	if err != nil || len(list) != 25 || len(list) != len(tools.Catalog()) {
+	if err != nil || len(list) != 26 || len(list) != len(tools.Catalog()) {
 		t.Fatal(list, err)
 	}
 	for i, entry := range tools.Catalog() {

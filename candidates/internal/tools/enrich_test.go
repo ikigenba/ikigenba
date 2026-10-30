@@ -45,7 +45,7 @@ func (f *fixture) waitEnrich(id string) store.Pass {
 	}
 }
 
-// R-ZCZ9-BW58 R-2ZGI-9CHJ R-VW92-U4C2 R-050Y-4M77 R-VSLD-OT3Z
+// R-ZCZ9-BW58 R-2ZGI-9CHJ R-7VOU-75DC R-050Y-4M77 R-7T91-FLVY
 func TestEnrichSchemaAndValidation(t *testing.T) {
 	f := newFixture(t)
 	infos, err := f.client.ListTools(t.Context(), caller)
@@ -91,7 +91,7 @@ func TestEnrichSchemaAndValidation(t *testing.T) {
 	}
 }
 
-// R-UZO7-ZHHN R-VSLD-OT3Z
+// R-UZO7-ZHHN R-7T91-FLVY
 func TestEnrichDispatchAndRefusals(t *testing.T) {
 	entered := make(chan struct{}, 4)
 	release := make(chan struct{})

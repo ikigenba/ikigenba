@@ -3,6 +3,7 @@ package tools_test
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -17,7 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-RP1C-IZ2C R-RRH5-AIJQ R-RV4U-FTRT R-TD0R-NEDD R-VV16-GCLD
+// R-RP1C-IZ2C R-RRH5-AIJQ R-RV4U-FTRT R-TD0R-NEDD R-7S15-1U59
 func TestLegacyListDispatch(t *testing.T) {
 	_ = tools.LegacyArgs{"chosen-id"}
 	d := tools.DescribeLegacy
@@ -107,9 +108,8 @@ func TestLegacyListDispatch(t *testing.T) {
 		body   string
 		chosen *mcp.Server
 	}{
-		{`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`, main}, {base, legacy}, {strings.Replace(base, `"method"`, `"Method"`, 1), main}, {strings.Replace(base, `"params"`, `"Params"`, 1), main}, {strings.Replace(base, `"name"`, `"Name"`, 1), main}, {base + strings.Repeat(" ", 65536-len(base)), legacy}, {base + strings.Repeat(" ", 65537-len(base)), main},
+		{`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`, main}, {strings.Replace(base, `"method"`, `"Method"`, 1), main}, {strings.Replace(base, `"params"`, `"Params"`, 1), main}, {strings.Replace(base, `"name"`, `"Name"`, 1), main},
 		{`{"jsonrpc":"2.0","id":1,"method":"server/discover"}`, main}, {`not JSON`, main},
-		{`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"prospect_list","arguments":{"prospect_list":"cohort"}}}`, main},
 	} {
 		request := func(handler http.Handler) *httptest.ResponseRecorder {
 			r := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewBufferString(tc.body))
@@ -123,6 +123,51 @@ func TestLegacyListDispatch(t *testing.T) {
 		got, want := request(tools.Dispatch(main, legacy)), request(tc.chosen)
 		if got.Code != want.Code || !bytes.Equal(got.Body.Bytes(), want.Body.Bytes()) {
 			t.Fatalf("body %d: %d %s vs %d %s", len(tc.body), got.Code, got.Body, want.Code, want.Body)
+		}
+	}
+	// The client makes valid calls; the transport can add insignificant JSON
+	// whitespace to reach the dispatcher's precise byte boundary.
+	for _, size := range []int{65536, 65537, 70000} {
+		selected := main
+		if size == 65536 {
+			selected = legacy
+		}
+		invoke := func(handler http.Handler) (mcp.Result, error) {
+			t.Helper()
+			host := httptest.NewServer(identity.Require(handler))
+			defer host.Close()
+			transport := host.Client().Transport
+			httpClient := &http.Client{Transport: websiteTransport(func(r *http.Request) (*http.Response, error) {
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					return nil, err
+				}
+				if err := r.Body.Close(); err != nil {
+					return nil, err
+				}
+				if len(body) > size {
+					t.Fatal("call exceeds chosen boundary", len(body), size)
+				}
+				body = append(body, bytes.Repeat([]byte(" "), size-len(body))...)
+				r.Body = io.NopCloser(bytes.NewReader(body))
+				r.ContentLength = int64(len(body))
+				return transport.RoundTrip(r)
+			})}
+			client := mcp.NewClient(mcp.ClientConfig{Endpoint: host.URL, HTTPClient: httpClient})
+			return client.CallTool(t.Context(), caller, "cohort", json.RawMessage(`{"cohort":"`+list.ID+`"}`))
+		}
+		got, gotErr := invoke(tools.Dispatch(main, legacy))
+		want, wantErr := invoke(selected)
+		if !reflect.DeepEqual(gotErr, wantErr) || !reflect.DeepEqual(decode(t, got), decode(t, want)) {
+			t.Fatal("boundary routed differently", size, gotErr, wantErr, decode(t, got), decode(t, want))
+		}
+	}
+	// A current tool remains on main even when its argument names cohort.
+	for _, id := range []string{list.ID, "cohort"} {
+		r := call("prospect_list", tools.ReadProspectListArgs{ProspectList: id, Peek: true})
+		expected := f.call("prospect_list", tools.ReadProspectListArgs{ProspectList: id, Peek: true})
+		if !reflect.DeepEqual(decode(t, r), decode(t, expected)) {
+			t.Fatal(decode(t, r), decode(t, expected))
 		}
 	}
 	primary := httptest.NewServer(identity.Require(main))

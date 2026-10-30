@@ -188,7 +188,7 @@ func (t causeTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return t.base.RoundTrip(r)
 }
 
-// R-4DBZ-8FOZ
+// R-4DBZ-8FOZ R-JC62-SPMJ
 func TestMCPContextAndTools(t *testing.T) {
 	cfg, _, capture, _ := fixture(t)
 	type observed struct {
@@ -313,29 +313,34 @@ func TestLifecycleDeclarationsIncludeDerived(t *testing.T) {
 	}
 }
 
-// R-IM0L-0QVS R-JOJI-0XTC
+// R-JC62-SPMJ R-JOJI-0XTC
 func TestMCPToolsReceiveConfiguredWebsite(t *testing.T) {
-	for _, enabled := range []bool{false, true} {
-		t.Run(map[bool]string{false: "nil", true: "checker"}[enabled], func(t *testing.T) {
-			cfg, _, _, _ := fixture(t)
-			if enabled {
-				cfg.Website = &website.Checker{Client: &http.Client{Transport: webTransport(func(*http.Request) (*http.Response, error) { t.Error("missing candidate fetched"); return nil, io.EOF })}}
-			}
-			cfg.Passes = passes.New(passes.Config{Store: cfg.Store, Sources: sources.New(fmcsa.New()), Telemetry: cfg.Telemetry, Events: cfg.Events, Website: cfg.Website})
-			defer cfg.Passes.Drain(t.Context())
-			srv := httptest.NewServer(web.Handler(cfg))
-			defer srv.Close()
-			client := mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL + "/mcp"})
-			result, err := client.CallTool(t.Context(), identity.Caller{UserID: "owner"}, "add_page", json.RawMessage(`{"candidate":"cand_5a5a5a5a5a5a5a5a","url":"https://acme.test/"}`))
-			want := "unavailable: " + tools.RefuseUnavailable
-			if enabled {
-				want = "not_found: " + tools.RefuseNotFound
-			}
-			b, _ := json.Marshal(result)
-			if err != nil || !result.IsError() || !strings.Contains(string(b), want) {
-				t.Fatal(result, err, want)
-			}
-		})
+	for _, legacy := range []bool{false, true} {
+		for _, enabled := range []bool{false, true} {
+			t.Run(strconv.FormatBool(legacy)+"/"+strconv.FormatBool(enabled), func(t *testing.T) {
+				cfg, _, _, _ := fixture(t)
+				if legacy {
+					cfg.LegacyMCP = mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: cfg.Telemetry})
+				}
+				if enabled {
+					cfg.Website = &website.Checker{Client: &http.Client{Transport: webTransport(func(*http.Request) (*http.Response, error) { t.Error("missing candidate fetched"); return nil, io.EOF })}}
+				}
+				cfg.Passes = passes.New(passes.Config{Store: cfg.Store, Sources: sources.New(fmcsa.New()), Telemetry: cfg.Telemetry, Events: cfg.Events, Website: cfg.Website})
+				defer cfg.Passes.Drain(t.Context())
+				srv := httptest.NewServer(web.Handler(cfg))
+				defer srv.Close()
+				client := mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL + "/mcp"})
+				result, err := client.CallTool(t.Context(), identity.Caller{UserID: "owner"}, "add_page", json.RawMessage(`{"candidate":"cand_5a5a5a5a5a5a5a5a","url":"https://acme.test/"}`))
+				want := "unavailable: " + tools.RefuseUnavailable
+				if enabled {
+					want = "not_found: " + tools.RefuseNotFound
+				}
+				b, _ := json.Marshal(result)
+				if err != nil || !result.IsError() || !strings.Contains(string(b), want) {
+					t.Fatal(result, err, want)
+				}
+			})
+		}
 	}
 }
 
@@ -343,7 +348,7 @@ type webTransport func(*http.Request) (*http.Response, error)
 
 func (f webTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-// R-XTQK-SDMD R-IM0L-0QVS
+// R-XTQK-SDMD R-JC62-SPMJ
 func TestLegacyDispatcherConfiguration(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
@@ -360,7 +365,7 @@ func TestLegacyDispatcherConfiguration(t *testing.T) {
 			client := mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL + "/mcp"})
 			caller := identity.Caller{UserID: "legacy-owner"}
 			list, err := client.ListTools(t.Context(), caller)
-			if err != nil || len(list) != len(tools.Catalog()) {
+			if err != nil || len(list) != 26 || len(list) != len(tools.Catalog()) {
 				t.Fatal(list, err)
 			}
 			for i, entry := range tools.Catalog() {
@@ -373,9 +378,17 @@ func TestLegacyDispatcherConfiguration(t *testing.T) {
 				t.Fatal(result, err)
 			}
 			if enabled {
-				normal, err := client.CallTool(t.Context(), caller, "prospect_list", json.RawMessage(`{"prospect_list":"`+pl.ID+`"}`))
+				normal, err := client.CallTool(t.Context(), caller, "prospect_list", json.RawMessage(`{"prospect_list":"`+pl.ID+`","peek":true}`))
 				if err != nil || !reflect.DeepEqual(normal, result) {
 					t.Fatal(normal, result, err)
+				}
+			} else {
+				empty := httptest.NewServer(identity.Require(mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: cfg.Telemetry})))
+				defer empty.Close()
+				control := mcp.NewClient(mcp.ClientConfig{Endpoint: empty.URL})
+				want, controlErr := control.CallTool(t.Context(), caller, "cohort", json.RawMessage(`{"cohort":"coh_`+strings.TrimPrefix(pl.ID, "pl_")+`"}`))
+				if controlErr == nil || err == nil || controlErr.Error() != err.Error() || !reflect.DeepEqual(result, want) {
+					t.Fatal(result, want, err, controlErr)
 				}
 			}
 		})

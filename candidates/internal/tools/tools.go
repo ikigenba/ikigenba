@@ -36,6 +36,7 @@ const (
 	DescribeReject             string = "Reject a candidate from a prospect list."
 	DescribeUnreject           string = "Remove a candidate's standing rejection from a prospect list."
 	DescribeCandidates         string = "Find candidate businesses by name, ZIP or phone."
+	DescribeSearch             string = "Find candidate businesses by part of a name, including misspellings."
 	DescribeCandidate          string = "Read a candidate with its enrichments, judgments, evidence and rulings."
 	DescribePasses             string = "Read recorded passes."
 	DescribePass               string = "Read a pass."
@@ -69,7 +70,7 @@ type Entry struct{ Name, Description string }
 
 // Catalog returns independent ordered tool metadata.
 func Catalog() []Entry {
-	return []Entry{{"prospect_lists", DescribeProspectLists}, {"prospect_list", DescribeProspectList}, {"candidates", DescribeCandidates}, {"candidate", DescribeCandidate}, {"passes", DescribePasses}, {"pass", DescribePass}, {"ingest", DescribeIngest}, {"judge", DescribeJudge}, {"enrich", DescribeEnrich}, {"add_page", DescribeAddPage}, {"decide", DescribeDecide}, {"exclude", DescribeExclude}, {"include", DescribeInclude}, {"create_prospect_list", DescribeCreateProspectList}, {"edit_prospect_list", DescribeEditProspectList}, {"delete_prospect_list", DescribeDeleteProspectList}, {"reject", DescribeReject}, {"unreject", DescribeUnreject}, {"parks", DescribeParks}, {"park", DescribePark}, {"park_rules", DescribeParkRules}, {"edit_park_rules", DescribeEditParkRules}, {"walk", DescribeWalk}, {"add_business", DescribeAddBusiness}, {"set_facts", DescribeSetFacts}}
+	return []Entry{{"prospect_lists", DescribeProspectLists}, {"prospect_list", DescribeProspectList}, {"candidates", DescribeCandidates}, {"search", DescribeSearch}, {"candidate", DescribeCandidate}, {"passes", DescribePasses}, {"pass", DescribePass}, {"ingest", DescribeIngest}, {"judge", DescribeJudge}, {"enrich", DescribeEnrich}, {"add_page", DescribeAddPage}, {"decide", DescribeDecide}, {"exclude", DescribeExclude}, {"include", DescribeInclude}, {"create_prospect_list", DescribeCreateProspectList}, {"edit_prospect_list", DescribeEditProspectList}, {"delete_prospect_list", DescribeDeleteProspectList}, {"reject", DescribeReject}, {"unreject", DescribeUnreject}, {"parks", DescribeParks}, {"park", DescribePark}, {"park_rules", DescribeParkRules}, {"edit_park_rules", DescribeEditParkRules}, {"walk", DescribeWalk}, {"add_business", DescribeAddBusiness}, {"set_facts", DescribeSetFacts}}
 }
 func refuse(word string) mcp.Result {
 	text := RefuseUnavailable
@@ -115,7 +116,7 @@ func add[A any](srv *mcp.Server, name, description string, effect mcp.Effect, ha
 	mcp.AddRawTool(srv, mcp.RawTool[A]{Name: name, Description: description, Effect: effect, Handler: func(ctx context.Context, c identity.Caller, a A) (mcp.Result, error) { return handler(ctx, c, a), nil }})
 }
 
-// Register installs the twenty-five candidate tools on srv.
+// Register installs the twenty-six candidate tools on srv.
 func Register(srv *mcp.Server, cfg Config) {
 	add(srv, "prospect_lists", DescribeProspectLists, mcp.Read, func(ctx context.Context, _ identity.Caller, a ProspectListsArgs) mcp.Result {
 		z, key, id, err := timePosition("prospect_lists", a.Page, a.Limit)
@@ -177,6 +178,24 @@ func Register(srv *mcp.Server, cfg Config) {
 			last := rows[z-1]
 			token := paging.Token{Tool: "candidates"}.Encode(stamp(last.Created), last.ID)
 			out.Next = &token
+		}
+		return answer(out)
+	})
+	add(srv, "search", DescribeSearch, mcp.Read, func(ctx context.Context, _ identity.Caller, a SearchArgs) mcp.Result {
+		limit := store.SearchDefaultLimit
+		if a.Limit != nil {
+			limit = *a.Limit
+		}
+		if strings.TrimSpace(a.Q) == "" || limit < 1 || limit > store.SearchMaxLimit {
+			return refuse(passes.RefusalInvalid)
+		}
+		matches, err := cfg.Store.Search(ctx, a.Q, limit)
+		if err != nil {
+			return failure(err)
+		}
+		out := MatchList{Matches: []Match{}}
+		for _, m := range matches {
+			out.Matches = append(out.Matches, Match{Candidate: candidateOf(m.Candidate), Matched: m.Matched, Score: m.Score})
 		}
 		return answer(out)
 	})

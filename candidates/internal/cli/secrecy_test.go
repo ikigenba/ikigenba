@@ -175,10 +175,18 @@ func secrecyAbsent(t *testing.T, where string, value any, markers []string) {
 	}
 }
 
-// R-MWWF-E3YX R-21BB-JRQ3 R-W2P0-857V R-VFIW-YI4O R-OW6B-4S0N R-YTGV-7KA4 R-WYEE-66HX R-NY14-F797 R-MJ56-QL88 R-1WS0-70BI R-QBCU-2WE1
+// R-MWWF-E3YX R-21BB-JRQ3 R-W2P0-857V R-VFIW-YI4O R-OW6B-4S0N R-YTGV-7KA4 R-WYEE-66HX R-NY14-F797 R-MJ56-QL88 R-1WS0-70BI R-QBCU-2WE1 R-JELV-K93X
 func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	markers, phone := secrecyMarkers(t)
-	forbidden := append(append([]string{}, markers...), phone)
+	// Change the final character so the eight-character marker windows keep
+	// their forced letters; both queries remain markers in their own right.
+	last := byte('A')
+	if markers[0][23] == last {
+		last = 'B'
+	}
+	misspelled := markers[0][:23] + string(last)
+	absent := strings.Repeat("Z", 24)
+	forbidden := append(append([]string{}, markers...), phone, misspelled, absent)
 	row := runRow()
 	row["name"] = markers[0]
 	row["names"] = []string{markers[1], markers[2]}
@@ -280,6 +288,12 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 		t.Fatal("marker candidate missing")
 	}
 	id := runText(candidates[0], "id")
+	for _, q := range []string{markers[0], misspelled, absent} {
+		call("search", map[string]any{"q": q}, false)
+	}
+	for _, limit := range []int{0, store.SearchMaxLimit + 1} {
+		call("search", map[string]any{"q": markers[0], "limit": limit}, true)
+	}
 	detail := call("candidate", map[string]any{"candidate": id}, false)
 	b, _ := json.Marshal(detail)
 	if !strings.Contains(strings.ToLower(string(b)), strings.ToLower(markers[0])) {

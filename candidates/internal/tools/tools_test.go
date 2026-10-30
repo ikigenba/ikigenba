@@ -251,12 +251,13 @@ func (f *fixture) seedWithStep(n int, step time.Duration, tie bool) []string {
 }
 
 // R-Y0OZ-AZ3O R-5LVY-DPZS
-// R-VTTA-2KUO R-VOXO-JHVW R-VQ5K-X9ML R-ZCZ9-BW58
+// R-7PLC-AANV R-7ODF-WIX6 R-7QT8-O2EK R-ZCZ9-BW58
 func TestCatalogAndSchemas(t *testing.T) {
 	const (
 		_ string = tools.DescribeProspectLists
 		_ string = tools.DescribeProspectList
 		_ string = tools.DescribeCandidates
+		_ string = tools.DescribeSearch
 		_ string = tools.DescribeCandidate
 		_ string = tools.DescribePasses
 		_ string = tools.DescribePass
@@ -281,7 +282,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 		_ string = tools.DescribeWalk
 	)
 	f := newFixture(t)
-	want := []tools.Entry{{"prospect_lists", tools.DescribeProspectLists}, {"prospect_list", tools.DescribeProspectList}, {"candidates", tools.DescribeCandidates}, {"candidate", tools.DescribeCandidate}, {"passes", tools.DescribePasses}, {"pass", tools.DescribePass}, {"ingest", tools.DescribeIngest}, {"judge", tools.DescribeJudge}, {"enrich", tools.DescribeEnrich}, {"add_page", tools.DescribeAddPage}, {"decide", tools.DescribeDecide}, {"exclude", tools.DescribeExclude}, {"include", tools.DescribeInclude}, {"create_prospect_list", tools.DescribeCreateProspectList}, {"edit_prospect_list", tools.DescribeEditProspectList}, {"delete_prospect_list", tools.DescribeDeleteProspectList}, {"reject", tools.DescribeReject}, {"unreject", tools.DescribeUnreject}, {"parks", tools.DescribeParks}, {"park", tools.DescribePark}, {"park_rules", tools.DescribeParkRules}, {"edit_park_rules", tools.DescribeEditParkRules}, {"walk", tools.DescribeWalk}, {"add_business", tools.DescribeAddBusiness}, {"set_facts", tools.DescribeSetFacts}}
+	want := []tools.Entry{{"prospect_lists", tools.DescribeProspectLists}, {"prospect_list", tools.DescribeProspectList}, {"candidates", tools.DescribeCandidates}, {"search", tools.DescribeSearch}, {"candidate", tools.DescribeCandidate}, {"passes", tools.DescribePasses}, {"pass", tools.DescribePass}, {"ingest", tools.DescribeIngest}, {"judge", tools.DescribeJudge}, {"enrich", tools.DescribeEnrich}, {"add_page", tools.DescribeAddPage}, {"decide", tools.DescribeDecide}, {"exclude", tools.DescribeExclude}, {"include", tools.DescribeInclude}, {"create_prospect_list", tools.DescribeCreateProspectList}, {"edit_prospect_list", tools.DescribeEditProspectList}, {"delete_prospect_list", tools.DescribeDeleteProspectList}, {"reject", tools.DescribeReject}, {"unreject", tools.DescribeUnreject}, {"parks", tools.DescribeParks}, {"park", tools.DescribePark}, {"park_rules", tools.DescribeParkRules}, {"edit_park_rules", tools.DescribeEditParkRules}, {"walk", tools.DescribeWalk}, {"add_business", tools.DescribeAddBusiness}, {"set_facts", tools.DescribeSetFacts}}
 	if !reflect.DeepEqual(tools.Catalog(), want) {
 		t.Fatal(tools.Catalog())
 	}
@@ -298,8 +299,8 @@ func TestCatalogAndSchemas(t *testing.T) {
 		t.Fatal(infos)
 	}
 	seen := map[string]bool{}
-	properties := [][]string{{"page", "limit"}, {"prospect_list", "peek"}, {"name", "zip", "phone", "page", "limit"}, {"candidate"}, {"page", "limit"}, {"pass"}, {"scraper"}, {}, {"kind", "prospect_list", "candidate", "force"}, {"candidate", "url"}, {"kind", "why", "candidate", "other", "links"}, {"candidate", "why"}, {"candidate", "why"}, {"name", "filters", "order", "size"}, {"prospect_list", "name", "filters", "order", "size"}, {"prospect_list"}, {"prospect_list", "candidate", "why"}, {"prospect_list", "candidate", "why"}, {"county", "walked", "gone", "sort", "page", "limit"}, {"park"}, {}, {"distance", "min_parcels", "value_threshold", "county", "labels", "walk_ceiling"}, {"parks", "again"}, {"name", "headcount", "revenue", "category", "website", "address", "phone", "email", "people", "known_since", "ein", "fleet", "note"}, {"candidate", "name", "headcount", "revenue", "category", "website", "address", "phone", "email", "people", "known_since", "ein", "fleet", "clear", "note"}}
-	required := [][]string{nil, {"prospect_list"}, nil, {"candidate"}, nil, {"pass"}, nil, nil, nil, {"candidate", "url"}, {"kind", "why", "candidate"}, {"candidate", "why"}, {"candidate", "why"}, {"name"}, {"prospect_list"}, {"prospect_list"}, {"prospect_list", "candidate", "why"}, {"prospect_list", "candidate", "why"}, nil, {"park"}, nil, nil, {"parks"}, {"name", "note"}, {"candidate", "note"}}
+	properties := [][]string{{"page", "limit"}, {"prospect_list", "peek"}, {"name", "zip", "phone", "page", "limit"}, {"q", "limit"}, {"candidate"}, {"page", "limit"}, {"pass"}, {"scraper"}, {}, {"kind", "prospect_list", "candidate", "force"}, {"candidate", "url"}, {"kind", "why", "candidate", "other", "links"}, {"candidate", "why"}, {"candidate", "why"}, {"name", "filters", "order", "size"}, {"prospect_list", "name", "filters", "order", "size"}, {"prospect_list"}, {"prospect_list", "candidate", "why"}, {"prospect_list", "candidate", "why"}, {"county", "walked", "gone", "sort", "page", "limit"}, {"park"}, {}, {"distance", "min_parcels", "value_threshold", "county", "labels", "walk_ceiling"}, {"parks", "again"}, {"name", "headcount", "revenue", "category", "website", "address", "phone", "email", "people", "known_since", "ein", "fleet", "note"}, {"candidate", "name", "headcount", "revenue", "category", "website", "address", "phone", "email", "people", "known_since", "ein", "fleet", "clear", "note"}}
+	required := [][]string{nil, {"prospect_list"}, nil, {"q"}, {"candidate"}, nil, {"pass"}, nil, nil, nil, {"candidate", "url"}, {"kind", "why", "candidate"}, {"candidate", "why"}, {"candidate", "why"}, {"name"}, {"prospect_list"}, {"prospect_list"}, {"prospect_list", "candidate", "why"}, {"prospect_list", "candidate", "why"}, nil, {"park"}, nil, nil, {"parks"}, {"name", "note"}, {"candidate", "note"}}
 	for i, info := range infos {
 		if info.Name != want[i].Name || info.Description != want[i].Description || len(info.OutputSchema) != 0 {
 			t.Fatal(info)
@@ -310,7 +311,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 		}
 		seen[d] = true
 		effect := mcp.Additive
-		if i < 6 || i >= 18 && i < 21 {
+		if i < 7 || i >= 19 && i < 22 {
 			effect = mcp.Read
 		}
 		if info.Name == "delete_prospect_list" {
@@ -519,7 +520,7 @@ func decodeList[T any](t *testing.T, r mcp.Result) T {
 
 var _ io.Reader = (*random)(nil)
 
-// R-R96N-JYFB R-VSLD-OT3Z R-27ET-GMFK R-136A-70EB R-WX6H-SER8
+// R-R96N-JYFB R-7T91-FLVY R-27ET-GMFK R-136A-70EB R-WX6H-SER8
 func TestDetailAndRulings(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -596,7 +597,7 @@ func TestDetailAndRulings(t *testing.T) {
 	}
 }
 
-// R-6LTC-HAMT R-VRDH-B1DA
+// R-6LTC-HAMT R-7UGX-TDMN
 func TestRefusalsAndPrecedence(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)

@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-DDU5-2I22 R-DF21-G9SR
+// R-DDU5-2I22 R-7ZCJ-CGLF
 func TestCampaignPresenceFiltersThroughTools(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(6)
@@ -115,9 +115,7 @@ func TestCampaignPresenceFiltersThroughTools(t *testing.T) {
 	}
 	before := decodeList[tools.ProspectListList](t, f.call("prospect_lists", tools.ProspectListsArgs{}))
 	bad := f.call("create_prospect_list", map[string]any{"name": "bad schema", "filters": map[string]any{"campaign_not": "true"}})
-	if !bad.IsError() || len(decode(t, bad).Structured) != 0 {
-		t.Fatal(bad)
-	}
+	schemaRefusal(t, bad)
 	after := decodeList[tools.ProspectListList](t, f.call("prospect_lists", tools.ProspectListsArgs{}))
 	if !reflect.DeepEqual(before, after) {
 		t.Fatal(before, after)

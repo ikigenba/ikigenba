@@ -197,11 +197,12 @@ func secrecyAbsent(t *testing.T, where string, value any, markers []string) {
 	}
 }
 
-// R-YIHR-RMLV R-T25Y-6K82 R-QCLZ-KWWI R-MKD3-4CYX R-UMAW-9NPZ R-F41M-83EA
+// R-YIHR-RMLV R-T25Y-6K82 R-QCLZ-KWWI R-MKD3-4CYX R-UMAW-9NPZ R-F41M-83EA R-JFTR-Y0UM
 func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	markers, phone := secrecyMarkers(t)
-	forbidden := append(append([]string{}, markers...), phone)
+	absent := strings.Repeat("Z", 24)
+	forbidden := append(append([]string{}, markers...), phone, absent)
 	eins := []string{"812345671", "823456782", "834567893", "845678904", "856789015"}
 	for _, ein := range eins {
 		if strings.Contains(phone, ein) {
@@ -345,6 +346,7 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 	prospectList := co
 	prospectListID := text(prospectList, "id")
 	args := map[string]any{
+		"search":         map[string]any{"q": "fixture"},
 		"prospect_lists": map[string]any{}, "prospect_list": map[string]any{"prospect_list": prospectListID},
 		"candidate": map[string]any{"candidate": id}, "passes": map[string]any{}, "pass": map[string]any{"pass": passID}, "ingest": map[string]any{}, "judge": map[string]any{},
 		"decide":  map[string]any{"kind": store.KindNotSame, "candidate": id, "other": ids[0], "why": markers[9]},
@@ -463,6 +465,10 @@ func TestHandlerSecrecyWhileDatabaseFails(t *testing.T) {
 			call(entry.Name, args[entry.Name], true)
 		}
 	}
+
+	call("search", map[string]any{"q": markers[0], "limit": 10}, true)
+	call("search", map[string]any{"q": absent}, true)
+	call("search", map[string]any{"q": markers[0], "limit": 0}, true)
 
 	failedSet := ownerArgs()
 	failedSet["candidate"] = ownerID

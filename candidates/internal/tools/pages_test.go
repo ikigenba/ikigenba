@@ -92,7 +92,7 @@ func TestPageSchemaAndJSON(t *testing.T) {
 	}
 }
 
-// R-P2B3-H65F R-M3JT-JKMP R-GADH-O9XX R-VSLD-OT3Z
+// R-P2B3-H65F R-M3JT-JKMP R-GADH-O9XX R-7T91-FLVY
 func TestAddPageRefusals(t *testing.T) {
 	var requests atomic.Int64
 	k := pageChecker(&requests)
@@ -295,7 +295,7 @@ func TestSiteTextProjection(t *testing.T) {
 	}
 }
 
-// R-XLHT-ENWI R-57N2-LEHE R-XRLB-BILZ R-XNXM-67DW R-14E6-KS50 R-VRDH-B1DA
+// R-XLHT-ENWI R-57N2-LEHE R-XRLB-BILZ R-XNXM-67DW R-14E6-KS50 R-7UGX-TDMN
 func TestAddUnreadablePageKeepsCopyAndLaterReplacesIt(t *testing.T) {
 	if tools.RefuseUnreadable == "" || strings.TrimSpace(tools.RefuseUnreadable) != tools.RefuseUnreadable || strings.ContainsAny(tools.RefuseUnreadable, "\r\n") {
 		t.Fatal("unreadable copy")

@@ -107,7 +107,7 @@ func TestOwnerWritesAndCandidateHistory(t *testing.T) {
 	refusal(t, f.call("set_facts", tools.SetFactsArgs{Candidate: id, Name: &name, Note: note}), "invalid", tools.RefuseInvalid)
 }
 
-// R-WEJK-KOGH R-WFRG-YG76 R-VSLD-OT3Z R-VRDH-B1DA
+// R-WEJK-KOGH R-WFRG-YG76 R-7T91-FLVY R-7UGX-TDMN
 func TestOwnerValidationBeforeStoreAccess(t *testing.T) {
 	f := newFixture(t)
 	f.d.SetFailing(true)

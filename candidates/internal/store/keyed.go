@@ -68,6 +68,9 @@ func candidateKey(ctx context.Context, tx *sql.Tx, id string) (Candidate, error)
 	return cs[0], nil
 }
 func putCandidate(ctx context.Context, tx *sql.Tx, c Candidate) error {
+	if err := prepareSearchWrite(ctx, tx, c.ID); err != nil {
+		return err
+	}
 	if err := insertRecord(ctx, tx, "candidates", candidateColumns, c, map[string]any{"names_lower": strings.ToLower(strings.Join(c.Names, "\n"))}); err != nil {
 		return err
 	}
@@ -79,7 +82,7 @@ func putCandidate(ctx context.Context, tx *sql.Tx, c Candidate) error {
 			return err
 		}
 	}
-	return nil
+	return indexCandidate(ctx, tx, c)
 }
 func putLink(ctx context.Context, tx *sql.Tx, l Link) error {
 	if err := insertRecord(ctx, tx, "links", linkColumns, l, map[string]any{"name_key": l.Reading.NameKey, "state": l.Reading.State, "zip": l.Reading.Zip, "phone_key": l.Reading.PhoneKey, "domain_key": l.Reading.DomainKey, "ein_key": l.Reading.EINKey}); err != nil {
@@ -313,7 +316,11 @@ func (s *Store) writeTx(ctx context.Context, fn func(context.Context, *sql.Tx) e
 		}()
 		ctx = context.WithValue(ctx, statementCacheKey{}, cache)
 		ctx = context.WithValue(ctx, ownerPresenceKey{}, &ownerPresence{})
-		return fn(ctx, tx)
+		ctx = context.WithValue(ctx, searchWriteKey{}, map[string]searchWrite{})
+		if err := fn(ctx, tx); err != nil {
+			return err
+		}
+		return flushSearchWrites(ctx, tx)
 	})
 }
 func (s *Store) readTx(ctx context.Context, fn func(*sql.Tx) error) error {

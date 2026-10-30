@@ -823,3 +823,30 @@ type CampaignUse struct {
 type IngestArgs struct {
 	Scraper string `json:"scraper"`
 }
+
+// SearchArgs names a ranked name query with an optional result limit.
+type SearchArgs struct {
+	Q     string `json:"q" mcp:"required"`
+	Limit *int   `json:"limit"`
+}
+
+// Match is one ranked candidate and the stored name it matched.
+type Match struct {
+	Candidate Candidate `json:"candidate"`
+	Matched   string    `json:"matched"`
+	Score     float64   `json:"score"`
+}
+
+// MatchList is a ranked search answer.
+type MatchList struct {
+	Matches []Match `json:"matches"`
+}
+
+// MarshalJSON encodes a missing result slice as an empty array.
+func (v MatchList) MarshalJSON() ([]byte, error) {
+	type plain MatchList
+	if v.Matches == nil {
+		v.Matches = []Match{}
+	}
+	return json.Marshal(plain(v))
+}
