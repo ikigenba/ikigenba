@@ -2,16 +2,21 @@ package store_test
 
 import (
 	"database/sql"
+	"encoding/json"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
 // Assigning to a distinct string type requires SearchShort to be untyped.
 const searchShort windowStatement = store.SearchShort
+
+// Assigning to a distinct string type requires SearchCandidates to be untyped.
+const searchCandidateRows windowStatement = store.SearchCandidates
 
 func searchShortFixture(t *testing.T) (*contractFixture, []string) {
 	t.Helper()
@@ -102,5 +107,95 @@ func TestSearchShortStatementSeeksNameRange(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// R-7SWG-2LSY
+func TestSearchCandidatesStatementParameter(t *testing.T) {
+	f := contractDB(t)
+	contractEqual(t, statementIDs(t, f, searchCandidateRows, "[]"), []string{})
+	contractOK(t, f.d.Read(t.Context(), func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(t.Context(), store.SearchCandidates)
+		if err == nil {
+			_ = rows.Close()
+			t.Fatal("candidate statement accepted no parameter")
+		}
+		return nil
+	}))
+}
+
+// R-7VC8-U5AC
+func TestSearchCandidatesStatementMatchesRequestedIDs(t *testing.T) {
+	f, ids := searchShortFixture(t)
+	cs := searchCandidates(t, f.s, ids)
+	for _, requested := range [][]string{
+		{}, {"no-such-id"}, {ids[0]}, {ids[len(ids)-1]},
+		{ids[1], ids[len(ids)-1], "no-such-id", ids[1], ids[len(ids)-1]},
+		{ids[2], ids[0], "\" OR 1=1 --", "\x00", "éb"}, ids,
+	} {
+		encoded, err := json.Marshal(requested)
+		contractOK(t, err)
+		want := []string{}
+		for _, c := range cs {
+			if slices.Contains(requested, c.ID) {
+				want = append(want, c.ID)
+			}
+		}
+		got := statementIDs(t, f, searchCandidateRows, string(encoded))
+		slices.Sort(got)
+		slices.Sort(want)
+		contractEqual(t, got, want)
+	}
+}
+
+// R-7WK5-7X11
+func TestSearchCandidatesStatementSeeksPrimaryKeys(t *testing.T) {
+	for _, populated := range []bool{false, true} {
+		t.Run(strconv.FormatBool(populated), func(t *testing.T) {
+			var f *contractFixture
+			if populated {
+				f, _ = searchShortFixture(t)
+			} else {
+				f = contractDB(t)
+			}
+			for _, arg := range []string{"[]", `["no-such-id","no-such-id"]`, "", "not-json", "null", "{}", "\x00"} {
+				details := statementPlan(t, f, searchCandidateRows, arg)
+				if len(details) == 0 || !strings.HasPrefix(details[0], "SEARCH ") || !strings.HasSuffix(details[0], " INDEX sqlite_autoindex_candidates_1 (id=?)") {
+					t.Fatalf("unexpected leading plan: %v", details)
+				}
+				for _, detail := range details {
+					if strings.HasPrefix(detail, "SCAN candidates") || strings.Contains(detail, "USE TEMP B-TREE") {
+						t.Fatalf("candidate scan or temporary sort: %v", details)
+					}
+				}
+			}
+		})
+	}
+}
+
+// R-4HXU-477Y R-7FMV-RIF1 R-7I2O-J1WF
+func TestSearchBatchPreservesCandidateRowsAndRanking(t *testing.T) {
+	f := contractDB(t)
+	ids := []string{}
+	for i, name := range []string{"Batch Longest Company", "Batch", "Batch Middle", "Batch Short"} {
+		id := searchAttach(t, f, "batch-"+strconv.Itoa(i), "Original "+name, "Batch Shared")
+		_, _, err := f.s.AddOwnerRecord(t.Context(), store.OwnerRecord{
+			Candidate: id, Note: "current owner values", UserID: "owner",
+			Set: store.OwnerValues{
+				Name: ownPtr(name), EIN: ownPtr("41987654" + strconv.Itoa(i)),
+				Address: &sources.Address{Street: "7 Elm St", City: "Rush City", State: "MN", Zip: "55069", County: "MN-025"},
+				Phone:   ownPtr("320555017" + strconv.Itoa(i)), Email: ownPtr("owner" + strconv.Itoa(i) + "@batch.test"),
+				People: []store.OwnerPerson{{Name: "Owner " + strconv.Itoa(i), Role: "president"}},
+			},
+		})
+		contractOK(t, err)
+		ids = append(ids, id)
+		f.now = f.now.AddDate(0, 0, 1)
+	}
+	cs := searchCandidates(t, f.s, ids)
+	for _, q := range []string{"ba", "batch", "batch shared", "missing"} {
+		for _, limit := range []int{1, 2, store.SearchMaxLimit} {
+			assertSearchRanking(t, f.s, cs, q, limit)
+		}
 	}
 }

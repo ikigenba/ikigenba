@@ -21,6 +21,9 @@ const SearchMaxLimit = 50
 // SearchShort reads active candidates in the half-open names_lower range.
 const SearchShort = "SELECT id,name FROM candidates WHERE +status='active' AND names_lower>=? AND names_lower<?"
 
+// SearchCandidates reads the candidates named by one JSON array of ids.
+const SearchCandidates = "SELECT " + candidateColumnNames + " FROM candidates WHERE id IN (SELECT value FROM json_each(?))"
+
 // Match holds the candidate, the stored name matched, and its search score.
 type Match struct {
 	Candidate Candidate
@@ -144,14 +147,25 @@ func (s *Store) Search(ctx context.Context, q string, limit int) ([]Match, error
 		if err != nil {
 			return err
 		}
-		ctx = ownerReadContext(ctx)
+		ids := make([]string, len(hits))
+		for i, hit := range hits {
+			ids[i] = hit.id
+		}
+		encoded, err := json.Marshal(ids)
+		if err != nil {
+			return err
+		}
+		cs, err := readQueryRecords[Candidate](ctx, tx, candidateColumns, SearchCandidates, string(encoded))
+		if err != nil {
+			return err
+		}
+		byID := make(map[string]Candidate, len(cs))
+		for _, c := range cs {
+			byID[c.ID] = c
+		}
 		out = make([]Match, 0, len(hits))
 		for _, hit := range hits {
-			c, e := candidateKey(ctx, tx, hit.id)
-			if e != nil {
-				return e
-			}
-			if c.Status == StatusActive {
+			if c, ok := byID[hit.id]; ok && c.Status == StatusActive {
 				out = append(out, Match{c, hit.name, hit.score})
 			}
 		}

@@ -29,7 +29,9 @@ type estimateRecord struct {
 }
 type column struct{ name, field string }
 
-var candidateColumns = columns("id:ID status:Status merged_into:MergedInto name:Name names:Names street:Street city:City state:State zip:Zip county:County phone:Phone email:Email people:People class:Class cargo:Cargo created:Created updated:Updated name_source:NameSource name_record:NameRecord address_source:AddressSource address_record:AddressRecord phone_source:PhoneSource phone_record:PhoneRecord email_source:EmailSource email_record:EmailRecord other_names:OtherNames other_addresses:OtherAddresses other_phones:OtherPhones other_emails:OtherEmails")
+const candidateColumnNames = "id,status,merged_into,name,names,street,city,state,zip,county,phone,email,people,class,cargo,created,updated,name_source,name_record,address_source,address_record,phone_source,phone_record,email_source,email_record,other_names,other_addresses,other_phones,other_emails"
+
+var candidateColumns = mappedColumns(candidateColumnNames, "ID Status MergedInto Name Names Street City State Zip County Phone Email People Class Cargo Created Updated NameSource NameRecord AddressSource AddressRecord PhoneSource PhoneRecord EmailSource EmailRecord OtherNames OtherAddresses OtherPhones OtherEmails")
 var linkColumns = columns("candidate:Candidate scraper:Scraper source_id:SourceID run:Run digest:Digest reading:Reading reason:Reason confidence:Confidence first_seen:FirstSeen last_seen:LastSeen gone:Gone walk:Walk park:Park")
 var estimateColumns = columns("candidate:Candidate source:Source low:Low high:High confidence:Confidence facts:Facts filed:Filed formula:Formula")
 var judgmentsColumns = columns("candidate:Candidate operating:Operating operating_key:OperatingKey evidence:Evidence revenue_low:RevenueLow revenue_high:RevenueHigh revenue_confidence:RevenueConfidence headcount_low:HeadcountLow headcount_high:HeadcountHigh headcount_basis:HeadcountBasis headcount_series:HeadcountSeries trend:Trend trend_kind:TrendKind trend_from_year:TrendFromYear trend_to_year:TrendToYear trend_from:TrendFrom trend_to:TrendTo trend_change:TrendChange excluded:Excluded rules:Rules calculated:Calculated")
@@ -41,6 +43,14 @@ func columns(s string) []column {
 	for _, part := range strings.Fields(s) {
 		p := strings.Split(part, ":")
 		out = append(out, column{p[0], p[1]})
+	}
+	return out
+}
+func mappedColumns(names, fields string) []column {
+	ns, fs := strings.Split(names, ","), strings.Fields(fields)
+	out := make([]column, len(ns))
+	for i, name := range ns {
+		out[i] = column{name, fs[i]}
 	}
 	return out
 }
