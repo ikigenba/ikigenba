@@ -35,7 +35,7 @@ A sibling's `specs/`, `AGENTS.md` and layout are read as precedent, never cited 
 
 ## Inputs
 
-- The decisions document, by absolute path, outside the repository and read-only. Its **Sequence** section orders the work; without one, derive an order from the document's dependencies and record it. Its **Finish line** says what delivered means: the sandbox exercise passed, the branch landed on `main`, or the suite deployed to a named space; without one, landed on `main`. What the document names as excluded or deferred is not delivered and is not decided.
+- The decisions document, by absolute path, in `~/Documents` outside the repository and read-only. Its **Sequence** section orders the work; without one, derive an order from the document's dependencies and record it. Its **Finish line** says what delivered means: the sandbox exercise passed, the branch landed on `main`, or the suite deployed to a named space; without one, landed on `main`. What the document names as excluded or deferred is not delivered and is not decided.
 - The sub-projects the document names. One it introduces does not exist yet; creating it is part of the work.
 - A running sandbox with a stored token.
 
