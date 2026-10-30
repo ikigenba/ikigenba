@@ -186,7 +186,7 @@ func Register(srv *mcp.Server, cfg Config) {
 		if a.Limit != nil {
 			limit = *a.Limit
 		}
-		if strings.TrimSpace(a.Q) == "" || limit < 1 || limit > store.SearchMaxLimit {
+		if strings.TrimSpace(strings.ReplaceAll(a.Q, "\x00", " ")) == "" || limit < 1 || limit > store.SearchMaxLimit {
 			return refuse(passes.RefusalInvalid)
 		}
 		matches, err := cfg.Store.Search(ctx, a.Q, limit)

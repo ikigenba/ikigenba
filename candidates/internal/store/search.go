@@ -103,7 +103,7 @@ func insertSearchNames(ctx context.Context, tx *sql.Tx, id string, w searchWrite
 			continue
 		}
 		seen[name] = true
-		if err := execSQL(ctx, tx, "INSERT INTO search_index(name,candidate,display) VALUES (?,?,?)", name, id, name == w.name); err != nil {
+		if err := execSQL(ctx, tx, "INSERT INTO search_index(name,candidate,display) VALUES (?,?,?)", strings.ReplaceAll(name, "\x00", " "), id, name == w.name); err != nil {
 			return err
 		}
 	}
@@ -127,7 +127,7 @@ func compareSearch(a, b searchHit) int {
 func (s *Store) Search(ctx context.Context, q string, limit int) ([]Match, error) {
 	var out []Match
 	err := s.readTx(ctx, func(tx *sql.Tx) error {
-		q = strings.ToLower(strings.TrimSpace(q))
+		q = strings.ToLower(strings.TrimSpace(strings.ReplaceAll(q, "\x00", " ")))
 		if q == "" || limit < 1 || limit > SearchMaxLimit {
 			return ErrInvalid
 		}
@@ -172,7 +172,7 @@ func shortSearch(ctx context.Context, tx *sql.Tx, q string, limit int) ([]search
 		if err = rows.Scan(&id, &name); err != nil {
 			return nil, err
 		}
-		n := strings.ToLower(name)
+		n := strings.ToLower(strings.ReplaceAll(name, "\x00", " "))
 		if !strings.HasPrefix(n, q) {
 			continue
 		}
@@ -267,18 +267,27 @@ func recallSearch(ctx context.Context, tx *sql.Tx, q, expression string, best ma
 		if status != StatusActive {
 			continue
 		}
-		tier, edits, allowance := searchTier(q, strings.ToLower(name))
-		if tier == 0 {
-			continue
-		}
-		hit := searchHit{id: id, name: name, score: searchScore(q, strings.ToLower(name), tier, display, edits, allowance)}
-		if name != displayName {
+		position := 0
+		if display {
+			name = displayName
+		} else {
 			var names []string
 			if err = json.Unmarshal([]byte(namesJSON), &names); err != nil {
 				return 0, err
 			}
-			hit.position = 1 + slices.Index(names, name)
+			for i, raw := range names {
+				if strings.ReplaceAll(raw, "\x00", " ") == name {
+					name, position = raw, i+1
+					break
+				}
+			}
 		}
+		folded := strings.ToLower(strings.ReplaceAll(name, "\x00", " "))
+		tier, edits, allowance := searchTier(q, folded)
+		if tier == 0 {
+			continue
+		}
+		hit := searchHit{id: id, name: name, score: searchScore(q, folded, tier, display, edits, allowance), position: position}
 		old, exists := best[id]
 		if !exists || hit.score > old.score || (hit.score == old.score && hit.position < old.position) {
 			best[id] = hit

@@ -13,7 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-4LLJ-9IG1 R-7FMV-RIF1
+// R-9JC7-61RU R-7FMV-RIF1
 func TestSearchTiming(t *testing.T) {
 	// Both record data and the store's ID source are deterministic and injected.
 	rng := rand.NewChaCha8([32]byte{9, 4, 8, 1, 7, 5})

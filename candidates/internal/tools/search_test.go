@@ -66,7 +66,7 @@ func TestSearchMatchEncoding(t *testing.T) {
 	}
 }
 
-// R-8WFG-C584
+// R-SQ7T-36SD
 func TestSearchMapsStoreResults(t *testing.T) {
 	f := newFixture(t)
 	f.seed(store.SearchDefaultLimit + 4)
@@ -79,7 +79,7 @@ func TestSearchMapsStoreResults(t *testing.T) {
 		}
 		byID[c.ID] = b
 	}
-	for _, q := range []string{"  BUSINESS ", "trucking alias", "busniess", "no-result-zzzzzzzz"} {
+	for _, q := range []string{"  BUSINESS ", "\x00 BUSINESS\x00", "trucking alias", "busniess", "no-result-zzzzzzzz"} {
 		for _, limit := range []*int{nil, new(1), new(3), new(store.SearchMaxLimit)} {
 			l := store.SearchDefaultLimit
 			if limit != nil {
@@ -132,12 +132,12 @@ func schemaRefusal(t *testing.T, r mcp.Result) {
 	}
 }
 
-// R-8XNC-PWYT R-7T91-FLVY
+// R-SNS0-BNAZ R-7T91-FLVY
 func TestSearchRefusesBeforeStore(t *testing.T) {
 	f := newFixture(t)
 	f.d.SetFailing(true)
 	defer f.d.SetFailing(false)
-	for _, q := range []string{"", "   ", "\t\n", "\u00a0"} {
+	for _, q := range []string{"", "   ", "\t\n", "\u00a0", "\x00", "\x00 "} {
 		refusal(t, f.call("search", tools.SearchArgs{Q: q}), passes.RefusalInvalid, tools.RefuseInvalid)
 	}
 	for _, l := range []int{0, -1, store.SearchMaxLimit + 1, 500} {

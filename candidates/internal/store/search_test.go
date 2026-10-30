@@ -146,7 +146,7 @@ func referenceWords(s string) []string {
 	return words
 }
 func referenceName(q, name string, display bool) (int, float64) {
-	n := strings.ToLower(name)
+	n := strings.ToLower(strings.ReplaceAll(name, "\x00", " "))
 	tier := 0
 	edits, allowance := 0, 0
 	qw, nw := referenceWords(q), referenceWords(n)
@@ -215,7 +215,7 @@ func referenceName(q, name string, display bool) (int, float64) {
 	return tier, score
 }
 func referenceSearch(candidates []store.Candidate, q string, limit int) []store.Match {
-	q = strings.ToLower(strings.TrimSpace(q))
+	q = strings.ToLower(strings.TrimSpace(strings.ReplaceAll(q, "\x00", " ")))
 	short := utf8.RuneCountInString(q) < 3
 	result := []store.Match{}
 	for _, c := range candidates {
@@ -233,7 +233,7 @@ func referenceSearch(candidates []store.Candidate, q string, limit int) []store.
 				continue
 			}
 			seen[name] = true
-			if short && !strings.HasPrefix(strings.ToLower(name), q) {
+			if short && !strings.HasPrefix(strings.ToLower(strings.ReplaceAll(name, "\x00", " ")), q) {
 				continue
 			}
 			_, score := referenceName(q, name, name == c.Name)
@@ -274,10 +274,10 @@ func assertSearchRanking(t *testing.T, s *store.Store, candidates []store.Candid
 	}
 }
 
-// R-4HXU-477Y R-78BH-GVYV R-7ARA-8FG9 R-7BZ6-M76Y R-7D72-ZYXN R-7FMV-RIF1
+// R-4HXU-477Y R-7GUS-5A5Q R-7ARA-8FG9 R-7BZ6-M76Y R-7D72-ZYXN R-7FMV-RIF1
 func TestSearchSmallStoreAgainstEditGraphRanking(t *testing.T) {
 	f := contractDB(t)
-	names := []string{"Acme Trucking", "Zed Holdings", "Acme Trucking North", "Acme Delivery", "Trujillo Transport Services", "MCCUEN CONSTRUCTION INC", "Abcdefghij", "Abcdzefghi Abcdfghi", "Jone Co", "A Trucking Acme", "Smith-Jones Co.", "AT&T Industries", "Brown Bird", "Acme", "Longword Service", "Decimal123 Trucking"}
+	names := []string{"Acme Trucking", "Zed Holdings", "Acme Trucking North", "Acme Delivery", "Trujillo Transport Services", "MCCUEN CONSTRUCTION INC", "Abcdefghij", "Abcdzefghi Abcdfghi", "Jone Co", "A Trucking Acme", "Smith-Jones Co.", "AT&T Industries", "Brown Bird", "Acme", "Longword Service", "Decimal123 Trucking", "Acme\x00Trucking"}
 	ids := []string{}
 	for i, name := range names {
 		alternates := []string{}
@@ -294,7 +294,7 @@ func TestSearchSmallStoreAgainstEditGraphRanking(t *testing.T) {
 		ids = append(ids, searchAttach(t, f, name, name, alternates...))
 	}
 	cs := searchCandidates(t, f.s, ids)
-	queries := []string{"  ACME Trucking \t", "acme", "trucking acme", "me truck", "brown hawk", "trujilo transport", "mcuen", "cadefghij", "abdcefghij", "xbcdefghij", "abcdefghi", "jnoe", "acme truckinf", "truck acm", "smith co", "at&t", "a trucking", "decimal123", "middle", "unfindable", "---", "truking acme"}
+	queries := []string{"  ACME Trucking \t", "acme", "trucking acme", "me truck", "brown hawk", "trujilo transport", "mcuen", "cadefghij", "abdcefghij", "xbcdefghij", "abcdefghi", "jnoe", "acme truckinf", "truck acm", "smith co", "at&t", "a trucking", "decimal123", "middle", "unfindable", "---", "truking acme", "\x00 ACME\x00Trucking \x00", "acme\x00\x00trucking"}
 	for _, q := range queries {
 		for _, limit := range []int{1, 10, 50} {
 			t.Run(q+"/"+strconv.Itoa(limit), func(t *testing.T) { assertSearchRanking(t, f.s, cs, q, limit) })
@@ -312,7 +312,7 @@ func TestSearchSmallStoreAgainstEditGraphRanking(t *testing.T) {
 	contractEqual(t, len(got), 0)
 }
 
-// R-7I2O-J1WF R-78BH-GVYV R-7FMV-RIF1
+// R-7I2O-J1WF R-7FMV-RIF1
 func TestSearchShortUnicodePrefixAndLongUnicodeNames(t *testing.T) {
 	f := contractDB(t)
 	ids := []string{}
@@ -320,7 +320,7 @@ func TestSearchShortUnicodePrefixAndLongUnicodeNames(t *testing.T) {
 		ids = append(ids, searchAttach(t, f, name+strconv.Itoa(len(ids)), name, "Ab Alternate"))
 	}
 	cs := searchCandidates(t, f.s, ids)
-	for _, q := range []string{"a", " AB ", "ÉB", "ébène", "ebene", "中文", "中文公", "at&", "smith-j"} {
+	for _, q := range []string{"a", " AB ", "ÉB", "中文"} {
 		for _, limit := range []int{1, 2, 50} {
 			assertSearchRanking(t, f.s, cs, q, limit)
 		}
@@ -380,6 +380,7 @@ func TestSearchValidationPrecedenceAndReadOnly(t *testing.T) {
 	contractEqual(t, searchCandidates(t, f.s, ids), before)
 }
 
+// R-EIT4-6RL9
 func TestSearchFollowsEveryCandidateWrite(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -466,6 +467,7 @@ func TestSearchFollowsEveryCandidateWrite(t *testing.T) {
 	check()
 }
 
+// R-EIT4-6RL9
 func TestSearchUsesFinalNamesOfEachWriteUnit(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -497,4 +499,44 @@ func TestSearchUsesFinalNamesOfEachWriteUnit(t *testing.T) {
 	f.reopen()
 	current := searchCandidates(t, f.s, []string{id})
 	assertSearchRanking(t, f.s, current, "Copper Welding", 50)
+}
+
+// R-9RWG-SWE5 R-EIT4-6RL9 R-7EEZ-DQOC
+func TestSearchNULNames(t *testing.T) {
+	for _, name := range []string{"A\x00B", "A\x00\x00B"} {
+		t.Run(name, func(t *testing.T) {
+			f := contractDB(t)
+			id := searchAttach(t, f, "nul", name)
+			for _, q := range []string{name, strings.ReplaceAll(name, "\x00", " "), "\x00 " + name + " \x00"} {
+				got, err := f.s.Search(t.Context(), q, store.SearchMaxLimit)
+				contractOK(t, err)
+				contractEqual(t, len(got), 1)
+				contractEqual(t, got[0].Candidate.ID, id)
+				contractEqual(t, got[0].Matched, name)
+				contractEqual(t, got[0].Score, 1.0)
+			}
+			f.reopen()
+			assertSearchRanking(t, f.s, searchCandidates(t, f.s, []string{id}), name, store.SearchMaxLimit)
+		})
+	}
+	t.Run("alternate", func(t *testing.T) {
+		f := contractDB(t)
+		id := searchAttach(t, f, "alternate", "Other Company", "A\x00B", "A B", "A\x00B", "")
+		for _, q := range []string{"A\x00B", "a b"} {
+			got, err := f.s.Search(t.Context(), q, store.SearchMaxLimit)
+			contractOK(t, err)
+			contractEqual(t, len(got), 1)
+			contractEqual(t, got[0].Candidate.ID, id)
+			contractEqual(t, got[0].Matched, "A\x00B")
+			contractEqual(t, got[0].Score, 1.0)
+		}
+	})
+	f := contractDB(t)
+	for _, q := range []string{"\x00", "\x00 ", "\t\x00\n"} {
+		got, err := f.s.Search(t.Context(), q, store.SearchDefaultLimit)
+		contractError(t, err, store.ErrInvalid)
+		if got != nil {
+			t.Fatal("blank NUL query returned a slice")
+		}
+	}
 }

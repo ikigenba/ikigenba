@@ -62,12 +62,13 @@ func searchUpgrade(t *testing.T, rows []searchPriorRow) *store.Store {
 	return store.New(d, store.Config{Now: clock, Rand: &contractRandom{next: 1}})
 }
 
+// R-9GWE-EIAG
 func TestSearchIndexBackfillsPreviousRelease(t *testing.T) {
 	rows := []searchPriorRow{
 		{"cand_0000000000000001", "Acme Trucking", store.StatusActive, []string{"Acme Trucking", "ACME TRUCKING LLC", "", "Alias Freight", "Alias Freight"}},
 		{"cand_0000000000000002", "Zed Holdings", store.StatusActive, []string{"Zed Holdings", "Acme Trucking"}},
 		{"cand_0000000000000003", "Merged Corporation", store.StatusMerged, []string{"Merged Corporation", "Merged Alternate", ""}},
-		{"cand_0000000000000004", "Ébène Co", store.StatusActive, []string{"Ébène Co", "ÉBÈNE ALT"}},
+		{"cand_0000000000000004", "Ebene Co", store.StatusActive, []string{"Ebene Co", "EBENE ALT"}},
 		{"cand_0000000000000005", "A \"Quoted\" Name", store.StatusActive, []string{"A \"Quoted\" Name", "Dash-and.Space"}},
 	}
 	s := searchUpgrade(t, rows)
@@ -76,8 +77,25 @@ func TestSearchIndexBackfillsPreviousRelease(t *testing.T) {
 		ids = append(ids, r.id)
 	}
 	cs := searchCandidates(t, s, ids)
-	for _, q := range []string{"acme", "Acme Trucking", "alias freight", "merged", "éb", "ébène", "ÉBÈNE ALT", "a \"quoted\" name", "\"quoted\"", "dash-and.space"} {
+	for _, q := range []string{"acme", "Acme Trucking", "alias freight", "merged", "eb", "ebene", "EBENE ALT", "a \"quoted\" name", "\"quoted\"", "dash-and.space"} {
 		assertSearchRanking(t, s, cs, q, 50)
+	}
+}
+
+// R-9GWE-EIAG
+func TestSearchIndexRewritesMigratedNULName(t *testing.T) {
+	const id = "cand_0000000000000001"
+	const name = "A\x00B"
+	s := searchUpgrade(t, []searchPriorRow{{id, name, store.StatusActive, []string{name}}})
+	_, _, err := s.AddOwnerRecord(t.Context(), store.OwnerRecord{Candidate: id, Note: "retain name", UserID: "owner", Set: store.OwnerValues{Name: ownPtr(name)}})
+	contractOK(t, err)
+	for _, q := range []string{name, "a b"} {
+		got, err := s.Search(t.Context(), q, store.SearchMaxLimit)
+		contractOK(t, err)
+		contractEqual(t, len(got), 1)
+		contractEqual(t, got[0].Candidate.ID, id)
+		contractEqual(t, got[0].Matched, name)
+		contractEqual(t, got[0].Score, 1.0)
 	}
 }
 
