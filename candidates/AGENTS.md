@@ -86,7 +86,7 @@ campaign use of the candidate it names, followed through a merge, starting
 no pass and reading no sibling. Its manifest sets
 `guests = false`: nginx lets no request without a credential through, to the
 pages and to `/mcp` alike, and its nginx fragment answers the bus's two paths
-404 at the public name. At `/mcp` it offers the twenty-five MCP tools
+404 at the public name. At `/mcp` it offers the twenty-six MCP tools
 `D10-tools` catalogs, which agents reach through the MCP gateway, and,
 unlisted, the legacy `cohort` tool a campaigns of the previous release still
 calls. At `/` it serves a page of the prospect lists and the passes, a page
@@ -126,7 +126,7 @@ build run writes the Go source, the tests, `go.mod`'s requirements and
 `0008_windows.sql`, `0009_judgments.sql`, `0010_cohorts.sql`,
 `0011_enrichments.sql`, `0012_facts.sql`, `0013_site_text.sql`,
 `0014_brief.sql`, `0015_website_search.sql`, `0016_campaign_uses.sql`,
-`0017_prospect_lists.sql`, `0018_drive_route.sql`, `0019_opens.sql`, `0020_headcounts.sql`, `0021_link_keys.sql`, `0022_headcount_trend.sql`, `0023_parks.sql`, `0024_walk.sql`, `0025_search_cases.sql`, `0026_fact_sources.sql`, `0027_page_reasons.sql`, `0028_owner_records.sql` and `0029_campaign_opened.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
+`0017_prospect_lists.sql`, `0018_drive_route.sql`, `0019_opens.sql`, `0020_headcounts.sql`, `0021_link_keys.sql`, `0022_headcount_trend.sql`, `0023_parks.sql`, `0024_walk.sql`, `0025_search_cases.sql`, `0026_fact_sources.sql`, `0027_page_reasons.sql`, `0028_owner_records.sql`, `0029_campaign_opened.sql` and `0030_search_index.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
 and the nginx fragment `etc/nginx.conf`). The
 delivery that created candidates seeded `go.mod` on appkit; the build run
 owns it and `go.sum` from then on and changes them as design says. It never
@@ -558,12 +558,16 @@ one; a finding it cannot fix, or believes is wrong, is filed as an issue.
    — the release build, static and cgo-free, the way `devctl build` builds
    it, which is why the SQLite driver must be pure Go
 4. `go test -race ./...`
-5. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`
+5. `go test -count=1 -run Timing ./...`
+   — the speed requirement's test, whose name contains `Timing` and whose
+   file is tagged `//go:build !race`, runs here without the race detector,
+   which slows SQLite by more than an order of magnitude
+6. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`
    — the cache lives in this worktree's git directory, so worktrees never
    share it, and `--allow-parallel-runners` lets gates for several
    sub-projects lint at once; `make lint` runs this form
 
-Gate 5 also flags an undocumented `package main` (`revive`) and an
+Gate 6 also flags an undocumented `package main` (`revive`) and an
 `http.Server` without `ReadHeaderTimeout` (`gosec` G112), and a TLS
 configuration that sets `InsecureSkipVerify` (`gosec` G402), which the stub's
 client avoids by trusting its own certificate; all are fixed in code, never
