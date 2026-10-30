@@ -665,7 +665,7 @@ Wisconsin.
   `tr[data-reject=<kind>][data-prospect-list=<id>]`, the prospect list's name linking to
   `/prospect-lists/<id>` beside its id, or its id and a muted "deleted" when the
   prospect list is gone. `section#campaigns-card` with `table#campaign-list`
-  of Campaign / From / Added / Delivered / Rejected,
+  of Campaign / From / Added / Delivered / Opened / Rejected,
   `tr[data-campaign=<id>]` (also `data-rejected`), From the prospect list
   or muted "added by hand". States: merged (`div#merged.alert.quiet`
   of kind info, "Merged", linking to the survivor; the record and the
@@ -688,7 +688,7 @@ Wisconsin.
   `dl#prospect-list.kv`: ID, Name, Size, Order (one `div[data-order]` per field,
   its direction muted), Created by, Created, Changed by, Changed.
   `section#filters` with `dl#filters.kv`: Revenue low, Drive minutes,
-  Categories, Fleet, Website, Government, Filing age, Campaigns, Class and Excluded, each muted
+  Categories, Fleet, Website, Government, Filing age, Campaigns, In any campaign, In campaign, Opened a link, Class and Excluded, each muted
   "any" when not carried, and a `.badge[data-unknown]` "unknown included"
   of kind info when its switch is set (Fleet and Website each have one;
   Website's states are `code[data-website]`, its switch `website_unknown`).
