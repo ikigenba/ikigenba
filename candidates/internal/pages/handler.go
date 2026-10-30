@@ -424,5 +424,6 @@ func campaignRow(ctx context.Context, cfg Config, u store.CampaignUse) (Campaign
 	v.Added, v.AddedText = stamp(u.Added, MinuteLayout)
 	v.RejectedAt, v.RejectedAtText = stamp(u.Rejected, MinuteLayout)
 	v.Delivered, v.DeliveredText = stamp(u.Delivered, MinuteLayout)
+	v.Opened, v.OpenedText = stamp(u.Opened, MinuteLayout)
 	return v, nil
 }

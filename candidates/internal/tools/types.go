@@ -682,6 +682,10 @@ type FilterArgs struct {
 	MaxFilingAgeDays   *uint32   `json:"max_filing_age_days"`
 	FilingUnknown      bool      `json:"filing_unknown"`
 	MinCampaignAgeDays *uint32   `json:"min_campaign_age_days"`
+	CampaignAny        string    `json:"campaign_any"`
+	Campaign           string    `json:"campaign"`
+	CampaignNot        bool      `json:"campaign_not"`
+	Opened             string    `json:"opened"`
 	Class              string    `json:"class"`
 	ClassUnknown       bool      `json:"class_unknown"`
 	Basis              *[]string `json:"basis"`
@@ -812,6 +816,7 @@ type CampaignUse struct {
 	Rejected     string `json:"rejected,omitempty"`
 	Reason       string `json:"reason,omitempty"`
 	Delivered    string `json:"delivered,omitempty"`
+	Opened       string `json:"opened,omitempty"`
 }
 
 // IngestArgs selects one scraper or every source.

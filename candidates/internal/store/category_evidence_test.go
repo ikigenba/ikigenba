@@ -134,7 +134,7 @@ func TestRecordsReadNewestLinkResultBesidePreviousWriterCategories(t *testing.T)
 	contractEqual(t, got.Records, []sources.Category{})
 }
 
-// R-703Y-PBES R-OQ2T-7XB6
+// R-J1A7-1024 R-OQ2T-7XB6
 func TestProspectListClassifiesOnlyItsSelectedMembersAndReadsNewCategories(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -245,7 +245,7 @@ func TestFillFactsReprojectsMissingCategoryRowsAndPreservesExistingRows(t *testi
 	contractEqual(t, got, before)
 }
 
-// R-703Y-PBES
+// R-J1A7-1024
 func TestProspectListClassificationUsesBriefDecisionOrRecordFallback(t *testing.T) {
 	for _, tc := range []struct {
 		name, category, source string
@@ -287,4 +287,48 @@ func TestProspectListClassificationUsesBriefDecisionOrRecordFallback(t *testing.
 			}
 		})
 	}
+}
+
+// R-J1A7-1024
+func TestProspectListOwnerCategoryOverridesBriefWithoutClassification(t *testing.T) {
+	f := contractDB(t)
+	ctx := context.Background()
+	id := contractSeed(t, f)
+	_, err := f.s.AddEnrichments(ctx, []store.Enrichment{
+		categoryLinks(t, id, sources.Category{Name: sources.CategoryConstruction, Source: ppp.Name}),
+		briefResult(t, id, "builder", false, sources.CategoryConstruction),
+	})
+	contractOK(t, err)
+	_, err = f.s.Judge(ctx, []string{id})
+	contractOK(t, err)
+	k, err := f.s.CreateProspectList(ctx, store.ProspectList{
+		Name: "owner category", Size: 100, CreatedUserID: "owner",
+		Filters: store.ProspectListFilters{Categories: []string{sources.CategoryConstruction}},
+	})
+	contractOK(t, err)
+	read := prospectListRead(t, f, k)
+	contractEqual(t, prospectListIDs(read.Members), []string{id})
+	contractEqual(t, read.Matching, int64(1))
+	contractEqual(t, read.Classified, int64(1))
+
+	filters := store.ProspectListFilters{Categories: []string{sources.CategoryTrucking}}
+	k, err = f.s.EditProspectList(ctx, store.ProspectListEdit{ID: k.ID, Filters: &filters, UserID: "owner"})
+	contractOK(t, err)
+	read = prospectListRead(t, f, k)
+	contractEqual(t, len(read.Members), 0)
+	contractEqual(t, read.Matching, int64(0))
+	contractEqual(t, read.Classified, int64(0))
+
+	category := sources.CategoryTrucking
+	_, _, err = f.s.AddOwnerRecord(ctx, store.OwnerRecord{
+		Candidate: id, Note: "Owner identifies trucking", UserID: "owner",
+		Set: store.OwnerValues{Category: &category},
+	})
+	contractOK(t, err)
+	read = prospectListRead(t, f, k)
+	contractEqual(t, prospectListIDs(read.Members), []string{id})
+	contractEqual(t, read.Matching, int64(1))
+	contractEqual(t, read.Classified, int64(0))
+	f.reopen()
+	contractEqual(t, prospectListRead(t, f, k), read)
 }

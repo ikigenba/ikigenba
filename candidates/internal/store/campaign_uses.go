@@ -11,10 +11,10 @@ type CampaignUse struct {
 	Candidate, Campaign, ProspectList string
 	Added, Rejected                   time.Time
 	Reason                            string
-	Delivered                         time.Time
+	Delivered, Opened                 time.Time
 }
 
-var campaignUseColumns = columns("candidate:Candidate campaign:Campaign prospect_list:ProspectList added:Added rejected:Rejected reason:Reason delivered:Delivered")
+var campaignUseColumns = columns("candidate:Candidate campaign:Campaign prospect_list:ProspectList added:Added rejected:Rejected reason:Reason delivered:Delivered opened:Opened")
 
 // AddCampaignUse keeps the earliest add and its originating prospectList.
 func (s *Store) AddCampaignUse(ctx context.Context, candidate, campaign, prospectList string, at time.Time) error {
@@ -39,6 +39,15 @@ func (s *Store) DeliverCampaignUse(ctx context.Context, candidate, campaign stri
 	return s.writeCampaignUse(ctx, candidate, campaign, at, func(u *CampaignUse, a time.Time, exists bool) {
 		if !exists || a.After(u.Delivered) {
 			u.Delivered = a
+		}
+	})
+}
+
+// MarkCampaignUseOpened keeps the earliest first visit.
+func (s *Store) MarkCampaignUseOpened(ctx context.Context, candidate, campaign string, at time.Time) error {
+	return s.writeCampaignUse(ctx, candidate, campaign, at, func(u *CampaignUse, a time.Time, _ bool) {
+		if u.Opened.IsZero() || a.Before(u.Opened) {
+			u.Opened = a
 		}
 	})
 }
@@ -116,6 +125,9 @@ func mergeCampaignUses(ctx context.Context, tx *sql.Tx, survivor, other string) 
 			}
 			if !v.Rejected.IsZero() && (u.Rejected.IsZero() || v.Rejected.Before(u.Rejected)) {
 				u.Rejected, u.Reason = v.Rejected, v.Reason
+			}
+			if !v.Opened.IsZero() && (u.Opened.IsZero() || v.Opened.Before(u.Opened)) {
+				u.Opened = v.Opened
 			}
 			if v.Delivered.After(u.Delivered) {
 				u.Delivered = v.Delivered

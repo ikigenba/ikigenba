@@ -168,7 +168,7 @@ func TestHandJudgeBusyAndStoreFailure(t *testing.T) {
 	}
 }
 
-// R-V6ZM-A3XT R-UJTJ-0GUM
+// R-0EOZ-5U1B R-TI07-OJ18
 func TestCampaignProspectListPrecedenceAndLegacyMapping(t *testing.T) {
 	for i, tc := range []struct {
 		attrs events.Attrs

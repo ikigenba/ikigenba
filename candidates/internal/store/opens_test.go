@@ -31,7 +31,7 @@ func emptyChanges() store.Changes {
 	return store.Changes{DefinitionChanged: []string{}, Joined: []store.Joined{}, Left: []store.Left{}}
 }
 
-// R-L607-M6YO R-3C8B-UG2Y R-NW7S-1GHY R-ZT7I-XW82 R-XUIO-0E44 R-72JR-GUW6 R-767G-M649
+// R-L607-M6YO R-3C8B-UG2Y R-NW7S-1GHY R-ZT7I-XW82 R-XUIO-0E44 R-J4XW-6BA7 R-J9TH-PE8Z
 func TestProspectListOpenSnapshotAndPersistence(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -163,7 +163,7 @@ func TestConcurrentProspectListOpensSerialize(t *testing.T) {
 	contractEqual(t, len(listOpens(t, f, k.ID)), 2)
 }
 
-// R-72JR-GUW6
+// R-J4XW-6BA7
 func TestProspectListDefinitionChangesCompareNormalizedSnapshot(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -189,7 +189,7 @@ func TestProspectListDefinitionChangesCompareNormalizedSnapshot(t *testing.T) {
 	contractEqual(t, prospectListRead(t, f, k).Changes.DefinitionChanged, []string{})
 }
 
-// R-73RN-UMMV R-74ZK-8EDK R-767G-M649
+// R-J65S-K30W R-J8LL-BMIA R-J9TH-PE8Z
 func TestProspectListJoinedAndLeftReasons(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -221,7 +221,7 @@ func TestProspectListJoinedAndLeftReasons(t *testing.T) {
 	contractEqual(t, gone.Filter, "")
 }
 
-// R-LXEB-91XC R-74ZK-8EDK
+// R-J7DO-XURL R-J8LL-BMIA
 func TestProspectListFirstFailingFilterInChanges(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -272,7 +272,7 @@ func TestProspectListFirstFailingFilterInChanges(t *testing.T) {
 	}
 }
 
-// R-71BV-335H
+// R-J2I3-ERST
 func TestProspectListByBasisCountsOnlyMembers(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -343,7 +343,7 @@ func TestOpenRecordShapesByUse(t *testing.T) {
 	contractEqual(t, read(store.ProspectListRead{}), read{})
 }
 
-// R-73RN-UMMV R-74ZK-8EDK
+// R-J65S-K30W R-J8LL-BMIA
 func TestProspectListNewBoundaryPassesAndCut(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -388,7 +388,7 @@ func TestProspectListNewBoundaryPassesAndCut(t *testing.T) {
 	contractEqual(t, r.Changes.Left, []store.Left{{Candidate: before.Members[1].Candidate.ID, Name: before.Members[1].Candidate.Name, BasisThen: store.BasisRecords, BasisNow: store.BasisRecords, Why: store.WhyCut}})
 }
 
-// R-74ZK-8EDK
+// R-J8LL-BMIA
 func TestProspectListRouteLeavingRetainsThenAndNowBasis(t *testing.T) {
 	f := contractDB(t)
 	f.s = routeStore(f, "test origin")
@@ -460,7 +460,7 @@ func TestProspectListOpenUsesOneClockSnapshot(t *testing.T) {
 	contractEqual(t, calls, 1)
 }
 
-// R-73RN-UMMV
+// R-J65S-K30W
 func TestProspectListJoinedTransitionTriggers(t *testing.T) {
 	for _, trigger := range []string{"brief", "unreject", "include", "campaign age", "size", "order", "filter with previous passing", "filter previously failed"} {
 		t.Run(trigger, func(t *testing.T) {
@@ -556,7 +556,7 @@ func TestProspectListJoinedTransitionTriggers(t *testing.T) {
 	}
 }
 
-// R-74ZK-8EDK
+// R-J8LL-BMIA
 func TestProspectListLeftRetainsPriorOrderAndRejectPrecedesFilter(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -578,7 +578,7 @@ func TestProspectListLeftRetainsPriorOrderAndRejectPrecedesFilter(t *testing.T) 
 	contractEqual(t, r.Changes.Left, want)
 }
 
-// R-72JR-GUW6 R-767G-M649
+// R-J4XW-6BA7 R-J9TH-PE8Z
 func TestProspectListLatestOpenAndReorderedMembership(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

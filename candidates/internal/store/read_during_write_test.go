@@ -13,7 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-M18X-YII6
+// R-8BIB-H3JV
 func TestContractReadsDuringQueuedWrites(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -168,6 +168,7 @@ func TestContractReadsDuringQueuedWrites(t *testing.T) {
 		func() error { return f.s.AddCampaignUse(ctx, id, "queued", "", f.now) },
 		func() error { return f.s.RejectCampaignUse(ctx, id, "held-campaign", "queued reason", f.now) },
 		func() error { return f.s.DeliverCampaignUse(ctx, id, "held-campaign", f.now) },
+		func() error { return f.s.MarkCampaignUseOpened(ctx, id, "held-campaign", f.now) },
 		func() error {
 			obs := contractObservation("evidence", "Changed queued display", f.now)
 			obs.Digest = "queued-digest"

@@ -368,12 +368,12 @@ func TestRefusals(t *testing.T) {
 	}
 }
 
-// R-4XES-EI5W R-WRRC-0E0S R-2Z7P-JEYA R-DNTW-H48N
+// R-TFKE-WZJU R-T50R-5R6I R-2Z7P-JEYA R-DNTW-H48N
 func TestSkippedAndHandlers(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
 	handlers := f.eng.Handlers()
-	if len(handlers) != 5 || handlers[trail.Accepted] == nil || handlers[trail.AcceptedJudge] == nil {
+	if len(handlers) != 6 || handlers[trail.Accepted] == nil || handlers[trail.AcceptedJudge] == nil {
 		t.Fatal(handlers)
 	}
 	variants := []events.Event{{Name: trail.AcceptedJudge}, {Name: "cron.other.fired", ID: "e"}, {ID: "e", Name: "scrape.started"}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "run": "run_a", "status": "failed"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "other", "run": "run_a", "status": "done"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "status": "done"}}, {Name: trail.Accepted, Attrs: events.Attrs{"scraper": "fmcsa", "run": "run_a", "status": "done"}}, {ID: "e", Name: trail.Accepted, Attrs: events.Attrs{"scraper": 17, "run": "run_a", "status": "done"}}}
@@ -392,7 +392,7 @@ func TestSkippedAndHandlers(t *testing.T) {
 	}
 	r := httptest.NewRecorder()
 	events.DeclarationsHandler(f.em, passes.New(passes.Config{Sources: sources.New(fmcsa.New(), ppp.New())}).Handlers()).ServeHTTP(r, httptest.NewRequest(http.MethodGet, "/declarations", nil))
-	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","target","enrich_kind","status","reason","parcel_run","rows","new","changed","unchanged","gone","created","linked","judged","unranged","derived","due","fetched","https","http","none","runs","runs_failed","pages","cost","parcels_read","by_label","by_value","by_candidate","parks_created","parks_updated","parks_gone","parks_grown","parks_walked","circles","requests","found","new_candidates","search_different","search_stands","search_none"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger","target","enrich_kind"]}],"accepts":["campaign.member.added","campaign.member.rejected","campaign.piece.delivered","cron.judge_candidates.fired","scrape.finished"]}`
+	want := `{"emits":[{"event":"pass.finished","attrs":["pass","kind","origin","trigger","target","enrich_kind","status","reason","parcel_run","rows","new","changed","unchanged","gone","created","linked","judged","unranged","derived","due","fetched","https","http","none","runs","runs_failed","pages","cost","parcels_read","by_label","by_value","by_candidate","parks_created","parks_updated","parks_gone","parks_grown","parks_walked","circles","requests","found","new_candidates","search_different","search_stands","search_none"]},{"event":"pass.started","attrs":["pass","kind","origin","trigger","target","enrich_kind"]}],"accepts":["campaign.member.added","campaign.member.opened","campaign.member.rejected","campaign.piece.delivered","cron.judge_candidates.fired","scrape.finished"]}`
 	if r.Code != 200 || r.Body.String() != want {
 		t.Fatal(r.Code, r.Body.String())
 	}
@@ -1197,4 +1197,40 @@ func TestRecoverSettlesActivePass(t *testing.T) {
 
 func failedCounts(p store.Pass) store.Counts {
 	return store.Counts{Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged, Derived: p.Derived, Due: p.Due, Fetched: p.Fetched, HTTPS: p.HTTPS, HTTP: p.HTTP, None: p.None, Runs: p.Runs, RunsFailed: p.RunsFailed, Pages: p.Pages, Cost: p.Cost, ParcelsRead: p.ParcelsRead, ByLabel: p.ByLabel, ByValue: p.ByValue, ByCandidate: p.ByCandidate, ParksCreated: p.ParksCreated, ParksUpdated: p.ParksUpdated, ParksGone: p.ParksGone, ParksGrown: p.ParksGrown, ParksWalked: p.ParksWalked, Circles: p.Circles, Requests: p.Requests, Found: p.Found, NewCandidates: p.NewCandidates}
+}
+
+// R-TFKE-WZJU
+func TestPassHandlersForwardValidDeliveries(t *testing.T) {
+	for _, name := range []string{trail.Accepted, trail.AcceptedJudge} {
+		t.Run(name, func(t *testing.T) {
+			var want store.Pass
+			for _, throughHandler := range []bool{false, true} {
+				f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
+					if strings.HasSuffix(r.URL.Path, "/record") {
+						record(w, "run_a", 0, store.StatusDone)
+					}
+				}, true)
+				d := events.Delivery{Event: events.Event{ID: "forwarded-event", Name: name, Attrs: events.Attrs{"scraper": "fmcsa", "run": "run_a", "status": store.StatusDone}}}
+				deliver := f.eng.Deliver
+				if throughHandler {
+					deliver = f.eng.Handlers()[name]
+				}
+				if out := deliver(t.Context(), d); out != events.OK() {
+					t.Fatal(out)
+				}
+				ps := f.list()
+				if len(ps) != 1 {
+					t.Fatal(ps)
+				}
+				got := f.ended(ps[0].ID)
+				if throughHandler {
+					if !reflect.DeepEqual(got, want) {
+						t.Fatal(got, want)
+					}
+				} else {
+					want = got
+				}
+			}
+		})
+	}
 }

@@ -250,7 +250,7 @@ func prospectListRow(c store.ProspectList) ProspectListRow {
 }
 
 func filtersView(f store.ProspectListFilters) FiltersView {
-	v := FiltersView{Basis: append([]string{}, f.Basis...), RevenueUnknown: f.RevenueUnknown, MinutesUnknown: f.MinutesUnknown, Categories: append([]string{}, f.Categories...), CategoryUnknown: f.CategoryUnknown, Fleet: f.Fleet, FleetUnknown: f.FleetUnknown, Website: append([]string{}, f.Website...), WebsiteUnknown: f.WebsiteUnknown, Trend: append([]string{}, f.Trend...), TrendUnknown: f.TrendUnknown, FilingUnknown: f.FilingUnknown, Class: f.Class, ClassUnknown: f.ClassUnknown, ShowExcluded: f.ShowExcluded}
+	v := FiltersView{Basis: append([]string{}, f.Basis...), RevenueUnknown: f.RevenueUnknown, MinutesUnknown: f.MinutesUnknown, Categories: append([]string{}, f.Categories...), CategoryUnknown: f.CategoryUnknown, Fleet: f.Fleet, FleetUnknown: f.FleetUnknown, Website: append([]string{}, f.Website...), WebsiteUnknown: f.WebsiteUnknown, Trend: append([]string{}, f.Trend...), TrendUnknown: f.TrendUnknown, FilingUnknown: f.FilingUnknown, CampaignAny: f.CampaignAny, Campaign: f.Campaign, CampaignNot: f.CampaignNot, Opened: f.Opened, Class: f.Class, ClassUnknown: f.ClassUnknown, ShowExcluded: f.ShowExcluded}
 	if f.RevenueMin != nil {
 		v.RevenueMin = dollars(*f.RevenueMin)
 	}

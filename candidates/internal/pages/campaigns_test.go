@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-S1KY-PFZ8 R-Z5NV-19P2 R-9SBD-VETV
+// R-3HYN-AOD7 R-Z5NV-19P2 R-9SBD-VETV R-4N6A-0UYS
 func TestCampaignHistoryPages(t *testing.T) {
 	cfg, db := pageFixture(t)
 	ctx := t.Context()
@@ -58,10 +58,20 @@ func TestCampaignHistoryPages(t *testing.T) {
 	if err := cfg.Store.DeliverCampaignUse(ctx, id, "chosen-first-campaign", at.Add(4*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
+	opened := time.Date(2026, 10, 7, 15, 2, 41, 0, time.UTC)
+	for _, at := range []time.Time{opened, opened.Add(48 * time.Hour)} {
+		if err := cfg.Store.MarkCampaignUseOpened(ctx, id, "chosen-first-campaign", at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := cfg.Store.MarkCampaignUseOpened(ctx, id, "chosen-fourth-campaign", opened.Add(19*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
 	got := capturedCandidate(t, cfg, id)
 	want := []CampaignRow{
 		{Campaign: "chosen-second-campaign", CampaignPage: "https://chosen-campaigns.test/campaigns/chosen-second-campaign", Added: "2026-10-05T10:00:07Z", AddedText: "2026-10-05 10:00"},
-		{Campaign: "chosen-first-campaign", CampaignPage: "https://chosen-campaigns.test/campaigns/chosen-first-campaign", ProspectList: prospectList.ID, ProspectListName: prospectList.Name, ProspectListPage: "/prospect-lists/" + prospectList.ID, Added: "2026-10-05T09:00:07Z", AddedText: "2026-10-05 09:00", Rejected: true, RejectedAt: "2026-10-05T12:00:07Z", RejectedAtText: "2026-10-05 12:00", Reason: "chosen-reason", Delivered: "2026-10-05T13:00:07Z", DeliveredText: "2026-10-05 13:00"},
+		{Campaign: "chosen-first-campaign", CampaignPage: "https://chosen-campaigns.test/campaigns/chosen-first-campaign", ProspectList: prospectList.ID, ProspectListName: prospectList.Name, ProspectListPage: "/prospect-lists/" + prospectList.ID, Added: "2026-10-05T09:00:07Z", AddedText: "2026-10-05 09:00", Rejected: true, RejectedAt: "2026-10-05T12:00:07Z", RejectedAtText: "2026-10-05 12:00", Reason: "chosen-reason", Delivered: "2026-10-05T13:00:07Z", DeliveredText: "2026-10-05 13:00", Opened: "2026-10-07T15:02:41Z", OpenedText: "2026-10-07 15:02"},
+		{Campaign: "chosen-fourth-campaign", CampaignPage: "https://chosen-campaigns.test/campaigns/chosen-fourth-campaign", Opened: "2026-10-08T10:02:41Z", OpenedText: "2026-10-08 10:02"},
 		{Campaign: "chosen-third-campaign", CampaignPage: "https://chosen-campaigns.test/campaigns/chosen-third-campaign", Delivered: "2026-10-05T11:00:07Z", DeliveredText: "2026-10-05 11:00"},
 	}
 	if !reflect.DeepEqual(got.Campaigns, want) {
@@ -92,7 +102,7 @@ func TestCampaignHistoryPages(t *testing.T) {
 	if err := cfg.Store.AddCampaignUse(ctx, id, "chosen-after-merge", "", at); err != nil {
 		t.Fatal(err)
 	}
-	if survivor := capturedCandidate(t, cfg, ids[1]); len(survivor.Campaigns) != 4 {
+	if survivor := capturedCandidate(t, cfg, ids[1]); len(survivor.Campaigns) != 5 {
 		t.Fatal(survivor.Campaigns)
 	}
 	db.SetFailing(true)
@@ -148,11 +158,11 @@ func TestCampaignFiltersAndTemplates(t *testing.T) {
 	}
 }
 
-// R-S1KY-PFZ8
+// R-3HYN-AOD7
 func TestCampaignRowShape(_ *testing.T) {
 	_ = struct {
 		Campaign, CampaignPage, ProspectList, ProspectListName, ProspectListPage, Added, AddedText string
 		Rejected                                                                                   bool
-		RejectedAt, RejectedAtText, Reason, Delivered, DeliveredText                               string
+		RejectedAt, RejectedAtText, Reason, Delivered, DeliveredText, Opened, OpenedText           string
 	}(CampaignRow{})
 }

@@ -22,7 +22,7 @@ import (
 
 func (h *runHarness) campaignDelivery(name, campaign, candidate, prospectList, reason string, at time.Time, request string) []byte {
 	h.t.Helper()
-	e := events.Event{ID: "evt_1212121212121212", Time: at, Service: "campaigns", Name: name, Attrs: events.Attrs{"campaign": campaign, "candidate": candidate, "prospect_list": prospectList, "reason": reason, "piece": "piece_fixture", "channel": "mail", "how": "hand"}, Seq: 1, Received: h.p.Now()}
+	e := events.Event{ID: "evt_1212121212121212", Time: at, Service: "campaigns", Name: name, Attrs: events.Attrs{"campaign": campaign, "candidate": candidate, "prospect_list": prospectList, "reason": reason, "piece": "piece_fixture", "channel": "mail", "how": "hand", "at": at.Add(-24 * time.Hour).UTC().Format(time.RFC3339)}, Seq: 1, Received: h.p.Now()}
 	b, err := json.Marshal(e)
 	if err != nil {
 		h.t.Fatal(err)
@@ -48,7 +48,7 @@ func (h *runHarness) campaignDelivery(name, campaign, candidate, prospectList, r
 	return answer
 }
 
-// R-4290-EY6Y R-XKCL-21UF
+// R-4290-EY6Y R-0FWV-JLS0
 func TestRunCampaignHistoryIsLocal(t *testing.T) {
 	var requests atomic.Int64
 	socketDir, err := os.MkdirTemp("", "cand-")
@@ -80,7 +80,7 @@ func TestRunCampaignHistoryIsLocal(t *testing.T) {
 	}
 	h.start()
 	stamp := h.p.Now().UTC().Truncate(time.Second)
-	names := []string{"campaign.member.added", "campaign.member.rejected", "campaign.piece.delivered"}
+	names := []string{"campaign.member.added", "campaign.member.rejected", "campaign.piece.delivered", "campaign.member.opened"}
 	for i, name := range names {
 		h.campaignDelivery(name, "campaign_fixture", ids[0], "prospect_list_fixture", "supplied private reason", stamp.Add(time.Duration(i)*time.Hour), fmt.Sprintf("campaign-request-%d", i))
 	}
@@ -107,7 +107,7 @@ func TestRunCampaignHistoryIsLocal(t *testing.T) {
 		t.Fatal(uses, err)
 	}
 	u := uses[0]
-	if u.Campaign != "campaign_fixture" || u.ProspectList != "prospect_list_fixture" || u.Reason != "supplied private reason" || !u.Added.Equal(stamp) || !u.Rejected.Equal(stamp.Add(time.Hour)) || !u.Delivered.Equal(stamp.Add(2*time.Hour)) {
+	if u.Campaign != "campaign_fixture" || u.ProspectList != "prospect_list_fixture" || u.Reason != "supplied private reason" || !u.Added.Equal(stamp) || !u.Rejected.Equal(stamp.Add(time.Hour)) || !u.Delivered.Equal(stamp.Add(2*time.Hour)) || !u.Opened.Equal(stamp.Add(-21*time.Hour)) {
 		t.Fatal(u)
 	}
 	for i := range names {

@@ -364,7 +364,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 	_ = tools.ProspectListsArgs{nil, nil}
 	_ = tools.ProspectListArgs{"id"}
 	_ = tools.ReadProspectListArgs{"id", false}
-	_ = tools.FilterArgs{nil, nil, false, nil, false, nil, false, "", false, nil, false, nil, false, nil, nil, false, nil, "", false, nil, false}
+	_ = tools.FilterArgs{nil, nil, false, nil, false, nil, false, "", false, nil, false, nil, false, nil, nil, false, nil, "", "", false, "", "", false, nil, false}
 	_ = tools.OrderArgs{"field", "direction"}
 	_ = tools.CreateProspectListArgs{"name", nil, nil, nil}
 	_ = tools.EditProspectListArgs{"id", nil, nil, nil, nil}

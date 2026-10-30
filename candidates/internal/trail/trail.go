@@ -19,6 +19,7 @@ const (
 	AcceptedAdded     = "campaign.member.added"
 	AcceptedRejected  = "campaign.member.rejected"
 	AcceptedDelivered = "campaign.piece.delivered"
+	AcceptedOpened    = "campaign.member.opened"
 )
 
 // Emits returns independent declarations of the pass lifecycle events.

@@ -953,7 +953,7 @@ func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	contractEqual(t, after, zipBefore)
 }
 
-// R-XQ4X-NJ1E R-OD8H-2EDG
+// R-87UM-BSBS R-OD8H-2EDG
 func TestContractAllMethodsUnavailable(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -1005,6 +1005,9 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 		{"AddCampaignUse", func(c context.Context) error { return f.s.AddCampaignUse(c, "", "", "", time.Time{}) }},
 		{"RejectCampaignUse", func(c context.Context) error { return f.s.RejectCampaignUse(c, "", "", "", time.Time{}) }},
 		{"DeliverCampaignUse", func(c context.Context) error { return f.s.DeliverCampaignUse(c, "", "", time.Time{}) }},
+		{"MarkCampaignUseOpened", func(c context.Context) error { return f.s.MarkCampaignUseOpened(c, "", "", time.Time{}) }},
+		{"AddOwnerRecord", func(c context.Context) error { _, _, e := f.s.AddOwnerRecord(c, store.OwnerRecord{}); return e }},
+		{"OwnerRecords", func(c context.Context) error { _, e := f.s.OwnerRecords(c, "missing"); return e }},
 		{"CampaignUses", func(c context.Context) error { _, e := f.s.CampaignUses(c, "missing"); return e }},
 		{"AddPage", func(c context.Context) error { _, e := f.s.AddPage(c, store.Page{}); return e }},
 		{"Pages", func(c context.Context) error { _, e := f.s.Pages(c, "missing"); return e }},

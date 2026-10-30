@@ -21,6 +21,10 @@ type ProspectListFilters struct {
 	MaxFilingAgeDays   *int64   `json:"max_filing_age_days,omitempty"`
 	FilingUnknown      bool     `json:"filing_unknown,omitempty"`
 	MinCampaignAgeDays *int64   `json:"min_campaign_age_days,omitempty"`
+	CampaignAny        string   `json:"campaign_any,omitempty"`
+	Campaign           string   `json:"campaign,omitempty"`
+	CampaignNot        bool     `json:"campaign_not,omitempty"`
+	Opened             string   `json:"opened,omitempty"`
 	Class              string   `json:"class,omitempty"`
 	ClassUnknown       bool     `json:"class_unknown,omitempty"`
 	Basis              []string `json:"basis,omitempty"`

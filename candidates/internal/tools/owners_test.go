@@ -48,7 +48,7 @@ func TestOwnerToolSchemas(t *testing.T) {
 	}
 }
 
-// R-W786-A20B R-W8G2-NTR0 R-W9NZ-1LHP R-WAVV-FD8E R-WGZD-C7XV R-WI79-PZOK R-1CXH-96BV
+// R-W786-A20B R-W8G2-NTR0 R-W9NZ-1LHP R-WAVV-FD8E R-WGZD-C7XV R-F6HE-ZMVO R-1CXH-96BV
 func TestOwnerWritesAndCandidateHistory(t *testing.T) {
 	f := newFixture(t)
 	name, phone, note := "North Star Hauling", "2185550100", "met at the expo"
@@ -180,7 +180,7 @@ func TestOwnerAnswerEncoding(t *testing.T) {
 	}
 }
 
-// R-WJF6-3RF9 R-WKN2-HJ5Y
+// R-WJF6-3RF9 R-F59I-LV4Z
 func TestOwnerWriteTelemetry(t *testing.T) {
 	type eventName string
 	const _ eventName = tools.EventOwnerRecordWritten
@@ -271,7 +271,7 @@ func TestOwnerReadProjections(t *testing.T) {
 	}
 }
 
-// R-WAVV-FD8E R-WI79-PZOK
+// R-WAVV-FD8E R-F6HE-ZMVO
 func TestOwnerAllValuesAndPlacesFallback(t *testing.T) {
 	f := newFixture(t)
 	a := tools.AddBusinessArgs{Name: " North Star Hauling ", Note: "  exact owner words  ", Headcount: &tools.HeadcountArgs{Count: 26, Year: 2024}, Revenue: &tools.RevenueArgs{Low: new(int64(1000000)), High: new(int64(2000000))}, Category: new(sources.CategoryTrucking), Website: new("https://owner-co.test/"), Address: &tools.AddressArgs{Street: " 5 Main St ", City: " Rush City ", State: "MN", Zip: "55069", County: "MN-115"}, Phone: new("2185550100"), Email: new("ops@northstar.test"), People: []tools.PersonArgs{{Name: " Jane Doe ", Role: " owner "}}, KnownSince: new(1988), EIN: new("411234567"), Fleet: new(int64(7))}

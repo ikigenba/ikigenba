@@ -161,7 +161,7 @@ func TestOwnerSetOrdersClearsWithoutChangingInput(t *testing.T) {
 	contractEqual(t, store.OwnerSet([]store.OwnerRecord{same, d})[sources.FactName], d)
 }
 
-// R-Y8FF-E35T R-XQ4X-NJ1E R-Y9NB-RUWI R-N5HM-KXZ3 R-YAV8-5MN7 R-YC34-JEDW
+// R-892I-PK2H R-87UM-BSBS R-8AAF-3BT6 R-N5HM-KXZ3 R-YAV8-5MN7 R-YC34-JEDW
 func TestOwnerRecordsRefusalsMintAndPersistence(t *testing.T) {
 	ctx := context.Background()
 	f := contractDB(t)
@@ -314,7 +314,7 @@ func TestOwnerGivenValuesAndClearsReachDisplayFactsAndEIN(t *testing.T) {
 	contractEqual(t, got, c)
 }
 
-// R-EXUW-9NXM R-EZ2S-NFOB R-F0AP-17F0 R-F1IL-EZ5P R-FHDA-DZSQ R-0YH4-TCGZ
+// R-EXUW-9NXM R-EZ2S-NFOB R-F0AP-17F0 R-F1IL-EZ5P R-BU65-1XKS R-BVE1-FPBH
 func TestOwnerKeysMatchScrapesAndNewOwnerRecords(t *testing.T) {
 	ctx := context.Background()
 	f := contractDB(t)
@@ -652,7 +652,7 @@ func TestOwnerEINHydratesEveryReadShape(t *testing.T) {
 	}
 }
 
-// R-0YH4-TCGZ R-T59G-A7X3
+// R-BVE1-FPBH R-T59G-A7X3
 func TestOwnerDerivedChangesOnlyChangedInputsAndRouteFallsBack(t *testing.T) {
 	ctx := context.Background()
 	f := contractDB(t)
@@ -800,7 +800,7 @@ func TestOwnerEqualTimeClearsAndInForceHistory(t *testing.T) {
 	contractEqual(t, got.OtherPhones, []sources.Sourced[string]{{Value: o.Reading.Phone, Source: fmcsa.Name, Key: sources.SourceKey(fmcsa.Name, o.SourceID)}})
 }
 
-// R-EZ2S-NFOB R-FHDA-DZSQ
+// R-EZ2S-NFOB R-BU65-1XKS
 func TestOwnerAddressClearActuallyRemovesThePreviouslyMatchingKey(t *testing.T) {
 	ctx := context.Background()
 	f := contractDB(t)
@@ -980,7 +980,7 @@ func TestOwnerMergedFoundingRecordDoesNotAllowScrapedSurvivorToSplitAllLinks(t *
 	contractEqual(t, rs[0].Candidate, founded.ID)
 }
 
-// R-FHDA-DZSQ R-EXUW-9NXM
+// R-BU65-1XKS R-EXUW-9NXM
 func TestOwnerMatchingRulesChooseFirstRuleAndOldestHolder(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
@@ -1108,7 +1108,7 @@ func TestOwnerOnlyKeysMatchPlacesWithoutFoundingCandidates(t *testing.T) {
 	}
 }
 
-// R-Y9NB-RUWI R-XQ4X-NJ1E
+// R-8AAF-3BT6 R-87UM-BSBS
 func TestOwnerCandidateMintFailureRollsBackOwnerRecord(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -1154,6 +1154,108 @@ func TestOwnerKnownSinceYearOneFollowsTheSharedPick(t *testing.T) {
 			}
 			contractEqual(t, facts.KnownSince, wantDate)
 			contractEqual(t, facts.KnownSinceSource, wantSource)
+		})
+	}
+}
+
+// R-892I-PK2H R-87UM-BSBS
+func TestOwnerRefusalsPreserveAllObservedRecords(t *testing.T) {
+	f := contractDB(t)
+	ctx := t.Context()
+	_, a := writeOwner(t, f, "", store.OwnerValues{Name: ownPtr("Kept active")})
+	_, b := writeOwner(t, f, "", store.OwnerValues{Name: ownPtr("Kept merged")})
+	_, _, err := f.s.Decide(ctx, store.Ruling{Kind: store.KindMerge, Candidate: a.ID, Other: b.ID, Why: "same", UserID: "owner"})
+	contractOK(t, err)
+	contractOK(t, f.s.MarkCampaignUseOpened(ctx, a.ID, "campaign", f.now))
+	snapshot := func() any {
+		t.Helper()
+		type records struct {
+			Candidate   store.Candidate
+			Owners      []store.OwnerRecord
+			Facts       store.Facts
+			Uses        []store.CampaignUse
+			Links       []store.Link
+			Estimates   []sources.Estimate
+			Judgments   store.Judgments
+			Enrichments []store.Enrichment
+			Rulings     []store.Ruling
+		}
+		byID := map[string]records{}
+		for _, id := range []string{a.ID, b.ID} {
+			c, e := f.s.GetCandidate(ctx, id)
+			contractOK(t, e)
+			os, e := f.s.OwnerRecords(ctx, id)
+			contractOK(t, e)
+			fs, e := f.s.GetFacts(ctx, id)
+			if e != nil {
+				contractError(t, e, store.ErrNotFound)
+			}
+			uses, e := f.s.CampaignUses(ctx, id)
+			contractOK(t, e)
+			links, e := f.s.Links(ctx, id)
+			contractOK(t, e)
+			estimates, e := f.s.Estimates(ctx, id)
+			contractOK(t, e)
+			judgments, e := f.s.GetJudgments(ctx, id)
+			if e != nil {
+				contractError(t, e, store.ErrNotFound)
+			}
+			enrichments, e := f.s.Enrichments(ctx, id)
+			contractOK(t, e)
+			rulings, e := f.s.Rulings(ctx, id)
+			contractOK(t, e)
+			byID[id] = records{c, os, fs, uses, links, estimates, judgments, enrichments, rulings}
+		}
+		candidates, e := f.s.ListCandidates(ctx, store.CandidateFilter{}, "", "", 100)
+		contractOK(t, e)
+		passes, e := f.s.ListPasses(ctx, "", "", 100)
+		contractOK(t, e)
+		return struct {
+			Candidates []store.Candidate
+			Passes     []store.Pass
+			Records    map[string]records
+		}{candidates, passes, byID}
+	}
+	before := snapshot()
+	valid := func(id string) store.OwnerRecord {
+		return store.OwnerRecord{ID: "caller-id", Founded: true, At: f.now.AddDate(-1, 0, 0), Candidate: id, UserID: "owner", Note: "note", Set: store.OwnerValues{Name: ownPtr("new name")}}
+	}
+	for _, tc := range []struct {
+		name                 string
+		r                    store.OwnerRecord
+		want                 error
+		cancel, fail, random bool
+	}{
+		{name: "empty user before malformed and missing", r: store.OwnerRecord{Candidate: "missing"}, want: store.ErrUnreachable},
+		{name: "malformed before missing", r: store.OwnerRecord{Candidate: "missing", UserID: "owner", Note: " "}, want: store.ErrInvalid},
+		{name: "malformed before merged", r: store.OwnerRecord{Candidate: b.ID, UserID: "owner", Note: "note", Set: store.OwnerValues{Phone: ownPtr("218-555-0100")}}, want: store.ErrInvalid},
+		{name: "missing before mint", r: valid("cand_0000000000000000"), want: store.ErrNotFound, random: true},
+		{name: "merged before mint", r: valid(b.ID), want: store.ErrInvalid, random: true},
+		{name: "mint failure", r: valid(a.ID), want: store.ErrUnreachable, random: true},
+		{name: "failing before malformed", r: store.OwnerRecord{}, want: store.ErrUnreachable, fail: true},
+		{name: "context before failing", r: store.OwnerRecord{}, want: store.ErrUnreachable, fail: true, cancel: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := f.s
+			if tc.random {
+				s = store.New(f.d, store.Config{Now: func() time.Time { return f.now }, Rand: bytes.NewReader(nil)})
+			}
+			callctx := ctx
+			if tc.cancel {
+				var cancel context.CancelFunc
+				callctx, cancel = context.WithCancel(ctx)
+				cancel()
+			}
+			f.d.SetFailing(tc.fail)
+			r, c, e := s.AddOwnerRecord(callctx, tc.r)
+			f.d.SetFailing(false)
+			contractError(t, e, tc.want)
+			if tc.cancel && !errors.Is(e, context.Canceled) {
+				t.Fatal(e)
+			}
+			contractEqual(t, r, store.OwnerRecord{})
+			contractEqual(t, c, store.Candidate{})
+			contractEqual(t, snapshot(), before)
 		})
 	}
 }

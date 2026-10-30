@@ -19,14 +19,14 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-QJXD-VJCO R-SNEV-M7SS R-A3AZ-5YRP R-QW4D-P8RM R-2S53-YQ1D R-ODVT-E7W8 R-A9EH-2TH6 R-00CZ-DATW R-01KV-R2KL R-SOMR-ZZJH
+// R-QJXD-VJCO R-SNEV-M7SS R-A3AZ-5YRP R-QW4D-P8RM R-2S53-YQ1D R-ODVT-E7W8 R-A9EH-2TH6 R-DA6F-X6TZ R-DBEC-AYKO R-SOMR-ZZJH
 func TestProspectListExactSchemas(t *testing.T) {
 	f := newFixture(t)
 	infos, err := f.client.ListTools(t.Context(), caller)
 	if err != nil {
 		t.Fatal(err)
 	}
-	filters := `{"type":"object","properties":{"revenue_min":{"type":"integer","minimum":0},"revenue_max":{"type":"integer","minimum":0},"revenue_unknown":{"type":"boolean"},"max_minutes":{"type":"integer","minimum":0},"minutes_unknown":{"type":"boolean"},"categories":{"type":"array","items":{"type":"string"}},"category_unknown":{"type":"boolean"},"fleet":{"type":"string"},"fleet_unknown":{"type":"boolean"},"website":{"type":"array","items":{"type":"string"}},"website_unknown":{"type":"boolean"},"trend":{"type":"array","items":{"type":"string"}},"trend_unknown":{"type":"boolean"},"government":{"type":"boolean"},"max_filing_age_days":{"type":"integer","minimum":0},"filing_unknown":{"type":"boolean"},"min_campaign_age_days":{"type":"integer","minimum":0},"class":{"type":"string"},"class_unknown":{"type":"boolean"},"basis":{"type":"array","items":{"type":"string"}},"show_excluded":{"type":"boolean"}},"additionalProperties":false}`
+	filters := `{"type":"object","properties":{"revenue_min":{"type":"integer","minimum":0},"revenue_max":{"type":"integer","minimum":0},"revenue_unknown":{"type":"boolean"},"max_minutes":{"type":"integer","minimum":0},"minutes_unknown":{"type":"boolean"},"categories":{"type":"array","items":{"type":"string"}},"category_unknown":{"type":"boolean"},"fleet":{"type":"string"},"fleet_unknown":{"type":"boolean"},"website":{"type":"array","items":{"type":"string"}},"website_unknown":{"type":"boolean"},"trend":{"type":"array","items":{"type":"string"}},"trend_unknown":{"type":"boolean"},"government":{"type":"boolean"},"max_filing_age_days":{"type":"integer","minimum":0},"filing_unknown":{"type":"boolean"},"min_campaign_age_days":{"type":"integer","minimum":0},"campaign_any":{"type":"string"},"campaign":{"type":"string"},"campaign_not":{"type":"boolean"},"opened":{"type":"string"},"class":{"type":"string"},"class_unknown":{"type":"boolean"},"basis":{"type":"array","items":{"type":"string"}},"show_excluded":{"type":"boolean"}},"additionalProperties":false}`
 	order := `{"type":"array","items":{"type":"object","properties":{"field":{"type":"string"},"direction":{"type":"string"}},"required":["field","direction"],"additionalProperties":false}}`
 	want := map[string]string{
 		"create_prospect_list": `{"type":"object","properties":{"name":{"type":"string"},"filters":` + filters + `,"order":` + order + `,"size":{"type":"integer"}},"required":["name"],"additionalProperties":false}`,

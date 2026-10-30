@@ -187,7 +187,7 @@ func siteTextResult(t *testing.T, id, status string) store.Enrichment {
 	return store.Enrichment{Candidate: id, Kind: enrichers.KindSiteText, Inputs: "https://business.test/", Source: enrichers.SourcePrompts, Found: b, Cost: 1.25}
 }
 
-// R-6XO5-XRXE R-4LXP-TXPQ
+// R-J02A-N8BF R-4LXP-TXPQ
 func TestSiteTextWrittenProjectsIntoProspectListWithoutChangingMembership(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

@@ -95,7 +95,7 @@ func TestKindsOfEverySubset(t *testing.T) {
 	}
 }
 
-// R-OW5O-5154
+// R-86MP-Y0L3
 func TestBasisFiltersJSON(t *testing.T) {
 	for _, tc := range []struct {
 		f    store.ProspectListFilters
@@ -107,6 +107,8 @@ func TestBasisFiltersJSON(t *testing.T) {
 		{store.ProspectListFilters{MinCampaignAgeDays: ptrInt(0)}, `{"min_campaign_age_days":0}`},
 		{store.ProspectListFilters{Basis: []string{store.BasisRecords, store.BasisEnriched}}, `{"basis":["records","enriched"]}`},
 		{store.ProspectListFilters{Basis: []string{}}, `{}`},
+		{store.ProspectListFilters{CampaignAny: "yes", Campaign: "camp_0123456789abcdef", CampaignNot: true, Opened: "no"}, `{"campaign_any":"yes","campaign":"camp_0123456789abcdef","campaign_not":true,"opened":"no"}`},
+		{store.ProspectListFilters{Opened: "yes"}, `{"opened":"yes"}`},
 	} {
 		raw, err := json.Marshal(tc.f)
 		contractOK(t, err)
@@ -131,6 +133,10 @@ func TestBasisFiltersJSON(t *testing.T) {
 		MaxFilingAgeDays   *int64   `json:"max_filing_age_days,omitempty"`
 		FilingUnknown      bool     `json:"filing_unknown,omitempty"`
 		MinCampaignAgeDays *int64   `json:"min_campaign_age_days,omitempty"`
+		CampaignAny        string   `json:"campaign_any,omitempty"`
+		Campaign           string   `json:"campaign,omitempty"`
+		CampaignNot        bool     `json:"campaign_not,omitempty"`
+		Opened             string   `json:"opened,omitempty"`
 		Class              string   `json:"class,omitempty"`
 		ClassUnknown       bool     `json:"class_unknown,omitempty"`
 		Basis              []string `json:"basis,omitempty"`
@@ -145,7 +151,7 @@ func TestBasisFiltersJSON(t *testing.T) {
 	contractEqual(t, got, f)
 }
 
-// R-B0HC-R8VK
+// R-ISQW-CLV9
 func TestBasisFilterValidation(t *testing.T) {
 	// Other filter fields are exercised by TestProspectListValidators; this adds the new basis dimension and its interaction with invalid existing fields.
 	for _, basis := range [][]string{nil, {}, {store.BasisRecords}, {store.BasisPartial}, {store.BasisEnriched}, {store.BasisRecords, store.BasisPartial, store.BasisEnriched}, {store.BasisEnriched, store.BasisEnriched}} {

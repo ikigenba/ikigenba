@@ -174,12 +174,19 @@ func firstFailingFilter(ctx context.Context, tx *sql.Tx, f ProspectListFilters, 
 		{"government", ProspectListFilters{Government: f.Government}},
 		{"max_filing_age_days", ProspectListFilters{MaxFilingAgeDays: f.MaxFilingAgeDays, FilingUnknown: f.FilingUnknown}},
 		{"min_campaign_age_days", ProspectListFilters{MinCampaignAgeDays: f.MinCampaignAgeDays}},
+		{"campaign_any", ProspectListFilters{CampaignAny: f.CampaignAny}},
+		{"campaign", ProspectListFilters{Campaign: f.Campaign, CampaignNot: f.CampaignNot}},
+		{"opened", ProspectListFilters{Campaign: f.Campaign, CampaignNot: f.CampaignNot, Opened: f.Opened}},
 		{"class", ProspectListFilters{Class: f.Class, ClassUnknown: f.ClassUnknown}},
 		{"basis", ProspectListFilters{Basis: f.Basis}},
 	}
 	for _, test := range tests {
 		test.filter.ShowExcluded = true
 		cond, args := prospectListCondition(ProspectList{Filters: test.filter}, now)
+		if test.name == "opened" {
+			cond = `c.status='active' AND (?='' OR EXISTS (SELECT 1 FROM campaign_uses u WHERE u.candidate=c.id AND (?='' OR u.campaign=?) AND u.opened<>'')=?)`
+			args = []any{f.Opened, f.Campaign, f.Campaign, f.Opened == "yes"}
+		}
 		var n int
 		err := tx.QueryRowContext(ctx, `SELECT count(*) FROM judgments a JOIN candidates c ON c.id=a.candidate LEFT JOIN facts f ON f.candidate=c.id WHERE `+cond+` AND c.id=?`, append(args, id)...).Scan(&n)
 		if err != nil {

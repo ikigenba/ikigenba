@@ -812,7 +812,7 @@ func filterOf(a FilterArgs) store.ProspectListFilters {
 	if a.Basis != nil {
 		basis = append([]string{}, (*a.Basis)...)
 	}
-	return store.ProspectListFilters{Basis: basis, RevenueMin: int64Of(a.RevenueMin), RevenueMax: int64Of(a.RevenueMax), RevenueUnknown: a.RevenueUnknown, MaxMinutes: int64Of(a.MaxMinutes), MinutesUnknown: a.MinutesUnknown, Categories: append([]string(nil), a.Categories...), CategoryUnknown: a.CategoryUnknown, Fleet: a.Fleet, FleetUnknown: a.FleetUnknown, Website: websites, WebsiteUnknown: a.WebsiteUnknown, Trend: trends, TrendUnknown: a.TrendUnknown, Government: a.Government, MaxFilingAgeDays: int64Of(a.MaxFilingAgeDays), FilingUnknown: a.FilingUnknown, MinCampaignAgeDays: int64Of(a.MinCampaignAgeDays), Class: a.Class, ClassUnknown: a.ClassUnknown, ShowExcluded: a.ShowExcluded}
+	return store.ProspectListFilters{Basis: basis, RevenueMin: int64Of(a.RevenueMin), RevenueMax: int64Of(a.RevenueMax), RevenueUnknown: a.RevenueUnknown, MaxMinutes: int64Of(a.MaxMinutes), MinutesUnknown: a.MinutesUnknown, Categories: append([]string(nil), a.Categories...), CategoryUnknown: a.CategoryUnknown, Fleet: a.Fleet, FleetUnknown: a.FleetUnknown, Website: websites, WebsiteUnknown: a.WebsiteUnknown, Trend: trends, TrendUnknown: a.TrendUnknown, Government: a.Government, MaxFilingAgeDays: int64Of(a.MaxFilingAgeDays), FilingUnknown: a.FilingUnknown, MinCampaignAgeDays: int64Of(a.MinCampaignAgeDays), CampaignAny: a.CampaignAny, Campaign: a.Campaign, CampaignNot: a.CampaignNot, Opened: a.Opened, Class: a.Class, ClassUnknown: a.ClassUnknown, ShowExcluded: a.ShowExcluded}
 }
 func orderOf(a []OrderArgs) []store.ProspectListOrder {
 	v := []store.ProspectListOrder{}
@@ -910,6 +910,9 @@ func campaignUseOf(u store.CampaignUse) CampaignUse {
 	}
 	if !u.Delivered.IsZero() {
 		v.Delivered = stamp(u.Delivered)
+	}
+	if !u.Opened.IsZero() {
+		v.Opened = stamp(u.Opened)
 	}
 	return v
 }

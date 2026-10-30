@@ -21,7 +21,7 @@ func campaignUses(t *testing.T, f *contractFixture, id string) []store.CampaignU
 	return us
 }
 
-// R-RQLV-9IAZ R-2UKW-Q9IR R-UOP4-JJTE R-SSER-4EAI R-S0D2-BO8J R-SZDI-2HTS R-T0LE-G9KH
+// R-7WVI-VUNJ R-2UKW-Q9IR R-7Y3F-9ME8 R-7ZBB-NE4X R-80J8-15VM R-SZDI-2HTS R-T0LE-G9KH
 func TestCampaignUseOrdersDuplicatesAndPersistence(t *testing.T) {
 	for _, order := range [][]int{{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}} {
 		t.Run(fmt.Sprint(order), func(t *testing.T) {
@@ -75,7 +75,7 @@ func TestCampaignUseOrdersDuplicatesAndPersistence(t *testing.T) {
 	}
 }
 
-// R-SY5L-OQ33 R-OD8H-2EDG
+// R-81R4-EXMB R-OD8H-2EDG
 func TestCampaignUseErrorsAreAtomicAndPrioritized(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -84,7 +84,7 @@ func TestCampaignUseErrorsAreAtomicAndPrioritized(t *testing.T) {
 	before := campaignUses(t, f, id)
 	calls := []func(context.Context, string, string, time.Time) error{func(c context.Context, id, k string, at time.Time) error { return f.s.AddCampaignUse(c, id, k, "", at) }, func(c context.Context, id, k string, at time.Time) error {
 		return f.s.RejectCampaignUse(c, id, k, "", at)
-	}, f.s.DeliverCampaignUse}
+	}, f.s.DeliverCampaignUse, f.s.MarkCampaignUseOpened}
 	for _, call := range calls {
 		for _, tc := range []struct {
 			id, k string
@@ -114,7 +114,7 @@ func TestCampaignUseErrorsAreAtomicAndPrioritized(t *testing.T) {
 	contractEqual(t, campaignUses(t, f, id), before)
 }
 
-// R-SS23-RVDM R-SDRY-J5E6 R-SOW1-ZWQM
+// R-SS23-RVDM R-4Z5H-LV5V R-SOW1-ZWQM
 func TestCampaignUsesMergeUnionTiesChainAndSplit(t *testing.T) {
 	for _, ties := range []bool{false, true} {
 		t.Run(fmt.Sprint(ties), func(t *testing.T) {
@@ -187,7 +187,7 @@ func TestCampaignUsesMergeUnionTiesChainAndSplit(t *testing.T) {
 	}
 }
 
-// R-T317-7T1V R-NEW2-V92O R-5N3M-ADXX
+// R-85ET-K8UE R-85CG-ZQCL R-5N3M-ADXX
 func TestCampaignConcurrentWritesAndMergeAreWhole(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -195,7 +195,7 @@ func TestCampaignConcurrentWritesAndMergeAreWhole(t *testing.T) {
 	o := contractAttach(t, f, "run", contractObservation("racing", "racing other", f.now))[0]
 	contractOK(t, f.s.AddCampaignUse(ctx, o, "moved", "", f.now))
 	start := make(chan struct{})
-	results := make(chan error, 61)
+	results := make(chan error, 81)
 	var wg sync.WaitGroup
 	run := func(call func() error) { wg.Go(func() { <-start; results <- call() }) }
 	for i := range 20 {
@@ -203,6 +203,7 @@ func TestCampaignConcurrentWritesAndMergeAreWhole(t *testing.T) {
 		run(func() error { return f.s.AddCampaignUse(ctx, o, "racing", "prospect_list", at) })
 		run(func() error { return f.s.RejectCampaignUse(ctx, o, "racing", "reason", at) })
 		run(func() error { return f.s.DeliverCampaignUse(ctx, o, "racing", at) })
+		run(func() error { return f.s.MarkCampaignUseOpened(ctx, o, "racing", at) })
 	}
 	run(func() error {
 		_, _, err := f.s.Decide(ctx, store.Ruling{Kind: store.KindMerge, Candidate: s, Other: o, Why: "same", UserID: "owner"})
@@ -234,11 +235,11 @@ func TestCampaignConcurrentWritesAndMergeAreWhole(t *testing.T) {
 	}
 	us := campaignUses(t, f, s)
 	contractEqual(t, len(us), 2)
-	contractEqual(t, us[1], store.CampaignUse{Candidate: s, Campaign: "racing", ProspectList: "prospect_list", Added: f.now.UTC().Truncate(time.Second), Rejected: f.now.UTC().Truncate(time.Second), Reason: "reason", Delivered: f.now.Add(19 * time.Hour).UTC().Truncate(time.Second)})
+	contractEqual(t, us[1], store.CampaignUse{Candidate: s, Campaign: "racing", ProspectList: "prospect_list", Added: f.now.UTC().Truncate(time.Second), Rejected: f.now.UTC().Truncate(time.Second), Reason: "reason", Delivered: f.now.Add(19 * time.Hour).UTC().Truncate(time.Second), Opened: f.now.UTC().Truncate(time.Second)})
 	contractEqual(t, campaignUses(t, f, o), []store.CampaignUse{})
 }
 
-// R-Y52V-K5G8 R-UOP4-JJTE R-SSER-4EAI R-S0D2-BO8J R-RQLV-9IAZ
+// R-846X-6H3P R-7Y3F-9ME8 R-7ZBB-NE4X R-80J8-15VM R-7WVI-VUNJ
 func TestCampaignWritesPreserveOtherRecordsAndOtherWritesPreserveHistory(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -247,11 +248,11 @@ func TestCampaignWritesPreserveOtherRecordsAndOtherWritesPreserveHistory(t *test
 		Candidate, Campaign, ProspectList string
 		Added, Rejected                   time.Time
 		Reason                            string
-		Delivered                         time.Time
+		Delivered, Opened                 time.Time
 	}
 	contractEqual(t, shape(store.CampaignUse{}), shape{})
 	before := contractState(t, f)
-	for _, call := range []func() error{func() error { return f.s.AddCampaignUse(ctx, id, "kept", "origin", f.now) }, func() error { return f.s.RejectCampaignUse(ctx, id, "kept", "reason", f.now) }, func() error { return f.s.DeliverCampaignUse(ctx, id, "kept", f.now) }} {
+	for _, call := range []func() error{func() error { return f.s.AddCampaignUse(ctx, id, "kept", "origin", f.now) }, func() error { return f.s.RejectCampaignUse(ctx, id, "kept", "reason", f.now) }, func() error { return f.s.DeliverCampaignUse(ctx, id, "kept", f.now) }, func() error { return f.s.MarkCampaignUseOpened(ctx, id, "kept", f.now) }} {
 		contractOK(t, call())
 		contractEqual(t, contractState(t, f), before)
 	}
@@ -321,7 +322,7 @@ func TestCampaignWritesPreserveOtherRecordsAndOtherWritesPreserveHistory(t *test
 	check()
 }
 
-// R-S0D2-BO8J R-UOP4-JJTE R-SSER-4EAI
+// R-80J8-15VM R-7Y3F-9ME8 R-7ZBB-NE4X
 func TestCampaignUseValidTimesBeforeZero(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()

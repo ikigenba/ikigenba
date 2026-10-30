@@ -100,6 +100,9 @@ type FiltersView struct {
 	MaxFilingAgeDays       string
 	FilingUnknown          bool
 	MinCampaignAgeDays     string
+	CampaignAny, Campaign  string
+	CampaignNot            bool
+	Opened                 string
 	Class                  string
 	ClassUnknown           bool
 	Basis                  []string
@@ -345,7 +348,7 @@ type ConfirmationView struct {
 type CampaignRow struct {
 	Campaign, CampaignPage, ProspectList, ProspectListName, ProspectListPage, Added, AddedText string
 	Rejected                                                                                   bool
-	RejectedAt, RejectedAtText, Reason, Delivered, DeliveredText                               string
+	RejectedAt, RejectedAtText, Reason, Delivered, DeliveredText, Opened, OpenedText           string
 }
 
 // EnrichmentsView holds the facts and brief.

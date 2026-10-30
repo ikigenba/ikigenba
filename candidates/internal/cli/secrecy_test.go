@@ -175,7 +175,7 @@ func secrecyAbsent(t *testing.T, where string, value any, markers []string) {
 	}
 }
 
-// R-3QAA-OAST R-21BB-JRQ3 R-W2P0-857V R-VFIW-YI4O R-OW6B-4S0N R-YTGV-7KA4 R-WYEE-66HX R-NY14-F797 R-MJ56-QL88 R-1WS0-70BI R-QBCU-2WE1
+// R-MWWF-E3YX R-21BB-JRQ3 R-W2P0-857V R-VFIW-YI4O R-OW6B-4S0N R-YTGV-7KA4 R-WYEE-66HX R-NY14-F797 R-MJ56-QL88 R-1WS0-70BI R-QBCU-2WE1
 func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 	markers, phone := secrecyMarkers(t)
 	forbidden := append(append([]string{}, markers...), phone)
@@ -541,7 +541,7 @@ func TestRunSecrecyAcrossSuccessAndFailures(t *testing.T) {
 
 	// Campaign reasons are record text: provoke every delivery, read, and render.
 	for _, campaignCandidate := range []string{id, other, "unknown_campaign_candidate"} {
-		for _, name := range []string{"campaign.member.added", "campaign.member.rejected", "campaign.piece.delivered"} {
+		for _, name := range []string{"campaign.member.added", "campaign.member.rejected", "campaign.piece.delivered", "campaign.member.opened"} {
 			answer := h.campaignDelivery(name, "campaign_secrecy", campaignCandidate, prospectListID, strings.Join(append(append([]string{}, markers...), phone), " "), h.p.Now(), "campaign-secrecy-delivery")
 			answers = append(answers, answer)
 			if campaignCandidate == "unknown_campaign_candidate" {

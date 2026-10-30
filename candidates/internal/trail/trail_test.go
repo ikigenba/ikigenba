@@ -15,9 +15,9 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
 )
 
-// R-775C-V5DE R-WLNU-3JBB
+// R-5N1V-ZR2X R-WLNU-3JBB
 func TestDeclarations(t *testing.T) {
-	if trail.Started != "pass.started" || trail.Finished != "pass.finished" || trail.Accepted != "scrape.finished" || trail.AcceptedJudge != "cron.judge_candidates.fired" || trail.AcceptedAdded != "campaign.member.added" || trail.AcceptedRejected != "campaign.member.rejected" || trail.AcceptedDelivered != "campaign.piece.delivered" {
+	if trail.Started != "pass.started" || trail.Finished != "pass.finished" || trail.Accepted != "scrape.finished" || trail.AcceptedJudge != "cron.judge_candidates.fired" || trail.AcceptedAdded != "campaign.member.added" || trail.AcceptedRejected != "campaign.member.rejected" || trail.AcceptedDelivered != "campaign.piece.delivered" || trail.AcceptedOpened != "campaign.member.opened" {
 		t.Fatal("names")
 	}
 	want := []events.Emission{{Event: "pass.started", Attrs: []string{"pass", "kind", "origin", "trigger", "target", "enrich_kind"}}, {Event: "pass.finished", Attrs: []string{"pass", "kind", "origin", "trigger", "target", "enrich_kind", "status", "reason", "parcel_run", "rows", "new", "changed", "unchanged", "gone", "created", "linked", "judged", "unranged", "derived", "due", "fetched", "https", "http", "none", "runs", "runs_failed", "pages", "cost", "parcels_read", "by_label", "by_value", "by_candidate", "parks_created", "parks_updated", "parks_gone", "parks_grown", "parks_walked", "circles", "requests", "found", "new_candidates", "search_different", "search_stands", "search_none"}}}

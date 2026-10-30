@@ -58,7 +58,16 @@ func prospectListCondition(k ProspectList, now time.Time) (string, []any) {
 		add(`((coalesce(f.newest_filing,'')<>'' AND julianday(?)-julianday(substr(f.newest_filing,1,10))<=?) OR (coalesce(f.newest_filing,'')='' AND ?))`, now.UTC().Format("2006-01-02"), *f.MaxFilingAgeDays, f.FilingUnknown)
 	}
 	if f.MinCampaignAgeDays != nil && *f.MinCampaignAgeDays > 0 {
-		add(`NOT EXISTS (SELECT 1 FROM campaign_uses AS u WHERE u.candidate=c.id AND julianday(?)-julianday(substr(CASE WHEN u.added<>'' THEN u.added WHEN u.rejected='' THEN u.delivered WHEN u.delivered='' THEN u.rejected WHEN u.rejected<u.delivered THEN u.rejected ELSE u.delivered END,1,10))<?)`, now.UTC().Format("2006-01-02"), *f.MinCampaignAgeDays)
+		add(`NOT EXISTS (SELECT 1 FROM campaign_uses AS u WHERE u.candidate=c.id AND julianday(?)-julianday(substr(coalesce(nullif(CASE WHEN u.added<>'' THEN u.added WHEN u.rejected='' THEN u.delivered WHEN u.delivered='' THEN u.rejected WHEN u.rejected<u.delivered THEN u.rejected ELSE u.delivered END,''),'0001-01-01T00:00:00Z'),1,10))<?)`, now.UTC().Format("2006-01-02"), *f.MinCampaignAgeDays)
+	}
+	if f.CampaignAny != "" {
+		add(`EXISTS (SELECT 1 FROM campaign_uses u WHERE u.candidate=c.id AND u.added<>'' AND u.rejected='')=?`, f.CampaignAny == "yes")
+	}
+	if f.Campaign != "" {
+		add(`EXISTS (SELECT 1 FROM campaign_uses u WHERE u.candidate=c.id AND u.campaign=? AND u.added<>'' AND u.rejected='')=?`, f.Campaign, !f.CampaignNot)
+	}
+	if f.Opened != "" {
+		add(`EXISTS (SELECT 1 FROM campaign_uses u WHERE u.candidate=c.id AND (?='' OR u.campaign=?) AND u.opened<>'')=?`, f.Campaign, f.Campaign, f.Opened == "yes")
 	}
 	if f.Class != "" {
 		add(`(c.class=? OR ((c.class='' OR c.class=?) AND ?))`, f.Class, sources.ClassUnknown, f.ClassUnknown)

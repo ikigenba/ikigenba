@@ -27,7 +27,7 @@ func campaignCandidate(t *testing.T, f *fixture, key string) string {
 	return ids[0]
 }
 func campaignDelivery(name, candidate string, at time.Time) events.Delivery {
-	return events.Delivery{Event: events.Event{Name: name, Time: at, Attrs: events.Attrs{"campaign": "campaign_fixture", "candidate": candidate, "prospect_list": "pl_fixture", "reason": "private reason", "piece": 17, "channel": nil, "how": false}}}
+	return events.Delivery{Event: events.Event{Name: name, Time: at, Attrs: events.Attrs{"campaign": "campaign_fixture", "candidate": candidate, "prospect_list": "pl_fixture", "reason": "private reason", "piece": 17, "channel": nil, "how": false, "at": at.Format(time.RFC3339Nano)}}}
 }
 func campaignUses(t *testing.T, f *fixture, id string) []store.CampaignUse {
 	t.Helper()
@@ -38,22 +38,33 @@ func campaignUses(t *testing.T, f *fixture, id string) []store.CampaignUse {
 	return uses
 }
 
-// R-V6ZM-A3XT R-UJTJ-0GUM R-UTKQ-2MS6 R-ZSTY-AWS9 R-5C1K-ZR28 R-RAR6-AHNY
-// R-59LS-87KU R-V4JT-IKGF R-4XES-EI5W
+// R-TLNW-TU9B R-0EOZ-5U1B R-TI07-OJ18 R-TJ84-2ARX R-TKG0-G2IM R-TO3P-LDQP R-TMVT-7M00
+// R-59LS-87KU R-V4JT-IKGF R-TFKE-WZJU
 func TestCampaignDeliveriesConvergeWithoutPasses(t *testing.T) {
-	orders := [][]int{{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}}
-	names := []string{trail.AcceptedAdded, trail.AcceptedRejected, trail.AcceptedDelivered}
+	var orders [][]int
+	for a := range 4 {
+		for b := range 4 {
+			for c := range 4 {
+				for d := range 4 {
+					if a != b && a != c && a != d && b != c && b != d && c != d {
+						orders = append(orders, []int{a, b, c, d})
+					}
+				}
+			}
+		}
+	}
+	names := []string{trail.AcceptedAdded, trail.AcceptedRejected, trail.AcceptedDelivered, trail.AcceptedOpened}
 	stamp := time.Date(2026, 2, 3, 4, 5, 6, 789, time.FixedZone("offset", 3600))
 	for _, order := range orders {
 		for _, duplicate := range []bool{false, true} {
 			t.Run(fmt.Sprint(order, duplicate), func(t *testing.T) {
-				f := newFixture(t, nil, false)
+				f := newFixture(t, nil, duplicate)
 				var pf *promptFake
 				if duplicate {
 					f.eng.Drain(t.Context())
 					client, fake := fakePrompts(t, f, func(string, map[string]json.RawMessage) (any, bool, int) { return nil, false, 500 })
 					pf = fake
-					f.eng = passes.New(passes.Config{Store: f.st, Telemetry: f.w, Events: f.em, Prompts: client})
+					f.eng = passes.New(passes.Config{Store: f.st, Telemetry: f.w, Events: f.em, Scrapes: f.sc, Prompts: client})
 				}
 				id := campaignCandidate(t, f, "business")
 				before, err := f.st.GetCandidate(t.Context(), id)
@@ -64,7 +75,6 @@ func TestCampaignDeliveriesConvergeWithoutPasses(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				var direct events.Handler = f.eng.DeliverCampaign
 				want := store.CampaignUse{Candidate: id, Campaign: "campaign_fixture"}
 				for _, i := range order {
 					ctx := context.Background()
@@ -81,16 +91,22 @@ func TestCampaignDeliveriesConvergeWithoutPasses(t *testing.T) {
 						want.Reason = "private reason"
 					case 2:
 						want.Delivered = stamp.Add(2 * time.Hour).UTC().Truncate(time.Second)
+					case 3:
+						want.Opened = stamp.Add(3 * time.Hour).UTC().Truncate(time.Second)
 					}
 
-					if out := direct(ctx, d); out != events.OK() {
+					deliver := f.eng.DeliverCampaign
+					if duplicate {
+						deliver = f.eng.Handlers()[names[i]]
+					}
+					if out := deliver(ctx, d); out != events.OK() {
 						t.Fatal(out)
 					}
 					if got := campaignUses(t, f, id); len(got) != 1 || !reflect.DeepEqual(got[0], want) {
 						t.Fatalf("after %s: %#v want %#v", names[i], got, want)
 					}
 					if duplicate {
-						if out := f.eng.Handlers()[names[i]](ctx, d); out != events.OK() {
+						if out := f.eng.DeliverCampaign(ctx, d); out != events.OK() {
 							t.Fatal(out)
 						}
 						if got := campaignUses(t, f, id); len(got) != 1 || !reflect.DeepEqual(got[0], want) {
@@ -103,7 +119,7 @@ func TestCampaignDeliveriesConvergeWithoutPasses(t *testing.T) {
 					t.Fatal(uses)
 				}
 				u := uses[0]
-				if u.Campaign != "campaign_fixture" || u.ProspectList != "pl_fixture" || u.Reason != "private reason" || !u.Added.Equal(stamp.UTC().Truncate(time.Second)) || !u.Rejected.Equal(stamp.Add(time.Hour).UTC().Truncate(time.Second)) || !u.Delivered.Equal(stamp.Add(2*time.Hour).UTC().Truncate(time.Second)) {
+				if u.Campaign != "campaign_fixture" || u.ProspectList != "pl_fixture" || u.Reason != "private reason" || !u.Added.Equal(stamp.UTC().Truncate(time.Second)) || !u.Rejected.Equal(stamp.Add(time.Hour).UTC().Truncate(time.Second)) || !u.Delivered.Equal(stamp.Add(2*time.Hour).UTC().Truncate(time.Second)) || !u.Opened.Equal(stamp.Add(3*time.Hour).UTC().Truncate(time.Second)) {
 					t.Fatal(u)
 				}
 				after, err := f.st.GetCandidate(t.Context(), id)
@@ -129,14 +145,14 @@ func TestCampaignDeliveriesConvergeWithoutPasses(t *testing.T) {
 	}
 }
 
-// R-1TZX-959X R-52AD-XL4O R-58DV-UFU5 R-4ZUL-61NA R-59LS-87KU
+// R-TGSB-ARAJ R-52AD-XL4O R-58DV-UFU5 R-4ZUL-61NA R-59LS-87KU
 func TestCampaignClassificationFailureAndDrain(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := campaignCandidate(t, f, "business")
 	stamp := time.Unix(100, 0)
 	valid := campaignDelivery(trail.AcceptedAdded, id, stamp)
 	variants := []events.Delivery{campaignDelivery("scrape.finished", id, stamp), campaignDelivery(trail.AcceptedAdded, id, time.Time{}), campaignDelivery(trail.AcceptedAdded, "missing", stamp)}
-	for _, name := range []string{trail.AcceptedAdded, trail.AcceptedRejected, trail.AcceptedDelivered} {
+	for _, name := range []string{trail.AcceptedAdded, trail.AcceptedRejected, trail.AcceptedDelivered, trail.AcceptedOpened} {
 		variants = append(variants, campaignDelivery(name, "missing", stamp))
 		missing := campaignDelivery(name, id, stamp)
 		missing.Event.Attrs = nil
@@ -149,13 +165,16 @@ func TestCampaignClassificationFailureAndDrain(t *testing.T) {
 			}
 		}
 	}
+	zeroOpened := campaignDelivery(trail.AcceptedOpened, id, stamp)
+	zeroOpened.Event.Attrs["at"] = "0001-01-01T00:00:00Z"
+	variants = append(variants, zeroOpened)
 	for _, d := range variants {
 		if out := f.eng.DeliverCampaign(t.Context(), d); out != events.Skip() {
 			t.Fatal(d, out)
 		}
 	}
 	f.d.SetFailing(true)
-	for _, name := range []string{trail.AcceptedAdded, trail.AcceptedRejected, trail.AcceptedDelivered} {
+	for _, name := range []string{trail.AcceptedAdded, trail.AcceptedRejected, trail.AcceptedDelivered, trail.AcceptedOpened} {
 		if out := f.eng.DeliverCampaign(t.Context(), campaignDelivery(name, id, stamp)); out != events.Fail(store.Unreachable) {
 			t.Fatal(out)
 		}
@@ -183,7 +202,7 @@ func TestCampaignClassificationFailureAndDrain(t *testing.T) {
 	}
 }
 
-// R-OL77-OUCE R-UJTJ-0GUM R-UTKQ-2MS6 R-ZSTY-AWS9
+// R-OL77-OUCE R-TI07-OJ18 R-TJ84-2ARX R-TKG0-G2IM
 func TestCampaignFollowsMergeAndIgnoresEventID(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := campaignCandidate(t, f, "first")
@@ -198,7 +217,7 @@ func TestCampaignFollowsMergeAndIgnoresEventID(t *testing.T) {
 	}
 	survivor = endpoint
 	stamp := time.Unix(100, 0)
-	for _, name := range []string{trail.AcceptedAdded, trail.AcceptedRejected, trail.AcceptedDelivered} {
+	for _, name := range []string{trail.AcceptedAdded, trail.AcceptedRejected, trail.AcceptedDelivered, trail.AcceptedOpened} {
 		d := campaignDelivery(name, id, stamp)
 		d.Event.ID = "same-id"
 		if out := f.eng.DeliverCampaign(t.Context(), d); out != events.OK() {
@@ -208,7 +227,7 @@ func TestCampaignFollowsMergeAndIgnoresEventID(t *testing.T) {
 	if len(campaignUses(t, f, id)) != 0 || len(campaignUses(t, f, survivor)) != 1 {
 		t.Fatal("merge destination")
 	}
-	for _, name := range []string{trail.AcceptedAdded, trail.AcceptedRejected, trail.AcceptedDelivered} {
+	for _, name := range []string{trail.AcceptedAdded, trail.AcceptedRejected, trail.AcceptedDelivered, trail.AcceptedOpened} {
 		d := campaignDelivery(name, id, stamp.Add(time.Hour))
 		d.Event.Attrs["reason"] = "later"
 		d.Event.Attrs["prospect_list"] = "later"
@@ -217,7 +236,7 @@ func TestCampaignFollowsMergeAndIgnoresEventID(t *testing.T) {
 		}
 	}
 	u := campaignUses(t, f, survivor)[0]
-	if !u.Added.Equal(stamp) || !u.Rejected.Equal(stamp) || u.Reason != "private reason" || u.ProspectList != "pl_fixture" || !u.Delivered.Equal(stamp.Add(time.Hour)) {
+	if !u.Added.Equal(stamp) || !u.Rejected.Equal(stamp) || u.Reason != "private reason" || u.ProspectList != "pl_fixture" || !u.Delivered.Equal(stamp.Add(time.Hour)) || !u.Opened.Equal(stamp) {
 		t.Fatal(u)
 	}
 	d := campaignDelivery(trail.AcceptedDelivered, id, stamp.Add(-time.Hour))
@@ -270,7 +289,7 @@ func TestConcurrentCampaignDeliveries(t *testing.T) {
 	wg.Wait()
 }
 
-// R-V6ZM-A3XT R-V4JT-IKGF
+// R-0EOZ-5U1B R-V4JT-IKGF
 func TestCampaignOptionalAttributesAndProspectListState(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := campaignCandidate(t, f, "business")
@@ -308,5 +327,87 @@ func TestCampaignOptionalAttributesAndProspectListState(t *testing.T) {
 	candidateAfter, err := f.st.GetCandidate(t.Context(), id)
 	if err != nil || !reflect.DeepEqual(candidateBefore, candidateAfter) {
 		t.Fatal(candidateAfter, err)
+	}
+}
+
+// R-0EOZ-5U1B R-TLNW-TU9B
+func TestCampaignOpenedTimeParsingAndFallback(t *testing.T) {
+	busTime := time.Date(2026, 10, 2, 3, 4, 5, 987, time.FixedZone("bus-offset", 7200))
+	visitTime := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	for _, tt := range []struct {
+		name    string
+		at      any
+		present bool
+		want    time.Time
+	}{
+		{"utc", "2026-10-01T12:00:00Z", true, visitTime},
+		{"offset", "2026-10-01T07:00:00-05:00", true, visitTime},
+		{"empty", "", true, busTime},
+		{"invalid", "yesterday", true, busTime},
+		{"number", 17, true, busTime},
+		{"absent", nil, false, busTime},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t, nil, false)
+			id := campaignCandidate(t, f, "business")
+			other := campaignCandidate(t, f, "untouched")
+			d := campaignDelivery(trail.AcceptedOpened, id, busTime)
+			if tt.present {
+				d.Event.Attrs["at"] = tt.at
+			} else {
+				delete(d.Event.Attrs, "at")
+			}
+			if out := f.eng.DeliverCampaign(t.Context(), d); out != events.OK() {
+				t.Fatal(out)
+			}
+			want := store.CampaignUse{Candidate: id, Campaign: "campaign_fixture", Opened: tt.want.UTC().Truncate(time.Second)}
+			if got := campaignUses(t, f, id); len(got) != 1 || !reflect.DeepEqual(got[0], want) {
+				t.Fatal(got, want)
+			}
+			if len(campaignUses(t, f, other)) != 0 {
+				t.Fatal("changed another candidate")
+			}
+		})
+	}
+}
+
+// R-TLNW-TU9B R-TKG0-G2IM
+func TestCampaignOpenedKeepsEarliestAndPreservesOtherHistory(t *testing.T) {
+	f := newFixture(t, nil, false)
+	id := campaignCandidate(t, f, "business")
+	stamp := time.Date(2026, 10, 1, 12, 0, 0, 123, time.FixedZone("offset", -18000))
+	for _, name := range []string{trail.AcceptedAdded, trail.AcceptedRejected, trail.AcceptedDelivered} {
+		if out := f.eng.DeliverCampaign(t.Context(), campaignDelivery(name, id, stamp)); out != events.OK() {
+			t.Fatal(out)
+		}
+	}
+	before := campaignUses(t, f, id)[0]
+	for _, offset := range []time.Duration{0, 0, time.Hour, -time.Hour} {
+		d := campaignDelivery(trail.AcceptedOpened, id, stamp.Add(48*time.Hour))
+		d.Event.Attrs["at"] = stamp.Add(offset).Format(time.RFC3339Nano)
+		if out := f.eng.DeliverCampaign(t.Context(), d); out != events.OK() {
+			t.Fatal(out)
+		}
+		want := before
+		want.Opened = stamp.UTC().Truncate(time.Second)
+		if offset < 0 {
+			want.Opened = want.Opened.Add(offset)
+		}
+		if got := campaignUses(t, f, id); len(got) != 1 || !reflect.DeepEqual(got[0], want) {
+			t.Fatal(got, want)
+		}
+	}
+	before = campaignUses(t, f, id)[0]
+	for _, offset := range []time.Duration{time.Hour, -time.Hour} {
+		d := campaignDelivery(trail.AcceptedDelivered, id, stamp.Add(offset))
+		d.Event.Attrs["piece"], d.Event.Attrs["channel"], d.Event.Attrs["how"] = nil, 23, "anything"
+		if out := f.eng.DeliverCampaign(t.Context(), d); out != events.OK() {
+			t.Fatal(out)
+		}
+		want := before
+		want.Delivered = stamp.Add(time.Hour).UTC().Truncate(time.Second)
+		if got := campaignUses(t, f, id); len(got) != 1 || !reflect.DeepEqual(got[0], want) {
+			t.Fatal(got, want)
+		}
 	}
 }

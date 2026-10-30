@@ -13,7 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-3GJ3-M4V9 R-ML95-4DLF R-15M2-YJVP
+// R-D5AU-E3V7 R-D7QN-5NCL R-D8YJ-JF3A
 func TestCampaignAnswerHistory(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -69,13 +69,20 @@ func TestCampaignAnswerHistory(t *testing.T) {
 	if err := f.st.DeliverCampaignUse(t.Context(), id, "chosen-q", at.Add(3*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
+	if err := f.st.MarkCampaignUseOpened(t.Context(), id, "chosen-q", at.Add(4*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.MarkCampaignUseOpened(t.Context(), id, "chosen-w", at.Add(5*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
 	if err := f.st.DeliverCampaignUse(t.Context(), id, "chosen-s", at.Add(4*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	want[0].Delivered = "2026-10-05T12:00:07Z"
+	want[0].Opened = "2026-10-05T13:00:07Z"
 	want[1].Rejected = "2026-10-05T11:00:07Z"
 	want[1].Reason = "chosen-reason"
-	want = append(want, tools.CampaignUse{Campaign: "chosen-s", Delivered: "2026-10-05T13:00:07Z"})
+	want = append(want, tools.CampaignUse{Campaign: "chosen-s", Delivered: "2026-10-05T13:00:07Z"}, tools.CampaignUse{Campaign: "chosen-w", Opened: "2026-10-05T14:00:07Z"})
 	checkCampaignWire(want)
 	if got := read(id); !reflect.DeepEqual(got.Campaigns, want) {
 		t.Fatal(got.Campaigns, want)
@@ -90,7 +97,7 @@ func TestCampaignAnswerHistory(t *testing.T) {
 	if err := f.st.AddCampaignUse(t.Context(), id, "chosen-after-merge", "", at); err != nil {
 		t.Fatal(err)
 	}
-	if got := read(ids[1]); len(got.Campaigns) != 4 {
+	if got := read(ids[1]); len(got.Campaigns) != 5 {
 		t.Fatal(got.Campaigns)
 	}
 	if got := read(id); got.Campaigns == nil || len(got.Campaigns) != 0 {
@@ -101,7 +108,7 @@ func TestCampaignAnswerHistory(t *testing.T) {
 		want string
 	}{
 		{tools.CampaignUse{}, `{"campaign":"","prospect_list":""}`},
-		{tools.CampaignUse{"campaign", "prospect_list", "added", "rejected", "reason", "delivered"}, `{"campaign":"campaign","prospect_list":"prospect_list","added":"added","rejected":"rejected","reason":"reason","delivered":"delivered"}`},
+		{tools.CampaignUse{"campaign", "prospect_list", "added", "rejected", "reason", "delivered", "opened"}, `{"campaign":"campaign","prospect_list":"prospect_list","added":"added","rejected":"rejected","reason":"reason","delivered":"delivered","opened":"opened"}`},
 	} {
 		b, err := json.Marshal(tc.v)
 		if err != nil || string(b) != tc.want {
@@ -110,7 +117,7 @@ func TestCampaignAnswerHistory(t *testing.T) {
 	}
 }
 
-// R-X5PS-GSY3 R-VXGZ-7W2R
+// R-X5PS-GSY3 R-DCM8-OQBD
 func TestCampaignFilterToolLifecycle(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(7)

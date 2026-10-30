@@ -21,13 +21,13 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-XT4M-RPN7 R-4BA8-N4ED R-1YVI-S88P R-SNJ5-LBBQ R-SBC5-RLWS
+// R-XT4M-RPN7 R-3J6J-OG3W R-1YVI-S88P R-SNJ5-LBBQ R-SBC5-RLWS
 func TestProspectListViewContracts(t *testing.T) {
 	low, high, minutes, days := int64(5000000), int64(9000000), int64(120), int64(730)
 	government := false
 	at := fixtureTime()
 	f := store.ProspectListFilters{RevenueMin: &low, RevenueMax: &high, RevenueUnknown: true, MaxMinutes: &minutes, MinutesUnknown: true, Categories: []string{sources.CategoryConstruction, sources.CategoryTrucking}, CategoryUnknown: true, Fleet: sources.FleetPass, FleetUnknown: true, Government: &government, MaxFilingAgeDays: &days, FilingUnknown: true, Class: sources.ClassPrivate, ClassUnknown: true, ShowExcluded: true}
-	wantF := FiltersView{"$5,000,000", "$9,000,000", true, "120", true, []string{sources.CategoryConstruction, sources.CategoryTrucking}, true, sources.FleetPass, true, []string{}, false, []string{}, false, "false", "730", true, "", sources.ClassPrivate, true, []string{}, true}
+	wantF := FiltersView{"$5,000,000", "$9,000,000", true, "120", true, []string{sources.CategoryConstruction, sources.CategoryTrucking}, true, sources.FleetPass, true, []string{}, false, []string{}, false, "false", "730", true, "", "", "", false, "", sources.ClassPrivate, true, []string{}, true}
 	if got := filtersView(f); !reflect.DeepEqual(got, wantF) {
 		t.Fatalf("filters got %#v want %#v", got, wantF)
 	}

@@ -68,6 +68,15 @@ func ValidProspectListFilters(f ProspectListFilters) bool {
 			return false
 		}
 	}
+	if f.CampaignAny != "" && f.CampaignAny != "yes" && f.CampaignAny != "no" {
+		return false
+	}
+	if f.Campaign != "" && !validID(f.Campaign, "camp_") || f.CampaignNot && f.Campaign == "" {
+		return false
+	}
+	if f.Opened != "" && f.Opened != "yes" && f.Opened != "no" {
+		return false
+	}
 	switch f.Class {
 	case "", sources.ClassForHire, sources.ClassPrivate, sources.ClassMixed:
 	default:

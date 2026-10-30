@@ -1,0 +1,1 @@
+ALTER TABLE campaign_uses ADD COLUMN opened TEXT NOT NULL DEFAULT '';

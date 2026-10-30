@@ -13,7 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-UHFA-QKR7 R-UIN7-4CHW R-UG7E-CT0I
+// R-UHFA-QKR7 R-F41M-83EA R-UG7E-CT0I
 func TestRunOwnerWritesEmitOneExactTrailEventPerSavedRecord(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
 	h.start()
