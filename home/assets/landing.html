@@ -1,14 +1,14 @@
-{{/* The landing page at GET /: the space's bookmarks, then every service
+{{/* The landing page at GET /: the caller's bookmarks, then every service
      on the space, as tiles, backend services over core services. The root
      of the hierarchy. Shown only to a signed-in user. Data: .Banner (a
      page.Banner, for banner and footer); .Bookmarks (a slice of bookmark
-     tiles, in name order, each with .ID, .Name, .URL and .HasIcon, a
-     bool); .Backend and .Core (each a slice of tiles, each with .Name,
+     tiles, the caller's own, in the caller's order, each with .ID, .Name,
+     .URL and .HasIcon, a bool); .Backend and .Core (each a slice of tiles, each with .Name,
      .URL, .Icon, an HTML value, and .Enabled).
      Hooks: title "home"; h1 with text "Services", no lede; then, always,
      section#bookmarks holding div.section-head > div > h2 (text
      "Bookmarks") beside div.actions holding a.button.secondary.small to
-     /bookmarks (the plus glyph, then text "Add bookmark"); then, when
+     /bookmarks (the Tabler pencil glyph, then text "Edit"); then, when
      .Bookmarks is not empty, nav.services labelled "Bookmarks" holding a ul
      with one li per bookmark, in the order given, each an a with href
      .URL holding, when .HasIcon, img with src "/bookmarks/<.ID>/icon" and
@@ -40,7 +40,7 @@
 <div>
 <h2>Bookmarks</h2>
 </div>
-<div class="actions"><a class="button secondary small" href="/bookmarks"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5l0 14"/><path d="M5 12l14 0"/></svg>Add bookmark</a></div>
+<div class="actions"><a class="button secondary small" href="/bookmarks"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4"/><path d="M13.5 6.5l4 4"/></svg>Edit</a></div>
 </div>
 {{if .Bookmarks}}<nav class="services" aria-label="Bookmarks">
 <ul>
