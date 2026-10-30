@@ -4,17 +4,19 @@ An app of the Ikigenba platform: the suite's front door, served at
 `home.<host>` and, as the manifest's default app, at the space host itself.
 One Go binary serves on the listening socket it is passed as descriptor 3
 (`/run/ikigenba/home.sock` on a host), behind the host's nginx. home shows
-the space's bookmarks and every service on the space: at `/` it serves a
-landing page of the bookmarks and of the services the host's services file
-names, as tiles, at `/bookmarks` a page where any signed-in user adds or
-removes a bookmark, and it links to an about screen at `/about`. It is the
-home the banner's product mark links to on every app's pages. home keeps the
-space's bookmarks, each with the icon fetched from the bookmarked site when
-it was added, in its own SQLite database, `state/home.db` resolved against the
+a signed-in user their own bookmarks and every service on the space: at `/`
+it serves a landing page of that user's bookmarks, in the user's order, and
+of the services the host's services file names, as tiles, at `/bookmarks` a
+page where a signed-in user adds, orders and removes their own bookmarks, and
+it links to an about screen at `/about`. It is the home the banner's product
+mark links to on every app's pages. home keeps each user's bookmarks, each
+with the icon fetched from the bookmarked site when it was added, in its own
+SQLite database, `state/home.db` resolved against the
 working directory and opened through appkit's `db` package, of which it is the
 only writer. It offers no MCP tools, neither emits nor accepts an event on the
 suite's event bus, and records in the trail, beyond appkit's request and
-service events, only its own `bookmark.created` and `bookmark.deleted`. Every
+service events, only its own `bookmark.created`, `bookmark.moved` and
+`bookmark.deleted`. Every
 page is for a signed-in user of the space; nginx lets no guest through. On a
 host it runs as `/opt/home/bin/home` with `/opt/home` as its working directory
 and its environment from `/opt/home/etc/env`; a developer runs the same binary
@@ -63,7 +65,7 @@ in the banner's trail and on home. The
   - `internal/bookmarks`: the store over the database.
   - `internal/favicon`: the fetch of a bookmark's icon.
 - `migrations/` is the database's schema, one file per migration named with a
-  four-digit version: `0001_bookmarks.sql`.
+  four-digit version: `0001_bookmarks.sql` and `0002_bookmark_order.sql`.
 - `etc/` is what the host needs: `manifest.toml`.
 
 ## Assets
@@ -108,8 +110,8 @@ without its class, width, height, or invisible bounding path, as
   committed, and the gates themselves run offline. `go.mod` starts with no
   requirement; the build run sets each one and its `go.sum` lines, and moves
   to another release only when this file names one:
-  - appkit `v0.31.0`, set with
-    `go get github.com/ikigenba/ikigenba/appkit@v0.31.0`: a release that
+  - appkit `v0.32.0`, set with
+    `go get github.com/ikigenba/ikigenba/appkit@v0.32.0`: a release that
     exports the `db` and `version` packages and whose `page.Banner` carries
     the home link, the tools flag, the trail's levels, and `Release` and
     `Commit` but no service launcher. See Adopting appkit below.
@@ -133,10 +135,10 @@ other external dependency needs approval first, the user's or a delivery's.
 
 ### Adopting appkit
 
-appkit is required only at a published release, here `v0.31.0`, fetched
+appkit is required only at a published release, here `v0.32.0`, fetched
 through the ordinary module proxy and checked against the checksum database
 (see the root `AGENTS.md`); the build run sets it with
-`go get github.com/ikigenba/ikigenba/appkit@v0.31.0`. No `replace` directive,
+`go get github.com/ikigenba/ikigenba/appkit@v0.32.0`. No `replace` directive,
 no `go.work`, no local module cache stands in for it.
 
 ## Test files
