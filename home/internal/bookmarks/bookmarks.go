@@ -1,4 +1,4 @@
-// Package bookmarks stores the space's shared links.
+// Package bookmarks stores each user's ordered links.
 package bookmarks
 
 import (
@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"math"
 	"net/url"
 	"strings"
 	"sync"
@@ -110,11 +111,11 @@ func New(d *db.DB, cfg Config) *Store {
 	return &Store{d: d, now: cfg.Now, rand: cfg.Rand}
 }
 
-// List returns all links in the database's case-insensitive name order.
-func (s *Store) List(ctx context.Context) ([]Bookmark, error) {
+// List returns the user's links in their stored order.
+func (s *Store) List(ctx context.Context, user string) ([]Bookmark, error) {
 	result := make([]Bookmark, 0)
 	err := s.d.Read(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, "SELECT id, name, url, created_by, length(icon) > 0, created_at FROM bookmarks ORDER BY name COLLATE NOCASE, id")
+		rows, err := tx.QueryContext(ctx, "SELECT id, name, url, created_by, length(icon) > 0, created_at FROM bookmarks WHERE created_by = ? ORDER BY position, id", user)
 		if err != nil {
 			return err
 		}
@@ -153,7 +154,7 @@ func (s *Store) Create(ctx context.Context, d Draft) (Bookmark, error) {
 	err := s.d.Write(ctx, func(tx *sql.Tx) error {
 		name, rawURL := strings.TrimSpace(d.Name), strings.TrimSpace(d.URL)
 		var count int
-		if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM bookmarks WHERE name = ? COLLATE NOCASE", name).Scan(&count); err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM bookmarks WHERE created_by = ? AND name = ? COLLATE NOCASE", d.CreatedBy, name).Scan(&count); err != nil {
 			return err
 		}
 		if count != 0 {
@@ -179,7 +180,20 @@ func (s *Store) Create(ctx context.Context, d Draft) (Bookmark, error) {
 			icon = d.Icon.Data
 			typ = d.Icon.Type
 		}
-		_, err := tx.ExecContext(ctx, "INSERT INTO bookmarks (id,name,url,icon,icon_type,created_by,created_at) VALUES (?,?,?,?,?,?,?)", b.ID, b.Name, b.URL, icon, typ, b.CreatedBy, b.Created.Format(time.RFC3339))
+		var position int64
+		if err := tx.QueryRowContext(ctx, "SELECT coalesce(max(position),0) FROM bookmarks WHERE created_by = ?", b.CreatedBy).Scan(&position); err != nil {
+			return err
+		}
+		if position == math.MaxInt64 {
+			// Reclaim integer space without changing the owner's visible order.
+			if _, err := tx.ExecContext(ctx, "WITH ordered AS MATERIALIZED (SELECT id, row_number() OVER (ORDER BY position, id) AS position FROM bookmarks WHERE created_by = ?) UPDATE bookmarks SET position = (SELECT position FROM ordered WHERE ordered.id = bookmarks.id) WHERE created_by = ?", b.CreatedBy, b.CreatedBy); err != nil {
+				return err
+			}
+			if err := tx.QueryRowContext(ctx, "SELECT max(position) FROM bookmarks WHERE created_by = ?", b.CreatedBy).Scan(&position); err != nil {
+				return err
+			}
+		}
+		_, err := tx.ExecContext(ctx, "INSERT INTO bookmarks (id,name,url,icon,icon_type,created_by,created_at,position) VALUES (?,?,?,?,?,?,?,?)", b.ID, b.Name, b.URL, icon, typ, b.CreatedBy, b.Created.Format(time.RFC3339), position+1)
 		return err
 	})
 	if err != nil {
@@ -189,11 +203,11 @@ func (s *Store) Create(ctx context.Context, d Draft) (Bookmark, error) {
 }
 
 // Icon returns a stored image or ErrNotFound.
-func (s *Store) Icon(ctx context.Context, id string) (Icon, error) {
+func (s *Store) Icon(ctx context.Context, user, id string) (Icon, error) {
 	var ic Icon
 	err := s.d.Read(ctx, func(tx *sql.Tx) error {
 		var typ sql.NullString
-		err := tx.QueryRowContext(ctx, "SELECT icon,icon_type FROM bookmarks WHERE id = ?", id).Scan(&ic.Data, &typ)
+		err := tx.QueryRowContext(ctx, "SELECT icon,icon_type FROM bookmarks WHERE created_by = ? AND id = ?", user, id).Scan(&ic.Data, &typ)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -213,10 +227,10 @@ func (s *Store) Icon(ctx context.Context, id string) (Icon, error) {
 }
 
 // Delete removes a link and reports whether it existed.
-func (s *Store) Delete(ctx context.Context, id string) (bool, error) {
+func (s *Store) Delete(ctx context.Context, user, id string) (bool, error) {
 	var removed bool
 	err := s.d.Write(ctx, func(tx *sql.Tx) error {
-		r, err := tx.ExecContext(ctx, "DELETE FROM bookmarks WHERE id = ?", id)
+		r, err := tx.ExecContext(ctx, "DELETE FROM bookmarks WHERE created_by = ? AND id = ?", user, id)
 		if err != nil {
 			return err
 		}
@@ -228,4 +242,84 @@ func (s *Store) Delete(ctx context.Context, id string) (bool, error) {
 		return false, err
 	}
 	return removed, nil
+}
+
+// Direction names the neighbour a bookmark moves toward.
+type Direction string
+
+// Left and Right move toward the start and end of the owner's list.
+const (
+	Left  Direction = "left"
+	Right Direction = "right"
+)
+
+// Moved reports the bookmark's indexes before and after a move.
+type Moved struct{ From, To int }
+
+// Move exchanges a bookmark with its neighbour in one database write.
+func (s *Store) Move(ctx context.Context, user, id string, dir Direction) (Moved, bool, error) {
+	var moved Moved
+	changed := false
+	err := s.d.Write(ctx, func(tx *sql.Tx) error {
+		if dir != Left && dir != Right {
+			return nil
+		}
+		rows, err := tx.QueryContext(ctx, "SELECT id, position FROM bookmarks WHERE created_by = ? ORDER BY position, id", user)
+		if err != nil {
+			return err
+		}
+		var ids []string
+		var positions []int64
+		index := -1
+		hasTie := false
+		for rows.Next() {
+			var key string
+			var position int64
+			if err := rows.Scan(&key, &position); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			if key == id {
+				index = len(ids)
+			}
+			if len(positions) > 0 && positions[len(positions)-1] == position {
+				hasTie = true
+			}
+			ids = append(ids, key)
+			positions = append(positions, position)
+		}
+		rowErr := rows.Err()
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		if rowErr != nil {
+			return rowErr
+		}
+		target := index - 1
+		if dir == Right {
+			target = index + 1
+		}
+		if index < 0 || target < 0 || target >= len(ids) {
+			return nil
+		}
+		if hasTie {
+			// A directly inserted tie needs distinct positions to exchange its order.
+			ids[index], ids[target] = ids[target], ids[index]
+			for i, key := range ids {
+				if _, err := tx.ExecContext(ctx, "UPDATE bookmarks SET position = ? WHERE id = ?", i+1, key); err != nil {
+					return err
+				}
+			}
+		} else {
+			if _, err := tx.ExecContext(ctx, "UPDATE bookmarks SET position = CASE id WHEN ? THEN ? WHEN ? THEN ? END WHERE id IN (?, ?)", id, positions[target], ids[target], positions[index], id, ids[target]); err != nil {
+				return err
+			}
+		}
+		moved, changed = Moved{From: index, To: target}, true
+		return nil
+	})
+	if err != nil {
+		return Moved{}, false, err
+	}
+	return moved, changed, nil
 }

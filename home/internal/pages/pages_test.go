@@ -95,7 +95,7 @@ func TestPublicDataAndTemplates(t *testing.T) {
 	cases := []struct {
 		name string
 		data any
-	}{{"landing", pages.LandingData{b, []pages.BookmarkTile{{"id", "supplied", "https://bookmark.test", true}}, []pages.Tile{{"provided-name", "https://provided.test", template.HTML("provided-icon"), true}}, []pages.Tile{{"another-name", "https://another.test", template.HTML("another-icon"), false}}}}, {"landing", pages.LandingData{}}, {"about", pages.AboutData{b, pages.Description}}, {"about", pages.AboutData{}}, {"notfound", pages.NoticeData{b}}, {"notfound", pages.NoticeData{}}, {"bookmarks", pages.BookmarksData{}}, {"bookmarks", pages.BookmarksData{Banner: b, Bookmarks: []pages.BookmarkRow{{"supplied-id", "supplied-name", "https://supplied.test", true, time.Time{}}}}}}
+	}{{"landing", pages.LandingData{b, []pages.BookmarkTile{{"id", "supplied", "https://bookmark.test", true}}, []pages.Tile{{"provided-name", "https://provided.test", template.HTML("provided-icon"), true}}, []pages.Tile{{"another-name", "https://another.test", template.HTML("another-icon"), false}}}}, {"landing", pages.LandingData{}}, {"about", pages.AboutData{b, pages.Description}}, {"about", pages.AboutData{}}, {"notfound", pages.NoticeData{b}}, {"notfound", pages.NoticeData{}}, {"bookmarks", pages.BookmarksData{}}, {"bookmarks", pages.BookmarksData{Banner: b, Bookmarks: []pages.BookmarkRow{{"supplied-id", "supplied-name", "https://supplied.test", true, true, true}}}}}
 	for _, c := range cases {
 		if templateSet(t).Lookup(c.name) == nil {
 			t.Fatal(c.name)
@@ -111,8 +111,8 @@ func TestPublicDataAndTemplates(t *testing.T) {
 	}
 }
 
-// R-DM1R-YDUM R-JMYZ-84F7 R-5S0J-3C52 R-JO6V-LW5W R-JPER-ZNWL
-// R-5OCT-Y0WZ R-4XJ1-J2LP R-7R41-6LU6 R-4ZYU-AM33
+// R-8BDS-9IAE R-E2NS-FVL9 R-91AH-MEPO R-DM1R-YDUM R-5S0J-3C52 R-JPER-ZNWL
+// R-5OCT-Y0WZ R-4XJ1-J2LP R-4ZYU-AM33
 func TestRoutesAndPageData(t *testing.T) {
 	for _, empty := range []bool{false, true} {
 		b := banner()
@@ -124,7 +124,7 @@ func TestRoutesAndPageData(t *testing.T) {
 		ab := b
 		ab.Trail = []page.Level{{Name: "about", URL: "/about"}}
 		h := testHandler(t, pages.Config{Banner: func(page.User) page.Banner { return b }, Telemetry: writer(t, &telemetry.Capture{}, new(bytes.Buffer))})
-		for _, path := range []string{"/", "/about", "/nope", "/about/", "/index.html", "/tools", "/mcp", "/events", "/declarations", "/_appkit", "//", "/bookmarks/", "/bookmarks//icon", "/bookmarks/a/b/icon", "/bookmarks/a/icon/", "/bookmarks/a"} {
+		for _, path := range []string{"/", "/about", "/nope", "/about/", "/index.html", "/tools", "/mcp", "/events", "/declarations", "/_appkit", "//", "/bookmarks/", "/bookmarks//icon", "/bookmarks/a/b/icon", "/bookmarks/a/icon/", "/bookmarks//move", "/bookmarks/a/b/move", "/bookmarks/a/move/", "/bookmarks/a/delete/", "/bookmarks/a"} {
 			for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"} {
 				r := request(method, path+"?route=/about")
 				r.Header.Set("Location", "/about")
@@ -184,7 +184,7 @@ func TestRoutesAndPageData(t *testing.T) {
 	}
 }
 
-// R-JLR2-UCOI R-JMYZ-84F7 R-DM1R-YDUM R-647I-X1K0
+// R-JLR2-UCOI R-DM1R-YDUM R-647I-X1K0
 func TestLandingTilesFromFreshServices(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "services.json")
 	b := banner()
@@ -264,11 +264,11 @@ func TestLandingTilesFromFreshServices(t *testing.T) {
 	}
 }
 
-// R-7R41-6LU6
+// R-8BDS-9IAE R-91AH-MEPO
 func TestDecodedPathChoosesRoute(t *testing.T) {
 	b := banner()
 	h := testHandler(t, pages.Config{Banner: func(page.User) page.Banner { return b }, Telemetry: writer(t, new(telemetry.Capture), new(bytes.Buffer))})
-	for _, path := range []string{"/%61bout", "/%2F", "/_appkit/%74heme.css"} {
+	for _, path := range []string{"/%61bout", "/%2F", "/_appkit/%74heme.css", "/bookmarks/unknown%2Fextra/icon", "/bookmarks/unknown%2Fextra/move", "/bookmarks/%61/move", "/bookmarks/%61/delete", "/bookmarks/%61/icon"} {
 		r := request("GET", path+"?path=/about")
 		decoded := r.Clone(r.Context())
 		decoded.URL.RawPath = ""
@@ -381,7 +381,7 @@ func TestIdentityBeforeAllRoutes(t *testing.T) {
 	}
 }
 
-// R-59Q1-CS0N R-KVBE-BUXX R-516Q-ODTS R-SGJQ-S0NK R-THMQ-69G5
+// R-8A5V-VQJP R-88XZ-HYT0 R-59Q1-CS0N R-516Q-ODTS R-THMQ-69G5
 func TestRequestEvents(t *testing.T) {
 	for _, c := range []struct{ method, path, user, id string }{{"GET", "/", "caller", "specified"}, {"POST", "/about", "caller", ""}, {"GET", "/nope", "caller", ""}, {"HEAD", "/_appkit/nope.css", "caller", "specified"}, {"GET", "/", "", ""}} {
 		capture := new(telemetry.Capture)
@@ -579,7 +579,7 @@ func (w *observingResponse) Write(b []byte) (int, error) {
 	return w.ResponseRecorder.Write(b)
 }
 
-// R-KVBE-BUXX
+// R-8A5V-VQJP
 func TestStartedBeforeResponseAndFinishedAfter(t *testing.T) {
 	capture := new(telemetry.Capture)
 	w := writer(t, capture, new(bytes.Buffer))
@@ -599,7 +599,7 @@ func TestStartedBeforeResponseAndFinishedAfter(t *testing.T) {
 	}
 }
 
-// R-JMYZ-84F7 R-5S0J-3C52 R-JO6V-LW5W R-6F6M-CZ89
+// R-5S0J-3C52 R-6F6M-CZ89
 func TestEachPageUsesItsRequestBanner(t *testing.T) {
 	type returned struct {
 		user   page.User

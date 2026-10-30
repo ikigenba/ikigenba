@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"io/fs"
@@ -12,9 +13,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -130,14 +133,30 @@ func TestDatabaseStatus(t *testing.T) {
 }
 func newerMigrations(t *testing.T) fs.FS {
 	t.Helper()
-	migration, err := fs.ReadFile(home.Migrations(), "0001_bookmarks.sql")
+	entries, err := fs.ReadDir(home.Migrations(), ".")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return fstest.MapFS{"0001_bookmarks.sql": &fstest.MapFile{Data: migration}, "0002_future.sql": &fstest.MapFile{Data: []byte("CREATE TABLE future_fixture (value TEXT);")}}
+	migrations := fstest.MapFS{}
+	maxVersion := 0
+	for _, entry := range entries {
+		data, readErr := fs.ReadFile(home.Migrations(), entry.Name())
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		migrations[entry.Name()] = &fstest.MapFile{Data: data}
+		prefix, _, _ := strings.Cut(entry.Name(), "_")
+		version, parseErr := strconv.Atoi(prefix)
+		if parseErr != nil {
+			t.Fatal(parseErr)
+		}
+		maxVersion = max(maxVersion, version)
+	}
+	migrations[fmt.Sprintf("%04d_future.sql", maxVersion+1)] = &fstest.MapFile{Data: []byte("CREATE TABLE future_fixture (value TEXT);")}
+	return migrations
 }
 
-// R-KWJA-PMOM R-2541-8WS5 R-44CL-C43Y R-5CAQ-PAN3 R-KFGP-CUAW
+// R-8F1H-ETIH R-2541-8WS5 R-44CL-C43Y R-5CAQ-PAN3 R-KFGP-CUAW
 func TestDatabaseLifecycle(t *testing.T) {
 	for _, emptyState := range []bool{false, true} {
 		dir := t.TempDir()
@@ -174,9 +193,12 @@ func TestDatabaseLifecycle(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		rows, err := bookmarks.New(d, bookmarks.Config{Now: fixedNow, Rand: repeatReader(0x5a)}).List(context.Background())
-		if err != nil || len(rows) != 0 {
-			t.Fatal(rows, err)
+		store := bookmarks.New(d, bookmarks.Config{Now: fixedNow, Rand: repeatReader(0x5a)})
+		for _, user := range []string{"caller-id", "another-user", ""} {
+			rows, listErr := store.List(context.Background(), user)
+			if listErr != nil || len(rows) != 0 {
+				t.Fatal(user, rows, listErr)
+			}
 		}
 		if err = d.Close(); err != nil {
 			t.Fatal(err)
@@ -266,7 +288,7 @@ func submit(t *testing.T, address, name string) {
 	}
 }
 
-// R-LNPI-HNLY R-LOXE-VFCN R-LQ5B-973C R-X6DA-DEI4 R-SGJQ-S0NK
+// R-XPWE-GI0Y R-LOXE-VFCN R-LQ5B-973C R-X6DA-DEI4
 func TestPersistentBookmarksAndFetchWiring(t *testing.T) {
 	outer := t.TempDir()
 	marker := filepath.Join(outer, "marker")
@@ -281,7 +303,7 @@ func TestPersistentBookmarksAndFetchWiring(t *testing.T) {
 	f := startRun(t, func(p *Process) { p.Dir = dir; p.HTTP = &http.Client{Transport: transport} })
 	submit(t, f.address, "Persistent fixture bookmark")
 	for _, route := range []string{"/", "/bookmarks"} {
-		_, _, body := request(t, f.address, route)
+		_, _, body := requestAs(t, f.address, route, "fixture-user")
 		if !strings.Contains(body, "Persistent fixture bookmark") {
 			t.Fatal("created bookmark missing")
 		}
@@ -310,7 +332,7 @@ func TestPersistentBookmarksAndFetchWiring(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows, err := bookmarks.New(d, bookmarks.Config{Now: fixedNow, Rand: repeatReader(0x5a)}).List(context.Background())
+	rows, err := bookmarks.New(d, bookmarks.Config{Now: fixedNow, Rand: repeatReader(0x5a)}).List(context.Background(), "fixture-user")
 	if err != nil || len(rows) != 1 || rows[0].ID != "bmk_5a5a5a5a5a5a5a5a" || !rows[0].Created.Equal(fixedNow().UTC().Truncate(time.Second)) {
 		t.Fatal(rows, err)
 	}
@@ -318,13 +340,13 @@ func TestPersistentBookmarksAndFetchWiring(t *testing.T) {
 		t.Fatal(err)
 	}
 	f = startRun(t, func(p *Process) { p.Dir = dir })
-	_, _, body := request(t, f.address, "/bookmarks")
+	_, _, body := requestAs(t, f.address, "/bookmarks", "fixture-user")
 	if !strings.Contains(body, "Persistent fixture bookmark") {
 		t.Fatal("bookmark not persisted")
 	}
 	f.stop(t, "read")
 	f = startRun(t, nil)
-	_, _, body = request(t, f.address, "/bookmarks")
+	_, _, body = requestAs(t, f.address, "/bookmarks", "fixture-user")
 	if strings.Contains(body, "Persistent fixture bookmark") {
 		t.Fatal("bookmark leaked between dirs")
 	}
@@ -381,7 +403,7 @@ func TestRandomSourceSerialized(t *testing.T) {
 	}
 }
 
-// R-1OK2-4RC4
+// R-8CLO-NA13
 func TestNewerDatabaseServesWithWarning(t *testing.T) {
 	dir := t.TempDir()
 	cfg := databaseConfig(dir)
@@ -416,15 +438,55 @@ func TestNewerDatabaseServesWithWarning(t *testing.T) {
 	if warning.Len() == 0 {
 		t.Fatal("fixture has no newer schema warning")
 	}
-	f := startRun(t, func(p *Process) { p.Dir = dir })
-	if f.stderr.text() != warning.String() || f.stderr.count() != 1 {
-		t.Fatalf("warning %q", f.stderr.text())
-	}
-	statusCode, _, body := request(t, f.address, "/bookmarks")
+	warningObserved := make(chan error, 1)
+	f := startRunWithReadiness(t, func(p *Process, notify *net.UnixConn) {
+		p.Dir = dir
+		raw, rawErr := notify.SyscallConn()
+		if rawErr != nil {
+			t.Fatal(rawErr)
+		}
+		stderr := p.Stderr
+		p.Stderr = writerFunc(func(b []byte) (int, error) {
+			var peekErr error
+			observeErr := raw.Control(func(fd uintptr) {
+				var data [1]byte
+				_, _, peekErr = syscall.Recvfrom(int(fd), data[:], syscall.MSG_DONTWAIT|syscall.MSG_PEEK)
+			})
+			if observeErr == nil {
+				switch peekErr {
+				case nil:
+					observeErr = fmt.Errorf("notification was sent before warning")
+				case syscall.EAGAIN:
+				default:
+					observeErr = peekErr
+				}
+			}
+			n, writeErr := stderr.Write(b)
+			select {
+			case warningObserved <- observeErr:
+			default:
+			}
+			return n, writeErr
+		})
+	}, func() {
+		// Keep the notification queued until the warning writer has inspected it.
+		select {
+		case observeErr := <-warningObserved:
+			if observeErr != nil {
+				t.Fatal(observeErr)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("warning was not written")
+		}
+	})
+	statusCode, _, body := requestAs(t, f.address, "/bookmarks", "fixture-user")
 	if statusCode != 200 || !strings.Contains(body, "Newer database bookmark") {
 		t.Fatal(statusCode, body)
 	}
 	f.stop(t, "newer stop")
+	if f.stderr.text() != warning.String() || f.stderr.count() != 1 {
+		t.Fatalf("warning after stop: writes=%d text=%q", f.stderr.count(), f.stderr.text())
+	}
 	after, err := status(t, databaseConfig(dir))
 	if err != nil || before != after {
 		t.Fatal("newer database status changed", err)
@@ -442,6 +504,61 @@ func TestNewerDatabaseServesWithWarning(t *testing.T) {
 	}
 	if started != 1 {
 		t.Fatal(started)
+	}
+}
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(b []byte) (int, error) { return f(b) }
+
+// R-8G9D-SL96
+func TestEarlierDatabaseServesOwnersBookmarks(t *testing.T) {
+	dir := t.TempDir()
+	migration, err := fs.ReadFile(home.Migrations(), "0001_bookmarks.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := databaseConfig(dir)
+	cfg.Migrations = fstest.MapFS{"0001_bookmarks.sql": &fstest.MapFile{Data: migration}}
+	d, err := db.Open(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := []struct{ id, name, user string }{
+		{"legacy-one", "Owner one saved alpha", "owner-one"},
+		{"legacy-two", "Owner two saved beta", "owner-two"},
+		{"legacy-three", "Owner one saved gamma", "owner-one"},
+		{"legacy-four", "Owner two saved delta", "owner-two"},
+	}
+	ctx := context.Background()
+	err = d.Write(ctx, func(tx *sql.Tx) error {
+		for _, row := range rows {
+			if _, insertErr := tx.ExecContext(ctx, "INSERT INTO bookmarks (id,name,url,created_by,created_at) VALUES (?,?,?,?,?)", row.id, row.name, "https://legacy.fixture.test/", row.user, fixedNow().UTC().Truncate(time.Second).Format(time.RFC3339)); insertErr != nil {
+				return insertErr
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = d.Close(); err != nil {
+		t.Fatal(err)
+	}
+	f := startRun(t, func(p *Process) { p.Dir = dir })
+	for _, user := range []string{"owner-one", "owner-two"} {
+		statusCode, _, body := requestAs(t, f.address, "/bookmarks", user)
+		if statusCode != http.StatusOK {
+			t.Fatal(statusCode, body)
+		}
+		for _, row := range rows {
+			if strings.Contains(body, row.name) != (row.user == user) {
+				t.Fatalf("bookmark %q visibility for %q", row.name, user)
+			}
+		}
+	}
+	if code := f.stop(t, "upgraded stop"); code != ExitSuccess {
+		t.Fatal(code)
 	}
 }
 

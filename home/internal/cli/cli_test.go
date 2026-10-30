@@ -290,6 +290,15 @@ type runFixture struct {
 
 func startRun(t *testing.T, modify func(*Process)) *runFixture {
 	t.Helper()
+	return startRunWithReadiness(t, func(p *Process, _ *net.UnixConn) {
+		if modify != nil {
+			modify(p)
+		}
+	}, nil)
+}
+
+func startRunWithReadiness(t *testing.T, modify func(*Process, *net.UnixConn), beforeRead func()) *runFixture {
+	t.Helper()
 	dir, err := os.MkdirTemp("", "home-cli-")
 	if err != nil {
 		t.Fatal(err)
@@ -320,12 +329,15 @@ func startRun(t *testing.T, modify func(*Process)) *runFixture {
 		return page.Banner{Service: pages.ServiceName, Release: "banner display", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 	}}
 	if modify != nil {
-		modify(&p)
+		modify(&p, notify)
 	}
 	ctx, cancel := context.WithCancelCause(context.Background())
 	f.cancel = cancel
 	t.Cleanup(func() { cancel(errors.New("test cleanup")) })
 	go func() { f.result <- Run(ctx, p) }()
+	if beforeRead != nil {
+		beforeRead()
+	}
 	if err = notify.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
@@ -352,13 +364,17 @@ func (f *runFixture) stop(t *testing.T, reason string) int {
 }
 func request(t *testing.T, address, path string) (int, http.Header, string) {
 	t.Helper()
+	return requestAs(t, address, path, "caller-id")
+}
+func requestAs(t *testing.T, address, path, user string) (int, http.Header, string) {
+	t.Helper()
 	client := &http.Client{Timeout: 3 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, "http://"+address+path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	req.Host = "home.test.invalid"
-	req.Header.Set("X-User-Id", "caller-id")
+	req.Header.Set("X-User-Id", user)
 	req.Header.Set("X-User-Email", "caller@example.invalid")
 	req.Header.Set("X-Request-Id", "injected-request")
 	req.Header.Set("X-Forwarded-Proto", "https")
@@ -375,7 +391,7 @@ func request(t *testing.T, address, path string) (int, http.Header, string) {
 	return response.StatusCode, response.Header, string(body)
 }
 
-// R-1NC5-QZLF R-KMS3-NGR2 R-KGOL-QM1L R-KHWI-4DSA R-1PRY-IJ2T R-KJ4E-I5IZ R-SGJQ-S0NK
+// R-1NC5-QZLF R-KMS3-NGR2 R-KGOL-QM1L R-KHWI-4DSA R-1PRY-IJ2T R-KJ4E-I5IZ
 func TestServeAndStop(t *testing.T) {
 	valid := filepath.Join(t.TempDir(), "services.json")
 	if err := os.WriteFile(valid, []byte(`{"services":[{"name":"auth","url":"https://fixture-auth.example.invalid","description":"fixture","socket":"/fixture/auth.sock","enabled":true,"mcp":false}]}`), 0600); err != nil {

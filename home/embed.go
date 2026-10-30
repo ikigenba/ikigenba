@@ -30,7 +30,7 @@ func Etc() fs.FS {
 	return result
 }
 
-//go:embed migrations/0001_bookmarks.sql
+//go:embed migrations/0001_bookmarks.sql migrations/0002_bookmark_order.sql
 var migrations embed.FS
 
 // Migrations returns the database migrations at the filesystem root.

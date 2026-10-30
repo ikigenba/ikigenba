@@ -21,6 +21,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
+	"github.com/ikigenba/ikigenba/home/internal/bookmarks"
 	"github.com/ikigenba/ikigenba/home/internal/cli"
 )
 
@@ -52,10 +53,12 @@ var credentialRequests = []credentialRequest{
 	{"GET", "/", false}, {"HEAD", "/", false}, {"POST", "/about", false},
 	{"GET", "/", true}, {"HEAD", "/", true}, {"GET", "/about", true},
 	{"GET", "/_appkit/theme.css", true}, {"GET", "/missing-fixture", true}, {"POST", "/", true},
-	{"GET", "/bookmarks", true}, {"POST", "/bookmarks", true}, {"GET", "/bookmarks/bmk_5a5a5a5a5a5a5a5a/icon", true}, {"POST", "/bookmarks/bmk_5a5a5a5a5a5a5a5a/delete", true}, {"POST", "/bookmarks", true},
+	{"GET", "/bookmarks", true}, {"POST", "/bookmarks", true}, {"GET", "/bookmarks/{first}/icon", true},
+	{"POST", "/bookmarks", true}, {"POST", "/bookmarks/{second}/move", true},
+	{"POST", "/bookmarks/{first}/delete", true}, {"POST", "/bookmarks", true},
 }
 
-// R-449G-CKT1 R-MCK6-JYLH R-5TU6-1298 R-KT8X-S0TS R-YSFR-NA2O R-SGJQ-S0NK R-MDS2-XQC6
+// R-449G-CKT1 R-MCK6-JYLH R-34VS-2UR8 R-KT8X-S0TS R-YSFR-NA2O R-MDS2-XQC6
 func TestCredentialSequenceLeavesNoSecrets(t *testing.T) {
 	const username = "ghijklmnopqrstuvwxyzZYXWVUTSRQ"
 	const password = "qrstuvwxyzGHIJKLMNOPQRSTUVWXYZ"
@@ -97,7 +100,7 @@ func TestCredentialSequenceLeavesNoSecrets(t *testing.T) {
 		assertNoMarkers(t, eventText(events)+requests+tree, fragments)
 		for _, event := range events {
 			switch event.Name {
-			case "service.started", "service.stopping", "request.started", "request.finished", "bookmark.created", "bookmark.deleted":
+			case "service.started", "service.stopping", "request.started", "request.finished", "bookmark.created", "bookmark.deleted", "bookmark.moved":
 			default:
 				t.Fatal(event)
 			}
@@ -204,14 +207,30 @@ func runCredentialPasses(t *testing.T, env map[string]string, email, bearer, bas
 	transport := &http.Transport{}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	bookmarkID := ""
 	for pass, authorization := range []string{bearer, basic} {
+		var bookmarkIDs []string
 		for i, r := range credentialRequests {
 			var body io.Reader
-			if r.method == "POST" && r.path == "/bookmarks" {
-				body = strings.NewReader(url.Values{"name": {fmt.Sprintf("fixture bookmark %d %d", pass, i)}, "url": {"http://fixture-site.test/path"}, "description": {"fixture detail"}}.Encode())
+			create := r.method == "POST" && r.path == "/bookmarks"
+			if create {
+				submission := bookmarks.Submission{Name: fmt.Sprintf("fixture bookmark %d %d", pass, i), URL: "http://fixture-site.test/path"}
+				if fields := bookmarks.Validate(submission); fields.Any() {
+					t.Fatal("invalid credential sequence submission", fields)
+				}
+				body = strings.NewReader(url.Values{"name": {submission.Name}, "url": {submission.URL}, "description": {"fixture detail"}}.Encode())
+			} else if strings.HasSuffix(r.path, "/move") {
+				body = strings.NewReader(url.Values{"to": {"left"}}.Encode())
 			}
-			request, err := http.NewRequest(r.method, "http://"+listener.Addr().String()+strings.ReplaceAll(r.path, "bmk_5a5a5a5a5a5a5a5a", bookmarkID), body)
+			path := r.path
+			for index, placeholder := range []string{"{first}", "{second}"} {
+				if strings.Contains(path, placeholder) {
+					if len(bookmarkIDs) <= index {
+						t.Fatal("credential sequence targets a bookmark before creating it")
+					}
+					path = strings.ReplaceAll(path, placeholder, bookmarkIDs[index])
+				}
+			}
+			request, err := http.NewRequest(r.method, "http://"+listener.Addr().String()+path, body)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -237,10 +256,13 @@ func runCredentialPasses(t *testing.T, env map[string]string, email, bearer, bas
 					data, _ := io.ReadAll(response.Body)
 					t.Fatalf("credential POST failed %d %s", response.StatusCode, data)
 				}
-				select {
-				case bookmarkID = <-sink.created:
-				case <-time.After(3 * time.Second):
-					t.Fatal("missing creation event")
+				if create {
+					select {
+					case bookmarkID := <-sink.created:
+						bookmarkIDs = append(bookmarkIDs, bookmarkID)
+					case <-time.After(3 * time.Second):
+						t.Fatal("missing creation event")
+					}
 				}
 			}
 			if strings.HasSuffix(r.path, "/icon") && response.StatusCode != 200 {

@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/page"
@@ -46,11 +45,10 @@ type BookmarkTile struct {
 	HasIcon       bool
 }
 
-// BookmarkRow carries a stored link and its creation time.
+// BookmarkRow carries a stored link and its position in the caller's list.
 type BookmarkRow struct {
-	ID, Name, URL string
-	HasIcon       bool
-	Created       time.Time
+	ID, Name, URL        string
+	HasIcon, First, Last bool
 }
 
 // BookmarksData supplies the bookmarks template.
@@ -114,7 +112,7 @@ func Handler(cfg Config) http.Handler {
 			if refuse(w, r, "POST", http.MethodPost) {
 				return
 			}
-			removed, err := cfg.Store.Delete(r.Context(), id)
+			removed, err := cfg.Store.Delete(r.Context(), r.Header.Get("X-User-Id"), id)
 			if err != nil {
 				unreachable(w, r)
 				return
@@ -125,11 +123,27 @@ func Handler(cfg Config) http.Handler {
 			redirect(w, "/bookmarks")
 			return
 		}
+		if action == "move" {
+			if refuse(w, r, "POST", http.MethodPost) {
+				return
+			}
+			values := formBody(r)
+			moved, changed, err := cfg.Store.Move(r.Context(), r.Header.Get("X-User-Id"), id, bookmarks.Direction(values.Get("to")))
+			if err != nil {
+				unreachable(w, r)
+				return
+			}
+			if changed {
+				cfg.Telemetry.Emit(r.Context(), "bookmark.moved", telemetry.Attrs{"bookmark": id, "from": moved.From, "to": moved.To})
+			}
+			redirect(w, "/bookmarks")
+			return
+		}
 		if action == "icon" {
 			if refuse(w, r, "GET, HEAD", http.MethodGet, http.MethodHead) {
 				return
 			}
-			icon, err := cfg.Store.Icon(r.Context(), id)
+			icon, err := cfg.Store.Icon(r.Context(), r.Header.Get("X-User-Id"), id)
 			if err == nil {
 				w.Header().Set("Content-Type", icon.Type)
 				w.Header().Set("Cache-Control", IconCacheControl)
@@ -159,7 +173,7 @@ func Handler(cfg Config) http.Handler {
 		var held []bookmarks.Bookmark
 		if name == "landing" {
 			var err error
-			held, err = cfg.Store.List(r.Context())
+			held, err = cfg.Store.List(r.Context(), r.Header.Get("X-User-Id"))
 			if err != nil {
 				unreachable(w, r)
 				return
@@ -229,7 +243,7 @@ func digits(s string) bool {
 
 func bookmarkRoute(path string) (string, string) {
 	parts := strings.Split(path, "/")
-	if len(parts) == 4 && parts[0] == "" && parts[1] == "bookmarks" && parts[2] != "" && (parts[3] == "icon" || parts[3] == "delete") {
+	if len(parts) == 4 && parts[0] == "" && parts[1] == "bookmarks" && parts[2] != "" && (parts[3] == "icon" || parts[3] == "delete" || parts[3] == "move") {
 		return parts[2], parts[3]
 	}
 	return "", ""
@@ -272,7 +286,7 @@ func redirect(w http.ResponseWriter, location string) {
 }
 
 func showBookmarks(w http.ResponseWriter, r *http.Request, cfg Config, templates *template.Template, status int, s bookmarks.Submission, fieldErrors bookmarks.FieldErrors, noIcon bool) {
-	held, err := cfg.Store.List(r.Context())
+	held, err := cfg.Store.List(r.Context(), r.Header.Get("X-User-Id"))
 	if err != nil {
 		unreachable(w, r)
 		return
@@ -281,8 +295,8 @@ func showBookmarks(w http.ResponseWriter, r *http.Request, cfg Config, templates
 	b := cfg.Banner(bannerUser(r, list))
 	b.Trail = []page.Level{{Name: "bookmarks", URL: "/bookmarks"}}
 	data := BookmarksData{Banner: b, Submission: s, Errors: fieldErrors, NoIcon: noIcon}
-	for _, k := range held {
-		data.Bookmarks = append(data.Bookmarks, BookmarkRow{k.ID, k.Name, k.URL, k.HasIcon, k.Created})
+	for i, k := range held {
+		data.Bookmarks = append(data.Bookmarks, BookmarkRow{k.ID, k.Name, k.URL, k.HasIcon, i == 0, i == len(held)-1})
 	}
 	render(w, r, templates, status, "bookmarks", data)
 }
@@ -293,15 +307,14 @@ func addBookmark(w http.ResponseWriter, r *http.Request, cfg Config, templates *
 		w.WriteHeader(http.StatusUnsupportedMediaType)
 		return
 	}
-	body, _ := io.ReadAll(io.LimitReader(r.Body, 10485761))
-	values, _ := url.ParseQuery(string(body))
+	values := formBody(r)
 	s := bookmarks.Submission{Name: values.Get("name"), URL: values.Get("url")}
 	fieldErrors := bookmarks.Validate(s)
 	if fieldErrors.Any() {
 		showBookmarks(w, r, cfg, templates, http.StatusUnprocessableEntity, s, fieldErrors, false)
 		return
 	}
-	if _, err := cfg.Store.List(r.Context()); err != nil {
+	if _, err := cfg.Store.List(r.Context(), r.Header.Get("X-User-Id")); err != nil {
 		unreachable(w, r)
 		return
 	}
@@ -321,4 +334,14 @@ func addBookmark(w http.ResponseWriter, r *http.Request, cfg Config, templates *
 		location += "?icon=none"
 	}
 	redirect(w, location)
+}
+
+func formBody(r *http.Request) url.Values {
+	mediaType, _, _ := strings.Cut(r.Header.Get("Content-Type"), ";")
+	if !strings.EqualFold(strings.TrimSpace(mediaType), "application/x-www-form-urlencoded") {
+		return nil
+	}
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 10485761))
+	values, _ := url.ParseQuery(string(body))
+	return values
 }

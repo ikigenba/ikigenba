@@ -19,3 +19,11 @@ func TestPositionalValues(t *testing.T) {
 		t.Fatal("positional value mismatch")
 	}
 }
+
+// R-3XEB-LXZL
+func TestMovedPosition(t *testing.T) {
+	m := Moved{2, 1}
+	if m.From != 2 || m.To != 1 {
+		t.Fatal(m)
+	}
+}

@@ -10,7 +10,7 @@ import (
 	"github.com/ikigenba/ikigenba/home/internal/cli"
 )
 
-// R-LF67-T9F3 R-LHM0-KSWH R-LITW-YKN6 R-LK1T-CCDV R-4OZQ-UOEU R-4RFJ-M7W8 R-4Q7N-8G5J
+// R-LF67-T9F3 R-LHM0-KSWH R-XNGL-OYJK R-XOOI-2QA9 R-4OZQ-UOEU R-4RFJ-M7W8 R-4Q7N-8G5J
 func TestEmbeddedFiles(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -18,7 +18,7 @@ func TestEmbeddedFiles(t *testing.T) {
 		names []string
 	}{
 		{"assets", home.Assets, []string{"about.html", "bookmarks.html", "landing.html", "notfound.html"}},
-		{"migrations", home.Migrations, []string{"0001_bookmarks.sql"}},
+		{"migrations", home.Migrations, []string{"0001_bookmarks.sql", "0002_bookmark_order.sql"}},
 		{"etc", home.Etc, []string{"manifest.toml"}},
 	}
 	snapshots := make(map[string]map[string][]byte)

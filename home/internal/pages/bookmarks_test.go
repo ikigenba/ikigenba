@@ -74,7 +74,11 @@ func testHandler(t *testing.T, cfg pages.Config) http.Handler {
 }
 func held(t *testing.T, s *bookmarks.Store) []bookmarks.Bookmark {
 	t.Helper()
-	k, e := s.List(context.Background())
+	return heldFor(t, s, "caller")
+}
+func heldFor(t *testing.T, s *bookmarks.Store, user string) []bookmarks.Bookmark {
+	t.Helper()
+	k, e := s.List(context.Background(), user)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -82,7 +86,11 @@ func held(t *testing.T, s *bookmarks.Store) []bookmarks.Bookmark {
 }
 func create(t *testing.T, s *bookmarks.Store, name string, icon bookmarks.Icon) bookmarks.Bookmark {
 	t.Helper()
-	k, e := s.Create(context.Background(), bookmarks.Draft{Name: name, URL: "https://supplied.test/" + url.PathEscape(name), CreatedBy: "fixture-owner", Icon: icon})
+	return createFor(t, s, "caller", name, icon)
+}
+func createFor(t *testing.T, s *bookmarks.Store, user, name string, icon bookmarks.Icon) bookmarks.Bookmark {
+	t.Helper()
+	k, e := s.Create(context.Background(), bookmarks.Draft{Name: name, URL: "https://supplied.test/" + url.PathEscape(name), CreatedBy: user, Icon: icon})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -100,8 +108,8 @@ func formValues(name, link string) *http.Request {
 func dataFor(b page.Banner, k []bookmarks.Bookmark, s bookmarks.Submission, e bookmarks.FieldErrors, n bool) pages.BookmarksData {
 	b.Trail = []page.Level{{Name: "bookmarks", URL: "/bookmarks"}}
 	d := pages.BookmarksData{b, nil, s, e, n}
-	for _, m := range k {
-		d.Bookmarks = append(d.Bookmarks, pages.BookmarkRow{m.ID, m.Name, m.URL, m.HasIcon, m.Created})
+	for i, m := range k {
+		d.Bookmarks = append(d.Bookmarks, pages.BookmarkRow{m.ID, m.Name, m.URL, m.HasIcon, i == 0, i == len(k)-1})
 	}
 	return d
 }
@@ -122,7 +130,7 @@ func checkUnavailable(t *testing.T, r *httptest.ResponseRecorder, head bool) {
 	}
 }
 
-// R-LE4W-DLUN R-LFCS-RDLC R-LK8E-AGK4 R-9R9H-FC8X R-LSRO-YUQZ R-4Z6P-XD0E R-51MI-OWHS
+// R-LFCS-RDLC R-LSRO-YUQZ R-8WEW-3BQW R-8XMS-H3HL R-92IE-06GD
 func TestBookmarksPageFreshAndHead(t *testing.T) {
 	_, s := database(t)
 	b := banner()
@@ -137,7 +145,7 @@ func TestBookmarksPageFreshAndHead(t *testing.T) {
 		}
 		if step == 3 {
 			for _, m := range held(t, s) {
-				if _, e := s.Delete(context.Background(), m.ID); e != nil {
+				if _, e := s.Delete(context.Background(), "caller", m.ID); e != nil {
 					t.Fatal(e)
 				}
 			}
@@ -158,7 +166,7 @@ func TestBookmarksPageFreshAndHead(t *testing.T) {
 	}
 }
 
-// R-JMYZ-84F7 R-JLR2-UCOI R-JD7S-5YHN R-JEFO-JQ8C R-JQMO-DFNA R-LQBW-7B9L
+// R-JLR2-UCOI R-JD7S-5YHN R-JEFO-JQ8C R-JQMO-DFNA R-LQBW-7B9L R-E07Z-OC3V
 func TestLandingBookmarksFreshAndUnavailable(t *testing.T) {
 	d, s := database(t)
 	b := banner()
@@ -172,7 +180,7 @@ func TestLandingBookmarksFreshAndUnavailable(t *testing.T) {
 		}
 		if step == 3 {
 			for _, m := range held(t, s) {
-				if _, e := s.Delete(context.Background(), m.ID); e != nil {
+				if _, e := s.Delete(context.Background(), "caller", m.ID); e != nil {
 					t.Fatal(e)
 				}
 			}
@@ -196,7 +204,7 @@ func TestLandingBookmarksFreshAndUnavailable(t *testing.T) {
 	checkPage(t, answer(h, request("GET", "/about")), 200, "about", pages.AboutData{Banner: b, Description: pages.Description})
 }
 
-// R-4FOS-KGGG R-LXNA-HXPR R-1EYQ-X5NH R-LWFE-45Z2 R-RRER-HUUS R-MB26-PEVE R-MDHZ-GYCS R-1JUC-G8M9
+// R-99TS-ASWJ R-4FOS-KGGG R-LXNA-HXPR R-LWFE-45Z2 R-RRER-HUUS R-MB26-PEVE R-MDHZ-GYCS R-1JUC-G8M9
 func TestAddValidationAndMediaType(t *testing.T) {
 	_, s := database(t)
 	create(t, s, "existing", bookmarks.Icon{})
@@ -242,7 +250,7 @@ type countBody struct{ reads int }
 func (c *countBody) Read([]byte) (int, error) { c.reads++; return 0, io.EOF }
 func (*countBody) Close() error               { return nil }
 
-// R-50EM-B4R3 R-4EGW-6OPR R-1CIY-5M63 R-55A7-U7PV R-M2IW-10OJ R-56I4-7ZGK R-M4YO-SK5X R-58XW-ZIXY
+// R-94Y6-RPXR R-97DZ-J9F5 R-98LV-X15U R-50EM-B4R3 R-4EGW-6OPR R-M2IW-10OJ R-M4YO-SK5X R-58XW-ZIXY
 func TestAddStoresFetchedIconAndEvents(t *testing.T) {
 	for _, icon := range []bool{false, true} {
 		t.Run(fmt.Sprint(icon), func(t *testing.T) {
@@ -265,7 +273,7 @@ func TestAddStoresFetchedIconAndEvents(t *testing.T) {
 			b := banner()
 			h := testHandler(t, pages.Config{Banner: func(page.User) page.Banner { return b }, Store: s, Favicon: f, Telemetry: w})
 			r := formValues("  Unique  ", "  https://site.test/path  ")
-			r.Header["X-User-Id"] = []string{"first-user", "second-user"}
+			r.Header["X-User-Id"] = []string{"caller", "second-user"}
 			r.Header.Set("X-User-Email", "different-email@test")
 			out := answer(h, r)
 			location := "/bookmarks?icon=none"
@@ -276,7 +284,7 @@ func TestAddStoresFetchedIconAndEvents(t *testing.T) {
 				t.Fatal(out.Code, out.Header())
 			}
 			after := held(t, s)
-			if len(after) != len(before)+1 {
+			if len(after) != len(before)+1 || !reflect.DeepEqual(after[:len(before)], before) || after[len(before)].Name != "Unique" {
 				t.Fatal(after)
 			}
 			var added bookmarks.Bookmark
@@ -287,7 +295,7 @@ func TestAddStoresFetchedIconAndEvents(t *testing.T) {
 					t.Fatal("existing bookmark changed")
 				}
 			}
-			if added.ID == "" || added.URL != "https://site.test/path" || added.CreatedBy != "first-user" {
+			if added.ID == "" || added.URL != "https://site.test/path" || added.CreatedBy != "caller" {
 				t.Fatal(added)
 			}
 			if calls.Load() == 0 {
@@ -298,7 +306,7 @@ func TestAddStoresFetchedIconAndEvents(t *testing.T) {
 				t.Fatal(added)
 			}
 			if added.HasIcon {
-				i, e := s.Icon(context.Background(), added.ID)
+				i, e := s.Icon(context.Background(), "caller", added.ID)
 				if e != nil || i.Type != typ || !bytes.Equal(i.Data, data) {
 					t.Fatal(i, e)
 				}
@@ -312,7 +320,7 @@ func TestAddStoresFetchedIconAndEvents(t *testing.T) {
 				t.Fatal(events)
 			}
 			e := events[1]
-			if e.RequestID != "request-value" || e.User != "first-user" || !reflect.DeepEqual(e.Attrs, telemetry.Attrs{"bookmark": added.ID, "name": added.Name, "icon": added.HasIcon, "icon_bytes": int64(len(data))}) {
+			if e.RequestID != "request-value" || e.User != "caller" || !reflect.DeepEqual(e.Attrs, telemetry.Attrs{"bookmark": added.ID, "name": added.Name, "icon": added.HasIcon, "icon_bytes": int64(len(data))}) {
 				t.Fatal(e)
 			}
 			calls.Store(0)
@@ -331,7 +339,7 @@ func TestAddStoresFetchedIconAndEvents(t *testing.T) {
 	}
 }
 
-// R-542B-GFZ6
+// R-9663-5HOG
 func TestConcurrentSameNameAdds(t *testing.T) {
 	_, s := database(t)
 	arrived := make(chan struct{}, 2)
@@ -376,7 +384,7 @@ func TestConcurrentSameNameAdds(t *testing.T) {
 	}
 }
 
-// R-LGKP-55C1 R-LHSL-IX2Q R-LJ0H-WOTF R-RSMN-VMLH R-MH5O-M9KV R-SLLP-I4YQ R-5CLM-4U61 R-5DTI-ILWQ R-SKDT-4D81 R-1JUC-G8M9 R-LNW3-FRS7 R-5G9B-A5E4 R-51MI-OWHS
+// R-9C9L-2CDX R-9DHH-G44M R-9EPD-TVVB R-9FXA-7NM0 R-LGKP-55C1 R-LHSL-IX2Q R-LJ0H-WOTF R-5DTI-ILWQ R-SKDT-4D81 R-1JUC-G8M9 R-5G9B-A5E4
 func TestIconAndDelete(t *testing.T) {
 	_, s := database(t)
 	icon := bookmarks.Icon{Type: "image/svg+xml; supplied=parameter", Data: []byte("supplied-icon-contents")}
@@ -457,7 +465,7 @@ func TestIconAndDelete(t *testing.T) {
 	}
 }
 
-// R-RMJ5-YRW0 R-ROYY-QBDE R-RQ6V-4343 R-LWFE-45Z2 R-5G9B-A5E4 R-RRER-HUUS R-MEPV-UQ3H R-M8MD-XVE0 R-LQBW-7B9L R-MDHZ-GYCS R-1JUC-G8M9 R-51MI-OWHS
+// R-9B1O-OKN8 R-9KSV-QQKS R-RMJ5-YRW0 R-ROYY-QBDE R-RQ6V-4343 R-LWFE-45Z2 R-5G9B-A5E4 R-RRER-HUUS R-M8MD-XVE0 R-LQBW-7B9L R-MDHZ-GYCS R-1JUC-G8M9
 func TestBookmarkRefusalsAndUnreachable(t *testing.T) {
 	d, s := database(t)
 	create(t, s, "unchanged", bookmarks.Icon{})
@@ -471,7 +479,7 @@ func TestBookmarkRefusalsAndUnreachable(t *testing.T) {
 		for _, tc := range []struct {
 			path, allow string
 			methods     []string
-		}{{"/bookmarks", "GET, HEAD, POST", []string{"PUT", "PATCH", "DELETE", "OPTIONS"}}, {"/bookmarks/unknown/icon", "GET, HEAD", []string{"POST", "PUT", "DELETE", "OPTIONS"}}, {"/bookmarks/unknown/delete", "POST", []string{"GET", "HEAD", "PUT", "DELETE", "OPTIONS"}}} {
+		}{{"/bookmarks", "GET, HEAD, POST", []string{"PUT", "PATCH", "DELETE", "OPTIONS"}}, {"/bookmarks/unknown/icon", "GET, HEAD", []string{"POST", "PUT", "DELETE", "OPTIONS"}}, {"/bookmarks/unknown/delete", "POST", []string{"GET", "HEAD", "PUT", "DELETE", "OPTIONS"}}, {"/bookmarks/unknown/move", "POST", []string{"GET", "HEAD", "PUT", "DELETE", "OPTIONS"}}} {
 			for _, method := range tc.methods {
 				for _, cancelled := range []bool{false, true} {
 					r := request(method, tc.path)
@@ -500,13 +508,15 @@ func TestBookmarkRefusalsAndUnreachable(t *testing.T) {
 			t.Fatal(out.Code, count.reads)
 		}
 		if down {
-			for _, tc := range []struct{ method, path string }{{"GET", "/bookmarks"}, {"HEAD", "/bookmarks"}, {"GET", "/bookmarks/id/icon"}, {"HEAD", "/bookmarks/id/icon"}, {"POST", "/bookmarks/id/delete"}} {
+			for _, tc := range []struct{ method, path string }{{"GET", "/bookmarks"}, {"HEAD", "/bookmarks"}, {"GET", "/bookmarks/id/icon"}, {"HEAD", "/bookmarks/id/icon"}, {"POST", "/bookmarks/id/delete"}, {"POST", "/bookmarks/id/move"}} {
 				r := request(tc.method, tc.path)
 				count := new(countBody)
 				r.Body = count
 				checkUnavailable(t, answer(h, r), tc.method == "HEAD")
-				if tc.path != "/bookmarks" && count.reads != 0 {
-					t.Fatal("body read")
+				if strings.HasSuffix(tc.path, "/icon") || strings.HasSuffix(tc.path, "/delete") {
+					if count.reads != 0 {
+						t.Fatal("body read")
+					}
 				}
 			}
 			fetchBefore := calls.Load()
@@ -552,7 +562,7 @@ func TestStoreFailsDuringFetch(t *testing.T) {
 	}
 }
 
-// R-9R9H-FC8X R-1EYQ-X5NH R-6F6M-CZ89 R-647I-X1K0
+// R-6F6M-CZ89 R-647I-X1K0
 func TestBookmarksUseRequestBanner(t *testing.T) {
 	_, s := database(t)
 	create(t, s, "existing", bookmarks.Icon{})
@@ -641,7 +651,7 @@ func TestMutationAnswersIndependentOfDelivery(t *testing.T) {
 	}
 }
 
-// R-KVBE-BUXX R-516Q-ODTS
+// R-516Q-ODTS
 func TestFormRequestEventAccounting(t *testing.T) {
 	c := new(telemetry.Capture)
 	w := writer(t, c, new(bytes.Buffer))
@@ -668,5 +678,219 @@ func TestFormRequestEventAccounting(t *testing.T) {
 	}
 	if len(out.Header().Values("Set-Cookie")) != 0 {
 		t.Fatal(out.Header())
+	}
+}
+
+// R-E07Z-OC3V R-92IE-06GD R-94Y6-RPXR R-97DZ-J9F5 R-9EPD-TVVB R-9FXA-7NM0 R-902L-8MYZ R-8YUO-UV8A
+func TestCallerOwnsEveryBookmarkRoute(t *testing.T) {
+	_, s := database(t)
+	foreign := createFor(t, s, "another-user", "shared-name", bookmarks.Icon{Type: "image/png", Data: []byte("foreign-icon")})
+	create(t, s, "Zulu", bookmarks.Icon{})
+	create(t, s, "Alpha", bookmarks.Icon{})
+	otherBefore := heldFor(t, s, "another-user")
+	b := banner()
+	c := new(telemetry.Capture)
+	w := writer(t, c, new(bytes.Buffer))
+	h := testHandler(t, pages.Config{Store: s, Telemetry: w, Banner: func(page.User) page.Banner { return b }})
+	before := held(t, s)
+	r := formValues(" shared-name ", " https://new.test/ ")
+	r.Header["X-User-Id"] = []string{"caller", "another-user"}
+	if out := answer(h, r); out.Code != 303 {
+		t.Fatal(out.Code)
+	}
+	after := held(t, s)
+	if len(after) != len(before)+1 || !reflect.DeepEqual(after[:len(before)], before) || after[len(before)].Name != "shared-name" || after[len(before)].URL != "https://new.test/" {
+		t.Fatal(after)
+	}
+	for _, tc := range []struct{ method, path string }{{"GET", "/"}, {"HEAD", "/"}, {"GET", "/bookmarks"}, {"HEAD", "/bookmarks"}, {"GET", "/bookmarks/" + foreign.ID + "/icon"}, {"HEAD", "/bookmarks/" + foreign.ID + "/icon"}, {"POST", "/bookmarks/" + foreign.ID + "/delete"}, {"POST", "/bookmarks/" + foreign.ID + "/move"}} {
+		r := request(tc.method, tc.path+"?name=untrusted&icon=other")
+		r.Header["X-User-Id"] = []string{"caller", "another-user"}
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.Body = io.NopCloser(strings.NewReader("to=left"))
+		out := answer(h, r)
+		switch tc.path {
+		case "/":
+			root := b
+			root.Trail = nil
+			data := pages.LandingData{Banner: root}
+			for _, k := range after {
+				data.Bookmarks = append(data.Bookmarks, pages.BookmarkTile{k.ID, k.Name, k.URL, k.HasIcon})
+			}
+			if tc.method == "GET" {
+				checkPage(t, out, 200, "landing", data)
+			} else if out.Code != 200 || out.Body.Len() != 0 {
+				t.Fatal(out.Code)
+			}
+		case "/bookmarks":
+			if tc.method == "GET" {
+				checkPage(t, out, 200, "bookmarks", dataFor(b, after, bookmarks.Submission{}, bookmarks.FieldErrors{}, false))
+			} else if out.Code != 200 || out.Body.Len() != 0 {
+				t.Fatal(out.Code)
+			}
+		default:
+			if strings.HasSuffix(tc.path, "/icon") {
+				unknown := answer(h, request(tc.method, "/bookmarks/unknown/icon"))
+				if out.Code != 404 || !reflect.DeepEqual(out.Header(), unknown.Header()) || out.Body.String() != unknown.Body.String() {
+					t.Fatal("foreign icon disclosed", out.Code, out.Header())
+				}
+			} else if out.Code != 303 || !reflect.DeepEqual(out.Header().Values("Location"), []string{"/bookmarks"}) || out.Body.Len() != 0 {
+				t.Fatal(out.Code, out.Header())
+			}
+		}
+		if !reflect.DeepEqual(held(t, s), after) || !reflect.DeepEqual(heldFor(t, s, "another-user"), otherBefore) {
+			t.Fatal("request changed caller or foreign bookmarks", tc)
+		}
+	}
+	flush(t, w)
+	for _, e := range c.Events() {
+		if e.Name != "request.started" && e.Name != "request.finished" && e.Name != "bookmark.created" {
+			t.Fatal(e)
+		}
+	}
+}
+
+func moveRequest(id, body, typ string) *http.Request {
+	r := request("POST", "/bookmarks/"+url.PathEscape(id)+"/move?to=right")
+	r.Header["Content-Type"] = []string{typ, "text/plain"}
+	r.Body = io.NopCloser(strings.NewReader(body))
+	return r
+}
+
+// R-9H56-LFCP R-9ID2-Z73E R-9JKZ-CYU3 R-9POH-9TJK R-8A5V-VQJP R-88XZ-HYT0 R-902L-8MYZ
+func TestMoveDirectionsAndEvents(t *testing.T) {
+	for _, tc := range []struct {
+		name, body, typ string
+		index, to       int
+	}{
+		{"left", "to=left", "application/x-www-form-urlencoded", 1, 0},
+		{"right", "to=right", "application/x-www-form-urlencoded", 1, 2},
+		{"first-left", "to=left", "application/x-www-form-urlencoded", 0, 0},
+		{"last-right", "to=right", "application/x-www-form-urlencoded", 2, 2},
+		{"empty", "", "application/x-www-form-urlencoded", 1, 1},
+		{"uppercase", "to=LEFT", "application/x-www-form-urlencoded", 1, 1},
+		{"padded", "to=+left+", "application/x-www-form-urlencoded", 1, 1},
+		{"invalid", "to=up", "application/x-www-form-urlencoded", 1, 1},
+		{"non-form", "to=left", "text/plain", 1, 1},
+		{"no-type", "to=left", "", 1, 1},
+		{"first-value", "to=left&to=right", " APPLICATION/X-WWW-FORM-URLENCODED ; ignored", 1, 0},
+		{"partial-query", "bad=%zz&to=right", "application/x-www-form-urlencoded", 1, 2},
+		{"invalid-to", "to=%zz&to=left", "application/x-www-form-urlencoded", 1, 0},
+		{"semicolon", "to=left;ignored=value", "application/x-www-form-urlencoded", 1, 1},
+		{"missing-id", "to=left", "application/x-www-form-urlencoded", -1, -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, s := database(t)
+			for _, name := range []string{"Zulu", "Alpha", "Middle"} {
+				create(t, s, name, bookmarks.Icon{})
+			}
+			createFor(t, s, "other", "untouched", bookmarks.Icon{})
+			before, others := held(t, s), heldFor(t, s, "other")
+			id := "missing"
+			if tc.index >= 0 {
+				id = before[tc.index].ID
+			}
+			capture := new(telemetry.Capture)
+			w := writer(t, capture, new(bytes.Buffer))
+			h := testHandler(t, pages.Config{Store: s, Telemetry: w, Banner: func(page.User) page.Banner { return banner() }})
+			r := moveRequest(id, tc.body, tc.typ)
+			r.Header["X-User-Id"] = []string{"caller", "other"}
+			out := answer(h, r)
+			if out.Code != 303 || !reflect.DeepEqual(out.Header().Values("Location"), []string{"/bookmarks"}) || out.Body.Len() != 0 {
+				t.Fatal(out.Code, out.Header())
+			}
+			want := append([]bookmarks.Bookmark(nil), before...)
+			if tc.to != tc.index {
+				want[tc.index], want[tc.to] = want[tc.to], want[tc.index]
+			}
+			if !reflect.DeepEqual(held(t, s), want) || !reflect.DeepEqual(heldFor(t, s, "other"), others) {
+				t.Fatal("wrong move", held(t, s), want)
+			}
+			flush(t, w)
+			events := capture.Events()
+			count := 2
+			if tc.to != tc.index {
+				count = 3
+			}
+			if len(events) != count || events[0].Name != "request.started" || events[count-1].Name != "request.finished" || (count == 3 && events[1].Name != "bookmark.moved") {
+				t.Fatal(events)
+			}
+			for _, e := range events {
+				if e.User != "caller" || e.RequestID != "request-value" {
+					t.Fatal(e)
+				}
+			}
+			root := banner()
+			root.Trail = nil
+			landing := pages.LandingData{Banner: root}
+			for _, k := range want {
+				landing.Bookmarks = append(landing.Bookmarks, pages.BookmarkTile{k.ID, k.Name, k.URL, k.HasIcon})
+			}
+			checkPage(t, answer(h, request("GET", "/")), 200, "landing", landing)
+			checkPage(t, answer(h, request("GET", "/bookmarks")), 200, "bookmarks", dataFor(banner(), want, bookmarks.Submission{}, bookmarks.FieldErrors{}, false))
+		})
+	}
+}
+
+// R-E07Z-OC3V R-92IE-06GD R-94Y6-RPXR R-97DZ-J9F5 R-M2IW-10OJ R-9C9L-2CDX R-9FXA-7NM0 R-9JKZ-CYU3
+func TestDifferentCallersKeepIndependentLists(t *testing.T) {
+	_, s := database(t)
+	c := new(telemetry.Capture)
+	w := writer(t, c, new(bytes.Buffer))
+	b := banner()
+	icon := "chosen-icon"
+	h := testHandler(t, pages.Config{Store: s, Telemetry: w, Banner: func(page.User) page.Banner { return b }, Favicon: newFetcher(func(*http.Request) (*http.Response, error) {
+		return response(200, "image/png", icon), nil
+	})})
+	users := []string{"owner-one", "owner-two"}
+	for _, user := range users {
+		for _, name := range []string{"Zulu", "Alpha"} {
+			r := formValues(name, "https://chosen.test/"+name)
+			r.Header["X-User-Id"] = []string{user, "ignored-owner"}
+			if out := answer(h, r); out.Code != 303 {
+				t.Fatal(user, out.Code)
+			}
+		}
+		list := heldFor(t, s, user)
+		if len(list) != 2 || list[0].Name != "Zulu" || list[1].Name != "Alpha" || list[0].CreatedBy != user || list[1].CreatedBy != user {
+			t.Fatal(list)
+		}
+	}
+	for _, user := range users {
+		list := heldFor(t, s, user)
+		r := moveRequest(list[1].ID, "to=left", "application/x-www-form-urlencoded")
+		r.Header.Set("X-User-Id", user)
+		if out := answer(h, r); out.Code != 303 {
+			t.Fatal(out.Code)
+		}
+		list[0], list[1] = list[1], list[0]
+		if !reflect.DeepEqual(heldFor(t, s, user), list) {
+			t.Fatal("different caller's move failed")
+		}
+		for _, path := range []string{"/", "/bookmarks"} {
+			r := request("GET", path)
+			r.Header.Set("X-User-Id", user)
+			out := answer(h, r)
+			if path == "/bookmarks" {
+				checkPage(t, out, 200, "bookmarks", dataFor(b, list, bookmarks.Submission{}, bookmarks.FieldErrors{}, false))
+			} else {
+				root := b
+				root.Trail = nil
+				data := pages.LandingData{Banner: root}
+				for _, k := range list {
+					data.Bookmarks = append(data.Bookmarks, pages.BookmarkTile{k.ID, k.Name, k.URL, k.HasIcon})
+				}
+				checkPage(t, out, 200, "landing", data)
+			}
+		}
+		r = request("GET", "/bookmarks/"+list[0].ID+"/icon")
+		r.Header.Set("X-User-Id", user)
+		if out := answer(h, r); out.Code != 200 || out.Body.String() != icon {
+			t.Fatal(user, out.Code)
+		}
+		r = request("POST", "/bookmarks/"+list[0].ID+"/delete")
+		r.Header.Set("X-User-Id", user)
+		if out := answer(h, r); out.Code != 303 || !reflect.DeepEqual(heldFor(t, s, user), list[1:]) {
+			t.Fatal(user, out.Code)
+		}
 	}
 }
