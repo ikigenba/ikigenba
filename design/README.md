@@ -86,12 +86,12 @@ design/
                     one campaign: its definition, material, and
                     members with their pieces and opens, paged
     webhooks.html   webhooks' landing: the space's webhooks
-    home.html       home's landing: the space's bookmarks, then every
+    home.html       home's landing: the user's bookmarks, then every
                     service on the space, as tiles, backend services over
                     core services
     home-bookmarks.html
-                    home's bookmarks page: the bookmarks in a table beside
-                    the add form
+                    home's bookmarks page: the user's bookmarks as tiles in
+                    edit mode, each moved or removed, over the add form
     icons.html      every icon shipped code emits, and what it says
     landing.html    marketing: hero, features, call to action
     prose.html      long-form docs / blog / legal
@@ -884,45 +884,66 @@ its menu holds home, Bookmarks and About, no Tools.
 - `h1` Services, no lede, then three `main > section`s, each with a
   `.section-head` `h2` and no subtitle over a `nav.services` grid of tiles,
   each an icon over a name linking to a URL, no search field. First
-  `Bookmarks` (`section#bookmarks`; decided 2026-10-23: the space's own
-  links sit above its services, since they are what a person comes to the
-  front door for): the space's bookmarks in name order, each tile the
-  site's favicon as an `img` (decided 2026-10-23: fetched once from the
-  bookmark's URL when it is added and served by home, never hot-linked from
-  the site or a favicon service) over the bookmark's name, linking to its
-  URL; a bookmark whose site had no icon shows the Tabler `world` glyph
-  instead. Its `.section-head` carries, at the right, an `.actions` with an
-  `Add bookmark` button-link to the bookmarks page. The example space keeps
-  `GitHub`, `Grafana`, `Linear`, `Runbook` and `Status page`, the last with
-  the globe. Then the services of the space in two groups (decided
-  2026-10-09), in the services file's order, entries with an icon only:
-  `Backend Services` (`section#backend-services`; renamed 2026-10-23 from
-  `Application Services`, since to a person the suite's own apps are the
-  backend their bookmarks sit in front of), today only `dummy`; then `Core
-  Services` (`section#core-services`), every other service. `home` itself
-  draws no tile: the banner's mark is the way to it, so no tile is ever
-  current. `repos` is disabled, faint and unlinked.
+  `Bookmarks` (`section#bookmarks`; decided 2026-10-23: a person's own
+  links sit above the space's services, since they are what a person comes
+  to the front door for): the signed-in user's bookmarks (decided
+  2026-10-30, reversing 2026-10-23: bookmarks belong to the user who added
+  them, like everything else in the suite, and nobody else sees them) in
+  the user's own order (decided 2026-10-30: set on the bookmarks page),
+  each tile the site's favicon as an `img` (decided 2026-10-23: fetched
+  once from the bookmark's URL when it is added and served by home, never
+  hot-linked from the site or a favicon service) over the bookmark's name,
+  linking to its URL; a bookmark whose site had no icon shows the Tabler
+  `world` glyph instead. Its `.section-head` carries, at the right, an
+  `.actions` with an `Edit` button-link (Tabler `pencil`; decided
+  2026-10-30, in place of `Add bookmark`, since the bookmarks page now
+  edits the tiles as well as adding them) to the bookmarks page. The
+  example user keeps `GitHub`, `Grafana`, `Linear`, `Runbook` and `Status
+  page`, the last with the globe. Then the services of the space in two
+  groups (decided 2026-10-09), in the services file's order, entries with
+  an icon only: `Backend Services` (`section#backend-services`; renamed
+  2026-10-23 from `Application Services`, since to a person the suite's
+  own apps are the backend their bookmarks sit in front of), today only
+  `dummy`; then `Core Services` (`section#core-services`), every other
+  service. `home` itself draws no tile: the banner's mark is the way to
+  it, so no tile is ever current. `repos` is disabled, faint and unlinked.
 - States: no bookmarks (the section stays, with `div#no-bookmarks.empty`
   holding an `Add a bookmark` button-link, so the way to add one is never
   hidden); no services (`div#no-services.empty`).
 
 **home-bookmarks.html** — home's bookmarks page at `/bookmarks`, one level
 down the trail (home / bookmarks), the menu's `Bookmarks` row current. The
-page every signed-in user adds and removes the space's bookmarks on;
-bookmarks are the space's, not the user's (decided 2026-10-23: the front
-door is shared, so what it links to is too).
-- `h1` Bookmarks with a lede; then a `.panel` as app.html's: `table#bookmark-list`
-  of Bookmark / URL / Added / actions, one `tr[data-bookmark=<id>]` per
-  bookmark in name order, the first cell the favicon as `img.favicon` (or the
-  `world` glyph as `svg.ico`) then the name, the URL a link in `code`, Added
-  a UTC `time` to the minute, and a `Remove` ghost button in a `form.inline`
-  posting to `/bookmarks/<id>/delete`; beside it the `Add bookmark` card
-  (Name, URL, a hint that the icon is fetched on add, `Add bookmark`
-  button) posting to `/bookmarks`, shown mid-error: Name `GitHub` → "that
-  name is already taken", URL `wiki.acme.dev/ops/oncall` → "the URL must
-  start with http:// or https://".
-- States: no bookmarks (the table with an empty body); the icon could not
-  be fetched (a warn `.alert`: the bookmark was still added, with the globe).
+page a signed-in user adds, removes and reorders their own bookmarks on
+(decided 2026-10-30, reversing 2026-10-23's "bookmarks are the space's, not
+the user's": a bookmark belongs to the user who added it, and nobody else
+sees it). It is the landing page's tile grid in edit mode (decided
+2026-10-30, replacing the table of Bookmark / URL / Added: the order a user
+sets is the order they see, so they set it on the tiles themselves).
+- A `.section-head`: `h1` Bookmarks, a lede saying the links are the user's
+  alone, and at the right an `.actions` with a `Done` button-link (Tabler
+  `check`) back to the landing page.
+- The user's bookmarks, in their order, as `nav.services.editing`: one
+  `li[data-bookmark=<id>]` per bookmark, the tile unlinked, a `span.tile`
+  titled with the URL holding the favicon `img` (or the `world` glyph) over
+  the name, then a `div.tile-actions` of three ghost small icon buttons,
+  each in a `form.inline` with an `aria-label` naming the bookmark and the
+  action (decided 2026-10-30): move left (Tabler `chevron-left`) posting
+  `to=left` to `/bookmarks/<id>/move`, remove (Tabler `x`) posting to
+  `/bookmarks/<id>/delete`, move right (Tabler `chevron-right`) posting
+  `to=right` to `/bookmarks/<id>/move`. The first tile's move left and the
+  last tile's move right are `disabled`. One place per click, no drag and
+  drop and no page script (decided 2026-10-30). In edit mode a tile's icon
+  box is dashed and its whole cell shaded, so the buttons read as the
+  tile's (`theme.css`, beside the `nav.services` rules).
+- Below the grid the `Add bookmark` card (Name, URL, a hint that a new
+  bookmark goes at the end and that the icon is fetched on add, `Add
+  bookmark` button) posting to `/bookmarks`, shown mid-error: Name `GitHub`
+  → "that name is already taken", URL `wiki.acme.dev/ops/oncall` → "the URL
+  must start with http:// or https://". A name is unique per user.
+- States: no bookmarks (the landing page's `div#no-bookmarks.empty` without
+  its button, since the add form is right below, in place of the grid); the
+  icon could not be fetched (a warn `.alert`: the bookmark was still added,
+  with the globe).
 
 **prompts.html, prompts-prompt.html, prompts-run.html** — prompts at
 `prompts.acme.ikigenba.com`, prompts run by an agent over the suite's models,

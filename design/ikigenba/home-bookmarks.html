@@ -18,50 +18,47 @@
 
 <main>
 <div class="section-head">
-  <div>
-    <h1>Bookmarks</h1>
-    <p>Links the space keeps on its front door. Anyone signed in can add or remove one.</p>
-  </div>
+<div>
+<h1>Bookmarks</h1>
+<p>Your links on the front door. Only you see them.</p>
+</div>
+<div class="actions"><a class="button small" href="home.html"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5l10 -10"/></svg>Done</a></div>
 </div>
 
-<div class="panel">
-<div class="table-scroll">
-<table id="bookmark-list">
-<thead><tr><th>Bookmark</th><th>URL</th><th>Added</th><th></th></tr></thead>
-<tbody>
-<tr data-bookmark="bmk_7c2e9a4f1b8d6035">
-<td><img class="favicon" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2324292f'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='Inter,sans-serif' font-size='17' font-weight='700' fill='white'%3EG%3C/text%3E%3C/svg%3E" alt="">GitHub</td>
-<td><a href="https://github.com/acme-dev"><code>https://github.com/acme-dev</code></a></td>
-<td><time datetime="2026-09-14T09:12Z">2026-09-14 09:12</time></td>
-<td class="row-actions"><form class="inline" method="post" action="/bookmarks/bmk_7c2e9a4f1b8d6035/delete"><button class="ghost small" type="submit">Remove</button></form></td>
-</tr>
-<tr data-bookmark="bmk_1f8b3d6a9c4e7021">
-<td><img class="favicon" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f46800'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='Inter,sans-serif' font-size='17' font-weight='700' fill='white'%3EG%3C/text%3E%3C/svg%3E" alt="">Grafana</td>
-<td><a href="https://grafana.acme.dev/"><code>https://grafana.acme.dev/</code></a></td>
-<td><time datetime="2026-09-14T09:15Z">2026-09-14 09:15</time></td>
-<td class="row-actions"><form class="inline" method="post" action="/bookmarks/bmk_1f8b3d6a9c4e7021/delete"><button class="ghost small" type="submit">Remove</button></form></td>
-</tr>
-<tr data-bookmark="bmk_4a9d2c7e5f1b8063">
-<td><img class="favicon" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235e6ad2'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='Inter,sans-serif' font-size='17' font-weight='700' fill='white'%3EL%3C/text%3E%3C/svg%3E" alt="">Linear</td>
-<td><a href="https://linear.app/acme"><code>https://linear.app/acme</code></a></td>
-<td><time datetime="2026-09-30T16:02Z">2026-09-30 16:02</time></td>
-<td class="row-actions"><form class="inline" method="post" action="/bookmarks/bmk_4a9d2c7e5f1b8063/delete"><button class="ghost small" type="submit">Remove</button></form></td>
-</tr>
-<tr data-bookmark="bmk_9e3f6b1d8a2c5047">
-<td><img class="favicon" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f766e'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='Inter,sans-serif' font-size='17' font-weight='700' fill='white'%3ER%3C/text%3E%3C/svg%3E" alt="">Runbook</td>
-<td><a href="https://wiki.acme.dev/ops/runbook"><code>https://wiki.acme.dev/ops/runbook</code></a></td>
-<td><time datetime="2026-10-02T11:48Z">2026-10-02 11:48</time></td>
-<td class="row-actions"><form class="inline" method="post" action="/bookmarks/bmk_9e3f6b1d8a2c5047/delete"><button class="ghost small" type="submit">Remove</button></form></td>
-</tr>
-<tr data-bookmark="bmk_2b7a5e9c3d6f1058">
-<td><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M3.6 9h16.8"/><path d="M3.6 15h16.8"/><path d="M11.5 3a17 17 0 0 0 0 18"/><path d="M12.5 3a17 17 0 0 1 0 18"/></svg>Status page</td>
-<td><a href="https://status.acme.dev/"><code>https://status.acme.dev/</code></a></td>
-<td><time datetime="2026-10-21T08:30Z">2026-10-21 08:30</time></td>
-<td class="row-actions"><form class="inline" method="post" action="/bookmarks/bmk_2b7a5e9c3d6f1058/delete"><button class="ghost small" type="submit">Remove</button></form></td>
-</tr>
-</tbody>
-</table>
-</div>
+<nav class="services editing" aria-label="Bookmarks">
+<ul>
+<li data-bookmark="bmk_7c2e9a4f1b3d5068"><span class="tile" title="https://github.com/acme-dev"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2324292f'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='Inter,sans-serif' font-size='17' font-weight='700' fill='white'%3EG%3C/text%3E%3C/svg%3E" alt="">GitHub</span>
+<div class="tile-actions">
+<form class="inline" method="post" action="/bookmarks/bmk_7c2e9a4f1b3d5068/move"><input type="hidden" name="to" value="left"><button class="ghost small" type="submit" aria-label="Move GitHub left" title="Move left" disabled><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6l6 6"/></svg></button></form>
+<form class="inline" method="post" action="/bookmarks/bmk_7c2e9a4f1b3d5068/delete"><button class="ghost small" type="submit" aria-label="Remove GitHub" title="Remove"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg></button></form>
+<form class="inline" method="post" action="/bookmarks/bmk_7c2e9a4f1b3d5068/move"><input type="hidden" name="to" value="right"><button class="ghost small" type="submit" aria-label="Move GitHub right" title="Move right"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6l-6 6"/></svg></button></form>
+</div></li>
+<li data-bookmark="bmk_1f8b3d6a9c4e7021"><span class="tile" title="https://grafana.acme.dev/"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f46800'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='Inter,sans-serif' font-size='17' font-weight='700' fill='white'%3EG%3C/text%3E%3C/svg%3E" alt="">Grafana</span>
+<div class="tile-actions">
+<form class="inline" method="post" action="/bookmarks/bmk_1f8b3d6a9c4e7021/move"><input type="hidden" name="to" value="left"><button class="ghost small" type="submit" aria-label="Move Grafana left" title="Move left"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6l6 6"/></svg></button></form>
+<form class="inline" method="post" action="/bookmarks/bmk_1f8b3d6a9c4e7021/delete"><button class="ghost small" type="submit" aria-label="Remove Grafana" title="Remove"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg></button></form>
+<form class="inline" method="post" action="/bookmarks/bmk_1f8b3d6a9c4e7021/move"><input type="hidden" name="to" value="right"><button class="ghost small" type="submit" aria-label="Move Grafana right" title="Move right"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6l-6 6"/></svg></button></form>
+</div></li>
+<li data-bookmark="bmk_4a9d2c7e5f1b8063"><span class="tile" title="https://linear.app/acme"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235e6ad2'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='Inter,sans-serif' font-size='17' font-weight='700' fill='white'%3EL%3C/text%3E%3C/svg%3E" alt="">Linear</span>
+<div class="tile-actions">
+<form class="inline" method="post" action="/bookmarks/bmk_4a9d2c7e5f1b8063/move"><input type="hidden" name="to" value="left"><button class="ghost small" type="submit" aria-label="Move Linear left" title="Move left"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6l6 6"/></svg></button></form>
+<form class="inline" method="post" action="/bookmarks/bmk_4a9d2c7e5f1b8063/delete"><button class="ghost small" type="submit" aria-label="Remove Linear" title="Remove"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg></button></form>
+<form class="inline" method="post" action="/bookmarks/bmk_4a9d2c7e5f1b8063/move"><input type="hidden" name="to" value="right"><button class="ghost small" type="submit" aria-label="Move Linear right" title="Move right"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6l-6 6"/></svg></button></form>
+</div></li>
+<li data-bookmark="bmk_9e3f6b1d8a2c5047"><span class="tile" title="https://wiki.acme.dev/ops/runbook"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f766e'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='Inter,sans-serif' font-size='17' font-weight='700' fill='white'%3ER%3C/text%3E%3C/svg%3E" alt="">Runbook</span>
+<div class="tile-actions">
+<form class="inline" method="post" action="/bookmarks/bmk_9e3f6b1d8a2c5047/move"><input type="hidden" name="to" value="left"><button class="ghost small" type="submit" aria-label="Move Runbook left" title="Move left"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6l6 6"/></svg></button></form>
+<form class="inline" method="post" action="/bookmarks/bmk_9e3f6b1d8a2c5047/delete"><button class="ghost small" type="submit" aria-label="Remove Runbook" title="Remove"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg></button></form>
+<form class="inline" method="post" action="/bookmarks/bmk_9e3f6b1d8a2c5047/move"><input type="hidden" name="to" value="right"><button class="ghost small" type="submit" aria-label="Move Runbook right" title="Move right"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6l-6 6"/></svg></button></form>
+</div></li>
+<li data-bookmark="bmk_2b7a5e9c3d6f1058"><span class="tile" title="https://status.acme.dev/"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M3.6 9h16.8"/><path d="M3.6 15h16.8"/><path d="M11.5 3a17 17 0 0 0 0 18"/><path d="M12.5 3a17 17 0 0 1 0 18"/></svg>Status page</span>
+<div class="tile-actions">
+<form class="inline" method="post" action="/bookmarks/bmk_2b7a5e9c3d6f1058/move"><input type="hidden" name="to" value="left"><button class="ghost small" type="submit" aria-label="Move Status page left" title="Move left"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6l6 6"/></svg></button></form>
+<form class="inline" method="post" action="/bookmarks/bmk_2b7a5e9c3d6f1058/delete"><button class="ghost small" type="submit" aria-label="Remove Status page" title="Remove"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg></button></form>
+<form class="inline" method="post" action="/bookmarks/bmk_2b7a5e9c3d6f1058/move"><input type="hidden" name="to" value="right"><button class="ghost small" type="submit" aria-label="Move Status page right" title="Move right" disabled><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6l-6 6"/></svg></button></form>
+</div></li>
+</ul>
+</nav>
 
 <section class="card">
 <header><h2 class="text-md">Add bookmark</h2></header>
@@ -72,11 +69,10 @@
 <label for="bookmark-url">URL</label>
 <input id="bookmark-url" type="text" name="url" value="wiki.acme.dev/ops/oncall" aria-describedby="url-error">
 <span id="url-error">the URL must start with http:// or https://</span>
-<p class="hint">The site's icon is fetched from the URL when the bookmark is added; a site without one gets a globe.</p>
+<p class="hint">A new bookmark goes at the end. The site's icon is fetched from the URL when the bookmark is added; a site without one gets a globe.</p>
 <button type="submit"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5l0 14"/><path d="M5 12l14 0"/></svg>Add bookmark</button>
 </form>
 </section>
-</div>
 
 <section>
 <div class="section-head">
@@ -88,10 +84,10 @@
 <div class="split">
   <div class="stack">
     <h3 class="text-md">No bookmarks</h3>
-    <table>
-    <thead><tr><th>Bookmark</th><th>URL</th><th>Added</th><th></th></tr></thead>
-    <tbody></tbody>
-    </table>
+    <div id="no-bookmarks" class="empty">
+      <h3 class="text-md">No bookmarks yet</h3>
+      <p>A bookmark is a name and a URL; its site's icon is fetched when it is added.</p>
+    </div>
   </div>
   <div class="stack">
     <h3 class="text-md">Site unreachable</h3>
