@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -25,7 +26,7 @@ func writeEnv(t *testing.T, root string, commands *[]host.Command) host.Env {
 			return host.Result{Stdout: []byte("1000\n")}, nil
 		case command.Name == "id" && reflect.DeepEqual(command.Args, []string{"--group", "--name", "ikigenba"}):
 			return host.Result{Stdout: []byte("ikigenba\n")}, nil
-		case command.Name == "chown":
+		case command.Name == "chown" || command.Name == "setfacl":
 			return host.Result{}, nil
 		default:
 			t.Errorf("unexpected command: %+v", command)
@@ -192,7 +193,7 @@ func TestWritePreflightFailuresLeaveFileAlone(t *testing.T) {
 }
 
 func TestWriteEnsuresAccountThenDirectoryMode(t *testing.T) {
-	// R-9EY8-T4V9
+	// R-6YGC-LLPE
 	root := perAppRoot(t)
 	env := writeEnv(t, root, nil)
 	baseExecute := env.Execute
@@ -214,7 +215,7 @@ func TestWriteEnsuresAccountThenDirectoryMode(t *testing.T) {
 }
 
 func TestWriteAccountFailureAndExistingDirectory(t *testing.T) {
-	// R-9EY8-T4V9
+	// R-6YGC-LLPE
 	root := perAppRoot(t)
 	env := writeEnv(t, root, nil)
 	env.Execute = func(_ context.Context, _ host.Command) (host.Result, error) {
@@ -252,7 +253,7 @@ func TestWriteAccountFailureAndExistingDirectory(t *testing.T) {
 }
 
 func TestWriteKeepsExactFileAndAtomicallyReplacesDifferentFile(t *testing.T) {
-	// R-9HE1-KOCN
+	// R-73BY-4OO6
 	root := perAppRoot(t)
 	env := writeEnv(t, root, nil)
 	if _, err := Write(context.Background(), env, "example.test"); err != nil {
@@ -287,7 +288,7 @@ func TestWriteKeepsExactFileAndAtomicallyReplacesDifferentFile(t *testing.T) {
 }
 
 func TestWriteRetainsPreviousFileUntilRename(t *testing.T) {
-	// R-9HE1-KOCN
+	// R-73BY-4OO6
 	root := perAppRoot(t)
 	file := servicesFile(root)
 	if err := os.MkdirAll(filepath.Dir(file), 0o750); err != nil {
@@ -325,7 +326,7 @@ func TestWriteRetainsPreviousFileUntilRename(t *testing.T) {
 }
 
 func TestWriteAppliesFileModeAndOwnership(t *testing.T) {
-	// R-9ILX-YG3C
+	// R-6ZO8-ZDG3
 	root := perAppRoot(t)
 	var commands []host.Command
 	if _, err := Write(context.Background(), writeEnv(t, root, &commands), "example.test"); err != nil {
@@ -351,7 +352,7 @@ func TestWriteAppliesFileModeAndOwnership(t *testing.T) {
 }
 
 func TestWriteOwnsStagedAndKeptFiles(t *testing.T) {
-	// R-9ILX-YG3C
+	// R-6ZO8-ZDG3
 	root := perAppRoot(t)
 	file := servicesFile(root)
 	var owned []string
@@ -396,7 +397,7 @@ func TestWriteOwnsStagedAndKeptFiles(t *testing.T) {
 }
 
 func TestWriteChownFailurePreservesPreviousFile(t *testing.T) {
-	// R-8MS4-44PM
+	// R-74JU-IGEV
 	root := perAppRoot(t)
 	file := servicesFile(root)
 	if err := os.MkdirAll(filepath.Dir(file), 0o750); err != nil {
@@ -430,7 +431,7 @@ func TestWriteChownFailurePreservesPreviousFile(t *testing.T) {
 }
 
 func TestWriteFailurePreservesAbsenceAndCleansTemporary(t *testing.T) {
-	// R-8MS4-44PM
+	// R-74JU-IGEV
 	for _, cause := range []string{"account", "directory", "ownership", "rename"} {
 		t.Run(cause, func(t *testing.T) {
 			root := perAppRoot(t)
@@ -485,7 +486,7 @@ func TestWriteFailurePreservesAbsenceAndCleansTemporary(t *testing.T) {
 }
 
 func TestWriteExecutesOnlyAccountAndOwnershipCommands(t *testing.T) {
-	// R-BZML-VP81
+	// R-75RQ-W85K
 	root := perAppRoot(t)
 	writeLauncher(t, root, "running")
 	var commands []host.Command
@@ -611,6 +612,113 @@ func TestWriteRejectsFirstManifestExactlyBeforeQueriesOrPublication(t *testing.T
 				directory, dirErr := os.Lstat(filepath.Dir(file))
 				if statErr != nil || dirErr != nil || info.Mode().Perm() != 0o600 || directory.Mode().Perm() != 0o700 || string(readPublishedServices(t, root)) != "previous" {
 					t.Fatalf("publication changed: %v, %v", info, statErr)
+				}
+			})
+		}
+	}
+}
+
+func TestRuntimePublicationEstablishesAccessBeforeClosingExistingDirectory(t *testing.T) {
+	// R-70W5-D56S R-7241-QWXH R-DZ7Z-TEOC R-6ZO8-ZDG3 R-6YGC-LLPE R-74JU-IGEV
+	for _, existing := range []bool{false, true} {
+		for _, failACL := range []bool{false, true} {
+			t.Run(fmt.Sprint(existing, failACL), func(t *testing.T) {
+				root := t.TempDir()
+				dir := filepath.Join(root, "run/ikigenba")
+				file := filepath.Join(dir, "services.json")
+				if existing {
+					if err := os.MkdirAll(dir, 0o750); err != nil {
+						t.Fatal(err)
+					}
+					filesystem, err := os.OpenRoot(root)
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer func() { _ = filesystem.Close() }()
+					if err := filesystem.Chmod("run/ikigenba", 0o755); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(file, []byte("previous"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+					if err := filesystem.Chmod("run/ikigenba/services.json", 0o620); err != nil {
+						t.Fatal(err)
+					}
+					_ = filesystem.Close()
+				}
+				base := writeEnv(t, root, nil).Execute
+				var events []string
+				env := host.Env{Root: root, Execute: func(ctx context.Context, c host.Command) (host.Result, error) {
+					if c.Name == "chown" || c.Name == "setfacl" {
+						info, err := os.Lstat(dir)
+						if err != nil {
+							t.Fatal(err)
+						}
+						want := os.FileMode(0o750)
+						if existing {
+							want = 0o755
+						}
+						if info.Mode().Perm() != want {
+							t.Fatalf("directory closed before ownership/ACL %o", info.Mode().Perm())
+						}
+						if c.Name == "chown" {
+							if len(c.Args) != 3 || c.Args[0] != "root:ikigenba" || c.Args[1] != dir {
+								t.Fatalf("chown %v", c.Args)
+							}
+							tmp, err := os.Lstat(c.Args[2])
+							if err != nil || tmp.Mode().Perm() != 0o640 {
+								t.Fatalf("temporary file not private: %v %v", tmp, err)
+							}
+						} else if !reflect.DeepEqual(c.Args, []string{"-m", "u:nginx:x", dir}) {
+							t.Fatalf("ACL %v", c.Args)
+						}
+						events = append(events, c.Name)
+						if failACL && c.Name == "setfacl" {
+							return host.Result{ExitCode: 5}, nil
+						}
+					}
+					return base(ctx, c)
+				}}
+				changes, err := Write(context.Background(), env, "host.example.test")
+				if !reflect.DeepEqual(events, []string{"chown", "setfacl"}) {
+					t.Fatalf("access order %q", events)
+				}
+				if failACL {
+					var ce *host.CommandError
+					if err == nil || changes != nil || !errors.As(err, &ce) || ce.Result.ExitCode != 5 {
+						t.Fatalf("failure %v %v", changes, err)
+					}
+					if existing {
+						filesystem, err := os.OpenRoot(root)
+						if err != nil {
+							t.Fatal(err)
+						}
+						defer func() { _ = filesystem.Close() }()
+						data, err := filesystem.ReadFile("run/ikigenba/services.json")
+						info, statErr := os.Lstat(file)
+						if err != nil || statErr != nil || string(data) != "previous" || info.Mode().Perm() != 0o620 {
+							t.Fatal("failed publication changed previous")
+						}
+					} else if _, err := os.Lstat(file); !errors.Is(err, os.ErrNotExist) {
+						t.Fatal("failed publication installed file")
+					}
+				} else {
+					if err != nil {
+						t.Fatal(err)
+					}
+					info, err := os.Lstat(dir)
+					if err != nil || info.Mode().Perm() != 0o750 {
+						t.Fatalf("final directory %v %v", info, err)
+					}
+				}
+				entries, err := os.ReadDir(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, entry := range entries {
+					if entry.Name() != "services.json" {
+						t.Fatalf("temporary retained %s", entry.Name())
+					}
 				}
 			})
 		}

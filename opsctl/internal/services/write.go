@@ -123,8 +123,8 @@ func createServicesDirectory(filesystem *os.Root, servicesDirectory string) erro
 	}
 	slices.Reverse(directories)
 	for _, directory := range directories {
-		if err := filesystem.Mkdir(directory, 0o755); err == nil {
-			if err := filesystem.Chmod(directory, 0o755); err != nil {
+		if err := filesystem.Mkdir(directory, servicesDirectoryMode(directory, servicesDirectory)); err == nil {
+			if err := filesystem.Chmod(directory, servicesDirectoryMode(directory, servicesDirectory)); err != nil {
 				return err
 			}
 		} else if !errors.Is(err, os.ErrExist) {
@@ -167,9 +167,7 @@ func createServicesTemporary(filesystem *os.Root, servicesDirectory string) (ser
 
 func chownServices(ctx context.Context, env host.Env, servicesDirectory, file string, perApp bool) error {
 	args := []string{"root:ikigenba"}
-	if perApp {
-		args = append(args, filepath.Join(env.Root, servicesDirectory))
-	}
+	args = append(args, filepath.Join(env.Root, servicesDirectory))
 	args = append(args, file)
 	command := host.Command{
 		Name: "chown",
@@ -179,5 +177,25 @@ func chownServices(ctx context.Context, env host.Env, servicesDirectory, file st
 	if err != nil || result.ExitCode != 0 {
 		return &host.CommandError{Label: "own services file", Result: result, Err: err}
 	}
+	if !perApp {
+		result, err := env.Execute(ctx, host.Command{Name: "setfacl", Args: []string{"-m", "u:nginx:x", filepath.Join(env.Root, servicesDirectory)}})
+		if err != nil || result.ExitCode != 0 {
+			return &host.CommandError{Label: "services directory ACL", Result: result, Err: err}
+		}
+	}
+	filesystem, err := os.OpenRoot(env.Root)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = filesystem.Close() }()
+	if err := filesystem.Chmod(servicesDirectory, 0o750); err != nil {
+		return err
+	}
 	return nil
+}
+func servicesDirectoryMode(directory, destination string) os.FileMode {
+	if directory == destination {
+		return 0o750
+	}
+	return 0o755
 }

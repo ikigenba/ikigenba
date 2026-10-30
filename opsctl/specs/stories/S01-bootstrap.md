@@ -59,6 +59,7 @@ Exit codes:
   1  the operation failed
   2  usage error, or a preflight check failed
   3  refused: opsctl must run as root
+  4  refused: the host's state does not allow it
 
 Run 'opsctl <command> --help' for details on a command.
 ```

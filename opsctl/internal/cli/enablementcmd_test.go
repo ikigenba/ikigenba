@@ -238,7 +238,7 @@ func TestEnablementServicesFailureStopsBeforeService(t *testing.T) {
 				}
 			case "id":
 				return host.Result{ExitCode: 1}, nil
-			case "chown":
+			case "chown", "setfacl":
 				return host.Result{}, errors.New("ownership\r\nfailed")
 			}
 			return host.Result{}, nil
@@ -512,7 +512,7 @@ func TestReleasedEnablementPreservesReleaseAndPublishesRuntimeServices(t *testin
 				return host.Result{Stdout: []byte("1000\n")}, nil
 			}
 			return host.Result{Stdout: []byte("ikigenba\n")}, nil
-		case "nginx", "chown", "useradd":
+		case "nginx", "chown", "setfacl", "useradd":
 			return host.Result{}, nil
 		case "systemctl":
 			if cmd.Args[0] == "show" {

@@ -25,6 +25,7 @@ Platform apps, each one Go binary behind the host's nginx:
 - `candidates` ingests the rows `scrapes` scrapes into candidate businesses with their evidence, enriches and judges them, and keeps prospect lists, saved searches over them that the owner grooms; a finished scrape starts an ingest over the bus, agents start an ingest or a judge by hand, and the owner rules on merges, splits and exclusions.
 - `campaigns` keeps the suite's outreach campaigns: prospects from candidates' prospect lists become members, each gets one piece per channel, mail or email, with a tracking link of its own, and every visit to a link is recorded; the owner marks pieces delivered by hand, and campaigns sends nothing.
 - `ledger` is the suite's books: a double-entry ledger of accounts, transactions, balance assertions, notes and documents for the one business, with its statements; agents post to it and read it over MCP, money is append-only, and later services build on it.
+- `accounts` is the suite's SSH accounts service: it keeps business groups, each a Linux group with a service account and a shared folder on the host, and the SSH users who belong to them, every change made on the host through opsctl and offered to agents as tools, with a read-only page.
 - `dummy` is the reference app: a control panel over in-memory widgets that shows the patterns.
 
 Shared library:

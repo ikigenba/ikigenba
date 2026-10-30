@@ -16,6 +16,7 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/cert"
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 	"github.com/ikigenba/ikigenba/opsctl/internal/dns"
+	"github.com/ikigenba/ikigenba/opsctl/internal/hardening"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 	"github.com/ikigenba/ikigenba/opsctl/internal/nginx"
 	"github.com/ikigenba/ikigenba/opsctl/internal/services"
@@ -45,6 +46,11 @@ Sequence:
                ikigenba-apps.slice, sized from the host's memory, and the
                drop-in that puts nginx in ikigenba-core.slice; restart nginx
                when the drop-in changed
+  hardening    bring the host to its rules: sshd, the shell group, fail2ban,
+               dnf-automatic, the login sessions' slice drop-ins, the suite's
+               state closed to others, and the sudo rule for opsctl's group
+               and user commands; install fail2ban and dnf-automatic when
+               missing
   nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx; an
                app whose manifest is no longer valid, or on a host without
                releases an installed app whose state/ is still under
@@ -343,6 +349,9 @@ func (p *initPreflight) finish(stdout, stderr io.Writer) exitCode {
 	}
 	if err == nil {
 		err = apps.SetupSlices(ctx, env)
+	}
+	if err == nil {
+		_, err = hardening.Apply(ctx, env)
 	}
 	if err == nil {
 		var layout apps.Layout

@@ -1,0 +1,59 @@
+{{/* The about screen at GET /about: the service's name, version and
+     description. One level below the root: .Banner's .Trail is the one
+     level about at /about. Shown only to a signed-in user; a guest is sent
+     to sign in. Data: .Banner (a page.Banner, for banner and footer; its
+     .Service is the name and its .Release and .Commit give the version
+     row); .Description (the service's one-line description, the
+     manifest's). Hooks: title "About accounts"; h1 with text "About
+     accounts"; dl#about.kv holding dt "Name" then dd#about-name
+     (.Banner.Service), dt "Version" then dd#about-version (.Banner.Release
+     and .Banner.Commit, present even when empty), and dt "Description" then
+     dd#about-description (.Description); then section#how.card with h2 "How
+     it works" and three p: "accounts keeps the business groups and the SSH
+     users on this space, and makes each change on the host at once. A group
+     is a business, named by a slug that is valid as a Linux account name.
+     The slug names the group, a service account of the same name, and the
+     folder /srv/<slug>, which the service account owns. The folder is
+     writable by the group's members and unreadable by anyone else, every
+     file in it is writable by the whole group, and it starts as an empty git
+     repository, so members commit to it as themselves. Nothing in it refers
+     to the host, so a business moves to its own host by copying the folder.
+     A group with members cannot be removed, and removing an empty group
+     leaves its folder in place."; "A user is a person, with a login name,
+     one or more ed25519 public keys, membership in one or more groups, and
+     a state, active or locked. Each signs in over SSH with a key, never a
+     password, and gets an ordinary home readable by them alone, with no
+     other access to the host. Locking a user ends their access and their
+     sessions and keeps their home and memberships; unlocking restores them.
+     Only a locked user can be deleted, which removes the account and its
+     home."; "Every change is made by an agent with the tools, and each is
+     recorded in telemetry with its caller and result. A change that could
+     not be made on the host is reported as failed and not recorded as done.
+     This page only lists the groups and users." (/srv/<slug> in a code
+     element). No section of the landing page's. No script but appkit's
+     /_appkit/feedback.js. */}}
+{{define "about"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>About accounts</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>About accounts</h1>
+<section class="card">
+<dl id="about" class="kv">
+<dt>Name</dt><dd id="about-name">{{.Banner.Service}}</dd>
+<dt>Version</dt><dd id="about-version">{{if .Banner.Release}}{{.Banner.Release}}{{if .Banner.Commit}} ({{.Banner.Commit}}){{end}}{{else}}{{.Banner.Commit}}{{end}}</dd>
+<dt>Description</dt><dd id="about-description">{{.Description}}</dd>
+</dl>
+</section>
+<section id="how" class="card" aria-labelledby="how-title">
+<header><h2 id="how-title">How it works</h2></header>
+<p>accounts keeps the business groups and the SSH users on this space, and makes each change on the host at once. A group is a business, named by a slug that is valid as a Linux account name. The slug names the group, a service account of the same name, and the folder <code>/srv/&lt;slug&gt;</code>, which the service account owns. The folder is writable by the group's members and unreadable by anyone else, every file in it is writable by the whole group, and it starts as an empty git repository, so members commit to it as themselves. Nothing in it refers to the host, so a business moves to its own host by copying the folder. A group with members cannot be removed, and removing an empty group leaves its folder in place.</p>
+<p>A user is a person, with a login name, one or more ed25519 public keys, membership in one or more groups, and a state, active or locked. Each signs in over SSH with a key, never a password, and gets an ordinary home readable by them alone, with no other access to the host. Locking a user ends their access and their sessions and keeps their home and memberships; unlocking restores them. Only a locked user can be deleted, which removes the account and its home.</p>
+<p>Every change is made by an agent with the tools, and each is recorded in telemetry with its caller and result. A change that could not be made on the host is reported as failed and not recorded as done. This page only lists the groups and users.</p>
+</section>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

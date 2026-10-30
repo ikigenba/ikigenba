@@ -15,6 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
 	"github.com/ikigenba/ikigenba/opsctl/internal/backup"
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
+	"github.com/ikigenba/ikigenba/opsctl/internal/hardening"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 	"github.com/ikigenba/ikigenba/opsctl/internal/nginx"
 	"github.com/ikigenba/ikigenba/opsctl/internal/release"
@@ -148,7 +149,10 @@ func runReleaseTransition(command string, r release.Release, stdout, stderr io.W
 	}{"secrets", t.secretsStep}, struct {
 		name string
 		run  func() (string, error)
-	}{"resources", t.resourcesStep})
+	}{"resources", t.resourcesStep}, struct {
+		name string
+		run  func() (string, error)
+	}{"hardening", t.hardeningStep})
 	report := func(name string, fn func() (string, error)) bool {
 		detail, err := fn()
 		if err != nil {
@@ -535,8 +539,13 @@ func (t *transition) unitsStep() (string, error) {
 						return "", e
 					}
 					mode := os.FileMode(0o755)
-					if dir == p {
+					if dir == p || dir == "var/opt/ikigenba" {
 						mode = 0o750
+					}
+					if dir == "var/opt/ikigenba" {
+						if _, e = t.command("chown", "root:ikigenba", filepath.Join(t.deps.Root, dir)); e != nil {
+							return "", e
+						}
 					}
 					if e = t.files.Chmod(dir, mode); e != nil {
 						return "", e
@@ -787,6 +796,21 @@ func (t *transition) retentionStep() (string, error) {
 	return "removed " + releaseCount(n, "release"), nil
 }
 
-const activateUsage = "Usage: opsctl activate SHA [LABEL]\n\nMake the release unpacked at /opt/ikigenba/releases/SHA/ the one this host\nruns. SHA is the full 40-character commit sha. LABEL, one token of letters,\ndigits, '.', '_', '/' and '-', is written to releases/SHA/label and given to\nevery app as IKIGENBA_RELEASE; without LABEL the label file is removed.\nMust be run by the opsctl inside that release,\n/opt/ikigenba/releases/SHA/opsctl/bin/opsctl.\n\nEvery check runs before anything outside the release changes: the release\ntree, the host's layout, every app's manifest, its secrets in\n/<host.name>/<app>, and the slices' room for the release. Then every app's\nenvironment file and units are written, previous is pointed at what current\nnamed and current at the release, nginx, /run/ikigenba/services.json and\n/etc/litestream.yml are regenerated, and every app is restarted one at a\ntime, core apps first, each active before the next. A disabled app stays\ndisabled and is not started. An app the host runs that the release lacks is\nstopped and its units removed; its data under /var/opt/ikigenba/APP/ is kept.\nThe first failure stops the run. After a run that succeeds, every release\nneither current nor previous names is removed.\n\nOn a host whose apps were installed one by one, every service is snapshotted\nand the apps' units and /opt/APP/ removed before the release's are written.\nActivating the release current already names redoes everything but moving\ncurrent and previous.\n\nConfiguration keys:\n  aws.region          the region this host's parameters live in\n  host.name           the fully-qualified name this host answers at\n  host.apex           the app that answers at the parent of host.name; unset means none\n  backup.s3_uri       the prefix the cutover's snapshots are written under\n  apps.drain_seconds  how long an app may drain when stopped (default 5)\n  apps.stop_seconds   how long systemd waits for an app to stop (default 10)\n"
+const activateUsage = "Usage: opsctl activate SHA [LABEL]\n\nMake the release unpacked at /opt/ikigenba/releases/SHA/ the one this host\nruns. SHA is the full 40-character commit sha. LABEL, one token of letters,\ndigits, '.', '_', '/' and '-', is written to releases/SHA/label and given to\nevery app as IKIGENBA_RELEASE; without LABEL the label file is removed.\nMust be run by the opsctl inside that release,\n/opt/ikigenba/releases/SHA/opsctl/bin/opsctl.\n\nEvery check runs before anything outside the release changes: the release\ntree, the host's layout, every app's manifest, its secrets in\n/<host.name>/<app>, and the slices' room for the release. Then the host's\nrules are put in place as 'opsctl init' puts them: sshd, the shell group,\nfail2ban, unattended security updates, the login sessions' slices, the\nsuite's directories closed to others, and the accounts sudo rule. Then every\napp's environment file and units are written, previous is pointed at what\ncurrent named and current at the release, nginx, /run/ikigenba/services.json\nand /etc/litestream.yml are regenerated, and every app is restarted one at a\ntime, core apps first, each active before the next. A disabled app stays\ndisabled and is not started. An app the host runs that the release lacks is\nstopped and its units removed; its data under /var/opt/ikigenba/APP/ is\nkept. The first failure stops the run. After a run that succeeds, every\nrelease neither current nor previous names is removed.\n\nOn a host whose apps were installed one by one, every service is snapshotted\nand the apps' units and /opt/APP/ removed before the release's are written.\nActivating the release current already names redoes everything but moving\ncurrent and previous.\n\nConfiguration keys:\n  aws.region          the region this host's parameters live in\n  host.name           the fully-qualified name this host answers at\n  host.apex           the app that answers at the parent of host.name; unset means none\n  backup.s3_uri       the prefix the cutover's snapshots are written under\n  apps.drain_seconds  how long an app may drain when stopped (default 5)\n  apps.stop_seconds   how long systemd waits for an app to stop (default 10)\n"
 
-const rollbackUsage = "Usage: opsctl rollback\n\nMake the release previous names the one this host runs again. current is\npointed at it and previous removed, then every app's environment file and\nunits are written from it, nginx, /run/ikigenba/services.json and\n/etc/litestream.yml are regenerated, and every app is restarted as 'opsctl\nactivate' does. The release keeps the label it last had. Run by the opsctl\ninside that release; any other opsctl hands the command to\n/opt/ikigenba/previous/opsctl/bin/opsctl. After a run that succeeds the\nrelease rolled away from is removed, so there is nothing for a second\nrollback to go back to.\n\nConfiguration keys:\n  aws.region          the region this host's parameters live in\n  host.name           the fully-qualified name this host answers at\n  host.apex           the app that answers at the parent of host.name; unset means none\n  apps.drain_seconds  how long an app may drain when stopped (default 5)\n  apps.stop_seconds   how long systemd waits for an app to stop (default 10)\n"
+const rollbackUsage = "Usage: opsctl rollback\n\nMake the release previous names the one this host runs again. The host's\nrules are put in place as 'opsctl activate' puts them, current is pointed at\nthe release and previous removed, then every app's environment file and\nunits are written from it, nginx, /run/ikigenba/services.json and\n/etc/litestream.yml are regenerated, and every app is restarted as 'opsctl\nactivate' does. The release keeps the label it last had. Run by the opsctl\ninside that release; any other opsctl hands the command to\n/opt/ikigenba/previous/opsctl/bin/opsctl. After a run that succeeds the\nrelease rolled away from is removed, so there is nothing for a second\nrollback to go back to.\n\nConfiguration keys:\n  aws.region          the region this host's parameters live in\n  host.name           the fully-qualified name this host answers at\n  host.apex           the app that answers at the parent of host.name; unset means none\n  apps.drain_seconds  how long an app may drain when stopped (default 5)\n  apps.stop_seconds   how long systemd waits for an app to stop (default 10)\n"
+
+func (t *transition) hardeningStep() (string, error) {
+	changed, err := hardening.Apply(t.ctx, t.env)
+	if err != nil {
+		var ce *host.CommandError
+		if errors.As(err, &ce) {
+			return "", ce
+		}
+		return "", err
+	}
+	if changed {
+		return "updated", nil
+	}
+	return "unchanged", nil
+}

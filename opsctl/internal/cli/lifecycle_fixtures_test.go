@@ -5,10 +5,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/cli"
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
+	"github.com/ikigenba/ikigenba/opsctl/internal/hardening"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
 
@@ -155,4 +157,66 @@ func (writer *failStepWriter) Write(data []byte) (int, error) {
 		writer.writesAfterFailure++
 	}
 	return writer.Buffer.Write(data)
+}
+
+// seedHardeningRules supplies the host's packaged directories and brings the
+// fixture to an already hardened state before the operation under test.
+func seedHardeningRules(t *testing.T, root string) {
+	t.Helper()
+	for _, name := range []string{"etc/ssh/sshd_config.d", "etc/sudoers.d", "etc/systemd/system", "etc/fail2ban", "etc/dnf", "var"} {
+		if err := os.MkdirAll(filepath.Join(root, name), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err := hardening.Apply(context.Background(), host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+		if result, ok := hardeningFixtureQuery(command); ok {
+			return result, nil
+		}
+		return host.Result{}, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// hardeningFixtureQuery supplies only read-only results for a host whose rules
+// are already installed. Mutating commands remain visible to each test.
+func hardeningFixtureQuery(command host.Command) (host.Result, bool) {
+	args := strings.Join(command.Args, " ")
+	switch command.Name {
+	case "id":
+		if args == "--user ikigenba" {
+			return host.Result{Stdout: []byte("998\n")}, true
+		}
+		if args == "--group --name ikigenba" {
+			return host.Result{Stdout: []byte("ikigenba\n")}, true
+		}
+	case "getent":
+		if args == "group shell" {
+			return host.Result{Stdout: []byte("shell:x:999:\n")}, true
+		}
+	case "rpm":
+		if args == "-q fail2ban-server" || args == "-q dnf-automatic" {
+			return host.Result{}, true
+		}
+	case "systemctl":
+		if len(command.Args) == 2 && (command.Args[0] == "is-enabled" || command.Args[0] == "is-active") && (command.Args[1] == "fail2ban.service" || command.Args[1] == "dnf-automatic.timer") {
+			return host.Result{}, true
+		}
+	case "stat":
+		if len(command.Args) > 1 && command.Args[0] == "--format=%U:%G" {
+			var out strings.Builder
+			for _, path := range command.Args[1:] {
+				owner := "root:ikigenba"
+				if strings.Contains(path, "/etc/ikigenba") || strings.Contains(path, "/etc/opt/ikigenba") {
+					owner = "root:root"
+				}
+				out.WriteString(owner + "\n")
+			}
+			return host.Result{Stdout: []byte(out.String())}, true
+		}
+	case "getfacl":
+		return host.Result{Stdout: []byte("user:nginx:--x\n")}, true
+	}
+	return host.Result{}, false
 }

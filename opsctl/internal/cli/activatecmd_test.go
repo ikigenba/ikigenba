@@ -16,6 +16,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
+	"github.com/ikigenba/ikigenba/opsctl/internal/hardening"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 	"github.com/ikigenba/ikigenba/opsctl/internal/release"
 )
@@ -40,6 +41,7 @@ type transitionFixture struct {
 func newTransitionFixture(t *testing.T) *transitionFixture {
 	t.Helper()
 	f := &transitionFixture{t: t, root: t.TempDir(), disabled: map[string]bool{}, active: map[string]bool{}}
+	seedHardeningRules(t, f.root)
 	f.cloud = &transitionCloud{f: f}
 	f.deps = Deps{Root: f.root, EUID: 0, Getenv: func(string) string { return "" }, Now: func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }, Execute: f.execute, Executable: func() (string, error) {
 		return filepath.Join(f.root, "opt/ikigenba/releases", transitionSHA, "opsctl/bin/opsctl"), nil
@@ -96,6 +98,9 @@ func (f *transitionFixture) execute(_ context.Context, c host.Command) (host.Res
 	joined := c.Name + " " + strings.Join(c.Args, " ")
 	if joined == f.fail {
 		return host.Result{ExitCode: 1, Stdout: []byte("command output\n"), Stderr: []byte("error output\n")}, nil
+	}
+	if result, ok := hardeningFixtureQuery(c); ok {
+		return result, nil
 	}
 	switch c.Name {
 	case "id":
@@ -278,7 +283,7 @@ func TestActivateConfigurationInert(t *testing.T) {
 	}
 }
 func TestActivateSuccessfulReleaseAndReactivation(t *testing.T) {
-	// R-SJ12-ASZT R-B3X7-XNXZ R-BDOE-ZTVJ R-BIK0-IWUB R-BKZT-AGBP R-TWU3-HX9Q R-SSS9-CYXD R-BR3B-7B16 R-BSB7-L2RV R-BVYW-QDZY R-BYEP-HXHC
+	// R-SJ12-ASZT R-96TV-G8QK R-BDOE-ZTVJ R-BIK0-IWUB R-BKZT-AGBP R-9BPG-ZBPC R-SSS9-CYXD R-BR3B-7B16 R-BSB7-L2RV R-BVYW-QDZY R-9CXD-D3G1
 	f := newTransitionFixture(t)
 	f.addRelease(transitionOld, "dropped")
 	f.link("current", transitionOld)
@@ -296,7 +301,7 @@ func TestActivateSuccessfulReleaseAndReactivation(t *testing.T) {
 	if code != 0 || err != "" {
 		t.Fatalf("%d\n%s\n%s", code, out, err)
 	}
-	expectedSteps := []string{"release", "layout", "manifests", "secrets", "resources", "label", "env", "units", "links", "systemd", "nginx", "services", "litestream", "service", "retention"}
+	expectedSteps := []string{"release", "layout", "manifests", "secrets", "resources", "hardening", "label", "env", "units", "links", "systemd", "nginx", "services", "litestream", "service", "retention"}
 	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
 	if len(lines) != len(expectedSteps) {
 		t.Fatalf("output %s", out)
@@ -464,7 +469,7 @@ func TestActivateCoreFirstDisabledAndServiceFailure(t *testing.T) {
 	}
 }
 func TestActivateCutoverAndSnapshotFailure(t *testing.T) {
-	// R-SRKC-Z76O R-BHC4-553M R-B3X7-XNXZ R-CUKM-FZ8E
+	// R-SRKC-Z76O R-BHC4-553M R-96TV-G8QK R-CUKM-FZ8E
 	for _, failSnapshot := range []bool{false, true} {
 		t.Run(fmt.Sprint(failSnapshot), func(t *testing.T) {
 			f := newTransitionFixture(t)
@@ -491,6 +496,16 @@ func TestActivateCutoverAndSnapshotFailure(t *testing.T) {
 			if code != 0 || err != "" || !strings.Contains(out, "layout: ok (per app; cutover of 1 app)") || !strings.Contains(out, "snapshot: ok (1 service)") || !strings.Contains(out, "cutover: ok (removed 1 app from /opt)") {
 				t.Fatalf("%d %s %s", code, out, err)
 			}
+			expectedSteps := []string{"release", "layout", "manifests", "secrets", "resources", "hardening", "snapshot", "cutover", "label", "env", "units", "links", "systemd", "nginx", "services", "litestream", "service", "retention"}
+			lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+			if len(lines) != len(expectedSteps) {
+				t.Fatalf("step count %s", out)
+			}
+			for i, step := range expectedSteps {
+				if !strings.HasPrefix(lines[i], step+": ok (") {
+					t.Fatalf("step %d %q, want %s", i, lines[i], step)
+				}
+			}
 			f.missing("opt/legacy")
 			f.missing("var/lib/ikigenba/services.json")
 			if f.read("opt/aws/keep") != "keep" || f.read("var/opt/ikigenba/legacy/state/keep") != "state" {
@@ -504,7 +519,7 @@ func TestActivateCutoverAndSnapshotFailure(t *testing.T) {
 }
 
 func TestActivateNewDataModesAndDroppedFailure(t *testing.T) {
-	// R-TWU3-HX9Q R-SJ12-ASZT R-BX6T-45QN R-BYEP-HXHC
+	// R-9BPG-ZBPC R-SJ12-ASZT R-BX6T-45QN R-9CXD-D3G1
 	f := newTransitionFixture(t)
 	f.addRelease(transitionOld, "dropped")
 	f.link("current", transitionOld)
@@ -1009,4 +1024,66 @@ func TestActivateRepairsOpsctlLink(t *testing.T) {
 			})
 		}
 	}
+}
+
+// seedHardeningRules supplies the host's packaged directories and brings the
+// fixture to an already hardened state before the operation under test.
+func seedHardeningRules(t *testing.T, root string) {
+	t.Helper()
+	for _, name := range []string{"etc/ssh/sshd_config.d", "etc/sudoers.d", "etc/systemd/system", "etc/fail2ban", "etc/dnf", "var"} {
+		if err := os.MkdirAll(filepath.Join(root, name), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err := hardening.Apply(context.Background(), host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+		if result, ok := hardeningFixtureQuery(command); ok {
+			return result, nil
+		}
+		return host.Result{}, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// hardeningFixtureQuery supplies only read-only results for a host whose rules
+// are already installed. Mutating commands remain visible to each test.
+func hardeningFixtureQuery(command host.Command) (host.Result, bool) {
+	args := strings.Join(command.Args, " ")
+	switch command.Name {
+	case "id":
+		if args == "--user ikigenba" {
+			return host.Result{Stdout: []byte("998\n")}, true
+		}
+		if args == "--group --name ikigenba" {
+			return host.Result{Stdout: []byte("ikigenba\n")}, true
+		}
+	case "getent":
+		if args == "group shell" {
+			return host.Result{Stdout: []byte("shell:x:999:\n")}, true
+		}
+	case "rpm":
+		if args == "-q fail2ban-server" || args == "-q dnf-automatic" {
+			return host.Result{}, true
+		}
+	case "systemctl":
+		if len(command.Args) == 2 && (command.Args[0] == "is-enabled" || command.Args[0] == "is-active") && (command.Args[1] == "fail2ban.service" || command.Args[1] == "dnf-automatic.timer") {
+			return host.Result{}, true
+		}
+	case "stat":
+		if len(command.Args) > 1 && command.Args[0] == "--format=%U:%G" {
+			var out strings.Builder
+			for _, path := range command.Args[1:] {
+				owner := "root:ikigenba"
+				if strings.Contains(path, "/etc/ikigenba") || strings.Contains(path, "/etc/opt/ikigenba") {
+					owner = "root:root"
+				}
+				out.WriteString(owner + "\n")
+			}
+			return host.Result{Stdout: []byte(out.String())}, true
+		}
+	case "getfacl":
+		return host.Result{Stdout: []byte("user:nginx:--x\n")}, true
+	}
+	return host.Result{}, false
 }

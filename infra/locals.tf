@@ -7,7 +7,6 @@ locals {
   instance_type      = "t3.medium"
   root_volume_gb     = 80
   backup_expiry_days = 30
-  ssh_admin_cidr     = "208.118.151.172/32"
   # The monthly cost budget only notifies; it never stops or changes anything.
   budget_monthly_usd = 75
   budget_email       = "mgreenly+295229566359@gmail.com"

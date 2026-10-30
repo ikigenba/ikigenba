@@ -27,36 +27,37 @@ the first step that reads it.
 
 The sequence is the setup commands that exist. It is empty until a group adds
 one to it, and each group that does says so; `S06-certificates.md` adds
-`certificate`, this group adds `slices`, `S05-nginx.md` adds `nginx.conf`,
-`S08-backup.md` adds `litestream` and `timers`, and `S07-apps.md` adds `apps`,
-in that order. `slices` reads no manifest, so it comes before every step that
-does: a host whose installed manifests the running opsctl refuses still gets its
-slices, which `activate` needs to judge a fixed release. Every
-setup command is idempotent, so `init` is too, and a step's inputs are read from
-the store every run — which is why changing a period or a zone is `config set`
-followed by `init`, and never an edit to something `init` generated.
-`devctl space create` runs that pair once, setting its ten keys and running
-`init`; on any later day an agent runs it on the host, or the space is
-recreated. Two of the generated files also answer to the apps on the
-host — `/etc/litestream.yml` to what is under `/var/opt/ikigenba` too — and the
-nginx file to which apps are disabled as well. So does the services file
-(`S09-services.md`), which `init` rewrites every run without printing a line for
-it; `activate`, `rollback`, `restore`, `disable`, and `enable` regenerate those
-themselves when they change what they answer to (see `S07-apps.md`,
-`S08-backup.md`, and `S10-releases.md`); `init` remains the only command that enables the units
-behind them.
+`certificate`, this group adds `slices`, `S11-hardening.md` adds `hardening`,
+`S05-nginx.md` adds `nginx.conf`, `S08-backup.md` adds `litestream` and
+`timers`, and `S07-apps.md` adds `apps`, in that order. `slices` reads no
+manifest, so it comes before every step that does: a host whose installed
+manifests the running opsctl refuses still gets its slices, which `activate`
+needs to judge a fixed release. Every setup command is idempotent, so `init` is
+too, and a step's inputs are read from the store every run — which is why
+changing a period or a zone is `config set` followed by `init`, and never an
+edit to something `init` generated. `devctl space create` runs that pair once,
+setting its ten keys and running `init`; on any later day an agent runs it on
+the host, or the space is recreated. Two of the generated files also answer to
+the apps on the host — `/etc/litestream.yml` to what is under
+`/var/opt/ikigenba` too — and the nginx file to which apps are disabled as well.
+So does the services file (`S09-services.md`), which `init` rewrites every run
+without printing a line for it; `activate`, `rollback`, `restore`, `disable`,
+and `enable` regenerate those themselves when they change what they answer to
+(see `S07-apps.md`, `S08-backup.md`, and `S10-releases.md`); `init` remains the
+only command that enables the units behind them.
 
 `init` runs on three kinds of host. A *released host* is one where
 `/opt/ikigenba/current` exists (`S10-releases.md`): its apps are the ones the
 release `current` names, the `apps` step writes each one's environment file and
 units exactly as `activate` does, together with the boot unit
 `ikigenba-services.service` (`S09-services.md`), and the services file is
-`/run/ikigenba/services.json`. A *per-app host* has no `current` and is laid out the
-legacy way, each app under `/opt/<app>/` (`S07-apps.md`): there `init` keeps
-that layout's behaviour, its apps are the ones under `/opt/<app>/`, and the services file is
-`/var/lib/ikigenba/services.json`; a story written for that layout says so in
-its preconditions. A *fresh host* has neither: `init` does the host's own work —
-the certificate, the slices, an nginx file with no apps, an empty
+`/run/ikigenba/services.json`. A *per-app host* has no `current` and is laid out
+the legacy way, each app under `/opt/<app>/` (`S07-apps.md`): there `init` keeps
+that layout's behaviour, its apps are the ones under `/opt/<app>/`, and the
+services file is `/var/lib/ikigenba/services.json`; a story written for that
+layout says so in its preconditions. A *fresh host* has neither: `init` does the
+host's own work — the certificate, the slices, the host rules
+(`S11-hardening.md`), an nginx file with no apps, an empty
 `/run/ikigenba/services.json`, the account `ikigenba`, Litestream, and the
 timers — and has no app to write. On any host, once the preflight has passed and
 before the `certificate` step, `init` makes `/usr/local/bin/opsctl` a link when
@@ -147,6 +148,11 @@ Sequence:
                ikigenba-apps.slice, sized from the host's memory, and the
                drop-in that puts nginx in ikigenba-core.slice; restart nginx
                when the drop-in changed
+  hardening    bring the host to its rules: sshd, the shell group, fail2ban,
+               dnf-automatic, the login sessions' slice drop-ins, the suite's
+               state closed to others, and the sudo rule for opsctl's group
+               and user commands; install fail2ban and dnf-automatic when
+               missing
   nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx; an
                app whose manifest is no longer valid, or on a host without
                releases an installed app whose state/ is still under
@@ -237,7 +243,8 @@ Postconditions:
 
 - The setup sequence has run: the host holds its certificate, the nginx file
   generated from the store and the release `current` names, the three slices and
-  nginx's drop-in, `/etc/litestream.yml` naming every database the current
+  nginx's drop-in, the host rules `S11-hardening.md` describes,
+  `/etc/litestream.yml` naming every database the current
   release's manifests declare, with `litestream.service` enabled, the two backup
   unit pairs with each timer enabled whose period the store gives as non-zero,
   and the certificate renewal pair with its timer enabled.
@@ -298,7 +305,7 @@ Preconditions:
 Postconditions:
 
 - The setup sequence has run, generated from the store and what is under
-  `/opt`.
+  `/opt`, and the host holds the rules `S11-hardening.md` describes.
 - `/var/lib/ikigenba/services.json` has been rewritten from the store, what
   is under `/opt`, and which apps are disabled. No line reports it.
   `/run/ikigenba/services.json` was not written.
@@ -355,6 +362,8 @@ Postconditions:
   `*.sbx.ikigenba.dev`, with hooks that name `opsctl` on the PATH.
 - The three slices and nginx's drop-in are written, sized from the host's
   memory, and nginx runs in `ikigenba-core.slice`.
+- The host holds the rules `S11-hardening.md` describes, as "An agent's first
+  init hardens the host" leaves them.
 - `/etc/nginx/conf.d/ikigenba.conf` is the configuration of a host with no
   apps (`S05-nginx.md`), and nginx has been reloaded.
 - `/run/ikigenba/services.json` holds an empty `services` list
@@ -645,9 +654,9 @@ Preconditions:
 
 Postconditions:
 
-- The steps before `apps` ran as on the ready host: the slices, the nginx
-  file, `/run/ikigenba/services.json`, `/etc/litestream.yml`, and the timers
-  are as they generate them.
+- The steps before `apps` ran as on the ready host: the slices, the host
+  rules, the nginx file, `/run/ikigenba/services.json`, `/etc/litestream.yml`,
+  and the timers are as they generate them.
 - No app changed: every app's environment file and units, and
   `ikigenba-services.service`, are as they were, and no app was restarted.
 - Running `init` again before the secret is pushed stops at the same place
@@ -713,6 +722,8 @@ Postconditions:
 - The `slices` step ran: the three slice units and nginx's drop-in are
   written, sized from the host's memory, systemd was reloaded, and nginx
   was restarted once, into `ikigenba-core.slice`.
+- The `hardening` step ran: the host holds the rules `S11-hardening.md`
+  describes.
 - Nothing from `nginx.conf` on ran: `/etc/nginx/conf.d/ikigenba.conf`,
   `/var/lib/ikigenba/services.json`, `/etc/litestream.yml`, and the timers
   are as they were, and nginx was not reloaded.
@@ -784,7 +795,7 @@ Preconditions:
 Postconditions:
 
 - The `certificate` step found nothing to renew and changed nothing. The
-  `slices` step ran as on any host.
+  `slices` and `hardening` steps ran as on any host.
 - Nothing from `nginx.conf` on ran: `/etc/nginx/conf.d/ikigenba.conf`,
   `/var/lib/ikigenba/services.json`, `/etc/litestream.yml`, and the timers
   are as they were, and nginx was not reloaded.
@@ -857,7 +868,7 @@ Preconditions:
 Postconditions:
 
 - The `certificate` step found nothing to renew and changed nothing. The
-  `slices` step ran as on any host.
+  `slices` and `hardening` steps ran as on any host.
 - Nothing from `nginx.conf` on ran: `/etc/nginx/conf.d/ikigenba.conf`,
   `/var/lib/ikigenba/services.json`, `/etc/litestream.yml`, and the timers
   are as they were, and nginx was not reloaded.

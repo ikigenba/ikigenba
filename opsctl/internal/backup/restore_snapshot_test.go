@@ -41,7 +41,7 @@ func snapshotRestoreExecute(t *testing.T, root string, events *[]string) func(co
 	}
 }
 func TestRestoreSnapshotRegeneratesEnvironmentAndUsesIncludedDatabase(t *testing.T) {
-	// R-FTMA-1XJY R-FMVM-I2DD R-D97F-184Q R-TPIP-7ATK R-GCHI-J8XY R-TOAS-TJ2V R-TPIP-7ATK R-GHD4-2BWQ R-TOAS-TJ2V
+	// R-FTMA-1XJY R-FMVM-I2DD R-D97F-184Q R-RP29-000R R-RMMG-8GJD R-TOAS-TJ2V R-RP29-000R R-RNUC-M8A2 R-TOAS-TJ2V
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -100,7 +100,7 @@ func TestRestoreSnapshotRegeneratesEnvironmentAndUsesIncludedDatabase(t *testing
 		t.Fatalf("environment mode %v %v", info, err)
 	}
 	db = readHostRestoreFile(t, root, "var/opt/ikigenba/notes/state/app.db")
-	assertRestoreMetadata(t, root, "var/opt/ikigenba/notes/state/app.db", 0600, os.Getuid(), os.Getgid())
+	assertRestoreMetadata(t, root, "var/opt/ikigenba/notes/state/app.db", 0640, os.Getuid(), os.Getgid())
 	if db[18] != 2 || db[19] != 2 {
 		t.Fatal("snapshot database was not converted to WAL")
 	}
@@ -112,7 +112,7 @@ func TestRestoreSnapshotRegeneratesEnvironmentAndUsesIncludedDatabase(t *testing
 	}
 }
 func TestRestoreSnapshotPreworkflowAndSourceFailures(t *testing.T) {
-	// R-GB9M-5H79 R-GCHI-J8XY R-FMVM-I2DD
+	// R-GB9M-5H79 R-RMMG-8GJD R-FMVM-I2DD
 	tests := []struct {
 		name, from, hostName string
 		at                   *time.Time
@@ -232,7 +232,7 @@ func TestRestoreSnapshotSecretsFailuresStopBeforeUnits(t *testing.T) {
 }
 
 func TestRestoreSnapshotEnvironmentIgnoresArchivedDirectory(t *testing.T) {
-	// R-TPIP-7ATK R-TPIP-7ATK R-TOAS-TJ2V
+	// R-RP29-000R R-RP29-000R R-TOAS-TJ2V
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -260,7 +260,7 @@ func TestRestoreSnapshotEnvironmentIgnoresArchivedDirectory(t *testing.T) {
 }
 
 func TestRestoreSnapshotWithoutArchivedManifestRegeneratesEnvironment(t *testing.T) {
-	// R-TPIP-7ATK R-TOAS-TJ2V R-TOAS-TJ2V
+	// R-RP29-000R R-TOAS-TJ2V R-TOAS-TJ2V
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -285,7 +285,7 @@ func TestRestoreSnapshotWithoutArchivedManifestRegeneratesEnvironment(t *testing
 }
 
 func TestRestoreSnapshotEnvironmentFailuresRemainAtFiles(t *testing.T) {
-	// R-TPIP-7ATK R-FMVM-I2DD R-TOAS-TJ2V
+	// R-RP29-000R R-FMVM-I2DD R-TOAS-TJ2V
 	for _, tc := range []struct{ name, failCommand, stage string }{
 		{name: "account", failCommand: "id --user ikigenba", stage: "ownership"},
 		{name: "publication", stage: "environment"},
@@ -340,7 +340,7 @@ func TestRestoreSnapshotEnvironmentFailuresRemainAtFiles(t *testing.T) {
 }
 
 func TestRestoreSnapshotMapsDatabaseOwnership(t *testing.T) {
-	// R-GHD4-2BWQ R-GA1P-RPGK
+	// R-RNUC-M8A2 R-RLEJ-UOSO
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	writeFile(t, root, "opt/notes/etc/manifest.toml", "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/nested/app.db\"\n", 0600)
@@ -359,7 +359,7 @@ func TestRestoreSnapshotMapsDatabaseOwnership(t *testing.T) {
 		restoreMember{name: "etc/manifest.toml", data: []byte("app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/nested/app.db\"\n")},
 		restoreMember{name: "state", typeflag: tar.TypeDir, mode: 0750, uname: "ikigenba", gname: "ikigenba"},
 		restoreMember{name: "state/nested", typeflag: tar.TypeDir, mode: 0710, uname: "ikigenba", gname: "ikigenba"},
-		restoreMember{name: "state/nested/app.db", data: db, mode: 0640, uname: "ikigenba", gname: "ikigenba"},
+		restoreMember{name: "state/nested/app.db", data: db, mode: 06640, uname: "ikigenba", gname: "ikigenba"},
 		restoreMember{name: "state/nested/app.db-wal", data: []byte("sidecar"), mode: 0640, uname: "ikigenba", gname: "ikigenba"},
 		restoreMember{name: "state/nested/app.db-shm", data: []byte("sidecar"), mode: 0640, uname: "ikigenba", gname: "ikigenba"},
 	)
@@ -371,7 +371,18 @@ func TestRestoreSnapshotMapsDatabaseOwnership(t *testing.T) {
 		t.Fatalf("Restore %+v %v", report, err)
 	}
 	uid, gid := os.Getuid(), os.Getgid()
-	assertDatabaseWALAndMetadata(t, root, "var/opt/ikigenba/notes/state/nested/app.db", uid, gid)
+	assertRestoreMetadata(t, root, "var/opt/ikigenba/notes/state/nested/app.db", 0640, uid, gid)
+	info, statErr := os.Lstat(filepath.Join(root, "var/opt/ikigenba/notes/state/nested/app.db"))
+	if statErr != nil || info.Mode()&(os.ModeSetuid|os.ModeSetgid) != (os.ModeSetuid|os.ModeSetgid) {
+		t.Fatalf("archived database lost special bits after WAL conversion: %v %v", info, statErr)
+	}
+	data := readHostRestoreFile(t, root, "var/opt/ikigenba/notes/state/nested/app.db")
+	if data[18] != 2 || data[19] != 2 {
+		t.Fatal("snapshot database not WAL")
+	}
+	for _, suffix := range []string{"-wal", "-shm"} {
+		assertRestoreMetadata(t, root, "var/opt/ikigenba/notes/state/nested/app.db"+suffix, 0640, uid, gid)
+	}
 	assertRestoreMetadata(t, root, "var/opt/ikigenba/notes/state", 0750, uid, gid)
 	assertRestoreMetadata(t, root, "var/opt/ikigenba/notes/state/nested", 0710, uid, gid)
 	for _, event := range events {

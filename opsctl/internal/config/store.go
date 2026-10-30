@@ -166,11 +166,20 @@ func (s Store) withLock(fn func() error) error {
 }
 
 func (s Store) holdLock(fn func() error) error {
-	f, err := os.OpenFile(s.lockPath(), os.O_RDWR|os.O_CREATE, 0o600)
+	f, err := os.OpenFile(s.lockPath(), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+	created := err == nil
+	if errors.Is(err, os.ErrExist) {
+		f, err = os.OpenFile(s.lockPath(), os.O_RDWR, 0)
+	}
 	if err != nil {
 		return err
 	}
 	defer func() { _ = f.Close() }()
+	if created {
+		if err := f.Chmod(0o600); err != nil {
+			return err
+		}
+	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
 		return err
 	}
@@ -204,6 +213,11 @@ func (s Store) save(m map[string]string) error {
 		return err
 	}
 	name := tmp.Name()
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(name)
+		return err
+	}
 	ok := false
 	defer func() {
 		if !ok {

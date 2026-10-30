@@ -14,7 +14,7 @@ import (
 )
 
 func TestReleaseUnitsExactAtomicFiles(t *testing.T) {
-	// R-A9FQ-DEEM R-AJ6X-FKC6 R-ALMQ-73TK R-AMUM-KVK9 R-AO2I-YNAY
+	// R-A9FQ-DEEM R-AJ6X-FKC6 R-7B91-6KHZ R-AMUM-KVK9 R-AO2I-YNAY
 	for _, core := range []bool{false, true} {
 		t.Run(fmt.Sprint(core), func(t *testing.T) {
 			root := t.TempDir()
@@ -40,7 +40,7 @@ func TestReleaseUnitsExactAtomicFiles(t *testing.T) {
 			}
 			dir := filepath.Join(root, "etc/systemd/system")
 			socket := "[Unit]\nDescription=Ikigenba notes socket\n\n[Socket]\nListenStream=" + filepath.Join(root, "run/ikigenba/notes.sock") + "\nSocketUser=ikigenba\nSocketGroup=nginx\nSocketMode=0660\nRemoveOnStop=yes\nBacklog=4096\n\n[Install]\nWantedBy=sockets.target\n"
-			service := "[Unit]\nDescription=Ikigenba notes app\nRequires=ikigenba-notes.socket\nAfter=ikigenba-notes.socket ikigenba-services.service\nWants=ikigenba-services.service\n\n[Service]\nType=notify\nExecStart=" + filepath.Join(root, "opt/ikigenba/current/notes/bin/notes") + "\nWorkingDirectory=" + filepath.Join(root, "var/opt/ikigenba/notes") + "\nEnvironmentFile=" + filepath.Join(root, "etc/opt/ikigenba/notes/env") + "\nUser=ikigenba\nRuntimeDirectory=ikigenba/notes\nPrivateTmp=yes\nRestart=on-failure\nTimeoutStopSec=13\n" + lines + "\n[Install]\nWantedBy=multi-user.target\n"
+			service := "[Unit]\nDescription=Ikigenba notes app\nRequires=ikigenba-notes.socket\nAfter=ikigenba-notes.socket ikigenba-services.service\nWants=ikigenba-services.service\n\n[Service]\nType=notify\nExecStart=" + filepath.Join(root, "opt/ikigenba/current/notes/bin/notes") + "\nWorkingDirectory=" + filepath.Join(root, "var/opt/ikigenba/notes") + "\nEnvironmentFile=" + filepath.Join(root, "etc/opt/ikigenba/notes/env") + "\nUser=ikigenba\nRuntimeDirectory=ikigenba/notes\nRuntimeDirectoryMode=0750\nPrivateTmp=yes\nRestart=on-failure\nTimeoutStopSec=13\n" + lines + "\n[Install]\nWantedBy=multi-user.target\n"
 			assertFile(t, filepath.Join(dir, "ikigenba-notes.socket"), socket)
 			assertFile(t, filepath.Join(dir, "ikigenba-notes.service"), service)
 			old, err := os.Lstat(filepath.Join(dir, "ikigenba-notes.service"))
@@ -112,12 +112,12 @@ func TestServicesUnitCreatesItsOwnDirectoryWithoutCommands(t *testing.T) {
 }
 
 func TestReleaseUnitsUseDirectManifestResourcesWithoutDefaults(t *testing.T) {
-	// R-ALMQ-73TK
+	// R-7B91-6KHZ
 	root := t.TempDir()
 	m := apps.Manifest{Resources: apps.Resources{CPUWeight: 37, MemoryMax: 256, GoMemoryLimit: 192, Delegate: true, OOMPolicy: "continue"}}
 	if err := apps.WriteReleaseUnits(host.Env{Root: root}, "notes", m, apps.Timeouts{StopSeconds: 11}); err != nil {
 		t.Fatal(err)
 	}
-	want := "[Unit]\nDescription=Ikigenba notes app\nRequires=ikigenba-notes.socket\nAfter=ikigenba-notes.socket ikigenba-services.service\nWants=ikigenba-services.service\n\n[Service]\nType=notify\nExecStart=" + filepath.Join(root, "opt/ikigenba/current/notes/bin/notes") + "\nWorkingDirectory=" + filepath.Join(root, "var/opt/ikigenba/notes") + "\nEnvironmentFile=" + filepath.Join(root, "etc/opt/ikigenba/notes/env") + "\nUser=ikigenba\nRuntimeDirectory=ikigenba/notes\nPrivateTmp=yes\nRestart=on-failure\nTimeoutStopSec=11\nSlice=ikigenba-.slice\nCPUWeight=37\nMemoryMax=256\nEnvironment=GOMEMLIMIT=192\nDelegate=yes\nOOMPolicy=continue\n\n[Install]\nWantedBy=multi-user.target\n"
+	want := "[Unit]\nDescription=Ikigenba notes app\nRequires=ikigenba-notes.socket\nAfter=ikigenba-notes.socket ikigenba-services.service\nWants=ikigenba-services.service\n\n[Service]\nType=notify\nExecStart=" + filepath.Join(root, "opt/ikigenba/current/notes/bin/notes") + "\nWorkingDirectory=" + filepath.Join(root, "var/opt/ikigenba/notes") + "\nEnvironmentFile=" + filepath.Join(root, "etc/opt/ikigenba/notes/env") + "\nUser=ikigenba\nRuntimeDirectory=ikigenba/notes\nRuntimeDirectoryMode=0750\nPrivateTmp=yes\nRestart=on-failure\nTimeoutStopSec=11\nSlice=ikigenba-.slice\nCPUWeight=37\nMemoryMax=256\nEnvironment=GOMEMLIMIT=192\nDelegate=yes\nOOMPolicy=continue\n\n[Install]\nWantedBy=multi-user.target\n"
 	assertFile(t, filepath.Join(root, "etc/systemd/system/ikigenba-notes.service"), want)
 }

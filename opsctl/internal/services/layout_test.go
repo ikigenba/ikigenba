@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -37,8 +38,8 @@ func releasedServicesRoot(t *testing.T) string {
 	return root
 }
 
-// R-96EY-4QOE R-97MU-IIF3 R-98UQ-WA5S R-9A2N-A1WH R-UGXD-9BQC
-// R-9EY8-T4V9 R-9ILX-YG3C R-BZML-VP81
+// R-96EY-4QOE R-97MU-IIF3 R-YH61-A90V R-9A2N-A1WH R-UGXD-9BQC
+// R-6YGC-LLPE R-6ZO8-ZDG3 R-75RQ-W85K
 func TestWriteAndApplyLayoutPathsAndEntries(t *testing.T) {
 	for _, layout := range []string{"fresh", "per-app", "released"} {
 		for _, apply := range []bool{false, true} {
@@ -105,7 +106,11 @@ func TestWriteAndApplyLayoutPathsAndEntries(t *testing.T) {
 					t.Fatalf("file %v %v", info, err)
 				}
 				runInfo, err := os.Stat(runDir)
-				if err != nil || runInfo.Mode().Perm() != 0700 {
+				wantRunMode := os.FileMode(0o750)
+				if path == apps.PerAppServicesPath {
+					wantRunMode = 0o700
+				}
+				if err != nil || runInfo.Mode().Perm() != wantRunMode {
 					t.Fatalf("run mode %v %v", runInfo, err)
 				}
 				chowns := 0
@@ -115,13 +120,14 @@ func TestWriteAndApplyLayoutPathsAndEntries(t *testing.T) {
 						if !listed || c.Args[0] != "show" {
 							t.Fatalf("mutating query %+v", c)
 						}
+					case "setfacl":
+						if path != apps.ServicesPath || !reflect.DeepEqual(c.Args, []string{"-m", "u:nginx:x", filepath.Dir(filepath.Join(root, path))}) {
+							t.Fatalf("ACL command: %+v", c)
+						}
 					case "id":
 					case "chown":
 						chowns++
-						wantLen := 2
-						if path == apps.PerAppServicesPath {
-							wantLen = 3
-						}
+						wantLen := 3
 						if len(c.Args) != wantLen || c.Args[0] != "root:ikigenba" || !strings.HasPrefix(c.Args[len(c.Args)-1], filepath.Dir(filepath.Join(root, path))+"/") {
 							t.Fatalf("ownership %+v", c)
 						}
@@ -137,7 +143,7 @@ func TestWriteAndApplyLayoutPathsAndEntries(t *testing.T) {
 	}
 }
 
-// R-98UQ-WA5S R-9CIG-1LDV
+// R-YH61-A90V R-9CIG-1LDV
 func TestApplyWithNoCurrentDoesNotReadPerAppManifests(t *testing.T) {
 	root := perAppRoot(t)
 	renderFixture(t, root, "bad", "bad =\n", true, nil)

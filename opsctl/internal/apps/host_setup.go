@@ -40,7 +40,7 @@ func EnsureDataDirectory(ctx context.Context, env host.Env, app string) error {
 		}
 		mode := fs.FileMode(0o755)
 		isApp := directory == path.Join(strings.TrimPrefix(DataRoot, "/"), app)
-		if isApp {
+		if isApp || directory == strings.TrimPrefix(DataRoot, "/") {
 			mode = 0o750
 		}
 		if err := filesystem.Mkdir(directory, mode); err != nil {
@@ -48,6 +48,11 @@ func EnsureDataDirectory(ctx context.Context, env host.Env, app string) error {
 		}
 		if err := filesystem.Chmod(directory, mode); err != nil {
 			return err
+		}
+		if directory == strings.TrimPrefix(DataRoot, "/") {
+			if err := executeAppCommand(ctx, env, "set data root ownership", host.Command{Name: "chown", Args: []string{"root:ikigenba", rootedHostPath(env.Root, DataRoot)}}); err != nil {
+				return err
+			}
 		}
 		if isApp {
 			if err := executeAppCommand(ctx, env, "set "+app+" data ownership", host.Command{Name: "chown", Args: []string{"ikigenba:ikigenba", rootedHostPath(env.Root, DataRoot, app)}}); err != nil {

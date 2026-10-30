@@ -92,7 +92,7 @@ func TestRestoreAtControlsArchiveAndDatabaseTogether(t *testing.T) {
 }
 
 func TestRestoreValidArchiveIgnoresArchivedDatabaseAndOtherServices(t *testing.T) {
-	// R-FQJB-NDLG R-D97F-184Q R-LC1T-L8RR R-GGSD-BKN5
+	// R-RGIY-BLTW R-D97F-184Q R-LC1T-L8RR R-GGSD-BKN5
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -273,7 +273,7 @@ func TestRestoreNoDatabaseRetryUsesMarkerWithoutLitestream(t *testing.T) {
 }
 
 func TestRestoreWithoutDatabaseHonorsEveryUnitState(t *testing.T) {
-	// R-DAFB-EZVF R-LC1T-L8RR
+	// R-RHQU-PDKL R-LC1T-L8RR
 	for _, test := range []struct {
 		name         string
 		service      string
@@ -617,7 +617,7 @@ func TestRestoreDatabaseLeavesInitiallyInactiveAppInactive(t *testing.T) {
 }
 
 func TestRestoreDisabledAppNeverRestartsAndClearsMarker(t *testing.T) {
-	// R-DAFB-EZVF R-G5T9-VMYW R-LC1T-L8RR R-XKEE-4ZE8
+	// R-RHQU-PDKL R-G5T9-VMYW R-LC1T-L8RR R-XKEE-4ZE8
 	for _, test := range []struct {
 		name, manifest, wantStop, wantStart string
 		wantSteps                           int

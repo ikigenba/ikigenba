@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/backup"
@@ -73,7 +74,7 @@ func TestRestoreRefusesEveryLegacyStateEntryBeforeSecretsOrStops(t *testing.T) {
 }
 
 func TestRestoreCreatesDataParentsAndPreservesCacheAndExistingModes(t *testing.T) {
-	// R-TPIP-7ATK R-DCV4-6JCT
+	// R-RP29-000R R-RIYR-35BA
 	for _, existing := range []bool{false, true} {
 		t.Run(map[bool]string{false: "new parents", true: "existing parents"}[existing], func(t *testing.T) {
 			root := t.TempDir()
@@ -100,7 +101,7 @@ func TestRestoreCreatesDataParentsAndPreservesCacheAndExistingModes(t *testing.T
 			if got := string(readHostRestoreFile(t, root, "var/opt/ikigenba/notes/state/value")); got != "restored" {
 				t.Fatal(got)
 			}
-			for name, want := range map[string]os.FileMode{"var/opt": 0755, "var/opt/ikigenba": 0755, "var/opt/ikigenba/notes": 0750} {
+			for name, want := range map[string]os.FileMode{"var/opt": 0755, "var/opt/ikigenba": 0750, "var/opt/ikigenba/notes": 0750} {
 				if existing && strings.HasPrefix(name, "var/") {
 					want = 0700
 				}
@@ -144,7 +145,7 @@ func TestRestoreCreatesDataParentsAndPreservesCacheAndExistingModes(t *testing.T
 }
 
 func TestRestoreDataDirectoryOwnershipFailureStopsAtFiles(t *testing.T) {
-	// R-DCV4-6JCT
+	// R-RIYR-35BA
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	store := restoreConfiguredStore(t, root)
@@ -164,7 +165,7 @@ func TestRestoreDataDirectoryOwnershipFailureStopsAtFiles(t *testing.T) {
 }
 
 func TestRestoreNewDataAccountFailureHasOwnershipStage(t *testing.T) {
-	// R-DCV4-6JCT R-G8TT-DXPV
+	// R-RIYR-35BA R-RK6N-GX1Z
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	store := restoreConfiguredStore(t, root)
@@ -201,5 +202,160 @@ func TestRestoreLegacyInspectionCannotFollowAncestorsOutsideRoot(t *testing.T) {
 	}
 	if len(executor.commands) != 0 || !reflect.DeepEqual(before, fileTreeSnapshot(t, outside)) {
 		t.Fatalf("effects outside root or after source: %v", executor.commands)
+	}
+}
+
+func TestRestoreKeepsNewDataPrivateAfterSuccessAndFailedHostTools(t *testing.T) {
+	// R-RQA5-DRRG R-RHQU-PDKL R-RIYR-35BA R-RK6N-GX1Z
+	for _, failed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "success", true: "tool failure"}[failed], func(t *testing.T) {
+			root := t.TempDir()
+			restoreInstalled(t, root, true)
+			store := restoreConfiguredStore(t, root)
+			writeFile(t, root, "var/opt/ikigenba/notes/state/app.db", "old database", 0o600)
+			writeFile(t, root, "var/opt/ikigenba/notes/cache/keep", "cache", 0o777)
+			filesystem, err := os.OpenRoot(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = filesystem.Close() }()
+			if err := filesystem.Chmod("var/opt/ikigenba/notes/cache/keep", 0o777); err != nil {
+				t.Fatal(err)
+			}
+			before := filepath.Join(root, "var/opt/ikigenba")
+			if err := filesystem.Chmod("var/opt/ikigenba", 0o777); err != nil {
+				t.Fatal(err)
+			}
+			body := hostRestoreArchive(t, restoreMember{name: "state", typeflag: tar.TypeDir, mode: 0o777}, restoreMember{name: "state/private", typeflag: tar.TypeDir, mode: 0o775}, restoreMember{name: "state/private/value", data: []byte("bytes"), mode: 0o647})
+			executor := &restoreStageExecutor{t: t, root: root}
+			base := executor.execute
+			env := host.Env{Root: root, Execute: func(ctx context.Context, c host.Command) (host.Result, error) {
+				if c.Name == "litestream" && len(c.Args) > 0 && c.Args[0] == "restore" {
+					p := filepath.Join(root, "var/opt/ikigenba/notes/state/generated")
+					if err := os.MkdirAll(p, 0o700); err != nil {
+						t.Fatal(err)
+					}
+					if err := filesystem.Chmod("var/opt/ikigenba/notes/state/generated", 0o777); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(filepath.Join(p, "partial"), []byte("partial"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+					filesystem, err := os.OpenRoot(root)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := filesystem.Chmod("var/opt/ikigenba/notes/state/generated/partial", 0o666); err != nil {
+						t.Fatal(err)
+					}
+					_ = filesystem.Close()
+					if failed {
+						writeRestoreSQLite(t, c.Args[2])
+						return host.Result{ExitCode: 8}, nil
+					}
+				}
+				return base(ctx, c)
+			}}
+			_, err = backup.Restore(context.Background(), env, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", nil, func(context.Context) error { return nil })
+			if failed && err == nil {
+				t.Fatal("failed tool accepted")
+			}
+			if !failed && err != nil {
+				t.Fatal(err)
+			}
+			if info, err := os.Lstat(before); err != nil || info.Mode().Perm() != 0o777 {
+				t.Fatal("existing root mode changed")
+			}
+			if info, err := os.Lstat(filepath.Join(root, "var/opt/ikigenba/notes/cache/keep")); err != nil || info.Mode().Perm() != 0o777 {
+				t.Fatal("existing cache changed")
+			}
+			err = filepath.WalkDir(filepath.Join(root, "var/opt/ikigenba/notes/state"), func(name string, d os.DirEntry, walkErr error) error {
+				if walkErr != nil {
+					return walkErr
+				}
+				if d.Type()&os.ModeSymlink != 0 {
+					return nil
+				}
+				info, err := d.Info()
+				if err != nil {
+					return err
+				}
+				if info.Mode().Perm()&7 != 0 {
+					t.Fatalf("new public path %s %o", name, info.Mode().Perm())
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if info, err := os.Lstat(filepath.Join(root, "var/opt/ikigenba/notes/state/private/value")); err != nil || info.Mode().Perm() != 0o640 {
+				t.Fatalf("archive other bits changed %v %v", info, err)
+			}
+		})
+	}
+}
+
+func TestRestoredArchiveSpecialBitsSurviveOwnershipMapping(t *testing.T) {
+	// R-RK6N-GX1Z R-RQA5-DRRG
+	root := t.TempDir()
+	restoreInstalled(t, root, false)
+	store := restoreConfiguredStore(t, root)
+	body := hostRestoreArchive(t, restoreMember{name: "state", typeflag: tar.TypeDir, mode: 0o2777, uname: "ikigenba", gname: "ikigenba"}, restoreMember{name: "state/executable", mode: 0o6757, data: []byte("opaque"), uname: "ikigenba", gname: "ikigenba"})
+	executor := &restoreStageExecutor{t: t, root: root}
+	_, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", nil, func(context.Context) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]os.FileMode{"var/opt/ikigenba/notes/state": os.ModeSetgid | 0o770, "var/opt/ikigenba/notes/state/executable": os.ModeSetuid | os.ModeSetgid | 0o750} {
+		info, err := os.Lstat(filepath.Join(root, name))
+		if err != nil || info.Mode()&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky|0o777) != want {
+			t.Fatalf("special archive mode %s: %v %v", name, info, err)
+		}
+	}
+}
+
+func TestRestoreModesIgnoreOwnerRestrictingUmask(t *testing.T) {
+	// R-76AM-ZRLD R-RK6N-GX1Z R-RP29-000R R-RQA5-DRRG
+	for _, hostRestore := range []bool{false, true} {
+		t.Run(map[bool]string{false: "service", true: "host"}[hostRestore], func(t *testing.T) {
+			root := t.TempDir()
+			var run func() error
+			if hostRestore {
+				store := configuredHostStore(t, root)
+				body := hostRestoreArchive(t, restoreMember{name: "etc/ikigenba", typeflag: tar.TypeDir, mode: 0o777}, restoreMember{name: "etc/ikigenba/nested", typeflag: tar.TypeDir, mode: 0o775}, restoreMember{name: "etc/ikigenba/nested/value", data: []byte("value"), mode: 0o644}, restoreMember{name: "etc/ikigenba/implied/value", data: []byte("implied"), mode: 0o644})
+				uri := "s3://bucket/project/host/2026-09-16T12:00:00Z.tar.zst"
+				client := &restoreCloud{objects: []cloud.Object{{URI: uri}}, bodies: map[string][]byte{uri: body}}
+				run = func() error {
+					_, err := backup.HostRestore(context.Background(), restoreHostEnv(t, root), cloud.Env{Open: client.open}, store)
+					return err
+				}
+			} else {
+				restoreInstalled(t, root, false)
+				store := restoreConfiguredStore(t, root)
+				body := hostRestoreArchive(t, restoreMember{name: "state", typeflag: tar.TypeDir, mode: 0o777}, restoreMember{name: "state/nested", typeflag: tar.TypeDir, mode: 0o775}, restoreMember{name: "state/nested/value", data: []byte("value"), mode: 0o644}, restoreMember{name: "state/implied/value", data: []byte("implied"), mode: 0o644})
+				executor := &restoreStageExecutor{t: t, root: root}
+				run = func() error {
+					_, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", nil, func(context.Context) error { return nil })
+					return err
+				}
+			}
+			mask := syscall.Umask(0o777)
+			defer syscall.Umask(mask)
+			if err := run(); err != nil {
+				t.Fatal(err)
+			}
+			base := "var/opt/ikigenba/notes/state"
+			baseMode := os.FileMode(0o770)
+			if hostRestore {
+				base = "etc/ikigenba"
+				baseMode = 0o700
+			}
+			for name, want := range map[string]os.FileMode{base: baseMode, base + "/nested": 0o770, base + "/nested/value": 0o640, base + "/implied": 0o700, base + "/implied/value": 0o640} {
+				info, err := os.Lstat(filepath.Join(root, name))
+				if err != nil || info.Mode().Perm() != want {
+					t.Fatalf("umask mode %s: %v %v", name, info, err)
+				}
+			}
+		})
 	}
 }

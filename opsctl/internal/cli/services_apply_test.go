@@ -91,7 +91,7 @@ func TestServicesApplySilentAndQuotedFailure(t *testing.T) {
 						return host.Result{Stdout: []byte("998\n")}, nil
 					}
 					return host.Result{Stdout: []byte("ikigenba\n")}, nil
-				case "chown":
+				case "chown", "setfacl":
 					return host.Result{}, nil
 				default:
 					t.Fatalf("unexpected %+v", c)
@@ -168,8 +168,10 @@ func TestServicesApplyUsesNormalizedHostAndCurrentRelease(t *testing.T) {
 				return host.Result{Stdout: []byte("998\n")}, nil
 			}
 			return host.Result{Stdout: []byte("ikigenba\n")}, nil
-		case "chown":
-			ownershipCalls++
+		case "chown", "setfacl":
+			if c.Name == "chown" {
+				ownershipCalls++
+			}
 			return host.Result{}, nil
 		default:
 			t.Fatalf("unexpected command %+v", c)
