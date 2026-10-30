@@ -80,8 +80,8 @@ SQLite database, `state/candidates.db` resolved against the working
 directory and opened through appkit's `db` package; it is the only writer of
 it. It emits an event on the bus for each pass that begins and each that
 ends, and records every scrapes read in the trail. It takes campaigns'
-`campaign.member.added`, `campaign.member.rejected` and
-`campaign.piece.delivered`, delivered on the bus, and records each as a
+`campaign.member.added`, `campaign.member.rejected`,
+`campaign.piece.delivered` and `campaign.member.opened`, delivered on the bus, and records each as a
 campaign use of the candidate it names, followed through a merge, starting
 no pass and reading no sibling. Its manifest sets
 `guests = false`: nginx lets no request without a credential through, to the
@@ -126,7 +126,7 @@ build run writes the Go source, the tests, `go.mod`'s requirements and
 `0008_windows.sql`, `0009_judgments.sql`, `0010_cohorts.sql`,
 `0011_enrichments.sql`, `0012_facts.sql`, `0013_site_text.sql`,
 `0014_brief.sql`, `0015_website_search.sql`, `0016_campaign_uses.sql`,
-`0017_prospect_lists.sql`, `0018_drive_route.sql`, `0019_opens.sql`, `0020_headcounts.sql`, `0021_link_keys.sql`, `0022_headcount_trend.sql`, `0023_parks.sql`, `0024_walk.sql`, `0025_search_cases.sql`, `0026_fact_sources.sql`, `0027_page_reasons.sql` and `0028_owner_records.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
+`0017_prospect_lists.sql`, `0018_drive_route.sql`, `0019_opens.sql`, `0020_headcounts.sql`, `0021_link_keys.sql`, `0022_headcount_trend.sql`, `0023_parks.sql`, `0024_walk.sql`, `0025_search_cases.sql`, `0026_fact_sources.sql`, `0027_page_reasons.sql`, `0028_owner_records.sql` and `0029_campaign_opened.sql`), which the root package embeds, and everything under `etc/` (`etc/manifest.toml`
 and the nginx fragment `etc/nginx.conf`). The
 delivery that created candidates seeded `go.mod` on appkit; the build run
 owns it and `go.sum` from then on and changes them as design says. It never
@@ -597,8 +597,8 @@ with every other app, its part of the release holding `bin/candidates`,
 `etc/` and `share/icon.svg`, and `devctl deploy <space> <sha|tag>` deploys
 that release. The host must run events, which candidates emits to and takes
 scrapes' `scrape.finished`, cron's `cron.judge_candidates.fired` and
-campaigns' `campaign.member.added`, `campaign.member.rejected` and
-`campaign.piece.delivered` from,
+campaigns' `campaign.member.added`, `campaign.member.rejected`,
+`campaign.piece.delivered` and `campaign.member.opened` from,
 scrapes, which it reads over the socket, in a pass and once at start, and
 prompts, which a targeted pass
 of a prompts kind runs the `website-search`, `site-text` or `brief` prompt
