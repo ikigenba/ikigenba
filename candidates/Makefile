@@ -5,6 +5,7 @@ build:
 
 test:
 	go test -race ./...
+	go test -count=1 -run Timing ./...
 
 lint:
 	GOLANGCI_LINT_CACHE="$$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners

@@ -322,6 +322,8 @@ two places only, because there the deadline is the behavior: a drain test,
 which keeps that wait to a few seconds, and a test that a pass reaches `done`
 within the deadline a requirement states; a busy-write test's wait on the
 database's busy timeout is the exception the test discipline above names.
+The speed test for the search tool (gate 5) reads the wall clock to measure
+one call and is the only test that does; it never sleeps.
 The gates run offline as an ordinary user, with no systemd.
 
 **The siblings are faked on loopback.** No test reaches scrapes. A
