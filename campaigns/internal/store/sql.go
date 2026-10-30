@@ -226,10 +226,10 @@ func memberRow(ctx context.Context, tx *sql.Tx, m Member) (MemberRow, error) {
 		}
 		r.Pieces = append(r.Pieces, PieceRow{p, g})
 		if g.Opens > 0 {
-			r.Engagement.Opens += g.Opens
-			if r.Engagement.First.IsZero() || g.First.Before(r.Engagement.First) {
+			if r.Engagement.Opens == 0 || g.First.Before(r.Engagement.First) {
 				r.Engagement.First = g.First
 			}
+			r.Engagement.Opens += g.Opens
 			if g.Last.After(r.Engagement.Last) {
 				r.Engagement.Last = g.Last
 			}

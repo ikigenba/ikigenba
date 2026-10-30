@@ -1,0 +1,1 @@
+ALTER TABLE members ADD COLUMN opened_emitted TEXT NOT NULL DEFAULT '';

@@ -3,6 +3,7 @@ package trail
 
 import (
 	"context"
+	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
@@ -18,15 +19,19 @@ const EventMemberRejected = "campaign.member.rejected"
 // EventPieceDelivered names the delivery of a piece.
 const EventPieceDelivered = "campaign.piece.delivered"
 
+// EventMemberOpened names the first visit of a member's links.
+const EventMemberOpened = "campaign.member.opened"
+
 // EventVisited names a recorded visit.
 const EventVisited = "campaign.visited"
 
-// Emits returns independent declarations for the three bus events.
+// Emits returns independent declarations for the four bus events.
 func Emits() []events.Emission {
 	return []events.Emission{
 		{Event: EventMemberAdded, Attrs: []string{"campaign", "candidate", "prospect_list"}},
 		{Event: EventMemberRejected, Attrs: []string{"campaign", "candidate", "reason"}},
 		{Event: EventPieceDelivered, Attrs: []string{"campaign", "candidate", "piece", "channel", "how"}},
+		{Event: EventMemberOpened, Attrs: []string{"campaign", "candidate", "at"}},
 	}
 }
 func both(ctx context.Context, w *telemetry.Writer, em *events.Emitter, name string, attrs telemetry.Attrs) {
@@ -51,6 +56,13 @@ func MemberRejected(ctx context.Context, w *telemetry.Writer, em *events.Emitter
 // PieceDelivered queues the trail and bus records for a delivery.
 func PieceDelivered(ctx context.Context, w *telemetry.Writer, em *events.Emitter, campaign, candidate, piece, channel, how string) {
 	both(ctx, w, em, EventPieceDelivered, telemetry.Attrs{"campaign": campaign, "candidate": candidate, "piece": piece, "channel": channel, "how": how})
+}
+
+// MemberOpened queues the first-open records with the request id and no user.
+func MemberOpened(ctx context.Context, w *telemetry.Writer, em *events.Emitter, campaign, candidate string, at time.Time) {
+	c, _ := identity.FromContext(ctx)
+	ctx = identity.NewContext(ctx, identity.Caller{RequestID: c.RequestID})
+	both(ctx, w, em, EventMemberOpened, telemetry.Attrs{"campaign": campaign, "candidate": candidate, "at": at.UTC().Format(time.RFC3339)})
 }
 
 // Visited queues a trail-only visit with its request id and no user.

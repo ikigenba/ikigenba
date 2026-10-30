@@ -17,7 +17,7 @@ func TestEmbeddedResources(t *testing.T) {
 	}{
 		{"assets", campaigns.Assets, []string{"about.html", "campaign.html", "landing.html", "notfound.html", "tools.html"}},
 		{"etc", campaigns.Etc, []string{"manifest.toml", "nginx.conf"}},
-		{"migrations", campaigns.Migrations, []string{"0001_campaigns.sql", "0002_prospect_lists.sql"}},
+		{"migrations", campaigns.Migrations, []string{"0001_campaigns.sql", "0002_prospect_lists.sql", "0003_opened.sql"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for range 2 {

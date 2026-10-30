@@ -110,7 +110,7 @@ func must[T any](t *testing.T, v T, e error) T {
 }
 func stamp(f *fixture) time.Time { return f.now.UTC().Truncate(time.Second) }
 
-// R-60VW-LG5X R-623S-Z7WM R-63BP-CZNB R-23TG-VTPA R-65RI-4J4P R-66ZE-IAVE R-687A-W2M3 R-69F7-9UCS R-6AN3-NM3H R-6BV0-1DU6
+// R-60VW-LG5X R-623S-Z7WM R-63BP-CZNB R-23TG-VTPA R-65RI-4J4P R-66ZE-IAVE R-ZMGU-AV0Q R-69F7-9UCS R-6AN3-NM3H R-6BV0-1DU6
 func TestPublicRecords(t *testing.T) {
 	f := newFixture(t)
 	c := f.campaign()
@@ -128,7 +128,7 @@ func TestPublicRecords(t *testing.T) {
 	_ = store.Material{c.ID, "path", "label", "artifact", time.Time{}, "owner", "mgreenly+fake00@gmail.com"}
 	_ = store.Visit{1, p.ID, time.Time{}, "agent", "ref", "addr"}
 	_ = store.VisitInput{"agent", "ref", "addr"}
-	_ = store.Visited{c.ID, p.ID, c.Destination}
+	_ = store.Visited{c.ID, m.Member.Candidate, p.ID, c.Destination, true, stamp(f)}
 	_ = store.PieceEngagement{0, time.Time{}, time.Time{}}
 	_ = store.MemberEngagement{false, 0, time.Time{}, time.Time{}}
 	_ = store.Counts{1, 0, 0}
@@ -704,7 +704,7 @@ func TestVisitsEngagement(t *testing.T) {
 		times = append(times, stamp(f))
 		p := a.Pieces[i%2].Piece
 		v, e := f.s.Visit(ctx, p.Token, in)
-		eq(t, must(t, v, e), store.Visited{Campaign: c.ID, Piece: p.ID, Destination: c.Destination})
+		eq(t, must(t, v, e), store.Visited{Campaign: c.ID, Candidate: a.Member.Candidate, Piece: p.ID, Destination: c.Destination, Opened: i == 0, First: stamp(f)})
 	}
 	co, e := f.s.Counts(ctx, c.ID)
 	eq(t, must(t, co, e), store.Counts{Members: 3, Delivered: 2, Opened: 1})
@@ -1207,13 +1207,14 @@ func TestWindowStatements(t *testing.T) {
 	}
 }
 
-// R-29WY-SOER
+// R-0GYB-V4K3
 func TestMigration(t *testing.T) {
 	entries, e := fs.ReadDir(campaigns.Migrations(), ".")
 	if e != nil {
 		t.Fatal(e)
 	}
-	eq(t, len(entries), 2)
+	eq(t, len(entries), 3)
+	eq(t, entries[2].Name(), "0003_opened.sql")
 	eq(t, entries[0].Name(), "0001_campaigns.sql")
 	eq(t, entries[1].Name(), "0002_prospect_lists.sql")
 	b, e := fs.ReadFile(campaigns.Migrations(), entries[0].Name())
@@ -1313,14 +1314,14 @@ func (r *failedReader) Read([]byte) (int, error) {
 	return 0, errors.New("random unavailable")
 }
 
-// R-86XH-2RMD
+// R-0EIJ-3L2P
 func TestRandomOnlyForNewRecords(t *testing.T) {
 	f := newFixture(t)
 	c := f.campaign()
 	m := f.member(c, 1, "mail")
 	r := &failedReader{}
 	f.s = store.New(f.d, store.Config{Now: func() time.Time { return f.now }, Rand: r})
-	for _, call := range calls(f, c, m) {
+	for _, call := range append(calls(f, c, m), markOpenedCall(f)) {
 		_ = call.fn(ctx)
 	}
 	_, _, e := f.s.DeleteCampaign(ctx, c.ID)
@@ -1425,7 +1426,7 @@ func TestFailuresTakePrecedence(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	all := calls(f, c, m)
+	all := append(calls(f, c, m), markOpenedCall(f))
 	all = append(all, call{"create", func(ctx context.Context) error {
 		v, e := f.s.CreateCampaign(ctx, store.Campaign{})
 		eq(t, v, store.Campaign{})
@@ -1685,7 +1686,7 @@ func TestPreviousReleaseRecords(t *testing.T) {
 					gotVisits, e := f.s.ListVisits(ctx, piece.Piece.ID, 0, 100)
 					eq(t, must(t, gotVisits, e), visits[piece.Piece.ID])
 					visited, e := f.s.Visit(ctx, piece.Piece.Token, store.VisitInput{UserAgent: "new agent"})
-					eq(t, must(t, visited, e), store.Visited{Campaign: c.ID, Piece: piece.Piece.ID, Destination: c.Destination})
+					eq(t, must(t, visited, e), store.Visited{Campaign: c.ID, Candidate: row.Member.Candidate, Piece: piece.Piece.ID, Destination: c.Destination, Opened: piece.Piece.Channel == store.ChannelMail, First: stamp(f)})
 				}
 			}
 		})
@@ -1723,4 +1724,15 @@ func TestPresentMemberKeepsFirstProspectList(t *testing.T) {
 	f.reopen()
 	got, e = f.s.GetMember(ctx, c.ID, in.Candidate)
 	eq(t, must(t, got, e), first)
+}
+
+func markOpenedCall(f *fixture) call {
+	return call{"mark opened", func(ctx context.Context) error {
+		k, v, e := f.s.MarkOpened(ctx, store.MemberKey{}, 2)
+		if e != nil {
+			eq(f.t, k, store.MemberKey{})
+			eq(f.t, v, []store.Opened(nil))
+		}
+		return e
+	}}
 }

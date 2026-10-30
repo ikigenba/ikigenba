@@ -352,7 +352,7 @@ func TestEditValuesAndDeletedDependents(t *testing.T) {
 	f.refuse("merge_list", MergeArgs{Campaign: k.ID, Channel: "mail"}, RefusalNotFound, RefuseNotFound)
 }
 
-// R-2ZIU-TUZC
+// R-QSYM-B662
 func TestSiblingIsolationAndArtifactOrder(t *testing.T) {
 	f := setup(t)
 	s := &sibling{businesses: map[string]map[string]any{id(1): business(1), id(2): business(2)}}

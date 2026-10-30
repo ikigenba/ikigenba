@@ -47,11 +47,11 @@ func (f noEvents) Deliver(context.Context, events.Event) error { f.t.Fatal("even
 func inert(t *testing.T, args []string) (cli.Process, *writes, *writes) {
 	t.Helper()
 	out, errout := &writes{}, &writes{}
-	p := cli.Process{Args: args, Dir: t.TempDir(), Stdout: out, Stderr: errout, Version: "test identity", LookupEnv: func(string) (string, bool) { t.Fatal("environment used"); return "", false }, Unsetenv: func(string) error { t.Fatal("unset used"); return nil }, Inherit: func(uintptr) (net.Listener, error) { t.Fatal("inherit used"); return nil, nil }, Now: func() time.Time { t.Fatal("clock used"); return time.Time{} }, Sleep: func(context.Context, time.Duration) { t.Fatal("pause used") }, Rand: forbidden{t}, Sink: noTelemetry{t}, EventSink: noEvents{t}, Banner: func(page.User) page.Banner { t.Fatal("banner used"); return page.Banner{} }, MCP: func(*telemetry.Writer) *mcp.Server { t.Fatal("MCP used"); return nil }}
+	p := cli.Process{Args: args, Dir: t.TempDir(), Stdout: out, Stderr: errout, Version: "test identity", LookupEnv: func(string) (string, bool) { t.Fatal("environment used"); return "", false }, Unsetenv: func(string) error { t.Fatal("unset used"); return nil }, Inherit: func(uintptr) (net.Listener, error) { t.Fatal("inherit used"); return nil, nil }, Now: func() time.Time { t.Fatal("clock used"); return time.Time{} }, Sleep: func(context.Context, time.Duration) { t.Fatal("pause used") }, SweepAfter: func(time.Duration) <-chan time.Time { t.Fatal("sweep timer used"); return nil }, Rand: forbidden{t}, Sink: noTelemetry{t}, EventSink: noEvents{t}, Banner: func(page.User) page.Banner { t.Fatal("banner used"); return page.Banner{} }, MCP: func(*telemetry.Writer) *mcp.Server { t.Fatal("MCP used"); return nil }}
 	return p, out, errout
 }
 
-// R-AD64-P8DC R-AEE1-3041 R-UXIC-W9FW R-UYQ9-A16L R-UZY5-NSXA R-V3LU-T45D R-965H-1PD4 R-97DD-FH3T R-98L9-T8UI R-V4TR-6VW2 R-8YU2-R2WY
+// R-XHSV-N8GB R-AEE1-3041 R-UXIC-W9FW R-UYQ9-A16L R-UZY5-NSXA R-V3LU-T45D R-965H-1PD4 R-97DD-FH3T R-98L9-T8UI R-8YU2-R2WY
 func TestCommands(t *testing.T) {
 	if cli.ExitSuccess != 0 || cli.ExitServerFailed != 1 || cli.ExitUsage != 2 {
 		t.Fatal("exit codes")
@@ -180,7 +180,7 @@ func TestDatabaseStatus(t *testing.T) {
 	}
 }
 
-// R-B0C7-YVGJ R-QAT0-M6RZ R-QD8T-DQ9D
+// R-B0C7-YVGJ R-QAT0-M6RZ R-QD8T-DQ9D R-QFHC-RSKN
 func TestStartFailures(t *testing.T) {
 	for _, mode := range []string{"setting", "absent", "multiple", "database"} {
 		t.Run(mode, func(t *testing.T) {
@@ -244,4 +244,22 @@ func TestStartFailures(t *testing.T) {
 		})
 	}
 	var _ error = &settings.Error{}
+}
+
+// R-R9OJ-VL8Q R-XHSV-N8GB
+func TestProcessByPositionAndMinimalCommands(t *testing.T) {
+	var p = cli.Process{[]string{"--help"}, nil, nil, 0, io.Discard, io.Discard, "", nil, nil, nil, nil, nil, t.TempDir(), nil, nil, nil, nil}
+	if cli.Run(context.Background(), p) != cli.ExitSuccess {
+		t.Fatal("positional process")
+	}
+	for _, args := range [][]string{{"--version"}, {"manifest"}, {"--help"}, {"db", "status"}, {"unknown"}} {
+		p := cli.Process{Args: args, Stdout: io.Discard, Stderr: io.Discard, Dir: t.TempDir()}
+		want := cli.ExitSuccess
+		if args[0] == "unknown" {
+			want = cli.ExitUsage
+		}
+		if code := cli.Run(context.Background(), p); code != want {
+			t.Fatalf("%v exit %d", args, code)
+		}
+	}
 }

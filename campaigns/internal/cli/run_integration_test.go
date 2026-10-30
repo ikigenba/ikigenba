@@ -3,6 +3,7 @@ package cli_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
@@ -28,8 +30,11 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/appkit/version"
+	"github.com/ikigenba/ikigenba/campaigns"
 	"github.com/ikigenba/ikigenba/campaigns/internal/cli"
+	"github.com/ikigenba/ikigenba/campaigns/internal/links"
 	"github.com/ikigenba/ikigenba/campaigns/internal/pages"
+	"github.com/ikigenba/ikigenba/campaigns/internal/store"
 	"github.com/ikigenba/ikigenba/campaigns/internal/tools"
 )
 
@@ -210,6 +215,8 @@ type integrationOptions struct {
 	acceptNotify, noNotify, unsetNotify bool
 	dir, path                           string
 	random                              io.Reader
+	sweepAfter                          func(time.Duration) <-chan time.Time
+	now                                 func() time.Time
 	sink                                telemetry.Sink
 	bus                                 events.Sink
 	nilSinks, nilUnset                  bool
@@ -217,6 +224,20 @@ type integrationOptions struct {
 	env                                 map[string]string
 	mcp                                 func(*telemetry.Writer) *mcp.Server
 }
+type integrationBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (b *integrationBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.Write(p)
+}
+func (b *integrationBuffer) String() string { b.mu.Lock(); defer b.mu.Unlock(); return b.b.String() }
+func (b *integrationBuffer) Len() int       { return len(b.String()) }
+func (b *integrationBuffer) Bytes() []byte  { return []byte(b.String()) }
+
 type integrationRun struct {
 	t           *testing.T
 	dir         string
@@ -227,7 +248,7 @@ type integrationRun struct {
 	done        chan int
 	capture     *telemetry.Capture
 	bus         *events.Capture
-	out, err    bytes.Buffer
+	out, err    integrationBuffer
 	keys, unset []string
 	sent        []string
 	inherit     int
@@ -280,6 +301,13 @@ func startIntegration(t *testing.T, o integrationOptions) *integrationRun {
 		default:
 		}
 	}}
+	if o.now != nil {
+		p.Now = o.now
+	}
+	p.SweepAfter = o.sweepAfter
+	if p.SweepAfter == nil {
+		p.SweepAfter = func(time.Duration) <-chan time.Time { return make(chan time.Time) }
+	}
 	if o.emptyDir {
 		p.Dir = ""
 	}
@@ -529,7 +557,7 @@ func integrationTree(t *testing.T, d string) {
 	}
 }
 
-// R-AFLX-GRUQ R-AI1Q-8BC4 R-AJ9M-M32T R-AKHI-ZUTI R-QC0W-ZYIO R-QEGP-RI02 R-QFOM-59QR R-QO7W-TNXM R-QRVL-YZ5P
+// R-AFLX-GRUQ R-AI1Q-8BC4 R-AJ9M-M32T R-AKHI-ZUTI R-QC0W-ZYIO R-QEGP-RI02 R-QFOM-59QR R-QO7W-TNXM R-ZGSL-30QA
 func TestRunIntegrationPersistence(t *testing.T) {
 	d := t.TempDir()
 	r := startIntegration(t, integrationOptions{dir: d, acceptNotify: true})
@@ -776,7 +804,7 @@ func integrationToken(t *testing.T, link string) string {
 	return token
 }
 
-// R-1WI2-L794 R-CZLO-8HOE R-GLK5-Y9SJ R-2PRN-RP1S R-4B2X-QWWF R-GMS2-C1J8 R-D6X2-J44K R-D84Y-WVV9 R-D9CV-ANLY R-4CAU-4ON4 R-4DIQ-IGDT R-4EQM-W84I R-Q4PI-PC2I
+// R-5BD2-EN8H R-POTZ-2NHP R-PQ1V-GF8E R-2PRN-RP1S R-4B2X-QWWF R-GMS2-C1J8 R-D6X2-J44K R-D84Y-WVV9 R-D9CV-ANLY R-4CAU-4ON4 R-4DIQ-IGDT R-4EQM-W84I R-Q4PI-PC2I
 func TestRunIntegrationAllToolsPrivacyAndTrail(t *testing.T) {
 	candidatesFake, artifactsFake := newIntegrationFake(t, false), newIntegrationFake(t, true)
 	markers := []string{}
@@ -823,6 +851,7 @@ func TestRunIntegrationAllToolsPrivacyAndTrail(t *testing.T) {
 	var campaign tools.Campaign
 	r.call("create_campaign", map[string]any{"name": name, "description": desc, "channels": []string{"mail", "email"}, "destination": destination}, &campaign)
 	id := campaign.ID
+	r.call("add_members", map[string]any{"campaign": id, "candidates": []string{"cand_0000000000000004"}}, nil)
 	r.call("add_prospect_list", map[string]any{"campaign": id, "prospect_list": "pl_0000000000000001"}, nil)
 	r.call("add_member", map[string]any{"campaign": id, "candidate": "cand_0000000000000004"}, nil)
 	var merge tools.MergeList
@@ -868,7 +897,7 @@ func TestRunIntegrationAllToolsPrivacyAndTrail(t *testing.T) {
 		name string
 		args any
 	}{
-		{"campaigns", map[string]any{"limit": 0}}, {"campaign", map[string]any{"campaign": "bad"}}, {"create_campaign", map[string]any{"name": name, "description": desc, "channels": []string{}, "destination": destination}}, {"edit_campaign", map[string]any{"campaign": "bad", "name": name, "description": desc, "destination": destination}}, {"delete_campaign", map[string]any{"campaign": "bad"}}, {"add_prospect_list", map[string]any{"campaign": "bad", "prospect_list": "pl_0000000000000001"}}, {"add_member", map[string]any{"campaign": "bad", "candidate": "cand_0000000000000001"}}, {"reject", map[string]any{"campaign": "bad", "candidate": "cand_0000000000000001", "why": "no"}}, {"drop", map[string]any{"piece": "bad"}}, {"deliver", map[string]any{"piece": "bad"}}, {"deliver_channel", map[string]any{"campaign": "bad", "channel": "mail"}}, {"add_material", map[string]any{"campaign": "bad", "path": "material", "label": label}}, {"remove_material", map[string]any{"campaign": "bad", "path": "material"}}, {"merge_list", map[string]any{"campaign": "bad", "channel": "mail"}}, {"engagement", map[string]any{}},
+		{"campaigns", map[string]any{"limit": 0}}, {"campaign", map[string]any{"campaign": "bad"}}, {"create_campaign", map[string]any{"name": name, "description": desc, "channels": []string{}, "destination": destination}}, {"edit_campaign", map[string]any{"campaign": "bad", "name": name, "description": desc, "destination": destination}}, {"delete_campaign", map[string]any{"campaign": "bad"}}, {"add_prospect_list", map[string]any{"campaign": "bad", "prospect_list": "pl_0000000000000001"}}, {"add_member", map[string]any{"campaign": "bad", "candidate": "cand_0000000000000001"}}, {"add_members", map[string]any{"campaign": "bad", "candidates": []string{"cand_0000000000000001"}}}, {"reject", map[string]any{"campaign": "bad", "candidate": "cand_0000000000000001", "why": "no"}}, {"drop", map[string]any{"piece": "bad"}}, {"deliver", map[string]any{"piece": "bad"}}, {"deliver_channel", map[string]any{"campaign": "bad", "channel": "mail"}}, {"add_material", map[string]any{"campaign": "bad", "path": "material", "label": label}}, {"remove_material", map[string]any{"campaign": "bad", "path": "material"}}, {"merge_list", map[string]any{"campaign": "bad", "channel": "mail"}}, {"engagement", map[string]any{}},
 	} {
 		r.refuse(tc.name, tc.args, "")
 	}
@@ -949,7 +978,7 @@ func TestRunIntegrationAllToolsPrivacyAndTrail(t *testing.T) {
 	bus := r.bus.Events()
 	byRequest := map[string][]telemetry.Event{}
 	closed := map[string]bool{}
-	for _, n := range []string{"service.started", "service.stopping", "request.started", "request.finished", "tool.called", "event.lost", "sibling.called", "campaign.member.added", "campaign.member.rejected", "campaign.piece.delivered", "campaign.visited"} {
+	for _, n := range []string{"service.started", "service.stopping", "request.started", "request.finished", "tool.called", "event.lost", "sibling.called", "campaign.member.added", "campaign.member.rejected", "campaign.piece.delivered", "campaign.member.opened", "campaign.visited"} {
 		closed[n] = true
 	}
 	visitCounts := map[string]int{}
@@ -1004,7 +1033,7 @@ func TestRunIntegrationAllToolsPrivacyAndTrail(t *testing.T) {
 			if event.Name == "request.finished" {
 				finishes++
 			}
-			if event.Name != "campaign.visited" && event.User != first.User {
+			if event.Name != "campaign.visited" && event.Name != "campaign.member.opened" && event.User != first.User {
 				t.Errorf("request user %+v", event)
 			}
 		}
@@ -1037,6 +1066,7 @@ func TestRunIntegrationAllToolsPrivacyAndTrail(t *testing.T) {
 		}
 	}
 	changeKeys := map[string][]string{"campaign.member.added": {"campaign", "candidate", "prospect_list"}, "campaign.member.rejected": {"campaign", "candidate", "reason"}, "campaign.piece.delivered": {"campaign", "candidate", "piece", "channel", "how"}}
+	changeKeys["campaign.member.opened"] = []string{"campaign", "candidate", "at"}
 	changes := []telemetry.Event{}
 	for _, event := range trail {
 		if _, ok := changeKeys[event.Name]; ok {
@@ -1063,7 +1093,7 @@ func TestRunIntegrationAllToolsPrivacyAndTrail(t *testing.T) {
 			if !matched[j] && event.Name == change.Name && event.RequestID == change.RequestID && event.User == change.User && reflect.DeepEqual(map[string]any(event.Attrs), map[string]any(change.Attrs)) {
 				matched[j] = true
 				found = true
-				if event.Cause != "evt_8c3f1a6e2d9b4075" || event.Depth != 2 {
+				if change.Name != "campaign.member.opened" && (event.Cause != "evt_8c3f1a6e2d9b4075" || event.Depth != 2) {
 					t.Errorf("cause/depth %+v", event)
 				}
 				break
@@ -1071,6 +1101,9 @@ func TestRunIntegrationAllToolsPrivacyAndTrail(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("no matching bus %+v", change)
+		}
+		if change.Name == "campaign.member.opened" {
+			continue
 		}
 		seenChange, seenCall := false, false
 		for _, event := range byRequest[change.RequestID] {
@@ -1234,7 +1267,7 @@ func (s *integrationBusSink) Deliver(ctx context.Context, e events.Event) error 
 	return nil
 }
 
-// R-XSDJ-PDX1 R-XYH1-M8MI
+// R-XSDJ-PDX1 R-XYH1-M8MI R-PW5D-D9XV
 func TestRunIntegrationRejectedBusKeepsTrail(t *testing.T) {
 	f := newIntegrationFake(t, false)
 	path := filepath.Join(t.TempDir(), "services")
@@ -1269,6 +1302,9 @@ func TestRunIntegrationRejectedBusKeepsTrail(t *testing.T) {
 		call("add", "add_member", map[string]any{"campaign": c.ID, "candidate": "cand_0000000000000001"}, &added)
 		call("deliver", "deliver", map[string]any{"piece": added.Member.Pieces[0].ID}, nil)
 		call("reject", "reject", map[string]any{"campaign": c.ID, "candidate": "cand_0000000000000001", "why": "not appropriate"}, nil)
+		var merge tools.MergeList
+		call("merge", "merge_list", map[string]any{"campaign": c.ID, "channel": "mail", "all": true}, &merge)
+		r.request("GET", "/t/"+integrationToken(t, merge.Rows[0].Link), "owner", "open", nil)
 		if code := r.stop(); code != 0 {
 			t.Fatal(code)
 		}
@@ -1280,19 +1316,19 @@ func TestRunIntegrationRejectedBusKeepsTrail(t *testing.T) {
 		}
 		trail := r.capture.Events()
 		bus := sink.capture.Events()
-		if len(bus) != 3 {
+		if len(bus) != 4 {
 			t.Fatalf("bus calls %d", len(bus))
 		}
 		lost := map[string][]telemetry.Event{}
 		for _, e := range trail {
 			switch e.Name {
-			case "campaign.member.added", "campaign.member.rejected", "campaign.piece.delivered":
+			case "campaign.member.added", "campaign.member.rejected", "campaign.piece.delivered", "campaign.member.opened":
 				changes[i] = append(changes[i], e)
 			case "event.lost":
 				lost[fmt.Sprint(e.Attrs["event"])] = append(lost[fmt.Sprint(e.Attrs["event"])], e)
 			}
 		}
-		if len(changes[i]) != 3 {
+		if len(changes[i]) != 4 {
 			t.Fatalf("changes %d", len(changes[i]))
 		}
 		if i == 0 && len(lost) != 0 {
@@ -1477,5 +1513,362 @@ func TestRunIntegrationBusDrainDeadline(t *testing.T) {
 	}
 	if !strings.Contains(r.err.String(), "lost event") {
 		t.Errorf("bus drain diagnostics %q", r.err.String())
+	}
+}
+
+func seedIntegrationVisits(t *testing.T, count int, extra bool) (string, map[string]telemetry.Attrs) {
+	t.Helper()
+	dir := t.TempDir()
+	now := integrationTime
+	d, err := db.Open(context.Background(), db.Config{Path: filepath.Join(dir, "state", "campaigns.db"), Migrations: campaigns.Migrations(), Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := d.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	st := store.New(d, store.Config{Now: func() time.Time { return now }, Rand: &integrationRandom{}})
+	c, err := st.CreateCampaign(context.Background(), store.Campaign{Name: "seed", CreatedUserID: "owner", Channels: []string{store.ChannelMail}, Destination: "https://destination.test/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := map[string]telemetry.Attrs{}
+	add := func(c store.Campaign, id string, visited bool) {
+		t.Helper()
+		m, _, err := st.AddMember(context.Background(), store.MemberInput{Campaign: c.ID, Candidate: id, UserID: "owner", Channels: c.Channels})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !visited {
+			return
+		}
+		now = integrationTime
+		if _, err = st.Visit(context.Background(), m.Pieces[0].Piece.Token, store.VisitInput{}); err != nil {
+			t.Fatal(err)
+		}
+		expected[id] = telemetry.Attrs{"campaign": c.ID, "candidate": id, "at": now.UTC().Format(time.RFC3339)}
+		now = now.Add(time.Hour)
+		if _, err = st.Visit(context.Background(), m.Pieces[0].Piece.Token, store.VisitInput{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := range count {
+		add(c, fmt.Sprintf("cand_%016x", i+1), true)
+	}
+	add(c, "cand_fffffffffffffffd", false)
+	if extra {
+		if _, _, err = st.RejectMember(context.Background(), store.Rejection{Campaign: c.ID, Candidate: "cand_0000000000000001", Why: "fixture", UserID: "owner"}); err != nil {
+			t.Fatal(err)
+		}
+		doomed, err := st.CreateCampaign(context.Background(), store.Campaign{Name: "deleted", CreatedUserID: "owner", Channels: c.Channels, Destination: c.Destination})
+		if err != nil {
+			t.Fatal(err)
+		}
+		add(doomed, "cand_fffffffffffffffe", true)
+		if _, _, err = st.DeleteCampaign(context.Background(), doomed.ID); err != nil {
+			t.Fatal(err)
+		}
+		delete(expected, "cand_fffffffffffffffe")
+		add(c, "cand_ffffffffffffffff", true)
+		delete(expected, "cand_ffffffffffffffff")
+	}
+	if err = d.Write(context.Background(), func(tx *sql.Tx) error {
+		_, err := tx.Exec("UPDATE members SET opened_emitted = '' WHERE candidate <> ?", "cand_ffffffffffffffff")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return dir, expected
+}
+
+type integrationTimer struct{ calls chan chan time.Time }
+
+func newIntegrationTimer() *integrationTimer {
+	return &integrationTimer{calls: make(chan chan time.Time, 10)}
+}
+func (a *integrationTimer) after(d time.Duration) <-chan time.Time {
+	if d != time.Hour {
+		panic("wrong sweep interval")
+	}
+	c := make(chan time.Time, 1)
+	a.calls <- c
+	return c
+}
+func (a *integrationTimer) next(t *testing.T) chan time.Time {
+	t.Helper()
+	select {
+	case c := <-a.calls:
+		return c
+	case <-time.After(5 * time.Second):
+		t.Fatal("sweep timer not called")
+		return nil
+	}
+}
+func integrationOpened(t *testing.T, trail []telemetry.Event, bus []events.Event, expected map[string]telemetry.Attrs) {
+	t.Helper()
+	seen := map[string]int{}
+	for _, e := range trail {
+		if e.Name != "campaign.member.opened" {
+			continue
+		}
+		id := fmt.Sprint(e.Attrs["candidate"])
+		seen[id]++
+		if !reflect.DeepEqual(e.Attrs, expected[id]) || e.RequestID != "" || e.User != "" {
+			t.Errorf("opened trail %+v", e)
+		}
+	}
+	if len(seen) != len(expected) {
+		t.Fatalf("opened members %d want %d", len(seen), len(expected))
+	}
+	for id := range expected {
+		if seen[id] != 1 {
+			t.Errorf("member %s count %d", id, seen[id])
+		}
+	}
+	seen = map[string]int{}
+	for _, e := range bus {
+		if e.Name != "campaign.member.opened" {
+			continue
+		}
+		id := fmt.Sprint(e.Attrs["candidate"])
+		seen[id]++
+		if !reflect.DeepEqual(map[string]any(e.Attrs), map[string]any(expected[id])) || e.RequestID != "" || e.User != "" {
+			t.Errorf("opened bus %+v", e)
+		}
+	}
+	if len(seen) != len(expected) {
+		t.Fatalf("bus members %d want %d", len(seen), len(expected))
+	}
+	for id := range expected {
+		if seen[id] != 1 {
+			t.Errorf("bus member %s count %d", id, seen[id])
+		}
+	}
+}
+
+// R-ZI0H-GSGZ R-QD1K-0939 R-QFHC-RSKN R-PUXG-ZI76
+func TestRunIntegrationHourlySweep(t *testing.T) {
+	for _, extra := range []bool{false, true} {
+		t.Run(fmt.Sprint(extra), func(t *testing.T) {
+			count := 2*links.SweepBatchSize + 1
+			if extra {
+				count = 2
+			}
+			dir, expected := seedIntegrationVisits(t, count, extra)
+			timer := newIntegrationTimer()
+			r := startIntegration(t, integrationOptions{dir: dir, sweepAfter: timer.after})
+			first := timer.next(t)
+			first <- integrationTime
+			second := timer.next(t)
+			if r.err.String() != "campaigns: opened events sent\n" {
+				t.Fatalf("completion %q", r.err.String())
+			}
+			integrationOpened(t, r.capture.Events(), r.bus.Events(), expected)
+			before := r.err.String()
+			second <- integrationTime
+			timer.next(t)
+			if r.err.String() != before {
+				t.Errorf("empty sweep wrote %q", r.err.String())
+			}
+			if code := r.stop(); code != cli.ExitSuccess {
+				t.Fatal(code)
+			}
+			integrationOpened(t, r.capture.Events(), r.bus.Events(), expected)
+		})
+	}
+}
+
+// R-QE9G-E0TY R-QGP9-5KBC
+func TestRunIntegrationSweepWaitCancelled(t *testing.T) {
+	dir, _ := seedIntegrationVisits(t, 2*links.SweepBatchSize+1, false)
+	timer := newIntegrationTimer()
+	r := startIntegration(t, integrationOptions{dir: dir, sweepAfter: timer.after})
+	timer.next(t)
+	if code := r.stop(); code != cli.ExitSuccess {
+		t.Fatal(code)
+	}
+	if r.err.Len() != 0 || len(r.bus.Events()) != 0 {
+		t.Fatalf("sweep ran before firing %q %+v", r.err.String(), r.bus.Events())
+	}
+	select {
+	case <-timer.calls:
+		t.Fatal("timer called after stop")
+	default:
+	}
+}
+
+type integrationCutoffSink struct {
+	capture events.Capture
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (s *integrationCutoffSink) Deliver(ctx context.Context, e events.Event) error {
+	s.once.Do(func() { close(s.entered); <-s.release })
+	return s.capture.Deliver(ctx, e)
+}
+
+// R-ZKGA-8BYD R-QGP9-5KBC
+func TestRunIntegrationStopsRunningSweep(t *testing.T) {
+	dir, _ := seedIntegrationVisits(t, 2*links.SweepBatchSize+1, false)
+	sink := &integrationCutoffSink{entered: make(chan struct{}), release: make(chan struct{})}
+	timer := newIntegrationTimer()
+	r := startIntegration(t, integrationOptions{dir: dir, sweepAfter: timer.after, bus: sink})
+	timer.next(t) <- integrationTime
+	select {
+	case <-sink.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("sweep never delivered")
+	}
+	r.cancel(errors.New("cutoff"))
+	close(sink.release)
+	if code := r.stop(); code != cli.ExitSuccess {
+		t.Fatal(code)
+	}
+	if r.err.Len() != 0 {
+		t.Fatalf("cutoff wrote %q", r.err.String())
+	}
+	select {
+	case <-timer.calls:
+		t.Fatal("timer called after cutoff")
+	default:
+	}
+	expected := map[string]telemetry.Attrs{}
+	stopped := false
+	for _, e := range r.capture.Events() {
+		if e.Name == "service.stopping" {
+			stopped = true
+		}
+		if e.Name == "campaign.member.opened" {
+			if stopped {
+				t.Error("opened after stopping")
+			}
+			expected[fmt.Sprint(e.Attrs["candidate"])] = e.Attrs
+		}
+	}
+	if len(expected) == 0 || len(expected) > links.SweepBatchSize {
+		t.Fatalf("cutoff page size %d", len(expected))
+	}
+	integrationOpened(t, r.capture.Events(), sink.capture.Events(), expected)
+}
+
+// R-PR9R-U6Z3 R-PTPK-LQGH
+func TestRunIntegrationLiveFirstOpen(t *testing.T) {
+	f := newIntegrationFake(t, false)
+	path := filepath.Join(t.TempDir(), "services")
+	integrationServices(t, path, map[string]string{"candidates": f.socket}, "")
+	r := startIntegration(t, integrationOptions{path: path})
+	var c tools.Campaign
+	r.call("create_campaign", map[string]any{"name": "live first", "channels": []string{"mail", "email"}, "destination": "https://destination.test/"}, &c)
+	r.call("add_member", map[string]any{"campaign": c.ID, "candidate": "cand_0000000000000001"}, nil)
+	var mail, email tools.MergeList
+	r.call("merge_list", map[string]any{"campaign": c.ID, "channel": "mail"}, &mail)
+	r.call("merge_list", map[string]any{"campaign": c.ID, "channel": "email"}, &email)
+	mailToken, emailToken := integrationToken(t, mail.Rows[0].Link), integrationToken(t, email.Rows[0].Link)
+	var wg sync.WaitGroup
+	gate := make(chan struct{})
+	for i := range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-gate
+			status, _ := r.request("GET", "/t/"+strings.ToUpper(mailToken)+"?r=private-query", "owner", fmt.Sprintf("concurrent-open-%d", i), nil)
+			if status != 302 {
+				t.Errorf("visit status %d", status)
+			}
+		}()
+	}
+	close(gate)
+	wg.Wait()
+	r.request("HEAD", "/t/"+emailToken, "owner", "later-head", nil)
+	r.request("GET", "/t/unknown", "owner", "unknown-open", nil)
+	r.request("POST", "/t/"+mailToken, "owner", "post-open", nil)
+	if code := r.stop(); code != 0 {
+		t.Fatal(code)
+	}
+	integrationAssertLiveOpened(t, r, c.ID, "cand_0000000000000001", integrationTime, []string{"concurrent-open-0", "concurrent-open-1"})
+}
+
+// R-PTPK-LQGH
+func TestRunIntegrationEarlierVisitFirstOpen(t *testing.T) {
+	dir, expected := seedIntegrationVisits(t, 1, false)
+	var campaign string
+	for _, attrs := range expected {
+		campaign = fmt.Sprint(attrs["campaign"])
+	}
+	d, err := db.Open(context.Background(), db.Config{Path: filepath.Join(dir, "state", "campaigns.db"), Migrations: campaigns.Migrations(), Now: func() time.Time { return integrationTime }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(d, store.Config{Now: func() time.Time { return integrationTime }, Rand: &integrationRandom{}})
+	m, err := st.GetMember(context.Background(), campaign, "cand_0000000000000001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := m.Pieces[0].Piece.Token
+	if err = d.Close(); err != nil {
+		t.Fatal(err)
+	}
+	r := startIntegration(t, integrationOptions{dir: dir, now: func() time.Time { return integrationTime.Add(3 * time.Hour) }})
+	r.request("GET", "/t/"+token, "owner", "earlier-open", nil)
+	r.request("GET", "/t/"+token, "owner", "already-open", nil)
+	if code := r.stop(); code != 0 {
+		t.Fatal(code)
+	}
+	integrationAssertLiveOpened(t, r, campaign, "cand_0000000000000001", integrationTime, []string{"earlier-open"})
+}
+
+func integrationAssertLiveOpened(t *testing.T, r *integrationRun, campaign, candidate string, first time.Time, requests []string) {
+	t.Helper()
+	want := telemetry.Attrs{"campaign": campaign, "candidate": candidate, "at": first.UTC().Truncate(time.Second).Format(time.RFC3339)}
+	var opened []telemetry.Event
+	for _, e := range r.capture.Events() {
+		if e.Name == "campaign.member.opened" {
+			opened = append(opened, e)
+		}
+	}
+	if len(opened) != 1 {
+		t.Fatalf("first-open trail count %d", len(opened))
+	}
+	e := opened[0]
+	allowed := false
+	for _, q := range requests {
+		if e.RequestID == q {
+			allowed = true
+		}
+	}
+	if !allowed || e.User != "" || !reflect.DeepEqual(e.Attrs, want) {
+		t.Fatalf("first-open trail %+v", e)
+	}
+	visited, finished := false, false
+	for _, event := range r.capture.Events() {
+		if event.RequestID != e.RequestID {
+			continue
+		}
+		switch event.Name {
+		case "campaign.visited":
+			visited = true
+		case "campaign.member.opened":
+			if !visited || finished {
+				t.Error("opened event order")
+			}
+		case "request.finished":
+			finished = true
+		}
+	}
+	if !visited || !finished {
+		t.Error("first-open request missing visit/finish")
+	}
+	bus := []events.Event{}
+	for _, event := range r.bus.Events() {
+		if event.Name == "campaign.member.opened" {
+			bus = append(bus, event)
+		}
+	}
+	if len(bus) != 1 || bus[0].RequestID != e.RequestID || bus[0].User != "" || !reflect.DeepEqual(map[string]any(bus[0].Attrs), map[string]any(want)) {
+		t.Fatalf("first-open bus %+v", bus)
 	}
 }

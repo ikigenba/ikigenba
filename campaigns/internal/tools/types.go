@@ -71,6 +71,12 @@ type MemberArgs struct {
 	Candidate string `json:"candidate" mcp:"required"`
 }
 
+// MembersArgs selects businesses to add in caller order.
+type MembersArgs struct {
+	Campaign   string   `json:"campaign" mcp:"required"`
+	Candidates []string `json:"candidates" mcp:"required"`
+}
+
 // RejectArgs supplies arguments for the corresponding MCP tool.
 type RejectArgs struct {
 	Campaign  string `json:"campaign" mcp:"required"`
@@ -215,6 +221,18 @@ type AddedMember struct {
 	Member  Member `json:"member"`
 	Added   bool   `json:"added"`
 	Skipped []Skip `json:"skipped"`
+}
+
+// MemberResult reports the outcome for one distinct candidate.
+type MemberResult struct {
+	Candidate string `json:"candidate"`
+	Result    string `json:"result"`
+	Skipped   []Skip `json:"skipped"`
+}
+
+// MembersAdd reports outcomes in the caller's distinct candidate order.
+type MembersAdd struct {
+	Results []MemberResult `json:"results"`
 }
 
 // ProspectListAdd reports additions and exclusions from a prospect list.

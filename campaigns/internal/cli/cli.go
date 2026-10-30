@@ -21,6 +21,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/campaigns"
+	"github.com/ikigenba/ikigenba/campaigns/internal/links"
 	"github.com/ikigenba/ikigenba/campaigns/internal/pages"
 	"github.com/ikigenba/ikigenba/campaigns/internal/server"
 	"github.com/ikigenba/ikigenba/campaigns/internal/settings"
@@ -47,22 +48,23 @@ const NginxConf = "location = /events { return 404; }\nlocation = /declarations 
 
 // Process supplies every host-dependent operation used by Run.
 type Process struct {
-	Args      []string
-	LookupEnv func(string) (string, bool)
-	Unsetenv  func(string) error
-	Pid       int
-	Stdout    io.Writer
-	Stderr    io.Writer
-	Version   string
-	Inherit   func(uintptr) (net.Listener, error)
-	Now       func() time.Time
-	Sleep     func(context.Context, time.Duration)
-	Rand      io.Reader
-	Dir       string
-	Sink      telemetry.Sink
-	EventSink events.Sink
-	Banner    func(page.User) page.Banner
-	MCP       func(*telemetry.Writer) *mcp.Server
+	Args       []string
+	LookupEnv  func(string) (string, bool)
+	Unsetenv   func(string) error
+	Pid        int
+	Stdout     io.Writer
+	Stderr     io.Writer
+	Version    string
+	Inherit    func(uintptr) (net.Listener, error)
+	Now        func() time.Time
+	Sleep      func(context.Context, time.Duration)
+	SweepAfter func(time.Duration) <-chan time.Time
+	Rand       io.Reader
+	Dir        string
+	Sink       telemetry.Sink
+	EventSink  events.Sink
+	Banner     func(page.User) page.Banner
+	MCP        func(*telemetry.Writer) *mcp.Server
 }
 type lockedReader struct {
 	mu sync.Mutex
@@ -151,7 +153,31 @@ func Run(ctx context.Context, p Process) int {
 			_ = c.Close()
 		}
 	}
+	sweepCtx, cancelSweep := context.WithCancel(ctx)
+	sweepDone := make(chan struct{})
+	after := p.SweepAfter
+	if after == nil {
+		after = time.After
+	}
+	go func() {
+		defer close(sweepDone)
+		for sweepCtx.Err() == nil {
+			timer := after(time.Hour)
+			select {
+			case <-sweepCtx.Done():
+				return
+			case <-timer:
+			}
+			if sweepCtx.Err() != nil {
+				return
+			}
+			<-links.StartSweep(sweepCtx, links.Config{Store: st, Telemetry: w, Events: em, DefaultDestination: s.DefaultDestination}, stderr)
+		}
+	}()
+	defer func() { cancelSweep(); <-sweepDone }()
 	err = server.Serve(ctx, ln, h, s.Drain(), func(c context.Context) {
+		cancelSweep()
+		<-sweepDone
 		_ = em.Flush(c)
 		reason := ""
 		if cause := context.Cause(ctx); cause != nil {

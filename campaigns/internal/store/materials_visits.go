@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"time"
 )
 
 // Materials reads material references in their original addition order.
@@ -76,9 +77,79 @@ func (s *Store) Visit(ctx context.Context, token string, in VisitInput) (Visited
 		if e != nil {
 			return Visited{}, e
 		}
-		e = exec(ctx, tx, "INSERT INTO visits(piece,at,user_agent,referrer,address)VALUES(?,?,?,?,?)", p.ID, text(s.stamp()), in.UserAgent, in.Referrer, in.Address)
-		return Visited{p.Campaign, p.ID, c.Destination}, e
+		at := s.stamp()
+		if e = exec(ctx, tx, "INSERT INTO visits(piece,at,user_agent,referrer,address)VALUES(?,?,?,?,?)", p.ID, at.Format(time.RFC3339), in.UserAgent, in.Referrer, in.Address); e != nil {
+			return Visited{}, e
+		}
+		r, e := tx.ExecContext(ctx, "UPDATE members SET opened_emitted=? WHERE campaign=? AND candidate=? AND opened_emitted=''", at.Format(time.RFC3339), p.Campaign, p.Candidate)
+		if e != nil {
+			return Visited{}, e
+		}
+		n, e := r.RowsAffected()
+		if e != nil {
+			return Visited{}, e
+		}
+		first, _, e := firstVisit(ctx, tx, MemberKey{p.Campaign, p.Candidate})
+		return Visited{p.Campaign, p.Candidate, p.ID, c.Destination, n > 0, first}, e
 	})
+}
+
+func firstVisit(ctx context.Context, tx *sql.Tx, key MemberKey) (time.Time, bool, error) {
+	var first sql.NullString
+	e := tx.QueryRowContext(ctx, "SELECT min(v.at) FROM pieces p JOIN visits v ON v.piece=p.id WHERE p.campaign=? AND p.candidate=?", key.Campaign, key.Candidate).Scan(&first)
+	if e != nil || !first.Valid {
+		return time.Time{}, false, e
+	}
+	// Earlier releases encoded a visit at the zero clock as empty text.
+	if first.String == "" {
+		return time.Time{}, true, nil
+	}
+	at, e := time.Parse(time.RFC3339, first.String)
+	return at, true, e
+}
+
+// MarkOpened examines a page of members and marks previously untold opens.
+func (s *Store) MarkOpened(ctx context.Context, after MemberKey, n int) (MemberKey, []Opened, error) {
+	type page struct {
+		last   MemberKey
+		opened []Opened
+	}
+	v, e := result(ctx, s, true, func(tx *sql.Tx) (page, error) {
+		if n < 1 {
+			return page{}, ErrUnreachable
+		}
+		members, e := query[MemberKey](ctx, tx, "SELECT campaign,candidate FROM members WHERE (campaign,candidate)>(?,?) ORDER BY campaign,candidate LIMIT ?", after.Campaign, after.Candidate, n)
+		if e != nil {
+			return page{}, e
+		}
+		out := page{opened: []Opened{}}
+		if len(members) == n {
+			out.last = members[len(members)-1]
+		}
+		at := s.stamp()
+		for _, key := range members {
+			first, found, e := firstVisit(ctx, tx, key)
+			if e != nil {
+				return page{}, e
+			}
+			if !found {
+				continue
+			}
+			r, e := tx.ExecContext(ctx, "UPDATE members SET opened_emitted=? WHERE campaign=? AND candidate=? AND opened_emitted='' AND EXISTS(SELECT 1 FROM campaigns WHERE id=? AND deleted=0)", at.Format(time.RFC3339), key.Campaign, key.Candidate, key.Campaign)
+			if e != nil {
+				return page{}, e
+			}
+			changed, e := r.RowsAffected()
+			if e != nil {
+				return page{}, e
+			}
+			if changed > 0 {
+				out.opened = append(out.opened, Opened{key.Campaign, key.Candidate, first})
+			}
+		}
+		return out, nil
+	})
+	return v.last, v.opened, e
 }
 
 // VisitsFirst is the indexed SQL statement for this window.

@@ -40,7 +40,7 @@ func Handler(cfg Config) http.Handler {
 		panic(err)
 	}
 	ph := identity.Optional(pages.Handler(pages.Config{Banner: cfg.Banner, Pages: ps, ServicesPath: cfg.ServicesPath, Store: cfg.Store, Candidates: cfg.Candidates, MCP: cfg.MCP}))
-	lh := links.Handler(links.Config{Store: cfg.Store, Telemetry: cfg.Telemetry, DefaultDestination: cfg.Settings.DefaultDestination})
+	lh := links.Handler(links.Config{Store: cfg.Store, Telemetry: cfg.Telemetry, Events: cfg.Events, DefaultDestination: cfg.Settings.DefaultDestination})
 	mh := identity.Require(events.Middleware(cfg.MCP))
 	sh := identity.Optional(page.Static())
 	dh := events.DeclarationsHandler(cfg.Events, nil)

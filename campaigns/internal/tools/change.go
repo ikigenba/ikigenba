@@ -101,6 +101,69 @@ func (h handlers) add(ctx context.Context, c identity.Caller, k store.Campaign, 
 	}
 	return AddedMember{memberAnswer(r), a, skip}, nil
 }
+
+func (h handlers) addMembers(ctx context.Context, c identity.Caller, in MembersArgs) (MembersAdd, error) {
+	k, err := h.live(ctx, in.Campaign)
+	if err != nil {
+		return MembersAdd{}, err
+	}
+	out := MembersAdd{Results: []MemberResult{}}
+	seen := make(map[string]bool)
+	needed := []int{}
+	for _, id := range in.Candidates {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		result := MemberResult{Candidate: id, Result: ResultUnknown, Skipped: []Skip{}}
+		if store.ValidCandidateID(id) {
+			_, err := h.Store.GetMember(ctx, k.ID, id)
+			switch {
+			case err == nil:
+				result.Result = ResultMember
+			case errors.Is(err, store.ErrNotFound):
+				needed = append(needed, len(out.Results))
+			default:
+				return MembersAdd{}, storeError(err, false)
+			}
+		}
+		out.Results = append(out.Results, result)
+	}
+	if len(needed) == 0 {
+		return out, nil
+	}
+	if h.Candidates == nil {
+		return MembersAdd{}, candidateFailure()
+	}
+	// Resolve every needed business before adding any member.
+	businesses := make(map[int]candidates.Business, len(needed))
+	for _, i := range needed {
+		b, err := h.Candidates.Candidate(ctx, out.Results[i].Candidate)
+		if errors.Is(err, candidates.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return MembersAdd{}, candidateFailure()
+		}
+		businesses[i] = b
+	}
+	for _, i := range needed {
+		b, ok := businesses[i]
+		if !ok {
+			continue
+		}
+		a, err := h.add(ctx, c, k, out.Results[i].Candidate, "", b)
+		if err != nil {
+			return MembersAdd{}, err
+		}
+		out.Results[i].Result = ResultMember
+		if a.Added {
+			out.Results[i].Result = ResultAdded
+			out.Results[i].Skipped = a.Skipped
+		}
+	}
+	return out, nil
+}
 func (h handlers) addProspectList(ctx context.Context, c identity.Caller, in ProspectListArgs) (out ProspectListAdd, err error) {
 	if !store.ValidCampaignID(in.Campaign) {
 		return out, missing()

@@ -46,6 +46,13 @@ const (
 	SkipNoEmail   = "no_email"
 )
 
+// Member addition outcomes are stable machine words.
+const (
+	ResultAdded   = "added"
+	ResultMember  = "member"
+	ResultUnknown = "unknown"
+)
+
 // Tool descriptions are centralized copy.
 const (
 	DescribeCampaigns       string = "Lists campaigns."
@@ -55,6 +62,7 @@ const (
 	DescribeDeleteCampaign  string = "Deletes a campaign."
 	DescribeAddProspectList string = "Adds a prospect list to a campaign."
 	DescribeAddMember       string = "Adds one member to a campaign."
+	DescribeAddMembers      string = "Adds chosen members to a campaign."
 	DescribeReject          string = "Rejects a member."
 	DescribeDrop            string = "Drops a planned piece."
 	DescribeDeliver         string = "Marks a piece delivered by hand."
@@ -75,6 +83,7 @@ func Catalog() []Entry {
 		{"delete_campaign", DescribeDeleteCampaign},
 		{"add_prospect_list", DescribeAddProspectList},
 		{"add_member", DescribeAddMember},
+		{"add_members", DescribeAddMembers},
 		{"reject", DescribeReject},
 		{"drop", DescribeDrop},
 		{"deliver", DescribeDeliver},
@@ -99,6 +108,7 @@ func Register(srv *mcp.Server, cfg Config) {
 	mcp.AddTool(srv, mcp.Tool[DeleteArgs, CampaignChange]{Name: "delete_campaign", Description: DescribeDeleteCampaign, Effect: mcp.Destructive, Handler: h.deleteCampaign})
 	mcp.AddTool(srv, mcp.Tool[ProspectListArgs, ProspectListAdd]{Name: "add_prospect_list", Description: DescribeAddProspectList, Effect: mcp.Additive, Handler: h.addProspectList})
 	mcp.AddTool(srv, mcp.Tool[MemberArgs, AddedMember]{Name: "add_member", Description: DescribeAddMember, Effect: mcp.Additive, Handler: h.addMember})
+	mcp.AddTool(srv, mcp.Tool[MembersArgs, MembersAdd]{Name: "add_members", Description: DescribeAddMembers, Effect: mcp.Additive, Handler: h.addMembers})
 	mcp.AddTool(srv, mcp.Tool[RejectArgs, MemberChange]{Name: "reject", Description: DescribeReject, Effect: mcp.Additive, Handler: h.reject})
 	mcp.AddTool(srv, mcp.Tool[PieceArgs, PieceChange]{Name: "drop", Description: DescribeDrop, Effect: mcp.Additive, Handler: h.drop})
 	mcp.AddTool(srv, mcp.Tool[PieceArgs, PieceChange]{Name: "deliver", Description: DescribeDeliver, Effect: mcp.Additive, Handler: h.deliver})

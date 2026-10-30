@@ -64,7 +64,7 @@ func same(t *testing.T, a, b *httptest.ResponseRecorder) {
 	}
 }
 
-// R-PXE4-EPMC R-PYM0-SHD1 R-3AHY-9SNL R-Q29P-XSL4 R-Q75B-GVJW R-Q8D7-UNAL R-Q9L4-8F1A R-3J3X-X9WS
+// R-PXE4-EPMC R-PYM0-SHD1 R-ZFKO-P8ZL R-Q29P-XSL4 R-Q75B-GVJW R-Q8D7-UNAL R-Q9L4-8F1A R-3J3X-X9WS
 func TestRouteDispatch(t *testing.T) {
 	cfg, tc, ec := fixture(t)
 	h := web.Handler(cfg)
@@ -113,9 +113,9 @@ func TestRouteDispatch(t *testing.T) {
 	}
 }
 
-// R-Q5XF-33T7
+// R-ZECS-BH8W
 func TestGuestTrackingDispatch(t *testing.T) {
-	cfg, _, _ := fixture(t)
+	cfg, _, ec := fixture(t)
 	c, e := cfg.Store.CreateCampaign(context.Background(), store.Campaign{CreatedUserID: "owner", Name: "chosen campaign", Channels: []string{store.ChannelMail}, Destination: "https://destination.test/"})
 	if e != nil {
 		t.Fatal(e)
@@ -125,7 +125,7 @@ func TestGuestTrackingDispatch(t *testing.T) {
 		t.Fatal(e)
 	}
 	h := web.Handler(cfg)
-	direct := links.Handler(links.Config{Store: cfg.Store, Telemetry: cfg.Telemetry, DefaultDestination: cfg.Settings.DefaultDestination})
+	direct := links.Handler(links.Config{Store: cfg.Store, Telemetry: cfg.Telemetry, Events: cfg.Events, DefaultDestination: cfg.Settings.DefaultDestination})
 	for _, u := range []string{"", "owner"} {
 		for _, method := range []string{"GET", "HEAD", "POST"} {
 			for _, path := range []string{"/t/" + m.Pieces[0].Piece.Token, "/t/unknown", "/t/"} {
@@ -140,6 +140,13 @@ func TestGuestTrackingDispatch(t *testing.T) {
 	recorded, e := cfg.Store.GetPiece(context.Background(), m.Pieces[0].Piece.ID)
 	if e != nil || recorded.Engagement.Opens != 8 {
 		t.Fatal(recorded, e)
+	}
+	if e = cfg.Events.Flush(context.Background()); e != nil {
+		t.Fatal(e)
+	}
+	opened := ec.Events()
+	if len(opened) != 1 || opened[0].Name != trail.EventMemberOpened || opened[0].RequestID != "chosen-request" || opened[0].User != "" || !reflect.DeepEqual(opened[0].Attrs, events.Attrs{"campaign": c.ID, "candidate": m.Member.Candidate, "at": m.Member.Added.UTC().Format(time.RFC3339)}) {
+		t.Fatalf("tracking bus %+v", opened)
 	}
 }
 
@@ -182,7 +189,7 @@ func TestMCPRegistrationAndCaller(t *testing.T) {
 	}
 }
 
-// R-3AHY-9SNL
+// R-ZFKO-P8ZL
 func TestDeclarationsIgnoreRequestInputs(t *testing.T) {
 	cfg, _, _ := fixture(t)
 	h := web.Handler(cfg)

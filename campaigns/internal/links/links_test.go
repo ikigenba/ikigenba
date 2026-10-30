@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/appkit/events"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/campaigns"
@@ -31,6 +32,8 @@ type fixture struct {
 	h        http.Handler
 	capture  *telemetry.Capture
 	writer   *telemetry.Writer
+	emitter  *events.Emitter
+	bus      *events.Capture
 	campaign store.Campaign
 	piece    store.Piece
 	now      time.Time
@@ -46,19 +49,23 @@ func setup(t *testing.T) *fixture {
 	}
 	t.Cleanup(func() { _ = f.d.Close() })
 	f.st = store.New(f.d, store.Config{Now: func() time.Time { return f.now }, Rand: bytes.NewReader(randomFixture(7))})
-	f.campaign, err = f.st.CreateCampaign(context.Background(), store.Campaign{Name: "a campaign", CreatedUserID: "creator", Channels: []string{store.ChannelMail}, Destination: "https://destination.example/"})
+	f.campaign, err = f.st.CreateCampaign(context.Background(), store.Campaign{Name: "a campaign", CreatedUserID: "creator", Channels: []string{store.ChannelMail, store.ChannelEmail}, Destination: "https://destination.example/"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	member, _, err := f.st.AddMember(context.Background(), store.MemberInput{UserID: "actor", Campaign: f.campaign.ID, Candidate: "cand_1111111111111111", Channels: []string{store.ChannelMail}})
+	member, _, err := f.st.AddMember(context.Background(), store.MemberInput{UserID: "actor", Campaign: f.campaign.ID, Candidate: "cand_1111111111111111", Channels: []string{store.ChannelMail, store.ChannelEmail}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	f.piece = member.Pieces[0].Piece
 	f.capture = &telemetry.Capture{}
-	f.writer = telemetry.New(telemetry.Config{Service: "campaigns", Sink: f.capture, Now: func() time.Time { return f.now }, Rand: bytes.NewReader(randomFixture(8)), Sleep: func(context.Context, time.Duration) {}})
+	sinkNow := f.now
+	f.writer = telemetry.New(telemetry.Config{Service: "campaigns", Sink: f.capture, Now: func() time.Time { return sinkNow }, Rand: bytes.NewReader(randomFixture(8)), Sleep: func(context.Context, time.Duration) {}})
 	t.Cleanup(func() { f.writer.Shutdown(context.Background(), "test") })
-	f.h = links.Handler(links.Config{Store: f.st, Telemetry: f.writer, DefaultDestination: "https://fallback.example/"})
+	f.bus = &events.Capture{}
+	f.emitter = events.New(events.Config{Service: "campaigns", Sink: f.bus, Emits: trail.Emits(), Now: func() time.Time { return sinkNow }, Rand: bytes.NewReader(randomFixture(9)), Sleep: func(context.Context, time.Duration) {}})
+	t.Cleanup(func() { f.emitter.Shutdown(context.Background()) })
+	f.h = links.Handler(f.config())
 	return f
 }
 func request(t *testing.T, f *fixture, method, path string, headers http.Header, caller *identity.Caller) *httptest.ResponseRecorder {
@@ -95,7 +102,7 @@ func flush(t *testing.T, f *fixture) {
 	}
 }
 
-// R-ZG45-OPXW R-ZIJY-G9FA R-ZJRU-U15Z R-ZONG-D44R R-ZKZR-7SWO R-ZM7N-LKND
+// R-ZIJY-G9FA R-ZJRU-U15Z R-ZONG-D44R R-ZKZR-7SWO R-ZM7N-LKND
 func TestVisits(t *testing.T) {
 	f := setup(t)
 	for i, method := range []string{"GET", "GET", "HEAD"} {
@@ -205,7 +212,7 @@ func TestNonVisitsAndDatabaseFailure(t *testing.T) {
 	}
 }
 
-// R-ZTJ1-W73J R-2AW5-UQPF
+// R-U3PX-T70U R-2AW5-UQPF
 func TestIdentityIgnoredAndVisitTrail(t *testing.T) {
 	f := setup(t)
 	caller := identity.Caller{UserID: "owner", Email: "mgreenly+fake00@gmail.com", RequestID: "request-chosen"}
@@ -234,9 +241,10 @@ func TestIdentityIgnoredAndVisitTrail(t *testing.T) {
 	}
 	flush(t, f)
 	events := f.capture.Events()
-	if len(events) != 3 {
+	if len(events) != 4 {
 		t.Fatal(events)
 	}
+	events = append(events[:1], events[2:]...)
 	for i, e := range events {
 		q := ""
 		if i == 1 {
@@ -303,10 +311,14 @@ func TestWireAnswersHaveOneShape(t *testing.T) {
 }
 
 func randomFixture(seed int) []byte {
-	out := make([]byte, 0, 32768)
-	for i := range 1024 {
+	out := make([]byte, 0, 131072)
+	for i := range 4096 {
 		sum := sha256.Sum256([]byte(fmt.Sprintf("%d-%d", seed, i)))
 		out = append(out, sum[:]...)
 	}
 	return out
+}
+
+func (f *fixture) config() links.Config {
+	return links.Config{Store: f.st, Telemetry: f.writer, Events: f.emitter, DefaultDestination: "https://fallback.example/"}
 }

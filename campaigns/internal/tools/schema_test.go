@@ -34,6 +34,8 @@ func schemaCases(t *testing.T, list []mcp.ToolInfo) {
 		{"add_prospect_list", []string{"campaign", "prospect_list"}, []string{"campaign", "prospect_list"}},
 		// R-FGGE-7CVX
 		{"add_member", []string{"campaign", "candidate"}, []string{"campaign", "candidate"}},
+		// R-Q88B-T2K9 R-QD3X-C5J1
+		{"add_members", []string{"campaign", "candidates"}, []string{"campaign", "candidates"}},
 		// R-FHOA-L4MM
 		{"reject", []string{"campaign", "candidate", "why"}, []string{"campaign", "candidate", "why"}},
 		// R-FIW6-YWDB
@@ -82,7 +84,7 @@ func schemaCases(t *testing.T, list []mcp.ToolInfo) {
 		}
 	}
 }
-func outputValue[T any](t *testing.T, v T, keys []string) {
+func outputValue[T any](t *testing.T, v T, keys []string) map[string]json.RawMessage {
 	t.Helper()
 	f := setup(t)
 	srv := mcp.NewServer(mcp.ServerConfig{Name: "campaigns", Telemetry: f.cfg.Telemetry})
@@ -144,6 +146,7 @@ func outputValue[T any](t *testing.T, v T, keys []string) {
 	if got := objectKeys(t, answer.StructuredContent); !reflect.DeepEqual(got, keys) {
 		t.Fatalf("result property order %v want %v", got, keys)
 	}
+	return m
 }
 
 // R-FNRS-HZC3

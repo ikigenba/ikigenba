@@ -121,8 +121,21 @@ type Visit struct {
 // VisitInput holds request data preserved verbatim.
 type VisitInput struct{ UserAgent, Referrer, Address string }
 
-// Visited identifies the visited piece and current destination.
-type Visited struct{ Campaign, Piece, Destination string }
+// Visited identifies the visit, current destination and first-open change.
+type Visited struct {
+	Campaign, Candidate, Piece, Destination string
+	Opened                                  bool
+	First                                   time.Time
+}
+
+// MemberKey is a member's position in campaign and candidate order.
+type MemberKey struct{ Campaign, Candidate string }
+
+// Opened identifies a member marked opened and its earliest visit.
+type Opened struct {
+	Campaign, Candidate string
+	First               time.Time
+}
 
 // PieceEngagement summarizes visits to one piece.
 type PieceEngagement struct {

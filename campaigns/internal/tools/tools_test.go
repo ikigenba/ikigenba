@@ -152,16 +152,18 @@ func (f *fixture) flush() {
 func id(n int) string { return fmt.Sprintf("cand_%016x", n) }
 
 type sibling struct {
-	mu          sync.Mutex
-	requests    []string
-	details     []siblingCall
-	users       []string
-	businesses  map[string]map[string]any
-	members     []map[string]any
-	failure     string
-	head        int
-	artifact    string
-	showFailure string
+	mu                sync.Mutex
+	requests          []string
+	details           []siblingCall
+	users             []string
+	businesses        map[string]map[string]any
+	members           []map[string]any
+	failure           string
+	head              int
+	artifact          string
+	showFailure       string
+	candidateFailures map[string]string
+	candidateStatuses map[string]int
 }
 
 func (s *sibling) records() []string {
@@ -203,7 +205,15 @@ func (s *sibling) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	failure := s.failure
 	switch req.Params.Name {
 	case "candidate":
-		b, ok := s.businesses[req.Params.Arguments["candidate"]]
+		candidate := req.Params.Arguments["candidate"]
+		if status := s.candidateStatuses[candidate]; status != 0 {
+			w.WriteHeader(status)
+			return
+		}
+		if text := s.candidateFailures[candidate]; text != "" {
+			failure = text
+		}
+		b, ok := s.businesses[candidate]
 		if !ok && failure == "" {
 			failure = "not_found: absent"
 		}
@@ -243,9 +253,9 @@ func business(n int) map[string]any {
 	return map[string]any{"id": id(n), "status": "active", "name": fmt.Sprintf("business %d", n), "names": []string{"alias"}, "street": "street", "city": "city", "state": "state", "zip": "zip", "county": "county", "phone": "phone", "email": "mgreenly+fake01@gmail.com", "people": []any{map[string]any{"name": "person", "role": "owner"}}}
 }
 
-// R-S7WV-1AWD R-F0LP-8C8W R-F1TL-M3ZL R-F31H-ZVQA R-F49E-DNGZ
-// R-SBKK-6M4G R-SCSG-KDV5 R-3BPU-NKEA R-SF89-BXCJ R-3CXR-1C4Z
-// R-3E5N-F3VO R-SIVY-H8KM R-3FDJ-SVMD R-3GLG-6ND2
+// R-ZCZ3-MKQN R-F0LP-8C8W R-F1TL-M3ZL R-F31H-ZVQA R-F49E-DNGZ
+// R-SBKK-6M4G R-SCSG-KDV5 R-3BPU-NKEA R-SF89-BXCJ R-Q4KM-NRC6
+// R-Q5SJ-1J2V R-SIVY-H8KM R-Q70F-FATK R-3GLG-6ND2
 func TestCatalogAndSchemas(t *testing.T) {
 	f := setup(t)
 	f.start()
@@ -260,11 +270,11 @@ func TestCatalogAndSchemas(t *testing.T) {
 		t.Fatal("catalog shares storage")
 	}
 	cat = copyCat
-	if len(cat) != 15 || len(list) != 15 || len(f.server.Tools()) != 15 {
+	if len(cat) != 16 || len(list) != 16 || len(f.server.Tools()) != 16 {
 		t.Fatal("catalog length")
 	}
-	names := []string{"campaigns", "campaign", "create_campaign", "edit_campaign", "delete_campaign", "add_prospect_list", "add_member", "reject", "drop", "deliver", "deliver_channel", "add_material", "remove_material", "merge_list", "engagement"}
-	descriptions := []string{DescribeCampaigns, DescribeCampaign, DescribeCreateCampaign, DescribeEditCampaign, DescribeDeleteCampaign, DescribeAddProspectList, DescribeAddMember, DescribeReject, DescribeDrop, DescribeDeliver, DescribeDeliverChannel, DescribeAddMaterial, DescribeRemoveMaterial, DescribeMergeList, DescribeEngagement}
+	names := []string{"campaigns", "campaign", "create_campaign", "edit_campaign", "delete_campaign", "add_prospect_list", "add_member", "add_members", "reject", "drop", "deliver", "deliver_channel", "add_material", "remove_material", "merge_list", "engagement"}
+	descriptions := []string{DescribeCampaigns, DescribeCampaign, DescribeCreateCampaign, DescribeEditCampaign, DescribeDeleteCampaign, DescribeAddProspectList, DescribeAddMember, DescribeAddMembers, DescribeReject, DescribeDrop, DescribeDeliver, DescribeDeliverChannel, DescribeAddMaterial, DescribeRemoveMaterial, DescribeMergeList, DescribeEngagement}
 	seen := map[string]bool{}
 	for i, x := range cat {
 		line := FirstLine(x.Description)
@@ -276,10 +286,10 @@ func TestCatalogAndSchemas(t *testing.T) {
 			t.Fatal("registered order/copy")
 		}
 		want := mcp.Additive
-		if i < 2 || i > 12 {
+		if i < 2 || i > 13 {
 			want = mcp.Read
 		}
-		if i == 4 || i == 12 {
+		if i == 4 || i == 13 {
 			want = mcp.Destructive
 		}
 		if list[i].Effect() != want {
@@ -308,7 +318,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 	}
 }
 
-// R-3J18-Y6UG R-31YN-LEGQ R-T4U5-D3X4 R-3LH1-PQBU R-3MOY-3I2J
+// R-3J18-Y6UG R-QGRM-HGR4 R-T4U5-D3X4 R-3LH1-PQBU R-3MOY-3I2J
 func TestPagingPrecedenceAndUnavailable(t *testing.T) {
 	f := setup(t)
 	f.start()
@@ -404,7 +414,7 @@ func TestCampaignLifecycleAndWindows(t *testing.T) {
 // R-3RKJ-ML1B R-3SSG-0CS0 R-T8HU-IF57 R-3K95-BYL5 R-3QCN-8TAM
 // R-GN4V-LBU8 R-GKP2-TSCU R-GOCR-Z3KX R-3WG5-5O03 R-3HTC-KF3R
 // R-403U-AZ86 R-41BQ-OQYV R-42JN-2IPK R-3XO1-JFQS R-3YVX-X7HH
-// R-2VV5-OJR9 R-2X32-2BHY R-2YAY-G38N R-34EG-CXY4 R-2ZIU-TUZC
+// R-2VV5-OJR9 R-2X32-2BHY R-2YAY-G38N R-QRQP-XEFD R-QSYM-B662
 func TestMembersPiecesEngagementAndEvents(t *testing.T) {
 	f := setup(t)
 	s := &sibling{businesses: map[string]map[string]any{id(1): business(1), id(2): business(2), id(3): business(3)}}
@@ -511,6 +521,7 @@ func TestMembersPiecesEngagementAndEvents(t *testing.T) {
 	if count != 3 {
 		t.Fatal(count)
 	}
+	f.ok("campaign", CampaignArgs{Campaign: k.ID})
 	member := f.ok("engagement", EngagementArgs{Campaign: k.ID, Candidate: id(1)})
 	me := decode[Engagement](t, member)
 	if me.Opens != 3 || me.Visits != nil || me.Next != nil || me.Piece != "" {
@@ -544,6 +555,9 @@ func TestMembersPiecesEngagementAndEvents(t *testing.T) {
 	}
 	n := 0
 	for _, e := range f.log.Events() {
+		if e.Name == trail.EventMemberOpened {
+			t.Fatal("tool recorded a member open", e)
+		}
 		if e.Name == trail.EventMemberAdded || e.Name == trail.EventMemberRejected || e.Name == trail.EventPieceDelivered {
 			n++
 		}
