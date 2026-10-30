@@ -18,6 +18,9 @@ const SearchDefaultLimit = 10
 // SearchMaxLimit bounds the number of matches in one answer.
 const SearchMaxLimit = 50
 
+// SearchShort reads active candidates in the half-open names_lower range.
+const SearchShort = "SELECT id,name FROM candidates WHERE +status='active' AND names_lower>=? AND names_lower<?"
+
 // Match holds the candidate, the stored name matched, and its search score.
 type Match struct {
 	Candidate Candidate
@@ -161,7 +164,7 @@ func (s *Store) Search(ctx context.Context, q string, limit int) ([]Match, error
 }
 
 func shortSearch(ctx context.Context, tx *sql.Tx, q string, limit int) ([]searchHit, error) {
-	rows, err := querySQL(ctx, tx, "SELECT id,name FROM candidates WHERE status='active' AND instr(names_lower,?)=1", q)
+	rows, err := querySQL(ctx, tx, SearchShort, q, q+"\xff")
 	if err != nil {
 		return nil, err
 	}

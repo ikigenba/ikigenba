@@ -16,13 +16,14 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-4J5Q-HYYN
+// R-3VMH-QT5L
 func TestSearchIndexMigrationBytes(t *testing.T) {
 	got, e := fs.ReadFile(candidates.Migrations(), "0030_search_index.sql")
 	contractOK(t, e)
 	want := "CREATE VIRTUAL TABLE search_index USING fts5(name, candidate UNINDEXED, display UNINDEXED, tokenize='trigram');\n" +
 		"CREATE VIRTUAL TABLE search_index_vocab USING fts5vocab(search_index, 'row');\n" +
-		"INSERT INTO search_index(name, candidate, display) SELECT name, id, 1 FROM candidates WHERE status = 'active' AND name <> '' UNION SELECT j.value, c.id, 0 FROM candidates AS c, json_each(c.names) AS j WHERE c.status = 'active' AND j.type = 'text' AND j.value <> '' AND j.value <> c.name;\n"
+		"INSERT INTO search_index(name, candidate, display) SELECT name, id, 1 FROM candidates WHERE status = 'active' AND name <> '' UNION SELECT j.value, c.id, 0 FROM candidates AS c, json_each(c.names) AS j WHERE c.status = 'active' AND j.type = 'text' AND j.value <> '' AND j.value <> c.name;\n" +
+		"CREATE INDEX candidates_names_lower ON candidates(names_lower);\n"
 	contractEqual(t, string(got), want)
 }
 
