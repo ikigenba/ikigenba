@@ -98,6 +98,7 @@ The store keeps it in the one place a candidate is written, so every write path 
 - **The cap may hide a weak match on a large store**: each pass keeps 200 rows by bm25, so a query common to thousands of names may leave out one that would rank in the top `limit`, typically a near miss on a long alternate.
 - **A middle-letter typo in a short word may not be recalled**: `abxde` shares no trigram with `abcde`, so it is found only through pass 2's rarest trigrams of the rest of the query.
 - **A thin multi-word query may pass the figure**: a query of several words whose pass 1 recalls fewer than `limit` rows runs pass 2, and on a store whose names share many common trigrams that pass can take longer than 100 ms. On the sandbox's 90,740 real candidates the four-word exact name `ANDERSON BUS COMPANY INC` took 82 to 135 ms, pass 1 alone 5 to 10 ms. The figure (R-9JC7-61RU) and the pass rules stand; the timing test's synthetic store does not show this.
+- **A one-word query on a common fragment may pass the figure at a large `limit`**: a word many names share, `ander`, which pass 1 matches in about 12,800 index rows, ran 96 to 122 ms at a `limit` of 50 on the sandbox's 90,740 real candidates, while the same query at the default `limit` ran about 64 ms and the figure's own test passes. Pass 1 ranks every matching row to keep its top 200 whatever `limit` is, and decoding fifty rows adds the rest; a narrower pass 1 or a smaller recall limit would cut it, and is left for a later decision.
 
 ## Consumer tasks
 
