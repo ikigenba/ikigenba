@@ -123,7 +123,7 @@ func (*Source) Read(r scrapes.Row) sources.Reading {
 		k := sources.NameKey(n)
 		if k != "" && !seen[k] {
 			out.Names = append(out.Names, n)
-			if i > 0 || len(derived) == 1 {
+			if i == 1 {
 				out.TradeNames = append(out.TradeNames, n)
 			}
 			seen[k] = true

@@ -45,21 +45,33 @@ func TestRecordTradeNamesAndMailing(t *testing.T) {
 	}
 }
 
-// R-4UYH-F8AJ
+// R-HAE6-U105
 func TestForm5500TradeNamesAndMailing(t *testing.T) {
 	for _, tc := range []struct {
 		names         []string
 		sponsor, plan string
 		want          []string
 	}{
-		{[]string{"BROWN HAWK LLC DBA NORTHERN LIGHTS STEEL FAB"}, "BROWN HAWK LLC DBA NORTHERN LIGHTS STEEL FAB", "NORTHERN LIGHTS STEEL FABRICATION 401(K) PROFIT SHARING PLAN", []string{"NORTHERN LIGHTS STEEL FAB", "NORTHERN LIGHTS STEEL FABRICATION"}},
-		{[]string{"HEGGIES PIZZA, LLC"}, "HEGGIES PIZZA, LLC", "HEGGIES SLICE OF THE PIE", []string{"HEGGIES SLICE OF THE PIE"}},
+		{[]string{"BROWN HAWK LLC DBA NORTHERN LIGHTS STEEL FAB"}, "BROWN HAWK LLC DBA NORTHERN LIGHTS STEEL FAB", "NORTHERN LIGHTS STEEL FABRICATION 401(K) PROFIT SHARING PLAN", []string{"NORTHERN LIGHTS STEEL FAB"}},
+		{[]string{"HEGGIES PIZZA, LLC"}, "HEGGIES PIZZA, LLC", "HEGGIES SLICE OF THE PIE", []string{}},
 		{[]string{"ACME PAVING INC"}, "", "Acme Paving, Inc. 401(k) Plan", []string{}},
 		{[]string{"SMITH CO DBA ACME PAVING"}, "SMITH CO DBA ACME PAVING", "ACME PAVING 401K PLAN", []string{"ACME PAVING"}},
 		{[]string{"SMITH CO", "SMITH TRUCKING", ""}, "", "", []string{"SMITH TRUCKING"}},
+		{[]string{"SMITH CO", "", " ", "SMITH TRUCKING", "SMITH TRUCKING"}, "SMITH CO DBA SMITH FREIGHT", "SMITH HAULING 401K PLAN", []string{" ", "SMITH TRUCKING", "SMITH TRUCKING", "SMITH FREIGHT"}},
+		{[]string{"SMITH TRUCKING"}, "SMITH CO DBA SMITH TRUCKING", "", []string{}},
+		{[]string{"SMITH CO DBA SMITH CO"}, "SMITH CO DBA SMITH CO", "", []string{}},
+		{[]string{"SMITH CO"}, "SMITH CO DBA !!!", "", []string{}},
+		{nil, "", "SMITH HAULING 401K PLAN", []string{}},
 		{nil, "", "", []string{}},
 	} {
-		r := scrapes.Row{Names: tc.names, Facts: stringFacts(map[string]string{"sponsor_name": tc.sponsor, "plan_name": tc.plan})}
+		facts := map[string]string{}
+		if tc.sponsor != "" {
+			facts["sponsor_name"] = tc.sponsor
+		}
+		if tc.plan != "" {
+			facts["plan_name"] = tc.plan
+		}
+		r := scrapes.Row{Names: tc.names, Facts: stringFacts(facts)}
 		got := form5500.New().Read(r)
 		if !reflect.DeepEqual(got.TradeNames, tc.want) {
 			t.Fatalf("%v %+v: %v want %v", tc.names, r.Facts, got.TradeNames, tc.want)
@@ -72,11 +84,14 @@ func TestForm5500TradeNamesAndMailing(t *testing.T) {
 	}{
 		{nil, true, nil},
 		{map[string]string{"loc_state": ""}, true, nil},
+		{map[string]string{"mail_street": "PO BOX 7"}, true, nil},
 		{map[string]string{"loc_state": "", "mail_street": "PO BOX 7"}, true, nil},
 		{map[string]string{"loc_state": "MN"}, false, nil},
+		{map[string]string{"loc_state": " "}, false, nil},
 		{map[string]string{"loc_state": "MN", "mail_street": " PO BOX 7 ", "mail_city": " RUSH CITY ", "mail_state": " mn ", "mail_zip": " 55069-0007 "}, false, &sources.Address{Street: "PO BOX 7", City: "Rush City", State: "MN", Zip: "55069"}},
 		{map[string]string{"loc_state": "MN", "mail_city": "NORTH ST. PAUL"}, false, &sources.Address{City: "North St. Paul"}},
 		{map[string]string{"loc_state": "MN", "mail_city": "éCOLE-D'ÉTÉ", "mail_zip": "一二三四五六"}, false, &sources.Address{City: "École-D'Été", Zip: "一二三四五"}},
+		{map[string]string{"loc_state": "MN", "mail_zip": " 123 "}, false, &sources.Address{Zip: "123"}},
 		{map[string]string{"loc_state": "MN", "mail_street": " ", "mail_city": "", "mail_state": " ", "mail_zip": ""}, false, nil},
 	} {
 		got := form5500.New().Read(scrapes.Row{Facts: stringFacts(tc.facts)})
