@@ -250,7 +250,7 @@ type countBody struct{ reads int }
 func (c *countBody) Read([]byte) (int, error) { c.reads++; return 0, io.EOF }
 func (*countBody) Close() error               { return nil }
 
-// R-94Y6-RPXR R-97DZ-J9F5 R-98LV-X15U R-50EM-B4R3 R-4EGW-6OPR R-M2IW-10OJ R-M4YO-SK5X R-58XW-ZIXY
+// R-94Y6-RPXR R-97DZ-J9F5 R-98LV-X15U R-50EM-B4R3 R-4EGW-6OPR R-M2IW-10OJ R-M4YO-SK5X R-2RED-NLY6
 func TestAddStoresFetchedIconAndEvents(t *testing.T) {
 	for _, icon := range []bool{false, true} {
 		t.Run(fmt.Sprint(icon), func(t *testing.T) {
@@ -320,7 +320,7 @@ func TestAddStoresFetchedIconAndEvents(t *testing.T) {
 				t.Fatal(events)
 			}
 			e := events[1]
-			if e.RequestID != "request-value" || e.User != "caller" || !reflect.DeepEqual(e.Attrs, telemetry.Attrs{"bookmark": added.ID, "name": added.Name, "icon": added.HasIcon, "icon_bytes": int64(len(data))}) {
+			if e.RequestID != "request-value" || e.User != "caller" || len(e.Attrs) != 4 || e.Attrs["bookmark"] != added.ID || e.Attrs["name"] != added.Name || e.Attrs["icon"] != added.HasIcon || signedInteger(t, e.Attrs["icon_bytes"]) != int64(len(data)) {
 				t.Fatal(e)
 			}
 			calls.Store(0)
@@ -756,7 +756,7 @@ func moveRequest(id, body, typ string) *http.Request {
 	return r
 }
 
-// R-9H56-LFCP R-9ID2-Z73E R-9JKZ-CYU3 R-9POH-9TJK R-8A5V-VQJP R-88XZ-HYT0 R-902L-8MYZ
+// R-9H56-LFCP R-9ID2-Z73E R-9JKZ-CYU3 R-9POH-9TJK R-8A5V-VQJP R-88XZ-HYT0 R-902L-8MYZ R-2W9Z-6OWY R-2YPR-Y8EC
 func TestMoveDirectionsAndEvents(t *testing.T) {
 	for _, tc := range []struct {
 		name, body, typ string
@@ -813,6 +813,12 @@ func TestMoveDirectionsAndEvents(t *testing.T) {
 			}
 			if len(events) != count || events[0].Name != "request.started" || events[count-1].Name != "request.finished" || (count == 3 && events[1].Name != "bookmark.moved") {
 				t.Fatal(events)
+			}
+			if count == 3 {
+				e := events[1]
+				if len(e.Attrs) != 3 || e.Attrs["bookmark"] != id || signedInteger(t, e.Attrs["from"]) != int64(tc.index) || signedInteger(t, e.Attrs["to"]) != int64(tc.to) {
+					t.Fatal(e)
+				}
 			}
 			for _, e := range events {
 				if e.User != "caller" || e.RequestID != "request-value" {
