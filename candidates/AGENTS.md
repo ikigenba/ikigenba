@@ -559,7 +559,7 @@ one; a finding it cannot fix, or believes is wrong, is filed as an issue.
 3. `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/candidates`
    — the release build, static and cgo-free, the way `devctl build` builds
    it, which is why the SQLite driver must be pure Go
-4. `go test -race ./...`
+4. `go test -race -timeout 30m ./...`
 5. `go test -count=1 -run Timing ./...`
    — the speed requirement's test, whose name contains `Timing` and whose
    file is tagged `//go:build !race`, runs here without the race detector,
