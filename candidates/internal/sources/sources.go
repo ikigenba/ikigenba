@@ -55,7 +55,7 @@ const (
 	WebsiteHTTP                 = "http"
 	WebsiteNone                 = "none"
 	WebsiteUnknown              = "unknown"
-	Rules                       = 10
+	Rules                       = 11
 )
 
 // Person is a party named by a source record.
