@@ -1,0 +1,16 @@
+app = "sessions"
+description = "The business's time in agent sessions, by kind of work."
+default = false
+mcp = true
+guests = false
+secrets = []
+
+[database]
+engine = "sqlite"
+path = "state/sessions.db"
+
+[resources]
+memory_max = "128M"
+
+[home]
+group = "core"
