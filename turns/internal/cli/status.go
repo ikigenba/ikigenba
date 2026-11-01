@@ -87,11 +87,10 @@ func runStatus(ctx context.Context, _ []string, _ io.Reader, stdout, stderr io.W
 	if remoteErr != nil {
 		var failure *space.Error
 		if errors.As(remoteErr, &failure) {
-			detail := failure.Detail
 			if failure.Quoted {
-				detail = seam.QuoteOutput(detail)
+				return diagnosticOutput(stderr, "could not read the space: "+failure.Reason, seam.QuoteOutput(failure.Detail))
 			}
-			return diagnostic(stderr, "could not read the space: "+failure.Reason, detail)
+			return diagnostic(stderr, "could not read the space: "+failure.Reason, failure.Detail)
 		}
 		return diagnostic(stderr, "could not read the space: "+remoteErr.Error(), "")
 	}

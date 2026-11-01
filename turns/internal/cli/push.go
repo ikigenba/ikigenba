@@ -126,11 +126,10 @@ func pushFailure(stderr io.Writer, err error) int {
 	if !errors.As(err, &failure) {
 		return diagnostic(stderr, "push failed: "+err.Error(), "")
 	}
-	detail := failure.Detail
 	if failure.Quoted {
-		detail = seam.QuoteOutput(detail)
+		return diagnosticOutput(stderr, "push failed: "+failure.Reason, seam.QuoteOutput(failure.Detail))
 	}
-	return diagnostic(stderr, "push failed: "+failure.Reason, detail)
+	return diagnostic(stderr, "push failed: "+failure.Reason, failure.Detail)
 }
 
 func pushReport(stdout io.Writer, batches [][]push.Pending, skipped map[session.Tool]int, dry bool) {

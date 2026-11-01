@@ -148,9 +148,9 @@ func TestConfigureValidationOrder(t *testing.T) {
 	}
 }
 
-// R-P0E8-19FN.
+// R-VJ7Q-LF2B R-P0E8-19FN.
 func TestConfigureInvalidSpace(t *testing.T) {
-	for _, space := range []string{"https://us.ikigenba.dev", "us.ikigenba.dev:443", "us.ikigenba.dev/mcp", "US.ikigenba.dev", "ikigenba", ""} {
+	for _, space := range []string{"https://us.ikigenba.dev", "us.ikigenba.dev:443", "us.ikigenba.dev/mcp", "US.ikigenba.dev", "ikigenba", "", "bad\nspace"} {
 		for _, noHome := range []bool{false, true} {
 			t.Run(space+stringBool(noHome), func(t *testing.T) {
 				deps, root := syntheticDeps(t)
@@ -158,7 +158,7 @@ func TestConfigureInvalidSpace(t *testing.T) {
 					overrideEnv(&deps, "HOME", "")
 				}
 				stdin := &recordingReader{}
-				assertUnchangedConfigure(t, deps, root, []string{"configure", space, "--token=distinct-secret"}, stdin, ExitUsage, "turns: '"+space+"' is not a space name\n")
+				assertUnchangedConfigure(t, deps, root, []string{"configure", space, "--token=distinct-secret"}, stdin, ExitUsage, "turns: '"+strings.ReplaceAll(space, "\n", `\n`)+"' is not a space name\n")
 				if stdin.Reads != 0 {
 					t.Error("invalid space read stdin")
 				}
@@ -173,9 +173,9 @@ func stringBool(value bool) string {
 	return " with HOME"
 }
 
-// R-JEE7-C6FN R-P0E8-19FN.
+// R-VKFM-Z6T0 R-P0E8-19FN.
 func TestConfigureBadHome(t *testing.T) {
-	for _, home := range []string{"", "home/me"} {
+	for _, home := range []string{"", "home/me", "home\nme"} {
 		for _, withSpace := range []bool{false, true} {
 			t.Run(home+stringBool(withSpace), func(t *testing.T) {
 				deps, root := syntheticDeps(t)
@@ -187,7 +187,7 @@ func TestConfigureBadHome(t *testing.T) {
 				stdin := &recordingReader{}
 				message := "HOME is not set"
 				if home != "" {
-					message = "HOME 'home/me' is not an absolute path"
+					message = "HOME '" + strings.ReplaceAll(home, "\n", `\n`) + "' is not an absolute path"
 				}
 				assertUnchangedConfigure(t, deps, root, args, stdin, ExitFailed, "turns: "+message+"\n")
 				if stdin.Reads != 0 {
@@ -225,9 +225,10 @@ func TestConfigureNeedsHostSpaceEvenWithUserConfig(t *testing.T) {
 	}
 }
 
-// R-RHGK-OQS9 R-P0E8-19FN.
+// R-VLNJ-CYJP R-P0E8-19FN.
 func TestConfigureHostReadFailure(t *testing.T) {
 	deps, root := syntheticDeps(t)
+	deps.Etc = filepath.Join(root, "host\nroot")
 	p := configPaths(t, deps)
 	if err := os.MkdirAll(p.HostConfig, 0700); err != nil {
 		t.Fatal(err)
@@ -324,12 +325,12 @@ func TestConfigureBadTokensLeaveFilesAndModes(t *testing.T) {
 
 type tokenErrorReader struct{}
 
-func (tokenErrorReader) Read([]byte) (int, error) { return 0, errors.New("synthetic stdin error") }
+func (tokenErrorReader) Read([]byte) (int, error) { return 0, errors.New("broken\npipe") }
 
-// R-JO5E-ECD7 R-P0E8-19FN.
+// R-VMVF-QQAE R-P0E8-19FN.
 func TestConfigureStdinError(t *testing.T) {
 	deps, root := syntheticDeps(t)
-	assertUnchangedConfigure(t, deps, root, []string{"configure", "a.b"}, tokenErrorReader{}, ExitFailed, "turns: could not read the token from stdin\n\nsynthetic stdin error\n")
+	assertUnchangedConfigure(t, deps, root, []string{"configure", "a.b"}, tokenErrorReader{}, ExitFailed, "turns: could not read the token from stdin\n\nbroken\\npipe\n")
 }
 
 // R-JRT3-JNLA R-JQL7-5VUL R-JVGS-OYTD.
@@ -433,7 +434,7 @@ func TestConfigureHostWritesTokenOnly(t *testing.T) {
 	}
 }
 
-// R-K1KA-LTIU R-P2U0-SSX1 R-P0E8-19FN.
+// R-K1KA-LTIU R-P2U0-SSX1 R-P0E8-19FN R-VO3C-4I13.
 func TestConfigureWriteFailures(t *testing.T) {
 	for _, name := range []string{paths.TokenFile, paths.ConfigFile} {
 		t.Run(name, func(t *testing.T) {
@@ -469,7 +470,7 @@ func TestConfigureWriteFailures(t *testing.T) {
 	}
 }
 
-// R-P0E8-19FN.
+// R-P0E8-19FN R-VQJ4-W1IH.
 func TestConfigureCannotCreateDirectory(t *testing.T) {
 	deps, root := syntheticDeps(t)
 	blocked := filepath.Join(root, "blocked")
@@ -488,13 +489,13 @@ func TestConfigureCannotCreateDirectory(t *testing.T) {
 	assertTreeEqual(t, before, snapshotTree(t, root))
 }
 
-// R-P1M4-F16C R-P0E8-19FN.
+// R-MJYW-1ZHF R-P0E8-19FN.
 func TestConfigureRefusalsNeverEchoToken(t *testing.T) {
 	for _, kind := range []string{"no space", "invalid space", "no HOME", "write error"} {
 		for _, flag := range []bool{false, true} {
 			t.Run(kind+stringBool(flag), func(t *testing.T) {
 				deps, _ := syntheticDeps(t)
-				token := "distinctive-sensitive-fixture-token"
+				token := "Q_distinctive_sensitive_fixture_token"
 				args := []string{"configure", "a.b"}
 				switch kind {
 				case "no space":

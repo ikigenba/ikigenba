@@ -128,7 +128,11 @@ func (c *Client) Push(ctx context.Context, host string, sessions []session.Sessi
 }
 
 func (c *Client) network(err error) *Error {
-	return &Error{Reason: "cannot reach " + c.endpoint, Detail: err.Error()}
+	detail := err.Error()
+	if c.token != "" {
+		detail = strings.ReplaceAll(detail, c.token, "<token>")
+	}
+	return &Error{Reason: "cannot reach " + c.endpoint, Detail: detail}
 }
 
 func (c *Client) call(ctx context.Context, name, tool string, entries any, refs []session.Ref) ([]Held, error) {
@@ -160,29 +164,48 @@ func (c *Client) call(ctx context.Context, name, tool string, entries any, refs 
 	}
 	defer func() { _ = resp.Body.Close() }()
 	var reader io.Reader = resp.Body
+	readLimit := int64(detailLimit) + int64(max(len(c.token), 1)) - 1
 	if resp.StatusCode != http.StatusOK {
-		reader = io.LimitReader(reader, detailLimit)
+		reader = io.LimitReader(reader, readLimit)
 	}
 	answer, err := io.ReadAll(reader)
-	if err != nil {
+	if err != nil && (resp.StatusCode == http.StatusOK || int64(len(answer)) < readLimit) {
 		return nil, c.network(err)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, c.network(err)
 	}
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, quoted("the space refused the token", string(answer))
+		return nil, c.quoted("the space refused the token", string(answer))
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, quoted("the space answered HTTP "+strconv.Itoa(resp.StatusCode), string(answer))
+		return nil, c.quoted("the space answered HTTP "+strconv.Itoa(resp.StatusCode), string(answer))
 	}
-	return parseAnswer(resp.Header.Get("Content-Type"), answer, refs, name)
+	return c.parseAnswer(resp.Header.Get("Content-Type"), answer, refs, name)
 }
 
-func quoted(reason, detail string) *Error {
-	if len(detail) > detailLimit {
-		detail = detail[:detailLimit]
+func (c *Client) quoted(reason, detail string) *Error {
+	end := min(len(detail), detailLimit)
+	if c.token != "" {
+		// Only occurrences starting within the original prefix qualify. Keep
+		// enough lookahead to recognize one that crosses its boundary, without
+		// pulling later source bytes into a shortened redacted prefix.
+		lookahead := min(len(detail), end+len(c.token)-1)
+		var redacted strings.Builder
+		for offset := 0; offset < end; {
+			match := strings.Index(detail[offset:lookahead], c.token)
+			if match < 0 || offset+match >= end {
+				redacted.WriteString(detail[offset:end])
+				break
+			}
+			start := offset + match
+			redacted.WriteString(detail[offset:start])
+			redacted.WriteString("<token>")
+			offset = start + len(c.token)
+		}
+		detail = redacted.String()
 	}
+	detail = detail[:min(len(detail), detailLimit)]
 	return &Error{reason, detail, true}
 }
 
@@ -201,8 +224,8 @@ func text(data json.RawMessage) (string, bool) {
 	return s, ok
 }
 
-func parseAnswer(contentType string, body []byte, refs []session.Ref, name string) ([]Held, error) {
-	unreadable := func() ([]Held, error) { return nil, quoted("the space's answer could not be read", string(body)) }
+func (c *Client) parseAnswer(contentType string, body []byte, refs []session.Ref, name string) ([]Held, error) {
+	unreadable := func() ([]Held, error) { return nil, c.quoted("the space's answer could not be read", string(body)) }
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil || !strings.EqualFold(mediaType, "application/json") {
 		return unreadable()
@@ -233,7 +256,7 @@ func parseAnswer(contentType string, body []byte, refs []session.Ref, name strin
 		if !ok {
 			return unreadable()
 		}
-		return nil, quoted("the gateway refused the request", message)
+		return nil, c.quoted("the gateway refused the request", message)
 	}
 	result, ok := object(resultData)
 	if !ok {
@@ -258,7 +281,7 @@ func parseAnswer(contentType string, body []byte, refs []session.Ref, name strin
 		if name == "mutate" {
 			reason = "sessions refused a batch"
 		}
-		return nil, quoted(reason, strings.Join(messages, "\n"))
+		return nil, c.quoted(reason, strings.Join(messages, "\n"))
 	}
 	structured, ok := object(result["structuredContent"])
 	if !ok {

@@ -186,6 +186,7 @@ func TestLoadDoesNotChangeExistingFiles(t *testing.T) {
 	}
 }
 
+// R-VHZU-7NBM.
 func TestReadFailures(t *testing.T) {
 	for _, file := range []string{"host", paths.ConfigFile, paths.TokenFile} {
 		for _, failure := range []string{"directory", "not a directory", "permission"} {
@@ -292,4 +293,32 @@ func snapshot(t *testing.T, root string) map[string]fileState {
 		t.Fatal(err)
 	}
 	return files
+}
+
+// R-VHZU-7NBM.
+func TestHostReadFailureRendersPathAndCause(t *testing.T) {
+	root := t.TempDir()
+	etc := filepath.Join(root, "host\nroot")
+	p, err := paths.Resolve(func(key string) string {
+		if key == "HOME" {
+			return filepath.Join(root, "home")
+		}
+		return ""
+	}, etc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(p.HostConfig, 0700); err != nil {
+		t.Fatal(err)
+	}
+	_, err = config.Load(p)
+	prefix := "could not read '" + strings.ReplaceAll(p.HostConfig, "\n", `\n`) + "': "
+	if err == nil || !strings.HasPrefix(err.Error(), prefix) || len(err.Error()) == len(prefix) {
+		t.Fatalf("error = %v; want prefix %q and cause", err, prefix)
+	}
+	for _, b := range []byte(err.Error()) {
+		if b < 0x20 || b == 0x7f {
+			t.Errorf("control byte in error %q", err.Error())
+		}
+	}
 }

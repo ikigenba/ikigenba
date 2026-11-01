@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	diagnostictext "github.com/ikigenba/ikigenba/turns/internal/diagnostic"
 	"github.com/ikigenba/ikigenba/turns/internal/seam"
 )
 
@@ -213,11 +214,18 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 }
 
 func diagnosticCode(stderr io.Writer, summary, detail string, code int) int {
-	_, _ = fmt.Fprintln(stderr, "turns: "+summary)
+	return writeDiagnostic(stderr, summary, diagnostictext.Text(detail), code)
+}
+
+func writeDiagnostic(stderr io.Writer, summary, detail string, code int) int {
+	_, _ = fmt.Fprintln(stderr, "turns: "+diagnostictext.Text(summary))
 	if detail != "" {
 		_, _ = fmt.Fprintln(stderr, "\n"+detail)
 	}
 	return code
+}
+func diagnosticOutput(stderr io.Writer, summary, quotedDetail string) int {
+	return writeDiagnostic(stderr, summary, quotedDetail, ExitFailed)
 }
 func diagnostic(stderr io.Writer, summary, detail string) int {
 	return diagnosticCode(stderr, summary, detail, ExitFailed)

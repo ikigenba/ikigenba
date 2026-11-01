@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,7 +25,9 @@ import (
 	"github.com/ikigenba/ikigenba/turns/internal/space"
 )
 
-const pushToken = "test-token"
+func pushToken(t testing.TB) string {
+	return fmt.Sprintf("PushToken-%x", sha256.Sum256([]byte(t.Name())))
+}
 
 type pushRequest struct {
 	ID     int `json:"id"`
@@ -81,7 +84,7 @@ func (f *pushFake) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	f.requests = append(f.requests, req)
 	f.bodies = append(f.bodies, b)
-	if r.URL.String() != space.Endpoint("test.example") || r.Header.Get("Authorization") != "Bearer "+pushToken {
+	if r.URL.String() != space.Endpoint("test.example") || r.Header.Get("Authorization") != "Bearer "+pushToken(f.t) {
 		f.t.Fatalf("wrong endpoint/token: %s", r.URL)
 	}
 	entries := make([]pushWireSession, len(req.Params.Arguments.Args.Sessions))
@@ -163,7 +166,7 @@ func pushSetup(t *testing.T) (seam.Deps, paths.Paths, *pushFake) {
 	deps, _ := syntheticDeps(t)
 	p := pushPaths(t, deps)
 	pushWrite(t, filepath.Join(p.Config, paths.ConfigFile), "space=test.example\n")
-	pushWrite(t, filepath.Join(p.Config, paths.TokenFile), pushToken)
+	pushWrite(t, filepath.Join(p.Config, paths.TokenFile), pushToken(t))
 	f := &pushFake{t: t}
 	deps.HTTP = &http.Client{Transport: f}
 	return deps, p, f
@@ -199,7 +202,7 @@ func pushGrok(t *testing.T, p paths.Paths, id string, n int) {
 	pushWrite(t, filepath.Join(root, "updates.jsonl"), b.String())
 }
 
-// R-YA9D-CE63 R-Q2AA-J94S
+// R-IF75-DZ0P R-Q2AA-J94S
 func pushRun(t *testing.T, deps seam.Deps, args ...string) (int, string, string) {
 	t.Helper()
 	p, resolveErr := paths.Resolve(deps.Getenv, deps.Etc)
@@ -209,7 +212,7 @@ func pushRun(t *testing.T, deps seam.Deps, args ...string) (int, string, string)
 		before, beforeErr = os.ReadFile(filepath.Join(p.State, paths.LastPushFile))
 	}
 	code, out, errText := runCLI(t, deps, append([]string{"push"}, args...), strings.NewReader("unused"))
-	if strings.Contains(out, pushToken) || strings.Contains(errText, pushToken) {
+	if strings.Contains(out, pushToken(t)) || strings.Contains(errText, pushToken(t)) {
 		t.Fatal("token disclosed")
 	}
 	if code != ExitOK && resolveErr == nil {
@@ -255,10 +258,10 @@ Options:
 	}
 }
 
-// R-YC0N-XKE1 R-YEGG-P3VF R-YFOD-2VM4 R-PBGI-4ATI R-PCOE-I2K7
+// R-35IW-Z5ME R-36QT-CXD3 R-3E27-NJT9 R-PBGI-4ATI R-PCOE-I2K7
 func TestPushConfigurationRefusals(t *testing.T) {
 	for _, dry := range []bool{false, true} {
-		for _, kind := range []string{"home", "config", "none", "token", "space", "host"} {
+		for _, kind := range []string{"home", "relative-home", "config", "control-config", "none", "token", "space", "host"} {
 			t.Run(fmt.Sprint(dry)+kind, func(t *testing.T) {
 				deps, _ := syntheticDeps(t)
 				p := pushPaths(t, deps)
@@ -273,15 +276,31 @@ func TestPushConfigurationRefusals(t *testing.T) {
 					deps.Getenv = func(string) string { return "" }
 					wantCode = ExitFailed
 					want = "turns: HOME is not set\n"
-				case "config":
-					if err := os.MkdirAll(filepath.Join(p.Config, paths.ConfigFile), 0700); err != nil {
+				case "relative-home":
+					getenv := deps.Getenv
+					deps.Getenv = func(key string) string {
+						if key == "HOME" {
+							return "relative\nvalue"
+						}
+						return getenv(key)
+					}
+					wantCode = ExitFailed
+					want = "turns: HOME 'relative\\nvalue' is not an absolute path\n"
+				case "config", "control-config":
+					configPath := filepath.Join(p.Config, paths.ConfigFile)
+					if kind == "control-config" {
+						deps.Etc = filepath.Join(deps.Etc, "host\nroot")
+						p = pushPaths(t, deps)
+						configPath = p.HostConfig
+					}
+					if err := os.MkdirAll(configPath, 0700); err != nil {
 						t.Fatal(err)
 					}
 					_, err := config.Load(p)
 					wantCode = ExitFailed
 					want = "turns: could not read the configuration\n\n" + err.Error() + "\n"
 				case "token":
-					pushWrite(t, filepath.Join(p.Config, paths.TokenFile), pushToken)
+					pushWrite(t, filepath.Join(p.Config, paths.TokenFile), pushToken(t))
 				case "space":
 					pushWrite(t, filepath.Join(p.Config, paths.ConfigFile), "space=test.example\n")
 				case "host":
@@ -341,9 +360,9 @@ func pushTree(t *testing.T, root string) map[string]string {
 	return result
 }
 
-// R-PQW1-36I2 R-E5Y3-RZLL R-PPO4-PERD R-PMFL-K8HR R-PNNH-Y08G R-RIOH-2IIY
+// R-3FA4-1BJY R-E5Y3-RZLL R-37YP-QP3S R-396M-4GUH R-PNNH-Y08G R-3AEI-I8L6
 func TestPushLocalOutcomes(t *testing.T) {
-	for _, kind := range []string{"empty", "empty-replace", "empty-dry", "last-directory", "state-file", "hostname-error", "hostname-empty", "hostname-dot"} {
+	for _, kind := range []string{"empty", "empty-replace", "empty-dry", "last-directory", "state-file", "hostname-error", "hostname-control", "hostname-empty", "hostname-dot"} {
 		t.Run(kind, func(t *testing.T) {
 			deps, p, f := pushSetup(t)
 			deps.Now = func() time.Time { return time.Date(2026, 2, 3, 4, 5, 6, 789, time.FixedZone("east", 7200)) }
@@ -371,6 +390,11 @@ func TestPushLocalOutcomes(t *testing.T) {
 				wantCode = ExitFailed
 				wantOut = ""
 				wantErr = "turns: could not read the host name\n\nhostname-broke\n"
+			case "hostname-control":
+				deps.Hostname = func() (string, error) { return "", errors.New("host\nname\tfailed") }
+				wantCode = ExitFailed
+				wantOut = ""
+				wantErr = "turns: could not read the host name\n\nhost\\nname\\tfailed\n"
 			case "hostname-empty", "hostname-dot":
 				host := ""
 				if kind == "hostname-dot" {
@@ -405,6 +429,97 @@ func TestPushLocalOutcomes(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// R-37YP-QP3S R-3AEI-I8L6
+func TestPushStateFailurePathsRenderControls(t *testing.T) {
+	for _, kind := range []string{"lock", "last-push"} {
+		t.Run(kind, func(t *testing.T) {
+			deps, _, fake := pushSetup(t)
+			getenv := deps.Getenv
+			deps.Getenv = func(key string) string {
+				if key == "XDG_STATE_HOME" {
+					return filepath.Join(getenv(key), "state\nroot")
+				}
+				return getenv(key)
+			}
+			p := pushPaths(t, deps)
+			path := filepath.Join(p.State, paths.LockFile)
+			var failure error
+			wantOut := ""
+			verb := "lock"
+			if kind == "lock" {
+				pushWrite(t, p.State, "blocked")
+				failure = os.MkdirAll(p.State, 0700)
+			} else {
+				path = filepath.Join(p.State, paths.LastPushFile)
+				if err := os.MkdirAll(path, 0700); err != nil {
+					t.Fatal(err)
+				}
+				failure = os.WriteFile(path, []byte("unused"), 0600)
+				verb = "write"
+				wantOut = pushZero(false)
+			}
+			if failure == nil {
+				t.Fatal("fixture did not produce the expected filesystem error")
+			}
+			wantErr := "turns: could not " + verb + " '" + strings.ReplaceAll(path, "\n", "\\n") + "'\n\n" + strings.ReplaceAll(failure.Error(), "\n", "\\n") + "\n"
+			code, out, errText := pushRun(t, deps)
+			if code != ExitFailed || out != wantOut || errText != wantErr || len(fake.requests) != 0 {
+				t.Fatalf("code=%d stdout=%q stderr=%q requests=%d; want stdout=%q stderr=%q", code, out, errText, len(fake.requests), wantOut, wantErr)
+			}
+		})
+	}
+}
+
+// R-IF75-DZ0P
+func TestPushRedactsEchoedTokenAtEachRequestStage(t *testing.T) {
+	for _, stage := range []string{"latest", "latest-dry", "push"} {
+		for _, kind := range []string{"transport", "401", "503"} {
+			t.Run(stage+kind, func(t *testing.T) {
+				deps, p, fake := pushSetup(t)
+				pushClaude(t, p, "one", 1)
+				wantCalls := 1
+				if stage == "push" {
+					wantCalls = 2
+				}
+				fake.refuse = func(n int, _ pushRequest) (*http.Response, error) {
+					if n != wantCalls {
+						return nil, nil
+					}
+					message := "echo: " + pushToken(t) + "\nrefused\n"
+					switch kind {
+					case "transport":
+						return nil, errors.New(message)
+					case "401":
+						return pushResponse(401, message), nil
+					default:
+						return pushResponse(503, message), nil
+					}
+				}
+				var args []string
+				wantOut := pushZero(false)
+				if stage == "latest-dry" {
+					args = []string{"--dry-run"}
+					wantOut = ""
+				}
+				code, out, errText := pushRun(t, deps, args...)
+				reason := "the space refused the token"
+				detail := "> echo: <token>\n> refused"
+				if kind == "503" {
+					reason = "the space answered HTTP 503"
+				}
+				if kind == "transport" {
+					reason = "cannot reach " + space.Endpoint("test.example")
+					detail = "Post \"" + space.Endpoint("test.example") + "\": echo: <token>\\nrefused\\n"
+				}
+				wantErr := "turns: push failed: " + reason + "\n\n" + detail + "\n"
+				if code != ExitFailed || out != wantOut || errText != wantErr || len(fake.requests) != wantCalls {
+					t.Fatalf("code=%d stdout=%q stderr=%q requests=%d; want stderr=%q requests=%d", code, out, errText, len(fake.requests), wantErr, wantCalls)
+				}
+			})
+		}
 	}
 }
 
@@ -618,7 +733,7 @@ type pushBrokenBody struct{}
 func (pushBrokenBody) Read([]byte) (int, error) { return 0, errors.New("") }
 func (pushBrokenBody) Close() error             { return nil }
 
-// R-E8DW-JJ2Z R-APVK-2HL8
+// R-3BME-W0BV R-3IXT-6MS1
 func TestPushLatestFailures(t *testing.T) {
 	cases := []struct {
 		name, reason, detail string
@@ -626,12 +741,16 @@ func TestPushLatestFailures(t *testing.T) {
 		answer               func(pushRequest) (*http.Response, error)
 	}{
 		{"network", "cannot reach " + space.Endpoint("test.example"), "", false, func(pushRequest) (*http.Response, error) { return nil, errors.New("offline") }},
+		{"network-lines", "cannot reach " + space.Endpoint("test.example"), "", false, func(pushRequest) (*http.Response, error) { return nil, errors.New("net\ndown") }},
 		{"empty-read", "cannot reach " + space.Endpoint("test.example"), "", false, func(pushRequest) (*http.Response, error) {
 			r := pushResponse(200, "")
 			r.Body = pushBrokenBody{}
 			return r, nil
 		}},
 		{"unauthorized", "the space refused the token", "refused\n\n", true, func(pushRequest) (*http.Response, error) { return pushResponse(401, "refused\n\n"), nil }},
+		{"raw-output", "the space refused the token", "raw\t\x1b\x7f\x80\r\nsecond\n", true, func(pushRequest) (*http.Response, error) {
+			return pushResponse(401, "raw\t\x1b\x7f\x80\r\nsecond\n"), nil
+		}},
 		{"newline-body", "the space refused the token", "\n\n", true, func(pushRequest) (*http.Response, error) { return pushResponse(401, "\n\n"), nil }},
 		{"unreadable", "the space's answer could not be read", "garbage", true, func(pushRequest) (*http.Response, error) { return pushResponse(200, "garbage"), nil }},
 		{"rpc", "the gateway refused the request", "gateway message", true, func(r pushRequest) (*http.Response, error) {
@@ -661,8 +780,12 @@ func TestPushLatestFailures(t *testing.T) {
 				if tt.quoted {
 					detail = seam.QuoteOutput(detail)
 				}
-				if tt.name == "network" {
-					want := "turns: push failed: " + tt.reason + "\n\n" + (&url.Error{Op: "Post", URL: space.Endpoint("test.example"), Err: errors.New("offline")}).Error() + "\n"
+				if strings.HasPrefix(tt.name, "network") {
+					message := "offline"
+					if tt.name == "network-lines" {
+						message = "net\\ndown"
+					}
+					want := "turns: push failed: " + tt.reason + "\n\n" + (&url.Error{Op: "Post", URL: space.Endpoint("test.example"), Err: errors.New(message)}).Error() + "\n"
 					if errText != want {
 						t.Fatalf("%q want %q", errText, want)
 					}
@@ -692,14 +815,14 @@ func TestPushLatestFailures(t *testing.T) {
 			}
 			return nil, nil
 		}
-		code, out, _ := pushRun(t, deps)
-		if code != ExitFailed || out != pushZero(false) || len(f.requests) != 2 {
-			t.Fatalf("%d %q %d", code, out, len(f.requests))
+		code, out, errText := pushRun(t, deps)
+		if code != ExitFailed || out != pushZero(false) || errText != "turns: push failed: the space refused the token\n" || len(f.requests) != 2 {
+			t.Fatalf("%d %q %q %d", code, out, errText, len(f.requests))
 		}
 	})
 }
 
-// R-E9LS-XATO R-Y7TK-KUOP
+// R-3GI0-F3AN R-Y7TK-KUOP
 func TestPushPartialRetryAndStateIndependence(t *testing.T) {
 	deps, p, f := pushSetup(t)
 	pushClaude(t, p, "a", 2500)
@@ -770,9 +893,9 @@ func TestPushRepeatedDryRunIsIdentical(t *testing.T) {
 	}
 }
 
-// R-PMFL-K8HR R-PNNH-Y08G
+// R-396M-4GUH R-PNNH-Y08G
 func TestPushDryRunHostnameFailures(t *testing.T) {
-	for _, kind := range []string{"error", "empty", "dot"} {
+	for _, kind := range []string{"error", "control-error", "empty", "dot"} {
 		for _, previous := range []bool{false, true} {
 			t.Run(fmt.Sprint(kind, previous), func(t *testing.T) {
 				deps, p, f := pushSetup(t)
@@ -784,6 +907,8 @@ func TestPushDryRunHostnameFailures(t *testing.T) {
 					switch kind {
 					case "error":
 						return "", errors.New("hostname-broke")
+					case "control-error":
+						return "", errors.New("host\nname\tfailed")
 					case "dot":
 						return ".domain", nil
 					}
@@ -791,6 +916,9 @@ func TestPushDryRunHostnameFailures(t *testing.T) {
 				}
 				if kind == "error" {
 					want += "\nhostname-broke\n"
+				}
+				if kind == "control-error" {
+					want += "\nhost\\nname\\tfailed\n"
 				}
 				code, out, errText := pushRun(t, deps, "--dry-run")
 				if code != ExitFailed || out != "" || errText != want || len(f.requests) != 0 {

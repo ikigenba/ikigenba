@@ -164,5 +164,5 @@ func installSystemctl(ctx context.Context, deps seam.Deps, stderr io.Writer, arg
 	if detail == "" {
 		detail = seam.QuoteOutput(string(result.Stdout))
 	}
-	return diagnostic(stderr, "could not enable turns.timer", detail)
+	return diagnosticOutput(stderr, "could not enable turns.timer", detail)
 }

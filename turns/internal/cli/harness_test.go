@@ -63,7 +63,7 @@ func runCLIContext(ctx context.Context, t testing.TB, deps seam.Deps, args []str
 		t.Error("root call escaped root refusal")
 	}
 	stderr := errOut.String()
-	// R-W9J8-28R4 R-WD6X-7JZ7 R-WEET-LBPW.
+	// R-W9J8-28R4 R-WD6X-7JZ7 R-WEET-LBPW R-QZ5J-ZRLL R-QXXN-LZUW.
 	if stderr != "" {
 		lines := strings.Split(strings.TrimSuffix(stderr, "\n"), "\n")
 		if !strings.HasPrefix(lines[0], "turns: ") || !strings.HasSuffix(stderr, "\n") {
@@ -73,6 +73,13 @@ func runCLIContext(ctx context.Context, t testing.TB, deps seam.Deps, args []str
 			t.Errorf("malformed diagnostic detail %q", stderr)
 		}
 		for _, line := range lines {
+			if !strings.HasPrefix(line, "> ") {
+				for _, b := range []byte(line) {
+					if b < 0x20 || b == 0x7f {
+						t.Errorf("control byte in turns-authored diagnostic line %q", line)
+					}
+				}
+			}
 			if strings.HasPrefix(line, "Usage: turns") {
 				t.Errorf("usage on stderr: %q", stderr)
 			}

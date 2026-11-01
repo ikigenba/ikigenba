@@ -247,9 +247,9 @@ func TestInstallExecutablePaths(t *testing.T) {
 	}
 }
 
-// R-E28N-SMHC R-JTRP-P9SR R-8E3Y-V231 R-E8C5-PH6T
+// R-E28N-SMHC R-JTRP-P9SR R-BYZ4-9W2S R-C070-NNTH R-QZOJ-JKFX
 func TestInstallEarlyRefusals(t *testing.T) {
-	for _, kind := range []string{"empty", "missing", "empty-path", "relative-path", "relative-search", "home", "relative-home", "space", "percent", "dollar", "double-quote", "single-quote", "backslash", "control", "delete", "invalid-utf8"} {
+	for _, kind := range []string{"empty", "missing", "empty-path", "relative-path", "relative-search", "home", "relative-home", "control-home", "space", "percent", "dollar", "double-quote", "single-quote", "backslash", "control", "delete", "invalid-utf8"} {
 		t.Run(kind, func(t *testing.T) {
 			deps, root := syntheticDeps(t)
 			deps.Arg0 = ""
@@ -269,9 +269,12 @@ func TestInstallEarlyRefusals(t *testing.T) {
 				deps.Arg0 = "turns"
 				deps.Dir = ""
 				pathValue = "bin"
-			case "home", "relative-home":
+			case "home", "relative-home", "control-home":
 				deps.Getenv = func(key string) string {
 					if key == "HOME" {
+						if kind == "control-home" {
+							return "relative\nvalue"
+						}
 						if kind == "relative-home" {
 							return "relative"
 						}
@@ -280,7 +283,7 @@ func TestInstallEarlyRefusals(t *testing.T) {
 					return getenv(key)
 				}
 				_, err := paths.Resolve(deps.Getenv, deps.Etc)
-				want = "turns: " + err.Error() + "\n"
+				want = "turns: " + strings.ReplaceAll(err.Error(), "\n", `\n`) + "\n"
 			default:
 				if kind != "empty" {
 					suffix := map[string]string{"space": "a b", "percent": "a%b", "dollar": "a$b", "double-quote": "a\"b", "single-quote": "a'b", "backslash": "a\\b", "control": "a\nb", "delete": "a\x7fb", "invalid-utf8": "a\xffb"}[kind]
@@ -288,7 +291,7 @@ func TestInstallEarlyRefusals(t *testing.T) {
 					want = "turns: systemd cannot run turns from " + strconv.Quote(deps.Arg0) + "\n\nmove turns to a path that holds no whitespace, quote, backslash, '%', '$', control character or invalid UTF-8, and run install again\n"
 				}
 			}
-			if kind != "home" && kind != "relative-home" {
+			if kind != "home" && kind != "relative-home" && kind != "control-home" {
 				deps.Getenv = func(key string) string {
 					if key == "PATH" {
 						return pathValue
@@ -366,7 +369,7 @@ func TestInstallHostDetection(t *testing.T) {
 	}
 }
 
-// R-E3GK-6E81 R-E4OG-K5YQ R-E5WC-XXPF R-898D-BZ49 R-SL5E-CCGR R-JYNB-8CRJ
+// R-E3GK-6E81 R-E4OG-K5YQ R-E5WC-XXPF R-BVBF-4KUP R-SL5E-CCGR R-JYNB-8CRJ
 func TestInstallSystemctlFailures(t *testing.T) {
 	for _, host := range []bool{false, true} {
 		for _, failureAt := range []int{1, 2} {
@@ -399,8 +402,8 @@ func TestInstallSystemctlFailures(t *testing.T) {
 						result.Stdout = []byte("\n")
 						result.Stderr = []byte("\n\n")
 					case "exec":
-						execErr = errors.New("cannot start fixture")
-						want += "\ncannot start fixture\n"
+						execErr = errors.New("a\nb")
+						want += "\na\\nb\n"
 					}
 					deps.Exec = func(_ context.Context, _ seam.Cmd) (seam.Result, error) {
 						calls++
@@ -422,7 +425,7 @@ func TestInstallSystemctlFailures(t *testing.T) {
 	}
 }
 
-// Independently exercise failures before any process starts.
+// R-BWJB-ICLE R-BXR7-W4C3: independently exercise failures before any process starts.
 func TestInstallWriteFailures(t *testing.T) {
 	for _, kind := range []string{"parent", turns.ServiceUnit, turns.TimerUnit} {
 		t.Run(kind, func(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ikigenba/ikigenba/turns/internal/diagnostic"
 	"github.com/ikigenba/ikigenba/turns/internal/paths"
 )
 
@@ -87,7 +88,7 @@ func read(path string) ([]byte, error) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("could not read '%s': %w", path, err)
+		return nil, fmt.Errorf("could not read '%s': %s", diagnostic.Text(path), diagnostic.Text(err.Error()))
 	}
 	return data, nil
 }

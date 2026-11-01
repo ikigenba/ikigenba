@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -116,6 +117,15 @@ func inertCLI(t *testing.T, args []string, uid int, wantCode int, wantOut, wantE
 	t.Helper()
 	deps, root := syntheticDeps(t)
 	deps.EUID = uid
+	processes, requests := 0, 0
+	deps.Exec = func(context.Context, seam.Cmd) (seam.Result, error) {
+		processes++
+		return seam.Result{}, fmt.Errorf("unexpected process")
+	}
+	deps.HTTP = &http.Client{Transport: testTransport(func(*http.Request) (*http.Response, error) {
+		requests++
+		return nil, fmt.Errorf("unexpected request")
+	})}
 	// Readable synthetic files make the unchanged-tree check sensitive to writes/removals.
 	for _, dir := range []string{deps.Getenv("HOME"), deps.Getenv("XDG_CONFIG_HOME"), deps.Getenv("XDG_STATE_HOME"), deps.Etc} {
 		writeFixture(t, filepath.Join(dir, "sentinel"), "unchanged", 0640)
@@ -126,6 +136,9 @@ func inertCLI(t *testing.T, args []string, uid int, wantCode int, wantOut, wantE
 	assertCLI(t, code, out, errText, wantCode, wantOut, wantErr)
 	if stdin.Reads != 0 {
 		t.Errorf("read stdin %d times", stdin.Reads)
+	}
+	if processes != 0 || requests != 0 {
+		t.Errorf("inert invocation made %d processes and %d requests", processes, requests)
 	}
 	assertTreeEqual(t, before, snapshotTree(t, root))
 }
@@ -173,7 +186,7 @@ func TestTopLevelHelpAndVersionPrecedence(t *testing.T) {
 	}
 }
 
-// R-VF1Q-HZ7R R-VMD4-SLNX R-VNL1-6DEM R-LUX0-WE3D R-LW4X-A5U2.
+// R-VF1Q-HZ7R R-VMD4-SLNX R-R0DG-DJCA R-R1LC-RB2Z R-LW4X-A5U2.
 func TestTopLevelRefusals(t *testing.T) {
 	cases := []struct {
 		args    []string
@@ -197,7 +210,7 @@ func TestEveryCommandHelpWins(t *testing.T) {
 	}
 }
 
-// R-W27T-RMAY R-W3FQ-5E1N R-W4NM-J5SC R-W5VI-WXJ1 R-M28F-70JJ R-M3GB-KSA8 R-WBZ0-TS8I.
+// R-R2T9-52TO R-W3FQ-5E1N R-R415-IUKD R-R6GY-AE1R R-R7OU-O5SG R-3QC7-4O1X R-WBZ0-TS8I.
 func TestCommandArgumentFrame(t *testing.T) {
 	for _, command := range []string{"configure", "install", "push", "status", "version", "help"} {
 		t.Run(command+" unknown", func(t *testing.T) {

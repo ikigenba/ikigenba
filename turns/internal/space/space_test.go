@@ -351,7 +351,7 @@ func assertFailure(t *testing.T, held []space.Held, err error, reason, detail st
 	}
 }
 
-// R-ALYX-HPRX R-BACX-54LT R-BCSP-WO37 R-TV2V-1V7J R-BK44-7AJD
+// R-ALYX-HPRX R-FLBZ-XVJ0 R-FMJW-BN9P R-FNRS-PF0E
 func TestHTTPFailuresAndRedirects(t *testing.T) {
 	for _, m := range methods() {
 		t.Run(m.name, func(t *testing.T) {
@@ -388,7 +388,7 @@ func TestHTTPFailuresAndRedirects(t *testing.T) {
 	}
 }
 
-// R-ALYX-HPRX R-B6P7-ZTDQ R-BK44-7AJD
+// R-ALYX-HPRX R-FIW7-6C1M
 func TestTransportFailure(t *testing.T) {
 	for _, m := range methods() {
 		t.Run(m.name, func(t *testing.T) {
@@ -421,13 +421,13 @@ func (r *failingReader) Read(p []byte) (int, error) {
 }
 func (*failingReader) Close() error { return nil }
 
-// R-ALYX-HPRX R-B7X4-DL4F R-BK44-7AJD
+// R-ALYX-HPRX R-FK43-K3SB
 func TestBodyReadFailures(t *testing.T) {
 	for _, m := range methods() {
 		t.Run(m.name, func(t *testing.T) {
 			for _, status := range []int{200, 401, 400, 302} {
 				t.Run(strconv.Itoa(status), func(t *testing.T) {
-					for _, prefix := range []string{"", "partial", strings.Repeat("a", 4095)} {
+					for _, prefix := range []string{"", "partial", strings.Repeat("a", 4095), strings.Repeat("a", 4096+len(testToken)-2)} {
 						hc := &http.Client{Transport: transportFunc(func(*http.Request) (*http.Response, error) {
 							res := response(status, "application/json", "")
 							res.Body = &failingReader{remaining: prefix, failure: errors.New("body failed")}
@@ -442,23 +442,46 @@ func TestBodyReadFailures(t *testing.T) {
 	}
 }
 
-// R-B7X4-DL4F
-func TestNonSuccessReadStopsAtCap(t *testing.T) {
+// R-FK43-K3SB
+func TestNonSuccessReadStopsAtLookahead(t *testing.T) {
 	for _, m := range methods() {
 		t.Run(m.name, func(t *testing.T) {
-			prefix := strings.Repeat("z", 4096)
-			hc := &http.Client{Transport: transportFunc(func(*http.Request) (*http.Response, error) {
-				res := response(400, "text/plain", "")
-				res.Body = &failingReader{remaining: prefix, failure: errors.New("must not read beyond cap")}
-				return res, nil
-			})}
-			held, err := m.call(space.New(testSpace, testToken, hc), context.Background())
-			assertFailure(t, held, err, "the space answered HTTP 400", prefix, true)
+			for _, token := range []string{"", "z", testToken} {
+				for _, status := range []int{401, 400, 302} {
+					prefix := strings.Repeat("a", 4096+max(len(token), 1)-1)
+					hc := &http.Client{Transport: transportFunc(func(*http.Request) (*http.Response, error) {
+						res := response(status, "text/plain", "")
+						res.Body = &failingReader{remaining: prefix, failure: errors.New("must not read beyond cap")}
+						return res, nil
+					})}
+					held, err := m.call(space.New(testSpace, token, hc), context.Background())
+					reason := "the space answered HTTP " + strconv.Itoa(status)
+					if status == 401 {
+						reason = "the space refused the token"
+					}
+					assertFailure(t, held, err, reason, prefix[:4096], true)
+				}
+			}
 		})
 	}
 }
 
-// R-ALYX-HPRX R-B950-RCV4 R-BK44-7AJD
+// R-FK43-K3SB
+func TestSuccessfulStatusReadsWholeBody(t *testing.T) {
+	for _, m := range methods() {
+		t.Run(m.name, func(t *testing.T) {
+			hc := &http.Client{Transport: transportFunc(func(*http.Request) (*http.Response, error) {
+				res := response(200, "application/json", "")
+				res.Body = &failingReader{remaining: strings.Repeat("a", 8192), failure: errors.New("late body failure")}
+				return res, nil
+			})}
+			held, err := m.call(space.New(testSpace, testToken, hc), context.Background())
+			assertFailure(t, held, err, "cannot reach "+space.Endpoint(testSpace), "late body failure", false)
+		})
+	}
+}
+
+// R-ALYX-HPRX R-B950-RCV4
 func TestCancellationWhileTransportWaits(t *testing.T) {
 	for _, m := range methods() {
 		t.Run(m.name, func(t *testing.T) {
@@ -485,7 +508,7 @@ func TestCancellationWhileTransportWaits(t *testing.T) {
 	}
 }
 
-// R-ALYX-HPRX R-BE0M-AFTW R-TTUY-O3GU R-BK44-7AJD
+// R-ALYX-HPRX R-FOZP-36R3 R-FQ7L-GYHS
 func TestGatewayAndToolRefusals(t *testing.T) {
 	for _, m := range methods() {
 		t.Run(m.name, func(t *testing.T) {
@@ -538,7 +561,7 @@ type invalidCase struct {
 	mutate func(map[string]any)
 }
 
-// R-ALYX-HPRX R-BGGF-1ZBA R-BHOB-FR1Z R-BIW7-TISO R-BK44-7AJD
+// R-ALYX-HPRX R-FRFH-UQ8H R-BHOB-FR1Z R-BIW7-TISO
 func TestUnreadableAnswers(t *testing.T) {
 	envelopeCases := []invalidCase{
 		{"missing-jsonrpc", func(a map[string]any) { delete(a, "jsonrpc") }},

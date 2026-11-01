@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,7 +23,9 @@ import (
 	"github.com/ikigenba/ikigenba/turns/internal/space"
 )
 
-const statusToken = "status-private-credential-marker"
+func statusToken(t testing.TB) string {
+	return fmt.Sprintf("StatusToken-%x", sha256.Sum256([]byte(t.Name())))
+}
 
 type statusRequest struct {
 	JSONRPC string `json:"jsonrpc"`
@@ -55,7 +58,7 @@ func (f *statusFake) RoundTrip(r *http.Request) (*http.Response, error) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		f.t.Fatal(err)
 	}
-	if r.URL.String() != space.Endpoint("test.example") || r.Header.Get("Authorization") != "Bearer "+statusToken || req.Method != "tools/call" || req.Params.Name != "call" || req.Params.Arguments.Service != "sessions" || req.Params.Arguments.Tool != "get_latest_turns" {
+	if r.URL.String() != space.Endpoint("test.example") || r.Header.Get("Authorization") != "Bearer "+statusToken(f.t) || req.Method != "tools/call" || req.Params.Name != "call" || req.Params.Arguments.Service != "sessions" || req.Params.Arguments.Tool != "get_latest_turns" {
 		f.t.Fatalf("unexpected status request: %s %#v", r.URL, req)
 	}
 	refs := make([]session.Ref, len(req.Params.Arguments.Args.Sessions))
@@ -95,7 +98,7 @@ func statusSetup(t *testing.T) (seam.Deps, paths.Paths, *statusFake, string) {
 	deps, root := syntheticDeps(t)
 	p := statusPaths(t, deps)
 	writeFixture(t, filepath.Join(p.Config, paths.ConfigFile), "space=test.example\n", 0600)
-	writeFixture(t, filepath.Join(p.Config, paths.TokenFile), statusToken, 0600)
+	writeFixture(t, filepath.Join(p.Config, paths.TokenFile), statusToken(t), 0600)
 	fake := &statusFake{t: t, latest: map[session.Ref]time.Time{}}
 	deps.HTTP = &http.Client{Transport: fake}
 	return deps, p, fake, root
@@ -125,11 +128,11 @@ func statusSession(t testing.TB, p paths.Paths, tool session.Tool, id string, n 
 	}
 }
 
-// Exercise status through the shared run harness.
+// R-17H0-GD3Q: every status case checks the stored token stays secret.
 func statusRun(t testing.TB, deps seam.Deps) (int, string, string) {
 	t.Helper()
 	code, out, errText := runCLI(t, deps, []string{"status"}, nil)
-	if strings.Contains(out, statusToken) || strings.Contains(errText, statusToken) {
+	if strings.Contains(out, statusToken(t)) || strings.Contains(errText, statusToken(t)) {
 		t.Fatal("status disclosed stored token")
 	}
 	return code, out, errText
@@ -162,18 +165,21 @@ Options:
 	}
 }
 
-// R-HPSD-CHRG
+// R-Z3AT-GWJQ R-Z4IP-UOAF
 func TestStatusConfigurationErrors(t *testing.T) {
-	for _, kind := range []string{"home", "config"} {
+	for _, kind := range []string{"home", "relative-home", "config", "control-config"} {
 		t.Run(kind, func(t *testing.T) {
 			deps, root := syntheticDeps(t)
 			p := statusPaths(t, deps)
 			statusSession(t, p, session.ToolClaude, "readable", 1)
 			want := "turns: HOME is not set\n"
-			if kind == "home" {
+			if kind == "home" || kind == "relative-home" {
 				getenv := deps.Getenv
 				deps.Getenv = func(key string) string {
 					if key == "HOME" {
+						if kind == "relative-home" {
+							return "relative\nvalue"
+						}
 						return ""
 					}
 					if key == "CLAUDE_CONFIG_DIR" {
@@ -181,8 +187,17 @@ func TestStatusConfigurationErrors(t *testing.T) {
 					}
 					return getenv(key)
 				}
+				if kind == "relative-home" {
+					want = "turns: HOME 'relative\\nvalue' is not an absolute path\n"
+				}
 			} else {
-				if err := os.MkdirAll(filepath.Join(p.Config, paths.ConfigFile), 0700); err != nil {
+				configPath := filepath.Join(p.Config, paths.ConfigFile)
+				if kind == "control-config" {
+					deps.Etc = filepath.Join(root, "host\nroot")
+					p = statusPaths(t, deps)
+					configPath = p.HostConfig
+				}
+				if err := os.MkdirAll(configPath, 0700); err != nil {
 					t.Fatal(err)
 				}
 				_, err := config.Load(p)
@@ -219,11 +234,11 @@ func TestStatusConfigurationAndNoSessions(t *testing.T) {
 				writeFixture(t, filepath.Join(p.Config, paths.ConfigFile), "space=user.example\n", 0600)
 				name = "user.example"
 			case "token-only":
-				writeFixture(t, filepath.Join(p.Config, paths.TokenFile), statusToken, 0600)
+				writeFixture(t, filepath.Join(p.Config, paths.TokenFile), statusToken(t), 0600)
 				token = "set"
 			case "configured":
 				writeFixture(t, filepath.Join(p.Config, paths.ConfigFile), "space=test.example\n", 0600)
-				writeFixture(t, filepath.Join(p.Config, paths.TokenFile), statusToken, 0600)
+				writeFixture(t, filepath.Join(p.Config, paths.TokenFile), statusToken(t), 0600)
 				name = "test.example"
 				token = "set"
 				suffix = "; 0 sessions, 0 turns on the space"
@@ -359,9 +374,9 @@ type statusBrokenBody struct{ message string }
 func (b statusBrokenBody) Read([]byte) (int, error) { return 0, errors.New(b.message) }
 func (statusBrokenBody) Close() error               { return nil }
 
-// R-AR3G-G9BX R-ASBC-U12M R-0MT5-KBRM
+// R-Z6YI-M7RT R-18OW-U4UF R-0MT5-KBRM
 func TestStatusSpaceFailures(t *testing.T) {
-	for _, kind := range []string{"network", "read", "empty-read", "401-lines", "401-empty", "401-newlines"} {
+	for _, kind := range []string{"network", "network-lines", "network-echo", "read", "empty-read", "401-lines", "401-raw", "401-echo", "401-empty", "401-newlines"} {
 		t.Run(kind, func(t *testing.T) {
 			deps, p, f, _ := statusSetup(t)
 			statusSession(t, p, session.ToolClaude, "one", 1)
@@ -372,6 +387,10 @@ func TestStatusSpaceFailures(t *testing.T) {
 				switch kind {
 				case "network":
 					return nil, errors.New("offline-marker")
+				case "network-lines":
+					return nil, errors.New("net\ndown")
+				case "network-echo":
+					return nil, errors.New("echo: " + statusToken(t))
 				case "read", "empty-read":
 					r := statusResponse(200, "")
 					message := "read-marker"
@@ -381,7 +400,13 @@ func TestStatusSpaceFailures(t *testing.T) {
 					r.Body = statusBrokenBody{message: message}
 					return r, nil
 				case "401-lines":
-					return statusResponse(401, "first refusal\nsecond refusal\n"), nil
+					r := statusResponse(401, "first refusal\nsecond refusal\n")
+					r.Header.Set("Content-Type", "text/plain")
+					return r, nil
+				case "401-raw":
+					return statusResponse(401, "raw\t\x1b\x7f\x80\r\nsecond\n"), nil
+				case "401-echo":
+					return statusResponse(401, "echo: "+statusToken(t)+"\nrefused\n"), nil
 				case "401-empty":
 					return statusResponse(401, ""), nil
 				default:
@@ -389,13 +414,19 @@ func TestStatusSpaceFailures(t *testing.T) {
 				}
 			}
 			switch kind {
-			case "network":
+			case "network", "network-lines", "network-echo":
 				network = true
 			case "read":
 				detail = "read-marker"
 			case "401-lines":
 				reason = "the space refused the token"
 				detail = "> first refusal\n> second refusal"
+			case "401-raw":
+				reason = "the space refused the token"
+				detail = "> raw\t\x1b\x7f\x80\r\n> second"
+			case "401-echo":
+				reason = "the space refused the token"
+				detail = "> echo: <token>\n> refused"
 			case "401-empty", "401-newlines":
 				reason = "the space refused the token"
 			}
@@ -406,7 +437,14 @@ func TestStatusSpaceFailures(t *testing.T) {
 				wantErr += "\n" + detail + "\n"
 			}
 			if network {
-				wantErr = "turns: could not read the space: " + reason + "\n\nPost \"" + space.Endpoint("test.example") + "\": offline-marker\n"
+				message := "offline-marker"
+				if kind == "network-lines" {
+					message = "net\\ndown"
+				}
+				if kind == "network-echo" {
+					message = "echo: <token>"
+				}
+				wantErr = "turns: could not read the space: " + reason + "\n\nPost \"" + space.Endpoint("test.example") + "\": " + message + "\n"
 			}
 			expectedCalls := 1
 			if code != ExitFailed || out != wantOut || errText != wantErr || len(f.requests) != expectedCalls {
