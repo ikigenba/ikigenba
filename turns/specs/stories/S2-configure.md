@@ -124,6 +124,7 @@ Postconditions:
 
 - `config` holds `space=sbx.ikigenba.dev` and `token` (mode `0600`) holds the new token.
 - No session already pushed to `us.ikigenba.dev` was changed or removed there.
+- `~/.local/state/turns/last-push` is unchanged, so the next `turns push` reads only the session files changed since then; the sessions already pushed to `us.ikigenba.dev` reach `sbx.ikigenba.dev` with `turns push --all`.
 
 ## A person configures turns without naming a space
 
