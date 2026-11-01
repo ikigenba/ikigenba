@@ -159,7 +159,7 @@ grok: 1 session, 12 turns here; unknown on the space
 ```
 turns: could not read the space: the space refused the token
 
-> <the gateway's answer, each line as it came>
+> <the gateway's answer, each line as it came, with the token, where it appears, shown as `<token>`>
 ```
 
 Exits 1. The report is on stdout; the diagnostic is on stderr, the gateway's answer quoted after an empty line. The diagnostic has the form `turns push` uses: `turns: <what failed>: <reason>`, then after one empty line the detail, unprefixed when turns writes it and quoted with `> ` when it is the gateway's HTTP answer. A gateway that cannot be reached at all says `turns: could not read the space: cannot reach https://mcp.us.ikigenba.dev/mcp`, and its detail is `<the network error>`, unprefixed.

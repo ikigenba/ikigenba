@@ -429,7 +429,7 @@ grok: 0 sessions, 0 turns pushed
 ```
 turns: push failed: the space refused the token
 
-> <the gateway's answer, each line as it came>
+> <the gateway's answer, each line as it came, with the token, where it appears, shown as `<token>`>
 ```
 
 Exits 1. The report is on stdout; the diagnostic is on stderr, the gateway's answer quoted after the empty line. The token itself is never printed.
@@ -464,7 +464,7 @@ grok: 0 sessions, 0 turns pushed
 ```
 turns: push failed: sessions refused a batch
 
-> <the tool's error text, each line as it came>
+> <the tool's error text, each line as it came, with the token, where it appears, shown as `<token>`>
 ```
 
 Exits 1. The report is on stdout; the diagnostic is on stderr.
