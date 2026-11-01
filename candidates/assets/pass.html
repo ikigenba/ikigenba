@@ -32,10 +32,29 @@
      holds them), and .Derived, .Due, .Fetched, .HTTPS, .HTTP and .None
      (ints, an enrich pass's counts as the record holds them: results the
      derived kinds wrote, then, for the website check, candidates due,
-     domains fetched, and results by state), .Target (the pl_ or cand_ id an enrich_target pass walks; empty for any other kind),
+     domains fetched, and results by state), .Target (the pl_ or cand_ id an enrich_target pass walks; empty for any other kind, and when .TargetForm is "ids"),
+     .TargetForm (what an enrich_target pass was given as its target:
+     "ids" for a set of candidate ids, "candidate" for one candidate,
+     "list" for a prospect list; empty for any other kind), .TargetIDs
+     (the cand_ ids given, as given, a slice of strings; empty unless
+     .TargetForm is "ids"),
      .TargetPage (the path of that prospect list's or candidate's page, "/prospect-lists/<.Target>" or "/candidates/<.Target>"; empty when .Target
      is), .EnrichKind (the enrichment kind an enrich_target pass walks, as
-     stored, "site_text" or "drive_route"; empty for any other kind),
+     stored, "site_text" or "drive_route"; empty for any other kind, and
+     empty for an enrich_target pass given no kind, which runs every
+     kind), .RunningKind (the enrichment kind an enrich_target pass given
+     no kind is running now, as stored, "brief"; empty when it runs none,
+     when it has ended, and for any other pass), .Busy (int, the
+     candidates of an enrich_target pass's target it skipped because
+     another running targeted pass held them), .Unmatched (int, the
+     .TargetIDs that named no active candidate), .KindEntries (an
+     enrich_target pass given no kind: one entry per kind it has ended so
+     far, in the order it ran them; empty for any other pass, each with
+     .Kind (the enrichment kind, as stored), .NewResults (int, candidates
+     given a new result), .NotDue (int, candidates that already had a
+     result and were not due), .NotApplicable (int, candidates the kind
+     did not apply to), .Failed (int, candidates whose result failed) and
+     .Cost (the kind's cost, as .Cost)),
      .Runs, .RunsFailed and .Pages (ints, as the record holds them:
      prompts runs started, those that ended other than exiting 0, and
      pages they added; for drive_route, requests made to the routing
@@ -128,9 +147,22 @@
      time[datetime=<.Started>] (text .StartedText), dt "Finished" then
      dd#pass-finished holding time[datetime=<.Finished>] (text
      .FinishedText) only when .Finished is set, then, when .Kind is
-     "enrich_target", dt "Target" then dd#pass-target (a.target-link, href
-     .TargetPage, holding .Target in a code element) and dt "Enrich kind"
-     then dd#pass-enrich-kind (.EnrichKind in a code element), then, when
+     "enrich_target", dt "Target" then dd#pass-target (when .TargetForm is
+     "ids", span.muted "a set of", a space, the count of .TargetIDs, a
+     space and "ids", then one a.candidate-link[data-target-id=<id>] per
+     id of .TargetIDs, href "/candidates/<id>", holding the id in a code
+     element, each after a space; else a.target-link, href .TargetPage,
+     holding .Target in a code element, followed, only when .EnrichKind is
+     empty, by a space and span.muted "candidate" when .TargetForm is
+     "candidate", "prospect list" when "list") and dt "Enrich kind"
+     then dd#pass-enrich-kind (.EnrichKind in a code element, or, when
+     .EnrichKind is empty, "every kind"), then, only when .RunningKind is
+     set, dt "Running kind" then dd#pass-running-kind (.RunningKind in a
+     code element), then, only when .EnrichKind is empty, .TargetForm is
+     "ids" or .Busy is not 0, dt "Skipped as busy" then dd#pass-busy
+     (.Busy), then, only when .TargetForm is "ids" or .Unmatched is not
+     0, dt "Ids with no active candidate" then dd#pass-unmatched
+     (.Unmatched), then, when
      .Kind is "enrich" or "enrich_target", dt "Derived" then dd#pass-derived, dt "Due" then
      dd#pass-due, dt "Fetched" then
      dd#pass-fetched, dt "https" then dd#pass-https, dt "http" then
@@ -168,7 +200,28 @@
      span.badge[data-kind=warn] (text "ceiling reached")),
      td.walk-park-found.num (.Found), td.walk-park-new.num
      (.NewCandidates), td.walk-park-requests.num (.Requests) and
-     td.walk-park-cost.num (.Cost). No script but
+     td.walk-park-cost.num (.Cost). Then, only when .Kind is
+     "enrich_target" and .EnrichKind is empty, section#pass-kinds.card.flush
+     with h2 "Kinds" and a p in its header (text "A targeted enrich given
+     no kind runs every kind its candidates are due, in order: the
+     website check when its inputs changed, then the website search, site
+     text, the brief and the drive route, each judged due after the kind
+     before it wrote; forced, it redoes every kind that applies. Each kind
+     appears here when it ends: new results counts the candidates given
+     one, not due those that already had one and were not due, not
+     applicable those the kind did not apply to, failed those whose result
+     failed, and cost what the kind spent. Skipped as busy counts the
+     candidates another running targeted pass held."), then either, when
+     .KindEntries is empty, div#no-pass-kinds.empty holding h3 "No kinds
+     yet" and a p (text "No kind has ended yet. Reload the page to see
+     each kind as it ends." when .Status is "running", else "The pass
+     ended no kind."), or table#pass-kind-list whose th read Kind, New
+     results, Not due, Not applicable, Failed, Cost, with one
+     tr[data-enrich-kind=<.Kind>] per entry holding td.pass-kind-name
+     (.Kind in a code element), td.pass-kind-new.num (.NewResults),
+     td.pass-kind-not-due.num (.NotDue), td.pass-kind-not-applicable.num
+     (.NotApplicable), td.pass-kind-failed.num (.Failed) and
+     td.pass-kind-cost.num (.Cost). No script but
      appkit's /_appkit/feedback.js. */}}
 {{define "pass"}}<!doctype html>
 <html lang="en">
@@ -193,9 +246,12 @@
 {{end}}<dt>Started by</dt><dd id="pass-by">{{if or (eq .Origin "ingest") (eq .Origin "judge") (eq .Origin "enrich") (eq .Origin "walk")}}{{.StartedBy}}{{else if eq .Origin "cron"}}cron <code>{{.Trigger}}</code>{{else if eq .Origin "pass"}}pass <code>{{.Trigger}}</code>{{else if eq .Origin "rules"}}{{.StartedBy}} with <code>edit_park_rules</code>{{else if eq .Origin "start"}}candidates at start{{else}}scrapes{{end}}</dd>
 <dt>Started</dt><dd id="pass-started"><time datetime="{{.Started}}">{{.StartedText}}</time></dd>
 {{if .Finished}}<dt>Finished</dt><dd id="pass-finished"><time datetime="{{.Finished}}">{{.FinishedText}}</time></dd>
-{{end}}{{if eq .Kind "enrich_target"}}<dt>Target</dt><dd id="pass-target"><a class="target-link" href="{{.TargetPage}}"><code>{{.Target}}</code></a></dd>
-<dt>Enrich kind</dt><dd id="pass-enrich-kind"><code>{{.EnrichKind}}</code></dd>
-{{end}}{{if or (eq .Kind "enrich") (eq .Kind "enrich_target")}}<dt>Derived</dt><dd id="pass-derived">{{.Derived}}</dd>
+{{end}}{{if eq .Kind "enrich_target"}}<dt>Target</dt><dd id="pass-target">{{if eq .TargetForm "ids"}}<span class="muted">a set of {{len .TargetIDs}} ids</span>{{range .TargetIDs}} <a class="candidate-link" data-target-id="{{.}}" href="/candidates/{{.}}"><code>{{.}}</code></a>{{end}}{{else}}<a class="target-link" href="{{.TargetPage}}"><code>{{.Target}}</code></a>{{if not .EnrichKind}} <span class="muted">{{if eq .TargetForm "candidate"}}candidate{{else if eq .TargetForm "list"}}prospect list{{end}}</span>{{end}}{{end}}</dd>
+<dt>Enrich kind</dt><dd id="pass-enrich-kind">{{if .EnrichKind}}<code>{{.EnrichKind}}</code>{{else}}every kind{{end}}</dd>
+{{if .RunningKind}}<dt>Running kind</dt><dd id="pass-running-kind"><code>{{.RunningKind}}</code></dd>
+{{end}}{{if or (not .EnrichKind) (eq .TargetForm "ids") (ne .Busy 0)}}<dt>Skipped as busy</dt><dd id="pass-busy">{{.Busy}}</dd>
+{{end}}{{if or (eq .TargetForm "ids") (ne .Unmatched 0)}}<dt>Ids with no active candidate</dt><dd id="pass-unmatched">{{.Unmatched}}</dd>
+{{end}}{{end}}{{if or (eq .Kind "enrich") (eq .Kind "enrich_target")}}<dt>Derived</dt><dd id="pass-derived">{{.Derived}}</dd>
 <dt>Due</dt><dd id="pass-due">{{.Due}}</dd>
 <dt>Fetched</dt><dd id="pass-fetched">{{.Fetched}}</dd>
 <dt><code>https</code></dt><dd id="pass-https">{{.HTTPS}}</dd>
@@ -250,6 +306,28 @@
 {{else}}<div id="no-walk-parks" class="empty">
 <h3 class="text-md">No parks</h3>
 <p>The walk covered no park before it stopped.</p>
+</div>{{end}}
+</section>
+{{end}}{{if and (eq .Kind "enrich_target") (not .EnrichKind)}}<section id="pass-kinds" class="card flush" aria-labelledby="pass-kinds-title">
+<header><div><h2 id="pass-kinds-title">Kinds</h2><p>A targeted enrich given no kind runs every kind its candidates are due, in order: the website check when its inputs changed, then the website search, site text, the brief and the drive route, each judged due after the kind before it wrote; forced, it redoes every kind that applies. Each kind appears here when it ends: new results counts the candidates given one, not due those that already had one and were not due, not applicable those the kind did not apply to, failed those whose result failed, and cost what the kind spent. Skipped as busy counts the candidates another running targeted pass held.</p></div></header>
+{{if .KindEntries}}<div class="table-scroll">
+<table id="pass-kind-list">
+<thead><tr><th>Kind</th><th class="num">New results</th><th class="num">Not due</th><th class="num">Not applicable</th><th class="num">Failed</th><th class="num">Cost</th></tr></thead>
+<tbody>
+{{range .KindEntries}}<tr data-enrich-kind="{{.Kind}}">
+<td class="pass-kind-name"><code>{{.Kind}}</code></td>
+<td class="pass-kind-new num">{{.NewResults}}</td>
+<td class="pass-kind-not-due num">{{.NotDue}}</td>
+<td class="pass-kind-not-applicable num">{{.NotApplicable}}</td>
+<td class="pass-kind-failed num">{{.Failed}}</td>
+<td class="pass-kind-cost num">{{.Cost}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}<div id="no-pass-kinds" class="empty">
+<h3 class="text-md">No kinds yet</h3>
+<p>{{if eq .Status "running"}}No kind has ended yet. Reload the page to see each kind as it ends.{{else}}The pass ended no kind.{{end}}</p>
 </div>{{end}}
 </section>
 {{end}}{{end}}</main>
