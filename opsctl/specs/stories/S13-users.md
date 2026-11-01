@@ -1,12 +1,12 @@
 # Stories — users
 
-A user is a person who signs in to the host over SSH. A user is an account whose login name, NAME, is valid as a Linux account name and unique on the host: no other account or group has it, a business group's slug included, since slugs and user names share one namespace. A user has a home, `/home/NAME`, readable by them alone; the login shell `/bin/bash`; a private primary group named after them; membership in the pooled group `shell` and in zero or more business groups (`S12-groups.md`); the ed25519 keys they sign in with, held one per line in `/etc/ssh/authorized_keys/NAME`, owned by root and not writable by the user, the only keys that sign a user in; and a state, `active` or `locked`. A user has no other access: no sudo, no membership in the suite's `ikigenba` group or the web server's `nginx` group, and opsctl never touches what is in their home. A user with no key cannot sign in. The users of a host are exactly the members of `shell`; `ec2-user` and service accounts are never users.
+A user is a person who signs in to the host over SSH. A user is an account whose login name, NAME, is valid as a Linux account name and unique on the host: no other account or group has it, a business group's slug included, since slugs and user names share one namespace. A user has a home, `/home/NAME`, readable by them alone; the login shell `/bin/bash`; a private primary group named after them; membership in the pooled group `shell` and in zero or more business groups (`S12-groups.md`); the ed25519 keys they sign in with, held one per line in `/etc/ssh/authorized_keys/NAME`, owned by root and not writable by the user, the only keys that sign a user in; and a state, `active` or `locked`. A user has no other access: no sudo, no membership in the suite's `ikigenba` group or the web server's `nginx` group, and opsctl never touches what is in their home but for the one link `user add` leaves there. A user with no key cannot sign in. When the host has the suite's user timer `/etc/systemd/user/turns.timer`, installed by `opsctl init` and `opsctl activate` (`S10-releases.md`), a user added afterwards has lingering enabled, so their own systemd manager runs from boot without a sign-in, and `turns.timer` enabled and started in that manager, which leaves the one link `/home/NAME/.config/systemd/user/timers.target.wants/turns.timer`, pointing at `/etc/systemd/user/turns.timer` and owned by NAME; opsctl makes and gives no token, so the timer pushes nothing until the person stores their own. `user unlock` does the same for the user it unlocks, or finds already active, when either is missing, and `user delete` disables lingering for the user it deletes. The users of a host are exactly the members of `shell`; `ec2-user` and service accounts are never users.
 
 The `accounts` app is the usual caller. It runs these commands as `sudo /usr/local/bin/opsctl user ...`, which the host's sudo rule allows (`S11-hardening.md`), and parses what they print; an operator may run the same commands by hand as root. The stories show them as `sudo opsctl user ...`, the same program.
 
 The top-level usage gains the line `  user      manage SSH users, their keys and groups` under `Commands:`.
 
-A command that changes the host prints nothing on success: the answer is the exit code. A command asked for a state the host is already in changes nothing and exits 0. The exit codes are those of the top-level help: `0  success`; `1  the operation failed`, with `opsctl: <tool>: exit status <n>` on stderr and, after one blank line, the tool's output with every line prefixed `> `; `2  usage error, or a preflight check failed`, here malformed input, with the three-line form ending `see 'opsctl user --help' for usage`; `3  refused: opsctl must run as root`; and `4  refused: the host's state does not allow it`, one line on stderr naming the case. Only `user add` undoes what it made when it fails. Every other command finishes the job when run again, because each exits 0 once the host is in the state asked for; a `delete` that failed partway, run again, completes, or answers `opsctl: no user 'bob'` with exit 4 once the account is gone. A business group is a group with a same-named service account whose home is `/srv/<slug>`; any other group named as GROUP, `shell` or `wheel` included, answers `opsctl: no group '<name>'` with exit 4. KEY is always one argument, the whole OpenSSH public key line `ssh-ed25519 BODY [COMMENT]`; a key is matched by its type and body, never by its comment.
+A command that changes the host prints nothing on success: the answer is the exit code. A command asked for a state the host is already in changes nothing and exits 0. The exit codes are those of the top-level help: `0  success`; `1  the operation failed`, with `opsctl: <tool>: exit status <n>` on stderr and, after one blank line, the tool's output with every line prefixed `> `; `2  usage error, or a preflight check failed`, here malformed input, with the three-line form ending `see 'opsctl user --help' for usage`; `3  refused: opsctl must run as root`; and `4  refused: the host's state does not allow it`, one line on stderr naming the case. Only `user add` undoes what it made when it fails; an `unlock` whose lingering or timer step fails leaves the user unlocked. Every other command finishes the job when run again, because each exits 0 once the host is in the state asked for; a `delete` that failed partway, run again, completes, or answers `opsctl: no user 'bob'` with exit 4 once the account is gone. A business group is a group with a same-named service account whose home is `/srv/<slug>`; any other group named as GROUP, `shell` or `wheel` included, answers `opsctl: no group '<name>'` with exit 4. KEY is always one argument, the whole OpenSSH public key line `ssh-ed25519 BODY [COMMENT]`; a key is matched by its type and body, never by its comment.
 
 The stories use the business groups `acme` and `beta`, made by `opsctl group add`, the users `alice` and `bob`, and three keys: `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDzTUG112+rxfh42mBeuJ5MyIW8NWSwHtmfqZMvJsR+B alice@laptop`, `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAZbrkOd+Y6S7A73l8INVj18asxLPNd5ESn8jJF92cOm alice@desktop` and `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOX98ItbYTqX546sPOUFYsJXWCgEsWBavHBIkCjPHj9P bob@work`.
 
@@ -79,11 +79,15 @@ Preconditions:
 - `opsctl` is running as root.
 - `acme` is a business group.
 - No account or group named `alice` exists on the host.
+- `/etc/systemd/user/turns.timer` exists, installed by `opsctl init` or `opsctl activate` (`S10-releases.md`).
 
 Postconditions:
 
 - The account `alice` exists with the login shell `/bin/bash` and the primary group `alice`, a group of her own. It is in `shell` and `acme` and in no other business group; it is not in `ikigenba` or `nginx` and has no sudo.
-- `/home/alice` exists, owned by `alice` and readable by no one else. opsctl put nothing in it.
+- `/home/alice` exists, owned by `alice` and readable by no one else. The only thing opsctl put in it is the link `/home/alice/.config/systemd/user/timers.target.wants/turns.timer`, owned by `alice` and pointing at `/etc/systemd/user/turns.timer`.
+- Lingering is enabled for `alice`, as `loginctl enable-linger alice` does, so her own systemd manager runs from boot without a sign-in.
+- `turns.timer` is enabled and active in `alice`'s own systemd manager.
+- No token was made or given to `alice`; the timer pushes nothing until she stores her own.
 - `/etc/ssh/authorized_keys/alice` exists, owned by root and not writable by `alice`, holding the one key line given.
 - `alice` can sign in over SSH with that key and by no other means.
 - `opsctl user list` shows `alice` in `acme`, holding that one key, `active`, with `last_sign_in` `null`.
@@ -214,7 +218,7 @@ Postconditions:
 
 ## The accounts app adds a user and a tool on the host fails
 
-Adding a user takes several steps on the host. When one of them fails, `user add` undoes what it had made before the failure, so the host is as it was and the same command can simply be run again.
+Adding a user takes several steps on the host: the account, its group, home and key file, then, when the host has `turns.timer`, lingering and the timer. When one of them fails, `user add` undoes what it had made before the failure, lingering included, so the host is as it was and the same command can simply be run again.
 
 Command:
 
@@ -243,6 +247,69 @@ Postconditions:
 
 - The host is as it was: there is no account `alice`, no group `alice`, no `/home/alice` and no `/etc/ssh/authorized_keys/alice`.
 - Nothing the command did not make was touched.
+
+## The accounts app adds a user and their timer cannot be started
+
+The account, its key file and lingering are made, but `alice`'s own systemd manager does not come up, so `turns.timer` cannot be enabled in it. `user add` undoes all of it, lingering included, and the same command can simply be run again.
+
+Command:
+
+```
+$ sudo opsctl user add alice acme 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDzTUG112+rxfh42mBeuJ5MyIW8NWSwHtmfqZMvJsR+B alice@laptop'
+```
+
+Output:
+
+```
+opsctl: systemctl: exit status 1
+
+> Failed to connect to user scope bus via local transport: No such file or directory
+```
+
+Exits 1. The text is on stderr; stdout is empty.
+
+Preconditions:
+
+- `opsctl` is running as root.
+- `acme` is a business group.
+- No account or group named `alice` exists.
+- `/etc/systemd/user/turns.timer` exists.
+- `alice`'s own systemd manager does not come up.
+
+Postconditions:
+
+- The host is as it was: there is no account `alice`, no group `alice`, no `/home/alice` and no `/etc/ssh/authorized_keys/alice`, and lingering is not enabled for `alice`.
+- Nothing the command did not make was touched.
+
+## The accounts app adds a user on a host without turns
+
+A host whose release predates `turns` has no `/etc/systemd/user/turns.timer`. `user add` makes the user as before and neither enables lingering nor enables a timer.
+
+Command:
+
+```
+$ sudo opsctl user add alice acme 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDzTUG112+rxfh42mBeuJ5MyIW8NWSwHtmfqZMvJsR+B alice@laptop'
+```
+
+Output:
+
+```
+```
+
+Exits 0. Nothing is on stdout or stderr.
+
+Preconditions:
+
+- `opsctl` is running as root.
+- `acme` is a business group.
+- No account or group named `alice` exists on the host.
+- `/etc/systemd/user/turns.timer` does not exist.
+
+Postconditions:
+
+- `alice` is a user as in "The accounts app adds a user": the same account, groups, key file and sign-in, and `opsctl user list` shows her the same way.
+- `/home/alice` exists, owned by `alice` and readable by no one else, and is empty: opsctl put nothing in it.
+- Lingering is not enabled for `alice`, and no timer is enabled in her own systemd manager.
 
 ## The accounts app lists the users
 
@@ -654,10 +721,45 @@ Preconditions:
 
 - `opsctl` is running as root.
 - `bob` is a locked user holding his key, in `acme`.
+- `/etc/systemd/user/turns.timer` exists.
 
 Postconditions:
 
 - `bob` can sign in over SSH with his key again. `opsctl user list` shows him `active`.
+- Lingering is enabled for `bob`, and `turns.timer` is enabled and active in his own systemd manager, as `user add` leaves them.
+- His home, keys and groups are unchanged, but for the timer's link in his home, which `user add` made and which is there again if it was missing.
+
+## The accounts app unlocks a user and their timer cannot be started
+
+`bob` is unlocked first; then his own systemd manager does not come up, so `turns.timer` cannot be started in it. Unlike `add`, `unlock` undoes nothing: `bob` can sign in, and the same command run again, on a user who is now active, enables what is still missing.
+
+Command:
+
+```
+$ sudo opsctl user unlock bob
+```
+
+Output:
+
+```
+opsctl: systemctl: exit status 1
+
+> Failed to connect to user scope bus via local transport: No such file or directory
+```
+
+Exits 1. The text is on stderr; stdout is empty.
+
+Preconditions:
+
+- `opsctl` is running as root.
+- `bob` is a locked user holding his key, in `acme`.
+- `/etc/systemd/user/turns.timer` exists.
+- `bob`'s own systemd manager does not come up.
+
+Postconditions:
+
+- `bob` can sign in over SSH with his key again. `opsctl user list` shows him `active`.
+- Lingering is enabled for `bob`; `turns.timer` is not active in his manager.
 - His home, keys and groups are unchanged.
 
 ## The accounts app unlocks a user who is active
@@ -678,7 +780,7 @@ Exits 0. Nothing is on stdout or stderr.
 Preconditions:
 
 - `opsctl` is running as root.
-- `alice` is an active user.
+- `alice` is an active user. Lingering is enabled for her and `turns.timer` is active in her own systemd manager, or the host has no `/etc/systemd/user/turns.timer`.
 
 Postconditions:
 
@@ -706,11 +808,13 @@ Preconditions:
 - `opsctl` is running as root.
 - `bob` is a locked user in `acme`; he left `beta` earlier.
 - `/srv/acme/notes.md` and `/srv/beta/plan.txt` are owned by `bob`.
+- Lingering is enabled for `bob`.
 
 Postconditions:
 
 - `/srv/acme/notes.md` is owned by the account `acme` and `/srv/beta/plan.txt` by the account `beta`; every other file anywhere under `/srv` that `bob` owned went the same way, to the service account of the folder it is in. Each file's group and contents are unchanged.
 - The account `bob`, his group `bob`, `/etc/ssh/authorized_keys/bob` and `/home/bob` are gone. `bob` is in no group, and `opsctl user list` does not show him.
+- Lingering is no longer enabled for `bob`.
 - The name `bob` is free for a later `user add`.
 
 ## The accounts app deletes a user who is not locked

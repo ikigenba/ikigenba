@@ -64,7 +64,21 @@ before the `certificate` step, `init` makes `/usr/local/bin/opsctl` a link when
 it does not exist, so certbot finds the `opsctl` its hooks name: to
 `/opt/ikigenba/current/opsctl/bin/opsctl` when `current` exists, otherwise to
 the opsctl that is running. A `/usr/local/bin/opsctl` that exists, link or file,
-is left as it is. That link prints no line either.
+is left as it is. That link prints no line either. At the same point `init`
+sets up the client command `turns`, which a suite release carries in `turns/`
+beside the apps, and prints no line for that either. Its source is the release
+`current` names when `current` exists, otherwise the release the running opsctl
+belongs to. When that release holds `turns/`, `init` makes
+`/usr/local/bin/turns` a link when it does not exist: to
+`/opt/ikigenba/current/turns/bin/turns` when `current` exists, otherwise to that
+release's own `turns/bin/turns`. A `/usr/local/bin/turns` that exists, link or
+file, is left as it is. It also writes `turns.service` and `turns.timer` from
+that release's `turns/share/systemd/` into `/etc/systemd/user/`, the directory
+of units every user's own systemd manager reads, replacing whatever files of
+those names were there. When there is no such release, or it holds no
+`turns/` (a per-app host run by a plain opsctl, or a current release older than
+`turns`), `init` leaves `/usr/local/bin/turns` and `/etc/systemd/user/` as they
+are.
 
 The suite runs inside three slices, systemd's way of grouping services so
 that they share a CPU weight and a memory ceiling. The `slices` step writes
@@ -237,7 +251,8 @@ Preconditions:
 - The host is a released host: `/opt/ikigenba/current` is a link to
   `/opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, whose last
   `activate` gave the label `r142`, and `/usr/local/bin/opsctl` is a link to
-  `/opt/ikigenba/current/opsctl/bin/opsctl`.
+  `/opt/ikigenba/current/opsctl/bin/opsctl`. The release holds `turns/`, and
+  `/usr/local/bin/turns` is a link to `/opt/ikigenba/current/turns/bin/turns`.
 
 Postconditions:
 
@@ -264,6 +279,9 @@ Postconditions:
 - `ikigenba-services.service`, the oneshot that runs
   `/usr/local/bin/opsctl services apply` at boot before every app's service,
   is written and enabled, as `activate` leaves it.
+- `/etc/systemd/user/turns.service` and `/etc/systemd/user/turns.timer` are
+  the current release's `turns/share/systemd/` files, replacing what was
+  there. `/usr/local/bin/turns` is the link it was.
 - No unit names a path under `/opt/<app>/`, and no `/opt/<app>/` was
   created.
 - Every setup command is idempotent, so a host that was already set up is
@@ -300,7 +318,8 @@ Preconditions:
   are unset.
 - The host is a per-app host: `/opt/ikigenba/current` does not exist, and
   each installed app's `bin/`, `etc/`, and `share/` are under `/opt/<app>/`,
-  as the per-app layout keeps them.
+  as the per-app layout keeps them. The running opsctl is
+  `/usr/local/bin/opsctl`, a regular file that belongs to no release.
 
 Postconditions:
 
@@ -315,6 +334,8 @@ Postconditions:
   names that file, a stop timeout of `10` seconds, and the resource settings
   its installed manifest declares, or their defaults (`S07-apps.md`). An app
   that already held those values was not restarted.
+- `/usr/local/bin/turns` and `/etc/systemd/user/` are as they were: there is
+  no `current`, and the running opsctl belongs to no release.
 - Every setup command is idempotent, so a host that was already set up is
   unchanged by the run.
 
@@ -351,13 +372,18 @@ Preconditions:
   `/opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/`.
 - The host is a fresh host: neither `/opt/ikigenba/current` nor
   `/opt/ikigenba/previous` exists, no `/opt/<app>/` and no app unit exists,
-  and `/usr/local/bin/opsctl` does not exist.
+  and neither `/usr/local/bin/opsctl` nor `/usr/local/bin/turns` exists.
+- The release holds `turns/`.
 - The account `ikigenba` does not exist yet.
 
 Postconditions:
 
 - `/usr/local/bin/opsctl` is a link to
   `/opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/opsctl/bin/opsctl`.
+- `/usr/local/bin/turns` is a link to
+  `/opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/turns/bin/turns`,
+  and `/etc/systemd/user/turns.service` and `/etc/systemd/user/turns.timer` are
+  that release's `turns/share/systemd/` files.
 - The host holds its certificate, covering `sbx.ikigenba.dev` and
   `*.sbx.ikigenba.dev`, with hooks that name `opsctl` on the PATH.
 - The three slices and nginx's drop-in are written, sized from the host's
@@ -447,7 +473,8 @@ Postconditions:
 
 - Nothing has changed. No setup command ran, no file under `/etc`, `/opt`,
   `/var/opt/ikigenba`, `/var/lib/ikigenba`, or `/run/ikigenba` was created,
-  modified, or removed, and `/usr/local/bin/opsctl` was not created.
+  modified, or removed, and neither `/usr/local/bin/opsctl` nor
+  `/usr/local/bin/turns` was created.
 
 ## An operator runs init again after fixing what it found
 
