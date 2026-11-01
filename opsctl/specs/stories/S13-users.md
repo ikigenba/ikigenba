@@ -250,7 +250,7 @@ Postconditions:
 
 ## The accounts app adds a user and their timer cannot be started
 
-The account, its key file and lingering are made, but `alice`'s own systemd manager does not come up, so `turns.timer` cannot be enabled in it. `user add` undoes all of it, lingering included, and the same command can simply be run again.
+The account, its key file and lingering are made, but `alice`'s own systemd manager, though it starts, cannot be reached on its bus, so `turns.timer` cannot be enabled in it. `user add` undoes all of it, lingering included, and the same command can simply be run again.
 
 Command:
 
@@ -263,7 +263,7 @@ Output:
 ```
 opsctl: systemctl: exit status 1
 
-> Failed to connect to user scope bus via local transport: No such file or directory
+> Failed to connect to bus: No such file or directory
 ```
 
 Exits 1. The text is on stderr; stdout is empty.
@@ -274,7 +274,7 @@ Preconditions:
 - `acme` is a business group.
 - No account or group named `alice` exists.
 - `/etc/systemd/user/turns.timer` exists.
-- `alice`'s own systemd manager does not come up.
+- `alice`'s own systemd manager starts, but its bus cannot be reached.
 
 Postconditions:
 
@@ -677,6 +677,7 @@ Postconditions:
 - Every process running as `bob` has ended, his SSH session included.
 - `bob` cannot sign in by any means: not with his keys, not with a password, not otherwise.
 - His home, his keys and his groups are unchanged. `opsctl user list` shows him `locked`.
+- Lingering is not enabled for `bob`, as `loginctl disable-linger bob` leaves it, so neither his own systemd manager nor `turns.timer` starts at boot.
 
 ## The accounts app locks a user who is already locked
 
@@ -697,6 +698,7 @@ Preconditions:
 
 - `opsctl` is running as root.
 - `bob` is a locked user.
+- Lingering is not enabled for `bob`.
 
 Postconditions:
 
@@ -731,7 +733,7 @@ Postconditions:
 
 ## The accounts app unlocks a user and their timer cannot be started
 
-`bob` is unlocked first; then his own systemd manager does not come up, so `turns.timer` cannot be started in it. Unlike `add`, `unlock` undoes nothing: `bob` can sign in, and the same command run again, on a user who is now active, enables what is still missing.
+`bob` is unlocked first; then his own systemd manager starts but cannot be reached on its bus, so `turns.timer` cannot be started in it. Unlike `add`, `unlock` undoes nothing: `bob` can sign in, and the same command run again, on a user who is now active, enables what is still missing.
 
 Command:
 
@@ -744,7 +746,7 @@ Output:
 ```
 opsctl: systemctl: exit status 1
 
-> Failed to connect to user scope bus via local transport: No such file or directory
+> Failed to connect to bus: No such file or directory
 ```
 
 Exits 1. The text is on stderr; stdout is empty.
@@ -754,7 +756,7 @@ Preconditions:
 - `opsctl` is running as root.
 - `bob` is a locked user holding his key, in `acme`.
 - `/etc/systemd/user/turns.timer` exists.
-- `bob`'s own systemd manager does not come up.
+- `bob`'s own systemd manager starts, but its bus cannot be reached.
 
 Postconditions:
 

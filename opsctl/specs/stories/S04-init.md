@@ -75,10 +75,13 @@ release's own `turns/bin/turns`. A `/usr/local/bin/turns` that exists, link or
 file, is left as it is. It also writes `turns.service` and `turns.timer` from
 that release's `turns/share/systemd/` into `/etc/systemd/user/`, the directory
 of units every user's own systemd manager reads, replacing whatever files of
-those names were there. When there is no such release, or it holds no
+those names were there. It writes `/etc/xdg/turns/config` too, mode `0644`
+in a directory of mode `0755`, holding the one line `space=<host.name>`, the
+space's own name, which `turns` reads as the host's default space, replacing
+what was there. When there is no such release, or it holds no
 `turns/` (a per-app host run by a plain opsctl, or a current release older than
-`turns`), `init` leaves `/usr/local/bin/turns` and `/etc/systemd/user/` as they
-are.
+`turns`), `init` leaves `/usr/local/bin/turns`, `/etc/systemd/user/` and
+`/etc/xdg/turns/config` as they are.
 
 The suite runs inside three slices, systemd's way of grouping services so
 that they share a CPU weight and a memory ceiling. The `slices` step writes
