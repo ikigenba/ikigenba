@@ -1,0 +1,80 @@
+# D12 — status
+
+`turns status` tells a person where turns stands: the space it pushes to, whether a token is stored, when it last pushed, and per tool how many sessions and turns are on this machine against how many of them the space holds. It is the `status` command of `cli.Run` (D02 declares Run, its exit codes, the root refusal that comes before any argument is looked at, and the top-level usage line for `status`). This document states everything status does after the root refusal.
+
+Arguments come first, under D02's rules for every command: `--help` or `-h` anywhere among status's arguments prints the usage this document states and wins over every other argument, reading nothing and making no request; status declares no option and no positional argument, so any other argument is refused as an unknown option or with `status takes no arguments`, the first refused argument deciding. D02 owns those refusals and help's precedence; this document owns only status's usage text.
+
+Then the configuration. `paths.Resolve` over `Deps.Getenv` and `Deps.Etc`, then `config.Load` (D03). An error from `paths.Resolve` is reported as the single line `turns: <error text>` (for example `turns: HOME is not set`); an error from `config.Load` as `turns: could not read the configuration` with the error text as unprefixed detail. Either way status exits 1, writes nothing to stdout, and nothing else happens. A missing file is not an error: an unconfigured account is a normal case for status.
+
+Then the report. Six lines, always in this order: `space:`, `token:`, `last push:`, then `claude:`, `codex:`, `grok:`. The space is `config.Config.Space`, the effective space (the user's config, else the host default). The token line says only `set` or `none`; the token never appears in anything status writes. The last-push line shows the moment held in `State/last-push`: the file's text with trailing whitespace removed, printed as held, when that text is exactly a valid `YYYY-MM-DDTHH:MM:SSZ` moment; otherwise (absent, unreadable, empty, any other shape, an impossible date) it is `never`. Since the accepted shape is fixed, printing as held and reformatting are the same thing; trimming trailing whitespace accepts the newline push writes and any an editor adds.
+
+The local half of each tool line counts the sessions `local.Read` returned for that tool and the sum of their turns. Sessions the readers skipped are not counted and are not mentioned: the six lines are fixed by the story, and skips are push's to report.
+
+The space's half is present only when both Space and Token are non-empty. Then status asks the space for the latest held turn of every session it read, through `space.Client.Latest`, in `local.Read` order across the three tools, in consecutive requests of exactly `space.MaxLatest` sessions each but the last, which holds the remaining 1 to `space.MaxLatest`. A session the space holds (non-zero `Held.Latest`) counts toward the space's sessions, and its local turns at or before that moment count toward the space's turns. This is what the story means by "the turns up to the latest one the space holds": the held turn itself is included, later local turns are not. When no session was read, no request is made and the space's half reads zero. When Space or Token is empty, the half is left off, no request is made, and status still succeeds.
+
+When a `Latest` call fails, status makes no further request and reports that call's error: the report still prints whole with `; unknown on the space` as the space's half of all three tool lines, then stderr carries `turns: could not read the space: <Reason>` and, only when the error's Detail is non-empty, an empty line and that Detail, quoted with `seam.QuoteOutput` when the error says so and unprefixed otherwise; a quoted Detail counts as empty when `seam.QuoteOutput` makes nothing of it; exit 1.
+
+status never takes `State/lock`, never writes or creates any file or directory, and never calls `push_turns`. A successful run writes nothing to stderr.
+
+## REQUIREMENTS
+
+- R-ZSBO-0289: `cli.Run` with args `status --help` and with args `status -h` MUST each write exactly this text to stdout, write nothing to stderr, and return `cli.ExitOK`:
+
+  ```
+  Usage: turns status
+
+  Print the space and token turns uses, when it last pushed, and per tool how
+  many sessions and turns are on this machine and how many the space holds.
+  Pushes nothing.
+
+  Options:
+    -h, --help   print this help
+  ```
+
+- R-HOKG-YQ0R: `cli.Run` with args `status` MUST, when `paths.Resolve` returns an error, write to stderr exactly the single line `turns: <error text>`, `<error text>` being that error's text, write nothing to stdout, read no session file, make no request, and return `cli.ExitFailed`, verified at least with `HOME` unset in `Deps.Getenv` and session files present under a temporary root that `CLAUDE_CONFIG_DIR` names.
+
+- R-HPSD-CHRG: `cli.Run` with args `status` MUST, when `paths.Resolve` succeeds and `config.Load` returns an error, write to stderr exactly `turns: could not read the configuration`, an empty line, and that error's text unprefixed followed by a newline, write nothing to stdout, make no request, and return `cli.ExitFailed`, verified at least with `Config/config` a directory.
+
+- R-00UY-OGF4: `cli.Run` with args `status` that completes without a failure of the space MUST write to stdout exactly six newline-terminated lines, in order the `space:` line, the `token:` line, the `last push:` line, and the `claude:`, `codex:` and `grok:` lines, MUST write nothing to stderr, and MUST return `cli.ExitOK`, verified for an unconfigured home, a configured home whose space answers, and a home with no session files.
+
+- R-022V-285T: The first line of the `status` report MUST be `space: <space>` where `<space>` is the effective space `config.Load` yields as `Config.Space`, or `space: none` when that is empty, verified at least for a user `Config/config` naming a space, for no user config and a `<Etc>/xdg/turns/config` naming a space, for a user config overriding a different host default, and for neither.
+
+- R-03AR-FZWI: The second line of the `status` report MUST be `token: set` when `config.Load` yields a non-empty `Config.Token` and `token: none` otherwise.
+
+- R-Q6Y5-62LZ: `cli.Run` with args `status` MUST NOT write the stored token's text to stdout or stderr, verified with a distinctive token for a successful configured run, a run whose space fails with a network error, and a run whose space answers 401.
+
+- R-05QK-7JDW: The third line of the `status` report MUST be `last push: <moment>` when `State/last-push` can be read and its content with trailing spaces, tabs, carriage returns and newlines removed is exactly a moment of the form `YYYY-MM-DDTHH:MM:SSZ` that parses as a valid UTC date and time, `<moment>` being that trimmed content as held, verified at least for `2026-11-01T14:05:00Z` followed by a newline and for the same moment with no newline.
+
+- R-06YG-LB4L: The third line of the `status` report MUST be `last push: never` when `State/last-push` is absent, cannot be read, or does not hold a moment as R-05QK-7JDW defines, verified at least for an absent file, `State/last-push` a directory, an empty file, ` 2026-11-01T14:05:00Z` (leading space), `2026-11-01 14:05:00Z`, `2026-11-01T14:05:00.000Z`, `2026-11-01T14:05:00+00:00` and `2026-13-01T00:00:00Z`.
+
+- R-09E9-CULZ: The fourth, fifth and sixth lines of the `status` report MUST begin, for `claude`, `codex` and `grok` in that order, with `<tool>: <s> <session-word>, <t> <turn-word> here`, where `<s>` is the number of sessions of that tool `local.Read` returns for the resolved paths and `<t>` the total number of turns of those sessions, and MUST be present for every tool even when its count is zero or its root does not exist.
+
+- R-0AM5-QMCO: Every count in a `status` tool line MUST be followed by `session` or `turn` when the count is exactly 1 and by `sessions` or `turns` otherwise, in both the local half and the space's half, verified at least for counts 0, 1 and 2 on each side.
+
+- R-0BU2-4E3D: The `status` report MUST NOT count a file the readers skip and MUST NOT write any line beyond the six, verified with a Claude session file holding a complete line that is not a JSON object beside one readable session: the `claude:` line counts one session and its turns and stdout has exactly six lines.
+
+- R-0E9U-VXKR: When `Config.Space` or `Config.Token` is empty, each `status` tool line MUST end right after `here`, `cli.Run` MUST make no request, write nothing to stderr and return `cli.ExitOK`, verified at least with neither set, with a host default space and no token (the report shows that space and `token: none`), and with a token stored and no space.
+
+- R-0FHR-9PBG: When `Config.Space` and `Config.Token` are both non-empty and every `space.Client.Latest` call succeeds, each `status` tool line MUST be its local half followed by `; <s2> <session-word>, <t2> <turn-word> on the space`.
+
+- R-0GPN-NH25: In a `status` tool line's space half, `<s2>` MUST be the number of that tool's sessions read whose `space.Held` answer has a non-zero `Latest`, verified with sessions the space holds, sessions it does not hold (answered without `latest`), and a held session whose local turns all come after its `Latest`.
+
+- R-0HXK-18SU: In a `status` tool line's space half, `<t2>` MUST be the sum, over that tool's sessions whose `space.Held` answer has a non-zero `Latest`, of the number of their local turns whose `Moment` is at or before that `Latest`, verified with a held session whose local turns fall before, exactly at and after its `Latest` (the turn exactly at `Latest` counts, later ones do not) and an unheld session whose turns are not counted.
+
+- R-IVG9-X4YL: When `Config.Space` and `Config.Token` are both non-empty and at least one session was read, `cli.Run` with args `status` MUST ask the space about every session `local.Read` returned, each once, in `local.Read` order across the three tools, in consecutive requests of which every one but the last names exactly `space.MaxLatest` refs and the last between 1 and `space.MaxLatest`, observed at the `Deps.HTTP` transport as `get_latest_turns` arguments, verified at least with `space.MaxLatest` + 1 claude sessions (requests of `space.MaxLatest` refs, then 1) and with 300 claude and 300 codex sessions (requests of 500 refs, then 100, the first holding all 300 claude refs followed by the first 200 codex refs).
+
+- R-0KDC-SSA8: Every request `cli.Run` with args `status` makes MUST be a `tools/call` of gateway tool `call` with service `sessions` and tool `get_latest_turns`, sent to `space.Endpoint(Config.Space)` with `Authorization: Bearer <Config.Token>`, and none MUST name `mutate` or `push_turns`.
+
+- R-0LL9-6K0X: When `Config.Space` and `Config.Token` are both non-empty and `local.Read` returns no session, `cli.Run` with args `status` MUST make no request, end each tool line with `; 0 sessions, 0 turns on the space`, write nothing to stderr and return `cli.ExitOK`.
+
+- R-0MT5-KBRM: When any `space.Client.Latest` call of a `status` run returns an error, `cli.Run` MUST write the six-line report to stdout with every one of the three tool lines being its local half followed by `; unknown on the space` and the first three lines as on success, and MUST return `cli.ExitFailed`, verified at least for a failure of the first request and for a failure of the second request after the first succeeded.
+
+- R-QBTQ-P5KR: After the first `space.Client.Latest` call of a `status` run that returns an error, `cli.Run` MUST make no further request and MUST report that call's error, verified with `2 * space.MaxLatest` + 1 sessions and a transport that fails the second request: exactly two requests are recorded and the diagnostic carries the second request's failure.
+
+- R-AR3G-G9BX: When a `status` run's `space.Client.Latest` call fails with a `space.Error` whose `Quoted` is false, stderr MUST be exactly the line `turns: could not read the space: <Reason>` followed, only when Detail is non-empty, by an empty line and that Detail unprefixed followed by a newline, verified at least with a transport whose `RoundTrip` returns an error with non-empty text (the first line is `turns: could not read the space: cannot reach https://mcp.<space>/mcp` and the detail ends in that text), with one answering 200 whose body fails to read with an error of non-empty text, and with one answering 200 whose body's `Read` fails with `errors.New("")`, giving a `space.Error` whose Detail is empty (stderr is the one line alone, no empty line after it).
+
+- R-ASBC-U12M: When a `status` run's `space.Client.Latest` call fails with a `space.Error` whose `Quoted` is true, stderr MUST be exactly the line `turns: could not read the space: <Reason>` followed, only when `seam.QuoteOutput(Detail)` is non-empty, by an empty line and `seam.QuoteOutput(Detail)` followed by a newline, verified at least with a transport answering HTTP 401 with a two-line `text/plain` body (the reason is `the space refused the token` and each body line appears prefixed `> `), with one answering HTTP 401 with an empty body and with one answering HTTP 401 with a body of only newlines (in both, stderr is the one line alone).
+
+- R-QALU-BDU2: `cli.Run` with args `status` MUST NOT wait on `State/lock`, verified by a run that returns its report while another open file description holds an exclusive flock on `State/lock`.
+
+- R-0SWN-H6H3: `cli.Run` with args `status` MUST NOT create, change or remove any file or directory, verified by the temporary home tree (including the config, state, session roots and dispatch jobs directories) being byte-equal in names, contents and modes before and after a successful configured run, an unconfigured run, and a run whose space fails; in particular `State/last-push` is not created when absent.
