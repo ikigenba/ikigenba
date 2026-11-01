@@ -33,9 +33,13 @@ enrichment kinds `D16-enrichers` names, one kind or every kind, derived
 kinds first, and records a result for each candidate whose inputs for a
 kind differ from those of its newest result, fetching from outside only for
 the website check, and reads nothing from scrapes; a targeted enrich, of
-kind `enrich_target`, started by the `enrich` tool naming a prospect list
-or a candidate, walks one kind over that target, and for `website_search`,
-`site_text` or `brief` runs the owner's prompt named for the kind,
+kind `enrich_target`, started by the `enrich` tool naming a prospect list,
+a candidate or a set of candidates' ids, works the kind it names over that
+target or, named none, each kind the candidates are due in order,
+`website_check`, `website_search`, `site_text`, `brief`, then `drive_route`,
+recording an entry for each kind as it ends, counts as busy a candidate
+another targeted pass holds and as unmatched an id naming no active
+candidate, and for `website_search`, `site_text` or `brief` runs the owner's prompt named for the kind,
 `website-search`, `site-text` or `brief`, for each due candidate, and for
 `drive_route` asks Google's Geocoding and Routes APIs for the drive from the
 origin to each due candidate's street address; a parks pass reads the
@@ -51,7 +55,7 @@ reads the run's record and rows from
 scrapes over its socket through appkit's `scrapes` client, as the caller
 for the `ingest` or `edit_park_rules` tool and as the service identity for a
 delivery or a start, and the start itself asks scrapes once, as the service
-identity and in the background, for the current `mn_parcels` run; a targeted pass of a prompts kind runs its prompts
+identity and in the background, for the current `mn_parcels` run; a targeted pass that runs a prompts kind runs its prompts
 through appkit's `prompts` client over the socket the services file's
 `prompts` entry names, as the caller of the `enrich` that started it;
 candidates calls no other sibling. It names campaigns only to link to a
@@ -59,7 +63,7 @@ campaign's page, built on the services file's optional entry `campaigns`. Outsid
 the websites the website check visits, the pages `add_page` keeps and the
 URL a website search's run names, which it confirms with one `Checker.Get`,
 over outbound HTTP through `cli.Process.HTTP`, and the geocoding and routing
-requests of a targeted `drive_route` pass and the Nearby Search requests of a
+requests of `drive_route` in a targeted pass and the Nearby Search requests of a
 walk, over HTTPS to Google through the same client; when `IKIGENBA_SANDBOX` is
 present the website fetches go only to an in-process stub on loopback and a
 walk's requests to an in-process fake, while a `drive_route` pass still
@@ -69,8 +73,8 @@ environment at start: `GOOGLE_MAPS_API_KEY`, the key every request to Google
 carries, and `CANDIDATES_ROUTE_ORIGIN`, the address a drive route is measured
 from, an address rather than a credential, listed as a secret so the owner
 can move the base on a space without a release. Unset or empty, the key
-leaves candidates with no routes client and a targeted enrich of
-`drive_route` refused and no Places client, a walk refused; the origin defaults to Sandstone, MN. The key is
+leaves candidates with no routes client, a targeted enrich of
+`drive_route` refused and a kindless one leaving it out, and no Places client, a walk refused; the origin defaults to Sandstone, MN. The key is
 never written to its database, its trail, a page or a tool's answer. It keeps its candidates, links, estimates,
 judgments, enrichment results, facts and kept pages, the owner's rulings,
 records, prospect lists, rejects and opens, its
@@ -607,7 +611,7 @@ campaigns' `campaign.member.added`, `campaign.member.rejected`,
 `campaign.piece.delivered` and `campaign.member.opened` from,
 scrapes, which it reads over the socket, in a pass and once at start, and
 prompts, which a targeted pass
-of a prompts kind runs the `website-search`, `site-text` or `brief` prompt
+that runs a prompts kind runs the `website-search`, `site-text` or `brief` prompt
 through over the socket; its
 services file names them, with telemetry and auth, and may name campaigns,
 whose entry candidates uses only to link to a campaign's page. The host needs outbound HTTP and HTTPS to the
