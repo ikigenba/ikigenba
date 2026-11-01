@@ -347,6 +347,7 @@ func (s *Store) ApplyParks(ctx context.Context, pass, run string, counties []str
 		}
 		p.Status = StatusDone
 		p.Finished = now
+		p.RunningKind = ""
 		p.ParcelRun = run
 		setCounts(&p, c)
 		if e = insertRecord(ctx, tx, "passes", passColumns, p, nil); e != nil {

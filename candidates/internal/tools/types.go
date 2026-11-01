@@ -592,6 +592,7 @@ type Detail struct {
 	Founded           *OwnerRecord          `json:"founded,omitempty"`
 	OwnerSet          map[string]OwnerSetBy `json:"owner_set"`
 	OwnerRecords      []OwnerRecord         `json:"owner_records"`
+	RunningPass       string                `json:"running_pass,omitempty"`
 }
 
 // MarshalJSON encodes empty collections as arrays or objects.
@@ -764,10 +765,11 @@ type DecideArgs struct {
 
 // EnrichArgs selects a website enrichment pass.
 type EnrichArgs struct {
-	Kind         string `json:"kind"`
-	ProspectList string `json:"prospect_list"`
-	Candidate    string `json:"candidate"`
-	Force        bool   `json:"force"`
+	Kind         string   `json:"kind"`
+	ProspectList string   `json:"prospect_list"`
+	Candidate    string   `json:"candidate"`
+	Candidates   []string `json:"candidates"`
+	Force        bool     `json:"force"`
 }
 
 // EnrichmentResult is one recorded enrichment result.

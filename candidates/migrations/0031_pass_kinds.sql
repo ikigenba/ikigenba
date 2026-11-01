@@ -1,0 +1,7 @@
+ALTER TABLE passes ADD COLUMN target_ids TEXT NOT NULL DEFAULT '';
+ALTER TABLE passes ADD COLUMN running_kind TEXT NOT NULL DEFAULT '';
+ALTER TABLE passes ADD COLUMN busy INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE passes ADD COLUMN unmatched INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE pass_kinds (pass TEXT NOT NULL, seq INTEGER NOT NULL, kind TEXT NOT NULL, new_results INTEGER NOT NULL, not_due INTEGER NOT NULL, not_applicable INTEGER NOT NULL, failed INTEGER NOT NULL, cost INTEGER NOT NULL, PRIMARY KEY (pass, seq));
+CREATE TABLE pass_claims (candidate TEXT NOT NULL, pass TEXT NOT NULL, PRIMARY KEY (candidate, pass));
+CREATE INDEX pass_claims_pass ON pass_claims(pass);

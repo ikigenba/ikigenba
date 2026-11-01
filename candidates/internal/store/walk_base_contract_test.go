@@ -169,7 +169,7 @@ func TestGetParkReadsNewestWalkIncludingCeiling(t *testing.T) {
 	contractEqual(t, got, want)
 }
 
-// R-W07T-G9JB R-OR9G-HGA3 R-64U1-LEO8 R-OQ1K-3OJE
+// R-CWDO-965C R-OR9G-HGA3 R-64U1-LEO8 R-OQ1K-3OJE
 func TestWalkCeilingRuleEditsAreAtomicAndPersistent(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -208,7 +208,7 @@ func TestWalkCeilingRuleEditsAreAtomicAndPersistent(t *testing.T) {
 	contractEqual(t, p.Kind, store.KindParks)
 }
 
-// R-VROI-RVCG R-VU4B-JETU R-VWK4-AYB8
+// R-VROI-RVCG R-CV5R-VEEN R-VWK4-AYB8
 func TestGenericPassEndingsPreserveWalkAndParkRecords(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)

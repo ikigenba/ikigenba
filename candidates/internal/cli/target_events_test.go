@@ -77,7 +77,7 @@ func assertEnrichEvents(t *testing.T, h *runHarness, c identity.Caller, done map
 	}
 }
 
-// R-YR12-G0SQ
+// R-U2T8-CXQA
 func TestRunCorpusEnrichEvents(t *testing.T) {
 	for _, httpMode := range []string{"nil", "injected", "sandbox"} {
 		t.Run(httpMode, func(t *testing.T) {

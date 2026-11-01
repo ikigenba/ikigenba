@@ -36,7 +36,7 @@ var linkColumns = columns("candidate:Candidate scraper:Scraper source_id:SourceI
 var estimateColumns = columns("candidate:Candidate source:Source low:Low high:High confidence:Confidence facts:Facts filed:Filed formula:Formula")
 var judgmentsColumns = columns("candidate:Candidate operating:Operating operating_key:OperatingKey evidence:Evidence revenue_low:RevenueLow revenue_high:RevenueHigh revenue_confidence:RevenueConfidence headcount_low:HeadcountLow headcount_high:HeadcountHigh headcount_basis:HeadcountBasis headcount_series:HeadcountSeries trend:Trend trend_kind:TrendKind trend_from_year:TrendFromYear trend_to_year:TrendToYear trend_from:TrendFrom trend_to:TrendTo trend_change:TrendChange excluded:Excluded rules:Rules calculated:Calculated")
 var rulingColumns = columns("kind:Kind candidate:Candidate other:Other keys:Keys why:Why user_id:UserID user_email:UserEmail at:At")
-var passColumns = columns("id:ID kind:Kind origin:Origin trigger:Trigger target:Target enrich_kind:EnrichKind scraper:Scraper parcel_run:ParcelRun status:Status reason:Reason started:Started finished:Finished rows:Rows new:New changed:Changed unchanged:Unchanged gone:Gone created:Created linked:Linked judged:Judged unranged:Unranged derived:Derived due:Due fetched:Fetched https:HTTPS http:HTTP none:None runs:Runs runs_failed:RunsFailed pages:Pages cost:Cost parcels_read:ParcelsRead by_label:ByLabel by_value:ByValue by_candidate:ByCandidate parks_created:ParksCreated parks_updated:ParksUpdated parks_gone:ParksGone parks_grown:ParksGrown parks_walked:ParksWalked circles:Circles requests:Requests found:Found new_candidates:NewCandidates search_different:SearchDifferent search_stands:SearchStands search_none:SearchNone ceiling_reached:CeilingReached user_id:UserID user_email:UserEmail request_id:RequestID delivery:Delivery")
+var passColumns = columns("id:ID kind:Kind origin:Origin trigger:Trigger target:Target enrich_kind:EnrichKind scraper:Scraper parcel_run:ParcelRun status:Status reason:Reason started:Started finished:Finished rows:Rows new:New changed:Changed unchanged:Unchanged gone:Gone created:Created linked:Linked judged:Judged unranged:Unranged derived:Derived due:Due fetched:Fetched https:HTTPS http:HTTP none:None runs:Runs runs_failed:RunsFailed pages:Pages cost:Cost parcels_read:ParcelsRead by_label:ByLabel by_value:ByValue by_candidate:ByCandidate parks_created:ParksCreated parks_updated:ParksUpdated parks_gone:ParksGone parks_grown:ParksGrown parks_walked:ParksWalked circles:Circles requests:Requests found:Found new_candidates:NewCandidates search_different:SearchDifferent search_stands:SearchStands search_none:SearchNone ceiling_reached:CeilingReached user_id:UserID user_email:UserEmail request_id:RequestID delivery:Delivery target_ids:TargetIDs running_kind:RunningKind busy:Busy unmatched:Unmatched")
 
 func columns(s string) []column {
 	out := []column{}
@@ -118,6 +118,11 @@ func readQueryRecords[T any](ctx context.Context, tx *sql.Tx, cs []column, query
 		}
 	}
 	for i := range out {
+		if p, ok := any(&out[i]).(*Pass); ok {
+			if err = readPassDetails(ctx, tx, p); err != nil {
+				return nil, err
+			}
+		}
 		if c, ok := any(&out[i]).(*Candidate); ok {
 			if err = withCandidateEIN(ctx, tx, c); err != nil {
 				return nil, err
@@ -145,6 +150,9 @@ var headcountsType = reflect.TypeFor[[]sources.Headcount]()
 var timeType = reflect.TypeFor[time.Time]()
 
 func decodeValue(v reflect.Value, x any) error {
+	if v.Type() == reflect.TypeFor[[]string]() && x == "" {
+		return nil
+	}
 	if v.Type() == peopleType {
 		text, ok := x.(string)
 		if !ok {
@@ -323,6 +331,9 @@ func insertRecord(ctx context.Context, tx *sql.Tx, table string, cs []column, v 
 		x, err := encodeValue(rv.FieldByName(c.field))
 		if err != nil {
 			return err
+		}
+		if table == "passes" && c.field == "TargetIDs" && rv.FieldByName(c.field).Len() == 0 {
+			x = ""
 		}
 		values = append(values, x)
 		names = append(names, `"`+c.name+`"`)

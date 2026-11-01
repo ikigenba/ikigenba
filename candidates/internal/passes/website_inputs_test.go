@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/candidates/internal/passes"
 	"github.com/ikigenba/ikigenba/candidates/internal/places"
 	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
@@ -66,7 +67,7 @@ func TestWebsitePassDeduplicatesFullInputs(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				p, err = f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, sources.WebsiteCheck, list.ID, false)
+				p, err = f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, sources.WebsiteCheck, passes.Target{ID: list.ID}, false)
 				if err != nil {
 					t.Fatal(err)
 				}

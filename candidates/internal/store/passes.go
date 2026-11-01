@@ -60,7 +60,7 @@ func (s *Store) AddPass(ctx context.Context, p Pass) (Pass, error) {
 	return out, nil
 }
 func (s *Store) addPassTx(ctx context.Context, tx *sql.Tx, p Pass) (Pass, error) {
-	if !validPass(p) {
+	if p.Kind == KindEnrichTarget || !validPass(p) {
 		return Pass{}, ErrUnreachable
 	}
 	ps, e := readRecords[Pass](ctx, tx, "passes", passColumns, ` WHERE status=? OR (delivery<>'' AND delivery=?) OR (origin=? AND "trigger"=?)`, StatusRunning, p.Delivery, OriginRun, p.Trigger)
@@ -82,6 +82,9 @@ func (s *Store) addPassTx(ctx context.Context, tx *sql.Tx, p Pass) (Pass, error)
 		return Pass{}, e
 	}
 	out := Pass{ID: id, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Target: p.Target, EnrichKind: p.EnrichKind, Scraper: p.Scraper, Status: StatusRunning, Started: s.now(), UserID: p.UserID, UserEmail: p.UserEmail, RequestID: p.RequestID, Delivery: p.Delivery}
+	if e = clearPassOrphans(ctx, tx, id); e != nil {
+		return Pass{}, e
+	}
 	if e = insertRecord(ctx, tx, "passes", passColumns, out, nil); e != nil {
 		return Pass{}, e
 	}
@@ -101,7 +104,7 @@ func nonnegative(c Counts) bool {
 // FinishPass ends a running pass with its work counts.
 func (s *Store) FinishPass(ctx context.Context, id string, c Counts) (Pass, error) {
 	var out Pass
-	err := s.passWrite(ctx, " WHERE id=?", []any{id}, func(_ *sql.Tx, r *records) error {
+	err := s.passWrite(ctx, id, func(_ *sql.Tx, r *records) error {
 		if !nonnegative(c) {
 			return ErrUnreachable
 		}
@@ -113,6 +116,7 @@ func (s *Store) FinishPass(ctx context.Context, id string, c Counts) (Pass, erro
 			return ErrEnded
 		}
 		p.Status = StatusDone
+		p.RunningKind = ""
 		p.Finished = s.now()
 		setCounts(&p, c)
 		r.passes[id] = p
@@ -128,7 +132,7 @@ func (s *Store) FinishPass(ctx context.Context, id string, c Counts) (Pass, erro
 // FailPass ends a running pass with a failure reason.
 func (s *Store) FailPass(ctx context.Context, id, reason string) (Pass, error) {
 	var out Pass
-	err := s.passWrite(ctx, " WHERE id=?", []any{id}, func(_ *sql.Tx, r *records) error {
+	err := s.passWrite(ctx, id, func(_ *sql.Tx, r *records) error {
 		if reason != ReasonScrapes && reason != ReasonInterrupted && reason != ReasonStore && reason != ReasonPrompts && reason != ReasonPlaces {
 			return ErrUnreachable
 		}
@@ -140,6 +144,7 @@ func (s *Store) FailPass(ctx context.Context, id, reason string) (Pass, error) {
 			return ErrEnded
 		}
 		p.Status = StatusFailed
+		p.RunningKind = ""
 		p.Reason = reason
 		p.Finished = s.now()
 		r.passes[id] = p
@@ -252,6 +257,11 @@ func (s *Store) PrunePasses(ctx context.Context, keep int64, n int) (int64, erro
 			return closeErr
 		}
 		for _, id := range ids {
+			for _, table := range []string{"pass_kinds", "pass_claims"} {
+				if err = deleteRecord(ctx, tx, table, "pass=?", id); err != nil {
+					return err
+				}
+			}
 			if err = deleteRecord(ctx, tx, "passes", "id=?", id); err != nil {
 				return err
 			}

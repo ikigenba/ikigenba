@@ -153,7 +153,7 @@ func TestParksLaneIndependentOfAllCandidateLanes(t *testing.T) {
 				}
 			}
 			ids := seedTarget(t, f, 1)
-			if _, err := f.st.AddPass(ctx, store.Pass{Kind: store.KindEnrichTarget, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, Target: ids[0], EnrichKind: enrichers.KindLinkFacts, UserID: "owner"}); err != nil {
+			if _, _, err := f.st.AddTargetPass(ctx, store.Pass{Kind: store.KindEnrichTarget, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, Target: ids[0], EnrichKind: enrichers.KindLinkFacts, UserID: "owner"}, []string{ids[0]}); err != nil {
 				t.Fatal(err)
 			}
 			var p store.Pass
@@ -220,7 +220,7 @@ func TestParksLaneIndependentOfAllCandidateLanes(t *testing.T) {
 	}
 }
 
-// R-DTXE-DYY4
+// R-PVFQ-YZV0
 func TestConcurrentParkRuleEditsAndMixedEngineMethods(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -269,7 +269,7 @@ func TestConcurrentParkRuleEditsAndMixedEngineMethods(t *testing.T) {
 		func() { _, _ = f.eng.Judge(ctx, identity.Caller{UserID: "owner"}) },
 		func() { _, _ = f.eng.Enrich(ctx, identity.Caller{UserID: "owner"}, enrichers.KindLinkFacts) },
 		func() {
-			_, _ = f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindLinkFacts, ids[0], false)
+			_, _ = f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindLinkFacts, passes.Target{ID: ids[0]}, false)
 		},
 		func() { _, _ = f.eng.EditParkRules(ctx, identity.Caller{UserID: "owner"}, store.ParkRulesEdit{}) },
 		func() { _, _ = f.eng.StartParks(ctx, "concurrent_start") },
@@ -422,7 +422,7 @@ func candidateReadSnapshot(t *testing.T, st *store.Store) []byte {
 	return b
 }
 
-// R-TQ38-2EBU R-3D78-36TE R-128R-PYXF
+// R-TQ38-2EBU R-3D78-36TE R-85VF-HQ5G
 func TestParksComposesClassificationClustersAndMixedPlan(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

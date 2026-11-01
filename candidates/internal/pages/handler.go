@@ -253,6 +253,13 @@ func Handler(cfg Config) http.Handler {
 				d.Rejects = append(d.Rejects, rejectRecordRow(x))
 			}
 			if c.Status != store.StatusMerged {
+				if c.Status == store.StatusActive {
+					d.Candidate.RunningPass, err = cfg.Store.RunningTargetPass(r.Context(), cid)
+					if err != nil {
+						fail()
+						return
+					}
+				}
 				owners, err := cfg.Store.OwnerRecords(r.Context(), cid)
 				if err != nil {
 					fail()

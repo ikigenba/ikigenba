@@ -22,7 +22,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 )
 
-// R-1LR5-UASJ
+// R-0E52-AN6M
 func TestFullIngestUnchangedRowsPreserveCandidate(t *testing.T) {
 	t.Parallel()
 	for _, reverse := range []bool{false, true} {
@@ -111,7 +111,7 @@ func TestFullIngestUnchangedRowsPreserveCandidate(t *testing.T) {
 	}
 }
 
-// R-19K6-0LDL
+// R-00Q6-360Z
 func TestFullIngestReprojectsUnchangedLinkFacts(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

@@ -522,7 +522,7 @@ func TestRunRulesLifecycleAfterStart(t *testing.T) {
 	assertParcelLifecycle(t, h, p, c.RequestID, c.UserID, "", 0)
 }
 
-// R-21LU-TBFK
+// R-0QC2-4CLK
 func TestRunParcelDeliveryUnavailableStillAcknowledges(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": missingParcelSocket(t)}))
 	h.start()
@@ -562,7 +562,7 @@ func parcelStoredPass(t *testing.T, h *runHarness, origin string) map[string]jso
 	}
 }
 
-// R-27PC-Q651
+// R-0WFK-17B1
 func TestRunEmptyParcelDeliveryStartsOnlyParks(t *testing.T) {
 	f := &runParcelFake{}
 	h := newRunHarness(t, t.TempDir(), runServices(t, map[string]string{"scrapes": runSocket(t, f)}))
@@ -591,7 +591,7 @@ func TestRunEmptyParcelDeliveryStartsOnlyParks(t *testing.T) {
 	h.stop()
 }
 
-// R-20DY-FJOV R-TQ38-2EBU
+// R-0P45-QKUV R-TQ38-2EBU
 func TestRunFreshNoncurrentParcelDeliveryExactDerivation(t *testing.T) {
 	rows := runParcelRows(t)
 	noPoint := runParcelRows(t)[0]

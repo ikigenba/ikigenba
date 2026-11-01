@@ -210,7 +210,7 @@ func TestWalkToolAnswersWhileNearbyRequestsRemainOpen(t *testing.T) {
 				}
 				waitSignal(t, entered)
 				p, err := f.st.GetPass(t.Context(), wire.Structured.ID)
-				if err != nil || p.Status != store.StatusRunning || wire.Structured != passes.RecordOf(p) {
+				if err != nil || p.Status != store.StatusRunning || !reflect.DeepEqual(wire.Structured, passes.RecordOf(p)) {
 					t.Fatal(wire.Structured, p, err)
 				}
 				want, err := json.Marshal(passes.RecordOf(p))
@@ -358,7 +358,7 @@ func TestWalkRefusalsLeaveNoWork(t *testing.T) {
 	}
 }
 
-// R-18E0-JLHM R-HT9C-7JEF R-BJYG-BQS8 R-UF5P-F79H R-18C9-MTMW R-128R-PYXF
+// R-18E0-JLHM R-HT9C-7JEF R-BJYG-BQS8 R-UF5P-F79H R-ZZI9-PEAA R-85VF-HQ5G
 func TestWalkAccountingAndFollowOn(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"done", "exact_ceiling", "cut", "cut_after_first", "first_failure", "second_failure"} {
@@ -483,7 +483,7 @@ func TestWalkAccountingAndFollowOn(t *testing.T) {
 	}
 }
 
-// R-UF5P-F79H R-HUH8-LB54 R-OJIZ-52KI
+// R-UF5P-F79H R-HUH8-LB54 R-PWNN-CRLP
 func TestWalkOutlivesCallerConcurrentAdmissionAndDrain(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -560,7 +560,7 @@ func TestWalkOutlivesCallerConcurrentAdmissionAndDrain(t *testing.T) {
 	assertRefusal(t, p, err, passes.RefusalStopping)
 }
 
-// R-1GVK-B7TR R-1FNN-XG32 R-1BZY-S4UZ
+// R-099G-RK7U R-06TO-00QG R-035Y-UPID
 func TestWalkDiagnosticsPrecedeEnding(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"places", "store", "nil"} {
@@ -612,7 +612,7 @@ func TestWalkDiagnosticsPrecedeEnding(t *testing.T) {
 	}
 }
 
-// R-OFV9-ZRCF R-OH36-DJ34 R-1D7V-5WLO
+// R-OFV9-ZRCF R-OH36-DJ34 R-04DV-8H92
 func TestOtherEngineMethodsNeverWalk(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -707,7 +707,7 @@ func TestOtherEngineMethodsNeverWalk(t *testing.T) {
 		t.Fatal(end)
 	}
 	ids := seedTarget(t, f, 1)
-	p, err = f.eng.EnrichTarget(t.Context(), c, enrichers.KindLinkFacts, ids[0], false)
+	p, err = f.eng.EnrichTarget(t.Context(), c, enrichers.KindLinkFacts, passes.Target{ID: ids[0]}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -737,12 +737,12 @@ func TestOtherEngineMethodsNeverWalk(t *testing.T) {
 	}
 }
 
-// R-SOKW-PW7E R-8WDK-MWRK R-SS8L-V7FH
+// R-7MD1-DEAC R-2FQ4-DT0J R-7NKX-R611
 func TestWalkRecordEveryFieldAndOrigin(t *testing.T) {
 	start := time.Date(2004, 3, 2, 1, 0, 0, 0, time.FixedZone("fixture", 3600))
 	p := store.Pass{ID: "pass", Kind: store.KindWalk, Origin: store.OriginWalk, Trigger: store.TriggerWalk, Target: "target", EnrichKind: "kind", Scraper: "scraper", ParcelRun: "parcel", Status: store.StatusDone, Reason: "reason", Started: start, Finished: start.Add(time.Hour), Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Derived: 10, Due: 11, Fetched: 12, HTTPS: 13, HTTP: 14, None: 15, Runs: 16, RunsFailed: 17, Pages: 18, Cost: 19, ParcelsRead: 20, ByLabel: 21, ByValue: 22, ByCandidate: 23, ParksCreated: 24, ParksUpdated: 25, ParksGone: 26, ParksGrown: 27, ParksWalked: 28, Circles: 29, Requests: 30, Found: 31, NewCandidates: 32, SearchDifferent: 33, SearchStands: 34, SearchNone: 35, CeilingReached: true, UserID: "owner", UserEmail: "owner@example.test"}
-	want := passes.Record{"pass", store.KindWalk, store.OriginWalk, store.TriggerWalk, "target", "kind", "scraper", "parcel", store.StatusDone, "reason", start.UTC().Format(time.RFC3339), p.Finished.UTC().Format(time.RFC3339), 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, true, "owner", "owner@example.test"}
-	if got := passes.RecordOf(p); got != want {
+	want := passes.Record{"pass", store.KindWalk, store.OriginWalk, store.TriggerWalk, "target", "kind", "scraper", "parcel", store.StatusDone, "reason", start.UTC().Format(time.RFC3339), p.Finished.UTC().Format(time.RFC3339), 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, true, "owner", "owner@example.test", nil, "", 0, 0, nil}
+	if got := passes.RecordOf(p); !reflect.DeepEqual(got, want) {
 		t.Fatal(got, want)
 	}
 	raw, err := json.Marshal(want)

@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-181V-Q3D3 R-D950-T4LS R-WN6X-B7B1
+// R-181V-Q3D3 R-D950-T4LS R-E5S7-FJN7
 func TestSearchAnswersUseStoredResults(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
@@ -97,7 +97,7 @@ func TestSearchAnswersUseStoredResults(t *testing.T) {
 	}
 }
 
-// R-SUUJ-VXRW
+// R-C56I-YALO
 func TestWebsiteSearchEnrichDispatch(t *testing.T) {
 	for _, reject := range []bool{false, true} {
 		var calls atomic.Int64
@@ -222,7 +222,7 @@ func TestWebsiteDecisionAnswersDistinguishUncheckedAndUnfound(t *testing.T) {
 	}
 }
 
-// R-WN6X-B7B1
+// R-E5S7-FJN7
 func TestSearchAnswersPreserveRecordedContext(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]
@@ -236,6 +236,7 @@ func TestSearchAnswersPreserveRecordedContext(t *testing.T) {
 		{Run: good, Answer: &enrichers.WebsiteSearchAnswer{URL: "https://recorded.test/"}, Reason: enrichers.SearchReasonAgain, Website: "https://recorded.test/", WebsiteFrom: store.WebsiteBySearch, SiteText: &enrichers.WebsiteSearchSiteText{Status: enrichers.RunExited, Pages: 4}, Case: enrichers.SearchCaseStands},
 		{Run: good, Answer: &enrichers.WebsiteSearchAnswer{}, Reason: enrichers.SearchReasonNoWebsite, Case: enrichers.SearchCaseNone},
 		{Run: enrichers.WebsiteSearchRun{ID: "failed-run", Status: "failed"}, Reason: enrichers.SearchReasonNoWebsite},
+		{Run: good, Answer: &enrichers.WebsiteSearchAnswer{URL: "https://provenance.test/"}, InputSources: []enrichers.InputSource{{Fact: "name", Source: sources.Owner, Record: "chosen-owner-record"}, {Fact: "address", Source: "fmcsa", Record: "chosen-link-record"}}},
 	} {
 		f.now = f.now.Add(time.Minute)
 		input := store.Enrichment{Candidate: id, Kind: enrichers.KindWebsiteSearch, Inputs: "context-input", Source: enrichers.SourcePrompts, Found: encodedJSON(found), Cost: .023714}
@@ -257,7 +258,7 @@ func TestSearchAnswersPreserveRecordedContext(t *testing.T) {
 	}
 }
 
-// R-WN6X-B7B1 R-181V-Q3D3
+// R-E5S7-FJN7 R-181V-Q3D3
 func TestSearchAnswersKeepRecordedCaseWhileFactsUseLanding(t *testing.T) {
 	const checked = "https://www.riverhaul.test/"
 	for _, tc := range []struct {

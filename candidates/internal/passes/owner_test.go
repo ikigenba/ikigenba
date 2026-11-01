@@ -16,7 +16,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-2BD1-VHD4 R-0YL2-KNPC R-0ZSY-YFG1 R-19K6-0LDL
+// R-2BD1-VHD4 R-ZTER-SJKT R-ZUMO-6BBI R-00Q6-360Z
 func TestFullIngestRebuildsOwnerFoundedCandidate(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) }, true)

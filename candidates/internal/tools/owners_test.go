@@ -130,7 +130,7 @@ func TestOwnerValidationBeforeStoreAccess(t *testing.T) {
 	refusal(t, f.call("set_facts", tools.SetFactsArgs{Candidate: "cand_0000000000000000", Name: new("North Star"), Note: "note"}), "unavailable", tools.RefuseUnavailable)
 }
 
-// R-W786-A20B R-W8G2-NTR0 R-VZWR-ZFK5
+// R-W786-A20B R-W8G2-NTR0 R-CA24-HDKG
 func TestOwnerAnswerEncoding(t *testing.T) {
 	for _, tc := range []struct {
 		value any

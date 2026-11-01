@@ -140,7 +140,7 @@ func (f *fixture) callAs(c identity.Caller, name string, args any) mcp.Result {
 		args = a
 	}
 	switch args.(type) {
-	case tools.AddBusinessArgs, tools.SetFactsArgs:
+	case tools.AddBusinessArgs, tools.SetFactsArgs, tools.EnrichArgs:
 		b, e := json.Marshal(args)
 		if e != nil {
 			f.t.Fatal(e)
@@ -251,7 +251,7 @@ func (f *fixture) seedWithStep(n int, step time.Duration, tie bool) []string {
 }
 
 // R-Y0OZ-AZ3O R-5LVY-DPZS
-// R-7PLC-AANV R-7ODF-WIX6 R-7QT8-O2EK R-ZCZ9-BW58
+// R-7PLC-AANV R-7ODF-WIX6 R-7QT8-O2EK R-BVFB-W4O4
 func TestCatalogAndSchemas(t *testing.T) {
 	const (
 		_ string = tools.DescribeProspectLists
@@ -299,7 +299,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 		t.Fatal(infos)
 	}
 	seen := map[string]bool{}
-	properties := [][]string{{"page", "limit"}, {"prospect_list", "peek"}, {"name", "zip", "phone", "page", "limit"}, {"q", "limit"}, {"candidate"}, {"page", "limit"}, {"pass"}, {"scraper"}, {}, {"kind", "prospect_list", "candidate", "force"}, {"candidate", "url"}, {"kind", "why", "candidate", "other", "links"}, {"candidate", "why"}, {"candidate", "why"}, {"name", "filters", "order", "size"}, {"prospect_list", "name", "filters", "order", "size"}, {"prospect_list"}, {"prospect_list", "candidate", "why"}, {"prospect_list", "candidate", "why"}, {"county", "walked", "gone", "sort", "page", "limit"}, {"park"}, {}, {"distance", "min_parcels", "value_threshold", "county", "labels", "walk_ceiling"}, {"parks", "again"}, {"name", "headcount", "revenue", "category", "website", "address", "phone", "email", "people", "known_since", "ein", "fleet", "note"}, {"candidate", "name", "headcount", "revenue", "category", "website", "address", "phone", "email", "people", "known_since", "ein", "fleet", "clear", "note"}}
+	properties := [][]string{{"page", "limit"}, {"prospect_list", "peek"}, {"name", "zip", "phone", "page", "limit"}, {"q", "limit"}, {"candidate"}, {"page", "limit"}, {"pass"}, {"scraper"}, {}, {"kind", "prospect_list", "candidate", "candidates", "force"}, {"candidate", "url"}, {"kind", "why", "candidate", "other", "links"}, {"candidate", "why"}, {"candidate", "why"}, {"name", "filters", "order", "size"}, {"prospect_list", "name", "filters", "order", "size"}, {"prospect_list"}, {"prospect_list", "candidate", "why"}, {"prospect_list", "candidate", "why"}, {"county", "walked", "gone", "sort", "page", "limit"}, {"park"}, {}, {"distance", "min_parcels", "value_threshold", "county", "labels", "walk_ceiling"}, {"parks", "again"}, {"name", "headcount", "revenue", "category", "website", "address", "phone", "email", "people", "known_since", "ein", "fleet", "note"}, {"candidate", "name", "headcount", "revenue", "category", "website", "address", "phone", "email", "people", "known_since", "ein", "fleet", "clear", "note"}}
 	required := [][]string{nil, {"prospect_list"}, nil, {"q"}, {"candidate"}, nil, {"pass"}, nil, nil, nil, {"candidate", "url"}, {"kind", "why", "candidate"}, {"candidate", "why"}, {"candidate", "why"}, {"name"}, {"prospect_list"}, {"prospect_list"}, {"prospect_list", "candidate", "why"}, {"prospect_list", "candidate", "why"}, nil, {"park"}, nil, nil, {"parks"}, {"name", "note"}, {"candidate", "note"}}
 	for i, info := range infos {
 		if info.Name != want[i].Name || info.Description != want[i].Description || len(info.OutputSchema) != 0 {
@@ -351,9 +351,9 @@ func TestCatalogAndSchemas(t *testing.T) {
 	_ = tools.Judgments{nil, nil, nil, nil, nil, nil, nil, "", nil, "", "", nil, nil, nil, nil, nil, false, 0, ""}
 	_ = tools.Estimate{"source", 1, nil, .5, nil, "", 1}
 	_ = tools.Ruling{"kind", "candidate", "other", nil, "why", "user", "email", "at"}
-	_ = tools.Detail{tools.Candidate{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil}
+	_ = tools.Detail{tools.Candidate{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ""}
 	_ = tools.Decision{tools.Ruling{}, nil}
-	_ = tools.EnrichArgs{"kind", "prospect_list", "candidate", false}
+	_ = tools.EnrichArgs{"kind", "prospect_list", "candidate", nil, false}
 	_ = tools.AddPageArgs{"candidate", "url"}
 	_ = tools.EnrichmentResult{"kind", "source", "inputs", nil, "state", "url", "title", 200, nil, "error", "domain", "place", "directions", .2, "at"}
 	_ = tools.NoArgs{}
@@ -396,9 +396,9 @@ func objectKeys(t *testing.T, b []byte) []string {
 	return out
 }
 
-// R-XFGZ-IYVN R-VWLI-BAIE R-MGDJ-LAMN R-SX62-ODQC R-R4MF-9E6P R-VZWR-ZFK5
+// R-XFGZ-IYVN R-VWLI-BAIE R-MGDJ-LAMN R-SX62-ODQC R-R4MF-9E6P R-CA24-HDKG
 // R-YNDH-GZXV R-SUQ9-WU8Y R-XIDP-GOVR R-SYDZ-25H1
-// R-2KBE-SFRV R-XFGZ-IYVN R-VWLI-BAIE R-MGDJ-LAMN R-SX62-ODQC R-R4MF-9E6P R-VZWR-ZFK5
+// R-2KBE-SFRV R-XFGZ-IYVN R-VWLI-BAIE R-MGDJ-LAMN R-SX62-ODQC R-R4MF-9E6P R-CA24-HDKG
 func TestAnswerJSONShapes(t *testing.T) {
 	tests := []struct {
 		v      any
@@ -456,7 +456,7 @@ func TestAnswerJSONShapes(t *testing.T) {
 		{tools.Estimate{High: &one, Filed: "2026-01-01"}, "source low high confidence facts filed formula"},
 		{tools.Judgments{OperatingConfidence: &confidence, RevenueLow: &one, RevenueHigh: &one, RevenueConfidence: &confidence}, "operating_confidence operating_evidence revenue_low revenue_high revenue_confidence headcount_series trend excluded rules calculated"},
 		{tools.Reject{Kind: "reject", ProspectList: "prospect_list", ProspectListName: "name", Candidate: "candidate", Why: "why", User: "user", Email: "email", At: "at"}, "kind prospect_list prospect_list_name candidate why user email at"},
-		{tools.Ruling{Other: "other"}, "kind candidate other keys why user email at"}, {tools.Detail{Park: &tools.ParkRef{"chosen-id", "chosen-name"}}, "candidate park estimates links rulings pages enrichment_results rejects campaigns owner_set owner_records"}, {tools.Detail{Judgments: &tools.Judgments{}}, "candidate judgments estimates links rulings pages enrichment_results rejects campaigns owner_set owner_records"},
+		{tools.Ruling{Other: "other"}, "kind candidate other keys why user email at"}, {tools.Detail{Park: &tools.ParkRef{"chosen-id", "chosen-name"}}, "candidate park estimates links rulings pages enrichment_results rejects campaigns owner_set owner_records"}, {tools.Detail{RunningPass: "chosen-pass"}, "candidate estimates links rulings pages enrichment_results rejects campaigns owner_set owner_records running_pass"}, {tools.Detail{Judgments: &tools.Judgments{}}, "candidate judgments estimates links rulings pages enrichment_results rejects campaigns owner_set owner_records"},
 	}
 	for _, tt := range populated {
 		b, err := json.Marshal(tt.v)

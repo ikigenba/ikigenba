@@ -85,7 +85,7 @@ func captureWalkRequest(r *http.Request) walkRequest {
 	return walkRequest{r.Method, r.URL.String(), r.Header.Clone(), string(body)}
 }
 
-// R-1T2K-4X8P R-1QMR-DDRB
+// R-0HSR-FYEP R-0FCY-OEXB
 func TestRunWalkUsesInjectedGoogleClientAndPublishesLifecycle(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
 	k := seedRunWalkParks(t, h, 1, 80)[0]
@@ -186,7 +186,7 @@ func TestRunWalkUsesInjectedGoogleClientAndPublishesLifecycle(t *testing.T) {
 	}
 }
 
-// R-1T2K-4X8P
+// R-0HSR-FYEP
 func TestRunWalkWithKeyAndNilHTTPFailsLocally(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
 	k := seedRunWalkParks(t, h, 1, 80)[0]
@@ -247,7 +247,7 @@ func TestRunWalkWithoutKeyRefusedWithoutRequestOrPass(t *testing.T) {
 	}
 }
 
-// R-1RUN-R5I0
+// R-0GKV-26O0
 func TestRunSandboxWalkUsesPlacesFake(t *testing.T) {
 	h := newRunHarness(t, t.TempDir(), "")
 	h.p.Rand = &secrecyBytes{}

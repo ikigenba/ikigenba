@@ -187,9 +187,9 @@ func judgeKeys(ctx context.Context, tx *sql.Tx, ids []string, t time.Time) (Coun
 	return out, nil
 }
 
-func (s *Store) passWrite(ctx context.Context, where string, args []any, fn func(*sql.Tx, *records) error) error {
+func (s *Store) passWrite(ctx context.Context, id string, fn func(*sql.Tx, *records) error) error {
 	return unreachable(s.writeTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		ps, err := readRecords[Pass](ctx, tx, "passes", passColumns, where, args...)
+		ps, err := readRecords[Pass](ctx, tx, "passes", passColumns, " WHERE id=?", id)
 		if err != nil {
 			return err
 		}

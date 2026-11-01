@@ -16,7 +16,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-40V8-V2LG R-QG8F-LZCT R-QCKQ-GO4Q
+// R-40V8-V2LG R-QG8F-LZCT R-Y2T0-WE90
 func TestTargetPassAndCosts(t *testing.T) {
 	for _, tc := range []struct {
 		n    int64
@@ -80,7 +80,7 @@ func TestSiteTextResultProjection(t *testing.T) {
 	}
 }
 
-// R-45QU-E5K8 R-RU1K-AXX2 R-ASUQ-T2E4
+// R-45QU-E5K8 R-Y1L4-IMIB R-ASUQ-T2E4
 func TestKeptPageProjections(t *testing.T) {
 	p := store.Page{Candidate: "cand_0123456789abcdef", Number: 7, URL: "https://fixture.test/", Size: 37, Fetched: fixtureTime(), UserID: "fixture-user", Text: "fixture text"}
 	row := pageRow(p)
@@ -304,7 +304,7 @@ func TestSiteTextCandidateAndProspectListAgree(t *testing.T) {
 	}
 }
 
-// R-QG8F-LZCT R-QCKQ-GO4Q
+// R-QG8F-LZCT R-Y2T0-WE90
 func TestTargetPassPage(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	_, ids, err := cfg.Store.Attach(t.Context(), "chosen-run", false, []store.Observation{{Scraper: "fixture", SourceID: "target-source", Digest: "target-digest", Reading: sources.Reading{Name: "target-name"}}})
@@ -316,7 +316,7 @@ func TestTargetPassPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, target := range []string{list.ID, ids[0]} {
-		p, err := cfg.Store.AddPass(t.Context(), store.Pass{Kind: store.KindEnrichTarget, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, UserID: "fixture-owner", Target: target, EnrichKind: enrichers.KindSiteText})
+		p, _, err := cfg.Store.AddTargetPass(t.Context(), store.Pass{Kind: store.KindEnrichTarget, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, UserID: "fixture-owner", Target: target, EnrichKind: enrichers.KindSiteText}, ids)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -339,7 +339,7 @@ func TestTargetPassPage(t *testing.T) {
 	}
 }
 
-// R-RU1K-AXX2 R-QCKQ-GO4Q R-ASUQ-T2E4
+// R-Y1L4-IMIB R-Y2T0-WE90 R-ASUQ-T2E4
 // R-U5TU-I2XQ
 func TestAddedViewShapes(t *testing.T) {
 	candidate := CandidateData{page.Banner{}, CandidateView{}, nil, nil, []EstimateView{}, []LinkView{}, []RulingView{}, []OwnerRecordRow{}, []PageRow{}, []EnrichmentRow{}, []RejectRecordRow{}, []CampaignRow{}}
@@ -349,7 +349,11 @@ func TestAddedViewShapes(t *testing.T) {
 	_ = struct {
 		ID, Kind, Origin, Trigger, RunPage, Status, Reason, StartedBy, Started, StartedText, Finished, FinishedText      string
 		Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None int64
-		Target, TargetPage, EnrichKind                                                                                   string
+		Target, TargetForm                                                                                               string
+		TargetIDs                                                                                                        []string
+		TargetPage, EnrichKind, RunningKind                                                                              string
+		Busy, Unmatched                                                                                                  int64
+		KindEntries                                                                                                      []KindEntryRow
 		Runs, RunsFailed, Pages                                                                                          int64
 		Cost                                                                                                             string
 		ParcelsRead, ByLabel, ByValue, ByCandidate, ParksCreated, ParksUpdated, ParksGone, ParksGrown                    int64

@@ -210,13 +210,13 @@ func TestContractVocabulary(t *testing.T) {
 	}
 }
 
-// R-VP8Q-0BV2 R-P28J-XDYC R-VROI-RVCG R-VU4B-JETU R-4ZXJ-0QUQ R-52DB-SAC4
+// R-CIYS-1OZP R-CK6O-FGQE R-VROI-RVCG R-CV5R-VEEN R-4ZXJ-0QUQ R-52DB-SAC4
 func TestContractPassLifecyclePersistence(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
 	ctx := context.Background()
 	stamp := f.now.UTC().Truncate(time.Second)
-	input := store.Pass{ID: "ignored", Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Status: "ignored", Reason: "ignored", Started: f.now.AddDate(-1, 0, 0), Finished: f.now, Rows: 99, New: 99, Changed: 99, Unchanged: 99, Gone: 99, Created: 99, Linked: 99, Judged: 99, Unranged: 99, Derived: 99, Due: 99, Fetched: 99, HTTPS: 99, HTTP: 99, None: 99, Runs: 99, RunsFailed: 99, Pages: 99, Cost: 99, ParcelRun: "ignored", ParcelsRead: 99, ByLabel: 99, ByValue: 99, ByCandidate: 99, ParksCreated: 99, ParksUpdated: 99, ParksGone: 99, ParksGrown: 99, ParksWalked: 99, Circles: 99, Requests: 99, Found: 99, NewCandidates: 99, SearchDifferent: 99, SearchStands: 99, SearchNone: 99, CeilingReached: true, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request"}
+	input := store.Pass{ID: "ignored", Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Status: "ignored", Reason: "ignored", Started: f.now.AddDate(-1, 0, 0), Finished: f.now, Rows: 99, New: 99, Changed: 99, Unchanged: 99, Gone: 99, Created: 99, Linked: 99, Judged: 99, Unranged: 99, Derived: 99, Due: 99, Fetched: 99, HTTPS: 99, HTTP: 99, None: 99, Runs: 99, RunsFailed: 99, Pages: 99, Cost: 99, ParcelRun: "ignored", ParcelsRead: 99, ByLabel: 99, ByValue: 99, ByCandidate: 99, ParksCreated: 99, ParksUpdated: 99, ParksGone: 99, ParksGrown: 99, ParksWalked: 99, Circles: 99, Requests: 99, Found: 99, NewCandidates: 99, SearchDifferent: 99, SearchStands: 99, SearchNone: 99, CeilingReached: true, UserID: "owner", UserEmail: "owner@example.test", RequestID: "request", TargetIDs: []string{"ignored"}, RunningKind: "ignored", Busy: 99, Unmatched: 99, KindEntries: []store.KindEntry{{Kind: "ignored", Cost: 99}}}
 	p, err := f.s.AddPass(ctx, input)
 	contractOK(t, err)
 	want := store.Pass{Kind: store.KindIngest, Origin: store.OriginIngest, ID: store.PassIDPrefix + "0101010101010101", Trigger: input.Trigger, Status: store.StatusRunning, Started: stamp, UserID: input.UserID, UserEmail: input.UserEmail, RequestID: input.RequestID}
@@ -918,7 +918,7 @@ func contractSeed(t *testing.T, f *contractFixture) string {
 	return id
 }
 
-// R-VROI-RVCG R-VU4B-JETU R-5610-XLK7
+// R-VROI-RVCG R-CV5R-VEEN R-5610-XLK7
 func TestContractPassAndZipWritesPreserveBusinessRecords(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -1041,6 +1041,18 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 		}},
 
 		{"AddPass", func(c context.Context) error { _, e := f.s.AddPass(c, store.Pass{}); return e }},
+		{"AddTargetPass", func(c context.Context) error {
+			_, _, e := f.s.AddTargetPass(c, targetPassIDs(id), []string{id})
+			return e
+		}},
+		{"AddTargetPassInvalid", func(c context.Context) error { _, _, e := f.s.AddTargetPass(c, store.Pass{}, nil); return e }},
+		{"StartPassKind", func(c context.Context) error { _, e := f.s.StartPassKind(c, p.ID, "kind"); return e }},
+		{"EndPassKind", func(c context.Context) error { _, e := f.s.EndPassKind(c, p.ID, store.KindEntry{}); return e }},
+		{"EndPassKindInvalid", func(c context.Context) error {
+			_, e := f.s.EndPassKind(c, "missing", store.KindEntry{Cost: -1})
+			return e
+		}},
+		{"RunningTargetPass", func(c context.Context) error { _, e := f.s.RunningTargetPass(c, id); return e }},
 		{"FinishPass", func(c context.Context) error { _, e := f.s.FinishPass(c, p.ID, store.Counts{Rows: -1}); return e }},
 		{"FinishPassValid", func(c context.Context) error { _, e := f.s.FinishPass(c, p.ID, store.Counts{Rows: 1}); return e }},
 		{"AddPassDuplicate", func(c context.Context) error {
@@ -1117,7 +1129,7 @@ func TestContractAllMethodsUnavailable(t *testing.T) {
 	contractEqual(t, contractState(t, f), before)
 }
 
-// R-W2NM-7T0P R-5N3M-ADXX
+// R-CXLK-MXW1 R-5N3M-ADXX
 func TestContractConcurrentStoreCalls(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)

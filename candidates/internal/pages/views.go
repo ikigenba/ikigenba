@@ -46,6 +46,22 @@ func passRow(p store.Pass) PassRow {
 }
 func passView(p store.Pass, sp string) PassView {
 	v := PassView{Parks: []WalkParkRow{}, Circles: p.Circles, Requests: p.Requests, Found: p.Found, NewCandidates: p.NewCandidates, CeilingReached: p.CeilingReached, ID: p.ID, Kind: p.Kind, Origin: p.Origin, Trigger: p.Trigger, Status: p.Status, Reason: p.Reason, Rows: p.Rows, New: p.New, Changed: p.Changed, Unchanged: p.Unchanged, Gone: p.Gone, Created: p.Created, Linked: p.Linked, Judged: p.Judged, Unranged: p.Unranged, Derived: p.Derived, Due: p.Due, Fetched: p.Fetched, HTTPS: p.HTTPS, HTTP: p.HTTP, None: p.None}
+	v.TargetIDs = append([]string{}, p.TargetIDs...)
+	v.KindEntries = []KindEntryRow{}
+	v.RunningKind, v.Busy, v.Unmatched = p.RunningKind, p.Busy, p.Unmatched
+	for _, k := range p.KindEntries {
+		v.KindEntries = append(v.KindEntries, KindEntryRow{Kind: k.Kind, NewResults: k.NewResults, NotDue: k.NotDue, NotApplicable: k.NotApplicable, Failed: k.Failed, Cost: costText(k.Cost)})
+	}
+	if p.Kind == store.KindEnrichTarget {
+		switch {
+		case len(p.TargetIDs) > 0:
+			v.TargetForm = TargetFormIDs
+		case store.ValidProspectListID(p.Target):
+			v.TargetForm = TargetFormList
+		case store.ValidCandidateID(p.Target):
+			v.TargetForm = TargetFormCandidate
+		}
+	}
 	v.ParcelsRead, v.ByLabel, v.ByValue, v.ByCandidate = p.ParcelsRead, p.ByLabel, p.ByValue, p.ByCandidate
 	v.ParksCreated, v.ParksUpdated, v.ParksGone, v.ParksGrown = p.ParksCreated, p.ParksUpdated, p.ParksGone, p.ParksGrown
 	v.Target, v.EnrichKind, v.Runs, v.RunsFailed, v.Pages, v.Cost = p.Target, p.EnrichKind, p.Runs, p.RunsFailed, p.Pages, costText(p.Cost)

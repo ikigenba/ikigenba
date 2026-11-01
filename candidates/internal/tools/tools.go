@@ -262,8 +262,14 @@ func Register(srv *mcp.Server, cfg Config) {
 	})
 	add(srv, "enrich", DescribeEnrich, mcp.Additive, func(ctx context.Context, c identity.Caller, a EnrichArgs) mcp.Result {
 		a.ProspectList = store.MapListID(a.ProspectList)
-		targeted := a.ProspectList != "" || a.Candidate != ""
-		if a.Kind != "" && !slices.Contains(enrichers.Kinds(), a.Kind) || a.ProspectList != "" && a.Candidate != "" || a.Force && !targeted || a.Kind == "" && targeted {
+		forms := 0
+		for _, holds := range []bool{a.ProspectList != "", a.Candidate != "", a.Candidates != nil} {
+			if holds {
+				forms++
+			}
+		}
+		targeted := forms > 0
+		if a.Kind != "" && !slices.Contains(enrichers.Kinds(), a.Kind) || forms > 1 || a.Candidates != nil && len(a.Candidates) == 0 || len(a.Candidates) > passes.MaxTargetIDs || a.Force && !targeted {
 			return refuse(passes.RefusalInvalid)
 		}
 		if !targeted {
@@ -283,7 +289,7 @@ func Register(srv *mcp.Server, cfg Config) {
 			if target == "" {
 				target = a.Candidate
 			}
-			p, err = cfg.Passes.EnrichTarget(ctx, c, a.Kind, target, a.Force)
+			p, err = cfg.Passes.EnrichTarget(ctx, c, a.Kind, passes.Target{ID: target, IDs: a.Candidates}, a.Force)
 		} else {
 			p, err = cfg.Passes.Enrich(ctx, c, a.Kind)
 		}
@@ -622,6 +628,10 @@ func detailValue(ctx context.Context, cfg Config, id string) (Detail, error) {
 		out.Rejects = append(out.Rejects, rejectOf(x))
 	}
 	if c.Status == store.StatusActive {
+		out.RunningPass, err = cfg.Store.RunningTargetPass(ctx, id)
+		if err != nil {
+			return Detail{}, err
+		}
 		owners, err := cfg.Store.OwnerRecords(ctx, id)
 		if err != nil {
 			return Detail{}, err

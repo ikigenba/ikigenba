@@ -23,12 +23,12 @@ func TestEtc(t *testing.T) {
 	checkFiles(t, candidates.Etc, []string{"manifest.toml", "nginx.conf"})
 }
 
-// R-JAY6-EXVU
+// R-2DAB-M9J5
 func TestMigrations(t *testing.T) {
 	t.Chdir(t.TempDir())
 	checkFiles(t, candidates.Migrations, []string{
 		"0001_candidates.sql", "0002_links.sql", "0003_estimates.sql", "0004_assessments.sql",
-		"0005_decisions.sql", "0006_passes.sql", "0007_zip_drive.sql", "0008_windows.sql", "0009_judgments.sql", "0010_cohorts.sql", "0011_enrichments.sql", "0012_facts.sql", "0013_site_text.sql", "0014_brief.sql", "0015_website_search.sql", "0016_campaign_uses.sql", "0017_prospect_lists.sql", "0018_drive_route.sql", "0019_opens.sql", "0020_headcounts.sql", "0021_link_keys.sql", "0022_headcount_trend.sql", "0023_parks.sql", "0024_walk.sql", "0025_search_cases.sql", "0026_fact_sources.sql", "0027_page_reasons.sql", "0028_owner_records.sql", "0029_campaign_opened.sql", "0030_search_index.sql",
+		"0005_decisions.sql", "0006_passes.sql", "0007_zip_drive.sql", "0008_windows.sql", "0009_judgments.sql", "0010_cohorts.sql", "0011_enrichments.sql", "0012_facts.sql", "0013_site_text.sql", "0014_brief.sql", "0015_website_search.sql", "0016_campaign_uses.sql", "0017_prospect_lists.sql", "0018_drive_route.sql", "0019_opens.sql", "0020_headcounts.sql", "0021_link_keys.sql", "0022_headcount_trend.sql", "0023_parks.sql", "0024_walk.sql", "0025_search_cases.sql", "0026_fact_sources.sql", "0027_page_reasons.sql", "0028_owner_records.sql", "0029_campaign_opened.sql", "0030_search_index.sql", "0031_pass_kinds.sql",
 	})
 }
 
@@ -181,5 +181,21 @@ func TestDriveRouteMigrationBytes(t *testing.T) {
 	got, err := fs.ReadFile(candidates.Migrations(), "0018_drive_route.sql")
 	if err != nil || string(got) != want {
 		t.Fatalf("drive route migration = %q, %v", got, err)
+	}
+}
+
+// R-D2H6-60UT
+func TestPassKindsMigrationBytes(t *testing.T) {
+	want := `ALTER TABLE passes ADD COLUMN target_ids TEXT NOT NULL DEFAULT '';
+ALTER TABLE passes ADD COLUMN running_kind TEXT NOT NULL DEFAULT '';
+ALTER TABLE passes ADD COLUMN busy INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE passes ADD COLUMN unmatched INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE pass_kinds (pass TEXT NOT NULL, seq INTEGER NOT NULL, kind TEXT NOT NULL, new_results INTEGER NOT NULL, not_due INTEGER NOT NULL, not_applicable INTEGER NOT NULL, failed INTEGER NOT NULL, cost INTEGER NOT NULL, PRIMARY KEY (pass, seq));
+CREATE TABLE pass_claims (candidate TEXT NOT NULL, pass TEXT NOT NULL, PRIMARY KEY (candidate, pass));
+CREATE INDEX pass_claims_pass ON pass_claims(pass);
+`
+	got, err := fs.ReadFile(candidates.Migrations(), "0031_pass_kinds.sql")
+	if err != nil || string(got) != want {
+		t.Fatalf("pass kinds migration = %q, %v", got, err)
 	}
 }

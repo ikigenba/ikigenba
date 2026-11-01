@@ -93,7 +93,10 @@
      "for_hire", "mixed" or "unknown"; empty when merged), .Cargo (its
      cargo tags, a slice of strings; may be empty), .Created and
      .CreatedText (RFC 3339 UTC to the second, and the same as shown,
-     "2006-01-02 15:04:05 UTC") and .Updated and .UpdatedText (likewise);
+     "2006-01-02 15:04:05 UTC") and .Updated and .UpdatedText (likewise),
+     .RunningPass (the pass_ id of the targeted enrich pass running over
+     this candidate as this page was read; empty when none, and when
+     merged);
      .Enrichments (nil when merged; else what the enrichers produced,
      apart from the judgments), with .Basis, .Kinds, .Facts and .Brief:
      .Basis (what its judgments stand on, worked out from its enrichment
@@ -412,7 +415,13 @@
      div#excluded.alert.quiet[data-kind=warn] holding strong "Excluded" and
      a p (text "The owner excluded this candidate, so no prospect list
      shows it unless the prospect list shows excluded candidates. The ruling is below; the
-     include tool reverses it.", include in a code element).
+     include tool reverses it.", include in a code element). When
+     .RunningPass is set: div#enriching.alert.quiet[data-kind=info]
+     holding strong "Enriching" and a p (text "A targeted enrich pass,
+     <.RunningPass>, is running over this candidate. Its page shows each
+     kind as it ends; reload this page when it is done to see the
+     results.", .RunningPass as a.pass-link, href "/passes/<.RunningPass>",
+     holding .RunningPass in a code element).
      section#candidate-card with h2 "Candidate" and a p in its header (text
      "Display fields from its freshest evidence: the link not gone with
      the newest filing."), then dl#candidate.kv holding, in this order, dt
@@ -882,7 +891,8 @@
 <p id="headline" class="cluster">{{if .Name}}{{.Name}} {{end}}<span class="status" data-status="{{.Status}}" data-kind="{{if eq .Status "merged"}}info{{else}}ok{{end}}">{{.Status}}</span>{{if $j}}{{if $j.Excluded}} <span class="badge" data-kind="warn">excluded</span>{{end}}{{end}} <span class="muted">updated <time datetime="{{.Updated}}">{{.UpdatedText}}</time></span></p>
 {{if eq .Status "merged"}}<div id="merged" class="alert quiet" data-kind="info"><strong>Merged</strong><p id="merged-into">This candidate was merged into <a class="candidate-link" href="/candidates/{{.MergedInto}}"><code>{{.MergedInto}}</code></a>. Its evidence, estimates and judgments are there now.</p></div>
 {{end}}{{if $j}}{{if $j.Excluded}}<div id="excluded" class="alert quiet" data-kind="warn"><strong>Excluded</strong><p>The owner excluded this candidate, so no prospect list shows it unless the prospect list shows excluded candidates. The ruling is below; the <code>include</code> tool reverses it.</p></div>
-{{end}}{{end}}<section id="candidate-card" class="card" aria-labelledby="candidate-title">
+{{end}}{{end}}{{if .RunningPass}}<div id="enriching" class="alert quiet" data-kind="info"><strong>Enriching</strong><p>A targeted enrich pass, <a class="pass-link" href="/passes/{{.RunningPass}}"><code>{{.RunningPass}}</code></a>, is running over this candidate. Its page shows each kind as it ends; reload this page when it is done to see the results.</p></div>
+{{end}}<section id="candidate-card" class="card" aria-labelledby="candidate-title">
 <header><h2 id="candidate-title">Candidate</h2><p>Display fields from its freshest evidence: the link not gone with the newest filing.</p></header>
 <dl id="candidate" class="kv">
 <dt>ID</dt><dd id="candidate-id"><code>{{.ID}}</code></dd>

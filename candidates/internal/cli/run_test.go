@@ -309,6 +309,13 @@ func (h *runHarness) filled() {
 func (h *runHarness) call(c identity.Caller, name string, args any) (mcp.Result, map[string]json.RawMessage) {
 	h.t.Helper()
 	h.filled()
+	if a, ok := args.(tools.EnrichArgs); ok {
+		fields := map[string]any{"kind": a.Kind, "prospect_list": a.ProspectList, "candidate": a.Candidate, "force": a.Force}
+		if a.Candidates != nil {
+			fields["candidates"] = a.Candidates
+		}
+		args = fields
+	}
 	b, err := json.Marshal(args)
 	if err != nil {
 		h.t.Fatal(err)
@@ -449,7 +456,7 @@ func runOnlyState(t *testing.T, dir string) {
 
 // R-U54M-T001 R-119A-9L3H R-13P3-14KV R-9NW2-FV7B R-A1AY-NCCY R-XHVR-JJLE
 // R-3TTL-43TV R-42CV-SI0Q R-7797-KNZO R-QR9U-4LFL R-49OA-34GW R-GC07-H8O0
-// R-2PZU-GQ9G R-R335-N3PU R-ZY3R-GAKJ R-R0NC-VK8G   R-1XY5-O07H
+// R-17EN-H4ZA R-R335-N3PU R-ZY3R-GAKJ R-R0NC-VK8G   R-0MOC-Z1DH
 // R-UG7E-CT0I R-06N2-4ORE R-MD1O-TQIR R-76JM-ZE8M
 func TestRunAssembledChain(t *testing.T) {
 	if cli.SweepInterval != time.Hour {
@@ -849,7 +856,7 @@ func TestRunInjectedClockAndBytes(t *testing.T) {
 	}
 }
 
-// R-1WQ9-A8GS
+// R-0LGG-L9MS
 func TestRunFreshDeliveryCounts(t *testing.T) {
 	row := runRow()
 	second := runRow()
@@ -1073,7 +1080,7 @@ func TestRunKeepsScrapesSocketSelectedAtStart(t *testing.T) {
 	}
 }
 
-// R-2NK1-P6S2
+// R-166R-3D8L
 func TestRunInterruptsHeldScrapesRead(t *testing.T) {
 	hold := make(chan struct{})
 	defer close(hold)
@@ -1105,7 +1112,7 @@ func TestRunInterruptsHeldScrapesRead(t *testing.T) {
 	}
 }
 
-// R-1Z62-1RY6
+// R-0NW9-CT46
 func TestRunUnreachableScrapesIngestAndDelivery(t *testing.T) {
 	d, err := os.MkdirTemp("", "cand-")
 	if err != nil {
@@ -1187,7 +1194,7 @@ type runFailBus struct{}
 
 func (runFailBus) Deliver(context.Context, events.Event) error { return errors.New("fixture refusal") }
 
-// R-1VIC-WGQ3
+// R-0K8K-7HW3
 func TestRunSinkFailuresDoNotChangePass(t *testing.T) {
 	var answers []map[string]json.RawMessage
 	var initial []map[string]json.RawMessage
@@ -1674,7 +1681,7 @@ func runAssertSilent(t *testing.T, h *runHarness) {
 	}
 }
 
-// R-22TR-7369 R-XQ2V-N2EA
+// R-0RJY-I4C9 R-XQ2V-N2EA
 func TestAllToolsAndPagesLeaveUnrelatedSiblingsAlone(t *testing.T) {
 	rows := make([]map[string]any, 3)
 	for i := range rows {
