@@ -1,0 +1,110 @@
+{{/* The landing page at GET /: what the service is, then the business's
+     time in agent sessions for this week and the eight weeks before it,
+     by kind of work. The root of the hierarchy: .Banner's .Trail is
+     empty, so the banner's breadcrumb holds only the service. Shown only
+     to a signed-in user; a guest is sent to sign in. Every signed-in user
+     sees the same figures: they are the business's totals over every
+     person's sessions, and nothing on the page is one person's.
+     Read-only: no form but the banner's sign out, no per-record pages and
+     no paging; rules, prices and the away limit are kept with the tools.
+     Data: .Banner (a page.Banner, for banner and footer); .AwayLimit (a
+     duration, the service's away limit as it stands); .Weeks (a
+     slice, empty exactly when the service holds no session at all;
+     otherwise nine weeks, the current week first, then the eight before
+     it, newest first, a week with no sessions included with zero
+     figures), each with .Start (string, the Monday the week begins,
+     UTC, YYYY-MM-DD; a week is bounded in UTC), .Kinds (a slice, one
+     entry per kind in the order plan, build, publish, operate, sell,
+     customer, then untagged last, every kind present even when its
+     figures are zero), .Total (the week's
+     figures over every kind, untagged included) and .UntaggedShare (int,
+     the untagged kind's attention as a percentage of the week's
+     attention, rounded to the nearest whole percent; 0 when the week has
+     no attention). Each entry of .Kinds, and .Total, carries the figures:
+     .Kind (string, the kind's name, "plan" or "untagged"; empty in
+     .Total), .Attention, .Wall and .Agent (each a duration: attention,
+     wall time and agent time, subagent sessions rolled up into the
+     sessions that ran them), .Tokens (string, every token the tool
+     reported, of every kind, as an integer grouped by commas, "18,204")
+     and .Dollars (string, the cost in US dollars from the price table, to
+     two decimal places, "41.07", no sign). A duration has .Seconds (int,
+     the whole duration in seconds), .Hours (int, the whole hours in it)
+     and .Minutes (int, 0 to 59, the whole minutes left over, the seconds
+     dropped). A duration is shown as "<.Hours>h <.Minutes>m", the minutes
+     two digits, "12h 05m", "0h 00m" for none, in a
+     time[datetime=PT<.Hours>H<.Minutes>M] (the duration template); a
+     cost as "$" then .Dollars; the five cells of a row are the figures
+     template.
+     Hooks: title "sessions"; h1 with text "sessions"; p#summary.lede (text
+     "The business's time in agent sessions, by kind of work, for this
+     week and the eight before it. Attention is the time the person spends
+     in a session, each turn capped at the away limit, currently " then
+     .AwayLimit (the duration) and ". Nothing here is one person's, and
+     nothing here changes a figure."); then, when .Weeks is empty, section#weeks.card
+     holding div#no-sessions.empty with h3 "No sessions yet" and a p (text
+     "A session shows up here once the turns command on a person's machine
+     pushes its turns.", turns in a code element); otherwise one
+     section.card.flush per week, in the order of .Weeks, with id
+     week-<.Start> and data-week=<.Start>, whose header holds an h2 (for
+     the first week, the current one, text "This week"; for every other,
+     "Week of " then time[datetime=<.Start>] (text .Start)) and a
+     p.week-summary: for the first week, "From " then
+     time[datetime=<.Start>] (text .Start) and ". "; then, when
+     .Total.Attention.Seconds is not 0, the attention (the duration in
+     span.week-attention), " of attention, " then span.untagged-share
+     (.UntaggedShare then "%") and " untagged."; when it is 0, "No
+     attention this week."; then div.table-scroll holding a table whose th
+     read Kind, Attention, Wall time, Agent time, Tokens, Dollars, every th
+     but Kind a th.num, with one tr[data-work-kind=<.Kind>] per entry of
+     .Kinds, in order, holding td.kind (.Kind in a code element),
+     td.attention.num, td.wall.num and td.agent.num (each the duration),
+     td.tokens.num (.Tokens) and td.dollars.num (the cost), then a last
+     tr[data-total] holding td.kind with text "Total" and the same five
+     cells for .Total; then a p holding a #tools-link (text "Tools")
+     whose href is "/tools" and a #about-link (text "About sessions")
+     whose href is "/about", separated by " · ". No script but appkit's
+     /_appkit/feedback.js. */}}
+{{define "landing"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>sessions</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>sessions</h1>
+<p id="summary" class="lede">The business's time in agent sessions, by kind of work, for this week and the eight before it. Attention is the time the person spends in a session, each turn capped at the away limit, currently {{template "duration" .AwayLimit}}. Nothing here is one person's, and nothing here changes a figure.</p>
+{{if .Weeks}}{{range $i, $w := .Weeks}}<section id="week-{{$w.Start}}" class="card flush" data-week="{{$w.Start}}" aria-labelledby="week-{{$w.Start}}-title">
+<header><div><h2 id="week-{{$w.Start}}-title">{{if eq $i 0}}This week{{else}}Week of <time datetime="{{$w.Start}}">{{$w.Start}}</time>{{end}}</h2><p class="week-summary">{{if eq $i 0}}From <time datetime="{{$w.Start}}">{{$w.Start}}</time>. {{end}}{{if $w.Total.Attention.Seconds}}<span class="week-attention">{{template "duration" $w.Total.Attention}}</span> of attention, <span class="untagged-share">{{$w.UntaggedShare}}%</span> untagged.{{else}}No attention this week.{{end}}</p></div></header>
+<div class="table-scroll">
+<table>
+<thead><tr><th>Kind</th><th class="num">Attention</th><th class="num">Wall time</th><th class="num">Agent time</th><th class="num">Tokens</th><th class="num">Dollars</th></tr></thead>
+<tbody>
+{{range $w.Kinds}}<tr data-work-kind="{{.Kind}}">
+<td class="kind"><code>{{.Kind}}</code></td>
+{{template "figures" .}}
+</tr>
+{{end}}<tr data-total>
+<td class="kind">Total</td>
+{{template "figures" $w.Total}}
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+{{end}}{{else}}<section id="weeks" class="card">
+<div id="no-sessions" class="empty">
+<h3 class="text-md">No sessions yet</h3>
+<p>A session shows up here once the <code>turns</code> command on a person's machine pushes its turns.</p>
+</div>
+</section>
+{{end}}<p><a id="tools-link" href="/tools">Tools</a> · <a id="about-link" href="/about">About sessions</a></p>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}
+{{define "figures"}}<td class="attention num">{{template "duration" .Attention}}</td>
+<td class="wall num">{{template "duration" .Wall}}</td>
+<td class="agent num">{{template "duration" .Agent}}</td>
+<td class="tokens num">{{.Tokens}}</td>
+<td class="dollars num">${{.Dollars}}</td>{{end}}
+{{define "duration"}}<time datetime="PT{{.Hours}}H{{.Minutes}}M">{{.Hours}}h {{printf "%02d" .Minutes}}m</time>{{end}}

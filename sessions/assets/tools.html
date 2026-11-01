@@ -1,0 +1,40 @@
+{{/* The tools page at GET /tools: the MCP tools agents reach this service
+     by, through the MCP gateway, and the turns command pushes by. One level
+     below the root: .Banner's .Trail is the one level tools at /tools.
+     Shown only to a signed-in user; a guest is sent to sign in. Data:
+     .Banner (a page.Banner, for banner and footer); .Tools (a slice of
+     items, each with .Name, the tool's name, and .Description, the first
+     line of its description), every tool in catalog order, as the design
+     names them.
+     Hooks: title "tools · sessions"; h1 with text "Tools"; p#summary.lede
+     (text "Agents read and keep sessions with these tools, through the MCP
+     gateway's call and mutate: they list sessions with their figures,
+     total attention, wall time, agent time, tokens and dollars by week or
+     month, grouped by kind, person, tool or first command, and read and
+     edit the kind rules, the price table and the away limit. The turns
+     command pushes each person's turns with them too, and learns, per
+     session, the latest turn the service already holds. Every tool
+     answers data; a change to a rule, a price or the away limit moves the
+     figures at once, without a push.", call and mutate each in a code
+     element, turns in a code element); a section.card holding dl#tools.kv
+     with one dt[data-tool=<.Name>] per tool, in the order of .Tools,
+     holding .Name in a code element and followed by a dd holding
+     .Description. No script but appkit's /_appkit/feedback.js. */}}
+{{define "tools"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>tools · sessions</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>Tools</h1>
+<p id="summary" class="lede">Agents read and keep sessions with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>: they list sessions with their figures, total attention, wall time, agent time, tokens and dollars by week or month, grouped by kind, person, tool or first command, and read and edit the kind rules, the price table and the away limit. The <code>turns</code> command pushes each person's turns with them too, and learns, per session, the latest turn the service already holds. Every tool answers data; a change to a rule, a price or the away limit moves the figures at once, without a push.</p>
+<section class="card">
+<dl id="tools" class="kv">
+{{range .Tools}}<dt data-tool="{{.Name}}"><code>{{.Name}}</code></dt><dd>{{.Description}}</dd>
+{{end}}</dl>
+</section>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}

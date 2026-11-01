@@ -1,0 +1,61 @@
+{{/* The about screen at GET /about: the service's name, version and
+     description. One level below the root: .Banner's .Trail is the one
+     level about at /about. Shown only to a signed-in user; a guest is sent
+     to sign in. Data: .Banner (a page.Banner, for banner and footer; its
+     .Service is the name and its .Release and .Commit give the version
+     row); .Description (the service's one-line description, the
+     manifest's). Hooks: title "About sessions"; h1 with text "About
+     sessions"; dl#about.kv holding dt "Name" then dd#about-name
+     (.Banner.Service), dt "Version" then dd#about-version (.Banner.Release
+     and .Banner.Commit, present even when empty), and dt "Description" then
+     dd#about-description (.Description); then section#how.card with h2 "How
+     it works" and three p: "sessions is the time ledger of the agent
+     sessions people run against this space. On each person's machine the
+     turns command reads the session files Claude Code, Codex CLI and Grok
+     CLI write, and pushes what is new, as that person, every five minutes.
+     A turn is one record: its session and, for a subagent, the session that
+     ran it, the host and the person who pushed it, the working directory,
+     the tool, the model, when it happened, whose turn it was (the
+     person's, the agent's or a tool result's), and the token counts the
+     tool reported. A turn pushed twice is one turn."; "No text is kept: no
+     prompt, answer, thought, tool call, tool result or file content. The
+     one exception is a session that began with a command: the command's
+     name and its argument are kept, so a /deliver session can be tied to
+     the document it delivered. The session files stay where the tools
+     wrote them, unchanged."; "Every figure is derived from the turns, so a
+     change to a rule, a price or the away limit recomputes them all.
+     Attention is the time a person spends in a session, each turn capped
+     at the away limit; wall time, agent time, tokens and dollars are
+     derived alike, and a subagent's session rolls up into the one that ran
+     it. Dollars come from a price table per model, and the kind of work
+     from rules on host, folder and first command; a session no rule
+     matches is untagged. Every change is made with the tools and recorded
+     in telemetry. This page shows the business's totals by week and kind,
+     never one person's." (turns and /deliver each in a code element). No
+     section of the landing page's. No script but appkit's
+     /_appkit/feedback.js. */}}
+{{define "about"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>About sessions</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>About sessions</h1>
+<section class="card">
+<dl id="about" class="kv">
+<dt>Name</dt><dd id="about-name">{{.Banner.Service}}</dd>
+<dt>Version</dt><dd id="about-version">{{if .Banner.Release}}{{.Banner.Release}}{{if .Banner.Commit}} ({{.Banner.Commit}}){{end}}{{else}}{{.Banner.Commit}}{{end}}</dd>
+<dt>Description</dt><dd id="about-description">{{.Description}}</dd>
+</dl>
+</section>
+<section id="how" class="card" aria-labelledby="how-title">
+<header><h2 id="how-title">How it works</h2></header>
+<p>sessions is the time ledger of the agent sessions people run against this space. On each person's machine the <code>turns</code> command reads the session files Claude Code, Codex CLI and Grok CLI write, and pushes what is new, as that person, every five minutes. A turn is one record: its session and, for a subagent, the session that ran it, the host and the person who pushed it, the working directory, the tool, the model, when it happened, whose turn it was (the person's, the agent's or a tool result's), and the token counts the tool reported. A turn pushed twice is one turn.</p>
+<p>No text is kept: no prompt, answer, thought, tool call, tool result or file content. The one exception is a session that began with a command: the command's name and its argument are kept, so a <code>/deliver</code> session can be tied to the document it delivered. The session files stay where the tools wrote them, unchanged.</p>
+<p>Every figure is derived from the turns, so a change to a rule, a price or the away limit recomputes them all. Attention is the time a person spends in a session, each turn capped at the away limit; wall time, agent time, tokens and dollars are derived alike, and a subagent's session rolls up into the one that ran it. Dollars come from a price table per model, and the kind of work from rules on host, folder and first command; a session no rule matches is untagged. Every change is made with the tools and recorded in telemetry. This page shows the business's totals by week and kind, never one person's.</p>
+</section>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}
