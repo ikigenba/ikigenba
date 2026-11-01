@@ -192,7 +192,84 @@ func occurs(text, path string) bool {
 	}
 	return false
 }
-func read(src source, jobs []string) (session.Session, []session.Mention, bool) {
+
+// matcher finds every job path in a text in one pass per parent directory.
+// A path whose final segment is wholly in the boundary alphabet is grouped
+// under its parent (everything through the last '/'); any other path falls
+// back to a direct boundary search.
+type matcher struct {
+	parents map[string]map[string][]string
+	order   []string
+	direct  []struct{ form, job string }
+}
+
+func newMatcher(jobs []string) *matcher {
+	m := &matcher{parents: make(map[string]map[string][]string)}
+	seen := make(map[string]bool)
+	add := func(form, job string) {
+		slash := strings.LastIndexByte(form, '/')
+		name := form[slash+1:]
+		simple := slash >= 0 && name != ""
+		for i := 0; simple && i < len(name); i++ {
+			simple = boundary(name[i])
+		}
+		if !simple {
+			m.direct = append(m.direct, struct{ form, job string }{form, job})
+			return
+		}
+		parent := form[:slash+1]
+		names, ok := m.parents[parent]
+		if !ok {
+			names = make(map[string][]string)
+			m.parents[parent] = names
+			m.order = append(m.order, parent)
+		}
+		names[name] = append(names[name], job)
+	}
+	for _, job := range jobs {
+		if job == "" || seen[job] {
+			continue
+		}
+		seen[job] = true
+		add(job, job)
+		if index := strings.Index(job, "/.local/state/dispatch/jobs/"); index >= 0 {
+			add("~"+job[index:], job)
+		}
+	}
+	return m
+}
+
+func (m *matcher) find(text string, hit func(job string)) {
+	for _, parent := range m.order {
+		names := m.parents[parent]
+		for start := 0; start < len(text); {
+			index := strings.Index(text[start:], parent)
+			if index < 0 {
+				break
+			}
+			index += start
+			start = index + 1
+			if index > 0 && boundary(text[index-1]) {
+				continue
+			}
+			from := index + len(parent)
+			end := from
+			for end < len(text) && boundary(text[end]) {
+				end++
+			}
+			for _, job := range names[text[from:end]] {
+				hit(job)
+			}
+		}
+	}
+	for _, d := range m.direct {
+		if occurs(text, d.form) {
+			hit(d.job)
+		}
+	}
+}
+
+func read(src source, jobs *matcher) (session.Session, []session.Mention, bool) {
 	s := session.Session{Ref: session.Ref{Tool: session.ToolClaude, ID: src.id}, Headless: src.parent != ""}
 	if src.parent != "" && src.parent != src.id {
 		s.Parent = &session.Ref{Tool: session.ToolClaude, ID: src.parent}
@@ -202,7 +279,7 @@ func read(src source, jobs []string) (session.Session, []session.Mention, bool) 
 		return s, nil, false
 	}
 	defer func() { _ = file.Close() }()
-	reader := bufio.NewReader(file)
+	reader := bufio.NewReaderSize(file, 1<<20)
 	var candidates []*candidate
 	agents := make(map[string]*candidate)
 	mentions := make(map[string]time.Time)
@@ -263,28 +340,13 @@ func read(src source, jobs []string) (session.Session, []session.Mention, bool) 
 		if whose != session.WhoseTool {
 			continue
 		}
-		for _, job := range jobs {
-			if job == "" {
-				continue
+		record := func(job string) {
+			if old, present := mentions[job]; !present || t.Before(old) {
+				mentions[job] = t
 			}
-			paths := []string{job}
-			if index := strings.Index(job, "/.local/state/dispatch/jobs/"); index >= 0 {
-				paths = append(paths, "~"+job[index:])
-			}
-			matched := false
-			for _, text := range texts(message["content"]) {
-				for _, path := range paths {
-					if occurs(text, path) {
-						matched = true
-					}
-				}
-			}
-			if matched {
-				old, present := mentions[job]
-				if !present || t.Before(old) {
-					mentions[job] = t
-				}
-			}
+		}
+		for _, text := range texts(message["content"]) {
+			jobs.find(text, record)
 		}
 	}
 	type key struct {
@@ -339,8 +401,9 @@ func Read(root string, jobs []string) (session.Found, []session.Mention) {
 	var found session.Found
 	var mentions []session.Mention
 	seen := make(map[string]bool)
+	match := newMatcher(jobs)
 	for _, src := range sources(root) {
-		s, m, ok := read(src, jobs)
+		s, m, ok := read(src, match)
 		if !ok {
 			found.Skipped++
 			continue
