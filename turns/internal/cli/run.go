@@ -26,7 +26,7 @@ const (
 	// ExitNotConfigured reports missing configuration.
 	ExitNotConfigured = 4
 	// Version is the released program version.
-	Version = "v0.1.0"
+	Version = "v0.1.1"
 )
 
 const topUsage = `Usage: turns [options] <command> [arguments]
