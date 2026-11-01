@@ -356,7 +356,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL
 	// R-ZIB1-SI40
 	// R-8LON-MN2L
-	// R-DJGH-HHQX
+	// R-T468-PXAZ
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZA": {
 			{Name: "example.com", Type: "SOA"},
@@ -901,7 +901,7 @@ func TestInitPreflightIgnoresHostApex(t *testing.T) {
 }
 
 func TestInitInvalidApexFailsAtCertificate(t *testing.T) {
-	// R-ZKQU-K1LE R-V903-9ZPN
+	// R-ZKQU-K1LE R-T5E5-3P1O
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZONE": {
 			{Name: "localhost", Type: "SOA"},
@@ -1556,32 +1556,24 @@ func TestInitStateGuardIgnoresServicesWithoutInstalledState(t *testing.T) {
 	}
 }
 
-// R-DKOD-V9HM
-func TestInitStateGuardPropagatesDiscoveryFailureAfterSlices(t *testing.T) {
+func TestInitLayoutFailureStopsBeforeTurnsSetup(t *testing.T) {
+	// R-T468-PXAZ
 	deps := readyStateGuardDeps(t)
 	writeCLIInstallFile(t, filepath.Join(deps.Root, "usr/local/bin/opsctl"), "already installed")
 	if err := os.WriteFile(filepath.Join(deps.Root, "opt"), []byte("not a directory"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	var afterSlices map[string]treeEntry
+	before := treeState(t, deps.Root)
 	deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
-		if result, ok := hardeningFixtureQuery(command); ok {
-			return result, nil
-		}
-		if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"restart", "nginx"}) {
-			afterSlices = treeState(t, deps.Root)
-		}
-		if command.Name == "nginx" {
-			t.Fatal("nginx called after discovery failure")
-		}
+		t.Fatalf("command after layout failure: %+v", command)
 		return host.Result{}, nil
 	}
 	stdout, stderr, code := invoke([]string{"init"}, deps)
 	if code != 1 || !strings.HasPrefix(stderr, "opsctl: ") || !strings.HasSuffix(stdout, "wildcard api.example.com: ok (192.0.2.10)\n") {
 		t.Fatalf("init = %d, %q, %q", code, stdout, stderr)
 	}
-	if afterSlices == nil || !reflect.DeepEqual(afterSlices, treeState(t, deps.Root)) {
-		t.Fatal("discovery failure changed state after slices")
+	if !reflect.DeepEqual(before, treeState(t, deps.Root)) {
+		t.Fatal("layout failure changed state")
 	}
 }
 
@@ -1720,7 +1712,7 @@ func TestInitEnvironmentGuardJudgesEntryWithoutFollowingSymlinks(t *testing.T) {
 	}
 }
 
-// R-DJGH-HHQX
+// R-T468-PXAZ
 func TestInitHardeningFilesystemFailureStopsBeforeEnvironmentGuard(t *testing.T) {
 	deps := readyStateGuardDeps(t)
 	makeStateGuardApp(t, deps.Root, "notes", true)

@@ -358,7 +358,7 @@ func TestActivateSuccessfulReleaseAndReactivation(t *testing.T) {
 }
 
 func TestActivatePrewriteStepsLeaveHostUntouched(t *testing.T) {
-	// R-SK8Y-OKQI R-CUKM-FZ8E R-BCGI-M24U R-TVM7-45J1 R-BX6T-45QN
+	// R-1EI4-N6ZY R-CUKM-FZ8E R-BCGI-M24U R-TVM7-45J1 R-BX6T-45QN
 	for _, tc := range []struct {
 		name, step, reason string
 		setup              func(*transitionFixture)
@@ -695,7 +695,7 @@ func TestActivateGeneratedConfigurationsAndReloads(t *testing.T) {
 }
 
 func TestReleaseNormalizesModesWithoutFollowingSymlinks(t *testing.T) {
-	// R-VCMW-NLOB
+	// R-DH3O-BBGQ
 	for _, command := range []string{"activate", "rollback"} {
 		for _, label := range []string{"", "kept-label"} {
 			t.Run(command+"/"+label, func(t *testing.T) {
@@ -715,6 +715,7 @@ func TestReleaseNormalizesModesWithoutFollowingSymlinks(t *testing.T) {
 					args = append(args, label)
 				}
 				base := "opt/ikigenba/releases/" + sha
+				f.addTurns(sha)
 				if command == "rollback" && label != "" {
 					f.write(base+"/label", label+"\n", 0o600)
 				}
@@ -725,6 +726,9 @@ func TestReleaseNormalizesModesWithoutFollowingSymlinks(t *testing.T) {
 					{"dummy/bin/dummy", 0o600, 0o755},
 					{"opsctl/bin/opsctl", 0o600, 0o755},
 					{"opsctl/bin/nested/helper", 0o640, 0o755},
+					{"turns/bin/turns", 0o600, 0o755},
+					{"turns/bin/nested/helper", 0o600, 0o755},
+					{"turns/libexec/helper", 0o700, 0o644},
 					{"dummy/libexec/owner", 0o100, 0o755},
 					{"dummy/libexec/group", 0o010, 0o755},
 					{"dummy/libexec/nested/other", 0o001, 0o755},

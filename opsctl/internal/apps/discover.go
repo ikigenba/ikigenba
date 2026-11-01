@@ -95,6 +95,9 @@ func discoverAt(root, directory string, released, required bool) ([]Service, err
 		if !entry.IsDir() || (!released && entry.Name() == "ikigenba") {
 			continue
 		}
+		if released && (entry.Name() == "opsctl" || entry.Name() == release.TurnsDir) {
+			continue
+		}
 		packagePath := path.Join(packageDirectory, entry.Name())
 		if released {
 			binary, statErr := filesystem.Stat(path.Join(packagePath, "bin", entry.Name()))

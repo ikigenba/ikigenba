@@ -17,7 +17,7 @@ import (
 )
 
 func TestAddSSHUser(t *testing.T) {
-	// R-AANS-533M R-5FWR-4D0T R-AMUR-YSIK
+	// R-AANS-533M R-2SGU-DN33 R-AMUR-YSIK
 	f := newUserFixture(t)
 	f.write("/etc/ssh/authorized_keys/carol", "old", 0600)
 	var skel string
@@ -59,7 +59,7 @@ func TestAddUserRefusals(t *testing.T) {
 }
 
 func TestAddUserUndo(t *testing.T) {
-	// R-50BW-ILT1 R-51JS-WDJQ R-AMUR-YSIK R-52RP-A5AF
+	// R-2UWN-56KH R-2W4J-IYB6 R-AMUR-YSIK R-2XCF-WQ1V
 	for _, homeExists := range []bool{false, true} {
 		for _, keyExists := range []bool{false, true} {
 			for _, writeFails := range []bool{false, true} {
@@ -173,7 +173,7 @@ func TestAddUserUndo(t *testing.T) {
 }
 
 func TestSSHUserList(t *testing.T) {
-	// R-A87Z-DJM8 R-A9FV-RBCX R-U996-6SDT R-UBOY-YBV7
+	// R-A87Z-DJM8 R-A9FV-RBCX R-U996-6SDT R-XE3A-EEY3
 	if StateActive != "active" || StateLocked != "locked" {
 		t.Fatal(StateActive, StateLocked)
 	}
@@ -230,7 +230,7 @@ func TestExpirationState(t *testing.T) {
 }
 
 func TestJournalSignInErrors(t *testing.T) {
-	// R-UBOY-YBV7
+	// R-XE3A-EEY3
 	f := newUserFixture(t)
 	for _, output := range []string{"", "\n", "not json", "{}", "null", "[]", "{\"__REALTIME_TIMESTAMP\":0}", "{\"__REALTIME_TIMESTAMP\":null}", "{\"__REALTIME_TIMESTAMP\":\"\"}", "{\"__REALTIME_TIMESTAMP\":\"-1\"}", "{\"__REALTIME_TIMESTAMP\":\"+1\"}", "{\"__REALTIME_TIMESTAMP\":\"1.0\"}", "{\"__REALTIME_TIMESTAMP\":\" 1\"}", "{\"__REALTIME_TIMESTAMP\":\"1e6\"}", "{\"__REALTIME_TIMESTAMP\":\"１\"}", "{\"__REALTIME_TIMESTAMP\":\"1\"}\n{\"__REALTIME_TIMESTAMP\":\"2\"}"} {
 		f.run = func(host.Command) (host.Result, error) { return host.Result{Stdout: []byte(output)}, nil }
@@ -256,7 +256,7 @@ func TestJournalSignInErrors(t *testing.T) {
 }
 
 func TestJournalSignInCommand(t *testing.T) {
-	// R-UAH2-KK4I R-UBOY-YBV7
+	// R-UAH2-KK4I R-XE3A-EEY3
 	for _, tc := range []struct{ name, quoted string }{
 		{"al", "al"},
 		{"al-ice", `al\-ice`},
@@ -283,7 +283,7 @@ func TestJournalSignInCommand(t *testing.T) {
 }
 
 func TestJournalTimestamp(t *testing.T) {
-	// R-UBOY-YBV7
+	// R-XE3A-EEY3
 	for _, tc := range []struct{ timestamp, want string }{
 		{"0", "1970-01-01T00:00:00Z"},
 		{"999999", "1970-01-01T00:00:00Z"},
@@ -352,7 +352,7 @@ func TestUserRefusalsAndShadowErrors(t *testing.T) {
 }
 
 func TestMembershipAndLocking(t *testing.T) {
-	// R-UUU8-P79R R-UW25-2Z0G R-UCWV-C3LW R-UE4R-PVCL
+	// R-UUU8-P79R R-UW25-2Z0G R-X7ZS-HK8M R-KV2L-Q7BD
 	f := newUserFixture(t)
 	ctx := context.Background()
 	if err := JoinGroup(ctx, f.env, "alice", "acme"); err != nil || len(f.commands) != 0 {
@@ -393,7 +393,7 @@ func TestMembershipAndLocking(t *testing.T) {
 			if name == "alice" {
 				want = append(want, userCall("usermod", "--expiredate", "1", name))
 			}
-			want = append(want, userCall("loginctl", "list-users", "--no-legend"))
+			want = append(want, userCall("loginctl", "disable-linger", name), userCall("loginctl", "list-users", "--no-legend"))
 			if sessions {
 				want = append(want, userCall("loginctl", "terminate-user", name))
 			}
@@ -409,7 +409,7 @@ func TestMembershipAndLocking(t *testing.T) {
 	if err := UnlockUser(ctx, f.env, "bob"); err != nil || !reflect.DeepEqual(f.commands, []host.Command{userCall("usermod", "--expiredate", "", "bob")}) {
 		t.Fatal(err, f.commands)
 	}
-	for step := 0; step < 3; step++ {
+	for step := 0; step < 4; step++ {
 		f := newUserFixture(t)
 		f.run = func(host.Command) (host.Result, error) {
 			if len(f.commands)-1 == step {
@@ -425,7 +425,7 @@ func TestMembershipAndLocking(t *testing.T) {
 }
 
 func TestExpiryOnlyLockLifecycle(t *testing.T) {
-	// R-U6TD-F8WF R-UCWV-C3LW R-UE4R-PVCL
+	// R-U6TD-F8WF R-X7ZS-HK8M R-KV2L-Q7BD
 	ctx := context.Background()
 	for _, expiry := range []string{"", "0", "-1", "99999999", "invalid"} {
 		f := newUserFixture(t)
@@ -436,6 +436,7 @@ func TestExpiryOnlyLockLifecycle(t *testing.T) {
 				f.write("/etc/shadow", "alice:!!:1:0:99999:7::1:\n", 0600)
 			case reflect.DeepEqual(c, userCall("usermod", "--expiredate", "", "alice")):
 				f.write("/etc/shadow", "alice:!!:1:0:99999:7:::\n", 0600)
+			case reflect.DeepEqual(c, userCall("loginctl", "disable-linger", "alice")):
 			case reflect.DeepEqual(c, userCall("loginctl", "list-users", "--no-legend")):
 				return host.Result{Stdout: []byte("alice other\n1001 alice-long\n1002 other alice\nalice\n")}, nil
 			default:
@@ -446,7 +447,7 @@ func TestExpiryOnlyLockLifecycle(t *testing.T) {
 		if err := LockUser(ctx, f.env, "alice"); err != nil {
 			t.Fatal(expiry, err)
 		}
-		want := []host.Command{userCall("loginctl", "list-users", "--no-legend")}
+		want := []host.Command{userCall("loginctl", "disable-linger", "alice"), userCall("loginctl", "list-users", "--no-legend")}
 		wantShadow := "alice:!!:1:0:99999:7::" + expiry + ":\n"
 		if expiry == "" {
 			want = append([]host.Command{userCall("usermod", "--expiredate", "1", "alice")}, want...)
@@ -467,8 +468,8 @@ func TestExpiryOnlyLockLifecycle(t *testing.T) {
 }
 
 func TestLockRetryAfterExpiry(t *testing.T) {
-	// R-UCWV-C3LW
-	for _, failedStep := range []string{"list-users", "terminate-user"} {
+	// R-X7ZS-HK8M
+	for _, failedStep := range []string{"disable-linger", "list-users", "terminate-user"} {
 		f := newUserFixture(t)
 		fail := true
 		f.run = func(c host.Command) (host.Result, error) {
@@ -485,7 +486,10 @@ func TestLockRetryAfterExpiry(t *testing.T) {
 		if !errors.As(err, &command) || command.Label != "loginctl" || command.Result.ExitCode != 8 || f.read("/etc/shadow") != "alice:!!:1:0:99999:7::1:\n" {
 			t.Fatal(err)
 		}
-		want := []host.Command{userCall("usermod", "--expiredate", "1", "alice"), userCall("loginctl", "list-users", "--no-legend")}
+		want := []host.Command{userCall("usermod", "--expiredate", "1", "alice"), userCall("loginctl", "disable-linger", "alice"), userCall("loginctl", "list-users", "--no-legend")}
+		if failedStep == "disable-linger" {
+			want = want[:2]
+		}
 		if failedStep == "terminate-user" {
 			want = append(want, userCall("loginctl", "terminate-user", "alice"))
 		}
@@ -494,14 +498,14 @@ func TestLockRetryAfterExpiry(t *testing.T) {
 		}
 		fail = false
 		f.commands = nil
-		if err := LockUser(context.Background(), f.env, "alice"); err != nil || !reflect.DeepEqual(f.commands, []host.Command{userCall("loginctl", "list-users", "--no-legend"), userCall("loginctl", "terminate-user", "alice")}) {
+		if err := LockUser(context.Background(), f.env, "alice"); err != nil || !reflect.DeepEqual(f.commands, []host.Command{userCall("loginctl", "disable-linger", "alice"), userCall("loginctl", "list-users", "--no-legend"), userCall("loginctl", "terminate-user", "alice")}) {
 			t.Fatal(err, f.commands)
 		}
 	}
 }
 
 func TestDeleteUserReassignAndOrder(t *testing.T) {
-	// R-5QVU-KAP2 R-5JKG-9O8W R-B559-PCMZ
+	// R-5QVU-KAP2 R-U26F-RCPK R-B559-PCMZ
 	f := newUserFixture(t)
 	ctx := context.Background()
 	err := DeleteUser(ctx, f.env, "alice")
@@ -543,6 +547,7 @@ func TestDeleteUserReassignAndOrder(t *testing.T) {
 			if _, err := os.Stat(keyPath(f.env.Root, "bob")); err != nil {
 				t.Fatal("key removed before reassignment")
 			}
+		case "loginctl", "systemctl":
 		case "userdel":
 			if !reflect.DeepEqual(c.Args, []string{"--remove", "bob"}) {
 				t.Fatal(c)
@@ -566,7 +571,8 @@ func TestDeleteUserReassignAndOrder(t *testing.T) {
 	want := []string{rootPath(f.env.Root, "/srv/acme"), rootPath(f.env.Root, "/srv/acme/link"), rootPath(f.env.Root, "/srv/acme/owned"), rootPath(f.env.Root, "/srv/direct"), rootPath(f.env.Root, "/srv/misc"), rootPath(f.env.Root, "/srv/misc/deep"), rootPath(f.env.Root, "/srv/misc/deep/owned")}
 	slices.Sort(reassigned)
 	slices.Sort(want)
-	if !reflect.DeepEqual(reassigned, want) || f.commands[len(f.commands)-2].Name != "userdel" || f.commands[len(f.commands)-1].Name != "groupdel" {
+	tail := []host.Command{userCall("loginctl", "disable-linger", "bob"), userCall("systemctl", "stop", "user@"+uid+".service"), userCall("userdel", "--remove", "bob"), userCall("groupdel", "bob")}
+	if !reflect.DeepEqual(reassigned, want) || len(f.commands) < len(tail) || !reflect.DeepEqual(f.commands[len(f.commands)-len(tail):], tail) {
 		t.Fatal(reassigned, f.commands)
 	}
 	outsideRoot, err := os.OpenRoot(outsideDir)
@@ -580,8 +586,8 @@ func TestDeleteUserReassignAndOrder(t *testing.T) {
 }
 
 func TestDeleteRetriesAndFailure(t *testing.T) {
-	// R-UGKK-HETZ R-52RP-A5AF
-	for _, stage := range []string{"chown", "userdel", "groupdel"} {
+	// R-XBNH-MVGP R-2XCF-WQ1V
+	for _, stage := range []string{"chown", "loginctl", "systemctl", "userdel", "groupdel"} {
 		f := newUserFixture(t)
 		f.write("/etc/passwd", strings.Replace(userAccountRows, "bob:x:1002:", fmt.Sprintf("bob:x:%d:", os.Getuid()), 1), 0600)
 		f.write("/srv/acme/file", "x", 0600)
@@ -620,9 +626,9 @@ func TestDeleteRetriesAndFailure(t *testing.T) {
 		if err := DeleteUser(context.Background(), f.env, "bob"); err != nil {
 			t.Fatal(err)
 		}
-		want := 1
+		want := 3
 		if gid == "1002" {
-			want = 2
+			want = 4
 		}
 		if len(f.commands) != want {
 			t.Fatal(f.commands)
@@ -658,7 +664,7 @@ func TestDeleteRetriesAndFailure(t *testing.T) {
 }
 
 func TestUserCommandErrors(t *testing.T) {
-	// R-UFCO-3N3A
+	// R-XCVE-0N7E
 	for _, startFailure := range []bool{false, true} {
 		for _, op := range []struct {
 			label string
@@ -682,7 +688,7 @@ func TestUserCommandErrors(t *testing.T) {
 				sentinel := errors.New("cannot start")
 				result := host.Result{ExitCode: 7, Stdout: []byte("out"), Stderr: []byte("err")}
 				f.run = func(c host.Command) (host.Result, error) {
-					if op.label == "groupdel" && c.Name == "userdel" {
+					if c.Name != op.label {
 						return host.Result{}, nil
 					}
 					if startFailure {
@@ -704,7 +710,7 @@ func TestUserCommandErrors(t *testing.T) {
 }
 
 func TestDeleteFailureProgress(t *testing.T) {
-	// R-UGKK-HETZ
+	// R-XBNH-MVGP
 	for _, stage := range []string{"userdel-before-removal", "userdel-after-removal", "groupdel"} {
 		t.Run(stage, func(t *testing.T) {
 			f := newUserFixture(t)
@@ -713,6 +719,7 @@ func TestDeleteFailureProgress(t *testing.T) {
 			failed := false
 			f.run = func(c host.Command) (host.Result, error) {
 				switch c.Name {
+				case "loginctl", "systemctl":
 				case "userdel":
 					if stage != "userdel-before-removal" || failed {
 						f.write("/etc/passwd", strings.Replace(userAccountRows, "bob:x:1002:1002::/home/bob:/bin/bash\n", "", 1), 0600)
@@ -736,7 +743,7 @@ func TestDeleteFailureProgress(t *testing.T) {
 			err := DeleteUser(context.Background(), f.env, "bob")
 			var command *host.CommandError
 			label := "userdel"
-			want := []host.Command{userCall("userdel", "--remove", "bob")}
+			want := []host.Command{userCall("loginctl", "disable-linger", "bob"), userCall("systemctl", "stop", "user@1002.service"), userCall("userdel", "--remove", "bob")}
 			if stage == "groupdel" {
 				label = "groupdel"
 				want = append(want, userCall("groupdel", "bob"))
@@ -753,7 +760,7 @@ func TestDeleteFailureProgress(t *testing.T) {
 			f.commands = nil
 			err = DeleteUser(context.Background(), f.env, "bob")
 			if stage == "userdel-before-removal" {
-				if err != nil || !reflect.DeepEqual(f.commands, []host.Command{userCall("userdel", "--remove", "bob"), userCall("groupdel", "bob")}) || strings.Contains(f.read("/etc/group"), "bob:x:1002:\n") {
+				if err != nil || !reflect.DeepEqual(f.commands, []host.Command{userCall("loginctl", "disable-linger", "bob"), userCall("systemctl", "stop", "user@1002.service"), userCall("userdel", "--remove", "bob"), userCall("groupdel", "bob")}) || strings.Contains(f.read("/etc/group"), "bob:x:1002:\n") {
 					t.Fatal(err, f.commands)
 				}
 			} else {
@@ -768,13 +775,14 @@ func TestDeleteFailureProgress(t *testing.T) {
 	f.write("/etc/ssh/authorized_keys/bob/obstruction", "kept", 0600)
 	err := DeleteUser(context.Background(), f.env, "bob")
 	var pathError *os.PathError
-	if !errors.As(err, &pathError) || pathError.Path != keyPath(f.env.Root, "bob") || len(f.commands) != 0 || f.read("/etc/passwd") != userAccountRows || f.read("/etc/group") != userGroups || f.read("/etc/ssh/authorized_keys/bob/obstruction") != "kept" {
+	if !errors.As(err, &pathError) || pathError.Path != keyPath(f.env.Root, "bob") || len(f.commands) != 2 || f.read("/etc/passwd") != userAccountRows || f.read("/etc/group") != userGroups || f.read("/etc/ssh/authorized_keys/bob/obstruction") != "kept" {
 		t.Fatal(err, f.commands)
 	}
 	if err := os.Remove(rootPath(f.env.Root, "/etc/ssh/authorized_keys/bob/obstruction")); err != nil {
 		t.Fatal(err)
 	}
-	if err := DeleteUser(context.Background(), f.env, "bob"); err != nil || !reflect.DeepEqual(f.commands, []host.Command{userCall("userdel", "--remove", "bob"), userCall("groupdel", "bob")}) {
+	f.commands = nil
+	if err := DeleteUser(context.Background(), f.env, "bob"); err != nil || !reflect.DeepEqual(f.commands, []host.Command{userCall("loginctl", "disable-linger", "bob"), userCall("systemctl", "stop", "user@1002.service"), userCall("userdel", "--remove", "bob"), userCall("groupdel", "bob")}) {
 		t.Fatal(err, f.commands)
 	}
 }
@@ -824,7 +832,7 @@ func TestUserOperationsRejectNamesAndAccountFiles(t *testing.T) {
 }
 
 func TestAddUserPreservesPreexistingSymlinkHome(t *testing.T) {
-	// R-50BW-ILT1
+	// R-2UWN-56KH
 	f := newUserFixture(t)
 	f.write("/preserved/valuable", "kept", 0640)
 	if err := os.MkdirAll(rootPath(f.env.Root, "/home"), 0700); err != nil {

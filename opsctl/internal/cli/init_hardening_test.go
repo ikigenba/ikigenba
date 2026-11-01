@@ -15,7 +15,7 @@ import (
 )
 
 func TestInitHardeningRunsSilentlyAfterSlicesOnEveryLayout(t *testing.T) {
-	// R-DJGH-HHQX
+	// R-T468-PXAZ
 	for _, layout := range []string{"fresh", "per-app", "released"} {
 		for _, changed := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/changed=%t", layout, changed), func(t *testing.T) {
@@ -88,7 +88,7 @@ func TestInitHardeningRunsSilentlyAfterSlicesOnEveryLayout(t *testing.T) {
 }
 
 func TestInitHardeningFailureKeepsCertificateAndSlices(t *testing.T) {
-	// R-DJGH-HHQX R-LXGW-8J1R
+	// R-T468-PXAZ R-LXGW-8J1R
 	deps := readyStateGuardDeps(t)
 	keys := filepath.Join(deps.Root, hardening.KeysDir)
 	if err := initFixtureRootChmod(t, deps.Root, hardening.KeysDir, 0700); err != nil {

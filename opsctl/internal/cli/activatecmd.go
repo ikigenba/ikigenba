@@ -252,6 +252,19 @@ func (t *transition) command(name string, args ...string) (host.Result, error) {
 	}
 	return result, nil
 }
+func (t *transition) regularTreeFile(name string) bool {
+	parts := strings.Split(name, "/")
+	p := t.folder
+	for i, part := range parts {
+		p += "/" + part
+		info, err := t.files.Lstat(p)
+		if err != nil || i < len(parts)-1 && !info.IsDir() || i == len(parts)-1 && !info.Mode().IsRegular() {
+			return false
+		}
+	}
+	return true
+}
+
 func (t *transition) releaseStep() (string, error) {
 	f, err := t.files.Open(t.folder)
 	if err != nil {
@@ -264,7 +277,7 @@ func (t *transition) releaseStep() (string, error) {
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	for _, entry := range entries {
-		if entry.IsDir() && entry.Name() != "opsctl" {
+		if entry.IsDir() && entry.Name() != "opsctl" && entry.Name() != release.TurnsDir {
 			t.trees = append(t.trees, entry.Name())
 		}
 	}
@@ -286,8 +299,7 @@ func (t *transition) releaseStep() (string, error) {
 			}
 		}
 		bin := t.folder + "/" + app + "/bin"
-		info, err := t.files.Lstat(bin + "/" + app)
-		if err != nil || !info.Mode().IsRegular() {
+		if !t.regularTreeFile(app + "/bin/" + app) {
 			return "", fmt.Errorf("%s: bin/%s is missing", app, app)
 		}
 		f, err = t.files.Open(bin)
@@ -301,6 +313,13 @@ func (t *transition) releaseStep() (string, error) {
 		}
 		if len(entries) != 1 {
 			return "", fmt.Errorf("%s: bin holds more than %s", app, app)
+		}
+	}
+	if release.HasTurns(t.deps.Root, t.r.SHA) {
+		for _, p := range []string{release.TurnsPath, release.TurnsUnitsPath + "/" + release.TurnsService, release.TurnsUnitsPath + "/" + release.TurnsTimer} {
+			if !t.regularTreeFile(p) {
+				return "", fmt.Errorf("turns: %s is missing", strings.TrimPrefix(p, "turns/"))
+			}
 		}
 	}
 	if _, err = t.command("chown", "--recursive", "--no-dereference", "root:root", filepath.Join(t.deps.Root, t.folder)); err != nil {
@@ -334,7 +353,7 @@ func (t *transition) releaseStep() (string, error) {
 					break
 				}
 			}
-			if parts[1] == "bin" && (isApp || parts[0] == "opsctl") ||
+			if parts[1] == "bin" && (isApp || parts[0] == "opsctl" || parts[0] == release.TurnsDir) ||
 				parts[1] == "libexec" && isApp && info.Mode().Perm()&0o111 != 0 {
 				mode = 0o755
 			}
@@ -619,6 +638,11 @@ func (t *transition) unitsStep() (string, error) {
 	if len(names) > 0 {
 		detail += "; " + strings.Join(names, ", ") + " stopped and removed, state kept"
 	}
+	if release.HasTurns(t.deps.Root, t.r.SHA) {
+		if err := release.InstallTurns(t.deps.Root, t.r.SHA, t.name); err != nil {
+			return "", err
+		}
+	}
 	return detail, nil
 }
 func (t *transition) link(name, target string) error {
@@ -664,6 +688,11 @@ func (t *transition) linksStep() (string, error) {
 	}
 	if err := release.LinkOpsctl(t.deps.Root, release.CurrentOpsctl); err != nil {
 		return "", err
+	}
+	if release.HasTurns(t.deps.Root, t.r.SHA) {
+		if err := release.LinkTurns(t.deps.Root, release.CurrentTurns); err != nil {
+			return "", err
+		}
 	}
 	prev, exists, err := release.Previous(t.deps.Root)
 	if err != nil {

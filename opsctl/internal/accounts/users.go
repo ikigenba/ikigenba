@@ -107,11 +107,23 @@ func AddUser(ctx context.Context, env host.Env, name, group string, key Key) err
 	}
 	defer func() { _ = os.Remove(skel) }()
 	_, err = execute(ctx, env, host.Command{Name: "useradd", Args: []string{"--create-home", "--home-dir", "/home/" + name, "--skel", skel, "--key", "HOME_MODE=0700", "--user-group", "--groups", hardening.ShellGroup + "," + group, "--shell", "/bin/bash", name}})
+	var timer userTimerStep
 	if err == nil {
 		err = writeKeys(env.Root, name, []string{key.Line()})
 	}
 	if err == nil {
+		var installed bool
+		installed, err = userTimerInstalled(env)
+		if err == nil && installed {
+			timer, err = enableUserTimer(ctx, env, name)
+		}
+	}
+	if err == nil {
 		return nil
+	}
+	if timer.lingering {
+		_, _ = execute(ctx, env, host.Command{Name: "loginctl", Args: []string{"disable-linger", name}})
+		_, _ = execute(ctx, env, host.Command{Name: "systemctl", Args: []string{"stop", "user@" + timer.uid + ".service"}})
 	}
 	undoAddUser(ctx, env, name, home, homeExisted, path, keyExisted, oldKey, oldMode)
 	return err
@@ -331,6 +343,9 @@ func LockUser(ctx context.Context, env host.Env, name string) error {
 			return err
 		}
 	}
+	if _, err = execute(ctx, env, host.Command{Name: "loginctl", Args: []string{"disable-linger", name}}); err != nil {
+		return err
+	}
 	result, err := execute(ctx, env, host.Command{Name: "loginctl", Args: []string{"list-users", "--no-legend"}})
 	if err != nil {
 		return err
@@ -354,10 +369,15 @@ func UnlockUser(ctx context.Context, env host.Env, name string) error {
 	if err != nil {
 		return err
 	}
-	if !states[name] {
-		return nil
+	if states[name] {
+		if _, err = execute(ctx, env, host.Command{Name: "usermod", Args: []string{"--expiredate", "", name}}); err != nil {
+			return err
+		}
 	}
-	_, err = execute(ctx, env, host.Command{Name: "usermod", Args: []string{"--expiredate", "", name}})
+	installed, err := userTimerInstalled(env)
+	if err == nil && installed {
+		_, err = enableUserTimer(ctx, env, name)
+	}
 	return err
 }
 
@@ -375,6 +395,16 @@ func DeleteUser(ctx context.Context, env host.Env, name string) error {
 		return &RefusedError{Reason: "user not locked: " + name}
 	}
 	if err = reassignFiles(ctx, env, db, name); err != nil {
+		return err
+	}
+	if _, err = execute(ctx, env, host.Command{Name: "loginctl", Args: []string{"disable-linger", name}}); err != nil {
+		return err
+	}
+	uid, err := strconv.ParseUint(db.accounts[name].uid, 10, 32)
+	if err != nil {
+		return err
+	}
+	if _, err = execute(ctx, env, host.Command{Name: "systemctl", Args: []string{"stop", "user@" + strconv.FormatUint(uid, 10) + ".service"}}); err != nil {
 		return err
 	}
 	if err = os.Remove(keyPath(env.Root, name)); err != nil && !errors.Is(err, os.ErrNotExist) {

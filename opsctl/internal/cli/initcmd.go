@@ -345,6 +345,9 @@ func (p *initPreflight) finish(stdout, stderr io.Writer) exitCode {
 		err = ensureInitOpsctl(p.deps)
 	}
 	if err == nil {
+		err = setupInitTurns(p.deps, p.host)
+	}
+	if err == nil {
 		err = cert.Obtain(ctx, env, p.host, email, apexApp != "")
 	}
 	if err == nil {

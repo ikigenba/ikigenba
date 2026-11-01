@@ -120,7 +120,7 @@ func TestUserKeyFiles(t *testing.T) {
 }
 
 func TestInvalidUserKeysAndWriteFailure(t *testing.T) {
-	// R-5KSC-NFZL R-52RP-A5AF
+	// R-5KSC-NFZL R-2XCF-WQ1V
 	for _, op := range []func(*userFixture, Key) error{
 		func(f *userFixture, k Key) error { return AddUser(context.Background(), f.env, "newuser", "acme", k) },
 		func(f *userFixture, k Key) error { return AddKey(context.Background(), f.env, "alice", k) },

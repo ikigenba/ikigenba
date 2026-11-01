@@ -65,6 +65,44 @@ type initAppFiles struct {
 	oldEnv, oldUnit []byte
 }
 
+func setupInitTurns(deps Deps, hostName string) error {
+	layout, err := apps.ReadLayout(deps.Root)
+	if err != nil {
+		return err
+	}
+	var source release.Release
+	var ok bool
+	if layout == apps.Released {
+		source, ok, err = release.Current(deps.Root)
+		if err != nil {
+			return err
+		}
+	} else if executable, e := deps.Executable(); e == nil {
+		source, ok = release.Of(deps.Root, executable)
+	}
+	if !ok || !release.HasTurns(deps.Root, source.SHA) {
+		return nil
+	}
+	filesystem, err := os.OpenRoot(deps.Root)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = filesystem.Close() }()
+	_, err = filesystem.Lstat(strings.TrimPrefix(release.TurnsLink, "/"))
+	if errors.Is(err, os.ErrNotExist) {
+		target := release.CurrentTurns
+		if layout != apps.Released {
+			target = release.ReleasesDir + "/" + source.SHA + "/" + release.TurnsPath
+		}
+		if err = release.LinkTurns(deps.Root, target); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return fmt.Errorf("%s: %w", release.TurnsLink, err)
+	}
+	return release.InstallTurns(deps.Root, source.SHA, hostName)
+}
+
 func setupInitApps(ctx context.Context, env host.Env, store config.Store, remote cloud.Env, hostName string) error {
 	layout, err := apps.ReadLayout(env.Root)
 	if err != nil {

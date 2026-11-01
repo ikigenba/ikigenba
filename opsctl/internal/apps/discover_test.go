@@ -368,7 +368,7 @@ func TestLayoutUsesCurrentEntryBeforePerAppPackages(t *testing.T) {
 	}
 }
 
-// R-8Z3J-U488 R-8T01-X9IR R-90BG-7VYX R-91JC-LNPM R-9PXC-92JI
+// R-8Z3J-U488 R-8T01-X9IR R-90BG-7VYX R-91JC-LNPM R-UDNX-V6NB
 func TestDiscoverReleasedPackagesAndDataOnlyServices(t *testing.T) {
 	root := t.TempDir()
 	sha := strings.Repeat("b", 40)
@@ -377,6 +377,9 @@ func TestDiscoverReleasedPackagesAndDataOnlyServices(t *testing.T) {
 	releasedPackage(t, folder, "broken", "broken TOML")
 	mkdirAll(t, filepath.Join(folder, "opsctl/bin"))
 	writeFile(t, filepath.Join(folder, "opsctl/bin/opsctl"), []byte("binary"))
+	writeFile(t, filepath.Join(folder, release.TurnsPath), []byte("turns binary"))
+	writeFile(t, filepath.Join(folder, release.TurnsUnitsPath, release.TurnsService), []byte("unit"))
+	writeFile(t, filepath.Join(folder, release.TurnsUnitsPath, release.TurnsTimer), []byte("timer"))
 	for _, name := range []string{"no-manifest", "no-binary", "directory-binary"} {
 		mkdirAll(t, filepath.Join(folder, name, "bin"))
 	}

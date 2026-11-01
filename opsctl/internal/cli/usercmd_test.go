@@ -242,7 +242,7 @@ func TestUserListJSON(t *testing.T) {
 }
 
 func TestUserCommandDiagnostic(t *testing.T) {
-	// R-53ZL-NX14
+	// R-2YKC-AHSK
 	f := newUserCLI(t)
 	f.run = func(c host.Command) (host.Result, error) {
 		if c.Name != "useradd" {

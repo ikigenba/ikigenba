@@ -12,15 +12,24 @@ import (
 
 // Host layout paths and package-relative release filenames.
 const (
-	Dir           = "/opt/ikigenba"
-	ReleasesDir   = Dir + "/releases"
-	CurrentLink   = Dir + "/current"
-	PreviousLink  = Dir + "/previous"
-	OpsctlLink    = "/usr/local/bin/opsctl"
-	CurrentOpsctl = CurrentLink + "/opsctl/bin/opsctl"
-	OpsctlPath    = "opsctl/bin/opsctl"
-	MetadataName  = "release.json"
-	LabelName     = "label"
+	Dir            = "/opt/ikigenba"
+	ReleasesDir    = Dir + "/releases"
+	CurrentLink    = Dir + "/current"
+	PreviousLink   = Dir + "/previous"
+	OpsctlLink     = "/usr/local/bin/opsctl"
+	CurrentOpsctl  = CurrentLink + "/opsctl/bin/opsctl"
+	OpsctlPath     = "opsctl/bin/opsctl"
+	MetadataName   = "release.json"
+	LabelName      = "label"
+	TurnsLink      = "/usr/local/bin/turns"
+	CurrentTurns   = CurrentLink + "/turns/bin/turns"
+	TurnsDir       = "turns"
+	TurnsPath      = "turns/bin/turns"
+	TurnsUnitsPath = "turns/share/systemd"
+	TurnsService   = "turns.service"
+	TurnsTimer     = "turns.timer"
+	UserUnitDir    = "/etc/systemd/user"
+	TurnsConfig    = "/etc/xdg/turns/config"
 )
 
 // ErrNoMetadata identifies an absent or invalid release record.
