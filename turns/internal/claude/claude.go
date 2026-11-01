@@ -143,6 +143,17 @@ func between(text, start, end string) (string, bool) {
 	}
 	return v, true
 }
+func argument(arg string) string {
+	arg, _, _ = strings.Cut(arg, "\n")
+	if len(arg) > 256 {
+		end := 256
+		for end > 0 && !utf8.RuneStart(arg[end]) {
+			end--
+		}
+		arg = arg[:end]
+	}
+	return arg
+}
 func command(content string) *session.Command {
 	for {
 		_, after, ok := strings.Cut(content, "<command-name>")
@@ -159,16 +170,21 @@ func command(content string) *session.Command {
 			continue
 		}
 		arg, _ := between(rest, "<command-args>", "</command-args>")
-		arg, _, _ = strings.Cut(arg, "\n")
-		if len(arg) > 256 {
-			end := 256
-			for end > 0 && !utf8.RuneStart(arg[end]) {
-				end--
-			}
-			arg = arg[:end]
-		}
-		return &session.Command{Name: name, Argument: arg}
+		return &session.Command{Name: name, Argument: argument(arg)}
 	}
+}
+func skillCommand(content json.RawMessage) *session.Command {
+	for _, raw := range array(content) {
+		item := obj(raw)
+		if str(item["type"]) != "tool_use" || str(item["name"]) != "Skill" {
+			continue
+		}
+		input := obj(item["input"])
+		if name := str(input["skill"]); name != "" {
+			return &session.Command{Name: "/" + name, Argument: argument(str(input["args"]))}
+		}
+	}
+	return nil
 }
 
 func texts(content json.RawMessage) []string {
@@ -348,6 +364,9 @@ func read(src source, jobs *matcher) (session.Session, []session.Mention, bool) 
 			}
 			c.turn.Model = str(message["model"])
 			c.usage = obj(message["usage"])
+			if c.valid && s.Command == nil {
+				s.Command = skillCommand(message["content"])
+			}
 			continue
 		}
 		if !valid {

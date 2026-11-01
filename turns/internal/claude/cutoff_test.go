@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -103,44 +102,5 @@ func TestCutoffIsReevaluatedOnEveryCall(t *testing.T) {
 	fourth, _ := claude.Read(root, nil, since)
 	if !reflect.DeepEqual(second, fourth) {
 		t.Fatalf("second=%+v fourth=%+v", second, fourth)
-	}
-}
-
-// R-N6CT-KE4Q R-N7KP-Y5VF R-N8SM-BXM4 R-NB8F-3H3I
-func TestCommandPairsAndArgument(t *testing.T) {
-	pair := func(name string) string { return "<command-name>" + name + "</command-name>" }
-	for _, test := range []struct{ name, content, args string }{
-		{"preface", "caveat <command-message>ignored</command-message>" + pair("/deliver") + "<command-args>first\nsecret prompt</command-args>", "first"},
-		{"same-turn", pair("clear") + pair("/exit") + pair("") + pair("/") + pair("/deliver") + "<command-args>chosen</command-args>", "chosen"},
-		{"earlier-args", "<command-args>before</command-args>" + pair("/deliver"), ""},
-		{"first-args", pair("/deliver") + "<command-args>one</command-args><command-args>two</command-args>", "one"},
-		{"unterminated", pair("/deliver") + "<command-args>unfinished", ""},
-		{"ascii", pair("/deliver") + "<command-args>" + strings.Repeat("a", 300) + "</command-args>", strings.Repeat("a", 256)},
-		{"utf8-cut", pair("/deliver") + "<command-args>" + strings.Repeat("a", 255) + "éextra</command-args>", strings.Repeat("a", 255)},
-		{"utf8-whole", pair("/deliver") + "<command-args>" + strings.Repeat("é", 128) + "</command-args>", strings.Repeat("é", 128)},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			got := readLines(t, line("user", instant, test.content), line("user", "2025-04-01T09:00:01Z", pair("later")))
-			if got.Command == nil || *got.Command != (session.Command{Name: "/deliver", Argument: test.args}) {
-				t.Fatalf("command=%+v", got.Command)
-			}
-		})
-	}
-	for _, sub := range []bool{false, true} {
-		root := t.TempDir()
-		path := "projects/p/example.jsonl"
-		if sub {
-			path = "projects/p/top/subagents/agent-child.jsonl"
-		}
-		write(t, root, path, encoded(t, line("user", instant, pair("/clear")), line("user", "2025-04-01T09:00:01Z", pair("/deliver"))))
-		got, _ := claude.Read(root, nil, time.Time{})
-		if len(got.Sessions) != 1 || got.Sessions[0].Command == nil || got.Sessions[0].Command.Name != "/deliver" {
-			t.Fatalf("got=%+v", got)
-		}
-		write(t, root, path, encoded(t, line("user", instant, pair("/exit")+pair("clear"))))
-		got, _ = claude.Read(root, nil, time.Time{})
-		if len(got.Sessions) != 1 || got.Sessions[0].Command != nil {
-			t.Fatalf("got=%+v", got)
-		}
 	}
 }

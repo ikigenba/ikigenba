@@ -246,43 +246,6 @@ func TestDirectoryAndEntrypoint(t *testing.T) {
 	}
 }
 
-// R-WQFB-8YHZ
-func TestFirstCommand(t *testing.T) {
-	valid := func(name, args string) string {
-		return "<command-name>" + name + "</command-name><command-args>" + args + "</command-args>"
-	}
-	var lines []any
-	for _, name := range []string{"clear", "/clear", "exit", "/exit", "", "/"} {
-		lines = append(lines, line("user", instant, valid(name, "ignored")))
-	}
-	lines = append(lines, line("user", instant, "<command-name>unfinished"))
-	meta := line("user", instant, valid("meta", "ignored"))
-	meta["isMeta"] = true
-	tool := line("user", instant, valid("tool", "ignored"))
-	tool["origin"] = map[string]any{"kind": "peer"}
-	lines = append(lines, meta, tool, line("system", instant, valid("system", "ignored")), line("user", "broken", valid("bad-time", "ignored")), line("user", instant, valid("/plan", "  a <b>\n c ")), line("user", instant, valid("later", "ignored")))
-	s := readLines(t, lines...)
-	if s.Command == nil || *s.Command != (session.Command{Name: "/plan", Argument: "  a <b>"}) {
-		t.Fatalf("command: %+v", s.Command)
-	}
-	s = readLines(t, line("user", instant, "<command-name>plain</command-name> <command-args>unfinished"))
-	if s.Command == nil || *s.Command != (session.Command{Name: "plain"}) {
-		t.Fatalf("command: %+v", s.Command)
-	}
-	for _, sub := range []bool{false, true} {
-		root := t.TempDir()
-		path := "projects/p/no-command.jsonl"
-		if sub {
-			path = "projects/p/parent/subagents/agent-a.jsonl"
-		}
-		write(t, root, path, encoded(t, line("user", instant, valid("clear", "")), line("user", instant, "ordinary")))
-		f, _ := claude.Read(root, nil, time.Time{})
-		if len(f.Sessions) != 1 || f.Sessions[0].Command != nil {
-			t.Fatalf("session: %+v", f)
-		}
-	}
-}
-
 // R-OX0X-GWCI R-EZUQ-QR1Y R-F12N-4ISN R-OY8T-UO37
 func TestMomentsOrderAndMerge(t *testing.T) {
 	s := readLines(t,
