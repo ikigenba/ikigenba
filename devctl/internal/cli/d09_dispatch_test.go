@@ -213,6 +213,7 @@ func (f *deployReleaseFixture) exec(_ context.Context, c seam.Cmd) (seam.Result,
 			return seam.Result{Stdout: []byte(deploySHA + "\n")}, nil
 		}
 		if c.Args[0] == "worktree" && c.Args[1] == "add" {
+			f.put(filepath.Join(c.Args[3], "turns", "share", "fixture"), "committed share")
 			for app, manifest := range f.manifests {
 				f.put(filepath.Join(c.Args[3], app, "etc/manifest.toml"), manifest)
 				f.put(filepath.Join(c.Args[3], app, "cmd", app, "main.go"), "package main\n")

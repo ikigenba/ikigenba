@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/appref"
@@ -95,7 +97,7 @@ func stageSuite(ctx context.Context, worktree, stage, sha, version string, deps 
 		return "", nil, err
 	}
 	for _, app := range apps {
-		if !appref.ValidName(app.Name) || app.Name == "opsctl" {
+		if !appref.ValidName(app.Name) || app.Name == "opsctl" || app.Name == "turns" {
 			return "", nil, &UsageError{Message: fmt.Sprintf("'%s' is not a usable app name", app.Name)}
 		}
 	}
@@ -109,6 +111,14 @@ func stageSuite(ctx context.Context, worktree, stage, sha, version string, deps 
 				return "", nil, &UsageError{Message: app.Name + ": " + forbidden + "/ is not allowed in a release"}
 			}
 		}
+	}
+	turnsDir := filepath.Join(worktree, "turns")
+	share, err := os.Stat(filepath.Join(turnsDir, "share"))
+	if os.IsNotExist(err) || errors.Is(err, syscall.ENOTDIR) || (err == nil && !share.IsDir()) {
+		return "", nil, &UsageError{Message: "turns/share/ is missing at the commit"}
+	}
+	if err != nil {
+		return "", nil, err
 	}
 	archiveRoot := filepath.Join(stage, "members")
 	releaseRoot := filepath.Join(archiveRoot, sha)
@@ -139,12 +149,19 @@ func stageSuite(ctx context.Context, worktree, stage, sha, version string, deps 
 			return "", nil, err
 		}
 		for _, directory := range []string{"etc", "share", "libexec", "lib"} {
-			if _, err := copyArchiveDirectory(app.Dir, destination, directory); err != nil {
+			if err := copyArchiveDirectory(app.Dir, destination, directory); err != nil {
 				return "", nil, err
 			}
 		}
 	}
 	if err := compileSuite(ctx, "opsctl", filepath.Join(worktree, "opsctl"), filepath.Join(releaseRoot, "opsctl", "bin", "opsctl"), deps); err != nil {
+		return "", nil, err
+	}
+	turnsRoot := filepath.Join(releaseRoot, "turns")
+	if err := compileSuite(ctx, "turns", turnsDir, filepath.Join(turnsRoot, "bin", "turns"), deps); err != nil {
+		return "", nil, err
+	}
+	if err := copyArchiveDirectory(turnsDir, turnsRoot, "share"); err != nil {
 		return "", nil, err
 	}
 	metadata, err := json.Marshal(struct {

@@ -43,7 +43,7 @@ func TestReleaseHostFailuresThroughCLI(t *testing.T) {
 					}
 					if c.Args[0] == "worktree" {
 						if c.Args[1] == "add" {
-							return seam.Result{}, os.MkdirAll(c.Args[3], 0o700)
+							return seam.Result{}, os.MkdirAll(filepath.Join(c.Args[3], "turns", "share"), 0o700)
 						}
 						return seam.Result{}, os.RemoveAll(c.Args[3])
 					}

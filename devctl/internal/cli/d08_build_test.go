@@ -13,8 +13,8 @@ import (
 const expectedBuildUsage = `Usage: devctl build <sha|tag>
 
 Build the suite at <sha|tag> for linux/amd64 and write dist/<sha>.tar.xz, one
-release holding every app and opsctl. <sha> is the full commit sha the argument
-resolves to; the working tree is not read.
+release holding every app, opsctl and turns. <sha> is the full commit sha the
+argument resolves to; the working tree is not read.
 `
 
 func TestBuildUsageDiagnosticsThroughCLI(t *testing.T) {
@@ -48,6 +48,8 @@ func TestBuildUsageDiagnosticsThroughCLI(t *testing.T) {
 
 func TestBuildHelpThroughCLIHasNoExternalOperation(t *testing.T) {
 	// R-6DMZ-9OZX
+	// R-4TWH-GU23
+	outside := t.TempDir()
 	for _, args := range [][]string{
 		{"build", "--help"},
 		{"build", "-h"},
@@ -57,6 +59,7 @@ func TestBuildHelpThroughCLIHasNoExternalOperation(t *testing.T) {
 			execCalls := 0
 			cloudCalls := 0
 			result := invokeWithDeps(seam.Deps{
+				Dir:  outside,
 				EUID: 1,
 				Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
 					execCalls++

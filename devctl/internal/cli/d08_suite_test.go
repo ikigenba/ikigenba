@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +20,7 @@ import (
 const cliSuiteSHA = "4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a"
 
 func TestSuiteDispatchThroughCLI(t *testing.T) {
-	// R-R22C-FF2C R-G683-IC4D R-R4I5-6YJQ
+	// R-R22C-FF2C R-G683-IC4D R-4V4D-ULSS
 	fixture := newCLISuiteFixture(t)
 	fixture.apps = []string{"crm"}
 	assertResult(t, invokeWithDeps(fixture.deps(), "build", "r1"), 0, "dist/"+cliSuiteSHA+".tar.xz\n", "")
@@ -39,8 +40,8 @@ func TestSuiteDispatchThroughCLI(t *testing.T) {
 }
 
 func TestSuiteRejectsNamesThroughCLI(t *testing.T) {
-	// R-GCBL-F6TU
-	for _, names := range [][]string{{"0app", "host"}, {"0app", "seed"}, {"0app", "Crm"}, {"0app", "opsctl"}, {"0app", "host", "opsctl", "seed"}} {
+	// R-4XK6-M5A6
+	for _, names := range [][]string{{"0app", "host"}, {"0app", "seed"}, {"0app", "Crm"}, {"0app", "opsctl"}, {"0app", "turns"}, {"0app", "host", "opsctl", "seed"}} {
 		t.Run(strings.Join(names, "_"), func(t *testing.T) {
 			f := newCLISuiteFixture(t)
 			f.apps = names
@@ -51,7 +52,7 @@ func TestSuiteRejectsNamesThroughCLI(t *testing.T) {
 }
 
 func TestSuiteRejectsForbiddenDirectoriesThroughCLI(t *testing.T) {
-	// R-FQTV-74T4
+	// R-4YS2-ZX0V
 	cases := []struct {
 		apps  []string
 		files map[string]string
@@ -74,13 +75,130 @@ func TestSuiteRejectsForbiddenDirectoriesThroughCLI(t *testing.T) {
 }
 
 func TestSuiteStopsOnCompilerFailureThroughCLI(t *testing.T) {
-	// R-G1CH-Z95L
+	// R-53NO-IZZN
 	f := newCLISuiteFixture(t)
 	f.apps = []string{"auth", "dashboard", "events"}
 	f.failCompile = "dashboard"
 	assertResult(t, invokeWithDeps(f.deps(), "build", "r1"), 1, "", "devctl: build dashboard: exit status 1\n\n> # github.com/ikigenba/ikigenba/dashboard/cmd/dashboard\n> cmd/dashboard/main.go:41:2: undefined: render\n")
 	if !reflect.DeepEqual(f.compiled, []string{"auth", "dashboard"}) || f.tarCalls != 0 {
 		t.Fatalf("compiled %q, tar calls %d", f.compiled, f.tarCalls)
+	}
+}
+
+func TestSuiteToolCompilerFailuresThroughCLI(t *testing.T) {
+	// R-53NO-IZZN
+	for _, tool := range []string{"opsctl", "turns"} {
+		t.Run(tool, func(t *testing.T) {
+			f := newCLISuiteFixture(t)
+			f.apps = []string{"crm"}
+			f.failCompile = tool
+			want := "devctl: build " + tool + ": exit status 1\n"
+			compiled := []string{"crm", "opsctl"}
+			if tool == "turns" {
+				want += "\n> cmd/turns/main.go:7:1: syntax error\n"
+				compiled = append(compiled, "turns")
+			}
+			assertResult(t, invokeWithDeps(f.deps(), "build", "r1"), 1, "", want)
+			if !reflect.DeepEqual(f.compiled, compiled) || f.tarCalls != 0 || f.removals != 1 {
+				t.Fatalf("compiled %q, tar %d, removals %d", f.compiled, f.tarCalls, f.removals)
+			}
+		})
+	}
+}
+
+func TestSuiteCompileOrderThroughCLI(t *testing.T) {
+	// R-52FS-588Y R-4V4D-ULSS
+	f := newCLISuiteFixture(t)
+	f.apps = []string{"auth", "dummy", "events", "mcp", "repos", "scripts", "sites", "telemetry"}
+	f.write(filepath.Join(f.root, "go.work"), "go 1.26\n")
+	deps := f.deps()
+	exec := deps.Exec
+	var compiles []seam.Cmd
+	deps.Exec = func(ctx context.Context, c seam.Cmd) (seam.Result, error) {
+		if c.Path == "go" {
+			compiles = append(compiles, c)
+		}
+		return exec(ctx, c)
+	}
+	assertResult(t, invokeWithDeps(deps, "build", "r1"), 0, "dist/"+cliSuiteSHA+".tar.xz\n", "")
+	names := append(append([]string{}, f.apps...), "opsctl", "turns")
+	if len(compiles) != len(names) || !reflect.DeepEqual(f.compiled, names) {
+		t.Fatalf("compile names %q, commands %#v", f.compiled, compiles)
+	}
+	for i, c := range compiles {
+		env := slices.Clone(c.Env)
+		slices.Sort(env)
+		if c.Dir != filepath.Join(f.worktree, names[i]) || !slices.Equal(env, []string{"CGO_ENABLED=0", "GOARCH=amd64", "GOOS=linux", "GOWORK=off"}) || len(c.Args) == 0 || c.Args[0] != "build" || !slices.Contains(c.Args, "-buildvcs=false") || !slices.Contains(c.Args, "./cmd/"+names[i]) || suiteCompilerOutput(c.Args) != f.compilerOutputs[names[i]] {
+			t.Fatalf("compile command %#v", c)
+		}
+		for _, arg := range c.Args {
+			if strings.HasPrefix(arg, "-ldflags") {
+				t.Fatalf("linker flags in compile command %#v", c)
+			}
+		}
+	}
+	for _, c := range f.commands {
+		for name, binary := range f.compilerOutputs {
+			if c.Path == binary && (name == "opsctl" || name == "turns" || !reflect.DeepEqual(c.Args, []string{"manifest"})) {
+				t.Fatalf("unexpected staged binary invocation %#v", c)
+			}
+		}
+	}
+}
+
+func TestSuiteMissingTurnsShareThroughCLI(t *testing.T) {
+	// R-517V-RGI9
+	for _, missing := range []string{"turns", "share", "share file", "forbidden app"} {
+		for _, existing := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s existing dist=%v", missing, existing), func(t *testing.T) {
+				f := newCLISuiteFixture(t)
+				f.apps = []string{"crm"}
+				f.omitTurns = missing == "turns"
+				f.omitShare = true
+				f.shareFile = missing == "share file"
+				want := "turns/share/ is missing at the commit"
+				if missing == "forbidden app" {
+					f.files = map[string]string{"crm/sbin/tool": "tool"}
+					want = "crm: sbin/ is not allowed in a release"
+				}
+				if existing {
+					f.write(filepath.Join(f.root, "dist", "keep"), "keep")
+					f.write(filepath.Join(f.root, "dist", cliSuiteSHA+".tar.xz"), "earlier release")
+				}
+				// A developer's copy cannot fill the missing commit content.
+				f.write(filepath.Join(f.root, "turns", "share", "local"), "uncommitted")
+				assertResult(t, invokeWithDeps(f.deps(), "build", "r1"), 2, "", "devctl: "+want+"\n")
+				f.assertNoCompile(t)
+				if f.removals != 1 {
+					t.Fatalf("removals %d", f.removals)
+				}
+				entries, err := os.ReadDir(filepath.Join(f.root, "dist"))
+				if !existing {
+					if !os.IsNotExist(err) {
+						t.Fatalf("new dist remains: %v", err)
+					}
+				} else {
+					if err != nil || len(entries) != 2 || entries[0].Name() != cliSuiteSHA+".tar.xz" || entries[1].Name() != "keep" {
+						t.Fatalf("dist entries %v, %v", entries, err)
+					}
+					root, err := os.OpenRoot(filepath.Join(f.root, "dist"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(func() {
+						if err := root.Close(); err != nil {
+							t.Error(err)
+						}
+					})
+					for name, want := range map[string]string{"keep": "keep", cliSuiteSHA + ".tar.xz": "earlier release"} {
+						data, err := root.ReadFile(name)
+						if err != nil || string(data) != want {
+							t.Fatalf("prior %s: %q, %v", name, data, err)
+						}
+					}
+				}
+			})
+		}
 	}
 }
 
@@ -217,8 +335,10 @@ type cliSuiteFixture struct {
 	noCommit, resolveFails, tarFails bool
 	stale, removeFails               bool
 	manifestFails, manifestNewline   bool
+	omitTurns, omitShare, shareFile  bool
 	cloudCalls, tarCalls, removals   int
 	compiled                         []string
+	commands                         []seam.Cmd
 	compilerOutputs                  map[string]string
 	manifestCalls                    map[string]int
 	releaseJSON                      []byte
@@ -238,7 +358,7 @@ func (f *cliSuiteFixture) write(path, contents string) {
 	}
 }
 func (f *cliSuiteFixture) deps() seam.Deps {
-	return seam.Deps{Dir: f.root, EUID: 1, Exec: f.exec, Now: func() time.Time {
+	return seam.Deps{Dir: f.root, EUID: 1, Getenv: func(string) string { return "" }, Exec: f.exec, Now: func() time.Time {
 		return time.Date(2026, 10, 8, 9, 3, 12, 900000000, time.FixedZone("offset", -5*3600))
 	}, Cloud: func(context.Context, string, string) (cloud.Clients, error) {
 		f.cloudCalls++
@@ -252,6 +372,7 @@ func (f *cliSuiteFixture) assertNoCompile(t *testing.T) {
 	}
 }
 func (f *cliSuiteFixture) exec(_ context.Context, c seam.Cmd) (seam.Result, error) {
+	f.commands = append(f.commands, c)
 	switch c.Path {
 	case "git":
 		switch {
@@ -284,6 +405,16 @@ func (f *cliSuiteFixture) exec(_ context.Context, c seam.Cmd) (seam.Result, erro
 				f.write(filepath.Join(f.worktree, path), contents)
 			}
 			f.write(filepath.Join(f.worktree, "opsctl", "cmd", "opsctl", "main.go"), "package main\n")
+			if !f.omitTurns {
+				f.write(filepath.Join(f.worktree, "turns", "cmd", "turns", "main.go"), "package main\n")
+				f.write(filepath.Join(f.worktree, "turns", "go.mod"), "module fixture\n")
+				if f.shareFile {
+					f.write(filepath.Join(f.worktree, "turns", "share"), "not a directory")
+				} else if !f.omitShare {
+					f.write(filepath.Join(f.worktree, "turns", "share", "systemd", "turns.service"), "service from commit")
+					f.write(filepath.Join(f.worktree, "turns", "share", "systemd", "turns.timer"), "timer from commit")
+				}
+			}
 			return seam.Result{}, nil
 		case len(c.Args) == 4 && reflect.DeepEqual(c.Args[:3], []string{"worktree", "remove", "--force"}):
 			f.removals++
@@ -301,17 +432,22 @@ func (f *cliSuiteFixture) exec(_ context.Context, c seam.Cmd) (seam.Result, erro
 		app := filepath.Base(c.Dir)
 		f.compiled = append(f.compiled, app)
 		if app == f.failCompile {
-			return seam.Result{ExitCode: 1, Stderr: []byte("# github.com/ikigenba/ikigenba/dashboard/cmd/dashboard\ncmd/dashboard/main.go:41:2: undefined: render\n")}, nil
-		}
-		for i, arg := range c.Args {
-			if arg == "-o" && i+1 < len(c.Args) {
-				f.write(c.Args[i+1], "binary "+app)
-				if f.compilerOutputs == nil {
-					f.compilerOutputs = make(map[string]string)
-				}
-				f.compilerOutputs[app] = c.Args[i+1]
-				return seam.Result{}, nil
+			stderr := "# github.com/ikigenba/ikigenba/dashboard/cmd/dashboard\ncmd/dashboard/main.go:41:2: undefined: render\n"
+			if app == "opsctl" {
+				stderr = ""
 			}
+			if app == "turns" {
+				stderr = "cmd/turns/main.go:7:1: syntax error\n"
+			}
+			return seam.Result{ExitCode: 1, Stderr: []byte(stderr)}, nil
+		}
+		if output := suiteCompilerOutput(c.Args); output != "" {
+			f.write(output, "binary "+app)
+			if f.compilerOutputs == nil {
+				f.compilerOutputs = make(map[string]string)
+			}
+			f.compilerOutputs[app] = output
+			return seam.Result{}, nil
 		}
 		f.t.Fatalf("go lacks output: %q", c.Args)
 	case "tar":
@@ -320,8 +456,8 @@ func (f *cliSuiteFixture) exec(_ context.Context, c seam.Cmd) (seam.Result, erro
 				f.t.Fatalf("manifest calls for %s = %d, want one", app, f.manifestCalls[app])
 			}
 		}
-		if f.manifestCalls["opsctl"] != 0 {
-			f.t.Fatal("opsctl binary was executed")
+		if f.manifestCalls["opsctl"] != 0 || f.manifestCalls["turns"] != 0 {
+			f.t.Fatal("tool binary was executed")
 		}
 		f.tarCalls++
 		if f.tarFails {
@@ -338,11 +474,14 @@ func (f *cliSuiteFixture) exec(_ context.Context, c seam.Cmd) (seam.Result, erro
 		f.write(c.Args[1], "fake archive")
 		return seam.Result{}, nil
 	default:
+		if reflect.DeepEqual(c.Args, []string{"--version"}) {
+			return seam.Result{ExitCode: 1}, nil
+		}
 		if !reflect.DeepEqual(c.Args, []string{"manifest"}) {
 			f.t.Fatalf("unexpected binary: %#v", c)
 		}
 		app := filepath.Base(c.Path)
-		if app == "opsctl" || f.compilerOutputs[app] == "" || c.Path != f.compilerOutputs[app] {
+		if app == "opsctl" || app == "turns" || f.compilerOutputs[app] == "" || c.Path != f.compilerOutputs[app] {
 			f.t.Fatalf("manifest path = %q, want compiled app binary %q", c.Path, f.compilerOutputs[app])
 		}
 		if f.manifestCalls == nil {
@@ -364,4 +503,16 @@ func (f *cliSuiteFixture) exec(_ context.Context, c seam.Cmd) (seam.Result, erro
 		return seam.Result{Stdout: []byte("app = \"" + app + "\"\n")}, nil
 	}
 	return seam.Result{}, errors.New("unexpected process")
+}
+
+func suiteCompilerOutput(args []string) string {
+	for i, arg := range args {
+		if arg == "-o" && i+1 < len(args) {
+			return args[i+1]
+		}
+		if output, ok := strings.CutPrefix(arg, "-o="); ok {
+			return output
+		}
+	}
+	return ""
 }

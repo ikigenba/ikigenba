@@ -312,6 +312,9 @@ func (f *createFake) exec(_ context.Context, c seam.Cmd) (seam.Result, error) {
 				dir := c.Args[3]
 				mustWrite(f.t, filepath.Join(dir, "crm", "cmd", "crm", "main.go"), "package main\n")
 				mustWrite(f.t, filepath.Join(dir, "crm", "etc", "manifest.toml"), "app = \"crm\"\n")
+				if err := os.MkdirAll(filepath.Join(dir, "turns", "share"), 0750); err != nil {
+					f.t.Fatal(err)
+				}
 			}
 			return seam.Result{}, nil
 		}

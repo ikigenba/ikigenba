@@ -36,17 +36,16 @@ func executeResult(ctx context.Context, deps seam.Deps, label string, command se
 	return result, nil
 }
 
-func copyArchiveDirectory(appDir, archiveRoot, directory string) ([]string, error) {
+func copyArchiveDirectory(appDir, archiveRoot, directory string) error {
 	sourceRoot := filepath.Join(appDir, directory)
 	if _, err := os.Stat(sourceRoot); err != nil {
 		if os.IsNotExist(err) && directory != "etc" {
-			return nil, nil
+			return nil
 		}
-		return nil, err
+		return err
 	}
 
-	var members []string
-	err := filepath.WalkDir(sourceRoot, func(source string, entry os.DirEntry, walkErr error) error {
+	return filepath.WalkDir(sourceRoot, func(source string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -60,13 +59,8 @@ func copyArchiveDirectory(appDir, archiveRoot, directory string) ([]string, erro
 		if filepath.ToSlash(relative) == checkout.ManifestFile {
 			return nil
 		}
-		if err := copyArchiveFile(source, filepath.Join(archiveRoot, relative)); err != nil {
-			return err
-		}
-		members = append(members, filepath.ToSlash(relative))
-		return nil
+		return copyArchiveFile(source, filepath.Join(archiveRoot, relative))
 	})
-	return members, err
 }
 
 func copyArchiveFile(source, destination string) error {

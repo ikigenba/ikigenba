@@ -336,6 +336,7 @@ func fakeCreateBuild(t *testing.T, root string, c seam.Cmd) (seam.Result, bool, 
 		}
 		if c.Args[0] == "worktree" {
 			if c.Args[1] == "add" {
+				write(filepath.Join(c.Args[3], "turns", "share", "fixture"), "committed share")
 				if err := os.MkdirAll(c.Args[3], 0750); err != nil {
 					return seam.Result{}, true, err
 				}

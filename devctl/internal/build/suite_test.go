@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -105,6 +106,8 @@ func (f *suiteFixture) exec(ctx context.Context, c seam.Cmd) (seam.Result, error
 				for _, name := range f.apps {
 					f.app(dir, name, suiteManifest(name))
 				}
+				f.put(dir, "turns/share/systemd/turns.service", "committed service", 0o644)
+				f.put(dir, "turns/share/systemd/turns.timer", "committed timer", 0o744)
 				for p, m := range f.files {
 					f.put(dir, p, m.Bytes, os.FileMode(m.Mode))
 				}
@@ -132,12 +135,10 @@ func (f *suiteFixture) exec(ctx context.Context, c seam.Cmd) (seam.Result, error
 			}
 			return seam.Result{ExitCode: 7, Stderr: []byte("compiler failed\n")}, nil
 		}
-		for i, arg := range c.Args {
-			if arg == "-o" {
-				f.put(filepath.Dir(c.Args[i+1]), filepath.Base(c.Args[i+1]), "binary "+name, 0o600)
-				f.compiled[name] = c.Args[i+1]
-				return seam.Result{}, nil
-			}
+		if output := suiteCompilerOutput(c.Args); output != "" {
+			f.put(filepath.Dir(output), filepath.Base(output), "binary "+name, 0o600)
+			f.compiled[name] = output
+			return seam.Result{}, nil
 		}
 	}
 	if c.Path == "tar" {
@@ -195,13 +196,13 @@ func (f *suiteFixture) exec(ctx context.Context, c seam.Cmd) (seam.Result, error
 	}
 	name := filepath.Base(c.Path)
 	if reflect.DeepEqual(c.Args, []string{"manifest"}) {
-		if name == "opsctl" || f.compiled[name] == "" || c.Path != f.compiled[name] {
+		if name == "opsctl" || name == "turns" || f.compiled[name] == "" || c.Path != f.compiled[name] {
 			f.t.Fatalf("manifest did not run the compiled app binary: %#v; compiled outputs %#v", c, f.compiled)
 		}
 		if f.fail == "manifest "+name {
 			return seam.Result{ExitCode: 9, Stderr: []byte("manifest failed\n")}, nil
 		}
-		if f.fail == "stale" {
+		if f.fail == "stale" || f.fail == "stale "+name {
 			return seam.Result{Stdout: []byte("app = \"crm\"\n# stale\n")}, nil
 		}
 		return seam.Result{Stdout: []byte(suiteManifest(name))}, nil
@@ -245,7 +246,7 @@ func (f *suiteFixture) assertCleanup() {
 
 func TestSuiteArchiveIsolationAndMetadata(t *testing.T) {
 	// R-FN66-1TL1
-	// R-FUR4-9R61
+	// R-54VK-WRQC
 	// R-G683-IC4D
 	f := newSuite(t)
 	f.app(f.root, "extra", suiteManifest("extra"))
@@ -253,8 +254,13 @@ func TestSuiteArchiveIsolationAndMetadata(t *testing.T) {
 	f.put(f.root, "crm/etc/nginx.conf", "developer", 0o644)
 	f.put(f.root, "crm/share/icon.svg", "developer icon", 0o644)
 	f.put(f.root, "crm/etc/local.conf", "uncommitted", 0o644)
+	f.put(f.root, "turns/share/systemd/turns.service", "developer service", 0o644)
+	f.put(f.root, "turns/share/local", "uncommitted share", 0o644)
 	f.files = map[string]suiteMember{
 		"crm/etc/nginx.conf": {Bytes: "commit nginx", Mode: 0o644}, "crm/share/icon.svg": {Bytes: "commit icon", Mode: 0o644}, "crm/share/doc/a.md": {Bytes: "doc", Mode: 0o644}, "crm/libexec/helper": {Bytes: "helper", Mode: 0o740}, "crm/lib/x.so": {Bytes: "library", Mode: 0o640}, "crm/internal/x.go": {Bytes: "source", Mode: 0o644}, "crm/specs/s.md": {Bytes: "spec", Mode: 0o644}, "crm/go.mod": {Bytes: "module", Mode: 0o644}, "crm/AGENTS.md": {Bytes: "instructions", Mode: 0o644}, "opsctl/cmd/opsctl/main.go": {Bytes: "package main", Mode: 0o644}, "opsctl/etc/x.conf": {Bytes: "config", Mode: 0o644}, "opsctl/go.mod": {Bytes: "module", Mode: 0o644}}
+	f.files["turns/cmd/turns/main.go"] = suiteMember{Bytes: "package main", Mode: 0o644}
+	f.files["turns/go.mod"] = suiteMember{Bytes: "module fixture", Mode: 0o644}
+	f.files["turns/etc/x.conf"] = suiteMember{Bytes: "excluded config", Mode: 0o644}
 	out, err := f.run(context.Background(), "r1")
 	if err != nil {
 		t.Fatal(err)
@@ -274,7 +280,7 @@ func TestSuiteArchiveIsolationAndMetadata(t *testing.T) {
 	}
 	meta := regular["release.json"]
 	delete(regular, "release.json")
-	want := map[string]string{"crm/bin/crm": "binary crm", "crm/etc/manifest.toml": suiteManifest("crm"), "crm/etc/nginx.conf": "commit nginx", "crm/share/icon.svg": "commit icon", "crm/share/doc/a.md": "doc", "crm/libexec/helper": "helper", "crm/lib/x.so": "library", "opsctl/bin/opsctl": "binary opsctl"}
+	want := map[string]string{"crm/bin/crm": "binary crm", "crm/etc/manifest.toml": suiteManifest("crm"), "crm/etc/nginx.conf": "commit nginx", "crm/share/icon.svg": "commit icon", "crm/share/doc/a.md": "doc", "crm/libexec/helper": "helper", "crm/lib/x.so": "library", "opsctl/bin/opsctl": "binary opsctl", "turns/bin/turns": "binary turns", "turns/share/systemd/turns.service": "committed service", "turns/share/systemd/turns.timer": "committed timer"}
 	if !reflect.DeepEqual(regular, want) {
 		t.Fatalf("regular members %#v want %#v", regular, want)
 	}
@@ -292,12 +298,12 @@ func TestSuiteArchiveIsolationAndMetadata(t *testing.T) {
 			}
 		}
 	}
-	for _, p := range []string{"crm/bin/crm", "opsctl/bin/opsctl", "crm/libexec/helper"} {
+	for _, p := range []string{"crm/bin/crm", "opsctl/bin/opsctl", "turns/bin/turns", "turns/share/systemd/turns.timer", "crm/libexec/helper"} {
 		if f.members[suiteSHA+"/"+p].Mode&0o100 == 0 {
 			t.Fatalf("not owner executable %s", p)
 		}
 	}
-	for _, p := range []string{"crm/etc/nginx.conf", "crm/lib/x.so", "crm/etc/manifest.toml", "release.json"} {
+	for _, p := range []string{"crm/etc/nginx.conf", "crm/lib/x.so", "crm/etc/manifest.toml", "turns/share/systemd/turns.service", "release.json"} {
 		if f.members[suiteSHA+"/"+p].Mode&0o100 != 0 {
 			t.Fatalf("unexpected executable %s", p)
 		}
@@ -342,9 +348,38 @@ func TestSuiteCommitFormsHaveSameRelease(t *testing.T) {
 		previous = f.members
 	}
 }
+
+func TestSuiteCopiesWholeTurnsShare(t *testing.T) {
+	// R-54VK-WRQC
+	f := newSuite(t)
+	f.files["turns/share/nested/data/value"] = suiteMember{Bytes: "arbitrary committed bytes\x00", Mode: 0o640}
+	f.files["turns/share/helpers/run"] = suiteMember{Bytes: "executable committed bytes", Mode: 0o740}
+	f.mutate = func(dir string) {
+		if err := os.MkdirAll(filepath.Join(dir, "turns/share/empty"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink("systemd/turns.service", filepath.Join(dir, "turns/share/link")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := f.run(context.Background(), "r1"); err != nil {
+		t.Fatal(err)
+	}
+	for path, source := range f.files {
+		member, ok := f.members[suiteSHA+"/"+path]
+		if !ok || member.Bytes != source.Bytes || member.Mode&0o100 != source.Mode&0o100 {
+			t.Fatalf("share member %s: %#v, want %#v", path, member, source)
+		}
+	}
+	for _, excluded := range []string{"turns/share/link", "turns/share/empty"} {
+		if _, ok := f.members[suiteSHA+"/"+excluded]; ok {
+			t.Fatalf("unexpected member %s", excluded)
+		}
+	}
+}
 func TestSuiteCompileCommands(t *testing.T) {
-	// R-I1LH-BP5S
-	// R-R4I5-6YJQ
+	// R-52FS-588Y
+	// R-4V4D-ULSS
 	f := newSuite(t)
 	f.apps = []string{"auth", "dummy", "events", "mcp", "repos", "scripts", "sites", "telemetry"}
 	f.put(f.root, "go.work", "go 1.26\n", 0o644)
@@ -362,7 +397,7 @@ func TestSuiteCompileCommands(t *testing.T) {
 	for _, c := range f.commands {
 		for name, binary := range f.compiled {
 			if c.Path == binary {
-				if name == "opsctl" || !reflect.DeepEqual(c.Args, []string{"manifest"}) {
+				if name == "opsctl" || name == "turns" || !reflect.DeepEqual(c.Args, []string{"manifest"}) {
 					t.Fatalf("unexpected staged executable call %#v", c)
 				}
 				manifestCounts[name]++
@@ -374,26 +409,39 @@ func TestSuiteCompileCommands(t *testing.T) {
 			t.Fatalf("%s manifest calls = %d, want exactly one", name, manifestCounts[name])
 		}
 	}
-	names := append(append([]string{}, f.apps...), "opsctl")
+	names := append(append([]string{}, f.apps...), "opsctl", "turns")
 	if len(compiles) != len(names) {
 		t.Fatalf("compile count %d", len(compiles))
 	}
 	for i, c := range compiles {
-		if c.Dir != filepath.Join(f.worktrees[0], names[i]) || !reflect.DeepEqual(c.Env, []string{"GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=0", "GOWORK=off"}) || len(c.Args) != 5 || c.Args[0] != "build" || c.Args[1] != "-buildvcs=false" || c.Args[2] != "-o" || c.Args[4] != "./cmd/"+names[i] {
-			t.Fatalf("compile %#v", c)
+		env := slices.Clone(c.Env)
+		slices.Sort(env)
+		if c.Dir != filepath.Join(f.worktrees[0], names[i]) || !slices.Equal(env, []string{"CGO_ENABLED=0", "GOARCH=amd64", "GOOS=linux", "GOWORK=off"}) || len(c.Args) == 0 || c.Args[0] != "build" || !slices.Contains(c.Args, "-buildvcs=false") || !slices.Contains(c.Args, "./cmd/"+names[i]) || suiteCompilerOutput(c.Args) != f.compiled[names[i]] {
+			t.Fatalf("compile command %#v", c)
+		}
+		for _, arg := range c.Args {
+			if strings.HasPrefix(arg, "-ldflags") {
+				t.Fatalf("linker flags in compile command %#v", c)
+			}
 		}
 	}
 }
 
 func TestSuiteCleanupEveryOutcome(t *testing.T) {
-	// R-FLY9-O1UC
+	// R-4WCA-8DJH
 	// R-FWGW-G66T
-	// R-G1CH-Z95L
-	for _, failure := range []string{"", "port", "reserved", "sbin", "stale", "compile crm", "manifest crm", "compile opsctl"} {
+	// R-53NO-IZZN
+	for _, failure := range []string{"", "port", "reserved", "sbin", "stale", "compile crm", "manifest crm", "compile opsctl", "compile turns", "missing turns share"} {
 		t.Run(failure, func(t *testing.T) {
 			f := newSuite(t)
 			f.fail = failure
 			switch failure {
+			case "missing turns share":
+				f.mutate = func(dir string) {
+					if err := os.RemoveAll(filepath.Join(dir, "turns")); err != nil {
+						t.Fatal(err)
+					}
+				}
 			case "port":
 				f.mutate = func(dir string) { f.put(dir, "crm/etc/manifest.toml", suiteManifest("crm")+"port = 1234\n", 0o644) }
 			case "reserved":
@@ -418,7 +466,7 @@ func TestSuiteCleanupEveryOutcome(t *testing.T) {
 				if !errors.As(err, &manifest) || manifest.Error() != "crm: etc/manifest.toml: 'port' is not allowed; the host gives the app its socket" || f.count("go") != 0 {
 					t.Fatalf("manifest error %v commands %#v", err, f.commands)
 				}
-			case "reserved", "sbin":
+			case "reserved", "sbin", "missing turns share":
 				if f.count("go") != 0 {
 					t.Fatal("compiled refused app")
 				}
@@ -427,7 +475,7 @@ func TestSuiteCleanupEveryOutcome(t *testing.T) {
 				if !errors.As(err, &stale) || stale.App != "crm" {
 					t.Fatalf("error %v", err)
 				}
-			case "compile crm", "manifest crm", "compile opsctl":
+			case "compile crm", "manifest crm", "compile opsctl", "compile turns":
 				var process *build.ProcessError
 				if !errors.As(err, &process) {
 					t.Fatalf("error %v", err)
@@ -480,6 +528,79 @@ func TestSuiteCleanupEveryOutcome(t *testing.T) {
 	})
 }
 
+func TestSuitePreflightUsageErrors(t *testing.T) {
+	// R-4XK6-M5A6 R-4YS2-ZX0V R-517V-RGI9
+	for _, test := range []struct {
+		name string
+		want string
+	}{
+		{"reserved turns", "'turns' is not a usable app name"},
+		{"sbin and include", "crm: sbin/ is not allowed in a release"},
+		{"missing share", "turns/share/ is missing at the commit"},
+		{"turns is a file", "turns/share/ is missing at the commit"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newSuite(t)
+			switch test.name {
+			case "reserved turns":
+				f.apps = []string{"turns"}
+			case "sbin and include":
+				f.files["crm/sbin/tool"] = suiteMember{Bytes: "tool", Mode: 0o700}
+				f.files["crm/include/file"] = suiteMember{Bytes: "header", Mode: 0o600}
+			default:
+				f.mutate = func(dir string) {
+					if err := os.RemoveAll(filepath.Join(dir, "turns")); err != nil {
+						t.Fatal(err)
+					}
+					if test.name == "turns is a file" {
+						f.put(dir, "turns", "not a directory", 0o600)
+					}
+				}
+			}
+			out, err := f.run(context.Background(), "r1")
+			var usage *build.UsageError
+			if !errors.As(err, &usage) || usage.Message != test.want || usage.Help != "" || out != "" || f.count("go") != 0 {
+				t.Fatalf("stdout %q error %#v commands %#v", out, err, f.commands)
+			}
+		})
+	}
+}
+
+func TestSuiteManifestFailuresStopLaterCompiles(t *testing.T) {
+	// R-53NO-IZZN
+	for _, failure := range []string{"manifest dashboard", "stale dashboard"} {
+		t.Run(failure, func(t *testing.T) {
+			f := newSuite(t)
+			f.apps = []string{"auth", "dashboard", "events"}
+			f.fail = failure
+			out, err := f.run(context.Background(), "r1")
+			if out != "" || err == nil {
+				t.Fatalf("stdout %q error %v", out, err)
+			}
+			if failure == "manifest dashboard" {
+				var process *build.ProcessError
+				if !errors.As(err, &process) || process.Label != "dashboard manifest" || process.Status != 9 || process.Stderr != "manifest failed\n" {
+					t.Fatalf("error %#v", err)
+				}
+			} else {
+				var stale *build.StaleManifestError
+				if !errors.As(err, &stale) || stale.App != "dashboard" {
+					t.Fatalf("error %#v", err)
+				}
+			}
+			var names []string
+			for _, c := range f.commands {
+				if c.Path == "go" {
+					names = append(names, filepath.Base(c.Dir))
+				}
+			}
+			if !reflect.DeepEqual(names, []string{"auth", "dashboard"}) || f.count("tar") != 0 {
+				t.Fatalf("compiled %q tar calls %d", names, f.count("tar"))
+			}
+		})
+	}
+}
+
 func TestSuiteNoCommitOrResolveErrorStops(t *testing.T) {
 	// R-R5Q1-KQAF
 	// R-FS1R-KWJT
@@ -508,7 +629,7 @@ func TestSuiteNoCommitOrResolveErrorStops(t *testing.T) {
 }
 
 func TestSuiteAddErrorStopsAndCleansDist(t *testing.T) {
-	// R-FLY9-O1UC
+	// R-4WCA-8DJH
 	// R-FZMP-SU4T
 	f := newSuite(t)
 	f.fail = "add"
@@ -696,4 +817,16 @@ func TestSuitePublicAPI(t *testing.T) {
 	if !errors.As(err, &process) || process.Label != "build dashboard" {
 		t.Fatalf("error %v", err)
 	}
+}
+
+func suiteCompilerOutput(args []string) string {
+	for i, arg := range args {
+		if arg == "-o" && i+1 < len(args) {
+			return args[i+1]
+		}
+		if output, ok := strings.CutPrefix(arg, "-o="); ok {
+			return output
+		}
+	}
+	return ""
 }
