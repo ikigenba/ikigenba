@@ -26,7 +26,7 @@ func runStatus(ctx context.Context, _ []string, _ io.Reader, stdout, stderr io.W
 	if err != nil {
 		return diagnostic(stderr, "could not read the configuration", err.Error())
 	}
-	found := local.Read(p)
+	found := local.Read(p, time.Time{})
 	localCounts := make(map[session.Tool]statusTally)
 	remoteCounts := make(map[session.Tool]statusTally)
 	for _, s := range found.Sessions {
@@ -105,24 +105,31 @@ func statusPlural(n int, word string) string {
 	}
 	return word + "s"
 }
+
+const lastPushLayout = "2006-01-02T15:04:05Z"
+
 func statusLastPush(state string) string {
+	moment, valid := lastPush(state)
+	if !valid {
+		return "never"
+	}
+	return moment.Format(lastPushLayout)
+}
+
+func lastPush(state string) (time.Time, bool) {
 	root, err := os.OpenRoot(state)
 	if err != nil {
-		return "never"
+		return time.Time{}, false
 	}
 	defer func() { _ = root.Close() }()
 	data, err := root.ReadFile(paths.LastPushFile)
 	if err != nil {
-		return "never"
+		return time.Time{}, false
 	}
-	text := strings.TrimRight(string(data), " \t\r\n")
-	const layout = "2006-01-02T15:04:05Z"
-	if len(text) != len(layout) {
-		return "never"
+	text := strings.TrimSuffix(string(data), "\n")
+	moment, err := time.Parse(lastPushLayout, text)
+	if err != nil || moment.Format(lastPushLayout) != text {
+		return time.Time{}, false
 	}
-	moment, err := time.Parse(layout, text)
-	if err != nil || moment.Format(layout) != text {
-		return "never"
-	}
-	return text
+	return moment, true
 }

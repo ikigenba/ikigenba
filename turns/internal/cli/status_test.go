@@ -253,9 +253,9 @@ func TestStatusConfigurationAndNoSessions(t *testing.T) {
 	}
 }
 
-// R-05QK-7JDW R-06YG-LB4L
+// R-1GH5-LM8H R-1HP1-ZDZ6
 func TestStatusLastPush(t *testing.T) {
-	for _, text := range []string{"absent", "directory", "", "2026-11-01T14:05:00Z\n", "2026-11-01T14:05:00Z", "2026-11-01T14:05:00Z \t\r\n", " 2026-11-01T14:05:00Z", "2026-11-01 14:05:00Z", "2026-11-01T14:05:00.000Z", "2026-11-01T14:05:00+00:00", "2026-13-01T00:00:00Z", "2026-02-30T00:00:00Z"} {
+	for _, text := range []string{"absent", "directory", "", "2026-11-01T14:05:00Z\n", "2026-11-01T14:05:00Z", "2026-11-01T14:05:00Z\n\n", "2026-11-01T14:05:00Z\r\n", "2026-11-01T14:05:00Z \n", " 2026-11-01T14:05:00Z", "2026-11-01 14:05:00Z", "2026-11-01T14:05:00.000Z", "2026-11-01T14:05:00+00:00", "2026-13-01T00:00:00Z", "2026-02-30T00:00:00Z"} {
 		t.Run(strconvStatusName(text), func(t *testing.T) {
 			deps, _ := syntheticDeps(t)
 			p := statusPaths(t, deps)
@@ -268,7 +268,7 @@ func TestStatusLastPush(t *testing.T) {
 				writeFixture(t, path, text, 0600)
 			}
 			moment := "never"
-			if text == "2026-11-01T14:05:00Z\n" || text == "2026-11-01T14:05:00Z" || text == "2026-11-01T14:05:00Z \t\r\n" {
+			if text == "2026-11-01T14:05:00Z\n" || text == "2026-11-01T14:05:00Z" {
 				moment = "2026-11-01T14:05:00Z"
 			}
 			code, out, errText := statusRun(t, deps)
@@ -280,7 +280,7 @@ func TestStatusLastPush(t *testing.T) {
 }
 func strconvStatusName(s string) string { return fmt.Sprintf("%q", s) }
 
-// R-09E9-CULZ R-0FHR-9PBG R-0GPN-NH25 R-0HXK-18SU R-00UY-OGF4
+// R-1IWY-D5PV R-0FHR-9PBG R-0GPN-NH25 R-0HXK-18SU R-00UY-OGF4
 func TestStatusCountsAndHeldBoundary(t *testing.T) {
 	deps, p, f, _ := statusSetup(t)
 	statusSession(t, p, session.ToolClaude, "held", 3)
@@ -338,7 +338,7 @@ func TestStatusLatestPagingAndWire(t *testing.T) {
 			for i := 0; i < sizes[1]; i++ {
 				statusSession(t, p, session.ToolCodex, fmt.Sprintf("x%04d", i), 1)
 			}
-			source := local.Read(p).Sessions
+			source := local.Read(p, time.Time{}).Sessions
 			want := make([]session.Ref, len(source))
 			for i, s := range source {
 				want[i] = s.Ref

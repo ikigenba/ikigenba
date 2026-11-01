@@ -2,6 +2,8 @@
 package local
 
 import (
+	"time"
+
 	"github.com/ikigenba/ikigenba/turns/internal/claude"
 	"github.com/ikigenba/ikigenba/turns/internal/codex"
 	"github.com/ikigenba/ikigenba/turns/internal/dispatch"
@@ -17,15 +19,25 @@ type Found struct {
 }
 
 // Read gathers all three tools' sessions without changing their files.
-func Read(p paths.Paths) Found {
+func Read(p paths.Paths, since time.Time) Found {
 	jobs := dispatch.Jobs(p.Jobs)
 	dirs := make([]string, len(jobs))
 	for i, job := range jobs {
 		dirs[i] = job.Dir
 	}
-	claudeFound, mentions := claude.Read(p.Claude, dirs)
-	codexFound := codex.Read(p.Codex)
-	grokFound := grok.Read(p.Grok)
+	claudeFound, mentions := claude.Read(p.Claude, dirs, since)
+	mentioned := make(map[string]bool, len(mentions))
+	for _, mention := range mentions {
+		mentioned[mention.Path] = true
+	}
+	var ids []string
+	for _, job := range jobs {
+		if mentioned[job.Dir] {
+			ids = append(ids, job.SessionID)
+		}
+	}
+	codexFound := codex.Read(p.Codex, since, ids)
+	grokFound := grok.Read(p.Grok, since, ids)
 	sessions := claudeFound.Sessions
 	sessions = append(sessions, codexFound.Sessions...)
 	sessions = append(sessions, grokFound.Sessions...)

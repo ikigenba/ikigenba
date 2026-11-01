@@ -21,7 +21,7 @@ const maxCount int64 = 1_000_000_000_000
 type object map[string]json.RawMessage
 
 // Read returns sessions below root, without changing their sources.
-func Read(root string) session.Found {
+func Read(root string, since time.Time, ids []string) session.Found {
 	var found session.Found
 	base := filepath.Join(root, "sessions")
 	groups, err := os.ReadDir(base)
@@ -63,6 +63,9 @@ func Read(root string) session.Found {
 	sort.Strings(sources)
 	seen := make(map[string]bool)
 	for _, path := range sources {
+		if !since.IsZero() && !changed(path, since) && !namedSource(path, ids) {
+			continue
+		}
 		value, readErr := readSource(path, parents)
 		if readErr != nil {
 			found.Skipped++
@@ -73,6 +76,42 @@ func Read(root string) session.Found {
 	}
 	sort.Slice(found.Sessions, func(i, j int) bool { return found.Sessions[i].Ref.ID < found.Sessions[j].Ref.ID })
 	return found
+}
+
+func changed(path string, since time.Time) bool {
+	info, err := os.Stat(path)
+	if err != nil || !info.ModTime().Before(since) {
+		return true
+	}
+	info, err = os.Stat(filepath.Join(path, "updates.jsonl"))
+	if errors.Is(err, os.ErrNotExist) {
+		return false
+	}
+	return err != nil || !info.ModTime().Before(since)
+}
+
+func namedSource(path string, ids []string) bool {
+	if len(ids) == 0 {
+		return false
+	}
+	data, err := os.ReadFile(filepath.Clean(filepath.Join(path, "summary.json")))
+	if err != nil {
+		return false
+	}
+	var summary object
+	if json.Unmarshal(data, &summary) != nil || summary == nil {
+		return false
+	}
+	id := text(nested(summary["info"])["id"])
+	if id == "" {
+		id = filepath.Base(path)
+	}
+	for _, requested := range ids {
+		if requested == id {
+			return true
+		}
+	}
+	return false
 }
 
 func readSource(path string, parents map[string]string) (session.Session, error) {

@@ -53,7 +53,7 @@ func readLines(t *testing.T, lines ...any) session.Session {
 	t.Helper()
 	root := t.TempDir()
 	write(t, root, "projects/p/example.jsonl", encoded(t, lines...))
-	found, _ := claude.Read(root, nil)
+	found, _ := claude.Read(root, nil, time.Time{})
 	if found.Skipped != 0 || len(found.Sessions) != 1 {
 		t.Fatalf("found = %+v", found)
 	}
@@ -74,12 +74,12 @@ func at(t *testing.T, stamp string) time.Time {
 	return v.UTC().Truncate(time.Millisecond)
 }
 
-// R-VSA4-JDQJ R-VTI0-X5H8 R-VUPX-AX7X R-VVXT-OOYM R-VX5Q-2GPB
+// R-MZ1F-9ROK R-VTI0-X5H8 R-VUPX-AX7X R-VVXT-OOYM R-VX5Q-2GPB
 // R-VYDM-G8G0 R-WJ3W-YC1T R-ESJC-G4LS R-ETR8-TWCH R-EUZ5-7O36
 // R-FGXC-3JFO R-ERBG-2CV3 R-EOVN-ATDP
 func TestSources(t *testing.T) {
 	reader := struct {
-		Read func(string, []string) (session.Found, []session.Mention)
+		Read func(string, []string, time.Time) (session.Found, []session.Mention)
 	}{Read: claude.Read}
 	root := t.TempDir()
 	top := line("user", instant, "hello")
@@ -97,7 +97,7 @@ func TestSources(t *testing.T) {
 		write(t, root, path, "not JSON\n")
 	}
 	write(t, root, "projects/p/absent/subagents/agent-a.meta.json", "broken")
-	found, _ := reader.Read(root, nil)
+	found, _ := reader.Read(root, nil, time.Time{})
 	ids := []string{"absent/agent-a", "ssh-alpha", "zeta", "zeta/agent-b"}
 	if found.Skipped != 0 || len(found.Sessions) != len(ids) {
 		t.Fatalf("found: %+v", found)
@@ -129,7 +129,7 @@ func TestDuplicatePreferenceAndMentions(t *testing.T) {
 	write(t, root, "projects/b/same.jsonl", encoded(t, tool))
 	preferred["cwd"] = "/lexical"
 	write(t, root, "projects/a/same.jsonl", encoded(t, preferred))
-	found, mentions := claude.Read(root, []string{job})
+	found, mentions := claude.Read(root, []string{job}, time.Time{})
 	if found.Skipped != 0 || len(found.Sessions) != 2 || len(mentions) != 0 {
 		t.Fatalf("found=%+v mentions=%+v", found, mentions)
 	}
@@ -183,7 +183,7 @@ func TestLineClassification(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
 			write(t, root, "projects/p/session.jsonl", encoded(t, tc.line))
-			found, _ := claude.Read(root, nil)
+			found, _ := claude.Read(root, nil, time.Time{})
 			if found.Skipped != 0 {
 				t.Fatalf("skipped: %+v", found)
 			}
@@ -246,7 +246,7 @@ func TestDirectoryAndEntrypoint(t *testing.T) {
 	}
 }
 
-// R-WMRM-3N9W R-WZ0R-I6AR R-WP7E-V6RA R-WQFB-8YHZ
+// R-WQFB-8YHZ
 func TestFirstCommand(t *testing.T) {
 	valid := func(name, args string) string {
 		return "<command-name>" + name + "</command-name><command-args>" + args + "</command-args>"
@@ -262,7 +262,7 @@ func TestFirstCommand(t *testing.T) {
 	tool["origin"] = map[string]any{"kind": "peer"}
 	lines = append(lines, meta, tool, line("system", instant, valid("system", "ignored")), line("user", "broken", valid("bad-time", "ignored")), line("user", instant, valid("/plan", "  a <b>\n c ")), line("user", instant, valid("later", "ignored")))
 	s := readLines(t, lines...)
-	if s.Command == nil || *s.Command != (session.Command{Name: "/plan", Argument: "  a <b>\n c "}) {
+	if s.Command == nil || *s.Command != (session.Command{Name: "/plan", Argument: "  a <b>"}) {
 		t.Fatalf("command: %+v", s.Command)
 	}
 	s = readLines(t, line("user", instant, "<command-name>plain</command-name> <command-args>unfinished"))
@@ -276,7 +276,7 @@ func TestFirstCommand(t *testing.T) {
 			path = "projects/p/parent/subagents/agent-a.jsonl"
 		}
 		write(t, root, path, encoded(t, line("user", instant, valid("clear", "")), line("user", instant, "ordinary")))
-		f, _ := claude.Read(root, nil)
+		f, _ := claude.Read(root, nil, time.Time{})
 		if len(f.Sessions) != 1 || f.Sessions[0].Command != nil {
 			t.Fatalf("session: %+v", f)
 		}
@@ -303,7 +303,7 @@ func TestMomentsOrderAndMerge(t *testing.T) {
 	missing := line("user", instant, "hi")
 	delete(missing, "timestamp")
 	write(t, root, "projects/p/empty.jsonl", encoded(t, missing, line("user", "bad", "x"), line("user", "1969-12-31T23:59:59Z", "x")))
-	f, _ := claude.Read(root, nil)
+	f, _ := claude.Read(root, nil, time.Time{})
 	if len(f.Sessions) != 0 || f.Skipped != 0 {
 		t.Fatalf("bad moments: %+v", f)
 	}
@@ -323,7 +323,7 @@ func TestInvalidCountsSkipWholeSource(t *testing.T) {
 				tool["origin"] = map[string]any{"kind": "peer"}
 				write(t, root, "projects/p/bad.jsonl", encoded(t, tool, assistant("one", instant, "m", usage), assistant("two", "2025-04-01T10:00:00Z", "m", usage)))
 				write(t, root, "projects/p/good.jsonl", encoded(t, line("user", instant, "ok")))
-				f, m := claude.Read(root, []string{"/jobs/x"})
+				f, m := claude.Read(root, []string{"/jobs/x"}, time.Time{})
 				if f.Skipped != 1 || len(f.Sessions) != 1 || f.Sessions[0].Ref.ID != "good" || len(m) != 0 {
 					t.Fatalf("found=%+v mentions=%+v", f, m)
 				}
@@ -333,14 +333,14 @@ func TestInvalidCountsSkipWholeSource(t *testing.T) {
 	for _, field := range []string{"input_tokens", "cache_read_input_tokens", "output_tokens", "thinking_tokens"} {
 		root := t.TempDir()
 		write(t, root, "projects/p/sum.jsonl", encoded(t, assistant("one", instant, "m", map[string]any{field: 1000000000000}), assistant("two", instant, "m", map[string]any{field: 1})))
-		f, _ := claude.Read(root, nil)
+		f, _ := claude.Read(root, nil, time.Time{})
 		if f.Skipped != 1 || len(f.Sessions) != 0 {
 			t.Fatalf("merge %s: %+v", field, f)
 		}
 	}
 	root := t.TempDir()
 	write(t, root, "projects/p/sum.jsonl", encoded(t, assistant("one", instant, "m", map[string]any{"input_tokens": 1000000000000, "cache_creation_input_tokens": 1})))
-	f, _ := claude.Read(root, nil)
+	f, _ := claude.Read(root, nil, time.Time{})
 	if f.Skipped != 1 || len(f.Sessions) != 0 {
 		t.Fatalf("input sum: %+v", f)
 	}
@@ -358,12 +358,12 @@ func TestJSONLines(t *testing.T) {
 		t.Run(bad, func(t *testing.T) {
 			root := t.TempDir()
 			write(t, root, "projects/p/broken.jsonl", good+bad+"\n")
-			f, _ := claude.Read(root, nil)
+			f, _ := claude.Read(root, nil, time.Time{})
 			if f.Skipped != 1 || len(f.Sessions) != 0 {
 				t.Fatalf("complete line: %+v", f)
 			}
 			write(t, root, "projects/p/broken.jsonl", good+bad)
-			f, _ = claude.Read(root, nil)
+			f, _ = claude.Read(root, nil, time.Time{})
 			if f.Skipped != 0 || len(f.Sessions) != 1 {
 				t.Fatalf("unterminated line: %+v", f)
 			}
@@ -374,7 +374,7 @@ func TestJSONLines(t *testing.T) {
 	write(t, root, "projects/p/empty.jsonl", "")
 	write(t, root, "projects/p/bookkeeping.jsonl", "{}\n")
 	write(t, root, "projects/p/incomplete.jsonl", strings.TrimSuffix(good, "\n"))
-	f, _ := claude.Read(root, nil)
+	f, _ := claude.Read(root, nil, time.Time{})
 	if f.Skipped != 0 || len(f.Sessions) != 1 {
 		t.Fatalf("blanks: %+v", f)
 	}
@@ -388,7 +388,7 @@ func TestMissingIdentityOrDirectory(t *testing.T) {
 			l := line("user", instant, "hi")
 			l["cwd"] = tc.cwd
 			write(t, root, tc.path, encoded(t, l))
-			f, _ := claude.Read(root, nil)
+			f, _ := claude.Read(root, nil, time.Time{})
 			if f.Skipped != 1 || len(f.Sessions) != 0 {
 				t.Fatalf("found: %+v", f)
 			}
@@ -408,7 +408,7 @@ func TestUnreadableFile(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	f, _ := claude.Read(root, nil)
+	f, _ := claude.Read(root, nil, time.Time{})
 	if f.Skipped != 1 || len(f.Sessions) != 0 {
 		t.Fatalf("unreadable: %+v", f)
 	}
@@ -419,7 +419,7 @@ func TestReadOnlyAndMissingDirectories(t *testing.T) {
 	root := t.TempDir()
 	missing := filepath.Join(root, "missing")
 	for _, path := range []string{missing, root} {
-		f, m := claude.Read(path, []string{filepath.Join(root, "jobs", "absent")})
+		f, m := claude.Read(path, []string{filepath.Join(root, "jobs", "absent")}, time.Time{})
 		if len(f.Sessions) != 0 || f.Skipped != 0 || len(m) != 0 {
 			t.Fatalf("missing: %+v %+v", f, m)
 		}
@@ -469,7 +469,7 @@ func TestReadOnlyAndMissingDirectories(t *testing.T) {
 		return result
 	}
 	before := snapshot()
-	claude.Read(root, []string{job})
+	claude.Read(root, []string{job}, time.Time{})
 	after := snapshot()
 	if !reflect.DeepEqual(before, after) {
 		t.Fatal("reader changed tree")
@@ -492,7 +492,7 @@ func TestMentions(t *testing.T) {
 		tool(instant, []any{map[string]any{"text": job + "2 then " + job + "/last.md"}, map[string]any{"content": other}}),
 		tool("2025-04-01T08:00:00Z", []any{map[string]any{"content": []any{map[string]any{"text": "~/.local/state/dispatch/jobs/x/last.md"}}}})))
 	write(t, root, "projects/p/a.jsonl", encoded(t, tool(instant, job)))
-	found, mentions := claude.Read(root, []string{other, job, job, ""})
+	found, mentions := claude.Read(root, []string{other, job, job, ""}, time.Time{})
 	expected := []session.Mention{
 		{Path: job, By: session.Ref{Tool: session.ToolClaude, ID: "a"}, Moment: at(t, instant)},
 		{Path: job, By: session.Ref{Tool: session.ToolClaude, ID: "b"}, Moment: at(t, "2025-04-01T08:00:00Z")},
@@ -503,7 +503,7 @@ func TestMentions(t *testing.T) {
 		t.Fatalf("mentions: %+v", mentions)
 	}
 	for _, jobs := range [][]string{nil, {}} {
-		f, m := claude.Read(root, jobs)
+		f, m := claude.Read(root, jobs, time.Time{})
 		if !reflect.DeepEqual(f, found) || len(m) != 0 {
 			t.Fatalf("jobs=%v found=%+v mentions=%+v", jobs, f, m)
 		}
@@ -516,7 +516,7 @@ func TestMentions(t *testing.T) {
 	for i, l := range exclusions {
 		isolated := t.TempDir()
 		write(t, isolated, "projects/p/excluded.jsonl", encoded(t, line("user", instant, "baseline"), l))
-		_, m := claude.Read(isolated, []string{job})
+		_, m := claude.Read(isolated, []string{job}, time.Time{})
 		if len(m) != 0 {
 			t.Fatalf("exclusion %d: %+v", i, m)
 		}
@@ -524,7 +524,7 @@ func TestMentions(t *testing.T) {
 	for _, text := range []string{job, job + "/", job + "/last.md", "(" + job + ")", job + "2 " + job + "/last.md"} {
 		isolated := t.TempDir()
 		write(t, isolated, "projects/p/included.jsonl", encoded(t, tool(instant, text)))
-		_, m := claude.Read(isolated, []string{job})
+		_, m := claude.Read(isolated, []string{job}, time.Time{})
 		if len(m) != 1 {
 			t.Fatalf("text %q: %+v", text, m)
 		}

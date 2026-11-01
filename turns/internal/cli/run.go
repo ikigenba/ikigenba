@@ -80,15 +80,16 @@ Options:
   --token <token>   take the token from the argument instead of stdin
   -h, --help        print this help
 `
-const pushUsage = `Usage: turns push [--dry-run]
+const pushUsage = `Usage: turns push [--dry-run] [--all]
 
 Read this home's Claude Code, Codex CLI and Grok CLI session files, ask the
 space which turns it already holds, and push the turns it lacks. Session
 files are never changed, and no text leaves the machine except a first
-command's name and argument.
+command's name and the first line of its argument.
 
 Options:
   --dry-run    report what would be pushed and push nothing
+  --all        read every session file, not just changed ones
   -h, --help   print this help
 `
 const installUsage = `Usage: turns install
@@ -162,7 +163,7 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		if command == "configure" && strings.HasPrefix(arg, "--token=") {
 			continue
 		}
-		if command == "push" && arg == "--dry-run" {
+		if command == "push" && (arg == "--dry-run" || arg == "--all") {
 			continue
 		}
 		if strings.HasPrefix(arg, "-") {

@@ -2,6 +2,7 @@
 package codex
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -27,7 +28,7 @@ var momentForm = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{
 type object map[string]json.RawMessage
 
 // Read reads the live and archived rollout sources below root without changing them.
-func Read(root string) session.Found {
+func Read(root string, since time.Time, ids []string) session.Found {
 	var result session.Found
 	seen := make(map[string]bool)
 	for _, name := range []string{"sessions", "archived_sessions"} {
@@ -52,6 +53,12 @@ func Read(root string) session.Found {
 		})
 		sort.Strings(paths)
 		for _, path := range paths {
+			if !since.IsZero() {
+				info, err := os.Stat(path)
+				if err == nil && info.ModTime().Before(since) && !namedSource(path, ids) {
+					continue
+				}
+			}
 			value, err := readSource(path)
 			if err != nil {
 				result.Skipped++
@@ -63,6 +70,55 @@ func Read(root string) session.Found {
 	}
 	sort.Slice(result.Sessions, func(i, j int) bool { return result.Sessions[i].Ref.ID < result.Sessions[j].Ref.ID })
 	return result
+}
+
+// namedSource learns only the first metadata id, so later malformed lines do not
+// hide an explicitly requested session. Unread sources never produce skips.
+func namedSource(path string, ids []string) bool {
+	if len(ids) == 0 {
+		return false
+	}
+	file, err := os.Open(filepath.Clean(path))
+	if err != nil {
+		return false
+	}
+	defer func() { _ = file.Close() }()
+	var input io.Reader = file
+	if strings.HasSuffix(path, ".zst") {
+		decoder, decodeErr := zstd.NewReader(file)
+		if decodeErr != nil {
+			return false
+		}
+		defer decoder.Close()
+		input = decoder
+	}
+	reader := bufio.NewReader(input)
+	for {
+		line, readErr := reader.ReadBytes('\n')
+		if readErr != nil {
+			return false
+		}
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		var record object
+		if json.Unmarshal(line, &record) != nil || record == nil {
+			return false
+		}
+		if text(record["type"]) != "session_meta" {
+			continue
+		}
+		id := text(nested(record["payload"])["id"])
+		if id == "" {
+			return false
+		}
+		for _, requested := range ids {
+			if requested == id {
+				return true
+			}
+		}
+		return false
+	}
 }
 
 func readSource(path string) (session.Session, error) {

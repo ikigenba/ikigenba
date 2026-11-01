@@ -231,30 +231,41 @@ func pushZero(dry bool) string {
 	return fmt.Sprintf("claude: 0 sessions, 0 turns %s\ncodex: 0 sessions, 0 turns %s\ngrok: 0 sessions, 0 turns %s\n", suffix, suffix, suffix)
 }
 
-// R-ODBB-EQ22 R-OEJ7-SHSR R-OGZ0-K1A5
+// R-5LGE-2DMN R-5MOA-G5DC R-5P43-7OUQ
 func TestPushGrammar(t *testing.T) {
-	for _, flag := range []string{"--help", "-h"} {
+	for _, item := range []struct {
+		flag       string
+		configured bool
+	}{{"--help", false}, {"-h", false}, {"--help", true}, {"-h", true}} {
 		deps, _ := syntheticDeps(t)
-		code, out, errText := pushRun(t, deps, flag)
-		want := `Usage: turns push [--dry-run]
+		if item.configured {
+			deps, _, _ = pushSetup(t)
+		}
+		code, out, errText := pushRun(t, deps, item.flag)
+		want := `Usage: turns push [--dry-run] [--all]
 
 Read this home's Claude Code, Codex CLI and Grok CLI session files, ask the
 space which turns it already holds, and push the turns it lacks. Session
 files are never changed, and no text leaves the machine except a first
-command's name and argument.
+command's name and the first line of its argument.
 
 Options:
   --dry-run    report what would be pushed and push nothing
+  --all        read every session file, not just changed ones
   -h, --help   print this help
 `
 		if code != ExitOK || out != want || errText != "" {
 			t.Fatalf("%d %q %q", code, out, errText)
 		}
 	}
-	deps, _ := syntheticDeps(t)
-	code, out, errText := pushRun(t, deps, "--dry-run=yes")
-	if code != ExitUsage || out != "" || errText != "turns: unknown option '--dry-run=yes'\n\nsee 'turns push --help' for usage\n" {
-		t.Fatalf("%d %q %q", code, out, errText)
+	for _, args := range [][]string{{"--dry-run=yes"}, {"--all=yes"}, {"--dry-run", "--allx"}} {
+		deps, _ := syntheticDeps(t)
+		code, out, errText := pushRun(t, deps, args...)
+		arg := args[len(args)-1]
+		want := "turns: unknown option '" + arg + "'\n\nsee 'turns push --help' for usage\n"
+		if code != ExitUsage || out != "" || errText != want {
+			t.Fatalf("%d %q %q", code, out, errText)
+		}
 	}
 }
 
@@ -360,7 +371,7 @@ func pushTree(t *testing.T, root string) map[string]string {
 	return result
 }
 
-// R-3FA4-1BJY R-E5Y3-RZLL R-37YP-QP3S R-396M-4GUH R-PNNH-Y08G R-3AEI-I8L6
+// R-37YP-QP3S R-396M-4GUH R-PNNH-Y08G R-3AEI-I8L6
 func TestPushLocalOutcomes(t *testing.T) {
 	for _, kind := range []string{"empty", "empty-replace", "empty-dry", "last-directory", "state-file", "hostname-error", "hostname-control", "hostname-empty", "hostname-dot"} {
 		t.Run(kind, func(t *testing.T) {
@@ -411,8 +422,8 @@ func TestPushLocalOutcomes(t *testing.T) {
 				wantErr = fmt.Sprintf("turns: could not lock '%s'\n\n%s\n", filepath.Join(p.State, paths.LockFile), err)
 			}
 			if kind == "last-directory" {
-				err := os.WriteFile(filepath.Join(p.State, paths.LastPushFile), []byte("unused"), 0600)
-				wantErr = fmt.Sprintf("turns: could not write '%s'\n\n%s\n", filepath.Join(p.State, paths.LastPushFile), err)
+				assertPushWriteDiagnostic(t, errText, filepath.Join(p.State, paths.LastPushFile))
+				wantErr = errText
 			}
 			if code != wantCode || out != wantOut || errText != wantErr || len(f.requests) != 0 {
 				t.Fatalf("%d %q %q requests=%d, want %d %q %q", code, out, errText, len(f.requests), wantCode, wantOut, wantErr)
@@ -457,15 +468,19 @@ func TestPushStateFailurePathsRenderControls(t *testing.T) {
 				if err := os.MkdirAll(path, 0700); err != nil {
 					t.Fatal(err)
 				}
-				failure = os.WriteFile(path, []byte("unused"), 0600)
 				verb = "write"
 				wantOut = pushZero(false)
 			}
-			if failure == nil {
+			if failure == nil && kind == "lock" {
 				t.Fatal("fixture did not produce the expected filesystem error")
 			}
-			wantErr := "turns: could not " + verb + " '" + strings.ReplaceAll(path, "\n", "\\n") + "'\n\n" + strings.ReplaceAll(failure.Error(), "\n", "\\n") + "\n"
 			code, out, errText := pushRun(t, deps)
+			wantErr := errText
+			if kind == "last-push" {
+				assertPushWriteDiagnostic(t, errText, path)
+			} else {
+				wantErr = "turns: could not " + verb + " '" + strings.ReplaceAll(path, "\n", "\\n") + "'\n\n" + strings.ReplaceAll(failure.Error(), "\n", "\\n") + "\n"
+			}
 			if code != ExitFailed || out != wantOut || errText != wantErr || len(fake.requests) != 0 {
 				t.Fatalf("code=%d stdout=%q stderr=%q requests=%d; want stdout=%q stderr=%q", code, out, errText, len(fake.requests), wantOut, wantErr)
 			}
@@ -538,7 +553,7 @@ func TestPushLatestPaging(t *testing.T) {
 			if code != ExitOK {
 				t.Fatal(code)
 			}
-			expected := local.Read(p).Sessions
+			expected := local.Read(p, time.Time{}).Sessions
 			var refs []session.Ref
 			sawPush := false
 			for i, req := range f.requests {
@@ -568,7 +583,7 @@ func TestPushLatestPaging(t *testing.T) {
 	}
 }
 
-// R-9KDV-B4TD R-PJZS-SP0D R-E4Q7-E7UW R-OFR4-69JG R-M2SD-11Y6
+// R-9KDV-B4TD R-PJZS-SP0D R-E4Q7-E7UW R-M2SD-11Y6
 func TestPushPipeline(t *testing.T) {
 	for _, host := range []string{"pat-laptop.example.com", "pat-laptop"} {
 		for _, mode := range []string{"new", "held", "dry", "dry-repeat"} {
@@ -587,7 +602,7 @@ func TestPushPipeline(t *testing.T) {
 				if removeErr := os.Remove(aPath); removeErr != nil {
 					t.Fatal(removeErr)
 				}
-				source := local.Read(p).Sessions
+				source := local.Read(p, time.Time{}).Sessions
 				f.latest = map[session.Ref]time.Time{}
 				held := []space.Held{}
 				for _, s := range source {
@@ -822,7 +837,7 @@ func TestPushLatestFailures(t *testing.T) {
 	})
 }
 
-// R-3GI0-F3AN R-Y7TK-KUOP
+// R-3GI0-F3AN R-5YVA-9USA
 func TestPushPartialRetryAndStateIndependence(t *testing.T) {
 	deps, p, f := pushSetup(t)
 	pushClaude(t, p, "a", 2500)
@@ -842,8 +857,7 @@ func TestPushPartialRetryAndStateIndependence(t *testing.T) {
 	f.requests = nil
 	f.bodies = nil
 	f.sessions = nil
-	// A prior state file has no bearing on which turns the space asks for.
-	pushWrite(t, filepath.Join(p.State, paths.LastPushFile), "prior-run\n")
+	// The failed run left last-push absent, so retry the same local selection.
 	held := make(map[session.Ref]time.Time)
 	for ref, l := range f.latest {
 		held[ref] = l
@@ -856,7 +870,7 @@ func TestPushPartialRetryAndStateIndependence(t *testing.T) {
 		t.Fatal("retry did not leave every turn exactly once in the space")
 	}
 	retryBodies := f.bodies
-	// Restore identical server answers and compare against a run without State.
+	// Restore identical server answers and compare against only the same last-push.
 	absent := filepath.Join(filepath.Dir(p.State), "fresh-state")
 	getenv := deps.Getenv
 	deps.Getenv = func(key string) string {
@@ -875,21 +889,6 @@ func TestPushPartialRetryAndStateIndependence(t *testing.T) {
 	}
 	if got := f.latest[session.Ref{Tool: session.ToolClaude, ID: "a"}]; !got.Equal(time.Unix(2599, 0)) {
 		t.Fatalf("space missing final turn: %v", got)
-	}
-}
-
-// R-OFR4-69JG
-func TestPushRepeatedDryRunIsIdentical(t *testing.T) {
-	deps, p, f := pushSetup(t)
-	pushClaude(t, p, "a", 3)
-	code, out, errText := pushRun(t, deps, "--dry-run")
-	first := append([][]byte(nil), f.bodies...)
-	f.requests = nil
-	f.bodies = nil
-	f.sessions = nil
-	code2, out2, errText2 := pushRun(t, deps, "--dry-run", "--dry-run")
-	if code != code2 || out != out2 || errText != errText2 || !reflect.DeepEqual(first, f.bodies) {
-		t.Fatal("repeated dry-run changed behavior")
 	}
 }
 

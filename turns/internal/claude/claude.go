@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ikigenba/ikigenba/turns/internal/session"
 )
@@ -143,14 +144,33 @@ func between(text, start, end string) (string, bool) {
 	return v, true
 }
 func command(content string) *session.Command {
-	name, ok := between(content, "<command-name>", "</command-name>")
-	trimmed := strings.TrimPrefix(name, "/")
-	if !ok || trimmed == "" || trimmed == "clear" || trimmed == "exit" {
-		return nil
+	for {
+		_, after, ok := strings.Cut(content, "<command-name>")
+		if !ok {
+			return nil
+		}
+		name, rest, ok := strings.Cut(after, "</command-name>")
+		if !ok {
+			return nil
+		}
+		content = rest
+		trimmed := strings.TrimPrefix(name, "/")
+		if trimmed == "" || trimmed == "clear" || trimmed == "exit" {
+			continue
+		}
+		arg, _ := between(rest, "<command-args>", "</command-args>")
+		arg, _, _ = strings.Cut(arg, "\n")
+		if len(arg) > 256 {
+			end := 256
+			for end > 0 && !utf8.RuneStart(arg[end]) {
+				end--
+			}
+			arg = arg[:end]
+		}
+		return &session.Command{Name: name, Argument: arg}
 	}
-	arg, _ := between(content, "<command-args>", "</command-args>")
-	return &session.Command{Name: name, Argument: arg}
 }
+
 func texts(content json.RawMessage) []string {
 	var out []string
 	var text string
@@ -397,12 +417,18 @@ func read(src source, jobs *matcher) (session.Session, []session.Mention, bool) 
 }
 
 // Read returns sessions and dispatch-directory mentions without changing their sources.
-func Read(root string, jobs []string) (session.Found, []session.Mention) {
+func Read(root string, jobs []string, since time.Time) (session.Found, []session.Mention) {
 	var found session.Found
 	var mentions []session.Mention
 	seen := make(map[string]bool)
 	match := newMatcher(jobs)
 	for _, src := range sources(root) {
+		if !since.IsZero() {
+			info, err := os.Stat(src.path)
+			if err == nil && info.ModTime().Before(since) {
+				continue
+			}
+		}
 		s, m, ok := read(src, match)
 		if !ok {
 			found.Skipped++

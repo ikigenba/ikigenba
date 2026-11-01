@@ -38,6 +38,7 @@ func runPush(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.
 		}
 		return diagnosticCode(stderr, "not configured", hint, ExitNotConfigured)
 	}
+	started := deps.Now()
 	if !dry {
 		lockPath := filepath.Join(p.State, paths.LockFile)
 		lock, lockErr := pushLock(p.State)
@@ -54,7 +55,11 @@ func runPush(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.
 	if host == "" {
 		return diagnostic(stderr, "could not read the host name", "")
 	}
-	found := local.Read(p)
+	since := time.Time{}
+	if !slices.Contains(args, "--all") {
+		since, _ = lastPush(p.State)
+	}
+	found := local.Read(p, since)
 	client := space.New(cfg.Space, cfg.Token, deps.HTTP)
 	var held []space.Held
 	for start := 0; start < len(found.Sessions); start += space.MaxLatest {
@@ -89,7 +94,7 @@ func runPush(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.
 	}
 	pushReport(stdout, batches, found.Skipped, false)
 	lastPath := filepath.Join(p.State, paths.LastPushFile)
-	if err = os.WriteFile(lastPath, []byte(deps.Now().UTC().Format(time.RFC3339)+"\n"), 0600); err != nil {
+	if err = replaceFile(lastPath, []byte(started.UTC().Format(lastPushLayout)+"\n"), 0600); err != nil {
 		return diagnostic(stderr, fmt.Sprintf("could not write '%s'", lastPath), err.Error())
 	}
 	return ExitOK

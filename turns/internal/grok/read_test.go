@@ -48,7 +48,7 @@ func person(moment int64) string {
 
 func one(t *testing.T, root string) session.Session {
 	t.Helper()
-	found := grok.Read(root)
+	found := grok.Read(root, time.Time{}, nil)
 	if found.Skipped != 0 || len(found.Sessions) != 1 {
 		t.Fatalf("Read = %#v, want one session and no skips", found)
 	}
@@ -67,7 +67,7 @@ func chmod(t *testing.T, path string, mode os.FileMode, restore os.FileMode) {
 	})
 }
 
-// R-SMKS-IV4W R-SNSO-WMVL R-SP0L-AEMA R-EOVN-ATDP R-ERBG-2CV3
+// R-9MAQ-3ONO R-SNSO-WMVL R-SP0L-AEMA R-EOVN-ATDP R-ERBG-2CV3
 // R-ESJC-G4LS R-F2AJ-IAJC R-FKL1-8UNR
 func TestReadSessionDepthAndOnlyNamedFiles(t *testing.T) {
 	root := t.TempDir()
@@ -80,9 +80,9 @@ func TestReadSessionDepthAndOnlyNamedFiles(t *testing.T) {
 		write(t, filepath.Join(path, name), "malformed and content that must not be retained\n")
 	}
 	reader := struct {
-		Read func(string) session.Found
+		Read func(string, time.Time, []string) session.Found
 	}{Read: grok.Read}
-	found := reader.Read(root)
+	found := reader.Read(root, time.Time{}, nil)
 	if found.Skipped != 0 || len(found.Sessions) != 1 {
 		t.Fatalf("Read = %#v, want one session and no skips", found)
 	}
@@ -112,7 +112,7 @@ func TestUnreadableDirectoriesAndFiles(t *testing.T) {
 				restore = 0o600
 			}
 			chmod(t, path, 0, restore)
-			got := grok.Read(root)
+			got := grok.Read(root, time.Time{}, nil)
 			wantCount := 1
 			if target == "sessions" {
 				wantCount = 0
@@ -145,7 +145,7 @@ func TestMissingSummaryAndEmptySources(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			got := grok.Read(root)
+			got := grok.Read(root, time.Time{}, nil)
 			if len(got.Sessions) != 0 || got.Skipped != test.skipped {
 				t.Fatalf("Read = %#v, want skip %d", got, test.skipped)
 			}
@@ -178,7 +178,7 @@ func TestIdentityAndDirectoryFallbacks(t *testing.T) {
 				encoded = encodedCWD
 			}
 			source(t, root, encoded, "from-directory", test.summary, person(1))
-			got := grok.Read(root)
+			got := grok.Read(root, time.Time{}, nil)
 			if got.Skipped != test.skipped {
 				t.Fatalf("Read = %#v", got)
 			}
@@ -346,7 +346,7 @@ func TestMomentFormRangeAndFallback(t *testing.T) {
 				updates += person(1)
 			}
 			source(t, root, encodedCWD, "session", `{}`, updates)
-			got := grok.Read(root)
+			got := grok.Read(root, time.Time{}, nil)
 			wantCount := 0
 			if keepGood {
 				wantCount = 1
@@ -388,7 +388,7 @@ func TestInvalidAndMergedCountsSkipWholeSourceOnce(t *testing.T) {
 			bad := line(2, `{"sessionUpdate":"turn_completed","usage":{"`+key+`":`+value+`}}`)
 			source(t, root, encodedCWD, "bad", `{}`, person(1)+bad+bad)
 			source(t, root, encodedCWD, "good", `{}`, person(1))
-			got := grok.Read(root)
+			got := grok.Read(root, time.Time{}, nil)
 			if got.Skipped != 1 || len(got.Sessions) != 1 || got.Sessions[0].Ref.ID != "good" {
 				t.Fatalf("%s=%s: %#v", key, value, got)
 			}
@@ -397,7 +397,7 @@ func TestInvalidAndMergedCountsSkipWholeSourceOnce(t *testing.T) {
 		first := line(1, `{"sessionUpdate":"turn_completed","usage":{"`+key+`":1000000000000}}`)
 		second := line(1, `{"sessionUpdate":"turn_completed","usage":{"`+key+`":1}}`)
 		source(t, root, encodedCWD, "bad", `{}`, first+second)
-		if got := grok.Read(root); got.Skipped != 1 || len(got.Sessions) != 0 {
+		if got := grok.Read(root, time.Time{}, nil); got.Skipped != 1 || len(got.Sessions) != 0 {
 			t.Fatalf("merged %s overflow: %#v", key, got)
 		}
 	}
@@ -411,7 +411,7 @@ func TestJSONDocumentAndLineRules(t *testing.T) {
 			source(t, root, encodedCWD, "complete-bad", `{}`, person(1)+malformed+"\n"+malformed+"\n")
 			source(t, root, encodedCWD, "unterminated", `{}`, person(1)+" \t \r\n\n"+malformed)
 			source(t, root, encodedCWD, "whole-bad", malformed, person(1))
-			got := grok.Read(root)
+			got := grok.Read(root, time.Time{}, nil)
 			if got.Skipped != 2 || len(got.Sessions) != 1 || got.Sessions[0].Ref.ID != "unterminated" || len(got.Sessions[0].Turns) != 1 {
 				t.Fatalf("Read = %#v", got)
 			}
@@ -424,7 +424,7 @@ func TestJSONDocumentAndLineRules(t *testing.T) {
 	}
 }
 
-// R-FGXC-3JFO R-OW6P-XS0K R-I1EF-19M1
+// R-FGXC-3JFO R-OW6P-XS0K R-PEDZ-5S83
 func TestSessionsOrderedAndDuplicateIDChoosesLeastPath(t *testing.T) {
 	root := t.TempDir()
 	source(t, root, "%2Fz", "earlier-name", `{"info":{"id":"shared"}}`, person(20))
@@ -432,7 +432,7 @@ func TestSessionsOrderedAndDuplicateIDChoosesLeastPath(t *testing.T) {
 	source(t, root, "%2Fa", "a-name", `{"info":{"id":"shared"}}`, person(5))
 	source(t, root, encodedCWD, "last", `{}`, person(1))
 	source(t, root, encodedCWD, "First", `{}`, person(2))
-	got := grok.Read(root)
+	got := grok.Read(root, time.Time{}, nil)
 	if got.Skipped != 0 || len(got.Sessions) != 3 {
 		t.Fatalf("Read = %#v", got)
 	}
@@ -446,7 +446,7 @@ func TestMissingRootsDoNotCreateAnything(t *testing.T) {
 	root := t.TempDir()
 	missingRoot := filepath.Join(root, "missing")
 	for _, home := range []string{root, missingRoot} {
-		got := grok.Read(home)
+		got := grok.Read(home, time.Time{}, nil)
 		if got.Skipped != 0 || len(got.Sessions) != 0 {
 			t.Fatalf("Read(%q) = %#v", home, got)
 		}
@@ -508,7 +508,7 @@ func TestReadLeavesAllSourceBytesAndMetadataUnchanged(t *testing.T) {
 	source(t, root, encodedCWD, "broken", `{}`, "not JSON\n")
 	write(t, filepath.Join(root, "sessions", encodedCWD, "valid", "other"), "private bytes")
 	before := snapshot(t, root)
-	got := grok.Read(root)
+	got := grok.Read(root, time.Time{}, nil)
 	if got.Skipped != 1 || len(got.Sessions) != 1 {
 		t.Fatalf("Read = %#v", got)
 	}

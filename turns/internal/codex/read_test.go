@@ -67,7 +67,7 @@ func single(t *testing.T, records ...obj) session.Session {
 	t.Helper()
 	root := t.TempDir()
 	put(t, root, live("sample"), lines(t, records...))
-	found := codex.Read(root)
+	found := codex.Read(root, time.Time{}, nil)
 	if found.Skipped != 0 || len(found.Sessions) != 1 {
 		t.Fatalf("Read = %+v", found)
 	}
@@ -78,7 +78,7 @@ func wantSkipped(t *testing.T, data []byte) {
 	t.Helper()
 	root := t.TempDir()
 	put(t, root, live("bad"), data)
-	found := codex.Read(root)
+	found := codex.Read(root, time.Time{}, nil)
 	if found.Skipped != 1 || len(found.Sessions) != 0 {
 		t.Fatalf("Read = %+v", found)
 	}
@@ -98,10 +98,10 @@ func compress(t *testing.T, data []byte) []byte {
 	return encoder.EncodeAll(data, nil)
 }
 
-// R-1YNS-PKZ9 R-1ZVP-3CPY R-213L-H4GN R-22BH-UW7C
+// R-NX6L-ZCG0 R-1ZVP-3CPY R-213L-H4GN R-22BH-UW7C
 func TestSources(t *testing.T) {
 	reader := struct {
-		read func(string) session.Found
+		read func(string, time.Time, []string) session.Found
 	}{read: codex.Read}
 	root := t.TempDir()
 	valid := []string{live("live"), "archived_sessions/rollout-flat.jsonl", "archived_sessions/a/b/c/d/rollout-deep.jsonl", "sessions/a/b/c/rollout-compressed.jsonl.zst", "archived_sessions/x/rollout-compressed.jsonl.zst"}
@@ -119,7 +119,7 @@ func TestSources(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "sessions/a/b/c/rollout-directory.jsonl"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	found := reader.read(root)
+	found := reader.read(root, time.Time{}, nil)
 	if len(found.Sessions) != len(valid) || found.Skipped != 0 {
 		t.Fatalf("Read = %+v", found)
 	}
@@ -131,7 +131,7 @@ func TestCompressedParityAndInvalidStreams(t *testing.T) {
 		plain, zipped := t.TempDir(), t.TempDir()
 		put(t, plain, live("data"), data)
 		put(t, zipped, live("data")+".zst", compress(t, data))
-		if a, b := codex.Read(plain), codex.Read(zipped); !reflect.DeepEqual(a, b) {
+		if a, b := codex.Read(plain, time.Time{}, nil), codex.Read(zipped, time.Time{}, nil); !reflect.DeepEqual(a, b) {
 			t.Fatalf("plain=%+v zipped=%+v", a, b)
 		}
 	}
@@ -139,7 +139,7 @@ func TestCompressedParityAndInvalidStreams(t *testing.T) {
 	for _, data := range [][]byte{nil, []byte("{}\n"), good[:len(good)-1], append(append([]byte{}, good...), 0xff)} {
 		root := t.TempDir()
 		put(t, root, live("bad")+".zst", data)
-		if got := codex.Read(root); got.Skipped != 1 || len(got.Sessions) != 0 {
+		if got := codex.Read(root, time.Time{}, nil); got.Skipped != 1 || len(got.Sessions) != 0 {
 			t.Fatalf("invalid stream result %+v", got)
 		}
 	}
@@ -381,7 +381,7 @@ func TestMomentsAndStableOrdering(t *testing.T) {
 	}
 	root := t.TempDir()
 	put(t, root, live("invalid-time"), lines(t, metadata("thread"), person("invalid")))
-	if got := codex.Read(root); len(got.Sessions) != 0 || got.Skipped != 0 {
+	if got := codex.Read(root, time.Time{}, nil); len(got.Sessions) != 0 || got.Skipped != 0 {
 		t.Fatalf("all bad moments %+v", got)
 	}
 	for _, invalid := range []string{"2026-10-21T9:00:00Z", "2026-10-21T09:00:00,1Z", "2026-10-21T09:00:00+24:00", "2026-10-21T09:00:00+00:60"} {
@@ -429,7 +429,7 @@ func TestLineRulesAndSkipIsolation(t *testing.T) {
 		root := t.TempDir()
 		data := append([]byte("\n \t\r\n"), lines(t, metadata("thread"), person(start))...)
 		put(t, root, live("line"), append(data, []byte(tail)...))
-		got := codex.Read(root)
+		got := codex.Read(root, time.Time{}, nil)
 		if got.Skipped != 0 || len(got.Sessions) != 1 || len(got.Sessions[0].Turns) != 1 {
 			t.Fatalf("tail %q result %+v", tail, got)
 		}
@@ -437,7 +437,7 @@ func TestLineRulesAndSkipIsolation(t *testing.T) {
 	root := t.TempDir()
 	put(t, root, live("bad"), []byte("null\n[]\n{\n"))
 	put(t, root, live("good"), lines(t, metadata("good"), person(start)))
-	got := codex.Read(root)
+	got := codex.Read(root, time.Time{}, nil)
 	if got.Skipped != 1 || len(got.Sessions) != 1 || got.Sessions[0].Ref.ID != "good" {
 		t.Fatalf("isolation %+v", got)
 	}
@@ -446,14 +446,14 @@ func TestLineRulesAndSkipIsolation(t *testing.T) {
 // R-EOVN-ATDP R-EQ3J-OL4E R-OUYT-K09V
 func TestEmptyAndMissingRoots(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "missing")
-	if got := codex.Read(root); len(got.Sessions) != 0 || got.Skipped != 0 {
+	if got := codex.Read(root, time.Time{}, nil); len(got.Sessions) != 0 || got.Skipped != 0 {
 		t.Fatalf("missing %+v", got)
 	}
 	if _, err := os.Stat(root); !os.IsNotExist(err) {
 		t.Fatalf("root created: %v", err)
 	}
 	root = t.TempDir()
-	if got := codex.Read(root); len(got.Sessions) != 0 || got.Skipped != 0 {
+	if got := codex.Read(root, time.Time{}, nil); len(got.Sessions) != 0 || got.Skipped != 0 {
 		t.Fatalf("missing children %+v", got)
 	}
 	for _, name := range []string{"sessions", "archived_sessions"} {
@@ -464,7 +464,7 @@ func TestEmptyAndMissingRoots(t *testing.T) {
 	put(t, root, live("empty"), nil)
 	put(t, root, live("meta"), lines(t, metadata("thread")))
 	put(t, root, live("ignored"), lines(t, record("unknown", obj{}, start)))
-	if got := codex.Read(root); len(got.Sessions) != 0 || got.Skipped != 0 {
+	if got := codex.Read(root, time.Time{}, nil); len(got.Sessions) != 0 || got.Skipped != 0 {
 		t.Fatalf("empty sources %+v", got)
 	}
 	if _, err := os.Stat(filepath.Join(root, "archived_sessions")); !os.IsNotExist(err) {
@@ -489,7 +489,7 @@ func TestDuplicatePrecedenceAndSorting(t *testing.T) {
 	put(t, root, live("fallback"), append(data("fallback", "/bad"), []byte("[]\n")...))
 	put(t, root, "archived_sessions/rollout-z.jsonl", data("Z", "/z"))
 	put(t, root, "archived_sessions/rollout-z-other.jsonl", data("Z", "/other"))
-	got := codex.Read(root)
+	got := codex.Read(root, time.Time{}, nil)
 	if got.Skipped != 2 || len(got.Sessions) != 3 {
 		t.Fatalf("result %+v", got)
 	}
@@ -512,7 +512,7 @@ func TestUnreadableSource(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	if got := codex.Read(root); got.Skipped != 1 || len(got.Sessions) != 0 {
+	if got := codex.Read(root, time.Time{}, nil); got.Skipped != 1 || len(got.Sessions) != 0 {
 		t.Fatalf("unreadable result %+v", got)
 	}
 }
@@ -568,7 +568,7 @@ func TestReadLeavesTreeUnchanged(t *testing.T) {
 		return result
 	}
 	before := take()
-	_ = codex.Read(root)
+	_ = codex.Read(root, time.Time{}, nil)
 	after := take()
 	if !reflect.DeepEqual(before, after) {
 		t.Fatalf("tree changed: before=%+v after=%+v", before, after)

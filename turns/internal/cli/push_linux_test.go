@@ -64,10 +64,18 @@ func TestPushHoldsExclusiveLockDuringEveryRequest(t *testing.T) {
 	}
 }
 
-// R-M7NY-K4WY R-9HY2-JLBZ
+// R-M7NY-K4WY R-9HY2-JLBZ R-5WFH-IBAW R-5SRS-D02T
 func TestPushWaitsForActualFlockWaiter(t *testing.T) {
 	deps, p, f := pushSetup(t)
 	pushClaude(t, p, "a", 1)
+	pushClaude(t, p, "old", 1)
+	cutoff := time.Date(2026, 11, 1, 14, 5, 0, 0, time.UTC)
+	started := cutoff.Add(5 * time.Minute)
+	setModified(t, claudeSource(p, "a"), cutoff)
+	setModified(t, claudeSource(p, "old"), cutoff.Add(-2*time.Minute))
+	pushWrite(t, filepath.Join(p.State, paths.LastPushFile), cutoff.Add(-5*time.Minute).Format(lastPushLayout)+"\n")
+	var clockCalls atomic.Int64
+	deps.Now = func() time.Time { return started.Add(time.Duration(clockCalls.Add(1)-1) * time.Second) }
 	lock := pushHeldLock(t, filepath.Join(p.State, paths.LockFile))
 	info, err := lock.Stat()
 	if err != nil {
@@ -117,6 +125,10 @@ func TestPushWaitsForActualFlockWaiter(t *testing.T) {
 		}
 		runtime.Gosched()
 	}
+	if clockCalls.Load() == 0 {
+		t.Fatal("clock was not sampled before waiting")
+	}
+	pushWrite(t, filepath.Join(p.State, paths.LastPushFile), cutoff.Format(lastPushLayout)+"\n")
 	if requests.Load() != 0 {
 		t.Fatal("request while waiting")
 	}
@@ -127,6 +139,14 @@ func TestPushWaitsForActualFlockWaiter(t *testing.T) {
 	case got := <-done:
 		if got.code != ExitOK || got.err != "" || got.out != "claude: 1 session, 1 turn pushed\ncodex: 0 sessions, 0 turns pushed\ngrok: 0 sessions, 0 turns pushed\n" {
 			t.Fatalf("after unlock: %#v", got)
+		}
+		refs := latestRefs(f)
+		if len(refs) != 1 || refs[0].ID != "a" {
+			t.Fatalf("used stale cutoff: %v", refs)
+		}
+		data, readErr := os.ReadFile(filepath.Join(p.State, paths.LastPushFile))
+		if readErr != nil || string(data) != started.Format(lastPushLayout)+"\n" {
+			t.Fatalf("start moment %q %v", data, readErr)
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("push did not complete after unlock")

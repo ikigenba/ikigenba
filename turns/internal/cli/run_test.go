@@ -11,7 +11,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/ikigenba/ikigenba/turns/internal/seam"
 )
@@ -68,15 +67,16 @@ Options:
   --token <token>   take the token from the argument instead of stdin
   -h, --help        print this help
 `,
-	"push": `Usage: turns push [--dry-run]
+	"push": `Usage: turns push [--dry-run] [--all]
 
 Read this home's Claude Code, Codex CLI and Grok CLI session files, ask the
 space which turns it already holds, and push the turns it lacks. Session
 files are never changed, and no text leaves the machine except a first
-command's name and argument.
+command's name and the first line of its argument.
 
 Options:
   --dry-run    report what would be pushed and push nothing
+  --all        read every session file, not just changed ones
   -h, --help   print this help
 `,
 	"install": `Usage: turns install
@@ -254,33 +254,6 @@ func configureEmptyPush(t testing.TB, deps seam.Deps) {
 	t.Helper()
 	writeFixture(t, filepath.Join(deps.Getenv("XDG_CONFIG_HOME"), "turns", "config"), "space=a.b\n", 0600)
 	writeFixture(t, filepath.Join(deps.Getenv("XDG_CONFIG_HOME"), "turns", "token"), "synthetic-token", 0600)
-}
-
-// R-SIXR-4O3V.
-func TestNilClockWritesCurrentUTC(t *testing.T) {
-	deps, _ := syntheticDeps(t)
-	configureEmptyPush(t, deps)
-	deps.Now = nil
-	oldLocal := time.Local
-	time.Local = time.FixedZone("fixture offset", 5*60*60)
-	t.Cleanup(func() { time.Local = oldLocal })
-	before := time.Now().Truncate(time.Second)
-	code, _, errText := runCLI(t, deps, []string{"push"}, nil)
-	after := time.Now()
-	if code != ExitOK || errText != "" {
-		t.Fatalf("push failed: %d %s", code, errText)
-	}
-	data, err := os.ReadFile(filepath.Join(deps.Getenv("XDG_STATE_HOME"), "turns", "last-push"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	moment, err := time.Parse("2006-01-02T15:04:05Z\n", string(data))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if moment.Before(before) || moment.After(after) {
-		t.Errorf("moment %s outside [%s,%s]", moment, before, after)
-	}
 }
 
 // R-KH39-EHJZ.
