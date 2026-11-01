@@ -15,58 +15,68 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// EnrichTarget starts one enrichment kind over a fixed prospect list or candidate.
-func (e *Engine) EnrichTarget(ctx context.Context, c identity.Caller, kind, target string, force bool) (store.Pass, error) {
+// EnrichTarget starts the requested enrichment kinds over a fixed target.
+func (e *Engine) EnrichTarget(ctx context.Context, c identity.Caller, kind string, t Target, force bool) (store.Pass, error) {
 	if e.stopping.Load() {
 		return store.Pass{}, &Refusal{Word: RefusalStopping}
 	}
-	en, ok := enrichers.New(enrichers.Config{Website: e.cfg.Website, Prompts: e.cfg.Prompts, Routes: e.cfg.Routes}).Get(kind)
-	if !ok {
+	reg := enrichers.New(enrichers.Config{Website: e.cfg.Website, Prompts: e.cfg.Prompts, Routes: e.cfg.Routes})
+	if _, ok := reg.Get(kind); kind != "" && !ok {
 		return store.Pass{}, &Refusal{Word: RefusalInvalid}
 	}
-	targets := []string{}
-	switch {
-	case store.ValidProspectListID(target):
-		read, err := e.cfg.Store.ReadProspectList(e.ctx, target)
-		if err != nil {
-			return store.Pass{}, targetReadError(err)
-		}
-		for _, m := range read.Members {
-			targets = append(targets, m.Candidate.ID)
-		}
-	case store.ValidCandidateID(target):
-		cand, err := e.cfg.Store.GetCandidate(e.ctx, target)
-		if err != nil {
-			return store.Pass{}, targetReadError(err)
-		}
-		if cand.Status == store.StatusMerged {
-			return store.Pass{}, &Refusal{Word: RefusalInvalid}
-		}
-		targets = append(targets, target)
-	default:
-		return store.Pass{}, &Refusal{Word: RefusalNotFound}
+	if (t.ID == "" && len(t.IDs) == 0) || (t.ID != "" && len(t.IDs) != 0) || len(t.IDs) > MaxTargetIDs {
+		return store.Pass{}, &Refusal{Word: RefusalInvalid}
 	}
-	if _, ok := en.(enrichers.Router); ok && e.cfg.Routes == nil {
-		return store.Pass{}, &Refusal{Word: RefusalInvalid, Text: NoRouteKey}
-	}
-	if ready, ok := en.(interface{ Ready() bool }); ok && !ready.Ready() {
-		return store.Pass{}, &Refusal{Word: RefusalUnavailable}
-	}
-	if pr, ok := en.(enrichers.Prompter); ok {
-		_, err := e.cfg.Prompts.Show(identity.NewContext(e.ctx, c), pr.Prompt())
-		if e.stopping.Load() {
-			return store.Pass{}, &Refusal{Word: RefusalStopping}
-		}
-		if err != nil {
-			var rf *prompts.Refusal
-			if errors.As(err, &rf) {
-				text := NoPrompt + " " + pr.Prompt()
-				if rf.Text != "" {
-					text += ": " + rf.Text
-				}
-				return store.Pass{}, &Refusal{Word: RefusalInvalid, Text: text}
+	targets := append([]string(nil), t.IDs...)
+	if t.ID != "" {
+		switch {
+		case store.ValidProspectListID(t.ID):
+			read, err := e.cfg.Store.ReadProspectList(e.ctx, t.ID)
+			if err != nil {
+				return store.Pass{}, targetReadError(err)
 			}
+			for _, m := range read.Members {
+				targets = append(targets, m.Candidate.ID)
+			}
+		case store.ValidCandidateID(t.ID):
+			cand, err := e.cfg.Store.GetCandidate(e.ctx, t.ID)
+			if err != nil {
+				return store.Pass{}, targetReadError(err)
+			}
+			if cand.Status == store.StatusMerged {
+				return store.Pass{}, &Refusal{Word: RefusalInvalid}
+			}
+			targets = append(targets, t.ID)
+		default:
+			return store.Pass{}, &Refusal{Word: RefusalNotFound}
+		}
+	}
+	kinds := targetKinds(reg, kind, e.cfg.Routes != nil)
+	for _, en := range kinds {
+		if _, ok := en.(enrichers.Router); ok && e.cfg.Routes == nil {
+			return store.Pass{}, &Refusal{Word: RefusalInvalid, Text: NoRouteKey}
+		}
+		if ready, ok := en.(interface{ Ready() bool }); ok && !ready.Ready() {
 			return store.Pass{}, &Refusal{Word: RefusalUnavailable}
+		}
+	}
+	for _, en := range kinds {
+		if pr, ok := en.(enrichers.Prompter); ok {
+			_, err := e.cfg.Prompts.Show(identity.NewContext(e.ctx, c), pr.Prompt())
+			if e.stopping.Load() {
+				return store.Pass{}, &Refusal{Word: RefusalStopping}
+			}
+			if err != nil {
+				var rf *prompts.Refusal
+				if errors.As(err, &rf) {
+					text := NoPrompt + " " + pr.Prompt()
+					if rf.Text != "" {
+						text += ": " + rf.Text
+					}
+					return store.Pass{}, &Refusal{Word: RefusalInvalid, Text: text}
+				}
+				return store.Pass{}, &Refusal{Word: RefusalUnavailable}
+			}
 		}
 	}
 	e.mu.Lock()
@@ -77,18 +87,47 @@ func (e *Engine) EnrichTarget(ctx context.Context, c identity.Caller, kind, targ
 	if e.filling {
 		return store.Pass{}, &Refusal{Word: RefusalBusy}
 	}
-	p, err := e.cfg.Store.AddPass(e.ctx, store.Pass{Kind: store.KindEnrichTarget, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, Target: target, EnrichKind: kind, UserID: c.UserID, UserEmail: c.Email, RequestID: c.RequestID})
+	p, claimed, err := e.cfg.Store.AddTargetPass(e.ctx, store.Pass{Kind: store.KindEnrichTarget, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, Target: t.ID, TargetIDs: append([]string(nil), t.IDs...), EnrichKind: kind, UserID: c.UserID, UserEmail: c.Email, RequestID: c.RequestID}, targets)
 	if err != nil && e.stopping.Load() {
 		return store.Pass{}, &Refusal{Word: RefusalStopping}
-	}
-	if errors.Is(err, store.ErrBusy) {
-		return store.Pass{}, &Refusal{Word: RefusalBusy}
 	}
 	if err != nil {
 		return store.Pass{}, err
 	}
-	e.startWork(ctx, p, c, func(work context.Context) (store.Counts, string) { return e.targeted(work, en, targets, force) })
+	// Named kinds begin with the recorded pass. Capture even queued subjects
+	// before returning, so a later worker sees the same input as the first.
+	var selection targetSelection
+	if kind != "" {
+		selection, err = e.selectTargets(identity.NewContext(e.ctx, c), kinds[0], claimed, force, false)
+	}
+	e.startWork(ctx, p, c, func(work context.Context) (store.Counts, string) {
+		if err != nil {
+			return store.Counts{}, e.storeFailure(work, err)
+		}
+		if kind != "" {
+			return e.targeted(work, kinds[0], claimed, force, selection)
+		}
+		return e.targetKinds(work, p.ID, kinds, claimed, force)
+	})
 	return p, nil
+}
+
+func targetKinds(reg *enrichers.Registry, kind string, routes bool) []enrichers.Enricher {
+	if kind != "" {
+		en, _ := reg.Get(kind)
+		return []enrichers.Enricher{en}
+	}
+	out := []enrichers.Enricher{}
+	for _, en := range reg.All() {
+		if _, ok := en.(enrichers.Deriver); ok {
+			continue
+		}
+		if _, ok := en.(enrichers.Router); ok && !routes {
+			continue
+		}
+		out = append(out, en)
+	}
+	return out
 }
 
 func targetReadError(err error) error {
@@ -98,7 +137,118 @@ func targetReadError(err error) error {
 	return err
 }
 
-func (e *Engine) targeted(ctx context.Context, en enrichers.Enricher, targets []string, force bool) (store.Counts, string) {
+type targetSelection struct {
+	due      []store.Due
+	subjects map[string]enrichers.Subject
+	previous map[string]int
+	entry    store.KindEntry
+}
+
+func (e *Engine) selectTargets(ctx context.Context, en enrichers.Enricher, targets []string, force, progress bool) (targetSelection, error) {
+	sel := targetSelection{subjects: map[string]enrichers.Subject{}, previous: map[string]int{}, entry: store.KindEntry{Kind: en.Kind()}}
+	var err error
+	sel.due, err = e.cfg.Store.DueAmong(ctx, en.Kind(), targets, force)
+	if err != nil {
+		return sel, err
+	}
+	if progress {
+		applicable, err := e.cfg.Store.DueAmong(ctx, en.Kind(), targets, true)
+		if err != nil {
+			return sel, err
+		}
+		var active int64
+		for _, id := range targets {
+			c, err := e.cfg.Store.GetCandidate(ctx, id)
+			if err != nil {
+				return sel, err
+			}
+			if c.Status == store.StatusActive {
+				active++
+			}
+		}
+		sel.entry.NotApplicable = active - int64(len(applicable))
+		sel.entry.NotDue = int64(len(applicable) - len(sel.due))
+	}
+	_, prompt := en.(enrichers.Prompter)
+	_, route := en.(enrichers.Router)
+	for _, d := range sel.due {
+		if prompt || route {
+			s, err := e.cfg.Store.Subject(ctx, d.Candidate)
+			if err != nil {
+				return sel, err
+			}
+			sel.subjects[d.Candidate] = s
+		}
+		if progress {
+			es, err := e.cfg.Store.Enrichments(ctx, d.Candidate)
+			if err != nil {
+				return sel, err
+			}
+			sel.previous[d.Candidate] = len(es)
+		}
+	}
+	return sel, nil
+}
+
+func (e *Engine) targetKinds(ctx context.Context, id string, kinds []enrichers.Enricher, targets []string, force bool) (store.Counts, string) {
+	var total store.Counts
+	for _, en := range kinds {
+		if ctx.Err() != nil {
+			return total, store.ReasonInterrupted
+		}
+		if _, err := e.cfg.Store.StartPassKind(ctx, id, en.Kind()); err != nil {
+			return total, e.storeFailure(ctx, err)
+		}
+		sel, err := e.selectTargets(ctx, en, targets, force, true)
+		if err != nil {
+			return total, e.storeFailure(ctx, err)
+		}
+		counts, reason := e.targeted(ctx, en, targets, force, sel)
+		if reason != "" {
+			return total, reason
+		}
+		if ctx.Err() != nil {
+			return total, store.ReasonInterrupted
+		}
+		entry := sel.entry
+		for _, d := range sel.due {
+			es, err := e.cfg.Store.Enrichments(ctx, d.Candidate)
+			if err != nil {
+				return total, e.storeFailure(ctx, err)
+			}
+			for _, r := range es[:max(0, len(es)-sel.previous[d.Candidate])] {
+				if r.Kind != en.Kind() {
+					continue
+				}
+				f, ok := en.(enrichers.Failer)
+				if ok && f.Failed(r.Found) {
+					entry.Failed++
+				} else {
+					entry.NewResults++
+				}
+			}
+		}
+		entry.Cost = counts.Cost
+		if _, err := e.cfg.Store.EndPassKind(ctx, id, entry); err != nil {
+			return total, e.storeFailure(ctx, err)
+		}
+		total.Due += counts.Due
+		total.Fetched += counts.Fetched
+		total.HTTPS += counts.HTTPS
+		total.HTTP += counts.HTTP
+		total.None += counts.None
+		total.Runs += counts.Runs
+		total.RunsFailed += counts.RunsFailed
+		total.Pages += counts.Pages
+		total.Cost += counts.Cost
+		total.SearchDifferent += counts.SearchDifferent
+		total.SearchStands += counts.SearchStands
+		total.SearchNone += counts.SearchNone
+	}
+	return total, ""
+}
+
+func (e *Engine) targeted(ctx context.Context, en enrichers.Enricher, targets []string, force bool, sel targetSelection) (store.Counts, string) {
 	if _, ok := en.(enrichers.Deriver); ok {
 		n, err := e.cfg.Store.DeriveAmong(ctx, en.Kind(), targets, force)
 		if err != nil {
@@ -106,17 +256,13 @@ func (e *Engine) targeted(ctx context.Context, en enrichers.Enricher, targets []
 		}
 		return store.Counts{Derived: n}, ""
 	}
-	ds, err := e.cfg.Store.DueAmong(ctx, en.Kind(), targets, force)
-	if err != nil {
-		return store.Counts{}, e.storeFailure(ctx, err)
-	}
 	if pr, ok := en.(enrichers.Prompter); ok {
-		return e.promptTargets(ctx, pr, ds)
+		return e.promptTargets(ctx, pr, sel.due, sel.subjects)
 	}
 	if rt, ok := en.(enrichers.Router); ok {
-		return e.routeTargets(ctx, rt, ds)
+		return e.routeTargets(ctx, rt, sel.due, sel.subjects)
 	}
-	return e.fetchTargets(ctx, en.(enrichers.Fetcher), ds)
+	return e.fetchTargets(ctx, en.(enrichers.Fetcher), sel.due)
 }
 
 func (e *Engine) fetchTargets(ctx context.Context, f enrichers.Fetcher, ds []store.Due) (store.Counts, string) {
@@ -135,7 +281,7 @@ func (e *Engine) fetchTargets(ctx context.Context, f enrichers.Fetcher, ds []sto
 	f.Fetch(ctx, inputs, func(in string, r enrichers.Result) {
 		mu.Lock()
 		defer mu.Unlock()
-		if failed {
+		if failed || ctx.Err() != nil {
 			return
 		}
 		es := make([]store.Enrichment, 0, len(groups[in]))
@@ -185,7 +331,7 @@ type promptResult struct {
 	reason string
 }
 
-func (e *Engine) promptTargets(ctx context.Context, pr enrichers.Prompter, ds []store.Due) (store.Counts, string) {
+func (e *Engine) promptTargets(ctx context.Context, pr enrichers.Prompter, ds []store.Due, subjects map[string]enrichers.Subject) (store.Counts, string) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	results := make(chan promptResult, RunsInFlight)
@@ -196,7 +342,10 @@ func (e *Engine) promptTargets(ctx context.Context, pr enrichers.Prompter, ds []
 			d := ds[next]
 			next++
 			active++
-			go func() { counts, reason := e.promptOne(ctx, pr, d); results <- promptResult{counts, reason} }()
+			go func() {
+				counts, reason := e.promptOne(ctx, pr, d, subjects[d.Candidate])
+				results <- promptResult{counts, reason}
+			}()
 		}
 		select {
 		case <-ctx.Done():
@@ -223,12 +372,8 @@ func (e *Engine) promptTargets(ctx context.Context, pr enrichers.Prompter, ds []
 	return total, ""
 }
 
-func (e *Engine) promptOne(ctx context.Context, pr enrichers.Prompter, d store.Due) (store.Counts, string) {
+func (e *Engine) promptOne(ctx context.Context, pr enrichers.Prompter, d store.Due, subject enrichers.Subject) (store.Counts, string) {
 	var total store.Counts
-	subject, err := e.cfg.Store.Subject(ctx, d.Candidate)
-	if err != nil {
-		return total, e.storeFailure(ctx, err)
-	}
 	before, err := e.cfg.Store.CountPages(ctx, d.Candidate)
 	if err != nil {
 		return total, e.storeFailure(ctx, err)

@@ -464,7 +464,7 @@ func TestRefetchStoreFailureAndNilDiagnostics(t *testing.T) {
 	}
 }
 
-// R-XMVN-NNHJ R-2TNJ-M1HJ R-XO3K-1F88
+// R-XMVN-NNHJ R-1B2C-MG7D R-XO3K-1F88
 func TestRefetchCutOffDuringFetchAndPace(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"cancel fetch", "drain fetch", "drain pace"} {
@@ -597,7 +597,7 @@ func TestRefetchLeavesPassesFactsAndEnrichmentsAlone(t *testing.T) {
 	}
 }
 
-// R-2SFN-89QU
+// R-19UG-8OGO
 func TestRefetchAdmitsJudgeAndFillAndRunsBesideFill(t *testing.T) {
 	t.Parallel()
 	f, _ := refetchFixture(t, 1)
@@ -661,7 +661,7 @@ func TestRefetchAdmitsJudgeAndFillAndRunsBesideFill(t *testing.T) {
 	unlock()
 }
 
-// R-XU71-Y9XP
+// R-PZ3G-4B33
 func TestConcurrentRefetchAdmissionAndEngineMethods(t *testing.T) {
 	t.Parallel()
 	f, pages := refetchFixture(t, 1)
@@ -705,7 +705,7 @@ func TestConcurrentRefetchAdmissionAndEngineMethods(t *testing.T) {
 		func() { _, _ = f.eng.Judge(t.Context(), caller) },
 		func() { _, _ = f.eng.Enrich(t.Context(), caller, "") },
 		func() {
-			_, _ = f.eng.EnrichTarget(t.Context(), caller, enrichers.KindLinkFacts, pages[0].Candidate, false)
+			_, _ = f.eng.EnrichTarget(t.Context(), caller, enrichers.KindLinkFacts, passes.Target{ID: pages[0].Candidate}, false)
 		},
 		func() { _, _ = f.eng.EditParkRules(t.Context(), caller, store.ParkRulesEdit{}) },
 		func() { _, _ = f.eng.Walk(t.Context(), caller, nil, false) },
@@ -731,7 +731,7 @@ func TestConcurrentRefetchAdmissionAndEngineMethods(t *testing.T) {
 	}
 }
 
-// R-2SFN-89QU
+// R-19UG-8OGO
 func TestRefetchDoesNotBlockAnyPassOrCampaignDelivery(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"ingest", "judge", "enrich", "target", "rules", "walk", "start parks", "deliver ingest", "deliver judge", "deliver parks", "campaign"} {
@@ -769,7 +769,7 @@ func TestRefetchDoesNotBlockAnyPassOrCampaignDelivery(t *testing.T) {
 			case "enrich":
 				p, err = f.eng.Enrich(t.Context(), caller, "")
 			case "target":
-				p, err = f.eng.EnrichTarget(t.Context(), caller, enrichers.KindLinkFacts, pages[0].Candidate, false)
+				p, err = f.eng.EnrichTarget(t.Context(), caller, enrichers.KindLinkFacts, passes.Target{ID: pages[0].Candidate}, false)
 			case "rules":
 				p, err = f.eng.EditParkRules(t.Context(), caller, store.ParkRulesEdit{})
 			case "walk":

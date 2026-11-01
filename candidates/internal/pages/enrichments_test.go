@@ -91,7 +91,7 @@ func capturedCandidate(t *testing.T, cfg Config, id string) CandidateData {
 	return got
 }
 
-// R-9SBD-VETV R-RU1K-AXX2 R-8QIQ-63EB
+// R-9SBD-VETV R-Y1L4-IMIB R-8QIQ-63EB
 func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	ctx := t.Context()
@@ -187,7 +187,7 @@ func TestCandidateEnrichmentsAndJudgedWebsite(t *testing.T) {
 	}
 }
 
-// R-QCKQ-GO4Q R-QF0J-87M4 R-QPZM-O5AD
+// R-Y2T0-WE90 R-QF0J-87M4 R-QPZM-O5AD
 func TestEnrichPassViews(t *testing.T) {
 	cfg, _ := pageFixture(t)
 	for _, tc := range []struct{ origin, email, user, by string }{

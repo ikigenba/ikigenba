@@ -96,7 +96,7 @@ func seedRules() parks.Rules {
 	return parks.Rules{Distance: parks.SeedDistance, MinParcels: parks.SeedMinParcels, ValueThreshold: parks.SeedValueThreshold, Labels: map[string][]string{"Chisago": {"3a Industrial Land And Building"}, "Stearns": {"3a Industrial Land And Building"}, "Anoka": {"3a INDUSTIAL PREFERENTIAL"}, "Aitkin": {"Industrial Preferred"}, "St. Louis": {"Industrial Preferred", "Industrial Non-Preferred"}, "Sherburne": {"Industrial Preferred", "Industrial Non-Preferred", "INDUSTRIAL (with Buildings)", "Industrial - Bare Land"}, "Mille Lacs": {"Indust Land/Building"}, "Isanti": {"3A-Commercial/Industrial/Public Utility"}, "Morrison": {"3A-Commercial/Industrial/Public Utility"}}}
 }
 
-// R-64U1-LEO8 R-TRB4-G62J R-W07T-G9JB R-OR9G-HGA3 R-EP8R-Z5D9 R-57ZF-FHOA
+// R-64U1-LEO8 R-TRB4-G62J R-CWDO-965C R-OR9G-HGA3 R-EP8R-Z5D9 R-57ZF-FHOA
 func TestParkRulesSeedEditAndRefusal(t *testing.T) {
 	t.Parallel()
 	f := contractDB(t)
@@ -472,7 +472,7 @@ func TestApplyParksRefusalsAndAtomicMint(t *testing.T) {
 	contractEqual(t, after, before)
 }
 
-// R-W2NM-7T0P R-OHI9-FACJ R-VP8Q-0BV2 R-P28J-XDYC R-VU4B-JETU R-VWK4-AYB8
+// R-CXLK-MXW1 R-OHI9-FACJ R-CIYS-1OZP R-CK6O-FGQE R-CV5R-VEEN R-VWK4-AYB8
 func TestParkPassConcurrencyAndOrigins(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -491,7 +491,13 @@ func TestParkPassConcurrencyAndOrigins(t *testing.T) {
 			inputs = append(inputs, parkPass(store.OriginStart))
 		}
 		for _, input := range inputs {
-			got, e := f.s.AddPass(ctx, input)
+			var got store.Pass
+			var e error
+			if input.Kind == store.KindEnrichTarget {
+				got, _, e = f.s.AddTargetPass(ctx, input, nil)
+			} else {
+				got, e = f.s.AddPass(ctx, input)
+			}
 			contractOK(t, e)
 			contractEqual(t, got.Kind, input.Kind)
 		}

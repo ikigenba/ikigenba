@@ -21,7 +21,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/website"
 )
 
-// R-0ZSY-YFG1 R-128R-PYXF
+// R-ZUMO-6BBI R-85VF-HQ5G
 func TestJudgeWalkUsesPassTimeAcrossPages(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -81,7 +81,7 @@ func (w *diagnosticWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// R-1FNN-XG32 R-2PIS-RSYP
+// R-06TO-00QG R-2EI8-019U
 func TestStoreFailureDiagnosticPrecedesEnding(t *testing.T) {
 	t.Parallel()
 
@@ -118,7 +118,7 @@ func TestStoreFailureDiagnosticPrecedesEnding(t *testing.T) {
 	}
 }
 
-// R-128R-PYXF R-13GO-3QO4
+// R-85VF-HQ5G R-ZVUK-K327
 func TestIngestMarksGoneAcrossAllPages(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -150,7 +150,7 @@ func TestIngestMarksGoneAcrossAllPages(t *testing.T) {
 	}
 }
 
-// R-1FNN-XG32
+// R-06TO-00QG
 func TestStoreDiagnosticSurvivesUnrecordableEnding(t *testing.T) {
 	t.Parallel()
 	var f *fixture
@@ -178,7 +178,7 @@ func TestStoreDiagnosticSurvivesUnrecordableEnding(t *testing.T) {
 	}
 }
 
-// R-1FNN-XG32
+// R-06TO-00QG
 func TestNonStoreEndingsLeaveDiagnosticWriterSilent(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"done", "scrapes", "interrupted", "prompts"} {
@@ -218,7 +218,7 @@ func TestNonStoreEndingsLeaveDiagnosticWriterSilent(t *testing.T) {
 			var p store.Pass
 			var err error
 			if mode == "prompts" {
-				p, err = f.eng.EnrichTarget(t.Context(), identity.Caller{UserID: "owner"}, enrichers.KindSiteText, target, false)
+				p, err = f.eng.EnrichTarget(t.Context(), identity.Caller{UserID: "owner"}, enrichers.KindSiteText, passes.Target{ID: target}, false)
 			} else {
 				p, err = f.eng.Ingest(t.Context(), identity.Caller{UserID: "owner"}, "")
 			}

@@ -40,7 +40,7 @@ func searchAfter(d time.Duration) <-chan time.Time {
 	return ch
 }
 
-// R-1I3G-OZKG R-110V-C76Q R-PRL0-FP0J R-1D7V-5WLO
+// R-0AHD-5BYJ R-8BYX-EKUX R-83FM-Q6O2 R-04DV-8H92
 func TestWebsiteSearchTargetResultsAndConfirmation(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -123,7 +123,7 @@ func TestWebsiteSearchTargetResultsAndConfirmation(t *testing.T) {
 	f.eng.Drain(ctx)
 	f.eng = passes.New(passes.Config{Store: f.st, Prompts: pc, Website: checker, Telemetry: f.w, Events: f.em, After: searchAfter})
 	caller := identity.Caller{UserID: "owner", Email: "owner@example.test", RequestID: "search-request"}
-	p, err := f.eng.EnrichTarget(ctx, caller, enrichers.KindWebsiteSearch, co.ID, true)
+	p, err := f.eng.EnrichTarget(ctx, caller, enrichers.KindWebsiteSearch, passes.Target{ID: co.ID}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestWebsiteSearchTargetResultsAndConfirmation(t *testing.T) {
 		inputs[id] = enrichers.WebsiteSearch{}.Input(s)
 	}
 	repeat.Store(true)
-	second, err := f.eng.EnrichTarget(ctx, caller, enrichers.KindWebsiteSearch, co.ID, true)
+	second, err := f.eng.EnrichTarget(ctx, caller, enrichers.KindWebsiteSearch, passes.Target{ID: co.ID}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestWebsiteSearchTargetResultsAndConfirmation(t *testing.T) {
 	}
 }
 
-// R-1I3G-OZKG R-110V-C76Q R-1D7V-5WLO
+// R-0AHD-5BYJ R-8BYX-EKUX R-04DV-8H92
 func TestWebsiteSearchKeepsInputSubjectThroughOutcome(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -286,7 +286,7 @@ func TestWebsiteSearchKeepsInputSubjectThroughOutcome(t *testing.T) {
 	})}}
 	f.eng.Drain(ctx)
 	f.eng = passes.New(passes.Config{Store: f.st, Prompts: pc, Website: checker, Telemetry: f.w, Events: f.em, After: searchAfter})
-	p, err := f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindWebsiteSearch, id, false)
+	p, err := f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindWebsiteSearch, passes.Target{ID: id}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,7 +347,7 @@ func TestWebsiteSearchDrainCancelsConfirmation(t *testing.T) {
 	})
 	f.eng.Drain(t.Context())
 	f.eng = passes.New(passes.Config{Store: f.st, Prompts: pc, Website: checker, Telemetry: f.w, Events: f.em, After: searchAfter})
-	p, err := f.eng.EnrichTarget(t.Context(), identity.Caller{UserID: "owner"}, enrichers.KindWebsiteSearch, id, false)
+	p, err := f.eng.EnrichTarget(t.Context(), identity.Caller{UserID: "owner"}, enrichers.KindWebsiteSearch, passes.Target{ID: id}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -21,6 +21,15 @@ const SecondLayout = "2006-01-02 15:04:05 UTC"
 // DateLayout supplies date layout page data.
 const DateLayout = "2006-01-02"
 
+// TargetFormIDs identifies a set of candidate ids.
+const TargetFormIDs = "ids"
+
+// TargetFormCandidate identifies one candidate.
+const TargetFormCandidate = "candidate"
+
+// TargetFormList identifies a prospect list.
+const TargetFormList = "list"
+
 // ToolsLevel supplies tools level page data.
 var ToolsLevel = page.Level{Name: "tools", URL: "/tools"}
 
@@ -162,6 +171,7 @@ type CandidateView struct {
 	Class                                                                                                               string
 	Cargo                                                                                                               []string
 	Created, CreatedText, Updated, UpdatedText                                                                          string
+	RunningPass                                                                                                         string
 }
 
 // PersonRow supplies person row page data.
@@ -249,13 +259,24 @@ type PassData struct {
 type PassView struct {
 	ID, Kind, Origin, Trigger, RunPage, Status, Reason, StartedBy, Started, StartedText, Finished, FinishedText      string
 	Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None int64
-	Target, TargetPage, EnrichKind                                                                                   string
+	Target, TargetForm                                                                                               string
+	TargetIDs                                                                                                        []string
+	TargetPage, EnrichKind, RunningKind                                                                              string
+	Busy, Unmatched                                                                                                  int64
+	KindEntries                                                                                                      []KindEntryRow
 	Runs, RunsFailed, Pages                                                                                          int64
 	Cost                                                                                                             string
 	ParcelsRead, ByLabel, ByValue, ByCandidate, ParksCreated, ParksUpdated, ParksGone, ParksGrown                    int64
 	Circles, Requests, Found, NewCandidates                                                                          int64
 	CeilingReached                                                                                                   bool
 	Parks                                                                                                            []WalkParkRow
+}
+
+// KindEntryRow supplies the progress of one finished targeted kind.
+type KindEntryRow struct {
+	Kind                                      string
+	NewResults, NotDue, NotApplicable, Failed int64
+	Cost                                      string
 }
 
 // ToolsData supplies tools data page data.

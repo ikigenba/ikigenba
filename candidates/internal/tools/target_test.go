@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -21,11 +22,12 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/enrichers"
 	"github.com/ikigenba/ikigenba/candidates/internal/passes"
 	"github.com/ikigenba/ikigenba/candidates/internal/routes"
+	"github.com/ikigenba/ikigenba/candidates/internal/sources"
 	"github.com/ikigenba/ikigenba/candidates/internal/store"
 	"github.com/ikigenba/ikigenba/candidates/internal/tools"
 )
 
-// R-Q7QE-1TXQ
+// R-C0AX-F7MW
 func TestTargetedDerivedDispatch(t *testing.T) {
 	f := newFixture(t)
 	ids := f.seed(2)
@@ -36,6 +38,9 @@ func TestTargetedDerivedDispatch(t *testing.T) {
 			t.Fatal(decode(t, r))
 		}
 		p := decodeList[passes.Record](t, r)
+		if raw := decodeList[map[string]json.RawMessage](t, r); raw["target_ids"] != nil {
+			t.Fatal(raw)
+		}
 		target := a.ProspectList
 		if target == "" {
 			target = a.Candidate
@@ -91,14 +96,18 @@ func promptClient(t *testing.T, reject bool, calls *atomic.Int64, kinds ...strin
 		if c.UserID != other.UserID {
 			t.Errorf("prompt caller %v", c)
 		}
-		kind := enrichers.KindSiteText
+		allowed := []string{enrichers.KindSiteText}
 		if len(kinds) > 0 {
-			kind = kinds[0]
+			allowed = kinds
 		}
-		if a.Name != enrichers.PromptName(kind) {
+		names := make([]string, len(allowed))
+		for i, kind := range allowed {
+			names[i] = enrichers.PromptName(kind)
+		}
+		if !slices.Contains(names, a.Name) {
 			t.Errorf("prompt name %s", a.Name)
 		}
-		if reject {
+		if reject && (len(kinds) < 2 || a.Name == names[len(names)-1]) {
 			return mcp.ErrorResult("chosen refusal"), nil
 		}
 		return result(map[string]any{"id": "prompt-one", "name": a.Name, "model": "fixture", "prompt": "fixture", "system": "", "tools": []string{}}), nil
@@ -127,7 +136,7 @@ func promptClient(t *testing.T, reject bool, calls *atomic.Int64, kinds ...strin
 	return prompts.NewClient(prompts.ClientConfig{Service: services.Entry{Name: "prompts", Socket: socket}, Telemetry: w})
 }
 
-// R-Q7QE-1TXQ R-OL8I-4DRP
+// R-C0AX-F7MW R-OL8I-4DRP
 func TestTargetedPromptDispatchAndRefusalText(t *testing.T) {
 	for _, reject := range []bool{false, true} {
 		t.Run(map[bool]string{false: "held", true: "refused"}[reject], func(t *testing.T) {
@@ -136,7 +145,12 @@ func TestTargetedPromptDispatchAndRefusalText(t *testing.T) {
 			f := fixtureWithPrompts(t, nil, nil, pc)
 			id := f.seed(1)[0]
 			setSite(t, f, id, "https://acme.test/")
-			a, b := f.create("first"), f.create("second")
+			a := f.create("first")
+			br := f.call("create_prospect_list", tools.CreateProspectListArgs{Name: "second", Filters: &tools.FilterArgs{Categories: []string{}, Class: sources.ClassPrivate}})
+			if br.IsError() {
+				t.Fatal(decode(t, br))
+			}
+			b := decodeList[tools.ProspectList](t, br)
 			args := tools.EnrichArgs{Kind: enrichers.KindSiteText, ProspectList: a.ID}
 			r := f.callAs(other, "enrich", args)
 			if reject {
@@ -154,14 +168,20 @@ func TestTargetedPromptDispatchAndRefusalText(t *testing.T) {
 			if p.Target != a.ID || p.EnrichKind != enrichers.KindSiteText || p.User != other.UserID || p.Kind != store.KindEnrichTarget || p.Status != store.StatusRunning {
 				t.Fatal(p)
 			}
-			refusal(t, f.callAs(other, "enrich", args), passes.RefusalBusy, tools.RefuseBusy)
-			for _, args := range []tools.EnrichArgs{{Kind: enrichers.KindSiteText, ProspectList: b.ID}, {Kind: enrichers.KindSiteText, Candidate: id}} {
+			second := f.callAs(other, "enrich", args)
+			if second.IsError() {
+				t.Fatal(decode(t, second))
+			}
+			if p := decodeList[passes.Record](t, second); p.Status != store.StatusRunning || p.Busy != 1 {
+				t.Fatal(p)
+			}
+			for i, args := range []tools.EnrichArgs{{Kind: enrichers.KindSiteText, ProspectList: b.ID}, {Kind: enrichers.KindSiteText, Candidate: id}} {
 				r := f.callAs(other, "enrich", args)
 				if r.IsError() {
 					t.Fatal(decode(t, r))
 				}
 				p := decodeList[passes.Record](t, r)
-				if p.Status != store.StatusRunning {
+				if p.Status != store.StatusRunning || p.Busy != int64(i) {
 					t.Fatal(p)
 				}
 			}
@@ -172,7 +192,7 @@ func TestTargetedPromptDispatchAndRefusalText(t *testing.T) {
 	}
 }
 
-// R-050Y-4M77
+// R-BXV4-NO5I
 func TestMalformedTargetsBeforeStoreAndDrain(t *testing.T) {
 	f := newFixture(t)
 	f.eng.Drain(context.Background())
@@ -180,7 +200,7 @@ func TestMalformedTargetsBeforeStoreAndDrain(t *testing.T) {
 	for _, args := range []tools.EnrichArgs{{Kind: enrichers.KindLinkFacts, ProspectList: "bogus"}, {Kind: enrichers.KindLinkFacts, Candidate: "bogus"}} {
 		refusal(t, f.call("enrich", args), passes.RefusalNotFound, tools.RefuseNotFound)
 	}
-	for _, args := range []tools.EnrichArgs{{Kind: strings.ToUpper(enrichers.KindSiteText)}, {Kind: enrichers.KindSiteText}, {Force: true}, {Candidate: "cand_0000000000000000"}, {Kind: enrichers.KindLinkFacts, ProspectList: "pl_0000000000000000", Candidate: "cand_0000000000000000"}} {
+	for _, args := range []tools.EnrichArgs{{Kind: strings.ToUpper(enrichers.KindSiteText)}, {Kind: enrichers.KindSiteText}, {Force: true}, {Candidates: []string{}}, {Candidates: make([]string, passes.MaxTargetIDs+1)}, {Kind: enrichers.KindLinkFacts, ProspectList: "pl_0000000000000000", Candidate: "cand_0000000000000000"}} {
 		refusal(t, f.call("enrich", args), passes.RefusalInvalid, tools.RefuseInvalid)
 	}
 	f.d.SetFailing(false)
@@ -190,7 +210,7 @@ func TestMalformedTargetsBeforeStoreAndDrain(t *testing.T) {
 	}
 }
 
-// R-ATQH-HWDD
+// R-C6EF-C2CD
 func TestDriveRouteCorpusRefusalNeverReadsOrRequests(t *testing.T) {
 	var requests atomic.Int64
 	rc := &routes.Client{Key: "fixture-key", HTTP: &http.Client{Transport: websiteTransport(func(*http.Request) (*http.Response, error) {
@@ -216,7 +236,7 @@ func TestDriveRouteCorpusRefusalNeverReadsOrRequests(t *testing.T) {
 	}
 }
 
-// R-AUYD-VO42
+// R-C7MB-PU32
 func TestDriveRouteTargetRefusalsAndRunningRecords(t *testing.T) {
 	f := fixtureWithRoutes(t, nil, nil, nil, nil, "Fixture origin")
 	ids := f.seed(2)
@@ -249,7 +269,7 @@ func TestDriveRouteTargetRefusalsAndRunningRecords(t *testing.T) {
 	h := fixtureWithRoutes(t, nil, nil, nil, rc, "Fixture origin")
 	id := h.seed(1)[0]
 	hl := h.create("Running fixture")
-	for _, a := range []tools.EnrichArgs{{Kind: enrichers.KindDriveRoute, ProspectList: hl.ID}, {Kind: enrichers.KindDriveRoute, Candidate: id}} {
+	for i, a := range []tools.EnrichArgs{{Kind: enrichers.KindDriveRoute, ProspectList: hl.ID}, {Kind: enrichers.KindDriveRoute, Candidate: id}} {
 		r := h.callAs(other, "enrich", a)
 		if r.IsError() {
 			t.Fatal(decode(t, r))
@@ -262,10 +282,202 @@ func TestDriveRouteTargetRefusalsAndRunningRecords(t *testing.T) {
 		if p.Kind != store.KindEnrichTarget || p.Target != target || p.EnrichKind != enrichers.KindDriveRoute || p.Status != store.StatusRunning || p.User != other.UserID {
 			t.Fatal(p)
 		}
-		select {
-		case <-entered:
-		case <-time.After(3 * time.Second):
-			t.Fatal("route did not start")
+		if i == 0 {
+			select {
+			case <-entered:
+			case <-time.After(3 * time.Second):
+				t.Fatal("route did not start")
+			}
 		}
+	}
+}
+
+// R-C1IT-SZDL
+func TestCandidateIDSetDispatch(t *testing.T) {
+	f := newFixture(t)
+	ids := f.seed(3)
+	if r := f.call("decide", tools.DecideArgs{Kind: store.KindMerge, Candidate: ids[1], Other: ids[2], Why: "duplicate fixture"}); r.IsError() {
+		t.Fatal(decode(t, r))
+	}
+	unknown := "cand_0000000000000000"
+	given := []string{ids[0], ids[0], unknown, ids[2], "bogus"}
+	r := f.callAs(other, "enrich", tools.EnrichArgs{Kind: enrichers.KindLinkFacts, Candidates: given})
+	if r.IsError() {
+		t.Fatal(decode(t, r))
+	}
+	p := decodeList[passes.Record](t, r)
+	if p.Kind != store.KindEnrichTarget || p.Origin != store.OriginEnrich || p.Trigger != store.TriggerEnrich || p.Target != "" || !slices.Equal(p.TargetIDs, given) || p.EnrichKind != enrichers.KindLinkFacts || p.Status != store.StatusRunning || p.User != other.UserID || p.Busy != 0 || p.Unmatched != 3 {
+		t.Fatal(p)
+	}
+	if raw := decodeList[map[string]json.RawMessage](t, r); raw["target"] != nil {
+		t.Fatal(raw)
+	}
+	if done := f.waitEnrich(p.ID); done.Status != store.StatusDone || done.Derived != 1 {
+		t.Fatal(done)
+	}
+	many := make([]string, passes.MaxTargetIDs)
+	for i := range many {
+		many[i] = unknown
+	}
+	r = f.call("enrich", tools.EnrichArgs{Kind: enrichers.KindLinkFacts, Candidates: many})
+	if r.IsError() {
+		t.Fatal(decode(t, r))
+	}
+	p = decodeList[passes.Record](t, r)
+	if p.Status != store.StatusRunning || p.Unmatched != 1 {
+		t.Fatal(p)
+	}
+	f.waitEnrich(p.ID)
+	f.eng.Drain(context.Background())
+	before, err := f.st.ListPasses(t.Context(), "", "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refusal(t, f.call("enrich", tools.EnrichArgs{Kind: enrichers.KindLinkFacts, Candidates: given}), passes.RefusalStopping, tools.RefuseStopping)
+	after, err := f.st.ListPasses(t.Context(), "", "", 100)
+	if err != nil || len(after) != len(before) {
+		t.Fatal(after, err)
+	}
+}
+
+// R-C1IT-SZDL R-CBA0-V5B5
+func TestTargetClaimsAppearInCandidateAnswer(t *testing.T) {
+	for _, form := range []string{"candidate", "candidates", "prospect_list"} {
+		t.Run(form, func(t *testing.T) {
+			var calls atomic.Int64
+			f := fixtureWithPrompts(t, nil, nil, promptClient(t, false, &calls))
+			ids := f.seed(3)
+			if r := f.call("decide", tools.DecideArgs{Kind: store.KindMerge, Candidate: ids[1], Other: ids[2], Why: "merged fixture"}); r.IsError() {
+				t.Fatal(decode(t, r))
+			}
+			setSite(t, f, ids[0], "https://held.test/")
+			read := func(id string) map[string]json.RawMessage {
+				t.Helper()
+				r := f.call("candidate", tools.CandidateArgs{Candidate: id})
+				if r.IsError() {
+					t.Fatal(decode(t, r))
+				}
+				return decodeList[map[string]json.RawMessage](t, r)
+			}
+			if v := read(ids[0]); v["running_pass"] != nil {
+				t.Fatal(v)
+			}
+			args := tools.EnrichArgs{Kind: enrichers.KindSiteText}
+			switch form {
+			case "candidate":
+				args.Candidate = ids[0]
+			case "candidates":
+				args.Candidates = []string{ids[0]}
+			case "prospect_list":
+				args.ProspectList = f.create("held candidates").ID
+			}
+			r := f.callAs(other, "enrich", args)
+			if r.IsError() {
+				t.Fatal(decode(t, r))
+			}
+			p := decodeList[passes.Record](t, r)
+			var held string
+			if err := json.Unmarshal(read(ids[0])["running_pass"], &held); err != nil || held != p.ID {
+				t.Fatal(held, p.ID, err)
+			}
+			if v := read(ids[2]); v["running_pass"] != nil {
+				t.Fatal(v)
+			}
+			second := f.callAs(other, "enrich", tools.EnrichArgs{Kind: enrichers.KindSiteText, Candidates: []string{ids[0], "cand_0000000000000000"}})
+			if second.IsError() {
+				t.Fatal(decode(t, second))
+			}
+			if next := decodeList[passes.Record](t, second); next.Status != store.StatusRunning || next.Busy != 1 || next.Unmatched != 1 {
+				t.Fatal(next)
+			}
+			f.eng.Drain(context.Background())
+			if done, err := f.st.GetPass(t.Context(), p.ID); err != nil || done.Status == store.StatusRunning {
+				t.Fatal(done, err)
+			}
+			if v := read(ids[0]); v["running_pass"] != nil {
+				t.Fatal(v)
+			}
+		})
+	}
+}
+
+// R-C3YM-KIUZ
+func TestOmittedTargetKindDispatch(t *testing.T) {
+	kinds := []string{enrichers.KindWebsiteSearch, enrichers.KindSiteText, enrichers.KindBrief}
+	for _, form := range []string{"candidate", "candidates", "prospect_list"} {
+		t.Run(form, func(t *testing.T) {
+			var calls, fetched atomic.Int64
+			f := fixtureWithPrompts(t, nil, pageChecker(&fetched), promptClient(t, false, &calls, kinds...))
+			id := f.seed(1)[0]
+			args := tools.EnrichArgs{}
+			switch form {
+			case "candidate":
+				args.Candidate = id
+			case "candidates":
+				args.Candidates = []string{id}
+			case "prospect_list":
+				args.ProspectList = f.create("every kind").ID
+			}
+			omitted := map[string]any{}
+			if args.Candidate != "" {
+				omitted["candidate"] = args.Candidate
+			}
+			if args.ProspectList != "" {
+				omitted["prospect_list"] = args.ProspectList
+			}
+			if args.Candidates != nil {
+				omitted["candidates"] = args.Candidates
+			}
+			r := f.callAs(other, "enrich", omitted)
+			if r.IsError() {
+				t.Fatal(decode(t, r))
+			}
+			p := decodeList[passes.Record](t, r)
+			if p.Kind != store.KindEnrichTarget || p.Status != store.StatusRunning || p.User != other.UserID || p.EnrichKind != "" || len(p.KindEntries) != 0 {
+				t.Fatal(p)
+			}
+			raw := decodeList[map[string]json.RawMessage](t, r)
+			if string(raw["kinds"]) != "[]" || raw["enrich_kind"] != nil {
+				t.Fatal(raw)
+			}
+			if form == "candidates" {
+				if !slices.Equal(p.TargetIDs, []string{id}) || raw["target"] != nil {
+					t.Fatal(p, raw)
+				}
+			} else {
+				want := args.Candidate
+				if want == "" {
+					want = args.ProspectList
+				}
+				if p.Target != want || raw["target_ids"] != nil {
+					t.Fatal(p, raw)
+				}
+			}
+		})
+	}
+	for _, mode := range []string{"no website", "no prompts", "brief refused"} {
+		t.Run(mode, func(t *testing.T) {
+			var calls, fetched atomic.Int64
+			pc := promptClient(t, mode == "brief refused", &calls, kinds...)
+			checker := pageChecker(&fetched)
+			if mode == "no website" {
+				checker = nil
+			}
+			if mode == "no prompts" {
+				pc = nil
+			}
+			f := fixtureWithPrompts(t, nil, checker, pc)
+			id := f.seed(1)[0]
+			r := f.callAs(other, "enrich", tools.EnrichArgs{Candidates: []string{id}})
+			if mode == "brief refused" {
+				refusal(t, r, passes.RefusalInvalid, passes.NoPrompt+" "+enrichers.PromptName(enrichers.KindBrief)+": chosen refusal")
+			} else {
+				refusal(t, r, passes.RefusalUnavailable, tools.RefuseUnavailable)
+			}
+			ps, err := f.st.ListPasses(t.Context(), "", "", 100)
+			if err != nil || len(ps) != 0 {
+				t.Fatal(ps, err)
+			}
+		})
 	}
 }

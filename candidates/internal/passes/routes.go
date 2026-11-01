@@ -9,7 +9,7 @@ import (
 
 // routeTargets keeps at most one request per worker in flight. A completed
 // worker admits the next subject immediately, without an engine timer.
-func (e *Engine) routeTargets(ctx context.Context, rt enrichers.Router, ds []store.Due) (store.Counts, string) {
+func (e *Engine) routeTargets(ctx context.Context, rt enrichers.Router, ds []store.Due, subjects map[string]enrichers.Subject) (store.Counts, string) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	results := make(chan promptResult, RoutesInFlight)
@@ -21,7 +21,10 @@ func (e *Engine) routeTargets(ctx context.Context, rt enrichers.Router, ds []sto
 			d := ds[next]
 			next++
 			active++
-			go func() { counts, why := e.routeOne(ctx, rt, d); results <- promptResult{counts, why} }()
+			go func() {
+				counts, why := e.routeOne(ctx, rt, d, subjects[d.Candidate])
+				results <- promptResult{counts, why}
+			}()
 		}
 		if ctx.Err() != nil && reason == "" {
 			reason = store.ReasonInterrupted
@@ -45,17 +48,13 @@ func (e *Engine) routeTargets(ctx context.Context, rt enrichers.Router, ds []sto
 	return total, reason
 }
 
-func (e *Engine) routeOne(ctx context.Context, rt enrichers.Router, d store.Due) (store.Counts, string) {
-	s, err := e.cfg.Store.Subject(ctx, d.Candidate)
-	if err != nil {
-		return store.Counts{}, e.storeFailure(ctx, err)
-	}
+func (e *Engine) routeOne(ctx context.Context, rt enrichers.Router, d store.Due, s enrichers.Subject) (store.Counts, string) {
 	res, tally := rt.Route(ctx, s)
 	counts := store.Counts{Runs: tally.Sent, RunsFailed: tally.Failed, Cost: tally.CostNanos}
 	if ctx.Err() != nil {
 		return counts, store.ReasonInterrupted
 	}
-	_, err = e.cfg.Store.AddEnrichments(ctx, []store.Enrichment{{Candidate: d.Candidate, Kind: rt.Kind(), Inputs: d.Inputs, Source: res.Source, Found: res.Found, Cost: res.Cost}})
+	_, err := e.cfg.Store.AddEnrichments(ctx, []store.Enrichment{{Candidate: d.Candidate, Kind: rt.Kind(), Inputs: d.Inputs, Source: res.Source, Found: res.Found, Cost: res.Cost}})
 	if err != nil {
 		return counts, e.storeFailure(ctx, err)
 	}

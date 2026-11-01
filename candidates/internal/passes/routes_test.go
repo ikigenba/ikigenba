@@ -87,7 +87,7 @@ func routeAnswer(r *http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header), Request: r}, nil
 }
 
-// R-2PIS-RSYP R-K51J-USRD R-YN8O-EHJU R-YUK2-P400 R-YWZV-GNHE R-YY7R-UF83 R-Z0NK-LYPH R-13GO-3QO4
+// R-2EI8-019U R-K51J-USRD R-EANS-YMLZ R-ED3L-Q63D R-8D6T-SCLM R-EEBI-3XU2 R-EFJE-HPKR R-ZVUK-K327
 func TestRouteTargetsResultsCountsAndRepeat(t *testing.T) {
 	t.Parallel()
 	if passes.RoutesInFlight != 4 || passes.NoRouteKey == "" || strings.Contains(passes.NoRouteKey, "\n") || passes.NoRouteKey == passes.NoPrompt {
@@ -134,7 +134,7 @@ func TestRouteTargetsResultsCountsAndRepeat(t *testing.T) {
 			requests = 0
 			mu.Unlock()
 			caller := identity.Caller{UserID: "owner", RequestID: "route-request"}
-			p, err := f.eng.EnrichTarget(t.Context(), caller, enrichers.KindDriveRoute, target, false)
+			p, err := f.eng.EnrichTarget(t.Context(), caller, enrichers.KindDriveRoute, passes.Target{ID: target}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -174,7 +174,7 @@ func TestRouteTargetsResultsCountsAndRepeat(t *testing.T) {
 					t.Fatal("route follow-on", other)
 				}
 			}
-			second, err := f.eng.EnrichTarget(t.Context(), caller, enrichers.KindDriveRoute, target, false)
+			second, err := f.eng.EnrichTarget(t.Context(), caller, enrichers.KindDriveRoute, passes.Target{ID: target}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -188,7 +188,7 @@ func TestRouteTargetsResultsCountsAndRepeat(t *testing.T) {
 			if after != sent {
 				t.Fatal("repeat requested route", sent, after)
 			}
-			forced, err := f.eng.EnrichTarget(t.Context(), caller, enrichers.KindDriveRoute, ids[0], true)
+			forced, err := f.eng.EnrichTarget(t.Context(), caller, enrichers.KindDriveRoute, passes.Target{ID: ids[0]}, true)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -200,7 +200,7 @@ func TestRouteTargetsResultsCountsAndRepeat(t *testing.T) {
 	}
 }
 
-// R-YVRZ-2VQP R-YTC6-BC9B
+// R-8EEQ-64CB R-EBVP-CECO
 func TestRouteWorkersAdvanceAndDrainCancels(t *testing.T) {
 	t.Parallel()
 	type held struct {
@@ -227,7 +227,7 @@ func TestRouteWorkersAdvanceAndDrainCancels(t *testing.T) {
 		}
 	}))
 	ids, target := routeCandidates(t, f, 10, false)
-	p, err := f.eng.EnrichTarget(t.Context(), identity.Caller{UserID: "owner"}, enrichers.KindDriveRoute, target, false)
+	p, err := f.eng.EnrichTarget(t.Context(), identity.Caller{UserID: "owner"}, enrichers.KindDriveRoute, passes.Target{ID: target}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,9 +282,9 @@ func TestRouteWorkersAdvanceAndDrainCancels(t *testing.T) {
 	}
 }
 
-// R-JYY1-XY1W R-JWI9-6EKI R-JVAC-SMTT R-K1DU-PHJA
+// R-7Q0Q-IPIF R-JWI9-6EKI R-JVAC-SMTT R-7TOF-O0QI
 func TestRouteRefusalsPreserveRecords(t *testing.T) {
-	for _, mode := range []string{"no-key", "no-http", "target", "kind", "busy", "store", "stopping", "corpus"} {
+	for _, mode := range []string{"no-key", "no-http", "target", "kind", "store", "stopping", "corpus"} {
 		t.Run(mode, func(t *testing.T) {
 			requests := 0
 			f, client := routeFixture(t, enrichTransport(func(r *http.Request) (*http.Response, error) { requests++; return routeAnswer(r) }))
@@ -303,13 +303,7 @@ func TestRouteRefusalsPreserveRecords(t *testing.T) {
 				target = "bad"
 				want = passes.RefusalNotFound
 			case "kind":
-				kind = ""
-			case "busy":
-				want = passes.RefusalBusy
-				_, err := f.st.AddPass(t.Context(), store.Pass{Kind: store.KindEnrichTarget, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, Target: target, EnrichKind: enrichers.KindLinkFacts, UserID: "owner"})
-				if err != nil {
-					t.Fatal(err)
-				}
+				kind = "unknown_kind"
 			case "stopping":
 				want = passes.RefusalStopping
 			}
@@ -342,17 +336,17 @@ func TestRouteRefusalsPreserveRecords(t *testing.T) {
 			if mode == "corpus" {
 				p, err = f.eng.Enrich(t.Context(), identity.Caller{UserID: "owner"}, kind)
 			} else {
-				p, err = f.eng.EnrichTarget(t.Context(), identity.Caller{UserID: "owner"}, kind, target, false)
+				p, err = f.eng.EnrichTarget(t.Context(), identity.Caller{UserID: "owner"}, kind, passes.Target{ID: target}, false)
 			}
 			if mode == "store" {
 				f.d.SetFailing(false)
 				var rf *passes.Refusal
-				if !errors.Is(err, store.ErrUnreachable) || errors.As(err, &rf) || p != (store.Pass{}) {
+				if !errors.Is(err, store.ErrUnreachable) || errors.As(err, &rf) || !reflect.DeepEqual(p, store.Pass{}) {
 					t.Fatal(p, err)
 				}
 			} else {
 				var rf *passes.Refusal
-				if !errors.As(err, &rf) || rf.Word != want || rf.Text != text || p != (store.Pass{}) {
+				if !errors.As(err, &rf) || rf.Word != want || rf.Text != text || !reflect.DeepEqual(p, store.Pass{}) {
 					t.Fatal(p, err, want, text)
 				}
 			}
@@ -364,7 +358,7 @@ func TestRouteRefusalsPreserveRecords(t *testing.T) {
 	}
 }
 
-// R-PSSW-TGR8
+// R-84NJ-3YER
 func TestOtherPassKindsNeverRoute(t *testing.T) {
 	f := newFixture(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) }, true)
 	f.eng.Drain(t.Context())
@@ -396,7 +390,7 @@ func TestOtherPassKindsNeverRoute(t *testing.T) {
 	if p = routeEnded(t, f, p.ID); p.Status != store.StatusDone {
 		t.Fatal(p)
 	}
-	p, err = f.eng.EnrichTarget(t.Context(), identity.Caller{UserID: "owner"}, enrichers.KindDriveMinutes, ids[0], true)
+	p, err = f.eng.EnrichTarget(t.Context(), identity.Caller{UserID: "owner"}, enrichers.KindDriveMinutes, passes.Target{ID: ids[0]}, true)
 	if err != nil {
 		t.Fatal(err)
 	}

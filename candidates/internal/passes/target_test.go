@@ -128,7 +128,7 @@ func targetEngine(f *fixture, pc *prompts.Client, after func(time.Duration) <-ch
 	f.eng = passes.New(passes.Config{Store: f.st, Scrapes: f.sc, Prompts: pc, Telemetry: f.w, Events: f.em, After: after})
 }
 
-// R-Z83N-ST6G R-2QQP-5KPE  R-SOKW-PW7E R-SS8L-V7FH
+// R-Z83N-ST6G R-2QQP-5KPE  R-7MD1-DEAC R-7NKX-R611
 func TestTargetRecordAndSchedulingValues(t *testing.T) {
 	t.Parallel()
 	if passes.RunsInFlight != 4 || passes.StartTries != 20 || passes.PollInterval != 5*time.Second || passes.QueueWait != 30*time.Second || passes.NoPrompt == "" || strings.Contains(passes.NoPrompt, "\n") {
@@ -152,9 +152,9 @@ func TestTargetRecordAndSchedulingValues(t *testing.T) {
 	}
 }
 
-// R-JYY1-XY1W R-K05Y-BPSL R-K1DU-PHJA
+// R-7Q0Q-IPIF R-7SGJ-A8ZT R-7TOF-O0QI
 func TestTargetRefusals(t *testing.T) {
-	for _, mode := range []string{"kind", "target", "missing", "unavailable", "prompt", "transport", "store", "stopping", "busy"} {
+	for _, mode := range []string{"kind", "target", "missing", "unavailable", "prompt", "transport", "store", "stopping"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newFixture(t, nil, false)
 			ids := seedTarget(t, f, 1)
@@ -177,7 +177,7 @@ func TestTargetRefusals(t *testing.T) {
 			kind, target, want := enrichers.KindSiteText, ids[0], passes.RefusalInvalid
 			switch mode {
 			case "kind":
-				kind = ""
+				kind = "unknown_kind"
 			case "target":
 				target = "bad"
 				want = passes.RefusalNotFound
@@ -191,14 +191,8 @@ func TestTargetRefusals(t *testing.T) {
 			case "stopping":
 				f.eng.Drain(context.Background())
 				want = passes.RefusalStopping
-			case "busy":
-				_, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindEnrichTarget, Origin: store.OriginEnrich, Trigger: store.TriggerEnrich, Target: target, EnrichKind: enrichers.KindLinkFacts, UserID: "owner"})
-				if err != nil {
-					t.Fatal(err)
-				}
-				want = passes.RefusalBusy
 			}
-			p, err := f.eng.EnrichTarget(context.Background(), identity.Caller{UserID: "owner"}, kind, target, false)
+			p, err := f.eng.EnrichTarget(context.Background(), identity.Caller{UserID: "owner"}, kind, passes.Target{ID: target}, false)
 			if mode == "store" {
 				f.d.SetFailing(false)
 				var rf *passes.Refusal
@@ -231,7 +225,7 @@ func TestTargetRefusals(t *testing.T) {
 	}
 }
 
-// R-MTSF-SRSA R-08ON-9XFA R-YM0S-0PT5 R-OYM3-WBI1 R-1I3G-OZKG R-110V-C76Q R-2EQ7-R8VQ R-PRL0-FP0J R-1D7V-5WLO
+// R-7UWC-1SH7 R-DUT3-ZLYY R-YM0S-0PT5 R-OYM3-WBI1 R-0AHD-5BYJ R-8BYX-EKUX R-2EQ7-R8VQ R-83FM-Q6O2 R-04DV-8H92
 func TestPromptPassResultsAndForce(t *testing.T) {
 	t.Parallel()
 	for _, status := range []string{"exited", "failed", "killed", "timed_out"} {
@@ -249,7 +243,7 @@ func TestPromptPassResultsAndForce(t *testing.T) {
 			caller := identity.Caller{UserID: "owner", Email: "owner@example.test", RequestID: "request"}
 			var firstResult store.Enrichment
 			for i, force := range []bool{false, false, true} {
-				p, err := f.eng.EnrichTarget(context.Background(), caller, enrichers.KindSiteText, id, force)
+				p, err := f.eng.EnrichTarget(context.Background(), caller, enrichers.KindSiteText, passes.Target{ID: id}, force)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -341,7 +335,7 @@ func TestPromptPassResultsAndForce(t *testing.T) {
 	}
 }
 
-// R-SXAC-NH9A R-1JBD-2RB5 R-1BZY-S4UZ R-1EFR-JOCD R-YG1Z-034H
+// R-SXAC-NH9A R-0BP9-J3P8 R-035Y-UPID R-05LR-M8ZR R-YG1Z-034H
 func TestPromptRetriesAndFailures(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"retry", "exhausted", "result", "invalid", "show_retry"} {
@@ -382,7 +376,7 @@ func TestPromptRetriesAndFailures(t *testing.T) {
 				return promptAfter(d)
 			})
 			ctx, cancel := context.WithCancel(context.Background())
-			p, err := f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindSiteText, id, false)
+			p, err := f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindSiteText, passes.Target{ID: id}, false)
 			cancel()
 			if err != nil {
 				t.Fatal(err)
@@ -417,7 +411,7 @@ func promptAfter(time.Duration) <-chan time.Time {
 	return ch
 }
 
-// R-PD8W-HKED R-YOGK-S9AJ R-08ON-9XFA R-PRL0-FP0J
+// R-PD8W-HKED R-YOGK-S9AJ R-DUT3-ZLYY R-83FM-Q6O2
 func TestTargetedDerivedAndWebsite(t *testing.T) {
 	for _, kind := range []string{enrichers.KindLinkFacts, sources.WebsiteCheck} {
 		t.Run(kind, func(t *testing.T) {
@@ -444,7 +438,7 @@ func TestTargetedDerivedAndWebsite(t *testing.T) {
 				before[id] = len(es)
 			}
 			for _, force := range []bool{false, true} {
-				p, err := f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, kind, ids[0], force)
+				p, err := f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, kind, passes.Target{ID: ids[0]}, force)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -481,7 +475,7 @@ func TestTargetedDerivedAndWebsite(t *testing.T) {
 	}
 }
 
-// R-YQWD-JSRX R-1EFR-JOCD R-373Q-6C3X R-DTXE-DYY4 R-MTSF-SRSA
+// R-8FMM-JW30 R-05LR-M8ZR R-373Q-6C3X R-PVFQ-YZV0 R-7UWC-1SH7
 func TestPromptConcurrencyAndDrain(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -518,7 +512,7 @@ func TestPromptConcurrencyAndDrain(t *testing.T) {
 		polls <- ch
 		return ch
 	})
-	p, err := f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindSiteText, prospectList.ID, false)
+	p, err := f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindSiteText, passes.Target{ID: prospectList.ID}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -553,7 +547,7 @@ func TestPromptConcurrencyAndDrain(t *testing.T) {
 			t.Fatal(es)
 		}
 	}
-	_, err = f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindSiteText, ids[0], false)
+	_, err = f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindSiteText, passes.Target{ID: ids[0]}, false)
 	var refused *passes.Refusal
 	if !errors.As(err, &refused) || refused.Word != passes.RefusalStopping {
 		t.Fatal(err)
@@ -581,7 +575,7 @@ func TestFullIngestRequestSequence(t *testing.T) {
 	}
 }
 
-// R-1I3G-OZKG R-110V-C76Q: distinct URLs are result data; page copies are pass cost.
+// R-0AHD-5BYJ R-8BYX-EKUX: distinct URLs are result data; page copies are pass cost.
 func TestPromptCountsPagesAndOutcome(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -603,7 +597,7 @@ func TestPromptCountsPagesAndOutcome(t *testing.T) {
 		return result, refused, code
 	})
 	targetEngine(f, pc, promptAfter)
-	p, err := f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindSiteText, id, false)
+	p, err := f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindSiteText, passes.Target{ID: id}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -631,13 +625,13 @@ func TestPromptCountsPagesAndOutcome(t *testing.T) {
 	}
 }
 
-// R-1KJ9-GJ1U: the default poll reaches a completed run within sixty seconds.
+// R-0CX5-WVFX: the default poll reaches a completed run within sixty seconds.
 func TestPromptDefaultPoll(t *testing.T) {
 	f := newFixture(t, nil, false)
 	id := seedTarget(t, f, 1)[0]
 	pc, _ := fakePrompts(t, f, promptAnswer)
 	targetEngine(f, pc, nil)
-	p, err := f.eng.EnrichTarget(context.Background(), identity.Caller{UserID: "owner"}, enrichers.KindSiteText, id, false)
+	p, err := f.eng.EnrichTarget(context.Background(), identity.Caller{UserID: "owner"}, enrichers.KindSiteText, passes.Target{ID: id}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -647,7 +641,7 @@ func TestPromptDefaultPoll(t *testing.T) {
 	}
 }
 
-// R-08ON-9XFA R-PD8W-HKED R-YOGK-S9AJ R-OYM3-WBI1 R-PRL0-FP0J
+// R-DUT3-ZLYY R-PD8W-HKED R-YOGK-S9AJ R-OYM3-WBI1 R-83FM-Q6O2
 func TestProspectListSelectionSkipsNoWebsiteAndPreservesOutside(t *testing.T) {
 	f := newFixture(t, nil, false)
 	ids := seedTarget(t, f, 4)
@@ -670,7 +664,7 @@ func TestProspectListSelectionSkipsNoWebsiteAndPreservesOutside(t *testing.T) {
 	}
 	pc, fake := fakePrompts(t, f, promptAnswer)
 	targetEngine(f, pc, promptAfter)
-	p, err := f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindSiteText, prospectList.ID, false)
+	p, err := f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindSiteText, passes.Target{ID: prospectList.ID}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -693,7 +687,7 @@ func TestProspectListSelectionSkipsNoWebsiteAndPreservesOutside(t *testing.T) {
 	if !starts[ids[0]] || !starts[ids[1]] || starts[ids[2]] || starts[ids[3]] {
 		t.Fatal(starts, ids)
 	}
-	p, err = f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindLinkFacts, prospectList.ID, true)
+	p, err = f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindLinkFacts, passes.Target{ID: prospectList.ID}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -708,7 +702,7 @@ func TestProspectListSelectionSkipsNoWebsiteAndPreservesOutside(t *testing.T) {
 	}
 }
 
-// R-1JBD-2RB5 R-1EFR-JOCD: one failed result cancels other held polls without waiting.
+// R-0BP9-J3P8 R-05LR-M8ZR: one failed result cancels other held polls without waiting.
 func TestPromptFailureCancelsOtherRunsAndKeepsPriorResult(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -763,7 +757,7 @@ func TestPromptFailureCancelsOtherRunsAndKeepsPriorResult(t *testing.T) {
 		return promptAnswer(name, args)
 	})
 	targetEngine(f, pc, func(time.Duration) <-chan time.Time { ch := make(chan time.Time, 1); polls <- ch; return ch })
-	p, err := f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindSiteText, prospectList.ID, false)
+	p, err := f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindSiteText, passes.Target{ID: prospectList.ID}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -847,41 +841,65 @@ func TestCorpusNeverRunsConfiguredPrompts(t *testing.T) {
 	}
 }
 
-// R-JYY1-XY1W R-DTXE-DYY4: one target's running pass admits exactly one racing start.
+// R-PVFQ-YZV0 R-80ZT-YN6O R-7UWC-1SH7: every start is admitted and exactly one holds the candidate.
 func TestConcurrentTargetStarts(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
 	id := seedTarget(t, f, 1)[0]
-	pc, _ := fakePrompts(t, f, promptAnswer)
-	targetEngine(f, pc, func(time.Duration) <-chan time.Time { return make(chan time.Time) })
+	pc, fake := fakePrompts(t, f, promptAnswer)
+	polling := make(chan struct{}, 1)
+	targetEngine(f, pc, func(time.Duration) <-chan time.Time { polling <- struct{}{}; return make(chan time.Time) })
 	var wg sync.WaitGroup
-	results := make(chan error, 20)
+	results := make(chan store.Pass, 20)
 	for range 20 {
 		wg.Go(func() {
-			_, err := f.eng.EnrichTarget(context.Background(), identity.Caller{UserID: "owner"}, enrichers.KindSiteText, id, false)
-			results <- err
+			p, err := f.eng.EnrichTarget(context.Background(), identity.Caller{UserID: "owner"}, enrichers.KindSiteText, passes.Target{ID: id}, false)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			results <- p
 		})
 	}
 	wg.Wait()
 	close(results)
-	successes := 0
-	for err := range results {
-		if err == nil {
-			successes++
+	successes, claimed := 0, ""
+	for p := range results {
+		successes++
+		if p.Busy == 0 {
+			if claimed != "" {
+				t.Fatal("two passes claimed candidate", claimed, p)
+			}
+			claimed = p.ID
 		} else {
-			var rf *passes.Refusal
-			if !errors.As(err, &rf) || rf.Word != passes.RefusalBusy {
-				t.Fatal(err)
+			p = f.ended(p.ID)
+			if p.Busy != 1 || p.Due+p.Runs != 0 || len(p.KindEntries) != 0 || p.RunningKind != "" {
+				t.Fatal(p)
 			}
 		}
 	}
-	if successes != 1 || len(f.list()) != 1 {
-		t.Fatal(successes, f.list())
+	holder, err := f.st.RunningTargetPass(t.Context(), id)
+	if err != nil || successes != 20 || len(f.list()) != 20 || claimed == "" || holder != claimed {
+		t.Fatal(successes, claimed, holder, err)
 	}
+	waitSignal(t, polling)
 	f.eng.Drain(context.Background())
+	starts := 0
+	for _, call := range fake.snapshot() {
+		if call.name == "run" {
+			starts++
+		}
+	}
+	if starts != 1 {
+		t.Fatal("duplicate paid work", starts)
+	}
+	holder, err = f.st.RunningTargetPass(t.Context(), id)
+	if err != nil || holder != "" {
+		t.Fatal(holder, err)
+	}
 }
 
-// R-110V-C76Q R-18C9-MTMW R-1I3G-OZKG R-YM0S-0PT5 R-2EQ7-R8VQ R-PRL0-FP0J
+// R-8BYX-EKUX R-ZZI9-PEAA R-0AHD-5BYJ R-YM0S-0PT5 R-2EQ7-R8VQ R-83FM-Q6O2
 func TestBriefTargetLifecycleAndCounts(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -955,7 +973,7 @@ func TestBriefTargetLifecycleAndCounts(t *testing.T) {
 	})
 	targetEngine(f, pc, promptAfter)
 	caller := identity.Caller{UserID: "owner", Email: "owner@example.test", RequestID: "brief-request"}
-	p, err := f.eng.EnrichTarget(ctx, caller, enrichers.KindBrief, prospectList.ID, false)
+	p, err := f.eng.EnrichTarget(ctx, caller, enrichers.KindBrief, passes.Target{ID: prospectList.ID}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -998,7 +1016,7 @@ func TestBriefTargetLifecycleAndCounts(t *testing.T) {
 		}
 	}
 	// A failed brief still records its inputs, so it is not run again unchanged.
-	second, err := f.eng.EnrichTarget(ctx, caller, enrichers.KindBrief, ids[0], false)
+	second, err := f.eng.EnrichTarget(ctx, caller, enrichers.KindBrief, passes.Target{ID: ids[0]}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1008,7 +1026,7 @@ func TestBriefTargetLifecycleAndCounts(t *testing.T) {
 	}
 }
 
-// R-1EFR-JOCD R-1BZY-S4UZ
+// R-05LR-M8ZR R-035Y-UPID
 func TestPromptAdditionalFailuresPreserveEvidence(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"result_refused", "empty_status", "socket_loss", "run_error"} {
@@ -1061,7 +1079,7 @@ func TestPromptAdditionalFailuresPreserveEvidence(t *testing.T) {
 				return promptAnswer(name, args)
 			})
 			targetEngine(f, pc, promptAfter)
-			p, err := f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindSiteText, id, true)
+			p, err := f.eng.EnrichTarget(ctx, identity.Caller{UserID: "owner"}, enrichers.KindSiteText, passes.Target{ID: id}, true)
 			if err != nil {
 				t.Fatal(err)
 			}

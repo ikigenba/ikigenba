@@ -404,7 +404,7 @@ func TestWebsiteProjectionWithAbsentConfirmationURL(t *testing.T) {
 	}
 }
 
-// R-4IA0-OMHN
+// R-DW10-DDPN
 func TestSubjectUsesMatchingSiteTextAndNewestSearchInputs(t *testing.T) {
 	f := contractDB(t)
 	ctx := context.Background()
@@ -475,6 +475,10 @@ func TestSubjectUsesMatchingSiteTextAndNewestSearchInputs(t *testing.T) {
 	newer.Inputs = "latest-search-inputs"
 	add(newer)
 	assertSite(first, newer.Inputs)
+	successful := searchResult(t, id, "", "")
+	successful.Inputs = "newest-successful-search"
+	add(successful)
+	assertSite(first, successful.Inputs)
 	add(websiteResult(id, sources.WebsiteNone))
-	assertSite(nil, newer.Inputs)
+	assertSite(nil, successful.Inputs)
 }

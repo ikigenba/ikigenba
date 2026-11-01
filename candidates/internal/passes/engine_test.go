@@ -132,7 +132,7 @@ func prepareFixtureDatabase() (data []byte, err error) {
 	return data, errors.Join(err, root.Close())
 }
 
-// R-2PIS-RSYP: the positional Config uses the whole declared client seam.
+// R-2EI8-019U: the positional Config uses the whole declared client seam.
 func newFixture(t *testing.T, h http.HandlerFunc, available bool) *fixture {
 	t.Helper()
 	f := &fixture{t: t, tc: &telemetry.Capture{}, ec: &events.Capture{}, changed: make(chan struct{}, 1)}
@@ -231,12 +231,12 @@ func (f *fixture) endedWithin(id string, budget time.Duration) store.Pass {
 			if p.Status == store.StatusRunning {
 				f.t.Fatal("ending event preceded stored ending")
 			}
-			// R-128R-PYXF: successful non-walk passes spend no walk work.
+			// R-85VF-HQ5G: successful non-walk passes spend no walk work.
 			if p.Status == store.StatusDone && p.Kind != store.KindWalk && (p.ParksWalked != 0 || p.Circles != 0 || p.Requests != 0 || p.Found != 0 || p.NewCandidates != 0) {
 				f.t.Fatal("non-walk pass carried walk counts", p)
 			}
-			// R-128R-PYXF R-1BZY-S4UZ: cases belong only to successful search passes.
-			if (p.Status == store.StatusFailed || p.Kind != store.KindEnrichTarget || p.EnrichKind != "website_search") && (p.SearchDifferent != 0 || p.SearchStands != 0 || p.SearchNone != 0) {
+			// R-85VF-HQ5G R-035Y-UPID: cases belong only to successful search passes.
+			if (p.Status == store.StatusFailed || p.Kind != store.KindEnrichTarget || p.EnrichKind != "website_search" && p.EnrichKind != "") && (p.SearchDifferent != 0 || p.SearchStands != 0 || p.SearchNone != 0) {
 				f.t.Fatal("unexpected search counts", p)
 			}
 			f.flush()
@@ -275,7 +275,7 @@ func assertRefusal(t *testing.T, p store.Pass, err error, word string) {
 	}
 }
 
-// R-2MC5-BF1D R-2QQP-5KPE  R-SOKW-PW7E R-SS8L-V7FH
+// R-14YU-PLHW R-2QQP-5KPE  R-7MD1-DEAC R-7NKX-R611
 func TestRecordContract(t *testing.T) {
 	t.Parallel()
 	const batch16 uint16 = passes.BatchSize
@@ -294,8 +294,8 @@ func TestRecordContract(t *testing.T) {
 	start := time.Date(2001, 2, 3, 4, 5, 6, 0, time.FixedZone("east", 3600))
 	p := store.Pass{ID: "id", Kind: store.KindIngest, Origin: store.OriginIngest, Trigger: store.TriggerIngest, Status: store.StatusDone, Reason: "reason", Started: start, Finished: start.Add(time.Hour), Rows: 1, New: 2, Changed: 3, Unchanged: 4, Gone: 5, Created: 6, Linked: 7, Judged: 8, Unranged: 9, Derived: 15, Due: 10, Fetched: 11, HTTPS: 12, HTTP: 13, None: 14, SearchDifferent: 33, SearchStands: 34, SearchNone: 35, UserID: "user", UserEmail: "email"}
 	r := passes.RecordOf(p)
-	want := passes.Record{"id", store.KindIngest, store.OriginIngest, store.TriggerIngest, "", "", "", "", store.StatusDone, "reason", start.UTC().Format(time.RFC3339), p.Finished.UTC().Format(time.RFC3339), 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 10, 11, 12, 13, 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 33, 34, 35, false, "user", "email"}
-	if r != want {
+	want := passes.Record{"id", store.KindIngest, store.OriginIngest, store.TriggerIngest, "", "", "", "", store.StatusDone, "reason", start.UTC().Format(time.RFC3339), p.Finished.UTC().Format(time.RFC3339), 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 10, 11, 12, 13, 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 33, 34, 35, false, "user", "email", nil, "", 0, 0, nil}
+	if !reflect.DeepEqual(r, want) {
 		t.Fatalf("%#v", r)
 	}
 	got, err := json.Marshal(r)
@@ -563,7 +563,7 @@ func TestFullIngestBackgroundIdentityAndEvents(t *testing.T) {
 	}
 }
 
-// R-18C9-MTMW R-128R-PYXF R-4YYI-MBWJ R-Z3M9-W116 R-WT12-CHE3
+// R-ZZI9-PEAA R-85VF-HQ5G R-4YYI-MBWJ R-Z3M9-W116 R-WT12-CHE3
 func TestIngestAndFullIngest(t *testing.T) {
 	t.Parallel()
 	var stateMu sync.Mutex
@@ -675,7 +675,7 @@ func TestIngestAndFullIngest(t *testing.T) {
 	}
 }
 
-// R-U2KS-EHLV R-3WIH-Q6HW R-384I-2RO0 R-1BZY-S4UZ
+// R-U2KS-EHLV R-3WIH-Q6HW R-384I-2RO0 R-035Y-UPID
 func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	t.Parallel()
 	released, firstBatch := make(chan struct{}), make(chan struct{})
@@ -778,7 +778,7 @@ func TestBatchStreamingAndFailureKeepsEvidence(t *testing.T) {
 	}
 }
 
-// R-384I-2RO0 R-3WIH-Q6HW R-1BZY-S4UZ
+// R-384I-2RO0 R-3WIH-Q6HW R-035Y-UPID
 func TestFailedReads(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"short", "500", "malformed", "not_done", "missing_current", "dead"} {
@@ -835,7 +835,7 @@ func TestFailedReads(t *testing.T) {
 	}
 }
 
-// R-373Q-6C3X R-2TNJ-M1HJ R-1BZY-S4UZ R-YOZH-AS4U
+// R-373Q-6C3X R-1B2C-MG7D R-035Y-UPID R-YOZH-AS4U
 func TestDrainCancelsReadsAndPendingDelivery(t *testing.T) {
 	t.Parallel()
 	for _, which := range []string{"rows", "record"} {
@@ -899,7 +899,7 @@ func TestDrainCancelsReadsAndPendingDelivery(t *testing.T) {
 	}
 }
 
-// R-2PU0-C7JL R-ZC5K-KF81 R-2TNJ-M1HJ
+// R-2PU0-C7JL R-ZC5K-KF81 R-1B2C-MG7D
 func TestRecoverAndUnrecordableEnding(t *testing.T) {
 	f := newFixture(t, nil, false)
 	original, err := f.st.AddPass(context.Background(), store.Pass{Kind: store.KindIngest, Origin: store.OriginRun, Trigger: "old_run", Delivery: "old_event", UserID: "old_user", RequestID: "old_request"})
@@ -965,7 +965,7 @@ func TestRecoverAndUnrecordableEnding(t *testing.T) {
 	})
 }
 
-// R-DTXE-DYY4 R-3NZ7-1SB1 R-SGG7-YQ5M R-TGML-IM9D
+// R-PVFQ-YZV0 R-3NZ7-1SB1 R-SGG7-YQ5M R-TGML-IM9D
 func TestConcurrentStarts(t *testing.T) {
 	t.Parallel()
 	entered := make(chan struct{}, 32)
@@ -1028,7 +1028,7 @@ func (r *failCandidateRandom) Read(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// R-1BZY-S4UZ
+// R-035Y-UPID
 func TestStoreFailureReason(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
@@ -1122,7 +1122,7 @@ func TestDeliveryOutlivesStartingContext(t *testing.T) {
 	}
 }
 
-// R-2TNJ-M1HJ
+// R-1B2C-MG7D
 func TestDrainDeadlineWhileEndingHeld(t *testing.T) {
 	entered := make(chan struct{})
 	f := newFixture(t, func(_ http.ResponseWriter, r *http.Request) { close(entered); <-r.Context().Done() }, true)
@@ -1166,7 +1166,7 @@ func TestDrainDeadlineWhileEndingHeld(t *testing.T) {
 	}
 }
 
-// R-2PU0-C7JL R-DTXE-DYY4
+// R-2PU0-C7JL R-PVFQ-YZV0
 func TestRecoverSettlesActivePass(t *testing.T) {
 	t.Parallel()
 	entered := make(chan struct{})

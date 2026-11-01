@@ -65,7 +65,7 @@ func (s *Store) FailWalk(ctx context.Context, pass, reason string, c Counts) (Pa
 }
 func (s *Store) endWalk(ctx context.Context, pass, reason string, c Counts, ceiling, failed bool) (Pass, error) {
 	var out Pass
-	err := s.passWrite(ctx, " WHERE id=?", []any{pass}, func(_ *sql.Tx, r *records) error {
+	err := s.passWrite(ctx, pass, func(_ *sql.Tx, r *records) error {
 		if !nonnegative(c) || failed && !validReason(reason) {
 			return ErrUnreachable
 		}
@@ -77,6 +77,7 @@ func (s *Store) endWalk(ctx context.Context, pass, reason string, c Counts, ceil
 			return ErrEnded
 		}
 		p.Finished = s.now()
+		p.RunningKind = ""
 		if !failed {
 			p.Status = StatusDone
 			setCounts(&p, c)

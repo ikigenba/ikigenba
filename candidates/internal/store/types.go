@@ -133,6 +133,16 @@ type Pass struct {
 	Rows, New, Changed, Unchanged, Gone, Created, Linked, Judged, Unranged, Derived, Due, Fetched, HTTPS, HTTP, None, Runs, RunsFailed, Pages, Cost, ParcelsRead, ByLabel, ByValue, ByCandidate, ParksCreated, ParksUpdated, ParksGone, ParksGrown, ParksWalked, Circles, Requests, Found, NewCandidates, SearchDifferent, SearchStands, SearchNone int64
 	CeilingReached                                                                                                                                                                                                                                                                                                                                  bool
 	UserID, UserEmail, RequestID, Delivery                                                                                                                                                                                                                                                                                                          string
+	TargetIDs                                                                                                                                                                                                                                                                                                                                       []string
+	RunningKind                                                                                                                                                                                                                                                                                                                                     string
+	Busy, Unmatched                                                                                                                                                                                                                                                                                                                                 int64
+	KindEntries                                                                                                                                                                                                                                                                                                                                     []KindEntry
+}
+
+// KindEntry records one completed enrichment kind.
+type KindEntry struct {
+	Kind                                            string
+	NewResults, NotDue, NotApplicable, Failed, Cost int64
 }
 
 // Counts contains the results of pass work.

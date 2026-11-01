@@ -179,7 +179,7 @@ func TestLegacyListDispatch(t *testing.T) {
 	}
 }
 
-// R-3347-ENPM R-TFTB-22NR R-1LGM-KR32 R-Q7QE-1TXQ
+// R-3347-ENPM R-TFTB-22NR R-1LGM-KR32 R-C0AX-F7MW
 func TestLegacyListArgumentsMapToCurrentIDs(t *testing.T) {
 	f := newFixture(t)
 	id := f.seed(1)[0]

@@ -91,7 +91,7 @@ func TestFactsSourceDatesAndCheckedURL(t *testing.T) {
 	}
 }
 
-// R-VYOV-LNTG R-VZWR-ZFK5
+// R-VYOV-LNTG R-CA24-HDKG
 func TestPopulatedFactsAndDetailSourceEncoding(t *testing.T) {
 	facts := Facts{KnownSince: "known", KnownSinceSource: "known-source", NewestFiling: "filed", NewestFilingSource: "filed-source", WebsiteCheckedURL: "https://checked.test/"}
 	b, err := json.Marshal(facts)

@@ -47,7 +47,7 @@ func TestWebsiteSearchClient(t *testing.T) {
 	}
 }
 
-// R-WGBU-VP1U R-I7FS-IIZB R-SDQ1-5H81 R-SEXX-J8YQ R-SG5T-X0PF R-AV13-OU59
+// R-E0WL-WGOF R-I7FS-IIZB R-SDQ1-5H81 R-SEXX-J8YQ R-SG5T-X0PF R-AV13-OU59
 func TestWebsiteSearchShapes(t *testing.T) {
 	zero := 0
 	input := enrichers.WebsiteSearchInput{"c", "n", "ci", "st", "street", "zip", "phone", "domain", "check", "error", "website", "check", &enrichers.WebsiteSearchSiteText{"failed", 0}, []enrichers.BriefPerson{{"person", "role"}}, []enrichers.Category{{"cat", "origin"}}}
@@ -88,7 +88,7 @@ func TestWebsiteSearchShapes(t *testing.T) {
 	}
 }
 
-// R-WF3Y-HXB5 R-M9NX-E3ED
+// R-DZOP-IOXQ R-DYGT-4X71
 func TestWebsiteSearchInputs(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	s := enrichers.Subject{People: []sources.Sourced[sources.Person]{{Value: sources.Person{Name: "Ann", Role: "owner"}}, {Value: sources.Person{Name: "Bob"}}, {Value: sources.Person{Name: "Ann", Role: "owner"}}}, ID: "candidate", Name: "Acme", City: "Sandstone", State: "MN", Street: "Main", Zip: "zip", Phone: "phone", Email: "Ops@Acme.test", Links: []enrichers.Link{{Reading: sources.Reading{People: []sources.Person{{Name: "Ann", Role: "owner"}, {Name: "Bob"}, {Name: "Ann", Role: "owner"}}}}, {Gone: true, Reading: sources.Reading{People: []sources.Person{{Name: "Gone"}}}}}, Facts: &enrichers.LinkFound{Categories: []enrichers.Category{{Name: "omit", Source: enrichers.KindBrief}, {Name: "keep", Source: "source"}}}}
@@ -171,7 +171,69 @@ func TestWebsiteSearchInputs(t *testing.T) {
 	}
 }
 
-// R-WL7G-ES0M R-IX1O-JPJW R-IY9K-XHAL R-85VH-Q371
+// R-DYGT-4X71 R-DZOP-IOXQ
+func TestWebsiteSearchInputClientsAndPickedEvidence(t *testing.T) {
+	s := enrichers.Subject{
+		ID: "candidate", Name: "Company", City: "Town", State: "MN",
+		Website: "https://company.test/", WebsiteSource: "check",
+		SiteText: &enrichers.SiteTextFound{Run: "prior", Status: "failed"},
+		People: []sources.Sourced[sources.Person]{
+			{Value: sources.Person{Name: "Ann", Role: "owner"}, Source: "source-one"},
+			{Value: sources.Person{Name: "Bob"}, Source: "source-two"},
+			{Value: sources.Person{Name: "Ann", Role: "president"}},
+			{Value: sources.Person{Name: "Ann", Role: "owner"}},
+			{Value: sources.Person{Role: "unnamed"}},
+		},
+		Facts: &enrichers.LinkFound{Categories: []enrichers.Category{
+			{Name: sources.CategoryRetail, Source: enrichers.KindBrief},
+			{Name: sources.CategoryTrucking, Source: "fmcsa"},
+			{Name: sources.CategoryConstruction, Source: "osha_ita"},
+		}},
+	}
+	want := enrichers.WebsiteSearchInput{
+		Candidate: s.ID, Name: s.Name, City: s.City, State: s.State,
+		Website: s.Website, WebsiteFrom: "check",
+		SiteText: &enrichers.WebsiteSearchSiteText{Status: "failed"},
+		People:   []enrichers.BriefPerson{{Name: "Ann", Role: "owner"}, {Name: "Bob"}, {Name: "Ann", Role: "president"}},
+		Categories: []enrichers.Category{
+			{Name: sources.CategoryTrucking, Source: "fmcsa"},
+			{Name: sources.CategoryConstruction, Source: "osha_ita"},
+		},
+	}
+	encoded, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identitySum := sha256.Sum256([]byte(s.Name + "\t" + s.City + "\t" + s.State))
+	siteSum := sha256.Sum256([]byte(s.Website + "\t" + s.SiteText.Run))
+	fingerprint := hex.EncodeToString(identitySum[:]) + "/" + hex.EncodeToString(siteSum[:])
+	for _, client := range []*prompts.Client{nil, {}} {
+		for _, checker := range []*website.Checker{nil, {}} {
+			e := enrichers.WebsiteSearch{Prompts: client, Checker: checker}
+			if got := e.Input(s); !bytes.Equal(got, encoded) {
+				t.Fatalf("input %s, want %s", got, encoded)
+			}
+			if got := e.Inputs(s); got != fingerprint {
+				t.Fatalf("fingerprint %q, want %q", got, fingerprint)
+			}
+			owned := s
+			owned.WebsiteSource = sources.Owner
+			if got := e.Inputs(owned); got != "" {
+				t.Fatalf("owner website selected: %q", got)
+			}
+		}
+	}
+	after, err := json.Marshal(s)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("subject changed", err)
+	}
+}
+
+// R-E4KB-1RWI R-IX1O-JPJW R-IY9K-XHAL R-85VH-Q371
 func TestWebsiteSearchFoundAndFailure(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	valid := `{"url":"https://acme.test/","why":"match","rejected":[{"url":"https://other.test/","why":"different","x":1},{"url":"https://third.test/","why":"another"}],"x":2}`
@@ -238,7 +300,7 @@ func TestWebsiteSearchFoundAndFailure(t *testing.T) {
 	}
 }
 
-// R-WOV5-K38P
+// R-E880-734L
 func TestWebsiteSearchValidation(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	run := `"run":{"id":"run","status":"killed","cost_nanos":0}`
@@ -262,7 +324,7 @@ func TestWebsiteSearchValidation(t *testing.T) {
 	}
 }
 
-// R-WNN9-6BI0
+// R-E703-TBDW
 func TestWebsiteSearchConfirmation(t *testing.T) {
 	for _, address := range []string{"https://acme.test/", "https://secure.test/", "http://acme.test/", "https://missing.test/", "acme.test/about"} {
 		requests := []string{}
@@ -336,7 +398,7 @@ func TestWebsiteSearchConfirmation(t *testing.T) {
 	}
 }
 
-// R-WNN9-6BI0
+// R-E703-TBDW
 func TestWebsiteSearchConfirmationCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -385,7 +447,7 @@ func TestWebsiteSearchContextDeclarations(t *testing.T) {
 	}
 }
 
-// R-WF3Y-HXB5
+// R-DZOP-IOXQ
 func TestWebsiteSearchEmptySiteFingerprint(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	hash := func(v string) string { sum := sha256.Sum256([]byte(v)); return hex.EncodeToString(sum[:]) }
@@ -468,7 +530,7 @@ func TestWebsiteSearchEmptySiteFingerprint(t *testing.T) {
 	}
 }
 
-// R-M9NX-E3ED R-WGBU-VP1U
+// R-DYGT-4X71 R-E0WL-WGOF
 func TestWebsiteSearchEmptySiteInput(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	for _, source := range []string{"", "check", "Search", "search"} {
@@ -500,7 +562,7 @@ func TestWebsiteSearchEmptySiteInput(t *testing.T) {
 	}
 }
 
-// R-WJZK-109X R-WL7G-ES0M
+// R-E3CE-O05T R-E4KB-1RWI
 func TestWebsiteSearchReasonsAndCases(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	for _, s := range []enrichers.Subject{
@@ -570,7 +632,7 @@ func TestWebsiteSearchReasonsAndCases(t *testing.T) {
 	}
 }
 
-// R-WJZK-109X R-WL7G-ES0M R-WNN9-6BI0 R-WOV5-K38P
+// R-E3CE-O05T R-E4KB-1RWI R-E703-TBDW R-E880-734L
 func TestWebsiteSearchRedirectCases(t *testing.T) {
 	const proposed = "https://acme-trucking.test/"
 	const prior = "https://www.social.test/acme"
@@ -654,7 +716,7 @@ func TestWebsiteSearchRedirectCases(t *testing.T) {
 	}
 }
 
-// R-WOV5-K38P
+// R-E880-734L
 func TestWebsiteSearchConfirmationCaseValidation(t *testing.T) {
 	for _, tc := range []struct {
 		name, answer, landed, state, caseWord string
@@ -703,7 +765,7 @@ func TestWebsiteSearchConfirmationCaseValidation(t *testing.T) {
 	}
 }
 
-// R-WOV5-K38P
+// R-E880-734L
 func TestWebsiteSearchContextValidation(t *testing.T) {
 	e := enrichers.WebsiteSearch{}
 	killed := `"run":{"id":"r","status":"killed","cost_nanos":0}`

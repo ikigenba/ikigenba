@@ -240,7 +240,7 @@ func TestPageReasonsPreviousWriter(t *testing.T) {
 	contractEqual(t, pending, []store.Page{})
 }
 
-// R-ZP7M-ICO4 R-ZQFI-W4ET R-WHJR-9GSJ
+// R-ZP7M-ICO4 R-ZQFI-W4ET R-E24I-A8F4
 func TestUnreadablePageStorageAndSubject(t *testing.T) {
 	f := contractDB(t)
 	ctx := t.Context()
@@ -258,6 +258,10 @@ func TestUnreadablePageStorageAndSubject(t *testing.T) {
 	first := keptPage(id, "https://unreadable.test/shared")
 	saved, err := f.s.AddPage(ctx, first)
 	contractOK(t, err)
+	readableSubject, err := f.s.Subject(ctx, id)
+	contractOK(t, err)
+	contractEqual(t, readableSubject.Pages[3].Number, saved.Number)
+	contractEqual(t, readableSubject.Pages[3].Reason, "")
 	first.Reason = website.ReasonEmpty
 	first.Text = ""
 	newer, err := f.s.AddPage(ctx, first)

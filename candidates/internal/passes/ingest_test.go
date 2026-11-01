@@ -21,7 +21,7 @@ import (
 	"github.com/ikigenba/ikigenba/candidates/internal/trail"
 )
 
-// R-SGG7-YQ5M R-3D03-LUMS R-3XQE-3Y8L R-TKAA-NXHG R-1AS2-ED4A
+// R-SGG7-YQ5M R-3D03-LUMS R-3XQE-3Y8L R-TKAA-NXHG R-01Y2-GXRO
 func TestScraperIngestScopeAndFollowOn(t *testing.T) {
 	t.Parallel()
 	entered, release := make(chan struct{}, 2), make(chan struct{})
@@ -108,7 +108,7 @@ func TestIngestInvalidPrecedesUnavailable(t *testing.T) {
 	}
 }
 
-// R-4066-VHPZ R-42LZ-N17D R-1D7V-5WLO R-0ZSY-YFG1
+// R-4066-VHPZ R-42LZ-N17D R-04DV-8H92 R-ZUMO-6BBI
 func TestHandJudgeWithoutScrapes(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -139,7 +139,7 @@ func TestHandJudgeWithoutScrapes(t *testing.T) {
 	assertRefusal(t, q, err, passes.RefusalStopping)
 }
 
-// R-4066-VHPZ R-DTXE-DYY4 R-3SUS-KV9T
+// R-4066-VHPZ R-PVFQ-YZV0 R-3SUS-KV9T
 func TestHandJudgeBusyAndStoreFailure(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)
@@ -197,7 +197,7 @@ func TestCampaignProspectListPrecedenceAndLegacyMapping(t *testing.T) {
 	}
 }
 
-// R-SOKW-PW7E R-SS8L-V7FH R-8WDK-MWRK
+// R-7MD1-DEAC R-7NKX-R611 R-2FQ4-DT0J
 func TestHandRecordCarriesScraperAndJudgeCaller(t *testing.T) {
 	t.Parallel()
 	for _, origin := range []string{store.OriginIngest, store.OriginJudge, store.OriginEnrich, store.OriginRun, store.OriginCron, store.OriginPass} {
@@ -229,14 +229,14 @@ func TestHandRecordCarriesScraperAndJudgeCaller(t *testing.T) {
 	// The targeted entry point admits the new list namespace.
 	f := newFixture(t, nil, false)
 	ids := seedTarget(t, f, 1)
-	p, err := f.eng.EnrichTarget(t.Context(), identity.Caller{UserID: "owner"}, enrichers.KindLinkFacts, ids[0], false)
+	p, err := f.eng.EnrichTarget(t.Context(), identity.Caller{UserID: "owner"}, enrichers.KindLinkFacts, passes.Target{ID: ids[0]}, false)
 	if err != nil || p.Kind != store.KindEnrichTarget {
 		t.Fatal(p, err)
 	}
 	f.ended(p.ID)
 }
 
-// R-42LZ-N17D R-4066-VHPZ R-DTXE-DYY4
+// R-42LZ-N17D R-4066-VHPZ R-PVFQ-YZV0
 func TestConcurrentHandJudgeStartsReturnBeforeWorkEnds(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil, false)

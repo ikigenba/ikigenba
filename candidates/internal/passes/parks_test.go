@@ -57,7 +57,7 @@ func assertParkZeroOtherCounts(t *testing.T, p store.Pass) {
 	}
 }
 
-// R-DXL3-JA67 R-E00W-ATNL R-TJ2E-A5QR R-DYSZ-X1WW R-3BZB-PF2P R-3D78-36TE R-128R-PYXF R-TKAA-NXHG R-DP1S-UVZC R-1D7V-5WLO R-18C9-MTMW
+// R-DXL3-JA67 R-E00W-ATNL R-TJ2E-A5QR R-DYSZ-X1WW R-3BZB-PF2P R-3D78-36TE R-85VF-HQ5G R-TKAA-NXHG R-DP1S-UVZC R-04DV-8H92 R-ZZI9-PEAA
 func TestParksDeliveryDerivesAndDoesNotIngest(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -269,7 +269,7 @@ func TestParksDeliveryAndRuleRefusals(t *testing.T) {
 	}
 }
 
-// R-E64E-7OD2 R-EENO-W2JX R-EDFS-IAT8 R-DP1S-UVZC R-2PIS-RSYP R-1BZY-S4UZ
+// R-E64E-7OD2 R-EENO-W2JX R-EDFS-IAT8 R-DP1S-UVZC R-2EI8-019U R-035Y-UPID
 func TestParkRulesPassOutlivesCallerAndUsesItsIdentity(t *testing.T) {
 	t.Parallel()
 	entered, release := make(chan struct{}), make(chan struct{})
@@ -378,7 +378,7 @@ func TestStartParksCurrentRunAndNoops(t *testing.T) {
 				t.Fatal(f.requests(), f.list())
 			}
 			if mode != "done" {
-				if ok || p != (store.Pass{}) {
+				if ok || !reflect.DeepEqual(p, store.Pass{}) {
 					t.Fatal(p, ok)
 				}
 				f.flush()
@@ -409,7 +409,7 @@ func TestStartParksCurrentRunAndNoops(t *testing.T) {
 	}
 }
 
-// R-EIBE-1DS0 R-373Q-6C3X R-1BZY-S4UZ
+// R-EIBE-1DS0 R-373Q-6C3X R-035Y-UPID
 func TestParksFailureLeavesPriorParks(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"short", "drain", "no_current"} {
@@ -566,7 +566,7 @@ waitForEnding:
 	}
 }
 
-// R-8WDK-MWRK R-SOKW-PW7E R-SS8L-V7FH
+// R-2FQ4-DT0J R-7MD1-DEAC R-7NKX-R611
 func TestParksRecordCarriesEveryCountAndRulesStarter(t *testing.T) {
 	t.Parallel()
 	p := store.Pass{Kind: store.KindParks, Origin: store.OriginRules, ParcelRun: "parcels", ParcelsRead: 1, ByLabel: 2, ByValue: 3, ByCandidate: 4, ParksCreated: 5, ParksUpdated: 6, ParksGone: 7, ParksGrown: 8, UserID: "owner", UserEmail: "owner@example.test"}
@@ -601,7 +601,7 @@ func (w *parkRestoreWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// R-1BZY-S4UZ R-1FNN-XG32
+// R-035Y-UPID R-06TO-00QG
 func TestParksStoreFailureRestoresForFailedEnding(t *testing.T) {
 	t.Parallel()
 	var f *fixture
