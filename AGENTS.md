@@ -2,6 +2,10 @@ Ikigenba is a platform for one business or workgroup that unifies the developmen
 
 The **project** is this git repository. A **sub-project** is a directory that holds `specs/` beside its own `AGENTS.md`, which declares its toolchain, test files, gates and commit conventions. This file is guidance for the whole project and never stands in for a sub-project's `AGENTS.md`.
 
+## Core and chosen services
+
+A customer's host does not carry the whole suite. A core set of services, which we define, is on every host that runs ikigenba. The core is `auth`, `telemetry`, `mcp` and `home`, which every other service depends on, plus `accounts` and `sessions` (in delivery as of 2026-11-01). Every other service is on a customer's host because that customer's business needs it; we recommend, the customer decides how their business runs, and a connector to a tool they already use is likelier than a service of ours doing the same job. A statement that a service runs on every space means every space we run, not every customer host, unless the service is in the core. The business framing is `/mnt/projects/biz/docs/platform.md`, What a customer host carries.
+
 ## Sub-projects
 
 Platform apps, each one Go binary behind the host's nginx:
