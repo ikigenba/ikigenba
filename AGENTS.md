@@ -26,6 +26,7 @@ Platform apps, each one Go binary behind the host's nginx:
 - `campaigns` keeps the suite's outreach campaigns: prospects from candidates' prospect lists become members, each gets one piece per channel, mail or email, with a tracking link of its own, and every visit to a link is recorded; the owner marks pieces delivered by hand, and campaigns sends nothing.
 - `ledger` is the suite's books: a double-entry ledger of accounts, transactions, balance assertions, notes and documents for the one business, with its statements; agents post to it and read it over MCP, money is append-only, and later services build on it.
 - `accounts` is the suite's SSH accounts service: it keeps business groups, each a Linux group with a service account and a shared folder on the host, and the SSH users who belong to them, every change made on the host through opsctl and offered to agents as tools, with a read-only page.
+- `sessions` keeps the suite's record of agent sessions: content-free turns the `turns` command pushes from each person's machine, from which it derives attention, wall time, agent time, tokens, dollars and kind of work; agents ask it for a period's figures and the page shows the business's weeks by kind.
 - `dummy` is the reference app: a control panel over in-memory widgets that shows the patterns.
 
 Shared library:
