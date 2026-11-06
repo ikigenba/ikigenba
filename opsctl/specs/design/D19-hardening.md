@@ -57,16 +57,85 @@ The step's parts, in the order it runs them:
   step puts the previous drop-in back, or removes the new one, before it
   returns, and the failing configuration is never installed. A kill between
   the rename and the check or reload can leave the new drop-in in place
-  unchecked; that window is accepted, and the next run checks it. The
-  drop-in's `Match Group shell` block turns off every forwarding sshd offers,
-  Unix-domain socket forwarding (`AllowStreamLocalForwarding`, `yes` by
-  default) included, so a member reaches no socket on the host through
-  sshd (sshd_config(5) lists the keyword among those `Match` accepts). The
-  drop-in also sets `UsePAM yes` before its `Match` block (sshd_config(5):
-  a global keyword, not one `Match` accepts, that turns on PAM account and
+  unchecked; that window is accepted, and the next run checks it. GSSAPI
+  authentication and key exchange are off for everyone, since the suite has
+  no Kerberos: AL2023's build defaults `GSSAPIAuthentication yes` and carries
+  the gssapi-keyex patch, so `GSSAPIKeyExchange` (default `no`) is a keyword
+  it knows, and the drop-in states both whatever the image says. Every
+  forwarding sshd offers is off globally, `ec2-user` included: TCP,
+  stream-local (Unix socket, `yes` by default), agent, X11 and tunnel. The
+  `Match Group shell` block holds only what differs for a member, the keys
+  file. The drop-in sets `UsePAM yes` before that block (sshd_config(5): a
+  global keyword, not one `Match` accepts, that turns on PAM account and
   session processing for every authentication type), so the account expiry
   that locks a person (D21) holds whatever the image's `50-redhat.conf`
-  says.
+  says. `PerSourcePenalties yes` takes this build's defaults, which the
+  drop-in does not restate: `crash:90s authfail:5s noauth:1s
+  grace-exceeded:10s refuseconnection:10s max:600s min:15s max-sources4:65536
+  max-sources6:65536 overflow:permissive overflow6:permissive` (sshd_config(5)
+  of the installed build, and `sshd -T` prints them). Upstream 9.8 turned
+  penalties on by default, but AL2023's package reports `persourcepenalties
+  no` without the drop-in. Penalties accrue only to connections that fail or
+  do not authenticate, so the admin's parallel agents, which authenticate at
+  once, are not penalized. The penalty for one that ends unauthenticated is
+  `noauth` 1s when closed and `grace-exceeded` 10s when dropped at the grace
+  limit, so an address that held many such connections is turned away for a
+  while after they end, until its penalty lifts. A sign-in that fails scores
+  `authfail`, 5s, so an address that keeps offering a key the account does not
+  accept passes `min` after four failures and is turned away from its fifth
+  attempt, ahead of fail2ban's `maxretry = 5`; one that tries no method at all
+  scores `noauth` and needs about sixteen. `MaxStartups start:rate:full`
+  counts unauthenticated connections from every source together; past `start`
+  sshd refuses new ones with probability `rate` percent, rising linearly to
+  100 at `full` (sshd_config(5)). Under the default `10:30:100`, one address
+  holding 20 would make about 38% of other addresses' connections fail. So the
+  drop-in sets `MaxStartups 30:30:100`, raising `start` to 30, above the
+  per-source cap of 20: one source alone can never push the total past
+  `start`, so another address is not affected, while `rate` and `full` keep
+  sshd's defaults. `PerSourceMaxStartups 20` caps one source's unauthenticated
+  connections, far above what a deploy holds: devctl runs each `ssh` and `scp`
+  as its own command and waits for it to end before starting the next, so a
+  deploy holds at most one unauthenticated connection at a time;
+  `PerSourceNetBlockSize` stays at its default `32:128`. The design promises
+  no per-cause accounting beyond sshd's own: a non-ed25519 key is an ordinary
+  publickey failure, and a key-exchange refusal closes before authentication
+  and is sshd's to penalize or not. fail2ban stays above it unchanged. The
+  algorithms are set in the drop-in, not through the system crypto policy,
+  which would change every TLS and SSH client on the host. User
+  keys are `ssh-ed25519` only, which excludes `sk-ssh-ed25519@openssh.com`,
+  ecdsa and RSA, matching what `opsctl user add` accepts (D21). AL2023's
+  `/etc/ssh/sshd_config` has only commented `HostKey` lines, `50-redhat.conf`
+  none, and the crypto-policy include
+  (`/etc/crypto-policies/back-ends/opensshserver.config`) sets
+  `HostKeyAlgorithms` but no `HostKey`, so sshd loads its built-in rsa,
+  ecdsa and ed25519 keys. A `HostKey` line replaces those defaults, so only
+  the ed25519 key is loaded; `HostKeyAlgorithms ssh-ed25519` alone would
+  still load the ecdsa key and only hide it from the offer, and `HostKey`
+  alone would leave the policy's longer `HostKeyAlgorithms` list in
+  `sshd -T`. Both are set, so the loaded key and the advertised list are each
+  ed25519 only; the ecdsa key stays on disk. Key exchange puts the
+  post-quantum hybrids first (`mlkem768x25519-sha256`, on by default
+  upstream since 9.9; `sntrup761x25519-sha512` and its `@openssh.com`
+  alias), then `curve25519-sha256` and its `@libssh.org` alias; AL2023's
+  policy default lists none of the hybrids. Ciphers are chacha20-poly1305
+  and AES-GCM only, MACs SHA-2 ETM only; every offered cipher is AEAD, so a
+  MAC is never negotiated and the MAC list is verified by `sshd -T`, not by
+  a client. Evidence: in a container from `amazonlinux:2023` (digest
+  `sha256:3ccfbe800f864982b0a4e124a614b2382518cbd04b3c1cd35202bd46f392675b`)
+  with `openssh-server-9.9p1-16.amzn2023.0.1`, `sshd -t -f
+  /etc/ssh/sshd_config` with exactly the drop-in's bytes exited 0 with nothing
+  on stderr; `sshd -T` printed every value back as written, `hostkey
+  /etc/ssh/ssh_host_ed25519_key` alone, and `ssh-keyscan` returned ed25519
+  only; `sshd -T -C user=<member of shell>,...` gave `authorizedkeysfile
+  /etc/ssh/authorized_keys/%u`, and for `ec2-user` every forwarding `no` and
+  `.ssh/authorized_keys`. Running that sshd with those bytes, `UsePAM no`
+  alone changed since the container has no PAM stack: an address offering a
+  key the account did not accept was turned away from its fifth attempt; one
+  holding 20 unauthenticated connections was refused a 21st while another
+  address's 10 parallel sign-ins succeeded; and three rounds of 15 parallel
+  key sign-ins from one address all succeeded with no penalty logged. A name
+  sshd did not know would fail `sshd -t`, and the put-back above keeps the old
+  drop-in.
 - The packages `fail2ban-server` and `dnf-automatic`, each queried with
   `rpm -q`, and one `dnf install -y` for whichever are missing.
   `fail2ban-server` rather than the `fail2ban` metapackage, which would also
@@ -135,15 +204,15 @@ holds every rule runs only the step's queries and reports no change.
 
 - R-QP1Z-BOQ4: Package `internal/hardening` MUST export the untyped string constants `ShellGroup = "shell"`, `KeysDir = "/etc/ssh/authorized_keys"`, and `AdminAccount = "ec2-user"`.
 - R-QQ9V-PGGT: Package `internal/hardening` MUST export `Apply(ctx context.Context, env host.Env) (changed bool, err error)`.
-- R-LNH0-1BL0: `Apply` MUST run its parts in this order, each finishing before the next begins, so the commands it executes through `env.Execute` appear in this order: the account (R-ZB1F-CHGU), the pool (R-SALL-UGL5), the journal (R-WPC6-2WYU, R-WQK2-GOPJ), the shell group (R-QV5H-8JFL), the keys directory (R-QWDD-MB6A), sshd (R-RNQB-Q76Z), the packages (R-LM93-NJUB), fail2ban (R-SD1E-M02J), the release lock (R-3DXV-DUNC), dnf-automatic (R-SE9A-ZRT8), the sudo rule (R-98VK-1BB5), and the state directories (R-YEOK-DJ3V); every host path it reads, writes, or passes in a command's arguments MUST be resolved under `env.Root` (D01), and every command MUST be executed through `env.Execute`.
+- R-PBSR-HVRO: `Apply` MUST run its parts in this order, each finishing before the next begins, so the commands it executes through `env.Execute` appear in this order: the account (R-ZB1F-CHGU), the pool (R-SALL-UGL5), the journal (R-WPC6-2WYU, R-WQK2-GOPJ), the shell group (R-QV5H-8JFL), the keys directory (R-QWDD-MB6A), sshd (R-P9CY-QCAA), the packages (R-LM93-NJUB), fail2ban (R-SD1E-M02J), the release lock (R-3DXV-DUNC), dnf-automatic (R-SE9A-ZRT8), the sudo rule (R-98VK-1BB5), and the state directories (R-YEOK-DJ3V); every host path it reads, writes, or passes in a command's arguments MUST be resolved under `env.Root` (D01), and every command MUST be executed through `env.Execute`.
 - R-ZB1F-CHGU: `Apply` MUST first execute `id --user ikigenba`, treating exit status 1 as an absent account and exit status 0 as a present one, and then call `apps.EnsureAccount(ctx, env)` (D08), so the account `ikigenba` exists before any later part names it; an account that was absent MUST make `changed` true. When `EnsureAccount` returns an error, `Apply` MUST stop at once and return, when `errors.As` finds a `*host.CommandError` in that error, that `*host.CommandError` itself, unchanged, its `Label` and `Result` as `EnsureAccount` set them and no prefix added to its `Error()`, and otherwise the error unchanged.
 - R-SALL-UGL5: `Apply` MUST make `/etc/systemd/system/user.slice.d/ikigenba.conf` hold exactly `"[Slice]\nMemoryHigh=1.5G\nMemoryMax=2G\nTasksMax=512\nCPUWeight=50\n"` and `/etc/systemd/system/user-.slice.d/ikigenba.conf` exactly `"[Slice]\nMemoryHigh=600M\nMemoryMax=1G\nTasksMax=256\n"`, `\n` denoting one LF byte, each with mode `0644`, creating either directory with mode `0755` when absent; it MUST rewrite neither file when its bytes are already right (setting only its mode when that differs), and after both MUST execute `systemctl daemon-reload` exactly when either file was created or its bytes changed, and otherwise no command for the pool, so a test observes the bytes and modes with `Lstat` and reads under `env.Root` and the reload in the recorded commands. When that `systemctl daemon-reload` cannot be run or exits nonzero, `Apply` MUST, before returning its error, put each drop-in it created or rewrote back to its previous bytes and mode, or remove it when it was absent, so the next run finds the pool not done and writes and reloads again.
 - R-WPC6-2WYU: `Apply` MUST make `/etc/systemd/journald.conf.d/ikigenba.conf` hold exactly `"[Journal]\nStorage=persistent\n"`, `\n` denoting one LF byte, with mode `0644`, creating `/etc/systemd/journald.conf.d/` with mode `0755` when absent, and MUST NOT rewrite it when its bytes are already right, setting only its mode when that differs. When nothing exists at `/var/log/journal` under `env.Root`, judged without following a link, it MUST create that directory with mode `0755`, creating `/var/log/` with mode `0755` when absent; it MUST NOT otherwise create, modify, or remove anything at or inside `/var/log/journal`, leaving its owner, group, mode, and ACL to the command of R-WQK2-GOPJ. This part MUST execute no command of its own.
 - R-WQK2-GOPJ: After R-WPC6-2WYU, exactly when the journald drop-in was created or its bytes changed, or `/var/log/journal` was created, in this call, `Apply` MUST execute in this order `systemd-tmpfiles --create --prefix <J>`, `<J>` being `/var/log/journal` resolved under `env.Root` (systemd-journald(8), tmpfiles.d(5)), then `systemctl restart systemd-journald.service`, then `journalctl --flush` (journalctl(1)), so a fake `Execute` observes the drop-in's new bytes and the directory in place when the first is recorded; otherwise it MUST execute no command for the journal, so on a host where both are already in place journald is not restarted. When any of the three cannot be run or exits nonzero, `Apply` MUST, before returning the error, leave the journald drop-in not holding R-WPC6-2WYU's bytes: when it was created or rewritten in this call, put it back to its previous bytes and mode, or remove it when it was absent, and when it already held those bytes before this call, remove it; it MUST leave `/var/log/journal` as it and the commands left it. So the next run finds the drop-in not in place, writes it, and executes the three commands again.
 - R-QV5H-8JFL: `Apply` MUST execute `getent group shell` (`ShellGroup`), treat exit status 0 as a present group and exit status 2 as an absent one (getent(1)), and only for an absent group execute `groupadd --system shell` (groupadd(8)), which makes `changed` true; it MUST NOT add any account to the group.
 - R-QWDD-MB6A: `Apply` MUST leave `KeysDir` under `env.Root` a directory with mode `0755`, creating it (and `/etc/ssh/` when absent, mode `0755`) when absent and setting its mode when it differs, and MUST NOT create, modify, or remove anything inside it.
-- R-RMIF-CFGA: *The sshd drop-in* MUST be `/etc/ssh/sshd_config.d/10-ikigenba.conf` holding exactly `"PubkeyAuthentication yes\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin no\nLoginGraceTime 30\nMaxAuthTries 3\nClientAliveInterval 300\nClientAliveCountMax 2\nAllowGroups ec2-user shell\nUsePAM yes\n\nMatch Group shell\n  AllowTcpForwarding no\n  AllowStreamLocalForwarding no\n  AllowAgentForwarding no\n  X11Forwarding no\n  PermitTunnel no\n  AuthorizedKeysFile /etc/ssh/authorized_keys/%u\n"`, `\n` denoting one LF byte, where `ec2-user` is `AdminAccount`, `shell` is `ShellGroup`, and `/etc/ssh/authorized_keys` is `KeysDir` written as the host path, never resolved under `env.Root`, with mode `0600`.
-- R-RNQB-Q76Z: When `/etc/ssh/sshd_config.d/10-ikigenba.conf` under `env.Root` is absent or its bytes differ from R-RMIF-CFGA's, `Apply` MUST put those bytes in place with mode `0600` by renaming a temporary file over the drop-in, then execute `sshd -t -f <C>`, `<C>` being `/etc/ssh/sshd_config` resolved under `env.Root`, so sshd judges exactly the configuration it will run with (sshd(8) `-t`, `-f`), and a fake `Execute` observes the new bytes in place when `sshd -t` is recorded; when it exits 0 `Apply` MUST execute `systemctl reload sshd.service`, which makes `changed` true. When `sshd -t` or that reload cannot be run or exits nonzero, `Apply` MUST, before returning the error, put the drop-in back to its previous bytes and mode, or remove it when it was absent, and after a failed `sshd -t` execute no reload, so once `Apply` returns a configuration that failed is not installed, a drop-in that failed to reload is not left looking done, and the next run checks again. When the drop-in already holds those bytes, `Apply` MUST execute no `sshd` and no reload of sshd, setting only its mode when it is not `0600`.
+- R-P852-CKJL: *The sshd drop-in* MUST be `/etc/ssh/sshd_config.d/10-ikigenba.conf` holding exactly `"PubkeyAuthentication yes\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nGSSAPIAuthentication no\nGSSAPIKeyExchange no\nPermitRootLogin no\nLoginGraceTime 30\nMaxAuthTries 3\nClientAliveInterval 300\nClientAliveCountMax 2\nAllowGroups ec2-user shell\nUsePAM yes\nAllowTcpForwarding no\nAllowStreamLocalForwarding no\nAllowAgentForwarding no\nX11Forwarding no\nPermitTunnel no\nPerSourcePenalties yes\nMaxStartups 30:30:100\nPerSourceMaxStartups 20\nPubkeyAcceptedAlgorithms ssh-ed25519\nHostKey /etc/ssh/ssh_host_ed25519_key\nHostKeyAlgorithms ssh-ed25519\nKexAlgorithms mlkem768x25519-sha256,sntrup761x25519-sha512,sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org\nCiphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com\nMACs hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com\n\nMatch Group shell\n  AuthorizedKeysFile /etc/ssh/authorized_keys/%u\n"`, `\n` denoting one LF byte, where `ec2-user` is `AdminAccount`, `shell` is `ShellGroup`, and `/etc/ssh/authorized_keys` is `KeysDir` written as the host path, never resolved under `env.Root`, with mode `0600`.
+- R-P9CY-QCAA: When `/etc/ssh/sshd_config.d/10-ikigenba.conf` under `env.Root` is absent or its bytes differ from R-P852-CKJL's, `Apply` MUST put those bytes in place with mode `0600` by renaming a temporary file over the drop-in, then execute `sshd -t -f <C>`, `<C>` being `/etc/ssh/sshd_config` resolved under `env.Root`, so sshd judges exactly the configuration it will run with (sshd(8) `-t`, `-f`), and a fake `Execute` observes the new bytes in place when `sshd -t` is recorded; when it exits 0 `Apply` MUST execute `systemctl reload sshd.service`, which makes `changed` true. When `sshd -t` or that reload cannot be run or exits nonzero, `Apply` MUST, before returning the error, put the drop-in back to its previous bytes and mode, or remove it when it was absent, and after a failed `sshd -t` execute no reload, so once `Apply` returns a configuration that failed is not installed, a drop-in that failed to reload is not left looking done, and the next run checks again. When the drop-in already holds those bytes, `Apply` MUST execute no `sshd` and no reload of sshd, setting only its mode when it is not `0600`.
 - R-LM93-NJUB: `Apply` MUST execute `rpm -q fail2ban-server` and then `rpm -q dnf-automatic`, treating exit status 0 as installed and exit status 1 as missing, and, when either is missing, execute exactly one `dnf install -y` followed by the missing names in that order (so `dnf install -y fail2ban-server dnf-automatic` when both are missing, `dnf install -y dnf-automatic` when only it is), which makes `changed` true on success; when both are installed it MUST execute no `dnf` command. It MUST execute these before writing the jail (R-LL17-9S3M) or `/etc/dnf/automatic.conf`, and a failed `dnf install -y` MUST stop `Apply` before either is written.
 - R-LL17-9S3M: `Apply` MUST make `/etc/fail2ban/jail.d/ikigenba.local` hold exactly `"[sshd]\nenabled = true\nbackend = systemd\nmode = aggressive\nbanaction = nftables-multiport\nmaxretry = 5\nfindtime = 10m\nbantime = 10m\nbantime.increment = true\nbantime.maxtime = 1w\n"`, `\n` denoting one LF byte, with mode `0644`, creating `/etc/fail2ban/jail.d/` with mode `0755` when absent, and MUST NOT rewrite it when its bytes are already right, setting only its mode when that differs.
 - R-SD1E-M02J: After writing the jail, `Apply` MUST execute `systemctl is-enabled fail2ban.service` and `systemctl is-active fail2ban.service`, each exit status 0 meaning enabled or active and any other exit status meaning not; when either is not, it MUST execute `systemctl enable --now fail2ban.service`, which makes `changed` true; when the jail file was created or its bytes changed and the service was active at the query, it MUST then execute `systemctl reload fail2ban.service`; and it MUST execute no other command for fail2ban, so on a host where the service is enabled, active, and the jail unchanged only the two queries run. When that `enable --now` or `reload` cannot be run or exits nonzero and the jail file was created or its bytes changed in this call, `Apply` MUST, before returning the error, put the jail back to its previous bytes and mode, or remove it when it was absent, so the next run writes it and reloads again.
