@@ -674,22 +674,29 @@ Postconditions:
 
 ## An outsider keeps failing from one address and sshd turns it away for a while
 
-Beneath fail2ban, sshd keeps its own count of each address's failed sign-ins. An address that keeps failing is turned away by sshd itself for a while: every connection from it is closed before sign-in, whichever account it names, `ec2-user` included, and then the limit lifts on its own.
+Beneath fail2ban, sshd keeps its own count of each address's failed sign-ins. An address that keeps failing is turned away by sshd itself for a while, before fail2ban's count would ban it: every connection from it is closed before sign-in, whichever account it names, `ec2-user` included, and then the limit lifts on its own.
 
 Command: the same failing sign-in, repeated from one address, then one more attempt with a key the account accepts:
 
 ```
-$ ssh -o PubkeyAuthentication=no alice@sbx.ikigenba.dev
+$ ssh -i ~/.ssh/stranger -o IdentitiesOnly=yes alice@sbx.ikigenba.dev
 $ ssh alice@sbx.ikigenba.dev
 ```
 
-Output: the first failures read as in "An outsider tries to sign in with a password". Once sshd turns the address away, each attempt from it, even with `alice`'s key, is closed before sign-in: ssh reports that the connection was closed or reset by the host.
+Output: the first failures each read
+
+```
+alice@sbx.ikigenba.dev: Permission denied (publickey).
+```
+
+Once sshd turns the address away, each attempt from it, even with `alice`'s key, is closed before sign-in: ssh reports that the connection was closed or reset by the host.
 
 Exits 255 for every attempt. The lines are on stderr; stdout is empty.
 
 Preconditions:
 
-- The host holds every rule, and `/etc/ssh/authorized_keys/alice` holds the key the client offers.
+- The host holds every rule, and `/etc/ssh/authorized_keys/alice` holds alice's key from `~/.ssh/id_ed25519`, which the last attempt offers.
+- `~/.ssh/stranger` is an ed25519 key that is in no authorized file on the host.
 - The address is not banned by fail2ban.
 
 Postconditions:
