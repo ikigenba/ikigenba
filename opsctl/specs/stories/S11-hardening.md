@@ -2,7 +2,7 @@
 
 `hardening` is the setup step that brings the host to the rules people who sign in to it live under. It is one idempotent step, run by `init` (`S04-init.md`) after `slices` and before `nginx.conf`, and by `activate` and `rollback` (`S10-releases.md`) right after `resources`: after every check, and before `snapshot` and `cutover` on a per-app host and before `label`. It brings the host to these rules, and nothing in them names a space:
 
-- **sshd** takes public keys only: no password or keyboard-interactive authentication and no root login, a short grace period to sign in, a small number of authentication attempts per connection, and idle sessions dropped. Only the admin account `ec2-user` and members of the group `shell` may sign in. A member of `shell` signs in only with a key held in `/etc/ssh/authorized_keys/<name>`, owned by root and not writable by them (`S13-users.md`); a key in their own `~/.ssh/authorized_keys` is ignored. `ec2-user` keeps signing in with the keys in its own `~/.ssh/authorized_keys`. A member of `shell` gets no TCP or port forwarding, no Unix-socket (stream-local) forwarding, no agent or X11 forwarding, and no tunnels. The rules are a drop-in under `/etc/ssh/sshd_config.d/`, checked with `sshd -t` before sshd is reloaded; a configuration that fails the check is not installed, so the admin's access is kept.
+- **sshd** takes public keys only, and of those only ed25519 keys, for everyone, `ec2-user` included: no RSA, ecdsa or security-key key signs anyone in. It offers no password, keyboard-interactive or GSSAPI authentication and no GSSAPI key exchange, allows no root login, gives a short grace period to sign in and a small number of authentication attempts per connection, and drops idle sessions. It offers only its ed25519 host key, and only modern MACs, key exchange methods and ciphers, so a client that speaks only an older host key type, cipher or key exchange method is refused before it can sign in; the host's ecdsa host key stays on disk but is not offered. No one gets TCP or port forwarding, Unix-socket (stream-local) forwarding, agent or X11 forwarding, or tunnels, `ec2-user` included. sshd itself turns away, for a while, a source that keeps failing to sign in or holds many unauthenticated connections at once; fail2ban still bans above it. Neither limit locks out the admin, who opens many connections at once and in a row from one address, as a devctl deploy and the owner's agents do. Only the admin account `ec2-user` and members of the group `shell` may sign in. `ec2-user` keeps signing in with the keys in its own `~/.ssh/authorized_keys`. The one rule that differs for a member of `shell` is where their keys are held: they sign in only with a key held in `/etc/ssh/authorized_keys/<name>`, owned by root and not writable by them (`S13-users.md`); a key in their own `~/.ssh/authorized_keys` is ignored. The rules are a drop-in under `/etc/ssh/sshd_config.d/`, checked with `sshd -t` before sshd is reloaded; a configuration that fails the check is not installed, so the admin's access is kept.
 - **The journal is persistent**: the drop-in `/etc/systemd/journald.conf.d/ikigenba.conf` sets `Storage=persistent` and `/var/log/journal` exists, so sshd's record of each sign-in, from which `opsctl user list` reads a person's last sign-in (`S13-users.md`), survives a reboot. When the drop-in or the directory was new, the step restarts journald and flushes what it held into `/var/log/journal`; otherwise journald is not restarted.
 - **The group `shell`** exists. `ec2-user` is not a member of it and may still sign in.
 - **fail2ban**, with a jail for sshd, bans a source that fails to sign in again and again. The first ban lasts 10 minutes; each repeated ban lasts longer; every ban lifts on its own.
@@ -38,7 +38,7 @@ Postconditions:
 
 - `fail2ban-server` and `dnf-automatic` are installed. fail2ban is running with its sshd jail, and dnf-automatic's timer is enabled, set to apply security updates only.
 - The group `shell` exists and has no members; `ec2-user` is not in it.
-- sshd runs with opsctl's drop-in, which passed `sshd -t`, and was reloaded: it accepts public keys only, refuses root, gives a short grace period and a small number of attempts per connection, drops idle sessions, and lets in only `ec2-user` and members of `shell`, with no forwarding of any kind, Unix sockets included, and no tunnels for members of `shell`. `ec2-user` signs in with its key as before.
+- sshd runs with opsctl's drop-in, which passed `sshd -t`, and was reloaded: it accepts ed25519 public keys only, for everyone, offers no GSSAPI authentication or key exchange, refuses root, gives a short grace period and a small number of attempts per connection, drops idle sessions, offers only its ed25519 host key and modern algorithms, lets in only `ec2-user` and members of `shell`, allows no forwarding of any kind, Unix sockets included, and no tunnels, for anyone, `ec2-user` included, and turns away for a while a source that keeps failing or holds many unauthenticated connections. `ec2-user` signs in with its ed25519 key as before.
 - `/etc/systemd/system/user.slice.d/ikigenba.conf` and `/etc/systemd/system/user-.slice.d/ikigenba.conf` are written and systemd was reloaded, so `ec2-user`'s next session runs inside the pool.
 - `/etc/systemd/journald.conf.d/ikigenba.conf` sets `Storage=persistent`, `/var/log/journal` exists, and journald was restarted and its records flushed there, so they survive a reboot.
 - Once `init` has finished, no path at or under any of the five state directories that exists grants any permission to others, `/run/ikigenba/services.json`, which `init` writes after the step, included. nginx still serves the host's names.
@@ -89,6 +89,7 @@ Preconditions:
 
 - The host is the one of "An agent activates a release on a host that runs releases" (`S10-releases.md`): it runs `1a2b3c4`, whose opsctl has no `hardening` step, and `c604e32` is unpacked whole.
 - The host holds none of the rules: no `fail2ban-server`, no `dnf-automatic`, no group `shell`, none of opsctl's drop-ins, no `/var/log/journal`, and no `/etc/sudoers.d/ikigenba-accounts`. Some files under `/var/opt/ikigenba` and `/etc/ikigenba` are readable by others.
+- `ec2-user`'s `~/.ssh/authorized_keys` holds the admin's ed25519 key.
 
 Postconditions:
 
@@ -396,7 +397,7 @@ Postconditions:
 
 ## A shell user asks for a port forward and is refused
 
-A person signs in to work in a shell, not to reach the host's own ports or to carry traffic through it. sshd lets them in and refuses every channel that would forward: a local or remote port forward, a dynamic (SOCKS) forward, a Unix-socket (stream-local) forward, the agent, X11, and a tunnel device. `ec2-user`, who is not in `shell`, is not limited this way.
+A person signs in to work in a shell, not to reach the host's own ports or to carry traffic through it. sshd lets them in and refuses every channel that would forward: a local or remote port forward, a dynamic (SOCKS) forward, a Unix-socket (stream-local) forward, the agent, X11, and a tunnel device. `ec2-user` is limited the same way ("The admin asks for a port forward and is refused").
 
 Command:
 
@@ -428,6 +429,40 @@ Postconditions:
 
 - Nothing has changed on the host. `alice` can sign in and use a shell as before.
 
+## The admin asks for a port forward and is refused
+
+The admin signs in to run commands and copy files, not to carry traffic through the host, and devctl needs only plain `ssh` and `scp`. sshd refuses `ec2-user` every channel that would forward, as it does a member of `shell`: a local or remote port forward, a dynamic (SOCKS) forward, a Unix-socket (stream-local) forward, the agent (`ssh -A`), X11, and a tunnel device.
+
+Command:
+
+```
+$ ssh -N -L 8080:127.0.0.1:443 ec2-user@sbx.ikigenba.dev
+```
+
+and, from another terminal on the same machine,
+
+```
+$ curl -sk https://127.0.0.1:8080/
+```
+
+Output: ssh prints, for each connection made to the forwarded port,
+
+```
+channel 2: open failed: administratively prohibited: open failed
+```
+
+with the channel number counting up. curl's connection is closed with no response.
+
+Exits 255 once interrupted. ssh's lines are on its stderr and its stdout is empty; curl prints nothing. Nothing reaches the host's port 443 through the forward.
+
+Preconditions:
+
+- The host holds every rule, and `ec2-user`'s `~/.ssh/authorized_keys` holds the admin's ed25519 key, which the client offers.
+
+Postconditions:
+
+- Nothing has changed on the host. `ec2-user` signs in, uses a shell, and copies files with `scp` as before.
+
 ## An outsider tries to sign in with a password
 
 sshd offers public keys and nothing else, so a client that has no key the account accepts is turned away before any password is asked for, whoever the account is.
@@ -453,6 +488,68 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. The failure counts toward fail2ban's ban of the client's address.
+
+## A client asks for GSSAPI and is not offered it
+
+The suite has no Kerberos, so sshd offers no GSSAPI authentication and no GSSAPI key exchange, to any account. A client that asks for GSSAPI and offers no key is turned away: publickey is the only method sshd names.
+
+Command:
+
+```
+$ ssh -o GSSAPIAuthentication=yes -o PubkeyAuthentication=no ec2-user@sbx.ikigenba.dev
+```
+
+Output:
+
+```
+ec2-user@sbx.ikigenba.dev: Permission denied (publickey).
+```
+
+Exits 255. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The host holds every rule.
+
+Postconditions:
+
+- Nothing has changed. The failure counts toward fail2ban's ban of the client's address.
+
+## A client that speaks only an old algorithm is refused before it signs in
+
+sshd offers only its ed25519 host key and only modern MACs, key exchange methods and ciphers. A client that will accept nothing sshd offers as a host key type, a cipher or a key exchange method is refused while the connection is being set up, before any account is named. Every cipher the host offers carries its own integrity check, so a client's MAC list is never negotiated and an old MAC alone neither refuses nor admits it.
+
+Command:
+
+```
+$ ssh -o HostKeyAlgorithms=ecdsa-sha2-nistp256 ec2-user@sbx.ikigenba.dev
+```
+
+```
+$ ssh -o Ciphers=aes128-cbc ec2-user@sbx.ikigenba.dev
+```
+
+```
+$ ssh -o KexAlgorithms=diffie-hellman-group14-sha1 ec2-user@sbx.ikigenba.dev
+```
+
+Output:
+
+```
+Unable to negotiate with 77.112.106.79 port 22: no matching <kind> found. Their offer: <offer>
+```
+
+where `<kind>` is `host key type`, `cipher` and `key exchange method` for the three forms in turn, and `<offer>` is the comma-separated list of what sshd offers of that kind.
+
+Exits 255. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The host holds every rule; its address is `77.112.106.79`.
+
+Postconditions:
+
+- No one signed in. Nothing has changed.
 
 ## An outsider tries to sign in as an account outside the shell group
 
@@ -513,7 +610,41 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. Signing in with `~/.ssh/id_ed25519` still works.
-- `ec2-user` is not affected: a key added to its own `~/.ssh/authorized_keys` lets it sign in.
+- `ec2-user` is not affected: an ed25519 key added to its own `~/.ssh/authorized_keys` lets it sign in.
+
+## The admin tries to sign in with a key that is not ed25519
+
+sshd accepts only ed25519 keys, for everyone, the same keys `opsctl user add` and `opsctl user key add` accept (`S13-users.md`). An RSA, ecdsa or security-key key does not sign `ec2-user` in, even when it is held in `ec2-user`'s own `~/.ssh/authorized_keys`.
+
+Command:
+
+```
+$ ssh -o IdentitiesOnly=yes -i ~/.ssh/id_rsa ec2-user@sbx.ikigenba.dev
+```
+
+```
+$ ssh -o IdentitiesOnly=yes -i ~/.ssh/id_ecdsa ec2-user@sbx.ikigenba.dev
+```
+
+```
+$ ssh -o IdentitiesOnly=yes -i ~/.ssh/id_ecdsa_sk ec2-user@sbx.ikigenba.dev
+```
+
+Output:
+
+```
+ec2-user@sbx.ikigenba.dev: Permission denied (publickey).
+```
+
+Exits 255. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The host holds every rule. `ec2-user`'s `~/.ssh/authorized_keys` holds the admin's ed25519 key and the public half of the key each form offers.
+
+Postconditions:
+
+- Nothing has changed. Signing in with the admin's ed25519 key still works.
 
 ## An outsider fails to sign in again and again from one address
 
@@ -526,7 +657,7 @@ $ ssh -o PubkeyAuthentication=no alice@sbx.ikigenba.dev
 $ ssh alice@sbx.ikigenba.dev
 ```
 
-Output: each failure reads as in "An outsider tries to sign in with a password". Once the address is banned, the next attempt, even with `alice`'s key, gets no answer from sshd: ssh reports that the connection was refused or timed out.
+Output: each failure reads as in "An outsider tries to sign in with a password", except that an attempt sshd itself turns away ("An outsider keeps failing from one address and sshd turns it away for a while") is closed before sign-in, and ssh reports that the connection was closed by the host. Once the address is banned, the next attempt, even with `alice`'s key, gets no answer from sshd: ssh reports that the connection was refused or timed out.
 
 Exits 255 for every attempt. The lines are on stderr; stdout is empty.
 
@@ -540,6 +671,84 @@ Postconditions:
 - The address is banned. Ten minutes after the ban began, `ssh alice@sbx.ikigenba.dev` from it signs in again.
 - Another address is not affected: `alice` signs in from it throughout.
 - If the address fails again and again after the ban lifts, it is banned again, for longer than 10 minutes, and that ban too lifts on its own.
+
+## An outsider keeps failing from one address and sshd turns it away for a while
+
+Beneath fail2ban, sshd keeps its own count of each address's failed sign-ins. An address that keeps failing is turned away by sshd itself for a while: every connection from it is closed before sign-in, whichever account it names, `ec2-user` included, and then the limit lifts on its own.
+
+Command: the same failing sign-in, repeated from one address, then one more attempt with a key the account accepts:
+
+```
+$ ssh -o PubkeyAuthentication=no alice@sbx.ikigenba.dev
+$ ssh alice@sbx.ikigenba.dev
+```
+
+Output: the first failures read as in "An outsider tries to sign in with a password". Once sshd turns the address away, each attempt from it, even with `alice`'s key, is closed before sign-in: ssh reports that the connection was closed or reset by the host.
+
+Exits 255 for every attempt. The lines are on stderr; stdout is empty.
+
+Preconditions:
+
+- The host holds every rule, and `/etc/ssh/authorized_keys/alice` holds the key the client offers.
+- The address is not banned by fail2ban.
+
+Postconditions:
+
+- Nothing has changed on disk. Once the limit has lifted, `ssh alice@sbx.ikigenba.dev` from the address signs in again, unless fail2ban has banned it meanwhile.
+- Another address is not affected: `alice` signs in from it throughout.
+
+## An outsider holds many unauthenticated connections from one address
+
+sshd caps how many connections one address may hold open at once without signing in. Beyond the cap, a further connection from that address is closed before sign-in; another address is not affected. Held connections that never sign in are dropped once the grace period runs out, so the limit lifts on its own.
+
+Command: many connections opened at once from one address and held without signing in, each like
+
+```
+$ nc sbx.ikigenba.dev 22
+```
+
+then, while they are held, from the same address,
+
+```
+$ ssh alice@sbx.ikigenba.dev
+```
+
+Output: each held connection shows sshd's version line and waits, until the connections from the address reach the cap. From then on, a further connection, `ssh`'s included, is closed at once: ssh reports that the connection was closed or reset by the host.
+
+Exits 255 for the `ssh` attempt. Its line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The host holds every rule, and `/etc/ssh/authorized_keys/alice` holds the key the client offers.
+- The address is not banned by fail2ban and not turned away by sshd.
+
+Postconditions:
+
+- Nothing has changed on disk. Once the held connections are closed or dropped, `ssh alice@sbx.ikigenba.dev` from the address signs in again.
+- Another address is not affected: `alice` signs in from it throughout.
+
+## The admin's agents open many connections from one address
+
+A devctl deploy, and the owner's agents, open many connections to the host from one address, several at once and many in a row. Each signs in with the admin's key and runs its command; sshd's own limits and fail2ban let every one through.
+
+Command: several of these at once, and many more in a row, from one address:
+
+```
+$ ssh ec2-user@sbx.ikigenba.dev uptime
+```
+
+Output: each connection prints `uptime`'s one line for the host.
+
+Exits 0 for every connection. Each line is on stdout; stderr is empty.
+
+Preconditions:
+
+- The host holds every rule, and `ec2-user`'s `~/.ssh/authorized_keys` holds the admin's ed25519 key, which the client offers.
+- The address is not banned by fail2ban and not turned away by sshd.
+
+Postconditions:
+
+- Nothing has changed. No connection was refused or delayed by sshd's limits, and fail2ban banned nothing.
 
 ## A shell user tries to read the suite's state
 
