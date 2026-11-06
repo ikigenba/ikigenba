@@ -539,7 +539,7 @@ Output:
 Unable to negotiate with 77.112.106.79 port 22: no matching <kind> found. Their offer: <offer>
 ```
 
-where `<kind>` is `host key type`, `cipher` and `key exchange method` for the three forms in turn, and `<offer>` is the comma-separated list of what sshd offers of that kind.
+where `<kind>` is `host key type`, `cipher` and `key exchange method` for the three forms in turn, and `<offer>` is the comma-separated list sshd offers of that kind: the host key types or ciphers the host allows, and for key exchange the methods the host allows together with sshd's own extension markers.
 
 Exits 255. The line is on stderr; stdout is empty.
 
@@ -699,7 +699,7 @@ Postconditions:
 
 ## An outsider holds many unauthenticated connections from one address
 
-sshd caps how many connections one address may hold open at once without signing in. Beyond the cap, a further connection from that address is closed before sign-in; another address is not affected. Held connections that never sign in are dropped once the grace period runs out, so the limit lifts on its own.
+sshd caps how many connections one address may hold open at once without signing in. Beyond the cap, a further connection from that address is closed before sign-in; another address is not affected. Held connections that never sign in are dropped once the grace period runs out. Each held connection that never signs in, whether dropped or closed by the client, earns the address a penalty from sshd, so once they close the address does not sign in again at once. The cap and the penalty both lift on their own.
 
 Command: many connections opened at once from one address and held without signing in, each like
 
@@ -724,7 +724,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed on disk. Once the held connections are closed or dropped, `ssh alice@sbx.ikigenba.dev` from the address signs in again.
+- Nothing has changed on disk. Once the held connections are closed or dropped and any penalty they earned has lifted, `ssh alice@sbx.ikigenba.dev` from the address signs in again.
 - Another address is not affected: `alice` signs in from it throughout.
 
 ## The admin's agents open many connections from one address
