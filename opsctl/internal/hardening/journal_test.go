@@ -247,45 +247,63 @@ func TestJournalFilesystemFailureRestoresDropIn(t *testing.T) {
 	}
 }
 
-func TestSSHDSpawnFailuresRestoreAndRetry(t *testing.T) {
-	// R-RNQB-Q76Z R-RV1Q-0TN5 R-ZH7B-34BK
+func TestSSHDFailuresRestoreAndRetry(t *testing.T) {
+	// R-P9CY-QCAA R-RV1Q-0TN5 R-ZH7B-34BK
 	for _, reload := range []bool{false, true} {
 		for _, exists := range []bool{false, true} {
-			t.Run(fmt.Sprintf("reload=%v/exists=%v", reload, exists), func(t *testing.T) {
-				f := newFixture(t)
-				f.requireApply()
-				name := "etc/ssh/sshd_config.d/10-ikigenba.conf"
-				if exists {
-					f.write(name, "previous sshd configuration", 0o620)
-				} else if err := os.Remove(filepath.Join(f.root, name)); err != nil {
-					t.Fatal(err)
-				}
-				f.commands = nil
-				label := "sshd -t"
-				f.fail = "sshd -t -f " + filepath.Join(f.root, "etc/ssh/sshd_config")
-				if reload {
-					label, f.fail = "systemctl reload", "systemctl reload sshd.service"
-				}
-				f.spawnErr = errors.New("fixture could not start process")
-				changed, err := f.apply()
-				var ce *host.CommandError
-				if changed || !errors.As(err, &ce) || !reflect.ValueOf(err).Equal(reflect.ValueOf(ce)) || ce.Label != label || !reflect.ValueOf(ce.Err).Equal(reflect.ValueOf(f.spawnErr)) || !reflect.DeepEqual(ce.Result, f.fault) || f.commands[len(f.commands)-1] != f.fail {
-					t.Fatalf("sshd failure: changed=%v error=%#v commands=%q", changed, err, f.commands)
-				}
-				if exists {
-					if f.read(name) != "previous sshd configuration" || f.mode(name) != 0o620 {
-						t.Fatal("previous sshd configuration not restored")
+			for _, spawn := range []bool{false, true} {
+				t.Run(fmt.Sprintf("reload=%v/exists=%v/spawn=%v", reload, exists, spawn), func(t *testing.T) {
+					f := newFixture(t)
+					f.requireApply()
+					name := "etc/ssh/sshd_config.d/10-ikigenba.conf"
+					if exists {
+						f.write(name, "previous sshd configuration", 0o620)
+					} else if err := os.Remove(filepath.Join(f.root, name)); err != nil {
+						t.Fatal(err)
 					}
-				} else if _, err := os.Lstat(filepath.Join(f.root, name)); !errors.Is(err, os.ErrNotExist) {
-					t.Fatalf("sshd candidate retained: %v", err)
-				}
-				f.noTemporary()
-				f.fail, f.spawnErr, f.commands = "", nil, nil
-				f.requireApply()
-				if !slices.Contains(f.commands, "systemctl reload sshd.service") {
-					t.Fatalf("sshd retry did not reload: %q", f.commands)
-				}
-			})
+					f.commands = nil
+					label := "sshd -t"
+					f.fail = "sshd -t -f " + filepath.Join(f.root, "etc/ssh/sshd_config")
+					if reload {
+						label, f.fail = "systemctl reload", "systemctl reload sshd.service"
+					}
+					if spawn {
+						f.spawnErr = errors.New("fixture could not start process")
+					}
+					f.hook = func(c host.Command) {
+						if c.Name == "sshd" || (c.Name == "systemctl" && slices.Equal(c.Args, []string{"reload", "sshd.service"})) {
+							if f.read(name) != expectedSSHConfig || f.mode(name) != 0o600 {
+								t.Fatal("new sshd policy not installed before check or reload")
+							}
+						}
+					}
+					changed, err := f.apply()
+					var ce *host.CommandError
+					if changed || !errors.As(err, &ce) || err.Error() != ce.Error() || ce.Label != label || !reflect.ValueOf(ce.Err).Equal(reflect.ValueOf(f.spawnErr)) || !reflect.DeepEqual(ce.Result, f.fault) || f.commands[len(f.commands)-1] != f.fail {
+						t.Fatalf("sshd failure: changed=%v error=%#v commands=%q", changed, err, f.commands)
+					}
+					if exists {
+						if f.read(name) != "previous sshd configuration" || f.mode(name) != 0o620 {
+							t.Fatal("previous sshd configuration not restored")
+						}
+					} else if _, err := os.Lstat(filepath.Join(f.root, name)); !errors.Is(err, os.ErrNotExist) {
+						t.Fatalf("sshd candidate retained: %v", err)
+					}
+					f.noTemporary()
+					f.fail, f.spawnErr, f.commands = "", nil, nil
+					f.requireApply()
+					var commands []string
+					for _, command := range f.commands {
+						if strings.HasPrefix(command, "sshd ") || command == "systemctl reload sshd.service" {
+							commands = append(commands, command)
+						}
+					}
+					want := []string{"sshd -t -f " + filepath.Join(f.root, "etc/ssh/sshd_config"), "systemctl reload sshd.service"}
+					if !slices.Equal(commands, want) || f.read(name) != expectedSSHConfig || f.mode(name) != 0o600 {
+						t.Fatalf("sshd retry = %q, want %q", commands, want)
+					}
+				})
+			}
 		}
 	}
 }
