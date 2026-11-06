@@ -657,7 +657,7 @@ $ ssh -o PubkeyAuthentication=no alice@sbx.ikigenba.dev
 $ ssh alice@sbx.ikigenba.dev
 ```
 
-Output: each failure reads as in "An outsider tries to sign in with a password", except that an attempt sshd itself turns away ("An outsider keeps failing from one address and sshd turns it away for a while") is closed before sign-in, and ssh reports that the connection was closed by the host. Once the address is banned, the next attempt, even with `alice`'s key, gets no answer from sshd: ssh reports that the connection was refused or timed out.
+Output: each failure reads as in "An outsider tries to sign in with a password". Once the address is banned, the next attempt, even with `alice`'s key, gets no answer from sshd: ssh reports that the connection was refused or timed out.
 
 Exits 255 for every attempt. The lines are on stderr; stdout is empty.
 
