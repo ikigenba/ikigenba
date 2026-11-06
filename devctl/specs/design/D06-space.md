@@ -35,7 +35,8 @@ destroyed space leaves nothing a later seed could take. The role's one inline po
 here too: `PolicyDocument` derives it from the root, the zone id, the space,
 and whether the space holds the apex, so `space create` (D07) and `apex` (D14)
 regenerate the same document and can never disagree about what a space's role
-may do. The wait helpers poll a cloud fact on
+may do. The policy also lets the host's SSM agent register and carry a
+Session Manager session. The wait helpers poll a cloud fact on
 the shared interval until it holds: `WaitState` and `WaitChecks` watch an
 instance, `WaitLaunchReady` watches a launch spec become acceptable, and
 `WaitInsync` watches a Route 53 change, so a caller can hold a step open until
@@ -89,7 +90,9 @@ release's label among them, are opsctl's and never parsed here.
 
 - R-SUCG-OHQC: `PolicyDocument` MUST return identical text for identical arguments.
 
-- R-9ANZ-12GL: The document `PolicyDocument` returns MUST grant `ssm:GetParameter` on exactly the resource `arn:aws:ssm:*:*:parameter/<sp.Domain>/*` and MUST grant no other `ssm:` action, so that the host reads each app's secrets object that create and `secrets push` write and nothing outside the space's prefix; verified at least by parsing the JSON for the space `sbx1` under `ikigenba.dev` and finding an `Allow` statement for `ssm:GetParameter` whose only resource is `arn:aws:ssm:*:*:parameter/sbx1.ikigenba.dev/*`, no action beginning `ssm:Put`, `ssm:Delete`, or `ssm:*`, and no resource naming `parameter/ikigenba/`.
+- R-U4WP-JND0: The document `PolicyDocument` returns MUST grant `ssm:GetParameter` on exactly the resource `arn:aws:ssm:*:*:parameter/<sp.Domain>/*` and `ssm:UpdateInstanceInformation` on exactly the resource `arn:aws:ec2:*:*:instance/*`, and MUST grant no other `ssm:` action, so that the host reads each app's secrets object that create and `secrets push` write and nothing outside the space's prefix, and its SSM agent registers the instance for Session Manager; verified at least by parsing the JSON for the space `sbx1` under `ikigenba.dev` and finding an `Allow` statement for `ssm:GetParameter` whose only resource is `arn:aws:ssm:*:*:parameter/sbx1.ikigenba.dev/*`, an `Allow` statement for `ssm:UpdateInstanceInformation` whose only resource is `arn:aws:ec2:*:*:instance/*`, no action beginning `ssm:Put`, `ssm:Delete`, or `ssm:*`, no `ssm:GetParameters`, and no resource naming `parameter/ikigenba/`.
+
+- R-U64L-XF3P: The document `PolicyDocument` returns MUST grant `ssmmessages:CreateControlChannel`, `ssmmessages:CreateDataChannel`, `ssmmessages:OpenControlChannel`, `ssmmessages:OpenDataChannel`, `ec2messages:AcknowledgeMessage`, `ec2messages:DeleteMessage`, `ec2messages:FailMessage`, `ec2messages:GetEndpoint`, `ec2messages:GetMessages`, and `ec2messages:SendReply` on exactly the resource `*`, and MUST grant no other `ssmmessages:` or `ec2messages:` action, so that the host's SSM agent carries a Session Manager session and an operator reaches the host without sshd; verified at least by parsing the JSON for `sbx1` under `ikigenba.dev` with each value of `apex` and finding each of the ten actions in an `Allow` statement whose only resource is `*`, exactly ten distinct actions beginning `ssmmessages:` or `ec2messages:`, and no action `ssmmessages:*` or `ec2messages:*`.
 
 - R-MM3E-Y3VK: The document `PolicyDocument` returns MUST grant `s3:GetObject`, `s3:PutObject`, and `s3:DeleteObject` on exactly `arn:aws:s3:::<root>/<sp.Label>/*`, and `s3:ListBucket` on `arn:aws:s3:::<root>` only under a `StringLike` condition on `s3:prefix` whose values are exactly `<sp.Label>/` and `<sp.Label>/*`, and MUST grant no other `s3:` action and no `s3:` action on any other resource, so that the host reads, writes, and deletes under `<sp.Label>/` and gains no access to another space's prefix; verified at least by parsing the JSON for `sbx1` under `ikigenba.dev` and finding the object resource `arn:aws:s3:::ikigenba.dev/sbx1/*` carrying `s3:DeleteObject`, the bucket resource `arn:aws:s3:::ikigenba.dev` with the prefixes `sbx1/` and `sbx1/*` and no `s3:DeleteObject`, and no resource or prefix naming `sbx2/`.
 
