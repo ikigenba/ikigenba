@@ -491,7 +491,7 @@ Postconditions:
 
 ## A client asks for GSSAPI and is not offered it
 
-The suite has no Kerberos, so sshd offers no GSSAPI authentication and no GSSAPI key exchange, to any account. A client that asks for GSSAPI and offers no key is turned away: publickey is the only method sshd names.
+The suite has no Kerberos, so sshd offers no GSSAPI authentication and no GSSAPI key exchange, to any account. The client is not offered GSSAPI and falls through to public key, the only method sshd names. Asking for GSSAPI is not itself a failure and counts toward nothing. This client offers no key, so its sign-in fails, and that failure counts as any other failed sign-in does.
 
 Command:
 
@@ -513,7 +513,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. The failure counts toward fail2ban's ban of the client's address.
+- Nothing has changed. Asking for GSSAPI counted toward nothing.
 
 ## A client that speaks only an old algorithm is refused before it signs in
 
