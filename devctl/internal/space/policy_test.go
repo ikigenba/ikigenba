@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -41,23 +42,120 @@ func TestPolicyDocumentIsDeterministic(t *testing.T) {
 	}
 }
 
-func TestPolicyParameterAccess(t *testing.T) {
-	// R-9ANZ-12GL
-	p := samplePolicy(t, false)
-	var actions []string
-	for _, statement := range p.Statement {
-		for _, action := range policyActions(t, statement) {
-			if strings.HasPrefix(action, "ssm:") {
-				actions = append(actions, action)
-				if statement.Effect != "Allow" || statement.Resource != "arn:aws:ssm:*:*:parameter/sbx1.ikigenba.dev/*" {
-					t.Errorf("SSM statement = %#v", statement)
+func TestPolicyParameterAndRegistrationAccess(t *testing.T) {
+	// R-U4WP-JND0
+	want := map[string]string{
+		"ssm:GetParameter":              "arn:aws:ssm:*:*:parameter/sbx1.ikigenba.dev/*",
+		"ssm:UpdateInstanceInformation": "arn:aws:ec2:*:*:instance/*",
+	}
+	for _, apex := range []bool{false, true} {
+		t.Run("apex="+strconv.FormatBool(apex), func(t *testing.T) {
+			statements := samplePolicyPermissions(t, apex)
+			seen := make(map[string]bool)
+			for _, statement := range statements {
+				for _, resource := range statement.Resource {
+					if strings.Contains(resource, "parameter/ikigenba/") {
+						t.Errorf("resource outside the space's secrets prefix: %q", resource)
+					}
+				}
+				for _, action := range statement.Action {
+					if !strings.HasPrefix(action, "ssm:") {
+						continue
+					}
+					resource, ok := want[action]
+					if !ok {
+						t.Errorf("unexpected SSM action %q", action)
+						continue
+					}
+					seen[action] = true
+					if statement.Effect != "Allow" || !slices.Equal(statement.Resource, []string{resource}) {
+						t.Errorf("SSM action %q: statement = %#v, want Allow on %q", action, statement, resource)
+					}
 				}
 			}
+			for action := range want {
+				if !seen[action] {
+					t.Errorf("missing SSM action %q", action)
+				}
+			}
+		})
+	}
+}
+
+func TestPolicySessionManagerMessagingAccess(t *testing.T) {
+	// R-U64L-XF3P
+	want := []string{
+		"ec2messages:AcknowledgeMessage",
+		"ec2messages:DeleteMessage",
+		"ec2messages:FailMessage",
+		"ec2messages:GetEndpoint",
+		"ec2messages:GetMessages",
+		"ec2messages:SendReply",
+		"ssmmessages:CreateControlChannel",
+		"ssmmessages:CreateDataChannel",
+		"ssmmessages:OpenControlChannel",
+		"ssmmessages:OpenDataChannel",
+	}
+	for _, apex := range []bool{false, true} {
+		t.Run("apex="+strconv.FormatBool(apex), func(t *testing.T) {
+			statements := samplePolicyPermissions(t, apex)
+			var actions []string
+			for _, statement := range statements {
+				for _, action := range statement.Action {
+					if !strings.HasPrefix(action, "ssmmessages:") && !strings.HasPrefix(action, "ec2messages:") {
+						continue
+					}
+					actions = append(actions, action)
+					if statement.Effect != "Allow" || !slices.Equal(statement.Resource, []string{"*"}) {
+						t.Errorf("messaging action %q: statement = %#v, want Allow on *", action, statement)
+					}
+				}
+			}
+			slices.Sort(actions)
+			if got := slices.Compact(actions); !reflect.DeepEqual(got, want) {
+				t.Errorf("messaging actions = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+type decodedPermissionStatement struct {
+	Effect   string          `json:"Effect"`
+	Action   policyStringSet `json:"Action"`
+	Resource policyStringSet `json:"Resource"`
+}
+
+type policyStringSet []string
+
+func (values *policyStringSet) UnmarshalJSON(raw []byte) error {
+	var many []string
+	if err := json.Unmarshal(raw, &many); err != nil {
+		var one string
+		if err := json.Unmarshal(raw, &one); err != nil {
+			return err
 		}
+		many = []string{one}
 	}
-	if !reflect.DeepEqual(actions, []string{"ssm:GetParameter"}) || strings.Contains(PolicyDocument("ikigenba.dev", "ZONE1", spaceref.Space{Label: "sbx1", Domain: "sbx1.ikigenba.dev"}, false), "parameter/ikigenba/") {
-		t.Fatalf("SSM actions = %v", actions)
+	slices.Sort(many)
+	*values = slices.Compact(many)
+	return nil
+}
+
+func samplePolicyPermissions(t *testing.T, apex bool) []decodedPermissionStatement {
+	t.Helper()
+	var decoded struct {
+		Statement []decodedPermissionStatement `json:"Statement"`
 	}
+	document := PolicyDocument(
+		"ikigenba.dev",
+		"Z09565073GHK8BYWQ1A78",
+		spaceref.Space{Label: "sbx1", Domain: "sbx1.ikigenba.dev"},
+		apex,
+	)
+	if err := json.Unmarshal([]byte(document), &decoded); err != nil {
+		t.Fatalf("parse permissions: %v", err)
+	}
+	return decoded.Statement
 }
 
 func TestPolicyObjectAccess(t *testing.T) {

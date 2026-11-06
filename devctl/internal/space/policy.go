@@ -34,6 +34,33 @@ func PolicyDocument(root, zoneID string, sp spaceref.Space, apex bool) string {
 			},
 			{
 				Effect:   "Allow",
+				Action:   "ssm:UpdateInstanceInformation",
+				Resource: "arn:aws:ec2:*:*:instance/*",
+			},
+			{
+				Effect: "Allow",
+				Action: []string{
+					"ssmmessages:CreateControlChannel",
+					"ssmmessages:CreateDataChannel",
+					"ssmmessages:OpenControlChannel",
+					"ssmmessages:OpenDataChannel",
+				},
+				Resource: "*",
+			},
+			{
+				Effect: "Allow",
+				Action: []string{
+					"ec2messages:AcknowledgeMessage",
+					"ec2messages:DeleteMessage",
+					"ec2messages:FailMessage",
+					"ec2messages:GetEndpoint",
+					"ec2messages:GetMessages",
+					"ec2messages:SendReply",
+				},
+				Resource: "*",
+			},
+			{
+				Effect:   "Allow",
 				Action:   []string{"s3:GetObject", "s3:PutObject", "s3:DeleteObject"},
 				Resource: "arn:aws:s3:::" + root + "/" + sp.Label + "/*",
 			},
