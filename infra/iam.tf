@@ -72,6 +72,32 @@ resource "aws_iam_policy" "space_boundary" {
         Action   = "route53:GetChange"
         Resource = "arn:aws:route53:::change/*"
       },
+      {
+        # Session Manager: the SSM agent registers the instance and carries a
+        # session, so an operator can reach a host without sshd. These are the
+        # session actions of AmazonSSMManagedInstanceCore and none of its
+        # broader ssm reads.
+        Effect   = "Allow"
+        Action   = "ssm:UpdateInstanceInformation"
+        Resource = "arn:aws:ec2:${var.region}:${data.aws_caller_identity.current.account_id}:instance/*"
+      },
+      {
+        # ssmmessages and ec2messages have no resource-level permissions.
+        Effect = "Allow"
+        Action = [
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel",
+          "ec2messages:AcknowledgeMessage",
+          "ec2messages:DeleteMessage",
+          "ec2messages:FailMessage",
+          "ec2messages:GetEndpoint",
+          "ec2messages:GetMessages",
+          "ec2messages:SendReply",
+        ]
+        Resource = "*"
+      },
     ]
   })
 }

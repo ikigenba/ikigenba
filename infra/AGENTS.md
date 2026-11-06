@@ -39,6 +39,7 @@ devctl creates each space's instance profile and role at launch. The role carrie
 - KMS `Decrypt` and `GenerateDataKey` via SSM in the region.
 - S3 get, put, delete and list on the backup bucket.
 - Route 53 `ChangeResourceRecordSets` on the one zone, record types `A` and `TXT` only, plus `ListResourceRecordSets` and `GetChange`.
+- Session Manager: `ssm:UpdateInstanceInformation` on the account's instances in the region, and the `ssmmessages` and `ec2messages` channel actions, which take no resource. These are the session actions of AWS's `AmazonSSMManagedInstanceCore`, without its broader `ssm` reads, so the SSM agent on a host can register and carry a session and an operator signed in through SSO reaches the host without sshd. A space gets them only when its inline policy grants them too.
 
 ### What hosts may delete
 
