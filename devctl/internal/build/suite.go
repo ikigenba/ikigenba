@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -122,13 +123,19 @@ func stageSuite(ctx context.Context, worktree, stage, sha, version string, deps 
 	}
 	archiveRoot := filepath.Join(stage, "members")
 	releaseRoot := filepath.Join(archiveRoot, sha)
+	releaseEnv := []string{"GOOS=linux", "GOARCH=arm64", "CGO_ENABLED=0", "GOWORK=off"}
+	manifestEnv := []string{"GOOS=" + runtime.GOOS, "GOARCH=" + runtime.GOARCH, "CGO_ENABLED=0", "GOWORK=off"}
 	var manifests []checkout.Manifest
 	for _, app := range apps {
 		binary := filepath.Join(releaseRoot, app.Name, "bin", app.Name)
-		if err := compileSuite(ctx, app.Name, app.Dir, binary, deps); err != nil {
+		if err := compileSuite(ctx, app.Name, app.Dir, binary, releaseEnv, deps); err != nil {
 			return "", nil, err
 		}
-		manifest, err := executeStaged(ctx, deps, binary, app.Dir, app.Name+" manifest", "manifest")
+		manifestBinary := filepath.Join(stage, "manifests", app.Name)
+		if err := compileSuite(ctx, app.Name, app.Dir, manifestBinary, manifestEnv, deps); err != nil {
+			return "", nil, err
+		}
+		manifest, err := executeStaged(ctx, deps, manifestBinary, app.Dir, app.Name+" manifest", "manifest")
 		if err != nil {
 			return "", nil, err
 		}
@@ -154,11 +161,11 @@ func stageSuite(ctx context.Context, worktree, stage, sha, version string, deps 
 			}
 		}
 	}
-	if err := compileSuite(ctx, "opsctl", filepath.Join(worktree, "opsctl"), filepath.Join(releaseRoot, "opsctl", "bin", "opsctl"), deps); err != nil {
+	if err := compileSuite(ctx, "opsctl", filepath.Join(worktree, "opsctl"), filepath.Join(releaseRoot, "opsctl", "bin", "opsctl"), releaseEnv, deps); err != nil {
 		return "", nil, err
 	}
 	turnsRoot := filepath.Join(releaseRoot, "turns")
-	if err := compileSuite(ctx, "turns", turnsDir, filepath.Join(turnsRoot, "bin", "turns"), deps); err != nil {
+	if err := compileSuite(ctx, "turns", turnsDir, filepath.Join(turnsRoot, "bin", "turns"), releaseEnv, deps); err != nil {
 		return "", nil, err
 	}
 	if err := copyArchiveDirectory(turnsDir, turnsRoot, "share"); err != nil {
@@ -182,11 +189,11 @@ func stageSuite(ctx context.Context, worktree, stage, sha, version string, deps 
 	return archive, manifests, nil
 }
 
-func compileSuite(ctx context.Context, name, dir, binary string, deps seam.Deps) error {
+func compileSuite(ctx context.Context, name, dir, binary string, env []string, deps seam.Deps) error {
 	if err := os.MkdirAll(filepath.Dir(binary), 0o700); err != nil {
 		return err
 	}
-	if err := execute(ctx, deps, "build "+name, seam.Cmd{Path: "go", Args: []string{"build", "-buildvcs=false", "-o", binary, "./cmd/" + name}, Dir: dir, Env: []string{"GOOS=linux", "GOARCH=arm64", "CGO_ENABLED=0", "GOWORK=off"}}); err != nil {
+	if err := execute(ctx, deps, "build "+name, seam.Cmd{Path: "go", Args: []string{"build", "-buildvcs=false", "-o", binary, "./cmd/" + name}, Dir: dir, Env: env}); err != nil {
 		return err
 	}
 	info, err := os.Stat(binary)

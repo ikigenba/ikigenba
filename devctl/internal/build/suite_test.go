@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -43,6 +44,7 @@ type suiteFixture struct {
 	worktrees   []string
 	members     map[string]suiteMember
 	compiled    map[string]string
+	releases    map[string]string
 }
 
 func newSuite(t *testing.T) *suiteFixture {
@@ -103,6 +105,8 @@ func (f *suiteFixture) exec(ctx context.Context, c seam.Cmd) (seam.Result, error
 					f.t.Fatalf("worktree sha %q", c.Args[4])
 				}
 				f.worktrees = append(f.worktrees, dir)
+				f.compiled = map[string]string{}
+				f.releases = map[string]string{}
 				for _, name := range f.apps {
 					f.app(dir, name, suiteManifest(name))
 				}
@@ -129,14 +133,29 @@ func (f *suiteFixture) exec(ctx context.Context, c seam.Cmd) (seam.Result, error
 	}
 	if c.Path == "go" {
 		name := filepath.Base(c.Dir)
-		if f.fail == "compile "+name {
+		isManifest := f.compiled[name] != ""
+		failure := "compile " + name
+		if isManifest {
+			failure = "manifest build " + name
+		}
+		if f.fail == failure {
+			if isManifest {
+				output := suiteCompilerOutput(c.Args)
+				f.put(filepath.Dir(output), filepath.Base(output), "partial manifest binary", 0o600)
+			}
 			if f.cancel != nil {
 				f.cancel()
 			}
 			return seam.Result{ExitCode: 7, Stderr: []byte("compiler failed\n")}, nil
 		}
 		if output := suiteCompilerOutput(c.Args); output != "" {
-			f.put(filepath.Dir(output), filepath.Base(output), "binary "+name, 0o600)
+			contents := "binary " + name
+			if isManifest {
+				contents = "manifest binary " + name
+			} else {
+				f.releases[name] = output
+			}
+			f.put(filepath.Dir(output), filepath.Base(output), contents, 0o600)
 			f.compiled[name] = output
 			return seam.Result{}, nil
 		}
@@ -194,7 +213,15 @@ func (f *suiteFixture) exec(ctx context.Context, c seam.Cmd) (seam.Result, error
 		}
 		return seam.Result{}, os.WriteFile(c.Args[1], data, 0o600)
 	}
+	for _, release := range f.releases {
+		if c.Path == release {
+			return seam.Result{}, errors.New("cannot execute release binary on build host")
+		}
+	}
 	name := filepath.Base(c.Path)
+	if reflect.DeepEqual(c.Args, []string{"--version"}) {
+		return seam.Result{ExitCode: 1}, nil
+	}
 	if reflect.DeepEqual(c.Args, []string{"manifest"}) {
 		if name == "opsctl" || name == "turns" || f.compiled[name] == "" || c.Path != f.compiled[name] {
 			f.t.Fatalf("manifest did not run the compiled app binary: %#v; compiled outputs %#v", c, f.compiled)
@@ -246,7 +273,7 @@ func (f *suiteFixture) assertCleanup() {
 
 func TestSuiteArchiveIsolationAndMetadata(t *testing.T) {
 	// R-FN66-1TL1
-	// R-54VK-WRQC
+	// R-6BPL-ZZRC
 	// R-G683-IC4D
 	f := newSuite(t)
 	f.app(f.root, "extra", suiteManifest("extra"))
@@ -350,7 +377,7 @@ func TestSuiteCommitFormsHaveSameRelease(t *testing.T) {
 }
 
 func TestSuiteCopiesWholeTurnsShare(t *testing.T) {
-	// R-54VK-WRQC
+	// R-6BPL-ZZRC
 	f := newSuite(t)
 	f.files["turns/share/nested/data/value"] = suiteMember{Bytes: "arbitrary committed bytes\x00", Mode: 0o640}
 	f.files["turns/share/helpers/run"] = suiteMember{Bytes: "executable committed bytes", Mode: 0o740}
@@ -378,12 +405,11 @@ func TestSuiteCopiesWholeTurnsShare(t *testing.T) {
 	}
 }
 func TestSuiteCompileCommands(t *testing.T) {
-	// R-T579-SJTN
-	// R-4V4D-ULSS
+	// R-699T-8G9Y
 	f := newSuite(t)
 	f.apps = []string{"auth", "dummy", "events", "mcp", "repos", "scripts", "sites", "telemetry"}
 	f.put(f.root, "go.work", "go 1.26\n", 0o644)
-	_, err := f.run(context.Background(), "r1")
+	_, err := f.run(context.Background(), "release-87")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -393,35 +419,38 @@ func TestSuiteCompileCommands(t *testing.T) {
 			compiles = append(compiles, c)
 		}
 	}
-	manifestCounts := map[string]int{}
-	for _, c := range f.commands {
-		for name, binary := range f.compiled {
-			if c.Path == binary {
-				if name == "opsctl" || name == "turns" || !reflect.DeepEqual(c.Args, []string{"manifest"}) {
-					t.Fatalf("unexpected staged executable call %#v", c)
-				}
-				manifestCounts[name]++
-			}
-		}
-	}
+	var names []string
 	for _, name := range f.apps {
-		if manifestCounts[name] != 1 {
-			t.Fatalf("%s manifest calls = %d, want exactly one", name, manifestCounts[name])
-		}
+		names = append(names, name, name)
 	}
-	names := append(append([]string{}, f.apps...), "opsctl", "turns")
+	names = append(names, "opsctl", "turns")
 	if len(compiles) != len(names) {
-		t.Fatalf("compile count %d", len(compiles))
+		t.Fatalf("compile count %d, want %d", len(compiles), len(names))
 	}
 	for i, c := range compiles {
+		goos, goarch, output := "linux", "arm64", f.releases[names[i]]
+		if i < len(f.apps)*2 && i%2 == 1 {
+			goos, goarch, output = runtime.GOOS, runtime.GOARCH, f.compiled[names[i]]
+		}
 		env := slices.Clone(c.Env)
 		slices.Sort(env)
-		if c.Dir != filepath.Join(f.worktrees[0], names[i]) || !slices.Equal(env, []string{"CGO_ENABLED=0", "GOARCH=arm64", "GOOS=linux", "GOWORK=off"}) || len(c.Args) == 0 || c.Args[0] != "build" || !slices.Contains(c.Args, "-buildvcs=false") || !slices.Contains(c.Args, "./cmd/"+names[i]) || suiteCompilerOutput(c.Args) != f.compiled[names[i]] {
-			t.Fatalf("compile command %#v", c)
+		wantEnv := []string{"CGO_ENABLED=0", "GOARCH=" + goarch, "GOOS=" + goos, "GOWORK=off"}
+		wantArgs := []string{"build", "-buildvcs=false", "-o", output, "./cmd/" + names[i]}
+		if c.Dir != filepath.Join(f.worktrees[0], names[i]) || !slices.Equal(env, wantEnv) {
+			t.Fatalf("compile command %#v, want env %q", c, wantEnv)
 		}
-		for _, arg := range c.Args {
-			if strings.HasPrefix(arg, "-ldflags") {
-				t.Fatalf("linker flags in compile command %#v", c)
+		if i < len(f.apps)*2 && i%2 == 1 {
+			if !slices.Equal(c.Args, wantArgs) {
+				t.Fatalf("manifest args %q, want %q", c.Args, wantArgs)
+			}
+		} else {
+			if len(c.Args) == 0 || c.Args[0] != "build" || !slices.Contains(c.Args, "-buildvcs=false") || !slices.Contains(c.Args, "./cmd/"+names[i]) || suiteCompilerOutput(c.Args) != output {
+				t.Fatalf("release compile command %#v", c)
+			}
+			for _, arg := range c.Args {
+				if strings.HasPrefix(arg, "-ldflags") {
+					t.Fatalf("linker flags in compile command %#v", c)
+				}
 			}
 		}
 	}
@@ -430,8 +459,8 @@ func TestSuiteCompileCommands(t *testing.T) {
 func TestSuiteCleanupEveryOutcome(t *testing.T) {
 	// R-4WCA-8DJH
 	// R-FWGW-G66T
-	// R-53NO-IZZN
-	for _, failure := range []string{"", "port", "reserved", "sbin", "stale", "compile crm", "manifest crm", "compile opsctl", "compile turns", "missing turns share"} {
+	// R-D1I9-ZIEJ
+	for _, failure := range []string{"", "port", "reserved", "sbin", "stale", "compile crm", "manifest build crm", "manifest crm", "compile opsctl", "compile turns", "missing turns share"} {
 		t.Run(failure, func(t *testing.T) {
 			f := newSuite(t)
 			f.fail = failure
@@ -475,19 +504,26 @@ func TestSuiteCleanupEveryOutcome(t *testing.T) {
 				if !errors.As(err, &stale) || stale.App != "crm" {
 					t.Fatalf("error %v", err)
 				}
-			case "compile crm", "manifest crm", "compile opsctl", "compile turns":
+			case "compile crm", "manifest build crm", "manifest crm", "compile opsctl", "compile turns":
 				var process *build.ProcessError
 				if !errors.As(err, &process) {
 					t.Fatalf("error %v", err)
 				}
 				label := failure
-				if strings.HasPrefix(label, "compile ") {
+				switch {
+				case strings.HasPrefix(label, "compile "):
 					label = "build " + strings.TrimPrefix(label, "compile ")
-				} else {
+				case label == "manifest build crm":
+					label = "build crm"
+				default:
 					label = "crm manifest"
 				}
-				if process.Label != label {
-					t.Fatalf("label %q", process.Label)
+				status, stderr := 7, "compiler failed\n"
+				if failure == "manifest crm" {
+					status, stderr = 9, "manifest failed\n"
+				}
+				if process.Label != label || process.Status != status || process.Stderr != stderr {
+					t.Fatalf("process error %#v", process)
 				}
 			}
 			if failure != "" && f.count("tar") != 0 {
@@ -567,7 +603,7 @@ func TestSuitePreflightUsageErrors(t *testing.T) {
 }
 
 func TestSuiteManifestFailuresStopLaterCompiles(t *testing.T) {
-	// R-53NO-IZZN
+	// R-D1I9-ZIEJ
 	for _, failure := range []string{"manifest dashboard", "stale dashboard"} {
 		t.Run(failure, func(t *testing.T) {
 			f := newSuite(t)
@@ -594,7 +630,7 @@ func TestSuiteManifestFailuresStopLaterCompiles(t *testing.T) {
 					names = append(names, filepath.Base(c.Dir))
 				}
 			}
-			if !reflect.DeepEqual(names, []string{"auth", "dashboard"}) || f.count("tar") != 0 {
+			if !reflect.DeepEqual(names, []string{"auth", "auth", "dashboard", "dashboard"}) || f.count("tar") != 0 {
 				t.Fatalf("compiled %q tar calls %d", names, f.count("tar"))
 			}
 		})
@@ -733,13 +769,13 @@ func TestSuitePublishAndFailurePreservation(t *testing.T) {
 }
 
 func TestSuiteManifestUsesWorktree(t *testing.T) {
-	// R-G2KE-D0WA
+	// R-D2Q6-DA58
 	for _, stale := range []bool{false, true} {
 		f := newSuite(t)
 		developer := suiteManifest("crm") + "# developer\n"
 		if stale {
 			developer = suiteManifest("crm")
-			f.fail = "stale"
+			f.files["crm/etc/manifest.toml"] = suiteMember{Bytes: developer + "# worktree\n", Mode: 0o644}
 		}
 		f.app(f.root, "crm", developer)
 		out, err := f.run(context.Background(), "r1")

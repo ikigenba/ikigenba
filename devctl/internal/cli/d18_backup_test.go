@@ -36,7 +36,7 @@ func TestMoveBackupUsesReleaseToolForBothArchitectures(t *testing.T) {
 					t.Fatal(c)
 				}
 			}
-			if goCount != len(createApps)+3 {
+			if goCount != len(createApps)*2+3 {
 				t.Fatal("unexpected go commands", goCount)
 			}
 			if len(f.toolCommands) != 3 {
