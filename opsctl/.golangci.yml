@@ -14,7 +14,7 @@ linters:
     - unparam
   exclusions:
     rules:
-      # Human-approved exception for R-5LFH-HU7S: callers select the
+      # Human-approved exception for R-P5OT-TTA9: callers select the
       # executables prescribed by the design; Exec passes arguments directly.
       # Keep G204 active for every other subprocess call.
       - path: ^internal/host/host\.go$
