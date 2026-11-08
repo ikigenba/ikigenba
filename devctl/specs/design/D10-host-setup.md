@@ -19,8 +19,9 @@ defaults declared here, and `Configure` leaves them alone when it is given
 none. `acme.email` is set when the caller supplies an address and left alone
 otherwise. The
 inputs are plain values carried in one `Config`, so a caller cannot hand the
-host an inconsistent pair. Every key is set with its own `sudo opsctl config
-set KEY=VALUE`, in a fixed order, and the count of keys set is what the
+host an inconsistent pair. Every key is set with its own `sudo systemd-run
+--quiet --wait --pipe --collect opsctl config set KEY=VALUE`, in a fixed
+order, and the count of keys set is what the
 callers print. `Config.Opsctl` names the opsctl the keys are set with: empty,
 the `opsctl` on root's PATH; for `space create` and `space move` (D18), the
 release's own, by absolute path. A move sets only the five derived keys, with
@@ -74,6 +75,6 @@ returned unchanged, so the diagnostic relay is the one D06 states.
 
 - R-WGUE-8YC4: Package `internal/hostsetup` MUST export `Config`, a struct whose fields are exactly `Root string`, `Region string`, `ZoneID string`, `Space spaceref.Space`, `Email string`, `Periods *BackupPeriods`, and `Opsctl string`.
 
-- R-WI2A-MQ2T: `Configure` MUST set its keys through one call to `(h).Sudo` per key, each with the step `step` and exactly the arguments `<program>`, `config`, `set`, and `<key>=<value>`, where `<program>` is `cfg.Opsctl` when it is not empty and `opsctl` when it is, and MUST issue them in this order: `KeyHostName`, `KeyDNSProvider`, `KeyDNSZones`, `KeyAWSRegion`, `KeyBackupS3URI`, then, only when `cfg.Periods` is not nil, `KeyBackupHostFilesSeconds`, `KeyBackupServiceFilesSeconds`, `KeyBackupServiceDBSeconds`, and `KeyBackupServiceWALSeconds`, then, only when `cfg.Email` is not empty, `KeyACMEEmail`, and MUST NOT make any other `Deps.Exec` or `Deps.Stream` call; verified at least by the remote argument vector `sudo opsctl config set host.name=sbx1.ikigenba.dev` for an empty `Opsctl` and `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl config set host.name=sbx1.ikigenba.dev` for that `Opsctl`.
+- R-IKGA-11BL: `Configure` MUST set its keys through one call to `(h).Sudo` per key, each with the step `step` and exactly the arguments `<program>`, `config`, `set`, and `<key>=<value>`, where `<program>` is `cfg.Opsctl` when it is not empty and `opsctl` when it is, and MUST issue them in this order: `KeyHostName`, `KeyDNSProvider`, `KeyDNSZones`, `KeyAWSRegion`, `KeyBackupS3URI`, then, only when `cfg.Periods` is not nil, `KeyBackupHostFilesSeconds`, `KeyBackupServiceFilesSeconds`, `KeyBackupServiceDBSeconds`, and `KeyBackupServiceWALSeconds`, then, only when `cfg.Email` is not empty, `KeyACMEEmail`, and MUST NOT make any other `Deps.Exec` or `Deps.Stream` call; verified at least by the remote argument vector `sudo systemd-run --quiet --wait --pipe --collect opsctl config set host.name=sbx1.ikigenba.dev` for an empty `Opsctl` and `sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl config set host.name=sbx1.ikigenba.dev` for that `Opsctl`.
 
 - R-RU41-854B: `Configure` MUST NOT issue any command whose arguments name `KeyHostApex`; `SetKey` and `DelKey`, called by `apex set` and `apex clear` (D14), MUST be the only operations of this package that set or remove `host.apex`; the one other command that changes it is outside this package: `space create`'s `restore` step (D07) removes it with a direct `(host.Host).Sudo` of `config del host.apex` run by its release's opsctl, which `DelKey`, always running the `opsctl` on root's PATH, cannot run.

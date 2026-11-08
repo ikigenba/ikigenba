@@ -24,7 +24,8 @@ accepted.
 
 Restore drives `opsctl restore <app> [--at <timestamp>]` on the space over the
 same kind of session: root file, operand, `cloud.Connect`, `cloud.LookupSpace`,
-running check, one `sudo` over ssh. Nothing moves through devctl and no bucket
+running check, one root command over ssh, run as a transient system unit.
+Nothing moves through devctl and no bucket
 object is read or written by it. The backups it puts back are the space's own,
 which only opsctl on the host writes and reads. They are not all that sits
 under the space's prefix: opsctl's snapshots sit there too, which `golden
@@ -84,7 +85,7 @@ carrying `ExitCode()`, D05's (R-D4G2-IO81).
 
 - R-FV7X-I3AA: Restore MUST invoke `Host.Sudo` at the resolved address with step `restore` and exactly `opsctl restore <app>`, appending `--at <value>` when supplied; success MUST discard remote output and report exactly `restore: ok (opsctl restore <app>[ --at <value>])`, and failure MUST return the host error without a success line. It MUST require no locally known or already-installed app and transfer no backup objects.
 
-- R-OWAD-GQ8T: The `restore` step MUST run on a `host.Host` whose `Address` is the found `cloud.Space`'s `Address` and whose `Deps` is `deps`, and its line MUST be written with `space.Step`; verified at least by `devctl restore sbx1 crm` reproducing the single stdout line `restore: ok (opsctl restore crm)` with a fake `ssh` process that exits 0, and by `devctl restore sbx1 crm --at 2026-09-11T18:00:00Z` reproducing `restore: ok (opsctl restore crm --at 2026-09-11T18:00:00Z)` with a recorded remote argument vector of exactly `sudo`, `opsctl`, `restore`, `crm`, `--at`, and `2026-09-11T18:00:00Z`, each with empty stderr and exit 0.
+- R-YCW8-7XXC: The `restore` step MUST run on a `host.Host` whose `Address` is the found `cloud.Space`'s `Address` and whose `Deps` is `deps`, and its line MUST be written with `space.Step`; verified at least by `devctl restore sbx1 crm` reproducing the single stdout line `restore: ok (opsctl restore crm)` with a fake `ssh` process that exits 0, and by `devctl restore sbx1 crm --at 2026-09-11T18:00:00Z` reproducing `restore: ok (opsctl restore crm --at 2026-09-11T18:00:00Z)` with a recorded remote argument vector of exactly `sudo`, `systemd-run`, `--quiet`, `--wait`, `--pipe`, `--collect`, `opsctl`, `restore`, `crm`, `--at`, and `2026-09-11T18:00:00Z`, each with empty stderr and exit 0.
 
 - R-VOSP-G8A5: Package `internal/deploy` MUST export `Run(ctx context.Context, args []string, version string, stdout io.Writer, deps seam.Deps) error`, and `Run` MUST take no writer other than `stdout`.
 

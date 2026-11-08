@@ -72,7 +72,12 @@ stdout and its diagnostic on its stderr (the repository's command-line
 convention), so a failing opsctl's report comes first and its reason after it;
 neither is dropped because the other is present. devctl never asserts what
 those bytes say. D07, D09, D10, D13, D14, D16, D17 and D18 issue every
-host command through this one shape. `Copy` is the one way a file reaches a
+host command through this one shape. Every root command runs as a transient
+system unit, `sudo systemd-run --quiet --wait --pipe --collect` before it, because
+opsctl's hardening caps the memory of every user slice and a command started
+from an ssh session stays in that slice even through sudo; the unit runs
+outside it, waits, connects the streams and passes back the exit status.
+`Copy` is the one way a file reaches a
 host from the developer's machine: `scp` with the same options and target as
 `ssh`, failing with the same `*CommandError`, so a failed copy is reported
 the way a failed remote command is. ssh and scp accept a host key they have
@@ -162,7 +167,7 @@ release's label among them, are opsctl's and never parsed here.
 
 - R-D6VV-A7PF: Package `internal/host` MUST export `Output` with exactly `Stdout string` and `Stderr string`, and methods `Run(ctx context.Context, step string, args ...string) (Output, error)`, `Sudo(ctx context.Context, step string, args ...string) (Output, error)`, `StreamSudo(ctx context.Context, stdout io.Writer, step string, args ...string) error`, and `Wait(ctx context.Context) error` on `Host`.
 
-- R-FUV2-JZR6: `Host.Run` MUST invoke `ssh` through `Deps.Exec` in `Deps.Dir` with `-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new`, followed, only when `KnownHosts` is not empty, by `-o` and `UserKnownHostsFile=` joined to `KnownHosts`, then `Target()`, and a remote command preserving each supplied argument as one literal shell word; `Host.Sudo` MUST prefix that remote argument vector with `sudo`; when `KnownHosts` is empty no argument MUST name `UserKnownHostsFile`. Tests MUST include spaces, quotes, wildcard characters and shell metacharacters to prove no argument becomes shell syntax, and MUST show a `Host` whose `Address` is `3.141.27.86` and whose `KnownHosts` is `/tmp/move.Ab12/known_hosts` passing, before the remote command, exactly the arguments `-o`, `BatchMode=yes`, `-o`, `ConnectTimeout=10`, `-o`, `StrictHostKeyChecking=accept-new`, `-o`, `UserKnownHostsFile=/tmp/move.Ab12/known_hosts`, and `ec2-user@3.141.27.86`, and the same `Host` with an empty `KnownHosts` passing exactly those arguments without the last `-o` and its value.
+- R-Y98J-2MP9: `Host.Run` MUST invoke `ssh` through `Deps.Exec` in `Deps.Dir` with `-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new`, followed, only when `KnownHosts` is not empty, by `-o` and `UserKnownHostsFile=` joined to `KnownHosts`, then `Target()`, and a remote command preserving each supplied argument as one literal shell word; `Host.Sudo` MUST prefix that remote argument vector with exactly `sudo`, `systemd-run`, `--quiet`, `--wait`, `--pipe`, and `--collect`, in that order; when `KnownHosts` is empty no argument MUST name `UserKnownHostsFile`. Tests MUST include spaces, quotes, wildcard characters and shell metacharacters to prove no argument becomes shell syntax, and MUST show a `Host` whose `Address` is `3.141.27.86` and whose `KnownHosts` is `/tmp/move.Ab12/known_hosts` passing, before the remote command, exactly the arguments `-o`, `BatchMode=yes`, `-o`, `ConnectTimeout=10`, `-o`, `StrictHostKeyChecking=accept-new`, `-o`, `UserKnownHostsFile=/tmp/move.Ab12/known_hosts`, and `ec2-user@3.141.27.86`, and the same `Host` with an empty `KnownHosts` passing exactly those arguments without the last `-o` and its value.
 
 - R-D9BO-1R6T: `Host.Run` and `Host.Sudo` MUST return unmodified stdout and stderr as Output and nil error on exit 0; on a nonzero exit they MUST return CommandError carrying step, status and both unmodified streams, with Command equal to `ssh`, Target(), and the logical remote argument vector, omitting transport flags and shell escaping. A process-start error MUST wrap the runner error, name ssh, and not masquerade as CommandError.
 
@@ -267,7 +272,7 @@ release's label among them, are opsctl's and never parsed here.
 
 - R-DDFT-AXS8: When `LookupSpace` found an instance and `--no-backup` is not given, `space destroy` MUST run the `retire` step as exactly one call to `(host.Host).Sudo` with the step `retire` and the arguments `opsctl` and `retire`, on a `host.Host` whose `Address` is the space's `Address` and whose `Deps` is `deps`, before any method of `clients` that terminates, releases, deletes, or changes anything other than the `apex` step's record delete, and MUST return that call's error unchanged.
 
-- R-JCCP-CNWX: After `sudo opsctl retire` exits 0, destroy MUST report `retire: ok (opsctl retire)`; a zero exit is the whole of the step's success, and devctl MUST NOT parse opsctl's output or read the backup bucket to describe what was backed up. Verified by reproducing `retire: ok (opsctl retire)`.
+- R-YAGF-GEFY: After `sudo systemd-run --quiet --wait --pipe --collect opsctl retire` exits 0, destroy MUST report `retire: ok (opsctl retire)`; a zero exit is the whole of the step's success, and devctl MUST NOT parse opsctl's output or read the backup bucket to describe what was backed up. Verified by reproducing `retire: ok (opsctl retire)`.
 
 - R-VL2K-REEI: The `retire` step of `space destroy` MUST write exactly the line `retire: ok (already gone)` when `LookupSpace` found no instance, whether or not `--no-backup` is given, and exactly the line `retire: skipped (--no-backup)` when it found one and `--no-backup` is given, whatever that instance's `State`, in each case passing no `seam.Cmd` to `deps.Exec` other than `checkout.ReadRootFile`'s; verified at least by reproducing both lines and by `space destroy staging --no-backup` on a `stopped` instance continuing to `instance: ok (i-0a1b2c3d4e5f60718 terminated)`.
 
@@ -283,7 +288,7 @@ release's label among them, are opsctl's and never parsed here.
 
 - R-VR62-O93Z: The `role` step of `space destroy` MUST call `DeleteRole(ctx, clients.IAM, space.Domain)` and report `RoleName(space.Domain)` followed by ` deleted` when it returned true and `already gone` when it returned false; verified at least by reproducing `role: ok (staging.ikigenba.dev deleted)` and `role: ok (already gone)`.
 
-- R-8YVJ-0IZI: `space list` and `space status` MUST perform no cloud mutation and MUST leave local checkout files unchanged; status MUST execute no host command other than its single `sudo opsctl status` invocation. Tests MUST use cloud fakes that fail on mutation and verify the host command count for both populated and empty results.
+- R-YBOB-U66N: `space list` and `space status` MUST perform no cloud mutation and MUST leave local checkout files unchanged; status MUST execute no host command other than its single `sudo systemd-run --quiet --wait --pipe --collect opsctl status` invocation. Tests MUST use cloud fakes that fail on mutation and verify the host command count for both populated and empty results.
 
 - R-FXAV-BJ8K: `devctl space --help` and `devctl space -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work outside a checkout and before any external operation:
 
