@@ -48,6 +48,17 @@ of its database, and `opsctl restore --from` puts one back.
 It is how a space is given data it never made — a golden set, or another
 space's data — and nothing on the host takes one on a timer.
 
+Nothing here fits in memory, and nothing needs to. A service's `state/`, its
+database and the archives that carry them can each be larger than the memory
+the host allots the command, and every backup, snapshot and restore here, the
+host's included, streams them whatever their size: what a run reads goes on
+as it is read, and what it fetches is written to disk or passed over as it
+arrives. A restore puts what arrives on disk beside its destination and swaps
+it in whole once all of it has arrived and been checked. What a run holds at
+once is fixed copy buffers, one upload part, and each entry's metadata, never
+its contents. A command here that could not run in that much is a defect, not
+a sizing problem.
+
 The top-level usage gains five lines under `Commands:`:
 
 ```
