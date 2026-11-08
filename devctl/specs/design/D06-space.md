@@ -86,9 +86,11 @@ host from the developer's machine: `scp` with the same options and target as
 `ssh`, failing with the same `*CommandError`, so a failed copy is reported
 the way a failed remote command is. ssh and scp accept a host key they have
 not seen and record it in the developer's own known hosts; a `Host` whose
-`KnownHosts` names a file uses that file instead, which is how a move keeps
-the key a new host has before its host restore out of the developer's file
-(D18). The path is one `-o` value, so it holds no whitespace; an empty
+`KnownHosts` names a file uses that file instead, which is how create (D07)
+and move (D18) keep the key a new host has before its host restore out of the
+developer's file; after a host restore, which D10's `Restore` issues for
+both, the host is reached through the known hosts `Restore` is given. The
+path is one `-o` value, so it holds no whitespace; an empty
 `KnownHosts` leaves the command exactly as it was. `space status` relays `opsctl status`
 whole, so its columns, the short sha of the commit each app runs and the
 release's label among them, are opsctl's and never parsed here.
