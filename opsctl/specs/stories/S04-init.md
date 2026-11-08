@@ -78,8 +78,13 @@ of units every user's own systemd manager reads, replacing whatever files of
 those names were there. It writes `/etc/xdg/turns/config` too, mode `0644`
 in a directory of mode `0755`, holding the one line `space=<host.name>`, the
 space's own name, which `turns` reads as the host's default space, replacing
-what was there. When there is no such release, or it holds no
-`turns/` (a per-app host run by a plain opsctl, or a current release older than
+what was there. Then it gives every active user (`S13-users.md`) what
+`opsctl user add` gives one on a host with `turns.timer`: lingering enabled,
+so the user's own systemd manager runs, and `turns.timer` enabled and started
+in that manager, for each user missing either, taking the users in name
+order; a locked user gets neither. That is how users put back by `opsctl host restore` before the first `init`
+(`S08-backup.md`) get their timers. When there is no such release, or it
+holds no `turns/` (a per-app host run by a plain opsctl, or a current release older than
 `turns`), `init` leaves `/usr/local/bin/turns`, `/etc/systemd/user/` and
 `/etc/xdg/turns/config` as they are.
 
@@ -285,6 +290,9 @@ Postconditions:
 - `/etc/systemd/user/turns.service` and `/etc/systemd/user/turns.timer` are
   the current release's `turns/share/systemd/` files, replacing what was
   there. `/usr/local/bin/turns` is the link it was.
+- Every active user has lingering enabled and `turns.timer` enabled and
+  active in their own systemd manager; one who already had both was not
+  touched. A locked user has neither. No line reports it.
 - No unit names a path under `/opt/<app>/`, and no `/opt/<app>/` was
   created.
 - Every setup command is idempotent, so a host that was already set up is
@@ -377,6 +385,8 @@ Preconditions:
   `/opt/ikigenba/previous` exists, no `/opt/<app>/` and no app unit exists,
   and neither `/usr/local/bin/opsctl` nor `/usr/local/bin/turns` exists.
 - The release holds `turns/`.
+- `opsctl host restore` (`S08-backup.md`) put back the users `alice`, active,
+  and `bob`, locked; neither has lingering enabled or `turns.timer` enabled.
 - The account `ikigenba` does not exist yet.
 
 Postconditions:
@@ -387,6 +397,8 @@ Postconditions:
   `/opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/turns/bin/turns`,
   and `/etc/systemd/user/turns.service` and `/etc/systemd/user/turns.timer` are
   that release's `turns/share/systemd/` files.
+- `alice` has lingering enabled, and `turns.timer` is enabled and active in
+  her own systemd manager. `bob` has neither. No line reports it.
 - The host holds its certificate, covering `sbx.ikigenba.dev` and
   `*.sbx.ikigenba.dev`, with hooks that name `opsctl` on the PATH.
 - The three slices and nginx's drop-in are written, sized from the host's
@@ -635,6 +647,69 @@ Postconditions:
   or `/opt/gmail/` was created, and no unit was written for it.
 - Running `init` again writes the same values, restarts no app, and prints
   the same lines.
+
+## An agent initialises a host where a user's timer cannot be started
+
+The turns setup gives each active user who lacks lingering or `turns.timer`
+the steps `opsctl user add` takes (`S13-users.md`). When one of them fails,
+`init` fails as any step of the sequence does: it reports the command that
+failed, quotes its output, and stops there, reaching no later user and no step
+of the sequence. Nothing is undone, and run again it finishes.
+
+Command:
+
+```
+$ sudo opsctl init; echo "exit $?"
+```
+
+Output:
+
+```
+nginx: ok (/usr/sbin/nginx)
+certbot: ok (/usr/bin/certbot)
+systemctl: ok (/usr/bin/systemctl)
+litestream: ok (/usr/bin/litestream)
+git: ok (/usr/bin/git)
+dns.provider: ok (route53)
+dns.zones: ok (ikigenba.dev)
+host.name: ok (sbx.ikigenba.dev)
+timeouts: ok (drain 5s, stop 10s)
+zone ikigenba.dev: ok (route53 Z09565073GHK8BYWQ1A78, 4 nameservers delegated)
+host sbx.ikigenba.dev: ok (zone ikigenba.dev)
+wildcard sbx.ikigenba.dev: ok (77.112.106.79)
+opsctl: systemctl: exit status 1
+
+> Failed to connect to bus: No such file or directory
+exit 1
+```
+
+Exits 1. The `ok` lines and the `exit` line are on stdout; the `opsctl:` line
+and systemctl's quoted output are on stderr. Whatever the failing command
+printed is quoted, every line prefixed `> `.
+
+Preconditions:
+
+- Every preflight check passes.
+- The host is the ready released host, and its release holds `turns/`.
+- `alice`, `carol` and `dave` are active users, none with lingering enabled
+  nor `turns.timer` enabled. `bob`, if the host has him, is a locked user.
+- `carol`'s own systemd manager starts, but its bus cannot be reached.
+
+Postconditions:
+
+- `/usr/local/bin/turns`, `/etc/systemd/user/turns.service`,
+  `/etc/systemd/user/turns.timer` and `/etc/xdg/turns/config` are as on the
+  ready host.
+- `alice` has lingering enabled and `turns.timer` enabled and active in her
+  own systemd manager. `carol` has lingering enabled and no `turns.timer`
+  enabled. `dave` was not touched, and `bob` has neither.
+- No step of the sequence ran: the certificate, the slices, the host rules,
+  the nginx file, `/run/ikigenba/services.json`, `/etc/litestream.yml`, the
+  timers and every app are as they were.
+- Running `init` again once `carol`'s manager can be reached leaves `alice`
+  as she is, gives `carol` and `dave` what they lack, runs
+  the whole sequence, and prints the twelve `ok` lines of the ready host with
+  exit 0.
 
 ## An agent initialises a released host whose app's secret was never pushed
 

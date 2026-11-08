@@ -14,14 +14,22 @@ Two different things are kept, so there are two pairs of commands for keeping
 them; a snapshot, below, is a third artifact. A **service** is an app the
 current release holds, under `/opt/ikigenba/current/<name>/`, together with
 its data under `/var/opt/ikigenba/<name>/`, or that data alone; the **host**
-is the machine's own configuration and its certificate. What is kept of a
+is the machine's own configuration, its certificate, and its **accounts**: the
+business groups of `S12-groups.md`, the users of `S13-users.md`, and the sshd
+host keys that let a client recognise the machine. What is kept of a
 service is its data and nothing else: its `state/` and its database. What the
 release brought under `/opt/ikigenba/releases/<sha>/<name>/` comes back by
 activating a release, and its environment file,
 `/etc/opt/ikigenba/<name>/env`, is generated, so a host writes it again
 rather than carrying a stale copy forward. A service backup never reads
 `/etc/`; a service restore writes there only the service's environment file;
-and a host restore never touches `/opt/`, `/etc/opt/`, or `/var/opt/`. Data
+and a host restore never touches `/opt/`, `/etc/opt/`, or `/var/opt/`. A host
+restore does write outside `/etc/ikigenba/` and `/etc/letsencrypt/`: it puts
+the accounts back, so it writes `/home/<name>/`, `/srv/<slug>/`,
+`/etc/ssh/authorized_keys/`, the sshd host keys under `/etc/ssh/`, and, through
+the host's own account tools, `/etc/passwd`, `/etc/group`, `/etc/shadow` and
+`/etc/gshadow`. No other account is ever read or written: not `ec2-user`, not
+the suite's `ikigenba`, no system account, and no home but a user's. Data
 and releases change independently: `opsctl activate` and `opsctl rollback`
 (`S10-releases.md`) never read or write a backup or a service's `state/`, and
 nothing here touches `/opt/ikigenba/`. The one exception is the cutover, the
@@ -141,7 +149,20 @@ snapshot and the committed changes after it, and nothing else.
 ## What is backed up, and what is not
 
 - `/etc/ikigenba/` and `/etc/letsencrypt/` — the host's own configuration and
-  its certificate — by `opsctl host backup`, under `host/`.
+  its certificate — by `opsctl host backup`, under `host/`, as
+  `<timestamp>.tar.zst`.
+- The host's accounts, by `opsctl host backup`, under `host/`, as
+  `<timestamp>.accounts.tar.zst` beside the configuration object of the same
+  run: every business group, its slug, its gid, its service account's uid and
+  its members; every user, their name, uid, the gid of their private group,
+  their state, `active` or `locked`, and their business groups;
+  `/etc/ssh/authorized_keys/<name>` and `/home/<name>/` for each user;
+  `/srv/<slug>/` for each business group; and the sshd host keys
+  `/etc/ssh/ssh_host_*`, private and public. Every file keeps its numeric
+  owner and group, its mode, and its POSIX ACLs, the default ACL on
+  `/srv/<slug>/` and what files under it inherited from it included.
+- Never `ec2-user`, its home, or any account that is neither a business
+  group's nor a user's.
 - Every service's `state/`, from `/var/opt/ikigenba/<service>/state/`, under
   the service's own name, by `opsctl backup`. In the tarball it is
   `state/...`, named relative to the service.
@@ -542,8 +563,9 @@ Postconditions:
 
 The host's own configuration is not a service and is not shaped like one:
 there is one of it, it lives under `/etc/`, and restoring it replaces what the
-machine is rather than what an app holds. It gets its own noun for that
-reason.
+machine is rather than what an app holds. Its accounts are the same kind of
+thing: they are who may sign in to the machine, not what an app holds. Both
+get their own noun for that reason.
 
 Command:
 
@@ -560,14 +582,16 @@ Output:
 ```
 Usage: opsctl host <subcommand>
 
-Back up and restore the host's own configuration: /etc/ikigenba/ and
-/etc/letsencrypt/, under 'host/' in backup.s3_uri. Nothing under /opt,
-/etc/opt, or /var/opt is touched either way -- that is 'opsctl backup' and
-'opsctl restore'.
+Back up and restore the host itself, under 'host/' in backup.s3_uri: its
+configuration, /etc/ikigenba/ and /etc/letsencrypt/, and its accounts, every
+business group with /srv/SLUG and every user with /home/NAME and their keys,
+together with sshd's host keys. No other account is backed up. Nothing under
+/opt, /etc/opt, or /var/opt is touched either way -- that is 'opsctl backup'
+and 'opsctl restore'.
 
 Subcommands:
-  backup    write /etc/ikigenba/ and /etc/letsencrypt/ to S3
-  restore   replace them with the newest backup
+  backup    write the configuration and the accounts to S3
+  restore   put back the newest backup, recreating its groups and users
 
 'opsctl init' writes the timer that runs the backup at
 backup.host_files_seconds.
@@ -593,7 +617,16 @@ Postconditions:
 The configuration store is reconstructible — `devctl space create` writes
 every key — but the certificate is not: the CA rate-limits how often it will
 issue the same names, so a host rebuilt often can find itself unable to get
-one back.
+one back. Nor are the accounts: the people who sign in, their keys, their
+homes, and each business's folder exist only on the host, and a client that
+has signed in before knows the host by its sshd host keys.
+
+The run samples one timestamp and writes two objects with it. The accounts
+come first, on their own line; their object holds homes and folders, so its
+size is given in MiB, as a service's is. Then the configuration, on the line
+the host has always printed. An opsctl from before accounts were kept looks
+only for `<timestamp>.tar.zst` under `host/`, so it restores the configuration
+of a newer backup and passes over the accounts object beside it.
 
 Command:
 
@@ -604,30 +637,194 @@ $ sudo opsctl host backup
 Output:
 
 ```
+accounts: ok (2026-09-12T03:00:04Z.accounts.tar.zst, 86.3 MiB)
 host: ok (2026-09-12T03:00:04Z.tar.zst, 48.2 KiB)
 ```
 
-Exits 0. The line is on stdout; stderr is empty.
+Exits 0. The lines are on stdout; stderr is empty. A host with no business
+group and no user still writes the accounts object, holding an empty manifest
+and the sshd host keys.
 
 Preconditions:
 
 - `aws.region` and `backup.s3_uri` are set, and the host's role can write
   under that prefix.
+- The host has the business groups `acme` and `beta` (`S12-groups.md`) and
+  the users `alice`, active, in `acme`, and `bob`, locked, in `acme` and
+  `beta` (`S13-users.md`).
 
 Postconditions:
 
+- `<backup.s3_uri>host/2026-09-12T03:00:04Z.accounts.tar.zst` holds the
+  accounts: a manifest naming `acme` and `beta` with their gids, their service
+  accounts' uids and their members, and `alice` and `bob` with their uids, the
+  gids of their private groups `alice` and `bob`, their states and their
+  business groups; `/etc/ssh/authorized_keys/alice` and
+  `/etc/ssh/authorized_keys/bob`; `/home/alice/` and `/home/bob/`;
+  `/srv/acme/` and `/srv/beta/`; and every `/etc/ssh/ssh_host_*` file. Every
+  file keeps its numeric owner and group, its mode, and its POSIX ACLs.
 - `<backup.s3_uri>host/2026-09-12T03:00:04Z.tar.zst` holds `/etc/ikigenba/`
-  and `/etc/letsencrypt/`, with their modes.
+  and `/etc/letsencrypt/`, with their modes, and nothing more than it did
+  before accounts were kept.
+- Nothing of `ec2-user`'s, of `ikigenba`'s, or of any other account is in
+  either object, nor any home but `alice`'s and `bob`'s.
 - Nothing under `/opt/`, `/etc/opt/`, or `/var/opt/` was read: no
-  environment file is in the backup. No earlier object was deleted or
-  overwritten.
+  environment file is in the backup. Nothing on the host has changed. No
+  earlier object was deleted or overwritten; the accounts object is kept as
+  long as the configuration object is, by the bucket's lifecycle policy.
+- A configuration object written by this run always has its accounts object
+  beside it: the accounts are written first, and a run whose accounts object
+  is not written writes no configuration object either.
 
-## An operator gives a rebuilt host its certificate back
+## The host cannot back up its accounts
+
+A configuration object without its accounts beside it would restore a host
+whose people were lost without a word, so when the accounts cannot be
+written the configuration is not written either, and the run says both.
+
+Command:
+
+```
+$ sudo opsctl host backup
+```
+
+Output:
+
+```
+accounts: failed: /home/alice/notes: input/output error
+host: failed: accounts not written
+opsctl: host backup failed
+```
+
+Exits 1. The step lines are on stdout; the diagnostic is on stderr.
+
+Preconditions:
+
+- `aws.region` and `backup.s3_uri` are set, and the host's role can write
+  under that prefix.
+- `/home/alice/notes` cannot be read.
+
+Postconditions:
+
+- No object was written under `<backup.s3_uri>host/`: neither an accounts
+  object nor a configuration object. Earlier objects are untouched.
+- Nothing on the host has changed.
+
+## An operator gives a rebuilt host its certificate and its people back
 
 `/etc/letsencrypt/` comes back rather than being re-issued, which is the
 point. The configuration store comes back with it, so a host restored this way
 is configured as the old one was — including any key set by hand that
-`space create` would not know to write.
+`space create` would not know to write. The accounts come back with them, so
+the people who signed in to the old host sign in to the new one with the keys
+they had, find their homes and their businesses' folders as they left them,
+and are not warned by ssh that the host has changed.
+
+The restore takes the newest `<timestamp>.tar.zst` under `host/`, as it
+always has, and then the `<timestamp>.accounts.tar.zst` with the same
+timestamp. It reads both whole and checks every name and id the manifest
+holds against the host before it changes anything, so the first two lines are
+the two objects and nothing has been written when either fails. Then it puts
+`/etc/ikigenba/` and `/etc/letsencrypt/` back as before. Then it creates the
+group `shell` if the host has none, as `init`'s hardening does
+(`S11-hardening.md`). It recreates each business group, in slug order, the way
+`opsctl group add` makes one over a folder already there (`S12-groups.md`):
+`/srv/<slug>/` is unpacked first, and the group and its service account are
+made over it with the gid and uid the backup holds. Then each user, in name
+order, with the uid and private-group gid the backup holds, in `shell` and in
+their business groups, with `/home/<name>/` unpacked as it was, owners
+included, rather than made fresh, and their key file put back; a user who was
+locked is locked again, as `opsctl user lock` leaves one (`S13-users.md`).
+Last, the sshd host keys are put back with their modes, sshd's configuration
+is checked with `sshd -t`, and sshd is reloaded, so it offers the old host's
+keys to the next client; a session already open stays open. A host key the
+new host has and the backup lacks is left in place.
+
+An active user gets lingering and `turns.timer` exactly when `opsctl user add`
+would give them: when `/etc/systemd/user/turns.timer` is installed. `devctl
+space create` runs this restore before `opsctl init`, which is what installs
+that file, so on a rebuilt space it is not there yet, and the `users` line says
+the timers were not started. They come at that following `init`, which gives
+every active user lingering and `turns.timer` once it has written the file
+(`S04-init.md`). When the file is installed, the line names the users alone, and each active user has
+lingering enabled and `turns.timer` enabled and active in their own manager. A
+locked user never gets either.
+
+Command:
+
+```
+$ sudo /opt/ikigenba/releases/<sha>/opsctl/bin/opsctl host restore
+```
+
+```
+$ sudo opsctl host restore
+```
+
+Output:
+
+```
+source: ok (host/2026-09-12T03:00:04Z.tar.zst, 48.2 KiB)
+accounts: ok (host/2026-09-12T03:00:04Z.accounts.tar.zst, 86.3 MiB)
+files: ok (/etc/ikigenba, /etc/letsencrypt, 31 files)
+groups: ok (acme, beta)
+users: ok (alice, bob locked; turns.timer not installed, no timers started)
+ssh: ok (3 host keys, sshd reloaded)
+```
+
+Exits 0. The lines are on stdout; stderr is empty. A backup whose manifest
+names no group gives `groups: ok (none)`, and one that names no user gives
+`users: ok (none)`.
+
+Preconditions:
+
+- `aws.region` and `backup.s3_uri` are set, and the host's role can read
+  under that prefix.
+- `<backup.s3_uri>host/` holds at least one backup, and the newest,
+  `2026-09-12T03:00:04Z.tar.zst`, has `2026-09-12T03:00:04Z.accounts.tar.zst`
+  beside it, written by the run of "The host backs up its own configuration".
+- The host is fresh: it has no business group, no member of `shell` and no
+  group `shell`, no account or group named `acme`, `beta`, `alice` or `bob`,
+  and no account or group holding any uid or gid the manifest names.
+  `/etc/systemd/user/turns.timer` does not exist.
+
+Postconditions:
+
+- `/etc/ikigenba/` and `/etc/letsencrypt/` are exactly what the newest backup
+  holds, with their modes. Anything that was there and is not in the backup
+  is gone.
+- The group `shell` exists. `acme` and `beta` are business groups, each with
+  the gid and service-account uid the backup holds, with `/srv/acme/` and
+  `/srv/beta/` holding what the backup holds, with their numeric owners,
+  modes and ACLs, and each folder with the owner, group, mode, setgid and
+  default ACL of a new group's folder. Each folder is a repository members
+  commit to as themselves, as `opsctl group add` leaves an adopted one.
+- `alice` and `bob` are users with the uids and private-group gids the backup
+  holds, in `shell` and exactly their business groups. `/home/alice/` and
+  `/home/bob/` hold what the backup holds, owners and modes intact, and
+  `/etc/ssh/authorized_keys/alice` and `/etc/ssh/authorized_keys/bob` hold
+  the keys the backup holds, owned by root. `alice` can sign in with her key;
+  `bob` is locked and cannot sign in. `opsctl user list` shows both as the old
+  host's would have, but for `last_sign_in`, which this host's journal does
+  not yet hold.
+- Lingering is not enabled for either user, and no timer was started.
+- Every `/etc/ssh/ssh_host_*` file is the backup's, with its mode; sshd's
+  configuration passed `sshd -t`, and sshd was reloaded and offers those keys.
+  A host key file the backup does not hold is as it was.
+- `ec2-user`, `ikigenba`, every other account and group the host had, and
+  every home but `alice`'s and `bob`'s are as they were.
+- Nothing under `/opt/`, `/etc/opt/`, or `/var/opt/` was touched, no unit of
+  the suite's was started or stopped, and nginx was not reloaded. `opsctl
+  init` is what makes the host act on the configuration just restored.
+- No object under `<backup.s3_uri>` was written or deleted.
+
+## An operator restores a host from a backup that holds no accounts
+
+A backup written before accounts were kept has no
+`<timestamp>.accounts.tar.zst` beside its configuration object. The restore
+does what it did before such objects existed and says, on the line where the
+accounts would be named, that there are none. That is not a failure: the
+backup is whole for what it was written to hold. The restore does not look
+for an accounts object of any other timestamp.
 
 Command:
 
@@ -639,6 +836,7 @@ Output:
 
 ```
 source: ok (host/2026-09-12T03:00:04Z.tar.zst, 48.2 KiB)
+accounts: ok (none in this backup)
 files: ok (/etc/ikigenba, /etc/letsencrypt, 31 files)
 ```
 
@@ -648,16 +846,162 @@ Preconditions:
 
 - `aws.region` and `backup.s3_uri` are set, and the host's role can read
   under that prefix.
-- `<backup.s3_uri>host/` holds at least one backup.
+- The newest backup under `<backup.s3_uri>host/` is
+  `2026-09-12T03:00:04Z.tar.zst`, and there is no
+  `2026-09-12T03:00:04Z.accounts.tar.zst`.
 
 Postconditions:
 
-- `/etc/ikigenba/` and `/etc/letsencrypt/` are exactly what the newest backup
-  holds, with their modes. Anything that was there and is not in the backup
-  is gone.
-- Nothing under `/opt/`, `/etc/opt/`, or `/var/opt/` was touched, no unit
-  was started or stopped, and nginx was not reloaded. `opsctl init` is what makes the host
-  act on what was just restored.
+- `/etc/ikigenba/` and `/etc/letsencrypt/` are exactly what the backup holds,
+  as in the previous story.
+- No group, user, home, folder, key file or sshd host key was written or
+  changed, the group `shell` was not created, and sshd was not reloaded.
+- No object under `<backup.s3_uri>` was written or deleted.
+
+## An operator restores accounts onto a host that already uses their ids
+
+A uid or gid is how every file in a home and a folder names its owner, so an
+account that came back under another number would own nothing it had. The
+restore therefore never renumbers. Before it changes anything it checks each
+business group and user the manifest names: a name the host already has, with
+the same kind and the same ids, is kept, and anything else that collides
+stops the restore. The line names the first collision, groups before users and
+each in name order, so the operator can clear it and run the command again.
+
+Command:
+
+```
+$ sudo opsctl host restore
+```
+
+Output:
+
+```
+source: ok (host/2026-09-12T03:00:04Z.tar.zst, 48.2 KiB)
+accounts: failed: uid 1002 of bob is carol's on this host
+opsctl: host restore failed at accounts
+```
+
+Exits 1. The step lines are on stdout; the diagnostic is on stderr. The other
+collisions read, on the `accounts` line:
+
+- `accounts: failed: gid 1004 of acme is carol's on this host`, for a gid the
+  manifest gives a business group or a user's private group, held on this
+  host by a group of another name;
+- `accounts: failed: alice on this host has uid 1005, not 1001`, and the same
+  with `gid`, for a name the host has as the same kind of account with other
+  ids;
+- `accounts: failed: acme on this host is not a business group` and
+  `accounts: failed: alice on this host is not a user`, for a name the host
+  has as an account or group of another kind, a system account or an account
+  not in `shell` for instance.
+
+Preconditions:
+
+- As for "An operator gives a rebuilt host its certificate and its people
+  back", except that the host has an account `carol`, not named in the
+  backup, whose uid is `1002`, the uid the manifest gives `bob`.
+
+Postconditions:
+
+- Nothing has changed: `/etc/ikigenba/` and `/etc/letsencrypt/` are as they
+  were, no group, account, home, folder, key file or sshd host key was written,
+  and sshd was not reloaded. `carol` is as she was.
+- No object under `<backup.s3_uri>` was written or deleted.
+
+## An operator runs a host restore again
+
+A restore may be run again on the host it already ran on, after one that
+stopped partway or simply to make sure. Every group and user the backup names
+is now on the host with its own name and ids, so the check keeps them, and the
+run makes each what the backup holds again: memberships, lock state, key file,
+and the contents of each home and folder. The lines are those of the first run.
+
+Command:
+
+```
+$ sudo opsctl host restore
+```
+
+Output:
+
+```
+source: ok (host/2026-09-12T03:00:04Z.tar.zst, 48.2 KiB)
+accounts: ok (host/2026-09-12T03:00:04Z.accounts.tar.zst, 86.3 MiB)
+files: ok (/etc/ikigenba, /etc/letsencrypt, 31 files)
+groups: ok (acme, beta)
+users: ok (alice, bob locked; turns.timer not installed, no timers started)
+ssh: ok (3 host keys, sshd reloaded)
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- "An operator gives a rebuilt host its certificate and its people back" has
+  run on this host, and since then `alice` was added to `beta`, `bob` was
+  unlocked, and a file was added under `/home/alice/`.
+- The host also has a user `dave`, in `acme`, whom the backup does not name.
+
+Postconditions:
+
+- Everything the first run's postconditions say: `alice` is in `acme` alone,
+  `bob` is locked again, and `/home/alice/` and every other home and folder
+  hold what the backup holds. No group or account was made a second time, and
+  no uid or gid changed.
+- `dave` is as he was: still a user, still in `acme`, his home and key file
+  untouched. `opsctl group members acme` names him beside `alice` and `bob`.
+
+## An operator restores a host whose sshd refuses the restored host keys
+
+The host keys are the last thing the restore puts back, and sshd reads them
+with the rest of its configuration, so `sshd -t` may refuse the whole once
+they are in place. A configuration sshd refuses is never left to be loaded:
+the restore puts back the host keys that were there before, does not reload
+sshd, and stops with sshd's own words quoted, as `init` does for a
+configuration that fails its check (`S11-hardening.md`). The steps before it
+completed and stay in place, so the people are back and a run of the restore
+once the configuration is fixed finishes the job.
+
+Command:
+
+```
+$ sudo opsctl host restore
+```
+
+Output:
+
+```
+source: ok (host/2026-09-12T03:00:04Z.tar.zst, 48.2 KiB)
+accounts: ok (host/2026-09-12T03:00:04Z.accounts.tar.zst, 86.3 MiB)
+files: ok (/etc/ikigenba, /etc/letsencrypt, 31 files)
+groups: ok (acme, beta)
+users: ok (alice, bob locked; turns.timer not installed, no timers started)
+ssh: failed: sshd -t: exit status 255
+opsctl: host restore failed at ssh
+
+> Unable to load host key: /etc/ssh/ssh_host_ed25519_key
+> sshd: no hostkeys available -- exiting.
+```
+
+Exits 1. The step lines are on stdout; the `opsctl:` line, the empty line and
+sshd's quoted output are on stderr.
+
+Preconditions:
+
+- As for "An operator gives a rebuilt host its certificate and its people
+  back", except that sshd's configuration fails `sshd -t` with the restored
+  host keys in place: the backup's `/etc/ssh/ssh_host_ed25519_key`, the one
+  host key sshd offers, is one sshd cannot load.
+
+Postconditions:
+
+- Every `/etc/ssh/ssh_host_*` file is the one that was there before the
+  restore, with its mode, and sshd was not reloaded, so it offers the keys it
+  offered before. A host key file the backup does not hold was left in place.
+- `/etc/ikigenba/`, `/etc/letsencrypt/`, the groups, the users, their homes
+  and their key files are restored, as in "An operator gives a rebuilt host
+  its certificate and its people back".
 - No object under `<backup.s3_uri>` was written or deleted.
 
 ## An operator asks for a period of zero
@@ -728,8 +1072,8 @@ Usage: opsctl retire
 Take a host's final backup before it is discarded. Stop every app's socket and
 service, sockets first so no request starts a service again, then
 litestream.service so it ships every committed change it holds, then copy
-every service's files and the host's own configuration to backup.s3_uri
-exactly as 'opsctl backup' and 'opsctl host backup' would.
+every service's files and the host's own configuration and accounts to
+backup.s3_uri exactly as 'opsctl backup' and 'opsctl host backup' would.
 
 Nothing is deleted or disabled. The units are left stopped; on a host kept
 after all, a reboot or 'opsctl restart APP' brings every enabled app back, and
@@ -753,8 +1097,8 @@ Postconditions:
 ## An operator takes a host's final backup
 
 `devctl space destroy` runs this over ssh before it terminates a space. Each line is one step; the backup lines are the same
-lines `opsctl backup` and `opsctl host backup` print, and every object of
-the run carries one timestamp.
+lines `opsctl backup` and `opsctl host backup` print, the `accounts` line
+before the `host` line, and every object of the run carries one timestamp.
 
 Stopping litestream is what finishes and closes its WAL stream, and that
 was verified against 0.5.17 rather than assumed. On stop it has 30 seconds
@@ -781,6 +1125,7 @@ services: ok (crm, dashboard stopped)
 litestream: ok (stopped, crm.db synced)
 crm: ok (2026-09-12T14:22:51Z.tar.zst, 1.2 MiB)
 dashboard: ok (2026-09-12T14:22:51Z.tar.zst, 1.1 MiB)
+accounts: ok (2026-09-12T14:22:51Z.accounts.tar.zst, 86.3 MiB)
 host: ok (2026-09-12T14:22:51Z.tar.zst, 48.2 KiB)
 ```
 
@@ -810,12 +1155,20 @@ Postconditions:
   shut down, and its shutdown sync shipped every WAL frame it held. The
   replica in S3 holds `crm.db` as of the last committed transaction.
 - `<backup.s3_uri>crm/2026-09-12T14:22:51Z.tar.zst`,
-  `<backup.s3_uri>dashboard/2026-09-12T14:22:51Z.tar.zst`, and
+  `<backup.s3_uri>dashboard/2026-09-12T14:22:51Z.tar.zst`,
+  `<backup.s3_uri>host/2026-09-12T14:22:51Z.accounts.tar.zst`, and
   `<backup.s3_uri>host/2026-09-12T14:22:51Z.tar.zst` exist, with the same
-  contents and exclusions the two backup commands write. No earlier object
+  contents and exclusions the two backup commands write: the accounts object
+  holds the host's business groups and users, their homes, folders and key
+  files, and the sshd host keys, and nothing of `ec2-user`'s.
+- When the accounts cannot be written, the run prints the `accounts: failed:`
+  and `host: failed: accounts not written` lines of "The host cannot back up
+  its accounts", writes no object under `host/`, and exits 1; the service
+  lines and objects are as they would be otherwise, and the units stay
+  stopped. No earlier object
   was deleted or overwritten.
 - A host with no services prints only the `services: ok (none)`,
-  `litestream: ok (stopped)`, and `host:` lines.
+  `litestream: ok (stopped)`, `accounts:`, and `host:` lines.
 - An app disabled with `opsctl disable` was already inactive, so the
   `services` line names it `already inactive, disabled` — `services: ok
   (crm already inactive, disabled; dashboard stopped)` — and it is backed
@@ -842,6 +1195,7 @@ litestream: ok (stopped, crm.db synced)
 crm: ok (2026-09-12T14:22:51Z.tar.zst, 1.2 MiB)
 dashboard: ok (2026-09-12T14:22:51Z.tar.zst, 1.1 MiB)
 gmail: ok (2026-09-12T14:22:51Z.tar.zst, 3.4 MiB)
+accounts: ok (2026-09-12T14:22:51Z.accounts.tar.zst, 86.3 MiB)
 host: ok (2026-09-12T14:22:51Z.tar.zst, 48.2 KiB)
 ```
 
@@ -878,6 +1232,7 @@ services: ok (crm, dashboard stopped)
 litestream: ok (stopped, crm.db synced)
 crm: failed: /var/opt/ikigenba/crm/state/outbox: permission denied
 dashboard: ok (2026-09-12T14:22:51Z.tar.zst, 1.1 MiB)
+accounts: ok (2026-09-12T14:22:51Z.accounts.tar.zst, 86.3 MiB)
 host: ok (2026-09-12T14:22:51Z.tar.zst, 48.2 KiB)
 exit 1
 ```
@@ -891,9 +1246,9 @@ Preconditions:
 
 Postconditions:
 
-- Every unit is inactive. `dashboard`'s and the host's objects were written;
-  no object was written for `crm`, and its earlier backups are untouched.
-  `crm.db` was shipped in full before the files step ran.
+- Every unit is inactive. `dashboard`'s object and the host's two objects
+  were written; no object was written for `crm`, and its earlier backups are
+  untouched. `crm.db` was shipped in full before the files step ran.
 
 ## A host's final backup finds a service whose state has not moved yet
 
@@ -915,6 +1270,7 @@ services: ok (crm, dashboard stopped)
 litestream: ok (stopped)
 crm: failed: /opt/crm/state has not moved
 dashboard: ok (2026-09-12T14:22:51Z.tar.zst, 1.1 MiB)
+accounts: ok (2026-09-12T14:22:51Z.accounts.tar.zst, 86.3 MiB)
 host: ok (2026-09-12T14:22:51Z.tar.zst, 48.2 KiB)
 exit 1
 ```
@@ -934,8 +1290,9 @@ Preconditions:
 
 Postconditions:
 
-- Every unit is inactive. `dashboard`'s and the host's objects were written;
-  no object was written for `crm`, and its earlier backups are untouched.
+- Every unit is inactive. `dashboard`'s object and the host's two objects
+  were written; no object was written for `crm`, and its earlier backups are
+  untouched.
 - Nothing under `/opt/crm/` was moved or removed, and
   `/var/opt/ikigenba/crm/` was not created.
 
