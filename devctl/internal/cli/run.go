@@ -26,7 +26,7 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/spacemove"
 )
 
-var version = "v0.10.0"
+var version = "v0.11.0"
 
 const usage = `Usage: devctl [options] <command> [arguments]
 
