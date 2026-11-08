@@ -403,6 +403,10 @@ Postconditions:
   in it answers at `<app>.sbx1.ikigenba.dev`, and `opsctl` on root's PATH is
   the release's. What activate did on the host is opsctl's. The space has no
   previous release, so `rollback` is refused until the next deploy.
+- With no host backup, the key the new host launched with is its host key.
+  The developer's `known_hosts` holds that key for `18.118.7.42`, and a
+  later command that reaches the space over ssh, such as `space status
+  sbx1`, reaches it with no complaint about the host key.
 
 ## A developer creates a space running a release they name
 
@@ -580,10 +584,11 @@ the old one held. It takes two commands.
    and `space destroy --no-backup` clears what remains: the records, the
    address, and the role. What the timers had not copied is lost with it.
 2. `space create`. Its `restore` step finds the host backup and has the
-   release's opsctl run `host restore`, which puts `/etc/letsencrypt/` and
-   `/etc/ikigenba/` back; create then sets its ten keys again, so what it
-   was told wins over the backup's copy of the store and any key an operator
-   set by hand survives. `init` finds the certificate current and asks the
+   release's opsctl run `host restore`, which puts `/etc/letsencrypt/`,
+   `/etc/ikigenba/`, and the old host's sshd host keys back and restarts
+   sshd; create then sets its ten keys again, so what it was told wins over
+   the backup's copy of the store and any key an operator set by hand
+   survives. `init` finds the certificate current and asks the
    CA for nothing. Because a host backup was found, create then puts each
    app's data back before any app runs: for each app in the release, in name
    order, whose prefix `<label>/<app>/` in the bucket holds a backup, the
@@ -610,6 +615,11 @@ it again (see `S7-apex.md`). The backup's store carries the old host's
 holds the apex until `apex set` says so; `init` then reissues the certificate
 without the apex name, since the restored one carries a name the store no
 longer asks for.
+
+The new host presents the old host's sshd host key from its host restore
+on. devctl's ssh to it keeps working through the rest of the create, and
+afterwards every command that reaches the space over ssh reaches the new
+address with no complaint about the host key.
 
 Command:
 
@@ -692,6 +702,13 @@ Postconditions:
   then exited 0, and `space status` shows every app as above.
 - The new instance has a new id and may have a new address; the records
   point at it. Nothing about the old instance remains in the account.
+- The new host holds the old host's sshd host keys, put back by `host
+  restore`, and sshd was restarted with them. No ssh connection devctl made
+  to the new address after the host restore complained of the host key, and
+  `space status staging` afterwards reached it the same way.
+- The developer's `known_hosts` holds no entry for the key the new host had
+  at launch, before its host restore; for the new address it holds the old
+  host's key, the one the new host presents.
 
 ## A developer creates a space at a name delegated away from the zone
 
