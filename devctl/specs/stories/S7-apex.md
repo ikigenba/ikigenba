@@ -273,7 +273,7 @@ Output:
 ```
 space: ok (sbx1.ikigenba.dev running, 18.118.7.42)
 role: ok (sbx1.ikigenba.dev may prove ikigenba.dev)
-devctl: host: ssh ec2-user@18.118.7.42 sudo opsctl cert obtain: exit status 1
+devctl: host: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect opsctl cert obtain: exit status 1
 
 > opsctl: certbot certonly: exit status 1
 > 
@@ -368,8 +368,8 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. `sudo opsctl config get host.apex` was run on the
-  host over ssh.
+- Nothing has changed. `sudo systemd-run --quiet --wait --pipe --collect
+  opsctl config get host.apex` was run on the host over ssh.
 
 ## A developer asks where the root points when it points nowhere
 

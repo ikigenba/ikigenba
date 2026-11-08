@@ -83,9 +83,10 @@ Preconditions:
 
 Postconditions:
 
-- `sudo opsctl restore crm` has been run on the host over ssh and has exited
-  0, so `crm`'s `etc/`, `state/`, and database on that host are what its own
-  backups held. `opsctl` alone decides what a restore does on the host.
+- `sudo systemd-run --quiet --wait --pipe --collect opsctl restore crm` has
+  been run on the host over ssh and has exited 0, so `crm`'s `etc/`,
+  `state/`, and database on that host are what its own backups held.
+  `opsctl` alone decides what a restore does on the host.
 - No other app on the space has changed, and no other space was read.
 
 ## A developer puts a space's app back as it was at a moment
@@ -189,7 +190,7 @@ $ devctl restore sbx1 crm
 Output:
 
 ```
-devctl: restore: ssh ec2-user@18.118.7.42 sudo opsctl restore crm: exit status 1
+devctl: restore: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect opsctl restore crm: exit status 1
 
 > source: failed: no backups for crm under s3://ikigenba.dev/sbx1/
 > opsctl: restore crm failed at source

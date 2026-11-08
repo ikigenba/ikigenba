@@ -277,7 +277,9 @@ each app's data back when a host backup was found (see the rebuild story), and
 last activates the release, with the tag as its label. The host's opsctl is
 from then on the one in the release it runs: activate points
 `/usr/local/bin/opsctl` at it, and every later activation points it at the new
-release's own.
+release's own. Every command devctl runs on a host as root runs as its own
+transient system unit, outside the ssh session's user slice, so the host's
+per-user memory limit does not throttle it.
 
 Backups are kept when a space is destroyed unless the developer says
 otherwise, so a space may have lived before, and its certificate and store
@@ -391,12 +393,12 @@ Postconditions:
   and `backup.service_wal_seconds=300`. `host.apex` is not set.
 - `sbx1/host/` was listed and found empty, so `opsctl host restore` was not
   run and the ten keys were set once.
-- `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl init`
+- `sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl init`
   has exited 0 on the host, so the host holds its certificate, its generated
   nginx configuration, its litestream configuration and unit, its two backup
   timers, each enabled whose period is non-zero, and its certificate renewal
   timer, enabled.
-- `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87`
+- `sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87`
   has then exited 0, so the space runs the release labelled `release-87`, every app
   in it answers at `<app>.sbx1.ikigenba.dev`, and `opsctl` on root's PATH is
   the release's. What activate did on the host is opsctl's. The space has no
@@ -681,12 +683,12 @@ Postconditions:
   asked the CA for nothing. The store holds the ten keys as create derived
   them, plus any other key the backup carried except `host.apex`, which
   create removed after the restore whether or not the backup had it.
-- `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl restore <app>`
+- `sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl restore <app>`
   was run and exited 0 for each of the seven apps, after `init` and before
   activate, so each of them started over the backup's `state/` and database;
   what restore does on the host is opsctl's. `sites` had no backup, so no
   restore was run for it and it started over empty state.
-- `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87`
+- `sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87`
   then exited 0, and `space status` shows every app as above.
 - The new instance has a new id and may have a new address; the records
   point at it. Nothing about the old instance remains in the account.
@@ -1026,7 +1028,7 @@ units: ok (8 apps)
 current: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
 nginx: ok (8 apps)
 restart: failed: events: service failed to start
-devctl: activate: ssh ec2-user@18.118.7.42 sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87: exit status 1
+devctl: activate: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87: exit status 1
 
 > opsctl: activate failed
 > 
@@ -1066,23 +1068,24 @@ and `domain` steps are create's. The release is chosen and built as create
 chooses and builds it, before anything is changed, so a move that cannot
 build leaves the space where it was.
 
-Then the old host goes. Over ssh, `sudo opsctl retire` takes its final
-backup, as destroy has it do; it runs on every move, because running it
-again is safe. The opsctl on the old host is whatever release it runs, and
-that may be older than the one being moved to, whose host restore needs
+Then the old host goes. Over ssh,
+`sudo systemd-run --quiet --wait --pipe --collect opsctl retire` takes its
+final backup, as destroy has it do; it runs on every move, because running
+it again is safe. The opsctl on the old host is whatever release it runs,
+and that may be older than the one being moved to, whose host restore needs
 what an older host backup lacks, such as the host's accounts. So the
-`backup` step then has the release being moved to take one more host
-backup: devctl asks the old host its architecture with `uname -m`
-(`x86_64` is `amd64`, `aarch64` is `arm64`), compiles that release's
-opsctl for it on the developer's machine, copies it to a temporary file
-under `/tmp` on the old host, runs `host backup` with it as root, and
-removes the file. That backup is the newest in the bucket and the one the
-new host is restored from. The copy is not part of the release, which
-stays arm64 only, and the binary never lands in `dist/`. The
-`stop` step stops the old instance, and the `tag` step tags it and its
-Elastic IP `Retired=<RFC3339 timestamp>`. The old instance and its address
-are not removed: they stay, stopped and retired, until `space destroy`
-removes them, or a person does, and until then they are the way back.
+`backup` step then has the release being moved to take one more host backup:
+devctl asks the old host its architecture with `uname -m` (`x86_64` is
+`amd64`, `aarch64` is `arm64`), compiles that release's opsctl for it on the
+developer's machine, copies it to a temporary file under `/tmp` on the old
+host, runs `host backup` with it as root, and removes the file. That backup
+is the newest in the bucket and the one the new host is restored from. The
+copy is not part of the release, which stays arm64 only, and the binary
+never lands in `dist/`. The `stop` step stops the old instance, and the
+`tag` step tags it and its Elastic IP `Retired=<RFC3339 timestamp>`. The old
+instance and its address are not removed: they stay, stopped and retired,
+until `space destroy` removes them, or a person does, and until then they
+are the way back.
 
 The new instance is launched from the launch template with the space's
 existing role and instance profile, and tagged `Domain=ikigenba.dev` and
@@ -1189,9 +1192,10 @@ Preconditions:
 Postconditions:
 
 - `dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` is in the checkout.
-- `sudo opsctl retire` has been run on the old host over ssh and exited 0,
-  so a new object under `staging/<app>/` for each of the eight apps and a
-  host backup of its own are in the bucket.
+- `sudo systemd-run --quiet --wait --pipe --collect opsctl retire` has been
+  run on the old host over ssh and exited 0, so a new object under
+  `staging/<app>/` for each of the eight apps and a host backup of its own
+  are in the bucket.
 - Then `uname -m` on the old host printed `x86_64`; the opsctl of
   `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, compiled for `linux/amd64`,
   was copied to a temporary file under `/tmp` there, run as root with
@@ -1221,8 +1225,8 @@ Postconditions:
 - After that host restore and before `init`, the `A` records
   `staging.ikigenba.dev` and `*.staging.ikigenba.dev`, TTL 60, were upserted
   to `3.141.27.86` and the change is `INSYNC`.
-- `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl init`, then `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl restore <app>` for each of the eight
-  apps in name order, then `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87`
+- `sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl init`, then `sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl restore <app>` for each of the eight
+  apps in name order, then `sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87`
   each exited 0 on the new host, so every app answers at
   `<app>.staging.ikigenba.dev` over the data the old host held.
 - The new host presents the old host's sshd host key: no ssh connection
@@ -1270,9 +1274,9 @@ Preconditions:
 Postconditions:
 
 - `i-0b2c3d4e5f6071829` was started and passed its status checks before
-  `sudo opsctl retire`, and then the `backup` step's `host backup`, were
-  run on it over ssh. It is then `stopped` and
-  retired, as in the story above.
+  `sudo systemd-run --quiet --wait --pipe --collect opsctl retire`, and then
+  the `backup` step's `host backup`, were run on it over ssh. It is then
+  `stopped` and retired, as in the story above.
 - Otherwise as for moving a running space.
 
 ## A developer moves a space to a release they name
@@ -1592,7 +1596,7 @@ account: ok (ikigenba.dev, us-east-2, 295229566359)
 domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
 build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 retire: ok (opsctl retire)
-devctl: backup: ssh ec2-user@18.220.10.5 sudo /tmp/tmp.Ab12Cd34Ef host backup: exit status 1
+devctl: backup: ssh ec2-user@18.220.10.5 sudo systemd-run --quiet --wait --pipe --collect /tmp/tmp.Ab12Cd34Ef host backup: exit status 1
 
 > opsctl: host backup: upload failed
 ```
@@ -1613,9 +1617,9 @@ Preconditions:
 
 Postconditions:
 
-- `sudo opsctl retire` has been run on the old host over ssh and exited 0:
-  the host is retired as opsctl leaves it, and its backups are in the
-  bucket.
+- `sudo systemd-run --quiet --wait --pipe --collect opsctl retire` has been
+  run on the old host over ssh and exited 0: the host is retired as opsctl
+  leaves it, and its backups are in the bucket.
 - The release's opsctl was compiled for `linux/amd64`, copied to
   `/tmp/tmp.Ab12Cd34Ef` on the old host, and run there as root with `host
   backup`; then the file was removed from the host.
@@ -1671,9 +1675,10 @@ Preconditions:
 
 Postconditions:
 
-- `sudo opsctl retire` and then the release's `host backup` have been run
-  on the old host over ssh and exited 0, so its final backups are in the
-  bucket under `sbx1/`, and the uploaded binary was removed from the host.
+- `sudo systemd-run --quiet --wait --pipe --collect opsctl retire` and then
+  the release's `host backup` have been run on the old host over ssh and
+  exited 0, so its final backups are in the bucket under `sbx1/`, and the
+  uploaded binary was removed from the host.
 - `i-0c9e94542d98846a8` is `stopped` and tagged
   `Retired=2026-11-08T18:30:00Z` beside its `Domain` and `Space` tags; its
   Elastic IP is still associated with it and tagged the same. No instance
@@ -1736,12 +1741,13 @@ nothing costs money. Each line of output is one step. Two things a space
 owned are kept unless the developer says otherwise: its secrets, because
 they are the developer's values and cost nothing, and its backups, because
 they are the point of a rebuild. Before the instance goes, devctl has the
-host take its final backup with `sudo opsctl retire` over ssh, which stops
-every service, lets litestream ship what it holds, and writes the service
-and host backups one last time; the timers only copy on their own schedule,
-and this is what makes a destroy lose nothing. A zero exit from retire is
-the whole of the step's success; what retire does on the host, and what it
-backs up, is opsctl's.
+host take its final backup with
+`sudo systemd-run --quiet --wait --pipe --collect opsctl retire` over ssh,
+which stops every service, lets litestream ship what it holds, and writes
+the service and host backups one last time; the timers only copy on their
+own schedule, and this is what makes a destroy lose nothing. A zero exit
+from retire is the whole of the step's success; what retire does on the
+host, and what it backs up, is opsctl's.
 
 Command:
 
@@ -1773,10 +1779,10 @@ Preconditions:
 
 Postconditions:
 
-- `sudo opsctl retire` has been run over ssh and exited 0, so
-  `staging/crm/`, `staging/dashboard/`, and `staging/host/` in the bucket
-  each hold a new object from that run, and `crm`'s database replica is
-  complete to its last committed transaction.
+- `sudo systemd-run --quiet --wait --pipe --collect opsctl retire` has been
+  run over ssh and exited 0, so `staging/crm/`, `staging/dashboard/`, and
+  `staging/host/` in the bucket each hold a new object from that run, and
+  `crm`'s database replica is complete to its last committed transaction.
 - The space's instance is terminated and its Elastic IP is disassociated and
   released.
 - The `A` records `staging.ikigenba.dev` and `*.staging.ikigenba.dev` are
@@ -1927,9 +1933,9 @@ Preconditions:
 
 Postconditions:
 
-- `sudo opsctl retire` has been run over ssh on `i-0e5d4c3b2a1f09876` and
-  exited 0. No ssh connection was made to the retired instance, and it was
-  not started.
+- `sudo systemd-run --quiet --wait --pipe --collect opsctl retire` has been
+  run over ssh on `i-0e5d4c3b2a1f09876` and exited 0. No ssh connection was
+  made to the retired instance, and it was not started.
 - Both instances are terminated, and both Elastic IPs are disassociated and
   released. Nothing tagged `Space=sbx1.ikigenba.dev` remains.
 - Otherwise as for a plain destroy. With `--no-backup` the `retire` line
@@ -1957,7 +1963,7 @@ $ devctl space destroy staging
 Output:
 
 ```
-devctl: retire: ssh ec2-user@18.220.10.5 sudo opsctl retire: exit status 1
+devctl: retire: ssh ec2-user@18.220.10.5 sudo systemd-run --quiet --wait --pipe --collect opsctl retire: exit status 1
 
 > services: ok (crm, dashboard stopped)
 > litestream: ok (stopped, crm.db synced)
@@ -2206,11 +2212,12 @@ Postconditions:
 
 The instance comes back at the address it had, so no record changes, and a
 renewal check runs on the host so a certificate that expired while the space
-was stopped is renewed. It is `sudo certbot renew`, never forced; certbot
-decides. The host's own renewal timer is persistent and would run the same
-check at boot; start runs it in the foreground so the developer sees the
-answer now rather than in a journal. The last line is the domain and the
-address.
+was stopped is renewed. It is
+`sudo systemd-run --quiet --wait --pipe --collect certbot renew`, never
+forced; certbot decides. The host's own renewal timer is persistent and
+would run the same check at boot; start runs it in the foreground so the
+developer sees the answer now rather than in a journal. The last line is the
+domain and the address.
 
 Command:
 
@@ -2241,7 +2248,8 @@ Postconditions:
 - The instance is `running` and has passed its status checks.
 - The `A` records `staging.ikigenba.dev` and `*.staging.ikigenba.dev` still
   point at the Elastic IP.
-- `sudo certbot renew` has been run on the host over ssh and exited 0.
+- `sudo systemd-run --quiet --wait --pipe --collect certbot renew` has been
+  run on the host over ssh and exited 0.
 
 ## A developer asks what a space is running
 
@@ -2565,9 +2573,10 @@ Preconditions:
 
 Postconditions:
 
-- `sudo opsctl restart crm` has been run on the host over ssh and exited 0,
-  so `ikigenba-crm.service` is `active` under a new process. What restart
-  does on the host is opsctl's; its socket kept listening throughout.
+- `sudo systemd-run --quiet --wait --pipe --collect opsctl restart crm` has
+  been run on the host over ssh and exited 0, so `ikigenba-crm.service` is
+  `active` under a new process. What restart does on the host is opsctl's;
+  its socket kept listening throughout.
 - Nothing on the host's disk changed, and no other app on the space has
   changed.
 
@@ -2602,10 +2611,10 @@ Preconditions:
 
 Postconditions:
 
-- `sudo opsctl restart crm` has been run on the host over ssh and exited 0.
-  Nothing has changed: neither of `crm`'s units was started or enabled, its
-  names still answer `503`, and `space status` still shows
-  `crm 4b22285 release-87 inactive disabled wal`.
+- `sudo systemd-run --quiet --wait --pipe --collect opsctl restart crm` has
+  been run on the host over ssh and exited 0. Nothing has changed: neither
+  of `crm`'s units was started or enabled, its names still answer `503`, and
+  `space status` still shows `crm 4b22285 release-87 inactive disabled wal`.
 
 ## A developer's restart fails on the host
 
@@ -2622,7 +2631,7 @@ $ devctl space restart sbx1 crm
 Output:
 
 ```
-devctl: restart: ssh ec2-user@18.118.7.42 sudo opsctl restart crm: exit status 1
+devctl: restart: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect opsctl restart crm: exit status 1
 
 > service: failed: crm: service failed to start
 > opsctl: restart failed
@@ -2690,9 +2699,10 @@ Preconditions:
 
 Postconditions:
 
-- `sudo opsctl disable crm` has been run on the host over ssh and exited 0.
-  What disable does on the host is opsctl's: `crm`'s socket and service are
-  stopped and disabled, and `https://crm.sbx1.ikigenba.dev` answers `503`.
+- `sudo systemd-run --quiet --wait --pipe --collect opsctl disable crm` has
+  been run on the host over ssh and exited 0. What disable does on the host
+  is opsctl's: `crm`'s socket and service are stopped and disabled, and
+  `https://crm.sbx1.ikigenba.dev` answers `503`.
 - `space status sbx1` shows `crm 4b22285 release-87 inactive disabled wal`.
 - Nothing under `/opt/crm/` changed, and no other app on the space has
   changed.
@@ -2729,9 +2739,10 @@ Preconditions:
 
 Postconditions:
 
-- `sudo opsctl enable crm` has been run on the host over ssh and exited 0.
-  What enable does on the host is opsctl's: both of `crm`'s units are enabled
-  and started, and `https://crm.sbx1.ikigenba.dev` reaches `crm` again.
+- `sudo systemd-run --quiet --wait --pipe --collect opsctl enable crm` has
+  been run on the host over ssh and exited 0. What enable does on the host
+  is opsctl's: both of `crm`'s units are enabled and started, and
+  `https://crm.sbx1.ikigenba.dev` reaches `crm` again.
 - `space status sbx1` shows `crm 4b22285 release-87 active active wal`.
 - Nothing under `/opt/crm/` changed, and no other app on the space has
   changed.
@@ -2750,7 +2761,7 @@ $ devctl space enable sbx1 crm
 Output:
 
 ```
-devctl: enable: ssh ec2-user@18.118.7.42 sudo opsctl enable crm: exit status 1
+devctl: enable: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect opsctl enable crm: exit status 1
 
 > enable: ok (ikigenba-crm.socket, ikigenba-crm.service)
 > nginx: ok (crm.sbx1.ikigenba.dev)
@@ -2824,8 +2835,9 @@ Preconditions:
 
 Postconditions:
 
-- `sudo opsctl disable crm` and `sudo opsctl enable dashboard` have been run
-  on the host over ssh and each exited 0.
+- `sudo systemd-run --quiet --wait --pipe --collect opsctl disable crm` and
+  `sudo systemd-run --quiet --wait --pipe --collect opsctl enable dashboard`
+  have been run on the host over ssh and each exited 0.
 - Nothing has changed: no unit was enabled, disabled, started, or stopped,
   and nginx was not reloaded.
 
@@ -2844,7 +2856,7 @@ $ devctl space disable sbx1 auth
 Output:
 
 ```
-devctl: disable: ssh ec2-user@18.118.7.42 sudo opsctl disable auth: exit status 1
+devctl: disable: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect opsctl disable auth: exit status 1
 
 > stop: failed: auth is the authenticator and cannot be disabled
 > opsctl: disable failed
@@ -2880,7 +2892,7 @@ $ devctl space disable sbx1 gmail
 Output:
 
 ```
-devctl: disable: ssh ec2-user@18.118.7.42 sudo opsctl disable gmail: exit status 1
+devctl: disable: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect opsctl disable gmail: exit status 1
 
 > stop: failed: no service 'gmail'
 > opsctl: disable failed
@@ -2895,7 +2907,7 @@ $ devctl space enable sbx1 gmail
 Output:
 
 ```
-devctl: enable: ssh ec2-user@18.118.7.42 sudo opsctl enable gmail: exit status 1
+devctl: enable: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect opsctl enable gmail: exit status 1
 
 > enable: failed: no service 'gmail'
 > opsctl: enable failed
@@ -2952,10 +2964,10 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. `sudo journalctl -u ikigenba-crm.service -n 100
-  --no-pager` was run on the host over ssh and its stdout was copied
-  unchanged; more than 100 lines would have been cut to the newest 100, the
-  way journalctl cuts them.
+- Nothing has changed. `sudo systemd-run --quiet --wait --pipe --collect
+  journalctl -u ikigenba-crm.service -n 100 --no-pager` was run on the host
+  over ssh and its stdout was copied unchanged; more than 100 lines would
+  have been cut to the newest 100, the way journalctl cuts them.
 
 ## A developer follows an app's journal, or reads it from a moment
 
@@ -2984,11 +2996,12 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. `sudo journalctl -u ikigenba-crm.service --since -1h
-  -f --no-pager` was run on the host over ssh. A `--since` journalctl cannot
-  parse is journalctl's to refuse: its diagnostic is relayed after
-  `devctl: logs: ssh ec2-user@18.118.7.42 sudo journalctl ...: exit status
-  1`, quoted with `> `, and the exit is 1.
+- Nothing has changed. `sudo systemd-run --quiet --wait --pipe --collect
+  journalctl -u ikigenba-crm.service --since -1h -f --no-pager` was run on
+  the host over ssh. A `--since` journalctl cannot parse is journalctl's to
+  refuse: its diagnostic is relayed after `devctl: logs: ssh
+  ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect
+  journalctl ...: exit status 1`, quoted with `> `, and the exit is 1.
 
 ## A developer asks for the journal of an app that is not on the space
 

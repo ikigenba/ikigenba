@@ -132,7 +132,7 @@ Postconditions:
   host holds the tarball's `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/` as it
   was built, and no copy of the tarball is left in the host's temporary
   directory.
-- `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87`
+- `sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87`
   has been run on the host over ssh and exited 0, so every app in the release
   answers at its name from the new release. What activate did on the host is
   opsctl's.
@@ -180,7 +180,7 @@ Preconditions:
 Postconditions:
 
 - As for deploying `release-87`, except that the command run on the host was
-  `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`,
+  `sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`,
   with no label.
 
 ## A developer deploys a release the host already holds
@@ -434,7 +434,7 @@ Output:
 build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 secrets: ok (8 apps, 2 keys)
 copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> 18.118.7.42)
-devctl: unpack: ssh ec2-user@18.118.7.42 sudo tar -x -J --no-same-owner -f /tmp/tmp.Xb3kQ9aLpz -C /opt/ikigenba/releases/.unpack.Q7mN2cRt4w: exit status 2
+devctl: unpack: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect tar -x -J --no-same-owner -f /tmp/tmp.Xb3kQ9aLpz -C /opt/ikigenba/releases/.unpack.Q7mN2cRt4w: exit status 2
 
 > tar: 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/auth/bin/auth: Cannot write: No space left on device
 > tar: Exiting with failure status due to previous errors
@@ -478,7 +478,7 @@ units: ok (8 apps)
 current: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a, previous 9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c)
 nginx: ok (8 apps)
 restart: failed: events: service failed to start
-devctl: activate: ssh ec2-user@18.118.7.42 sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87: exit status 1
+devctl: activate: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87: exit status 1
 
 > opsctl: activate failed
 > 
@@ -560,10 +560,11 @@ Postconditions:
 ## A developer rolls a space back
 
 A deploy went badly and the developer wants the space on what it ran before.
-devctl runs `sudo opsctl rollback` on the host over ssh and copies opsctl's
-stdout to its own as opsctl writes it; devctl adds no line of its own. Nothing
-is built and the checkout's commits are not read. The lines are opsctl's,
-shown here for illustration.
+devctl runs `sudo systemd-run --quiet --wait --pipe --collect opsctl
+rollback` on the host over ssh and copies opsctl's stdout to its own as
+opsctl writes it; devctl adds no line of its own. Nothing is built and the
+checkout's commits are not read. The lines are opsctl's, shown here for
+illustration.
 
 Command:
 
@@ -595,9 +596,10 @@ Preconditions:
 
 Postconditions:
 
-- `sudo opsctl rollback` has been run on the host over ssh and exited 0, so
-  the space runs `9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c` and has no
-  previous release. What rollback did on the host is opsctl's.
+- `sudo systemd-run --quiet --wait --pipe --collect opsctl rollback` has
+  been run on the host over ssh and exited 0, so the space runs
+  `9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c` and has no previous release.
+  What rollback did on the host is opsctl's.
 - Nothing in the checkout or the account changed.
 
 ## A developer rolls back a space that has no previous release
@@ -615,7 +617,7 @@ $ devctl rollback sbx1
 Output:
 
 ```
-devctl: rollback: ssh ec2-user@18.118.7.42 sudo opsctl rollback: exit status 1
+devctl: rollback: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect opsctl rollback: exit status 1
 
 > opsctl: no previous release to roll back to
 ```
