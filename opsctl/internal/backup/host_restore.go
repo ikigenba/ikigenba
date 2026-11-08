@@ -2,11 +2,9 @@ package backup
 
 import (
 	"archive/tar"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -84,36 +82,14 @@ func HostRestore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store co
 	basename := strings.TrimPrefix(selected.URI, hostPrefix)
 	result.Object = "host/" + basename
 
-	reader, getErr := client.GetObject(ctx, selected.URI)
-	if getErr != nil {
-		if reader != nil {
-			getErr = errors.Join(getErr, reader.Close())
-		}
-		return hostRestoreSourceFailure(result, fmt.Errorf("download %q: %w", selected.URI, getErr))
-	}
-	if reader == nil {
-		return hostRestoreSourceFailure(result, fmt.Errorf("download %q: object reader is not configured", selected.URI))
-	}
-	compressed, readErr := io.ReadAll(reader)
-	result.Size = int64(len(compressed))
-	closeErr := reader.Close()
-	if err := errors.Join(readErr, closeErr); err != nil {
-		return hostRestoreSourceFailure(result, fmt.Errorf("download %q: %w", selected.URI, err))
-	}
-	if err := ctx.Err(); err != nil {
-		return hostRestoreSourceFailure(result, fmt.Errorf("download %q: %w", selected.URI, err))
-	}
-
-	archive, err := decompressHostArchive(ctx, env.Execute, compressed)
+	stage, err := newHostRestoreStage(env.Root)
 	if err != nil {
 		return hostRestoreSourceFailure(result, err)
 	}
-	entries, err := validateHostArchive(archive)
+	defer stage.close()
+	result.Size, err = stage.read(ctx, env, client, selected.URI)
 	if err != nil {
-		return hostRestoreSourceFailure(result, fmt.Errorf("validate %q: %w", selected.URI, err))
-	}
-	if err := ctx.Err(); err != nil {
-		return hostRestoreSourceFailure(result, fmt.Errorf("validate %q: %w", selected.URI, err))
+		return hostRestoreSourceFailure(result, err)
 	}
 	result.SourceReady = true
 
@@ -123,7 +99,7 @@ func HostRestore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store co
 		return result, err
 	}
 
-	result.Files, err = replaceHostTrees(ctx, env.Root, entries)
+	result.Files, err = stage.publish(ctx)
 	if err != nil {
 		result.FailedStep = "files"
 		return result, fmt.Errorf("replace host files: %w", err)
@@ -168,26 +144,6 @@ func newestHostArchive(objects []cloud.Object, prefix string) (cloud.Object, boo
 	return selected, found
 }
 
-func decompressHostArchive(ctx context.Context, execute func(context.Context, host.Command) (host.Result, error), compressed []byte) ([]byte, error) {
-	result, err := execute(ctx, host.Command{
-		Name:  "zstd",
-		Args:  []string{"--quiet", "--decompress", "--stdout"},
-		Stdin: bytes.NewReader(compressed),
-	})
-	const label = "decompress host archive"
-	if err != nil {
-		var commandErr *host.CommandError
-		if errors.As(err, &commandErr) {
-			return nil, err
-		}
-		return nil, &host.CommandError{Label: label, Result: result, Err: err}
-	}
-	if result.ExitCode != 0 {
-		return nil, &host.CommandError{Label: label, Result: result}
-	}
-	return result.Stdout, nil
-}
-
 type hostRestoreEntry struct {
 	name     string
 	typeflag byte
@@ -198,76 +154,6 @@ type hostRestoreEntry struct {
 	gid      int
 	access   string
 	defaults string
-}
-
-func validateHostArchive(archive []byte) ([]hostRestoreEntry, error) {
-	if len(archive) < 1024 || len(archive)%512 != 0 || !allZero(archive[len(archive)-1024:]) {
-		return nil, errors.New("invalid tar archive termination")
-	}
-	raw := bytes.NewReader(archive)
-	reader := tar.NewReader(raw)
-	entries := make([]hostRestoreEntry, 0)
-	byName := make(map[string]hostRestoreEntry)
-	for {
-		header, err := reader.Next()
-		if errors.Is(err, io.EOF) {
-			remaining := archive[len(archive)-raw.Len():]
-			if !allZero(remaining) {
-				return nil, errors.New("invalid data after tar archive end")
-			}
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("read tar archive: %w", err)
-		}
-		name, err := validHostArchiveName(header.Name)
-		if err != nil {
-			return nil, err
-		}
-		if _, duplicate := byName[name]; duplicate {
-			return nil, fmt.Errorf("duplicate archive entry %q", header.Name)
-		}
-		entry := hostRestoreEntry{name: name, typeflag: header.Typeflag, mode: restoredFileMode(header.Mode), linkname: header.Linkname}
-		if name == "etc/ikigenba" {
-			entry.mode = 0o700
-		} else if strings.HasPrefix(name, "etc/ikigenba/") {
-			entry.mode &^= 0o007
-		}
-		switch header.Typeflag {
-		case tar.TypeReg, byte(0):
-			entry.typeflag = tar.TypeReg
-			entry.data, err = io.ReadAll(reader)
-			if err != nil {
-				return nil, fmt.Errorf("read archive entry %q: %w", header.Name, err)
-			}
-		case tar.TypeDir, tar.TypeSymlink:
-			if header.Size != 0 {
-				return nil, fmt.Errorf("archive entry %q has unexpected data", header.Name)
-			}
-		case tar.TypeChar, tar.TypeBlock, tar.TypeFifo:
-			return nil, fmt.Errorf("archive entry %q is a special device", header.Name)
-		default:
-			return nil, fmt.Errorf("archive entry %q has unsupported type %d", header.Name, header.Typeflag)
-		}
-		entries = append(entries, entry)
-		byName[name] = entry
-	}
-
-	for _, entry := range entries {
-		for parent := path.Dir(entry.name); parent != "."; parent = path.Dir(parent) {
-			ancestor, ok := byName[parent]
-			if !ok {
-				continue
-			}
-			if ancestor.typeflag == tar.TypeSymlink {
-				return nil, fmt.Errorf("archive entry %q traverses symlink %q", entry.name, parent)
-			}
-			if ancestor.typeflag != tar.TypeDir {
-				return nil, fmt.Errorf("archive entry %q traverses non-directory %q", entry.name, parent)
-			}
-		}
-	}
-	return entries, nil
 }
 
 func allZero(data []byte) bool {
@@ -311,61 +197,6 @@ func restoredFileMode(mode int64) fs.FileMode {
 		restored |= fs.ModeSticky
 	}
 	return restored
-}
-
-func replaceHostTrees(ctx context.Context, rootName string, entries []hostRestoreEntry) (int, error) {
-	if err := ctx.Err(); err != nil {
-		return 0, err
-	}
-	root, err := os.OpenRoot(rootName)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = root.Close() }()
-
-	stageName, err := os.MkdirTemp(rootName, ".opsctl-host-restore-")
-	if err != nil {
-		return 0, err
-	}
-	stageBase := path.Base(stageName)
-	defer func() { _ = root.RemoveAll(stageBase) }()
-	if err := root.Chmod(stageBase, 0o700); err != nil {
-		return 0, err
-	}
-	if err := mkdirHostRestoreParents(root, path.Join(stageBase, "etc")); err != nil {
-		return 0, err
-	}
-	if err := populateHostRestoreStage(root, stageBase, entries); err != nil {
-		return 0, err
-	}
-	etcInfo, err := root.Lstat("etc")
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		if err := root.Mkdir("etc", 0o755); err != nil {
-			return 0, err
-		}
-	case err != nil:
-		return 0, err
-	case !etcInfo.IsDir() || etcInfo.Mode()&os.ModeSymlink != 0:
-		return 0, errors.New("destination parent /etc is not a directory")
-	}
-
-	restored := 0
-	for _, tree := range []string{"etc/ikigenba", "etc/letsencrypt"} {
-		if err := ctx.Err(); err != nil {
-			return restored, err
-		}
-		if err := root.RemoveAll(tree); err != nil {
-			return restored, err
-		}
-		if hostArchiveContainsTree(entries, tree) {
-			if err := root.Rename(path.Join(stageBase, tree), tree); err != nil {
-				return restored, err
-			}
-		}
-		restored += hostTreeFileCount(entries, tree)
-	}
-	return restored, nil
 }
 
 func populateHostRestoreStage(root *os.Root, stageBase string, entries []hostRestoreEntry) error {

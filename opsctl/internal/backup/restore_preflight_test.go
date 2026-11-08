@@ -101,7 +101,7 @@ func TestRestoreMissingMigratedEnvironmentEntryIsInert(t *testing.T) {
 }
 
 func TestRestoreMigratedEnvSymlinkAndOldCacheAreAcceptedWithoutFollowing(t *testing.T) {
-	// R-CQWX-AO0B R-COH4-J4IX R-RGIY-BLTW
+	// R-CQWX-AO0B R-COH4-J4IX R-0RN4-UC7N
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	store := restoreConfiguredStore(t, root)

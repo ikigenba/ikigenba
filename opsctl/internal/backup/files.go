@@ -2,7 +2,6 @@ package backup
 
 import (
 	"archive/tar"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -120,7 +119,10 @@ func executeFileBackup(ctx context.Context, env host.Env, plan fileBackupPlan) (
 			continue
 		}
 
-		compressed, archiveErr := serviceArchive(ctx, env, selected)
+		object := strings.TrimSuffix(plan.prefix, "/") + "/" + selected.Name + "/" + plan.basename
+		size, archiveErr := uploadHostArchive(ctx, env, plan.client, object, selected.Name, func(ctx context.Context, env host.Env, writer io.Writer) error {
+			return serviceArchive(ctx, env, selected, writer)
+		})
 		if archiveErr != nil {
 			result.Err = archiveErr
 			results = append(results, result)
@@ -129,29 +131,8 @@ func executeFileBackup(ctx context.Context, env host.Env, plan fileBackupPlan) (
 			}
 			continue
 		}
-		if err := ctx.Err(); err != nil {
-			result.Err = fmt.Errorf("archive %q: %w", selected.Name, err)
-			results = append(results, result)
-			return results, fmt.Errorf("backup files: %w", err)
-		}
-
-		object := strings.TrimSuffix(plan.prefix, "/") + "/" + selected.Name + "/" + plan.basename
-		uploadErr := plan.client.PutObject(ctx, object, bytes.NewReader(compressed))
-		if uploadErr != nil {
-			result.Err = fmt.Errorf("upload %q: %w", object, uploadErr)
-			results = append(results, result)
-			if interrupted := interruption(ctx, uploadErr); interrupted != nil {
-				return results, fmt.Errorf("backup files: %w", interrupted)
-			}
-			continue
-		}
-		if err := ctx.Err(); err != nil {
-			result.Err = fmt.Errorf("upload %q: %w", object, err)
-			results = append(results, result)
-			return results, fmt.Errorf("backup files: %w", err)
-		}
 		result.Object = plan.basename
-		result.Size = int64(len(compressed))
+		result.Size = size
 		results = append(results, result)
 	}
 	return results, nil
@@ -291,29 +272,22 @@ func singleQuotedDiagnostic(value string) string {
 	return "'" + strings.ReplaceAll(quoted[1:len(quoted)-1], "'", "\\'") + "'"
 }
 
-func serviceArchive(ctx context.Context, env host.Env, service apps.Service) ([]byte, error) {
+func serviceArchive(ctx context.Context, env host.Env, service apps.Service, output io.Writer) error {
 	filesystem, err := os.OpenRoot(env.Root)
 	if err != nil {
-		return nil, fmt.Errorf("archive %q: %w", service.Name, err)
+		return fmt.Errorf("archive %q: %w", service.Name, err)
 	}
 	defer func() { _ = filesystem.Close() }()
 
 	resolver := identityResolver{ctx: ctx, execute: env.Execute, users: make(map[uint32]string), groups: make(map[uint32]string)}
-	var archive bytes.Buffer
-	tarWriter := tar.NewWriter(&archive)
-	for _, tree := range []string{"state"} {
-		if err := archiveTree(ctx, filesystem, tarWriter, &resolver, service, tree); err != nil {
-			_ = tarWriter.Close()
-			return nil, snapshotReadError(env.Root, err)
-		}
+	writer := tar.NewWriter(output)
+	if err := archiveTree(ctx, filesystem, writer, &resolver, service, "state"); err != nil {
+		return snapshotReadError(env.Root, err)
 	}
-	if err := tarWriter.Close(); err != nil {
-		return nil, fmt.Errorf("archive %q: %w", service.Name, err)
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("archive %q: %w", service.Name, err)
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("archive %q: %w", service.Name, err)
-	}
-	return compressArchive(ctx, env.Execute, service.Name, archive.Bytes())
+	return ctx.Err()
 }
 
 func archiveTree(ctx context.Context, filesystem *os.Root, writer *tar.Writer, resolver *identityResolver, service apps.Service, tree string) error {
@@ -458,32 +432,6 @@ func (resolver *identityResolver) lookup(database string, id uint32) (string, er
 		return "", fmt.Errorf("%s: invalid response", label)
 	}
 	return fields[0], nil
-}
-
-func compressArchive(ctx context.Context, execute func(context.Context, host.Command) (host.Result, error), service string, archive []byte) ([]byte, error) {
-	if execute == nil {
-		return nil, errors.New("compress archive: host execution is not configured")
-	}
-	result, err := execute(ctx, host.Command{
-		Name:  "zstd",
-		Args:  []string{"--quiet", "--stdout"},
-		Stdin: bytes.NewReader(archive),
-	})
-	label := "compress " + strconv.Quote(service) + " archive"
-	if err != nil {
-		var commandErr *host.CommandError
-		if errors.As(err, &commandErr) {
-			return nil, err
-		}
-		return nil, &host.CommandError{Label: label, Result: result, Err: err}
-	}
-	if result.ExitCode != 0 {
-		return nil, &host.CommandError{Label: label, Result: result}
-	}
-	if len(result.Stdout) < 4 || !bytes.Equal(result.Stdout[:4], []byte{0x28, 0xb5, 0x2f, 0xfd}) {
-		return nil, fmt.Errorf("%s: invalid zstd output", label)
-	}
-	return result.Stdout, nil
 }
 
 func legacyStateError(root, service string) error {

@@ -41,7 +41,7 @@ func snapshotRestoreExecute(t *testing.T, root string, events *[]string) func(co
 	}
 }
 func TestRestoreSnapshotRegeneratesEnvironmentAndUsesIncludedDatabase(t *testing.T) {
-	// R-FTMA-1XJY R-FMVM-I2DD R-D97F-184Q R-RP29-000R R-RMMG-8GJD R-TOAS-TJ2V R-RP29-000R R-RNUC-M8A2 R-TOAS-TJ2V
+	// R-FTMA-1XJY R-FMVM-I2DD R-D97F-184Q R-RP29-000R R-0WIQ-DF6F R-TOAS-TJ2V R-RP29-000R R-0XQM-R6X4 R-TOAS-TJ2V
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -112,7 +112,7 @@ func TestRestoreSnapshotRegeneratesEnvironmentAndUsesIncludedDatabase(t *testing
 	}
 }
 func TestRestoreSnapshotPreworkflowAndSourceFailures(t *testing.T) {
-	// R-GB9M-5H79 R-RMMG-8GJD R-FMVM-I2DD
+	// R-GB9M-5H79 R-0WIQ-DF6F R-FMVM-I2DD
 	tests := []struct {
 		name, from, hostName string
 		at                   *time.Time
@@ -206,14 +206,14 @@ func TestRestoreSnapshotSecretsFailuresStopBeforeUnits(t *testing.T) {
 			from := "s3://bucket/snapshot"
 			client := &snapshotRestoreCloud{restoreCloud: &restoreCloud{bodies: map[string][]byte{from: body}}, secrets: tc.values, secretErr: tc.secretErr}
 			writeFile(t, root, "var/opt/ikigenba/notes/state/sentinel", "unchanged", 0o600)
-			before := fileTreeSnapshot(t, root)
+			before := restoreTreeSnapshot(t, root)
 			var events []string
 			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: snapshotRestoreExecute(t, root, &events)}, cloud.Env{Open: client.open}, store, "notes", nil, from, nil, func(context.Context) error { t.Fatal("callback invoked"); return nil })
 			var failure *backup.RestoreError
 			if !errors.As(err, &failure) || failure.Stage != "secrets" || len(failure.Stopped) != 0 || len(report.Steps) != 2 || report.Steps[1].Name != "secrets" || report.Steps[1].Err == nil || report.Steps[1].Detail != "" || !strings.Contains(report.Steps[1].Err.Error(), tc.want) {
 				t.Fatalf("Restore %+v error %#v", report, err)
 			}
-			if !reflect.DeepEqual(before, fileTreeSnapshot(t, root)) {
+			if !reflect.DeepEqual(before, restoreTreeSnapshot(t, root)) {
 				t.Fatal("secrets failure changed host files")
 			}
 			if strings.Contains(fmt.Sprint(report, err), "hidden") {
@@ -340,7 +340,7 @@ func TestRestoreSnapshotEnvironmentFailuresRemainAtFiles(t *testing.T) {
 }
 
 func TestRestoreSnapshotMapsDatabaseOwnership(t *testing.T) {
-	// R-RNUC-M8A2 R-RLEJ-UOSO
+	// R-0XQM-R6X4 R-0U2X-LVP1
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	writeFile(t, root, "opt/notes/etc/manifest.toml", "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/nested/app.db\"\n", 0600)

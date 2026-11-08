@@ -57,6 +57,7 @@ func TestHostBackupJoinsExecuteAfterCollision(t *testing.T) {
 func TestHostRestoreJoinsExecuteAfterMidstreamFailure(t *testing.T) {
 	// R-PLR0-LKUQ
 	root := t.TempDir()
+	t.Cleanup(func() { assertHostStageGone(t, root) })
 	store := configuredHostStore(t, root)
 	fixture := newRestoreAccountExecutor(t, root)
 	client := &lifetimeCloud{Client: restoreAccountsCloud(t, hostRestoreArchive(t, restoreManifestMember(t, accounts.Manifest{})))}
@@ -98,6 +99,44 @@ func TestHostRestoreJoinsExecuteAfterMidstreamFailure(t *testing.T) {
 	client.assertClosed(t, 3)
 }
 
+func TestHostRestoreSourceJoinsExecuteAfterHeaderRejection(t *testing.T) {
+	// R-PLR0-LKUQ R-13U4-O1ML
+	root := t.TempDir()
+	store := configuredHostStore(t, root)
+	client := &lifetimeCloud{Client: restoreAccountsCloud(t, nil)}
+	failedWrite, release, completed := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	env := host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+		defer close(completed)
+		if _, err := io.Copy(io.Discard, command.Stdin); err != nil {
+			return host.Result{}, err
+		}
+		_, err := command.Stdout.Write(bytes.Repeat([]byte{'!'}, 2*1024*1024))
+		close(failedWrite)
+		<-release
+		return host.Result{}, err
+	}}
+	outcome := make(chan lifetimeOutcome, 1)
+	go func() {
+		result, err := backup.HostRestore(context.Background(), env, cloud.Env{Open: client.open}, store)
+		outcome <- lifetimeOutcome{joined: channelClosed(completed), err: err, step: result.FailedStep}
+	}()
+	awaitLifetime(t, failedWrite)
+	select {
+	case got := <-outcome:
+		close(release)
+		t.Fatalf("HostRestore returned before source Execute: %+v", got)
+	default:
+	}
+	close(release)
+	got := receiveLifetime(t, outcome)
+	var commandErr *host.CommandError
+	if !got.joined || got.err == nil || got.step != "source" || errors.As(got.err, &commandErr) {
+		t.Fatalf("HostRestore completed = %+v", got)
+	}
+	client.assertClosed(t, 1)
+	assertHostStageGone(t, root)
+}
+
 func TestHostRestoreClosesEveryObjectReader(t *testing.T) {
 	// R-PLR0-LKUQ
 	for _, test := range []struct {
@@ -112,6 +151,7 @@ func TestHostRestoreClosesEveryObjectReader(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
+			t.Cleanup(func() { assertHostStageGone(t, root) })
 			store := configuredHostStore(t, root)
 			fixture := newRestoreAccountExecutor(t, root)
 			client := &lifetimeCloud{Client: restoreAccountsCloud(t, hostRestoreArchive(t, restoreManifestMember(t, accounts.Manifest{}))), failGet: test.failGet, failRead: test.failRead}

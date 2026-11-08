@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -30,6 +31,7 @@ type transitionFixture struct {
 	root         string
 	deps         Deps
 	commands     []host.Command
+	commandMu    sync.Mutex
 	disabled     map[string]bool
 	active       map[string]bool
 	fail         string
@@ -94,9 +96,14 @@ func (f *transitionFixture) link(name, sha string) {
 	}
 }
 func (f *transitionFixture) execute(_ context.Context, c host.Command) (host.Result, error) {
+	f.commandMu.Lock()
 	f.commands = append(f.commands, c)
+	f.commandMu.Unlock()
 	joined := c.Name + " " + strings.Join(c.Args, " ")
 	if joined == f.fail {
+		if c.Name == "zstd" {
+			return host.Result{ExitCode: 1, Stderr: []byte("command output\nerror output\n")}, nil
+		}
 		return host.Result{ExitCode: 1, Stdout: []byte("command output\n"), Stderr: []byte("error output\n")}, nil
 	}
 	if result, ok := hardeningFixtureQuery(c); ok {
@@ -155,7 +162,7 @@ func (f *transitionFixture) execute(_ context.Context, c host.Command) (host.Res
 			}
 		}
 		// A reversible process-fixture frame keeps the archive observable.
-		return host.Result{Stdout: append([]byte{0x28, 0xb5, 0x2f, 0xfd}, data...)}, nil
+		return hostFixtureOutput(c, append([]byte{0x28, 0xb5, 0x2f, 0xfd}, data...))
 	}
 	return host.Result{}, nil
 }

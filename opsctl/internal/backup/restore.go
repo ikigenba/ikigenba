@@ -62,7 +62,6 @@ type serviceRestoreEntry struct {
 	typeflag byte
 	mode     fs.FileMode
 	linkname string
-	data     []byte
 	uid      int
 	gid      int
 	uname    string
@@ -73,6 +72,7 @@ type serviceRestoreSource struct {
 	basename string
 	size     int64
 	entries  []serviceRestoreEntry
+	stage    string
 }
 
 // Restore selects and validates the requested service backup before any host
@@ -160,6 +160,9 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 		report.Steps = append(report.Steps, RestoreStep{Name: "source", Err: err})
 		return report, &RestoreError{Service: service, Stage: "source", Err: err}
 	}
+	defer func() {
+		runErr = errors.Join(runErr, os.RemoveAll(filepath.Join(env.Root, source.stage)))
+	}()
 	if from != "" && manifest.Database != nil {
 		found := false
 		for _, entry := range source.entries {
@@ -249,7 +252,7 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 	if err != nil {
 		return failRestoreStep(report, service, "files", "ownership", err, stopped)
 	}
-	count, err := replaceServiceRestoreTrees(ctx, env, service, source.entries, identity)
+	count, err := replaceServiceRestoreTrees(ctx, env, service, source, identity)
 	if err != nil {
 		return failRestoreStep(report, service, "files", "files", err, stopped)
 	}
@@ -531,41 +534,12 @@ func loadServiceRestoreSource(ctx context.Context, env host.Env, client cloud.Cl
 		return serviceRestoreSource{}, fmt.Errorf("%s: no backup at or before %s", service, at.Format(time.RFC3339Nano))
 	}
 
-	reader, err := client.GetObject(ctx, selected.URI)
-	if err != nil {
-		if reader != nil {
-			err = errors.Join(err, reader.Close())
-		}
-		return serviceRestoreSource{}, fmt.Errorf("download %q: %w", selected.URI, err)
-	}
-	if reader == nil {
-		return serviceRestoreSource{}, fmt.Errorf("download %q: object reader is not configured", selected.URI)
-	}
-	compressed, readErr := io.ReadAll(reader)
-	closeErr := reader.Close()
-	if err := errors.Join(readErr, closeErr); err != nil {
-		return serviceRestoreSource{}, fmt.Errorf("download %q: %w", selected.URI, err)
-	}
-	if err := ctx.Err(); err != nil {
-		return serviceRestoreSource{}, fmt.Errorf("download %q: %w", selected.URI, err)
-	}
-
-	archive, err := decompressServiceArchive(ctx, env.Execute, service, compressed)
+	source, err := stageServiceRestoreSource(ctx, env, client, selected.URI, service, false)
 	if err != nil {
 		return serviceRestoreSource{}, err
 	}
-	entries, err := validateServiceRestoreArchive(archive)
-	if err != nil {
-		return serviceRestoreSource{}, fmt.Errorf("validate %q: %w", selected.URI, err)
-	}
-	if err := ctx.Err(); err != nil {
-		return serviceRestoreSource{}, fmt.Errorf("validate %q: %w", selected.URI, err)
-	}
-	return serviceRestoreSource{
-		basename: strings.TrimPrefix(selected.URI, servicePrefix),
-		size:     int64(len(compressed)),
-		entries:  entries,
-	}, nil
+	source.basename = strings.TrimPrefix(selected.URI, servicePrefix)
+	return source, nil
 }
 
 func selectServiceRestoreObject(objects []cloud.Object, prefix string, at *time.Time) (cloud.Object, bool, bool) {
@@ -596,96 +570,6 @@ func selectServiceRestoreObject(objects []cloud.Object, prefix string, at *time.
 		}
 	}
 	return selected, anyBackup, found
-}
-
-func decompressServiceArchive(ctx context.Context, execute func(context.Context, host.Command) (host.Result, error), service string, compressed []byte) ([]byte, error) {
-	result, err := execute(ctx, host.Command{
-		Name:  "zstd",
-		Args:  []string{"--quiet", "--decompress", "--stdout"},
-		Stdin: bytes.NewReader(compressed),
-	})
-	label := "decompress " + fmt.Sprintf("%q", service) + " archive"
-	if err != nil {
-		var commandErr *host.CommandError
-		if errors.As(err, &commandErr) {
-			return nil, err
-		}
-		return nil, &host.CommandError{Label: label, Result: result, Err: err}
-	}
-	if result.ExitCode != 0 {
-		return nil, &host.CommandError{Label: label, Result: result}
-	}
-	return result.Stdout, nil
-}
-
-func validateServiceRestoreArchive(archive []byte) ([]serviceRestoreEntry, error) {
-	if len(archive) < 1024 || len(archive)%512 != 0 || !allZero(archive[len(archive)-1024:]) {
-		return nil, errors.New("invalid tar archive termination")
-	}
-	raw := bytes.NewReader(archive)
-	reader := tar.NewReader(raw)
-	entries := make([]serviceRestoreEntry, 0)
-	byName := make(map[string]serviceRestoreEntry)
-	for {
-		header, err := reader.Next()
-		if errors.Is(err, io.EOF) {
-			remaining := archive[len(archive)-raw.Len():]
-			if !allZero(remaining) {
-				return nil, errors.New("invalid data after tar archive end")
-			}
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("read tar archive: %w", err)
-		}
-		name, err := validServiceArchiveName(header.Name)
-		if err != nil {
-			return nil, err
-		}
-		if name == "etc" || strings.HasPrefix(name, "etc/") {
-			continue
-		}
-		if _, duplicate := byName[name]; duplicate {
-			return nil, fmt.Errorf("duplicate archive entry %q", header.Name)
-		}
-		entry := serviceRestoreEntry{
-			name: name, typeflag: header.Typeflag, mode: restoredFileMode(header.Mode) &^ 0o007, linkname: header.Linkname,
-			uid: header.Uid, gid: header.Gid, uname: header.Uname, gname: header.Gname,
-		}
-		switch header.Typeflag {
-		case tar.TypeReg, byte(0):
-			entry.typeflag = tar.TypeReg
-			entry.data, err = io.ReadAll(reader)
-			if err != nil {
-				return nil, fmt.Errorf("read archive entry %q: %w", header.Name, err)
-			}
-		case tar.TypeDir, tar.TypeSymlink:
-			if header.Size != 0 {
-				return nil, fmt.Errorf("archive entry %q has unexpected data", header.Name)
-			}
-		case tar.TypeChar, tar.TypeBlock, tar.TypeFifo:
-			return nil, fmt.Errorf("archive entry %q is a special device", header.Name)
-		default:
-			return nil, fmt.Errorf("archive entry %q has unsupported type %d", header.Name, header.Typeflag)
-		}
-		entries = append(entries, entry)
-		byName[name] = entry
-	}
-	for _, entry := range entries {
-		for parent := path.Dir(entry.name); parent != "."; parent = path.Dir(parent) {
-			ancestor, ok := byName[parent]
-			if !ok {
-				continue
-			}
-			if ancestor.typeflag == tar.TypeSymlink {
-				return nil, fmt.Errorf("archive entry %q traverses symlink %q", entry.name, parent)
-			}
-			if ancestor.typeflag != tar.TypeDir {
-				return nil, fmt.Errorf("archive entry %q traverses non-directory %q", entry.name, parent)
-			}
-		}
-	}
-	return entries, nil
 }
 
 func inspectRestoreUnit(ctx context.Context, env host.Env, unit string) (bool, error) {
@@ -854,7 +738,7 @@ func ensureRestoreAccount(ctx context.Context, env host.Env) (int, int, error) {
 	return uid, gid, nil
 }
 
-func replaceServiceRestoreTrees(ctx context.Context, env host.Env, service string, entries []serviceRestoreEntry, identity restoreIdentity) (int, error) {
+func replaceServiceRestoreTrees(ctx context.Context, env host.Env, service string, source serviceRestoreSource, identity restoreIdentity) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
@@ -864,16 +748,8 @@ func replaceServiceRestoreTrees(ctx context.Context, env host.Env, service strin
 		return 0, err
 	}
 	defer func() { _ = root.Close() }()
-	stageName, err := os.MkdirTemp(rootName, ".opsctl-service-restore-")
-	if err != nil {
-		return 0, err
-	}
-	stage := path.Base(stageName)
-	if err := root.Chmod(stage, 0o700); err != nil {
-		return 0, err
-	}
-	defer func() { _ = root.RemoveAll(stage) }()
-	if err := populateServiceRestoreStage(root, rootName, stage, entries, identity); err != nil {
+	stage, entries := source.stage, source.entries
+	if err := applyServiceRestoreStageMetadata(root, rootName, stage, entries, identity); err != nil {
 		return 0, err
 	}
 	dataParent := path.Join(strings.TrimPrefix(apps.DataRoot, "/"), service)
@@ -909,7 +785,7 @@ func replaceServiceRestoreTrees(ctx context.Context, env host.Env, service strin
 	return count, nil
 }
 
-func populateServiceRestoreStage(root *os.Root, rootName, stage string, entries []serviceRestoreEntry, identity restoreIdentity) error {
+func applyServiceRestoreStageMetadata(root *os.Root, rootName, stage string, entries []serviceRestoreEntry, identity restoreIdentity) error {
 	ordered := append([]serviceRestoreEntry(nil), entries...)
 	sort.Slice(ordered, func(i, j int) bool {
 		di, dj := strings.Count(ordered[i].name, "/"), strings.Count(ordered[j].name, "/")
@@ -924,32 +800,8 @@ func populateServiceRestoreStage(root *os.Root, rootName, stage string, entries 
 	var directories []serviceRestoreEntry
 	for _, entry := range ordered {
 		name := path.Join(stage, entry.name)
-		if err := mkdirHostRestoreParents(root, path.Dir(name)); err != nil {
-			return err
-		}
-		switch entry.typeflag {
-		case tar.TypeDir:
-			if err := root.MkdirAll(name, 0o700); err != nil {
-				return err
-			}
-			if err := root.Chmod(name, 0o700); err != nil {
-				return err
-			}
+		if entry.typeflag == tar.TypeDir {
 			directories = append(directories, entry)
-		case tar.TypeReg:
-			file, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-			if err != nil {
-				return err
-			}
-			_, writeErr := file.Write(entry.data)
-			closeErr := file.Close()
-			if err := errors.Join(writeErr, closeErr); err != nil {
-				return err
-			}
-		case tar.TypeSymlink:
-			if err := root.Symlink(entry.linkname, name); err != nil {
-				return err
-			}
 		}
 		uid, gid := mappedServiceRestoreOwnership(entry, identity)
 		if err := os.Lchown(filepath.Join(rootName, filepath.FromSlash(name)), uid, gid); err != nil {
@@ -1001,35 +853,7 @@ func validServiceArchiveName(headerName string) (string, error) {
 }
 
 func loadSnapshotRestoreSource(ctx context.Context, env host.Env, client cloud.Client, from, service string) (serviceRestoreSource, error) {
-	reader, err := client.GetObject(ctx, from)
-	if err != nil {
-		if reader != nil {
-			_ = reader.Close()
-		}
-		if errors.Is(err, cloud.ErrNotFound) {
-			return serviceRestoreSource{}, fmt.Errorf("%s: no such object", from)
-		}
-		return serviceRestoreSource{}, fmt.Errorf("%s: %w", from, err)
-	}
-	if reader == nil {
-		return serviceRestoreSource{}, fmt.Errorf("%s: object reader is not configured", from)
-	}
-	compressed, readErr := io.ReadAll(reader)
-	if err := errors.Join(readErr, reader.Close(), ctx.Err()); err != nil {
-		return serviceRestoreSource{}, fmt.Errorf("%s: %w", from, err)
-	}
-	archive, err := decompressServiceArchive(ctx, env.Execute, service, compressed)
-	if err != nil {
-		return serviceRestoreSource{}, err
-	}
-	entries, err := validateServiceRestoreArchive(archive)
-	if err != nil {
-		return serviceRestoreSource{}, fmt.Errorf("validate %q: %w", from, err)
-	}
-	if err := ctx.Err(); err != nil {
-		return serviceRestoreSource{}, err
-	}
-	return serviceRestoreSource{size: int64(len(compressed)), entries: entries}, nil
+	return stageServiceRestoreSource(ctx, env, client, from, service, true)
 }
 
 func restoreExistingPaths(rootName string) map[string]os.FileInfo {

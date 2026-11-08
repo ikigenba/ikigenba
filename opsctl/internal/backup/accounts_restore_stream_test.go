@@ -82,7 +82,7 @@ func accountStreamingEnv(fixture *restoreAccountExecutor, client *accountPassClo
 	base := env.Execute
 	pass := 0
 	env.Execute = func(ctx context.Context, command host.Command) (host.Result, error) {
-		if command.Name != "zstd" || command.Stdout == nil {
+		if command.Name != "zstd" || command.Stdout == nil || client.accountGets == 0 {
 			return base(ctx, command)
 		}
 		if !slices.Equal(command.Args, []string{"--quiet", "--decompress", "--stdout"}) {
@@ -189,6 +189,7 @@ func TestHostRestoreRejectsAccountsOrderingBeforeMutation(t *testing.T) {
 	for name, members := range cases {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
+			t.Cleanup(func() { assertHostStageGone(t, root) })
 			store := configuredHostStore(t, root)
 			before := fileTreeSnapshot(t, root)
 			client := restoreAccountsCloud(t, hostRestoreArchive(t, members...))

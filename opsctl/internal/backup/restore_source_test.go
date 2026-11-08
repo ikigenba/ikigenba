@@ -263,7 +263,7 @@ func TestRestoreMissingSourceReportsOneFailedStepWithoutMutation(t *testing.T) {
 }
 
 func TestRestoreRejectsInvalidSourceBeforeHostChanges(t *testing.T) {
-	// R-RGIY-BLTW R-D97F-184Q R-G7FZ-2AO2 R-FMVM-I2DD
+	// R-0RN4-UC7N R-D97F-184Q R-G7FZ-2AO2 R-FMVM-I2DD
 	tests := []struct {
 		name       string
 		members    []restoreMember
@@ -284,7 +284,7 @@ func TestRestoreRejectsInvalidSourceBeforeHostChanges(t *testing.T) {
 			restoreInstalled(t, root, false)
 			store := restoreConfiguredStore(t, root)
 			writeFile(t, root, "var/opt/ikigenba/notes/state/existing", "unchanged", 0o600)
-			before := fileTreeSnapshot(t, root)
+			before := restoreTreeSnapshot(t, root)
 			body := test.compressed
 			if body == nil {
 				body = hostRestoreArchive(t, test.members...)
@@ -301,7 +301,7 @@ func TestRestoreRejectsInvalidSourceBeforeHostChanges(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), test.want) || len(report.Steps) != 1 || report.Steps[0].Name != "source" || report.Steps[0].Err == nil {
 				t.Fatalf("Restore() = %+v, %v; want %q", report, err, test.want)
 			}
-			if !reflect.DeepEqual(fileTreeSnapshot(t, root), before) || client.puts != 0 || len(client.readers) != 1 || !client.readers[0].closed {
+			if !reflect.DeepEqual(restoreTreeSnapshot(t, root), before) || client.puts != 0 || len(client.readers) != 1 || !client.readers[0].closed {
 				t.Fatalf("invalid source effects: puts %d readers %#v", client.puts, client.readers)
 			}
 		})
@@ -352,4 +352,11 @@ func restoreServiceHostEnv(t *testing.T, root string) host.Env {
 	t.Helper()
 	executor := &restoreStageExecutor{t: t, root: root}
 	return host.Env{Root: root, Execute: executor.execute, Now: func() time.Time { return time.Date(2026, 9, 16, 0, 0, 0, 0, time.UTC) }}
+}
+
+// Staging creation and removal change the root mtime, outside the targets.
+func restoreTreeSnapshot(t *testing.T, root string) []string {
+	t.Helper()
+	snapshot := fileTreeSnapshot(t, root)
+	return snapshot[1:]
 }

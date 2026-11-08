@@ -42,6 +42,7 @@ func TestHostRestoreAPI(t *testing.T) {
 func TestHostRestoreSelectsNewestImmediateArchive(t *testing.T) {
 	// R-YGCS-8A7I R-F8PH-QCIE
 	root := t.TempDir()
+	t.Cleanup(func() { assertHostStageGone(t, root) })
 	store := configuredHostStore(t, root)
 	writeFile(t, root, "etc/ikigenba/stale", "stale", 0o600)
 	writeFile(t, root, "etc/letsencrypt/live/stale.pem", "stale certificate", 0o600)
@@ -113,6 +114,7 @@ func TestHostRestoreRejectsInvalidArchivesBeforeChanges(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
+			t.Cleanup(func() { assertHostStageGone(t, root) })
 			store := configuredHostStore(t, root)
 			writeFile(t, root, "etc/ikigenba/existing", "configuration", 0o640)
 			writeFile(t, root, "etc/letsencrypt/existing", "certificate", 0o600)
@@ -125,7 +127,10 @@ func TestHostRestoreRejectsInvalidArchivesBeforeChanges(t *testing.T) {
 			client := &restoreCloud{objects: []cloud.Object{{URI: uri}}, bodies: map[string][]byte{uri: body}}
 			env := restoreHostEnv(t, root)
 			if test.decompress.ExitCode != 0 {
-				env.Execute = func(context.Context, host.Command) (host.Result, error) { return test.decompress, nil }
+				env.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+					_, err := io.Copy(io.Discard, command.Stdin)
+					return test.decompress, err
+				}
 			}
 			result, err := backup.HostRestore(context.Background(), env, cloud.Env{Open: client.open}, store)
 			if err == nil || !strings.Contains(err.Error(), test.wantMessage) {
@@ -147,6 +152,7 @@ func TestHostRestoreRejectsInvalidArchivesBeforeChanges(t *testing.T) {
 func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
 	// R-TU9Y-IUQ1 R-F8PH-QCIE R-9JTU-C7U1
 	root := t.TempDir()
+	t.Cleanup(func() { assertHostStageGone(t, root) })
 	store := configuredHostStore(t, root)
 	writeFile(t, root, "etc/ikigenba/stale", "remove", 0o600)
 	writeFile(t, root, "etc/letsencrypt/stale", "remove", 0o600)
@@ -241,6 +247,7 @@ func TestHostRestorePhaseFailures(t *testing.T) {
 	// R-YGCS-8A7I R-F8PH-QCIE R-DK7F-CAV0
 	t.Run("cancellation before source selection has no failed step", func(t *testing.T) {
 		root := t.TempDir()
+		t.Cleanup(func() { assertHostStageGone(t, root) })
 		store := configuredHostStore(t, root)
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
@@ -255,6 +262,7 @@ func TestHostRestorePhaseFailures(t *testing.T) {
 
 	t.Run("no matching archive", func(t *testing.T) {
 		root := t.TempDir()
+		t.Cleanup(func() { assertHostStageGone(t, root) })
 		store := configuredHostStore(t, root)
 		writeFile(t, root, "etc/ikigenba/existing", "keep", 0o600)
 		before := fileTreeSnapshot(t, root)
@@ -268,7 +276,8 @@ func TestHostRestorePhaseFailures(t *testing.T) {
 		}
 	})
 
-	t.Run("replacement failure preserves source phase", func(t *testing.T) {
+	t.Run("stage creation failure is a source failure", func(t *testing.T) {
+		// R-9C9O-862I
 		store := configuredHostStore(t, t.TempDir())
 		body := hostRestoreArchive(t,
 			restoreMember{name: "etc/ikigenba", typeflag: tar.TypeDir, mode: 0o750},
@@ -278,13 +287,14 @@ func TestHostRestorePhaseFailures(t *testing.T) {
 		client := &restoreCloud{objects: []cloud.Object{{URI: uri}}, bodies: map[string][]byte{uri: body}}
 		missingRoot := filepath.Join(t.TempDir(), "missing")
 		result, err := backup.HostRestore(context.Background(), restoreHostEnv(t, missingRoot), cloud.Env{Open: client.open}, store)
-		if err == nil || result.Object != "host/2026-09-16T12:00:00Z.tar.zst" || result.Size != int64(len(body)) || !result.SourceReady || result.FilesRestored || result.Files != 0 || result.FailedStep != "files" {
+		if err == nil || result.Object != "host/2026-09-16T12:00:00Z.tar.zst" || result.Size != 0 || result.SourceReady || result.FilesRestored || result.Files != 0 || result.FailedStep != "source" {
 			t.Fatalf("HostRestore() = %+v, %v", result, err)
 		}
 	})
 
 	t.Run("cancellation after selection retains source result", func(t *testing.T) {
 		root := t.TempDir()
+		t.Cleanup(func() { assertHostStageGone(t, root) })
 		store := configuredHostStore(t, root)
 		writeFile(t, root, "etc/ikigenba/existing", "keep", 0o600)
 		before := fileTreeSnapshot(t, root)
@@ -322,6 +332,7 @@ func TestHostRestorePhaseFailures(t *testing.T) {
 
 	t.Run("second replacement failure retains first replacement", func(t *testing.T) {
 		root := t.TempDir()
+		t.Cleanup(func() { assertHostStageGone(t, root) })
 		store := configuredHostStore(t, root)
 		writeFile(t, root, "etc/ikigenba/stale", "remove", 0o600)
 		writeFile(t, root, "etc/letsencrypt/blocked/existing.pem", "existing", 0o600)
@@ -375,6 +386,7 @@ func TestHostRestorePhaseFailures(t *testing.T) {
 
 	t.Run("source configuration is captured before selected object access", func(t *testing.T) {
 		root := t.TempDir()
+		t.Cleanup(func() { assertHostStageGone(t, root) })
 		store := configuredHostStore(t, root)
 		body := hostRestoreArchive(t,
 			restoreMember{name: "etc/ikigenba", typeflag: tar.TypeDir, mode: 0o750},
@@ -410,6 +422,7 @@ func TestHostRestorePhaseFailures(t *testing.T) {
 
 	t.Run("reader returned with download error is closed", func(t *testing.T) {
 		root := t.TempDir()
+		t.Cleanup(func() { assertHostStageGone(t, root) })
 		store := configuredHostStore(t, root)
 		uri := "s3://bucket/project/host/2026-09-16T12:00:00Z.tar.zst"
 		client := &restoreCloud{
@@ -428,6 +441,7 @@ func TestHostRestorePhaseFailures(t *testing.T) {
 
 	t.Run("missing cloud dependency has no step or effects", func(t *testing.T) {
 		root := t.TempDir()
+		t.Cleanup(func() { assertHostStageGone(t, root) })
 		store := configuredHostStore(t, root)
 		writeFile(t, root, "etc/ikigenba/existing", "unchanged", 0o600)
 		before := fileTreeSnapshot(t, root)

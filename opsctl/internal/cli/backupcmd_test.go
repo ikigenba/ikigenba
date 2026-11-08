@@ -113,7 +113,10 @@ func TestBackupCommandReportsResultsAndOperationalInterruptions(t *testing.T) {
 			case "getent":
 				return host.Result{ExitCode: 2}, nil
 			case "zstd":
-				return host.Result{Stdout: []byte("partial stdout\n"), Stderr: []byte("partial stderr")}, context.Canceled
+				if _, err := hostFixtureOutput(command, []byte{0x28, 0xb5, 0x2f, 0xfd}); err != nil {
+					return host.Result{}, err
+				}
+				return host.Result{Stderr: []byte("partial stdout\npartial stderr")}, context.Canceled
 			default:
 				return host.Result{}, errors.New("unexpected command: " + command.Name)
 			}
@@ -294,9 +297,12 @@ func successfulBackupExecute(_ context.Context, command host.Command) (host.Resu
 	case "getent":
 		return host.Result{ExitCode: 2}, nil
 	case "zstd":
+		if _, err := io.Copy(io.Discard, command.Stdin); err != nil {
+			return host.Result{}, err
+		}
 		compressed := make([]byte, 1530921)
 		copy(compressed, []byte{0x28, 0xb5, 0x2f, 0xfd})
-		return host.Result{Stdout: compressed}, nil
+		return hostFixtureOutput(command, compressed)
 	default:
 		return host.Result{}, errors.New("unexpected command: " + command.Name)
 	}

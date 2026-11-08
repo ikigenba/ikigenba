@@ -166,8 +166,11 @@ func TestHostRestoreCommandReportsCompletedAndFailedPhases(t *testing.T) {
 		client := newHostCLICloud()
 		uri := "s3://backups.example/host/host/2026-09-16T12:34:56Z.tar.zst"
 		client.objects[uri] = []byte{0x28, 0xb5, 0x2f, 0xfd, 0}
-		execute := func(context.Context, host.Command) (host.Result, error) {
-			return host.Result{Stdout: []byte("partial archive\n"), Stderr: []byte("decoder stopped")}, context.Canceled
+		execute := func(_ context.Context, command host.Command) (host.Result, error) {
+			if _, err := hostFixtureOutput(command, []byte("partial archive\n")); err != nil {
+				return host.Result{}, err
+			}
+			return host.Result{Stderr: []byte("partial archive\ndecoder stopped")}, context.Canceled
 		}
 
 		stdout, stderr, code := invokeBackupCLI([]string{"host", "restore"}, hostCLIDeps(root, client, execute))

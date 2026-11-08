@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -52,7 +53,7 @@ func TestRestoreDatabaseRequiresRegionBeforeHostOrCloudAccess(t *testing.T) {
 }
 
 func TestRestoreDatabaseLifecycleUsesIndependentHistoryAndOrdersStarts(t *testing.T) {
-	// R-DE30-KB3I R-G3DH-43HI R-FZPR-YS9F R-G4LD-HV87 R-G564-8MHS R-RLEJ-UOSO R-D97F-184Q
+	// R-DE30-KB3I R-G3DH-43HI R-FZPR-YS9F R-G4LD-HV87 R-G564-8MHS R-0U2X-LVP1 R-D97F-184Q
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	writeFile(t, root, "opt/notes/etc/manifest.toml", "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/nested/app.db\"\n", 0600)
@@ -314,7 +315,7 @@ func TestRestoreDatabaseRejectsNonSQLiteBeforeRegenerationOrStarts(t *testing.T)
 }
 
 func TestRestoreDatabaseOwnershipFailurePreventsLaterLifecycle(t *testing.T) {
-	// R-RLEJ-UOSO
+	// R-0U2X-LVP1
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -331,7 +332,7 @@ func TestRestoreDatabaseOwnershipFailurePreventsLaterLifecycle(t *testing.T) {
 }
 
 func TestRestoreDatabaseOwnershipUsesSymbolicArchiveMemberWithoutManifestApp(t *testing.T) {
-	// R-RLEJ-UOSO
+	// R-0U2X-LVP1
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -354,6 +355,7 @@ func TestRestoreDatabaseOwnershipUsesSymbolicArchiveMemberWithoutManifestApp(t *
 }
 
 type databaseRestoreExecutor struct {
+	mu                    sync.Mutex
 	t                     *testing.T
 	root                  string
 	installed             bool
@@ -370,6 +372,8 @@ type databaseRestoreExecutor struct {
 }
 
 func (executor *databaseRestoreExecutor) execute(_ context.Context, command host.Command) (host.Result, error) {
+	executor.mu.Lock()
+	defer executor.mu.Unlock()
 	text := strings.Join(append([]string{command.Name}, command.Args...), " ")
 	executor.events = append(executor.events, text)
 	switch command.Name {
@@ -386,7 +390,12 @@ func (executor *databaseRestoreExecutor) execute(_ context.Context, command host
 		if err != nil {
 			return host.Result{}, err
 		}
-		return host.Result{Stdout: decodeRawZstandardFrame(executor.t, compressed)}, nil
+		data := decodeRawZstandardFrame(executor.t, compressed)
+		if command.Stdout != nil {
+			_, err := command.Stdout.Write(data)
+			return host.Result{}, err
+		}
+		return host.Result{Stdout: data}, nil
 	case "systemctl":
 		if len(command.Args) == 4 && command.Args[0] == "show" {
 			if command.Args[2] == "--property=UnitFileState" {

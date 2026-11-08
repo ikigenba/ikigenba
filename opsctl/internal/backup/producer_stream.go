@@ -18,6 +18,9 @@ type archiveProducer func(context.Context, host.Env, io.Writer) error
 // The two pipes impose backpressure in both directions: files cannot be read
 // ahead of zstd, and zstd cannot deliver output ahead of the upload reader.
 func uploadHostArchive(ctx context.Context, env host.Env, client cloud.Client, object, service string, archive archiveProducer) (int64, error) {
+	if env.Execute == nil {
+		return 0, errors.New("compress archive: host execution is not configured")
+	}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	tarReader, tarWriter := io.Pipe()
@@ -102,7 +105,7 @@ func uploadHostArchive(ctx context.Context, env host.Env, client cloud.Client, o
 		return body.size, archiveErr
 	}
 	if uploadErr != nil {
-		return body.size, fmt.Errorf("upload %q: %w", object, uploadErr)
+		return body.size, &archiveUploadError{object: object, err: uploadErr}
 	}
 	if archiveErr != nil {
 		return body.size, archiveErr
@@ -142,3 +145,16 @@ func (r *archiveUploadBody) Read(p []byte) (int, error) {
 	}
 	return n, err
 }
+
+// archiveUploadError distinguishes a storage failure from a producer failure.
+// Callers retain their own diagnostic presentation while preserving its cause.
+type archiveUploadError struct {
+	object string
+	err    error
+}
+
+func (failure *archiveUploadError) Error() string {
+	return fmt.Sprintf("upload %q: %v", failure.object, failure.err)
+}
+
+func (failure *archiveUploadError) Unwrap() error { return failure.err }

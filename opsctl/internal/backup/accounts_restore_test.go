@@ -146,6 +146,7 @@ func TestHostRestoreRejectsAccountsBeforeAnyMutation(t *testing.T) {
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
+			t.Cleanup(func() { assertHostStageGone(t, root) })
 			store := configuredHostStore(t, root)
 			writeFile(t, root, "etc/letsencrypt/old", "old certificate", 0o600)
 			before := fileTreeSnapshot(t, root)
@@ -171,6 +172,7 @@ func TestHostRestoreRejectsAccountsBeforeAnyMutation(t *testing.T) {
 func TestHostRestoreManifestCollisionLeavesConfiguration(t *testing.T) {
 	// R-TRU5-RB8N
 	root := t.TempDir()
+	t.Cleanup(func() { assertHostStageGone(t, root) })
 	store := configuredHostStore(t, root)
 	writeFile(t, root, "etc/passwd", "carol:x:1002:3002::/home/carol:/bin/bash\n", 0o600)
 	writeFile(t, root, "etc/letsencrypt/old", "old certificate", 0o600)
@@ -764,6 +766,7 @@ func TestHostRestoreAccountsReadFailuresCloseReaders(t *testing.T) {
 	for _, failure := range []string{"get", "read", "close", "compression"} {
 		t.Run(failure, func(t *testing.T) {
 			root := t.TempDir()
+			t.Cleanup(func() { assertHostStageGone(t, root) })
 			store := configuredHostStore(t, root)
 			before := fileTreeSnapshot(t, root)
 			base := restoreAccountsCloud(t, nil)
@@ -953,6 +956,7 @@ func TestHostRestoreChecksAccountFileAncestorsBeforeReading(t *testing.T) {
 	for _, name := range []string{"passwd", "group", "shadow"} {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
+			t.Cleanup(func() { assertHostStageGone(t, root) })
 			store := configuredHostStore(t, root)
 			private := filepath.Join(root, "etc/opt/private")
 			writeFile(t, root, "etc/opt/private/"+name, "sensitive account data", 0o600)

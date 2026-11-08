@@ -284,7 +284,10 @@ func TestRetireOperationalErrorsRetainOnlyCompletedReports(t *testing.T) {
 			case text == "systemctl show --property=LoadState --property=ActiveState litestream.service":
 				return host.Result{Stdout: []byte("LoadState=loaded\nActiveState=inactive\n")}, nil
 			case command.Name == "zstd":
-				return host.Result{Stdout: []byte("partial archive")}, context.Canceled
+				if _, err := hostFixtureOutput(command, []byte{0x28, 0xb5, 0x2f, 0xfd}); err != nil {
+					return host.Result{}, err
+				}
+				return host.Result{Stderr: []byte("partial archive")}, context.Canceled
 			default:
 				return host.Result{}, fmt.Errorf("unexpected command %q", text)
 			}

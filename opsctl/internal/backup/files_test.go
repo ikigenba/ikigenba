@@ -376,8 +376,8 @@ func TestFilesServiceFailuresContinueWithoutPartialObjects(t *testing.T) {
 		if !errors.Is(runErr, context.Canceled) || len(got) != 1 || !errors.Is(got[0].Err, context.Canceled) {
 			t.Fatalf("compression interruption Files() = %+v, %v", got, runErr)
 		}
-		if len(interrupting.puts) != 0 {
-			t.Fatalf("compression interruption uploads = %v", interrupting.puts)
+		if len(interrupting.objects) != 0 {
+			t.Fatalf("compression interruption published = %v", interrupting.objects)
 		}
 		if got := strings.Count(strings.Join(executor.commands, "\n"), "zstd --quiet --stdout"); got != 1 {
 			t.Fatalf("compression commands = %v", executor.commands)
@@ -842,7 +842,17 @@ func fileTreeSnapshot(t *testing.T, root string) []string {
 		if err != nil {
 			return err
 		}
-		line := filepath.ToSlash(relative) + " " + info.Mode().String() + " " + strconv.FormatInt(info.ModTime().UnixNano(), 10)
+		// Source staging may exist while an injected operation inspects the
+		// persistent tree. Its cleanup is asserted separately by restore tests.
+		if filepath.Dir(relative) == "." && info.IsDir() && strings.HasPrefix(filepath.Base(relative), ".opsctl-host-restore-") {
+			return filepath.SkipDir
+		}
+		line := filepath.ToSlash(relative) + " " + info.Mode().String()
+		// Creating and removing an allowed temporary directory updates only
+		// the root's mtime; persistent descendants retain full comparisons.
+		if relative != "." {
+			line += " " + strconv.FormatInt(info.ModTime().UnixNano(), 10)
+		}
 		switch {
 		case info.Mode()&os.ModeSymlink != 0:
 			target, err := os.Readlink(name)
@@ -954,7 +964,7 @@ func TestFilesCanonicalReadFailure(t *testing.T) {
 }
 
 func TestExplicitBackupSelectionRequiresImmediateDirectoryParent(t *testing.T) {
-	// R-FHFA-8850 R-DGIT-BUKW
+	// R-FHFA-8850 R-0J3U-5Y0S
 	for _, location := range []struct{ parent, marker, alternate, alternateMarker string }{
 		{"opt", "etc", "var/opt/ikigenba", "state"},
 		{"var/opt/ikigenba", "state", "opt", "etc"},
@@ -1009,7 +1019,7 @@ func TestExplicitBackupSelectionRequiresImmediateDirectoryParent(t *testing.T) {
 }
 
 func TestReleasedBackupSelectionIgnoresPerAppEntries(t *testing.T) {
-	// R-FHFA-8850 R-CN98-5CS8 R-DGIT-BUKW R-D1W0-QLOK R-D33X-4DF9
+	// R-FHFA-8850 R-CN98-5CS8 R-0J3U-5Y0S R-D1W0-QLOK R-0KBQ-JPRH
 	for _, snapshot := range []bool{false, true} {
 		t.Run(fmt.Sprintf("snapshot=%t", snapshot), func(t *testing.T) {
 			root := t.TempDir()
@@ -1055,7 +1065,7 @@ func TestReleasedBackupSelectionIgnoresPerAppEntries(t *testing.T) {
 }
 
 func TestExplicitBackupIgnoresIkigenbaPackageDirectory(t *testing.T) {
-	// R-FHFA-8850 R-DGIT-BUKW
+	// R-FHFA-8850 R-0J3U-5Y0S
 	for _, snapshot := range []bool{false, true} {
 		for _, state := range []bool{false, true} {
 			t.Run(fmt.Sprintf("snapshot=%t/state=%t", snapshot, state), func(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 
@@ -19,7 +20,7 @@ import (
 )
 
 func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
-	// R-RHQU-PDKL R-RP29-000R R-RK6N-GX1Z
+	// R-RHQU-PDKL R-RP29-000R R-0QF8-GKGY
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -239,7 +240,7 @@ func TestRestoreStopFailuresPreserveCauseStoppedUnitsAndTargets(t *testing.T) {
 }
 
 func TestRestoreCreatesAccountBeforePublishingAndRetainsMarkerOnFailure(t *testing.T) {
-	// R-RK6N-GX1Z
+	// R-0QF8-GKGY
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -268,7 +269,7 @@ func TestRestoreCreatesAccountBeforePublishingAndRetainsMarkerOnFailure(t *testi
 }
 
 func TestRestoreEnsureAccountFailurePreventsReplacement(t *testing.T) {
-	// R-RK6N-GX1Z
+	// R-0QF8-GKGY
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -293,7 +294,7 @@ func TestRestoreEnsureAccountFailurePreventsReplacement(t *testing.T) {
 }
 
 func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
-	// R-RK6N-GX1Z
+	// R-0QF8-GKGY
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -326,7 +327,7 @@ func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
 }
 
 func TestRestoreOwnershipApplicationFailurePreservesPublishedTrees(t *testing.T) {
-	// R-RK6N-GX1Z R-RP29-000R R-G7FZ-2AO2 R-FMVM-I2DD
+	// R-0QF8-GKGY R-RP29-000R R-G7FZ-2AO2 R-FMVM-I2DD
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -366,7 +367,7 @@ func TestRestoreOwnershipApplicationFailurePreservesPublishedTrees(t *testing.T)
 }
 
 func TestRestoreManifestAppAloneTriggersAccountPreparation(t *testing.T) {
-	// R-RK6N-GX1Z
+	// R-0QF8-GKGY
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -390,7 +391,7 @@ func TestRestoreManifestAppAloneTriggersAccountPreparation(t *testing.T) {
 }
 
 func TestRestoreRejectsWrongAccountPrimaryGroupBeforePublishing(t *testing.T) {
-	// R-RK6N-GX1Z
+	// R-0QF8-GKGY
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -421,6 +422,7 @@ func TestRestoreRejectsWrongAccountPrimaryGroupBeforePublishing(t *testing.T) {
 }
 
 type restoreStageExecutor struct {
+	mu                  sync.Mutex
 	t                   *testing.T
 	root                string
 	installed           bool
@@ -438,6 +440,8 @@ type restoreStageExecutor struct {
 }
 
 func (executor *restoreStageExecutor) execute(_ context.Context, command host.Command) (host.Result, error) {
+	executor.mu.Lock()
+	defer executor.mu.Unlock()
 	text := strings.Join(append([]string{command.Name}, command.Args...), " ")
 	executor.commands = append(executor.commands, text)
 	if text == executor.failCommand {
@@ -457,7 +461,12 @@ func (executor *restoreStageExecutor) execute(_ context.Context, command host.Co
 		if err != nil {
 			return host.Result{}, err
 		}
-		return host.Result{Stdout: decodeRawZstandardFrame(executor.t, compressed)}, nil
+		data := decodeRawZstandardFrame(executor.t, compressed)
+		if command.Stdout != nil {
+			_, err := command.Stdout.Write(data)
+			return host.Result{}, err
+		}
+		return host.Result{Stdout: data}, nil
 	case "systemctl":
 		if len(command.Args) == 4 && command.Args[0] == "show" {
 			if command.Args[2] == "--property=UnitFileState" {

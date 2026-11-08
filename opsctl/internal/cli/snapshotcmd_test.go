@@ -106,7 +106,10 @@ func TestSnapshotCommandReportsResultsAndOperationalInterruptions(t *testing.T) 
 			case "getent":
 				return host.Result{ExitCode: 2}, nil
 			case "zstd":
-				return host.Result{Stdout: []byte("partial stdout\n"), Stderr: []byte("partial stderr")}, context.Canceled
+				if _, err := hostFixtureOutput(command, []byte{0x28, 0xb5, 0x2f, 0xfd}); err != nil {
+					return host.Result{}, err
+				}
+				return host.Result{Stderr: []byte("partial stdout\npartial stderr")}, context.Canceled
 			default:
 				return host.Result{}, errors.New("unexpected command: " + command.Name)
 			}

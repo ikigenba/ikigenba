@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -55,22 +56,18 @@ func Snapshot(ctx context.Context, env host.Env, cloudEnv cloud.Env, store confi
 		case selected.ManifestError != nil:
 			result.Err = snapshotReadError(env.Root, selected.ManifestError)
 		default:
-			compressed, archiveErr := snapshotArchive(ctx, env, plan.prefix, region, selected)
+			uri := strings.TrimSuffix(plan.prefix, "/") + "/snapshots/" + selected.Name + "/" + plan.basename
+			size, archiveErr := uploadHostArchive(ctx, env, plan.client, uri, selected.Name, func(ctx context.Context, env host.Env, writer io.Writer) error {
+				return snapshotArchive(ctx, env, plan.prefix, region, selected, writer)
+			})
 			result.Err = archiveErr
+			var uploadErr *archiveUploadError
+			if errors.As(archiveErr, &uploadErr) {
+				result.Err = uploadErr.Unwrap()
+			}
 			if archiveErr == nil {
-				if err := ctx.Err(); err != nil {
-					result.Err = err
-				} else {
-					uri := strings.TrimSuffix(plan.prefix, "/") + "/snapshots/" + selected.Name + "/" + plan.basename
-					result.Err = plan.client.PutObject(ctx, uri, bytes.NewReader(compressed))
-					if result.Err == nil {
-						result.Err = ctx.Err()
-					}
-					if result.Err == nil {
-						result.URI = uri
-						result.Size = int64(len(compressed))
-					}
-				}
+				result.URI = uri
+				result.Size = size
 			}
 		}
 		results = append(results, result)
@@ -81,75 +78,81 @@ func Snapshot(ctx context.Context, env host.Env, cloudEnv cloud.Env, store confi
 	return results, nil
 }
 
-func snapshotArchive(ctx context.Context, env host.Env, prefix, region string, service apps.Service) ([]byte, error) {
+func snapshotArchive(ctx context.Context, env host.Env, prefix, region string, service apps.Service, output io.Writer) (returnedErr error) {
 	filesystem, err := os.OpenRoot(env.Root)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() { _ = filesystem.Close() }()
 	resolver := identityResolver{ctx: ctx, execute: env.Execute, users: make(map[uint32]string), groups: make(map[uint32]string)}
-	var databaseHeader *tar.Header
-	var databaseData []byte
+	var database *snapshotDatabaseCopy
 	if service.Manifest != nil && service.Manifest.Database != nil {
-		databaseHeader, databaseData, err = snapshotDatabase(ctx, env, filesystem, &resolver, prefix, region, service)
+		database, err = snapshotDatabase(ctx, env, filesystem, &resolver, prefix, region, service)
 		if err != nil {
-			return nil, snapshotReadError(env.Root, err)
+			return snapshotReadError(env.Root, err)
 		}
+		defer func() { returnedErr = errors.Join(returnedErr, database.close()) }()
 	}
-	var archive bytes.Buffer
-	writer := tar.NewWriter(&archive)
-	exclusions := databaseExclusions(service.Manifest)
-	for _, tree := range []string{"state"} {
-		if err := archiveTreeExcluding(ctx, filesystem, writer, &resolver, service, tree, exclusions); err != nil {
-			_ = writer.Close()
-			return nil, snapshotReadError(env.Root, err)
-		}
+	writer := tar.NewWriter(output)
+	if err := archiveTree(ctx, filesystem, writer, &resolver, service, "state"); err != nil {
+		return snapshotReadError(env.Root, err)
 	}
-	if databaseHeader != nil {
-		if err := writer.WriteHeader(databaseHeader); err != nil {
-			return nil, err
+	if database != nil {
+		if err := writer.WriteHeader(database.header); err != nil {
+			return err
 		}
-		if _, err := writer.Write(databaseData); err != nil {
-			return nil, err
+		if _, err := io.Copy(writer, database.file); err != nil {
+			return err
 		}
 	}
 	if err := writer.Close(); err != nil {
-		return nil, err
+		return err
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	return compressArchive(ctx, env.Execute, service.Name, archive.Bytes())
+	return ctx.Err()
 }
 
-func snapshotDatabase(ctx context.Context, env host.Env, filesystem *os.Root, resolver *identityResolver, prefix, region string, service apps.Service) (headerResult *tar.Header, dataResult []byte, returnedErr error) {
+type snapshotDatabaseCopy struct {
+	header    *tar.Header
+	file      *os.File
+	directory string
+}
+
+func (database *snapshotDatabaseCopy) close() error {
+	return errors.Join(database.file.Close(), os.RemoveAll(database.directory))
+}
+
+func snapshotDatabase(ctx context.Context, env host.Env, filesystem *os.Root, resolver *identityResolver, prefix, region string, service apps.Service) (copyResult *snapshotDatabaseCopy, returnedErr error) {
 	if env.Execute == nil {
-		return nil, nil, errors.New("snapshot database: host execution is not configured")
+		return nil, errors.New("snapshot database: host execution is not configured")
 	}
 	replica := strings.TrimSuffix(prefix, "/") + "/" + service.Name + "/?region=" + region
 	result, err := env.Execute(ctx, host.Command{Name: "litestream", Args: []string{"ltx", "-level", "all", "-json", replica}})
 	if err != nil || result.ExitCode != 0 {
-		return nil, nil, snapshotCommandError("list Litestream snapshot replica", result, err)
+		return nil, snapshotCommandError("list Litestream snapshot replica", result, err)
 	}
 	var files []json.RawMessage
 	if err := json.Unmarshal(result.Stdout, &files); err != nil {
-		return nil, nil, fmt.Errorf("list Litestream snapshot replica: invalid JSON: %w", err)
+		return nil, fmt.Errorf("list Litestream snapshot replica: invalid JSON: %w", err)
 	}
 	if len(files) == 0 {
-		return nil, nil, errors.New("no replica under the prefix")
+		return nil, errors.New("no replica under the prefix")
 	}
 	directory, err := os.MkdirTemp(env.Root, ".opsctl-snapshot-")
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	defer func() { returnedErr = errors.Join(returnedErr, os.RemoveAll(directory)) }()
+	defer func() {
+		if copyResult == nil {
+			returnedErr = errors.Join(returnedErr, os.RemoveAll(directory))
+		}
+	}()
 	destination := filepath.Join(directory, "database")
 	result, err = env.Execute(ctx, host.Command{Name: "litestream", Args: []string{"restore", "-o", destination, replica}})
 	if err != nil || result.ExitCode != 0 {
 		if bytes.Contains(result.Stderr, []byte("no matching backup files")) {
-			return nil, nil, errors.New("no replica under the prefix")
+			return nil, errors.New("no replica under the prefix")
 		}
-		return nil, nil, snapshotCommandError("rebuild snapshot database", result, err)
+		return nil, snapshotCommandError("rebuild snapshot database", result, err)
 	}
 	relative := service.Manifest.Database.Path
 	info, err := filesystem.Stat(path.Join(apps.DataRoot[1:], service.Name, relative))
@@ -157,24 +160,28 @@ func snapshotDatabase(ctx context.Context, env host.Env, filesystem *os.Root, re
 		info, err = filesystem.Stat(path.Dir(path.Join(apps.DataRoot[1:], service.Name, relative)))
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	stat := info.Sys().(*syscall.Stat_t)
 	uname, err := resolver.user(stat.Uid)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	gname, err := resolver.group(stat.Gid)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	// Read through the confined root even if a failed process left a symlink.
-	data, err := filesystem.ReadFile(filepath.ToSlash(filepath.Join(filepath.Base(directory), "database")))
+	// Open through the confined root even if a failed process left a symlink.
+	file, err := filesystem.Open(filepath.ToSlash(filepath.Join(filepath.Base(directory), "database")))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	header := &tar.Header{Name: relative, Typeflag: tar.TypeReg, Mode: 0o600, Size: int64(len(data)), Uid: int(stat.Uid), Gid: int(stat.Gid), Uname: uname, Gname: gname}
-	return header, data, nil
+	copyInfo, err := file.Stat()
+	if err != nil {
+		return nil, errors.Join(err, file.Close())
+	}
+	header := &tar.Header{Name: relative, Typeflag: tar.TypeReg, Mode: 0o600, Size: copyInfo.Size(), Uid: int(stat.Uid), Gid: int(stat.Gid), Uname: uname, Gname: gname}
+	return &snapshotDatabaseCopy{header: header, file: file, directory: directory}, nil
 }
 
 func snapshotCommandError(label string, result host.Result, err error) error {

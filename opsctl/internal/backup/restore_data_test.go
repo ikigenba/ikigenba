@@ -74,7 +74,7 @@ func TestRestoreRefusesEveryLegacyStateEntryBeforeSecretsOrStops(t *testing.T) {
 }
 
 func TestRestoreCreatesDataParentsAndPreservesCacheAndExistingModes(t *testing.T) {
-	// R-RP29-000R R-RIYR-35BA
+	// R-RP29-000R R-0SV1-83YC
 	for _, existing := range []bool{false, true} {
 		t.Run(map[bool]string{false: "new parents", true: "existing parents"}[existing], func(t *testing.T) {
 			root := t.TempDir()
@@ -145,7 +145,7 @@ func TestRestoreCreatesDataParentsAndPreservesCacheAndExistingModes(t *testing.T
 }
 
 func TestRestoreDataDirectoryOwnershipFailureStopsAtFiles(t *testing.T) {
-	// R-RIYR-35BA
+	// R-0SV1-83YC
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	store := restoreConfiguredStore(t, root)
@@ -165,20 +165,20 @@ func TestRestoreDataDirectoryOwnershipFailureStopsAtFiles(t *testing.T) {
 }
 
 func TestRestoreNewDataAccountFailureHasOwnershipStage(t *testing.T) {
-	// R-RIYR-35BA R-RK6N-GX1Z
+	// R-0SV1-83YC R-0QF8-GKGY
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	store := restoreConfiguredStore(t, root)
 	writeFile(t, root, "opt/notes/etc/old", "unchanged", 0600)
 	body := hostRestoreArchive(t, restoreMember{name: "etc/new", data: []byte("new")}, restoreMember{name: "state/value", data: []byte("new")})
 	executor := &restoreStageExecutor{t: t, root: root, failCommand: "id --user ikigenba", failErr: errors.New("account unavailable")}
-	before := fileTreeSnapshot(t, root)
+	before := restoreTreeSnapshot(t, root)
 	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, "", nil, func(context.Context) error { t.Fatal("callback called"); return nil })
 	var failure *backup.RestoreError
 	if !errors.As(err, &failure) || failure.Stage != "ownership" || len(report.Steps) != 4 || report.Steps[3].Name != "files" || report.Steps[3].Err == nil || report.Steps[3].Detail != "" {
 		t.Fatalf("Restore = %+v %v", report, err)
 	}
-	if !reflect.DeepEqual(before, fileTreeSnapshot(t, root)) {
+	if !reflect.DeepEqual(before, restoreTreeSnapshot(t, root)) {
 		t.Fatal("account failure changed host files")
 	}
 }
@@ -206,7 +206,7 @@ func TestRestoreLegacyInspectionCannotFollowAncestorsOutsideRoot(t *testing.T) {
 }
 
 func TestRestoreKeepsNewDataPrivateAfterSuccessAndFailedHostTools(t *testing.T) {
-	// R-RQA5-DRRG R-RHQU-PDKL R-RIYR-35BA R-RK6N-GX1Z
+	// R-RQA5-DRRG R-RHQU-PDKL R-0SV1-83YC R-0QF8-GKGY
 	for _, failed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "success", true: "tool failure"}[failed], func(t *testing.T) {
 			root := t.TempDir()
@@ -296,7 +296,7 @@ func TestRestoreKeepsNewDataPrivateAfterSuccessAndFailedHostTools(t *testing.T) 
 }
 
 func TestRestoredArchiveSpecialBitsSurviveOwnershipMapping(t *testing.T) {
-	// R-RK6N-GX1Z R-RQA5-DRRG
+	// R-0QF8-GKGY R-RQA5-DRRG
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	store := restoreConfiguredStore(t, root)
@@ -315,7 +315,7 @@ func TestRestoredArchiveSpecialBitsSurviveOwnershipMapping(t *testing.T) {
 }
 
 func TestRestoreModesIgnoreOwnerRestrictingUmask(t *testing.T) {
-	// R-TU9Y-IUQ1 R-RK6N-GX1Z R-RP29-000R R-RQA5-DRRG
+	// R-TU9Y-IUQ1 R-0QF8-GKGY R-RP29-000R R-RQA5-DRRG
 	for _, hostRestore := range []bool{false, true} {
 		t.Run(map[bool]string{false: "service", true: "host"}[hostRestore], func(t *testing.T) {
 			root := t.TempDir()

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -92,7 +93,7 @@ func TestRestoreAtControlsArchiveAndDatabaseTogether(t *testing.T) {
 }
 
 func TestRestoreValidArchiveIgnoresArchivedDatabaseAndOtherServices(t *testing.T) {
-	// R-RGIY-BLTW R-D97F-184Q R-LC1T-L8RR R-GGSD-BKN5
+	// R-0RN4-UC7N R-D97F-184Q R-LC1T-L8RR R-GGSD-BKN5
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -820,6 +821,7 @@ func assertActivationMarkerFailure(t *testing.T, report backup.RestoreReport, er
 }
 
 type restoreIntegrationExecutor struct {
+	mu                  sync.Mutex
 	t                   *testing.T
 	root                string
 	installed           bool
@@ -834,6 +836,8 @@ type restoreIntegrationExecutor struct {
 }
 
 func (executor *restoreIntegrationExecutor) execute(_ context.Context, command host.Command) (host.Result, error) {
+	executor.mu.Lock()
+	defer executor.mu.Unlock()
 	text := strings.Join(append([]string{command.Name}, command.Args...), " ")
 	executor.events = append(executor.events, text)
 	if text == executor.failCommand {
@@ -859,7 +863,12 @@ func (executor *restoreIntegrationExecutor) execute(_ context.Context, command h
 		if err != nil {
 			return host.Result{}, err
 		}
-		return host.Result{Stdout: decodeRawZstandardFrame(executor.t, compressed)}, nil
+		data := decodeRawZstandardFrame(executor.t, compressed)
+		if command.Stdout != nil {
+			_, err := command.Stdout.Write(data)
+			return host.Result{}, err
+		}
+		return host.Result{Stdout: data}, nil
 	case "systemctl":
 		if len(command.Args) == 4 && command.Args[0] == "show" {
 			if command.Args[2] == "--property=UnitFileState" {

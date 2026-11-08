@@ -270,14 +270,14 @@ func TestRestoreReleaseSecretsValidationPrecedesUnits(t *testing.T) {
 				client.secrets = map[string]string{}
 			}
 			executor := &databaseRestoreExecutor{t: t, root: root}
-			before := fileTreeSnapshot(t, root)
+			before := restoreTreeSnapshot(t, root)
 			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, "", &r, func(context.Context) error { t.Fatal("fresh callback"); return nil })
 			if !reflect.DeepEqual(client.parameters, []string{"/host.example.test/notes"}) {
 				t.Fatalf("parameters=%v", client.parameters)
 			}
 			if failure {
 				var restoreErr *backup.RestoreError
-				if !errors.As(err, &restoreErr) || restoreErr.Stage != "secrets" || len(restoreErr.Stopped) != 0 || len(report.Steps) != 2 || report.Steps[1].Err == nil || report.Steps[1].Err.Error() != "notes: no value for 'TOKEN' in /host.example.test/notes" || len(executor.events) != 1 || !reflect.DeepEqual(before, fileTreeSnapshot(t, root)) {
+				if !errors.As(err, &restoreErr) || restoreErr.Stage != "secrets" || len(restoreErr.Stopped) != 0 || len(report.Steps) != 2 || report.Steps[1].Err == nil || report.Steps[1].Err.Error() != "notes: no value for 'TOKEN' in /host.example.test/notes" || len(executor.events) != 1 || !reflect.DeepEqual(before, restoreTreeSnapshot(t, root)) {
 					t.Fatalf("report=%+v err=%v events=%v", report, err, executor.events)
 				}
 			} else {
