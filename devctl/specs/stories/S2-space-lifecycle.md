@@ -1601,7 +1601,11 @@ Postconditions:
   move; the way back is by hand: start `i-0c9e94542d98846a8`, remove the
   `Retired` tag from it and from its Elastic IP, and point the records
   `sbx1.ikigenba.dev` and `*.sbx1.ikigenba.dev` at `18.118.7.42` if a later
-  failure had already moved them. Then the space is its old instance again.
+  failure had already moved them. If the space held the apex, the root's
+  record still points at `18.118.7.42`, which now holds nothing, so re-point
+  or clear the apex with `devctl apex set` or `devctl apex clear` too; a
+  destroy before that would leave the root record pointing at a released
+  address. Then the space is its old instance again.
 - Until then the label has no active instance, so `space list` shows no
   line for it, and `space move sbx1` and `space status sbx1` say `devctl: no
   space at 'sbx1.ikigenba.dev'`, as "A developer moves a space that does not
