@@ -1,8 +1,12 @@
 # The instance profile is deliberately absent: devctl passes the per-space
 # profile at launch time. devctl finds this template by name.
+data "aws_ssm_parameter" "ami" {
+  name = local.ami_parameter
+}
+
 resource "aws_launch_template" "space" {
   name                   = var.domain
-  image_id               = local.ami
+  image_id               = data.aws_ssm_parameter.ami.insecure_value
   instance_type          = local.instance_type
   key_name               = aws_key_pair.space.key_name
   update_default_version = true
