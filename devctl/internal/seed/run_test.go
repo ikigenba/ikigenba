@@ -189,7 +189,7 @@ func TestSeedSourceResolution(t *testing.T) {
 }
 
 func TestSeedCopiesNewestInOrderAndOnlyTargetMutates(t *testing.T) {
-	// R-U8SH-WPOL R-TMUB-0UC3 R-U3WW-DMPT R-TQI0-65K6
+	// R-U8SH-WPOL R-E1EK-SG7I R-U3WW-DMPT R-TQI0-65K6
 	for _, source := range []string{"sbx1", "sbx2"} {
 		h := newHarness(t)
 		h.add(source+"/snapshots/", "dashboard/2026-09-12T14:22:51Z.tar.zst", "crm/2026-09-12T14:22:51Z.tar.zst", "crm/2026-09-14T09:10:02Z.tar.zst", "crm/2026-09-13T00:00:00Z.tar.zst")
@@ -219,7 +219,7 @@ func TestSeedCopiesNewestInOrderAndOnlyTargetMutates(t *testing.T) {
 }
 
 func TestSeedCopyRestoreAndCleanupFailures(t *testing.T) {
-	// R-U8SH-WPOL R-TMUB-0UC3 R-U3WW-DMPT
+	// R-U8SH-WPOL R-E1EK-SG7I R-U3WW-DMPT
 	for _, phase := range []string{"copy1", "copy2", "restore2", "restore3", "clean-list", "delete", "empty-clean"} {
 		h := newHarness(t)
 		h.add("golden/demo/", "crm/2026-09-12T14:22:51Z.tar.zst", "dashboard/2026-09-12T14:22:51Z.tar.zst", "gmail/2026-09-12T14:22:51Z.tar.zst")
@@ -250,7 +250,7 @@ func TestSeedCopyRestoreAndCleanupFailures(t *testing.T) {
 				"copy: ok (gmail -> ikigenba.dev/sbx2/seed/gmail/2026-09-12T14:22:51Z.tar.zst)\n" +
 				"restore: ok (opsctl restore crm --from s3://ikigenba.dev/sbx2/seed/crm/2026-09-12T14:22:51Z.tar.zst)\n" +
 				"restore: ok (opsctl restore dashboard --from s3://ikigenba.dev/sbx2/seed/dashboard/2026-09-12T14:22:51Z.tar.zst)\n"
-			want := "devctl: restore: ssh ec2-user@18.224.31.9 sudo opsctl restore gmail --from s3://ikigenba.dev/sbx2/seed/gmail/2026-09-12T14:22:51Z.tar.zst: exit status 1\n\n> partial\n> output\n> failure\n> detail\n"
+			want := "devctl: restore: ssh ec2-user@18.224.31.9 sudo systemd-run --quiet --wait --pipe --collect opsctl restore gmail --from s3://ikigenba.dev/sbx2/seed/gmail/2026-09-12T14:22:51Z.tar.zst: exit status 1\n\n> partial\n> output\n> failure\n> detail\n"
 			if status != 1 || h.ssh != 3 || h.deleteCalls != 0 || len(h.seedObjects()) != 3 || out.String() != wantOut || diag.String() != want {
 				t.Fatalf("restore: %d %q %q %v", status, out.String(), diag.String(), h.events)
 			}
@@ -368,7 +368,7 @@ func (h *harness) deps() seam.Deps {
 					key = copyPair[1]
 				}
 			}
-			want := "'sudo' 'opsctl' 'restore' '" + app + "' '--from' 's3://ikigenba.dev/" + key + "'"
+			want := "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'restore' '" + app + "' '--from' 's3://ikigenba.dev/" + key + "'"
 			if cmd.Args[len(cmd.Args)-2] != "ec2-user@18.224.31.9" || cmd.Args[len(cmd.Args)-1] != want {
 				h.t.Fatal(cmd)
 			}

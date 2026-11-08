@@ -42,7 +42,7 @@ func TestCLIDispatchesRestoreAndFormatsHostFailure(t *testing.T) {
 		return baseExec(ctx, cmd)
 	}
 	result := invokeWithDeps(deps, "restore", "sbx1", "crm")
-	wantErr := "devctl: restore: ssh ec2-user@18.118.7.42 sudo opsctl restore crm: exit status 1\n\n> restore failed\n> more output\n> backup missing\n> more error\n"
+	wantErr := "devctl: restore: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect opsctl restore crm: exit status 1\n\n> restore failed\n> more output\n> backup missing\n> more error\n"
 	assertResult(t, result, 1, "", wantErr)
 
 	deps = d09Deps(t, root, 0)
@@ -335,7 +335,7 @@ func TestDeployReleaseBuildSecretsCopyAndActivate(t *testing.T) {
 				t.Fatalf("operand %q not resolved as typed: %#v", operand, f.commands)
 			}
 			last := f.commands[len(f.commands)-1]
-			wantRemote := "'sudo' '/opt/ikigenba/releases/" + deploySHA + "/opsctl/bin/opsctl' 'activate' '" + deploySHA + "'"
+			wantRemote := "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' '/opt/ikigenba/releases/" + deploySHA + "/opsctl/bin/opsctl' 'activate' '" + deploySHA + "'"
 			if label != "" {
 				wantRemote += " '" + operand + "'"
 			}

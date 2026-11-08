@@ -264,7 +264,7 @@ func (f *moveFake) exec(ctx context.Context, c seam.Cmd) (seam.Result, error) {
 	}
 	stage := ""
 	switch {
-	case remote == "'sudo' 'opsctl' 'retire'":
+	case remote == "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'retire'":
 		stage = "retire"
 	case strings.HasSuffix(remote, "'host' 'backup'"):
 		stage = "backup"
@@ -463,10 +463,10 @@ func expectedMove(stopped, apex, noAddress bool, absentApp string) string {
 }
 
 func TestMoveSuccessfulFlows(t *testing.T) {
-	// R-K6AR-U5BF R-G0YK-GUGN R-VQ53-X7P1 R-KKXK-FE7R R-KM5G-T5YG
+	// R-K6AR-U5BF R-G0YK-GUGN R-VQ53-X7P1 R-KKXK-FE7R R-CFDR-NR2K
 	// R-338C-KBL6 R-KOL9-KPFU R-KPT5-YH6J R-KS8Y-Q0NX R-KTGV-3SEM
-	// R-KUOR-HK5B R-KVWN-VBW0 R-4YBV-C7C7 R-KZKD-0N43 R-50RO-3QTL
-	// R-L205-S6LH R-L382-5YC6 R-34G8-Y3BV R-FGDR-NL6B R-KIHR-NUQD
+	// R-KUOR-HK5B R-CJ1G-T2AN R-CK9D-6U1C R-KZKD-0N43 R-CQCV-3OQT
+	// R-CLH9-KLS1 R-L382-5YC6 R-CP4Y-PX04 R-CNX2-C59F R-KIHR-NUQD
 	for _, tc := range []struct {
 		name, operand                       string
 		stopped, apex, apexOther, noAddress bool
@@ -541,7 +541,7 @@ func TestMoveSuccessfulFlows(t *testing.T) {
 					t.Fatal(r)
 				}
 			}
-			program := "'sudo' '" + release.Opsctl(createSHA) + "'"
+			program := "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' '" + release.Opsctl(createSHA) + "'"
 			var five []string
 			for _, key := range []string{"host.name=staging.ikigenba.dev", "dns.provider=route53", "dns.zones=ikigenba.dev:" + moveZone, "aws.region=us-east-2", "backup.s3_uri=s3://ikigenba.dev/staging/"} {
 				five = append(five, program+" 'config' 'set' '"+key+"'")
@@ -549,7 +549,7 @@ func TestMoveSuccessfulFlows(t *testing.T) {
 			if !reflect.DeepEqual(config, append(append([]string{}, five...), five...)) {
 				t.Fatal(config)
 			}
-			wantOps := append([]string{"'sudo' 'opsctl' 'retire'"}, five...)
+			wantOps := append([]string{"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'retire'"}, five...)
 			wantOps = append(wantOps, program+" 'host' 'restore'")
 			wantOps = append(wantOps, five...)
 			wantOps = append(wantOps, program+" 'init'")
@@ -685,9 +685,9 @@ func TestMoveReleaseAndPreflightFailures(t *testing.T) {
 }
 
 func TestMoveStopsAtFailureAndKeepsCompletedSteps(t *testing.T) {
-	// R-VQ53-X7P1 R-KM5G-T5YG R-338C-KBL6 R-KOL9-KPFU R-KPT5-YH6J
-	// R-KS8Y-Q0NX R-KTGV-3SEM R-4YBV-C7C7 R-4ZJR-PZ2W R-KZKD-0N43
-	// R-50RO-3QTL R-L205-S6LH R-34G8-Y3BV R-KIHR-NUQD R-FGDR-NL6B
+	// R-VQ53-X7P1 R-CFDR-NR2K R-338C-KBL6 R-KOL9-KPFU R-KPT5-YH6J
+	// R-KS8Y-Q0NX R-KTGV-3SEM R-CK9D-6U1C R-CMP5-YDIQ R-KZKD-0N43
+	// R-CQCV-3OQT R-CLH9-KLS1 R-CP4Y-PX04 R-KIHR-NUQD R-CNX2-C59F
 	for _, stage := range []string{"retire", "stop", "describe " + moveOldID, "tag", "launch", "allocate", "associate", "checks " + moveNewID, "restore", "records", "init", "activate"} {
 		t.Run(stage, func(t *testing.T) {
 			f := newMoveFake(t)
@@ -718,12 +718,12 @@ func TestMoveStopsAtFailureAndKeepsCompletedSteps(t *testing.T) {
 				t.Fatal("continued after failure", f.events)
 			}
 			if stage == "retire" {
-				assertResult(t, got, 1, moveInitial(), "devctl: retire: ssh ec2-user@"+moveOldIP+" sudo opsctl retire: exit status 1\n\n> opsctl: backup failed\n")
+				assertResult(t, got, 1, moveInitial(), "devctl: retire: ssh ec2-user@"+moveOldIP+" sudo systemd-run --quiet --wait --pipe --collect opsctl retire: exit status 1\n\n> opsctl: backup failed\n")
 			}
 			if stage == "launch" {
 				assertResult(t, got, 1, moveInitial()+"retire: ok (opsctl retire)\nbackup: ok (opsctl host backup, amd64)\nstop: ok ("+moveOldID+" stopped)\ntag: ok ("+moveOldID+" and elastic ip "+moveOldIP+" Retired="+moveTime+")\n", "devctl: ec2 RunInstances: InsufficientInstanceCapacity\n")
 			}
-			if stage == "activate" && (!strings.HasPrefix(got.stderr, "devctl: activate: ssh ec2-user@"+moveNewIP+" sudo "+release.Opsctl(createSHA)+" activate "+createSHA+" release-87: exit status 1\n") || strings.Contains(got.stdout, "apex: ok")) {
+			if stage == "activate" && (!strings.HasPrefix(got.stderr, "devctl: activate: ssh ec2-user@"+moveNewIP+" sudo systemd-run --quiet --wait --pipe --collect "+release.Opsctl(createSHA)+" activate "+createSHA+" release-87: exit status 1\n") || strings.Contains(got.stdout, "apex: ok")) {
 				t.Fatal(got)
 			}
 		})
@@ -735,7 +735,7 @@ func TestMoveStopsAtFailureAndKeepsCompletedSteps(t *testing.T) {
 		t.Fatal(got, f.events)
 	}
 	last := f.commands[len(f.commands)-1]
-	if last.Args[len(last.Args)-1] != "'sudo' '"+release.Opsctl(createSHA)+"' 'config' 'set' 'backup.s3_uri=s3://ikigenba.dev/staging/'" {
+	if last.Args[len(last.Args)-1] != "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' '"+release.Opsctl(createSHA)+"' 'config' 'set' 'backup.s3_uri=s3://ikigenba.dev/staging/'" {
 		t.Fatal("process after empty host listing", last)
 	}
 	f.clean()
@@ -753,7 +753,7 @@ func TestMoveStopsAtFailureAndKeepsCompletedSteps(t *testing.T) {
 }
 
 func TestMoveTypedErrorsAndWrappedTemporaryFailure(t *testing.T) {
-	// R-K7IO-7X24 R-4ZJR-PZ2W R-KIHR-NUQD R-KH9V-A2ZO
+	// R-K7IO-7X24 R-CMP5-YDIQ R-KIHR-NUQD R-KH9V-A2ZO
 	_ = spacemove.NoHostBackupError(struct{ Bucket, Prefix string }{})
 	e := &spacemove.NoHostBackupError{Bucket: "ikigenba.dev", Prefix: "sbx1/host/"}
 	if e.Error() != "restore: no host backup under s3://ikigenba.dev/sbx1/host/" || e.ExitCode() != 1 {
@@ -787,7 +787,7 @@ func TestMoveTypedErrorsAndWrappedTemporaryFailure(t *testing.T) {
 
 func TestMoveCloudFailuresReturnUnchanged(t *testing.T) {
 	// R-KEU2-IJIA R-KG1Y-WB8Z R-KKXK-FE7R R-338C-KBL6 R-KOL9-KPFU
-	// R-KPT5-YH6J R-KS8Y-Q0NX R-KTGV-3SEM R-4YBV-C7C7 R-KZKD-0N43 R-50RO-3QTL
+	// R-KPT5-YH6J R-KS8Y-Q0NX R-KTGV-3SEM R-CK9D-6U1C R-KZKD-0N43 R-CQCV-3OQT
 	for _, stage := range []string{"open", "sts", "zone", "template", "boundary", "instances", "addresses", "apex", "start", "describe " + moveOldID, "checks " + moveOldID, "stop", "tag", "launch", "describe " + moveNewID, "allocate", "associate", "checks " + moveNewID, "objects staging/host/", "records", "insync", "objects staging/auth/", "objects staging/sites/"} {
 		t.Run(stage, func(t *testing.T) {
 			f := newMoveFake(t)
@@ -806,7 +806,7 @@ func TestMoveCloudFailuresReturnUnchanged(t *testing.T) {
 }
 
 func TestMoveRemoteFailuresOmitFailedStep(t *testing.T) {
-	// R-KTGV-3SEM R-KVWN-VBW0 R-4YBV-C7C7 R-50RO-3QTL R-34G8-Y3BV R-KIHR-NUQD
+	// R-KTGV-3SEM R-CJ1G-T2AN R-CK9D-6U1C R-CQCV-3OQT R-CP4Y-PX04 R-KIHR-NUQD
 	for _, tc := range []struct {
 		name, remote, marker string
 		restored             bool

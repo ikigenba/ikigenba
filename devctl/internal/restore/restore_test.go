@@ -118,7 +118,7 @@ func TestRestoreReturnsRootParseConnectAndLookupFailuresUnchanged(t *testing.T) 
 }
 
 func TestRestoreUsesOnlyRootSessionAndOneHostCommand(t *testing.T) {
-	// R-2B3I-HPXS R-9R4L-UV1E R-FV7X-I3AA R-OWAD-GQ8T
+	// R-2B3I-HPXS R-9R4L-UV1E R-FV7X-I3AA R-YCW8-7XXC
 	h := newRestoreHarness(t)
 	var stdout bytes.Buffer
 	stamp := "2026-09-11T18:00:00.25-05:00"
@@ -134,7 +134,7 @@ func TestRestoreUsesOnlyRootSessionAndOneHostCommand(t *testing.T) {
 	if len(h.commands) != 2 || h.commands[0].Path != "git" || h.commands[1].Path != "ssh" {
 		t.Fatalf("commands = %#v", h.commands)
 	}
-	wantRemote := "'sudo' 'opsctl' 'restore' 'crm' '--at' '" + stamp + "'"
+	wantRemote := "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'restore' 'crm' '--at' '" + stamp + "'"
 	if got := h.commands[1].Args[len(h.commands[1].Args)-1]; got != wantRemote {
 		t.Fatalf("remote = %q", got)
 	}

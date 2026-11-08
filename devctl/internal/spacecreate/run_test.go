@@ -89,8 +89,8 @@ func TestRunHelpIsExactAndDependencyFree(t *testing.T) {
 
 func TestRunSuccessfulCreateUsesCurrentContracts(t *testing.T) {
 	// R-VOX7-JFYC R-V5AB-BWF1 R-V6I7-PO5Q R-V7Q4-3FWF R-V8Y0-H7N4
-	// R-VA5W-UZDT R-VBDT-8R4I R-VCLP-MIV7 R-4TG9-T4DF R-VF1I-E2CL
-	// R-4VW2-KNUT R-4X3Y-YFLI R-VIP7-JDKO R-VJX3-X5BD
+	// R-VA5W-UZDT R-VBDT-8R4I R-C6UG-ZCVP R-ILO6-ET2A R-C82D-D4ME
+	// R-IMW2-SKSZ R-C9A9-QWD3 R-VIP7-JDKO R-CBQ2-IFUH
 	//
 	// R-EB4J-WN6C  R-YMOE-CCEO
 	f := newCreateFake(t)
@@ -217,7 +217,7 @@ func TestCreateStopsAtSecretsAndEmptyRestoreSkipsRestoreCommands(t *testing.T) {
 }
 
 func TestNewestBackupBreaksModifiedTieByKey(t *testing.T) {
-	// R-4TG9-T4DF
+	// R-ILO6-ET2A
 	f := newCreateFake(t)
 	when := time.Unix(1, 0)
 	f.objects = []cloud.Object{{Key: "sbx1/host/a.tar.zst", Modified: when}, {Key: "sbx1/host/z.tar.zst", Modified: when}, {Key: "sbx1/host/zz.accounts.tar.zst", Modified: when.Add(time.Hour)}, {Key: "sbx1/host/nested/zz.tar.zst", Modified: when.Add(time.Hour)}}
@@ -654,7 +654,7 @@ func (f *createFake) TagRetired(context.Context, []string, string) error {
 }
 
 func TestCreateRejectsOtherKeysAsHostBackups(t *testing.T) {
-	// R-4TG9-T4DF R-4VW2-KNUT
+	// R-ILO6-ET2A R-IMW2-SKSZ
 	for _, key := range []string{"sbx1/host/2026-09-12T14:22:51Z.accounts.tar.zst", "sbx1/host/nested/backup.tar.zst", "other/host/backup.tar.zst", "sbx1/host/backup.zip", "sbx1/host/backup.1.tar.zst"} {
 		t.Run(key, func(t *testing.T) {
 			f := newCreateFake(t)

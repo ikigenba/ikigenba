@@ -50,7 +50,7 @@ func (f *apexHostFixture) ChangeRecords(context.Context, string, []cloud.RecordC
 func (*apexHostFixture) PutRolePolicy(context.Context, string, string, string) error { return nil }
 
 func TestApexHostCommandFailuresThroughCLI(t *testing.T) {
-	// R-SNXG-N0VB R-SRL5-SC3E
+	// R-DU36-HTRC R-DWIZ-9D8Q
 	for _, tc := range []struct {
 		name    string
 		clear   bool
@@ -61,16 +61,16 @@ func TestApexHostCommandFailuresThroughCLI(t *testing.T) {
 		changes int
 	}{
 		{
-			name: "set certificate", fail: []string{"sudo", "opsctl", "cert", "obtain"},
+			name: "set certificate", fail: []string{"sudo", "systemd-run", "--quiet", "--wait", "--pipe", "--collect", "opsctl", "cert", "obtain"},
 			stderr: "a\n\nb\nc\n",
 			stdout: "space: ok (sbx1.ikigenba.dev running, 18.118.7.42)\nrole: ok (sbx1.ikigenba.dev may prove ikigenba.dev)\n",
-			remote: [][]string{{"true"}, {"sudo", "opsctl", "config", "set", "host.apex=crm"}, {"sudo", "opsctl", "cert", "obtain"}},
+			remote: [][]string{{"true"}, {"sudo", "systemd-run", "--quiet", "--wait", "--pipe", "--collect", "opsctl", "config", "set", "host.apex=crm"}, {"sudo", "systemd-run", "--quiet", "--wait", "--pipe", "--collect", "opsctl", "cert", "obtain"}},
 		},
 		{
-			name: "clear nginx", clear: true, fail: []string{"sudo", "opsctl", "nginx", "apply"},
+			name: "clear nginx", clear: true, fail: []string{"sudo", "systemd-run", "--quiet", "--wait", "--pipe", "--collect", "opsctl", "nginx", "apply"},
 			stderr:  "a\n\nb\n",
 			stdout:  "space: ok (sbx1.ikigenba.dev running, 18.118.7.42)\nrecord: ok (ikigenba.dev deleted)\nrole: ok (sbx1.ikigenba.dev may no longer prove ikigenba.dev)\n",
-			remote:  [][]string{{"true"}, {"sudo", "opsctl", "config", "del", "host.apex"}, {"sudo", "opsctl", "cert", "obtain"}, {"sudo", "opsctl", "nginx", "apply"}},
+			remote:  [][]string{{"true"}, {"sudo", "systemd-run", "--quiet", "--wait", "--pipe", "--collect", "opsctl", "config", "del", "host.apex"}, {"sudo", "systemd-run", "--quiet", "--wait", "--pipe", "--collect", "opsctl", "cert", "obtain"}, {"sudo", "systemd-run", "--quiet", "--wait", "--pipe", "--collect", "opsctl", "nginx", "apply"}},
 			changes: 1,
 		},
 	} {

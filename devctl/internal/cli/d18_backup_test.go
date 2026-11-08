@@ -18,7 +18,7 @@ import (
 )
 
 func TestMoveBackupUsesReleaseToolForBothArchitectures(t *testing.T) {
-	// R-FCQ2-I9Y8 R-FGDR-NL6B R-34G8-Y3BV
+	// R-CGLO-1IT9 R-CNX2-C59F R-CP4Y-PX04
 	for _, tc := range []struct{ machine, arch string }{{"x86_64", "amd64"}, {"aarch64", "arm64"}} {
 		t.Run(tc.machine, func(t *testing.T) {
 			f := newMoveFake(t)
@@ -83,7 +83,7 @@ func TestMoveBackupUsesReleaseToolForBothArchitectures(t *testing.T) {
 					remote = append(remote, c.Args[len(c.Args)-1])
 				}
 			}
-			wantRemote := []string{"'sudo' 'opsctl' 'retire'", "'uname' '-m'", "'mktemp'", "copy", "'chmod' '0700' '/tmp/tmp.Ab12Cd34Ef'", "'sudo' '/tmp/tmp.Ab12Cd34Ef' 'host' 'backup'", "'rm' '-f' '/tmp/tmp.Ab12Cd34Ef'"}
+			wantRemote := []string{"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'retire'", "'uname' '-m'", "'mktemp'", "copy", "'chmod' '0700' '/tmp/tmp.Ab12Cd34Ef'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' '/tmp/tmp.Ab12Cd34Ef' 'host' 'backup'", "'rm' '-f' '/tmp/tmp.Ab12Cd34Ef'"}
 			if !reflect.DeepEqual(remote, wantRemote) {
 				t.Fatal(remote)
 			}
@@ -106,7 +106,7 @@ func TestMoveArchErrorShape(t *testing.T) {
 }
 
 func TestMoveBackupFailuresStopAndCleanUp(t *testing.T) {
-	// R-FF5V-9TFM R-2X4U-NGVP
+	// R-CHTK-FAJY R-2X4U-NGVP
 	for _, failure := range []string{"uname", "riscv64", "empty machine", "machine whitespace", "compile", "add", "remove worktree", "mktemp", "outside tmp", "empty path", "tmp directory", "nested path", "copy", "chmod", "host backup", "rm", "cancelled copy", "cancelled chmod", "cancelled backup"} {
 		t.Run(failure, func(t *testing.T) {
 			f := newMoveFake(t)
@@ -194,7 +194,7 @@ func TestMoveBackupFailuresStopAndCleanUp(t *testing.T) {
 			}
 			switch failure {
 			case "host backup":
-				want := "devctl: backup: ssh ec2-user@" + moveOldIP + " sudo " + f.remoteTemp + " host backup: exit status 1\n\n> opsctl: host backup: upload failed\n"
+				want := "devctl: backup: ssh ec2-user@" + moveOldIP + " sudo systemd-run --quiet --wait --pipe --collect " + f.remoteTemp + " host backup: exit status 1\n\n> opsctl: host backup: upload failed\n"
 				if diagnostic.String() != want {
 					t.Fatal(diagnostic.String())
 				}
@@ -221,7 +221,7 @@ func TestMoveBackupFailuresStopAndCleanUp(t *testing.T) {
 }
 
 func TestMoveBackupReturnsTypedFailures(t *testing.T) {
-	// R-FF5V-9TFM
+	// R-CHTK-FAJY
 	for _, failure := range []string{"architecture", "compile", "host"} {
 		t.Run(failure, func(t *testing.T) {
 			f := newMoveFake(t)

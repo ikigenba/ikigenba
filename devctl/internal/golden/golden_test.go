@@ -182,7 +182,7 @@ func TestRootSessionLookupFailures(t *testing.T) {
 }
 
 func TestStatusAndSnapshotRefusals(t *testing.T) {
-	// R-TRPW-JXAV R-U2OZ-ZUZ4
+	// R-E06O-EOGT R-DXQV-N4ZF
 	for _, status := range []string{"", " \t\n"} {
 		h := newHarness(t)
 		h.status = seam.Result{Stdout: []byte(status)}
@@ -204,7 +204,7 @@ func TestStatusAndSnapshotRefusals(t *testing.T) {
 		if step == "snapshot" {
 			prefix = "snapshot: "
 		}
-		want := "devctl: " + prefix + "ssh ec2-user@18.118.7.42 sudo opsctl " + step + ": exit status 1\n\n> line1\n> line2\n> err1\n> err2\n"
+		want := "devctl: " + prefix + "ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect opsctl " + step + ": exit status 1\n\n> line1\n> line2\n> err1\n> err2\n"
 		if code != 1 || out != "" || stderr != want || len(h.s3Calls) != 0 {
 			t.Fatalf("%d %q %q", code, out, stderr)
 		}
@@ -347,9 +347,9 @@ func (h *harness) deps() seam.Deps {
 			return seam.Result{Stdout: []byte(h.root + "\n")}, nil
 		case "ssh":
 			switch cmd.Args[len(cmd.Args)-1] {
-			case "'sudo' 'opsctl' 'status'":
+			case "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'status'":
 				return h.status, nil
-			case "'sudo' 'opsctl' 'snapshot'":
+			case "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'snapshot'":
 				return h.snapshot, nil
 			}
 		}
@@ -373,7 +373,7 @@ func (h *harness) assertCommands(t *testing.T) {
 	if h.opens != 1 || len(h.commands) != 3 {
 		t.Fatalf("opens %d commands %#v", h.opens, h.commands)
 	}
-	for i, remote := range []string{"'sudo' 'opsctl' 'status'", "'sudo' 'opsctl' 'snapshot'"} {
+	for i, remote := range []string{"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'status'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'snapshot'"} {
 		cmd := h.commands[i+1]
 		if cmd.Path != "ssh" || cmd.Dir != h.root || !reflect.DeepEqual(cmd.Args, []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", "ec2-user@18.118.7.42", remote}) {
 			t.Fatalf("command %#v", cmd)

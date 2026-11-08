@@ -38,16 +38,16 @@ func TestConfigureTenKeys(t *testing.T) {
 		t.Fatalf("Configure() = %d, %v", count, err)
 	}
 	want := []string{
-		"'sudo' 'opsctl' 'config' 'set' 'host.name=foo.ikigenba.dev'",
-		"'sudo' 'opsctl' 'config' 'set' 'dns.provider=route53'",
-		"'sudo' 'opsctl' 'config' 'set' 'dns.zones=ikigenba.dev:ZONE1'",
-		"'sudo' 'opsctl' 'config' 'set' 'aws.region=us-east-2'",
-		"'sudo' 'opsctl' 'config' 'set' 'backup.s3_uri=s3://ikigenba.dev/foo/'",
-		"'sudo' 'opsctl' 'config' 'set' 'backup.host_files_seconds=11'",
-		"'sudo' 'opsctl' 'config' 'set' 'backup.service_files_seconds=22'",
-		"'sudo' 'opsctl' 'config' 'set' 'backup.service_db_seconds=33'",
-		"'sudo' 'opsctl' 'config' 'set' 'backup.service_wal_seconds=44'",
-		"'sudo' 'opsctl' 'config' 'set' 'acme.email=ops@ikigenba.dev'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'host.name=foo.ikigenba.dev'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'dns.provider=route53'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'dns.zones=ikigenba.dev:ZONE1'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'aws.region=us-east-2'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'backup.s3_uri=s3://ikigenba.dev/foo/'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'backup.host_files_seconds=11'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'backup.service_files_seconds=22'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'backup.service_db_seconds=33'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'backup.service_wal_seconds=44'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'acme.email=ops@ikigenba.dev'",
 	}
 	if got := commands; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Configure commands = %#v, want %#v", got, want)

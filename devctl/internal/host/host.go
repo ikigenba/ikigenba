@@ -83,14 +83,14 @@ func (h Host) Run(ctx context.Context, step string, args ...string) (Output, err
 	return h.run(ctx, step, args)
 }
 
-// Sudo runs a command as root on the host.
+// Sudo runs a command as root in a transient system unit on the host.
 func (h Host) Sudo(ctx context.Context, step string, args ...string) (Output, error) {
-	return h.run(ctx, step, append([]string{"sudo"}, args...))
+	return h.run(ctx, step, rootCommand(args))
 }
 
-// StreamSudo runs a command as root and streams its standard output.
+// StreamSudo runs a command as root in a transient system unit and streams its standard output.
 func (h Host) StreamSudo(ctx context.Context, stdout io.Writer, step string, args ...string) error {
-	logical := append([]string{"sudo"}, args...)
+	logical := rootCommand(args)
 	deps := h.Deps.Defaults()
 	result, err := deps.Stream(ctx, h.command(logical), stdout)
 	if err != nil {
@@ -105,6 +105,10 @@ func (h Host) StreamSudo(ctx context.Context, stdout io.Writer, step string, arg
 		}
 	}
 	return nil
+}
+
+func rootCommand(args []string) []string {
+	return append([]string{"sudo", "systemd-run", "--quiet", "--wait", "--pipe", "--collect"}, args...)
 }
 
 // Wait waits until the host accepts an SSH command.

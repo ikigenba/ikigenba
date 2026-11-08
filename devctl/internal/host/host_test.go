@@ -101,12 +101,16 @@ func TestCommandErrorContract(t *testing.T) {
 	}
 }
 
-func TestRunAndSudoPreserveRemoteArguments(t *testing.T) {
-	// R-FUV2-JZR6
+func TestHostPreservesRemoteArguments(t *testing.T) {
+	// R-Y98J-2MP9 R-DAJK-FIXI
 	var commands []seam.Cmd
 	h := Host{Address: "192.0.2.1", Deps: seam.Deps{
 		Dir: "/checkout",
 		Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
+			commands = append(commands, command)
+			return seam.Result{}, nil
+		},
+		Stream: func(_ context.Context, command seam.Cmd, _ io.Writer) (seam.Result, error) {
 			commands = append(commands, command)
 			return seam.Result{}, nil
 		},
@@ -118,10 +122,16 @@ func TestRunAndSudoPreserveRemoteArguments(t *testing.T) {
 	if _, err := h.Sudo(context.Background(), "", args...); err != nil {
 		t.Fatal(err)
 	}
+	if err := h.StreamSudo(context.Background(), io.Discard, "", args...); err != nil {
+		t.Fatal(err)
+	}
 	prefix := []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", "ec2-user@192.0.2.1"}
 	wantRun := append(append([]string{}, prefix...), `'space here' 'double"quote' 'single'\''quote' '*?[abc]' '; $(touch no) & | >' ''`)
-	wantSudo := append(append([]string{}, prefix...), `'sudo' 'space here' 'double"quote' 'single'\''quote' '*?[abc]' '; $(touch no) & | >' ''`)
-	for i, want := range [][]string{wantRun, wantSudo} {
+	wantSudo := append(append([]string{}, prefix...), `'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'space here' 'double"quote' 'single'\''quote' '*?[abc]' '; $(touch no) & | >' ''`)
+	if len(commands) != 3 {
+		t.Fatalf("got %d commands, want 3", len(commands))
+	}
+	for i, want := range [][]string{wantRun, wantSudo, wantSudo} {
 		if commands[i].Path != "ssh" || commands[i].Dir != "/checkout" || !reflect.DeepEqual(commands[i].Args, want) {
 			t.Errorf("command %d = %#v, want path ssh, dir /checkout, args %#v", i, commands[i], want)
 		}
@@ -149,7 +159,7 @@ func TestRunResultsAndErrors(t *testing.T) {
 			call: func(h Host) (Output, error) {
 				return h.Sudo(context.Background(), "deploy", "opsctl", "status")
 			},
-			logical: []string{"ssh", "ec2-user@host", "sudo", "opsctl", "status"},
+			logical: []string{"ssh", "ec2-user@host", "sudo", "systemd-run", "--quiet", "--wait", "--pipe", "--collect", "opsctl", "status"},
 		},
 	}
 	tests := []struct {
@@ -280,7 +290,7 @@ func TestStreamSudo(t *testing.T) {
 	if got := stdout.String(); got != "first\nsecond" {
 		t.Fatalf("stdout = %q", got)
 	}
-	wantArgs := []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", "ec2-user@host", "'sudo' 'journalctl' '-f' 'space app'"}
+	wantArgs := []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", "ec2-user@host", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'journalctl' '-f' 'space app'"}
 	if gotCommand.Path != "ssh" || gotCommand.Dir != "/work" || !reflect.DeepEqual(gotCommand.Args, wantArgs) {
 		t.Errorf("command = %#v", gotCommand)
 	}
@@ -291,7 +301,7 @@ func TestStreamSudo(t *testing.T) {
 	if commandErr.Stdout != "" || commandErr.Stderr != "remote failed\n" || commandErr.Status != 9 || commandErr.Step != "logs" {
 		t.Errorf("CommandError = %#v", commandErr)
 	}
-	wantLogical := []string{"ssh", "ec2-user@host", "sudo", "journalctl", "-f", "space app"}
+	wantLogical := []string{"ssh", "ec2-user@host", "sudo", "systemd-run", "--quiet", "--wait", "--pipe", "--collect", "journalctl", "-f", "space app"}
 	if !reflect.DeepEqual(commandErr.Command, wantLogical) {
 		t.Errorf("logical command = %#v", commandErr.Command)
 	}

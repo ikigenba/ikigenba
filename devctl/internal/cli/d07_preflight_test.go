@@ -646,7 +646,7 @@ func createInitialLines() string {
 }
 
 func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
-	// R-VOX7-JFYC R-V5AB-BWF1 R-VBDT-8R4I R-VCLP-MIV7 R-4TG9-T4DF R-4VW2-KNUT R-4X3Y-YFLI R-VIP7-JDKO R-VJX3-X5BD
+	// R-VOX7-JFYC R-V5AB-BWF1 R-VBDT-8R4I R-C6UG-ZCVP R-ILO6-ET2A R-IMW2-SKSZ R-C9A9-QWD3 R-VIP7-JDKO R-CBQ2-IFUH
 	for _, operand := range []string{"sbx1", "sbx1.ikigenba.dev", "staging"} {
 		f := newCompleteCreateFake(t)
 		f.backup = operand == "staging"
@@ -699,7 +699,7 @@ func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
 			if strings.Contains(remote, "'config' 'set'") {
 				configCount++
 				configVectors = append(configVectors, remote)
-				if !strings.HasPrefix(remote, "'sudo' "+program+" 'config' 'set'") {
+				if !strings.HasPrefix(remote, "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' "+program+" 'config' 'set'") {
 					t.Fatalf("config %s", remote)
 				}
 			}
@@ -713,32 +713,32 @@ func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
 		}
 		values := []string{"host.name=" + domain, "dns.provider=route53", "dns.zones=ikigenba.dev:Z", "aws.region=us-east-2", "backup.s3_uri=s3://ikigenba.dev/" + label + "/", "backup.host_files_seconds=86400", "backup.service_files_seconds=86400", "backup.service_db_seconds=86400", "backup.service_wal_seconds=300", "acme.email=ops@ikigenba.dev"}
 		for i, vector := range configVectors {
-			wantVector := "'sudo' " + program + " 'config' 'set' '" + values[i%10] + "'"
+			wantVector := "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' " + program + " 'config' 'set' '" + values[i%10] + "'"
 			if vector != wantVector {
 				t.Fatalf("configuration %d = %s want %s", i, vector, wantVector)
 			}
 		}
 		var operations []string
 		for _, remote := range f.remotes {
-			if strings.HasPrefix(remote, "'sudo' "+program) {
+			if strings.HasPrefix(remote, "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' "+program) {
 				operations = append(operations, remote)
 			}
 		}
 		tail := []string{}
 		if f.backup {
-			tail = append(tail, "'sudo' "+program+" 'host' 'restore'")
+			tail = append(tail, "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' "+program+" 'host' 'restore'")
 			tail = append(tail, configVectors[10:]...)
-			tail = append(tail, "'sudo' "+program+" 'config' 'del' 'host.apex'")
+			tail = append(tail, "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' "+program+" 'config' 'del' 'host.apex'")
 		}
-		tail = append(tail, "'sudo' "+program+" 'init'")
+		tail = append(tail, "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' "+program+" 'init'")
 		if f.backup {
 			for _, app := range createApps {
 				if app != "sites" {
-					tail = append(tail, "'sudo' "+program+" 'restore' '"+app+"'")
+					tail = append(tail, "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' "+program+" 'restore' '"+app+"'")
 				}
 			}
 		}
-		tail = append(tail, "'sudo' "+program+" 'activate' '"+createSHA+"' 'release-87'")
+		tail = append(tail, "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' "+program+" 'activate' '"+createSHA+"' 'release-87'")
 		if !reflect.DeepEqual(operations[10:], tail) {
 			t.Fatalf("operations after config = %v want %v", operations[10:], tail)
 		}
@@ -747,7 +747,7 @@ func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
 }
 
 func TestCreateFailuresKeepCompletedStepsThroughCLI(t *testing.T) {
-	// R-VOX7-JFYC R-V5AB-BWF1 R-V7Q4-3FWF R-VF1I-E2CL R-4X3Y-YFLI R-VIP7-JDKO
+	// R-VOX7-JFYC R-V5AB-BWF1 R-V7Q4-3FWF R-C82D-D4ME R-C9A9-QWD3 R-VIP7-JDKO
 	for _, stop := range []string{"build", "secret", "launch", "init", "activate"} {
 		t.Run(stop, func(t *testing.T) {
 			f := newCompleteCreateFake(t)
@@ -786,11 +786,11 @@ func TestCreateFailuresKeepCompletedStepsThroughCLI(t *testing.T) {
 			case "launch":
 				assertResult(t, got, 1, createInitialLines()+"secrets: ok (8 apps)\nrole: ok (sbx1.ikigenba.dev)\n", "devctl: ec2 RunInstances: InsufficientInstanceCapacity\n")
 			case "init":
-				if got.stderr != "devctl: init: ssh ec2-user@18.118.7.42 sudo /opt/ikigenba/releases/"+createSHA+"/opsctl/bin/opsctl init: exit status 2\n" || !strings.HasSuffix(got.stdout, "restore: ok (no host backup)\n") {
+				if got.stderr != "devctl: init: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/"+createSHA+"/opsctl/bin/opsctl init: exit status 2\n" || !strings.HasSuffix(got.stdout, "restore: ok (no host backup)\n") {
 					t.Fatalf("result %#v", got)
 				}
 			case "activate":
-				if !strings.HasSuffix(got.stdout, "init: ok\nactivation output\n") || got.stderr != "devctl: activate: ssh ec2-user@18.118.7.42 sudo /opt/ikigenba/releases/"+createSHA+"/opsctl/bin/opsctl activate "+createSHA+" release-87: exit status 1\n\n> opsctl: activate failed\n" {
+				if !strings.HasSuffix(got.stdout, "init: ok\nactivation output\n") || got.stderr != "devctl: activate: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/"+createSHA+"/opsctl/bin/opsctl activate "+createSHA+" release-87: exit status 1\n\n> opsctl: activate failed\n" {
 					t.Fatalf("result %#v", got)
 				}
 			}
@@ -853,7 +853,7 @@ func TestCreateUnlabelledReleaseThroughCLI(t *testing.T) {
 	if got.code != 0 || got.stderr != "" || !strings.Contains(got.stdout, "build: ok (dist/"+sha+".tar.xz)\n") {
 		t.Fatalf("result %#v", got)
 	}
-	want := "'sudo' '/opt/ikigenba/releases/" + sha + "/opsctl/bin/opsctl' 'activate' '" + sha + "'"
+	want := "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' '/opt/ikigenba/releases/" + sha + "/opsctl/bin/opsctl' 'activate' '" + sha + "'"
 	if f.remotes[len(f.remotes)-1] != want {
 		t.Fatalf("activate %s want %s", f.remotes[len(f.remotes)-1], want)
 	}
@@ -879,7 +879,7 @@ func (f *createListingFailure) ListObjects(ctx context.Context, bucket, prefix s
 }
 
 func TestCreateHostAndAppFailuresStopByUse(t *testing.T) {
-	// R-VBDT-8R4I R-VCLP-MIV7 R-4TG9-T4DF R-4VW2-KNUT
+	// R-VBDT-8R4I R-C6UG-ZCVP R-ILO6-ET2A R-IMW2-SKSZ
 	for _, tc := range []struct {
 		name, match, prefix, lastLine, absent string
 		configOrdinal                         int

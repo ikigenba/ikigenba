@@ -110,7 +110,7 @@ func TestResolutionFailuresStopBeforeHostAccess(t *testing.T) {
 }
 
 func TestRestartUsesRootLookupAndOpsctl(t *testing.T) {
-	// R-JNNS-D34S R-SBQG-TBGD
+	// R-JNNS-D34S R-DNZO-KZ1V
 	f := runningFixture(t)
 	f.execResults = []seam.Result{{Stdout: []byte("a\n"), Stderr: []byte("b\n")}}
 	var stdout bytes.Buffer
@@ -120,7 +120,7 @@ func TestRestartUsesRootLookupAndOpsctl(t *testing.T) {
 	if stdout.String() != "a\n" {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	want := f.ssh("'sudo' 'opsctl' 'restart' 'crm'")
+	want := f.ssh("'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'restart' 'crm'")
 	if !reflect.DeepEqual(f.execs, []seam.Cmd{want}) || len(f.streams) != 0 {
 		t.Fatalf("exec/stream = %#v/%#v", f.execs, f.streams)
 	}
@@ -128,7 +128,7 @@ func TestRestartUsesRootLookupAndOpsctl(t *testing.T) {
 }
 
 func TestRestartFailureHasNoSuccessLine(t *testing.T) {
-	// R-SBQG-TBGD
+	// R-DNZO-KZ1V
 	f := runningFixture(t)
 	f.execResults = []seam.Result{{ExitCode: 6, Stderr: []byte("failed\n")}}
 	var stdout bytes.Buffer
@@ -140,7 +140,7 @@ func TestRestartFailureHasNoSuccessLine(t *testing.T) {
 }
 
 func TestOpsctlOperationsRelayOnlySuccessfulStdout(t *testing.T) {
-	// R-SBQG-TBGD R-SGM2-CEF5 R-SK9R-HPN8 R-JNNS-D34S
+	// R-DNZO-KZ1V R-DP7K-YQSK R-DQFH-CIJ9 R-JNNS-D34S
 	for _, command := range []string{"restart", "disable", "enable"} {
 		for _, tc := range []struct {
 			name   string
@@ -169,7 +169,7 @@ func TestOpsctlOperationsRelayOnlySuccessfulStdout(t *testing.T) {
 						t.Fatalf("error = %#v", err)
 					}
 				}
-				want := f.ssh("'sudo' 'opsctl' '" + command + "' 'Odd/App'")
+				want := f.ssh("'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' '" + command + "' 'Odd/App'")
 				if !reflect.DeepEqual(f.execs, []seam.Cmd{want}) || len(f.streams) != 0 {
 					t.Fatalf("exec/stream = %#v/%#v", f.execs, f.streams)
 				}
@@ -180,7 +180,7 @@ func TestOpsctlOperationsRelayOnlySuccessfulStdout(t *testing.T) {
 }
 
 func TestLogsChecksUnitBeforeJournal(t *testing.T) {
-	// R-HBNL-Y865
+	// R-DRND-QA9Y
 	for _, tc := range []struct {
 		name   string
 		result seam.Result
@@ -204,23 +204,24 @@ func TestLogsChecksUnitBeforeJournal(t *testing.T) {
 					t.Fatalf("error = %#v", err)
 				}
 			}
-			if len(f.streams) != 0 {
-				t.Fatalf("streams = %#v", f.streams)
+			wantQuery := f.ssh("'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'systemctl' 'show' '--property=LoadState' '--value' 'ikigenba-crm.service'")
+			if !reflect.DeepEqual(f.execs, []seam.Cmd{wantQuery}) || len(f.streams) != 0 {
+				t.Fatalf("commands = %#v/%#v", f.execs, f.streams)
 			}
 		})
 	}
 }
 
 func TestLogsOptionsAndStreaming(t *testing.T) {
-	// R-JK03-7RWP R-JNNS-D34S R-HCVI-BZWU R-HE3E-PRNJ
+	// R-JK03-7RWP R-JNNS-D34S R-DSVA-420N R-HE3E-PRNJ
 	for _, tc := range []struct {
 		name    string
 		args    []string
 		journal string
 	}{
-		{name: "default", args: []string{"logs", "sbx1", "crm"}, journal: "'sudo' 'journalctl' '-u' 'ikigenba-crm.service' '-n' '100' '--no-pager'"},
-		{name: "combined", args: []string{"logs", "--follow", "sbx1", "--since=-2h", "crm", "--follow"}, journal: "'sudo' 'journalctl' '-u' 'ikigenba-crm.service' '--since' '-2h' '-f' '--no-pager'"},
-		{name: "last since", args: []string{"logs", "--since", "yesterday", "sbx1", "crm", "--since", "-1h"}, journal: "'sudo' 'journalctl' '-u' 'ikigenba-crm.service' '--since' '-1h' '--no-pager'"},
+		{name: "default", args: []string{"logs", "sbx1", "crm"}, journal: "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'journalctl' '-u' 'ikigenba-crm.service' '-n' '100' '--no-pager'"},
+		{name: "combined", args: []string{"logs", "--follow", "sbx1", "--since=-2h", "crm", "--follow"}, journal: "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'journalctl' '-u' 'ikigenba-crm.service' '--since' '-2h' '-f' '--no-pager'"},
+		{name: "last since", args: []string{"logs", "--since", "yesterday", "sbx1", "crm", "--since", "-1h"}, journal: "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'journalctl' '-u' 'ikigenba-crm.service' '--since' '-1h' '--no-pager'"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := runningFixture(t)
@@ -233,7 +234,7 @@ func TestLogsOptionsAndStreaming(t *testing.T) {
 			if stdout.String() != f.streamText {
 				t.Fatalf("stdout = %q", stdout.String())
 			}
-			wantQuery := f.ssh("'sudo' 'systemctl' 'show' '--property=LoadState' '--value' 'ikigenba-crm.service'")
+			wantQuery := f.ssh("'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'systemctl' 'show' '--property=LoadState' '--value' 'ikigenba-crm.service'")
 			wantJournal := f.ssh(tc.journal)
 			if !reflect.DeepEqual(f.execs, []seam.Cmd{wantQuery}) || !reflect.DeepEqual(f.streams, []seam.Cmd{wantJournal}) {
 				t.Fatalf("commands = %#v/%#v", f.execs, f.streams)

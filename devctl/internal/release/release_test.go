@@ -128,9 +128,9 @@ func TestPutCommands(t *testing.T) {
 		if err := Put(context.Background(), f.host(), &out, file, sha); err != nil {
 			t.Fatal(err)
 		}
-		want := []string{"'mktemp'", "scp", "'sudo' 'mkdir' '-p' '-m' '0755' '" + ReleasesDir + "'", "'sudo' 'test' '-e' '" + Folder(sha) + "'"}
+		want := []string{"'mktemp'", "scp", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'mkdir' '-p' '-m' '0755' '" + ReleasesDir + "'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'test' '-e' '" + Folder(sha) + "'"}
 		if !present {
-			want = append(want, "'sudo' 'mktemp' '-d' '"+ReleasesDir+"/.unpack.XXXXXXXXXX'", "'sudo' 'tar' '-x' '-J' '--no-same-owner' '-f' '"+remote+"' '-C' '"+temp+"'", "'sudo' 'mv' '-T' '"+temp+"/"+sha+"' '"+Folder(sha)+"'", "'sudo' 'rmdir' '"+temp+"'")
+			want = append(want, "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'mktemp' '-d' '"+ReleasesDir+"/.unpack.XXXXXXXXXX'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'tar' '-x' '-J' '--no-same-owner' '-f' '"+remote+"' '-C' '"+temp+"'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'mv' '-T' '"+temp+"/"+sha+"' '"+Folder(sha)+"'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'rmdir' '"+temp+"'")
 		}
 		want = append(want, "'rm' '-f' '"+remote+"'")
 		if !reflect.DeepEqual(f.commands, want) {
@@ -146,7 +146,7 @@ func TestPutCommands(t *testing.T) {
 	}
 }
 func TestPutFailureCleanup(t *testing.T) {
-	// R-WU9A-GFHR R-WWP3-7YZ5 R-WZ4V-ZIGJ
+	// R-WU9A-GFHR R-CCXY-W7L6 R-WZ4V-ZIGJ
 	for fail := 1; fail <= 9; fail++ {
 		f := putFake{t: t, fail: fail}
 		var out bytes.Buffer
@@ -164,7 +164,7 @@ func TestPutFailureCleanup(t *testing.T) {
 		if fail >= 2 && f.commands[len(f.commands)-1] != "'rm' '-f' '"+remote+"'" {
 			t.Fatal(f.commands)
 		}
-		if fail >= 6 && fail <= 8 && f.commands[len(f.commands)-2] != "'sudo' 'rm' '-rf' '"+temp+"'" {
+		if fail >= 6 && fail <= 8 && f.commands[len(f.commands)-2] != "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'rm' '-rf' '"+temp+"'" {
 			t.Fatal(f.commands)
 		}
 	}
@@ -186,7 +186,7 @@ func TestPutFailureCleanup(t *testing.T) {
 	}
 }
 func TestActivateStreamsVerbatim(t *testing.T) {
-	// R-WT1E-2NR2 R-WXWZ-LQPU R-WZ4V-ZIGJ
+	// R-WT1E-2NR2 R-CE5V-9ZBV R-WZ4V-ZIGJ
 	for _, label := range []string{"", "r1"} {
 		for _, status := range []int{0, 1} {
 			calls := 0
@@ -196,7 +196,7 @@ func TestActivateStreamsVerbatim(t *testing.T) {
 				return seam.Result{}, nil
 			}, Stream: func(_ context.Context, c seam.Cmd, w io.Writer) (seam.Result, error) {
 				calls++
-				want := "'sudo' '" + Opsctl(sha) + "' 'activate' '" + sha + "'"
+				want := "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' '" + Opsctl(sha) + "' 'activate' '" + sha + "'"
 				if label != "" {
 					want += " '" + label + "'"
 				}
@@ -227,7 +227,7 @@ func TestActivateStreamsVerbatim(t *testing.T) {
 }
 
 func TestCopyEmptyTempAndCleanupFailure(t *testing.T) {
-	// R-WU9A-GFHR R-WWP3-7YZ5
+	// R-WU9A-GFHR R-CCXY-W7L6
 	calls := 0
 	h := host.Host{Deps: seam.Deps{Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
 		calls++

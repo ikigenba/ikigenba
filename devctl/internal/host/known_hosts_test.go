@@ -9,7 +9,7 @@ import (
 )
 
 func TestKnownHostsForEveryTransport(t *testing.T) {
-	// R-FUV2-JZR6 R-FW2Y-XRHV
+	// R-Y98J-2MP9 R-FW2Y-XRHV
 	for _, known := range []string{"", "/tmp/move.Ab12/known_hosts"} {
 		options := []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new"}
 		if known != "" {
@@ -29,7 +29,7 @@ func TestKnownHostsForEveryTransport(t *testing.T) {
 		if err := h.Copy(t.Context(), "copy", "/fixture/archive", "/tmp/upload"); err != nil {
 			t.Fatal(err)
 		}
-		for i, remote := range []string{"'a b' 'x'\\''y' '*;$(touch x)'", "'sudo' 'a b' 'x'\\''y' '*;$(touch x)'"} {
+		for i, remote := range []string{"'a b' 'x'\\''y' '*;$(touch x)'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'a b' 'x'\\''y' '*;$(touch x)'"} {
 			want := append(append([]string{}, options...), h.Target(), remote)
 			if calls[i].Path != "ssh" || calls[i].Dir != "/fixture" || !reflect.DeepEqual(calls[i].Args, want) {
 				t.Fatalf("%#v", calls[i])

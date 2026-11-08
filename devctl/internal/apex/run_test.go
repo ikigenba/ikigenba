@@ -108,7 +108,7 @@ func TestGrammarAndHelpAreSideEffectFree(t *testing.T) {
 
 func TestSetRunsPreflightAndOrderedSteps(t *testing.T) {
 	// R-P4G8-WHR8 R-YVVK-TXS8 R-4GUV-4ZHL R-YX3H-7PIX R-VX21-6EX8
-	// R-SNXG-N0VB R-4LQG-O2GD R-YYBD-LH9M R-4O69-FLXR
+	// R-DU36-HTRC R-4LQG-O2GD R-YYBD-LH9M R-4O69-FLXR
 	f := successfulFake()
 	deps := testDeps(t, f)
 	var stdout bytes.Buffer
@@ -140,13 +140,13 @@ func TestSetRunsPreflightAndOrderedSteps(t *testing.T) {
 	}
 	wantSSH := []string{
 		"'true'",
-		"'sudo' 'opsctl' 'config' 'set' 'host.apex=crm'",
-		"'sudo' 'opsctl' 'cert' 'obtain'",
-		"'sudo' 'opsctl' 'nginx' 'apply'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'host.apex=crm'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'cert' 'obtain'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'nginx' 'apply'",
 		"'true'",
-		"'sudo' 'opsctl' 'config' 'del' 'host.apex'",
-		"'sudo' 'opsctl' 'cert' 'obtain'",
-		"'sudo' 'opsctl' 'nginx' 'apply'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'del' 'host.apex'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'cert' 'obtain'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'nginx' 'apply'",
 	}
 	if !reflect.DeepEqual(f.ssh, wantSSH) {
 		t.Errorf("ssh commands = %#v, want %#v", f.ssh, wantSSH)
@@ -287,7 +287,7 @@ func TestAcceptedInvocationFailureOrderAndPropagation(t *testing.T) {
 }
 
 func TestSetFailureBoundariesAndExactCalls(t *testing.T) {
-	// R-4GUV-4ZHL R-VX21-6EX8 R-SNXG-N0VB R-4LQG-O2GD R-YYBD-LH9M R-4O69-FLXR
+	// R-4GUV-4ZHL R-VX21-6EX8 R-DU36-HTRC R-4LQG-O2GD R-YYBD-LH9M R-4O69-FLXR
 	const spaceLine = "space: ok (sbx1.ikigenba.dev running, 18.118.7.42)\n"
 	const roleLine = "role: ok (sbx1.ikigenba.dev may prove ikigenba.dev)\n"
 	const hostLine = "host: ok (host.apex=crm, certificate obtained, nginx applied)\n"
@@ -316,7 +316,7 @@ func TestSetFailureBoundariesAndExactCalls(t *testing.T) {
 		var stdout bytes.Buffer
 		err := apex.Run(context.Background(), []string{"set", "crm.sbx1"}, &stdout, testDeps(t, f))
 		var command *host.CommandError
-		wantSSH := []string{"'true'", "'sudo' 'opsctl' 'config' 'set' 'host.apex=crm'", "'sudo' 'opsctl' 'cert' 'obtain'"}
+		wantSSH := []string{"'true'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'host.apex=crm'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'cert' 'obtain'"}
 		if !errors.As(err, &command) || command.Step != "host" || command.Status != 1 || command.Stderr != "first\nsecond\n" || stdout.String() != spaceLine+roleLine || !reflect.DeepEqual(f.ssh, wantSSH) || !reflect.DeepEqual(f.sshTargets, []string{"ec2-user@18.118.7.42", "ec2-user@18.118.7.42", "ec2-user@18.118.7.42"}) || len(f.changes) != 0 {
 			t.Fatalf("err=%#v stdout=%q ssh=%v targets=%v changes=%v", err, stdout.String(), f.ssh, f.sshTargets, f.changes)
 		}
@@ -446,7 +446,7 @@ func TestSetFailureBoundariesAndExactCalls(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := spaceLine + roleLine + hostLine + recordLine + "previous: ok (none)\nikigenba.dev crm.sbx1.ikigenba.dev\n"
-			wantSSH := []string{"'true'", "'sudo' 'opsctl' 'config' 'set' 'host.apex=crm'", "'sudo' 'opsctl' 'cert' 'obtain'", "'sudo' 'opsctl' 'nginx' 'apply'"}
+			wantSSH := []string{"'true'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'host.apex=crm'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'cert' 'obtain'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'nginx' 'apply'"}
 			if stdout.String() != want || len(f.policies) != 1 || len(f.changes) != 1 || f.changeStatusCalls != 1 || !reflect.DeepEqual(f.ssh, wantSSH) || f.streamCalls != 0 || f.ssmCalls != 0 || f.s3Calls != 0 {
 				t.Fatalf("stdout=%q policies=%v changes=%v status=%d ssh=%v forbidden=%d/%d/%d", stdout.String(), f.policies, f.changes, f.changeStatusCalls, f.ssh, f.streamCalls, f.ssmCalls, f.s3Calls)
 			}
@@ -455,8 +455,8 @@ func TestSetFailureBoundariesAndExactCalls(t *testing.T) {
 }
 
 func TestShowAndClear(t *testing.T) {
-	// R-4PE5-TDOG R-4QM2-75F5 R-4RTY-KX5U R-4T1U-YOWJ R-4U9R-CGN8
-	// R-4VHN-Q8DX R-VZHT-XYEM R-SRL5-SC3E R-50D9-9BCP
+	// R-4PE5-TDOG R-DVB2-VLI1 R-4RTY-KX5U R-4T1U-YOWJ R-4U9R-CGN8
+	// R-4VHN-Q8DX R-VZHT-XYEM R-DWIZ-9D8Q R-50D9-9BCP
 	t.Run("show", func(t *testing.T) {
 		f := successfulFake()
 		f.getValue = "crm\n"
@@ -539,7 +539,7 @@ func TestShowAndClear(t *testing.T) {
 }
 
 func TestShowExactHostReadAndFailureBoundaries(t *testing.T) {
-	// R-4QM2-75F5 R-4RTY-KX5U
+	// R-DVB2-VLI1 R-4RTY-KX5U
 	t.Run("set", func(t *testing.T) {
 		f := successfulFake()
 		f.getValue = "crm\r\n"
@@ -547,7 +547,7 @@ func TestShowExactHostReadAndFailureBoundaries(t *testing.T) {
 		if err := apex.Run(context.Background(), []string{"show"}, &stdout, testDeps(t, f)); err != nil {
 			t.Fatal(err)
 		}
-		wantSSH := []string{"'sudo' 'opsctl' 'config' 'get' 'host.apex'"}
+		wantSSH := []string{"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'get' 'host.apex'"}
 		if stdout.String() != "crm.sbx2.ikigenba.dev 18.220.10.5\n" || !reflect.DeepEqual(f.ssh, wantSSH) || !reflect.DeepEqual(f.sshTargets, []string{"ec2-user@18.220.10.5"}) || len(f.policies) != 0 || len(f.changes) != 0 || f.streamCalls != 0 || f.ssmCalls != 0 || f.s3Calls != 0 {
 			t.Fatalf("stdout=%q ssh=%v targets=%v policies=%v changes=%v forbidden=%d/%d/%d", stdout.String(), f.ssh, f.sshTargets, f.policies, f.changes, f.streamCalls, f.ssmCalls, f.s3Calls)
 		}
@@ -572,7 +572,7 @@ func TestShowExactHostReadAndFailureBoundaries(t *testing.T) {
 		var stdout bytes.Buffer
 		err := apex.Run(context.Background(), []string{"show"}, &stdout, testDeps(t, f))
 		var command *host.CommandError
-		if !errors.As(err, &command) || command.Step != "show" || command.Status != 2 || !reflect.DeepEqual(command.Command, []string{"ssh", "ec2-user@18.220.10.5", "sudo", "opsctl", "config", "get", "host.apex"}) || command.Stderr != "broken\n" || stdout.Len() != 0 || len(f.ssh) != 1 {
+		if !errors.As(err, &command) || command.Step != "show" || command.Status != 2 || !reflect.DeepEqual(command.Command, []string{"ssh", "ec2-user@18.220.10.5", "sudo", "systemd-run", "--quiet", "--wait", "--pipe", "--collect", "opsctl", "config", "get", "host.apex"}) || command.Stderr != "broken\n" || stdout.Len() != 0 || len(f.ssh) != 1 {
 			t.Fatalf("err=%#v stdout=%q ssh=%v", err, stdout.String(), f.ssh)
 		}
 	})
@@ -599,7 +599,7 @@ func TestShowExactHostReadAndFailureBoundaries(t *testing.T) {
 }
 
 func TestClearExactSequenceAndFailureBoundaries(t *testing.T) {
-	// R-4T1U-YOWJ R-4U9R-CGN8 R-VZHT-XYEM R-SRL5-SC3E R-50D9-9BCP
+	// R-4T1U-YOWJ R-4U9R-CGN8 R-VZHT-XYEM R-DWIZ-9D8Q R-50D9-9BCP
 	const spaceLine = "space: ok (sbx2.ikigenba.dev running, 18.220.10.5)\n"
 	const recordLine = "record: ok (ikigenba.dev deleted)\n"
 	const roleLine = "role: ok (sbx2.ikigenba.dev may no longer prove ikigenba.dev)\n"
@@ -611,7 +611,7 @@ func TestClearExactSequenceAndFailureBoundaries(t *testing.T) {
 			t.Fatal(err)
 		}
 		wantPolicy := policyCall{"sbx2.ikigenba.dev", space.PolicyName, space.PolicyDocument("ikigenba.dev", "ZONE1", spaceref.Space{Label: "sbx2", Domain: "sbx2.ikigenba.dev"}, false)}
-		wantSSH := []string{"'true'", "'sudo' 'opsctl' 'config' 'del' 'host.apex'", "'sudo' 'opsctl' 'cert' 'obtain'", "'sudo' 'opsctl' 'nginx' 'apply'"}
+		wantSSH := []string{"'true'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'del' 'host.apex'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'cert' 'obtain'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'nginx' 'apply'"}
 		wantOutput := spaceLine + recordLine + roleLine + "host: ok (host.apex removed, certificate obtained, nginx applied)\n"
 		if stdout.String() != wantOutput || !reflect.DeepEqual(f.changeZones, []string{"ZONE1"}) || len(f.changes) != 1 || !reflect.DeepEqual(f.changes[0], []cloud.RecordChange{{Action: cloud.ChangeDelete, Record: f.record}}) || !reflect.DeepEqual(f.policies, []policyCall{wantPolicy}) || !reflect.DeepEqual(f.ssh, wantSSH) || !reflect.DeepEqual(f.sshTargets, []string{"ec2-user@18.220.10.5", "ec2-user@18.220.10.5", "ec2-user@18.220.10.5", "ec2-user@18.220.10.5"}) || f.changeStatusCalls != 0 || f.streamCalls != 0 || f.ssmCalls != 0 || f.s3Calls != 0 {
 			t.Fatalf("stdout=%q zones=%v changes=%#v policies=%#v ssh=%v targets=%v forbidden=%d/%d/%d/%d", stdout.String(), f.changeZones, f.changes, f.policies, f.ssh, f.sshTargets, f.changeStatusCalls, f.streamCalls, f.ssmCalls, f.s3Calls)
@@ -675,8 +675,8 @@ func TestClearExactSequenceAndFailureBoundaries(t *testing.T) {
 		var stdout bytes.Buffer
 		err := apex.Run(context.Background(), []string{"clear"}, &stdout, testDeps(t, f))
 		var command *host.CommandError
-		wantSSH := []string{"'true'", "'sudo' 'opsctl' 'config' 'del' 'host.apex'", "'sudo' 'opsctl' 'cert' 'obtain'", "'sudo' 'opsctl' 'nginx' 'apply'"}
-		if !errors.As(err, &command) || command.Step != "host" || command.Status != 1 || command.Stderr != "nginx one\nnginx two\n" || command.Error() != "host: ssh ec2-user@18.220.10.5 sudo opsctl nginx apply: exit status 1" || command.Detail() != "> nginx one\n> nginx two" || stdout.String() != spaceLine+recordLine+roleLine || !reflect.DeepEqual(f.ssh, wantSSH) {
+		wantSSH := []string{"'true'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'del' 'host.apex'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'cert' 'obtain'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'nginx' 'apply'"}
+		if !errors.As(err, &command) || command.Step != "host" || command.Status != 1 || command.Stderr != "nginx one\nnginx two\n" || command.Error() != "host: ssh ec2-user@18.220.10.5 sudo systemd-run --quiet --wait --pipe --collect opsctl nginx apply: exit status 1" || command.Detail() != "> nginx one\n> nginx two" || stdout.String() != spaceLine+recordLine+roleLine || !reflect.DeepEqual(f.ssh, wantSSH) {
 			t.Fatalf("err=%#v stdout=%q ssh=%v", err, stdout.String(), f.ssh)
 		}
 	})

@@ -25,7 +25,7 @@ const (
 )
 
 func TestRunListCurrentRootAndApex(t *testing.T) {
-	// R-RJ9Z-1OB0 R-P5O5-A9HX R-V6FS-65I6 R-XO8Q-YVRD R-V8VK-XOZK R-8YVJ-0IZI
+	// R-RJ9Z-1OB0 R-P5O5-A9HX R-V6FS-65I6 R-XO8Q-YVRD R-V8VK-XOZK R-YBOB-U66N
 	_ = []func(context.Context, []string, io.Writer, seam.Deps) error{Run}
 	f := newOperationFake(t)
 	f.instances = []cloud.Instance{
@@ -89,7 +89,7 @@ func TestRunListCurrentRootAndApex(t *testing.T) {
 func TestRunActionsLookupAndOutput(t *testing.T) {
 	// R-V7NO-JX8V R-VBBD-P8GY R-VCJA-307N R-VDR6-GRYC R-S6SW-5NHI
 	t.Run("status relays exact bytes through exact host command", func(t *testing.T) {
-		// R-S9WX-LSSA R-8YVJ-0IZI
+		// R-S9WX-LSSA R-YBOB-U66N
 		for _, output := range []string{"one\ntwo\n", "without trailing newline", ""} {
 			t.Run(strings.ReplaceAll(output, "\n", "_"), func(t *testing.T) {
 				f := newOperationFake(t)
@@ -101,12 +101,12 @@ func TestRunActionsLookupAndOutput(t *testing.T) {
 				}
 				wantExec := []seam.Cmd{
 					checkoutCommand(f.root),
-					hostCommand(f.root, "18.118.7.42", "'sudo' 'opsctl' 'status'"),
+					hostCommand(f.root, "18.118.7.42", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'status'"),
 				}
 				if !reflect.DeepEqual(f.execCalls, wantExec) {
 					t.Fatalf("Exec commands = %#v, want %#v", f.execCalls, wantExec)
 				}
-				wantOps := []string{"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot, "ssh 'sudo' 'opsctl' 'status'"}
+				wantOps := []string{"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot, "ssh 'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'status'"}
 				if !reflect.DeepEqual(f.ops, wantOps) || f.streamCalls != 0 {
 					t.Fatalf("operations=%#v Stream calls=%d, want %#v and zero", f.ops, f.streamCalls, wantOps)
 				}
@@ -170,11 +170,11 @@ func TestRunActionsLookupAndOutput(t *testing.T) {
 			if state == cloud.StateStopped {
 				wantOps = append(wantOps, "start i-one", "describe i-one")
 			}
-			wantOps = append(wantOps, "checks i-one", "ssh 'true'", "ssh 'sudo' 'certbot' 'renew'")
+			wantOps = append(wantOps, "checks i-one", "ssh 'true'", "ssh 'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'certbot' 'renew'")
 			wantExec := []seam.Cmd{
 				checkoutCommand(f.root),
 				hostCommand(f.root, "18.220.10.5", "'true'"),
-				hostCommand(f.root, "18.220.10.5", "'sudo' 'certbot' 'renew'"),
+				hostCommand(f.root, "18.220.10.5", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'certbot' 'renew'"),
 			}
 			if err != nil || stdout != want || !reflect.DeepEqual(f.ops, wantOps) || !reflect.DeepEqual(f.execCalls, wantExec) || f.streamCalls != 0 {
 				t.Fatalf("state=%s stdout=%q err=%v ops=%#v Exec=%#v Stream=%d", state, stdout, err, f.ops, f.execCalls, f.streamCalls)
@@ -260,7 +260,7 @@ func TestRunPrerequisiteFailuresStopUnchanged(t *testing.T) {
 }
 
 func TestDestroyOrderedOptionsAndCleanup(t *testing.T) {
-	// R-VIMR-ZUX4 R-JCCP-CNWX R-FPZH-0WSE R-FR7D-EOJ3 R-VNID-IXVW R-S80S-JF87 R-S98O-X6YW R-VR62-O93Z
+	// R-VIMR-ZUX4 R-YAGF-GEFY R-FPZH-0WSE R-FR7D-EOJ3 R-VNID-IXVW R-S80S-JF87 R-S98O-X6YW R-VR62-O93Z
 	f := newOperationFake(t)
 	f.instances = []cloud.Instance{{ID: "i-one", Space: testDomain, State: cloud.StateRunning, Address: "18.118.7.42"}}
 	f.described = cloud.Instance{ID: "i-one", State: cloud.StateTerminated}
@@ -289,7 +289,7 @@ func TestDestroyOrderedOptionsAndCleanup(t *testing.T) {
 	}
 	wantOps := []string{
 		"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot, "zone " + testRoot,
-		"find " + testRoot, "addresses " + testRoot, "change apex", "ssh 'sudo' 'opsctl' 'retire'",
+		"find " + testRoot, "addresses " + testRoot, "change apex", "ssh 'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'retire'",
 		"spaces " + testRoot, "terminate i-one", "describe i-one", "addresses " + testRoot, "disassociate assoc", "release alloc",
 		"list records", "change records", "parameters " + secrets.Prefix(testDomain),
 		"delete parameters /a", "delete parameters /b", "delete parameters /c",
@@ -303,7 +303,7 @@ func TestDestroyOrderedOptionsAndCleanup(t *testing.T) {
 	}
 	wantExec := []seam.Cmd{
 		checkoutCommand(f.root),
-		hostCommand(f.root, "18.118.7.42", "'sudo' 'opsctl' 'retire'"),
+		hostCommand(f.root, "18.118.7.42", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'retire'"),
 	}
 	if !reflect.DeepEqual(f.execCalls, wantExec) || f.streamCalls != 0 {
 		t.Fatalf("Exec=%#v Stream=%d, want %#v and zero", f.execCalls, f.streamCalls, wantExec)
@@ -359,14 +359,14 @@ func TestDestroyRetireSudo(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			wantHost := hostCommand(f.root, "18.220.10.5", "'sudo' 'opsctl' 'retire'")
+			wantHost := hostCommand(f.root, "18.220.10.5", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'retire'")
 			wantExec := []seam.Cmd{checkoutCommand(f.root), wantHost}
 			if !reflect.DeepEqual(f.execCalls, wantExec) {
 				t.Fatalf("Exec calls = %#v, want %#v", f.execCalls, wantExec)
 			}
 			retireAt := -1
 			for i, op := range f.ops {
-				if op == "ssh 'sudo' 'opsctl' 'retire'" {
+				if op == "ssh 'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'retire'" {
 					retireAt = i
 					break
 				}
@@ -573,12 +573,12 @@ func TestDestroyStopsAtEveryFirstFailure(t *testing.T) {
 			wantOps: append(append([]string{}, initialOps...), "addresses "+testRoot)},
 		{name: "apex delete", failOp: "change apex", setup: addHeldApex,
 			wantOps: append(append([]string{}, initialOps...), "addresses "+testRoot, "change apex")},
-		{name: "retire", args: []string{"destroy", "sbx1"}, failOp: "ssh 'sudo' 'opsctl' 'retire'", execFailure: true,
+		{name: "retire", args: []string{"destroy", "sbx1"}, failOp: "ssh 'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'retire'", execFailure: true,
 			setup: func(f *operationFake) {
 				f.instances[0].State = cloud.StateRunning
 				f.instances[0].Address = "18.118.7.42"
 			},
-			wantOps: append(append([]string{}, initialOps...), "ssh 'sudo' 'opsctl' 'retire'")},
+			wantOps: append(append([]string{}, initialOps...), "ssh 'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'retire'")},
 		{name: "instance terminate", failOp: "terminate i-one", wantStdout: retireSkipped},
 		{name: "instance wait", failOp: "describe i-one", wantStdout: retireSkipped},
 		{name: "address lookup", failOp: "addresses " + testRoot, wantStdout: instanceDone},

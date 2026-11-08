@@ -78,7 +78,7 @@ func TestRollbackLookupRefusals(t *testing.T) {
 }
 
 func TestRollbackDispatchStreamsOnlyHostOutput(t *testing.T) {
-	// R-X1KO-R1XX R-X6GA-A4WP R-X7O6-NWNE
+	// R-X1KO-R1XX R-YE44-LPO1 R-X7O6-NWNE
 	for _, failed := range []bool{false, true} {
 		h := newRollbackHarness(t)
 		deps := h.deps()
@@ -100,7 +100,7 @@ func TestRollbackDispatchStreamsOnlyHostOutput(t *testing.T) {
 		}
 		deps.Stream = func(_ context.Context, cmd seam.Cmd, out io.Writer) (seam.Result, error) {
 			streams++
-			if cmd.Path != "ssh" || cmd.Args[len(cmd.Args)-2] != "ec2-user@18.118.7.42" || cmd.Args[len(cmd.Args)-1] != "'sudo' 'opsctl' 'rollback'" {
+			if cmd.Path != "ssh" || cmd.Args[len(cmd.Args)-2] != "ec2-user@18.118.7.42" || cmd.Args[len(cmd.Args)-1] != "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'rollback'" {
 				t.Fatalf("command %#v", cmd)
 			}
 			if failed {
@@ -110,7 +110,7 @@ func TestRollbackDispatchStreamsOnlyHostOutput(t *testing.T) {
 			return seam.Result{}, err
 		}
 		if failed {
-			assertResult(t, invokeWithDeps(deps, "rollback", "sbx1"), 1, "", "devctl: rollback: ssh ec2-user@18.118.7.42 sudo opsctl rollback: exit status 1\n\n> opsctl: no previous release to roll back to\n")
+			assertResult(t, invokeWithDeps(deps, "rollback", "sbx1"), 1, "", "devctl: rollback: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect opsctl rollback: exit status 1\n\n> opsctl: no previous release to roll back to\n")
 		} else {
 			assertResult(t, invokeWithDeps(deps, "rollback", "sbx1"), 0, "arbitrary\n\nrollback output\n", "")
 		}

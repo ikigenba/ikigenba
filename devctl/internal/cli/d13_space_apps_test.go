@@ -165,7 +165,7 @@ func (f *d13Fixture) deps() seam.Deps {
 }
 
 func TestSpaceOpsctlResultsThroughCLI(t *testing.T) {
-	// R-SBQG-TBGD R-SGM2-CEF5 R-SK9R-HPN8 R-JNNS-D34S
+	// R-DNZO-KZ1V R-DP7K-YQSK R-DQFH-CIJ9 R-JNNS-D34S
 	for _, tc := range []struct {
 		command string
 		output  string
@@ -179,14 +179,14 @@ func TestSpaceOpsctlResultsThroughCLI(t *testing.T) {
 			f.hostEnabled = true
 			f.hostResult = seam.Result{Stdout: []byte(tc.output), Stderr: []byte("ignored\n")}
 			assertResult(t, invokeWithDeps(f.deps(), "space", tc.command, "sbx1", "crm"), 0, tc.output, "")
-			want := []seam.Cmd{{Path: "ssh", Args: []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", "ec2-user@18.118.7.42", "'sudo' 'opsctl' '" + tc.command + "' 'crm'"}, Dir: f.work}}
+			want := []seam.Cmd{{Path: "ssh", Args: []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", "ec2-user@18.118.7.42", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' '" + tc.command + "' 'crm'"}, Dir: f.work}}
 			if !reflect.DeepEqual(f.hostCmds, want) {
 				t.Fatalf("host commands = %#v", f.hostCmds)
 			}
 			f.hostResult = seam.Result{Stdout: []byte("a")}
 			assertResult(t, invokeWithDeps(f.deps(), "space", tc.command, "sbx1", "crm"), 0, "a", "")
 			f.hostResult = seam.Result{ExitCode: 1, Stdout: []byte("bad\nmore\n"), Stderr: []byte("error\nmore\n")}
-			assertResult(t, invokeWithDeps(f.deps(), "space", tc.command, "sbx1", "crm"), 1, "", "devctl: "+tc.command+": ssh ec2-user@18.118.7.42 sudo opsctl "+tc.command+" crm: exit status 1\n\n> bad\n> more\n> error\n> more\n")
+			assertResult(t, invokeWithDeps(f.deps(), "space", tc.command, "sbx1", "crm"), 1, "", "devctl: "+tc.command+": ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect opsctl "+tc.command+" crm: exit status 1\n\n> bad\n> more\n> error\n> more\n")
 		})
 	}
 }

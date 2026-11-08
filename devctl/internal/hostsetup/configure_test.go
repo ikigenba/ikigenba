@@ -70,7 +70,7 @@ func TestConfigurationContract(t *testing.T) {
 }
 
 func TestConfigureSetsDerivedDefaultsAndEmailInOrder(t *testing.T) {
-	// R-WI2A-MQ2T R-8JNG-YGX3 R-8KVD-C8NS
+	// R-IKGA-11BL R-8JNG-YGX3 R-8KVD-C8NS
 	periods := DefaultBackupPeriods()
 	cfg := Config{
 		Root:    "ikigenba.dev",
@@ -90,16 +90,16 @@ func TestConfigureSetsDerivedDefaultsAndEmailInOrder(t *testing.T) {
 		t.Fatalf("Configure() = %d, %v, want 10, nil", count, err)
 	}
 	want := []string{
-		"'sudo' 'opsctl' 'config' 'set' 'host.name=sbx1.ikigenba.dev'",
-		"'sudo' 'opsctl' 'config' 'set' 'dns.provider=route53'",
-		"'sudo' 'opsctl' 'config' 'set' 'dns.zones=ikigenba.dev:Z09565073GHK8BYWQ1A78'",
-		"'sudo' 'opsctl' 'config' 'set' 'aws.region=us-east-2'",
-		"'sudo' 'opsctl' 'config' 'set' 'backup.s3_uri=s3://ikigenba.dev/sbx1/'",
-		"'sudo' 'opsctl' 'config' 'set' 'backup.host_files_seconds=86400'",
-		"'sudo' 'opsctl' 'config' 'set' 'backup.service_files_seconds=86400'",
-		"'sudo' 'opsctl' 'config' 'set' 'backup.service_db_seconds=86400'",
-		"'sudo' 'opsctl' 'config' 'set' 'backup.service_wal_seconds=300'",
-		"'sudo' 'opsctl' 'config' 'set' 'acme.email= ops+literal@example.test '",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'host.name=sbx1.ikigenba.dev'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'dns.provider=route53'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'dns.zones=ikigenba.dev:Z09565073GHK8BYWQ1A78'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'aws.region=us-east-2'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'backup.s3_uri=s3://ikigenba.dev/sbx1/'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'backup.host_files_seconds=86400'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'backup.service_files_seconds=86400'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'backup.service_db_seconds=86400'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'backup.service_wal_seconds=300'",
+		"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'acme.email= ops+literal@example.test '",
 	}
 	if got := logicalCommands(commands); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Configure commands = %#v, want %#v", got, want)
@@ -179,8 +179,8 @@ func TestSingleKeyOperations(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := []string{
-			"'sudo' 'opsctl' 'config' 'set' 'host.apex= sbx1.example.test '",
-			"'sudo' 'opsctl' 'config' 'del' 'host.apex'",
+			"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'host.apex= sbx1.example.test '",
+			"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'del' 'host.apex'",
 		}
 		if got := logicalCommands(commands); !reflect.DeepEqual(got, want) {
 			t.Fatalf("commands = %#v, want %#v", got, want)
@@ -196,7 +196,7 @@ func TestSingleKeyOperations(t *testing.T) {
 		if err != nil || !set || got != " arbitrary value \t" {
 			t.Fatalf("GetKey() = %q, %t, %v", got, set, err)
 		}
-		want := []string{"'sudo' 'opsctl' 'config' 'get' 'host.apex'"}
+		want := []string{"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'get' 'host.apex'"}
 		if logical := logicalCommands(commands); !reflect.DeepEqual(logical, want) {
 			t.Fatalf("commands = %#v, want %#v", logical, want)
 		}
@@ -316,7 +316,7 @@ func logicalCommands(commands []seam.Cmd) []string {
 }
 
 func TestConfigureUsesReleaseOpsctl(t *testing.T) {
-	// R-WI2A-MQ2T
+	// R-IKGA-11BL
 	var commands []seam.Cmd
 	program := "/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl"
 	cfg := Config{Root: "example.test", Region: "region", ZoneID: "zone", Space: spaceref.Space{Label: "sbx", Domain: "sbx1.ikigenba.dev"}, Opsctl: program}
@@ -325,11 +325,11 @@ func TestConfigureUsesReleaseOpsctl(t *testing.T) {
 		t.Fatalf("Configure %d %v", count, err)
 	}
 	for _, cmd := range commands {
-		if !strings.HasPrefix(cmd.Args[len(cmd.Args)-1], "'sudo' '"+program+"' 'config' 'set' ") {
+		if !strings.HasPrefix(cmd.Args[len(cmd.Args)-1], "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' '"+program+"' 'config' 'set' ") {
 			t.Fatalf("command %#v", cmd)
 		}
 	}
-	if commands[0].Args[len(commands[0].Args)-1] != "'sudo' '"+program+"' 'config' 'set' 'host.name=sbx1.ikigenba.dev'" {
+	if commands[0].Args[len(commands[0].Args)-1] != "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' '"+program+"' 'config' 'set' 'host.name=sbx1.ikigenba.dev'" {
 		t.Fatal(commands[0])
 	}
 }
