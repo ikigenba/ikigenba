@@ -24,6 +24,15 @@ worktree at a given directory. A `Checkout` whose `Root` is such a worktree
 is an ordinary checkout of that commit, and `Apps` on it discovers the apps
 the commit holds.
 
+The checkout also names the default release that `space create` and `space
+move` deploy. `NewestRelease` lists the local repository's tags, fetching
+nothing, and returns the newest `release-<N>`: of the tags named exactly
+`release-` and a number without a leading zero, the one with the highest
+number, compared as a number, so `release-100` is newer than `release-99`.
+A release candidate such as `release-88-rc1` is never chosen, and the older
+`r<N>` tags are not consulted at all; a checkout that holds only those has
+no release tag.
+
 The checkout is also where the platform is stated. devctl has no
 configuration of its own: the root domain and its region live in the root
 file, `infra/terraform.tfvars.json` at the checkout root, the same file
@@ -181,4 +190,4 @@ looked up.
 
 - R-ULRX-7KJX: Package `internal/checkout` MUST export the method `NewestRelease(ctx context.Context) (tag string, ok bool, err error)` on `*Checkout`.
 
-- R-D7OH-KNPH: `(*Checkout).NewestRelease` MUST pass exactly one `seam.Cmd` to `Deps.Exec`, whose `Path` is `git`, whose `Args` are exactly `tag`, `--list`, and `--no-column`, and whose `Dir` is `Root`; among the lines of its standard output it MUST consider only those that are exactly `r` followed by one or more ASCII digits whose first digit is not `0` unless it is the only digit, and when that process exits 0 MUST return the one whose digits denote the greatest number, compared as a number of any length without conversion to a fixed-size integer, true, and a nil error, and the empty string, false, and a nil error when no line qualifies; it MUST return a `*GitError` carrying the command arguments, exit status and stderr for a non-zero exit, and an error that `errors.As` does not match to a `*GitError`, whose message contains `git tag` and that wraps the runner error, when `Deps.Exec` cannot run the process; it MUST fetch nothing and change no ref; verified at least by output lines `feature/x`, `r1`, `r10`, `r2`, `r3-rc1`, `r9x`, `R11`, `r01`, `rr5` and `v1.0.0` giving `r10`, by `r9` and `r100000000000000000000` giving the latter, by `r0` alone giving `r0`, and by `r1-rc1` and `feature/x` alone, and by empty output, each giving false.
+- R-T2RH-10C9: `(*Checkout).NewestRelease` MUST pass exactly one `seam.Cmd` to `Deps.Exec`, whose `Path` is `git`, whose `Args` are exactly `tag`, `--list`, and `--no-column`, and whose `Dir` is `Root`; among the lines of its standard output it MUST consider only those that are exactly `release-` followed by one or more ASCII digits whose first digit is not `0`, so that no `r<N>` tag and no release candidate such as `release-88-rc1` is ever a candidate, and when that process exits 0 MUST return the one whose digits denote the greatest number, compared as a number of any length without conversion to a fixed-size integer, true, and a nil error, and the empty string, false, and a nil error when no line qualifies; it MUST return a `*GitError` carrying the command arguments, exit status and stderr for a non-zero exit, and an error that `errors.As` does not match to a `*GitError`, whose message contains `git tag` and that wraps the runner error, when `Deps.Exec` cannot run the process; it MUST fetch nothing and change no ref; verified at least by output lines `feature/x`, `r1`, `r7`, `r100`, `release-86`, `release-87`, `release-88-rc1`, `release-9x`, `Release-99`, `release-01`, `release-0`, `release-`, `releases-90`, `xrelease-95` and `v1.0.0` giving `release-87`, by `release-99` and `release-100` giving `release-100`, by `release-9` and `release-100000000000000000000` giving the latter, and by `r1`, `r2`, `r3`, `r4`, `r5`, `r6` and `r7` alone, by `release-1-rc1` and `feature/x` alone, by `release-0` alone, and by empty output, each giving false.

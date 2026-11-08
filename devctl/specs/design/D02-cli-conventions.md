@@ -73,7 +73,7 @@ including nested quotes and empty lines.
 
 - R-1MN4-VC6Y: Command help MUST take precedence over command-local argument validation when `--help` or `-h` appears among that command’s arguments, subject to the root refusal; it MUST invoke neither cloud nor process runners, including the streaming runner.
 
-- R-RJ4X-S7G2: Missing or empty option values for create and restore MUST be diagnosed before external access; a following argument beginning with `-` MUST not be consumed as such a value. Logs’ `--since` exception MUST follow its own declared grammar.
+- R-VK1M-0CZK: Missing or empty option values for create and restore, and for `space move`'s `--release`, MUST be diagnosed before external access; a following argument beginning with `-` MUST not be consumed as such a value, so `space move sbx1 --release -x` and `space move sbx1 --release --help` are diagnosed as the same arguments to `space create` are. Logs’ `--since` exception MUST follow its own declared grammar.
 
 - R-SRWN-WY8Y: The binary built from `./cmd/devctl` by `go build` with no flags, run with the single argument `--version` as a non-root user, MUST print to stdout exactly what `cli.Run` prints to stdout for `--version`, write nothing to stderr, and exit 0.
 
@@ -83,7 +83,7 @@ including nested quotes and empty lines.
 
 - R-YPS2-X32R: The commands that read the root file MUST be exactly `space`, `secrets`, `deploy`, `rollback`, `restore`, `golden`, `seed`, and `apex`, and each of them MUST make every call to `Deps.Cloud` with the `Domain` of the `checkout.RootFile` it read as the profile and that file's `Region` as the region, taking neither value from anywhere else, verified with a recording fake `Deps.Cloud` by a well-formed invocation of each of the eight in a temporary checkout whose root file holds `{"domain": "example.test", "region": "eu-west-1"}` leaving the fake with calls whose profile is exactly `example.test` and whose region is exactly `eu-west-1`.
 
-- R-YS7V-OMK5: `devctl --help` and `devctl -h` MUST print exactly this text, once, to stdout, write nothing to stderr, and exit 0:
+- R-T1JK-N8LK: `devctl --help` and `devctl -h` MUST print exactly this text, once, to stdout, write nothing to stderr, and exit 0:
 
   ```
   Usage: devctl [options] <command> [arguments]
@@ -92,7 +92,7 @@ including nested quotes and empty lines.
 
   Commands:
     version   print the version
-    space     list, create, destroy, stop, start, and inspect spaces
+    space     list, create, move, destroy, stop, start, and inspect spaces
     secrets   push and list an app's secrets for a space
     build     build the suite at a commit into a release
     deploy    put a release on a space

@@ -64,7 +64,7 @@ fallback that turns a `*space.NotRunningError` into
 `devctl: '<domain>' is stopped`, exit 1 (D05 R-0D99-FN33); step lines through
 `space.Step` (D06 R-SR5Y-JN2E); and the host runner, `host.Host`,
 `(host.Host).Sudo`, and `*host.CommandError`, whose diagnostic quotes opsctl's
-standard output and then its standard error (D06 R-T3CY-DCHC, R-D6VV-A7PF,
+standard output and then its standard error (D06 R-FSF9-SG9S, R-D6VV-A7PF,
 R-JA8W-5LZ5, R-D9BO-1R6T). Neither command uses the clock.
 
 ## REQUIREMENTS

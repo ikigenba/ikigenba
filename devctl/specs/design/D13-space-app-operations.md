@@ -7,8 +7,9 @@ goes to opsctl as typed, and only logs checks it against the usable-name rule,
 because logs alone forms a unit name from it. None of them needs
 anything from the checkout beyond the root file: it names the root and the
 region, and from those the command connects (STS first, like every cloud
-command), finds the space by its tags, and refuses a missing or non-running
-one before any ssh.
+command), finds the space by its tags through `cloud.LookupSpace`, which
+answers with its active instance and never a retired one a move left behind
+(D03), and refuses a missing or non-running one before any ssh.
 
 Restart, disable, and enable hand the work to the installed host tool over
 ssh — `sudo opsctl restart <app>`, `sudo opsctl disable <app>`, `sudo opsctl

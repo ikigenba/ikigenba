@@ -10,14 +10,25 @@ machine and no `--account` exists. Output names the full space domain even
 when the label was typed; the one place a label appears is the advice line
 that tells the developer which command to run next.
 
-`space list` prints one line per space and marks the holder of the apex: the
-space whose Elastic IP the root's `A` record points at. The holder is read
+A space is its active instance (D03): `space move` (D18) leaves the instance
+it moved from, and that instance's Elastic IP, stopped and tagged `Retired`,
+and every command here but destroy sees only the active one. `space list`
+prints one line per space and marks the holder of the apex: the
+space whose active Elastic IP the root's `A` record points at. The holder is read
 from the zone and the address tags, never from a host, by `FindApex`, which
-`space destroy` and D14's `apex` command share. Stop and start preserve
+`space destroy` and D14's `apex` command share; an address tagged `Retired`
+holds nothing, so a root record left pointing at one marks no holder.
+`ElasticIP` likewise answers with the active address only. Stop and start preserve
 records and the address; start runs the host's renewal check in the
 foreground. Destroy deletes the root's record first when this space holds it,
 has the host take its final backup with `opsctl retire`, then removes the
-instance, the address, the space's two `A` records, and the role, resumably.
+instances, the addresses, the space's two `A` records, and the role, resumably.
+Retire runs on the active instance alone; the `instance` and `address` steps
+remove every instance and address the label carries, through D03's
+`SpaceInstances` and `SpaceAddresses`, the active one first and then each
+retired one, so a moved space leaves nothing behind. A label whose only
+instance is retired has no active instance: retire says `already gone` and
+no host is reached.
 Secrets and backups are kept unless `--delete-secrets` or `--delete-backups`
 says otherwise; each option governs only its own step. A stopped host cannot
 take a backup, so destroy without `--no-backup` refuses a non-running instance
@@ -51,7 +62,7 @@ at once. Every helper takes the one
 client interface it needs, as D03's `Spaces` and D05's `Push` do; no session
 or checkout type crosses into a helper.
 
-Host execution lives in `internal/host`: `Host{Address, Deps}` runs a command
+Host execution lives in `internal/host`: `Host{Address, Deps, KnownHosts}` runs a command
 over ssh with every argument preserved as one literal word, `Sudo` returns the
 captured `Output{Stdout, Stderr}` so a caller can use stdout (`opsctl status`
 relays it; D10's `GetKey` reads it), and a non-zero exit is a `*CommandError`
@@ -60,11 +71,16 @@ it wrote to stderr, each line prefixed `> `. A command's product is on its
 stdout and its diagnostic on its stderr (the repository's command-line
 convention), so a failing opsctl's report comes first and its reason after it;
 neither is dropped because the other is present. devctl never asserts what
-those bytes say. D07, D09, D10, D13, D14, D16 and D17 issue every
+those bytes say. D07, D09, D10, D13, D14, D16, D17 and D18 issue every
 host command through this one shape. `Copy` is the one way a file reaches a
 host from the developer's machine: `scp` with the same options and target as
 `ssh`, failing with the same `*CommandError`, so a failed copy is reported
-the way a failed remote command is. `space status` relays `opsctl status`
+the way a failed remote command is. ssh and scp accept a host key they have
+not seen and record it in the developer's own known hosts; a `Host` whose
+`KnownHosts` names a file uses that file instead, which is how a move keeps
+the key a new host has before its host restore out of the developer's file
+(D18). The path is one `-o` value, so it holds no whitespace; an empty
+`KnownHosts` leaves the command exactly as it was. `space status` relays `opsctl status`
 whole, so its columns, the short sha of the commit each app runs and the
 release's label among them, are opsctl's and never parsed here.
 
@@ -108,7 +124,7 @@ release's label among them, are opsctl's and never parsed here.
 
 - R-U9IH-UCHF: Package `internal/space` MUST export a `RetireStateError` struct whose fields are exactly `ID string`, `State cloud.InstanceState`, and `Label string`, with the methods `Error() string`, returning `retire: instance <ID> is <State>`, `ExitCode() int`, returning 1, and `Detail() string`, returning `run 'devctl space start <Label>' first, or pass --no-backup`, verified at least by reproducing `retire: instance i-0a1b2c3d4e5f60718 is stopped` and `run 'devctl space start staging' first, or pass --no-backup`.
 
-- R-T3CY-DCHC: Package `internal/host` MUST export `User = "ec2-user"`, a `Host` struct whose fields are exactly `Address string` and `Deps seam.Deps`, and the method `Target() string` on `Host`, returning `User`, `@`, and `Address` joined, verified at least by the `Target()` of a `Host` whose `Address` is `3.19.79.227` being `ec2-user@3.19.79.227`.
+- R-FSF9-SG9S: Package `internal/host` MUST export `User = "ec2-user"`, a `Host` struct whose fields are exactly `Address string`, `Deps seam.Deps`, and `KnownHosts string`, and the method `Target() string` on `Host`, returning `User`, `@`, and `Address` joined, verified at least by the `Target()` of a `Host` whose `Address` is `3.19.79.227` being `ec2-user@3.19.79.227`.
 
 - R-T5SR-4VYQ: Package `internal/host` MUST export `ProbeInterval = 5 * time.Second` and `ProbeAttempts = 12`.
 
@@ -130,7 +146,7 @@ release's label among them, are opsctl's and never parsed here.
 
 - R-UFLZ-R76W: `space.WaitInsync` MUST call `route53.ChangeStatus` with `changeID` and return a nil error as soon as it reports `cloud.ChangeInsync`, MUST return its error unchanged as soon as it returns a non-nil one, MUST wait on `deps.After(PollInterval)` between consecutive calls, MUST make at most `PollAttempts` calls, and MUST return a `*WaitError` whose `Subject` is `changeID` and whose `Want` is `reach INSYNC` when that many calls have not reported it; verified with a fake `Deps.After` that fires immediately.
 
-- R-UGTW-4YXL: `space.ElasticIP` MUST call `ec2.ListSpaceAddresses` with `root` and return, with a true second result, the one `cloud.Address` whose `Space` equals `domain`; MUST return a false second result and a nil error when none does; and MUST return a non-nil error naming `domain` when two or more do.
+- R-FNJO-9DB0: `space.ElasticIP` MUST call `ec2.ListSpaceAddresses` with `root`, MUST consider only the addresses whose `Space` equals `domain` and whose `Retired` is empty, and MUST return, with a true second result, the one such `cloud.Address`; MUST return a false second result and a nil error when there is none, whatever retired addresses carry `domain`; and MUST return a non-nil error naming `domain` when there are two or more; verified at least by an address `3.141.27.86` with no `Retired` and an address `18.118.7.42` whose `Retired` is `2026-11-08T18:30:00Z`, both carrying `sbx1.ikigenba.dev`, giving the first with a true second result, and by the retired one alone giving a false second result and a nil error.
 
 - R-UI1S-IQOA: `space.ReleaseElasticIP` MUST call `ec2.DisassociateAddress` with `addr.AssociationID` exactly once when that field is not empty and not at all when it is, and MUST then call `ec2.ReleaseAddress` with `addr.AllocationID` exactly once.
 
@@ -140,13 +156,13 @@ release's label among them, are opsctl's and never parsed here.
 
 - R-ULPH-O1WD: `space.DeleteRole` MUST call `iam.RoleExists` and `iam.InstanceProfileRoles` for `RoleName(domain)`, MUST return false and a nil error and call no other IAM operation when neither reports existence, and otherwise MUST call `DeleteRolePolicy` for that role and `PolicyName`, `RemoveRoleFromInstanceProfile` for that instance profile and each role it holds, `DeleteInstanceProfile`, and `DeleteRole`, in that order, and return true.
 
-- R-UMXE-1TN2: `space.FindApex` MUST call `route53.FindRecord(ctx, zoneID, root, "A")` and, when it reports no record, return an `ApexRecord` whose `Found` is false and whose `Holder` is empty without calling `ec2`; otherwise it MUST call `ec2.ListSpaceAddresses(ctx, root)` and return an `ApexRecord` whose `Record` is the record `FindRecord` returned unchanged, whose `Found` is true, and whose `Holder` is the `Space` of the one `cloud.Address` whose `IP` is an element of that record's `Values`, or empty when no address's `IP` is; and it MUST return a non-nil error naming `root` when two or more addresses match; verified at least by `Holder` being `sbx1.ikigenba.dev` for a record holding `18.118.7.42` and an address with that `IP` and that `Space`, by `Holder` being empty for a record holding `203.0.113.9` that no address carries, and by `Found` being false with no `ListSpaceAddresses` call when the record is absent.
+- R-FORK-N51P: `space.FindApex` MUST call `route53.FindRecord(ctx, zoneID, root, "A")` and, when it reports no record, return an `ApexRecord` whose `Found` is false and whose `Holder` is empty without calling `ec2`; otherwise it MUST call `ec2.ListSpaceAddresses(ctx, root)` and return an `ApexRecord` whose `Record` is the record `FindRecord` returned unchanged, whose `Found` is true, and whose `Holder` is the `Space` of the one `cloud.Address` whose `Retired` is empty and whose `IP` is an element of that record's `Values`, or empty when no such address's `IP` is, so that an address tagged `Retired` holds nothing; and it MUST return a non-nil error naming `root` when two or more such addresses match; verified at least by `Holder` being `sbx1.ikigenba.dev` for a record holding `18.118.7.42` and an address with that `IP`, that `Space`, and no `Retired`, by `Holder` being empty with `Found` true for a record holding `18.118.7.42` when the only address with that `IP` carries `sbx1.ikigenba.dev` and a `Retired` of `2026-11-08T18:30:00Z`, by `Holder` being `sbx1.ikigenba.dev` for a record holding `3.141.27.86` when that address is active and a retired `18.118.7.42` also carries `sbx1.ikigenba.dev`, by `Holder` being empty for a record holding `203.0.113.9` that no address carries, and by `Found` being false with no `ListSpaceAddresses` call when the record is absent.
 
 - R-JA8W-5LZ5: Package `internal/host` MUST export `CommandError` with exactly `Step string`, `Command []string`, `Status int`, `Stdout string`, and `Stderr string`; `Error() string` MUST return the space-joined command followed by `: exit status <Status>`, preceded by `<Step>: ` when nonempty; `Detail() string` MUST return `seam.QuoteOutput(Stdout)` followed by `seam.QuoteOutput(Stderr)`, each included only when that stream contains non-whitespace, the two separated by exactly one newline when both are included, and the empty string when neither is, so that what the remote program reported on its standard output precedes what it wrote to its standard error; `ExitCode() int` MUST return 1; verified at least by a `CommandError` whose `Stdout` is `a\nb\n` and whose `Stderr` is `c\n\n> d\n` giving a `Detail()` of exactly the five lines `> a`, `> b`, `> c`, `> `, and `> > d`, by one whose `Stderr` is empty and one whose `Stderr` is only whitespace each giving `seam.QuoteOutput(Stdout)` alone, and by one whose `Stdout` is empty giving `seam.QuoteOutput(Stderr)` alone.
 
 - R-D6VV-A7PF: Package `internal/host` MUST export `Output` with exactly `Stdout string` and `Stderr string`, and methods `Run(ctx context.Context, step string, args ...string) (Output, error)`, `Sudo(ctx context.Context, step string, args ...string) (Output, error)`, `StreamSudo(ctx context.Context, stdout io.Writer, step string, args ...string) error`, and `Wait(ctx context.Context) error` on `Host`.
 
-- R-D83R-NZG4: `Host.Run` MUST invoke `ssh` through `Deps.Exec` in `Deps.Dir` with `-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new`, `Target()`, and a remote command preserving each supplied argument as one literal shell word; `Host.Sudo` MUST prefix that remote argument vector with `sudo`. Tests MUST include spaces, quotes, wildcard characters and shell metacharacters to prove no argument becomes shell syntax.
+- R-FUV2-JZR6: `Host.Run` MUST invoke `ssh` through `Deps.Exec` in `Deps.Dir` with `-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new`, followed, only when `KnownHosts` is not empty, by `-o` and `UserKnownHostsFile=` joined to `KnownHosts`, then `Target()`, and a remote command preserving each supplied argument as one literal shell word; `Host.Sudo` MUST prefix that remote argument vector with `sudo`; when `KnownHosts` is empty no argument MUST name `UserKnownHostsFile`. Tests MUST include spaces, quotes, wildcard characters and shell metacharacters to prove no argument becomes shell syntax, and MUST show a `Host` whose `Address` is `3.141.27.86` and whose `KnownHosts` is `/tmp/move.Ab12/known_hosts` passing, before the remote command, exactly the arguments `-o`, `BatchMode=yes`, `-o`, `ConnectTimeout=10`, `-o`, `StrictHostKeyChecking=accept-new`, `-o`, `UserKnownHostsFile=/tmp/move.Ab12/known_hosts`, and `ec2-user@3.141.27.86`, and the same `Host` with an empty `KnownHosts` passing exactly those arguments without the last `-o` and its value.
 
 - R-D9BO-1R6T: `Host.Run` and `Host.Sudo` MUST return unmodified stdout and stderr as Output and nil error on exit 0; on a nonzero exit they MUST return CommandError carrying step, status and both unmodified streams, with Command equal to `ssh`, Target(), and the logical remote argument vector, omitting transport flags and shell escaping. A process-start error MUST wrap the runner error, name ssh, and not masquerade as CommandError.
 
@@ -211,9 +227,9 @@ release's label among them, are opsctl's and never parsed here.
 
 - R-UZ4D-VJ20: `space destroy`, `space stop`, `space start`, and `space status` invoked with more than one operand MUST each write `devctl: space <subcommand> takes only <space>`, and `space list` invoked with any operand MUST write `devctl: space list takes no arguments`, as the first of exactly three lines followed by an empty line and `see 'devctl space --help' for usage` on stderr, write nothing to stdout, call `Deps.Cloud` not at all, pass no `seam.Cmd` to `Deps.Exec`, and exit 2.
 
-- R-RMSM-XIO5: The `space` subcommands MUST be exactly `list`, `create`, `destroy`, `stop`, `start`, `status`, `restart`, `disable`, `enable`, and `logs`; `list` takes no operand, `destroy`, `stop`, `start`, and `status` take exactly one `<space>` operand, and `destroy` alone among those five accepts options, exactly `--no-backup`, `--delete-secrets`, and `--delete-backups`, in addition to help; the grammars of `create`, `restart`, `disable`, `enable`, and `logs` MUST be those their owning packages declare.
+- R-FYIR-PAZ9: The `space` subcommands MUST be exactly `list`, `create`, `move`, `destroy`, `stop`, `start`, `status`, `restart`, `disable`, `enable`, and `logs`; `list` takes no operand, `destroy`, `stop`, `start`, and `status` take exactly one `<space>` operand, and `destroy` alone among those five accepts options, exactly `--no-backup`, `--delete-secrets`, and `--delete-backups`, in addition to help; the grammars of `create`, `move`, `restart`, `disable`, `enable`, and `logs` MUST be those their owning packages declare.
 
-- R-RO0J-BAEU: An argument of `space` or of one of its subcommands other than `create`, `restart`, `disable`, `enable`, and `logs` that begins with `-` and is none of `--help`, `-h`, and — for `destroy` only — `--no-backup`, `--delete-secrets`, and `--delete-backups` MUST cause exactly the three lines `devctl: unknown option '<option>'`, an empty line, and `see 'devctl space --help' for usage` to be written to stderr, nothing to stdout, and exit 2, with `Deps.Cloud` not called and no `seam.Cmd` passed to `Deps.Exec`; verified at least by `devctl space stop sbx1 --no-backup` and `devctl space destroy sbx1 --no-backup=true`.
+- R-FZQO-32PY: An argument of `space` or of one of its subcommands other than `create`, `move`, `restart`, `disable`, `enable`, and `logs` that begins with `-` and is none of `--help`, `-h`, and — for `destroy` only — `--no-backup`, `--delete-secrets`, and `--delete-backups` MUST cause exactly the three lines `devctl: unknown option '<option>'`, an empty line, and `see 'devctl space --help' for usage` to be written to stderr, nothing to stdout, and exit 2, with `Deps.Cloud` not called and no `seam.Cmd` passed to `Deps.Exec`; verified at least by `devctl space stop sbx1 --no-backup` and `devctl space destroy sbx1 --no-backup=true`.
 
 - R-V3ZZ-EM0S: `space destroy` MUST accept each of `--no-backup`, `--delete-secrets`, and `--delete-backups` on either side of its `<space>` operand and in any order, with repeated occurrences of one option having the same effect as one, and each option MUST govern only its own step — `--no-backup` the `retire` step, `--delete-secrets` the `secrets` step, and `--delete-backups` the `backups` step; a value-bearing form such as `--no-backup=true` or `--delete-secrets=yes` MUST be an unknown option.
 
@@ -255,9 +271,9 @@ release's label among them, are opsctl's and never parsed here.
 
 - R-VL2K-REEI: The `retire` step of `space destroy` MUST write exactly the line `retire: ok (already gone)` when `LookupSpace` found no instance, whether or not `--no-backup` is given, and exactly the line `retire: skipped (--no-backup)` when it found one and `--no-backup` is given, whatever that instance's `State`, in each case passing no `seam.Cmd` to `deps.Exec` other than `checkout.ReadRootFile`'s; verified at least by reproducing both lines and by `space destroy staging --no-backup` on a `stopped` instance continuing to `instance: ok (i-0a1b2c3d4e5f60718 terminated)`.
 
-- R-VMAH-5657: The `instance` step of `space destroy` MUST report `already gone`, with no EC2 method other than those `LookupSpace` and `FindApex` make called before it, when `LookupSpace` returned a `*cloud.NoSpaceError`, and otherwise MUST call `clients.EC2.TerminateInstance` with the space's `ID` exactly once, then `WaitState` for `cloud.StateTerminated`, and report the space's `ID` followed by ` terminated`; verified at least by reproducing `instance: ok (i-0a1b2c3d4e5f60718 terminated)` and `instance: ok (already gone)`.
+- R-FPZH-0WSE: The `instance` step of `space destroy` MUST call `cloud.SpaceInstances(ctx, clients.EC2, root, space.Domain)` and return its error unchanged; when it returns none the step MUST report `already gone`, with no EC2 method other than those `LookupSpace`, `FindApex`, and `SpaceInstances` make called before it; otherwise it MUST call `clients.EC2.TerminateInstance` exactly once with the `ID` of each instance `SpaceInstances` returned, retired ones included, and with no other id, MUST call `StartInstance` not at all, MUST call `WaitState` for `cloud.StateTerminated` for each of those `ID`s, and MUST then report each `ID` followed by ` terminated`, in the order `SpaceInstances` returned them, joined by `, `; verified at least by reproducing `instance: ok (i-0a1b2c3d4e5f60718 terminated)` and `instance: ok (already gone)`, by `space destroy sbx1` for an active running `i-0e5d4c3b2a1f09876` at `3.141.27.86` and a stopped `i-0c9e94542d98846a8` whose `Retired` is `2026-11-08T18:30:00Z` reproducing `retire: ok (opsctl retire)` and then `instance: ok (i-0e5d4c3b2a1f09876 terminated, i-0c9e94542d98846a8 terminated)` with every `ssh` `seam.Cmd` passed to `deps.Exec` naming `ec2-user@3.141.27.86`, and by a label whose only instance not terminated is that retired one reproducing `retire: ok (already gone)` and then `instance: ok (i-0c9e94542d98846a8 terminated)` with no `ssh` `seam.Cmd` passed to `deps.Exec`.
 
-- R-UL0J-793W: The `address` step of `space destroy` MUST report `elastic ip `, the `cloud.Address`'s `IP`, and ` released` after calling `ReleaseElasticIP` for it when `ElasticIP` reports an Elastic IP for the domain; MUST report `no elastic ip` when it reports none and the `instance` step terminated an instance; and MUST report `already gone` when it reports none and the `instance` step reported `already gone`; verified at least by reproducing `address: ok (elastic ip 18.220.10.5 released)`, `address: ok (no elastic ip)`, and `address: ok (already gone)`.
+- R-FR7D-EOJ3: The `address` step of `space destroy` MUST call `cloud.SpaceAddresses(ctx, clients.EC2, root, space.Domain)` and return its error unchanged; when it returns at least one address the step MUST call `ReleaseElasticIP` exactly once for each, retired ones included, and report, in the order `SpaceAddresses` returned them, `elastic ip `, each address's `IP`, and ` released`, joined by `, `; it MUST report `no elastic ip` when it returns none and the `instance` step terminated at least one instance; and it MUST report `already gone` when it returns none and the `instance` step reported `already gone`; verified at least by reproducing `address: ok (elastic ip 18.220.10.5 released)`, `address: ok (no elastic ip)`, `address: ok (already gone)`, and, for an active address `3.141.27.86` and an address `18.118.7.42` whose `Retired` is `2026-11-08T18:30:00Z`, both carrying `sbx1.ikigenba.dev`, `address: ok (elastic ip 3.141.27.86 released, elastic ip 18.118.7.42 released)` with `ReleaseAddress` called for both allocation ids.
 
 - R-VNID-IXVW: The `records` step of `space destroy` MUST call `DeleteRecords(ctx, clients.Route53, zone, space.Domain)` exactly once and MUST report `deleted ` followed by the names it returned joined by `, ` when it returned at least one, and `already gone` when it returned none; verified at least by reproducing `records: ok (deleted staging.ikigenba.dev, *.staging.ikigenba.dev)`, `records: ok (deleted staging.ikigenba.dev)` for a zone that holds only the bare record, and `records: ok (already gone)`.
 
@@ -269,19 +285,20 @@ release's label among them, are opsctl's and never parsed here.
 
 - R-8YVJ-0IZI: `space list` and `space status` MUST perform no cloud mutation and MUST leave local checkout files unchanged; status MUST execute no host command other than its single `sudo opsctl status` invocation. Tests MUST use cloud fakes that fail on mutation and verify the host command count for both populated and empty results.
 
-- R-RQGC-2TW8: `devctl space --help` and `devctl space -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work outside a checkout and before any external operation:
+- R-FXAV-BJ8K: `devctl space --help` and `devctl space -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work outside a checkout and before any external operation:
 
   ```
   Usage: devctl space <subcommand> [arguments]
 
-  List, create, destroy, stop, start, and inspect spaces, and restart, disable,
-  enable, or read the journal of one app on one. A space is one label under the
-  root domain; <space> is that label or the full domain. The cloud's tags are
-  the only registry.
+  List, create, move, destroy, stop, start, and inspect spaces, and restart,
+  disable, enable, or read the journal of one app on one. A space is one label
+  under the root domain; <space> is that label or the full domain. The cloud's
+  tags are the only registry.
 
   Subcommands:
     list                       one line per space
     create <space> [options]   create the space and deploy a release to it
+    move <space> [options]     move the space to a new instance and restore it there
     destroy <space> [options]  remove the space and everything it owned
     stop <space>               stop the instance; state is kept
     start <space>              start the instance; its address is unchanged
@@ -293,7 +310,10 @@ release's label among them, are opsctl's and never parsed here.
 
   Options (create):
     --acme-email <address>  where the CA sends the space's expiry warnings; required
-    --release <sha|tag>     the release to deploy; the newest r<N> tag otherwise
+    --release <sha|tag>     the release to deploy; the newest release-<N> tag otherwise
+
+  Options (move):
+    --release <sha|tag>     the release to deploy; the newest release-<N> tag otherwise
 
   Options (destroy):
     --no-backup             skip the final backup the host takes before it goes
@@ -316,8 +336,8 @@ release's label among them, are opsctl's and never parsed here.
   socket state and database journal mode. A host with no apps prints nothing.
   ```
 
-- R-RP8F-P25J: `cli.Run` MUST dispatch `space create` to `spacecreate.Run`, `space restart`, `space disable`, `space enable`, and `space logs` to `spaceapps.Run`, and every other `space` invocation to `space.Run`; create receives the arguments after its subcommand and, as `version`, the version string that `devctl --version` prints without its newline, spaceapps receives the subcommand and the arguments after it, and every dispatch receives `cli.Run`'s own `ctx`, `stdout`, and `deps` and nothing else, and returns 0 on a nil error.
+- R-G0YK-GUGN: `cli.Run` MUST dispatch `space create` to `spacecreate.Run`, `space move` to `spacemove.Run`, `space restart`, `space disable`, `space enable`, and `space logs` to `spaceapps.Run`, and every other `space` invocation to `space.Run`; create and move each receive the arguments after its subcommand and, as `version`, the version string that `devctl --version` prints without its newline, spaceapps receives the subcommand and the arguments after it, and every dispatch receives `cli.Run`'s own `ctx`, `stdout`, and `deps` and nothing else, and returns 0 on a nil error.
 
 - R-URVF-4F9E: Package `internal/host` MUST export the method `Copy(ctx context.Context, step, local, remote string) error` on `Host`.
 
-- R-UT3B-I703: `(host.Host).Copy` MUST pass to `Deps.Exec` exactly one `seam.Cmd`, whose `Path` is `scp`, whose `Dir` is `Deps.Dir`, and whose `Args` are exactly `-o`, `BatchMode=yes`, `-o`, `ConnectTimeout=10`, `-o`, `StrictHostKeyChecking=accept-new`, `local`, and `Target()` followed by `:` and `remote`, so that the file at `local` on the developer's machine is copied to `remote` on the host as `User`; it MUST return nil when that process exits 0; on a non-zero exit it MUST return a `*CommandError` whose `Step` is `step`, whose `Command` is exactly `scp`, `local`, and `Target()` followed by `:` and `remote`, omitting the transport options, and which carries the exit status and both unmodified streams; and when `Deps.Exec` returns a non-nil error it MUST return an error that wraps it, whose message contains `scp`, and that `errors.As` does not match to a `*CommandError`; verified at least by a `Host` whose `Address` is `18.118.7.42` copying `/w/dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` to `/tmp/tmp.Ab12Cd34Ef` with the step `copy` and a fake `scp` exiting 1 with the standard error `No space left on device`, giving an `Error()` of `copy: scp /w/dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz ec2-user@18.118.7.42:/tmp/tmp.Ab12Cd34Ef: exit status 1` and a `Detail()` of `> No space left on device`.
+- R-FW2Y-XRHV: `(host.Host).Copy` MUST pass to `Deps.Exec` exactly one `seam.Cmd`, whose `Path` is `scp`, whose `Dir` is `Deps.Dir`, and whose `Args` are exactly `-o`, `BatchMode=yes`, `-o`, `ConnectTimeout=10`, `-o`, `StrictHostKeyChecking=accept-new`, then — only when `KnownHosts` is not empty — `-o` and `UserKnownHostsFile=` joined to `KnownHosts`, then `local`, and `Target()` followed by `:` and `remote`, so that the file at `local` on the developer's machine is copied to `remote` on the host as `User`; it MUST return nil when that process exits 0; on a non-zero exit it MUST return a `*CommandError` whose `Step` is `step`, whose `Command` is exactly `scp`, `local`, and `Target()` followed by `:` and `remote`, omitting the transport options, and which carries the exit status and both unmodified streams; and when `Deps.Exec` returns a non-nil error it MUST return an error that wraps it, whose message contains `scp`, and that `errors.As` does not match to a `*CommandError`; verified at least by a `Host` whose `Address` is `18.118.7.42` copying `/w/dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` to `/tmp/tmp.Ab12Cd34Ef` with the step `copy` and a fake `scp` exiting 1 with the standard error `No space left on device`, giving an `Error()` of `copy: scp /w/dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz ec2-user@18.118.7.42:/tmp/tmp.Ab12Cd34Ef: exit status 1` and a `Detail()` of `> No space left on device`, and by the same copy from a `Host` whose `KnownHosts` is `/tmp/move.Ab12/known_hosts` passing exactly the `Args` `-o`, `BatchMode=yes`, `-o`, `ConnectTimeout=10`, `-o`, `StrictHostKeyChecking=accept-new`, `-o`, `UserKnownHostsFile=/tmp/move.Ab12/known_hosts`, `/w/dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`, and `ec2-user@18.118.7.42:/tmp/tmp.Ab12Cd34Ef`, with the same `Error()`.

@@ -20,7 +20,8 @@ are not apps. The first failure stops the build. Each app's binary is asked
 for its manifest, the only thing build asks it for, and what it emits must be
 byte for byte the manifest committed at that commit; build never runs the
 binary's `--version`, and never runs opsctl's or turns' binary at all.
-Nothing is injected into any binary.
+Nothing is injected into any binary. Every binary is compiled static for
+`linux/arm64`, the platform of every space's host.
 
 The release is `dist/<sha>.tar.xz` at the checkout root (`ReleaseFile`),
 printed relative to the checkout root. Its one top-level entry is `<sha>/`,
@@ -65,12 +66,12 @@ against.
 
 - R-EM3N-CKUL: Package `internal/build` MUST export a `ProcessError` struct whose fields are exactly `Label string`, `Status int`, and `Stderr string`, with the methods `Error() string`, returning `<Label>: exit status <Status>`, `Detail() string`, returning `seam.QuoteOutput(Stderr)`, and `ExitCode() int`, returning 1.
 
-- R-4TWH-GU23: `devctl build --help` and `devctl build -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work without reading the root file and before any external operation:
+- R-T3ZD-ES2Y: `devctl build --help` and `devctl build -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work without reading the root file and before any external operation:
 
   ```
   Usage: devctl build <sha|tag>
 
-  Build the suite at <sha|tag> for linux/amd64 and write dist/<sha>.tar.xz, one
+  Build the suite at <sha|tag> for linux/arm64 and write dist/<sha>.tar.xz, one
   release holding every app, opsctl and turns. <sha> is the full commit sha the
   argument resolves to; the working tree is not read.
   ```
@@ -97,7 +98,7 @@ against.
 
 - R-517V-RGI9: Before passing any `seam.Cmd` whose `Path` is `go` to `deps.Exec`, and when `(*Checkout).Apps` on the worktree returned no error, no app's name is refused as R-4XK6-M5A6 states and no app is refused as R-4YS2-ZX0V states, the suite build MUST return a `*UsageError` whose `Help` is empty and whose `Message` is `turns/share/ is missing at the commit` when `<dir>/turns/share`, `<dir>` being the worktree, is not a directory, verified at least through `cli.Run` by a fake worktree holding the app `crm` and no `turns/`, and by one whose `turns/` holds `cmd/turns/main.go` and `go.mod` and no `share/`, each making `devctl build r1` write the single stderr line `devctl: turns/share/ is missing at the commit`, write nothing to stdout, exit 2, pass no `go` `seam.Cmd`, and leave `dist/` as R-FZMP-SU4T states; and by a fake worktree lacking `turns/share/` whose app `crm` holds `crm/sbin/tool` writing the line `devctl: crm: sbin/ is not allowed in a release` instead.
 
-- R-52FS-588Y: For each app in ascending `Name` order, then for opsctl, and then for turns, the suite build MUST compile exactly once by passing to `deps.Exec` one `seam.Cmd` whose `Path` is `go`, whose `Env` holds exactly the entries `GOOS=linux`, `GOARCH=amd64`, `CGO_ENABLED=0` and `GOWORK=off`, so that every other Go setting, `GOFLAGS` included, is inherited from devctl's environment, whose `Dir` is the app's `Dir`, for opsctl `<dir>/opsctl` and for turns `<dir>/turns`, where `<dir>` is the worktree, and whose `Args` hold `-buildvcs=false`, name the package path `./cmd/<app>`, for opsctl `./cmd/opsctl` and for turns `./cmd/turns`, as the package to build, and hold no argument that is or begins with `-ldflags`; these `seam.Cmd` values MUST be passed in that order and MUST be the only ones whose `Path` is `go`; verified at least by a successful `devctl build r1` over the apps `auth`, `dummy`, `events`, `mcp`, `repos`, `scripts`, `sites` and `telemetry` in a temporary checkout whose root holds a `go.work` file, its last two `go` `seam.Cmd` values being opsctl's and then turns'.
+- R-T579-SJTN: For each app in ascending `Name` order, then for opsctl, and then for turns, the suite build MUST compile exactly once by passing to `deps.Exec` one `seam.Cmd` whose `Path` is `go`, whose `Env` holds exactly the entries `GOOS=linux`, `GOARCH=arm64`, `CGO_ENABLED=0` and `GOWORK=off`, so that every other Go setting, `GOFLAGS` included, is inherited from devctl's environment, whose `Dir` is the app's `Dir`, for opsctl `<dir>/opsctl` and for turns `<dir>/turns`, where `<dir>` is the worktree, and whose `Args` hold `-buildvcs=false`, name the package path `./cmd/<app>`, for opsctl `./cmd/opsctl` and for turns `./cmd/turns`, as the package to build, and hold no argument that is or begins with `-ldflags`; these `seam.Cmd` values MUST be passed in that order and MUST be the only ones whose `Path` is `go`; verified at least by a successful `devctl build release-87` over the apps `auth`, `dummy`, `events`, `mcp`, `repos`, `scripts`, `sites` and `telemetry` in a temporary checkout whose root holds a `go.work` file, its last two `go` `seam.Cmd` values being opsctl's and then turns'.
 
 - R-53NO-IZZN: When an app's compile exits non-zero, its `manifest` run exits non-zero, or its manifest comparison fails, the suite build MUST return that failure's error, a `*ProcessError` labeled `build <app>`, a `*ProcessError` labeled `<app> manifest`, or a `*StaleManifestError` for the app, and MUST pass no `go` `seam.Cmd` for any later app, for opsctl or for turns and no `seam.Cmd` whose `Path` is `tar`; when opsctl's compile exits non-zero it MUST return a `*ProcessError` labeled `build opsctl` carrying that exit status and stderr and pass no `go` `seam.Cmd` for turns and no `tar` `seam.Cmd`; when turns' compile exits non-zero it MUST return a `*ProcessError` labeled `build turns` carrying that exit status and stderr and pass no `tar` `seam.Cmd`; verified at least through `cli.Run` by an app `dashboard`, between apps `auth` and `events`, whose fake compile exits 1 with the two stderr lines `# github.com/ikigenba/ikigenba/dashboard/cmd/dashboard` and `cmd/dashboard/main.go:41:2: undefined: render`, writing to stderr exactly `devctl: build dashboard: exit status 1`, an empty line, and those two lines each prefixed `> `, writing nothing to stdout, and exiting 1, with no `go` `seam.Cmd` for `events`, opsctl or turns; by a fake opsctl compile exiting 1, giving the error line `devctl: build opsctl: exit status 1`, exit 1, and no `go` `seam.Cmd` for turns; and by a fake turns compile exiting 1 with the stderr line `cmd/turns/main.go:7:1: syntax error`, writing to stderr exactly `devctl: build turns: exit status 1`, an empty line, and `> cmd/turns/main.go:7:1: syntax error`, writing nothing to stdout, exiting 1, and passing no `tar` `seam.Cmd`.
 

@@ -11,7 +11,11 @@ The vocabulary is the platform's. The root and its region come from the
 checkout's root file (D04). The holder is the space whose Elastic IP the root's
 `A` record points at, found the way `space list` and `space destroy` find it,
 by `space.FindApex` (D06): the record, then the tagged addresses, then the
-`Space` tag. No host is asked to learn the holder; a host is asked only which
+`Space` tag. Only an active address holds the apex: one tagged `Retired`,
+left with the instance a `space move` moved from, holds nothing, so a record
+pointing at one reads as a record that points at no space's address. Every
+space `apex` looks up, the target and the holder, is found by
+`cloud.LookupSpace` and so is its active instance. No host is asked to learn the holder; a host is asked only which
 app answers there, which is the opsctl configuration key `host.apex`. That
 key, the certificate that carries the root as a third name, and the nginx
 route from the root to the app are opsctl's, reached through its published
@@ -36,6 +40,13 @@ in the reverse order, its policy narrowed first and then its host, or reports
 `none`. Every step runs on every `set`, whether or not the target already
 holds the apex, so a retry repeats from the start and a `set` that changes
 nothing has the same shape as one that changes everything.
+
+Pointing the root at an address is one exported piece, `PutRecord`: the
+upsert of the root's `A` record and the wait for `INSYNC`, with
+`RecordDetail` the one spelling of what it did. `space move` (D18) calls it
+for a space that holds the apex, to make the root follow the space to its
+new address, and writes the detail under its own step name; nothing else
+about the apex changes in a move.
 
 A failure stops the command at that step: the completed lines stay on stdout,
 the failed step's error is the diagnostic, and nothing is undone. A cloud
@@ -73,6 +84,12 @@ Deps}`, `Wait`, `Sudo`, `*host.CommandError`, and `*host.UnreachableError`.
 ## REQUIREMENTS
 
 - R-Q4D0-4OUV: Package `internal/apex` MUST export `Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) error`, and `Run` MUST take no writer other than `stdout`.
+
+- R-G26G-UM7C: Package `internal/apex` MUST export `PutRecord(ctx context.Context, deps seam.Deps, route53 cloud.Route53, zone cloud.Zone, root, address string) error` and `RecordDetail(root, address string) string`.
+
+- R-G3ED-8DY1: `apex.PutRecord` MUST call `route53.ChangeRecords` for `zone.ID` exactly once, with exactly one `cloud.RecordChange` whose `Action` is `cloud.ChangeUpsert` and whose `Record` has `root` as `Name`, `A` as `Type`, `space.RecordTTL` as `TTL`, and exactly `address` as `Values`; MUST then call `space.WaitInsync(ctx, deps, route53, changeID)` with the change id that call returned and return a nil error only after it returned one; MUST return a non-nil error from either unchanged, calling `ChangeStatus` not at all when `ChangeRecords` failed; and MUST call no other `route53` method; verified at least with a fake `Deps.After` that fires immediately and a recording fake `Route53` for the zone `Z09565073GHK8BYWQ1A78`, the root `ikigenba.dev`, and the address `3.141.27.86`, whose `ChangeStatus` reports `PENDING` once and then `INSYNC`, left with exactly that one change and two `ChangeStatus` calls for the returned change id, and by a `ChangeRecords` failing with a `*cloud.Error` whose message is `route53 ChangeResourceRecordSets: Throttling` giving that error unchanged.
+
+- R-G4M9-M5OQ: `apex.RecordDetail` MUST return `root`, ` -> `, `address`, and `, INSYNC` joined, verified at least by `RecordDetail("ikigenba.dev", "3.141.27.86")` being `ikigenba.dev -> 3.141.27.86, INSYNC`, so that `space.Step` with the name `apex` and that detail writes `apex: ok (ikigenba.dev -> 3.141.27.86, INSYNC)`.
 
 - R-4282-JQL9: Package `internal/apex` MUST export a `HolderStoppedError` struct whose fields are exactly `Domain string`, `Label string`, and `State cloud.InstanceState`, with the methods `Error() string`, returning `'<Domain>' holds the apex and is <State>`, `ExitCode() int`, returning 1, and `Detail() string`, returning `run 'devctl space start <Label>' first`, verified at least by reproducing `'sbx2.ikigenba.dev' holds the apex and is stopped` and `run 'devctl space start sbx2' first`.
 

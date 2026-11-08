@@ -22,8 +22,10 @@ inputs are plain values carried in one `Config`, so a caller cannot hand the
 host an inconsistent pair. Every key is set with its own `sudo opsctl config
 set KEY=VALUE`, in a fixed order, and the count of keys set is what the
 callers print. `Config.Opsctl` names the opsctl the keys are set with: empty,
-the `opsctl` on root's PATH; for `space create`, the release's own, by
-absolute path. The eleventh key, `host.apex`, is never touched by
+the `opsctl` on root's PATH; for `space create` and `space move` (D18), the
+release's own, by absolute path. A move sets only the five derived keys, with
+no email and no periods, because its host restore brings back the old host's
+`acme.email` and periods. The eleventh key, `host.apex`, is never touched by
 `Configure`: in this package only the single-key operations change it, for
 `apex set` and `apex clear`. The one exception is outside the package: create,
 clearing a restored store, deletes it with a direct `config del` run by the
