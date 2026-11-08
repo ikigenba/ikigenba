@@ -25,7 +25,7 @@ through. The upload is create-only and the cloud client publishes only a body
 that ends cleanly (D01), so every failure, a file that cannot be read,
 getfacl, find, tar or zstd, ends the body with an error instead, and nothing
 appears under `host/`; the rows say what they always said. The configuration
-archive takes the same path, though it is small.
+archive takes the same path; the rule has no size threshold.
 
 What a backup holds at once is bounded: file contents only in fixed copy
 buffers, the upload's one part (D01), and the output of getfacl and find,
@@ -36,8 +36,9 @@ input may run ahead of the files read and how far its output may run ahead of
 the upload. The second is one-sided: it bounds how far zstd's writes run
 ahead of the upload, and a test sees a breach only if zstd writes much more
 than the bound before the upload drains it, so a fake zstd makes one `Write`
-of at least 4 MiB and the fake upload takes 4 KiB per `Read`. The service archives of D12 and the service restore of D14 are not
-part of this: a service's `state/` still goes through memory, as before.
+of at least 4 MiB and the fake upload takes 4 KiB per `Read`. The service
+archives of D12 and the service restore of D14 stream the same way and state
+the same bounds.
 
 Owners and ACLs cross the D01 boundary as commands, so the gates prove them as
 an ordinary user who cannot chown. The backup reads them from `getfacl` and,
@@ -51,10 +52,15 @@ test observes them with `Lstat`. ACLs travel in the tar as the PAX records
 
 The restore takes the newest configuration archive, as it always has, and the
 accounts archive of the same timestamp text; a backup without one restores as
-before and says the backup holds none. The configuration archive is small and
-is still read whole. The accounts archive is never held: each time it is read
-it streams from the object through `zstd --quiet --decompress --stdout` into a
-tar reader, and it is read three times.
+before and says the backup holds none. Neither archive is ever held. The
+configuration archive is read once, in the `source` step: it streams from the
+object through `zstd --quiet --decompress --stdout` into a tar reader, each
+member is checked as it arrives, and each file's contents are written, as
+they arrive, below a staging directory, `/.opsctl-host-restore-<random>/`,
+which only root can enter; the `files` step renames both trees into place
+from there, so each restored file is the file the stream wrote, and the stage
+is gone when the restore returns. The accounts archive streams through zstd
+likewise, and it is read three times.
 
 The first read, the `accounts` step, validates every member as it arrives, its
 order included: `accounts.json` first, then the host keys, the key files, the
@@ -79,9 +85,12 @@ the host what the backup holds again.
 
 Nothing else in opsctl reads an object twice. It does here because the
 archive's order, host keys, key files, homes, folders, is not the restore's,
-groups, users, ssh, and the only other ways to meet it are to hold the archive
-or stage all of it on disk, which is what streaming removes; the price is
-decompressing the archive three times. Each later read must find the
+groups, users, ssh, and the only other ways to meet it are to hold the archive,
+which streaming forbids, or stage all of it on disk, as the configuration
+archive and the service restore of D14 do, where one tree replaces another
+whole; here homes and folders are put in place one at a time and their groups
+and users recreated over them as they arrive, so the price is decompressing
+the archive three times rather than staging every home at once. Each later read must find the
 `accounts.json` the first read found and members the first read's validation
 accepts; a failed download, corrupt data, a failing zstd or any discrepancy
 fails that step, leaving the steps and the groups or users before it in place,
@@ -89,13 +98,18 @@ and running the restore again converges. A tree is put in place only once all
 of it has arrived, so a failure mid-tree leaves its destination as it was, and
 at most one tree waits on disk beside its destination. What a restore holds at
 once is fixed copy buffers, the manifest, host keys and key files, and
-per-entry metadata, names, owners and ACL text for the setfacl input, which
-grows with the number of entries, not their size. Streaming makes the seams concurrent: the
+per-entry metadata of either archive, names, types, modes, owners, link
+targets and ACL text for the setfacl input, which grows with the number of
+entries, not their size. The configuration archive's bounds are the service
+restore's (D14): how far zstd's output may run ahead of the staged files, and
+how far past a bad member the restore reads. Streaming makes the seams concurrent: the
 backup's `PutObject` runs while its zstd `Execute` is in flight, and the
 `groups` and `users` steps run `setfacl`, `chown` and the `internal/accounts`
-calls while that step's zstd `Execute` is in flight, so `env.Execute` and the
-cloud client are used concurrently and a test's fakes must be safe for
-concurrent use.
+calls while that step's zstd `Execute` is in flight, and the `source` step
+writes its stage and reads its object while its zstd `Execute` is in flight,
+so `env.Execute` and the cloud client are used concurrently, a test's fake
+zstd writes to `Command.Stdout` when it is non-nil rather than returning its
+output in `Result.Stdout`, and a test's fakes must be safe for concurrent use.
 
 Neither generated services file, `/run/ikigenba/services.json` nor a per-app
 host's `/var/lib/ikigenba/services.json`, is archived or restored (D15,
@@ -182,3 +196,9 @@ synchronization proof.
 - R-V0YF-WTOC: When a retirement operational error occurs, the CLI MUST return exit 1, render completed report phases and any returned archive results on stdout, and append `<step>: failed: <reason>` followed by a newline when `FailedStep` is nonempty, using its name and the error's concise single-line cause without captured subprocess output. An operational failure during an attempted service, accounts or host archive MUST retain that failed archive result using its existing service, `accounts` or `host` row name; no additional failed phase row MUST duplicate it. The D02 diagnostic first line MUST be `opsctl: retire failed at <step>` when a failed phase or archive row identifies the failed step, or `opsctl: retire failed` for an interruption between completed steps, without repeating report findings; preworkflow failures MUST leave stdout empty and retain their specific reason in the diagnostic. Unattempted phases MUST have no row, no report MUST assert an uncompleted stop, synchronization, or backup succeeded, and captured subprocess output MUST appear only in D02 quoted stderr detail.
 - R-Z2AZ-45K0: Host backup and restore MUST preserve the certificate material already present rather than request certificate issuance, and retirement MUST neither terminate the machine nor run another project; a caller such as an installed `devctl` remains responsible for deciding what to do after the reported result.
 - R-V89U-7G4I: For a host with no discovered services and no declared databases, successful retirement MUST leave `Services` and `SyncedDatabases` empty, complete the Litestream stop phase, create only the accounts and configuration objects, and render exactly the `services: ok (none)`, `litestream: ok (stopped)`, `accounts:`, and `host:` lines, without enabling, disabling, masking, deleting, or restarting any unit.
+
+- R-9B1R-UEBT: In the `source` step `HostRestore` MUST call `GetObject` for the selected configuration object once, and for it at no other time, and MUST read it by executing through `env.Execute` `zstd --quiet --decompress --stdout` (zstd(1): `--decompress` decompresses standard input when no file is named, `--stdout` writes the result to standard output) with a `host.Command` whose `Stdin` yields the bytes of the reader that call returned, in order, as they are read from it, and whose `Stdout` is non-nil; it MUST read that object reader only while that `Execute` runs, so a fake whose reader records each read finds none before the call or after it returns, and MUST read the tar zstd writes through to its end before `SourceReady` becomes true, a zstd that cannot be started or exits nonzero failing the `source` step (R-UL3Q-XT1B).
+- R-9C9O-862I: In the `source` step `HostRestore` MUST write the contents of each regular file member of the configuration archive, as they arrive, to a file below one directory it creates directly under `env.Root` whose name begins `.opsctl-host-restore-` and whose mode, set whatever the process umask, is `0700`, one of the temporary entries R-TXXN-O5Y4 allows, and the `files` step MUST put `/etc/ikigenba/` and `/etc/letsencrypt/` in place from it as R-TU9Y-IUQ1 prescribes. A failure creating or writing that directory or a file below it MUST fail the `source` step, leaving `SourceReady` false and the host otherwise untouched.
+- R-9DHK-LXT7: Whenever a `Write` that the `source` step's zstd makes to its `Command.Stdout` returns, every byte of a regular file member of the configuration archive that the tar holds more than 1048576 bytes before the end of what that zstd has written so far MUST already have been written to the file that, once the `files` step has put both trees in place, is that member at its destination under `/etc/ikigenba/` or `/etc/letsencrypt/` (the same file by `os.SameFile`), so a test that records at each such return the size of every regular file under `env.Root` finds that file grown with the stream, never written only once its contents were whole.
+- R-13U4-O1ML: `HostRestore` MUST reject the configuration archive in the `source` step once it has read the header of a member, any extended header before it included, that with the members before it is one of these: a name that is absolute, holds a `..` component, or is neither `etc/ikigenba` nor `etc/letsencrypt` nor below either; a name an earlier member already took; a type other than regular file, directory or symbolic link; a directory or symbolic link whose size is nonzero; a name that passes through an earlier member that is not a directory; or a member that is not a directory and that an earlier member's name passes through. The `Write`s that zstd makes to its `Command.Stdout` MUST then accept in all no more than 1048576 bytes of the tar past the end of that header, every later `Write` returning an error, so a fake zstd that writes such a header followed by 8 MiB more finds at most 1 MiB of it taken; the failed `source` step's error MUST be that rejection, from which `errors.As` extracts no `*host.CommandError`, with `SourceReady` false and the host untouched.
+- R-1521-1TDA: Whenever a `Read` that the `source` step's zstd makes from its `Command.Stdin` returns, the bytes that `HostRestore` has read from the configuration object's reader MUST exceed the bytes that `Stdin` has yielded by at most 1048576, so a fake zstd that reads 4 KiB at a time and a fake object reader that counts what is read from it find at most 1 MiB of compressed input held between them whatever the object's size.
