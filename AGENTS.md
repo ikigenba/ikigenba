@@ -64,6 +64,8 @@ Each sub-project's code is derived from its `specs/`; a hand-written file desync
 
 A sub-project's design follows the conventions in `shape/`; one that departs from an entry records the departure and why.
 
+Memory does not grow with the data: a file, an archive, a database copy or a process's output is streamed through fixed buffers, never held whole, and what must exist whole first goes to disk, as `shape/README.md`, Bounded work, sets out. A design that cannot say what each operation holds at once is not finished. This has been missed in design review and found in production more than once.
+
 Stories and designs are working material, not a constraint. Only the build run and the audit treat them as read-only. Never cite a requirement as a reason something cannot be done: it is a decision we made and can unmake, so argue for or against it on its merits. Changing one costs a re-minted id.
 
 Versions are data. No test, fixture or requirement names a release version; a test that needs it reads the value the source declares and derives the rest from that.

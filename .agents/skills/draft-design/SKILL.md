@@ -134,6 +134,9 @@ Verification must establish:
   a requirement that would guard it is removed, not tightened.
 - Behavioral requirements state observable outcomes at public seams, never how
   the code produces them.
+- Memory is bounded. For every operation a verifier asks what it holds at
+  once and which requirement states that bound; one whose answer grows with
+  its data, or that no requirement bounds, is redesigned.
 - No requirement quotes copy or names a hook, and every copy constant is
   declared without a value (`spec`'s design format, "Copy").
 - The contract passes the declared gates. In a throwaway worktree, stub the
