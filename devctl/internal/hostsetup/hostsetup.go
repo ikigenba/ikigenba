@@ -103,6 +103,20 @@ func Configure(
 	return len(values), nil
 }
 
+// Restore restores the host backup, switches known hosts, and reapplies configuration.
+func Restore(ctx context.Context, h host.Host, step string, cfg Config, knownHosts string) (host.Host, int, error) {
+	program := cfg.Opsctl
+	if program == "" {
+		program = "opsctl"
+	}
+	if _, err := h.Sudo(ctx, step, program, "host", "restore"); err != nil {
+		return h, 0, err
+	}
+	h.KnownHosts = knownHosts
+	count, err := Configure(ctx, h, step, cfg)
+	return h, count, err
+}
+
 // SetKey sets one opsctl configuration key.
 func SetKey(ctx context.Context, target host.Host, step, key, value string) error {
 	_, err := target.Sudo(ctx, step, "opsctl", "config", "set", key+"="+value)

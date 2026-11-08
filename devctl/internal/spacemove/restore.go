@@ -43,11 +43,7 @@ func restoreHost(ctx context.Context, stdout io.Writer, p preflightResult, built
 	if !found {
 		return &NoHostBackupError{Bucket: p.root.Domain, Prefix: prefix}
 	}
-	if _, err := h.Sudo(ctx, "restore", release.Opsctl(p.sha), "host", "restore"); err != nil {
-		return err
-	}
-	h.KnownHosts = knownHosts
-	count, err = hostsetup.Configure(ctx, h, "restore", cfg)
+	h, count, err = hostsetup.Restore(ctx, h, "restore", cfg, knownHosts)
 	if err != nil {
 		return err
 	}

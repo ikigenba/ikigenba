@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"strings"
+	"unicode"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/build"
 	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
@@ -22,10 +25,16 @@ func Run(ctx context.Context, args []string, version string, stdout io.Writer, d
 		_, err := fmt.Fprint(stdout, usageText)
 		return err
 	}
+	deps = deps.Defaults()
 	result, err := preflight(ctx, deps, invocation)
 	if err != nil {
 		return err
 	}
+	dir, err := temporaryDirectory(deps)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
 	space.Step(stdout, "account", fmt.Sprintf("%s, %s, %s", result.root.Domain, result.root.Region, result.session.AccountID))
 	space.Step(stdout, "domain", fmt.Sprintf("zone %s %s", result.zone.Name, result.zone.ID))
 	built, err := build.Suite(ctx, result.checkout, result.sha, version)
@@ -46,5 +55,20 @@ func Run(ctx context.Context, args []string, version string, stdout io.Writer, d
 		return err
 	}
 	space.Step(stdout, "secrets", fmt.Sprintf("%d apps", len(entries)))
-	return provision(ctx, stdout, deps, invocation, result, built)
+	return provision(ctx, stdout, deps, invocation, result, built, dir)
+}
+
+func temporaryDirectory(deps seam.Deps) (string, error) {
+	base := deps.Getenv("TMPDIR")
+	if base == "" {
+		base = "/tmp"
+	}
+	if strings.ContainsFunc(base, unicode.IsSpace) {
+		return "", &RefusedError{Message: fmt.Sprintf("temporary directory '%s' holds whitespace", base)}
+	}
+	dir, err := os.MkdirTemp(base, "create.")
+	if err != nil {
+		return "", fmt.Errorf("create temporary directory: %w", err)
+	}
+	return dir, nil
 }

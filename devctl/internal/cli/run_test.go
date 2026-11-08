@@ -1156,6 +1156,12 @@ func checkoutDepsAt(root string) seam.Deps {
 	return withCreateRelease(seam.Deps{
 		EUID: 1,
 		Dir:  filepath.Join(root, "work"),
+		Getenv: func(key string) string {
+			if key == "TMPDIR" {
+				return filepath.Join(root, "work")
+			}
+			return ""
+		},
 		Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
 			if command.Path != "git" || !reflect.DeepEqual(command.Args, []string{"rev-parse", "--show-toplevel"}) {
 				return seam.Result{}, fmt.Errorf("unexpected command: %#v", command)

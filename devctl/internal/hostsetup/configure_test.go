@@ -166,7 +166,7 @@ func TestConfigureCountsOptionalKeysAndStopsAtFirstFailure(t *testing.T) {
 }
 
 func TestSingleKeyOperations(t *testing.T) {
-	// R-8OJ2-HJVV R-8PQY-VBMK R-8QYV-93D9 R-8TEO-0MUN
+	// R-8OJ2-HJVV R-8PQY-VBMK R-8QYV-93D9 R-7Z75-4ZIC
 	t.Run("set and delete each issue one exact command", func(t *testing.T) {
 		var commands []seam.Cmd
 		target := recordingHost(&commands, func(seam.Cmd) (seam.Result, error) {
@@ -263,7 +263,7 @@ func TestSingleKeyOperations(t *testing.T) {
 }
 
 func TestOnlySingleKeyOperationsCanNameHostApex(t *testing.T) {
-	// R-RU41-854B
+	// R-82UU-AAQF
 	var commands []seam.Cmd
 	deps := seam.Deps{Dir: "/work", Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
 		commands = append(commands, command)
@@ -272,6 +272,9 @@ func TestOnlySingleKeyOperationsCanNameHostApex(t *testing.T) {
 	target := host.Host{Address: "192.0.2.10", Deps: deps}
 	cfg := Config{Root: "example.test", Region: "us-east-1", ZoneID: "ZONE", Space: spaceref.Space{Label: "sbx", Domain: "sbx.example.test"}}
 	if _, err := Configure(context.Background(), target, "configuration", cfg); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := Restore(context.Background(), target, "restore", cfg, ""); err != nil {
 		t.Fatal(err)
 	}
 	for _, command := range logicalCommands(commands) {

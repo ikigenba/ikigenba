@@ -34,6 +34,9 @@ func TestSecretValuesNeverReachCLIStreamsOrCommands(t *testing.T) {
 		h.createRoleErr = errors.New("stop after secrets")
 		deps := h.deps()
 		deps.Getenv = func(name string) string {
+			if name == "TMPDIR" {
+				return h.tmp
+			}
 			if name != "CRM_API_KEY" {
 				t.Fatalf("Getenv(%q), want CRM_API_KEY", name)
 			}

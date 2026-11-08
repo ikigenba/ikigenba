@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/build"
@@ -12,7 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
 )
 
-func provision(ctx context.Context, stdout io.Writer, deps seam.Deps, invocation invocation, result preflightResult, built build.Release) error {
+func provision(ctx context.Context, stdout io.Writer, deps seam.Deps, invocation invocation, result preflightResult, built build.Release, dir string) error {
 	clients := result.session.Clients
 	roleName := space.RoleName(result.sp.Domain)
 	role := cloud.RoleSpec{Name: roleName, AssumeRolePolicy: AssumeRolePolicy, PermissionsBoundaryARN: result.boundaryARN}
@@ -58,7 +59,7 @@ func provision(ctx context.Context, stdout io.Writer, deps seam.Deps, invocation
 	}
 	space.Step(stdout, "records", fmt.Sprintf("created %s -> %s, INSYNC", strings.Join(space.RecordNames(result.sp.Domain), ", "), address.IP))
 
-	if err := runHostSteps(ctx, stdout, deps, result, address.IP, running.ID, invocation.acmeEmail, built); err != nil {
+	if err := runHostSteps(ctx, stdout, deps, result, address.IP, running.ID, invocation.acmeEmail, built, filepath.Join(dir, "known_hosts.launch")); err != nil {
 		return err
 	}
 	_, err = fmt.Fprintf(stdout, "%s %s\n", result.sp.Domain, address.IP)

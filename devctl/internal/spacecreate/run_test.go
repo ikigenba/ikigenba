@@ -88,11 +88,11 @@ func TestRunHelpIsExactAndDependencyFree(t *testing.T) {
 }
 
 func TestRunSuccessfulCreateUsesCurrentContracts(t *testing.T) {
-	// R-VOX7-JFYC R-V5AB-BWF1 R-V6I7-PO5Q R-V7Q4-3FWF R-V8Y0-H7N4
-	// R-VA5W-UZDT R-VBDT-8R4I R-C6UG-ZCVP R-1CBC-EGCS R-C82D-D4ME
-	// R-1DJ8-S83H R-1ER5-5ZU6 R-VIP7-JDKO R-CBQ2-IFUH
+	// R-140K-HX48 R-V5AB-BWF1 R-V6I7-PO5Q R-V7Q4-3FWF R-V8Y0-H7N4
+	// R-VA5W-UZDT R-18W6-1030 R-1CJV-6BB3 R-1EZN-XUSH R-C82D-D4ME
+	// R-1IND-360K R-1MB2-8H8N R-VIP7-JDKO R-CBQ2-IFUH
 	//
-	// R-EB4J-WN6C  R-YMOE-CCEO
+	// R-EB4J-WN6C  R-16GD-9GLM
 	f := newCreateFake(t)
 	f.objects = []cloud.Object{
 		{Key: "sbx1/host/2026-09-11T14:22:51.48120933Z.tar.zst", Modified: time.Unix(1, 0)},
@@ -217,7 +217,7 @@ func TestCreateStopsAtSecretsAndEmptyRestoreSkipsRestoreCommands(t *testing.T) {
 }
 
 func TestNewestBackupBreaksTimestampTieByKey(t *testing.T) {
-	// R-1CBC-EGCS
+	// R-1EZN-XUSH
 	f := newCreateFake(t)
 	when := time.Unix(1, 0)
 	f.objects = []cloud.Object{{Key: "sbx1/host/2026-09-12T14:22:51.50Z.tar.zst", Modified: when}, {Key: "sbx1/host/2026-09-12T14:22:51.5Z.tar.zst", Modified: when}, {Key: "sbx1/host/2026-09-12T14:22:51.5Z.accounts.tar.zst", Modified: when.Add(time.Hour)}, {Key: "sbx1/host/nested/2026-09-12T14:22:51.5Z.tar.zst", Modified: when.Add(time.Hour)}}
@@ -235,7 +235,7 @@ func resultSpace() spaceref.Space { return spaceref.Space{Label: "sbx1", Domain:
 type createFake struct {
 	t                                    *testing.T
 	commands                             []seam.Cmd
-	root                                 string
+	root, tmp                            string
 	stopErr                              error
 	events, remotes                      []string
 	openProfile, openRegion, stopAt      string
@@ -254,7 +254,7 @@ func newCreateFake(t *testing.T) *createFake {
 	mustWrite(t, filepath.Join(root, "infra", "terraform.tfvars.json"), `{"domain":"ikigenba.dev","region":"us-east-2"}`)
 	mustWrite(t, filepath.Join(root, "crm", "cmd", "crm", "main.go"), "package main\n")
 	mustWrite(t, filepath.Join(root, "crm", "etc", "manifest.toml"), "app = \"crm\"\n")
-	return &createFake{t: t, root: root}
+	return &createFake{t: t, root: root, tmp: t.TempDir()}
 }
 
 func mustWrite(t *testing.T, path, value string) {
@@ -289,7 +289,12 @@ func (f *createFake) event(name string) error {
 const createSHA = "4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a"
 
 func (f *createFake) deps() seam.Deps {
-	return seam.Deps{Dir: f.root, EUID: 1, Getenv: func(string) string { return "" }, Now: func() time.Time { return time.Unix(1, 0) }, After: immediateAfter, Exec: f.exec,
+	return seam.Deps{Dir: f.root, EUID: 1, Getenv: func(key string) string {
+		if key == "TMPDIR" {
+			return f.tmp
+		}
+		return ""
+	}, Now: func() time.Time { return time.Unix(1, 0) }, After: immediateAfter, Exec: f.exec,
 		Stream: func(_ context.Context, c seam.Cmd, w io.Writer) (seam.Result, error) {
 			f.commands = append(f.commands, c)
 			f.remotes = append(f.remotes, c.Args[len(c.Args)-1])
@@ -568,7 +573,7 @@ func TestCreatePropagatesCloudFailuresAndStops(t *testing.T) {
 }
 
 func TestCreateForwardsVersionIntoBuiltRelease(t *testing.T) {
-	// R-VOX7-JFYC
+	// R-140K-HX48
 	f := newCreateFake(t)
 	deps := f.deps()
 	exec := deps.Exec
@@ -654,7 +659,7 @@ func (f *createFake) TagRetired(context.Context, []string, string) error {
 }
 
 func TestCreateRejectsOtherKeysAsHostBackups(t *testing.T) {
-	// R-1CBC-EGCS R-1DJ8-S83H
+	// R-1EZN-XUSH R-1IND-360K
 	for _, key := range []string{"sbx1/host/2026-09-12T14:22:51.865067548Z.accounts.tar.zst", "sbx1/host/nested/backup.tar.zst", "other/host/backup.tar.zst", "sbx1/host/backup.zip", "sbx1/host/backup.1.tar.zst"} {
 		t.Run(key, func(t *testing.T) {
 			f := newCreateFake(t)

@@ -66,12 +66,13 @@ func TestCreateCLIUsagePrecedesCheckout(t *testing.T) {
 type commandHarness struct {
 	t             *testing.T
 	checkoutRoot  string
+	tmp           string
 	mutations     []string
 	createRoleErr error
 }
 
 func newCommandHarness(t *testing.T) *commandHarness {
-	h := &commandHarness{t: t, checkoutRoot: t.TempDir()}
+	h := &commandHarness{t: t, checkoutRoot: t.TempDir(), tmp: t.TempDir()}
 	h.write(filepath.Join("infra", "terraform.tfvars.json"), `{"domain":"ikigenba.dev","region":"us-east-2"}`)
 	return h
 }
@@ -95,7 +96,12 @@ func (h *commandHarness) addAppWithSecrets(name string, names ...string) {
 	h.write(filepath.Join(name, "etc", "manifest.toml"), "app = \""+name+"\"\nsecrets = ["+strings.Join(quoted, ",")+"]\n")
 }
 func (h *commandHarness) deps() seam.Deps {
-	return seam.Deps{Dir: h.checkoutRoot, EUID: 1, Getenv: func(string) string { return "" }, After: immediateD07After, Now: func() time.Time { return time.Unix(1, 0) }, Exec: func(_ context.Context, c seam.Cmd) (seam.Result, error) {
+	return seam.Deps{Dir: h.checkoutRoot, EUID: 1, Getenv: func(key string) string {
+		if key == "TMPDIR" {
+			return h.tmp
+		}
+		return ""
+	}, After: immediateD07After, Now: func() time.Time { return time.Unix(1, 0) }, Exec: func(_ context.Context, c seam.Cmd) (seam.Result, error) {
 		if result, handled, err := fakeCreateBuild(h.t, h.checkoutRoot, c); handled {
 			return result, err
 		}
@@ -498,6 +504,7 @@ type createPlatformFake struct {
 }
 
 func (f *createPlatformFake) fail(name string) error {
+	assertCreateTempEmpty(f.t, f.tmp)
 	f.calls = append(f.calls, name)
 	if name == f.stop {
 		return errors.New("stop " + name)
@@ -544,6 +551,7 @@ type completeCreateFake struct {
 	wholeSeconds                  bool
 	prefixes, remotes, parameters []string
 	fail                          string
+	commands                      []seam.Cmd
 }
 
 func (f *completeCreateFake) DescribeInstance(context.Context, string) (cloud.Instance, error) {
@@ -595,6 +603,10 @@ func (f *completeCreateFake) deps() seam.Deps {
 		return cloud.Clients{STS: f, EC2: f, IAM: f, SSM: f, S3: f, Route53: f}, nil
 	}
 	deps.Exec = func(ctx context.Context, c seam.Cmd) (seam.Result, error) {
+		if c.Path == "ssh" || c.Path == "scp" {
+			f.commands = append(f.commands, c)
+			writeCreateKnownHost(f.t, f.tmp, c)
+		}
 		if c.Path == "go" && f.fail == "build" {
 			return seam.Result{ExitCode: 1, Stderr: []byte("# github.com/ikigenba/ikigenba/dashboard/cmd/dashboard\ncmd/dashboard/main.go:41:2: undefined: render\n")}, nil
 		}
@@ -631,6 +643,8 @@ func (f *completeCreateFake) deps() seam.Deps {
 		return exec(ctx, c)
 	}
 	deps.Stream = func(_ context.Context, c seam.Cmd, w io.Writer) (seam.Result, error) {
+		f.commands = append(f.commands, c)
+		writeCreateKnownHost(f.t, f.tmp, c)
 		f.remotes = append(f.remotes, c.Args[len(c.Args)-1])
 		if _, err := io.WriteString(w, "activation output\n"); err != nil {
 			return seam.Result{}, err
@@ -655,7 +669,8 @@ func createInitialLines() string {
 }
 
 func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
-	// R-VOX7-JFYC R-V5AB-BWF1 R-VBDT-8R4I R-C6UG-ZCVP R-1CBC-EGCS R-1DJ8-S83H R-1ER5-5ZU6 R-VIP7-JDKO R-CBQ2-IFUH
+	// R-140K-HX48 R-V5AB-BWF1 R-18W6-1030 R-1CJV-6BB3 R-1EZN-XUSH R-1IND-360K R-1MB2-8H8N R-VIP7-JDKO R-CBQ2-IFUH
+	// R-16GD-9GLM R-1PYR-DSGQ
 	for _, tc := range []struct {
 		operand      string
 		wholeSeconds bool
@@ -689,6 +704,7 @@ func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
 		}
 		want += "activation output\n" + domain + " 18.118.7.42\n"
 		assertResult(t, got, 0, want, "")
+		assertCreateKnownHosts(t, f)
 		if len(f.parameters) != 8 {
 			t.Fatalf("parameters %v", f.parameters)
 		}
@@ -764,7 +780,7 @@ func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
 }
 
 func TestCreateFailuresKeepCompletedStepsThroughCLI(t *testing.T) {
-	// R-VOX7-JFYC R-V5AB-BWF1 R-V7Q4-3FWF R-C82D-D4ME R-1ER5-5ZU6 R-VIP7-JDKO
+	// R-140K-HX48 R-V5AB-BWF1 R-V7Q4-3FWF R-C82D-D4ME R-1MB2-8H8N R-VIP7-JDKO
 	for _, stop := range []string{"build", "secret", "launch", "init", "activate"} {
 		t.Run(stop, func(t *testing.T) {
 			f := newCompleteCreateFake(t)
@@ -853,7 +869,7 @@ func (f *completeCreateFake) DeleteObjects(context.Context, string, []string) er
 }
 
 func TestCreateUnlabelledReleaseThroughCLI(t *testing.T) {
-	// R-VOX7-JFYC R-T8UY-XV1Q
+	// R-140K-HX48 R-T8UY-XV1Q
 	f := newCompleteCreateFake(t)
 	deps := f.deps()
 	exec := deps.Exec
@@ -900,7 +916,7 @@ func (f *createListingFailure) ListObjects(ctx context.Context, bucket, prefix s
 }
 
 func TestCreateHostAndAppFailuresStopByUse(t *testing.T) {
-	// R-VBDT-8R4I R-C6UG-ZCVP R-1CBC-EGCS R-1DJ8-S83H
+	// R-18W6-1030 R-1CJV-6BB3 R-1EZN-XUSH R-1IND-360K
 	for _, tc := range []struct {
 		name, match, prefix, lastLine, absent string
 		configOrdinal                         int

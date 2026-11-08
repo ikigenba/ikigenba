@@ -14,11 +14,11 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
 )
 
-func runHostSteps(ctx context.Context, stdout io.Writer, deps seam.Deps, result preflightResult, address, instanceID, acmeEmail string, built build.Release) error {
+func runHostSteps(ctx context.Context, stdout io.Writer, deps seam.Deps, result preflightResult, address, instanceID, acmeEmail string, built build.Release, knownHosts string) error {
 	if err := space.WaitChecks(ctx, deps, result.session.Clients.EC2, instanceID); err != nil {
 		return err
 	}
-	target := host.Host{Address: address, Deps: deps}
+	target := host.Host{Address: address, Deps: deps, KnownHosts: knownHosts}
 	if err := target.Wait(ctx); err != nil {
 		return err
 	}
@@ -45,12 +45,10 @@ func runHostSteps(ctx context.Context, stdout io.Writer, deps seam.Deps, result 
 	}
 	selected, found := space.HostBackup(objects, prefix)
 	if !found {
+		target.KnownHosts = ""
 		space.Step(stdout, "restore", "no host backup")
 	} else {
-		if _, err := target.Sudo(ctx, "restore", release.Opsctl(result.sha), "host", "restore"); err != nil {
-			return err
-		}
-		configured, err = hostsetup.Configure(ctx, target, "restore", cfg)
+		target, configured, err = hostsetup.Restore(ctx, target, "restore", cfg, "")
 		if err != nil {
 			return err
 		}

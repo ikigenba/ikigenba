@@ -13,7 +13,7 @@ import (
 )
 
 func TestCreateAccountsOnlyListingSkipsAllRestores(t *testing.T) {
-	// R-1CBC-EGCS R-1DJ8-S83H
+	// R-1EZN-XUSH R-1IND-360K
 	f := newCompleteCreateFake(t)
 	f.onlyAccounts = true
 	got := invokeWithDeps(f.deps(), "space", "create", "staging", "--acme-email", "ops@ikigenba.dev")
@@ -31,7 +31,7 @@ func TestCreateAccountsOnlyListingSkipsAllRestores(t *testing.T) {
 }
 
 func TestMoveRejectsListingsWithoutHostTarball(t *testing.T) {
-	// R-I4AF-RKNI R-I32J-DSWT
+	// R-LXP7-5B5C R-LU1H-ZZX9
 	for _, key := range []string{"", "sbx1/host/2026-11-08T18:29:41.222933531Z.accounts.tar.zst", "sbx1/host/nested/backup.tar.zst", "other/host/backup.tar.zst", "sbx1/host/backup.zip", "sbx1/host/backup.1.tar.zst", "sbx1/host/latest.tar.zst"} {
 		t.Run(key, func(t *testing.T) {
 			f := newMoveFake(t)
@@ -65,7 +65,7 @@ func TestMoveRejectsListingsWithoutHostTarball(t *testing.T) {
 }
 
 func TestMoveHostBackupSelectionBreaksTieByKey(t *testing.T) {
-	// R-I32J-DSWT
+	// R-LU1H-ZZX9
 	f := newMoveFake(t)
 	when := time.Unix(1, 0)
 	f.hostObjects = []cloud.Object{

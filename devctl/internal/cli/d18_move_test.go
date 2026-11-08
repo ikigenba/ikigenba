@@ -468,9 +468,9 @@ func expectedMove(stopped, apex, noAddress bool, absentApp string) string {
 }
 
 func TestMoveSuccessfulFlows(t *testing.T) {
-	// R-K6AR-U5BF R-G0YK-GUGN R-VQ53-X7P1 R-KKXK-FE7R R-CFDR-NR2K
+	// R-K6AR-U5BF R-G0YK-GUGN R-LRLP-8GFV R-KKXK-FE7R R-CFDR-NR2K
 	// R-338C-KBL6 R-KOL9-KPFU R-KPT5-YH6J R-KS8Y-Q0NX R-KTGV-3SEM
-	// R-KUOR-HK5B R-CJ1G-T2AN R-I32J-DSWT R-KZKD-0N43 R-I5IC-5CE7
+	// R-KUOR-HK5B R-CJ1G-T2AN R-LU1H-ZZX9 R-KZKD-0N43 R-M1CW-AMDF
 	// R-CLH9-KLS1 R-L382-5YC6 R-CP4Y-PX04 R-CNX2-C59F R-KIHR-NUQD
 	for _, tc := range []struct {
 		name, operand                       string
@@ -702,9 +702,9 @@ func TestMoveReleaseAndPreflightFailures(t *testing.T) {
 }
 
 func TestMoveStopsAtFailureAndKeepsCompletedSteps(t *testing.T) {
-	// R-VQ53-X7P1 R-CFDR-NR2K R-338C-KBL6 R-KOL9-KPFU R-KPT5-YH6J
-	// R-KS8Y-Q0NX R-KTGV-3SEM R-I32J-DSWT R-I4AF-RKNI R-KZKD-0N43
-	// R-I5IC-5CE7 R-CLH9-KLS1 R-CP4Y-PX04 R-KIHR-NUQD R-CNX2-C59F
+	// R-LRLP-8GFV R-CFDR-NR2K R-338C-KBL6 R-KOL9-KPFU R-KPT5-YH6J
+	// R-KS8Y-Q0NX R-KTGV-3SEM R-LU1H-ZZX9 R-LXP7-5B5C R-KZKD-0N43
+	// R-M1CW-AMDF R-CLH9-KLS1 R-CP4Y-PX04 R-KIHR-NUQD R-CNX2-C59F
 	for _, stage := range []string{"retire", "stop", "describe " + moveOldID, "tag", "launch", "allocate", "associate", "checks " + moveNewID, "restore", "records", "init", "activate"} {
 		t.Run(stage, func(t *testing.T) {
 			f := newMoveFake(t)
@@ -770,7 +770,7 @@ func TestMoveStopsAtFailureAndKeepsCompletedSteps(t *testing.T) {
 }
 
 func TestMoveTypedErrorsAndWrappedTemporaryFailure(t *testing.T) {
-	// R-K7IO-7X24 R-I4AF-RKNI R-KIHR-NUQD R-KH9V-A2ZO
+	// R-K7IO-7X24 R-LXP7-5B5C R-KIHR-NUQD R-KH9V-A2ZO
 	_ = spacemove.NoHostBackupError(struct{ Bucket, Prefix string }{})
 	e := &spacemove.NoHostBackupError{Bucket: "ikigenba.dev", Prefix: "sbx1/host/"}
 	if e.Error() != "restore: no host backup under s3://ikigenba.dev/sbx1/host/" || e.ExitCode() != 1 {
@@ -804,7 +804,7 @@ func TestMoveTypedErrorsAndWrappedTemporaryFailure(t *testing.T) {
 
 func TestMoveCloudFailuresReturnUnchanged(t *testing.T) {
 	// R-KEU2-IJIA R-KG1Y-WB8Z R-KKXK-FE7R R-338C-KBL6 R-KOL9-KPFU
-	// R-KPT5-YH6J R-KS8Y-Q0NX R-KTGV-3SEM R-I32J-DSWT R-KZKD-0N43 R-I5IC-5CE7
+	// R-KPT5-YH6J R-KS8Y-Q0NX R-KTGV-3SEM R-LU1H-ZZX9 R-KZKD-0N43 R-M1CW-AMDF
 	for _, stage := range []string{"open", "sts", "zone", "template", "boundary", "instances", "addresses", "apex", "start", "describe " + moveOldID, "checks " + moveOldID, "stop", "tag", "launch", "describe " + moveNewID, "allocate", "associate", "checks " + moveNewID, "objects staging/host/", "records", "insync", "objects staging/auth/", "objects staging/sites/"} {
 		t.Run(stage, func(t *testing.T) {
 			f := newMoveFake(t)
@@ -823,7 +823,7 @@ func TestMoveCloudFailuresReturnUnchanged(t *testing.T) {
 }
 
 func TestMoveRemoteFailuresOmitFailedStep(t *testing.T) {
-	// R-KTGV-3SEM R-CJ1G-T2AN R-I32J-DSWT R-I5IC-5CE7 R-CP4Y-PX04 R-KIHR-NUQD
+	// R-KTGV-3SEM R-CJ1G-T2AN R-LU1H-ZZX9 R-M1CW-AMDF R-CP4Y-PX04 R-KIHR-NUQD
 	for _, tc := range []struct {
 		name, remote, marker string
 		restored             bool
