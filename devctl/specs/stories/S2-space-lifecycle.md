@@ -1068,7 +1068,17 @@ build leaves the space where it was.
 
 Then the old host goes. Over ssh, `sudo opsctl retire` takes its final
 backup, as destroy has it do; it runs on every move, because running it
-again is safe and its backup is the one the new host is restored from. The
+again is safe. The opsctl on the old host is whatever release it runs, and
+that may be older than the one being moved to, whose host restore needs
+what an older host backup lacks, such as the host's accounts. So the
+`backup` step then has the release being moved to take one more host
+backup: devctl asks the old host its architecture with `uname -m`
+(`x86_64` is `amd64`, `aarch64` is `arm64`), compiles that release's
+opsctl for it on the developer's machine, copies it to a temporary file
+under `/tmp` on the old host, runs `host backup` with it as root, and
+removes the file. That backup is the newest in the bucket and the one the
+new host is restored from. The copy is not part of the release, which
+stays arm64 only, and the binary never lands in `dist/`. The
 `stop` step stops the old instance, and the `tag` step tags it and its
 Elastic IP `Retired=<RFC3339 timestamp>`. The old instance and its address
 are not removed: they stay, stopped and retired, until `space destroy`
@@ -1085,17 +1095,17 @@ On the new host, the release's own opsctl sets the five keys derived from
 the root, the zone, and the space, `host.name`, `dns.provider`, `dns.zones`,
 `aws.region`, and `backup.s3_uri`; the space has no `--acme-email` here, and
 its address for the CA and its backup periods come from the old host. The
-`restore` step then has it run `host restore` over the newest host backup
-in the bucket, the one retire has just written, which brings back the old
-host's store, `acme.email`, the backup periods and `host.apex` among it,
-with its certificate, its users and groups, their authorized keys and
+`restore` step then has it run `host restore` over the newest host backup in
+the bucket, the one the `backup` step has just written, which brings back
+the old host's store, `acme.email`, the backup periods and `host.apex` among
+it, with its certificate, its users and groups, their authorized keys and
 homes, `/srv`, and the old host's sshd host keys, and restarts sshd; and
 then sets the five keys again, so devctl's values win. Unlike create, move
 keeps `host.apex`: a space that held the apex still holds it. Only after the
 host restore does the `records` step point the space's records at the new
 address and wait for `INSYNC`, so that the new host answers at the space's
-names with the old host's identity. Then `init`, each app's data put back
-as the rebuild story does it, and the release activated, as create does.
+names with the old host's identity. Then `init`, each app's data put back as
+the rebuild story does it, and the release activated, as create does.
 
 The new host presents the old host's sshd host key from its host restore
 on. devctl's ssh to it keeps working through the rest of the move, and
@@ -1122,6 +1132,7 @@ account: ok (ikigenba.dev, us-east-2, 295229566359)
 domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
 build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 retire: ok (opsctl retire)
+backup: ok (opsctl host backup, amd64)
 stop: ok (i-0a1b2c3d4e5f60718 stopped)
 tag: ok (i-0a1b2c3d4e5f60718 and elastic ip 18.220.10.5 Retired=2026-11-08T18:30:00Z)
 instance: ok (i-0e5d4c3b2a1f09876 running, 3.22.140.61)
@@ -1165,8 +1176,9 @@ Preconditions:
 - The space's instance `i-0a1b2c3d4e5f60718` is `running` with the Elastic
   IP `18.220.10.5`, and it is the only instance tagged
   `Space=staging.ikigenba.dev` that is not terminated. It runs the eight
-  apps of `release-87`, and it does not hold the apex. The role and instance
-  profile `staging.ikigenba.dev` exist.
+  apps of an earlier release on `x86_64`, with that release's `opsctl`, and
+  it does not hold the apex. The role and instance profile
+  `staging.ikigenba.dev` exist.
 - The local repository's newest `release-<N>` tag is `release-87`, at
   `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, where the suite builds and
   holds the apps `auth`, `dummy`, `events`, `mcp`, `repos`, `scripts`,
@@ -1178,8 +1190,16 @@ Postconditions:
 
 - `dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` is in the checkout.
 - `sudo opsctl retire` has been run on the old host over ssh and exited 0,
-  so `staging/host/2026-11-08T18:29:41Z.tar.zst` and a new object under
-  `staging/<app>/` for each of the eight apps are in the bucket.
+  so a new object under `staging/<app>/` for each of the eight apps and a
+  host backup of its own are in the bucket.
+- Then `uname -m` on the old host printed `x86_64`; the opsctl of
+  `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, compiled for `linux/amd64`,
+  was copied to a temporary file under `/tmp` there, run as root with
+  `host backup`, which exited 0, and the file was removed. So
+  `staging/host/2026-11-08T18:29:41Z.tar.zst`, with the accounts archive
+  beside it, is the newest host backup in the bucket. The developer's
+  machine keeps no copy of that binary; it never landed in `dist/`, which
+  holds only the release.
 - `i-0a1b2c3d4e5f60718` is `stopped` and tagged
   `Retired=2026-11-08T18:30:00Z` beside its `Domain` and `Space` tags; the
   Elastic IP `18.220.10.5` is still associated with it and tagged the same.
@@ -1215,8 +1235,9 @@ Postconditions:
 
 A stopped host cannot take its final backup, so move starts it first, as
 `space start` would, and the `start` step reports it; then retire runs on
-it and the move goes on as for a running space. The instance comes back at
-its Elastic IP, so retire reaches it at the address it always had.
+it, then the `backup` step, and the move goes on as for a running space. The
+instance comes back at its Elastic IP, so retire reaches it at the address
+it always had.
 
 Command:
 
@@ -1232,6 +1253,7 @@ domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
 build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 start: ok (i-0b2c3d4e5f6071829 running, status checks passed)
 retire: ok (opsctl retire)
+backup: ok (opsctl host backup, amd64)
 stop: ok (i-0b2c3d4e5f6071829 stopped)
 ...
 sbx2.ikigenba.dev i-0e5d4c3b2a1f09876 3.141.27.86
@@ -1248,7 +1270,8 @@ Preconditions:
 Postconditions:
 
 - `i-0b2c3d4e5f6071829` was started and passed its status checks before
-  `sudo opsctl retire` was run on it over ssh. It is then `stopped` and
+  `sudo opsctl retire`, and then the `backup` step's `host backup`, were
+  run on it over ssh. It is then `stopped` and
   retired, as in the story above.
 - Otherwise as for moving a running space.
 
@@ -1281,6 +1304,7 @@ account: ok (ikigenba.dev, us-east-2, 295229566359)
 domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
 build: ok (dist/9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c.tar.xz)
 retire: ok (opsctl retire)
+backup: ok (opsctl host backup, amd64)
 stop: ok (i-0a1b2c3d4e5f60718 stopped)
 tag: ok (i-0a1b2c3d4e5f60718 and elastic ip 18.220.10.5 Retired=2026-11-08T18:30:00Z)
 ...
@@ -1343,6 +1367,7 @@ account: ok (ikigenba.dev, us-east-2, 295229566359)
 domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
 build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 retire: ok (opsctl retire)
+backup: ok (opsctl host backup, amd64)
 stop: ok (i-0c9e94542d98846a8 stopped)
 tag: ok (i-0c9e94542d98846a8 and elastic ip 18.118.7.42 Retired=2026-11-08T18:30:00Z)
 ...
@@ -1543,6 +1568,63 @@ Postconditions:
 
 - Nothing has changed. No AWS call was made.
 
+## A developer's move cannot take the host backup
+
+The `backup` step comes after retire and before the old host is stopped, so
+when it fails the old host is still running, as retire left it, and no new
+instance has been launched. The step fails when the old host's `uname -m`
+names an architecture other than `x86_64` or `aarch64`, when the release's
+opsctl does not compile for it, or when copying, running, or removing the
+uploaded binary fails; here the release's `host backup` itself exits 1, and
+what it wrote to its standard error is quoted. The uploaded binary is
+removed from the host even so. A failure to remove it fails the step too.
+
+Command:
+
+```
+$ devctl space move staging
+```
+
+Output:
+
+```
+account: ok (ikigenba.dev, us-east-2, 295229566359)
+domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
+build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+retire: ok (opsctl retire)
+devctl: backup: ssh ec2-user@18.220.10.5 sudo /tmp/tmp.Ab12Cd34Ef host backup: exit status 1
+
+> opsctl: host backup: upload failed
+```
+
+Exits 1. The `ok` lines are on stdout; the rest is on stderr. The
+temporary file's name is the one the old host's `mktemp` gave. An
+architecture devctl does not know gives the single line `devctl: backup:
+host architecture 'riscv64' is neither x86_64 nor aarch64` after `retire`
+and compiles nothing.
+
+Preconditions:
+
+- As for moving a running space: the space's instance
+  `i-0a1b2c3d4e5f60718` is `running` with the Elastic IP `18.220.10.5`, and
+  `uname -m` there prints `x86_64`.
+- The release's `host backup` on the old host fails, writing `opsctl: host
+  backup: upload failed` to its standard error.
+
+Postconditions:
+
+- `sudo opsctl retire` has been run on the old host over ssh and exited 0:
+  the host is retired as opsctl leaves it, and its backups are in the
+  bucket.
+- The release's opsctl was compiled for `linux/amd64`, copied to
+  `/tmp/tmp.Ab12Cd34Ef` on the old host, and run there as root with `host
+  backup`; then the file was removed from the host.
+- `i-0a1b2c3d4e5f60718` is still `running`; it was not stopped, and neither
+  it nor its Elastic IP is tagged `Retired`. No instance was launched and no
+  address allocated; the records, the secrets, and the role are untouched.
+- Nothing undoes the retire. Running `space move staging` again, once the
+  cause is fixed, runs retire again, which is safe, and goes on from there.
+
 ## A developer's move fails part-way
 
 A move stops at the first step that fails, as create and destroy do, and
@@ -1565,6 +1647,7 @@ account: ok (ikigenba.dev, us-east-2, 295229566359)
 domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
 build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 retire: ok (opsctl retire)
+backup: ok (opsctl host backup, amd64)
 stop: ok (i-0c9e94542d98846a8 stopped)
 tag: ok (i-0c9e94542d98846a8 and elastic ip 18.118.7.42 Retired=2026-11-08T18:30:00Z)
 devctl: ec2 RunInstances: InsufficientInstanceCapacity
@@ -1580,7 +1663,7 @@ Preconditions:
 - The space's instance `i-0c9e94542d98846a8` is `running` with the Elastic
   IP `18.118.7.42`, and it is the only instance tagged
   `Space=sbx1.ikigenba.dev` that is not terminated; `opsctl` is installed on
-  it.
+  it, and `uname -m` there prints `x86_64`.
 - The local repository's newest `release-<N>` tag is `release-87`, at
   `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, where the suite builds.
 - The developer's ssh configuration can reach the instance as `ec2-user`.
@@ -1588,8 +1671,9 @@ Preconditions:
 
 Postconditions:
 
-- `sudo opsctl retire` has been run on the old host over ssh and exited 0,
-  so its final backup is in the bucket under `sbx1/`.
+- `sudo opsctl retire` and then the release's `host backup` have been run
+  on the old host over ssh and exited 0, so its final backups are in the
+  bucket under `sbx1/`, and the uploaded binary was removed from the host.
 - `i-0c9e94542d98846a8` is `stopped` and tagged
   `Retired=2026-11-08T18:30:00Z` beside its `Domain` and `Space` tags; its
   Elastic IP is still associated with it and tagged the same. No instance
