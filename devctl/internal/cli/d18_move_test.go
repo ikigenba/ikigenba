@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -33,12 +34,13 @@ const moveActivation = "opaque one\nopaque two\nopaque three\nopaque four\nopaqu
 const expectedMoveUsage = `Usage: devctl space move <space> [--release <sha|tag>]
 
 Move the space to a new instance launched from the current launch template:
-build the release, have the current host take its final backup with opsctl
-retire, stop it and tag it and its Elastic IP Retired, launch the new instance
-with a new Elastic IP, copy and unpack the release there, restore the host
-backup, point the space's records at the new address, restore each app's data,
-and activate the release. The retired instance stays, stopped, as the way
-back until space destroy removes it. Completed steps remain on failure.
+build the release, have the current host retire with opsctl retire and take
+a host backup with the release's own opsctl, stop it and tag it and its
+Elastic IP Retired, launch the new instance with a new Elastic IP, copy and
+unpack the release there, restore the host backup, point the space's records
+at the new address, restore each app's data, and activate the release. The
+retired instance stays, stopped, as the way back until space destroy removes
+it. Completed steps remain on failure.
 
 Options:
   --release <sha|tag>     the release to deploy; the newest release-<N> tag otherwise
@@ -60,6 +62,13 @@ type moveFake struct {
 	addresses                  []cloud.Address
 	apex, apexOther            bool
 	backup                     bool
+	machine, remoteTemp        string
+	onlyAccounts               bool
+	hostObjects                []cloud.Object
+	toolCommands               []seam.Cmd
+	allCommands                []seam.Cmd
+	backupCommands             []seam.Cmd
+	backupWorktree             string
 	absentApp                  string
 	oldState                   cloud.InstanceState
 	events                     []string
@@ -81,7 +90,7 @@ func newMoveFake(t *testing.T) *moveFake {
 	for _, app := range createApps {
 		h.addAppWithSecrets(app)
 	}
-	return &moveFake{t: t, h: h, ctx: t.Context(), tmp: t.TempDir(), tags: "release-86\nrelease-87\nrelease-88-rc1\n", sha: createSHA, backup: true, oldState: cloud.StateRunning,
+	return &moveFake{t: t, h: h, ctx: t.Context(), tmp: t.TempDir(), tags: "release-86\nrelease-87\nrelease-88-rc1\n", sha: createSHA, machine: "x86_64", remoteTemp: "/tmp/tmp.Ab12Cd34Ef", backup: true, oldState: cloud.StateRunning,
 		instances: []cloud.Instance{{ID: moveOldID, Space: "staging.ikigenba.dev", State: cloud.StateRunning, Address: moveOldIP}},
 		addresses: []cloud.Address{{AllocationID: "eipalloc-0123456789abcdef0", IP: moveOldIP, Space: "staging.ikigenba.dev"}}, cause: errors.New("move sentinel")}
 }
@@ -174,6 +183,10 @@ func (f *moveFake) checkTransport(c seam.Cmd) {
 	}
 }
 func (f *moveFake) exec(ctx context.Context, c seam.Cmd) (seam.Result, error) {
+	f.allCommands = append(f.allCommands, c)
+	if c.Path == "secret-tool" {
+		f.t.Fatal("move accessed secrets")
+	}
 	if c.Path == "git" && c.Args[0] == "tag" {
 		f.events = append(f.events, "tags")
 		return seam.Result{Stdout: []byte(f.tags)}, nil
@@ -185,6 +198,17 @@ func (f *moveFake) exec(ctx context.Context, c seam.Cmd) (seam.Result, error) {
 			return seam.Result{ExitCode: 1}, nil
 		}
 		return seam.Result{Stdout: []byte(f.sha + "\n")}, nil
+	}
+	if c.Path == "git" && len(c.Args) > 3 && c.Args[0] == "worktree" && c.Args[1] == "add" && slices.Contains(f.events, "retire") {
+		f.backupWorktree = c.Args[3]
+		f.toolCommands = append(f.toolCommands, c)
+	}
+	if c.Path == "go" && f.backupWorktree != "" && c.Dir == filepath.Join(f.backupWorktree, "opsctl") {
+		f.toolCommands = append(f.toolCommands, c)
+		return seam.Result{}, os.WriteFile(c.Args[3], []byte("backup binary"), 0600)
+	}
+	if c.Path == "git" && len(c.Args) > 3 && c.Args[0] == "worktree" && c.Args[1] == "remove" && c.Args[3] == f.backupWorktree {
+		f.toolCommands = append(f.toolCommands, c)
 	}
 	if c.Path == "go" && f.compileApp != "" && filepath.Base(c.Dir) == f.compileApp {
 		return seam.Result{ExitCode: 1, Stderr: []byte("# github.com/ikigenba/ikigenba/dashboard/cmd/dashboard\ncmd/dashboard/main.go:41:2: undefined: render\n")}, nil
@@ -207,13 +231,25 @@ func (f *moveFake) exec(ctx context.Context, c seam.Cmd) (seam.Result, error) {
 		f.t.Fatalf("unexpected process %#v", c)
 	}
 	f.checkTransport(c)
+	if strings.Contains(strings.Join(c.Args, " "), "ec2-user@"+moveOldIP) {
+		f.backupCommands = append(f.backupCommands, c)
+	}
 	if c.Path == "scp" {
+		if c.Args[len(c.Args)-1] == "ec2-user@"+moveOldIP+":"+f.remoteTemp {
+			return seam.Result{}, nil
+		}
 		if c.Args[len(c.Args)-2] != filepath.Join(f.h.checkoutRoot, "dist", f.sha+".tar.xz") {
 			f.t.Fatal(c)
 		}
 		return seam.Result{}, nil
 	}
 	remote := c.Args[len(c.Args)-1]
+	if remote == "'uname' '-m'" {
+		return seam.Result{Stdout: []byte(f.machine + "\n\n")}, nil
+	}
+	if remote == "'mktemp'" && strings.Contains(strings.Join(c.Args, " "), "ec2-user@"+moveOldIP) {
+		return seam.Result{Stdout: []byte(f.remoteTemp + "\n\n")}, nil
+	}
 	if f.failRemote != "" && strings.Contains(remote, f.failRemote) && f.restoreDone == f.failRestored {
 		return seam.Result{ExitCode: 1, Stderr: []byte("remote failure")}, nil
 	}
@@ -230,6 +266,8 @@ func (f *moveFake) exec(ctx context.Context, c seam.Cmd) (seam.Result, error) {
 	switch {
 	case remote == "'sudo' 'opsctl' 'retire'":
 		stage = "retire"
+	case strings.HasSuffix(remote, "'host' 'backup'"):
+		stage = "backup"
 	case strings.HasSuffix(remote, "'host' 'restore'"):
 		stage = "restore"
 	case strings.HasSuffix(remote, "'init'"):
@@ -296,6 +334,10 @@ func (f *moveFake) StartInstance(ctx context.Context, id string) error {
 	return f.call(ctx, "start")
 }
 func (f *moveFake) StopInstance(ctx context.Context, id string) error {
+	last := f.allCommands[len(f.allCommands)-1]
+	if last.Path != "ssh" || last.Args[len(last.Args)-1] != "'rm' '-f' '"+f.remoteTemp+"'" {
+		f.t.Fatal("stopped before backup cleanup", last)
+	}
 	if id != moveOldID {
 		f.t.Fatal(id)
 	}
@@ -350,10 +392,21 @@ func (f *moveFake) ListObjects(ctx context.Context, bucket, prefix string) ([]cl
 	if err := f.call(ctx, "objects "+prefix); err != nil {
 		return nil, err
 	}
+	if strings.HasSuffix(prefix, "/host/") && f.hostObjects != nil {
+		return f.hostObjects, nil
+	}
 	if !f.backup || prefix == "staging/"+f.absentApp+"/" {
 		return nil, nil
 	}
-	return []cloud.Object{{Key: prefix + "2026-11-07T18:29:41Z.tar.zst", Modified: time.Unix(1, 0)}, {Key: prefix + "2026-11-08T18:29:41Z.tar.zst", Modified: time.Unix(2, 0)}}, nil
+	objects := []cloud.Object{{Key: prefix + "2026-11-07T18:29:41Z.tar.zst", Modified: time.Unix(1, 0)}, {Key: prefix + "2026-11-08T18:29:41Z.tar.zst", Modified: time.Unix(2, 0)}}
+	if strings.HasSuffix(prefix, "/host/") {
+		accounts := cloud.Object{Key: prefix + "2026-11-08T18:29:41Z.accounts.tar.zst", Modified: time.Unix(3, 0)}
+		if f.onlyAccounts {
+			return []cloud.Object{accounts}, nil
+		}
+		objects = append(objects, accounts)
+	}
+	return objects, nil
 }
 func (f *moveFake) ChangeRecords(ctx context.Context, zone string, changes []cloud.RecordChange) (string, error) {
 	if !f.restoreDone || zone != moveZone {
@@ -389,7 +442,7 @@ func expectedMove(stopped, apex, noAddress bool, absentApp string) string {
 	if stopped {
 		s += "start: ok (" + moveOldID + " running, status checks passed)\n"
 	}
-	s += "retire: ok (opsctl retire)\nstop: ok (" + moveOldID + " stopped)\ntag: ok (" + moveOldID
+	s += "retire: ok (opsctl retire)\nbackup: ok (opsctl host backup, amd64)\nstop: ok (" + moveOldID + " stopped)\ntag: ok (" + moveOldID
 	if !noAddress {
 		s += " and elastic ip " + moveOldIP
 	}
@@ -411,9 +464,9 @@ func expectedMove(stopped, apex, noAddress bool, absentApp string) string {
 
 func TestMoveSuccessfulFlows(t *testing.T) {
 	// R-K6AR-U5BF R-G0YK-GUGN R-VQ53-X7P1 R-KKXK-FE7R R-KM5G-T5YG
-	// R-KNDD-6XP5 R-KOL9-KPFU R-KPT5-YH6J R-KS8Y-Q0NX R-KTGV-3SEM
-	// R-KUOR-HK5B R-KVWN-VBW0 R-KX4K-93MP R-KZKD-0N43 R-L0S9-EEUS
-	// R-L205-S6LH R-L382-5YC6 R-L4FY-JQ2V R-L5NU-XHTK R-KIHR-NUQD
+	// R-338C-KBL6 R-KOL9-KPFU R-KPT5-YH6J R-KS8Y-Q0NX R-KTGV-3SEM
+	// R-KUOR-HK5B R-KVWN-VBW0 R-4YBV-C7C7 R-KZKD-0N43 R-50RO-3QTL
+	// R-L205-S6LH R-L382-5YC6 R-34G8-Y3BV R-FGDR-NL6B R-KIHR-NUQD
 	for _, tc := range []struct {
 		name, operand                       string
 		stopped, apex, apexOther, noAddress bool
@@ -451,7 +504,7 @@ func TestMoveSuccessfulFlows(t *testing.T) {
 			if tc.stopped {
 				wantEvents = append(wantEvents, "start", "describe "+moveOldID, "checks "+moveOldID)
 			}
-			wantEvents = append(wantEvents, "retire", "stop", "describe "+moveOldID, "tag", "launch", "describe "+moveNewID, "allocate", "associate", "checks "+moveNewID, "objects staging/host/", "restore", "records", "insync", "init")
+			wantEvents = append(wantEvents, "retire", "backup", "stop", "describe "+moveOldID, "tag", "launch", "describe "+moveNewID, "allocate", "associate", "checks "+moveNewID, "objects staging/host/", "restore", "records", "insync", "init")
 			for _, app := range createApps {
 				wantEvents = append(wantEvents, "objects staging/"+app+"/")
 			}
@@ -520,7 +573,7 @@ func boolInt(b bool) int {
 }
 
 func TestMoveUsageBeforeAnyExternalAccess(t *testing.T) {
-	// R-K9YG-ZGJI R-KB6D-D8A7 R-KCE9-R00W R-KDM6-4RRL R-VK1M-0CZK
+	// R-K9YG-ZGJI R-320G-6JUH R-KCE9-R00W R-KDM6-4RRL R-VK1M-0CZK
 	for _, tc := range []struct {
 		args    []string
 		message string
@@ -632,9 +685,9 @@ func TestMoveReleaseAndPreflightFailures(t *testing.T) {
 }
 
 func TestMoveStopsAtFailureAndKeepsCompletedSteps(t *testing.T) {
-	// R-VQ53-X7P1 R-KM5G-T5YG R-KNDD-6XP5 R-KOL9-KPFU R-KPT5-YH6J
-	// R-KS8Y-Q0NX R-KTGV-3SEM R-KX4K-93MP R-KYCG-MVDE R-KZKD-0N43
-	// R-L0S9-EEUS R-L205-S6LH R-L4FY-JQ2V R-KIHR-NUQD R-L5NU-XHTK
+	// R-VQ53-X7P1 R-KM5G-T5YG R-338C-KBL6 R-KOL9-KPFU R-KPT5-YH6J
+	// R-KS8Y-Q0NX R-KTGV-3SEM R-4YBV-C7C7 R-4ZJR-PZ2W R-KZKD-0N43
+	// R-50RO-3QTL R-L205-S6LH R-34G8-Y3BV R-KIHR-NUQD R-FGDR-NL6B
 	for _, stage := range []string{"retire", "stop", "describe " + moveOldID, "tag", "launch", "allocate", "associate", "checks " + moveNewID, "restore", "records", "init", "activate"} {
 		t.Run(stage, func(t *testing.T) {
 			f := newMoveFake(t)
@@ -668,7 +721,7 @@ func TestMoveStopsAtFailureAndKeepsCompletedSteps(t *testing.T) {
 				assertResult(t, got, 1, moveInitial(), "devctl: retire: ssh ec2-user@"+moveOldIP+" sudo opsctl retire: exit status 1\n\n> opsctl: backup failed\n")
 			}
 			if stage == "launch" {
-				assertResult(t, got, 1, moveInitial()+"retire: ok (opsctl retire)\nstop: ok ("+moveOldID+" stopped)\ntag: ok ("+moveOldID+" and elastic ip "+moveOldIP+" Retired="+moveTime+")\n", "devctl: ec2 RunInstances: InsufficientInstanceCapacity\n")
+				assertResult(t, got, 1, moveInitial()+"retire: ok (opsctl retire)\nbackup: ok (opsctl host backup, amd64)\nstop: ok ("+moveOldID+" stopped)\ntag: ok ("+moveOldID+" and elastic ip "+moveOldIP+" Retired="+moveTime+")\n", "devctl: ec2 RunInstances: InsufficientInstanceCapacity\n")
 			}
 			if stage == "activate" && (!strings.HasPrefix(got.stderr, "devctl: activate: ssh ec2-user@"+moveNewIP+" sudo "+release.Opsctl(createSHA)+" activate "+createSHA+" release-87: exit status 1\n") || strings.Contains(got.stdout, "apex: ok")) {
 				t.Fatal(got)
@@ -700,7 +753,7 @@ func TestMoveStopsAtFailureAndKeepsCompletedSteps(t *testing.T) {
 }
 
 func TestMoveTypedErrorsAndWrappedTemporaryFailure(t *testing.T) {
-	// R-K7IO-7X24 R-KYCG-MVDE R-KIHR-NUQD R-KH9V-A2ZO
+	// R-K7IO-7X24 R-4ZJR-PZ2W R-KIHR-NUQD R-KH9V-A2ZO
 	_ = spacemove.NoHostBackupError(struct{ Bucket, Prefix string }{})
 	e := &spacemove.NoHostBackupError{Bucket: "ikigenba.dev", Prefix: "sbx1/host/"}
 	if e.Error() != "restore: no host backup under s3://ikigenba.dev/sbx1/host/" || e.ExitCode() != 1 {
@@ -733,8 +786,8 @@ func TestMoveTypedErrorsAndWrappedTemporaryFailure(t *testing.T) {
 }
 
 func TestMoveCloudFailuresReturnUnchanged(t *testing.T) {
-	// R-KEU2-IJIA R-KG1Y-WB8Z R-KKXK-FE7R R-KNDD-6XP5 R-KOL9-KPFU
-	// R-KPT5-YH6J R-KS8Y-Q0NX R-KTGV-3SEM R-KX4K-93MP R-KZKD-0N43 R-L0S9-EEUS
+	// R-KEU2-IJIA R-KG1Y-WB8Z R-KKXK-FE7R R-338C-KBL6 R-KOL9-KPFU
+	// R-KPT5-YH6J R-KS8Y-Q0NX R-KTGV-3SEM R-4YBV-C7C7 R-KZKD-0N43 R-50RO-3QTL
 	for _, stage := range []string{"open", "sts", "zone", "template", "boundary", "instances", "addresses", "apex", "start", "describe " + moveOldID, "checks " + moveOldID, "stop", "tag", "launch", "describe " + moveNewID, "allocate", "associate", "checks " + moveNewID, "objects staging/host/", "records", "insync", "objects staging/auth/", "objects staging/sites/"} {
 		t.Run(stage, func(t *testing.T) {
 			f := newMoveFake(t)
@@ -753,7 +806,7 @@ func TestMoveCloudFailuresReturnUnchanged(t *testing.T) {
 }
 
 func TestMoveRemoteFailuresOmitFailedStep(t *testing.T) {
-	// R-KTGV-3SEM R-KVWN-VBW0 R-KX4K-93MP R-L0S9-EEUS R-L4FY-JQ2V R-KIHR-NUQD
+	// R-KTGV-3SEM R-KVWN-VBW0 R-4YBV-C7C7 R-50RO-3QTL R-34G8-Y3BV R-KIHR-NUQD
 	for _, tc := range []struct {
 		name, remote, marker string
 		restored             bool

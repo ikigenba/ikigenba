@@ -41,6 +41,7 @@ func restoreHost(ctx context.Context, stdout io.Writer, p preflightResult, built
 	if err != nil {
 		return err
 	}
+	objects = hostTarballs(objects, prefix)
 	if len(objects) == 0 {
 		return &NoHostBackupError{Bucket: p.root.Domain, Prefix: prefix}
 	}
@@ -87,4 +88,16 @@ func newestObject(objects []cloud.Object) cloud.Object {
 		return copyOf[i].Modified.After(copyOf[j].Modified)
 	})
 	return copyOf[0]
+}
+
+func hostTarballs(objects []cloud.Object, prefix string) []cloud.Object {
+	var selected []cloud.Object
+	for _, object := range objects {
+		name, ok := strings.CutPrefix(object.Key, prefix)
+		stem, suffix := strings.CutSuffix(name, ".tar.zst")
+		if ok && suffix && !strings.ContainsAny(stem, "/.") {
+			selected = append(selected, object)
+		}
+	}
+	return selected
 }

@@ -540,6 +540,7 @@ var createApps = []string{"auth", "dummy", "events", "mcp", "repos", "scripts", 
 type completeCreateFake struct {
 	*commandHarness
 	backup                        bool
+	onlyAccounts                  bool
 	prefixes, remotes, parameters []string
 	fail                          string
 }
@@ -562,8 +563,15 @@ func (f *completeCreateFake) ListObjects(_ context.Context, bucket, prefix strin
 		f.t.Fatalf("bucket %s", bucket)
 	}
 	f.prefixes = append(f.prefixes, prefix)
+	if strings.HasSuffix(prefix, "/host/") && f.onlyAccounts {
+		return []cloud.Object{{Key: prefix + "2026-09-12T14:22:51Z.accounts.tar.zst", Modified: time.Unix(3, 0)}}, nil
+	}
 	if f.backup && prefix != "staging/sites/" {
-		return []cloud.Object{{Key: prefix + "old.tar.zst", Modified: time.Unix(1, 0)}, {Key: prefix + "new.tar.zst", Modified: time.Unix(2, 0)}}, nil
+		objects := []cloud.Object{{Key: prefix + "2026-09-11T14:22:51Z.tar.zst", Modified: time.Unix(1, 0)}, {Key: prefix + "2026-09-12T14:22:51Z.tar.zst", Modified: time.Unix(2, 0)}}
+		if strings.HasSuffix(prefix, "/host/") {
+			objects = append(objects, cloud.Object{Key: prefix + "2026-09-12T14:22:51Z.accounts.tar.zst", Modified: time.Unix(3, 0)})
+		}
+		return objects, nil
 	}
 	return nil, nil
 }
@@ -638,7 +646,7 @@ func createInitialLines() string {
 }
 
 func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
-	// R-VOX7-JFYC R-V5AB-BWF1 R-VBDT-8R4I R-VCLP-MIV7 R-VDTM-0ALW R-VG9E-RU3A R-VHHB-5LTZ R-VIP7-JDKO R-VJX3-X5BD
+	// R-VOX7-JFYC R-V5AB-BWF1 R-VBDT-8R4I R-VCLP-MIV7 R-4TG9-T4DF R-4VW2-KNUT R-4X3Y-YFLI R-VIP7-JDKO R-VJX3-X5BD
 	for _, operand := range []string{"sbx1", "sbx1.ikigenba.dev", "staging"} {
 		f := newCompleteCreateFake(t)
 		f.backup = operand == "staging"
@@ -650,7 +658,7 @@ func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
 		got := invokeWithDeps(f.deps(), "space", "create", operand, "--acme-email", "ops@ikigenba.dev")
 		restore := "restore: ok (no host backup)\n"
 		if f.backup {
-			restore = "restore: ok (host/new.tar.zst, 10 keys set again)\n"
+			restore = "restore: ok (host/2026-09-12T14:22:51Z.tar.zst, 10 keys set again)\n"
 		}
 		want := createInitialLines() + "secrets: ok (8 apps)\nrole: ok (" + domain + ")\ninstance: ok (i-0c9e94542d98846a8 running, 3.19.79.227)\naddress: ok (elastic ip 18.118.7.42 associated)\nrecords: ok (created " + domain + ", *." + domain + " -> 18.118.7.42, INSYNC)\nhost: ok (status checks passed, cloud-init done)\ncopy: ok (" + createSHA + ".tar.xz -> 18.118.7.42)\nunpack: ok (/opt/ikigenba/releases/" + createSHA + ")\nopsctl: ok (10 keys set)\n" + restore + "init: ok\n"
 		if f.backup {
@@ -739,7 +747,7 @@ func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
 }
 
 func TestCreateFailuresKeepCompletedStepsThroughCLI(t *testing.T) {
-	// R-VOX7-JFYC R-V5AB-BWF1 R-V7Q4-3FWF R-VF1I-E2CL R-VHHB-5LTZ R-VIP7-JDKO
+	// R-VOX7-JFYC R-V5AB-BWF1 R-V7Q4-3FWF R-VF1I-E2CL R-4X3Y-YFLI R-VIP7-JDKO
 	for _, stop := range []string{"build", "secret", "launch", "init", "activate"} {
 		t.Run(stop, func(t *testing.T) {
 			f := newCompleteCreateFake(t)
@@ -871,7 +879,7 @@ func (f *createListingFailure) ListObjects(ctx context.Context, bucket, prefix s
 }
 
 func TestCreateHostAndAppFailuresStopByUse(t *testing.T) {
-	// R-VBDT-8R4I R-VCLP-MIV7 R-VDTM-0ALW R-VG9E-RU3A
+	// R-VBDT-8R4I R-VCLP-MIV7 R-4TG9-T4DF R-4VW2-KNUT
 	for _, tc := range []struct {
 		name, match, prefix, lastLine, absent string
 		configOrdinal                         int

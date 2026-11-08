@@ -89,8 +89,8 @@ func TestRunHelpIsExactAndDependencyFree(t *testing.T) {
 
 func TestRunSuccessfulCreateUsesCurrentContracts(t *testing.T) {
 	// R-VOX7-JFYC R-V5AB-BWF1 R-V6I7-PO5Q R-V7Q4-3FWF R-V8Y0-H7N4
-	// R-VA5W-UZDT R-VBDT-8R4I R-VCLP-MIV7 R-VDTM-0ALW R-VF1I-E2CL
-	// R-VG9E-RU3A R-VHHB-5LTZ R-VIP7-JDKO R-VJX3-X5BD
+	// R-VA5W-UZDT R-VBDT-8R4I R-VCLP-MIV7 R-4TG9-T4DF R-VF1I-E2CL
+	// R-4VW2-KNUT R-4X3Y-YFLI R-VIP7-JDKO R-VJX3-X5BD
 	//
 	// R-EB4J-WN6C  R-YMOE-CCEO
 	f := newCreateFake(t)
@@ -217,15 +217,15 @@ func TestCreateStopsAtSecretsAndEmptyRestoreSkipsRestoreCommands(t *testing.T) {
 }
 
 func TestNewestBackupBreaksModifiedTieByKey(t *testing.T) {
-	// R-VDTM-0ALW
+	// R-4TG9-T4DF
 	f := newCreateFake(t)
 	when := time.Unix(1, 0)
-	f.objects = []cloud.Object{{Key: "sbx1/host/a", Modified: when}, {Key: "sbx1/host/z", Modified: when}}
+	f.objects = []cloud.Object{{Key: "sbx1/host/a.tar.zst", Modified: when}, {Key: "sbx1/host/z.tar.zst", Modified: when}, {Key: "sbx1/host/zz.accounts.tar.zst", Modified: when.Add(time.Hour)}, {Key: "sbx1/host/nested/zz.tar.zst", Modified: when.Add(time.Hour)}}
 	var out bytes.Buffer
 	if err := Run(context.Background(), []string{"sbx1", "--acme-email=x"}, "build-version", &out, f.deps()); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "restore: ok (host/z, 10 keys set again)\n") {
+	if !strings.Contains(out.String(), "restore: ok (host/z.tar.zst, 10 keys set again)\n") {
 		t.Fatalf("restore = %q", out.String())
 	}
 }
@@ -651,4 +651,35 @@ func TestCreateReleaseQueryErrorsPropagate(t *testing.T) {
 
 func (f *createFake) TagRetired(context.Context, []string, string) error {
 	panic("unexpected TagRetired")
+}
+
+func TestCreateRejectsOtherKeysAsHostBackups(t *testing.T) {
+	// R-4TG9-T4DF R-4VW2-KNUT
+	for _, key := range []string{"sbx1/host/2026-09-12T14:22:51Z.accounts.tar.zst", "sbx1/host/nested/backup.tar.zst", "other/host/backup.tar.zst", "sbx1/host/backup.zip", "sbx1/host/backup.1.tar.zst"} {
+		t.Run(key, func(t *testing.T) {
+			f := newCreateFake(t)
+			f.objects = []cloud.Object{{Key: key}}
+			var out bytes.Buffer
+			if err := Run(t.Context(), []string{"sbx1", "--acme-email=x"}, "test-version", &out, f.deps()); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out.String(), "restore: ok (no host backup)\ninit: ok\n") || strings.Count(out.String(), "restore:") != 1 {
+				t.Fatal(out.String())
+			}
+			count := 0
+			for _, event := range f.events {
+				if event == "list-objects" {
+					count++
+				}
+			}
+			if count != 1 {
+				t.Fatal("listed app backups", f.events)
+			}
+			for _, remote := range f.remotes {
+				if strings.Contains(remote, "'restore'") || strings.Contains(remote, "'host.apex'") {
+					t.Fatal(remote)
+				}
+			}
+		})
+	}
 }

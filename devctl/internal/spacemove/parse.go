@@ -9,12 +9,13 @@ import (
 const usageText = `Usage: devctl space move <space> [--release <sha|tag>]
 
 Move the space to a new instance launched from the current launch template:
-build the release, have the current host take its final backup with opsctl
-retire, stop it and tag it and its Elastic IP Retired, launch the new instance
-with a new Elastic IP, copy and unpack the release there, restore the host
-backup, point the space's records at the new address, restore each app's data,
-and activate the release. The retired instance stays, stopped, as the way
-back until space destroy removes it. Completed steps remain on failure.
+build the release, have the current host retire with opsctl retire and take
+a host backup with the release's own opsctl, stop it and tag it and its
+Elastic IP Retired, launch the new instance with a new Elastic IP, copy and
+unpack the release there, restore the host backup, point the space's records
+at the new address, restore each app's data, and activate the release. The
+retired instance stays, stopped, as the way back until space destroy removes
+it. Completed steps remain on failure.
 
 Options:
   --release <sha|tag>     the release to deploy; the newest release-<N> tag otherwise

@@ -67,7 +67,7 @@ func Run(ctx context.Context, args []string, version string, stdout io.Writer, d
 		detail = p.label + ", " + detail
 	}
 	space.Step(stdout, "build", detail)
-	if err := retire(ctx, stdout, deps, p); err != nil {
+	if err := retire(ctx, stdout, deps, p, dir); err != nil {
 		return err
 	}
 	instance, address, err := launch(ctx, stdout, deps, p)
@@ -88,7 +88,7 @@ func Run(ctx context.Context, args []string, version string, stdout io.Writer, d
 	return err
 }
 
-func retire(ctx context.Context, stdout io.Writer, deps seam.Deps, p preflightResult) error {
+func retire(ctx context.Context, stdout io.Writer, deps seam.Deps, p preflightResult, dir string) error {
 	ec2 := p.session.Clients.EC2
 	h := host.Host{Address: p.old.Address, Deps: deps}
 	if p.old.State == cloud.StateStopped {
@@ -112,6 +112,9 @@ func retire(ctx context.Context, stdout io.Writer, deps seam.Deps, p preflightRe
 		return err
 	}
 	space.Step(stdout, "retire", "opsctl retire")
+	if err := backup(ctx, stdout, p, h, dir); err != nil {
+		return err
+	}
 	if err := ec2.StopInstance(ctx, p.old.ID); err != nil {
 		return err
 	}
