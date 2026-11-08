@@ -12,7 +12,7 @@ import (
 
 const expectedBuildUsage = `Usage: devctl build <sha|tag>
 
-Build the suite at <sha|tag> for linux/amd64 and write dist/<sha>.tar.xz, one
+Build the suite at <sha|tag> for linux/arm64 and write dist/<sha>.tar.xz, one
 release holding every app, opsctl and turns. <sha> is the full commit sha the
 argument resolves to; the working tree is not read.
 `
