@@ -130,7 +130,7 @@ func HostRestore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store co
 	}
 	result.FilesRestored = true
 	if accountsArchive != nil {
-		if err := replayRestoreAccounts(ctx, env, *accountsArchive, &result); err != nil {
+		if err := replayRestoreAccounts(ctx, env, client, *accountsArchive, &result); err != nil {
 			return result, err
 		}
 	}

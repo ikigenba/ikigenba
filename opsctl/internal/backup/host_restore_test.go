@@ -40,7 +40,7 @@ func TestHostRestoreAPI(t *testing.T) {
 }
 
 func TestHostRestoreSelectsNewestImmediateArchive(t *testing.T) {
-	// R-YGCS-8A7I R-UINY-69JX
+	// R-YGCS-8A7I R-F8PH-QCIE
 	root := t.TempDir()
 	store := configuredHostStore(t, root)
 	writeFile(t, root, "etc/ikigenba/stale", "stale", 0o600)
@@ -91,7 +91,7 @@ func TestHostRestoreSelectsNewestImmediateArchive(t *testing.T) {
 }
 
 func TestHostRestoreRejectsInvalidArchivesBeforeChanges(t *testing.T) {
-	// R-TLQN-UGJ6 R-UINY-69JX
+	// R-F69O-YT10 R-F8PH-QCIE
 	tests := []struct {
 		name        string
 		members     []restoreMember
@@ -145,7 +145,7 @@ func TestHostRestoreRejectsInvalidArchivesBeforeChanges(t *testing.T) {
 }
 
 func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
-	// R-TU9Y-IUQ1 R-UINY-69JX R-9JTU-C7U1
+	// R-TU9Y-IUQ1 R-F8PH-QCIE R-9JTU-C7U1
 	root := t.TempDir()
 	store := configuredHostStore(t, root)
 	writeFile(t, root, "etc/ikigenba/stale", "remove", 0o600)
@@ -238,7 +238,7 @@ func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
 }
 
 func TestHostRestorePhaseFailures(t *testing.T) {
-	// R-YGCS-8A7I R-UINY-69JX R-DK7F-CAV0
+	// R-YGCS-8A7I R-F8PH-QCIE R-DK7F-CAV0
 	t.Run("cancellation before source selection has no failed step", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredHostStore(t, root)
@@ -507,7 +507,12 @@ func restoreHostEnv(t *testing.T, root string) host.Env {
 			if err != nil {
 				return host.Result{}, err
 			}
-			return host.Result{Stdout: decodeRawZstandardFrame(t, compressed)}, nil
+			data := decodeRawZstandardFrame(t, compressed)
+			if command.Stdout != nil {
+				_, err := command.Stdout.Write(data)
+				return host.Result{}, err
+			}
+			return host.Result{Stdout: data}, nil
 		case "systemctl":
 			if len(command.Args) == 4 && command.Args[0] == "show" {
 				return host.Result{Stdout: []byte("LoadState=not-found\nActiveState=inactive\n")}, nil

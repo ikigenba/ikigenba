@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -247,7 +248,7 @@ func TestHostBackupAndRestorePreserveCertificateWithoutExternalActions(t *testin
 	if string(data) != "original certificate\n" {
 		t.Fatalf("restored certificate = %q", data)
 	}
-	if want := []string{"zstd", "zstd", "zstd", "zstd", "getent", "groupadd", "sshd", "systemctl"}; fmt.Sprint(commands) != fmt.Sprint(want) {
+	if want := []string{"zstd", "zstd", "zstd", "zstd", "getent", "groupadd", "zstd", "zstd", "sshd", "systemctl"}; fmt.Sprint(commands) != fmt.Sprint(want) {
 		t.Fatalf("host backup/restore commands = %v, want only %v; certificate issuance or external project action must not run", commands, want)
 	}
 }
@@ -340,14 +341,22 @@ func fixedSizeZstdExecute(size int) func(context.Context, host.Command) (host.Re
 		}
 		compressed := make([]byte, size)
 		copy(compressed, []byte{0x28, 0xb5, 0x2f, 0xfd})
-		return host.Result{Stdout: compressed}, nil
+		if command.Stdin != nil {
+			if _, err := io.Copy(io.Discard, command.Stdin); err != nil {
+				return host.Result{}, err
+			}
+		}
+		return hostFixtureOutput(command, compressed)
 	}
 }
 
 func roundTripZstdExecute(commands *[]string) func(context.Context, host.Command) (host.Result, error) {
+	var mu sync.Mutex
 	return func(_ context.Context, command host.Command) (host.Result, error) {
 		if commands != nil {
+			mu.Lock()
 			*commands = append(*commands, command.Name)
+			mu.Unlock()
 		}
 		if command.Name == "getent" {
 			return host.Result{ExitCode: 2}, nil
@@ -366,9 +375,9 @@ func roundTripZstdExecute(commands *[]string) func(context.Context, host.Command
 			if len(input) < 4 || !bytes.Equal(input[:4], []byte{0x28, 0xb5, 0x2f, 0xfd}) {
 				return host.Result{ExitCode: 1, Stderr: []byte("invalid fixture")}, nil
 			}
-			return host.Result{Stdout: input[4:]}, nil
+			return hostFixtureOutput(command, input[4:])
 		}
-		return host.Result{Stdout: append([]byte{0x28, 0xb5, 0x2f, 0xfd}, input...)}, nil
+		return hostFixtureOutput(command, append([]byte{0x28, 0xb5, 0x2f, 0xfd}, input...))
 	}
 }
 
@@ -451,4 +460,12 @@ func (client *hostCLICloud) ListObjects(_ context.Context, prefix string) ([]clo
 
 func (*hostCLICloud) ReadSecrets(context.Context, string) (map[string]string, error) {
 	panic("unexpected ReadSecrets")
+}
+
+func hostFixtureOutput(command host.Command, output []byte) (host.Result, error) {
+	if command.Stdout == nil {
+		return host.Result{Stdout: output}, nil
+	}
+	_, err := command.Stdout.Write(output)
+	return host.Result{}, err
 }

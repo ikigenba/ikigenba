@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -566,6 +567,7 @@ func resultNames(results []backup.FileResult) []string {
 }
 
 type fileCloud struct {
+	mu      sync.Mutex
 	objects map[string][]byte
 	puts    []string
 	fail    func(string, []byte) error
@@ -634,6 +636,8 @@ func (client *fileCloud) PutObject(_ context.Context, uri string, body io.Reader
 	if err != nil {
 		return err
 	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
 	client.puts = append(client.puts, uri)
 	if client.fail != nil {
 		if err := client.fail(uri, data); err != nil {
@@ -656,6 +660,7 @@ func (*fileCloud) ReadSecrets(context.Context, string) (map[string]string, error
 }
 
 type fileExecutor struct {
+	mu                   sync.Mutex
 	uid                  int
 	gid                  int
 	user                 string
@@ -667,7 +672,9 @@ type fileExecutor struct {
 }
 
 func (executor *fileExecutor) execute(_ context.Context, command host.Command) (host.Result, error) {
+	executor.mu.Lock()
 	executor.commands = append(executor.commands, strings.Join(append([]string{command.Name}, command.Args...), " "))
+	executor.mu.Unlock()
 	switch command.Name {
 	case "getent":
 		if executor.identityErr != nil {
@@ -696,7 +703,12 @@ func (executor *fileExecutor) execute(_ context.Context, command host.Command) (
 		if err != nil {
 			return host.Result{}, err
 		}
-		return host.Result{Stdout: rawZstandardFrame(data)}, nil
+		output := rawZstandardFrame(data)
+		if command.Stdout != nil {
+			_, err := command.Stdout.Write(output)
+			return host.Result{}, err
+		}
+		return host.Result{Stdout: output}, nil
 	default:
 		return host.Result{}, fmt.Errorf("unexpected command %q", command.Name)
 	}

@@ -2,6 +2,7 @@
 package aws
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"net/url"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -21,7 +23,17 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/cloud"
 )
 
+// PartSize bounds the body bytes held for an upload request.
+const PartSize = 16777216
+
+// AbortTimeout bounds cleanup after a failed multipart upload.
+const AbortTimeout time.Duration = time.Minute
+
 type s3API interface {
+	CreateMultipartUpload(context.Context, *awss3.CreateMultipartUploadInput, ...func(*awss3.Options)) (*awss3.CreateMultipartUploadOutput, error)
+	UploadPart(context.Context, *awss3.UploadPartInput, ...func(*awss3.Options)) (*awss3.UploadPartOutput, error)
+	CompleteMultipartUpload(context.Context, *awss3.CompleteMultipartUploadInput, ...func(*awss3.Options)) (*awss3.CompleteMultipartUploadOutput, error)
+	AbortMultipartUpload(context.Context, *awss3.AbortMultipartUploadInput, ...func(*awss3.Options)) (*awss3.AbortMultipartUploadOutput, error)
 	GetObject(context.Context, *awss3.GetObjectInput, ...func(*awss3.Options)) (*awss3.GetObjectOutput, error)
 	PutObject(context.Context, *awss3.PutObjectInput, ...func(*awss3.Options)) (*awss3.PutObjectOutput, error)
 	ListObjectsV2(context.Context, *awss3.ListObjectsV2Input, ...func(*awss3.Options)) (*awss3.ListObjectsV2Output, error)
@@ -89,21 +101,157 @@ func (c *client) GetObject(ctx context.Context, uri string) (io.ReadCloser, erro
 	return output.Body, nil
 }
 
-func (c *client) PutObject(ctx context.Context, uri string, body io.Reader) error {
+func (c *client) PutObject(ctx context.Context, uri string, body io.Reader) (failure error) {
 	location, err := parseS3URI(uri, true)
 	if err != nil {
 		return err
 	}
-	_, err = c.s3.PutObject(ctx, &awss3.PutObjectInput{
-		Bucket:      awssdk.String(location.bucket),
-		Key:         awssdk.String(location.key),
-		Body:        body,
-		IfNoneMatch: awssdk.String("*"),
+	buffer := make([]byte, PartSize)
+	n, eof, err := readPart(ctx, body, buffer)
+	if err != nil {
+		return uploadError(err, false)
+	}
+	var lookahead [1]byte
+	var next int
+	if !eof {
+		next, eof, err = readPart(ctx, body, lookahead[:])
+		if err != nil {
+			return uploadError(err, false)
+		}
+	}
+	if next == 0 {
+		if err := ctx.Err(); err != nil {
+			return uploadError(err, false)
+		}
+		_, err = c.s3.PutObject(ctx, &awss3.PutObjectInput{
+			Bucket: awssdk.String(location.bucket), Key: awssdk.String(location.key),
+			Body: bytes.NewReader(buffer[:n]), ContentLength: awssdk.Int64(int64(n)), IfNoneMatch: awssdk.String("*"),
+		})
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		}
+		return uploadError(err, true)
+	}
+	if err := ctx.Err(); err != nil {
+		return uploadError(err, false)
+	}
+	created, err := c.s3.CreateMultipartUpload(ctx, &awss3.CreateMultipartUploadInput{
+		Bucket: awssdk.String(location.bucket), Key: awssdk.String(location.key), ChecksumAlgorithm: s3types.ChecksumAlgorithmCrc32,
 	})
+	if err != nil {
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		}
+		return uploadError(err, false)
+	}
+	if created == nil || awssdk.ToString(created.UploadId) == "" {
+		if ctx.Err() != nil {
+			return uploadError(ctx.Err(), false)
+		}
+		return errors.New("put S3 object: invalid multipart response")
+	}
+	uploadID := created.UploadId
+	defer func() {
+		if failure != nil {
+			abortCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), AbortTimeout)
+			defer cancel()
+			_, _ = c.s3.AbortMultipartUpload(abortCtx, &awss3.AbortMultipartUploadInput{
+				Bucket: awssdk.String(location.bucket), Key: awssdk.String(location.key), UploadId: uploadID,
+			})
+		}
+	}()
+	var parts []s3types.CompletedPart
+	partNumber := int32(1)
+	for {
+		if err := ctx.Err(); err != nil {
+			return uploadError(err, false)
+		}
+		output, err := c.s3.UploadPart(ctx, &awss3.UploadPartInput{
+			Bucket: awssdk.String(location.bucket), Key: awssdk.String(location.key), UploadId: uploadID,
+			PartNumber: awssdk.Int32(partNumber), ChecksumAlgorithm: s3types.ChecksumAlgorithmCrc32,
+			Body: bytes.NewReader(buffer[:n]), ContentLength: awssdk.Int64(int64(n)),
+		})
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		}
+		if err != nil {
+			return uploadError(err, false)
+		}
+		if output == nil || awssdk.ToString(output.ETag) == "" || awssdk.ToString(output.ChecksumCRC32) == "" {
+			return errors.New("put S3 object: invalid part response")
+		}
+		parts = append(parts, s3types.CompletedPart{PartNumber: awssdk.Int32(partNumber), ETag: output.ETag, ChecksumCRC32: output.ChecksumCRC32})
+		partNumber++
+		switch {
+		case next != 0:
+			buffer[0] = lookahead[0]
+			n = next
+			next = 0
+			if !eof {
+				var count int
+				count, eof, err = readPart(ctx, body, buffer[n:])
+				n += count
+			}
+		case !eof:
+			n, eof, err = readPart(ctx, body, buffer)
+		default:
+			n = 0
+		}
+		if err != nil {
+			return uploadError(err, false)
+		}
+		if n == 0 {
+			break
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return uploadError(err, false)
+	}
+	_, err = c.s3.CompleteMultipartUpload(ctx, &awss3.CompleteMultipartUploadInput{
+		Bucket: awssdk.String(location.bucket), Key: awssdk.String(location.key), UploadId: uploadID,
+		IfNoneMatch: awssdk.String("*"), MultipartUpload: &s3types.CompletedMultipartUpload{Parts: parts},
+	})
+	if ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	return uploadError(err, true)
+}
+
+// readPart distinguishes a reader's own non-EOF errors from a short final part.
+func readPart(ctx context.Context, body io.Reader, buffer []byte) (n int, eof bool, err error) {
+	emptyReads := 0
+	for n < len(buffer) {
+		if err := ctx.Err(); err != nil {
+			return n, false, err
+		}
+		count, readErr := body.Read(buffer[n:])
+		n += count
+		if ctx.Err() != nil {
+			return n, false, ctx.Err()
+		}
+		if readErr != nil {
+			if readErr == io.EOF {
+				return n, true, nil
+			}
+			return n, false, readErr
+		}
+		if count == 0 {
+			emptyReads++
+			if emptyReads == 100 {
+				return n, false, io.ErrNoProgress
+			}
+		} else {
+			emptyReads = 0
+		}
+	}
+	return n, false, nil
+}
+
+func uploadError(err error, conditional bool) error {
 	if err == nil {
 		return nil
 	}
-	if conditionalCollision(err) {
+	if conditional && conditionalCollision(err) {
 		return &operationError{operation: "put S3 object: already exists", cause: err, sentinel: cloud.ErrAlreadyExists}
 	}
 	return &operationError{operation: "put S3 object", cause: err}

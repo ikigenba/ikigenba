@@ -15,15 +15,17 @@ import (
 )
 
 func TestBoundaryFields(t *testing.T) {
-	// R-Y5EK-K08K R-Y6MG-XRZ9 R-Y7UD-BJPY R-YBI2-GUY1
+	// R-Y5EK-K08K R-P4GX-G1JK R-Y7UD-BJPY R-YBI2-GUY1
 	stdin := strings.NewReader("input")
-	command := host.Command{Name: "tool", Args: []string{"a"}, Dir: "/dir", Env: []string{"K=V"}, Stdin: stdin}
+	var destination bytes.Buffer
+	command := host.Command{Name: "tool", Args: []string{"a"}, Dir: "/dir", Env: []string{"K=V"}, Stdin: stdin, Stdout: &destination}
 	name := typed[string](command.Name)
 	args := typed[[]string](command.Args)
 	dir := typed[string](command.Dir)
 	cmdEnv := typed[[]string](command.Env)
 	cmdStdin := *typed[*io.Reader](&command.Stdin)
-	if name != "tool" || len(args) != 1 || args[0] != "a" || dir != "/dir" || len(cmdEnv) != 1 || cmdEnv[0] != "K=V" || cmdStdin != stdin {
+	cmdStdout := *typed[*io.Writer](&command.Stdout)
+	if name != "tool" || len(args) != 1 || args[0] != "a" || dir != "/dir" || len(cmdEnv) != 1 || cmdEnv[0] != "K=V" || cmdStdin != stdin || cmdStdout != &destination {
 		t.Errorf("Command = %+v", command)
 	}
 
@@ -123,7 +125,7 @@ func TestNormalizeName(t *testing.T) {
 }
 
 func TestExecDirectProcess(t *testing.T) {
-	// R-5LFH-HU7S
+	// R-P5OT-TTA9
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -146,7 +148,7 @@ func TestExecDirectProcess(t *testing.T) {
 }
 
 func TestExecCompletionAndStartErrors(t *testing.T) {
-	// R-5LFH-HU7S
+	// R-P5OT-TTA9
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -167,8 +169,142 @@ func TestExecCompletionAndStartErrors(t *testing.T) {
 	}
 }
 
+func TestExecStreamsBeforeChildExitsAndWaitsForWriter(t *testing.T) {
+	// R-P6WQ-7L0Y
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	input, reply := io.Pipe()
+	defer func() { _ = input.Close() }()
+	defer func() { _ = reply.Close() }()
+	const first = "first\x00\r\n"
+	const last = "last\xff\x00"
+	var received bytes.Buffer
+	lastWrite := make(chan struct{})
+	release := make(chan struct{})
+	defer close(release)
+	replied := false
+	writer := writerFunc(func(p []byte) (int, error) {
+		_, _ = received.Write(p)
+		if !replied && received.Len() >= len(first) {
+			replied = true
+			if _, err := reply.Write([]byte("reply")); err != nil {
+				return 0, err
+			}
+			if err := reply.Close(); err != nil {
+				return 0, err
+			}
+		}
+		if received.Len() == len(first)+len(last) {
+			close(lastWrite)
+			<-release
+		}
+		return len(p), nil
+	})
+	type outcome struct {
+		result host.Result
+		err    error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		result, err := host.Exec(ctx, host.Command{Name: executable, Args: []string{"-test.run=^TestHostChild$"}, Env: []string{"OPSCTL_HOST_CHILD=stream"}, Stdin: input, Stdout: writer})
+		done <- outcome{result, err}
+	}()
+	select {
+	case <-lastWrite:
+	case got := <-done:
+		t.Fatalf("Exec finished before the handshake: %#v, %v", got.result, got.err)
+	case <-ctx.Done():
+		t.Fatal("child did not receive the reply from the streaming writer")
+	}
+	select {
+	case got := <-done:
+		t.Fatalf("Exec returned while the writer was blocked: %#v, %v", got.result, got.err)
+	default:
+	}
+	release <- struct{}{}
+	got := <-done
+	if got.err != nil || got.result.ExitCode != 23 || len(got.result.Stdout) != 0 || string(got.result.Stderr) != "stream diagnostic\x00\r\n" || received.String() != first+last {
+		t.Fatalf("streamed result = %#v, %v; output %q", got.result, got.err, received.Bytes())
+	}
+}
+
+func TestExecWriterFailureRegardlessOfExitStatus(t *testing.T) {
+	// R-P84M-LCRN
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		mode string
+		code int
+	}{
+		{mode: "writer-success", code: 0},
+		{mode: "writer-nonzero", code: 23},
+		{mode: "writer-signal", code: -1},
+	} {
+		t.Run(test.mode, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			input, reply := io.Pipe()
+			defer func() { _ = input.Close() }()
+			defer func() { _ = reply.Close() }()
+			failure := errors.New("destination refused output")
+			writer := writerFunc(func([]byte) (int, error) {
+				if test.mode != "writer-signal" {
+					if _, err := reply.Write([]byte("reply")); err != nil {
+						return 0, err
+					}
+				}
+				_ = reply.Close()
+				return 0, failure
+			})
+			result, err := host.Exec(ctx, host.Command{Name: executable, Args: []string{"-test.run=^TestHostChild$"}, Env: []string{"OPSCTL_HOST_CHILD=" + test.mode}, Stdin: input, Stdout: writer})
+			if err == nil || result.ExitCode != test.code || len(result.Stdout) != 0 {
+				t.Fatalf("writer failure returned %#v, %v; want error and exit %d", result, err, test.code)
+			}
+			if ctx.Err() != nil {
+				t.Fatal("Exec needed cancellation to finish after a writer failure")
+			}
+		})
+	}
+}
+
+type writerFunc func([]byte) (int, error)
+
+func (w writerFunc) Write(p []byte) (int, error) { return w(p) }
+
 func TestHostChild(_ *testing.T) {
 	switch os.Getenv("OPSCTL_HOST_CHILD") {
+	case "stream", "writer-success", "writer-nonzero":
+		if _, err := os.Stdout.WriteString("first\x00\r\n"); err != nil {
+			os.Exit(99)
+		}
+		reply, err := io.ReadAll(os.Stdin)
+		if err != nil || string(reply) != "reply" {
+			os.Exit(99)
+		}
+		if os.Getenv("OPSCTL_HOST_CHILD") == "stream" {
+			if _, err := os.Stdout.WriteString("last\xff\x00"); err != nil {
+				os.Exit(99)
+			}
+			if _, err := os.Stderr.WriteString("stream diagnostic\x00\r\n"); err != nil {
+				os.Exit(99)
+			}
+		}
+		if os.Getenv("OPSCTL_HOST_CHILD") == "writer-success" {
+			os.Exit(0)
+		}
+		os.Exit(23)
+	case "writer-signal":
+		for {
+			if _, err := os.Stdout.Write(bytes.Repeat([]byte("x"), 64*1024)); err != nil {
+				os.Exit(99)
+			}
+		}
 	case "success":
 		if _, err := os.Stdout.WriteString("ok"); err != nil {
 			os.Exit(99)

@@ -2,7 +2,6 @@ package backup
 
 import (
 	"archive/tar"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -72,22 +71,10 @@ func HostBackup(ctx context.Context, env host.Env, cloudEnv cloud.Env, store con
 	return result, err
 }
 
-func writeHostArchive(ctx context.Context, env host.Env, client cloud.Client, prefix, service, basename string, archive func(context.Context, host.Env) ([]byte, error)) (FileResult, error) {
+func writeHostArchive(ctx context.Context, env host.Env, client cloud.Client, prefix, service, basename string, archive archiveProducer) (FileResult, error) {
 	result := FileResult{Service: service}
-	compressed, err := archive(ctx, env)
-	if err == nil {
-		err = ctx.Err()
-	}
-	if err == nil {
-		object := strings.TrimSuffix(prefix, "/") + "/host/" + basename
-		err = client.PutObject(ctx, object, bytes.NewReader(compressed))
-		if err != nil {
-			err = fmt.Errorf("upload %q: %w", object, err)
-		}
-		if err == nil {
-			err = ctx.Err()
-		}
-	}
+	object := strings.TrimSuffix(prefix, "/") + "/host/" + basename
+	size, err := uploadHostArchive(ctx, env, client, object, service, archive)
 	if err != nil {
 		result.Err = err
 		if interrupted := interruption(ctx, err); interrupted != nil {
@@ -96,32 +83,31 @@ func writeHostArchive(ctx context.Context, env host.Env, client cloud.Client, pr
 		return result, nil
 	}
 	result.Object = basename
-	result.Size = int64(len(compressed))
+	result.Size = size
 	return result, nil
 }
 
-func hostArchive(ctx context.Context, env host.Env) ([]byte, error) {
+func hostArchive(ctx context.Context, env host.Env, output io.Writer) error {
 	filesystem, err := os.OpenRoot(env.Root)
 	if err != nil {
-		return nil, fmt.Errorf("archive host: %w", err)
+		return fmt.Errorf("archive host: %w", err)
 	}
 	defer func() { _ = filesystem.Close() }()
 
-	var archive bytes.Buffer
-	tarWriter := tar.NewWriter(&archive)
+	tarWriter := tar.NewWriter(output)
 	for _, tree := range []string{"etc/ikigenba", "etc/letsencrypt"} {
 		if err := archiveHostTree(ctx, filesystem, tarWriter, tree); err != nil {
 			_ = tarWriter.Close()
-			return nil, fmt.Errorf("archive host: %w", err)
+			return fmt.Errorf("archive host: %w", err)
 		}
 	}
 	if err := tarWriter.Close(); err != nil {
-		return nil, fmt.Errorf("archive host: %w", err)
+		return fmt.Errorf("archive host: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("archive host: %w", err)
+		return fmt.Errorf("archive host: %w", err)
 	}
-	return compressArchive(ctx, env.Execute, "host", archive.Bytes())
+	return nil
 }
 
 func archiveHostTree(ctx context.Context, filesystem *os.Root, writer *tar.Writer, tree string) error {

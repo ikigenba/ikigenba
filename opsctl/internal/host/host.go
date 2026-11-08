@@ -24,11 +24,12 @@ type Env struct {
 
 // Command describes one directly executed process.
 type Command struct {
-	Name  string
-	Args  []string
-	Dir   string
-	Env   []string
-	Stdin io.Reader
+	Name   string
+	Args   []string
+	Dir    string
+	Env    []string
+	Stdin  io.Reader
+	Stdout io.Writer
 }
 
 // Result retains a completed process's output and status.
@@ -90,16 +91,40 @@ func Exec(ctx context.Context, command Command) (Result, error) {
 	cmd.Stdin = command.Stdin
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
+	var streamed *outputWriter
+	if command.Stdout != nil {
+		streamed = &outputWriter{writer: command.Stdout}
+		cmd.Stdout = streamed
+	}
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	result := Result{Stdout: stdout.Bytes(), Stderr: stderr.Bytes()}
-	if err == nil {
-		return result, nil
-	}
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
 		result.ExitCode = exit.ExitCode()
+	}
+	if streamed != nil && streamed.err != nil {
+		return result, streamed.err
+	}
+	if exit != nil {
 		return result, nil
 	}
 	return result, err
+}
+
+// outputWriter retains copy failures even when Wait reports an exit status first.
+type outputWriter struct {
+	writer io.Writer
+	err    error
+}
+
+func (w *outputWriter) Write(p []byte) (int, error) {
+	n, err := w.writer.Write(p)
+	if err == nil && n != len(p) {
+		err = io.ErrShortWrite
+	}
+	if err != nil {
+		w.err = err
+	}
+	return n, err
 }

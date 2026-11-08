@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -689,6 +690,7 @@ func TestRetireInterruptionStopsBeforeHostArchive(t *testing.T) {
 }
 
 type retireExecutor struct {
+	mu               sync.Mutex
 	units            map[string]bool
 	sockets          map[string]bool
 	inactive         map[string]bool
@@ -713,6 +715,8 @@ func newRetireExecutor(units map[string]bool) *retireExecutor {
 }
 
 func (executor *retireExecutor) execute(ctx context.Context, command host.Command) (host.Result, error) {
+	executor.mu.Lock()
+	defer executor.mu.Unlock()
 	text := strings.Join(append([]string{command.Name}, command.Args...), " ")
 	executor.commands = append(executor.commands, text)
 	if executor.fail != nil {
@@ -770,7 +774,10 @@ func (executor *retireExecutor) execute(ctx context.Context, command host.Comman
 	if command.Name == "zstd" && executor.firstCompression < 0 {
 		executor.firstCompression = len(executor.commands) - 1
 	}
-	return executor.files.execute(ctx, command)
+	executor.mu.Unlock()
+	result, err := executor.files.execute(ctx, command)
+	executor.mu.Lock()
+	return result, err
 }
 
 func retirementStopsOrdered(commands []string, units []string) bool {

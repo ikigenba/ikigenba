@@ -26,9 +26,13 @@ import (
 var _ cloud.Client = (*client)(nil)
 
 type fakeS3 struct {
-	get  func(context.Context, *awss3.GetObjectInput) (*awss3.GetObjectOutput, error)
-	put  func(context.Context, *awss3.PutObjectInput) (*awss3.PutObjectOutput, error)
-	list func(context.Context, *awss3.ListObjectsV2Input) (*awss3.ListObjectsV2Output, error)
+	create   func(context.Context, *awss3.CreateMultipartUploadInput) (*awss3.CreateMultipartUploadOutput, error)
+	upload   func(context.Context, *awss3.UploadPartInput) (*awss3.UploadPartOutput, error)
+	complete func(context.Context, *awss3.CompleteMultipartUploadInput) (*awss3.CompleteMultipartUploadOutput, error)
+	abort    func(context.Context, *awss3.AbortMultipartUploadInput) (*awss3.AbortMultipartUploadOutput, error)
+	get      func(context.Context, *awss3.GetObjectInput) (*awss3.GetObjectOutput, error)
+	put      func(context.Context, *awss3.PutObjectInput) (*awss3.PutObjectOutput, error)
+	list     func(context.Context, *awss3.ListObjectsV2Input) (*awss3.ListObjectsV2Output, error)
 }
 
 func (fake *fakeS3) GetObject(ctx context.Context, input *awss3.GetObjectInput, _ ...func(*awss3.Options)) (*awss3.GetObjectOutput, error) {
@@ -50,6 +54,19 @@ func (fake *fakeS3) ListObjectsV2(ctx context.Context, input *awss3.ListObjectsV
 		panic("unexpected ListObjectsV2")
 	}
 	return fake.list(ctx, input)
+}
+
+func (fake *fakeS3) CreateMultipartUpload(ctx context.Context, in *awss3.CreateMultipartUploadInput, _ ...func(*awss3.Options)) (*awss3.CreateMultipartUploadOutput, error) {
+	return fake.create(ctx, in)
+}
+func (fake *fakeS3) UploadPart(ctx context.Context, in *awss3.UploadPartInput, _ ...func(*awss3.Options)) (*awss3.UploadPartOutput, error) {
+	return fake.upload(ctx, in)
+}
+func (fake *fakeS3) CompleteMultipartUpload(ctx context.Context, in *awss3.CompleteMultipartUploadInput, _ ...func(*awss3.Options)) (*awss3.CompleteMultipartUploadOutput, error) {
+	return fake.complete(ctx, in)
+}
+func (fake *fakeS3) AbortMultipartUpload(ctx context.Context, in *awss3.AbortMultipartUploadInput, _ ...func(*awss3.Options)) (*awss3.AbortMultipartUploadOutput, error) {
+	return fake.abort(ctx, in)
 }
 
 type fakeSSM struct {
@@ -416,14 +433,14 @@ func TestReadSecretsStrictJSONMappingAndSecrecy(t *testing.T) {
 	}
 }
 
-// R-AQ2K-9UAJ
+// R-PAKF-CW91
 func TestPutObjectUsesOneConditionalCompleteUpload(t *testing.T) {
 	body := strings.NewReader("complete object body")
 	calls := 0
 	client := newClient(&fakeS3{put: func(ctx context.Context, input *awss3.PutObjectInput) (*awss3.PutObjectOutput, error) {
 		calls++
 		if ctx != t.Context() || awssdk.ToString(input.Bucket) != "bucket" || awssdk.ToString(input.Key) != "/a/../key ?" ||
-			awssdk.ToString(input.IfNoneMatch) != "*" || input.Body != body {
+			awssdk.ToString(input.IfNoneMatch) != "*" || awssdk.ToInt64(input.ContentLength) != body.Size() {
 			t.Fatalf("PutObject input = %#v", input)
 		}
 		data, err := io.ReadAll(input.Body)
@@ -457,7 +474,7 @@ type apiError struct {
 func (e *apiError) Error() string     { return e.message }
 func (e *apiError) ErrorCode() string { return e.code }
 
-// R-AQ2K-9UAJ
+// R-PHVT-NIP7
 func TestPutObjectMapsOnlyExactConditionalErrorsWithoutRetry(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -494,7 +511,7 @@ func TestPutObjectMapsOnlyExactConditionalErrorsWithoutRetry(t *testing.T) {
 
 }
 
-// R-AQ2K-9UAJ
+// R-PHVT-NIP7
 func TestPutObjectConcurrentCreateHasOneWinner(t *testing.T) {
 	const writers = 24
 	var mu sync.Mutex

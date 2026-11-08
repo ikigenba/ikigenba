@@ -2,7 +2,6 @@ package backup
 
 import (
 	"archive/tar"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -32,60 +31,59 @@ type accountArchiveMetadata struct {
 	owner, group     bool
 }
 
-func accountsArchive(ctx context.Context, env host.Env) ([]byte, error) {
+func accountsArchive(ctx context.Context, env host.Env, output io.Writer) error {
 	filesystem, err := os.OpenRoot(env.Root)
 	if err != nil {
-		return nil, accountsArchiveReadError(env.Root, err)
+		return accountsArchiveReadError(env.Root, err)
 	}
 	defer func() { _ = filesystem.Close() }()
 	if err := hostArchiveParents(filesystem, "etc/passwd"); err != nil {
-		return nil, err
+		return err
 	}
 	for _, name := range []string{"etc/passwd", "etc/group", "etc/shadow"} {
 		info, err := filesystem.Lstat(name)
 		if err != nil {
-			return nil, accountsArchiveReadError(env.Root, err)
+			return accountsArchiveReadError(env.Root, err)
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			return nil, fmt.Errorf("/%s: account source is a symbolic link", name)
+			return fmt.Errorf("/%s: account source is a symbolic link", name)
 		}
 	}
 	manifest, err := accounts.ReadManifest(ctx, env)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	data, err := json.Marshal(manifest)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	paths, entries, err := collectAccountArchive(ctx, filesystem, manifest)
 	if err != nil {
-		return nil, accountsArchiveReadError(env.Root, err)
+		return accountsArchiveReadError(env.Root, err)
 	}
 	metadata, links, err := readAccountArchiveMetadata(ctx, env, paths, entries)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	var archive bytes.Buffer
-	writer := tar.NewWriter(&archive)
+	writer := tar.NewWriter(output)
 	if err := writer.WriteHeader(&tar.Header{Name: "accounts.json", Typeflag: tar.TypeReg, Mode: 0o600, Size: int64(len(data))}); err != nil {
-		return nil, err
+		return err
 	}
 	if _, err := writer.Write(data); err != nil {
-		return nil, err
+		return err
 	}
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return err
 		}
 		if err := writeAccountArchiveEntry(filesystem, writer, env.Root, entry, metadata, links); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	if err := writer.Close(); err != nil {
-		return nil, err
+		return err
 	}
-	return compressArchive(ctx, env.Execute, "accounts", archive.Bytes())
+	return nil
 }
 
 func collectAccountArchive(ctx context.Context, root *os.Root, manifest accounts.Manifest) ([]string, []accountArchiveEntry, error) {

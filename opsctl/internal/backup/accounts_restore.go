@@ -24,8 +24,10 @@ import (
 )
 
 type restoreAccountsArchive struct {
-	manifest accounts.Manifest
-	entries  []hostRestoreEntry
+	manifest     accounts.Manifest
+	manifestJSON []byte
+	uri          string
+	entries      []hostRestoreEntry
 }
 
 func loadRestoreAccounts(ctx context.Context, env host.Env, client cloud.Client, objects []cloud.Object, selectedURI, prefix string, result *HostRestoreResult) (*restoreAccountsArchive, error) {
@@ -36,18 +38,25 @@ func loadRestoreAccounts(ctx context.Context, env host.Env, client cloud.Client,
 		return nil, nil
 	}
 	result.AccountsObject = "host/" + strings.TrimPrefix(uri, prefix)
-	compressed, err := readRestoreAccountsObject(ctx, client, uri)
-	result.AccountsSize = int64(len(compressed))
+	decoded := restoreAccountsArchive{uri: uri}
+	size, err := streamRestoreAccounts(ctx, env, client, uri, nil, func(entry hostRestoreEntry, content io.Reader) error {
+		if entry.name == "accounts.json" || strings.HasPrefix(entry.name, "etc/ssh/") {
+			var err error
+			entry.data, err = io.ReadAll(content)
+			if err != nil {
+				return err
+			}
+			decoded.entries = append(decoded.entries, entry)
+			if entry.name == "accounts.json" {
+				decoded.manifestJSON = entry.data
+				return decodeRestoreManifest(entry.data, &decoded.manifest)
+			}
+		}
+		return nil
+	}, nil)
+	result.AccountsSize = size
 	if err != nil {
 		return nil, err
-	}
-	archive, err := decompressHostArchive(ctx, env.Execute, compressed)
-	if err != nil {
-		return nil, err
-	}
-	decoded, err := validateRestoreAccountsArchive(archive)
-	if err != nil {
-		return nil, fmt.Errorf("validate %q: %w", uri, err)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -96,100 +105,6 @@ func prepareRestoreAccountsParent(rootName, parent string) error {
 	return ensureRestoreAccountsParent(root, parent)
 }
 
-func readRestoreAccountsObject(ctx context.Context, client cloud.Client, uri string) ([]byte, error) {
-	reader, err := client.GetObject(ctx, uri)
-	if err != nil {
-		if reader != nil {
-			err = errors.Join(err, reader.Close())
-		}
-		return nil, fmt.Errorf("download %q: %w", uri, err)
-	}
-	if reader == nil {
-		return nil, fmt.Errorf("download %q: object reader is not configured", uri)
-	}
-	data, readErr := io.ReadAll(reader)
-	closeErr := reader.Close()
-	if err := errors.Join(readErr, closeErr, ctx.Err()); err != nil {
-		return data, fmt.Errorf("download %q: %w", uri, err)
-	}
-	return data, nil
-}
-
-func validateRestoreAccountsArchive(archive []byte) (restoreAccountsArchive, error) {
-	decoded := restoreAccountsArchive{}
-	if len(archive) < 1024 || len(archive)%512 != 0 || !allZero(archive[len(archive)-1024:]) {
-		return decoded, errors.New("invalid accounts tar archive termination")
-	}
-	raw := bytes.NewReader(archive)
-	reader := tar.NewReader(raw)
-	byName := map[string]hostRestoreEntry{}
-	manifestFound := false
-	for {
-		header, err := reader.Next()
-		if errors.Is(err, io.EOF) {
-			if !allZero(archive[len(archive)-raw.Len():]) {
-				return decoded, errors.New("invalid data after accounts tar archive end")
-			}
-			break
-		}
-		if err != nil {
-			return decoded, fmt.Errorf("read accounts tar archive: %w", err)
-		}
-		name := strings.TrimSuffix(header.Name, "/")
-		if name == "" || path.IsAbs(name) || path.Clean(name) != name || strings.Contains(name, "//") {
-			return decoded, fmt.Errorf("unsafe accounts archive entry %q", header.Name)
-		}
-		for component := range strings.SplitSeq(name, "/") {
-			if component == "" || component == "." || component == ".." {
-				return decoded, fmt.Errorf("unsafe accounts archive entry %q", header.Name)
-			}
-		}
-		if _, exists := byName[name]; exists {
-			return decoded, fmt.Errorf("duplicate accounts archive entry %q", header.Name)
-		}
-		entry := hostRestoreEntry{name: name, typeflag: header.Typeflag, mode: restoredFileMode(header.Mode), linkname: header.Linkname, uid: header.Uid, gid: header.Gid, access: header.PAXRecords["SCHILY.acl.access"], defaults: header.PAXRecords["SCHILY.acl.default"]}
-		for _, key := range []string{"SCHILY.acl.access", "SCHILY.acl.default"} {
-			if value, exists := header.PAXRecords[key]; exists && !validRestoreACL(value) {
-				return decoded, fmt.Errorf("invalid %s in %q", key, name)
-			}
-		}
-		switch header.Typeflag {
-		case tar.TypeReg, byte(0):
-			entry.typeflag = tar.TypeReg
-			entry.data, err = io.ReadAll(reader)
-			if err != nil {
-				return decoded, fmt.Errorf("read accounts archive entry %q: %w", name, err)
-			}
-		case tar.TypeDir, tar.TypeSymlink:
-			if header.Size != 0 {
-				return decoded, fmt.Errorf("accounts archive entry %q has unexpected data", name)
-			}
-		default:
-			return decoded, fmt.Errorf("accounts archive entry %q has unsupported type", name)
-		}
-		if name == "accounts.json" {
-			if entry.typeflag != tar.TypeReg {
-				return decoded, errors.New("accounts.json is not a regular file")
-			}
-			if err := decodeRestoreManifest(entry.data, &decoded.manifest); err != nil {
-				return decoded, err
-			}
-			manifestFound = true
-		}
-		byName[name] = entry
-		decoded.entries = append(decoded.entries, entry)
-	}
-	if !manifestFound {
-		return decoded, errors.New("accounts.json is missing")
-	}
-	for _, entry := range decoded.entries {
-		if err := validRestoreAccountsEntry(entry, decoded.manifest, byName); err != nil {
-			return decoded, err
-		}
-	}
-	return decoded, nil
-}
-
 func decodeRestoreManifest(data []byte, manifest *accounts.Manifest) error {
 	data = bytes.TrimSpace(data)
 	if len(data) == 0 || data[0] != '{' {
@@ -203,7 +118,7 @@ func decodeRestoreManifest(data []byte, manifest *accounts.Manifest) error {
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return errors.New("accounts.json must hold one JSON object")
 	}
-	return nil
+	return validateRestoreManifest(*manifest)
 }
 
 func validRestoreAccountsEntry(entry hostRestoreEntry, manifest accounts.Manifest, byName map[string]hostRestoreEntry) error {
@@ -261,54 +176,17 @@ func validRestoreACL(value string) bool {
 	return true
 }
 
-func replayRestoreAccounts(ctx context.Context, env host.Env, archive restoreAccountsArchive, result *HostRestoreResult) error {
+func replayRestoreAccounts(ctx context.Context, env host.Env, client cloud.Client, archive restoreAccountsArchive, result *HostRestoreResult) error {
 	fail := func(step string, err error) error { result.FailedStep = step; return err }
 	if err := accounts.EnsureShellGroup(ctx, env); err != nil {
 		return fail("groups", err)
 	}
-	groups := slices.Clone(archive.manifest.Groups)
-	slices.SortFunc(groups, func(a, b accounts.ManifestGroup) int { return strings.Compare(a.Slug, b.Slug) })
-	for _, group := range groups {
-		if err := prepareRestoreAccountsParent(env.Root, "srv"); err != nil {
-			return fail("groups", err)
-		}
-		members := restoreAccountMembers(archive.entries, "srv/"+group.Slug)
-		if err := replaceRestoreAccountsMembers(ctx, env, members); err != nil {
-			return fail("groups", err)
-		}
-		if err := restoreAccountsMetadata(ctx, env, members); err != nil {
-			return fail("groups", err)
-		}
-		if err := accounts.RestoreGroup(ctx, env, group); err != nil {
-			return fail("groups", err)
-		}
-		result.Groups = append(result.Groups, group.Slug)
+	if err := replayRestoreAccountStep(ctx, env, client, archive, result, false); err != nil {
+		return fail("groups", err)
 	}
 	result.GroupsRestored = true
-	users := slices.Clone(archive.manifest.Users)
-	slices.SortFunc(users, func(a, b accounts.ManifestUser) int { return strings.Compare(a.Name, b.Name) })
-	for _, user := range users {
-		home := "home/" + user.Name
-		key := strings.TrimPrefix(hardening.KeysDir, "/") + "/" + user.Name
-		members := make([]hostRestoreEntry, 0)
-		for _, entry := range archive.entries {
-			if entry.name == home || strings.HasPrefix(entry.name, home+"/") || entry.name == key {
-				members = append(members, entry)
-			}
-		}
-		if err := replaceRestoreAccountsMembers(ctx, env, members); err != nil {
-			return fail("users", err)
-		}
-		if err := restoreAccountsMetadata(ctx, env, members); err != nil {
-			return fail("users", err)
-		}
-		if err := accounts.RestoreUser(ctx, env, user); err != nil {
-			return fail("users", err)
-		}
-		result.Users = append(result.Users, user.Name)
-		if user.State == accounts.StateLocked {
-			result.Locked = append(result.Locked, user.Name)
-		}
+	if err := replayRestoreAccountStep(ctx, env, client, archive, result, true); err != nil {
+		return fail("users", err)
 	}
 	_, err := os.Stat(filepath.Join(env.Root, release.UserUnitDir, release.TurnsTimer))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -323,16 +201,6 @@ func replayRestoreAccounts(ctx context.Context, env host.Env, archive restoreAcc
 	result.HostKeys = count
 	result.SSHRestored = true
 	return nil
-}
-
-func restoreAccountMembers(entries []hostRestoreEntry, tree string) []hostRestoreEntry {
-	members := make([]hostRestoreEntry, 0)
-	for _, entry := range entries {
-		if entry.name == tree || strings.HasPrefix(entry.name, tree+"/") {
-			members = append(members, entry)
-		}
-	}
-	return members
 }
 
 func replaceRestoreAccountsMembers(ctx context.Context, env host.Env, members []hostRestoreEntry) error {

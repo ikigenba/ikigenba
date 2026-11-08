@@ -79,7 +79,7 @@ func TestHostRestoreLegacyHasNoAccountEffects(t *testing.T) {
 }
 
 func TestHostRestoreRejectsAccountsBeforeAnyMutation(t *testing.T) {
-	// R-TLQN-UGJ6 R-TO6G-M00K R-UINY-69JX
+	// R-F69O-YT10 R-F51S-L1AB R-F8PH-QCIE
 	manifest := restoreTestManifest()
 	good := restoreManifestMember(t, manifest)
 	cases := []struct {
@@ -187,7 +187,7 @@ func TestHostRestoreManifestCollisionLeavesConfiguration(t *testing.T) {
 }
 
 func restoreTestManifest() accounts.Manifest {
-	return accounts.Manifest{Groups: []accounts.ManifestGroup{{Slug: "beta", UID: 1005, GID: 1005, Members: []string{"bob"}}, {Slug: "acme", UID: 1004, GID: 1004, Members: []string{"alice", "bob"}}}, Users: []accounts.ManifestUser{{Name: "bob", UID: 1002, GID: 1002, State: accounts.StateLocked, Groups: []string{"acme", "beta"}}, {Name: "alice", UID: 1001, GID: 1001, State: accounts.StateActive, Groups: []string{"acme"}}}}
+	return accounts.Manifest{Groups: []accounts.ManifestGroup{{Slug: "acme", UID: 1004, GID: 1004, Members: []string{"alice", "bob"}}, {Slug: "beta", UID: 1005, GID: 1005, Members: []string{"bob"}}}, Users: []accounts.ManifestUser{{Name: "alice", UID: 1001, GID: 1001, State: accounts.StateActive, Groups: []string{"acme"}}, {Name: "bob", UID: 1002, GID: 1002, State: accounts.StateLocked, Groups: []string{"acme", "beta"}}}}
 }
 
 func restoreManifestMember(t *testing.T, manifest accounts.Manifest) restoreMember {
@@ -206,7 +206,7 @@ func restoreAccountsCloud(t *testing.T, body []byte) *restoreCloud {
 }
 
 func TestHostRestoreReplaysAccountTreesInOrder(t *testing.T) {
-	// R-U591-YSEA R-U8WR-43MD R-U0DG-FPFI R-U2T9-78WW R-TXXN-O5Y4 R-UA4N-HVD2 R-UINY-69JX
+	// R-PD7P-X6NV R-PFNI-OQ59 R-U0DG-FPFI R-U2T9-78WW R-TXXN-O5Y4 R-UA4N-HVD2 R-F8PH-QCIE
 	root := t.TempDir()
 	store := configuredHostStore(t, root)
 	writeFile(t, root, "etc/ssh/sshd_config", "host config", 0o600)
@@ -224,16 +224,16 @@ func TestHostRestoreReplaysAccountTreesInOrder(t *testing.T) {
 		{name: "etc/ssh/ssh_host_rsa_key", data: []byte("private"), mode: 0o600, uid: 23, gid: 24},
 		{name: "etc/ssh/ssh_host_rsa_key.pub", data: []byte("public"), mode: 0o644, uid: 23, gid: 24},
 		{name: "etc/ssh/authorized_keys/alice", data: []byte("alice key"), mode: 0o640, uid: 41, gid: 42},
-		{name: "home/bob", typeflag: tar.TypeDir, mode: 0o700, uid: 51, gid: 52},
-		{name: "home/bob/file", data: []byte("bob home"), mode: 0o600, uid: 51, gid: 52},
 		{name: "home/alice", typeflag: tar.TypeDir, mode: 0o3750, uid: 41, gid: 42, pax: map[string]string{"SCHILY.acl.access": "user::rwx,user:1002:r-x,group::r-x,mask::r-x,other::---", "SCHILY.acl.default": "user::rwx,group::r-x,other::---"}},
 		{name: specialName, data: []byte("escaped"), mode: 0o6754, uid: 41, gid: 42},
 		{name: "home/alice/second-link", typeflag: tar.TypeSymlink, linkname: "/outside", uid: 40, gid: 3},
 		{name: "home/alice/third-link", typeflag: tar.TypeSymlink, linkname: "back\\slash\nline\rend", uid: 40, gid: 2},
 		{name: "home/alice/fourth-link", typeflag: tar.TypeSymlink, linkname: "/outside-too", uid: 40, gid: 3},
-		{name: "srv/beta", typeflag: tar.TypeDir, mode: 0o770, uid: 61, gid: 62},
+		{name: "home/bob", typeflag: tar.TypeDir, mode: 0o700, uid: 51, gid: 52},
+		{name: "home/bob/file", data: []byte("bob home"), mode: 0o600, uid: 51, gid: 52},
 		{name: "srv/acme", typeflag: tar.TypeDir, mode: 0o2770, uid: 63, gid: 64},
 		{name: "srv/acme/file", data: []byte("group file"), mode: 0o660, uid: 63, gid: 64},
+		{name: "srv/beta", typeflag: tar.TypeDir, mode: 0o770, uid: 61, gid: 62},
 	}
 	body := hostRestoreArchive(t, members...)
 	client := restoreAccountsCloud(t, body)
@@ -331,7 +331,7 @@ func TestHostRestoreReplaysAccountTreesInOrder(t *testing.T) {
 }
 
 func TestHostRestoreAccountPhaseFailuresRetainEarlierPhases(t *testing.T) {
-	// R-U591-YSEA R-U8WR-43MD R-UINY-69JX R-UL3Q-XT1B
+	// R-PD7P-X6NV R-PFNI-OQ59 R-F8PH-QCIE R-UL3Q-XT1B
 	for _, step := range []string{"groups", "users"} {
 		t.Run(step, func(t *testing.T) {
 			root := t.TempDir()
@@ -368,7 +368,7 @@ func TestHostRestoreAccountPhaseFailuresRetainEarlierPhases(t *testing.T) {
 }
 
 func TestHostRestoreSSHFailureRestoresOriginalFiles(t *testing.T) {
-	// R-UCKG-9EUG R-UA4N-HVD2 R-UL3Q-XT1B R-TXXN-O5Y4 R-UINY-69JX
+	// R-UCKG-9EUG R-UA4N-HVD2 R-UL3Q-XT1B R-TXXN-O5Y4 R-F8PH-QCIE
 	for _, failure := range []string{"setfacl", "sshd", "reload", "start error", "put key"} {
 		t.Run(failure, func(t *testing.T) {
 			root := t.TempDir()
@@ -379,10 +379,10 @@ func TestHostRestoreSSHFailureRestoresOriginalFiles(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			members := []restoreMember{restoreManifestMember(t, accounts.Manifest{}), {name: "etc/ssh/ssh_host_rsa_key", data: []byte("new key"), mode: 0o600}, {name: "etc/ssh/ssh_host_new_key", data: []byte("new key"), mode: 0o600}}
+			members := []restoreMember{restoreManifestMember(t, accounts.Manifest{}), {name: "etc/ssh/ssh_host_new_key", data: []byte("new key"), mode: 0o600}, {name: "etc/ssh/ssh_host_rsa_key", data: []byte("new key"), mode: 0o600}}
 			if failure == "put key" {
 				writeFile(t, root, "etc/ssh/ssh_host_blocked_key/blocked", "cannot move directory", 0o600)
-				members = append(members, restoreMember{name: "etc/ssh/ssh_host_blocked_key", data: []byte("replacement"), mode: 0o600})
+				members = append(members[:1], append([]restoreMember{{name: "etc/ssh/ssh_host_blocked_key", data: []byte("replacement"), mode: 0o600}}, members[1:]...)...)
 			}
 			fixture := newRestoreAccountExecutor(t, root)
 			sshDirectory, statErr := os.Stat(filepath.Join(root, "etc/ssh"))
@@ -454,7 +454,7 @@ func TestHostRestoreSSHFailureRestoresOriginalFiles(t *testing.T) {
 }
 
 func TestHostRestoreEmptyAccountsStillChecksSSH(t *testing.T) {
-	// R-UA4N-HVD2 R-U591-YSEA R-U8WR-43MD
+	// R-UA4N-HVD2 R-PD7P-X6NV R-PFNI-OQ59
 	root := t.TempDir()
 	store := configuredHostStore(t, root)
 	fixture := newRestoreAccountExecutor(t, root)
@@ -463,14 +463,14 @@ func TestHostRestoreEmptyAccountsStillChecksSSH(t *testing.T) {
 	if err != nil || !result.GroupsRestored || !result.UsersRestored || !result.SSHRestored || len(result.Groups) != 0 || len(result.Users) != 0 || result.HostKeys != 0 {
 		t.Fatalf("HostRestore() = %+v, %v", result, err)
 	}
-	want := []string{"zstd --quiet --decompress --stdout", "zstd --quiet --decompress --stdout", "getent group " + hardening.ShellGroup, "sshd -t -f " + filepath.Join(root, "etc/ssh/sshd_config"), "systemctl reload sshd.service"}
+	want := []string{"zstd --quiet --decompress --stdout", "zstd --quiet --decompress --stdout", "getent group " + hardening.ShellGroup, "zstd --quiet --decompress --stdout", "zstd --quiet --decompress --stdout", "sshd -t -f " + filepath.Join(root, "etc/ssh/sshd_config"), "systemctl reload sshd.service"}
 	if !slices.Equal(fixture.calls, want) {
 		t.Fatalf("empty accounts commands = %v, want %v", fixture.calls, want)
 	}
 }
 
 func TestHostRestoreUsersGetInstalledTimer(t *testing.T) {
-	// R-U8WR-43MD
+	// R-PFNI-OQ59
 	root := t.TempDir()
 	store := configuredHostStore(t, root)
 	fixture := newRestoreAccountExecutor(t, root)
@@ -639,7 +639,7 @@ func assertNoRestoreTemps(t *testing.T, root string) {
 }
 
 func TestHostRestoreRetainsPartialAccountProgress(t *testing.T) {
-	// R-U591-YSEA R-U8WR-43MD R-UINY-69JX
+	// R-PD7P-X6NV R-PFNI-OQ59 R-F8PH-QCIE
 	for _, step := range []string{"groups", "users"} {
 		t.Run(step, func(t *testing.T) {
 			root := t.TempDir()
@@ -682,10 +682,10 @@ func TestHostRestoreCreatesOnlyMissingAccountParents(t *testing.T) {
 	writeFile(t, root, "etc/ssh/sshd_config", "config", 0o600)
 	manifest := accounts.Manifest{Groups: []accounts.ManifestGroup{{Slug: "acme", UID: 1004, GID: 1004}}, Users: []accounts.ManifestUser{{Name: "alice", UID: 1001, GID: 1001, State: accounts.StateActive}}}
 	client := restoreAccountsCloud(t, hostRestoreArchive(t, restoreManifestMember(t, manifest),
+		restoreMember{name: "etc/ssh/authorized_keys/alice", mode: 0o640, data: []byte("key"), pax: map[string]string{"SCHILY.acl.access": "user::rw-,group::r--,mask:999999999999999999999999999999999999999999:r--,other:7:---"}},
 		restoreMember{name: "home/alice", typeflag: tar.TypeDir, mode: 0o750},
 		restoreMember{name: "home/alice/file", mode: 0o6750, data: []byte("special")},
 		restoreMember{name: "srv/acme", typeflag: tar.TypeDir, mode: 0o2770},
-		restoreMember{name: "etc/ssh/authorized_keys/alice", mode: 0o640, data: []byte("key"), pax: map[string]string{"SCHILY.acl.access": "user::rw-,group::r--,mask:999999999999999999999999999999999999999999:r--,other:7:---"}},
 	))
 	result, err := backup.HostRestore(context.Background(), fixture.env(), cloud.Env{Open: client.open}, store)
 	if err != nil || !result.SSHRestored {
@@ -760,7 +760,7 @@ func TestHostRestoreRejectsAccountDestinationAncestorLinks(t *testing.T) {
 }
 
 func TestHostRestoreAccountsReadFailuresCloseReaders(t *testing.T) {
-	// R-TLQN-UGJ6 R-UINY-69JX
+	// R-F69O-YT10 R-F8PH-QCIE
 	for _, failure := range []string{"get", "read", "close", "compression"} {
 		t.Run(failure, func(t *testing.T) {
 			root := t.TempDir()
@@ -768,7 +768,7 @@ func TestHostRestoreAccountsReadFailuresCloseReaders(t *testing.T) {
 			before := fileTreeSnapshot(t, root)
 			base := restoreAccountsCloud(t, nil)
 			readFailure := errors.New("accounts reader failure")
-			reader := &restoreFailingAccountsReader{body: strings.NewReader("fixture compressed accounts")}
+			reader := &restoreFailingAccountsReader{body: strings.NewReader(string(hostRestoreArchive(t, restoreManifestMember(t, accounts.Manifest{}))))}
 			client := &restoreDownloadAccountsClient{restoreCloud: base, reader: reader}
 			if failure == "get" {
 				client.getErr = readFailure
@@ -831,7 +831,7 @@ func (r *restoreFailingAccountsReader) Read(p []byte) (int, error) {
 func (r *restoreFailingAccountsReader) Close() error { r.closed = true; return r.closeErr }
 
 func TestHostRestoreLinkOwnershipFailureStopsUser(t *testing.T) {
-	// R-UL3Q-XT1B R-U8WR-43MD R-U0DG-FPFI
+	// R-UL3Q-XT1B R-PFNI-OQ59 R-U0DG-FPFI
 	root := t.TempDir()
 	store := configuredHostStore(t, root)
 	fixture := newRestoreAccountExecutor(t, root)
@@ -855,7 +855,7 @@ func TestHostRestoreLinkOwnershipFailureStopsUser(t *testing.T) {
 }
 
 func TestHostAccountsBackupRestoreRoundTrip(t *testing.T) {
-	// R-TLQN-UGJ6 R-U0DG-FPFI R-U2T9-78WW R-U591-YSEA R-U8WR-43MD R-UA4N-HVD2
+	// R-F69O-YT10 R-U0DG-FPFI R-U2T9-78WW R-PD7P-X6NV R-PFNI-OQ59 R-UA4N-HVD2
 	source := t.TempDir()
 	store := configuredHostStore(t, source)
 	writeFile(t, source, "etc/passwd", "acme:x:1004:1004::/srv/acme:/usr/sbin/nologin\nalice:x:1001:1001::/home/alice:/bin/bash\n", 0o600)
@@ -906,7 +906,7 @@ func TestHostAccountsBackupRestoreRoundTrip(t *testing.T) {
 }
 
 func TestHostRestoreMissingFolderStillGuardsParent(t *testing.T) {
-	// R-TXXN-O5Y4 R-U591-YSEA
+	// R-TXXN-O5Y4 R-PD7P-X6NV
 	for _, linked := range []bool{false, true} {
 		t.Run(fmt.Sprint(linked), func(t *testing.T) {
 			root := t.TempDir()
