@@ -88,7 +88,7 @@ Run from `auth/`, in order; every command must exit 0. No skipped tests and no d
 
 1. `test -z "$(gofmt -l .)"` (fix with `make fmt`)
 2. `go build ./...`
-3. `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/auth`, the release build, static and cgo-free, which is why the SQLite driver must be pure Go
+3. `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /dev/null ./cmd/auth`, the release build, static and cgo-free, which is why the SQLite driver must be pure Go
 4. `go test -race ./...`
 5. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`; the cache lives in this worktree's git directory so worktrees never share it, and parallel runners let several sub-projects lint at once (`make lint` runs this form)
 6. `make live`, only when the phase's diff against the last phase commit adds or modifies a `*_live_test.go` file; otherwise it is not run and not counted. A missing credential is then a missing tool: file an issue, never pass or skip.

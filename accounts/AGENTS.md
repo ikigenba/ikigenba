@@ -93,7 +93,7 @@ Run from this directory (`accounts/`), in order; every command must exit 0. No s
 
 1. `test -z "$(gofmt -l .)"` — fails if any file is unformatted (fix with `make fmt`)
 2. `go build ./...`
-3. `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/accounts` — the release build, static and cgo-free, the way `devctl build` builds it, which is why the SQLite driver must be pure Go
+3. `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /dev/null ./cmd/accounts` — the release build, static and cgo-free, the way `devctl build` builds it, which is why the SQLite driver must be pure Go
 4. `go test -race ./...`
 5. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners` — the cache lives in this worktree's git directory, so worktrees never share it, and `--allow-parallel-runners` lets gates for several sub-projects lint at once; `make lint` runs this form
 

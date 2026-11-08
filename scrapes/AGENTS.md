@@ -423,7 +423,7 @@ one; a finding it cannot fix, or believes is wrong, is filed as an issue.
 1. `test -z "$(gofmt -l .)"` — fails if any file is unformatted (fix with
    `make fmt`)
 2. `go build ./...`
-3. `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/scrapes`
+3. `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /dev/null ./cmd/scrapes`
    — the release build, static and cgo-free, the way `devctl build` builds
    it, which is why the SQLite driver must be pure Go
 4. `go test -race ./...`
