@@ -18,10 +18,10 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
 
-var _ func(context.Context, host.Env, cloud.Env, config.Store) (backup.FileResult, error) = backup.HostBackup
+var _ func(context.Context, host.Env, cloud.Env, config.Store) (backup.HostBackupResult, error) = backup.HostBackup
 
 func TestHostBackupAPIConfigurationAndPreworkflow(t *testing.T) {
-	// R-FCIA-771G R-YBH6-P78Q R-9TEE-6UL8 R-DK7F-CAV0
+	// R-SNLH-4VRQ R-YBH6-P78Q R-H8QA-FZWB R-DK7F-CAV0
 	t.Run("prefix absent before region", func(t *testing.T) {
 		assertHostConfigurationError(t, config.Store{Root: t.TempDir()}, "backup.s3_uri not set")
 	})
@@ -139,7 +139,7 @@ func TestHostBackupAPIConfigurationAndPreworkflow(t *testing.T) {
 }
 
 func TestHostBackupArchiveContentsAndBoundaries(t *testing.T) {
-	// R-FJ7X-CR5A R-YDWZ-GQQ4 R-9TEE-6UL8 R-YYIY-T743 R-9JTU-C7U1
+	// R-T10D-CCXD R-T3G6-3WER R-H8QA-FZWB R-YYIY-T743 R-9JTU-C7U1
 	root := t.TempDir()
 	store := configuredHostStore(t, root)
 	writeFile(t, root, "etc/ikigenba/nested/settings", "host settings\n", 0o640)
@@ -177,14 +177,14 @@ func TestHostBackupArchiveContentsAndBoundaries(t *testing.T) {
 		},
 		Execute: executor.execute,
 	}, cloud.Env{Open: client.open}, store)
-	if err != nil || result.Err != nil {
+	if err != nil || result.Host.Err != nil {
 		t.Fatalf("HostBackup() = %+v, %v", result, err)
 	}
-	if nowCalls != 1 || result.Service != "host" || result.Object != "2026-09-16T17:34:56.1234Z.tar.zst" || result.Size <= 0 {
+	if nowCalls != 1 || result.Host.Service != "host" || result.Host.Object != "2026-09-16T17:34:56.1234Z.tar.zst" || result.Host.Size <= 0 {
 		t.Fatalf("HostBackup() = %+v, Now calls %d", result, nowCalls)
 	}
-	wantURI := "s3://bucket/project/host/" + result.Object
-	if !reflect.DeepEqual(client.puts, []string{wantURI}) || int64(len(client.objects[wantURI])) != result.Size {
+	wantURI := "s3://bucket/project/host/" + result.Host.Object
+	if !reflect.DeepEqual(client.puts, []string{strings.TrimSuffix(wantURI, ".tar.zst") + ".accounts.tar.zst", wantURI}) || int64(len(client.objects[wantURI])) != result.Host.Size {
 		t.Fatalf("uploads = %v, object bytes = %d, result = %+v", client.puts, len(client.objects[wantURI]), result)
 	}
 	members := readTestArchive(t, client.objects[wantURI])
@@ -217,7 +217,7 @@ func TestHostBackupArchiveContentsAndBoundaries(t *testing.T) {
 			t.Fatalf("out-of-scope archive member %q", name)
 		}
 	}
-	if !reflect.DeepEqual(executor.commands, []string{"zstd --quiet --stdout"}) {
+	if !reflect.DeepEqual(executor.commands, []string{"zstd --quiet --stdout", "zstd --quiet --stdout"}) {
 		t.Fatalf("host commands = %v", executor.commands)
 	}
 	forbidden.assertQuiet(t)
@@ -230,10 +230,10 @@ func TestHostBackupArchiveContentsAndBoundaries(t *testing.T) {
 		missingStore := configuredHostStore(t, missingRoot)
 		missingClient := newFileCloud()
 		missingResult, missingErr := backup.HostBackup(context.Background(), fileHostEnv(missingRoot, (&fileExecutor{unmapped: true}).execute), cloud.Env{Open: missingClient.open}, missingStore)
-		if missingErr != nil || missingResult.Err != nil {
+		if missingErr != nil || missingResult.Host.Err != nil {
 			t.Fatalf("HostBackup() = %+v, %v", missingResult, missingErr)
 		}
-		missingMembers := readTestArchive(t, missingClient.objects[missingClient.puts[0]])
+		missingMembers := readTestArchive(t, missingClient.objects[missingClient.puts[1]])
 		for name := range missingMembers {
 			if strings.HasPrefix(name, "etc/letsencrypt") {
 				t.Fatalf("missing source appeared as %q", name)
@@ -243,8 +243,9 @@ func TestHostBackupArchiveContentsAndBoundaries(t *testing.T) {
 }
 
 func TestHostBackupPreservesSourceRootSymlinksWithoutDereferencing(t *testing.T) {
-	// R-FJ7X-CR5A
+	// R-T10D-CCXD
 	root := t.TempDir()
+	emptyBackupAccounts(t, root)
 	writeFile(t, root, "opt/ikigenba-private/secret", "service secret", 0o600)
 	writeFile(t, root, "opt/letsencrypt-private/key.pem", "private key", 0o600)
 	if err := os.MkdirAll(filepath.Join(root, "etc"), 0o750); err != nil {
@@ -271,10 +272,10 @@ func TestHostBackupPreservesSourceRootSymlinksWithoutDereferencing(t *testing.T)
 		cloud.Env{Open: client.open},
 		configuredHostStore(t, t.TempDir()),
 	)
-	if err != nil || result.Err != nil {
+	if err != nil || result.Host.Err != nil {
 		t.Fatalf("HostBackup() = %+v, %v", result, err)
 	}
-	members := readTestArchive(t, client.objects[client.puts[0]])
+	members := readTestArchive(t, client.objects[client.puts[1]])
 	if got := sortedHeaderNames(members); !reflect.DeepEqual(got, []string{"etc/ikigenba", "etc/letsencrypt"}) {
 		t.Fatalf("archive members = %v", got)
 	}
@@ -291,7 +292,7 @@ func TestHostBackupPreservesSourceRootSymlinksWithoutDereferencing(t *testing.T)
 }
 
 func TestHostBackupTimestampAndCreateOnlyCollision(t *testing.T) {
-	// R-YDWZ-GQQ4 R-9TEE-6UL8
+	// R-T3G6-3WER R-H8QA-FZWB
 	root := t.TempDir()
 	store := configuredHostStore(t, root)
 	writeFile(t, root, "etc/letsencrypt/cert.pem", "certificate", 0o600)
@@ -309,16 +310,16 @@ func TestHostBackupTimestampAndCreateOnlyCollision(t *testing.T) {
 		return value
 	}}
 	first, err := backup.HostBackup(context.Background(), env, cloud.Env{Open: client.open}, store)
-	if err != nil || first.Err != nil || first.Object != "2026-01-02T03:04:05Z.tar.zst" {
+	if err != nil || first.Host.Err != nil || first.Host.Object != "2026-01-02T03:04:05Z.tar.zst" {
 		t.Fatalf("first HostBackup() = %+v, %v", first, err)
 	}
 	second, err := backup.HostBackup(context.Background(), env, cloud.Env{Open: client.open}, store)
-	if err != nil || second.Err != nil || second.Object != "2026-01-02T03:04:06.000000007Z.tar.zst" {
+	if err != nil || second.Host.Err != nil || second.Host.Object != "2026-01-02T03:04:06.000000007Z.tar.zst" {
 		t.Fatalf("second HostBackup() = %+v, %v", second, err)
 	}
 	before := cloneObjects(client.objects)
 	collision, err := backup.HostBackup(context.Background(), env, cloud.Env{Open: client.open}, store)
-	if err != nil || collision.Service != "host" || !errors.Is(collision.Err, cloud.ErrAlreadyExists) || collision.Object != "" || collision.Size != 0 || nowCalls != 3 {
+	if err != nil || collision.Accounts.Service != "accounts" || !errors.Is(collision.Accounts.Err, cloud.ErrAlreadyExists) || collision.Host.Err == nil || collision.Host.Err.Error() != "accounts not written" || collision.Accounts.Object != "" || collision.Accounts.Size != 0 || nowCalls != 3 {
 		t.Fatalf("collision HostBackup() = %+v, %v, Now calls %d", collision, err, nowCalls)
 	}
 	if !reflect.DeepEqual(client.objects, before) {
@@ -327,13 +328,13 @@ func TestHostBackupTimestampAndCreateOnlyCollision(t *testing.T) {
 }
 
 func TestHostBackupAttemptFailuresAndInterruptions(t *testing.T) {
-	// R-9TEE-6UL8 R-YBI2-GUY1
+	// R-H8QA-FZWB R-YBI2-GUY1
 	storeRoot := t.TempDir()
 	store := configuredHostStore(t, storeRoot)
 	t.Run("archive read", func(t *testing.T) {
 		client := newFileCloud()
 		result, err := backup.HostBackup(context.Background(), fileHostEnv(filepath.Join(t.TempDir(), "missing"), (&fileExecutor{unmapped: true}).execute), cloud.Env{Open: client.open}, store)
-		if err != nil || result.Service != "host" || result.Err == nil || len(client.puts) != 0 {
+		if err != nil || result.Accounts.Service != "accounts" || result.Accounts.Err == nil || len(client.puts) != 0 {
 			t.Fatalf("HostBackup() = %+v, %v, uploads %v", result, err, client.puts)
 		}
 	})
@@ -342,7 +343,7 @@ func TestHostBackupAttemptFailuresAndInterruptions(t *testing.T) {
 		client := newFileCloud()
 		result, err := backup.HostBackup(context.Background(), fileHostEnv(storeRoot, executor.execute), cloud.Env{Open: client.open}, store)
 		var commandErr *host.CommandError
-		if err != nil || result.Service != "host" || !errors.As(result.Err, &commandErr) || len(client.puts) != 0 {
+		if err != nil || result.Accounts.Service != "accounts" || !errors.As(result.Accounts.Err, &commandErr) || len(client.puts) != 0 {
 			t.Fatalf("HostBackup() = %+v, %v, uploads %v", result, err, client.puts)
 		}
 	})
@@ -350,7 +351,7 @@ func TestHostBackupAttemptFailuresAndInterruptions(t *testing.T) {
 		client := newFileCloud()
 		client.fail = func(string, []byte) error { return errors.New("upload unavailable") }
 		result, err := backup.HostBackup(context.Background(), fileHostEnv(storeRoot, (&fileExecutor{unmapped: true}).execute), cloud.Env{Open: client.open}, store)
-		if err != nil || result.Service != "host" || result.Err == nil || !strings.Contains(result.Err.Error(), "upload unavailable") || len(client.objects) != 0 {
+		if err != nil || result.Accounts.Service != "accounts" || result.Accounts.Err == nil || !strings.Contains(result.Accounts.Err.Error(), "upload unavailable") || len(client.objects) != 0 {
 			t.Fatalf("HostBackup() = %+v, %v, objects %v", result, err, client.objects)
 		}
 	})
@@ -366,7 +367,7 @@ func TestHostBackupAttemptFailuresAndInterruptions(t *testing.T) {
 		}
 		client := newFileCloud()
 		result, err := backup.HostBackup(ctx, fileHostEnv(storeRoot, execute), cloud.Env{Open: client.open}, store)
-		if !errors.Is(err, context.Canceled) || result.Service != "host" || !errors.Is(result.Err, context.Canceled) || len(client.puts) != 0 {
+		if !errors.Is(err, context.Canceled) || result.Accounts.Service != "accounts" || !errors.Is(result.Accounts.Err, context.Canceled) || len(client.puts) != 0 {
 			t.Fatalf("HostBackup() = %+v, %v, uploads %v", result, err, client.puts)
 		}
 	})
@@ -378,7 +379,7 @@ func TestHostBackupAttemptFailuresAndInterruptions(t *testing.T) {
 			return context.Canceled
 		}
 		result, err := backup.HostBackup(ctx, fileHostEnv(storeRoot, (&fileExecutor{unmapped: true}).execute), cloud.Env{Open: client.open}, store)
-		if !errors.Is(err, context.Canceled) || result.Service != "host" || !errors.Is(result.Err, context.Canceled) || len(client.objects) != 0 {
+		if !errors.Is(err, context.Canceled) || result.Accounts.Service != "accounts" || !errors.Is(result.Accounts.Err, context.Canceled) || len(client.objects) != 0 {
 			t.Fatalf("HostBackup() = %+v, %v, objects %v", result, err, client.objects)
 		}
 	})
@@ -390,7 +391,7 @@ func TestHostBackupAttemptFailuresAndInterruptions(t *testing.T) {
 			return nil
 		}
 		result, err := backup.HostBackup(ctx, fileHostEnv(storeRoot, (&fileExecutor{unmapped: true}).execute), cloud.Env{Open: client.open}, store)
-		if !errors.Is(err, context.Canceled) || result.Service != "host" || !errors.Is(result.Err, context.Canceled) || len(client.objects) != 1 {
+		if !errors.Is(err, context.Canceled) || result.Accounts.Service != "accounts" || !errors.Is(result.Accounts.Err, context.Canceled) || len(client.objects) != 1 {
 			t.Fatalf("HostBackup() = %+v, %v, objects %v", result, err, client.objects)
 		}
 	})
@@ -417,6 +418,7 @@ func assertHostConfigurationError(t *testing.T, store config.Store, want string)
 
 func configuredHostStore(t *testing.T, root string) config.Store {
 	t.Helper()
+	emptyBackupAccounts(t, root)
 	store := config.Store{Root: root}
 	for key, value := range map[string]string{"backup.s3_uri": "s3://bucket/project/", "aws.region": "us-east-2"} {
 		if err := store.Set(key, value); err != nil {
@@ -426,9 +428,9 @@ func configuredHostStore(t *testing.T, root string) config.Store {
 	return store
 }
 
-func assertZeroHostResult(t *testing.T, result backup.FileResult) {
+func assertZeroHostResult(t *testing.T, result backup.HostBackupResult) {
 	t.Helper()
-	if !reflect.DeepEqual(result, backup.FileResult{}) {
+	if !reflect.DeepEqual(result, backup.HostBackupResult{}) {
 		t.Fatalf("HostBackup() result = %+v, want zero value", result)
 	}
 }
@@ -438,5 +440,17 @@ func unexpectedHostCommand(t *testing.T) func(context.Context, host.Command) (ho
 	return func(_ context.Context, command host.Command) (host.Result, error) {
 		t.Fatalf("unexpected host command: %s", fmt.Sprint(command))
 		return host.Result{}, nil
+	}
+}
+
+func emptyBackupAccounts(t *testing.T, root string) {
+	t.Helper()
+	for _, fixture := range []struct{ name, data string }{{"etc/passwd", "root:x:0:0:root:/root:/bin/bash\n"}, {"etc/group", "root:x:0:\n"}, {"etc/shadow", "root:*:0:0:99999:7:::\n"}} {
+		name, data := fixture.name, fixture.data
+		if _, err := os.Stat(filepath.Join(root, name)); errors.Is(err, os.ErrNotExist) {
+			writeFile(t, root, name, data, 0o600)
+		} else if err != nil {
+			t.Fatal(err)
+		}
 	}
 }

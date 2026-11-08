@@ -51,8 +51,10 @@ type group struct {
 	members             []string
 }
 type accountDB struct {
-	accounts map[string]account
-	groups   map[string]group
+	accounts     map[string]account
+	groups       map[string]group
+	accountOrder []account
+	groupOrder   []group
 }
 
 func rootPath(root, path string) string { return filepath.Join(root, path) }
@@ -108,7 +110,16 @@ func loadAccounts(root string) (accountDB, error) {
 		return db, err
 	}
 	for _, f := range entries {
-		db.accounts[f[0]] = account{f[0], f[1], f[2], f[3], f[4], f[5], f[6]}
+		a := account{f[0], f[1], f[2], f[3], f[4], f[5], f[6]}
+		db.accounts[f[0]] = a
+		db.accountOrder = append(db.accountOrder, a)
+	}
+	groupEntries, err := readEntries(rootPath(root, "/etc/group"), 4)
+	if err != nil {
+		return db, err
+	}
+	for _, f := range groupEntries {
+		db.groupOrder = append(db.groupOrder, group{name: f[0], password: f[1], gid: f[2]})
 	}
 	return db, nil
 }

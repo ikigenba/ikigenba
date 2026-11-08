@@ -21,8 +21,8 @@ import (
 var _ func(context.Context, host.Env, cloud.Env, config.Store) (backup.RetireResult, error) = backup.Retire
 
 func TestRetireAPIAndOrderedSuccessfulEffects(t *testing.T) {
-	// R-Y91D-XNRC R-Z3JR-9L00 R-X9FA-P1PZ R-XAN7-2TGO
-	// R-YW7H-7AUJ R-D6RM-9ONC
+	// R-Y91D-XNRC R-SXCO-71PA R-X9FA-P1PZ R-XAN7-2TGO
+	// R-V3E8-OD5Q R-D6RM-9ONC
 	shape := backup.RetireResult{
 		Services:          []string{"alpha"},
 		Disabled:          []string{"ikigenba-alpha.service"},
@@ -31,6 +31,7 @@ func TestRetireAPIAndOrderedSuccessfulEffects(t *testing.T) {
 		SyncedDatabases:   []string{"alpha"},
 		Files:             []backup.FileResult{{Service: "alpha"}},
 		Host:              backup.FileResult{Service: "host"},
+		Accounts:          backup.FileResult{Service: "accounts"},
 		FailedStep:        "host",
 	}
 	var (
@@ -46,12 +47,13 @@ func TestRetireAPIAndOrderedSuccessfulEffects(t *testing.T) {
 	shapeServices, shapeDisabled, shapeServicesStopped, shapeLitestreamStopped = shape.Services, shape.Disabled, shape.ServicesStopped, shape.LitestreamStopped
 	shapeSyncedDatabases, shapeFiles, shapeHost, shapeFailedStep = shape.SyncedDatabases, shape.Files, shape.Host, shape.FailedStep
 	if len(shapeServices) != 1 || len(shapeDisabled) != 1 || !shapeServicesStopped || !shapeLitestreamStopped || len(shapeSyncedDatabases) != 1 ||
-		len(shapeFiles) != 1 || shapeFiles[0].Service != "alpha" || shapeHost.Service != "host" || shapeFailedStep != "host" {
+		len(shapeFiles) != 1 || shapeFiles[0].Service != "alpha" || shapeHost.Service != "host" || shape.Accounts.Service != "accounts" || shapeFailedStep != "host" {
 		t.Fatalf("RetireResult = %+v", shape)
 	}
 
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
+	emptyBackupAccounts(t, root)
 	writeFile(t, root, "opt/alpha/etc/manifest.toml", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o600)
 	writeFile(t, root, "var/opt/ikigenba/alpha/state/app.db", "database", 0o600)
 	writeFile(t, root, "var/opt/ikigenba/alpha/state/ordinary", "alpha", 0o600)
@@ -91,6 +93,9 @@ func TestRetireAPIAndOrderedSuccessfulEffects(t *testing.T) {
 		t.Fatalf("Retire() = %+v, cloud opens %d, Now calls %d", result, opened, nowCalls)
 	}
 	wantObject := "2026-09-16T23:45:12.345Z.tar.zst"
+	if result.Accounts.Err != nil || result.Accounts.Service != "accounts" || result.Accounts.Object != "2026-09-16T23:45:12.345Z.accounts.tar.zst" {
+		t.Fatalf("accounts = %+v", result.Accounts)
+	}
 	for _, archive := range append(append([]backup.FileResult{}, result.Files...), result.Host) {
 		if archive.Err != nil || archive.Object != wantObject {
 			t.Fatalf("archive result = %+v, want common object %q", archive, wantObject)
@@ -121,6 +126,7 @@ func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
 	t.Run("discovery failure before unit operation", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredFileStore(t, root)
+		emptyBackupAccounts(t, root)
 		writeFile(t, root, "opt", "not a directory", 0o600)
 		client := newFileCloud()
 		executor := newRetireExecutor(map[string]bool{"alpha": true})
@@ -136,6 +142,7 @@ func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
 	t.Run("cloud opening is preworkflow", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredFileStore(t, root)
+		emptyBackupAccounts(t, root)
 		writeFile(t, root, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
 		executor := newRetireExecutor(map[string]bool{"alpha": true})
 		result, err := backup.Retire(context.Background(), host.Env{Root: root, Now: time.Now, Execute: executor.execute}, cloud.Env{Open: func(context.Context, string) (cloud.Client, error) {
@@ -149,6 +156,7 @@ func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
 	t.Run("missing cloud dependency is preworkflow", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredFileStore(t, root)
+		emptyBackupAccounts(t, root)
 		writeFile(t, root, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
 		before := fileTreeSnapshot(t, root)
 		executor := newRetireExecutor(map[string]bool{"alpha": true})
@@ -164,6 +172,7 @@ func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
 	t.Run("invalid discovered name before unit operation", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredFileStore(t, root)
+		emptyBackupAccounts(t, root)
 		writeFile(t, root, "var/opt/ikigenba/bad_name/state/value", "data", 0o600)
 		client := newFileCloud()
 		executor := newRetireExecutor(nil)
@@ -176,6 +185,7 @@ func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
 	t.Run("later service inspection prevents all stops", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredFileStore(t, root)
+		emptyBackupAccounts(t, root)
 		writeFile(t, root, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
 		writeFile(t, root, "var/opt/ikigenba/zeta/state/value", "zeta", 0o600)
 		client := newFileCloud()
@@ -200,6 +210,7 @@ func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
 	t.Run("litestream nonzero preserves stopped services", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredFileStore(t, root)
+		emptyBackupAccounts(t, root)
 		writeFile(t, root, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
 		client := newFileCloud()
 		executor := newRetireExecutor(map[string]bool{"alpha": true})
@@ -222,6 +233,7 @@ func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
 	t.Run("service stop transport failure prevents later actions", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredFileStore(t, root)
+		emptyBackupAccounts(t, root)
 		writeFile(t, root, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
 		client := newFileCloud()
 		transport := errors.New("connection closed")
@@ -247,6 +259,7 @@ func TestRetireSocketFirstAndDisabledClassification(t *testing.T) {
 	// R-X9FA-P1PZ R-XAN7-2TGO
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
+	emptyBackupAccounts(t, root)
 	for _, name := range []string{"alpha", "beta", "gamma", "delta"} {
 		writeFile(t, root, "var/opt/ikigenba/"+name+"/state/value", name, 0o600)
 	}
@@ -281,6 +294,7 @@ func TestRetireDisabledInspectionFailurePreventsStops(t *testing.T) {
 	// R-XAN7-2TGO
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
+	emptyBackupAccounts(t, root)
 	writeFile(t, root, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
 	client := newFileCloud()
 	executor := newRetireExecutor(map[string]bool{"alpha": true})
@@ -306,6 +320,7 @@ func TestRetireDisabledRequiresInitiallyInactiveUnits(t *testing.T) {
 		t.Run(initialState, func(t *testing.T) {
 			root := t.TempDir()
 			store := configuredFileStore(t, root)
+			emptyBackupAccounts(t, root)
 			writeFile(t, root, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
 			client := newFileCloud()
 			executor := newRetireExecutor(map[string]bool{"alpha": true})
@@ -343,6 +358,7 @@ func TestRetirePostStopRequiresInactiveState(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
 			store := configuredFileStore(t, root)
+			emptyBackupAccounts(t, root)
 			writeFile(t, root, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
 			client := newFileCloud()
 			executor := newRetireExecutor(map[string]bool{"alpha": true})
@@ -413,6 +429,7 @@ func TestRetireRejectsInvalidSynchronizationProofAndStops(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
 			store := configuredFileStore(t, root)
+			emptyBackupAccounts(t, root)
 			writeFile(t, root, "opt/alpha/etc/manifest.toml", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o600)
 			client := newFileCloud()
 			executor := newRetireExecutor(map[string]bool{"alpha": false})
@@ -459,6 +476,7 @@ func TestRetireSyncCommandFailuresStopWithoutRetry(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
 			store := configuredFileStore(t, root)
+			emptyBackupAccounts(t, root)
 			writeFile(t, root, "opt/alpha/etc/manifest.toml", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o600)
 			client := newFileCloud()
 			executor := newRetireExecutor(map[string]bool{"alpha": false})
@@ -487,6 +505,7 @@ func TestRetireRetainsPartialProofAndOrderedStopError(t *testing.T) {
 	// R-D6RM-9ONC
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
+	emptyBackupAccounts(t, root)
 	for _, name := range []string{"alpha", "beta", "gamma"} {
 		writeFile(t, root, "opt/"+name+"/etc/manifest.toml", "app = \""+name+"\"\n[database]\nengine = \"sqlite\"\npath = \"state/"+name+".db\"\n", 0o600)
 	}
@@ -525,6 +544,7 @@ func TestRetireSuccessfulProofStillRequiresLitestreamStop(t *testing.T) {
 	// R-D6RM-9ONC
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
+	emptyBackupAccounts(t, root)
 	writeFile(t, root, "opt/alpha/etc/manifest.toml", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o600)
 	client := newFileCloud()
 	executor := newRetireExecutor(map[string]bool{"alpha": false})
@@ -554,9 +574,10 @@ func countCommands(commands []string, prefix string) int {
 }
 
 func TestRetireTimestampCollisionDoesNotAdvance(t *testing.T) {
-	// R-YW7H-7AUJ
+	// R-V3E8-OD5Q
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
+	emptyBackupAccounts(t, root)
 	writeFile(t, root, "var/opt/ikigenba/alpha/state/value", "alpha", 0o600)
 	client := newFileCloud()
 	basename := "1970-01-01T00:00:07Z.tar.zst"
@@ -578,15 +599,16 @@ func TestRetireTimestampCollisionDoesNotAdvance(t *testing.T) {
 	if string(client.objects[alphaURI]) != "earlier object" || result.Host.Object != basename || result.Host.Err != nil {
 		t.Fatalf("collision results = %+v, preserved alpha %q", result, client.objects[alphaURI])
 	}
-	if len(client.puts) != 2 || client.puts[0] != alphaURI || client.puts[1] != "s3://bucket/host/host/"+basename {
+	if len(client.puts) != 3 || client.puts[0] != alphaURI || client.puts[1] != "s3://bucket/host/host/"+strings.TrimSuffix(basename, ".tar.zst")+".accounts.tar.zst" || client.puts[2] != "s3://bucket/host/host/"+basename {
 		t.Fatalf("uploads = %v", client.puts)
 	}
 }
 
 func TestRetireArchiveFailuresRetainResultsAndStoppedUnits(t *testing.T) {
-	// R-DUOO-S3WL R-YW7H-7AUJ
+	// R-V5U1-FWN4 R-V3E8-OD5Q
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
+	emptyBackupAccounts(t, root)
 	for _, name := range []string{"alpha", "beta", "gamma"} {
 		writeFile(t, root, "var/opt/ikigenba/"+name+"/state/value", name, 0o600)
 	}
@@ -613,7 +635,7 @@ func TestRetireArchiveFailuresRetainResultsAndStoppedUnits(t *testing.T) {
 	if got := resultNames(result.Files); !reflect.DeepEqual(got, []string{"alpha", "beta", "gamma"}) || result.Files[0].Err != nil || result.Files[1].Err == nil || result.Files[2].Err != nil {
 		t.Fatalf("file results = %+v", result.Files)
 	}
-	if len(client.puts) != 4 || !strings.Contains(client.puts[len(client.puts)-1], "/host/") {
+	if len(client.puts) != 5 || !strings.Contains(client.puts[len(client.puts)-1], "/host/") {
 		t.Fatalf("uploads = %v", client.puts)
 	}
 	if containsRetireAction(executor.commands, "start") || containsRetireAction(executor.commands, "restart") || containsRetireAction(executor.commands, "enable") || containsRetireAction(executor.commands, "disable") || containsRetireAction(executor.commands, "mask") {
@@ -627,10 +649,11 @@ func TestRetireArchiveFailuresRetainResultsAndStoppedUnits(t *testing.T) {
 }
 
 func TestRetireInterruptionStopsBeforeHostArchive(t *testing.T) {
-	// R-DUOO-S3WL
+	// R-V5U1-FWN4
 	ctx, cancel := context.WithCancel(context.Background())
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
+	emptyBackupAccounts(t, root)
 	for _, name := range []string{"alpha", "beta", "gamma"} {
 		writeFile(t, root, "var/opt/ikigenba/"+name+"/state/value", name, 0o600)
 	}
@@ -775,6 +798,7 @@ func TestRetireSkipsUnmovedDatabaseAndReportsFileFailure(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			root := t.TempDir()
 			store := configuredFileStore(t, root)
+			emptyBackupAccounts(t, root)
 			writeFile(t, root, "opt/alpha/etc/manifest.toml", "[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o600)
 			writeFile(t, root, "var/opt/ikigenba/alpha/state/app.db", "live", 0o600)
 			switch kind {
@@ -793,7 +817,7 @@ func TestRetireSkipsUnmovedDatabaseAndReportsFileFailure(t *testing.T) {
 			if err != nil || !got.ServicesStopped || !got.LitestreamStopped || len(got.SyncedDatabases) != 0 || len(got.Files) != 1 || got.Files[0].Err == nil || got.Files[0].Err.Error() != "/opt/alpha/state has not moved" || got.Host.Err != nil {
 				t.Fatalf("Retire = %+v, %v", got, err)
 			}
-			if countCommands(executor.commands, "litestream sync ") != 0 || len(client.puts) != 1 || !strings.Contains(client.puts[0], "/host/") {
+			if countCommands(executor.commands, "litestream sync ") != 0 || len(client.puts) != 2 || !strings.Contains(client.puts[0], "/host/") {
 				t.Fatalf("commands %v, puts %v", executor.commands, client.puts)
 			}
 		})
@@ -804,6 +828,7 @@ func TestReleasedRetireSynchronizesDespiteOldPerAppState(t *testing.T) {
 	// R-D6RM-9ONC
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
+	emptyBackupAccounts(t, root)
 	writeFile(t, root, "opt/ikigenba/releases/fixture/alpha/bin/alpha", "binary", 0o700)
 	writeFile(t, root, "opt/ikigenba/releases/fixture/alpha/etc/manifest.toml", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o600)
 	if err := os.Symlink("releases/fixture", filepath.Join(root, "opt/ikigenba/current")); err != nil {
@@ -817,7 +842,7 @@ func TestReleasedRetireSynchronizesDespiteOldPerAppState(t *testing.T) {
 	if err != nil || !got.ServicesStopped || !got.LitestreamStopped || !reflect.DeepEqual(got.SyncedDatabases, []string{"app.db"}) || len(got.Files) != 1 || got.Files[0].Err != nil || got.Host.Err != nil {
 		t.Fatalf("Retire = %+v, %v", got, err)
 	}
-	if countCommands(executor.commands, "litestream sync ") != 1 || len(client.puts) != 2 {
+	if countCommands(executor.commands, "litestream sync ") != 1 || len(client.puts) != 3 {
 		t.Fatalf("commands %v, puts %v", executor.commands, client.puts)
 	}
 }

@@ -356,7 +356,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL
 	// R-ZIB1-SI40
 	// R-8LON-MN2L
-	// R-T468-PXAZ
+	// R-WGT2-OLIH
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZA": {
 			{Name: "example.com", Type: "SOA"},
@@ -901,7 +901,7 @@ func TestInitPreflightIgnoresHostApex(t *testing.T) {
 }
 
 func TestInitInvalidApexFailsAtCertificate(t *testing.T) {
-	// R-ZKQU-K1LE R-T5E5-3P1O
+	// R-ZKQU-K1LE R-WED9-X213
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZONE": {
 			{Name: "localhost", Type: "SOA"},
@@ -1557,7 +1557,7 @@ func TestInitStateGuardIgnoresServicesWithoutInstalledState(t *testing.T) {
 }
 
 func TestInitLayoutFailureStopsBeforeTurnsSetup(t *testing.T) {
-	// R-T468-PXAZ
+	// R-WGT2-OLIH
 	deps := readyStateGuardDeps(t)
 	writeCLIInstallFile(t, filepath.Join(deps.Root, "usr/local/bin/opsctl"), "already installed")
 	if err := os.WriteFile(filepath.Join(deps.Root, "opt"), []byte("not a directory"), 0o600); err != nil {
@@ -1712,7 +1712,7 @@ func TestInitEnvironmentGuardJudgesEntryWithoutFollowingSymlinks(t *testing.T) {
 	}
 }
 
-// R-T468-PXAZ
+// R-WGT2-OLIH
 func TestInitHardeningFilesystemFailureStopsBeforeEnvironmentGuard(t *testing.T) {
 	deps := readyStateGuardDeps(t)
 	makeStateGuardApp(t, deps.Root, "notes", true)

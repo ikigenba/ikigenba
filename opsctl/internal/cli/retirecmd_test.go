@@ -21,8 +21,8 @@ const wantRetireUsage = `Usage: opsctl retire
 Take a host's final backup before it is discarded. Stop every app's socket and
 service, sockets first so no request starts a service again, then
 litestream.service so it ships every committed change it holds, then copy
-every service's files and the host's own configuration to backup.s3_uri
-exactly as 'opsctl backup' and 'opsctl host backup' would.
+every service's files and the host's own configuration and accounts to
+backup.s3_uri exactly as 'opsctl backup' and 'opsctl host backup' would.
 
 Nothing is deleted or disabled. The units are left stopped; on a host kept
 after all, a reboot or 'opsctl restart APP' brings every enabled app back, and
@@ -34,7 +34,7 @@ Configuration keys:
 `
 
 func TestRetireHelpIsExactAndHostIndependent(t *testing.T) {
-	// R-XD2Z-UCY2
+	// R-UW2U-DQPK
 	for _, euid := range []int{0, 1000} {
 		for _, option := range []string{"--help", "-h"} {
 			deps, assertInert := inertHostCommandDeps(t, euid)
@@ -77,7 +77,7 @@ func TestRetireGrammarAndRootRefusalPrecedeHostAccess(t *testing.T) {
 }
 
 func TestRetireRendersSynchronizedSuccessAndArchiveFindings(t *testing.T) {
-	// R-XBV3-GL7D
+	// R-UYIN-5A6Y
 	result := backup.RetireResult{
 		Services:          []string{"alpha", "beta", "crm", "dashboard", "epsilon", "zeta"},
 		Disabled:          []string{"crm", "zeta"},
@@ -92,7 +92,8 @@ func TestRetireRendersSynchronizedSuccessAndArchiveFindings(t *testing.T) {
 			{Service: "epsilon", Object: "stamp.tar.zst", Size: 1024 * 1024},
 			{Service: "zeta", Err: errors.New("upload rejected")},
 		},
-		Host: backup.FileResult{Service: "host", Object: "stamp.tar.zst", Size: 1536},
+		Accounts: backup.FileResult{Service: "accounts", Object: "stamp.accounts.tar.zst", Size: 1572864},
+		Host:     backup.FileResult{Service: "host", Object: "stamp.tar.zst", Size: 1536},
 	}
 	var stdout, stderr bytes.Buffer
 	code := renderRetireOutcome(&stdout, &stderr, result, nil)
@@ -104,6 +105,7 @@ func TestRetireRendersSynchronizedSuccessAndArchiveFindings(t *testing.T) {
 		"dashboard: ok (stamp.tar.zst, 1.0 MiB)\n" +
 		"epsilon: ok (stamp.tar.zst, 1.0 MiB)\n" +
 		"zeta: failed: upload rejected\n" +
+		"accounts: ok (stamp.accounts.tar.zst, 1.5 MiB)\n" +
 		"host: ok (stamp.tar.zst, 1.5 KiB)\n"
 	if code != exitFail || stdout.String() != want || stderr.String() != "" {
 		t.Fatalf("renderRetireOutcome = exit %d stdout %q stderr %q", code, stdout.String(), stderr.String())
@@ -120,6 +122,7 @@ func TestRetireRendersSynchronizedSuccessAndArchiveFindings(t *testing.T) {
 		"dashboard: ok (stamp.tar.zst, 1.0 MiB)\n" +
 		"epsilon: ok (stamp.tar.zst, 1.0 MiB)\n" +
 		"zeta: ok (stamp.tar.zst, 2.0 MiB)\n" +
+		"accounts: ok (stamp.accounts.tar.zst, 1.5 MiB)\n" +
 		"host: ok (stamp.tar.zst, 1.5 KiB)\n"
 	if code != exitOK || stdout.String() != want || stderr.Len() != 0 {
 		t.Fatalf("successful render = exit %d stdout %q stderr %q", code, stdout.String(), stderr.String())
@@ -127,7 +130,7 @@ func TestRetireRendersSynchronizedSuccessAndArchiveFindings(t *testing.T) {
 }
 
 func TestRetireServiceReportKeepsAdjacentDisabledAppsSeparate(t *testing.T) {
-	// R-XBV3-GL7D
+	// R-UYIN-5A6Y
 	result := backup.RetireResult{
 		Services:          []string{"alpha", "beta", "gamma", "delta"},
 		Disabled:          []string{"alpha", "beta"},
@@ -156,7 +159,7 @@ func TestRetireServiceReportKeepsAdjacentDisabledAppsSeparate(t *testing.T) {
 }
 
 func TestRetireOperationalErrorsRetainOnlyCompletedReports(t *testing.T) {
-	// R-HZPA-6PHZ
+	// R-V0YF-WTOC
 	t.Run("sync failure remains primary and both command captures render", func(t *testing.T) {
 		root := configuredBackupRoot(t)
 		manifest := filepath.Join(root, "opt/alpha/etc/manifest.toml")
@@ -270,7 +273,7 @@ func TestRetireOperationalErrorsRetainOnlyCompletedReports(t *testing.T) {
 		}
 	})
 
-	t.Run("failed host archive row is retained", func(t *testing.T) {
+	t.Run("failed accounts archive row is retained", func(t *testing.T) {
 		root := configuredBackupRoot(t)
 		client := newHostCLICloud()
 		execute := func(_ context.Context, command host.Command) (host.Result, error) {
@@ -287,9 +290,9 @@ func TestRetireOperationalErrorsRetainOnlyCompletedReports(t *testing.T) {
 			}
 		}
 		stdout, stderr, code := invokeBackupCLI([]string{"retire"}, hostCLIDeps(root, client, execute))
-		wantOut := "services: ok (none)\nlitestream: ok (stopped)\nhost: failed: compress \"host\" archive: context canceled\n"
-		wantErr := "opsctl: retire failed at host\n\n> partial archive\n"
-		if code != int(exitFail) || stdout != wantOut || stderr != wantErr || strings.Count(stdout, "host: failed:") != 1 {
+		wantOut := "services: ok (none)\nlitestream: ok (stopped)\naccounts: failed: compress \"accounts\" archive: context canceled\n"
+		wantErr := "opsctl: retire failed at accounts\n\n> partial archive\n"
+		if code != int(exitFail) || stdout != wantOut || stderr != wantErr || strings.Count(stdout, "accounts: failed:") != 1 {
 			t.Fatalf("host archive failure = exit %d stdout %q stderr %q", code, stdout, stderr)
 		}
 	})
@@ -329,7 +332,7 @@ func observeRetireRootAccess(t *testing.T, root string) func() {
 }
 
 func TestRetireWithoutServicesArchivesOnlyHostAndRunsNoOtherProject(t *testing.T) {
-	// R-Z3IV-HXAP R-Z2AZ-45K0
+	// R-V89U-7G4I R-Z2AZ-45K0
 	root := configuredBackupRoot(t)
 	client := newHostCLICloud()
 	var commands []string
@@ -348,15 +351,15 @@ func TestRetireWithoutServicesArchivesOnlyHostAndRunsNoOtherProject(t *testing.T
 		}
 	}
 	stdout, stderr, code := invokeBackupCLI([]string{"retire"}, hostCLIDeps(root, client, execute))
-	want := "services: ok (none)\nlitestream: ok (stopped)\nhost: ok (2026-09-16T12:34:56Z.tar.zst, 1.5 KiB)\n"
+	want := "services: ok (none)\nlitestream: ok (stopped)\naccounts: ok (2026-09-16T12:34:56Z.accounts.tar.zst, 0.0 MiB)\nhost: ok (2026-09-16T12:34:56Z.tar.zst, 1.5 KiB)\n"
 	if code != 0 || stdout != want || stderr != "" {
 		t.Fatalf("retire empty host = exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
-	if wantCommands := []string{"systemctl stop litestream.service", "systemctl show --property=LoadState --property=ActiveState litestream.service", "zstd --quiet --stdout"}; !reflect.DeepEqual(commands, wantCommands) {
+	if wantCommands := []string{"systemctl stop litestream.service", "systemctl show --property=LoadState --property=ActiveState litestream.service", "zstd --quiet --stdout", "zstd --quiet --stdout"}; !reflect.DeepEqual(commands, wantCommands) {
 		t.Fatalf("commands = %v, want %v; retirement must not terminate the machine or run another project", commands, wantCommands)
 	}
-	if len(client.objects) != 1 {
-		t.Fatalf("published objects = %v, want only host archive", reflect.ValueOf(client.objects).MapKeys())
+	if len(client.objects) != 2 {
+		t.Fatalf("published objects = %v, want accounts and host archives", reflect.ValueOf(client.objects).MapKeys())
 	}
 	for uri := range client.objects {
 		if filepath.Base(filepath.Dir(uri)) != "host" {

@@ -18,6 +18,7 @@ import (
 
 func makeInitTurnsRelease(t *testing.T, root, sha, content string) string {
 	t.Helper()
+	seedInitAccountFiles(t, root, "", "", "")
 	folder := filepath.Join(root, release.ReleasesDir, sha)
 	executable := filepath.Join(folder, release.OpsctlPath)
 	writeCLIInstallFile(t, executable, "binary")
@@ -59,7 +60,7 @@ func stopInitAtCertificate(t *testing.T, deps *cli.Deps) *int {
 }
 
 func TestInitTurnsSetupSourceAndExistingLink(t *testing.T) {
-	// R-T2YC-C5KA R-3ZDN-MY6N R-T6M1-HGSD
+	// R-W89S-07BM R-WAPK-RQT0 R-WJ8V-G4ZV
 	for _, layout := range []string{"fresh", "per-app", "released"} {
 		for _, kind := range []string{"absent", "file", "link", "dangling", "directory"} {
 			t.Run(layout+"/"+kind, func(t *testing.T) {
@@ -141,7 +142,7 @@ func TestInitTurnsSetupSourceAndExistingLink(t *testing.T) {
 }
 
 func TestInitTurnsAbsentSourceIsInertAndLinkFailureStopsInstall(t *testing.T) {
-	// R-T2YC-C5KA R-3ZDN-MY6N
+	// R-W89S-07BM R-WAPK-RQT0
 	for _, kind := range []string{"no-tree", "outside-release", "executable-error", "bad-current", "link-failure"} {
 		t.Run(kind, func(t *testing.T) {
 			deps := readyStateGuardDeps(t)
@@ -175,6 +176,12 @@ func TestInitTurnsAbsentSourceIsInertAndLinkFailureStopsInstall(t *testing.T) {
 					injected = initTurnsState(t, deps.Root)
 					return executable, nil
 				}
+			}
+			if kind == "no-tree" || kind == "outside-release" || kind == "executable-error" {
+				// An accidental EnsureTimers call must fail, even when old
+				// timer units remain from an earlier release.
+				writeCLIInstallFile(t, filepath.Join(deps.Root, release.UserUnitDir, release.TurnsTimer), "existing timer")
+				writeCLIInstallFile(t, filepath.Join(deps.Root, "etc/shadow"), "malformed shadow")
 			}
 			before := initTurnsState(t, deps.Root)
 			calls := stopInitAtCertificate(t, &deps)
@@ -254,10 +261,11 @@ func TestInitDiscoveryFailureAfterHardeningStopsBeforeNginx(t *testing.T) {
 }
 
 func TestInitTurnsPrecedesCertificateAndFailuresStopSequence(t *testing.T) {
-	// R-T2YC-C5KA R-T468-PXAZ R-3ZDN-MY6N R-T6M1-HGSD
+	// R-W89S-07BM R-WGT2-OLIH R-WAPK-RQT0 R-WJ8V-G4ZV
 	for _, kind := range []string{"ready", "missing-unit", "config-blocked", "bad-current", "no-turns"} {
 		t.Run(kind, func(t *testing.T) {
 			deps := readyStateGuardDeps(t)
+			seedInitAccountFiles(t, deps.Root, "", "", "")
 			sha := strings.Repeat("d", 40)
 			folder := release.ReleasesDir + "/" + sha
 			executable := filepath.Join(deps.Root, folder, release.OpsctlPath)
@@ -335,5 +343,159 @@ func TestInitTurnsPrecedesCertificateAndFailuresStopSequence(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func seedInitAccountFiles(t *testing.T, root, passwd, group, shadow string) {
+	t.Helper()
+	for name, data := range map[string]string{"passwd": passwd, "group": group, "shadow": shadow} {
+		writeCLIInstallFile(t, filepath.Join(root, "etc", name), data)
+	}
+}
+
+func initTimerUsers(t *testing.T, root string) {
+	t.Helper()
+	seedInitAccountFiles(t, root,
+		"dave:x:1004:1004::/home/dave:/bin/bash\ncarol:x:1003:1003::/home/carol:/bin/bash\nbob:x:1002:1002::/home/bob:/bin/bash\nalice:x:1001:1001::/home/alice:/bin/bash\nerin:x:1005:1005::/home/erin:/bin/bash\n",
+		"shell:x:900:alice,bob,carol,dave,erin\n",
+		"alice:!!:0:0:99999:7:::\nbob:!!:0:0:99999:7::1:\ncarol:!!:0:0:99999:7:::\ndave:!!:0:0:99999:7:::\nerin:!!:0:0:99999:7:::\n")
+	initTimerReady(t, root, "erin")
+}
+
+func initTimerReady(t *testing.T, root, name string) {
+	t.Helper()
+	writeCLIInstallFile(t, filepath.Join(root, "var/lib/systemd/linger", name), "")
+	link := filepath.Join(root, "home", name, ".config/systemd/user/timers.target.wants", release.TurnsTimer)
+	if err := os.MkdirAll(filepath.Dir(link), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(release.UserUnitDir+"/"+release.TurnsTimer, link); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInitGivesActiveUsersTimersAfterInstall(t *testing.T) {
+	// R-W89S-07BM R-WAPK-RQT0 R-WGT2-OLIH R-WJ8V-G4ZV
+	deps := readyStateGuardDeps(t)
+	executable := makeInitTurnsRelease(t, deps.Root, strings.Repeat("a", 40), "source ")
+	deps.Executable = func() (string, error) { return executable, nil }
+	initTimerUsers(t, deps.Root)
+	before := initTurnsState(t, deps.Root)
+	filesystem, err := os.OpenRoot(deps.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = filesystem.Close() }()
+	var calls []string
+	deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+		calls = append(calls, command.Name+" "+strings.Join(command.Args, " "))
+		for path, want := range map[string]string{release.TurnsConfig: "space=api.example.com\n", release.UserUnitDir + "/" + release.TurnsTimer: "source " + release.TurnsTimer} {
+			data, err := filesystem.ReadFile(strings.TrimPrefix(path, "/"))
+			if err != nil || string(data) != want {
+				t.Fatalf("timer commands before install: %s = %q, %v", path, data, err)
+			}
+		}
+		if command.Name == "certbot" {
+			return host.Result{}, errors.New("certificate fixture stop")
+		}
+		return host.Result{}, nil
+	}
+	stdout, stderr, code := invoke([]string{"init"}, deps)
+	want := []string{
+		"loginctl enable-linger alice", "systemctl start user@1001.service", "systemctl --user --machine=alice@.host enable --now turns.timer",
+		"loginctl enable-linger carol", "systemctl start user@1003.service", "systemctl --user --machine=carol@.host enable --now turns.timer",
+		"loginctl enable-linger dave", "systemctl start user@1004.service", "systemctl --user --machine=dave@.host enable --now turns.timer",
+	}
+	if code != 1 || stderr != "opsctl: certbot certonly: certificate fixture stop\n" || !strings.HasSuffix(stdout, "wildcard api.example.com: ok (192.0.2.10)\n") || strings.Contains(stdout, "turns") {
+		t.Fatalf("init = %d %q %q", code, stdout, stderr)
+	}
+	if len(calls) != len(want)+1 || !reflect.DeepEqual(calls[:len(want)], want) || !strings.HasPrefix(calls[len(want)], "certbot ") {
+		t.Fatalf("commands = %v", calls)
+	}
+	after := initTurnsState(t, deps.Root)
+	for path, entry := range before {
+		if strings.HasPrefix(path, "opt/ikigenba/") || strings.HasPrefix(path, "home/") || strings.HasPrefix(path, "var/lib/systemd/linger/") {
+			if !reflect.DeepEqual(after[path], entry) {
+				t.Fatal("setup itself changed protected state", path)
+			}
+		}
+	}
+}
+
+func TestInitTimerFailureStopsBeforeCertificateAndResumes(t *testing.T) {
+	// R-W89S-07BM R-WAPK-RQT0
+	deps := readyStateGuardDeps(t)
+	executable := makeInitTurnsRelease(t, deps.Root, strings.Repeat("a", 40), "source ")
+	deps.Executable = func() (string, error) { return executable, nil }
+	initTimerUsers(t, deps.Root)
+	var calls []string
+	fail := true
+	deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+		line := command.Name + " " + strings.Join(command.Args, " ")
+		calls = append(calls, line)
+		if command.Name == "certbot" {
+			return host.Result{}, errors.New("certificate fixture stop")
+		}
+		if line == "systemctl --user --machine=carol@.host enable --now turns.timer" && fail {
+			return host.Result{ExitCode: 1, Stderr: []byte("Failed to connect to bus: No such file or directory\n")}, nil
+		}
+		if command.Name == "systemctl" && len(command.Args) > 0 && command.Args[0] == "--user" {
+			name := strings.TrimSuffix(strings.TrimPrefix(command.Args[1], "--machine="), "@.host")
+			initTimerReady(t, deps.Root, name)
+		}
+		return host.Result{}, nil
+	}
+	stdout, stderr, code := invoke([]string{"init"}, deps)
+	wantErr := "opsctl: systemctl: exit status 1\n\n> Failed to connect to bus: No such file or directory\n"
+	want := []string{
+		"loginctl enable-linger alice", "systemctl start user@1001.service", "systemctl --user --machine=alice@.host enable --now turns.timer",
+		"loginctl enable-linger carol", "systemctl start user@1003.service", "systemctl --user --machine=carol@.host enable --now turns.timer",
+	}
+	if code != 1 || stderr != wantErr || !strings.HasSuffix(stdout, "wildcard api.example.com: ok (192.0.2.10)\n") || !reflect.DeepEqual(calls, want) {
+		t.Fatalf("init = %d %q %q, calls %v", code, stdout, stderr, calls)
+	}
+	fail, calls = false, nil
+	stdoutAgain, stderr, code := invoke([]string{"init"}, deps)
+	if code != 1 || stdoutAgain != stdout || stderr != "opsctl: certbot certonly: certificate fixture stop\n" || len(calls) != 7 || calls[0] != "loginctl enable-linger carol" || calls[3] != "loginctl enable-linger dave" || !strings.HasPrefix(calls[6], "certbot ") {
+		t.Fatalf("rerun = %d %q %q, calls %v", code, stdoutAgain, stderr, calls)
+	}
+}
+
+func TestInitInvalidApexAllowsOnlyTurnsTimerCommands(t *testing.T) {
+	// R-WED9-X213
+	deps := readyStateGuardDeps(t)
+	store := config.Store{Root: deps.Root}
+	for key, value := range map[string]string{"host.name": "EXAMPLE.COM.", "host.apex": "home"} {
+		if err := store.Set(key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	executable := makeInitTurnsRelease(t, deps.Root, strings.Repeat("a", 40), "source ")
+	deps.Executable = func() (string, error) { return executable, nil }
+	seedInitAccountFiles(t, deps.Root, "alice:x:1001:1001::/home/alice:/bin/bash\n", "shell:x:900:alice\n", "alice:!!:0:0:99999:7:::\n")
+	before := initTurnsState(t, deps.Root)
+	var calls []string
+	deps.Execute = func(_ context.Context, c host.Command) (host.Result, error) {
+		calls = append(calls, c.Name+" "+strings.Join(c.Args, " "))
+		return host.Result{}, nil
+	}
+	stdout, stderr, code := invoke([]string{"init"}, deps)
+	want := []string{"loginctl enable-linger alice", "systemctl start user@1001.service", "systemctl --user --machine=alice@.host enable --now turns.timer"}
+	if code != 1 || stderr != "opsctl: host.apex is set but host.name 'example.com' has no parent domain\n" || !strings.HasSuffix(stdout, "wildcard example.com: ok (192.0.2.10)\n") || !reflect.DeepEqual(calls, want) {
+		t.Fatalf("init = %d %q %q calls %v", code, stdout, stderr, calls)
+	}
+	after := initTurnsState(t, deps.Root)
+	for name, entry := range after {
+		if name == "usr" || strings.HasPrefix(name, "usr/local") || name == "etc/systemd/user" || strings.HasPrefix(name, "etc/systemd/user/") || name == "etc/xdg" || strings.HasPrefix(name, "etc/xdg/turns") {
+			continue
+		}
+		if !reflect.DeepEqual(before[name], entry) {
+			t.Fatal("unexpected persistent change", name)
+		}
+	}
+	for name, entry := range before {
+		if !reflect.DeepEqual(after[name], entry) {
+			t.Fatal("existing persistent state changed", name)
+		}
 	}
 }

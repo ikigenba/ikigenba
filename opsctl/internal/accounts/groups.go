@@ -114,6 +114,11 @@ func AddGroup(ctx context.Context, env host.Env, slug string) error {
 	}
 	groupArgs = append(groupArgs, slug)
 	userArgs = append(userArgs, "--gid", slug, "--home-dir", SrvDir+"/"+slug, "--no-create-home", "--shell", "/usr/sbin/nologin", slug)
+	return createGroup(ctx, env, slug, dir, exists, groupArgs, userArgs)
+}
+
+func createGroup(ctx context.Context, env host.Env, slug, dir string, exists bool, groupArgs, userArgs []string) error {
+	var err error
 	if _, err = execute(ctx, env, host.Command{Name: "groupadd", Args: groupArgs}); err != nil {
 		return err
 	}

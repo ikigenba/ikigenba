@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ikigenba/ikigenba/opsctl/internal/accounts"
 	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
 	"github.com/ikigenba/ikigenba/opsctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
@@ -100,7 +101,12 @@ func setupInitTurns(deps Deps, hostName string) error {
 	} else if err != nil {
 		return fmt.Errorf("%s: %w", release.TurnsLink, err)
 	}
-	return release.InstallTurns(deps.Root, source.SHA, hostName)
+	if err := release.InstallTurns(deps.Root, source.SHA, hostName); err != nil {
+		return err
+	}
+	return accounts.EnsureTimers(context.Background(), host.Env{
+		Root: deps.Root, Getenv: deps.Getenv, Execute: deps.Execute, Now: deps.Now,
+	})
 }
 
 func setupInitApps(ctx context.Context, env host.Env, store config.Store, remote cloud.Env, hostName string) error {

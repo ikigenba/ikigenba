@@ -16,8 +16,8 @@ const retireUsage = `Usage: opsctl retire
 Take a host's final backup before it is discarded. Stop every app's socket and
 service, sockets first so no request starts a service again, then
 litestream.service so it ships every committed change it holds, then copy
-every service's files and the host's own configuration to backup.s3_uri
-exactly as 'opsctl backup' and 'opsctl host backup' would.
+every service's files and the host's own configuration and accounts to
+backup.s3_uri exactly as 'opsctl backup' and 'opsctl host backup' would.
 
 Nothing is deleted or disabled. The units are left stopped; on a host kept
 after all, a reboot or 'opsctl restart APP' brings every enabled app back, and
@@ -66,12 +66,15 @@ func renderRetireOutcome(stdout, stderr io.Writer, result backup.RetireResult, r
 		_, _ = fmt.Fprintf(&report, "litestream: ok (%s)\n", status)
 	}
 	archivesOK, _ := writeBackupResults(&report, result.Files)
-	if result.Host.Service != "" {
-		if err := writeHostBackupResult(&report, result.Host); err != nil {
+	for _, archive := range []backup.FileResult{result.Accounts, result.Host} {
+		if archive.Service == "" {
+			continue
+		}
+		if err := writeHostBackupResult(&report, archive); err != nil {
 			writeDiagnostic(stderr, hostOperationDiagnostic{message: "retire failed", cause: err})
 			return exitFail
 		}
-		if result.Host.Err != nil {
+		if archive.Err != nil {
 			archivesOK = false
 		}
 	}
@@ -135,10 +138,7 @@ func retireServiceSegments(services, disabled []string) string {
 }
 
 func retireDiagnosticCause(result backup.RetireResult, runErr error) error {
-	if result.FailedStep == "host" && result.Host.Service == "host" && result.Host.Err != nil {
-		return result.Host.Err
-	}
-	for _, archive := range result.Files {
+	for _, archive := range append([]backup.FileResult{result.Accounts, result.Host}, result.Files...) {
 		if archive.Service == result.FailedStep && archive.Err != nil {
 			return archive.Err
 		}
@@ -147,10 +147,7 @@ func retireDiagnosticCause(result backup.RetireResult, runErr error) error {
 }
 
 func retireArchiveFailureReported(result backup.RetireResult) bool {
-	if result.Host.Service != "" && result.Host.Err != nil && result.FailedStep == "host" {
-		return true
-	}
-	for _, archive := range result.Files {
+	for _, archive := range append([]backup.FileResult{result.Accounts, result.Host}, result.Files...) {
 		if archive.Service == result.FailedStep && archive.Err != nil {
 			return true
 		}

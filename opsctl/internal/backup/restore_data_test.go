@@ -315,7 +315,7 @@ func TestRestoredArchiveSpecialBitsSurviveOwnershipMapping(t *testing.T) {
 }
 
 func TestRestoreModesIgnoreOwnerRestrictingUmask(t *testing.T) {
-	// R-76AM-ZRLD R-RK6N-GX1Z R-RP29-000R R-RQA5-DRRG
+	// R-TU9Y-IUQ1 R-RK6N-GX1Z R-RP29-000R R-RQA5-DRRG
 	for _, hostRestore := range []bool{false, true} {
 		t.Run(map[bool]string{false: "service", true: "host"}[hostRestore], func(t *testing.T) {
 			root := t.TempDir()

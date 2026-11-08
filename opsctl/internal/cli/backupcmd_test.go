@@ -257,6 +257,11 @@ func configuredBackupRoot(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
+	for _, name := range []string{"passwd", "group", "shadow"} {
+		if err := os.WriteFile(filepath.Join(root, "etc", name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	return root
 }
 

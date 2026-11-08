@@ -21,14 +21,16 @@ import (
 
 const wantHostUsage = `Usage: opsctl host <subcommand>
 
-Back up and restore the host's own configuration: /etc/ikigenba/ and
-/etc/letsencrypt/, under 'host/' in backup.s3_uri. Nothing under /opt,
-/etc/opt, or /var/opt is touched either way -- that is 'opsctl backup' and
-'opsctl restore'.
+Back up and restore the host itself, under 'host/' in backup.s3_uri: its
+configuration, /etc/ikigenba/ and /etc/letsencrypt/, and its accounts, every
+business group with /srv/SLUG and every user with /home/NAME and their keys,
+together with sshd's host keys. No other account is backed up. Nothing under
+/opt, /etc/opt, or /var/opt is touched either way -- that is 'opsctl backup'
+and 'opsctl restore'.
 
 Subcommands:
-  backup    write /etc/ikigenba/ and /etc/letsencrypt/ to S3
-  restore   replace them with the newest backup
+  backup    write the configuration and the accounts to S3
+  restore   put back the newest backup, recreating its groups and users
 
 'opsctl init' writes the timer that runs the backup at
 backup.host_files_seconds.
@@ -39,7 +41,7 @@ Configuration keys:
 `
 
 func TestHostHelpIsExactAndHostIndependent(t *testing.T) {
-	// R-FLNQ-4AMO
+	// R-UTN1-M786
 	for _, euid := range []int{0, 1000} {
 		for _, option := range []string{"--help", "-h"} {
 			deps, assertInert := inertHostCommandDeps(t, euid)
@@ -75,14 +77,14 @@ func TestHostDispatchErrorsAreExactAndHostIndependent(t *testing.T) {
 }
 
 func TestHostBackupCommandReportsResultAndOperationalErrors(t *testing.T) {
-	// R-I4KV-PSGR
+	// R-UORG-349E
 	t.Run("success", func(t *testing.T) {
 		root := configuredBackupRoot(t)
 		client := newHostCLICloud()
 		deps := hostCLIDeps(root, client, fixedSizeZstdExecute(1536))
 
 		stdout, stderr, code := invokeBackupCLI([]string{"host", "backup"}, deps)
-		if code != 0 || stdout != "host: ok (2026-09-16T12:34:56Z.tar.zst, 1.5 KiB)\n" || stderr != "" {
+		if code != 0 || stdout != "accounts: ok (2026-09-16T12:34:56Z.accounts.tar.zst, 0.0 MiB)\nhost: ok (2026-09-16T12:34:56Z.tar.zst, 1.5 KiB)\n" || stderr != "" {
 			t.Fatalf("host backup = exit %d stdout %q stderr %q", code, stdout, stderr)
 		}
 	})
@@ -94,8 +96,8 @@ func TestHostBackupCommandReportsResultAndOperationalErrors(t *testing.T) {
 		deps := hostCLIDeps(root, client, fixedSizeZstdExecute(1536))
 
 		stdout, stderr, code := invokeBackupCLI([]string{"host", "backup"}, deps)
-		want := "host: failed: upload \"s3://backups.example/host/host/2026-09-16T12:34:56Z.tar.zst\": upload unavailable\n"
-		if code != 1 || stdout != want || stderr != "" {
+		want := "accounts: failed: upload \"s3://backups.example/host/host/2026-09-16T12:34:56Z.accounts.tar.zst\": upload unavailable\nhost: failed: accounts not written\n"
+		if code != 1 || stdout != want || stderr != "opsctl: host backup failed\n" {
 			t.Fatalf("host backup failure = exit %d stdout %q stderr %q, want stdout %q", code, stdout, stderr, want)
 		}
 	})
@@ -109,11 +111,11 @@ func TestHostBackupCommandReportsResultAndOperationalErrors(t *testing.T) {
 
 	t.Run("successful result with operational failure", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
-		code := renderHostBackupOutcome(&stdout, &stderr, backup.FileResult{
+		code := renderHostBackupOutcome(&stdout, &stderr, backup.HostBackupResult{Host: backup.FileResult{
 			Service: "host",
 			Object:  "2026-09-16T12:34:56Z.tar.zst",
 			Size:    1536,
-		}, errors.New("finalize backup run"))
+		}}, errors.New("finalize backup run"))
 		if code != exitFail || stdout.String() != "host: ok (2026-09-16T12:34:56Z.tar.zst, 1.5 KiB)\n" || stderr.String() != "opsctl: host backup failed\n" {
 			t.Fatalf("mixed host backup outcome = exit %d stdout %q stderr %q", code, stdout.String(), stderr.String())
 		}
@@ -126,7 +128,7 @@ func TestHostBackupCommandReportsResultAndOperationalErrors(t *testing.T) {
 			return host.Result{Stdout: []byte("partial output\n"), Stderr: []byte("compression stopped")}, context.Canceled
 		}
 		stdout, stderr, code := invokeBackupCLI([]string{"host", "backup"}, hostCLIDeps(root, client, execute))
-		wantOut := "host: failed: compress \"host\" archive: context canceled\n"
+		wantOut := "accounts: failed: compress \"accounts\" archive: context canceled\n"
 		wantErr := "opsctl: host backup failed\n\n> partial output\n> compression stopped\n"
 		if code != 1 || stdout != wantOut || stderr != wantErr {
 			t.Fatalf("interrupted host backup = exit %d stdout %q stderr %q", code, stdout, stderr)
@@ -138,7 +140,7 @@ func TestHostBackupCommandReportsResultAndOperationalErrors(t *testing.T) {
 }
 
 func TestHostRestoreCommandReportsCompletedAndFailedPhases(t *testing.T) {
-	// R-HX9H-F60L
+	// R-UPZC-GW03
 	t.Run("success", func(t *testing.T) {
 		root := configuredBackupRoot(t)
 		client := newHostCLICloud()
@@ -151,7 +153,7 @@ func TestHostRestoreCommandReportsCompletedAndFailedPhases(t *testing.T) {
 		client.objects[uri] = append([]byte{0x28, 0xb5, 0x2f, 0xfd}, archive...)
 
 		stdout, stderr, code := invokeBackupCLI([]string{"host", "restore"}, hostCLIDeps(root, client, roundTripZstdExecute(nil)))
-		want := fmt.Sprintf("source: ok (host/%s, %.1f KiB)\nfiles: ok (/etc/ikigenba, /etc/letsencrypt, 2 files)\n",
+		want := fmt.Sprintf("source: ok (host/%s, %.1f KiB)\naccounts: ok (none in this backup)\nfiles: ok (/etc/ikigenba, /etc/letsencrypt, 2 files)\n",
 			basename, float64(len(client.objects[uri]))/1024)
 		if code != 0 || stdout != want || stderr != "" {
 			t.Fatalf("host restore = exit %d stdout %q stderr %q, want stdout %q", code, stdout, stderr, want)
@@ -202,7 +204,7 @@ func TestHostRestoreCommandReportsCompletedAndFailedPhases(t *testing.T) {
 		}
 
 		stdout, stderr, code := invokeBackupCLI([]string{"host", "restore"}, hostCLIDeps(root, client, roundTripZstdExecute(nil)))
-		wantOut := fmt.Sprintf("source: ok (host/%s, %.1f KiB)\nfiles: failed: replace host files: destination parent /etc is not a directory\n",
+		wantOut := fmt.Sprintf("source: ok (host/%s, %.1f KiB)\naccounts: ok (none in this backup)\nfiles: failed: replace host files: destination parent /etc is not a directory\n",
 			basename, float64(len(client.objects[uri]))/1024)
 		if code != 1 || stdout != wantOut || stderr != "opsctl: host restore failed at files\n" {
 			t.Fatalf("files failure = exit %d stdout %q stderr %q, want stdout %q", code, stdout, stderr, wantOut)
@@ -224,7 +226,7 @@ func TestHostBackupAndRestorePreserveCertificateWithoutExternalActions(t *testin
 	client := newHostCLICloud()
 	var commands []string
 	deps := hostCLIDeps(root, client, roundTripZstdExecute(&commands))
-	if stdout, stderr, code := invokeBackupCLI([]string{"host", "backup"}, deps); code != 0 || stderr != "" || !strings.HasPrefix(stdout, "host: ok (") {
+	if stdout, stderr, code := invokeBackupCLI([]string{"host", "backup"}, deps); code != 0 || stderr != "" || !strings.HasPrefix(stdout, "accounts: ok (") {
 		t.Fatalf("host backup = exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
 	if err := os.WriteFile(certificate, []byte("replacement certificate\n"), 0o600); err != nil {
@@ -245,7 +247,7 @@ func TestHostBackupAndRestorePreserveCertificateWithoutExternalActions(t *testin
 	if string(data) != "original certificate\n" {
 		t.Fatalf("restored certificate = %q", data)
 	}
-	if want := []string{"zstd", "zstd"}; fmt.Sprint(commands) != fmt.Sprint(want) {
+	if want := []string{"zstd", "zstd", "zstd", "zstd", "getent", "groupadd", "sshd", "systemctl"}; fmt.Sprint(commands) != fmt.Sprint(want) {
 		t.Fatalf("host backup/restore commands = %v, want only %v; certificate issuance or external project action must not run", commands, want)
 	}
 }
@@ -346,6 +348,12 @@ func roundTripZstdExecute(commands *[]string) func(context.Context, host.Command
 	return func(_ context.Context, command host.Command) (host.Result, error) {
 		if commands != nil {
 			*commands = append(*commands, command.Name)
+		}
+		if command.Name == "getent" {
+			return host.Result{ExitCode: 2}, nil
+		}
+		if command.Name == "groupadd" || command.Name == "sshd" || command.Name == "systemctl" {
+			return host.Result{}, nil
 		}
 		if command.Name != "zstd" {
 			return host.Result{}, errors.New("unexpected command: " + command.Name)

@@ -22,12 +22,23 @@ import (
 
 // HostRestoreResult describes the completed phases of a host restore.
 type HostRestoreResult struct {
-	Object        string
-	Size          int64
-	Files         int
-	SourceReady   bool
-	FilesRestored bool
-	FailedStep    string
+	Object          string
+	Size            int64
+	Files           int
+	SourceReady     bool
+	FilesRestored   bool
+	AccountsObject  string
+	AccountsSize    int64
+	AccountsReady   bool
+	Groups          []string
+	GroupsRestored  bool
+	Users           []string
+	Locked          []string
+	TimersInstalled bool
+	UsersRestored   bool
+	HostKeys        int
+	SSHRestored     bool
+	FailedStep      string
 }
 
 // HostRestore replaces the host configuration and certificate trees from the
@@ -106,12 +117,23 @@ func HostRestore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store co
 	}
 	result.SourceReady = true
 
+	accountsArchive, err := loadRestoreAccounts(ctx, env, client, objects, selected.URI, hostPrefix, &result)
+	if err != nil {
+		result.FailedStep = "accounts"
+		return result, err
+	}
+
 	result.Files, err = replaceHostTrees(ctx, env.Root, entries)
 	if err != nil {
 		result.FailedStep = "files"
 		return result, fmt.Errorf("replace host files: %w", err)
 	}
 	result.FilesRestored = true
+	if accountsArchive != nil {
+		if err := replayRestoreAccounts(ctx, env, *accountsArchive, &result); err != nil {
+			return result, err
+		}
+	}
 	return result, nil
 }
 
@@ -172,6 +194,10 @@ type hostRestoreEntry struct {
 	mode     fs.FileMode
 	linkname string
 	data     []byte
+	uid      int
+	gid      int
+	access   string
+	defaults string
 }
 
 func validateHostArchive(archive []byte) ([]hostRestoreEntry, error) {
@@ -302,10 +328,10 @@ func replaceHostTrees(ctx context.Context, rootName string, entries []hostRestor
 		return 0, err
 	}
 	stageBase := path.Base(stageName)
+	defer func() { _ = root.RemoveAll(stageBase) }()
 	if err := root.Chmod(stageBase, 0o700); err != nil {
 		return 0, err
 	}
-	defer func() { _ = root.RemoveAll(stageBase) }()
 	if err := mkdirHostRestoreParents(root, path.Join(stageBase, "etc")); err != nil {
 		return 0, err
 	}

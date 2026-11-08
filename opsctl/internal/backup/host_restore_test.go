@@ -23,7 +23,7 @@ import (
 var _ func(context.Context, host.Env, cloud.Env, config.Store) (backup.HostRestoreResult, error) = backup.HostRestore
 
 func TestHostRestoreAPI(t *testing.T) {
-	// R-Y6LL-649Y R-Z2BU-VT9B
+	// R-Y6LL-649Y R-SUWV-FI7W
 	result := backup.HostRestoreResult{Object: "s3://bucket/host.tar.zst", Size: 7, Files: 3, SourceReady: true, FilesRestored: true, FailedStep: "extract"}
 	var (
 		object        string
@@ -40,7 +40,7 @@ func TestHostRestoreAPI(t *testing.T) {
 }
 
 func TestHostRestoreSelectsNewestImmediateArchive(t *testing.T) {
-	// R-YGCS-8A7I R-HUTO-NMJ7
+	// R-YGCS-8A7I R-UINY-69JX
 	root := t.TempDir()
 	store := configuredHostStore(t, root)
 	writeFile(t, root, "etc/ikigenba/stale", "stale", 0o600)
@@ -71,6 +71,7 @@ func TestHostRestoreSelectsNewestImmediateArchive(t *testing.T) {
 		Files:         1,
 		SourceReady:   true,
 		FilesRestored: true,
+		AccountsReady: true,
 	}
 	if !reflect.DeepEqual(result, want) {
 		t.Fatalf("HostRestore() result = %+v, want %+v", result, want)
@@ -90,7 +91,7 @@ func TestHostRestoreSelectsNewestImmediateArchive(t *testing.T) {
 }
 
 func TestHostRestoreRejectsInvalidArchivesBeforeChanges(t *testing.T) {
-	// R-YHKO-M1Y7 R-HUTO-NMJ7
+	// R-TLQN-UGJ6 R-UINY-69JX
 	tests := []struct {
 		name        string
 		members     []restoreMember
@@ -144,7 +145,7 @@ func TestHostRestoreRejectsInvalidArchivesBeforeChanges(t *testing.T) {
 }
 
 func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
-	// R-76AM-ZRLD R-HUTO-NMJ7 R-9JTU-C7U1
+	// R-TU9Y-IUQ1 R-UINY-69JX R-9JTU-C7U1
 	root := t.TempDir()
 	store := configuredHostStore(t, root)
 	writeFile(t, root, "etc/ikigenba/stale", "remove", 0o600)
@@ -237,7 +238,7 @@ func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
 }
 
 func TestHostRestorePhaseFailures(t *testing.T) {
-	// R-YGCS-8A7I R-HUTO-NMJ7 R-DK7F-CAV0
+	// R-YGCS-8A7I R-UINY-69JX R-DK7F-CAV0
 	t.Run("cancellation before source selection has no failed step", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredHostStore(t, root)
@@ -247,7 +248,7 @@ func TestHostRestorePhaseFailures(t *testing.T) {
 			t.Fatal("opened cloud storage after preworkflow cancellation")
 			return nil, nil
 		}}, store)
-		if !errors.Is(err, context.Canceled) || result != (backup.HostRestoreResult{}) {
+		if !errors.Is(err, context.Canceled) || !reflect.DeepEqual(result, backup.HostRestoreResult{}) {
 			t.Fatalf("HostRestore() = %+v, %v, want zero result and context cancellation", result, err)
 		}
 	})
@@ -351,11 +352,12 @@ func TestHostRestorePhaseFailures(t *testing.T) {
 			t.Fatal("HostRestore() error = nil, want second replacement failure")
 		}
 		want := backup.HostRestoreResult{
-			Object:      "host/2026-09-16T12:00:00Z.tar.zst",
-			Size:        int64(len(body)),
-			Files:       1,
-			SourceReady: true,
-			FailedStep:  "files",
+			Object:        "host/2026-09-16T12:00:00Z.tar.zst",
+			Size:          int64(len(body)),
+			Files:         1,
+			SourceReady:   true,
+			AccountsReady: true,
+			FailedStep:    "files",
 		}
 		if !reflect.DeepEqual(result, want) {
 			t.Fatalf("HostRestore() result = %+v, want %+v", result, want)
@@ -434,7 +436,7 @@ func TestHostRestorePhaseFailures(t *testing.T) {
 			executions++
 			return host.Result{}, errors.New("unexpected host command")
 		}}, cloud.Env{}, store)
-		if err == nil || !strings.Contains(err.Error(), "cloud access is not configured") || result != (backup.HostRestoreResult{}) {
+		if err == nil || !strings.Contains(err.Error(), "cloud access is not configured") || !reflect.DeepEqual(result, backup.HostRestoreResult{}) {
 			t.Fatalf("HostRestore() = %+v, %v", result, err)
 		}
 		if executions != 0 || !reflect.DeepEqual(fileTreeSnapshot(t, root), before) {
@@ -453,6 +455,7 @@ type restoreMember struct {
 	gid      int
 	uname    string
 	gname    string
+	pax      map[string]string
 }
 
 func hostRestoreArchive(t *testing.T, members ...restoreMember) []byte {
@@ -474,7 +477,7 @@ func hostRestoreArchive(t *testing.T, members ...restoreMember) []byte {
 		}
 		header := &tar.Header{
 			Name: member.name, Typeflag: typeflag, Mode: mode, Linkname: member.linkname,
-			Uid: uid, Gid: gid, Uname: member.uname, Gname: member.gname,
+			Uid: uid, Gid: gid, Uname: member.uname, Gname: member.gname, PAXRecords: member.pax,
 		}
 		if typeflag == tar.TypeReg {
 			header.Size = int64(len(member.data))

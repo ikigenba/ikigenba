@@ -72,7 +72,7 @@ func TestInitFreshAppsStepDoesNothing(t *testing.T) {
 }
 
 func TestInitReleasedAppsStepRejectsInputsBeforeWriting(t *testing.T) {
-	// R-VBFW-1J71 R-T6M1-HGSD
+	// R-VBFW-1J71 R-WJ8V-G4ZV
 	root := initReleasedRoot(t)
 	env := host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
 		t.Fatal("invalid setup ran command")
@@ -139,7 +139,7 @@ func releaseTree(t *testing.T, root string) map[string]string {
 }
 
 func TestInitReleasedWritesUnitsAndRestartsChangedActiveApps(t *testing.T) {
-	// R-VCNS-FAXQ R-VDVO-T2OF R-T6M1-HGSD
+	// R-VCNS-FAXQ R-VDVO-T2OF R-WJ8V-G4ZV
 	root := initReleasedRoot(t)
 	sha := strings.Repeat("a", 40)
 	appDir := filepath.Join(root, "opt/ikigenba/releases", sha, "auth")

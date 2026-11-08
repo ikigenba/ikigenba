@@ -26,6 +26,7 @@ type RetireResult struct {
 	LitestreamStopped bool
 	SyncedDatabases   []string
 	Files             []FileResult
+	Accounts          FileResult
 	Host              FileResult
 	FailedStep        string
 }
@@ -220,10 +221,13 @@ func Retire(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config.
 		return outcome, err
 	}
 
-	outcome.Host, err = HostBackup(ctx, fixedEnv, cachedCloud, store)
+	hostResult, err := HostBackup(ctx, fixedEnv, cachedCloud, store)
+	outcome.Accounts, outcome.Host = hostResult.Accounts, hostResult.Host
 	if err != nil {
 		if outcome.Host.Service != "" {
 			outcome.FailedStep = "host"
+		} else if outcome.Accounts.Service != "" {
+			outcome.FailedStep = "accounts"
 		}
 		return outcome, err
 	}

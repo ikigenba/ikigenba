@@ -18,61 +18,82 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
 
-// HostBackup archives and uploads the host configuration and certificate trees.
-func HostBackup(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config.Store) (FileResult, error) {
+// HostBackupResult describes the accounts and configuration archive attempts.
+type HostBackupResult struct {
+	Accounts FileResult
+	Host     FileResult
+}
+
+// HostBackup archives the accounts before publishing their configuration.
+func HostBackup(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config.Store) (HostBackupResult, error) {
+	var result HostBackupResult
 	prefix, region, err := fileBackupConfiguration(store, "")
 	if err != nil {
-		return FileResult{}, err
+		return result, err
 	}
 	if err := ctx.Err(); err != nil {
-		return FileResult{}, fmt.Errorf("backup host: %w", err)
+		return result, fmt.Errorf("backup host: %w", err)
 	}
 	if env.Now == nil {
-		return FileResult{}, errors.New("backup host: host time is not configured")
+		return result, errors.New("backup host: host time is not configured")
 	}
 	if env.Execute == nil {
-		return FileResult{}, errors.New("backup host: host execution is not configured")
+		return result, errors.New("backup host: host execution is not configured")
 	}
 	if cloudEnv.Open == nil {
-		return FileResult{}, errors.New("backup host: cloud access is not configured")
+		return result, errors.New("backup host: cloud access is not configured")
 	}
 	client, err := cloudEnv.Open(ctx, region)
 	if err != nil {
-		return FileResult{}, fmt.Errorf("open backup storage: %w", err)
+		return result, fmt.Errorf("open backup storage: %w", err)
 	}
 	if client == nil {
-		return FileResult{}, errors.New("open backup storage: cloud client is not configured")
+		return result, errors.New("open backup storage: cloud client is not configured")
 	}
 	if err := ctx.Err(); err != nil {
-		return FileResult{}, fmt.Errorf("backup host: %w", err)
+		return result, fmt.Errorf("backup host: %w", err)
 	}
-
-	basename := env.Now().UTC().Format(time.RFC3339Nano) + ".tar.zst"
-	result := FileResult{Service: "host"}
-	compressed, archiveErr := hostArchive(ctx, env)
-	if archiveErr != nil {
-		result.Err = archiveErr
-		if interrupted := interruption(ctx, archiveErr); interrupted != nil {
-			return result, fmt.Errorf("backup host: %w", interrupted)
-		}
+	timestamp := env.Now().UTC().Format(time.RFC3339Nano)
+	if err := ctx.Err(); err != nil {
+		return result, fmt.Errorf("backup host: %w", err)
+	}
+	result.Accounts, err = writeHostArchive(ctx, env, client, prefix, "accounts", timestamp+".accounts.tar.zst", accountsArchive)
+	if err != nil {
+		return result, err
+	}
+	if result.Accounts.Err != nil {
+		result.Host = FileResult{Service: "host", Err: errors.New("accounts not written")}
 		return result, nil
 	}
 	if err := ctx.Err(); err != nil {
-		result.Err = fmt.Errorf("archive host: %w", err)
 		return result, fmt.Errorf("backup host: %w", err)
 	}
+	result.Host, err = writeHostArchive(ctx, env, client, prefix, "host", timestamp+".tar.zst", hostArchive)
+	return result, err
+}
 
-	object := strings.TrimSuffix(prefix, "/") + "/host/" + basename
-	if uploadErr := client.PutObject(ctx, object, bytes.NewReader(compressed)); uploadErr != nil {
-		result.Err = fmt.Errorf("upload %q: %w", object, uploadErr)
-		if interrupted := interruption(ctx, uploadErr); interrupted != nil {
+func writeHostArchive(ctx context.Context, env host.Env, client cloud.Client, prefix, service, basename string, archive func(context.Context, host.Env) ([]byte, error)) (FileResult, error) {
+	result := FileResult{Service: service}
+	compressed, err := archive(ctx, env)
+	if err == nil {
+		err = ctx.Err()
+	}
+	if err == nil {
+		object := strings.TrimSuffix(prefix, "/") + "/host/" + basename
+		err = client.PutObject(ctx, object, bytes.NewReader(compressed))
+		if err != nil {
+			err = fmt.Errorf("upload %q: %w", object, err)
+		}
+		if err == nil {
+			err = ctx.Err()
+		}
+	}
+	if err != nil {
+		result.Err = err
+		if interrupted := interruption(ctx, err); interrupted != nil {
 			return result, fmt.Errorf("backup host: %w", interrupted)
 		}
 		return result, nil
-	}
-	if err := ctx.Err(); err != nil {
-		result.Err = fmt.Errorf("upload %q: %w", object, err)
-		return result, fmt.Errorf("backup host: %w", err)
 	}
 	result.Object = basename
 	result.Size = int64(len(compressed))
@@ -104,6 +125,9 @@ func hostArchive(ctx context.Context, env host.Env) ([]byte, error) {
 }
 
 func archiveHostTree(ctx context.Context, filesystem *os.Root, writer *tar.Writer, tree string) error {
+	if err := hostArchiveParents(filesystem, tree); err != nil {
+		return err
+	}
 	rootInfo, err := filesystem.Lstat(tree)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
