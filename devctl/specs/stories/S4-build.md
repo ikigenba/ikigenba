@@ -21,7 +21,9 @@ built. opsctl ships as
 `opsctl/bin/opsctl` alone; turns ships as `turns/bin/turns` with its committed
 `share/`, which holds its user systemd units. Apps are built in name order,
 then opsctl, then turns, and the first failure stops the build with no release
-written.
+written. Each app is built a second time, for the developer's own machine, so
+it can be run there to emit its manifest; that build is not shipped, and the
+release holds only the `linux/arm64` binaries.
 
 An app's name goes three places on a host, and each constrains it. It is a
 DNS label, because the app answers at `<app>.<host.name>`: lowercase
@@ -105,8 +107,8 @@ Preconditions:
   `scripts`, `sites` and `telemetry`; `opsctl/` holds opsctl; and `turns/`
   holds turns, with `turns/share/systemd/turns.service` and
   `turns/share/systemd/turns.timer` committed.
-- The Go toolchain can build each of them for `linux/arm64`, and each app's
-  built binary runs on the developer's machine and its `<app> manifest`
+- The Go toolchain can build each of them for `linux/arm64`, and each app
+  also for the developer's machine, where that build's `<app> manifest`
   emits exactly that app's committed `etc/manifest.toml`.
 - The working tree may have uncommitted changes, be on any branch or none,
   and have `HEAD` at any commit; none of it is read.
@@ -125,10 +127,10 @@ Postconditions:
     where `<version>` is that version;
   - for each of the eight apps, `<app>/bin/<app>`, the static `linux/arm64`
     binary and the only file in `<app>/bin/`; `<app>/etc/manifest.toml`,
-    emitted by running that binary with the argument `manifest`; every other
-    file under the app's committed `etc/`, `nginx.conf` included; and the
-    app's committed `share/`, `libexec/` and `lib/`, each as it is, when the
-    app has one;
+    emitted by running the app's build for the developer's machine with the
+    argument `manifest`; every other file under the app's committed `etc/`,
+    `nginx.conf` included; and the app's committed `share/`, `libexec/` and
+    `lib/`, each as it is, when the app has one;
   - `opsctl/bin/opsctl`, the static `linux/arm64` binary, and nothing else
     under `opsctl/`;
   - `turns/bin/turns`, the static `linux/arm64` binary and the only file in
@@ -175,8 +177,9 @@ Postconditions:
 
 ## A developer builds the suite at a commit with a stale manifest
 
-Each app's built binary is run with the argument `manifest`, and what it
-emits must be byte for byte the `etc/manifest.toml` committed at that commit.
+Each app's build for the developer's machine is run with the argument
+`manifest`, and what it emits must be byte for byte the `etc/manifest.toml`
+committed at that commit.
 
 Command:
 
