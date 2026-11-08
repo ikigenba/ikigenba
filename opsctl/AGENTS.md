@@ -68,7 +68,7 @@ The `Requirements:` trailer lists the phase's ids so history stays greppable by 
 
 ## Build
 
-`make build` builds the binary from the checkout; `make install` runs `go install ./cmd/opsctl`; `make fmt` formats; `make test` and `make lint` run those gates. `make deploy` builds a linux/amd64 binary and installs it on `DEPLOY_HOST` as `DEPLOY_USER` over ssh, for trying a change on a host without a release; the file it puts at `/usr/local/bin/opsctl` lasts only until the next activate re-creates the link. The gates themselves call the Go tool directly.
+`make build` builds the binary from the checkout; `make install` runs `go install ./cmd/opsctl`; `make fmt` formats; `make test` and `make lint` run those gates. `make deploy` builds a linux/arm64 binary and installs it on `DEPLOY_HOST` as `DEPLOY_USER` over ssh, for trying a change on a host without a release; the file it puts at `/usr/local/bin/opsctl` lasts only until the next activate re-creates the link. The gates themselves call the Go tool directly.
 
 ## Releasing
 

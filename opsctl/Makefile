@@ -6,7 +6,7 @@ build:
 	go build -o $(BIN) ./cmd/opsctl
 
 deploy:
-	GOOS=linux GOARCH=amd64 go build -o $(BIN) ./cmd/opsctl
+	GOOS=linux GOARCH=arm64 go build -o $(BIN) ./cmd/opsctl
 	scp $(BIN) $(DEPLOY_USER)@$(DEPLOY_HOST):/tmp/opsctl
 	ssh $(DEPLOY_USER)@$(DEPLOY_HOST) sudo install -m 0755 /tmp/opsctl /usr/local/bin/opsctl
 	ssh $(DEPLOY_USER)@$(DEPLOY_HOST) rm -f /tmp/opsctl
