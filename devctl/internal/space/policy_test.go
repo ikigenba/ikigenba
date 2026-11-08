@@ -159,7 +159,7 @@ func samplePolicyPermissions(t *testing.T, apex bool) []decodedPermissionStateme
 }
 
 func TestPolicyObjectAccess(t *testing.T) {
-	// R-MM3E-Y3VK
+	// R-2RDF-YMG9
 	p := samplePolicy(t, false)
 	var actions []string
 	for _, statement := range p.Statement {
@@ -182,7 +182,7 @@ func TestPolicyObjectAccess(t *testing.T) {
 		}
 	}
 	slices.Sort(actions)
-	if want := []string{"s3:DeleteObject", "s3:GetObject", "s3:ListBucket", "s3:PutObject"}; !reflect.DeepEqual(actions, want) {
+	if want := []string{"s3:AbortMultipartUpload", "s3:DeleteObject", "s3:GetObject", "s3:ListBucket", "s3:PutObject"}; !reflect.DeepEqual(actions, want) {
 		t.Fatalf("S3 actions = %v, want %v", actions, want)
 	}
 	if strings.Contains(string(mustJSON(t, p)), "sbx2/") {

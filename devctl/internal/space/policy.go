@@ -61,7 +61,7 @@ func PolicyDocument(root, zoneID string, sp spaceref.Space, apex bool) string {
 			},
 			{
 				Effect:   "Allow",
-				Action:   []string{"s3:GetObject", "s3:PutObject", "s3:DeleteObject"},
+				Action:   []string{"s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload"},
 				Resource: "arn:aws:s3:::" + root + "/" + sp.Label + "/*",
 			},
 			{
