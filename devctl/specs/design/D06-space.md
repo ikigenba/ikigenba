@@ -40,7 +40,11 @@ instance profile are the space domain, the records are `<space domain>` and
 is the space's label followed by `/`. Under that prefix opsctl writes the
 backups, and its snapshots under `snapshots/`; earlier per-app deploys left
 files under `deploy/`; and seed (D15) copies snapshots into `seed/`. `SnapshotPrefix` and
-`SeedPrefix` name those two, beside `BackupPrefix`. `--delete-backups` deletes
+`SeedPrefix` name those two, beside `BackupPrefix`. A host backup is
+`host/<ts>.tar.zst` under it, `<ts>` an RFC3339 UTC time to the nanosecond as
+opsctl writes it, beside a `<ts>.accounts.tar.zst` that is not one;
+`HostBackup` picks the newest from a listing by that time, so `space create`
+(D07) and `space move` (D18) choose the same backup. `--delete-backups` deletes
 every object under the whole prefix, snapshots and seed copies included, so a
 destroyed space leaves nothing a later seed could take. The role's one inline policy is built
 here too: `PolicyDocument` derives it from the root, the zone id, the space,
@@ -98,6 +102,12 @@ release's label among them, are opsctl's and never parsed here.
 - R-U273-JQ19: Package `internal/space` MUST export `RoleName(domain string) string`, returning `domain` unchanged, so that a space's IAM role and its instance profile are both named exactly the space domain; `PolicyName = "space"`; `BackupPrefix(label string) string`, returning `label` followed by `/`; `RecordNames(domain string) []string`, returning exactly `domain` and `*.` followed by `domain`, in that order; and `RecordTTL = 60`; verified at least by `RoleName("sbx1.ikigenba.dev")` being `sbx1.ikigenba.dev`, `BackupPrefix("sbx1")` being `sbx1/`, and `RecordNames("sbx1.ikigenba.dev")` being `sbx1.ikigenba.dev` and `*.sbx1.ikigenba.dev`.
 
 - R-SCI4-HK5P: Package `internal/space` MUST export `SnapshotPrefix(label string) string`, returning `BackupPrefix(label)` followed by `snapshots/`, and `SeedPrefix(label string) string`, returning `BackupPrefix(label)` followed by `seed/`; verified at least by `SnapshotPrefix("sbx1")` being `sbx1/snapshots/` and `SeedPrefix("sbx2")` being `sbx2/seed/`.
+
+- R-DOS2-ETVF: Package `internal/space` MUST export `HostBackup(objects []cloud.Object, prefix string) (cloud.Object, bool)`.
+
+- R-DPZY-SLM4: `space.HostBackup` MUST treat as a host backup exactly each `cloud.Object` in `objects` whose `Key` is `prefix` followed by `<ts>.tar.zst`, where `<ts>` is an RFC3339 UTC timestamp `YYYY-MM-DDThh:mm:ssZ`, optionally with a fractional second of one to nine digits before the `Z`, that parses as a valid time, and MUST ignore every other object, and MUST return the zero `cloud.Object` and false when `objects` holds no host backup; verified at least by, for `prefix` `us/host/`, a listing holding only `us/host/2026-11-01T00:00:00Z.tar.zst` returning that object, its `Size` and `Modified` unchanged, and true; by a listing holding `us/host/2026-11-08T16:12:01.865067548Z.tar.zst` beside `us/host/2026-11-08T16:12:01.865067548Z.accounts.tar.zst`, `us/host/2026-11-08T17:43:26.222933531Z.accounts.tar.zst`, `us/host/old/2026-11-09T00:00:00Z.tar.zst`, `us/host/latest.tar.zst`, `us/host/2026-11-09T00:00:00+00:00.tar.zst`, `us/host/2026-02-30T00:00:00Z.tar.zst`, `us/host/2026-11-09T00:00:00Z.tar.gz`, and `them/host/2026-11-09T00:00:00Z.tar.zst`, each of these others given a later `Modified`, returning `us/host/2026-11-08T16:12:01.865067548Z.tar.zst` and true; and by a nil listing and a listing holding only the eight ignored objects above each returning the zero `cloud.Object` and false.
+
+- R-DR7V-6DCT: When `objects` holds more than one host backup, `space.HostBackup` MUST return the one whose parsed `<ts>` is the latest instant, whatever the objects' `Modified` and order in `objects`, and of two that parse to the same instant the one with the greater `Key`, with true; verified at least by, for `prefix` `us/host/` and with each listing given in both orders, `us/host/2026-11-08T16:12:01.5Z.tar.zst` winning over `us/host/2026-11-08T16:12:01Z.tar.zst` whose `Modified` is later, `us/host/2026-11-07T17:09:48.74850415Z.tar.zst` winning over `us/host/2026-11-07T17:09:48.7485041Z.tar.zst` whose `Modified` is later, `us/host/2026-11-08T17:43:26.222933531Z.tar.zst` winning over `us/host/2026-11-08T16:12:01.865067548Z.tar.zst` whose `Modified` is later, and `us/host/2026-11-08T16:12:01.5Z.tar.zst` winning over `us/host/2026-11-08T16:12:01.50Z.tar.zst`.
 
 - R-U3EZ-XHRY: Package `internal/space` MUST export `WaitState(ctx context.Context, deps seam.Deps, ec2 cloud.EC2, id string, state cloud.InstanceState) (cloud.Instance, error)`, `WaitChecks(ctx context.Context, deps seam.Deps, ec2 cloud.EC2, id string) error`, `WaitLaunchReady(ctx context.Context, deps seam.Deps, ec2 cloud.EC2, spec cloud.LaunchSpec) error`, `WaitInsync(ctx context.Context, deps seam.Deps, route53 cloud.Route53, changeID string) error`, `PollInterval = 5 * time.Second`, and `PollAttempts = 60`.
 
