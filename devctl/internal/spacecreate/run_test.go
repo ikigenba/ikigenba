@@ -69,13 +69,13 @@ func TestRunSignatureAndGrammar(t *testing.T) {
 		t.Fatalf("last option parse = %#v, %v", got, err)
 	}
 	got, err = parseInvocation([]string{"sbx1", "--acme-email", "--literal-address"})
-	if err != nil || got.acmeEmail != "--literal-address" {
+	if err == nil {
 		t.Fatalf("option-like value parse = %#v, %v", got, err)
 	}
 }
 
 func TestRunHelpIsExactAndDependencyFree(t *testing.T) {
-	// R-UXYX-19YV
+	// R-T6F6-6BKC
 	//
 	for _, option := range []string{"--help", "-h"} {
 		calls := 0
@@ -88,7 +88,7 @@ func TestRunHelpIsExactAndDependencyFree(t *testing.T) {
 }
 
 func TestRunSuccessfulCreateUsesCurrentContracts(t *testing.T) {
-	// R-V2UI-KCXN R-V5AB-BWF1 R-V6I7-PO5Q R-V7Q4-3FWF R-V8Y0-H7N4
+	// R-VOX7-JFYC R-V5AB-BWF1 R-V6I7-PO5Q R-V7Q4-3FWF R-V8Y0-H7N4
 	// R-VA5W-UZDT R-VBDT-8R4I R-VCLP-MIV7 R-VDTM-0ALW R-VF1I-E2CL
 	// R-VG9E-RU3A R-VHHB-5LTZ R-VIP7-JDKO R-VJX3-X5BD
 	//
@@ -104,7 +104,7 @@ func TestRunSuccessfulCreateUsesCurrentContracts(t *testing.T) {
 	}
 	want := "account: ok (ikigenba.dev, us-east-2, 295229566359)\n" +
 		"domain: ok (zone ikigenba.dev ZONE1)\n" +
-		"build: ok (r2, dist/" + createSHA + ".tar.xz)\n" +
+		"build: ok (release-87, dist/" + createSHA + ".tar.xz)\n" +
 		"secrets: ok (1 apps)\n" +
 		"role: ok (sbx1.ikigenba.dev)\n" +
 		"instance: ok (i-new running, 198.51.100.7)\n" +
@@ -156,7 +156,7 @@ func TestRunSuccessfulCreateUsesCurrentContracts(t *testing.T) {
 }
 
 func TestRunPreflightRefusalsAndRoleLength(t *testing.T) {
-	// R-90WR-YWJ1 R-93CK-QG0F R-94KH-47R4 R-95SD-HZHT
+	// R-90WR-YWJ1 R-93CK-QG0F R-VMHE-RWGY R-95SD-HZHT
 	tests := []struct {
 		name   string
 		change func(*createFake)
@@ -320,7 +320,7 @@ func (f *createFake) exec(_ context.Context, c seam.Cmd) (seam.Result, error) {
 		}
 		_ = f.event("git")
 		if c.Args[0] == "tag" {
-			return seam.Result{Stdout: []byte("r1\nr2\nr3-rc1\n")}, nil
+			return seam.Result{Stdout: []byte("r1\nr7\nrelease-86\nrelease-87\nrelease-88-rc1\n")}, nil
 		}
 		if len(c.Args) > 1 && c.Args[1] == "--verify" {
 			return seam.Result{Stdout: []byte(createSHA + "\n")}, nil
@@ -542,7 +542,7 @@ func TestCreateCheckoutFailuresPrecedeConnection(t *testing.T) {
 }
 
 func TestCreatePropagatesCloudFailuresAndStops(t *testing.T) {
-	// R-V1MM-6L6Y R-V6I7-PO5Q R-V7Q4-3FWF R-V8Y0-H7N4 R-VA5W-UZDT R-VIP7-JDKO
+	// R-VNPB-5O7N R-V6I7-PO5Q R-V7Q4-3FWF R-V8Y0-H7N4 R-VA5W-UZDT R-VIP7-JDKO
 	for _, stage := range []string{"zone", "template", "boundary", "ns", "spaces", "role-exists", "profile-exists", "create-role", "put-policy", "create-profile", "add-role", "launch-ready", "run-instance", "allocate", "associate", "records", "checks"} {
 		t.Run(stage, func(t *testing.T) {
 			f := newCreateFake(t)
@@ -568,7 +568,7 @@ func TestCreatePropagatesCloudFailuresAndStops(t *testing.T) {
 }
 
 func TestCreateForwardsVersionIntoBuiltRelease(t *testing.T) {
-	// R-V2UI-KCXN
+	// R-VOX7-JFYC
 	f := newCreateFake(t)
 	deps := f.deps()
 	exec := deps.Exec
@@ -608,7 +608,7 @@ func TestCreateForwardsVersionIntoBuiltRelease(t *testing.T) {
 }
 
 func TestCreateReleaseQueryErrorsPropagate(t *testing.T) {
-	// R-DA4A-C76V
+	// R-T8UY-XV1Q
 	for _, query := range []string{"tag", "resolve"} {
 		t.Run(query, func(t *testing.T) {
 			f := newCreateFake(t)
@@ -647,4 +647,8 @@ func TestCreateReleaseQueryErrorsPropagate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func (f *createFake) TagRetired(context.Context, []string, string) error {
+	panic("unexpected TagRetired")
 }

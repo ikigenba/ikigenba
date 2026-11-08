@@ -26,6 +26,7 @@ type expectedEC2 interface {
 	AssociateAddress(context.Context, string, string) error
 	DisassociateAddress(context.Context, string) error
 	ReleaseAddress(context.Context, string) error
+	TagRetired(context.Context, []string, string) error
 }
 
 type expectedSSM interface {
@@ -231,7 +232,7 @@ func TestNotFoundErrorContract(t *testing.T) {
 }
 
 func TestEC2ValueContracts(t *testing.T) {
-	// R-6N60-DGIR
+	// R-F8WV-O4EO
 	states := []InstanceState{StatePending, StateRunning, StateShuttingDown, StateTerminated, StateStopping, StateStopped}
 	wantStates := []InstanceState{"pending", "running", "shutting-down", "terminated", "stopping", "stopped"}
 	if !reflect.DeepEqual(states, wantStates) {
@@ -265,12 +266,14 @@ func TestEC2ValueContracts(t *testing.T) {
 		Space   string
 		State   InstanceState
 		Address string
+		Retired string
 	}{})
 	_ = Address(struct {
 		AllocationID  string
 		AssociationID string
 		IP            string
 		Space         string
+		Retired       string
 	}{})
 	_ = LaunchSpec(struct {
 		LaunchTemplateID string
@@ -281,7 +284,7 @@ func TestEC2ValueContracts(t *testing.T) {
 }
 
 func TestEC2InterfaceContract(_ *testing.T) {
-	// R-QA6P-YFZ0
+	// R-FBCO-FNW2
 	var gotEC2 EC2
 	wantEC2 := expectedEC2(gotEC2)
 	gotEC2 = wantEC2
@@ -406,7 +409,7 @@ func TestNoSpaceErrorContract(t *testing.T) {
 }
 
 func TestSpacesFiltersMapsAndSortsInstances(t *testing.T) {
-	// R-2ZKD-LLTT
+	// R-FCKK-TFMR
 	ctx := context.Background()
 	ec2 := &listEC2{instances: []Instance{
 		{ID: "i-z", Space: "zulu.ikigenba.dev", State: StateStopped, Address: "203.0.113.2"},
@@ -430,7 +433,7 @@ func TestSpacesFiltersMapsAndSortsInstances(t *testing.T) {
 }
 
 func TestSpacesEmptyAndDuplicateBehavior(t *testing.T) {
-	// R-2ZKD-LLTT
+	// R-FCKK-TFMR
 	t.Run("empty", func(t *testing.T) {
 		got, err := Spaces(context.Background(), &listEC2{}, "ikigenba.dev")
 		if err != nil || got == nil || len(got) != 0 {
@@ -463,7 +466,7 @@ func TestSpacesEmptyAndDuplicateBehavior(t *testing.T) {
 }
 
 func TestLookupSpace(t *testing.T) {
-	// R-QHI4-92F6
+	// R-FDSH-77DG
 	t.Run("found", func(t *testing.T) {
 		ec2 := &listEC2{instances: []Instance{
 			{ID: "i-b", Space: "sbx2.ikigenba.dev", State: StateStopped},

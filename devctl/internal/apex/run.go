@@ -140,17 +140,10 @@ func runSet(ctx context.Context, stdout io.Writer, deps seam.Deps, clients cloud
 	}
 	space.Step(stdout, "host", "host.apex="+app.Name+", certificate obtained, nginx applied")
 
-	changeID, err := clients.Route53.ChangeRecords(ctx, pre.zone.ID, []cloud.RecordChange{{
-		Action: cloud.ChangeUpsert,
-		Record: cloud.Record{Name: root, Type: "A", TTL: space.RecordTTL, Values: []string{pre.target.Address}},
-	}})
-	if err != nil {
+	if err := PutRecord(ctx, deps, clients.Route53, pre.zone, root, pre.target.Address); err != nil {
 		return err
 	}
-	if err := space.WaitInsync(ctx, deps, clients.Route53, changeID); err != nil {
-		return err
-	}
-	space.Step(stdout, "record", root+" -> "+pre.target.Address+", INSYNC")
+	space.Step(stdout, "record", RecordDetail(root, pre.target.Address))
 
 	if pre.apex.Holder != "" && pre.apex.Holder != pre.target.Domain {
 		if err := clients.IAM.PutRolePolicy(ctx, space.RoleName(pre.apex.Holder), space.PolicyName, space.PolicyDocument(root, pre.zone.ID, pre.prev, false)); err != nil {
@@ -306,3 +299,15 @@ func runClear(ctx context.Context, stdout io.Writer, deps seam.Deps, clients clo
 	space.Step(stdout, "host", "host.apex removed, certificate obtained, nginx applied")
 	return nil
 }
+
+// PutRecord points the root A record at address and waits for propagation.
+func PutRecord(ctx context.Context, deps seam.Deps, route53 cloud.Route53, zone cloud.Zone, root, address string) error {
+	id, err := route53.ChangeRecords(ctx, zone.ID, []cloud.RecordChange{{Action: cloud.ChangeUpsert, Record: cloud.Record{Name: root, Type: "A", TTL: space.RecordTTL, Values: []string{address}}}})
+	if err != nil {
+		return err
+	}
+	return space.WaitInsync(ctx, deps, route53, id)
+}
+
+// RecordDetail describes a propagated root record.
+func RecordDetail(root, address string) string { return root + " -> " + address + ", INSYNC" }

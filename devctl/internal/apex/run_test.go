@@ -965,3 +965,5 @@ var _ cloud.S3 = (*fake)(nil)
 func (*fake) CopyObject(context.Context, string, string, string) error {
 	panic("unexpected CopyObject")
 }
+
+func (*fake) TagRetired(context.Context, []string, string) error { panic("unexpected EC2 call") }

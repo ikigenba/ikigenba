@@ -378,7 +378,7 @@ func TestSuiteCopiesWholeTurnsShare(t *testing.T) {
 	}
 }
 func TestSuiteCompileCommands(t *testing.T) {
-	// R-52FS-588Y
+	// R-T579-SJTN
 	// R-4V4D-ULSS
 	f := newSuite(t)
 	f.apps = []string{"auth", "dummy", "events", "mcp", "repos", "scripts", "sites", "telemetry"}
@@ -416,7 +416,7 @@ func TestSuiteCompileCommands(t *testing.T) {
 	for i, c := range compiles {
 		env := slices.Clone(c.Env)
 		slices.Sort(env)
-		if c.Dir != filepath.Join(f.worktrees[0], names[i]) || !slices.Equal(env, []string{"CGO_ENABLED=0", "GOARCH=amd64", "GOOS=linux", "GOWORK=off"}) || len(c.Args) == 0 || c.Args[0] != "build" || !slices.Contains(c.Args, "-buildvcs=false") || !slices.Contains(c.Args, "./cmd/"+names[i]) || suiteCompilerOutput(c.Args) != f.compiled[names[i]] {
+		if c.Dir != filepath.Join(f.worktrees[0], names[i]) || !slices.Equal(env, []string{"CGO_ENABLED=0", "GOARCH=arm64", "GOOS=linux", "GOWORK=off"}) || len(c.Args) == 0 || c.Args[0] != "build" || !slices.Contains(c.Args, "-buildvcs=false") || !slices.Contains(c.Args, "./cmd/"+names[i]) || suiteCompilerOutput(c.Args) != f.compiled[names[i]] {
 			t.Fatalf("compile command %#v", c)
 		}
 		for _, arg := range c.Args {

@@ -12,7 +12,7 @@ import (
 )
 
 func TestCreateDispatchSuppliesReportedVersionToRelease(t *testing.T) {
-	// R-RP8F-P25J
+	// R-G0YK-GUGN
 	h := newCommandHarness(t)
 	h.createRoleErr = errors.New("stop after build")
 	deps := h.deps()

@@ -12,6 +12,7 @@ import (
 )
 
 type ec2API interface {
+	CreateTags(context.Context, *ec2.CreateTagsInput, ...func(*ec2.Options)) (*ec2.CreateTagsOutput, error)
 	DescribeLaunchTemplates(context.Context, *ec2.DescribeLaunchTemplatesInput, ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplatesOutput, error)
 	DescribeInstances(context.Context, *ec2.DescribeInstancesInput, ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
 	RunInstances(context.Context, *ec2.RunInstancesInput, ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error)
@@ -220,6 +221,7 @@ func cloudInstance(instance types.Instance) cloud.Instance {
 	return cloud.Instance{
 		ID:      aws.ToString(instance.InstanceId),
 		Space:   tagValue(instance.Tags, "Space"),
+		Retired: tagValue(instance.Tags, cloud.RetiredTag),
 		State:   cloud.InstanceState(instance.State.Name),
 		Address: aws.ToString(instance.PublicIpAddress),
 	}
@@ -231,6 +233,7 @@ func cloudAddress(address types.Address) cloud.Address {
 		AssociationID: aws.ToString(address.AssociationId),
 		IP:            aws.ToString(address.PublicIp),
 		Space:         tagValue(address.Tags, "Space"),
+		Retired:       tagValue(address.Tags, cloud.RetiredTag),
 	}
 }
 
@@ -256,4 +259,9 @@ func ec2Error(operation string, err error) *cloud.Error {
 
 func ec2APIErrorCode(err error) string {
 	return apiErrorCode(err)
+}
+
+func (c *ec2Client) TagRetired(ctx context.Context, ids []string, value string) error {
+	_, err := c.sdk.CreateTags(ctx, &ec2.CreateTagsInput{Resources: ids, Tags: []types.Tag{{Key: aws.String(cloud.RetiredTag), Value: aws.String(value)}}})
+	return wrapEC2("CreateTags", err)
 }

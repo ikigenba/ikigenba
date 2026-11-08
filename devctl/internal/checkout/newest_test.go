@@ -11,10 +11,14 @@ import (
 )
 
 func TestNewestRelease(t *testing.T) {
-	// R-ULRX-7KJX R-D7OH-KNPH
+	// R-ULRX-7KJX R-T2RH-10C9
 	for _, tc := range []struct{ output, want string }{
-		{"feature/x\nr1\nr10\nr2\nr3-rc1\nr9x\nR11\nr01\nrr5\nnon-release-tag\n", "r10"},
-		{"r9\nr100000000000000000000\n", "r100000000000000000000"}, {"r0\n", "r0"}, {"r1-rc1\nfeature/x\n", ""}, {"", ""},
+
+		{"feature/x\nr1\nr7\nr100\nrelease-86\nrelease-87\nrelease-88-rc1\nrelease-9x\nRelease-99\nrelease-01\nrelease-0\nrelease-\nreleases-90\nxrelease-95\nv1.0.0\n", "release-87"},
+		{"release-99\nrelease-100\n", "release-100"},
+		{"release-9\nrelease-100000000000000000000\n", "release-100000000000000000000"},
+		{"r1\nr2\nr3\nr4\nr5\nr6\nr7\n", ""},
+		{"release-1-rc1\nfeature/x\n", ""}, {"release-0\n", ""}, {"", ""},
 	} {
 		calls := 0
 		c := Checkout{Root: "/root", Deps: seam.Deps{Dir: "/root/sub", Exec: func(_ context.Context, cmd seam.Cmd) (seam.Result, error) {

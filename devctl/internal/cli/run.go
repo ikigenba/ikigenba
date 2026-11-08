@@ -23,6 +23,7 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
 	"github.com/ikigenba/ikigenba/devctl/internal/spaceapps"
 	"github.com/ikigenba/ikigenba/devctl/internal/spacecreate"
+	"github.com/ikigenba/ikigenba/devctl/internal/spacemove"
 )
 
 var version = "v0.10.0"
@@ -33,7 +34,7 @@ Manage the platform from the developer's machine. Never run as root.
 
 Commands:
   version   print the version
-  space     list, create, destroy, stop, start, and inspect spaces
+  space     list, create, move, destroy, stop, start, and inspect spaces
   secrets   push and list an app's secrets for a space
   build     build the suite at a commit into a release
   deploy    put a release on a space
@@ -196,6 +197,8 @@ func missingCommandOptionValue(command string, arguments []string) (string, stri
 func runSpace(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) error {
 	if len(args) != 0 {
 		switch args[0] {
+		case "move":
+			return spacemove.Run(ctx, args[1:], version, stdout, deps)
 		case "create":
 			return spacecreate.Run(ctx, args[1:], version, stdout, deps)
 		case "restart":

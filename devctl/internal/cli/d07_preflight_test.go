@@ -30,11 +30,11 @@ remain on failure; use space destroy to clean up.
 
 Options:
   --acme-email <address>  where the CA sends the space's expiry warnings; required
-  --release <sha|tag>     the release to deploy; the newest r<N> tag otherwise
+  --release <sha|tag>     the release to deploy; the newest release-<N> tag otherwise
 `
 
 func TestCreateCLIUsagePrecedesCheckout(t *testing.T) {
-	// R-8UTA-21TK R-8X92-TLAY R-UXYX-19YV R-UWR0-NI86
+	// R-8UTA-21TK R-8X92-TLAY R-T6F6-6BKC R-UWR0-NI86
 	deps := seam.Deps{Dir: t.TempDir(), EUID: 1, Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
 		t.Fatal("unexpected exec")
 		return seam.Result{}, nil
@@ -240,7 +240,7 @@ func TestInvalidSpaceAndAppNeverConnectThroughCLI(t *testing.T) {
 }
 
 func TestCreateConnectsOnceAndStopsOnIdentityFailureThroughCLI(t *testing.T) {
-	// R-27QI-54Y6
+	// R-T7N2-K3B1
 	//
 	for _, operand := range []string{"sbx1", "sbx1.ikigenba.dev"} {
 		h := newCommandHarness(t)
@@ -293,7 +293,7 @@ func withCreateRelease(deps seam.Deps) seam.Deps {
 	exec := deps.Exec
 	deps.Exec = func(ctx context.Context, c seam.Cmd) (seam.Result, error) {
 		if c.Path == "git" && c.Args[0] == "tag" {
-			return seam.Result{Stdout: []byte("r2\n")}, nil
+			return seam.Result{Stdout: []byte("release-87\n")}, nil
 		}
 		if c.Path == "git" && len(c.Args) > 1 && c.Args[1] == "--verify" {
 			return seam.Result{Stdout: []byte(createSHA + "\n")}, nil
@@ -329,7 +329,7 @@ func fakeCreateBuild(t *testing.T, root string, c seam.Cmd) (seam.Result, bool, 
 	}
 	if c.Path == "git" {
 		if c.Args[0] == "tag" {
-			return seam.Result{Stdout: []byte("r2\n")}, true, nil
+			return seam.Result{Stdout: []byte("release-87\n")}, true, nil
 		}
 		if len(c.Args) > 1 && c.Args[1] == "--verify" {
 			return seam.Result{Stdout: []byte(createSHA + "\n")}, true, nil
@@ -380,16 +380,17 @@ func fakeCreateBuild(t *testing.T, root string, c seam.Cmd) (seam.Result, bool, 
 }
 
 func TestCreateReleaseResolutionThroughCLI(t *testing.T) {
-	// R-DA4A-C76V R-27QI-54Y6 R-UVJ4-9QHH R-UWR0-NI86
+	// R-T8UY-XV1Q R-T7N2-K3B1 R-UVJ4-9QHH R-UWR0-NI86
 	for _, tc := range []struct {
 		args                 []string
 		tags, rev, sha, want string
 	}{
-		{nil, "r1\nr2\nr3-rc1\n", "refs/tags/r2^{commit}", createSHA, ""},
+		{nil, "r1\nr7\nrelease-86\nrelease-87\nrelease-88-rc1\n", "refs/tags/release-87^{commit}", createSHA, ""},
 		{[]string{"--release", "9e1c7a3"}, "", "9e1c7a3^{commit}", "9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c", ""},
-		{[]string{"--release=r3-rc1"}, "", "refs/tags/r3-rc1^{commit}", createSHA, ""},
+		{[]string{"--release=release-88-rc1"}, "", "refs/tags/release-88-rc1^{commit}", createSHA, ""},
 		{[]string{"--release", "main"}, "", "refs/tags/main^{commit}", "", "devctl: 'main' is not a commit\n"},
-		{nil, "r1-rc1\nfeature/x\n", "", "", "devctl: no r<N> release tag in this checkout; name one with --release <sha|tag>\n"},
+		{nil, "release-1-rc1\nfeature/x\n", "", "", "devctl: no release-<N> tag in this checkout; name one with --release <sha|tag>\n"},
+		{nil, "r1\nr2\nr3\nr4\nr5\nr6\nr7\n", "", "", "devctl: no release-<N> tag in this checkout; name one with --release <sha|tag>\n"},
 		{[]string{"--release=first", "--release", "r2"}, "", "refs/tags/r2^{commit}", createSHA, ""},
 	} {
 		h := newCommandHarness(t)
@@ -450,7 +451,7 @@ func TestCreateReleaseResolutionThroughCLI(t *testing.T) {
 }
 
 func TestCreatePlatformBarrierThroughCLI(t *testing.T) {
-	// R-V1MM-6L6Y
+	// R-VNPB-5O7N
 	for _, stop := range []string{"zone", "template", "boundary", "ns", "instances", "role", "profile"} {
 		t.Run(stop, func(t *testing.T) {
 			h := newCommandHarness(t)
@@ -633,11 +634,11 @@ func newCompleteCreateFake(t *testing.T) *completeCreateFake {
 	return &completeCreateFake{commandHarness: h}
 }
 func createInitialLines() string {
-	return "account: ok (ikigenba.dev, us-east-2, 123)\ndomain: ok (zone ikigenba.dev Z)\nbuild: ok (r2, dist/" + createSHA + ".tar.xz)\n"
+	return "account: ok (ikigenba.dev, us-east-2, 123)\ndomain: ok (zone ikigenba.dev Z)\nbuild: ok (release-87, dist/" + createSHA + ".tar.xz)\n"
 }
 
 func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
-	// R-V2UI-KCXN R-V5AB-BWF1 R-VBDT-8R4I R-VCLP-MIV7 R-VDTM-0ALW R-VG9E-RU3A R-VHHB-5LTZ R-VIP7-JDKO R-VJX3-X5BD
+	// R-VOX7-JFYC R-V5AB-BWF1 R-VBDT-8R4I R-VCLP-MIV7 R-VDTM-0ALW R-VG9E-RU3A R-VHHB-5LTZ R-VIP7-JDKO R-VJX3-X5BD
 	for _, operand := range []string{"sbx1", "sbx1.ikigenba.dev", "staging"} {
 		f := newCompleteCreateFake(t)
 		f.backup = operand == "staging"
@@ -729,7 +730,7 @@ func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
 				}
 			}
 		}
-		tail = append(tail, "'sudo' "+program+" 'activate' '"+createSHA+"' 'r2'")
+		tail = append(tail, "'sudo' "+program+" 'activate' '"+createSHA+"' 'release-87'")
 		if !reflect.DeepEqual(operations[10:], tail) {
 			t.Fatalf("operations after config = %v want %v", operations[10:], tail)
 		}
@@ -738,7 +739,7 @@ func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
 }
 
 func TestCreateFailuresKeepCompletedStepsThroughCLI(t *testing.T) {
-	// R-V2UI-KCXN R-V5AB-BWF1 R-V7Q4-3FWF R-VF1I-E2CL R-VHHB-5LTZ R-VIP7-JDKO
+	// R-VOX7-JFYC R-V5AB-BWF1 R-V7Q4-3FWF R-VF1I-E2CL R-VHHB-5LTZ R-VIP7-JDKO
 	for _, stop := range []string{"build", "secret", "launch", "init", "activate"} {
 		t.Run(stop, func(t *testing.T) {
 			f := newCompleteCreateFake(t)
@@ -781,7 +782,7 @@ func TestCreateFailuresKeepCompletedStepsThroughCLI(t *testing.T) {
 					t.Fatalf("result %#v", got)
 				}
 			case "activate":
-				if !strings.HasSuffix(got.stdout, "init: ok\nactivation output\n") || got.stderr != "devctl: activate: ssh ec2-user@18.118.7.42 sudo /opt/ikigenba/releases/"+createSHA+"/opsctl/bin/opsctl activate "+createSHA+" r2: exit status 1\n\n> opsctl: activate failed\n" {
+				if !strings.HasSuffix(got.stdout, "init: ok\nactivation output\n") || got.stderr != "devctl: activate: ssh ec2-user@18.118.7.42 sudo /opt/ikigenba/releases/"+createSHA+"/opsctl/bin/opsctl activate "+createSHA+" release-87: exit status 1\n\n> opsctl: activate failed\n" {
 					t.Fatalf("result %#v", got)
 				}
 			}
@@ -823,7 +824,7 @@ func (f *completeCreateFake) DeleteObjects(context.Context, string, []string) er
 }
 
 func TestCreateUnlabelledReleaseThroughCLI(t *testing.T) {
-	// R-V2UI-KCXN R-DA4A-C76V
+	// R-VOX7-JFYC R-T8UY-XV1Q
 	f := newCompleteCreateFake(t)
 	deps := f.deps()
 	exec := deps.Exec
@@ -942,4 +943,12 @@ func TestCreateHostAndAppFailuresStopByUse(t *testing.T) {
 			}
 		})
 	}
+}
+
+func (h *commandHarness) TagRetired(context.Context, []string, string) error {
+	panic("unexpected TagRetired")
+}
+
+func (f *completeCreateFake) TagRetired(context.Context, []string, string) error {
+	panic("unexpected TagRetired")
 }

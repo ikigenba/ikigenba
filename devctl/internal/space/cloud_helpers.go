@@ -136,7 +136,7 @@ func ElasticIP(ctx context.Context, ec2 cloud.EC2, root, domain string) (cloud.A
 	var match cloud.Address
 	found := false
 	for _, address := range addresses {
-		if address.Space != domain {
+		if address.Space != domain || address.Retired != "" {
 			continue
 		}
 		if found {
@@ -272,6 +272,9 @@ func FindApex(ctx context.Context, route53 cloud.Route53, ec2 cloud.EC2, zoneID,
 	result := ApexRecord{Record: record, Found: true}
 	matches := 0
 	for _, address := range addresses {
+		if address.Retired != "" {
+			continue
+		}
 		for _, value := range record.Values {
 			if address.IP == value {
 				matches++

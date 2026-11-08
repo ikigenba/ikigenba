@@ -55,29 +55,40 @@ func runDestroy(ctx context.Context, stdout io.Writer, deps seam.Deps, clients c
 		Step(stdout, "retire", "opsctl retire")
 	}
 
-	if exists {
-		if err := clients.EC2.TerminateInstance(ctx, item.ID); err != nil {
-			return err
-		}
-		if _, err := WaitState(ctx, deps, clients.EC2, item.ID, cloud.StateTerminated); err != nil {
-			return err
-		}
-		Step(stdout, "instance", item.ID+" terminated")
-	} else {
-		Step(stdout, "instance", "already gone")
-	}
-
-	address, found, err := ElasticIP(ctx, clients.EC2, root, sp.Domain)
+	instances, err := cloud.SpaceInstances(ctx, clients.EC2, root, sp.Domain)
 	if err != nil {
 		return err
 	}
-	switch {
-	case found:
+	details := make([]string, 0, len(instances))
+	for _, instance := range instances {
+		if err := clients.EC2.TerminateInstance(ctx, instance.ID); err != nil {
+			return err
+		}
+		if _, err := WaitState(ctx, deps, clients.EC2, instance.ID, cloud.StateTerminated); err != nil {
+			return err
+		}
+		details = append(details, instance.ID+" terminated")
+	}
+	if len(details) == 0 {
+		Step(stdout, "instance", "already gone")
+	} else {
+		Step(stdout, "instance", strings.Join(details, ", "))
+	}
+	addresses, err := cloud.SpaceAddresses(ctx, clients.EC2, root, sp.Domain)
+	if err != nil {
+		return err
+	}
+	details = nil
+	for _, address := range addresses {
 		if err := ReleaseElasticIP(ctx, clients.EC2, address); err != nil {
 			return err
 		}
-		Step(stdout, "address", "elastic ip "+address.IP+" released")
-	case exists:
+		details = append(details, "elastic ip "+address.IP+" released")
+	}
+	switch {
+	case len(details) > 0:
+		Step(stdout, "address", strings.Join(details, ", "))
+	case len(instances) > 0:
 		Step(stdout, "address", "no elastic ip")
 	default:
 		Step(stdout, "address", "already gone")

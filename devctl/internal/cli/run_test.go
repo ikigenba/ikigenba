@@ -22,6 +22,7 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
 	"github.com/ikigenba/ikigenba/devctl/internal/spaceapps"
 	"github.com/ikigenba/ikigenba/devctl/internal/spacecreate"
+	"github.com/ikigenba/ikigenba/devctl/internal/spacemove"
 )
 
 var _ func(context.Context, []string, io.Reader, io.Writer, io.Writer, seam.Deps) int = Run
@@ -32,7 +33,7 @@ Manage the platform from the developer's machine. Never run as root.
 
 Commands:
   version   print the version
-  space     list, create, destroy, stop, start, and inspect spaces
+  space     list, create, move, destroy, stop, start, and inspect spaces
   secrets   push and list an app's secrets for a space
   build     build the suite at a commit into a release
   deploy    put a release on a space
@@ -100,14 +101,15 @@ Arguments:
 
 const expectedD06Usage = `Usage: devctl space <subcommand> [arguments]
 
-List, create, destroy, stop, start, and inspect spaces, and restart, disable,
-enable, or read the journal of one app on one. A space is one label under the
-root domain; <space> is that label or the full domain. The cloud's tags are
-the only registry.
+List, create, move, destroy, stop, start, and inspect spaces, and restart,
+disable, enable, or read the journal of one app on one. A space is one label
+under the root domain; <space> is that label or the full domain. The cloud's
+tags are the only registry.
 
 Subcommands:
   list                       one line per space
   create <space> [options]   create the space and deploy a release to it
+  move <space> [options]     move the space to a new instance and restore it there
   destroy <space> [options]  remove the space and everything it owned
   stop <space>               stop the instance; state is kept
   start <space>              start the instance; its address is unchanged
@@ -119,7 +121,10 @@ Subcommands:
 
 Options (create):
   --acme-email <address>  where the CA sends the space's expiry warnings; required
-  --release <sha|tag>     the release to deploy; the newest r<N> tag otherwise
+  --release <sha|tag>     the release to deploy; the newest release-<N> tag otherwise
+
+Options (move):
+  --release <sha|tag>     the release to deploy; the newest release-<N> tag otherwise
 
 Options (destroy):
   --no-backup             skip the final backup the host takes before it goes
@@ -434,7 +439,7 @@ func TestCloudErrorsAreSingleLineOperationFailures(t *testing.T) {
 			}}, &cliRoute53{}),
 			wantStdout: "account: ok (ikigenba.dev, us-east-2, 123456789012)\n" +
 				"domain: ok (zone ikigenba.dev ZROOT)\n" +
-				"build: ok (r2, dist/" + createSHA + ".tar.xz)\n" +
+				"build: ok (release-87, dist/" + createSHA + ".tar.xz)\n" +
 				"secrets: ok (0 apps)\n" +
 				"role: ok (sbx1.ikigenba.dev)\n",
 			wantStderr: "devctl: ec2 RunInstances: InsufficientInstanceCapacity\n",
@@ -633,7 +638,7 @@ func TestTopLevelCommandSet(t *testing.T) {
 }
 
 func TestTopLevelHelp(t *testing.T) {
-	// R-YS7V-OMK5
+	// R-T1JK-N8LK
 	for _, option := range []string{"--help", "-h"} {
 		assertResult(t, invoke(option), 0, expectedUsage, "")
 	}
@@ -662,7 +667,7 @@ func TestSpaceHelpThroughCLIWithoutCheckoutOrEffects(t *testing.T) {
 		command []string
 		want    string
 	}{
-		// R-RQGC-2TW8
+		// R-FXAV-BJ8K
 		{name: "space", command: []string{"space"}, want: expectedD06Usage},
 		// R-UPD6-TD4G
 		{name: "list", command: []string{"space", "list"}, want: expectedD06ListUsage},
@@ -729,7 +734,7 @@ func TestSpaceRejectsExtraOperandsBeforeEffects(t *testing.T) {
 }
 
 func TestSpaceRejectsUnknownOptionsBeforeEffects(t *testing.T) {
-	// R-RO0J-BAEU
+	// R-FZQO-32PY
 	tests := [][]string{
 		{"space", "--wat"},
 		{"space", "--help", "--wat"},
@@ -1213,7 +1218,7 @@ func cliCheckoutAndHostExec(t *testing.T, checkoutExec seam.Runner) seam.Runner 
 }
 
 func TestSpaceDispatchMatchesOwningPackage(t *testing.T) {
-	// R-RP8F-P25J
+	// R-G0YK-GUGN
 	type target func(context.Context, []string, io.Writer, seam.Deps) error
 	tests := []struct {
 		name   string
@@ -1224,6 +1229,9 @@ func TestSpaceDispatchMatchesOwningPackage(t *testing.T) {
 		{name: "create", args: []string{"space", "create", "sbx1", "--acme-email", "ops@ikigenba.dev"}, run: func(ctx context.Context, args []string, out io.Writer, deps seam.Deps) error {
 			return spacecreate.Run(ctx, args, version, out, deps)
 		}, direct: []string{"sbx1", "--acme-email", "ops@ikigenba.dev"}},
+		{name: "move", args: []string{"space", "move", "sbx1"}, run: func(ctx context.Context, args []string, out io.Writer, deps seam.Deps) error {
+			return spacemove.Run(ctx, args, version, out, deps)
+		}, direct: []string{"sbx1"}},
 		{name: "restart", args: []string{"space", "restart", "sbx1", "crm"}, run: spaceapps.Run, direct: []string{"restart", "sbx1", "crm"}},
 		{name: "disable", args: []string{"space", "disable", "sbx1", "crm"}, run: spaceapps.Run, direct: []string{"disable", "sbx1", "crm"}},
 		{name: "enable", args: []string{"space", "enable", "sbx1", "crm"}, run: spaceapps.Run, direct: []string{"enable", "sbx1", "crm"}},

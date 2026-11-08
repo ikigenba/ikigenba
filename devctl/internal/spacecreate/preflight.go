@@ -2,7 +2,6 @@ package spacecreate
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
@@ -37,7 +36,7 @@ func preflight(ctx context.Context, deps seam.Deps, invocation invocation) (pref
 			return preflightResult{}, err
 		}
 		if !found {
-			return preflightResult{}, &RefusedError{Message: "no r<N> release tag in this checkout; name one with --release <sha|tag>"}
+			return preflightResult{}, &RefusedError{Message: "no release-<N> tag in this checkout; name one with --release <sha|tag>"}
 		}
 	}
 	sha, label, err := release.Resolve(ctx, opened, rev)
@@ -79,13 +78,17 @@ func preflight(ctx context.Context, deps seam.Deps, invocation invocation) (pref
 	if delegated {
 		return preflightResult{}, &RefusedError{Message: fmt.Sprintf("'%s' is delegated away from '%s'", sp.Domain, zone.Name)}
 	}
-	existing, err := cloud.LookupSpace(ctx, session.Clients.EC2, root.Domain, sp.Domain)
-	if err == nil {
-		return preflightResult{}, &RefusedError{Message: fmt.Sprintf("a space at '%s' already exists (%s)", sp.Domain, existing.ID)}
-	}
-	var noSpace *cloud.NoSpaceError
-	if !errors.As(err, &noSpace) {
+
+	existing, err := cloud.SpaceInstances(ctx, session.Clients.EC2, root.Domain, sp.Domain)
+	if err != nil {
 		return preflightResult{}, err
+	}
+	if len(existing) > 0 {
+		id := existing[0].ID
+		if existing[0].Retired != "" {
+			id += " retired"
+		}
+		return preflightResult{}, &RefusedError{Message: fmt.Sprintf("a space at '%s' already exists (%s)", sp.Domain, id)}
 	}
 
 	roleName := space.RoleName(sp.Domain)

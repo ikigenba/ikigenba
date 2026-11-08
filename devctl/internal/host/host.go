@@ -23,8 +23,9 @@ const (
 
 // Host is a remote deployment host.
 type Host struct {
-	Address string
-	Deps    seam.Deps
+	Address    string
+	Deps       seam.Deps
+	KnownHosts string
 }
 
 // Output is the output captured from a remote command.
@@ -150,18 +151,15 @@ func (h Host) run(ctx context.Context, step string, logical []string) (Output, e
 	return output, nil
 }
 
-func (h Host) command(logical []string) seam.Cmd {
-	return seam.Cmd{
-		Path: "ssh",
-		Args: []string{
-			"-o", "BatchMode=yes",
-			"-o", "ConnectTimeout=10",
-			"-o", "StrictHostKeyChecking=accept-new",
-			h.Target(),
-			quoteCommand(logical),
-		},
-		Dir: h.Deps.Dir,
+func (h Host) options() []string {
+	args := []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new"}
+	if h.KnownHosts != "" {
+		args = append(args, "-o", "UserKnownHostsFile="+h.KnownHosts)
 	}
+	return args
+}
+func (h Host) command(logical []string) seam.Cmd {
+	return seam.Cmd{Path: "ssh", Args: append(h.options(), h.Target(), quoteCommand(logical)), Dir: h.Deps.Dir}
 }
 
 func (h Host) logicalCommand(logical []string) []string {
@@ -181,7 +179,7 @@ func quoteCommand(args []string) string {
 // Copy transfers a local artifact to a literal remote path.
 func (h Host) Copy(ctx context.Context, step, local, remote string) error {
 	destination := h.Target() + ":" + remote
-	result, err := h.Deps.Defaults().Exec(ctx, seam.Cmd{Path: "scp", Dir: h.Deps.Dir, Args: []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", local, destination}})
+	result, err := h.Deps.Defaults().Exec(ctx, seam.Cmd{Path: "scp", Dir: h.Deps.Dir, Args: append(h.options(), local, destination)})
 	if err != nil {
 		return fmt.Errorf("scp: %w", err)
 	}

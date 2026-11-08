@@ -296,7 +296,7 @@ func TestWaitInsync(t *testing.T) {
 }
 
 func TestElasticIP(t *testing.T) {
-	// R-U4MW-B9IN R-UGTW-4YXL
+	// R-U4MW-B9IN R-FNJO-9DB0
 	addresses := []cloud.Address{
 		{AllocationID: "other", Space: "other.example"},
 		{AllocationID: "wanted", IP: "192.0.2.2", Space: "app.example"},
@@ -501,7 +501,7 @@ func TestDeleteRole(t *testing.T) {
 }
 
 func TestFindApex(t *testing.T) {
-	// R-U8AL-GKQQ R-UMXE-1TN2
+	// R-U8AL-GKQQ R-FORK-N51P
 	_ = ApexRecord(struct {
 		Record cloud.Record
 		Found  bool
@@ -669,4 +669,8 @@ func (f *helperIAM) DeleteInstanceProfile(ctx context.Context, name string) erro
 }
 func (f *helperIAM) DeleteRole(ctx context.Context, name string) error {
 	return f.deleteRole(ctx, name)
+}
+
+func (f *helperEC2) TagRetired(context.Context, []string, string) error {
+	panic("unexpected TagRetired")
 }

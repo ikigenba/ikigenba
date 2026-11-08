@@ -15,7 +15,8 @@ import (
 )
 
 type fakeEC2 struct {
-	err error
+	err        error
+	createTags func(*ec2.CreateTagsInput) (*ec2.CreateTagsOutput, error)
 
 	calls []string
 
@@ -555,3 +556,13 @@ func assertTagSpecifications(t *testing.T, got []types.TagSpecification, resourc
 		}
 	}
 }
+
+func (f *fakeEC2) CreateTags(_ context.Context, in *ec2.CreateTagsInput, _ ...func(*ec2.Options)) (*ec2.CreateTagsOutput, error) {
+	f.calls = append(f.calls, "CreateTags")
+	if f.createTags != nil {
+		return f.createTags(in)
+	}
+	return nil, f.err
+}
+
+func (f *fakeEC2) TagRetired(context.Context, []string, string) error { panic("unexpected TagRetired") }

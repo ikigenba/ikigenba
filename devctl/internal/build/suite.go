@@ -186,7 +186,7 @@ func compileSuite(ctx context.Context, name, dir, binary string, deps seam.Deps)
 	if err := os.MkdirAll(filepath.Dir(binary), 0o700); err != nil {
 		return err
 	}
-	if err := execute(ctx, deps, "build "+name, seam.Cmd{Path: "go", Args: []string{"build", "-buildvcs=false", "-o", binary, "./cmd/" + name}, Dir: dir, Env: []string{"GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=0", "GOWORK=off"}}); err != nil {
+	if err := execute(ctx, deps, "build "+name, seam.Cmd{Path: "go", Args: []string{"build", "-buildvcs=false", "-o", binary, "./cmd/" + name}, Dir: dir, Env: []string{"GOOS=linux", "GOARCH=arm64", "CGO_ENABLED=0", "GOWORK=off"}}); err != nil {
 		return err
 	}
 	info, err := os.Stat(binary)

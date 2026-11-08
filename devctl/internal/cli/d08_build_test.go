@@ -48,7 +48,7 @@ func TestBuildUsageDiagnosticsThroughCLI(t *testing.T) {
 
 func TestBuildHelpThroughCLIHasNoExternalOperation(t *testing.T) {
 	// R-6DMZ-9OZX
-	// R-4TWH-GU23
+	// R-T3ZD-ES2Y
 	outside := t.TempDir()
 	for _, args := range [][]string{
 		{"build", "--help"},

@@ -105,7 +105,7 @@ func TestCommandHelpPrecedesValidationAndExternalAccess(t *testing.T) {
 }
 
 func TestCommandOptionValuesFailBeforeExternalAccess(t *testing.T) {
-	// R-RJ4X-S7G2
+	// R-VK1M-0CZK
 	tests := []struct {
 		name   string
 		args   []string
@@ -114,6 +114,7 @@ func TestCommandOptionValuesFailBeforeExternalAccess(t *testing.T) {
 	}{
 		{name: "create missing", args: []string{"space", "create", "sbx1", "--acme-email"}, option: "--acme-email", help: "devctl space --help"},
 		{name: "create empty", args: []string{"space", "create", "sbx1", "--acme-email="}, option: "--acme-email", help: "devctl space --help"},
+		{name: "create option-like", args: []string{"space", "create", "sbx1", "--release", "-x"}, option: "--release", help: "devctl space --help"},
 		{name: "restore missing", args: []string{"restore", "sbx1", "app", "--at"}, option: "--at", help: "devctl restore --help"},
 		{name: "restore empty", args: []string{"restore", "sbx1", "app", "--at="}, option: "--at", help: "devctl restore --help"},
 		{name: "restore option-like", args: []string{"restore", "sbx1", "app", "--at", "--bad"}, option: "--at", help: "devctl restore --help"},

@@ -14,13 +14,14 @@ import (
 )
 
 func TestHostPublicContract(t *testing.T) {
-	// R-T3CY-DCHC
+	// R-FSF9-SG9S
 	if User != "ec2-user" {
 		t.Fatalf("User = %q", User)
 	}
 	_ = Host(struct {
-		Address string
-		Deps    seam.Deps
+		Address    string
+		Deps       seam.Deps
+		KnownHosts string
 	}{})
 	h := Host{Address: "3.19.79.227"}
 	if got, want := h.Target(), "ec2-user@3.19.79.227"; got != want {
@@ -101,7 +102,7 @@ func TestCommandErrorContract(t *testing.T) {
 }
 
 func TestRunAndSudoPreserveRemoteArguments(t *testing.T) {
-	// R-D83R-NZG4
+	// R-FUV2-JZR6
 	var commands []seam.Cmd
 	h := Host{Address: "192.0.2.1", Deps: seam.Deps{
 		Dir: "/checkout",

@@ -19,7 +19,7 @@ remain on failure; use space destroy to clean up.
 
 Options:
   --acme-email <address>  where the CA sends the space's expiry warnings; required
-  --release <sha|tag>     the release to deploy; the newest r<N> tag otherwise
+  --release <sha|tag>     the release to deploy; the newest release-<N> tag otherwise
 `
 )
 
@@ -31,6 +31,11 @@ type invocation struct {
 }
 
 func parseInvocation(args []string) (invocation, error) {
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			return invocation{help: true}, nil
+		}
+	}
 	result := invocation{}
 	operands := make([]string, 0, len(args))
 	missingACMEEmailValue := false
@@ -44,6 +49,9 @@ func parseInvocation(args []string) (invocation, error) {
 		case argument == "--acme-email":
 			value, ok := following(args[index:])
 			if !ok || value == "" {
+				if len(args[index:]) > 1 && strings.HasPrefix(args[index+1], "-") {
+					return invocation{}, usage("option '--acme-email' requires a value")
+				}
 				missingACMEEmailValue = true
 				continue
 			}
@@ -56,6 +64,9 @@ func parseInvocation(args []string) (invocation, error) {
 		case argument == "--release":
 			value, ok := following(args[index:])
 			if !ok || value == "" {
+				if len(args[index:]) > 1 && strings.HasPrefix(args[index+1], "-") {
+					return invocation{}, usage("option '--release' requires a value")
+				}
 				missingReleaseValue = true
 				continue
 			}
@@ -95,7 +106,7 @@ func parseInvocation(args []string) (invocation, error) {
 }
 
 func following(arguments []string) (string, bool) {
-	if len(arguments) < 2 {
+	if len(arguments) < 2 || strings.HasPrefix(arguments[1], "-") {
 		return "", false
 	}
 	return arguments[1], true

@@ -22,14 +22,15 @@ What a space is running is 'devctl space status'.
 
 const usageText = `Usage: devctl space <subcommand> [arguments]
 
-List, create, destroy, stop, start, and inspect spaces, and restart, disable,
-enable, or read the journal of one app on one. A space is one label under the
-root domain; <space> is that label or the full domain. The cloud's tags are
-the only registry.
+List, create, move, destroy, stop, start, and inspect spaces, and restart,
+disable, enable, or read the journal of one app on one. A space is one label
+under the root domain; <space> is that label or the full domain. The cloud's
+tags are the only registry.
 
 Subcommands:
   list                       one line per space
   create <space> [options]   create the space and deploy a release to it
+  move <space> [options]     move the space to a new instance and restore it there
   destroy <space> [options]  remove the space and everything it owned
   stop <space>               stop the instance; state is kept
   start <space>              start the instance; its address is unchanged
@@ -41,7 +42,10 @@ Subcommands:
 
 Options (create):
   --acme-email <address>  where the CA sends the space's expiry warnings; required
-  --release <sha|tag>     the release to deploy; the newest r<N> tag otherwise
+  --release <sha|tag>     the release to deploy; the newest release-<N> tag otherwise
+
+Options (move):
+  --release <sha|tag>     the release to deploy; the newest release-<N> tag otherwise
 
 Options (destroy):
   --no-backup             skip the final backup the host takes before it goes
@@ -100,6 +104,7 @@ type invocation struct {
 var subcommands = map[string]struct{}{
 	"list":    {},
 	"create":  {},
+	"move":    {},
 	"destroy": {},
 	"stop":    {},
 	"start":   {},
@@ -135,7 +140,7 @@ func parseInvocation(args []string) (invocation, error) {
 
 	// These subcommands own their grammars in their own packages. The CLI
 	// dispatcher normally routes them there without calling this package.
-	if subcommand == "create" || subcommand == "restart" || subcommand == "disable" || subcommand == "enable" || subcommand == "logs" {
+	if subcommand == "move" || subcommand == "create" || subcommand == "restart" || subcommand == "disable" || subcommand == "enable" || subcommand == "logs" {
 		return result, nil
 	}
 

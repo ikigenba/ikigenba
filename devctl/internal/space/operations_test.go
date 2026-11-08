@@ -260,7 +260,7 @@ func TestRunPrerequisiteFailuresStopUnchanged(t *testing.T) {
 }
 
 func TestDestroyOrderedOptionsAndCleanup(t *testing.T) {
-	// R-VIMR-ZUX4 R-JCCP-CNWX R-VMAH-5657 R-UL0J-793W R-VNID-IXVW R-S80S-JF87 R-S98O-X6YW R-VR62-O93Z
+	// R-VIMR-ZUX4 R-JCCP-CNWX R-FPZH-0WSE R-FR7D-EOJ3 R-VNID-IXVW R-S80S-JF87 R-S98O-X6YW R-VR62-O93Z
 	f := newOperationFake(t)
 	f.instances = []cloud.Instance{{ID: "i-one", Space: testDomain, State: cloud.StateRunning, Address: "18.118.7.42"}}
 	f.described = cloud.Instance{ID: "i-one", State: cloud.StateTerminated}
@@ -290,7 +290,7 @@ func TestDestroyOrderedOptionsAndCleanup(t *testing.T) {
 	wantOps := []string{
 		"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot, "zone " + testRoot,
 		"find " + testRoot, "addresses " + testRoot, "change apex", "ssh 'sudo' 'opsctl' 'retire'",
-		"terminate i-one", "describe i-one", "addresses " + testRoot, "disassociate assoc", "release alloc",
+		"spaces " + testRoot, "terminate i-one", "describe i-one", "addresses " + testRoot, "disassociate assoc", "release alloc",
 		"list records", "change records", "parameters " + secrets.Prefix(testDomain),
 		"delete parameters /a", "delete parameters /b", "delete parameters /c",
 		"objects " + testRoot + " " + BackupPrefix("sbx1"),
@@ -389,7 +389,7 @@ func TestDestroyRetireSudo(t *testing.T) {
 }
 
 func TestDestroyRefusalAndResumptionBranches(t *testing.T) {
-	// R-VHEV-M36F R-VL2K-REEI R-UL0J-793W
+	// R-VHEV-M36F R-VL2K-REEI R-FR7D-EOJ3
 	for _, operand := range []string{"sbx1", testDomain} {
 		t.Run("non-running refuses unchanged "+operand, func(t *testing.T) {
 			f := newOperationFake(t)
@@ -536,7 +536,7 @@ func TestDestroyStopsAtEveryFirstFailure(t *testing.T) {
 		"zone " + testRoot, "find " + testRoot,
 	}
 	normalOps := append(append([]string{}, initialOps...),
-		"terminate i-one", "describe i-one", "addresses "+testRoot,
+		"spaces "+testRoot, "terminate i-one", "describe i-one", "addresses "+testRoot,
 		"disassociate assoc", "release alloc", "list records", "change records",
 		"parameters "+secrets.Prefix(testDomain), "delete parameters /one", "delete parameters /two",
 		"objects "+testRoot+" "+BackupPrefix("sbx1"), "delete objects "+testRoot+" sbx1/one,sbx1/two",
@@ -945,3 +945,7 @@ func hostCommand(dir, address, remote string) seam.Cmd {
 }
 
 var _ = secrets.Prefix
+
+func (f *operationFake) TagRetired(context.Context, []string, string) error {
+	panic("unexpected TagRetired")
+}

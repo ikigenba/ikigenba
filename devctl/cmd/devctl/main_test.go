@@ -18,7 +18,7 @@ Manage the platform from the developer's machine. Never run as root.
 
 Commands:
   version   print the version
-  space     list, create, destroy, stop, start, and inspect spaces
+  space     list, create, move, destroy, stop, start, and inspect spaces
   secrets   push and list an app's secrets for a space
   build     build the suite at a commit into a release
   deploy    put a release on a space

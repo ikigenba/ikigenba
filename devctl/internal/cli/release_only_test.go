@@ -13,7 +13,7 @@ import (
 )
 
 func TestRetiredCommandsAreUnknown(t *testing.T) {
-	// R-YNCA-5JLD R-RMSM-XIO5
+	// R-YNCA-5JLD R-FYIR-PAZ9
 	for _, test := range []struct {
 		args          []string
 		message, help string

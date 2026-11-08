@@ -208,3 +208,7 @@ func (f *addressStepFake) DeleteRole(context.Context, string) error {
 	f.deleteRoleCount++
 	return nil
 }
+
+func (f *addressStepFake) TagRetired(context.Context, []string, string) error {
+	panic("unexpected TagRetired")
+}

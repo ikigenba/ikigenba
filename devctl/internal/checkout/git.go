@@ -32,11 +32,11 @@ func (checkout *Checkout) NewestRelease(ctx context.Context) (string, bool, erro
 	}
 	best := ""
 	for _, tag := range strings.Split(output, "\n") {
-		if len(tag) < 2 || tag[0] != 'r' || (len(tag) > 2 && tag[1] == '0') {
+		if !strings.HasPrefix(tag, "release-") || len(tag) == len("release-") || tag[len("release-")] == '0' {
 			continue
 		}
 		valid := true
-		for i := 1; i < len(tag); i++ {
+		for i := len("release-"); i < len(tag); i++ {
 			if tag[i] < '0' || tag[i] > '9' {
 				valid = false
 				break
