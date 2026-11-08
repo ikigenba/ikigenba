@@ -5,8 +5,8 @@ account, named by its domain, found by its tags. A space is exactly one label
 under the root domain: `sbx1.ikigenba.dev` is a space, and `crm.sbx1.ikigenba.dev`
 is an app on it. There is no nesting, no grouping, and no space at the root
 itself; the root is an A record `apex` points at one app on one space (see
-`S7-apex.md`). `space` is the command that lists, creates, destroys, stops,
-and starts spaces, asks one what it is running, restarts, disables, or
+`S7-apex.md`). `space` is the command that lists, creates, moves, destroys,
+stops, and starts spaces, asks one what it is running, restarts, disables, or
 enables one of its apps, and reads that app's journal. Nothing is kept on the developer's machine; the cloud is the
 registry.
 
@@ -22,13 +22,21 @@ the backup bucket, and the ssh key pair are all `ikigenba.dev`. What devctl
 makes for a space is named after the space: the role and its instance profile
 are `<space domain>`, and the instance, its volumes, and its Elastic IP are
 tagged `Domain=ikigenba.dev` and `Space=<space domain>`. A space's instance
-is the one tagged `Space=<space domain>` that is not terminated; there is at
-most one.
+is the one tagged `Space=<space domain>` that is neither terminated nor
+retired; there is at most one. `space move` puts a space on a new instance
+and retires the one it left: that instance is stopped and tagged
+`Retired=<RFC3339 timestamp>` beside its `Domain` and `Space` tags, and its
+Elastic IP stays associated with it and is tagged the same. A retired
+instance and its address stay in the account until `space destroy` removes
+them, or a person does. Every command that acts on a space's instance acts
+on this one and never on a retired one; only `space create`, which refuses
+while any instance carries the label, and `space destroy`, which removes
+every one, look at retired instances at all.
 
 ## A developer asks what `space` can do
 
-The top-level usage gains the line `  space     list, create, destroy, stop,
-start, and inspect spaces` under `Commands:`.
+The top-level usage gains the line `  space     list, create, move, destroy,
+stop, start, and inspect spaces` under `Commands:`.
 
 Command:
 
@@ -41,14 +49,15 @@ Output:
 ```
 Usage: devctl space <subcommand> [arguments]
 
-List, create, destroy, stop, start, and inspect spaces, and restart, disable,
-enable, or read the journal of one app on one. A space is one label under the
-root domain; <space> is that label or the full domain. The cloud's tags are
-the only registry.
+List, create, move, destroy, stop, start, and inspect spaces, and restart,
+disable, enable, or read the journal of one app on one. A space is one label
+under the root domain; <space> is that label or the full domain. The cloud's
+tags are the only registry.
 
 Subcommands:
   list                       one line per space
   create <space> [options]   create the space and deploy a release to it
+  move <space> [options]     move the space to a new instance and restore it there
   destroy <space> [options]  remove the space and everything it owned
   stop <space>               stop the instance; state is kept
   start <space>              start the instance; its address is unchanged
@@ -60,7 +69,10 @@ Subcommands:
 
 Options (create):
   --acme-email <address>  where the CA sends the space's expiry warnings; required
-  --release <sha|tag>     the release to deploy; the newest r<N> tag otherwise
+  --release <sha|tag>     the release to deploy; the newest release-<N> tag otherwise
+
+Options (move):
+  --release <sha|tag>     the release to deploy; the newest release-<N> tag otherwise
 
 Options (destroy):
   --no-backup             skip the final backup the host takes before it goes
@@ -90,7 +102,10 @@ A developer about to create, deploy to, or clean up a space checks what is
 there first. One line per space, sorted by domain: the domain, the instance
 state, the public address or `-`, and `apex` on the one space that holds the
 root domain or `-` on every other. The holder is the space whose Elastic IP
-the root's A record points at; no host is asked. No spaces prints nothing.
+the root's A record points at; no host is asked. Only active instances and
+their addresses count: an instance or Elastic IP tagged `Retired` is
+skipped, so a moved space is listed once, at its new address, and a root
+record left pointing at a retired address marks no space. No spaces prints nothing.
 What a space is running is `space status`, asked of the host.
 
 Command:
@@ -219,12 +234,14 @@ the root and region from the checkout's file, and the account id the profile
 reached, asked of STS. The `domain` step finds the zone named after the root.
 
 Create deploys a release, and without `--release` it is the newest release
-tag in the local repository: of the tags named exactly `r<N>`, `N` a number,
-the one with the highest `N`, so `r10` is newer than `r9`, and a release
-candidate such as `r3-rc1` is never chosen. Nothing is fetched. The tag is
-resolved to its commit and the release is built there, as `devctl build`
-builds it (see `S4-build.md`), before anything is created in the account, so
-a create that cannot build leaves nothing behind. The `build` line names the
+tag in the local repository: of the tags named exactly `release-<N>`, `N` a
+number, the one with the highest `N`, so `release-100` is newer than
+`release-99`, and a release candidate such as `release-88-rc1` is never
+chosen. The older `r<N>` tags are not consulted at all, whatever their
+numbers. Nothing is fetched. The tag is resolved to its commit and the
+release is built there, as `devctl build` builds it (see `S4-build.md`),
+before anything is created in the account, so a create that cannot build
+leaves nothing behind. The `build` line names the
 tag it chose and the file it wrote, and the tag is the release's label on the
 host.
 
@@ -290,7 +307,7 @@ Output:
 ```
 account: ok (ikigenba.dev, us-east-2, 295229566359)
 domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
-build: ok (r2, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 secrets: ok (8 apps)
 role: ok (sbx1.ikigenba.dev)
 instance: ok (i-0c9e94542d98846a8 running, 3.19.79.227)
@@ -303,13 +320,13 @@ opsctl: ok (10 keys set)
 restore: ok (no host backup)
 init: ok
 preflight: ok (8 apps)
-label: ok (r2)
+label: ok (release-87)
 env: ok (8 apps)
 units: ok (8 apps)
 current: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
 nginx: ok (8 apps)
 restart: ok (8 apps)
-activate: ok (r2 (4b22285))
+activate: ok (release-87 (4b22285))
 sbx1.ikigenba.dev 18.118.7.42
 ```
 
@@ -326,8 +343,9 @@ Preconditions:
 - No instance is tagged `Space=sbx1.ikigenba.dev`, and no role or instance
   profile named `sbx1.ikigenba.dev` exists.
 - The zone holds no `NS` record for `sbx1.ikigenba.dev`.
-- The local repository holds the tags `r1`, `r2` and `r3-rc1`, and no other
-  tag named `r<N>`; `r2` points at the commit
+- The local repository holds the tags `release-86`, `release-87` and
+  `release-88-rc1`, and no other tag named `release-<N>`, as well as the
+  older tags `r1` through `r7`; `release-87` points at the commit
   `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, where the suite builds as
   `S4-build.md` says and holds the apps `auth`, `dummy`, `events`, `mcp`,
   `repos`, `scripts`, `sites` and `telemetry`.
@@ -341,7 +359,7 @@ Preconditions:
 Postconditions:
 
 - `dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` is in the checkout,
-  as `devctl build r2` writes it; no tag, branch or worktree was created or
+  as `devctl build release-87` writes it; no tag, branch or worktree was created or
   moved.
 - The role `sbx1.ikigenba.dev` exists with the `ikigenba.dev` permissions
   boundary attached and one inline policy named `space`, which allows the
@@ -378,18 +396,19 @@ Postconditions:
   nginx configuration, its litestream configuration and unit, its two backup
   timers, each enabled whose period is non-zero, and its certificate renewal
   timer, enabled.
-- `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a r2`
-  has then exited 0, so the space runs the release labelled `r2`, every app
+- `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87`
+  has then exited 0, so the space runs the release labelled `release-87`, every app
   in it answers at `<app>.sbx1.ikigenba.dev`, and `opsctl` on root's PATH is
   the release's. What activate did on the host is opsctl's. The space has no
   previous release, so `rollback` is refused until the next deploy.
 
 ## A developer creates a space running a release they name
 
-`--release` names the release to deploy instead of the newest `r<N>`, in any
-form `deploy` takes: a tag, such as a release candidate `r3-rc1`, which is
-then the label, or a sha, full or short, which gives no label. It is resolved
-in the local repository before any AWS call, with nothing fetched.
+`--release` names the release to deploy instead of the newest
+`release-<N>`, in any form `deploy` takes: a tag, such as a release
+candidate `release-88-rc1`, which is then the label, or a sha, full or
+short, which gives no label. It is resolved in the local repository before
+any AWS call, with nothing fetched.
 
 Command:
 
@@ -400,7 +419,7 @@ $ devctl space create sbx1 --acme-email ops@ikigenba.dev --release 9e1c7a3
 Options (create):
 
 - `--release <sha|tag>` names the release the space runs; without it, the
-  newest `r<N>` tag.
+  newest `release-<N>` tag.
 
 Output:
 
@@ -430,15 +449,15 @@ sbx1.ikigenba.dev 18.118.7.42
 ```
 
 Exits 0. The lines are on stdout; stderr is empty. The `build` line names a
-tag only when a tag chose the release. With `--release r3-rc1` it reads
-`build: ok (r3-rc1, dist/<sha>.tar.xz)` and the release is labelled
-`r3-rc1`. The lines from `preflight` on are opsctl's, as above.
+tag only when a tag chose the release. With `--release release-88-rc1` it reads
+`build: ok (release-88-rc1, dist/<sha>.tar.xz)` and the release is labelled
+`release-88-rc1`. The lines from `preflight` on are opsctl's, as above.
 
 Preconditions:
 
 - As for a create without `--release`, with `9e1c7a3` resolving to
   `9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c` in the local repository, where
-  the suite builds. Whether any `r<N>` tag exists does not matter.
+  the suite builds. Whether any `release-<N>` tag exists does not matter.
 
 Postconditions:
 
@@ -477,10 +496,13 @@ Postconditions:
 
 ## A developer creates a space when the checkout has no release tag
 
-Without `--release`, create deploys the newest `r<N>` tag, and when the local
-repository holds none there is nothing to deploy. Release candidates such as
-`r1-rc1` are not counted. The refusal comes before any AWS call, and names
-the option that would let the create go ahead.
+Without `--release`, create deploys the newest `release-<N>` tag, and when
+the local repository holds none there is nothing to deploy. Release
+candidates such as `release-1-rc1` are not counted, and neither are the
+older `r<N>` tags: a checkout that holds only `r1` through `r7` has no
+release tag. The refusal comes before any AWS call, and names the option
+that would let the create go ahead. `space move` without `--release` looks
+for the same tag and refuses with the same line.
 
 Command:
 
@@ -491,7 +513,7 @@ $ devctl space create sbx1 --acme-email ops@ikigenba.dev
 Output:
 
 ```
-devctl: no r<N> release tag in this checkout; name one with --release <sha|tag>
+devctl: no release-<N> tag in this checkout; name one with --release <sha|tag>
 ```
 
 Exits 2. The line is on stderr; stdout is empty.
@@ -499,8 +521,9 @@ Exits 2. The line is on stderr; stdout is empty.
 Preconditions:
 
 - The working directory is inside the checkout.
-- The local repository holds no tag named exactly `r<N>`; it may hold
-  release candidates such as `r1-rc1` and tags such as `feature/x`.
+- The local repository holds no tag named exactly `release-<N>`; it may hold
+  release candidates such as `release-1-rc1`, the older tags `r1` through
+  `r7`, and tags such as `feature/x`.
 
 Postconditions:
 
@@ -535,8 +558,8 @@ build makes before compiling gives its own line from `S4-build.md` and exits
 
 Preconditions:
 
-- As for a create that succeeds, except that at the commit the newest `r<N>`
-  names, `dashboard/` is an app that does not compile for `linux/amd64`.
+- As for a create that succeeds, except that at the commit the newest `release-<N>`
+  names, `dashboard/` is an app that does not compile for `linux/arm64`.
 
 Postconditions:
 
@@ -620,16 +643,16 @@ restore: ok (no backup of sites)
 restore: ok (opsctl restore telemetry)
 preflight: ok (8 apps)
 ...
-activate: ok (r2 (4b22285))
+activate: ok (release-87 (4b22285))
 staging.ikigenba.dev 18.117.42.9
-auth 4b22285 r2 active active wal
-dummy 4b22285 r2 active active -
-events 4b22285 r2 active active wal
-mcp 4b22285 r2 active active -
-repos 4b22285 r2 active active wal
-scripts 4b22285 r2 active active wal
-sites 4b22285 r2 active active wal
-telemetry 4b22285 r2 active active wal
+auth 4b22285 release-87 active active wal
+dummy 4b22285 release-87 active active -
+events 4b22285 release-87 active active wal
+mcp 4b22285 release-87 active active -
+repos 4b22285 release-87 active active wal
+scripts 4b22285 release-87 active active wal
+sites 4b22285 release-87 active active wal
+telemetry 4b22285 release-87 active active wal
 ```
 
 Each command exits 0. The lines are on stdout; stderr is empty.
@@ -639,9 +662,9 @@ Preconditions:
 - The working directory is inside the checkout, and a live SSO session for
   the profile `ikigenba.dev`.
 - The space exists, its instance is `running`, and it runs a release of
-  seven apps, all of `r2`'s but `sites`, which it has never run. It does not
+  seven apps, all of `release-87`'s but `sites`, which it has never run. It does not
   hold the apex.
-- The local repository's newest `r<N>` tag is `r2`, at
+- The local repository's newest `release-<N>` tag is `release-87`, at
   `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, where the suite builds and holds
   the eight apps.
 - The developer's ssh configuration can reach the old instance and the new
@@ -663,7 +686,7 @@ Postconditions:
   activate, so each of them started over the backup's `state/` and database;
   what restore does on the host is opsctl's. `sites` had no backup, so no
   restore was run for it and it started over empty state.
-- `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a r2`
+- `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87`
   then exited 0, and `space status` shows every app as above.
 - The new instance has a new id and may have a new address; the records
   point at it. Nothing about the old instance remains in the account.
@@ -701,6 +724,12 @@ Postconditions:
 
 ## A developer creates a space that already exists
 
+Any instance carrying the label that is not terminated is in the way, a
+retired one included: a space that has been moved is refused for its active
+instance, and one whose active instance is gone is refused for the retired
+one (see the next story). The line names the active instance when there is
+one.
+
 Command:
 
 ```
@@ -724,6 +753,41 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
+
+## A developer creates a space while a retired instance remains
+
+A move that failed after it retired the old instance and before it launched
+the new one leaves the label with no active instance, only a retired one,
+stopped, and its Elastic IP. Create does not take that as room for a new
+space: the retired instance holds the space's last state, and `space
+destroy` is what removes it. The line marks the instance it names as
+retired.
+
+Command:
+
+```
+$ devctl space create sbx1 --acme-email ops@ikigenba.dev
+```
+
+Output:
+
+```
+devctl: a space at 'sbx1.ikigenba.dev' already exists (i-0c9e94542d98846a8 retired)
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- The only instance tagged `Space=sbx1.ikigenba.dev` that is not terminated
+  is `i-0c9e94542d98846a8`, `stopped` and tagged
+  `Retired=2026-11-08T18:30:00Z`.
+
+Postconditions:
+
+- Nothing has changed. Nothing was built.
 
 ## A developer creates a space whose role a failed create left behind
 
@@ -773,7 +837,7 @@ Output:
 ```
 account: ok (ikigenba.dev, us-east-2, 295229566359)
 domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
-build: ok (r2, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 devctl: auth: no value for 'GOOGLE_CLIENT_ID' in the keyring or the environment
 ```
 
@@ -904,7 +968,7 @@ Output:
 ```
 account: ok (ikigenba.dev, us-east-2, 295229566359)
 domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
-build: ok (r2, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 secrets: ok (8 apps)
 role: ok (sbx1.ikigenba.dev)
 devctl: ec2 RunInstances: InsufficientInstanceCapacity
@@ -943,7 +1007,7 @@ Output:
 ```
 account: ok (ikigenba.dev, us-east-2, 295229566359)
 domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
-build: ok (r2, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 secrets: ok (8 apps)
 role: ok (sbx1.ikigenba.dev)
 instance: ok (i-0c9e94542d98846a8 running, 3.19.79.227)
@@ -956,13 +1020,13 @@ opsctl: ok (10 keys set)
 restore: ok (no host backup)
 init: ok
 preflight: ok (8 apps)
-label: ok (r2)
+label: ok (release-87)
 env: ok (8 apps)
 units: ok (8 apps)
 current: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
 nginx: ok (8 apps)
 restart: failed: events: service failed to start
-devctl: activate: ssh ec2-user@18.118.7.42 sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a r2: exit status 1
+devctl: activate: ssh ec2-user@18.118.7.42 sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87: exit status 1
 
 > opsctl: activate failed
 > 
@@ -984,6 +1048,567 @@ Postconditions:
   status` reports it.
 - `deploy` of a release that starts puts the space right; `space destroy`
   removes it.
+
+## A developer moves a space to a new instance
+
+A developer wants a space on a new host launched from the current launch
+template, with its architecture and instance type, and everything the old
+host held carried across: every app's data, the host's own configuration,
+its users, groups, authorized keys, homes, `/srv`, and its sshd host keys.
+The space keeps its names; only its instance and its address change. Each
+line of output is one step; the last line is the domain, the new instance,
+and its address.
+
+Before any step runs, move checks what create checks of the account, the
+hosted zone, the launch template, and the permissions boundary, and that the
+label has exactly one active instance, `running` or `stopped`. The `account`
+and `domain` steps are create's. The release is chosen and built as create
+chooses and builds it, before anything is changed, so a move that cannot
+build leaves the space where it was.
+
+Then the old host goes. Over ssh, `sudo opsctl retire` takes its final
+backup, as destroy has it do; it runs on every move, because running it
+again is safe and its backup is the one the new host is restored from. The
+`stop` step stops the old instance, and the `tag` step tags it and its
+Elastic IP `Retired=<RFC3339 timestamp>`. The old instance and its address
+are not removed: they stay, stopped and retired, until `space destroy`
+removes them, or a person does, and until then they are the way back.
+
+The new instance is launched from the launch template with the space's
+existing role and instance profile, and tagged `Domain=ikigenba.dev` and
+`Space=<space domain>` on the instance and its volume, as create tags it.
+It is given a new Elastic IP of its own, tagged the same. The `instance`,
+`address`, `host`, `copy`, and `unpack` steps are create's. No secrets are
+written: the space's secrets objects are already in Parameter Store.
+
+On the new host, the release's own opsctl sets the five keys derived from
+the root, the zone, and the space, `host.name`, `dns.provider`, `dns.zones`,
+`aws.region`, and `backup.s3_uri`; the space has no `--acme-email` here, and
+its address for the CA and its backup periods come from the old host. The
+`restore` step then has it run `host restore` over the newest host backup
+in the bucket, the one retire has just written, which brings back the old
+host's store, `acme.email`, the backup periods and `host.apex` among it,
+with its certificate, its users and groups, their authorized keys and
+homes, `/srv`, and the old host's sshd host keys, and restarts sshd; and
+then sets the five keys again, so devctl's values win. Unlike create, move
+keeps `host.apex`: a space that held the apex still holds it. Only after the
+host restore does the `records` step point the space's records at the new
+address and wait for `INSYNC`, so that the new host answers at the space's
+names with the old host's identity. Then `init`, each app's data put back
+as the rebuild story does it, and the release activated, as create does.
+
+The new host presents the old host's sshd host key from its host restore
+on. devctl's ssh to it keeps working through the rest of the move, and
+afterwards every command that reaches the space over ssh reaches the new
+address with no complaint about the host key.
+
+The lines from `preflight` on are opsctl's, copied as it writes them, as a
+deploy's are; they are shown here for illustration.
+
+Command:
+
+```
+$ devctl space move staging
+```
+
+```
+$ devctl space move staging.ikigenba.dev
+```
+
+Output:
+
+```
+account: ok (ikigenba.dev, us-east-2, 295229566359)
+domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
+build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+retire: ok (opsctl retire)
+stop: ok (i-0a1b2c3d4e5f60718 stopped)
+tag: ok (i-0a1b2c3d4e5f60718 and elastic ip 18.220.10.5 Retired=2026-11-08T18:30:00Z)
+instance: ok (i-0e5d4c3b2a1f09876 running, 3.22.140.61)
+address: ok (elastic ip 3.141.27.86 associated)
+host: ok (status checks passed, cloud-init done)
+copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> 3.141.27.86)
+unpack: ok (/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
+opsctl: ok (5 keys set)
+restore: ok (host/2026-11-08T18:29:41Z.tar.zst, 5 keys set again)
+records: ok (updated staging.ikigenba.dev, *.staging.ikigenba.dev -> 3.141.27.86, INSYNC)
+init: ok
+restore: ok (opsctl restore auth)
+restore: ok (opsctl restore dummy)
+restore: ok (opsctl restore events)
+restore: ok (opsctl restore mcp)
+restore: ok (opsctl restore repos)
+restore: ok (opsctl restore scripts)
+restore: ok (opsctl restore sites)
+restore: ok (opsctl restore telemetry)
+preflight: ok (8 apps)
+label: ok (release-87)
+env: ok (8 apps)
+units: ok (8 apps)
+current: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
+nginx: ok (8 apps)
+restart: ok (8 apps)
+activate: ok (release-87 (4b22285))
+staging.ikigenba.dev i-0e5d4c3b2a1f09876 3.141.27.86
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, whose root file names
+  `ikigenba.dev` and `us-east-2`, and a live SSO session for the profile
+  `ikigenba.dev`.
+- Terraform has been applied: the account holds the hosted zone, the launch
+  template, the permissions boundary policy, the backup bucket, and the key
+  pair, all named `ikigenba.dev`.
+- The space's instance `i-0a1b2c3d4e5f60718` is `running` with the Elastic
+  IP `18.220.10.5`, and it is the only instance tagged
+  `Space=staging.ikigenba.dev` that is not terminated. It runs the eight
+  apps of `release-87`, and it does not hold the apex. The role and instance
+  profile `staging.ikigenba.dev` exist.
+- The local repository's newest `release-<N>` tag is `release-87`, at
+  `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, where the suite builds and
+  holds the apps `auth`, `dummy`, `events`, `mcp`, `repos`, `scripts`,
+  `sites` and `telemetry`.
+- The developer's ssh configuration can reach the old instance and a new
+  one as `ec2-user` with the `ikigenba.dev` key pair.
+
+Postconditions:
+
+- `dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` is in the checkout.
+- `sudo opsctl retire` has been run on the old host over ssh and exited 0,
+  so `staging/host/2026-11-08T18:29:41Z.tar.zst` and a new object under
+  `staging/<app>/` for each of the eight apps are in the bucket.
+- `i-0a1b2c3d4e5f60718` is `stopped` and tagged
+  `Retired=2026-11-08T18:30:00Z` beside its `Domain` and `Space` tags; the
+  Elastic IP `18.220.10.5` is still associated with it and tagged the same.
+  Both stay until `space destroy staging` removes them.
+- `i-0e5d4c3b2a1f09876` is running, launched from the `ikigenba.dev` launch
+  template with the instance profile `staging.ikigenba.dev`, tagged
+  `Domain=ikigenba.dev` and `Space=staging.ikigenba.dev` on the instance and
+  its volume, and has passed its status checks and `cloud-init status
+  --wait`. A new Elastic IP, `3.141.27.86`, tagged the same, is associated
+  with it. The role, its policy, and the secrets objects are as they were.
+- On the new host, `/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/`
+  holds the release. The release's opsctl set `host.name`, `dns.provider`,
+  `dns.zones`, `aws.region`, and `backup.s3_uri`, then ran `host restore`
+  over `staging/host/2026-11-08T18:29:41Z.tar.zst` and exited 0, then set
+  the same five keys again. The store holds the old host's `acme.email` and
+  backup periods; no `config del host.apex` was run. The host holds the old
+  host's users, groups, authorized keys, homes, `/srv`, certificate, and
+  sshd host keys, and sshd was restarted with them.
+- After that host restore and before `init`, the `A` records
+  `staging.ikigenba.dev` and `*.staging.ikigenba.dev`, TTL 60, were upserted
+  to `3.141.27.86` and the change is `INSYNC`.
+- `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl init`, then `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl restore <app>` for each of the eight
+  apps in name order, then `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87`
+  each exited 0 on the new host, so every app answers at
+  `<app>.staging.ikigenba.dev` over the data the old host held.
+- The new host presents the old host's sshd host key: no ssh connection
+  devctl made to `3.141.27.86` after the host restore complained of the
+  host key, and `space status staging` afterwards reaches it the same way.
+- The developer's `known_hosts` holds no entry for the key the new host had
+  at launch, before its host restore; devctl recorded none.
+
+## A developer moves a stopped space
+
+A stopped host cannot take its final backup, so move starts it first, as
+`space start` would, and the `start` step reports it; then retire runs on
+it and the move goes on as for a running space. The instance comes back at
+its Elastic IP, so retire reaches it at the address it always had.
+
+Command:
+
+```
+$ devctl space move sbx2
+```
+
+Output, with the lines after `stop` as in the story above, for this space:
+
+```
+account: ok (ikigenba.dev, us-east-2, 295229566359)
+domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
+build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+start: ok (i-0b2c3d4e5f6071829 running, status checks passed)
+retire: ok (opsctl retire)
+stop: ok (i-0b2c3d4e5f6071829 stopped)
+...
+sbx2.ikigenba.dev i-0e5d4c3b2a1f09876 3.141.27.86
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- As for moving a running space, except that the space is `sbx2`, whose
+  only instance not terminated, `i-0b2c3d4e5f6071829`, is `stopped`, with
+  the Elastic IP `18.191.20.7`.
+
+Postconditions:
+
+- `i-0b2c3d4e5f6071829` was started and passed its status checks before
+  `sudo opsctl retire` was run on it over ssh. It is then `stopped` and
+  retired, as in the story above.
+- Otherwise as for moving a running space.
+
+## A developer moves a space to a release they name
+
+`--release` names the release to deploy on the new host instead of the
+newest `release-<N>`, in any form create's `--release` takes: a tag, which
+is then the label, or a sha, full or short, which gives no label. It is
+resolved in the local repository before any AWS call, with nothing fetched.
+A move is how a space goes to a new instance, not how it changes release, but
+the new host has to be given a release, and this is the developer's say in
+which.
+
+Command:
+
+```
+$ devctl space move staging --release 9e1c7a3
+```
+
+Options (move):
+
+- `--release <sha|tag>` names the release the new host runs; without it, the
+  newest `release-<N>` tag.
+
+Output, with the lines between `tag` and `opsctl`, and between `init` and
+`preflight`, as in the story of moving a running space:
+
+```
+account: ok (ikigenba.dev, us-east-2, 295229566359)
+domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
+build: ok (dist/9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c.tar.xz)
+retire: ok (opsctl retire)
+stop: ok (i-0a1b2c3d4e5f60718 stopped)
+tag: ok (i-0a1b2c3d4e5f60718 and elastic ip 18.220.10.5 Retired=2026-11-08T18:30:00Z)
+...
+copy: ok (9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c.tar.xz -> 3.141.27.86)
+unpack: ok (/opt/ikigenba/releases/9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c)
+opsctl: ok (5 keys set)
+restore: ok (host/2026-11-08T18:29:41Z.tar.zst, 5 keys set again)
+records: ok (updated staging.ikigenba.dev, *.staging.ikigenba.dev -> 3.141.27.86, INSYNC)
+init: ok
+...
+preflight: ok (8 apps)
+env: ok (8 apps)
+units: ok (8 apps)
+current: ok (9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c)
+nginx: ok (8 apps)
+restart: ok (8 apps)
+activate: ok (9e1c7a3)
+staging.ikigenba.dev i-0e5d4c3b2a1f09876 3.141.27.86
+```
+
+Exits 0. The lines are on stdout; stderr is empty. The `build` line names a
+tag only when a tag chose the release; with `--release release-88-rc1` it
+reads `build: ok (release-88-rc1, dist/<sha>.tar.xz)` and the release is
+labelled `release-88-rc1`. The lines from `preflight` on are opsctl's.
+
+Preconditions:
+
+- As for moving a running space, with `9e1c7a3` resolving to
+  `9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c` in the local repository, where
+  the suite builds. Whether any `release-<N>` tag exists does not matter.
+
+Postconditions:
+
+- As for moving a running space, for the release
+  `9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c`, which was activated on the new
+  host with no label: `opsctl activate 9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c`.
+
+## A developer moves the space that holds the apex
+
+The root's `A` record points at the old instance's Elastic IP, which the
+move keeps but leaves on a stopped host. Once the release is active on the
+new host, the `apex` step upserts the root's record to the new Elastic IP
+and waits for `INSYNC`, so the root follows the space. Nothing else about
+the apex is done: the restored store still holds `host.apex`, the restored
+certificate already carries the root, and the role already allows the
+root's challenge record. Until the step, the root answers at the old,
+stopped address. A space that does not hold the apex has no `apex` line.
+
+Command:
+
+```
+$ devctl space move sbx1
+```
+
+Output, with the lines between `tag` and `activate` as in the story of
+moving a running space, for this space:
+
+```
+account: ok (ikigenba.dev, us-east-2, 295229566359)
+domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
+build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+retire: ok (opsctl retire)
+stop: ok (i-0c9e94542d98846a8 stopped)
+tag: ok (i-0c9e94542d98846a8 and elastic ip 18.118.7.42 Retired=2026-11-08T18:30:00Z)
+...
+activate: ok (release-87 (4b22285))
+apex: ok (ikigenba.dev -> 3.141.27.86, INSYNC)
+sbx1.ikigenba.dev i-0e5d4c3b2a1f09876 3.141.27.86
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- As for moving a running space, except that the space is `sbx1`, whose
+  only instance not terminated, `i-0c9e94542d98846a8`, is `running` with the
+  Elastic IP `18.118.7.42`, and the zone's `A` record `ikigenba.dev` points
+  at `18.118.7.42`. On the old host `host.apex` is `crm`, and its
+  certificate carries the root.
+
+Postconditions:
+
+- Everything moving a running space's postconditions say, for `sbx1`.
+- On the new host `host.apex` is `crm`, as the restored store held it, and
+  the certificate covers `sbx1.ikigenba.dev`, `*.sbx1.ikigenba.dev`, and
+  `ikigenba.dev`.
+- After the release was activated, the zone's `A` record `ikigenba.dev`,
+  TTL 60, was upserted to `3.141.27.86` and the change is `INSYNC`. `space
+  list` marks `sbx1.ikigenba.dev` with `apex`, and no line for the retired
+  instance.
+
+## A developer moves a space that does not exist
+
+A move needs a host to take the final backup from and a space to move, so a
+label with no active instance is refused as `space stop` and `space status`
+refuse it, before any step runs. A label whose only instance is retired has
+no active instance and is refused the same way.
+
+Command:
+
+```
+$ devctl space move gone
+```
+
+Output:
+
+```
+devctl: no space at 'gone.ikigenba.dev'
+```
+
+Exits 1. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- No instance tagged `Space=gone.ikigenba.dev` is active: none exists, or
+  every one is terminated or tagged `Retired`.
+
+Postconditions:
+
+- Nothing has changed. Nothing was built and no ssh connection was made.
+
+## A developer moves a space with more than one active instance
+
+A space has at most one active instance, and a label that carries two, made
+by hand or by something other than devctl, leaves no telling which one holds
+the space. Move refuses rather than pick, naming both, before any step runs;
+the developer retires or removes the stray one by hand.
+
+Command:
+
+```
+$ devctl space move sbx1
+```
+
+Output:
+
+```
+devctl: 'sbx1.ikigenba.dev' has more than one active instance (i-0c9e94542d98846a8, i-0f1e2d3c4b5a69788)
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- Two instances tagged `Space=sbx1.ikigenba.dev`, `i-0c9e94542d98846a8` and
+  `i-0f1e2d3c4b5a69788`, are neither terminated nor tagged `Retired`.
+
+Postconditions:
+
+- Nothing has changed. Nothing was built and no ssh connection was made.
+
+## A developer moves a space before Terraform has been applied
+
+The new instance is launched from the launch template and holds the zone's
+records, so move looks up the zone, the launch template, and the
+permissions boundary by the root's name as create does, before any step
+runs, and refuses with create's lines.
+
+Command:
+
+```
+$ devctl space move sbx1
+```
+
+Output:
+
+```
+devctl: no launch template 'ikigenba.dev'
+```
+
+Exits 1. The line is on stderr; stdout is empty. A missing zone says
+`devctl: no hosted zone 'ikigenba.dev'`, and a missing boundary
+`devctl: no permissions boundary 'ikigenba.dev'`; the first missing one, in
+that order, is the one reported.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- The account has no launch template named `ikigenba.dev`.
+
+Postconditions:
+
+- Nothing has changed. The space's instance was not touched.
+
+## A developer moves a space with a release that does not build
+
+The build is the first step that does anything, so a failed build leaves
+the space where it was: the current host has not been asked for its final
+backup, and it keeps running. It fails as `devctl build` fails at that
+commit (see `S4-build.md`). A release that is not a commit, and a checkout
+with no `release-<N>` tag when `--release` is not given, are refused before
+any AWS call with create's lines.
+
+Command:
+
+```
+$ devctl space move sbx1
+```
+
+Output:
+
+```
+account: ok (ikigenba.dev, us-east-2, 295229566359)
+domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
+devctl: build dashboard: exit status 1
+
+> # github.com/ikigenba/ikigenba/dashboard/cmd/dashboard
+> cmd/dashboard/main.go:41:2: undefined: render
+```
+
+Exits 1. The `ok` lines are on stdout; the rest is on stderr. A refusal the
+build makes before compiling gives its own line from `S4-build.md` and exits
+2.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- The space's instance `i-0c9e94542d98846a8` is `running`, and it is the
+  only instance tagged `Space=sbx1.ikigenba.dev` that is not terminated.
+- At the commit the newest `release-<N>` names, `dashboard/` is an app that
+  does not compile for `linux/arm64`.
+
+Postconditions:
+
+- Nothing has changed in the account or on the host: no ssh connection was
+  made, the instance is `running` and untagged `Retired`, and no instance or
+  address was made. Nothing under `dist/` has changed, and no worktree is
+  left behind.
+
+## A developer runs `space move` without a space
+
+Command:
+
+```
+$ devctl space move
+```
+
+Output:
+
+```
+devctl: space move needs <space>
+
+see 'devctl space --help' for usage
+```
+
+Exits 2. The text is on stderr; stdout is empty. A `--release` with no
+value gives `devctl: option '--release' requires a value`, also exit 2.
+
+Preconditions:
+
+- `bin/devctl` exists.
+
+Postconditions:
+
+- Nothing has changed. No AWS call was made.
+
+## A developer's move fails part-way
+
+A move stops at the first step that fails, as create and destroy do, and
+undoes nothing: what each completed step did holds. Here the old host has
+taken its final backup and been stopped and retired, and no new instance
+could be launched. The space's records still point at the retired
+instance's Elastic IP, so the space answers nothing until it is brought
+back.
+
+Command:
+
+```
+$ devctl space move sbx1
+```
+
+Output:
+
+```
+account: ok (ikigenba.dev, us-east-2, 295229566359)
+domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
+build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+retire: ok (opsctl retire)
+stop: ok (i-0c9e94542d98846a8 stopped)
+tag: ok (i-0c9e94542d98846a8 and elastic ip 18.118.7.42 Retired=2026-11-08T18:30:00Z)
+devctl: ec2 RunInstances: InsufficientInstanceCapacity
+```
+
+Exits 1. The `ok` lines are on stdout; the last line is on stderr. No last
+line naming the domain, the instance and the address is written.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- The space's instance `i-0c9e94542d98846a8` is `running` with the Elastic
+  IP `18.118.7.42`, and it is the only instance tagged
+  `Space=sbx1.ikigenba.dev` that is not terminated; `opsctl` is installed on
+  it.
+- The local repository's newest `release-<N>` tag is `release-87`, at
+  `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, where the suite builds.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+- EC2 has no capacity for the launch template's instance type.
+
+Postconditions:
+
+- `sudo opsctl retire` has been run on the old host over ssh and exited 0,
+  so its final backup is in the bucket under `sbx1/`.
+- `i-0c9e94542d98846a8` is `stopped` and tagged
+  `Retired=2026-11-08T18:30:00Z` beside its `Domain` and `Space` tags; its
+  Elastic IP is still associated with it and tagged the same. No instance
+  was launched and no address allocated.
+- The records `sbx1.ikigenba.dev` and `*.sbx1.ikigenba.dev`, the apex record
+  if the space held it, the secrets, the backups, and the role are untouched.
+- The old instance is intact: stopped, with its volume, its data as retire
+  left it, and its Elastic IP. There is no resume and nothing undoes the
+  move; the way back is by hand: start `i-0c9e94542d98846a8`, remove the
+  `Retired` tag from it and from its Elastic IP, and point the records
+  `sbx1.ikigenba.dev` and `*.sbx1.ikigenba.dev` at `18.118.7.42` if a later
+  failure had already moved them. Then the space is its old instance again.
+- Until then the label has no active instance, so `space list` shows no
+  line for it, and `space move sbx1` and `space status sbx1` say `devctl: no
+  space at 'sbx1.ikigenba.dev'`, as "A developer moves a space that does not
+  exist" shows. `space create sbx1` is refused for the retired
+  instance. `space destroy sbx1` removes the retired instance and its
+  address with the rest; with no active instance its first line is
+  `retire: ok (already gone)`, and no ssh connection is made.
 
 ## A developer's SSO session has expired
 
@@ -1168,6 +1793,63 @@ Postconditions:
   last column of every line, and `apex show` prints nothing.
 - Everything a plain destroy's postconditions say. With `--no-backup` the
   `apex` line still comes first and `retire` is skipped as below.
+
+## A developer destroys a space that has a retired instance
+
+A space that has been moved still has the instance it was moved from,
+stopped and retired, with its Elastic IP. Destroy removes the label's
+every instance and every address, the retired ones with the active one, so
+nothing the space ever had lingers. The final backup is the active host's
+alone: `retire` runs on it and never on a retired instance, which already
+took its final backup before the move left it. The `instance` and
+`address` lines name the active instance and its address first, then each
+retired one.
+
+Command:
+
+```
+$ devctl space destroy sbx1
+```
+
+Output:
+
+```
+retire: ok (opsctl retire)
+instance: ok (i-0e5d4c3b2a1f09876 terminated, i-0c9e94542d98846a8 terminated)
+address: ok (elastic ip 3.141.27.86 released, elastic ip 18.118.7.42 released)
+records: ok (deleted sbx1.ikigenba.dev, *.sbx1.ikigenba.dev)
+secrets: ok (kept)
+backups: ok (kept)
+role: ok (sbx1.ikigenba.dev deleted)
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- `space move sbx1` has run to the end: the active instance
+  `i-0e5d4c3b2a1f09876` is `running` with the Elastic IP `3.141.27.86`, and
+  `i-0c9e94542d98846a8`, the instance it moved from, is `stopped` and
+  tagged `Retired=2026-11-08T18:30:00Z`, its Elastic IP `18.118.7.42` still
+  associated with it and tagged the same. The space does not hold the apex.
+- The developer's ssh configuration can reach the active instance as
+  `ec2-user`.
+
+Postconditions:
+
+- `sudo opsctl retire` has been run over ssh on `i-0e5d4c3b2a1f09876` and
+  exited 0. No ssh connection was made to the retired instance, and it was
+  not started.
+- Both instances are terminated, and both Elastic IPs are disassociated and
+  released. Nothing tagged `Space=sbx1.ikigenba.dev` remains.
+- Otherwise as for a plain destroy. With `--no-backup` the `retire` line
+  says `skipped (--no-backup)` and the rest is the same.
+- Had the label held only the retired instance, as a move that failed after
+  its `tag` step leaves it, the `retire` line would say `ok (already gone)`,
+  no ssh connection would be made, and the `instance` and `address` lines
+  would name only `i-0c9e94542d98846a8` and `18.118.7.42`.
 
 ## A developer destroys a space whose host cannot take a final backup
 
@@ -1496,9 +2178,9 @@ $ devctl space status sbx1
 Output:
 
 ```
-crm 4b22285 r1 active active wal
-dashboard 4b22285 r1 active active -
-gmail 4b22285 r1 failed active -
+crm 4b22285 release-87 active active wal
+dashboard 4b22285 release-87 active active -
+gmail 4b22285 release-87 failed active -
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -1511,7 +2193,7 @@ Preconditions:
 - The developer's ssh configuration can reach the instance as `ec2-user`.
 - Three apps are installed on the host, and every socket is listening. The
   host runs the release `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, labelled
-  `r1`; deployed by its sha, the third column would be `-`.
+  `release-87`; deployed by its sha, the third column would be `-`.
 
 Postconditions:
 
@@ -1533,8 +2215,8 @@ $ devctl space status sbx1
 Output:
 
 ```
-crm 4b22285 r1 inactive disabled wal
-dashboard 4b22285 r1 active active -
+crm 4b22285 release-87 inactive disabled wal
+dashboard 4b22285 release-87 active active -
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -1608,6 +2290,74 @@ Postconditions:
 
 - Nothing has changed.
 
+## A developer asks about a space after it has moved
+
+After a move the space is its new instance. `space list` shows one line for
+it, the active instance's state and the new address, and never a line for
+the retired instance it left; the space still holds the apex if it held it
+before, because the move pointed the root's record at the new address.
+`space status`, `stop`, `start`, `restart`, `disable`, `enable`, and `logs`
+act on the new instance. The new host presents the host key the old one
+did, so the developer's ssh reaches the new address with no complaint about
+a changed host key.
+
+Command:
+
+```
+$ devctl space list
+```
+
+Output:
+
+```
+sbx1.ikigenba.dev running 3.141.27.86 apex
+```
+
+Exits 0. The line is on stdout; stderr is empty.
+
+Command:
+
+```
+$ devctl space status sbx1
+```
+
+Output:
+
+```
+auth 4b22285 release-87 active active wal
+dummy 4b22285 release-87 active active -
+events 4b22285 release-87 active active wal
+mcp 4b22285 release-87 active active -
+repos 4b22285 release-87 active active wal
+scripts 4b22285 release-87 active active wal
+sites 4b22285 release-87 active active wal
+telemetry 4b22285 release-87 active active wal
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- `space move sbx1` has run to the end: the active instance
+  `i-0e5d4c3b2a1f09876` is `running` with the Elastic IP `3.141.27.86` and
+  runs `release-87`, and `i-0c9e94542d98846a8`, the instance it moved from,
+  is `stopped` and tagged `Retired=2026-11-08T18:30:00Z`, its Elastic IP
+  `18.118.7.42` still associated with it. The zone's `A` records
+  `sbx1.ikigenba.dev`, `*.sbx1.ikigenba.dev` and `ikigenba.dev` point at
+  `3.141.27.86`. No other space exists.
+- Before the move, the developer's ssh had reached the old host as
+  `ec2-user`, and the developer's ssh configuration can reach the new one.
+
+Postconditions:
+
+- Nothing has changed. The retired instance was not started or asked.
+- `space status` reached `3.141.27.86` over ssh, the first ordinary command
+  to do so since the move, and nothing on stderr complained of a changed or
+  unknown host key. The developer's `known_hosts` holds no entry for the key
+  the new host had at launch.
+
 ## A developer stops, starts, or asks about a space that does not exist
 
 Command:
@@ -1646,7 +2396,9 @@ Output:
 devctl: no space at 'gone.ikigenba.dev'
 ```
 
-Exits 1. The line is on stderr; stdout is empty.
+Exits 1. The line is on stderr; stdout is empty. A label whose only
+instances are retired has no space to act on and gets the same line; a
+retired instance is never started, stopped, or asked.
 
 Preconditions:
 
@@ -1765,7 +2517,7 @@ Postconditions:
 - `sudo opsctl restart crm` has been run on the host over ssh and exited 0.
   Nothing has changed: neither of `crm`'s units was started or enabled, its
   names still answer `503`, and `space status` still shows
-  `crm 4b22285 r1 inactive disabled wal`.
+  `crm 4b22285 release-87 inactive disabled wal`.
 
 ## A developer's restart fails on the host
 
@@ -1808,7 +2560,7 @@ Preconditions:
 Postconditions:
 
 - `crm` on the host is whatever `opsctl` left; `space status` reports it,
-  here `crm 4b22285 r1 failed active wal`.
+  here `crm 4b22285 release-87 failed active wal`.
 - No other app on the space has changed.
 
 ## A developer takes an app on a space offline
@@ -1853,7 +2605,7 @@ Postconditions:
 - `sudo opsctl disable crm` has been run on the host over ssh and exited 0.
   What disable does on the host is opsctl's: `crm`'s socket and service are
   stopped and disabled, and `https://crm.sbx1.ikigenba.dev` answers `503`.
-- `space status sbx1` shows `crm 4b22285 r1 inactive disabled wal`.
+- `space status sbx1` shows `crm 4b22285 release-87 inactive disabled wal`.
 - Nothing under `/opt/crm/` changed, and no other app on the space has
   changed.
 
@@ -1892,7 +2644,7 @@ Postconditions:
 - `sudo opsctl enable crm` has been run on the host over ssh and exited 0.
   What enable does on the host is opsctl's: both of `crm`'s units are enabled
   and started, and `https://crm.sbx1.ikigenba.dev` reaches `crm` again.
-- `space status sbx1` shows `crm 4b22285 r1 active active wal`.
+- `space status sbx1` shows `crm 4b22285 release-87 active active wal`.
 - Nothing under `/opt/crm/` changed, and no other app on the space has
   changed.
 
@@ -1935,7 +2687,7 @@ Postconditions:
 
 - `crm` is enabled: both its units are enabled, its socket is listening, and
   nginx routes its names to it. Its service is `failed`, and `space status`
-  shows `crm 4b22285 r1 failed active wal`. Nothing was rolled back.
+  shows `crm 4b22285 release-87 failed active wal`. Nothing was rolled back.
 - No other app on the space has changed.
 
 ## A developer disables an app that is already disabled, or enables one that is already enabled

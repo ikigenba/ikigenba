@@ -246,25 +246,25 @@ Command:
 
 ```
 $ devctl secrets push sbx1 auth
-$ devctl deploy sbx1 r1
+$ devctl deploy sbx1 release-87
 ```
 
 Output:
 
 ```
 auth: ok (2 keys)
-build: ok (r1, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 secrets: ok (8 apps, 2 keys)
 copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> 18.118.7.42)
 unpack: ok (/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a already present, kept)
 preflight: ok (8 apps)
-label: ok (r1)
+label: ok (release-87)
 env: ok (8 apps)
 units: ok (8 apps)
 current: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
 nginx: ok (8 apps)
 restart: ok (8 apps)
-activate: ok (r1 (4b22285))
+activate: ok (release-87 (4b22285))
 ```
 
 Each command exits 0. The lines are on stdout; stderr is empty.
@@ -273,7 +273,7 @@ Preconditions:
 
 - The working directory is inside the checkout, and a live SSO session for
   the profile `ikigenba.dev`.
-- The space exists, its instance is `running`, and it runs the release `r1`,
+- The space exists, its instance is `running`, and it runs the release `release-87`,
   the commit `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, whose `auth` manifest
   lists `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `secrets` and whose
   other apps list none; `auth` is not disabled.

@@ -50,7 +50,7 @@ Output:
 ```
 Usage: devctl build <sha|tag>
 
-Build the suite at <sha|tag> for linux/amd64 and write dist/<sha>.tar.xz, one
+Build the suite at <sha|tag> for linux/arm64 and write dist/<sha>.tar.xz, one
 release holding every app, opsctl and turns. <sha> is the full commit sha the
 argument resolves to; the working tree is not read.
 ```
@@ -76,7 +76,7 @@ written, relative to the checkout root.
 Command:
 
 ```
-$ devctl build r1
+$ devctl build release-87
 ```
 
 ```
@@ -98,14 +98,14 @@ Exits 0. The line is on stdout; stderr is empty.
 Preconditions:
 
 - The local repository holds the commit
-  `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, and the tag `r1` in it points
+  `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, and the tag `release-87` in it points
   at that commit.
 - At that commit the apps, sub-projects with a `main` package and a committed
   `etc/manifest.toml`, are `auth`, `dummy`, `events`, `mcp`, `repos`,
   `scripts`, `sites` and `telemetry`; `opsctl/` holds opsctl; and `turns/`
   holds turns, with `turns/share/systemd/turns.service` and
   `turns/share/systemd/turns.timer` committed.
-- The Go toolchain can build each of them for `linux/amd64`, and each app's
+- The Go toolchain can build each of them for `linux/arm64`, and each app's
   built binary runs on the developer's machine and its `<app> manifest`
   emits exactly that app's committed `etc/manifest.toml`.
 - The working tree may have uncommitted changes, be on any branch or none,
@@ -123,15 +123,15 @@ Postconditions:
     and the version `devctl --version` prints, for example
     `{"sha": "4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a", "built": "2026-10-08T14:03:12Z", "devctl": "<version>"}`
     where `<version>` is that version;
-  - for each of the eight apps, `<app>/bin/<app>`, the static `linux/amd64`
+  - for each of the eight apps, `<app>/bin/<app>`, the static `linux/arm64`
     binary and the only file in `<app>/bin/`; `<app>/etc/manifest.toml`,
     emitted by running that binary with the argument `manifest`; every other
     file under the app's committed `etc/`, `nginx.conf` included; and the
     app's committed `share/`, `libexec/` and `lib/`, each as it is, when the
     app has one;
-  - `opsctl/bin/opsctl`, the static `linux/amd64` binary, and nothing else
+  - `opsctl/bin/opsctl`, the static `linux/arm64` binary, and nothing else
     under `opsctl/`;
-  - `turns/bin/turns`, the static `linux/amd64` binary and the only file in
+  - `turns/bin/turns`, the static `linux/arm64` binary and the only file in
     `turns/bin/`, and turns' committed `share/` as it is,
     `turns/share/systemd/turns.service` and
     `turns/share/systemd/turns.timer`; nothing else is under `turns/`.
@@ -181,7 +181,7 @@ emits must be byte for byte the `etc/manifest.toml` committed at that commit.
 Command:
 
 ```
-$ devctl build r1
+$ devctl build release-87
 ```
 
 Output:
@@ -194,7 +194,7 @@ Exits 2. The line is on stderr; stdout is empty.
 
 Preconditions:
 
-- `r1` points at a commit where `crm/` is an app, and every app before it in
+- `release-87` points at a commit where `crm/` is an app, and every app before it in
   name order builds and passes its manifest check.
 - At that commit `crm` compiles, and `crm manifest` emits something other
   than its committed `etc/manifest.toml`.
@@ -213,7 +213,7 @@ before it compiles anything.
 Command:
 
 ```
-$ devctl build r1
+$ devctl build release-87
 ```
 
 Output:
@@ -226,7 +226,7 @@ Exits 2. The line is on stderr; stdout is empty.
 
 Preconditions:
 
-- `r1` points at a commit where `crm/etc/manifest.toml` holds a top-level
+- `release-87` points at a commit where `crm/etc/manifest.toml` holds a top-level
   `port` key.
 
 Postconditions:
@@ -239,7 +239,7 @@ Postconditions:
 Command:
 
 ```
-$ devctl build r1
+$ devctl build release-87
 ```
 
 Output:
@@ -254,7 +254,7 @@ and so does an app named `opsctl` or `turns`.
 
 Preconditions:
 
-- `r1` points at a commit where `host/` is a sub-project with a `main`
+- `release-87` points at a commit where `host/` is a sub-project with a `main`
   package and `host/etc/manifest.toml`.
 
 Postconditions:
@@ -271,7 +271,7 @@ the commit is refused rather than shipped without it.
 Command:
 
 ```
-$ devctl build r1
+$ devctl build release-87
 ```
 
 Output:
@@ -285,7 +285,7 @@ fails the same way, naming `include/`.
 
 Preconditions:
 
-- `r1` points at a commit where `crm/` is an app holding a `sbin/` directory.
+- `release-87` points at a commit where `crm/` is an app holding a `sbin/` directory.
 
 Postconditions:
 
@@ -302,7 +302,7 @@ plainly the compiler's and not devctl's.
 Command:
 
 ```
-$ devctl build r1
+$ devctl build release-87
 ```
 
 Output:
@@ -318,8 +318,8 @@ Exits 1. The text is on stderr; stdout is empty.
 
 Preconditions:
 
-- `r1` points at a commit where `dashboard/` is an app that does not compile
-  for `linux/amd64`, and every app before it in name order builds.
+- `release-87` points at a commit where `dashboard/` is an app that does not compile
+  for `linux/arm64`, and every app before it in name order builds.
 
 Postconditions:
 

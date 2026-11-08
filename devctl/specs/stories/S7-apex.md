@@ -6,9 +6,11 @@ answers at it. `apex` is the command that makes, reads, and unmakes that
 choice from the developer's machine. The record is `A` only: `*.ikigenba.dev`
 is never written, so no name under the root resolves unless a space owns it.
 
-The holder of the apex is the space whose Elastic IP the root's `A` record
-points at; `space list` marks it, `space destroy` on it deletes the record
-first, and this group reads it the same way. Which app answers there reaches
+The holder of the apex is the space whose active Elastic IP the root's `A`
+record points at; an address tagged `Retired`, left with the instance a
+`space move` moved from, holds nothing, so a root record pointing at one
+reads as no holder. `space list` marks the holder, `space destroy` on it
+deletes the record first, and this group reads it the same way. Which app answers there reaches
 the host as one opsctl configuration key, `host.apex`, holding the app's
 name; the host derives the apex hostname as the parent of its own `host.name`
 and never stores it (see opsctl's `S5-nginx.md`). The apex app is chosen

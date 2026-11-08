@@ -12,7 +12,7 @@ space's host over ssh; nothing is uploaded to the bucket and there is no store
 of built releases. On the host the tarball is unpacked into
 `/opt/ikigenba/releases/<sha>/`, and that release's own opsctl,
 `/opt/ikigenba/releases/<sha>/opsctl/bin/opsctl`, activates it with
-`activate <sha> [label]`. The label is the tag exactly as typed, `r1` or
+`activate <sha> [label]`. The label is the tag exactly as typed, `release-87` or
 `feature/x`; a sha, full or short, gives no label. Nothing reaches the host
 until the space's secrets objects hold every name the manifests in the
 release declare. What activate does on the host, and what its lines say, is
@@ -85,24 +85,24 @@ say is opsctl's.
 Command:
 
 ```
-$ devctl deploy sbx1 r1
+$ devctl deploy sbx1 release-87
 ```
 
 Output:
 
 ```
-build: ok (r1, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 secrets: ok (8 apps, 2 keys)
 copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> 18.118.7.42)
 unpack: ok (/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
 preflight: ok (8 apps)
-label: ok (r1)
+label: ok (release-87)
 env: ok (8 apps)
 units: ok (8 apps)
 current: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a, previous 9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c)
 nginx: ok (8 apps)
 restart: ok (8 apps)
-activate: ok (r1 (4b22285))
+activate: ok (release-87 (4b22285))
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -111,7 +111,7 @@ Preconditions:
 
 - The working directory is inside the checkout, and a live SSO session for
   the profile `ikigenba.dev`.
-- The local repository holds the tag `r1`, pointing at the commit
+- The local repository holds the tag `release-87`, pointing at the commit
   `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, and the suite builds at that
   commit as `S4-build.md` says; its apps are `auth`, `dummy`, `events`,
   `mcp`, `repos`, `scripts`, `sites` and `telemetry`, and only `auth`'s
@@ -132,7 +132,7 @@ Postconditions:
   host holds the tarball's `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/` as it
   was built, and no copy of the tarball is left in the host's temporary
   directory.
-- `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a r1`
+- `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87`
   has been run on the host over ssh and exited 0, so every app in the release
   answers at its name from the new release. What activate did on the host is
   opsctl's.
@@ -174,12 +174,12 @@ on are opsctl's, as above.
 
 Preconditions:
 
-- As for deploying `r1`, with `4b22285` resolving to
+- As for deploying `release-87`, with `4b22285` resolving to
   `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a` in the local repository.
 
 Postconditions:
 
-- As for deploying `r1`, except that the command run on the host was
+- As for deploying `release-87`, except that the command run on the host was
   `sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`,
   with no label.
 
@@ -193,24 +193,24 @@ runs restarts every app, and deploying it by a tag gives it that label.
 Command:
 
 ```
-$ devctl deploy sbx1 r1
+$ devctl deploy sbx1 release-87
 ```
 
 Output:
 
 ```
-build: ok (r1, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 secrets: ok (8 apps, 2 keys)
 copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> 18.118.7.42)
 unpack: ok (/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a already present, kept)
 preflight: ok (8 apps)
-label: ok (r1)
+label: ok (release-87)
 env: ok (8 apps)
 units: ok (8 apps)
 current: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
 nginx: ok (8 apps)
 restart: ok (8 apps)
-activate: ok (r1 (4b22285))
+activate: ok (release-87 (4b22285))
 ```
 
 Exits 0. The lines are on stdout; stderr is empty. The lines from `preflight`
@@ -218,7 +218,7 @@ on are opsctl's.
 
 Preconditions:
 
-- As for deploying `r1`, except that the host already holds
+- As for deploying `release-87`, except that the host already holds
   `/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/`, here
   because the space runs that release, deployed earlier by its sha.
 
@@ -227,7 +227,7 @@ Postconditions:
 - Nothing under `/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/`
   was replaced or extracted again, and no copy of the tarball is left in the
   host's temporary directory.
-- The release's opsctl ran `activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a r1`
+- The release's opsctl ran `activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87`
   and exited 0. What activate does with a release that is already current is
   opsctl's.
 
@@ -242,7 +242,7 @@ has all fail the same way, and so does a path to a file, such as
 Command:
 
 ```
-$ devctl deploy sbx1 r9
+$ devctl deploy sbx1 release-99
 ```
 
 ```
@@ -252,7 +252,7 @@ $ devctl deploy sbx1 main
 Output:
 
 ```
-devctl: 'r9' is not a commit
+devctl: 'release-99' is not a commit
 ```
 
 Exits 2. The line is on stderr, naming the argument as typed; stdout is
@@ -261,7 +261,7 @@ empty.
 Preconditions:
 
 - The working directory is inside the checkout.
-- The local repository holds no tag `r9`; `main` is a branch, not a tag.
+- The local repository holds no tag `release-99`; `main` is a branch, not a tag.
 
 Postconditions:
 
@@ -276,7 +276,7 @@ builds nothing.
 Command:
 
 ```
-$ devctl deploy gone r1
+$ devctl deploy gone release-87
 ```
 
 Output:
@@ -288,7 +288,7 @@ devctl: no space at 'gone.ikigenba.dev'
 Command:
 
 ```
-$ devctl deploy sbx2 r1
+$ devctl deploy sbx2 release-87
 ```
 
 Output:
@@ -303,7 +303,7 @@ Preconditions:
 
 - The working directory is inside the checkout, and a live SSO session for
   the profile `ikigenba.dev`.
-- The local repository holds the tag `r1`.
+- The local repository holds the tag `release-87`.
 - No instance is tagged `Space=gone.ikigenba.dev`; the instance tagged
   `Space=sbx2.ikigenba.dev` is `stopped`.
 
@@ -320,7 +320,7 @@ lines (see `S4-build.md`), and nothing reaches the host.
 Command:
 
 ```
-$ devctl deploy sbx1 r1
+$ devctl deploy sbx1 release-87
 ```
 
 Output:
@@ -341,8 +341,8 @@ Preconditions:
 - The working directory is inside the checkout, and a live SSO session for
   the profile `ikigenba.dev`.
 - The space exists and its instance is `running`.
-- `r1` points at a commit where `dashboard/` is an app that does not compile
-  for `linux/amd64`.
+- `release-87` points at a commit where `dashboard/` is an app that does not compile
+  for `linux/arm64`.
 
 Postconditions:
 
@@ -359,13 +359,13 @@ has that no manifest names are left alone.
 Command:
 
 ```
-$ devctl deploy sbx1 r1
+$ devctl deploy sbx1 release-87
 ```
 
 Output:
 
 ```
-build: ok (r1, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 devctl: auth: secrets missing GOOGLE_CLIENT_SECRET
 
 run 'devctl secrets push sbx1 auth'
@@ -375,7 +375,7 @@ Exits 2. The `ok` line is on stdout; the rest is on stderr.
 
 Preconditions:
 
-- As for deploying `r1`, except that `/sbx1.ikigenba.dev/auth` holds
+- As for deploying `release-87`, except that `/sbx1.ikigenba.dev/auth` holds
   `GOOGLE_CLIENT_ID` and not `GOOGLE_CLIENT_SECRET`.
 
 Postconditions:
@@ -391,13 +391,13 @@ with `> `.
 Command:
 
 ```
-$ devctl deploy sbx1 r1
+$ devctl deploy sbx1 release-87
 ```
 
 Output:
 
 ```
-build: ok (r1, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 secrets: ok (8 apps, 2 keys)
 devctl: copy: scp /home/dev/ikigenba/dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz ec2-user@18.118.7.42:/tmp/tmp.Xb3kQ9aLpz: exit status 1
 
@@ -408,7 +408,7 @@ Exits 1. The `ok` lines are on stdout; the rest is on stderr.
 
 Preconditions:
 
-- As for deploying `r1`, with the checkout at `/home/dev/ikigenba`, and the
+- As for deploying `release-87`, with the checkout at `/home/dev/ikigenba`, and the
   host's temporary directory cannot hold the tarball.
 
 Postconditions:
@@ -425,13 +425,13 @@ it is whole, so a failed unpack leaves no folder for that sha.
 Command:
 
 ```
-$ devctl deploy sbx1 r1
+$ devctl deploy sbx1 release-87
 ```
 
 Output:
 
 ```
-build: ok (r1, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 secrets: ok (8 apps, 2 keys)
 copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> 18.118.7.42)
 devctl: unpack: ssh ec2-user@18.118.7.42 sudo tar -x -J --no-same-owner -f /tmp/tmp.Xb3kQ9aLpz -C /opt/ikigenba/releases/.unpack.Q7mN2cRt4w: exit status 2
@@ -444,7 +444,7 @@ Exits 1. The `ok` lines are on stdout; the rest is on stderr.
 
 Preconditions:
 
-- As for deploying `r1`, and the host's disk under `/opt/ikigenba/` cannot
+- As for deploying `release-87`, and the host's disk under `/opt/ikigenba/` cannot
   hold the unpacked release.
 
 Postconditions:
@@ -461,24 +461,24 @@ from `preflight` on are opsctl's, shown for illustration.
 Command:
 
 ```
-$ devctl deploy sbx1 r1
+$ devctl deploy sbx1 release-87
 ```
 
 Output:
 
 ```
-build: ok (r1, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 secrets: ok (8 apps, 2 keys)
 copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> 18.118.7.42)
 unpack: ok (/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
 preflight: ok (8 apps)
-label: ok (r1)
+label: ok (release-87)
 env: ok (8 apps)
 units: ok (8 apps)
 current: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a, previous 9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c)
 nginx: ok (8 apps)
 restart: failed: events: service failed to start
-devctl: activate: ssh ec2-user@18.118.7.42 sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a r1: exit status 1
+devctl: activate: ssh ec2-user@18.118.7.42 sudo /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87: exit status 1
 
 > opsctl: activate failed
 > 
@@ -490,7 +490,7 @@ stderr.
 
 Preconditions:
 
-- As for deploying `r1`, and `events` in that release exits as soon as it
+- As for deploying `release-87`, and `events` in that release exits as soon as it
   starts.
 
 Postconditions:
