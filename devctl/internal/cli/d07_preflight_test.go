@@ -541,6 +541,7 @@ type completeCreateFake struct {
 	*commandHarness
 	backup                        bool
 	onlyAccounts                  bool
+	wholeSeconds                  bool
 	prefixes, remotes, parameters []string
 	fail                          string
 }
@@ -564,12 +565,20 @@ func (f *completeCreateFake) ListObjects(_ context.Context, bucket, prefix strin
 	}
 	f.prefixes = append(f.prefixes, prefix)
 	if strings.HasSuffix(prefix, "/host/") && f.onlyAccounts {
-		return []cloud.Object{{Key: prefix + "2026-09-12T14:22:51Z.accounts.tar.zst", Modified: time.Unix(3, 0)}}, nil
+		return []cloud.Object{{Key: prefix + "2026-09-12T14:22:51.865067548Z.accounts.tar.zst", Modified: time.Unix(3, 0)}}, nil
 	}
 	if f.backup && prefix != "staging/sites/" {
 		objects := []cloud.Object{{Key: prefix + "2026-09-11T14:22:51Z.tar.zst", Modified: time.Unix(1, 0)}, {Key: prefix + "2026-09-12T14:22:51Z.tar.zst", Modified: time.Unix(2, 0)}}
 		if strings.HasSuffix(prefix, "/host/") {
-			objects = append(objects, cloud.Object{Key: prefix + "2026-09-12T14:22:51Z.accounts.tar.zst", Modified: time.Unix(3, 0)})
+			if f.wholeSeconds {
+				return objects, nil
+			}
+			return []cloud.Object{
+				{Key: prefix + "2026-09-12T14:22:51.865067548Z.tar.zst", Modified: time.Unix(1, 0)},
+				{Key: prefix + "2026-09-11T14:22:51.48120933Z.tar.zst", Modified: time.Unix(2, 0)},
+				{Key: prefix + "2026-09-12T14:22:51.8650675Z.tar.zst", Modified: time.Unix(2, 0)},
+				{Key: prefix + "2026-09-12T14:22:51.865067548Z.accounts.tar.zst", Modified: time.Unix(3, 0)},
+			}, nil
 		}
 		return objects, nil
 	}
@@ -646,9 +655,14 @@ func createInitialLines() string {
 }
 
 func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
-	// R-VOX7-JFYC R-V5AB-BWF1 R-VBDT-8R4I R-C6UG-ZCVP R-ILO6-ET2A R-IMW2-SKSZ R-C9A9-QWD3 R-VIP7-JDKO R-CBQ2-IFUH
-	for _, operand := range []string{"sbx1", "sbx1.ikigenba.dev", "staging"} {
+	// R-VOX7-JFYC R-V5AB-BWF1 R-VBDT-8R4I R-C6UG-ZCVP R-1CBC-EGCS R-1DJ8-S83H R-1ER5-5ZU6 R-VIP7-JDKO R-CBQ2-IFUH
+	for _, tc := range []struct {
+		operand      string
+		wholeSeconds bool
+	}{{"sbx1", false}, {"sbx1.ikigenba.dev", false}, {"staging", false}, {"staging", true}} {
+		operand := tc.operand
 		f := newCompleteCreateFake(t)
+		f.wholeSeconds = tc.wholeSeconds
 		f.backup = operand == "staging"
 		label := "sbx1"
 		if f.backup {
@@ -658,7 +672,10 @@ func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
 		got := invokeWithDeps(f.deps(), "space", "create", operand, "--acme-email", "ops@ikigenba.dev")
 		restore := "restore: ok (no host backup)\n"
 		if f.backup {
-			restore = "restore: ok (host/2026-09-12T14:22:51Z.tar.zst, 10 keys set again)\n"
+			restore = "restore: ok (host/2026-09-12T14:22:51.865067548Z.tar.zst, 10 keys set again)\n"
+			if tc.wholeSeconds {
+				restore = "restore: ok (host/2026-09-12T14:22:51Z.tar.zst, 10 keys set again)\n"
+			}
 		}
 		want := createInitialLines() + "secrets: ok (8 apps)\nrole: ok (" + domain + ")\ninstance: ok (i-0c9e94542d98846a8 running, 3.19.79.227)\naddress: ok (elastic ip 18.118.7.42 associated)\nrecords: ok (created " + domain + ", *." + domain + " -> 18.118.7.42, INSYNC)\nhost: ok (status checks passed, cloud-init done)\ncopy: ok (" + createSHA + ".tar.xz -> 18.118.7.42)\nunpack: ok (/opt/ikigenba/releases/" + createSHA + ")\nopsctl: ok (10 keys set)\n" + restore + "init: ok\n"
 		if f.backup {
@@ -747,7 +764,7 @@ func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
 }
 
 func TestCreateFailuresKeepCompletedStepsThroughCLI(t *testing.T) {
-	// R-VOX7-JFYC R-V5AB-BWF1 R-V7Q4-3FWF R-C82D-D4ME R-C9A9-QWD3 R-VIP7-JDKO
+	// R-VOX7-JFYC R-V5AB-BWF1 R-V7Q4-3FWF R-C82D-D4ME R-1ER5-5ZU6 R-VIP7-JDKO
 	for _, stop := range []string{"build", "secret", "launch", "init", "activate"} {
 		t.Run(stop, func(t *testing.T) {
 			f := newCompleteCreateFake(t)
@@ -764,7 +781,11 @@ func TestCreateFailuresKeepCompletedStepsThroughCLI(t *testing.T) {
 			if stop == "secret" {
 				f.addAppWithSecrets("auth", "GOOGLE_CLIENT_ID")
 			}
-			got := invokeWithDeps(f.deps(), "space", "create", "sbx1", "--acme-email=ops@ikigenba.dev")
+			args := []string{"space", "create", "sbx1", "--acme-email=ops@ikigenba.dev"}
+			if stop == "activate" {
+				args = append(args, "--release", "r2")
+			}
+			got := invokeWithDeps(f.deps(), args...)
 			wantCode := 1
 			if stop == "secret" {
 				wantCode = 2
@@ -790,7 +811,7 @@ func TestCreateFailuresKeepCompletedStepsThroughCLI(t *testing.T) {
 					t.Fatalf("result %#v", got)
 				}
 			case "activate":
-				if !strings.HasSuffix(got.stdout, "init: ok\nactivation output\n") || got.stderr != "devctl: activate: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/"+createSHA+"/opsctl/bin/opsctl activate "+createSHA+" release-87: exit status 1\n\n> opsctl: activate failed\n" {
+				if !strings.HasSuffix(got.stdout, "init: ok\nactivation output\n") || got.stderr != "devctl: activate: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/"+createSHA+"/opsctl/bin/opsctl activate "+createSHA+" r2: exit status 1\n\n> opsctl: activate failed\n" {
 					t.Fatalf("result %#v", got)
 				}
 			}
@@ -879,7 +900,7 @@ func (f *createListingFailure) ListObjects(ctx context.Context, bucket, prefix s
 }
 
 func TestCreateHostAndAppFailuresStopByUse(t *testing.T) {
-	// R-VBDT-8R4I R-C6UG-ZCVP R-ILO6-ET2A R-IMW2-SKSZ
+	// R-VBDT-8R4I R-C6UG-ZCVP R-1CBC-EGCS R-1DJ8-S83H
 	for _, tc := range []struct {
 		name, match, prefix, lastLine, absent string
 		configOrdinal                         int

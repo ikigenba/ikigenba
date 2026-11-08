@@ -13,7 +13,7 @@ import (
 )
 
 func TestCreateAccountsOnlyListingSkipsAllRestores(t *testing.T) {
-	// R-ILO6-ET2A R-IMW2-SKSZ
+	// R-1CBC-EGCS R-1DJ8-S83H
 	f := newCompleteCreateFake(t)
 	f.onlyAccounts = true
 	got := invokeWithDeps(f.deps(), "space", "create", "staging", "--acme-email", "ops@ikigenba.dev")
@@ -31,20 +31,22 @@ func TestCreateAccountsOnlyListingSkipsAllRestores(t *testing.T) {
 }
 
 func TestMoveRejectsListingsWithoutHostTarball(t *testing.T) {
-	// R-CMP5-YDIQ R-CK9D-6U1C
-	for _, key := range []string{"", "staging/host/2026-11-08T18:29:41Z.accounts.tar.zst", "staging/host/nested/backup.tar.zst", "other/host/backup.tar.zst", "staging/host/backup.zip", "staging/host/backup.1.tar.zst"} {
+	// R-I4AF-RKNI R-I32J-DSWT
+	for _, key := range []string{"", "sbx1/host/2026-11-08T18:29:41.222933531Z.accounts.tar.zst", "sbx1/host/nested/backup.tar.zst", "other/host/backup.tar.zst", "sbx1/host/backup.zip", "sbx1/host/backup.1.tar.zst", "sbx1/host/latest.tar.zst"} {
 		t.Run(key, func(t *testing.T) {
 			f := newMoveFake(t)
+			f.instances[0].Space = "sbx1.ikigenba.dev"
+			f.addresses[0].Space = "sbx1.ikigenba.dev"
 			f.hostObjects = []cloud.Object{}
 			if key != "" {
 				f.hostObjects = append(f.hostObjects, cloud.Object{Key: key})
 			}
-			got := f.run("staging")
-			if got.code != 1 || !strings.HasSuffix(got.stdout, "opsctl: ok (5 keys set)\n") || got.stderr != "devctl: restore: no host backup under s3://ikigenba.dev/staging/host/\n" || len(f.changes) != 0 || f.events[len(f.events)-1] != "objects staging/host/" {
+			got := f.run("sbx1")
+			if got.code != 1 || !strings.HasSuffix(got.stdout, "opsctl: ok (5 keys set)\n") || got.stderr != "devctl: restore: no host backup under s3://ikigenba.dev/sbx1/host/\n" || len(f.changes) != 0 || f.events[len(f.events)-1] != "objects sbx1/host/" {
 				t.Fatal(got, f.events)
 			}
 			last := f.commands[len(f.commands)-1]
-			if !strings.HasSuffix(last.Args[len(last.Args)-1], "'config' 'set' 'backup.s3_uri=s3://ikigenba.dev/staging/'") {
+			if !strings.HasSuffix(last.Args[len(last.Args)-1], "'config' 'set' 'backup.s3_uri=s3://ikigenba.dev/sbx1/'") {
 				t.Fatal("process after failed restore", last)
 			}
 			f.clean()
@@ -63,17 +65,17 @@ func TestMoveRejectsListingsWithoutHostTarball(t *testing.T) {
 }
 
 func TestMoveHostBackupSelectionBreaksTieByKey(t *testing.T) {
-	// R-CK9D-6U1C
+	// R-I32J-DSWT
 	f := newMoveFake(t)
 	when := time.Unix(1, 0)
 	f.hostObjects = []cloud.Object{
-		{Key: "staging/host/z.tar.zst", Modified: when},
-		{Key: "staging/host/a.tar.zst", Modified: when},
-		{Key: "staging/host/zz.accounts.tar.zst", Modified: when.Add(time.Hour)},
-		{Key: "staging/host/nested/zz.tar.zst", Modified: when.Add(time.Hour)},
+		{Key: "staging/host/2026-11-08T18:29:41.5Z.tar.zst", Modified: when},
+		{Key: "staging/host/2026-11-08T18:29:41.50Z.tar.zst", Modified: when.Add(time.Hour)},
+		{Key: "staging/host/2026-11-08T18:29:41.5Z.accounts.tar.zst", Modified: when.Add(time.Hour)},
+		{Key: "staging/host/nested/2026-11-08T18:29:41.5Z.tar.zst", Modified: when.Add(time.Hour)},
 	}
 	got := f.run("staging")
-	want := strings.ReplaceAll(expectedMove(false, false, false, ""), "host/2026-11-08T18:29:41Z.tar.zst", "host/z.tar.zst")
+	want := strings.ReplaceAll(expectedMove(false, false, false, ""), "host/2026-11-08T18:29:41.222933531Z.tar.zst", "host/2026-11-08T18:29:41.5Z.tar.zst")
 	assertResult(t, got, 0, want, "")
 	f.clean()
 }

@@ -4,11 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/build"
-	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/host"
 	"github.com/ikigenba/ikigenba/devctl/internal/hostsetup"
 	"github.com/ikigenba/ikigenba/devctl/internal/release"
@@ -41,8 +39,8 @@ func restoreHost(ctx context.Context, stdout io.Writer, p preflightResult, built
 	if err != nil {
 		return err
 	}
-	objects = hostTarballs(objects, prefix)
-	if len(objects) == 0 {
+	selected, found := space.HostBackup(objects, prefix)
+	if !found {
 		return &NoHostBackupError{Bucket: p.root.Domain, Prefix: prefix}
 	}
 	if _, err := h.Sudo(ctx, "restore", release.Opsctl(p.sha), "host", "restore"); err != nil {
@@ -53,7 +51,7 @@ func restoreHost(ctx context.Context, stdout io.Writer, p preflightResult, built
 	if err != nil {
 		return err
 	}
-	space.Step(stdout, "restore", fmt.Sprintf("%s, %d keys set again", strings.TrimPrefix(newestObject(objects).Key, space.BackupPrefix(p.sp.Label)), count))
+	space.Step(stdout, "restore", fmt.Sprintf("%s, %d keys set again", strings.TrimPrefix(selected.Key, space.BackupPrefix(p.sp.Label)), count))
 	if err := space.PutRecords(ctx, h.Deps, clients.Route53, p.zone, p.sp.Domain, h.Address); err != nil {
 		return err
 	}
@@ -77,27 +75,4 @@ func restoreHost(ctx context.Context, stdout io.Writer, p preflightResult, built
 		space.Step(stdout, "restore", detail)
 	}
 	return release.Activate(ctx, h, stdout, p.sha, p.label)
-}
-
-func newestObject(objects []cloud.Object) cloud.Object {
-	copyOf := append([]cloud.Object(nil), objects...)
-	sort.Slice(copyOf, func(i, j int) bool {
-		if copyOf[i].Modified.Equal(copyOf[j].Modified) {
-			return copyOf[i].Key > copyOf[j].Key
-		}
-		return copyOf[i].Modified.After(copyOf[j].Modified)
-	})
-	return copyOf[0]
-}
-
-func hostTarballs(objects []cloud.Object, prefix string) []cloud.Object {
-	var selected []cloud.Object
-	for _, object := range objects {
-		name, ok := strings.CutPrefix(object.Key, prefix)
-		stem, suffix := strings.CutSuffix(name, ".tar.zst")
-		if ok && suffix && !strings.ContainsAny(stem, "/.") {
-			selected = append(selected, object)
-		}
-	}
-	return selected
 }

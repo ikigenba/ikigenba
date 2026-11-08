@@ -367,13 +367,13 @@ func (f *moveFake) TagRetired(ctx context.Context, ids []string, value string) e
 	return f.call(ctx, "tag")
 }
 func (f *moveFake) RunInstance(ctx context.Context, spec cloud.LaunchSpec) (cloud.Instance, error) {
-	if spec != (cloud.LaunchSpec{LaunchTemplateID: "lt-current", InstanceProfile: "staging.ikigenba.dev", Domain: "ikigenba.dev", Space: "staging.ikigenba.dev"}) {
+	if spec != (cloud.LaunchSpec{LaunchTemplateID: "lt-current", InstanceProfile: f.instances[0].Space, Domain: "ikigenba.dev", Space: f.instances[0].Space}) {
 		f.t.Fatal(spec)
 	}
 	return cloud.Instance{ID: moveNewID}, f.call(ctx, "launch")
 }
 func (f *moveFake) AllocateAddress(ctx context.Context, root, domain string) (cloud.Address, error) {
-	if root != "ikigenba.dev" || domain != "staging.ikigenba.dev" {
+	if root != "ikigenba.dev" || domain != f.instances[0].Space {
 		f.t.Fatal(root, domain)
 	}
 	return cloud.Address{AllocationID: "new-allocation", IP: moveNewIP}, f.call(ctx, "allocate")
@@ -400,11 +400,16 @@ func (f *moveFake) ListObjects(ctx context.Context, bucket, prefix string) ([]cl
 	}
 	objects := []cloud.Object{{Key: prefix + "2026-11-07T18:29:41Z.tar.zst", Modified: time.Unix(1, 0)}, {Key: prefix + "2026-11-08T18:29:41Z.tar.zst", Modified: time.Unix(2, 0)}}
 	if strings.HasSuffix(prefix, "/host/") {
-		accounts := cloud.Object{Key: prefix + "2026-11-08T18:29:41Z.accounts.tar.zst", Modified: time.Unix(3, 0)}
+		accounts := cloud.Object{Key: prefix + "2026-11-08T18:29:41.222933531Z.accounts.tar.zst", Modified: time.Unix(3, 0)}
 		if f.onlyAccounts {
 			return []cloud.Object{accounts}, nil
 		}
-		objects = append(objects, accounts)
+		objects = []cloud.Object{
+			{Key: prefix + "2026-11-08T18:29:41.222933531Z.tar.zst", Modified: time.Unix(1, 0)},
+			{Key: prefix + "2026-11-07T18:29:41.74850415Z.tar.zst", Modified: time.Unix(2, 0)},
+			{Key: prefix + "2026-11-08T18:29:41.2229335Z.tar.zst", Modified: time.Unix(2, 0)},
+			accounts,
+		}
 	}
 	return objects, nil
 }
@@ -447,7 +452,7 @@ func expectedMove(stopped, apex, noAddress bool, absentApp string) string {
 		s += " and elastic ip " + moveOldIP
 	}
 	s += " Retired=" + moveTime + ")\n"
-	s += "instance: ok (" + moveNewID + " running, " + moveLaunchIP + ")\naddress: ok (elastic ip " + moveNewIP + " associated)\nhost: ok (status checks passed, cloud-init done)\ncopy: ok (" + createSHA + ".tar.xz -> " + moveNewIP + ")\nunpack: ok (" + release.Folder(createSHA) + ")\nopsctl: ok (5 keys set)\nrestore: ok (host/2026-11-08T18:29:41Z.tar.zst, 5 keys set again)\nrecords: ok (updated staging.ikigenba.dev, *.staging.ikigenba.dev -> " + moveNewIP + ", INSYNC)\ninit: ok\n"
+	s += "instance: ok (" + moveNewID + " running, " + moveLaunchIP + ")\naddress: ok (elastic ip " + moveNewIP + " associated)\nhost: ok (status checks passed, cloud-init done)\ncopy: ok (" + createSHA + ".tar.xz -> " + moveNewIP + ")\nunpack: ok (" + release.Folder(createSHA) + ")\nopsctl: ok (5 keys set)\nrestore: ok (host/2026-11-08T18:29:41.222933531Z.tar.zst, 5 keys set again)\nrecords: ok (updated staging.ikigenba.dev, *.staging.ikigenba.dev -> " + moveNewIP + ", INSYNC)\ninit: ok\n"
 	for _, app := range createApps {
 		detail := "opsctl restore " + app
 		if app == absentApp {
@@ -465,17 +470,25 @@ func expectedMove(stopped, apex, noAddress bool, absentApp string) string {
 func TestMoveSuccessfulFlows(t *testing.T) {
 	// R-K6AR-U5BF R-G0YK-GUGN R-VQ53-X7P1 R-KKXK-FE7R R-CFDR-NR2K
 	// R-338C-KBL6 R-KOL9-KPFU R-KPT5-YH6J R-KS8Y-Q0NX R-KTGV-3SEM
-	// R-KUOR-HK5B R-CJ1G-T2AN R-CK9D-6U1C R-KZKD-0N43 R-CQCV-3OQT
+	// R-KUOR-HK5B R-CJ1G-T2AN R-I32J-DSWT R-KZKD-0N43 R-I5IC-5CE7
 	// R-CLH9-KLS1 R-L382-5YC6 R-CP4Y-PX04 R-CNX2-C59F R-KIHR-NUQD
 	for _, tc := range []struct {
 		name, operand                       string
 		stopped, apex, apexOther, noAddress bool
 		absentApp                           string
+		wholeSeconds                        bool
 	}{
+		{name: "whole seconds", operand: "staging", wholeSeconds: true},
 		{name: "label", operand: "staging"}, {name: "domain", operand: "staging.ikigenba.dev"}, {name: "stopped", operand: "staging", stopped: true}, {name: "apex", operand: "staging", apex: true}, {name: "another apex holder", operand: "staging", apexOther: true}, {name: "no address or app backup", operand: "staging", noAddress: true, absentApp: "sites"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newMoveFake(t)
+			if tc.wholeSeconds {
+				f.hostObjects = []cloud.Object{
+					{Key: "staging/host/2026-11-08T18:29:41Z.tar.zst", Modified: time.Unix(1, 0)},
+					{Key: "staging/host/2026-11-07T18:29:41Z.tar.zst", Modified: time.Unix(2, 0)},
+				}
+			}
 			f.apex, f.apexOther = tc.apex, tc.apexOther
 			if tc.apexOther {
 				f.addresses = append(f.addresses, cloud.Address{Space: "other.ikigenba.dev", IP: "203.0.113.9"})
@@ -489,7 +502,11 @@ func TestMoveSuccessfulFlows(t *testing.T) {
 				f.addresses = nil
 			}
 			result := f.run(tc.operand)
-			assertResult(t, result, 0, expectedMove(tc.stopped, tc.apex, tc.noAddress, tc.absentApp), "")
+			want := expectedMove(tc.stopped, tc.apex, tc.noAddress, tc.absentApp)
+			if tc.wholeSeconds {
+				want = strings.ReplaceAll(want, "host/2026-11-08T18:29:41.222933531Z.tar.zst", "host/2026-11-08T18:29:41Z.tar.zst")
+			}
+			assertResult(t, result, 0, want, "")
 			f.clean()
 			if f.version != strings.TrimSpace(invokeWithDeps(f.deps(), "--version").stdout) {
 				t.Fatal("version was not forwarded", f.version)
@@ -686,8 +703,8 @@ func TestMoveReleaseAndPreflightFailures(t *testing.T) {
 
 func TestMoveStopsAtFailureAndKeepsCompletedSteps(t *testing.T) {
 	// R-VQ53-X7P1 R-CFDR-NR2K R-338C-KBL6 R-KOL9-KPFU R-KPT5-YH6J
-	// R-KS8Y-Q0NX R-KTGV-3SEM R-CK9D-6U1C R-CMP5-YDIQ R-KZKD-0N43
-	// R-CQCV-3OQT R-CLH9-KLS1 R-CP4Y-PX04 R-KIHR-NUQD R-CNX2-C59F
+	// R-KS8Y-Q0NX R-KTGV-3SEM R-I32J-DSWT R-I4AF-RKNI R-KZKD-0N43
+	// R-I5IC-5CE7 R-CLH9-KLS1 R-CP4Y-PX04 R-KIHR-NUQD R-CNX2-C59F
 	for _, stage := range []string{"retire", "stop", "describe " + moveOldID, "tag", "launch", "allocate", "associate", "checks " + moveNewID, "restore", "records", "init", "activate"} {
 		t.Run(stage, func(t *testing.T) {
 			f := newMoveFake(t)
@@ -753,7 +770,7 @@ func TestMoveStopsAtFailureAndKeepsCompletedSteps(t *testing.T) {
 }
 
 func TestMoveTypedErrorsAndWrappedTemporaryFailure(t *testing.T) {
-	// R-K7IO-7X24 R-CMP5-YDIQ R-KIHR-NUQD R-KH9V-A2ZO
+	// R-K7IO-7X24 R-I4AF-RKNI R-KIHR-NUQD R-KH9V-A2ZO
 	_ = spacemove.NoHostBackupError(struct{ Bucket, Prefix string }{})
 	e := &spacemove.NoHostBackupError{Bucket: "ikigenba.dev", Prefix: "sbx1/host/"}
 	if e.Error() != "restore: no host backup under s3://ikigenba.dev/sbx1/host/" || e.ExitCode() != 1 {
@@ -787,7 +804,7 @@ func TestMoveTypedErrorsAndWrappedTemporaryFailure(t *testing.T) {
 
 func TestMoveCloudFailuresReturnUnchanged(t *testing.T) {
 	// R-KEU2-IJIA R-KG1Y-WB8Z R-KKXK-FE7R R-338C-KBL6 R-KOL9-KPFU
-	// R-KPT5-YH6J R-KS8Y-Q0NX R-KTGV-3SEM R-CK9D-6U1C R-KZKD-0N43 R-CQCV-3OQT
+	// R-KPT5-YH6J R-KS8Y-Q0NX R-KTGV-3SEM R-I32J-DSWT R-KZKD-0N43 R-I5IC-5CE7
 	for _, stage := range []string{"open", "sts", "zone", "template", "boundary", "instances", "addresses", "apex", "start", "describe " + moveOldID, "checks " + moveOldID, "stop", "tag", "launch", "describe " + moveNewID, "allocate", "associate", "checks " + moveNewID, "objects staging/host/", "records", "insync", "objects staging/auth/", "objects staging/sites/"} {
 		t.Run(stage, func(t *testing.T) {
 			f := newMoveFake(t)
@@ -806,7 +823,7 @@ func TestMoveCloudFailuresReturnUnchanged(t *testing.T) {
 }
 
 func TestMoveRemoteFailuresOmitFailedStep(t *testing.T) {
-	// R-KTGV-3SEM R-CJ1G-T2AN R-CK9D-6U1C R-CQCV-3OQT R-CP4Y-PX04 R-KIHR-NUQD
+	// R-KTGV-3SEM R-CJ1G-T2AN R-I32J-DSWT R-I5IC-5CE7 R-CP4Y-PX04 R-KIHR-NUQD
 	for _, tc := range []struct {
 		name, remote, marker string
 		restored             bool

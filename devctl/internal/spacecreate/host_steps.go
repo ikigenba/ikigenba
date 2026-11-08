@@ -4,11 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/build"
-	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/host"
 	"github.com/ikigenba/ikigenba/devctl/internal/hostsetup"
 	"github.com/ikigenba/ikigenba/devctl/internal/release"
@@ -45,11 +43,10 @@ func runHostSteps(ctx context.Context, stdout io.Writer, deps seam.Deps, result 
 	if err != nil {
 		return err
 	}
-	objects = hostTarballs(objects, prefix)
-	if len(objects) == 0 {
+	selected, found := space.HostBackup(objects, prefix)
+	if !found {
 		space.Step(stdout, "restore", "no host backup")
 	} else {
-		selected := newestObject(objects)
 		if _, err := target.Sudo(ctx, "restore", release.Opsctl(result.sha), "host", "restore"); err != nil {
 			return err
 		}
@@ -67,7 +64,7 @@ func runHostSteps(ctx context.Context, stdout io.Writer, deps seam.Deps, result 
 		return err
 	}
 	space.Step(stdout, "init", "")
-	if len(objects) != 0 {
+	if found {
 		for _, manifest := range built.Manifests {
 			objects, err := result.session.Clients.S3.ListObjects(ctx, result.root.Domain, space.BackupPrefix(result.sp.Label)+manifest.App+"/")
 			if err != nil {
@@ -88,27 +85,4 @@ func runHostSteps(ctx context.Context, stdout io.Writer, deps seam.Deps, result 
 func deleteApex(ctx context.Context, h host.Host, sha string) error {
 	_, err := h.Sudo(ctx, "restore", release.Opsctl(sha), "config", "del", hostsetup.KeyHostApex)
 	return err
-}
-
-func newestObject(objects []cloud.Object) cloud.Object {
-	copyOf := append([]cloud.Object(nil), objects...)
-	sort.Slice(copyOf, func(i, j int) bool {
-		if copyOf[i].Modified.Equal(copyOf[j].Modified) {
-			return copyOf[i].Key > copyOf[j].Key
-		}
-		return copyOf[i].Modified.After(copyOf[j].Modified)
-	})
-	return copyOf[0]
-}
-
-func hostTarballs(objects []cloud.Object, prefix string) []cloud.Object {
-	var selected []cloud.Object
-	for _, object := range objects {
-		name, ok := strings.CutPrefix(object.Key, prefix)
-		stem, suffix := strings.CutSuffix(name, ".tar.zst")
-		if ok && suffix && !strings.ContainsAny(stem, "/.") {
-			selected = append(selected, object)
-		}
-	}
-	return selected
 }

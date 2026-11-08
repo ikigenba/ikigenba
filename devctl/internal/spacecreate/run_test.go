@@ -89,14 +89,14 @@ func TestRunHelpIsExactAndDependencyFree(t *testing.T) {
 
 func TestRunSuccessfulCreateUsesCurrentContracts(t *testing.T) {
 	// R-VOX7-JFYC R-V5AB-BWF1 R-V6I7-PO5Q R-V7Q4-3FWF R-V8Y0-H7N4
-	// R-VA5W-UZDT R-VBDT-8R4I R-C6UG-ZCVP R-ILO6-ET2A R-C82D-D4ME
-	// R-IMW2-SKSZ R-C9A9-QWD3 R-VIP7-JDKO R-CBQ2-IFUH
+	// R-VA5W-UZDT R-VBDT-8R4I R-C6UG-ZCVP R-1CBC-EGCS R-C82D-D4ME
+	// R-1DJ8-S83H R-1ER5-5ZU6 R-VIP7-JDKO R-CBQ2-IFUH
 	//
 	// R-EB4J-WN6C  R-YMOE-CCEO
 	f := newCreateFake(t)
 	f.objects = []cloud.Object{
-		{Key: "sbx1/host/old.tar.zst", Modified: time.Unix(1, 0)},
-		{Key: "sbx1/host/new.tar.zst", Modified: time.Unix(2, 0)},
+		{Key: "sbx1/host/2026-09-11T14:22:51.48120933Z.tar.zst", Modified: time.Unix(1, 0)},
+		{Key: "sbx1/host/2026-09-12T14:22:51.865067548Z.tar.zst", Modified: time.Unix(2, 0)},
 	}
 	var stdout bytes.Buffer
 	if err := Run(context.Background(), []string{"sbx1", "--acme-email", "ops@ikigenba.dev"}, "test-version", &stdout, f.deps()); err != nil {
@@ -114,7 +114,7 @@ func TestRunSuccessfulCreateUsesCurrentContracts(t *testing.T) {
 		"copy: ok (" + createSHA + ".tar.xz -> 18.118.7.42)\n" +
 		"unpack: ok (/opt/ikigenba/releases/" + createSHA + ")\n" +
 		"opsctl: ok (10 keys set)\n" +
-		"restore: ok (host/new.tar.zst, 10 keys set again)\n" +
+		"restore: ok (host/2026-09-12T14:22:51.865067548Z.tar.zst, 10 keys set again)\n" +
 		"init: ok\n" +
 		"restore: ok (opsctl restore crm)\n" +
 		"activate output\n" +
@@ -216,16 +216,16 @@ func TestCreateStopsAtSecretsAndEmptyRestoreSkipsRestoreCommands(t *testing.T) {
 	}
 }
 
-func TestNewestBackupBreaksModifiedTieByKey(t *testing.T) {
-	// R-ILO6-ET2A
+func TestNewestBackupBreaksTimestampTieByKey(t *testing.T) {
+	// R-1CBC-EGCS
 	f := newCreateFake(t)
 	when := time.Unix(1, 0)
-	f.objects = []cloud.Object{{Key: "sbx1/host/a.tar.zst", Modified: when}, {Key: "sbx1/host/z.tar.zst", Modified: when}, {Key: "sbx1/host/zz.accounts.tar.zst", Modified: when.Add(time.Hour)}, {Key: "sbx1/host/nested/zz.tar.zst", Modified: when.Add(time.Hour)}}
+	f.objects = []cloud.Object{{Key: "sbx1/host/2026-09-12T14:22:51.50Z.tar.zst", Modified: when}, {Key: "sbx1/host/2026-09-12T14:22:51.5Z.tar.zst", Modified: when}, {Key: "sbx1/host/2026-09-12T14:22:51.5Z.accounts.tar.zst", Modified: when.Add(time.Hour)}, {Key: "sbx1/host/nested/2026-09-12T14:22:51.5Z.tar.zst", Modified: when.Add(time.Hour)}}
 	var out bytes.Buffer
 	if err := Run(context.Background(), []string{"sbx1", "--acme-email=x"}, "build-version", &out, f.deps()); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "restore: ok (host/z.tar.zst, 10 keys set again)\n") {
+	if !strings.Contains(out.String(), "restore: ok (host/2026-09-12T14:22:51.5Z.tar.zst, 10 keys set again)\n") {
 		t.Fatalf("restore = %q", out.String())
 	}
 }
@@ -654,8 +654,8 @@ func (f *createFake) TagRetired(context.Context, []string, string) error {
 }
 
 func TestCreateRejectsOtherKeysAsHostBackups(t *testing.T) {
-	// R-ILO6-ET2A R-IMW2-SKSZ
-	for _, key := range []string{"sbx1/host/2026-09-12T14:22:51Z.accounts.tar.zst", "sbx1/host/nested/backup.tar.zst", "other/host/backup.tar.zst", "sbx1/host/backup.zip", "sbx1/host/backup.1.tar.zst"} {
+	// R-1CBC-EGCS R-1DJ8-S83H
+	for _, key := range []string{"sbx1/host/2026-09-12T14:22:51.865067548Z.accounts.tar.zst", "sbx1/host/nested/backup.tar.zst", "other/host/backup.tar.zst", "sbx1/host/backup.zip", "sbx1/host/backup.1.tar.zst"} {
 		t.Run(key, func(t *testing.T) {
 			f := newCreateFake(t)
 			f.objects = []cloud.Object{{Key: key}}
