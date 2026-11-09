@@ -6,11 +6,15 @@ answers at it. `apex` is the command that makes, reads, and unmakes that
 choice from the developer's machine. The record is `A` only: `*.ikigenba.dev`
 is never written, so no name under the root resolves unless a space owns it.
 
-The holder of the apex is the space whose active Elastic IP the root's `A`
-record points at; an address tagged `Retired`, left with the instance a
-`space move` moved from, holds nothing, so a root record pointing at one
-reads as no holder. `space list` marks the holder, `space destroy` on it
-deletes the record first, and this group reads it the same way. Which app answers there reaches
+The holder of the apex is the space whose Elastic IP the root's `A` record
+points at. `space list` marks the holder, and this group reads it the same
+way. The record changes only through `apex set`, `apex clear`, `space
+destroy` on the holder, which deletes the record first, and `space create` of
+a space whose restored store holds the apex, which writes the record and
+clears the previous holder as `apex set` does; `space create --apex <app>`
+sets the apex in the store before that, and `space create --no-apex` deletes
+it. `space replace` changes neither the root's record, the role's grant
+nor `host.apex`. Which app answers there reaches
 the host as one opsctl configuration key, `host.apex`, holding the app's
 name; the host derives the apex hostname as the parent of its own `host.name`
 and never stores it (see opsctl's `S5-nginx.md`). The apex app is chosen
@@ -273,7 +277,7 @@ Output:
 ```
 space: ok (sbx1.ikigenba.dev running, 18.118.7.42)
 role: ok (sbx1.ikigenba.dev may prove ikigenba.dev)
-devctl: host: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect opsctl cert obtain: exit status 1
+devctl: host: ssh ec2-user@sbx1.ikigenba.dev sudo systemd-run --quiet --wait --pipe --collect opsctl cert obtain: exit status 1
 
 > opsctl: certbot certonly: exit status 1
 > 
@@ -316,7 +320,7 @@ space: ok (sbx1.ikigenba.dev running, 18.118.7.42)
 role: ok (sbx1.ikigenba.dev may prove ikigenba.dev)
 host: ok (host.apex=crm, certificate obtained, nginx applied)
 record: ok (ikigenba.dev -> 18.118.7.42, INSYNC)
-devctl: previous: ssh ec2-user@18.220.10.5: connection timed out
+devctl: previous: ssh ec2-user@sbx2.ikigenba.dev: connection timed out
 ```
 
 Exits 1. The `ok` lines are on stdout; the last line is on stderr.

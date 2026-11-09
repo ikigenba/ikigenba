@@ -77,8 +77,8 @@ the release's own opsctl activates it, with the tag as its label.
 
 Each of devctl's lines is one step: `build` names the tag, when a tag was
 typed, and the file it wrote, `secrets` how many apps the release holds and
-how many names their manifests declare in all, `copy` the file and the host's
-address, and `unpack` the folder. The lines from `preflight` on are opsctl's,
+how many names their manifests declare in all, `copy` the file and the space's
+domain, and `unpack` the folder. The lines from `preflight` on are opsctl's,
 copied as it writes them; they are shown here for illustration, and what they
 say is opsctl's.
 
@@ -93,7 +93,7 @@ Output:
 ```
 build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 secrets: ok (8 apps, 2 keys)
-copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> 18.118.7.42)
+copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> sbx1.ikigenba.dev)
 unpack: ok (/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
 preflight: ok (8 apps)
 label: ok (release-87)
@@ -158,7 +158,7 @@ Output:
 ```
 build: ok (dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 secrets: ok (8 apps, 2 keys)
-copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> 18.118.7.42)
+copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> sbx1.ikigenba.dev)
 unpack: ok (/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
 preflight: ok (8 apps)
 env: ok (8 apps)
@@ -201,7 +201,7 @@ Output:
 ```
 build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 secrets: ok (8 apps, 2 keys)
-copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> 18.118.7.42)
+copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> sbx1.ikigenba.dev)
 unpack: ok (/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a already present, kept)
 preflight: ok (8 apps)
 label: ok (release-87)
@@ -399,7 +399,7 @@ Output:
 ```
 build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 secrets: ok (8 apps, 2 keys)
-devctl: copy: scp /home/dev/ikigenba/dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz ec2-user@18.118.7.42:/tmp/tmp.Xb3kQ9aLpz: exit status 1
+devctl: copy: scp /home/dev/ikigenba/dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz ec2-user@sbx1.ikigenba.dev:/tmp/tmp.Xb3kQ9aLpz: exit status 1
 
 > scp: /tmp/tmp.Xb3kQ9aLpz: No space left on device
 ```
@@ -433,8 +433,8 @@ Output:
 ```
 build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 secrets: ok (8 apps, 2 keys)
-copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> 18.118.7.42)
-devctl: unpack: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect tar -x -J --no-same-owner -f /tmp/tmp.Xb3kQ9aLpz -C /opt/ikigenba/releases/.unpack.Q7mN2cRt4w: exit status 2
+copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> sbx1.ikigenba.dev)
+devctl: unpack: ssh ec2-user@sbx1.ikigenba.dev sudo systemd-run --quiet --wait --pipe --collect tar -x -J --no-same-owner -f /tmp/tmp.Xb3kQ9aLpz -C /opt/ikigenba/releases/.unpack.Q7mN2cRt4w: exit status 2
 
 > tar: 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/auth/bin/auth: Cannot write: No space left on device
 > tar: Exiting with failure status due to previous errors
@@ -469,7 +469,7 @@ Output:
 ```
 build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
 secrets: ok (8 apps, 2 keys)
-copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> 18.118.7.42)
+copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> sbx1.ikigenba.dev)
 unpack: ok (/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
 preflight: ok (8 apps)
 label: ok (release-87)
@@ -478,7 +478,7 @@ units: ok (8 apps)
 current: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a, previous 9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c)
 nginx: ok (8 apps)
 restart: failed: events: service failed to start
-devctl: activate: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87: exit status 1
+devctl: activate: ssh ec2-user@sbx1.ikigenba.dev sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl activate 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a release-87: exit status 1
 
 > opsctl: activate failed
 > 
@@ -617,7 +617,7 @@ $ devctl rollback sbx1
 Output:
 
 ```
-devctl: rollback: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect opsctl rollback: exit status 1
+devctl: rollback: ssh ec2-user@sbx1.ikigenba.dev sudo systemd-run --quiet --wait --pipe --collect opsctl rollback: exit status 1
 
 > opsctl: no previous release to roll back to
 ```

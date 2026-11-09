@@ -169,7 +169,7 @@ $ devctl golden capture sbx1 demo
 Output:
 
 ```
-devctl: snapshot: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect opsctl snapshot: exit status 1
+devctl: snapshot: ssh ec2-user@sbx1.ikigenba.dev sudo systemd-run --quiet --wait --pipe --collect opsctl snapshot: exit status 1
 
 > crm: failed: no replica under the prefix
 > dashboard: ok (s3://ikigenba.dev/sbx1/snapshots/dashboard/2026-09-12T14:22:51Z.tar.zst, 1.1 MiB)
@@ -604,7 +604,7 @@ copy: ok (dashboard -> ikigenba.dev/sbx2/seed/dashboard/2026-09-12T14:22:51Z.tar
 copy: ok (gmail -> ikigenba.dev/sbx2/seed/gmail/2026-09-12T14:22:51Z.tar.zst)
 restore: ok (opsctl restore crm --from s3://ikigenba.dev/sbx2/seed/crm/2026-09-12T14:22:51Z.tar.zst)
 restore: ok (opsctl restore dashboard --from s3://ikigenba.dev/sbx2/seed/dashboard/2026-09-12T14:22:51Z.tar.zst)
-devctl: restore: ssh ec2-user@18.224.31.9 sudo systemd-run --quiet --wait --pipe --collect opsctl restore gmail --from s3://ikigenba.dev/sbx2/seed/gmail/2026-09-12T14:22:51Z.tar.zst: exit status 1
+devctl: restore: ssh ec2-user@sbx2.ikigenba.dev sudo systemd-run --quiet --wait --pipe --collect opsctl restore gmail --from s3://ikigenba.dev/sbx2/seed/gmail/2026-09-12T14:22:51Z.tar.zst: exit status 1
 
 > source: ok (s3://ikigenba.dev/sbx2/seed/gmail/2026-09-12T14:22:51Z.tar.zst, 6.1 MiB)
 > secrets: failed: gmail: no value for 'GMAIL_CLIENT_SECRET' in /sbx2.ikigenba.dev/gmail

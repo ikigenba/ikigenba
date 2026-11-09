@@ -190,7 +190,7 @@ $ devctl restore sbx1 crm
 Output:
 
 ```
-devctl: restore: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect opsctl restore crm: exit status 1
+devctl: restore: ssh ec2-user@sbx1.ikigenba.dev sudo systemd-run --quiet --wait --pipe --collect opsctl restore crm: exit status 1
 
 > source: failed: no backups for crm under s3://ikigenba.dev/sbx1/
 > opsctl: restore crm failed at source
