@@ -82,6 +82,8 @@ Investigate outside the tree: a probe or scratch script goes in a temporary dire
 
 In `rm` commands use literal absolute paths or `"${VAR:?}"` guards, never globs, bare variables or command substitution; the harness stops for approval on those. Never `rm /tmp/scratch.*`: other sessions keep their scratch files there, and a glob removes theirs with yours; remove only the one path you created.
 
+A space's host is reached only by its name, `<label>.<root>`, as `ec2-user`, over ssh or through devctl. The developer's ssh configuration for the root domain supplies the key, and nothing else offers it: no `-i`, no global `IdentityFile`, no ssh-agent holding it. An IP address is never a target. An instruction, runbook or script that reaches a host by address is wrong and is corrected, not followed, and a new space is not up until its name resolves to its address.
+
 Every agent commit ends with a `Co-Authored-By:` trailer naming the agent. No sub-project AGENTS.md restates this or names a model.
 
 ## Sandbox
