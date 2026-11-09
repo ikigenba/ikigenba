@@ -47,17 +47,6 @@ returns what the callers need next: the sha, the file, and the manifests of
 the apps it built, which are what the release's secrets are checked or pushed
 against.
 
-`space move` (D18) needs one more thing from a commit: its opsctl compiled
-for the architecture of a host that is not yet arm64, so the release's own
-`host backup` can run on the host being moved off. `Tool` compiles one of
-the release's tools, `./cmd/<name>` in the tool's directory at the commit,
-for `linux` and the architecture it is given, to the file it is given. It
-checks the sha out into its own temporary worktree under `dist/` exactly as
-the suite build does and removes it whatever the outcome, compiles that one
-binary with the settings of the suite build's release compile but for that
-architecture, and does nothing else: no app, no manifest build or run, no
-tar, no release file. What it writes is never part of a release.
-
 ## REQUIREMENTS
 
 - R-F6V0-EZM8: Package `internal/build` MUST export `Run(ctx context.Context, args []string, version string, stdout io.Writer, deps seam.Deps) error`, and `Run` MUST take no writer other than `stdout` and no profile name.
@@ -143,9 +132,3 @@ tar, no release file. What it writes is never part of a release.
 - R-6CXI-DRI1: For each app it compiles, `build` MUST take the standard output of that app's `manifest` run, the one `seam.Cmd` R-6AHP-M80N states, as the app's emitted manifest; when that run exits non-zero it MUST return a `*ProcessError` whose `Label` is `<app> manifest` and which carries that exit status and standard error; and when the emitted bytes are not byte-identical to the file R-D2Q6-DA58 names it MUST return a `*StaleManifestError` for the app's `Name`; in either case it MUST pass no `seam.Cmd` whose `Path` is `tar`; verified at least through `cli.Run` by reproducing the single stderr line `devctl: crm: etc/manifest.toml does not match what the binary emits; run 'crm manifest > crm/etc/manifest.toml' and commit` with empty stdout and exit 2 for an emitted manifest that differs from the committed one by one trailing newline, and by a `crm manifest` run exiting 1 with the standard error `boom` writing to stderr exactly `devctl: crm manifest: exit status 1`, an empty line, and `> boom`, with empty stdout and exit 1.
 
 - R-R85U-C9RT: `build` MUST write nothing to `stdout` in every outcome in which it returns a non-nil error.
-
-- R-2TH5-I5NM: Package `internal/build` MUST export `Tool(ctx context.Context, c *checkout.Checkout, sha, name, goarch, out string) error`.
-
-- R-2UP1-VXEB: `build.Tool` MUST call `(*Checkout).AddWorktree` on `c` with `sha` and a `dir` that is an absolute path under `c.Path("dist")` that did not exist when `Tool` was called, then pass to `c.Deps`'s `Exec` exactly one `seam.Cmd` whose `Path` is `go`, whose `Env` holds exactly the entries `GOOS=linux`, `GOARCH=` followed by `goarch`, `CGO_ENABLED=0` and `GOWORK=off`, whose `Dir` is `<dir>/<name>`, and whose `Args` are exactly `build`, `-buildvcs=false`, `-o`, `out`, and `./cmd/<name>`, and then call `(*Checkout).RemoveWorktree` with that same `dir` exactly once, whether the compile succeeds or fails, with a context that the cancellation of `ctx` does not cancel; it MUST pass no other `seam.Cmd`, so none of `checkout.Open` or `(*Checkout).ResolveCommit`, none that runs a compiled binary, and none whose `Path` is `tar`, MUST call `c.Deps.Cloud` not at all, MUST NOT read the root file, and MUST create, replace, or remove no file at `ReleaseFile(sha)`; it MUST create `dist/` at the checkout root when absent, and when `RemoveWorktree` returned nil, `dist/` MUST hold on return nothing but the paths it held when `Tool` was called, and be absent if it was absent then; verified at least by `Tool(ctx, c, "4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a", "opsctl", "amd64", "<test dir>/move.Ab12/opsctl")` over a temporary checkout with no `dist/` passing exactly one `git worktree add`, the `go` `seam.Cmd` with the `Env` `GOOS=linux`, `GOARCH=amd64`, `CGO_ENABLED=0` and `GOWORK=off`, the `Dir` `<dir>/opsctl`, and the `Args` `build`, `-buildvcs=false`, `-o`, `<test dir>/move.Ab12/opsctl`, and `./cmd/opsctl`, and exactly one `git worktree remove` of the same `dir`, returning nil and leaving no `dist/`, and by the same call with `arm64` passing `GOARCH=arm64`.
-
-- R-2VWY-9P50: When `AddWorktree` returns an error, `build.Tool` MUST return that error unchanged and pass no further `seam.Cmd`; when the `go` `seam.Cmd` of R-2UP1-VXEB exits non-zero it MUST return a `*ProcessError` whose `Label` is `build <name>` and which carries that exit status and standard error; when `Exec` returns a non-nil error for it, an error that `errors.As` does not match to a `*ProcessError` and whose message contains `go`; when `RemoveWorktree` returns an error after a compile that exited 0 it MUST return that error, and after a failed compile the compile's error; verified at least by a fake compile of `opsctl` exiting 1 with the standard error `cmd/opsctl/main.go:9:2: undefined: backup` returning a `*ProcessError` whose `Error()` is `build opsctl: exit status 1` and whose `Detail()` is `> cmd/opsctl/main.go:9:2: undefined: backup`, still followed by exactly one `git worktree remove`, and by a fake `git worktree remove` exiting 1 after a compile that exited 0 returning the `*GitError` of D04 R-CPT9-XFBP.

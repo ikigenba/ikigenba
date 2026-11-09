@@ -6,7 +6,11 @@ the only configuration. All environmental dependencies enter through the run
 seam; offline tests supply fakes. The seam already carries everything the
 single-root platform needs: the working directory that checkout discovery
 starts from, the effective uid, the environment, the cloud opener that takes
-the root as the profile name, the process runners, and the clock.
+the root as the profile name, the process runners, the clock, the
+system resolver's host lookup, through which a command learns what a name
+resolves to as ssh will see it, and the file stat through which `space
+create` learns, without reading it, whether the developer's known hosts file
+exists, the one look it takes into the developer's home.
 
 ## REQUIREMENTS
 
@@ -20,7 +24,7 @@ the root as the profile name, the process runners, and the clock.
 
 - R-F59F-A9GW: The binary built from `./cmd/devctl`, run with the single argument `--help` as a non-root user, MUST print the top-level usage text of D2 to stdout, write nothing to stderr, and exit 0.
 
-- R-BMSH-ORLH: Package `internal/seam` MUST export a `Deps` struct whose fields are exactly `Dir string`, `EUID int`, `Getenv func(key string) string`, `Cloud cloud.Opener`, `Exec Runner`, `Stream StreamRunner`, `Now func() time.Time`, and `After func(d time.Duration) <-chan time.Time`; a nil `Getenv` MUST read as an empty environment, a nil `Exec` MUST read as `seam.Exec`, a nil `Now` MUST read as `time.Now`, and a nil `After` MUST read as `time.After`.
+- R-OIUP-BXFV: Package `internal/seam` MUST export a `Deps` struct whose fields are exactly `Dir string`, `EUID int`, `Getenv func(key string) string`, `Cloud cloud.Opener`, `Exec Runner`, `Stream StreamRunner`, `Now func() time.Time`, `After func(d time.Duration) <-chan time.Time`, `LookupHost func(host string) ([]string, error)`, and `Stat func(name string) (fs.FileInfo, error)`; a nil `Getenv` MUST read as an empty environment, a nil `Exec` MUST read as `seam.Exec`, a nil `Now` MUST read as `time.Now`, a nil `After` MUST read as `time.After`, a nil `LookupHost` MUST read as `net.LookupHost`, and a nil `Stat` MUST read as `os.Stat`.
 
 - R-BO0E-2JC6: Package `internal/seam` MUST export `StreamRunner func(ctx context.Context, cmd Cmd, stdout io.Writer) (Result, error)`.
 
@@ -30,4 +34,4 @@ the root as the profile name, the process runners, and the clock.
 
 - R-BRO3-7UK9: `seam.Stream` MUST terminate and reap its process when its context is cancelled; tests MUST prove delivery before exit and cancellation completion with controlled local processes and no network access.
 
-- R-RGP5-0NYO: Every relative path read or written by a command MUST resolve under `Deps.Dir` or the checkout root returned by `checkout.Open`. Commands MUST NOT discover or read the developer’s home directory. Every process directory MUST be explicitly supplied through `seam.Cmd.Dir`; tests MUST use temporary paths and fake process runners.
+- R-9H9L-AH48: Every relative path read or written by a command MUST resolve under `Deps.Dir` or the checkout root returned by `checkout.Open`. Commands MUST NOT discover or read the developer’s home directory, with the one exception of `space create`'s `known_hosts` step, which MUST make its only read there through `Deps.Stat`, of the path `Deps.Getenv("HOME")` followed by `/.ssh/known_hosts`, and devctl's own code MUST read nothing else under it; this limit is on devctl's own reads, and the child processes it runs, such as `ssh-keygen -R`, which reads and rewrites that file, are excluded from it. Every process directory MUST be explicitly supplied through `seam.Cmd.Dir`; tests MUST use temporary paths and fake process runners.

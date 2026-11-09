@@ -25,7 +25,7 @@ is an ordinary checkout of that commit, and `Apps` on it discovers the apps
 the commit holds.
 
 The checkout also names the default release that `space create` and `space
-move` deploy. `NewestRelease` lists the local repository's tags, fetching
+replace` deploy. `NewestRelease` lists the local repository's tags, fetching
 nothing, and returns the newest `release-<N>`: of the tags named exactly
 `release-` and a number without a leading zero, the one with the highest
 number, compared as a number, so `release-100` is newer than `release-99`.

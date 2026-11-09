@@ -13,11 +13,13 @@ than a session, which is what `space create` (D07) and `deploy` (D09) hand
 them.
 
 Push resolves the checkout and its apps first, then the root file, then the
-operand, then connects and confirms the space exists with `cloud.LookupSpace`
-before any value is looked up or written; it gathers every required value
-before writing any object. List reads the root file and connects, but never
-opens the app list and never looks the instance up, so retained objects can be
-listed after a space is destroyed. Rotation is a push followed by a deploy:
+operand, then connects and confirms the space has its instance with
+`cloud.LookupInstance` (D03) before any value is looked up or written,
+returning D03's refusals unchanged: a space that has only its address is a
+`NoInstanceError` like any other host command's; it gathers every required
+value before writing any object. List reads the root file and connects, but
+never opens the app list and never looks the instance up, so retained objects
+can be listed after a space is destroyed. Rotation is a push followed by a deploy:
 of the release the space runs, which activates it again and so writes every
 app's environment afresh. The deploy's own step lines are D09's. `space create` pushes through
 the same `Push`, for the apps of the release it deploys rather than the apps
@@ -110,7 +112,7 @@ line of their own: only the lines the stories show.
 
 - R-267W-YMZ0: `secrets push` and `secrets list` MUST each obtain the space from the `<space>` operand by `spaceref.Parse` as R-ST4K-APZN requires, with the `Domain` of the `RootFile` they read, and MUST then call `cloud.Connect` exactly once, with `deps.Cloud` as `open`, that `RootFile`'s `Domain` as `profile`, and its `Region` as `region`, MUST return `Connect`'s error unchanged, and MUST pass the `SSM` of the returned `Session.Clients` to `Push`, `List`, or `Names`; verified at least through `cli.Run`, in a temporary checkout whose root file holds `{"domain": "ikigenba.dev", "region": "us-east-2"}`, by a recording fake `Opener` receiving `ikigenba.dev` and `us-east-2` from `devctl secrets push sbx1` and from `devctl secrets list sbx1.ikigenba.dev`, and by `devctl secrets push crm.sbx1` and `devctl secrets list crm.sbx1` each writing the single line `devctl: 'crm.sbx1' is not a space: a space is one label under 'ikigenba.dev'` to stderr, exiting 2, and leaving that fake `Opener` with no call.
 
-- R-0O8C-VKRC: `secrets push` MUST call `cloud.LookupSpace` with the `EC2` of the session's `Clients`, the `RootFile`'s `Domain`, and the parsed `Space.Domain`, after `cloud.Connect` and before `secrets.Push`, and when it returns an error MUST return that error unchanged and MUST call `keyring.Lookup` and `PutSecureParameter` not at all, verified at least by `devctl secrets push gone` against a fake `EC2` that lists no instance tagged `Space=gone.ikigenba.dev` writing the single line `devctl: no space at 'gone.ikigenba.dev'` to stderr, nothing to stdout, exiting 1, and leaving a recording fake `SSM` with no call.
+- R-G1RO-WSVQ: `secrets push` MUST call `cloud.LookupInstance` with the `EC2` of the session's `Clients`, the `RootFile`'s `Domain`, and the parsed `Space.Domain`, after `cloud.Connect` and before `secrets.Push`, and when it returns an error MUST return that error unchanged and MUST call `keyring.Lookup` and `PutSecureParameter` not at all, verified at least, each with nothing written to stdout, no `ssh` or `scp` command run, and a recording fake `SSM` left with no call, by `devctl secrets push gone` against a fake `EC2` that lists no instance that is not terminated and no address carrying `gone.ikigenba.dev` writing the single stderr line `devctl: no space at 'gone.ikigenba.dev'` and exiting 1; by `devctl secrets push sbx1` while the only resource carrying `sbx1.ikigenba.dev` is the address `18.118.7.42` associated with nothing writing the single stderr line `devctl: 'sbx1.ikigenba.dev' has no instance` and exiting 1; and by `devctl secrets push sbx1` while the two addresses `18.118.7.42` and `18.190.33.61` and one running instance carry `sbx1.ikigenba.dev` writing the single stderr line `devctl: 'sbx1.ikigenba.dev' has more than one Elastic IP (18.118.7.42, 18.190.33.61)` and exiting 2.
 
 - R-0PG9-9CI1: `secrets push <space>` MUST push every app `(*Checkout).Apps` returns, in the ascending `Name` order `Apps` returns them in, and `secrets push <space> <app>` MUST push only the one app `(*Checkout).App` returns for `<app>`, in either case by one call to `secrets.Push` with the parsed `Space.Domain` as `domain`.
 
