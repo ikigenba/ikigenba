@@ -142,7 +142,38 @@ Preconditions:
 
 - The working directory is inside the checkout, and a live SSO session for
   the profile `ikigenba.dev`.
-- No instance is tagged `Space=gone.ikigenba.dev`.
+- No instance that is not terminated and no Elastic IP is tagged
+  `Space=gone.ikigenba.dev`.
+
+Postconditions:
+
+- Nothing has changed. No ssh connection was opened.
+
+## A developer restores to a space that has no instance
+
+Command:
+
+```
+$ devctl restore sbx1 crm
+```
+
+Output:
+
+```
+devctl: 'sbx1.ikigenba.dev' has no instance
+```
+
+Exits 1. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- `space replace sbx1` could not launch a new instance (see "A developer's
+  replace cannot launch the new instance"): no instance tagged
+  `Space=sbx1.ikigenba.dev` is anything but terminated, and the Elastic IP
+  `18.118.7.42`, tagged `Domain=ikigenba.dev` and `Space=sbx1.ikigenba.dev`,
+  is allocated and associated with nothing.
 
 Postconditions:
 

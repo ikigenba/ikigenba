@@ -220,7 +220,8 @@ Preconditions:
 
 - The working directory is inside the checkout, and a live SSO session for
   the profile `ikigenba.dev`.
-- No instance is tagged `Space=gone.ikigenba.dev`.
+- No instance that is not terminated and no Elastic IP is tagged
+  `Space=gone.ikigenba.dev`.
 
 Postconditions:
 

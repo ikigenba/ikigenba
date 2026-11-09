@@ -304,8 +304,44 @@ Preconditions:
 - The working directory is inside the checkout, and a live SSO session for
   the profile `ikigenba.dev`.
 - The local repository holds the tag `release-87`.
-- No instance is tagged `Space=gone.ikigenba.dev`; the instance tagged
-  `Space=sbx2.ikigenba.dev` is `stopped`.
+- No instance that is not terminated and no Elastic IP is tagged
+  `Space=gone.ikigenba.dev`; the instance tagged `Space=sbx2.ikigenba.dev`
+  is `stopped`.
+
+Postconditions:
+
+- Nothing has changed. Nothing was built, nothing under `dist/` was written,
+  and no ssh connection was opened.
+
+## A developer deploys a release to a space that has no instance
+
+The space is checked before the build, so a deploy to a space with no host
+builds nothing.
+
+Command:
+
+```
+$ devctl deploy sbx1 release-87
+```
+
+Output:
+
+```
+devctl: 'sbx1.ikigenba.dev' has no instance
+```
+
+Exits 1. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- `space replace sbx1` could not launch a new instance (see "A developer's
+  replace cannot launch the new instance"): no instance tagged
+  `Space=sbx1.ikigenba.dev` is anything but terminated, and the Elastic IP
+  `18.118.7.42`, tagged `Domain=ikigenba.dev` and `Space=sbx1.ikigenba.dev`,
+  is allocated and associated with nothing.
+- The local repository holds the tag `release-87`.
 
 Postconditions:
 
@@ -669,8 +705,39 @@ Preconditions:
 
 - The working directory is inside the checkout, and a live SSO session for
   the profile `ikigenba.dev`.
-- No instance is tagged `Space=gone.ikigenba.dev`; the instance tagged
-  `Space=sbx2.ikigenba.dev` is `stopped`.
+- No instance that is not terminated and no Elastic IP is tagged
+  `Space=gone.ikigenba.dev`; the instance tagged `Space=sbx2.ikigenba.dev`
+  is `stopped`.
+
+Postconditions:
+
+- Nothing has changed. No ssh connection was opened.
+
+## A developer rolls back a space that has no instance
+
+Command:
+
+```
+$ devctl rollback sbx1
+```
+
+Output:
+
+```
+devctl: 'sbx1.ikigenba.dev' has no instance
+```
+
+Exits 1. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- `space replace sbx1` could not launch a new instance (see "A developer's
+  replace cannot launch the new instance"): no instance tagged
+  `Space=sbx1.ikigenba.dev` is anything but terminated, and the Elastic IP
+  `18.118.7.42`, tagged `Domain=ikigenba.dev` and `Space=sbx1.ikigenba.dev`,
+  is allocated and associated with nothing.
 
 Postconditions:
 

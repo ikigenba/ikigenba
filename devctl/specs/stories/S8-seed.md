@@ -284,8 +284,39 @@ Preconditions:
 
 - The working directory is inside the checkout, and a live SSO session for
   the profile `ikigenba.dev`.
-- No instance is tagged `Space=gone.ikigenba.dev`; the instance tagged
-  `Space=sbx2.ikigenba.dev` is `stopped`.
+- No instance that is not terminated and no Elastic IP is tagged
+  `Space=gone.ikigenba.dev`; the instance tagged `Space=sbx2.ikigenba.dev`
+  is `stopped`.
+
+Postconditions:
+
+- Nothing has changed. No ssh connection was opened.
+
+## A developer captures a space that has no instance
+
+Command:
+
+```
+$ devctl golden capture sbx1 demo
+```
+
+Output:
+
+```
+devctl: 'sbx1.ikigenba.dev' has no instance
+```
+
+Exits 1. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- `space replace sbx1` could not launch a new instance (see "A developer's
+  replace cannot launch the new instance"): no instance tagged
+  `Space=sbx1.ikigenba.dev` is anything but terminated, and the Elastic IP
+  `18.118.7.42`, tagged `Domain=ikigenba.dev` and `Space=sbx1.ikigenba.dev`,
+  is allocated and associated with nothing.
 
 Postconditions:
 
@@ -574,8 +605,42 @@ Preconditions:
 
 - The working directory is inside the checkout, and a live SSO session for
   the profile `ikigenba.dev`.
-- No instance is tagged `Space=gone.ikigenba.dev`; the instance tagged
-  `Space=sbx2.ikigenba.dev` is `stopped`.
+- No instance that is not terminated and no Elastic IP is tagged
+  `Space=gone.ikigenba.dev`; the instance tagged `Space=sbx2.ikigenba.dev`
+  is `stopped`.
+
+Postconditions:
+
+- Nothing has changed. No object was copied and no ssh connection was
+  opened.
+
+## A developer seeds a space that has no instance
+
+The target is checked before the source is looked up.
+
+Command:
+
+```
+$ devctl seed sbx1 demo
+```
+
+Output:
+
+```
+devctl: 'sbx1.ikigenba.dev' has no instance
+```
+
+Exits 1. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- `space replace sbx1` could not launch a new instance (see "A developer's
+  replace cannot launch the new instance"): no instance tagged
+  `Space=sbx1.ikigenba.dev` is anything but terminated, and the Elastic IP
+  `18.118.7.42`, tagged `Domain=ikigenba.dev` and `Space=sbx1.ikigenba.dev`,
+  is allocated and associated with nothing.
 
 Postconditions:
 

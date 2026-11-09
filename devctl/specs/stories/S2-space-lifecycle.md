@@ -152,6 +152,51 @@ Postconditions:
   root's `A` record been absent, or pointed at no space's address, every line
   would end in `-`.
 
+## A developer asks which spaces exist when one has no instance
+
+A replace that could not launch its new instance leaves the label with its
+Elastic IP and no instance. The space still exists, so it is listed: `-` in
+the state column, its Elastic IP as the address, and `apex` or `-` by the
+usual rule, so it would read `apex` if the root's record pointed at its
+address.
+
+Command:
+
+```
+$ devctl space list
+```
+
+Output:
+
+```
+sbx1.ikigenba.dev - 18.118.7.42 -
+sbx2.ikigenba.dev running 18.220.10.5 -
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, whose root file names
+  `ikigenba.dev` and `us-east-2`.
+- A live SSO session for the profile `ikigenba.dev`.
+- `space replace sbx1` could not launch a new instance (see "A developer's
+  replace cannot launch the new instance"): no instance tagged
+  `Space=sbx1.ikigenba.dev` is anything but terminated, and the Elastic IP
+  `18.118.7.42`, tagged `Domain=ikigenba.dev` and `Space=sbx1.ikigenba.dev`,
+  is allocated and associated with nothing.
+- The instance tagged `Space=sbx2.ikigenba.dev` is `running` with the
+  Elastic IP `18.220.10.5`.
+- The zone `ikigenba.dev` holds no `A` record `ikigenba.dev`.
+
+Postconditions:
+
+- Nothing has changed.
+- Instances were found by `DescribeInstances` with filters
+  `tag:Domain=ikigenba.dev` and `tag-key=Space`, in `us-east-2`, and Elastic
+  IPs by `DescribeAddresses` with the same filters, so a label carrying only
+  its Elastic IP is listed.
+
 ## A developer names something that is not a space
 
 The operand rule is the same for every subcommand here and for every other
@@ -1829,6 +1874,39 @@ Postconditions:
 
 - Nothing has changed. Nothing was built and no ssh connection was made.
 
+## A developer names a space with more than one Elastic IP
+
+A label carries at most one Elastic IP, and a label that carries two or
+more, made by hand or by something other than devctl, leaves no telling
+which one is the space's. Every command that looks the space up refuses
+rather than pick, naming them, before anything else runs; the developer
+releases the stray one by hand.
+
+Command:
+
+```
+$ devctl space replace sbx1
+```
+
+Output:
+
+```
+devctl: 'sbx1.ikigenba.dev' has more than one Elastic IP (18.118.7.42, 18.190.33.61)
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- Two Elastic IPs tagged `Space=sbx1.ikigenba.dev`, `18.118.7.42` and
+  `18.190.33.61`, are allocated.
+
+Postconditions:
+
+- Nothing has changed. Nothing was built and no ssh connection was made.
+
 ## A developer replaces a space before Terraform has been applied
 
 The new instance is launched from the launch template, and the space's
@@ -2987,6 +3065,105 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
+
+## A developer stops a space that has no instance
+
+A failed replace leaves nothing to stop. The way on is `space replace
+sbx1` again, or `space destroy sbx1`.
+
+Command:
+
+```
+$ devctl space stop sbx1
+```
+
+Output:
+
+```
+devctl: 'sbx1.ikigenba.dev' has no instance
+```
+
+Exits 1. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- `space replace sbx1` could not launch a new instance (see "A developer's
+  replace cannot launch the new instance"): no instance tagged
+  `Space=sbx1.ikigenba.dev` is anything but terminated, and the Elastic IP
+  `18.118.7.42`, tagged `Domain=ikigenba.dev` and `Space=sbx1.ikigenba.dev`,
+  is allocated and associated with nothing.
+
+Postconditions:
+
+- Nothing has changed.
+
+## A developer starts a space that has no instance
+
+There is no instance to start; start launches none. The way on is
+`space replace sbx1` again, or `space destroy sbx1`.
+
+Command:
+
+```
+$ devctl space start sbx1
+```
+
+Output:
+
+```
+devctl: 'sbx1.ikigenba.dev' has no instance
+```
+
+Exits 1. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- `space replace sbx1` could not launch a new instance (see "A developer's
+  replace cannot launch the new instance"): no instance tagged
+  `Space=sbx1.ikigenba.dev` is anything but terminated, and the Elastic IP
+  `18.118.7.42`, tagged `Domain=ikigenba.dev` and `Space=sbx1.ikigenba.dev`,
+  is allocated and associated with nothing.
+
+Postconditions:
+
+- Nothing has changed. No ssh connection was opened.
+
+## A developer asks what a space that has no instance is running
+
+`space restart`, `space disable`, `space enable`, and `space logs` need the
+same host and refuse a space that has no instance with the same line.
+
+Command:
+
+```
+$ devctl space status sbx1
+```
+
+Output:
+
+```
+devctl: 'sbx1.ikigenba.dev' has no instance
+```
+
+Exits 1. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- `space replace sbx1` could not launch a new instance (see "A developer's
+  replace cannot launch the new instance"): no instance tagged
+  `Space=sbx1.ikigenba.dev` is anything but terminated, and the Elastic IP
+  `18.118.7.42`, tagged `Domain=ikigenba.dev` and `Space=sbx1.ikigenba.dev`,
+  is allocated and associated with nothing.
+
+Postconditions:
+
+- Nothing has changed. No ssh connection was opened.
 
 ## A developer's start cannot reach the host
 
