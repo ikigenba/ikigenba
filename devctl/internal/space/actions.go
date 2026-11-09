@@ -32,11 +32,15 @@ func runList(ctx context.Context, stdout io.Writer, clients cloud.Clients, root 
 		if address == "" {
 			address = "-"
 		}
+		state := string(item.State)
+		if state == "" {
+			state = "-"
+		}
 		marker := "-"
 		if apex.Holder == item.Domain {
 			marker = "apex"
 		}
-		if _, err := fmt.Fprintf(stdout, "%s %s %s %s\n", item.Domain, item.State, address, marker); err != nil {
+		if _, err := fmt.Fprintf(stdout, "%s %s %s %s\n", item.Domain, state, address, marker); err != nil {
 			return err
 		}
 	}
@@ -44,7 +48,7 @@ func runList(ctx context.Context, stdout io.Writer, clients cloud.Clients, root 
 }
 
 func lookupSpace(ctx context.Context, clients cloud.Clients, root string, sp spaceref.Space) (cloud.Space, error) {
-	return cloud.LookupSpace(ctx, clients.EC2, root, sp.Domain)
+	return cloud.LookupInstance(ctx, clients.EC2, root, sp.Domain)
 }
 
 func runStatus(ctx context.Context, stdout io.Writer, deps seam.Deps, clients cloud.Clients, root string, sp spaceref.Space) error {
@@ -55,7 +59,7 @@ func runStatus(ctx context.Context, stdout io.Writer, deps seam.Deps, clients cl
 	if item.State != cloud.StateRunning {
 		return &NotRunningError{Domain: sp.Domain, State: item.State}
 	}
-	output, err := (host.Host{Address: item.Address, Deps: deps}).Sudo(ctx, "", "opsctl", "status")
+	output, err := (host.Host{Domain: sp.Domain, Deps: deps}).Sudo(ctx, "", "opsctl", "status")
 	if err != nil {
 		return err
 	}
@@ -102,7 +106,7 @@ func runStart(ctx context.Context, stdout io.Writer, deps seam.Deps, clients clo
 		return err
 	}
 	Step(stdout, "host", "status checks passed")
-	remote := host.Host{Address: running.Address, Deps: deps}
+	remote := host.Host{Domain: sp.Domain, Deps: deps}
 	if err := remote.Wait(ctx); err != nil {
 		return err
 	}

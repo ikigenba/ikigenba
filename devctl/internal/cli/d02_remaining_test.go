@@ -105,7 +105,7 @@ func TestCommandHelpPrecedesValidationAndExternalAccess(t *testing.T) {
 }
 
 func TestCommandOptionValuesFailBeforeExternalAccess(t *testing.T) {
-	// R-VK1M-0CZK
+	// R-5789-Z458
 	tests := []struct {
 		name   string
 		args   []string
@@ -115,6 +115,9 @@ func TestCommandOptionValuesFailBeforeExternalAccess(t *testing.T) {
 		{name: "create missing", args: []string{"space", "create", "sbx1", "--acme-email"}, option: "--acme-email", help: "devctl space --help"},
 		{name: "create empty", args: []string{"space", "create", "sbx1", "--acme-email="}, option: "--acme-email", help: "devctl space --help"},
 		{name: "create option-like", args: []string{"space", "create", "sbx1", "--release", "-x"}, option: "--release", help: "devctl space --help"},
+		{name: "replace missing", args: []string{"space", "replace", "sbx1", "--release"}, option: "--release", help: "devctl space --help"},
+		{name: "replace empty", args: []string{"space", "replace", "sbx1", "--release="}, option: "--release", help: "devctl space --help"},
+		{name: "replace option-like", args: []string{"space", "replace", "sbx1", "--release", "-x"}, option: "--release", help: "devctl space --help"},
 		{name: "restore missing", args: []string{"restore", "sbx1", "app", "--at"}, option: "--at", help: "devctl restore --help"},
 		{name: "restore empty", args: []string{"restore", "sbx1", "app", "--at="}, option: "--at", help: "devctl restore --help"},
 		{name: "restore option-like", args: []string{"restore", "sbx1", "app", "--at", "--bad"}, option: "--at", help: "devctl restore --help"},
@@ -129,6 +132,14 @@ func TestCommandOptionValuesFailBeforeExternalAccess(t *testing.T) {
 				t.Fatalf("external calls = %d, want zero", external)
 			}
 		})
+	}
+
+	for _, test := range []struct{ subcommand, want string }{{"create", expectedCreateUsage}, {"replace", expectedReplaceUsage}} {
+		external := 0
+		assertResult(t, invokeWithDeps(noExternalDeps(&external), "space", test.subcommand, "sbx1", "--release", "--help"), 0, test.want, "")
+		if external != 0 {
+			t.Fatalf("%s help made %d external calls", test.subcommand, external)
+		}
 	}
 
 	cloudCalls := 0

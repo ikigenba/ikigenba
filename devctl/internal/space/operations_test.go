@@ -25,7 +25,7 @@ const (
 )
 
 func TestRunListCurrentRootAndApex(t *testing.T) {
-	// R-RJ9Z-1OB0 R-P5O5-A9HX R-V6FS-65I6 R-XO8Q-YVRD R-V8VK-XOZK R-YBOB-U66N
+	// R-9IAV-GV18 R-RJ9Z-1OB0 R-P5O5-A9HX R-V6FS-65I6 R-XO8Q-YVRD  R-YBOB-U66N
 	_ = []func(context.Context, []string, io.Writer, seam.Deps) error{Run}
 	f := newOperationFake(t)
 	f.instances = []cloud.Instance{
@@ -45,7 +45,7 @@ func TestRunListCurrentRootAndApex(t *testing.T) {
 	if stdout != want {
 		t.Fatalf("stdout = %q, want %q", stdout, want)
 	}
-	wantOps := []string{"git", "open " + testRoot + " " + testRegion, "sts", "zone " + testRoot, "spaces " + testRoot, "find " + testRoot, "addresses " + testRoot}
+	wantOps := []string{"git", "open " + testRoot + " " + testRegion, "sts", "zone " + testRoot, "spaces " + testRoot, "addresses " + testRoot, "find " + testRoot, "addresses " + testRoot}
 	if !reflect.DeepEqual(f.ops, wantOps) {
 		t.Fatalf("operations = %#v, want %#v", f.ops, wantOps)
 	}
@@ -87,9 +87,9 @@ func TestRunListCurrentRootAndApex(t *testing.T) {
 }
 
 func TestRunActionsLookupAndOutput(t *testing.T) {
-	// R-V7NO-JX8V R-VBBD-P8GY R-VCJA-307N R-VDR6-GRYC R-S6SW-5NHI
+	//     R-S6SW-5NHI
 	t.Run("status relays exact bytes through exact host command", func(t *testing.T) {
-		// R-S9WX-LSSA R-YBOB-U66N
+		// R-CBWP-I45X R-YBOB-U66N
 		for _, output := range []string{"one\ntwo\n", "without trailing newline", ""} {
 			t.Run(strings.ReplaceAll(output, "\n", "_"), func(t *testing.T) {
 				f := newOperationFake(t)
@@ -101,12 +101,12 @@ func TestRunActionsLookupAndOutput(t *testing.T) {
 				}
 				wantExec := []seam.Cmd{
 					checkoutCommand(f.root),
-					hostCommand(f.root, "18.118.7.42", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'status'"),
+					hostCommand(f.root, "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'status'"),
 				}
 				if !reflect.DeepEqual(f.execCalls, wantExec) {
 					t.Fatalf("Exec commands = %#v, want %#v", f.execCalls, wantExec)
 				}
-				wantOps := []string{"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot, "ssh 'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'status'"}
+				wantOps := []string{"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot, "addresses " + testRoot, "ssh 'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'status'"}
 				if !reflect.DeepEqual(f.ops, wantOps) || f.streamCalls != 0 {
 					t.Fatalf("operations=%#v Stream calls=%d, want %#v and zero", f.ops, f.streamCalls, wantOps)
 				}
@@ -114,6 +114,7 @@ func TestRunActionsLookupAndOutput(t *testing.T) {
 		}
 	})
 	t.Run("status refuses stopped before host", func(t *testing.T) {
+		// R-RNOX-Q2WC
 		f := newOperationFake(t)
 		f.instances = []cloud.Instance{{ID: "i-two", Space: testDomain, State: cloud.StateStopped}}
 		stdout, err := runOperation(t, f, "status", "sbx1.ikigenba.dev")
@@ -122,13 +123,13 @@ func TestRunActionsLookupAndOutput(t *testing.T) {
 			target.Domain != testDomain || target.State != cloud.StateStopped || err.Error() != "'"+testDomain+"' is stopped" {
 			t.Fatalf("stdout=%q err=%#v ops=%v", stdout, err, f.ops)
 		}
-		wantOps := []string{"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot}
+		wantOps := []string{"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot, "addresses " + testRoot}
 		if !reflect.DeepEqual(f.ops, wantOps) || !reflect.DeepEqual(f.execCalls, []seam.Cmd{checkoutCommand(f.root)}) || f.streamCalls != 0 {
 			t.Fatalf("operations=%#v Exec=%#v Stream=%d", f.ops, f.execCalls, f.streamCalls)
 		}
 	})
 	t.Run("stop and already stopped", func(t *testing.T) {
-		// R-8XNM-MR8T
+		// R-RL94-YJEY R-8XNM-MR8T
 		for _, tc := range []struct {
 			name       string
 			state      cloud.InstanceState
@@ -143,7 +144,7 @@ func TestRunActionsLookupAndOutput(t *testing.T) {
 				f.instances = []cloud.Instance{{ID: "i-one", Space: testDomain, State: tc.state}}
 				f.described = cloud.Instance{ID: "i-one", Space: testDomain, State: cloud.StateStopped}
 				stdout, err := runOperation(t, f, "stop", "sbx1")
-				wantOps := append([]string{"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot}, tc.wantAction...)
+				wantOps := append([]string{"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot, "addresses " + testRoot}, tc.wantAction...)
 				if err != nil || stdout != tc.wantOut || !reflect.DeepEqual(f.ops, wantOps) {
 					t.Fatalf("stdout=%q err=%v operations=%#v, want %#v", stdout, err, f.ops, wantOps)
 				}
@@ -154,7 +155,7 @@ func TestRunActionsLookupAndOutput(t *testing.T) {
 		}
 	})
 	t.Run("start ordered and repeats checks", func(t *testing.T) {
-		// R-DP6D-0RTU R-B1XP-NI4K
+		// R-RMH1-CB5N R-CD4L-VVWM R-DP6D-0RTU
 		for _, state := range []cloud.InstanceState{cloud.StateStopped, cloud.StateRunning} {
 			f := newOperationFake(t)
 			address := ""
@@ -166,15 +167,15 @@ func TestRunActionsLookupAndOutput(t *testing.T) {
 			f.checks = true
 			stdout, err := runOperation(t, f, "start", "sbx1")
 			want := "instance: ok (i-one running, 18.220.10.5)\nhost: ok (status checks passed)\ncertificate: ok (certbot renew)\n" + testDomain + " 18.220.10.5\n"
-			wantOps := []string{"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot}
+			wantOps := []string{"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot, "addresses " + testRoot}
 			if state == cloud.StateStopped {
 				wantOps = append(wantOps, "start i-one", "describe i-one")
 			}
 			wantOps = append(wantOps, "checks i-one", "ssh 'true'", "ssh 'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'certbot' 'renew'")
 			wantExec := []seam.Cmd{
 				checkoutCommand(f.root),
-				hostCommand(f.root, "18.220.10.5", "'true'"),
-				hostCommand(f.root, "18.220.10.5", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'certbot' 'renew'"),
+				hostCommand(f.root, "'true'"),
+				hostCommand(f.root, "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'certbot' 'renew'"),
 			}
 			if err != nil || stdout != want || !reflect.DeepEqual(f.ops, wantOps) || !reflect.DeepEqual(f.execCalls, wantExec) || f.streamCalls != 0 {
 				t.Fatalf("state=%s stdout=%q err=%v ops=%#v Exec=%#v Stream=%d", state, stdout, err, f.ops, f.execCalls, f.streamCalls)
@@ -182,12 +183,12 @@ func TestRunActionsLookupAndOutput(t *testing.T) {
 		}
 	})
 	t.Run("start failure preserves completed steps", func(t *testing.T) {
-		// R-B1XP-NI4K
+		//
 		f := newOperationFake(t)
 		f.instances = []cloud.Instance{{ID: "i-one", Space: testDomain, State: cloud.StateRunning, Address: "18.220.10.5"}}
 		f.checksErr = errors.New("checks failed")
 		stdout, err := runOperation(t, f, "start", "sbx1")
-		wantOps := []string{"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot, "checks i-one"}
+		wantOps := []string{"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot, "addresses " + testRoot, "checks i-one"}
 		if err == nil || reflect.ValueOf(err).Pointer() != reflect.ValueOf(f.checksErr).Pointer() || stdout != "instance: ok (i-one running, 18.220.10.5)\n" || !reflect.DeepEqual(f.ops, wantOps) ||
 			!reflect.DeepEqual(f.execCalls, []seam.Cmd{checkoutCommand(f.root)}) || f.streamCalls != 0 {
 			t.Fatalf("stdout=%q err=%v ops=%v", stdout, err, f.ops)
@@ -196,6 +197,7 @@ func TestRunActionsLookupAndOutput(t *testing.T) {
 }
 
 func TestRunActionLookupFailureStopsBeforeEffects(t *testing.T) {
+	// R-RHLF-T86V
 	wantErr := errors.New("lookup sentinel")
 	for _, command := range []string{"status", "stop", "start", "destroy"} {
 		t.Run(command, func(t *testing.T) {
@@ -222,7 +224,7 @@ func TestRunActionLookupFailureStopsBeforeEffects(t *testing.T) {
 				f := newOperationFake(t)
 				stdout, err := runOperation(t, f, command, "gone")
 				var target *cloud.NoSpaceError
-				wantOps := []string{"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot}
+				wantOps := []string{"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot, "addresses " + testRoot}
 				if stdout != "" || !errors.As(err, &target) || reflect.TypeOf(err) != reflect.TypeOf(target) ||
 					target.Domain != "gone."+testRoot || !reflect.DeepEqual(f.ops, wantOps) {
 					t.Fatalf("stdout=%q error=%#v operations=%#v", stdout, err, f.ops)
@@ -260,7 +262,8 @@ func TestRunPrerequisiteFailuresStopUnchanged(t *testing.T) {
 }
 
 func TestDestroyOrderedOptionsAndCleanup(t *testing.T) {
-	// R-VIMR-ZUX4 R-YAGF-GEFY R-FPZH-0WSE R-FR7D-EOJ3 R-VNID-IXVW R-S80S-JF87 R-S98O-X6YW R-VR62-O93Z
+	// R-CFKE-NFE0 R-CJ83-SQM3 R-CLNW-KA3H
+	//  R-YAGF-GEFY   R-VNID-IXVW R-S80S-JF87  R-VR62-O93Z
 	f := newOperationFake(t)
 	f.instances = []cloud.Instance{{ID: "i-one", Space: testDomain, State: cloud.StateRunning, Address: "18.118.7.42"}}
 	f.described = cloud.Instance{ID: "i-one", State: cloud.StateTerminated}
@@ -288,9 +291,9 @@ func TestDestroyOrderedOptionsAndCleanup(t *testing.T) {
 		t.Fatalf("stdout = %q, want %q", stdout, want)
 	}
 	wantOps := []string{
-		"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot, "zone " + testRoot,
+		"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot, "addresses " + testRoot, "zone " + testRoot,
 		"find " + testRoot, "addresses " + testRoot, "change apex", "ssh 'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'retire'",
-		"spaces " + testRoot, "terminate i-one", "describe i-one", "addresses " + testRoot, "disassociate assoc", "release alloc",
+		"terminate i-one", "describe i-one", "spaces " + testRoot, "addresses " + testRoot, "release alloc",
 		"list records", "change records", "parameters " + secrets.Prefix(testDomain),
 		"delete parameters /a", "delete parameters /b", "delete parameters /c",
 		"objects " + testRoot + " " + BackupPrefix("sbx1"),
@@ -303,7 +306,7 @@ func TestDestroyOrderedOptionsAndCleanup(t *testing.T) {
 	}
 	wantExec := []seam.Cmd{
 		checkoutCommand(f.root),
-		hostCommand(f.root, "18.118.7.42", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'retire'"),
+		hostCommand(f.root, "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'retire'"),
 	}
 	if !reflect.DeepEqual(f.execCalls, wantExec) || f.streamCalls != 0 {
 		t.Fatalf("Exec=%#v Stream=%d, want %#v and zero", f.execCalls, f.streamCalls, wantExec)
@@ -333,7 +336,7 @@ func TestDestroyOrderedOptionsAndCleanup(t *testing.T) {
 }
 
 func TestDestroyRetireSudo(t *testing.T) {
-	// R-DDFT-AXS8
+	//
 	for _, failed := range []bool{false, true} {
 		name := "success"
 		if failed {
@@ -359,7 +362,7 @@ func TestDestroyRetireSudo(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			wantHost := hostCommand(f.root, "18.220.10.5", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'retire'")
+			wantHost := hostCommand(f.root, "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'retire'")
 			wantExec := []seam.Cmd{checkoutCommand(f.root), wantHost}
 			if !reflect.DeepEqual(f.execCalls, wantExec) {
 				t.Fatalf("Exec calls = %#v, want %#v", f.execCalls, wantExec)
@@ -389,7 +392,8 @@ func TestDestroyRetireSudo(t *testing.T) {
 }
 
 func TestDestroyRefusalAndResumptionBranches(t *testing.T) {
-	// R-VHEV-M36F R-VL2K-REEI R-FR7D-EOJ3
+	// R-CECI-9NNB R-CI07-EYVE
+	//
 	for _, operand := range []string{"sbx1", testDomain} {
 		t.Run("non-running refuses unchanged "+operand, func(t *testing.T) {
 			f := newOperationFake(t)
@@ -398,7 +402,7 @@ func TestDestroyRefusalAndResumptionBranches(t *testing.T) {
 			f.addresses = []cloud.Address{{AllocationID: "alloc", IP: "18.118.7.42", Space: testDomain}}
 			stdout, err := runOperation(t, f, "destroy", operand)
 			var target *RetireStateError
-			wantOps := []string{"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot, "zone " + testRoot}
+			wantOps := []string{"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot, "addresses " + testRoot, "zone " + testRoot}
 			if stdout != "" || !errors.As(err, &target) || reflect.TypeOf(err) != reflect.TypeOf(target) ||
 				target.ID != "i-refuse" || target.State != cloud.StateStopped || target.Label != "sbx1" ||
 				!reflect.DeepEqual(f.ops, wantOps) || len(f.changeCalls) != 0 ||
@@ -412,7 +416,7 @@ func TestDestroyRefusalAndResumptionBranches(t *testing.T) {
 		f.instances = []cloud.Instance{{ID: "i-refuse", Space: testDomain, State: cloud.StateStopped}}
 		f.zoneErr = errors.New("zone sentinel")
 		stdout, err := runOperation(t, f, "destroy", "sbx1")
-		wantOps := []string{"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot, "zone " + testRoot}
+		wantOps := []string{"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot, "addresses " + testRoot, "zone " + testRoot}
 		if stdout != "" || err == nil || reflect.ValueOf(err).Pointer() != reflect.ValueOf(f.zoneErr).Pointer() || !reflect.DeepEqual(f.ops, wantOps) || len(f.changeCalls) != 0 ||
 			!reflect.DeepEqual(f.execCalls, []seam.Cmd{checkoutCommand(f.root)}) || f.streamCalls != 0 {
 			t.Fatalf("stdout=%q err=%#v operations=%#v Exec=%#v", stdout, err, f.ops, f.execCalls)
@@ -532,12 +536,12 @@ func TestDestroyApexAndCleanupBranches(t *testing.T) {
 func TestDestroyStopsAtEveryFirstFailure(t *testing.T) {
 	// R-VEZ2-UJP1
 	initialOps := []string{
-		"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot,
+		"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot, "addresses " + testRoot,
 		"zone " + testRoot, "find " + testRoot,
 	}
 	normalOps := append(append([]string{}, initialOps...),
-		"spaces "+testRoot, "terminate i-one", "describe i-one", "addresses "+testRoot,
-		"disassociate assoc", "release alloc", "list records", "change records",
+		"terminate i-one", "describe i-one", "spaces "+testRoot, "addresses "+testRoot,
+		"release alloc", "list records", "change records",
 		"parameters "+secrets.Prefix(testDomain), "delete parameters /one", "delete parameters /two",
 		"objects "+testRoot+" "+BackupPrefix("sbx1"), "delete objects "+testRoot+" sbx1/one,sbx1/two",
 		"role "+testDomain, "profile "+testDomain, "delete policy "+testDomain,
@@ -569,8 +573,7 @@ func TestDestroyStopsAtEveryFirstFailure(t *testing.T) {
 		wantOps     []string
 	}{
 		{name: "apex lookup", failOp: "find " + testRoot, wantOps: append([]string(nil), initialOps...)},
-		{name: "apex address lookup", failOp: "addresses " + testRoot, setup: addHeldApex,
-			wantOps: append(append([]string{}, initialOps...), "addresses "+testRoot)},
+		{name: "space address lookup", failOp: "addresses " + testRoot, wantOps: initialOps[:5]},
 		{name: "apex delete", failOp: "change apex", setup: addHeldApex,
 			wantOps: append(append([]string{}, initialOps...), "addresses "+testRoot, "change apex")},
 		{name: "retire", args: []string{"destroy", "sbx1"}, failOp: "ssh 'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'retire'", execFailure: true,
@@ -581,8 +584,6 @@ func TestDestroyStopsAtEveryFirstFailure(t *testing.T) {
 			wantOps: append(append([]string{}, initialOps...), "ssh 'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'retire'")},
 		{name: "instance terminate", failOp: "terminate i-one", wantStdout: retireSkipped},
 		{name: "instance wait", failOp: "describe i-one", wantStdout: retireSkipped},
-		{name: "address lookup", failOp: "addresses " + testRoot, wantStdout: instanceDone},
-		{name: "address disassociate", failOp: "disassociate assoc", wantStdout: instanceDone},
 		{name: "address release", failOp: "release alloc", wantStdout: instanceDone},
 		{name: "records list", failOp: "list records", wantStdout: addressDone},
 		{name: "records delete", failOp: "change records", wantStdout: addressDone},
@@ -759,7 +760,18 @@ func (f *operationFake) StopInstance(_ context.Context, id string) error {
 func (f *operationFake) TerminateInstance(_ context.Context, id string) error {
 	op := "terminate " + id
 	f.ops = append(f.ops, op)
-	return f.opErrors[op]
+	if f.opErrors[op] != nil {
+		return f.opErrors[op]
+	}
+	for i := range f.instances {
+		if f.instances[i].ID == id {
+			f.instances[i].State = cloud.StateTerminated
+		}
+	}
+	for i := range f.addresses {
+		f.addresses[i].AssociationID = ""
+	}
+	return nil
 }
 func (f *operationFake) InstanceChecksPassed(_ context.Context, id string) (bool, error) {
 	f.ops = append(f.ops, "checks "+id)
@@ -837,10 +849,16 @@ func (f *operationFake) DeleteParameter(_ context.Context, name string) error {
 	f.ops = append(f.ops, op)
 	return f.opErrors[op]
 }
-func (f *operationFake) ListObjects(_ context.Context, bucket, prefix string) ([]cloud.Object, error) {
+func (f *operationFake) ListObjects(_ context.Context, bucket, prefix string, each func([]cloud.Object) bool) error {
 	op := "objects " + bucket + " " + prefix
 	f.ops = append(f.ops, op)
-	return f.objects, f.opErrors[op]
+	if f.opErrors[op] != nil {
+		return f.opErrors[op]
+	}
+	if len(f.objects) > 0 {
+		each(f.objects)
+	}
+	return nil
 }
 func (f *operationFake) PutObject(context.Context, string, string, io.Reader, int64) error {
 	panic("unexpected")
@@ -933,19 +951,15 @@ func checkoutCommand(dir string) seam.Cmd {
 	return seam.Cmd{Path: "git", Args: []string{"rev-parse", "--show-toplevel"}, Dir: dir}
 }
 
-func hostCommand(dir, address, remote string) seam.Cmd {
+func hostCommand(dir, remote string) seam.Cmd {
 	return seam.Cmd{
 		Path: "ssh",
 		Args: []string{
 			"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new",
-			"ec2-user@" + address, remote,
+			"ec2-user@" + testDomain, remote,
 		},
 		Dir: dir,
 	}
 }
 
 var _ = secrets.Prefix
-
-func (f *operationFake) TagRetired(context.Context, []string, string) error {
-	panic("unexpected TagRetired")
-}

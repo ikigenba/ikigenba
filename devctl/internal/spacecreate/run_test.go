@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -30,7 +31,7 @@ func TestAssumeRolePolicy(t *testing.T) {
 }
 
 func TestRunSignatureAndGrammar(t *testing.T) {
-	// R-UUB7-VYQS R-UVJ4-9QHH R-UWR0-NI86 R-8UTA-21TK R-8W16-FTK9 R-3M5T-DZ38 R-E7GU-RBY9 R-8X92-TLAY
+	// R-38TK-V96P R-UUB7-VYQS  R-UWR0-NI86 R-8UTA-21TK R-8W16-FTK9 R-3M5T-DZ38 R-E7GU-RBY9 R-8X92-TLAY
 	tests := []struct {
 		name string
 		args []string
@@ -75,7 +76,8 @@ func TestRunSignatureAndGrammar(t *testing.T) {
 }
 
 func TestRunHelpIsExactAndDependencyFree(t *testing.T) {
-	// R-T6F6-6BKC
+	// R-3A1H-90XE
+	//
 	//
 	for _, option := range []string{"--help", "-h"} {
 		calls := 0
@@ -88,11 +90,12 @@ func TestRunHelpIsExactAndDependencyFree(t *testing.T) {
 }
 
 func TestRunSuccessfulCreateUsesCurrentContracts(t *testing.T) {
-	// R-140K-HX48 R-V5AB-BWF1 R-V6I7-PO5Q R-V7Q4-3FWF R-V8Y0-H7N4
-	// R-VA5W-UZDT R-18W6-1030 R-1CJV-6BB3 R-1EZN-XUSH R-C82D-D4ME
-	// R-1IND-360K R-1MB2-8H8N R-VIP7-JDKO R-CBQ2-IFUH
+	// R-3DP6-EC5H R-3G4Z-5VMV R-3IKR-XF49 R-3M8H-2QCC R-3PW6-81KF R-3R42-LTB4 R-3X7K-IO0L R-O3FU-P7QO R-UCSX-0DZL
+	//  R-V5AB-BWF1 R-V6I7-PO5Q R-V7Q4-3FWF R-V8Y0-H7N4
+	// R-VA5W-UZDT
 	//
-	// R-EB4J-WN6C  R-16GD-9GLM
+	//
+	//
 	f := newCreateFake(t)
 	f.objects = []cloud.Object{
 		{Key: "sbx1/host/2026-09-11T14:22:51.48120933Z.tar.zst", Modified: time.Unix(1, 0)},
@@ -110,17 +113,39 @@ func TestRunSuccessfulCreateUsesCurrentContracts(t *testing.T) {
 		"instance: ok (i-new running, 198.51.100.7)\n" +
 		"address: ok (elastic ip 18.118.7.42 associated)\n" +
 		"records: ok (created sbx1.ikigenba.dev, *.sbx1.ikigenba.dev -> 18.118.7.42, INSYNC)\n" +
+		"resolve: ok (sbx1.ikigenba.dev -> 18.118.7.42)\n" +
 		"host: ok (status checks passed, cloud-init done)\n" +
-		"copy: ok (" + createSHA + ".tar.xz -> 18.118.7.42)\n" +
+		"copy: ok (" + createSHA + ".tar.xz -> sbx1.ikigenba.dev)\n" +
 		"unpack: ok (/opt/ikigenba/releases/" + createSHA + ")\n" +
 		"opsctl: ok (10 keys set)\n" +
 		"restore: ok (host/2026-09-12T14:22:51.865067548Z.tar.zst, 10 keys set again)\n" +
+		"known_hosts: ok (kept)\n" +
 		"init: ok\n" +
 		"restore: ok (opsctl restore crm)\n" +
 		"activate output\n" +
 		"sbx1.ikigenba.dev 18.118.7.42\n"
 	if stdout.String() != want {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
+	}
+	restored := false
+	for _, cmd := range f.commands {
+		if cmd.Path != "ssh" && cmd.Path != "scp" {
+			continue
+		}
+		joined := strings.Join(cmd.Args, " ")
+		if !strings.Contains(joined, "ec2-user@sbx1.ikigenba.dev") {
+			t.Fatal(cmd)
+		}
+		has := strings.Contains(joined, "UserKnownHostsFile=")
+		if has == restored {
+			t.Fatalf("wrong known hosts after restore=%v: %v", restored, cmd)
+		}
+		if strings.Contains(joined, "'host' 'restore'") {
+			restored = true
+		}
+	}
+	if !restored {
+		t.Fatal("no host restore")
 	}
 	if f.openProfile != "ikigenba.dev" || f.openRegion != "us-east-2" {
 		t.Fatalf("cloud open = %q, %q", f.openProfile, f.openRegion)
@@ -147,7 +172,7 @@ func TestRunSuccessfulCreateUsesCurrentContracts(t *testing.T) {
 		t.Fatalf("policy = %q, %q", f.policyName, f.policy)
 	}
 	joined := strings.ReplaceAll(strings.Join(f.remotes, "\n"), release.Opsctl(createSHA), "opsctl")
-	if strings.Count(joined, "'opsctl' 'config' 'set'") != 20 || !strings.Contains(joined, "'opsctl' 'config' 'del' 'host.apex'") || !strings.Contains(joined, "'opsctl' 'host' 'restore'") {
+	if strings.Count(joined, "'opsctl' 'config' 'set'") != 20 || strings.Contains(joined, "'opsctl' 'config' 'del' 'host.apex'") || !strings.Contains(joined, "'opsctl' 'host' 'restore'") {
 		t.Fatalf("remote commands:\n%s", joined)
 	}
 	if strings.Count(joined, "'opsctl' 'config' 'set' 'aws.region=us-east-2'") != 2 {
@@ -156,7 +181,7 @@ func TestRunSuccessfulCreateUsesCurrentContracts(t *testing.T) {
 }
 
 func TestRunPreflightRefusalsAndRoleLength(t *testing.T) {
-	// R-90WR-YWJ1 R-93CK-QG0F R-VMHE-RWGY R-95SD-HZHT
+	// R-90WR-YWJ1 R-93CK-QG0F  R-95SD-HZHT
 	tests := []struct {
 		name   string
 		change func(*createFake)
@@ -217,7 +242,7 @@ func TestCreateStopsAtSecretsAndEmptyRestoreSkipsRestoreCommands(t *testing.T) {
 }
 
 func TestNewestBackupBreaksTimestampTieByKey(t *testing.T) {
-	// R-1EZN-XUSH
+	//
 	f := newCreateFake(t)
 	when := time.Unix(1, 0)
 	f.objects = []cloud.Object{{Key: "sbx1/host/2026-09-12T14:22:51.50Z.tar.zst", Modified: when}, {Key: "sbx1/host/2026-09-12T14:22:51.5Z.tar.zst", Modified: when}, {Key: "sbx1/host/2026-09-12T14:22:51.5Z.accounts.tar.zst", Modified: when.Add(time.Hour)}, {Key: "sbx1/host/nested/2026-09-12T14:22:51.5Z.tar.zst", Modified: when.Add(time.Hour)}}
@@ -240,10 +265,16 @@ type createFake struct {
 	events, remotes                      []string
 	openProfile, openRegion, stopAt      string
 	findZone, findDomain, findType       string
+	rootRecord                           cloud.Record
+	rootFound                            bool
 	allocateRoot, allocateSpace          string
 	delegated, roleExists, profileExists bool
 	instances                            []cloud.Instance
 	objects                              []cloud.Object
+	addresses                            []cloud.Address
+	list                                 func(context.Context, string, string, func([]cloud.Object) bool) error
+	apexStatus                           int
+	apexOutput                           string
 	readySpec, runSpec                   cloud.LaunchSpec
 	roleSpec                             cloud.RoleSpec
 	policyName, policy                   string
@@ -254,7 +285,7 @@ func newCreateFake(t *testing.T) *createFake {
 	mustWrite(t, filepath.Join(root, "infra", "terraform.tfvars.json"), `{"domain":"ikigenba.dev","region":"us-east-2"}`)
 	mustWrite(t, filepath.Join(root, "crm", "cmd", "crm", "main.go"), "package main\n")
 	mustWrite(t, filepath.Join(root, "crm", "etc", "manifest.toml"), "app = \"crm\"\n")
-	return &createFake{t: t, root: root, tmp: t.TempDir()}
+	return &createFake{t: t, root: root, tmp: t.TempDir(), apexStatus: 1}
 }
 
 func mustWrite(t *testing.T, path, value string) {
@@ -295,6 +326,8 @@ func (f *createFake) deps() seam.Deps {
 		}
 		return ""
 	}, Now: func() time.Time { return time.Unix(1, 0) }, After: immediateAfter, Exec: f.exec,
+		LookupHost: func(string) ([]string, error) { return []string{"18.118.7.42"}, nil },
+		Stat:       func(string) (os.FileInfo, error) { return nil, fs.ErrNotExist },
 		Stream: func(_ context.Context, c seam.Cmd, w io.Writer) (seam.Result, error) {
 			f.commands = append(f.commands, c)
 			f.remotes = append(f.remotes, c.Args[len(c.Args)-1])
@@ -344,11 +377,17 @@ func (f *createFake) exec(_ context.Context, c seam.Cmd) (seam.Result, error) {
 		data, err := os.ReadFile(filepath.Join(c.Dir, "etc", "manifest.toml"))
 		return seam.Result{Stdout: data}, err
 	}
+	if c.Path == "ssh-keygen" {
+		return seam.Result{}, nil
+	}
 	if c.Path != "ssh" && c.Path != "scp" {
 		f.t.Fatalf("unexpected command %#v", c)
 	}
 	f.remotes = append(f.remotes, c.Args[len(c.Args)-1])
 	remote := c.Args[len(c.Args)-1]
+	if strings.Contains(remote, "'config' 'get' 'host.apex'") {
+		return seam.Result{ExitCode: f.apexStatus, Stdout: []byte(f.apexOutput)}, nil
+	}
 	if remote == "'mktemp'" {
 		return seam.Result{Stdout: []byte("/tmp/upload\n")}, nil
 	}
@@ -415,7 +454,7 @@ func (f *createFake) InstanceChecksPassed(context.Context, string) (bool, error)
 	return true, nil
 }
 func (f *createFake) ListSpaceAddresses(context.Context, string) ([]cloud.Address, error) {
-	return nil, nil
+	return f.addresses, nil
 }
 func (f *createFake) AllocateAddress(_ context.Context, root, spaceDomain string) (cloud.Address, error) {
 	f.allocateRoot, f.allocateSpace = root, spaceDomain
@@ -445,6 +484,9 @@ func (f *createFake) Zone(context.Context, string) (cloud.Zone, error) {
 }
 func (f *createFake) ListRecords(context.Context, string) ([]cloud.Record, error) { return nil, nil }
 func (f *createFake) FindRecord(_ context.Context, zone, domain, recordType string) (cloud.Record, bool, error) {
+	if recordType == "A" {
+		return f.rootRecord, f.rootFound, nil
+	}
 	f.findZone, f.findDomain, f.findType = zone, domain, recordType
 	if err := f.event("ns"); err != nil {
 		return cloud.Record{}, false, err
@@ -463,9 +505,19 @@ func (f *createFake) ChangeStatus(context.Context, string) (cloud.ChangeStatus, 
 	}
 	return cloud.ChangeInsync, nil
 }
-func (f *createFake) ListObjects(context.Context, string, string) ([]cloud.Object, error) {
+func (f *createFake) ListObjects(ctx context.Context, bucket string, prefix string, each func([]cloud.Object) bool) error {
+	if f.list != nil {
+		return f.list(ctx, bucket, prefix, each)
+	}
 	f.events = append(f.events, "list-objects")
-	return f.objects, nil
+	if strings.HasSuffix(prefix, "/host/") {
+		if len(f.objects) > 0 {
+			each(f.objects)
+		}
+	} else if len(f.objects) > 0 {
+		each([]cloud.Object{{Key: prefix + "backup"}})
+	}
+	return nil
 }
 func (f *createFake) PutObject(context.Context, string, string, io.Reader, int64) error { return nil }
 func (f *createFake) CopyObject(context.Context, string, string, string) error          { return nil }
@@ -547,7 +599,7 @@ func TestCreateCheckoutFailuresPrecedeConnection(t *testing.T) {
 }
 
 func TestCreatePropagatesCloudFailuresAndStops(t *testing.T) {
-	// R-VNPB-5O7N R-V6I7-PO5Q R-V7Q4-3FWF R-V8Y0-H7N4 R-VA5W-UZDT R-VIP7-JDKO
+	//  R-V6I7-PO5Q R-V7Q4-3FWF R-V8Y0-H7N4 R-VA5W-UZDT
 	for _, stage := range []string{"zone", "template", "boundary", "ns", "spaces", "role-exists", "profile-exists", "create-role", "put-policy", "create-profile", "add-role", "launch-ready", "run-instance", "allocate", "associate", "records", "checks"} {
 		t.Run(stage, func(t *testing.T) {
 			f := newCreateFake(t)
@@ -573,7 +625,7 @@ func TestCreatePropagatesCloudFailuresAndStops(t *testing.T) {
 }
 
 func TestCreateForwardsVersionIntoBuiltRelease(t *testing.T) {
-	// R-140K-HX48
+	//
 	f := newCreateFake(t)
 	deps := f.deps()
 	exec := deps.Exec
@@ -654,12 +706,8 @@ func TestCreateReleaseQueryErrorsPropagate(t *testing.T) {
 	}
 }
 
-func (f *createFake) TagRetired(context.Context, []string, string) error {
-	panic("unexpected TagRetired")
-}
-
 func TestCreateRejectsOtherKeysAsHostBackups(t *testing.T) {
-	// R-1EZN-XUSH R-1IND-360K
+	//
 	for _, key := range []string{"sbx1/host/2026-09-12T14:22:51.865067548Z.accounts.tar.zst", "sbx1/host/nested/backup.tar.zst", "other/host/backup.tar.zst", "sbx1/host/backup.zip", "sbx1/host/backup.1.tar.zst"} {
 		t.Run(key, func(t *testing.T) {
 			f := newCreateFake(t)
@@ -668,7 +716,7 @@ func TestCreateRejectsOtherKeysAsHostBackups(t *testing.T) {
 			if err := Run(t.Context(), []string{"sbx1", "--acme-email=x"}, "test-version", &out, f.deps()); err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(out.String(), "restore: ok (no host backup)\ninit: ok\n") || strings.Count(out.String(), "restore:") != 1 {
+			if !strings.Contains(out.String(), "restore: ok (no host backup)\nknown_hosts: ok (removed sbx1.ikigenba.dev)\ninit: ok\n") || strings.Count(out.String(), "restore:") != 1 {
 				t.Fatal(out.String())
 			}
 			count := 0

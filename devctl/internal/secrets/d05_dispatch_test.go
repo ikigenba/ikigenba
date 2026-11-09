@@ -55,6 +55,7 @@ type d05EC2 struct {
 	cloud.EC2
 	rootDomain string
 	instances  []cloud.Instance
+	addresses  []cloud.Address
 	err        error
 	calls      int
 }
@@ -286,7 +287,7 @@ func TestCommandsParseSpaceAndConnectFromRootFile(t *testing.T) {
 }
 
 func TestPushLooksUpSpaceBeforeSecrets(t *testing.T) {
-	// R-0O8C-VKRC
+	// R-G1RO-WSVQ
 	// R-D209-R4QN
 	root := d05Checkout(t)
 	ssm := &d05SSM{}
@@ -303,7 +304,7 @@ func TestPushLooksUpSpaceBeforeSecrets(t *testing.T) {
 	if !errors.As(err, &noSpace) || noSpace.Domain != "gone.ikigenba.dev" {
 		t.Fatalf("Run error = %T %v, want NoSpaceError", err, err)
 	}
-	if ec2.calls != 1 || ec2.rootDomain != "ikigenba.dev" {
+	if ec2.calls != 2 || ec2.rootDomain != "ikigenba.dev" {
 		t.Fatalf("space lookup = calls %d root %q", ec2.calls, ec2.rootDomain)
 	}
 	if lookups != 0 || ssm.attempts != 0 {
@@ -428,4 +429,10 @@ func TestPushDoesNotDeployOrOperateHost(t *testing.T) {
 	if !reflect.DeepEqual(commands, wantCommands) || ssm.attempts != 1 || stdout.String() != "crm: ok (3 keys)\n" {
 		t.Fatalf("push: commands %#v writes %d stdout %q", commands, ssm.attempts, stdout.String())
 	}
+}
+
+func (ec2 *d05EC2) ListSpaceAddresses(_ context.Context, root string) ([]cloud.Address, error) {
+	ec2.calls++
+	ec2.rootDomain = root
+	return ec2.addresses, nil
 }

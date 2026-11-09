@@ -120,7 +120,7 @@ func (f *fakeIAM) DeleteRole(_ context.Context, input *iam.DeleteRoleInput, _ ..
 }
 
 func TestIAMPermissionsBoundary(t *testing.T) {
-	// R-QW4W-UBBI R-QXCT-8327 R-QL5T-EDN9
+	// R-QW4W-UBBI R-QXCT-8327 R-7EY7-I0O5
 	page := 0
 	fake := &fakeIAM{listPolicies: func(in *iam.ListPoliciesInput) (*iam.ListPoliciesOutput, error) {
 		if in.Scope != types.PolicyScopeTypeLocal {

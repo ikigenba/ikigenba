@@ -83,7 +83,7 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) e
 	if err != nil {
 		return err
 	}
-	item, err := cloud.LookupSpace(ctx, session.Clients.EC2, root.Domain, spaceRef.Domain)
+	item, err := cloud.LookupInstance(ctx, session.Clients.EC2, root.Domain, spaceRef.Domain)
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) e
 	if parsed.at != "" {
 		command = append(command, "--at", parsed.at)
 	}
-	return restoreOnHost(ctx, stdout, host.Host{Address: item.Address, Deps: deps}, command)
+	return restoreOnHost(ctx, stdout, host.Host{Domain: item.Domain, Deps: deps}, command)
 }
 
 func restoreOnHost(ctx context.Context, stdout io.Writer, remote sudoer, command []string) error {

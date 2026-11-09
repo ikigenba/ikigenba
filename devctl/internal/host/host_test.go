@@ -14,17 +14,17 @@ import (
 )
 
 func TestHostPublicContract(t *testing.T) {
-	// R-FSF9-SG9S
+	// R-C5T7-L9GG
 	if User != "ec2-user" {
 		t.Fatalf("User = %q", User)
 	}
 	_ = Host(struct {
-		Address    string
+		Domain     string
 		Deps       seam.Deps
 		KnownHosts string
 	}{})
-	h := Host{Address: "3.19.79.227"}
-	if got, want := h.Target(), "ec2-user@3.19.79.227"; got != want {
+	h := Host{Domain: "sbx1.ikigenba.dev"}
+	if got, want := h.Target(), "ec2-user@sbx1.ikigenba.dev"; got != want {
 		t.Fatalf("Target() = %q, want %q", got, want)
 	}
 
@@ -33,10 +33,10 @@ func TestHostPublicContract(t *testing.T) {
 		t.Fatalf("probe constants = %v, %d", ProbeInterval, ProbeAttempts)
 	}
 
-	// R-T88J-WFG4
-	_ = UnreachableError(struct{ Address string }{})
-	err := (&UnreachableError{Address: "3.145.72.19"}).Error()
-	if want := "ssh ec2-user@3.145.72.19: connection timed out"; err != want {
+	// R-C713-Z175
+	_ = UnreachableError(struct{ Domain string }{})
+	err := (&UnreachableError{Domain: "sbx1.ikigenba.dev"}).Error()
+	if want := "ssh ec2-user@sbx1.ikigenba.dev: connection timed out"; err != want {
 		t.Fatalf("Error() = %q, want %q", err, want)
 	}
 
@@ -102,9 +102,9 @@ func TestCommandErrorContract(t *testing.T) {
 }
 
 func TestHostPreservesRemoteArguments(t *testing.T) {
-	// R-Y98J-2MP9 R-DAJK-FIXI
+	// R-C9GW-QKOJ R-DAJK-FIXI
 	var commands []seam.Cmd
-	h := Host{Address: "192.0.2.1", Deps: seam.Deps{
+	h := Host{Domain: "sbx1.ikigenba.dev", Deps: seam.Deps{
 		Dir: "/checkout",
 		Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
 			commands = append(commands, command)
@@ -125,7 +125,7 @@ func TestHostPreservesRemoteArguments(t *testing.T) {
 	if err := h.StreamSudo(context.Background(), io.Discard, "", args...); err != nil {
 		t.Fatal(err)
 	}
-	prefix := []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", "ec2-user@192.0.2.1"}
+	prefix := []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", "ec2-user@sbx1.ikigenba.dev"}
 	wantRun := append(append([]string{}, prefix...), `'space here' 'double"quote' 'single'\''quote' '*?[abc]' '; $(touch no) & | >' ''`)
 	wantSudo := append(append([]string{}, prefix...), `'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'space here' 'double"quote' 'single'\''quote' '*?[abc]' '; $(touch no) & | >' ''`)
 	if len(commands) != 3 {
@@ -176,7 +176,7 @@ func TestRunResultsAndErrors(t *testing.T) {
 	for _, invocation := range invocations {
 		for _, test := range tests {
 			t.Run(invocation.name+"/"+test.name, func(t *testing.T) {
-				h := Host{Address: "host", Deps: seam.Deps{Dir: "/work", Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
+				h := Host{Domain: "host", Deps: seam.Deps{Dir: "/work", Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
 					return test.result, test.runnerErr
 				}}}
 				got, err := invocation.call(h)
@@ -215,10 +215,10 @@ func TestRunResultsAndErrors(t *testing.T) {
 }
 
 func TestWaitRetriesUntilReachable(t *testing.T) {
-	// R-TD45-FIEW
+	// R-C890-CSXU
 	var commands []seam.Cmd
 	var waits []time.Duration
-	h := Host{Address: "192.0.2.2", Deps: seam.Deps{
+	h := Host{Domain: "sbx1.ikigenba.dev", Deps: seam.Deps{
 		Dir: "/work",
 		Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
 			commands = append(commands, command)
@@ -240,7 +240,7 @@ func TestWaitRetriesUntilReachable(t *testing.T) {
 	if len(commands) != 3 || !reflect.DeepEqual(waits, []time.Duration{ProbeInterval, ProbeInterval}) {
 		t.Fatalf("got %d probes and waits %v", len(commands), waits)
 	}
-	wantArgs := []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", "ec2-user@192.0.2.2", "'true'"}
+	wantArgs := []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", "ec2-user@sbx1.ikigenba.dev", "'true'"}
 	for _, command := range commands {
 		if command.Path != "ssh" || command.Dir != "/work" || !reflect.DeepEqual(command.Args, wantArgs) {
 			t.Errorf("probe = %#v", command)
@@ -249,10 +249,10 @@ func TestWaitRetriesUntilReachable(t *testing.T) {
 }
 
 func TestWaitStopsAfterProbeLimit(t *testing.T) {
-	// R-TD45-FIEW
+	// R-C890-CSXU
 	probes := 0
 	waits := 0
-	h := Host{Address: "3.145.72.19", Deps: seam.Deps{
+	h := Host{Domain: "sbx1.ikigenba.dev", Deps: seam.Deps{
 		Dir: "/work",
 		Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
 			probes++
@@ -267,7 +267,7 @@ func TestWaitStopsAfterProbeLimit(t *testing.T) {
 	}}
 	err := h.Wait(context.Background())
 	var unreachable *UnreachableError
-	if !errors.As(err, &unreachable) || unreachable.Address != h.Address {
+	if !errors.As(err, &unreachable) || unreachable.Domain != h.Domain {
 		t.Fatalf("Wait error = %T %v", err, err)
 	}
 	if probes != ProbeAttempts || waits != ProbeAttempts-1 {
@@ -278,7 +278,7 @@ func TestWaitStopsAfterProbeLimit(t *testing.T) {
 func TestStreamSudo(t *testing.T) {
 	// R-DAJK-FIXI
 	var gotCommand seam.Cmd
-	h := Host{Address: "host", Deps: seam.Deps{Dir: "/work", Stream: func(_ context.Context, command seam.Cmd, stdout io.Writer) (seam.Result, error) {
+	h := Host{Domain: "host", Deps: seam.Deps{Dir: "/work", Stream: func(_ context.Context, command seam.Cmd, stdout io.Writer) (seam.Result, error) {
 		gotCommand = command
 		if _, err := io.WriteString(stdout, "first\nsecond"); err != nil {
 			return seam.Result{}, err
@@ -311,7 +311,7 @@ func TestStreamSudoWrapsRunnerFailures(t *testing.T) {
 	// R-DAJK-FIXI
 	for _, want := range []error{context.Canceled, errors.New("writer failed"), errors.New("cannot start")} {
 		t.Run(want.Error(), func(t *testing.T) {
-			h := Host{Address: "host", Deps: seam.Deps{Dir: "/work", Stream: func(context.Context, seam.Cmd, io.Writer) (seam.Result, error) {
+			h := Host{Domain: "host", Deps: seam.Deps{Dir: "/work", Stream: func(context.Context, seam.Cmd, io.Writer) (seam.Result, error) {
 				return seam.Result{}, want
 			}}}
 			err := h.StreamSudo(context.Background(), io.Discard, "", "true")
@@ -328,7 +328,7 @@ func TestStreamSudoWrapsRunnerFailures(t *testing.T) {
 
 func TestStreamSudoSuccess(t *testing.T) {
 	// R-DAJK-FIXI
-	h := Host{Address: "host", Deps: seam.Deps{Dir: "/work", Stream: func(_ context.Context, _ seam.Cmd, stdout io.Writer) (seam.Result, error) {
+	h := Host{Domain: "host", Deps: seam.Deps{Dir: "/work", Stream: func(_ context.Context, _ seam.Cmd, stdout io.Writer) (seam.Result, error) {
 		_, err := io.WriteString(stdout, "unchanged\x00output")
 		return seam.Result{Stderr: []byte("warning stays private")}, err
 	}}}

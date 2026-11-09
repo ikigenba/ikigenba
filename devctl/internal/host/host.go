@@ -23,7 +23,7 @@ const (
 
 // Host is a remote deployment host.
 type Host struct {
-	Address    string
+	Domain     string
 	Deps       seam.Deps
 	KnownHosts string
 }
@@ -68,15 +68,15 @@ func (e *CommandError) ExitCode() int { return 1 }
 
 // UnreachableError reports a host that did not accept an SSH probe in time.
 type UnreachableError struct {
-	Address string
+	Domain string
 }
 
 func (e *UnreachableError) Error() string {
-	return "ssh " + User + "@" + e.Address + ": connection timed out"
+	return "ssh " + User + "@" + e.Domain + ": connection timed out"
 }
 
 // Target returns the SSH target for the host.
-func (h Host) Target() string { return User + "@" + h.Address }
+func (h Host) Target() string { return User + "@" + h.Domain }
 
 // Run runs a command on the host.
 func (h Host) Run(ctx context.Context, step string, args ...string) (Output, error) {
@@ -133,7 +133,7 @@ func (h Host) Wait(ctx context.Context) error {
 		case <-deps.After(ProbeInterval):
 		}
 	}
-	return &UnreachableError{Address: h.Address}
+	return &UnreachableError{Domain: h.Domain}
 }
 
 func (h Host) run(ctx context.Context, step string, logical []string) (Output, error) {

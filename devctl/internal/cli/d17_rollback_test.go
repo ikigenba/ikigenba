@@ -60,25 +60,32 @@ func TestRollbackUsageBeforeExternalAccess(t *testing.T) {
 }
 
 func TestRollbackLookupRefusals(t *testing.T) {
-	// R-X58D-WD60
-	for _, stopped := range []bool{false, true} {
-		h := newRollbackHarness(t)
-		operand := "gone"
-		want := "devctl: no space at 'gone.ikigenba.dev'\n"
-		if stopped {
-			operand = "sbx2"
-			h.instances[0].State = cloud.StateStopped
-			want = "devctl: 'sbx2.ikigenba.dev' is stopped\n"
-		}
-		assertResult(t, invokeWithDeps(h.deps(), "rollback", operand), 1, "", want)
-		if h.sshCalls != 0 || h.streamCalls != 0 {
-			t.Fatal("host reached before running check")
-		}
+	// R-5I1H-KHKK
+	for _, tc := range []struct {
+		name, operand, message string
+		code                   int
+		instances              []cloud.Instance
+		addresses              []cloud.Address
+	}{
+		{name: "missing", operand: "gone", message: "no space at 'gone.ikigenba.dev'", code: 1},
+		{name: "stopped", operand: "sbx2", message: "'sbx2.ikigenba.dev' is stopped", code: 1, instances: []cloud.Instance{{ID: "i-2", Space: "sbx2.ikigenba.dev", State: cloud.StateStopped}}},
+		{name: "address only", operand: "sbx1", message: "'sbx1.ikigenba.dev' has no instance", code: 1, addresses: []cloud.Address{{IP: "18.118.7.42", Space: "sbx1.ikigenba.dev"}}},
+		{name: "duplicates", operand: "sbx1", message: "'sbx1.ikigenba.dev' has more than one Elastic IP (18.118.7.42, 18.190.33.61)", code: 2, instances: []cloud.Instance{{ID: "i-1", Space: "sbx1.ikigenba.dev", State: cloud.StateRunning}}, addresses: []cloud.Address{{IP: "18.190.33.61", Space: "sbx1.ikigenba.dev"}, {IP: "18.118.7.42", Space: "sbx1.ikigenba.dev"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newRollbackHarness(t)
+			h.instances = tc.instances
+			h.addresses = tc.addresses
+			assertResult(t, invokeWithDeps(h.deps(), "rollback", tc.operand), tc.code, "", "devctl: "+tc.message+"\n")
+			if h.sshCalls != 0 || h.streamCalls != 0 {
+				t.Fatal("host reached before running check")
+			}
+		})
 	}
 }
 
 func TestRollbackDispatchStreamsOnlyHostOutput(t *testing.T) {
-	// R-X1KO-R1XX R-YE44-LPO1 R-X7O6-NWNE
+	// R-X1KO-R1XX R-BV3Q-UOGF R-5J9D-Y9B9
 	for _, failed := range []bool{false, true} {
 		h := newRollbackHarness(t)
 		deps := h.deps()
@@ -100,7 +107,7 @@ func TestRollbackDispatchStreamsOnlyHostOutput(t *testing.T) {
 		}
 		deps.Stream = func(_ context.Context, cmd seam.Cmd, out io.Writer) (seam.Result, error) {
 			streams++
-			if cmd.Path != "ssh" || cmd.Args[len(cmd.Args)-2] != "ec2-user@18.118.7.42" || cmd.Args[len(cmd.Args)-1] != "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'rollback'" {
+			if cmd.Path != "ssh" || cmd.Args[len(cmd.Args)-2] != "ec2-user@sbx1.ikigenba.dev" || cmd.Args[len(cmd.Args)-1] != "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'rollback'" {
 				t.Fatalf("command %#v", cmd)
 			}
 			if failed {
@@ -110,11 +117,11 @@ func TestRollbackDispatchStreamsOnlyHostOutput(t *testing.T) {
 			return seam.Result{}, err
 		}
 		if failed {
-			assertResult(t, invokeWithDeps(deps, "rollback", "sbx1"), 1, "", "devctl: rollback: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect opsctl rollback: exit status 1\n\n> opsctl: no previous release to roll back to\n")
+			assertResult(t, invokeWithDeps(deps, "rollback", "sbx1"), 1, "", "devctl: rollback: ssh ec2-user@sbx1.ikigenba.dev sudo systemd-run --quiet --wait --pipe --collect opsctl rollback: exit status 1\n\n> opsctl: no previous release to roll back to\n")
 		} else {
 			assertResult(t, invokeWithDeps(deps, "rollback", "sbx1"), 0, "arbitrary\n\nrollback output\n", "")
 		}
-		if strict.stsCalls != 1 || strict.ec2Calls != 1 {
+		if strict.stsCalls != 1 || strict.ec2Calls != 2 {
 			t.Fatalf("sts=%d ec2=%d", strict.stsCalls, strict.ec2Calls)
 		}
 		if git != 1 || streams != 1 {
@@ -124,7 +131,7 @@ func TestRollbackDispatchStreamsOnlyHostOutput(t *testing.T) {
 }
 
 func TestRollbackReturnsRootFailureUnchanged(t *testing.T) {
-	// R-X58D-WD60
+	// R-5I1H-KHKK
 	sentinel := errors.New("git failed")
 	deps := noExternalDeps(new(int))
 	deps.Exec = func(context.Context, seam.Cmd) (seam.Result, error) { return seam.Result{}, sentinel }
@@ -135,7 +142,7 @@ func TestRollbackReturnsRootFailureUnchanged(t *testing.T) {
 }
 
 func TestChangedRootPreflightsThroughCLI(t *testing.T) {
-	// R-P5O5-A9HX R-P4G8-WHR8
+	// R-P5O5-A9HX R-EINW-L6B7
 	for _, args := range [][]string{{"space", "stop", "sbx1"}, {"apex", "show"}} {
 		deps := checkoutDeps(t, `{"domain":"example.test","region":"eu-west-1"}`)
 		calls := 0
@@ -174,6 +181,7 @@ type rollbackCloudFake struct {
 	cloud.STS
 	t                  *testing.T
 	instances          []cloud.Instance
+	addresses          []cloud.Address
 	stsErr, ec2Err     error
 	stsCalls, ec2Calls int
 }
@@ -191,7 +199,7 @@ func (f *rollbackCloudFake) ListSpaceInstances(_ context.Context, root string) (
 }
 
 func TestRollbackReturnsCloudFailuresUnchangedBeforeHost(t *testing.T) {
-	// R-X58D-WD60
+	// R-5I1H-KHKK
 	for _, step := range []string{"connect", "sts", "lookup"} {
 		t.Run(step, func(t *testing.T) {
 			sentinel := errors.New(step + " sentinel")
@@ -250,6 +258,7 @@ type rollbackHarness struct {
 	t                     *testing.T
 	root                  string
 	instances             []cloud.Instance
+	addresses             []cloud.Address
 	sshCalls, streamCalls int
 	cloud.STS
 	cloud.EC2
@@ -283,4 +292,15 @@ func (h *rollbackHarness) deps() seam.Deps {
 func (*rollbackHarness) CallerAccountID(context.Context) (string, error) { return "123456789012", nil }
 func (h *rollbackHarness) ListSpaceInstances(context.Context, string) ([]cloud.Instance, error) {
 	return h.instances, nil
+}
+
+func (f *rollbackCloudFake) ListSpaceAddresses(_ context.Context, root string) ([]cloud.Address, error) {
+	if root != "ikigenba.dev" {
+		f.t.Fatalf("address root=%s", root)
+	}
+	f.ec2Calls++
+	return f.addresses, nil
+}
+func (h *rollbackHarness) ListSpaceAddresses(context.Context, string) ([]cloud.Address, error) {
+	return h.addresses, nil
 }

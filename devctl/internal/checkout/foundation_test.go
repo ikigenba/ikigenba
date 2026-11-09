@@ -163,7 +163,6 @@ func TestOpenFailures(t *testing.T) {
 
 func TestPath(t *testing.T) {
 	t.Parallel()
-	// R-RGP5-0NYO
 
 	opened := &checkout.Checkout{Root: filepath.Join("root", "checkout")}
 	// R-VYWC-5HZJ

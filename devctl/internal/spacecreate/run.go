@@ -46,6 +46,22 @@ func Run(ctx context.Context, args []string, version string, stdout io.Writer, d
 		detail = result.label + ", " + detail
 	}
 	space.Step(stdout, "build", detail)
+	if invocation.apex != "" {
+		found := false
+		for _, m := range built.Manifests {
+			if m.App == invocation.apex {
+				found = true
+				break
+			}
+		}
+		if !found {
+			name := result.label
+			if name == "" {
+				name = built.File
+			}
+			return &NotInReleaseError{App: invocation.apex, Release: name}
+		}
+	}
 	apps := make([]checkout.App, len(built.Manifests))
 	for i, manifest := range built.Manifests {
 		apps[i] = checkout.App{Name: manifest.App, Manifest: manifest}

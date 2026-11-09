@@ -209,6 +209,7 @@ func (f *addressStepFake) DeleteRole(context.Context, string) error {
 	return nil
 }
 
-func (f *addressStepFake) TagRetired(context.Context, []string, string) error {
-	panic("unexpected TagRetired")
+func (f *addressStepFake) ListSpaceAddresses(context.Context, string) ([]cloud.Address, error) {
+	f.call("ListSpaceAddresses")
+	return nil, nil
 }

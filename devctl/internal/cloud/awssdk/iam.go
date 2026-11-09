@@ -34,6 +34,8 @@ var _ cloud.IAM = (*iamClient)(nil)
 
 func (c *iamClient) PermissionsBoundary(ctx context.Context, name string) (string, error) {
 	input := &iam.ListPoliciesInput{Scope: types.PolicyScopeTypeLocal}
+	var arn string
+	found := false
 	for {
 		output, err := c.sdk.ListPolicies(ctx, input)
 		if err != nil {
@@ -41,10 +43,13 @@ func (c *iamClient) PermissionsBoundary(ctx context.Context, name string) (strin
 		}
 		for _, policy := range output.Policies {
 			if aws.ToString(policy.PolicyName) == name {
-				return aws.ToString(policy.Arn), nil
+				arn, found = aws.ToString(policy.Arn), true
 			}
 		}
 		if !output.IsTruncated || output.Marker == nil || aws.ToString(output.Marker) == "" {
+			if found {
+				return arn, nil
+			}
 			return "", &cloud.NotFoundError{Kind: "permissions boundary", Name: name}
 		}
 		input.Marker = output.Marker

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
@@ -47,14 +49,16 @@ type StreamRunner func(ctx context.Context, cmd Cmd, stdout io.Writer) (Result, 
 
 // Deps contains all environmental dependencies used by the application.
 type Deps struct {
-	Dir    string
-	EUID   int
-	Getenv func(key string) string
-	Cloud  cloud.Opener
-	Exec   Runner
-	Stream StreamRunner
-	Now    func() time.Time
-	After  func(d time.Duration) <-chan time.Time
+	Dir        string
+	EUID       int
+	Getenv     func(key string) string
+	Cloud      cloud.Opener
+	Exec       Runner
+	Stream     StreamRunner
+	Now        func() time.Time
+	After      func(d time.Duration) <-chan time.Time
+	LookupHost func(host string) ([]string, error)
+	Stat       func(name string) (fs.FileInfo, error)
 }
 
 // Defaults replaces nil environmental functions with their real or inert
@@ -74,6 +78,12 @@ func (deps Deps) Defaults() Deps {
 	}
 	if deps.After == nil {
 		deps.After = time.After
+	}
+	if deps.LookupHost == nil {
+		deps.LookupHost = net.LookupHost
+	}
+	if deps.Stat == nil {
+		deps.Stat = os.Stat
 	}
 	return deps
 }

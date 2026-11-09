@@ -26,7 +26,6 @@ type expectedEC2 interface {
 	AssociateAddress(context.Context, string, string) error
 	DisassociateAddress(context.Context, string) error
 	ReleaseAddress(context.Context, string) error
-	TagRetired(context.Context, []string, string) error
 }
 
 type expectedSSM interface {
@@ -45,7 +44,7 @@ type expectedRoute53 interface {
 }
 
 type expectedS3 interface {
-	ListObjects(context.Context, string, string) ([]Object, error)
+	ListObjects(context.Context, string, string, func([]Object) bool) error
 	PutObject(context.Context, string, string, io.Reader, int64) error
 	CopyObject(context.Context, string, string, string) error
 	DeleteObjects(context.Context, string, []string) error
@@ -232,7 +231,7 @@ func TestNotFoundErrorContract(t *testing.T) {
 }
 
 func TestEC2ValueContracts(t *testing.T) {
-	// R-F8WV-O4EO
+	// R-OLAI-3GX9
 	states := []InstanceState{StatePending, StateRunning, StateShuttingDown, StateTerminated, StateStopping, StateStopped}
 	wantStates := []InstanceState{"pending", "running", "shutting-down", "terminated", "stopping", "stopped"}
 	if !reflect.DeepEqual(states, wantStates) {
@@ -266,14 +265,13 @@ func TestEC2ValueContracts(t *testing.T) {
 		Space   string
 		State   InstanceState
 		Address string
-		Retired string
 	}{})
 	_ = Address(struct {
 		AllocationID  string
 		AssociationID string
+		InstanceID    string
 		IP            string
 		Space         string
-		Retired       string
 	}{})
 	_ = LaunchSpec(struct {
 		LaunchTemplateID string
@@ -284,7 +282,7 @@ func TestEC2ValueContracts(t *testing.T) {
 }
 
 func TestEC2InterfaceContract(_ *testing.T) {
-	// R-FBCO-FNW2
+	// R-3YQV-YM7M
 	var gotEC2 EC2
 	wantEC2 := expectedEC2(gotEC2)
 	gotEC2 = wantEC2
@@ -371,7 +369,7 @@ func TestSTSContract(_ *testing.T) {
 }
 
 func TestS3Contract(_ *testing.T) {
-	// R-SILM-EEV6
+	// R-7CIE-QH6R
 	_ = Object(struct {
 		Key      string
 		Size     int64
@@ -384,12 +382,13 @@ func TestS3Contract(_ *testing.T) {
 }
 
 func TestSpaceContract(_ *testing.T) {
-	// R-QDUF-3R73
+	// R-3ZYS-CDYB
 	_ = Space(struct {
-		Domain  string
-		ID      string
-		State   InstanceState
-		Address string
+		Domain    string
+		ID        string
+		State     InstanceState
+		Address   string
+		ElasticIP Address
 	}{})
 	_ = []func(context.Context, EC2, string) ([]Space, error){Spaces}
 	_ = []func(context.Context, EC2, string, string) (Space, error){LookupSpace}
@@ -409,7 +408,7 @@ func TestNoSpaceErrorContract(t *testing.T) {
 }
 
 func TestSpacesFiltersMapsAndSortsInstances(t *testing.T) {
-	// R-FCKK-TFMR
+	// R-44UD-VGX3
 	ctx := context.Background()
 	ec2 := &listEC2{instances: []Instance{
 		{ID: "i-z", Space: "zulu.ikigenba.dev", State: StateStopped, Address: "203.0.113.2"},
@@ -433,7 +432,7 @@ func TestSpacesFiltersMapsAndSortsInstances(t *testing.T) {
 }
 
 func TestSpacesEmptyAndDuplicateBehavior(t *testing.T) {
-	// R-FCKK-TFMR
+	// R-44UD-VGX3
 	t.Run("empty", func(t *testing.T) {
 		got, err := Spaces(context.Background(), &listEC2{}, "ikigenba.dev")
 		if err != nil || got == nil || len(got) != 0 {
@@ -466,7 +465,7 @@ func TestSpacesEmptyAndDuplicateBehavior(t *testing.T) {
 }
 
 func TestLookupSpace(t *testing.T) {
-	// R-FDSH-77DG
+	// R-NIT5-O5N2
 	t.Run("found", func(t *testing.T) {
 		ec2 := &listEC2{instances: []Instance{
 			{ID: "i-b", Space: "sbx2.ikigenba.dev", State: StateStopped},
@@ -523,4 +522,14 @@ func (e *listEC2) ListSpaceInstances(ctx context.Context, domain string) ([]Inst
 	e.domain = domain
 	e.calls++
 	return e.instances, e.err
+}
+
+func (e *listEC2) ListSpaceAddresses(context.Context, string) ([]Address, error) { return nil, nil }
+
+func TestObjectPageSize(t *testing.T) {
+	// R-7DQB-48XG
+	const value int16 = ObjectPageSize
+	if value != 1000 {
+		t.Fatal(value)
+	}
 }

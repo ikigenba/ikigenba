@@ -48,7 +48,7 @@ func TestOpenWithLoaderUsesPathStyleS3(t *testing.T) {
 		t.Fatal(err)
 	}
 	const bucket = "bucket.with.dots"
-	if _, err := clients.S3.ListObjects(context.Background(), bucket, "prefix/"); err != nil {
+	if err := clients.S3.ListObjects(context.Background(), bucket, "prefix/", func([]cloud.Object) bool { return true }); err != nil {
 		t.Fatal(err)
 	}
 	if err := clients.S3.PutObject(context.Background(), bucket, "key", bytes.NewReader([]byte("x")), 1); err != nil {
@@ -217,7 +217,7 @@ func exerciseClients(t *testing.T, clients cloud.Clients) {
 	if _, err := clients.Route53.Zone(ctx, "example.com"); err != nil {
 		t.Errorf("Route53: %v", err)
 	}
-	if _, err := clients.S3.ListObjects(ctx, "bucket", "prefix"); err != nil {
+	if err := clients.S3.ListObjects(ctx, "bucket", "prefix", func([]cloud.Object) bool { return true }); err != nil {
 		t.Errorf("S3: %v", err)
 	}
 	if _, err := clients.IAM.RoleExists(ctx, "role"); err != nil {

@@ -116,8 +116,6 @@ func usage(message string) *space.UsageError {
 type setPreflight struct {
 	target cloud.Space
 	zone   cloud.Zone
-	apex   space.ApexRecord
-	prev   spaceref.Space
 	holder cloud.Space
 }
 
@@ -128,35 +126,22 @@ func runSet(ctx context.Context, stdout io.Writer, deps seam.Deps, clients cloud
 	}
 
 	space.Step(stdout, "space", fmt.Sprintf("%s running, %s", pre.target.Domain, pre.target.Address))
-	if err := clients.IAM.PutRolePolicy(ctx, space.RoleName(app.Space.Domain), space.PolicyName, space.PolicyDocument(root, pre.zone.ID, app.Space, true)); err != nil {
+	if err := GrantApex(ctx, stdout, clients.IAM, root, pre.zone, app.Space); err != nil {
 		return err
 	}
-	space.Step(stdout, "role", pre.target.Domain+" may prove "+root)
 
-	if err := configureHost(ctx, deps, pre.target.Address, "host", func(target host.Host) error {
+	if err := configureHost(ctx, deps, pre.target.Domain, "host", func(target host.Host) error {
 		return hostsetup.SetKey(ctx, target, "host", hostsetup.KeyHostApex, app.Name)
 	}); err != nil {
 		return err
 	}
 	space.Step(stdout, "host", "host.apex="+app.Name+", certificate obtained, nginx applied")
 
-	if err := PutRecord(ctx, deps, clients.Route53, pre.zone, root, pre.target.Address); err != nil {
+	if err := PointRoot(ctx, stdout, deps, clients.Route53, pre.zone, root, pre.target.Address); err != nil {
 		return err
 	}
-	space.Step(stdout, "record", RecordDetail(root, pre.target.Address))
-
-	if pre.apex.Holder != "" && pre.apex.Holder != pre.target.Domain {
-		if err := clients.IAM.PutRolePolicy(ctx, space.RoleName(pre.apex.Holder), space.PolicyName, space.PolicyDocument(root, pre.zone.ID, pre.prev, false)); err != nil {
-			return err
-		}
-		if err := configureHost(ctx, deps, pre.holder.Address, "previous", func(target host.Host) error {
-			return hostsetup.DelKey(ctx, target, "previous", hostsetup.KeyHostApex)
-		}); err != nil {
-			return err
-		}
-		space.Step(stdout, "previous", pre.apex.Holder+" cleared")
-	} else {
-		space.Step(stdout, "previous", "none")
+	if err := ClearPrevious(ctx, stdout, deps, clients.IAM, root, pre.zone, pre.holder); err != nil {
+		return err
 	}
 	_, err = fmt.Fprintf(stdout, "%s %s\n", root, app.Hostname)
 	return err
@@ -165,7 +150,7 @@ func runSet(ctx context.Context, stdout io.Writer, deps seam.Deps, clients cloud
 func preflightSet(ctx context.Context, clients cloud.Clients, root string, app spaceref.App) (setPreflight, error) {
 	result := setPreflight{}
 	var err error
-	result.target, err = cloud.LookupSpace(ctx, clients.EC2, root, app.Space.Domain)
+	result.target, err = cloud.LookupInstance(ctx, clients.EC2, root, app.Space.Domain)
 	if err != nil {
 		return result, err
 	}
@@ -176,32 +161,12 @@ func preflightSet(ctx context.Context, clients cloud.Clients, root string, app s
 	if err != nil {
 		return result, err
 	}
-	result.apex, err = space.FindApex(ctx, clients.Route53, clients.EC2, result.zone.ID, root)
-	if err != nil {
-		return result, err
-	}
-	if result.apex.Found && result.apex.Holder == "" {
-		return result, &NotSpaceAddressError{Root: root, Values: result.apex.Record.Values}
-	}
-	if result.apex.Holder == "" || result.apex.Holder == result.target.Domain {
-		return result, nil
-	}
-	result.prev, err = spaceref.Parse(result.apex.Holder, root)
-	if err != nil {
-		return result, err
-	}
-	result.holder, err = cloud.LookupSpace(ctx, clients.EC2, root, result.apex.Holder)
-	if err != nil {
-		return result, err
-	}
-	if result.holder.State != cloud.StateRunning {
-		return result, &HolderStoppedError{Domain: result.holder.Domain, Label: result.prev.Label, State: result.holder.State}
-	}
-	return result, nil
+	result.holder, err = CheckHolder(ctx, clients.Route53, clients.EC2, result.zone, root, result.target.Domain)
+	return result, err
 }
 
-func configureHost(ctx context.Context, deps seam.Deps, address, step string, configure func(host.Host) error) error {
-	target := host.Host{Address: address, Deps: deps}
+func configureHost(ctx context.Context, deps seam.Deps, domain, step string, configure func(host.Host) error) error {
+	target := host.Host{Domain: domain, Deps: deps}
 	if err := target.Wait(ctx); err != nil {
 		return &StepError{Step: step, Err: err}
 	}
@@ -234,14 +199,14 @@ func runShow(ctx context.Context, stdout io.Writer, deps seam.Deps, clients clou
 	if record.Holder == "" {
 		return &NotSpaceAddressError{Root: root, Values: record.Record.Values}
 	}
-	holder, err := cloud.LookupSpace(ctx, clients.EC2, root, record.Holder)
+	holder, err := cloud.LookupInstance(ctx, clients.EC2, root, record.Holder)
 	if err != nil {
 		return err
 	}
 	if holder.State != cloud.StateRunning {
 		return &space.NotRunningError{Domain: holder.Domain, State: holder.State}
 	}
-	value, set, err := hostsetup.GetKey(ctx, host.Host{Address: holder.Address, Deps: deps}, "show", hostsetup.KeyHostApex)
+	value, set, err := hostsetup.GetKey(ctx, host.Host{Domain: holder.Domain, Deps: deps}, "show", hostsetup.KeyHostApex)
 	if err != nil {
 		return err
 	}
@@ -274,7 +239,7 @@ func runClear(ctx context.Context, stdout io.Writer, deps seam.Deps, clients clo
 	if err != nil {
 		return err
 	}
-	holder, err := cloud.LookupSpace(ctx, clients.EC2, root, record.Holder)
+	holder, err := cloud.LookupInstance(ctx, clients.EC2, root, record.Holder)
 	if err != nil {
 		return err
 	}
@@ -291,7 +256,7 @@ func runClear(ctx context.Context, stdout io.Writer, deps seam.Deps, clients clo
 		return err
 	}
 	space.Step(stdout, "role", holder.Domain+" may no longer prove "+root)
-	if err := configureHost(ctx, deps, holder.Address, "host", func(target host.Host) error {
+	if err := configureHost(ctx, deps, holder.Domain, "host", func(target host.Host) error {
 		return hostsetup.DelKey(ctx, target, "host", hostsetup.KeyHostApex)
 	}); err != nil {
 		return err
@@ -300,14 +265,72 @@ func runClear(ctx context.Context, stdout io.Writer, deps seam.Deps, clients clo
 	return nil
 }
 
-// PutRecord points the root A record at address and waits for propagation.
-func PutRecord(ctx context.Context, deps seam.Deps, route53 cloud.Route53, zone cloud.Zone, root, address string) error {
+// CheckHolder checks whether the apex can be given to target.
+func CheckHolder(ctx context.Context, route53 cloud.Route53, ec2 cloud.EC2, zone cloud.Zone, root, target string) (cloud.Space, error) {
+	apex, err := space.FindApex(ctx, route53, ec2, zone.ID, root)
+	if err != nil {
+		return cloud.Space{}, err
+	}
+	if apex.Found && apex.Holder == "" {
+		return cloud.Space{}, &NotSpaceAddressError{Root: root, Values: apex.Record.Values}
+	}
+	if !apex.Found || apex.Holder == target {
+		return cloud.Space{}, nil
+	}
+	prev, err := spaceref.Parse(apex.Holder, root)
+	if err != nil {
+		return cloud.Space{}, err
+	}
+	holder, err := cloud.LookupInstance(ctx, ec2, root, apex.Holder)
+	if err != nil {
+		return cloud.Space{}, err
+	}
+	if holder.State != cloud.StateRunning {
+		return cloud.Space{}, &HolderStoppedError{Domain: holder.Domain, Label: prev.Label, State: holder.State}
+	}
+	return holder, nil
+}
+
+// GrantApex grants the space's role permission to prove the root domain.
+func GrantApex(ctx context.Context, w io.Writer, iam cloud.IAM, root string, zone cloud.Zone, sp spaceref.Space) error {
+	if err := iam.PutRolePolicy(ctx, space.RoleName(sp.Domain), space.PolicyName, space.PolicyDocument(root, zone.ID, sp, true)); err != nil {
+		return err
+	}
+	space.Step(w, "role", sp.Domain+" may prove "+root)
+	return nil
+}
+
+// PointRoot points the root A record at address and reports propagation.
+func PointRoot(ctx context.Context, w io.Writer, deps seam.Deps, route53 cloud.Route53, zone cloud.Zone, root, address string) error {
 	id, err := route53.ChangeRecords(ctx, zone.ID, []cloud.RecordChange{{Action: cloud.ChangeUpsert, Record: cloud.Record{Name: root, Type: "A", TTL: space.RecordTTL, Values: []string{address}}}})
 	if err != nil {
 		return err
 	}
-	return space.WaitInsync(ctx, deps, route53, id)
+	if err := space.WaitInsync(ctx, deps, route53, id); err != nil {
+		return err
+	}
+	space.Step(w, "record", root+" -> "+address+", INSYNC")
+	return nil
 }
 
-// RecordDetail describes a propagated root record.
-func RecordDetail(root, address string) string { return root + " -> " + address + ", INSYNC" }
+// ClearPrevious removes the old holder's apex permission and host setting.
+func ClearPrevious(ctx context.Context, w io.Writer, deps seam.Deps, iam cloud.IAM, root string, zone cloud.Zone, holder cloud.Space) error {
+	if holder.Domain == "" {
+		space.Step(w, "previous", "none")
+		return nil
+	}
+	prev, err := spaceref.Parse(holder.Domain, root)
+	if err != nil {
+		return err
+	}
+	if err := iam.PutRolePolicy(ctx, space.RoleName(holder.Domain), space.PolicyName, space.PolicyDocument(root, zone.ID, prev, false)); err != nil {
+		return err
+	}
+	if err := configureHost(ctx, deps, holder.Domain, "previous", func(target host.Host) error {
+		return hostsetup.DelKey(ctx, target, "previous", hostsetup.KeyHostApex)
+	}); err != nil {
+		return err
+	}
+	space.Step(w, "previous", holder.Domain+" cleared")
+	return nil
+}

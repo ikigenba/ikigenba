@@ -127,27 +127,6 @@ func WaitInsync(ctx context.Context, deps seam.Deps, route53 cloud.Route53, chan
 	return &WaitError{Subject: changeID, Want: "reach INSYNC"}
 }
 
-// ElasticIP finds the address allocated to domain.
-func ElasticIP(ctx context.Context, ec2 cloud.EC2, root, domain string) (cloud.Address, bool, error) {
-	addresses, err := ec2.ListSpaceAddresses(ctx, root)
-	if err != nil {
-		return cloud.Address{}, false, err
-	}
-	var match cloud.Address
-	found := false
-	for _, address := range addresses {
-		if address.Space != domain || address.Retired != "" {
-			continue
-		}
-		if found {
-			return cloud.Address{}, false, fmt.Errorf("multiple elastic IPs for %s", domain)
-		}
-		match = address
-		found = true
-	}
-	return match, found, nil
-}
-
 // ReleaseElasticIP disassociates addr when necessary, then releases it.
 func ReleaseElasticIP(ctx context.Context, ec2 cloud.EC2, addr cloud.Address) error {
 	if addr.AssociationID != "" {
@@ -272,9 +251,6 @@ func FindApex(ctx context.Context, route53 cloud.Route53, ec2 cloud.EC2, zoneID,
 	result := ApexRecord{Record: record, Found: true}
 	matches := 0
 	for _, address := range addresses {
-		if address.Retired != "" {
-			continue
-		}
 		for _, value := range record.Values {
 			if address.IP == value {
 				matches++
@@ -287,4 +263,35 @@ func FindApex(ctx context.Context, route53 cloud.Route53, ec2 cloud.EC2, zoneID,
 		return ApexRecord{}, fmt.Errorf("multiple elastic IPs match apex for %s", root)
 	}
 	return result, nil
+}
+
+// ResolveError reports a name that did not acquire its one expected address.
+type ResolveError struct {
+	Domain  string
+	Address string
+}
+
+func (e *ResolveError) Error() string {
+	return "resolve: " + e.Domain + " does not resolve to " + e.Address
+}
+
+// ExitCode reports a failed name resolution wait.
+func (e *ResolveError) ExitCode() int { return 1 }
+
+// WaitResolves polls the same resolver SSH uses until its sole answer matches.
+func WaitResolves(ctx context.Context, deps seam.Deps, domain, address string) error {
+	for attempt := 0; attempt < PollAttempts; attempt++ {
+		answer, err := deps.LookupHost(domain)
+		if err == nil && len(answer) == 1 && answer[0] == address {
+			return nil
+		}
+		if attempt+1 < PollAttempts {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-deps.After(PollInterval):
+			}
+		}
+	}
+	return &ResolveError{Domain: domain, Address: address}
 }

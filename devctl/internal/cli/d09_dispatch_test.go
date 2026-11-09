@@ -31,7 +31,7 @@ before that moment, and the database is rebuilt to the moment itself.
 `
 
 func TestCLIDispatchesRestoreAndFormatsHostFailure(t *testing.T) {
-	// R-OSMO-BF0Q
+	// R-OSMO-BF0Q R-8P8Q-QOFQ R-8O0U-CWP1
 	root := d09Root(t)
 	deps := d09Deps(t, root, 1)
 	baseExec := deps.Exec
@@ -42,7 +42,7 @@ func TestCLIDispatchesRestoreAndFormatsHostFailure(t *testing.T) {
 		return baseExec(ctx, cmd)
 	}
 	result := invokeWithDeps(deps, "restore", "sbx1", "crm")
-	wantErr := "devctl: restore: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect opsctl restore crm: exit status 1\n\n> restore failed\n> more output\n> backup missing\n> more error\n"
+	wantErr := "devctl: restore: ssh ec2-user@sbx1.ikigenba.dev sudo systemd-run --quiet --wait --pipe --collect opsctl restore crm: exit status 1\n\n> restore failed\n> more output\n> backup missing\n> more error\n"
 	assertResult(t, result, 1, "", wantErr)
 
 	deps = d09Deps(t, root, 0)
@@ -64,18 +64,31 @@ func TestD09CommandBoundaryEarlyResultsOutsideCheckout(t *testing.T) {
 }
 
 func TestD09CommandBoundaryMissingAndStoppedSpaces(t *testing.T) {
-	// R-2B3I-HPXS
+	// R-906M-1H1K
 	root := d09Root(t)
 	for _, test := range []struct {
 		name, operand, diagnostic string
 		instances                 []cloud.Instance
+		addresses                 []cloud.Address
+		code                      int
 	}{
-		{name: "missing", operand: "gone", diagnostic: "devctl: no space at 'gone.ikigenba.dev'\n", instances: []cloud.Instance{}},
-		{name: "stopped", operand: "sbx2", diagnostic: "devctl: 'sbx2.ikigenba.dev' is stopped\n", instances: []cloud.Instance{{ID: "i-2", Space: "sbx2.ikigenba.dev", State: cloud.StateStopped}}},
+		{name: "missing", operand: "gone", diagnostic: "devctl: no space at 'gone.ikigenba.dev'\n", instances: []cloud.Instance{}, code: 1},
+		{name: "stopped", operand: "sbx2", diagnostic: "devctl: 'sbx2.ikigenba.dev' is stopped\n", instances: []cloud.Instance{{ID: "i-2", Space: "sbx2.ikigenba.dev", State: cloud.StateStopped}}, code: 1},
+		{name: "address only", operand: "sbx1", diagnostic: "devctl: 'sbx1.ikigenba.dev' has no instance\n", instances: []cloud.Instance{}, addresses: []cloud.Address{{IP: "18.118.7.42", Space: "sbx1.ikigenba.dev"}}, code: 1},
+		{name: "duplicates", operand: "sbx1", diagnostic: "devctl: 'sbx1.ikigenba.dev' has more than one Elastic IP (18.118.7.42, 18.190.33.61)\n", instances: []cloud.Instance{{ID: "i-1", Space: "sbx1.ikigenba.dev", State: cloud.StateRunning}}, addresses: []cloud.Address{{IP: "18.190.33.61", Space: "sbx1.ikigenba.dev"}, {IP: "18.118.7.42", Space: "sbx1.ikigenba.dev"}}, code: 2},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			deps := d09DepsWithInstances(t, root, test.instances, 0)
-			assertResult(t, invokeWithDeps(deps, "restore", test.operand, "crm"), 1, "", test.diagnostic)
+			deps.Cloud = func(context.Context, string, string) (cloud.Clients, error) {
+				return cloud.Clients{STS: d09STS{}, EC2: d09EC2{instances: test.instances, addresses: test.addresses}, S3: deployNoS3{t: t}}, nil
+			}
+			deps.Exec = func(_ context.Context, c seam.Cmd) (seam.Result, error) {
+				if c.Path != "git" {
+					t.Fatalf("unexpected host %#v", c)
+				}
+				return seam.Result{Stdout: []byte(root + "\n")}, nil
+			}
+			assertResult(t, invokeWithDeps(deps, "restore", test.operand, "crm"), test.code, "", test.diagnostic)
 		})
 	}
 }
@@ -120,6 +133,7 @@ func (d09STS) CallerAccountID(context.Context) (string, error) { return "1234567
 type d09EC2 struct {
 	cloud.EC2
 	instances []cloud.Instance
+	addresses []cloud.Address
 }
 
 func (f d09EC2) ListSpaceInstances(context.Context, string) ([]cloud.Instance, error) {
@@ -156,6 +170,7 @@ type deployReleaseFixture struct {
 	secretCalls  []string
 	state        cloud.InstanceState
 	missingSpace bool
+	addresses    []cloud.Address
 	fail         string
 	metadata     string
 }
@@ -193,7 +208,7 @@ func (f *deployReleaseFixture) deps() seam.Deps {
 		if f.missingSpace {
 			instances = []cloud.Instance{}
 		}
-		return cloud.Clients{STS: d09STS{}, EC2: d09EC2{instances: instances}, SSM: deployReleaseSSM{f: f}, S3: deployNoS3{t: f.t}}, nil
+		return cloud.Clients{STS: d09STS{}, EC2: d09EC2{instances: instances, addresses: f.addresses}, SSM: deployReleaseSSM{f: f}, S3: deployNoS3{t: f.t}}, nil
 	}}
 }
 func (f *deployReleaseFixture) exec(_ context.Context, c seam.Cmd) (seam.Result, error) {
@@ -279,9 +294,9 @@ type deployNoS3 struct {
 	t *testing.T
 }
 
-func (s deployNoS3) ListObjects(context.Context, string, string) ([]cloud.Object, error) {
+func (s deployNoS3) ListObjects(context.Context, string, string, func([]cloud.Object) bool) error {
 	s.t.Fatal("S3 ListObjects")
-	return nil, nil
+	return nil
 }
 func (s deployNoS3) PutObject(context.Context, string, string, io.Reader, int64) error {
 	s.t.Fatal("S3 PutObject")
@@ -297,7 +312,7 @@ func (s deployNoS3) CopyObject(context.Context, string, string, string) error {
 }
 
 func TestDeployReleaseBuildSecretsCopyAndActivate(t *testing.T) {
-	// R-VQ0L-U00U R-9WMJ-QLVW R-W9IZ-YBVY R-WAQW-C3MN R-WBYS-PVDC R-WD6P-3N41
+	// R-VQ0L-U00U R-9WMJ-QLVW R-W9IZ-YBVY R-WAQW-C3MN R-8QGN-4G6F R-WD6P-3N41
 	for _, operand := range []string{"r1", "feature/x", "4b22285"} {
 		t.Run(operand, func(t *testing.T) {
 			f := newDeployRelease(t)
@@ -307,7 +322,7 @@ func TestDeployReleaseBuildSecretsCopyAndActivate(t *testing.T) {
 			if operand != "4b22285" {
 				label = operand + ", "
 			}
-			want := "build: ok (" + label + "dist/" + deploySHA + ".tar.xz)\nsecrets: ok (8 apps, 2 keys)\ncopy: ok (" + deploySHA + ".tar.xz -> 18.118.7.42)\nunpack: ok (/opt/ikigenba/releases/" + deploySHA + ")\nactivated\nprogress as produced\n"
+			want := "build: ok (" + label + "dist/" + deploySHA + ".tar.xz)\nsecrets: ok (8 apps, 2 keys)\ncopy: ok (" + deploySHA + ".tar.xz -> sbx1.ikigenba.dev)\nunpack: ok (/opt/ikigenba/releases/" + deploySHA + ")\nactivated\nprogress as produced\n"
 			assertResult(t, result, 0, want, "")
 			if !reflect.DeepEqual(f.secretCalls, []string{"/sbx1.ikigenba.dev/auth"}) {
 				t.Fatalf("secret calls %#v", f.secretCalls)
@@ -347,7 +362,7 @@ func TestDeployReleaseBuildSecretsCopyAndActivate(t *testing.T) {
 }
 
 func TestDeployReleaseRefAndSpaceFailuresBuildNothing(t *testing.T) {
-	// R-W8B3-KK59
+	// R-91EI-F8S9
 	for _, operand := range []string{"r9", "main"} {
 		f := newDeployRelease(t)
 		f.fail = "cloud"
@@ -356,7 +371,7 @@ func TestDeployReleaseRefAndSpaceFailuresBuildNothing(t *testing.T) {
 			t.Fatalf("commands %#v", f.commands)
 		}
 	}
-	for _, kind := range []string{"missing", "stopped"} {
+	for _, kind := range []string{"missing", "stopped", "address only", "duplicates"} {
 		f := newDeployRelease(t)
 		message := "devctl: no space at 'gone.ikigenba.dev'\n"
 		operand := "gone"
@@ -367,7 +382,19 @@ func TestDeployReleaseRefAndSpaceFailuresBuildNothing(t *testing.T) {
 			operand = "sbx1"
 			message = "devctl: 'sbx1.ikigenba.dev' is stopped\n"
 		}
-		assertResult(t, invokeWithDeps(f.deps(), "deploy", operand, "r1"), 1, "", message)
+		code := 1
+		if kind == "address only" || kind == "duplicates" {
+			operand = "sbx1"
+			f.addresses = []cloud.Address{{IP: "18.118.7.42", Space: "sbx1.ikigenba.dev"}}
+			message = "devctl: 'sbx1.ikigenba.dev' has no instance\n"
+			if kind == "duplicates" {
+				f.missingSpace = false
+				f.addresses = append(f.addresses, cloud.Address{IP: "18.190.33.61", Space: "sbx1.ikigenba.dev"})
+				code = 2
+				message = "devctl: 'sbx1.ikigenba.dev' has more than one Elastic IP (18.118.7.42, 18.190.33.61)\n"
+			}
+		}
+		assertResult(t, invokeWithDeps(f.deps(), "deploy", operand, "r1"), code, "", message)
 		if len(f.commands) != 2 || len(f.secretCalls) != 0 {
 			t.Fatalf("commands %#v secrets %#v", f.commands, f.secretCalls)
 		}
@@ -397,7 +424,7 @@ func TestDeployReleaseBuildAndMissingSecretFailures(t *testing.T) {
 }
 
 func TestDeployReleaseCopyAndActivateFailuresStop(t *testing.T) {
-	// R-WBYS-PVDC
+	// R-8QGN-4G6F
 	for _, failure := range []string{"copy", "activate"} {
 		t.Run(failure, func(t *testing.T) {
 			f := newDeployRelease(t)
@@ -420,7 +447,7 @@ func TestDeployReleaseCopyAndActivateFailuresStop(t *testing.T) {
 						t.Fatalf("activated after copy failure %#v", c)
 					}
 				}
-			} else if result.stdout != prefix+"copy: ok ("+deploySHA+".tar.xz -> 18.118.7.42)\nunpack: ok (/opt/ikigenba/releases/"+deploySHA+")\n" {
+			} else if result.stdout != prefix+"copy: ok ("+deploySHA+".tar.xz -> sbx1.ikigenba.dev)\nunpack: ok (/opt/ikigenba/releases/"+deploySHA+")\n" {
 				t.Fatalf("output %q", result.stdout)
 			}
 		})
@@ -434,5 +461,38 @@ func TestDeployReleaseEmptySecretsMakesNoSSMCalls(t *testing.T) {
 	result := invokeWithDeps(f.deps(), "deploy", "sbx1", "r1")
 	if result.code != 0 || result.stderr != "" || !strings.Contains(result.stdout, "secrets: ok (8 apps, 0 keys)\n") || len(f.secretCalls) != 0 {
 		t.Fatalf("result %#v secret calls %#v", result, f.secretCalls)
+	}
+}
+
+func (f d09EC2) ListSpaceAddresses(context.Context, string) ([]cloud.Address, error) {
+	return f.addresses, nil
+}
+
+func TestRestoreUsesDomainAndForwardsAtExactly(t *testing.T) {
+	// R-8O0U-CWP1 R-8P8Q-QOFQ
+	for _, at := range []string{"", "2026-09-11T18:00:00Z"} {
+		root := d09Root(t)
+		deps := d09Deps(t, root, 0)
+		base := deps.Exec
+		var calls []seam.Cmd
+		deps.Exec = func(ctx context.Context, c seam.Cmd) (seam.Result, error) {
+			if c.Path == "ssh" {
+				calls = append(calls, c)
+				return seam.Result{Stdout: []byte("discarded\n"), Stderr: []byte("discarded error\n")}, nil
+			}
+			return base(ctx, c)
+		}
+		args := []string{"restore", "sbx1", "crm"}
+		want := "opsctl restore crm"
+		remote := "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'restore' 'crm'"
+		if at != "" {
+			args = append(args, "--at", at)
+			want += " --at " + at
+			remote += " '--at' '" + at + "'"
+		}
+		assertResult(t, invokeWithDeps(deps, args...), 0, "restore: ok ("+want+")\n", "")
+		if len(calls) != 1 || calls[0].Path != "ssh" || calls[0].Args[len(calls[0].Args)-2] != "ec2-user@sbx1.ikigenba.dev" || calls[0].Args[len(calls[0].Args)-1] != remote {
+			t.Fatalf("commands %#v", calls)
+		}
 	}
 }

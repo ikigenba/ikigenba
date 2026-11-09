@@ -1,4 +1,4 @@
-package spacemove
+package spacereplace
 
 import (
 	"context"
@@ -21,9 +21,6 @@ type preflightResult struct {
 	zone       cloud.Zone
 	template   string
 	old        cloud.Space
-	address    cloud.Address
-	hasAddress bool
-	apex       space.ApexRecord
 }
 
 func preflight(ctx context.Context, deps seam.Deps, inv invocation) (preflightResult, error) {
@@ -77,13 +74,8 @@ func preflight(ctx context.Context, deps seam.Deps, inv invocation) (preflightRe
 	if err != nil {
 		return p, err
 	}
-	if p.old.State != cloud.StateRunning && p.old.State != cloud.StateStopped {
+	if !inv.noBackup && p.old.ID != "" && p.old.State != cloud.StateRunning && p.old.State != cloud.StateStopped {
 		return p, &space.NotRunningError{Domain: p.sp.Domain, State: p.old.State}
 	}
-	p.address, p.hasAddress, err = space.ElasticIP(ctx, clients.EC2, p.root.Domain, p.sp.Domain)
-	if err != nil {
-		return p, err
-	}
-	p.apex, err = space.FindApex(ctx, clients.Route53, clients.EC2, p.zone.ID, p.root.Domain)
-	return p, err
+	return p, nil
 }

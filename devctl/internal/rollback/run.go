@@ -73,13 +73,13 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) e
 	if err != nil {
 		return err
 	}
-	target, err := cloud.LookupSpace(ctx, session.Clients.EC2, root.Domain, sp.Domain)
+	target, err := cloud.LookupInstance(ctx, session.Clients.EC2, root.Domain, sp.Domain)
 	if err != nil {
 		return err
 	}
 	if target.State != cloud.StateRunning {
 		return &space.NotRunningError{Domain: sp.Domain, State: target.State}
 	}
-	h := host.Host{Address: target.Address, Deps: deps}
+	h := host.Host{Domain: target.Domain, Deps: deps}
 	return h.StreamSudo(ctx, stdout, "rollback", "opsctl", "rollback")
 }

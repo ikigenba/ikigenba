@@ -17,6 +17,7 @@ type d05DispatchSSM struct {
 	parameters []cloud.Parameter
 	gets       int
 	puts       int
+	lists      int
 }
 
 func (ssm *d05DispatchSSM) GetParameter(context.Context, string) (string, error) {
@@ -25,6 +26,7 @@ func (ssm *d05DispatchSSM) GetParameter(context.Context, string) (string, error)
 }
 
 func (ssm *d05DispatchSSM) ListParameters(context.Context, string) ([]cloud.Parameter, error) {
+	ssm.lists++
 	return ssm.parameters, nil
 }
 
@@ -42,6 +44,7 @@ func (*d05DispatchSTS) CallerAccountID(context.Context) (string, error) {
 type d05DispatchEC2 struct {
 	cloud.EC2
 	instances []cloud.Instance
+	addresses []cloud.Address
 	roots     []string
 }
 
@@ -125,7 +128,7 @@ func TestSecretsCLIParsesSpaceAndConnectsFromRootFile(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var opens []d05CloudOpen
-			e2 := &d05DispatchEC2{instances: []cloud.Instance{{Space: "sbx1.ikigenba.dev", State: cloud.StateRunning}}}
+			e2 := &d05DispatchEC2{instances: []cloud.Instance{{ID: "i-1", Space: "sbx1.ikigenba.dev", State: cloud.StateRunning}}}
 			deps := d05CLIDeps(root, func(_ context.Context, profile, region string) (cloud.Clients, error) {
 				opens = append(opens, d05CloudOpen{profile: profile, region: region})
 				return cloud.Clients{STS: &d05DispatchSTS{}, EC2: e2, SSM: &d05DispatchSSM{value: `{}`}}, nil
@@ -152,24 +155,40 @@ func TestSecretsCLIParsesSpaceAndConnectsFromRootFile(t *testing.T) {
 }
 
 func TestSecretsPushMissingSpaceStopsBeforeValuesAndWrites(t *testing.T) {
-	// R-0O8C-VKRC
-	root := t.TempDir()
-	writeD05CLIRootFile(t, root)
-	writeD05CLIFile(t, filepath.Join(root, "crm", "cmd", "crm", "main.go"), "package main\n")
-	writeD05CLIFile(t, filepath.Join(root, "crm", "etc", "manifest.toml"), "app = \"crm\"\nsecrets = [\"TOKEN\"]\n")
-	ssm := &d05DispatchSSM{}
-	ec2 := &d05DispatchEC2{}
-	valueLookups := 0
-	deps := d05CLIDeps(root, func(context.Context, string, string) (cloud.Clients, error) {
-		return cloud.Clients{STS: &d05DispatchSTS{}, EC2: ec2, SSM: ssm}, nil
-	})
-	deps.Getenv = func(string) string {
-		valueLookups++
-		return "must-not-be-read"
-	}
-	assertResult(t, invokeWithDeps(deps, "secrets", "push", "gone", "crm"), 1, "", "devctl: no space at 'gone.ikigenba.dev'\n")
-	if !reflect.DeepEqual(ec2.roots, []string{"ikigenba.dev"}) || valueLookups != 0 || ssm.puts != 0 {
-		t.Fatalf("before missing-space refusal: roots=%q value lookups=%d writes=%d", ec2.roots, valueLookups, ssm.puts)
+	// R-G1RO-WSVQ
+	for _, tc := range []struct {
+		name, operand, diagnostic string
+		code                      int
+		instances                 []cloud.Instance
+		addresses                 []cloud.Address
+	}{
+		{name: "missing", operand: "gone", diagnostic: "no space at 'gone.ikigenba.dev'", code: 1},
+		{name: "address only", operand: "sbx1", diagnostic: "'sbx1.ikigenba.dev' has no instance", code: 1, addresses: []cloud.Address{{IP: "18.118.7.42", Space: "sbx1.ikigenba.dev"}}},
+		{name: "duplicates", operand: "sbx1", diagnostic: "'sbx1.ikigenba.dev' has more than one Elastic IP (18.118.7.42, 18.190.33.61)", code: 2, instances: []cloud.Instance{{ID: "i-1", Space: "sbx1.ikigenba.dev", State: cloud.StateRunning}}, addresses: []cloud.Address{{IP: "18.190.33.61", Space: "sbx1.ikigenba.dev"}, {IP: "18.118.7.42", Space: "sbx1.ikigenba.dev"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeD05CLIRootFile(t, root)
+			writeD05CLIFile(t, filepath.Join(root, "crm", "cmd", "crm", "main.go"), "package main\n")
+			writeD05CLIFile(t, filepath.Join(root, "crm", "etc", "manifest.toml"), "app = \"crm\"\nsecrets = [\"TOKEN\"]\n")
+			ssm := &d05DispatchSSM{}
+			ec2 := &d05DispatchEC2{instances: tc.instances, addresses: tc.addresses}
+			values := 0
+			deps := d05CLIDeps(root, func(context.Context, string, string) (cloud.Clients, error) {
+				return cloud.Clients{STS: &d05DispatchSTS{}, EC2: ec2, SSM: ssm}, nil
+			})
+			deps.Getenv = func(string) string { values++; return "must-not-be-read" }
+			deps.Exec = func(_ context.Context, c seam.Cmd) (seam.Result, error) {
+				if c.Path != "git" {
+					t.Fatalf("unexpected process %#v", c)
+				}
+				return seam.Result{Stdout: []byte(root + "\n")}, nil
+			}
+			assertResult(t, invokeWithDeps(deps, "secrets", "push", tc.operand, "crm"), tc.code, "", "devctl: "+tc.diagnostic+"\n")
+			if !reflect.DeepEqual(ec2.roots, []string{"ikigenba.dev"}) || values != 0 || ssm.puts != 0 || ssm.gets != 0 || ssm.lists != 0 {
+				t.Fatalf("roots=%v values=%d ssm=%#v", ec2.roots, values, ssm)
+			}
+		})
 	}
 }
 
@@ -210,4 +229,8 @@ func d05CLIDeps(root string, open cloud.Opener) seam.Deps {
 			return seam.Result{Stdout: []byte(root + "\n")}, nil
 		},
 	}
+}
+
+func (ec2 *d05DispatchEC2) ListSpaceAddresses(context.Context, string) ([]cloud.Address, error) {
+	return ec2.addresses, nil
 }

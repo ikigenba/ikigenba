@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"net"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -162,16 +164,18 @@ func TestExecErrorsAndExitStatus(t *testing.T) {
 }
 
 func TestDepsDefaults(t *testing.T) {
-	// R-BMSH-ORLH
+	// R-OIUP-BXFV
 	_ = Deps(struct {
-		Dir    string
-		EUID   int
-		Getenv func(string) string
-		Cloud  cloud.Opener
-		Exec   Runner
-		Stream StreamRunner
-		Now    func() time.Time
-		After  func(time.Duration) <-chan time.Time
+		Dir        string
+		EUID       int
+		Getenv     func(string) string
+		Cloud      cloud.Opener
+		Exec       Runner
+		Stream     StreamRunner
+		Now        func() time.Time
+		After      func(time.Duration) <-chan time.Time
+		LookupHost func(string) ([]string, error)
+		Stat       func(string) (fs.FileInfo, error)
 	}{})
 
 	deps := (Deps{}).Defaults()
@@ -183,6 +187,9 @@ func TestDepsDefaults(t *testing.T) {
 	}
 	if reflect.ValueOf(deps.Stream).Pointer() != reflect.ValueOf(Stream).Pointer() {
 		t.Fatal("nil Stream did not select seam.Stream")
+	}
+	if reflect.ValueOf(deps.LookupHost).Pointer() != reflect.ValueOf(net.LookupHost).Pointer() || reflect.ValueOf(deps.Stat).Pointer() != reflect.ValueOf(os.Stat).Pointer() {
+		t.Fatal("resolver/stat defaults")
 	}
 	before := time.Now()
 	if got := deps.Now(); got.Before(before) || got.After(time.Now()) {

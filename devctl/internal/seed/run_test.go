@@ -74,7 +74,7 @@ func TestSeedPublicErrorsAndGrammar(t *testing.T) {
 }
 
 func TestSeedValidationOrderAndTargetFailures(t *testing.T) {
-	// R-TZ1A-UJR1 R-THYP-HRDB
+	// R-NCZQ-GOZ0 R-THYP-HRDB
 	for _, operand := range []string{"crm.sbx1", "Demo", "ikigenba.dev", "crm.sbx1.ikigenba.dev", "golden.ikigenba.dev"} {
 		h := newHarness(t)
 		var out, diag bytes.Buffer
@@ -147,7 +147,7 @@ func TestSeedValidationOrderAndTargetFailures(t *testing.T) {
 }
 
 func TestSeedSourceResolution(t *testing.T) {
-	// R-U7KL-IXXW R-TKEI-9AUP
+	// R-VOYR-DKQV R-TKEI-9AUP
 	for _, tc := range []struct {
 		operand  string
 		golden   []string
@@ -189,7 +189,7 @@ func TestSeedSourceResolution(t *testing.T) {
 }
 
 func TestSeedCopiesNewestInOrderAndOnlyTargetMutates(t *testing.T) {
-	// R-U8SH-WPOL R-E1EK-SG7I R-U3WW-DMPT R-TQI0-65K6
+	// R-37LG-QEM5 R-DO2X-9MWO R-3A19-HY3J R-NFFJ-88GE
 	for _, source := range []string{"sbx1", "sbx2"} {
 		h := newHarness(t)
 		h.add(source+"/snapshots/", "dashboard/2026-09-12T14:22:51Z.tar.zst", "crm/2026-09-12T14:22:51Z.tar.zst", "crm/2026-09-14T09:10:02Z.tar.zst", "crm/2026-09-13T00:00:00Z.tar.zst")
@@ -219,7 +219,7 @@ func TestSeedCopiesNewestInOrderAndOnlyTargetMutates(t *testing.T) {
 }
 
 func TestSeedCopyRestoreAndCleanupFailures(t *testing.T) {
-	// R-U8SH-WPOL R-E1EK-SG7I R-U3WW-DMPT
+	// R-37LG-QEM5 R-DO2X-9MWO R-3A19-HY3J
 	for _, phase := range []string{"copy1", "copy2", "restore2", "restore3", "clean-list", "delete", "empty-clean"} {
 		h := newHarness(t)
 		h.add("golden/demo/", "crm/2026-09-12T14:22:51Z.tar.zst", "dashboard/2026-09-12T14:22:51Z.tar.zst", "gmail/2026-09-12T14:22:51Z.tar.zst")
@@ -250,7 +250,7 @@ func TestSeedCopyRestoreAndCleanupFailures(t *testing.T) {
 				"copy: ok (gmail -> ikigenba.dev/sbx2/seed/gmail/2026-09-12T14:22:51Z.tar.zst)\n" +
 				"restore: ok (opsctl restore crm --from s3://ikigenba.dev/sbx2/seed/crm/2026-09-12T14:22:51Z.tar.zst)\n" +
 				"restore: ok (opsctl restore dashboard --from s3://ikigenba.dev/sbx2/seed/dashboard/2026-09-12T14:22:51Z.tar.zst)\n"
-			want := "devctl: restore: ssh ec2-user@18.224.31.9 sudo systemd-run --quiet --wait --pipe --collect opsctl restore gmail --from s3://ikigenba.dev/sbx2/seed/gmail/2026-09-12T14:22:51Z.tar.zst: exit status 1\n\n> partial\n> output\n> failure\n> detail\n"
+			want := "devctl: restore: ssh ec2-user@sbx2.ikigenba.dev sudo systemd-run --quiet --wait --pipe --collect opsctl restore gmail --from s3://ikigenba.dev/sbx2/seed/gmail/2026-09-12T14:22:51Z.tar.zst: exit status 1\n\n> partial\n> output\n> failure\n> detail\n"
 			if status != 1 || h.ssh != 3 || h.deleteCalls != 0 || len(h.seedObjects()) != 3 || out.String() != wantOut || diag.String() != want {
 				t.Fatalf("restore: %d %q %q %v", status, out.String(), diag.String(), h.events)
 			}
@@ -332,6 +332,10 @@ type harness struct {
 	opens, lookups, ssh, deleteCalls int
 	failurePhase                     string
 	failure                          error
+	addresses                        []cloud.Address
+	noInstance                       bool
+	pages                            map[string][][]cloud.Object
+	pageLog                          []string
 }
 
 func newHarness(t *testing.T) *harness {
@@ -369,7 +373,7 @@ func (h *harness) deps() seam.Deps {
 				}
 			}
 			want := "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'restore' '" + app + "' '--from' 's3://ikigenba.dev/" + key + "'"
-			if cmd.Args[len(cmd.Args)-2] != "ec2-user@18.224.31.9" || cmd.Args[len(cmd.Args)-1] != want {
+			if cmd.Args[len(cmd.Args)-2] != "ec2-user@sbx2.ikigenba.dev" || cmd.Args[len(cmd.Args)-1] != want {
 				h.t.Fatal(cmd)
 			}
 			if (h.failurePhase == "restore3" && h.ssh == 3) || (h.failurePhase == "restore2" && h.ssh == 2) {
@@ -417,25 +421,28 @@ func (f fakeEC2) ListSpaceInstances(_ context.Context, root string) ([]cloud.Ins
 	if f.h.failurePhase == "lookup" {
 		return nil, f.h.failure
 	}
+	if f.h.noInstance {
+		return nil, nil
+	}
 	return []cloud.Instance{{ID: "i-target", Space: "sbx2.ikigenba.dev", State: f.h.state, Address: "18.224.31.9"}}, nil
 }
 
 type fakeS3 struct{ h *harness }
 
-func (f fakeS3) ListObjects(_ context.Context, bucket, prefix string) ([]cloud.Object, error) {
+func (f fakeS3) ListObjects(_ context.Context, bucket, prefix string, each func([]cloud.Object) bool) error {
 	h := f.h
 	h.checkBucket(bucket)
 	h.events = append(h.events, "list")
 	h.prefixes = append(h.prefixes, prefix)
 	if (h.failurePhase == "golden-list" && prefix == "golden/demo/") || (h.failurePhase == "space-list" && prefix == "demo/snapshots/") {
-		return nil, h.failure
+		return h.failure
 	}
 	if prefix == "sbx2/seed/" {
 		if h.failurePhase == "clean-list" {
-			return nil, h.failure
+			return h.failure
 		}
 		if h.failurePhase == "empty-clean" {
-			return nil, nil
+			return nil
 		}
 	}
 	var objects []cloud.Object
@@ -444,7 +451,17 @@ func (f fakeS3) ListObjects(_ context.Context, bucket, prefix string) ([]cloud.O
 			objects = append(objects, object)
 		}
 	}
-	return objects, nil
+	pages, custom := h.pages[prefix]
+	if !custom {
+		pages = [][]cloud.Object{objects}
+	}
+	for _, page := range pages {
+		h.pageLog = append(h.pageLog, "page "+objectKeys(page))
+		if !each(page) {
+			break
+		}
+	}
+	return nil
 }
 func (f fakeS3) CopyObject(_ context.Context, bucket, source, key string) error {
 	h := f.h
@@ -469,7 +486,8 @@ func (f fakeS3) DeleteObjects(_ context.Context, bucket string, keys []string) e
 	h.checkBucket(bucket)
 	h.events = append(h.events, "delete")
 	h.deleteCalls++
-	h.deleted = append([]string(nil), keys...)
+	h.deleted = append(h.deleted, keys...)
+	h.pageLog = append(h.pageLog, "delete "+strings.Join(keys, " "))
 	for _, key := range keys {
 		if !strings.HasPrefix(key, "sbx2/seed/") {
 			h.t.Fatal(key)
@@ -523,4 +541,116 @@ func containsObject(objects []cloud.Object, want cloud.Object) bool {
 		}
 	}
 	return false
+}
+
+func (f fakeEC2) ListSpaceAddresses(context.Context, string) ([]cloud.Address, error) {
+	return f.h.addresses, nil
+}
+func objectKeys(page []cloud.Object) string {
+	keys := make([]string, len(page))
+	for i, o := range page {
+		keys[i] = o.Key
+	}
+	return strings.Join(keys, " ")
+}
+
+func TestSeedRefusesAddressOnlyAndDuplicateAddresses(t *testing.T) {
+	// R-NCZQ-GOZ0
+	for _, duplicate := range []bool{false, true} {
+		h := newHarness(t)
+		h.addresses = []cloud.Address{{Space: "sbx2.ikigenba.dev", IP: "18.118.7.42"}}
+		h.noInstance = !duplicate
+		want := "devctl: 'sbx2.ikigenba.dev' has no instance\n"
+		wantCode := 1
+		if duplicate {
+			h.addresses = append(h.addresses, cloud.Address{Space: "sbx2.ikigenba.dev", IP: "18.190.33.61"})
+			want = "devctl: 'sbx2.ikigenba.dev' has more than one Elastic IP (18.118.7.42, 18.190.33.61)\n"
+			wantCode = 2
+		}
+		var out, diag bytes.Buffer
+		code := cli.Run(context.Background(), []string{"seed", "sbx2", "demo"}, nil, &out, &diag, h.deps())
+		if code != wantCode || out.Len() != 0 || diag.String() != want || h.ssh != 0 || h.s3Calls() != 0 {
+			t.Fatalf("%d %q %q", code, out.String(), diag.String())
+		}
+	}
+}
+
+func TestSeedFoldsSourcePagesAndCleansWithinPages(t *testing.T) {
+	// R-VOYR-DKQV R-37LG-QEM5 R-3A19-HY3J R-NFFJ-88GE
+	for _, fail := range []bool{false, true} {
+		h := newHarness(t)
+		source := "sbx1/snapshots/"
+		newest := "2026-09-14T09:10:02Z.tar.zst"
+		older := "2026-09-12T14:22:51Z.tar.zst"
+		first := []cloud.Object{{Key: source + "crm/" + newest}, {Key: source + "gmail/" + older}}
+		second := []cloud.Object{{Key: source + "crm/" + older}, {Key: source + "dashboard/" + older}}
+		cleanFirst := []cloud.Object{{Key: "sbx2/seed/crm/" + newest}, {Key: "sbx2/seed/dashboard/" + older}}
+		cleanLast := []cloud.Object{{Key: "sbx2/seed/gmail/" + older}}
+		h.pages = map[string][][]cloud.Object{source: {first, second}, "sbx2/seed/": {cleanFirst, cleanLast}}
+		if fail {
+			h.failurePhase = "delete"
+			h.failure = errors.New("delete failed")
+		}
+		var out, diag bytes.Buffer
+		code := cli.Run(context.Background(), []string{"seed", "sbx2", "sbx1"}, nil, &out, &diag, h.deps())
+		wantCopies := [][2]string{{source + "crm/" + newest, "sbx2/seed/crm/" + newest}, {source + "dashboard/" + older, "sbx2/seed/dashboard/" + older}, {source + "gmail/" + older, "sbx2/seed/gmail/" + older}}
+		if !reflect.DeepEqual(h.copies, wantCopies) || !strings.HasPrefix(out.String(), "source: ok (space sbx1.ikigenba.dev, 3 apps)\n") {
+			t.Fatalf("%q %#v", out.String(), h.copies)
+		}
+		wantLog := []string{"page ", "page " + objectKeys(first), "page " + objectKeys(second), "page " + objectKeys(cleanFirst), "delete " + objectKeys(cleanFirst)}
+		if !fail {
+			wantLog = append(wantLog, "page "+objectKeys(cleanLast), "delete "+objectKeys(cleanLast))
+		}
+		if !reflect.DeepEqual(h.pageLog, wantLog) {
+			t.Fatalf("log %#v want %#v", h.pageLog, wantLog)
+		}
+		if fail {
+			if code != 1 || strings.Contains(out.String(), "clean:") || strings.Count(out.String(), "restore: ok") != 3 {
+				t.Fatalf("%d %q", code, out.String())
+			}
+		} else if code != 0 || !strings.HasSuffix(out.String(), "clean: ok (3 objects deleted)\n") || len(h.seedObjects()) != 0 {
+			t.Fatalf("%d %q %q", code, out.String(), diag.String())
+		}
+	}
+}
+
+func TestSeedCopiesNewestAcrossPagesThenCleansStaleCopy(t *testing.T) {
+	// R-37LG-QEM5 R-3A19-HY3J
+	for _, fail := range []bool{false, true} {
+		h := newHarness(t)
+		prefix := "sbx1/snapshots/"
+		older := "2026-09-12T14:22:51Z.tar.zst"
+		middle := "2026-09-13T00:00:00Z.tar.zst"
+		newest := "2026-09-14T09:10:02Z.tar.zst"
+		first := []cloud.Object{{Key: prefix + "dashboard/" + older}, {Key: prefix + "crm/" + older}, {Key: prefix + "crm/" + newest}}
+		second := []cloud.Object{{Key: prefix + "crm/" + middle}}
+		cleanFirst := []cloud.Object{{Key: "sbx2/seed/crm/" + newest}, {Key: "sbx2/seed/dashboard/" + older}}
+		cleanLast := []cloud.Object{{Key: "sbx2/seed/gmail/2026-09-01T00:00:00Z.tar.zst"}}
+		h.add("sbx2/seed/", "gmail/2026-09-01T00:00:00Z.tar.zst")
+		h.pages = map[string][][]cloud.Object{prefix: {first, second}, "sbx2/seed/": {cleanFirst, cleanLast}}
+		if fail {
+			h.failurePhase = "delete"
+			h.failure = errors.New("delete failed")
+		}
+		var out, diag bytes.Buffer
+		code := cli.Run(context.Background(), []string{"seed", "sbx2", "sbx1"}, nil, &out, &diag, h.deps())
+		wantCopies := [][2]string{{prefix + "crm/" + newest, "sbx2/seed/crm/" + newest}, {prefix + "dashboard/" + older, "sbx2/seed/dashboard/" + older}}
+		if !reflect.DeepEqual(h.copies, wantCopies) {
+			t.Fatal(h.copies)
+		}
+		wantLog := []string{"page ", "page " + objectKeys(first), "page " + objectKeys(second), "page " + objectKeys(cleanFirst), "delete " + objectKeys(cleanFirst)}
+		if !fail {
+			wantLog = append(wantLog, "page "+objectKeys(cleanLast), "delete "+objectKeys(cleanLast))
+		}
+		if !reflect.DeepEqual(h.pageLog, wantLog) {
+			t.Fatalf("log %#v want %#v", h.pageLog, wantLog)
+		}
+		if fail {
+			if code != 1 || strings.Contains(out.String(), "clean:") || strings.Count(out.String(), "restore: ok") != 2 {
+				t.Fatalf("%d %q", code, out.String())
+			}
+		} else if code != 0 || !strings.HasSuffix(out.String(), "clean: ok (3 objects deleted)\n") || len(h.seedObjects()) != 0 {
+			t.Fatalf("%d %q %q", code, out.String(), diag.String())
+		}
+	}
 }

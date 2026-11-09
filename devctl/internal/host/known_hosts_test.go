@@ -9,14 +9,14 @@ import (
 )
 
 func TestKnownHostsForEveryTransport(t *testing.T) {
-	// R-Y98J-2MP9 R-FW2Y-XRHV
-	for _, known := range []string{"", "/tmp/move.Ab12/known_hosts"} {
+	// R-C9GW-QKOJ R-CAOT-4CF8
+	for _, known := range []string{"", "/tmp/create.Ab12/known_hosts"} {
 		options := []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new"}
 		if known != "" {
 			options = append(options, "-o", "UserKnownHostsFile="+known)
 		}
 		var calls []seam.Cmd
-		h := Host{Address: "3.141.27.86", KnownHosts: known, Deps: seam.Deps{Dir: "/fixture", Exec: func(_ context.Context, c seam.Cmd) (seam.Result, error) {
+		h := Host{Domain: "staging.ikigenba.dev", KnownHosts: known, Deps: seam.Deps{Dir: "/fixture", Exec: func(_ context.Context, c seam.Cmd) (seam.Result, error) {
 			calls = append(calls, c)
 			return seam.Result{}, nil
 		}}}

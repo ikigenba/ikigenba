@@ -29,7 +29,7 @@ func runDestroy(ctx context.Context, stdout io.Writer, deps seam.Deps, clients c
 	if err != nil {
 		return err
 	}
-	if exists && !options.noBackup && item.State != cloud.StateRunning {
+	if exists && item.ID != "" && !options.noBackup && item.State != cloud.StateRunning {
 		return &RetireStateError{ID: item.ID, State: item.State, Label: sp.Label}
 	}
 	apex, err := FindApex(ctx, clients.Route53, clients.EC2, zone.ID, root)
@@ -44,51 +44,39 @@ func runDestroy(ctx context.Context, stdout io.Writer, deps seam.Deps, clients c
 	}
 
 	switch {
-	case !exists:
+	case !exists || item.ID == "":
 		Step(stdout, "retire", "already gone")
 	case options.noBackup:
 		_, _ = fmt.Fprintln(stdout, "retire: skipped (--no-backup)")
 	default:
-		if _, err := (host.Host{Address: item.Address, Deps: deps}).Sudo(ctx, "retire", "opsctl", "retire"); err != nil {
+		if _, err := (host.Host{Domain: sp.Domain, Deps: deps}).Sudo(ctx, "retire", "opsctl", "retire"); err != nil {
 			return err
 		}
 		Step(stdout, "retire", "opsctl retire")
 	}
 
-	instances, err := cloud.SpaceInstances(ctx, clients.EC2, root, sp.Domain)
-	if err != nil {
-		return err
-	}
-	details := make([]string, 0, len(instances))
-	for _, instance := range instances {
-		if err := clients.EC2.TerminateInstance(ctx, instance.ID); err != nil {
+	if item.ID != "" {
+		if err := clients.EC2.TerminateInstance(ctx, item.ID); err != nil {
 			return err
 		}
-		if _, err := WaitState(ctx, deps, clients.EC2, instance.ID, cloud.StateTerminated); err != nil {
+		if _, err := WaitState(ctx, deps, clients.EC2, item.ID, cloud.StateTerminated); err != nil {
 			return err
 		}
-		details = append(details, instance.ID+" terminated")
-	}
-	if len(details) == 0 {
-		Step(stdout, "instance", "already gone")
+		Step(stdout, "instance", item.ID+" terminated")
 	} else {
-		Step(stdout, "instance", strings.Join(details, ", "))
+		Step(stdout, "instance", "already gone")
 	}
-	addresses, err := cloud.SpaceAddresses(ctx, clients.EC2, root, sp.Domain)
+	remaining, _, err := destroySpace(ctx, clients.EC2, root, sp.Domain)
 	if err != nil {
 		return err
-	}
-	details = nil
-	for _, address := range addresses {
-		if err := ReleaseElasticIP(ctx, clients.EC2, address); err != nil {
-			return err
-		}
-		details = append(details, "elastic ip "+address.IP+" released")
 	}
 	switch {
-	case len(details) > 0:
-		Step(stdout, "address", strings.Join(details, ", "))
-	case len(instances) > 0:
+	case remaining.ElasticIP.AllocationID != "":
+		if err := ReleaseElasticIP(ctx, clients.EC2, remaining.ElasticIP); err != nil {
+			return err
+		}
+		Step(stdout, "address", "elastic ip "+remaining.ElasticIP.IP+" released")
+	case item.ID != "":
 		Step(stdout, "address", "no elastic ip")
 	default:
 		Step(stdout, "address", "already gone")
@@ -160,23 +148,31 @@ func destroyBackups(ctx context.Context, stdout io.Writer, s3 cloud.S3, root, la
 		Step(stdout, "backups", "kept")
 		return nil
 	}
-	objects, err := s3.ListObjects(ctx, root, BackupPrefix(label))
+	count := 0
+	var deleteErr error
+	err := s3.ListObjects(ctx, root, BackupPrefix(label), func(page []cloud.Object) bool {
+		keys := make([]string, len(page))
+		for i, object := range page {
+			keys[i] = object.Key
+		}
+		deleteErr = s3.DeleteObjects(ctx, root, keys)
+		if deleteErr != nil {
+			return false
+		}
+		count += len(keys)
+		return true
+	})
+	if deleteErr != nil {
+		return deleteErr
+	}
 	if err != nil {
 		return err
 	}
-	keys := make([]string, len(objects))
-	for index, object := range objects {
-		keys[index] = object.Key
-	}
-	if len(keys) != 0 {
-		if err := s3.DeleteObjects(ctx, root, keys); err != nil {
-			return err
-		}
-	}
-	if len(keys) == 0 {
+	if count == 0 {
 		Step(stdout, "backups", "already gone")
 	} else {
-		Step(stdout, "backups", fmt.Sprintf("%d objects deleted", len(keys)))
+		Step(stdout, "backups", fmt.Sprintf("%d objects deleted", count))
 	}
+
 	return nil
 }

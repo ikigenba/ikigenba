@@ -2,6 +2,7 @@ package awssdk
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/url"
 
@@ -25,26 +26,35 @@ type s3Client struct {
 	sdk s3API
 }
 
-func (c *s3Client) ListObjects(ctx context.Context, bucket, prefix string) ([]cloud.Object, error) {
+func (c *s3Client) ListObjects(ctx context.Context, bucket, prefix string, each func(page []cloud.Object) bool) error {
 	input := &s3.ListObjectsV2Input{
-		Bucket: aws.String(bucket),
-		Prefix: aws.String(prefix),
+		Bucket:  aws.String(bucket),
+		Prefix:  aws.String(prefix),
+		MaxKeys: aws.Int32(cloud.ObjectPageSize),
 	}
-	var objects []cloud.Object
 	for {
 		output, err := c.sdk.ListObjectsV2(ctx, input)
 		if err != nil {
-			return nil, s3Error("ListObjectsV2", bucket+"/"+prefix, err)
+			return s3Error("ListObjectsV2", bucket+"/"+prefix, err)
 		}
-		for _, object := range output.Contents {
-			objects = append(objects, cloud.Object{
-				Key:      aws.ToString(object.Key),
-				Size:     aws.ToInt64(object.Size),
-				Modified: aws.ToTime(object.LastModified),
-			})
+		if aws.ToBool(output.IsTruncated) && aws.ToString(output.NextContinuationToken) == "" {
+			return s3Error("ListObjectsV2", bucket+"/"+prefix, errors.New("truncated response has no continuation token"))
+		}
+		if len(output.Contents) != 0 {
+			page := make([]cloud.Object, len(output.Contents))
+			for index, object := range output.Contents {
+				page[index] = cloud.Object{
+					Key:      aws.ToString(object.Key),
+					Size:     aws.ToInt64(object.Size),
+					Modified: aws.ToTime(object.LastModified),
+				}
+			}
+			if !each(page) {
+				return nil
+			}
 		}
 		if !aws.ToBool(output.IsTruncated) {
-			return objects, nil
+			return nil
 		}
 		input.ContinuationToken = output.NextContinuationToken
 	}

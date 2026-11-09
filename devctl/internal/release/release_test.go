@@ -87,7 +87,7 @@ type putFake struct {
 }
 
 func (f *putFake) host() host.Host {
-	return host.Host{Address: "18.118.7.42", Deps: seam.Deps{Dir: "/w", Exec: func(_ context.Context, c seam.Cmd) (seam.Result, error) {
+	return host.Host{Domain: "sbx1.ikigenba.dev", Deps: seam.Deps{Dir: "/w", Exec: func(_ context.Context, c seam.Cmd) (seam.Result, error) {
 		logical := c.Args[len(c.Args)-1]
 		if c.Path == "scp" {
 			logical = "scp"
@@ -121,7 +121,7 @@ func (f *putFake) host() host.Host {
 	}}}
 }
 func TestPutCommands(t *testing.T) {
-	// R-WT1E-2NR2 R-WU9A-GFHR R-WVH6-U78G R-WZ4V-ZIGJ
+	// R-WT1E-2NR2 R-MYKF-357T R-WVH6-U78G R-WZ4V-ZIGJ
 	for _, present := range []bool{false, true} {
 		f := putFake{t: t, present: present}
 		var out bytes.Buffer
@@ -140,13 +140,13 @@ func TestPutCommands(t *testing.T) {
 		if present {
 			detail += " already present, kept"
 		}
-		if out.String() != "copy: ok ("+sha+".tar.xz -> 18.118.7.42)\nunpack: ok ("+detail+")\n" {
+		if out.String() != "copy: ok ("+sha+".tar.xz -> sbx1.ikigenba.dev)\nunpack: ok ("+detail+")\n" {
 			t.Fatal(out.String())
 		}
 	}
 }
 func TestPutFailureCleanup(t *testing.T) {
-	// R-WU9A-GFHR R-CCXY-W7L6 R-WZ4V-ZIGJ
+	// R-MYKF-357T R-MZSB-GWYI R-WZ4V-ZIGJ
 	for fail := 1; fail <= 9; fail++ {
 		f := putFake{t: t, fail: fail}
 		var out bytes.Buffer
@@ -186,12 +186,12 @@ func TestPutFailureCleanup(t *testing.T) {
 	}
 }
 func TestActivateStreamsVerbatim(t *testing.T) {
-	// R-WT1E-2NR2 R-CE5V-9ZBV R-WZ4V-ZIGJ
+	// R-WT1E-2NR2 R-N107-UOP7 R-WZ4V-ZIGJ
 	for _, label := range []string{"", "r1"} {
 		for _, status := range []int{0, 1} {
 			calls := 0
 			var out bytes.Buffer
-			h := host.Host{Address: "18.118.7.42", Deps: seam.Deps{Dir: "/w", Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
+			h := host.Host{Domain: "sbx1.ikigenba.dev", Deps: seam.Deps{Dir: "/w", Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
 				t.Fatal("unexpected exec")
 				return seam.Result{}, nil
 			}, Stream: func(_ context.Context, c seam.Cmd, w io.Writer) (seam.Result, error) {
@@ -227,7 +227,7 @@ func TestActivateStreamsVerbatim(t *testing.T) {
 }
 
 func TestCopyEmptyTempAndCleanupFailure(t *testing.T) {
-	// R-WU9A-GFHR R-CCXY-W7L6
+	// R-MYKF-357T R-MZSB-GWYI
 	calls := 0
 	h := host.Host{Deps: seam.Deps{Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
 		calls++

@@ -101,17 +101,36 @@ func TestSpaceAppSyntaxThroughCLI(t *testing.T) {
 }
 
 func TestSpaceAppResolutionThroughCLI(t *testing.T) {
-	// R-YUNO-G61J
+	// R-A9O4-71I0 R-AC3W-YKZE
 	for _, subcommand := range []string{"restart", "disable", "enable", "logs"} {
 		missing := newD13Fixture(t, nil)
 		assertResult(t, invokeWithDeps(missing.deps(), "space", subcommand, "gone", "crm"), 1, "", "devctl: no space at 'gone.ikigenba.dev'\n")
 		if missing.hostCalls != 0 {
 			t.Fatalf("%s missing host calls = %d", subcommand, missing.hostCalls)
 		}
-		stopped := newD13Fixture(t, []cloud.Instance{{Space: "sbx2.ikigenba.dev", State: cloud.StateStopped}})
+		stopped := newD13Fixture(t, []cloud.Instance{{ID: "i-2", Space: "sbx2.ikigenba.dev", State: cloud.StateStopped}})
 		assertResult(t, invokeWithDeps(stopped.deps(), "space", subcommand, "sbx2", "crm"), 1, "", "devctl: 'sbx2.ikigenba.dev' is stopped\n")
 		if stopped.hostCalls != 0 {
 			t.Fatalf("%s stopped host calls = %d", subcommand, stopped.hostCalls)
+		}
+
+		for _, tc := range []struct {
+			name, message string
+			code          int
+			instances     []cloud.Instance
+			addresses     []cloud.Address
+		}{
+			{name: "address only", message: "'sbx1.ikigenba.dev' has no instance", code: 1, instances: []cloud.Instance{{ID: "i-old", Space: "sbx1.ikigenba.dev", State: cloud.StateTerminated}}, addresses: []cloud.Address{{IP: "18.118.7.42", Space: "sbx1.ikigenba.dev"}}},
+			{name: "duplicates", message: "'sbx1.ikigenba.dev' has more than one Elastic IP (18.118.7.42, 18.190.33.61)", code: 2, instances: []cloud.Instance{{ID: "i-1", Space: "sbx1.ikigenba.dev", State: cloud.StateRunning}}, addresses: []cloud.Address{{IP: "18.190.33.61", Space: "sbx1.ikigenba.dev"}, {IP: "18.118.7.42", Space: "sbx1.ikigenba.dev"}}},
+		} {
+			t.Run(subcommand+"/"+tc.name, func(t *testing.T) {
+				f := newD13Fixture(t, tc.instances)
+				f.addresses = tc.addresses
+				assertResult(t, invokeWithDeps(f.deps(), "space", subcommand, "sbx1", "crm"), tc.code, "", "devctl: "+tc.message+"\n")
+				if f.hostCalls != 0 {
+					t.Fatalf("host calls %d", f.hostCalls)
+				}
+			})
 		}
 	}
 }
@@ -119,6 +138,7 @@ func TestSpaceAppResolutionThroughCLI(t *testing.T) {
 type d13Fixture struct {
 	root, work  string
 	instances   []cloud.Instance
+	addresses   []cloud.Address
 	hostCalls   int
 	hostEnabled bool
 	hostResult  seam.Result
@@ -144,7 +164,7 @@ func newD13Fixture(t *testing.T, instances []cloud.Instance) *d13Fixture {
 func (f *d13Fixture) deps() seam.Deps {
 	return seam.Deps{EUID: 1, Dir: f.work,
 		Cloud: func(context.Context, string, string) (cloud.Clients, error) {
-			return cloud.Clients{STS: d13STS{}, EC2: d13EC2{instances: f.instances}}, nil
+			return cloud.Clients{STS: d13STS{}, EC2: d13EC2{instances: f.instances, addresses: f.addresses}}, nil
 		},
 		Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
 			if command.Path == "git" {
@@ -165,7 +185,7 @@ func (f *d13Fixture) deps() seam.Deps {
 }
 
 func TestSpaceOpsctlResultsThroughCLI(t *testing.T) {
-	// R-DNZO-KZ1V R-DP7K-YQSK R-DQFH-CIJ9 R-JNNS-D34S
+	// R-EHHN-OD4Z R-EIPK-24VO R-EJXG-FWMD R-ADBT-CCQ3
 	for _, tc := range []struct {
 		command string
 		output  string
@@ -179,14 +199,14 @@ func TestSpaceOpsctlResultsThroughCLI(t *testing.T) {
 			f.hostEnabled = true
 			f.hostResult = seam.Result{Stdout: []byte(tc.output), Stderr: []byte("ignored\n")}
 			assertResult(t, invokeWithDeps(f.deps(), "space", tc.command, "sbx1", "crm"), 0, tc.output, "")
-			want := []seam.Cmd{{Path: "ssh", Args: []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", "ec2-user@18.118.7.42", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' '" + tc.command + "' 'crm'"}, Dir: f.work}}
+			want := []seam.Cmd{{Path: "ssh", Args: []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", "ec2-user@sbx1.ikigenba.dev", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' '" + tc.command + "' 'crm'"}, Dir: f.work}}
 			if !reflect.DeepEqual(f.hostCmds, want) {
 				t.Fatalf("host commands = %#v", f.hostCmds)
 			}
 			f.hostResult = seam.Result{Stdout: []byte("a")}
 			assertResult(t, invokeWithDeps(f.deps(), "space", tc.command, "sbx1", "crm"), 0, "a", "")
 			f.hostResult = seam.Result{ExitCode: 1, Stdout: []byte("bad\nmore\n"), Stderr: []byte("error\nmore\n")}
-			assertResult(t, invokeWithDeps(f.deps(), "space", tc.command, "sbx1", "crm"), 1, "", "devctl: "+tc.command+": ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect opsctl "+tc.command+" crm: exit status 1\n\n> bad\n> more\n> error\n> more\n")
+			assertResult(t, invokeWithDeps(f.deps(), "space", tc.command, "sbx1", "crm"), 1, "", "devctl: "+tc.command+": ssh ec2-user@sbx1.ikigenba.dev sudo systemd-run --quiet --wait --pipe --collect opsctl "+tc.command+" crm: exit status 1\n\n> bad\n> more\n> error\n> more\n")
 		})
 	}
 }
@@ -198,8 +218,13 @@ func (d13STS) CallerAccountID(context.Context) (string, error) { return "123", n
 type d13EC2 struct {
 	cloud.EC2
 	instances []cloud.Instance
+	addresses []cloud.Address
 }
 
 func (f d13EC2) ListSpaceInstances(context.Context, string) ([]cloud.Instance, error) {
 	return append([]cloud.Instance(nil), f.instances...), nil
+}
+
+func (f d13EC2) ListSpaceAddresses(context.Context, string) ([]cloud.Address, error) {
+	return f.addresses, nil
 }

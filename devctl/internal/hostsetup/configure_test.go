@@ -263,13 +263,13 @@ func TestSingleKeyOperations(t *testing.T) {
 }
 
 func TestOnlySingleKeyOperationsCanNameHostApex(t *testing.T) {
-	// R-82UU-AAQF
+	// R-59O2-QNMM
 	var commands []seam.Cmd
 	deps := seam.Deps{Dir: "/work", Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
 		commands = append(commands, command)
 		return seam.Result{Stdout: []byte("opaque output\n")}, nil
 	}}
-	target := host.Host{Address: "192.0.2.10", Deps: deps}
+	target := host.Host{Domain: "sbx1.ikigenba.dev", Deps: deps}
 	cfg := Config{Root: "example.test", Region: "us-east-1", ZoneID: "ZONE", Space: spaceref.Space{Label: "sbx", Domain: "sbx.example.test"}}
 	if _, err := Configure(context.Background(), target, "configuration", cfg); err != nil {
 		t.Fatal(err)
@@ -293,7 +293,7 @@ func requireDelKeySignature(func(context.Context, host.Host, string, string) err
 func requireGetKeySignature(func(context.Context, host.Host, string, string) (string, bool, error)) {}
 
 func recordingHost(commands *[]seam.Cmd, result func(seam.Cmd) (seam.Result, error)) host.Host {
-	return host.Host{Address: "192.0.2.10", Deps: seam.Deps{
+	return host.Host{Domain: "sbx1.ikigenba.dev", Deps: seam.Deps{
 		Dir: "/work",
 		Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
 			*commands = append(*commands, command)

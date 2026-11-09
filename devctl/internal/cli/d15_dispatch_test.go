@@ -46,12 +46,14 @@ type dispatchS3 struct {
 	calls *[]string
 }
 
-func (s *dispatchS3) ListObjects(_ context.Context, bucket, prefix string) ([]cloud.Object, error) {
+func (s *dispatchS3) ListObjects(_ context.Context, bucket, prefix string, each func([]cloud.Object) bool) error {
 	*s.calls = append(*s.calls, "list "+bucket+" "+prefix)
 	if prefix == "golden/demo/" {
-		return []cloud.Object{{Key: prefix + "crm/snapshot.tar.zst"}}, nil
+		each([]cloud.Object{{Key: prefix + "crm/snapshot.tar.zst"}})
+	} else {
+		each(nil)
 	}
-	return nil, nil
+	return nil
 }
 func (s *dispatchS3) CopyObject(_ context.Context, bucket, source, key string) error {
 	*s.calls = append(*s.calls, "copy "+bucket+" "+source+" "+key)

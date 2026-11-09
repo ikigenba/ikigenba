@@ -13,17 +13,17 @@ import (
 )
 
 func TestRestoreSwitchesKnownHostsAndConfigures(t *testing.T) {
-	// R-7O81-P1U3 R-7QNU-GLBH R-7UBJ-LWJK R-7Z75-4ZIC
+	// R-7O81-P1U3 R-5DBR-VYUP R-5EJO-9QLE R-7Z75-4ZIC
 	requireRestoreSignature(Restore)
 	for _, program := range []string{"", "/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a/opsctl/bin/opsctl"} {
-		for _, knownHosts := range []string{"", "/tmp/move.Ab12/known_hosts"} {
+		for _, knownHosts := range []string{"", "/tmp/create.Ab12/known_hosts"} {
 			t.Run(program+knownHosts, func(t *testing.T) {
-				cfg := Config{Root: "ikigenba.dev", Region: "us-east-2", ZoneID: "ZONE", Space: spaceref.Space{Label: "staging", Domain: "staging.ikigenba.dev"}, Opsctl: program}
+				cfg := Config{Root: "ikigenba.dev", Region: "us-east-2", ZoneID: "ZONE", Space: spaceref.Space{Label: "sbx1", Domain: "sbx1.ikigenba.dev"}, Opsctl: program}
 				var commands []seam.Cmd
 				h := recordingHost(&commands, func(seam.Cmd) (seam.Result, error) {
 					return seam.Result{Stdout: []byte("\x00arbitrary\r\n"), Stderr: []byte("\xffopaque\n")}, nil
 				})
-				h.Address = "3.141.27.86"
+				h.Domain = "sbx1.ikigenba.dev"
 				h.KnownHosts = "/tmp/create.Ab12/known_hosts.launch"
 				restored, count, err := Restore(t.Context(), h, "restore", cfg, knownHosts)
 				if err != nil || count != 5 || len(commands) != 6 {
@@ -58,7 +58,7 @@ func TestRestoreSwitchesKnownHostsAndConfigures(t *testing.T) {
 }
 
 func TestRestoreStopsAtFailureAndPreservesErrorBytes(t *testing.T) {
-	// R-7WRC-DG0Y R-7UBJ-LWJK R-7Z75-4ZIC
+	// R-5FRK-NIC3 R-5EJO-9QLE R-7Z75-4ZIC
 	for _, failAt := range []int{1, 4} {
 		t.Run(strconv.Itoa(failAt), func(t *testing.T) {
 			var commands []seam.Cmd
@@ -68,9 +68,9 @@ func TestRestoreStopsAtFailureAndPreservesErrorBytes(t *testing.T) {
 				}
 				return seam.Result{Stdout: []byte("unparsed output")}, nil
 			})
-			h.Address = "3.141.27.86"
+			h.Domain = "sbx1.ikigenba.dev"
 			h.KnownHosts = "/tmp/create.Ab12/known_hosts.launch"
-			knownHosts := "/tmp/move.Ab12/known_hosts"
+			knownHosts := "/tmp/create.Ab12/known_hosts"
 			restored, count, err := Restore(t.Context(), h, "restore", Config{}, knownHosts)
 			var commandErr *host.CommandError
 			if !errors.As(err, &commandErr) || reflect.ValueOf(err) != reflect.ValueOf(commandErr) ||
@@ -130,7 +130,7 @@ func assertRestoreTransport(t *testing.T, cmd seam.Cmd, knownHosts string) {
 	if knownHosts != "" {
 		args = append(args, "-o", "UserKnownHostsFile="+knownHosts)
 	}
-	args = append(args, "ec2-user@3.141.27.86")
+	args = append(args, "ec2-user@sbx1.ikigenba.dev")
 	if cmd.Path != "ssh" || cmd.Dir != "/work" || !reflect.DeepEqual(cmd.Args[:len(cmd.Args)-1], args) {
 		t.Fatal("transport changed", cmd)
 	}
@@ -138,7 +138,7 @@ func assertRestoreTransport(t *testing.T, cmd seam.Cmd, knownHosts string) {
 
 func assertRestoredHost(t *testing.T, restored, original host.Host, knownHosts string) {
 	t.Helper()
-	if restored.Address != original.Address || restored.KnownHosts != knownHosts || restored.Deps.Dir != original.Deps.Dir || restored.Deps.EUID != original.Deps.EUID {
+	if restored.Domain != original.Domain || restored.KnownHosts != knownHosts || restored.Deps.Dir != original.Deps.Dir || restored.Deps.EUID != original.Deps.EUID {
 		t.Fatal("returned host changed", restored)
 	}
 	// Use the returned runner as well as inspecting its plain fields.

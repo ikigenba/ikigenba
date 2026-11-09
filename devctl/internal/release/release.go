@@ -74,7 +74,7 @@ func Put(ctx context.Context, h host.Host, stdout io.Writer, file, sha string) e
 		_, _ = h.Run(context.WithoutCancel(ctx), "copy", "rm", "-f", remote)
 		return err
 	}
-	space.Step(stdout, "copy", fmt.Sprintf("%s -> %s", filepath.Base(file), h.Address))
+	space.Step(stdout, "copy", fmt.Sprintf("%s -> %s", filepath.Base(file), h.Domain))
 	return unpack(ctx, h, stdout, remote, sha)
 }
 

@@ -105,7 +105,7 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) e
 	if err != nil {
 		return err
 	}
-	target, err := cloud.LookupSpace(ctx, session.Clients.EC2, root.Domain, targetRef.Domain)
+	target, err := cloud.LookupInstance(ctx, session.Clients.EC2, root.Domain, targetRef.Domain)
 	if err != nil {
 		return err
 	}
@@ -113,7 +113,7 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) e
 		return &space.NotRunningError{Domain: targetRef.Domain, State: target.State}
 	}
 
-	remote := host.Host{Address: target.Address, Deps: deps}
+	remote := host.Host{Domain: target.Domain, Deps: deps}
 	if parsed.subcommand != "logs" {
 		output, err := remote.Sudo(ctx, parsed.subcommand, "opsctl", parsed.subcommand, parsed.app)
 		if err != nil {

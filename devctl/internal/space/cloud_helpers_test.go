@@ -3,6 +3,9 @@ package space
 import (
 	"context"
 	"errors"
+	"io"
+	"io/fs"
+	"net"
 	"reflect"
 	"strings"
 	"testing"
@@ -295,37 +298,8 @@ func TestWaitInsync(t *testing.T) {
 	}
 }
 
-func TestElasticIP(t *testing.T) {
-	// R-U4MW-B9IN R-FNJO-9DB0
-	addresses := []cloud.Address{
-		{AllocationID: "other", Space: "other.example"},
-		{AllocationID: "wanted", IP: "192.0.2.2", Space: "app.example"},
-	}
-	var roots []string
-	ec2 := &helperEC2{addresses: func(_ context.Context, root string) ([]cloud.Address, error) {
-		roots = append(roots, root)
-		return addresses, nil
-	}}
-	got, found, err := ElasticIP(context.Background(), ec2, "example", "app.example")
-	if err != nil || !found || !reflect.DeepEqual(got, addresses[1]) {
-		t.Fatalf("ElasticIP = %#v, %v, %v", got, found, err)
-	}
-	_, found, err = ElasticIP(context.Background(), ec2, "example", "missing.example")
-	if err != nil || found {
-		t.Fatalf("missing ElasticIP found=%v err=%v", found, err)
-	}
-	addresses = append(addresses, cloud.Address{AllocationID: "duplicate", Space: "app.example"})
-	_, _, err = ElasticIP(context.Background(), ec2, "example", "app.example")
-	if err == nil || !strings.Contains(err.Error(), "app.example") {
-		t.Fatalf("duplicate error = %v", err)
-	}
-	if !reflect.DeepEqual(roots, []string{"example", "example", "example"}) {
-		t.Fatalf("ListSpaceAddresses roots = %v", roots)
-	}
-}
-
 func TestReleaseElasticIP(t *testing.T) {
-	// R-UI1S-IQOA
+	// R-BW20-J3IW R-UI1S-IQOA
 	var calls []string
 	ec2 := &helperEC2{
 		disassociate: func(_ context.Context, id string) error { calls = append(calls, "disassociate "+id); return nil },
@@ -501,7 +475,7 @@ func TestDeleteRole(t *testing.T) {
 }
 
 func TestFindApex(t *testing.T) {
-	// R-U8AL-GKQQ R-FORK-N51P
+	// R-U8AL-GKQQ R-C4LB-7HPR
 	_ = ApexRecord(struct {
 		Record cloud.Record
 		Found  bool
@@ -518,7 +492,7 @@ func TestFindApex(t *testing.T) {
 		return record, found, nil
 	}}
 	addressCalls := 0
-	addresses := []cloud.Address{{IP: "18.118.7.42", Space: "sbx1.ikigenba.dev"}}
+	addresses := []cloud.Address{{IP: "18.118.7.42", Space: "sbx1.ikigenba.dev", AssociationID: "eipassoc-01"}}
 	ec2 := &helperEC2{addresses: func(_ context.Context, root string) ([]cloud.Address, error) {
 		addressCalls++
 		if root != "ikigenba.dev" {
@@ -532,6 +506,12 @@ func TestFindApex(t *testing.T) {
 	}
 	if !reflect.DeepEqual(findArgs, []string{"ZONE1", "ikigenba.dev", "A"}) || addressCalls != 1 {
 		t.Fatalf("find args=%v address calls=%d", findArgs, addressCalls)
+	}
+
+	addresses[0].AssociationID = ""
+	got, err = FindApex(context.Background(), route53, ec2, "ZONE1", "ikigenba.dev")
+	if err != nil || got.Holder != "sbx1.ikigenba.dev" || !reflect.DeepEqual(got.Record, record) {
+		t.Fatalf("unassociated FindApex = %#v, %v", got, err)
 	}
 
 	record.Values = []string{"203.0.113.9"}
@@ -671,6 +651,80 @@ func (f *helperIAM) DeleteRole(ctx context.Context, name string) error {
 	return f.deleteRole(ctx, name)
 }
 
-func (f *helperEC2) TagRetired(context.Context, []string, string) error {
-	panic("unexpected TagRetired")
+func TestWaitResolvesOnlyAcceptsOneExpectedAddress(t *testing.T) {
+	// R-BX9W-WV9L R-BYHT-AN0A R-BZPP-OEQZ R-C0XM-26HO R-C3DE-TPZ2
+	_ = ResolveError(struct {
+		Domain  string
+		Address string
+	}{})
+	const domain = "sbx1.ikigenba.dev"
+	const address = "18.118.7.42"
+	failure := errors.New("lookup failure")
+	for _, tc := range []struct {
+		name     string
+		first    []string
+		err      error
+		failures int
+		never    bool
+	}{
+		{name: "immediate", first: []string{address}},
+		{name: "empty twice", failures: 2},
+		{name: "NXDOMAIN", err: &net.DNSError{IsNotFound: true}, failures: 1},
+		{name: "wrong address", first: []string{"3.19.79.227"}, failures: 1},
+		{name: "multiple", first: []string{address, "3.19.79.227"}, failures: 1},
+		{name: "multiple other", first: []string{"3.19.79.227", "3.19.79.228"}, failures: 1},
+		{name: "answer with error", first: []string{address}, err: failure, failures: 1},
+		{name: "always error", err: failure, never: true},
+		{name: "never resolves", first: []string{"3.19.79.227"}, never: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls, waits := 0, 0
+			deps := seam.Deps{
+				LookupHost: func(name string) ([]string, error) {
+					if name != domain {
+						t.Fatal(name)
+					}
+					calls++
+					if tc.never || calls <= tc.failures {
+						return tc.first, tc.err
+					}
+					return []string{address}, nil
+				},
+				After: func(d time.Duration) <-chan time.Time {
+					if d != PollInterval {
+						t.Fatal(d)
+					}
+					waits++
+					ch := make(chan time.Time, 1)
+					ch <- time.Time{}
+					return ch
+				},
+				Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
+					t.Fatal("process called")
+					return seam.Result{}, nil
+				},
+				Stream: func(context.Context, seam.Cmd, io.Writer) (seam.Result, error) {
+					t.Fatal("stream called")
+					return seam.Result{}, nil
+				},
+				Getenv: func(string) string { t.Fatal("environment read"); return "" },
+				Now:    func() time.Time { t.Fatal("clock read"); return time.Time{} },
+				Stat:   func(string) (fs.FileInfo, error) { t.Fatal("file read"); return nil, nil },
+			}
+			err := WaitResolves(t.Context(), deps, domain, address)
+			wantCalls := tc.failures + 1
+			if tc.never {
+				wantCalls = PollAttempts
+				var resolve *ResolveError
+				if !errors.As(err, &resolve) || resolve.Domain != domain || resolve.Address != address || resolve.ExitCode() != 1 || resolve.Error() != "resolve: sbx1.ikigenba.dev does not resolve to 18.118.7.42" {
+					t.Fatalf("%#v", err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if calls != wantCalls || waits != wantCalls-1 {
+				t.Fatalf("calls=%d waits=%d", calls, waits)
+			}
+		})
+	}
 }

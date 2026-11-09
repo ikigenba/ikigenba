@@ -17,7 +17,7 @@ func TestConfigureTenKeys(t *testing.T) {
 		commands = append(commands, logical)
 		return seam.Result{}, nil
 	}}
-	target := host.Host{Address: "192.0.2.10", Deps: deps}
+	target := host.Host{Domain: "sbx1.ikigenba.dev", Deps: deps}
 
 	periods := BackupPeriods{
 		HostFilesSeconds:    11,

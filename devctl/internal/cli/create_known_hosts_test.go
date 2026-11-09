@@ -50,7 +50,7 @@ func assertCreateKnownHosts(t *testing.T, f *completeCreateFake) {
 		if c.Path != "ssh" && c.Path != "scp" {
 			t.Fatal("unexpected transport", c)
 		}
-		if c.Dir != f.checkoutRoot || !strings.Contains(strings.Join(c.Args, " "), "ec2-user@18.118.7.42") {
+		if c.Dir != f.checkoutRoot || !strings.Contains(strings.Join(c.Args, " "), "ec2-user@"+f.domain()) {
 			t.Fatal("incorrect host", c)
 		}
 		remote := c.Args[len(c.Args)-1]
@@ -62,7 +62,7 @@ func assertCreateKnownHosts(t *testing.T, f *completeCreateFake) {
 		}
 		if c.Path == "scp" {
 			copies++
-			if c.Args[len(c.Args)-2] != filepath.Join(f.checkoutRoot, "dist", createSHA+".tar.xz") || remote != "ec2-user@18.118.7.42:/tmp/upload" {
+			if c.Args[len(c.Args)-2] != filepath.Join(f.checkoutRoot, "dist", createSHA+".tar.xz") || remote != "ec2-user@"+f.domain()+":/tmp/upload" {
 				t.Fatal("wrong release copy", c)
 			}
 		}
@@ -99,7 +99,7 @@ func assertCreateTempEmpty(t *testing.T, base string) {
 }
 
 func TestCreateTemporaryDirectoryCleanup(t *testing.T) {
-	// R-10CV-CLW5
+	// R-3EX2-S3W6
 	for _, stop := range []string{"", "launch", "restore"} {
 		t.Run("stop="+stop, func(t *testing.T) {
 			f := newCompleteCreateFake(t)
@@ -152,7 +152,7 @@ func (w *createDirectoryWriter) Write(p []byte) (int, error) {
 }
 
 func TestCreateTemporaryDirectoryRefusals(t *testing.T) {
-	// R-10CV-CLW5
+	// R-3EX2-S3W6
 	for _, whitespace := range []string{"a b", "a\tb", "a\nb", "a\u2003b"} {
 		t.Run(whitespace, func(t *testing.T) {
 			f := newCompleteCreateFake(t)
@@ -192,4 +192,11 @@ func TestCreateTemporaryDirectoryRefusals(t *testing.T) {
 		}
 		assertCreateTempEmpty(t, f.tmp)
 	})
+}
+
+func (f *completeCreateFake) domain() string {
+	if f.backup {
+		return "staging.ikigenba.dev"
+	}
+	return testDomain
 }

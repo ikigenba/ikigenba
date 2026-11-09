@@ -104,14 +104,14 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) e
 	if err != nil {
 		return err
 	}
-	found, err := cloud.LookupSpace(ctx, session.Clients.EC2, root.Domain, ref.Domain)
+	found, err := cloud.LookupInstance(ctx, session.Clients.EC2, root.Domain, ref.Domain)
 	if err != nil {
 		return err
 	}
 	if found.State != cloud.StateRunning {
 		return &space.NotRunningError{Domain: ref.Domain, State: found.State}
 	}
-	remote := host.Host{Address: found.Address, Deps: deps}
+	remote := host.Host{Domain: found.Domain, Deps: deps}
 	status, err := remote.Sudo(ctx, "", "opsctl", "status")
 	if err != nil {
 		return err
@@ -137,22 +137,34 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) e
 		written[key] = true
 		space.Step(stdout, "copy", report.app+" -> "+root.Domain+"/"+key)
 	}
-	objects, err := session.Clients.S3.ListObjects(ctx, root.Domain, Prefix(args[2]))
+	deleted := 0
+	var deleteErr error
+	err = session.Clients.S3.ListObjects(ctx, root.Domain, Prefix(args[2]), func(page []cloud.Object) bool {
+		keys := make([]string, 0, len(page))
+		for _, object := range page {
+			if !written[object.Key] {
+				keys = append(keys, object.Key)
+			}
+		}
+		if len(keys) == 0 {
+			return true
+		}
+		deleteErr = session.Clients.S3.DeleteObjects(ctx, root.Domain, keys)
+		if deleteErr != nil {
+			return false
+		}
+		deleted += len(keys)
+		return true
+	})
+	if deleteErr != nil {
+		return deleteErr
+	}
 	if err != nil {
 		return err
 	}
-	var obsolete []string
-	for _, object := range objects {
-		if !written[object.Key] {
-			obsolete = append(obsolete, object.Key)
-		}
-	}
 	detail := "nothing to delete"
-	if len(obsolete) > 0 {
-		if err := session.Clients.S3.DeleteObjects(ctx, root.Domain, obsolete); err != nil {
-			return err
-		}
-		detail = fmt.Sprintf("%d objects deleted", len(obsolete))
+	if deleted > 0 {
+		detail = fmt.Sprintf("%d objects deleted", deleted)
 	}
 	space.Step(stdout, "prune", detail)
 	return nil

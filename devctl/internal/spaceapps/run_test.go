@@ -83,7 +83,7 @@ func TestHelpAndSyntaxBeforeExternalAccess(t *testing.T) {
 }
 
 func TestResolutionFailuresStopBeforeHostAccess(t *testing.T) {
-	// R-YUNO-G61J
+	// R-A9O4-71I0
 	for _, subcommand := range []string{"restart", "disable", "enable", "logs"} {
 		for _, tc := range []struct {
 			name      string
@@ -91,7 +91,7 @@ func TestResolutionFailuresStopBeforeHostAccess(t *testing.T) {
 			want      string
 		}{
 			{name: "missing", want: "no space at 'gone.ikigenba.dev'"},
-			{name: "stopped", instances: []cloud.Instance{{Space: "gone.ikigenba.dev", State: cloud.StateStopped}}, want: "'gone.ikigenba.dev' is stopped"},
+			{name: "stopped", instances: []cloud.Instance{{ID: "i-stopped", Space: "gone.ikigenba.dev", State: cloud.StateStopped}}, want: "'gone.ikigenba.dev' is stopped"},
 		} {
 			t.Run(subcommand+"/"+tc.name, func(t *testing.T) {
 				f := newFixture(t, tc.instances)
@@ -110,7 +110,7 @@ func TestResolutionFailuresStopBeforeHostAccess(t *testing.T) {
 }
 
 func TestRestartUsesRootLookupAndOpsctl(t *testing.T) {
-	// R-JNNS-D34S R-DNZO-KZ1V
+	// R-ADBT-CCQ3 R-EHHN-OD4Z
 	f := runningFixture(t)
 	f.execResults = []seam.Result{{Stdout: []byte("a\n"), Stderr: []byte("b\n")}}
 	var stdout bytes.Buffer
@@ -128,7 +128,7 @@ func TestRestartUsesRootLookupAndOpsctl(t *testing.T) {
 }
 
 func TestRestartFailureHasNoSuccessLine(t *testing.T) {
-	// R-DNZO-KZ1V
+	// R-EHHN-OD4Z
 	f := runningFixture(t)
 	f.execResults = []seam.Result{{ExitCode: 6, Stderr: []byte("failed\n")}}
 	var stdout bytes.Buffer
@@ -140,7 +140,7 @@ func TestRestartFailureHasNoSuccessLine(t *testing.T) {
 }
 
 func TestOpsctlOperationsRelayOnlySuccessfulStdout(t *testing.T) {
-	// R-DNZO-KZ1V R-DP7K-YQSK R-DQFH-CIJ9 R-JNNS-D34S
+	// R-EHHN-OD4Z R-EIPK-24VO R-EJXG-FWMD R-ADBT-CCQ3
 	for _, command := range []string{"restart", "disable", "enable"} {
 		for _, tc := range []struct {
 			name   string
@@ -213,7 +213,7 @@ func TestLogsChecksUnitBeforeJournal(t *testing.T) {
 }
 
 func TestLogsOptionsAndStreaming(t *testing.T) {
-	// R-JK03-7RWP R-JNNS-D34S R-DSVA-420N R-HE3E-PRNJ
+	// R-JK03-7RWP R-ADBT-CCQ3 R-DSVA-420N R-HE3E-PRNJ
 	for _, tc := range []struct {
 		name    string
 		args    []string
@@ -302,6 +302,7 @@ func forbiddenDeps(calls *int) seam.Deps {
 type fixture struct {
 	root, work     string
 	instances      []cloud.Instance
+	addresses      []cloud.Address
 	events         []string
 	execs, streams []seam.Cmd
 	execResults    []seam.Result
@@ -334,7 +335,7 @@ func (f *fixture) deps() seam.Deps {
 	return seam.Deps{Dir: f.work,
 		Cloud: func(_ context.Context, profile, region string) (cloud.Clients, error) {
 			f.events = append(f.events, "cloud "+profile+" "+region)
-			return cloud.Clients{STS: fakeSTS{events: &f.events}, EC2: fakeEC2{events: &f.events, instances: f.instances}}, nil
+			return cloud.Clients{STS: fakeSTS{events: &f.events}, EC2: fakeEC2{events: &f.events, instances: f.instances, addresses: f.addresses}}, nil
 		},
 		Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
 			if command.Path == "git" {
@@ -359,13 +360,13 @@ func (f *fixture) deps() seam.Deps {
 
 func (f *fixture) assertResolution(t *testing.T) {
 	t.Helper()
-	want := []string{"git", "cloud ikigenba.dev us-east-2", "sts", "list ikigenba.dev"}
+	want := []string{"git", "cloud ikigenba.dev us-east-2", "sts", "list ikigenba.dev", "addresses ikigenba.dev"}
 	if !reflect.DeepEqual(f.events, want) {
 		t.Fatalf("events = %#v, want %#v", f.events, want)
 	}
 }
 func (f *fixture) ssh(remote string) seam.Cmd {
-	return seam.Cmd{Path: "ssh", Args: []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", "ec2-user@192.0.2.8", remote}, Dir: f.work}
+	return seam.Cmd{Path: "ssh", Args: []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", "ec2-user@sbx1.ikigenba.dev", remote}, Dir: f.work}
 }
 
 type fakeSTS struct {
@@ -382,9 +383,15 @@ type fakeEC2 struct {
 	cloud.EC2
 	events    *[]string
 	instances []cloud.Instance
+	addresses []cloud.Address
 }
 
 func (f fakeEC2) ListSpaceInstances(_ context.Context, domain string) ([]cloud.Instance, error) {
 	*f.events = append(*f.events, "list "+domain)
 	return append([]cloud.Instance(nil), f.instances...), nil
+}
+
+func (f fakeEC2) ListSpaceAddresses(_ context.Context, domain string) ([]cloud.Address, error) {
+	*f.events = append(*f.events, "addresses "+domain)
+	return append([]cloud.Address(nil), f.addresses...), nil
 }

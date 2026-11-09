@@ -158,7 +158,7 @@ func dispatch(ctx context.Context, invocation invocation, stdout io.Writer, deps
 		if err != nil {
 			return err
 		}
-		if _, err := cloud.LookupSpace(ctx, session.Clients.EC2, rootFile.Domain, space.Domain); err != nil {
+		if _, err := cloud.LookupInstance(ctx, session.Clients.EC2, rootFile.Domain, space.Domain); err != nil {
 			return err
 		}
 		entries, err := Push(ctx, deps, session.Clients.SSM, space.Domain, apps)

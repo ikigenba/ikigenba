@@ -8,18 +8,22 @@ import (
 
 const (
 	helpCommand = "devctl space --help"
-	usageText   = `Usage: devctl space create <space> --acme-email <address> [--release <sha|tag>]
+	usageText   = `Usage: devctl space create <space> --acme-email <address> [--release <sha|tag>] [--apex <app> | --no-apex]
 
 Create the space and deploy a release to it: build the release, push its
 apps' secrets, make the role, launch the instance with an Elastic IP, write
-its records, copy and unpack the release on the host, have the release's
-opsctl set the ten host keys, restore the space's own backups when the bucket
-holds a host backup, run init, and activate the release. Completed steps
-remain on failure; use space destroy to clean up.
+its records and wait until its name resolves, copy and unpack the release on
+the host, have the release's opsctl set the ten host keys, restore the
+space's own backups when the bucket holds a host backup, run init, and
+activate the release. When the store holds the apex, the role may prove the
+root and the root's record points at the space. Completed steps remain on
+failure; use space destroy to clean up.
 
 Options:
   --acme-email <address>  where the CA sends the space's expiry warnings; required
   --release <sha|tag>     the release to deploy; the newest release-<N> tag otherwise
+  --apex <app>            after the restore, set host.apex to <app>, an app in the release
+  --no-apex               after the restore, delete host.apex whatever the backup held
 `
 )
 
@@ -27,6 +31,8 @@ type invocation struct {
 	operand   string
 	release   string
 	acmeEmail string
+	apex      string
+	noApex    bool
 	help      bool
 }
 
@@ -46,6 +52,20 @@ func parseInvocation(args []string) (invocation, error) {
 		switch {
 		case argument == "--help" || argument == "-h":
 			result.help = true
+		case argument == "--apex":
+			value, ok := following(args[index:])
+			if !ok || value == "" {
+				return invocation{}, usage("option '--apex' requires a value")
+			}
+			index++
+			result.apex = value
+		case strings.HasPrefix(argument, "--apex="):
+			result.apex = strings.TrimPrefix(argument, "--apex=")
+			if result.apex == "" {
+				return invocation{}, usage("option '--apex' requires a value")
+			}
+		case argument == "--no-apex":
+			result.noApex = true
 		case argument == "--acme-email":
 			value, ok := following(args[index:])
 			if !ok || value == "" {
@@ -100,6 +120,9 @@ func parseInvocation(args []string) (invocation, error) {
 	}
 	if result.acmeEmail == "" {
 		return invocation{}, usage("space create needs --acme-email <address>")
+	}
+	if result.apex != "" && result.noApex {
+		return invocation{}, usage("space create takes --apex or --no-apex, not both")
 	}
 	result.operand = operands[0]
 	return result, nil

@@ -9,6 +9,8 @@ import (
 
 	"github.com/ikigenba/ikigenba/devctl/internal/build"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
+	"github.com/ikigenba/ikigenba/devctl/internal/hostsetup"
+	"github.com/ikigenba/ikigenba/devctl/internal/release"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
 )
@@ -59,9 +61,14 @@ func provision(ctx context.Context, stdout io.Writer, deps seam.Deps, invocation
 	}
 	space.Step(stdout, "records", fmt.Sprintf("created %s -> %s, INSYNC", strings.Join(space.RecordNames(result.sp.Domain), ", "), address.IP))
 
-	if err := runHostSteps(ctx, stdout, deps, result, address.IP, running.ID, invocation.acmeEmail, built, filepath.Join(dir, "known_hosts.launch")); err != nil {
+	if err := Resolve(ctx, stdout, deps, result.sp.Domain, address.IP); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(stdout, "%s %s\n", result.sp.Domain, address.IP)
-	return err
+	periods := hostsetup.DefaultBackupPeriods()
+	l := Launch{InstanceID: running.ID, SHA: result.sha, Label: result.label, File: result.checkout.Path(built.File), Manifests: built.Manifests, Config: hostsetup.Config{Root: result.root.Domain, Region: result.root.Region, ZoneID: result.zone.ID, Space: result.sp, Email: invocation.acmeEmail, Periods: &periods, Opsctl: release.Opsctl(result.sha)}, KnownHosts: filepath.Join(dir, "known_hosts.launch")}
+	r, err := SetUpHost(ctx, stdout, deps, clients.EC2, clients.S3, l)
+	if err != nil {
+		return err
+	}
+	return finishCreate(ctx, stdout, deps, invocation, result, l, r, address.IP)
 }

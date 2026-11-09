@@ -103,16 +103,15 @@ type Instance struct {
 	Space   string
 	State   InstanceState
 	Address string
-	Retired string
 }
 
 // Address describes a public address allocated to a space.
 type Address struct {
 	AllocationID  string
 	AssociationID string
+	InstanceID    string
 	IP            string
 	Space         string
-	Retired       string
 }
 
 // LaunchSpec describes an instance to launch.
@@ -139,7 +138,6 @@ type EC2 interface {
 	AssociateAddress(ctx context.Context, allocationID, instanceID string) error
 	DisassociateAddress(ctx context.Context, associationID string) error
 	ReleaseAddress(ctx context.Context, allocationID string) error
-	TagRetired(ctx context.Context, ids []string, value string) error
 }
 
 // Parameter is a named configuration parameter.
@@ -212,9 +210,12 @@ type Object struct {
 	Modified time.Time
 }
 
+// ObjectPageSize bounds one object-listing callback.
+const ObjectPageSize = 1000
+
 // S3 is the object storage service boundary.
 type S3 interface {
-	ListObjects(ctx context.Context, bucket, prefix string) ([]Object, error)
+	ListObjects(ctx context.Context, bucket, prefix string, each func(page []Object) bool) error
 	PutObject(ctx context.Context, bucket, key string, body io.Reader, size int64) error
 	CopyObject(ctx context.Context, bucket, source, key string) error
 	DeleteObjects(ctx context.Context, bucket string, keys []string) error
@@ -247,83 +248,19 @@ type STS interface {
 	CallerAccountID(ctx context.Context) (string, error)
 }
 
-// Space describes the instance registered for a space domain.
+// Space describes a space's current instance and persistent address.
 type Space struct {
-	Domain  string
-	ID      string
-	State   InstanceState
-	Address string
+	Domain    string
+	ID        string
+	State     InstanceState
+	Address   string
+	ElasticIP Address
 }
 
-// NoSpaceError reports that a space has no registered instance.
-type NoSpaceError struct {
-	Domain string
-}
+// NoSpaceError reports a label with neither an instance nor an address.
+type NoSpaceError struct{ Domain string }
 
-// Error describes the absent space.
-func (e *NoSpaceError) Error() string {
-	return fmt.Sprintf("no space at '%s'", e.Domain)
-}
-
-// Spaces lists active spaces, ordered by domain.
-func Spaces(ctx context.Context, ec2 EC2, domain string) ([]Space, error) {
-	instances, err := ec2.ListSpaceInstances(ctx, domain)
-	if err != nil {
-		return nil, err
-	}
-	return activeSpaces(instances)
-}
-
-func activeSpaces(instances []Instance) ([]Space, error) {
-	groups := make(map[string][]Instance)
-	for _, instance := range instances {
-		if instance.State != StateTerminated && instance.Retired == "" {
-			groups[instance.Space] = append(groups[instance.Space], instance)
-		}
-	}
-	domains := make([]string, 0, len(groups))
-	for domain := range groups {
-		domains = append(domains, domain)
-	}
-	sort.Strings(domains)
-	spaces := make([]Space, 0, len(domains))
-	for _, domain := range domains {
-		group := groups[domain]
-		if len(group) > 1 {
-			ids := make([]string, len(group))
-			for i, item := range group {
-				ids[i] = item.ID
-			}
-			sort.Strings(ids)
-			return nil, &DuplicateSpaceError{Domain: domain, IDs: ids}
-		}
-		item := group[0]
-		spaces = append(spaces, Space{Domain: domain, ID: item.ID, State: item.State, Address: item.Address})
-	}
-	return spaces, nil
-}
-
-// LookupSpace finds the one active instance carrying space.
-func LookupSpace(ctx context.Context, ec2 EC2, domain, space string) (Space, error) {
-	instances, err := ec2.ListSpaceInstances(ctx, domain)
-	if err != nil {
-		return Space{}, err
-	}
-	selected := make([]Instance, 0)
-	for _, item := range instances {
-		if item.Space == space {
-			selected = append(selected, item)
-		}
-	}
-	spaces, err := activeSpaces(selected)
-	if err != nil {
-		return Space{}, err
-	}
-	if len(spaces) == 0 {
-		return Space{}, &NoSpaceError{Domain: space}
-	}
-	return spaces[0], nil
-}
+func (e *NoSpaceError) Error() string { return fmt.Sprintf("no space at '%s'", e.Domain) }
 
 // DuplicateSpaceError reports ambiguous active instances.
 type DuplicateSpaceError struct {
@@ -335,53 +272,125 @@ func (e *DuplicateSpaceError) Error() string {
 	return fmt.Sprintf("'%s' has more than one active instance (%s)", e.Domain, strings.Join(e.IDs, ", "))
 }
 
-// ExitCode reports an ambiguous operand.
+// ExitCode reports an ambiguous instance registry.
 func (e *DuplicateSpaceError) ExitCode() int { return 2 }
 
-// RetiredTag marks resources retained after a move.
-const RetiredTag = "Retired"
+// DuplicateAddressError reports ambiguous persistent addresses.
+type DuplicateAddressError struct {
+	Domain string
+	IPs    []string
+}
 
-// RetiredValue formats a retirement timestamp.
-func RetiredValue(t time.Time) string { return t.UTC().Format(time.RFC3339) }
+func (e *DuplicateAddressError) Error() string {
+	return fmt.Sprintf("'%s' has more than one Elastic IP (%s)", e.Domain, strings.Join(e.IPs, ", "))
+}
 
-// SpaceInstances lists all non-terminated instances, active before retired.
-func SpaceInstances(ctx context.Context, ec2 EC2, domain, space string) ([]Instance, error) {
-	items, err := ec2.ListSpaceInstances(ctx, domain)
+// ExitCode reports an ambiguous address registry.
+func (e *DuplicateAddressError) ExitCode() int { return 2 }
+
+// NoInstanceError reports a space without a host to act on.
+type NoInstanceError struct{ Domain string }
+
+func (e *NoInstanceError) Error() string { return fmt.Sprintf("'%s' has no instance", e.Domain) }
+
+func registry(ctx context.Context, ec2 EC2, domain string) (map[string][]Instance, map[string][]Address, error) {
+	instances, err := ec2.ListSpaceInstances(ctx, domain)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	result := make([]Instance, 0)
-	for _, item := range items {
-		if item.Space == space && item.State != StateTerminated {
-			result = append(result, item)
+	addresses, err := ec2.ListSpaceAddresses(ctx, domain)
+	if err != nil {
+		return nil, nil, err
+	}
+	hosts := make(map[string][]Instance)
+	ips := make(map[string][]Address)
+	for _, instance := range instances {
+		if instance.State != StateTerminated {
+			hosts[instance.Space] = append(hosts[instance.Space], instance)
 		}
 	}
-	sort.Slice(result, func(i, j int) bool {
-		if (result[i].Retired == "") != (result[j].Retired == "") {
-			return result[i].Retired == ""
+	for _, address := range addresses {
+		ips[address.Space] = append(ips[address.Space], address)
+	}
+	return hosts, ips, nil
+}
+
+func registeredSpace(domain string, hosts []Instance, addresses []Address) (Space, error) {
+	if len(hosts) > 1 {
+		ids := make([]string, len(hosts))
+		for i, host := range hosts {
+			ids[i] = host.ID
 		}
-		return result[i].ID < result[j].ID
-	})
+		sort.Strings(ids)
+		return Space{}, &DuplicateSpaceError{Domain: domain, IDs: ids}
+	}
+	if len(addresses) > 1 {
+		ips := make([]string, len(addresses))
+		for i, address := range addresses {
+			ips[i] = address.IP
+		}
+		sort.Strings(ips)
+		return Space{}, &DuplicateAddressError{Domain: domain, IPs: ips}
+	}
+	if len(hosts) == 0 && len(addresses) == 0 {
+		return Space{}, &NoSpaceError{Domain: domain}
+	}
+	result := Space{Domain: domain}
+	if len(hosts) == 1 {
+		result.ID, result.State, result.Address = hosts[0].ID, hosts[0].State, hosts[0].Address
+	}
+	if len(addresses) == 1 {
+		result.ElasticIP, result.Address = addresses[0], addresses[0].IP
+	}
 	return result, nil
 }
 
-// SpaceAddresses lists all space addresses, active before retired.
-func SpaceAddresses(ctx context.Context, ec2 EC2, domain, space string) ([]Address, error) {
-	items, err := ec2.ListSpaceAddresses(ctx, domain)
+// Spaces lists all labels carried by a live instance or allocated address.
+func Spaces(ctx context.Context, ec2 EC2, domain string) ([]Space, error) {
+	hosts, ips, err := registry(ctx, ec2, domain)
 	if err != nil {
 		return nil, err
 	}
-	result := make([]Address, 0)
-	for _, item := range items {
-		if item.Space == space {
-			result = append(result, item)
-		}
+	names := make(map[string]bool)
+	for name := range hosts {
+		names[name] = true
 	}
-	sort.Slice(result, func(i, j int) bool {
-		if (result[i].Retired == "") != (result[j].Retired == "") {
-			return result[i].Retired == ""
+	for name := range ips {
+		names[name] = true
+	}
+	domains := make([]string, 0, len(names))
+	for name := range names {
+		domains = append(domains, name)
+	}
+	sort.Strings(domains)
+	result := make([]Space, 0, len(domains))
+	for _, name := range domains {
+		space, err := registeredSpace(name, hosts[name], ips[name])
+		if err != nil {
+			return nil, err
 		}
-		return result[i].AllocationID < result[j].AllocationID
-	})
+		result = append(result, space)
+	}
+	return result, nil
+}
+
+// LookupSpace looks up only the requested label's instance and address.
+func LookupSpace(ctx context.Context, ec2 EC2, domain, space string) (Space, error) {
+	hosts, ips, err := registry(ctx, ec2, domain)
+	if err != nil {
+		return Space{}, err
+	}
+	return registeredSpace(space, hosts[space], ips[space])
+}
+
+// LookupInstance refuses an address-only space, which has no host to act on.
+func LookupInstance(ctx context.Context, ec2 EC2, domain, space string) (Space, error) {
+	result, err := LookupSpace(ctx, ec2, domain, space)
+	if err != nil {
+		return Space{}, err
+	}
+	if result.ID == "" {
+		return Space{}, &NoInstanceError{Domain: space}
+	}
 	return result, nil
 }

@@ -10,6 +10,7 @@ import (
 )
 
 func TestRunListHelp(t *testing.T) {
+	// R-CO3P-BTKV
 	for _, option := range []string{"--help", "-h"} {
 		t.Run(option, func(t *testing.T) {
 			var stdout bytes.Buffer
@@ -57,8 +58,9 @@ func TestRunRejectsExtraOperands(t *testing.T) {
 }
 
 func TestSpaceSubcommandGrammar(t *testing.T) {
-	// R-FYIR-PAZ9
-	want := []string{"list", "create", "move", "destroy", "stop", "start", "status", "restart", "disable", "enable", "logs"}
+	// R-04BN-SV5G
+	//
+	want := []string{"list", "create", "replace", "destroy", "stop", "start", "status", "restart", "disable", "enable", "logs"}
 	if len(subcommands) != len(want) {
 		t.Fatalf("subcommand count = %d, want %d", len(subcommands), len(want))
 	}

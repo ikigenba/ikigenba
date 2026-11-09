@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -19,22 +20,26 @@ import (
 
 const testDomain = "sbx1.ikigenba.dev"
 
-const expectedCreateUsage = `Usage: devctl space create <space> --acme-email <address> [--release <sha|tag>]
+const expectedCreateUsage = `Usage: devctl space create <space> --acme-email <address> [--release <sha|tag>] [--apex <app> | --no-apex]
 
 Create the space and deploy a release to it: build the release, push its
 apps' secrets, make the role, launch the instance with an Elastic IP, write
-its records, copy and unpack the release on the host, have the release's
-opsctl set the ten host keys, restore the space's own backups when the bucket
-holds a host backup, run init, and activate the release. Completed steps
-remain on failure; use space destroy to clean up.
+its records and wait until its name resolves, copy and unpack the release on
+the host, have the release's opsctl set the ten host keys, restore the
+space's own backups when the bucket holds a host backup, run init, and
+activate the release. When the store holds the apex, the role may prove the
+root and the root's record points at the space. Completed steps remain on
+failure; use space destroy to clean up.
 
 Options:
   --acme-email <address>  where the CA sends the space's expiry warnings; required
   --release <sha|tag>     the release to deploy; the newest release-<N> tag otherwise
+  --apex <app>            after the restore, set host.apex to <app>, an app in the release
+  --no-apex               after the restore, delete host.apex whatever the backup held
 `
 
 func TestCreateCLIUsagePrecedesCheckout(t *testing.T) {
-	// R-8UTA-21TK R-8X92-TLAY R-T6F6-6BKC R-UWR0-NI86
+	// R-8UTA-21TK R-8X92-TLAY R-UWR0-NI86
 	deps := seam.Deps{Dir: t.TempDir(), EUID: 1, Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
 		t.Fatal("unexpected exec")
 		return seam.Result{}, nil
@@ -101,7 +106,7 @@ func (h *commandHarness) deps() seam.Deps {
 			return h.tmp
 		}
 		return ""
-	}, After: immediateD07After, Now: func() time.Time { return time.Unix(1, 0) }, Exec: func(_ context.Context, c seam.Cmd) (seam.Result, error) {
+	}, LookupHost: func(string) ([]string, error) { return []string{"18.118.7.42"}, nil }, Stat: func(string) (fs.FileInfo, error) { return nil, fs.ErrNotExist }, After: immediateD07After, Now: func() time.Time { return time.Unix(1, 0) }, Exec: func(_ context.Context, c seam.Cmd) (seam.Result, error) {
 		if result, handled, err := fakeCreateBuild(h.t, h.checkoutRoot, c); handled {
 			return result, err
 		}
@@ -174,7 +179,7 @@ func (h *commandHarness) ChangeRecords(context.Context, string, []cloud.RecordCh
 func (h *commandHarness) ChangeStatus(context.Context, string) (cloud.ChangeStatus, error) {
 	return cloud.ChangeInsync, nil
 }
-func (h *commandHarness) ListObjects(context.Context, string, string) ([]cloud.Object, error) {
+func (h *commandHarness) listObjects(context.Context, string, string) ([]cloud.Object, error) {
 	return nil, nil
 }
 func (h *commandHarness) PutObject(context.Context, string, string, io.Reader, int64) error {
@@ -203,7 +208,6 @@ func (h *commandHarness) DeleteInstanceProfile(context.Context, string) error { 
 func (h *commandHarness) DeleteRole(context.Context, string) error            { return nil }
 
 func TestRootBoundOperationProfilesThroughCLI(t *testing.T) {
-	//
 	for _, args := range [][]string{{"space", "list"}, {"space", "destroy", "sbx1"}, {"space", "stop", "sbx1"}, {"space", "start", "sbx1"}, {"space", "status", "sbx1"}, {"apex", "set", "crm.sbx1"}, {"apex", "show"}, {"apex", "clear"}} {
 		h := newCommandHarness(t)
 		h.write(filepath.Join("infra", "terraform.tfvars.json"), `{"domain":"example.test","region":"eu-west-1"}`)
@@ -247,7 +251,6 @@ func TestInvalidSpaceAndAppNeverConnectThroughCLI(t *testing.T) {
 
 func TestCreateConnectsOnceAndStopsOnIdentityFailureThroughCLI(t *testing.T) {
 	// R-T7N2-K3B1
-	//
 	for _, operand := range []string{"sbx1", "sbx1.ikigenba.dev"} {
 		h := newCommandHarness(t)
 		deps := h.deps()
@@ -279,7 +282,6 @@ func (*commandHarness) CopyObject(context.Context, string, string, string) error
 }
 
 func TestRootFailuresStopBeforeCloudThroughCLI(t *testing.T) {
-	//
 	for _, args := range [][]string{{"space", "list"}, {"space", "destroy", "sbx1"}, {"space", "stop", "sbx1"}, {"space", "start", "sbx1"}, {"space", "status", "sbx1"}, {"apex", "set", "crm.sbx1"}, {"apex", "show"}, {"apex", "clear"}} {
 		h := newCommandHarness(t)
 		h.write(filepath.Join("infra", "terraform.tfvars.json"), `{}`)
@@ -386,7 +388,7 @@ func fakeCreateBuild(t *testing.T, root string, c seam.Cmd) (seam.Result, bool, 
 }
 
 func TestCreateReleaseResolutionThroughCLI(t *testing.T) {
-	// R-T8UY-XV1Q R-T7N2-K3B1 R-UVJ4-9QHH R-UWR0-NI86
+	// R-T8UY-XV1Q R-T7N2-K3B1 R-UWR0-NI86
 	for _, tc := range []struct {
 		args                 []string
 		tags, rev, sha, want string
@@ -457,7 +459,7 @@ func TestCreateReleaseResolutionThroughCLI(t *testing.T) {
 }
 
 func TestCreatePlatformBarrierThroughCLI(t *testing.T) {
-	// R-VNPB-5O7N
+	// R-3DP6-EC5H
 	for _, stop := range []string{"zone", "template", "boundary", "ns", "instances", "role", "profile"} {
 		t.Run(stop, func(t *testing.T) {
 			h := newCommandHarness(t)
@@ -549,7 +551,9 @@ type completeCreateFake struct {
 	backup                        bool
 	onlyAccounts                  bool
 	wholeSeconds                  bool
+	reverseHost                   bool
 	prefixes, remotes, parameters []string
+	pages                         map[string]int
 	fail                          string
 	commands                      []seam.Cmd
 }
@@ -567,7 +571,7 @@ func (f *completeCreateFake) AllocateAddress(context.Context, string, string) (c
 	return cloud.Address{IP: "18.118.7.42", AllocationID: "eipalloc-1"}, nil
 }
 func (f *completeCreateFake) AssociateAddress(context.Context, string, string) error { return nil }
-func (f *completeCreateFake) ListObjects(_ context.Context, bucket, prefix string) ([]cloud.Object, error) {
+func (f *completeCreateFake) listObjects(_ context.Context, bucket, prefix string) ([]cloud.Object, error) {
 	if bucket != "ikigenba.dev" {
 		f.t.Fatalf("bucket %s", bucket)
 	}
@@ -624,6 +628,9 @@ func (f *completeCreateFake) deps() seam.Deps {
 		if c.Path == "ssh" {
 			remote := c.Args[len(c.Args)-1]
 			f.remotes = append(f.remotes, remote)
+			if strings.Contains(remote, "'config' 'get' 'host.apex'") {
+				return seam.Result{ExitCode: 1}, nil
+			}
 			if remote == "'mktemp'" {
 				return seam.Result{Stdout: []byte("/tmp/upload\n")}, nil
 			}
@@ -669,15 +676,16 @@ func createInitialLines() string {
 }
 
 func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
-	// R-140K-HX48 R-V5AB-BWF1 R-18W6-1030 R-1CJV-6BB3 R-1EZN-XUSH R-1IND-360K R-1MB2-8H8N R-VIP7-JDKO R-CBQ2-IFUH
-	// R-16GD-9GLM R-1PYR-DSGQ
+	// R-O101-XO9A R-O73J-UIYR R-V5AB-BWF1
 	for _, tc := range []struct {
 		operand      string
 		wholeSeconds bool
-	}{{"sbx1", false}, {"sbx1.ikigenba.dev", false}, {"staging", false}, {"staging", true}} {
+		reverseHost  bool
+	}{{"sbx1", false, false}, {"sbx1.ikigenba.dev", false, false}, {"staging", false, false}, {"staging", false, true}, {"staging", true, false}} {
 		operand := tc.operand
 		f := newCompleteCreateFake(t)
 		f.wholeSeconds = tc.wholeSeconds
+		f.reverseHost = tc.reverseHost
 		f.backup = operand == "staging"
 		label := "sbx1"
 		if f.backup {
@@ -692,7 +700,7 @@ func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
 				restore = "restore: ok (host/2026-09-12T14:22:51Z.tar.zst, 10 keys set again)\n"
 			}
 		}
-		want := createInitialLines() + "secrets: ok (8 apps)\nrole: ok (" + domain + ")\ninstance: ok (i-0c9e94542d98846a8 running, 3.19.79.227)\naddress: ok (elastic ip 18.118.7.42 associated)\nrecords: ok (created " + domain + ", *." + domain + " -> 18.118.7.42, INSYNC)\nhost: ok (status checks passed, cloud-init done)\ncopy: ok (" + createSHA + ".tar.xz -> 18.118.7.42)\nunpack: ok (/opt/ikigenba/releases/" + createSHA + ")\nopsctl: ok (10 keys set)\n" + restore + "init: ok\n"
+		want := createInitialLines() + "secrets: ok (8 apps)\nrole: ok (" + domain + ")\ninstance: ok (i-0c9e94542d98846a8 running, 3.19.79.227)\naddress: ok (elastic ip 18.118.7.42 associated)\nrecords: ok (created " + domain + ", *." + domain + " -> 18.118.7.42, INSYNC)\nresolve: ok (" + domain + " -> 18.118.7.42)\nhost: ok (status checks passed, cloud-init done)\ncopy: ok (" + createSHA + ".tar.xz -> " + domain + ")\nunpack: ok (/opt/ikigenba/releases/" + createSHA + ")\nopsctl: ok (10 keys set)\n" + restore + "known_hosts: ok (" + map[bool]string{true: "kept", false: "removed " + domain}[f.backup] + ")\ninit: ok\n"
 		if f.backup {
 			for _, app := range createApps {
 				if app == "sites" {
@@ -719,6 +727,16 @@ func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
 				wantPrefix = append(wantPrefix, label+"/"+app+"/")
 			}
 		}
+		for _, prefix := range wantPrefix {
+			wantPages := 1
+			if f.backup && strings.HasSuffix(prefix, "/host/") {
+				wantPages = 2
+			}
+			if f.pages[prefix] != wantPages {
+				t.Fatalf("prefix %s pages %d want %d", prefix, f.pages[prefix], wantPages)
+			}
+		}
+
 		if !reflect.DeepEqual(f.prefixes, wantPrefix) {
 			t.Fatalf("prefixes %v want %v", f.prefixes, wantPrefix)
 		}
@@ -761,7 +779,7 @@ func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
 		if f.backup {
 			tail = append(tail, "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' "+program+" 'host' 'restore'")
 			tail = append(tail, configVectors[10:]...)
-			tail = append(tail, "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' "+program+" 'config' 'del' 'host.apex'")
+			tail = append(tail, "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' "+program+" 'config' 'get' 'host.apex'")
 		}
 		tail = append(tail, "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' "+program+" 'init'")
 		if f.backup {
@@ -780,7 +798,7 @@ func TestCreateDeploysReleaseThroughCLI(t *testing.T) {
 }
 
 func TestCreateFailuresKeepCompletedStepsThroughCLI(t *testing.T) {
-	// R-140K-HX48 R-V5AB-BWF1 R-V7Q4-3FWF R-C82D-D4ME R-1MB2-8H8N R-VIP7-JDKO
+	// R-3G4Z-5VMV R-O8BG-8APG R-V5AB-BWF1 R-V7Q4-3FWF
 	for _, stop := range []string{"build", "secret", "launch", "init", "activate"} {
 		t.Run(stop, func(t *testing.T) {
 			f := newCompleteCreateFake(t)
@@ -823,11 +841,11 @@ func TestCreateFailuresKeepCompletedStepsThroughCLI(t *testing.T) {
 			case "launch":
 				assertResult(t, got, 1, createInitialLines()+"secrets: ok (8 apps)\nrole: ok (sbx1.ikigenba.dev)\n", "devctl: ec2 RunInstances: InsufficientInstanceCapacity\n")
 			case "init":
-				if got.stderr != "devctl: init: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/"+createSHA+"/opsctl/bin/opsctl init: exit status 2\n" || !strings.HasSuffix(got.stdout, "restore: ok (no host backup)\n") {
+				if got.stderr != "devctl: init: ssh ec2-user@sbx1.ikigenba.dev sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/"+createSHA+"/opsctl/bin/opsctl init: exit status 2\n" || !strings.HasSuffix(got.stdout, "known_hosts: ok (removed sbx1.ikigenba.dev)\n") {
 					t.Fatalf("result %#v", got)
 				}
 			case "activate":
-				if !strings.HasSuffix(got.stdout, "init: ok\nactivation output\n") || got.stderr != "devctl: activate: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/"+createSHA+"/opsctl/bin/opsctl activate "+createSHA+" r2: exit status 1\n\n> opsctl: activate failed\n" {
+				if !strings.HasSuffix(got.stdout, "init: ok\nactivation output\n") || got.stderr != "devctl: activate: ssh ec2-user@sbx1.ikigenba.dev sudo systemd-run --quiet --wait --pipe --collect /opt/ikigenba/releases/"+createSHA+"/opsctl/bin/opsctl activate "+createSHA+" r2: exit status 1\n\n> opsctl: activate failed\n" {
 					t.Fatalf("result %#v", got)
 				}
 			}
@@ -869,7 +887,7 @@ func (f *completeCreateFake) DeleteObjects(context.Context, string, []string) er
 }
 
 func TestCreateUnlabelledReleaseThroughCLI(t *testing.T) {
-	// R-140K-HX48 R-T8UY-XV1Q
+	// R-T8UY-XV1Q
 	f := newCompleteCreateFake(t)
 	deps := f.deps()
 	exec := deps.Exec
@@ -903,7 +921,7 @@ type createListingFailure struct {
 	sentinel error
 }
 
-func (f *createListingFailure) ListObjects(ctx context.Context, bucket, prefix string) ([]cloud.Object, error) {
+func (f *createListingFailure) listObjects(ctx context.Context, bucket, prefix string) ([]cloud.Object, error) {
 	if *f.failed {
 		f.t.Fatalf("listing after failure: %s", prefix)
 	}
@@ -912,22 +930,21 @@ func (f *createListingFailure) ListObjects(ctx context.Context, bucket, prefix s
 		f.prefixes = append(f.prefixes, prefix)
 		return nil, f.sentinel
 	}
-	return f.completeCreateFake.ListObjects(ctx, bucket, prefix)
+	return f.completeCreateFake.listObjects(ctx, bucket, prefix)
 }
 
 func TestCreateHostAndAppFailuresStopByUse(t *testing.T) {
-	// R-18W6-1030 R-1CJV-6BB3 R-1EZN-XUSH R-1IND-360K
 	for _, tc := range []struct {
 		name, match, prefix, lastLine, absent string
 		configOrdinal                         int
 	}{
 		{name: "copy", match: "scp", lastLine: "host: ok (status checks passed, cloud-init done)\n", absent: "copy:"},
-		{name: "unpack", match: "'tar' '-x'", lastLine: "copy: ok (" + createSHA + ".tar.xz -> 18.118.7.42)\n", absent: "unpack:"},
+		{name: "unpack", match: "'tar' '-x'", lastLine: "copy: ok (" + createSHA + ".tar.xz -> sbx1.ikigenba.dev)\n", absent: "unpack:"},
 		{name: "configure", match: "'config' 'set'", configOrdinal: 3, lastLine: "unpack: ok (/opt/ikigenba/releases/" + createSHA + ")\n", absent: "opsctl:"},
 		{name: "host listing", prefix: "sbx1/host/", lastLine: "opsctl: ok (10 keys set)\n", absent: "restore:"},
 		{name: "host restore", match: "'host' 'restore'", lastLine: "opsctl: ok (10 keys set)\n", absent: "restore:"},
 		{name: "configure again", match: "'config' 'set'", configOrdinal: 13, lastLine: "opsctl: ok (10 keys set)\n", absent: "restore:"},
-		{name: "delete apex", match: "'config' 'del' 'host.apex'", lastLine: "opsctl: ok (10 keys set)\n", absent: "restore:"},
+		{name: "read apex", match: "'config' 'get' 'host.apex'", lastLine: "known_hosts: ok (kept)\n", absent: "init:"},
 		{name: "app listing", prefix: "sbx1/dummy/", lastLine: "restore: ok (opsctl restore auth)\n", absent: "restore: ok (opsctl restore dummy)"},
 		{name: "app restore", match: "'restore' 'dummy'", lastLine: "restore: ok (opsctl restore auth)\n", absent: "restore: ok (opsctl restore dummy)"},
 	} {
@@ -990,10 +1007,56 @@ func TestCreateHostAndAppFailuresStopByUse(t *testing.T) {
 	}
 }
 
-func (h *commandHarness) TagRetired(context.Context, []string, string) error {
-	panic("unexpected TagRetired")
+func (f *createListingFailure) ListObjects(ctx context.Context, bucket, prefix string, each func([]cloud.Object) bool) error {
+	objects, err := f.listObjects(ctx, bucket, prefix)
+	if err != nil {
+		return err
+	}
+	each(objects)
+	return nil
 }
 
-func (f *completeCreateFake) TagRetired(context.Context, []string, string) error {
-	panic("unexpected TagRetired")
+func (f *completeCreateFake) ListObjects(ctx context.Context, bucket, prefix string, each func([]cloud.Object) bool) error {
+	objects, err := f.listObjects(ctx, bucket, prefix)
+	if err != nil {
+		return err
+	}
+	if f.pages == nil {
+		f.pages = map[string]int{}
+	}
+	if len(objects) == 0 {
+		f.pages[prefix]++
+		each(nil)
+		return nil
+	}
+	if strings.HasSuffix(prefix, "/host/") && len(objects) > 1 {
+		pages := [][]cloud.Object{objects[:1], objects[1:]}
+		if f.reverseHost {
+			pages[0], pages[1] = pages[1], pages[0]
+		}
+		for _, page := range pages {
+			f.pages[prefix]++
+			if !each(page) {
+				break
+			}
+		}
+		return nil
+	}
+
+	for _, object := range objects {
+		f.pages[prefix]++
+		if !each([]cloud.Object{object}) {
+			break
+		}
+	}
+	return nil
+}
+
+func (h *commandHarness) ListObjects(ctx context.Context, bucket, prefix string, each func([]cloud.Object) bool) error {
+	objects, err := h.listObjects(ctx, bucket, prefix)
+	if err != nil {
+		return err
+	}
+	each(objects)
+	return nil
 }

@@ -15,8 +15,7 @@ import (
 )
 
 type fakeEC2 struct {
-	err        error
-	createTags func(*ec2.CreateTagsInput) (*ec2.CreateTagsOutput, error)
+	err error
 
 	calls []string
 
@@ -134,7 +133,7 @@ func TestEC2LaunchTemplateLookup(t *testing.T) {
 }
 
 func TestEC2SpaceFilteringAndMapping(t *testing.T) {
-	// R-QMDP-S5DY R-QQ1E-XGM1
+	// R-QMDP-S5DY R-9G1O-WPDJ
 	wantFilters := []types.Filter{
 		{Name: aws.String("tag:Domain"), Values: []string{"root.example"}},
 		{Name: aws.String("tag-key"), Values: []string{"Space"}},
@@ -179,6 +178,11 @@ func TestEC2SpaceFilteringAndMapping(t *testing.T) {
 			AllocationId: aws.String("eipalloc-one"),
 			PublicIp:     aws.String("192.0.2.3"),
 			Tags:         []types.Tag{{Key: aws.String("Space"), Value: aws.String("one.example")}},
+			InstanceId:   aws.String("i-foreign"),
+		}, {
+			AllocationId: aws.String("eipalloc-two"),
+			PublicIp:     aws.String("192.0.2.4"),
+			Tags:         []types.Tag{{Key: aws.String("Space"), Value: aws.String("two.example")}},
 		}}}, nil
 	}
 
@@ -198,14 +202,17 @@ func TestEC2SpaceFilteringAndMapping(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantAddresses := []cloud.Address{{AllocationID: "eipalloc-one", AssociationID: "", IP: "192.0.2.3", Space: "one.example"}}
+	wantAddresses := []cloud.Address{
+		{AllocationID: "eipalloc-one", AssociationID: "", InstanceID: "i-foreign", IP: "192.0.2.3", Space: "one.example"},
+		{AllocationID: "eipalloc-two", InstanceID: "", IP: "192.0.2.4", Space: "two.example"},
+	}
 	if !reflect.DeepEqual(addresses, wantAddresses) {
 		t.Fatalf("addresses = %#v, want %#v", addresses, wantAddresses)
 	}
 }
 
 func TestEC2CreationTagsAndRunMapping(t *testing.T) {
-	// R-QMDP-S5DY R-QQ1E-XGM1
+	// R-QMDP-S5DY R-9G1O-WPDJ
 	fake := &fakeEC2{}
 	fake.runInstances = func(in *ec2.RunInstancesInput) (*ec2.RunInstancesOutput, error) {
 		if aws.ToInt32(in.MinCount) != 1 || aws.ToInt32(in.MaxCount) != 1 {
@@ -556,13 +563,3 @@ func assertTagSpecifications(t *testing.T, got []types.TagSpecification, resourc
 		}
 	}
 }
-
-func (f *fakeEC2) CreateTags(_ context.Context, in *ec2.CreateTagsInput, _ ...func(*ec2.Options)) (*ec2.CreateTagsOutput, error) {
-	f.calls = append(f.calls, "CreateTags")
-	if f.createTags != nil {
-		return f.createTags(in)
-	}
-	return nil, f.err
-}
-
-func (f *fakeEC2) TagRetired(context.Context, []string, string) error { panic("unexpected TagRetired") }

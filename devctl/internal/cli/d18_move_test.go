@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -18,83 +17,88 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/release"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
-	"github.com/ikigenba/ikigenba/devctl/internal/spacemove"
+	"github.com/ikigenba/ikigenba/devctl/internal/spacecreate"
+	"github.com/ikigenba/ikigenba/devctl/internal/spacereplace"
 )
 
-var _ func(context.Context, []string, string, io.Writer, seam.Deps) error = spacemove.Run
+var _ func(context.Context, []string, string, io.Writer, seam.Deps) error = spacereplace.Run
 
-const moveOldID = "i-0a1b2c3d4e5f60718"
-const moveNewID = "i-0e5d4c3b2a1f09876"
-const moveOldIP = "18.220.10.5"
-const moveNewIP = "3.141.27.86"
-const moveLaunchIP = "3.22.140.61"
-const moveZone = "Z09565073GHK8BYWQ1A78"
-const moveTime = "2026-11-08T18:30:00Z"
-const moveActivation = "opaque one\nopaque two\nopaque three\nopaque four\nopaque five\nopaque six\nopaque seven\nopaque eight\n"
-const expectedMoveUsage = `Usage: devctl space move <space> [--release <sha|tag>]
+const replaceOldID = "i-0a1b2c3d4e5f60718"
+const replaceNewID = "i-0e5d4c3b2a1f09876"
+const replaceOldIP = "18.220.10.5"
+const replaceNewIP = "3.141.27.86"
+const replaceLaunchIP = "3.22.140.61"
+const replaceZone = "Z09565073GHK8BYWQ1A78"
+const replaceActivation = "opaque one\nopaque two\nopaque three\nopaque four\nopaque five\nopaque six\nopaque seven\nopaque eight\n"
+const expectedReplaceUsage = `Usage: devctl space replace <space> [--release <sha|tag>] [--no-backup]
 
-Move the space to a new instance launched from the current launch template:
-build the release, have the current host retire with opsctl retire and take
-a host backup with the release's own opsctl, stop it and tag it and its
-Elastic IP Retired, launch the new instance with a new Elastic IP, copy and
-unpack the release there, restore the host backup, point the space's records
-at the new address, restore each app's data, and activate the release. The
-retired instance stays, stopped, as the way back until space destroy removes
-it. Completed steps remain on failure.
+Put the space on a new instance at its address: build the release, have the
+current host take its final backups with opsctl retire, disassociate the
+space's Elastic IP, terminate the instance, launch a new one and associate
+the same Elastic IP with it, wait until its name resolves, copy and unpack
+the release on the host, restore the newest host backup, run init, restore
+each app's data, and activate the release. A space with no Elastic IP is
+first given one, and its records pointed at it, before opsctl retire;
+otherwise the records are not touched, and the apex never is. Completed
+steps remain on failure; replace again, with --no-backup when the space's
+instance is a half-built host.
 
 Options:
   --release <sha|tag>     the release to deploy; the newest release-<N> tag otherwise
+  --no-backup             skip the final backup; restore from the newest backups already kept
 `
 
-// Unimplemented cloud operations panic through the embedded interfaces. A move
+// Unimplemented cloud operations panic through the embedded interfaces. Replace
 // has no permission to use those operations, including any SSM operation.
-type moveFake struct {
+type replaceFake struct {
 	cloud.EC2
 	cloud.IAM
 	cloud.Route53
 	cloud.S3
-	t                          *testing.T
-	h                          *commandHarness
-	ctx                        context.Context
-	tmp                        string
-	tags, sha, resolve         string
-	instances                  []cloud.Instance
-	addresses                  []cloud.Address
-	apex, apexOther            bool
-	backup                     bool
-	machine, remoteTemp        string
-	onlyAccounts               bool
-	hostObjects                []cloud.Object
-	toolCommands               []seam.Cmd
-	allCommands                []seam.Cmd
-	backupCommands             []seam.Cmd
-	backupWorktree             string
-	absentApp                  string
-	oldState                   cloud.InstanceState
-	events                     []string
-	commands                   []seam.Cmd
-	prefixes                   []string
-	changes                    [][]cloud.RecordChange
-	restoreDone                bool
-	knownLaunch, knownRestored string
-	fail                       string
-	failRemote                 string
-	failRestored               bool
-	cause                      error
-	compileApp                 string
-	version                    string
+	t                  *testing.T
+	h                  *commandHarness
+	ctx                context.Context
+	tmp                string
+	tags, sha, resolve string
+	instances          []cloud.Instance
+	addresses          []cloud.Address
+	apex               bool
+	backup             bool
+	onlyAccounts       bool
+	hostObjects        []cloud.Object
+	allCommands        []seam.Cmd
+	oldState           cloud.InstanceState
+	events             []string
+	commands           []seam.Cmd
+	prefixes           []string
+	changes            [][]cloud.RecordChange
+	restoreDone        bool
+	knownLaunch        string
+	fail               string
+	forbidOld          bool
+	legacyResolved     bool
+	resolveBad         bool
+	unreachable        bool
+	domain             string
+	oldID              string
+	newID              string
+	failRemote         string
+	failRestored       bool
+	cause              error
+	compileApp         string
+	version            string
 }
 
-func newMoveFake(t *testing.T) *moveFake {
+func newReplaceFake(t *testing.T) *replaceFake {
 	h := newCommandHarness(t)
 	for _, app := range createApps {
 		h.addAppWithSecrets(app)
 	}
-	return &moveFake{t: t, h: h, ctx: t.Context(), tmp: t.TempDir(), tags: "release-86\nrelease-87\nrelease-88-rc1\n", sha: createSHA, machine: "x86_64", remoteTemp: "/tmp/tmp.Ab12Cd34Ef", backup: true, oldState: cloud.StateRunning,
-		instances: []cloud.Instance{{ID: moveOldID, Space: "staging.ikigenba.dev", State: cloud.StateRunning, Address: moveOldIP}},
-		addresses: []cloud.Address{{AllocationID: "eipalloc-0123456789abcdef0", IP: moveOldIP, Space: "staging.ikigenba.dev"}}, cause: errors.New("move sentinel")}
+	return &replaceFake{t: t, h: h, ctx: t.Context(), tmp: t.TempDir(), tags: "release-86\nrelease-87\nrelease-88-rc1\n", sha: createSHA, backup: true, oldState: cloud.StateRunning, domain: "staging.ikigenba.dev", oldID: replaceOldID, newID: replaceNewID,
+		instances: []cloud.Instance{{ID: replaceOldID, Space: "staging.ikigenba.dev", State: cloud.StateRunning, Address: replaceOldIP}},
+		addresses: []cloud.Address{{AllocationID: "eipalloc-0123456789abcdef0", IP: replaceOldIP, AssociationID: "old-association", InstanceID: replaceOldID, Space: "staging.ikigenba.dev"}}, cause: errors.New("replace sentinel")}
 }
-func (f *moveFake) call(ctx context.Context, name string) error {
+func (f *replaceFake) call(ctx context.Context, name string) error {
 	f.t.Helper()
 	if ctx != f.ctx {
 		f.t.Fatalf("context changed at %s", name)
@@ -111,13 +115,28 @@ func (f *moveFake) call(ctx context.Context, name string) error {
 	}
 	return nil
 }
-func (f *moveFake) deps() seam.Deps {
+func (f *replaceFake) deps() seam.Deps {
 	return seam.Deps{Dir: f.h.checkoutRoot, EUID: 1, Getenv: func(key string) string {
 		if key == "TMPDIR" {
 			return f.tmp
 		}
 		return ""
-	}, Now: func() time.Time { return time.Date(2026, 11, 8, 18, 30, 0, 0, time.UTC) }, After: immediateD07After,
+	}, Now: func() time.Time { return time.Date(2026, 11, 8, 18, 30, 0, 0, time.UTC) }, After: immediateD07After, LookupHost: func(domain string) ([]string, error) {
+		if domain != f.domain {
+			f.t.Fatal(domain)
+		}
+		if f.resolveBad {
+			return []string{"203.0.113.8"}, nil
+		}
+		if len(f.addresses) == 0 {
+			if !slices.Contains(f.events, "insync") {
+				f.t.Fatal("resolved before records synchronized", f.events)
+			}
+			f.legacyResolved = true
+			return []string{replaceNewIP}, nil
+		}
+		return []string{f.addresses[0].IP}, nil
+	},
 		Cloud: func(ctx context.Context, profile, region string) (cloud.Clients, error) {
 			if profile != "ikigenba.dev" || region != "us-east-2" {
 				f.t.Fatal(profile, region)
@@ -131,19 +150,24 @@ func (f *moveFake) deps() seam.Deps {
 			if err := f.call(ctx, "activate"); err != nil {
 				return seam.Result{ExitCode: 1, Stderr: []byte("arbitrary activation failure")}, nil
 			}
-			_, err := io.WriteString(w, moveActivation)
+			_, err := io.WriteString(w, replaceActivation)
 			return seam.Result{}, err
 		}}
 }
-func (f *moveFake) checkTransport(c seam.Cmd) {
+func (f *replaceFake) checkTransport(c seam.Cmd) {
 	f.t.Helper()
 	f.commands = append(f.commands, c)
 	if c.Dir != f.h.checkoutRoot {
 		f.t.Fatal(c)
 	}
 	joined := strings.Join(c.Args, " ")
-	if strings.Contains(joined, moveLaunchIP) {
-		f.t.Fatal("launch address used after allocation", c)
+	if !strings.Contains(joined, "ec2-user@"+f.domain) {
+		f.t.Fatal("host must be reached by name", c)
+	}
+	for _, ip := range []string{replaceOldIP, replaceLaunchIP, replaceNewIP} {
+		if strings.Contains(joined, ip) {
+			f.t.Fatal("address in transport", c)
+		}
 	}
 	known := ""
 	for _, arg := range c.Args {
@@ -151,41 +175,31 @@ func (f *moveFake) checkTransport(c seam.Cmd) {
 			known = strings.TrimPrefix(arg, "UserKnownHostsFile=")
 		}
 	}
-	if strings.Contains(joined, "ec2-user@"+moveOldIP) {
+	beforeHost := !slices.Contains(f.events, "launch")
+	if beforeHost && f.forbidOld {
+		f.t.Fatal("contacted old host despite no backup", c)
+	}
+	if beforeHost && len(f.addresses) == 0 && !f.legacyResolved {
+		f.t.Fatal("contacted legacy host before resolution", c)
+	}
+	if beforeHost || f.restoreDone {
 		if known != "" {
-			f.t.Fatal("old host used temporary known hosts")
+			f.t.Fatal("unexpected known hosts override", c)
 		}
 		return
 	}
-	if !strings.Contains(joined, "ec2-user@"+moveNewIP) || known == "" {
-		f.t.Fatal("new host lacks isolated known hosts", c)
+	if known == "" || filepath.Base(known) != "known_hosts.launch" || filepath.Dir(filepath.Dir(known)) != f.tmp || !strings.HasPrefix(filepath.Base(filepath.Dir(known)), "replace.") {
+		f.t.Fatal("launch key isolation", c)
 	}
-	if filepath.Dir(filepath.Dir(known)) != f.tmp || !strings.HasPrefix(filepath.Base(filepath.Dir(known)), "move.") {
-		f.t.Fatal(known)
-	}
-	want := "known_hosts.launch"
-	if f.restoreDone {
-		want = "known_hosts"
-	}
-	if filepath.Base(known) != want {
-		f.t.Fatal("wrong key phase", known, f.restoreDone)
-	}
-	if f.restoreDone && f.knownRestored == "" {
-		if _, err := os.Stat(known); !os.IsNotExist(err) {
-			f.t.Fatal("restored key file already exists", err)
-		}
-		f.knownRestored = known
-	} else if !f.restoreDone {
-		f.knownLaunch = known
-	}
+	f.knownLaunch = known
 	if err := os.WriteFile(known, []byte("arbitrary trusted key\n"), 0600); err != nil {
 		f.t.Fatal(err)
 	}
 }
-func (f *moveFake) exec(ctx context.Context, c seam.Cmd) (seam.Result, error) {
+func (f *replaceFake) exec(ctx context.Context, c seam.Cmd) (seam.Result, error) {
 	f.allCommands = append(f.allCommands, c)
 	if c.Path == "secret-tool" {
-		f.t.Fatal("move accessed secrets")
+		f.t.Fatal("replace accessed secrets")
 	}
 	if c.Path == "git" && c.Args[0] == "tag" {
 		f.events = append(f.events, "tags")
@@ -198,17 +212,6 @@ func (f *moveFake) exec(ctx context.Context, c seam.Cmd) (seam.Result, error) {
 			return seam.Result{ExitCode: 1}, nil
 		}
 		return seam.Result{Stdout: []byte(f.sha + "\n")}, nil
-	}
-	if c.Path == "git" && len(c.Args) > 3 && c.Args[0] == "worktree" && c.Args[1] == "add" && slices.Contains(f.events, "retire") {
-		f.backupWorktree = c.Args[3]
-		f.toolCommands = append(f.toolCommands, c)
-	}
-	if c.Path == "go" && f.backupWorktree != "" && c.Dir == filepath.Join(f.backupWorktree, "opsctl") {
-		f.toolCommands = append(f.toolCommands, c)
-		return seam.Result{}, os.WriteFile(c.Args[3], []byte("backup binary"), 0600)
-	}
-	if c.Path == "git" && len(c.Args) > 3 && c.Args[0] == "worktree" && c.Args[1] == "remove" && c.Args[3] == f.backupWorktree {
-		f.toolCommands = append(f.toolCommands, c)
 	}
 	if c.Path == "go" && f.compileApp != "" && filepath.Base(c.Dir) == f.compileApp {
 		return seam.Result{ExitCode: 1, Stderr: []byte("# github.com/ikigenba/ikigenba/dashboard/cmd/dashboard\ncmd/dashboard/main.go:41:2: undefined: render\n")}, nil
@@ -231,24 +234,18 @@ func (f *moveFake) exec(ctx context.Context, c seam.Cmd) (seam.Result, error) {
 		f.t.Fatalf("unexpected process %#v", c)
 	}
 	f.checkTransport(c)
-	if strings.Contains(strings.Join(c.Args, " "), "ec2-user@"+moveOldIP) {
-		f.backupCommands = append(f.backupCommands, c)
-	}
 	if c.Path == "scp" {
-		if c.Args[len(c.Args)-1] == "ec2-user@"+moveOldIP+":"+f.remoteTemp {
-			return seam.Result{}, nil
-		}
 		if c.Args[len(c.Args)-2] != filepath.Join(f.h.checkoutRoot, "dist", f.sha+".tar.xz") {
 			f.t.Fatal(c)
 		}
 		return seam.Result{}, nil
 	}
 	remote := c.Args[len(c.Args)-1]
-	if remote == "'uname' '-m'" {
-		return seam.Result{Stdout: []byte(f.machine + "\n\n")}, nil
+	if strings.Contains(remote, "'opsctl'") && remote != "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'retire'" {
+		f.t.Fatal("unreleased opsctl", c)
 	}
-	if remote == "'mktemp'" && strings.Contains(strings.Join(c.Args, " "), "ec2-user@"+moveOldIP) {
-		return seam.Result{Stdout: []byte(f.remoteTemp + "\n\n")}, nil
+	if f.unreachable && slices.Contains(f.events, "launch") {
+		return seam.Result{ExitCode: 255}, nil
 	}
 	if f.failRemote != "" && strings.Contains(remote, f.failRemote) && f.restoreDone == f.failRestored {
 		return seam.Result{ExitCode: 1, Stderr: []byte("remote failure")}, nil
@@ -275,7 +272,7 @@ func (f *moveFake) exec(ctx context.Context, c seam.Cmd) (seam.Result, error) {
 	}
 	if stage != "" {
 		if err := f.call(ctx, stage); err != nil {
-			return seam.Result{ExitCode: 1, Stderr: []byte("opsctl: backup failed")}, nil
+			return seam.Result{ExitCode: 1, Stdout: []byte("backup report one\nbackup report two\n")}, nil
 		}
 		if stage == "restore" {
 			f.restoreDone = true
@@ -283,126 +280,122 @@ func (f *moveFake) exec(ctx context.Context, c seam.Cmd) (seam.Result, error) {
 	}
 	return seam.Result{Stdout: []byte("opaque captured output\n")}, nil
 }
-func (f *moveFake) CallerAccountID(ctx context.Context) (string, error) {
+func (f *replaceFake) CallerAccountID(ctx context.Context) (string, error) {
 	return "295229566359", f.call(ctx, "sts")
 }
-func (f *moveFake) Zone(ctx context.Context, root string) (cloud.Zone, error) {
+func (f *replaceFake) Zone(ctx context.Context, root string) (cloud.Zone, error) {
 	if root != "ikigenba.dev" {
 		f.t.Fatal(root)
 	}
-	return cloud.Zone{ID: moveZone, Name: root}, f.call(ctx, "zone")
+	return cloud.Zone{ID: replaceZone, Name: root}, f.call(ctx, "zone")
 }
-func (f *moveFake) LaunchTemplate(ctx context.Context, root string) (string, error) {
+func (f *replaceFake) LaunchTemplate(ctx context.Context, root string) (string, error) {
 	if root != "ikigenba.dev" {
 		f.t.Fatal(root)
 	}
 	return "lt-current", f.call(ctx, "template")
 }
-func (f *moveFake) PermissionsBoundary(ctx context.Context, root string) (string, error) {
+func (f *replaceFake) PermissionsBoundary(ctx context.Context, root string) (string, error) {
 	if root != "ikigenba.dev" {
 		f.t.Fatal(root)
 	}
 	return "boundary", f.call(ctx, "boundary")
 }
-func (f *moveFake) ListSpaceInstances(ctx context.Context, root string) ([]cloud.Instance, error) {
+func (f *replaceFake) ListSpaceInstances(ctx context.Context, root string) ([]cloud.Instance, error) {
 	if root != "ikigenba.dev" {
 		f.t.Fatal(root)
 	}
 	return f.instances, f.call(ctx, "instances")
 }
-func (f *moveFake) ListSpaceAddresses(ctx context.Context, root string) ([]cloud.Address, error) {
+func (f *replaceFake) ListSpaceAddresses(ctx context.Context, root string) ([]cloud.Address, error) {
 	if root != "ikigenba.dev" {
 		f.t.Fatal(root)
 	}
 	return f.addresses, f.call(ctx, "addresses")
 }
-func (f *moveFake) FindRecord(ctx context.Context, zone, root, kind string) (cloud.Record, bool, error) {
-	if zone != moveZone || root != "ikigenba.dev" || kind != "A" {
-		f.t.Fatal(zone, root, kind)
-	}
-	address := moveOldIP
-	if f.apexOther {
-		address = "203.0.113.9"
-	}
-	return cloud.Record{Name: root, Type: kind, Values: []string{address}}, f.apex || f.apexOther, f.call(ctx, "apex")
-}
-func (f *moveFake) StartInstance(ctx context.Context, id string) error {
-	if id != moveOldID {
+func (f *replaceFake) StartInstance(ctx context.Context, id string) error {
+	if id != f.oldID {
 		f.t.Fatal(id)
 	}
 	f.oldState = cloud.StateRunning
 	return f.call(ctx, "start")
 }
-func (f *moveFake) StopInstance(ctx context.Context, id string) error {
-	last := f.allCommands[len(f.allCommands)-1]
-	if last.Path != "ssh" || last.Args[len(last.Args)-1] != "'rm' '-f' '"+f.remoteTemp+"'" {
-		f.t.Fatal("stopped before backup cleanup", last)
-	}
-	if id != moveOldID {
+func (f *replaceFake) TerminateInstance(ctx context.Context, id string) error {
+	if id != f.oldID {
 		f.t.Fatal(id)
 	}
-	f.oldState = cloud.StateStopped
-	return f.call(ctx, "stop")
+	if err := f.call(ctx, "terminate"); err != nil {
+		return err
+	}
+	f.oldState = cloud.StateTerminated
+	return nil
 }
-func (f *moveFake) DescribeInstance(ctx context.Context, id string) (cloud.Instance, error) {
-	state, address := cloud.StateRunning, moveLaunchIP
-	if id == moveOldID {
-		state, address = f.oldState, moveOldIP
-	} else if id != moveNewID {
+func (f *replaceFake) DisassociateAddress(ctx context.Context, id string) error {
+	if id != f.addresses[0].AssociationID {
+		f.t.Fatal(id)
+	}
+	return f.call(ctx, "disassociate")
+}
+func (f *replaceFake) DescribeInstance(ctx context.Context, id string) (cloud.Instance, error) {
+	state, address := cloud.StateRunning, replaceLaunchIP
+	if id == f.oldID {
+		state, address = f.oldState, replaceOldIP
+	} else if id != f.newID {
 		f.t.Fatal(id)
 	}
 	return cloud.Instance{ID: id, State: state, Address: address}, f.call(ctx, "describe "+id)
 }
-func (f *moveFake) InstanceChecksPassed(ctx context.Context, id string) (bool, error) {
+func (f *replaceFake) InstanceChecksPassed(ctx context.Context, id string) (bool, error) {
 	return true, f.call(ctx, "checks "+id)
 }
-func (f *moveFake) TagRetired(ctx context.Context, ids []string, value string) error {
-	want := []string{moveOldID}
-	if len(f.addresses) > 0 {
-		want = append(want, "eipalloc-0123456789abcdef0")
+func (f *replaceFake) RunInstance(ctx context.Context, spec cloud.LaunchSpec) (cloud.Instance, error) {
+	for _, old := range f.instances {
+		if old.State != cloud.StateTerminated && f.oldState != cloud.StateTerminated {
+			f.t.Fatal("two active instances", f.events)
+		}
 	}
-	if !reflect.DeepEqual(ids, want) || value != moveTime {
-		f.t.Fatal(ids, value)
-	}
-	return f.call(ctx, "tag")
-}
-func (f *moveFake) RunInstance(ctx context.Context, spec cloud.LaunchSpec) (cloud.Instance, error) {
-	if spec != (cloud.LaunchSpec{LaunchTemplateID: "lt-current", InstanceProfile: f.instances[0].Space, Domain: "ikigenba.dev", Space: f.instances[0].Space}) {
+	if spec != (cloud.LaunchSpec{LaunchTemplateID: "lt-current", InstanceProfile: f.domain, Domain: "ikigenba.dev", Space: f.domain}) {
 		f.t.Fatal(spec)
 	}
-	return cloud.Instance{ID: moveNewID}, f.call(ctx, "launch")
+	return cloud.Instance{ID: f.newID}, f.call(ctx, "launch")
 }
-func (f *moveFake) AllocateAddress(ctx context.Context, root, domain string) (cloud.Address, error) {
-	if root != "ikigenba.dev" || domain != f.instances[0].Space {
+func (f *replaceFake) AllocateAddress(ctx context.Context, root, domain string) (cloud.Address, error) {
+	if root != "ikigenba.dev" || domain != f.domain {
 		f.t.Fatal(root, domain)
 	}
-	return cloud.Address{AllocationID: "new-allocation", IP: moveNewIP}, f.call(ctx, "allocate")
+	return cloud.Address{AllocationID: "new-allocation", IP: replaceNewIP}, f.call(ctx, "allocate")
 }
-func (f *moveFake) AssociateAddress(ctx context.Context, allocation, id string) error {
-	if allocation != "new-allocation" || id != moveNewID {
+func (f *replaceFake) AssociateAddress(ctx context.Context, allocation, id string) error {
+	want := "new-allocation"
+	if len(f.addresses) > 0 {
+		want = f.addresses[0].AllocationID
+	}
+	if allocation != want || (id != f.newID && id != f.oldID) {
 		f.t.Fatal(allocation, id)
 	}
-	return f.call(ctx, "associate")
+	return f.call(ctx, "associate "+id)
 }
-func (f *moveFake) ListObjects(ctx context.Context, bucket, prefix string) ([]cloud.Object, error) {
+func (f *replaceFake) ListObjects(ctx context.Context, bucket, prefix string, visit func([]cloud.Object) bool) error {
 	if bucket != "ikigenba.dev" {
 		f.t.Fatal(bucket)
 	}
 	f.prefixes = append(f.prefixes, prefix)
 	if err := f.call(ctx, "objects "+prefix); err != nil {
-		return nil, err
+		return err
 	}
 	if strings.HasSuffix(prefix, "/host/") && f.hostObjects != nil {
-		return f.hostObjects, nil
+		visit(f.hostObjects)
+		return nil
 	}
-	if !f.backup || prefix == "staging/"+f.absentApp+"/" {
-		return nil, nil
+	if !f.backup {
+		return nil
 	}
 	objects := []cloud.Object{{Key: prefix + "2026-11-07T18:29:41Z.tar.zst", Modified: time.Unix(1, 0)}, {Key: prefix + "2026-11-08T18:29:41Z.tar.zst", Modified: time.Unix(2, 0)}}
 	if strings.HasSuffix(prefix, "/host/") {
 		accounts := cloud.Object{Key: prefix + "2026-11-08T18:29:41.222933531Z.accounts.tar.zst", Modified: time.Unix(3, 0)}
 		if f.onlyAccounts {
-			return []cloud.Object{accounts}, nil
+			visit([]cloud.Object{accounts})
+			return nil
 		}
 		objects = []cloud.Object{
 			{Key: prefix + "2026-11-08T18:29:41.222933531Z.tar.zst", Modified: time.Unix(1, 0)},
@@ -411,27 +404,29 @@ func (f *moveFake) ListObjects(ctx context.Context, bucket, prefix string) ([]cl
 			accounts,
 		}
 	}
-	return objects, nil
+	visit(objects[:1])
+	visit(objects[1:])
+	return nil
 }
-func (f *moveFake) ChangeRecords(ctx context.Context, zone string, changes []cloud.RecordChange) (string, error) {
-	if !f.restoreDone || zone != moveZone {
+func (f *replaceFake) ChangeRecords(ctx context.Context, zone string, changes []cloud.RecordChange) (string, error) {
+	if f.restoreDone || zone != replaceZone {
 		f.t.Fatal("DNS changed before restore", zone)
 	}
 	f.changes = append(f.changes, changes)
 	return "change", f.call(ctx, "records")
 }
-func (f *moveFake) ChangeStatus(ctx context.Context, id string) (cloud.ChangeStatus, error) {
+func (f *replaceFake) ChangeStatus(ctx context.Context, id string) (cloud.ChangeStatus, error) {
 	if id != "change" {
 		f.t.Fatal(id)
 	}
 	return cloud.ChangeInsync, f.call(ctx, "insync")
 }
-func (f *moveFake) run(args ...string) runResult {
+func (f *replaceFake) run(args ...string) runResult {
 	var out, diagnostic bytes.Buffer
-	code := Run(f.ctx, append([]string{"space", "move"}, args...), strings.NewReader(""), &out, &diagnostic, f.deps())
+	code := Run(f.ctx, append([]string{"space", "replace"}, args...), strings.NewReader(""), &out, &diagnostic, f.deps())
 	return runResult{code: code, stdout: out.String(), stderr: diagnostic.String()}
 }
-func (f *moveFake) clean() {
+func (f *replaceFake) clean() {
 	f.t.Helper()
 	entries, err := os.ReadDir(f.tmp)
 	if err != nil || len(entries) != 0 {
@@ -439,61 +434,63 @@ func (f *moveFake) clean() {
 	}
 }
 
-func moveInitial() string {
-	return "account: ok (ikigenba.dev, us-east-2, 295229566359)\ndomain: ok (zone ikigenba.dev " + moveZone + ")\nbuild: ok (release-87, dist/" + createSHA + ".tar.xz)\n"
+func replaceInitial() string {
+	return "account: ok (ikigenba.dev, us-east-2, 295229566359)\ndomain: ok (zone ikigenba.dev " + replaceZone + ")\nbuild: ok (release-87, dist/" + createSHA + ".tar.xz)\n"
 }
-func expectedMove(stopped, apex, noAddress bool, absentApp string) string {
-	s := moveInitial()
-	if stopped {
-		s += "start: ok (" + moveOldID + " running, status checks passed)\n"
+func expectedReplace(stopped, noBackup, noAddress, gone bool) string {
+	s := replaceInitial()
+	if stopped && !noBackup {
+		s += "start: ok (" + replaceOldID + " running, status checks passed)\n"
 	}
-	s += "retire: ok (opsctl retire)\nbackup: ok (opsctl host backup, amd64)\nstop: ok (" + moveOldID + " stopped)\ntag: ok (" + moveOldID
+	address := replaceOldIP
+	if noAddress {
+		address = replaceNewIP
+		s += "address: ok (elastic ip " + address + " associated)\nrecords: ok (created staging.ikigenba.dev, *.staging.ikigenba.dev -> " + address + ", INSYNC)\nresolve: ok (staging.ikigenba.dev -> " + address + ")\n"
+	}
+	switch {
+	case gone:
+		s += "retire: ok (already gone)\n"
+	case noBackup:
+		s += "retire: skipped (--no-backup)\n"
+	default:
+		s += "retire: ok (opsctl retire)\n"
+	}
 	if !noAddress {
-		s += " and elastic ip " + moveOldIP
-	}
-	s += " Retired=" + moveTime + ")\n"
-	s += "instance: ok (" + moveNewID + " running, " + moveLaunchIP + ")\naddress: ok (elastic ip " + moveNewIP + " associated)\nhost: ok (status checks passed, cloud-init done)\ncopy: ok (" + createSHA + ".tar.xz -> " + moveNewIP + ")\nunpack: ok (" + release.Folder(createSHA) + ")\nopsctl: ok (5 keys set)\nrestore: ok (host/2026-11-08T18:29:41.222933531Z.tar.zst, 5 keys set again)\nrecords: ok (updated staging.ikigenba.dev, *.staging.ikigenba.dev -> " + moveNewIP + ", INSYNC)\ninit: ok\n"
-	for _, app := range createApps {
-		detail := "opsctl restore " + app
-		if app == absentApp {
-			detail = "no backup of " + app
+		if gone {
+			s += "address: ok (not associated)\n"
+		} else {
+			s += "address: ok (elastic ip " + address + " disassociated from " + replaceOldID + ")\n"
 		}
-		s += "restore: ok (" + detail + ")\n"
 	}
-	s += moveActivation
-	if apex {
-		s += "apex: ok (ikigenba.dev -> " + moveNewIP + ", INSYNC)\n"
+	s += "instance: ok ("
+	if !gone {
+		s += replaceOldID + " terminated, "
 	}
-	return s + "staging.ikigenba.dev " + moveNewID + " " + moveNewIP + "\n"
+	s += replaceNewID + " running, " + replaceLaunchIP + ")\naddress: ok (elastic ip " + address + " associated)\nresolve: ok (staging.ikigenba.dev -> " + address + ")\nhost: ok (status checks passed, cloud-init done)\ncopy: ok (" + createSHA + ".tar.xz -> staging.ikigenba.dev)\nunpack: ok (" + release.Folder(createSHA) + ")\nopsctl: ok (5 keys set)\nrestore: ok (host/2026-11-08T18:29:41.222933531Z.tar.zst, 5 keys set again)\ninit: ok\n"
+	for _, app := range createApps {
+		s += "restore: ok (opsctl restore " + app + ")\n"
+	}
+	return s + replaceActivation + "staging.ikigenba.dev " + replaceNewID + " " + address + "\n"
 }
 
-func TestMoveSuccessfulFlows(t *testing.T) {
-	// R-K6AR-U5BF R-G0YK-GUGN R-LRLP-8GFV R-KKXK-FE7R R-CFDR-NR2K
-	// R-338C-KBL6 R-KOL9-KPFU R-KPT5-YH6J R-KS8Y-Q0NX R-KTGV-3SEM
-	// R-KUOR-HK5B R-CJ1G-T2AN R-LU1H-ZZX9 R-KZKD-0N43 R-M1CW-AMDF
-	// R-CLH9-KLS1 R-L382-5YC6 R-CP4Y-PX04 R-CNX2-C59F R-KIHR-NUQD
+func TestReplaceSuccessfulFlows(t *testing.T) {
+	// R-3EJQ-KEIX R-2MPN-0OSX R-NG9R-FKNH R-NHHN-TCE6 R-NIPK-744V R-NJXG-KVVK
+	// R-NMD9-CFCY R-NOT2-3YUC R-OW9L-JELI R-2YWM-UE7V R-304J-85YK R-31CF-LXP9
+	// R-33S8-DH6N R-3504-R8XC R-NXCC-SD17 R-3681-50O1 R-NZS5-JWIL R-NQ0Y-HQL1
+	// R-39VQ-ABW4 R-4DWT-NR12 R-4F4Q-1IRR R-4HKI-T295
 	for _, tc := range []struct {
-		name, operand                       string
-		stopped, apex, apexOther, noAddress bool
-		absentApp                           string
-		wholeSeconds                        bool
+		name                                     string
+		stopped, noBackup, noAddress, gone, full bool
 	}{
-		{name: "whole seconds", operand: "staging", wholeSeconds: true},
-		{name: "label", operand: "staging"}, {name: "domain", operand: "staging.ikigenba.dev"}, {name: "stopped", operand: "staging", stopped: true}, {name: "apex", operand: "staging", apex: true}, {name: "another apex holder", operand: "staging", apexOther: true}, {name: "no address or app backup", operand: "staging", noAddress: true, absentApp: "sites"},
+		{name: "running"}, {name: "domain", full: true}, {name: "stopped", stopped: true},
+		{name: "no-backup", noBackup: true}, {name: "stopped-no-backup", stopped: true, noBackup: true},
+		{name: "legacy", noAddress: true}, {name: "stopped-legacy", stopped: true, noAddress: true},
+		{name: "legacy-no-backup", noBackup: true, noAddress: true}, {name: "address-only", gone: true},
+		{name: "address-only-no-backup", gone: true, noBackup: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f := newMoveFake(t)
-			if tc.wholeSeconds {
-				f.hostObjects = []cloud.Object{
-					{Key: "staging/host/2026-11-08T18:29:41Z.tar.zst", Modified: time.Unix(1, 0)},
-					{Key: "staging/host/2026-11-07T18:29:41Z.tar.zst", Modified: time.Unix(2, 0)},
-				}
-			}
-			f.apex, f.apexOther = tc.apex, tc.apexOther
-			if tc.apexOther {
-				f.addresses = append(f.addresses, cloud.Address{Space: "other.ikigenba.dev", IP: "203.0.113.9"})
-			}
-			f.absentApp = tc.absentApp
+			f := newReplaceFake(t)
+			f.forbidOld = tc.noBackup || tc.gone
 			if tc.stopped {
 				f.instances[0].State = cloud.StateStopped
 				f.oldState = cloud.StateStopped
@@ -501,352 +498,498 @@ func TestMoveSuccessfulFlows(t *testing.T) {
 			if tc.noAddress {
 				f.addresses = nil
 			}
-			result := f.run(tc.operand)
-			want := expectedMove(tc.stopped, tc.apex, tc.noAddress, tc.absentApp)
-			if tc.wholeSeconds {
-				want = strings.ReplaceAll(want, "host/2026-11-08T18:29:41.222933531Z.tar.zst", "host/2026-11-08T18:29:41Z.tar.zst")
+			if tc.gone {
+				f.instances[0].State = cloud.StateTerminated
+				f.addresses[0].AssociationID = ""
+				f.addresses[0].InstanceID = ""
 			}
-			assertResult(t, result, 0, want, "")
+			operand := "staging"
+			if tc.full {
+				operand = f.domain
+			}
+			args := []string{operand}
+			if tc.noBackup {
+				args = append(args, "--no-backup")
+			}
+			got := f.run(args...)
+			assertResult(t, got, 0, expectedReplace(tc.stopped, tc.noBackup, tc.noAddress, tc.gone), "")
 			f.clean()
 			if f.version != strings.TrimSpace(invokeWithDeps(f.deps(), "--version").stdout) {
-				t.Fatal("version was not forwarded", f.version)
+				t.Fatal("version not forwarded", f.version)
 			}
-			if f.knownLaunch == "" || f.knownRestored == "" || f.knownLaunch == f.knownRestored {
-				t.Fatal("missing key phases")
+			if f.knownLaunch == "" {
+				t.Fatal("no launch key file")
 			}
-			wantEvents := []string{"tags", "resolve", "open", "sts", "zone", "template", "boundary", "instances", "addresses", "apex"}
-			if tc.apex || tc.apexOther {
-				wantEvents = append(wantEvents, "addresses")
+			wantPrefix := []string{"tags", "resolve", "open", "sts", "zone", "template", "boundary", "instances", "addresses"}
+			if !slices.Equal(f.events[:len(wantPrefix)], wantPrefix) {
+				t.Fatal("preflight order", f.events)
 			}
-			if tc.stopped {
-				wantEvents = append(wantEvents, "start", "describe "+moveOldID, "checks "+moveOldID)
+			if !tc.gone {
+				want := []string{"disassociate", "terminate", "describe " + replaceOldID, "launch"}
+				if tc.noAddress {
+					want = want[1:]
+				}
+				pos := slices.Index(f.events, want[0])
+				if pos < 0 || !slices.Equal(f.events[pos:pos+len(want)], want) {
+					t.Fatal("serial replacement", f.events)
+				}
+			} else if slices.Contains(f.events, "terminate") || slices.Contains(f.events, "disassociate") {
+				t.Fatal("retired absent instance", f.events)
 			}
-			wantEvents = append(wantEvents, "retire", "backup", "stop", "describe "+moveOldID, "tag", "launch", "describe "+moveNewID, "allocate", "associate", "checks "+moveNewID, "objects staging/host/", "restore", "records", "insync", "init")
-			for _, app := range createApps {
-				wantEvents = append(wantEvents, "objects staging/"+app+"/")
+			if tc.noBackup || tc.gone {
+				if slices.Contains(f.events, "retire") || slices.Contains(f.events, "start") {
+					t.Fatal(f.events)
+				}
 			}
-			wantEvents = append(wantEvents, "activate")
-			if tc.apex {
-				wantEvents = append(wantEvents, "records", "insync")
+			if tc.noAddress {
+				if len(f.changes) != 1 || len(f.changes[0]) != 2 {
+					t.Fatal(f.changes)
+				}
+				for i, name := range space.RecordNames(f.domain) {
+					c := f.changes[0][i]
+					if c.Action != cloud.ChangeUpsert || c.Record.Name != name || c.Record.Type != "A" || !slices.Equal(c.Record.Values, []string{replaceNewIP}) {
+						t.Fatal(c)
+					}
+				}
+			} else if len(f.changes) != 0 || slices.Contains(f.events, "allocate") {
+				t.Fatal("changed lifetime address", f.events, f.changes)
 			}
-			if !reflect.DeepEqual(f.events, wantEvents) {
-				t.Fatalf("events %v want %v", f.events, wantEvents)
-			}
-			wantChanges := []cloud.RecordChange{}
-			for _, name := range space.RecordNames("staging.ikigenba.dev") {
-				wantChanges = append(wantChanges, cloud.RecordChange{Action: cloud.ChangeUpsert, Record: cloud.Record{Name: name, Type: "A", TTL: space.RecordTTL, Values: []string{moveNewIP}}})
-			}
-			if !reflect.DeepEqual(f.changes[0], wantChanges) || len(f.changes) != 1+boolInt(tc.apex) {
-				t.Fatal(f.changes)
-			}
-			if tc.apex && !reflect.DeepEqual(f.changes[1], []cloud.RecordChange{{Action: cloud.ChangeUpsert, Record: cloud.Record{Name: "ikigenba.dev", Type: "A", TTL: space.RecordTTL, Values: []string{moveNewIP}}}}) {
-				t.Fatal(f.changes)
-			}
-			var config, ops []string
+			var config []string
 			for _, c := range f.commands {
-				if c.Path != "ssh" {
-					continue
+				remote := c.Args[len(c.Args)-1]
+				if c.Path == "ssh" && strings.Contains(remote, "'config' 'set'") {
+					config = append(config, remote)
 				}
-				r := c.Args[len(c.Args)-1]
-				if strings.Contains(r, "'config' 'set'") {
-					config = append(config, r)
-				}
-				if strings.Contains(r, "'opsctl'") || strings.Contains(r, "opsctl/bin/opsctl'") {
-					ops = append(ops, r)
-				}
-				if strings.Contains(r, "'config' 'del'") || strings.Contains(r, "'curl'") || strings.Contains(r, "'bash'") {
-					t.Fatal(r)
+				if strings.Contains(remote, "'host.apex") || strings.Contains(remote, "'acme.email") || strings.Contains(remote, "'backup.period") || strings.Contains(remote, "'curl'") || strings.Contains(remote, "'bash'") {
+					t.Fatal(c)
 				}
 			}
-			program := "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' '" + release.Opsctl(createSHA) + "'"
-			var five []string
-			for _, key := range []string{"host.name=staging.ikigenba.dev", "dns.provider=route53", "dns.zones=ikigenba.dev:" + moveZone, "aws.region=us-east-2", "backup.s3_uri=s3://ikigenba.dev/staging/"} {
-				five = append(five, program+" 'config' 'set' '"+key+"'")
-			}
-			if !reflect.DeepEqual(config, append(append([]string{}, five...), five...)) {
-				t.Fatal(config)
-			}
-			wantOps := append([]string{"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'retire'"}, five...)
-			wantOps = append(wantOps, program+" 'host' 'restore'")
-			wantOps = append(wantOps, five...)
-			wantOps = append(wantOps, program+" 'init'")
-			for _, app := range createApps {
-				if app != tc.absentApp {
-					wantOps = append(wantOps, program+" 'restore' '"+app+"'")
+			var wantConfig []string
+			for range 2 {
+				for _, key := range []string{"host.name=" + f.domain, "dns.provider=route53", "dns.zones=ikigenba.dev:" + replaceZone, "aws.region=us-east-2", "backup.s3_uri=s3://ikigenba.dev/staging/"} {
+					wantConfig = append(wantConfig, "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' '"+release.Opsctl(f.sha)+"' 'config' 'set' '"+key+"'")
 				}
 			}
-			wantOps = append(wantOps, program+" 'activate' '"+createSHA+"' 'release-87'")
-			if !reflect.DeepEqual(ops, wantOps) {
-				t.Fatalf("ops %v want %v", ops, wantOps)
+			if !slices.Equal(config, wantConfig) {
+				t.Fatal(config, wantConfig)
 			}
 		})
 	}
 }
-func boolInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
 
-func TestMoveUsageBeforeAnyExternalAccess(t *testing.T) {
-	// R-K9YG-ZGJI R-320G-6JUH R-KCE9-R00W R-KDM6-4RRL R-VK1M-0CZK
+func TestReplaceUsageBeforeExternalAccess(t *testing.T) {
+	// R-2LHQ-MX28 R-3I7F-PPR0 R-3JFC-3HHP
 	for _, tc := range []struct {
 		args    []string
 		message string
 		help    bool
 	}{
-		{args: nil, message: "space move needs <space>"}, {args: []string{"sbx1", "sbx2"}, message: "space move takes only <space>"},
+		{message: "space replace needs <space>"}, {args: []string{"sbx1", "sbx2"}, message: "space replace takes only <space>"},
 		{args: []string{"sbx1", "--acme-email", "ops@example.test"}, message: "unknown option '--acme-email'"},
+		{args: []string{"sbx1", "--apex", "crm"}, message: "unknown option '--apex'"},
+		{args: []string{"sbx1", "--no-backup=true"}, message: "unknown option '--no-backup=true'"},
 		{args: []string{"sbx1", "--release"}, message: "option '--release' requires a value"},
 		{args: []string{"sbx1", "--release="}, message: "option '--release' requires a value"},
 		{args: []string{"--release"}, message: "option '--release' requires a value"},
 		{args: []string{"sbx1", "--release", "-x"}, message: "option '--release' requires a value"},
 		{args: []string{"--help"}, help: true}, {args: []string{"-h"}, help: true}, {args: []string{"sbx1", "--release", "--help"}, help: true},
 	} {
-		external := 0
-		deps := noExternalDeps(&external)
+		calls := 0
+		deps := noExternalDeps(&calls)
 		deps.Dir = t.TempDir()
-		got := invokeWithDeps(deps, append([]string{"space", "move"}, tc.args...)...)
+		got := invokeWithDeps(deps, append([]string{"space", "replace"}, tc.args...)...)
 		if tc.help {
-			assertResult(t, got, 0, expectedMoveUsage, "")
+			assertResult(t, got, 0, expectedReplaceUsage, "")
 		} else {
 			assertResult(t, got, 2, "", "devctl: "+tc.message+"\n\nsee 'devctl space --help' for usage\n")
 		}
-		if external != 0 {
-			t.Fatal(external)
+		if calls != 0 {
+			t.Fatal(calls)
 		}
+	}
+	var out bytes.Buffer
+	err := spacereplace.Run(t.Context(), nil, "test-version", &out, seam.Deps{})
+	var usage *space.UsageError
+	if !errors.As(err, &usage) || usage.Message != "space replace needs <space>" || usage.Help != "devctl space --help" {
+		t.Fatal(err)
 	}
 }
 
-func TestMoveReleaseAndPreflightFailures(t *testing.T) {
-	// R-K9YG-ZGJI R-KEU2-IJIA R-KG1Y-WB8Z R-KH9V-A2ZO R-KIHR-NUQD
+func TestReplaceReleaseResolution(t *testing.T) {
+	// R-3FRM-Y69M R-3KN8-H98E
 	for _, tc := range []struct {
-		name    string
-		setup   func(*moveFake)
-		args    []string
-		message string
-		code    int
+		args                           []string
+		tags, sha, ref, label, message string
 	}{
-		{name: "old tags", setup: func(f *moveFake) { f.tags = "r1\nr2\nr3\nr4\nr5\nr6\nr7\n" }, message: "no release-<N> tag in this checkout; name one with --release <sha|tag>", code: 2},
-		{name: "branch", args: []string{"staging", "--release", "main"}, message: "'main' is not a commit", code: 2},
-		{name: "invalid space", args: []string{"crm.sbx1"}, message: "'crm.sbx1' is not a space: a space is one label under 'ikigenba.dev'", code: 2},
-		{name: "zone", setup: func(f *moveFake) {
-			f.fail = "zone"
-			f.cause = &cloud.NotFoundError{Kind: "hosted zone", Name: "ikigenba.dev"}
-		}, message: "no hosted zone 'ikigenba.dev'", code: 1},
-		{name: "template", setup: func(f *moveFake) {
-			f.fail = "template"
-			f.cause = &cloud.NotFoundError{Kind: "launch template", Name: "ikigenba.dev"}
-		}, message: "no launch template 'ikigenba.dev'", code: 1},
-		{name: "boundary", setup: func(f *moveFake) {
-			f.fail = "boundary"
-			f.cause = &cloud.NotFoundError{Kind: "permissions boundary", Name: "ikigenba.dev"}
-		}, message: "no permissions boundary 'ikigenba.dev'", code: 1},
-		{name: "only retired", setup: func(f *moveFake) { f.instances[0].Retired = moveTime }, message: "no space at 'staging.ikigenba.dev'", code: 1},
-		{name: "duplicate", setup: func(f *moveFake) {
-			f.instances = append(f.instances, cloud.Instance{ID: "i-0f1e2d3c4b5a69788", Space: "staging.ikigenba.dev", State: cloud.StateRunning})
-		}, message: "'staging.ikigenba.dev' has more than one active instance (" + moveOldID + ", i-0f1e2d3c4b5a69788)", code: 2},
-		{name: "stopping", setup: func(f *moveFake) { f.instances[0].State = cloud.StateStopping }, message: "'staging.ikigenba.dev' is stopping", code: 1},
-		{name: "pending", setup: func(f *moveFake) { f.instances[0].State = cloud.StatePending }, message: "'staging.ikigenba.dev' is pending", code: 1},
-		{name: "whitespace", setup: func(f *moveFake) { f.tmp = filepath.Join(f.tmp, "a b") }, code: 2},
+		{args: []string{"staging"}, ref: "refs/tags/release-87^{commit}", label: "release-87"},
+		{args: []string{"--release", "r1", "staging", "--no-backup", "--release", "9e1c7a3", "--no-backup"}, ref: "9e1c7a3^{commit}", sha: "9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c"},
+		{args: []string{"staging", "--release=release-88-rc1"}, ref: "refs/tags/release-88-rc1^{commit}", label: "release-88-rc1"},
+		{args: []string{"staging"}, tags: "r1\nr2\nr3\nr4\nr5\nr6\nr7\n", message: "no release-<N> tag in this checkout; name one with --release <sha|tag>"},
+		{args: []string{"staging", "--release", "main"}, message: "'main' is not a commit"},
+		{args: []string{"crm.sbx1"}, message: "'crm.sbx1' is not a space: a space is one label under 'ikigenba.dev'"},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			f := newMoveFake(t)
-			if tc.setup != nil {
-				tc.setup(f)
-			}
-			args := tc.args
-			if args == nil {
-				args = []string{"staging"}
-			}
-			got := f.run(args...)
-			message := tc.message
-			if tc.name == "whitespace" {
-				message = "temporary directory '" + f.tmp + "' holds whitespace"
-			}
-			assertResult(t, got, tc.code, "", "devctl: "+message+"\n")
-			if len(f.commands) != 0 {
-				t.Fatal(f.commands)
-			}
-			for _, event := range f.events {
-				if event == "start" || event == "stop" || event == "tag" || event == "launch" {
-					t.Fatal(f.events)
-				}
-			}
-			if tc.name == "old tags" || tc.name == "branch" || tc.name == "invalid space" {
-				for _, event := range f.events {
-					if event == "open" {
-						t.Fatal("connected before local validation")
-					}
-				}
-			}
-			if tc.name != "whitespace" {
-				f.clean()
-			}
-		})
-	}
-	// Last release wins, including an explicitly named legacy tag; a SHA has no label.
-	f := newMoveFake(t)
-	f.sha = "9e1c7a3b5d2f4e6a8c0b1d3f5a7c9e2b4d6f8a0c"
-	got := f.run("--release", "r1", "staging", "--release", "9e1c7a3")
-	if got.code != 0 || got.stderr != "" || f.resolve != "9e1c7a3^{commit}" || !strings.Contains(got.stdout, "build: ok (dist/"+f.sha+".tar.xz)\n") {
-		t.Fatalf("%#v %s", got, f.resolve)
-	}
-	for _, event := range f.events {
-		if event == "tags" {
-			t.Fatal("explicit release listed tags")
+		f := newReplaceFake(t)
+		if tc.tags != "" {
+			f.tags = tc.tags
 		}
+		if tc.sha != "" {
+			f.sha = tc.sha
+		}
+		got := f.run(tc.args...)
+		if tc.message != "" {
+			assertResult(t, got, 2, "", "devctl: "+tc.message+"\n")
+			if slices.Contains(f.events, "open") {
+				t.Fatal("opened cloud", f.events)
+			}
+		} else {
+			if got.code != 0 || got.stderr != "" || f.resolve != tc.ref {
+				t.Fatal(got, f.resolve, tc.ref)
+			}
+			build := "build: ok ("
+			if tc.label != "" {
+				build += tc.label + ", "
+			}
+			build += "dist/" + f.sha + ".tar.xz)\n"
+			if !strings.Contains(got.stdout, build) {
+				t.Fatal(got.stdout, build)
+			}
+			if slices.Contains(tc.args, "--no-backup") && !strings.Contains(got.stdout, "retire: skipped (--no-backup)\n") {
+				t.Fatal(got.stdout)
+			}
+		}
+		f.clean()
 	}
-	f.clean()
 }
 
-func TestMoveStopsAtFailureAndKeepsCompletedSteps(t *testing.T) {
-	// R-LRLP-8GFV R-CFDR-NR2K R-338C-KBL6 R-KOL9-KPFU R-KPT5-YH6J
-	// R-KS8Y-Q0NX R-KTGV-3SEM R-LU1H-ZZX9 R-LXP7-5B5C R-KZKD-0N43
-	// R-M1CW-AMDF R-CLH9-KLS1 R-CP4Y-PX04 R-KIHR-NUQD R-CNX2-C59F
-	for _, stage := range []string{"retire", "stop", "describe " + moveOldID, "tag", "launch", "allocate", "associate", "checks " + moveNewID, "restore", "records", "init", "activate"} {
-		t.Run(stage, func(t *testing.T) {
-			f := newMoveFake(t)
-			f.fail = stage
-			if stage == "launch" {
-				f.cause = &cloud.Error{Service: "ec2", Operation: "RunInstances", Code: "InsufficientInstanceCapacity"}
+func TestReplaceRequiresHostBackup(t *testing.T) {
+	// R-47TB-QWBL
+	for _, key := range []string{"", "staging/host/2026-11-08T18:29:41.222933531Z.accounts.tar.zst"} {
+		f := newReplaceFake(t)
+		f.hostObjects = []cloud.Object{}
+		if key != "" {
+			f.hostObjects = append(f.hostObjects, cloud.Object{Key: key})
+		}
+		got := f.run("staging", "--no-backup")
+		if got.code != 1 || !strings.HasSuffix(got.stdout, "opsctl: ok (5 keys set)\n") || got.stderr != "devctl: restore: no host backup under s3://ikigenba.dev/staging/host/\n" || f.events[len(f.events)-1] != "objects staging/host/" {
+			t.Fatal(got, f.events)
+		}
+		for _, c := range f.commands {
+			if strings.HasSuffix(c.Args[len(c.Args)-1], "'init'") {
+				t.Fatal(c)
 			}
-			got := f.run("staging")
-			if got.code != 1 || got.stderr == "" {
-				t.Fatal(got)
+		}
+		f.clean()
+		f = newReplaceFake(t)
+		f.hostObjects = []cloud.Object{}
+		var out bytes.Buffer
+		err := spacereplace.Run(f.ctx, []string{"staging", "--no-backup"}, "test-version", &out, f.deps())
+		var missing *spacecreate.NoHostBackupError
+		if !errors.As(err, &missing) || errors.Unwrap(err) != nil || missing.Bucket != "ikigenba.dev" || missing.Prefix != "staging/host/" {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestReplacePreflightErrorsDoNothing(t *testing.T) {
+	// R-NR8U-VIBQ R-NSGR-9A2F
+	for _, failure := range []string{"open", "sts", "zone", "template", "boundary", "instances", "addresses"} {
+		t.Run(failure, func(t *testing.T) {
+			f := newReplaceFake(t)
+			f.fail = failure
+			var out bytes.Buffer
+			err := spacereplace.Run(f.ctx, []string{"staging"}, "test-version", &out, f.deps())
+			if !errors.Is(err, f.cause) || errors.Unwrap(err) != nil || out.Len() != 0 || len(f.commands) != 0 || f.events[len(f.events)-1] != failure {
+				t.Fatal(err, out.String(), f.events)
+			}
+			for _, c := range f.allCommands {
+				if c.Path != "git" || c.Args[0] == "worktree" {
+					t.Fatal("effects before checks", c)
+				}
 			}
 			f.clean()
-			full := expectedMove(false, false, false, "")
-			markers := map[string]string{
-				"retire": "retire: ok", "stop": "stop: ok", "describe " + moveOldID: "stop: ok",
-				"tag": "tag: ok", "launch": "instance: ok", "allocate": "address: ok", "associate": "address: ok",
-				"checks " + moveNewID: "host: ok", "restore": "restore: ok (host/", "records": "records: ok",
-				"init": "init: ok", "activate": moveActivation,
-			}
-			want, _, found := strings.Cut(full, markers[stage])
-			if !found {
-				t.Fatal("missing step marker", stage)
-			}
-			if got.stdout != want {
-				t.Fatalf("completed output %q want %q", got.stdout, want)
-			}
-			if f.events[len(f.events)-1] != stage {
-				t.Fatal("continued after failure", f.events)
-			}
-			if stage == "retire" {
-				assertResult(t, got, 1, moveInitial(), "devctl: retire: ssh ec2-user@"+moveOldIP+" sudo systemd-run --quiet --wait --pipe --collect opsctl retire: exit status 1\n\n> opsctl: backup failed\n")
-			}
-			if stage == "launch" {
-				assertResult(t, got, 1, moveInitial()+"retire: ok (opsctl retire)\nbackup: ok (opsctl host backup, amd64)\nstop: ok ("+moveOldID+" stopped)\ntag: ok ("+moveOldID+" and elastic ip "+moveOldIP+" Retired="+moveTime+")\n", "devctl: ec2 RunInstances: InsufficientInstanceCapacity\n")
-			}
-			if stage == "activate" && (!strings.HasPrefix(got.stderr, "devctl: activate: ssh ec2-user@"+moveNewIP+" sudo systemd-run --quiet --wait --pipe --collect "+release.Opsctl(createSHA)+" activate "+createSHA+" release-87: exit status 1\n") || strings.Contains(got.stdout, "apex: ok")) {
-				t.Fatal(got)
-			}
 		})
 	}
-	f := newMoveFake(t)
-	f.backup = false
+	for _, tc := range []struct {
+		name                            string
+		state                           cloud.InstanceState
+		gone, multiple, addressMultiple bool
+		code                            int
+		message                         string
+	}{
+		{name: "gone", gone: true, code: 1, message: "no space at 'staging.ikigenba.dev'"},
+		{name: "multiple instances", multiple: true, code: 2, message: "'staging.ikigenba.dev' has more than one active instance (" + replaceOldID + ", " + replaceNewID + ")"},
+		{name: "multiple addresses", addressMultiple: true, code: 2, message: "'staging.ikigenba.dev' has more than one Elastic IP (18.190.33.61, 18.220.10.5)"},
+		{name: "stopping", state: cloud.StateStopping, code: 1, message: "'staging.ikigenba.dev' is stopping"},
+		{name: "pending", state: cloud.StatePending, code: 1, message: "'staging.ikigenba.dev' is pending"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newReplaceFake(t)
+			if tc.gone {
+				f.instances = nil
+				f.addresses = nil
+			}
+			if tc.multiple {
+				f.instances = append(f.instances, cloud.Instance{ID: replaceNewID, Space: f.domain, State: cloud.StateRunning})
+			}
+			if tc.addressMultiple {
+				f.addresses = append(f.addresses, cloud.Address{AllocationID: "other", Space: f.domain, IP: "18.190.33.61"})
+			}
+			if tc.state != "" {
+				f.instances[0].State = tc.state
+			}
+			got := f.run("staging")
+			assertResult(t, got, tc.code, "", "devctl: "+tc.message+"\n")
+			if len(f.commands) != 0 || slices.Contains(f.events, "launch") {
+				t.Fatal(f.events)
+			}
+			f.clean()
+		})
+	}
+	f := newReplaceFake(t)
+	f.instances[0].State = cloud.StateStopping
+	got := f.run("staging", "--no-backup")
+	assertResult(t, got, 0, expectedReplace(false, true, false, false), "")
+}
+
+func TestReplaceTempDirectoryLifecycle(t *testing.T) {
+	// R-NTON-N1T4
+	for _, failure := range []string{"", "launch", "restore"} {
+		f := newReplaceFake(t)
+		f.fail = failure
+		got := f.run("staging")
+		if (failure == "") != (got.code == 0) {
+			t.Fatal(failure, got)
+		}
+		f.clean()
+	}
+	f := newReplaceFake(t)
+	f.tmp = filepath.Join(t.TempDir(), "a b")
 	got := f.run("staging")
-	if got.code != 1 || !strings.HasSuffix(got.stdout, "opsctl: ok (5 keys set)\n") || got.stderr != "devctl: restore: no host backup under s3://ikigenba.dev/staging/host/\n" || f.events[len(f.events)-1] != "objects staging/host/" {
-		t.Fatal(got, f.events)
+	assertResult(t, got, 2, "", "devctl: temporary directory '"+f.tmp+"' holds whitespace\n")
+	if _, err := os.Stat(f.tmp); !os.IsNotExist(err) {
+		t.Fatal(err)
 	}
-	last := f.commands[len(f.commands)-1]
-	if last.Args[len(last.Args)-1] != "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' '"+release.Opsctl(createSHA)+"' 'config' 'set' 'backup.s3_uri=s3://ikigenba.dev/staging/'" {
-		t.Fatal("process after empty host listing", last)
+	if len(f.commands) != 0 || slices.Contains(f.events, "launch") {
+		t.Fatal(f.events)
 	}
-	f.clean()
-	f = newMoveFake(t)
+	f = newReplaceFake(t)
+	f.tmp = filepath.Join(t.TempDir(), "missing", "child")
+	var out bytes.Buffer
+	err := spacereplace.Run(f.ctx, []string{"staging"}, "test-version", &out, f.deps())
+	var path *os.PathError
+	if !errors.As(err, &path) || errors.Unwrap(err) == nil || out.Len() != 0 {
+		t.Fatal(err, out.String())
+	}
+}
+
+func TestReplaceBuildFailurePreservesSpace(t *testing.T) {
+	// R-2MPN-0OSX
+	f := newReplaceFake(t)
 	f.compileApp = "dashboard"
 	f.h.addAppWithSecrets("dashboard")
-	got = f.run("staging")
-	want := strings.SplitAfter(moveInitial(), "build: ok")[0]
-	want = strings.TrimSuffix(want, "build: ok")
-	assertResult(t, got, 1, want, "devctl: build dashboard: exit status 1\n\n> # github.com/ikigenba/ikigenba/dashboard/cmd/dashboard\n> cmd/dashboard/main.go:41:2: undefined: render\n")
-	if len(f.commands) != 0 || f.events[len(f.events)-1] != "apex" {
-		t.Fatal(f.commands, f.events)
+	got := f.run("staging")
+	assertResult(t, got, 1, "account: ok (ikigenba.dev, us-east-2, 295229566359)\ndomain: ok (zone ikigenba.dev "+replaceZone+")\n", "devctl: build dashboard: exit status 1\n\n> # github.com/ikigenba/ikigenba/dashboard/cmd/dashboard\n> cmd/dashboard/main.go:41:2: undefined: render\n")
+	if len(f.commands) != 0 || slices.Contains(f.events, "launch") || slices.Contains(f.events, "terminate") {
+		t.Fatal(f.events)
 	}
 	f.clean()
 }
 
-func TestMoveTypedErrorsAndWrappedTemporaryFailure(t *testing.T) {
-	// R-K7IO-7X24 R-LXP7-5B5C R-KIHR-NUQD R-KH9V-A2ZO
-	_ = spacemove.NoHostBackupError(struct{ Bucket, Prefix string }{})
-	e := &spacemove.NoHostBackupError{Bucket: "ikigenba.dev", Prefix: "sbx1/host/"}
-	if e.Error() != "restore: no host backup under s3://ikigenba.dev/sbx1/host/" || e.ExitCode() != 1 {
-		t.Fatal(e)
-	}
-	f := newMoveFake(t)
-	f.tmp = filepath.Join(f.tmp, "absent")
-	var out bytes.Buffer
-	err := spacemove.Run(f.ctx, []string{"staging"}, "test-version", &out, f.deps())
-	var pathErr *os.PathError
-	if !errors.As(err, &pathErr) || out.Len() != 0 || len(f.commands) != 0 {
-		t.Fatalf("%v %s", err, out.String())
-	}
-	f = newMoveFake(t)
-	f.instances[0].State = cloud.StatePending
-	err = spacemove.Run(f.ctx, []string{"staging"}, "test-version", &out, f.deps())
-	var stateErr *space.NotRunningError
-	if !errors.As(err, &stateErr) || stateErr.Domain != "staging.ikigenba.dev" || stateErr.State != cloud.StatePending {
-		t.Fatal(err)
-	}
-	f = newMoveFake(t)
-	f.backup = false
-	err = spacemove.Run(f.ctx, []string{"staging"}, "test-version", &out, f.deps())
-	var backupErr *spacemove.NoHostBackupError
-	if !errors.As(err, &backupErr) || backupErr.Bucket != "ikigenba.dev" || backupErr.Prefix != "staging/host/" {
-		t.Fatal(err)
+func TestReplaceRetireFailurePreservesSpace(t *testing.T) {
+	// R-NNL5-Q73N R-NMD9-CFCY
+	f := newReplaceFake(t)
+	f.fail = "retire"
+	got := f.run("staging")
+	assertResult(t, got, 1, replaceInitial(), "devctl: retire: ssh ec2-user@staging.ikigenba.dev sudo systemd-run --quiet --wait --pipe --collect opsctl retire: exit status 1\n\n> backup report one\n> backup report two\n")
+	if len(f.commands) != 1 || f.events[len(f.events)-1] != "retire" {
+		t.Fatal(f.events, f.commands)
 	}
 	f.clean()
-
 }
 
-func TestMoveCloudFailuresReturnUnchanged(t *testing.T) {
-	// R-KEU2-IJIA R-KG1Y-WB8Z R-KKXK-FE7R R-338C-KBL6 R-KOL9-KPFU
-	// R-KPT5-YH6J R-KS8Y-Q0NX R-KTGV-3SEM R-LU1H-ZZX9 R-KZKD-0N43 R-M1CW-AMDF
-	for _, stage := range []string{"open", "sts", "zone", "template", "boundary", "instances", "addresses", "apex", "start", "describe " + moveOldID, "checks " + moveOldID, "stop", "tag", "launch", "describe " + moveNewID, "allocate", "associate", "checks " + moveNewID, "objects staging/host/", "records", "insync", "objects staging/auth/", "objects staging/sites/"} {
-		t.Run(stage, func(t *testing.T) {
-			f := newMoveFake(t)
-			f.fail = stage
-			if stage == "start" || stage == "checks "+moveOldID {
-				f.instances[0].State, f.oldState = cloud.StateStopped, cloud.StateStopped
+func TestReplaceLaunchFailureLeavesAddress(t *testing.T) {
+	// R-32KB-ZPFY
+	f := newReplaceFake(t)
+	f.fail = "launch"
+	f.cause = &cloud.Error{Service: "ec2", Operation: "RunInstances", Code: "InsufficientInstanceCapacity"}
+	got := f.run("staging")
+	assertResult(t, got, 1, replaceInitial()+"retire: ok (opsctl retire)\naddress: ok (elastic ip "+replaceOldIP+" disassociated from "+replaceOldID+")\n", "devctl: ec2 RunInstances: InsufficientInstanceCapacity\n")
+	if f.events[len(f.events)-1] != "launch" || strings.Count(strings.Join(f.events, "\n"), "terminate") != 1 {
+		t.Fatal(f.events)
+	}
+	f.clean()
+}
+
+func TestReplaceCloudFailuresReturnUnchanged(t *testing.T) {
+	// R-NG9R-FKNH R-NHHN-TCE6 R-NIPK-744V R-OW9L-JELI R-2YWM-UE7V
+	// R-304J-85YK R-31CF-LXP9 R-33S8-DH6N R-NQ0Y-HQL1
+	for _, tc := range []struct {
+		failure               string
+		stopped, legacy, gone bool
+		last                  string
+	}{
+		{failure: "start", stopped: true, last: "build"}, {failure: "checks " + replaceOldID, stopped: true, last: "build"},
+		{failure: "describe " + replaceOldID, stopped: true, last: "build"},
+		{failure: "allocate", legacy: true, last: "build"}, {failure: "associate " + replaceOldID, legacy: true, last: "build"},
+		{failure: "records", legacy: true, last: "address"}, {failure: "insync", legacy: true, last: "address"},
+		{failure: "disassociate", last: "retire"}, {failure: "terminate", last: "address"},
+		{failure: "describe " + replaceOldID, last: "address"}, {failure: "launch", last: "address"},
+		{failure: "describe " + replaceNewID, last: "address"}, {failure: "associate " + replaceNewID, last: "instance"},
+		{failure: "launch", gone: true, last: "address"}, {failure: "describe " + replaceNewID, gone: true, last: "address"},
+	} {
+		t.Run(tc.failure+tc.last, func(t *testing.T) {
+			f := newReplaceFake(t)
+			f.fail = tc.failure
+			if tc.stopped {
+				f.instances[0].State = cloud.StateStopped
+				f.oldState = cloud.StateStopped
+			}
+			if tc.legacy {
+				f.addresses = nil
+			}
+			if tc.gone {
+				f.instances = nil
+				f.addresses[0].AssociationID = ""
 			}
 			var out bytes.Buffer
-			err := spacemove.Run(f.ctx, []string{"staging"}, "test-version", &out, f.deps())
-			if reflect.ValueOf(err) != reflect.ValueOf(f.cause) || f.events[len(f.events)-1] != stage {
-				t.Fatalf("error %v events %v", err, f.events)
+			err := spacereplace.Run(f.ctx, []string{"staging"}, "test-version", &out, f.deps())
+			if !errors.Is(err, f.cause) || errors.Unwrap(err) != nil || f.events[len(f.events)-1] != tc.failure {
+				t.Fatal(err, f.events)
+			}
+			lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+			if !strings.HasPrefix(lines[len(lines)-1], tc.last+": ok (") {
+				t.Fatal(out.String())
 			}
 			f.clean()
 		})
 	}
 }
 
-func TestMoveRemoteFailuresOmitFailedStep(t *testing.T) {
-	// R-KTGV-3SEM R-CJ1G-T2AN R-LU1H-ZZX9 R-M1CW-AMDF R-CP4Y-PX04 R-KIHR-NUQD
-	for _, tc := range []struct {
-		name, remote, marker string
-		restored             bool
-	}{
-		{name: "cloud init", remote: "'cloud-init' 'status' '--wait'", marker: "host: ok"},
-		{name: "configure launch", remote: "'config' 'set' 'dns.provider=route53'", marker: "opsctl: ok"},
-		{name: "configure restored", remote: "'config' 'set' 'dns.provider=route53'", marker: "restore: ok (host/", restored: true},
-		{name: "app restore", remote: "'restore' 'sites'", marker: "restore: ok (opsctl restore sites)", restored: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			f := newMoveFake(t)
-			f.failRemote, f.failRestored = tc.remote, tc.restored
-			got := f.run("staging")
-			full := expectedMove(false, false, false, "")
-			want, _, found := strings.Cut(full, tc.marker)
-			if !found {
-				t.Fatal("missing step marker", tc.marker)
+func TestReplaceResolverFailureStopsBeforeSSH(t *testing.T) {
+	// R-3504-R8XC R-NJXG-KVVK
+	for _, legacy := range []bool{false, true} {
+		f := newReplaceFake(t)
+		f.resolveBad = true
+		if legacy {
+			f.addresses = nil
+		}
+		got := f.run("staging")
+		address := replaceOldIP
+		if legacy {
+			address = replaceNewIP
+		}
+		if got.code != 1 || got.stderr != "devctl: resolve: staging.ikigenba.dev does not resolve to "+address+"\n" {
+			t.Fatal(got)
+		}
+		if legacy {
+			if len(f.commands) != 0 || slices.Contains(f.events, "terminate") {
+				t.Fatal(f.events, f.commands)
 			}
-			last := f.commands[len(f.commands)-1]
-			if got.code != 1 || !strings.Contains(got.stderr, "> remote failure\n") || got.stdout != want || !strings.Contains(last.Args[len(last.Args)-1], tc.remote) {
-				t.Fatal(got, last)
+			if !strings.HasSuffix(got.stdout, ", INSYNC)\n") {
+				t.Fatal(got.stdout)
+			}
+		} else if len(f.commands) != 1 || !strings.HasSuffix(got.stdout, "address: ok (elastic ip "+address+" associated)\n") {
+			t.Fatal(got, f.commands)
+		}
+		f.clean()
+	}
+}
+
+func TestReplaceNewHostUnreachableAndRetry(t *testing.T) {
+	// R-4GCM-FAIG
+	f := newReplaceFake(t)
+	f.unreachable = true
+	got := f.run("staging")
+	if got.code != 1 || got.stderr != "devctl: ssh ec2-user@staging.ikigenba.dev: connection timed out\n" || !strings.HasSuffix(got.stdout, "resolve: ok (staging.ikigenba.dev -> "+replaceOldIP+")\n") {
+		t.Fatal(got)
+	}
+	if f.events[len(f.events)-1] != "checks "+replaceNewID {
+		t.Fatal(f.events)
+	}
+	for _, c := range f.commands {
+		if c.Path == "scp" {
+			t.Fatal(c)
+		}
+	}
+	f.clean()
+	f = newReplaceFake(t)
+	f.oldID = replaceNewID
+	f.newID = "i-07a8b9c0d1e2f3a4b"
+	f.instances[0].ID = f.oldID
+	f.addresses[0].InstanceID = f.oldID
+	got = f.run("staging", "--no-backup")
+	want := strings.ReplaceAll(expectedReplace(false, true, false, false), replaceNewID, f.newID)
+	want = strings.ReplaceAll(want, replaceOldID, f.oldID)
+	assertResult(t, got, 0, want, "")
+	f.clean()
+}
+
+func TestReplaceNewHostFailuresStopWithoutUndo(t *testing.T) {
+	// R-NXCC-SD17 R-3681-50O1 R-NQ0Y-HQL1
+	for _, failure := range []string{"checks " + replaceNewID, "objects staging/host/", "restore", "init", "objects staging/auth/", "activate"} {
+		t.Run(failure, func(t *testing.T) {
+			f := newReplaceFake(t)
+			f.fail = failure
+			got := f.run("staging")
+			if got.code != 1 || got.stderr == "" || strings.HasSuffix(got.stdout, "staging.ikigenba.dev "+replaceNewID+" "+replaceOldIP+"\n") {
+				t.Fatal(got)
+			}
+			if f.events[len(f.events)-1] != failure {
+				t.Fatal(f.events)
+			}
+			if strings.Count(strings.Join(f.events, "\n"), "terminate") != 1 || strings.Count(strings.Join(f.events, "\n"), "disassociate") != 1 || strings.Count(strings.Join(f.events, "\n"), "launch") != 1 {
+				t.Fatal("undid completed effects", f.events)
+			}
+			if failure == "activate" && !strings.HasPrefix(got.stderr, "devctl: activate: ssh ec2-user@staging.ikigenba.dev sudo systemd-run --quiet --wait --pipe --collect "+release.Opsctl(f.sha)+" activate "+f.sha+" release-87: exit status 1\n") {
+				t.Fatal(got.stderr)
 			}
 			f.clean()
 		})
 	}
+}
+
+func TestReplaceAddressAssociationAndApexStayWithSpace(t *testing.T) {
+	// R-OW9L-JELI R-4HKI-T295 R-39VQ-ABW4
+	for _, foreign := range []bool{false, true} {
+		f := newReplaceFake(t)
+		f.domain = "sbx1.ikigenba.dev"
+		f.oldID = "i-0c9e94542d98846a8"
+		f.instances[0].ID = f.oldID
+		f.instances[0].Space = f.domain
+		f.addresses[0].Space = f.domain
+		f.addresses[0].IP = "18.118.7.42"
+		f.addresses[0].InstanceID = f.oldID
+		// The root's A record points at this lifetime address. Any attempt to read
+		// or change it panics through Route53's unimplemented methods.
+		f.apex = true
+		if foreign {
+			f.instances = nil
+			f.addresses[0].InstanceID = "i-0f1e2d3c4b5a69788"
+			f.forbidOld = true
+		}
+		got := f.run("sbx1")
+		if got.code != 0 || got.stderr != "" {
+			t.Fatal(got)
+		}
+		if !strings.Contains(got.stdout, "address: ok (elastic ip 18.118.7.42 disassociated from "+f.addresses[0].InstanceID+")\n") || !strings.HasSuffix(got.stdout, "sbx1.ikigenba.dev "+f.newID+" 18.118.7.42\n") {
+			t.Fatal(got.stdout)
+		}
+		if len(f.changes) != 0 {
+			t.Fatal(f.changes)
+		}
+		for _, prefix := range []string{"apex:", "role:", "record:", "previous:"} {
+			if strings.Contains(got.stdout, prefix) {
+				t.Fatal(got.stdout)
+			}
+		}
+		if foreign && (slices.Contains(f.events, "terminate") || !strings.Contains(got.stdout, "retire: ok (already gone)\n")) {
+			t.Fatal(got.stdout, f.events)
+		}
+		f.clean()
+	}
+}
+
+func (f *replaceFake) FindRecord(context.Context, string, string, string) (cloud.Record, bool, error) {
+	f.t.Fatal("replace must not read the root record", f.apex)
+	return cloud.Record{}, false, nil
 }

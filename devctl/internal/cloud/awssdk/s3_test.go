@@ -64,7 +64,7 @@ func (f *fakeS3) DeleteObjects(_ context.Context, input *s3.DeleteObjectsInput, 
 }
 
 func TestS3MappingPaginationAndFields(t *testing.T) {
-	// R-SJTI-S6LV
+	// R-7HE0-9K5J R-7ILW-NBW8
 	const (
 		bucket = "backup-bucket"
 		prefix = "spaces/example/backups/"
@@ -116,7 +116,11 @@ func TestS3MappingPaginationAndFields(t *testing.T) {
 	}
 
 	client := &s3Client{sdk: fake}
-	objects, err := client.ListObjects(context.Background(), bucket, prefix)
+	var objects []cloud.Object
+	err := client.ListObjects(context.Background(), bucket, prefix, func(page []cloud.Object) bool {
+		objects = append(objects, page...)
+		return true
+	})
 	if err != nil {
 		t.Fatalf("ListObjects: %v", err)
 	}
@@ -139,7 +143,7 @@ func TestS3MappingPaginationAndFields(t *testing.T) {
 }
 
 func TestS3DeleteObjectsBatchBoundaries(t *testing.T) {
-	// R-SJTI-S6LV
+	// R-7HE0-9K5J
 	for _, count := range []int{0, 1, 999, 1000, 1001, 2000, 2001} {
 		t.Run(fmt.Sprintf("keys_%d", count), func(t *testing.T) {
 			keys := make([]string, count)
@@ -178,7 +182,7 @@ func TestS3DeleteObjectsBatchBoundaries(t *testing.T) {
 }
 
 func TestS3ErrorMapping(t *testing.T) {
-	// R-VV8S-ZVE7 R-YPQX-0LG8 R-SJTI-S6LV
+	// R-VV8S-ZVE7 R-YPQX-0LG8 R-7HE0-9K5J
 	boom := &smithy.GenericAPIError{Code: "SlowDown", Message: "retry later"}
 	tests := []struct {
 		method    string
@@ -187,8 +191,7 @@ func TestS3ErrorMapping(t *testing.T) {
 		call      func(*s3Client) error
 	}{
 		{"ListObjects", "ListObjectsV2", "bucket/prefix/", func(client *s3Client) error {
-			_, err := client.ListObjects(context.Background(), "bucket", "prefix/")
-			return err
+			return client.ListObjects(context.Background(), "bucket", "prefix/", func([]cloud.Object) bool { return true })
 		}},
 		{"PutObject", "PutObject", "bucket/key", func(client *s3Client) error {
 			return client.PutObject(context.Background(), "bucket", "key", bytes.NewReader(nil), 0)
@@ -218,7 +221,7 @@ func TestS3ErrorMapping(t *testing.T) {
 }
 
 func TestS3CopyObjectReplacesDestination(t *testing.T) {
-	// R-SJTI-S6LV
+	// R-7HE0-9K5J
 	objects := map[string]string{"source": "snapshot", "key": "previous"}
 	fake := &fakeS3{copyObject: func(input *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
 		source, err := url.PathUnescape(aws.ToString(input.CopySource))

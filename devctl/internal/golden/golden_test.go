@@ -111,7 +111,7 @@ func TestHelpUsageAndLabelBeforeCheckout(t *testing.T) {
 }
 
 func TestRootSessionLookupFailures(t *testing.T) {
-	// R-SYGB-DFI7
+	// R-NBRU-2X8B
 	for _, name := range []string{"root", "parse", "open", "identity", "lookup", "missing", "stopped"} {
 		t.Run(name, func(t *testing.T) {
 			h := newHarness(t)
@@ -182,7 +182,7 @@ func TestRootSessionLookupFailures(t *testing.T) {
 }
 
 func TestStatusAndSnapshotRefusals(t *testing.T) {
-	// R-E06O-EOGT R-DXQV-N4ZF
+	// R-DLN4-I3FA R-DMV0-VV5Z
 	for _, status := range []string{"", " \t\n"} {
 		h := newHarness(t)
 		h.status = seam.Result{Stdout: []byte(status)}
@@ -204,7 +204,7 @@ func TestStatusAndSnapshotRefusals(t *testing.T) {
 		if step == "snapshot" {
 			prefix = "snapshot: "
 		}
-		want := "devctl: " + prefix + "ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect opsctl " + step + ": exit status 1\n\n> line1\n> line2\n> err1\n> err2\n"
+		want := "devctl: " + prefix + "ssh ec2-user@sbx1.ikigenba.dev sudo systemd-run --quiet --wait --pipe --collect opsctl " + step + ": exit status 1\n\n> line1\n> line2\n> err1\n> err2\n"
 		if code != 1 || out != "" || stderr != want || len(h.s3Calls) != 0 {
 			t.Fatalf("%d %q %q", code, out, stderr)
 		}
@@ -236,7 +236,7 @@ func TestMalformedReports(t *testing.T) {
 }
 
 func TestCopiesPruneAndRestrictedOperations(t *testing.T) {
-	// R-T3BW-WIGZ R-U6CP-5677 R-T6ZM-1TP2 R-U1H3-M38F
+	// R-T3BW-WIGZ R-U6CP-5677 R-33XR-L3E2 R-NE7M-UGPP
 	for _, obsolete := range []bool{false, true} {
 		h := newHarness(t)
 		h.objects = []cloud.Object{{Key: key("crm")}, {Key: key("dashboard")}}
@@ -319,6 +319,10 @@ type harness struct {
 	opens                                                   int
 	openErr, stsErr, lookupErr, copyErr, listErr, deleteErr error
 	state                                                   cloud.InstanceState
+	addresses                                               []cloud.Address
+	noInstance                                              bool
+	pages                                                   [][]cloud.Object
+	pageLog                                                 []string
 	status, snapshot                                        seam.Result
 	objects                                                 []cloud.Object
 	s3Calls                                                 []string
@@ -375,7 +379,7 @@ func (h *harness) assertCommands(t *testing.T) {
 	}
 	for i, remote := range []string{"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'status'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'snapshot'"} {
 		cmd := h.commands[i+1]
-		if cmd.Path != "ssh" || cmd.Dir != h.root || !reflect.DeepEqual(cmd.Args, []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", "ec2-user@18.118.7.42", remote}) {
+		if cmd.Path != "ssh" || cmd.Dir != h.root || !reflect.DeepEqual(cmd.Args, []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", "ec2-user@sbx1.ikigenba.dev", remote}) {
 			t.Fatalf("command %#v", cmd)
 		}
 	}
@@ -389,6 +393,9 @@ type fakeEC2 struct {
 func (f fakeEC2) ListSpaceInstances(_ context.Context, domain string) ([]cloud.Instance, error) {
 	if domain != "ikigenba.dev" {
 		f.h.t.Fatal(domain)
+	}
+	if f.h.noInstance {
+		return nil, f.h.lookupErr
 	}
 	return []cloud.Instance{{ID: "i-test", Space: f.h.domain, Address: "18.118.7.42", State: f.h.state}}, f.h.lookupErr
 }
@@ -413,10 +420,31 @@ func (f fakeS3) CopyObject(_ context.Context, bucket, source, key string) error 
 	}
 	return nil
 }
-func (f fakeS3) ListObjects(_ context.Context, bucket, prefix string) ([]cloud.Object, error) {
+func (f fakeS3) ListObjects(_ context.Context, bucket, prefix string, each func([]cloud.Object) bool) error {
 	f.h.s3Calls = append(f.h.s3Calls, "list "+bucket+" "+prefix)
-	return f.h.objects, f.h.listErr
+	if f.h.listErr != nil {
+		return f.h.listErr
+	}
+	pages := f.h.pages
+	if pages == nil {
+		pages = [][]cloud.Object{f.h.objects}
+	}
+	for _, page := range pages {
+		f.h.pageLog = append(f.h.pageLog, "page "+objectKeys(page))
+		if !each(page) {
+			break
+		}
+	}
+	return nil
 }
+func objectKeys(page []cloud.Object) string {
+	keys := make([]string, len(page))
+	for i, o := range page {
+		keys[i] = o.Key
+	}
+	return strings.Join(keys, " ")
+}
+
 func (f fakeS3) DeleteObjects(_ context.Context, bucket string, keys []string) error {
 	for _, key := range keys {
 		if !strings.HasPrefix(key, "golden/demo/") {
@@ -424,5 +452,60 @@ func (f fakeS3) DeleteObjects(_ context.Context, bucket string, keys []string) e
 		}
 	}
 	f.h.s3Calls = append(f.h.s3Calls, "delete "+bucket+" "+strings.Join(keys, " "))
+	f.h.pageLog = append(f.h.pageLog, "delete "+strings.Join(keys, " "))
 	return f.h.deleteErr
+}
+
+func (f fakeEC2) ListSpaceAddresses(context.Context, string) ([]cloud.Address, error) {
+	return f.h.addresses, nil
+}
+
+func TestCaptureRefusesAddressOnlyAndDuplicateAddresses(t *testing.T) {
+	// R-NBRU-2X8B
+	for _, duplicate := range []bool{false, true} {
+		h := newHarness(t)
+		h.addresses = []cloud.Address{{Space: h.domain, IP: "18.118.7.42"}}
+		h.noInstance = !duplicate
+		want := "devctl: 'sbx1.ikigenba.dev' has no instance\n"
+		wantCode := 1
+		if duplicate {
+			h.addresses = append(h.addresses, cloud.Address{Space: h.domain, IP: "18.190.33.61"})
+			want = "devctl: 'sbx1.ikigenba.dev' has more than one Elastic IP (18.118.7.42, 18.190.33.61)\n"
+			wantCode = 2
+		}
+		out, diag, code := h.cli()
+		if code != wantCode || out != "" || diag != want || len(h.commands) != 1 || len(h.s3Calls) != 0 {
+			t.Fatalf("%d %q %q %#v", code, out, diag, h.commands)
+		}
+	}
+}
+
+func TestCapturePrunesWithinEachPageAndStops(t *testing.T) {
+	// R-33XR-L3E2 R-NE7M-UGPP
+	for _, fail := range []bool{false, true} {
+		h := newHarness(t)
+		first := []cloud.Object{{Key: "golden/demo/crm/old"}, {Key: "golden/demo/dashboard/old"}}
+		middle := []cloud.Object{{Key: key("crm")}, {Key: key("dashboard")}}
+		last := []cloud.Object{{Key: "golden/demo/gmail/old"}}
+		h.pages = [][]cloud.Object{first, middle, last}
+		if fail {
+			h.deleteErr = errors.New("delete failed")
+		}
+		out, _, code := h.cli()
+		want := []string{"page " + objectKeys(first), "delete " + objectKeys(first)}
+		if !fail {
+			want = append(want, "page "+objectKeys(middle), "page "+objectKeys(last), "delete "+objectKeys(last))
+		}
+		if !reflect.DeepEqual(h.pageLog, want) {
+			t.Fatalf("log %#v want %#v", h.pageLog, want)
+		}
+		if fail {
+			if code != 1 || strings.Contains(out, "prune:") {
+				t.Fatalf("%d %q", code, out)
+			}
+		} else if code != 0 || !strings.HasSuffix(out, "prune: ok (3 objects deleted)\n") {
+			t.Fatalf("%d %q", code, out)
+		}
+		h.assertCommands(t)
+	}
 }

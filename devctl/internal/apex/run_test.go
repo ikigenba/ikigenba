@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -23,7 +24,7 @@ import (
 func TestErrorContracts(t *testing.T) {
 	t.Parallel()
 
-	// R-4282-JQL9 R-43FY-XIBY R-44NV-BA2N R-45VR-P1TC
+	// R-4282-JQL9 R-43FY-XIBY R-44NV-BA2N R-FDUL-FD1C
 	holder := &apex.HolderStoppedError{Domain: "sbx2.ikigenba.dev", Label: "sbx2", State: cloud.StateStopped}
 	_ = apex.HolderStoppedError(struct {
 		Domain string
@@ -49,16 +50,25 @@ func TestErrorContracts(t *testing.T) {
 	if got := noApp.Error(); got != "ikigenba.dev points at sbx1.ikigenba.dev, whose host.apex is not set" {
 		t.Errorf("NoApexAppError = %q", got)
 	}
-	step := &apex.StepError{Step: "previous", Err: &host.UnreachableError{Address: "18.220.10.5"}}
+	step := &apex.StepError{Step: "previous", Err: &host.UnreachableError{Domain: "sbx2.ikigenba.dev"}}
 	_ = apex.StepError(struct {
 		Step string
 		Err  error
 	}{})
-	if step.Error() != "previous: ssh ec2-user@18.220.10.5: connection timed out" || step.ExitCode() != 1 || step.Detail() != "" {
+	if step.Error() != "previous: ssh ec2-user@sbx2.ikigenba.dev: connection timed out" || step.ExitCode() != 1 || step.Detail() != "" {
 		t.Errorf("StepError = %q, %d, %q", step.Error(), step.ExitCode(), step.Detail())
 	}
 	if !errors.Is(step, step.Err) {
 		t.Error("StepError does not unwrap its Err")
+	}
+	detailed := &host.CommandError{Step: "host", Command: []string{"opsctl", "cert", "obtain"}, Status: 1, Stdout: "first\n", Stderr: "second\n\n> nested\n"}
+	wrapped := fmt.Errorf("outer: %w", detailed)
+	step = &apex.StepError{Step: "previous", Err: wrapped}
+	if got := step.Detail(); got != "> first\n> second\n> \n> > nested" {
+		t.Errorf("wrapped StepError.Detail = %q", got)
+	}
+	if !errors.Is(step.Unwrap(), wrapped) || !errors.Is(step, detailed) {
+		t.Error("StepError does not preserve the wrapped cause")
 	}
 }
 
@@ -107,8 +117,8 @@ func TestGrammarAndHelpAreSideEffectFree(t *testing.T) {
 }
 
 func TestSetRunsPreflightAndOrderedSteps(t *testing.T) {
-	// R-P4G8-WHR8 R-YVVK-TXS8 R-4GUV-4ZHL R-YX3H-7PIX R-VX21-6EX8
-	// R-DU36-HTRC R-4LQG-O2GD R-YYBD-LH9M R-4O69-FLXR
+	// R-EINW-L6B7 R-FF2H-T4S1 R-4GUV-4ZHL R-FHIA-KO9F R-FIQ6-YG04
+	// R-FJY3-C7QT R-FNLS-HIYW R-FOTO-VAPL R-EJVS-YY1W
 	f := successfulFake()
 	deps := testDeps(t, f)
 	var stdout bytes.Buffer
@@ -157,14 +167,14 @@ func TestSetRunsPreflightAndOrderedSteps(t *testing.T) {
 }
 
 func TestSetPreflightRefusesBeforeOutputOrMutation(t *testing.T) {
-	// R-YVVK-TXS8
+	// R-FF2H-T4S1
 	tests := []struct {
 		name string
 		edit func(*fake)
 		want any
 	}{
 		{"target stopped", func(f *fake) { f.instances[0].State = cloud.StateStopped }, &space.NotRunningError{}},
-		{"target missing", func(f *fake) { f.instances = f.instances[1:] }, &cloud.NoSpaceError{}},
+		{"target missing", func(f *fake) { f.instances = f.instances[1:]; f.addresses = f.addresses[1:] }, &cloud.NoSpaceError{}},
 		{"unowned address", func(f *fake) { f.addresses = nil }, &apex.NotSpaceAddressError{}},
 		{"holder stopped", func(f *fake) { f.instances[1].State = cloud.StateStopped }, &apex.HolderStoppedError{}},
 	}
@@ -182,7 +192,7 @@ func TestSetPreflightRefusesBeforeOutputOrMutation(t *testing.T) {
 }
 
 func TestAcceptedInvocationFailureOrderAndPropagation(t *testing.T) {
-	// R-P4G8-WHR8 R-YVVK-TXS8
+	// R-EINW-L6B7 R-FF2H-T4S1
 	t.Run("root discovery", func(t *testing.T) {
 		want := errors.New("git unavailable")
 		cloudCalls := 0
@@ -287,7 +297,7 @@ func TestAcceptedInvocationFailureOrderAndPropagation(t *testing.T) {
 }
 
 func TestSetFailureBoundariesAndExactCalls(t *testing.T) {
-	// R-4GUV-4ZHL R-VX21-6EX8 R-DU36-HTRC R-4LQG-O2GD R-YYBD-LH9M R-4O69-FLXR
+	// R-4GUV-4ZHL R-FIQ6-YG04 R-FJY3-C7QT R-FNLS-HIYW R-FOTO-VAPL R-EJVS-YY1W
 	const spaceLine = "space: ok (sbx1.ikigenba.dev running, 18.118.7.42)\n"
 	const roleLine = "role: ok (sbx1.ikigenba.dev may prove ikigenba.dev)\n"
 	const hostLine = "host: ok (host.apex=crm, certificate obtained, nginx applied)\n"
@@ -317,7 +327,7 @@ func TestSetFailureBoundariesAndExactCalls(t *testing.T) {
 		err := apex.Run(context.Background(), []string{"set", "crm.sbx1"}, &stdout, testDeps(t, f))
 		var command *host.CommandError
 		wantSSH := []string{"'true'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'set' 'host.apex=crm'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'cert' 'obtain'"}
-		if !errors.As(err, &command) || command.Step != "host" || command.Status != 1 || command.Stderr != "first\nsecond\n" || stdout.String() != spaceLine+roleLine || !reflect.DeepEqual(f.ssh, wantSSH) || !reflect.DeepEqual(f.sshTargets, []string{"ec2-user@18.118.7.42", "ec2-user@18.118.7.42", "ec2-user@18.118.7.42"}) || len(f.changes) != 0 {
+		if !errors.As(err, &command) || command.Step != "host" || command.Status != 1 || command.Stderr != "first\nsecond\n" || stdout.String() != spaceLine+roleLine || !reflect.DeepEqual(f.ssh, wantSSH) || !reflect.DeepEqual(f.sshTargets, []string{"ec2-user@sbx1.ikigenba.dev", "ec2-user@sbx1.ikigenba.dev", "ec2-user@sbx1.ikigenba.dev"}) || len(f.changes) != 0 {
 			t.Fatalf("err=%#v stdout=%q ssh=%v targets=%v changes=%v", err, stdout.String(), f.ssh, f.sshTargets, f.changes)
 		}
 	})
@@ -329,7 +339,7 @@ func TestSetFailureBoundariesAndExactCalls(t *testing.T) {
 		err := apex.Run(context.Background(), []string{"set", "crm.sbx1"}, &stdout, testDeps(t, f))
 		var step *apex.StepError
 		var unreachable *host.UnreachableError
-		if !errors.As(err, &step) || step.Step != "host" || !errors.As(err, &unreachable) || unreachable.Address != "18.118.7.42" || stdout.String() != spaceLine+roleLine || len(f.ssh) != host.ProbeAttempts || len(f.changes) != 0 {
+		if !errors.As(err, &step) || step.Step != "host" || !errors.As(err, &unreachable) || unreachable.Domain != "sbx1.ikigenba.dev" || stdout.String() != spaceLine+roleLine || len(f.ssh) != host.ProbeAttempts || len(f.changes) != 0 {
 			t.Fatalf("err=%#v stdout=%q ssh=%v changes=%v", err, stdout.String(), f.ssh, f.changes)
 		}
 		for _, command := range f.ssh {
@@ -408,7 +418,7 @@ func TestSetFailureBoundariesAndExactCalls(t *testing.T) {
 	t.Run("previous timeout", func(t *testing.T) {
 		f := successfulFake()
 		f.execResult = func(cmd seam.Cmd) (seam.Result, error) {
-			if cmd.Args[len(cmd.Args)-2] == "ec2-user@18.220.10.5" {
+			if cmd.Args[len(cmd.Args)-2] == "ec2-user@sbx2.ikigenba.dev" {
 				return seam.Result{ExitCode: 255}, nil
 			}
 			return seam.Result{}, nil
@@ -419,14 +429,14 @@ func TestSetFailureBoundariesAndExactCalls(t *testing.T) {
 		var unreachable *host.UnreachableError
 		oldCommands := 0
 		for i, target := range f.sshTargets {
-			if target == "ec2-user@18.220.10.5" {
+			if target == "ec2-user@sbx2.ikigenba.dev" {
 				oldCommands++
 				if f.ssh[i] != "'true'" {
 					t.Fatalf("old host command %q", f.ssh[i])
 				}
 			}
 		}
-		if !errors.As(err, &step) || step.Step != "previous" || !errors.As(err, &unreachable) || unreachable.Address != "18.220.10.5" || stdout.String() != spaceLine+roleLine+hostLine+recordLine || oldCommands != host.ProbeAttempts {
+		if !errors.As(err, &step) || step.Step != "previous" || !errors.As(err, &unreachable) || unreachable.Domain != "sbx2.ikigenba.dev" || stdout.String() != spaceLine+roleLine+hostLine+recordLine || oldCommands != host.ProbeAttempts {
 			t.Fatalf("err=%#v stdout=%q old commands=%d ssh=%v", err, stdout.String(), oldCommands, f.ssh)
 		}
 	})
@@ -455,8 +465,8 @@ func TestSetFailureBoundariesAndExactCalls(t *testing.T) {
 }
 
 func TestShowAndClear(t *testing.T) {
-	// R-4PE5-TDOG R-DVB2-VLI1 R-4RTY-KX5U R-4T1U-YOWJ R-4U9R-CGN8
-	// R-4VHN-Q8DX R-VZHT-XYEM R-DWIZ-9D8Q R-50D9-9BCP
+	// R-EL3P-CPSL R-FMDW-3R87 R-EMBL-QHJA R-ENJI-499Z R-4U9R-CGN8
+	// R-4VHN-Q8DX R-EORE-I10O R-FL5Z-PZHI R-IMZA-PUPT
 	t.Run("show", func(t *testing.T) {
 		f := successfulFake()
 		f.getValue = "crm\n"
@@ -539,7 +549,7 @@ func TestShowAndClear(t *testing.T) {
 }
 
 func TestShowExactHostReadAndFailureBoundaries(t *testing.T) {
-	// R-DVB2-VLI1 R-4RTY-KX5U
+	// R-FMDW-3R87 R-EMBL-QHJA
 	t.Run("set", func(t *testing.T) {
 		f := successfulFake()
 		f.getValue = "crm\r\n"
@@ -548,7 +558,7 @@ func TestShowExactHostReadAndFailureBoundaries(t *testing.T) {
 			t.Fatal(err)
 		}
 		wantSSH := []string{"'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'get' 'host.apex'"}
-		if stdout.String() != "crm.sbx2.ikigenba.dev 18.220.10.5\n" || !reflect.DeepEqual(f.ssh, wantSSH) || !reflect.DeepEqual(f.sshTargets, []string{"ec2-user@18.220.10.5"}) || len(f.policies) != 0 || len(f.changes) != 0 || f.streamCalls != 0 || f.ssmCalls != 0 || f.s3Calls != 0 {
+		if stdout.String() != "crm.sbx2.ikigenba.dev 18.220.10.5\n" || !reflect.DeepEqual(f.ssh, wantSSH) || !reflect.DeepEqual(f.sshTargets, []string{"ec2-user@sbx2.ikigenba.dev"}) || len(f.policies) != 0 || len(f.changes) != 0 || f.streamCalls != 0 || f.ssmCalls != 0 || f.s3Calls != 0 {
 			t.Fatalf("stdout=%q ssh=%v targets=%v policies=%v changes=%v forbidden=%d/%d/%d", stdout.String(), f.ssh, f.sshTargets, f.policies, f.changes, f.streamCalls, f.ssmCalls, f.s3Calls)
 		}
 	})
@@ -572,7 +582,7 @@ func TestShowExactHostReadAndFailureBoundaries(t *testing.T) {
 		var stdout bytes.Buffer
 		err := apex.Run(context.Background(), []string{"show"}, &stdout, testDeps(t, f))
 		var command *host.CommandError
-		if !errors.As(err, &command) || command.Step != "show" || command.Status != 2 || !reflect.DeepEqual(command.Command, []string{"ssh", "ec2-user@18.220.10.5", "sudo", "systemd-run", "--quiet", "--wait", "--pipe", "--collect", "opsctl", "config", "get", "host.apex"}) || command.Stderr != "broken\n" || stdout.Len() != 0 || len(f.ssh) != 1 {
+		if !errors.As(err, &command) || command.Step != "show" || command.Status != 2 || !reflect.DeepEqual(command.Command, []string{"ssh", "ec2-user@sbx2.ikigenba.dev", "sudo", "systemd-run", "--quiet", "--wait", "--pipe", "--collect", "opsctl", "config", "get", "host.apex"}) || command.Stderr != "broken\n" || stdout.Len() != 0 || len(f.ssh) != 1 {
 			t.Fatalf("err=%#v stdout=%q ssh=%v", err, stdout.String(), f.ssh)
 		}
 	})
@@ -599,7 +609,7 @@ func TestShowExactHostReadAndFailureBoundaries(t *testing.T) {
 }
 
 func TestClearExactSequenceAndFailureBoundaries(t *testing.T) {
-	// R-4T1U-YOWJ R-4U9R-CGN8 R-VZHT-XYEM R-DWIZ-9D8Q R-50D9-9BCP
+	// R-ENJI-499Z R-4U9R-CGN8 R-EORE-I10O R-FL5Z-PZHI R-IMZA-PUPT
 	const spaceLine = "space: ok (sbx2.ikigenba.dev running, 18.220.10.5)\n"
 	const recordLine = "record: ok (ikigenba.dev deleted)\n"
 	const roleLine = "role: ok (sbx2.ikigenba.dev may no longer prove ikigenba.dev)\n"
@@ -613,7 +623,7 @@ func TestClearExactSequenceAndFailureBoundaries(t *testing.T) {
 		wantPolicy := policyCall{"sbx2.ikigenba.dev", space.PolicyName, space.PolicyDocument("ikigenba.dev", "ZONE1", spaceref.Space{Label: "sbx2", Domain: "sbx2.ikigenba.dev"}, false)}
 		wantSSH := []string{"'true'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'del' 'host.apex'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'cert' 'obtain'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'nginx' 'apply'"}
 		wantOutput := spaceLine + recordLine + roleLine + "host: ok (host.apex removed, certificate obtained, nginx applied)\n"
-		if stdout.String() != wantOutput || !reflect.DeepEqual(f.changeZones, []string{"ZONE1"}) || len(f.changes) != 1 || !reflect.DeepEqual(f.changes[0], []cloud.RecordChange{{Action: cloud.ChangeDelete, Record: f.record}}) || !reflect.DeepEqual(f.policies, []policyCall{wantPolicy}) || !reflect.DeepEqual(f.ssh, wantSSH) || !reflect.DeepEqual(f.sshTargets, []string{"ec2-user@18.220.10.5", "ec2-user@18.220.10.5", "ec2-user@18.220.10.5", "ec2-user@18.220.10.5"}) || f.changeStatusCalls != 0 || f.streamCalls != 0 || f.ssmCalls != 0 || f.s3Calls != 0 {
+		if stdout.String() != wantOutput || !reflect.DeepEqual(f.changeZones, []string{"ZONE1"}) || len(f.changes) != 1 || !reflect.DeepEqual(f.changes[0], []cloud.RecordChange{{Action: cloud.ChangeDelete, Record: f.record}}) || !reflect.DeepEqual(f.policies, []policyCall{wantPolicy}) || !reflect.DeepEqual(f.ssh, wantSSH) || !reflect.DeepEqual(f.sshTargets, []string{"ec2-user@sbx2.ikigenba.dev", "ec2-user@sbx2.ikigenba.dev", "ec2-user@sbx2.ikigenba.dev", "ec2-user@sbx2.ikigenba.dev"}) || f.changeStatusCalls != 0 || f.streamCalls != 0 || f.ssmCalls != 0 || f.s3Calls != 0 {
 			t.Fatalf("stdout=%q zones=%v changes=%#v policies=%#v ssh=%v targets=%v forbidden=%d/%d/%d/%d", stdout.String(), f.changeZones, f.changes, f.policies, f.ssh, f.sshTargets, f.changeStatusCalls, f.streamCalls, f.ssmCalls, f.s3Calls)
 		}
 	})
@@ -676,7 +686,7 @@ func TestClearExactSequenceAndFailureBoundaries(t *testing.T) {
 		err := apex.Run(context.Background(), []string{"clear"}, &stdout, testDeps(t, f))
 		var command *host.CommandError
 		wantSSH := []string{"'true'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'config' 'del' 'host.apex'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'cert' 'obtain'", "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'nginx' 'apply'"}
-		if !errors.As(err, &command) || command.Step != "host" || command.Status != 1 || command.Stderr != "nginx one\nnginx two\n" || command.Error() != "host: ssh ec2-user@18.220.10.5 sudo systemd-run --quiet --wait --pipe --collect opsctl nginx apply: exit status 1" || command.Detail() != "> nginx one\n> nginx two" || stdout.String() != spaceLine+recordLine+roleLine || !reflect.DeepEqual(f.ssh, wantSSH) {
+		if !errors.As(err, &command) || command.Step != "host" || command.Status != 1 || command.Stderr != "nginx one\nnginx two\n" || command.Error() != "host: ssh ec2-user@sbx2.ikigenba.dev sudo systemd-run --quiet --wait --pipe --collect opsctl nginx apply: exit status 1" || command.Detail() != "> nginx one\n> nginx two" || stdout.String() != spaceLine+recordLine+roleLine || !reflect.DeepEqual(f.ssh, wantSSH) {
 			t.Fatalf("err=%#v stdout=%q ssh=%v", err, stdout.String(), f.ssh)
 		}
 	})
@@ -714,7 +724,7 @@ func TestClearExactSequenceAndFailureBoundaries(t *testing.T) {
 		err := apex.Run(context.Background(), []string{"clear"}, &stdout, testDeps(t, f))
 		var step *apex.StepError
 		var unreachable *host.UnreachableError
-		if !errors.As(err, &step) || step.Step != "host" || !errors.As(err, &unreachable) || unreachable.Address != "18.220.10.5" || stdout.String() != spaceLine+recordLine+roleLine || len(f.ssh) != host.ProbeAttempts {
+		if !errors.As(err, &step) || step.Step != "host" || !errors.As(err, &unreachable) || unreachable.Domain != "sbx2.ikigenba.dev" || stdout.String() != spaceLine+recordLine+roleLine || len(f.ssh) != host.ProbeAttempts {
 			t.Fatalf("err=%#v stdout=%q ssh=%v", err, stdout.String(), f.ssh)
 		}
 		for _, command := range f.ssh {
@@ -942,7 +952,7 @@ func (f *fake) DeleteParameter(context.Context, string) error {
 	f.ssmCalls++
 	panic("unexpected SSM call")
 }
-func (f *fake) ListObjects(context.Context, string, string) ([]cloud.Object, error) {
+func (f *fake) ListObjects(context.Context, string, string, func([]cloud.Object) bool) error {
 	f.s3Calls++
 	panic("unexpected S3 call")
 }
@@ -965,5 +975,3 @@ var _ cloud.S3 = (*fake)(nil)
 func (*fake) CopyObject(context.Context, string, string, string) error {
 	panic("unexpected CopyObject")
 }
-
-func (*fake) TagRetired(context.Context, []string, string) error { panic("unexpected EC2 call") }

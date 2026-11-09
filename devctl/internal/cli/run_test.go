@@ -22,7 +22,7 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
 	"github.com/ikigenba/ikigenba/devctl/internal/spaceapps"
 	"github.com/ikigenba/ikigenba/devctl/internal/spacecreate"
-	"github.com/ikigenba/ikigenba/devctl/internal/spacemove"
+	"github.com/ikigenba/ikigenba/devctl/internal/spacereplace"
 )
 
 var _ func(context.Context, []string, io.Reader, io.Writer, io.Writer, seam.Deps) int = Run
@@ -33,7 +33,7 @@ Manage the platform from the developer's machine. Never run as root.
 
 Commands:
   version   print the version
-  space     list, create, move, destroy, stop, start, and inspect spaces
+  space     list, create, replace, destroy, stop, start, and inspect spaces
   secrets   push and list an app's secrets for a space
   build     build the suite at a commit into a release
   deploy    put a release on a space
@@ -101,7 +101,7 @@ Arguments:
 
 const expectedD06Usage = `Usage: devctl space <subcommand> [arguments]
 
-List, create, move, destroy, stop, start, and inspect spaces, and restart,
+List, create, replace, destroy, stop, start, and inspect spaces, and restart,
 disable, enable, or read the journal of one app on one. A space is one label
 under the root domain; <space> is that label or the full domain. The cloud's
 tags are the only registry.
@@ -109,7 +109,7 @@ tags are the only registry.
 Subcommands:
   list                       one line per space
   create <space> [options]   create the space and deploy a release to it
-  move <space> [options]     move the space to a new instance and restore it there
+  replace <space> [options]  put the space on a new instance at its address and restore it there
   destroy <space> [options]  remove the space and everything it owned
   stop <space>               stop the instance; state is kept
   start <space>              start the instance; its address is unchanged
@@ -122,9 +122,12 @@ Subcommands:
 Options (create):
   --acme-email <address>  where the CA sends the space's expiry warnings; required
   --release <sha|tag>     the release to deploy; the newest release-<N> tag otherwise
+  --apex <app>            after the restore, set host.apex to <app>, an app in the release
+  --no-apex               after the restore, delete host.apex whatever the backup held
 
-Options (move):
+Options (replace):
   --release <sha|tag>     the release to deploy; the newest release-<N> tag otherwise
+  --no-backup             skip the final backup; restore from the newest backups already kept
 
 Options (destroy):
   --no-backup             skip the final backup the host takes before it goes
@@ -144,10 +147,10 @@ Print one line per space: the domain, the instance state, the public address
 or - when it has none, and apex on the one space that holds the root domain or
 - on every other. The lines are sorted by domain, and no spaces prints nothing.
 
-The cloud's tags are the only registry: a space is an instance tagged with the
-root domain and a Space tag naming its own. The holder of the root domain is
-the space whose Elastic IP the root's A record points at; no host is asked.
-What a space is running is 'devctl space status'.
+The cloud's tags are the only registry: a space is an instance or an Elastic
+IP tagged with the root domain and a Space tag naming its own. The holder of
+the root domain is the space whose Elastic IP the root's A record points at;
+no host is asked. What a space is running is 'devctl space status'.
 `
 
 const expectedD06DestroyUsage = `Usage: devctl space destroy <space> [--no-backup] [--delete-secrets] [--delete-backups]
@@ -638,7 +641,7 @@ func TestTopLevelCommandSet(t *testing.T) {
 }
 
 func TestTopLevelHelp(t *testing.T) {
-	// R-T1JK-N8LK
+	// R-58G6-CVVX
 	for _, option := range []string{"--help", "-h"} {
 		assertResult(t, invoke(option), 0, expectedUsage, "")
 	}
@@ -667,9 +670,9 @@ func TestSpaceHelpThroughCLIWithoutCheckoutOrEffects(t *testing.T) {
 		command []string
 		want    string
 	}{
-		// R-FXAV-BJ8K
+		// R-CPBL-PLBK
 		{name: "space", command: []string{"space"}, want: expectedD06Usage},
-		// R-UPD6-TD4G
+		// R-CO3P-BTKV
 		{name: "list", command: []string{"space", "list"}, want: expectedD06ListUsage},
 		// R-UQL3-74V5
 		{name: "destroy", command: []string{"space", "destroy"}, want: expectedD06DestroyUsage},
@@ -734,13 +737,11 @@ func TestSpaceRejectsExtraOperandsBeforeEffects(t *testing.T) {
 }
 
 func TestSpaceRejectsUnknownOptionsBeforeEffects(t *testing.T) {
-	// R-FZQO-32PY
+	// R-CRRE-H4SY
 	tests := [][]string{
 		{"space", "--wat"},
-		{"space", "--help", "--wat"},
 		{"space", "list", "--wat"},
 		{"space", "stop", "sbx1", "--no-backup"},
-		{"space", "stop", "sbx1", "--no-backup", "--help"},
 		{"space", "destroy", "sbx1", "--no-backup=true"},
 		{"space", "destroy", "--delete-secrets=yes", "sbx1"},
 	}
@@ -841,10 +842,14 @@ func (ssm *sentinelSSM) ListParameters(context.Context, string) ([]cloud.Paramet
 
 type sentinelEC2 struct{ cloud.EC2 }
 
+func (*sentinelEC2) ListSpaceAddresses(context.Context, string) ([]cloud.Address, error) {
+	return nil, nil
+}
+
 func (*sentinelEC2) ListSpaceInstances(context.Context, string) ([]cloud.Instance, error) {
 	return []cloud.Instance{
-		{Space: "foo.sbx.ikigenba.dev", State: cloud.StateRunning},
-		{Space: "sbx1.ikigenba.dev", State: cloud.StateRunning},
+		{ID: "i-foo", Space: "foo.sbx.ikigenba.dev", State: cloud.StateRunning},
+		{ID: "i-sbx1", Space: "sbx1.ikigenba.dev", State: cloud.StateRunning},
 	}, nil
 }
 
@@ -1041,6 +1046,8 @@ type cliEC2 struct {
 	runErr      error
 }
 
+func (*cliEC2) ListSpaceAddresses(context.Context, string) ([]cloud.Address, error) { return nil, nil }
+
 func (fake *cliEC2) ListSpaceInstances(_ context.Context, domain string) ([]cloud.Instance, error) {
 	fake.listDomains = append(fake.listDomains, domain)
 	return fake.instances, fake.err
@@ -1224,7 +1231,7 @@ func cliCheckoutAndHostExec(t *testing.T, checkoutExec seam.Runner) seam.Runner 
 }
 
 func TestSpaceDispatchMatchesOwningPackage(t *testing.T) {
-	// R-G0YK-GUGN
+	// R-CSZA-UWJN
 	type target func(context.Context, []string, io.Writer, seam.Deps) error
 	tests := []struct {
 		name   string
@@ -1235,8 +1242,8 @@ func TestSpaceDispatchMatchesOwningPackage(t *testing.T) {
 		{name: "create", args: []string{"space", "create", "sbx1", "--acme-email", "ops@ikigenba.dev"}, run: func(ctx context.Context, args []string, out io.Writer, deps seam.Deps) error {
 			return spacecreate.Run(ctx, args, version, out, deps)
 		}, direct: []string{"sbx1", "--acme-email", "ops@ikigenba.dev"}},
-		{name: "move", args: []string{"space", "move", "sbx1"}, run: func(ctx context.Context, args []string, out io.Writer, deps seam.Deps) error {
-			return spacemove.Run(ctx, args, version, out, deps)
+		{name: "replace", args: []string{"space", "replace", "sbx1"}, run: func(ctx context.Context, args []string, out io.Writer, deps seam.Deps) error {
+			return spacereplace.Run(ctx, args, version, out, deps)
 		}, direct: []string{"sbx1"}},
 		{name: "restart", args: []string{"space", "restart", "sbx1", "crm"}, run: spaceapps.Run, direct: []string{"restart", "sbx1", "crm"}},
 		{name: "disable", args: []string{"space", "disable", "sbx1", "crm"}, run: spaceapps.Run, direct: []string{"disable", "sbx1", "crm"}},

@@ -38,7 +38,7 @@ func runRelease(ctx context.Context, invocation invocation, version string, stdo
 	if err != nil {
 		return err
 	}
-	target, err := cloud.LookupSpace(ctx, session.Clients.EC2, root.Domain, ref.Domain)
+	target, err := cloud.LookupInstance(ctx, session.Clients.EC2, root.Domain, ref.Domain)
 	if err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func runRelease(ctx context.Context, invocation invocation, version string, stdo
 		keys += len(required)
 	}
 	space.Step(stdout, "secrets", fmt.Sprintf("%d apps, %d keys", len(built.Manifests), keys))
-	h := host.Host{Address: target.Address, Deps: deps}
+	h := host.Host{Domain: target.Domain, Deps: deps}
 	if err := release.Put(ctx, h, stdout, c.Path(built.File), sha); err != nil {
 		return err
 	}

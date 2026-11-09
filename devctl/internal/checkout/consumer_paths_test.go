@@ -12,7 +12,7 @@ import (
 )
 
 func TestOpenConsumersUseCheckoutRoot(t *testing.T) {
-	// R-RFH8-MW7Z R-RGP5-0NYO
+	// R-RFH8-MW7Z R-9H9L-AH48
 	root := t.TempDir()
 	dir := filepath.Join(root, "nested", "work")
 	files := map[string]string{

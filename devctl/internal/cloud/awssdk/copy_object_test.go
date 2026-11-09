@@ -30,7 +30,7 @@ func (c *copyTransport) RoundTrip(request *http.Request) (*http.Response, error)
 }
 
 func TestCopyObjectRequestAndErrorThroughLoader(t *testing.T) {
-	// R-SL1F-5YCK R-SJTI-S6LV
+	// R-SL1F-5YCK R-7HE0-9K5J
 	const bucket = "ikigenba.dev"
 	const source = "sbx1/snapshots/crm/2026-09-12T14:22:51Z.tar.zst"
 	const key = "golden/demo/crm/2026-09-12T14:22:51Z.tar.zst"

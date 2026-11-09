@@ -2,6 +2,7 @@ package awssdk
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -18,7 +19,7 @@ import (
 )
 
 func TestListMethodsPaginateThroughFakeEndpoint(t *testing.T) {
-	// R-QL5T-EDN9
+	// R-7EY7-I0O5
 	transport := &paginationTransport{calls: make(map[string]int)}
 	clients, err := OpenWithLoader(context.Background(), "profile", "region", func(
 		context.Context, string, string,
@@ -43,10 +44,6 @@ func TestListMethodsPaginateThroughFakeEndpoint(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(parameterNames(parameters), []string{"/spaces/one", "/spaces/two"}) {
 		t.Fatalf("ListParameters = %#v, %v; want both endpoint pages", parameters, err)
 	}
-	objects, err := clients.S3.ListObjects(context.Background(), "bucket", "prefix/")
-	if err != nil || !reflect.DeepEqual(objectKeys(objects), []string{"prefix/one", "prefix/two"}) {
-		t.Fatalf("ListObjects = %#v, %v; want both endpoint pages", objects, err)
-	}
 	records, err := clients.Route53.ListRecords(context.Background(), "Z1")
 	if err != nil || !reflect.DeepEqual(recordNames(records), []string{"one.example", "two.example"}) {
 		t.Fatalf("ListRecords = %#v, %v; want both endpoint pages", records, err)
@@ -57,7 +54,7 @@ func TestListMethodsPaginateThroughFakeEndpoint(t *testing.T) {
 		t.Fatalf("PermissionsBoundary = %q, %v; want arn:target, nil", boundary, err)
 	}
 
-	for _, operation := range []string{"DescribeInstances", "GetParametersByPath", "ListObjectsV2", "ListResourceRecordSets", "ListPolicies"} {
+	for _, operation := range []string{"DescribeInstances", "GetParametersByPath", "ListResourceRecordSets", "ListPolicies"} {
 		if transport.calls[operation] != 2 {
 			t.Errorf("%s endpoint calls = %d; want 2", operation, transport.calls[operation])
 		}
@@ -108,7 +105,9 @@ func TestDeleteMissingResourcesSucceeds(t *testing.T) {
 }
 
 type paginationTransport struct {
-	calls map[string]int
+	calls           map[string]int
+	boundaryOnFirst bool
+	failIAMSecond   bool
 }
 
 func (p *paginationTransport) RoundTrip(request *http.Request) (*http.Response, error) {
@@ -122,8 +121,13 @@ func (p *paginationTransport) RoundTrip(request *http.Request) (*http.Response, 
 	}
 	operation, response := p.response(request, string(body))
 	p.calls[operation]++
+	status := http.StatusOK
+	if operation == "ListPolicies" && p.failIAMSecond && p.calls[operation] == 2 {
+		status = http.StatusForbidden
+		response = `<ErrorResponse xmlns="https://iam.amazonaws.com/doc/2010-05-08/"><Error><Type>Sender</Type><Code>AccessDenied</Code><Message>denied</Message></Error></ErrorResponse>`
+	}
 	return &http.Response{
-		StatusCode: http.StatusOK,
+		StatusCode: status,
 		Header:     make(http.Header),
 		Body:       io.NopCloser(strings.NewReader(response)),
 		Request:    request,
@@ -145,18 +149,20 @@ func (p *paginationTransport) response(request *http.Request, body string) (stri
 		}
 		return "GetParametersByPath", `{"Parameters":[{"Name":"/spaces/two","Value":"two"}]}`
 	}
-	if strings.HasPrefix(host, "s3.") || strings.Contains(host, ".s3.") {
-		if request.URL.Query().Get("continuation-token") == "" {
-			return "ListObjectsV2", `<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><IsTruncated>true</IsTruncated><NextContinuationToken>s3-next</NextContinuationToken><Contents><Key>prefix/one</Key><Size>1</Size><LastModified>2026-01-01T00:00:00Z</LastModified></Contents></ListBucketResult>`
-		}
-		return "ListObjectsV2", `<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><IsTruncated>false</IsTruncated><Contents><Key>prefix/two</Key><Size>2</Size><LastModified>2026-01-02T00:00:00Z</LastModified></Contents></ListBucketResult>`
-	}
 	if strings.HasPrefix(host, "iam.") {
 		values, _ := url.ParseQuery(body)
 		if values.Get("Marker") == "" {
-			return "ListPolicies", `<ListPoliciesResponse xmlns="https://iam.amazonaws.com/doc/2010-05-08/"><ListPoliciesResult><Policies><member><PolicyName>other</PolicyName><Arn>arn:other</Arn></member></Policies><IsTruncated>true</IsTruncated><Marker>iam-next</Marker></ListPoliciesResult></ListPoliciesResponse>`
+			response := `<ListPoliciesResponse xmlns="https://iam.amazonaws.com/doc/2010-05-08/"><ListPoliciesResult><Policies><member><PolicyName>other</PolicyName><Arn>arn:other</Arn></member></Policies><IsTruncated>true</IsTruncated><Marker>iam-next</Marker></ListPoliciesResult></ListPoliciesResponse>`
+			if p.boundaryOnFirst {
+				response = strings.ReplaceAll(response, "other", "target")
+			}
+			return "ListPolicies", response
 		}
-		return "ListPolicies", `<ListPoliciesResponse xmlns="https://iam.amazonaws.com/doc/2010-05-08/"><ListPoliciesResult><Policies><member><PolicyName>target</PolicyName><Arn>arn:target</Arn></member></Policies><IsTruncated>false</IsTruncated></ListPoliciesResult></ListPoliciesResponse>`
+		response := `<ListPoliciesResponse xmlns="https://iam.amazonaws.com/doc/2010-05-08/"><ListPoliciesResult><Policies><member><PolicyName>target</PolicyName><Arn>arn:target</Arn></member></Policies><IsTruncated>false</IsTruncated></ListPoliciesResult></ListPoliciesResponse>`
+		if p.boundaryOnFirst {
+			response = strings.ReplaceAll(response, "target", "other")
+		}
+		return "ListPolicies", response
 	}
 	if strings.HasSuffix(request.URL.Path, "/rrset") {
 		if request.URL.Query().Get("name") == "" {
@@ -183,18 +189,47 @@ func parameterNames(parameters []cloud.Parameter) []string {
 	return result
 }
 
-func objectKeys(objects []cloud.Object) []string {
-	result := make([]string, len(objects))
-	for index := range objects {
-		result[index] = objects[index].Key
-	}
-	return result
-}
-
 func recordNames(records []cloud.Record) []string {
 	result := make([]string, len(records))
 	for index := range records {
 		result[index] = records[index].Name
 	}
 	return result
+}
+
+func TestPermissionsBoundaryExhaustsPagesAfterMatch(t *testing.T) {
+	// R-7EY7-I0O5 R-VV8S-ZVE7
+	for _, failure := range []bool{false, true} {
+		name := "later page"
+		if failure {
+			name = "later error"
+		}
+		t.Run(name, func(t *testing.T) {
+			transport := &paginationTransport{calls: make(map[string]int), boundaryOnFirst: true, failIAMSecond: failure}
+			clients, err := OpenWithLoader(t.Context(), "profile", "us-test-1", func(context.Context, string, string) (aws.Config, error) {
+				return aws.Config{
+					Region: "us-test-1", RetryMaxAttempts: 1,
+					Credentials: aws.CredentialsProviderFunc(func(context.Context) (aws.Credentials, error) {
+						return aws.Credentials{AccessKeyID: "fake", SecretAccessKey: "fake"}, nil
+					}),
+					HTTPClient: &http.Client{Transport: transport},
+				}, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			arn, err := clients.IAM.PermissionsBoundary(t.Context(), "target")
+			if failure {
+				var got *cloud.Error
+				if arn != "" || !errors.As(err, &got) || got.Service != "iam" || got.Operation != "ListPolicies" || got.Subject != "" || got.Code != "AccessDenied" {
+					t.Fatalf("PermissionsBoundary = %q, %#v; want later ListPolicies error", arn, err)
+				}
+			} else if err != nil || arn != "arn:target" {
+				t.Fatalf("PermissionsBoundary = %q, %v; want first page match", arn, err)
+			}
+			if transport.calls["ListPolicies"] != 2 {
+				t.Fatalf("ListPolicies calls = %d; want 2", transport.calls["ListPolicies"])
+			}
+		})
+	}
 }

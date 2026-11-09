@@ -14,15 +14,15 @@ Print one line per space: the domain, the instance state, the public address
 or - when it has none, and apex on the one space that holds the root domain or
 - on every other. The lines are sorted by domain, and no spaces prints nothing.
 
-The cloud's tags are the only registry: a space is an instance tagged with the
-root domain and a Space tag naming its own. The holder of the root domain is
-the space whose Elastic IP the root's A record points at; no host is asked.
-What a space is running is 'devctl space status'.
+The cloud's tags are the only registry: a space is an instance or an Elastic
+IP tagged with the root domain and a Space tag naming its own. The holder of
+the root domain is the space whose Elastic IP the root's A record points at;
+no host is asked. What a space is running is 'devctl space status'.
 `
 
 const usageText = `Usage: devctl space <subcommand> [arguments]
 
-List, create, move, destroy, stop, start, and inspect spaces, and restart,
+List, create, replace, destroy, stop, start, and inspect spaces, and restart,
 disable, enable, or read the journal of one app on one. A space is one label
 under the root domain; <space> is that label or the full domain. The cloud's
 tags are the only registry.
@@ -30,7 +30,7 @@ tags are the only registry.
 Subcommands:
   list                       one line per space
   create <space> [options]   create the space and deploy a release to it
-  move <space> [options]     move the space to a new instance and restore it there
+  replace <space> [options]  put the space on a new instance at its address and restore it there
   destroy <space> [options]  remove the space and everything it owned
   stop <space>               stop the instance; state is kept
   start <space>              start the instance; its address is unchanged
@@ -43,9 +43,12 @@ Subcommands:
 Options (create):
   --acme-email <address>  where the CA sends the space's expiry warnings; required
   --release <sha|tag>     the release to deploy; the newest release-<N> tag otherwise
+  --apex <app>            after the restore, set host.apex to <app>, an app in the release
+  --no-apex               after the restore, delete host.apex whatever the backup held
 
-Options (move):
+Options (replace):
   --release <sha|tag>     the release to deploy; the newest release-<N> tag otherwise
+  --no-backup             skip the final backup; restore from the newest backups already kept
 
 Options (destroy):
   --no-backup             skip the final backup the host takes before it goes
@@ -104,7 +107,7 @@ type invocation struct {
 var subcommands = map[string]struct{}{
 	"list":    {},
 	"create":  {},
-	"move":    {},
+	"replace": {},
 	"destroy": {},
 	"stop":    {},
 	"start":   {},
@@ -140,7 +143,7 @@ func parseInvocation(args []string) (invocation, error) {
 
 	// These subcommands own their grammars in their own packages. The CLI
 	// dispatcher normally routes them there without calling this package.
-	if subcommand == "move" || subcommand == "create" || subcommand == "restart" || subcommand == "disable" || subcommand == "enable" || subcommand == "logs" {
+	if subcommand == "replace" || subcommand == "create" || subcommand == "restart" || subcommand == "disable" || subcommand == "enable" || subcommand == "logs" {
 		return result, nil
 	}
 

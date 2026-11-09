@@ -73,7 +73,7 @@ func TestRestorePublicContractAndGrammar(t *testing.T) {
 }
 
 func TestRestoreReturnsRootParseConnectAndLookupFailuresUnchanged(t *testing.T) {
-	// R-2B3I-HPXS
+	// R-906M-1H1K
 	t.Run("root", func(t *testing.T) {
 		h := newRestoreHarness(t)
 		if err := os.WriteFile(filepath.Join(h.root, "infra", "terraform.tfvars.json"), []byte(`{"domain":"ikigenba.dev"}`), 0o600); err != nil {
@@ -118,7 +118,7 @@ func TestRestoreReturnsRootParseConnectAndLookupFailuresUnchanged(t *testing.T) 
 }
 
 func TestRestoreUsesOnlyRootSessionAndOneHostCommand(t *testing.T) {
-	// R-2B3I-HPXS R-9R4L-UV1E R-FV7X-I3AA R-YCW8-7XXC
+	// R-906M-1H1K R-9R4L-UV1E R-8O0U-CWP1 R-8P8Q-QOFQ
 	h := newRestoreHarness(t)
 	var stdout bytes.Buffer
 	stamp := "2026-09-11T18:00:00.25-05:00"
@@ -135,7 +135,7 @@ func TestRestoreUsesOnlyRootSessionAndOneHostCommand(t *testing.T) {
 		t.Fatalf("commands = %#v", h.commands)
 	}
 	wantRemote := "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'opsctl' 'restore' 'crm' '--at' '" + stamp + "'"
-	if got := h.commands[1].Args[len(h.commands[1].Args)-1]; got != wantRemote {
+	if got := h.commands[1].Args[len(h.commands[1].Args)-1]; got != wantRemote || h.commands[1].Args[len(h.commands[1].Args)-2] != "ec2-user@sbx1.ikigenba.dev" {
 		t.Fatalf("remote = %q", got)
 	}
 
@@ -167,7 +167,7 @@ func TestRestoreUsesOnlyRootSessionAndOneHostCommand(t *testing.T) {
 }
 
 func TestRestoreReturnsSudoErrorUnchanged(t *testing.T) {
-	// R-FV7X-I3AA
+	// R-8O0U-CWP1
 	want := errors.New("sentinel")
 	remote := &recordingSudoer{err: want}
 	err := restoreOnHost(context.Background(), io.Discard, remote, []string{"opsctl", "restore", "crm"})
@@ -193,6 +193,7 @@ type restoreHarness struct {
 	commands                   []seam.Cmd
 	state                      cloud.InstanceState
 	instances                  []cloud.Instance
+	addresses                  []cloud.Address
 	profile, region, ec2Domain string
 	sshStatus, s3Calls         int
 	sshStderr                  string
@@ -265,9 +266,9 @@ type restoreS3 struct {
 	h *restoreHarness
 }
 
-func (f *restoreS3) ListObjects(context.Context, string, string) ([]cloud.Object, error) {
+func (f *restoreS3) ListObjects(context.Context, string, string, func([]cloud.Object) bool) error {
 	f.h.s3Calls++
-	return nil, nil
+	return nil
 }
 
 func (f *restoreS3) PutObject(context.Context, string, string, io.Reader, int64) error {
@@ -305,3 +306,7 @@ func restoreFailCloud(t *testing.T) cloud.Opener {
 }
 
 func (f *restoreS3) CopyObject(context.Context, string, string, string) error { return nil }
+
+func (f *restoreEC2) ListSpaceAddresses(context.Context, string) ([]cloud.Address, error) {
+	return f.h.addresses, nil
+}

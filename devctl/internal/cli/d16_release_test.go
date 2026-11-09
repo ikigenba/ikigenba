@@ -15,7 +15,7 @@ import (
 )
 
 func TestReleaseHostFailuresThroughCLI(t *testing.T) {
-	// R-WU9A-GFHR R-CCXY-W7L6 R-CE5V-9ZBV
+	// R-MYKF-357T R-MZSB-GWYI R-N107-UOP7
 	const sha = "4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a"
 	const remote = "/tmp/tmp.Ab12Cd34Ef"
 	const temporary = "/opt/ikigenba/releases/.unpack.Ab12Cd34Ef"
@@ -85,12 +85,12 @@ func TestReleaseHostFailuresThroughCLI(t *testing.T) {
 			result := invokeWithDeps(deps, "deploy", "sbx1", "r1")
 			prefix := "build: ok (r1, dist/" + sha + ".tar.xz)\nsecrets: ok (0 apps, 0 keys)\n"
 			archive := filepath.Join(root, "dist", sha+".tar.xz")
-			wantErr := "devctl: copy: scp " + archive + " ec2-user@18.118.7.42:" + remote + ": exit status 1\n\n> No space left on device\n"
+			wantErr := "devctl: copy: scp " + archive + " ec2-user@sbx1.ikigenba.dev:" + remote + ": exit status 1\n\n> No space left on device\n"
 			if failure != "copy" {
-				prefix += "copy: ok (" + sha + ".tar.xz -> 18.118.7.42)\n"
+				prefix += "copy: ok (" + sha + ".tar.xz -> sbx1.ikigenba.dev)\n"
 			}
 			if failure == "tar" {
-				wantErr = "devctl: unpack: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect tar -x -J --no-same-owner -f " + remote + " -C " + temporary + ": exit status 2\n\n> tar: " + sha + "/auth/bin/auth: Cannot write: No space left on device\n> tar: Exiting with failure status due to previous errors\n"
+				wantErr = "devctl: unpack: ssh ec2-user@sbx1.ikigenba.dev sudo systemd-run --quiet --wait --pipe --collect tar -x -J --no-same-owner -f " + remote + " -C " + temporary + ": exit status 2\n\n> tar: " + sha + "/auth/bin/auth: Cannot write: No space left on device\n> tar: Exiting with failure status due to previous errors\n"
 				if commands[len(commands)-2] != "'sudo' 'systemd-run' '--quiet' '--wait' '--pipe' '--collect' 'rm' '-rf' '"+temporary+"'" || commands[len(commands)-1] != "'rm' '-f' '"+remote+"'" {
 					t.Fatal(commands)
 				}
@@ -102,7 +102,7 @@ func TestReleaseHostFailuresThroughCLI(t *testing.T) {
 			}
 			if failure == "activate" {
 				prefix += "unpack: ok (" + release.Folder(sha) + ")\nstreamed activation\n"
-				wantErr = "devctl: activate: ssh ec2-user@18.118.7.42 sudo systemd-run --quiet --wait --pipe --collect " + release.Opsctl(sha) + " activate " + sha + " r1: exit status 1\n\n> opsctl: activate failed\n> \n> > ikigenba-events.service: Main process exited, code=exited, status=1/FAILURE\n"
+				wantErr = "devctl: activate: ssh ec2-user@sbx1.ikigenba.dev sudo systemd-run --quiet --wait --pipe --collect " + release.Opsctl(sha) + " activate " + sha + " r1: exit status 1\n\n> opsctl: activate failed\n> \n> > ikigenba-events.service: Main process exited, code=exited, status=1/FAILURE\n"
 			}
 			assertResult(t, result, 1, prefix, wantErr)
 		})
