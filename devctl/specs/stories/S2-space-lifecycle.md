@@ -31,10 +31,11 @@ the address. No other command allocates, releases, or rewrites them: `space
 stop` and `space start` leave them alone, and `space replace` puts the space
 on a new instance and assigns it the same address. The one exception is a
 space created before every space had an Elastic IP: its first `space
-replace` allocates its address and writes its records, once, and from then
-on they are left alone like any other's. The root's record changes
-only through `apex set`, `apex clear`, `space destroy` of the space that
-holds the apex, and `space create` of a space whose store holds the apex.
+replace` allocates its address and writes its records, once, before it first
+reaches the host, and from then on they are left alone like any other's. The
+root's record changes only through `apex set`, `apex clear`, `space destroy`
+of the space that holds the apex, and `space create` of a space whose store
+holds the apex.
 
 devctl reaches a space's host only by its name, as `ec2-user@<space
 domain>`, for every ssh and scp it runs, and passes no key, no address, and
@@ -1501,8 +1502,9 @@ The second `address` step associates the same Elastic IP with the new
 instance. No address is allocated or released and no record is written: the
 space's two `A` records already point at the address, and from the first
 `address` step until the new host is set up nothing behind it answers. A
-space that has no Elastic IP is first given one (see "A developer replaces a
-space that has no Elastic IP").
+space that has no Elastic IP is given one, and its records, before `retire`,
+and has no disassociation (see "A developer replaces a space that has no
+Elastic IP").
 
 The `resolve` step is create's, and passes at once, because the name has
 resolved to the address all along. The `host`, `copy`, and `unpack` steps
@@ -1657,7 +1659,10 @@ Postconditions:
 A stopped host cannot take its final backup, so replace starts it first, as
 `space start` would, and the `start` step reports it; then `retire` runs on
 it, and the replace goes on as for a running space. The instance comes back
-at its Elastic IP, so `retire` reaches it by the name it always had.
+at its Elastic IP, so `retire` reaches it by the name it always had. A
+stopped space that has no Elastic IP comes back at a new public address
+instead, and is given its Elastic IP and records before `retire` (see "A
+developer replaces a space that has no Elastic IP").
 
 Command:
 
@@ -1701,18 +1706,28 @@ Postconditions:
 A space created before every space was given an Elastic IP has none: its
 instance carries the label, and its records point at the instance's own
 public address, which a new instance would not have. Replace gives it the
-address create would have, before it launches anything. In place of the
-first `address` step's disassociation it allocates an Elastic IP, tagged as
-create tags it, and associates it with the old instance, retired but still
-running and the only instance there is; that is create's `address` line.
-It then writes the space's two `A` records to point at the address and waits
-for `INSYNC`; that is create's `records` line. The `instance` step then
-terminates the old instance, which ends the association, and launches the
-new one, and the second `address` step associates the same Elastic IP with
-it, as for any replace. The `resolve` step waits, as create's does, until
-the developer's resolver answers with the Elastic IP rather than the old
-address. Everything else is as for replacing a running space, and from here
-the space has its address for life like any other.
+address create would have, and points its records there, before anything
+reaches the host by name. Right after `build`, before `retire`, it allocates
+an Elastic IP, tagged as create tags it, and associates it with the old
+instance, still running and the only instance there is; that is create's
+`address` line. The association takes the place of the instance's public
+address, and `retire` reaches the host by name, so the records must point at
+the Elastic IP first: replace writes the space's two `A` records to point at
+it and waits for `INSYNC`, create's `records` line, and then waits, as
+create's `resolve` step does, until the developer's resolver answers with the
+Elastic IP rather than the old address. Only then does `retire` run. There is
+no disassociation: the `instance` step terminates the old instance, which
+ends the association, and launches the new one; the second `address` step
+associates the same Elastic IP with it, and the `resolve` step after it
+passes at once, as for any replace, because the name already resolves to the
+Elastic IP. Everything else is as for replacing a running space, and from
+here the space has its address for life like any other.
+
+A stopped space that has no Elastic IP is started first, as for any stopped
+space (see "A developer replaces a stopped space"). A stopped instance comes
+up on a new public address, which its records do not point at, so the
+`address`, `records`, and `resolve` steps come right after `start`, still
+before `retire`, and `retire` reaches the host by name at the Elastic IP.
 
 Command:
 
@@ -1726,9 +1741,10 @@ Output:
 account: ok (ikigenba.dev, us-east-2, 295229566359)
 domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
 build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
-retire: ok (opsctl retire)
 address: ok (elastic ip 18.224.61.19 associated)
 records: ok (created sbx3.ikigenba.dev, *.sbx3.ikigenba.dev -> 18.224.61.19, INSYNC)
+resolve: ok (sbx3.ikigenba.dev -> 18.224.61.19)
+retire: ok (opsctl retire)
 instance: ok (i-0d4e5f60718293a4b terminated, i-0f6a7b8c9d0e1f203 running, 3.16.204.75)
 address: ok (elastic ip 18.224.61.19 associated)
 resolve: ok (sbx3.ikigenba.dev -> 18.224.61.19)
@@ -1760,6 +1776,25 @@ sbx3.ikigenba.dev i-0f6a7b8c9d0e1f203 18.224.61.19
 Exits 0. The lines are on stdout; stderr is empty. The lines from
 `preflight` on are opsctl's.
 
+Output, had `i-0d4e5f60718293a4b` been stopped, with the lines after
+`instance` as above:
+
+```
+account: ok (ikigenba.dev, us-east-2, 295229566359)
+domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
+build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+start: ok (i-0d4e5f60718293a4b running, status checks passed)
+address: ok (elastic ip 18.224.61.19 associated)
+records: ok (created sbx3.ikigenba.dev, *.sbx3.ikigenba.dev -> 18.224.61.19, INSYNC)
+resolve: ok (sbx3.ikigenba.dev -> 18.224.61.19)
+retire: ok (opsctl retire)
+instance: ok (i-0d4e5f60718293a4b terminated, i-0f6a7b8c9d0e1f203 running, 3.16.204.75)
+...
+sbx3.ikigenba.dev i-0f6a7b8c9d0e1f203 18.224.61.19
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
 Preconditions:
 
 - The working directory is inside the checkout, whose root file names
@@ -1775,6 +1810,8 @@ Preconditions:
   release, with that release's `opsctl`, and it does not hold the apex. The
   space's records `sbx3.ikigenba.dev` and `*.sbx3.ikigenba.dev` point at
   `3.141.52.88`. The role and instance profile `sbx3.ikigenba.dev` exist.
+  For the second output, the instance is instead `stopped`, with no public
+  address, and the records still point at `3.141.52.88`.
 - The local repository's newest `release-<N>` tag is `release-87`, at
   `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, where the suite builds and
   holds the apps `auth`, `dummy`, `events`, `mcp`, `repos`, `scripts`,
@@ -1785,27 +1822,35 @@ Preconditions:
 
 Postconditions:
 
-- `sudo systemd-run --quiet --wait --pipe --collect opsctl retire` has been
-  run on the old host over ssh and exited 0, so a new object under
-  `sbx3/<app>/` for each of the eight apps and a host backup,
-  `sbx3/host/2026-11-08T19:04:12Z.tar.zst`, are in the bucket; that host
-  backup is the newest there.
-- After that, an Elastic IP `18.224.61.19`, tagged `Domain=ikigenba.dev` and
+- An Elastic IP `18.224.61.19`, tagged `Domain=ikigenba.dev` and
   `Space=sbx3.ikigenba.dev`, was allocated and associated with
-  `i-0d4e5f60718293a4b`, and then the `A` records `sbx3.ikigenba.dev` and
+  `i-0d4e5f60718293a4b`; then the `A` records `sbx3.ikigenba.dev` and
   `*.sbx3.ikigenba.dev`, TTL 60, were written to point at it and the change
-  was `INSYNC`, all before any new instance was launched.
+  was `INSYNC`; then the developer's system resolver answered
+  `sbx3.ikigenba.dev` with `18.224.61.19`. All of this happened before
+  devctl's first ssh connection to the old host. For the second output,
+  `i-0d4e5f60718293a4b` was started and passed its status checks before the
+  Elastic IP was allocated.
+- After that, `sudo systemd-run --quiet --wait --pipe --collect opsctl
+  retire` was run on the old host over ssh, as `ec2-user@sbx3.ikigenba.dev`,
+  and exited 0, so a new object under `sbx3/<app>/` for each of the eight
+  apps and a host backup, `sbx3/host/2026-11-08T19:04:12Z.tar.zst`, are in
+  the bucket; that host backup is the newest there.
 - `i-0d4e5f60718293a4b` was then terminated, before any new instance was
-  launched. At no point were two instances tagged `Space=sbx3.ikigenba.dev`
-  anything but terminated.
+  launched; the Elastic IP was never disassociated from it by devctl. At no
+  point were two instances tagged `Space=sbx3.ikigenba.dev` anything but
+  terminated.
 - `i-0f6a7b8c9d0e1f203` is running, launched from the `ikigenba.dev` launch
   template with the instance profile `sbx3.ikigenba.dev`, tagged
   `Domain=ikigenba.dev` and `Space=sbx3.ikigenba.dev` on the instance and
   its volume, and has passed its status checks and `cloud-init status
   --wait`. The Elastic IP `18.224.61.19` is associated with it. The role,
   its policy, and the secrets objects are as they were.
-- Before devctl's first ssh connection to the new host, the developer's
-  system resolver answered `sbx3.ikigenba.dev` with `18.224.61.19`.
+- The records were written once, before `retire`, and not again. Before
+  devctl's first ssh connection to the new host, the developer's system
+  resolver answered `sbx3.ikigenba.dev` with `18.224.61.19`.
+- Every ssh and scp devctl ran, to the old host and the new, named
+  `ec2-user@sbx3.ikigenba.dev`; none passed a key, an address, or an agent.
 - On the new host, the release was restored and activated, and the
   developer's `known_hosts` left, as in "A developer replaces a space's
   instance", for `sbx3.ikigenba.dev`: every app answers at
