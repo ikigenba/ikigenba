@@ -29,7 +29,10 @@ writes the space's two `A` records, `<space domain>` and `*.<space domain>`,
 at a TTL of 60 seconds, and `space destroy` deletes the records and releases
 the address. No other command allocates, releases, or rewrites them: `space
 stop` and `space start` leave them alone, and `space replace` puts the space
-on a new instance and assigns it the same address. The root's record changes
+on a new instance and assigns it the same address. The one exception is a
+space created before every space had an Elastic IP: its first `space
+replace` allocates its address and writes its records, once, and from then
+on they are left alone like any other's. The root's record changes
 only through `apex set`, `apex clear`, `space destroy` of the space that
 holds the apex, and `space create` of a space whose store holds the apex.
 
@@ -1497,7 +1500,9 @@ existing role and instance profile, tagged `Domain=ikigenba.dev` and
 The second `address` step associates the same Elastic IP with the new
 instance. No address is allocated or released and no record is written: the
 space's two `A` records already point at the address, and from the first
-`address` step until the new host is set up nothing behind it answers.
+`address` step until the new host is set up nothing behind it answers. A
+space that has no Elastic IP is first given one (see "A developer replaces a
+space that has no Elastic IP").
 
 The `resolve` step is create's, and passes at once, because the name has
 resolved to the address all along. The `host`, `copy`, and `unpack` steps
@@ -1690,6 +1695,124 @@ Postconditions:
   it over ssh, as `ec2-user@sbx2.ikigenba.dev`. It is then terminated, as in
   the story above.
 - Otherwise as for replacing a running space, at the address `18.191.20.7`.
+
+## A developer replaces a space that has no Elastic IP
+
+A space created before every space was given an Elastic IP has none: its
+instance carries the label, and its records point at the instance's own
+public address, which a new instance would not have. Replace gives it the
+address create would have, before it launches anything. In place of the
+first `address` step's disassociation it allocates an Elastic IP, tagged as
+create tags it, and associates it with the old instance, retired but still
+running and the only instance there is; that is create's `address` line.
+It then writes the space's two `A` records to point at the address and waits
+for `INSYNC`; that is create's `records` line. The `instance` step then
+terminates the old instance, which ends the association, and launches the
+new one, and the second `address` step associates the same Elastic IP with
+it, as for any replace. The `resolve` step waits, as create's does, until
+the developer's resolver answers with the Elastic IP rather than the old
+address. Everything else is as for replacing a running space, and from here
+the space has its address for life like any other.
+
+Command:
+
+```
+$ devctl space replace sbx3
+```
+
+Output:
+
+```
+account: ok (ikigenba.dev, us-east-2, 295229566359)
+domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
+build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+retire: ok (opsctl retire)
+address: ok (elastic ip 18.224.61.19 associated)
+records: ok (created sbx3.ikigenba.dev, *.sbx3.ikigenba.dev -> 18.224.61.19, INSYNC)
+instance: ok (i-0d4e5f60718293a4b terminated, i-0f6a7b8c9d0e1f203 running, 3.16.204.75)
+address: ok (elastic ip 18.224.61.19 associated)
+resolve: ok (sbx3.ikigenba.dev -> 18.224.61.19)
+host: ok (status checks passed, cloud-init done)
+copy: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz -> sbx3.ikigenba.dev)
+unpack: ok (/opt/ikigenba/releases/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
+opsctl: ok (5 keys set)
+restore: ok (host/2026-11-08T19:04:12Z.tar.zst, 5 keys set again)
+init: ok
+restore: ok (opsctl restore auth)
+restore: ok (opsctl restore dummy)
+restore: ok (opsctl restore events)
+restore: ok (opsctl restore mcp)
+restore: ok (opsctl restore repos)
+restore: ok (opsctl restore scripts)
+restore: ok (opsctl restore sites)
+restore: ok (opsctl restore telemetry)
+preflight: ok (8 apps)
+label: ok (release-87)
+env: ok (8 apps)
+units: ok (8 apps)
+current: ok (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
+nginx: ok (8 apps)
+restart: ok (8 apps)
+activate: ok (release-87 (4b22285))
+sbx3.ikigenba.dev i-0f6a7b8c9d0e1f203 18.224.61.19
+```
+
+Exits 0. The lines are on stdout; stderr is empty. The lines from
+`preflight` on are opsctl's.
+
+Preconditions:
+
+- The working directory is inside the checkout, whose root file names
+  `ikigenba.dev` and `us-east-2`, and a live SSO session for the profile
+  `ikigenba.dev`.
+- Terraform has been applied: the account holds the hosted zone, the launch
+  template, the permissions boundary policy, the backup bucket, and the key
+  pair, all named `ikigenba.dev`.
+- The space's instance `i-0d4e5f60718293a4b` is `running` at its public
+  address `3.141.52.88`, and it is the only instance tagged
+  `Space=sbx3.ikigenba.dev` that is not terminated. No Elastic IP is tagged
+  `Space=sbx3.ikigenba.dev`. The instance runs the eight apps of an earlier
+  release, with that release's `opsctl`, and it does not hold the apex. The
+  space's records `sbx3.ikigenba.dev` and `*.sbx3.ikigenba.dev` point at
+  `3.141.52.88`. The role and instance profile `sbx3.ikigenba.dev` exist.
+- The local repository's newest `release-<N>` tag is `release-87`, at
+  `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, where the suite builds and
+  holds the apps `auth`, `dummy`, `events`, `mcp`, `repos`, `scripts`,
+  `sites` and `telemetry`.
+- The developer's ssh configuration is as "A developer creates a space"
+  says, and its `~/.ssh/known_hosts` holds the old host's key for
+  `sbx3.ikigenba.dev`.
+
+Postconditions:
+
+- `sudo systemd-run --quiet --wait --pipe --collect opsctl retire` has been
+  run on the old host over ssh and exited 0, so a new object under
+  `sbx3/<app>/` for each of the eight apps and a host backup,
+  `sbx3/host/2026-11-08T19:04:12Z.tar.zst`, are in the bucket; that host
+  backup is the newest there.
+- After that, an Elastic IP `18.224.61.19`, tagged `Domain=ikigenba.dev` and
+  `Space=sbx3.ikigenba.dev`, was allocated and associated with
+  `i-0d4e5f60718293a4b`, and then the `A` records `sbx3.ikigenba.dev` and
+  `*.sbx3.ikigenba.dev`, TTL 60, were written to point at it and the change
+  was `INSYNC`, all before any new instance was launched.
+- `i-0d4e5f60718293a4b` was then terminated, before any new instance was
+  launched. At no point were two instances tagged `Space=sbx3.ikigenba.dev`
+  anything but terminated.
+- `i-0f6a7b8c9d0e1f203` is running, launched from the `ikigenba.dev` launch
+  template with the instance profile `sbx3.ikigenba.dev`, tagged
+  `Domain=ikigenba.dev` and `Space=sbx3.ikigenba.dev` on the instance and
+  its volume, and has passed its status checks and `cloud-init status
+  --wait`. The Elastic IP `18.224.61.19` is associated with it. The role,
+  its policy, and the secrets objects are as they were.
+- Before devctl's first ssh connection to the new host, the developer's
+  system resolver answered `sbx3.ikigenba.dev` with `18.224.61.19`.
+- On the new host, the release was restored and activated, and the
+  developer's `known_hosts` left, as in "A developer replaces a space's
+  instance", for `sbx3.ikigenba.dev`: every app answers at
+  `<app>.sbx3.ikigenba.dev` over the data the old host held.
+- The space now has its address for life, like any other: a later `space
+  stop`, `space start`, or `space replace sbx3` leaves the Elastic IP
+  `18.224.61.19` and the records alone.
 
 ## A developer replaces a space with a release they name
 
@@ -2191,9 +2314,11 @@ Postconditions:
   replace sbx1` again, once EC2 has capacity. With no instance there is no
   final backup to take and no address to disassociate, so its `retire` line
   is `retire: ok (already gone)` and its first `address` line `address: ok
-  (not associated)`, it makes no ssh connection before the new host, and it
-  then launches the new instance and goes on as for a running space,
-  restoring from the backups this replace's `retire` wrote.
+  (not associated)`; with no old instance to terminate, its `instance` line
+  is `instance: ok (<new id> running, <address>)`, the form create's has. It
+  makes no ssh connection before the new host, and it then launches the new
+  instance and goes on as for a running space, restoring from the backups
+  this replace's `retire` wrote.
 
 ## A developer recovers a replace that failed on the new host
 
