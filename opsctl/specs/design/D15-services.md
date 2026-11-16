@@ -56,8 +56,8 @@ systemd created is never briefly closed to apps or nginx. The file is
 creates grants anything to others.
 
 The file is rewritten wherever nginx's configuration is regenerated —
-`activate`, `rollback`, `enable`, `disable`, `restore`, `init`, and
-`nginx apply` — and always after nginx's configuration
+`activate`, `rollback`, `enable`, `disable`, `restore`, `init`,
+`nginx apply`, `domain add` and `domain remove` (D23) — and always after nginx's configuration
 has succeeded, so the two files never disagree about which apps are disabled
 and a command that fails before or at its nginx step leaves the file as it
 was. Since every regeneration refuses a host where a manifest cannot be read
@@ -73,7 +73,8 @@ change to the command's own app's entry: `disabled`, `enabled`, or
 change is measured against the file on disk before the rewrite, because
 nothing else remembers the previous entry. `activate`
 and `rollback` report the number of entries instead (D18). `init`, `restore`,
-`nginx apply`, and `services apply` rewrite the file silently.
+`nginx apply`, `domain add`, `domain remove` and `services apply` rewrite the
+file silently.
 
 The layout is exact — the object pretty-printed, one service per line — so a
 rerun that changes nothing rewrites nothing, and a story can show the file.

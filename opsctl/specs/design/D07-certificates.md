@@ -1,13 +1,13 @@
 # D07-certificates
 
-The host serves one certbot lineage, named after its host name, covering that
-name and its wildcard. On the one host that holds the root domain's apex —
-the host whose `host.apex` names an app — the same lineage covers the parent
-of the host name too, so the host answers at the apex with the certificate it
-already serves. The parent is derived, never stored: `internal/host` computes
-it from the host name and refuses a name that has no parent, and `Obtain`
-makes that refusal before certbot runs, so the CA is never asked for a name
-that does not exist.
+The host has one certbot lineage of its own, named after its host name,
+covering that name and its wildcard. On the one host that holds the root
+domain's apex — the host whose `host.apex` names an app — the same lineage
+covers the parent of the host name too, so the host answers at the apex with
+the certificate it already serves. The parent is derived, never stored:
+`internal/host` computes it from the host name and refuses a name that has no
+parent, and `Obtain` makes that refusal before certbot runs, so the CA is
+never asked for a name that does not exist.
 
 The names the lineage should carry follow the store, and `obtain` is how a
 change lands. certbot owns both decisions: a certificate that is not due and
@@ -41,13 +41,59 @@ the hooks of the release the host then runs, and no hook names a release.
 (D05), so a fresh host's first `obtain` already records hooks certbot can
 find.
 
+Beside the host's lineage, each custom domain D23 keeps has a lineage of its
+own, redirect names included, named after the domain and holding that one
+name. `ObtainDomain` obtains it by HTTP-01 through certbot's webroot plugin,
+and `DeleteDomain` deletes it; D23's `domain` command calls both, and `cert`
+itself still obtains and shows only the host's lineage. The webroot is
+`Webroot`, `/var/www/acme`, a host path: D06 creates it and its port-80 server
+answers `/.well-known/acme-challenge/` from it, and `ObtainDomain` hands
+certbot the same path resolved under the environment's root. No DNS record is
+written and no DNS-01 hook runs for a custom domain, so the host's lineage,
+its names and its hooks are never touched by a domain operation. A domain
+lineage carries only the deploy hook, `systemctl try-reload-or-restart nginx`,
+subject to the same PATH rule as the host's hooks.
+
+The certbot behavior this rests on is its published documentation, the certbot
+User Guide (https://eff-certbot.readthedocs.io/en/stable/using.html), not an
+observation. Under "Webroot", `certonly --webroot` with `--webroot-path`/`-w`
+writes a temporary file for each requested domain in
+`<webroot-path>/.well-known/acme-challenge`. Under "Managing certificates",
+`--cert-name` names the lineage, and a certificate is deleted by giving its
+name to `delete --cert-name`, which cleans up all files related to it. Under
+"Modifying the Renewal Configuration of Existing Certificates" and "Renewing
+certificates", certbot keeps track of the relevant options chosen when a
+certificate is created, in `/etc/letsencrypt/renewal/<name>.conf`, and
+`renew` uses "the same plugin and options that were used at the time the
+certificate was originally issued" for each certificate that is ready for
+renewal, which is how a webroot lineage renews from the same webroot; the
+`--deploy-hook` help says the hook runs once for each
+successfully issued certificate "including on subsequent renewals", and the
+`--run-deploy-hooks` help speaks of hooks "saved in the certificate's renewal
+configuration file". The `--keep-until-expiring` help says a request matching
+an existing certificate keeps it until it is due, which is why a lineage left
+by an add whose nginx apply failed is reused without asking the CA. The
+guide does not state what a refused issuance leaves behind; that an earlier
+lineage is unchanged and that a refused first issuance publishes no lineage
+rests on certbot's behavior, as the host lineage's refusal requirement does.
+Because `ObtainDomain` always passes `--cert-name` with the name, an `add`
+run again after a refused issuance names the same lineage whatever certbot
+left on disk, and never gets a numbered sibling lineage. Renewal stays the D12
+timer's one `certbot renew`: it covers every lineage on the host, so no second
+timer exists, and certbot carries on to the remaining lineages when one fails
+to renew, which rests on its behavior rather than on the guide, so a custom domain whose name no longer points at the host does not
+stop the host's own lineage from renewing.
+
 ## REQUIREMENTS
 
 - R-2X8T-NIF1: Package `internal/cert` MUST export `Obtain(ctx context.Context, env host.Env, hostName, email string, apex bool) error`.
 - R-YMH5-WSMA: Package `internal/cert` MUST export `Info` with the fields `Names []string`, `Issuer string`, and `Expires time.Time`.
 - R-YF0K-OV8Z: Package `internal/cert` MUST export `Inspect(env host.Env, hostName string) (Info, error)`.
 - R-YG8H-2MZO: Package `internal/cert` MUST export the sentinel error `ErrNotFound`.
-- R-2YGQ-1A5Q: `opsctl cert --help` and `opsctl cert -h` MUST, for any effective uid and without reading configuration, executing commands, or changing host state, exit 0 with empty stderr and stdout exactly `"Usage: opsctl cert <subcommand>\n\nObtain and inspect the one certificate this host serves: host.name and\n*.host.name, plus the parent of host.name when host.apex is set, proved over\nDNS-01 through 'opsctl dns acme-auth'.\n\nSubcommands:\n  show    print the certificate's names, issuer, and expiry\n  obtain  obtain the certificate, renew it if it is due, or reissue it when\n          the names it should carry have changed\n\nConfiguration keys:\n  acme.email  the address the CA sends expiry warnings to\n  host.name   the fully-qualified name this host answers at\n  host.apex   the app that answers at the parent of host.name; unset means none\n\nRenewal is certbot's: 'certbot renew' re-runs the same hooks and reloads\nnginx, with no further configuration. 'opsctl init' writes the timer that\nruns it twice a day, ikigenba-renew-certificate.timer.\n"`, where `\n` denotes LF.
+- R-GWRV-RWU9: Package `internal/cert` MUST export the constant `Webroot = "/var/www/acme"`, the host path of the directory from which HTTP-01 challenges for custom-domain lineages are answered.
+- R-GXZS-5OKY: Package `internal/cert` MUST export `ObtainDomain(ctx context.Context, env host.Env, name, email string) error`.
+- R-GZ7O-JGBN: Package `internal/cert` MUST export `DeleteDomain(ctx context.Context, env host.Env, name string) error`.
+- R-GVJZ-E53K: `opsctl cert --help` and `opsctl cert -h` MUST, for any effective uid and without reading configuration, executing commands, or changing host state, exit 0 with empty stderr and stdout exactly `"Usage: opsctl cert <subcommand>\n\nObtain and inspect this host's own certificate: host.name and *.host.name,\nplus the parent of host.name when host.apex is set, proved over DNS-01\nthrough 'opsctl dns acme-auth'.\n\nSubcommands:\n  show    print the certificate's names, issuer, and expiry\n  obtain  obtain the certificate, renew it if it is due, or reissue it when\n          the names it should carry have changed\n\nConfiguration keys:\n  acme.email  the address the CA sends expiry warnings to\n  host.name   the fully-qualified name this host answers at\n  host.apex   the app that answers at the parent of host.name; unset means none\n\nRenewal is certbot's: 'certbot renew' re-runs the same hooks and reloads\nnginx, with no further configuration, and renews the certificate of each\ncustom domain 'opsctl domain' holds the way it was obtained. 'opsctl init'\nwrites the timer that runs it twice a day, ikigenba-renew-certificate.timer.\n"`, where `\n` denotes LF.
 - R-YIO9-U6H2: The `cert` command MUST accept exactly `show` and `obtain`, each without options or positional arguments; non-help invocations MUST obey D02's root check, and a root invocation with no subcommand or an unknown subcommand MUST leave state unchanged, write no stdout, exit 2, and write respectively `"opsctl: no cert subcommand given\n\nsee 'opsctl cert --help' for usage\n"` or `"opsctl: unknown cert subcommand '<name>'\n\nsee 'opsctl cert --help' for usage\n"` to stderr, substituting the given subcommand for `<name>`; invalid extra arguments or options MUST likewise fail with exit 2 and a D02 diagnostic before configuration reads or external execution.
 - R-O6Q6-LMAB: Before a root `cert show` or `cert obtain` action, the CLI MUST read `host.name` from `config.Store` rooted at `Deps.Root` and take `host.NormalizeName` of the stored value as the host name, and before `obtain` additionally read `acme.email` and then `host.apex` from that store, while `cert show` MUST NOT read `host.apex`; checking `host.name` first, a `host.name` that is unset or whose normalized value is empty, or an unset or empty `acme.email`, MUST produce exactly `opsctl: <key> not set` followed by LF on stderr, empty stdout, exit 1, and no external execution or state change, an unset or empty `host.apex` MUST NOT be an error and means the host does not hold the apex, and any other store error MUST produce a D02 diagnostic and exit 1 without running the certificate operation.
 - R-FRFQ-VNTM: `Obtain` MUST reject an empty `hostName` with an error whose text is exactly `host.name not set`, or, when `hostName` is nonempty and `email` is empty, with an error whose text is exactly `acme.email not set`; these checks MUST precede any external execution or state change, including when called by init, and a rejected call MUST invoke no `env.Execute` and leave host state unchanged.
@@ -59,6 +105,18 @@ find.
 - R-3700-POCL: Successful `Obtain` on an existing lineage `/etc/letsencrypt/live/<hostName>/` whose certificate names differ from the requested set in either direction MUST, whether or not certbot considers the certificate due, leave that lineage under the same name holding a certificate covering exactly the requested names with the same recorded hooks, with no challenge value left behind at any record name, so that an immediately following `Obtain` with the same arguments changes nothing; certbot owns the mismatch decision and `Obtain` MUST NOT request forced renewal or delete the lineage to bring the names into agreement.
 - R-YORR-R16J: A failed certbot invocation in `Obtain` MUST return an error containing `*host.CommandError` with `Label` equal to `certbot certonly`, preserving its `Result` and execution `Err`; a successful execution with `ExitCode` 0 MUST return nil, and captured subprocess output MUST remain available on failure and MUST NOT itself be printed by the package.
 - R-3Y2Q-E7IX: When the CA refuses issuance, `Obtain` MUST leave any earlier certificate unchanged and nginx serving it, publish no replacement certificate, and use the recorded cleanup hook to remove every challenge value whose cleanup certbot reaches.
+- R-H0FK-X82C: `ObtainDomain` MUST reject an empty `email` with an error whose text is exactly `acme.email not set` before any external execution or state change, invoking no `env.Execute` and leaving host state unchanged.
+- R-S7VF-DU3K: `ObtainDomain` with an empty `name` and a nonempty `email`, and `DeleteDomain` with an empty `name`, MUST return a non-nil error before any external execution or state change, invoking no `env.Execute` and leaving host state unchanged.
+- R-H1NH-AZT1: For a nonempty `name` and nonempty `email`, `ObtainDomain` MUST execute `certbot` once through `env.Execute` with ordered arguments `["certonly", "--non-interactive", "--agree-tos", "--email", email, "--webroot", "--webroot-path", Wr, "--deploy-hook", "systemctl try-reload-or-restart nginx", "--cert-name", name, "-d", name, "--keep-until-expiring", "--config-dir", C, "--work-dir", W, "--logs-dir", L]`, where Wr is `Webroot` resolved under `env.Root` and C, W, and L are respectively `/etc/letsencrypt`, `/var/lib/letsencrypt`, and `/var/log/letsencrypt` resolved under `env.Root`; it MUST pass the supplied context, use empty `Dir`, nil `Env`, and nil `Stdin`, and MUST NOT request forced renewal or write DNS records.
+- R-H2VD-ORJQ: The `--deploy-hook` value `ObtainDomain` passes to `certbot` MUST, when split into words the way a POSIX shell splits a command line, begin with the bare name of an executable that resolves on PATH, and MUST NOT begin with a shell keyword, operator, or compound command, because certbot resolves a hook's first word on PATH before performing any ACME work and refuses the invocation when it does not resolve.
+- R-H43A-2JAF: A failed certbot invocation in `ObtainDomain` MUST return an error containing `*host.CommandError` with `Label` equal to `certbot certonly`, preserving its `Result` and execution `Err`; a successful execution with `ExitCode` 0 MUST return nil, and captured subprocess output MUST remain available on failure and MUST NOT itself be printed by the package.
+- R-H5B6-GB14: `DeleteDomain` MUST execute `certbot` once through `env.Execute` with ordered arguments `["delete", "--non-interactive", "--cert-name", name, "--config-dir", C, "--work-dir", W, "--logs-dir", L]`, where C, W, and L are respectively `/etc/letsencrypt`, `/var/lib/letsencrypt`, and `/var/log/letsencrypt` resolved under `env.Root`; it MUST pass the supplied context, use empty `Dir`, nil `Env`, and nil `Stdin`, and MUST NOT write DNS records.
+- R-H7QZ-7UII: A failed certbot invocation in `DeleteDomain` MUST return an error containing `*host.CommandError` with `Label` equal to `certbot delete`, preserving its `Result` and execution `Err`; a successful execution with `ExitCode` 0 MUST return nil, and captured subprocess output MUST remain available on failure and MUST NOT itself be printed by the package.
+- R-25DS-GPIV: Successful `DeleteDomain` MUST leave no lineage `/etc/letsencrypt/live/<name>/` and no renewal configuration `/etc/letsencrypt/renewal/<name>.conf` under `env.Root`, so that a subsequent `certbot renew` no longer renews it.
+- R-S93B-RLU9: `ObtainDomain` and `DeleteDomain` MUST act only on the lineage named `name`: for a `name` other than the host's lineage name they MUST leave the host's lineage `/etc/letsencrypt/live/<hostName>/` under `env.Root`, its renewal configuration, and every other lineage unchanged, and MUST NOT run the DNS-01 hooks, write DNS records, or create, change, start, or stop any timer or service; the only service action either may cause is the recorded deploy hook's reload of nginx after a certificate is issued.
+- R-SAB8-5DKY: Successful `ObtainDomain` for an absent or due lineage MUST establish certbot's lineage `/etc/letsencrypt/live/<name>/` under `env.Root` containing `fullchain.pem` and `privkey.pem` for a certificate covering exactly `name`, proved by an HTTP-01 challenge certbot writes under `.well-known/acme-challenge/` in `Webroot` resolved under `env.Root`, with renewal configuration retaining the webroot authenticator, that webroot path for `name`, and the deploy hook, so that a subsequent `certbot renew` renews the lineage by HTTP-01 from the same webroot and reloads nginx without further configuration.
+- R-HBEO-D5QL: `ObtainDomain` on a lineage `/etc/letsencrypt/live/<name>/` that certbot considers not due and whose certificate covers exactly `name` MUST succeed without changing the certificate or requesting issuance from the CA; certbot owns the due decision and `ObtainDomain` MUST NOT impose a separate renewal threshold.
+- R-HCMK-QXHA: When the CA refuses issuance, `ObtainDomain` MUST leave any earlier lineage for `name` exactly as it was and publish no new certificate, so that when no lineage for `name` existed before, none exists after.
 - R-YR7K-IKNX: `Inspect` MUST read the first PEM certificate in `/etc/letsencrypt/live/<hostName>/fullchain.pem` resolved under `env.Root`, return its DNS subject alternative names in encoded order in `Names`, its issuer common name in `Issuer` (or the issuer distinguished-name string when the common name is empty), and its NotAfter instant in `Expires`; it MUST perform no writes, external execution, or network requests and MUST report expired certificates as certificate data rather than an operation failure.
 - R-YSFG-WCEM: When the lineage directory or its `fullchain.pem` is absent, `Inspect` MUST return an error matching `ErrNotFound` through `errors.Is` and having exactly the text `no certificate for <hostName>`; unreadable files, missing PEM certificate blocks, and invalid X.509 certificate data MUST return an operational error rather than successful empty information.
 - R-O95Z-D5RP: A root `opsctl cert show` with a `host.name` whose normalized value is nonempty MUST call `Inspect` with `host.NormalizeName` of the stored `host.name` as `hostName` and the host environment from `Deps`, exit 0 on success with empty stderr and exactly three LF-terminated stdout lines `names: <names>`, `issuer: <issuer>`, and `expires: <expires>`, where names are `Info.Names` joined with comma-space, issuer is `Info.Issuer`, and expires is `Info.Expires` formatted in UTC as RFC3339 with seconds and a `Z` suffix.
