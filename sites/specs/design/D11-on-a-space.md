@@ -35,7 +35,7 @@ In a sandbox sites is the same binary in the same arrangement: the sandbox build
 - It runs the first `git` on the `PATH` it is given (`D03-serve`, R-VLOG-3TP1; `D05-git-and-cache`, R-CBY7-DQF0); that the sandbox's `PATH` holds the developer's own `git` is the sandbox's arrangement, a sandbox-level check.
 - It reads nothing from its environment beyond what a host gives it, so the variables only the sandbox sets change nothing it does: the keys `Run` looks up are the closed list `D01-layout-and-run-seam` states (R-YPQB-601F), and `AGENTS.md`'s run-seam rule keeps sites' own code from reading the environment any other way. The readers of `IKIGENBA_SERVICES` that sit outside the seam are appkit's and named in `D01-layout-and-run-seam`.
 - A sandbox has no apex host nor any custom domain: its nginx routes neither to sites, so apex and domain requests are proved by sites' tests and checked only on a space. This is accepted.
-- The same credential guarantees hold; `sandbox logs sites` showing no line is `D03-serve`'s quiet standard error (R-QNNB-Z54V).
+- The same credential guarantees hold; `sandbox logs sites` showing no line is `D03-serve`'s quiet standard error (R-2UCV-T4ZW).
 
 ## The recorded deviation
 
