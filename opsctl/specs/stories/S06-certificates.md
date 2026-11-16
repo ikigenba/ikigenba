@@ -15,12 +15,23 @@ host's own subtree that the host's role allows only while it holds the apex.
 Setting or clearing `host.apex` changes the names the certificate should
 carry, and `obtain` is how the change lands: certbot reissues a certificate
 whose requested names differ from the ones it holds, whether or not it is due.
-There is one lineage, named after `host.name`, whatever it covers.
+The host has one lineage of its own, named after `host.name`, whatever it
+covers.
+
+Each custom domain `opsctl domain` keeps in the configuration store
+(`S14-domains.md`) has a lineage of its own beside it, named after the domain
+and holding that one name, at `/etc/letsencrypt/live/<name>/`. A redirect
+name has one as well. `opsctl domain add` obtains it by HTTP-01: certbot
+writes the challenge under the webroot `/var/www/acme`, which the port-80
+server answers from (`S05-nginx.md`). The host's own lineage, its DNS-01
+hooks and its names are unchanged by any of it, and `cert` obtains and shows
+only the host's lineage.
 
 The top-level usage gains the line `  cert      obtain and inspect the host's
 certificate` under `Commands:`, and `init`'s sequence gains the step
-`certificate`, before `nginx.conf` — every nginx server block names the
-certificate, so nginx has nothing to load until this has run.
+`certificate`, before `nginx.conf` — every nginx server block but a custom
+domain's names the host's certificate, so nginx has nothing to load until
+this has run.
 
 Renewal has an owner, and it is opsctl. `init`'s `timers` step writes
 `ikigenba-renew-certificate.service`, which runs `certbot renew` as root, and
@@ -31,9 +42,14 @@ that holds a certificate has to renew it, and there is nothing for a space
 to opt out of. The same step masks the certbot package's own
 `certbot-renew.timer` when the package ships one, so exactly one thing on the
 host renews and the answer to "who renews" does not depend on packaging.
-What renewal does is still certbot's: the hooks `obtain` recorded re-prove
-the challenge through opsctl and reload nginx, for every name the lineage
-holds. The hooks name `opsctl` bare, and certbot finds it on its PATH at
+What renewal does is still certbot's: `certbot renew` renews every lineage
+on the host by the method that obtained it, reloading nginx, and carries on
+past one that fails. For the host's lineage, the hooks `obtain` recorded
+re-prove the challenge through opsctl and reload nginx, for every name the
+lineage holds; for a custom domain's, the challenge is answered from
+`/var/www/acme` again. There is no second timer, and a custom domain that
+stops pointing at this host fails only its own renewal. The hooks name
+`opsctl` bare, and certbot finds it on its PATH at
 `/usr/local/bin/opsctl`, which on a released host is a link to
 `/opt/ikigenba/current/opsctl/bin/opsctl`: whichever release the host runs
 answers the challenge, and no hook names a release. `init` makes that link
@@ -62,9 +78,9 @@ Output:
 ```
 Usage: opsctl cert <subcommand>
 
-Obtain and inspect the one certificate this host serves: host.name and
-*.host.name, plus the parent of host.name when host.apex is set, proved over
-DNS-01 through 'opsctl dns acme-auth'.
+Obtain and inspect this host's own certificate: host.name and *.host.name,
+plus the parent of host.name when host.apex is set, proved over DNS-01
+through 'opsctl dns acme-auth'.
 
 Subcommands:
   show    print the certificate's names, issuer, and expiry
@@ -77,8 +93,9 @@ Configuration keys:
   host.apex   the app that answers at the parent of host.name; unset means none
 
 Renewal is certbot's: 'certbot renew' re-runs the same hooks and reloads
-nginx, with no further configuration. 'opsctl init' writes the timer that
-runs it twice a day, ikigenba-renew-certificate.timer.
+nginx, with no further configuration, and renews the certificate of each
+custom domain 'opsctl domain' holds the way it was obtained. 'opsctl init'
+writes the timer that runs it twice a day, ikigenba-renew-certificate.timer.
 ```
 
 Exits 0. The text is on stdout; stderr is empty. It prints for any user.

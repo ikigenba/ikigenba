@@ -23,7 +23,9 @@ the wildcard certificate, the nginx catch-all, and every app's own name all
 hang off it. The one host that also answers at the root's apex says so with
 `host.apex` (see `S05-nginx.md`); the preflight does not look at that key, and
 a value the host cannot carry is refused by the `certificate` step, which is
-the first step that reads it.
+the first step that reads it. A host may also answer at the custom domains
+`opsctl domain` keeps in the configuration store (`S14-domains.md`), each
+under a certificate of its own that the `certificate` step does not touch.
 
 The sequence is the setup commands that exist. It is empty until a group adds
 one to it, and each group that does says so; `S06-certificates.md` adds

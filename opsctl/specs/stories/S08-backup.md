@@ -159,8 +159,10 @@ snapshot and the committed changes after it, and nothing else.
 
 ## What is backed up, and what is not
 
-- `/etc/ikigenba/` and `/etc/letsencrypt/` — the host's own configuration and
-  its certificate — by `opsctl host backup`, under `host/`, as
+- `/etc/ikigenba/` and `/etc/letsencrypt/` — the host's own configuration,
+  the custom domains `opsctl domain` keeps in the configuration store among
+  it (`S14-domains.md`), and every certificate lineage, the host's and each
+  custom domain's — by `opsctl host backup`, under `host/`, as
   `<timestamp>.tar.zst`.
 - The host's accounts, by `opsctl host backup`, under `host/`, as
   `<timestamp>.accounts.tar.zst` beside the configuration object of the same
@@ -194,6 +196,8 @@ snapshot and the committed changes after it, and nothing else.
 - Never `/run/ikigenba/services.json`: it is generated from the configuration
   store, the current release, and which apps are disabled, so a restored host
   writes it again as well.
+- Never `/var/www/acme`, the webroot the CA's HTTP-01 challenges are answered
+  from (`S05-nginx.md`): `opsctl nginx apply` creates it when it is missing.
 
 A service is discovered, never registered. On a released host, one where
 `/opt/ikigenba/current` exists, a service is an app the release `current`
@@ -827,6 +831,12 @@ Postconditions:
   the suite's was started or stopped, and nginx was not reloaded. `opsctl
   init` is what makes the host act on the configuration just restored.
 - No object under `<backup.s3_uri>` was written or deleted.
+- The custom domains come back with `/etc/ikigenba/`, and their lineages with
+  `/etc/letsencrypt/`. After the following `opsctl init`, whose `nginx.conf`
+  step applies nginx and creates `/var/www/acme`, the host serves its custom
+  domains without obtaining anything — a primary name answers `404` until a
+  release that holds `sites` is activated (`S05-nginx.md`) — and the next
+  `certbot renew` finds the webroot it answers their challenges from.
 
 ## An operator restores a host from a backup that holds no accounts
 

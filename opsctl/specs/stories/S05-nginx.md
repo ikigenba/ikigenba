@@ -157,10 +157,10 @@ cookie. So every block that serves an app grants cross-origin access to that
 one origin, the *allowed origin*, and to no other. It is derived from
 `host.name` alone, `https://sites.sbx.ikigenba.dev` on a host named
 `sbx.ikigenba.dev`, whether or not a `sites` app is routed; no configuration
-key changes it. nginx decides it, and an app never sees a preflight: every
-`OPTIONS` request to an app's block is answered `204` by nginx before
-anything else in the block, so with no subrequest to `auth` and nothing
-proxied. When the request's `Origin` is exactly the allowed origin, the
+key changes it. nginx decides it, and an app never sees a preflight sent to
+its block: every `OPTIONS` request to an app's block is answered `204` by
+nginx before anything else in the block, so with no subrequest to `auth` and
+nothing proxied. When the request's `Origin` is exactly the allowed origin, the
 response carries `Access-Control-Allow-Origin` naming that origin, never `*`,
 and `Access-Control-Allow-Credentials: true`. The `204` also carries
 `Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS`,
@@ -175,10 +175,11 @@ in, a 403 from `auth`, the 404 of `auth`'s guarded `/check`, and a disabled
 app's 503. That holds for a plain block on a host with no authenticator, a
 wired block, one that serves guests, `auth`'s own block, a disabled app's
 block, and the apex wherever it is a name on an app's block. It holds for no
-other block: the port-80 redirect, the handshake-rejecting default, and the
-404 block answer as before. An app refuses a call whose `Origin` names
-another host, so when nginx passes a request on to an app, or to `auth`'s
-`/check` on its behalf, it leaves out an `Origin` that is exactly the allowed
+other block: the port-80 server, the handshake-rejecting default, and the
+404 block answer as before, and a custom domain's block carries none of it.
+An app refuses a call whose `Origin` names another host, so when nginx passes
+a request on from an app's block, or to `auth`'s `/check` on its behalf, it
+leaves out an `Origin` that is exactly the allowed
 origin and passes any other `Origin` on unchanged, for the app to judge.
 `auth`'s own block passes even the allowed origin on, because `auth` checks it
 to let any app on the space, `sites` included, sign its user out. The file
@@ -203,6 +204,45 @@ name and another at the apex, or the same app at both. When the named app is
 not routed — not in the current release, or only its data left on the host — the apex answers
 404 under the host's certificate until it is, so the name never falls to the
 handshake-rejecting default block once the certificate carries it.
+
+The port-80 default server answers every path under
+`/.well-known/acme-challenge/` with a file from the webroot `/var/www/acme`
+and redirects every other request to https. It does so on every host, whether
+or not the host has a custom domain, so the CA can fetch the HTTP-01
+challenge by which `opsctl domain add` obtains a custom domain's certificate
+(`S06-certificates.md`) with no nginx change before it. `opsctl nginx apply`
+creates `/var/www/acme` when it is missing; it is not under `/etc/nginx`, and
+it is never backed up. Every command that writes
+`/etc/nginx/conf.d/ikigenba.conf` — `nginx apply`, `init`'s `nginx.conf`
+step, the `nginx` step of `activate` and `rollback` (`S10-releases.md`), and
+`opsctl domain add` and `remove` (`S14-domains.md`) — creates `/var/www/acme`
+the same way when it is missing, root-owned with mode `0755`, so a restored
+host has it once `init` has run.
+
+A host may also answer at custom domains: DNS names outside the space's own
+whose address records point at this host, which `opsctl domain` keeps in the
+configuration store (`S14-domains.md`), so the file is a function of them
+too. Each is a *primary name*, which serves a site of `sites`, or a *redirect
+name*, which names the primary it redirects to. Each gets a server block of
+its own on 443, under a certificate of its own at
+`/etc/letsencrypt/live/<name>/` (`S06-certificates.md`); the blocks come
+after the app blocks, in name order, primaries and redirect names together. A
+primary name's block proxies every request to `sites`' socket, setting
+`Host`, the forwarded headers and `X-Request-Id` as every proxying location
+does, and setting `X-User-Id` and `X-User-Email` empty, so the client's own
+never reach `sites`. It carries nothing else of an app's block: no subrequest
+to `auth`, whether or not a routed `auth` is present; no `/mcp`, `/api` or
+git location; no include of `sites`' own `etc/nginx.conf`; no cross-origin
+header, no `Vary: Origin` and no preflight answer of its own; and the
+request's `Origin` reaches `sites` unchanged. Every visitor there is a guest,
+and `/mcp`, `/api` and the git paths are paths like any other. While `sites`
+is disabled, the block answers `503` in place of its location; while `sites`
+is not routed — not in the current release, only its data left, or no release
+at all — it answers `404`, under the name's own certificate, as the apex
+does. A redirect name's block answers every request `301` to
+`https://<primary>` and the request's own target, whatever `sites`' state. A
+name in no block, including one whose DNS points here that `opsctl domain`
+does not hold, still has its handshake rejected.
 
 ## An operator asks what `nginx` can do
 
@@ -256,7 +296,11 @@ answered 401 too, with a Basic challenge so git asks for the token. An app
 whose manifest sets guests admits a request without a credential elsewhere,
 checked against auth's /check/open. Every app's block answers an OPTIONS
 request 204 itself, and grants cross-origin access with credentials to
-https://sites.<host.name> alone.
+https://sites.<host.name> alone. Port 80 serves /.well-known/acme-challenge/
+from /var/www/acme and redirects everything else to https. Each custom domain
+'opsctl domain' holds answers under its own certificate: a primary name is
+proxied to sites with no sign-in, and a redirect name answers 301 to its
+primary.
 ```
 
 Exits 0. The text is on stdout; stderr is empty. It prints for any user.
@@ -271,8 +315,9 @@ Postconditions:
 
 ## An operator reads the configuration a bare host would get
 
-Before any release is activated, the file is the frame: port 80 redirects
-everything to 443, an unknown name has its TLS handshake rejected outright
+Before any release is activated, the file is the frame: port 80 serves the
+CA's challenges from `/var/www/acme` and redirects everything else to 443,
+an unknown name has its TLS handshake rejected outright
 rather than being answered with someone else's certificate, and the host's own
 name and its wildcard answer 404 under the host's certificate. The
 `ikigenba` log format comes first, and every block that answers a request
@@ -337,7 +382,14 @@ server {
     listen      [::]:80 default_server;
     server_name _;
     access_log  /var/log/nginx/access.log ikigenba;
-    return      301 https://$host$request_uri;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/acme;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 
 server {
@@ -440,7 +492,14 @@ server {
     listen      [::]:80 default_server;
     server_name _;
     access_log  /var/log/nginx/access.log ikigenba;
-    return      301 https://$host$request_uri;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/acme;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 
 server {
@@ -743,7 +802,14 @@ server {
     listen      [::]:80 default_server;
     server_name _;
     access_log  /var/log/nginx/access.log ikigenba;
-    return      301 https://$host$request_uri;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/acme;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 
 server {
@@ -874,7 +940,14 @@ server {
     listen      [::]:80 default_server;
     server_name _;
     access_log  /var/log/nginx/access.log ikigenba;
-    return      301 https://$host$request_uri;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/acme;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 
 server {
@@ -1408,7 +1481,14 @@ server {
     listen      [::]:80 default_server;
     server_name _;
     access_log  /var/log/nginx/access.log ikigenba;
-    return      301 https://$host$request_uri;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/acme;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 
 server {
@@ -1735,6 +1815,180 @@ Postconditions:
 - `auth` has no block: unrouted, it is a service the host will back up and one
   nginx cannot route, and it is not the authenticator. No block is wired; the
   host stays fail-open until a release that holds `auth` is activated.
+
+## An operator reads the configuration of a host with custom domains
+
+The host of the `host running an app that serves guests` story also holds two
+custom domains: `example.com`, a primary name, and `www.example.com`, a
+redirect name to it. Each gets a block of its own after the app blocks, in
+name order, under its own lineage's certificate. `example.com`'s block
+proxies every request to `sites`' socket with no subrequest to `auth`,
+though a routed `auth` is on the host, and with the identity headers set
+empty; it carries no other location, no include, no cross-origin header and
+no preflight answer. `www.example.com`'s block only redirects. Every other
+block, the 404 block and `sites`' own included, is as that story shows it.
+
+Command:
+
+```
+$ sudo opsctl nginx show
+```
+
+Output: the `host running an app that serves guests` story's file, followed
+by an empty line and
+
+```
+server {
+    listen              443 ssl;
+    server_name         example.com;
+    ssl_certificate     /etc/letsencrypt/live/example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
+    access_log          /var/log/nginx/access.log ikigenba;
+
+    location / {
+        proxy_pass       http://unix:/run/ikigenba/sites.sock:;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header X-User-Id         "";
+        proxy_set_header X-User-Email      "";
+    }
+}
+
+server {
+    listen              443 ssl;
+    server_name         www.example.com;
+    ssl_certificate     /etc/letsencrypt/live/www.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/www.example.com/privkey.pem;
+    access_log          /var/log/nginx/access.log ikigenba;
+    return              301 https://example.com$request_uri;
+}
+```
+
+Exits 0. The text is on stdout; stderr is empty.
+
+Preconditions:
+
+- The host is the one in the `host running an app that serves guests` story.
+- The custom domains `opsctl domain` keeps in the configuration store are
+  `example.com`, a primary name, and `www.example.com`, a redirect name to
+  `example.com` (`S14-domains.md`).
+- Each name's certificate is at `/etc/letsencrypt/live/<name>/`; `show` does
+  not check, since it writes nothing.
+
+Postconditions:
+
+- Nothing has changed. `show` writes no file and reloads nothing.
+- Neither name is on the 404 block or on any app's block, and neither is a
+  name of the host's certificate. The maps are unchanged: the allowed origin
+  is still `https://sites.sbx.ikigenba.dev` alone.
+- Had no routed `auth` been on the host, the two blocks would be exactly the
+  same.
+- `example.com` sorts before `sites` yet comes after every app block: the
+  custom domains are ordered among themselves, by name, primaries and
+  redirect names together, so a redirect name that sorts before its primary
+  comes first.
+
+## An operator reads the configuration while sites is disabled on a host with custom domains
+
+`sites` has been disabled with `opsctl disable sites`. Its own block becomes
+the `503` block of the `app is disabled` story, and the primary name's block
+answers `503` too, in place of its location, still under its own
+certificate. The redirect name's block is unchanged: it never reaches
+`sites`.
+
+Command:
+
+```
+$ sudo opsctl nginx show
+```
+
+Output: the `host with custom domains` story's file, with `sites`' block the
+`503` block of the `app is disabled` story, answering at
+`sites.sbx.ikigenba.dev ikigenba.dev`, and `example.com`'s block reading
+
+```
+server {
+    listen              443 ssl;
+    server_name         example.com;
+    ssl_certificate     /etc/letsencrypt/live/example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
+    access_log          /var/log/nginx/access.log ikigenba;
+    return              503;
+}
+```
+
+Exits 0. The text is on stdout; stderr is empty.
+
+Preconditions:
+
+- As for the `host with custom domains` story, and systemd reports
+  `ikigenba-sites.socket` disabled.
+
+Postconditions:
+
+- Nothing has changed.
+- Once applied, every request to `https://example.com`, a preflight
+  included, is answered `503` by nginx with no `Access-Control-` header and
+  no `Vary: Origin`; nothing reaches `/run/ikigenba/sites.sock`.
+  `https://www.example.com` still answers `301` to `https://example.com`.
+
+## An operator reads the configuration when sites is not routed on a host with custom domains
+
+The custom domains are in the configuration store, but no `sites` is routed:
+the host is fresh, as a host rebuilt from a backup is before its first
+`activate` (`S08-backup.md`). The primary name's block answers `404` under
+its own certificate, as the apex does when its app is not routed, so the name
+never falls to the handshake-rejecting default. The redirect name's block is
+unchanged.
+
+Command:
+
+```
+$ sudo opsctl nginx show
+```
+
+Output: the `bare host` story's file, followed by an empty line and
+
+```
+server {
+    listen              443 ssl;
+    server_name         example.com;
+    ssl_certificate     /etc/letsencrypt/live/example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
+    access_log          /var/log/nginx/access.log ikigenba;
+    return              404;
+}
+
+server {
+    listen              443 ssl;
+    server_name         www.example.com;
+    ssl_certificate     /etc/letsencrypt/live/www.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/www.example.com/privkey.pem;
+    access_log          /var/log/nginx/access.log ikigenba;
+    return              301 https://example.com$request_uri;
+}
+```
+
+Exits 0. The text is on stdout; stderr is empty.
+
+Preconditions:
+
+- `host.name` is `sbx.ikigenba.dev` and `host.apex` is not set.
+- The host is fresh, as in the `bare host` story: there is no
+  `/opt/ikigenba/current`, so no app is routed. `/var/opt/ikigenba/sites/`
+  may hold a `state/`; a data-only `sites` is not routed either.
+- The custom domains are those of the `host with custom domains` story.
+
+Postconditions:
+
+- Nothing has changed.
+- A release whose apps hold no `sites` gives `example.com` the same `404`
+  block, after the app blocks; the next `activate` of a release that holds
+  `sites` gives it the proxying block of the `host with custom domains`
+  story.
 
 ## An MCP client reaches a wired app without a credential
 
@@ -2520,6 +2774,129 @@ Postconditions:
 
 - Nothing has changed. Nothing reached `/run/ikigenba/auth.sock`.
 
+## A visitor reaches a site at its custom domain
+
+A visitor asks for a page at a primary name. nginx proxies every request
+there to `sites` as a guest's: it asks `auth` nothing, sends nobody to sign
+in, and passes on no identity, whatever the client sent. The block grants no
+cross-origin access and answers no preflight itself, so an `OPTIONS` request
+reaches `sites` like any other, and so do `/mcp`, `/api` and the git paths.
+
+Request:
+
+```
+$ curl -si -H 'X-User-Id: <forged>' -H 'X-User-Email: <forged>' https://example.com/
+```
+
+```
+$ curl -si -H 'Origin: https://sites.sbx.ikigenba.dev' https://example.com/
+```
+
+```
+$ curl -si -X OPTIONS -H 'Origin: https://sites.sbx.ikigenba.dev' -H 'Access-Control-Request-Method: POST' https://example.com/
+```
+
+```
+$ curl -si https://example.com/mcp
+```
+
+Response: not fixed here; it is `sites`'s answer to the request.
+
+Status is whatever `sites` answers; nginx adds no status of its own. The
+response carries no `Access-Control-` header and no `Vary: Origin` from
+nginx, and is never a redirect to `auth.sbx.ikigenba.dev`.
+
+Preconditions:
+
+- The configuration of the `host with custom domains` story has been
+  applied, and `auth` and `sites` are active.
+
+Postconditions:
+
+- `sites` received each request with `Host: example.com`, with
+  `X-Request-Id` set by nginx, and with no `X-User-Id` and no
+  `X-User-Email`: the forged values never reached it.
+- `sites` received the second and third requests with
+  `Origin: https://sites.sbx.ikigenba.dev` unchanged, and the third as an
+  `OPTIONS` request; nginx answered no `204` of its own.
+- No subrequest went to `auth` for any of them. A request carrying an
+  `ikigenba_session` cookie or an `Authorization` header is answered the
+  same, and `sites` receives no identity from nginx for it.
+- `https://example.com/api`, `https://example.com/mcp/<anything>` and
+  `https://example.com/notes.git/info/refs` reach `sites` the same way, with
+  no challenge from nginx.
+
+## A visitor reaches a redirect name
+
+A redirect name only sends its visitor to its primary name, keeping the
+request's own target.
+
+Request:
+
+```
+$ curl -si 'https://www.example.com/about?x=1'
+```
+
+Response:
+
+```
+HTTP/1.1 301 Moved Permanently
+Location: https://example.com/about?x=1
+```
+
+Status 301. The body is not fixed.
+
+Preconditions:
+
+- The configuration of the `host with custom domains` story has been
+  applied.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached `/run/ikigenba/sites.sock` and no
+  subrequest went to `auth`.
+- The answer is the same whether `sites` is active, disabled, or not routed,
+  and for any method, path and query.
+
+## The CA fetches a challenge over port 80
+
+`opsctl domain add` obtains a custom domain's certificate by HTTP-01
+(`S14-domains.md`, `S06-certificates.md`): certbot writes a token file under
+`/var/www/acme`, and the CA fetches it at the name over plain http. The
+port-80 server answers it from the webroot, on any name that reaches it,
+while every other http request is still redirected to https.
+
+Request:
+
+```
+$ curl -si http://example.com/.well-known/acme-challenge/<token>
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+```
+
+Status 200. The body is the content of
+`/var/www/acme/.well-known/acme-challenge/<token>`.
+
+Preconditions:
+
+- The configuration of any story in this group has been applied; the
+  port-80 server is the same on every host. `example.com`'s address record
+  points at this host, whether or not `opsctl domain` holds it yet.
+- `/var/www/acme/.well-known/acme-challenge/<token>` exists, written by
+  certbot.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached any app's socket.
+- A token with no file under the webroot answers `404`.
+- `http://example.com/about` answers `301` with `Location:
+  https://example.com/about`, as any http request outside
+  `/.well-known/acme-challenge/` does on any name.
+
 ## An app widens the request limits for its own requests
 
 An app that takes large uploads over slow connections — git pushes, say —
@@ -2596,6 +2973,8 @@ Preconditions:
 
 - `host.name` is set and the host's certificate exists at
   `/etc/letsencrypt/live/<host.name>/`.
+- Each custom domain `opsctl domain` keeps in the configuration store, if
+  any, has its certificate at `/etc/letsencrypt/live/<name>/`.
 - `/opt/ikigenba/current` names a release.
 - `nginx` and `systemctl` are on the PATH.
 
@@ -2607,6 +2986,8 @@ Postconditions:
 - `nginx -t` passed and nginx has been reloaded; it is serving the new
   configuration and never stopped serving the old one.
 - No other file under `/etc/nginx` was created, modified, or removed.
+- `/var/www/acme` exists, owned by root with mode `0755`; `apply` created it
+  if it was missing.
 - `/run/ikigenba/services.json` has been rewritten from the same store,
   current release, and disabled apps the nginx file was. Nothing was printed
   about it.
@@ -2619,8 +3000,8 @@ Postconditions:
 
 ## An operator applies before the certificate exists
 
-Every 443 block names the host's certificate, so a host with none has a
-configuration nginx will refuse. The refusal is nginx's, and its output
+Every 443 block but a custom domain's names the host's certificate, so a host
+with none has a configuration nginx will refuse. The refusal is nginx's, and its output
 follows the diagnostic, quoted line by line.
 
 Command:
