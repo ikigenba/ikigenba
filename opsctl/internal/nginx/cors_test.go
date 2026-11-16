@@ -55,7 +55,7 @@ func TestRenderAPIReservationsAndChallengeInBothWiredForms(t *testing.T) {
 	}
 }
 
-// R-UUDA-OQTB R-V0GS-LLIS
+// R-UUDA-OQTB R-95DJ-YIPP
 func TestRenderCORSAtEveryServiceBlockAndChallenge(t *testing.T) {
 	for _, authenticated := range []bool{false, true} {
 		root := t.TempDir()
@@ -110,7 +110,7 @@ func TestRenderCORSAtEveryServiceBlockAndChallenge(t *testing.T) {
 	}
 }
 
-// R-RZ2U-D6NV R-UZ8W-7TS3
+// R-91PU-T7HM R-945N-KQZ0
 func TestRenderCORSMapsGrantOnlySitesOriginAndSelectMethodHeaders(t *testing.T) {
 	for _, hostName := range []string{"sbx.ikigenba.dev", "other-2.example.test"} {
 		for _, sitesState := range []string{"absent", "unrouted", "enabled", "disabled"} {
@@ -228,7 +228,7 @@ func mappedValue(t *testing.T, config, variable, input string, values map[string
 	return fallback
 }
 
-// R-UVL7-2IK0
+// R-96LG-CAGE
 func TestRenderUpstreamOriginInEveryGeneratedProxyLocation(t *testing.T) {
 	const hostName = "space.example.test"
 	allowed := "https://sites." + hostName

@@ -134,16 +134,24 @@ func TestReleaseHardeningFailureKeepsEarlierRulesAndHostInputs(t *testing.T) {
 }
 
 func TestRunStateRefusalRecognizesWrappedTypeAndOverridesCapture(t *testing.T) {
-	// R-7RE1-VBNQ
+	// R-CS9P-PFDI
 	reason := "fixture host state refuses this operation"
 	capture := host.Result{Stdout: []byte("captured stdout\n"), Stderr: []byte("captured stderr\n")}
 	refused := &accounts.RefusedError{Reason: reason}
-	for _, action := range []string{"group", "user"} {
+	for _, action := range []string{"group", "user", "domain"} {
 		tool := "groupadd"
 		args := []string{"group", "add", "example"}
 		if action == "user" {
 			tool = "useradd"
 			args = []string{"user", "add", "carol", "acme", cliUserKey}
+		}
+		if action == "domain" {
+			tool = "certbot"
+			args = []string{"domain", "add", "example.com"}
+		}
+		label := tool
+		if action == "domain" {
+			label = "certbot certonly"
 		}
 		cases := []struct {
 			name       string
@@ -154,11 +162,14 @@ func TestRunStateRefusalRecognizesWrappedTypeAndOverridesCapture(t *testing.T) {
 			{"direct", refused, 4, "opsctl: " + reason + "\n"},
 			{"wrapped", fmt.Errorf("outer: %w", refused), 4, "opsctl: " + reason + "\n"},
 			{"joined", errors.Join(&host.CommandError{Label: "inner", Result: capture}, fmt.Errorf("outer: %w", refused)), 4, "opsctl: " + reason + "\n"},
-			{"same words without type", errors.New(reason), 1, "opsctl: " + tool + ": " + reason + "\n\n> captured stdout\n> captured stderr\n"},
+			{"same words without type", errors.New(reason), 1, "opsctl: " + label + ": " + reason + "\n\n> captured stdout\n> captured stderr\n"},
 		}
 		for _, test := range cases {
 			t.Run(action+"/"+test.name, func(t *testing.T) {
 				f := newUserCLI(t)
+				if action == "domain" {
+					groupCLIWrite(t, f.deps.Root, "/etc/ikigenba/config.json", `{"host.name":"sbx.ikigenba.dev","acme.email":"operator@example.com"}`)
+				}
 				f.run = func(command host.Command) (host.Result, error) {
 					if command.Name != tool {
 						t.Fatalf("unexpected command %+v", command)
@@ -176,7 +187,7 @@ func TestRunStateRefusalRecognizesWrappedTypeAndOverridesCapture(t *testing.T) {
 }
 
 func TestRunOtherCommandsKeepTheirErrorContractForRefusedTypes(t *testing.T) {
-	// R-7RE1-VBNQ
+	// R-CS9P-PFDI
 	cause := fmt.Errorf("outer: %w", &accounts.RefusedError{Reason: "fixture refusal"})
 	capture := host.Result{Stdout: []byte("captured stdout\n"), Stderr: []byte("captured stderr\n")}
 	t.Run("nginx", func(t *testing.T) {

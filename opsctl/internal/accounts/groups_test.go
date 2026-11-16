@@ -37,7 +37,7 @@ func TestTakenNamesRefused(t *testing.T) {
 }
 
 func TestAddGroupRejectsNonDirectories(t *testing.T) {
-	// R-7SLY-93EF
+	// R-HXS8-TWPR
 	for _, kind := range []string{"file", "directory symlink", "file symlink", "dangling symlink"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newGroupFixture(t, "", "")

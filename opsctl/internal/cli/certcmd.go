@@ -15,9 +15,9 @@ import (
 
 const certUsage = `Usage: opsctl cert <subcommand>
 
-Obtain and inspect the one certificate this host serves: host.name and
-*.host.name, plus the parent of host.name when host.apex is set, proved over
-DNS-01 through 'opsctl dns acme-auth'.
+Obtain and inspect this host's own certificate: host.name and *.host.name,
+plus the parent of host.name when host.apex is set, proved over DNS-01
+through 'opsctl dns acme-auth'.
 
 Subcommands:
   show    print the certificate's names, issuer, and expiry
@@ -30,8 +30,9 @@ Configuration keys:
   host.apex   the app that answers at the parent of host.name; unset means none
 
 Renewal is certbot's: 'certbot renew' re-runs the same hooks and reloads
-nginx, with no further configuration. 'opsctl init' writes the timer that
-runs it twice a day, ikigenba-renew-certificate.timer.
+nginx, with no further configuration, and renews the certificate of each
+custom domain 'opsctl domain' holds the way it was obtained. 'opsctl init'
+writes the timer that runs it twice a day, ikigenba-renew-certificate.timer.
 `
 
 func runCert(args []string, stdout, stderr io.Writer, deps Deps) exitCode {

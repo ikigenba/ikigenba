@@ -48,7 +48,11 @@ answered 401 too, with a Basic challenge so git asks for the token. An app
 whose manifest sets guests admits a request without a credential elsewhere,
 checked against auth's /check/open. Every app's block answers an OPTIONS
 request 204 itself, and grants cross-origin access with credentials to
-https://sites.<host.name> alone.
+https://sites.<host.name> alone. Port 80 serves /.well-known/acme-challenge/
+from /var/www/acme and redirects everything else to https. Each custom domain
+'opsctl domain' holds answers under its own certificate: a primary name is
+proxied to sites with no sign-in, and a redirect name answers 301 to its
+primary.
 `
 
 func runNginx(args []string, stdout, stderr io.Writer, deps Deps) exitCode {

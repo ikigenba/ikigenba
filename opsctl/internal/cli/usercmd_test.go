@@ -154,7 +154,7 @@ func TestUserGrammar(t *testing.T) {
 }
 
 func TestUserActions(t *testing.T) {
-	// R-BEWG-RIKJ R-BONN-TOI3 R-7V1R-0MVT
+	// R-BEWG-RIKJ R-BONN-TOI3 R-I1FX-Z7XU
 	for _, args := range [][]string{{"add", "carol", "acme", "  " + cliUserKey + "  "}, {"key", "add", "alice", "  " + cliUserKey + "  "}, {"key", "remove", "alice", cliUserKey}, {"join", "bob", "acme"}, {"leave", "alice", "acme"}, {"lock", "alice"}, {"unlock", "bob"}, {"delete", "bob"}} {
 		f := newUserCLI(t)
 		if args[0] == "key" && args[1] == "remove" {
@@ -193,7 +193,7 @@ func TestUserActions(t *testing.T) {
 }
 
 func TestUserStateRefusals(t *testing.T) {
-	// R-7V1R-0MVT
+	// R-I1FX-Z7XU
 	for _, tc := range []struct {
 		args   []string
 		reason string

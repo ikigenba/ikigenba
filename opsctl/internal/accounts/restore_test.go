@@ -195,7 +195,7 @@ func TestRestoreGroupValidationAndExisting(t *testing.T) {
 }
 
 func TestRestoreGroupExplicitIDsAndFolder(t *testing.T) {
-	// R-YNDO-TJHI R-YII3-AGIQ
+	// R-0E8C-2NEL R-YII3-AGIQ
 	for _, exists := range []bool{false, true} {
 		for _, repository := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%t/%t", exists, repository), func(t *testing.T) {
@@ -246,7 +246,7 @@ func TestRestoreGroupExplicitIDsAndFolder(t *testing.T) {
 }
 
 func TestRestoreGroupFailureUndo(t *testing.T) {
-	// R-YNDO-TJHI R-AS4J-4TTD
+	// R-0E8C-2NEL R-AS4J-4TTD
 	for fail := 0; fail < 8; fail++ {
 		t.Run(fmt.Sprint(fail), func(t *testing.T) {
 			f := newRestoreFixture(t)
@@ -285,6 +285,41 @@ func TestRestoreGroupFailureUndo(t *testing.T) {
 			}
 			if f.read("/srv/newbiz/kept") != "precious" {
 				t.Fatal("undo changed folder")
+			}
+		})
+	}
+}
+
+func TestRestoreGroupRefusesNonDirectoriesWithoutFollowingLinks(t *testing.T) {
+	// R-0E8C-2NEL
+	for _, kind := range []string{"file", "directory symlink", "file symlink", "dangling symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newRestoreFixture(t)
+			f.write("/srv/kept/file", "preserved", 0640)
+			var target string
+			switch kind {
+			case "file":
+				f.write("/srv/newbiz", "preserved", 0600)
+			case "directory symlink":
+				target = rootPath(f.env.Root, "/srv/kept")
+			case "file symlink":
+				target = rootPath(f.env.Root, "/srv/kept/file")
+			case "dangling symlink":
+				target = rootPath(f.env.Root, "/srv/missing")
+			}
+			if target != "" {
+				if err := os.Symlink(target, rootPath(f.env.Root, "/srv/newbiz")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := userTree(t, f.env.Root)
+			err := RestoreGroup(context.Background(), f.env, ManifestGroup{Slug: "newbiz", UID: 12004, GID: 13004, Members: []string{"alice"}})
+			var refused *RefusedError
+			if !errors.As(err, &refused) || refused.Reason != "not a directory: /srv/newbiz" || len(f.commands) != 0 {
+				t.Fatal(err, f.commands)
+			}
+			if !reflect.DeepEqual(userTree(t, f.env.Root), before) {
+				t.Fatal("refusal changed host state")
 			}
 		})
 	}

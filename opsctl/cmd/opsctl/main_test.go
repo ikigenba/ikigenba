@@ -13,7 +13,7 @@ import (
 
 func TestBinaryHelp(t *testing.T) {
 	// R-N0T5-G71B
-	// R-HE1E-EY3A
+	// R-IHS1-82LT
 	stdout, stderr, code := runBinary(t, buildOpsctl(t), exec.Command("./opsctl", "--help"))
 	if code != 0 {
 		t.Errorf("exit code = %d, want 0", code)
@@ -32,6 +32,7 @@ Commands:
   config    read and write the host configuration store
   disable   stop an installed app and keep it from starting
   dns       manage DNS records in the zones opsctl owns
+  domain    manage the host's custom domains
   enable    let a disabled app start again, and start it
   group     manage business groups and their folders
   host      back up and restore the host's own configuration

@@ -9,8 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
+	"github.com/ikigenba/ikigenba/opsctl/internal/cert"
+	"github.com/ikigenba/ikigenba/opsctl/internal/config"
+	"github.com/ikigenba/ikigenba/opsctl/internal/domain"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
 
@@ -24,7 +28,12 @@ const defaultServers = "server {\n" +
 	"    listen      [::]:80 default_server;\n" +
 	"    server_name _;\n" +
 	"    access_log  /var/log/nginx/access.log ikigenba;\n" +
-	"    return      301 https://$host$request_uri;\n" +
+	"\n    location ^~ /.well-known/acme-challenge/ {\n" +
+	"        root " + cert.Webroot + ";\n" +
+	"    }\n\n" +
+	"    location / {\n" +
+	"        return 301 https://$host$request_uri;\n" +
+	"    }\n" +
 	"}\n\n" +
 	"server {\n" +
 	"    listen              443 ssl default_server;\n" +
@@ -46,6 +55,10 @@ func Render(ctx context.Context, env host.Env, hostName, apexApp string) ([]byte
 	if err != nil {
 		return nil, err
 	}
+	domains, err := domain.List(config.Store{Root: env.Root})
+	if err != nil {
+		return nil, err
+	}
 
 	var output strings.Builder
 	writeHeaderBlock(&output, hostName, apexApp, apexName, defaultService, routed)
@@ -58,6 +71,7 @@ func Render(ctx context.Context, env host.Env, hostName, apexApp string) ([]byte
 		disabled[service.Name] = isDisabled
 	}
 	writeServiceBlocks(&output, hostName, apexApp, apexName, routed, disabled)
+	writeDomainBlocks(&output, domains, isRouted("sites", routed), disabled["sites"])
 	return []byte(output.String()), nil
 }
 
@@ -71,6 +85,9 @@ func Apply(ctx context.Context, env host.Env, hostName, apexApp string) error {
 }
 
 func applyCandidate(ctx context.Context, env host.Env, candidate []byte) error {
+	if err := prepareWebroot(env.Root); err != nil {
+		return err
+	}
 	if env.Execute == nil {
 		return errors.New("apply nginx configuration: host execution is not configured")
 	}
@@ -126,10 +143,72 @@ func Write(ctx context.Context, env host.Env, hostName, apexApp string) error {
 	if err != nil {
 		return err
 	}
+	if err := prepareWebroot(env.Root); err != nil {
+		return err
+	}
 	if _, err := publish(env.Root, candidate); err != nil {
 		return fmt.Errorf("publish nginx configuration: %w", err)
 	}
 	return nil
+}
+
+func prepareWebroot(root string) error {
+	path := filepath.Join(root, strings.TrimPrefix(cert.Webroot, "/"))
+	if err := ensureDirectory(path); err != nil {
+		return fmt.Errorf("prepare ACME webroot: %w", err)
+	}
+	if err := syscall.Chmod(path, 0o755); err != nil {
+		return fmt.Errorf("prepare ACME webroot: %w", err)
+	}
+	return nil
+}
+
+func ensureDirectory(path string) error {
+	info, err := os.Stat(path)
+	if err == nil {
+		if !info.IsDir() {
+			return &os.PathError{Op: "mkdir", Path: path, Err: syscall.ENOTDIR}
+		}
+		return nil
+	}
+	if !os.IsNotExist(err) {
+		return err
+	}
+	if err := ensureDirectory(filepath.Dir(path)); err != nil {
+		return err
+	}
+	if err := os.Mkdir(path, 0o700); err != nil {
+		return err
+	}
+	return syscall.Chmod(path, 0o755)
+}
+
+func writeDomainBlocks(output *strings.Builder, domains []domain.Domain, sitesRouted, sitesDisabled bool) {
+	for _, d := range domains {
+		output.WriteString("\nserver {\n    listen              443 ssl;\n    server_name         " + d.Name + ";\n")
+		writeCertificate(output, d.Name)
+		output.WriteString("    access_log          /var/log/nginx/access.log ikigenba;\n")
+		switch {
+		case d.Primary != "":
+			output.WriteString("    return              301 https://" + d.Primary + "$request_uri;\n")
+		case !sitesRouted:
+			output.WriteString("    return              404;\n")
+		case sitesDisabled:
+			output.WriteString("    return              503;\n")
+		default:
+			output.WriteString("\n    location / {\n")
+			writeProxy(output, "sites")
+			output.WriteString("        proxy_set_header Host              $host;\n" +
+				"        proxy_set_header X-Real-IP         $remote_addr;\n" +
+				"        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;\n" +
+				"        proxy_set_header X-Forwarded-Proto $scheme;\n" +
+				"        proxy_set_header X-Request-Id      $request_id;\n" +
+				"        proxy_set_header X-User-Id         \"\";\n" +
+				"        proxy_set_header X-User-Email      \"\";\n" +
+				"    }\n")
+		}
+		output.WriteString("}\n")
+	}
 }
 
 type publishedConfiguration struct {

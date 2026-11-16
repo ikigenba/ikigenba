@@ -25,6 +25,7 @@ Commands:
   config    read and write the host configuration store
   disable   stop an installed app and keep it from starting
   dns       manage DNS records in the zones opsctl owns
+  domain    manage the host's custom domains
   enable    let a disabled app start again, and start it
   group     manage business groups and their folders
   host      back up and restore the host's own configuration
@@ -198,10 +199,10 @@ func TestTopLevelGrammar(t *testing.T) {
 }
 
 func TestCommandSet(t *testing.T) {
-	// R-HCTI-16CL
+	// R-CPTW-XVW4
 	user := depsAt(t, 1)
 
-	wantCommands := []string{"activate", "backup", "cert", "config", "disable", "dns", "enable", "group", "host", "init", "nginx", "restart", "restore", "retire", "rollback", "services", "snapshot", "status", "user", "version"}
+	wantCommands := []string{"activate", "backup", "cert", "config", "disable", "dns", "domain", "enable", "group", "host", "init", "nginx", "restart", "restore", "retire", "rollback", "services", "snapshot", "status", "user", "version"}
 	for _, name := range wantCommands {
 		_, stderr, _ := invoke([]string{name}, user)
 		if strings.Contains(stderr, "unknown command") {
@@ -245,7 +246,7 @@ func TestCommandSet(t *testing.T) {
 }
 
 func TestTopLevelHelp(t *testing.T) {
-	// R-HE1E-EY3A
+	// R-IHS1-82LT
 	user := depsAt(t, 1)
 	for _, args := range [][]string{{"--help"}, {"-h"}} {
 		stdout, stderr, code := invoke(args, user)

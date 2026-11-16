@@ -25,9 +25,9 @@ import (
 
 const wantCertUsage = `Usage: opsctl cert <subcommand>
 
-Obtain and inspect the one certificate this host serves: host.name and
-*.host.name, plus the parent of host.name when host.apex is set, proved over
-DNS-01 through 'opsctl dns acme-auth'.
+Obtain and inspect this host's own certificate: host.name and *.host.name,
+plus the parent of host.name when host.apex is set, proved over DNS-01
+through 'opsctl dns acme-auth'.
 
 Subcommands:
   show    print the certificate's names, issuer, and expiry
@@ -40,12 +40,13 @@ Configuration keys:
   host.apex   the app that answers at the parent of host.name; unset means none
 
 Renewal is certbot's: 'certbot renew' re-runs the same hooks and reloads
-nginx, with no further configuration. 'opsctl init' writes the timer that
-runs it twice a day, ikigenba-renew-certificate.timer.
+nginx, with no further configuration, and renews the certificate of each
+custom domain 'opsctl domain' holds the way it was obtained. 'opsctl init'
+writes the timer that runs it twice a day, ikigenba-renew-certificate.timer.
 `
 
 func TestCertHelpIsExactAndInert(t *testing.T) {
-	// R-2YGQ-1A5Q R-YYIY-T743
+	// R-GVJZ-E53K R-YYIY-T743
 	for _, uid := range []int{0, 1000} {
 		for _, option := range []string{"-h", "--help"} {
 			root := t.TempDir()
@@ -59,7 +60,9 @@ func TestCertHelpIsExactAndInert(t *testing.T) {
 					return host.Result{}, errors.New("unexpected execution")
 				},
 			}
+			noAccess := observeFilesystemAccess(t, root)
 			stdout, stderr, code := invoke([]string{"cert", option}, deps)
+			noAccess()
 			if code != 0 || stdout != wantCertUsage || stderr != "" || called {
 				t.Fatalf("uid %d %s: exit %d stdout %q stderr %q executed %t", uid, option, code, stdout, stderr, called)
 			}

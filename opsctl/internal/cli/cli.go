@@ -42,6 +42,7 @@ Commands:
   config    read and write the host configuration store
   disable   stop an installed app and keep it from starting
   dns       manage DNS records in the zones opsctl owns
+  domain    manage the host's custom domains
   enable    let a disabled app start again, and start it
   group     manage business groups and their folders
   host      back up and restore the host's own configuration
@@ -228,6 +229,8 @@ func diagnosticArg(s string) string {
 
 func dispatch(name string, args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	switch name {
+	case "domain":
+		return runDomain(args, stdout, stderr, deps)
 	case "group":
 		return runGroup(args, stdout, stderr, deps)
 	case "user":

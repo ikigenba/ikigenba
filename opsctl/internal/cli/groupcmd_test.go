@@ -172,7 +172,7 @@ func TestGroupJSONAndSilentSuccess(t *testing.T) {
 }
 
 func TestGroupStateRefusals(t *testing.T) {
-	// R-7TTU-MV54 R-7SLY-93EF
+	// R-CS9P-PFDI R-I081-LG75 R-HXS8-TWPR
 	for _, tc := range []struct {
 		args                   []string
 		passwd, groups, reason string
