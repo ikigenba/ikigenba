@@ -338,27 +338,9 @@ Deploy machinery, `devctl build` and `devctl deploy`, is hand-maintained
 infrastructure outside the spec system: the build run never reads, edits, or
 tests it.
 
-webhooks is an app, not a self-installing CLI: `devctl` builds it into a tarball
-named by the commit and pushes it to a space's host, where `opsctl install`
-installs it. There is no version to set, no tag to mint and no `--version`
-check. Until devctl is next released, use the `devctl` the worktree builds: run
-`make build` in `devctl/`, then run the commands below from the repository
-root. The host must run events, which webhooks emits to.
-
-1. Commit the change on the branch you are on (push only when asked); the
-   working tree must be clean.
-2. `devctl/bin/devctl build webhooks` writes `webhooks/dist/webhooks-<sha>.tar.xz`,
-   `<sha>` being the 40 lowercase hex digits of `HEAD`. It holds `bin/webhooks`,
-   `etc/`, and `share/icon.svg`; it refuses a dirty tree and a binary whose
-   `manifest` disagrees with the committed `etc/manifest.toml`.
-3. `devctl/bin/devctl deploy <space> webhooks/dist/webhooks-<sha>.tar.xz` uploads the
-   tarball to the space's `deploy/` prefix and runs `opsctl install` over ssh;
-   the host fetches it, writes `etc/env` (the manifest's `[env]` defaults and
-   the space's `DRAIN_SECONDS`), replaces the release, publishes
-   `ikigenba-webhooks.socket` (the Unix socket `/run/ikigenba/webhooks.sock`)
-   and the `Type=notify` `ikigenba-webhooks.service`, bounded by the manifest's
-   `[resources]`, regenerates the host's nginx and litestream configuration,
-   and restarts the service alone. The database is kept across releases.
+webhooks ships in the suite release (`devctl build <sha|tag>`,
+`devctl deploy <space> <sha|tag>`), built and deployed with the installed
+`devctl`; it has no tarball, tag or version of its own. The host must run events, which webhooks emits to.
 
 `webhooks --version` prints the host's display string for the code it runs, built
 by appkit's `version.Display()` from `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE`.

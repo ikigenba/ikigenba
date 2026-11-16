@@ -139,10 +139,12 @@ Verification must establish:
   its data, or that no requirement bounds, is redesigned.
 - No requirement quotes copy or names a hook, and every copy constant is
   declared without a value (`spec`'s design format, "Copy").
-- The contract passes the declared gates. In a throwaway worktree, stub the
-  declared public surface, write the consumer tasks as code against it, and
-  run the sub-project's gates, then remove the worktree. A shape the gates
-  reject is redesigned; it is never left for the build.
+- The contract passes the declared gates. In the worktree the operation was
+  started in, never another worktree or a copy of the tree, stub the declared
+  public surface, write the consumer tasks as code against it, and run the
+  sub-project's gates, then remove every stub and task file so the tree holds
+  only the design before anything is committed. A shape the gates reject is
+  redesigned; it is never left for the build.
 - Contracts agree across documents. Assign each shared boundary and story
   spanning documents as bounded integration work; local coverage alone is
   insufficient.

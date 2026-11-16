@@ -426,5 +426,6 @@ prompts ships in the suite release: `devctl build <sha|tag>` builds it with
 every other app, and `devctl deploy <space> <sha|tag>` deploys that release.
 The six secrets its manifest names (the five provider keys and
 `BRAVE_API_KEY`) must exist on the space
-(`devctl secrets push`) or in the shell that runs `sandbox up`, or the app is
-refused.
+(`devctl secrets push`) or in the shell the developer starts the sandbox
+from, or the app is refused. An agent never starts the sandbox; it uses the one
+the developer provided, which already holds them.

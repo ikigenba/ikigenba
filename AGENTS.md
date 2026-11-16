@@ -78,7 +78,7 @@ A library in this repository (appkit, agentkit, toolkit) is consumed only as a p
 
 Push only `main` and release tags to origin, and only when asked. Commit only to the branch checked out where you started; unless asked, move no other branch and create no branch or worktree for the work you were given. Land work, when asked, with `git fetch . <branch>:main`. Never `git stash`: the stack is shared across worktrees. Set work aside with a WIP commit or a local branch.
 
-Investigate outside the tree: a probe or scratch script goes in a temporary directory, or in a throwaway worktree when it must import the code, removed afterwards and never committed. Try the cheapest instrument first; a shell command or a question usually beats a program.
+Work happens in the one worktree you were started in. Never create another tree to build, test or check in: no throwaway worktree, no clone, no temporary copy of the code. A probe or scratch script that imports nothing goes in a temporary directory; one that must import the code is written inside the worktree you were started in, removed afterwards and never committed. Try the cheapest instrument first; a shell command or a question usually beats a program.
 
 In `rm` commands use literal absolute paths or `"${VAR:?}"` guards, never globs, bare variables or command substitution; the harness stops for approval on those. Never `rm /tmp/scratch.*`: other sessions keep their scratch files there, and a glob removes theirs with yours; remove only the one path you created.
 
@@ -88,7 +88,13 @@ Every agent commit ends with a `Co-Authored-By:` trailer naming the agent. No su
 
 ## Sandbox
 
-The apps are not designed to run alone; `sandbox` (built from `sandbox/` with `make install`) stands up the whole suite from the current worktree, edits included, as user systemd units behind a local nginx. `sandbox up` builds and starts or redeploys it and prints each app's URL; `sandbox --help` has the rest. Apps behind auth take `Authorization: Bearer $(sandbox token)`; when none is stored, ask the human to create one at the auth app and store it with `sandbox token set`.
+The apps are not designed to run alone; `sandbox` (built from `sandbox/` with `make install`) stands up the whole suite from the current worktree as user systemd units behind a local nginx.
+
+The human starts the sandbox, and a worktree has exactly one: the one `sandbox ls` shows for it. It is the only one an agent ever uses. An agent never runs `sandbox up`, `sandbox down` or `sandbox wipe`, never starts another sandbox, and never tests against any other tree, copy or deployment in its place. `sandbox up` needs secrets only the human's shell holds, so an agent that runs it stops the work.
+
+To run changed code, an agent rebuilds each changed app into that sandbox and restarts its unit, nothing more. With `<name>` from `sandbox ls`: in the app's directory, `go build -o ~/.local/state/ikigenba/sandbox/<name>/bin/<app>.new ./cmd/<app>`, move it over `bin/<app>`, then `systemctl --user restart sandbox-<name>-<app>.service`. An app applies its migrations when it starts. A change a rebuild and restart cannot carry, such as a new app, a changed manifest or a new nginx route, needs the human to run `sandbox up`; ask before the work starts, not in the middle of it.
+
+`sandbox url`, `sandbox status` and `sandbox logs` read the sandbox; `sandbox --help` has the rest. Apps behind auth take `Authorization: Bearer $(sandbox token)`; when none is stored, ask the human to create one at the auth app and store it with `sandbox token set`.
 
 ## Web assets
 

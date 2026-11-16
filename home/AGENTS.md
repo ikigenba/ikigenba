@@ -367,27 +367,9 @@ Deploy machinery, `devctl build` and `devctl deploy`, is hand-maintained
 infrastructure outside the spec system: the build run never reads, edits, or
 tests it.
 
-home is an app, not a self-installing CLI: `devctl` builds it into a tarball
-named by the commit and pushes it to a space's host, where `opsctl install`
-installs it. There is no version to set, no tag to mint and no `--version`
-check. Until devctl is next released, use the `devctl` the worktree builds: run
-`make build` in `devctl/`, then run the commands below from the repository
-root.
-
-1. Commit the change on the branch you are on (push only when asked); the
-   working tree must be clean.
-2. `devctl/bin/devctl build home` writes `home/dist/home-<sha>.tar.xz`,
-   `<sha>` being the 40 lowercase hex digits of `HEAD`. It holds `bin/home`,
-   `etc/`, and `share/icon.svg`; it refuses a dirty tree and a binary whose
-   `manifest` disagrees with the committed `etc/manifest.toml`.
-3. `devctl/bin/devctl deploy <space> home/dist/home-<sha>.tar.xz` uploads the
-   tarball to the space's `deploy/` prefix and runs `opsctl install` over ssh;
-   the host fetches it, writes `etc/env` (the manifest's `[env]` defaults and
-   the space's `DRAIN_SECONDS`), replaces the release, publishes
-   `ikigenba-home.socket` (the Unix socket `/run/ikigenba/home.sock`)
-   and the `Type=notify` `ikigenba-home.service`, bounded by the manifest's
-   `[resources]`, regenerates the host's nginx and litestream configuration,
-   and restarts the service alone. The database is kept across releases.
+home ships in the suite release (`devctl build <sha|tag>`,
+`devctl deploy <space> <sha|tag>`), built and deployed with the installed
+`devctl`; it has no tarball, tag or version of its own.
 
 `home --version` prints the host's display string for the code it runs, built
 by appkit's `version.Display()` from `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE`.
