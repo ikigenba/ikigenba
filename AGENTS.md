@@ -90,9 +90,7 @@ Every agent commit ends with a `Co-Authored-By:` trailer naming the agent. No su
 
 The apps are not designed to run alone; `sandbox` (built from `sandbox/` with `make install`) stands up the whole suite from the current worktree as user systemd units behind a local nginx.
 
-The human starts the sandbox, and a worktree has exactly one: the one `sandbox ls` shows for it. It is the only one an agent ever uses. An agent never runs `sandbox up`, `sandbox down` or `sandbox wipe`, never starts another sandbox, and never tests against any other tree, copy or deployment in its place. `sandbox up` needs secrets only the human's shell holds, so an agent that runs it stops the work.
-
-To run changed code, an agent rebuilds each changed app into that sandbox and restarts its unit, nothing more. With `<name>` from `sandbox ls`: in the app's directory, `go build -o ~/.local/state/ikigenba/sandbox/<name>/bin/<app>.new ./cmd/<app>`, move it over `bin/<app>`, then `systemctl --user restart sandbox-<name>-<app>.service`. An app applies its migrations when it starts. A change a rebuild and restart cannot carry, such as a new app, a changed manifest or a new nginx route, needs the human to run `sandbox up`; ask before the work starts, not in the middle of it.
+A worktree has one sandbox, the one `sandbox ls` shows for it, and it is the only one an agent ever uses. Every change is planned to be made on that worktree's branch and tested in that sandbox; nothing is tested anywhere else, and no other sandbox is ever created. Services can be restarted: to test changed code, rebuild the changed app's binary into the sandbox and restart its service. With `<name>` from `sandbox ls`, in the app's directory: `go build -o ~/.local/state/ikigenba/sandbox/<name>/bin/<app>.new ./cmd/<app>`, move it over `bin/<app>`, then `systemctl --user restart sandbox-<name>-<app>.service`.
 
 `sandbox url`, `sandbox status` and `sandbox logs` read the sandbox; `sandbox --help` has the rest. Apps behind auth take `Authorization: Bearer $(sandbox token)`; when none is stored, ask the human to create one at the auth app and store it with `sandbox token set`.
 

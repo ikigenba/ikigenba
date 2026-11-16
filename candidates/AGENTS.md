@@ -621,8 +621,7 @@ outbound HTTPS to Google's Geocoding and Routes APIs for `drive_route` and to
 Places API (New) for a walk. The
 two secrets its manifest lists, `CANDIDATES_ROUTE_ORIGIN` and
 `GOOGLE_MAPS_API_KEY`, must exist on the space (`devctl secrets push`) or in
-the shell the developer starts the sandbox from, or the app is refused (an
-agent never starts the sandbox; it uses the one the developer provided); a changed value
+the shell that runs `sandbox up`, or the app is refused; a changed value
 takes effect only at the next activation, a push followed by a deploy. The host's backup archives `state/`
 whole, so `candidates.db` is taken with it; it holds candidates, their
 evidence copied from public records, their enrichment results, facts and
