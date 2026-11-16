@@ -37,6 +37,9 @@ func expectedSiteWire(s store.Site) string {
 		needle := fmt.Sprintf(`,"visibility":%q`, s.Visibility)
 		wire = strings.Replace(wire, needle, fmt.Sprintf(`,"path":%q`, s.Path)+needle, 1)
 	}
+	if s.Domain != "" {
+		wire += fmt.Sprintf(`,"domain":%q`, s.Domain)
+	}
 	if s.Commit != "" {
 		wire += fmt.Sprintf(`,"commit":%q`, s.Commit)
 	}
@@ -112,7 +115,7 @@ func makeTreeMarker(t *testing.T, h *harness, s store.Site) {
 	}
 }
 
-// R-A5IA-PJBT R-0494-3JHU R-05H0-HB8J
+// R-77KG-TVLF R-0494-3JHU R-7A2C-E75C
 func TestCreateRulesAndTakenNames(t *testing.T) {
 	h := newHarness(t)
 	repo := "rep_0123456789abcdef"
@@ -176,7 +179,7 @@ func TestConcurrentCreateHasOneWinner(t *testing.T) {
 	}
 }
 
-// R-A6Q7-3B2I R-NRDL-0697
+// R-78SD-7NC4 R-NRDL-0697
 func TestCreateDefaultsAndOverrides(t *testing.T) {
 	for _, overrides := range []bool{false, true} {
 		t.Run(fmt.Sprint(overrides), func(t *testing.T) {
@@ -229,7 +232,7 @@ func TestCreateDefaultsAndOverrides(t *testing.T) {
 	}
 }
 
-// R-AGHE-5H02
+// R-756Q-V46K
 func TestUpdateRuleOrder(t *testing.T) {
 	h := newHarness(t)
 	s := h.add(t, "alice", "blog", true)
@@ -250,7 +253,7 @@ func TestUpdateRuleOrder(t *testing.T) {
 	}
 }
 
-// R-AHPA-J8QR R-O2CO-G3XG
+// R-77MJ-MNNY R-O2CO-G3XG
 func TestUpdatePreservesFieldsWithoutRepository(t *testing.T) {
 	h := newHarness(t)
 	s := h.add(t, "alice", "blog", false)
@@ -421,7 +424,7 @@ func TestApexReadSetClearAndRules(t *testing.T) {
 	}
 }
 
-// R-05H0-HB8J
+// R-7A2C-E75C
 func TestCreateRepositoryDeadlineAndGitFailure(t *testing.T) {
 	t.Run("deadline", func(t *testing.T) {
 		h := newHarness(t)

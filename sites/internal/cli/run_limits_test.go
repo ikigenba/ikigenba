@@ -457,7 +457,7 @@ func (g *limitRandom) Read(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// R-WEY1-ABHP
+// R-2WSO-KOHA
 func TestRunSerializesRandomAndStderr(t *testing.T) {
 	f := newStartFixture(t)
 	root := filepath.Join(t.TempDir(), "repos")
@@ -595,7 +595,7 @@ func (c *limitLateConn) Close() error {
 	return err
 }
 
-// R-WEY1-ABHP
+// R-2WSO-KOHA
 func TestRunMakesNoLateStderrWrite(t *testing.T) {
 	f := newStartFixture(t)
 	f.set("DRAIN_SECONDS", "1")

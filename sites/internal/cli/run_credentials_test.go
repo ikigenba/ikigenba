@@ -158,7 +158,9 @@ func credentialGET(t *testing.T, f *startFixture, path, host string, want int) {
 		t.Fatal(err)
 	}
 	r.Host = host
-	r.Header.Set("X-User-Id", "owner")
+	if host != "blog.example.com" && host != "unknown.example.com" {
+		r.Header.Set("X-User-Id", "owner")
+	}
 	r.Header.Set("X-Request-Id", "credential-view")
 	r.Header.Set("X-Forwarded-Proto", "http")
 	res, err := f.http.Do(r)
@@ -172,7 +174,7 @@ func credentialGET(t *testing.T, f *startFixture, path, host string, want int) {
 	}
 }
 
-// R-DN5E-UIA0 R-DODB-8A0P R-796D-SRTD R-X21X-EJO9 R-FQ1J-ABP3 R-FR9F-O3FS
+// R-DN5E-UIA0 R-MUMN-XBJ1 R-MVUK-B39Q R-MX2G-OV0F R-FQ1J-ABP3 R-FR9F-O3FS
 func TestRunCredentialRouteAndToolMatrix(t *testing.T) {
 	user, password := "ABCD1234EFGH5678", "IJKL9012MNOP3456"
 	encoded := base64.StdEncoding.EncodeToString([]byte(user + ":" + password))
@@ -186,6 +188,11 @@ func TestRunCredentialRouteAndToolMatrix(t *testing.T) {
 				root := t.TempDir()
 				sha := startRepo(t, f, root)
 				f.set("REPOS_DIR", root)
+				services := filepath.Join(f.p.Dir, "services.json")
+				if e := os.WriteFile(services, []byte(`{"services":[{"name":"sites","url":"https://sites.sbx.example.test","enabled":true,"mcp":true,"description":"fixture","socket":"/missing"}]}`), 0600); e != nil {
+					t.Fatal(e)
+				}
+				f.set("IKIGENBA_SERVICES", services)
 				for _, value := range f.p.Environ() {
 					credentialAbsent(t, "environment", []byte(value), secrets)
 				}
@@ -209,16 +216,19 @@ func TestRunCredentialRouteAndToolMatrix(t *testing.T) {
 				f.call(t, "list", `{}`)
 				f.call(t, "show", `{"name":"blog"}`)
 				f.call(t, "update", `{"name":"private","listed":false}`)
+				f.call(t, "update", `{"name":"blog","domain":"blog.example.com"}`)
 				f.call(t, "apex", `{"name":"blog"}`)
 				for _, path := range []string{"/", "/about", "/_appkit/theme.css", "/blog/", "/private/"} {
-					credentialGET(t, f, path, "sites.example.test", http.StatusOK)
+					credentialGET(t, f, path, "sites.sbx.example.test", http.StatusOK)
 				}
 				if err := os.RemoveAll(filepath.Join(f.p.Dir, "cache/sites", private["id"].(string), sha)); err != nil {
 					t.Fatal(err)
 				}
-				credentialGET(t, f, "/private/", "sites.example.test", http.StatusOK)
-				credentialGET(t, f, "/no-such-site/", "sites.example.test", http.StatusNotFound)
+				credentialGET(t, f, "/private/", "sites.sbx.example.test", http.StatusOK)
+				credentialGET(t, f, "/no-such-site/", "sites.sbx.example.test", http.StatusNotFound)
 				credentialGET(t, f, "/", "example.test", http.StatusFound)
+				credentialGET(t, f, "/", "blog.example.com", http.StatusOK)
+				credentialGET(t, f, "/", "unknown.example.com", http.StatusNotFound)
 				// A failed lazy rebuild exercises the final allowed site event.
 				if err := os.RemoveAll(filepath.Join(f.p.Dir, "cache/sites", public["id"].(string), sha)); err != nil {
 					t.Fatal(err)
@@ -226,7 +236,7 @@ func TestRunCredentialRouteAndToolMatrix(t *testing.T) {
 				if err := os.RemoveAll(filepath.Join(root, "rep_0123456789abcdef.git")); err != nil {
 					t.Fatal(err)
 				}
-				credentialGET(t, f, "/blog/", "sites.example.test", http.StatusServiceUnavailable)
+				credentialGET(t, f, "/blog/", "sites.sbx.example.test", http.StatusServiceUnavailable)
 				f.call(t, "delete", `{"name":"blog"}`)
 				if code := f.stop(t); code != cli.ExitSuccess {
 					t.Fatal("exit", code)

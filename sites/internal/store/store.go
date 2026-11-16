@@ -25,9 +25,11 @@ const (
 
 // Catalog error sentinels distinguish refusals from storage failures.
 var (
-	ErrNotFound  = errors.New("site not found")
-	ErrNameTaken = errors.New("name taken")
-	ErrNotPublic = errors.New("site is not public")
+	ErrNotFound        = errors.New("site not found")
+	ErrNameTaken       = errors.New("name taken")
+	ErrNotPublic       = errors.New("site is not public")
+	ErrDomainTaken     = errors.New("domain taken")
+	ErrDomainNotPublic = errors.New("site with a domain is not public")
 )
 
 // Config supplies catalog time and randomness.
@@ -40,6 +42,7 @@ type Config struct {
 type Site struct {
 	ID, Name, Slug, Owner, Repo, Ref, Path, Visibility string
 	Listed                                             bool
+	Domain                                             string `json:"-"`
 	Commit, PublishedPath                              string
 	Created, Published                                 time.Time
 }
@@ -56,6 +59,7 @@ type Change struct {
 	Listed     *bool
 	Ref        *string
 	Path       *string
+	Domain     *string
 }
 
 // Store provides record operations over one catalog handle.
@@ -90,6 +94,34 @@ func ValidName(s string) bool {
 		}
 	}
 	return true
+}
+
+// ValidDomain reports whether s is a lower-case ASCII domain name.
+func ValidDomain(s string) bool {
+	if len(s) < 1 || len(s) > 253 {
+		return false
+	}
+	start, numeric := 0, true
+	for i := 0; i <= len(s); i++ {
+		if i == len(s) || s[i] == '.' {
+			if i == start || i-start > 63 || s[start] == '-' || s[i-1] == '-' {
+				return false
+			}
+			if i == len(s) {
+				return !numeric
+			}
+			start, numeric = i+1, true
+			continue
+		}
+		b := s[i]
+		if (b < 'a' || b > 'z') && (b < '0' || b > '9') && b != '-' {
+			return false
+		}
+		if b < '0' || b > '9' {
+			numeric = false
+		}
+	}
+	return false
 }
 
 // New builds a catalog over a caller-owned database handle.
@@ -129,33 +161,35 @@ type apexResult struct {
 	set  bool
 }
 
-func decode(payload string) (Site, error) {
+func decode(payload string, domain sql.NullString) (Site, error) {
 	var x Site
 	err := json.Unmarshal([]byte(payload), &x)
+	x.Domain = domain.String
 	x.Created = x.Created.UTC()
 	x.Published = x.Published.UTC()
 	return x, err
 }
 func readOne(ctx context.Context, tx *sql.Tx, query string, args ...any) (Site, error) {
 	var payload string
-	err := tx.QueryRowContext(ctx, query, args...).Scan(&payload)
+	var domain sql.NullString
+	err := tx.QueryRowContext(ctx, query, args...).Scan(&payload, &domain)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Site{}, ErrNotFound
 	}
 	if err != nil {
 		return Site{}, err
 	}
-	return decode(payload)
+	return decode(payload, domain)
 }
 func (s *Store) byID(ctx context.Context, tx *sql.Tx, id string) (Site, error) {
-	return readOne(ctx, tx, "SELECT payload FROM sites WHERE id=?", id)
+	return readOne(ctx, tx, "SELECT payload, domain FROM sites WHERE id=?", id)
 }
 func (s *Store) save(ctx context.Context, tx *sql.Tx, x Site) error {
 	b, err := json.Marshal(x)
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, "INSERT INTO sites(id,name,slug,owner,payload,listed) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, listed=excluded.listed", x.ID, x.Name, x.Slug, x.Owner, string(b), x.Listed)
+	_, err = tx.ExecContext(ctx, "INSERT INTO sites(id,name,slug,owner,payload,listed,domain) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, listed=excluded.listed, domain=excluded.domain", x.ID, x.Name, x.Slug, x.Owner, string(b), x.Listed, sql.NullString{String: x.Domain, Valid: x.Domain != ""})
 	return err
 }
 func (s *Store) apexID(ctx context.Context, tx *sql.Tx) (string, error) {
@@ -170,14 +204,24 @@ func (s *Store) apexID(ctx context.Context, tx *sql.Tx) (string, error) {
 // Find finds an owner's site by name.
 func (s *Store) Find(ctx context.Context, owner, name string) (Site, error) {
 	return transact(ctx, s.db.Read, func(tx *sql.Tx) (Site, error) {
-		return readOne(ctx, tx, "SELECT payload FROM sites WHERE owner=? AND name=?", owner, name)
+		return readOne(ctx, tx, "SELECT payload, domain FROM sites WHERE owner=? AND name=?", owner, name)
 	})
 }
 
 // BySlug finds a site by its exact serving slug.
 func (s *Store) BySlug(ctx context.Context, slug string) (Site, error) {
 	return transact(ctx, s.db.Read, func(tx *sql.Tx) (Site, error) {
-		return readOne(ctx, tx, "SELECT payload FROM sites WHERE slug=?", slug)
+		return readOne(ctx, tx, "SELECT payload, domain FROM sites WHERE slug=?", slug)
+	})
+}
+
+// ByDomain finds a site by its exact, non-empty domain.
+func (s *Store) ByDomain(ctx context.Context, domain string) (Site, error) {
+	return transact(ctx, s.db.Read, func(tx *sql.Tx) (Site, error) {
+		if domain == "" {
+			return Site{}, ErrNotFound
+		}
+		return readOne(ctx, tx, "SELECT payload, domain FROM sites WHERE domain=?", domain)
 	})
 }
 
@@ -187,7 +231,7 @@ func (s *Store) List(ctx context.Context, owner, after string, n int) ([]Site, e
 		if n < 1 {
 			n = 0
 		}
-		rows, err := tx.QueryContext(ctx, "SELECT payload FROM sites WHERE owner=? AND name > ? ORDER BY name LIMIT ?", owner, after, n)
+		rows, err := tx.QueryContext(ctx, "SELECT payload, domain FROM sites WHERE owner=? AND name > ? ORDER BY name LIMIT ?", owner, after, n)
 		if err != nil {
 			return nil, err
 		}
@@ -195,10 +239,11 @@ func (s *Store) List(ctx context.Context, owner, after string, n int) ([]Site, e
 		out := make([]Site, 0)
 		for rows.Next() {
 			var payload string
-			if err := rows.Scan(&payload); err != nil {
+			var domain sql.NullString
+			if err := rows.Scan(&payload, &domain); err != nil {
 				return nil, err
 			}
-			x, err := decode(payload)
+			x, err := decode(payload, domain)
 			if err != nil {
 				return nil, err
 			}
@@ -214,7 +259,7 @@ func (s *Store) Visible(ctx context.Context, user, after string, n int) ([]Site,
 		if n < 1 {
 			n = 0
 		}
-		rows, err := tx.QueryContext(ctx, "SELECT name, payload FROM sites WHERE listed=1 AND name > ? UNION ALL SELECT name, payload FROM sites INDEXED BY sites_owner_name WHERE owner=? AND listed=0 AND name > ? ORDER BY name LIMIT ?", after, user, after, n)
+		rows, err := tx.QueryContext(ctx, "SELECT name, payload, domain FROM sites WHERE listed=1 AND name > ? UNION ALL SELECT name, payload, domain FROM sites INDEXED BY sites_owner_name WHERE owner=? AND listed=0 AND name > ? ORDER BY name LIMIT ?", after, user, after, n)
 		if err != nil {
 			return nil, err
 		}
@@ -222,10 +267,11 @@ func (s *Store) Visible(ctx context.Context, user, after string, n int) ([]Site,
 		out := make([]Site, 0)
 		for rows.Next() {
 			var name, payload string
-			if err := rows.Scan(&name, &payload); err != nil {
+			var domain sql.NullString
+			if err := rows.Scan(&name, &payload, &domain); err != nil {
 				return nil, err
 			}
-			x, err := decode(payload)
+			x, err := decode(payload, domain)
 			if err != nil {
 				return nil, err
 			}
@@ -243,10 +289,10 @@ func (s *Store) VisibleBefore(ctx context.Context, user, before string, n int) (
 		if n < 1 {
 			return out, nil
 		}
-		query := "SELECT name, payload FROM sites WHERE listed=1 UNION ALL SELECT name, payload FROM sites INDEXED BY sites_owner_name WHERE owner=? AND listed=0 ORDER BY name DESC LIMIT ?"
+		query := "SELECT name, payload, domain FROM sites WHERE listed=1 UNION ALL SELECT name, payload, domain FROM sites INDEXED BY sites_owner_name WHERE owner=? AND listed=0 ORDER BY name DESC LIMIT ?"
 		args := []any{user, n}
 		if before != "" {
-			query = "SELECT name, payload FROM sites WHERE listed=1 AND name < ? UNION ALL SELECT name, payload FROM sites INDEXED BY sites_owner_name WHERE owner=? AND listed=0 AND name < ? ORDER BY name DESC LIMIT ?"
+			query = "SELECT name, payload, domain FROM sites WHERE listed=1 AND name < ? UNION ALL SELECT name, payload, domain FROM sites INDEXED BY sites_owner_name WHERE owner=? AND listed=0 AND name < ? ORDER BY name DESC LIMIT ?"
 			args = []any{before, user, before, n}
 		}
 		rows, err := tx.QueryContext(ctx, query, args...)
@@ -256,10 +302,11 @@ func (s *Store) VisibleBefore(ctx context.Context, user, before string, n int) (
 		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var name, payload string
-			if err := rows.Scan(&name, &payload); err != nil {
+			var domain sql.NullString
+			if err := rows.Scan(&name, &payload, &domain); err != nil {
 				return nil, err
 			}
-			x, err := decode(payload)
+			x, err := decode(payload, domain)
 			if err != nil {
 				return nil, err
 			}
@@ -358,7 +405,7 @@ func (s *Store) Publish(ctx context.Context, id, commit, path string) (Site, err
 // Update atomically changes visibility, listing, and tracking ref.
 func (s *Store) Update(ctx context.Context, id string, c Change) (Site, []string, error) {
 	result, err := transact(ctx, s.db.Write, func(tx *sql.Tx) (updateResult, error) {
-		if c.Visibility != nil && *c.Visibility != Public && *c.Visibility != Private || c.Ref != nil && *c.Ref == "" {
+		if c.Visibility != nil && *c.Visibility != Public && *c.Visibility != Private || c.Ref != nil && *c.Ref == "" || c.Domain != nil && *c.Domain != "" && !ValidDomain(*c.Domain) {
 			return updateResult{}, errors.New("invalid change")
 		}
 		x, err := s.byID(ctx, tx, id)
@@ -388,6 +435,23 @@ func (s *Store) Update(ctx context.Context, id string, c Change) (Site, []string
 		if c.Path != nil && *c.Path != x.Path {
 			x.Path = *c.Path
 			changed = append(changed, "path")
+		}
+		if c.Domain != nil && *c.Domain != x.Domain {
+			x.Domain = *c.Domain
+			changed = append(changed, "domain")
+		}
+		if x.Visibility == Private && x.Domain != "" {
+			return updateResult{}, ErrDomainNotPublic
+		}
+		if c.Domain != nil && *c.Domain != "" {
+			var heldID string
+			err := tx.QueryRowContext(ctx, "SELECT id FROM sites WHERE domain=?", *c.Domain).Scan(&heldID)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return updateResult{}, err
+			}
+			if err == nil && heldID != id {
+				return updateResult{}, ErrDomainTaken
+			}
 		}
 		if err = s.save(ctx, tx, x); err != nil {
 			return updateResult{}, err

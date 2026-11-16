@@ -84,23 +84,29 @@ func TestCreatedEventMatchesObject(t *testing.T) {
 	checkSiteEvents(t, events, []string{"site.created"}, []telemetry.Attrs{{"site": o.ID, "repo": o.Repo, "visibility": o.Visibility, "listed": o.Listed}})
 }
 
-// R-URM7-KAGX
+// R-R323-QN7U
 func TestUpdatedEventsOnlyChangedFieldsInOrder(t *testing.T) {
 	h := newHarness(t)
 	h.add(t, "alice", "blog", false)
-	for i, args := range []string{`{"name":"blog","visibility":"private","listed":true,"ref":"future","path":"dist"}`, `{"name":"blog","visibility":"private","listed":true,"ref":"future","path":"dist"}`, `{"name":"blog","visibility":"private","listed":false,"ref":"main","path":""}`} {
+	for i, args := range []string{`{"name":"blog","visibility":"private","listed":true,"ref":"future","path":"dist"}`, `{"name":"blog","visibility":"private","listed":true,"ref":"future","path":"dist"}`, `{"name":"blog","visibility":"private","listed":false,"ref":"main","path":""}`, `{"name":"blog","visibility":"public","path":"dist","domain":"example.org"}`, `{"name":"blog","domain":"example.org"}`, `{"name":"blog","visibility":"private","domain":""}`} {
 		old := mutationObject(t, h.call(t, "alice", "show", `{"name":"blog"}`))
+		start := len(h.capture.Events())
 		r, events := eventCall(t, h, fmt.Sprintf("event-update-%d", i), "update", args)
 		o := mutationObject(t, r)
 		names := []string{}
 		attrs := []telemetry.Attrs{}
-		for _, change := range []struct{ field, before, after string }{{"visibility", old.Visibility, o.Visibility}, {"listed", fmt.Sprint(old.Listed), fmt.Sprint(o.Listed)}, {"ref", old.Ref, o.Ref}, {"path", pathValue(old.Path), pathValue(o.Path)}} {
+		for _, change := range []struct{ field, before, after string }{{"visibility", old.Visibility, o.Visibility}, {"listed", fmt.Sprint(old.Listed), fmt.Sprint(o.Listed)}, {"ref", old.Ref, o.Ref}, {"path", pathValue(old.Path), pathValue(o.Path)}, {"domain", pathValue(old.Domain), pathValue(o.Domain)}} {
 			if change.before != change.after {
 				names = append(names, "site.updated")
 				attrs = append(attrs, telemetry.Attrs{"site": o.ID, "field": change.field, "value": change.after})
 			}
 		}
 		checkSiteEvents(t, events, names, attrs)
+		counts := map[string]int{}
+		if len(names) > 0 {
+			counts["site.updated"] = len(names)
+		}
+		assertToolTrail(t, h, start, "update", "ok", counts)
 	}
 }
 

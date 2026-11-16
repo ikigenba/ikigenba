@@ -318,6 +318,7 @@ func TestTemporaryAcceptAndPanicDoNotLog(t *testing.T) {
 	}
 }
 
+// R-K0VI-FJ0S
 func TestGoexitReleasesHandler(t *testing.T) {
 	ln := listener(t)
 	ctx, cancel := context.WithCancel(context.Background())

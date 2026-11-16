@@ -16,14 +16,20 @@ import (
 	"github.com/ikigenba/ikigenba/sites/internal/tools"
 )
 
-// R-9S3E-I266 R-9TBA-VTWV
+// R-DJCB-FD0C R-DKK7-T4R1
 func TestDescriptionConstants(t *testing.T) {
+	const (
+		show    string = tools.ShowDescription
+		create  string = tools.CreateDescription
+		publish string = tools.PublishDescription
+		update  string = tools.UpdateDescription
+	)
 	h := newHarness(t)
 	infos, err := h.client.ListTools(context.Background(), identity.Caller{UserID: "alice"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	descriptions := []string{tools.ListDescription, tools.ShowDescription, tools.CreateDescription, tools.PublishDescription, tools.UpdateDescription}
+	descriptions := []string{tools.ListDescription, show, create, publish, update}
 	seen := map[string]bool{}
 	for i, d := range descriptions {
 		if d == "" || seen[d] || infos[i].Description != d {
@@ -49,7 +55,7 @@ func commitDirectories(t *testing.T, h *harness, p string) string {
 	return sha
 }
 
-// R-DRB0-SEJJ R-A0MP-6GD1 R-A6Q7-3B2I R-ABLS-ME1A R-AIX6-X0HG R-UQEB-6IQ8
+// R-DRB0-SEJJ R-6XVC-KHQE R-78SD-7NC4 R-7B85-Z6TI R-AIX6-X0HG R-UQEB-6IQ8
 func TestConfiguredPathAndPublishedPathRemainDistinct(t *testing.T) {
 	h := newHarness(t)
 	repo := "rep_0123456789abcdef"
@@ -141,7 +147,7 @@ func TestConfiguredPathAndPublishedPathRemainDistinct(t *testing.T) {
 	}
 }
 
-// R-A5IA-PJBT R-A7Y3-H2T7 R-AGHE-5H02 R-DSIX-66A8 R-A4AE-BRL4
+// R-77KG-TVLF R-A7Y3-H2T7 R-756Q-V46K R-DLS4-6WHQ R-DPFT-C7PT
 func TestPathRefusalOrderAndCatalogFailure(t *testing.T) {
 	h := newHarness(t)
 	repo := "rep_0123456789abcdef"
@@ -157,7 +163,7 @@ func TestPathRefusalOrderAndCatalogFailure(t *testing.T) {
 		}
 	}
 	for _, path := range []string{"absent", "index.html"} {
-		expectRefusal(t, h, "publish", fmt.Sprintf(`{"name":"blog","path":%q}`, path), fmt.Sprintf(tools.NoDirectory, path, "main"))
+		expectRefusal(t, h, "publish", fmt.Sprintf(`{"name":"blog","path":%q}`, path), fmt.Sprintf(tools.NoDirectory, path))
 	}
 	expectRefusal(t, h, "update", `{"name":"blog","visibility":"secret","ref":"..bad","path":"/bad"}`, tools.BadVisibility)
 	expectRefusal(t, h, "update", `{"name":"blog","ref":"..bad","path":"/bad"}`, fmt.Sprintf(tools.InvalidRef, "..bad"))
@@ -173,7 +179,7 @@ func TestPathRefusalOrderAndCatalogFailure(t *testing.T) {
 	expectRefusal(t, h, "update", `{"name":"blog","path":""}`, store.Unreachable)
 }
 
-// R-AHPA-J8QR R-URM7-KAGX
+// R-77MJ-MNNY R-R323-QN7U
 func TestUpdatePathClearsWithoutPublishingAndEmitsChanges(t *testing.T) {
 	h := newHarness(t)
 	p := h.repo(t, "rep_0123456789abcdef", "alice")

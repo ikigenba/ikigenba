@@ -5,7 +5,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
@@ -44,8 +46,12 @@ func Handler(cfg Config) http.Handler {
 	for i, tool := range registered {
 		pageTools[i] = pages.Tool{Name: tool.Name, Description: tool.Description}
 	}
-	sc := serving.Config{Banner: cfg.Banner, Pages: set, ServicesPath: cfg.ServicesPath, Store: cfg.Store, Cache: cfg.Cache, Telemetry: cfg.Telemetry, Rand: cfg.Rand}
-	apex, sites := serving.Apex(sc), serving.Sites(sc)
+	random := cfg.Rand
+	if random != nil {
+		random = &lockedReader{source: random}
+	}
+	sc := serving.Config{Banner: cfg.Banner, Pages: set, ServicesPath: cfg.ServicesPath, Store: cfg.Store, Cache: cfg.Cache, Telemetry: cfg.Telemetry, Rand: random}
+	apex, sites, domains := serving.Apex(sc), serving.Sites(sc), serving.Domains(sc)
 	p := pages.Handler(pages.Config{Banner: cfg.Banner, Pages: set, ServicesPath: cfg.ServicesPath, Store: cfg.Store, Tools: pageTools})
 	static := page.Static()
 	endpoint := identity.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -57,9 +63,24 @@ func Handler(cfg Config) http.Handler {
 			host = h
 		}
 		host = asciiLower(host)
-		if strings.Contains(host, ".") && !strings.HasPrefix(host, "sites.") {
-			apex.ServeHTTP(w, r)
-			return
+		if strings.Contains(host, ".") {
+			base, e := url.Parse(urls.SitesURL(r, cfg.ServicesPath))
+			name := ""
+			if e == nil {
+				h := asciiLower(base.Hostname())
+				if strings.HasPrefix(h, "sites.") && len(h) > len("sites.") {
+					name = h[len("sites."):]
+				}
+			}
+			gateway := name != "" && host == "sites."+name || name == "" && strings.HasPrefix(host, "sites.")
+			if !gateway {
+				if i := strings.IndexByte(name, '.'); i >= 0 && host == name[i+1:] {
+					apex.ServeHTTP(w, r)
+				} else {
+					domains.ServeHTTP(w, r)
+				}
+				return
+			}
 		}
 		switch {
 		case r.URL.Path == "/mcp":
@@ -83,4 +104,16 @@ func asciiLower(s string) string {
 		}
 	}
 	return string(b)
+}
+
+// lockedReader serializes the source shared by the two site routes.
+type lockedReader struct {
+	mu     sync.Mutex
+	source io.Reader
+}
+
+func (r *lockedReader) Read(p []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.source.Read(p)
 }

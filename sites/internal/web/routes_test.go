@@ -2,8 +2,11 @@ package web_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -18,13 +21,28 @@ import (
 	"github.com/ikigenba/ikigenba/sites/internal/store"
 	"github.com/ikigenba/ikigenba/sites/internal/tools"
 	"github.com/ikigenba/ikigenba/sites/internal/urls"
+	"github.com/ikigenba/ikigenba/sites/internal/web"
 )
 
-// R-UXAG-GEV5 R-3NN6-FZEC R-XPM2-VTHM R-WWFV-811E R-WXNR-LSS3
+// R-UXAG-GEV5 R-QF41-AQY0 R-XPM2-VTHM R-WWFV-811E R-UETF-UB43
 // R-WPX4-Q95Y R-WR51-40WN R-WYVN-ZKIS R-WW0M-N3VF R-WX8J-0VM4
-// R-X03K-DC9H R-XD37-ZW95
+// R-QMFF-LDE6 R-XD37-ZW95 R-QJZM-TTWS R-QIRQ-G263
 func TestRoutesMatchTheirOwningHandlers(t *testing.T) {
 	f := fresh(t)
+	configureServices(t, f)
+	f.repository(t)
+	sha := f.commit(t, "domain routing body")
+	site := f.add(t, "blog", store.Public)
+	domain := "blog.example.com"
+	if _, _, e := f.cfg.Store.Update(context.Background(), site.ID, store.Change{Domain: &domain}); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := f.cfg.Store.Publish(context.Background(), site.ID, sha, ""); e != nil {
+		t.Fatal(e)
+	}
+	if e := f.cfg.Cache.Unpack(context.Background(), site.ID, site.Repo, sha, ""); e != nil {
+		t.Fatal(e)
+	}
 	p, e := pages.Load()
 	if e != nil {
 		t.Fatal(e)
@@ -35,18 +53,20 @@ func TestRoutesMatchTheirOwningHandlers(t *testing.T) {
 	for i, tool := range registered {
 		pageTools[i] = pages.Tool{Name: tool.Name, Description: tool.Description}
 	}
-	own := map[string]http.Handler{"apex": serving.Apex(sc), "site": serving.Sites(sc), "page": pages.Handler(pages.Config{Banner: f.cfg.Banner, Pages: p, ServicesPath: f.cfg.ServicesPath, Store: f.cfg.Store, Tools: pageTools}), "static": page.Static()}
+	own := map[string]http.Handler{"apex": serving.Apex(sc), "domain": serving.Domains(sc), "site": serving.Sites(sc), "page": pages.Handler(pages.Config{Banner: f.cfg.Banner, Pages: p, ServicesPath: f.cfg.ServicesPath, Store: f.cfg.Store, Tools: pageTools}), "static": page.Static()}
 	for _, test := range []struct {
-		host string
-		apex bool
+		host  string
+		route string
 	}{
-		{"", false}, {"backend", false}, {"localhost", false}, {"notes:80", false},
-		{"sites", false}, {"sites:80", false}, {"Sites.sbx.ikigenba.dev", false}, {"sites.sbx.ikigenba.dev:8443", false},
-		{"SITES.example", false}, {"sites.", false}, {"backend:80:90", false}, {"[::1]:80", false},
-		{"ikigenba.dev", true}, {"ikigenba.dev:443", true}, {"wip.localhost:7400", true},
-		{"sitesx.dev", true}, {"www.sites.dev", true}, {"example.org:80:90", true}, {"[::ffff:192.0.2.1]:80", true},
+		{"", "gateway"}, {"backend", "gateway"}, {"localhost", "gateway"}, {"notes:80", "gateway"},
+		{"sites", "gateway"}, {"sites:80", "gateway"}, {"Sites.SBX.ikigenba.dev:8443", "gateway"},
+		{"sites.sbx.ikigenba.dev", "gateway"}, {"ikigenba.dev", "apex"}, {"IKIGENBA.dev:443", "apex"},
+		{"sites.example.com", "domain"}, {"sites.other.dev", "domain"}, {"sbx.ikigenba.dev", "domain"},
+		{"www.ikigenba.dev", "domain"}, {"blog.example.com", "domain"}, {"blog.sbx.ikigenba.dev", "domain"},
+		{"sitesx.dev", "domain"}, {"www.sites.dev", "domain"}, {"SİTES.example", "domain"},
+		{"backend:80:90", "gateway"}, {"[::1]:80", "gateway"}, {"example.org:80:90", "domain"}, {"[::ffff:192.0.2.1]:80", "domain"},
 	} {
-		host, apex := test.host, test.apex
+		host, route := test.host, test.route
 		for _, path := range []string{"/", "/about", "/tools", "/mcp", "/_appkit/theme.css", "/_appkit", "/about/", "/tools/", "/mcp/", "/mcp/tools", "//", "/blog/../x", "/nope?next=/mcp", "/tools?next=/mcp", "/?next=/_appkit/theme.css", "/%74ools", "/%61bout", "/%6dcp", "/_appkit%2ftheme.css"} {
 			for _, method := range []string{"GET", "HEAD", "POST", "OPTIONS", "CUSTOM"} {
 				for _, user := range []string{"", "user"} {
@@ -54,6 +74,7 @@ func TestRoutesMatchTheirOwningHandlers(t *testing.T) {
 						r := httptest.NewRequest(method, path, strings.NewReader("fixture-body"))
 						r.Host = host
 						r.Header.Set("X-Request-Id", "req_0123456789abcdef0123456789abcdef")
+						r.Header.Set("Cookie", "ikigenba_visitor=vis_0123456789abcdef")
 						r.Header.Set("X-User-Id", user)
 						r.Header.Set("X-User-Email", "other@example.invalid")
 						r.Header.Set("X-Forwarded-Host", "unrelated.example")
@@ -64,8 +85,8 @@ func TestRoutesMatchTheirOwningHandlers(t *testing.T) {
 					decoded := request().URL.Path
 					expected := own["site"]
 					switch {
-					case apex:
-						expected = own["apex"]
+					case route != "gateway":
+						expected = own[route]
 					case decoded == "/" || decoded == "/about" || decoded == "/tools":
 						expected = own["page"]
 					case strings.HasPrefix(decoded, "/_appkit/"):
@@ -94,7 +115,7 @@ func TestRoutesMatchTheirOwningHandlers(t *testing.T) {
 	}
 }
 
-// R-WTKT-VKE1 R-3NN6-FZEC
+// R-WTKT-VKE1 R-UETF-UB43
 func TestToolRegistration(t *testing.T) {
 	f := fresh(t)
 	other := mcp.NewServer(mcp.ServerConfig{Name: "sites", Version: "fixture", Telemetry: f.cfg.Telemetry})
@@ -123,10 +144,16 @@ func TestToolRegistration(t *testing.T) {
 	}
 }
 
-// R-F9NC-PFC6 R-XMS7-WNA2
+// R-QL7J-7LNH R-XMS7-WNA2
 func TestCatalogRefusalAndRecovery(t *testing.T) {
 	f := fresh(t)
 	f.add(t, "private", "private")
+	public := f.add(t, "public", store.Public)
+	domain := "blog.example.com"
+	if _, _, e := f.cfg.Store.Update(context.Background(), public.ID, store.Change{Domain: &domain}); e != nil {
+		t.Fatal(e)
+	}
+	configureServices(t, f)
 	baseline := f.get(t, "GET", "/about", "sites", "user", nil)
 	landing := f.get(t, "GET", "/", "sites", "user", nil)
 	after := paging.Token{Tool: "sites"}
@@ -145,10 +172,13 @@ func TestCatalogRefusalAndRecovery(t *testing.T) {
 		"/blog", "/blog/", "/private/", "/mcp", "/about",
 	}
 	f.db.SetFailing(true)
-	for _, host := range []string{"sites", "ikigenba.dev"} {
+	for _, host := range []string{"sites", "ikigenba.dev", "blog.example.com", "absent.example.com"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "DELETE", "OPTIONS", "CUSTOM"} {
 			for _, path := range paths {
 				for _, user := range []string{"", "user"} {
+					if host != "sites" && host != "ikigenba.dev" && method != "GET" && method != "HEAD" {
+						continue
+					}
 					if host == "sites" && (path == "/mcp" || path == "/about" || method != "GET" && method != "HEAD" || strings.SplitN(path, "?", 2)[0] == "/" && user == "") {
 						continue
 					}
@@ -169,23 +199,24 @@ func TestCatalogRefusalAndRecovery(t *testing.T) {
 	}
 }
 
-// R-3NN6-FZEC R-WXNR-LSS3
-func TestUnicodeHostsAreApexRequests(t *testing.T) {
+// R-UETF-UB43 R-QIRQ-G263
+func TestUnicodeHostsAreDomainRequests(t *testing.T) {
 	f := fresh(t)
 	for _, host := range []string{"SİTES.example", "SİTES.example:80"} {
 		r := f.get(t, "GET", "/mcp", host, "", nil)
 		if r.Code != http.StatusNotFound {
-			t.Fatalf("Unicode host %q: status %d, want apex 404", host, r.Code)
+			t.Fatalf("Unicode host %q: status %d, want domain 404", host, r.Code)
 		}
 		if r.Header().Get("Set-Cookie") != "" {
-			t.Fatal("apex minted a visitor")
+			t.Fatal("domain minted a visitor")
 		}
 	}
 }
 
-// R-WXNR-LSS3 R-X03K-DC9H
+// R-QJZM-TTWS R-QMFF-LDE6
 func TestRedirectsMatchTheirOwningHandlers(t *testing.T) {
 	f := fresh(t)
+	configureServices(t, f)
 	site := f.add(t, "public", store.Public)
 	if _, err := f.cfg.Store.SetApex(context.Background(), site.ID); err != nil {
 		t.Fatal(err)
@@ -253,5 +284,80 @@ func TestToolsPageUsesMCPDescriptions(t *testing.T) {
 	got := f.get(t, "GET", "/tools", "sites", "user", nil)
 	if got.Code != http.StatusOK || got.Body.String() != want.Body.String() || !reflect.DeepEqual(got.Header(), want.Header()) {
 		t.Fatalf("tools page differs from tools/list: status %d", got.Code)
+	}
+}
+
+func configureServices(t *testing.T, f *fixture) {
+	t.Helper()
+	path := filepath.Join(f.root, "services.json")
+	writeServices(t, path, "https://sites.sbx.ikigenba.dev")
+	f.cfg.ServicesPath = path
+	f.cfg.MCP = newServer(f.cfg.Telemetry)
+	f.h = web.Handler(f.cfg)
+}
+func writeServices(t *testing.T, path, base string) {
+	t.Helper()
+	b, e := json.Marshal(map[string]any{"services": []any{map[string]any{"name": "sites", "url": base, "enabled": true, "mcp": true, "description": "fixture", "socket": "/missing"}}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = os.WriteFile(path, b, 0600); e != nil {
+		t.Fatal(e)
+	}
+}
+
+// R-QF41-AQY0 R-UETF-UB43 R-QMFF-LDE6
+func TestRoutingReclassifiesHostsWhenServicesChanges(t *testing.T) {
+	f := fresh(t)
+	configureServices(t, f)
+	site := f.add(t, "blog", store.Public)
+	if _, e := f.cfg.Store.SetApex(context.Background(), site.ID); e != nil {
+		t.Fatal(e)
+	}
+	for _, q := range []struct {
+		base, host string
+		status     int
+	}{
+		{"https://sites.sbx.ikigenba.dev", "ikigenba.dev", 302},
+		{"https://Sites.SBX.ikigenba.dev:8443/", "IKIGENBA.dev:443", 302},
+		{"https://sites.sbx.ikigenba.dev", "sites.other.dev", 405},
+		{"https://sites.sbx.ikigenba.dev", "sites.sbx.ikigenba.dev", 500},
+		{"http://sites.wip.localhost:7400", "localhost", 500},
+		{"http://sites.wip.localhost:7400", "wip.localhost", 405},
+		{"https://sites.sbx.example.co.uk", "example.co.uk", 302},
+		{"https://sites.sbx.example.co.uk", "co.uk", 405},
+		{"https://sites.localhost", "example.com", 405},
+		{"sites.sbx.ikigenba.dev", "sites.example.com", 500},
+		{"https://sites.", "sites.example.com", 500},
+		{"https://sitesx.dev", "sites.example.com", 500},
+		{"https://www.sites.dev", "sites.example.com", 500},
+		{"https://sites.sbx.ikigenba.dev", "backend", 500},
+		{"https://sites.sbx.ikigenba.dev", "sites:80", 500},
+	} {
+		writeServices(t, f.cfg.ServicesPath, q.base)
+		r := f.get(t, "POST", "/mcp?route=/_appkit/theme.css", q.host, "", map[string]string{"X-Forwarded-Host": "sites.sbx.ikigenba.dev"})
+		if r.Code != q.status {
+			t.Fatalf("base=%q host=%q: %d want %d", q.base, q.host, r.Code, q.status)
+		}
+	}
+	original := f.cfg.ServicesPath
+	for _, path := range []string{"", filepath.Join(f.root, "missing"), original} {
+		if path == original {
+			if e := os.WriteFile(path, []byte(`{"services":[]}`), 0600); e != nil {
+				t.Fatal(e)
+			}
+		}
+		f.cfg.ServicesPath = path
+		f.cfg.MCP = newServer(f.cfg.Telemetry)
+		f.h = web.Handler(f.cfg)
+		for _, q := range []struct {
+			host   string
+			status int
+		}{{"sites.sbx.ikigenba.dev", 500}, {"sites.example.com", 500}, {"ikigenba.dev", 405}, {"wip.localhost:7400", 405}} {
+			r := f.get(t, "POST", "/mcp", q.host, "", nil)
+			if r.Code != q.status {
+				t.Fatalf("path=%q host=%q status=%d", path, q.host, r.Code)
+			}
+		}
 	}
 }

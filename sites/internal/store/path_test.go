@@ -13,7 +13,7 @@ import (
 )
 
 func TestConfiguredAndPublishedPaths(t *testing.T) {
-	// R-TP9N-N3I1 R-TQHK-0V8Q R-TRPG-EMZF R-TSXC-SEQ4 R-TVD5-JY7I R-TXSY-BHOW R-U1GN-GSWZ R-TU59-66GT R-TWL1-XPY7
+	// R-HXBJ-QSOZ R-TQHK-0V8Q R-HYJG-4KFO R-TSXC-SEQ4 R-TVD5-JY7I R-TXSY-BHOW R-IFM1-HCTE R-TU59-66GT R-TWL1-XPY7
 	for i, path := range []string{"", "docs", " odd/../path\x00\\é"} {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
 			now := stamp

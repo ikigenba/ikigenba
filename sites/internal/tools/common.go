@@ -39,6 +39,10 @@ func siteObject(ctx context.Context, s store.Site) Site {
 		path := s.Path
 		o.Path = &path
 	}
+	if s.Domain != "" {
+		domain := s.Domain
+		o.Domain = &domain
+	}
 	if s.Commit != "" {
 		commit := s.Commit
 		published := s.Published.UTC().Format("2006-01-02T15:04:05Z")
@@ -97,7 +101,7 @@ func (cfg Config) list(ctx context.Context, c identity.Caller, a ListArgs) (Site
 	}
 	for _, s := range ss {
 		o := siteObject(ctx, s)
-		out.Sites = append(out.Sites, ListedSite{ID: o.ID, Name: o.Name, Slug: o.Slug, URL: o.URL, Path: o.Path, Visibility: o.Visibility, Listed: o.Listed, Commit: o.Commit})
+		out.Sites = append(out.Sites, ListedSite{ID: o.ID, Name: o.Name, Slug: o.Slug, URL: o.URL, Path: o.Path, Visibility: o.Visibility, Listed: o.Listed, Domain: o.Domain, Commit: o.Commit})
 	}
 	return out, nil
 }

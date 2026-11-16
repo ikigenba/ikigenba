@@ -89,10 +89,10 @@ func checkErr(t *testing.T, e, w error) {
 	}
 }
 
-// R-4HSO-9DOB
+// R-I72Q-SYMJ
 func catalog(t *testing.T, e error) {
 	t.Helper()
-	if e == nil || errors.Is(e, store.ErrNotFound) || errors.Is(e, store.ErrNameTaken) || errors.Is(e, store.ErrNotPublic) {
+	if e == nil || errors.Is(e, store.ErrNotFound) || errors.Is(e, store.ErrNameTaken) || errors.Is(e, store.ErrNotPublic) || errors.Is(e, store.ErrDomainTaken) || errors.Is(e, store.ErrDomainNotPublic) {
 		t.Fatalf("not a catalog error: %v", e)
 	}
 }
@@ -121,16 +121,16 @@ func snapshot(t *testing.T, s *store.Store) content {
 }
 
 func TestDeclarationsAndValidation(t *testing.T) {
-	// R-WM78-FJ18 R-TP9N-N3I1 R-TQHK-0V8Q R-TRPG-EMZF R-0ZYU-VJXJ R-ZFV4-G4NY R-12EN-N3EX R-WYE8-98G6
+	// R-WM78-FJ18 R-HXBJ-QSOZ R-TQHK-0V8Q R-HYJG-4KFO R-0ZYU-VJXJ R-ZFV4-G4NY R-12EN-N3EX R-I275-9VNR
 	c := store.Config{Now: func() time.Time { return stamp }, Rand: &counter{}}
 	s := open(t, c)
 	if s == nil {
 		t.Fatal("nil store")
 	}
 	v, l, r := store.Private, false, "next"
-	_ = store.Change{&v, &l, &r, &r}
+	_ = store.Change{&v, &l, &r, &r, &r}
 	_ = store.Draft{"owner", "name", "repo", "ref", "path", store.Public, true}
-	x := store.Site{"id", "name", "slug", "owner", "repo", "ref", "path", "visibility", true, "commit", "published-path", stamp, stamp}
+	x := store.Site{"id", "name", "slug", "owner", "repo", "ref", "path", "visibility", true, "domain", "commit", "published-path", stamp, stamp}
 	equal(t, x.Name, "name")
 	equal(t, store.IDPrefix, "sit_")
 	equal(t, store.Public, "public")
@@ -138,7 +138,7 @@ func TestDeclarationsAndValidation(t *testing.T) {
 	if store.Unreachable == "" || strings.Contains(store.Unreachable, "\n") {
 		t.Fatal("invalid catalog refusal constant")
 	}
-	sentinels := []error{store.ErrNotFound, store.ErrNameTaken, store.ErrNotPublic}
+	sentinels := []error{store.ErrNotFound, store.ErrNameTaken, store.ErrNotPublic, store.ErrDomainTaken, store.ErrDomainNotPublic}
 	for i, e := range sentinels {
 		if e == nil {
 			t.Fatal("nil sentinel")
@@ -450,7 +450,7 @@ func TestVisibleBeforeWindows(t *testing.T) {
 }
 
 func TestPublishUpdateAndApex(t *testing.T) {
-	// R-TSXC-SEQ4 R-18I5-JY4E R-TXSY-BHOW R-TZ0U-P9FL R-U1GN-GSWZ R-247J-HZEG R-2AB1-EU3X R-2BIX-SLUM R-4QBY-XRV6 R-2CQU-6DLB
+	// R-TSXC-SEQ4 R-18I5-JY4E R-TXSY-BHOW R-TZ0U-P9FL R-IFM1-HCTE R-IGTX-V4K3 R-2AB1-EU3X R-2BIX-SLUM R-4QBY-XRV6 R-2CQU-6DLB
 	now := stamp
 	s := open(t, store.Config{Now: func() time.Time { return now }})
 	x := create(t, s, draft("docs"))
@@ -641,6 +641,11 @@ func assertDeleted(t *testing.T, s *store.Store, dead store.Site) {
 func calls(c context.Context, s *store.Store, id string) []error {
 	_, a := s.Find(c, "alice", "docs")
 	_, b := s.BySlug(c, "docs")
+	_, domain := s.ByDomain(c, "docs.example")
+	_, emptyDomain := s.ByDomain(c, "")
+	invalidDomain, heldDomain := "Bad.example", "held.example"
+	_, _, invalidDomainUpdate := s.Update(c, "missing", store.Change{Domain: &invalidDomain})
+	_, _, validDomainUpdate := s.Update(c, id, store.Change{Domain: &heldDomain})
 	_, d := s.List(c, "alice", "", 10000)
 	_, e := s.Visible(c, "alice", "", 10000)
 	_, f := s.Taken(c, "docs")
@@ -671,10 +676,10 @@ func calls(c context.Context, s *store.Store, id string) []error {
 	_, _, privateApex := s.Update(c, id, store.Change{Visibility: &private})
 	_, missingDelete := s.Delete(c, "missing")
 	_, missingApex := s.SetApex(c, "missing")
-	return []error{a, b, d, e, f, g, h, i, j, k, l, m, zeroList, negativeList, zeroVisible, negativeVisible, before, last, zeroBefore, negativeBefore, missingFind, missingSlug, invalidCreate, takenCreate, invalidPublish, missingPublish, invalidUpdate, missingUpdate, privateApex, missingDelete, missingApex}
+	return []error{a, b, domain, emptyDomain, invalidDomainUpdate, validDomainUpdate, d, e, f, g, h, i, j, k, l, m, zeroList, negativeList, zeroVisible, negativeVisible, before, last, zeroBefore, negativeBefore, missingFind, missingSlug, invalidCreate, takenCreate, invalidPublish, missingPublish, invalidUpdate, missingUpdate, privateApex, missingDelete, missingApex}
 }
 func TestContextCloseAndPrecedence(t *testing.T) {
-	// R-OR3N-86JI R-OSBJ-LYA7 R-U3WG-8CED
+	// R-IKHN-0FS6 R-ILPJ-E7IV R-IMXF-RZ9K
 	path := filepath.Join(t.TempDir(), "db")
 	s, handle := openAt(t, path, store.Config{})
 	x := create(t, s, draft("docs"))
@@ -719,7 +724,7 @@ func TestContextCloseAndPrecedence(t *testing.T) {
 }
 
 func TestStoreRefusalPrecedence(t *testing.T) {
-	// R-U3WG-8CED
+	// R-IMXF-RZ9K
 	randomFailure := errors.New("test randomness failure")
 	s := open(t, store.Config{})
 	x := create(t, s, draft("docs"))
@@ -742,7 +747,7 @@ func TestStoreRefusalPrecedence(t *testing.T) {
 	equal(t, snapshot(t, s), before)
 	// Name refusal wins before a failing random read; random errors on success
 	// paths remain catalog errors even if the source returns a store sentinel.
-	for _, failure := range []error{randomFailure, store.ErrNotFound, store.ErrNameTaken, store.ErrNotPublic} {
+	for _, failure := range []error{randomFailure, store.ErrNotFound, store.ErrNameTaken, store.ErrNotPublic, store.ErrDomainTaken, store.ErrDomainNotPublic} {
 		path := filepath.Join(t.TempDir(), "db")
 		q, handle := openAt(t, path, store.Config{})
 		_ = create(t, q, draft("taken"))

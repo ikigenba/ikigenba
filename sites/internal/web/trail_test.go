@@ -2,10 +2,12 @@ package web_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -14,13 +16,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 	"github.com/ikigenba/ikigenba/sites/internal/store"
 	"github.com/ikigenba/ikigenba/sites/internal/visitor"
 	"github.com/ikigenba/ikigenba/sites/internal/web"
 )
 
-// R-UDMA-P63M R-RDFN-99RW R-FA6U-BB22 R-RENJ-N1IL R-ZWY1-7AE7
+//	R-AJOV-DIFN R-FA6U-BB22 R-RENJ-N1IL R-ZWY1-7AE7
+//
 // R-UH9Z-UHBP R-X244-JYKW R-XRGM-7X3F
 func TestRequestTrails(t *testing.T) {
 	f := fresh(t)
@@ -127,7 +132,7 @@ func TestRequestTrails(t *testing.T) {
 	}
 }
 
-// R-WSCX-HSNC R-XBVB-M4IG
+// R-WSCX-HSNC R-QOV8-CWVK
 func TestServicesURLReloadWithoutSocketCalls(t *testing.T) {
 	f := fresh(t)
 	s := f.add(t, "blog", store.Public)
@@ -142,7 +147,7 @@ func TestServicesURLReloadWithoutSocketCalls(t *testing.T) {
 	// A newly configured server is needed: Handler registers tools once.
 	f.cfg.MCP = newServer(f.cfg.Telemetry)
 	f.h = web.Handler(f.cfg)
-	for _, base := range []string{"https://sites.one.invalid", "https://sites.two.invalid"} {
+	for _, base := range []string{"https://sites.one.example.invalid", "https://sites.two.example.invalid"} {
 		b, _ := json.Marshal(map[string]any{"services": []any{map[string]any{"name": "sites", "url": base, "description": "fixture", "socket": sock, "enabled": true, "mcp": true, "icon": "<svg></svg>"}}})
 		if e := os.WriteFile(path, b, 0600); e != nil {
 			t.Fatal(e)
@@ -157,6 +162,8 @@ func TestServicesURLReloadWithoutSocketCalls(t *testing.T) {
 		f.call(t, q.name, q.args)
 	}
 	f.get(t, "GET", "/blog/", "sites", "", nil)
+	f.get(t, "GET", "/", "example.invalid", "", nil)
+	f.get(t, "GET", "/", "domain.example.com", "", nil)
 	if e := ln.SetDeadline(time.Now().Add(20 * time.Millisecond)); e != nil {
 		t.Fatal(e)
 	}
@@ -193,21 +200,65 @@ func TestConcurrentRequestsKeepTheirTrails(t *testing.T) {
 	}
 }
 
-// R-RDFN-99RW
+// R-AJOV-DIFN
 func TestNonviewsHaveOnlyRequestEvents(t *testing.T) {
 	f := fresh(t)
-	f.add(t, "blog", store.Public)
-	f.add(t, "private", store.Private)
-	for _, q := range []struct{ method, path, host, user string }{{"GET", "/", "sites", "user"}, {"GET", "/about", "sites", "user"}, {"GET", "/_appkit/theme.css", "sites", ""}, {"GET", "/nosuch/", "sites", ""}, {"GET", "/private/", "sites", ""}, {"POST", "/blog/", "sites", ""}, {"GET", "/mcp", "sites", ""}, {"GET", "/blog/", "ikigenba.dev", ""}} {
-		r := f.get(t, q.method, q.path, q.host, q.user, map[string]string{"Cookie": "ikigenba_visitor=vis_0123456789abcdef"})
-		if r.Header().Get("Set-Cookie") != "" {
-			t.Fatal("nonview cookie")
+	configureServices(t, f)
+	public := f.add(t, "blog", store.Public)
+	private := f.add(t, "private", store.Private)
+	domain := "blog.example.com"
+	if _, _, e := f.cfg.Store.Update(context.Background(), public.ID, store.Change{Domain: &domain}); e != nil {
+		t.Fatal(e)
+	}
+	// A restored private row with a domain must never become a view.
+	if e := f.db.Write(context.Background(), func(tx *sql.Tx) error {
+		_, e := tx.ExecContext(context.Background(), "UPDATE sites SET domain=? WHERE id=?", "private.example.com", private.ID)
+		return e
+	}); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := f.cfg.Store.SetApex(context.Background(), public.ID); e != nil {
+		t.Fatal(e)
+	}
+	for _, cookie := range []string{"", "ikigenba_visitor=vis_0123456789abcdef", "ikigenba_visitor=invalid"} {
+		for _, q := range []struct{ method, path, host, user string }{
+			{"GET", "/", "sites", "user"}, {"GET", "/about", "sites", "user"}, {"GET", "/_appkit/theme.css", "sites", ""},
+			{"GET", "/nosuch/", "sites", ""}, {"GET", "/private/", "sites", ""}, {"POST", "/blog/", "sites", ""}, {"GET", "/mcp", "sites", ""},
+			{"GET", "/blog/", "ikigenba.dev", ""}, {"POST", "/mcp", "ikigenba.dev", ""},
+			{"GET", "/", "absent.example.com", ""}, {"GET", "/", "private.example.com", ""}, {"GET", "/", "private.example.com", "user"},
+			{"POST", "/", "blog.example.com", ""}, {"POST", "/mcp", "blog.example.com", ""},
+		} {
+			r := f.get(t, q.method, q.path, q.host, q.user, map[string]string{"Cookie": cookie})
+			if len(r.Header().Values("Set-Cookie")) != 0 {
+				t.Fatal("nonview cookie", q)
+			}
+		}
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Host = "sites"
+		f.h.ServeHTTP(w, r)
+		if len(w.Header().Values("Set-Cookie")) != 0 {
+			t.Error("MCP nonview set cookie")
+		}
+	}))
+	defer server.Close()
+	client := mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL + "/mcp", HTTPClient: server.Client()})
+	for _, q := range []struct{ name, args string }{{"list", `{}`}, {"show", `{"name":"blog"}`}, {"apex", `{}`}, {"create", `{"name":"invalid space","repo":"missing"}`}, {"publish", `{"name":"missing"}`}, {"update", `{"name":"missing","listed":false}`}, {"delete", `{"name":"missing"}`}} {
+		if _, e := client.CallTool(context.Background(), identity.Caller{UserID: "user", RequestID: "nonview-" + q.name}, q.name, json.RawMessage(q.args)); e != nil {
+			t.Fatal(e)
 		}
 	}
 	f.db.SetFailing(true)
-	f.get(t, "GET", "/blog/", "sites", "", nil)
+	for _, host := range []string{"sites", "blog.example.com", "absent.example.com"} {
+		for _, cookie := range []string{"", "ikigenba_visitor=vis_0123456789abcdef", "ikigenba_visitor=invalid"} {
+			r := f.get(t, "GET", "/blog/", host, "", map[string]string{"Cookie": cookie})
+			if r.Code != 503 || len(r.Header().Values("Set-Cookie")) != 0 {
+				t.Fatal("catalog refusal", host, r.Code)
+			}
+		}
+	}
 	for _, e := range f.events(t) {
-		if e.Name != "request.started" && e.Name != "request.finished" {
+		if e.Name != "request.started" && e.Name != "request.finished" && e.Name != "tool.called" {
 			t.Fatalf("nonview event %+v", e)
 		}
 	}

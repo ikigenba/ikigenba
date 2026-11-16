@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -37,7 +39,12 @@ type Config struct {
 }
 
 // Sites serves the first path segment's site.
-func Sites(cfg Config) http.Handler {
+func Sites(cfg Config) http.Handler { return siteHandler(cfg, false) }
+
+// Domains serves a public site at the root of its configured domain.
+func Domains(cfg Config) http.Handler { return siteHandler(cfg, true) }
+
+func siteHandler(cfg Config, domain bool) http.Handler {
 	var randomMu sync.Mutex
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -49,8 +56,18 @@ func Sites(cfg Config) http.Handler {
 		if strings.Contains(strings.TrimPrefix(r.URL.Path, "/"), "/") {
 			rest = "/" + rest
 		}
-		site, err := cfg.Store.BySlug(r.Context(), slug)
-		if errors.Is(err, store.ErrNotFound) {
+		var site store.Site
+		var err error
+		if domain {
+			rest = r.URL.Path
+			if rest == "" {
+				rest = "/"
+			}
+			site, err = cfg.Store.ByDomain(r.Context(), requestHost(r))
+		} else {
+			site, err = cfg.Store.BySlug(r.Context(), slug)
+		}
+		if errors.Is(err, store.ErrNotFound) || (err == nil && domain && site.Visibility == store.Private) {
 			w.Header().Set("Cache-Control", "no-cache")
 			notice(cfg, w, r, 404, "notfound")
 			return
@@ -117,6 +134,13 @@ func Sites(cfg Config) http.Handler {
 				w.Header().Add("Set-Cookie", visitor.Cookie(id, visitor.Secure(r)))
 			}
 		}
+		if !domain && site.Domain != "" && (status == http.StatusOK || status == http.StatusNotModified) {
+			canonical := (&url.URL{Path: rest}).EscapedPath()
+			if canonical == "" {
+				canonical = "/"
+			}
+			w.Header().Set("Link", "<https://"+site.Domain+canonical+">; rel=\"canonical\"")
+		}
 		control := "public, no-cache"
 		if site.Visibility == store.Private {
 			control = "private, no-cache"
@@ -143,7 +167,7 @@ func Sites(cfg Config) http.Handler {
 			return
 		}
 		if valid {
-			cfg.Telemetry.Emit(r.Context(), "site.viewed", telemetry.Attrs{"site": site.ID, "visitor": id, "path": r.URL.Path, "status": int64(status), "referrer_host": visitor.ReferrerHost(r), "commit": site.Commit})
+			cfg.Telemetry.Emit(r.Context(), "site.viewed", telemetry.Attrs{"site": site.ID, "visitor": id, "host": requestHost(r), "path": r.URL.Path, "status": int64(status), "referrer_host": visitor.ReferrerHost(r), "commit": site.Commit})
 		}
 		if template == "unavailable" {
 			cfg.Telemetry.Emit(r.Context(), "site.unavailable", telemetry.Attrs{"site": site.ID, "commit": site.Commit, "reason": cache.Reason(treeErr)})
@@ -166,6 +190,19 @@ func Apex(cfg Config) http.Handler {
 		}
 		redirect(w, r, 302, withQuery(urls.ApexBase(r, cfg.ServicesPath)+"/"+site.Slug+"/"+strings.TrimPrefix(r.URL.EscapedPath(), "/"), r))
 	})
+}
+func requestHost(r *http.Request) string {
+	host := r.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	b := []byte(host)
+	for i, c := range b {
+		if c >= 'A' && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
 }
 func withQuery(s string, r *http.Request) string {
 	if r.URL.RawQuery != "" {

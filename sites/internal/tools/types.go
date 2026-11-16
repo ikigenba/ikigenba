@@ -56,6 +56,7 @@ type UpdateArgs struct {
 	Listed     *bool   `json:"listed" description:"Whether the site is on the landing page."`
 	Ref        *string `json:"ref" description:"The branch, tag, or commit the site tracks from now on."`
 	Path       *string `json:"path" description:"The directory to serve from now on; empty clears it. This does not publish."`
+	Domain     *string `json:"domain" description:"A public site's domain; empty clears it. The operator must add it to the host before it is served."`
 }
 
 // ApexArgs reads, sets, or clears the apex.
@@ -75,6 +76,7 @@ type Site struct {
 	Path       *string `json:"path"`
 	Visibility string  `json:"visibility" mcp:"required"`
 	Listed     bool    `json:"listed" mcp:"required"`
+	Domain     *string `json:"domain"`
 	Commit     *string `json:"commit"`
 	Created    string  `json:"created" mcp:"required"`
 	Published  *string `json:"published"`
@@ -89,6 +91,7 @@ type ListedSite struct {
 	Path       *string `json:"path"`
 	Visibility string  `json:"visibility" mcp:"required"`
 	Listed     bool    `json:"listed" mcp:"required"`
+	Domain     *string `json:"domain"`
 	Commit     *string `json:"commit"`
 }
 

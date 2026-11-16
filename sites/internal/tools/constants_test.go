@@ -8,28 +8,32 @@ import (
 	"github.com/ikigenba/ikigenba/sites/internal/tools"
 )
 
-// R-9QVI-4AFH
+// R-6QJY-9VA8
 func TestRefusalCopyConstants(t *testing.T) {
 	const (
-		missing     string = tools.MissingSite
-		name        string = tools.InvalidName
-		ref         string = tools.InvalidRef
-		path        string = tools.InvalidPath
-		directory   string = tools.NoDirectory
-		taken       string = tools.NameTaken
-		repo        string = tools.NoRepository
-		unavailable string = tools.RepoUnavailable
-		commit      string = tools.NoCommit
-		timeout     string = tools.TimedOut
-		size        string = tools.TooLarge
-		visibility  string = tools.BadVisibility
-		update      string = tools.EmptyUpdate
-		both        string = tools.NameOrClear
-		apex        string = tools.ApexNotPublic
-		git         string = tools.GitFailed
+		missing      string = tools.MissingSite
+		name         string = tools.InvalidName
+		ref          string = tools.InvalidRef
+		path         string = tools.InvalidPath
+		directory    string = tools.NoDirectory
+		taken        string = tools.NameTaken
+		repo         string = tools.NoRepository
+		unavailable  string = tools.RepoUnavailable
+		commit       string = tools.NoCommit
+		domain       string = tools.InvalidDomain
+		space        string = tools.SpaceDomain
+		domainTaken  string = tools.DomainTaken
+		domainPublic string = tools.DomainNotPublic
+		timeout      string = tools.TimedOut
+		size         string = tools.TooLarge
+		visibility   string = tools.BadVisibility
+		update       string = tools.EmptyUpdate
+		both         string = tools.NameOrClear
+		apex         string = tools.ApexNotPublic
+		git          string = tools.GitFailed
 	)
 	seen := map[string]bool{}
-	all := []string{missing, name, ref, path, taken, repo, unavailable, commit, directory, timeout, size, visibility, update, both, apex, git}
+	all := []string{missing, name, ref, path, taken, repo, unavailable, commit, directory, domain, space, domainTaken, timeout, size, visibility, update, both, apex, domainPublic, git}
 	for i, c := range all {
 		if c == "" || strings.Contains(c, "\n") || seen[c] {
 			t.Fatalf("invalid copy constant %d", i)
@@ -37,17 +41,12 @@ func TestRefusalCopyConstants(t *testing.T) {
 		seen[c] = true
 		var result string
 		switch {
-		case i == 8:
-			result = fmt.Sprintf(c, "operand-probe", "ref-probe")
-			if !strings.Contains(result, "operand-probe") || !strings.Contains(result, "ref-probe") {
-				t.Fatalf("directory operands: %s", result)
-			}
-		case i < 8:
+		case i < 12:
 			result = fmt.Sprintf(c, "operand-probe")
 			if strings.Count(result, "operand-probe") != 1 {
 				t.Fatalf("string operand in constant %d", i)
 			}
-		case i < 11:
+		case i < 14:
 			result = fmt.Sprintf(c, 918273)
 			if result == fmt.Sprintf(c, 0) {
 				t.Fatalf("integer operand not used in constant %d", i)

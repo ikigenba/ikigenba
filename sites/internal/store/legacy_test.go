@@ -15,7 +15,7 @@ import (
 )
 
 func TestAdoptWholeSecondUTCCatalog(t *testing.T) {
-	// R-4FCV-HU6X
+	// R-4FCV-HU6X R-I9IJ-KI3X
 	created := time.Date(2026, 10, 1, 12, 34, 56, 0, time.UTC)
 	records := []store.Site{
 		{ID: "sit_0000000000000001", Name: "docs", Slug: "docs", Owner: "alice", Repo: "repository-a", Ref: "main", Visibility: store.Public, Listed: true, Commit: strings.Repeat("a", 40), Created: created, Published: created.Add(time.Hour)},
@@ -74,6 +74,16 @@ func TestAdoptWholeSecondUTCCatalog(t *testing.T) {
 				t.Fatalf("adopt catalog: handle=%v, error=%v", d, err)
 			}
 			t.Cleanup(func() { _ = d.Close() })
+			equal(t, d.Read(ctx, func(tx *sql.Tx) error {
+				for _, x := range tc.records {
+					var domain sql.NullString
+					if err := tx.QueryRowContext(ctx, "SELECT domain FROM sites WHERE id=?", x.ID).Scan(&domain); err != nil {
+						return err
+					}
+					equal(t, domain, sql.NullString{})
+				}
+				return nil
+			}), nil)
 			s := store.New(d, store.Config{Now: clock, Rand: &counter{}})
 			for _, owner := range []string{"alice", "bob", "nobody"} {
 				want := make(map[string]store.Site)

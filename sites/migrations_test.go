@@ -15,8 +15,8 @@ import (
 )
 
 func TestEmbeddedMigrations(t *testing.T) {
-	// R-CVSL-4CM2 R-M88D-7X15
-	names := []string{"0001_catalog.sql", "0002_listed.sql", "0003_backfill_listed.sql"}
+	// R-X4ZT-25OL R-X67P-FXFA
+	names := []string{"0001_catalog.sql", "0002_listed.sql", "0003_backfill_listed.sql", "0004_domain.sql"}
 	original := make(map[string][]byte)
 	for _, name := range names {
 		contents, err := fs.ReadFile(sites.Migrations(), name)
@@ -48,7 +48,7 @@ func TestEmbeddedMigrations(t *testing.T) {
 }
 
 func TestCatalogSchema(t *testing.T) {
-	// R-9U9Q-8OGL R-4AH9-YR85 R-Y074-44FP
+	// R-9U9Q-8OGL R-I3F1-NNEG R-Y074-44FP
 	ctx := context.Background()
 	d, err := db.Open(ctx, db.Config{Path: filepath.Join(t.TempDir(), "sites.db"), Migrations: sites.Migrations(), Now: func() time.Time { return time.Unix(123, 0) }})
 	if err != nil {
@@ -90,7 +90,7 @@ func TestCatalogSchema(t *testing.T) {
 			table string
 			want  []column
 		}{
-			{"sites", []column{{0, "id", "TEXT", 0, nil, 1}, {1, "name", "TEXT", 1, nil, 0}, {2, "slug", "TEXT", 1, nil, 0}, {3, "owner", "TEXT", 1, nil, 0}, {4, "payload", "TEXT", 1, nil, 0}, {5, "listed", "INTEGER", 1, new("0"), 0}}},
+			{"sites", []column{{0, "id", "TEXT", 0, nil, 1}, {1, "name", "TEXT", 1, nil, 0}, {2, "slug", "TEXT", 1, nil, 0}, {3, "owner", "TEXT", 1, nil, 0}, {4, "payload", "TEXT", 1, nil, 0}, {5, "listed", "INTEGER", 1, new("0"), 0}, {6, "domain", "TEXT", 0, nil, 0}}},
 			{"settings", []column{{0, "key", "TEXT", 0, nil, 1}, {1, "value", "TEXT", 1, nil, 0}}},
 		}
 		for _, c := range cases {
@@ -119,7 +119,7 @@ func TestCatalogSchema(t *testing.T) {
 			}
 			for i, got := range columns {
 				want := c.want[i]
-				if got.Name != want.Name || got.Type != want.Type || got.PK != want.PK || c.table == "sites" && got.Name == "listed" && !reflect.DeepEqual(got.Default, want.Default) || i > 0 && got.NotNull != want.NotNull {
+				if got.Name != want.Name || got.Type != want.Type || got.PK != want.PK || c.table == "sites" && (got.Name == "listed" || got.Name == "domain") && !reflect.DeepEqual(got.Default, want.Default) || i > 0 && got.NotNull != want.NotNull {
 					t.Fatalf("%s column %d: %#v", c.table, i, got)
 				}
 			}
@@ -139,7 +139,7 @@ func TestCatalogSchema(t *testing.T) {
 }
 
 func TestCatalogIndexes(t *testing.T) {
-	// R-4CX2-QAPJ
+	// R-I5UU-F6VU
 	ctx := context.Background()
 	d, err := db.Open(ctx, db.Config{Path: filepath.Join(t.TempDir(), "sites.db"), Migrations: sites.Migrations(), Now: func() time.Time { return time.Unix(123, 0) }})
 	if err != nil {
@@ -165,7 +165,7 @@ func TestCatalogIndexes(t *testing.T) {
 					pk++
 					continue
 				}
-				if origin != "c" || unique != 0 {
+				if origin != "c" || partial != 0 || unique != map[bool]int{false: 0, true: 1}[name == "sites_domain"] {
 					t.Fatalf("unexpected index: %s %s %d %d", name, origin, unique, partial)
 				}
 				indexes[name] = nil
@@ -201,7 +201,7 @@ func TestCatalogIndexes(t *testing.T) {
 			}
 			want := map[string][]string{}
 			if table == "sites" {
-				want = map[string][]string{"sites_owner_name": {"owner", "name"}, "sites_slug": {"slug"}, "sites_listed_name": {"listed", "name"}}
+				want = map[string][]string{"sites_owner_name": {"owner", "name"}, "sites_slug": {"slug"}, "sites_listed_name": {"listed", "name"}, "sites_domain": {"domain"}}
 			}
 			if pk != 1 || !reflect.DeepEqual(indexes, want) {
 				t.Fatalf("%s indexes: pk=%d %#v", table, pk, indexes)

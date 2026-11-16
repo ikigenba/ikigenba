@@ -204,14 +204,14 @@ func assertNotice(t *testing.T, got, want *httptest.ResponseRecorder) {
 	}
 }
 
-// R-EDHD-NT2A R-EEPA-1KSZ R-EFX6-FCJO R-EH52-T4AD R-EICZ-6W12 R-EJKV-KNRR R-EPOD-HIH8
+// R-EDQI-81KF R-EDHD-NT2A R-EEPA-1KSZ R-EEYE-LTB4 R-EH52-T4AD R-EICZ-6W12 R-EJKV-KNRR R-EPOD-HIH8
 func TestDeclaredServingSeams(t *testing.T) {
 	f := newFixture(t, nil)
 	// Unkeyed construction makes the exact exported Config shape a consumer contract.
 	cfg := serving.Config{f.cfg.Banner, f.cfg.Pages, "", f.s, f.c, f.cfg.Telemetry, f.random}
-	var sites, apex func(serving.Config) http.Handler
-	sites, apex = serving.Sites, serving.Apex
-	for _, h := range []http.Handler{sites(cfg), apex(cfg)} {
+	var sites, apex, domains func(serving.Config) http.Handler
+	sites, apex, domains = serving.Sites, serving.Apex, serving.Domains
+	for _, h := range []http.Handler{sites(cfg), apex(cfg), domains(cfg)} {
 		r := f.req("GET", "/missing/", "")
 		w := httptest.NewRecorder()
 		identity.Optional(h).ServeHTTP(w, r)
@@ -233,7 +233,7 @@ func TestDeclaredServingSeams(t *testing.T) {
 	}
 }
 
-// R-X4HQ-635N R-ETC2-MTPB R-Y2FP-NURO R-Y3NM-1MID R-4YFR-E1U4
+// R-X4HQ-635N R-ETC2-MTPB R-Y2FP-NURO R-Y3NM-1MID R-EOPL-NZ8O
 func TestSiteAnswerOrder(t *testing.T) {
 	f := newFixture(t, nil)
 	for _, method := range []string{"POST", "DELETE", "OPTIONS", "PUT"} {
@@ -439,7 +439,7 @@ func TestFixedContentTypes(t *testing.T) {
 	}
 }
 
-// R-4ZNN-RTKT R-FAEN-ZM31 R-1DZ9-ITG2
+// R-EPXI-1QZD R-FAEN-ZM31 R-AG16-877K
 func TestHeadParityAndViewCacheControl(t *testing.T) {
 	for _, visibility := range []string{store.Public, store.Private} {
 		f := newFixture(t, map[string]string{"index.html": "index", "404.html": "missing", "about/index.html": "about"})
@@ -493,7 +493,7 @@ func TestHeadParityAndViewCacheControl(t *testing.T) {
 	}
 }
 
-// R-5KY9-QUE4 R-5M66-4M4T R-FFA9-IP1T
+// R-5KY9-QUE4 R-5M66-4M4T R-ER5E-FIQ2
 func TestFreshCatalogAndCachedTreeReadOnly(t *testing.T) {
 	f := newFixture(t, map[string]string{"index.html": "old"})
 	before, _ := f.s.BySlug(context.Background(), "blog")
@@ -568,7 +568,7 @@ func TestFreshCatalogAndCachedTreeReadOnly(t *testing.T) {
 	assertNotice(t, f.answer(r, false), f.notice(r, 404, "notfound"))
 }
 
-// R-ZIAX-7O5C R-W4I0-R9ZH R-KWCD-44CL R-UP6E-SQZJ R-LON3-52D8
+// R-ZIAX-7O5C R-W4I0-R9ZH R-AOKG-WLEF R-UP6E-SQZJ R-R1U7-CVH5
 func TestRebuildFailuresAndDrain(t *testing.T) {
 	for _, reason := range []string{cache.ReasonRepositoryMissing, cache.ReasonCommitMissing, cache.ReasonDirectoryMissing, cache.ReasonTooLarge, cache.ReasonTimedOut, cache.ReasonGitFailed, "stopping"} {
 		t.Run(reason, func(t *testing.T) {
@@ -628,7 +628,7 @@ func TestRebuildFailuresAndDrain(t *testing.T) {
 			}
 			for i, e := range events {
 				if reason == "stopping" || i%2 == 0 {
-					want := telemetry.Attrs{"site": f.site.ID, "visitor": visitorID, "path": "/blog/", "status": int64(503), "referrer_host": "news.example", "commit": f.site.Commit}
+					want := telemetry.Attrs{"site": f.site.ID, "visitor": visitorID, "host": "sites.example.test", "path": "/blog/", "status": int64(503), "referrer_host": "news.example", "commit": f.site.Commit}
 					if e.Name != "site.viewed" || !reflect.DeepEqual(e.Attrs, want) {
 						t.Fatalf("view %v want %v", e, want)
 					}
@@ -723,7 +723,7 @@ func TestCanceledAndHaltedRebuildWritesNothing(t *testing.T) {
 	}
 }
 
-// R-LM7A-DIVU
+// R-ANCK-ITNQ
 func TestEventsFollowCompletedWriteContext(t *testing.T) {
 	for _, unavailable := range []bool{false, true} {
 		for _, canceled := range []bool{false, true} {
@@ -822,7 +822,7 @@ func TestApexAnswersWithoutTreeOrMethodGate(t *testing.T) {
 	assertHeader(t, f.answer(r, true), "Location", urls.ApexBase(r, "")+"/empty/")
 }
 
-// R-UEU7-2XUB R-UIHW-892E R-LON3-52D8 R-PX8N-N4Z0 R-RFVG-0T9A
+// R-AIGY-ZQOY R-UIHW-892E R-R1U7-CVH5 R-PX8N-N4Z0 R-APSD-AD54
 func TestViewCookieAndExactAttrs(t *testing.T) {
 	for _, method := range []string{"GET", "HEAD"} {
 		for _, user := range []string{"", "u_fixture"} {
@@ -835,7 +835,7 @@ func TestViewCookieAndExactAttrs(t *testing.T) {
 				assertStatus(t, w, 200)
 				assertHeader(t, w, "Set-Cookie", visitor.Cookie(visitorID, scheme == "https"))
 				events := f.events()
-				want := telemetry.Attrs{"site": f.site.ID, "visitor": visitorID, "path": "/blog/about/", "status": int64(200), "referrer_host": "example.org", "commit": f.sha}
+				want := telemetry.Attrs{"site": f.site.ID, "visitor": visitorID, "host": "sites.example.test", "path": "/blog/about/", "status": int64(200), "referrer_host": "example.org", "commit": f.sha}
 				if len(events) != 1 || events[0].Name != "site.viewed" || !reflect.DeepEqual(events[0].Attrs, want) {
 					t.Fatalf("view %v want %v", events, want)
 				}
@@ -872,7 +872,7 @@ func TestViewCookieAndExactAttrs(t *testing.T) {
 		}
 		for key, value := range event.Attrs {
 			switch key {
-			case "site", "path", "status", "referrer_host", "commit":
+			case "site", "host", "path", "status", "referrer_host", "commit":
 			case "visitor":
 				id, ok := value.(string)
 				if !ok || (id != "" && !visitor.ValidID(id)) {
@@ -885,7 +885,7 @@ func TestViewCookieAndExactAttrs(t *testing.T) {
 	}
 }
 
-// R-FGI5-WGSI
+// R-ESDA-TAGR
 func TestConcurrentServingHasNoDefaultLogs(t *testing.T) {
 	f := newFixture(t, map[string]string{"index.html": "index"})
 	var logs bytes.Buffer
@@ -955,7 +955,7 @@ func treeSnapshot(t *testing.T, root string) map[string]string {
 	return snapshot
 }
 
-// R-FFA9-IP1T R-5M66-4M4T
+// R-ER5E-FIQ2 R-5M66-4M4T
 func TestCachedAnswersPreserveEntireTreeAndCatalog(t *testing.T) {
 	f := newFixture(t, map[string]string{"index.html": "index", "404.html": "missing", "about/index.html": "about"})
 	_, err := f.s.SetApex(context.Background(), f.site.ID)
@@ -1033,7 +1033,7 @@ func (w *publishWriter) Write(p []byte) (int, error) {
 	return w.ResponseRecorder.Write(p)
 }
 
-// R-PX8N-N4Z0 R-LON3-52D8
+// R-PX8N-N4Z0 R-R1U7-CVH5
 func TestViewCommitRemainsTheAnsweredCommit(t *testing.T) {
 	for _, source := range []string{"", "docs"} {
 		t.Run(source, func(t *testing.T) {
@@ -1054,7 +1054,7 @@ func TestViewCommitRemainsTheAnsweredCommit(t *testing.T) {
 			}
 			assertHeader(t, writer.ResponseRecorder, "ETag", publishedTag(f.sha, source))
 			events := f.events()
-			want := telemetry.Attrs{"site": f.site.ID, "visitor": visitorID, "path": "/blog/", "status": int64(200), "referrer_host": "", "commit": f.sha}
+			want := telemetry.Attrs{"site": f.site.ID, "visitor": visitorID, "host": "sites.example.test", "path": "/blog/", "status": int64(200), "referrer_host": "", "commit": f.sha}
 			if len(events) != 1 || events[0].Name != "site.viewed" || events[0].RequestID != r.Header.Get("X-Request-Id") || !reflect.DeepEqual(events[0].Attrs, want) {
 				t.Fatalf("wrong response snapshot event %v", events)
 			}
@@ -1062,7 +1062,7 @@ func TestViewCommitRemainsTheAnsweredCommit(t *testing.T) {
 	}
 }
 
-// R-1DZ9-ITG2 R-LON3-52D8
+// R-AG16-877K R-R1U7-CVH5
 func TestAllViewStatusesHaveExactAttributes(t *testing.T) {
 	f := newFixture(t, map[string]string{"index.html": "index", "404.html": "missing"})
 	for i, tc := range []struct {
@@ -1079,14 +1079,14 @@ func TestAllViewStatusesHaveExactAttributes(t *testing.T) {
 		}
 		assertStatus(t, f.answer(r, false), tc.status)
 		events := f.events()
-		want := telemetry.Attrs{"site": f.site.ID, "visitor": visitorID, "path": tc.path, "status": int64(tc.status), "referrer_host": "", "commit": f.sha}
+		want := telemetry.Attrs{"site": f.site.ID, "visitor": visitorID, "host": "sites.example.test", "path": tc.path, "status": int64(tc.status), "referrer_host": "", "commit": f.sha}
 		if len(events) != i+1 || events[i].Name != "site.viewed" || !reflect.DeepEqual(events[i].Attrs, want) {
 			t.Fatalf("view attrs %v", events)
 		}
 	}
 }
 
-// R-LON3-52D8
+// R-R1U7-CVH5
 func TestUnpublishedViewsHaveExactAttributes(t *testing.T) {
 	f := newFixture(t, nil)
 	for i, method := range []string{"GET", "HEAD"} {
@@ -1096,7 +1096,7 @@ func TestUnpublishedViewsHaveExactAttributes(t *testing.T) {
 		r.Header.Set("Referer", "https://news.example:8443/post?hidden=detail")
 		assertStatus(t, f.answer(r, false), 404)
 		events := f.events()
-		want := telemetry.Attrs{"site": f.site.ID, "visitor": visitorID, "path": "/blog/unfinished", "status": int64(404), "referrer_host": "news.example:8443", "commit": ""}
+		want := telemetry.Attrs{"site": f.site.ID, "visitor": visitorID, "host": "sites.example.test", "path": "/blog/unfinished", "status": int64(404), "referrer_host": "news.example:8443", "commit": ""}
 		if len(events) != i+1 || events[i].Name != "site.viewed" || !reflect.DeepEqual(events[i].Attrs, want) {
 			t.Fatalf("unpublished view %v want %v", events, want)
 		}

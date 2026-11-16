@@ -186,7 +186,7 @@ func (f *startFixture) get(t *testing.T, path string) *http.Response {
 	return res
 }
 
-// R-V89J-WCJE R-V9HG-A4A3 R-VAPC-NW0S R-VBX9-1NRH R-VD55-FFI6 R-VFKY-6YZK R-V6ZN-HU9K R-SLH1-GJRQ
+// R-V89J-WCJE R-V9HG-A4A3 R-VAPC-NW0S R-VBX9-1NRH R-VD55-FFI6 R-VFKY-6YZK R-2VKS-6WQL R-SLH1-GJRQ
 func TestRunStartupRefusals(t *testing.T) {
 	for _, tc := range []struct{ name, pid, count, setting, want string }{{"setting", "123", "1", "abc", "DRAIN_SECONDS is 'abc', not a positive whole number of seconds"}, {"missing", "124", "1", "", "no socket was passed in\n\nrun it under systemd, with a listening socket passed in"}, {"zero", "123", "0", "", "no socket was passed in\n\nrun it under systemd, with a listening socket passed in"}, {"space", "123", " 1", "", "no socket was passed in\n\nrun it under systemd, with a listening socket passed in"}, {"plus", "123", "+1", "", "no socket was passed in\n\nrun it under systemd, with a listening socket passed in"}, {"many", "123", "0002", "", "0002 sockets were passed in, expected 1\n\nrun it under systemd, with a listening socket passed in"}, {"overflow", "123", "999999999999999999999999", "", "999999999999999999999999 sockets were passed in, expected 1\n\nrun it under systemd, with a listening socket passed in"}} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -332,7 +332,7 @@ func TestRunNotificationFailure(t *testing.T) {
 	}
 }
 
-// R-XKCF-53SO R-VSZU-EG57 R-XQ8P-U5CQ R-KRGR-L1DT R-KTWK-CKV7 R-WMZ0-I8LW R-KV4G-QCLW R-YULW-P307 R-YPQB-601F
+// R-XKCF-53SO R-VSZU-EG57 R-2N1H-IIJQ R-KRGR-L1DT R-2O9D-WAAF R-WMZ0-I8LW R-KV4G-QCLW R-YULW-P307 R-YPQB-601F
 func TestRunFirstStartComposition(t *testing.T) {
 	for _, services := range []string{"", "missing", "malformed"} {
 		t.Run(services, func(t *testing.T) {
@@ -450,7 +450,7 @@ func startRepo(t *testing.T, f *startFixture, root string, directory ...string) 
 	return sha
 }
 
-// R-VLOG-3TP1 R-NP4W-DPTP R-YIEW-VDL9 R-2ZL3-20Q4 R-YKUP-MX2N R-YM2M-0OTC R-4AOP-838L R-WVYF-HOYS
+// R-VLOG-3TP1 R-NP4W-DPTP R-YIEW-VDL9 R-2ZL3-20Q4 R-YKUP-MX2N R-2KLO-QZ2C R-4AOP-838L R-WVYF-HOYS
 func TestRunRepositoriesAndPaths(t *testing.T) {
 	for _, relative := range []bool{false, true} {
 		t.Run(map[bool]string{true: "relative", false: "absolute"}[relative], func(t *testing.T) {
@@ -470,6 +470,11 @@ func TestRunRepositoriesAndPaths(t *testing.T) {
 
 			services := filepath.Join(outer, "services.json")
 			f.set("IKIGENBA_SERVICES", services)
+			if relative {
+				if e := os.WriteFile(services, []byte(`{"services":[]}`), 0600); e != nil {
+					t.Fatal(e)
+				}
+			}
 			f.start(t)
 			f.call(t, "list", "{}")
 			if _, e := os.Stat(root); !os.IsNotExist(e) {
@@ -481,6 +486,7 @@ func TestRunRepositoriesAndPaths(t *testing.T) {
 			if e := os.WriteFile(services, []byte(`{"services":[{"name":"sites","url":"https://sites.example.test","description":"Sites","socket":"/missing","enabled":true,"mcp":true}]}`), 0600); e != nil {
 				t.Fatal(e)
 			}
+			f.mcp = mcp.NewClient(mcp.ClientConfig{Endpoint: "http://sites.example.test/mcp", HTTPClient: f.http, Name: "test", Version: "test"})
 			trace := filepath.Join(f.p.Dir, "git-trace")
 			f.set("GIT_TRACE2_EVENT", trace)
 			before := startSnapshot(t, outer, f.p.Dir)
@@ -655,7 +661,7 @@ func TestRunStartupLeavesTreesAndRecordsOnlyLifecycle(t *testing.T) {
 	}
 }
 
-// R-VSZU-EG57 R-XQ8P-U5CQ
+// R-VSZU-EG57 R-2N1H-IIJQ
 func TestRunAbstractAndAbsentNotification(t *testing.T) {
 	t.Run("abstract", func(t *testing.T) {
 		f := newStartFixture(t)

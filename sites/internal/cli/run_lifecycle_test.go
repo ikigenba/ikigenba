@@ -122,68 +122,80 @@ func lifeRead(t *testing.T, res *http.Response) []byte {
 	return b
 }
 
-// R-W1J5-2UC2
+// R-QRB1-4GCY
 func TestRunLifecycleAcceptedHeadersWhileDraining(t *testing.T) {
-	f := newStartFixture(t)
-	l := lifeObserve(f)
-	f.set("DRAIN_SECONDS", "2")
-	root := t.TempDir()
-	startRepo(t, f, root)
-	f.set("REPOS_DIR", root)
-	entered, release := make(chan struct{}), make(chan struct{})
-	var once sync.Once
-	banner := f.p.Banner
-	f.p.Banner = func(u page.User) page.Banner { once.Do(func() { close(entered) }); <-release; return banner(u) }
-	t.Cleanup(func() {
-		select {
-		case <-release:
-		default:
+	for _, domain := range []bool{false, true} {
+		t.Run(fmt.Sprintf("domain=%v", domain), func(t *testing.T) {
+			f := newStartFixture(t)
+			l := lifeObserve(f)
+			f.set("DRAIN_SECONDS", "2")
+			root := t.TempDir()
+			startRepo(t, f, root)
+			f.set("REPOS_DIR", root)
+			entered, release := make(chan struct{}), make(chan struct{})
+			var once sync.Once
+			banner := f.p.Banner
+			f.p.Banner = func(u page.User) page.Banner { once.Do(func() { close(entered) }); <-release; return banner(u) }
+			t.Cleanup(func() {
+				select {
+				case <-release:
+				default:
+					close(release)
+				}
+			})
+			var gitCalls atomic.Int64
+			f.p.After = func(time.Duration) <-chan time.Time { gitCalls.Add(1); return make(chan time.Time) }
+			f.start(t)
+			site := f.call(t, "create", `{"name":"blog","repo":"rep_0123456789abcdef","visibility":"public"}`)
+			if domain {
+				f.call(t, "update", `{"name":"blog","domain":"blog.example.com"}`)
+			}
+			published := f.call(t, "publish", `{"name":"blog"}`)
+			if e := os.RemoveAll(filepath.Join(f.p.Dir, "cache/sites", site["id"].(string), published["commit"].(string))); e != nil {
+				t.Fatal(e)
+			}
+			req, _ := http.NewRequest(http.MethodGet, "http://sites/about", nil)
+			req.Header.Set("X-User-Id", "owner")
+			go func() {
+				res, e := f.http.Do(req)
+				if e == nil {
+					_, _ = io.Copy(io.Discard, res.Body)
+					_ = res.Body.Close()
+				}
+			}()
+			lifeWait(t, entered)
+			for len(l.accepted) > 0 {
+				<-l.accepted
+			}
+			c := lifeConnect(t, f)
+			target := "GET /blog/ HTTP/1.1\r\nHost: sites\r\nX-Request-Id: late-view\r\n"
+			if domain {
+				target = "GET / HTTP/1.1\r\nHost: blog.example.com\r\nX-Request-Id: late-view\r\n"
+			}
+			if _, e := io.WriteString(c, target); e != nil {
+				t.Fatal(e)
+			}
+			lifeWait(t, l.accepted)
+			before := gitCalls.Load()
+			f.cancel(errors.New("drain partial headers"))
+			lifeWait(t, l.closed)
+			if _, e := io.WriteString(c, "\r\n"); e != nil {
+				t.Fatal(e)
+			}
+			res, e := http.ReadResponse(bufio.NewReader(c), nil)
+			if e != nil {
+				t.Fatalf("accepted request lost during drain: %v", e)
+			}
+			_ = lifeRead(t, res)
+			if res.StatusCode != 503 || res.Header.Get("Retry-After") != "30" || gitCalls.Load() != before {
+				t.Fatalf("status=%d retry=%q git=%d/%d", res.StatusCode, res.Header.Get("Retry-After"), gitCalls.Load(), before)
+			}
 			close(release)
-		}
-	})
-	var gitCalls atomic.Int64
-	f.p.After = func(time.Duration) <-chan time.Time { gitCalls.Add(1); return make(chan time.Time) }
-	f.start(t)
-	site := f.call(t, "create", `{"name":"blog","repo":"rep_0123456789abcdef","visibility":"public"}`)
-	published := f.call(t, "publish", `{"name":"blog"}`)
-	if e := os.RemoveAll(filepath.Join(f.p.Dir, "cache/sites", site["id"].(string), published["commit"].(string))); e != nil {
-		t.Fatal(e)
-	}
-	req, _ := http.NewRequest(http.MethodGet, "http://sites/about", nil)
-	req.Header.Set("X-User-Id", "owner")
-	go func() {
-		res, e := f.http.Do(req)
-		if e == nil {
-			_, _ = io.Copy(io.Discard, res.Body)
-			_ = res.Body.Close()
-		}
-	}()
-	lifeWait(t, entered)
-	for len(l.accepted) > 0 {
-		<-l.accepted
-	}
-	c := lifeConnect(t, f)
-	if _, e := io.WriteString(c, "GET /blog/ HTTP/1.1\r\nHost: sites\r\nX-Request-Id: late-view\r\n"); e != nil {
-		t.Fatal(e)
-	}
-	lifeWait(t, l.accepted)
-	before := gitCalls.Load()
-	f.cancel(errors.New("drain partial headers"))
-	lifeWait(t, l.closed)
-	if _, e := io.WriteString(c, "\r\n"); e != nil {
-		t.Fatal(e)
-	}
-	res, e := http.ReadResponse(bufio.NewReader(c), nil)
-	if e != nil {
-		t.Fatalf("accepted request lost during drain: %v", e)
-	}
-	_ = lifeRead(t, res)
-	if res.StatusCode != 503 || res.Header.Get("Retry-After") != "30" || gitCalls.Load() != before {
-		t.Fatalf("status=%d retry=%q git=%d/%d", res.StatusCode, res.Header.Get("Retry-After"), gitCalls.Load(), before)
-	}
-	close(release)
-	if lifeExit(t, f) != cli.ExitSuccess {
-		t.Fatal(f.err.text())
+			if lifeExit(t, f) != cli.ExitSuccess {
+				t.Fatal(f.err.text())
+			}
+
+		})
 	}
 }
 
@@ -283,7 +295,7 @@ func lifeStopping(t *testing.T, events []telemetry.Event, reason string) {
 	}
 }
 
-// R-SGCR-8UGJ R-WA2F-R8IX
+// R-2PHA-A214 R-2QP6-NTRT
 func TestRunLifecycleIdleStopAndEventOrder(t *testing.T) {
 	for _, drain := range []string{"1", "999999999999999999999999999"} {
 		t.Run(drain, func(t *testing.T) {
@@ -402,7 +414,7 @@ func TestRunLifecyclePublishCompletesWithinDrain(t *testing.T) {
 	}
 }
 
-// R-WBAC-509M
+// R-2LTL-4QT1
 func TestRunLifecycleUndeliveredLines(t *testing.T) {
 	f := newStartFixture(t)
 	w := &lifeWrites{changed: make(chan struct{}, 32)}
@@ -417,7 +429,16 @@ func TestRunLifecycleUndeliveredLines(t *testing.T) {
 	if len(first) != 1 || first[0].Name != "service.started" {
 		t.Fatal(first)
 	}
-	res := lifeGet(t, f, "/about", "failed-delivery-request", "owner")
+	req, e := http.NewRequest(http.MethodGet, "http://sites.sbx.ikigenba.dev/about", nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	req.Header.Set("X-Request-Id", "failed-delivery-request")
+	req.Header.Set("X-User-Id", "owner")
+	res, e := f.http.Do(req)
+	if e != nil {
+		t.Fatal(e)
+	}
 	_ = lifeRead(t, res)
 	if res.StatusCode != 200 {
 		t.Fatal(res.StatusCode)
@@ -496,7 +517,7 @@ func lifeGone(t *testing.T, marker string) {
 	}
 }
 
-// R-SCP2-3J8G
+// R-K0VI-FJ0S
 func TestRunLifecycleCanceledPublishEndsHandler(t *testing.T) {
 	f := newStartFixture(t)
 	f.set("DRAIN_SECONDS", "30")
@@ -544,7 +565,7 @@ func TestRunLifecycleCanceledPublishEndsHandler(t *testing.T) {
 	lifeGone(t, marker)
 }
 
-// R-W2R1-GM2R R-V5RR-42IV R-WCI8-IS0B R-BH93-MQG1
+// R-W2R1-GM2R R-V5RR-42IV R-2RX3-1LII R-2T4Z-FD97
 func TestRunLifecycleCutoffStopsGitAndSuppressesEvents(t *testing.T) {
 	f := newStartFixture(t)
 	f.p.Rand = &lifeRand{}
@@ -725,17 +746,23 @@ func TestRunLifecycleAcceptFailure(t *testing.T) {
 	}
 }
 
-// R-JETU-2OFJ
+// R-2UCV-T4ZW
 func TestRunLifecycleQuietResponses(t *testing.T) {
 	f := newStartFixture(t)
 	root := t.TempDir()
 	startRepo(t, f, root)
 	f.set("REPOS_DIR", root)
 	f.http.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	services := filepath.Join(f.p.Dir, "services.json")
+	if e := os.WriteFile(services, []byte(`{"services":[{"name":"sites","url":"https://sites.sbx.space.example","enabled":true,"mcp":true,"description":"fixture","socket":"/missing"}]}`), 0600); e != nil {
+		t.Fatal(e)
+	}
+	f.set("IKIGENBA_SERVICES", services)
 	f.start(t)
 	lifeSite(t, f, "blog")
 	f.call(t, "publish", `{"name":"blog"}`)
 	f.call(t, "apex", `{"name":"blog"}`)
+	f.call(t, "update", `{"name":"blog","domain":"blog.example.com"}`)
 	for _, path := range []string{"/blog/", "/nope"} {
 		res := lifeGet(t, f, path, "quiet"+path, "")
 		_ = lifeRead(t, res)
@@ -758,6 +785,21 @@ func TestRunLifecycleQuietResponses(t *testing.T) {
 	_ = lifeRead(t, res)
 	if res.StatusCode != 302 {
 		t.Fatal(res.StatusCode)
+	}
+	for _, q := range []struct {
+		host   string
+		status int
+	}{{"blog.example.com", 200}, {"absent.example.com", 404}} {
+		req, _ := http.NewRequest(http.MethodGet, "http://sites/", nil)
+		req.Host = q.host
+		res, e := f.http.Do(req)
+		if e != nil {
+			t.Fatal(e)
+		}
+		_ = lifeRead(t, res)
+		if res.StatusCode != q.status {
+			t.Fatal(res.StatusCode)
+		}
 	}
 	r, e := lifeCall(context.Background(), f, "quiet-refusal", "show", `{"name":"absent"}`)
 	if e != nil || !r.IsError() {
@@ -794,7 +836,7 @@ func lifeLargeRepo(t *testing.T, f *startFixture, root string) {
 	run(nil, "update-ref", "refs/heads/main", sha)
 }
 
-// R-WA2F-R8IX R-SGCR-8UGJ
+// R-2QP6-NTRT R-2PHA-A214
 func TestRunLifecyclePendingTelemetryFlushedAtDeadline(t *testing.T) {
 	f := newStartFixture(t)
 	f.set("DRAIN_SECONDS", "1")

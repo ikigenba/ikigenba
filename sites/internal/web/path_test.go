@@ -51,7 +51,7 @@ func (f *fixture) directoryCommit(t *testing.T) string {
 	return sha
 }
 
-// R-AE1L-DXIO R-ROWO-XEAP R-ABLS-ME1A R-AIX6-X0HG
+// R-AE1L-DXIO R-ROWO-XEAP  R-AIX6-X0HG
 func TestPathPublicationControlsServedTreeAndTag(t *testing.T) {
 	f := fresh(t)
 	f.repository(t)
@@ -126,7 +126,7 @@ func TestPathPublicationControlsServedTreeAndTag(t *testing.T) {
 		if e := json.Unmarshal(b, &answer); e != nil {
 			t.Fatal(e)
 		}
-		want := fmt.Sprintf(tools.NoDirectory, path, "main")
+		want := fmt.Sprintf(tools.NoDirectory, path)
 		if path == "/dist" {
 			want = fmt.Sprintf(tools.InvalidPath, path)
 		}

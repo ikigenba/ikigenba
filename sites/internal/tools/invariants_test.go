@@ -159,7 +159,7 @@ func assertToolTrail(t *testing.T, h *harness, start int, tool, outcome string, 
 }
 
 func TestCatalogFreeRulesAndFailingCatalog(t *testing.T) {
-	// R-DSIX-66A8 R-A4AE-BRL4
+	// R-DLS4-6WHQ R-DPFT-C7PT
 	h := newHarness(t)
 	h.add(t, "alice", "blog", true)
 	h.db.SetFailing(true)
@@ -183,7 +183,7 @@ func TestCatalogFreeRulesAndFailingCatalog(t *testing.T) {
 }
 
 func TestInvalidArgumentsAndUnknownTool(t *testing.T) {
-	// R-ZZDI-KGJ2 R-00LE-Y89R
+	// R-2Z8H-C7YO R-00LE-Y89R
 	h := newHarness(t)
 	h.add(t, "alice", "blog", true)
 	seedProtectedCatalog(t, h)
@@ -191,9 +191,11 @@ func TestInvalidArgumentsAndUnknownTool(t *testing.T) {
 	trees := diskSnapshot(t, h.cacheRoot, false)
 	cases := []struct{ tool, args string }{
 		{"list", `{"name":"blog"}`}, {"show", `{"site":"blog"}`},
-		{"create", `{"name":"docs"}`}, {"create", `{"name":"docs","repo":"rep_0102030405060708","listed":"no","slug":"docs"}`},
+		{"create", `{"name":"docs"}`}, {"create", `{"name":"docs","repo":"rep_8c21d4e0f7a3b915","listed":"no","slug":"docs"}`},
+		{"create", `{"name":"docs","repo":"rep_8c21d4e0f7a3b915","domain":"docs.example.org"}`},
+		{"update", `{"name":"blog","domain":["blog.example.org"]}`},
 		{"publish", `{"ref":"main"}`}, {"update", `{"name":"blog","listed":"no","new_name":"journal"}`},
-		{"delete", `{"id":"sit_0102030405060708"}`}, {"apex", `{"name":3,"clear":"yes","site":"blog"}`},
+		{"delete", `{"id":"sit_4e7a1c9b0d2f8635"}`}, {"apex", `{"name":3,"clear":"yes","site":"blog"}`},
 	}
 	for _, c := range cases {
 		start := len(h.capture.Events())
@@ -240,7 +242,7 @@ func TestInvalidArgumentsAndUnknownTool(t *testing.T) {
 }
 
 func TestToolClockKindsAndRepositoriesUntouched(t *testing.T) {
-	// R-XVCP-61ZC R-9D0Y-WP6T R-NBIW-15M6 R-ACTP-05RZ R-0317-PRR5
+	// R-2Y0K-YG7Z R-9D0Y-WP6T R-NBIW-15M6 R-ACTP-05RZ R-0317-PRR5
 	h := newHarness(t)
 	repo := h.repo(t, "rep_0123456789abcdef", "alice")
 	h.add(t, "alice", "blog", true)
@@ -323,7 +325,7 @@ func TestCreateLeavesRepositoryUnchanged(t *testing.T) {
 }
 
 func TestLaterCreateCatalogFailureHonorsFreeRules(t *testing.T) {
-	// R-A4AE-BRL4 R-9FGR-O8O7
+	// R-DPFT-C7PT R-9FGR-O8O7
 	for _, visibility := range []string{"public", "secret"} {
 		t.Run(visibility, func(t *testing.T) {
 			h := newHarness(t)

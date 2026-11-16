@@ -22,6 +22,7 @@ import (
 	"github.com/ikigenba/ikigenba/sites/internal/settings"
 	"github.com/ikigenba/ikigenba/sites/internal/store"
 	"github.com/ikigenba/ikigenba/sites/internal/tools"
+	"github.com/ikigenba/ikigenba/sites/internal/urls"
 )
 
 func gitInput(t *testing.T, h *harness, dir, input string, args ...string) string {
@@ -87,7 +88,7 @@ func outsideSiteSnapshot(t *testing.T, h *harness, id string) map[string]diskEnt
 }
 
 func TestPublishSuccessPruningAndOwnerIndependence(t *testing.T) {
-	// R-ABLS-ME1A R-AIX6-X0HG R-NXH2-X0YO R-NBIW-15M6
+	// R-7B85-Z6TI R-AIX6-X0HG R-NXH2-X0YO R-NBIW-15M6
 	h := newHarness(t)
 	p := h.repo(t, "rep_0123456789abcdef", "alice")
 	first := commitFile(t, h, p, "old")
@@ -166,7 +167,7 @@ func TestPublishSuccessPruningAndOwnerIndependence(t *testing.T) {
 }
 
 func TestPublishRefusalOrderLimitsAndDiskFailure(t *testing.T) {
-	// R-A7Y3-H2T7 R-A95Z-UUJW R-74WV-C1W8 R-9FGR-O8O7 R-0317-PRR5
+	// R-A7Y3-H2T7 R-7BA8-RYW1 R-7A09-LF2T R-9FGR-O8O7 R-0317-PRR5
 	for _, which := range []string{"missing-site", "missing-repo", "no-ref", "malformed-ref", "large", "resolve-timeout", "archive-timeout", "disk", "archive-git"} {
 		t.Run(which, func(t *testing.T) {
 			h := newHarness(t)
@@ -264,7 +265,7 @@ func TestPublishRefusalOrderLimitsAndDiskFailure(t *testing.T) {
 }
 
 func TestPublishCatalogFailureRollsBackOnlyNewTree(t *testing.T) {
-	// R-A4AE-BRL4 R-9FGR-O8O7
+	// R-DPFT-C7PT R-9FGR-O8O7
 	for _, existing := range []bool{false, true} {
 		t.Run(fmt.Sprint(existing), func(t *testing.T) {
 			h := newHarness(t)
@@ -296,7 +297,7 @@ func TestPublishCatalogFailureRollsBackOnlyNewTree(t *testing.T) {
 }
 
 func TestHaltedAndCanceledToolsEndWithoutResult(t *testing.T) {
-	// R-LUQL-1X2P
+	// R-73YU-HCFV
 	for _, which := range []string{"halt-create", "halt-publish", "cancel-create", "cancel-publish", "cancel-archive"} {
 		t.Run(which, func(t *testing.T) {
 			h := newHarness(t)
@@ -324,11 +325,11 @@ func TestHaltedAndCanceledToolsEndWithoutResult(t *testing.T) {
 				}
 			}
 			body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"` + tool + `","arguments":` + args + `}}`
-			r := httptest.NewRequest(http.MethodPost, "http://sites.example.invalid/mcp", strings.NewReader(body)).WithContext(ctx)
+			r := httptest.NewRequest(http.MethodPost, "http://sites.example.invalid/mcp", strings.NewReader(body)).WithContext(urls.NewContext(ctx, "https://sites.example.invalid"))
 			r.Header.Set("Content-Type", "application/json")
 			r.Header.Set("X-User-Id", "alice")
 			r.Header.Set("X-Request-Id", "req_11223344556677889900aabbccddeeff")
-			rec := httptest.NewRecorder()
+			rec := &observedResponse{ResponseRecorder: httptest.NewRecorder()}
 			ended := make(chan bool, 1)
 			wrapped := identity.Require(h.server)
 			go func() {
@@ -345,7 +346,7 @@ func TestHaltedAndCanceledToolsEndWithoutResult(t *testing.T) {
 			case <-time.After(10 * time.Second):
 				t.Fatal("goroutine did not end")
 			}
-			if rec.Body.Len() != 0 || len(rec.Header()) != 0 {
+			if rec.wrote || rec.Body.Len() != 0 || len(rec.Header()) != 0 {
 				t.Fatalf("wrote response %s %v", rec.Body.String(), rec.Header())
 			}
 			if e := h.cfg.Telemetry.Flush(context.Background()); e != nil {
@@ -361,7 +362,7 @@ func TestHaltedAndCanceledToolsEndWithoutResult(t *testing.T) {
 }
 
 func TestCommittedPublishAndDeleteSucceedDespiteCleanupFailure(t *testing.T) {
-	// R-AF9H-RP9D
+	// R-7CG2-CYK7
 	for _, tool := range []string{"publish", "delete"} {
 		t.Run(tool, func(t *testing.T) {
 			h := newHarness(t)
@@ -407,7 +408,7 @@ func TestCommittedPublishAndDeleteSucceedDespiteCleanupFailure(t *testing.T) {
 }
 
 func TestPublishRefusesHostileRealGitArchive(t *testing.T) {
-	// R-74WV-C1W8
+	// R-7A09-LF2T
 	h := newHarness(t)
 	p := h.repo(t, "rep_0123456789abcdef", "alice")
 	blob := gitInput(t, h, p, "target", "hash-object", "-w", "--stdin")
@@ -426,7 +427,7 @@ func TestPublishRefusesHostileRealGitArchive(t *testing.T) {
 }
 
 func TestGitMutationsToolCalledTrail(t *testing.T) {
-	// R-XVCP-61ZC
+	// R-2Y0K-YG7Z
 	h := newHarness(t)
 	p := h.repo(t, "rep_0123456789abcdef", "alice")
 	commitFile(t, h, p, "body")
@@ -442,4 +443,20 @@ func TestGitMutationsToolCalledTrail(t *testing.T) {
 		}
 		assertToolTrail(t, h, start, c.tool, c.outcome, sites)
 	}
+}
+
+// observedResponse distinguishes an untouched writer from an empty 200 answer.
+type observedResponse struct {
+	*httptest.ResponseRecorder
+	wrote bool
+}
+
+func (w *observedResponse) WriteHeader(code int) {
+	w.wrote = true
+	w.ResponseRecorder.WriteHeader(code)
+}
+
+func (w *observedResponse) Write(p []byte) (int, error) {
+	w.wrote = true
+	return w.ResponseRecorder.Write(p)
 }

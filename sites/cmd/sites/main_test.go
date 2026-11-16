@@ -180,14 +180,14 @@ func TestBinary(t *testing.T) {
 	services := filepath.Join(root, "services.json")
 	writeServices := func(disabled bool, description string) {
 		t.Helper()
-		data := fmt.Sprintf(`{"services":[{"name":"auth","url":"https://account.example.test","description":"Auth","socket":"/unused","enabled":true,"mcp":false,"icon":"<svg></svg>"},{"name":"home","url":"https://home.example.test","description":"Home","socket":"/unused","enabled":%t,"mcp":false,"icon":"<svg></svg>"},{"name":"sites","url":"https://sites.example.test","description":%q,"socket":"/unused","enabled":true,"mcp":true,"icon":%q}]}`, !disabled, description, binarySitesIcon)
+		data := fmt.Sprintf(`{"services":[{"name":"auth","url":"https://account.example.test","description":"Auth","socket":"/unused","enabled":true,"mcp":false,"icon":"<svg></svg>"},{"name":"home","url":"https://home.example.test","description":"Home","socket":"/unused","enabled":%t,"mcp":false,"icon":"<svg></svg>"},{"name":"sites","url":"https://sites.sbx.ikigenba.dev","description":%q,"socket":"/unused","enabled":true,"mcp":true,"icon":%q}]}`, !disabled, description, binarySitesIcon)
 		if e := os.WriteFile(services, []byte(data), 0600); e != nil {
 			t.Fatal(e)
 		}
 	}
 	writeServices(false, "First description")
 	f := startBinary(t, binary, emptyWork, append(append([]string{}, env...), "IKIGENBA_SERVICES="+services))
-	// R-MK59-L2ZO
+	// R-2JDS-D7BN
 	beforeBody := assertBinaryPage(t, f, "/", id, services)
 	f.instructions(t, true, "First description")
 	writeServices(true, "First description")

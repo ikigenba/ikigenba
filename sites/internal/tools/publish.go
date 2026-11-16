@@ -48,7 +48,7 @@ func (cfg Config) publish(ctx context.Context, caller identity.Caller, a Publish
 	_, siteErr := os.Lstat(filepath.Dir(dir))
 	if err = cfg.Cache.Unpack(ctx, s.ID, s.Repo, sha, path); err != nil {
 		if errors.Is(err, cache.ErrNoDirectory) {
-			return Site{}, fmt.Errorf(NoDirectory, path, ref)
+			return Site{}, fmt.Errorf(NoDirectory, path)
 		}
 		return Site{}, cfg.gitError(ctx, err)
 	}
