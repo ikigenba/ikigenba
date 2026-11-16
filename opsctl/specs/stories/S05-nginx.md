@@ -216,7 +216,8 @@ it is never backed up. Every command that writes
 `/etc/nginx/conf.d/ikigenba.conf` — `nginx apply`, `init`'s `nginx.conf`
 step, the `nginx` step of `activate` and `rollback` (`S10-releases.md`), and
 `opsctl domain add` and `remove` (`S14-domains.md`) — creates `/var/www/acme`
-the same way when it is missing, root-owned with mode `0755`, so a restored
+the same way when it is missing, root-owned as opsctl created it, and sets its
+mode to `0755` whether it is new or already there, so a restored
 host has it once `init` has run.
 
 A host may also answer at custom domains: DNS names outside the space's own
@@ -2986,8 +2987,8 @@ Postconditions:
 - `nginx -t` passed and nginx has been reloaded; it is serving the new
   configuration and never stopped serving the old one.
 - No other file under `/etc/nginx` was created, modified, or removed.
-- `/var/www/acme` exists, owned by root with mode `0755`; `apply` created it
-  if it was missing.
+- `/var/www/acme` exists with mode `0755`, root-owned as opsctl created it;
+  `apply` created it if it was missing.
 - `/run/ikigenba/services.json` has been rewritten from the same store,
   current release, and disabled apps the nginx file was. Nothing was printed
   about it.

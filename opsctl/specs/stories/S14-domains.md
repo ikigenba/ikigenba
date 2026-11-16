@@ -90,7 +90,7 @@ Postconditions:
 - `/etc/letsencrypt/live/example.com/` holds a certificate for `example.com` alone, obtained by HTTP-01 from `/var/www/acme`. The host's own lineage at `/etc/letsencrypt/live/sbx.ikigenba.dev/` is untouched.
 - When a current lineage for `example.com` was already on disk, left by an earlier add that failed or by a remove that could not delete it, it was kept and the CA was not asked for anything.
 - `opsctl domain list` prints the line `example.com`.
-- nginx was applied exactly as `opsctl nginx apply` does: `/etc/nginx/conf.d/ikigenba.conf` holds a server block for `example.com` (`S05-nginx.md`), `nginx -t` passed, and nginx was reloaded. `/var/www/acme` exists, owned by root with mode `0755`, created if it was missing.
+- nginx was applied exactly as `opsctl nginx apply` does: `/etc/nginx/conf.d/ikigenba.conf` holds a server block for `example.com` (`S05-nginx.md`), `nginx -t` passed, and nginx was reloaded. `/var/www/acme` exists with mode `0755`, root-owned as opsctl created it, created if it was missing.
 - `certbot renew`, run by `ikigenba-renew-certificate.timer`, renews the lineage by HTTP-01 and reloads nginx afterwards.
 - `sites` was not asked or told anything.
 
@@ -638,6 +638,8 @@ opsctl: acme.email not set
 ```
 
 Exits 1. The line is on stderr; stdout is empty. With `host.name` unset the line is `opsctl: host.name not set`.
+
+`sudo opsctl domain remove example.com` needs `host.name` too, but not `acme.email`: with `host.name` unset it answers `opsctl: host.name not set`, and for `add` and `remove` alike, with `host.apex` set and `host.name` `localhost`, which has no parent domain, the line is `opsctl: host.apex is set but host.name 'localhost' has no parent domain`; each exits 1 and changes nothing. A `host.domains` someone edited by hand into a value opsctl did not write, such as `example.com,Example.org`, makes `add`, `remove` and `list` answer `opsctl: host.domains malformed: "Example.org"` on stderr, exit 1 and change nothing.
 
 Preconditions:
 
