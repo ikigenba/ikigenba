@@ -14,7 +14,7 @@ Platform apps, each one Go binary behind the host's nginx:
 - `telemetry` keeps the suite's trail of events; every service posts to it and agents query it.
 - `mcp` is the MCP gateway: one endpoint through which agents reach every service's tools.
 - `repos` is the suite's home for git repositories, served over smart HTTP and MCP.
-- `sites` is the suite's static site host: it publishes a repository that `repos` holds at one commit, public or private.
+- `sites` is the suite's static site host: it publishes a repository that `repos` holds at one commit, public or private, and serves a public site at the root of a domain of its own when opsctl routes one to it.
 - `scripts` runs Python scripts kept in `repos` on behalf of agents and keeps each run's input, output and files.
 - `events` is the suite's internal event bus: services emit events to it and it delivers them to the services that accept them.
 - `cron` keeps triggers, each a slug and a cron schedule, and emits an event on the bus each time one fires; agents subscribe scripts to those events.

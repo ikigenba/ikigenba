@@ -12,6 +12,12 @@ through seven MCP tools, `list`, `show`, `create`, `publish`, `update`,
 `delete` and `apex`, reached through the MCP gateway. Its home page lists the
 space's sites and says how to make one.
 
+A public site can also be served at the root of a domain of its own, such as
+`example.com`, while its `sites.<host>/<slug>/` address keeps working and
+names the domain as canonical. The operator adds the domain on the host with
+`opsctl`, which obtains its certificate and routes it to `sites`; an agent
+sets it on the site with `update`. A private site cannot have a domain.
+
 ## Installing it
 
 `sites` runs on an Ikigenba host beside `repos`, whose repositories it reads

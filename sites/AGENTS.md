@@ -16,7 +16,11 @@ credential, whom nginx lets through because sites' manifest declares
 `guests = true`; a private site sends such a visitor to auth's sign-in with a
 return URL, and serves any signed-in user of the space. Every site request
 carries a long-lived visitor cookie sites mints, and records a `site.viewed`
-event. A request at the space's apex host redirects to the apex site. At
+event. A request at the space's apex host redirects to the apex site. A
+public site may also have a domain of its own, a name opsctl routes to
+sites on the host; a request at that name is answered from the site's tree
+at the root, every path of it the site's, and any other unknown host is
+answered not-found. At
 `/mcp` it offers seven MCP tools, which agents reach through the MCP gateway:
 `list`, `show`, `create`, `publish`, `update`, `delete` and `apex`. At `/` it
 serves a landing page, for a signed-in user, that lists the space's sites and
