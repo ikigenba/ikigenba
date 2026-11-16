@@ -22,3 +22,20 @@ builds the release and unpacks it on the host at
 ```sh
 opsctl --help
 ```
+
+## Custom domains
+
+A custom domain is a name outside `host.name` whose A record points at the
+host. A primary name is served by the `sites` app; a redirect name answers 301
+to its primary. Each name gets a certificate of its own by HTTP-01 from
+`/var/www/acme`, renewed by the host's existing certbot timer.
+
+```sh
+opsctl domain add example.com
+opsctl domain add www.example.com --redirect example.com
+opsctl domain list
+opsctl domain remove www.example.com
+```
+
+`add` and `remove` apply nginx themselves; `opsctl domain --help` has the
+rest.
