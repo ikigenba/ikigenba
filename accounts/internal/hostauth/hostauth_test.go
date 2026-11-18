@@ -550,7 +550,16 @@ func TestTokenBucket(t *testing.T) {
 	now = now.Add(time.Millisecond)
 	assertVerify(t.Context(), t, v, header(now, VerifyBurst), nil)
 	if callerCalls != VerifyBurst+1 {
-		t.Fatalf("CallerOf calls = %d", callerCalls)
+		t.Fatalf("CallerOf calls after one token refills = %d, want %d", callerCalls, VerifyBurst+1)
+	}
+
+	now = now.Add(time.Hour)
+	for i := range VerifyBurst {
+		assertVerify(t.Context(), t, v, header(now, VerifyBurst+1+i), nil)
+	}
+	assertVerify(t.Context(), t, v, header(now, 2*VerifyBurst+1), ErrBusy)
+	if callerCalls != 2*VerifyBurst+1 {
+		t.Fatalf("CallerOf calls after the bucket refills = %d, want %d", callerCalls, 2*VerifyBurst+1)
 	}
 }
 

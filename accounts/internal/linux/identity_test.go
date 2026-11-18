@@ -209,6 +209,92 @@ func TestApplyRefusesIdentityMismatch(t *testing.T) {
 	}
 }
 
+func TestApplyCreatesActiveUser(t *testing.T) {
+	// R-KZ69-MFRD
+	for _, tc := range []struct {
+		name         string
+		privateGroup bool
+	}{
+		{name: "without private group"},
+		{name: "with private group", privateGroup: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newHardeningFixture(t)
+			groups := "shell:x:990:\ncitron:x:20000:\n"
+			var want []linux.Command
+			if tc.privateGroup {
+				groups += "alice:x:20001:\n"
+			} else {
+				want = append(want, linux.Command{Name: "groupadd", Args: []string{"--gid", "20001", "alice"}})
+			}
+			f.put("/etc/group", groups, 0o644)
+			f.put("/etc/passwd", "citron:x:20000:20000::/srv/citron:/usr/sbin/nologin\n", 0o644)
+			f.put("/srv/citron/.git/config", "existing", 0o644)
+			want = append(want, linux.Command{Name: "useradd", Args: []string{
+				"--uid", "20001", "--gid", "alice", "--groups", "shell,citron", "--create-home",
+				"--home-dir", f.path("/home/alice"), "--skel", f.path(linux.SkelDir),
+				"--key", "HOME_MODE=0700", "--shell", "/bin/bash", "alice",
+			}})
+			var got []linux.Command
+			f.observe = func(c linux.Command) {
+				if (c.Name == "groupadd" || c.Name == "useradd") && slices.Contains(c.Args, "alice") {
+					got = append(got, c)
+				}
+			}
+			f.apply(protocol.DesiredState{
+				DataVolume: "vol-12345678",
+				Accounts:   []protocol.Account{{Slug: "citron", GID: 20000, State: protocol.AccountActive}},
+				Users:      []protocol.User{{Name: "alice", Account: "citron", UID: 20001, State: protocol.UserActive}},
+			})
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("active user creation = %+v, want %+v", got, want)
+			}
+		})
+	}
+}
+
+func TestApplyRepairsUserGroupMembership(t *testing.T) {
+	// R-KZ69-MFRD
+	for _, tc := range []struct {
+		name         string
+		shellMembers string
+		acctMembers  string
+		wantAppend   bool
+	}{
+		{name: "missing shell membership", acctMembers: "alice", wantAppend: true},
+		{name: "missing account membership", shellMembers: "alice", wantAppend: true},
+		{name: "both memberships present", shellMembers: "alice", acctMembers: "alice"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newHardeningFixture(t)
+			groups := fmt.Sprintf("shell:x:990:%s\ncitron:x:20000:%s\nalice:x:20001:\n", tc.shellMembers, tc.acctMembers)
+			f.put("/etc/group", groups, 0o644)
+			f.put("/etc/passwd", "citron:x:20000:20000::/srv/citron:/usr/sbin/nologin\nalice:x:20001:20001::/home/alice:/bin/bash\n", 0o644)
+			f.put("/srv/citron/.git/config", "existing", 0o644)
+			var got, want []linux.Command
+			if tc.wantAppend {
+				want = []linux.Command{{Name: "usermod", Args: []string{"--append", "--groups", "shell,citron", "alice"}}}
+			}
+			f.observe = func(c linux.Command) {
+				switch c.Name {
+				case "groupadd", "useradd", "usermod":
+					if slices.Contains(c.Args, "alice") {
+						got = append(got, c)
+					}
+				}
+			}
+			f.apply(protocol.DesiredState{
+				DataVolume: "vol-12345678",
+				Accounts:   []protocol.Account{{Slug: "citron", GID: 20000, State: protocol.AccountActive}},
+				Users:      []protocol.User{{Name: "alice", Account: "citron", UID: 20001, State: protocol.UserActive}},
+			})
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("existing user identity commands = %+v, want %+v", got, want)
+			}
+		})
+	}
+}
+
 func TestApplyLocksBeforeRefusingConflictingUserIdentity(t *testing.T) {
 	// R-KZ69-MFRD R-KXYD-8O0O
 	const groups = "shell:x:990:alice\ncitron:x:20000:alice\n"
@@ -241,7 +327,11 @@ func TestApplyLocksBeforeRefusingConflictingUserIdentity(t *testing.T) {
 			if len(f.commands) < len(want) || !slices.Equal(f.commands[:len(want)], want) {
 				t.Fatalf("identity conflict did not allow the lockdown first: %v", f.commands)
 			}
-			f.forbidCalls("groupadd --gid 20001", "useradd --uid 20001", "usermod --append", "usermod --expiredate  alice")
+			for _, call := range f.commands[len(want):] {
+				if strings.Contains(strings.ReplaceAll(call, f.root, ""), "alice") {
+					t.Fatalf("command for conflicting user after lockdown: %q", call)
+				}
+			}
 			f.expectAbsent(linux.KeysDir + "/alice")
 		})
 	}

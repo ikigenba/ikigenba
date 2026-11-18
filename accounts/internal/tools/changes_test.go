@@ -4,17 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	accounts "github.com/ikigenba/ikigenba/accounts"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/tools"
 	"github.com/ikigenba/ikigenba/accounts/internal/trail"
 	"github.com/ikigenba/ikigenba/accounts/internal/valid"
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
@@ -313,34 +316,94 @@ func TestCreateAccountDNS(t *testing.T) {
 
 // R-0XON-ENBG
 func TestRemoveAccount(t *testing.T) {
+	t.Run("missing", func(t *testing.T) {
+		f := setup(t)
+		f.serveLoopback()
+		refusal(t, f.call(tools.ToolRemoveAccount, tools.AccountArgs{Account: "missing"}), tools.NoAccount)
+	})
+	t.Run("has users", testRemoveAccountWithUsers)
+	for _, state := range []string{store.AccountPending, store.AccountActive, store.AccountFailed} {
+		t.Run(state, func(t *testing.T) {
+			testRemoveAccountFromState(t, state)
+		})
+	}
+}
+
+func testRemoveAccountFromState(t *testing.T, state string) {
 	f := setup(t)
+	f.serveLoopback()
 	h, _ := f.seedHost(false)
 	args := tools.AccountArgs{Account: "acme"}
-	refusal(t, f.call(tools.ToolRemoveAccount, args), tools.NoAccount)
-	_, op := f.seedAccount(args.Account, h.Name)
-	f.fail(op.ID, "place failed")
-	removing := answer[tools.Account](t, f.call(tools.ToolRemoveAccount, args))
-	if removing.State != store.AccountRemoving || removing.Reason != "" {
-		t.Fatal(removing)
+	a, place := f.seedAccount(args.Account, h.Name)
+	creator := f.caller.UserID
+	f.caller.UserID = "removing-caller"
+	wantPlaceStatus := store.OpCancelled
+	switch state {
+	case store.AccountActive:
+		f.finish(place.ID, store.Update{})
+		wantPlaceStatus = store.OpDone
+	case store.AccountFailed:
+		f.fail(place.ID, "place failed")
+		wantPlaceStatus = store.OpFailed
 	}
-	findUnplace := func(status string) string {
+	want := tools.Account{
+		Account: args.Account, Host: h.Name, DNSName: args.Account + "." + f.hosts.Domain,
+		State: store.AccountRemoving, Created: a.Created.UTC().Format(time.RFC3339), CreatedBy: creator,
+	}
+	remove := func(previous, wantPreviousStatus string) string {
 		t.Helper()
-		a := readAccount(t, f, args.Account)
-		if a.Operation == nil || a.Operation.Kind != store.OpUnplace || a.Operation.Status != status {
-			t.Fatalf("removal status %+v", a)
+		if got := answer[tools.Account](t, f.call(tools.ToolRemoveAccount, args)); got != want {
+			t.Fatalf("removal answer %+v, want %+v", got, want)
 		}
-		return a.Operation.Operation
+		ctx := t.Context()
+		d, err := db.Open(ctx, db.Config{Path: f.path, Migrations: accounts.Migrations(),
+			Now: func() time.Time { return f.now }, Service: "accounts", Stderr: io.Discard})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if err := d.Close(); err != nil {
+				t.Error(err)
+			}
+		}()
+		reopened := store.New(d, store.Config{})
+		stored, err := reopened.Account(ctx, args.Account)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stored.State != store.AccountRemoving || stored.Reason != "" || stored.CreatedBy != creator || stored.Operation == previous {
+			t.Fatalf("stored account after removal %+v", stored)
+		}
+		op, err := reopened.Operation(ctx, stored.Operation)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if op.Kind != store.OpUnplace || op.Status != store.OpRunning || op.Account != args.Account ||
+			op.Host != h.Name || op.Caller.UserID != f.caller.UserID {
+			t.Fatalf("stored removal by %q: %+v", f.caller.UserID, op)
+		}
+		prior, err := reopened.Operation(ctx, previous)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if prior.Status != wantPreviousStatus {
+			t.Fatalf("prior operation %+v, want status %q", prior, wantPreviousStatus)
+		}
+		return op.ID
 	}
-	first := findUnplace(store.OpRunning)
-	refusal(t, f.call(tools.ToolRemoveAccount, args), tools.AccountRemoving)
-	f.fail(first, "unplace failed")
-	if failed := findUnplace(store.OpFailed); failed != first {
-		t.Fatal(failed)
+	first := remove(place.ID, wantPlaceStatus)
+	if state == store.AccountFailed {
+		refusal(t, f.call(tools.ToolRemoveAccount, args), tools.AccountRemoving)
+		f.fail(first, "unplace failed")
+		f.caller.UserID = "retrying-caller"
+		remove(first, store.OpFailed)
 	}
-	after := answer[tools.Account](t, f.call(tools.ToolRemoveAccount, args))
-	if second := findUnplace(store.OpRunning); second == first || after != removing {
-		t.Fatal(second, after)
-	}
+}
+
+func testRemoveAccountWithUsers(t *testing.T) {
+	f := setup(t)
+	f.serveLoopback()
+	h, _ := f.seedHost(false)
 	active, place := f.seedAccount("active", h.Name)
 	f.finish(place.ID, store.Update{})
 	added := answer[tools.UserChange](t, f.call(tools.ToolAddUser, tools.UserKeyArgs{Account: active.Slug, User: "daffy", Key: key(1)}))
