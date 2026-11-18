@@ -26,7 +26,14 @@ never trimmed. The manifest names no port: the host hands every app its
 socket, so a manifest that still carries `port` is refused rather than
 ignored. How long an app may drain and how long systemd waits for it to stop
 are not the app's choice either; they are two space-wide keys in the store,
-read and validated here so activate and init agree on them.
+read and validated here so activate and init agree on them. The space also
+hands every app on a released host its AWS region and the four `hosts.*`
+settings a space that operates hosts carries (`hosts.domain`,
+`hosts.zone_id`, `hosts.launch_template`, `hosts.instance_profile`); no
+manifest sets them either. Those five are read here too, but only read:
+opsctl passes each on exactly as the store holds it, judges none of them,
+and asks no cloud service about them, leaving the app that operates hosts to
+judge whether what it was given is complete and well-formed.
 
 A manifest may also carry a `[resources]` table saying where the app runs
 and how much of the host it may take, every key optional and defaulted at
@@ -102,7 +109,9 @@ directory of every release.
 
 The environment file is host configuration, not part of what the package
 brought: `/etc/opt/ikigenba/<name>/env` under `EnvRoot`, alone in its own
-directory, generated from the manifest, the secrets parameter, and the store.
+directory, generated from the manifest, the secrets parameter, and the store:
+the timing keys on every host, and on a released host also the region and
+the `hosts.*` settings (D17).
 `activate` writes it whole for every app of the release (D17, D18), restore
 writes it whole (D14), `init` rewrites it, and an activate that drops an app
 removes its directory (D18). It is never backed up: a host writes it again
@@ -164,6 +173,10 @@ runs a migration and no app is seeded.
 - R-UA45-18GV: The configuration keys `apps.drain_seconds` and `apps.stop_seconds` MUST be the space-wide app timing settings: `apps.drain_seconds` is how many whole seconds every app may spend draining once told to stop, and `apps.stop_seconds` is how many whole seconds systemd waits for every app's service to stop; an absent key or an empty value MUST mean `5` and `10` respectively, and no manifest field sets or overrides either.
 - R-UBC1-F07K: `ReadTimeouts` MUST read both timing keys from `store` and return their values; a nonempty value MUST consist only of ASCII decimal digits, leading zeros permitted, denoting a whole number from 1 through 9223372036, and otherwise `ReadTimeouts` MUST return an error whose `Error()` is exactly `<key> is not a positive whole number of seconds: '<value>'` with the stored value substituted unchanged, judging `apps.drain_seconds` before `apps.stop_seconds` so only the first offending key is named; when both are valid and the stop value is not greater than the drain value it MUST return an error whose `Error()` is exactly `apps.stop_seconds (<S>) is not greater than apps.drain_seconds (<D>)`, with `<S>` and `<D>` the effective values in decimal without leading zeros, defaults included.
 - R-UCJX-SRY9: `ReadTimeouts` MUST NOT write the store; a store read failure other than an absent key, including a corrupt store, MUST be returned as an error wrapping the store's error (so `errors.Is` matches `config.ErrCorrupt` for a corrupt store) rather than as a timing finding.
+- R-QTM0-T9V0: Package `internal/apps` MUST export `SpaceEnv` as a struct with `Region string`, `HostsDomain string`, `HostsZoneID string`, `HostsLaunchTemplate string`, and `HostsInstanceProfile string` fields, and `ReadSpaceEnv(store config.Store) (SpaceEnv, error)`.
+- R-QUTX-71LP: The configuration keys `hosts.domain`, `hosts.zone_id`, `hosts.launch_template`, and `hosts.instance_profile` MUST be the space-wide host-operation settings, set only on a space that operates hosts: `hosts.domain` is the domain hosts' accounts are named under, `hosts.zone_id` is the Route 53 hosted zone id of that domain in the form `dns.zones` carries ids, `hosts.launch_template` is the name of the EC2 launch template hosts are launched from, and `hosts.instance_profile` is the name of the IAM instance profile hosts run with; no manifest field sets or overrides any of them, every app on a released host is handed the same values, and nothing in opsctl judges their values.
+- R-QW1T-KTCE: `ReadSpaceEnv` MUST return in `Region`, `HostsDomain`, `HostsZoneID`, `HostsLaunchTemplate`, and `HostsInstanceProfile` the values `store` holds for `aws.region`, `hosts.domain`, `hosts.zone_id`, `hosts.launch_template`, and `hosts.instance_profile` respectively, each byte for byte as stored, and the empty string for an absent key; it MUST NOT validate any of them, so any stored value, including an empty one, one of only whitespace, one naming no existing domain, zone, template, or profile, and any combination of set and absent keys, MUST be returned unchanged with a nil error.
+- R-QX9P-YL33: `ReadSpaceEnv` MUST NOT write the store and MUST make no call to any cloud service; a store read failure other than an absent key, including a corrupt store, MUST be returned as an error wrapping the store's error (so `errors.Is` matches `config.ErrCorrupt` for a corrupt store).
 - R-93Z5-D770: Package `internal/apps` MUST export the constants `IconPath = "share/icon.svg"`, the package-relative path of a service's launcher icon; `ServicesPath = "/run/ikigenba/services.json"`, the services file of every host but a per-app host (D15); `PerAppServicesPath = "/var/lib/ikigenba/services.json"`, the services file of a per-app host; and `ServicesEnv = "IKIGENBA_SERVICES"`, the name of the environment variable that carries the services file's path to every app.
 - R-G34X-CPC0: Package `internal/apps` MUST export the constant `DataRoot = "/var/opt/ikigenba"`, the host directory beneath which every service's data directory lies.
 - R-CVSI-TQZ3: A service `<name>`'s *data directory* MUST be `DataRoot` followed by `/<name>`, that is `/var/opt/ikigenba/<name>/`, resolved under the root an operation is given (`Discover`'s `root`, `host.Env.Root`, or `cli.Deps.Root`, D01); it is the app's working directory, the `WorkingDirectory=` of the per-app service unit (D09 R-CZG7-Z276) and of the one `WriteReleaseUnits` writes (D17), and every operation that reads or writes a file a manifest names by a relative path, `Database.Path` among them, MUST resolve that path against it, so `Status` (D10) reads the journal mode of a `crm` declaring `state/crm.db` from `/var/opt/ikigenba/crm/state/crm.db` under its root and never from `/opt/crm/state/crm.db`.
