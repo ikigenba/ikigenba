@@ -6,7 +6,8 @@ unpacks it; opsctl never fetches or unpacks a release. The folder holds
 `release.json` (the suite build's record, whose `sha` member names the commit),
 `opsctl/bin/opsctl`, the opsctl that belongs to that release, and one *app tree*
 per app, `<app>/`, holding only `bin/`, `libexec/`, `lib/`, `share/` and `etc/`,
-with `bin/` holding exactly the app's own binary. A release may also hold the
+with `bin/` holding the app's own binary and any other regular files the app
+ships. A release may also hold the
 *turns tree*, `turns/`: the client command `turns`, not an app, with its binary
 `turns/bin/turns` and the user units `turns/share/systemd/turns.service` and
 `turns.timer`; a release older than `turns` has none. After the release's first
