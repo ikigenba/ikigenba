@@ -1,8 +1,8 @@
 {{/* The not-found page, answered with status 404 to a signed-in user for
-     a path that is not a page, whatever the method, for a host name no host
-     has, for any host page on a space that operates no hosts, and for a
-     hosts_page, accounts_page or users_page value the landing page cannot
-     decode; a guest is sent to sign in. No banner; footer only. Data: .Banner (a
+     a path that is not a page, whatever the method: /hosts/<name> with a
+     name no host has, any other path under /hosts/, any host page on a
+     space that operates no hosts, and a hosts_page, accounts_page or
+     users_page value the landing page cannot decode; a guest is sent to sign in. No banner; footer only. Data: .Banner (a
      page.Banner, for the footer). Hooks: title "Not found"; h1 with text
      "Not found"; p#notfound with text "There is nothing at this
      address."; no banner; no script but appkit's /_appkit/feedback.js. */}}

@@ -47,7 +47,8 @@
      .Users (a slice, one window of up to 25 users, sorted by account slug
      then login name, so each account's users read together), each with
      .Login (string, the login name), .Account (string, the slug of the
-     account the user belongs to), .State (string, "active" or "locked"),
+     account the user belongs to), .State (string, "active", "locked", or "removing" for a user deleted
+     but not yet removed from the host),
      .Pending (bool, a change to the user or their keys has not yet been
      reported applied by the host), .KeyCount (int, how many public keys
      the user has), .LastSignIn and .LastSignInText (string, the user's last
@@ -67,7 +68,7 @@
      "stopping", "starting", "resizing" and "deleting" info; "failed" err;
      "stopped" no kind. Health: "sync" ok, "pending" info, "error" err,
      "silent" warn, "none" no kind. Account state: "active" ok, "pending"
-     and "removing" info. User state: "active" ok, "locked" warn.
+     and "removing" info. User state: "active" ok, "locked" warn, "removing" info.
      Hooks: title "accounts"; h1 with text "accounts"; p#summary.lede (text
      "SSH as a service: accounts runs hosts, places each business account
      on one of them, and keeps the people who sign in to work there. Agents
@@ -91,7 +92,7 @@
      Health, Type, Root (GB) (th.num), Data (GB) (th.num), Elastic IP,
      Accounts (th.num), Last report, with one tr[data-host=<.Name>] per
      host, in the order of .Hosts, holding td.host-name (a.host-link, href
-     "/<.Name>", .Name in a code element), td.host-state holding
+     "/hosts/<.Name>", .Name in a code element), td.host-state holding
      span.status[data-status=<.State>][data-kind=<kind>] (text .State)
      and, when .Reason is not empty, span.secondary-text.host-reason (text
      .Reason), td.host-health holding
@@ -115,7 +116,7 @@
      holding table#account-list whose th read Account, Host, DNS name,
      State, Users (th.num), Created, with one tr[data-account=<.Slug>] per
      account, in the order of .Accounts, holding td.account-slug (.Slug in
-     a code element), td.account-host (a.host-link, href "/<.Host>", .Host
+     a code element), td.account-host (a.host-link, href "/hosts/<.Host>", .Host
      in a code element), td.account-dns (.DNSName in a code element),
      td.account-state holding
      span.status[data-status=<.State>][data-kind=<kind>] (text .State),
@@ -167,7 +168,7 @@
 <thead><tr><th>Host</th><th>State</th><th>Health</th><th>Type</th><th class="num">Root (GB)</th><th class="num">Data (GB)</th><th>Elastic IP</th><th class="num">Accounts</th><th>Last report</th></tr></thead>
 <tbody>
 {{range .Hosts}}<tr data-host="{{.Name}}">
-<td class="host-name"><a class="host-link" href="/{{.Name}}"><code>{{.Name}}</code></a></td>
+<td class="host-name"><a class="host-link" href="/hosts/{{.Name}}"><code>{{.Name}}</code></a></td>
 <td class="host-state">{{template "host-state" .State}}{{if .Reason}}<span class="secondary-text host-reason">{{.Reason}}</span>{{end}}</td>
 <td class="host-health">{{template "host-health" .Health}}</td>
 <td class="host-type"><code>{{.Type}}</code></td>
@@ -194,7 +195,7 @@
 <tbody>
 {{range .Accounts}}<tr data-account="{{.Slug}}">
 <td class="account-slug"><code>{{.Slug}}</code></td>
-<td class="account-host"><a class="host-link" href="/{{.Host}}"><code>{{.Host}}</code></a></td>
+<td class="account-host"><a class="host-link" href="/hosts/{{.Host}}"><code>{{.Host}}</code></a></td>
 <td class="account-dns"><code>{{.DNSName}}</code></td>
 <td class="account-state">{{template "account-state" .State}}</td>
 <td class="account-users num">{{.UserCount}}</td>
@@ -257,7 +258,8 @@
      data-kind when it has one, text the state. Used by landing and host. */}}
 {{define "account-state"}}<span class="status" data-status="{{.}}"{{if eq . "active"}} data-kind="ok"{{else if or (eq . "pending") (eq . "removing")}} data-kind="info"{{end}}>{{.}}</span>{{end}}
 {{/* user-state: a user's state as a .status word. Data: the state string,
-     "active" or "locked". Kinds: "active" ok, "locked" warn. Hooks:
+     "active", "locked" or "removing". Kinds: "active" ok, "locked" warn,
+     "removing" info. Hooks:
      span.status[data-status=<state>][data-kind=<kind>], text the state.
      Used by landing. */}}
-{{define "user-state"}}<span class="status" data-status="{{.}}"{{if eq . "active"}} data-kind="ok"{{else if eq . "locked"}} data-kind="warn"{{end}}>{{.}}</span>{{end}}
+{{define "user-state"}}<span class="status" data-status="{{.}}"{{if eq . "active"}} data-kind="ok"{{else if eq . "locked"}} data-kind="warn"{{else if eq . "removing"}} data-kind="info"{{end}}>{{.}}</span>{{end}}

@@ -1,10 +1,10 @@
-{{/* One host at GET /<name>: its record and its latest report in full.
+{{/* One host at GET /hosts/<name>: its record and its latest report in full.
      Shown only to a signed-in user; a guest is sent to sign in; a name no
      host has, or a space whose configuration names no hosts domain, is the
      not-found page. The page does not stream: the host is shown as it
      stands when the page is loaded. Read-only: no form but the banner's
      sign out. One level below the root: .Banner's .Trail is the one level
-     <.Host.Name> at /<.Host.Name>.
+     <.Host.Name> at /hosts/<.Host.Name>.
      Data: .Banner (a page.Banner, for banner and footer); .Host, with
      .Name, .State, .Reason, .Health, .Type, .RootGB, .DataGB, .EIP,
      .AccountCount, .Reported and .ReportedText as landing names them, and
@@ -47,7 +47,7 @@
      When .Host.State is "provisioning", "stopping", "starting",
      "resizing" or "deleting", div#running.alert.quiet[data-kind=info]
      holding strong "In progress" and p "The page does not stream. Reload
-     it to see the outcome.", and a#reload.button (href "/<.Host.Name>",
+     it to see the outcome.", and a#reload.button (href "/hosts/<.Host.Name>",
      text "Reload").
      When .Host.Health is "silent", div#silent.alert.callout[data-kind=warn]
      holding strong "Nothing heard from this host" and p (text "The host
@@ -127,7 +127,7 @@
 <strong>In progress</strong>
 <p>The page does not stream. Reload it to see the outcome.</p>
 </div>
-<p><a id="reload" class="button" href="/{{.Name}}">Reload</a></p>
+<p><a id="reload" class="button" href="/hosts/{{.Name}}">Reload</a></p>
 {{end}}{{if eq .Health "silent"}}<div id="silent" class="alert callout" data-kind="warn">
 <strong>Nothing heard from this host</strong>
 <p>The host is running but has not reported for 5 minutes. People can still sign in with what it last applied.</p>

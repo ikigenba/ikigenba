@@ -4,7 +4,10 @@
      to sign in. Data: .Banner (a page.Banner, for banner and footer; its
      .Service is the name and its .Release and .Commit give the version
      row); .Description (the service's one-line description, the
-     manifest's). Hooks: title "About accounts"; h1 with text "About
+     manifest's); .DefaultType (string, the instance type a host gets when
+     its creation names none, "t4g.medium"); .DefaultRootGB and
+     .DefaultDataGB (int, the root and data volume sizes in GB a host gets
+     when its creation names none, 20 and 50). Hooks: title "About accounts"; h1 with text "About
      accounts"; dl#about.kv holding dt "Name" then dd#about-name
      (.Banner.Service), dt "Version" then dd#about-version (.Banner.Release
      and .Banner.Commit, present even when empty), and dt "Description" then
@@ -14,8 +17,9 @@
      each with an Elastic IP, a data volume holding /home and /srv, and
      SSH host keys kept on that volume, so a host keeps its address, its
      data and its identity across stop, start and resize. A host starts
-     on the type and sizes the tools choose, a t4g.medium with a 20 GB
-     root and a 50 GB data volume when they choose none; changing its
+     on the type and sizes the tools choose, a <.DefaultType> with a
+     <.DefaultRootGB> GB root and a <.DefaultDataGB> GB data volume when
+     they choose none; changing its
      type stops and starts it, and volumes only grow. Long operations
      run in the background: a host shows provisioning, running,
      stopping, stopped, starting, resizing, deleting or failed with its
@@ -43,7 +47,7 @@
      with the tools, and each change, and each host going silent, coming
      back in sync or failing to apply, is recorded in telemetry. This
      page only shows the hosts, accounts and users." (host01, host02,
-     /home, /srv, t4g.medium, /srv/<account>, <account>.<hosts domain> and
+     /home, /srv, .DefaultType, /srv/<account>, <account>.<hosts domain> and
      ssh <user>@<account>.<hosts domain> each in a code element).
      No section of the landing page's. No script but appkit's
      /_appkit/feedback.js. */}}
@@ -63,7 +67,7 @@
 </section>
 <section id="how" class="card" aria-labelledby="how-title">
 <header><h2 id="how-title">How it works</h2></header>
-<p>accounts runs SSH as a service. It keeps a fleet of machines, hosts, named <code>host01</code>, <code>host02</code> and on in order, each with an Elastic IP, a data volume holding <code>/home</code> and <code>/srv</code>, and SSH host keys kept on that volume, so a host keeps its address, its data and its identity across stop, start and resize. A host starts on the type and sizes the tools choose, a <code>t4g.medium</code> with a 20 GB root and a 50 GB data volume when they choose none; changing its type stops and starts it, and volumes only grow. Long operations run in the background: a host shows provisioning, running, stopping, stopped, starting, resizing, deleting or failed with its reason, and a failed operation can be retried.</p>
+<p>accounts runs SSH as a service. It keeps a fleet of machines, hosts, named <code>host01</code>, <code>host02</code> and on in order, each with an Elastic IP, a data volume holding <code>/home</code> and <code>/srv</code>, and SSH host keys kept on that volume, so a host keeps its address, its data and its identity across stop, start and resize. A host starts on the type and sizes the tools choose, a <code>{{.DefaultType}}</code> with a {{.DefaultRootGB}} GB root and a {{.DefaultDataGB}} GB data volume when they choose none; changing its type stops and starts it, and volumes only grow. Long operations run in the background: a host shows provisioning, running, stopping, stopped, starting, resizing, deleting or failed with its reason, and a failed operation can be retried.</p>
 <p>An account is one business, placed on one host. Its slug names a Linux group, a service account of the same name and the folder <code>/srv/&lt;account&gt;</code>, which every user of the account writes to and nobody else reads, and reserves the DNS name <code>&lt;account&gt;.&lt;hosts domain&gt;</code>, which points at its host. Each account runs in a slice of its own with an equal share of the host's CPU and a memory ceiling, so one busy business slows only itself. Account slugs and user names are unique across every host. An account with users cannot be removed, and removing an empty one leaves its folder on the data volume; a host with accounts cannot be deleted, and deleting an empty one keeps its data volume.</p>
 <p>A user is a person in exactly one account, with a login name, one or more ed25519 public keys and a state, active or locked. They sign in with <code>ssh &lt;user&gt;@&lt;account&gt;.&lt;hosts domain&gt;</code> and a key, never a password, and get a home readable by them alone. Locking a user ends their access and keeps their home; only a locked user can be deleted, which removes their home. Each host runs a daemon that fetches what the host should hold and makes it so, and reports back each cycle; a change shows as pending until the host reports it applied. A host keeps working with what it last applied when accounts cannot be reached.</p>
 <p>Every change is made by an agent with the tools, and each change, and each host going silent, coming back in sync or failing to apply, is recorded in telemetry. This page only shows the hosts, accounts and users.</p>
