@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"syscall"
 	"time"
 
@@ -122,6 +121,14 @@ func stageSuite(ctx context.Context, worktree, stage, sha, version string, deps 
 	if err != nil {
 		return "", nil, err
 	}
+	extraCommands := make(map[string][]string)
+	for _, app := range apps {
+		commands, err := discoverExtraCommands(app)
+		if err != nil {
+			return "", nil, err
+		}
+		extraCommands[app.Name] = commands
+	}
 	archiveRoot := filepath.Join(stage, "members")
 	releaseRoot := filepath.Join(archiveRoot, sha)
 	releaseEnv := []string{"GOOS=linux", "GOARCH=arm64", "CGO_ENABLED=0", "GOWORK=off"}
@@ -151,8 +158,10 @@ func stageSuite(ctx context.Context, worktree, stage, sha, version string, deps 
 			return "", nil, err
 		}
 		manifests = append(manifests, decoded)
-		if err := compileExtraCommands(ctx, app, binDir, releaseEnv, deps); err != nil {
-			return "", nil, err
+		for _, command := range extraCommands[app.Name] {
+			if err := compileSuite(ctx, app.Name, command, app.Dir, filepath.Join(binDir, command), releaseEnv, deps); err != nil {
+				return "", nil, err
+			}
 		}
 		if err := writeArchiveFile(filepath.Join(destination, checkout.ManifestFile), bytes.NewReader(manifest), mode); err != nil {
 			return "", nil, err
@@ -191,25 +200,23 @@ func stageSuite(ctx context.Context, worktree, stage, sha, version string, deps 
 	return archive, manifests, nil
 }
 
-func compileExtraCommands(ctx context.Context, app checkout.App, binDir string, env []string, deps seam.Deps) error {
+func discoverExtraCommands(app checkout.App) ([]string, error) {
 	entries, err := os.ReadDir(filepath.Join(app.Dir, "cmd"))
 	if err != nil {
-		return err
+		return nil, err
 	}
+	var commands []string
 	for _, entry := range entries {
 		name := entry.Name()
 		if !entry.IsDir() || name == app.Name {
 			continue
 		}
-		// The go command treats ... as a package wildcard, even in a literal directory name.
-		if strings.Contains(name, "...") {
-			return fmt.Errorf("build %s: extra command %q contains ... which Go treats as a package wildcard", app.Name, name)
+		if !appref.ValidName(name) {
+			return nil, &UsageError{Message: fmt.Sprintf("%s: cmd/%s is not a usable command name", app.Name, name)}
 		}
-		if err := compileSuite(ctx, app.Name, name, app.Dir, filepath.Join(binDir, name), env, deps); err != nil {
-			return err
-		}
+		commands = append(commands, name)
 	}
-	return nil
+	return commands, nil
 }
 
 func compileSuite(ctx context.Context, name, command, dir, binary string, env []string, deps seam.Deps) error {

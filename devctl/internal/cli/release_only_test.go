@@ -74,7 +74,7 @@ func TestDeployArchivePathIsACommitOperand(t *testing.T) {
 }
 
 func TestSuiteManifestFailuresHaveNoArchiveOrOutput(t *testing.T) {
-	// R-NJ0I-ALMX R-R85U-C9RT
+	// R-29GH-EAVS R-R85U-C9RT
 	for _, nonzero := range []bool{false, true} {
 		f := newCLISuiteFixture(t)
 		f.apps = []string{"crm"}

@@ -41,22 +41,132 @@ func TestSuiteDispatchThroughCLI(t *testing.T) {
 }
 
 func TestSuiteRunsOnlyHostManifestsThroughCLI(t *testing.T) {
-	// R-WGTF-0VMA
+	// R-24KV-V7X0
 	f := newCLISuiteFixture(t)
 	f.apps = []string{"auth", "crm"}
 	f.files = map[string]string{"crm/cmd/crmd/main.go": "package main\n"}
 	assertResult(t, invokeWithDeps(f.deps(), "build", "r1"), 0, "dist/"+cliSuiteSHA+".tar.xz\n", "")
-	if !reflect.DeepEqual(f.manifestCalls, map[string]int{"auth": 1, "crm": 1}) {
-		t.Fatalf("manifest calls %v", f.manifestCalls)
+	wantRuns := make(map[string]int, len(f.apps))
+	for _, app := range f.apps {
+		wantRuns[f.compilerOutputs[app]]++
 	}
+	runs := make(map[string]int, len(f.apps))
 	for _, c := range f.commands {
-		if !filepath.IsAbs(c.Path) {
+		if c.Path == "git" || c.Path == "go" || c.Path == "tar" {
 			continue
 		}
-		app := filepath.Base(c.Dir)
-		if c.Path != f.compilerOutputs[app] || c.Path == f.releaseOutputs[app] || f.extraOutputs[c.Path] || !slices.Equal(c.Args, []string{"manifest"}) {
+		if wantRuns[c.Path] == 0 || f.extraOutputs[c.Path] || !slices.Equal(c.Args, []string{"manifest"}) {
 			t.Fatalf("unexpected executable run %#v", c)
 		}
+		for _, path := range f.releaseOutputs {
+			if c.Path == path {
+				t.Fatalf("executed release binary %#v", c)
+			}
+		}
+		runs[c.Path]++
+	}
+	if !reflect.DeepEqual(runs, wantRuns) {
+		t.Fatalf("manifest runs %v, want %v", runs, wantRuns)
+	}
+}
+
+func TestSuiteRejectsUnusableExtraCommandNamesThroughCLI(t *testing.T) {
+	// R-20X6-PWOX R-23CZ-HG6B
+	for _, name := range []string{"...", ".hidden", "_x", "Tool", "host"} {
+		t.Run(name, func(t *testing.T) {
+			f := newCLISuiteFixture(t)
+			f.apps = []string{"auth", "crm"}
+			f.files = map[string]string{"crm/cmd/" + name + "/README.md": "no Go files"}
+			assertResult(t, invokeWithDeps(f.deps(), "build", "r1"), 2, "", "devctl: crm: cmd/"+name+" is not a usable command name\n")
+			f.assertNoCompile(t)
+		})
+	}
+	for _, test := range []struct {
+		name      string
+		apps      []string
+		files     map[string]string
+		omitShare bool
+		want      string
+	}{
+		{
+			name: "first directory", apps: []string{"auth", "crm"},
+			files: map[string]string{"crm/cmd/Tool/README.md": "", "crm/cmd/.hidden/README.md": ""},
+			want:  "crm: cmd/.hidden is not a usable command name",
+		},
+		{
+			name: "first app", apps: []string{"auth", "crm"},
+			files: map[string]string{"auth/cmd/_x/README.md": "", "crm/cmd/.../README.md": ""},
+			want:  "auth: cmd/_x is not a usable command name",
+		},
+		{
+			name: "forbidden directory", apps: []string{"auth", "crm"},
+			files: map[string]string{"crm/cmd/.../README.md": "", "crm/sbin/tool": "tool"},
+			want:  "crm: sbin/ is not allowed in a release",
+		},
+		{
+			name: "missing share", apps: []string{"auth", "crm"}, omitShare: true,
+			files: map[string]string{"crm/cmd/.../README.md": ""},
+			want:  "turns/share/ is missing at the commit",
+		},
+		{
+			name: "invalid app name", apps: []string{"auth", "crm", "host"},
+			files: map[string]string{"crm/cmd/.../README.md": ""},
+			want:  "'host' is not a usable app name",
+		},
+		{
+			name: "broken app manifest", apps: []string{"auth", "crm"},
+			files: map[string]string{"auth/cmd/.../README.md": "", "crm/etc/manifest.toml": "app = \"crm\"\nport = 8080\n"},
+			want:  "crm: etc/manifest.toml: 'port' is not allowed; the host gives the app its socket",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newCLISuiteFixture(t)
+			f.apps = test.apps
+			f.files = test.files
+			f.omitShare = test.omitShare
+			assertResult(t, invokeWithDeps(f.deps(), "build", "r1"), 2, "", "devctl: "+test.want+"\n")
+			f.assertNoCompile(t)
+		})
+	}
+}
+
+func TestSuiteAcceptsUsableExtraCommandNamesThroughCLI(t *testing.T) {
+	// R-20X6-PWOX
+	f := newCLISuiteFixture(t)
+	f.apps = []string{"auth", "crm"}
+	f.files = map[string]string{
+		"crm/cmd/...":              "regular file",
+		"crm/cmd/opsctl/main.go":   "package main\n",
+		"crm/cmd/testdata/main.go": "package main\n",
+		"crm/cmd/turns/main.go":    "package main\n",
+		"opsctl/cmd/.x/README.md":  "",
+		"turns/cmd/.x/README.md":   "",
+	}
+	f.mutate = func(dir string) {
+		if err := os.Symlink("crm", filepath.Join(dir, "crm", "cmd", ".x")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertResult(t, invokeWithDeps(f.deps(), "build", "r1"), 0, "dist/"+cliSuiteSHA+".tar.xz\n", "")
+	var packages []string
+	for _, c := range f.commands {
+		if c.Path != "go" {
+			continue
+		}
+		if slices.Contains(c.Args, "./cmd/...") || slices.Contains(c.Args, "./cmd/.x") {
+			t.Fatalf("compile named an excluded command: %#v", c)
+		}
+		pkg := c.Args[len(c.Args)-1]
+		if pkg == "./cmd/"+filepath.Base(c.Dir) {
+			continue
+		}
+		if c.Dir != filepath.Join(f.worktree, "crm") {
+			t.Fatalf("extra compile outside crm: %#v", c)
+		}
+		packages = append(packages, pkg)
+	}
+	if want := []string{"./cmd/opsctl", "./cmd/testdata", "./cmd/turns"}; !slices.Equal(packages, want) {
+		t.Fatalf("extra packages %q, want %q", packages, want)
 	}
 }
 
@@ -146,7 +256,7 @@ func TestSuiteStopsOnManifestBuildFailureThroughCLI(t *testing.T) {
 }
 
 func TestSuiteCompileOrderThroughCLI(t *testing.T) {
-	// R-WD5P-VKE7
+	// R-25SS-8ZNP
 	f := newCLISuiteFixture(t)
 	f.apps = []string{"auth", "dummy", "events", "mcp", "repos", "scripts", "sites", "telemetry"}
 	f.write(filepath.Join(f.root, "go.work"), "go 1.26\n")
@@ -185,7 +295,9 @@ func TestSuiteCompileOrderThroughCLI(t *testing.T) {
 				t.Fatalf("manifest args %q, want %q", c.Args, wantArgs)
 			}
 		} else {
-			if len(c.Args) == 0 || c.Args[0] != "build" || !slices.Contains(c.Args, "-buildvcs=false") || !slices.Contains(c.Args, "./cmd/"+names[i]) || suiteCompilerOutput(c.Args) != output {
+			outputIndex := slices.Index(c.Args, "-o")
+			if len(c.Args) == 0 || c.Args[0] != "build" || !slices.Contains(c.Args, "-buildvcs=false") ||
+				c.Args[len(c.Args)-1] != "./cmd/"+names[i] || outputIndex < 0 || outputIndex+1 >= len(c.Args) || c.Args[outputIndex+1] != output {
 				t.Fatalf("release compile command %#v", c)
 			}
 			for _, arg := range c.Args {
@@ -198,7 +310,7 @@ func TestSuiteCompileOrderThroughCLI(t *testing.T) {
 }
 
 func TestSuiteExtraCompileOrderThroughCLI(t *testing.T) {
-	// R-WD5P-VKE7
+	// R-25SS-8ZNP
 	f := newCLISuiteFixture(t)
 	f.apps = []string{"auth", "crm"}
 	f.files = map[string]string{
@@ -228,6 +340,7 @@ func TestSuiteExtraCompileOrderThroughCLI(t *testing.T) {
 }
 
 func TestSuiteDiscoversExtraCommandDirectoriesThroughCLI(t *testing.T) {
+	// R-23CZ-HG6B
 	for _, file := range []struct{ name, contents string }{
 		{"README.md", "no Go files"},
 		{"pkg.go", "package pkg\n"},
@@ -250,6 +363,11 @@ func TestSuiteDiscoversExtraCommandDirectoriesThroughCLI(t *testing.T) {
 			for _, c := range f.commands {
 				if c.Path != "go" {
 					continue
+				}
+				for _, excluded := range []string{"./cmd/notes.txt", "./cmd/link", "./cmd/opshelper", "./cmd/turnsd"} {
+					if slices.Contains(c.Args, excluded) {
+						t.Fatalf("compile named an excluded command: %#v", c)
+					}
 				}
 				pkg := c.Args[len(c.Args)-1]
 				if pkg == "./cmd/"+filepath.Base(c.Dir) {
@@ -525,6 +643,7 @@ type cliSuiteFixture struct {
 	compiled                         []string
 	commands                         []seam.Cmd
 	compilerOutputs                  map[string]string
+	manifestApps                     map[string]string
 	releaseOutputs                   map[string]string
 	extraOutputs                     map[string]bool
 	manifestCalls                    map[string]int
@@ -535,7 +654,7 @@ func newCLISuiteFixture(t *testing.T) *cliSuiteFixture {
 	t.Helper()
 	return &cliSuiteFixture{
 		t: t, root: t.TempDir(),
-		compilerOutputs: map[string]string{}, releaseOutputs: map[string]string{}, extraOutputs: map[string]bool{},
+		compilerOutputs: map[string]string{}, manifestApps: map[string]string{}, releaseOutputs: map[string]string{}, extraOutputs: map[string]bool{},
 	}
 }
 func (f *cliSuiteFixture) write(path, contents string) {
@@ -654,6 +773,7 @@ func (f *cliSuiteFixture) exec(_ context.Context, c seam.Cmd) (seam.Result, erro
 			case isManifest:
 				contents = "manifest binary " + app
 				f.compilerOutputs[app] = output
+				f.manifestApps[output] = app
 			default:
 				f.releaseOutputs[app] = output
 			}
@@ -699,9 +819,9 @@ func (f *cliSuiteFixture) exec(_ context.Context, c seam.Cmd) (seam.Result, erro
 		if !reflect.DeepEqual(c.Args, []string{"manifest"}) {
 			f.t.Fatalf("unexpected binary: %#v", c)
 		}
-		app := filepath.Base(c.Path)
-		if app == "opsctl" || app == "turns" || f.compilerOutputs[app] == "" || c.Path != f.compilerOutputs[app] {
-			f.t.Fatalf("manifest path = %q, want compiled app binary %q", c.Path, f.compilerOutputs[app])
+		app, ok := f.manifestApps[c.Path]
+		if !ok || app == "opsctl" || app == "turns" {
+			f.t.Fatalf("manifest path = %q, compiled outputs = %v", c.Path, f.compilerOutputs)
 		}
 		if f.manifestCalls == nil {
 			f.manifestCalls = make(map[string]int)

@@ -30,22 +30,23 @@ type suiteMember struct {
 	Mode  uint32
 }
 type suiteFixture struct {
-	t           *testing.T
-	root        string
-	deps        seam.Deps
-	commands    []seam.Cmd
-	files       map[string]suiteMember
-	apps        []string
-	mutate      func(string)
-	fail        string
-	runnerError error
-	removeFail  bool
-	cancel      context.CancelFunc
-	worktrees   []string
-	members     map[string]suiteMember
-	compiled    map[string]string
-	releases    map[string]string
-	extras      map[string]string
+	t            *testing.T
+	root         string
+	deps         seam.Deps
+	commands     []seam.Cmd
+	files        map[string]suiteMember
+	apps         []string
+	mutate       func(string)
+	fail         string
+	runnerError  error
+	removeFail   bool
+	cancel       context.CancelFunc
+	worktrees    []string
+	members      map[string]suiteMember
+	compiled     map[string]string
+	manifestApps map[string]string
+	releases     map[string]string
+	extras       map[string]string
 }
 
 func newSuite(t *testing.T) *suiteFixture {
@@ -110,6 +111,7 @@ func (f *suiteFixture) exec(ctx context.Context, c seam.Cmd) (seam.Result, error
 				}
 				f.worktrees = append(f.worktrees, dir)
 				f.compiled = map[string]string{}
+				f.manifestApps = map[string]string{}
 				f.releases = map[string]string{}
 				f.extras = map[string]string{}
 				for _, name := range f.apps {
@@ -167,6 +169,7 @@ func (f *suiteFixture) exec(ctx context.Context, c seam.Cmd) (seam.Result, error
 			case isManifest:
 				contents = "manifest binary " + name
 				f.compiled[name] = output
+				f.manifestApps[output] = name
 			default:
 				f.releases[name] = output
 			}
@@ -235,12 +238,12 @@ func (f *suiteFixture) exec(ctx context.Context, c seam.Cmd) (seam.Result, error
 	if _, exists := f.extras[c.Path]; exists {
 		return seam.Result{}, errors.New("cannot execute extra binary on build host")
 	}
-	name := filepath.Base(c.Path)
 	if reflect.DeepEqual(c.Args, []string{"--version"}) {
 		return seam.Result{ExitCode: 1}, nil
 	}
 	if reflect.DeepEqual(c.Args, []string{"manifest"}) {
-		if name == "opsctl" || name == "turns" || f.compiled[name] == "" || c.Path != f.compiled[name] {
+		name, ok := f.manifestApps[c.Path]
+		if !ok || name == "opsctl" || name == "turns" {
 			f.t.Fatalf("manifest did not run the compiled app binary: %#v; compiled outputs %#v", c, f.compiled)
 		}
 		if f.fail == "manifest "+name {
@@ -258,6 +261,24 @@ func (f *suiteFixture) run(ctx context.Context, operand string) (string, error) 
 	var out bytes.Buffer
 	err := build.Run(ctx, []string{operand}, "test-version", &out, f.deps)
 	return out.String(), err
+}
+
+func (f *suiteFixture) publishedMembers() map[string]suiteMember {
+	f.t.Helper()
+	root, err := os.OpenRoot(f.root)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	data, err := root.ReadFile(build.ReleaseFile(suiteSHA))
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	var members map[string]suiteMember
+	if err := json.Unmarshal(data, &members); err != nil {
+		f.t.Fatal(err)
+	}
+	return members
 }
 func (f *suiteFixture) count(path string) int {
 	n := 0
@@ -290,7 +311,7 @@ func (f *suiteFixture) assertCleanup() {
 
 func TestSuiteArchiveIsolationAndMetadata(t *testing.T) {
 	// R-FN66-1TL1
-	// R-WJ97-SF3O
+	// R-288L-0J53
 	// R-G683-IC4D
 	f := newSuite(t)
 	f.apps = []string{"auth", "crm"}
@@ -317,15 +338,20 @@ func TestSuiteArchiveIsolationAndMetadata(t *testing.T) {
 	if out != build.ReleaseFile(suiteSHA)+"\n" {
 		t.Fatalf("stdout %q", out)
 	}
+	members := f.publishedMembers()
 	regular := map[string]string{}
-	for p, m := range f.members {
+	for p, m := range members {
 		if strings.Contains(p, "test-version") {
 			t.Fatalf("version in member %q", p)
 		}
 		if os.FileMode(m.Mode).IsDir() {
 			continue
 		}
-		regular[strings.TrimPrefix(p, suiteSHA+"/")] = m.Bytes
+		relative, ok := strings.CutPrefix(p, suiteSHA+"/")
+		if !ok || !os.FileMode(m.Mode).IsRegular() {
+			t.Fatalf("unexpected member %q with mode %#o", p, m.Mode)
+		}
+		regular[relative] = m.Bytes
 	}
 	meta := regular["release.json"]
 	delete(regular, "release.json")
@@ -338,12 +364,12 @@ func TestSuiteArchiveIsolationAndMetadata(t *testing.T) {
 	if !reflect.DeepEqual(regular, want) {
 		t.Fatalf("regular members %#v want %#v", regular, want)
 	}
-	for p, m := range f.members {
+	for p, m := range members {
 		if os.FileMode(m.Mode).IsDir() {
 			prefix := p + "/"
 			ancestor := false
-			for file := range f.members {
-				if strings.HasPrefix(file, prefix) {
+			for file, member := range members {
+				if os.FileMode(member.Mode).IsRegular() && strings.HasPrefix(file, prefix) {
 					ancestor = true
 				}
 			}
@@ -353,12 +379,12 @@ func TestSuiteArchiveIsolationAndMetadata(t *testing.T) {
 		}
 	}
 	for _, p := range []string{"auth/bin/auth", "crm/bin/crm", "crm/bin/crmd", "crm/etc/manifest.toml", "opsctl/bin/opsctl", "turns/bin/turns", "turns/share/systemd/turns.timer", "crm/libexec/helper"} {
-		if f.members[suiteSHA+"/"+p].Mode&0o100 == 0 {
+		if members[suiteSHA+"/"+p].Mode&0o100 == 0 {
 			t.Fatalf("not owner executable %s", p)
 		}
 	}
-	for _, p := range []string{"auth/etc/manifest.toml", "crm/etc/nginx.conf", "crm/lib/x.so", "turns/share/systemd/turns.service", "release.json"} {
-		if f.members[suiteSHA+"/"+p].Mode&0o100 != 0 {
+	for _, p := range []string{"auth/etc/manifest.toml", "crm/etc/nginx.conf", "crm/share/icon.svg", "crm/share/doc/a.md", "crm/lib/x.so", "turns/share/systemd/turns.service", "release.json"} {
+		if members[suiteSHA+"/"+p].Mode&0o100 != 0 {
 			t.Fatalf("unexpected executable %s", p)
 		}
 	}
@@ -404,7 +430,7 @@ func TestSuiteCommitFormsHaveSameRelease(t *testing.T) {
 }
 
 func TestSuiteCopiesWholeTurnsShare(t *testing.T) {
-	// R-WJ97-SF3O
+	// R-288L-0J53
 	f := newSuite(t)
 	f.files["turns/share/nested/data/value"] = suiteMember{Bytes: "arbitrary committed bytes\x00", Mode: 0o640}
 	f.files["turns/share/helpers/run"] = suiteMember{Bytes: "executable committed bytes", Mode: 0o740}
@@ -419,20 +445,21 @@ func TestSuiteCopiesWholeTurnsShare(t *testing.T) {
 	if _, err := f.run(context.Background(), "r1"); err != nil {
 		t.Fatal(err)
 	}
+	members := f.publishedMembers()
 	for path, source := range f.files {
-		member, ok := f.members[suiteSHA+"/"+path]
+		member, ok := members[suiteSHA+"/"+path]
 		if !ok || member.Bytes != source.Bytes || member.Mode&0o100 != source.Mode&0o100 {
 			t.Fatalf("share member %s: %#v, want %#v", path, member, source)
 		}
 	}
 	for _, excluded := range []string{"turns/share/link", "turns/share/empty"} {
-		if _, ok := f.members[suiteSHA+"/"+excluded]; ok {
+		if _, ok := members[suiteSHA+"/"+excluded]; ok {
 			t.Fatalf("unexpected member %s", excluded)
 		}
 	}
 }
 func TestSuiteCompileCommands(t *testing.T) {
-	// R-WD5P-VKE7
+	// R-25SS-8ZNP
 	f := newSuite(t)
 	f.apps = []string{"auth", "dummy", "events", "mcp", "repos", "scripts", "sites", "telemetry"}
 	f.put(f.root, "go.work", "go 1.26\n", 0o644)
@@ -676,25 +703,22 @@ func TestSuiteManifestFailuresStopLaterCompiles(t *testing.T) {
 	}
 }
 
-func TestSuiteRefusesWildcardCommandNames(t *testing.T) {
+func TestSuiteRefusesUnusableExtraCommandsBeforeCompiling(t *testing.T) {
+	// R-20X6-PWOX
 	for _, name := range []string{"...", "crm...ctl"} {
 		t.Run(name, func(t *testing.T) {
 			f := newSuite(t)
+			f.apps = []string{"auth", "crm"}
 			f.files["crm/cmd/"+name+"/README.md"] = suiteMember{Bytes: "no Go source", Mode: 0o600}
 			f.put(f.root, build.ReleaseFile(suiteSHA), "earlier archive", 0o600)
 
 			out, err := f.run(t.Context(), "r1")
-			if want := fmt.Sprintf("build crm: extra command %q contains ... which Go treats as a package wildcard", name); err == nil || err.Error() != want || out != "" {
+			var usage *build.UsageError
+			if want := "crm: cmd/" + name + " is not a usable command name"; !errors.As(err, &usage) || usage.Message != want || usage.Help != "" || out != "" {
 				t.Fatalf("stdout %q error %v, want error %q", out, err, want)
 			}
-			var packages []string
-			for _, c := range f.commands {
-				if c.Path == "go" {
-					packages = append(packages, c.Args[len(c.Args)-1])
-				}
-			}
-			if !slices.Equal(packages, []string{"./cmd/crm", "./cmd/crm"}) || f.count("tar") != 0 {
-				t.Fatalf("compiled %q, tar calls %d", packages, f.count("tar"))
+			if f.count("go") != 0 || f.count("tar") != 0 {
+				t.Fatalf("go calls %d, tar calls %d", f.count("go"), f.count("tar"))
 			}
 			data, err := os.ReadFile(filepath.Join(f.root, build.ReleaseFile(suiteSHA)))
 			if err != nil || string(data) != "earlier archive" {
@@ -890,7 +914,7 @@ func TestSuitePublicAPI(t *testing.T) {
 	f.files["auth/etc/manifest.toml"] = suiteMember{Bytes: auth, Mode: 0o644}
 	original := f.deps.Exec
 	f.deps.Exec = func(ctx context.Context, c seam.Cmd) (seam.Result, error) {
-		if filepath.Base(c.Path) == "auth" && reflect.DeepEqual(c.Args, []string{"manifest"}) {
+		if f.manifestApps[c.Path] == "auth" && reflect.DeepEqual(c.Args, []string{"manifest"}) {
 			f.commands = append(f.commands, c)
 			return seam.Result{Stdout: []byte(auth)}, nil
 		}

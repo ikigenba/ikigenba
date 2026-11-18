@@ -13,7 +13,7 @@ import (
 )
 
 func TestSuiteBuildsAndRunsHostManifests(t *testing.T) {
-	// R-WFLI-N3VL
+	// R-270O-MREE
 	for _, failure := range []string{"", "stale crm", "manifest crm", "manifest build crm", "compile crm", "compile opsctl", "compile turns", "tar", "remove"} {
 		t.Run(failure, func(t *testing.T) {
 			f := newSuite(t)
@@ -40,6 +40,7 @@ func TestSuiteBuildsAndRunsHostManifests(t *testing.T) {
 				t.Fatalf("stdout %q error %v", out, err)
 			}
 			manifestBuilds := map[string]seam.Cmd{}
+			manifestApps := map[string]string{}
 			manifestRuns := map[string]int{}
 			compileCounts := map[string]int{}
 			for _, c := range f.commands {
@@ -57,6 +58,7 @@ func TestSuiteBuildsAndRunsHostManifests(t *testing.T) {
 						t.Fatalf("duplicate manifest build for %s", name)
 					}
 					manifestBuilds[name] = c
+					manifestApps[output] = name
 					wantEnv := []string{"CGO_ENABLED=0", "GOARCH=" + runtime.GOARCH, "GOOS=" + runtime.GOOS, "GOWORK=off"}
 					env := slices.Clone(c.Env)
 					slices.Sort(env)
@@ -78,10 +80,9 @@ func TestSuiteBuildsAndRunsHostManifests(t *testing.T) {
 					if _, err := os.Stat(output); !os.IsNotExist(err) {
 						t.Fatalf("manifest output remains at %q: %v", output, err)
 					}
-				} else if filepath.IsAbs(c.Path) {
-					name := filepath.Base(c.Dir)
-					manifestBuild, exists := manifestBuilds[name]
-					if !exists || c.Path != suiteCompilerOutput(manifestBuild.Args) || !slices.Equal(c.Args, []string{"manifest"}) {
+				} else if c.Path != "git" && c.Path != "tar" {
+					name, exists := manifestApps[c.Path]
+					if !exists || !slices.Equal(c.Args, []string{"manifest"}) {
 						t.Fatalf("unexpected executable run %#v", c)
 					}
 					manifestRuns[name]++
