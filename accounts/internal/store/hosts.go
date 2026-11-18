@@ -16,20 +16,29 @@ const hostFields = `name, seq, state, reason, instance_type, root_gb, data_gb, i
 const hostSelect = `SELECT ` + hostFields +
 	`, (SELECT count(*) FROM accounts WHERE host = hosts.name) FROM hosts`
 
-func scanHost(r scanner) (h Host, err error) {
-	err = r.Scan(&h.Name, &h.Seq, &h.State, &h.Reason, &h.Type, &h.RootGB, &h.DataGB,
+func scanHost(q query, r scanner) (h Host, err error) {
+	if err := r.Scan(&h.Name, &h.Seq, &h.State, &h.Reason, &h.Type, &h.RootGB, &h.DataGB,
 		&h.InstanceID, &h.RootVolume, &h.DataVolume, &h.AllocationID, &h.AssociationID, &h.EIP, &h.AZ,
 		&h.Version, &h.Applied, &h.Attempted, &h.ReportError, &h.Alarm, storedTime{&h.RunningSince},
-		storedTime{&h.Reported}, &h.Operation, storedTime{&h.Created}, &h.CreatedBy, &h.Accounts)
+		storedTime{&h.Reported}, &h.Operation, storedTime{&h.Created}, &h.CreatedBy, &h.Accounts); err != nil {
+		return Host{}, err
+	}
+	h.Allowlist, err = allowlist(q, h.Name)
 	return h, err
 }
 
 func getHost(q query, name string) (Host, error) {
-	return scanHost(q.row(hostSelect+" WHERE name = ?", name))
+	return scanHost(q, q.row(hostSelect+" WHERE name = ?", name))
 }
 
 func liveHost(q query, name string) (Host, error) {
-	return scanHost(q.row(hostSelect+" WHERE name = ? AND state <> ?", name, HostDeleted))
+	return scanHost(q, q.row(hostSelect+" WHERE name = ? AND state <> ?", name, HostDeleted))
+}
+
+func collectHosts(q query, stmt string, args ...any) ([]Host, error) {
+	return collect(q, func(r scanner) (Host, error) {
+		return scanHost(q, r)
+	}, hostSelect+stmt, args...)
 }
 
 func insertHost(q query, h Host) error {
@@ -54,7 +63,7 @@ func (s *Store) CreateHost(ctx context.Context, spec HostSpec, c identity.Caller
 			return hostOp{}, err
 		}
 		h := Host{Name: fmt.Sprintf("host%02d", seq), Seq: seq, State: HostProvisioning, Type: spec.Type,
-			RootGB: spec.RootGB, DataGB: spec.DataGB, Version: 1, Created: stamp, CreatedBy: c.UserID}
+			RootGB: spec.RootGB, DataGB: spec.DataGB, Version: 1, Created: stamp, CreatedBy: c.UserID, Allowlist: []string{}}
 		op, err := s.newOperation(w.query, Operation{Host: h.Name, Kind: OpCreate, Caller: c}, stamp)
 		if err != nil {
 			return hostOp{}, err
@@ -73,13 +82,13 @@ func (s *recordReader) Host(ctx context.Context, name string) (Host, error) {
 // HostByInstance reads the live host that owns an instance.
 func (s *recordReader) HostByInstance(ctx context.Context, id string) (Host, error) {
 	return read(ctx, s, true, func(q query) (Host, error) {
-		return scanHost(q.row(hostSelect+" WHERE instance_id = ? AND instance_id <> '' AND state <> ?", id, HostDeleted))
+		return scanHost(q, q.row(hostSelect+" WHERE instance_id = ? AND instance_id <> '' AND state <> ?", id, HostDeleted))
 	})
 }
 
 func (s *recordReader) hostPage(ctx context.Context, limit int, reverse bool, stmt string, args ...any) ([]Host, error) {
 	return read(ctx, s, validLimit(limit), func(q query) ([]Host, error) {
-		out, err := collect(q, scanHost, hostSelect+stmt, append(args, limit)...)
+		out, err := collectHosts(q, stmt, append(args, limit)...)
 		if reverse {
 			slices.Reverse(out)
 		}

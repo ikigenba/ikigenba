@@ -236,11 +236,16 @@ func assertEmptyStore(t *testing.T, st *store.Store) {
 	}
 }
 
-// R-EUVX-0DY8 R-QP6K-92D8 R-QVA2-5X2P
+// R-GUNC-P0SM R-QP6K-92D8 R-QVA2-5X2P
 func TestMCPRegistrationAndIdentity(t *testing.T) {
 	f := setup(t)
 	h := web.Handler(f.cfg)
-	catalog := []string{tools.ToolHosts, tools.ToolHost, tools.ToolCreateHost, tools.ToolStopHost, tools.ToolStartHost, tools.ToolResizeHost, tools.ToolRetryHost, tools.ToolDeleteHost, tools.ToolAccounts, tools.ToolAccount, tools.ToolCreateAccount, tools.ToolRemoveAccount, tools.ToolUsers, tools.ToolAddUser, tools.ToolAddKey, tools.ToolRemoveKey, tools.ToolLockUser, tools.ToolUnlockUser, tools.ToolDeleteUser}
+	catalog := []string{
+		tools.ToolHosts, tools.ToolHost, tools.ToolCreateHost, tools.ToolStopHost, tools.ToolStartHost, tools.ToolResizeHost,
+		tools.ToolRetryHost, tools.ToolDeleteHost, tools.ToolAccounts, tools.ToolAccount, tools.ToolCreateAccount, tools.ToolRemoveAccount,
+		tools.ToolUsers, tools.ToolAddUser, tools.ToolAddKey, tools.ToolRemoveKey, tools.ToolLockUser, tools.ToolUnlockUser, tools.ToolDeleteUser,
+		tools.ToolUnbanIP, tools.ToolAllowIP, tools.ToolDisallowIP,
+	}
 	registered := f.cfg.MCP.Tools()
 	if len(registered) != len(catalog) {
 		t.Fatal("registered count", len(registered))

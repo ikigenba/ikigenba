@@ -206,16 +206,22 @@ func (h *Host) remove(hostPath string) (bool, error) {
 
 // lineWriter streams output, discarding individual lines beyond the chosen limit.
 type lineWriter struct {
-	line      []byte
-	overLimit bool
-	limit     int
-	emit      func([]byte)
+	line          []byte
+	overLimit     bool
+	limit         int
+	emit          func([]byte)
+	countNonempty bool
+	nonempty      bool
+	total         int
 }
 
 func (w *lineWriter) Write(p []byte) (int, error) {
 	size := len(p)
 	for len(p) > 0 {
 		part, next, found := bytes.Cut(p, []byte{'\n'})
+		if w.countNonempty && !w.nonempty {
+			w.nonempty = len(bytes.Trim(part, " \t\r")) != 0
+		}
 		if !w.overLimit {
 			if len(w.line)+len(part) > w.limit {
 				w.overLimit = true
@@ -237,6 +243,10 @@ func (w *lineWriter) finish() {
 	}
 	w.line = w.line[:0]
 	w.overLimit = false
+	if w.nonempty {
+		w.total++
+		w.nonempty = false
+	}
 }
 
 func (h *Host) scan(hostPath string, visit func(string)) error {

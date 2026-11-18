@@ -8,7 +8,7 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 )
 
-// R-GVGS-XTNW R-HBBH-WUAX R-IVEV-IAEV R-0P5C-Q94L R-IXUO-9TW9 R-IZ2K-NLMY
+// R-GVGS-XTNW R-HBBH-WUAX R-27BJ-H0XA R-263N-396L R-IXUO-9TW9 R-IZ2K-NLMY
 // R-J0AH-1DDN R-J1ID-F54C R-J2Q9-SWV1 R-J6DY-Y834 R-IQJ9-Z7G3
 func TestDesiredReportAndWatch(t *testing.T) {
 	_, s, now := fixture(t)
@@ -26,6 +26,7 @@ func TestDesiredReportAndWatch(t *testing.T) {
 	d := value(t, result(s.Desired(ctx, h.Name)))
 	eq(t, d, protocol.DesiredState{Protocol: protocol.Version, Host: h.Name, Version: h.Version,
 		DataVolume: h.DataVolume, RootGB: h.RootGB, DataGB: h.DataGB,
+		Allowlist: []string{}, Unban: []string{},
 		Accounts: []protocol.Account{{Slug: a.Slug, GID: a.GID, State: protocol.AccountActive}},
 		Users: []protocol.User{
 			{Name: user.Name, Account: a.Slug, UID: user.UID, State: protocol.UserActive, Keys: []string{firstKey.Line}},

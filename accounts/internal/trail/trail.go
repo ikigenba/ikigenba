@@ -33,9 +33,9 @@ const (
 )
 
 // Change queues a changing tool's outcome.
-func Change(ctx context.Context, w *telemetry.Writer, tool, host, account, user, result string) {
+func Change(ctx context.Context, w *telemetry.Writer, tool, host, account, user, ip, result string) {
 	w.Emit(ctx, EventChangeFinished, telemetry.Attrs{
-		"tool": tool, "host": host, "account": account, "user": user, "result": result,
+		"tool": tool, "host": host, "account": account, "user": user, "ip": ip, "result": result,
 	})
 }
 

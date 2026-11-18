@@ -28,6 +28,19 @@ func validateState(s protocol.DesiredState) error {
 	if s.DataVolume != "" && !volumeID.MatchString(s.DataVolume) {
 		return machine.ErrInvalidState
 	}
+	if len(s.Allowlist) > protocol.MaxAllowlist || len(s.Unban) > protocol.MaxUnbans {
+		return machine.ErrInvalidState
+	}
+	for _, entry := range s.Allowlist {
+		if canonical, err := valid.AllowEntry(entry); err != nil || canonical != entry {
+			return machine.ErrInvalidState
+		}
+	}
+	for _, address := range s.Unban {
+		if canonical, err := valid.Address(address); err != nil || canonical != address {
+			return machine.ErrInvalidState
+		}
+	}
 	ids := make(map[int64]bool)
 	accounts := make(map[string]bool)
 	for _, a := range s.Accounts {

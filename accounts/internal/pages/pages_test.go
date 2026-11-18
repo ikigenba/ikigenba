@@ -168,7 +168,7 @@ func TestPageNamesAndTimeLayouts(t *testing.T) {
 	}
 }
 
-// R-A8L8-1TI4 R-A9T4-FL8T R-ATBI-JX3X R-S6XY-J6PQ R-0QD9-40VA R-SALN-OHXT R-SBTK-29OI R-SD1G-G1F7 R-AICF-3ZFO R-AJKB-HR6D R-AM04-9ANR R-SE9C-TT5W
+// R-A8L8-1TI4 R-A9T4-FL8T R-ATBI-JX3X R-S6XY-J6PQ R-0QD9-40VA R-TSTJ-2BVL R-TU1F-G3MA R-SD1G-G1F7 R-AICF-3ZFO R-AJKB-HR6D R-AM04-9ANR R-TYX0-Z6L2
 func TestTemplateSet(t *testing.T) {
 	t.Chdir(t.TempDir())
 	independent, err := page.Templates().ParseFS(accounts.Assets(), "*.html")
@@ -214,20 +214,32 @@ func TestTemplateSet(t *testing.T) {
 			eip, reason, stamp, visible = "192.0.2.1", "chosen-reason", "2026-11-17T14:05:09Z", "2026-11-17 14:05"
 			instance, volume = "chosen-instance", "chosen-volume"
 			rows = []pages.ToolRow{{"chosen-tool", "chosen-copy"}}
-			report = &pages.ReportView{stamp, visible, instance, "chosen-type", "chosen-ami", "chosen-os", "chosen-kernel", "chosen-daemon", stamp, visible, 2, 3, reason, 1, 2, 3, 4, 10, 11, 12, 13, pages.VolumeView{1, 2, 3, 4}, pages.VolumeView{5, 6, 7, 8}, 15, 16, true, []string{}, []pages.SliceRow{}}
+			report = &pages.ReportView{stamp, visible, instance, "chosen-type", "chosen-ami", "chosen-os", "chosen-kernel", "chosen-daemon", stamp, visible, 2, 3, reason, 1, 2, 3, 4, 10, 11, 12, 13, pages.VolumeView{1, 2, 3, 4}, pages.VolumeView{5, 6, 7, 8}, 15, 16, true, []string{}, []pages.SliceRow{}, []pages.BanRow{}, 0, []string{}}
 		}
 		var hosts []pages.HostRow
 		for i, state := range states {
 			health := healths[i%len(healths)]
 			hosts = append(hosts, pages.HostRow{"chosen-host", state, reason, health, "chosen-type", 20, 50, eip, 3, stamp, visible})
-			data := pages.HostData{b, pages.HostView{"chosen-host", state, reason, health, "chosen-type", 20, 50, eip, 3, stamp, visible, instance, volume, stamp, visible}, report}
+			data := pages.HostData{b, pages.HostView{"chosen-host", state, reason, health, "chosen-type", 20, 50, eip, 3, stamp, visible, instance, volume, stamp, visible, []string{}}, report}
 			check("host", data)
 			if report != nil {
 				populated := *report
 				populated.FailedUnits = []string{"chosen-unit"}
 				populated.Slices = []pages.SliceRow{{"chosen-slice", 17, 18}}
+				populated.Bans = []pages.BanRow{{"203.0.113.7", stamp, visible, stamp, visible}}
+				populated.BanTotal = len(populated.Bans)
+				populated.Allowlist = []string{"192.0.2.7"}
+				data.Host.Allowlist = []string{"192.0.2.0/24"}
 				data.Report = &populated
 				check("host", data)
+				populated.BanTotal++
+				check("host", data)
+				empty := *report
+				data.Report = &empty
+				for _, total := range []int{1, 517} {
+					empty.BanTotal = total
+					check("host", data)
+				}
 			}
 		}
 		var accountsRows []pages.AccountRow

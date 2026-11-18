@@ -176,7 +176,7 @@ func (cfg Config) host(ctx context.Context, a HostArgs) (HostRead, error) {
 		Type: answer.Type, RootGB: answer.RootGB, DataGB: answer.DataGB, EIP: answer.EIP,
 		Accounts: answer.Accounts, Reported: answer.Reported,
 		InstanceID: h.InstanceID, DataVolume: h.DataVolume, Version: h.Version, Applied: h.Applied,
-		Created: stamp(h.Created), CreatedBy: h.CreatedBy, AccountNames: names,
+		Created: stamp(h.Created), CreatedBy: h.CreatedBy, AccountNames: names, Allowlist: append([]string{}, h.Allowlist...),
 	}
 	switch h.State {
 	case store.HostRunning, store.HostStopped:

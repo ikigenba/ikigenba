@@ -261,6 +261,8 @@ func TestInspectHost(t *testing.T) {
 				}
 			}
 			return linux.Result{ExitCode: 1}, nil
+		case "fail2ban-client":
+			return linux.Result{}, nil
 		}
 		t.Fatalf("unexpected command %s", c.Name)
 		return linux.Result{}, nil

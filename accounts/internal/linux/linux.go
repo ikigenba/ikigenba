@@ -28,6 +28,7 @@ const (
 	MaxCapture      = 64 << 10
 	ChownBatch      = 100
 	MaxJournalLine  = 64 << 10
+	MaxBanLine      = 512
 	UpdatesInterval = time.Hour
 )
 
@@ -178,11 +179,24 @@ func (h *Host) Apply(ctx context.Context, s protocol.DesiredState) error {
 		return err
 	}
 	for _, part := range []func(context.Context) error{
-		h.packages, h.imds, h.journal, h.updates, h.fail2ban, h.shell, h.growRoot,
+		h.packages, h.imds, h.journal, h.updates,
 	} {
 		if err := part(ctx); err != nil {
 			return err
 		}
+	}
+	started, err := h.fail2ban(ctx, s.Allowlist)
+	if err != nil {
+		return err
+	}
+	if err := h.liftBans(ctx, s, started); err != nil {
+		return err
+	}
+	if err := h.shell(ctx); err != nil {
+		return err
+	}
+	if err := h.growRoot(ctx); err != nil {
+		return err
 	}
 	hasData, err := h.data(ctx, s)
 	if err != nil {

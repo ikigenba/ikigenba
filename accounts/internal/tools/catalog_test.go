@@ -58,6 +58,9 @@ func catalog() []entry {
 		entryFor(tools.ToolLockUser, "lock_user", tools.DescribeLockUser, mcp.Additive, nil, user),
 		entryFor(tools.ToolUnlockUser, "unlock_user", tools.DescribeUnlockUser, mcp.Additive, nil, user),
 		entryFor(tools.ToolDeleteUser, "delete_user", tools.DescribeDeleteUser, mcp.Destructive, nil, user),
+		entryFor(tools.ToolUnbanIP, "unban_ip", tools.DescribeUnbanIP, mcp.Additive, host, []string{"ip"}),
+		entryFor(tools.ToolAllowIP, "allow_ip", tools.DescribeAllowIP, mcp.Additive, nil, []string{"host", "ip"}),
+		entryFor(tools.ToolDisallowIP, "disallow_ip", tools.DescribeDisallowIP, mcp.Destructive, nil, []string{"host", "ip"}),
 	}
 }
 
@@ -125,7 +128,7 @@ func checkRequired(t *testing.T, s schema) {
 	}
 }
 
-// R-51DJ-TTH0 R-YDET-CHO2 R-YEMP-Q9ER R-YODW-SFCB R-OJAK-Q8E1 R-Z0KW-M4R9
+// R-51DJ-TTH0 R-YDET-CHO2 R-YEMP-Q9ER R-YODW-SFCB R-ZJJV-6E73 R-ZLZN-XXOH R-Z7CV-COS5 R-Z8KR-QGIU R-ZDGD-9JHM R-ZEO9-NB8B
 func TestCatalogAndSchemas(t *testing.T) {
 	const (
 		_ = tools.DescribeHosts
@@ -147,8 +150,17 @@ func TestCatalogAndSchemas(t *testing.T) {
 		_ = tools.DescribeLockUser
 		_ = tools.DescribeUnlockUser
 		_ = tools.DescribeDeleteUser
+		_ = tools.DescribeUnbanIP
+		_ = tools.DescribeAllowIP
+		_ = tools.DescribeDisallowIP
 	)
 	f := setup(t)
+	f.serveLoopback()
+	_ = struct {
+		IP   string
+		Host *string
+	}(tools.UnbanArgs{})
+	_ = struct{ Host, IP string }(tools.HostIPArgs{})
 	list, err := f.client.ListTools(context.Background(), f.caller)
 	if err != nil {
 		t.Fatal(err)
@@ -200,7 +212,7 @@ func checkInput(t *testing.T, info mcp.ToolInfo, expected entry) {
 	t.Helper()
 	copyByField := map[string]string{
 		"page": paging.PageDescription, "limit": paging.LimitDescription,
-		"host": tools.ArgHost, "account": tools.ArgAccount, "user": tools.ArgUser,
+		"host": tools.ArgHost, "account": tools.ArgAccount, "user": tools.ArgUser, "ip": tools.ArgIP,
 		"key": tools.ArgKey, "type": tools.ArgType, "root_gb": tools.ArgRootGB, "data_gb": tools.ArgDataGB,
 	}
 	var in schema
@@ -234,6 +246,8 @@ func validArgs(expected entry) map[string]any {
 	args := map[string]any{}
 	for _, n := range slices.Concat(expected.required, expected.optional) {
 		switch n {
+		case "ip":
+			args[n] = "192.0.2.7"
 		case "page":
 			args[n] = ""
 		case "limit", "root_gb", "data_gb":

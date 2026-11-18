@@ -18,7 +18,7 @@ import (
 var _ machine.Machine = (*machine.Memory)(nil)
 
 func TestMachineContracts(t *testing.T) {
-	// R-B9A3-2Z55 R-7QOL-B9O2 R-BBPV-UIMJ R-BCXS-8AD8
+	// R-B9A3-2Z55 R-7QOL-B9O2 R-BBPV-UIMJ R-ZSFH-07NI
 	const delay = 33 * time.Second
 	ctx, cancel := context.WithCancel(t.Context())
 	var sleeps int
@@ -43,7 +43,9 @@ func TestMachineContracts(t *testing.T) {
 	if err := m.InstallDaemon(t.Context(), strings.NewReader(""), ""); !errors.Is(err, machine.ErrNotExecutable) {
 		t.Fatalf("InstallDaemon with empty body = %v", err)
 	}
-	if got := m.(*machine.Memory).State(); !reflect.DeepEqual(got, machine.Snapshot{Accounts: nil, Users: nil, Folders: nil, Daemon: "", Applies: 0}) {
+	if got := m.(*machine.Memory).State(); !reflect.DeepEqual(got, machine.Snapshot{
+		Accounts: nil, Users: nil, Folders: nil, Daemon: "", Applies: 0, Allowlist: nil, Bans: nil,
+	}) {
 		t.Fatalf("initial snapshot = %+v", got)
 	}
 	if state := machine.NewMemory(machine.MemoryConfig{}).State(); state.Applies != 0 {
@@ -146,12 +148,16 @@ func TestMemoryApplyAndSnapshot(t *testing.T) {
 }
 
 func TestMemoryInspect(t *testing.T) {
-	// R-BE5O-M23X R-590I-GX4P
+	// R-BE5O-M23X R-WA02-2RB8
 	m := fixedMachine()
 	s := protocol.DesiredState{RootGB: 20, DataGB: 30, DataVolume: "vol-00000001", Accounts: []protocol.Account{
 		{Slug: "zebra", GID: 20000, State: protocol.AccountActive},
 		{Slug: "alpaca", GID: 20001, State: protocol.AccountActive},
 	}}
+	apply(t, m, s)
+	m.Ban("192.0.2.77")
+	m.Ban("192.0.2.7")
+	s.Allowlist = []string{"2001:db8::1", "198.51.100.0/24"}
 	apply(t, m, s)
 	if machine.MemoryUsed != 512<<20 || machine.MemoryAvailable != 3<<30 ||
 		machine.MemoryDiskUsed != 1<<30 || machine.MemoryInodesUsed != 50000 || machine.MemoryInodesTotal != 10000000 {
@@ -163,6 +169,12 @@ func TestMemoryInspect(t *testing.T) {
 		Root:   protocol.Disk{UsedBytes: machine.MemoryDiskUsed, SizeBytes: 20 << 30, InodesUsed: machine.MemoryInodesUsed, InodesTotal: machine.MemoryInodesTotal},
 		Data:   protocol.Disk{UsedBytes: machine.MemoryDiskUsed, SizeBytes: 30 << 30, InodesUsed: machine.MemoryInodesUsed, InodesTotal: machine.MemoryInodesTotal},
 		Slices: []protocol.Slice{{Account: "alpaca"}, {Account: "zebra"}},
+		Bans: []protocol.Ban{
+			{Address: "192.0.2.7", Banned: time.Unix(48, 0).UTC(), Expires: time.Unix(648, 0).UTC()},
+			{Address: "192.0.2.77", Banned: time.Unix(48, 0).UTC(), Expires: time.Unix(648, 0).UTC()},
+		},
+		BanTotal:  2,
+		Allowlist: []string{"198.51.100.0/24", "2001:db8::1"},
 	}
 	for _, volume := range []string{s.DataVolume, ""} {
 		s.DataVolume = volume

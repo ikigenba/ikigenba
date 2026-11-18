@@ -9,7 +9,7 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/cli"
 )
 
-// R-Y21B-A4SL R-C7K6-723O R-Y4H4-1O9Z
+// R-Y21B-A4SL R-C7K6-723O R-GSPX-5RRM
 func TestEmbeddedResources(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -18,7 +18,7 @@ func TestEmbeddedResources(t *testing.T) {
 	}{
 		{"assets", accounts.Assets, []string{"about.html", "host.html", "landing.html", "notfound.html", "tools.html"}},
 		{"etc", accounts.Etc, []string{"manifest.toml", "nginx.conf"}},
-		{"migrations", accounts.Migrations, []string{"0001_accounts.sql", "0002_hosts.sql"}},
+		{"migrations", accounts.Migrations, []string{"0001_accounts.sql", "0002_hosts.sql", "0003_bans.sql"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for range 2 {

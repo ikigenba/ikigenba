@@ -52,7 +52,7 @@ func hostView(h store.Host, now time.Time) HostView {
 		Name: row.Name, State: row.State, Reason: row.Reason, Health: row.Health, Type: row.Type,
 		RootGB: row.RootGB, DataGB: row.DataGB, EIP: row.EIP, AccountCount: row.AccountCount,
 		Reported: row.Reported, ReportedText: row.ReportedText, InstanceID: h.InstanceID, DataVolume: h.DataVolume,
-		Created: created, CreatedText: createdText,
+		Created: created, CreatedText: createdText, Allowlist: append([]string{}, h.Allowlist...),
 	}
 }
 
@@ -68,6 +68,12 @@ func reportView(report *store.Report, wanted int64) *ReportView {
 		rows = append(rows, SliceRow{Account: s.Account, CPUPercent: s.CPUPercent, MemoryBytes: s.MemoryBytes})
 	}
 	slices.SortFunc(rows, func(a, b SliceRow) int { return strings.Compare(a.Account, b.Account) })
+	bans := make([]BanRow, 0, len(body.Bans))
+	for _, ban := range body.Bans {
+		banned, bannedText := stamps(ban.Banned, SecondLayout)
+		expires, expiresText := stamps(ban.Expires, SecondLayout)
+		bans = append(bans, BanRow{Address: ban.Address, Banned: banned, BannedText: bannedText, Expires: expires, ExpiresText: expiresText})
+	}
 	return &ReportView{
 		Received: received, ReceivedText: receivedText, InstanceID: body.InstanceID, Type: body.Type, AMI: body.AMI,
 		OS: body.OS, Kernel: body.Kernel, DaemonVersion: body.DaemonVersion, Booted: booted, BootedText: bootedText,
@@ -76,5 +82,6 @@ func reportView(report *store.Report, wanted int64) *ReportView {
 		SwapUsed: body.SwapUsed, SwapTotal: body.SwapTotal, Root: VolumeView(body.Root), Data: VolumeView(body.Data),
 		Sessions: body.Sessions, Updates: body.Updates, Reboot: body.Reboot,
 		FailedUnits: append([]string{}, body.FailedUnits...), Slices: rows,
+		Bans: bans, BanTotal: body.BanTotal, Allowlist: append([]string{}, body.Allowlist...),
 	}
 }

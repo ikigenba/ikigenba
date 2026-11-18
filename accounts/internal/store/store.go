@@ -37,6 +37,7 @@ type Host struct {
 	Accounts                                                                 int
 	Created                                                                  time.Time
 	CreatedBy                                                                string
+	Allowlist                                                                []string
 }
 
 // HostSpec supplies the initial type and sizes.
@@ -191,6 +192,8 @@ var (
 	ErrTooManyKeys     = fmt.Errorf("user key limit reached: %w", ErrConflict)
 	ErrNotLocked       = fmt.Errorf("user is not locked: %w", ErrConflict)
 	ErrUserRemoving    = fmt.Errorf("user is being removed: %w", ErrConflict)
+	ErrTooManyUnbans   = fmt.Errorf("host pending unban limit reached: %w", ErrConflict)
+	ErrAllowlistFull   = fmt.Errorf("host allowlist limit reached: %w", ErrConflict)
 	ErrNotInAccount    = fmt.Errorf("user belongs to another account: %w", ErrNotFound)
 	ErrKeyNotHeld      = fmt.Errorf("user does not hold the key: %w", ErrNotFound)
 )
@@ -204,14 +207,19 @@ type Store struct {
 	d        *db.DB
 	cfg      Config
 	mu       sync.Mutex
-	watchers map[string]map[chan struct{}]struct{}
+	watchers map[string]*hostWatchers
+}
+
+type hostWatchers struct {
+	channels map[chan struct{}]struct{}
+	pending  bool
 }
 
 // New builds a store over the supplied handle without opening anything.
 func New(d *db.DB, cfg Config) *Store {
 	return &Store{
 		recordReader: recordReader{runRead: d.Read},
-		d:            d, cfg: cfg, watchers: make(map[string]map[chan struct{}]struct{}),
+		d:            d, cfg: cfg, watchers: make(map[string]*hostWatchers),
 	}
 }
 
@@ -338,25 +346,38 @@ func transact[T any](ctx context.Context, run func(context.Context, func(*sql.Tx
 
 type writing struct {
 	query
-	changed string // Every store write bumps the version of at most one host.
+	noteVersionChange func(string)
 }
 
 func write[T any](ctx context.Context, s *Store, valid bool, fn func(*writing) (T, error)) (T, error) {
 	// Keep the commit and its notification ordered with registrations.
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var changed string
-	out, err := transact(ctx, s.d.Write, valid, func(q query) (T, error) {
-		w := writing{query: q}
-		out, err := fn(&w)
-		changed = w.changed
-		return out, err
-	})
-	if err == nil && changed != "" {
-		for ch := range s.watchers[changed] {
-			close(ch)
+	var pending bool
+	noteVersionChange := func(host string) {
+		// Keep a mark on the existing watcher entry until the transaction ends.
+		if watchers := s.watchers[host]; watchers != nil {
+			watchers.pending = true
+			pending = true
 		}
-		delete(s.watchers, changed)
+	}
+	out, err := transact(ctx, s.d.Write, valid, func(q query) (T, error) {
+		return fn(&writing{query: q, noteVersionChange: noteVersionChange})
+	})
+	if pending {
+		for host, watchers := range s.watchers {
+			if !watchers.pending {
+				continue
+			}
+			watchers.pending = false
+			if err != nil {
+				continue
+			}
+			for ch := range watchers.channels {
+				close(ch)
+			}
+			delete(s.watchers, host)
+		}
 	}
 	return out, err
 }
@@ -371,7 +392,7 @@ func change(ctx context.Context, s *Store, valid bool, fn func(*writing) error) 
 func (w *writing) bump(host string) (int64, error) {
 	var version int64
 	err := w.row("UPDATE hosts SET version = version + 1 WHERE name = ? RETURNING version", host).Scan(&version)
-	w.changed = host
+	w.noteVersionChange(host)
 	return version, err
 }
 
@@ -386,15 +407,21 @@ func (s *Store) Watch(host string) (<-chan struct{}, func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ch := make(chan struct{})
-	if s.watchers[host] == nil {
-		s.watchers[host] = make(map[chan struct{}]struct{})
+	watchers := s.watchers[host]
+	if watchers == nil {
+		watchers = &hostWatchers{channels: make(map[chan struct{}]struct{})}
+		s.watchers[host] = watchers
 	}
-	s.watchers[host][ch] = struct{}{}
+	watchers.channels[ch] = struct{}{}
 	return ch, func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		delete(s.watchers[host], ch)
-		if len(s.watchers[host]) == 0 {
+		watchers := s.watchers[host]
+		if watchers == nil {
+			return
+		}
+		delete(watchers.channels, ch)
+		if len(watchers.channels) == 0 {
 			delete(s.watchers, host)
 		}
 	}

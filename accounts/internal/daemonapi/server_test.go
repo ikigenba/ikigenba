@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -398,7 +399,7 @@ func desired(t *testing.T, st *store.Store, name, digest string) protocol.Desire
 	return state
 }
 
-// R-RKK2-6VN1, R-RGWD-1KEY.
+// R-X1NT-0HH5, R-RGWD-1KEY.
 func TestImmediateState(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	stamps := new(requests)
@@ -419,12 +420,28 @@ func TestImmediateState(t *testing.T) {
 	} {
 		expectState(t, invoke(s, stamps.signed(t.Context(), http.MethodGet, path, nil)), want)
 	}
+	s = server(t, Config{
+		Store: st, Verifier: stamps.verifier(fixtureSTS{instance: fixtureInstance}), Configured: true,
+		After: func(time.Duration) <-chan time.Time {
+			t.Fatal("an empty daemon digest delayed a mismatched version")
+			return nil
+		},
+	})
+	expectState(t, invoke(s, stamps.signed(t.Context(), http.MethodGet, protocol.StatePath, nil)), desired(t, st, host.Name, ""))
 }
 
 func startPoll(t *testing.T, s *Server, req *http.Request, waits <-chan time.Duration) <-chan *httptest.ResponseRecorder {
 	t.Helper()
 	done := make(chan *httptest.ResponseRecorder, 1)
 	go func() { done <- invoke(s, req) }()
+	waitForPoll(t, waits, done)
+	return done
+}
+
+func waitForPoll(t *testing.T, waits <-chan time.Duration, done <-chan *httptest.ResponseRecorder) {
+	t.Helper()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
 	select {
 	case duration := <-waits:
 		if duration != protocol.LongPoll {
@@ -432,16 +449,17 @@ func startPoll(t *testing.T, s *Server, req *http.Request, waits <-chan time.Dur
 		}
 	case w := <-done:
 		t.Fatalf("poll finished before waiting: %d %s", w.Code, w.Body.String())
+	case <-deadline.C:
+		t.Fatal("poll did not reach its timer")
 	}
 	select {
 	case w := <-done:
 		t.Fatalf("poll finished early: %d %s", w.Code, w.Body.String())
 	default:
 	}
-	return done
 }
 
-// R-RMZU-YF4F, R-GKYK-5337.
+// R-AVPU-2ANX, R-AZDJ-7LW0.
 func TestPollEndsOnWriteTimeoutCancelOrStop(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	stamps := new(requests)
@@ -499,8 +517,116 @@ func TestPollEndsOnWriteTimeoutCancelOrStop(t *testing.T) {
 	expectState(t, invoke(s, stamps.signed(t.Context(), http.MethodGet, protocol.StatePath, nil)), state)
 }
 
-// R-RO7R-C6V4.
-func TestDesiredFailureAfterWait(t *testing.T) {
+type blockedPollWriter struct {
+	*httptest.ResponseRecorder
+	entered chan struct{}
+	release chan struct{}
+	first   sync.Once
+}
+
+func (w *blockedPollWriter) Write(p []byte) (int, error) {
+	w.first.Do(func() {
+		close(w.entered)
+		<-w.release
+	})
+	return w.ResponseRecorder.Write(p)
+}
+
+// R-AVPU-2ANX, R-AZDJ-7LW0.
+func TestMatchingDigestPollStopsWithoutWaitingForWriter(t *testing.T) {
+	_, st, host := fixtureStore(t)
+	stamps := new(requests)
+	file := filepath.Join(t.TempDir(), "accountsd")
+	writeBinary(t, file, []byte("fixture"))
+	wait := make(chan time.Duration, 1)
+	s := server(t, Config{
+		Store: st, Verifier: stamps.verifier(fixtureSTS{instance: fixtureInstance}), Configured: true, Binary: file,
+		After: func(d time.Duration) <-chan time.Time { wait <- d; return nil },
+	})
+	digest := s.Digest()
+	if digest == "" {
+		t.Fatal("non-empty fixture binary produced no digest")
+	}
+	req := stamps.signed(t.Context(), http.MethodGet, pollingRequest(host, digest), nil)
+	w := &blockedPollWriter{ResponseRecorder: httptest.NewRecorder(), entered: make(chan struct{}), release: make(chan struct{})}
+	release := sync.OnceFunc(func() { close(w.release) })
+	defer release()
+	result := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		s.ServeHTTP(w, req)
+		result <- w.ResponseRecorder
+	}()
+	waitForPoll(t, wait, result)
+	select {
+	case <-w.entered:
+		t.Fatal("matching state was written before Stop")
+	default:
+	}
+	stopped := make(chan struct{})
+	go func() {
+		s.Stop()
+		close(stopped)
+	}()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	select {
+	case <-w.entered:
+	case <-deadline.C:
+		t.Fatal("Stop did not wake the matching poll")
+	}
+	select {
+	case <-stopped:
+	case <-deadline.C:
+		t.Fatal("Stop waited for the blocked response write")
+	}
+	release()
+	select {
+	case w := <-result:
+		expectState(t, w, desired(t, st, host.Name, digest))
+	case <-deadline.C:
+		t.Fatal("poll did not finish after releasing the response write")
+	}
+}
+
+type afterHostLookup struct {
+	*store.Store
+	after func()
+}
+
+func (s afterHostLookup) HostByInstance(ctx context.Context, instance string) (store.Host, error) {
+	host, err := s.Store.HostByInstance(ctx, instance)
+	if err == nil {
+		s.after()
+	}
+	return host, err
+}
+
+// R-AVPU-2ANX.
+func TestPollSeesWriteBetweenLookupAndWatch(t *testing.T) {
+	_, st, host := fixtureStore(t)
+	stamps := new(requests)
+	s := server(t, Config{
+		Store: st, Configured: true, Verifier: stamps.verifier(fixtureSTS{instance: fixtureInstance}),
+		After: func(time.Duration) <-chan time.Time {
+			t.Fatal("poll waited after the host version changed")
+			return nil
+		},
+	})
+	s.store = afterHostLookup{st, func() {
+		if _, err := st.Allow(t.Context(), host.Name, "192.0.2.0/24"); err != nil {
+			t.Fatal(err)
+		}
+	}}
+	w := invoke(s, stamps.signed(t.Context(), http.MethodGet, pollingRequest(host, ""), nil))
+	want := desired(t, st, host.Name, "")
+	if want.Version != host.Version+1 || !slices.Equal(want.Allowlist, []string{"192.0.2.0/24"}) {
+		t.Fatalf("allowlist write did not change desired state: %+v", want)
+	}
+	expectState(t, w, want)
+}
+
+// R-AWXQ-G2EM.
+func TestStateReadFailures(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
 		failure func(*testing.T, *db.DB, *store.Store, store.Host)
@@ -510,7 +636,7 @@ func TestDesiredFailureAfterWait(t *testing.T) {
 		{"deleted", removeFixtureHost, http.StatusForbidden, UnknownHost},
 		{"database closed", closeFixtureDatabase, http.StatusServiceUnavailable, store.Unreachable},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name+" during Desired after wait", func(t *testing.T) {
 			d, st, host := fixtureStore(t)
 			stamps := new(requests)
 			wait := make(chan time.Duration, 1)
@@ -524,6 +650,25 @@ func TestDesiredFailureAfterWait(t *testing.T) {
 			timer <- fixtureNow
 			expectError(t, <-result, tt.code, tt.copy)
 		})
+		for _, sameVersion := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s after lookup (same version: %t)", tt.name, sameVersion), func(t *testing.T) {
+				d, st, host := fixtureStore(t)
+				stamps := new(requests)
+				s := server(t, Config{
+					Store: st, Configured: true, Verifier: stamps.verifier(fixtureSTS{instance: fixtureInstance}),
+					After: func(time.Duration) <-chan time.Time {
+						t.Fatal("poll waited after a store failure")
+						return nil
+					},
+				})
+				s.store = afterHostLookup{st, func() { tt.failure(t, d, st, host) }}
+				path := protocol.StatePath
+				if sameVersion {
+					path = pollingRequest(host, "")
+				}
+				expectError(t, invoke(s, stamps.signed(t.Context(), http.MethodGet, path, nil)), tt.code, tt.copy)
+			})
+		}
 	}
 }
 
@@ -545,7 +690,7 @@ func closeFixtureDatabase(t *testing.T, d *db.DB, _ *store.Store, _ store.Host) 
 	}
 }
 
-// R-RPFN-PYLT.
+// R-AY5M-TU5B.
 func TestWaiterLimitDoesNotThrottleImmediateReads(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	stamps := new(requests)
@@ -569,7 +714,7 @@ func TestWaiterLimitDoesNotThrottleImmediateReads(t *testing.T) {
 	}
 }
 
-// R-RRVG-HI37, R-RXYY-ECSO.
+// R-RRVG-HI37, R-UC6I-UWQX.
 func TestReportValidationAndRecording(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	stamps := new(requests)

@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"context"
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
@@ -11,7 +12,7 @@ import (
 // These assignments use the public values as unnamed structs, so field order
 // and field types have to agree for the tests to compile.
 
-// R-GO5E-N77Q
+// R-1V4J-NBIC
 var _ struct {
 	Name                                                                     string
 	Seq                                                                      int64
@@ -26,7 +27,16 @@ var _ struct {
 	Accounts                                                                 int
 	Created                                                                  time.Time
 	CreatedBy                                                                string
+	Allowlist                                                                []string
 } = store.Host{}
+
+// R-1XKC-EUZQ
+var _ interface {
+	Unban(context.Context, string, string) (store.Host, error)
+	UnbanRunning(context.Context, string) (int, error)
+	Allow(context.Context, string, string) (store.Host, error)
+	Disallow(context.Context, string, string) (store.Host, error)
+} = (*store.Store)(nil)
 
 // R-GPDB-0YYF
 type resizeShape = struct {

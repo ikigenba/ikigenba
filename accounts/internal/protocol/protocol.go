@@ -3,6 +3,7 @@ package protocol
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"io"
 	"reflect"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -38,6 +40,9 @@ const (
 	MaxFailedUnits = 100
 	MaxSlices      = 50
 	MaxSignIns     = 200
+	MaxBans        = 200
+	MaxAllowlist   = 50
+	MaxUnbans      = 50
 	DigestBuffer   = 32 << 10
 	LongPoll       = 45 * time.Second
 )
@@ -69,6 +74,8 @@ type DesiredState struct {
 	DataGB     int       `json:"data_gb"`
 	Accounts   []Account `json:"accounts"`
 	Users      []User    `json:"users"`
+	Allowlist  []string  `json:"allowlist"`
+	Unban      []string  `json:"unban"`
 }
 
 // Account describes a group and its service account.
@@ -114,6 +121,9 @@ type Report struct {
 	FailedUnits     []string   `json:"failed_units"`
 	Slices          []Slice    `json:"slices"`
 	SignIns         []SignIn   `json:"sign_ins"`
+	Bans            []Ban      `json:"bans"`
+	BanTotal        int        `json:"ban_total"`
+	Allowlist       []string   `json:"allowlist"`
 }
 
 // Disk reports filesystem usage.
@@ -135,6 +145,13 @@ type Slice struct {
 type SignIn struct {
 	User string    `json:"user"`
 	At   time.Time `json:"at"`
+}
+
+// Ban records one address's active SSH ban.
+type Ban struct {
+	Address string    `json:"address"`
+	Banned  time.Time `json:"banned"`
+	Expires time.Time `json:"expires"`
 }
 
 // DecodeState reads one bounded v1 desired state document.
@@ -257,9 +274,17 @@ func decodeObject(raw []byte, dst reflect.Value) error {
 
 // Bounded returns the canonical lists without modifying the receiver.
 func (r Report) Bounded() Report {
-	r.FailedUnits = smallest(r.FailedUnits, MaxFailedUnits, func(unit string) string { return unit })
-	r.Slices = smallest(r.Slices, MaxSlices, func(slice Slice) string { return slice.Account })
-	r.SignIns = smallest(r.SignIns, MaxSignIns, func(signIn SignIn) string { return signIn.User })
+	r.FailedUnits = smallest(r.FailedUnits, MaxFailedUnits, cmp.Compare[string])
+	r.Slices = smallest(r.Slices, MaxSlices, func(a, b Slice) int { return cmp.Compare(a.Account, b.Account) })
+	r.SignIns = smallest(r.SignIns, MaxSignIns, func(a, b SignIn) int { return cmp.Compare(a.User, b.User) })
+	r.BanTotal = max(r.BanTotal, len(r.Bans))
+	r.Bans = smallest(r.Bans, MaxBans, func(a, b Ban) int {
+		if order := b.Banned.Compare(a.Banned); order != 0 {
+			return order
+		}
+		return cmp.Compare(a.Address, b.Address)
+	})
+	r.Allowlist = smallest(r.Allowlist, MaxAllowlist, cmp.Compare[string])
 	if len(r.Error) > MaxErrorBytes {
 		end := MaxErrorBytes
 		for start := end - 1; start >= end-utf8.UTFMax+1; start-- {
@@ -273,25 +298,15 @@ func (r Report) Bounded() Report {
 	return r
 }
 
-// smallest retains only the first limit entries of a stable sort by key.
-func smallest[T any](values []T, limit int, key func(T) string) []T {
+// smallest retains only the first limit entries of a stable sort.
+func smallest[T any](values []T, limit int, compare func(T, T) int) []T {
 	if values == nil {
 		return nil
 	}
 	result := make([]T, 0, min(limit, len(values)))
 	for _, value := range values {
-		valueKey := key(value)
-		var i int
 		// Insert after equal keys to preserve their input order.
-		for lo, hi := 0, len(result); lo < hi; {
-			mid := lo + (hi-lo)/2
-			if key(result[mid]) <= valueKey {
-				lo = mid + 1
-			} else {
-				hi = mid
-			}
-			i = lo
-		}
+		i := sort.Search(len(result), func(i int) bool { return compare(result[i], value) > 0 })
 		if i == limit {
 			continue
 		}

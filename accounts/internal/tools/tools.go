@@ -6,6 +6,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/trail"
+	"github.com/ikigenba/ikigenba/accounts/internal/valid"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 )
@@ -31,6 +32,9 @@ func Register(srv *mcp.Server, cfg Config) {
 	mcp.AddTool(srv, mcp.Tool[UserArgs, UserChange]{Name: ToolLockUser, Description: DescribeLockUser, Effect: mcp.Additive, Handler: change(cfg, ToolLockUser, cfg.userOperation(cfg.Store.Lock))})
 	mcp.AddTool(srv, mcp.Tool[UserArgs, UserChange]{Name: ToolUnlockUser, Description: DescribeUnlockUser, Effect: mcp.Additive, Handler: change(cfg, ToolUnlockUser, cfg.userOperation(cfg.Store.Unlock))})
 	mcp.AddTool(srv, mcp.Tool[UserArgs, UserChange]{Name: ToolDeleteUser, Description: DescribeDeleteUser, Effect: mcp.Destructive, Handler: change(cfg, ToolDeleteUser, cfg.userOperation(cfg.Store.Delete))})
+	mcp.AddTool(srv, mcp.Tool[UnbanArgs, Unbanned]{Name: ToolUnbanIP, Description: DescribeUnbanIP, Effect: mcp.Additive, Handler: change(cfg, ToolUnbanIP, cfg.unbanIP)})
+	mcp.AddTool(srv, mcp.Tool[HostIPArgs, AllowlistChange]{Name: ToolAllowIP, Description: DescribeAllowIP, Effect: mcp.Additive, Handler: change(cfg, ToolAllowIP, cfg.allowlistOperation(cfg.Store.Allow))})
+	mcp.AddTool(srv, mcp.Tool[HostIPArgs, AllowlistChange]{Name: ToolDisallowIP, Description: DescribeDisallowIP, Effect: mcp.Destructive, Handler: change(cfg, ToolDisallowIP, cfg.allowlistOperation(cfg.Store.Disallow))})
 }
 
 func read[A, R any](cfg Config, handle func(context.Context, A) (R, error)) func(context.Context, identity.Caller, A) (R, error) {
@@ -44,15 +48,15 @@ func read[A, R any](cfg Config, handle func(context.Context, A) (R, error)) func
 }
 
 type changeRecord struct {
-	host, account, user string
-	before, after       string
-	operation           store.Operation
+	host, account, user, ip string
+	ipErr                   error
+	before, after           string
+	operation               store.Operation
 }
 
 func change[A, R any](cfg Config, name string, handle func(context.Context, identity.Caller, A, *changeRecord) (R, error)) func(context.Context, identity.Caller, A) (R, error) {
 	return func(ctx context.Context, c identity.Caller, a A) (R, error) {
-		// Record only the names carried in the input until the configured and
-		// argument checks let the handler read the store.
+		// Record input fields without reading the store, even on disabled spaces.
 		r := changeNames(a)
 		var result R
 		err := errors.New(NotConfigured)
@@ -78,6 +82,12 @@ func changeNames(args any) changeRecord {
 		return changeRecord{account: a.Account, user: a.User}
 	case UserKeyArgs:
 		return changeRecord{account: a.Account, user: a.User}
+	case UnbanArgs:
+		ip, err := valid.Address(a.IP)
+		return changeRecord{host: value(a.Host, ""), ip: ip, ipErr: err}
+	case HostIPArgs:
+		ip, err := valid.AllowEntry(a.IP)
+		return changeRecord{host: a.Host, ip: ip, ipErr: err}
 	}
 	return changeRecord{}
 }
@@ -102,7 +112,7 @@ func (cfg Config) tellChange(ctx context.Context, name string, r changeRecord, e
 			result = trail.ResultFailed
 		}
 	}
-	trail.Change(ctx, cfg.Telemetry, name, r.host, r.account, r.user, result)
+	trail.Change(ctx, cfg.Telemetry, name, r.host, r.account, r.user, r.ip, result)
 	if op.ID != "" {
 		cfg.Wake()
 	}
@@ -132,6 +142,8 @@ var storeRefusals = []struct {
 	{store.ErrUserRemoving, UserRemoving},
 	{store.ErrNotInAccount, NotInAccount},
 	{store.ErrKeyNotHeld, KeyNotHeld},
+	{store.ErrTooManyUnbans, TooManyUnbans},
+	{store.ErrAllowlistFull, AllowlistFull},
 }
 
 func storeError(err error, missing string) error {

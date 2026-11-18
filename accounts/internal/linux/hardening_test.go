@@ -178,7 +178,7 @@ const hardenJail = "/etc/fail2ban/jail.d/ikigenba.local"
 const wantIMDSRules = "table inet ikigenba_imds\ndelete table inet ikigenba_imds\ntable inet ikigenba_imds {\n\tchain output {\n\t\ttype filter hook output priority filter; policy accept;\n\t\tmeta skuid != 0 ip daddr 169.254.169.254 drop\n\t\tmeta skuid != 0 ip6 daddr fd00:ec2::254 drop\n\t}\n}\n"
 const wantIMDSUnit = "[Unit]\nBefore=sshd.service\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=nft -f /etc/nftables/ikigenba-imds.nft\n\n[Install]\nWantedBy=multi-user.target\n"
 const wantJournal = "[Journal]\nStorage=persistent\n"
-const wantJail = "[sshd]\nenabled = true\nbackend = systemd\nmode = aggressive\nbanaction = nftables-multiport\nmaxretry = 5\nfindtime = 10m\nbantime = 10m\nbantime.increment = true\nbantime.maxtime = 1w\n"
+const wantJail = "[sshd]\nenabled = true\nbackend = systemd\nmode = normal\nbanaction = nftables-multiport\nmaxretry = 5\nfindtime = 10m\nbantime = 10m\nignoreip = 127.0.0.1/8 ::1\n"
 
 func TestApplyPackages(t *testing.T) {
 	// R-GZKW-7A5C R-H0SS-L1W1
@@ -272,7 +272,7 @@ func TestApplyHostHardening(t *testing.T) {
 		return linux.Result{}, false
 	}
 	f.apply(protocol.DesiredState{})
-	// R-BYVZ-45PQ R-C03V-HXGF R-C1BR-VP74 R-C3RK-N8OI R-C4ZH-10F7 R-C67D-ES5W
+	// R-BYVZ-45PQ R-C03V-HXGF R-C1BR-VP74 R-C3RK-N8OI R-ZHGD-K9Z9 R-C67D-ES5W
 	sequence := []string{
 		"rpm -q nftables", "rpm -q fail2ban-server", "rpm -q dnf-automatic", "rpm -q git", "dnf install -y nftables dnf-automatic",
 		"rpm -q cronie", "rpm -q at",
@@ -336,7 +336,7 @@ func TestApplyHardeningRetries(t *testing.T) {
 				}
 				return linux.Result{}, false
 			}
-			// R-C03V-HXGF R-C1BR-VP74 R-C4ZH-10F7
+			// R-C03V-HXGF R-C1BR-VP74 R-ZHGD-K9Z9
 			f.applyFails(protocol.DesiredState{}, call, test.label)
 			if test.before == "" || test.before == test.configured {
 				f.expectAbsent(test.path)

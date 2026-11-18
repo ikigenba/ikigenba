@@ -102,7 +102,7 @@ func remove(t *testing.T, s *store.Store, slug string) (store.Account, store.Ope
 	return a, op
 }
 
-// R-GMXI-9FH1 R-GO5E-N77Q R-GPDB-0YYF R-GQL7-EQP4 R-H6FW-DRC5
+// R-GMXI-9FH1 R-GPDB-0YYF R-GQL7-EQP4 R-H6FW-DRC5
 // R-OTU8-67AN R-HEZ7-25J0 R-HG73-FX9P R-HHEZ-TP0E R-HJUS-L8HS
 func TestHostsReopenAndPage(t *testing.T) {
 	calls := 0
@@ -114,7 +114,7 @@ func TestHostsReopenAndPage(t *testing.T) {
 	eq(t, calls, 1)
 	stamp := baseTime.UTC().Truncate(time.Second)
 	wantHost := store.Host{Name: "host01", Seq: 1, State: store.HostProvisioning, Type: spec.Type, RootGB: spec.RootGB, DataGB: spec.DataGB,
-		Version: 1, Operation: "op_0000000000000001", Created: stamp, CreatedBy: caller.UserID}
+		Version: 1, Operation: "op_0000000000000001", Created: stamp, CreatedBy: caller.UserID, Allowlist: []string{}}
 	eq(t, h, wantHost)
 	eq(t, op, store.Operation{ID: h.Operation, Host: h.Name, Kind: store.OpCreate, Status: store.OpRunning,
 		Generation: 1, Started: stamp, StepStarted: stamp, NextTry: stamp, Caller: caller})
@@ -185,13 +185,14 @@ func TestOperationIDCollisionsRollBack(t *testing.T) {
 	eq(t, h.Seq, int64(3))
 }
 
-// R-H403-M7UR
+// R-1WCG-1391
 func TestErrorClasses(t *testing.T) {
 	base := []error{store.ErrUnreachable, store.ErrNotFound, store.ErrTaken, store.ErrConflict}
 	groups := [][]error{base, {store.ErrNotInAccount, store.ErrKeyNotHeld}, {store.ErrBusy, store.ErrHostFailed,
 		store.ErrNotFailed, store.ErrNotRunning, store.ErrNotStopped, store.ErrHasAccounts, store.ErrHostFull,
 		store.ErrHostGone, store.ErrNothingToChange, store.ErrShrinks, store.ErrGrowLimit, store.ErrHasUsers,
-		store.ErrAccountRemoving, store.ErrAccountFull, store.ErrTooManyKeys, store.ErrNotLocked, store.ErrUserRemoving}}
+		store.ErrAccountRemoving, store.ErrAccountFull, store.ErrTooManyKeys, store.ErrNotLocked, store.ErrUserRemoving,
+		store.ErrTooManyUnbans, store.ErrAllowlistFull}}
 	seen := map[error]bool{}
 	for i, group := range groups {
 		for pos, e := range group {

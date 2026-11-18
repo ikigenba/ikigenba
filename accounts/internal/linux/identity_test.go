@@ -19,7 +19,7 @@ import (
 )
 
 func TestApplyInvalidStateDoesNothing(t *testing.T) {
-	// R-09JX-8LBZ
+	// R-ZJW6-BTGN
 	acct := protocol.Account{Slug: "citron", GID: 20000, State: protocol.AccountActive}
 	user := protocol.User{Name: "alice", Account: "citron", UID: 20001, State: protocol.UserActive}
 	cases := map[string]func(*protocol.DesiredState){
@@ -33,19 +33,31 @@ func TestApplyInvalidStateDoesNothing(t *testing.T) {
 		"multiline key": func(s *protocol.DesiredState) {
 			s.Users[0].Keys = []string{fixtureKey("first") + "\r\n" + fixtureKey("second")}
 		},
-		"volume id": func(s *protocol.DesiredState) { s.DataVolume = "/dev/invalid" },
+		"volume id":          func(s *protocol.DesiredState) { s.DataVolume = "/dev/invalid" },
+		"invalid allowlist":  func(s *protocol.DesiredState) { s.Allowlist = []string{"192.0.2.7\n"} },
+		"uncanonical prefix": func(s *protocol.DesiredState) { s.Allowlist = []string{"192.0.2.77/24"} },
+		"unban prefix":       func(s *protocol.DesiredState) { s.Unban = []string{"192.0.2.0/24"} },
+		"uncanonical unban":  func(s *protocol.DesiredState) { s.Unban = []string{"2001:DB8::1"} },
+		"too many allowed": func(s *protocol.DesiredState) {
+			s.Allowlist = slices.Repeat([]string{"192.0.2.0/24"}, protocol.MaxAllowlist+1)
+		},
+		"too many unbans": func(s *protocol.DesiredState) {
+			s.Unban = slices.Repeat([]string{"192.0.2.77"}, protocol.MaxUnbans+1)
+		},
 	}
 	for name, change := range cases {
 		t.Run(name, func(t *testing.T) {
 			f := newHardeningFixture(t)
 			s := protocol.DesiredState{DataVolume: "vol-12345678", Accounts: []protocol.Account{acct}, Users: []protocol.User{user}}
 			change(&s)
+			before := snapshotHost(t, f.root)
 			if err := f.host.Apply(t.Context(), s); !errors.Is(err, machine.ErrInvalidState) {
 				t.Fatalf("invalid Apply = %v", err)
 			}
 			f.expectCalls()
-			f.expectAbsent("/etc/nftables")
-			f.expectAbsent("/etc/systemd")
+			if after := snapshotHost(t, f.root); !reflect.DeepEqual(after, before) {
+				t.Fatal("invalid Apply changed a host path")
+			}
 		})
 	}
 }
@@ -121,9 +133,10 @@ func TestApplyAbortsWhenStoppingUserSliceFails(t *testing.T) {
 }
 
 func TestApplyAccountsAndUsers(t *testing.T) {
-	// R-BQSP-OL9R R-CM22-DSSX R-0FNF-5G1G R-CPPR-J410 R-CQXN-WVRP R-KZ69-MFRD R-CTDG-OF93 R-82VL-4Z30 R-CX15-TQH6 R-0JB4-AR9J R-SM70-07MK
+	// R-ZIO9-Y1PY R-CM22-DSSX R-0FNF-5G1G R-CPPR-J410 R-CQXN-WVRP R-KZ69-MFRD R-CTDG-OF93 R-82VL-4Z30 R-CX15-TQH6 R-0JB4-AR9J R-SM70-07MK
 	f := newHardeningFixture(t)
-	f.put("/etc/group", "shell:x:990:retained\nwillow:x:21000:\nperry:x:21001:maia\nmaia:x:21003:\nwheel:x:10:maia\n", 0o644)
+	const groups = "willow:x:21000:\nperry:x:21001:maia\nmaia:x:21003:\nwheel:x:10:maia\n"
+	f.put("/etc/group", groups, 0o644)
 	f.put("/etc/passwd", "perry:x:21001:21001::/srv/perry:/usr/sbin/nologin\nwillow:x:21000:21000::/srv/willow:/usr/sbin/nologin\nmaia:x:21003:21003::/home/maia:/bin/bash\n", 0o644)
 	f.put("/etc/shadow", "maia:!:1:::::1:\n", 0o600)
 	f.put("/srv/willow/retained", "do not remove", 0o600)
@@ -141,8 +154,18 @@ func TestApplyAccountsAndUsers(t *testing.T) {
 		{Name: "leon", Account: "citron", UID: 21004, State: protocol.UserLocked},
 		{Name: "deleted", Account: "willow", UID: 21005, State: protocol.UserDeleted},
 	}}
+	state.Unban = []string{"198.51.100.7"}
+	state.Allowlist = []string{"192.0.2.0/24"}
 	gitQuery := "git config --file " + f.path("/etc/gitconfig") + " --get-all safe.directory"
+	f.observe = func(c linux.Command) {
+		if c.Name == "fail2ban-client" && c.Args[0] == "get" {
+			writeBanOutput(t, c, "192.0.2.77\n")
+		}
+	}
 	f.answer = func(call string) (linux.Result, bool) {
+		if call == "groupadd --system shell" {
+			f.put("/etc/group", "shell:x:990:retained\n"+groups, 0o644)
+		}
 		if call == gitQuery {
 			return hostAnswer("/srv/other\n/srv/perry\n"), true
 		}
@@ -171,6 +194,11 @@ func TestApplyAccountsAndUsers(t *testing.T) {
 		"journalctl --flush",
 		"systemctl is-enabled dnf-automatic.timer",
 		"systemctl is-enabled fail2ban.service",
+		"systemctl reload fail2ban.service",
+		unbanPrefix + "198.51.100.7",
+		banQuery,
+		unbanPrefix + "192.0.2.77",
+		"groupadd --system shell",
 		"lsblk --pairs --noheadings --output NAME,PKNAME,FSTYPE,MOUNTPOINT",
 		"lsblk --nodeps --pairs --noheadings --output NAME,SERIAL",
 		"sshd -t -f " + f.path("/etc/ssh/sshd_config"),

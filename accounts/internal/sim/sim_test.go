@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -50,12 +52,18 @@ func sandboxCloud(t *testing.T, clock *simClock) (*memory.Cloud, cloud.Instance)
 		Now:  clock.now, Rand: rand.NewChaCha8([32]byte{13}), Hosts: hosts,
 	})
 	must(t, err)
+	return c, launchSandboxHost(t, c, "host01")
+}
+
+func launchSandboxHost(t *testing.T, c *memory.Cloud, name string) cloud.Instance {
+	t.Helper()
+	hosts := settings.SandboxHosts
 	i, err := c.RunInstance(t.Context(), cloud.Launch{
 		Template: hosts.LaunchTemplate, InstanceProfile: hosts.InstanceProfile, Type: "t4g.medium", RootGB: 20,
-		Tags: cloud.Tags{cloud.TagKind: cloud.KindHost},
+		Tags: cloud.Tags{cloud.TagKind: cloud.KindHost, cloud.TagHost: name},
 	})
 	must(t, err)
-	return c, i
+	return i
 }
 
 func watchTimer(t *testing.T, watchers chan<- chan time.Time) func(time.Duration) <-chan time.Time {
@@ -71,9 +79,13 @@ func watchTimer(t *testing.T, watchers chan<- chan time.Time) func(time.Duration
 }
 
 func TestWatchAndRestartLoop(t *testing.T) {
-	// R-V8TV-72ZZ R-VB9N-YMHD
-	if WatchInterval != 2*time.Second || ApplyDelay != 3*time.Second {
-		t.Fatalf("WatchInterval = %v, ApplyDelay = %v", WatchInterval, ApplyDelay)
+	// R-QARJ-4MFY R-VB9N-YMHD
+	const (
+		_ int64  = MaxBanFileBytes
+		_ uint64 = MaxBanFileBytes
+	)
+	if WatchInterval != 2*time.Second || ApplyDelay != 3*time.Second || MaxBanFileBytes != 64<<10 {
+		t.Fatalf("WatchInterval = %v, ApplyDelay = %v, MaxBanFileBytes = %d", WatchInterval, ApplyDelay, MaxBanFileBytes)
 	}
 	clock := &simClock{}
 	c, i := sandboxCloud(t, clock)
@@ -119,9 +131,8 @@ func TestWatchAndRestartLoop(t *testing.T) {
 	})
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	s := New(Config{Cloud: c, Handler: h, Binding: expectedBinding, Digest: func() string { return "sandbox-digest" },
-		Now: clock.now, After: watchTimer(t, watches),
-		Sleep: func(ctx context.Context, _ time.Duration) { <-ctx.Done() },
+	s := New(Config{c, h, expectedBinding, func() string { return "sandbox-digest" }, clock.now,
+		func(ctx context.Context, _ time.Duration) { <-ctx.Done() }, watchTimer(t, watches), "",
 	})
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx) }()
@@ -221,21 +232,26 @@ func TestDesiredChangeReachesApplied(t *testing.T) {
 	ctx := t.Context()
 	clock := &simClock{}
 	c, instance := sandboxCloud(t, clock)
+	otherInstance := launchSandboxHost(t, c, "host02")
 	clock.advance(memory.BootDelay)
 	hosts := settings.SandboxHosts
-	v, err := c.CreateVolume(ctx, cloud.VolumeSpec{AZ: instance.AZ, SizeGB: 50, Tags: cloud.Tags{cloud.TagKind: cloud.KindHostData}})
-	must(t, err)
 	dir := t.TempDir()
 	d, err := db.Open(ctx, db.Config{Path: filepath.Join(dir, "accounts.db"), Migrations: accounts.Migrations(), Now: clock.now})
 	must(t, err)
 	t.Cleanup(func() { _ = d.Close() })
 	st := store.New(d, store.Config{Now: clock.now, Rand: rand.NewChaCha8([32]byte{26})})
 	caller := identity.Caller{UserID: "owner"}
-	host, op, err := st.CreateHost(ctx, store.HostSpec{Type: instance.Type, RootGB: 20, DataGB: 50}, caller)
-	must(t, err)
-	must(t, st.Finish(ctx, op.ID, store.Update{InstanceID: instance.ID, RootVolume: instance.RootVolume, DataVolume: v.ID, AZ: instance.AZ}))
-	host, err = st.Host(ctx, host.Name)
-	must(t, err)
+	recordHost := func(i cloud.Instance) store.Host {
+		v, err := c.CreateVolume(ctx, cloud.VolumeSpec{AZ: i.AZ, SizeGB: 50, Tags: cloud.Tags{cloud.TagKind: cloud.KindHostData}})
+		must(t, err)
+		h, op, err := st.CreateHost(ctx, store.HostSpec{Type: i.Type, RootGB: 20, DataGB: 50}, caller)
+		must(t, err)
+		must(t, st.Finish(ctx, op.ID, store.Update{InstanceID: i.ID, RootVolume: i.RootVolume, DataVolume: v.ID, AZ: i.AZ}))
+		h, err = st.Host(ctx, h.Name)
+		must(t, err)
+		return h
+	}
+	host, other := recordHost(instance), recordHost(otherInstance)
 	capture := &telemetry.Capture{}
 	w := telemetry.New(telemetry.Config{Service: "accounts", Sink: capture, Now: clock.now,
 		Rand: rand.NewChaCha8([32]byte{48}), Stderr: io.Discard, Sleep: func(context.Context, time.Duration) {},
@@ -246,7 +262,7 @@ func TestDesiredChangeReachesApplied(t *testing.T) {
 		Region: hosts.Region, Role: hosts.InstanceProfile, STS: c, Now: clock.now,
 		Binding: func() (string, error) { return binding, nil },
 	})
-	polls := make(chan struct{}, 4)
+	polls := make(chan chan time.Time, 4)
 	binary := filepath.Join(dir, "accountsd")
 	must(t, os.WriteFile(binary, []byte("sandbox daemon"), 0600))
 	ds, err := daemonapi.New(ctx, daemonapi.Config{
@@ -255,8 +271,9 @@ func TestDesiredChangeReachesApplied(t *testing.T) {
 			if d != protocol.LongPoll {
 				t.Errorf("long poll duration = %v", d)
 			}
-			polls <- struct{}{}
-			return make(chan time.Time)
+			tick := make(chan time.Time, 1)
+			polls <- tick
+			return tick
 		},
 	})
 	must(t, err)
@@ -269,26 +286,33 @@ func TestDesiredChangeReachesApplied(t *testing.T) {
 		Store:  st, Cloud: c, Hosts: hosts, Configured: true, Wake: func() {},
 		Daemon: ds, Telemetry: w, Settings: cfg,
 	})
-	reports := make(chan *store.Report, 4)
+	reports := make(chan struct{}, 4)
 	observed := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler.ServeHTTP(w, r)
 		switch r.URL.Path {
 		case protocol.BinaryPath:
 			t.Error("simulator tried to update its served daemon")
 		case protocol.ReportPath:
-			report, err := st.Report(ctx, host.Name)
-			if err != nil && !errors.Is(err, context.Canceled) {
-				t.Error(err)
-			}
-			reports <- report
+			reports <- struct{}{}
 		}
 	})
+	readReport := func(name string) store.Report {
+		r, err := st.Report(ctx, name)
+		must(t, err)
+		if r == nil {
+			t.Fatalf("host %s has no report", name)
+		}
+		return *r
+	}
 	type pause struct {
 		proceed chan struct{}
 	}
 	applies := make(chan pause, 4)
 	watches := make(chan chan time.Time, 4)
-	s := New(Config{Cloud: c, Handler: observed, Binding: binding, Digest: ds.Digest, Now: clock.now, After: watchTimer(t, watches),
+	banFile := filepath.Join(dir, "drop")
+	const initialBan = "192.0.2.76"
+	must(t, os.WriteFile(banFile, []byte(host.Name+" "+initialBan+"\n"), 0600))
+	s := New(Config{Cloud: c, Handler: observed, Binding: binding, Digest: ds.Digest, Now: clock.now, After: watchTimer(t, watches), BanFile: banFile,
 		Sleep: func(ctx context.Context, d time.Duration) {
 			if d != ApplyDelay {
 				clock.advance(d)
@@ -309,18 +333,39 @@ func TestDesiredChangeReachesApplied(t *testing.T) {
 		cancel()
 		must(t, await(t, done))
 	}()
-	finishApply := func(p pause) {
+	finishApply := func(p pause) time.Time {
 		clock.advance(ApplyDelay)
+		appliedAt := clock.now()
 		close(p.proceed)
+		return appliedAt
 	}
+	// R-IV91-69U5. Collect both initial reports after the first look has run.
+	watch := await(t, watches)
+	assertNoBanFile(t, banFile)
 	finishApply(await(t, applies))
-	initial := await(t, reports)
-	if initial.Body.Applied != host.Version || initial.Body.InstanceID != instance.ID ||
-		initial.Body.Type != instance.Type || initial.Body.AMI != memory.AMI || initial.Body.OS != machine.MemoryOS ||
-		initial.Body.DaemonVersion != ds.Digest() {
-		t.Fatalf("initial report = %+v", initial.Body)
+	await(t, reports)
+	firstPoll := await(t, polls)
+	firstTargetReport, err := st.Report(ctx, host.Name)
+	must(t, err)
+	finishApply(await(t, applies))
+	await(t, reports)
+	secondPoll := await(t, polls)
+	otherPoll := firstPoll
+	if firstTargetReport != nil {
+		otherPoll = secondPoll
 	}
-	await(t, polls)
+	initial := readReport(host.Name).Body
+	if len(initial.Bans) != 1 || initial.Bans[0].Address != initialBan {
+		t.Fatalf("first report for %s has bans %+v, want %s", host.Name, initial.Bans, initialBan)
+	}
+	if r := readReport(other.Name).Body; r.InstanceID != otherInstance.ID || len(r.Bans) != 0 {
+		t.Fatalf("first report for %s has instance %s and bans %+v, want instance %s and no bans", other.Name, r.InstanceID, r.Bans, otherInstance.ID)
+	}
+	if initial.Applied != host.Version || initial.InstanceID != instance.ID ||
+		initial.Type != instance.Type || initial.AMI != memory.AMI || initial.OS != machine.MemoryOS ||
+		initial.DaemonVersion != ds.Digest() {
+		t.Fatalf("initial report = %+v", initial)
+	}
 	account, _, err := st.PlaceAccount(ctx, "team", host.Name, caller)
 	must(t, err)
 	nextApply := await(t, applies)
@@ -330,10 +375,112 @@ func TestDesiredChangeReachesApplied(t *testing.T) {
 		t.Fatalf("host should show pending during apply delay: %+v", pending)
 	}
 	finishApply(nextApply)
-	final := await(t, reports)
+	await(t, reports)
+	final := readReport(host.Name).Body
 	synced, err := st.Host(ctx, host.Name)
 	must(t, err)
-	if synced.Applied != account.Version || final.Body.Applied != account.Version {
-		t.Fatalf("applied host = %d, report = %d, expected %d", synced.Applied, final.Body.Applied, account.Version)
+	if synced.Applied != account.Version || final.Applied != account.Version {
+		t.Fatalf("applied host = %d, report = %d, expected %d", synced.Applied, final.Applied, account.Version)
+	}
+
+	await(t, polls)
+	nextLook := func() {
+		watch <- clock.now()
+		watch = await(t, watches)
+	}
+	nextReport := func(name string, timer *chan time.Time) protocol.Report {
+		*timer <- clock.now()
+		appliedAt := finishApply(await(t, applies))
+		await(t, reports)
+		*timer = await(t, polls)
+		r := readReport(name)
+		if !r.Received.Equal(appliedAt) {
+			t.Fatalf("host %s last reported at %v, want report at %v", name, r.Received, appliedAt)
+		}
+		return r.Body
+	}
+
+	// R-IV91-69U5
+	const allowed = "198.51.100.0/24"
+	const banned = "192.0.2.77"
+	clock.advance(machine.MemoryBanTime)
+	_, err = st.Allow(ctx, host.Name, allowed)
+	must(t, err)
+	finishApply(await(t, applies))
+	await(t, reports)
+	before := readReport(host.Name).Body
+	poll := await(t, polls)
+	if !slices.Equal(before.Allowlist, []string{allowed}) || len(before.Bans) != 0 {
+		t.Fatalf("before the drop, allowlist = %v, bans = %+v", before.Allowlist, before.Bans)
+	}
+	must(t, os.WriteFile(banFile, []byte(host.Name+" "+banned+"\n"), 0600))
+	expires := clock.now().Add(machine.MemoryBanTime)
+	nextLook()
+	assertNoBanFile(t, banFile)
+	if r := nextReport(host.Name, &poll); len(r.Bans) != 1 || r.Bans[0].Address != banned {
+		t.Fatalf("first report after the drop has bans %+v, want %s", r.Bans, banned)
+	}
+	if r := nextReport(other.Name, &otherPoll); len(r.Bans) != 0 {
+		t.Fatalf("first report for %s after the drop for %s has bans %+v", other.Name, host.Name, r.Bans)
+	}
+	clock.advance(expires.Add(-3 * ApplyDelay).Sub(clock.now()))
+	if r := nextReport(host.Name, &poll); len(r.Bans) != 1 || r.Bans[0].Address != banned {
+		t.Fatalf("report before expiry has bans %+v, want %s", r.Bans, banned)
+	}
+	clock.advance(expires.Add(-ApplyDelay).Sub(clock.now()))
+	if r := nextReport(host.Name, &poll); len(r.Bans) != 0 {
+		t.Fatalf("report at expiry has bans %+v", r.Bans)
+	}
+	const covered = "198.51.100.77"
+	must(t, os.WriteFile(banFile, []byte(host.Name+" "+covered+"\n"), 0600))
+	nextLook()
+	assertNoBanFile(t, banFile)
+	if r := nextReport(host.Name, &poll); len(r.Bans) != 0 {
+		t.Fatalf("drop for allowlisted address %s caused bans %+v", covered, r.Bans)
+	}
+
+	// R-IYWQ-BL28
+	for range 2 {
+		nextLook()
+		assertNoBanFile(t, banFile)
+	}
+	must(t, os.Mkdir(banFile, 0700))
+	nextLook()
+	info, err := os.Lstat(banFile)
+	if err != nil || !info.IsDir() {
+		t.Fatalf("look changed the directory at its drop path: %v, %v", info, err)
+	}
+	for name, timer := range map[string]*chan time.Time{host.Name: &poll, other.Name: &otherPoll} {
+		if r := nextReport(name, timer); len(r.Bans) != 0 {
+			t.Fatalf("directory caused bans for %s: %+v", name, r.Bans)
+		}
+	}
+	must(t, os.Remove(banFile))
+	lines := "host01\nhost01 192.0.2.77 x\nnohost 192.0.2.78\nhost01 192.0.2.300\nhost01 \t::ffff:192.0.2.79\n"
+	const clipped = "host01 192.0.2.8"
+	padding := strings.Repeat("x", MaxBanFileBytes-len(lines)-len(clipped)-1)
+	must(t, os.WriteFile(banFile, []byte(lines+padding+"\n"+clipped+"0\n"), 0600))
+	nextLook()
+	assertNoBanFile(t, banFile)
+	if r := nextReport(host.Name, &poll); len(r.Bans) != 1 || r.Bans[0].Address != "192.0.2.79" {
+		t.Fatalf("report after reading the drop file = %+v", r.Bans)
+	}
+	if r := nextReport(other.Name, &otherPoll); len(r.Bans) != 0 {
+		t.Fatalf("mixed drop file caused bans for %s: %+v", other.Name, r.Bans)
+	}
+	const finalLine = "host01 192.0.2.90"
+	padding = strings.Repeat("x", MaxBanFileBytes-len(finalLine)-1)
+	must(t, os.WriteFile(banFile, []byte(padding+"\n"+finalLine), 0600))
+	nextLook()
+	assertNoBanFile(t, banFile)
+	if r := nextReport(host.Name, &poll); len(r.Bans) != 2 || !slices.ContainsFunc(r.Bans, func(b protocol.Ban) bool { return b.Address == "192.0.2.90" }) {
+		t.Fatalf("report after a complete final line at the byte cap = %+v", r.Bans)
+	}
+}
+
+func assertNoBanFile(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected drop path to be absent: %v", err)
 	}
 }

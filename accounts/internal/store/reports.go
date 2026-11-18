@@ -25,8 +25,13 @@ func (s *recordReader) Desired(ctx context.Context, host string) (protocol.Desir
 		if err != nil {
 			return protocol.DesiredState{}, err
 		}
+		unban, err := collect(q, scanString, "SELECT address FROM host_unbans WHERE host = ? ORDER BY address", host)
+		if err != nil {
+			return protocol.DesiredState{}, err
+		}
 		d := protocol.DesiredState{Protocol: protocol.Version, Host: h.Name, Version: h.Version,
 			DataVolume: h.DataVolume, RootGB: h.RootGB, DataGB: h.DataGB,
+			Allowlist: h.Allowlist, Unban: unban,
 			Accounts: make([]protocol.Account, 0, len(as)), Users: make([]protocol.User, 0, len(us))}
 		for _, a := range as {
 			state := protocol.AccountActive
@@ -125,7 +130,7 @@ func foldReport(h *Host, r protocol.Report, now time.Time) Transition {
 	return tr
 }
 
-// RecordReport replaces the host's report, folds its status and purges applied user removals.
+// RecordReport replaces the host's report and purges applied user removals and unbans.
 func (s *Store) RecordReport(ctx context.Context, host string, r protocol.Report, now time.Time) (Transition, error) {
 	valid := host != "" && len(r.SignIns) <= protocol.MaxSignIns && len(r.Slices) <= protocol.MaxSlices
 	return write(ctx, s, valid, func(w *writing) (Transition, error) {
@@ -157,7 +162,10 @@ func (s *Store) RecordReport(ctx context.Context, host string, r protocol.Report
 			h.Reported.Unix(), h.ReportError, h.Attempted, h.Applied, h.Alarm, host); err != nil {
 			return Transition{}, err
 		}
-		return tr, purgeUsers(w.query, host, h.Applied)
+		if err := purgeUsers(w.query, host, h.Applied); err != nil {
+			return Transition{}, err
+		}
+		return tr, w.exec("DELETE FROM host_unbans WHERE host = ? AND version <= ?", host, h.Applied)
 	})
 }
 
@@ -210,7 +218,7 @@ func (s *Store) MarkSilent(ctx context.Context, now time.Time, after string, lim
 		if cutoff.Nanosecond() != 0 {
 			second++
 		}
-		hs, err := collect(w.query, scanHost, hostSelect+` WHERE name > ? AND state = ? AND alarm <> ?
+		hs, err := collectHosts(w.query, ` WHERE name > ? AND state = ? AND alarm <> ?
 			AND reported < ? AND running_since < ? ORDER BY name LIMIT ?`, after, HostRunning, AlarmSilent, second, second, limit)
 		if err != nil {
 			return nil, err

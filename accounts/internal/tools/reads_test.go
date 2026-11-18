@@ -122,9 +122,10 @@ func readAccount(t *testing.T, f *fixture, account string) tools.AccountRead {
 	return answer[tools.AccountRead](t, f.call(tools.ToolAccount, tools.AccountArgs{Account: account}))
 }
 
-// R-XXK4-DH11 R-WD1R-OERO R-0V8U-N3U2 R-0YWJ-SF25 R-0WGR-0VKR
+// R-XXK4-DH11 R-WD1R-OERO R-0V8U-N3U2 R-ZN7K-BPF6 R-0WGR-0VKR
 func TestReadAnswers(t *testing.T) {
 	f := setup(t)
+	f.serveLoopback()
 	ctx := context.Background()
 	h, op := f.seedHost(false)
 	created := f.now.UTC().Format(time.RFC3339)
@@ -132,7 +133,7 @@ func TestReadAnswers(t *testing.T) {
 	want := tools.HostRead{
 		Host: h.Name, State: store.HostProvisioning, Health: store.Health(h, f.now), Type: h.Type,
 		RootGB: h.RootGB, DataGB: h.DataGB, Version: h.Version, Created: created, CreatedBy: f.caller.UserID,
-		AccountNames: []string{}, Operation: &tools.Operation{Operation: op.ID, Kind: store.OpCreate, Status: store.OpRunning, Started: created},
+		AccountNames: []string{}, Allowlist: []string{}, Operation: &tools.Operation{Operation: op.ID, Kind: store.OpCreate, Status: store.OpRunning, Started: created},
 	}
 	if !reflect.DeepEqual(provisioning, want) {
 		t.Fatalf("provisioning %+v, want %+v", provisioning, want)
@@ -152,13 +153,20 @@ func TestReadAnswers(t *testing.T) {
 	}
 	answer[tools.UserChange](t, f.call(tools.ToolAddKey, tools.UserKeyArgs{Account: acme.Slug, User: "daffy", Key: key(0)}))
 	f.fail(place.ID, "record conflict")
+	for _, entry := range []string{"198.51.100.0/24", "192.0.2.7"} {
+		if _, err := f.st.Allow(ctx, h.Name, entry); err != nil {
+			t.Fatal(err)
+		}
+	}
 	h = f.host(h.Name)
 	f.now = f.now.Add(time.Minute).UTC().Truncate(time.Second)
 	signIn := f.now.Add(-time.Second)
 	body := protocol.Report{
 		Protocol: protocol.Version, Applied: h.Version, Attempted: h.Version, InstanceID: h.InstanceID,
 		Booted: f.now.Add(-2 * time.Hour), Load: [3]float64{0.25, 0.5, 0.75},
-		SignIns: []protocol.SignIn{{User: "daffy", At: signIn}},
+		SignIns:  []protocol.SignIn{{User: "daffy", At: signIn}},
+		Bans:     []protocol.Ban{{Address: "203.0.113.9", Banned: signIn, Expires: signIn.Add(10 * time.Minute)}},
+		BanTotal: 3, Allowlist: []string{"192.0.2.7"},
 	}
 	if _, err := f.st.RecordReport(ctx, h.Name, body, f.now); err != nil {
 		t.Fatal(err)
@@ -172,11 +180,12 @@ func TestReadAnswers(t *testing.T) {
 	if running.Operation != nil || running.State != store.HostRunning || running.InstanceID != h.InstanceID ||
 		running.Applied != h.Version || running.Version != h.Version || running.DataVolume != h.DataVolume || running.EIP != h.EIP ||
 		running.Accounts != 2 || !slices.Equal(running.AccountNames, []string{"acme", "beta"}) ||
+		!slices.Equal(running.Allowlist, []string{"192.0.2.7", "198.51.100.0/24"}) ||
 		running.Reported != f.now.Format(time.RFC3339) || running.Health != store.Health(f.host(h.Name), f.now) {
 		t.Fatalf("running host %+v", running)
 	}
 	fields := []string{"host", "state", "reason", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported",
-		"instance_id", "data_volume", "version", "applied", "created", "created_by", "account_names", "report"}
+		"instance_id", "data_volume", "version", "applied", "created", "created_by", "account_names", "allowlist", "report"}
 	wireMembers(t, unpack(t, result).Structured, fields...)
 
 	a := readAccount(t, f, acme.Slug)
@@ -201,6 +210,10 @@ func TestReadAnswers(t *testing.T) {
 		t.Fatalf("users %+v, want daffy %+v", list.Users, expected)
 	}
 	refusal(t, f.call(tools.ToolAccount, tools.AccountArgs{Account: "missing"}), tools.NoAccount)
+	deleted, _ := f.seedHost(true)
+	deleteHost := answer[tools.HostChange](t, f.call(tools.ToolDeleteHost, tools.HostArgs{Host: deleted.Name}))
+	f.finish(deleteHost.Operation, store.Update{})
+	refusal(t, f.call(tools.ToolHost, tools.HostArgs{Host: deleted.Name}), tools.NoHost)
 }
 
 // R-Z947-AIY4
@@ -230,7 +243,7 @@ func TestReadOnlyEffects(t *testing.T) {
 			t.Fatal(read.name, unpack(t, res))
 		}
 	}
-	if got := f.host(h.Name); got != h {
+	if got := f.host(h.Name); !reflect.DeepEqual(got, h) {
 		t.Fatalf("host changed: %+v (%+v before)", got, h)
 	}
 	if got, err := f.st.Account(ctx, a.Slug); err != nil || got != original {

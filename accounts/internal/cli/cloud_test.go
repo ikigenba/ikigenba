@@ -18,6 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud/memory"
 	"github.com/ikigenba/ikigenba/accounts/internal/ops"
+	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 	"github.com/ikigenba/ikigenba/accounts/internal/settings"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/tools"
@@ -394,7 +395,47 @@ func TestSandboxResumesAndSynchronizesHosts(t *testing.T) {
 	})
 }
 
-// R-E18S-PNZ9 R-EKR6-TZUD
+// R-TB3B-1D9C
+func TestSandboxBanDropReachesHostReport(t *testing.T) {
+	clock := newDrivenClock()
+	run := startIntegration(t, integrationOptions{now: clock.now, after: clock.after, sleep: clock.sleep})
+	var created tools.HostChange
+	run.call(tools.ToolCreateHost, struct{}{}, &created)
+	if created.Host != "host01" {
+		t.Fatalf("new host = %q", created.Host)
+	}
+	hostArgs := tools.HostArgs{Host: created.Host}
+	driveUntil(t, clock, func() bool {
+		var host tools.HostRead
+		run.call(tools.ToolHost, hostArgs, &host)
+		return host.State == "running" && host.Health == "sync"
+	})
+	path := filepath.Join(run.dir, "state", "sandbox-bans")
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("before the drop the expected path must be absent: %v", err)
+	}
+	const address = "192.0.2.77"
+	if err := os.WriteFile(path, []byte(created.Host+" "+address+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	driveUntil(t, clock, func() bool {
+		var host tools.HostRead
+		run.call(tools.ToolHost, hostArgs, &host)
+		var report protocol.Report
+		if err := json.Unmarshal(host.Report, &report); err != nil {
+			t.Fatal(err)
+		}
+		return len(report.Bans) == 1 && report.Bans[0].Address == address
+	})
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("after the report the expected path must be absent: %v", err)
+	}
+	if run.stop() != cli.ExitSuccess {
+		t.Fatal(run.err.String())
+	}
+}
+
+// R-E18S-PNZ9 R-EKR6-TZUD R-IF26-P336
 func TestRunSecrecy(t *testing.T) {
 	const bodyMarker = "GHIJKLMNGHIJKLMNGHIJKLMN"
 	const emailMarker = "OPQRSTUVOPQRSTUVOPQRSTUV"
@@ -419,6 +460,12 @@ func TestRunSecrecy(t *testing.T) {
 			t.Fatal(call.name, err)
 		}
 	}
+	for _, call := range addressCalls() {
+		result, err := run.callAs(call.name, call.args, identity.Caller{UserID: "owner", Email: run.email})
+		if err != nil || result.IsError() {
+			t.Fatal(call.name, result, err)
+		}
+	}
 	for _, call := range readCalls() {
 		_, err := run.callAs(call.name, call.args, identity.Caller{UserID: "owner", Email: run.email})
 		if err != nil {
@@ -433,6 +480,7 @@ func TestRunSecrecy(t *testing.T) {
 	if run.stop() != cli.ExitSuccess {
 		t.Fatal(run.err.String())
 	}
+	var allowObserved bool
 	for _, event := range run.capture.Events() {
 		data, err := json.Marshal(event)
 		if err != nil {
@@ -443,6 +491,13 @@ func TestRunSecrecy(t *testing.T) {
 				t.Fatalf("marker in event %s", event.Name)
 			}
 		}
+		if event.Name == "change.finished" && event.Attrs["tool"] == tools.ToolAllowIP &&
+			event.Attrs["host"] == "host01" && event.Attrs["ip"] == "192.0.2.0/24" {
+			allowObserved = true
+		}
+	}
+	if !allowObserved {
+		t.Fatal("change.finished for the allowlist addition was missing")
 	}
 }
 

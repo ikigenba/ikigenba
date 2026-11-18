@@ -794,33 +794,44 @@ func readCalls() []catalogCall {
 	}
 }
 
+func addressCalls() []catalogCall {
+	return []catalogCall{
+		{tools.ToolUnbanIP, map[string]any{"host": "host01", "ip": "192.0.2.77"}},
+		{tools.ToolUnbanIP, map[string]any{"ip": "192.0.2.78"}},
+		{tools.ToolAllowIP, map[string]any{"host": "host01", "ip": "192.0.2.0/24"}},
+		{tools.ToolDisallowIP, map[string]any{"host": "host01", "ip": "192.0.2.0/24"}},
+	}
+}
+
 // R-5ESL-LDPF R-EFVL-AWVL R-EH3H-OOMA R-HT7K-XT5A
 func TestRunTrail(t *testing.T) {
 	r := startIntegration(t, integrationOptions{})
 	type requestRecord struct {
 		method, path, user, tool string
 		status                   int
+		change                   bool
 	}
 	requests := map[string]requestRecord{}
 	caller := identity.Caller{UserID: "actor", Email: "actor@fixture.test"}
-	for _, c := range append(changeCalls(validKey()), readCalls()...) {
-		caller.RequestID = c.name
+	changing := append(changeCalls(validKey()), addressCalls()...)
+	for i, c := range append(changing, readCalls()...) {
+		caller.RequestID = fmt.Sprintf("tool-%d", i)
 		if _, err := r.callAs(c.name, c.args, caller); err != nil {
 			t.Fatal(c.name, err)
 		}
-		requests[c.name] = requestRecord{"POST", "/mcp", caller.UserID, c.name, 200}
+		requests[caller.RequestID] = requestRecord{"POST", "/mcp", caller.UserID, c.name, 200, i < len(changing)}
 	}
 	caller.RequestID = "invalid-args"
 	if result, err := r.callAs("add_user", map[string]any{"account": "acme", "user": "alice"}, caller); err != nil || !result.IsError() {
 		t.Fatal(err)
 	}
-	requests[caller.RequestID] = requestRecord{"POST", "/mcp", caller.UserID, "", 200}
+	requests[caller.RequestID] = requestRecord{"POST", "/mcp", caller.UserID, "", 200, false}
 	for _, user := range []string{"", "actor"} {
 		for _, path := range []string{"/", "/hosts/host01", "/tools", "/about", "/accountsd", "/nope"} {
 			for _, method := range []string{"GET", "POST", "DELETE", "HEAD"} {
 				id := fmt.Sprintf("page-%d", len(requests))
 				code, _, _ := r.request(method, path, user, id)
-				requests[id] = requestRecord{method, path, user, "", code}
+				requests[id] = requestRecord{method, path, user, "", code, false}
 			}
 		}
 	}
@@ -833,11 +844,10 @@ func TestRunTrail(t *testing.T) {
 		if !slices.Contains(allowed, event.Name) {
 			t.Fatal(event)
 		}
+		if event.Name == "change.finished" && !requests[event.RequestID].change {
+			t.Fatalf("unexpected change event: %+v", event)
+		}
 		byRequest[event.RequestID] = append(byRequest[event.RequestID], event)
-	}
-	changes := map[string]bool{}
-	for _, c := range changeCalls(validKey()) {
-		changes[c.name] = true
 	}
 	for id, request := range requests {
 		events := byRequest[id]
@@ -865,25 +875,27 @@ func TestRunTrail(t *testing.T) {
 					t.Fatal(id, event)
 				}
 			case "tool.called":
-				toolAt = i
+				if toolAt == -1 {
+					toolAt = i
+				}
 			case "change.finished":
-				if changeAt != -1 || !changes[request.tool] || event.Attrs["tool"] != request.tool {
+				if changeAt != -1 || !request.change || event.Attrs["tool"] != request.tool {
 					t.Fatal(id, events)
 				}
 				changeAt = i
 			case "operation.started", "operation.finished", "host.changed", "account.changed":
-				if !changes[request.tool] {
+				if !request.change {
 					t.Fatal(id, event)
 				}
 			}
 		}
-		if changes[request.tool] && (changeAt < 0 || toolAt <= changeAt) {
+		if request.change && (changeAt < 0 || toolAt <= changeAt) {
 			t.Fatal(id, events)
 		}
 	}
 }
 
-// R-YD0E-Q2GU
+// R-GTXT-JJIB
 func TestRunNoSiblingConnections(t *testing.T) {
 	var accepted atomic.Int64
 	ln, e := net.Listen("unix", filepath.Join(integrationSocketDir(t), "trap"))
@@ -930,8 +942,13 @@ func TestRunNoSiblingConnections(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "services")
 	integrationServices(t, path, entries, "")
 	r := startIntegration(t, integrationOptions{path: path})
-	for _, call := range append(changeCalls(validKey()), readCalls()...) {
-		_, err := r.callAs(call.name, call.args, identity.Caller{UserID: "viewer"})
+	calls := append(changeCalls(validKey()), readCalls()...)
+	calls = append(calls, addressCalls()...)
+	requests := make(map[string]string, len(calls))
+	for i, call := range calls {
+		id := fmt.Sprintf("sibling-check-%d", i)
+		requests[id] = call.name
+		_, err := r.callAs(call.name, call.args, identity.Caller{UserID: "viewer", RequestID: id})
 		if err != nil {
 			t.Fatal(call.name, err)
 		}
@@ -947,6 +964,12 @@ func TestRunNoSiblingConnections(t *testing.T) {
 	seen := map[string]bool{}
 	for _, event := range events {
 		seen[event.Name] = true
+		if event.Name == "tool.called" {
+			delete(requests, event.RequestID)
+		}
+	}
+	if len(requests) != 0 {
+		t.Fatalf("tool calls missing from the capture: %v", requests)
 	}
 	for _, name := range []string{"request.started", "request.finished", "tool.called", "change.finished"} {
 		if !seen[name] {

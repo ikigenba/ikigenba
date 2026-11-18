@@ -51,6 +51,9 @@ const (
 	ToolLockUser      = "lock_user"
 	ToolUnlockUser    = "unlock_user"
 	ToolDeleteUser    = "delete_user"
+	ToolUnbanIP       = "unban_ip"
+	ToolAllowIP       = "allow_ip"
+	ToolDisallowIP    = "disallow_ip"
 )
 
 // Tool and argument descriptions.
@@ -74,7 +77,11 @@ const (
 	DescribeLockUser      string = "Lock a user and keep their access settings."
 	DescribeUnlockUser    string = "Restore access to a locked user."
 	DescribeDeleteUser    string = "Delete a locked user and their home."
+	DescribeUnbanIP       string = "Lift an SSH ban on one running host or all running hosts."
+	DescribeAllowIP       string = "Allow an address or network on one SSH host and lift any bans it covers."
+	DescribeDisallowIP    string = "Remove an address or network from one SSH host's allowlist."
 	ArgHost               string = "SSH host name."
+	ArgIP                 string = "IP address or, for allowlist changes, a CIDR prefix."
 	ArgAccount            string = "SSH account slug."
 	ArgUser               string = "SSH user name."
 	ArgKey                string = "OpenSSH public key, including its comment."
@@ -116,6 +123,10 @@ const (
 	UserRemoving    string = "the user is being removed"
 	NameHasRecord   string = "a DNS record already holds that name"
 	CloudFailed     string = "the DNS check failed"
+	InvalidAddress  string = "the IP address or allowlist entry is invalid"
+	PrefixTooWide   string = "the allowlist prefix must be at least /24 for IPv4 or /48 for IPv6"
+	TooManyUnbans   string = "a host already holds its maximum number of pending unbans"
+	AllowlistFull   string = "the host already holds its maximum number of allowlist entries"
 )
 
 // HostsArgs selects a window of live hosts.
@@ -181,6 +192,18 @@ type UserKeyArgs struct {
 	Key     string `json:"key" description:"OpenSSH public key, including its comment." mcp:"required"`
 }
 
+// UnbanArgs selects an address and, optionally, one running host.
+type UnbanArgs struct {
+	IP   string  `json:"ip" description:"IP address or, for allowlist changes, a CIDR prefix." mcp:"required"`
+	Host *string `json:"host" description:"SSH host name."`
+}
+
+// HostIPArgs identifies a host and an allowlist entry.
+type HostIPArgs struct {
+	Host string `json:"host" description:"SSH host name." mcp:"required"`
+	IP   string `json:"ip" description:"IP address or, for allowlist changes, a CIDR prefix." mcp:"required"`
+}
+
 // Host summarizes a live host.
 type Host struct {
 	Host     string `json:"host" mcp:"required"`
@@ -220,8 +243,24 @@ type HostRead struct {
 	Created      string          `json:"created" mcp:"required"`
 	CreatedBy    string          `json:"created_by" mcp:"required"`
 	AccountNames []string        `json:"account_names" mcp:"required"`
+	Allowlist    []string        `json:"allowlist" mcp:"required"`
 	Operation    *Operation      `json:"operation"`
 	Report       json.RawMessage `json:"report"`
+}
+
+// Unbanned describes the pending unban recorded for the selected hosts.
+type Unbanned struct {
+	IP    string `json:"ip" mcp:"required"`
+	Host  string `json:"host" mcp:"required"`
+	Hosts int    `json:"hosts" mcp:"required"`
+}
+
+// AllowlistChange shows the host's allowlist after a tool call.
+type AllowlistChange struct {
+	Host      string   `json:"host" mcp:"required"`
+	IP        string   `json:"ip" mcp:"required"`
+	Allowlist []string `json:"allowlist" mcp:"required"`
+	Pending   bool     `json:"pending" mcp:"required"`
 }
 
 // Operation summarizes a recorded operation.

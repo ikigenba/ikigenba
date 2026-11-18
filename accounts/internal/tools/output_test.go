@@ -171,7 +171,7 @@ func TestOutputEncoding(t *testing.T) {
 	refusal(t, f.call(tools.ToolHost, tools.HostArgs{Host: "missing"}), tools.NoHost)
 }
 
-// R-KD82-QKEV
+// R-ZIBY-SMGE
 func TestHostReadEncoding(t *testing.T) {
 	_ = struct {
 		Host, State, Reason, Health, Type string
@@ -181,24 +181,29 @@ func TestHostReadEncoding(t *testing.T) {
 		Reported, InstanceID, DataVolume  string
 		Version, Applied                  int64
 		Created, CreatedBy                string
-		AccountNames                      []string
+		AccountNames, Allowlist           []string
 		Operation                         *tools.Operation
 		Report                            json.RawMessage
 	}(tools.HostRead{})
 	base := []string{"host", "state", "reason", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported",
-		"instance_id", "data_volume", "version", "applied", "created", "created_by", "account_names"}
+		"instance_id", "data_volume", "version", "applied", "created", "created_by", "account_names", "allowlist"}
 	for _, names := range [][]string{nil, {}} {
-		raw := testEncoding(t, tools.HostRead{AccountNames: names})
+		raw := testEncoding(t, tools.HostRead{AccountNames: names, Allowlist: names})
 		wireMembers(t, raw, base...)
 		wireArray(t, raw, "account_names")
+		wireArray(t, raw, "allowlist")
 	}
 	op := tools.Operation{Operation: "op_example", Kind: store.OpCreate, Status: store.OpRunning}
 	report := json.RawMessage(`{"z":7,"a":{"nested":true}}`)
-	raw := testEncoding(t, tools.HostRead{AccountNames: []string{"chosen"}, Operation: &op, Report: report})
+	raw := testEncoding(t, tools.HostRead{AccountNames: []string{"chosen"}, Allowlist: []string{"192.0.2.7"}, Operation: &op, Report: report})
 	wireMembers(t, raw, append(base, "operation", "report")...)
 	var names []string
 	if err := json.Unmarshal(field(t, raw, "account_names"), &names); err != nil || !slices.Equal(names, []string{"chosen"}) {
 		t.Fatalf("account names = %v (%v)", names, err)
+	}
+	var allowlist []string
+	if err := json.Unmarshal(field(t, raw, "allowlist"), &allowlist); err != nil || !slices.Equal(allowlist, []string{"192.0.2.7"}) {
+		t.Fatalf("allowlist = %v (%v)", allowlist, err)
 	}
 	wireMembers(t, field(t, raw, "operation"), "operation", "kind", "step", "status", "error", "started")
 	var got tools.Operation

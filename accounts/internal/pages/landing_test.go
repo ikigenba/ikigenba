@@ -290,7 +290,7 @@ func TestToolAndPageWindowsAgree(t *testing.T) {
 	}
 }
 
-// R-RTJ2-BPK3 R-SSW5-F228 R-SWJU-KDAB R-K8CH-7HG3
+// R-S5OQ-Q4G0 R-S6WN-3W6P R-SWJU-KDAB R-K8CH-7HG3
 func TestHostDetailsAndLatestReport(t *testing.T) {
 	f := setup(t)
 	st := f.cfg.Store
@@ -300,7 +300,7 @@ func TestHostDetailsAndLatestReport(t *testing.T) {
 	}
 	target := "/hosts/" + h.Name
 	b := banner(f, target, []page.Level{pages.HostLevel(h.Name)})
-	view := pages.HostView{Name: h.Name, State: store.HostProvisioning, Health: store.HealthNone, Type: hostSpec.Type, RootGB: hostSpec.RootGB, DataGB: hostSpec.DataGB, Created: created, CreatedText: createdSecond}
+	view := pages.HostView{Name: h.Name, State: store.HostProvisioning, Health: store.HealthNone, Type: hostSpec.Type, RootGB: hostSpec.RootGB, DataGB: hostSpec.DataGB, Created: created, CreatedText: createdSecond, Allowlist: []string{}}
 	same(t, answer(f, "GET", target, "viewer"), expected(f, "GET", target, "host", 200, pages.HostData{Banner: b, Host: view}))
 	for _, slug := range []string{"alpha", "zulu"} {
 		if _, _, err := st.PlaceAccount(t.Context(), slug, h.Name, caller); err != nil {
@@ -311,7 +311,13 @@ func TestHostDetailsAndLatestReport(t *testing.T) {
 	if err := st.Finish(t.Context(), op.ID, store.Update{InstanceID: instance, DataVolume: volume, EIP: eip}); err != nil {
 		t.Fatal(err)
 	}
+	for _, entry := range []string{"198.51.100.0/24", "192.0.2.7"} {
+		if _, err := st.Allow(t.Context(), h.Name, entry); err != nil {
+			t.Fatal(err)
+		}
+	}
 	received := f.cfg.Now().Add(2*time.Minute + 2*time.Second)
+	banned := received.In(time.FixedZone("test", 2*60*60))
 	report := protocol.Report{
 		Protocol: protocol.Version, Attempted: 2, Applied: 1, Error: "chosen apply error", InstanceID: "reported-instance",
 		Type: "reported-type", AMI: "reported-ami", OS: "reported-os", Kernel: "reported-kernel", DaemonVersion: "reported-daemon", Booted: f.cfg.Now(),
@@ -320,6 +326,11 @@ func TestHostDetailsAndLatestReport(t *testing.T) {
 		Data: protocol.Disk{UsedBytes: 301, SizeBytes: 302, InodesUsed: 303, InodesTotal: 304}, Sessions: 5, Updates: 6, Reboot: true,
 		FailedUnits: []string{"chosen-z.service", "chosen-a.service"},
 		Slices:      []protocol.Slice{{Account: "zulu", CPUPercent: 9.8, MemoryBytes: 410}, {Account: "alpha", CPUPercent: 8.7, MemoryBytes: 420}},
+		Bans: []protocol.Ban{
+			{Address: "203.0.113.9", Banned: banned, Expires: banned.Add(10 * time.Minute)},
+			{Address: "192.0.2.9", Banned: banned.Add(-time.Minute), Expires: banned.Add(9 * time.Minute)},
+		},
+		BanTotal: 300, Allowlist: []string{"192.0.2.7"},
 	}
 	if _, err := st.RecordReport(t.Context(), h.Name, protocol.Report{Protocol: protocol.Version, OS: "old-os"}, f.cfg.Now()); err != nil {
 		t.Fatal(err)
@@ -334,6 +345,7 @@ func TestHostDetailsAndLatestReport(t *testing.T) {
 	}
 	view.State, view.Health, view.AccountCount = store.HostRunning, store.HealthError, 2
 	view.InstanceID, view.DataVolume, view.EIP = instance, volume, eip
+	view.Allowlist = []string{"192.0.2.7", "198.51.100.0/24"}
 	view.Reported, view.ReportedText = "2026-11-17T14:05:09Z", "2026-11-17 14:05"
 	reportView := &pages.ReportView{
 		Received: "2026-11-17T14:05:09Z", ReceivedText: "2026-11-17 14:05:09 UTC", InstanceID: "reported-instance", Type: "reported-type",
@@ -342,6 +354,11 @@ func TestHostDetailsAndLatestReport(t *testing.T) {
 		MemoryUsed: 101, MemoryAvailable: 102, SwapUsed: 103, SwapTotal: 104, Root: pages.VolumeView{UsedBytes: 201, SizeBytes: 202, InodesUsed: 203, InodesTotal: 204},
 		Data: pages.VolumeView{UsedBytes: 301, SizeBytes: 302, InodesUsed: 303, InodesTotal: 304}, Sessions: 5, Updates: 6, Reboot: true,
 		FailedUnits: []string{"chosen-z.service", "chosen-a.service"}, Slices: []pages.SliceRow{{Account: "alpha", CPUPercent: 8.7, MemoryBytes: 420}, {Account: "zulu", CPUPercent: 9.8, MemoryBytes: 410}},
+		Bans: []pages.BanRow{
+			{Address: "203.0.113.9", Banned: "2026-11-17T14:05:09Z", BannedText: "2026-11-17 14:05:09 UTC", Expires: "2026-11-17T14:15:09Z", ExpiresText: "2026-11-17 14:15:09 UTC"},
+			{Address: "192.0.2.9", Banned: "2026-11-17T14:04:09Z", BannedText: "2026-11-17 14:04:09 UTC", Expires: "2026-11-17T14:14:09Z", ExpiresText: "2026-11-17 14:14:09 UTC"},
+		},
+		BanTotal: 300, Allowlist: []string{"192.0.2.7"},
 	}
 	for _, method := range []string{"GET", "HEAD"} {
 		same(t, answer(f, method, target, "viewer"), expected(f, method, target, "host", 200, pages.HostData{Banner: b, Host: view, Report: reportView}))
@@ -366,5 +383,22 @@ func TestHostDetailsAndLatestReport(t *testing.T) {
 	get, head := answer(f, "GET", target, "viewer"), answer(f, "HEAD", target, "viewer")
 	if get.Code != head.Code || !reflect.DeepEqual(get.Header(), head.Header()) || head.Body.Len() != 0 {
 		t.Fatal("host HEAD differs from GET")
+	}
+	legacy := protocol.Report{Protocol: protocol.Version, Applied: report.Applied, Attempted: report.Attempted, Error: report.Error, OS: "old-os"}
+	emptyView := &pages.ReportView{
+		Received: reportView.Received, ReceivedText: reportView.ReceivedText, Applied: legacy.Applied, Wanted: recorded.Version,
+		OS: legacy.OS, Error: legacy.Error, FailedUnits: []string{}, Slices: []pages.SliceRow{}, Bans: []pages.BanRow{}, Allowlist: []string{},
+	}
+	for _, total := range []int{0, 1, 517} {
+		t.Run(fmt.Sprintf("no ban rows with total %d", total), func(t *testing.T) {
+			emptyReport := legacy
+			emptyReport.BanTotal = total
+			if _, err := st.RecordReport(t.Context(), h.Name, emptyReport, received); err != nil {
+				t.Fatal(err)
+			}
+			want := *emptyView
+			want.BanTotal = total
+			same(t, answer(f, "GET", target, "viewer"), expected(f, "GET", target, "host", 200, pages.HostData{Banner: b, Host: view, Report: &want}))
+		})
 	}
 }

@@ -70,11 +70,11 @@ type notice struct {
 	send func(context.Context, *telemetry.Writer)
 }
 
-func notices(tool, host, account, user, result, op, kind, from, to, status, reason, resource string, n int64) []notice {
+func notices(tool, host, account, user, ip, result, op, kind, from, to, status, reason, resource string, n int64) []notice {
 	return []notice{
-		{trail.EventChangeFinished, telemetry.Attrs{"tool": tool, "host": host, "account": account, "user": user, "result": result},
+		{trail.EventChangeFinished, telemetry.Attrs{"tool": tool, "host": host, "account": account, "user": user, "ip": ip, "result": result},
 			func(ctx context.Context, w *telemetry.Writer) {
-				trail.Change(ctx, w, tool, host, account, user, result)
+				trail.Change(ctx, w, tool, host, account, user, ip, result)
 			}},
 		{trail.EventOperationStarted, telemetry.Attrs{"operation": op, "kind": kind, "host": host, "account": account},
 			func(ctx context.Context, w *telemetry.Writer) {
@@ -100,7 +100,7 @@ func notices(tool, host, account, user, result, op, kind, from, to, status, reas
 }
 
 func example(n int64) []notice {
-	return notices("lock_user", "host01", "acme", "daffy", trail.ResultOK, "op_1", "place", "pending", "active", "done", "reason", "i-1", n)
+	return notices("allow_ip", "host01", "acme", "daffy", "192.0.2.0/24", trail.ResultOK, "op_1", "place", "pending", "active", "done", "reason", "i-1", n)
 }
 
 func checkEvent(t *testing.T, e telemetry.Event, want notice, c identity.Caller) {
@@ -110,7 +110,7 @@ func checkEvent(t *testing.T, e telemetry.Event, want notice, c identity.Caller)
 	}
 }
 
-// R-E00W-BW8K R-E8K7-0AFF R-E9S3-E264 R-KMZ9-SQCF R-L1M2-DZ8R
+// R-I7QS-EGN0 R-E8K7-0AFF R-E9S3-E264 R-I8YO-S8DP R-IA6L-604E
 func TestEachEvent(t *testing.T) {
 	caller := identity.Caller{UserID: "caller", RequestID: "request", Email: "private@example.test"}
 	for _, c := range []identity.Caller{{}, caller} {
@@ -126,7 +126,7 @@ func TestEachEvent(t *testing.T) {
 			capture := &telemetry.Capture{}
 			w := writer(t, capture)
 			want := append(example(7), example(-2)...)
-			want = append(want, notices("", "", "", "", "", "", "", "", "", "", "", "", 0)...)
+			want = append(want, notices("", "", "", "", "", "", "", "", "", "", "", "", "", 0)...)
 			for _, n := range want {
 				n.send(ctx, w)
 			}
@@ -158,7 +158,7 @@ func (s *blockedSink) Deliver(ctx context.Context, ev telemetry.Event) error {
 	return s.Capture.Deliver(ctx, ev)
 }
 
-// R-9V58-00PE R-9WD4-DSG3 R-L2TY-RQZG
+// R-9V58-00PE R-9WD4-DSG3 R-IBEH-JRV3
 func TestNoticeQueuesWithoutDelivery(t *testing.T) {
 	const primingEvent, laterEvent = "request.started", "tool.called"
 	for _, n := range example(7) {
@@ -193,7 +193,7 @@ func TestNoticeQueuesWithoutDelivery(t *testing.T) {
 	}
 }
 
-// R-KO76-6I34
+// R-ICMD-XJLS
 func TestConcurrentNotices(t *testing.T) {
 	const callers = 32
 	capture := &telemetry.Capture{}
@@ -205,7 +205,7 @@ func TestConcurrentNotices(t *testing.T) {
 		id := fmt.Sprint(i)
 		c := identity.Caller{UserID: id, RequestID: "request-" + id}
 		ctx := identity.NewContext(context.Background(), c)
-		for _, n := range notices("tool"+id, "host"+id, "account"+id, "user"+id, id, id, id, id, id, id, id, id, int64(i)) {
+		for _, n := range notices("tool"+id, "host"+id, "account"+id, "user"+id, "ip"+id, id, id, id, id, id, id, id, id, int64(i)) {
 			want[id+"/"+n.name] = n
 			wg.Go(func() {
 				<-start

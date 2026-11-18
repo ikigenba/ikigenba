@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
+	"net/netip"
 	"regexp"
 	"slices"
 	"strings"
@@ -19,21 +20,27 @@ var (
 	ErrKey      = errors.New("invalid SSH public key")
 	ErrType     = errors.New("invalid instance type")
 	ErrSize     = errors.New("invalid volume size")
+	ErrAddress  = errors.New("invalid IP address or prefix")
+	ErrPrefix   = errors.New("IP prefix is too wide")
 )
 
-// Instance defaults, size ranges and per-host capacity.
+// Instance defaults, size ranges, per-host capacity and minimum prefix lengths.
 const (
-	DefaultType        = "t4g.medium"
-	DefaultRootGB      = 20
-	DefaultDataGB      = 50
-	MinRootGB          = 20
-	MaxRootGB          = 100
-	MinDataGB          = 10
-	MaxDataGB          = 1024
-	MaxAccountsPerHost = 50
-	MaxUsersPerHost    = 200
-	MaxKeysPerUser     = 10
-	MaxKeyBytes        = 512
+	DefaultType         = "t4g.medium"
+	DefaultRootGB       = 20
+	DefaultDataGB       = 50
+	MinRootGB           = 20
+	MaxRootGB           = 100
+	MinDataGB           = 10
+	MaxDataGB           = 1024
+	MaxAccountsPerHost  = 50
+	MaxUsersPerHost     = 200
+	MaxKeysPerUser      = 10
+	MaxKeyBytes         = 512
+	MaxUnbansPerHost    = 50
+	MaxAllowlistPerHost = 50
+	MinPrefixIPv4       = 24
+	MinPrefixIPv6       = 48
 )
 
 var (
@@ -123,6 +130,56 @@ func (k Key) Line() string {
 		line += " " + comment
 	}
 	return line
+}
+
+// Address returns the canonical spelling of an IP address without a zone.
+func Address(s string) (string, error) {
+	addr, err := netip.ParseAddr(s)
+	if err != nil || addr.Zone() != "" {
+		return "", ErrAddress
+	}
+	return addr.Unmap().String(), nil
+}
+
+// AllowEntry returns the canonical address or network for an allowlist entry.
+func AllowEntry(s string) (string, error) {
+	if !strings.Contains(s, "/") {
+		return Address(s)
+	}
+	prefix, err := netip.ParsePrefix(s)
+	if err != nil {
+		return "", ErrAddress
+	}
+	addr, bits := prefix.Addr(), prefix.Bits()
+	if addr.Is4In6() && bits >= 96 {
+		addr, bits = addr.Unmap(), bits-96
+	}
+	if (addr.Is4() && bits < MinPrefixIPv4) || (addr.Is6() && bits < MinPrefixIPv6) {
+		return "", ErrPrefix
+	}
+	if bits == addr.BitLen() {
+		return addr.String(), nil
+	}
+	return netip.PrefixFrom(addr, bits).Masked().String(), nil
+}
+
+// Covers reports whether a canonical entry holds a canonical address.
+func Covers(entry, address string) bool {
+	if canonical, err := AllowEntry(entry); err != nil || canonical != entry {
+		return false
+	}
+	if canonical, err := Address(address); err != nil || canonical != address {
+		return false
+	}
+	if entry == address {
+		return true
+	}
+	prefix, err := netip.ParsePrefix(entry)
+	if err != nil {
+		return false
+	}
+	addr, err := netip.ParseAddr(address)
+	return err == nil && prefix.Contains(addr)
 }
 
 // AllowedTypes returns a copy of the allowed EC2 types.

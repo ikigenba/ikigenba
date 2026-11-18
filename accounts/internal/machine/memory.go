@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
+	"github.com/ikigenba/ikigenba/accounts/internal/valid"
 )
 
 // Fixed facts reported by a simulated host.
@@ -20,6 +21,7 @@ const (
 	MemoryDiskUsed    int64 = 1 << 30
 	MemoryInodesUsed  int64 = 50000
 	MemoryInodesTotal int64 = 10000000
+	MemoryBanTime           = 10 * time.Minute
 )
 
 // MemoryConfig controls timing on a simulated host.
@@ -45,24 +47,28 @@ type User struct {
 
 // Snapshot describes the current contents of a simulated host.
 type Snapshot struct {
-	Accounts []Account
-	Users    []User
-	Folders  []string
-	Daemon   string
-	Applies  int
+	Accounts  []Account
+	Users     []User
+	Folders   []string
+	Daemon    string
+	Applies   int
+	Allowlist []string
+	Bans      []protocol.Ban
 }
 
 // Memory is an in-memory machine for tests and sandbox hosts.
 type Memory struct {
-	mu       sync.Mutex
-	cfg      MemoryConfig
-	booted   time.Time
-	accounts map[string]Account
-	users    map[string]User
-	folders  map[string]struct{}
-	daemon   string
-	applies  int
-	failure  error
+	mu        sync.Mutex
+	cfg       MemoryConfig
+	booted    time.Time
+	accounts  map[string]Account
+	users     map[string]User
+	folders   map[string]struct{}
+	daemon    string
+	applies   int
+	failure   error
+	allowlist []string
+	bans      map[string]protocol.Ban
 }
 
 // NewMemory makes an empty simulated host.
@@ -83,7 +89,7 @@ func NewMemory(cfg MemoryConfig) *Memory {
 	return &Memory{
 		cfg: cfg, booted: cfg.Now().UTC().Truncate(time.Second),
 		accounts: make(map[string]Account), users: make(map[string]User),
-		folders: make(map[string]struct{}),
+		folders: make(map[string]struct{}), bans: make(map[string]protocol.Ban),
 	}
 }
 
@@ -91,7 +97,9 @@ func NewMemory(cfg MemoryConfig) *Memory {
 func (m *Memory) State() Snapshot {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	out := Snapshot{Daemon: m.daemon, Applies: m.applies}
+	out := Snapshot{
+		Daemon: m.daemon, Applies: m.applies, Allowlist: slices.Clone(m.allowlist), Bans: m.activeBans(),
+	}
 	for _, account := range m.accounts {
 		out.Accounts = append(out.Accounts, account)
 	}
@@ -106,6 +114,57 @@ func (m *Memory) State() Snapshot {
 	sort.Slice(out.Users, func(i, j int) bool { return out.Users[i].Name < out.Users[j].Name })
 	slices.Sort(out.Folders)
 	return out
+}
+
+// Ban records a simulated jail ban when the address is eligible.
+func (m *Memory) Ban(address string) {
+	if canonical, err := valid.Address(address); err != nil || canonical != address {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.allowed(address) {
+		return
+	}
+	now := m.cfg.Now()
+	m.expireBans(now)
+	if _, exists := m.bans[address]; !exists && len(m.bans) >= protocol.MaxBans {
+		return
+	}
+	start := now.UTC().Truncate(time.Second)
+	m.bans[address] = protocol.Ban{Address: address, Banned: start, Expires: start.Add(MemoryBanTime)}
+}
+
+func (m *Memory) allowed(address string) bool {
+	for _, entry := range m.allowlist {
+		if valid.Covers(entry, address) {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Memory) expireBans(now time.Time) {
+	for address, ban := range m.bans {
+		if !ban.Expires.After(now) {
+			delete(m.bans, address)
+		}
+	}
+}
+
+func (m *Memory) activeBans() []protocol.Ban {
+	m.expireBans(m.cfg.Now())
+	var bans []protocol.Ban
+	for _, ban := range m.bans {
+		bans = append(bans, ban)
+	}
+	sort.Slice(bans, func(i, j int) bool {
+		if bans[i].Banned.Equal(bans[j].Banned) {
+			return bans[i].Address < bans[j].Address
+		}
+		return bans[i].Banned.After(bans[j].Banned)
+	})
+	return bans
 }
 
 // SetFailure sets the error returned by later Apply calls.
@@ -154,6 +213,16 @@ func (m *Memory) Apply(ctx context.Context, s protocol.DesiredState) error {
 			m.users[name] = user
 		}
 	}
+	m.allowlist = slices.Clone(s.Allowlist)
+	slices.Sort(m.allowlist)
+	for _, address := range s.Unban {
+		delete(m.bans, address)
+	}
+	for address := range m.bans {
+		if m.allowed(address) {
+			delete(m.bans, address)
+		}
+	}
 	m.applies++
 	return nil
 }
@@ -168,7 +237,9 @@ func (m *Memory) Inspect(_ context.Context, s protocol.DesiredState) (protocol.R
 	report := protocol.Report{
 		OS: MemoryOS, Kernel: MemoryKernel, Booted: m.booted,
 		MemoryUsed: MemoryUsed, MemoryAvailable: MemoryAvailable, Root: disk(s.RootGB),
+		Allowlist: slices.Clone(m.allowlist), Bans: m.activeBans(),
 	}
+	report.BanTotal = len(report.Bans)
 	if s.DataVolume != "" {
 		report.Data = disk(s.DataGB)
 	}

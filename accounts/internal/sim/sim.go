@@ -28,6 +28,7 @@ type Config struct {
 	Now     func() time.Time
 	Sleep   func(context.Context, time.Duration)
 	After   func(time.Duration) <-chan time.Time
+	BanFile string
 }
 
 // Sim supervises the sandbox's simulated hosts.
@@ -37,8 +38,9 @@ type Sim struct{ cfg Config }
 func New(cfg Config) *Sim { return &Sim{cfg: cfg} }
 
 type loop struct {
-	cancel context.CancelFunc
-	done   <-chan struct{}
+	cancel  context.CancelFunc
+	done    <-chan struct{}
+	machine *machine.Memory
 }
 
 // Run watches instances and joins all their loops when ctx ends.
@@ -69,12 +71,12 @@ func (s *Sim) Run(ctx context.Context) error {
 }
 
 func (s *Sim) look(ctx context.Context, loops map[string]loop) error {
-	running := make(map[string]bool)
+	running := make(map[string]string)
 	tags := cloud.Tags{cloud.TagKind: cloud.KindHost}
 	err := s.cfg.Cloud.FindInstances(ctx, tags, func(page []cloud.Instance) bool {
 		for _, i := range page {
 			if i.State == cloud.InstanceRunning {
-				running[i.ID] = true
+				running[i.ID] = i.Tags[cloud.TagHost]
 			}
 		}
 		return ctx.Err() == nil
@@ -88,7 +90,7 @@ func (s *Sim) look(ctx context.Context, loops map[string]loop) error {
 			l.cancel()
 			delete(loops, id)
 		default:
-			if !running[id] {
+			if _, up := running[id]; !up {
 				l.cancel()
 			}
 		}
@@ -101,6 +103,7 @@ func (s *Sim) look(ctx context.Context, loops map[string]loop) error {
 			loops[id] = s.start(ctx, id)
 		}
 	}
+	s.consumeBans(running, loops)
 	return nil
 }
 
@@ -108,6 +111,7 @@ func (s *Sim) start(ctx context.Context, id string) loop {
 	cfg := s.cfg
 	loopCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
+	m := machine.NewMemory(machine.MemoryConfig{ApplyDelay: ApplyDelay, Sleep: cfg.Sleep, Now: cfg.Now})
 	go func() {
 		defer close(done)
 		if loopCtx.Err() != nil {
@@ -118,12 +122,12 @@ func (s *Sim) start(ctx context.Context, id string) loop {
 			HTTP:      &http.Client{Transport: transport{handler: cfg.Handler, binding: cfg.Binding}},
 			Presigner: cfg.Cloud.Presigner(id),
 			Metadata:  cfg.Cloud.Metadata(id),
-			Machine:   machine.NewMemory(machine.MemoryConfig{ApplyDelay: ApplyDelay, Sleep: cfg.Sleep, Now: cfg.Now}),
+			Machine:   m,
 			Digest:    cfg.Digest(),
 			Now:       cfg.Now,
 			Sleep:     cfg.Sleep,
 			Stderr:    io.Discard,
 		})
 	}()
-	return loop{cancel: cancel, done: done}
+	return loop{cancel: cancel, done: done, machine: m}
 }

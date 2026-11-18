@@ -168,12 +168,14 @@ func applyHost(w *writing, h *Host, u Update) error {
 	assign(&h.Type, u.Type)
 	assign(&h.RootGB, u.RootGB)
 	assign(&h.DataGB, u.DataGB)
-	if *h == before {
+	if h.InstanceID == before.InstanceID && h.RootVolume == before.RootVolume && h.DataVolume == before.DataVolume &&
+		h.AllocationID == before.AllocationID && h.AssociationID == before.AssociationID && h.EIP == before.EIP &&
+		h.AZ == before.AZ && h.Type == before.Type && h.RootGB == before.RootGB && h.DataGB == before.DataGB {
 		return nil
 	}
 	if h.DataVolume != before.DataVolume || h.RootGB != before.RootGB || h.DataGB != before.DataGB {
 		h.Version++
-		w.changed = h.Name
+		w.noteVersionChange(h.Name)
 	}
 	return w.exec(`UPDATE hosts SET instance_id = ?, root_volume = ?, data_volume = ?, allocation_id = ?, association_id = ?,
 		eip = ?, az = ?, instance_type = ?, root_gb = ?, data_gb = ?, version = ? WHERE name = ?`,

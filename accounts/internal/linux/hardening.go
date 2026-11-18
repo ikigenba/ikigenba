@@ -146,39 +146,42 @@ const jailPath = "/etc/fail2ban/jail.d/ikigenba.local"
 const jailContents = `[sshd]
 enabled = true
 backend = systemd
-mode = aggressive
+mode = normal
 banaction = nftables-multiport
 maxretry = 5
 findtime = 10m
 bantime = 10m
-bantime.increment = true
-bantime.maxtime = 1w
-`
+ignoreip = 127.0.0.1/8 ::1`
 
-func (h *Host) fail2ban(ctx context.Context) error {
+func (h *Host) fail2ban(ctx context.Context, allowlist []string) (bool, error) {
 	const unit = "fail2ban.service"
-	jail, err := h.write(jailPath, []byte(jailContents), 0o644)
+	contents := jailContents
+	if len(allowlist) != 0 {
+		contents += " " + strings.Join(allowlist, " ")
+	}
+	jail, err := h.write(jailPath, []byte(contents+"\n"), 0o644)
 	if err != nil {
-		return err
+		return false, err
 	}
 	enabled, active, err := h.unitReadiness(ctx, unit)
 	if err != nil {
-		return err
+		return false, err
 	}
-	if !enabled || !active {
+	started := !enabled || !active
+	if started {
 		if _, err := h.run(ctx, "systemctl", "enable", "--now", unit); err != nil {
 			if jail.changed {
-				return errors.Join(err, h.restore(jailPath, jail))
+				return false, errors.Join(err, h.restore(jailPath, jail))
 			}
-			return err
+			return false, err
 		}
 	}
 	if jail.changed && active {
 		if _, err := h.run(ctx, "systemctl", "reload", unit); err != nil {
-			return errors.Join(err, h.restore(jailPath, jail))
+			return false, errors.Join(err, h.restore(jailPath, jail))
 		}
 	}
-	return nil
+	return started, nil
 }
 
 func (h *Host) unitStatus(ctx context.Context, verb, unit string) (bool, error) {

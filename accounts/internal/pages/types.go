@@ -93,6 +93,7 @@ type HostView struct {
 	EIP                                                                  string
 	AccountCount                                                         int
 	Reported, ReportedText, InstanceID, DataVolume, Created, CreatedText string
+	Allowlist                                                            []string
 }
 
 // ReportView describes the latest daemon report.
@@ -107,6 +108,9 @@ type ReportView struct {
 	Reboot                                                                                       bool
 	FailedUnits                                                                                  []string
 	Slices                                                                                       []SliceRow
+	Bans                                                                                         []BanRow
+	BanTotal                                                                                     int
+	Allowlist                                                                                    []string
 }
 
 // VolumeView describes space and inode use on a volume.
@@ -118,6 +122,9 @@ type SliceRow struct {
 	CPUPercent  float64
 	MemoryBytes int64
 }
+
+// BanRow describes a reported SSH ban and its times.
+type BanRow struct{ Address, Banned, BannedText, Expires, ExpiresText string }
 
 // ToolsData describes the registered tools.
 type ToolsData struct {

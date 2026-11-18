@@ -27,11 +27,12 @@ type callCase struct {
 	want string
 }
 
-// R-Y9R4-76FZ R-Z1SS-ZWHY R-ZBK0-22FI R-Y4VI-O3H7 R-D1GS-WBBJ
+// R-Y9R4-76FZ R-Z1SS-ZWHY R-ZOFG-PH5V R-Y4VI-O3H7 R-D1GS-WBBJ
 func TestDisabledAndUnavailableTools(t *testing.T) {
 	for _, configured := range []bool{false, true} {
 		t.Run(fmt.Sprint(configured), func(t *testing.T) {
 			f := setupConfigured(t, configured)
+			f.serveLoopback()
 			f.d.SetFailing(true)
 			for _, e := range catalog() {
 				args := validArgs(e)
@@ -59,6 +60,9 @@ func TestDisabledAndUnavailableTools(t *testing.T) {
 				{tools.ToolAddUser, tools.UserKeyArgs{User: "bad name"}, tools.InvalidName},
 				{tools.ToolAddUser, tools.UserKeyArgs{User: "root"}, tools.ReservedName},
 				{tools.ToolAddUser, tools.UserKeyArgs{User: "valid-user", Key: "invalid"}, tools.InvalidKey},
+				{tools.ToolUnbanIP, tools.UnbanArgs{IP: "192.0.2.0/24"}, tools.InvalidAddress},
+				{tools.ToolAllowIP, tools.HostIPArgs{Host: "missing", IP: "invalid"}, tools.InvalidAddress},
+				{tools.ToolDisallowIP, tools.HostIPArgs{Host: "missing", IP: "10.0.0.0/8"}, tools.PrefixTooWide},
 			} {
 				want := tools.NotConfigured
 				if configured {
@@ -528,9 +532,10 @@ func TestAccountUserCapacity(t *testing.T) {
 	refusal(t, f.call(tools.ToolAddUser, tools.UserKeyArgs{Account: "beta", User: "overflow", Key: k.Line}), tools.AccountFull)
 }
 
-// R-ZMJ3-I03R R-XWC7-ZPAC R-GCUE-PFWU
+// R-ZMJ3-I03R R-GKN3-WKUI R-GPIP-FNTA
 func TestChangeTrailAndWake(t *testing.T) {
 	f := setup(t)
+	f.serveLoopback()
 	ctx := context.Background()
 	var ready []map[string]bool
 	f.onWake = func() {
@@ -587,7 +592,7 @@ func TestChangeTrailAndWake(t *testing.T) {
 		attrs telemetry.Attrs
 	}
 	changed := func(tool, h, a, u, result string) expectedEvent {
-		return expectedEvent{trail.EventChangeFinished, telemetry.Attrs{"tool": tool, "host": h, "account": a, "user": u, "result": result}}
+		return expectedEvent{trail.EventChangeFinished, telemetry.Attrs{"tool": tool, "host": h, "account": a, "user": u, "ip": "", "result": result}}
 	}
 	started := func(id, kind, account string) expectedEvent {
 		return expectedEvent{trail.EventOperationStarted, telemetry.Attrs{"operation": id, "kind": kind, "host": host.Host, "account": account}}
@@ -658,9 +663,10 @@ func TestPendingAccountAndRemovingUserThroughTools(t *testing.T) {
 	refusal(t, f.call(tools.ToolDeleteHost, tools.HostArgs{Host: host.Host}), tools.HostHasAccounts)
 }
 
-// R-ZBK0-22FI
+// R-ZOFG-PH5V
 func TestClosedRecord(t *testing.T) {
 	f := setup(t)
+	f.serveLoopback()
 	if err := f.d.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -675,6 +681,9 @@ func TestClosedRecord(t *testing.T) {
 		{tools.ToolAddUser, tools.UserKeyArgs{Account: "acme", User: "daffy", Key: key(1)}, store.Unreachable},
 		{tools.ToolRemoveAccount, tools.AccountArgs{Account: "acme"}, store.Unreachable},
 		{tools.ToolCreateAccount, tools.CreateAccountArgs{Account: "invalid!"}, tools.InvalidName},
+		{tools.ToolUnbanIP, tools.UnbanArgs{IP: "192.0.2.7"}, store.Unreachable},
+		{tools.ToolAllowIP, tools.HostIPArgs{Host: "host01", IP: "192.0.2.7"}, store.Unreachable},
+		{tools.ToolDisallowIP, tools.HostIPArgs{Host: "host01", IP: "192.0.2.7"}, store.Unreachable},
 	} {
 		refusal(t, f.call(c.name, c.args), c.want)
 	}

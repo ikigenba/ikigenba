@@ -108,6 +108,8 @@ func TestInvalidInput(t *testing.T) {
 		observe(s.UsersOf(ctx, "")), observe(s.Desired(ctx, "")), observe(s.RecordReport(ctx, "", protocol.Report{}, baseTime)),
 		observe(s.Report(ctx, "")), observe(s.NoteStray(ctx, "resource", "", "", baseTime)), observe(s.Explains(ctx, "")),
 		noOutput(s.NoteGrow(ctx, "", baseTime)),
+		observe(s.Allow(ctx, "", "192.0.2.7")), observe(s.Disallow(ctx, "", "192.0.2.7")),
+		observe(s.Unban(ctx, "", "192.0.2.7")), observe(s.UnbanRunning(ctx, "")),
 	} {
 		call.assertZero(t, store.ErrUnreachable)
 	}
@@ -121,6 +123,9 @@ func exercise(c context.Context, s *store.Store, host string, opID string) []obs
 		noOutput(s.Defer(c, opID, baseTime.Add(time.Second), 1)), observe(s.NextTry(c)), observe(s.Host(c, host)),
 		observe(s.HostByInstance(c, "instance")), observe(s.Operation(c, opID)),
 		noOutput(s.Fail(c, opID, "retryable")), observe2(s.RetryHost(c, host, caller)), noOutput(s.Finish(c, opID, store.Update{})),
+		observe(s.Allow(c, host, "198.51.100.0/24")), observe(s.Allow(c, host, "192.0.2.7")),
+		observe(s.Disallow(c, host, "192.0.2.7")), observe(s.Unban(c, host, "192.0.2.7")),
+		observe(s.UnbanRunning(c, "198.51.100.7")),
 		observe2(s.StartHostOp(c, host, store.OpStop, store.Target{}, caller)),
 		observe2(s.PlaceAccount(c, "business", host, caller)), observe(s.Account(c, "business")), observe(s.AccountsOn(c, host)),
 	}
@@ -189,7 +194,7 @@ func TestSnapshotKeepsItsViewAndDoesNotChangeStoreReads(t *testing.T) {
 	checkErr(t, err, nil)
 }
 
-// R-PDCM-AJ5R R-JDPD-8UJA R-JG56-0E0O R-JHD2-E5RD
+// R-PDCM-AJ5R R-JDPD-8UJA R-JG56-0E0O R-2AZ8-MC5D
 func TestAdditiveMigrations(t *testing.T) {
 	migrations := accounts.Migrations()
 	old := value(t, result(fs.ReadFile(migrations, "0001_accounts.sql")))
@@ -218,16 +223,14 @@ func TestAdditiveMigrations(t *testing.T) {
 		return err
 	}), nil)
 	var extra strings.Builder
-	for _, table := range []string{"hosts", "operations", "accounts", "ssh_users", "ssh_keys",
-		"reports", "names", "counters", "strays", "volume_grows"} {
+	bansSchema := value(t, result(fs.ReadFile(migrations, "0003_bans.sql")))
+	for _, table := range tableNames(string(newSchema) + string(bansSchema)) {
 		extra.WriteString("ALTER TABLE " + table + " ADD COLUMN future_note TEXT;\n")
 	}
-	expanded := fstest.MapFS{"0001_accounts.sql": {Data: old}, "0002_hosts.sql": {Data: newSchema}, "0003_expand.sql": {Data: []byte(extra.String())}}
+	expanded := fstest.MapFS{"0001_accounts.sql": {Data: old}, "0002_hosts.sql": {Data: newSchema},
+		"0003_bans.sql": {Data: bansSchema}, "0004_expand.sql": {Data: []byte(extra.String())}}
 	cfg.Rand = new(counterRandom)
-	path := filepath.Join(t.TempDir(), "expand.db")
-	d, _ = open(t, path, expanded, cfg)
-	checkErr(t, d.Close(), nil)
-	_, withExtra := open(t, path, migrations, cfg)
+	_, withExtra := open(t, filepath.Join(t.TempDir(), "expand.db"), expanded, cfg)
 	for _, s := range []*store.Store{baseline, withoutLegacy, withExtra} {
 		create(t, s)
 	}
@@ -245,4 +248,56 @@ func TestAdditiveMigrations(t *testing.T) {
 		closed(t, w, true)
 		cancel()
 	}
+}
+
+func tableNames(schema string) []string {
+	createTable := regexp.MustCompile(`\bCREATE TABLE ([a-z_][a-z_0-9]*)\b`)
+	var names []string
+	for _, match := range createTable.FindAllStringSubmatch(schema, -1) {
+		names = append(names, match[1])
+	}
+	return names
+}
+
+// R-29RC-8KEO
+func TestBansMigrationExpandsPreviousSchema(t *testing.T) {
+	migrations := accounts.Migrations()
+	groups := value(t, result(fs.ReadFile(migrations, "0001_accounts.sql")))
+	hosts := value(t, result(fs.ReadFile(migrations, "0002_hosts.sql")))
+	bans := value(t, result(fs.ReadFile(migrations, "0003_bans.sql")))
+	previous := fstest.MapFS{"0001_accounts.sql": {Data: groups}, "0002_hosts.sql": {Data: hosts}}
+	oldNames := tableNames(string(groups) + string(hosts))
+	oldTable := regexp.MustCompile(`\b(` + strings.Join(oldNames, "|") + `)\b`)
+	createStatement := regexp.MustCompile(`^CREATE (TABLE|INDEX|UNIQUE INDEX)\b`)
+	for _, statement := range strings.Split(strings.TrimSuffix(strings.TrimSpace(string(bans)), ";"), ";") {
+		if !createStatement.MatchString(strings.TrimSpace(statement)) || oldTable.MatchString(statement) {
+			t.Fatalf("migration statement is not additive: %q", statement)
+		}
+	}
+
+	cfg := store.Config{Now: func() time.Time { return baseTime }, Rand: new(counterRandom)}
+	path := filepath.Join(t.TempDir(), "previous.db")
+	d, _ := open(t, path, previous, cfg)
+	checkErr(t, d.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "INSERT INTO counters (name, value) VALUES ('host', 7)")
+		return err
+	}), nil)
+	checkErr(t, d.Close(), nil)
+	d, expanded := open(t, path, migrations, cfg)
+	h, _ := create(t, expanded)
+	eq(t, h.Seq, int64(8))
+	eq(t, h.Allowlist, []string{})
+	eq(t, value(t, result(expanded.Desired(ctx, h.Name))).Unban, []string{})
+	checkErr(t, d.Close(), nil)
+
+	d, _ = open(t, path, previous, cfg)
+	checkErr(t, d.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "UPDATE counters SET value = 11 WHERE name = 'host'")
+		return err
+	}), nil)
+	checkErr(t, d.Close(), nil)
+	_, expanded = open(t, path, migrations, cfg)
+	eq(t, value(t, result(expanded.Host(ctx, h.Name))), h)
+	h, _ = create(t, expanded)
+	eq(t, h.Seq, int64(12))
 }
