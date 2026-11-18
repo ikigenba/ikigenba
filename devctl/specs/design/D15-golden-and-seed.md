@@ -69,7 +69,7 @@ Shared rules are referenced, not restated: usage errors first, then the root
 file, then the operand, then the first cloud call (D04 R-N1LD-IX1I and
 R-ST4K-APZN, which also brings the `golden` label refusal of R-S8UF-C8XM);
 `cloud.Connect` with the root as the profile and the root file's region (D02
-R-YPS2-X32R); the host commands' lookup, `cloud.LookupInstance`, whose
+R-Z8MF-4H88); the host commands' lookup, `cloud.LookupInstance`, whose
 errors are returned unchanged (D03 R-NHL9-ADWD, R-NL8Y-FP4G, R-NMGU-TGV5,
 R-NNOR-78LU); a `*cloud.NoSpaceError` to `devctl: no space at '<domain>'`,
 exit 1 (D03 R-YTFS-2EAU); a `*cloud.NoInstanceError` to
