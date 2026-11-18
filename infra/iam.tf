@@ -237,14 +237,14 @@ locals {
       }
     },
     {
-      # Attach and detach take the volume and the instance; modify and delete
-      # take the volume, root or data.
+      # Attach and detach take the volume and the instance; modify takes the
+      # volume, root or data. No delete: no tool deletes a data volume, and a
+      # root volume goes with its instance.
       Effect = "Allow"
       Action = [
         "ec2:AttachVolume",
         "ec2:DetachVolume",
         "ec2:ModifyVolume",
-        "ec2:DeleteVolume",
       ]
       Resource = [
         "${local.ec2_arn}:instance/*",
