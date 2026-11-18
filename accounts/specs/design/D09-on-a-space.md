@@ -76,7 +76,7 @@ The alternative was a fragment `location` that proxies `/accountsd` to accounts'
 - The sandbox proxies to an `upstream` of its own naming.
 - A fragment can name neither without encoding a sibling's internals.
 
-Giving fragments a portable proxy target would be two sibling changes (plan section 10, Q1 (b)). Switching to it later changes only this document's manifest and fragment.
+Giving fragments a portable proxy target would be two sibling changes (log D13, Q1 (b)). Switching to it later changes only this document's manifest and fragment.
 
 **Other departures:**
 
@@ -303,7 +303,7 @@ An operator's path, in order:
 1. `devctl hosts set us`.
 2. `opsctl config set` of `aws.region` and the four `hosts.*` keys.
 3. Deploy. opsctl writes the env file with the five keys, generates accounts' server with `/check/open` on `location /` and `etc/nginx.conf` included, and starts the unit.
-4. accounts starts in AWS mode (plan section 11, task 14 shows the unconfigured case).
+4. accounts starts in AWS mode.
 
 An agent then calls `create_host` through the gateway (task 1). An instance's first boot fetches `https://accounts.<space host>/accountsd` through `location /` (task 2).
 

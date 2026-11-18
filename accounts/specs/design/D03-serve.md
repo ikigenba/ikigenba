@@ -122,7 +122,7 @@ The one exec'ing test of `cmd/accounts` proves the wiring. `D01-layout-and-run-s
   - The pages need whether the run is configured and the hosts domain.
   - The route table needs the daemon endpoints.
 - **The pages' clock is the writer's `Now`.** `web.Config` carries no clock of its own, as before. `pages.Config.Now` is `cfg.Telemetry.Now`, which is `Process.Now`.
-- **A cloud that fails to open is not fatal** (plan, D03).
+- **A cloud that fails to open is not fatal**.
   - accounts serves as mode none and says why on standard error.
   - It writes one line, so an operator sees it in the journal, and the tools say "not configured" rather than failing.
   - `cli.NoCloud` is a copy constant, a pick.
@@ -131,17 +131,17 @@ The one exec'ing test of `cmd/accounts` proves the wiring. `D01-layout-and-run-s
 - **Stop order: daemon endpoints, drain, background, writer, database.**
   - Long polls would otherwise run out the drain. Precedent: no sibling long-polls. gmail's and gdrive's workers stop on `ctx` before the writer shuts down.
   - Stopping the background before the writer keeps `service.stopping` the last event, as R-UVI5-53XK requires.
-- **The engine resumes on start, where gdrive and gmail fail interrupted work at `Recover`.** Outcome 11 requires resume (plan section 8, departure 2). The resume is the engine's (`D10-operations`). This document requires only that the engine runs from the start of every configured run.
+- **The engine resumes on start, where gdrive and gmail fail interrupted work at `Recover`.** Outcome 11 requires resume. The resume is the engine's (`D10-operations`). This document requires only that the engine runs from the start of every configured run.
 - **The simulated hosts' diagnostics never reach `Process.Stderr`.** R-H30N-ZNGY allows nothing on standard error beyond the lines it lists, in every mode. `D16-sandbox` gives each simulated daemon a `Stderr` that discards (R-VB9N-YMHD).
 - **The daemon endpoints take `Process.After`** as `daemonapi.Config.After` (`D13-daemon-endpoints`, R-R4PD-7V00), so a long poll's 45 s wait is driven by the test's timer source, as the engine's and the simulated hosts' waits are.
-- **Tests these requirements need** (plan section 9):
+- **Tests these requirements need**, each permitted by `accounts/AGENTS.md`, Test discipline:
   - sandbox mode over a temp `Dir`, with an `After` the test controls
   - AWS mode with a recording or blocking fake `cloud.Cloud` handed as `Process.Cloud`
   - long-poll tests that never wait out `protocol.LongPoll`, because the stop answers them at once
 
 ## Consumer usage
 
-`Run`, serving (plan section 11, tasks 1, 2, 9, 14 and 15):
+`Run`, serving:
 
 1. It reads `s, err := settings.Read(p.LookupEnv)`, checks the socket, unsets the three `LISTEN_*` variables and takes `ln, _ := p.Inherit(3)`.
 2. It opens `d` with `db.Open` at `state/accounts.db`, builds `st := store.New(d, store.Config{Now: p.Now, Rand: rnd})` and `w := telemetry.New(...)`, and records `service.started`.

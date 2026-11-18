@@ -54,7 +54,7 @@ Error bodies are one line of plain text. Each is a copy constant, declared below
 ## Recorded decisions
 
 - **One open descriptor for the binary.** accounts could reopen the path on each request. It does not: the resolved path names a release directory, which a later deploy may prune. An open file keeps the digested bytes servable for as long as this process advertises their digest. Sibling precedent: artifacts and sites stream blobs from files they open per request; their files are immutable and never pruned under them, and this one may be.
-- **`After` added to `Config`.** It is an injected timer for the long poll (nil means `time.After`). The plan's shape fixes the other fields. This field lets a test end a wait at `LongPoll` without waiting 45 seconds (plan §9, test discipline). `D03-serve` passes `Process.After`.
+- **`After` added to `Config`.** It is an injected timer for the long poll (nil means `time.After`). This field lets a test end a wait at `LongPoll` without waiting 45 seconds (`accounts/AGENTS.md`, Test discipline). `D03-serve` passes `Process.After`.
 - **An empty digest never makes the poll answer at once.** If it did, an accounts process with no binary beside it would answer every poll immediately and spin every daemon.
 - **Query checked before identity, body after it.** A malformed `after` costs no STS call. A report body is read only from a verified host, so junk reports cost a token, not a 256 KiB read.
 - **`WWW-Authenticate` on 401.** HTTP requires a challenge with 401 (RFC 9110 §15.5.2). The value is the scheme name `Accountsd-Identity`. No client parses it.

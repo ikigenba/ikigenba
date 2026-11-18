@@ -61,7 +61,7 @@ The caps bound everything that grows per host: 50 accounts and 200 users on one 
 - **Bounds** (pick, outcome 16): root 20–100 GB, data 10–1024 GB, grow only (the growing rule is `D07-tools`' and `D10-operations`'; this package states the range).
 - **Caps** (pick): 50 accounts per host, 200 users per host, 10 keys per user, 512 bytes per key line: generous for a small business's people on one host and small enough that one host's whole desired state fits one bounded document.
 
-Tests (permitted by `accounts/AGENTS.md` once plan §9 lists `internal/valid` among the test packages) call each function with the examples the requirements give and with keys built from 32 random bytes of the test's own source, encoded as the RFC 8709 wire form; no fixture holds an id-shaped literal.
+Tests (in `internal/valid`, which `accounts/AGENTS.md` lists among its test files) call each function with the examples the requirements give and with keys built from 32 random bytes of the test's own source, encoded as the RFC 8709 wire form; no fixture holds an id-shaped literal.
 
 ## Consumer usage
 

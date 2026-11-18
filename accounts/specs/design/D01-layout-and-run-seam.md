@@ -163,7 +163,7 @@ The binary-level test composes `PATH` with recording `sudo` and `opsctl` stubs, 
   - Precedent: accounts' previous `Settings.HostFields`, where a non-blank `ACCOUNTS_HOST_COMMAND` won over the sandbox. Here a complete hosts configuration wins over the sandbox in the same way.
   - Any partial configuration is mode none, sandbox or not. A half-configured space then refuses rather than half-working, and a sandbox never mixes a real setting into a fake cloud.
 - **Hosts values are verbatim.** Precedent: opsctl D08, which passes them on unjudged and leaves it to the app that operates hosts to judge them. A value of only white space counts as set. AWS refuses a bad value when it is first used, and the failure lands as the operation's reason. accounts adds no shape check, so an operator never meets two judges of one value.
-- **`settings.SandboxHosts` is a package variable**, as the plan names it. It holds the region `sandbox`, the domain `hosts.test` (an RFC 6761 test name), zone `ZSANDBOX`, launch template `sandbox-hosts` and instance profile `sandbox-hosts`. `D16-sandbox`'s memory cloud answers ARNs for that profile, and its STS host for that region.
+- **`settings.SandboxHosts` is a package variable**. It holds the region `sandbox`, the domain `hosts.test` (an RFC 6761 test name), zone `ZSANDBOX`, launch template `sandbox-hosts` and instance profile `sandbox-hosts`. `D16-sandbox`'s memory cloud answers ARNs for that profile, and its STS host for that region.
 - **`HostsInUse()`** is added so that one method answers "which hosts settings apply", and the tools, pages, engine and verifier cannot disagree. It answers `SandboxHosts` in sandbox mode, the read values in AWS mode, and zero in mode none.
 - **The accounts URL and binding** are methods on `Settings` taking the services path.
   - They read the file afresh, as the pages read `auth` afresh (`D06-pages`).
@@ -174,12 +174,11 @@ The binary-level test composes `PATH` with recording `sudo` and `opsctl` stubs, 
 - **The daemon binary path is resolved once, at start, with `filepath.EvalSymlinks`** (log D11). Re-resolving per request would serve a newer release's binary while the digest computed at start named the old one. A daemon would then install bytes whose digest it never saw. When `Executable` fails, or the resolved file is absent, the daemon endpoints get a path to no file. `D13-daemon-endpoints` then answers `/accountsd` 404, and the start does not fail.
 - **The sandbox memory cloud lives in `state/`**, beside the database. Fake state must survive an accounts restart for resume to be observable, and `sandbox wipe` removes it with the app directory. The precedent is accounts' previous in-memory host, which was empty at each start: a departure, for that reason.
 - **Mode none rather than a start failure for an unconfigured space.** accounts ships on every space (outcome 4), and a space that does not operate hosts must still serve.
-- **The binary-level `PATH` stub** (R-ETO0-MM7J) proves outcome 27's "stops calling opsctl". It runs in sandbox mode, where every changing tool does its work, so a build that still shells out to `sudo opsctl` from any tool is caught; in mode none the tools refuse before any work and would prove nothing. It relies on accounts/AGENTS.md's exec'ing test keeping a composed-`PATH` case with recording `sudo` and `opsctl` stubs that must never run. Plan §9 drops the old stub cases that expected a run, and the coordinator lists this allowance as a build input.
-- **Tests these requirements need** (plan §9):
+- **The binary-level `PATH` stub** (R-ETO0-MM7J) proves outcome 27's "stops calling opsctl". It runs in sandbox mode, where every changing tool does its work, so a build that still shells out to `sudo opsctl` from any tool is caught; in mode none the tools refuse before any work and would prove nothing. It relies on accounts/AGENTS.md's exec'ing test keeping a composed-`PATH` case with recording `sudo` and `opsctl` stubs that must never run. accounts/AGENTS.md keeps no stub case that expects a run.
+- **Tests these requirements need**, each permitted by `accounts/AGENTS.md`, Test discipline:
   - `Run`-level tests drive the sandbox mode with `IKIGENBA_SANDBOX` and a temp `Dir`, and the AWS mode with a recording fake `cloud.Cloud` handed as `Process.Cloud`.
   - The binary-serving test points `Executable` at a temp file through a symlink.
   - The exec'ing test uses `IKIGENBA_SANDBOX`.
-  - Each is permitted by the AGENTS.md changes plan §9 lists.
 - **`pages.ServiceName` stays declared here**: `main`, the banner kit, the MCP server, the database and the manifest all need the name.
 
 ## Consumer usage
@@ -195,7 +194,7 @@ The binary-level test composes `PATH` with recording `sudo` and `opsctl` stubs, 
 
 `ctx` is cancelled on `SIGTERM` or `SIGINT`, with a cause whose `Error` is the signal's name.
 
-`Run`, serving (plan section 11, tasks 1, 9, 14 and 15):
+`Run`, serving:
 
 1. It reads `s, err := settings.Read(p.LookupEnv)`. A refusal writes `accounts: ` and the error and returns `ExitUsage`.
 2. It takes `hosts := s.HostsInUse()` and switches on `s.Cloud()`:
