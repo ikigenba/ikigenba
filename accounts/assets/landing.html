@@ -1,115 +1,153 @@
-{{/* The landing page at GET /: what the service is, then every group and
-     every user on the space. The root of the hierarchy: .Banner's .Trail
-     is empty, so the banner's breadcrumb holds only the service. Shown
-     only to a signed-in user; a guest is sent to sign in. Every signed-in
-     user sees the same groups and users: they are the space's, not a
-     user's. Read-only: no form but the banner's sign out and no per-record
-     pages; groups and users are kept with the tools. Data: .Banner (a
-     page.Banner, for banner and footer); .Groups (a slice, one window of
-     up to 25 groups, sorted by slug), each with .Slug (string, the group's slug,
-     which names its Linux group, its service account and its folder),
-     .MemberCount (int, how many users belong to it), .Members ([]string,
-     the login names of its members, sorted; empty when it has none),
-     .Created and .CreatedText (string, when the group was created, RFC 3339
-     UTC to the second and UTC to the minute, "2026-10-29 14:05");
-     .GroupsPage (string, this window's own groups page token, the
-     ?groups_page= the request carried; empty on the first window),
-     .GroupsPrev (string, the page token for the groups window before this
-     one, in the same groups_page parameter as .GroupsNext; empty on the
-     first window) and .GroupsNext (string, the page token the groups list
-     tool's next carries for the groups after these; empty when none
-     remain); .Groups is the window .GroupsPage names; .Users (a slice, one
-     window of up to 25 users, sorted by login name), each with .Login
-     (string, the login name), .State (string, "active" or "locked"),
-     .Groups ([]string, the slugs of the groups the user belongs to,
-     sorted; empty when none), .KeyCount (int, how many public keys the
-     user has), .LastSignIn and .LastSignInText (string, the user's last
-     sign-in, in the same two forms as .Created and .CreatedText; both
-     empty when the user has never signed in); .UsersPage (string, this
-     window's own users page token, the ?users_page= the request carried;
-     empty on the first window), .UsersPrev (string, the page token for the
-     users window before this one, in the same users_page parameter as
-     .UsersNext; empty on the first window) and .UsersNext (string, the
-     page token the users list tool's next carries for the users after
-     these; empty when none remain); .Users is the window .UsersPage names.
-     Two lists share the page, so each has its own nav and parameter,
-     nav#paging-groups with groups_page and nav#paging-users with
-     users_page; each nav's hrefs carry the other list's current token,
-     Prev's and Last's included, so paging one list never resets the
-     other. Counts are shown as the plain integer.
+{{/* The landing page at GET /: what the service is, then the hosts it
+     runs, the accounts placed on them and the users of each account. The
+     root of the hierarchy: .Banner's .Trail is empty, so the banner's
+     breadcrumb holds only the service. Shown only to a signed-in user; a
+     guest is sent to sign in. Every signed-in user sees the same hosts,
+     accounts and users: they are the service's, not a user's. Read-only:
+     no form but the banner's sign out; hosts, accounts and users are kept
+     with the tools. The page does not stream: states are as they stand
+     when the page is loaded.
+     Data: .Banner (a page.Banner, for banner and footer); .Configured
+     (bool, the space's configuration names the hosts domain, the zone and
+     the launch template, so the host and account tools work here); when
+     .Configured is false nothing else is read and the page shows only the
+     notice that the space operates no hosts; .Domain (string, the hosts
+     domain the configuration names, "metaspot.org"; read only when
+     .Configured).
+     .Hosts (a slice, one window of up to 25 hosts, sorted by name), each
+     with .Name (string, "host01", "host02", ...), .State (string, as
+     stored: "provisioning", "running", "stopping", "stopped", "starting",
+     "resizing", "deleting" or "failed"), .Reason (string, why the last
+     operation failed, as recorded; empty unless .State is "failed"),
+     .Health (string, from the host's latest report: "sync" the report
+     applied the host's current desired state, "pending" the host has not
+     yet applied a change made since, "error" the latest report says the
+     apply failed, "silent" the host is running and nothing has been heard
+     from it for 5 minutes, "none" no report has ever been received),
+     .Type (string, the instance type, "t4g.medium"), .RootGB and .DataGB
+     (int, the root and data volume sizes in GB), .EIP (string, the
+     Elastic IP; empty until one is allocated), .AccountCount (int, how many
+     accounts are placed on it), .Reported and .ReportedText (string, when
+     the latest report was received, RFC 3339 UTC to the second and UTC to
+     the minute, "2026-11-17 14:05"; both empty when none has been);
+     .HostsPage, .HostsPrev, .HostsNext (string, the hosts list's page
+     tokens, as the two-list form in design/README.md names them, in the
+     hosts_page parameter).
+     .Accounts (a slice, one window of up to 25 accounts, sorted by slug),
+     each with .Slug (string, the account's slug, which names its Linux
+     group, its service account and its folder), .Host (string, the name of
+     the host it is placed on), .DNSName (string, the name people sign in
+     at, "<slug>.metaspot.org", the hosts domain from the configuration),
+     .State (string, as stored: "pending" its group, folder or DNS name is
+     not yet in place, "active", or "removing"), .UserCount (int, how many
+     users it has), .Created and .CreatedText (string, when it was created,
+     in the two forms of .Reported); .AccountsPage, .AccountsPrev,
+     .AccountsNext (string, the accounts list's page tokens, in the
+     accounts_page parameter).
+     .Users (a slice, one window of up to 25 users, sorted by account slug
+     then login name, so each account's users read together), each with
+     .Login (string, the login name), .Account (string, the slug of the
+     account the user belongs to), .State (string, "active" or "locked"),
+     .Pending (bool, a change to the user or their keys has not yet been
+     reported applied by the host), .KeyCount (int, how many public keys
+     the user has), .LastSignIn and .LastSignInText (string, the user's last
+     sign-in as the host last reported it, in the two forms of .Reported;
+     both empty when the user has never signed in); .UsersPage, .UsersPrev,
+     .UsersNext (string, the users list's page tokens, in the users_page
+     parameter).
+     Three lists share the page, so each has its own nav and parameter, the
+     two-list form of design/README.md carried to three:
+     nav#paging-hosts with hosts_page, nav#paging-accounts with
+     accounts_page and nav#paging-users with users_page; each nav's hrefs,
+     First's, Prev's and Last's included, carry the other two lists'
+     current page values when they are not empty, in the order hosts_page,
+     accounts_page, users_page, so paging one list never resets the
+     others. Counts and sizes are shown as the plain integer.
+     Kinds are chosen here. Host state: "running" ok; "provisioning",
+     "stopping", "starting", "resizing" and "deleting" info; "failed" err;
+     "stopped" no kind. Health: "sync" ok, "pending" info, "error" err,
+     "silent" warn, "none" no kind. Account state: "active" ok, "pending"
+     and "removing" info. User state: "active" ok, "locked" warn.
      Hooks: title "accounts"; h1 with text "accounts"; p#summary.lede (text
-     "The SSH accounts on this space: business groups, each with a shared
-     folder, and the people who sign in to work in them. Agents create
-     groups, add users and their keys, and lock or delete them with the
-     tools."); section#groups.card.flush with h2 "Groups" and a p in its
-     header (text "Each group is a business and its folder, /srv/<slug>.
-     Nothing here changes a group.", /srv/<slug> in a code element), then
-     either, when .Groups is empty, div#no-groups.empty holding h3 "No
-     groups yet" and a p (text "A group an agent creates with the tools
-     shows up here."), or div.table-scroll holding table#group-list whose th
-     read Group, Members, Folder, Created, with one tr[data-group=<.Slug>]
-     per group, in the order of .Groups, holding td.group-slug (.Slug in a
-     code element), td.group-members (.MemberCount, then, when .Members is
-     not empty, ": " and one code[data-member=<login>] per element of
-     .Members, in order, holding the login, separated by ", "),
-     td.group-folder (/srv/ followed by .Slug, in a code element) and
-     td.group-created holding time[datetime=<.Created>] (text
-     .CreatedText); then, after the card (section#groups),
-     nav.paging#paging-groups (aria-label "Pages") whose children are, in
-     order, First, Prev, Next and Last: First (on the first window,
-     .GroupsPage empty, a span with aria-current="page" and text "First";
-     otherwise a link with text "First" to / when .UsersPage is empty, else
-     to /?users_page=<.UsersPage>), then, only when .GroupsPrev is not
-     empty, Prev (a link with text "Prev" to /?groups_page=<.GroupsPrev>,
-     followed by &users_page=<.UsersPage> when .UsersPage is not empty),
-     then, only when .GroupsNext is not empty, Next (a link with text
-     "Next" to /?groups_page=<.GroupsNext>, followed by
-     &users_page=<.UsersPage> when .UsersPage is not empty), then, always,
-     Last (while .GroupsNext is not empty, a link with text "Last" to
-     /?groups_page=last, followed by &users_page=<.UsersPage> when
-     .UsersPage is not empty, groups_page=last naming the last groups
-     window; when .GroupsNext is empty, the last window, a span with
-     aria-current="page" and text "Last", so a single window shows First
-     and Last both as the current item); the nav shows when .Groups is not
-     empty or .GroupsPage is not empty, so an emptied later window still
-     offers First; on the first window with no groups there is no nav;
-     then section#users.card.flush with h2 "Users" and a p
-     in its header (text "The people who sign in over SSH. A locked user
-     cannot sign in. Nothing here changes a user."), then either, when
-     .Users is empty, div#no-users.empty holding h3 "No users yet" and a p
-     (text "A user an agent adds with the tools shows up here."), or
-     div.table-scroll holding table#user-list whose th read Login, State,
-     Groups, Keys (th.num), Last sign-in, with one tr[data-user=<.Login>] per user,
-     in the order of .Users, holding td.user-login (.Login in a code
-     element), td.user-state holding span.status[data-status=<.State>]
-     (text .State), td.user-groups (one code[data-group=<slug>] per element
-     of .Groups, in order, holding the slug, separated by ", "; when .Groups
-     is empty, td.user-groups.muted with text "none"), td.user-keys.num
-     (.KeyCount) and td.user-last-sign-in, which when .LastSignIn is not
-     empty holds time[datetime=<.LastSignIn>] (text .LastSignInText) and
-     when it is empty is td.user-last-sign-in.muted with text "never";
-     then, after the card (section#users), nav.paging#paging-users
-     (aria-label "Pages") whose children are, in order, First, Prev, Next
-     and Last: First (on the first window, .UsersPage empty, a span with
-     aria-current="page" and text "First"; otherwise a link with text
-     "First" to / when .GroupsPage is empty, else to
-     /?groups_page=<.GroupsPage>), then, only when .UsersPrev is not empty,
-     Prev (a link with text "Prev" to /?users_page=<.UsersPrev>, followed
-     by &groups_page=<.GroupsPage> when .GroupsPage is not empty), then,
-     only when .UsersNext is not empty, Next (a link with text "Next" to
-     /?users_page=<.UsersNext>, followed by &groups_page=<.GroupsPage> when
-     .GroupsPage is not empty), then, always, Last (while .UsersNext is not
-     empty, a link with text "Last" to /?users_page=last, followed by
-     &groups_page=<.GroupsPage> when .GroupsPage is not empty,
-     users_page=last naming the last users window; when .UsersNext is
-     empty, the last window, a span with aria-current="page" and text
-     "Last", so a single window shows First and Last both as the current
-     item); the nav shows when .Users is not empty or .UsersPage is not
-     empty, so an emptied later window still offers First; on the first
-     window with no users there is no nav; then a p holding a #tools-link (text "Tools") whose
-     href is "/tools" and a #about-link (text "About accounts") whose href
-     is "/about", separated by " · ". No script but appkit's
-     /_appkit/feedback.js. */}}
+     "SSH as a service: accounts runs hosts, places each business account
+     on one of them, and keeps the people who sign in to work there. Agents
+     create hosts and accounts, add users and their keys, and lock or
+     delete them with the tools.", then, when .Configured, " People sign
+     in as <user>@<account>.<.Domain>." with <user>@<account>.<.Domain> in
+     a code element).
+     When .Configured is false: div#not-configured.alert.callout[data-kind=info]
+     holding strong "This space operates no hosts" and a p (text "Hosts,
+     accounts and their users are run from one space only, the one whose
+     configuration names the hosts domain. Here the host and account tools
+     refuse, saying the space is not configured."); no section and no nav.
+     When .Configured is true:
+     section#hosts.card.flush with h2 "Hosts" and a p in its header (text
+     "The machines accounts runs, each with an Elastic IP and a data volume
+     that keep across stop, start and resize. Select a host for its latest
+     report. Nothing here changes a host."), then either, when .Hosts is
+     empty, div#no-hosts.empty holding h3 "No hosts yet" and a p (text "A
+     host an agent creates with the tools shows up here."), or
+     div.table-scroll holding table#host-list whose th read Host, State,
+     Health, Type, Root (GB) (th.num), Data (GB) (th.num), Elastic IP,
+     Accounts (th.num), Last report, with one tr[data-host=<.Name>] per
+     host, in the order of .Hosts, holding td.host-name (a.host-link, href
+     "/<.Name>", .Name in a code element), td.host-state holding
+     span.status[data-status=<.State>][data-kind=<kind>] (text .State)
+     and, when .Reason is not empty, span.secondary-text.host-reason (text
+     .Reason), td.host-health holding
+     span.status[data-status=<.Health>][data-kind=<kind>] with the health's
+     word ("in sync", "applying", "apply failed", "silent", "no report"),
+     td.host-type (.Type in a code element), td.host-root.num (.RootGB),
+     td.host-data.num (.DataGB), td.host-eip (.EIP in a code element; when
+     .EIP is empty, td.host-eip.muted with text "none"), td.host-accounts.num
+     (.AccountCount) and td.host-reported, which when .Reported is not
+     empty holds time[datetime=<.Reported>] (text .ReportedText) and when
+     it is empty is td.host-reported.muted with text "never"; then, after
+     the card, nav.paging#paging-hosts (aria-label "Pages"), shown when
+     .Hosts is not empty or .HostsPage is not empty.
+     section#accounts.card.flush with h2 "Accounts" and a p in its header
+     (text "Each account is a business placed on one host: a Linux group, a
+     service account and the shared folder /srv/<account>, reached at its
+     own name. Nothing here changes an account.", /srv/<account> in a code
+     element), then either, when .Accounts is empty, div#no-accounts.empty
+     holding h3 "No accounts yet" and a p (text "An account an agent
+     creates on a host with the tools shows up here."), or div.table-scroll
+     holding table#account-list whose th read Account, Host, DNS name,
+     State, Users (th.num), Created, with one tr[data-account=<.Slug>] per
+     account, in the order of .Accounts, holding td.account-slug (.Slug in
+     a code element), td.account-host (a.host-link, href "/<.Host>", .Host
+     in a code element), td.account-dns (.DNSName in a code element),
+     td.account-state holding
+     span.status[data-status=<.State>][data-kind=<kind>] (text .State),
+     td.account-users.num (.UserCount) and td.account-created holding
+     time[datetime=<.Created>] (text .CreatedText); then, after the card,
+     nav.paging#paging-accounts (aria-label "Pages"), shown when .Accounts
+     is not empty or .AccountsPage is not empty.
+     section#users.card.flush with h2 "Users" and a p in its header (text
+     "The people who sign in over SSH, each in one account. A locked user
+     cannot sign in. A pending change is made on the host at its next
+     cycle. Nothing here changes a user."), then either, when .Users is
+     empty, div#no-users.empty holding h3 "No users yet" and a p (text "A
+     user an agent adds to an account with the tools shows up here."), or
+     div.table-scroll holding table#user-list whose th read User, Account,
+     State, Keys (th.num), Last sign-in, with one tr[data-user=<.Login>]
+     per user, in the order of .Users, holding td.user-login (.Login in a
+     code element), td.user-account (.Account in a code element),
+     td.user-state holding span.status[data-status=<.State>][data-kind=<kind>]
+     (text .State) and, when .Pending, a space and
+     span.badge.user-pending[data-kind=info] (text "pending"),
+     td.user-keys.num (.KeyCount) and td.user-last-sign-in, which when
+     .LastSignIn is not empty holds time[datetime=<.LastSignIn>] (text
+     .LastSignInText) and when it is empty is td.user-last-sign-in.muted
+     with text "never"; then, after the card, nav.paging#paging-users
+     (aria-label "Pages"), shown when .Users is not empty or .UsersPage is
+     not empty.
+     Each nav's children are, in order, First, Prev, Next and Last, with
+     the texts "First", "Prev", "Next", "Last" and the current-item rule
+     of design/README.md. Then, configured or not, a p holding a
+     #tools-link (text "Tools") whose href is "/tools" and a #about-link
+     (text "About accounts") whose href is "/about", separated by " · ".
+     No script but appkit's /_appkit/feedback.js. */}}
 {{define "landing"}}<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>accounts</title></head>
@@ -117,38 +155,70 @@
 {{template "banner" .Banner}}
 <main>
 <h1>accounts</h1>
-<p id="summary" class="lede">The SSH accounts on this space: business groups, each with a shared folder, and the people who sign in to work in them. Agents create groups, add users and their keys, and lock or delete them with the tools.</p>
-<section id="groups" class="card flush" aria-labelledby="groups-title">
-<header><div><h2 id="groups-title">Groups</h2><p>Each group is a business and its folder, <code>/srv/&lt;slug&gt;</code>. Nothing here changes a group.</p></div></header>
-{{if .Groups}}<div class="table-scroll">
-<table id="group-list">
-<thead><tr><th>Group</th><th>Members</th><th>Folder</th><th>Created</th></tr></thead>
+<p id="summary" class="lede">SSH as a service: accounts runs hosts, places each business account on one of them, and keeps the people who sign in to work there. Agents create hosts and accounts, add users and their keys, and lock or delete them with the tools.{{if .Configured}} People sign in as <code>&lt;user&gt;@&lt;account&gt;.{{.Domain}}</code>.{{end}}</p>
+{{if not .Configured}}<div id="not-configured" class="alert callout" data-kind="info">
+<strong>This space operates no hosts</strong>
+<p>Hosts, accounts and their users are run from one space only, the one whose configuration names the hosts domain. Here the host and account tools refuse, saying the space is not configured.</p>
+</div>
+{{else}}<section id="hosts" class="card flush" aria-labelledby="hosts-title">
+<header><div><h2 id="hosts-title">Hosts</h2><p>The machines accounts runs, each with an Elastic IP and a data volume that keep across stop, start and resize. Select a host for its latest report. Nothing here changes a host.</p></div></header>
+{{if .Hosts}}<div class="table-scroll">
+<table id="host-list">
+<thead><tr><th>Host</th><th>State</th><th>Health</th><th>Type</th><th class="num">Root (GB)</th><th class="num">Data (GB)</th><th>Elastic IP</th><th class="num">Accounts</th><th>Last report</th></tr></thead>
 <tbody>
-{{range .Groups}}<tr data-group="{{.Slug}}">
-<td class="group-slug"><code>{{.Slug}}</code></td>
-<td class="group-members">{{.MemberCount}}{{if .Members}}: {{range $i, $m := .Members}}{{if $i}}, {{end}}<code data-member="{{$m}}">{{$m}}</code>{{end}}{{end}}</td>
-<td class="group-folder"><code>/srv/{{.Slug}}</code></td>
-<td class="group-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></td>
+{{range .Hosts}}<tr data-host="{{.Name}}">
+<td class="host-name"><a class="host-link" href="/{{.Name}}"><code>{{.Name}}</code></a></td>
+<td class="host-state">{{template "host-state" .State}}{{if .Reason}}<span class="secondary-text host-reason">{{.Reason}}</span>{{end}}</td>
+<td class="host-health">{{template "host-health" .Health}}</td>
+<td class="host-type"><code>{{.Type}}</code></td>
+<td class="host-root num">{{.RootGB}}</td>
+<td class="host-data num">{{.DataGB}}</td>
+{{if .EIP}}<td class="host-eip"><code>{{.EIP}}</code></td>{{else}}<td class="host-eip muted">none</td>{{end}}
+<td class="host-accounts num">{{.AccountCount}}</td>
+{{if .Reported}}<td class="host-reported"><time datetime="{{.Reported}}">{{.ReportedText}}</time></td>{{else}}<td class="host-reported muted">never</td>{{end}}
 </tr>
 {{end}}</tbody>
 </table>
 </div>
-{{else}}<div id="no-groups" class="empty">
-<h3 class="text-md">No groups yet</h3>
-<p>A group an agent creates with the tools shows up here.</p>
+{{else}}<div id="no-hosts" class="empty">
+<h3 class="text-md">No hosts yet</h3>
+<p>A host an agent creates with the tools shows up here.</p>
 </div>{{end}}
 </section>
-{{if or .Groups .GroupsPage}}<nav class="paging" id="paging-groups" aria-label="Pages">{{if .GroupsPage}}<a href="/{{if .UsersPage}}?users_page={{.UsersPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .GroupsPrev}}<a href="/?groups_page={{.GroupsPrev}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}">Prev</a>{{end}}{{if .GroupsNext}}<a href="/?groups_page={{.GroupsNext}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}">Next</a>{{end}}{{if .GroupsNext}}<a href="/?groups_page=last{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
+{{if or .Hosts .HostsPage}}<nav class="paging" id="paging-hosts" aria-label="Pages">{{if .HostsPage}}<a href="/{{if .AccountsPage}}?accounts_page={{.AccountsPage}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}{{else if .UsersPage}}?users_page={{.UsersPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .HostsPrev}}<a href="/?hosts_page={{.HostsPrev}}{{if .AccountsPage}}&amp;accounts_page={{.AccountsPage}}{{end}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}">Prev</a>{{end}}{{if .HostsNext}}<a href="/?hosts_page={{.HostsNext}}{{if .AccountsPage}}&amp;accounts_page={{.AccountsPage}}{{end}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}">Next</a>{{end}}{{if .HostsNext}}<a href="/?hosts_page=last{{if .AccountsPage}}&amp;accounts_page={{.AccountsPage}}{{end}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
+{{end}}<section id="accounts" class="card flush" aria-labelledby="accounts-title">
+<header><div><h2 id="accounts-title">Accounts</h2><p>Each account is a business placed on one host: a Linux group, a service account and the shared folder <code>/srv/&lt;account&gt;</code>, reached at its own name. Nothing here changes an account.</p></div></header>
+{{if .Accounts}}<div class="table-scroll">
+<table id="account-list">
+<thead><tr><th>Account</th><th>Host</th><th>DNS name</th><th>State</th><th class="num">Users</th><th>Created</th></tr></thead>
+<tbody>
+{{range .Accounts}}<tr data-account="{{.Slug}}">
+<td class="account-slug"><code>{{.Slug}}</code></td>
+<td class="account-host"><a class="host-link" href="/{{.Host}}"><code>{{.Host}}</code></a></td>
+<td class="account-dns"><code>{{.DNSName}}</code></td>
+<td class="account-state">{{template "account-state" .State}}</td>
+<td class="account-users num">{{.UserCount}}</td>
+<td class="account-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}<div id="no-accounts" class="empty">
+<h3 class="text-md">No accounts yet</h3>
+<p>An account an agent creates on a host with the tools shows up here.</p>
+</div>{{end}}
+</section>
+{{if or .Accounts .AccountsPage}}<nav class="paging" id="paging-accounts" aria-label="Pages">{{if .AccountsPage}}<a href="/{{if .HostsPage}}?hosts_page={{.HostsPage}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}{{else if .UsersPage}}?users_page={{.UsersPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .AccountsPrev}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}accounts_page={{.AccountsPrev}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}">Prev</a>{{end}}{{if .AccountsNext}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}accounts_page={{.AccountsNext}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}">Next</a>{{end}}{{if .AccountsNext}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}accounts_page=last{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
 {{end}}<section id="users" class="card flush" aria-labelledby="users-title">
-<header><div><h2 id="users-title">Users</h2><p>The people who sign in over SSH. A locked user cannot sign in. Nothing here changes a user.</p></div></header>
+<header><div><h2 id="users-title">Users</h2><p>The people who sign in over SSH, each in one account. A locked user cannot sign in. A pending change is made on the host at its next cycle. Nothing here changes a user.</p></div></header>
 {{if .Users}}<div class="table-scroll">
 <table id="user-list">
-<thead><tr><th>Login</th><th>State</th><th>Groups</th><th class="num">Keys</th><th>Last sign-in</th></tr></thead>
+<thead><tr><th>User</th><th>Account</th><th>State</th><th class="num">Keys</th><th>Last sign-in</th></tr></thead>
 <tbody>
 {{range .Users}}<tr data-user="{{.Login}}">
 <td class="user-login"><code>{{.Login}}</code></td>
-<td class="user-state"><span class="status" data-status="{{.State}}">{{.State}}</span></td>
-{{if .Groups}}<td class="user-groups">{{range $i, $g := .Groups}}{{if $i}}, {{end}}<code data-group="{{$g}}">{{$g}}</code>{{end}}</td>{{else}}<td class="user-groups muted">none</td>{{end}}
+<td class="user-account"><code>{{.Account}}</code></td>
+<td class="user-state">{{template "user-state" .State}}{{if .Pending}} <span class="badge user-pending" data-kind="info">pending</span>{{end}}</td>
 <td class="user-keys num">{{.KeyCount}}</td>
 {{if .LastSignIn}}<td class="user-last-sign-in"><time datetime="{{.LastSignIn}}">{{.LastSignInText}}</time></td>{{else}}<td class="user-last-sign-in muted">never</td>{{end}}
 </tr>
@@ -157,13 +227,37 @@
 </div>
 {{else}}<div id="no-users" class="empty">
 <h3 class="text-md">No users yet</h3>
-<p>A user an agent adds with the tools shows up here.</p>
+<p>A user an agent adds to an account with the tools shows up here.</p>
 </div>{{end}}
 </section>
-{{if or .Users .UsersPage}}<nav class="paging" id="paging-users" aria-label="Pages">{{if .UsersPage}}<a href="/{{if .GroupsPage}}?groups_page={{.GroupsPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .UsersPrev}}<a href="/?users_page={{.UsersPrev}}{{if .GroupsPage}}&amp;groups_page={{.GroupsPage}}{{end}}">Prev</a>{{end}}{{if .UsersNext}}<a href="/?users_page={{.UsersNext}}{{if .GroupsPage}}&amp;groups_page={{.GroupsPage}}{{end}}">Next</a>{{end}}{{if .UsersNext}}<a href="/?users_page=last{{if .GroupsPage}}&amp;groups_page={{.GroupsPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
-{{end}}<p><a id="tools-link" href="/tools">Tools</a> · <a id="about-link" href="/about">About accounts</a></p>
+{{if or .Users .UsersPage}}<nav class="paging" id="paging-users" aria-label="Pages">{{if .UsersPage}}<a href="/{{if .HostsPage}}?hosts_page={{.HostsPage}}{{if .AccountsPage}}&amp;accounts_page={{.AccountsPage}}{{end}}{{else if .AccountsPage}}?accounts_page={{.AccountsPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .UsersPrev}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}{{if .AccountsPage}}accounts_page={{.AccountsPage}}&amp;{{end}}users_page={{.UsersPrev}}">Prev</a>{{end}}{{if .UsersNext}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}{{if .AccountsPage}}accounts_page={{.AccountsPage}}&amp;{{end}}users_page={{.UsersNext}}">Next</a>{{end}}{{if .UsersNext}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}{{if .AccountsPage}}accounts_page={{.AccountsPage}}&amp;{{end}}users_page=last">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
+{{end}}{{end}}<p><a id="tools-link" href="/tools">Tools</a> · <a id="about-link" href="/about">About accounts</a></p>
 </main>
 {{template "footer" .Banner}}
 </body>
 </html>
 {{end}}
+{{/* host-state: a host's state as a .status word. Data: the state string,
+     as stored. Kinds: "running" ok; "provisioning", "stopping",
+     "starting", "resizing" and "deleting" info; "failed" err; any other,
+     "stopped" included, no kind. Hooks: span.status[data-status=<state>]
+     with data-kind when it has one, text the state. Used by landing and
+     host. */}}
+{{define "host-state"}}<span class="status" data-status="{{.}}"{{if eq . "running"}} data-kind="ok"{{else if eq . "failed"}} data-kind="err"{{else if or (eq . "provisioning") (eq . "stopping") (eq . "starting") (eq . "resizing") (eq . "deleting")}} data-kind="info"{{end}}>{{.}}</span>{{end}}
+{{/* host-health: a host's health as a .status word. Data: the health
+     string, "sync", "pending", "error", "silent" or "none". Words and
+     kinds: "sync" "in sync" ok; "pending" "applying" info; "error" "apply
+     failed" err; "silent" "silent" warn; "none" "no report", no kind.
+     Hooks: span.status[data-status=<health>] with data-kind when it has
+     one. Used by landing and host. */}}
+{{define "host-health"}}{{if eq . "sync"}}<span class="status" data-status="sync" data-kind="ok">in sync</span>{{else if eq . "pending"}}<span class="status" data-status="pending" data-kind="info">applying</span>{{else if eq . "error"}}<span class="status" data-status="error" data-kind="err">apply failed</span>{{else if eq . "silent"}}<span class="status" data-status="silent" data-kind="warn">silent</span>{{else}}<span class="status" data-status="{{.}}">no report</span>{{end}}{{end}}
+{{/* account-state: an account's state as a .status word. Data: the state
+     string, as stored. Kinds: "active" ok; "pending" and "removing" info;
+     any other no kind. Hooks: span.status[data-status=<state>] with
+     data-kind when it has one, text the state. Used by landing and host. */}}
+{{define "account-state"}}<span class="status" data-status="{{.}}"{{if eq . "active"}} data-kind="ok"{{else if or (eq . "pending") (eq . "removing")}} data-kind="info"{{end}}>{{.}}</span>{{end}}
+{{/* user-state: a user's state as a .status word. Data: the state string,
+     "active" or "locked". Kinds: "active" ok, "locked" warn. Hooks:
+     span.status[data-status=<state>][data-kind=<kind>], text the state.
+     Used by landing. */}}
+{{define "user-state"}}<span class="status" data-status="{{.}}"{{if eq . "active"}} data-kind="ok"{{else if eq . "locked"}} data-kind="warn"{{end}}>{{.}}</span>{{end}}

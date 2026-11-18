@@ -9,28 +9,43 @@
      (.Banner.Service), dt "Version" then dd#about-version (.Banner.Release
      and .Banner.Commit, present even when empty), and dt "Description" then
      dd#about-description (.Description); then section#how.card with h2 "How
-     it works" and three p: "accounts keeps the business groups and the SSH
-     users on this space, and makes each change on the host at once. A group
-     is a business, named by a slug that is valid as a Linux account name.
-     The slug names the group, a service account of the same name, and the
-     folder /srv/<slug>, which the service account owns. The folder is
-     writable by the group's members and unreadable by anyone else, every
-     file in it is writable by the whole group, and it starts as an empty git
-     repository, so members commit to it as themselves. Nothing in it refers
-     to the host, so a business moves to its own host by copying the folder.
-     A group with members cannot be removed, and removing an empty group
-     leaves its folder in place."; "A user is a person, with a login name,
-     one or more ed25519 public keys, membership in one or more groups, and
-     a state, active or locked. Each signs in over SSH with a key, never a
-     password, and gets an ordinary home readable by them alone, with no
-     other access to the host. Locking a user ends their access and their
-     sessions and keeps their home and memberships; unlocking restores them.
-     Only a locked user can be deleted, which removes the account and its
-     home."; "Every change is made by an agent with the tools, and each is
-     recorded in telemetry with its caller and result. A change that could
-     not be made on the host is reported as failed and not recorded as done.
-     This page only lists the groups and users." (/srv/<slug> in a code
-     element). No section of the landing page's. No script but appkit's
+     it works" and four p: "accounts runs SSH as a service. It keeps a
+     fleet of machines, hosts, named host01, host02 and on in order,
+     each with an Elastic IP, a data volume holding /home and /srv, and
+     SSH host keys kept on that volume, so a host keeps its address, its
+     data and its identity across stop, start and resize. A host starts
+     on the type and sizes the tools choose, a t4g.medium with a 20 GB
+     root and a 50 GB data volume when they choose none; changing its
+     type stops and starts it, and volumes only grow. Long operations
+     run in the background: a host shows provisioning, running,
+     stopping, stopped, starting, resizing, deleting or failed with its
+     reason, and a failed operation can be retried."; "An account is one
+     business, placed on one host. Its slug names a Linux group, a
+     service account of the same name and the folder /srv/<account>,
+     which every user of the account writes to and nobody else reads,
+     and reserves the DNS name <account>.<hosts domain>, which points at
+     its host. Each account runs in a slice of its own with an equal share
+     of the host's CPU and a memory ceiling, so one busy business slows
+     only itself. Account slugs and user names are unique across every
+     host. An account with users cannot be removed, and removing an
+     empty one leaves its folder on the data volume; a host with
+     accounts cannot be deleted, and deleting an empty one keeps its
+     data volume."; "A user is a person in exactly one account, with a
+     login name, one or more ed25519 public keys and a state, active or
+     locked. They sign in with ssh <user>@<account>.<hosts domain> and a key,
+     never a password, and get a home readable by them alone. Locking a
+     user ends their access and keeps their home; only a locked user can
+     be deleted, which removes their home. Each host runs a daemon that
+     fetches what the host should hold and makes it so, and reports back
+     each cycle; a change shows as pending until the host reports it
+     applied. A host keeps working with what it last applied when
+     accounts cannot be reached."; "Every change is made by an agent
+     with the tools, and each change, and each host going silent, coming
+     back in sync or failing to apply, is recorded in telemetry. This
+     page only shows the hosts, accounts and users." (host01, host02,
+     /home, /srv, t4g.medium, /srv/<account>, <account>.<hosts domain> and
+     ssh <user>@<account>.<hosts domain> each in a code element).
+     No section of the landing page's. No script but appkit's
      /_appkit/feedback.js. */}}
 {{define "about"}}<!doctype html>
 <html lang="en">
@@ -48,9 +63,10 @@
 </section>
 <section id="how" class="card" aria-labelledby="how-title">
 <header><h2 id="how-title">How it works</h2></header>
-<p>accounts keeps the business groups and the SSH users on this space, and makes each change on the host at once. A group is a business, named by a slug that is valid as a Linux account name. The slug names the group, a service account of the same name, and the folder <code>/srv/&lt;slug&gt;</code>, which the service account owns. The folder is writable by the group's members and unreadable by anyone else, every file in it is writable by the whole group, and it starts as an empty git repository, so members commit to it as themselves. Nothing in it refers to the host, so a business moves to its own host by copying the folder. A group with members cannot be removed, and removing an empty group leaves its folder in place.</p>
-<p>A user is a person, with a login name, one or more ed25519 public keys, membership in one or more groups, and a state, active or locked. Each signs in over SSH with a key, never a password, and gets an ordinary home readable by them alone, with no other access to the host. Locking a user ends their access and their sessions and keeps their home and memberships; unlocking restores them. Only a locked user can be deleted, which removes the account and its home.</p>
-<p>Every change is made by an agent with the tools, and each is recorded in telemetry with its caller and result. A change that could not be made on the host is reported as failed and not recorded as done. This page only lists the groups and users.</p>
+<p>accounts runs SSH as a service. It keeps a fleet of machines, hosts, named <code>host01</code>, <code>host02</code> and on in order, each with an Elastic IP, a data volume holding <code>/home</code> and <code>/srv</code>, and SSH host keys kept on that volume, so a host keeps its address, its data and its identity across stop, start and resize. A host starts on the type and sizes the tools choose, a <code>t4g.medium</code> with a 20 GB root and a 50 GB data volume when they choose none; changing its type stops and starts it, and volumes only grow. Long operations run in the background: a host shows provisioning, running, stopping, stopped, starting, resizing, deleting or failed with its reason, and a failed operation can be retried.</p>
+<p>An account is one business, placed on one host. Its slug names a Linux group, a service account of the same name and the folder <code>/srv/&lt;account&gt;</code>, which every user of the account writes to and nobody else reads, and reserves the DNS name <code>&lt;account&gt;.&lt;hosts domain&gt;</code>, which points at its host. Each account runs in a slice of its own with an equal share of the host's CPU and a memory ceiling, so one busy business slows only itself. Account slugs and user names are unique across every host. An account with users cannot be removed, and removing an empty one leaves its folder on the data volume; a host with accounts cannot be deleted, and deleting an empty one keeps its data volume.</p>
+<p>A user is a person in exactly one account, with a login name, one or more ed25519 public keys and a state, active or locked. They sign in with <code>ssh &lt;user&gt;@&lt;account&gt;.&lt;hosts domain&gt;</code> and a key, never a password, and get a home readable by them alone. Locking a user ends their access and keeps their home; only a locked user can be deleted, which removes their home. Each host runs a daemon that fetches what the host should hold and makes it so, and reports back each cycle; a change shows as pending until the host reports it applied. A host keeps working with what it last applied when accounts cannot be reached.</p>
+<p>Every change is made by an agent with the tools, and each change, and each host going silent, coming back in sync or failing to apply, is recorded in telemetry. This page only shows the hosts, accounts and users.</p>
 </section>
 </main>
 {{template "footer" .Banner}}

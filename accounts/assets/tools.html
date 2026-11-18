@@ -6,16 +6,17 @@
      and .Description, the first line of its description), every tool in
      catalog order, as the design names them.
      Hooks: title "tools · accounts"; h1 with text "Tools"; p#summary.lede
-     (text "Agents keep the space's groups and users with these tools,
-     through the MCP gateway's call and mutate: they create, list and
-     remove groups, add users with a key and a group, add and remove keys
-     and memberships, lock, unlock and delete users, and list them with
-     their groups, keys, state and last sign-in. Each change is made on the
-     host at once, and one that could not be made is reported as failed.",
-     call and mutate each in a code element); a section.card holding
-     dl#tools.kv with one dt[data-tool=<.Name>] per tool, in the order of
-     .Tools, holding .Name in a code element and followed by a dd holding
-     .Description. No script but appkit's /_appkit/feedback.js. */}}
+     (text "Agents run SSH hosting with these tools, through the MCP
+     gateway's call and mutate: they create, stop, start, resize and
+     delete hosts, create accounts on a host and remove them, add users to
+     an account with a key, add and remove keys, lock, unlock and delete
+     users, and list and read them all. A tool records the change and
+     returns at once; a host's state, and a pending user or key, show when
+     it is done. On a space that operates no hosts the host and account
+     tools refuse, saying the space is not configured.", call and mutate
+     each in a code element); a section.card holding dl#tools.kv with one
+     dt[data-tool=<.Name>] per tool, in the order of .Tools, holding .Name
+     in a code element and followed by a dd holding .Description. No script but appkit's /_appkit/feedback.js. */}}
 {{define "tools"}}<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>tools · accounts</title></head>
@@ -23,7 +24,7 @@
 {{template "banner" .Banner}}
 <main>
 <h1>Tools</h1>
-<p id="summary" class="lede">Agents keep the space's groups and users with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>: they create, list and remove groups, add users with a key and a group, add and remove keys and memberships, lock, unlock and delete users, and list them with their groups, keys, state and last sign-in. Each change is made on the host at once, and one that could not be made is reported as failed.</p>
+<p id="summary" class="lede">Agents run SSH hosting with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>: they create, stop, start, resize and delete hosts, create accounts on a host and remove them, add users to an account with a key, add and remove keys, lock, unlock and delete users, and list and read them all. A tool records the change and returns at once; a host's state, and a pending user or key, show when it is done. On a space that operates no hosts the host and account tools refuse, saying the space is not configured.</p>
 <section class="card">
 <dl id="tools" class="kv">
 {{range .Tools}}<dt data-tool="{{.Name}}"><code>{{.Name}}</code></dt><dd>{{.Description}}</dd>

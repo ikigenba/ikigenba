@@ -1,0 +1,205 @@
+{{/* One host at GET /<name>: its record and its latest report in full.
+     Shown only to a signed-in user; a guest is sent to sign in; a name no
+     host has, or a space whose configuration names no hosts domain, is the
+     not-found page. The page does not stream: the host is shown as it
+     stands when the page is loaded. Read-only: no form but the banner's
+     sign out. One level below the root: .Banner's .Trail is the one level
+     <.Host.Name> at /<.Host.Name>.
+     Data: .Banner (a page.Banner, for banner and footer); .Host, with
+     .Name, .State, .Reason, .Health, .Type, .RootGB, .DataGB, .EIP,
+     .AccountCount, .Reported and .ReportedText as landing names them, and
+     .InstanceID (string, the EC2 instance id; empty until one is
+     launched), .DataVolume (string, the data volume's EBS id; empty until
+     one is made) and .Created and .CreatedText (string, when the host was
+     created, RFC 3339 UTC to the second and the same as shown,
+     "2006-01-02 15:04:05 UTC"); .Report (the latest report the host's
+     daemon sent; nil when none has been received), with .Received and
+     .ReceivedText (string, when it was received, in the two forms of
+     .Created), .InstanceID, .Type, .AMI, .OS, .Kernel and .DaemonVersion
+     (string, as reported), .Booted and .BootedText (string, when the
+     machine booted, from its uptime, in the two forms of .Created),
+     .Applied (int64, the desired-state version the host has applied;
+     0 when none), .Wanted (int64, the host's current desired-state
+     version), .Error (string, the error that stopped the last apply;
+     empty when it succeeded), .Load1, .Load5, .Load15 (float64, the load
+     averages), .CPUPercent (float64, CPU in use across the machine),
+     .MemoryUsed, .MemoryAvailable, .SwapUsed, .SwapTotal (int64, bytes),
+     .Root and .Data (each a volume: .UsedBytes, .SizeBytes, .InodesUsed,
+     .InodesTotal, int64), .Sessions (int, active SSH sessions), .Updates
+     (int, pending security updates), .Reboot (bool, a reboot is needed),
+     .FailedUnits ([]string, the failed systemd units, sorted; empty when
+     none) and .Slices (a slice, one per account slice the host reported,
+     sorted by account slug), each with .Account (string, the slug),
+     .CPUPercent (float64) and .MemoryBytes (int64).
+     Bytes and counts are shown as the plain integer, never a humanised
+     size; load averages to two decimals and percents to one, by printf
+     here. Kinds and words for state and health are landing's host-state
+     and host-health templates.
+     Hooks: title "<.Host.Name> · accounts"; h1 with text .Host.Name;
+     p#headline.cluster holding the host-state span, a space, the
+     host-health span and, when .Host.Reported is set, a space and
+     span.muted holding "last report" and time[datetime=<.Host.Reported>]
+     (text .Host.ReportedText).
+     When .Host.State is "failed", div#failure.alert[data-kind=err][role=alert]
+     holding strong "The last operation failed" and p#failure-reason (text
+     .Host.Reason), then a p (text "An agent can retry it with the tools;
+     a retry continues from what the failed attempt left.").
+     When .Host.State is "provisioning", "stopping", "starting",
+     "resizing" or "deleting", div#running.alert.quiet[data-kind=info]
+     holding strong "In progress" and p "The page does not stream. Reload
+     it to see the outcome.", and a#reload.button (href "/<.Host.Name>",
+     text "Reload").
+     When .Host.Health is "silent", div#silent.alert.callout[data-kind=warn]
+     holding strong "Nothing heard from this host" and p (text "The host
+     is running but has not reported for 5 minutes. People can still sign
+     in with what it last applied.").
+     section#host-card.card with h2 "Host" and a p in its header (text "An
+     Elastic IP, a data volume holding /home and /srv, and SSH host keys
+     that keep across stop, start and resize.", /home and /srv each in a
+     code element), then dl#host.kv holding, in this order, dt "Name" then
+     dd#host-name (.Name in a code element), dt "State" then
+     dd#host-state (the host-state span), dt "Reason" then
+     dd#host-reason (.Reason) only when .Reason is set, dt "Health" then
+     dd#host-health (the host-health span), dt "Instance" then
+     dd#host-instance (.InstanceID in a code element; when empty,
+     dd#host-instance.muted with text "none"), dt "Type" then
+     dd#host-type (.Type in a code element), dt "Root volume (GB)" then
+     dd#host-root (.RootGB), dt "Data volume (GB)" then dd#host-data
+     (.DataGB), dt "Data volume" then dd#host-volume (.DataVolume in a code
+     element; when empty, dd#host-volume.muted with text "none"), dt
+     "Elastic IP" then dd#host-eip (.EIP in a code element; when empty,
+     dd#host-eip.muted with text "none"), dt "Accounts" then
+     dd#host-accounts (.AccountCount), and dt "Created" then
+     dd#host-created holding time[datetime=<.Created>] (text
+     .CreatedText).
+     section#report.card with h2 "Latest report" and a p in its header
+     (text "What the host's daemon reported at the end of its last cycle.
+     Reports are kept as the latest only."), then, when .Report is nil,
+     div#no-report.empty holding h3 "No report yet" and a p (text "The
+     host's daemon reports once it has started and reached accounts."), or
+     dl#report-identity.kv holding, in this order, dt "Received" then
+     dd#report-received (time, .Received, text .ReceivedText), dt
+     "Instance" then dd#report-instance (code), dt "Type" then
+     dd#report-type (code), dt "Image" then dd#report-ami (code), dt "OS"
+     then dd#report-os, dt "Kernel" then dd#report-kernel (code), dt
+     "Booted" then dd#report-booted (time, .Booted, text .BootedText), dt
+     "Daemon version" then dd#report-daemon (code), dt "Desired state" then
+     dd#report-applied (text "version " .Applied " applied", then, when
+     .Applied differs from .Wanted, " of " .Wanted), dt "Apply error" then
+     dd#report-error (.Error in a code element) only when .Error is set;
+     then h3 "Resources" and dl#report-resources.kv holding dt "Load
+     average" then dd#report-load (.Load1, .Load5, .Load15, separated by
+     " "), dt "CPU (%)" then dd#report-cpu, dt "Memory used (bytes)" then
+     dd#report-memory-used, dt "Memory available (bytes)" then
+     dd#report-memory-available, dt "Swap (bytes)" then dd#report-swap
+     (.SwapUsed " of " .SwapTotal), dt "Root volume (bytes)" then
+     dd#report-root-bytes (.Root.UsedBytes " of " .Root.SizeBytes), dt
+     "Root volume (inodes)" then dd#report-root-inodes (.Root.InodesUsed "
+     of " .Root.InodesTotal), dt "Data volume (bytes)" then
+     dd#report-data-bytes, dt "Data volume (inodes)" then
+     dd#report-data-inodes, likewise, dt "SSH sessions" then
+     dd#report-sessions (.Sessions), dt "Security updates" then
+     dd#report-updates (.Updates), dt "Reboot needed" then dd#report-reboot
+     (text "yes" when .Reboot, else dd#report-reboot.muted "no"), and dt
+     "Failed units" then dd#report-units (one code[data-unit=<unit>] per
+     element of .FailedUnits, separated by ", "; when empty,
+     dd#report-units.muted "none"); then h3 "Account slices" and either,
+     when .Slices is empty, p#no-slices.muted (text "No account slices
+     reported."), or div.table-scroll holding table#slice-list whose th
+     read Account, CPU (%) (th.num), Memory (bytes) (th.num), with one
+     tr[data-account=<.Account>] per slice holding td.slice-account
+     (.Account in a code element), td.slice-cpu.num and td.slice-memory.num.
+     No script but appkit's /_appkit/feedback.js. */}}
+{{define "host"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>{{.Host.Name}} · accounts</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+{{with .Host}}<h1>{{.Name}}</h1>
+<p id="headline" class="cluster">{{template "host-state" .State}} {{template "host-health" .Health}}{{if .Reported}} <span class="muted">last report <time datetime="{{.Reported}}">{{.ReportedText}}</time></span>{{end}}</p>
+{{if eq .State "failed"}}<div id="failure" class="alert" data-kind="err" role="alert">
+<strong>The last operation failed</strong>
+<p id="failure-reason">{{.Reason}}</p>
+<p>An agent can retry it with the tools; a retry continues from what the failed attempt left.</p>
+</div>
+{{else if or (eq .State "provisioning") (eq .State "stopping") (eq .State "starting") (eq .State "resizing") (eq .State "deleting")}}<div id="running" class="alert quiet" data-kind="info">
+<strong>In progress</strong>
+<p>The page does not stream. Reload it to see the outcome.</p>
+</div>
+<p><a id="reload" class="button" href="/{{.Name}}">Reload</a></p>
+{{end}}{{if eq .Health "silent"}}<div id="silent" class="alert callout" data-kind="warn">
+<strong>Nothing heard from this host</strong>
+<p>The host is running but has not reported for 5 minutes. People can still sign in with what it last applied.</p>
+</div>
+{{end}}<section id="host-card" class="card" aria-labelledby="host-title">
+<header><div><h2 id="host-title">Host</h2><p>An Elastic IP, a data volume holding <code>/home</code> and <code>/srv</code>, and SSH host keys that keep across stop, start and resize.</p></div></header>
+<dl id="host" class="kv">
+<dt>Name</dt><dd id="host-name"><code>{{.Name}}</code></dd>
+<dt>State</dt><dd id="host-state">{{template "host-state" .State}}</dd>
+{{if .Reason}}<dt>Reason</dt><dd id="host-reason">{{.Reason}}</dd>
+{{end}}<dt>Health</dt><dd id="host-health">{{template "host-health" .Health}}</dd>
+<dt>Instance</dt>{{if .InstanceID}}<dd id="host-instance"><code>{{.InstanceID}}</code></dd>{{else}}<dd id="host-instance" class="muted">none</dd>{{end}}
+<dt>Type</dt><dd id="host-type"><code>{{.Type}}</code></dd>
+<dt>Root volume (GB)</dt><dd id="host-root">{{.RootGB}}</dd>
+<dt>Data volume (GB)</dt><dd id="host-data">{{.DataGB}}</dd>
+<dt>Data volume</dt>{{if .DataVolume}}<dd id="host-volume"><code>{{.DataVolume}}</code></dd>{{else}}<dd id="host-volume" class="muted">none</dd>{{end}}
+<dt>Elastic IP</dt>{{if .EIP}}<dd id="host-eip"><code>{{.EIP}}</code></dd>{{else}}<dd id="host-eip" class="muted">none</dd>{{end}}
+<dt>Accounts</dt><dd id="host-accounts">{{.AccountCount}}</dd>
+<dt>Created</dt><dd id="host-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></dd>
+</dl>
+</section>
+{{end}}<section id="report" class="card" aria-labelledby="report-title">
+<header><div><h2 id="report-title">Latest report</h2><p>What the host's daemon reported at the end of its last cycle. Reports are kept as the latest only.</p></div></header>
+{{with .Report}}<dl id="report-identity" class="kv">
+<dt>Received</dt><dd id="report-received"><time datetime="{{.Received}}">{{.ReceivedText}}</time></dd>
+<dt>Instance</dt><dd id="report-instance"><code>{{.InstanceID}}</code></dd>
+<dt>Type</dt><dd id="report-type"><code>{{.Type}}</code></dd>
+<dt>Image</dt><dd id="report-ami"><code>{{.AMI}}</code></dd>
+<dt>OS</dt><dd id="report-os">{{.OS}}</dd>
+<dt>Kernel</dt><dd id="report-kernel"><code>{{.Kernel}}</code></dd>
+<dt>Booted</dt><dd id="report-booted"><time datetime="{{.Booted}}">{{.BootedText}}</time></dd>
+<dt>Daemon version</dt><dd id="report-daemon"><code>{{.DaemonVersion}}</code></dd>
+<dt>Desired state</dt><dd id="report-applied">version {{.Applied}} applied{{if ne .Applied .Wanted}} of {{.Wanted}}{{end}}</dd>
+{{if .Error}}<dt>Apply error</dt><dd id="report-error"><code>{{.Error}}</code></dd>
+{{end}}</dl>
+<h3 class="text-md">Resources</h3>
+<dl id="report-resources" class="kv">
+<dt>Load average</dt><dd id="report-load">{{printf "%.2f" .Load1}} {{printf "%.2f" .Load5}} {{printf "%.2f" .Load15}}</dd>
+<dt>CPU (%)</dt><dd id="report-cpu">{{printf "%.1f" .CPUPercent}}</dd>
+<dt>Memory used (bytes)</dt><dd id="report-memory-used">{{.MemoryUsed}}</dd>
+<dt>Memory available (bytes)</dt><dd id="report-memory-available">{{.MemoryAvailable}}</dd>
+<dt>Swap (bytes)</dt><dd id="report-swap">{{.SwapUsed}} of {{.SwapTotal}}</dd>
+<dt>Root volume (bytes)</dt><dd id="report-root-bytes">{{.Root.UsedBytes}} of {{.Root.SizeBytes}}</dd>
+<dt>Root volume (inodes)</dt><dd id="report-root-inodes">{{.Root.InodesUsed}} of {{.Root.InodesTotal}}</dd>
+<dt>Data volume (bytes)</dt><dd id="report-data-bytes">{{.Data.UsedBytes}} of {{.Data.SizeBytes}}</dd>
+<dt>Data volume (inodes)</dt><dd id="report-data-inodes">{{.Data.InodesUsed}} of {{.Data.InodesTotal}}</dd>
+<dt>SSH sessions</dt><dd id="report-sessions">{{.Sessions}}</dd>
+<dt>Security updates</dt><dd id="report-updates">{{.Updates}}</dd>
+<dt>Reboot needed</dt>{{if .Reboot}}<dd id="report-reboot">yes</dd>{{else}}<dd id="report-reboot" class="muted">no</dd>{{end}}
+<dt>Failed units</dt>{{if .FailedUnits}}<dd id="report-units">{{range $i, $u := .FailedUnits}}{{if $i}}, {{end}}<code data-unit="{{$u}}">{{$u}}</code>{{end}}</dd>{{else}}<dd id="report-units" class="muted">none</dd>{{end}}
+</dl>
+<h3 class="text-md">Account slices</h3>
+{{if .Slices}}<div class="table-scroll">
+<table id="slice-list">
+<thead><tr><th>Account</th><th class="num">CPU (%)</th><th class="num">Memory (bytes)</th></tr></thead>
+<tbody>
+{{range .Slices}}<tr data-account="{{.Account}}">
+<td class="slice-account"><code>{{.Account}}</code></td>
+<td class="slice-cpu num">{{printf "%.1f" .CPUPercent}}</td>
+<td class="slice-memory num">{{.MemoryBytes}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}<p id="no-slices" class="muted">No account slices reported.</p>
+{{end}}{{else}}<div id="no-report" class="empty">
+<h3 class="text-md">No report yet</h3>
+<p>The host's daemon reports once it has started and reached accounts.</p>
+</div>
+{{end}}</section>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}
