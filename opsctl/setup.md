@@ -71,6 +71,26 @@ against the zone names. `host.name` is the name this host answers at; it must
 be the apex of a configured zone or a name beneath one, and the records
 bootstrap created are `<name>` and `*.<name>`.
 
+Only on the one space that operates SSH hosts, also set the four `hosts.*`
+keys; every other space leaves them absent. `activate` hands them, with
+`aws.region`, to every app's environment file, and `opsctl` judges none of
+them:
+
+```
+sudo $O config set hosts.domain=<hosts-domain>
+sudo $O config set hosts.zone_id=<hosts-zone-id>
+sudo $O config set hosts.launch_template=<root-domain>-hosts
+sudo $O config set hosts.instance_profile=<root-domain>-hosts
+```
+
+The values come from `infra/`, which has no outputs for them:
+`<hosts-domain>` is `local.hosts_domain` (`metaspot.org`); `<hosts-zone-id>`
+is the id of `aws_route53_zone.hosts`, that domain's hosted zone, in the form
+`dns.zones` carries ids; and the launch template `aws_launch_template.hosts`
+and the instance profile `aws_iam_instance_profile.hosts` are both named
+`<root-domain>-hosts` after infra's `domain` variable, for example
+`ikigenba.dev-hosts`.
+
 ## host restore
 
 On a rebuilt host, bring back the old host's `/etc/ikigenba/` (the config
