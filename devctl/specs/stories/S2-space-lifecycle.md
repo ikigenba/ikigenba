@@ -30,12 +30,15 @@ at a TTL of 60 seconds, and `space destroy` deletes the records and releases
 the address. No other command allocates, releases, or rewrites them: `space
 stop` and `space start` leave them alone, and `space replace` puts the space
 on a new instance and assigns it the same address. The one exception is a
-space created before every space had an Elastic IP: its first `space
-replace` allocates its address and writes its records, once, before it first
-reaches the host, and from then on they are left alone like any other's. The
-root's record changes only through `apex set`, `apex clear`, `space destroy`
-of the space that holds the apex, and `space create` of a space whose store
-holds the apex.
+space created before every space had an Elastic IP: its first `space replace`
+allocates its address and writes its records, once, before it first reaches
+the host, and from then on they are left alone like any other's. The root's
+record changes only through `apex set`, `apex clear`, `space destroy` of the
+space that holds the apex, and `space create` of a space whose store holds the
+apex. The hosts operator (the space whose role carries the tag
+`HostsOperator=true` and has the managed policy `ikigenba.dev-hosts-operator`)
+changes only through `hosts set`, `hosts clear`, and `space destroy` of the
+hosts operator (see `S9-hosts.md`).
 
 devctl reaches a space's host only by its name, as `ec2-user@<space
 domain>`, for every ssh and scp it runs, and passes no key, no address, and
@@ -456,12 +459,14 @@ Postconditions:
   as `devctl build release-87` writes it; no tag, branch or worktree was created or
   moved.
 - The role `sbx1.ikigenba.dev` exists with the `ikigenba.dev` permissions
-  boundary attached and one inline policy named `space`, which allows the
-  host to read parameters under `/sbx1.ikigenba.dev/`, to read, write, and
-  list objects under `sbx1/` in the bucket and nothing outside it, and to
-  write `TXT` records at `sbx1.ikigenba.dev` and `*.sbx1.ikigenba.dev` in the
-  zone and no other record. The instance profile of the same name holds the
-  role.
+  boundary attached and one inline policy named `space`, which allows the host
+  to read parameters under `/sbx1.ikigenba.dev/`, to read, write, and list
+  objects under `sbx1/` in the bucket and nothing outside it, and to write
+  `TXT` records at `sbx1.ikigenba.dev` and `*.sbx1.ikigenba.dev` in the zone
+  and no other record. The instance profile of the same name holds the role.
+  No managed policy is attached to the role and it carries no tag
+  `HostsOperator=true`; since only `hosts set` gives a role either, a new
+  space is not the hosts operator (see `S9-hosts.md`).
 - One instance is running, launched from the `ikigenba.dev` launch template
   with that profile, tagged `Domain=ikigenba.dev` and `Space=sbx1.ikigenba.dev`
   on the instance and its volume. It has passed its status checks and
@@ -1977,6 +1982,51 @@ Postconditions:
   `18.118.7.42`. The role's policy was not put again. `space list` marks
   `sbx1.ikigenba.dev` with `apex`, as it did before.
 
+## A developer replaces the space that operates hosts
+
+The space is the hosts operator (see `S9-hosts.md`). Replace keeps the space's
+role, and with it the tag `HostsOperator=true` and the managed policy it
+carries, so the new host has the old one's rights from its first boot. There
+is no `hosts` line.
+
+Command:
+
+```
+$ devctl space replace us
+```
+
+Output, with the lines between `instance` and `activate` as in the story of
+replacing a running space, for this space:
+
+```
+account: ok (ikigenba.dev, us-east-2, 295229566359)
+domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
+build: ok (release-87, dist/4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+retire: ok (opsctl retire)
+address: ok (elastic ip 3.131.20.44 disassociated from i-0f1e2d3c4b5a69788)
+instance: ok (i-0f1e2d3c4b5a69788 terminated, i-0e5d4c3b2a1f09876 running, 3.22.140.61)
+...
+activate: ok (release-87 (4b22285))
+us.ikigenba.dev i-0e5d4c3b2a1f09876 3.131.20.44
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- As for replacing a running space, except that the space is `us`, whose only
+  instance not terminated, `i-0f1e2d3c4b5a69788`, is `running` with the
+  Elastic IP `3.131.20.44`. The role `us.ikigenba.dev` carries the tag
+  `HostsOperator=true` and has the managed policy
+  `ikigenba.dev-hosts-operator` attached.
+
+Postconditions:
+
+- Everything replacing a running space's postconditions say, for `us`.
+- The role `us.ikigenba.dev` still carries the tag `HostsOperator=true`, and
+  the managed policy `ikigenba.dev-hosts-operator` is still attached to it;
+  the policy was not attached again. No other space is the hosts operator.
+
 ## A developer replaces a space that does not exist
 
 A replace needs a space to put on a new instance, so a label that carries
@@ -2628,6 +2678,59 @@ Postconditions:
   last column of every line, and `apex show` prints nothing.
 - Everything a plain destroy's postconditions say. With `--no-backup` the
   `apex` line still comes first and `retire` is skipped as below.
+
+## A developer destroys the space that operates hosts
+
+The space is the hosts operator (see `S9-hosts.md`). IAM will not delete a
+role that has a managed policy attached, so the `hosts` step detaches it just
+before the `role` step deletes the role. The step runs whenever
+`ikigenba.dev-hosts-operator` is attached to the role, whether or not the role
+still carries the tag `HostsOperator=true`, so a destroy that failed part-way
+and is run again still detaches the policy before `role`. Deleting the role
+deletes its tag, and no space is the hosts operator: a space created again at
+this label is not one until `hosts set` names it. A destroy whose role has no
+such policy attached has no `hosts` line.
+
+Command:
+
+```
+$ devctl space destroy staging
+```
+
+Output:
+
+```
+retire: ok (opsctl retire)
+instance: ok (i-0a1b2c3d4e5f60718 terminated)
+address: ok (elastic ip 18.220.10.5 released)
+records: ok (deleted staging.ikigenba.dev, *.staging.ikigenba.dev)
+secrets: ok (kept)
+backups: ok (kept)
+hosts: ok (ikigenba.dev-hosts-operator detached)
+role: ok (staging.ikigenba.dev deleted)
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- As for a plain destroy, and the role `staging.ikigenba.dev` carries the tag
+  `HostsOperator=true` and has the managed policy
+  `ikigenba.dev-hosts-operator` attached.
+
+Postconditions:
+
+- Everything a plain destroy's postconditions say.
+- No space's role carries the tag `HostsOperator=true`, and the managed policy
+  `ikigenba.dev-hosts-operator` is attached to no space's role; the policy
+  itself is untouched.
+- Run again after it failed part-way (see "A developer's destroy fails
+  part-way"), destroy prints the `hosts` line before `role` as long as the
+  policy is still attached to the role, whatever became of the tag. Until
+  then, `hosts clear staging` clears the role a failed destroy left behind
+  (see `S9-hosts.md`).
+- A destroy of the hosts operator that also holds the apex prints the `apex`
+  line first and the `hosts` line before `role`, as here.
 
 ## A developer destroys a space that has no instance
 

@@ -8,18 +8,20 @@ is never written, so no name under the root resolves unless a space owns it.
 
 The holder of the apex is the space whose Elastic IP the root's `A` record
 points at. `space list` marks the holder, and this group reads it the same
-way. The record changes only through `apex set`, `apex clear`, `space
-destroy` on the holder, which deletes the record first, and `space create` of
-a space whose restored store holds the apex, which writes the record and
-clears the previous holder as `apex set` does; `space create --apex <app>`
-sets the apex in the store before that, and `space create --no-apex` deletes
-it. `space replace` changes neither the root's record, the role's grant
-nor `host.apex`. Which app answers there reaches
-the host as one opsctl configuration key, `host.apex`, holding the app's
-name; the host derives the apex hostname as the parent of its own `host.name`
-and never stores it (see opsctl's `S5-nginx.md`). The apex app is chosen
-independently of the manifest's `default`: one app may answer at the space's
-name and another at the root, or the same app at both.
+way. The record changes only through `apex set`, `apex clear`, `space destroy`
+on the holder, which deletes the record first, and `space create` of a space
+whose restored store holds the apex, which writes the record and clears the
+previous holder as `apex set` does; `space create --apex <app>` sets the apex
+in the store before that, and `space create --no-apex` deletes it. `space
+replace` changes neither the root's record, the role's grant nor `host.apex`.
+The `role` steps here put and narrow only the role's inline policy `space`;
+the tag `HostsOperator=true` on a space's role and the managed policy attached
+to it (see `S9-hosts.md`) are left as they are. Which app answers there
+reaches the host as one opsctl configuration key, `host.apex`, holding the
+app's name; the host derives the apex hostname as the parent of its own
+`host.name` and never stores it (see opsctl's `S5-nginx.md`). The apex app is
+chosen independently of the manifest's `default`: one app may answer at the
+space's name and another at the root, or the same app at both.
 
 Answering at the root takes three things on the host, and `apex set` does
 them in an order that never lets the root resolve to a host that would refuse
