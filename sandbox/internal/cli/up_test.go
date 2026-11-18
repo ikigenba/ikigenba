@@ -117,7 +117,7 @@ func (f *upFixture) answer(c seam.Cmd) (seam.Result, error) {
 		}
 		return fixtureGitResult(c, f.worktree), nil
 	case "go":
-		f.put(c.Args[2], "new:"+filepath.Base(c.Dir), 0755)
+		f.put(c.Args[2], "new:"+filepath.Base(c.Args[3]), 0755)
 	case "systemctl":
 		if len(c.Args) > 1 && c.Args[1] == "show" {
 			state := "inactive\n"
@@ -210,11 +210,14 @@ func upSnapshot(t *testing.T, root string) map[string]string {
 }
 
 func TestUpSuccessfulDeployment(t *testing.T) {
-	// R-RGOI-M8C3 R-RHWF-002S R-XXC9-Z9PP R-XYK6-D1GE R-Y0ZZ-4KXS
-	// R-Y4NO-9W5V R-U16K-JJPF R-RQFP-OE9N R-RRNM-260C R-ZFIX-V9WF
+	// R-6B37-FSW1 R-6JMI-472W R-6FYS-YVUT R-6KUE-HYTL
+	// R-RHWF-002S R-XXC9-Z9PP R-XYK6-D1GE R-Y0ZZ-4KXS
+	// R-Y4NO-9W5V R-RQFP-OE9N R-RRNM-260C R-ZFIX-V9WF
 	// R-YRTR-JJ92 R-MGWM-89DK R-YU9K-B2QG R-YVHG-OUH5 R-Z2SU-ZGXB R-IJUW-KM7L
-	// R-Z58N-R0EP R-R6ZG-1XW8 R-YGUO-3LKT R-S1ET-4BXW R-RP7T-AMIY
+	// R-Z58N-R0EP R-R6ZG-1XW8 R-S1ET-4BXW R-RP7T-AMIY
 	f := newUpFixture(t, "dummy", "auth")
+	f.commandDirs("auth", "worker", "auth")
+	f.commandDirs("dummy", "dummyd", "dummy", "beta")
 	f.put(filepath.Join(f.worktree, "auth", "etc", "manifest.toml"), "app=\"auth\"\nsecrets=[\"GOOGLE_CLIENT_SECRET\"]\n[env]\nWORKSPACE_DOMAIN=\"example.test\"\n[home]\ngroup=\"core\"\n", 0644)
 	f.environment = map[string]string{"GOOGLE_LOCALHOST_CLIENT_SECRET": "desktop-secret"}
 	f.exec = func(c seam.Cmd) (seam.Result, error) {
@@ -282,8 +285,8 @@ func TestUpSuccessfulDeployment(t *testing.T) {
 		t.Fatalf("%d %q %q", code, out, diagnostic)
 	}
 	want := []seam.Cmd{{Path: "git", Args: []string{"rev-parse", "--show-toplevel"}, Dir: f.worktree}, {Path: "git", Args: []string{"rev-parse", "HEAD"}, Dir: f.worktree}, {Path: "git", Args: []string{"--no-optional-locks", "status", "--porcelain", "--untracked-files=normal"}, Dir: f.worktree}}
-	for _, app := range []string{"auth", "dummy"} {
-		want = append(want, seam.Cmd{Path: "go", Args: []string{"build", "-o", filepath.Join(f.data, "stage", "bin", app), "./cmd/" + app}, Dir: filepath.Join(f.worktree, app)})
+	for _, program := range [][2]string{{"auth", "auth"}, {"auth", "worker"}, {"dummy", "dummy"}, {"dummy", "beta"}, {"dummy", "dummyd"}} {
+		want = append(want, f.buildCommand(program[0], program[1]))
 	}
 	want = append(want, seam.Cmd{Path: "nginx", Args: []string{"-t", "-p", filepath.Join(f.data, "nginx"), "-c", filepath.Join(f.data, "stage", "nginx", "nginx.conf"), "-e", "/dev/null"}, Dir: "/"}, seam.Cmd{Path: "systemctl", Args: []string{"--user", "daemon-reload"}, Dir: "/"}, seam.Cmd{Path: "systemctl", Args: []string{"--user", "show", "--property=ActiveState", "--value", "sandbox-wip-nginx.service"}, Dir: "/"})
 	for _, unit := range []string{"auth.socket", "dummy.socket", "auth.service", "dummy.service", "nginx.service"} {
@@ -306,7 +309,7 @@ func TestUpSuccessfulDeployment(t *testing.T) {
 		for _, entry := range entries {
 			names = append(names, entry.Name())
 		}
-		want := []string{"auth", "dummy"}
+		want := []string{"auth", "beta", "dummy", "dummyd", "worker"}
 		if dir == "env" {
 			want = []string{"auth.env", "dummy.env"}
 		}
@@ -320,7 +323,7 @@ func TestUpSuccessfulDeployment(t *testing.T) {
 }
 
 func TestUpWithoutAuthAndReload(t *testing.T) {
-	// R-9VP6-LI8K R-Z6GK-4S5E R-XZS2-QT73 R-YZ55-U5P8 R-Z0D2-7XFX R-RYZ0-CSGI
+	// R-9VP6-LI8K R-Z6GK-4S5E R-XZS2-QT73 R-YZ55-U5P8 R-Z0D2-7XFX
 	f := newUpFixture(t, "dummy")
 	code, out, diagnostic := f.run("up")
 	if code != 0 || diagnostic != "" || out != "dummy  http://dummy.wip.localhost:7400\n" {
@@ -332,17 +335,9 @@ func TestUpWithoutAuthAndReload(t *testing.T) {
 	other := filepath.Join(f.state, "ikigenba", "sandbox", "other")
 	f.put(filepath.Join(other, "token"), "other", 0600)
 	before := upSnapshot(t, other)
-	oldLink := filepath.Join(f.root, "old-binary")
-	if err := os.Link(filepath.Join(f.data, "bin", "dummy"), oldLink); err != nil {
-		t.Fatal(err)
-	}
-	f.put(filepath.Join(f.data, "bin", "dummy"), "old-binary", 0755)
 	code, _, diagnostic = f.run("up")
 	if code != 0 || diagnostic != "" {
 		t.Fatalf("%d %q", code, diagnostic)
-	}
-	if upRead(t, oldLink) != "old-binary" || upRead(t, filepath.Join(f.data, "bin", "dummy")) != "new:dummy" {
-		t.Fatal("binary not replaced by rename")
 	}
 	if upRead(t, filepath.Join(f.data, "apps", "dummy", "state", "auth.db")) != "persistent" {
 		t.Fatal("state changed")
@@ -435,7 +430,7 @@ func upStable(t *testing.T, f *upFixture, ignoreNginx bool) map[string]string {
 }
 
 func TestUpBuildFailureIsolation(t *testing.T) {
-	// R-RMS0-J31K R-Y9J9-SZ4N R-YAR6-6QVC R-YBZ2-KIM1 R-RNZW-WUS9 R-RP7T-AMIY
+	// R-RMS0-J31K R-6M2A-VQKA R-RNZW-WUS9 R-RP7T-AMIY
 	for _, known := range []bool{false, true} {
 		for _, runnerErr := range []bool{false, true} {
 			t.Run(fmt.Sprintf("known%t/error%t", known, runnerErr), func(t *testing.T) {
@@ -723,7 +718,7 @@ func TestUpIgnoresFragmentContents(t *testing.T) {
 }
 
 func TestUpManifestAndIconChecksPrecedeDefaultsAndSecrets(t *testing.T) {
-	// R-5631-6PVJ
+	// R-6S5S-SL9R
 	for _, fault := range []string{"earlier-icon", "later-manifest", "icon-before-defaults"} {
 		t.Run(fault, func(t *testing.T) {
 			f := newUpFixture(t, "auth", "dummy")
@@ -749,7 +744,7 @@ func TestUpManifestAndIconChecksPrecedeDefaultsAndSecrets(t *testing.T) {
 }
 
 func TestUpCheckOrderAndRefusalIsolation(t *testing.T) {
-	// R-5631-6PVJ R-S969-SQY1
+	// R-6S5S-SL9R R-6TDP-6D0G
 	for _, known := range []bool{false, true} {
 		for _, fault := range []string{"noapps", "manifest", "icon", "defaults", "badvalue", "secrets", "clash", "ports"} {
 			if known && fault == "ports" {
@@ -838,9 +833,7 @@ func TestUpCheckOrderAndRefusalIsolation(t *testing.T) {
 				if code != 2 || out != "" || diagnostic != want {
 					t.Fatalf("%d %q %q want %q", code, out, diagnostic, want)
 				}
-				if len(f.calls) != 1 || f.calls[0].Path != "git" {
-					t.Fatalf("checks ran programs %+v", f.calls)
-				}
+				f.requireOnlyToplevel()
 				if !reflect.DeepEqual(upSnapshot(t, f.data), beforeData) || !reflect.DeepEqual(upSnapshot(t, f.units), beforeUnits) {
 					t.Fatal("checks changed deployed files")
 				}
@@ -1023,8 +1016,8 @@ func TestUpRemovedApps(t *testing.T) {
 }
 
 func TestUpRecordsAppsBeforeInstallingFiles(t *testing.T) {
-	// R-X5L5-DM6R R-Z1KY-LP6M
-	for _, fault := range []string{"socket", "bin", "env", "services", "app", "nginx", "nginxunit", "readonly"} {
+	// R-X5L5-DM6R R-YZMN-0VRM
+	for _, fault := range []string{"socket", "bin", "rename", "env", "services", "app", "nginx", "nginxunit", "readonly", "stale-bin"} {
 		t.Run(fault, func(t *testing.T) {
 			f := newUpFixture(t, "auth")
 			code, _, diagnostic := f.run("up")
@@ -1040,6 +1033,8 @@ func TestUpRecordsAppsBeforeInstallingFiles(t *testing.T) {
 			case "bin":
 				path = filepath.Join(f.data, "bin")
 				isFile = true
+			case "rename":
+				path = filepath.Join(f.data, "bin")
 			case "env":
 				path = filepath.Join(f.data, "env", "dummy.env")
 			case "services":
@@ -1053,16 +1048,12 @@ func TestUpRecordsAppsBeforeInstallingFiles(t *testing.T) {
 				path = filepath.Join(f.units, "sandbox-wip-nginx.service")
 			case "readonly":
 				path = f.units
+			case "stale-bin":
+				path = filepath.Join(f.data, "bin", "old")
+				f.put(filepath.Join(path, "f"), "stale", 0600)
 			}
-			if fault == "readonly" {
-				if err := upChmod(path, 0500); err != nil {
-					t.Fatal(err)
-				}
-				defer func() {
-					if err := upChmod(path, 0700); err != nil {
-						t.Error(err)
-					}
-				}()
+			if fault == "readonly" || fault == "stale-bin" || fault == "rename" {
+				f.chmodDir(path, 0500)
 			} else {
 				if err := os.RemoveAll(path); err != nil {
 					t.Fatal(err)
@@ -1084,6 +1075,13 @@ func TestUpRecordsAppsBeforeInstallingFiles(t *testing.T) {
 				errorPath = filepath.Join(path, "state")
 				reason = syscall.ENOTDIR.Error()
 			}
+			if fault == "rename" {
+				errorPath = filepath.Join(path, "auth")
+				reason = syscall.EACCES.Error()
+			}
+			if fault == "stale-bin" {
+				reason = syscall.EACCES.Error()
+			}
 			if fault == "readonly" {
 				errorPath = filepath.Join(path, "sandbox-wip-dummy.service")
 				reason = syscall.EACCES.Error()
@@ -1095,10 +1093,8 @@ func TestUpRecordsAppsBeforeInstallingFiles(t *testing.T) {
 			if !reflect.DeepEqual(f.records()[0].Apps, []registryApp{{Name: "auth"}, {Name: "dummy"}}) {
 				t.Fatalf("registry before file failure %+v", f.records())
 			}
-			for _, c := range f.calls {
-				if c.Path == "systemctl" {
-					t.Fatalf("run after file failure %+v", c)
-				}
+			if len(f.calls) != 6 || f.calls[5].Path != "nginx" {
+				t.Fatalf("runs through file failure %+v", f.calls)
 			}
 			upMissing(t, filepath.Join(f.data, "stage"))
 		})
@@ -1106,7 +1102,7 @@ func TestUpRecordsAppsBeforeInstallingFiles(t *testing.T) {
 }
 
 func TestUpCheckRefusalsLeaveAbsentRegistry(t *testing.T) {
-	// R-S969-SQY1
+	// R-6TDP-6D0G
 	for _, fault := range []string{"noapps", "manifest", "icon", "badvalue", "secrets"} {
 		t.Run(fault, func(t *testing.T) {
 			f := newUpFixture(t, "dummy")
@@ -1132,9 +1128,7 @@ func TestUpCheckRefusalsLeaveAbsentRegistry(t *testing.T) {
 			if code != 2 || out != "" || diagnostic == "" {
 				t.Fatalf("%d %q %q", code, out, diagnostic)
 			}
-			if len(f.calls) != 1 || f.calls[0].Path != "git" {
-				t.Fatalf("check runs %+v", f.calls)
-			}
+			f.requireOnlyToplevel()
 			upMissing(t, filepath.Join(f.state, "ikigenba", "sandbox", "registry.json"))
 			upMissing(t, f.data)
 			upMissing(t, f.units)

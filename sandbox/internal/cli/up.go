@@ -18,6 +18,16 @@ func (i invocation) runUp() (code int) {
 	defer t.unlock()
 	apps, err := discoverApps(t.worktree)
 	if err != nil {
+		return i.report(err)
+	}
+	programs, err := discoverPrograms(t.worktree, apps)
+	if err != nil {
+		return i.report(err)
+	}
+	if err = checkProgramNames(programs); err != nil {
+		return i.report(err)
+	}
+	if err = checkManifests(t.worktree, apps); err != nil {
 		return i.diagnostic(err.Error())
 	}
 	if err = checkSecrets(i.deps.Getenv, apps); err != nil {
@@ -57,8 +67,12 @@ func (i invocation) runUp() (code int) {
 	if err = os.MkdirAll(filepath.Join(stage, "bin"), 0700); err != nil {
 		return i.fileError(filepath.Join(stage, "bin"), err)
 	}
-	for _, app := range apps {
-		if code = i.upExec(seam.Cmd{Path: "go", Args: []string{"build", "-o", p.stageBinary(entry.Name, app.Name), "./cmd/" + app.Name}, Dir: filepath.Join(t.worktree, app.Name)}, "build "+app.Name, ""); code != 0 {
+	for _, program := range programs {
+		if code = i.upExec(seam.Cmd{
+			Path: "go",
+			Args: []string{"build", "-o", p.stageBinary(entry.Name, program.name), "./cmd/" + program.name},
+			Dir:  filepath.Join(t.worktree, program.app),
+		}, "build "+program.app, ""); code != 0 {
 			return code
 		}
 	}
@@ -138,38 +152,27 @@ func (i invocation) runUp() (code int) {
 	if err != nil {
 		return i.report(err)
 	}
-	for _, dir := range []string{filepath.Join(p.data(entry.Name), "bin"), filepath.Join(p.data(entry.Name), "env")} {
-		if err = os.MkdirAll(dir, 0700); err != nil {
-			return i.fileError(dir, err)
-		}
-		entries, readErr := os.ReadDir(dir)
-		if readErr != nil {
-			return i.fileError(dir, readErr)
-		}
-		for _, item := range entries {
-			keep := false
-			for _, app := range apps {
-				wanted := app.Name
-				if filepath.Base(dir) == "env" {
-					wanted += ".env"
-				}
-				if item.Name() == wanted {
-					keep = true
-					break
-				}
-			}
-			if !keep {
-				path := filepath.Join(dir, item.Name())
-				if err = os.RemoveAll(path); err != nil {
-					return i.fileError(path, err)
-				}
-			}
+	binaries := make(map[string]bool, len(programs))
+	for _, program := range programs {
+		binaries[program.name] = true
+	}
+	envFiles := make(map[string]bool, len(apps))
+	for _, app := range apps {
+		envFiles[app.Name+".env"] = true
+	}
+	if err = pruneGenerated(filepath.Join(p.data(entry.Name), "bin"), binaries); err != nil {
+		return i.report(err)
+	}
+	if err = pruneGenerated(filepath.Join(p.data(entry.Name), "env"), envFiles); err != nil {
+		return i.report(err)
+	}
+	for _, program := range programs {
+		binary := p.binary(entry.Name, program.name)
+		if err = os.Rename(p.stageBinary(entry.Name, program.name), binary); err != nil {
+			return i.fileError(binary, err)
 		}
 	}
 	for _, app := range apps {
-		if err = os.Rename(p.stageBinary(entry.Name, app.Name), p.binary(entry.Name, app.Name)); err != nil {
-			return i.fileError(p.binary(entry.Name, app.Name), err)
-		}
 		if err = os.MkdirAll(p.appState(entry.Name, app.Name), 0700); err != nil {
 			return i.fileError(p.appState(entry.Name, app.Name), err)
 		}
@@ -215,6 +218,26 @@ func (i invocation) runUp() (code int) {
 		return i.runnerError("write stdout", err)
 	}
 	return 0
+}
+
+func pruneGenerated(dir string, keep map[string]bool) error {
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return dataFileError(dir, err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return dataFileError(dir, err)
+	}
+	for _, item := range entries {
+		if keep[item.Name()] {
+			continue
+		}
+		path := filepath.Join(dir, item.Name())
+		if err := os.RemoveAll(path); err != nil {
+			return dataFileError(path, err)
+		}
+	}
+	return nil
 }
 
 func (i invocation) upCommit(worktree string) (string, int) {

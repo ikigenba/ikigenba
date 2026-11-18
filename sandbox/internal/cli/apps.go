@@ -89,7 +89,7 @@ func invalidValue(s string) bool {
 func discoverApps(worktree string) ([]appInfo, error) {
 	entries, err := os.ReadDir(worktree)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %s", worktree, appOSReason(err))
+		return nil, dataFileError(worktree, err)
 	}
 	var apps []appInfo
 	for _, entry := range entries {
@@ -99,13 +99,72 @@ func discoverApps(worktree string) ([]appInfo, error) {
 		}
 		apps = append(apps, appInfo{Name: name})
 	}
-	sort.Slice(apps, func(i, j int) bool { return apps[i].Name < apps[j].Name })
 	if len(apps) == 0 {
-		return nil, fmt.Errorf("no apps in %s\n\nan app is a directory holding etc/manifest.toml", worktree)
+		return nil, failure{2, fmt.Sprintf("no apps in %s\n\nan app is a directory holding etc/manifest.toml", worktree)}
 	}
+	return apps, nil
+}
+
+type appProgram struct {
+	app, name string
+}
+
+func (p appProgram) directory() string {
+	return filepath.Join(p.app, "cmd", p.name)
+}
+
+func discoverPrograms(worktree string, apps []appInfo) ([]appProgram, error) {
+	var programs []appProgram
+	for _, app := range apps {
+		programs = append(programs, appProgram{app.Name, app.Name})
+		cmd := filepath.Join(worktree, app.Name, "cmd")
+		info, err := os.Stat(cmd)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		entries, err := os.ReadDir(cmd)
+		if err != nil {
+			return nil, dataFileError(cmd, err)
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			if name == app.Name {
+				continue
+			}
+			info, err := os.Stat(filepath.Join(cmd, name))
+			if err == nil && info.IsDir() {
+				programs = append(programs, appProgram{app.Name, name})
+			}
+		}
+	}
+	return programs, nil
+}
+
+func checkProgramNames(programs []appProgram) error {
+	dirs := make(map[string][]string, len(programs))
+	firstClash := ""
+	for _, program := range programs {
+		name := program.name
+		dirs[name] = append(dirs[name], program.directory())
+		if len(dirs[name]) == 2 && (firstClash == "" || name < firstClash) {
+			firstClash = name
+		}
+	}
+	if firstClash == "" {
+		return nil
+	}
+	clashes := dirs[firstClash]
+	sort.Strings(clashes)
+	for i, dir := range clashes {
+		clashes[i] = printedName(dir)
+	}
+	return failure{2, fmt.Sprintf("more than one program named '%s': %s", printedName(firstClash), strings.Join(clashes, ", "))}
+}
+
+func checkManifests(worktree string, apps []appInfo) error {
 	for i := range apps {
 		if err := readManifest(worktree, &apps[i]); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	var defaults []string
@@ -115,9 +174,9 @@ func discoverApps(worktree string) ([]appInfo, error) {
 		}
 	}
 	if len(defaults) > 1 {
-		return nil, fmt.Errorf("more than one default app: %s", strings.Join(defaults, ", "))
+		return fmt.Errorf("more than one default app: %s", strings.Join(defaults, ", "))
 	}
-	return apps, nil
+	return nil
 }
 func readManifest(worktree string, a *appInfo) error {
 	if !usableAppName(a.Name) {

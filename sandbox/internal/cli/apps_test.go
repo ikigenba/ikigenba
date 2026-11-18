@@ -188,7 +188,13 @@ func TestAppsDiscoveryRefusals(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	f.refuse(f.work + ": permission denied")
+	code, out, diagnostic := f.run()
+	if code != 1 || out != "" || diagnostic != "sandbox: "+f.work+": permission denied\n" {
+		t.Fatalf("up: %d %q %q", code, out, diagnostic)
+	}
+	if len(f.commands) != 1 || f.commands[0].Path != "git" {
+		t.Fatalf("commands after refusal: %#v", f.commands)
+	}
 }
 
 // R-MCLC-9SME R-MBDF-W0VP R-UVA4-8TCQ
@@ -1007,6 +1013,9 @@ func TestResourcePlacementAndDelegation(t *testing.T) {
 			f.manifest(name, appManifest(name)+c.body)
 			apps, err := discoverApps(f.work)
 			if err != nil {
+				t.Fatal(err)
+			}
+			if err := checkManifests(f.work, apps); err != nil {
 				t.Fatal(err)
 			}
 			if len(apps) != 1 || apps[0].Placement != c.placement || apps[0].Delegate != c.delegate {
