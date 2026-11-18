@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -13,10 +14,16 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts"
-	"github.com/ikigenba/ikigenba/accounts/internal/host"
+	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
+	"github.com/ikigenba/ikigenba/accounts/internal/cloud/awssdk"
+	"github.com/ikigenba/ikigenba/accounts/internal/cloud/memory"
+	"github.com/ikigenba/ikigenba/accounts/internal/daemonapi"
+	"github.com/ikigenba/ikigenba/accounts/internal/hostauth"
+	"github.com/ikigenba/ikigenba/accounts/internal/ops"
 	"github.com/ikigenba/ikigenba/accounts/internal/pages"
 	"github.com/ikigenba/ikigenba/accounts/internal/server"
 	"github.com/ikigenba/ikigenba/accounts/internal/settings"
+	"github.com/ikigenba/ikigenba/accounts/internal/sim"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/web"
 	"github.com/ikigenba/ikigenba/appkit/db"
@@ -34,31 +41,37 @@ const (
 )
 
 // Usage describes the command to a person.
-const Usage string = "Usage: accounts [--version|manifest|--help|db status]\n\nManage the host’s SSH accounts.\nWith no arguments, serve on the socket systemd passes in.\ndb status reports database migrations.\n--version prints the release identity; manifest prints deployment settings.\n--help prints this help.\n\nExit codes: 0 success, 1 server or database failure, 2 usage error.\n"
+const Usage string = "Usage: accounts [--version|manifest|--help|db status]\n\nManage SSH hosts, accounts and users.\nWith no arguments, serve on the socket systemd passes in.\ndb status reports database migrations.\n--version prints the release identity; manifest prints deployment settings.\n--help prints this help.\n\nExit codes: 0 success, 1 server or database failure, 2 usage error.\n"
 
 // Manifest is the deployment contract.
-const Manifest = "app = \"accounts\"\ndescription = \"" + pages.Description + "\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[database]\nengine = \"sqlite\"\npath = \"state/accounts.db\"\n\n[resources]\nmemory_max = \"128M\"\n\n[home]\ngroup = \"core\"\n"
+const Manifest = "app = \"accounts\"\ndescription = \"" + pages.Description + "\"\ndefault = false\nmcp = true\nguests = true\nsecrets = []\n\n[database]\nengine = \"sqlite\"\npath = \"state/accounts.db\"\n\n[resources]\nmemory_max = \"256M\"\n\n[home]\ngroup = \"core\"\n"
+
+// NoCloud describes a failure to open the selected cloud.
+const NoCloud = "cannot open cloud"
 
 // NginxConf hides the internal event-bus routes from public ingress.
 const NginxConf = "location = /events { return 404; }\nlocation = /declarations { return 404; }\n"
 
 // Process supplies every host-dependent operation used by Run.
 type Process struct {
-	Args      []string
-	LookupEnv func(string) (string, bool)
-	Unsetenv  func(string) error
-	Pid       int
-	Stdout    io.Writer
-	Stderr    io.Writer
-	Version   string
-	Inherit   func(uintptr) (net.Listener, error)
-	Now       func() time.Time
-	Sleep     func(context.Context, time.Duration)
-	Rand      io.Reader
-	Dir       string
-	Sink      telemetry.Sink
-	Banner    func(page.User) page.Banner
-	MCP       func(*telemetry.Writer) *mcp.Server
+	Args       []string
+	LookupEnv  func(string) (string, bool)
+	Unsetenv   func(string) error
+	Pid        int
+	Stdout     io.Writer
+	Stderr     io.Writer
+	Version    string
+	Inherit    func(uintptr) (net.Listener, error)
+	Now        func() time.Time
+	Sleep      func(context.Context, time.Duration)
+	Rand       io.Reader
+	Dir        string
+	Sink       telemetry.Sink
+	Banner     func(page.User) page.Banner
+	MCP        func(*telemetry.Writer) *mcp.Server
+	After      func(time.Duration) <-chan time.Time
+	Executable func() (string, error)
+	Cloud      cloud.Opener
 }
 type lockedReader struct {
 	mu sync.Mutex
@@ -128,7 +141,18 @@ func Run(ctx context.Context, p Process) int {
 		return ExitServerFailed
 	}
 	defer func() { _ = ln.Close() }()
+	return serve(ctx, p, ln, s)
+}
+
+func serve(ctx context.Context, p Process, ln net.Listener, s settings.Settings) int {
+	if p.After == nil {
+		p.After = time.After
+	}
+	if p.Sleep == nil {
+		p.Sleep = sleep
+	}
 	stderr := &gatedWriter{w: p.Stderr}
+	defer stderr.close()
 	d, err := db.Open(ctx, db.Config{Path: filepath.Join(p.Dir, "state", "accounts.db"), Migrations: accounts.Migrations(), Now: p.Now, Service: pages.ServiceName, Stderr: stderr})
 	if err != nil {
 		diagnostic(p.Stderr, "cannot open database state/accounts.db: "+err.Error())
@@ -136,35 +160,91 @@ func Run(ctx context.Context, p Process) int {
 	}
 	defer func() { _ = d.Close() }()
 	rnd := &lockedReader{r: p.Rand}
-	st := store.New(d, store.Config{Now: p.Now})
-	var h host.Host
-	if fields := s.HostFields(); fields != nil {
-		h = host.NewCommand(fields)
-	} else {
-		h = host.NewMemory()
-	}
-	w := telemetry.New(telemetry.Config{Service: pages.ServiceName, Version: p.Version, Sink: p.Sink, Stderr: stderr, Now: p.Now, Sleep: p.Sleep, Rand: rnd})
+	st := store.New(d, store.Config{Now: p.Now, Rand: rnd})
+	writer := telemetry.New(telemetry.Config{Service: pages.ServiceName, Version: p.Version, Sink: p.Sink, Stderr: stderr, Now: p.Now, Sleep: p.Sleep, Rand: rnd})
+	writer.Ready()
+
 	path, _ := p.LookupEnv(services.Variable)
-	w.Ready()
-	hnd := web.Handler(web.Config{Banner: p.Banner, MCP: p.MCP(w), ServicesPath: path, Store: st, Telemetry: w, Host: h, Settings: s})
-	if socket, _ := p.LookupEnv("NOTIFY_SOCKET"); socket != "" {
-		if c, e := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: socket, Net: "unixgram"}); e == nil {
-			_, _ = c.Write([]byte("READY=1"))
-			_ = c.Close()
-		}
+	binding := func() (string, error) { return s.Binding(path) }
+	hosts := s.HostsInUse()
+	c, mc, err := openCloud(ctx, p, s, rnd)
+	if err != nil {
+		diagnostic(stderr, NoCloud+": "+err.Error())
+		c, mc, hosts = nil, nil, settings.Hosts{}
 	}
-	stopped := false
-	err = server.Serve(ctx, ln, hnd, s.Drain(), func(c context.Context) {
-		stopped = true
+	configured := c != nil
+	binary := ""
+	if configured {
+		binary = daemonBinary(p.Executable)
+	}
+
+	verifier := hostauth.NewVerifier(hostauth.VerifierConfig{Region: hosts.Region, Role: hosts.InstanceProfile, Binding: binding, STS: c, Now: p.Now})
+	// A cancelled start still needs a handler so the ordinary shutdown path
+	// can close the writer. An interrupted digest simply disables the download.
+	daemonConfig := daemonapi.Config{Store: st, Verifier: verifier, Binary: binary, Telemetry: writer, Now: p.Now, Configured: configured, After: p.After}
+	ds, err := daemonapi.New(ctx, daemonConfig)
+	if err != nil {
+		daemonConfig.Binary = ""
+		ds, _ = daemonapi.New(context.Background(), daemonConfig)
+	}
+	engine := ops.New(ops.Config{Store: st, Cloud: c, Hosts: hosts, AccountsURL: func() (string, error) { return s.AccountsURL(path) }, Telemetry: writer, Now: p.Now, After: p.After})
+	handler := web.Handler(web.Config{Banner: p.Banner, MCP: p.MCP(writer), ServicesPath: path, Store: st, Cloud: c, Hosts: hosts, Configured: configured, Wake: engine.Wake, Daemon: ds, Telemetry: writer, Settings: s})
+	notifyReady(p.LookupEnv)
+
+	work, cancelWork := context.WithCancel(ctx)
+	defer cancelWork()
+	// Keep the serving context live until long polls can exit. The engine's
+	// cloud calls lose their context immediately when the process is cancelled.
+	serving, stopServing := context.WithCancel(context.WithoutCancel(ctx))
+	defer stopServing()
+	detach := context.AfterFunc(ctx, func() {
+		ds.Stop()
+		stopServing()
+	})
+	defer detach()
+	var background sync.WaitGroup
+	if configured {
+		background.Go(func() { _ = engine.Run(work) })
+	}
+	if mc != nil {
+		b, _ := binding()
+		simulator := sim.New(sim.Config{Cloud: mc, Handler: handler, Binding: b, Digest: ds.Digest, Now: p.Now, Sleep: p.Sleep, After: p.After})
+		background.Go(func() { _ = simulator.Run(work) })
+	}
+	backgroundDone := make(chan struct{})
+	go func() {
+		background.Wait()
+		close(backgroundDone)
+	}()
+	stop := func(drain context.Context) {
+		cancelWork()
+		ds.Stop()
+		httpDrained := drain.Err() == nil
+		select {
+		case <-backgroundDone:
+		case <-drain.Done():
+		}
+		if httpDrained && drain.Err() != nil {
+			// A cloud call can ignore cancellation. Leave a bounded window for
+			// an already-drained server to deliver its stopping event.
+			var cancel context.CancelFunc
+			drain, cancel = context.WithTimeout(context.Background(), 250*time.Millisecond)
+			defer cancel()
+		}
 		reason := ""
 		if cause := context.Cause(ctx); cause != nil {
 			reason = cause.Error()
 		}
-		w.Shutdown(c, reason)
+		writer.Shutdown(drain, reason)
+	}
+	stopped := false
+	err = server.Serve(serving, ln, handler, s.Drain(), func(drain context.Context) {
+		stopped = true
+		stop(drain)
 	})
 	if !stopped {
-		c, cancel := context.WithTimeout(context.Background(), s.Drain())
-		w.Shutdown(c, "")
+		drain, cancel := context.WithTimeout(context.Background(), s.Drain())
+		stop(drain)
 		cancel()
 	}
 	stderr.close()
@@ -174,6 +254,63 @@ func Run(ctx context.Context, p Process) int {
 	}
 	return ExitSuccess
 }
+
+func openCloud(ctx context.Context, p Process, s settings.Settings, rnd io.Reader) (cloud.Cloud, *memory.Cloud, error) {
+	switch s.Cloud() {
+	case settings.ModeAWS:
+		open := p.Cloud
+		if open == nil {
+			open = awssdk.Open
+		}
+		c, err := open(ctx, s.Hosts.Region)
+		return c, nil, err
+	case settings.ModeSandbox:
+		c, err := memory.New(memory.Config{Path: filepath.Join(p.Dir, "state", "sandbox-cloud.json"), Now: p.Now, Rand: rnd, Hosts: s.HostsInUse()})
+		if err != nil {
+			return nil, nil, err
+		}
+		return c, c, nil
+	default:
+		return nil, nil, nil
+	}
+}
+
+func daemonBinary(executable func() (string, error)) string {
+	if executable == nil {
+		executable = os.Executable
+	}
+	path, err := executable()
+	if err != nil {
+		return ""
+	}
+	bin, err := filepath.EvalSymlinks(filepath.Join(filepath.Dir(path), "accountsd"))
+	if err != nil {
+		return ""
+	}
+	return bin
+}
+
+func sleep(ctx context.Context, delay time.Duration) {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+	case <-timer.C:
+	}
+}
+
+func notifyReady(lookup func(string) (string, bool)) {
+	socket, _ := lookup("NOTIFY_SOCKET")
+	if socket == "" {
+		return
+	}
+	conn, err := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: socket, Net: "unixgram"})
+	if err == nil {
+		_, _ = conn.Write([]byte("READY=1"))
+		_ = conn.Close()
+	}
+}
+
 func command(ctx context.Context, p Process) int {
 	if len(p.Args) == 1 {
 		switch p.Args[0] {

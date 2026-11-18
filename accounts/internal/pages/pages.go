@@ -1,32 +1,33 @@
 package pages
 
 import (
+	"errors"
 	"net/http"
-	"net/url"
-	"time"
+	"strings"
 
-	"github.com/ikigenba/ikigenba/accounts/internal/host"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/tools"
+	"github.com/ikigenba/ikigenba/accounts/internal/valid"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/page"
 )
 
-// Handler answers browser requests without changing the host or the record.
+// Handler answers browser requests without changing the record.
 func Handler(cfg Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c, ok := identity.FromContext(r.Context())
-		if !ok || c.UserID == "" {
-			w.Header().Set("Location", SignIn(r, cfg.ServicesPath))
-			w.WriteHeader(http.StatusFound)
+		caller, ok := identity.FromContext(r.Context())
+		if !ok || caller.UserID == "" {
+			redirect(w, http.StatusFound, SignIn(r, cfg.ServicesPath))
 			return
 		}
 		auth := Auth(r, cfg.ServicesPath)
-		b := cfg.Banner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: auth + "/", LogoutURL: auth + "/logout"})
-		b.Trail = nil
-		path := r.URL.EscapedPath()
-		notFound := func() { cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NotFoundData{Banner: b}) }
-		if path != "/" && path != "/tools" && path != "/about" {
+		banner := cfg.Banner(page.User{Email: caller.Email, ProfileURL: auth + "/", LogoutURL: auth + "/logout"})
+		banner.Trail = nil
+		escaped := r.URL.EscapedPath()
+		host, hasHost := strings.CutPrefix(escaped, "/hosts/")
+		hasHost = hasHost && host != "" && !strings.Contains(host, "/")
+		notFound := func() { cfg.Pages.Write(w, r, http.StatusNotFound, "notfound", NotFoundData{Banner: banner}) }
+		if !hasHost && escaped != "/" && escaped != "/tools" && escaped != "/about" {
 			notFound()
 			return
 		}
@@ -35,89 +36,120 @@ func Handler(cfg Config) http.Handler {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		switch path {
+		switch escaped {
 		case "/":
-			p, q := r.URL.Query().Get("groups_page"), r.URL.Query().Get("users_page")
-			gp, gok := decode(tools.ToolGroups, p)
-			up, uok := decode(tools.ToolUsers, q)
-			if !gok || !uok {
-				notFound()
-				return
-			}
-			gs, err := cfg.Host.GroupList(r.Context())
-			if err != nil {
-				refusal(w, r, host.HostFailed)
-				return
-			}
-			us, err := cfg.Host.UserList(r.Context())
-			if err != nil {
-				refusal(w, r, host.HostFailed)
-				return
-			}
-			gw := listWindow(gs, tools.ToolGroups, p, gp, func(g host.Group) string { return g.Slug })
-			uw := listWindow(us, tools.ToolUsers, q, up, func(u host.User) string { return u.Name })
-			if gw.underflow || uw.underflow {
-				location := "/"
-				if p != "" && !gw.underflow {
-					location += "?groups_page=" + url.QueryEscape(p)
-				}
-				if q != "" && !uw.underflow {
-					location += "?users_page=" + url.QueryEscape(q)
-				}
-				w.Header().Set("Location", location)
-				w.WriteHeader(http.StatusSeeOther)
-				return
-			}
-			slugs := make([]string, 0, gw.end-gw.start)
-			for _, g := range gs[gw.start:gw.end] {
-				slugs = append(slugs, g.Slug)
-			}
-			records, err := cfg.Store.Groups(r.Context(), slugs)
-			if err != nil {
-				refusal(w, r, store.Unreachable)
-				return
-			}
-			groups := make([]GroupRow, 0, len(slugs))
-			for _, g := range gs[gw.start:gw.end] {
-				row := GroupRow{Slug: g.Slug, MemberCount: g.Members, Members: []string{}}
-				for _, u := range us {
-					for _, slug := range u.Groups {
-						if slug == g.Slug {
-							row.Members = append(row.Members, u.Name)
-							break
-						}
-					}
-				}
-				if record, ok := records[g.Slug]; ok {
-					row.Created, row.CreatedText = stamps(record.Created)
-				}
-				groups = append(groups, row)
-			}
-			users := make([]UserRow, 0, uw.end-uw.start)
-			for _, u := range us[uw.start:uw.end] {
-				row := UserRow{Login: u.Name, State: u.State, Groups: append([]string{}, u.Groups...), KeyCount: len(u.Keys)}
-				if !u.LastSignIn.IsZero() {
-					row.LastSignIn, row.LastSignInText = stamps(u.LastSignIn)
-				}
-				users = append(users, row)
-			}
-			cfg.Pages.Write(w, r, http.StatusOK, "landing", LandingData{Banner: b, Groups: groups, GroupsPage: p, GroupsPrev: gw.prev, GroupsNext: gw.next, Users: users, UsersPage: q, UsersPrev: uw.prev, UsersNext: uw.next})
+			landing(w, r, cfg, banner, notFound)
 		case "/tools":
-			b.Trail = []page.Level{ToolsLevel}
-			rows := make([]ToolRow, 0)
-			for _, t := range cfg.MCP.Tools() {
+			banner.Trail = []page.Level{ToolsLevel}
+			catalog := cfg.MCP.Tools()
+			rows := make([]ToolRow, 0, len(catalog))
+			for _, t := range catalog {
 				rows = append(rows, ToolRow{Name: t.Name, Description: tools.FirstLine(t.Description)})
 			}
-			cfg.Pages.Write(w, r, http.StatusOK, "tools", ToolsData{Banner: b, Tools: rows})
+			cfg.Pages.Write(w, r, http.StatusOK, "tools", ToolsData{Banner: banner, Tools: rows})
 		case "/about":
-			b.Trail = []page.Level{AboutLevel}
-			cfg.Pages.Write(w, r, http.StatusOK, "about", AboutData{Banner: b, Description: Description})
+			banner.Trail = []page.Level{AboutLevel}
+			cfg.Pages.Write(w, r, http.StatusOK, "about", AboutData{
+				Banner: banner, Description: Description, DefaultType: valid.DefaultType,
+				DefaultRootGB: valid.DefaultRootGB, DefaultDataGB: valid.DefaultDataGB,
+			})
+		default:
+			hostDetail(w, r, cfg, banner, host, notFound)
 		}
 	})
 }
-func stamps(t time.Time) (string, string) {
-	return t.UTC().Format(time.RFC3339), t.UTC().Format(MinuteLayout)
+
+func landing(w http.ResponseWriter, r *http.Request, cfg Config, banner page.Banner, notFound func()) {
+	data := LandingData{Banner: banner, Configured: cfg.Configured}
+	if !cfg.Configured {
+		cfg.Pages.Write(w, r, http.StatusOK, "landing", data)
+		return
+	}
+	positions := readPositions(r.URL.Query())
+	if !positions.valid() {
+		notFound()
+		return
+	}
+	var hosts []store.Host
+	var accounts []store.Account
+	var users []store.User
+	var hw, aw, uw window
+	ctx := r.Context()
+	err := store.ReadSnapshot(ctx, cfg.Store, func(snapshot *store.Snapshot) error {
+		var err error
+		hosts, hw, err = hostListing(snapshot).read(ctx, positions.hosts, positions.hostSeq)
+		if err != nil {
+			return err
+		}
+		accounts, aw, err = accountListing(snapshot).read(ctx, positions.accounts, positions.slug)
+		if err != nil {
+			return err
+		}
+		users, uw, err = userListing(snapshot).read(ctx, positions.users, userKey{positions.userAccount, positions.userName})
+		return err
+	})
+	if err != nil {
+		refusal(w, r, store.Unreachable)
+		return
+	}
+	if hw.underflow || aw.underflow || uw.underflow {
+		redirect(w, http.StatusSeeOther, canonicalLanding(hw, aw, uw))
+		return
+	}
+	data.Domain = cfg.Domain
+	data.Hosts = make([]HostRow, 0, len(hosts))
+	now := cfg.Now()
+	for _, h := range hosts {
+		data.Hosts = append(data.Hosts, hostRow(h, now))
+	}
+	data.Accounts = make([]AccountRow, 0, len(accounts))
+	for _, a := range accounts {
+		data.Accounts = append(data.Accounts, accountRow(a, cfg.Domain))
+	}
+	data.Users = make([]UserRow, 0, len(users))
+	for _, u := range users {
+		data.Users = append(data.Users, userRow(u))
+	}
+	data.HostsPage, data.HostsPrev, data.HostsNext = hw.value, hw.prev, hw.next
+	data.AccountsPage, data.AccountsPrev, data.AccountsNext = aw.value, aw.prev, aw.next
+	data.UsersPage, data.UsersPrev, data.UsersNext = uw.value, uw.prev, uw.next
+	cfg.Pages.Write(w, r, http.StatusOK, "landing", data)
 }
+
+func hostDetail(w http.ResponseWriter, r *http.Request, cfg Config, banner page.Banner, name string, notFound func()) {
+	if !cfg.Configured {
+		notFound()
+		return
+	}
+	var h store.Host
+	var report *store.Report
+	ctx := r.Context()
+	err := store.ReadSnapshot(ctx, cfg.Store, func(snapshot *store.Snapshot) error {
+		var err error
+		h, err = snapshot.Host(ctx, name)
+		if err != nil {
+			return err
+		}
+		report, err = snapshot.Report(ctx, name)
+		return err
+	})
+	if errors.Is(err, store.ErrNotFound) {
+		notFound()
+		return
+	}
+	if err != nil {
+		refusal(w, r, store.Unreachable)
+		return
+	}
+	banner.Trail = []page.Level{HostLevel(h.Name)}
+	cfg.Pages.Write(w, r, http.StatusOK, "host", HostData{Banner: banner, Host: hostView(h, cfg.Now()), Report: reportView(report, h.Version)})
+}
+
+func redirect(w http.ResponseWriter, status int, location string) {
+	w.Header().Set("Location", location)
+	w.WriteHeader(status)
+}
+
 func refusal(w http.ResponseWriter, r *http.Request, line string) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusServiceUnavailable)

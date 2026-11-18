@@ -5,7 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ikigenba/ikigenba/accounts/internal/host"
+	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
+	"github.com/ikigenba/ikigenba/accounts/internal/daemonapi"
 	"github.com/ikigenba/ikigenba/accounts/internal/pages"
 	"github.com/ikigenba/ikigenba/accounts/internal/settings"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
@@ -22,27 +23,39 @@ type Config struct {
 	MCP          *mcp.Server
 	ServicesPath string
 	Store        *store.Store
-	Host         host.Host
+	Cloud        cloud.Cloud
+	Hosts        settings.Hosts
+	Configured   bool
+	Wake         func()
+	Daemon       *daemonapi.Server
 	Telemetry    *telemetry.Writer
 	Settings     settings.Settings
 }
 
 // Handler registers the service's tools and composes its routes.
 func Handler(cfg Config) http.Handler {
-	tools.Register(cfg.MCP, tools.Config{Store: cfg.Store, Host: cfg.Host, Telemetry: cfg.Telemetry})
+	tools.Register(cfg.MCP, tools.Config{
+		Store: cfg.Store, Cloud: cfg.Cloud, Hosts: cfg.Hosts, Configured: cfg.Configured, Wake: cfg.Wake, Telemetry: cfg.Telemetry,
+	})
 	set, err := pages.Load()
 	if err != nil {
 		panic(err)
 	}
-	ph := identity.Optional(pages.Handler(pages.Config{Banner: cfg.Banner, Pages: set, ServicesPath: cfg.ServicesPath, Store: cfg.Store, Host: cfg.Host, MCP: cfg.MCP}))
+	ph := identity.Optional(pages.Handler(pages.Config{
+		Banner: cfg.Banner, Pages: set, ServicesPath: cfg.ServicesPath, Store: cfg.Store,
+		MCP: cfg.MCP, Configured: cfg.Configured, Domain: cfg.Hosts.Domain, Now: cfg.Telemetry.Now,
+	}))
 	mh := identity.Require(cfg.MCP)
 	sh := identity.Optional(page.Static())
 	return telemetry.Middleware(cfg.Telemetry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
 		switch {
-		case r.URL.Path == "/mcp":
+		case path == "/mcp":
 			mh.ServeHTTP(w, r)
-		case strings.HasPrefix(r.URL.Path, "/_appkit/"):
+		case strings.HasPrefix(path, "/_appkit/"):
 			sh.ServeHTTP(w, r)
+		case path == "/accountsd" || strings.HasPrefix(path, "/accountsd/"):
+			cfg.Daemon.ServeHTTP(w, r)
 		default:
 			ph.ServeHTTP(w, r)
 		}

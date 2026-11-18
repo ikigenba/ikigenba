@@ -11,16 +11,20 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts"
-	"github.com/ikigenba/ikigenba/accounts/internal/host"
+	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
+	"github.com/ikigenba/ikigenba/accounts/internal/cloud/memory"
+	"github.com/ikigenba/ikigenba/accounts/internal/daemonapi"
+	"github.com/ikigenba/ikigenba/accounts/internal/hostauth"
 	"github.com/ikigenba/ikigenba/accounts/internal/pages"
+	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 	"github.com/ikigenba/ikigenba/accounts/internal/settings"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/tools"
-	"github.com/ikigenba/ikigenba/accounts/internal/trail"
 	"github.com/ikigenba/ikigenba/accounts/internal/web"
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
@@ -38,33 +42,54 @@ type fixture struct {
 	d       *db.DB
 	path    string
 	now     func() time.Time
+	wakes   atomic.Int32
 }
 
 func setup(t *testing.T) *fixture {
 	t.Helper()
 	t.Setenv(services.Variable, "")
-	now := func() time.Time { return time.Date(2026, 10, 29, 14, 3, 7, 0, time.UTC) }
-	path := filepath.Join(t.TempDir(), "accounts.db")
+	now := func() time.Time { return time.Date(2026, 11, 17, 14, 3, 7, 0, time.UTC) }
+	dir := t.TempDir()
+	path := filepath.Join(dir, "accounts.db")
 	d, err := db.Open(t.Context(), db.Config{Path: path, Migrations: accounts.Migrations(), Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = d.Close() })
+	st := store.New(d, store.Config{Now: now, Rand: strings.NewReader("mock-id1mock-id2mock-id3mock-id4")})
 	capture := &telemetry.Capture{}
-	w := telemetry.New(telemetry.Config{Service: pages.ServiceName, Sink: capture, Now: now, Rand: bytes.NewReader(bytes.Repeat([]byte{0x5a}, 1000000)), Stderr: io.Discard, Sleep: func(context.Context, time.Duration) {}})
+	w := telemetry.New(telemetry.Config{Service: pages.ServiceName, Sink: capture, Now: now, Rand: bytes.NewReader(bytes.Repeat([]byte{0x5a}, 1<<16)), Stderr: io.Discard, Sleep: func(context.Context, time.Duration) {}})
 	t.Cleanup(func() { w.Shutdown(context.Background(), "test") })
 	banner := func(u page.User) page.Banner {
 		return page.Banner{Service: pages.ServiceName, Release: "chosen-release", Commit: "chosen-commit", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Tools: true}
 	}
-	s, err := settings.Read(func(string) (string, bool) { return "", false })
+	s, err := settings.Read(func(name string) (string, bool) { return "1", name == "IKIGENBA_SANDBOX" })
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := web.Config{banner, mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: w}), "", store.New(d, store.Config{Now: now}), host.NewMemory(), w, s}
-	return &fixture{cfg: cfg, capture: capture, d: d, path: path, now: now}
+	hosts := settings.SandboxHosts
+	c, err := memory.New(memory.Config{Path: filepath.Join(dir, "sandbox-cloud.json"), Hosts: hosts, Now: now, Rand: strings.NewReader(strings.Repeat("chosen-m", 8))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	binary := filepath.Join(dir, "accountsd")
+	if err := os.WriteFile(binary, []byte("chosen daemon bytes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	v := hostauth.NewVerifier(hostauth.VerifierConfig{Region: hosts.Region, Role: hosts.InstanceProfile, Binding: func() (string, error) { return "chosen-binding", nil }, STS: c, Now: now})
+	ds, err := daemonapi.New(t.Context(), daemonapi.Config{Store: st, Verifier: v, Binary: binary, Telemetry: w, Configured: true, Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(ds.Stop)
+	f := &fixture{capture: capture, d: d, path: path, now: now}
+	wake := func() { f.wakes.Add(1) }
+	f.cfg = web.Config{banner, mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: w}), "", st, c, hosts, true, wake, ds, w, s}
+	return f
 }
-func request(h http.Handler, method, target, user string) *httptest.ResponseRecorder {
-	r := httptest.NewRequest(method, target, strings.NewReader("chosen-body"))
+
+func makeRequest(method, target, user string, body io.Reader) *http.Request {
+	r := httptest.NewRequest(method, target, body)
 	r.Host = "accounts.example.test:443"
 	r.Header.Set("X-Forwarded-Proto", "https")
 	r.Header.Set("X-User-Email", "chosen@example.test")
@@ -72,10 +97,15 @@ func request(h http.Handler, method, target, user string) *httptest.ResponseReco
 	if user != "" {
 		r.Header.Set("X-User-Id", user)
 	}
+	return r
+}
+
+func request(h http.Handler, method, target, user string) *httptest.ResponseRecorder {
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, r)
+	h.ServeHTTP(w, makeRequest(method, target, user, strings.NewReader("chosen-body")))
 	return w
 }
+
 func same(t *testing.T, a, b *httptest.ResponseRecorder) {
 	t.Helper()
 	if a.Code != b.Code || !reflect.DeepEqual(a.Header(), b.Header()) || a.Body.String() != b.Body.String() {
@@ -83,234 +113,234 @@ func same(t *testing.T, a, b *httptest.ResponseRecorder) {
 	}
 }
 
-// R-QKAY-PZEG R-QMQR-HIVU R-QNYN-VAMJ R-QQEG-MU3X R-QSU9-EDLB R-EIGQ-GZX9 R-QVA2-5X2P
+// R-GC6V-KP5O R-QMQR-HIVU R-GEMO-C8N2 R-QSU9-EDLB R-GIAD-HJV5 R-GJI9-VBLU R-QVA2-5X2P
 func TestRouteDispatch(t *testing.T) {
 	f := setup(t)
+	st := f.cfg.Store
+	caller := identity.Caller{UserID: "owner"}
+	host, op, err := st.CreateHost(t.Context(), store.HostSpec{Type: "chosen-type", RootGB: 27, DataGB: 69}, caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Finish(t.Context(), op.ID, store.Update{InstanceID: "chosen-instance"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.PlaceAccount(t.Context(), "example-co", host.Name, caller); err != nil {
+		t.Fatal(err)
+	}
+	// The independently built page handler uses the writer clock, not the store clock.
+	f.cfg.Telemetry.Shutdown(t.Context(), "replace test clock")
+	capture := &telemetry.Capture{}
+	w := telemetry.New(telemetry.Config{Service: pages.ServiceName, Sink: capture, Now: func() time.Time { return f.now().Add(store.SilentAfter + time.Second) }, Stderr: io.Discard})
+	t.Cleanup(func() { w.Shutdown(context.Background(), "test") })
+	f.cfg.Telemetry = w
+	f.cfg.MCP = mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: w})
 	constructor := signature[func(web.Config) http.Handler](web.Handler)
 	h := constructor(f.cfg)
 	set, err := pages.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	ph := identity.Optional(pages.Handler(pages.Config{Banner: f.cfg.Banner, Pages: set, ServicesPath: f.cfg.ServicesPath, Store: f.cfg.Store, Host: f.cfg.Host, MCP: f.cfg.MCP}))
+	ph := identity.Optional(pages.Handler(pages.Config{Banner: f.cfg.Banner, Pages: set, ServicesPath: f.cfg.ServicesPath, Store: st, MCP: f.cfg.MCP, Configured: f.cfg.Configured, Domain: f.cfg.Hosts.Domain, Now: w.Now}))
+	var expectedStarts, expectedFinishes []telemetry.Attrs
+	var expectedUsers []string
 	for _, user := range []string{"", "viewer"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
-			for _, target := range []string{"/", "/tools?ignored=one", "/about", "/nope", "/mcp/", "/events", "/declarations", "/_appkit", "/_appkit/theme.css", "/_appkit/not-present"} {
-				got := request(h, method, target, user)
-				want := ph
-				if strings.HasPrefix(target, "/_appkit/") {
-					want = page.Static()
-				}
-				same(t, got, request(want, method, target, user))
+			for _, tc := range []struct {
+				target  string
+				handler http.Handler
+			}{
+				{"/", ph}, {"/tools?ignored=one", ph}, {"/about", ph}, {"/hosts/" + host.Name, ph}, {"/nope", ph}, {"/mcp/", ph}, {"/events", ph}, {"/declarations", ph}, {"/_appkit", ph}, {"/accountsdx", ph},
+				{"/_appkit/theme.css", page.Static()}, {"/_appkit/not-present", page.Static()},
+				{protocol.BinaryPath, f.cfg.Daemon}, {protocol.StatePath, f.cfg.Daemon}, {"/accountsd//malformed", f.cfg.Daemon}, {"/%61ccountsd?ignored=one", f.cfg.Daemon},
+			} {
+				got := request(h, method, tc.target, user)
+				same(t, got, request(tc.handler, method, tc.target, user))
 				if len(got.Header().Values("Set-Cookie")) != 0 {
 					t.Fatal("cookie")
 				}
+				expectedStarts = append(expectedStarts, telemetry.Attrs{"method": method, "path": httptest.NewRequest(method, tc.target, nil).URL.Path})
+				expectedFinishes = append(expectedFinishes, telemetry.Attrs{"status": int64(got.Code)})
+				expectedUsers = append(expectedUsers, user)
 			}
 		}
 	}
-	for _, method := range []string{"GET", "HEAD", "POST", "DELETE", "PUT"} {
-		got := request(h, method, "/mcp?ignored=one", "")
-		want := identity.Require(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("guest reached backend") }))
-		same(t, got, request(want, method, "/mcp?ignored=one", ""))
-		if len(got.Header().Values("Set-Cookie")) != 0 {
-			t.Fatal("MCP cookie")
-		}
-	}
-	if err := f.cfg.Telemetry.Flush(t.Context()); err != nil {
+	if err := w.Flush(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-
-	events := f.capture.Events()
-	wantRequests := 2*4*10 + 5
-	if len(events) != 2*wantRequests {
-		t.Fatalf("request telemetry count %d want %d", len(events), 2*wantRequests)
+	events := capture.Events()
+	if len(events) != 2*len(expectedStarts) {
+		t.Fatalf("request event count = %d, want %d", len(events), 2*len(expectedStarts))
 	}
-	for i := 0; i < len(events); i += 2 {
-		start, finish := events[i], events[i+1]
-		if start.Name != "request.started" || finish.Name != "request.finished" || start.RequestID != "chosen-request" || finish.RequestID != start.RequestID {
+	for i, want := range expectedStarts {
+		start, finish := events[2*i], events[2*i+1]
+		if start.Name != "request.started" || finish.Name != "request.finished" || start.RequestID != "chosen-request" || finish.RequestID != start.RequestID || start.User != expectedUsers[i] || finish.User != start.User || !reflect.DeepEqual(start.Attrs, want) || finish.Attrs["status"] != expectedFinishes[i]["status"] {
 			t.Fatal("request telemetry wiring", start, finish)
 		}
 	}
-	groups, err := f.cfg.Host.GroupList(t.Context())
-	if err != nil || len(groups) != 0 {
-		t.Fatal("host changed", groups, err)
+}
+
+// R-GFUK-Q0DR R-QVA2-5X2P
+func TestGuestMCPRefusesBeforeToolDispatch(t *testing.T) {
+	f := setup(t)
+	f.cfg.Cloud = struct{ cloud.Cloud }{}
+	h := web.Handler(f.cfg)
+	never := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("guest reached backend") })
+	refusal := identity.Require(never)
+	methods := []string{"GET", "HEAD", "POST", "DELETE", "PUT"}
+	for _, method := range methods {
+		target := "/%6dcp?ignored=one"
+		result := func(h http.Handler) *httptest.ResponseRecorder {
+			r := makeRequest(method, target, "", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_host","arguments":{}}}`))
+			r.Header["X-User-Id"] = []string{"", "unused"}
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			return w
+		}
+		got := result(h)
+		same(t, got, result(refusal))
+		body := identity.MissingBody
+		if method == "HEAD" {
+			body = ""
+		}
+		if got.Code != 500 || got.Body.String() != body || !reflect.DeepEqual(got.Header().Values("Content-Type"), []string{"text/plain; charset=utf-8"}) || len(got.Header().Values("Set-Cookie")) != 0 {
+			t.Fatalf("guest MCP response = %d %v %q", got.Code, got.Header(), got.Body.String())
+		}
 	}
-	rec, err := f.cfg.Store.Groups(t.Context(), []string{"business"})
-	if err != nil || len(rec) != 0 {
-		t.Fatal("store changed", rec, err)
+	if f.wakes.Load() != 0 {
+		t.Fatal("guest MCP woke engine")
+	}
+	assertEmptyStore(t, f.cfg.Store)
+	if err := f.cfg.Telemetry.Flush(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	events := f.capture.Events()
+	if len(events) != 2*len(methods) {
+		t.Fatalf("events: %v", events)
+	}
+	for i := range methods {
+		if events[2*i].Name != "request.started" || events[2*i+1].Name != "request.finished" {
+			t.Fatal("guest MCP emitted tool events")
+		}
 	}
 }
 
-// R-QRMD-0LUM R-QP6K-92D8 R-QVA2-5X2P
+func assertEmptyStore(t *testing.T, st *store.Store) {
+	t.Helper()
+	hosts, he := st.ListHosts(t.Context(), 0, 1)
+	accounts, ae := st.ListAccounts(t.Context(), "", 1)
+	users, ue := st.ListUsers(t.Context(), "", "", "", 1)
+	ops, oe := st.Runnable(t.Context(), time.Date(2026, 11, 17, 14, 3, 7, 0, time.UTC), "", 1)
+	if he != nil || ae != nil || ue != nil || oe != nil || len(hosts)+len(accounts)+len(users)+len(ops) != 0 {
+		t.Fatal("unexpected store records", hosts, accounts, users, ops, he, ae, ue, oe)
+	}
+}
+
+// R-EUVX-0DY8 R-QP6K-92D8 R-QVA2-5X2P
 func TestMCPRegistrationAndIdentity(t *testing.T) {
 	f := setup(t)
 	h := web.Handler(f.cfg)
-	catalog := []string{tools.ToolGroups, tools.ToolGroup, tools.ToolCreateGroup, tools.ToolRemoveGroup, tools.ToolUsers, tools.ToolAddUser, tools.ToolAddKey, tools.ToolRemoveKey, tools.ToolAddMember, tools.ToolRemoveMember, tools.ToolLockUser, tools.ToolUnlockUser, tools.ToolDeleteUser}
+	catalog := []string{tools.ToolHosts, tools.ToolHost, tools.ToolCreateHost, tools.ToolStopHost, tools.ToolStartHost, tools.ToolResizeHost, tools.ToolRetryHost, tools.ToolDeleteHost, tools.ToolAccounts, tools.ToolAccount, tools.ToolCreateAccount, tools.ToolRemoveAccount, tools.ToolUsers, tools.ToolAddUser, tools.ToolAddKey, tools.ToolRemoveKey, tools.ToolLockUser, tools.ToolUnlockUser, tools.ToolDeleteUser}
 	registered := f.cfg.MCP.Tools()
 	if len(registered) != len(catalog) {
 		t.Fatal("registered count", len(registered))
 	}
 	for i, tool := range registered {
 		if tool.Name != catalog[i] {
-			t.Fatal("registration order", registered)
+			t.Fatal("registered tools", registered)
 		}
 	}
-	var observed identity.Caller
-	mcp.AddTool(f.cfg.MCP, mcp.Tool[struct{}, struct{}]{Name: "observe_caller", Description: "Chosen description.", Effect: mcp.Read, Handler: func(_ context.Context, c identity.Caller, _ struct{}) (struct{}, error) {
-		observed = c
+	observed := make(chan identity.Caller, 1)
+	mcp.AddTool(f.cfg.MCP, mcp.Tool[struct{}, struct{}]{Name: "observe_caller", Description: "Chosen test description.", Effect: mcp.Read, Handler: func(_ context.Context, c identity.Caller, _ struct{}) (struct{}, error) {
+		observed <- c
 		return struct{}{}, nil
 	}})
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 	client := mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL + "/mcp", HTTPClient: srv.Client()})
-	infos, err := client.ListTools(t.Context(), identity.Caller{UserID: "reader"})
-	if err != nil || len(infos) != len(catalog)+1 {
-		t.Fatal("MCP tools", infos, err)
+	caller := identity.Caller{UserID: "owner", Email: "chosen@example.test", RequestID: "chosen-mcp-id"}
+	change := call[tools.HostChange](t, client, caller, tools.ToolCreateHost, `{}`)
+	if change.Host != "host01" || change.State != store.HostProvisioning || f.wakes.Load() == 0 {
+		t.Fatal("create_host did not use configured tools", change)
 	}
-	for i, info := range infos[:len(catalog)] {
-		if info.Name != catalog[i] {
-			t.Fatal("tool order", info)
+	detail := call[tools.HostRead](t, client, caller, tools.ToolHost, `{"host":"host01"}`)
+	if detail.Created != "2026-11-17T14:03:07Z" || detail.CreatedBy != caller.UserID {
+		t.Fatal("host did not use store or caller", detail)
+	}
+	account := call[tools.Account](t, client, caller, tools.ToolCreateAccount, `{"account":"acme","host":"host01"}`)
+	if account.DNSName != "acme."+f.cfg.Hosts.Domain {
+		t.Fatal("create_account did not use hosts settings", account)
+	}
+	for _, first := range []string{"supplied", ""} {
+		r := makeRequest("POST", "/mcp", "", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"observe_caller","arguments":{}}}`))
+		r.Header["X-User-Id"] = []string{"test-viewer", "unused-id"}
+		r.Header["X-User-Email"] = []string{"first@example.test", "unused-email@example.test"}
+		r.Header["X-Request-Id"] = []string{first, "unused-request"}
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Accept", "application/json, text/event-stream")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != 200 || len(w.Header().Values("Set-Cookie")) != 0 {
+			t.Fatal("MCP answer", w.Code, w.Body.String())
 		}
-	}
-	for i, caller := range []identity.Caller{{UserID: "owner", Email: "first@example.test", RequestID: "first-request"}, {UserID: "other", Email: "second@example.test", RequestID: "second-request"}} {
-		group := []string{"acme", "beta"}[i]
-		args, err := json.Marshal(map[string]string{"group": group})
-		if err != nil {
-			t.Fatal(err)
+		var got identity.Caller
+		select {
+		case got = <-observed:
+		default:
+			t.Fatal("test tool was not called")
 		}
-		result, err := client.CallTool(t.Context(), caller, tools.ToolCreateGroup, args)
-		if err != nil || result.IsError() {
-			t.Fatal("create_group", err, result)
+		id := first
+		if first == "" {
+			id = strings.Repeat("5a", 16)
 		}
-		rec, err := f.cfg.Store.Groups(t.Context(), []string{group})
-		if err != nil || rec[group].CreatedUserID != caller.UserID || !rec[group].Created.Equal(f.now()) {
-			t.Fatal("tool did not use config store or caller", rec, err)
+		if got != (identity.Caller{UserID: "test-viewer", Email: "first@example.test", RequestID: id}) {
+			t.Fatalf("tool caller = %+v", got)
 		}
-	}
-	groups, err := f.cfg.Host.GroupList(t.Context())
-	if err != nil || len(groups) != 2 || groups[0].Slug != "acme" || groups[1].Slug != "beta" {
-		t.Fatal("tool did not use config host", groups, err)
-	}
-	result, err := client.CallTool(t.Context(), identity.Caller{UserID: "reader"}, tools.ToolGroups, json.RawMessage(`{}`))
-	if err != nil || result.IsError() {
-		t.Fatal(err, result)
-	}
-	raw, err := json.Marshal(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var listed struct {
-		Data tools.GroupList `json:"structuredContent"`
-	}
-	if err := json.Unmarshal(raw, &listed); err != nil {
-		t.Fatal(err)
-	}
-	if len(listed.Data.Groups) != 2 || listed.Data.Groups[0].Created != f.now().Format(time.RFC3339) {
-		t.Fatal("groups did not read configured store", string(raw))
-	}
-	if err := f.cfg.Telemetry.Flush(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	changes := []telemetry.Event{}
-	for _, event := range f.capture.Events() {
-		if event.Name == trail.EventChangeFinished {
-			changes = append(changes, event)
-		}
-	}
-	if len(changes) != 2 || changes[0].User != "owner" || changes[0].RequestID != "first-request" || changes[1].User != "other" || changes[1].RequestID != "second-request" {
-		t.Fatal("tool did not use config writer/caller", changes)
-	}
-	caller := identity.Caller{UserID: "chosen-user", Email: "chosen@example.test", RequestID: "chosen-observation"}
-	if _, err := client.CallTool(t.Context(), caller, "observe_caller", json.RawMessage(`{}`)); err != nil {
-		t.Fatal(err)
-	}
-	if observed != caller {
-		t.Fatal("caller", observed, caller)
-	}
-	caller.RequestID = ""
-	if _, err := client.CallTool(t.Context(), caller, "observe_caller", json.RawMessage(`{}`)); err != nil {
-		t.Fatal(err)
-	}
-	if observed.RequestID == "" || observed.UserID != caller.UserID || observed.Email != caller.Email {
-		t.Fatal("missing request ID was not minted", observed)
 	}
 }
 
-// R-QWHY-JOTE
-func TestOtherRoutesRunOnlyListsAndKeepRecords(t *testing.T) {
+func call[T any](t *testing.T, c *mcp.Client, caller identity.Caller, name, arguments string) T {
+	t.Helper()
+	result, err := c.CallTool(t.Context(), caller, name, json.RawMessage(arguments))
+	if err != nil || result.IsError() {
+		t.Fatalf("%s: %v %v", name, result, err)
+	}
+	raw, err := result.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Data T `json:"structuredContent"`
+	}
+	if err := json.Unmarshal(raw, &response); err != nil {
+		t.Fatal(err)
+	}
+	return response.Data
+}
+
+// R-GKQ6-93CJ
+func TestOtherRoutesKeepRecordsAndDoNotUseCloud(t *testing.T) {
 	f := setup(t)
-	dir := t.TempDir()
-	stub := filepath.Join(dir, "host")
-	log := filepath.Join(dir, "calls")
-	script := `#!/bin/sh
-printf '%s\n' "$*" >> "$1"
-shift
-case "$*" in
- 'group list') printf '%s\n' '{"groups":[{"slug":"business","members":0}]}' ;;
- 'user list') printf '%s\n' '{"users":[]}' ;;
- *) exit 1 ;;
-esac
-`
-	if err := os.WriteFile(stub, []byte(script), 0600); err != nil {
-		t.Fatal(err)
-	}
-	f.cfg.Host = host.NewCommand([]string{"/bin/sh", stub, log})
+	// An unexpected cloud call invokes a nil embedded method and fails the test.
+	f.cfg.Cloud = struct{ cloud.Cloud }{}
 	h := web.Handler(f.cfg)
-	if _, _, err := f.cfg.Store.AddGroup(t.Context(), "business", "creator"); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := f.cfg.Store.AddUser(t.Context(), "person", "creator"); err != nil {
-		t.Fatal(err)
-	}
-	beforeGroups, err := f.cfg.Store.Groups(t.Context(), []string{"business", "other"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	beforeUsers, err := f.cfg.Store.Users(t.Context(), []string{"person", "other"})
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, user := range []string{"", "viewer"} {
 		for _, method := range []string{"GET", "POST", "DELETE"} {
-			for _, target := range []string{"/", "/tools", "/about", "/nope", "/mcp/", "/_appkit/theme.css"} {
+			for _, target := range []string{"/", "/tools", "/about", "/hosts/host01", "/nope", "/mcp/", "/_appkit/theme.css"} {
 				request(h, method, target, user)
 			}
 		}
 	}
-	root, err := os.OpenRoot(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = root.Close() }()
-	raw, err := root.ReadFile("calls")
-	if err != nil {
-		t.Fatal(err)
-	}
-	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
-	if len(lines) != 2 {
-		t.Fatal("unexpected host calls", string(raw))
-	}
-	if lines[0] != log+" group list" || lines[1] != log+" user list" {
-		t.Fatal("non-list host calls", string(raw))
+	if f.wakes.Load() != 0 {
+		t.Fatal("page or static route woke engine")
 	}
 	if err := f.d.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := db.Open(t.Context(), db.Config{Path: f.path, Migrations: accounts.Migrations(), Now: f.now})
+	d, err := db.Open(t.Context(), db.Config{Path: f.path, Migrations: accounts.Migrations(), Now: f.now})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = reopened.Close() }()
-	st := store.New(reopened, store.Config{Now: f.now})
-	afterGroups, err := st.Groups(t.Context(), []string{"business", "other"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	afterUsers, err := st.Users(t.Context(), []string{"person", "other"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(beforeGroups, afterGroups) || !reflect.DeepEqual(beforeUsers, afterUsers) {
-		t.Fatal("non-MCP route changed record")
-	}
+	defer func() { _ = d.Close() }()
+	assertEmptyStore(t, store.New(d, store.Config{Now: f.now}))
 }

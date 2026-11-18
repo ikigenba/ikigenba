@@ -1,8 +1,8 @@
 app = "accounts"
-description = "Manage business groups and the people who sign in over SSH."
+description = "Manage SSH hosts, business accounts and their users."
 default = false
 mcp = true
-guests = false
+guests = true
 secrets = []
 
 [database]
@@ -10,7 +10,7 @@ engine = "sqlite"
 path = "state/accounts.db"
 
 [resources]
-memory_max = "128M"
+memory_max = "256M"
 
 [home]
 group = "core"

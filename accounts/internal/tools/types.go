@@ -1,161 +1,317 @@
-// Package tools exposes accounts through typed MCP tools.
 package tools
 
 import (
+	"encoding/json"
 	"strings"
+	"time"
 
-	"github.com/ikigenba/ikigenba/accounts/internal/host"
+	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
+	"github.com/ikigenba/ikigenba/accounts/internal/settings"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
-// Config carries the record, host and event writer.
+// Config connects the tools to the store, cloud, operations engine and trail.
 type Config struct {
-	Store     *store.Store
-	Host      host.Host
-	Telemetry *telemetry.Writer
+	Store      *store.Store
+	Cloud      cloud.Cloud
+	Hosts      settings.Hosts
+	Configured bool
+	Wake       func()
+	Telemetry  *telemetry.Writer
+}
+
+// DNSCheckTimeout bounds one account's DNS reservation check.
+const DNSCheckTimeout = 5 * time.Second
+
+// FirstLine returns the first line of a tool description.
+func FirstLine(description string) string {
+	line, _, _ := strings.Cut(description, "\n")
+	return line
 }
 
 // Tool names in catalog order.
 const (
-	ToolGroups       = "groups"
-	ToolGroup        = "group"
-	ToolCreateGroup  = "create_group"
-	ToolRemoveGroup  = "remove_group"
-	ToolUsers        = "users"
-	ToolAddUser      = "add_user"
-	ToolAddKey       = "add_key"
-	ToolRemoveKey    = "remove_key"
-	ToolAddMember    = "add_member"
-	ToolRemoveMember = "remove_member"
-	ToolLockUser     = "lock_user"
-	ToolUnlockUser   = "unlock_user"
-	ToolDeleteUser   = "delete_user"
+	ToolHosts         = "hosts"
+	ToolHost          = "host"
+	ToolCreateHost    = "create_host"
+	ToolStopHost      = "stop_host"
+	ToolStartHost     = "start_host"
+	ToolResizeHost    = "resize_host"
+	ToolRetryHost     = "retry_host"
+	ToolDeleteHost    = "delete_host"
+	ToolAccounts      = "accounts"
+	ToolAccount       = "account"
+	ToolCreateAccount = "create_account"
+	ToolRemoveAccount = "remove_account"
+	ToolUsers         = "users"
+	ToolAddUser       = "add_user"
+	ToolAddKey        = "add_key"
+	ToolRemoveKey     = "remove_key"
+	ToolLockUser      = "lock_user"
+	ToolUnlockUser    = "unlock_user"
+	ToolDeleteUser    = "delete_user"
 )
 
-// Descriptions are the tool catalog copy.
+// Tool and argument descriptions.
 const (
-	DescribeGroups       string = "List the host groups."
-	DescribeGroup        string = "Read a group and its members."
-	DescribeCreateGroup  string = "Create a business group."
-	DescribeRemoveGroup  string = "Remove an empty business group."
-	DescribeUsers        string = "List the host users with their access."
-	DescribeAddUser      string = "Add a user with a group and key."
-	DescribeAddKey       string = "Add a public key to a user."
-	DescribeRemoveKey    string = "Remove a public key from a user."
-	DescribeAddMember    string = "Add a user to a group."
-	DescribeRemoveMember string = "Remove a user from a group."
-	DescribeLockUser     string = "Lock a user and keep their access settings."
-	DescribeUnlockUser   string = "Restore access to a locked user."
-	DescribeDeleteUser   string = "Delete a locked user and their home."
-	ArgGroup             string = "Business group slug."
-	ArgUser              string = "SSH user name."
-	ArgKey               string = "OpenSSH public key, including its comment."
-	Failed               string = "the host change or read failed"
-	KeysUnread           string = "the key was removed but the remaining keys could not be read"
+	DescribeHosts         string = "List live SSH hosts in creation order."
+	DescribeHost          string = "Read a host, its accounts, current operation and latest report."
+	DescribeCreateHost    string = "Provision a new SSH host."
+	DescribeStopHost      string = "Stop a running host."
+	DescribeStartHost     string = "Start a stopped host."
+	DescribeResizeHost    string = "Change a host instance type or grow its volumes."
+	DescribeRetryHost     string = "Resume a failed host operation."
+	DescribeDeleteHost    string = "Delete a host and retain its data volume."
+	DescribeAccounts      string = "List SSH accounts by slug."
+	DescribeAccount       string = "Read an SSH account, its users and its current operation."
+	DescribeCreateAccount string = "Place an SSH account on a host."
+	DescribeRemoveAccount string = "Remove an account that has no users."
+	DescribeUsers         string = "List SSH users across accounts or in one account."
+	DescribeAddUser       string = "Add a user to one account with one public key."
+	DescribeAddKey        string = "Add a public key to a user."
+	DescribeRemoveKey     string = "Remove a public key from a user."
+	DescribeLockUser      string = "Lock a user and keep their access settings."
+	DescribeUnlockUser    string = "Restore access to a locked user."
+	DescribeDeleteUser    string = "Delete a locked user and their home."
+	ArgHost               string = "SSH host name."
+	ArgAccount            string = "SSH account slug."
+	ArgUser               string = "SSH user name."
+	ArgKey                string = "OpenSSH public key, including its comment."
+	ArgType               string = "EC2 instance type."
+	ArgRootGB             string = "Root volume size in GB."
+	ArgDataGB             string = "Data volume size in GB."
 )
 
-// FirstLine returns the description's first line.
-func FirstLine(description string) string { line, _, _ := strings.Cut(description, "\n"); return line }
+// Refusal text returned to tool callers.
+const (
+	NotConfigured   string = "this space is not configured to operate SSH hosts"
+	InvalidName     string = "the name is invalid"
+	ReservedName    string = "the name is reserved"
+	NameTaken       string = "an account or user already holds that name"
+	NoHost          string = "no live host has that name"
+	NoAccount       string = "no account has that slug"
+	NoUser          string = "no user has that name"
+	NotInAccount    string = "that user belongs to a different account"
+	InvalidKey      string = "the public key is invalid"
+	KeyNotHeld      string = "the user does not hold that public key"
+	TypeNotAllowed  string = "that instance type is not allowed"
+	SizeOutOfRange  string = "a volume size is outside the allowed range"
+	SizeShrinks     string = "volumes can only grow"
+	NothingToChange string = "there is no change to make"
+	HostBusy        string = "a host operation is already running"
+	HostFailed      string = "the host has failed"
+	HostNotFailed   string = "the host has not failed"
+	HostNotRunning  string = "the host is not running"
+	HostNotStopped  string = "the host is not stopped"
+	HostHasAccounts string = "the host still holds accounts that are not being removed"
+	HostFull        string = "the host already holds its maximum number of accounts"
+	HostGone        string = "the host is being deleted"
+	AccountHasUsers string = "the account still holds users"
+	AccountRemoving string = "the account is being removed"
+	AccountFull     string = "the host already holds its maximum number of users"
+	TooManyKeys     string = "the user already holds the maximum number of keys"
+	GrowLimit       string = "a volume has reached its growth limit for the current window"
+	UserNotLocked   string = "the user must be locked before deletion"
+	UserRemoving    string = "the user is being removed"
+	NameHasRecord   string = "a DNS record already holds that name"
+	CloudFailed     string = "the DNS check failed"
+)
 
-// GroupsArgs declares the tool input.
-type GroupsArgs struct {
+// HostsArgs selects a window of live hosts.
+type HostsArgs struct {
 	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
 	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
 }
 
-// UsersArgs declares the tool input.
+// HostArgs names a host.
+type HostArgs struct {
+	Host string `json:"host" description:"SSH host name." mcp:"required"`
+}
+
+// CreateHostArgs specifies the resources for a new host.
+type CreateHostArgs struct {
+	Type   *string `json:"type" description:"EC2 instance type."`
+	RootGB *int    `json:"root_gb" description:"Root volume size in GB."`
+	DataGB *int    `json:"data_gb" description:"Data volume size in GB."`
+}
+
+// ResizeHostArgs names a host and the resources to change.
+type ResizeHostArgs struct {
+	Host   string  `json:"host" description:"SSH host name." mcp:"required"`
+	Type   *string `json:"type" description:"EC2 instance type."`
+	RootGB *int    `json:"root_gb" description:"Root volume size in GB."`
+	DataGB *int    `json:"data_gb" description:"Data volume size in GB."`
+}
+
+// AccountsArgs selects a window of accounts.
+type AccountsArgs struct {
+	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
+}
+
+// AccountArgs names an account by slug.
+type AccountArgs struct {
+	Account string `json:"account" description:"SSH account slug." mcp:"required"`
+}
+
+// CreateAccountArgs names an account and the host that will hold it.
+type CreateAccountArgs struct {
+	Account string `json:"account" description:"SSH account slug." mcp:"required"`
+	Host    string `json:"host" description:"SSH host name." mcp:"required"`
+}
+
+// UsersArgs selects a window of users, optionally in one account.
 type UsersArgs struct {
-	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
-	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
+	Account *string `json:"account" description:"SSH account slug."`
+	Page    *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit   *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
 }
 
-// GroupArgs declares the tool input.
-type GroupArgs struct {
-	Group string `json:"group" description:"Business group slug." mcp:"required"`
-}
-
-// UserArgs declares the tool input.
+// UserArgs identifies an account and one of its users.
 type UserArgs struct {
-	User string `json:"user" description:"SSH user name." mcp:"required"`
+	Account string `json:"account" description:"SSH account slug." mcp:"required"`
+	User    string `json:"user" description:"SSH user name." mcp:"required"`
 }
 
-// AddUserArgs declares the tool input.
-type AddUserArgs struct {
-	User  string `json:"user" description:"SSH user name." mcp:"required"`
-	Group string `json:"group" description:"Business group slug." mcp:"required"`
-	Key   string `json:"key" description:"OpenSSH public key, including its comment." mcp:"required"`
+// UserKeyArgs identifies an account, user and public key.
+type UserKeyArgs struct {
+	Account string `json:"account" description:"SSH account slug." mcp:"required"`
+	User    string `json:"user" description:"SSH user name." mcp:"required"`
+	Key     string `json:"key" description:"OpenSSH public key, including its comment." mcp:"required"`
 }
 
-// KeyArgs declares the tool input.
-type KeyArgs struct {
-	User string `json:"user" description:"SSH user name." mcp:"required"`
-	Key  string `json:"key" description:"OpenSSH public key, including its comment." mcp:"required"`
+// Host summarizes a live host.
+type Host struct {
+	Host     string `json:"host" mcp:"required"`
+	State    string `json:"state" mcp:"required"`
+	Reason   string `json:"reason" mcp:"required"`
+	Health   string `json:"health" mcp:"required"`
+	Type     string `json:"type" mcp:"required"`
+	RootGB   int    `json:"root_gb" mcp:"required"`
+	DataGB   int    `json:"data_gb" mcp:"required"`
+	EIP      string `json:"eip" mcp:"required"`
+	Accounts int    `json:"accounts" mcp:"required"`
+	Reported string `json:"reported" mcp:"required"`
 }
 
-// MemberArgs declares the tool input.
-type MemberArgs struct {
-	User  string `json:"user" description:"SSH user name." mcp:"required"`
-	Group string `json:"group" description:"Business group slug." mcp:"required"`
+// HostList holds one window of hosts.
+type HostList struct {
+	Hosts []Host  `json:"hosts" mcp:"required"`
+	Next  *string `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
-// Group is a structured tool answer.
-type Group struct {
-	Slug        string `json:"slug" mcp:"required"`
-	MemberCount int    `json:"member_count" mcp:"required"`
-	Created     string `json:"created" mcp:"required"`
-	CreatedBy   string `json:"created_by" mcp:"required"`
+// HostRead includes a host's record, accounts, operation and latest report.
+type HostRead struct {
+	Host         string          `json:"host" mcp:"required"`
+	State        string          `json:"state" mcp:"required"`
+	Reason       string          `json:"reason" mcp:"required"`
+	Health       string          `json:"health" mcp:"required"`
+	Type         string          `json:"type" mcp:"required"`
+	RootGB       int             `json:"root_gb" mcp:"required"`
+	DataGB       int             `json:"data_gb" mcp:"required"`
+	EIP          string          `json:"eip" mcp:"required"`
+	Accounts     int             `json:"accounts" mcp:"required"`
+	Reported     string          `json:"reported" mcp:"required"`
+	InstanceID   string          `json:"instance_id" mcp:"required"`
+	DataVolume   string          `json:"data_volume" mcp:"required"`
+	Version      int64           `json:"version" mcp:"required"`
+	Applied      int64           `json:"applied" mcp:"required"`
+	Created      string          `json:"created" mcp:"required"`
+	CreatedBy    string          `json:"created_by" mcp:"required"`
+	AccountNames []string        `json:"account_names" mcp:"required"`
+	Operation    *Operation      `json:"operation"`
+	Report       json.RawMessage `json:"report"`
 }
 
-// GroupList is a structured tool answer.
-type GroupList struct {
-	Groups []Group `json:"groups" mcp:"required"`
-	Next   *string `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
+// Operation summarizes a recorded operation.
+type Operation struct {
+	Operation string `json:"operation"`
+	Kind      string `json:"kind" mcp:"required"`
+	Step      string `json:"step" mcp:"required"`
+	Status    string `json:"status" mcp:"required"`
+	Error     string `json:"error" mcp:"required"`
+	Started   string `json:"started" mcp:"required"`
 }
 
-// GroupRead is a structured tool answer.
-type GroupRead struct {
-	Slug      string   `json:"slug" mcp:"required"`
-	Members   []string `json:"members" mcp:"required"`
-	Created   string   `json:"created" mcp:"required"`
-	CreatedBy string   `json:"created_by" mcp:"required"`
+// HostChange identifies the operation started for a host.
+type HostChange struct {
+	Host      string `json:"host" mcp:"required"`
+	State     string `json:"state" mcp:"required"`
+	Operation string `json:"operation"`
 }
 
-// User is a structured tool answer.
+// HostResize identifies a resize operation and whether it restarts the host.
+type HostResize struct {
+	Host      string `json:"host" mcp:"required"`
+	State     string `json:"state" mcp:"required"`
+	Operation string `json:"operation"`
+	Restarts  bool   `json:"restarts" mcp:"required"`
+}
+
+// Account summarizes an account and its placement.
+type Account struct {
+	Account   string `json:"account" mcp:"required"`
+	Host      string `json:"host" mcp:"required"`
+	DNSName   string `json:"dns_name" mcp:"required"`
+	State     string `json:"state" mcp:"required"`
+	Reason    string `json:"reason" mcp:"required"`
+	Users     int    `json:"users" mcp:"required"`
+	Created   string `json:"created" mcp:"required"`
+	CreatedBy string `json:"created_by" mcp:"required"`
+}
+
+// AccountList holds one window of accounts.
+type AccountList struct {
+	Accounts []Account `json:"accounts" mcp:"required"`
+	Next     *string   `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
+}
+
+// AccountRead includes the account's users and current operation.
+type AccountRead struct {
+	Account   string     `json:"account" mcp:"required"`
+	Host      string     `json:"host" mcp:"required"`
+	DNSName   string     `json:"dns_name" mcp:"required"`
+	State     string     `json:"state" mcp:"required"`
+	Reason    string     `json:"reason" mcp:"required"`
+	Users     int        `json:"users" mcp:"required"`
+	Created   string     `json:"created" mcp:"required"`
+	CreatedBy string     `json:"created_by" mcp:"required"`
+	UserNames []string   `json:"user_names" mcp:"required"`
+	Operation *Operation `json:"operation"`
+}
+
+// User summarizes a user and their SSH access.
 type User struct {
-	Name       string   `json:"name" mcp:"required"`
-	Groups     []string `json:"groups" mcp:"required"`
-	Keys       []string `json:"keys" mcp:"required"`
+	User       string   `json:"user" mcp:"required"`
+	Account    string   `json:"account" mcp:"required"`
 	State      string   `json:"state" mcp:"required"`
+	Pending    bool     `json:"pending" mcp:"required"`
+	Keys       []string `json:"keys" mcp:"required"`
 	LastSignIn string   `json:"last_sign_in" mcp:"required"`
 	Created    string   `json:"created" mcp:"required"`
 	CreatedBy  string   `json:"created_by" mcp:"required"`
 }
 
-// UserList is a structured tool answer.
+// UserList holds one window of users.
 type UserList struct {
 	Users []User  `json:"users" mcp:"required"`
 	Next  *string `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
-// GroupDone is a structured tool answer.
-type GroupDone struct {
-	Group string `json:"group" mcp:"required"`
+// UserChange describes the user's recorded state after a change.
+type UserChange struct {
+	User    string `json:"user" mcp:"required"`
+	Account string `json:"account" mcp:"required"`
+	State   string `json:"state" mcp:"required"`
+	Pending bool   `json:"pending" mcp:"required"`
 }
 
-// UserDone is a structured tool answer.
-type UserDone struct {
-	User string `json:"user" mcp:"required"`
-}
-
-// MemberDone is a structured tool answer.
-type MemberDone struct {
-	User  string `json:"user" mcp:"required"`
-	Group string `json:"group" mcp:"required"`
-}
-
-// KeyRemoved is a structured tool answer.
+// KeyRemoved reports the user's state and remaining key count.
 type KeyRemoved struct {
-	User      string `json:"user" mcp:"required"`
-	NoKeyLeft bool   `json:"no_key_left" mcp:"required"`
+	User     string `json:"user" mcp:"required"`
+	Account  string `json:"account" mcp:"required"`
+	State    string `json:"state" mcp:"required"`
+	Pending  bool   `json:"pending" mcp:"required"`
+	KeysLeft int    `json:"keys_left" mcp:"required"`
 }

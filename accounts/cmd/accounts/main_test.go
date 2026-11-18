@@ -3,6 +3,8 @@ package main_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,7 +15,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -22,6 +23,7 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/cli"
 	"github.com/ikigenba/ikigenba/accounts/internal/pages"
 	"github.com/ikigenba/ikigenba/accounts/internal/tools"
+	"github.com/ikigenba/ikigenba/accounts/internal/valid"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
@@ -30,7 +32,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/version"
 )
 
-// R-DD0R-79BA R-DE8N-L11Z R-DGOG-CKJD R-DHWC-QCA2 R-DJ49-440R R-PHW4-C3M0 R-PJ40-PVCP R-DLK1-VNI5 R-SGIE-LJRV R-V8IV-TOG4 R-SIY7-D399 R-RDKJ-WH74 R-RESG-A8XT
+// R-DD0R-79BA R-DE8N-L11Z R-DGOG-CKJD R-Z3U7-50S4 R-Z523-ISIT R-PHW4-C3M0 R-ETO0-MM7J R-DLK1-VNI5 R-SGIE-LJRV R-V8IV-TOG4 R-SIY7-D399 R-RDKJ-WH74 R-H48K-DF7N
 func TestBinary(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	const commit = "abcdeff01234567890-dirty"
@@ -120,20 +122,12 @@ func TestBinary(t *testing.T) {
 		t.Fatal(e)
 	}
 	stubDir := t.TempDir()
-	stub := filepath.Join(stubDir, "host")
 	record := filepath.Join(stubDir, "record")
-	groupsPath := filepath.Join(stubDir, "groups")
-	if e = os.WriteFile(groupsPath, []byte(`{"groups":[]}`+"\n"), 0600); e != nil {
-		t.Fatal(e)
-	}
-	script := "#!/bin/sh\nprintf '%s|' \"$@\" >> '" + record + "'\nprintf '\\n' >> '" + record + "'\ncase \"$1 $2\" in\n'group list') IFS= read -r doc < '" + groupsPath + "'; printf '%s\\n' \"$doc\";;\n'user list') printf '{\"users\":[]}\\n';;\n'group members') printf '{\"group\":\"%s\",\"members\":[]}\\n' \"$3\";;\nesac\n"
-	if e = writeExecutable(stub, []byte(script)); e != nil {
-		t.Fatal(e)
-	}
-	sudo := filepath.Join(stubDir, "sudo")
-	sudoScript := strings.Replace(script, "case \"$1 $2\" in", "shift 2\ncase \"$1 $2\" in", 1)
-	if e = writeExecutable(sudo, []byte(sudoScript)); e != nil {
-		t.Fatal(e)
+	script := "#!/bin/sh\nprintf 'ran\n' >> '" + record + "'\n"
+	for _, name := range []string{"sudo", "opsctl"} {
+		if e = writeExecutable(filepath.Join(stubDir, name), []byte(script)); e != nil {
+			t.Fatal(e)
+		}
 	}
 	dir := t.TempDir()
 	var created string
@@ -163,11 +157,7 @@ func TestBinary(t *testing.T) {
 		if i != 3 {
 			cmd.Env = append(cmd.Env, services.Variable+"="+path)
 		}
-		if i == 2 {
-			cmd.Env = append(cmd.Env, "PATH="+stubDir)
-		} else {
-			cmd.Env = append(cmd.Env, "ACCOUNTS_HOST_COMMAND="+stub)
-		}
+		cmd.Env = append(cmd.Env, "PATH="+stubDir, "IKIGENBA_SANDBOX=")
 		cmd.Dir = dir
 		cmd.ExtraFiles = []*os.File{file}
 		var out, errout bytes.Buffer
@@ -205,7 +195,7 @@ func TestBinary(t *testing.T) {
 		hc := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 		client := mcp.NewClient(mcp.ClientConfig{Endpoint: "http://accounts/mcp", HTTPClient: hc})
 		caller := identity.Caller{UserID: "owner", Email: "mg@example.com", RequestID: "binary-request"}
-		result, err := client.CallTool(context.Background(), caller, "groups", nil)
+		result, err := client.CallTool(context.Background(), caller, "hosts", nil)
 		if err != nil || result.IsError() {
 			t.Fatal(result, err)
 		}
@@ -215,7 +205,7 @@ func TestBinary(t *testing.T) {
 		}
 		var raw struct {
 			Meta    map[string]json.RawMessage `json:"_meta"`
-			Content tools.GroupList            `json:"structuredContent"`
+			Content tools.HostList             `json:"structuredContent"`
 		}
 		if err = json.Unmarshal(rawBytes, &raw); err != nil {
 			t.Fatal(err)
@@ -224,30 +214,44 @@ func TestBinary(t *testing.T) {
 		if err = json.Unmarshal(raw.Meta["io.modelcontextprotocol/serverInfo"], &serverInfo); err != nil || !reflect.DeepEqual(serverInfo, map[string]string{"name": pages.ServiceName, "version": display}) {
 			t.Fatal(serverInfo, err)
 		}
-		if i == 0 && len(raw.Content.Groups) != 0 {
+		if i == 0 && len(raw.Content.Hosts) != 0 {
 			t.Fatal(raw.Content)
 		}
-		if i == 1 && (len(raw.Content.Groups) != 1 || raw.Content.Groups[0].Created == "" || raw.Content.Groups[0].Created != created) {
+		if i == 1 && (len(raw.Content.Hosts) != 1 || raw.Content.Hosts[0].Host != created) {
 			t.Fatal("persistence", raw.Content, created)
 		}
 		if i == 0 || i == 2 {
-			result, err = client.CallTool(context.Background(), caller, "create_group", json.RawMessage(`{"group":"acme"}`))
+			result, err = client.CallTool(t.Context(), caller, "create_host", json.RawMessage(`{}`))
 			if err != nil || result.IsError() {
 				t.Fatal(result, err)
 			}
+			var output struct {
+				Content tools.HostChange `json:"structuredContent"`
+			}
+			b, err := result.MarshalJSON()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = json.Unmarshal(b, &output); err != nil || output.Content.Host == "" {
+				t.Fatal(string(b), err)
+			}
 			if i == 0 {
-				if err = os.WriteFile(groupsPath, []byte(`{"groups":[{"slug":"acme","members":0}]}`+"\n"), 0600); err != nil {
+				created = output.Content.Host
+			} else {
+				exerciseBinaryChanges(t, client, caller, output.Content.Host)
+				req, err := http.NewRequestWithContext(t.Context(), "GET", "http://accounts/", nil)
+				if err != nil {
 					t.Fatal(err)
 				}
-				result, err = client.CallTool(context.Background(), caller, "groups", nil)
-				if err != nil || result.IsError() {
-					t.Fatal(result, err)
+				req.Header.Set("X-User-Id", caller.UserID)
+				res, err := hc.Do(req)
+				if err != nil {
+					t.Fatal(err)
 				}
-				b, _ := result.MarshalJSON()
-				if err = json.Unmarshal(b, &raw); err != nil || len(raw.Content.Groups) != 1 || raw.Content.Groups[0].Created == "" {
-					t.Fatal(string(b), err)
+				_ = res.Body.Close()
+				if res.StatusCode != http.StatusOK {
+					t.Fatal(res.StatusCode)
 				}
-				created = raw.Content.Groups[0].Created
 			}
 		}
 		if i == 3 {
@@ -275,7 +279,7 @@ func TestBinary(t *testing.T) {
 			banner := page.New(pages.ServiceName, id).Banner(page.User{Email: caller.Email, ProfileURL: "https://auth.example.test/", LogoutURL: "https://auth.example.test/logout"})
 			banner.Trail = []page.Level{pages.AboutLevel}
 			want := httptest.NewRecorder()
-			set.Write(want, req, 200, "about", pages.AboutData{Banner: banner, Description: pages.Description})
+			set.Write(want, req, 200, "about", pages.AboutData{Banner: banner, Description: pages.Description, DefaultType: valid.DefaultType, DefaultRootGB: valid.DefaultRootGB, DefaultDataGB: valid.DefaultDataGB})
 			if response.StatusCode != 200 || !bytes.Equal(body, want.Body.Bytes()) {
 				t.Fatal("about identity differs")
 			}
@@ -316,15 +320,42 @@ func TestBinary(t *testing.T) {
 		}
 	}
 	records, e := os.ReadFile(filepath.Clean(record))
-	if e != nil {
-		t.Fatal(e)
+	if len(records) != 0 || (e != nil && !errors.Is(e, os.ErrNotExist)) {
+		t.Fatalf("host commands ran: %q (%v)", records, e)
 	}
-	if !strings.Contains(string(records), "group|add|acme|\n") || !strings.Contains(string(records), "-n|/usr/local/bin/opsctl|group|add|acme|\n") {
-		t.Fatal(string(records))
+}
+
+func exerciseBinaryChanges(t *testing.T, client *mcp.Client, caller identity.Caller, host string) {
+	t.Helper()
+	key := func(last byte) string {
+		var raw [51]byte
+		binary.BigEndian.PutUint32(raw[:4], 11)
+		copy(raw[4:15], "ssh-ed25519")
+		binary.BigEndian.PutUint32(raw[15:19], 32)
+		raw[50] = last
+		return "ssh-ed25519 " + base64.StdEncoding.EncodeToString(raw[:])
 	}
-	for _, line := range strings.Split(strings.TrimSpace(string(records)), "\n") {
-		if strings.HasPrefix(line, "-n|") && !strings.HasPrefix(line, "-n|/usr/local/bin/opsctl|") {
-			t.Fatal(line)
+	for _, call := range []struct {
+		name string
+		args map[string]string
+	}{
+		{"create_account", map[string]string{"account": "acme", "host": host}},
+		{"add_user", map[string]string{"account": "acme", "user": "alice", "key": key(1)}},
+		{"add_key", map[string]string{"account": "acme", "user": "alice", "key": key(2)}},
+		{"remove_key", map[string]string{"account": "acme", "user": "alice", "key": key(2)}},
+		{"lock_user", map[string]string{"account": "acme", "user": "alice"}},
+		{"unlock_user", map[string]string{"account": "acme", "user": "alice"}},
+		{"lock_user", map[string]string{"account": "acme", "user": "alice"}},
+		{"delete_user", map[string]string{"account": "acme", "user": "alice"}},
+		{"remove_account", map[string]string{"account": "acme"}},
+		{"delete_host", map[string]string{"host": host}},
+	} {
+		data, err := json.Marshal(call.args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = client.CallTool(t.Context(), caller, call.name, data); err != nil {
+			t.Fatal(call.name, err)
 		}
 	}
 }

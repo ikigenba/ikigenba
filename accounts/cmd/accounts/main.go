@@ -1,4 +1,4 @@
-// Command accounts manages the host’s SSH accounts.
+// Command accounts serves the business’s SSH hosts and accounts.
 package main
 
 import (
@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/cli"
+	"github.com/ikigenba/ikigenba/accounts/internal/cloud/awssdk"
 	"github.com/ikigenba/ikigenba/accounts/internal/pages"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
@@ -37,7 +38,7 @@ func main() {
 		case <-ctx.Done():
 		}
 	}()
-	code := cli.Run(ctx, cli.Process{Args: os.Args[1:], LookupEnv: os.LookupEnv, Unsetenv: os.Unsetenv, Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr, Version: v, Inherit: inherit, Now: time.Now, Rand: rand.Reader, Banner: kit.Banner, MCP: func(w *telemetry.Writer) *mcp.Server {
+	code := cli.Run(ctx, cli.Process{Args: os.Args[1:], LookupEnv: os.LookupEnv, Unsetenv: os.Unsetenv, Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr, Version: v, Inherit: inherit, Now: time.Now, Rand: rand.Reader, Cloud: awssdk.Open, Banner: kit.Banner, MCP: func(w *telemetry.Writer) *mcp.Server {
 		return mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: v, Telemetry: w})
 	}})
 	signal.Stop(signals)

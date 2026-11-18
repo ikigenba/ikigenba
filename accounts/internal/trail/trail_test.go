@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/ikigenba/ikigenba/accounts/internal/host"
 	"github.com/ikigenba/ikigenba/accounts/internal/trail"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
@@ -18,128 +18,208 @@ import (
 
 func writer(t *testing.T, sink telemetry.Sink) *telemetry.Writer {
 	t.Helper()
-	w := telemetry.New(telemetry.Config{Service: "accounts", Sink: sink, Now: func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }, Rand: zeroReader{}, Sleep: func(context.Context, time.Duration) {}, Stderr: io.Discard})
+	w := telemetry.New(telemetry.Config{Service: "accounts", Sink: sink, Stderr: io.Discard,
+		Now: func() time.Time { return time.Unix(123, 0) }, Rand: rand.NewChaCha8([32]byte{1}),
+	})
 	t.Cleanup(func() { w.Shutdown(context.Background(), "done") })
 	return w
 }
 
-type zeroReader struct{}
-
-func (zeroReader) Read(p []byte) (int, error) { clear(p); return len(p), nil }
-
-// R-9NTT-PE98 R-9P1Q-35ZX R-9Q9M-GXQM R-9RHI-UPHB R-9SPF-8H80 R-9TXB-M8YP R-9V58-00PE R-9YSX-5BXH
-func TestChangeAndResult(t *testing.T) {
-	if trail.EventChangeFinished != "change.finished" || trail.ResultOK != "ok" || trail.ResultRefused != "refused" || trail.ResultFailed != "failed" {
-		t.Fatal("wire constants")
+// R-9NTT-PE98 R-9P1Q-35ZX R-E3OL-H7GN R-E64E-8QY1
+func TestWireConstants(t *testing.T) {
+	got := []string{
+		trail.EventChangeFinished, trail.ResultOK, trail.ResultRefused, trail.ResultFailed,
+		trail.EventOperationStarted, trail.EventOperationFinished, trail.EventHostChanged, trail.EventAccountChanged,
+		trail.EventHostSilent, trail.EventHostSynced, trail.EventHostApplyFailed, trail.EventResourceUnexplained,
+		trail.AccountRemoved, trail.ResourceInstance, trail.ResourceVolume, trail.ResourceAddress,
 	}
-	capture := &telemetry.Capture{}
-	w := writer(t, capture)
-	caller := identity.Caller{UserID: "creator", Email: "private@example.test", RequestID: "request"}
+	want := []string{
+		"change.finished", "ok", "refused", "failed",
+		"operation.started", "operation.finished", "host.changed", "account.changed",
+		"host.silent", "host.synced", "host.apply_failed", "resource.unexplained",
+		"removed", "instance", "volume", "address",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("wire constants %v, want %v", got, want)
+	}
+}
+
+// R-E7CA-MIOQ R-EENO-X54W
+func TestResult(t *testing.T) {
+	refusal, unrelated := errors.New("refusal"), errors.New("unrelated")
 	cases := []struct {
-		err  error
-		want string
-	}{{nil, trail.ResultOK}, {&host.RefusedError{Status: 4, Diagnostic: "diagnostic"}, trail.ResultRefused}, {fmt.Errorf("wrapped: %w", &host.RefusedError{Status: 2, Diagnostic: "other"}), trail.ResultRefused}, {&host.FailedError{Status: 1}, trail.ResultFailed}, {errors.New("failure"), trail.ResultFailed}}
-	for i, tc := range cases {
-		if got := trail.Result(tc.err); got != tc.want {
-			t.Fatalf("Result=%q want %q", got, tc.want)
+		err      error
+		refusals []error
+		want     string
+	}{
+		{nil, []error{refusal, nil}, trail.ResultOK},
+		{fmt.Errorf("wrapper: %w", refusal), []error{unrelated, refusal}, trail.ResultRefused},
+		{unrelated, []error{refusal}, trail.ResultFailed},
+		{refusal, nil, trail.ResultFailed},
+	}
+	for _, c := range cases {
+		if got := trail.Result(c.err, c.refusals...); got != c.want {
+			t.Errorf("Result(%v, %v) = %q, want %q", c.err, c.refusals, got, c.want)
 		}
-		ctx := identity.NewContext(context.Background(), caller)
-		if i%2 == 0 {
-			cancelled, cancel := context.WithCancel(ctx)
+	}
+}
+
+type notice struct {
+	name string
+	attr telemetry.Attrs
+	send func(context.Context, *telemetry.Writer)
+}
+
+func notices(tool, host, account, user, result, op, kind, from, to, status, reason, resource string, n int64) []notice {
+	return []notice{
+		{trail.EventChangeFinished, telemetry.Attrs{"tool": tool, "host": host, "account": account, "user": user, "result": result},
+			func(ctx context.Context, w *telemetry.Writer) {
+				trail.Change(ctx, w, tool, host, account, user, result)
+			}},
+		{trail.EventOperationStarted, telemetry.Attrs{"operation": op, "kind": kind, "host": host, "account": account},
+			func(ctx context.Context, w *telemetry.Writer) {
+				trail.OperationStarted(ctx, w, op, kind, host, account)
+			}},
+		{trail.EventOperationFinished, telemetry.Attrs{"operation": op, "kind": kind, "host": host, "account": account, "status": status, "reason": reason},
+			func(ctx context.Context, w *telemetry.Writer) {
+				trail.OperationFinished(ctx, w, op, kind, host, account, status, reason)
+			}},
+		{trail.EventHostChanged, telemetry.Attrs{"host": host, "from": from, "to": to, "operation": op},
+			func(ctx context.Context, w *telemetry.Writer) { trail.HostChanged(ctx, w, host, from, to, op) }},
+		{trail.EventAccountChanged, telemetry.Attrs{"account": account, "host": host, "from": from, "to": to},
+			func(ctx context.Context, w *telemetry.Writer) { trail.AccountChanged(ctx, w, account, host, from, to) }},
+		{trail.EventHostSilent, telemetry.Attrs{"host": host, "applied": n},
+			func(ctx context.Context, w *telemetry.Writer) { trail.HostSilent(ctx, w, host, n) }},
+		{trail.EventHostSynced, telemetry.Attrs{"host": host, "applied": n},
+			func(ctx context.Context, w *telemetry.Writer) { trail.HostSynced(ctx, w, host, n) }},
+		{trail.EventHostApplyFailed, telemetry.Attrs{"host": host, "attempted": n},
+			func(ctx context.Context, w *telemetry.Writer) { trail.HostApplyFailed(ctx, w, host, n) }},
+		{trail.EventResourceUnexplained, telemetry.Attrs{"resource": resource, "kind": kind, "host": host},
+			func(ctx context.Context, w *telemetry.Writer) { trail.Unexplained(ctx, w, resource, kind, host) }},
+	}
+}
+
+func example(n int64) []notice {
+	return notices("lock_user", "host01", "acme", "daffy", trail.ResultOK, "op_1", "place", "pending", "active", "done", "reason", "i-1", n)
+}
+
+func checkEvent(t *testing.T, e telemetry.Event, want notice, c identity.Caller) {
+	t.Helper()
+	if e.Name != want.name || !reflect.DeepEqual(e.Attrs, want.attr) || e.User != c.UserID || e.RequestID != c.RequestID {
+		t.Errorf("event %+v, want %s %v under caller %q and request %q", e, want.name, want.attr, c.UserID, c.RequestID)
+	}
+}
+
+// R-E00W-BW8K R-E8K7-0AFF R-E9S3-E264 R-EAZZ-RTWT
+func TestEachEvent(t *testing.T) {
+	caller := identity.Caller{UserID: "caller", RequestID: "request", Email: "private@example.test"}
+	for _, c := range []identity.Caller{{}, caller} {
+		for _, cancelled := range []bool{false, true} {
+			ctx := context.Background()
+			if c.UserID != "" {
+				ctx = identity.NewContext(ctx, c)
+			}
+			ctx, cancel := context.WithCancel(ctx)
+			if cancelled {
+				cancel()
+			}
+			capture := &telemetry.Capture{}
+			w := writer(t, capture)
+			want := append(example(7), example(-2)...)
+			want = append(want, notices("", "", "", "", "", "", "", "", "", "", "", "", 0)...)
+			for _, n := range want {
+				n.send(ctx, w)
+			}
 			cancel()
-			ctx = cancelled
+			if err := w.Flush(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			got := capture.Events()
+			if len(got) != len(want) {
+				t.Fatalf("captured %d events, want %d", len(got), len(want))
+			}
+			for i, e := range got {
+				checkEvent(t, e, want[i], c)
+			}
 		}
-		trail.Change(ctx, w, "tool", "group", "user", tc.want)
-	}
-	trail.Change(context.Background(), w, "", "", "", "")
-	w.Emit(context.Background(), "tool.called", telemetry.Attrs{})
-	if err := w.Flush(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	events := capture.Events()
-	if len(events) != 7 {
-		t.Fatalf("events %v", events)
-	}
-	for i, e := range events[:5] {
-		if e.Name != trail.EventChangeFinished || e.RequestID != caller.RequestID || e.User != caller.UserID || !reflect.DeepEqual(e.Attrs, telemetry.Attrs{"tool": "tool", "group": "group", "user": "user", "result": cases[i].want}) {
-			t.Fatalf("event %d: %+v", i, e)
-		}
-	}
-	if e := events[5]; e.User != "" || e.RequestID != "" || !reflect.DeepEqual(e.Attrs, telemetry.Attrs{"tool": "", "group": "", "user": "", "result": ""}) {
-		t.Fatalf("guest event %+v", e)
-	}
-	if events[6].Name != "tool.called" {
-		t.Fatal(events)
 	}
 }
 
 type blockedSink struct {
+	telemetry.Capture
 	entered chan struct{}
 	release chan struct{}
 	once    sync.Once
 }
 
-func (s *blockedSink) Deliver(_ context.Context, _ telemetry.Event) error {
+func (s *blockedSink) Deliver(ctx context.Context, ev telemetry.Event) error {
 	s.once.Do(func() { close(s.entered) })
 	<-s.release
-	return nil
+	return s.Capture.Deliver(ctx, ev)
 }
 
-// R-9WD4-DSG3
-func TestChangeQueuesWithoutDelivery(t *testing.T) {
-	sink := &blockedSink{entered: make(chan struct{}), release: make(chan struct{})}
-	w := writer(t, sink)
-	released := false
-	defer func() {
-		if !released {
-			close(sink.release)
-		}
-	}()
-	done := make(chan struct{})
-	go func() { trail.Change(context.Background(), w, "tool", "", "", trail.ResultOK); close(done) }()
-	select {
-	case <-sink.entered:
-	case <-time.After(2 * time.Second):
-		t.Fatal("delivery never started")
-	}
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("Change waited for delivery")
-	}
-	close(sink.release)
-	released = true
-	if err := w.Flush(context.Background()); err != nil {
-		t.Fatal(err)
+// R-9V58-00PE R-9WD4-DSG3 R-EC7W-5LNI
+func TestNoticeQueuesWithoutDelivery(t *testing.T) {
+	for _, n := range example(7) {
+		t.Run(n.name, func(t *testing.T) {
+			sink := &blockedSink{entered: make(chan struct{}), release: make(chan struct{})}
+			w := writer(t, sink)
+			release := sync.OnceFunc(func() { close(sink.release) })
+			defer release()
+			done := make(chan struct{})
+			go func() { n.send(context.Background(), w); close(done) }()
+			select {
+			case <-sink.entered:
+			case <-time.After(2 * time.Second):
+				t.Fatal("delivery never started")
+			}
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				t.Fatal("notice waited for delivery")
+			}
+			w.Emit(context.Background(), "tool.called", nil)
+			release()
+			if err := w.Flush(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			got := sink.Events()
+			if len(got) != 2 || got[0].Name != n.name || got[1].Name != "tool.called" {
+				t.Fatalf("unexpected order %v", got)
+			}
+		})
 	}
 }
 
-// R-9XL0-RK6S
-func TestConcurrentChanges(t *testing.T) {
+func TestConcurrentNotices(t *testing.T) {
+	const callers = 32
 	capture := &telemetry.Capture{}
 	w := writer(t, capture)
 	var wg sync.WaitGroup
-	for i := range 100 {
-		wg.Go(func() {
-			value := fmt.Sprint(i)
-			ctx := identity.NewContext(context.Background(), identity.Caller{UserID: value, RequestID: value})
-			trail.Change(ctx, w, value, value, value, value)
-		})
+	want := map[string]notice{}
+	for i := range callers {
+		id := fmt.Sprint(i)
+		c := identity.Caller{UserID: id, RequestID: "request-" + id}
+		ctx := identity.NewContext(context.Background(), c)
+		for _, n := range notices("tool"+id, "host"+id, "account"+id, "user"+id, id, id, id, id, id, id, id, id, int64(i)) {
+			want[id+"/"+n.name] = n
+			wg.Go(func() { n.send(ctx, w) })
+		}
 	}
 	wg.Wait()
 	if err := w.Flush(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	events := capture.Events()
-	if len(events) != 100 {
-		t.Fatal(len(events))
-	}
-	seen := map[string]bool{}
-	for _, e := range events {
-		v := e.User
-		if seen[v] || e.RequestID != v || !reflect.DeepEqual(e.Attrs, telemetry.Attrs{"tool": v, "group": v, "user": v, "result": v}) {
-			t.Fatalf("bad event %+v", e)
+	for _, e := range capture.Events() {
+		key := e.User + "/" + e.Name
+		n, found := want[key]
+		if !found {
+			t.Fatalf("unexpected or duplicate event %+v", e)
 		}
-		seen[v] = true
+		checkEvent(t, e, n, identity.Caller{UserID: e.User, RequestID: "request-" + e.User})
+		delete(want, key)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing %d events", len(want))
 	}
 }

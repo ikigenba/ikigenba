@@ -10,9 +10,12 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/ikigenba/ikigenba/accounts"
 	"github.com/ikigenba/ikigenba/accounts/internal/cli"
+	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 	"github.com/ikigenba/ikigenba/accounts/internal/pages"
 	"github.com/ikigenba/ikigenba/accounts/internal/settings"
 	"github.com/ikigenba/ikigenba/appkit/db"
@@ -36,24 +39,29 @@ const (
 	_ uint64  = cli.ExitUsage
 )
 
-// R-C9ZY-YLL2 R-CB7V-CDBR
+// R-CB7V-CDBR
 var _ func(context.Context, cli.Process) int = cli.Run
+
+// R-Y5P0-FG0O
 var _ = struct {
-	Args      []string
-	LookupEnv func(key string) (string, bool)
-	Unsetenv  func(key string) error
-	Pid       int
-	Stdout    io.Writer
-	Stderr    io.Writer
-	Version   string
-	Inherit   func(fd uintptr) (net.Listener, error)
-	Now       func() time.Time
-	Sleep     func(ctx context.Context, d time.Duration)
-	Rand      io.Reader
-	Dir       string
-	Sink      telemetry.Sink
-	Banner    func(u page.User) page.Banner
-	MCP       func(w *telemetry.Writer) *mcp.Server
+	Args       []string
+	LookupEnv  func(key string) (string, bool)
+	Unsetenv   func(key string) error
+	Pid        int
+	Stdout     io.Writer
+	Stderr     io.Writer
+	Version    string
+	Inherit    func(fd uintptr) (net.Listener, error)
+	Now        func() time.Time
+	Sleep      func(ctx context.Context, d time.Duration)
+	Rand       io.Reader
+	Dir        string
+	Sink       telemetry.Sink
+	Banner     func(u page.User) page.Banner
+	MCP        func(w *telemetry.Writer) *mcp.Server
+	After      func(time.Duration) <-chan time.Time
+	Executable func() (string, error)
+	Cloud      cloud.Opener
 }(cli.Process{})
 
 type writes struct {
@@ -78,10 +86,13 @@ func inert(t *testing.T, args []string) (cli.Process, *writes, *writes) {
 	t.Helper()
 	out, errout := &writes{}, &writes{}
 	p := cli.Process{Args: args, Dir: t.TempDir(), Stdout: out, Stderr: errout, Version: "test identity", LookupEnv: func(string) (string, bool) { t.Fatal("environment used"); return "", false }, Unsetenv: func(string) error { t.Fatal("unset used"); return nil }, Inherit: func(uintptr) (net.Listener, error) { t.Fatal("inherit used"); return nil, nil }, Now: func() time.Time { t.Fatal("clock used"); return time.Time{} }, Sleep: func(context.Context, time.Duration) { t.Fatal("pause used") }, Rand: forbidden{t}, Sink: noTelemetry{t}, Banner: func(page.User) page.Banner { t.Fatal("banner used"); return page.Banner{} }, MCP: func(*telemetry.Writer) *mcp.Server { t.Fatal("MCP used"); return nil }}
+	p.After = func(time.Duration) <-chan time.Time { t.Fatal("timer used"); return nil }
+	p.Executable = func() (string, error) { t.Fatal("executable used"); return "", nil }
+	p.Cloud = func(context.Context, string) (cloud.Cloud, error) { t.Fatal("cloud used"); return nil, nil }
 	return p, out, errout
 }
 
-// R-S0NP-MJ4U R-S1VM-0AVJ R-S33I-E2M8 R-S5JB-5M3M R-V7AZ-FWPF R-S7Z3-X5L0 R-S970-AXBP R-SAEW-OP2E R-CB7V-CDBR
+// R-S0NP-MJ4U R-S1VM-0AVJ R-S33I-E2M8 R-S5JB-5M3M R-V7AZ-FWPF R-S7Z3-X5L0 R-S970-AXBP R-SAEW-OP2E R-GOA5-W1VL R-CB7V-CDBR
 func TestCommands(t *testing.T) {
 	if cli.ExitSuccess != 0 || cli.ExitServerFailed != 1 || cli.ExitUsage != 2 {
 		t.Fatal("exit codes")
@@ -129,9 +140,18 @@ func TestCommands(t *testing.T) {
 	}
 }
 
-// R-V4V6-OD81 R-E307-S9VA R-M6FC-GN0B
+// R-APH7-IHIV
+func TestManifestDescription(t *testing.T) {
+	const description string = pages.Description
+	if description == "" || !utf8.ValidString(description) || strings.ContainsAny(description, "\"\\") ||
+		strings.IndexFunc(description, unicode.IsControl) != -1 {
+		t.Fatalf("unsafe TOML description %q", description)
+	}
+}
+
+// R-V4V6-OD81 R-DJ7M-H4AO R-M6FC-GN0B
 func TestManifestAndFragment(t *testing.T) {
-	want := "app = \"accounts\"\ndescription = \"" + pages.Description + "\"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[database]\nengine = \"sqlite\"\npath = \"state/accounts.db\"\n\n[resources]\nmemory_max = \"128M\"\n\n[home]\ngroup = \"core\"\n"
+	want := "app = \"accounts\"\ndescription = \"" + pages.Description + "\"\ndefault = false\nmcp = true\nguests = true\nsecrets = []\n\n[database]\nengine = \"sqlite\"\npath = \"state/accounts.db\"\n\n[resources]\nmemory_max = \"256M\"\n\n[home]\ngroup = \"core\"\n"
 	if cli.Manifest != want {
 		t.Fatal("manifest bytes")
 	}
@@ -190,7 +210,7 @@ func TestDatabaseStatus(t *testing.T) {
 	}
 }
 
-// R-DBSU-THKL R-QXPU-XGK3 R-R05N-P01H
+// R-YWIS-UEBY R-GLY2-MV38 R-GN5Z-0MTX
 func TestStartFailures(t *testing.T) {
 	for _, mode := range []string{"setting", "setting_multiline", "absent", "multiple", "database"} {
 		t.Run(mode, func(t *testing.T) {
@@ -265,7 +285,7 @@ func TestStartFailures(t *testing.T) {
 	var _ error = &settings.Error{}
 }
 
-// R-QXPU-XGK3
+// R-GLY2-MV38
 func TestNoSocketVariants(t *testing.T) {
 	for _, values := range []map[string]string{
 		{}, {"LISTEN_FDS": "1"}, {"LISTEN_PID": "other", "LISTEN_FDS": "1"}, {"LISTEN_PID": "42"},
@@ -277,7 +297,7 @@ func TestNoSocketVariants(t *testing.T) {
 		p.Pid = 42
 		p.LookupEnv = func(k string) (string, bool) {
 			switch k {
-			case "DRAIN_SECONDS", "ACCOUNTS_HOST_COMMAND", "IKIGENBA_SANDBOX", "LISTEN_PID", "LISTEN_FDS":
+			case "DRAIN_SECONDS", "AWS_REGION", "IKIGENBA_HOSTS_DOMAIN", "IKIGENBA_HOSTS_ZONE_ID", "IKIGENBA_HOSTS_LAUNCH_TEMPLATE", "IKIGENBA_HOSTS_INSTANCE_PROFILE", "IKIGENBA_SANDBOX", "LISTEN_PID", "LISTEN_FDS":
 			default:
 				t.Error("unexpected lookup", k)
 			}

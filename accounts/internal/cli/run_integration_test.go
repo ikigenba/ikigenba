@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -24,11 +25,11 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/cli"
-	"github.com/ikigenba/ikigenba/accounts/internal/host"
+	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 	"github.com/ikigenba/ikigenba/accounts/internal/pages"
 	"github.com/ikigenba/ikigenba/accounts/internal/server"
 	"github.com/ikigenba/ikigenba/accounts/internal/tools"
-	"github.com/ikigenba/ikigenba/accounts/internal/trail"
+	"github.com/ikigenba/ikigenba/accounts/internal/valid"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
@@ -39,7 +40,7 @@ import (
 
 const runVersion = "integration-display"
 
-var fixedTime = time.Date(2026, 10, 29, 14, 3, 7, 0, time.UTC)
+var fixedTime = time.Date(2026, 11, 17, 14, 3, 7, 0, time.UTC)
 
 type integrationRandom struct {
 	n         uint64
@@ -131,6 +132,11 @@ type integrationOptions struct {
 	env                                 map[string]string
 	mcp                                 func(*telemetry.Writer) *mcp.Server
 	banner                              func(page.User) page.Banner
+	cloud                               cloud.Opener
+	executable                          func() (string, error)
+	after                               func(time.Duration) <-chan time.Time
+	sleep                               func(context.Context, time.Duration)
+	email                               string
 }
 type integrationRun struct {
 	t           *testing.T
@@ -138,6 +144,7 @@ type integrationRun struct {
 	client      *mcp.Client
 	http        *http.Client
 	base        string
+	email       string
 	cancel      context.CancelCauseFunc
 	done        chan int
 	capture     *telemetry.Capture
@@ -174,6 +181,10 @@ func startIntegration(t *testing.T, o integrationOptions) *integrationRun {
 		t.Fatal(e)
 	}
 	r.base = "http://accounts.test"
+	r.email = o.email
+	if r.email == "" {
+		r.email = "mgreenly+fake01@gmail.com"
+	}
 	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, "unix", filepath.Join(sd, "app"))
 	}}
@@ -198,7 +209,17 @@ func startIntegration(t *testing.T, o integrationOptions) *integrationRun {
 		case <-ctx.Done():
 		default:
 		}
-	}, o.random, r.dir, o.sink, page.New(pages.ServiceName, version.Identity{}).Banner, o.mcp}
+	}, o.random, r.dir, o.sink, page.New(pages.ServiceName, version.Identity{}).Banner, o.mcp, o.after, o.executable, o.cloud}
+	if p.Executable == nil {
+		name := filepath.Join(t.TempDir(), "accounts")
+		p.Executable = func() (string, error) { return name, nil }
+	}
+	if p.After == nil {
+		p.After = func(time.Duration) <-chan time.Time { return nil }
+	}
+	if o.sleep != nil {
+		p.Sleep = o.sleep
+	}
 	if o.banner != nil {
 		p.Banner = o.banner
 	}
@@ -327,7 +348,7 @@ func (r *integrationRun) stop() int {
 }
 func (r *integrationRun) assertKeys() {
 	r.t.Helper()
-	allowed := map[string]bool{"DRAIN_SECONDS": true, "ACCOUNTS_HOST_COMMAND": true, "IKIGENBA_SANDBOX": true, services.Variable: true, "LISTEN_PID": true, "LISTEN_FDS": true, "NOTIFY_SOCKET": true}
+	allowed := map[string]bool{"DRAIN_SECONDS": true, "AWS_REGION": true, "IKIGENBA_HOSTS_DOMAIN": true, "IKIGENBA_HOSTS_ZONE_ID": true, "IKIGENBA_HOSTS_LAUNCH_TEMPLATE": true, "IKIGENBA_HOSTS_INSTANCE_PROFILE": true, "IKIGENBA_SANDBOX": true, services.Variable: true, "LISTEN_PID": true, "LISTEN_FDS": true, "NOTIFY_SOCKET": true}
 	for _, k := range r.keys {
 		if !allowed[k] {
 			r.t.Errorf("unexpected environment read %q", k)
@@ -349,7 +370,7 @@ func (r *integrationRun) callAs(name string, args any, caller identity.Caller) (
 func (r *integrationRun) call(name string, args any, into any) {
 	r.t.Helper()
 	q := fmt.Sprintf("call-%d", integrationCalls.Add(1))
-	result, e := r.callAs(name, args, identity.Caller{UserID: "owner", Email: "mgreenly+fake01@gmail.com", RequestID: q})
+	result, e := r.callAs(name, args, identity.Caller{UserID: "owner", Email: r.email, RequestID: q})
 	if e != nil {
 		r.t.Fatalf("%s: %v", name, e)
 	}
@@ -390,7 +411,7 @@ var integrationCalls atomic.Uint64
 
 func (r *integrationRun) refuse(name string, args any, word string) {
 	r.t.Helper()
-	result, e := r.callAs(name, args, identity.Caller{UserID: "owner", Email: "mgreenly+fake01@gmail.com", RequestID: fmt.Sprintf("refuse-%d", integrationCalls.Add(1))})
+	result, e := r.callAs(name, args, identity.Caller{UserID: "owner", Email: r.email, RequestID: fmt.Sprintf("refuse-%d", integrationCalls.Add(1))})
 	if e != nil {
 		r.t.Fatal(e)
 	}
@@ -399,7 +420,7 @@ func (r *integrationRun) refuse(name string, args any, word string) {
 		r.t.Fatalf("%s expected %s refusal: %s", name, word, b)
 	}
 }
-func (r *integrationRun) request(method, path, user, id string, headers map[string]string) (int, http.Header, string) {
+func (r *integrationRun) request(method, path, user, id string) (int, http.Header, string) {
 	r.t.Helper()
 	if id != "" {
 		r.mu.Lock()
@@ -414,13 +435,10 @@ func (r *integrationRun) request(method, path, user, id string, headers map[stri
 	req.Header.Set("X-Forwarded-Proto", "https")
 	if user != "" {
 		req.Header.Set("X-User-Id", user)
-		req.Header.Set("X-User-Email", "mgreenly+fake01@gmail.com")
+		req.Header.Set("X-User-Email", r.email)
 	}
 	if id != "" {
 		req.Header.Set("X-Request-Id", id)
-	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
 	}
 	res, e := r.http.Do(req)
 	if e != nil {
@@ -476,22 +494,21 @@ func integrationDatagrams(c *net.UnixConn) ([]string, error) {
 	return result, readErr
 }
 
-// R-C9ZY-YLL2 R-CIJ9-MZRX R-CJR6-0RIM R-CKZ2-EJ9B R-CM6Y-SB00 R-QYXR-B8AS R-R1DK-2RS6 R-R3TC-UB9K R-R519-8309 R-UVI5-53XK R-EJOM-URNY
+// R-ESG4-8UGU R-Y9CP-KR8R R-YAKL-YIZG R-YBSI-CAQ5 R-QYXR-B8AS R-R1DK-2RS6 R-GODV-EEKM R-R519-8309 R-UVI5-53XK R-H30N-ZNGY
 func TestRunPersistenceAndLifecycle(t *testing.T) {
 	dir := t.TempDir()
-	command, record := integrationStub(t, "", "", "")
-	r := startIntegration(t, integrationOptions{dir: dir, acceptNotify: true, env: map[string]string{"ACCOUNTS_HOST_COMMAND": command}})
+	r := startIntegration(t, integrationOptions{dir: dir, acceptNotify: true})
 	checkState(t, dir)
 	if r.makers.Load() != 1 {
 		t.Fatal("server factory calls", r.makers.Load())
 	}
-	result, err := r.callAs("groups", struct{}{}, identity.Caller{UserID: "owner", RequestID: "first-read"})
+	result, err := r.callAs("hosts", struct{}{}, identity.Caller{UserID: "owner", RequestID: "first-read"})
 	if err != nil || result.IsError() {
 		t.Fatal(result, err)
 	}
 	assertServerInfo(t, result, runVersion)
-	r.writer.Emit(context.Background(), "change.finished", telemetry.Attrs{"tool": "probe"})
-	r.call("create_group", map[string]any{"group": "acme"}, nil)
+	r.writer.Emit(t.Context(), "change.finished", telemetry.Attrs{"tool": "probe"})
+	r.call("create_host", struct{}{}, nil)
 	checkState(t, dir)
 	if r.stop() != cli.ExitSuccess {
 		t.Fatal(r.err.String())
@@ -500,7 +517,7 @@ func TestRunPersistenceAndLifecycle(t *testing.T) {
 	if r.inherit != 1 || !reflect.DeepEqual(r.unset, []string{"LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES"}) {
 		t.Fatal(r.inherit, r.unset)
 	}
-	assertLifecycle(t, r.capture.Events(), runVersion)
+	assertLifecycle(t, r.capture.Events())
 	found := false
 	for _, event := range r.capture.Events() {
 		if event.Name == "change.finished" && event.Attrs["tool"] == "probe" {
@@ -510,25 +527,20 @@ func TestRunPersistenceAndLifecycle(t *testing.T) {
 	if !found {
 		t.Fatal("factory writer did not deliver")
 	}
-	before := r.err.String()
-	r.writer.Emit(context.Background(), "change.finished", telemetry.Attrs{})
-	if r.err.String() != before || r.out.Len() != 0 || before != "" {
+	r.writer.Emit(t.Context(), "change.finished", telemetry.Attrs{})
+	if r.err.Len() != 0 || r.out.Len() != 0 {
 		t.Fatal(r.out.String(), r.err.String())
 	}
-	b, err := os.ReadFile(filepath.Clean(record))
-	if err != nil || !strings.Contains(string(b), "group|add|acme|") {
-		t.Fatal(string(b), err)
-	}
 	for _, next := range []string{dir, t.TempDir()} {
-		n := startIntegration(t, integrationOptions{dir: next, env: map[string]string{"ACCOUNTS_HOST_COMMAND": command}})
-		var groups tools.GroupList
-		n.call("groups", struct{}{}, &groups)
-		want := ""
+		n := startIntegration(t, integrationOptions{dir: next})
 		if next == dir {
-			want = fixedTime.Format(time.RFC3339)
-		}
-		if len(groups.Groups) != 1 || groups.Groups[0].Created != want {
-			t.Fatal(groups)
+			var host tools.HostRead
+			n.call("host", map[string]string{"host": "host01"}, &host)
+			if host.Host != "host01" || host.Created != fixedTime.Format(time.RFC3339) {
+				t.Fatal(host)
+			}
+		} else {
+			n.refuse("host", map[string]string{"host": "host01"}, tools.NoHost)
 		}
 		if n.stop() != cli.ExitSuccess {
 			t.Fatal(n.err.String())
@@ -552,13 +564,13 @@ func assertServerInfo(t *testing.T, result mcp.Result, v string) {
 		t.Fatal(string(b), e)
 	}
 }
-func assertLifecycle(t *testing.T, events []telemetry.Event, v string) {
+func assertLifecycle(t *testing.T, events []telemetry.Event) {
 	t.Helper()
 	if len(events) < 2 {
 		t.Fatal(events)
 	}
 	a, b := events[0], events[len(events)-1]
-	if a.Name != "service.started" || a.User != "" || a.RequestID != "" || !reflect.DeepEqual(a.Attrs, telemetry.Attrs{"version": v}) {
+	if a.Name != "service.started" || a.User != "" || a.RequestID != "" || !reflect.DeepEqual(a.Attrs, telemetry.Attrs{"version": runVersion}) {
 		t.Fatal(a)
 	}
 	if b.Name != "service.stopping" || b.User != "" || b.RequestID != "" || !reflect.DeepEqual(b.Attrs, telemetry.Attrs{"reason": "integration stop"}) {
@@ -586,7 +598,7 @@ func checkState(t *testing.T, dir string) {
 	}
 	found := false
 	for _, f := range files {
-		if !strings.HasPrefix(f.Name(), "accounts.db") {
+		if !strings.HasPrefix(f.Name(), "accounts.db") && f.Name() != "sandbox-cloud.json" {
 			t.Fatal(f.Name())
 		}
 		if f.Name() == "accounts.db" {
@@ -602,37 +614,6 @@ func checkState(t *testing.T, dir string) {
 	}
 }
 
-// integrationStub writes a command, three protocol documents, and a control
-// file. Only accounts starts this stub; all shell operations are builtins.
-func integrationStub(t *testing.T, leading, users, diagnostic string) (string, string) {
-	t.Helper()
-	dir := t.TempDir()
-	command := filepath.Join(dir, "command")
-	record := filepath.Join(dir, "record")
-	if users == "" {
-		users = `{"users":[]}`
-	}
-	for name, body := range map[string]string{"groups": `{"groups":[{"slug":"acme","members":0}]}`, "users": users, "mode": "0", "diagnostic": diagnostic} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	script := "#!/bin/sh\nrecord='" + record + "'\nprintf '%s|' \"$@\" >> \"$record\"\nprintf '\\n' >> \"$record\"\ninput=\nwhile IFS= read -r line; do input=\"$input$line\"; done\nprintf '%s\\n' \"$input\" >> '" + filepath.Join(dir, "input") + "'\n"
-	if leading != "" {
-		script += "shift\n"
-	}
-	script += "case \"$1 $2\" in\n'group list') IFS= read -r document < '" + filepath.Join(dir, "groups") + "'; printf '%s\\n' \"$document\"; exit 0;;\n'group members') printf '{\"group\":\"%s\",\"members\":[]}\\n' \"$3\"; exit 0;;\n'user list') IFS= read -r document < '" + filepath.Join(dir, "users") + "'; printf '%s\\n' \"$document\"; exit 0;;\nesac\nmode=0\nIFS= read -r mode < '" + filepath.Join(dir, "mode") + "'\nIFS= read -r diagnostic < '" + filepath.Join(dir, "diagnostic") + "'\nprintf '%s\\n' \"$diagnostic\" >&2\nexit \"$mode\"\n"
-	if err := writeExecutable(command, []byte(script)); err != nil {
-		t.Fatal(err)
-	}
-	return command, record
-}
-func setStubMode(t *testing.T, command, mode string) {
-	t.Helper()
-	if err := os.WriteFile(filepath.Join(filepath.Dir(command), "mode"), []byte(mode+"\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-}
 func validKey() string {
 	blob := make([]byte, 51)
 	binary.BigEndian.PutUint32(blob[:4], 11)
@@ -644,71 +625,35 @@ func validKey() string {
 	return "ssh-ed25519 " + base64.StdEncoding.EncodeToString(blob) + " fixture"
 }
 
-// R-CDNO-3WT5 R-CPUN-XM83 R-PGO7-YBVB
+// R-Y6WW-T7RD R-YE8B-3U7J
 func TestRunMemoryAndClock(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	var clock atomic.Int64
 	clock.Store(fixedTime.Unix())
-	for _, blank := range []string{"", " \t\n"} {
-		r := startIntegration(t, integrationOptions{emptyDir: true, nilUnset: true, now: func() time.Time { return time.Unix(clock.Load(), 0).UTC() }, env: map[string]string{"ACCOUNTS_HOST_COMMAND": blank, "IKIGENBA_SANDBOX": ""}})
-		var groups tools.GroupList
-		r.call("groups", struct{}{}, &groups)
-		if len(groups.Groups) != 0 {
-			t.Fatal(groups)
-		}
-		r.refuse("create_group", map[string]any{"group": "Acme"}, host.RefuseInvalidName)
-		r.call("create_group", map[string]any{"group": "acme"}, nil)
-		r.call("add_user", map[string]any{"user": "alice", "group": "acme", "key": validKey()}, nil)
-		code, _, body := r.request("GET", "/", "owner", "landing", nil)
-		if code != 200 || !strings.Contains(body, "acme") || !strings.Contains(body, "alice") || !strings.Contains(body, fixedTime.Format(time.RFC3339)) {
-			t.Fatal(code, body)
-		}
-		clock.Store(time.Date(2026, 10, 29, 14, 5, 0, 0, time.UTC).Unix())
-		r.call("add_user", map[string]any{"user": "bob", "group": "acme", "key": validKey()}, nil)
-		var users tools.UserList
-		r.call("users", struct{}{}, &users)
-		if len(users.Users) != 2 || users.Users[0].Created != fixedTime.Format(time.RFC3339) || users.Users[1].Created != time.Unix(clock.Load(), 0).UTC().Format(time.RFC3339) {
-			t.Fatal(users)
-		}
-		r.call("groups", struct{}{}, &groups)
-		if len(groups.Groups) != 1 || groups.Groups[0].Created != fixedTime.Format(time.RFC3339) {
-			t.Fatal(groups)
-		}
-		if r.stop() != cli.ExitSuccess {
-			t.Fatal(r.err.String())
-		}
-		clock.Store(fixedTime.Unix())
+	r := startIntegration(t, integrationOptions{emptyDir: true, nilUnset: true, now: func() time.Time { return time.Unix(clock.Load(), 0).UTC() }})
+	r.call("create_host", struct{}{}, nil)
+	createdAccount := time.Date(2026, 11, 17, 14, 5, 0, 0, time.UTC)
+	clock.Store(createdAccount.Unix())
+	r.call("create_account", map[string]string{"account": "acme", "host": "host01"}, nil)
+	var host tools.HostRead
+	r.call("host", map[string]string{"host": "host01"}, &host)
+	var account tools.AccountRead
+	r.call("account", map[string]string{"account": "acme"}, &account)
+	if host.Created != fixedTime.Format(time.RFC3339) || account.Created != createdAccount.Format(time.RFC3339) {
+		t.Fatal(host, account)
 	}
+	code, _, body := r.request("GET", "/", "owner", "landing")
+	if code != 200 || !strings.Contains(body, host.Host) || !strings.Contains(body, account.Account) {
+		t.Fatal(code, body)
+	}
+	if r.stop() != cli.ExitSuccess || len(r.unset) != 0 {
+		t.Fatal(r.err.String(), r.unset)
+	}
+	checkState(t, dir)
 }
 
-// R-PFGB-KK4M
-func TestRunCommandOverride(t *testing.T) {
-	for _, sandbox := range []string{"absent", "", "space"} {
-		command, record := integrationStub(t, "-x", "", "")
-		r := startIntegration(t, integrationOptions{noSandbox: sandbox == "absent", env: map[string]string{"ACCOUNTS_HOST_COMMAND": "\t" + command + "   -x\t", "IKIGENBA_SANDBOX": sandbox}})
-		r.call("create_group", map[string]any{"group": "acme"}, nil)
-		r.request("GET", "/", "owner", "page", nil)
-		if r.stop() != cli.ExitSuccess {
-			t.Fatal(r.err.String())
-		}
-		b, e := os.ReadFile(filepath.Clean(record))
-		if e != nil {
-			t.Fatal(e)
-		}
-		lines := strings.Split(strings.TrimSpace(string(b)), "\n")
-		for _, line := range lines {
-			if !strings.HasPrefix(line, "-x|") {
-				t.Fatal(line)
-			}
-		}
-		if !strings.Contains(string(b), "-x|group|add|acme|\n") {
-			t.Fatal(string(b))
-		}
-	}
-}
-
-// R-CEVK-HOJU R-CG3G-VGAJ R-PE8F-6SDX R-A7C7-TQ4C
+// R-CEVK-HOJU R-CG3G-VGAJ R-PE8F-6SDX R-EJJA-G83O
 func TestRunRandomAndTime(t *testing.T) {
 	var ids []string
 	for i, clock := range []time.Time{time.Date(2026, 10, 29, 14, 0, 0, 0, time.UTC), time.Date(2026, 10, 30, 9, 30, 0, 0, time.UTC), fixedTime} {
@@ -718,7 +663,7 @@ func TestRunRandomAndTime(t *testing.T) {
 		}
 		r := startIntegration(t, integrationOptions{random: value, now: func() time.Time { return clock }})
 		// The first request omits its id so the middleware must mint it.
-		result, e := r.callAs("create_group", map[string]any{"group": "beta"}, identity.Caller{UserID: "owner"})
+		result, e := r.callAs("create_host", struct{}{}, identity.Caller{UserID: "owner"})
 		if e != nil || result.IsError() {
 			t.Fatal(result, e)
 		}
@@ -736,7 +681,7 @@ func TestRunRandomAndTime(t *testing.T) {
 					id = event.RequestID
 				}
 			}
-			if event.Name == "change.finished" && event.Attrs["group"] == "beta" {
+			if event.Name == "change.finished" && event.Attrs["host"] == "host01" {
 				change = event.RequestID
 			}
 		}
@@ -751,11 +696,11 @@ func TestRunRandomAndTime(t *testing.T) {
 	random := &integrationRandom{}
 	r := startIntegration(t, integrationOptions{random: random})
 	var wg sync.WaitGroup
-	for i := range 24 {
+	for range 24 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			result, e := r.callAs("create_group", map[string]any{"group": fmt.Sprintf("team%d", i)}, identity.Caller{UserID: "owner"})
+			result, e := r.callAs("create_host", struct{}{}, identity.Caller{UserID: "owner"})
 			if e != nil || result.IsError() {
 				t.Error(result, e)
 			}
@@ -768,7 +713,7 @@ func TestRunRandomAndTime(t *testing.T) {
 	}
 }
 
-// R-7XHX-UQ7T R-R7H1-ZMHN
+// R-R7H1-ZMHN
 func TestRunServices(t *testing.T) {
 	for _, mode := range []string{"unset", "empty", "missing", "invalid", "no_entries"} {
 		path := ""
@@ -783,13 +728,9 @@ func TestRunServices(t *testing.T) {
 		if mode == "no_entries" {
 			integrationServices(t, path, map[string]string{}, "")
 		}
-		command, _ := integrationStub(t, "", "", "")
-		if e := os.WriteFile(filepath.Join(filepath.Dir(command), "groups"), []byte(`{"groups":[]}`), 0600); e != nil {
-			t.Fatal(e)
-		}
-		r := startIntegration(t, integrationOptions{path: path, env: map[string]string{"ACCOUNTS_HOST_COMMAND": command}})
-		r.call("groups", struct{}{}, nil)
-		code, _, _ := r.request("GET", "/", "owner", "landing", nil)
+		r := startIntegration(t, integrationOptions{path: path})
+		r.call("hosts", struct{}{}, nil)
+		code, _, _ := r.request("GET", "/", "owner", "landing")
 		if code != 200 {
 			t.Fatal(code)
 		}
@@ -799,198 +740,127 @@ func TestRunServices(t *testing.T) {
 	integrationServices(t, path, map[string]string{"auth": ""}, "https://auth.one.test")
 	r := startIntegration(t, integrationOptions{path: path})
 	integrationServices(t, path, map[string]string{"auth": ""}, "https://auth.two.test")
-	code, h, _ := r.request("GET", "/", "", "guest", nil)
+	code, h, _ := r.request("GET", "/", "", "guest")
 	if code != 302 || !strings.HasPrefix(h.Get("Location"), "https://auth.two.test/") {
 		t.Fatal(code, h)
 	}
 	r.stop()
 }
 
-func changingCalls(key string) []struct {
+type catalogCall struct {
 	name string
 	args map[string]any
-} {
-	return []struct {
-		name string
-		args map[string]any
-	}{
-		{"create_group", map[string]any{"group": "acme"}}, {"remove_group", map[string]any{"group": "acme"}},
-		{"add_user", map[string]any{"user": "alice", "group": "acme", "key": key}}, {"add_key", map[string]any{"user": "alice", "key": key}}, {"remove_key", map[string]any{"user": "alice", "key": key}},
-		{"add_member", map[string]any{"user": "alice", "group": "acme"}}, {"remove_member", map[string]any{"user": "alice", "group": "acme"}}, {"lock_user", map[string]any{"user": "alice"}}, {"unlock_user", map[string]any{"user": "alice"}}, {"delete_user", map[string]any{"user": "alice"}},
+}
+
+func changeCalls(key string) []catalogCall {
+	host := map[string]any{"host": "host01"}
+	account := map[string]any{"account": "acme"}
+	user := map[string]any{"account": "acme", "user": "alice"}
+	userKey := map[string]any{"account": "acme", "user": "alice", "key": key}
+	return []catalogCall{
+		{"create_host", map[string]any{}}, {"create_account", map[string]any{"host": "host01", "account": "acme"}},
+		{"add_user", userKey}, {"add_key", userKey}, {"remove_key", userKey}, {"lock_user", user}, {"unlock_user", user}, {"delete_user", user},
+		{"remove_account", account}, {"stop_host", host}, {"start_host", host}, {"resize_host", map[string]any{"host": "host01", "data_gb": 60}},
+		{"retry_host", host}, {"delete_host", host},
+	}
+}
+func readCalls() []catalogCall {
+	return []catalogCall{
+		{"hosts", map[string]any{}}, {"host", map[string]any{"host": "host01"}}, {"accounts", map[string]any{}},
+		{"account", map[string]any{"account": "acme"}}, {"users", map[string]any{}},
 	}
 }
 
-// R-A00T-J3O6 R-5ESL-LDPF R-AG0K-V54M R-AH8H-8WVB R-A4WF-26MY R-AIGD-MOM0 R-AJOA-0GCP
-func TestRunTrailAndSecrecy(t *testing.T) {
-	markers := []string{"GHIJKLMNGHIJKLMNGHIJKLMN", "OPQRSTUVOPQRSTUVOPQRSTUV", "WXYZ1234WXYZ1234WXYZ1234"}
-	encoded := strings.Split(validKey(), " ")[1]
-	encoded = encoded[:28] + markers[0] + encoded[52:]
-	key := "ssh-ed25519 " + encoded + " " + markers[2]
-	blob, e := base64.StdEncoding.DecodeString(encoded)
-	if e != nil || len(blob) != 51 || !strings.Contains(base64.StdEncoding.EncodeToString(blob), markers[0]) {
-		t.Fatal("key fixture", e)
+// R-5ESL-LDPF R-EFVL-AWVL R-EH3H-OOMA R-HT7K-XT5A
+func TestRunTrail(t *testing.T) {
+	r := startIntegration(t, integrationOptions{})
+	type requestRecord struct {
+		method, path, user, tool string
+		status                   int
 	}
-	userDoc, bErr := json.Marshal(map[string]any{"users": []any{map[string]any{"name": "alice", "groups": []string{"acme"}, "keys": []string{key}, "state": host.StateActive, "last_sign_in": nil}}})
-	if bErr != nil {
-		t.Fatal(bErr)
-	}
-	command, _ := integrationStub(t, "", string(userDoc), host.DiagnosticPrefix+strings.Join(markers, " "))
-	r := startIntegration(t, integrationOptions{env: map[string]string{"ACCOUNTS_HOST_COMMAND": command}})
-	type expected struct {
-		tool, group, user, result, method, path string
-		status                                  int
-	}
-	calls := map[string]expected{}
-	requests := map[string]expected{}
-	reads := []struct {
-		name string
-		args map[string]any
-	}{{"groups", map[string]any{}}, {"group", map[string]any{"group": "acme"}}, {"users", map[string]any{}}}
-	for _, mode := range []struct {
-		status, result string
-		failure        bool
-	}{{"0", trail.ResultOK, false}, {"2", trail.ResultRefused, true}, {"4", trail.ResultRefused, true}, {"1", trail.ResultFailed, true}, {"3", trail.ResultFailed, true}} {
-		setStubMode(t, command, mode.status)
-		for _, call := range changingCalls(key) {
-			id := fmt.Sprintf("change-%s-%s", mode.status, call.name)
-			result, err := r.callAs(call.name, call.args, identity.Caller{UserID: "actor", Email: markers[1] + "@test.invalid", RequestID: id})
-			if err != nil || result.IsError() != mode.failure {
-				t.Fatal(call.name, mode, result, err)
-			}
-			want := expected{tool: call.name, result: mode.result, status: 200, method: "POST", path: "/mcp"}
-			want.group, _ = call.args["group"].(string)
-			want.user, _ = call.args["user"].(string)
-			calls[id] = want
-			requests[id] = want
+	requests := map[string]requestRecord{}
+	caller := identity.Caller{UserID: "actor", Email: "actor@fixture.test"}
+	for _, c := range append(changeCalls(validKey()), readCalls()...) {
+		caller.RequestID = c.name
+		if _, err := r.callAs(c.name, c.args, caller); err != nil {
+			t.Fatal(c.name, err)
 		}
-		for _, call := range reads {
-			id := "read-" + mode.status + call.name
-			result, err := r.callAs(call.name, call.args, identity.Caller{UserID: "actor", Email: markers[1] + "@test.invalid", RequestID: id})
-			if err != nil || result.IsError() {
-				t.Fatal(result, err)
-			}
-			requests[id] = expected{status: 200, method: "POST", path: "/mcp"}
-		}
+		requests[c.name] = requestRecord{"POST", "/mcp", caller.UserID, c.name, 200}
 	}
-	invalidID := "missing-key"
-	result, err := r.callAs("add_user", map[string]any{"user": "alice", "group": "acme"}, identity.Caller{UserID: "actor", Email: markers[1] + "@test.invalid", RequestID: invalidID})
-	if err != nil || !result.IsError() {
-		t.Fatal(result, err)
+	caller.RequestID = "invalid-args"
+	if result, err := r.callAs("add_user", map[string]any{"account": "acme", "user": "alice"}, caller); err != nil || !result.IsError() {
+		t.Fatal(err)
 	}
-	requests[invalidID] = expected{status: 200, method: "POST", path: "/mcp"}
-	_, err = r.callAs("not_a_tool", map[string]any{}, identity.Caller{UserID: "actor", Email: markers[1] + "@test.invalid", RequestID: "unknown-tool"})
-	if err == nil {
-		t.Fatal("unknown tool should fail")
-	}
+	requests[caller.RequestID] = requestRecord{"POST", "/mcp", caller.UserID, "", 200}
 	for _, user := range []string{"", "actor"} {
-		for _, path := range []string{"/", "/tools?x=1", "/about", "/nope"} {
+		for _, path := range []string{"/", "/hosts/host01", "/tools", "/about", "/accountsd", "/nope"} {
 			for _, method := range []string{"GET", "POST", "DELETE", "HEAD"} {
 				id := fmt.Sprintf("page-%d", len(requests))
-				code, _, _ := r.request(method, path, user, id, map[string]string{"X-User-Email": markers[1] + "@test.invalid"})
-				urlPath, _, _ := strings.Cut(path, "?")
-				requests[id] = expected{user: user, status: code, method: method, path: urlPath}
+				code, _, _ := r.request(method, path, user, id)
+				requests[id] = requestRecord{method, path, user, "", code}
 			}
 		}
 	}
-	if r.stop() != cli.ExitSuccess {
-		t.Fatal(r.err.String())
+	if r.stop() != cli.ExitSuccess || r.err.Len() != 0 || r.out.Len() != 0 {
+		t.Fatal(r.err.String(), r.out.String())
 	}
-	if r.out.Len() != 0 || r.err.Len() != 0 {
-		t.Fatal(r.out.String(), r.err.String())
-	}
-	events := r.capture.Events()
-	allowed := map[string]bool{"service.started": true, "service.stopping": true, "request.started": true, "request.finished": true, "tool.called": true, "change.finished": true}
-	byID := map[string][]telemetry.Event{}
-	for _, event := range events {
-		if !allowed[event.Name] {
+	byRequest := map[string][]telemetry.Event{}
+	allowed := strings.Fields("service.started service.stopping request.started request.finished tool.called change.finished operation.started operation.finished host.changed account.changed host.silent host.synced host.apply_failed resource.unexplained")
+	for _, event := range r.capture.Events() {
+		if !slices.Contains(allowed, event.Name) {
 			t.Fatal(event)
 		}
-		if !event.Time.Equal(fixedTime) {
-			t.Fatal(event)
-		}
-		bytes, marshalErr := json.Marshal(event)
-		if marshalErr != nil {
-			t.Fatal(marshalErr)
-		}
-		for _, marker := range markers {
-			if strings.Contains(strings.ToLower(string(bytes)), strings.ToLower(marker)) {
-				t.Fatal("marker leaked", event.Name)
-			}
-		}
-		if event.RequestID != "" {
-			byID[event.RequestID] = append(byID[event.RequestID], event)
-		}
+		byRequest[event.RequestID] = append(byRequest[event.RequestID], event)
 	}
-	for _, event := range byID["unknown-tool"] {
-		if event.Name == "change.finished" {
-			t.Fatal("transport error recorded a change", event)
-		}
+	changes := map[string]bool{}
+	for _, c := range changeCalls(validKey()) {
+		changes[c.name] = true
 	}
-	for id, want := range requests {
-		got := byID[id]
-		if len(got) < 2 || got[0].Name != "request.started" || got[len(got)-1].Name != "request.finished" {
-			t.Fatal(id, got)
+	for id, request := range requests {
+		events := byRequest[id]
+		if len(events) < 2 {
+			t.Fatal(id, events)
 		}
-		user := "actor"
-		if strings.HasPrefix(id, "page-") {
-			user = want.user
+		first, last := events[0], events[len(events)-1]
+		if first.Name != "request.started" || last.Name != "request.finished" ||
+			!reflect.DeepEqual(first.Attrs, telemetry.Attrs{"method": request.method, "path": request.path}) ||
+			fmt.Sprint(last.Attrs["status"]) != fmt.Sprint(request.status) {
+			t.Fatal(id, events)
 		}
-		if !reflect.DeepEqual(got[0].Attrs, telemetry.Attrs{"method": want.method, "path": want.path}) {
-			t.Fatal(got[0])
-		}
-		starts, finishes, changes, toolAt, changeAt := 0, 0, 0, -1, -1
-		for i, event := range got {
-			if event.User != user || event.RequestID != id {
-				t.Fatal(event)
+		changeAt, toolAt := -1, -1
+		for i, event := range events {
+			if event.User != request.user || event.RequestID != id {
+				t.Fatal(id, event)
 			}
 			switch event.Name {
 			case "request.started":
-				starts++
+				if i != 0 {
+					t.Fatal(id, event)
+				}
 			case "request.finished":
-				finishes++
-				if fmt.Sprint(event.Attrs["status"]) != fmt.Sprint(want.status) {
-					t.Fatal(event, want)
+				if i != len(events)-1 {
+					t.Fatal(id, event)
 				}
 			case "tool.called":
 				toolAt = i
 			case "change.finished":
-				changes++
+				if changeAt != -1 || !changes[request.tool] || event.Attrs["tool"] != request.tool {
+					t.Fatal(id, events)
+				}
 				changeAt = i
-				if !reflect.DeepEqual(event.Attrs, telemetry.Attrs{"tool": want.tool, "group": want.group, "user": want.user, "result": want.result}) {
-					t.Fatal(event, want)
+			case "operation.started", "operation.finished", "host.changed", "account.changed":
+				if !changes[request.tool] {
+					t.Fatal(id, event)
 				}
 			}
 		}
-		if starts != 1 || finishes != 1 {
-			t.Fatal(id, starts, finishes)
+		if changes[request.tool] && (changeAt < 0 || toolAt <= changeAt) {
+			t.Fatal(id, events)
 		}
-		_, changing := calls[id]
-		if changing {
-			if changes != 1 || changeAt >= toolAt {
-				t.Fatal(id, got)
-			}
-		} else if changes != 0 {
-			t.Fatal(id, got)
-		}
-	}
-	missing := startIntegration(t, integrationOptions{env: map[string]string{"ACCOUNTS_HOST_COMMAND": filepath.Join(t.TempDir(), "absent")}})
-	missing.refuse("create_group", map[string]any{"group": "acme"}, tools.Failed)
-	missing.stop()
-	seen := false
-	for _, event := range missing.capture.Events() {
-		if event.Name == "change.finished" {
-			seen = true
-			if event.Attrs["result"] != trail.ResultFailed {
-				t.Fatal(event)
-			}
-		}
-	}
-	if !seen {
-		t.Fatal("failure event missing")
 	}
 }
 
-// R-CNEV-62QP
+// R-YD0E-Q2GU
 func TestRunNoSiblingConnections(t *testing.T) {
 	var accepted atomic.Int64
 	ln, e := net.Listen("unix", filepath.Join(integrationSocketDir(t), "trap"))
@@ -1031,30 +901,26 @@ func TestRunNoSiblingConnections(t *testing.T) {
 		t.Fatal("trap positive control", accepted.Load())
 	}
 	entries := map[string]string{}
-	for _, name := range []string{"auth", "telemetry", "mcp", "repos", "sites", "scripts", "events", "cron", "home", "webhooks", "prompts", "artifacts", "connections", "gdrive", "gmail", "scrapes", "candidates", "campaigns", "ledger", "dummy"} {
+	for _, name := range []string{"auth", "telemetry", "mcp", "repos", "sites", "scripts", "events", "cron", "home", "webhooks", "prompts", "artifacts", "connections", "gdrive", "gmail", "scrapes", "candidates", "campaigns", "ledger", "sessions", "dummy"} {
 		entries[name] = ln.Addr().String()
 	}
 	path := filepath.Join(t.TempDir(), "services")
 	integrationServices(t, path, entries, "")
-	command, _ := integrationStub(t, "", "", "")
-	r := startIntegration(t, integrationOptions{path: path, env: map[string]string{"ACCOUNTS_HOST_COMMAND": command}})
-	for _, call := range changingCalls(validKey()) {
-		r.call(call.name, call.args, nil)
-	}
-	r.call("groups", struct{}{}, nil)
-	r.call("group", map[string]any{"group": "acme"}, nil)
-	r.call("users", struct{}{}, nil)
-	for _, path := range []string{"/", "/tools", "/about"} {
-		code, _, _ := r.request("GET", path, "owner", "page"+path, nil)
-		if code != 200 {
-			t.Fatal(path, code)
+	r := startIntegration(t, integrationOptions{path: path})
+	for _, call := range append(changeCalls(validKey()), readCalls()...) {
+		_, err := r.callAs(call.name, call.args, identity.Caller{UserID: "viewer"})
+		if err != nil {
+			t.Fatal(call.name, err)
 		}
+	}
+	for _, path := range []string{"/", "/tools", "/about", "/hosts/host01", "/accountsd"} {
+		r.request("GET", path, "owner", "page"+path)
 	}
 	if code := r.stop(); code != cli.ExitSuccess {
 		t.Fatal(code, r.err.String())
 	}
 	events := r.capture.Events()
-	assertLifecycle(t, events, runVersion)
+	assertLifecycle(t, events)
 	seen := map[string]bool{}
 	for _, event := range events {
 		seen[event.Name] = true
@@ -1074,14 +940,14 @@ func TestRunNoSiblingConnections(t *testing.T) {
 func TestRunNoNotification(t *testing.T) {
 	for _, unset := range []bool{false, true} {
 		r := startIntegration(t, integrationOptions{noNotify: !unset, unsetNotify: unset})
-		r.call("groups", struct{}{}, nil)
+		r.call("hosts", struct{}{}, nil)
 		if r.stop() != cli.ExitSuccess {
 			t.Fatal(r.err.String())
 		}
 	}
 }
 
-// R-UWQ1-IVO9 R-UXXX-WNEY R-EJOM-URNY
+// R-UWQ1-IVO9
 func TestRunDrainDeadline(t *testing.T) {
 	entered, release, canceled := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	r := startIntegration(t, integrationOptions{env: map[string]string{"DRAIN_SECONDS": "1"}, mcp: func(w *telemetry.Writer) *mcp.Server {
@@ -1158,7 +1024,7 @@ func TestRunBlockedSinkStopsAtDeadline(t *testing.T) {
 		close(sink.release)
 		t.Fatal("sink not entered")
 	}
-	r.call("create_group", map[string]any{"group": "acme"}, nil)
+	r.call("create_host", struct{}{}, nil)
 	before := time.Now()
 	code := r.stop()
 	if code != cli.ExitSuccess || time.Since(before) > 3*time.Second {
@@ -1179,7 +1045,6 @@ func (failedListener) Accept() (net.Conn, error) { return nil, errors.New("liste
 func (failedListener) Close() error              { return nil }
 func (failedListener) Addr() net.Addr            { return &net.UnixAddr{Name: "fixture", Net: "unix"} }
 
-// R-AESO-HDDX
 func TestRunFatalAccept(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	var out, errout writes
@@ -1204,7 +1069,7 @@ func TestRunFatalAccept(t *testing.T) {
 	}
 }
 
-// R-CDNO-3WT5
+// R-Y6WW-T7RD
 func TestRunDefaultSocketSink(t *testing.T) {
 	var mu sync.Mutex
 	var events []string
@@ -1223,7 +1088,7 @@ func TestRunDefaultSocketSink(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "services")
 	integrationServices(t, path, map[string]string{"telemetry": socket}, "")
 	r := startIntegration(t, integrationOptions{path: path, nilSinks: true, nilUnset: true})
-	r.call("create_group", map[string]any{"group": "acme"}, nil)
+	r.call("create_host", struct{}{}, nil)
 	if r.stop() != cli.ExitSuccess {
 		t.Fatal(r.err.String())
 	}
@@ -1234,90 +1099,13 @@ func TestRunDefaultSocketSink(t *testing.T) {
 	}
 }
 
-// R-UXXX-WNEY
-func TestRunDrainCancelsHostCommand(t *testing.T) {
-	dir := t.TempDir()
-	enteredPath := filepath.Join(dir, "entered")
-	releasePath := filepath.Join(dir, "release")
-	for _, path := range []string{enteredPath, releasePath} {
-		if e := syscall.Mkfifo(path, 0600); e != nil {
-			t.Fatal(e)
-		}
-	}
-	entered, e := os.OpenFile(filepath.Clean(enteredPath), os.O_RDWR, 0600)
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer func() { _ = entered.Close() }()
-	release, e := os.OpenFile(filepath.Clean(releasePath), os.O_RDWR, 0600)
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer func() { _ = release.Close() }()
-	command := filepath.Join(dir, "host")
-	script := "#!/bin/sh\nprintf x > '" + enteredPath + "'\nIFS= read -r line < '" + releasePath + "'\n"
-	if e = writeExecutable(command, []byte(script)); e != nil {
-		t.Fatal(e)
-	}
-	r := startIntegration(t, integrationOptions{env: map[string]string{"DRAIN_SECONDS": "1", "ACCOUNTS_HOST_COMMAND": command}})
-	completed := make(chan struct{})
-	go func() {
-		defer close(completed)
-		_, _ = r.callAs("create_group", map[string]any{"group": "acme"}, identity.Caller{UserID: "owner", RequestID: "blocked-host"})
-	}()
-	received := make(chan error, 1)
-	go func() { var b [1]byte; _, err := entered.Read(b[:]); received <- err }()
-	select {
-	case err := <-received:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("host not entered")
-	}
-	start := time.Now()
-	if code := r.stop(); code != cli.ExitServerFailed || time.Since(start) > 3*time.Second {
-		t.Error(code, time.Since(start))
-	}
-	want := "accounts: " + (&server.DrainError{Unfinished: 1}).Error() + "\n"
-	before := r.err.String()
-	if !strings.HasSuffix(before, want) {
-		t.Error(before)
-	}
-	// The request must end without releasing the stub's blocking read.
-	select {
-	case <-completed:
-	case <-time.After(2 * time.Second):
-		t.Error("host command survived request cancellation")
-	}
-	_, _ = release.Write([]byte("released\n"))
-	r.writer.Emit(context.Background(), "change.finished", telemetry.Attrs{})
-	if r.err.String() != before || r.out.Len() != 0 {
-		t.Fatal("late output", r.err.String())
-	}
-}
-
-func writeExecutable(path string, data []byte) error {
-	root, err := os.OpenRoot(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer func() { _ = root.Close() }()
-	name := filepath.Base(path)
-	if err = root.WriteFile(name, data, 0600); err != nil {
-		return err
-	}
-	return root.Chmod(name, 0700)
-}
-
-// R-C9ZY-YLL2
 func TestRunInjectedBanner(t *testing.T) {
 	const chosen = "test-owned-banner"
 	banner := func(u page.User) page.Banner {
 		return page.Banner{Service: chosen, Release: chosen, Commit: chosen, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 	}
 	r := startIntegration(t, integrationOptions{banner: banner})
-	code, _, body := r.request("GET", "/about", "owner", "about-injection", nil)
+	code, _, body := r.request("GET", "/about", "owner", "about-injection")
 	req := httptest.NewRequest("GET", r.base+"/about", nil)
 	req.Host = "accounts.test"
 	req.Header.Set("X-Forwarded-Proto", "https")
@@ -1328,7 +1116,7 @@ func TestRunInjectedBanner(t *testing.T) {
 	b := banner(page.User{Email: "mgreenly+fake01@gmail.com", ProfileURL: pages.Auth(req, "") + "/", LogoutURL: pages.Auth(req, "") + "/logout"})
 	b.Trail = []page.Level{pages.AboutLevel}
 	want := httptest.NewRecorder()
-	set.Write(want, req, 200, "about", pages.AboutData{Banner: b, Description: pages.Description})
+	set.Write(want, req, 200, "about", pages.AboutData{Banner: b, Description: pages.Description, DefaultType: valid.DefaultType, DefaultRootGB: valid.DefaultRootGB, DefaultDataGB: valid.DefaultDataGB})
 	if code != 200 || body != want.Body.String() {
 		t.Fatal("injected banner did not reach rendered page")
 	}
