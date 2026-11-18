@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -73,9 +75,25 @@ func (w *capture) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+const commandPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+
+func resolveCommand(name, path string) (string, error) {
+	if strings.ContainsRune(name, '/') {
+		return name, nil
+	}
+	for dir := range strings.SplitSeq(path, ":") {
+		candidate := filepath.Join(dir, name)
+		info, err := os.Stat(candidate)
+		if err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
+			return candidate, nil
+		}
+	}
+	return "", &exec.Error{Name: name, Err: exec.ErrNotFound}
+}
+
 // Exec runs a command without a shell, bounding any output retained in memory.
 func Exec(ctx context.Context, c Command) (Result, error) {
-	program, err := exec.LookPath(c.Name)
+	program, err := resolveCommand(c.Name, commandPath)
 	if err != nil {
 		return Result{}, err
 	}
@@ -89,6 +107,7 @@ func Exec(ctx context.Context, c Command) (Result, error) {
 	}
 	cmd := &exec.Cmd{
 		Path: program, Args: append([]string{c.Name}, c.Args...),
+		Env:   append(os.Environ(), "PATH="+commandPath),
 		Stdin: c.Stdin, Stdout: out, Stderr: &stderr, WaitDelay: time.Second,
 	}
 	if err := cmd.Start(); err != nil {

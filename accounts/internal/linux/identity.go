@@ -109,10 +109,14 @@ func (h *Host) locks(ctx context.Context, s protocol.DesiredState) error {
 	}); err != nil {
 		return err
 	}
-	var users []string
-	if err := h.passwd(func(name string, _, _ int64, _ string) {
+	type login struct {
+		name string
+		uid  int64
+	}
+	var users []login
+	if err := h.passwd(func(name string, uid, _ int64, _ string) {
 		if _, found := targets[name]; found {
-			users = append(users, name)
+			users = append(users, login{name: name, uid: uid})
 		}
 	}); err != nil {
 		return err
@@ -125,26 +129,36 @@ func (h *Host) locks(ctx context.Context, s protocol.DesiredState) error {
 	}); err != nil {
 		return err
 	}
-	for _, name := range users {
-		if ended, exists := expired[name]; exists && !ended {
-			if _, err := h.run(ctx, "usermod", "--expiredate", "1", name); err != nil {
+	for _, user := range users {
+		ended, hasShadow := expired[user.name]
+		if hasShadow && !ended {
+			if _, err := h.run(ctx, "usermod", "--expiredate", "1", user.name); err != nil {
 				return err
 			}
 		}
 		if err := h.unitFiles(func(unit string) error {
-			if !isPersonSlice(unit, name) {
+			if !isPersonSlice(unit, user.name) {
 				return nil
 			}
-			res, err := h.query(ctx, Command{Name: "systemctl", Args: []string{"is-active", unit}})
-			if err == nil && res.ExitCode == 0 {
-				_, err = h.run(ctx, "systemctl", "stop", unit)
-			}
-			return err
+			return h.stopActiveSlice(ctx, unit)
 		}); err != nil {
 			return err
 		}
+		if hasShadow {
+			if err := h.stopActiveSlice(ctx, "user-"+strconv.FormatInt(user.uid, 10)+".slice"); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
+}
+
+func (h *Host) stopActiveSlice(ctx context.Context, unit string) error {
+	active, err := h.unitStatus(ctx, "is-active", unit)
+	if err == nil && active {
+		_, err = h.run(ctx, "systemctl", "stop", unit)
+	}
+	return err
 }
 
 type identity struct {

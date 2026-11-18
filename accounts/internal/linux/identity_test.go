@@ -59,12 +59,14 @@ func fixtureKey(comment string) string {
 }
 
 func TestApplyLockBeforeAnyHardeningFailure(t *testing.T) {
-	// R-BV89-YUHN R-KXYD-8O0O
+	// R-BV89-YUHN R-KXYD-8O0O R-AXUQ-0YCB
 	f := newHardeningFixture(t)
-	const locked = "shell:x:990:alice,bob,zoe\n"
+	const locked = "shell:x:990:alice,bob,zoe,wren,sam\n"
 	f.put("/etc/group", locked, 0o644)
-	f.put("/etc/passwd", "alice:x:20001:20001::/home/alice:/bin/bash\nbob:x:20002:20002::/home/bob:/bin/bash\nzoe:x:20003:20003::/home/zoe:/bin/bash\n", 0o644)
-	f.put("/etc/shadow", "alice:!:1::::::\nbob:!:1:::::1:\nzoe:!:1::::::\n", 0o600)
+	f.put("/etc/passwd", "alice:x:20006:20001::/home/alice:/bin/bash\nbob:x:20002:20002::/home/bob:/bin/bash\n"+
+		"zoe:x:20003:20003::/home/zoe:/bin/bash\nwren:x:20004:20004::/home/wren:/bin/bash\n"+
+		"sam:x:20005:20005::/home/sam:/bin/bash\nforeign:x:20008:20008::/home/foreign:/bin/bash\n", 0o644)
+	f.put("/etc/shadow", "alice:!:1::::::\nbob:!:1:::::1:\nzoe:!:1::::::\nwren:!:1:::::1:\nsam:!:1:::::1:\nforeign:!:1:::::1:\n", 0o600)
 	const unitDir = "/etc/systemd/system/"
 	alice, bob, zoe := linux.PersonSlice("co-op", "alice"), linux.PersonSlice("co-op", "bob"), linux.PersonSlice("co-op", "zoe")
 	for _, unit := range []string{alice, bob, zoe} {
@@ -74,10 +76,12 @@ func TestApplyLockBeforeAnyHardeningFailure(t *testing.T) {
 	f.put(linux.KeysDir+"/zoe", "old keys", 0o644)
 	f.put("/home/zoe/keep", "old home", 0o640)
 	f.answer = func(call string) (linux.Result, bool) {
-		if call == "systemctl is-active "+bob {
+		switch call {
+		case "systemctl is-active " + bob:
 			return linux.Result{ExitCode: 3}, true
-		}
-		if call == "rpm -q nftables" {
+		case "systemctl is-active user-20004.slice":
+			return linux.Result{ExitCode: 11}, true
+		case "rpm -q nftables":
 			return linux.Result{ExitCode: 7}, true
 		}
 		return linux.Result{}, false
@@ -87,12 +91,35 @@ func TestApplyLockBeforeAnyHardeningFailure(t *testing.T) {
 		Users: []protocol.User{
 			{Name: "alice", Account: "co-op", UID: 20001, State: protocol.UserLocked},
 			{Name: "bob", Account: "co-op", UID: 20002, State: protocol.UserDeleted},
+			{Name: "sam", Account: "co-op", UID: 20005, State: protocol.UserActive},
+			{Name: "tess", Account: "co-op", UID: 20007, State: protocol.UserLocked},
 		},
 	}, "rpm -q nftables", "rpm")
-	f.expectCalls("usermod --expiredate 1 alice", "systemctl is-active "+alice, "systemctl stop "+alice,
-		"systemctl is-active "+bob, "usermod --expiredate 1 zoe", "systemctl is-active "+zoe, "systemctl stop "+zoe, "rpm -q nftables")
+	f.expectCalls(
+		"usermod --expiredate 1 alice", "systemctl is-active "+alice, "systemctl stop "+alice,
+		"systemctl is-active user-20006.slice", "systemctl stop user-20006.slice",
+		"systemctl is-active "+bob, "systemctl is-active user-20002.slice", "systemctl stop user-20002.slice",
+		"usermod --expiredate 1 zoe", "systemctl is-active "+zoe, "systemctl stop "+zoe,
+		"systemctl is-active user-20003.slice", "systemctl stop user-20003.slice",
+		"systemctl is-active user-20004.slice",
+		"rpm -q nftables",
+	)
 	f.expectFile(linux.KeysDir+"/zoe", "old keys", 0o644)
 	f.expectFile("/home/zoe/keep", "old home", 0o640)
+}
+
+func TestApplyAbortsWhenStoppingUserSliceFails(t *testing.T) {
+	// R-AXUQ-0YCB R-BV89-YUHN
+	f := newHardeningFixture(t)
+	f.put("/etc/group", "shell:x:990:alice,bob\n", 0o644)
+	f.put("/etc/passwd", "alice:x:20001:20001::/home/alice:/bin/bash\nbob:x:20002:20002::/home/bob:/bin/bash\n", 0o644)
+	f.put("/etc/shadow", "alice:!:1:::::1:\nbob:!:1::::::\n", 0o600)
+	const stop = "systemctl stop user-20001.slice"
+	f.answer = func(call string) (linux.Result, bool) {
+		return linux.Result{ExitCode: 7}, call == stop
+	}
+	f.applyFails(protocol.DesiredState{}, stop, "systemctl stop")
+	f.expectCalls("systemctl is-active user-20001.slice", stop)
 }
 
 func TestApplyAccountsAndUsers(t *testing.T) {
@@ -323,7 +350,10 @@ func TestApplyLocksBeforeRefusingConflictingUserIdentity(t *testing.T) {
 			if !errors.Is(err, machine.ErrIdentity) {
 				t.Fatalf("conflicting identity Apply = %v, want ErrIdentity", err)
 			}
-			want := []string{"usermod --expiredate 1 alice", "systemctl is-active " + unit, "systemctl stop " + unit, "rpm -q nftables"}
+			uid := strings.Split(tc.passwd, ":")[2]
+			userSlice := "user-" + uid + ".slice"
+			want := []string{"usermod --expiredate 1 alice", "systemctl is-active " + unit, "systemctl stop " + unit,
+				"systemctl is-active " + userSlice, "systemctl stop " + userSlice, "rpm -q nftables"}
 			if len(f.commands) < len(want) || !slices.Equal(f.commands[:len(want)], want) {
 				t.Fatalf("identity conflict did not allow the lockdown first: %v", f.commands)
 			}

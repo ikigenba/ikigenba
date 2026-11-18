@@ -99,6 +99,45 @@ exit 19
 	}
 }
 
+func TestExecUsesFixedPath(t *testing.T) {
+	// R-AWMT-N6LM
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	name := "accountsd-path-probe-" + filepath.Base(filepath.Dir(dir))
+	script := filepath.Join(dir, name)
+	marker := filepath.Join(dir, "caller-path-stub-ran")
+	const body = `#!/bin/sh
+if [ "$#" -ne 0 ]; then
+  printf 'called\n' > "$1"
+fi
+printf '%s\n' "$PATH"
+`
+	if err := root.WriteFile(name, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Chmod(name, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const want = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin\n"
+	for _, callerPath := range []string{dir, ""} {
+		t.Setenv("PATH", callerPath)
+		if got, err := linux.Exec(t.Context(), linux.Command{Name: name, Args: []string{marker}}); err == nil {
+			t.Fatalf("Exec found %q with caller PATH %q: %+v", name, callerPath, got)
+		}
+		if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("caller PATH stub marker was not absent: %v", err)
+		}
+		got, err := linux.Exec(t.Context(), linux.Command{Name: script})
+		if err != nil || got.ExitCode != 0 || string(got.Stdout) != want {
+			t.Fatalf("Exec with caller PATH %q returned PATH %q, status %d, error %v", callerPath, got.Stdout, got.ExitCode, err)
+		}
+	}
+}
+
 type endlessBytes struct{ read int }
 
 func (b *endlessBytes) Read(p []byte) (int, error) {
