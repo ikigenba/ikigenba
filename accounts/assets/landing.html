@@ -14,7 +14,7 @@
      notice that the space operates no hosts; .Domain (string, the hosts
      domain the configuration names, "metaspot.org"; read only when
      .Configured).
-     .Hosts (a slice, one window of up to 25 hosts, sorted by name), each
+     .Hosts (a slice, one window of up to 25 hosts, in creation order by seq), each
      with .Name (string, "host01", "host02", ...), .State (string, as
      stored: "provisioning", "running", "stopping", "stopped", "starting",
      "resizing", "deleting" or "failed"), .Reason (string, why the last
