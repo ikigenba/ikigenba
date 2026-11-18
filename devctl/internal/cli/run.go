@@ -27,7 +27,7 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/spacereplace"
 )
 
-var version = "v0.12.0"
+var version = "v0.13.0"
 
 const usage = `Usage: devctl [options] <command> [arguments]
 
