@@ -32,9 +32,9 @@ The steps, in order, and what each reports on success:
 | `service` | `auth c604e32 active`, one line per app | restarts the app, or starts it if inactive, and waits for it to be `active`; a disabled app is not started and reads `disabled` |
 | `retention` | `removed 1 release`, or `nothing removed` | removes every folder in `releases/` named by a full sha that neither link names; ignores every entry whose name begins with `.`, such as devctl's `.unpack.XXXXXXXXXX`, and leaves any other entry |
 
-The `release`, `layout`, `manifests`, `secrets` and `resources` steps write nothing on the host but the release folder's own ownership and modes. The `service` lines run core apps (manifest `slice = "core"`) first, then the rest, in name order within each. On a released host each app's units are `/etc/systemd/system/ikigenba-<app>.socket`, listening at `/run/ikigenba/<app>.sock` as `S07-apps.md` describes it, and `/etc/systemd/system/ikigenba-<app>.service`, running `/opt/ikigenba/current/<app>/bin/<app>` with working directory `/var/opt/ikigenba/<app>`, environment file `/etc/opt/ikigenba/<app>/env`, a runtime directory `/run/ikigenba/<app>/` and a private `/tmp`, and everything else (slice, resources, stop timeout, user) as `S07-apps.md` describes it. Its environment file holds each secret, the manifest's `[env]` and `DRAIN_SECONDS`, with `IKIGENBA_SERVICES=/run/ikigenba/services.json`, `IKIGENBA_COMMIT=<full sha>`, and `IKIGENBA_RELEASE=<label>` only when current's release has a label. `ikigenba-services.service` is a oneshot that runs `/usr/local/bin/opsctl services apply` at boot, ordered before every app's service (`S09-services.md`). Since the units name `current` rather than a release, moving the link is what changes the binary each app runs; the restart is what makes it run.
+The `release`, `layout`, `manifests`, `secrets` and `resources` steps write nothing on the host but the release folder's own ownership and modes. The `service` lines run core apps (manifest `slice = "core"`) first, then the rest, in name order within each. On a released host each app's units are `/etc/systemd/system/ikigenba-<app>.socket`, listening at `/run/ikigenba/<app>.sock` as `S07-apps.md` describes it, and `/etc/systemd/system/ikigenba-<app>.service`, running `/opt/ikigenba/current/<app>/bin/<app>` with working directory `/var/opt/ikigenba/<app>`, environment file `/etc/opt/ikigenba/<app>/env`, a runtime directory `/run/ikigenba/<app>/` and a private `/tmp`, and everything else (slice, resources, stop timeout, user) as `S07-apps.md` describes it. Its environment file holds each secret, the manifest's `[env]` and `DRAIN_SECONDS`, with `IKIGENBA_SERVICES=/run/ikigenba/services.json`, `IKIGENBA_COMMIT=<full sha>`, and `IKIGENBA_RELEASE=<label>` only when current's release has a label, then `AWS_REGION=<aws.region>`, `IKIGENBA_HOSTS_DOMAIN=<hosts.domain>`, `IKIGENBA_HOSTS_ZONE_ID=<hosts.zone_id>`, `IKIGENBA_HOSTS_LAUNCH_TEMPLATE=<hosts.launch_template>` and `IKIGENBA_HOSTS_INSTANCE_PROFILE=<hosts.instance_profile>`, in that order, each only when its configuration key is set and not empty, its value written as the store holds it. Every app gets the same five lines; opsctl makes no AWS call for the `hosts.*` keys, judges none of their values, and refuses nothing over them, so a host with only some of them set gives every app just those. A manifest whose `secrets` or `[env]` names `AWS_REGION` or one of the four `IKIGENBA_HOSTS_*` variables is not valid, as one naming `DRAIN_SECONDS` is not. `ikigenba-services.service` is a oneshot that runs `/usr/local/bin/opsctl services apply` at boot, ordered before every app's service (`S09-services.md`). Since the units name `current` rather than a release, moving the link is what changes the binary each app runs; the restart is what makes it run.
 
-The stories use the example host `sbx.ikigenba.dev` and three releases: `c604e32` (`c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, label `r142`), `1a2b3c4` (`1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d`, label `r141`) and `9f8e7d6` (`9f8e7d6c5b4a39281706f5e4d3c2b1a098765432`). Each release holds the suite's eight apps, `auth`, `telemetry`, `mcp`, `repos`, `sites`, `scripts`, `events` and `dummy`, with the manifests the suite ships: `auth` and `telemetry` are core apps; `auth` lists two secrets and no other app lists any; every app but `mcp` declares a database. Each release also carries `turns/`. Unless a story says otherwise, every app is enabled, `/<host.name>/auth` holds both of `auth`'s secrets, and `host.name`, `aws.region` and `backup.s3_uri` are set.
+The stories use the example host `sbx.ikigenba.dev` and three releases: `c604e32` (`c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, label `r142`), `1a2b3c4` (`1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d`, label `r141`) and `9f8e7d6` (`9f8e7d6c5b4a39281706f5e4d3c2b1a098765432`). Each release holds the suite's eight apps, `auth`, `telemetry`, `mcp`, `repos`, `sites`, `scripts`, `events` and `dummy`, with the manifests the suite ships: `auth` and `telemetry` are core apps; `auth` lists two secrets and no other app lists any; every app but `mcp` declares a database. Each release also carries `turns/`. Unless a story says otherwise, every app is enabled, `/<host.name>/auth` holds both of `auth`'s secrets, `host.name`, `aws.region` (`us-east-2`) and `backup.s3_uri` are set, and no `hosts.*` key is.
 
 ## An operator asks what `activate` can do
 
@@ -81,12 +81,16 @@ Activating the release current already names redoes everything but moving
 current and previous.
 
 Configuration keys:
-  aws.region          the region this host's parameters live in
-  host.name           the fully-qualified name this host answers at
-  host.apex           the app that answers at the parent of host.name; unset means none
-  backup.s3_uri       the prefix the cutover's snapshots are written under
-  apps.drain_seconds  how long an app may drain when stopped (default 5)
-  apps.stop_seconds   how long systemd waits for an app to stop (default 10)
+  aws.region              the region this host's parameters live in; passed to every app as AWS_REGION
+  host.name               the fully-qualified name this host answers at
+  host.apex               the app that answers at the parent of host.name; unset means none
+  backup.s3_uri           the prefix the cutover's snapshots are written under
+  apps.drain_seconds      how long an app may drain when stopped (default 5)
+  apps.stop_seconds       how long systemd waits for an app to stop (default 10)
+  hosts.domain            the domain hosts are named under; passed to every app
+  hosts.zone_id           the hosted zone id of hosts.domain; passed to every app
+  hosts.launch_template   the launch template hosts are launched from; passed to every app
+  hosts.instance_profile  the instance profile hosts run with; passed to every app
 ```
 
 Exits 0. The text is on stdout; stderr is empty. It prints for any user.
@@ -152,7 +156,7 @@ Postconditions:
 - `/opt/ikigenba/current` names `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18` and `/opt/ikigenba/previous` names `releases/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d`. `previous` was moved before `current`. `/usr/local/bin/opsctl` was re-created as a link to `/opt/ikigenba/current/opsctl/bin/opsctl`, so `opsctl version` prints `r142 (c604e32)`.
 - `/usr/local/bin/turns` was re-created as a link to `/opt/ikigenba/current/turns/bin/turns`, and `/etc/systemd/user/turns.service` and `/etc/systemd/user/turns.timer` are `c604e32`'s `turns/share/systemd/` files.
 - `releases/9f8e7d6c5b4a39281706f5e4d3c2b1a098765432/` is gone; `releases/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d/` is untouched.
-- Every app's `/etc/opt/ikigenba/<app>/env` was written whole, owned `root:root` with mode `0600`, and holds each secret, the manifest's `[env]` and `DRAIN_SECONDS`, `IKIGENBA_SERVICES=/run/ikigenba/services.json`, `IKIGENBA_COMMIT=c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18` and `IKIGENBA_RELEASE=r142`.
+- Every app's `/etc/opt/ikigenba/<app>/env` was written whole, owned `root:root` with mode `0600`, and holds each secret, the manifest's `[env]` and `DRAIN_SECONDS`, `IKIGENBA_SERVICES=/run/ikigenba/services.json`, `IKIGENBA_COMMIT=c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, `IKIGENBA_RELEASE=r142` and `AWS_REGION=us-east-2`, and no `IKIGENBA_HOSTS_*` line.
 - Every app's two units are as the group describes and are enabled; `ikigenba-services.service` is written and enabled. systemd was reloaded.
 - `/etc/nginx/conf.d/ikigenba.conf` was regenerated from current, including each `/opt/ikigenba/current/<app>/etc/nginx.conf*`, and nginx reloaded. `/run/ikigenba/services.json` lists the eight apps, read from current, owned `root:ikigenba` with mode `0640`.
 - `/etc/litestream.yml` is byte for byte as it was, and `litestream.service` was not restarted.
@@ -207,6 +211,66 @@ Preconditions:
 Postconditions:
 
 - Everything the previous story's postconditions say, except: `releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/` holds no `label`, no app's environment file holds an `IKIGENBA_RELEASE` line, `opsctl version` prints `c604e32`, `status` shows `auth c604e32 - active active wal`, and no release was removed.
+
+## An agent activates a release on a space configured for hosts
+
+The four `hosts.*` keys are set, so the `env` step writes each of them into every app's environment file after `AWS_REGION`. opsctl only carries the values: it makes no AWS call for them and checks none of them, so the run reads exactly as on a host without them.
+
+Command:
+
+```
+$ sudo /opt/ikigenba/releases/c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18/opsctl/bin/opsctl activate c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18 r142
+```
+
+Output:
+
+```
+release: ok (c604e32, r142)
+layout: ok (releases)
+manifests: ok (8 apps)
+secrets: ok (2 keys)
+resources: ok (8 apps)
+hardening: ok (unchanged)
+label: ok (r142)
+env: ok (8 apps)
+units: ok (8 apps)
+links: ok (current c604e32, previous 1a2b3c4)
+systemd: ok (daemon-reload)
+nginx: ok (8 apps)
+services: ok (8 services)
+litestream: ok (unchanged)
+service: ok (auth c604e32 active)
+service: ok (telemetry c604e32 active)
+service: ok (dummy c604e32 active)
+service: ok (events c604e32 active)
+service: ok (mcp c604e32 active)
+service: ok (repos c604e32 active)
+service: ok (scripts c604e32 active)
+service: ok (sites c604e32 active)
+retention: ok (removed 1 release)
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- Everything the preconditions of "An agent activates a release on a host that runs releases" say.
+- `hosts.domain` is `metaspot.org`, `hosts.zone_id` is `Z0123456789ABCDEFGHIJ`, `hosts.launch_template` is `ikigenba-dev-hosts` and `hosts.instance_profile` is `ikigenba-dev-hosts`.
+
+Postconditions:
+
+- Everything the postconditions of "An agent activates a release on a host that runs releases" say, except that every app's environment file ends, after `IKIGENBA_RELEASE=r142`, with these lines, in this order:
+
+  ```
+  AWS_REGION=us-east-2
+  IKIGENBA_HOSTS_DOMAIN=metaspot.org
+  IKIGENBA_HOSTS_ZONE_ID=Z0123456789ABCDEFGHIJ
+  IKIGENBA_HOSTS_LAUNCH_TEMPLATE=ikigenba-dev-hosts
+  IKIGENBA_HOSTS_INSTANCE_PROFILE=ikigenba-dev-hosts
+  ```
+
+- opsctl made no AWS call for any `hosts.*` key.
+- Had only `hosts.domain` been set, every app's environment file would hold `IKIGENBA_HOSTS_DOMAIN=metaspot.org` and no other `IKIGENBA_HOSTS_*` line, and the run would read the same: opsctl refuses nothing over a partial set, and leaves it to the app that reads them to judge.
 
 ## An agent moves a host from the per-app layout to releases
 
@@ -995,11 +1059,15 @@ release rolled away from is removed, so there is nothing for a second
 rollback to go back to.
 
 Configuration keys:
-  aws.region          the region this host's parameters live in
-  host.name           the fully-qualified name this host answers at
-  host.apex           the app that answers at the parent of host.name; unset means none
-  apps.drain_seconds  how long an app may drain when stopped (default 5)
-  apps.stop_seconds   how long systemd waits for an app to stop (default 10)
+  aws.region              the region this host's parameters live in; passed to every app as AWS_REGION
+  host.name               the fully-qualified name this host answers at
+  host.apex               the app that answers at the parent of host.name; unset means none
+  apps.drain_seconds      how long an app may drain when stopped (default 5)
+  apps.stop_seconds       how long systemd waits for an app to stop (default 10)
+  hosts.domain            the domain hosts are named under; passed to every app
+  hosts.zone_id           the hosted zone id of hosts.domain; passed to every app
+  hosts.launch_template   the launch template hosts are launched from; passed to every app
+  hosts.instance_profile  the instance profile hosts run with; passed to every app
 ```
 
 Exits 0. The text is on stdout; stderr is empty. It prints for any user.

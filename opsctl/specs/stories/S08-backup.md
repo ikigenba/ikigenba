@@ -1625,8 +1625,9 @@ declares. Any other opsctl refuses to run there at all.
 
 The environment file, /etc/opt/ikigenba/SERVICE/env, is never backed up. The
 restore writes it as 'opsctl activate' does, from the parameter
-/<host.name>/SERVICE, the manifest, and the commit and label of the release
-it restores against, reading the parameter before anything is stopped.
+/<host.name>/SERVICE, the manifest, the configuration keys below, and the
+commit and label of the release it restores against, reading the parameter
+before anything is stopped.
 
 SERVICE's socket and service are stopped for the restore, socket first so no
 request starts the service again mid-restore, and started again after it; so
@@ -1655,12 +1656,16 @@ and reads neither the backups nor litestream's replica. It cannot be combined
 with --at.
 
 Configuration keys:
-  aws.region      the region the backup bucket lives in
+  aws.region      the region the backup bucket lives in; passed to the app as AWS_REGION
   backup.s3_uri   the prefix this host backs up to
   host.name       the fully-qualified name this host answers at
   apps.drain_seconds  how long the app may drain when stopped (default 5)
   backup.service_db_seconds  how often a declared database is snapshotted whole
   backup.service_wal_seconds  how often a declared database's committed changes are shipped
+  hosts.domain    the domain hosts are named under; passed to the app
+  hosts.zone_id   the hosted zone id of hosts.domain; passed to the app
+  hosts.launch_template  the launch template hosts are launched from; passed to the app
+  hosts.instance_profile  the instance profile hosts run with; passed to the app
 ```
 
 Exits 0. The text is on stdout; stderr is empty. It prints for any user.
@@ -1711,8 +1716,8 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- `aws.region` and `backup.s3_uri` are set, and the host's role can read
-  under that prefix.
+- `aws.region` is `us-east-2` and `backup.s3_uri` is set, and the host's
+  role can read under that prefix.
 - `<backup.s3_uri>crm/` holds at least one tarball and litestream has
   replicated `crm`'s database there.
 - `/opt/ikigenba/current` names the release
@@ -1734,8 +1739,10 @@ Postconditions:
   this host's parameter and the manifest in the current release: mode
   `0600`, every secret the manifest names, its `[env]`, `DRAIN_SECONDS`,
   `IKIGENBA_SERVICES=/run/ikigenba/services.json`,
-  `IKIGENBA_COMMIT=c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, and
-  `IKIGENBA_RELEASE=r142`. Had the current release no label, there would be
+  `IKIGENBA_COMMIT=c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`,
+  `IKIGENBA_RELEASE=r142`, `AWS_REGION=us-east-2`, and an
+  `IKIGENBA_HOSTS_*` line for each `hosts.*` key that is set, in the order
+  `S10-releases.md` gives. Had the current release no label, there would be
   no `IKIGENBA_RELEASE` line. The values are never printed.
 - Nothing under `/opt/ikigenba/` was written: the code and the manifest on
   the host are the release's business, not the restore's.
@@ -1869,8 +1876,10 @@ Postconditions:
 - `/var/opt/ikigenba/dashboard/state/` is exactly what the tarball holds, and
   is the whole of it. `/etc/opt/ikigenba/dashboard/env` is what `opsctl
   activate` would write: no secrets, the manifest's `[env]`,
-  `DRAIN_SECONDS`, `IKIGENBA_SERVICES`, `IKIGENBA_COMMIT`, and, when the
-  current release has a label, `IKIGENBA_RELEASE`. No litestream call was made, `/etc/litestream.yml` was
+  `DRAIN_SECONDS`, `IKIGENBA_SERVICES`, `IKIGENBA_COMMIT`,
+  `IKIGENBA_RELEASE` when the current release has a label, `AWS_REGION`, and an
+  `IKIGENBA_HOSTS_*` line for each `hosts.*` key that is set. No litestream
+  call was made, `/etc/litestream.yml` was
   not regenerated, and `litestream.service` was left running throughout, still
   replicating every other service's database.
 - `ikigenba-dashboard.socket` is listening and `ikigenba-dashboard.service`
@@ -2204,9 +2213,11 @@ Postconditions:
 - `/etc/opt/ikigenba/crm/env` is written as `activate` writes it for that
   release with no label: mode `0600`, every secret the manifest names, its
   `[env]`, `DRAIN_SECONDS`, `IKIGENBA_SERVICES=/run/ikigenba/services.json`,
-  and `IKIGENBA_COMMIT=c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, and no
-  `IKIGENBA_RELEASE` line. An `activate` of the release with a label writes
-  the file again with one.
+  `IKIGENBA_COMMIT=c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, no
+  `IKIGENBA_RELEASE` line, then `AWS_REGION` with `aws.region`'s value and an
+  `IKIGENBA_HOSTS_*` line for each `hosts.*` key that is set, as `activate`
+  writes them. An `activate` of the release with a label writes the file
+  again with one.
 - `/etc/litestream.yml` is generated from that release's manifests, and
   `litestream.service` is running again, replicating `crm.db`.
 - No app unit was written, started, or enabled; `/opt/ikigenba/current` and

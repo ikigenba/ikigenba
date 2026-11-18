@@ -15,7 +15,10 @@ One configuration key:
 | `host.name` | the fully-qualified name this host answers at, at or under a configured zone, e.g. `sbx.ikigenba.dev` |
 
 Its preflight and its `apps` step also read `apps.drain_seconds` and
-`apps.stop_seconds`, the two app timing keys `S07-apps.md` declares.
+`apps.stop_seconds`, the two app timing keys `S07-apps.md` declares. On a
+released host its `apps` step also reads `aws.region` and the four `hosts.*`
+keys `S07-apps.md` declares, which it passes to every app; the preflight
+checks none of the `hosts.*` keys and prints no line for them.
 
 A host answers at one name: the space's, one label under the root domain.
 The records a bootstrap created are `<host.name>` and `*.<host.name>`, and
@@ -199,10 +202,14 @@ sequence runs: to /opt/ikigenba/current/opsctl/bin/opsctl when that exists,
 otherwise to the running opsctl, so certbot's hooks find opsctl on PATH.
 
 Configuration keys:
-  aws.region          the region this host's parameters live in
-  host.name           the fully-qualified name this host answers at, at or under a configured zone
-  apps.drain_seconds  how long an app may drain when stopped (default 5)
-  apps.stop_seconds   how long systemd waits for an app to stop (default 10)
+  aws.region              the region this host's parameters live in; passed to every app as AWS_REGION
+  host.name               the fully-qualified name this host answers at, at or under a configured zone
+  apps.drain_seconds      how long an app may drain when stopped (default 5)
+  apps.stop_seconds       how long systemd waits for an app to stop (default 10)
+  hosts.domain            the domain hosts are named under; passed to every app
+  hosts.zone_id           the hosted zone id of hosts.domain; passed to every app
+  hosts.launch_template   the launch template hosts are launched from; passed to every app
+  hosts.instance_profile  the instance profile hosts run with; passed to every app
 ```
 
 Exits 0. The text is on stdout; stderr is empty. It prints for any user.
@@ -256,6 +263,7 @@ Preconditions:
   credentials can read the configured zone.
 - `apps.drain_seconds` and `apps.stop_seconds` are unset, so the defaults
   apply.
+- `aws.region` is `us-east-2`, and none of the four `hosts.*` keys is set.
 - Public DNS delegates the zone, and `sbx.ikigenba.dev` and
   `_opsctl-preflight.sbx.ikigenba.dev` resolve to the same address.
 - The host is a released host: `/opt/ikigenba/current` is a link to
@@ -279,8 +287,9 @@ Postconditions:
   writes (`S10-releases.md`): `/etc/opt/ikigenba/<app>/env` holds, besides its
   secrets and its manifest's `[env]`, `DRAIN_SECONDS=5`,
   `IKIGENBA_SERVICES=/run/ikigenba/services.json`,
-  `IKIGENBA_COMMIT=c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`, and
-  `IKIGENBA_RELEASE=r142`; its service unit runs
+  `IKIGENBA_COMMIT=c604e32a4b1f9d07e5c38a26b1d4f0e97a3c5b18`,
+  `IKIGENBA_RELEASE=r142`, and `AWS_REGION=us-east-2`, and no
+  `IKIGENBA_HOSTS_` line; its service unit runs
   `/opt/ikigenba/current/<app>/bin/<app>` in `/var/opt/ikigenba/<app>`, names
   that environment file, has a stop timeout of `10` seconds, and carries the
   resource settings the app's manifest in the current release declares, or their
@@ -346,7 +355,9 @@ Postconditions:
   `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json`, and its service unit
   names that file, a stop timeout of `10` seconds, and the resource settings
   its installed manifest declares, or their defaults (`S07-apps.md`). An app
-  that already held those values was not restarted.
+  that already held those values was not restarted. Every other line of the
+  file is as it was: `init` writes no `AWS_REGION` and no `IKIGENBA_HOSTS_`
+  line on a per-app host, whatever the store holds.
 - `/usr/local/bin/turns` and `/etc/systemd/user/` are as they were: there is
   no `current`, and the running opsctl belongs to no release.
 - Every setup command is idempotent, so a host that was already set up is
@@ -649,6 +660,162 @@ Postconditions:
   or `/opt/gmail/` was created, and no unit was written for it.
 - Running `init` again writes the same values, restarts no app, and prints
   the same lines.
+
+## An operator turns on hosts on a space
+
+The four `hosts.*` keys are store inputs like the timing keys, so naming the
+space's hosts is `config set` followed by `init`. The `apps` step writes them
+into every app of the current release, each under its variable
+(`S07-apps.md`), and restarts only the apps whose environment changed. opsctl
+passes the values on and judges none of them: it looks nothing up in AWS for
+them, and the preflight prints no line for them, so the output is the ready
+host's.
+
+Command:
+
+```
+$ sudo opsctl config set hosts.domain=metaspot.org
+$ sudo opsctl config set hosts.zone_id=Z0123456789ABCDEFGHIJ
+$ sudo opsctl config set hosts.launch_template=ikigenba-dev-hosts
+$ sudo opsctl config set hosts.instance_profile=ikigenba-dev-hosts
+$ sudo opsctl init; echo "exit $?"
+```
+
+Output: the twelve `ok` lines of the ready host, and `exit 0`.
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- The host is the ready released host, and the current release holds `crm`,
+  `dashboard`, and `notes`. `notes` was disabled with `opsctl disable notes`.
+- `crm`'s and `dashboard`'s sockets are listening, and neither is disabled.
+- `aws.region` is `us-east-2`, so each app's environment file already ends
+  with `AWS_REGION=us-east-2`, and none of the four `hosts.*` keys was set
+  before these commands.
+
+Postconditions:
+
+- `/etc/opt/ikigenba/crm/env`, `/etc/opt/ikigenba/dashboard/env`, and
+  `/etc/opt/ikigenba/notes/env` each end with these lines, in this order,
+  after `AWS_REGION=us-east-2`:
+
+  ```
+  IKIGENBA_HOSTS_DOMAIN=metaspot.org
+  IKIGENBA_HOSTS_ZONE_ID=Z0123456789ABCDEFGHIJ
+  IKIGENBA_HOSTS_LAUNCH_TEMPLATE=ikigenba-dev-hosts
+  IKIGENBA_HOSTS_INSTANCE_PROFILE=ikigenba-dev-hosts
+  ```
+
+  Every other line in them is as it was, and each app's units are as they
+  were.
+- `ikigenba-crm.service` and `ikigenba-dashboard.service` were restarted, so
+  each now runs with the new lines. Their sockets were not restarted.
+- `notes` was not started, restarted, or enabled: both its units are still
+  disabled and inactive and its names still answer `503`. When it is enabled
+  it starts with the new lines.
+- No request was made to AWS about the four values: no hosted zone, launch
+  template, or instance profile was looked up.
+- Running `init` again writes the same lines, restarts no app, and prints
+  the same lines.
+
+## An operator sets only some of the hosts keys
+
+Whether the four `hosts.*` keys make a complete set is for the app that
+reads them to judge, not opsctl. `init` writes a line for each key that is
+set and none for the others, prints no line about them, and refuses nothing.
+
+Command:
+
+```
+$ sudo opsctl config set hosts.domain=metaspot.org
+$ sudo opsctl config set hosts.zone_id=Z0123456789ABCDEFGHIJ
+$ sudo opsctl init; echo "exit $?"
+```
+
+Output: the twelve `ok` lines of the ready host, and `exit 0`.
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- The host is as before "An operator turns on hosts on a space": the ready
+  released host with `crm`, `dashboard`, and the disabled `notes`, `aws.region`
+  `us-east-2`, and none of the four `hosts.*` keys set.
+
+Postconditions:
+
+- Each app's environment file ends with `AWS_REGION=us-east-2`,
+  `IKIGENBA_HOSTS_DOMAIN=metaspot.org`, and
+  `IKIGENBA_HOSTS_ZONE_ID=Z0123456789ABCDEFGHIJ`, in that order, and holds no
+  `IKIGENBA_HOSTS_LAUNCH_TEMPLATE` or `IKIGENBA_HOSTS_INSTANCE_PROFILE`
+  line. Every other line in it is as it was.
+- `ikigenba-crm.service` and `ikigenba-dashboard.service` were restarted, and
+  their sockets were not; `notes` is still disabled and inactive.
+- The whole sequence ran, as on the ready host.
+
+## An operator sets a hosts key to a value opsctl cannot judge
+
+opsctl does not know what a hosted zone id, a launch template, or an
+instance profile should look like, and does not ask AWS, so a value that
+names nothing is written as it stands. The app that reads it is what finds it
+wrong.
+
+Command:
+
+```
+$ sudo opsctl config set hosts.zone_id=not-a-zone
+$ sudo opsctl init; echo "exit $?"
+```
+
+Output: the twelve `ok` lines of the ready host, and `exit 0`.
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- The host is as after "An operator turns on hosts on a space".
+
+Postconditions:
+
+- Each app's environment file holds `IKIGENBA_HOSTS_ZONE_ID=not-a-zone` where
+  it held `IKIGENBA_HOSTS_ZONE_ID=Z0123456789ABCDEFGHIJ`; every other line in
+  it is as it was.
+- `ikigenba-crm.service` and `ikigenba-dashboard.service` were restarted, and
+  their sockets were not; `notes` is still disabled and inactive.
+- The whole sequence ran, as on the ready host.
+
+## An operator turns hosts off
+
+Removing the `hosts.*` keys, or setting them to the empty string, and
+running `init` takes their lines out of every app's environment file, since a
+line is written only for a key that is set and not empty.
+
+Command:
+
+```
+$ sudo opsctl config del hosts.domain
+$ sudo opsctl config del hosts.zone_id
+$ sudo opsctl config set hosts.launch_template=
+$ sudo opsctl config set hosts.instance_profile=
+$ sudo opsctl init; echo "exit $?"
+```
+
+Output: the twelve `ok` lines of the ready host, and `exit 0`.
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- The host is as after "An operator turns on hosts on a space".
+
+Postconditions:
+
+- No app's environment file holds an `IKIGENBA_HOSTS_` line; each ends with
+  `AWS_REGION=us-east-2`, and every other line in it is as it was.
+- `ikigenba-crm.service` and `ikigenba-dashboard.service` were restarted, and
+  their sockets were not; `notes` is still disabled and inactive.
+- Running `init` again restarts no app and prints the same lines.
 
 ## An agent initialises a host where a user's timer cannot be started
 

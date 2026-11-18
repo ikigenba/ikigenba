@@ -66,11 +66,13 @@ Nothing is printed: the answer to "did it work" is the exit code.
 
 These ten are what `init` needs to bring the host to the state the store
 describes, and a host that has them all and nothing else is a configured host.
-opsctl's groups declare three other keys. `host.apex` is set later by
+opsctl's groups declare seven other keys. `host.apex` is set later by
 `devctl apex set` on the one space that holds the root domain's apex and is
 absent everywhere else (see `S05-nginx.md`). `apps.drain_seconds` and
 `apps.stop_seconds` have defaults and are set only to change them (see
-`S07-apps.md`).
+`S07-apps.md`). `hosts.domain`, `hosts.zone_id`, `hosts.launch_template`,
+and `hosts.instance_profile` are set only on a space that operates hosts,
+and are absent everywhere else (see `S07-apps.md`).
 
 Command:
 

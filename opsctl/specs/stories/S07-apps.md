@@ -59,13 +59,17 @@ The top-level usage gains four lines under `Commands:`:
   status    print every service, its release and its state
 ```
 
-Three configuration keys:
+Seven configuration keys:
 
 | key | value |
 |---|---|
 | `aws.region` | the region this host's parameters and backups live in, e.g. `us-east-2` |
 | `apps.drain_seconds` | how long every app may spend finishing the requests it holds once told to stop, in whole seconds; unset or empty means `5` |
 | `apps.stop_seconds` | how long systemd waits for every app to stop before killing it, in whole seconds; unset or empty means `10` |
+| `hosts.domain` | the domain hosts' accounts are named under, e.g. `metaspot.org` |
+| `hosts.zone_id` | the Route 53 hosted zone id of that domain, as `dns.zones` carries ids, e.g. `Z0123456789ABCDEFGHIJ` |
+| `hosts.launch_template` | the name of the EC2 launch template hosts are launched from, e.g. `ikigenba-dev-hosts` |
+| `hosts.instance_profile` | the name of the IAM instance profile hosts run with, e.g. `ikigenba-dev-hosts` |
 
 The two timing keys are space-wide: no manifest sets them, and every app on
 the host gets the same values. Each must be a positive whole number, and
@@ -75,6 +79,28 @@ kills it. `activate` writes them into every app of the release it puts in
 place (`S10-releases.md`), and `init` writes them into every app the host
 runs (see `S04-init.md`), which is how a changed value reaches apps already
 on the host.
+
+`aws.region` and the four `hosts.*` keys are space-wide in the same way, and
+reach every app the same way, as these lines of its environment file:
+
+| variable | from key |
+|---|---|
+| `AWS_REGION` | `aws.region` |
+| `IKIGENBA_HOSTS_DOMAIN` | `hosts.domain` |
+| `IKIGENBA_HOSTS_ZONE_ID` | `hosts.zone_id` |
+| `IKIGENBA_HOSTS_LAUNCH_TEMPLATE` | `hosts.launch_template` |
+| `IKIGENBA_HOSTS_INSTANCE_PROFILE` | `hosts.instance_profile` |
+
+Each line is written, with the key's value exactly as the store holds it,
+only when its key is set and not empty, and is absent otherwise. opsctl
+judges nothing about the `hosts.*` values: it makes no call to AWS for them,
+checks none of them against anything, prints no `init` line for them, and
+refuses no command over them, whether some of the four are set and others
+not, or one holds a value that names nothing. They are there for an app that
+operates hosts, and that app judges whether the set it was given is complete
+and well-formed. `aws.region` is otherwise read as it always was. No
+manifest sets these lines, and opsctl names no app that reads them: every
+app gets the same ones.
 
 Every app the host runs has a package directory holding what its release
 brought: `bin/<app>`, `etc/manifest.toml`, whatever else the app keeps under
@@ -304,7 +330,14 @@ brought: `/etc/opt/ikigenba/<app>/env`, owned `root:root` with mode `0600`.
 `activate` writes it whole for every app of the release it puts in place,
 from the manifest, the parameter, the store, and the release
 (`S10-releases.md`); `restore` writes it whole the same way (see
-`S08-backup.md`); and `init` rewrites it (see `S04-init.md`). It is never
+`S08-backup.md`); and `init` rewrites it (see `S04-init.md`). Written whole,
+it holds, in this order, each secret, the manifest's `[env]`,
+`DRAIN_SECONDS`, `IKIGENBA_SERVICES`, `IKIGENBA_COMMIT`, `IKIGENBA_RELEASE`
+when the release has a label, and then whichever of `AWS_REGION`,
+`IKIGENBA_HOSTS_DOMAIN`, `IKIGENBA_HOSTS_ZONE_ID`,
+`IKIGENBA_HOSTS_LAUNCH_TEMPLATE`, and `IKIGENBA_HOSTS_INSTANCE_PROFILE` have
+a value in the store. On a per-app host `init` edits only the lines it
+always has, and writes none of those five. It is never
 backed up: it is generated, so a host writes it again rather than carrying a
 stale copy forward. Writing it whole creates `/etc/opt/` owned `root:root`
 with mode `0755` if it is missing, and `/etc/opt/ikigenba/` and
