@@ -39,8 +39,9 @@
      canonical), .Banned and .BannedText (string, when it was banned, in
      the two forms of .Created) and .Expires and .ExpiresText (string,
      when the ban ends, in the two forms of .Created), .BanTotal (int, how
-     many bans the host holds, which exceeds len .Bans only when the
-     report cut the list), and .Allowlist ([]string, the allowlist the
+     many bans the host holds, which exceeds len .Bans when the report cut
+     the list or a line of the host's listing could not be listed, even
+     when .Bans is empty), and .Allowlist ([]string, the allowlist the
      host applied, each entry an address or a CIDR as reported, sorted, at
      most 50, loopback not included, since the host always adds it; empty
      when none).
@@ -126,16 +127,18 @@
      (.Account in a code element), td.slice-cpu.num and td.slice-memory.num;
      then h3 "Bans" and p.muted (text "An address that fails to sign in
      too often is banned from this host for 10 minutes. An agent can lift
-     a ban with the tools; the host lifts it at its next cycle."), then
-     either, when .Bans is empty, p#no-bans.muted (text "No address is
-     banned."), or div.table-scroll holding table#ban-list whose th read
-     Address, Banned, Expires, with one tr[data-ip=<.Address>] per ban, in
-     the order of .Bans, holding td.ban-address (.Address in a code
-     element), td.ban-banned holding time[datetime=<.Banned>] (text
+     a ban with the tools; the host lifts it at its next cycle."), then,
+     when .Bans is not empty, div.table-scroll holding table#ban-list
+     whose th read Address, Banned, Expires, with one tr[data-ip=<.Address>]
+     per ban, in the order of .Bans, holding td.ban-address (.Address in a
+     code element), td.ban-banned holding time[datetime=<.Banned>] (text
      .BannedText) and td.ban-expires holding time[datetime=<.Expires>]
-     (text .ExpiresText), followed, when .BanTotal exceeds len .Bans, by
-     p#ban-total.muted (text "Showing the newest <len .Bans> of
-     <.BanTotal> bans."); then h3 "Allowlist applied" and p.muted (text
+     (text .ExpiresText); then, when .BanTotal exceeds len .Bans,
+     p#ban-total.muted (text, when .Bans is not empty, "Showing the newest
+     <len .Bans> of <.BanTotal> bans.", and when it is empty, "The host
+     holds <.BanTotal> bans, none of which could be listed." with "ban"
+     for a total of 1), or, when .BanTotal is 0 and .Bans is empty,
+     p#no-bans.muted (text "No address is banned."); then h3 "Allowlist applied" and p.muted (text
      "The addresses and networks this host never bans, as it last applied
      them. Loopback is always allowed. An allowed address gets unlimited
      sign-in attempts."), then either, when .Allowlist is empty,
@@ -241,8 +244,8 @@
 {{end}}</tbody>
 </table>
 </div>
-{{if gt .BanTotal (len .Bans)}}<p id="ban-total" class="muted">Showing the newest {{len .Bans}} of {{.BanTotal}} bans.</p>
-{{end}}{{else}}<p id="no-bans" class="muted">No address is banned.</p>
+{{end}}{{if gt .BanTotal (len .Bans)}}<p id="ban-total" class="muted">{{if .Bans}}Showing the newest {{len .Bans}} of {{.BanTotal}} bans.{{else}}The host holds {{.BanTotal}} {{if eq .BanTotal 1}}ban{{else}}bans{{end}}, none of which could be listed.{{end}}</p>
+{{else if and (eq .BanTotal 0) (not .Bans)}}<p id="no-bans" class="muted">No address is banned.</p>
 {{end}}<h3 class="text-md">Allowlist applied</h3>
 <p class="muted">The addresses and networks this host never bans, as it last applied them. Loopback is always allowed. An allowed address gets unlimited sign-in attempts.</p>
 {{if .Allowlist}}<p id="allowlist-applied">{{range $i, $a := .Allowlist}}{{if $i}}, {{end}}<code data-ip="{{$a}}">{{$a}}</code>{{end}}</p>
