@@ -10,9 +10,12 @@
      .AccountCount, .Reported and .ReportedText as landing names them, and
      .InstanceID (string, the EC2 instance id; empty until one is
      launched), .DataVolume (string, the data volume's EBS id; empty until
-     one is made) and .Created and .CreatedText (string, when the host was
+     one is made), .Created and .CreatedText (string, when the host was
      created, RFC 3339 UTC to the second and the same as shown,
-     "2006-01-02 15:04:05 UTC"); .Report (the latest report the host's
+     "2006-01-02 15:04:05 UTC") and .Allowlist ([]string, the host's
+     allowlist as accounts' record holds it, each entry an address or a
+     CIDR in canonical form, sorted, at most 50; loopback is never an
+     entry; empty when none); .Report (the latest report the host's
      daemon sent; nil when none has been received), with .Received and
      .ReceivedText (string, when it was received, in the two forms of
      .Created), .InstanceID, .Type, .AMI, .OS, .Kernel and .DaemonVersion
@@ -28,9 +31,19 @@
      .InodesTotal, int64), .Sessions (int, active SSH sessions), .Updates
      (int, pending security updates), .Reboot (bool, a reboot is needed),
      .FailedUnits ([]string, the failed systemd units, sorted; empty when
-     none) and .Slices (a slice, one per account slice the host reported,
+     none), .Slices (a slice, one per account slice the host reported,
      sorted by account slug), each with .Account (string, the slug),
-     .CPUPercent (float64) and .MemoryBytes (int64).
+     .CPUPercent (float64) and .MemoryBytes (int64), .Bans (a slice, the
+     host's current fail2ban bans as reported, newest first, at most 200;
+     empty when none), each with .Address (string, the banned address,
+     canonical), .Banned and .BannedText (string, when it was banned, in
+     the two forms of .Created) and .Expires and .ExpiresText (string,
+     when the ban ends, in the two forms of .Created), .BanTotal (int, how
+     many bans the host holds, which exceeds len .Bans only when the
+     report cut the list), and .Allowlist ([]string, the allowlist the
+     host applied, each entry an address or a CIDR as reported, sorted, at
+     most 50, loopback not included, since the host always adds it; empty
+     when none).
      Bytes and counts are shown as the plain integer, never a humanised
      size; load averages to two decimals and percents to one, by printf
      here. Kinds and words for state and health are landing's host-state
@@ -69,9 +82,11 @@
      element; when empty, dd#host-volume.muted with text "none"), dt
      "Elastic IP" then dd#host-eip (.EIP in a code element; when empty,
      dd#host-eip.muted with text "none"), dt "Accounts" then
-     dd#host-accounts (.AccountCount), and dt "Created" then
-     dd#host-created holding time[datetime=<.Created>] (text
-     .CreatedText).
+     dd#host-accounts (.AccountCount), dt "Allowlist" then
+     dd#host-allowlist (one code[data-ip=<entry>] per element of
+     .Allowlist, separated by ", "; when empty, dd#host-allowlist.muted
+     "loopback only"), and dt "Created" then dd#host-created holding
+     time[datetime=<.Created>] (text .CreatedText).
      section#report.card with h2 "Latest report" and a p in its header
      (text "What the host's daemon reported at the end of its last cycle.
      Reports are kept as the latest only."), then, when .Report is nil,
@@ -108,7 +123,25 @@
      reported."), or div.table-scroll holding table#slice-list whose th
      read Account, CPU (%) (th.num), Memory (bytes) (th.num), with one
      tr[data-account=<.Account>] per slice holding td.slice-account
-     (.Account in a code element), td.slice-cpu.num and td.slice-memory.num.
+     (.Account in a code element), td.slice-cpu.num and td.slice-memory.num;
+     then h3 "Bans" and p.muted (text "An address that fails to sign in
+     too often is banned from this host for 10 minutes. An agent can lift
+     a ban with the tools; the host lifts it at its next cycle."), then
+     either, when .Bans is empty, p#no-bans.muted (text "No address is
+     banned."), or div.table-scroll holding table#ban-list whose th read
+     Address, Banned, Expires, with one tr[data-ip=<.Address>] per ban, in
+     the order of .Bans, holding td.ban-address (.Address in a code
+     element), td.ban-banned holding time[datetime=<.Banned>] (text
+     .BannedText) and td.ban-expires holding time[datetime=<.Expires>]
+     (text .ExpiresText), followed, when .BanTotal exceeds len .Bans, by
+     p#ban-total.muted (text "Showing the newest <len .Bans> of
+     <.BanTotal> bans."); then h3 "Allowlist applied" and p.muted (text
+     "The addresses and networks this host never bans, as it last applied
+     them. Loopback is always allowed. An allowed address gets unlimited
+     sign-in attempts."), then either, when .Allowlist is empty,
+     p#no-allowlist.muted (text "Only loopback is allowed."), or
+     p#allowlist-applied holding one code[data-ip=<entry>] per element of
+     .Allowlist, separated by ", ".
      No script but appkit's /_appkit/feedback.js. */}}
 {{define "host"}}<!doctype html>
 <html lang="en">
@@ -146,6 +179,7 @@
 <dt>Data volume</dt>{{if .DataVolume}}<dd id="host-volume"><code>{{.DataVolume}}</code></dd>{{else}}<dd id="host-volume" class="muted">none</dd>{{end}}
 <dt>Elastic IP</dt>{{if .EIP}}<dd id="host-eip"><code>{{.EIP}}</code></dd>{{else}}<dd id="host-eip" class="muted">none</dd>{{end}}
 <dt>Accounts</dt><dd id="host-accounts">{{.AccountCount}}</dd>
+<dt>Allowlist</dt>{{if .Allowlist}}<dd id="host-allowlist">{{range $i, $a := .Allowlist}}{{if $i}}, {{end}}<code data-ip="{{$a}}">{{$a}}</code>{{end}}</dd>{{else}}<dd id="host-allowlist" class="muted">loopback only</dd>{{end}}
 <dt>Created</dt><dd id="host-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></dd>
 </dl>
 </section>
@@ -193,6 +227,26 @@
 </table>
 </div>
 {{else}}<p id="no-slices" class="muted">No account slices reported.</p>
+{{end}}<h3 class="text-md">Bans</h3>
+<p class="muted">An address that fails to sign in too often is banned from this host for 10 minutes. An agent can lift a ban with the tools; the host lifts it at its next cycle.</p>
+{{if .Bans}}<div class="table-scroll">
+<table id="ban-list">
+<thead><tr><th>Address</th><th>Banned</th><th>Expires</th></tr></thead>
+<tbody>
+{{range .Bans}}<tr data-ip="{{.Address}}">
+<td class="ban-address"><code>{{.Address}}</code></td>
+<td class="ban-banned"><time datetime="{{.Banned}}">{{.BannedText}}</time></td>
+<td class="ban-expires"><time datetime="{{.Expires}}">{{.ExpiresText}}</time></td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{if gt .BanTotal (len .Bans)}}<p id="ban-total" class="muted">Showing the newest {{len .Bans}} of {{.BanTotal}} bans.</p>
+{{end}}{{else}}<p id="no-bans" class="muted">No address is banned.</p>
+{{end}}<h3 class="text-md">Allowlist applied</h3>
+<p class="muted">The addresses and networks this host never bans, as it last applied them. Loopback is always allowed. An allowed address gets unlimited sign-in attempts.</p>
+{{if .Allowlist}}<p id="allowlist-applied">{{range $i, $a := .Allowlist}}{{if $i}}, {{end}}<code data-ip="{{$a}}">{{$a}}</code>{{end}}</p>
+{{else}}<p id="no-allowlist" class="muted">Only loopback is allowed.</p>
 {{end}}{{else}}<div id="no-report" class="empty">
 <h3 class="text-md">No report yet</h3>
 <p>The host's daemon reports once it has started and reached accounts.</p>
