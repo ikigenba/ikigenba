@@ -39,7 +39,7 @@ The release holds five members of accounts' directory:
 - `etc/nginx.conf`, holding the bytes of `cli.NginxConf`.
 - `share/icon.svg`, unchanged.
 
-The two files under `etc/` are what the root package's `Etc` embeds (`D01-layout-and-run-seam`, R-C7K6-723O). The templates and both migrations ship inside the binary (`D01-layout-and-run-seam`, R-Y21B-A4SL and R-Y4H4-1O9Z; the migrations' bytes are `D04-store`'s). The database is not in the release: accounts creates `state/accounts.db` on its first start, and in a sandbox also `state/sandbox-cloud.json` (`D01-layout-and-run-seam`, R-ESG4-8UGU and R-Y9CP-KR8R).
+The two files under `etc/` are what the root package's `Etc` embeds (`D01-layout-and-run-seam`, R-C7K6-723O). The templates and the migrations ship inside the binary (`D01-layout-and-run-seam`, R-Y21B-A4SL and R-GSPX-5RRM; the migrations' bytes are `D04-store`'s). The database is not in the release: accounts creates `state/accounts.db` on its first start, and in a sandbox also `state/sandbox-cloud.json` (`D01-layout-and-run-seam`, R-ESG4-8UGU and R-Y9CP-KR8R).
 
 The tarball, its member list and its name are devctl's, and no test reads the checkout. So the release's members are outside what a requirement can state; a developer checks them with `tar`.
 
@@ -54,7 +54,7 @@ In order, the manifest says:
 - the app is `accounts`
 - its description is `pages.Description` (`D06-pages`, new words)
 - it is not the default app
-- it is an MCP service, so the gateway offers the nineteen tools (`D07-tools`)
+- it is an MCP service, so the gateway offers the twenty-two tools (`D07-tools`)
 - it admits guests (`guests = true`)
 - it holds no secrets (`secrets = []`)
 - a `[database]` table names `sqlite` and `state/accounts.db`
@@ -140,7 +140,7 @@ On a space that URL is `https://accounts.<space host>`.
 
 **Backup and restore.** The host's backup archives `state/` whole, so `accounts.db` goes with it: the hosts, operations, accounts, users, keys and latest reports (`D04-store`). After a restore the record may lag AWS. Operations resume against what AWS holds, by their recorded steps and lookups by tag (`D10-operations`). A resource no restored record explains is reported as unexplained, never deleted (`D10-operations`).
 
-**Releases: expand only** (outcome 27). This release adds `0002_hosts.sql` and stops reading or writing the old `groups` and `users` tables of `0001`, but drops nothing (`D04-store`). It stops calling opsctl: no `sudo`, no `opsctl group|user` (`D01-layout-and-run-seam`, R-ETO0-MM7J). It changes nothing in opsctl.
+**Releases: expand only** (outcome 27). This release adds `0002_hosts.sql` and stops reading or writing the old `groups` and `users` tables of `0001`, but drops nothing (`D04-store`). It stops calling opsctl: no `sudo`, no `opsctl group|user` (`D01-layout-and-run-seam`, R-ETO0-MM7J). It changes nothing in opsctl. The SSH bans release adds `0003_bans.sql`, new tables and indexes only, and the release before it runs on that schema (`D04-store`).
 
 The next release contracts. It drops accounts' old tables, and opsctl removes the shell group and its sshd rules, the pooled limits, the sudo rule for accounts, and its `group` and `user` commands. The daemon protocol changes by expand then contract too (`D11-protocol`).
 
@@ -178,7 +178,7 @@ The timings are `D16-sandbox`'s: about 40 s of `provisioning`, 5 s for a DNS cha
    - `GET /`, `/tools` and `/about` are fetched with the token, and without it (sent to sign in).
    - `POST /mcp` without a credential gets 401 from nginx.
    - `/events` and `/declarations` answer 404.
-   - The gateway's `describe` of accounts lists the nineteen tools.
+   - The gateway's `describe` of accounts lists the twenty-two tools.
    - `curl` of `/accountsd` without a token gets bytes equal to `<data>/bin/accountsd`.
    - `GET /accountsd/v1/state` without the identity header is answered 401 by accounts.
 2. **Create a host.**
@@ -237,7 +237,7 @@ Each row is an outcome the walk checks and the documents that own it. A row nami
 | restart mid-operation resumes, with no duplicates and no strays | `D03-serve` (R-GT9G-XHJE, R-KRUV-BTB7); `D10-operations`; `D16-sandbox` |
 | removal guards, unplace, delete and orphaned volume | `D04-store`, `D07-tools`, `D10-operations` |
 | trail events | `D08-trail`; emitters `D07-tools`, `D10-operations`, `D13-daemon-endpoints` |
-| accounts reaches no sibling and runs no program | `D01-layout-and-run-seam` (R-YD0E-Q2GU, R-ETO0-MM7J) |
+| accounts reaches no sibling and runs no program | `D01-layout-and-run-seam` (R-GTXT-JJIB, R-ETO0-MM7J) |
 
 ## Trust
 
