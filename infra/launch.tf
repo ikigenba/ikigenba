@@ -36,3 +36,37 @@ resource "aws_launch_template" "space" {
 
   user_data = base64encode(file("${path.module}/templates/space-first-boot.sh"))
 }
+
+# SSH hosts. accounts finds this template by name and passes the hosts'
+# instance profile (iam.tf) and every tag at launch; the template carries
+# neither, nor a key pair: there is no admin SSH login on a host. The data
+# volume is accounts' own, created and attached apart from the instance.
+resource "aws_launch_template" "hosts" {
+  name                   = "${var.domain}-hosts"
+  image_id               = data.aws_ssm_parameter.ami.insecure_value
+  instance_type          = local.host_instance_type
+  update_default_version = true
+
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_type           = "gp3"
+      volume_size           = local.host_root_volume_gb
+      delete_on_termination = true
+    }
+  }
+
+  network_interfaces {
+    associate_public_ip_address = true
+    security_groups             = [aws_security_group.hosts.id]
+    delete_on_termination       = true
+  }
+
+  metadata_options {
+    http_tokens = "required"
+  }
+
+  credit_specification {
+    cpu_credits = "unlimited"
+  }
+}

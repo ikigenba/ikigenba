@@ -45,3 +45,31 @@ resource "aws_security_group" "space" {
     create_before_destroy = true
   }
 }
+
+# SSH hosts: port 22 from anywhere and nothing else. On the host, the sshd
+# rules and failed-login blocking accountsd lays down do the limiting;
+# operators arrive through Session Manager, which needs no inbound port.
+resource "aws_security_group" "hosts" {
+  name_prefix = "${var.domain}-hosts-"
+  description = "SSH hosts: SSH only"
+  vpc_id      = data.aws_vpc.default.id
+
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}

@@ -11,6 +11,14 @@ locals {
   root_volume_gb     = 80
   backup_expiry_days = 30
   # The monthly cost budget only notifies; it never stops or changes anything.
-  budget_monthly_usd = 75
+  budget_monthly_usd = 125
   budget_email       = "mgreenly+295229566359@gmail.com"
+
+  # SSH hosts, which accounts on the hosts-operator space launches from the
+  # hosts' template (launch.tf) into the hosts zone (dns.tf). Same image as a
+  # space; the type and root size are the defaults accounts may override at
+  # launch. The data volume is accounts' own, created apart from the instance.
+  hosts_domain        = "metaspot.org"
+  host_instance_type  = "t4g.medium"
+  host_root_volume_gb = 20
 }

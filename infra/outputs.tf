@@ -4,3 +4,8 @@ output "hosted_zone_name_servers" {
   description = "Name servers to configure at the registrar in the mgmt account."
   value       = aws_route53_zone.root.name_servers
 }
+
+output "hosts_zone_name_servers" {
+  description = "Name servers to configure at the registrar for the hosts domain, in the mgmt account."
+  value       = aws_route53_zone.hosts.name_servers
+}
