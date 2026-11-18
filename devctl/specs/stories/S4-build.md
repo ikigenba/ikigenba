@@ -15,9 +15,11 @@ as it is gives the folder a host keeps for that release. In it are
 `release.json` and one directory per app, plus `opsctl/` and `turns/`: every
 app the commit holds, each laid out as `<app>/bin/<app>` and, when present,
 `<app>/etc/`, `<app>/share/`, `<app>/libexec/` and `<app>/lib/`; nothing else
-from an app's directory is shipped. opsctl and turns are the release's two
-tools: neither has a manifest, so neither is an app, and both are always
-built. opsctl ships as
+from an app's directory is shipped, except that every `cmd/<x>` of an app
+other than `cmd/<app>` is built too and shipped as `<app>/bin/<x>`; this
+holds for apps only, never for opsctl or turns. opsctl
+and turns are the release's two tools: neither has a manifest, so neither is
+an app, and both are always built. opsctl ships as
 `opsctl/bin/opsctl` alone; turns ships as `turns/bin/turns` with its committed
 `share/`, which holds its user systemd units. Apps are built in name order,
 then opsctl, then turns, and the first failure stops the build with no release
@@ -104,7 +106,8 @@ Preconditions:
   at that commit.
 - At that commit the apps, sub-projects with a `main` package and a committed
   `etc/manifest.toml`, are `auth`, `dummy`, `events`, `mcp`, `repos`,
-  `scripts`, `sites` and `telemetry`; `opsctl/` holds opsctl; and `turns/`
+  `scripts`, `sites` and `telemetry`, and each app's `cmd/` holds only
+  `<app>/`; `opsctl/` holds opsctl; and `turns/`
   holds turns, with `turns/share/systemd/turns.service` and
   `turns/share/systemd/turns.timer` committed.
 - The Go toolchain can build each of them for `linux/arm64`, and each app
@@ -143,6 +146,45 @@ Postconditions:
   `git worktree list` shows what it showed before.
 - The working tree, its index and its `HEAD` are as they were. Nothing outside
   `dist/` has changed.
+
+## A developer builds the suite at a commit where an app has a second command
+
+An app can hold more than one command under its `cmd/`. `cmd/<app>` is the
+app itself; every other `cmd/<x>` is built the same way, a static
+`linux/arm64` binary, and shipped beside the app's own as `<app>/bin/<x>`.
+The output is the same one line.
+
+Command:
+
+```
+$ devctl build 7d3e9a1c5b8f2e4d6a0c9b7e5f3d1a2c4b6e8f0a
+```
+
+Output:
+
+```
+dist/7d3e9a1c5b8f2e4d6a0c9b7e5f3d1a2c4b6e8f0a.tar.xz
+```
+
+Exits 0. The line is on stdout; stderr is empty.
+
+Preconditions:
+
+- The local repository holds the commit
+  `7d3e9a1c5b8f2e4d6a0c9b7e5f3d1a2c4b6e8f0a`, where `accounts/` is an app
+  whose `cmd/` holds `accounts/` and `accountsd/`, each a `main` package, and
+  every other app's `cmd/` holds only `<app>/`.
+- The Go toolchain can build every app, `accountsd`, opsctl and turns for
+  `linux/arm64`, and every app's `<app> manifest` emits exactly its
+  committed `etc/manifest.toml`.
+
+Postconditions:
+
+- `dist/7d3e9a1c5b8f2e4d6a0c9b7e5f3d1a2c4b6e8f0a.tar.xz` exists, and in it
+  `accounts/` has the same release layout as every other app, except that
+  `7d3e9a1c5b8f2e4d6a0c9b7e5f3d1a2c4b6e8f0a/accounts/bin/` holds exactly
+  `accounts` and `accountsd`, both static `linux/arm64` binaries.
+- Every other app's `bin/` holds only `<app>`.
 
 ## A developer builds something that is not a commit
 
@@ -300,7 +342,10 @@ Postconditions:
 
 A failed compile names the app, or `opsctl` or `turns`, that failed; the
 compiler's output follows the error line, each line quoted with `> ` so it is
-plainly the compiler's and not devctl's.
+plainly the compiler's and not devctl's. An app's extra command that fails
+to compile, a `cmd/<x>` that is not a `main` package included, is named by
+its app: a failing `accounts/cmd/accountsd` gives
+`devctl: build accounts: exit status 1`, its compiler output quoted below.
 
 Command:
 
