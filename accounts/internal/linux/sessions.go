@@ -9,18 +9,22 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 	"github.com/ikigenba/ikigenba/accounts/internal/valid"
 )
 
-// SessionHelper and SessionName identify the PAM session helper.
+// Session helper paths and scope placement timing.
 const (
 	SessionHelper = "/usr/local/libexec/accountsd-session"
 	SessionName   = "accountsd-session"
+	SessionPoll   = 10 * time.Millisecond
+	SessionWait   = 5 * time.Second
 
 	pamPath        = "/etc/pam.d/sshd"
 	pamMemberTest  = "session [success=ignore default=1] pam_succeed_if.so quiet user ingroup shell"
@@ -92,16 +96,45 @@ func Session(ctx context.Context, env Env, getenv func(string) string, parent in
 		return nil
 	}
 	pid := strconv.Itoa(parent)
-	_, err := h.run(ctx, "busctl", "call", "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
+	scope := SessionName + "-" + pid + ".scope"
+	if _, err := h.run(ctx, "busctl", "call", "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
 		"org.freedesktop.systemd1.Manager", "StartTransientUnit", "ssa(sv)a(sa(sv))",
-		SessionName+"-"+pid+".scope", "fail", "2", "PIDs", "au", "1", pid, "Slice", "s", target, "0")
-	return err
+		scope, "fail", "2", "PIDs", "au", "1", pid, "Slice", "s", target, "0"); err != nil {
+		return err
+	}
+	return h.waitForScope("/proc/"+pid+"/cgroup", "/"+target+"/"+scope)
+}
+
+const sessionPlacementTimeout = "session scope did not appear"
+
+func (h *Host) waitForScope(path, suffix string) error {
+	start := h.env.Now()
+	for {
+		placed := false
+		err := h.scan(path, func(line string) {
+			if cgroup, ok := strings.CutPrefix(line, "0::"); ok && strings.HasSuffix(cgroup, suffix) {
+				placed = true
+			}
+		})
+		if err == nil && placed {
+			return nil
+		}
+		if h.env.Now().Sub(start) >= SessionWait {
+			break
+		}
+		h.env.Sleep(SessionPoll)
+		if h.env.Now().Sub(start) >= SessionWait {
+			break
+		}
+	}
+	return hostError(path, errors.New(sessionPlacementTimeout))
 }
 
 const (
 	poolSliceContents    = "[Slice]\nCPUWeight=50\n"
 	accountSliceContents = "[Slice]\nCPUWeight=100\nMemoryHigh=1.5G\nMemoryMax=2G\nTasksMax=512\n"
 	personSliceContents  = "[Slice]\nMemoryHigh=600M\nMemoryMax=1G\nTasksMax=256\n"
+	sharedPAMPath        = "/etc/pam.d/password-auth"
 )
 
 func (h *Host) slices(ctx context.Context, s protocol.DesiredState) error {
@@ -144,18 +177,19 @@ func (h *Host) slices(ctx context.Context, s protocol.DesiredState) error {
 			return err
 		}
 	}
-	if err := h.installSession(); err != nil {
-		return err
-	}
 	if reload {
-		_, err := h.run(ctx, "systemctl", "daemon-reload")
-		return err
+		if _, err := h.run(ctx, "systemctl", "daemon-reload"); err != nil {
+			return err
+		}
 	}
-	return nil
+	return h.installSession()
 }
 
 func (h *Host) installSession() error {
-	if err := h.installPAM(); err != nil {
+	if err := h.installPAM(pamPath); err != nil {
+		return err
+	}
+	if err := h.installPAM(sharedPAMPath); err != nil {
 		return err
 	}
 
@@ -187,111 +221,198 @@ func (h *Host) installSession() error {
 	return nil
 }
 
-func (h *Host) installPAM() error {
-	f, err := os.Open(h.path(pamPath))
+func (h *Host) installPAM(path string) error {
+	f, err := os.Open(h.path(path))
 	if errors.Is(err, fs.ErrNotExist) {
-		_, err := h.write(pamPath, []byte(pamHook), 0o644)
+		if path != pamPath {
+			return nil
+		}
+		_, err := h.write(path, []byte(pamHook), 0o644)
 		return err
 	}
 	if err != nil {
-		return hostError(pamPath, err)
+		return hostError(path, err)
 	}
 	defer func() { _ = f.Close() }()
-	insertion, err := pamInsertion(f)
+	info, err := f.Stat()
 	if err != nil {
-		return hostError(pamPath, err)
+		return hostError(path, err)
 	}
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return hostError(pamPath, err)
-	}
-	return h.writeStream(pamPath, 0o644, func(dst io.Writer) (bool, error) {
-		r := bufio.NewReader(f)
-		var offset int64
-		var changed, precedingSkip, partial bool
-		for {
-			if offset == insertion {
-				if _, err := io.WriteString(dst, pamHook); err != nil {
-					return false, err
-				}
-				changed = true
-			}
-			fragment, err := r.ReadSlice('\n')
-			if len(fragment) > 0 {
-				skip := false
-				if !partial && !errors.Is(err, bufio.ErrBufferFull) {
-					line := bytes.TrimSuffix(fragment, []byte{'\n'})
-					skip = string(line) == pamSkipSystemd
-					if !precedingSkip && pamSystemd(line) {
-						if _, err := io.WriteString(dst, pamSkipSystemd+"\n"); err != nil {
-							return false, err
-						}
-						changed = true
-					}
-				}
-				precedingSkip = skip
-				if _, err := dst.Write(fragment); err != nil {
-					return false, err
-				}
-				offset += int64(len(fragment))
-			}
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			partial = errors.Is(err, bufio.ErrBufferFull)
-			if err != nil && !partial {
-				return false, err
-			}
+	size := info.Size()
+	insertion := int64(-1)
+	if path == pamPath {
+		insertion, err = pamInsertion(f, size)
+		if err != nil {
+			return hostError(path, err)
 		}
-		return changed, nil
+	}
+	return h.writeStream(path, 0o644, func(dst io.Writer) (bool, error) {
+		return rewritePAM(f, size, dst, insertion)
 	})
 }
 
-// pamInsertion finds an existing hook or the last line boundary, preserving an
-// unterminated last line without storing it in memory.
-func pamInsertion(input io.Reader) (int64, error) {
-	r := bufio.NewReader(input)
-	var offset, boundary, previous int64
-	var partial, precedingMemberTest, precedingSkip bool
+type pamLineKind uint8
+
+const (
+	pamOtherLine pamLineKind = iota
+	pamSkipLine
+	pamMemberLine
+	pamExecLine
+	pamSystemdLine
+)
+
+// Linux-PAM replaces a continuation with a space and skips intervening
+// blank or comment-only lines. The matcher leaves the original bytes on disk.
+const pamContinuation = `\\[ \t]*\n(?:[ \t]*(?:#[^\n]*)?\n)*`
+const pamSpace = `(?:[ \t\r]|` + pamContinuation + `)`
+
+// Match the module field after a module control. The include and substack
+// controls name another PAM file.
+var pamSystemdModule = regexp.MustCompile(
+	`^` + pamSpace + `*(?i:-?session)` + pamSpace + `+` +
+		`(?:(?i:required|requisite|sufficient|optional)` + pamSpace + `+|\[(?:` +
+		pamContinuation + `|\\\]|[^#\\\]\n])*\]` + pamSpace + `*)` +
+		`(?:[^[:space:]#]*/)?pam_systemd\.so(?:` + pamSpace + `|[#\n]|$)`)
+
+type pamLine struct {
+	size       int64
+	terminated bool
+	kind       pamLineKind
+}
+
+// Long lines are matched directly on a section of the input file. Keeping only
+// the offset and a fixed reader buffer lets us preserve the original bytes.
+func readPAMLine(r *bufio.Reader, input io.ReaderAt, start int64) (pamLine, error) {
+	first, err := readPAMPhysicalLine(r)
+	if err != nil {
+		return pamLine{}, err
+	}
+	line := pamLine{size: first.size, terminated: first.terminated}
+	for continued := first.continued; continued; {
+		next, err := readPAMPhysicalLine(r)
+		if errors.Is(err, io.EOF) {
+			line.terminated = false
+			break
+		}
+		if err != nil {
+			return pamLine{}, err
+		}
+		line.size += next.size
+		line.terminated = next.terminated
+		continued = next.continued || next.ignored
+	}
+	if first.continued || first.size > int64(len(first.fragment)) {
+		section := bufio.NewReader(io.NewSectionReader(input, start, line.size))
+		if pamSystemdModule.MatchReader(section) {
+			line.kind = pamSystemdLine
+		}
+		return line, nil
+	}
+	switch string(bytes.TrimSuffix(first.fragment, []byte{'\n'})) {
+	case pamSkipSystemd:
+		line.kind = pamSkipLine
+	case pamMemberTest:
+		line.kind = pamMemberLine
+	case pamHelperLine:
+		line.kind = pamExecLine
+	default:
+		if pamSystemdModule.Match(first.fragment) {
+			line.kind = pamSystemdLine
+		}
+	}
+	return line, nil
+}
+
+type pamPhysicalLine struct {
+	fragment   []byte
+	size       int64
+	terminated bool
+	continued  bool
+	ignored    bool
+}
+
+func readPAMPhysicalLine(r *bufio.Reader) (pamPhysicalLine, error) {
+	var line pamPhysicalLine
+	var first, last byte
+	var found, comment bool
 	for {
 		fragment, err := r.ReadSlice('\n')
-		offset += int64(len(fragment))
-		if !partial && !errors.Is(err, bufio.ErrBufferFull) {
-			line := bytes.TrimSuffix(fragment, []byte{'\n'})
-			if precedingMemberTest && string(line) == pamHelperLine {
-				return -1, nil
+		line.size += int64(len(fragment))
+		if content := bytes.Trim(fragment, " \t\n"); len(content) > 0 {
+			if !found {
+				first, found = content[0], true
 			}
-			if err == nil {
-				precedingMemberTest = string(line) == pamMemberTest
-				precedingSkip = string(line) == pamSkipSystemd
-			}
-		} else if err == nil {
-			precedingMemberTest, precedingSkip = false, false
+			last = content[len(content)-1]
+			comment = comment || bytes.IndexByte(content, '#') >= 0
 		}
-		switch {
-		case err == nil:
-			previous, boundary = boundary, offset
-		case errors.Is(err, io.EOF):
-			if offset > boundary && precedingSkip {
-				return previous, nil
-			}
-			return boundary, nil
-		case !errors.Is(err, bufio.ErrBufferFull):
-			return 0, err
+		if errors.Is(err, bufio.ErrBufferFull) {
+			continue
 		}
-		partial = errors.Is(err, bufio.ErrBufferFull)
+		if err != nil && (!errors.Is(err, io.EOF) || line.size == 0) {
+			return pamPhysicalLine{}, err
+		}
+		line.fragment = fragment
+		line.terminated = err == nil
+		line.continued = !comment && last == '\\'
+		line.ignored = !found || first == '#'
+		return line, nil
 	}
 }
 
-func pamSystemd(line []byte) bool {
-	fields := bytes.Fields(line)
-	if len(fields) < 3 || (string(fields[0]) != "session" && string(fields[0]) != "-session") {
-		return false
-	}
-	module := 2
-	if fields[1][0] == '[' {
-		for module < len(fields) && !bytes.HasSuffix(fields[module-1], []byte{']'}) {
-			module++
+// Insert at the end when possible. Keep an unterminated last line byte-identical
+// and keep an existing skip immediately before the module it skips.
+func pamInsertion(input io.ReaderAt, size int64) (int64, error) {
+	r := bufio.NewReader(io.NewSectionReader(input, 0, size))
+	var previous, start int64
+	preceding := pamOtherLine
+	for start < size {
+		line, err := readPAMLine(r, input, start)
+		if err != nil {
+			return 0, err
 		}
+		if preceding == pamMemberLine && line.kind == pamExecLine {
+			return -1, nil
+		}
+		if !line.terminated {
+			if preceding == pamSkipLine {
+				return previous, nil
+			}
+			return start, nil
+		}
+		previous, start = start, start+line.size
+		preceding = line.kind
 	}
-	return module < len(fields) && filepath.Base(string(fields[module])) == "pam_systemd.so"
+	return size, nil
+}
+
+func rewritePAM(input io.ReaderAt, size int64, dst io.Writer, insertion int64) (bool, error) {
+	r := bufio.NewReader(io.NewSectionReader(input, 0, size))
+	var start, pending int64
+	var changed, precedingSkip bool
+	for start < size {
+		line, err := readPAMLine(r, input, start)
+		if err != nil {
+			return false, err
+		}
+		var insert string
+		if start == insertion {
+			insert = pamHook
+		}
+		if !precedingSkip && line.kind == pamSystemdLine {
+			insert += pamSkipSystemd + "\n"
+		}
+		if insert != "" {
+			if err := editConfig(input, dst, pending, start, insert); err != nil {
+				return false, err
+			}
+			pending, changed = start, true
+		}
+		precedingSkip = line.kind == pamSkipLine
+		start += line.size
+	}
+	var insert string
+	if insertion == size {
+		insert = pamHook
+	}
+	return changed || insert != "", editConfig(input, dst, pending, size, insert)
 }

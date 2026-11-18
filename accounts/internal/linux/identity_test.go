@@ -1,7 +1,6 @@
 package linux_test
 
 import (
-	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -13,7 +12,6 @@ import (
 	"strings"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/linux"
 	"github.com/ikigenba/ikigenba/accounts/internal/machine"
@@ -546,16 +544,25 @@ func TestApplySecuresUnlistedUsersKeysAndPreservesOtherFiles(t *testing.T) {
 	}
 }
 
-func TestApplySlicesAndSession(t *testing.T) {
-	// R-CJM9-M9BJ R-LDT2-7ONP R-0D7M-DWK2 R-0EFI-ROAR R-BU0D-L2QY
+func TestApplySlicesAndPAM(t *testing.T) {
+	// R-CJM9-M9BJ R-U9X8-WR7R R-BU0D-L2QY
 	f := newHardeningFixture(t)
 	const unitDir = "/etc/systemd/system/"
 	const pamFile = "/etc/pam.d/sshd"
+	const sharedPAMPath = "/etc/pam.d/password-auth"
 	const preface = "# preface\r\nsession optional pam_succeed_if.so quiet user != root\n"
+	const passwordPreface = "# session optional pam_systemd.so\r\n" +
+		"session optional pam_other.so pam_systemd.so # ignored \\\n" +
+		"session InClUdE pam_systemd.so\n" +
+		"session SuBsTaCk /etc/pam.d/pam_systemd.so\n"
 	const directSystemd = "\tsession optional pam_systemd.so\n"
 	const absoluteSystemd = "-session [success=ok default=ignore] /usr/lib64/security/pam_systemd.so\r\n"
-	lastLine := "# " + strings.Repeat("long comment ", 400)
+	const passwordSystemd = "-session     optional      pam_systemd.so\n"
+	const continuedSystemd = "SeSsIoN \\ \t\n# between parts\n\n\tOpTiOnAl \\\n\tpam_systemd.so\n"
+	longSystemd := "session [success=ok \\\n" + strings.Repeat("  ", 2200) + "default=ignore]\tpam_systemd.so"
+	lastLine := "session optional pam_other.so \\\n\t" + strings.Repeat("long-option ", 400)
 	f.put(pamFile, preface+directSystemd+absoluteSystemd+"\n"+lastLine, 0o666)
+	f.put(sharedPAMPath, passwordPreface+passwordSystemd+continuedSystemd+longSystemd, 0o666)
 	f.put("/etc/group", "shell:x:990:alice\ncit-ron:x:20000:alice\nalice:x:20001:\n", 0o644)
 	f.put("/etc/passwd", "cit-ron:x:20000:20000::/srv/cit-ron:/usr/sbin/nologin\nalice:x:20001:20001::/home/alice:/bin/bash\n", 0o644)
 	f.put("/srv/cit-ron/.git/config", "data", 0o600)
@@ -578,9 +585,6 @@ func TestApplySlicesAndSession(t *testing.T) {
 	f.expectFile(unitDir+linux.PersonSlice("pear", "inert"), "keep", 0o644)
 	f.expectAbsent(unitDir + linux.AccountSlice("pear"))
 	f.expectAbsent(unitDir + linux.PersonSlice("pear", "deleted"))
-	if linux.SessionName != "accountsd-session" || linux.SessionHelper != "/usr/local/libexec/accountsd-session" {
-		t.Fatal("session helper constants differ")
-	}
 	if target, err := os.Readlink(f.path(linux.SessionHelper)); err != nil || target != linux.DaemonPath {
 		t.Fatalf("helper link = %q, %v", target, err)
 	}
@@ -592,18 +596,18 @@ func TestApplySlicesAndSession(t *testing.T) {
 	const helper = "session [success=ignore default=1] pam_succeed_if.so quiet user ingroup " + linux.ShellGroup + "\n" +
 		"session required pam_exec.so type=open_session " + linux.SessionHelper + "\n"
 	wantPAM := preface + skipSystemd + directSystemd + skipSystemd + absoluteSystemd + "\n" + helper + lastLine
+	wantPasswordAuth := passwordPreface + skipSystemd + passwordSystemd + skipSystemd + continuedSystemd + skipSystemd + longSystemd
 	f.expectFile(pamFile, wantPAM, 0o644)
-	before, err := os.Stat(f.path(pamFile))
-	if err != nil {
-		t.Fatal(err)
-	}
+	f.expectFile(sharedPAMPath, wantPasswordAuth, 0o644)
+	before := f.stat(pamFile)
+	passwordBefore := f.stat(sharedPAMPath)
 	f.commands = nil
 	f.observe = func(c linux.Command) {
 		if filepath.Base(c.Name) == linux.SessionName {
 			t.Fatalf("repeated apply ran the session helper: %+v", c)
 		}
 		for _, arg := range c.Args {
-			for _, path := range []string{pamFile, linux.SessionHelper} {
+			for _, path := range []string{pamFile, sharedPAMPath, linux.SessionHelper} {
 				if strings.Contains(arg, path) && (c.Name != "chown" || !slices.Equal(c.Args, []string{"--no-dereference", "root:root", f.path(path)})) {
 					t.Fatalf("repeated apply issued a placement command: %+v", c)
 				}
@@ -612,48 +616,54 @@ func TestApplySlicesAndSession(t *testing.T) {
 	}
 	f.apply(active)
 	f.expectFile(pamFile, wantPAM, 0o644)
+	f.expectFile(sharedPAMPath, wantPasswordAuth, 0o644)
 	assertUnchanged(t, f.path(pamFile), before)
+	assertUnchanged(t, f.path(sharedPAMPath), passwordBefore)
 	linkAfter, err := os.Lstat(f.path(linux.SessionHelper))
 	if err != nil || !os.SameFile(linkBefore, linkAfter) {
 		t.Fatalf("rewrote session helper: %v", err)
 	}
 	f.forbidCalls("systemctl daemon-reload")
-	var calls []linux.Command
-	code := 0
-	env := linux.Env{Root: f.root, Now: func() time.Time { return time.Unix(0, 0) }, Execute: func(_ context.Context, c linux.Command) (linux.Result, error) {
-		calls = append(calls, c)
-		return linux.Result{ExitCode: code}, nil
-	}}
-	lookup := func(kind, user string) func(string) string {
-		return func(key string) string {
-			switch key {
-			case "PAM_TYPE":
-				return kind
-			case "PAM_USER":
-				return user
-			}
-			t.Fatalf("unexpected PAM environment lookup %q", key)
-			return ""
-		}
-	}
-	for _, pair := range [][2]string{{"close_session", "alice"}, {"open_session", "inert"}, {"open_session", ""}} {
-		if err := linux.Session(t.Context(), env, lookup(pair[0], pair[1]), 42); err != nil || len(calls) != 0 {
-			t.Fatalf("Session(%v) = %v with %d commands", pair, err, len(calls))
-		}
-	}
-	if err := linux.Session(t.Context(), env, lookup("open_session", "alice"), 42); err != nil {
+}
+
+func TestApplyLeavesAbsentPasswordAuth(t *testing.T) {
+	// R-U9X8-WR7R
+	f := newHardeningFixture(t)
+	f.apply(protocol.DesiredState{DataVolume: "vol-12345678"})
+	f.expectAbsent("/etc/pam.d/password-auth")
+}
+
+func TestApplyReloadsChangedSlicesBeforePAMFailure(t *testing.T) {
+	// R-CJM9-M9BJ
+	f := newHardeningFixture(t)
+	state := protocol.DesiredState{}
+	f.apply(state)
+
+	const sharedPAMPath = "/etc/pam.d/password-auth"
+	if err := os.Symlink("password-auth", f.path(sharedPAMPath)); err != nil {
 		t.Fatal(err)
 	}
-	expected := linux.Command{Name: "busctl", Args: []string{
-		"call", "org.freedesktop.systemd1", "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager", "StartTransientUnit",
-		"ssa(sv)a(sa(sv))", "accountsd-session-42.scope", "fail", "2", "PIDs", "au", "1", "42", "Slice", "s", person, "0",
-	}}
-	if !reflect.DeepEqual(calls, []linux.Command{expected}) {
-		t.Fatalf("session commands = %+v", calls)
+	const pool = "/etc/systemd/system/" + linux.PoolSlice
+	f.put(pool, "[Slice]\nCPUWeight=25\n", 0o644)
+	f.commands = nil
+	reloads := 0
+	f.answer = func(call string) (linux.Result, bool) {
+		if call == "systemctl daemon-reload" {
+			reloads++
+			f.expectFile(pool, "[Slice]\nCPUWeight=50\n", 0o644)
+		}
+		return linux.Result{}, false
 	}
-	code = 9
-	var resultErr *linux.CommandError
-	if err := linux.Session(t.Context(), env, lookup("open_session", "alice"), 42); !errors.As(err, &resultErr) || resultErr.Result.ExitCode != 9 {
-		t.Fatalf("Session command failure = %v", err)
+	err := f.host.Apply(t.Context(), state)
+	if err == nil || !strings.Contains(err.Error(), sharedPAMPath) || reloads != 1 {
+		t.Fatalf("Apply returned %v after %d reloads, want a password-auth error after one reload", err, reloads)
+	}
+
+	if err := os.Remove(f.path(sharedPAMPath)); err != nil {
+		t.Fatal(err)
+	}
+	f.apply(state)
+	if reloads != 1 {
+		t.Fatalf("retry reloaded unchanged slices, total reloads = %d", reloads)
 	}
 }

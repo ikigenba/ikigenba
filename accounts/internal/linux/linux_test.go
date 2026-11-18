@@ -27,10 +27,15 @@ import (
 var _ machine.Machine = (*linux.Host)(nil)
 
 func TestLinuxSeam(t *testing.T) {
-	// R-BMOZ-AGAS R-BNWV-O81H R-BP4S-1ZS6 R-BQCO-FRIV
-	env := linux.Real()
-	if env.Root != "/" || env.Execute == nil || env.Now == nil {
-		t.Fatalf("Real returns root %q and incomplete seams", env.Root)
+	// R-U3TQ-ZWIA R-BNWV-O81H R-BP4S-1ZS6 R-BQCO-FRIV
+	var host machine.Machine = linux.New(linux.Env{
+		Root:    t.TempDir(),
+		Execute: func(context.Context, linux.Command) (linux.Result, error) { return linux.Result{}, nil },
+		Now:     func() time.Time { return time.Unix(0, 0) },
+		Sleep:   func(time.Duration) {},
+	})
+	if host == (*linux.Host)(nil) {
+		t.Fatal("New returned a nil host")
 	}
 	if linux.ShellGroup != "shell" || linux.KeysDir != "/etc/ssh/authorized_keys" ||
 		linux.SkelDir != "/var/lib/accountsd/skel" || linux.DataDir != "/data" || linux.HostKeyDir != "/data/ssh" ||
@@ -56,7 +61,13 @@ func TestLinuxSeam(t *testing.T) {
 }
 
 func TestExec(t *testing.T) {
-	// R-BRKK-TJ9K
+	// R-U7HG-57QD
+	env := linux.Real()
+	if env.Root != "/" || reflect.ValueOf(env.Execute).Pointer() != reflect.ValueOf(linux.Exec).Pointer() ||
+		reflect.ValueOf(env.Now).Pointer() != reflect.ValueOf(time.Now).Pointer() ||
+		reflect.ValueOf(env.Sleep).Pointer() != reflect.ValueOf(time.Sleep).Pointer() {
+		t.Fatal("Real returned unexpected seams")
+	}
 	script := filepath.Join(t.TempDir(), "probe.sh")
 	const scriptBody = `IFS= read -r line
 printf '%s\n%s\n' "$line" "$1"
@@ -359,7 +370,30 @@ func snapshotHost(t *testing.T, path string) map[string]hostFile {
 	return output
 }
 
-func assertHostChanges(t *testing.T, before, after map[string]hostFile, managed []string) {
+type applyHostFile struct {
+	hostFile
+	modified int64
+}
+
+func snapshotApplyHost(t *testing.T, root string) map[string]applyHostFile {
+	t.Helper()
+	files := snapshotHost(t, root)
+	output := make(map[string]applyHostFile, len(files))
+	for path, file := range files {
+		value := applyHostFile{hostFile: file}
+		if file.mode.IsRegular() || path == "/etc/sudoers.d" {
+			info, err := os.Lstat(filepath.Join(root, path))
+			if err != nil {
+				t.Fatal(err)
+			}
+			value.modified = info.ModTime().UnixNano()
+		}
+		output[path] = value
+	}
+	return output
+}
+
+func assertHostChanges(t *testing.T, before, after map[string]applyHostFile, managed []string) {
 	t.Helper()
 	allowed := map[string]bool{}
 	for _, path := range managed {
@@ -383,32 +417,65 @@ func assertHostChanges(t *testing.T, before, after map[string]hostFile, managed 
 }
 
 func TestApplyChangesOnlyManagedFiles(t *testing.T) {
-	// R-LF0Y-LGEE
+	// R-UJOF-YX5B
 	f := newHardeningFixture(t)
-	f.put("/etc/sudoers", "root ALL=(ALL) ALL\n", 0o600)
-	f.put("/etc/sudoers.d/retained", "other existing configuration\n", 0o600)
-	before := snapshotHost(t, f.root)
-	f.apply(protocol.DesiredState{})
-	f.expectCalls(append(initialHardeningCommands(f), "systemctl daemon-reload")...)
-	assertHostChanges(t, before, snapshotHost(t, f.root), append(hardeningPaths(), "/var/log/journal", linux.SkelDir, linux.KeysDir, linux.SessionHelper))
+	seedApplySudoers(f)
+	before := snapshotApplyHost(t, f.root)
+	commands := applyRecordingCommands(f, protocol.DesiredState{})
+	expectApplyCommands(t, commands, append(initialHardeningCommands(f), []string{"systemctl", "daemon-reload"})...)
+	assertHostChanges(t, before, snapshotApplyHost(t, f.root), append(hardeningPaths(), "/var/log/journal", linux.SkelDir, linux.KeysDir, linux.SessionHelper))
 }
 
-func initialHardeningCommands(f *hardeningFixture) []string {
-	return []string{
-		"rpm -q nftables", "rpm -q fail2ban-server", "rpm -q dnf-automatic", "rpm -q git",
-		"rpm -q cronie", "rpm -q at",
-		"systemctl daemon-reload", "nft list table inet ikigenba_imds",
-		"nft -f " + f.path(hardenRules), "systemctl is-enabled ikigenba-imds.service",
-		"systemd-tmpfiles --create --prefix " + f.path("/var/log/journal"),
-		"systemctl restart systemd-journald.service", "journalctl --flush",
-		"systemctl is-enabled dnf-automatic.timer", "systemctl is-active dnf-automatic.timer",
-		"systemctl is-enabled fail2ban.service", "systemctl is-active fail2ban.service",
-		"systemctl reload fail2ban.service",
-		"lsblk --pairs --noheadings --output NAME,PKNAME,FSTYPE,MOUNTPOINT",
-		"blockdev --getsize64 " + f.path("/dev/nvme0n1"),
-		"growpart " + f.path("/dev/nvme0n1") + " 1",
-		"xfs_growfs -d " + f.path("/"),
-		"lsblk --nodeps --pairs --noheadings --output NAME,SERIAL",
+func seedApplySudoers(f *hardeningFixture) {
+	f.t.Helper()
+	f.put("/etc/sudoers", "root ALL=(ALL) ALL\n", 0o600)
+	f.put("/etc/sudoers.d/retained", "other existing configuration\n", 0o600)
+	stamp := time.Unix(1, 0)
+	for _, path := range []string{"/etc/sudoers", "/etc/sudoers.d", "/etc/sudoers.d/retained"} {
+		if err := os.Chtimes(f.path(path), stamp, stamp); err != nil {
+			f.t.Fatal(err)
+		}
+	}
+}
+
+func applyRecordingCommands(f *hardeningFixture, state protocol.DesiredState) []linux.Command {
+	f.t.Helper()
+	var commands []linux.Command
+	f.observe = func(command linux.Command) {
+		commands = append(commands, linux.Command{Name: command.Name, Args: slices.Clone(command.Args)})
+	}
+	f.apply(state)
+	return commands
+}
+
+func expectApplyCommands(t *testing.T, got []linux.Command, want ...[]string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Errorf("applied %d commands, want %d: %+v", len(got), len(want), got)
+	}
+	for i := range min(len(got), len(want)) {
+		if got[i].Name != want[i][0] || !slices.Equal(got[i].Args, want[i][1:]) {
+			t.Errorf("command %d = %q %q, want %q %q", i+1, got[i].Name, got[i].Args, want[i][0], want[i][1:])
+		}
+	}
+}
+
+func initialHardeningCommands(f *hardeningFixture) [][]string {
+	return [][]string{
+		{"rpm", "-q", "nftables"}, {"rpm", "-q", "fail2ban-server"}, {"rpm", "-q", "dnf-automatic"}, {"rpm", "-q", "git"},
+		{"rpm", "-q", "cronie"}, {"rpm", "-q", "at"},
+		{"systemctl", "daemon-reload"}, {"nft", "list", "table", "inet", "ikigenba_imds"},
+		{"nft", "-f", f.path(hardenRules)}, {"systemctl", "is-enabled", "ikigenba-imds.service"},
+		{"systemd-tmpfiles", "--create", "--prefix", f.path("/var/log/journal")},
+		{"systemctl", "restart", "systemd-journald.service"}, {"journalctl", "--flush"},
+		{"systemctl", "is-enabled", "dnf-automatic.timer"}, {"systemctl", "is-active", "dnf-automatic.timer"},
+		{"systemctl", "is-enabled", "fail2ban.service"}, {"systemctl", "is-active", "fail2ban.service"},
+		{"systemctl", "reload", "fail2ban.service"},
+		{"lsblk", "--pairs", "--noheadings", "--output", "NAME,PKNAME,FSTYPE,MOUNTPOINT"},
+		{"blockdev", "--getsize64", f.path("/dev/nvme0n1")},
+		{"growpart", f.path("/dev/nvme0n1"), "1"},
+		{"xfs_growfs", "-d", f.path("/")},
+		{"lsblk", "--nodeps", "--pairs", "--noheadings", "--output", "NAME,SERIAL"},
 	}
 }
 
@@ -421,7 +488,7 @@ func hardeningPaths() []string {
 }
 
 func TestApplyChangesOnlyManagedFilesWithUsersAndData(t *testing.T) {
-	// R-LF0Y-LGEE
+	// R-UJOF-YX5B
 	f := newHardeningFixture(t)
 	const unitDir = "/etc/systemd/system/"
 	const folder = "/srv/citron"
@@ -429,8 +496,10 @@ func TestApplyChangesOnlyManagedFilesWithUsersAndData(t *testing.T) {
 	const aliceKeys = linux.KeysDir + "/alice"
 	const retiredKeys = linux.KeysDir + "/retired"
 	const staleSlice = unitDir + "acct-pear-retired.slice"
+	const sharedPAMPath = "/etc/pam.d/password-auth"
+	seedApplySudoers(f)
 	for _, path := range []string{
-		"/etc/sudoers", "/etc/sudoers.d/retained", "/etc/untouched", "/usr/local/bin/other", "/etc/systemd/system/unrelated.service",
+		"/etc/untouched", "/usr/local/bin/other", "/etc/systemd/system/unrelated.service",
 		folder + "/.git/config", folder + "/project", home + "/private", "/srv/unlisted/project", "/home/unlisted/private", retiredKeys, staleSlice,
 	} {
 		f.put(path, "fixture for "+path, 0o664)
@@ -438,12 +507,15 @@ func TestApplyChangesOnlyManagedFilesWithUsersAndData(t *testing.T) {
 	f.setMode(home, 0o755)
 	f.put("/etc/group", "shell:x:990:alice\ncitron:x:24000:alice\nalice:x:24001:\n", 0o644)
 	f.put("/etc/passwd", "citron:x:24000:24000::/srv/citron:/usr/sbin/nologin\nalice:x:24001:24001::/home/alice:/bin/bash\n", 0o644)
-	gitQuery := "git config --file " + f.path("/etc/gitconfig") + " --get-all safe.directory"
+	f.put("/etc/pam.d/sshd", "session include password-auth\n", 0o644)
+	f.put(sharedPAMPath, "-session optional pam_systemd.so\n", 0o644)
+	gitQuery := []string{"git", "config", "--file", f.path("/etc/gitconfig"), "--get-all", "safe.directory"}
+	gitCall := strings.Join(gitQuery, " ")
 	f.answer = func(call string) (linux.Result, bool) {
-		return hostAnswer(folder + "\n"), call == gitQuery
+		return hostAnswer(folder + "\n"), call == gitCall
 	}
-	before := snapshotHost(t, f.root)
-	f.apply(protocol.DesiredState{
+	before := snapshotApplyHost(t, f.root)
+	commands := applyRecordingCommands(f, protocol.DesiredState{
 		DataVolume: "vol-12345678",
 		Accounts: []protocol.Account{
 			{Slug: "citron", GID: 24000, State: protocol.AccountActive},
@@ -454,32 +526,32 @@ func TestApplyChangesOnlyManagedFilesWithUsersAndData(t *testing.T) {
 			{Name: "retired", Account: "pear", UID: 24011, State: protocol.UserDeleted},
 		},
 	})
-	after := snapshotHost(t, f.root)
+	after := snapshotApplyHost(t, f.root)
 	volumeFiles := []string{unitDir + "data.mount", unitDir + "home.mount", unitDir + "srv.mount", sshUnitPath, sshDropInPath,
 		unitDir + linux.AccountSlice("citron"), unitDir + linux.PersonSlice("citron", "alice"), aliceKeys}
 	secureFirst := []string{linux.DaemonPath, linux.SessionHelper, linux.HostKeyDir, dataPrivateKey, dataPublicKey, linux.KeysDir}
 	managed := slices.Concat(hardeningPaths(), volumeFiles, secureFirst,
-		[]string{"/var/log/journal", linux.SkelDir, "/data/home", "/data/srv", folder, home, retiredKeys, staleSlice})
+		[]string{"/var/log/journal", linux.SkelDir, "/data/home", "/data/srv", folder, home, retiredKeys, staleSlice, sharedPAMPath})
 	assertHostChanges(t, before, after, managed)
 
 	dataDevice := f.path("/dev/nvme1n1")
 	want := append(initialHardeningCommands(f),
-		"blkid -p --output export "+dataDevice, "systemctl daemon-reload",
-		"systemctl is-enabled data.mount", "systemctl is-active data.mount",
-		"systemctl is-enabled home.mount", "systemctl is-active home.mount",
-		"systemctl is-enabled srv.mount", "systemctl is-active srv.mount",
-		"blockdev --getsize64 "+dataDevice, "xfs_growfs -d "+f.path("/data"), "systemctl daemon-reload",
-		"sshd -t -f "+f.path("/etc/ssh/sshd_config"), "systemctl reload sshd.service", "systemctl daemon-reload")
+		[]string{"blkid", "-p", "--output", "export", dataDevice}, []string{"systemctl", "daemon-reload"},
+		[]string{"systemctl", "is-enabled", "data.mount"}, []string{"systemctl", "is-active", "data.mount"},
+		[]string{"systemctl", "is-enabled", "home.mount"}, []string{"systemctl", "is-active", "home.mount"},
+		[]string{"systemctl", "is-enabled", "srv.mount"}, []string{"systemctl", "is-active", "srv.mount"},
+		[]string{"blockdev", "--getsize64", dataDevice}, []string{"xfs_growfs", "-d", f.path("/data")}, []string{"systemctl", "daemon-reload"},
+		[]string{"sshd", "-t", "-f", f.path("/etc/ssh/sshd_config")}, []string{"systemctl", "reload", "sshd.service"}, []string{"systemctl", "daemon-reload"})
 	if before[folder].uid != 24000 || before[folder].gid != 24000 {
-		want = append(want, "chown citron:citron "+f.path(folder), "setfacl -d -m g::rwx,o::- "+f.path(folder))
+		want = append(want, []string{"chown", "citron:citron", f.path(folder)}, []string{"setfacl", "-d", "-m", "g::rwx,o::-", f.path(folder)})
 	}
 	want = append(want, gitQuery)
-	secureLater := slices.Concat(hardeningPaths(), volumeFiles, []string{dataPrivateKey, dataPublicKey})
+	secureLater := slices.Concat(hardeningPaths(), volumeFiles, []string{dataPrivateKey, dataPublicKey, sharedPAMPath})
 	slices.Sort(secureLater)
 	for _, path := range slices.Concat(secureFirst, secureLater) {
 		if info := after[path]; info.uid != 0 || info.gid != 0 {
-			want = append(want, "chown --no-dereference root:root "+f.path(path))
+			want = append(want, []string{"chown", "--no-dereference", "root:root", f.path(path)})
 		}
 	}
-	f.expectCalls(want...)
+	expectApplyCommands(t, commands, want...)
 }

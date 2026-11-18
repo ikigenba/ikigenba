@@ -31,11 +31,12 @@ const (
 	UpdatesInterval = time.Hour
 )
 
-// Env supplies the filesystem root, command runner and clock.
+// Env supplies the filesystem root, command runner, clock and sleep.
 type Env struct {
 	Root    string
 	Execute func(context.Context, Command) (Result, error)
 	Now     func() time.Time
+	Sleep   func(time.Duration)
 }
 
 // Command is a direct process invocation.
@@ -128,7 +129,7 @@ func Exec(ctx context.Context, c Command) (Result, error) {
 }
 
 // Real targets the host's own filesystem, programs and clock.
-func Real() Env { return Env{Root: "/", Execute: Exec, Now: time.Now} }
+func Real() Env { return Env{Root: "/", Execute: Exec, Now: time.Now, Sleep: time.Sleep} }
 
 // AccountSlice is the systemd unit for an account.
 func AccountSlice(account string) string { return "acct-" + escapeSlice(account) + ".slice" }
