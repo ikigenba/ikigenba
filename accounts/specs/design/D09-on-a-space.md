@@ -1,122 +1,321 @@
 # D09-on-a-space
 
-What accounts contributes when it runs on a space and in a sandbox: what ships, what the manifest says and what a space takes from it, the nginx fragment `cli.NginxConf` and the file under `etc/` that copies it, the working directory, the environment file and the services file entries it uses, the host command a space gives it and the precondition that command stands on, the in-memory host a sandbox gives it, the walk the delivery makes in the sandbox, the trust accounts places in what reaches it, and the finish line. Almost every step between a checkout and an agent's tool call belongs to someone else: devctl builds and ships the release, opsctl installs it, initializes the host and generates nginx, auth decides every credential, the host's nginx turns away every request without one and sets the identity headers, the gateway relays tool calls, telemetry keeps the trail, home lists the app, and opsctl, run through sudo, makes every change on the host. accounts' own share is what `D01-layout-and-run-seam` to `D08-trail` state, plus the manifest's contents and the fragment, which this document states. Outcomes cited by number are the decisions document /home/mgreenly/Documents/ikigenba-accounts.md.
+This document covers what accounts contributes when it runs on a space and in a sandbox:
 
-This document states three things: the contents of `cli.Manifest`, which `D02-cli` declares; the constant `cli.NginxConf`, which `D01-layout-and-run-seam` assigns to it; and that `etc/nginx.conf` holds the fragment's bytes. Everything else it says of a space or a sandbox is behaviour the other documents own; the table under Verification names the owner of each outcome.
+- what ships
+- what the manifest says and what a space takes from it
+- the nginx fragment `cli.NginxConf` and the file under `etc/` that copies it
+- the working directory, the environment and the services file entries it uses
+- the preconditions the hosts feature stands on
+- the memory cloud and simulated hosts a sandbox gives it
+- the walk the delivery makes in the sandbox
+- the trust accounts places in what reaches it
+- the finish line
+
+Outcomes cited as outcome N are those of /home/mgreenly/Documents/ikigenba-ssh-hosts.md, and log entries those of /home/mgreenly/Documents/ikigenba-ssh-hosts-decisions.md.
+
+Almost every step between a checkout and a running host belongs to someone else:
+
+- devctl builds and ships the release, `accountsd` included, and `devctl hosts set` gives one space its AWS rights.
+- infra holds the zone, the launch template whose user data installs `accountsd`, the hosts' role and profile, and the operator policy.
+- opsctl installs the release, writes the environment and generates nginx.
+- auth decides every person's credential.
+- AWS runs the hosts and answers the daemons' identity.
+- telemetry keeps the trail.
+
+accounts' own share is what the other documents of this design state, plus three things this document states:
+
+- the contents of `cli.Manifest`, which `D02-cli` declares
+- the constant `cli.NginxConf`
+- that `etc/nginx.conf` holds the fragment's bytes
 
 ## What ships
 
-The release holds four members of accounts' directory: `bin/accounts`, `etc/manifest.toml`, `etc/nginx.conf` and `share/icon.svg`, the last Tabler's `users` outline, human-authored and already in the tree; `devctl build` packs it beside `bin/` and `etc/`, and home and the banner's trail show it. The two files under `etc/` are what the root package's `Etc` embeds (`D01-layout-and-run-seam`, R-C7K6-723O): `etc/manifest.toml` holds the bytes of `cli.Manifest` (`D02-cli`) and `etc/nginx.conf` the bytes of `cli.NginxConf` (this document). The templates and the migration ship inside the binary (`D01-layout-and-run-seam`, R-C6C9-TACZ, R-C8S2-KTUD; the migration's bytes `D04-store`, R-PDCM-AJ5R), and the database is not in the release: accounts creates `state/accounts.db` under its working directory on its first start (`D01-layout-and-run-seam`, R-CIJ9-MZRX, R-CJR6-0RIM). The tarball, its member list and its name are devctl's, and no test opens the icon or reads the checkout, so the release's members and the icon are outside what a requirement can state; a developer checks them with `tar`.
+The release holds five members of accounts' directory:
+
+- `bin/accounts`.
+- `bin/accountsd`, the daemon. `devctl build` builds every `cmd/<x>` other than `cmd/accounts` static for linux/arm64 and ships it as `accounts/bin/<x>` (log D5). On a space it lands at `/opt/ikigenba/current/accounts/bin/accountsd`, beside `bin/accounts`, which is where accounts finds it (`D01-layout-and-run-seam`).
+- `etc/manifest.toml`, holding the bytes of `cli.Manifest`.
+- `etc/nginx.conf`, holding the bytes of `cli.NginxConf`.
+- `share/icon.svg`, unchanged.
+
+The two files under `etc/` are what the root package's `Etc` embeds (`D01-layout-and-run-seam`, R-C7K6-723O). The templates and both migrations ship inside the binary (`D01-layout-and-run-seam`, R-Y21B-A4SL and R-Y4H4-1O9Z; the migrations' bytes are `D04-store`'s). The database is not in the release: accounts creates `state/accounts.db` on its first start, and in a sandbox also `state/sandbox-cloud.json` (`D01-layout-and-run-seam`, R-ESG4-8UGU and R-Y9CP-KR8R).
+
+The tarball, its member list and its name are devctl's, and no test reads the checkout. So the release's members are outside what a requirement can state; a developer checks them with `tar`.
+
+opsctl's `activate` used to refuse a `bin/` holding more than `<app>`. Under log D11 it now accepts extra regular files there; that is opsctl's change, already landed, and a precondition of this release.
 
 ## The manifest
 
-The manifest is a program-parsed file: opsctl, the sandbox, devctl and home read it, so its text is contract and this document states it byte for byte (R-E307-S9VA), and bounds the description so that TOML reads it as itself (R-E484-61LZ). `D02-cli` declares the constant `cli.Manifest`, says that `accounts manifest` prints it and that `etc/manifest.toml` holds the same bytes.
+opsctl, the sandbox, devctl and home read the manifest, so its text is contract and this document states it byte for byte (R-DJ7M-H4AO). It also bounds the description so that TOML reads it as itself (R-APH7-IHIV).
 
-In order, it says: the app is `accounts`; its description is `pages.Description` (`D06-pages`), the line the about screen shows and the host publishes in its services file for the gateway's instructions, spelled between the quotes so that the two cannot drift, which is why the requirement also keeps the constant free of anything TOML would read as other than itself; it is not the default app (`default = false`); it is an MCP service (`mcp = true`), so the gateway offers the thirteen tools (`D07-tools`); it admits no guests (`guests = false`); it holds no secrets (`secrets = []`), since it calls nothing outside the suite and authenticates to nothing; a `[database]` table naming the `sqlite` engine and `state/accounts.db`, which the host keeps and replicates; a `[resources]` table whose only line is `memory_max = "128M"`, which bounds the unit; and, last, a `[home]` table whose only line is `group = "core"`.
+In order, the manifest says:
 
-**Why `core`.** home draws its `core` group apart from the `application` group. accounts is platform infrastructure: it manages the space's host itself, the accounts, groups and folders people reach the space by, as repos holds the suite's repositories and connections the suite's grants, and both of those sit in `core`. It is not a business application like ledger, candidates or campaigns, whose subject is a business's own work. A business's folder lives on the host accounts manages, not inside accounts. `[resources]` names no `slice`, so the unit runs in the apps' slice like repos and connections: `core` in `[home]` is where home lists it, not where systemd places it.
+- the app is `accounts`
+- its description is `pages.Description` (`D06-pages`, new words)
+- it is not the default app
+- it is an MCP service, so the gateway offers the nineteen tools (`D07-tools`)
+- it admits guests (`guests = true`)
+- it holds no secrets (`secrets = []`)
+- a `[database]` table names `sqlite` and `state/accounts.db`
+- a `[resources]` table holds only `memory_max = "256M"`
+- a `[home]` table holds only `group = "core"`
 
-**What the manifest leaves out.** No `[env]` table: accounts' only setting of its own, `ACCOUNTS_HOST_COMMAND`, must stay unset on a host so that the default applies, and unset in a sandbox so that the in-memory host is chosen (below); a value written from the manifest into the environment would override both. `DRAIN_SECONDS` is the space's, as for every app. No `[events]` and nothing about the bus: accounts emits no bus event and accepts none (`D01-layout-and-run-seam`), and the manifest format has no place for either. No port: accounts serves on the socket the host passes it. Nothing names a space, a release or a host name.
+**Why `guests = true`** (coordinator decision Q1). A daemon on a host has no person's credential. It must reach `/accountsd`, to download the binary at first boot and on self-update, and `/accountsd/v1/*`, to long-poll and report (outcome 21).
 
-**What `guests = false` means.** The host's nginx (opsctl's) and the sandbox's put every request to accounts' host name through auth's `/check`, to the pages, to `/_appkit/` and to `/mcp` alike, and admit only one that carries a credential: a page asked without one is sent to sign in by nginx and auth, and `/mcp` without one is answered `401`, before anything reaches accounts. The pages still send a guest to sign in themselves, through `identity.Optional`, should one reach the socket (`D03-serve`, `D06-pages`), and `/mcp` is wrapped by `identity.Require` (`D03-serve`). So every check the walk makes with a credential is answered by accounts, and every one without by nginx and auth.
+- Under `guests = true`, opsctl's nginx and the sandbox's ask auth's `/check/open` on `location /`. That subrequest admits a request with no credential and passes it on with no identity headers.
+- `/mcp` keeps the strict `/check`, so an agent without a credential is still turned away by nginx and auth with 401.
+- A page asked without a credential now reaches accounts. `identity.Optional` and `D06-pages` send that guest to sign in, as before.
+- The daemon routes take no person's identity at all (`D03-serve`). `/accountsd` serves the release's binary to anyone, and `/accountsd/v1/*` demands the presigned identity header that `D13-daemon-endpoints` verifies (`D12-host-identity`).
+
+**Departure (recorded, flagged to the caller).** Outcome 21 says the daemon long-polls on "a path nginx passes without auth's subrequest". Under `guests = true` nginx still makes a subrequest, `/check/open`, which admits anyone. The daemon paths therefore depend on auth being up. While auth is down a host keeps its last applied state and sign-ins keep working (outcome 22), so nothing is lost but freshness.
+
+The alternative was a fragment `location` that proxies `/accountsd` to accounts' socket without `auth_request`. It is not portable:
+
+- opsctl proxies to `unix:/run/ikigenba/accounts.sock`.
+- The sandbox proxies to an `upstream` of its own naming.
+- A fragment can name neither without encoding a sibling's internals.
+
+Giving fragments a portable proxy target would be two sibling changes (plan section 10, Q1 (b)). Switching to it later changes only this document's manifest and fragment.
+
+**Other departures:**
+
+- accounts' previous manifest had `guests = false`. The precedent for `guests = true` is webhooks (`/in/<slug>`) and sites.
+- `memory_max` moves from `128M` (ledger's and connections' value, and accounts' before) to `256M`. The reasons are the AWS SDK's clients, up to `daemonapi.MaxWaiters` waiting long polls each holding a goroutine and a watch, and report bodies of up to `protocol.MaxReportBytes`.
+
+**What the manifest leaves out:**
+
+- **No `[env]`.** accounts' settings are the space's:
+  - `DRAIN_SECONDS`
+  - `AWS_REGION` and the four `IKIGENBA_HOSTS_*` keys, which opsctl writes only when its configuration names them (log D9) and reserves, so a manifest naming one is refused
+  - `IKIGENBA_SANDBOX`, the sandbox's
+- **`secrets = []`.** accounts' AWS credentials come from the space host's instance role, through the SDK's default chain. `devctl hosts set` attaches the operator policy to that role (outcome 5).
+- **No `[events]`.** accounts emits nothing on the bus and accepts nothing (`D08-trail`).
+- **No port and no name.** Nothing names a space, a release, a host name, the zone or the template.
+
+**Why `core`.** home draws its `core` group apart from `application`. accounts is platform infrastructure, now operating the business's SSH hosts, like repos and connections. `[resources]` names no `slice`, so the unit runs in the apps' slice.
 
 ## The nginx fragment
 
-`cli.NginxConf` holds back the suite's two internal bus paths, `/events` and `/declarations`, at the public name with two exact-match locations answering 404, the pair most of the suite's apps carry. accounts serves neither as a route of its own (`D03-serve`): the events app asks every enabled service on the host for `/declarations` over its socket and takes an answer other than 200 as declaring nothing, and accounts accepts no delivery. The fragment makes the public answer at those two paths the suite's, whatever accounts' socket answers there, so a later release that joins the bus exposes nothing by the change. Nothing else is held back: `/mcp` is guarded by nginx's own locations, and every other path is gated by nginx under `guests = false` and guards itself besides. opsctl and the sandbox include `etc/nginx.conf` inside accounts' server.
+`cli.NginxConf` holds back the suite's two internal bus paths, `/events` and `/declarations`, at the public name, with two exact-match locations answering 404. That is unchanged.
+
+Nothing else is held back or added:
+
+- `/accountsd` and `/accountsd/…` ride `location /` with `/check/open`, so the fragment needs no location for them.
+- `/mcp` is guarded by nginx's own locations.
+
+`protocol.LongPoll` (45 s) sits under nginx's default 60 s `proxy_read_timeout`, which opsctl's generated configuration leaves unset. So a long poll needs no timeout directive in the fragment either. opsctl and the sandbox include `etc/nginx.conf` inside accounts' server.
 
 ## On a space
 
-accounts on a space is the same binary on the same terms as under a test: a socket passed as descriptor 3 (`/run/ikigenba/accounts.sock`), `/var/opt/ikigenba/accounts` as its working directory, so that its database is `/var/opt/ikigenba/accounts/state/accounts.db`, its environment from `/etc/opt/ikigenba/accounts/env`, which opsctl writes and which holds `DRAIN_SECONDS` and neither `ACCOUNTS_HOST_COMMAND` nor `IKIGENBA_SANDBOX`, and `IKIGENBA_SERVICES` naming the host's services file. Who supplies each is opsctl's; what accounts does with them is `D01-layout-and-run-seam`'s and `D03-serve`'s. It is served at `accounts.<host>`, the space's own host name; nothing names a space, and the DNS name is the space's (outcome 23).
+accounts runs on the same terms as under a test:
 
-Of the services file it uses `auth`, for the banner's links and a guest's sign-in address (`D06-pages`), and `telemetry`, appkit's sink for the trail (`D08-trail`). It reaches no sibling and nothing outside the suite (`D01-layout-and-run-seam`, R-CNEV-62QP); it needs no outbound access and holds no secret. A missing entry never refuses the start: without `auth` the addresses are built on the request's scheme and host, and without `telemetry` the writer behaves as appkit's does. The host must run telemetry and auth.
+- a socket passed as descriptor 3 (`/run/ikigenba/accounts.sock`)
+- `/var/opt/ikigenba/accounts` as its working directory
+- its environment from `/etc/opt/ikigenba/accounts/env`, which opsctl writes
 
-**The host command.** With `ACCOUNTS_HOST_COMMAND` unset and no `IKIGENBA_SANDBOX`, as on every space, accounts runs `host.DefaultCommand` (`D05-host`, R-HQO5-SWWO, R-I432-0E2B; `D01-layout-and-run-seam`, R-DAKY-FPTW, R-PJ40-PVCP): `sudo -n` with the installed `opsctl` at `/usr/local/bin/opsctl`, the path opsctl's published README says activating a release links it at, and the arguments of each command, the grammar, outputs and exit statuses `D05-host` relies on. Both are reached only through their published interfaces, as the design format's "Depending on an external tool" allows, and no test runs either: every test runs a stub in their place (accounts/AGENTS.md, "The host is a stub").
+That environment holds `DRAIN_SECONDS`, `IKIGENBA_SERVICES`, `IKIGENBA_COMMIT` and `IKIGENBA_RELEASE`. On the space that operates hosts it also holds `AWS_REGION`, `IKIGENBA_HOSTS_DOMAIN`, `IKIGENBA_HOSTS_ZONE_ID`, `IKIGENBA_HOSTS_LAUNCH_TEMPLATE` and `IKIGENBA_HOSTS_INSTANCE_PROFILE`. It never holds `IKIGENBA_SANDBOX`.
 
-**The precondition: the sudo rule.** accounts relies on the host having been initialized by an opsctl that lays down a sudo rule letting the unprivileged account every app runs as run `opsctl group …` and `opsctl user …` as root without a password, and nothing else (outcomes 16 and 22). The rule is opsctl's to write and the host's to hold; accounts never writes, reads or checks it, and no requirement here states it, since only a real sudo could observe it and no test runs one. What accounts does without it follows from sudo's documented behaviour: sudo(8) says `-n` makes sudo exit with an error rather than prompt when a password would be needed, and that sudo exits 1 when there is a configuration or permission problem or it cannot run the command. So on a host with no rule every changing tool and every list answers failed, `D05-host`'s `*host.FailedError` for status 1 (R-IGA1-U3H9), and nothing is recorded (`D07-tools`); it is never mistaken for a refusal, which only opsctl's statuses 2 and 4 carry. The unit must also leave sudo able to gain privilege, so opsctl's unit for accounts must not set `NoNewPrivileges`; that too is opsctl's.
+With all five hosts keys present accounts runs in AWS mode. With any one missing it runs unconfigured: the tools refuse saying so, the page says so, and the engine does not run (outcome 4; `D01-layout-and-run-seam`). Every other space ships the same binary and runs unconfigured.
 
-**Backup and restore.** The host's backup archives `state/` whole, so `accounts.db` is taken with it: the groups and users accounts created, with their created times and creators, and no key, membership, state or secret (`D04-store`). The host's accounts, homes and folders are the host's, not accounts'. After a restore the record may hold a group or user the host no longer has, which no list shows, or miss one the host has, which lists show with no created time (`D04-store`, `D07-tools`).
+Of the services file accounts uses three entries:
 
-**Releases.** accounts ships in the next suite release (outcome 25). There is no previous release of accounts, so the first migration has no predecessor to run beside; the rolling rule for later releases is `D04-store`'s (R-XKOP-IEAG).
+- `auth`, for the banner and sign-in
+- `telemetry`, for the trail
+- `accounts`, its own entry, whose URL is the **accounts URL** tagged on every instance it launches and the **binding** its verifier expects (`D01-layout-and-run-seam`)
+
+On a space that URL is `https://accounts.<space host>`.
+
+**Preconditions of the hosts feature.** They are stated in prose only; no test can observe them.
+
+- **infra applied** (log step 2, D7, D8). It provides:
+  - The hosted zone for the hosts domain.
+  - The hosts' launch template. Its user data reads the instance's `AccountsURL` tag through IMDS, downloads `<AccountsURL>/accountsd` (arm64 ELF, over HTTPS, no redirect), writes `ACCOUNTS_URL` to `/etc/accountsd.env`, and enables `accountsd.service` with `Restart=always`.
+  - The security group.
+  - The hosts' role and instance profile, named alike, which `D12-host-identity` relies on: the verifier expects the assumed-role ARN under the profile's name.
+  - The operator policy holding the tag contract `D05-cloud` and `D10-operations` follow. AWS denies any call outside it.
+- **`devctl hosts set`** on the operating space (outcome 5), which gives its role the operator policy.
+- **opsctl writes the five keys** (log D9) and accepts extra files in `bin/` (log D11).
+- **The space's accounts unit can reach IMDS and AWS's regional endpoints** for EC2, STS and Route 53. Its unit hardening is opsctl's, and the finish line checks it.
+
+**Backup and restore.** The host's backup archives `state/` whole, so `accounts.db` goes with it: the hosts, operations, accounts, users, keys and latest reports (`D04-store`). After a restore the record may lag AWS. Operations resume against what AWS holds, by their recorded steps and lookups by tag (`D10-operations`). A resource no restored record explains is reported as unexplained, never deleted (`D10-operations`).
+
+**Releases: expand only** (outcome 27). This release adds `0002_hosts.sql` and stops reading or writing the old `groups` and `users` tables of `0001`, but drops nothing (`D04-store`). It stops calling opsctl: no `sudo`, no `opsctl group|user` (`D01-layout-and-run-seam`, R-ETO0-MM7J). It changes nothing in opsctl.
+
+The next release contracts. It drops accounts' old tables, and opsctl removes the shell group and its sshd rules, the pooled limits, the sudo rule for accounts, and its `group` and `user` commands. The daemon protocol changes by expand then contract too (`D11-protocol`).
 
 ## In a sandbox
 
-The sandbox builds accounts from the worktree, gives it `DRAIN_SECONDS` and `IKIGENBA_SANDBOX` (set to the sandbox's name, never in production), includes `etc/nginx.conf` in accounts' server, and, the manifest refusing guests, routes every request through auth's `/check`, as the host does. With `ACCOUNTS_HOST_COMMAND` unset and `IKIGENBA_SANDBOX` present, accounts reaches the in-memory host `host.NewMemory()` returns (`D01-layout-and-run-seam`, R-CPUN-XM83, R-DAKY-FPTW; `D05-host`, R-HXZK-3JCU), so no sudo and no opsctl run on the developer's machine. That host follows opsctl's interface (names, refusals, states) and holds nothing when the run starts; every user's last sign-in is never (R-IZSF-YFCD). The record, under the sandbox's data directory, survives `down` and `up`; the in-memory host does not, so after a restart the record's groups and users are not listed until made again, and are then listed with the first run's created times (`D04-store`, R-OXHX-BIIQ, R-P4TB-M4YW).
+The sandbox builds accounts from the worktree and gives it `DRAIN_SECONDS` and `IKIGENBA_SANDBOX`, and no hosts key. It also builds `cmd/accountsd` into `<data>/bin/accountsd` beside `bin/accounts`, for the developer's architecture and still an ELF, and starts nothing for it (log D11, D12). It includes `etc/nginx.conf` in accounts' server. Because the manifest admits guests, it routes `location /` through auth's `/check/open` and `/mcp` through `/check`, as a space does.
 
-An agent is curl on the developer's machine: the pages at `http://accounts.<sandbox>.localhost:<port>/` with `Authorization: Bearer $(sandbox token)`, and the tools through the gateway or at accounts' `/mcp` with the same token. Every step signs in; a step without the token is answered by nginx and auth, never by accounts.
+Sandbox mode (`D01-layout-and-run-seam`):
+
+- accounts runs on `D16-sandbox`'s memory cloud, kept in `state/sandbox-cloud.json` under its app directory.
+- The memory cloud enforces the tag contract and takes observable time over each transition.
+- One simulated daemon (`D16-sandbox`) runs in process for every running instance. It speaks the real protocol, through the real verifier, to accounts' own handler, and applies to an in-memory machine.
+
+No AWS call and no real host change is made on the developer's machine.
+
+What survives a restart:
+
+- The record and the memory cloud survive `down`, `up` and an accounts restart, so an interrupted operation resumes against what the fake already made.
+- Simulated machines do not survive. Their next cycle re-applies the whole desired state, as a real daemon does after a reboot.
+- `sandbox wipe` removes everything.
+
+An agent is curl on the developer's machine:
+
+- the pages at `http://accounts.<sandbox>.localhost:<port>/`, with `Authorization: Bearer $(sandbox token)`
+- the tools through the gateway or at accounts' `/mcp`, with the same token
 
 ### The walk
 
-With the sandbox up from the worktree, the delivery walks, as the developer, with the stored token, through the gateway's tools or accounts' `/mcp` and with curl. Keys are fresh ed25519 OpenSSH public keys the delivery generates for the walk.
+The sandbox is up from the worktree. The delivery walks it as the developer, with the stored token, through the gateway's tools or accounts' `/mcp`, and with curl. Keys are fresh ed25519 OpenSSH public keys the delivery generates.
 
-1. Before any change: home, `GET /`, `/tools` and `/about` with the token and without it, `POST /mcp` without a credential, `/events` and `/declarations` at the public name, and the gateway's `describe` of accounts.
-2. `groups` and `users`: none of either.
-3. `create_group` `acme`; again, refused as a name taken; `create_group` with a name that is not valid; `group` `acme`.
-4. `add_user` `alice` to `acme` with a key; `add_user` with a key that is not ed25519; `add_user` `bob` to `acme`; `add_user` with the name `acme`.
-5. `add_key` a second key to `alice`; `remove_key` both, the second answering that no key is left; `add_key` one back.
-6. `create_group` `beta`; `add_member` `alice` to `beta`; `remove_member` `alice` from `beta`; `remove_group` `beta`.
-7. `remove_group` `acme`, refused while it has members.
-8. `delete_user` `bob`, refused while active; `lock_user` `bob`; `delete_user` `bob`; `lock_user` then `unlock_user` `alice`.
-9. `groups` and `users` with `limit` 1, following `next` to the end; `group` `acme`.
-10. `GET /` again, `/tools`, `/about` and an unknown path, with the token.
-11. telemetry's `catalog` and `search` for accounts.
+The timings are `D16-sandbox`'s: about 40 s of `provisioning`, 5 s for a DNS change, and 3 s per apply.
 
-The real chain through sudo and opsctl is not in the sandbox; it is walked on the space at the finish line.
+1. **Before any change.**
+   - home lists accounts.
+   - `GET /`, `/tools` and `/about` are fetched with the token, and without it (sent to sign in).
+   - `POST /mcp` without a credential gets 401 from nginx.
+   - `/events` and `/declarations` answer 404.
+   - The gateway's `describe` of accounts lists the nineteen tools.
+   - `curl` of `/accountsd` without a token gets bytes equal to `<data>/bin/accountsd`.
+   - `GET /accountsd/v1/state` without the identity header is answered 401 by accounts.
+2. **Create a host.**
+   - `hosts` lists none.
+   - `create_host` with no argument answers `host01`, `provisioning`.
+   - `host` shows `host01`, `/hosts/host01` shows the host page, and the landing row shows health `none`.
+   - After about 40 s the host is `running`, and within a cycle its health is `sync` with a full report on `/hosts/host01`.
+3. **Place an account.**
+   - `create_account` `acme` on `host01` answers `pending` and the DNS name `acme.hosts.test`. It turns `active` after the DNS change and one apply.
+   - `create_account` `www` is refused as reserved.
+   - `acme` again is refused as taken.
+4. **Add users.**
+   - `add_user` `bugs` and `daffy` to `acme` with keys: each answers `pending: true`, then `false` once applied.
+   - `add_user` a third user under the name `acme` is refused as taken.
+   - `add_key` and then `remove_key` on `bugs`.
+5. **Lock, unlock and delete.**
+   - `lock_user` `daffy` (pending, then applied), then `unlock_user`.
+   - `delete_user` `daffy` while active is refused.
+   - `lock_user` then `delete_user` `daffy`: `removing`, then gone from `users`.
+   - `add_user` `daffy` again succeeds.
+6. **Stop and start.**
+   - `stop_host` `host01`: `stopping`, then `stopped`. Health keeps its last word.
+   - `start_host`: `starting`, then `running`, with the same EIP and data volume and health back to `sync`.
+7. **Resize.** `resize_host` `host01` to type `t4g.large` with `data_gb` 60 answers `restarts: true`, then `resizing`, then `running` with the new type and size.
+8. **Restart mid-operation.** `create_host` again (`host02`). During its `provisioning`, run `systemctl --user restart sandbox-<name>-accounts`. Then `resize_host` `host01`'s root to 30 and restart again during `resizing`. Each operation resumes from its recorded step and settles. After it settles, the delivery counts the instances, volumes and addresses tagged `Host=<name>` in `state/sandbox-cloud.json` and expects exactly one instance, one data volume, one root volume and one address per host. An extra resource the interrupted attempt made carries the running operation's `Operation` tag, so the stray scan treats it as explained; telemetry's lack of `resource.unexplained` alone proves nothing here.
+9. **Removal guards.**
+   - `delete_host` `host01` is refused while `acme` is on it.
+   - `remove_account` `acme` is refused while it has users. Lock and delete them, then `remove_account` `acme`: `removing`, then gone.
+   - `delete_host` `host02` and `host01`: `deleting`, then hidden from `hosts` and the landing page. Their data volumes stay in the memory cloud, tagged `Orphaned=true`.
+10. **Telemetry.** telemetry's `catalog` and `search` for accounts show:
+    - one `change.finished` per changing call
+    - `operation.started` and `operation.finished` for each operation
+    - `host.changed` for each host state change
+    - `account.changed` for each account state change
+    - nothing for a read
+
+Silence (`host.silent`) is not part of the walk, because a running sandbox host always reports. Unit tests prove it with an injected clock.
+
+The real chain, AWS, real hosts, SSH and the space's nginx, is not in the sandbox. It is walked at the finish line.
 
 ## Verification
 
-Each row is an outcome the walk checks and the documents that own it. A row naming nginx, auth, the sandbox, home, telemetry or the gateway is that service's behaviour, observed and not required here. Ids are cited where this document's inputs fix them; the rest are cited by document.
+Each row is an outcome the walk checks and the documents that own it. A row naming nginx, auth, the sandbox, home, telemetry or the gateway is that service's behaviour, observed and not required here.
 
 | Outcome the checks rely on | Owner |
 |---|---|
-| home lists accounts under core, with its icon and description | `[home] group = "core"` and the description in the manifest (R-E307-S9VA, R-E484-61LZ; `cli.Manifest` `D02-cli`; `pages.Description` `D06-pages`); the icon in `share/` (What ships); the listing: home and the sandbox's or opsctl's services file |
-| `GET /`, `/tools` and `/about` with the token answer 200 with the page drawn for the developer, the release in the footer; an unknown path answers accounts' not-found page | `D06-pages`; routing `D03-serve`; the footer's release `D01-layout-and-run-seam` (R-PHW4-C3M0) |
-| the same paths without a credential are sent to sign in by nginx and auth, and nothing reaches accounts | `guests = false` (R-E307-S9VA); nginx and auth's `/check`; the pages' own redirect `D06-pages`, `D03-serve` |
-| `POST /mcp` without a credential answers 401 and nothing reaches accounts | nginx and auth; were it to reach accounts, `D03-serve` |
-| `/events` and `/declarations` at the public name answer 404, with or without the token | the fragment (R-M6FC-GN0B, R-M7N8-UER0), included by the sandbox's and opsctl's nginx |
-| the gateway's `describe` lists the thirteen tools in catalog order with their effects, and a call's result carries accounts' `serverInfo` | `D07-tools`; mounting `D03-serve`; `D01-layout-and-run-seam` (R-DJ49-440R); the relay: the gateway |
-| the sandbox's tools reach the in-memory host, empty at the start | `D01-layout-and-run-seam` (R-CPUN-XM83); `D05-host` (R-IOTC-IHO4) |
-| `create_group` makes the group; again it is refused as a name taken with the host's diagnostic and records nothing; an invalid name is refused with the host's diagnostic | `D07-tools`; `D04-store` (R-XEL7-LJKZ); `D05-host` (R-9VCK-2CEE, R-D9PT-VML3) |
-| `add_user` makes the user active in the group with the key; a bad key and a taken name are refused with the host's diagnostic | `D07-tools`; `D04-store` (R-XFT3-ZBBO); `D05-host` (R-IYKJ-KNLO, R-IR95-A15I) |
-| `add_key` and `remove_key` change the user's keys; removing the last answers that no key is left and keeps the user | `D07-tools`; `D05-host` (R-J10C-C732, R-J288-PYTR) |
-| `add_member`, `remove_member` and `remove_group` of an empty group succeed; `remove_group` of a group with members is refused | `D07-tools`; `D04-store` (R-OZXQ-3204); `D05-host` (R-J3G5-3QKG, R-SXVL-IZ6F) |
-| `delete_user` of an active user is refused; lock, then delete succeeds; lock and unlock change the state and keep groups and keys | `D07-tools`; `D04-store` (R-P794-DOGA); `D05-host` (R-SZ3H-WQX4, R-J4O1-HIB5) |
-| `groups` and `users` page by name with `next`; `group` lists its members sorted | `D07-tools`; `D05-host` (R-IUWU-FCDL, R-IZSF-YFCD, R-IXCN-6VUZ) |
-| `GET /` shows the groups with their members and created times and the users with their state and an empty last sign-in | `D06-pages`; `D01-layout-and-run-seam` (R-PGO7-YBVB) |
-| telemetry's `catalog` and `search` for accounts show one change event per changing call, naming the tool, the developer, the group or user and the result, and none for a read | `D08-trail`; which call records `D07-tools` |
-| accounts reaches no sibling: telemetry shows no `sibling.called` | `D01-layout-and-run-seam` (R-CNEV-62QP); `D08-trail` |
-
-That a test proves each owner's requirement over a stub host and fakes on loopback sockets, and never over a real sudo, opsctl, telemetry, nginx or gateway, is the run's; the walk is the delivery's, and no requirement states what the real services answer.
+| home lists accounts under core with its icon and description | the manifest (R-DJ7M-H4AO, R-APH7-IHIV; `D02-cli`; `D06-pages`); home |
+| pages answer 200 for the developer and send a guest to sign in; `/mcp` without a credential is 401 | `D06-pages`, `D03-serve`; `guests = true` (R-DJ7M-H4AO); nginx and auth |
+| `/events` and `/declarations` answer 404 | the fragment (R-M6FC-GN0B, R-M7N8-UER0) |
+| `/accountsd` serves the binary to anyone; `/accountsd/v1/*` refuses a request without identity | `D13-daemon-endpoints`; routing `D03-serve` (R-GIAD-HJV5); binary path `D01-layout-and-run-seam` (R-Z1EE-DHAQ) |
+| the sandbox runs on the memory cloud and simulated daemons, persisted across restarts | `D01-layout-and-run-seam` (R-YRN7-BBD6, R-YYYL-LXTC); `D03-serve` (R-GY52-GKI6); `D16-sandbox` |
+| host states, health and the report page | `D10-operations`, `D04-store`, `D06-pages`, `D07-tools` |
+| account placement, DNS name, reserved and taken names | `D07-tools`, `D17-names-keys-sizes`, `D04-store`, `D10-operations` |
+| users pending, then applied; lock, unlock, delete, re-add | `D07-tools`, `D04-store`, `D13-daemon-endpoints`, `D14-accountsd`, `D15-machine` |
+| stop, start, resize with `restarts` | `D07-tools`, `D10-operations` |
+| restart mid-operation resumes, with no duplicates and no strays | `D03-serve` (R-GT9G-XHJE, R-H0KV-83ZK); `D10-operations`; `D16-sandbox` |
+| removal guards, unplace, delete and orphaned volume | `D04-store`, `D07-tools`, `D10-operations` |
+| trail events | `D08-trail`; emitters `D07-tools`, `D10-operations`, `D13-daemon-endpoints` |
+| accounts reaches no sibling and runs no program | `D01-layout-and-run-seam` (R-YD0E-Q2GU, R-ETO0-MM7J) |
 
 ## Trust
 
-accounts believes the identity it is sent, as every sibling does: `X-User-Id`, `X-User-Email` and `X-Request-Id` as nginx or the gateway set them on a request to its socket (`D03-serve`). It asks auth nothing. Every signed-in user of the space reads and changes every group and user, as themselves (outcome 1), and every change is recorded in the trail under the user id the request names (`D08-trail`). A process that can reach accounts' socket can therefore name any user and make any change a tool makes; every service on the host is trusted, and nginx and the gateway are the only doors from outside, nginx admitting no request without a credential.
-
-What opsctl answers is believed: its lists are the truth the tools and the page show, and its first diagnostic line is relayed unaltered (`D05-host`). The privilege accounts uses is exactly what the sudo rule grants: opsctl's group and user commands, which validate every name and key themselves, so accounts holds no privilege of its own and does no validation of its own. Every app on a host runs as the same account, so the rule is reachable from any app's process; that is the host's arrangement and the same trust every service on the host already has. accounts holds no secret; its database holds names, times and creators, and public keys never enter it.
+- **People.** accounts believes the identity nginx sets for a person (`X-User-Id`, `X-User-Email`, `X-Request-Id`), as every sibling does. Every signed-in user of the space reads and changes every host, account and user, as themselves, and every change is recorded under the caller (`D08-trail`). `guests = true` lets a request without a credential reach accounts' socket. The pages send it to sign in, `/mcp` never sees it, and only the daemon routes answer it.
+- **Daemons.**
+  - A daemon is believed only after its presigned `sts:GetCallerIdentity` request has been executed by accounts and answered by STS:
+    - for accounts' own AWS account
+    - for the hosts' role
+    - with an instance id that maps to exactly one live host
+  - The request is fresh, never replayed, and bound to accounts' binding (`D12-host-identity`).
+  - The session name is trusted as the instance id because the hosts' role trusts only `ec2.amazonaws.com` (infra).
+  - Customer users cannot obtain the role's credentials, because the host blocks IMDS for every uid but root (`D15-machine`).
+  - What a forged report could do is bounded to its own host (`D04-store`).
+- **The binary.** `/accountsd` serves, to anyone, the release's own daemon binary. It holds no secret: the daemon learns everything else from the verified protocol.
+- **AWS.** accounts holds no secret of its own. Its credentials are the space role's, which the operator policy limits to the tag contract, so AWS itself refuses anything outside it. An AWS error's message text never enters the trail, only its service, operation, subject and code (`D05-cloud`).
 
 ## The finish line
 
-The delivery carries accounts to the space the decisions document names, after the sandbox walk, as its Finish line settles it: build (the gap closed and the gates pass), the sandbox walk above, land onto `main`, tag the next suite release, push, apply the infra change, and deploy, the host initialized by the release's opsctl so the sudo rule is in place before the first change. On the space, with the space token and through the gateway: `create_group` and `add_user` with the owner's test key succeed and `GET /` on `accounts.<host>` and home show both; the rest of the walk, `lock_user`, `unlock_user` and `delete_user` included, is repeated against the real host. This is where the real chain through sudo and opsctl is proved; no test proves it.
+The delivery carries accounts to `us`, as the decisions document's Finish line and Sequence settle it:
+
+1. Build: the gap closed and the gates pass, including the `accountsd` arm64 build.
+2. The sandbox walk above.
+3. Land onto `main`, tag the next suite release, push, and deploy to `us`.
+
+The preconditions above come first: infra applied, `devctl hosts set us`, opsctl's five keys set and `init` run.
+
+On the space, with the space token and through the gateway, the delivery makes the eight checks of the decisions document's Finish line:
+
+1. `host01` provisions to `running` and `sync`, with a full report.
+2. `acme.<hosts domain>` resolves to `host01`'s EIP.
+3. `bugs` and `daffy` show pending, then applied.
+4. SSH works as each of them, with shared `/srv/acme` and private homes; `ec2-user` and passwords are refused.
+5. Lock, unlock, delete and re-add.
+6. Stop, start and resize keep the same EIP, data and host key.
+7. Restarting accounts during a create and a resize, and restarting the daemon during an apply, resumes and settles with no orphaned resource.
+8. SSM reaches the host, and `acme` and `bugs` are gone from `us`.
+
+No test can make the following checks, so they are made here:
+
+- an SSH session's processes sit in `acct-<account>-<user>.slice` with the slice's properties (`D15-machine`; the PAM mechanism is unproven until here, coordinator decision Q2)
+- IMDS is unreachable as a customer user and reachable as root (`D15-machine`)
+- `getent passwd` and `getent group` on the launched host list no name outside `valid.SystemNames` (`D17-names-keys-sizes`) other than the accounts and users accounts placed, so the reserved system names cover every account and group the image, SSM and EC2 create
+- real STS accepts the daemons' presigned headers bound to the binding
+- the space's nginx passes `/accountsd` under `guests = true`
+- opsctl activates a release whose `bin/` holds `accountsd`
+- the accounts unit reaches IMDS and AWS
 
 ## Recorded decisions
 
-- **The manifest's contents are stated here,** byte for byte, and `cli.Manifest`, its printing and `etc/manifest.toml`'s equality with it are `D02-cli`'s. It is ledger's manifest with accounts' name, its database path and `[home] group = "core"` in place of `application`.
-- **`[home] group = "core"`,** the brief's settled point 8: accounts is platform infrastructure managing the space's host, like repos and connections, not a business application. `[resources]` keeps the default `apps` slice.
-- **No `[env]`,** so that the default host command applies on a space and the in-memory host in a sandbox; a manifest value would override both.
-- **`guests = false`** (settled point 7): accounts has no guest route.
-- **`memory_max = "128M"`,** as ledger and connections.
-- **`cli.NginxConf` is the suite's held-back pair,** `/events` and `/declarations`, though accounts serves neither, so the public answer at those paths is the suite's and a later bus membership exposes nothing. The alternative, an empty fragment, would have the same effect today; `D01-layout-and-run-seam` requires the file to exist either way.
-- **The host command default and the sandbox switch are `D01-layout-and-run-seam`'s and `D05-host`'s,** cited here, not restated. The sudo rule is an external precondition, stated in prose and never tested.
-- No release, space or host name is named in the manifest, the fragment or any requirement.
+- **The manifest's contents are stated here,** byte for byte. `cli.Manifest`, its printing and `etc/manifest.toml`'s equality with it are `D02-cli`'s.
+- **`guests = true`** (coordinator decision Q1). This is a departure from outcome 21's wording and from accounts' previous `guests = false`. The precedent is webhooks and sites. The reasons are above.
+- **`memory_max = "256M"`.** A departure from `128M` (ledger, connections, accounts before), for the reasons above.
+- **`secrets = []` and no `[env]`.** Credentials come from the instance role. The hosts keys are opsctl's to write, and reserved.
+- **`[home] group = "core"`** is kept.
+- **`cli.NginxConf` is unchanged.** The daemon paths need no location of their own under `guests = true`. A fragment that proxied them past auth would need a proxy target that is not portable across opsctl and the sandbox.
+- **What ships, the preconditions and the finish line are prose.** Only a real release, a real AWS account and a real host could observe them, and no permitted test reaches those.
+- No release, space, host name, zone or template is named in the manifest, the fragment or any requirement.
 
-## Consumer tasks
+## Consumer usage
 
-An operator initializes the host with the release's opsctl, which lays down the sudo rule, and installs the release; opsctl reads `etc/manifest.toml`, writes `DRAIN_SECONDS` into `/etc/opt/ikigenba/accounts/env`, generates accounts' server with auth's `/check` in front of every path and `etc/nginx.conf` included, adds accounts' entry with its icon and the `core` group to the services file, and starts the unit; the start creates and migrates the database with no step of the operator's. An agent then calls `create_group` through the gateway, and accounts runs `sudo -n` with opsctl's `group add`.
+An operator's path, in order:
 
-A test compares `cli.Manifest` with the string it builds from the stated lines and `pages.Description`; another checks `pages.Description` with `utf8.ValidString` and rune by rune for what R-E484-61LZ excludes. A test reads `nginx.conf` from the root package's `Etc()` with `fs.ReadFile` and compares it with `cli.NginxConf`; it imports `cli` and references the constant, so it compiles only if the constant exists.
+1. `devctl hosts set us`.
+2. `opsctl config set` of `aws.region` and the four `hosts.*` keys.
+3. Deploy. opsctl writes the env file with the five keys, generates accounts' server with `/check/open` on `location /` and `etc/nginx.conf` included, and starts the unit.
+4. accounts starts in AWS mode (plan section 11, task 14 shows the unconfigured case).
+
+An agent then calls `create_host` through the gateway (task 1). An instance's first boot fetches `https://accounts.<space host>/accountsd` through `location /` (task 2).
+
+Tests of this document:
+
+- One compares `cli.Manifest` with the string it builds from the stated lines and `pages.Description`.
+- One checks `pages.Description` with `utf8.ValidString` and rune by rune.
+- One reads `nginx.conf` from `accounts.Etc()` with `fs.ReadFile` and compares it with `cli.NginxConf`.
 
 ## REQUIREMENTS
 
-- R-E307-S9VA: The value of `cli.Manifest` (`D02-cli`) MUST be exactly `app = "accounts"\ndescription = "` followed by the text of `pages.Description` (`D06-pages`) followed by `"\ndefault = false\nmcp = true\nguests = false\nsecrets = []\n\n[database]\nengine = "sqlite"\npath = "state/accounts.db"\n\n[resources]\nmemory_max = "128M"\n\n[home]\ngroup = "core"\n`, each `\n` denoting one line feed and each `"` one double quote.
-- R-E484-61LZ: `pages.Description` (`D06-pages`) MUST be non-empty, be valid UTF-8 as the standard library's `utf8.ValidString` reports, and hold no `"`, no `\` and no rune for which the standard library's `unicode.IsControl` is true; so that, written between the quotes of the manifest's description line (R-E307-S9VA), its TOML value is exactly `pages.Description`.
+- R-DJ7M-H4AO: The value of `cli.Manifest` (`D02-cli`) MUST be exactly `app = "accounts"\ndescription = "` followed by the text of `pages.Description` (`D06-pages`) followed by `"\ndefault = false\nmcp = true\nguests = true\nsecrets = []\n\n[database]\nengine = "sqlite"\npath = "state/accounts.db"\n\n[resources]\nmemory_max = "256M"\n\n[home]\ngroup = "core"\n`, each `\n` denoting one line feed and each `"` one double quote.
+- R-APH7-IHIV: `pages.Description` (`D06-pages`) MUST be non-empty, be valid UTF-8 as the standard library's `utf8.ValidString` reports, and hold no `"`, no `\` and no rune for which the standard library's `unicode.IsControl` is true; so that, written between the quotes of the manifest's description line (R-DJ7M-H4AO), its TOML value is exactly `pages.Description`.
 - R-M6FC-GN0B: The `internal/cli` package MUST export `const NginxConf = "location = /events { return 404; }\nlocation = /declarations { return 404; }\n"`, each `\n` denoting one line feed.
 - R-M7N8-UER0: The contents of the file `nginx.conf` in the file system the root package's `Etc` returns (`D01-layout-and-run-seam`) MUST be exactly the bytes of `cli.NginxConf`.
