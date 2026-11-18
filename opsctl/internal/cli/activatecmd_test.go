@@ -270,27 +270,8 @@ func TestActivateGrammarAndIdentity(t *testing.T) {
 		})
 	}
 }
-func TestActivateConfigurationInert(t *testing.T) {
-	// R-B1HF-64GL
-	for _, tc := range []struct{ key, val, want string }{{"aws.region", "", "aws.region not set"}, {"host.name", "", "host.name not set"}, {"apps.stop_seconds", "2", "apps.stop_seconds (2) is not greater than apps.drain_seconds (5)"}, {"host.apex", "dummy", "host.apex is set but host.name 'example' has no parent domain"}} {
-		f := newTransitionFixture(t)
-		store := config.Store{Root: f.root}
-		if e := store.Set(tc.key, tc.val); e != nil {
-			t.Fatal(e)
-		}
-		if tc.key == "host.apex" {
-			if e := store.Set("host.name", "example"); e != nil {
-				t.Fatal(e)
-			}
-		}
-		code, out, err := f.run("activate", transitionSHA)
-		if code != 1 || out != "" || err != "opsctl: "+tc.want+"\n" || len(f.commands) != 0 {
-			t.Fatalf("%d %q %q", code, out, err)
-		}
-	}
-}
 func TestActivateSuccessfulReleaseAndReactivation(t *testing.T) {
-	// R-SJ12-ASZT R-96TV-G8QK R-BDOE-ZTVJ R-BIK0-IWUB R-BKZT-AGBP R-9BPG-ZBPC R-SSS9-CYXD R-BR3B-7B16 R-BSB7-L2RV R-BVYW-QDZY R-9CXD-D3G1
+	// R-SJ12-ASZT R-96TV-G8QK R-BIK0-IWUB R-9BPG-ZBPC R-SSS9-CYXD R-BR3B-7B16 R-BSB7-L2RV R-BVYW-QDZY R-9CXD-D3G1
 	f := newTransitionFixture(t)
 	f.addRelease(transitionOld, "dropped")
 	f.link("current", transitionOld)

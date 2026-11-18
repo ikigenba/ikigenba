@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -163,14 +164,14 @@ func distinctNames(names []string) []string {
 	return distinct
 }
 
-func validateEnvironment(manifest Manifest, secrets map[string]string) error {
+func validateEnvironment(manifest Manifest, secrets map[string]string, extraReserved ...string) error {
 	secretNames := distinctNames(manifest.Secrets)
 	secretSet := make(map[string]struct{}, len(secretNames))
 	for _, name := range secretNames {
 		if !validEnvironmentName(name) {
 			return fmt.Errorf("%s: invalid secret name %q", safeDiagnosticToken(manifest.App), name)
 		}
-		if name == "DRAIN_SECONDS" || name == ServicesEnv || name == "PORT" {
+		if reservedEnvironmentName(name, extraReserved) {
 			return fmt.Errorf("%s: secret name %s is reserved", safeDiagnosticToken(manifest.App), name)
 		}
 		secretSet[name] = struct{}{}
@@ -188,7 +189,7 @@ func validateEnvironment(manifest Manifest, secrets map[string]string) error {
 		if !validEnvironmentName(name) {
 			return fmt.Errorf("%s: invalid setting name %q", safeDiagnosticToken(manifest.App), name)
 		}
-		if name == "DRAIN_SECONDS" || name == ServicesEnv || name == "PORT" {
+		if reservedEnvironmentName(name, extraReserved) {
 			return fmt.Errorf("%s: setting name %s is reserved", safeDiagnosticToken(manifest.App), name)
 		}
 		if _, overlap := secretSet[name]; overlap {
@@ -199,6 +200,10 @@ func validateEnvironment(manifest Manifest, secrets map[string]string) error {
 		}
 	}
 	return nil
+}
+
+func reservedEnvironmentName(name string, extra []string) bool {
+	return name == "DRAIN_SECONDS" || name == ServicesEnv || name == "PORT" || slices.Contains(extra, name)
 }
 
 func validEnvironmentName(name string) bool {
@@ -221,10 +226,9 @@ func invalidEnvironmentValue(value string) bool {
 	return strings.ContainsAny(value, "\x00\r\n")
 }
 
-func renderEnvironment(manifest Manifest, secrets map[string]string, drainSeconds int64) []byte {
-	var output strings.Builder
+func writeAppEnvironment(output *strings.Builder, manifest Manifest, secrets map[string]string, drainSeconds int64, servicesPath string) {
 	for _, name := range distinctNames(manifest.Secrets) {
-		writeEnvironmentEntry(&output, name, secrets[name])
+		writeEnvironmentEntry(output, name, secrets[name])
 	}
 	names := make([]string, 0, len(manifest.Env))
 	for name := range manifest.Env {
@@ -232,13 +236,12 @@ func renderEnvironment(manifest Manifest, secrets map[string]string, drainSecond
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		writeEnvironmentEntry(&output, name, manifest.Env[name])
+		writeEnvironmentEntry(output, name, manifest.Env[name])
 	}
 	output.WriteString("DRAIN_SECONDS=")
 	output.WriteString(strconv.FormatInt(drainSeconds, 10))
 	output.WriteByte('\n')
-	output.WriteString(ServicesEnv + "=" + PerAppServicesPath + "\n")
-	return []byte(output.String())
+	output.WriteString(ServicesEnv + "=" + servicesPath + "\n")
 }
 
 func writeEnvironmentEntry(output *strings.Builder, name, value string) {

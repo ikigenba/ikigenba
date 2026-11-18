@@ -120,12 +120,12 @@ func setupInitApps(ctx context.Context, env host.Env, store config.Store, remote
 	if layout == apps.PerApp {
 		return apps.SetupTimeouts(ctx, env, store)
 	}
-	region, err := store.Get("aws.region")
-	if errors.Is(err, config.ErrNotSet) || err == nil && region == "" {
-		return errors.New("aws.region not set")
-	}
+	space, err := apps.ReadSpaceEnv(store)
 	if err != nil {
 		return err
+	}
+	if space.Region == "" {
+		return errors.New("aws.region not set")
 	}
 	r, _, err := release.Current(env.Root)
 	if err != nil {
@@ -155,11 +155,11 @@ func setupInitApps(ctx context.Context, env host.Env, store config.Store, remote
 		if s.Manifest == nil {
 			return fmt.Errorf("%s: no manifest", s.Name)
 		}
-		secrets, err := apps.ReadSecrets(ctx, remote, region, hostName, *s.Manifest)
+		secrets, err := apps.ReadSecrets(ctx, remote, space.Region, hostName, *s.Manifest)
 		if err != nil {
 			return err
 		}
-		data, err := apps.ReleaseEnv(*s.Manifest, secrets, timing, r)
+		data, err := apps.ReleaseEnv(*s.Manifest, secrets, timing, r, space)
 		if err != nil {
 			return err
 		}
@@ -218,15 +218,20 @@ func setupInitApps(ctx context.Context, env host.Env, store config.Store, remote
 		return err
 	}
 	for _, f := range files {
-		unit, _ := fs.ReadFile("etc/systemd/system/ikigenba-" + f.service.Name + ".service")
-		if string(f.data) == string(f.oldEnv) && string(unit) == string(f.oldUnit) {
-			continue
-		}
+		// Inspect enablement on every run so a hosts setting changes only the
+		// active-state queries and restarts for apps with new environment bytes.
 		disabled, err := apps.Disabled(ctx, env, f.service.Name)
 		if err != nil {
 			return err
 		}
 		if disabled {
+			continue
+		}
+		unit, err := fs.ReadFile("etc/systemd/system/ikigenba-" + f.service.Name + ".service")
+		if err != nil {
+			return err
+		}
+		if string(f.data) == string(f.oldEnv) && string(unit) == string(f.oldUnit) {
 			continue
 		}
 		result, err := execute("show", "--property=ActiveState", "ikigenba-"+f.service.Name+".socket")

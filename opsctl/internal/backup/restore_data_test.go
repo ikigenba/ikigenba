@@ -74,7 +74,7 @@ func TestRestoreRefusesEveryLegacyStateEntryBeforeSecretsOrStops(t *testing.T) {
 }
 
 func TestRestoreCreatesDataParentsAndPreservesCacheAndExistingModes(t *testing.T) {
-	// R-RP29-000R R-0SV1-83YC
+	// R-0SV1-83YC
 	for _, existing := range []bool{false, true} {
 		t.Run(map[bool]string{false: "new parents", true: "existing parents"}[existing], func(t *testing.T) {
 			root := t.TempDir()
@@ -315,7 +315,7 @@ func TestRestoredArchiveSpecialBitsSurviveOwnershipMapping(t *testing.T) {
 }
 
 func TestRestoreModesIgnoreOwnerRestrictingUmask(t *testing.T) {
-	// R-TU9Y-IUQ1 R-0QF8-GKGY R-RP29-000R R-RQA5-DRRG
+	// R-TU9Y-IUQ1 R-0QF8-GKGY R-RQA5-DRRG
 	for _, hostRestore := range []bool{false, true} {
 		t.Run(map[bool]string{false: "service", true: "host"}[hostRestore], func(t *testing.T) {
 			root := t.TempDir()

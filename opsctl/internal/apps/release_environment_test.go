@@ -89,30 +89,62 @@ func TestReadReleaseSecretsOnlyRequestedKeys(t *testing.T) {
 }
 
 func TestReleaseEnvironmentExactEncodingAndPurity(t *testing.T) {
-	// R-AD3F-IPMP R-AFJ8-A943 R-APAF-CF1N
-	r := release.Release{SHA: strings.Repeat("a", 40), Label: "candidate"}
+	// R-RA48-8TE2 R-RDRX-E4M5 R-USOQ-AOHQ R-APAF-CF1N
+	r := release.Release{SHA: strings.Repeat("a", 40)}
 	m := apps.Manifest{App: "notes", Secrets: []string{"B", "A", "B"}, Env: map[string]string{"Z": "tail", "C": "quote\" slash\\"}}
-	secrets := map[string]string{"A": "", "B": "private", "OTHER": "ignored"}
-	for _, label := range []string{r.Label, ""} {
-		r.Label = label
-		data, err := apps.ReleaseEnv(m, secrets, apps.Timeouts{DrainSeconds: 7, StopSeconds: 9}, r)
-		want := "B=\"private\"\nA=\"\"\nC=\"quote\\\" slash\\\\\"\nZ=\"tail\"\nDRAIN_SECONDS=7\nIKIGENBA_SERVICES=/run/ikigenba/services.json\nIKIGENBA_COMMIT=" + r.SHA + "\n"
-		if label != "" {
-			want += "IKIGENBA_RELEASE=" + label + "\n"
-		}
-		if err != nil || string(data) != want {
-			t.Fatalf("environment %q %v want %q", data, err, want)
-		}
-		again, err := apps.ReleaseEnv(m, secrets, apps.Timeouts{DrainSeconds: 7, StopSeconds: 9}, r)
-		if err != nil || string(again) != want || m.Secrets[0] != "B" || secrets["OTHER"] != "ignored" {
-			t.Fatal("not pure")
-		}
+	secrets := map[string]string{"A": "", "B": "private\"\\", "OTHER": "ignored"}
+	for _, test := range []struct {
+		name  string
+		label string
+		space apps.SpaceEnv
+		tail  string
+	}{
+		{
+			name:  "all settings",
+			label: "candidate",
+			space: apps.SpaceEnv{
+				Region:               "us-east-2",
+				HostsDomain:          "not-a-domain",
+				HostsZoneID:          "  \t",
+				HostsLaunchTemplate:  "quote\" slash\\",
+				HostsInstanceProfile: "profile #1",
+			},
+			tail: "IKIGENBA_RELEASE=candidate\nAWS_REGION=us-east-2\nIKIGENBA_HOSTS_DOMAIN=not-a-domain\nIKIGENBA_HOSTS_ZONE_ID=  \t\nIKIGENBA_HOSTS_LAUNCH_TEMPLATE=quote\" slash\\\nIKIGENBA_HOSTS_INSTANCE_PROFILE=profile #1\n",
+		},
+		{
+			name: "sparse settings",
+			space: apps.SpaceEnv{
+				HostsDomain:          "hosts.example",
+				HostsInstanceProfile: "instance",
+			},
+			tail: "IKIGENBA_HOSTS_DOMAIN=hosts.example\nIKIGENBA_HOSTS_INSTANCE_PROFILE=instance\n",
+		},
+		{name: "empty settings", label: "candidate", tail: "IKIGENBA_RELEASE=candidate\n"},
+		{name: "no optional values"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			r.Label = test.label
+			data, err := apps.ReleaseEnv(m, secrets, apps.Timeouts{DrainSeconds: 7, StopSeconds: 9}, r, test.space)
+			want := "B=\"private\\\"\\\\\"\nA=\"\"\nC=\"quote\\\" slash\\\\\"\nZ=\"tail\"\nDRAIN_SECONDS=7\nIKIGENBA_SERVICES=/run/ikigenba/services.json\nIKIGENBA_COMMIT=" + r.SHA + "\n" + test.tail
+			if err != nil || string(data) != want {
+				t.Fatalf("environment %q %v want %q", data, err, want)
+			}
+			again, err := apps.ReleaseEnv(m, secrets, apps.Timeouts{DrainSeconds: 7, StopSeconds: 9}, r, test.space)
+			if err != nil || string(again) != want || m.Secrets[0] != "B" || secrets["OTHER"] != "ignored" {
+				t.Fatal("not pure")
+			}
+		})
 	}
 }
 
 func TestReleaseEnvironmentRejectsInvalidNamesAndValues(t *testing.T) {
-	// R-AEBB-WHDE
-	for _, name := range []string{"", "9KEY", "bad-name", "DRAIN_SECONDS", "PORT", "IKIGENBA_SERVICES", "IKIGENBA_COMMIT", "IKIGENBA_RELEASE"} {
+	// R-RBC4-ML4R R-QUTX-71LP
+	for _, name := range []string{
+		"", "9KEY", "bad-name", "unicodé", "DRAIN_SECONDS", "PORT",
+		"IKIGENBA_SERVICES", "IKIGENBA_COMMIT", "IKIGENBA_RELEASE", "AWS_REGION",
+		"IKIGENBA_HOSTS_DOMAIN", "IKIGENBA_HOSTS_ZONE_ID", "IKIGENBA_HOSTS_LAUNCH_TEMPLATE",
+		"IKIGENBA_HOSTS_INSTANCE_PROFILE",
+	} {
 		for _, secret := range []bool{false, true} {
 			m := apps.Manifest{App: "notes"}
 			values := map[string]string{}
@@ -122,7 +154,7 @@ func TestReleaseEnvironmentRejectsInvalidNamesAndValues(t *testing.T) {
 			} else {
 				m.Env = map[string]string{name: "private-value"}
 			}
-			_, err := apps.ReleaseEnv(m, values, apps.Timeouts{}, release.Release{})
+			_, err := apps.ReleaseEnv(m, values, apps.Timeouts{}, release.Release{}, apps.SpaceEnv{})
 			if err == nil || !strings.Contains(err.Error(), "notes") || !strings.Contains(err.Error(), name) || strings.Contains(err.Error(), "private-value") {
 				t.Fatalf("error %v", err)
 			}
@@ -138,27 +170,71 @@ func TestReleaseEnvironmentRejectsInvalidNamesAndValues(t *testing.T) {
 			} else {
 				m.Env = map[string]string{"KEY": value}
 			}
-			_, err := apps.ReleaseEnv(m, values, apps.Timeouts{}, release.Release{})
+			_, err := apps.ReleaseEnv(m, values, apps.Timeouts{}, release.Release{}, apps.SpaceEnv{})
 			if err == nil || !strings.Contains(err.Error(), "notes") || !strings.Contains(err.Error(), "KEY") || strings.Contains(err.Error(), "private") {
 				t.Fatalf("error %v", err)
 			}
 		}
 	}
-	_, err := apps.ReleaseEnv(apps.Manifest{App: "notes", Secrets: []string{"KEY"}, Env: map[string]string{"KEY": "private"}}, map[string]string{"KEY": "private"}, apps.Timeouts{}, release.Release{})
+	_, err := apps.ReleaseEnv(apps.Manifest{App: "notes", Secrets: []string{"KEY"}, Env: map[string]string{"KEY": "private"}}, map[string]string{"KEY": "private"}, apps.Timeouts{}, release.Release{}, apps.SpaceEnv{})
 	if err == nil || !strings.Contains(err.Error(), "notes") || !strings.Contains(err.Error(), "KEY") || strings.Contains(err.Error(), "private") {
 		t.Fatalf("overlap error %v", err)
+	}
+}
+
+func TestReleaseEnvironmentRejectsFirstInvalidSpaceSetting(t *testing.T) {
+	// R-USOQ-AOHQ
+	m := apps.Manifest{App: "notes"}
+	for _, bad := range []string{"hidden\x00value", "hidden\rvalue", "hidden\nvalue"} {
+		s := apps.SpaceEnv{
+			Region: bad, HostsDomain: bad, HostsZoneID: bad, HostsLaunchTemplate: bad, HostsInstanceProfile: bad,
+		}
+		for _, field := range []struct {
+			name  string
+			value *string
+		}{
+			{"AWS_REGION", &s.Region},
+			{"IKIGENBA_HOSTS_DOMAIN", &s.HostsDomain},
+			{"IKIGENBA_HOSTS_ZONE_ID", &s.HostsZoneID},
+			{"IKIGENBA_HOSTS_LAUNCH_TEMPLATE", &s.HostsLaunchTemplate},
+			{"IKIGENBA_HOSTS_INSTANCE_PROFILE", &s.HostsInstanceProfile},
+		} {
+			_, err := apps.ReleaseEnv(m, nil, apps.Timeouts{}, release.Release{}, s)
+			want := "notes: " + field.name + " holds a NUL, CR or LF"
+			if err == nil || err.Error() != want {
+				t.Fatalf("error = %v, want %q", err, want)
+			}
+			*field.value = ""
+		}
+	}
+}
+
+func TestReleaseEnvironmentRejectsManifestBeforeSpaceSettings(t *testing.T) {
+	// R-USOQ-AOHQ
+	for _, test := range []struct {
+		manifest apps.Manifest
+		secrets  map[string]string
+	}{
+		{manifest: apps.Manifest{App: "notes", Env: map[string]string{"AWS_REGION": "manifest value"}}},
+		{manifest: apps.Manifest{App: "notes", Secrets: []string{"KEY"}}, secrets: map[string]string{"KEY": "secret\nvalue"}},
+	} {
+		_, want := apps.ReleaseEnv(test.manifest, test.secrets, apps.Timeouts{}, release.Release{}, apps.SpaceEnv{})
+		_, err := apps.ReleaseEnv(test.manifest, test.secrets, apps.Timeouts{}, release.Release{}, apps.SpaceEnv{Region: "bad\nvalue"})
+		if want == nil || err == nil || err.Error() != want.Error() {
+			t.Fatalf("error = %v, want manifest error %v", err, want)
+		}
 	}
 }
 
 func TestReleaseEnvironmentErrorIsPure(t *testing.T) {
 	// R-APAF-CF1N
 	m := apps.Manifest{App: "notes", Env: map[string]string{"IKIGENBA_COMMIT": "hidden", "IKIGENBA_RELEASE": "hidden"}}
-	_, first := apps.ReleaseEnv(m, nil, apps.Timeouts{}, release.Release{})
+	_, first := apps.ReleaseEnv(m, nil, apps.Timeouts{}, release.Release{}, apps.SpaceEnv{})
 	if first == nil {
 		t.Fatal("reserved env accepted")
 	}
 	for range 32 {
-		_, err := apps.ReleaseEnv(m, nil, apps.Timeouts{}, release.Release{})
+		_, err := apps.ReleaseEnv(m, nil, apps.Timeouts{}, release.Release{}, apps.SpaceEnv{})
 		if err == nil || err.Error() != first.Error() {
 			t.Fatalf("same arguments changed error: %v vs %v", first, err)
 		}

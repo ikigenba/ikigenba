@@ -73,10 +73,14 @@ sequence runs: to /opt/ikigenba/current/opsctl/bin/opsctl when that exists,
 otherwise to the running opsctl, so certbot's hooks find opsctl on PATH.
 
 Configuration keys:
-  aws.region          the region this host's parameters live in
-  host.name           the fully-qualified name this host answers at, at or under a configured zone
-  apps.drain_seconds  how long an app may drain when stopped (default 5)
-  apps.stop_seconds   how long systemd waits for an app to stop (default 10)
+  aws.region              the region this host's parameters live in; passed to every app as AWS_REGION
+  host.name               the fully-qualified name this host answers at, at or under a configured zone
+  apps.drain_seconds      how long an app may drain when stopped (default 5)
+  apps.stop_seconds       how long systemd waits for an app to stop (default 10)
+  hosts.domain            the domain hosts are named under; passed to every app
+  hosts.zone_id           the hosted zone id of hosts.domain; passed to every app
+  hosts.launch_template   the launch template hosts are launched from; passed to every app
+  hosts.instance_profile  the instance profile hosts run with; passed to every app
 `
 
 func runInit(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
@@ -90,11 +94,7 @@ func runInit(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 		return writeInitUsageError(stderr, "init takes no arguments")
 	}
 
-	entries, err := (config.Store{Root: deps.Root}).List()
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return initConfigErr(stderr, deps, err)
-	}
-	return runInitPreflight(stdout, stderr, deps, entries)
+	return runInitPreflight(stdout, stderr, deps)
 }
 
 func initConfigErr(stderr io.Writer, deps Deps, err error) exitCode {
@@ -111,18 +111,20 @@ func writeInitUsageError(stderr io.Writer, message string) exitCode {
 	return exitUsage
 }
 
-// runInitPreflight is the boundary between command handling and the checks.
-// The preflight implementation consumes the configuration snapshot loaded
-// before any output, so a store read failure can never produce partial stdout.
-func runInitPreflight(stdout, stderr io.Writer, deps Deps, entries []config.Entry) exitCode {
+// runInitPreflight collects the full report before writing it.
+func runInitPreflight(stdout, stderr io.Writer, deps Deps) exitCode {
 	preflight := initPreflight{
 		deps:   deps,
 		store:  config.Store{Root: deps.Root},
-		values: make(map[string]string, len(entries)),
+		values: make(map[string]string),
 		allOK:  true,
 	}
-	for _, entry := range entries {
-		preflight.values[entry.Key] = entry.Value
+	for _, key := range []string{dns.KeyProvider, dns.KeyZones, "host.name"} {
+		value, err := initConfigValue(preflight.store, key)
+		if err != nil {
+			return initConfigErr(stderr, deps, err)
+		}
+		preflight.values[key] = value
 	}
 	preflight.checkTools()
 	if err := preflight.checkDNSConfig(); err != nil {
@@ -136,6 +138,14 @@ func runInitPreflight(stdout, stderr io.Writer, deps Deps, entries []config.Entr
 	preflight.checkHostZone()
 	preflight.checkWildcard()
 	return preflight.finish(stdout, stderr)
+}
+
+func initConfigValue(store config.Store, key string) (string, error) {
+	value, err := store.Get(key)
+	if errors.Is(err, config.ErrNotSet) {
+		return "", nil
+	}
+	return value, err
 }
 
 type initPreflight struct {
@@ -328,18 +338,10 @@ func (p *initPreflight) finish(stdout, stderr io.Writer) exitCode {
 	}
 	ctx := context.Background()
 	env := host.Env{Root: p.deps.Root, Getenv: p.deps.Getenv, Execute: p.deps.Execute, Now: p.deps.Now}
-	email, err := p.store.Get("acme.email")
-	if errors.Is(err, config.ErrNotSet) {
-		email = ""
-		err = nil
-	}
+	email, err := initConfigValue(p.store, "acme.email")
 	apexApp := ""
 	if err == nil {
-		apexApp, err = p.store.Get("host.apex")
-		if errors.Is(err, config.ErrNotSet) {
-			apexApp = ""
-			err = nil
-		}
+		apexApp, err = initConfigValue(p.store, "host.apex")
 	}
 	if err == nil {
 		err = ensureInitOpsctl(p.deps)

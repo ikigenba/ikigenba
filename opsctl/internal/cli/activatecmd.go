@@ -95,26 +95,27 @@ func releaseCount(n int, noun string) string {
 }
 
 type transition struct {
-	ctx                context.Context
-	env                host.Env
-	deps               Deps
-	files              *os.Root
-	store              config.Store
-	r                  release.Release
-	folder             string
-	name, apex, region string
-	timing             apps.Timeouts
-	trees              []string
-	manifests          []apps.Manifest
-	envs               map[string][]byte
-	old                []apps.Service
-	disabled           map[string]bool
-	layout             apps.Layout
-	current            release.Release
-	hasCurrent         bool
-	rollback           bool
-	journal            []byte
-	journalErr         error
+	ctx        context.Context
+	env        host.Env
+	deps       Deps
+	files      *os.Root
+	store      config.Store
+	r          release.Release
+	folder     string
+	name, apex string
+	timing     apps.Timeouts
+	spaceEnv   apps.SpaceEnv
+	trees      []string
+	manifests  []apps.Manifest
+	envs       map[string][]byte
+	old        []apps.Service
+	disabled   map[string]bool
+	layout     apps.Layout
+	current    release.Release
+	hasCurrent bool
+	rollback   bool
+	journal    []byte
+	journalErr error
 }
 
 func runReleaseTransition(command string, r release.Release, stdout, stderr io.Writer, deps Deps) exitCode {
@@ -215,10 +216,17 @@ func (e *transitionError) Error() string { return e.message }
 func (e *transitionError) Unwrap() error { return e.cause }
 func (t *transition) configuration() error {
 	var err error
+	t.spaceEnv, err = apps.ReadSpaceEnv(t.store)
+	if err != nil {
+		return err
+	}
+	if t.spaceEnv.Region == "" {
+		return errors.New("aws.region not set")
+	}
 	for _, item := range []struct {
 		key string
 		out *string
-	}{{"aws.region", &t.region}, {"host.name", &t.name}, {"host.apex", &t.apex}} {
+	}{{"host.name", &t.name}, {"host.apex", &t.apex}} {
 		v, e := t.store.Get(item.key)
 		if errors.Is(e, config.ErrNotSet) {
 			v = ""
@@ -466,11 +474,11 @@ func (t *transition) manifestsStep() (string, error) {
 func (t *transition) secretsStep() (string, error) {
 	n := 0
 	for _, m := range t.manifests {
-		secrets, err := apps.ReadSecrets(t.ctx, t.deps.Cloud, t.region, t.name, m)
+		secrets, err := apps.ReadSecrets(t.ctx, t.deps.Cloud, t.spaceEnv.Region, t.name, m)
 		if err != nil {
 			return "", err
 		}
-		data, err := apps.ReleaseEnv(m, secrets, t.timing, t.r)
+		data, err := apps.ReleaseEnv(m, secrets, t.timing, t.r, t.spaceEnv)
 		if err != nil {
 			return "", err
 		}
@@ -825,9 +833,72 @@ func (t *transition) retentionStep() (string, error) {
 	return "removed " + releaseCount(n, "release"), nil
 }
 
-const activateUsage = "Usage: opsctl activate SHA [LABEL]\n\nMake the release unpacked at /opt/ikigenba/releases/SHA/ the one this host\nruns. SHA is the full 40-character commit sha. LABEL, one token of letters,\ndigits, '.', '_', '/' and '-', is written to releases/SHA/label and given to\nevery app as IKIGENBA_RELEASE; without LABEL the label file is removed.\nMust be run by the opsctl inside that release,\n/opt/ikigenba/releases/SHA/opsctl/bin/opsctl.\n\nEvery check runs before anything outside the release changes: the release\ntree, the host's layout, every app's manifest, its secrets in\n/<host.name>/<app>, and the slices' room for the release. Then the host's\nrules are put in place as 'opsctl init' puts them: sshd, the shell group,\nfail2ban, unattended security updates, the login sessions' slices, the\nsuite's directories closed to others, and the accounts sudo rule. Then every\napp's environment file and units are written, previous is pointed at what\ncurrent named and current at the release, nginx, /run/ikigenba/services.json\nand /etc/litestream.yml are regenerated, and every app is restarted one at a\ntime, core apps first, each active before the next. A disabled app stays\ndisabled and is not started. An app the host runs that the release lacks is\nstopped and its units removed; its data under /var/opt/ikigenba/APP/ is\nkept. The first failure stops the run. After a run that succeeds, every\nrelease neither current nor previous names is removed.\n\nOn a host whose apps were installed one by one, every service is snapshotted\nand the apps' units and /opt/APP/ removed before the release's are written.\nActivating the release current already names redoes everything but moving\ncurrent and previous.\n\nConfiguration keys:\n  aws.region          the region this host's parameters live in\n  host.name           the fully-qualified name this host answers at\n  host.apex           the app that answers at the parent of host.name; unset means none\n  backup.s3_uri       the prefix the cutover's snapshots are written under\n  apps.drain_seconds  how long an app may drain when stopped (default 5)\n  apps.stop_seconds   how long systemd waits for an app to stop (default 10)\n"
+const activateUsage = `Usage: opsctl activate SHA [LABEL]
 
-const rollbackUsage = "Usage: opsctl rollback\n\nMake the release previous names the one this host runs again. The host's\nrules are put in place as 'opsctl activate' puts them, current is pointed at\nthe release and previous removed, then every app's environment file and\nunits are written from it, nginx, /run/ikigenba/services.json and\n/etc/litestream.yml are regenerated, and every app is restarted as 'opsctl\nactivate' does. The release keeps the label it last had. Run by the opsctl\ninside that release; any other opsctl hands the command to\n/opt/ikigenba/previous/opsctl/bin/opsctl. After a run that succeeds the\nrelease rolled away from is removed, so there is nothing for a second\nrollback to go back to.\n\nConfiguration keys:\n  aws.region          the region this host's parameters live in\n  host.name           the fully-qualified name this host answers at\n  host.apex           the app that answers at the parent of host.name; unset means none\n  apps.drain_seconds  how long an app may drain when stopped (default 5)\n  apps.stop_seconds   how long systemd waits for an app to stop (default 10)\n"
+Make the release unpacked at /opt/ikigenba/releases/SHA/ the one this host
+runs. SHA is the full 40-character commit sha. LABEL, one token of letters,
+digits, '.', '_', '/' and '-', is written to releases/SHA/label and given to
+every app as IKIGENBA_RELEASE; without LABEL the label file is removed.
+Must be run by the opsctl inside that release,
+/opt/ikigenba/releases/SHA/opsctl/bin/opsctl.
+
+Every check runs before anything outside the release changes: the release
+tree, the host's layout, every app's manifest, its secrets in
+/<host.name>/<app>, and the slices' room for the release. Then the host's
+rules are put in place as 'opsctl init' puts them: sshd, the shell group,
+fail2ban, unattended security updates, the login sessions' slices, the
+suite's directories closed to others, and the accounts sudo rule. Then every
+app's environment file and units are written, previous is pointed at what
+current named and current at the release, nginx, /run/ikigenba/services.json
+and /etc/litestream.yml are regenerated, and every app is restarted one at a
+time, core apps first, each active before the next. A disabled app stays
+disabled and is not started. An app the host runs that the release lacks is
+stopped and its units removed; its data under /var/opt/ikigenba/APP/ is
+kept. The first failure stops the run. After a run that succeeds, every
+release neither current nor previous names is removed.
+
+On a host whose apps were installed one by one, every service is snapshotted
+and the apps' units and /opt/APP/ removed before the release's are written.
+Activating the release current already names redoes everything but moving
+current and previous.
+
+Configuration keys:
+  aws.region              the region this host's parameters live in; passed to every app as AWS_REGION
+  host.name               the fully-qualified name this host answers at
+  host.apex               the app that answers at the parent of host.name; unset means none
+  backup.s3_uri           the prefix the cutover's snapshots are written under
+  apps.drain_seconds      how long an app may drain when stopped (default 5)
+  apps.stop_seconds       how long systemd waits for an app to stop (default 10)
+  hosts.domain            the domain hosts are named under; passed to every app
+  hosts.zone_id           the hosted zone id of hosts.domain; passed to every app
+  hosts.launch_template   the launch template hosts are launched from; passed to every app
+  hosts.instance_profile  the instance profile hosts run with; passed to every app
+`
+
+const rollbackUsage = `Usage: opsctl rollback
+
+Make the release previous names the one this host runs again. The host's
+rules are put in place as 'opsctl activate' puts them, current is pointed at
+the release and previous removed, then every app's environment file and
+units are written from it, nginx, /run/ikigenba/services.json and
+/etc/litestream.yml are regenerated, and every app is restarted as 'opsctl
+activate' does. The release keeps the label it last had. Run by the opsctl
+inside that release; any other opsctl hands the command to
+/opt/ikigenba/previous/opsctl/bin/opsctl. After a run that succeeds the
+release rolled away from is removed, so there is nothing for a second
+rollback to go back to.
+
+Configuration keys:
+  aws.region              the region this host's parameters live in; passed to every app as AWS_REGION
+  host.name               the fully-qualified name this host answers at
+  host.apex               the app that answers at the parent of host.name; unset means none
+  apps.drain_seconds      how long an app may drain when stopped (default 5)
+  apps.stop_seconds       how long systemd waits for an app to stop (default 10)
+  hosts.domain            the domain hosts are named under; passed to every app
+  hosts.zone_id           the hosted zone id of hosts.domain; passed to every app
+  hosts.launch_template   the launch template hosts are launched from; passed to every app
+  hosts.instance_profile  the instance profile hosts run with; passed to every app
+`
 
 func (t *transition) hardeningStep() (string, error) {
 	changed, err := hardening.Apply(t.ctx, t.env)

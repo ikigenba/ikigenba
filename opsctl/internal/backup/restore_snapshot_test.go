@@ -41,7 +41,7 @@ func snapshotRestoreExecute(t *testing.T, root string, events *[]string) func(co
 	}
 }
 func TestRestoreSnapshotRegeneratesEnvironmentAndUsesIncludedDatabase(t *testing.T) {
-	// R-FTMA-1XJY R-FMVM-I2DD R-D97F-184Q R-RP29-000R R-0WIQ-DF6F R-TOAS-TJ2V R-RP29-000R R-0XQM-R6X4 R-TOAS-TJ2V
+	// R-FTMA-1XJY R-FMVM-I2DD R-D97F-184Q R-JOD8-SMSR R-0WIQ-DF6F R-JN5C-EV22 R-0XQM-R6X4
 	root := t.TempDir()
 	restoreInstalled(t, root, true)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -173,7 +173,7 @@ func TestRestoreSnapshotPreworkflowAndSourceFailures(t *testing.T) {
 }
 
 func TestRestoreSnapshotSecretsFailuresStopBeforeUnits(t *testing.T) {
-	// R-TOAS-TJ2V R-FMVM-I2DD R-TOAS-TJ2V
+	// R-JN5C-EV22 R-FMVM-I2DD
 	for _, tc := range []struct {
 		name, manifest string
 		values         map[string]string
@@ -232,7 +232,7 @@ func TestRestoreSnapshotSecretsFailuresStopBeforeUnits(t *testing.T) {
 }
 
 func TestRestoreSnapshotEnvironmentIgnoresArchivedDirectory(t *testing.T) {
-	// R-RP29-000R R-RP29-000R R-TOAS-TJ2V
+	// R-JOD8-SMSR R-JN5C-EV22
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -260,7 +260,7 @@ func TestRestoreSnapshotEnvironmentIgnoresArchivedDirectory(t *testing.T) {
 }
 
 func TestRestoreSnapshotWithoutArchivedManifestRegeneratesEnvironment(t *testing.T) {
-	// R-RP29-000R R-TOAS-TJ2V R-TOAS-TJ2V
+	// R-JOD8-SMSR R-JN5C-EV22
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	if err := os.MkdirAll(filepath.Join(root, "var/opt/ikigenba/notes"), 0o750); err != nil {
@@ -285,7 +285,7 @@ func TestRestoreSnapshotWithoutArchivedManifestRegeneratesEnvironment(t *testing
 }
 
 func TestRestoreSnapshotEnvironmentFailuresRemainAtFiles(t *testing.T) {
-	// R-RP29-000R R-FMVM-I2DD R-TOAS-TJ2V
+	// R-JOD8-SMSR R-FMVM-I2DD
 	for _, tc := range []struct{ name, failCommand, stage string }{
 		{name: "account", failCommand: "id --user ikigenba", stage: "ownership"},
 		{name: "publication", stage: "environment"},

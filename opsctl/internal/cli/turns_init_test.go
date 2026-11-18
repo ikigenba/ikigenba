@@ -261,7 +261,7 @@ func TestInitDiscoveryFailureAfterHardeningStopsBeforeNginx(t *testing.T) {
 }
 
 func TestInitTurnsPrecedesCertificateAndFailuresStopSequence(t *testing.T) {
-	// R-W89S-07BM R-WGT2-OLIH R-WAPK-RQT0 R-WJ8V-G4ZV
+	// R-W89S-07BM R-7UR7-GDDB R-WAPK-RQT0 R-WJ8V-G4ZV
 	for _, kind := range []string{"ready", "missing-unit", "config-blocked", "bad-current", "no-turns"} {
 		t.Run(kind, func(t *testing.T) {
 			deps := readyStateGuardDeps(t)
@@ -375,7 +375,7 @@ func initTimerReady(t *testing.T, root, name string) {
 }
 
 func TestInitGivesActiveUsersTimersAfterInstall(t *testing.T) {
-	// R-W89S-07BM R-WAPK-RQT0 R-WGT2-OLIH R-WJ8V-G4ZV
+	// R-W89S-07BM R-WAPK-RQT0 R-7UR7-GDDB R-WJ8V-G4ZV
 	deps := readyStateGuardDeps(t)
 	executable := makeInitTurnsRelease(t, deps.Root, strings.Repeat("a", 40), "source ")
 	deps.Executable = func() (string, error) { return executable, nil }

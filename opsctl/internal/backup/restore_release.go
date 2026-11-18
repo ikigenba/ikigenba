@@ -83,7 +83,11 @@ func prepareRestoreEnvironment(ctx context.Context, remote cloud.Env, client clo
 	if err != nil {
 		return nil, err
 	}
-	return apps.ReleaseEnv(manifest, secrets, timeouts, *own)
+	space, err := apps.ReadSpaceEnv(store)
+	if err != nil {
+		return nil, err
+	}
+	return apps.ReleaseEnv(manifest, secrets, timeouts, *own, space)
 }
 
 func publishRestoreEnvironment(env host.Env, service string, data []byte, own *release.Release) error {

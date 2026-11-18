@@ -72,7 +72,7 @@ func TestInitFreshAppsStepDoesNothing(t *testing.T) {
 }
 
 func TestInitReleasedAppsStepRejectsInputsBeforeWriting(t *testing.T) {
-	// R-VBFW-1J71 R-WJ8V-G4ZV
+	// R-7VZ3-U540 R-WJ8V-G4ZV
 	root := initReleasedRoot(t)
 	env := host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
 		t.Fatal("invalid setup ran command")
@@ -184,7 +184,7 @@ func TestInitReleasedWritesUnitsAndRestartsChangedActiveApps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := apps.ReleaseEnv(m, map[string]string{}, timing, r)
+	want, err := apps.ReleaseEnv(m, map[string]string{}, timing, r, apps.SpaceEnv{Region: "fixture-region"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +209,7 @@ func TestInitReleasedWritesUnitsAndRestartsChangedActiveApps(t *testing.T) {
 	if err := setupInitApps(context.Background(), env, store, Deps{}.Cloud, "host.example.test"); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(commands, []string{"enable " + apps.ServicesUnit}) {
+	if !reflect.DeepEqual(commands, []string{"enable " + apps.ServicesUnit, "show --property=LoadState --property=UnitFileState ikigenba-auth.socket"}) {
 		t.Fatal("unchanged app commands", commands)
 	}
 	if !reflect.DeepEqual(before, releaseTree(t, root)) {
@@ -258,7 +258,7 @@ func addInitReleaseApp(t *testing.T, root, name, manifest string) {
 }
 
 func TestInitReleasedPreparesAllAppEnvironmentsBeforeWriting(t *testing.T) {
-	// R-VBFW-1J71
+	// R-7VZ3-U540
 	root := initReleasedRoot(t)
 	addInitReleaseApp(t, root, "auth", "app = \"auth\"\n")
 	addInitReleaseApp(t, root, "notes", "app = \"notes\"\nsecrets = [\"TOKEN\"]\n")
@@ -350,7 +350,7 @@ func TestInitReleasedDisabledAndInactiveAppsAreNotRestarted(t *testing.T) {
 }
 
 func TestInitReleasedUsesCurrentLabelSecretsTimingAndExactUnits(t *testing.T) {
-	// R-VBFW-1J71 R-VCNS-FAXQ
+	// R-7VZ3-U540 R-VCNS-FAXQ
 	root := initReleasedRoot(t)
 	sha := strings.Repeat("a", 40)
 	label := "candidate/test"
@@ -368,7 +368,15 @@ func TestInitReleasedUsesCurrentLabelSecretsTimingAndExactUnits(t *testing.T) {
 	}
 	beforeData := releaseTree(t, dataDir)
 	store := config.Store{Root: root}
-	for k, v := range map[string]string{"aws.region": "configured-region", "apps.drain_seconds": "13", "apps.stop_seconds": "29"} {
+	for k, v := range map[string]string{
+		"aws.region":             "configured-region",
+		"apps.drain_seconds":     "13",
+		"apps.stop_seconds":      "29",
+		"hosts.domain":           "fixture.example.test",
+		"hosts.zone_id":          "fixture-zone",
+		"hosts.launch_template":  "fixture-template",
+		"hosts.instance_profile": "fixture-profile",
+	} {
 		if err := store.Set(k, v); err != nil {
 			t.Fatal(err)
 		}
@@ -396,7 +404,14 @@ func TestInitReleasedUsesCurrentLabelSecretsTimingAndExactUnits(t *testing.T) {
 	}
 	timing := apps.Timeouts{DrainSeconds: 13, StopSeconds: 29}
 	r := release.Release{SHA: sha, Label: label}
-	want, err := apps.ReleaseEnv(m, map[string]string{"TOKEN": "fetched-value"}, timing, r)
+	space := apps.SpaceEnv{
+		Region:               "configured-region",
+		HostsDomain:          "fixture.example.test",
+		HostsZoneID:          "fixture-zone",
+		HostsLaunchTemplate:  "fixture-template",
+		HostsInstanceProfile: "fixture-profile",
+	}
+	want, err := apps.ReleaseEnv(m, map[string]string{"TOKEN": "fetched-value"}, timing, r, space)
 	if err != nil {
 		t.Fatal(err)
 	}

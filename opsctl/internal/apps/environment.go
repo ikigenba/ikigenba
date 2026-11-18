@@ -25,7 +25,9 @@ func PrepareEnvironment(ctx context.Context, client cloud.Client, store config.S
 	if err != nil {
 		return nil, err
 	}
-	return renderEnvironment(manifest, values, timeouts.DrainSeconds), nil
+	var output strings.Builder
+	writeAppEnvironment(&output, manifest, values, timeouts.DrainSeconds, PerAppServicesPath)
+	return []byte(output.String()), nil
 }
 
 // PublishEnvironment atomically publishes prepared settings with mode 0600.

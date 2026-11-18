@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/cloud"
@@ -47,32 +46,48 @@ func ReadSecrets(ctx context.Context, remote cloud.Env, region, hostName string,
 }
 
 // ReleaseEnv renders the environment for one release app without host access.
-func ReleaseEnv(m Manifest, secrets map[string]string, t Timeouts, r release.Release) ([]byte, error) {
-	if err := validateEnvironment(m, secrets); err != nil {
+func ReleaseEnv(m Manifest, secrets map[string]string, t Timeouts, r release.Release, s SpaceEnv) ([]byte, error) {
+	const commit = "IKIGENBA_COMMIT"
+	const label = "IKIGENBA_RELEASE"
+	settings := [...]struct{ name, value string }{
+		{"AWS_REGION", s.Region},
+		{"IKIGENBA_HOSTS_DOMAIN", s.HostsDomain},
+		{"IKIGENBA_HOSTS_ZONE_ID", s.HostsZoneID},
+		{"IKIGENBA_HOSTS_LAUNCH_TEMPLATE", s.HostsLaunchTemplate},
+		{"IKIGENBA_HOSTS_INSTANCE_PROFILE", s.HostsInstanceProfile},
+	}
+	reserved := make([]string, 0, len(settings)+2)
+	reserved = append(reserved, commit, label)
+	for _, setting := range settings {
+		reserved = append(reserved, setting.name)
+	}
+	if err := validateEnvironment(m, secrets, reserved...); err != nil {
 		return nil, err
 	}
-	for _, name := range distinctNames(m.Secrets) {
-		if name == "IKIGENBA_COMMIT" || name == "IKIGENBA_RELEASE" {
-			return nil, fmt.Errorf("%s: secret name %s is reserved", m.App, name)
+	for _, setting := range settings {
+		if invalidEnvironmentValue(setting.value) {
+			return nil, fmt.Errorf("%s: %s holds a NUL, CR or LF", m.App, setting.name)
 		}
 	}
-	names := make([]string, 0, len(m.Env))
-	for name := range m.Env {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		if name == "IKIGENBA_COMMIT" || name == "IKIGENBA_RELEASE" {
-			return nil, fmt.Errorf("%s: setting name %s is reserved", m.App, name)
-		}
-	}
-	data := string(renderEnvironment(m, secrets, t.DrainSeconds))
-	data = strings.TrimSuffix(data, ServicesEnv+"="+PerAppServicesPath+"\n")
-	data += ServicesEnv + "=" + ServicesPath + "\nIKIGENBA_COMMIT=" + r.SHA + "\n"
+	var output strings.Builder
+	writeAppEnvironment(&output, m, secrets, t.DrainSeconds, ServicesPath)
+	writeBareEnvironmentEntry(&output, commit, r.SHA)
 	if r.Label != "" {
-		data += "IKIGENBA_RELEASE=" + r.Label + "\n"
+		writeBareEnvironmentEntry(&output, label, r.Label)
 	}
-	return []byte(data), nil
+	for _, setting := range settings {
+		if setting.value != "" {
+			writeBareEnvironmentEntry(&output, setting.name, setting.value)
+		}
+	}
+	return []byte(output.String()), nil
+}
+
+func writeBareEnvironmentEntry(output *strings.Builder, name, value string) {
+	output.WriteString(name)
+	output.WriteByte('=')
+	output.WriteString(value)
+	output.WriteByte('\n')
 }
 
 // WriteEnv replaces an app's host environment without executing a command.

@@ -10,8 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
 	"github.com/ikigenba/ikigenba/opsctl/internal/backup"
 	"github.com/ikigenba/ikigenba/opsctl/internal/cloud"
+	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 	"github.com/ikigenba/ikigenba/opsctl/internal/release"
 )
@@ -45,12 +47,26 @@ func restoreReleaseFixture(t *testing.T, root string, released, database bool) r
 }
 
 func TestRestoreReleaseEnvironmentAndFreshUnitLifecycle(t *testing.T) {
-	// R-GSZD-5A23 R-D7ZI-NGE1 R-TOAS-TJ2V R-RP29-000R R-FZPR-YS9F R-G4LD-HV87 R-G5T9-VMYW R-G3DH-43HI R-GAOV-EPXO R-LC1T-L8RR R-TLV0-1ZLH
+	// R-GSZD-5A23 R-D7ZI-NGE1 R-JN5C-EV22 R-JOD8-SMSR R-FZPR-YS9F R-G4LD-HV87 R-G5T9-VMYW R-G3DH-43HI R-GAOV-EPXO R-LC1T-L8RR R-TLV0-1ZLH
 	for _, released := range []bool{false, true} {
 		for _, database := range []bool{false, true} {
 			t.Run(map[bool]string{false: "fresh", true: "released"}[released]+map[bool]string{false: "opaque", true: "database"}[database], func(t *testing.T) {
 				root := t.TempDir()
 				store := restoreConfiguredStore(t, root)
+				hosts := map[string]string{
+					"hosts.domain":          "example.test",
+					"hosts.zone_id":         "ZEXAMPLE",
+					"hosts.launch_template": "",
+				}
+				if released {
+					hosts["hosts.launch_template"] = "fixture template"
+					hosts["hosts.instance_profile"] = "fixture profile"
+				}
+				for key, value := range hosts {
+					if err := store.Set(key, value); err != nil {
+						t.Fatal(err)
+					}
+				}
 				r := restoreReleaseFixture(t, root, released, database)
 				// Per-app state must not affect a released host; an empty fresh host has no per-app tree.
 				if released {
@@ -59,7 +75,7 @@ func TestRestoreReleaseEnvironmentAndFreshUnitLifecycle(t *testing.T) {
 				}
 				before := fileTreeSnapshot(t, filepath.Join(root, "opt"))
 				body := hostRestoreArchive(t, restoreMember{name: "state", typeflag: tar.TypeDir, mode: 0750}, restoreMember{name: "state/value", data: []byte("restored")})
-				client := restoreClientFor(t, body)
+				client := &snapshotRestoreCloud{restoreCloud: restoreClientFor(t, body)}
 				executor := &databaseRestoreExecutor{t: t, root: root, installed: released, active: released, ltx: `[{"timestamp":"2026-09-16T11:00:00Z"}]`}
 				callbacks := 0
 				stopped, recovered := false, false
@@ -109,8 +125,18 @@ func TestRestoreReleaseEnvironmentAndFreshUnitLifecycle(t *testing.T) {
 				if released {
 					wantEnv += "IKIGENBA_RELEASE=" + r.Label + "\n"
 				}
+				wantEnv += "AWS_REGION=us-east-2\nIKIGENBA_HOSTS_DOMAIN=example.test\nIKIGENBA_HOSTS_ZONE_ID=ZEXAMPLE\n"
+				if released {
+					wantEnv += "IKIGENBA_HOSTS_LAUNCH_TEMPLATE=fixture template\nIKIGENBA_HOSTS_INSTANCE_PROFILE=fixture profile\n"
+				}
 				if got := string(readHostRestoreFile(t, root, "etc/opt/ikigenba/notes/env")); got != wantEnv {
 					t.Fatalf("environment=%q want=%q", got, wantEnv)
+				}
+				for name, mode := range map[string]os.FileMode{
+					"etc/opt": 0o755, "etc/opt/ikigenba": 0o700,
+					"etc/opt/ikigenba/notes": 0o700, "etc/opt/ikigenba/notes/env": 0o600,
+				} {
+					assertRestoreMetadata(t, root, name, mode, os.Geteuid(), os.Getegid())
 				}
 				if !reflect.DeepEqual(before, fileTreeSnapshot(t, filepath.Join(root, "opt"))) {
 					t.Fatal("restore changed deployment tree")
@@ -130,6 +156,9 @@ func TestRestoreReleaseEnvironmentAndFreshUnitLifecycle(t *testing.T) {
 				}
 				if len(report.Steps) != len(names) {
 					t.Fatalf("steps=%+v", report.Steps)
+				}
+				if report.Steps[1].Detail != "0 keys" || len(client.parameters) != 0 {
+					t.Fatalf("secrets detail=%q; parameter reads=%v", report.Steps[1].Detail, client.parameters)
 				}
 				if !released {
 					detail := "none"
@@ -254,7 +283,7 @@ func TestRestoreReleaseMembershipAndManifestFaultsAreInert(t *testing.T) {
 }
 
 func TestRestoreReleaseSecretsValidationPrecedesUnits(t *testing.T) {
-	// R-TOAS-TJ2V R-RP29-000R
+	// R-JN5C-EV22 R-JOD8-SMSR
 	for _, failure := range []bool{false, true} {
 		t.Run(map[bool]string{false: "values", true: "missing"}[failure], func(t *testing.T) {
 			root := t.TempDir()
@@ -284,7 +313,7 @@ func TestRestoreReleaseSecretsValidationPrecedesUnits(t *testing.T) {
 				if err != nil || report.Steps[1].Detail != "1 keys" {
 					t.Fatalf("report=%+v err=%v", report, err)
 				}
-				want := "TOKEN=\"host secret\"\nPLAIN=\"setting\"\nDRAIN_SECONDS=5\nIKIGENBA_SERVICES=/run/ikigenba/services.json\nIKIGENBA_COMMIT=" + r.SHA + "\n"
+				want := "TOKEN=\"host secret\"\nPLAIN=\"setting\"\nDRAIN_SECONDS=5\nIKIGENBA_SERVICES=/run/ikigenba/services.json\nIKIGENBA_COMMIT=" + r.SHA + "\nAWS_REGION=us-east-2\n"
 				if got := string(readHostRestoreFile(t, root, "etc/opt/ikigenba/notes/env")); got != want {
 					t.Fatalf("env=%q", got)
 				}
@@ -295,6 +324,88 @@ func TestRestoreReleaseSecretsValidationPrecedesUnits(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRestoreReleaseSettingsFailuresPrecedeUnits(t *testing.T) {
+	// R-JN5C-EV22
+	for _, source := range []string{"backup", "snapshot"} {
+		for _, failure := range []string{"timing read", "space read", "space value"} {
+			t.Run(source+"/"+failure, func(t *testing.T) {
+				root := t.TempDir()
+				store := restoreConfiguredStore(t, root)
+				r := restoreReleaseFixture(t, root, true, false)
+				writeFile(t, root, "opt/ikigenba/releases/"+r.SHA+"/notes/etc/manifest.toml", "app='notes'\nsecrets=['TOKEN']\n", 0600)
+				writeFile(t, root, "etc/opt/ikigenba/notes/env", "previous environment\n", 0600)
+				writeFile(t, root, "var/opt/ikigenba/notes/state/keep", "previous state\n", 0600)
+				if err := store.Set("hosts.domain", "invalid\x00domain"); err != nil {
+					t.Fatal(err)
+				}
+				body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("incoming state")})
+				storage := restoreClientFor(t, body)
+				var from string
+				if source == "snapshot" {
+					from = "s3://snapshots.example/object"
+					storage.bodies[from] = body
+				}
+				client := &snapshotRestoreCloud{restoreCloud: storage, secrets: map[string]string{"TOKEN": "sample secret"}}
+				corruptConfig := func() {
+					t.Helper()
+					writeFile(t, root, filepath.Join(config.Dir, config.FileName), "invalid config", 0600)
+				}
+				remote := cloud.Env{Open: func(ctx context.Context, region string) (cloud.Client, error) {
+					if failure == "space read" && len(client.opened) == 1 {
+						corruptConfig()
+					}
+					return client.open(ctx, region)
+				}}
+				executor := &restoreStageExecutor{t: t, root: root, installed: true, active: true}
+				env := host.Env{Root: root, Execute: func(ctx context.Context, cmd host.Command) (host.Result, error) {
+					if cmd.Name != "zstd" {
+						t.Fatalf("executed %s before settings validation", cmd.Name)
+					}
+					if failure == "timing read" {
+						corruptConfig()
+					}
+					return executor.execute(ctx, cmd)
+				}}
+				before := make(map[string][]string)
+				for _, name := range []string{"opt", "etc/opt", "var/opt"} {
+					before[name] = fileTreeSnapshot(t, filepath.Join(root, name))
+				}
+				report, err := backup.Restore(context.Background(), env, remote, store, "notes", nil, from, nil, func(context.Context) error {
+					t.Fatal("regenerated nginx after settings failure")
+					return nil
+				})
+				var want error
+				switch failure {
+				case "timing read":
+					_, want = apps.ReadTimeouts(store)
+				case "space read":
+					_, want = apps.ReadSpaceEnv(store)
+				case "space value":
+					want = errors.New("notes: IKIGENBA_HOSTS_DOMAIN holds a NUL, CR or LF")
+				}
+				if want == nil {
+					t.Fatal("fixture did not cause the expected error")
+				}
+				var restoreErr *backup.RestoreError
+				if !errors.As(err, &restoreErr) || restoreErr.Stage != "secrets" || len(restoreErr.Stopped) != 0 || restoreErr.Err.Error() != want.Error() {
+					t.Fatalf("Restore error=%v, want secrets failure %q with no stopped units", err, want)
+				}
+				if len(report.Steps) != 2 || report.Steps[0].Name != "source" || report.Steps[0].Err != nil || report.Steps[1].Name != "secrets" || report.Steps[1].Detail != "" || report.Steps[1].Err == nil || report.Steps[1].Err.Error() != want.Error() {
+					t.Fatalf("report=%+v, want successful source and failed secrets step", report)
+				}
+				for name, snapshot := range before {
+					if !reflect.DeepEqual(snapshot, fileTreeSnapshot(t, filepath.Join(root, name))) {
+						t.Fatalf("settings failure changed %s", name)
+					}
+				}
+				if _, err := os.Lstat(filepath.Join(root, "run/opsctl/restore")); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("restore activation marker directory: %v", err)
+				}
+			})
+		}
 	}
 }
 

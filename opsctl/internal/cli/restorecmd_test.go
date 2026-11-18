@@ -44,8 +44,9 @@ declares. Any other opsctl refuses to run there at all.
 
 The environment file, /etc/opt/ikigenba/SERVICE/env, is never backed up. The
 restore writes it as 'opsctl activate' does, from the parameter
-/<host.name>/SERVICE, the manifest, and the commit and label of the release
-it restores against, reading the parameter before anything is stopped.
+/<host.name>/SERVICE, the manifest, the configuration keys below, and the
+commit and label of the release it restores against, reading the parameter
+before anything is stopped.
 
 SERVICE's socket and service are stopped for the restore, socket first so no
 request starts the service again mid-restore, and started again after it; so
@@ -74,16 +75,20 @@ and reads neither the backups nor litestream's replica. It cannot be combined
 with --at.
 
 Configuration keys:
-  aws.region      the region the backup bucket lives in
+  aws.region      the region the backup bucket lives in; passed to the app as AWS_REGION
   backup.s3_uri   the prefix this host backs up to
   host.name       the fully-qualified name this host answers at
   apps.drain_seconds  how long the app may drain when stopped (default 5)
   backup.service_db_seconds  how often a declared database is snapshotted whole
   backup.service_wal_seconds  how often a declared database's committed changes are shipped
+  hosts.domain    the domain hosts are named under; passed to the app
+  hosts.zone_id   the hosted zone id of hosts.domain; passed to the app
+  hosts.launch_template  the launch template hosts are launched from; passed to the app
+  hosts.instance_profile  the instance profile hosts run with; passed to the app
 `
 
 func TestRestoreHelpIsExactAndInert(t *testing.T) {
-	// R-CTCQ-27HP
+	// R-JLXG-13BD
 	for _, euid := range []int{0, 1000} {
 		for _, option := range []string{"--help", "-h"} {
 			root := filepath.Join(t.TempDir(), "host-state")

@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -68,14 +69,18 @@ sequence runs: to /opt/ikigenba/current/opsctl/bin/opsctl when that exists,
 otherwise to the running opsctl, so certbot's hooks find opsctl on PATH.
 
 Configuration keys:
-  aws.region          the region this host's parameters live in
-  host.name           the fully-qualified name this host answers at, at or under a configured zone
-  apps.drain_seconds  how long an app may drain when stopped (default 5)
-  apps.stop_seconds   how long systemd waits for an app to stop (default 10)
+  aws.region              the region this host's parameters live in; passed to every app as AWS_REGION
+  host.name               the fully-qualified name this host answers at, at or under a configured zone
+  apps.drain_seconds      how long an app may drain when stopped (default 5)
+  apps.stop_seconds       how long systemd waits for an app to stop (default 10)
+  hosts.domain            the domain hosts are named under; passed to every app
+  hosts.zone_id           the hosted zone id of hosts.domain; passed to every app
+  hosts.launch_template   the launch template hosts are launched from; passed to every app
+  hosts.instance_profile  the instance profile hosts run with; passed to every app
 `
 
 func TestInitHelp(t *testing.T) {
-	// R-DI8L-3Q08
+	// R-7TJB-2LMM
 	for _, uid := range []int{0, 1000} {
 		for _, args := range [][]string{{"init", "--help"}, {"init", "-h"}} {
 			deps, assertNoAccess := inertDeps(t, uid)
@@ -356,7 +361,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL
 	// R-ZIB1-SI40
 	// R-8LON-MN2L
-	// R-WGT2-OLIH
+	// R-7UR7-GDDB
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZA": {
 			{Name: "example.com", Type: "SOA"},
@@ -900,6 +905,90 @@ func TestInitPreflightIgnoresHostApex(t *testing.T) {
 	}
 }
 
+func TestInitPreflightIgnoresHostsSettings(t *testing.T) {
+	// R-7X70-7WUP
+	for _, passes := range []bool{false, true} {
+		name := "failed preflight"
+		if passes {
+			name = "passed preflight"
+		}
+		t.Run(name, func(t *testing.T) {
+			type observations struct {
+				out, diagnostic string
+				code            int
+				calls           []string
+			}
+			run := func(t *testing.T, hosts map[string]string) observations {
+				t.Helper()
+				deps := readyStateGuardDeps(t)
+				values := map[string]string{
+					dns.KeyProvider: "route53",
+					dns.KeyZones:    "example.com:ZA",
+					"host.name":     "api.example.com",
+					"acme.email":    "admin@example.com",
+				}
+				for key, value := range hosts {
+					values[key] = value
+				}
+				data, err := json.Marshal(values)
+				if err != nil {
+					t.Fatal(err)
+				}
+				writeInitConfig(t, deps.Root, string(data))
+
+				var got observations
+				deps.LookPath = func(tool string) (string, error) {
+					got.calls = append(got.calls, "tool "+tool)
+					if !passes && tool == "git" {
+						return "", errors.New("missing")
+					}
+					return foundInitTools(tool)
+				}
+				open, lookupNS, lookupHost := deps.DNS.Open, deps.DNS.LookupNS, deps.LookupHost
+				deps.DNS.Open = func(ctx context.Context, provider string) (dns.Provider, error) {
+					got.calls = append(got.calls, "provider "+provider)
+					return open(ctx, provider)
+				}
+				deps.DNS.LookupNS = func(ctx context.Context, domain string) ([]string, error) {
+					got.calls = append(got.calls, "nameservers "+domain)
+					return lookupNS(ctx, domain)
+				}
+				deps.LookupHost = func(ctx context.Context, domain string) ([]string, error) {
+					got.calls = append(got.calls, "resolve "+domain)
+					return lookupHost(ctx, domain)
+				}
+				deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+					got.calls = append(got.calls, command.Name)
+					if !passes || command.Name != "certbot" {
+						t.Fatalf("unexpected setup command %+v", command)
+					}
+					return host.Result{}, errors.New("certificate fixture stop")
+				}
+				got.out, got.diagnostic, got.code = invoke([]string{"init"}, deps)
+				return got
+			}
+
+			want := run(t, nil)
+			if passes {
+				if want.code != 1 || want.diagnostic != "opsctl: certbot certonly: certificate fixture stop\n" {
+					t.Fatalf("unset settings did not reach certificate: %+v", want)
+				}
+			} else if want.code != 2 || want.diagnostic != "" {
+				t.Fatalf("unset settings did not fail preflight: %+v", want)
+			}
+			for _, hosts := range []map[string]string{
+				{"hosts.domain": "", "hosts.zone_id": "", "hosts.launch_template": "", "hosts.instance_profile": ""},
+				{"hosts.domain": "unrelated.test", "hosts.zone_id": "other-zone", "hosts.launch_template": "a template", "hosts.instance_profile": "another profile"},
+				{"hosts.instance_profile": "x\x00y\rz\n"},
+			} {
+				if got := run(t, hosts); !reflect.DeepEqual(got, want) {
+					t.Errorf("settings %q gave %+v, want %+v", hosts, got, want)
+				}
+			}
+		})
+	}
+}
+
 func TestInitInvalidApexFailsAtCertificate(t *testing.T) {
 	// R-ZKQU-K1LE R-WED9-X213
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
@@ -1220,7 +1309,7 @@ func TestInitRejectsEmptyWildcardAddressSet(t *testing.T) {
 }
 
 func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
-	// R-YV17-LR74
+	// R-YV17-LR74 R-8B7E-V6D8
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZONE": {
 			{Name: "example.com", Type: "SOA"},
@@ -1231,6 +1320,7 @@ func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
 		dns.KeyProvider: "route53", dns.KeyZones: "example.com:ZONE", "host.name": "example.com",
 		"acme.email": "admin@example.com", "aws.region": "us-east-2", "backup.s3_uri": "s3://bucket/host/",
 		"apps.drain_seconds": "7", "apps.stop_seconds": "19",
+		"hosts.domain": "UNUSED.INVALID.", "hosts.launch_template": "unknown template",
 	})
 	if err := os.MkdirAll(filepath.Join(deps.Root, "etc/nginx/conf.d"), 0o750); err != nil {
 		t.Fatal(err)
@@ -1557,7 +1647,7 @@ func TestInitStateGuardIgnoresServicesWithoutInstalledState(t *testing.T) {
 }
 
 func TestInitLayoutFailureStopsBeforeTurnsSetup(t *testing.T) {
-	// R-WGT2-OLIH
+	// R-7UR7-GDDB
 	deps := readyStateGuardDeps(t)
 	writeCLIInstallFile(t, filepath.Join(deps.Root, "usr/local/bin/opsctl"), "already installed")
 	if err := os.WriteFile(filepath.Join(deps.Root, "opt"), []byte("not a directory"), 0o600); err != nil {
@@ -1712,7 +1802,7 @@ func TestInitEnvironmentGuardJudgesEntryWithoutFollowingSymlinks(t *testing.T) {
 	}
 }
 
-// R-WGT2-OLIH
+// R-7UR7-GDDB
 func TestInitHardeningFilesystemFailureStopsBeforeEnvironmentGuard(t *testing.T) {
 	deps := readyStateGuardDeps(t)
 	makeStateGuardApp(t, deps.Root, "notes", true)

@@ -144,7 +144,7 @@ func TestRestoreMigratedEnvSymlinkAndOldCacheAreAcceptedWithoutFollowing(t *test
 }
 
 func TestRestoreEnvironmentPublicationReplacesOnlySelectedFileWithoutChown(t *testing.T) {
-	// R-RP29-000R R-RP29-000R R-TOAS-TJ2V R-TOAS-TJ2V
+	// R-JOD8-SMSR R-JN5C-EV22
 	root := t.TempDir()
 	restoreInstalled(t, root, false)
 	store := restoreConfiguredStore(t, root)
@@ -153,6 +153,11 @@ func TestRestoreEnvironmentPublicationReplacesOnlySelectedFileWithoutChown(t *te
 	writeFile(t, root, "etc/opt/ikigenba/other/env", "other app", 0600)
 	if err := store.Set("apps.drain_seconds", "7"); err != nil {
 		t.Fatal(err)
+	}
+	for _, key := range []string{"hosts.domain", "hosts.zone_id", "hosts.launch_template", "hosts.instance_profile"} {
+		if err := store.Set(key, "ignored\x00value"); err != nil {
+			t.Fatal(err)
+		}
 	}
 	beforeOpt := fileTreeSnapshot(t, filepath.Join(root, "opt"))
 	body := hostRestoreArchive(t, restoreMember{name: "etc/env", data: []byte("TOKEN=archived")}, restoreMember{name: "state/value", data: []byte("state")})
