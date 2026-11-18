@@ -15,7 +15,7 @@ import (
 
 const rootProbe = "lsblk --pairs --noheadings --output NAME,PKNAME,FSTYPE,MOUNTPOINT"
 const dataProbe = "lsblk --nodeps --pairs --noheadings --output NAME,SERIAL"
-const volumeUUID = "636e7f23-3f2d-4821-8b86-0b703e14be7b"
+const volumeUUID = "b11361ec-f088-4db6-9102-f823cd3fbc27"
 
 const sshUnitPath = "/etc/systemd/system/sshd.service.d/ikigenba.conf"
 const sshDropInPath = "/etc/ssh/sshd_config.d/10-ikigenba.conf"
@@ -56,11 +56,32 @@ Match Group shell
   AuthorizedKeysFile /etc/ssh/authorized_keys/%u
 `
 
+func (f *hardeningFixture) checkDataVolumeCommands(device string) (probe, format string) {
+	probeArgs := []string{"blkid", "-p", "--output", "export", device}
+	formatArgs := []string{"mkfs.xfs", "-L", "ikigenbadata", device}
+	f.observe = func(c linux.Command) {
+		name, _, _ := strings.Cut(c.Name, " ")
+		var want []string
+		switch name {
+		case "blkid":
+			want = probeArgs
+		case "mkfs.xfs":
+			want = formatArgs
+		default:
+			return
+		}
+		if c.Name != want[0] || !slices.Equal(c.Args, want[1:]) {
+			f.t.Fatalf("command = %q with arguments %q, want %q with arguments %q", c.Name, c.Args, want[0], want[1:])
+		}
+	}
+	return strings.Join(probeArgs, " "), strings.Join(formatArgs, " ")
+}
+
 func TestApplyVolumeAndSSHSetup(t *testing.T) {
 	f := newHardeningFixture(t)
 	dataDevice := f.path("/dev/nvme1n1")
 	rootDisk := f.path("/dev/nvme0n1")
-	probe := "blkid -p --output export " + dataDevice
+	probe, format := f.checkDataVolumeCommands(dataDevice)
 	rootSize, dataSize := "1048576\n", "2097152\n"
 	formatted, mounted := false, false
 	mounts := map[string]bool{}
@@ -76,8 +97,8 @@ func TestApplyVolumeAndSSHSetup(t *testing.T) {
 			if !formatted {
 				return linux.Result{ExitCode: 2}, true
 			}
-			return hostAnswer("LABEL=ikigenba-data\nUUID=" + volumeUUID + "\nTYPE=xfs\n"), true
-		case "mkfs.xfs -L ikigenba-data " + dataDevice:
+			return hostAnswer("LABEL=ikigenbadata\nUUID=" + volumeUUID + "\nTYPE=xfs\n"), true
+		case format:
 			formatted = true
 		case "systemctl is-enabled home.mount":
 			if !mounted {
@@ -113,11 +134,11 @@ func TestApplyVolumeAndSSHSetup(t *testing.T) {
 		return linux.Result{}, false
 	}
 	state := protocol.DesiredState{DataVolume: "vol-12345678"}
-	// R-C7F9-SJWL R-C8N6-6BNA R-C9V2-K3DZ R-CB2Y-XV4O R-CCAV-BMVD R-CDIR-PEM2 R-CEQO-36CR R-7VK6-UCMU R-CH6G-UPU5 R-CIED-8HKU
+	// R-C7F9-SJWL R-C8N6-6BNA R-0RPX-5CWH R-CB2Y-XV4O R-CCAV-BMVD R-CDIR-PEM2 R-CEQO-36CR R-7VK6-UCMU R-CH6G-UPU5 R-CIED-8HKU
 	f.apply(state)
 	want := []string{
 		rootProbe, "blockdev --getsize64 " + rootDisk, "growpart " + rootDisk + " 1", "xfs_growfs -d " + f.root,
-		dataProbe, probe, "mkfs.xfs -L ikigenba-data " + dataDevice, probe, "systemctl daemon-reload",
+		dataProbe, probe, format, probe, "systemctl daemon-reload",
 		"systemctl is-enabled data.mount", "systemctl is-active data.mount", "systemctl enable --now data.mount",
 		"systemctl is-enabled home.mount", "systemctl is-active home.mount", "systemctl enable --now home.mount",
 		"systemctl is-enabled srv.mount", "systemctl is-active srv.mount", "systemctl enable --now srv.mount",
@@ -139,7 +160,7 @@ func TestApplyVolumeAndSSHSetup(t *testing.T) {
 	privateBefore, publicBefore := f.stat(dataPrivateKey), f.stat(dataPublicKey)
 	f.commands = nil
 	f.apply(state)
-	f.forbidCalls("growpart ", "xfs_growfs ", "mkfs.xfs ", "systemctl enable", "systemctl reload", "systemctl daemon-reload", "sshd ")
+	f.forbidCalls("growpart ", "xfs_growfs ", "mkfs", "systemctl enable", "systemctl reload", "systemctl daemon-reload", "sshd ")
 	assertUnchanged(t, f.path(dataPrivateKey), privateBefore)
 	assertUnchanged(t, f.path(dataPublicKey), publicBefore)
 	f.expectFile(dataPrivateKey, "instance private\n", 0o600)
@@ -166,18 +187,24 @@ func TestApplyExistingFilesystems(t *testing.T) {
 	for _, kind := range []string{"ext4", "btrfs"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newHardeningFixture(t)
+			probe, _ := f.checkDataVolumeCommands(f.path("/dev/nvme1n1"))
+			probes := 0
 			f.answer = func(call string) (linux.Result, bool) {
 				switch call {
 				case rootProbe:
 					return hostAnswer("NAME=\"nvme0n1\" PKNAME=\"\" FSTYPE=\"" + kind + "\" MOUNTPOINT=\"/\"\n"), true
-				case "blkid -p --output export " + f.path("/dev/nvme1n1"):
+				case probe:
+					probes++
 					return hostAnswer("TYPE=" + kind + "\nUUID=" + volumeUUID + "\n"), true
 				}
 				return linux.Result{}, false
 			}
-			// R-C7F9-SJWL R-C9V2-K3DZ R-CDIR-PEM2
+			// R-C7F9-SJWL R-0RPX-5CWH R-CDIR-PEM2
 			f.apply(protocol.DesiredState{DataVolume: "vol-12345678"})
-			f.forbidCalls("growpart ", "mkfs ", "mkfs.xfs ", "xfs_growfs ")
+			if probes != 1 {
+				t.Fatalf("signed device probed %d times, want 1", probes)
+			}
+			f.forbidCalls("growpart ", "mkfs", "xfs_growfs ")
 			if kind == "ext4" {
 				for _, name := range []string{"nvme0n1", "nvme1n1"} {
 					if !slices.Contains(f.commands, "resize2fs "+f.path("/dev/"+name)) {
@@ -192,16 +219,40 @@ func TestApplyExistingFilesystems(t *testing.T) {
 	}
 }
 
+func TestApplyUsesFilesystemMetadataFromSecondProbe(t *testing.T) {
+	f := newHardeningFixture(t)
+	probe, _ := f.checkDataVolumeCommands(f.path("/dev/nvme1n1"))
+	const uuid = "5d5bd0a3-a2ab-443a-978d-8d45ae0b8fb8"
+	// Use a synthetic type to distinguish the probe result from the mkfs program name.
+	const kind = "ext4"
+	probes := 0
+	f.answer = func(call string) (linux.Result, bool) {
+		if call != probe {
+			return linux.Result{}, false
+		}
+		probes++
+		if probes == 1 {
+			return linux.Result{ExitCode: 2}, true
+		}
+		return hostAnswer("UUID=" + uuid + "\nTYPE=" + kind + "\n"), true
+	}
+	// R-0RPX-5CWH
+	f.apply(protocol.DesiredState{DataVolume: "vol-12345678"})
+	if probes != 2 {
+		t.Fatalf("blank device probed %d times, want 2", probes)
+	}
+	f.expectFile("/etc/systemd/system/data.mount", "[Mount]\nWhat=/dev/disk/by-uuid/"+uuid+"\nWhere=/data\nType="+kind+"\n\n[Install]\nWantedBy=local-fs.target\n", 0o644)
+}
+
 func TestApplyUnsafeToFormat(t *testing.T) {
 	for _, status := range []int{2, 7} {
 		t.Run(map[int]string{2: "second probe still has no signature", 7: "probe failed"}[status], func(t *testing.T) {
 			f := newHardeningFixture(t)
-			device := f.path("/dev/nvme1n1")
-			probe := "blkid -p --output export " + device
+			probe, format := f.checkDataVolumeCommands(f.path("/dev/nvme1n1"))
 			f.answer = func(call string) (linux.Result, bool) {
 				return linux.Result{ExitCode: status}, call == probe
 			}
-			// R-C9V2-K3DZ
+			// R-0RPX-5CWH
 			err := f.host.Apply(t.Context(), protocol.DesiredState{DataVolume: "vol-12345678"})
 			var commandErr *linux.CommandError
 			if !errors.As(err, &commandErr) || commandErr.Label != "blkid" || commandErr.Result.ExitCode != status {
@@ -213,7 +264,7 @@ func TestApplyUnsafeToFormat(t *testing.T) {
 			}
 			f.commands = f.commands[part:]
 			if status == 2 {
-				f.expectCalls(dataProbe, probe, "mkfs.xfs -L ikigenba-data "+device, probe)
+				f.expectCalls(dataProbe, probe, format, probe)
 			} else {
 				f.expectCalls(dataProbe, probe)
 			}

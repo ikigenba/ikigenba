@@ -58,7 +58,7 @@ func TestNames(t *testing.T) {
 	}
 }
 
-// R-J6Y7-ZLQ5 R-JD1P-WGFM R-YJ8P-WFFL R-JMSW-YMD6
+// R-J6Y7-ZLQ5 R-JD1P-WGFM R-0VDM-AO4K R-JMSW-YMD6
 func TestListsAreExactAndIndependent(t *testing.T) {
 	for _, tc := range []struct {
 		get   func() []string
@@ -66,7 +66,7 @@ func TestListsAreExactAndIndependent(t *testing.T) {
 		check func(string) bool
 	}{
 		{valid.ReservedLabels, "www mail smtp imap pop pop3 ftp api app admin root ns ns1 ns2 dns mx autodiscover autoconfig webmail status support help docs blog cdn static assets auth login sso vpn git ssh dev test staging prod localhost host hosts dnd eastmark", valid.Reserved},
-		{valid.SystemNames, "root bin daemon adm lp sync shutdown halt mail operator games ftp nobody systemd-network systemd-resolve systemd-timesync systemd-coredump systemd-oom dbus polkitd sshd chrony rpc rpcuser tss ec2-user ec2-instance-connect ssm-user nginx ikigenba shell wheel users acct accountsd data home srv nfsnobody libstoragemgmt sys tty disk mem kmem cdrom man dialout floppy tape video lock audio utmp input kvm render sgx systemd-journal systemd-journal-remote ssh_keys utempter screen tcpdump stapusr stapsys stapdev uuidd sssd", valid.Reserved},
+		{valid.SystemNames, "root bin daemon adm lp sync shutdown halt mail operator games ftp nobody systemd-network systemd-resolve systemd-timesync systemd-coredump systemd-oom dbus polkitd sshd chrony rpc rpcuser tss ec2-user ec2-instance-connect ssm-user nginx ikigenba shell wheel users acct accountsd data home srv nfsnobody libstoragemgmt sys tty disk mem kmem cdrom man dialout floppy tape video lock audio utmp input kvm render sgx systemd-journal systemd-journal-remote ssh_keys utempter screen tcpdump stapusr stapsys stapdev stapunpriv uuidd sssd", valid.Reserved},
 		{valid.AllowedTypes, "t4g.small t4g.medium t4g.large t4g.xlarge t4g.2xlarge m7g.medium m7g.large m7g.xlarge m7g.2xlarge m7g.4xlarge m7g.8xlarge m7g.12xlarge m7g.16xlarge c7g.medium c7g.large c7g.xlarge c7g.2xlarge c7g.4xlarge c7g.8xlarge c7g.12xlarge c7g.16xlarge r7g.medium r7g.large r7g.xlarge r7g.2xlarge r7g.4xlarge r7g.8xlarge r7g.12xlarge r7g.16xlarge", func(s string) bool { return valid.Type(s) == nil }},
 	} {
 		a, b := tc.get(), tc.get()

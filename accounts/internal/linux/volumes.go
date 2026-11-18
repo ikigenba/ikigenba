@@ -164,7 +164,7 @@ func (h *Host) filesystem(ctx context.Context, device string) (uuid, kind string
 		return "", "", err
 	}
 	if result.ExitCode == 2 {
-		if _, err := h.run(ctx, "mkfs.xfs", "-L", "ikigenba-data", device); err != nil {
+		if _, err := h.run(ctx, "mkfs.xfs", "-L", "ikigenbadata", device); err != nil {
 			return "", "", err
 		}
 		result, err = h.query(ctx, probe, 0)
