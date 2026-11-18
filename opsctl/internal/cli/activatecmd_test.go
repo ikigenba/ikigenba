@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -346,26 +347,11 @@ func TestActivateSuccessfulReleaseAndReactivation(t *testing.T) {
 }
 
 func TestActivatePrewriteStepsLeaveHostUntouched(t *testing.T) {
-	// R-1EI4-N6ZY R-CUKM-FZ8E R-BCGI-M24U R-TVM7-45J1 R-BX6T-45QN
+	// R-CUKM-FZ8E R-BCGI-M24U R-TVM7-45J1 R-BX6T-45QN
 	for _, tc := range []struct {
 		name, step, reason string
 		setup              func(*transitionFixture)
 	}{
-		{"tree order", "release", "dummy: sbin is not allowed; an app holds only bin, libexec, lib, share and etc", func(f *transitionFixture) {
-			f.write("opt/ikigenba/releases/"+transitionSHA+"/dummy/sbin/other", "x", 0o644)
-		}},
-		{"bin link", "release", "dummy: bin/dummy is missing", func(f *transitionFixture) {
-			p := filepath.Join(f.root, "opt/ikigenba/releases", transitionSHA, "dummy/bin/dummy")
-			if e := os.Remove(p); e != nil {
-				f.t.Fatal(e)
-			}
-			if e := os.Symlink("../etc/manifest.toml", p); e != nil {
-				f.t.Fatal(e)
-			}
-		}},
-		{"extra bin", "release", "dummy: bin holds more than dummy", func(f *transitionFixture) {
-			f.write("opt/ikigenba/releases/"+transitionSHA+"/dummy/bin/other", "x", 0o644)
-		}},
 		{"uninitialised", "layout", "host is not initialised", func(f *transitionFixture) {
 			if e := os.Remove(filepath.Join(f.root, "etc/systemd/system/ikigenba.slice")); e != nil {
 				f.t.Fatal(e)
@@ -408,6 +394,77 @@ func TestActivatePrewriteStepsLeaveHostUntouched(t *testing.T) {
 		})
 	}
 }
+
+func TestReleaseRejectsInvalidAppTreesBeforeAnyChange(t *testing.T) {
+	// R-TFST-27FX
+	for _, tc := range []struct {
+		name, reason string
+		setup        func(*transitionFixture, string)
+	}{
+		{"app and entry order", "dummy: sbin is not allowed; an app holds only bin, libexec, lib, share and etc", func(f *transitionFixture, base string) {
+			if err := os.Rename(filepath.Join(f.root, base, "dummy"), filepath.Join(f.root, base, "zapp")); err != nil {
+				f.t.Fatal(err)
+			}
+			f.write(base+"/zapp/a/entry", "x", 0o644)
+			f.write(base+"/dummy/zbin/entry", "x", 0o644)
+			f.write(base+"/dummy/sbin/entry", "x", 0o644)
+		}},
+		{"bin directory link", "dummy: bin is not allowed; an app holds only bin, libexec, lib, share and etc", func(f *transitionFixture, base string) {
+			app := filepath.Join(f.root, base, "dummy")
+			if err := os.Rename(filepath.Join(app, "bin"), filepath.Join(app, "lib")); err != nil {
+				f.t.Fatal(err)
+			}
+			if err := os.Symlink("lib", filepath.Join(app, "bin")); err != nil {
+				f.t.Fatal(err)
+			}
+		}},
+		{"required binary link", "dummy: bin/dummy is missing", func(f *transitionFixture, base string) {
+			bin := filepath.Join(f.root, base, "dummy/bin")
+			if err := os.Rename(filepath.Join(bin, "dummy"), filepath.Join(bin, "helper")); err != nil {
+				f.t.Fatal(err)
+			}
+			if err := os.Symlink("helper", filepath.Join(bin, "dummy")); err != nil {
+				f.t.Fatal(err)
+			}
+			f.write(base+"/dummy/bin/a-tools/entry", "x", 0o644)
+		}},
+		{"extra directory", "dummy: bin/tools is not a regular file", func(f *transitionFixture, base string) {
+			f.write(base+"/dummy/bin/tools/entry", "x", 0o644)
+		}},
+		{"extra symlink before directory", "dummy: bin/a-link is not a regular file", func(f *transitionFixture, base string) {
+			f.write(base+"/dummy/bin/z-tools/entry", "x", 0o644)
+			if err := os.Symlink("dummy", filepath.Join(f.root, base, "dummy/bin/a-link")); err != nil {
+				f.t.Fatal(err)
+			}
+		}},
+		{"extra FIFO", "dummy: bin/pipe is not a regular file", func(f *transitionFixture, base string) {
+			if err := syscall.Mkfifo(filepath.Join(f.root, base, "dummy/bin/pipe"), 0o600); err != nil {
+				f.t.Fatal(err)
+			}
+		}},
+	} {
+		for _, command := range []string{"activate", "rollback"} {
+			t.Run(command+"/"+tc.name, func(t *testing.T) {
+				f, sha, args := releaseTransition(t, command)
+				base := filepath.Join(release.ReleasesDir, sha)
+				folder := filepath.Join(f.root, base)
+				before, err := os.Stat(folder)
+				if err != nil {
+					t.Fatal(err)
+				}
+				tc.setup(f, base)
+				code, out, stderr := f.run(args...)
+				if code != 1 || out != "release: failed: "+tc.reason+"\n" || stderr != "opsctl: "+command+" failed\n" || len(f.commands) != 0 {
+					t.Fatalf("exit %d, stdout %q, stderr %q, commands %v", code, out, stderr, f.commands)
+				}
+				if info, err := os.Stat(folder); err != nil || info.Mode() != before.Mode() {
+					t.Fatalf("release folder changed: %v, %v", info, err)
+				}
+			})
+		}
+	}
+}
+
 func TestActivateCoreFirstDisabledAndServiceFailure(t *testing.T) {
 	// R-SNWN-TVYL R-SP4K-7NPA R-SJ12-ASZT R-BX6T-45QN
 	for _, journalFails := range []bool{false, true} {
@@ -683,35 +740,27 @@ func TestActivateGeneratedConfigurationsAndReloads(t *testing.T) {
 }
 
 func TestReleaseNormalizesModesWithoutFollowingSymlinks(t *testing.T) {
-	// R-DH3O-BBGQ
+	// R-DH3O-BBGQ R-TFST-27FX
 	for _, command := range []string{"activate", "rollback"} {
 		for _, label := range []string{"", "kept-label"} {
 			t.Run(command+"/"+label, func(t *testing.T) {
-				f := newTransitionFixture(t)
-				sha := transitionSHA
-				args := []string{"activate", sha}
-				if command == "rollback" {
-					sha = transitionOld
-					f.addRelease(sha, "dummy")
-					f.link("current", transitionSHA)
-					f.link("previous", sha)
-					f.deps.Executable = func() (string, error) {
-						return filepath.Join(f.root, "opt/ikigenba/releases", sha, "opsctl/bin/opsctl"), nil
-					}
-					args = []string{"rollback"}
-				} else if label != "" {
+				f, sha, args := releaseTransition(t, command)
+				if command == "activate" && label != "" {
 					args = append(args, label)
 				}
 				base := "opt/ikigenba/releases/" + sha
 				f.addTurns(sha)
+				f.addRelease(sha, "accounts")
 				if command == "rollback" && label != "" {
 					f.write(base+"/label", label+"\n", 0o600)
 				}
-				cases := []struct {
+				type modeCase struct {
 					name          string
 					before, after os.FileMode
-				}{
+				}
+				cases := []modeCase{
 					{"dummy/bin/dummy", 0o600, 0o755},
+					{"accounts/bin/accountsd", 0o600, 0o755},
 					{"opsctl/bin/opsctl", 0o600, 0o755},
 					{"opsctl/bin/nested/helper", 0o640, 0o755},
 					{"turns/bin/turns", 0o600, 0o755},
@@ -726,6 +775,9 @@ func TestReleaseNormalizesModesWithoutFollowingSymlinks(t *testing.T) {
 					{"dummy/lib/library", 0o700, 0o644},
 					{"opsctl/libexec/helper", 0o700, 0o644},
 					{"top-level", 0o777, 0o644},
+				}
+				for i := range 100 {
+					cases = append(cases, modeCase{fmt.Sprintf("accounts/bin/helper-%d", i), 0o640, 0o755})
 				}
 				for _, tc := range cases {
 					f.write(base+"/"+tc.name, "file", tc.before)

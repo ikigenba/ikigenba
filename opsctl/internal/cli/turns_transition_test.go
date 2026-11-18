@@ -18,7 +18,7 @@ func (f *transitionFixture) addTurns(sha string) {
 	f.write(base+release.TurnsUnitsPath+"/"+release.TurnsTimer, "timer bytes\n", 0o600)
 }
 
-func turnsTransition(t *testing.T, command string) (*transitionFixture, string, []string) {
+func releaseTransition(t *testing.T, command string) (*transitionFixture, string, []string) {
 	t.Helper()
 	f := newTransitionFixture(t)
 	sha := transitionSHA
@@ -40,7 +40,7 @@ func TestTransitionsInstallTurnsWithoutManagingUsers(t *testing.T) {
 	// R-1GXX-EQHC R-DJJH-2UY4 R-DLZ9-UEFI
 	for _, command := range []string{"activate", "rollback"} {
 		t.Run(command, func(t *testing.T) {
-			f, sha, args := turnsTransition(t, command)
+			f, sha, args := releaseTransition(t, command)
 			f.addTurns(sha)
 			f.write("usr/local/bin/turns", "replace me", 0o600)
 			code, out, stderr := f.run(args...)
@@ -74,7 +74,7 @@ func TestTransitionsTurnsFailuresStopAtTheirStep(t *testing.T) {
 	for _, command := range []string{"activate", "rollback"} {
 		for _, stage := range []string{"units", "links", "opsctl-link"} {
 			t.Run(command+"/"+stage, func(t *testing.T) {
-				f, sha, args := turnsTransition(t, command)
+				f, sha, args := releaseTransition(t, command)
 				f.addTurns(sha)
 				switch stage {
 				case "units":
@@ -114,7 +114,7 @@ func TestTurnsInstallationFollowsDroppedAppCleanup(t *testing.T) {
 	// R-1GXX-EQHC
 	for _, command := range []string{"activate", "rollback"} {
 		t.Run(command, func(t *testing.T) {
-			f, sha, args := turnsTransition(t, command)
+			f, sha, args := releaseTransition(t, command)
 			f.addTurns(sha)
 			if command == "activate" {
 				f.addRelease(transitionOld, "dropped")
@@ -147,7 +147,7 @@ func TestTransitionsWithoutTurnsLeaveAllTurnsStateAlone(t *testing.T) {
 	for _, command := range []string{"activate", "rollback"} {
 		for _, state := range []string{"absent", "files", "symlinks"} {
 			t.Run(command+"/"+state, func(t *testing.T) {
-				f, _, args := turnsTransition(t, command)
+				f, _, args := releaseTransition(t, command)
 				paths := []string{release.TurnsLink, release.UserUnitDir, "/etc/xdg/turns"}
 				switch state {
 				case "files":
@@ -196,7 +196,7 @@ func TestTransitionsWithoutTurnsLeaveAllTurnsStateAlone(t *testing.T) {
 }
 
 func TestReleaseTurnsValidationBeforeAnyChange(t *testing.T) {
-	// R-1DA8-9F99 R-1EI4-N6ZY
+	// R-1DA8-9F99 R-TFST-27FX
 	for _, path := range []string{release.TurnsPath, release.TurnsUnitsPath + "/" + release.TurnsService, release.TurnsUnitsPath + "/" + release.TurnsTimer, "turns/bin", "turns/share", "turns/share/systemd"} {
 		for _, kind := range []string{"absent", "link", "directory"} {
 			t.Run(path+"/"+kind, func(t *testing.T) {
@@ -234,13 +234,13 @@ func TestReleaseTurnsValidationBeforeAnyChange(t *testing.T) {
 	}
 	f := newTransitionFixture(t)
 	f.addTurns(transitionSHA)
-	f.write("opt/ikigenba/releases/"+transitionSHA+"/dummy/sbin/extra", "x", 0o600)
+	f.write("opt/ikigenba/releases/"+transitionSHA+"/dummy/bin/tools/extra", "x", 0o600)
 	if err := os.Remove(filepath.Join(f.root, release.ReleasesDir, transitionSHA, release.TurnsPath)); err != nil {
 		t.Fatal(err)
 	}
-	_, out, _ := f.run("activate", transitionSHA)
-	if !strings.HasPrefix(out, "release: failed: dummy: sbin is not allowed;") || len(f.commands) != 0 {
-		t.Fatal(out, f.commands)
+	code, out, stderr := f.run("activate", transitionSHA)
+	if code != 1 || out != "release: failed: dummy: bin/tools is not a regular file\n" || stderr != "opsctl: activate failed\n" || len(f.commands) != 0 {
+		t.Fatalf("exit %d, stdout %q, stderr %q, commands %v", code, out, stderr, f.commands)
 	}
 }
 

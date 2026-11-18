@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -273,6 +274,49 @@ func (t *transition) regularTreeFile(name string) bool {
 	return true
 }
 
+func (t *transition) visitAppBin(dir string, visit func(fs.DirEntry) error) error {
+	bin, err := t.files.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = bin.Close() }()
+	const batchSize = 64
+	for {
+		entries, err := bin.ReadDir(batchSize)
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if err := visit(entry); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func (t *transition) validateAppBin(app string) error {
+	if !t.regularTreeFile(app + "/bin/" + app) {
+		return fmt.Errorf("%s: bin/%s is missing", app, app)
+	}
+	// ReadDir yields filesystem order. Keep only the earliest invalid name.
+	var firstInvalid string
+	if err := t.visitAppBin(t.folder+"/"+app+"/bin", func(entry fs.DirEntry) error {
+		if !entry.Type().IsRegular() && (firstInvalid == "" || entry.Name() < firstInvalid) {
+			firstInvalid = entry.Name()
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if firstInvalid != "" {
+		return fmt.Errorf("%s: bin/%s is not a regular file", app, firstInvalid)
+	}
+	return nil
+}
+
 func (t *transition) releaseStep() (string, error) {
 	f, err := t.files.Open(t.folder)
 	if err != nil {
@@ -306,21 +350,8 @@ func (t *transition) releaseStep() (string, error) {
 				return "", fmt.Errorf("%s: %s is not allowed; an app holds only bin, libexec, lib, share and etc", app, entry.Name())
 			}
 		}
-		bin := t.folder + "/" + app + "/bin"
-		if !t.regularTreeFile(app + "/bin/" + app) {
-			return "", fmt.Errorf("%s: bin/%s is missing", app, app)
-		}
-		f, err = t.files.Open(bin)
-		if err != nil {
+		if err := t.validateAppBin(app); err != nil {
 			return "", err
-		}
-		entries, err = f.ReadDir(-1)
-		_ = f.Close()
-		if err != nil {
-			return "", err
-		}
-		if len(entries) != 1 {
-			return "", fmt.Errorf("%s: bin holds more than %s", app, app)
 		}
 	}
 	if release.HasTurns(t.deps.Root, t.r.SHA) {
@@ -344,25 +375,32 @@ func (t *transition) releaseStep() (string, error) {
 		if e != nil {
 			return e
 		}
+		parts := strings.SplitN(strings.TrimPrefix(p, t.folder+"/"), "/", 3)
 		if info.IsDir() {
-			return t.files.Chmod(p, 0o755)
+			if err := t.files.Chmod(p, 0o755); err != nil {
+				return err
+			}
+			if len(parts) == 2 && parts[1] == "bin" && slices.Contains(t.trees, parts[0]) {
+				// App bins are flat, and WalkDir would read each bin's whole listing.
+				if err := t.visitAppBin(p, func(entry fs.DirEntry) error {
+					if !entry.Type().IsRegular() {
+						return nil
+					}
+					return t.files.Chmod(p+"/"+entry.Name(), 0o755)
+				}); err != nil {
+					return err
+				}
+				return fs.SkipDir
+			}
+			return nil
 		}
 		if !info.Mode().IsRegular() {
 			return nil
 		}
 		mode := os.FileMode(0o644)
-		rel := strings.TrimPrefix(p, t.folder+"/")
-		parts := strings.SplitN(rel, "/", 3)
 		if len(parts) == 3 {
-			isApp := false
-			for _, app := range t.trees {
-				if parts[0] == app {
-					isApp = true
-					break
-				}
-			}
-			if parts[1] == "bin" && (isApp || parts[0] == "opsctl" || parts[0] == release.TurnsDir) ||
-				parts[1] == "libexec" && isApp && info.Mode().Perm()&0o111 != 0 {
+			if parts[1] == "bin" && (parts[0] == "opsctl" || parts[0] == release.TurnsDir) ||
+				parts[1] == "libexec" && slices.Contains(t.trees, parts[0]) && info.Mode().Perm()&0o111 != 0 {
 				mode = 0o755
 			}
 		}
