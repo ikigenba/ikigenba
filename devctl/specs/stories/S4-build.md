@@ -16,8 +16,9 @@ as it is gives the folder a host keeps for that release. In it are
 app the commit holds, each laid out as `<app>/bin/<app>` and, when present,
 `<app>/etc/`, `<app>/share/`, `<app>/libexec/` and `<app>/lib/`; nothing else
 from an app's directory is shipped, except that every `cmd/<x>` of an app
-other than `cmd/<app>` is built too and shipped as `<app>/bin/<x>`; this
-holds for apps only, never for opsctl or turns. opsctl
+other than `cmd/<app>` is built too and shipped as `<app>/bin/<x>`, and its
+`<x>` must be a usable command name; this holds for apps only, never for
+opsctl or turns. opsctl
 and turns are the release's two tools: neither has a manifest, so neither is
 an app, and both are always built. opsctl ships as
 `opsctl/bin/opsctl` alone; turns ships as `turns/bin/turns` with its committed
@@ -36,7 +37,10 @@ with a hyphen. It is a prefix under the space's backup URI, where `host/`,
 `renew-certificate` already live. A usable app name is a DNS label that is
 none of those seven, and build refuses an app at the commit with any other
 name before it compiles anything. It also refuses an app named `opsctl` or
-`turns`, whose directory in the release is that tool's own.
+`turns`, whose directory in the release is that tool's own. A usable command
+name follows the same rule as a usable app name, except that `opsctl` and
+`turns` are allowed; only directories under an app's `cmd/` are commands, and
+a regular file or symlink there is never refused.
 
 ## A developer asks what `build` can do
 
@@ -336,6 +340,35 @@ Postconditions:
 
 - Nothing under `dist/` was written; an earlier `dist/<sha>.tar.xz`, if any,
   is as it was.
+- No worktree is left behind, and the working tree is as it was.
+
+## A developer builds the suite at a commit where an app holds a command with an unusable name
+
+Command:
+
+```
+$ devctl build release-87
+```
+
+Output:
+
+```
+devctl: crm: cmd/... is not a usable command name
+```
+
+Exits 2. The line is on stderr; stdout is empty. Build refuses before it
+compiles anything. A directory named `.hidden`, `_x`, `Tool` or `host` under
+`crm/cmd/` fails the same way, naming it.
+
+Preconditions:
+
+- `release-87` points at a commit where `crm/` is an app whose `cmd/` holds
+  `crm/` and a directory named `...`.
+
+Postconditions:
+
+- Nothing was compiled, nothing under `dist/` was written, and an earlier
+  `dist/<sha>.tar.xz`, if any, is as it was.
 - No worktree is left behind, and the working tree is as it was.
 
 ## A developer's suite build does not compile
