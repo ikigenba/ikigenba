@@ -39,7 +39,9 @@
      the host it is placed on), .DNSName (string, the name people sign in
      at, "<slug>.metaspot.org", the hosts domain from the configuration),
      .State (string, as stored: "pending" its group, folder or DNS name is
-     not yet in place, "active", or "removing"), .UserCount (int, how many
+     not yet in place, "active", "failed" its placement failed, or
+     "removing"), .Reason (string, why its placement failed, as recorded;
+     empty unless .State is "failed"), .UserCount (int, how many
      users it has), .Created and .CreatedText (string, when it was created,
      in the two forms of .Reported); .AccountsPage, .AccountsPrev,
      .AccountsNext (string, the accounts list's page tokens, in the
@@ -68,7 +70,7 @@
      "stopping", "starting", "resizing" and "deleting" info; "failed" err;
      "stopped" no kind. Health: "sync" ok, "pending" info, "error" err,
      "silent" warn, "none" no kind. Account state: "active" ok, "pending"
-     and "removing" info. User state: "active" ok, "locked" warn, "removing" info.
+     and "removing" info, "failed" err. User state: "active" ok, "locked" warn, "removing" info.
      Hooks: title "accounts"; h1 with text "accounts"; p#summary.lede (text
      "SSH as a service: accounts runs hosts, places each business account
      on one of them, and keeps the people who sign in to work there. Agents
@@ -119,8 +121,9 @@
      a code element), td.account-host (a.host-link, href "/hosts/<.Host>", .Host
      in a code element), td.account-dns (.DNSName in a code element),
      td.account-state holding
-     span.status[data-status=<.State>][data-kind=<kind>] (text .State),
-     td.account-users.num (.UserCount) and td.account-created holding
+     span.status[data-status=<.State>][data-kind=<kind>] (text .State)
+     and, when .Reason is not empty, span.secondary-text.account-reason
+     (text .Reason), td.account-users.num (.UserCount) and td.account-created holding
      time[datetime=<.Created>] (text .CreatedText); then, after the card,
      nav.paging#paging-accounts (aria-label "Pages"), shown when .Accounts
      is not empty or .AccountsPage is not empty.
@@ -197,7 +200,7 @@
 <td class="account-slug"><code>{{.Slug}}</code></td>
 <td class="account-host"><a class="host-link" href="/hosts/{{.Host}}"><code>{{.Host}}</code></a></td>
 <td class="account-dns"><code>{{.DNSName}}</code></td>
-<td class="account-state">{{template "account-state" .State}}</td>
+<td class="account-state">{{template "account-state" .State}}{{if .Reason}}<span class="secondary-text account-reason">{{.Reason}}</span>{{end}}</td>
 <td class="account-users num">{{.UserCount}}</td>
 <td class="account-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></td>
 </tr>
@@ -254,9 +257,9 @@
 {{define "host-health"}}{{if eq . "sync"}}<span class="status" data-status="sync" data-kind="ok">in sync</span>{{else if eq . "pending"}}<span class="status" data-status="pending" data-kind="info">applying</span>{{else if eq . "error"}}<span class="status" data-status="error" data-kind="err">apply failed</span>{{else if eq . "silent"}}<span class="status" data-status="silent" data-kind="warn">silent</span>{{else}}<span class="status" data-status="{{.}}">no report</span>{{end}}{{end}}
 {{/* account-state: an account's state as a .status word. Data: the state
      string, as stored. Kinds: "active" ok; "pending" and "removing" info;
-     any other no kind. Hooks: span.status[data-status=<state>] with
+     "failed" err; any other no kind. Hooks: span.status[data-status=<state>] with
      data-kind when it has one, text the state. Used by landing and host. */}}
-{{define "account-state"}}<span class="status" data-status="{{.}}"{{if eq . "active"}} data-kind="ok"{{else if or (eq . "pending") (eq . "removing")}} data-kind="info"{{end}}>{{.}}</span>{{end}}
+{{define "account-state"}}<span class="status" data-status="{{.}}"{{if eq . "active"}} data-kind="ok"{{else if eq . "failed"}} data-kind="err"{{else if or (eq . "pending") (eq . "removing")}} data-kind="info"{{end}}>{{.}}</span>{{end}}
 {{/* user-state: a user's state as a .status word. Data: the state string,
      "active", "locked" or "removing". Kinds: "active" ok, "locked" warn,
      "removing" info. Hooks:
