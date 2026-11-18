@@ -5,7 +5,7 @@
 - **sshd** takes public keys only, and of those only ed25519 keys, for everyone, `ec2-user` included: no RSA, ecdsa or security-key key signs anyone in. It offers no password, keyboard-interactive or GSSAPI authentication and no GSSAPI key exchange, allows no root login, gives a short grace period to sign in and a small number of authentication attempts per connection, and drops idle sessions. It offers only its ed25519 host key, and only modern MACs, key exchange methods and ciphers, so a client that speaks only an older host key type, cipher or key exchange method is refused before it can sign in; the host's ecdsa host key stays on disk but is not offered. No one gets TCP or port forwarding, Unix-socket (stream-local) forwarding, agent or X11 forwarding, or tunnels, `ec2-user` included. sshd itself turns away, for a while, a source that keeps failing to sign in or holds many unauthenticated connections at once; fail2ban still bans above it. Neither limit locks out the admin, who opens many connections at once and in a row from one address, as a devctl deploy and the owner's agents do. Only the admin account `ec2-user` and members of the group `shell` may sign in. `ec2-user` keeps signing in with the keys in its own `~/.ssh/authorized_keys`. The one rule that differs for a member of `shell` is where their keys are held: they sign in only with a key held in `/etc/ssh/authorized_keys/<name>`, owned by root and not writable by them (`S13-users.md`); a key in their own `~/.ssh/authorized_keys` is ignored. The rules are a drop-in under `/etc/ssh/sshd_config.d/`, checked with `sshd -t` before sshd is reloaded; a configuration that fails the check is not installed, so the admin's access is kept.
 - **The journal is persistent**: the drop-in `/etc/systemd/journald.conf.d/ikigenba.conf` sets `Storage=persistent` and `/var/log/journal` exists, so sshd's record of each sign-in, from which `opsctl user list` reads a person's last sign-in (`S13-users.md`), survives a reboot. When the drop-in or the directory was new, the step restarts journald and flushes what it held into `/var/log/journal`; otherwise journald is not restarted.
 - **The group `shell`** exists. `ec2-user` is not a member of it and may still sign in.
-- **fail2ban**, with a jail for sshd, bans a source that fails to sign in again and again. The first ban lasts 10 minutes; each repeated ban lasts longer; every ban lifts on its own.
+- **fail2ban**, with a jail for sshd, bans a source that fails to sign in again and again. Every ban lasts 10 minutes and lifts on its own, however often the source has been banned before.
 - **dnf-automatic** applies security updates, and only those, unattended, on its timer.
 - **The packages** `fail2ban-server` and `dnf-automatic` are installed with dnf when either is missing; when both are present dnf is not run. `init`'s preflight does not check for them.
 - **The resource pool**: `/etc/systemd/system/user.slice.d/ikigenba.conf` sets `MemoryHigh`, `MemoryMax`, `CPUWeight` and `TasksMax` for all login sessions together, `ec2-user`'s included, and `/etc/systemd/system/user-.slice.d/ikigenba.conf` sets `MemoryHigh`, `MemoryMax` and `TasksMax` for each person's own sessions, each below the pool's, leaving the CPU weight at systemd's default. The values are the same on every host, whatever its memory, and no configuration key changes them. When either file changed, the step reloads systemd itself. The suite's own slices and nginx's drop-in (`S04-init.md`) are not touched.
@@ -648,7 +648,7 @@ Postconditions:
 
 ## An outsider fails to sign in again and again from one address
 
-fail2ban watches sshd's failures and bans an address that keeps failing: from then on the host does not let it reach sshd at all, whichever account it names, `ec2-user` included. The ban lifts on its own; the first lasts 10 minutes, and an address banned again is banned for longer each time.
+fail2ban watches sshd's failures and bans an address that keeps failing: from then on the host does not let it reach sshd at all, whichever account it names, `ec2-user` included. The ban lifts on its own after 10 minutes, and an address banned again is banned for 10 minutes again.
 
 Command: the same failing sign-in, repeated from one address, then one more attempt with a key the account accepts:
 
@@ -664,13 +664,12 @@ Exits 255 for every attempt. The lines are on stderr; stdout is empty.
 Preconditions:
 
 - The host holds every rule, and `/etc/ssh/authorized_keys/alice` holds the key the client offers.
-- The address has not been banned before.
 
 Postconditions:
 
 - The address is banned. Ten minutes after the ban began, `ssh alice@sbx.ikigenba.dev` from it signs in again.
 - Another address is not affected: `alice` signs in from it throughout.
-- If the address fails again and again after the ban lifts, it is banned again, for longer than 10 minutes, and that ban too lifts on its own.
+- If the address fails again and again after the ban lifts, it is banned again, for 10 minutes, and that ban too lifts on its own.
 
 ## An outsider keeps failing from one address and sshd turns it away for a while
 
