@@ -11,11 +11,13 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
 
 const expectedSSHConfig = "PubkeyAuthentication yes\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nGSSAPIAuthentication no\nGSSAPIKeyExchange no\nPermitRootLogin no\nLoginGraceTime 30\nMaxAuthTries 3\nClientAliveInterval 300\nClientAliveCountMax 2\nAllowGroups ec2-user shell\nUsePAM yes\nAllowTcpForwarding no\nAllowStreamLocalForwarding no\nAllowAgentForwarding no\nX11Forwarding no\nPermitTunnel no\nPerSourcePenalties yes\nMaxStartups 30:30:100\nPerSourceMaxStartups 20\nPubkeyAcceptedAlgorithms ssh-ed25519\nHostKey /etc/ssh/ssh_host_ed25519_key\nHostKeyAlgorithms ssh-ed25519\nKexAlgorithms mlkem768x25519-sha256,sntrup761x25519-sha512,sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org\nCiphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com\nMACs hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com\n\nMatch Group shell\n  AuthorizedKeysFile /etc/ssh/authorized_keys/%u\n"
+const expectedJailConfig = "[sshd]\nenabled = true\nbackend = systemd\nmode = aggressive\nbanaction = nftables-multiport\nmaxretry = 5\nfindtime = 10m\nbantime = 10m\n"
 
 type fixture struct {
 	t              *testing.T
@@ -179,8 +181,8 @@ func (f *fixture) noTemporary() {
 }
 
 func TestApplyContractAndIdempotence(t *testing.T) {
-	// R-QP1Z-BOQ4 R-QQ9V-PGGT R-PBSR-HVRO R-ZB1F-CHGU R-SALL-UGL5 R-QV5H-8JFL R-QWDD-MB6A
-	// R-P852-CKJL R-P9CY-QCAA R-LM93-NJUB R-LL17-9S3M R-SD1E-M02J R-3DXV-DUNC R-R4WO-APD5 R-SE9A-ZRT8
+	// R-QP1Z-BOQ4 R-QQ9V-PGGT R-BEMF-Z3QV R-ZB1F-CHGU R-SALL-UGL5 R-QV5H-8JFL R-QWDD-MB6A
+	// R-P852-CKJL R-P9CY-QCAA R-XUQL-KYCJ R-XR2W-FN4G R-SD1E-M02J R-3DXV-DUNC R-R4WO-APD5 R-SE9A-ZRT8
 	// R-R7CH-28UJ R-98VK-1BB5 R-RC82-LBTB R-ZFZE-PCKV R-ZH7B-34BK R-SLKP-AE9E
 	if ShellGroup != "shell" || KeysDir != "/etc/ssh/authorized_keys" || AdminAccount != "ec2-user" {
 		t.Fatal("public constants")
@@ -210,9 +212,9 @@ func TestApplyContractAndIdempotence(t *testing.T) {
 			if !reflect.DeepEqual(journalCommands(f), expectedJournalCommands(f)) || f.read("etc/systemd/journald.conf.d/ikigenba.conf") != "[Journal]\nStorage=persistent\n" {
 				t.Fatal("journal part not finished before shell group")
 			}
-			if f.mode("etc/ssh/authorized_keys") != 0o700 {
-				t.Fatal("keys part ran before shell group")
-			}
+		}
+		if (c.Name == "getent" || c.Name == "groupadd") && f.mode("etc/ssh/authorized_keys") != 0o700 {
+			t.Fatal("keys part ran before shell group finished")
 		}
 		if c.Name == "sshd" {
 			if f.mode("etc/ssh/authorized_keys") != 0o755 {
@@ -235,7 +237,7 @@ func TestApplyContractAndIdempotence(t *testing.T) {
 			}
 		}
 		if c.Name == "systemctl" && c.Args[len(c.Args)-1] == "fail2ban.service" {
-			if !strings.Contains(f.read("etc/fail2ban/jail.d/ikigenba.local"), "\nmode = aggressive\n") {
+			if f.read("etc/fail2ban/jail.d/ikigenba.local") != expectedJailConfig {
 				t.Fatal("jail not installed before fail2ban commands")
 			}
 			if _, err := os.Lstat(filepath.Join(f.root, "etc/dnf/vars/releasever")); !errors.Is(err, os.ErrNotExist) {
@@ -267,7 +269,7 @@ func TestApplyContractAndIdempotence(t *testing.T) {
 	}
 	f.requireApply()
 	f.noTemporary()
-	for name, want := range map[string]string{"etc/systemd/system/user.slice.d/ikigenba.conf": "[Slice]\nMemoryHigh=1.5G\nMemoryMax=2G\nTasksMax=512\nCPUWeight=50\n", "etc/systemd/system/user-.slice.d/ikigenba.conf": "[Slice]\nMemoryHigh=600M\nMemoryMax=1G\nTasksMax=256\n", "etc/systemd/journald.conf.d/ikigenba.conf": "[Journal]\nStorage=persistent\n", "etc/fail2ban/jail.d/ikigenba.local": "[sshd]\nenabled = true\nbackend = systemd\nmode = aggressive\nbanaction = nftables-multiport\nmaxretry = 5\nfindtime = 10m\nbantime = 10m\nbantime.increment = true\nbantime.maxtime = 1w\n", "etc/dnf/vars/releasever": "latest\n", "etc/dnf/automatic.conf": "# packaged\n[commands]\nupgrade_type = security\napply_updates = yes\ndownload_updates = yes\n[emitters]\nemit_via = stdio\n"} {
+	for name, want := range map[string]string{"etc/systemd/system/user.slice.d/ikigenba.conf": "[Slice]\nMemoryHigh=1.5G\nMemoryMax=2G\nTasksMax=512\nCPUWeight=50\n", "etc/systemd/system/user-.slice.d/ikigenba.conf": "[Slice]\nMemoryHigh=600M\nMemoryMax=1G\nTasksMax=256\n", "etc/systemd/journald.conf.d/ikigenba.conf": "[Journal]\nStorage=persistent\n", "etc/fail2ban/jail.d/ikigenba.local": expectedJailConfig, "etc/dnf/vars/releasever": "latest\n", "etc/dnf/automatic.conf": "# packaged\n[commands]\nupgrade_type = security\napply_updates = yes\ndownload_updates = yes\n[emitters]\nemit_via = stdio\n"} {
 		if got := f.read(name); got != want {
 			t.Fatalf("%s = %q", name, got)
 		}
@@ -286,11 +288,24 @@ func TestApplyContractAndIdempotence(t *testing.T) {
 	if !reflect.DeepEqual(f.commands, wantCommands) {
 		t.Fatalf("commands = %q", f.commands)
 	}
+	jailPath := filepath.Join(f.root, "etc/fail2ban/jail.d/ikigenba.local")
+	stamp := time.Unix(1, 0)
+	if err := os.Chtimes(jailPath, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+	jailBefore, err := os.Lstat(jailPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	f.hook = nil
 	f.commands = nil
 	changed, err := f.apply()
 	if err != nil || changed {
 		t.Fatalf("second Apply = %v %v", changed, err)
+	}
+	jailAfter, err := os.Lstat(jailPath)
+	if err != nil || !os.SameFile(jailBefore, jailAfter) || !jailBefore.ModTime().Equal(jailAfter.ModTime()) {
+		t.Fatalf("correct jail rewritten: %v", err)
 	}
 	wantCommands = []string{"id --user ikigenba", "id --user ikigenba", "id --group --name ikigenba", "getent group shell", "rpm -q fail2ban-server", "rpm -q dnf-automatic", "systemctl is-enabled fail2ban.service", "systemctl is-active fail2ban.service", "systemctl is-enabled dnf-automatic.timer", "systemctl is-active dnf-automatic.timer"}
 	wantCommands = append(wantCommands, "stat --format=%U:%G "+filepath.Join(f.root, "etc/ikigenba"))
@@ -404,7 +419,7 @@ func TestApplyRollbackAndCommandErrors(t *testing.T) {
 }
 
 func TestApplyInstallsOnlyMissingPackages(t *testing.T) {
-	// R-LM93-NJUB
+	// R-XUQL-KYCJ
 	for _, test := range []struct {
 		name             string
 		fail2ban, dnf    bool
@@ -443,21 +458,23 @@ func TestApplyInstallsOnlyMissingPackages(t *testing.T) {
 }
 
 func TestApplyUpgradesExistingJailAndReloadsActiveFail2ban(t *testing.T) {
-	// R-LL17-9S3M R-SD1E-M02J
+	// R-XR2W-FN4G R-SD1E-M02J
 	f := newFixture(t)
 	f.requireApply()
 	name := "etc/fail2ban/jail.d/ikigenba.local"
-	want := f.read(name)
-	f.write(name, strings.Replace(want, "mode = aggressive\n", "", 1), 0o600)
+	f.write(name, expectedJailConfig+"bantime.increment = true\nbantime.maxtime = 1w\n", 0o600)
 	f.commands = nil
 	f.hook = func(c host.Command) {
 		if c.Name == "systemctl" && c.Args[len(c.Args)-1] == "fail2ban.service" {
-			if f.read(name) != want || f.mode(name) != 0o644 {
+			if f.read(name) != expectedJailConfig || f.mode(name) != 0o644 {
 				t.Fatal("updated jail not installed before fail2ban commands")
 			}
 		}
 	}
 	f.requireApply()
+	if f.read(name) != expectedJailConfig || f.mode(name) != 0o644 {
+		t.Fatal("updated jail did not remain in place")
+	}
 	var commands []string
 	for _, c := range f.commands {
 		if strings.Contains(c, "fail2ban.service") {
@@ -550,11 +567,16 @@ func TestAutomaticSectionEditing(t *testing.T) {
 }
 
 func TestApplyModeOnlyKeepsInodesAndRunsNoReload(t *testing.T) {
-	// R-SALL-UGL5 R-QWDD-MB6A R-P9CY-QCAA R-LL17-9S3M R-3DXV-DUNC R-98VK-1BB5 R-ZH7B-34BK
+	// R-SALL-UGL5 R-QWDD-MB6A R-P9CY-QCAA R-XR2W-FN4G R-3DXV-DUNC R-98VK-1BB5 R-ZH7B-34BK
 	f := newFixture(t)
 	f.requireApply()
+	const jailName = "etc/fail2ban/jail.d/ikigenba.local"
+	stamp := time.Unix(1, 0)
+	if err := os.Chtimes(filepath.Join(f.root, jailName), stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
 	var infos = map[string]os.FileInfo{}
-	for _, name := range []string{"etc/systemd/system/user.slice.d/ikigenba.conf", "etc/systemd/system/user-.slice.d/ikigenba.conf", "etc/systemd/journald.conf.d/ikigenba.conf", "etc/ssh/sshd_config.d/10-ikigenba.conf", "etc/fail2ban/jail.d/ikigenba.local", "etc/dnf/vars/releasever", "etc/sudoers.d/ikigenba-accounts"} {
+	for _, name := range []string{"etc/systemd/system/user.slice.d/ikigenba.conf", "etc/systemd/system/user-.slice.d/ikigenba.conf", "etc/systemd/journald.conf.d/ikigenba.conf", "etc/ssh/sshd_config.d/10-ikigenba.conf", jailName, "etc/dnf/vars/releasever", "etc/sudoers.d/ikigenba-accounts"} {
 		p := filepath.Join(f.root, name)
 		info, err := os.Lstat(p)
 		if err != nil {
@@ -579,9 +601,15 @@ func TestApplyModeOnlyKeepsInodesAndRunsNoReload(t *testing.T) {
 		if err != nil || !os.SameFile(info, after) {
 			t.Fatalf("mode-only rewrite %s", name)
 		}
+		if name == jailName && !after.ModTime().Equal(info.ModTime()) {
+			t.Fatal("jail modification time changed during mode correction")
+		}
 	}
-	if f.mode("etc/fail2ban/jail.d/ikigenba.local") != 0o644 {
+	if f.mode(jailName) != 0o644 {
 		t.Fatal("jail mode not corrected")
+	}
+	if f.read(jailName) != expectedJailConfig {
+		t.Fatal("jail contents changed during mode correction")
 	}
 	for _, c := range f.commands {
 		if strings.Contains(c, "reload") || strings.HasPrefix(c, "sshd ") || strings.HasPrefix(c, "visudo ") {
@@ -592,7 +620,7 @@ func TestApplyModeOnlyKeepsInodesAndRunsNoReload(t *testing.T) {
 }
 
 func TestApplyStopsOnUnexpectedQueryAndFilesystemFailure(t *testing.T) {
-	// R-RV1Q-0TN5 R-RH3O-4ES3 R-ZB1F-CHGU R-LM93-NJUB
+	// R-RV1Q-0TN5 R-RH3O-4ES3 R-ZB1F-CHGU R-XUQL-KYCJ
 	for _, command := range []string{"id --user ikigenba", "getent group shell", "rpm -q fail2ban-server", "rpm -q dnf-automatic", "dnf install -y fail2ban-server dnf-automatic"} {
 		for _, spawn := range []bool{false, true} {
 			t.Run(command+fmt.Sprint(spawn), func(t *testing.T) {
@@ -722,7 +750,7 @@ func TestFail2banModeOnlyFailureReportsRetainedChange(t *testing.T) {
 }
 
 func TestApplyReplacesWholeFilesWithoutChangingOpenReaders(t *testing.T) {
-	// R-RC82-LBTB R-SALL-UGL5 R-P9CY-QCAA R-LL17-9S3M R-3DXV-DUNC R-R4WO-APD5 R-98VK-1BB5
+	// R-RC82-LBTB R-SALL-UGL5 R-P9CY-QCAA R-3DXV-DUNC R-R4WO-APD5 R-98VK-1BB5
 	f := newFixture(t)
 	f.requireApply()
 	names := []string{"etc/systemd/system/user.slice.d/ikigenba.conf", "etc/systemd/system/user-.slice.d/ikigenba.conf", "etc/systemd/journald.conf.d/ikigenba.conf", "etc/ssh/sshd_config.d/10-ikigenba.conf", "etc/fail2ban/jail.d/ikigenba.local", "etc/dnf/vars/releasever", "etc/dnf/automatic.conf", "etc/sudoers.d/ikigenba-accounts"}
