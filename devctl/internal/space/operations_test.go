@@ -25,7 +25,7 @@ const (
 )
 
 func TestRunListCurrentRootAndApex(t *testing.T) {
-	// R-9IAV-GV18 R-RJ9Z-1OB0 R-P5O5-A9HX R-V6FS-65I6 R-XO8Q-YVRD  R-YBOB-U66N
+	// R-9IAV-GV18 R-RJ9Z-1OB0 R-V6FS-65I6 R-XO8Q-YVRD  R-YBOB-U66N
 	_ = []func(context.Context, []string, io.Writer, seam.Deps) error{Run}
 	f := newOperationFake(t)
 	f.instances = []cloud.Instance{
@@ -238,6 +238,7 @@ func TestRunActionLookupFailureStopsBeforeEffects(t *testing.T) {
 }
 
 func TestRunPrerequisiteFailuresStopUnchanged(t *testing.T) {
+	// R-HG4A-VDEP
 	want := errors.New("sentinel")
 	for _, tc := range []struct {
 		name string
@@ -254,7 +255,7 @@ func TestRunPrerequisiteFailuresStopUnchanged(t *testing.T) {
 			f := newOperationFake(t)
 			tc.set(f)
 			stdout, err := runOperation(t, f, tc.args...)
-			if stdout != "" || !errors.Is(err, want) || containsOp(f.ops, "ssh ") || containsOp(f.ops, "start ") || containsOp(f.ops, "stop ") || containsOp(f.ops, "terminate ") || containsOp(f.ops, "change ") {
+			if stdout != "" || !errors.Is(err, want) || reflect.TypeOf(err) != reflect.TypeOf(want) || containsOp(f.ops, "ssh ") || containsOp(f.ops, "start ") || containsOp(f.ops, "stop ") || containsOp(f.ops, "terminate ") || containsOp(f.ops, "change ") {
 				t.Fatalf("stdout=%q err=%v ops=%v", stdout, err, f.ops)
 			}
 		})
@@ -298,6 +299,7 @@ func TestDestroyOrderedOptionsAndCleanup(t *testing.T) {
 		"delete parameters /a", "delete parameters /b", "delete parameters /c",
 		"objects " + testRoot + " " + BackupPrefix("sbx1"),
 		"delete objects " + testRoot + " sbx1/a,sbx1/b",
+		"attached policy " + testDomain + " " + HostsPolicyName(testRoot),
 		"role " + testDomain, "profile " + testDomain, "delete policy " + testDomain,
 		"delete profile " + testDomain, "delete role " + testDomain,
 	}
@@ -534,7 +536,7 @@ func TestDestroyApexAndCleanupBranches(t *testing.T) {
 }
 
 func TestDestroyStopsAtEveryFirstFailure(t *testing.T) {
-	// R-VEZ2-UJP1
+	// R-S1QB-1D4D R-NM11-J5XN
 	initialOps := []string{
 		"git", "open " + testRoot + " " + testRegion, "sts", "spaces " + testRoot, "addresses " + testRoot,
 		"zone " + testRoot, "find " + testRoot,
@@ -544,6 +546,7 @@ func TestDestroyStopsAtEveryFirstFailure(t *testing.T) {
 		"release alloc", "list records", "change records",
 		"parameters "+secrets.Prefix(testDomain), "delete parameters /one", "delete parameters /two",
 		"objects "+testRoot+" "+BackupPrefix("sbx1"), "delete objects "+testRoot+" sbx1/one,sbx1/two",
+		"attached policy "+testDomain+" "+HostsPolicyName(testRoot),
 		"role "+testDomain, "profile "+testDomain, "delete policy "+testDomain,
 		"remove role "+testDomain+" "+testDomain, "delete profile "+testDomain, "delete role "+testDomain,
 	)
@@ -591,6 +594,7 @@ func TestDestroyStopsAtEveryFirstFailure(t *testing.T) {
 		{name: "secrets delete", failOp: "delete parameters /one", wantStdout: recordsDone},
 		{name: "backups list", failOp: "objects " + testRoot + " " + BackupPrefix("sbx1"), wantStdout: secretsDone},
 		{name: "backups delete", failOp: "delete objects " + testRoot + " sbx1/one,sbx1/two", wantStdout: secretsDone},
+		{name: "hosts lookup", failOp: "attached policy " + testDomain + " " + HostsPolicyName(testRoot), wantStdout: backupsDone},
 		{name: "role lookup", failOp: "role " + testDomain, wantStdout: backupsDone},
 		{name: "role profile lookup", failOp: "profile " + testDomain, wantStdout: backupsDone},
 		{name: "role policy delete", failOp: "delete policy " + testDomain, wantStdout: backupsDone},
@@ -657,6 +661,7 @@ func runOperation(t *testing.T, f *operationFake, args ...string) (string, error
 }
 
 type operationFake struct {
+	cloud.IAM
 	t            *testing.T
 	root         string
 	ops          []string
@@ -878,6 +883,11 @@ func (f *operationFake) RoleExists(_ context.Context, name string) (bool, error)
 	op := "role " + name
 	f.ops = append(f.ops, op)
 	return f.roleExists, f.opErrors[op]
+}
+func (f *operationFake) AttachedPolicy(_ context.Context, role, name string) (string, bool, error) {
+	op := "attached policy " + role + " " + name
+	f.ops = append(f.ops, op)
+	return "", false, f.opErrors[op]
 }
 func (f *operationFake) CreateRole(context.Context, cloud.RoleSpec) error { panic("unexpected") }
 func (f *operationFake) PutRolePolicy(context.Context, string, string, string) error {

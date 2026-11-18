@@ -62,6 +62,14 @@ type expectedIAM interface {
 	RemoveRoleFromInstanceProfile(context.Context, string, string) error
 	DeleteInstanceProfile(context.Context, string) error
 	DeleteRole(context.Context, string) error
+	ManagedPolicy(context.Context, string) (string, error)
+	AttachedPolicy(context.Context, string, string) (string, bool, error)
+	AttachRolePolicy(context.Context, string, string) error
+	DetachRolePolicy(context.Context, string, string) error
+	TagRole(context.Context, string, string, string) error
+	UntagRole(context.Context, string, string) error
+	RoleTag(context.Context, string, string) (string, bool, error)
+	RolesTagged(context.Context, string, string) ([]string, error)
 }
 
 type expectedSTS interface {
@@ -348,7 +356,7 @@ func TestRoute53InterfaceContract(_ *testing.T) {
 }
 
 func TestIAMContract(_ *testing.T) {
-	// R-QCMI-PZGE
+	// R-BEPC-RJ64
 	_ = RoleSpec(struct {
 		Name                   string
 		AssumeRolePolicy       string

@@ -136,7 +136,7 @@ func TestGoldenAndSeedDispatchMatchesSuccessfulPackageRun(t *testing.T) {
 }
 
 func TestCommandsOutsideRootFileSetIgnoreInvalidRootFile(t *testing.T) {
-	// R-YPS2-X32R
+	// R-Z8MF-4H88
 	fixture := newCLISuiteFixture(t)
 	if err := os.MkdirAll(filepath.Join(fixture.root, "infra"), 0o700); err != nil {
 		t.Fatal(err)

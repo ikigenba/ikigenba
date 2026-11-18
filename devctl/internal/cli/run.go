@@ -14,6 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/deploy"
 	"github.com/ikigenba/ikigenba/devctl/internal/golden"
+	"github.com/ikigenba/ikigenba/devctl/internal/hosts"
 	"github.com/ikigenba/ikigenba/devctl/internal/keyring"
 	"github.com/ikigenba/ikigenba/devctl/internal/restore"
 	"github.com/ikigenba/ikigenba/devctl/internal/rollback"
@@ -43,6 +44,7 @@ Commands:
   golden    capture a space's data as a named golden set
   seed      give a space a golden set's or another space's data
   apex      point the root domain at one app on one space
+  hosts     make one space the hosts operator, or stop it being one
 
 Options:
   --help              print this help
@@ -73,6 +75,7 @@ var commandSet = map[string]struct{}{
 	"apex":     {},
 	"golden":   {},
 	"seed":     {},
+	"hosts":    {},
 }
 
 type topLevel struct {
@@ -120,6 +123,9 @@ func Run(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.Writ
 	}
 	if invocation.command == "apex" {
 		return operationError(stderr, apex.Run(ctx, invocation.arguments, stdout, deps))
+	}
+	if invocation.command == "hosts" {
+		return operationError(stderr, hosts.Run(ctx, invocation.arguments, stdout, deps))
 	}
 	if invocation.command == "build" {
 		return operationError(stderr, build.Run(ctx, invocation.arguments, version, stdout, deps))

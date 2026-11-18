@@ -198,7 +198,7 @@ func recordNames(records []cloud.Record) []string {
 }
 
 func TestPermissionsBoundaryExhaustsPagesAfterMatch(t *testing.T) {
-	// R-7EY7-I0O5 R-VV8S-ZVE7
+	// R-7EY7-I0O5 R-BFX9-5AWT
 	for _, failure := range []bool{false, true} {
 		name := "later page"
 		if failure {

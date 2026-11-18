@@ -27,6 +27,7 @@ Commands:
   golden    capture a space's data as a named golden set
   seed      give a space a golden set's or another space's data
   apex      point the root domain at one app on one space
+  hosts     make one space the hosts operator, or stop it being one
 
 Options:
   --help              print this help

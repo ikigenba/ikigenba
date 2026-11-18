@@ -241,6 +241,14 @@ type IAM interface {
 	RemoveRoleFromInstanceProfile(ctx context.Context, profile, role string) error
 	DeleteInstanceProfile(ctx context.Context, name string) error
 	DeleteRole(ctx context.Context, name string) error
+	ManagedPolicy(ctx context.Context, name string) (string, error)
+	AttachedPolicy(ctx context.Context, role, name string) (string, bool, error)
+	AttachRolePolicy(ctx context.Context, role, arn string) error
+	DetachRolePolicy(ctx context.Context, role, arn string) error
+	TagRole(ctx context.Context, role, key, value string) error
+	UntagRole(ctx context.Context, role, key string) error
+	RoleTag(ctx context.Context, role, key string) (string, bool, error)
+	RolesTagged(ctx context.Context, key, value string) ([]string, error)
 }
 
 // STS is the caller identity service boundary.

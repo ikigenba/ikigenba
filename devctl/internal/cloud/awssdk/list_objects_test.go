@@ -116,7 +116,7 @@ func TestListObjectsEmptyPages(t *testing.T) {
 }
 
 func TestListObjectsPageFailures(t *testing.T) {
-	// R-7L1P-EVDM R-GSOH-NDVV
+	// R-BJKY-AM4W R-GSOH-NDVV
 	first := []cloud.Object{{Key: "sbx1/host/one", Size: 1, Modified: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}, {Key: "sbx1/host/two", Size: 2, Modified: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)}}
 	for _, malformed := range []bool{false, true} {
 		t.Run(fmt.Sprintf("missing_token_%t", malformed), func(t *testing.T) {
@@ -137,8 +137,11 @@ func TestListObjectsPageFailures(t *testing.T) {
 			if !errors.As(err, &got) || got.Service != "s3" || got.Operation != "ListObjectsV2" || got.Subject != "ikigenba.dev/sbx1/host/" || got.Err == nil {
 				t.Fatalf("error = %#v; want listing cloud.Error", err)
 			}
-			if !malformed && got.Error() != "s3 ListObjectsV2 ikigenba.dev/sbx1/host/: SlowDown" {
-				t.Fatalf("error = %v", err)
+			if !malformed {
+				if got.Code != "SlowDown" || got.Error() != "s3 ListObjectsV2 ikigenba.dev/sbx1/host/: SlowDown" {
+					t.Fatalf("error = %v (%#v), want SlowDown", err, got)
+				}
+				assertUnwrappedAPIError(t, got.Err, "SlowDown", "retry later")
 			}
 			if transport.requests != 2 || calls != 1 {
 				t.Fatalf("requests %d, callbacks %d; want 2, 1", transport.requests, calls)

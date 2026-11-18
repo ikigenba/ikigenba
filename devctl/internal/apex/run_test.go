@@ -117,7 +117,7 @@ func TestGrammarAndHelpAreSideEffectFree(t *testing.T) {
 }
 
 func TestSetRunsPreflightAndOrderedSteps(t *testing.T) {
-	// R-EINW-L6B7 R-FF2H-T4S1 R-4GUV-4ZHL R-FHIA-KO9F R-FIQ6-YG04
+	// R-88FM-TRPT R-FF2H-T4S1 R-4GUV-4ZHL R-FHIA-KO9F R-FIQ6-YG04
 	// R-FJY3-C7QT R-FNLS-HIYW R-FOTO-VAPL R-EJVS-YY1W
 	f := successfulFake()
 	deps := testDeps(t, f)
@@ -192,7 +192,7 @@ func TestSetPreflightRefusesBeforeOutputOrMutation(t *testing.T) {
 }
 
 func TestAcceptedInvocationFailureOrderAndPropagation(t *testing.T) {
-	// R-EINW-L6B7 R-FF2H-T4S1
+	// R-88FM-TRPT R-FF2H-T4S1
 	t.Run("root discovery", func(t *testing.T) {
 		want := errors.New("git unavailable")
 		cloudCalls := 0
@@ -936,6 +936,22 @@ func (*fake) RemoveRoleFromInstanceProfile(context.Context, string, string) erro
 }
 func (*fake) DeleteInstanceProfile(context.Context, string) error { panic("unexpected IAM call") }
 func (*fake) DeleteRole(context.Context, string) error            { panic("unexpected IAM call") }
+func (*fake) ManagedPolicy(context.Context, string) (string, error) {
+	panic("unexpected IAM call")
+}
+func (*fake) AttachedPolicy(context.Context, string, string) (string, bool, error) {
+	panic("unexpected IAM call")
+}
+func (*fake) AttachRolePolicy(context.Context, string, string) error { panic("unexpected IAM call") }
+func (*fake) DetachRolePolicy(context.Context, string, string) error { panic("unexpected IAM call") }
+func (*fake) TagRole(context.Context, string, string, string) error  { panic("unexpected IAM call") }
+func (*fake) UntagRole(context.Context, string, string) error        { panic("unexpected IAM call") }
+func (*fake) RoleTag(context.Context, string, string) (string, bool, error) {
+	panic("unexpected IAM call")
+}
+func (*fake) RolesTagged(context.Context, string, string) ([]string, error) {
+	panic("unexpected IAM call")
+}
 func (f *fake) GetParameter(context.Context, string) (string, error) {
 	f.ssmCalls++
 	panic("unexpected SSM call")

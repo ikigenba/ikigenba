@@ -97,6 +97,13 @@ func runDestroy(ctx context.Context, stdout io.Writer, deps seam.Deps, clients c
 	if err := destroyBackups(ctx, stdout, clients.S3, root, sp.Label, options.deleteBackups); err != nil {
 		return err
 	}
+	detached, err := DetachHostsPolicy(ctx, clients.IAM, root, sp.Domain)
+	if err != nil {
+		return err
+	}
+	if detached {
+		Step(stdout, "hosts", HostsPolicyName(root)+" detached")
+	}
 	deletedRole, err := DeleteRole(ctx, clients.IAM, sp.Domain)
 	if err != nil {
 		return err

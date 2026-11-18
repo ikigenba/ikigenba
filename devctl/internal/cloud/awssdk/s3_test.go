@@ -182,7 +182,7 @@ func TestS3DeleteObjectsBatchBoundaries(t *testing.T) {
 }
 
 func TestS3ErrorMapping(t *testing.T) {
-	// R-VV8S-ZVE7 R-YPQX-0LG8 R-7HE0-9K5J
+	// R-BFX9-5AWT R-BH55-J2NI R-7HE0-9K5J
 	boom := &smithy.GenericAPIError{Code: "SlowDown", Message: "retry later"}
 	tests := []struct {
 		method    string

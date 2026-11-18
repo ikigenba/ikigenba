@@ -619,6 +619,7 @@ func (f *helperRoute53) ChangeStatus(ctx context.Context, id string) (cloud.Chan
 }
 
 type helperIAM struct {
+	cloud.IAM
 	roleExists    func(context.Context, string) (bool, error)
 	profileRoles  func(context.Context, string) ([]string, bool, error)
 	deletePolicy  func(context.Context, string, string) error

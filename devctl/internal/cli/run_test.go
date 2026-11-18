@@ -42,6 +42,7 @@ Commands:
   golden    capture a space's data as a named golden set
   seed      give a space a golden set's or another space's data
   apex      point the root domain at one app on one space
+  hosts     make one space the hosts operator, or stop it being one
 
 Options:
   --help              print this help
@@ -235,7 +236,7 @@ func TestUnknownTopLevelOption(t *testing.T) {
 }
 
 func TestRootFileSelectsCloudProfileAndRegion(t *testing.T) {
-	// R-YPS2-X32R R-N1LD-IX1I
+	// R-Z8MF-4H88 R-N1LD-IX1I
 	tests := []struct {
 		name    string
 		args    []string
@@ -247,6 +248,7 @@ func TestRootFileSelectsCloudProfileAndRegion(t *testing.T) {
 		{name: "restore", args: []string{"restore", "sbx1", "crm"}},
 		{name: "rollback", args: []string{"rollback", "sbx1"}},
 		{name: "apex", args: []string{"apex", "show"}},
+		{name: "hosts", args: []string{"hosts", "set", "sbx1"}},
 		{name: "golden", args: []string{"golden", "capture", "sbx1", "demo"}},
 		{name: "seed", args: []string{"seed", "sbx2", "demo"}},
 	}
@@ -344,6 +346,8 @@ func TestEveryCloudCommandStopsAtMissingRootFile(t *testing.T) {
 		{name: "apex set", args: []string{"apex", "set", "crm.sbx1"}},
 		{name: "apex show", args: []string{"apex", "show"}},
 		{name: "apex clear", args: []string{"apex", "clear"}},
+		{name: "hosts set", args: []string{"hosts", "set", "us"}},
+		{name: "hosts clear", args: []string{"hosts", "clear", "us"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -550,6 +554,7 @@ func TestRootRefusalPrecedesEveryInvocation(t *testing.T) {
 		{"apex", "--help"},
 		{"golden", "--help"},
 		{"seed", "--help"},
+		{"hosts", "--help"},
 		{"space", "list"},
 		{"secrets", "list", "sbx1"},
 		{"build", "crm"},
@@ -559,6 +564,7 @@ func TestRootRefusalPrecedesEveryInvocation(t *testing.T) {
 		{"apex", "show"},
 		{"golden", "capture", "sbx1", "demo"},
 		{"seed", "sbx2", "demo"},
+		{"hosts", "set", "us"},
 	}
 	for _, args := range invocations {
 		external := 0
@@ -623,13 +629,13 @@ func TestVersionRejectsArguments(t *testing.T) {
 }
 
 func TestTopLevelCommandSet(t *testing.T) {
-	// R-YNCA-5JLD
+	// R-Z66M-CXQU
 	got := make([]string, 0, len(commandSet))
 	for command := range commandSet {
 		got = append(got, command)
 	}
 	sort.Strings(got)
-	want := []string{"apex", "build", "deploy", "golden", "restore", "rollback", "secrets", "seed", "space", "version"}
+	want := []string{"apex", "build", "deploy", "golden", "hosts", "restore", "rollback", "secrets", "seed", "space", "version"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("top-level commands = %q, want %q", got, want)
 	}
@@ -641,7 +647,7 @@ func TestTopLevelCommandSet(t *testing.T) {
 }
 
 func TestTopLevelHelp(t *testing.T) {
-	// R-58G6-CVVX
+	// R-Z9UB-I8YX
 	for _, option := range []string{"--help", "-h"} {
 		assertResult(t, invoke(option), 0, expectedUsage, "")
 	}

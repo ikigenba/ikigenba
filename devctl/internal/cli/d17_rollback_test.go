@@ -142,7 +142,7 @@ func TestRollbackReturnsRootFailureUnchanged(t *testing.T) {
 }
 
 func TestChangedRootPreflightsThroughCLI(t *testing.T) {
-	// R-P5O5-A9HX R-EINW-L6B7
+	// R-88FM-TRPT
 	for _, args := range [][]string{{"space", "stop", "sbx1"}, {"apex", "show"}} {
 		deps := checkoutDeps(t, `{"domain":"example.test","region":"eu-west-1"}`)
 		calls := 0

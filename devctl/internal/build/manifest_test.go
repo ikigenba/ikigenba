@@ -13,11 +13,12 @@ import (
 )
 
 func TestSuiteBuildsAndRunsHostManifests(t *testing.T) {
-	// R-681W-UOJ9 R-6AHP-M80N
+	// R-WFLI-N3VL
 	for _, failure := range []string{"", "stale crm", "manifest crm", "manifest build crm", "compile crm", "compile opsctl", "compile turns", "tar", "remove"} {
 		t.Run(failure, func(t *testing.T) {
 			f := newSuite(t)
 			f.apps = []string{"auth", "crm"}
+			f.files["crm/cmd/crmd/main.go"] = suiteMember{Bytes: "package main", Mode: 0o644}
 			f.fail = failure
 			f.removeFail = failure == "remove"
 			f.deps.Getenv = func(key string) string {
@@ -44,6 +45,9 @@ func TestSuiteBuildsAndRunsHostManifests(t *testing.T) {
 			for _, c := range f.commands {
 				if c.Path == "go" {
 					name := filepath.Base(c.Dir)
+					if c.Args[len(c.Args)-1] != "./cmd/"+name {
+						continue
+					}
 					output := suiteCompilerOutput(c.Args)
 					compileCounts[name]++
 					if compileCounts[name] == 1 {
@@ -67,6 +71,9 @@ func TestSuiteBuildsAndRunsHostManifests(t *testing.T) {
 						if output == release {
 							t.Fatalf("manifest output equals release output %q", output)
 						}
+					}
+					if _, exists := f.extras[output]; exists {
+						t.Fatalf("manifest output equals extra output %q", output)
 					}
 					if _, err := os.Stat(output); !os.IsNotExist(err) {
 						t.Fatalf("manifest output remains at %q: %v", output, err)

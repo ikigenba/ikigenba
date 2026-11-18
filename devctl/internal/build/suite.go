@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -127,32 +128,33 @@ func stageSuite(ctx context.Context, worktree, stage, sha, version string, deps 
 	manifestEnv := []string{"GOOS=" + runtime.GOOS, "GOARCH=" + runtime.GOARCH, "CGO_ENABLED=0", "GOWORK=off"}
 	var manifests []checkout.Manifest
 	for _, app := range apps {
-		binary := filepath.Join(releaseRoot, app.Name, "bin", app.Name)
-		if err := compileSuite(ctx, app.Name, app.Dir, binary, releaseEnv, deps); err != nil {
+		destination := filepath.Join(releaseRoot, app.Name)
+		binDir := filepath.Join(destination, "bin")
+		binary := filepath.Join(binDir, app.Name)
+		if err := compileSuite(ctx, app.Name, app.Name, app.Dir, binary, releaseEnv, deps); err != nil {
 			return "", nil, err
 		}
 		manifestBinary := filepath.Join(stage, "manifests", app.Name)
-		if err := compileSuite(ctx, app.Name, app.Dir, manifestBinary, manifestEnv, deps); err != nil {
+		if err := compileSuite(ctx, app.Name, app.Name, app.Dir, manifestBinary, manifestEnv, deps); err != nil {
 			return "", nil, err
 		}
 		manifest, err := executeStaged(ctx, deps, manifestBinary, app.Dir, app.Name+" manifest", "manifest")
 		if err != nil {
 			return "", nil, err
 		}
-		committed, err := os.ReadFile(filepath.Join(app.Dir, checkout.ManifestFile))
+		mode, err := checkManifest(app, manifest)
 		if err != nil {
 			return "", nil, err
-		}
-		if !bytes.Equal(manifest, committed) {
-			return "", nil, &StaleManifestError{App: app.Name}
 		}
 		decoded, err := checkout.DecodeManifest(bytes.NewReader(manifest))
 		if err != nil {
 			return "", nil, err
 		}
 		manifests = append(manifests, decoded)
-		destination := filepath.Join(releaseRoot, app.Name)
-		if err := writeArchiveFile(filepath.Join(destination, checkout.ManifestFile), manifest, 0o644); err != nil {
+		if err := compileExtraCommands(ctx, app, binDir, releaseEnv, deps); err != nil {
+			return "", nil, err
+		}
+		if err := writeArchiveFile(filepath.Join(destination, checkout.ManifestFile), bytes.NewReader(manifest), mode); err != nil {
 			return "", nil, err
 		}
 		for _, directory := range []string{"etc", "share", "libexec", "lib"} {
@@ -161,11 +163,11 @@ func stageSuite(ctx context.Context, worktree, stage, sha, version string, deps 
 			}
 		}
 	}
-	if err := compileSuite(ctx, "opsctl", filepath.Join(worktree, "opsctl"), filepath.Join(releaseRoot, "opsctl", "bin", "opsctl"), releaseEnv, deps); err != nil {
+	if err := compileSuite(ctx, "opsctl", "opsctl", filepath.Join(worktree, "opsctl"), filepath.Join(releaseRoot, "opsctl", "bin", "opsctl"), releaseEnv, deps); err != nil {
 		return "", nil, err
 	}
 	turnsRoot := filepath.Join(releaseRoot, "turns")
-	if err := compileSuite(ctx, "turns", turnsDir, filepath.Join(turnsRoot, "bin", "turns"), releaseEnv, deps); err != nil {
+	if err := compileSuite(ctx, "turns", "turns", turnsDir, filepath.Join(turnsRoot, "bin", "turns"), releaseEnv, deps); err != nil {
 		return "", nil, err
 	}
 	if err := copyArchiveDirectory(turnsDir, turnsRoot, "share"); err != nil {
@@ -179,7 +181,7 @@ func stageSuite(ctx context.Context, worktree, stage, sha, version string, deps 
 	if err != nil {
 		return "", nil, err
 	}
-	if err := writeArchiveFile(filepath.Join(releaseRoot, "release.json"), metadata, 0o644); err != nil {
+	if err := writeArchiveFile(filepath.Join(releaseRoot, "release.json"), bytes.NewReader(metadata), 0o644); err != nil {
 		return "", nil, err
 	}
 	archive := filepath.Join(stage, "release.tar.xz")
@@ -189,11 +191,37 @@ func stageSuite(ctx context.Context, worktree, stage, sha, version string, deps 
 	return archive, manifests, nil
 }
 
-func compileSuite(ctx context.Context, name, dir, binary string, env []string, deps seam.Deps) error {
+func compileExtraCommands(ctx context.Context, app checkout.App, binDir string, env []string, deps seam.Deps) error {
+	entries, err := os.ReadDir(filepath.Join(app.Dir, "cmd"))
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !entry.IsDir() || name == app.Name {
+			continue
+		}
+		// The go command treats ... as a package wildcard, even in a literal directory name.
+		if strings.Contains(name, "...") {
+			return fmt.Errorf("build %s: extra command %q contains ... which Go treats as a package wildcard", app.Name, name)
+		}
+		if err := compileSuite(ctx, app.Name, name, app.Dir, filepath.Join(binDir, name), env, deps); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func compileSuite(ctx context.Context, name, command, dir, binary string, env []string, deps seam.Deps) error {
 	if err := os.MkdirAll(filepath.Dir(binary), 0o700); err != nil {
 		return err
 	}
-	if err := execute(ctx, deps, "build "+name, seam.Cmd{Path: "go", Args: []string{"build", "-buildvcs=false", "-o", binary, "./cmd/" + name}, Dir: dir, Env: env}); err != nil {
+	args := []string{"build", "-buildvcs=false"}
+	if command != name {
+		args = append(args, "-buildmode=exe")
+	}
+	args = append(args, "-o", binary, "./cmd/"+command)
+	if err := execute(ctx, deps, "build "+name, seam.Cmd{Path: "go", Args: args, Dir: dir, Env: env}); err != nil {
 		return err
 	}
 	info, err := os.Stat(binary)

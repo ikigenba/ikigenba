@@ -201,6 +201,47 @@ func TestCreateApexStateControlsRoleAndRoot(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateDoesNotChangeHostsOperator(t *testing.T) {
+	// R-53DM-YAZG
+	for _, tc := range []struct {
+		name    string
+		options []string
+		backup  bool
+		fail    bool
+	}{
+		{name: "fresh"},
+		{name: "explicit apex", options: []string{"--apex=crm"}},
+		{name: "restored apex", backup: true},
+		{name: "failure after role", fail: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newCreateFake(t)
+			if tc.backup {
+				f.objects = []cloud.Object{{Key: "sbx1/host/2026-09-12T14:22:51Z.tar.zst"}}
+				f.apexStatus = 0
+			}
+			var wantErr error
+			if tc.fail {
+				wantErr = errors.New("launch failed")
+				f.stopAt, f.stopErr = "run-instance", wantErr
+			}
+			var stdout bytes.Buffer
+			args := append([]string{"sbx1", "--acme-email=ops@ikigenba.dev"}, tc.options...)
+			err := Run(t.Context(), args, "test-version", &stdout, f.deps())
+			if !errors.Is(err, wantErr) {
+				t.Fatalf("error = %v, want %v", err, wantErr)
+			}
+			if !strings.Contains(stdout.String(), "role: ok (sbx1.ikigenba.dev)\n") || len(f.hostRightsCalls) != 0 {
+				t.Fatalf("stdout = %q, hosts rights calls = %v", stdout.String(), f.hostRightsCalls)
+			}
+			if wantApex := tc.backup || len(tc.options) > 0; strings.Contains(stdout.String(), "role: ok (sbx1.ikigenba.dev may prove ikigenba.dev)\n") != wantApex {
+				t.Fatalf("apex = %t, stdout = %q", wantApex, stdout.String())
+			}
+		})
+	}
+}
+
 func stepNames(text string) []string {
 	var names []string
 	for _, line := range strings.Split(text, "\n") {

@@ -246,7 +246,7 @@ func TestApexArgumentFailuresAreExactAndDependencyFree(t *testing.T) {
 }
 
 func TestApexOperandParsingPrecedesCloud(t *testing.T) {
-	// R-ST4K-APZN R-EINW-L6B7
+	// R-ST4K-APZN R-88FM-TRPT
 	for _, operand := range []string{"sbx1", "crm.sbx1.example.com"} {
 		deps := checkoutDeps(t, `{"domain":"ikigenba.dev","region":"us-east-2"}`)
 		cloudCalls := 0
@@ -430,7 +430,7 @@ func TestApexShowHostReadThroughCLI(t *testing.T) {
 }
 
 func TestApexRootFileProfileAndErrors(t *testing.T) {
-	// R-EINW-L6B7
+	// R-88FM-TRPT
 	for _, args := range [][]string{{"apex", "set", "crm.sbx1"}, {"apex", "show"}, {"apex", "clear"}} {
 		deps := checkoutDeps(t, `{"domain":"example.test","region":"eu-west-1"}`)
 		calls := 0

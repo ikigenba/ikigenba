@@ -30,7 +30,7 @@ func (f *fakeSTS) GetCallerIdentity(_ context.Context, input *sts.GetCallerIdent
 }
 
 func TestSTSCallerAccountID(t *testing.T) {
-	// R-Z35T-82LV R-VV8S-ZVE7 R-YPQX-0LG8
+	// R-Z35T-82LV R-BFX9-5AWT R-BH55-J2NI
 	t.Run("account", func(t *testing.T) {
 		fake := &fakeSTS{}
 		account, err := (&stsClient{sdk: fake}).CallerAccountID(context.Background())

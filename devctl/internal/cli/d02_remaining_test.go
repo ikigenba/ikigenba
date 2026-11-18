@@ -48,7 +48,7 @@ Run 'devctl apex <subcommand> --help' for details.
 `
 
 func TestEveryCommandHelpIsExact(t *testing.T) {
-	// R-YOK6-JBC2
+	// R-Z7EI-QPHJ
 	tests := []struct {
 		command string
 		want    string
@@ -60,6 +60,7 @@ func TestEveryCommandHelpIsExact(t *testing.T) {
 		{command: "rollback", want: expectedRollbackUsage},
 		{command: "restore", want: expectedRestoreUsage},
 		{command: "apex", want: expectedApexUsage},
+		{command: "hosts", want: expectedHostsUsage},
 		{command: "golden", want: expectedGoldenUsage},
 		{command: "seed", want: expectedSeedUsage},
 	}

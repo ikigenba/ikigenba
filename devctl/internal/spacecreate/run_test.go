@@ -258,6 +258,7 @@ func TestNewestBackupBreaksTimestampTieByKey(t *testing.T) {
 func resultSpace() spaceref.Space { return spaceref.Space{Label: "sbx1", Domain: "sbx1.ikigenba.dev"} }
 
 type createFake struct {
+	cloud.IAM
 	t                                    *testing.T
 	commands                             []seam.Cmd
 	root, tmp                            string
@@ -278,6 +279,7 @@ type createFake struct {
 	readySpec, runSpec                   cloud.LaunchSpec
 	roleSpec                             cloud.RoleSpec
 	policyName, policy                   string
+	hostRightsCalls                      []string
 }
 
 func newCreateFake(t *testing.T) *createFake {
@@ -558,6 +560,26 @@ func (f *createFake) AddRoleToInstanceProfile(context.Context, string, string) e
 func (f *createFake) RemoveRoleFromInstanceProfile(context.Context, string, string) error { return nil }
 func (f *createFake) DeleteInstanceProfile(context.Context, string) error                 { return nil }
 func (f *createFake) DeleteRole(context.Context, string) error                            { return nil }
+
+func (f *createFake) TagRole(context.Context, string, string, string) error {
+	f.hostRightsCalls = append(f.hostRightsCalls, "TagRole")
+	return nil
+}
+
+func (f *createFake) UntagRole(context.Context, string, string) error {
+	f.hostRightsCalls = append(f.hostRightsCalls, "UntagRole")
+	return nil
+}
+
+func (f *createFake) AttachRolePolicy(context.Context, string, string) error {
+	f.hostRightsCalls = append(f.hostRightsCalls, "AttachRolePolicy")
+	return nil
+}
+
+func (f *createFake) DetachRolePolicy(context.Context, string, string) error {
+	f.hostRightsCalls = append(f.hostRightsCalls, "DetachRolePolicy")
+	return nil
+}
 
 func TestCreateCheckoutFailuresPrecedeConnection(t *testing.T) {
 	//

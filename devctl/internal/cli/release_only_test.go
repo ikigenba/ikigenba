@@ -13,7 +13,7 @@ import (
 )
 
 func TestRetiredCommandsAreUnknown(t *testing.T) {
-	// R-YNCA-5JLD
+	// R-Z66M-CXQU
 	for _, test := range []struct {
 		args          []string
 		message, help string
@@ -74,7 +74,7 @@ func TestDeployArchivePathIsACommitOperand(t *testing.T) {
 }
 
 func TestSuiteManifestFailuresHaveNoArchiveOrOutput(t *testing.T) {
-	// R-6CXI-DRI1 R-R85U-C9RT
+	// R-NJ0I-ALMX R-R85U-C9RT
 	for _, nonzero := range []bool{false, true} {
 		f := newCLISuiteFixture(t)
 		f.apps = []string{"crm"}

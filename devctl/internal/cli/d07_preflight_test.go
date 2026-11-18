@@ -69,6 +69,7 @@ func TestCreateCLIUsagePrecedesCheckout(t *testing.T) {
 
 // commandHarness remains shared with the existing secret-safety regression.
 type commandHarness struct {
+	cloud.IAM
 	t             *testing.T
 	checkoutRoot  string
 	tmp           string
@@ -224,6 +225,53 @@ func TestRootBoundOperationProfilesThroughCLI(t *testing.T) {
 		if calls != 1 {
 			t.Fatalf("%q cloud calls = %d", args, calls)
 		}
+	}
+}
+
+func TestSpacePrerequisitesThroughCLI(t *testing.T) {
+	// R-HG4A-VDEP
+	const rootFile = `{"domain": "example.test", "region": "eu-west-1"}`
+	for _, cmd := range []string{"list", "destroy", "stop", "start", "status"} {
+		t.Run(cmd, func(t *testing.T) {
+			args := []string{"space", cmd}
+			invalid := []string{"space", cmd}
+			if cmd == "list" {
+				invalid = append(invalid, "sbx1")
+			} else {
+				args = append(args, "sbx1")
+			}
+			deps := checkoutDeps(t, rootFile)
+			exec := deps.Exec
+			var calls []string
+			deps.Exec = func(ctx context.Context, c seam.Cmd) (seam.Result, error) {
+				calls = append(calls, c.Path)
+				return exec(ctx, c)
+			}
+			deps.Cloud = func(_ context.Context, profile, region string) (cloud.Clients, error) {
+				calls = append(calls, profile+" "+region)
+				return cloud.Clients{}, errors.New("connect stopped here")
+			}
+			if got := invokeWithDeps(deps, invalid...); got.code != 2 || got.stdout != "" || len(calls) != 0 {
+				t.Fatalf("invalid syntax = %#v, calls = %v", got, calls)
+			}
+			if cmd != "list" {
+				got := invokeWithDeps(deps, "space", cmd, "crm.sbx1")
+				if got.code != 2 || got.stdout != "" || !strings.Contains(got.stderr, "'crm.sbx1' is not a space: a space is one label under 'example.test'") || !reflect.DeepEqual(calls, []string{"git"}) {
+					t.Fatalf("invalid space = %#v, calls = %v", got, calls)
+				}
+			}
+			calls = nil
+			assertResult(t, invokeWithDeps(deps, args...), 1, "", "devctl: connect stopped here\n")
+			if want := []string{"git", "example.test eu-west-1"}; !reflect.DeepEqual(calls, want) {
+				t.Fatalf("calls = %v, want %v", calls, want)
+			}
+			badRoot := checkoutDeps(t, `{}`)
+			badRoot.Cloud = func(context.Context, string, string) (cloud.Clients, error) {
+				t.Fatal("connected after root-file failure")
+				return cloud.Clients{}, nil
+			}
+			assertResult(t, invokeWithDeps(badRoot, args...), 2, "", "devctl: infra/terraform.tfvars.json: missing 'domain'\n")
+		})
 	}
 }
 

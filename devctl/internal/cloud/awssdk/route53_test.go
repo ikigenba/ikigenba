@@ -53,7 +53,7 @@ func (f *fakeRoute53) GetChange(_ context.Context, in *route53.GetChangeInput, _
 }
 
 func TestRoute53ChangeBatchAndStatus(t *testing.T) {
-	// R-QR9B-B8CQ
+	// R-QR9B-B8CQ R-BH55-J2NI
 	changes := []cloud.RecordChange{
 		{Action: cloud.ChangeDelete, Record: cloud.Record{Name: `\052.api.root.example`, Type: "A", TTL: 60, Values: []string{"192.0.2.1"}}},
 		{Action: cloud.ChangeUpsert, Record: cloud.Record{Name: "www.root.example", Type: "AAAA", TTL: 300, Values: []string{"2001:db8::1", "2001:db8::2"}}},
@@ -94,7 +94,7 @@ func TestRoute53ChangeBatchAndStatus(t *testing.T) {
 }
 
 func TestRoute53EscapedListDeleteRoundTrip(t *testing.T) {
-	// R-QUX0-GJKT
+	// R-QUX0-GJKT R-BH55-J2NI
 	const escapedName = `\052.api.root.example`
 	wantRecord := cloud.Record{Name: escapedName, Type: "A", TTL: 60, Values: []string{"192.0.2.1", "192.0.2.2"}}
 	fake := &fakeRoute53{}
@@ -135,7 +135,7 @@ func TestRoute53EscapedListDeleteRoundTrip(t *testing.T) {
 }
 
 func TestRoute53ZoneSelectionAbsenceAndError(t *testing.T) {
-	// R-QSH7-P03F
+	// R-QSH7-P03F R-BH55-J2NI
 	t.Run("first matching zone after nonmatches", func(t *testing.T) {
 		fake := &fakeRoute53{listZones: func(in *route53.ListHostedZonesByNameInput) (*route53.ListHostedZonesByNameOutput, error) {
 			if aws.ToString(in.DNSName) != "root.example" {
@@ -150,6 +150,9 @@ func TestRoute53ZoneSelectionAbsenceAndError(t *testing.T) {
 		zone, err := (&route53Client{sdk: fake}).Zone(context.Background(), "root.example")
 		if err != nil || zone != (cloud.Zone{ID: "Z1", Name: "root.example"}) {
 			t.Fatalf("Zone = %#v, %v; want first matching zone, nil", zone, err)
+		}
+		if want := []string{"ListHostedZonesByName"}; !reflect.DeepEqual(fake.calls, want) {
+			t.Fatalf("calls = %v, want exactly %v", fake.calls, want)
 		}
 	})
 
@@ -175,7 +178,7 @@ func TestRoute53ZoneSelectionAbsenceAndError(t *testing.T) {
 }
 
 func TestRoute53FindRecordMatchMissesAndError(t *testing.T) {
-	// R-QTP4-2RU4
+	// R-QTP4-2RU4 R-BH55-J2NI
 	const escapedName = `\052.api.root.example`
 	wantRecord := cloud.Record{Name: escapedName, Type: "A", TTL: 60, Values: []string{"192.0.2.1"}}
 	tests := []struct {
@@ -200,6 +203,9 @@ func TestRoute53FindRecordMatchMissesAndError(t *testing.T) {
 				return test.output, test.err
 			}}
 			got, found, err := (&route53Client{sdk: fake}).FindRecord(context.Background(), "Z1", "*.api.root.example", "A")
+			if want := []string{"ListResourceRecordSets"}; !reflect.DeepEqual(fake.calls, want) {
+				t.Fatalf("calls = %v, want exactly %v", fake.calls, want)
+			}
 			if test.err != nil {
 				var cloudErr *cloud.Error
 				if !errors.As(err, &cloudErr) || cloudErr.Service != "route53" || cloudErr.Operation != "ListResourceRecordSets" || cloudErr.Subject != "" || cloudErr.Code != "Throttling" || !errors.Is(cloudErr, test.err) {
@@ -209,6 +215,51 @@ func TestRoute53FindRecordMatchMissesAndError(t *testing.T) {
 			}
 			if err != nil || found != test.found || !reflect.DeepEqual(got, test.want) {
 				t.Fatalf("FindRecord = %#v, %v, %v; want %#v, %v, nil", got, found, err, test.want, test.found)
+			}
+		})
+	}
+}
+
+func TestRoute53ErrorMapping(t *testing.T) {
+	// R-BFX9-5AWT R-BH55-J2NI
+	ctx := t.Context()
+	cause := &smithy.GenericAPIError{Code: "AccessDenied", Message: "denied"}
+	for _, test := range []struct {
+		name      string
+		operation string
+		call      func(cloud.Route53) error
+	}{
+		{"Zone", "ListHostedZonesByName", func(client cloud.Route53) error {
+			_, err := client.Zone(ctx, "root.example")
+			return err
+		}},
+		{"ListRecords", "ListResourceRecordSets", func(client cloud.Route53) error {
+			_, err := client.ListRecords(ctx, "Z1")
+			return err
+		}},
+		{"FindRecord", "ListResourceRecordSets", func(client cloud.Route53) error {
+			_, _, err := client.FindRecord(ctx, "Z1", "root.example", "A")
+			return err
+		}},
+		{"ChangeRecords", "ChangeResourceRecordSets", func(client cloud.Route53) error {
+			_, err := client.ChangeRecords(ctx, "Z1", []cloud.RecordChange{{Action: cloud.ChangeUpsert, Record: cloud.Record{Name: "root.example", Type: "A", TTL: 60, Values: []string{"192.0.2.1"}}}})
+			return err
+		}},
+		{"ChangeStatus", "GetChange", func(client cloud.Route53) error {
+			_, err := client.ChangeStatus(ctx, "C1")
+			return err
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fake := &fakeRoute53{err: &smithy.OperationError{ServiceID: "Route 53", OperationName: test.operation, Err: cause}}
+			err := test.call(&route53Client{sdk: fake})
+			var got *cloud.Error
+			if !errors.As(err, &got) || got.Service != "route53" || got.Operation != test.operation ||
+				got.Subject != "" || got.Code != cause.ErrorCode() || !errors.Is(got.Err, cause) || got.Err.Error() != cause.Error() {
+				t.Fatalf("error = %#v, want route53 %s with no subject and code %s wrapping the SDK cause", err, test.operation, cause.ErrorCode())
+			}
+			if want := []string{test.operation}; !reflect.DeepEqual(fake.calls, want) {
+				t.Fatalf("calls = %v, want exactly %v", fake.calls, want)
 			}
 		})
 	}

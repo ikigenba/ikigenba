@@ -1,8 +1,11 @@
 package build
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -34,6 +37,41 @@ func executeResult(ctx context.Context, deps seam.Deps, label string, command se
 		}
 	}
 	return result, nil
+}
+
+func checkManifest(app checkout.App, emitted []byte) (os.FileMode, error) {
+	root, err := os.OpenRoot(app.Dir)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = root.Close() }()
+	committed, err := root.Open(checkout.ManifestFile)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = committed.Close() }()
+	info, err := committed.Stat()
+	if err != nil {
+		return 0, err
+	}
+	if info.Size() != int64(len(emitted)) {
+		return 0, &StaleManifestError{App: app.Name}
+	}
+	var buffer [4096]byte
+	for len(emitted) > 0 {
+		chunk := buffer[:min(len(buffer), len(emitted))]
+		if _, err := io.ReadFull(committed, chunk); err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				return 0, &StaleManifestError{App: app.Name}
+			}
+			return 0, err
+		}
+		if !bytes.Equal(chunk, emitted[:len(chunk)]) {
+			return 0, &StaleManifestError{App: app.Name}
+		}
+		emitted = emitted[len(chunk):]
+	}
+	return info.Mode().Perm(), nil
 }
 
 func copyArchiveDirectory(appDir, archiveRoot, directory string) error {
@@ -68,23 +106,21 @@ func copyArchiveFile(source, destination string) error {
 	if err != nil {
 		return err
 	}
-	contents, err := sourceRoot.ReadFile(filepath.Base(source))
-	closeErr := sourceRoot.Close()
+	defer func() { _ = sourceRoot.Close() }()
+	file, err := sourceRoot.Open(filepath.Base(source))
 	if err != nil {
 		return err
 	}
-	if closeErr != nil {
-		return closeErr
-	}
-	info, err := os.Stat(source)
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
 	if err != nil {
 		return err
 	}
 	mode := info.Mode().Perm()
-	return writeArchiveFile(destination, contents, mode)
+	return writeArchiveFile(destination, file, mode)
 }
 
-func writeArchiveFile(path string, contents []byte, mode os.FileMode) error {
+func writeArchiveFile(path string, contents io.Reader, mode os.FileMode) error {
 	directory := filepath.Dir(path)
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return err
@@ -98,7 +134,7 @@ func writeArchiveFile(path string, contents []byte, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	if _, err := file.Write(contents); err != nil {
+	if _, err := io.Copy(file, contents); err != nil {
 		_ = file.Close()
 		return err
 	}

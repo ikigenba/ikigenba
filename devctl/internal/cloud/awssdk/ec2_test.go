@@ -322,7 +322,7 @@ func TestEC2LaunchReady(t *testing.T) {
 }
 
 func TestEC2OperationMappingsAndChecks(t *testing.T) {
-	// R-QMDP-S5DY R-VV8S-ZVE7 R-YPQX-0LG8
+	// R-QMDP-S5DY R-BFX9-5AWT R-BH55-J2NI
 	boom := &smithy.GenericAPIError{Code: "RequestLimitExceeded", Message: "boom"}
 	tests := []struct {
 		method    string
@@ -407,7 +407,7 @@ func TestEC2OperationMappingsAndChecks(t *testing.T) {
 }
 
 func TestEC2MutationExactDispatchAfterSuccess(t *testing.T) {
-	// R-YPQX-0LG8
+	// R-BH55-J2NI
 	tests := []struct {
 		method    string
 		operation string
@@ -446,7 +446,7 @@ func TestEC2MutationExactDispatchAfterSuccess(t *testing.T) {
 }
 
 func TestEC2ReadExactDispatchAfterSuccess(t *testing.T) {
-	// R-YPQX-0LG8
+	// R-BH55-J2NI
 	tests := []struct {
 		method    string
 		operation string
@@ -499,7 +499,7 @@ func TestEC2ReadExactDispatchAfterSuccess(t *testing.T) {
 }
 
 func TestDescribeInstanceNotYetVisible(t *testing.T) {
-	// R-5LKS-2NVC
+	// R-BID1-WUE7
 	const id = "i-absent"
 	wantInput := &ec2.DescribeInstancesInput{InstanceIds: []string{id}}
 	clientFor := func(t *testing.T, respond func() (*ec2.DescribeInstancesOutput, error)) *ec2Client {
@@ -524,12 +524,8 @@ func TestDescribeInstanceNotYetVisible(t *testing.T) {
 
 	t.Run("not found", func(t *testing.T) {
 		notFound := &smithy.GenericAPIError{Code: "InvalidInstanceID.NotFound", Message: "missing"}
-		var api smithy.APIError = notFound
-		if api.ErrorCode() != "InvalidInstanceID.NotFound" {
-			t.Fatalf("ErrorCode = %q", api.ErrorCode())
-		}
 		got, err := clientFor(t, func() (*ec2.DescribeInstancesOutput, error) {
-			return nil, notFound
+			return nil, &smithy.OperationError{ServiceID: "EC2", OperationName: "DescribeInstances", Err: notFound}
 		}).DescribeInstance(context.Background(), id)
 		if err != nil || got != (cloud.Instance{}) {
 			t.Fatalf("DescribeInstance = %#v, %v; want zero, nil", got, err)
@@ -544,6 +540,19 @@ func TestDescribeInstanceNotYetVisible(t *testing.T) {
 		var cloudErr *cloud.Error
 		if !errors.As(err, &cloudErr) || cloudErr.Operation != "DescribeInstances" || cloudErr.Code != "UnauthorizedOperation" {
 			t.Fatalf("error = %#v, want *cloud.Error DescribeInstances UnauthorizedOperation", err)
+		}
+	})
+
+	t.Run("not found in nested operation", func(t *testing.T) {
+		nested := &smithy.OperationError{ServiceID: "Other", OperationName: "OtherCall",
+			Err: &smithy.GenericAPIError{Code: "InvalidInstanceID.NotFound", Message: "missing"}}
+		_, err := clientFor(t, func() (*ec2.DescribeInstancesOutput, error) {
+			return nil, &smithy.OperationError{ServiceID: "EC2", OperationName: "DescribeInstances", Err: nested}
+		}).DescribeInstance(context.Background(), id)
+		var cloudErr *cloud.Error
+		if !errors.As(err, &cloudErr) || cloudErr.Operation != "DescribeInstances" || cloudErr.Code != "" ||
+			!errors.Is(cloudErr.Err, nested) || cloudErr.Err.Error() != nested.Error() {
+			t.Fatalf("error = %#v, want *cloud.Error DescribeInstances with no code, wrapping nested operation", err)
 		}
 	})
 }

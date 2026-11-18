@@ -45,6 +45,7 @@ type suiteFixture struct {
 	members     map[string]suiteMember
 	compiled    map[string]string
 	releases    map[string]string
+	extras      map[string]string
 }
 
 func newSuite(t *testing.T) *suiteFixture {
@@ -62,6 +63,9 @@ func (f *suiteFixture) put(root, relative, contents string, mode os.FileMode) {
 		f.t.Fatal(err)
 	}
 	if err := os.WriteFile(p, []byte(contents), mode); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := os.Chmod(p, mode); err != nil {
 		f.t.Fatal(err)
 	}
 }
@@ -107,6 +111,7 @@ func (f *suiteFixture) exec(ctx context.Context, c seam.Cmd) (seam.Result, error
 				f.worktrees = append(f.worktrees, dir)
 				f.compiled = map[string]string{}
 				f.releases = map[string]string{}
+				f.extras = map[string]string{}
 				for _, name := range f.apps {
 					f.app(dir, name, suiteManifest(name))
 				}
@@ -133,9 +138,14 @@ func (f *suiteFixture) exec(ctx context.Context, c seam.Cmd) (seam.Result, error
 	}
 	if c.Path == "go" {
 		name := filepath.Base(c.Dir)
-		isManifest := f.compiled[name] != ""
+		pkg := c.Args[len(c.Args)-1]
+		isExtra := pkg != "./cmd/"+name
+		isManifest := !isExtra && f.releases[name] != ""
 		failure := "compile " + name
-		if isManifest {
+		switch {
+		case isExtra:
+			failure = "extra compile " + name + " " + pkg
+		case isManifest:
 			failure = "manifest build " + name
 		}
 		if f.fail == failure {
@@ -150,13 +160,17 @@ func (f *suiteFixture) exec(ctx context.Context, c seam.Cmd) (seam.Result, error
 		}
 		if output := suiteCompilerOutput(c.Args); output != "" {
 			contents := "binary " + name
-			if isManifest {
+			switch {
+			case isExtra:
+				contents = "extra binary " + name + " " + pkg
+				f.extras[output] = contents
+			case isManifest:
 				contents = "manifest binary " + name
-			} else {
+				f.compiled[name] = output
+			default:
 				f.releases[name] = output
 			}
 			f.put(filepath.Dir(output), filepath.Base(output), contents, 0o600)
-			f.compiled[name] = output
 			return seam.Result{}, nil
 		}
 	}
@@ -218,6 +232,9 @@ func (f *suiteFixture) exec(ctx context.Context, c seam.Cmd) (seam.Result, error
 			return seam.Result{}, errors.New("cannot execute release binary on build host")
 		}
 	}
+	if _, exists := f.extras[c.Path]; exists {
+		return seam.Result{}, errors.New("cannot execute extra binary on build host")
+	}
 	name := filepath.Base(c.Path)
 	if reflect.DeepEqual(c.Args, []string{"--version"}) {
 		return seam.Result{ExitCode: 1}, nil
@@ -273,9 +290,10 @@ func (f *suiteFixture) assertCleanup() {
 
 func TestSuiteArchiveIsolationAndMetadata(t *testing.T) {
 	// R-FN66-1TL1
-	// R-6BPL-ZZRC
+	// R-WJ97-SF3O
 	// R-G683-IC4D
 	f := newSuite(t)
+	f.apps = []string{"auth", "crm"}
 	f.app(f.root, "extra", suiteManifest("extra"))
 	f.app(f.root, "crm", suiteManifest("crm"))
 	f.put(f.root, "crm/etc/nginx.conf", "developer", 0o644)
@@ -286,6 +304,10 @@ func TestSuiteArchiveIsolationAndMetadata(t *testing.T) {
 	f.files = map[string]suiteMember{
 		"crm/etc/nginx.conf": {Bytes: "commit nginx", Mode: 0o644}, "crm/share/icon.svg": {Bytes: "commit icon", Mode: 0o644}, "crm/share/doc/a.md": {Bytes: "doc", Mode: 0o644}, "crm/libexec/helper": {Bytes: "helper", Mode: 0o740}, "crm/lib/x.so": {Bytes: "library", Mode: 0o640}, "crm/internal/x.go": {Bytes: "source", Mode: 0o644}, "crm/specs/s.md": {Bytes: "spec", Mode: 0o644}, "crm/go.mod": {Bytes: "module", Mode: 0o644}, "crm/AGENTS.md": {Bytes: "instructions", Mode: 0o644}, "opsctl/cmd/opsctl/main.go": {Bytes: "package main", Mode: 0o644}, "opsctl/etc/x.conf": {Bytes: "config", Mode: 0o644}, "opsctl/go.mod": {Bytes: "module", Mode: 0o644}}
 	f.files["turns/cmd/turns/main.go"] = suiteMember{Bytes: "package main", Mode: 0o644}
+	f.files["turns/cmd/turnsd/main.go"] = suiteMember{Bytes: "package main", Mode: 0o644}
+	f.files["opsctl/cmd/opshelper/main.go"] = suiteMember{Bytes: "package main", Mode: 0o644}
+	f.files["crm/cmd/crmd/main.go"] = suiteMember{Bytes: "package main", Mode: 0o644}
+	f.files["crm/etc/manifest.toml"] = suiteMember{Bytes: suiteManifest("crm"), Mode: 0o744}
 	f.files["turns/go.mod"] = suiteMember{Bytes: "module fixture", Mode: 0o644}
 	f.files["turns/etc/x.conf"] = suiteMember{Bytes: "excluded config", Mode: 0o644}
 	out, err := f.run(context.Background(), "r1")
@@ -297,17 +319,22 @@ func TestSuiteArchiveIsolationAndMetadata(t *testing.T) {
 	}
 	regular := map[string]string{}
 	for p, m := range f.members {
+		if strings.Contains(p, "test-version") {
+			t.Fatalf("version in member %q", p)
+		}
 		if os.FileMode(m.Mode).IsDir() {
 			continue
 		}
 		regular[strings.TrimPrefix(p, suiteSHA+"/")] = m.Bytes
-		if strings.Contains(p, "test-version") {
-			t.Fatalf("version in member %q", p)
-		}
 	}
 	meta := regular["release.json"]
 	delete(regular, "release.json")
-	want := map[string]string{"crm/bin/crm": "binary crm", "crm/etc/manifest.toml": suiteManifest("crm"), "crm/etc/nginx.conf": "commit nginx", "crm/share/icon.svg": "commit icon", "crm/share/doc/a.md": "doc", "crm/libexec/helper": "helper", "crm/lib/x.so": "library", "opsctl/bin/opsctl": "binary opsctl", "turns/bin/turns": "binary turns", "turns/share/systemd/turns.service": "committed service", "turns/share/systemd/turns.timer": "committed timer"}
+	want := map[string]string{
+		"auth/bin/auth": "binary auth", "auth/etc/manifest.toml": suiteManifest("auth"),
+		"crm/bin/crm": "binary crm", "crm/bin/crmd": "extra binary crm ./cmd/crmd", "crm/etc/manifest.toml": suiteManifest("crm"),
+		"crm/etc/nginx.conf": "commit nginx", "crm/share/icon.svg": "commit icon", "crm/share/doc/a.md": "doc", "crm/libexec/helper": "helper", "crm/lib/x.so": "library",
+		"opsctl/bin/opsctl": "binary opsctl", "turns/bin/turns": "binary turns", "turns/share/systemd/turns.service": "committed service", "turns/share/systemd/turns.timer": "committed timer",
+	}
 	if !reflect.DeepEqual(regular, want) {
 		t.Fatalf("regular members %#v want %#v", regular, want)
 	}
@@ -325,12 +352,12 @@ func TestSuiteArchiveIsolationAndMetadata(t *testing.T) {
 			}
 		}
 	}
-	for _, p := range []string{"crm/bin/crm", "opsctl/bin/opsctl", "turns/bin/turns", "turns/share/systemd/turns.timer", "crm/libexec/helper"} {
+	for _, p := range []string{"auth/bin/auth", "crm/bin/crm", "crm/bin/crmd", "crm/etc/manifest.toml", "opsctl/bin/opsctl", "turns/bin/turns", "turns/share/systemd/turns.timer", "crm/libexec/helper"} {
 		if f.members[suiteSHA+"/"+p].Mode&0o100 == 0 {
 			t.Fatalf("not owner executable %s", p)
 		}
 	}
-	for _, p := range []string{"crm/etc/nginx.conf", "crm/lib/x.so", "crm/etc/manifest.toml", "turns/share/systemd/turns.service", "release.json"} {
+	for _, p := range []string{"auth/etc/manifest.toml", "crm/etc/nginx.conf", "crm/lib/x.so", "turns/share/systemd/turns.service", "release.json"} {
 		if f.members[suiteSHA+"/"+p].Mode&0o100 != 0 {
 			t.Fatalf("unexpected executable %s", p)
 		}
@@ -377,7 +404,7 @@ func TestSuiteCommitFormsHaveSameRelease(t *testing.T) {
 }
 
 func TestSuiteCopiesWholeTurnsShare(t *testing.T) {
-	// R-6BPL-ZZRC
+	// R-WJ97-SF3O
 	f := newSuite(t)
 	f.files["turns/share/nested/data/value"] = suiteMember{Bytes: "arbitrary committed bytes\x00", Mode: 0o640}
 	f.files["turns/share/helpers/run"] = suiteMember{Bytes: "executable committed bytes", Mode: 0o740}
@@ -405,7 +432,7 @@ func TestSuiteCopiesWholeTurnsShare(t *testing.T) {
 	}
 }
 func TestSuiteCompileCommands(t *testing.T) {
-	// R-699T-8G9Y
+	// R-WD5P-VKE7
 	f := newSuite(t)
 	f.apps = []string{"auth", "dummy", "events", "mcp", "repos", "scripts", "sites", "telemetry"}
 	f.put(f.root, "go.work", "go 1.26\n", 0o644)
@@ -459,7 +486,7 @@ func TestSuiteCompileCommands(t *testing.T) {
 func TestSuiteCleanupEveryOutcome(t *testing.T) {
 	// R-4WCA-8DJH
 	// R-FWGW-G66T
-	// R-D1I9-ZIEJ
+	// R-WI1B-ENCZ
 	for _, failure := range []string{"", "port", "reserved", "sbin", "stale", "compile crm", "manifest build crm", "manifest crm", "compile opsctl", "compile turns", "missing turns share"} {
 		t.Run(failure, func(t *testing.T) {
 			f := newSuite(t)
@@ -603,36 +630,77 @@ func TestSuitePreflightUsageErrors(t *testing.T) {
 }
 
 func TestSuiteManifestFailuresStopLaterCompiles(t *testing.T) {
-	// R-D1I9-ZIEJ
-	for _, failure := range []string{"manifest dashboard", "stale dashboard"} {
+	// R-WI1B-ENCZ
+	for _, failure := range []string{"manifest dashboard", "stale dashboard", "extra compile dashboard ./cmd/dashboardctl"} {
 		t.Run(failure, func(t *testing.T) {
 			f := newSuite(t)
 			f.apps = []string{"auth", "dashboard", "events"}
+			f.files["dashboard/cmd/dashboardctl/main.go"] = suiteMember{Bytes: "package main", Mode: 0o644}
+			f.files["dashboard/cmd/dashboardd/main.go"] = suiteMember{Bytes: "package main", Mode: 0o644}
 			f.fail = failure
 			out, err := f.run(context.Background(), "r1")
 			if out != "" || err == nil {
 				t.Fatalf("stdout %q error %v", out, err)
 			}
-			if failure == "manifest dashboard" {
+			switch failure {
+			case "manifest dashboard":
 				var process *build.ProcessError
 				if !errors.As(err, &process) || process.Label != "dashboard manifest" || process.Status != 9 || process.Stderr != "manifest failed\n" {
 					t.Fatalf("error %#v", err)
 				}
-			} else {
+			case "stale dashboard":
 				var stale *build.StaleManifestError
 				if !errors.As(err, &stale) || stale.App != "dashboard" {
+					t.Fatalf("error %#v", err)
+				}
+			default:
+				var process *build.ProcessError
+				if !errors.As(err, &process) || process.Label != "build dashboard" || process.Status != 7 || process.Stderr != "compiler failed\n" {
 					t.Fatalf("error %#v", err)
 				}
 			}
 			var names []string
 			for _, c := range f.commands {
 				if c.Path == "go" {
-					names = append(names, filepath.Base(c.Dir))
+					names = append(names, c.Args[len(c.Args)-1])
 				}
 			}
-			if !reflect.DeepEqual(names, []string{"auth", "auth", "dashboard", "dashboard"}) || f.count("tar") != 0 {
+			want := []string{"./cmd/auth", "./cmd/auth", "./cmd/dashboard", "./cmd/dashboard"}
+			if strings.HasPrefix(failure, "extra compile ") {
+				want = append(want, "./cmd/dashboardctl")
+			}
+			if !slices.Equal(names, want) || f.count("tar") != 0 {
 				t.Fatalf("compiled %q tar calls %d", names, f.count("tar"))
 			}
+		})
+	}
+}
+
+func TestSuiteRefusesWildcardCommandNames(t *testing.T) {
+	for _, name := range []string{"...", "crm...ctl"} {
+		t.Run(name, func(t *testing.T) {
+			f := newSuite(t)
+			f.files["crm/cmd/"+name+"/README.md"] = suiteMember{Bytes: "no Go source", Mode: 0o600}
+			f.put(f.root, build.ReleaseFile(suiteSHA), "earlier archive", 0o600)
+
+			out, err := f.run(t.Context(), "r1")
+			if want := fmt.Sprintf("build crm: extra command %q contains ... which Go treats as a package wildcard", name); err == nil || err.Error() != want || out != "" {
+				t.Fatalf("stdout %q error %v, want error %q", out, err, want)
+			}
+			var packages []string
+			for _, c := range f.commands {
+				if c.Path == "go" {
+					packages = append(packages, c.Args[len(c.Args)-1])
+				}
+			}
+			if !slices.Equal(packages, []string{"./cmd/crm", "./cmd/crm"}) || f.count("tar") != 0 {
+				t.Fatalf("compiled %q, tar calls %d", packages, f.count("tar"))
+			}
+			data, err := os.ReadFile(filepath.Join(f.root, build.ReleaseFile(suiteSHA)))
+			if err != nil || string(data) != "earlier archive" {
+				t.Fatalf("earlier archive = %q, %v", data, err)
+			}
+			f.assertCleanup()
 		})
 	}
 }

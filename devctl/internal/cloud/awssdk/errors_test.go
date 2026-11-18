@@ -9,7 +9,7 @@ import (
 )
 
 func TestSDKErrorBoundary(t *testing.T) {
-	// R-VV8S-ZVE7
+	// R-BFX9-5AWT
 	api := &smithy.GenericAPIError{Code: "OuterCode", Message: "outer message"}
 	outer := &smithy.OperationError{ServiceID: "SDK", OperationName: "Call", Err: api}
 	got := sdkError("ec2", "RunInstances", "", outer)
@@ -30,5 +30,14 @@ func TestSDKErrorBoundary(t *testing.T) {
 	got = sdkError("sts", "GetCallerIdentity", "", outer)
 	if got.Code != "" || !errors.Is(got.Err, nested) {
 		t.Fatalf("direct nested operation error = %#v", got)
+	}
+}
+
+func assertUnwrappedAPIError(t *testing.T, err error, code, message string) {
+	t.Helper()
+	var apiErr smithy.APIError
+	var operationErr *smithy.OperationError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode() != code || apiErr.ErrorMessage() != message || errors.As(err, &operationErr) {
+		t.Fatalf("error cause = %v, want SDK API error %s: %s without operation wrapper", err, code, message)
 	}
 }

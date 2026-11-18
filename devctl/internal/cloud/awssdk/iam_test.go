@@ -15,6 +15,7 @@ import (
 )
 
 type fakeIAM struct {
+	iamAPI
 	calls []string
 	err   error
 
@@ -266,7 +267,7 @@ func TestIAMMappingInputsAndResults(t *testing.T) {
 }
 
 func TestIAMErrorMapping(t *testing.T) {
-	// R-QW4W-UBBI R-VV8S-ZVE7 R-YPQX-0LG8
+	// R-QW4W-UBBI R-BFX9-5AWT R-BH55-J2NI
 	boom := &smithy.GenericAPIError{Code: "AccessDenied", Message: "denied"}
 	tests := []struct {
 		method    string

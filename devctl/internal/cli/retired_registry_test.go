@@ -121,6 +121,9 @@ func (f *destroyAddressCLI) ReleaseAddress(_ context.Context, id string) error {
 	return nil
 }
 func (f *destroyAddressCLI) RoleExists(context.Context, string) (bool, error) { return true, nil }
+func (f *destroyAddressCLI) AttachedPolicy(context.Context, string, string) (string, bool, error) {
+	return "", false, nil
+}
 func (f *destroyAddressCLI) ListRecords(context.Context, string) ([]cloud.Record, error) {
 	return []cloud.Record{{Name: testDomain, Type: "A", TTL: 60, Values: []string{"18.118.7.42"}}, {Name: "*." + testDomain, Type: "A", TTL: 60, Values: []string{"18.118.7.42"}}}, nil
 }
