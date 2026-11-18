@@ -234,7 +234,7 @@ Each row is an outcome the walk checks and the documents that own it. A row nami
 | account placement, DNS name, reserved and taken names | `D07-tools`, `D17-names-keys-sizes`, `D04-store`, `D10-operations` |
 | users pending, then applied; lock, unlock, delete, re-add | `D07-tools`, `D04-store`, `D13-daemon-endpoints`, `D14-accountsd`, `D15-machine` |
 | stop, start, resize with `restarts` | `D07-tools`, `D10-operations` |
-| restart mid-operation resumes, with no duplicates and no strays | `D03-serve` (R-GT9G-XHJE, R-H0KV-83ZK); `D10-operations`; `D16-sandbox` |
+| restart mid-operation resumes, with no duplicates and no strays | `D03-serve` (R-GT9G-XHJE, R-KRUV-BTB7); `D10-operations`; `D16-sandbox` |
 | removal guards, unplace, delete and orphaned volume | `D04-store`, `D07-tools`, `D10-operations` |
 | trail events | `D08-trail`; emitters `D07-tools`, `D10-operations`, `D13-daemon-endpoints` |
 | accounts reaches no sibling and runs no program | `D01-layout-and-run-seam` (R-YD0E-Q2GU, R-ETO0-MM7J) |
@@ -277,7 +277,7 @@ On the space, with the space token and through the gateway, the delivery makes t
 
 No test can make the following checks, so they are made here:
 
-- an SSH session's processes sit in `acct-<account>-<user>.slice` with the slice's properties (`D15-machine`; the PAM mechanism is unproven until here, coordinator decision Q2)
+- an SSH session's processes sit in `acct-<account>-<user>.slice` with the slice's properties: on `host01`, `/proc/<pid>/cgroup` of a signed-in session's shell, and of a background child it started, names a cgroup at or below `/acct.slice/<AccountSlice(a)>/<PersonSlice(a, u)>/`, `a` the account and `u` the user, so the limits of the account's and the person's slice files bound it (`D15-machine`; the PAM mechanism is unproven until here, coordinator decision Q2; the seam requirements prove only the files, the link and `Session`'s command)
 - IMDS is unreachable as a customer user and reachable as root (`D15-machine`)
 - `getent passwd` and `getent group` on the launched host list no name outside `valid.SystemNames` (`D17-names-keys-sizes`) other than the accounts and users accounts placed, so the reserved system names cover every account and group the image, SSM and EC2 create
 - real STS accepts the daemons' presigned headers bound to the binding
