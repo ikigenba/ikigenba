@@ -356,7 +356,8 @@ func TestApplyChangesOnlyManagedFiles(t *testing.T) {
 
 func initialHardeningCommands(f *hardeningFixture) []string {
 	return []string{
-		"rpm -q nftables", "rpm -q fail2ban-server", "rpm -q dnf-automatic",
+		"rpm -q nftables", "rpm -q fail2ban-server", "rpm -q dnf-automatic", "rpm -q git",
+		"rpm -q cronie", "rpm -q at",
 		"systemctl daemon-reload", "nft list table inet ikigenba_imds",
 		"nft -f " + f.path(hardenRules), "systemctl is-enabled ikigenba-imds.service",
 		"systemd-tmpfiles --create --prefix " + f.path("/var/log/journal"),

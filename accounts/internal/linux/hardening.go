@@ -13,13 +13,20 @@ import (
 const unitDirectory = "/etc/systemd/system/"
 
 func (h *Host) packages(ctx context.Context) error {
-	args := []string{"install", "-y"}
-	for _, name := range []string{"nftables", "fail2ban-server", "dnf-automatic"} {
+	if err := h.changePackages(ctx, "install", 1, "nftables", "fail2ban-server", "dnf-automatic", "git"); err != nil {
+		return err
+	}
+	return h.changePackages(ctx, "remove", 0, "cronie", "at")
+}
+
+func (h *Host) changePackages(ctx context.Context, verb string, wantedStatus int, names ...string) error {
+	args := []string{verb, "-y"}
+	for _, name := range names {
 		result, err := h.query(ctx, Command{Name: "rpm", Args: []string{"-q", name}}, 0, 1)
 		if err != nil {
 			return err
 		}
-		if result.ExitCode == 1 {
+		if result.ExitCode == wantedStatus {
 			args = append(args, name)
 		}
 	}

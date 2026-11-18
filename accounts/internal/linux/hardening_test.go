@@ -54,6 +54,9 @@ func newHardeningFixture(t *testing.T) *hardeningFixture {
 					return result, nil
 				}
 			}
+			if call == "rpm -q cronie" || call == "rpm -q at" {
+				return linux.Result{ExitCode: 1}, nil
+			}
 			switch c.Name {
 			case "lsblk":
 				if c.Args[0] == "--nodeps" {
@@ -177,6 +180,77 @@ const wantIMDSUnit = "[Unit]\nBefore=sshd.service\n\n[Service]\nType=oneshot\nRe
 const wantJournal = "[Journal]\nStorage=persistent\n"
 const wantJail = "[sshd]\nenabled = true\nbackend = systemd\nmode = aggressive\nbanaction = nftables-multiport\nmaxretry = 5\nfindtime = 10m\nbantime = 10m\nbantime.increment = true\nbantime.maxtime = 1w\n"
 
+func TestApplyPackages(t *testing.T) {
+	// R-GZKW-7A5C R-H0SS-L1W1
+	tests := []struct {
+		name                    string
+		missing                 []string
+		wantInstall, wantRemove []string
+	}{
+		{
+			name:    "no package changes",
+			missing: []string{"cronie", "at"},
+		},
+		{
+			name:        "install and remove all",
+			missing:     []string{"nftables", "fail2ban-server", "dnf-automatic", "git"},
+			wantInstall: []string{"dnf", "install", "-y", "nftables", "fail2ban-server", "dnf-automatic", "git"},
+			wantRemove:  []string{"dnf", "remove", "-y", "cronie", "at"},
+		},
+		{
+			name:        "install git only",
+			missing:     []string{"git", "cronie", "at"},
+			wantInstall: []string{"dnf", "install", "-y", "git"},
+		},
+		{
+			name:        "install missing packages and remove at",
+			missing:     []string{"fail2ban-server", "git", "cronie"},
+			wantInstall: []string{"dnf", "install", "-y", "fail2ban-server", "git"},
+			wantRemove:  []string{"dnf", "remove", "-y", "at"},
+		},
+		{
+			name:       "remove cronie only",
+			missing:    []string{"at"},
+			wantRemove: []string{"dnf", "remove", "-y", "cronie"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			f := newHardeningFixture(t)
+			f.answer = func(call string) (linux.Result, bool) {
+				name, ok := strings.CutPrefix(call, "rpm -q ")
+				if ok && slices.Contains(test.missing, name) {
+					return linux.Result{ExitCode: 1}, true
+				}
+				return linux.Result{}, ok
+			}
+			var got [][]string
+			f.observe = func(c linux.Command) {
+				if c.Name == "rpm" || c.Name == "dnf" {
+					got = append(got, append([]string{c.Name}, c.Args...))
+				}
+			}
+			f.apply(protocol.DesiredState{})
+			want := [][]string{
+				{"rpm", "-q", "nftables"},
+				{"rpm", "-q", "fail2ban-server"},
+				{"rpm", "-q", "dnf-automatic"},
+				{"rpm", "-q", "git"},
+			}
+			if test.wantInstall != nil {
+				want = append(want, test.wantInstall)
+			}
+			want = append(want, []string{"rpm", "-q", "cronie"}, []string{"rpm", "-q", "at"})
+			if test.wantRemove != nil {
+				want = append(want, test.wantRemove)
+			}
+			if !slices.EqualFunc(got, want, slices.Equal[[]string]) {
+				t.Fatalf("package commands = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 func TestApplyHostHardening(t *testing.T) {
 	f := newHardeningFixture(t)
 	f.put("/etc/group", "root:x:0:\n", 0o644)
@@ -198,9 +272,10 @@ func TestApplyHostHardening(t *testing.T) {
 		return linux.Result{}, false
 	}
 	f.apply(protocol.DesiredState{})
-	// R-BXO2-QDZ1 R-BYVZ-45PQ R-C03V-HXGF R-C1BR-VP74 R-C3RK-N8OI R-C4ZH-10F7 R-C67D-ES5W
+	// R-BYVZ-45PQ R-C03V-HXGF R-C1BR-VP74 R-C3RK-N8OI R-C4ZH-10F7 R-C67D-ES5W
 	sequence := []string{
-		"rpm -q nftables", "rpm -q fail2ban-server", "rpm -q dnf-automatic", "dnf install -y nftables dnf-automatic",
+		"rpm -q nftables", "rpm -q fail2ban-server", "rpm -q dnf-automatic", "rpm -q git", "dnf install -y nftables dnf-automatic",
+		"rpm -q cronie", "rpm -q at",
 		"systemctl daemon-reload", "nft list table inet ikigenba_imds", "nft -f " + f.path(hardenRules), "systemctl is-enabled ikigenba-imds.service", "systemctl enable ikigenba-imds.service",
 		"systemd-tmpfiles --create --prefix " + f.path("/var/log/journal"), "systemctl restart systemd-journald.service", "journalctl --flush",
 		"systemctl is-enabled dnf-automatic.timer", "systemctl is-active dnf-automatic.timer", "systemctl enable --now dnf-automatic.timer",
