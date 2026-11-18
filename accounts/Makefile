@@ -1,7 +1,9 @@
 BIN := bin/accounts
+DAEMON := bin/accountsd
 
 build:
 	CGO_ENABLED=0 go build -o $(BIN) ./cmd/accounts
+	CGO_ENABLED=0 go build -o $(DAEMON) ./cmd/accountsd
 
 test:
 	go test -race ./...
@@ -16,6 +18,6 @@ clean:
 	rm -rf bin dist
 
 install:
-	go install ./cmd/accounts
+	go install ./cmd/accounts ./cmd/accountsd
 
 .PHONY: build test lint fmt clean install
