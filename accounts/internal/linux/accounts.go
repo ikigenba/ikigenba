@@ -129,17 +129,21 @@ func (h *Host) visitChildren(path string, visit func(fs.DirEntry) error) error {
 	}
 }
 
-func (h *Host) reassignFiles(ctx context.Context, uid int64) error {
+func (h *Host) reassignFiles(ctx context.Context, uid int64, recipients map[string]bool) error {
+	owners := make(map[string]bool, len(recipients))
+	if err := h.passwd(func(user string, _, _ int64, home string) {
+		if recipients[user] && home == filepath.Join("/srv", user) {
+			owners[user] = true
+		}
+	}); err != nil {
+		return err
+	}
 	return h.visitChildren("/srv", func(top fs.DirEntry) error {
 		name := top.Name()
 		base := filepath.Join("/srv", name)
 		owner := "root"
-		if err := h.passwd(func(user string, _, _ int64, home string) {
-			if user == name && home == base {
-				owner = user
-			}
-		}); err != nil {
-			return err
+		if top.IsDir() && owners[name] {
+			owner = name
 		}
 		batch := make([]string, 0, ChownBatch)
 		flush := func() error {

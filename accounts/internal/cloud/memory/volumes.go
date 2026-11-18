@@ -61,6 +61,9 @@ func (c *Cloud) CreateVolume(_ context.Context, spec cloud.VolumeSpec) (cloud.Vo
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	op := ec2("CreateVolume", "")
+	if spec.Tags[cloud.TagKind] != cloud.KindHostData || forbiddenTags(spec.Tags) {
+		return cloud.Volume{}, op.reject(cloud.CodeTagContract)
+	}
 	now := c.cfg.Now()
 	if t, ok := c.state.VolumeTokens[spec.ClientToken]; ok {
 		if spec.AZ != t.Spec.AZ || spec.SizeGB != t.Spec.SizeGB || !maps.Equal(spec.Tags, t.Spec.Tags) {
@@ -69,9 +72,6 @@ func (c *Cloud) CreateVolume(_ context.Context, spec cloud.VolumeSpec) (cloud.Vo
 		value, _ := c.state.volume(t.ID, now)
 		value.Tags = maps.Clone(value.Tags)
 		return value, nil
-	}
-	if spec.Tags[cloud.TagKind] != cloud.KindHostData || forbiddenTags(spec.Tags) {
-		return cloud.Volume{}, op.reject(cloud.CodeTagContract)
 	}
 	if err := checkMutation(op, []cloud.Tags{spec.Tags}, spec.AZ, spec.ClientToken); err != nil {
 		return cloud.Volume{}, err

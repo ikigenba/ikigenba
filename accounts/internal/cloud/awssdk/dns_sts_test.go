@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 )
@@ -130,6 +132,7 @@ func TestChangeRecords(t *testing.T) {
 }
 
 func TestCallerOf(t *testing.T) {
+	// R-KLRD-EYLQ
 	const (
 		target  = "https://sts.us-east-2.amazonaws.com/?X-Amz-Signature=private%2Fsignature&Action=GetCallerIdentity"
 		binding = "accounts.space.test"
@@ -145,16 +148,18 @@ func TestCallerOf(t *testing.T) {
 		class     cloud.Class
 		transport error
 	}{
-		{name: "success", status: 200, body: success},
+		{name: "success", status: 200, body: `<?xml version="1.0"?>` + success},
 		{name: "unknown response", status: 200, body: "<different/>", code: cloud.CodeBadResponse, class: cloud.ClassRefused},
+		{name: "leading text", status: 200, body: "text" + success, code: cloud.CodeBadResponse, class: cloud.ClassRefused},
+		{name: "malformed preamble", status: 200, body: "<!garbage>" + success, code: cloud.CodeBadResponse, class: cloud.ClassRefused},
 		{name: "trailing XML", status: 200, body: success + "<different/>", code: cloud.CodeBadResponse, class: cloud.ClassRefused},
 		{name: "missing fields", status: 200, body: `<GetCallerIdentityResponse><GetCallerIdentityResult><Account>123</Account></GetCallerIdentityResult></GetCallerIdentityResponse>`, code: cloud.CodeBadResponse, class: cloud.ClassRefused},
 		{name: "known excess length", status: 200, body: success + strings.Repeat(" ", cloud.MaxCallerBytes), code: cloud.CodeBadResponse, class: cloud.ClassRefused},
 		{name: "redirect", status: 307, body: "private URL", code: "HTTP 307", class: cloud.ClassRefused},
+		{name: "no content", status: 204, code: "HTTP 204", class: cloud.ClassRefused},
 		{name: "denied", status: 403, body: "private credentials", code: "HTTP 403", class: cloud.ClassRefused},
 		{name: "server error", status: 503, body: "private binding", code: "HTTP 503", class: cloud.ClassTransient},
 		{name: "transport error", transport: errors.New(target), code: cloud.CodeNoResponse, class: cloud.ClassTransient},
-		{name: "deadline", transport: context.DeadlineExceeded, code: cloud.CodeNoResponse, class: cloud.ClassTransient},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			calls := 0
@@ -162,9 +167,6 @@ func TestCallerOf(t *testing.T) {
 				calls++
 				if r.URL.String() != target || r.Method != http.MethodGet || r.Header.Get(cloud.BindingHeader) != binding {
 					t.Fatalf("unmatched signed request: %s %s %v", r.Method, r.URL, r.Header)
-				}
-				if _, exists := r.Context().Deadline(); !exists {
-					t.Error("signed request requires a deadline")
 				}
 				if test.transport != nil {
 					return nil, test.transport
@@ -190,6 +192,29 @@ func TestCallerOf(t *testing.T) {
 	}
 }
 
+func TestCallerTimeout(t *testing.T) {
+	// R-KLRD-EYLQ
+	synctest.Test(t, func(t *testing.T) {
+		c := open(t, func(r *http.Request) (*http.Response, error) {
+			if _, ok := r.Context().Deadline(); !ok {
+				t.Fatal("request has no deadline")
+			}
+			<-r.Context().Done()
+			err := r.Context().Err()
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Errorf("request context ended with %v, want DeadlineExceeded", err)
+			}
+			return nil, err
+		})
+		start := time.Now()
+		_, err := c.CallerOf(t.Context(), "https://sts.us-east-2.amazonaws.com/", "test-binding")
+		if elapsed := time.Since(start); elapsed != cloud.CallerTimeout {
+			t.Errorf("CallerOf gave up after %v, want %v", elapsed, cloud.CallerTimeout)
+		}
+		checkError(t, err, "sts", "GetCallerIdentity", "", cloud.CodeNoResponse, cloud.ClassTransient)
+	})
+}
+
 type countedBody struct {
 	reader io.Reader
 	read   int
@@ -203,15 +228,31 @@ func (b *countedBody) Read(p []byte) (int, error) {
 
 func (*countedBody) Close() error { return nil }
 
-func TestCallerReadLimitWithoutContentLength(t *testing.T) {
-	value := `<GetCallerIdentityResponse><GetCallerIdentityResult><Account>123</Account><Arn>test</Arn></GetCallerIdentityResult></GetCallerIdentityResponse>`
-	body := &countedBody{reader: strings.NewReader(value + strings.Repeat(" ", cloud.MaxCallerBytes))}
-	c := open(t, func(*http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: http.StatusOK, Body: body, ContentLength: -1}, nil
-	})
-	_, err := c.CallerOf(t.Context(), "https://sts.us-east-2.amazonaws.com/", "test-binding")
-	checkError(t, err, "sts", "GetCallerIdentity", "", cloud.CodeBadResponse, cloud.ClassRefused)
-	if body.read > cloud.MaxCallerBytes {
-		t.Errorf("read %d bytes of an unbounded STS response", body.read)
+func TestCallerReadLimit(t *testing.T) {
+	// R-KLRD-EYLQ
+	const value = `<GetCallerIdentityResponse><GetCallerIdentityResult><Account>123</Account><Arn>test</Arn></GetCallerIdentityResult></GetCallerIdentityResponse>`
+	for _, test := range []struct {
+		name string
+		size int
+	}{
+		{name: "exact limit", size: cloud.MaxCallerBytes},
+		{name: "one byte over", size: cloud.MaxCallerBytes + 1},
+		{name: "more than one byte over", size: cloud.MaxCallerBytes + 100},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			body := &countedBody{reader: strings.NewReader(value + strings.Repeat(" ", test.size-len(value)))}
+			c := open(t, func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusOK, Body: body, ContentLength: -1}, nil
+			})
+			got, err := c.CallerOf(t.Context(), "https://sts.us-east-2.amazonaws.com/", "test-binding")
+			if test.size > cloud.MaxCallerBytes {
+				checkError(t, err, "sts", "GetCallerIdentity", "", cloud.CodeBadResponse, cloud.ClassRefused)
+			} else if err != nil || got != (cloud.Caller{Account: "123", Arn: "test"}) {
+				t.Errorf("CallerOf = %+v, %v at the limit", got, err)
+			}
+			if want := min(test.size, cloud.MaxCallerBytes+1); body.read != want {
+				t.Errorf("read %d bytes from STS, want %d", body.read, want)
+			}
+		})
 	}
 }

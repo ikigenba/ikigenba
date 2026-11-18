@@ -3,11 +3,11 @@ package tools_test
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -68,7 +68,7 @@ func setupConfigured(t *testing.T, configured bool) *fixture {
 			t.Error(err)
 		}
 	})
-	f.st = store.New(f.d, store.Config{Now: func() time.Time { return f.now }, Rand: rand.Reader})
+	f.st = store.New(f.d, store.Config{Now: func() time.Time { return f.now }, Rand: rand.NewChaCha8([32]byte{1})})
 	f.cloud = &dnsCloud{}
 	f.hosts = settings.Hosts{Domain: "metaspot.example", ZoneID: "zone-example"}
 	f.capture = &telemetry.Capture{}
@@ -89,6 +89,13 @@ func setupConfigured(t *testing.T, configured bool) *fixture {
 		HTTPClient: &http.Client{Transport: testTransport{identity.Require(f.srv)}},
 	})
 	return f
+}
+
+func (f *fixture) serveLoopback() {
+	f.t.Helper()
+	srv := httptest.NewServer(identity.Require(f.srv))
+	f.t.Cleanup(srv.Close)
+	f.client = mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL + "/mcp", HTTPClient: srv.Client()})
 }
 
 type testTransport struct{ handler http.Handler }

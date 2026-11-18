@@ -49,6 +49,7 @@ type Config struct {
 // Server handles the daemon endpoints for one accounts process.
 type Server struct {
 	cfg    Config
+	store  hostStore
 	binary *os.File
 	size   int64
 	digest string
@@ -56,6 +57,14 @@ type Server struct {
 	stopOnce sync.Once
 	stopped  chan struct{}
 	waiters  chan struct{}
+}
+
+type hostStore interface {
+	HostByInstance(context.Context, string) (store.Host, error)
+	Host(context.Context, string) (store.Host, error)
+	Watch(string) (<-chan struct{}, func())
+	Desired(context.Context, string) (protocol.DesiredState, error)
+	RecordReport(context.Context, string, protocol.Report, time.Time) (store.Transition, error)
 }
 
 // New opens and digests the daemon binary when it is available.
@@ -66,7 +75,12 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 	if cfg.After == nil {
 		cfg.After = time.After
 	}
-	s := &Server{cfg: cfg, stopped: make(chan struct{}), waiters: make(chan struct{}, MaxWaiters)}
+	s := &Server{
+		cfg: cfg, store: cfg.Store,
+		stopped: make(chan struct{}), waiters: make(chan struct{}, MaxWaiters),
+	}
+	// Keep store access behind the daemon's narrower interface.
+	s.cfg.Store = nil
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -216,7 +230,7 @@ func (s *Server) identify(w http.ResponseWriter, r *http.Request) (store.Host, b
 		}
 		return store.Host{}, false
 	}
-	host, err := s.cfg.Store.HostByInstance(ctx, id)
+	host, err := s.store.HostByInstance(ctx, id)
 	if err != nil {
 		storeFailure(w, err)
 		return store.Host{}, false
@@ -239,10 +253,10 @@ func (s *Server) poll(w http.ResponseWriter, r *http.Request, host store.Host, a
 		return
 	}
 
-	changed, release := s.cfg.Store.Watch(host.Name)
+	changed, release := s.store.Watch(host.Name)
 	defer release()
 	// Recheck after registering the watch to catch commits since HostByInstance.
-	current, err := s.cfg.Store.Host(ctx, host.Name)
+	current, err := s.store.Host(ctx, host.Name)
 	if err != nil {
 		storeFailure(w, err)
 		return
@@ -286,7 +300,7 @@ func (s *Server) wait(ctx context.Context, w http.ResponseWriter, changed <-chan
 }
 
 func (s *Server) state(ctx context.Context, w http.ResponseWriter, name string) {
-	desired, err := s.cfg.Store.Desired(ctx, name)
+	desired, err := s.store.Desired(ctx, name)
 	if ctx.Err() != nil {
 		return
 	}
@@ -312,7 +326,7 @@ func (s *Server) report(w http.ResponseWriter, r *http.Request, name string) {
 		http.Error(w, BadRequest, http.StatusBadRequest)
 		return
 	}
-	change, err := s.cfg.Store.RecordReport(r.Context(), name, report, s.cfg.Now())
+	change, err := s.store.RecordReport(r.Context(), name, report, s.cfg.Now())
 	if err != nil {
 		storeFailure(w, err)
 		return

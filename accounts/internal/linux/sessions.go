@@ -26,6 +26,7 @@ const (
 	pamMemberTest  = "session [success=ignore default=1] pam_succeed_if.so quiet user ingroup shell"
 	pamHelperLine  = "session required pam_exec.so type=open_session " + SessionHelper
 	pamSkipSystemd = "session [success=1 default=ignore] pam_succeed_if.so quiet user ingroup shell"
+	pamHook        = pamMemberTest + "\n" + pamHelperLine + "\n"
 )
 
 func (h *Host) unitFiles(visit func(string) error) error {
@@ -187,43 +188,51 @@ func (h *Host) installSession() error {
 }
 
 func (h *Host) installPAM() error {
-	const hook = pamMemberTest + "\n" + pamHelperLine + "\n"
 	f, err := os.Open(h.path(pamPath))
 	if errors.Is(err, fs.ErrNotExist) {
-		_, err := h.write(pamPath, []byte(hook), 0o644)
+		_, err := h.write(pamPath, []byte(pamHook), 0o644)
 		return err
 	}
 	if err != nil {
 		return hostError(pamPath, err)
 	}
 	defer func() { _ = f.Close() }()
+	insertion, err := pamInsertion(f)
+	if err != nil {
+		return hostError(pamPath, err)
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return hostError(pamPath, err)
+	}
 	return h.writeStream(pamPath, 0o644, func(dst io.Writer) (bool, error) {
 		r := bufio.NewReader(f)
-		var changed, managed, precedingSkip, precedingMemberTest, partial, needsLF bool
+		var offset int64
+		var changed, precedingSkip, partial bool
 		for {
+			if offset == insertion {
+				if _, err := io.WriteString(dst, pamHook); err != nil {
+					return false, err
+				}
+				changed = true
+			}
 			fragment, err := r.ReadSlice('\n')
 			if len(fragment) > 0 {
-				skip, memberTest := false, false
+				skip := false
 				if !partial && !errors.Is(err, bufio.ErrBufferFull) {
 					line := bytes.TrimSuffix(fragment, []byte{'\n'})
 					skip = string(line) == pamSkipSystemd
-					memberTest = string(line) == pamMemberTest
-					managed = managed || precedingMemberTest && string(line) == pamHelperLine
-					fields := bytes.Fields(line)
-					if !precedingSkip && len(fields) >= 3 &&
-						(string(fields[0]) == "session" || string(fields[0]) == "-session") &&
-						string(fields[2]) == "pam_systemd.so" {
+					if !precedingSkip && pamSystemd(line) {
 						if _, err := io.WriteString(dst, pamSkipSystemd+"\n"); err != nil {
 							return false, err
 						}
 						changed = true
 					}
 				}
-				precedingSkip, precedingMemberTest = skip, memberTest
+				precedingSkip = skip
 				if _, err := dst.Write(fragment); err != nil {
 					return false, err
 				}
-				needsLF = fragment[len(fragment)-1] != '\n'
+				offset += int64(len(fragment))
 			}
 			if errors.Is(err, io.EOF) {
 				break
@@ -233,17 +242,56 @@ func (h *Host) installPAM() error {
 				return false, err
 			}
 		}
-		if !managed {
-			if needsLF {
-				if _, err := io.WriteString(dst, "\n"); err != nil {
-					return false, err
-				}
-			}
-			if _, err := io.WriteString(dst, hook); err != nil {
-				return false, err
-			}
-			changed = true
-		}
 		return changed, nil
 	})
+}
+
+// pamInsertion finds an existing hook or the last line boundary, preserving an
+// unterminated last line without storing it in memory.
+func pamInsertion(input io.Reader) (int64, error) {
+	r := bufio.NewReader(input)
+	var offset, boundary, previous int64
+	var partial, precedingMemberTest, precedingSkip bool
+	for {
+		fragment, err := r.ReadSlice('\n')
+		offset += int64(len(fragment))
+		if !partial && !errors.Is(err, bufio.ErrBufferFull) {
+			line := bytes.TrimSuffix(fragment, []byte{'\n'})
+			if precedingMemberTest && string(line) == pamHelperLine {
+				return -1, nil
+			}
+			if err == nil {
+				precedingMemberTest = string(line) == pamMemberTest
+				precedingSkip = string(line) == pamSkipSystemd
+			}
+		} else if err == nil {
+			precedingMemberTest, precedingSkip = false, false
+		}
+		switch {
+		case err == nil:
+			previous, boundary = boundary, offset
+		case errors.Is(err, io.EOF):
+			if offset > boundary && precedingSkip {
+				return previous, nil
+			}
+			return boundary, nil
+		case !errors.Is(err, bufio.ErrBufferFull):
+			return 0, err
+		}
+		partial = errors.Is(err, bufio.ErrBufferFull)
+	}
+}
+
+func pamSystemd(line []byte) bool {
+	fields := bytes.Fields(line)
+	if len(fields) < 3 || (string(fields[0]) != "session" && string(fields[0]) != "-session") {
+		return false
+	}
+	module := 2
+	if fields[1][0] == '[' {
+		for module < len(fields) && !bytes.HasSuffix(fields[module-1], []byte{']'}) {
+			module++
+		}
+	}
+	return module < len(fields) && filepath.Base(string(fields[module])) == "pam_systemd.so"
 }

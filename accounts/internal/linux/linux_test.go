@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -275,75 +276,61 @@ func assertUnchanged(t *testing.T, path string, previous fs.FileInfo) {
 	}
 }
 
-func TestApplyChangesOnlyManagedFiles(t *testing.T) {
-	// R-SKZ3-MFVV
-	f := newHardeningFixture(t)
-	f.put("/etc/sudoers", "root ALL=(ALL) ALL\n", 0o600)
-	f.put("/etc/sudoers.d/retained", "other existing configuration\n", 0o600)
-	type file struct {
-		bytes  []byte
-		mode   fs.FileMode
-		target string
+type hostFile struct {
+	bytes    []byte
+	mode     fs.FileMode
+	target   string
+	uid, gid uint32
+	inode    uint64
+}
+
+func snapshotHost(t *testing.T, path string) map[string]hostFile {
+	t.Helper()
+	output := map[string]hostFile{}
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	snapshot := func() map[string]file {
-		output := map[string]file{}
-		root, err := os.OpenRoot(f.root)
+	defer func() { _ = root.Close() }()
+	if err := filepath.WalkDir(path, func(full string, d fs.DirEntry, err error) error {
 		if err != nil {
-			t.Fatal(err)
-		}
-		defer func() { _ = root.Close() }()
-		if err := filepath.WalkDir(f.root, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			name := strings.TrimPrefix(path, f.root)
-			info, err := d.Info()
-			if err != nil {
-				return err
-			}
-			value := file{mode: info.Mode()}
-			switch {
-			case info.Mode().IsRegular():
-				value.bytes, err = root.ReadFile(strings.TrimPrefix(name, "/"))
-			case info.Mode()&fs.ModeSymlink != 0:
-				value.target, err = root.Readlink(strings.TrimPrefix(name, "/"))
-			}
-			output[name] = value
 			return err
-		}); err != nil {
-			t.Fatal(err)
 		}
-		return output
+		name := strings.TrimPrefix(full, path)
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			return fmt.Errorf("missing ownership for %s", name)
+		}
+		value := hostFile{mode: info.Mode(), uid: stat.Uid, gid: stat.Gid, inode: stat.Ino}
+		switch {
+		case info.Mode().IsRegular():
+			value.bytes, err = root.ReadFile(strings.TrimPrefix(name, "/"))
+		case info.Mode()&fs.ModeSymlink != 0:
+			value.target, err = root.Readlink(strings.TrimPrefix(name, "/"))
+		}
+		output[name] = value
+		return err
+	}); err != nil {
+		t.Fatal(err)
 	}
-	before := snapshot()
-	f.apply(protocol.DesiredState{})
-	f.expectCalls(
-		"rpm -q nftables", "rpm -q fail2ban-server", "rpm -q dnf-automatic",
-		"systemctl daemon-reload", "nft list table inet ikigenba_imds",
-		"nft -f "+f.path(hardenRules), "systemctl is-enabled ikigenba-imds.service",
-		"systemd-tmpfiles --create --prefix "+f.path("/var/log/journal"),
-		"systemctl restart systemd-journald.service", "journalctl --flush",
-		"systemctl is-enabled dnf-automatic.timer", "systemctl is-active dnf-automatic.timer",
-		"systemctl is-enabled fail2ban.service", "systemctl is-active fail2ban.service",
-		"systemctl reload fail2ban.service",
-		"lsblk --pairs --noheadings --output NAME,PKNAME,FSTYPE,MOUNTPOINT",
-		"blockdev --getsize64 "+f.path("/dev/nvme0n1"),
-		"growpart "+f.path("/dev/nvme0n1")+" 1",
-		"xfs_growfs -d "+f.path("/"),
-		"lsblk --nodeps --pairs --noheadings --output NAME,SERIAL",
-		"systemctl daemon-reload",
-	)
-	allowed := map[string]bool{"/etc/pam.d/sshd": true}
-	for _, managed := range []string{
-		hardenRules, hardenIMDSUnit, hardenJournal, "/var/log/journal",
-		"/etc/dnf/vars/releasever", hardenUpdates, hardenJail, linux.KeysDir, linux.SkelDir,
-		"/etc/systemd/system/" + linux.PoolSlice, linux.SessionHelper,
-	} {
-		for path := managed; path != "/"; path = filepath.Dir(path) {
-			allowed[path] = true
+	return output
+}
+
+func assertHostChanges(t *testing.T, before, after map[string]hostFile, managed []string) {
+	t.Helper()
+	allowed := map[string]bool{}
+	for _, path := range managed {
+		allowed[path] = true
+		for dir := filepath.Dir(path); dir != "/"; dir = filepath.Dir(dir) {
+			if _, exists := before[dir]; !exists {
+				allowed[dir] = true
+			}
 		}
 	}
-	after := snapshot()
 	for path, prior := range before {
 		if !allowed[path] && !reflect.DeepEqual(after[path], prior) {
 			t.Errorf("unexpected change at %s", path)
@@ -354,4 +341,105 @@ func TestApplyChangesOnlyManagedFiles(t *testing.T) {
 			t.Errorf("unexpected new path %s", path)
 		}
 	}
+}
+
+func TestApplyChangesOnlyManagedFiles(t *testing.T) {
+	// R-LF0Y-LGEE
+	f := newHardeningFixture(t)
+	f.put("/etc/sudoers", "root ALL=(ALL) ALL\n", 0o600)
+	f.put("/etc/sudoers.d/retained", "other existing configuration\n", 0o600)
+	before := snapshotHost(t, f.root)
+	f.apply(protocol.DesiredState{})
+	f.expectCalls(append(initialHardeningCommands(f), "systemctl daemon-reload")...)
+	assertHostChanges(t, before, snapshotHost(t, f.root), append(hardeningPaths(), "/var/log/journal", linux.SkelDir, linux.KeysDir, linux.SessionHelper))
+}
+
+func initialHardeningCommands(f *hardeningFixture) []string {
+	return []string{
+		"rpm -q nftables", "rpm -q fail2ban-server", "rpm -q dnf-automatic",
+		"systemctl daemon-reload", "nft list table inet ikigenba_imds",
+		"nft -f " + f.path(hardenRules), "systemctl is-enabled ikigenba-imds.service",
+		"systemd-tmpfiles --create --prefix " + f.path("/var/log/journal"),
+		"systemctl restart systemd-journald.service", "journalctl --flush",
+		"systemctl is-enabled dnf-automatic.timer", "systemctl is-active dnf-automatic.timer",
+		"systemctl is-enabled fail2ban.service", "systemctl is-active fail2ban.service",
+		"systemctl reload fail2ban.service",
+		"lsblk --pairs --noheadings --output NAME,PKNAME,FSTYPE,MOUNTPOINT",
+		"blockdev --getsize64 " + f.path("/dev/nvme0n1"),
+		"growpart " + f.path("/dev/nvme0n1") + " 1",
+		"xfs_growfs -d " + f.path("/"),
+		"lsblk --nodeps --pairs --noheadings --output NAME,SERIAL",
+	}
+}
+
+func hardeningPaths() []string {
+	return []string{
+		hardenRules, hardenIMDSUnit, hardenJournal,
+		"/etc/dnf/vars/releasever", hardenUpdates, hardenJail,
+		"/etc/systemd/system/" + linux.PoolSlice, "/etc/pam.d/sshd",
+	}
+}
+
+func TestApplyChangesOnlyManagedFilesWithUsersAndData(t *testing.T) {
+	// R-LF0Y-LGEE
+	f := newHardeningFixture(t)
+	const unitDir = "/etc/systemd/system/"
+	const folder = "/srv/citron"
+	const home = "/home/alice"
+	const aliceKeys = linux.KeysDir + "/alice"
+	const retiredKeys = linux.KeysDir + "/retired"
+	const staleSlice = unitDir + "acct-pear-retired.slice"
+	for _, path := range []string{
+		"/etc/sudoers", "/etc/sudoers.d/retained", "/etc/untouched", "/usr/local/bin/other", "/etc/systemd/system/unrelated.service",
+		folder + "/.git/config", folder + "/project", home + "/private", "/srv/unlisted/project", "/home/unlisted/private", retiredKeys, staleSlice,
+	} {
+		f.put(path, "fixture for "+path, 0o664)
+	}
+	f.setMode(home, 0o755)
+	f.put("/etc/group", "shell:x:990:alice\ncitron:x:24000:alice\nalice:x:24001:\n", 0o644)
+	f.put("/etc/passwd", "citron:x:24000:24000::/srv/citron:/usr/sbin/nologin\nalice:x:24001:24001::/home/alice:/bin/bash\n", 0o644)
+	gitQuery := "git config --file " + f.path("/etc/gitconfig") + " --get-all safe.directory"
+	f.answer = func(call string) (linux.Result, bool) {
+		return hostAnswer(folder + "\n"), call == gitQuery
+	}
+	before := snapshotHost(t, f.root)
+	f.apply(protocol.DesiredState{
+		DataVolume: "vol-12345678",
+		Accounts: []protocol.Account{
+			{Slug: "citron", GID: 24000, State: protocol.AccountActive},
+			{Slug: "pear", GID: 24010, State: protocol.AccountRemoved},
+		},
+		Users: []protocol.User{
+			{Name: "alice", Account: "citron", UID: 24001, State: protocol.UserActive},
+			{Name: "retired", Account: "pear", UID: 24011, State: protocol.UserDeleted},
+		},
+	})
+	after := snapshotHost(t, f.root)
+	volumeFiles := []string{unitDir + "data.mount", unitDir + "home.mount", unitDir + "srv.mount", sshUnitPath, sshDropInPath,
+		unitDir + linux.AccountSlice("citron"), unitDir + linux.PersonSlice("citron", "alice"), aliceKeys}
+	secureFirst := []string{linux.DaemonPath, linux.SessionHelper, linux.HostKeyDir, dataPrivateKey, dataPublicKey, linux.KeysDir}
+	managed := slices.Concat(hardeningPaths(), volumeFiles, secureFirst,
+		[]string{"/var/log/journal", linux.SkelDir, "/data/home", "/data/srv", folder, home, retiredKeys, staleSlice})
+	assertHostChanges(t, before, after, managed)
+
+	dataDevice := f.path("/dev/nvme1n1")
+	want := append(initialHardeningCommands(f),
+		"blkid -p --output export "+dataDevice, "systemctl daemon-reload",
+		"systemctl is-enabled data.mount", "systemctl is-active data.mount",
+		"systemctl is-enabled home.mount", "systemctl is-active home.mount",
+		"systemctl is-enabled srv.mount", "systemctl is-active srv.mount",
+		"blockdev --getsize64 "+dataDevice, "xfs_growfs -d "+f.path("/data"), "systemctl daemon-reload",
+		"sshd -t -f "+f.path("/etc/ssh/sshd_config"), "systemctl reload sshd.service", "systemctl daemon-reload")
+	if before[folder].uid != 24000 || before[folder].gid != 24000 {
+		want = append(want, "chown citron:citron "+f.path(folder), "setfacl -d -m g::rwx,o::- "+f.path(folder))
+	}
+	want = append(want, gitQuery)
+	secureLater := slices.Concat(hardeningPaths(), volumeFiles, []string{dataPrivateKey, dataPublicKey})
+	slices.Sort(secureLater)
+	for _, path := range slices.Concat(secureFirst, secureLater) {
+		if info := after[path]; info.uid != 0 || info.gid != 0 {
+			want = append(want, "chown --no-dereference root:root "+f.path(path))
+		}
+	}
+	f.expectCalls(want...)
 }

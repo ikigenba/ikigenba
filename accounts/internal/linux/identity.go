@@ -86,12 +86,13 @@ func (h *Host) expired(visit func(string, bool)) error {
 }
 
 func (h *Host) locks(ctx context.Context, s protocol.DesiredState) error {
-	listed := make(map[string]protocol.User, len(s.Users))
-	for _, u := range s.Users {
-		listed[u.Name] = u
+	listed := make(map[string]bool, len(s.Accounts)+len(s.Users))
+	for _, a := range s.Accounts {
+		listed[a.Slug] = true
 	}
 	targets := make(map[string]struct{})
 	for _, u := range s.Users {
+		listed[u.Name] = true
 		if u.State == protocol.UserLocked || u.State == protocol.UserDeleted {
 			targets[u.Name] = struct{}{}
 		}
@@ -101,7 +102,7 @@ func (h *Host) locks(ctx context.Context, s protocol.DesiredState) error {
 			return
 		}
 		for _, member := range members {
-			if _, found := listed[member]; !found && member != "" {
+			if member != "" && !listed[member] {
 				targets[member] = struct{}{}
 			}
 		}
@@ -125,11 +126,6 @@ func (h *Host) locks(ctx context.Context, s protocol.DesiredState) error {
 		return err
 	}
 	for _, name := range users {
-		if desired, found := listed[name]; found && desired.State == protocol.UserLocked {
-			if _, err := h.identity(name, desired.UID, desired.Account); err != nil {
-				return err
-			}
-		}
 		if ended, exists := expired[name]; exists && !ended {
 			if _, err := h.run(ctx, "usermod", "--expiredate", "1", name); err != nil {
 				return err
@@ -235,6 +231,7 @@ func (h *Host) removedAccounts(ctx context.Context, s protocol.DesiredState) err
 }
 
 func (h *Host) users(ctx context.Context, s protocol.DesiredState) error {
+	var recipients map[string]bool
 	for _, u := range s.Users {
 		switch u.State {
 		case protocol.UserActive, protocol.UserLocked:
@@ -242,7 +239,13 @@ func (h *Host) users(ctx context.Context, s protocol.DesiredState) error {
 				return err
 			}
 		case protocol.UserDeleted:
-			if err := h.deleteUser(ctx, u); err != nil {
+			if recipients == nil {
+				recipients = make(map[string]bool, len(s.Accounts))
+				for _, a := range s.Accounts {
+					recipients[a.Slug] = true
+				}
+			}
+			if err := h.deleteUser(ctx, u, recipients); err != nil {
 				return err
 			}
 		}
@@ -301,13 +304,13 @@ func (h *Host) ensureUser(ctx context.Context, u protocol.User) error {
 	return nil
 }
 
-func (h *Host) deleteUser(ctx context.Context, u protocol.User) error {
+func (h *Host) deleteUser(ctx context.Context, u protocol.User, recipients map[string]bool) error {
 	exists, err := h.hasAccount(u.Name)
 	if err != nil {
 		return err
 	}
 	if exists {
-		if err := h.reassignFiles(ctx, u.UID); err != nil {
+		if err := h.reassignFiles(ctx, u.UID, recipients); err != nil {
 			return err
 		}
 	}

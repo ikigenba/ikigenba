@@ -122,11 +122,15 @@ func (v *Verifier) Verify(ctx context.Context, header string) (string, error) {
 			v.mu.Unlock()
 			select {
 			case <-pending.done:
-				if pending.accepted {
-					return "", ErrReplayed
-				}
 			case <-ctx.Done():
 				return "", fmt.Errorf("%w: %w", ErrUnavailable, ctx.Err())
+			}
+			// Completion and cancellation may both be ready when the waiter resumes.
+			if err := ctx.Err(); err != nil {
+				return "", fmt.Errorf("%w: %w", ErrUnavailable, err)
+			}
+			if pending.accepted {
+				return "", ErrReplayed
 			}
 			now = v.cfg.Now()
 		case binding == "":
@@ -200,11 +204,15 @@ func (v *Verifier) admit(signature string, now time.Time) (*flight, <-chan struc
 
 func (v *Verifier) verifyCaller(ctx context.Context, raw, binding, signature string, date time.Time, pending *flight) (string, error) {
 	caller, err := v.cfg.STS.CallerOf(ctx, raw, binding)
+	now := v.cfg.Now()
 	v.mu.Lock()
 	delete(v.inFlight, signature)
 	pending.accepted = err == nil
-	if pending.accepted && !date.Before(v.pruned) {
-		v.accepted[signature] = date
+	if pending.accepted {
+		v.prune(now)
+		if !date.Before(v.pruned) {
+			v.accepted[signature] = date
+		}
 	}
 	close(pending.done)
 	v.mu.Unlock()

@@ -83,6 +83,12 @@ func header(now time.Time, code int) string {
 	return encode(rawURL(now, code, nil))
 }
 
+func reorderQuery(raw string) string {
+	prefix, query, _ := strings.Cut(raw, "?")
+	first, remaining, _ := strings.Cut(query, "&")
+	return prefix + "?" + remaining + "&" + first
+}
+
 func verifier(sts cloud.STS, now func() time.Time) *Verifier {
 	return NewVerifier(VerifierConfig{region, role, func() (string, error) { return binding, nil }, sts, now})
 }
@@ -184,7 +190,7 @@ func TestRefuseBeforeBindingAndSTS(t *testing.T) {
 	assertVerify(t.Context(), t, boundary, header(fixtureTime.Add(MaxSkew), 2), nil)
 }
 
-// R-G8RK-BDO9, R-GCF9-GOWC, R-4X80-T2EC, R-4YFX-6U51, R-HBS9-0LX4.
+// R-G8RK-BDO9, R-K9KD-L96S, R-L59R-JAGU, R-4X80-T2EC, R-4YFX-6U51, R-LA5D-2DFM.
 func TestSTSOutcomesAndReplayOrder(t *testing.T) {
 	raw := rawURL(fixtureTime, 1, func(q url.Values) { q.Set(BindingHeader, "elsewhere.example") })
 	now := fixtureTime
@@ -231,17 +237,63 @@ func TestSTSOutcomesAndReplayOrder(t *testing.T) {
 	assertVerify(ctx, t, v, encode(raw), ErrRejected)
 	assertVerify(ctx, t, v, encode(raw), ErrUnavailable)
 
-	prefix, query, _ := strings.Cut(raw, "?")
-	first, remaining, _ := strings.Cut(query, "&")
-	assertVerify(ctx, t, v, encode(prefix+"?"+remaining+"&"+first), ErrReplayed)
+	assertVerify(ctx, t, v, encode(reorderQuery(raw)), ErrReplayed)
 	assertVerify(ctx, t, v, header(now, 2), ErrRejected)
 	assertVerify(ctx, t, v, header(now, 2), ErrReplayed)
 	assertVerify(ctx, t, v, header(now, 3), nil)
+	assertVerify(ctx, t, v, header(now.Add(-Freshness-time.Second), 3), ErrStale)
 
 	now = now.Add(Freshness + time.Second)
 	assertVerify(ctx, t, v, encode(raw), ErrStale)
 	if bindingCalls != 5 || callerCalls != 5 || accountCalls != 2 {
 		t.Fatalf("calls to Binding, CallerOf, Account = %d, %d, %d; want 5, 5, 2", bindingCalls, callerCalls, accountCalls)
+	}
+}
+
+// R-L8XG-OLOX.
+func TestReplayExpiresWhileCallerOfRuns(t *testing.T) {
+	now := fixtureTime
+	calls := 0
+	v := verifier(stsFake{callerOf: func(context.Context, string, string) (cloud.Caller, error) {
+		calls++
+		if calls == 1 {
+			now = now.Add(Freshness + time.Second)
+		}
+		return caller(), nil
+	}}, func() time.Time { return now })
+	assertVerify(t.Context(), t, v, header(fixtureTime, 1), nil)
+
+	// Move the clock back so admission itself cannot expire the original date.
+	now = fixtureTime
+	assertVerify(t.Context(), t, v, header(now.Add(time.Second), 1), nil)
+	if calls != 2 {
+		t.Fatalf("CallerOf calls = %d after the age-out during the first call, want 2", calls)
+	}
+}
+
+// R-K9KD-L96S, R-KAS9-Z0XH, R-L8XG-OLOX.
+func TestReplayExpiresByAcceptedDate(t *testing.T) {
+	now := fixtureTime
+	calls := 0
+	v := verifier(stsFake{callerOf: func(context.Context, string, string) (cloud.Caller, error) {
+		calls++
+		return caller(), nil
+	}}, func() time.Time { return now })
+	ctx := t.Context()
+	original := rawURL(fixtureTime, 1, nil)
+	assertVerify(ctx, t, v, encode(original), nil)
+	assertVerify(ctx, t, v, encode(reorderQuery(original)), ErrReplayed)
+
+	now = fixtureTime.Add(Freshness)
+	changed := header(now, 1)
+	assertVerify(ctx, t, v, changed, ErrReplayed)
+	if calls != 1 {
+		t.Fatalf("CallerOf called %d times before the accepted date expired", calls)
+	}
+	now = now.Add(time.Second)
+	assertVerify(ctx, t, v, changed, nil)
+	if calls != 2 {
+		t.Fatalf("CallerOf called %d times after the accepted date expired", calls)
 	}
 }
 
@@ -268,59 +320,90 @@ func TestCallerShape(t *testing.T) {
 	}
 }
 
-// R-GB7D-2X5N, R-53BI-PX3T.
+// R-KAS9-Z0XH, R-L41V-5IQ5, R-53BI-PX3T.
 func TestSingleFlight(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
+	releaseCaller := sync.OnceFunc(func() { close(release) })
+	defer releaseCaller()
 	var calls atomic.Int64
 	v := verifier(stsFake{callerOf: func(context.Context, string, string) (cloud.Caller, error) {
-		if calls.Add(1) == 1 {
-			close(started)
+		if calls.Add(1) != 1 {
+			return cloud.Caller{}, errors.New("duplicate request reached CallerOf")
 		}
+		close(started)
 		<-release
 		return caller(), nil
 	}}, func() time.Time { return fixtureTime })
 	ctx := t.Context()
-	h := header(fixtureTime, 1)
-	results := make(chan error, 10)
-	for range 10 {
+	raw := rawURL(fixtureTime, 1, nil)
+	leader := make(chan error, 1)
+	go func() {
+		id, err := v.Verify(ctx, encode(raw))
+		if id != instanceID {
+			t.Errorf("leader instance id = %q, want %q", id, instanceID)
+		}
+		leader <- err
+	}()
+	await(t, started, "leader to reach CallerOf")
+
+	waiters := make([]chan error, 9)
+	for i := range waiters {
+		waiter := make(chan error, 1)
+		waiters[i] = waiter
+		waitCtx := &waitObservedContext{Context: ctx, waiting: make(chan struct{})}
 		go func() {
-			_, err := v.Verify(ctx, h)
-			results <- err
+			id, err := v.Verify(waitCtx, encode(reorderQuery(raw)))
+			if id != "" {
+				t.Errorf("waiter instance id = %q, want empty", id)
+			}
+			waiter <- err
 		}()
+		awaitPending(t, waitCtx, waiter)
 	}
-	<-started
+
 	cancelCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	waitCtx := &waitObservedContext{Context: cancelCtx, waiting: make(chan struct{})}
+	canceled := make(chan error, 1)
+	go func() {
+		id, err := v.Verify(waitCtx, encode(raw))
+		if id != "" {
+			t.Errorf("canceled waiter instance id = %q, want empty", id)
+		}
+		canceled <- err
+	}()
+	awaitPending(t, waitCtx, canceled)
 	cancel()
-	if id, err := v.Verify(cancelCtx, h); id != "" || !errors.Is(err, ErrUnavailable) || !errors.Is(err, context.Canceled) {
-		t.Errorf("canceled waiter = %q, %v", id, err)
+	if err := await(t, canceled, "canceled waiter"); !errors.Is(err, ErrUnavailable) || !errors.Is(err, context.Canceled) {
+		t.Errorf("canceled waiter error = %v", err)
 	}
 	if got := calls.Load(); got != 1 {
 		t.Errorf("calls while blocked = %d, want 1", got)
 	}
-	close(release)
-	successes := 0
-	for range 10 {
-		switch err := <-results; {
-		case err == nil:
-			successes++
-		case errors.Is(err, ErrReplayed):
-		default:
-			t.Errorf("unexpected verification result %v", err)
+	releaseCaller()
+	if err := await(t, leader, "leader"); err != nil {
+		t.Errorf("leader verification error = %v", err)
+	}
+	for _, waiter := range waiters {
+		if err := await(t, waiter, "replayed waiter"); !errors.Is(err, ErrReplayed) {
+			t.Errorf("waiter verification error = %v, want ErrReplayed", err)
 		}
 	}
-	if successes != 1 || calls.Load() != 1 {
-		t.Fatalf("successes = %d, STS calls = %d; want 1, 1", successes, calls.Load())
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("CallerOf calls = %d, want 1", got)
 	}
 }
 
-// R-GB7D-2X5N.
+// R-L41V-5IQ5.
 func TestWaiterRetriesAfterFailedLeader(t *testing.T) {
 	ctx := t.Context()
 	good := rawURL(fixtureTime, 1, nil)
 	bad := good + "&X-Amz-Credential=other"
 	started := make(chan struct{})
 	release := make(chan struct{})
+	releaseCaller := sync.OnceFunc(func() { close(release) })
+	defer releaseCaller()
 	v := verifier(stsFake{callerOf: func(_ context.Context, raw string, _ string) (cloud.Caller, error) {
 		if raw == bad {
 			close(started)
@@ -334,42 +417,125 @@ func TestWaiterRetriesAfterFailedLeader(t *testing.T) {
 		_, err := v.Verify(ctx, encode(bad))
 		result <- err
 	}()
-	<-started
+	await(t, started, "leader to reach CallerOf")
 	goodResult := make(chan error, 1)
+	waitCtx := &waitObservedContext{Context: ctx, waiting: make(chan struct{})}
 	go func() {
-		_, err := v.Verify(ctx, encode(good))
+		id, err := v.Verify(waitCtx, encode(good))
+		if id != instanceID {
+			t.Errorf("waiter instance id = %q, want %q", id, instanceID)
+		}
 		goodResult <- err
 	}()
-	close(release)
-	if err := <-result; !errors.Is(err, ErrRejected) {
+	awaitPending(t, waitCtx, goodResult)
+	releaseCaller()
+	if err := await(t, result, "failed leader"); !errors.Is(err, ErrRejected) {
 		t.Errorf("failed leader = %v", err)
 	}
-	if err := <-goodResult; err != nil {
+	if err := await(t, goodResult, "retrying waiter"); err != nil {
 		t.Errorf("waiter with valid URL = %v", err)
 	}
 }
 
-// R-GCF9-GOWC, R-GDN5-UGN1, R-HBS9-0LX4.
+// R-L41V-5IQ5.
+func TestWaiterCancellationBeforeSettlement(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		callerErr error
+		leaderErr error
+	}{
+		{name: "accepted"},
+		{name: "refused", callerErr: &cloud.Error{Class: cloud.ClassRefused}, leaderErr: ErrRejected},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			// The select may choose either ready channel. Exercise it repeatedly.
+			for range 32 {
+				ctx := t.Context()
+				started, settle := make(chan struct{}), make(chan struct{})
+				settleCaller := sync.OnceFunc(func() { close(settle) })
+				t.Cleanup(settleCaller)
+				var calls atomic.Int64
+				v := verifier(stsFake{callerOf: func(context.Context, string, string) (cloud.Caller, error) {
+					if calls.Add(1) == 1 {
+						close(started)
+						<-settle
+					}
+					return caller(), tt.callerErr
+				}}, func() time.Time { return fixtureTime })
+				h := header(fixtureTime, 1)
+				leader := make(chan error, 1)
+				go func() {
+					_, err := v.Verify(ctx, h)
+					leader <- err
+				}()
+				await(t, started, "leader to reach CallerOf")
+
+				cancelCtx, cancel := context.WithCancel(ctx)
+				t.Cleanup(cancel)
+				resume := make(chan struct{})
+				resumeWaiter := sync.OnceFunc(func() { close(resume) })
+				t.Cleanup(resumeWaiter)
+				waitCtx := &waitObservedContext{Context: cancelCtx, waiting: make(chan struct{}), resume: resume}
+				result := make(chan error, 1)
+				go func() {
+					id, err := v.Verify(waitCtx, h)
+					if id != "" {
+						t.Errorf("canceled waiter instance id = %q, want empty", id)
+					}
+					result <- err
+				}()
+				awaitPending(t, waitCtx, result)
+				cancel()
+				settleCaller()
+				err := await(t, leader, "leader")
+				resumeWaiter()
+				if !errors.Is(err, tt.leaderErr) {
+					t.Errorf("leader verification error = %v, want %v", err, tt.leaderErr)
+				}
+				if err := await(t, result, "canceled waiter"); !errors.Is(err, ErrUnavailable) || !errors.Is(err, context.Canceled) {
+					t.Fatalf("canceled waiter error = %v", err)
+				}
+				if got := calls.Load(); got != 1 {
+					t.Fatalf("CallerOf calls = %d, want 1", got)
+				}
+			}
+		})
+	}
+}
+
+// R-L59R-JAGU, R-L6HN-X27J, R-LA5D-2DFM.
 func TestTokenBucket(t *testing.T) {
 	now := fixtureTime
 	configured := ""
 	bindingErr := error(nil)
-	calls := 0
+	bindingCalls, callerCalls, accountCalls := 0, 0, 0
 	v := NewVerifier(VerifierConfig{
 		Region: region,
 		Role:   role,
 		Binding: func() (string, error) {
+			bindingCalls++
 			return configured, bindingErr
 		},
-		STS: stsFake{callerOf: func(context.Context, string, string) (cloud.Caller, error) {
-			calls++
-			return caller(), nil
-		}},
+		STS: stsFake{
+			callerOf: func(context.Context, string, string) (cloud.Caller, error) {
+				callerCalls++
+				return caller(), nil
+			},
+			account: func(context.Context) (string, error) {
+				accountCalls++
+				return accountID, nil
+			},
+		},
 		Now: func() time.Time { return now },
 	})
 	assertVerify(t.Context(), t, v, header(now, 1), ErrUnavailable)
 	bindingErr = errors.New("fixture binding error")
 	assertVerify(t.Context(), t, v, header(now, 1), ErrUnavailable)
+	assertVerify(t.Context(), t, v, "", ErrMalformed)
+	assertVerify(t.Context(), t, v, header(now.Add(-Freshness-time.Second), 1), ErrStale)
+	if bindingCalls != 2 || callerCalls != 0 || accountCalls != 0 {
+		t.Fatalf("calls to Binding, CallerOf, Account = %d, %d, %d; want 2, 0, 0", bindingCalls, callerCalls, accountCalls)
+	}
 	configured, bindingErr = binding, nil
 	for i := range VerifyBurst {
 		assertVerify(t.Context(), t, v, header(now, i), nil)
@@ -383,17 +549,19 @@ func TestTokenBucket(t *testing.T) {
 	assertVerify(t.Context(), t, v, header(now, VerifyBurst), ErrBusy)
 	now = now.Add(time.Millisecond)
 	assertVerify(t.Context(), t, v, header(now, VerifyBurst), nil)
-	if calls != VerifyBurst+1 {
-		t.Fatalf("CallerOf calls = %d", calls)
+	if callerCalls != VerifyBurst+1 {
+		t.Fatalf("CallerOf calls = %d", callerCalls)
 	}
 }
 
-// R-GEV2-88DQ, R-GDN5-UGN1.
+// R-L7PK-ATY8, R-L6HN-X27J.
 func TestInFlightLimit(t *testing.T) {
 	var elapsed atomic.Int64
 	now := func() time.Time { return fixtureTime.Add(time.Duration(elapsed.Load())) }
 	started := make(chan struct{}, VerifyBurst+1)
 	release := make(chan struct{})
+	releaseCalls := sync.OnceFunc(func() { close(release) })
+	defer releaseCalls()
 	v := verifier(stsFake{callerOf: func(context.Context, string, string) (cloud.Caller, error) {
 		started <- struct{}{}
 		<-release
@@ -408,7 +576,7 @@ func TestInFlightLimit(t *testing.T) {
 		})
 	}
 	for range VerifyBurst {
-		<-started
+		await(t, started, "CallerOf to start")
 	}
 	elapsed.Store(int64(50 * time.Millisecond))
 	full := make(chan error, 1)
@@ -423,13 +591,20 @@ func TestInFlightLimit(t *testing.T) {
 		}
 	case <-started:
 		t.Error("extra request reached STS while all calls were in flight")
+	case <-time.After(waitLimit):
+		t.Error("admission did not refuse the extra request")
 	}
-	close(release)
-	done.Wait()
+	releaseCalls()
+	allDone := make(chan struct{})
+	go func() {
+		done.Wait()
+		close(allDone)
+	}()
+	await(t, allDone, "CallerOf calls to finish")
 	assertVerify(t.Context(), t, v, header(fixtureTime, VerifyBurst+1), nil)
 }
 
-// R-H9CG-92FQ.
+// R-L8XG-OLOX.
 func TestReplaySetExpiresWithClock(t *testing.T) {
 	now := fixtureTime
 	v := verifier(stsFake{}, func() time.Time { return now })
@@ -439,7 +614,7 @@ func TestReplaySetExpiresWithClock(t *testing.T) {
 	}
 }
 
-// R-H9CG-92FQ.
+// R-L8XG-OLOX.
 func TestReplaySetCeilingUnderClockCorrections(t *testing.T) {
 	// Validate against a clock repeatedly corrected backwards at admission.
 	// This reaches the hard ceiling without expiring the accepted dates.
@@ -447,6 +622,8 @@ func TestReplaySetCeilingUnderClockCorrections(t *testing.T) {
 	admission := fixtureTime
 	var clock, calls atomic.Int64
 	leaderStarted, releaseLeader := make(chan struct{}), make(chan struct{})
+	releaseCaller := sync.OnceFunc(func() { close(releaseLeader) })
+	defer releaseCaller()
 	leaderURL := rawURL(signed, ReplayCapacity-1, nil)
 	v := NewVerifier(VerifierConfig{
 		Region: region,
@@ -479,7 +656,7 @@ func TestReplaySetCeilingUnderClockCorrections(t *testing.T) {
 		_, err := v.Verify(ctx, encode(leaderURL))
 		leader <- err
 	}()
-	<-leaderStarted
+	await(t, leaderStarted, "leader to reach CallerOf")
 
 	clock.Store(signed.UnixNano())
 	waiter := make(chan error, 1)
@@ -488,20 +665,15 @@ func TestReplaySetCeilingUnderClockCorrections(t *testing.T) {
 		_, err := v.Verify(waitCtx, header(signed, ReplayCapacity))
 		waiter <- err
 	}()
-	select {
-	case <-waitCtx.waiting:
-		if got := calls.Load(); got != ReplayCapacity {
-			t.Errorf("CallerOf called %d times before the reserved slot cleared", got)
-		}
-	case err := <-waiter:
-		close(releaseLeader)
-		t.Fatalf("pending STS call counted as an accepted signature: %v", err)
+	awaitPending(t, waitCtx, waiter)
+	if got := calls.Load(); got != ReplayCapacity {
+		t.Errorf("CallerOf called %d times before the reserved slot cleared", got)
 	}
-	close(releaseLeader)
-	if err := <-leader; !errors.Is(err, ErrRejected) {
+	releaseCaller()
+	if err := await(t, leader, "leader"); !errors.Is(err, ErrRejected) {
 		t.Fatalf("reserved call = %v, want rejection", err)
 	}
-	if err := <-waiter; err != nil {
+	if err := await(t, waiter, "waiter"); err != nil {
 		t.Fatalf("waiting call did not acquire the slot: %v", err)
 	}
 
@@ -517,10 +689,39 @@ func TestReplaySetCeilingUnderClockCorrections(t *testing.T) {
 type waitObservedContext struct {
 	context.Context
 	waiting chan struct{}
+	resume  <-chan struct{}
 	once    sync.Once
+}
+
+const waitLimit = 5 * time.Second
+
+func await[T any](t *testing.T, ch <-chan T, description string) T {
+	t.Helper()
+	select {
+	case value := <-ch:
+		return value
+	case <-time.After(waitLimit):
+		t.Fatalf("timed out waiting for %s", description)
+		var zero T
+		return zero
+	}
+}
+
+func awaitPending(t *testing.T, ctx *waitObservedContext, result <-chan error) {
+	t.Helper()
+	select {
+	case <-ctx.waiting:
+	case err := <-result:
+		t.Fatalf("waiter returned before the in-flight call settled: %v", err)
+	case <-time.After(waitLimit):
+		t.Fatal("timed out waiting for the verifier to block on the in-flight call")
+	}
 }
 
 func (c *waitObservedContext) Done() <-chan struct{} {
 	c.once.Do(func() { close(c.waiting) })
+	if c.resume != nil {
+		<-c.resume
+	}
 	return c.Context.Done()
 }

@@ -110,7 +110,7 @@ func checkEvent(t *testing.T, e telemetry.Event, want notice, c identity.Caller)
 	}
 }
 
-// R-E00W-BW8K R-E8K7-0AFF R-E9S3-E264 R-EAZZ-RTWT
+// R-E00W-BW8K R-E8K7-0AFF R-E9S3-E264 R-KMZ9-SQCF R-L1M2-DZ8R
 func TestEachEvent(t *testing.T) {
 	caller := identity.Caller{UserID: "caller", RequestID: "request", Email: "private@example.test"}
 	for _, c := range []identity.Caller{{}, caller} {
@@ -158,44 +158,48 @@ func (s *blockedSink) Deliver(ctx context.Context, ev telemetry.Event) error {
 	return s.Capture.Deliver(ctx, ev)
 }
 
-// R-9V58-00PE R-9WD4-DSG3 R-EC7W-5LNI
+// R-9V58-00PE R-9WD4-DSG3 R-L2TY-RQZG
 func TestNoticeQueuesWithoutDelivery(t *testing.T) {
+	const primingEvent, laterEvent = "request.started", "tool.called"
 	for _, n := range example(7) {
 		t.Run(n.name, func(t *testing.T) {
 			sink := &blockedSink{entered: make(chan struct{}), release: make(chan struct{})}
 			w := writer(t, sink)
 			release := sync.OnceFunc(func() { close(sink.release) })
 			defer release()
-			done := make(chan struct{})
-			go func() { n.send(context.Background(), w); close(done) }()
+			w.Emit(context.Background(), primingEvent, nil)
 			select {
 			case <-sink.entered:
 			case <-time.After(2 * time.Second):
-				t.Fatal("delivery never started")
+				t.Fatal("priming delivery never started")
 			}
+			done := make(chan struct{})
+			go func() { n.send(context.Background(), w); close(done) }()
 			select {
 			case <-done:
 			case <-time.After(2 * time.Second):
 				t.Fatal("notice waited for delivery")
 			}
-			w.Emit(context.Background(), "tool.called", nil)
+			w.Emit(context.Background(), laterEvent, nil)
 			release()
 			if err := w.Flush(context.Background()); err != nil {
 				t.Fatal(err)
 			}
 			got := sink.Events()
-			if len(got) != 2 || got[0].Name != n.name || got[1].Name != "tool.called" {
+			if len(got) != 3 || got[0].Name != primingEvent || got[1].Name != n.name || got[2].Name != laterEvent {
 				t.Fatalf("unexpected order %v", got)
 			}
 		})
 	}
 }
 
+// R-KO76-6I34
 func TestConcurrentNotices(t *testing.T) {
 	const callers = 32
 	capture := &telemetry.Capture{}
 	w := writer(t, capture)
 	var wg sync.WaitGroup
+	start := make(chan struct{})
 	want := map[string]notice{}
 	for i := range callers {
 		id := fmt.Sprint(i)
@@ -203,9 +207,13 @@ func TestConcurrentNotices(t *testing.T) {
 		ctx := identity.NewContext(context.Background(), c)
 		for _, n := range notices("tool"+id, "host"+id, "account"+id, "user"+id, id, id, id, id, id, id, id, id, int64(i)) {
 			want[id+"/"+n.name] = n
-			wg.Go(func() { n.send(ctx, w) })
+			wg.Go(func() {
+				<-start
+				n.send(ctx, w)
+			})
 		}
 	}
+	close(start)
 	wg.Wait()
 	if err := w.Flush(context.Background()); err != nil {
 		t.Fatal(err)

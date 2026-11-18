@@ -157,7 +157,7 @@ func TestAddresses(t *testing.T) {
 	}
 }
 
-// R-DMRY-9F8U R-A4XI-WIA1 R-A65F-AA0Q R-S4I5-RN8C
+// R-DMRY-9F8U R-A4XI-WIA1 R-A65F-AA0Q R-S4I5-RN8C R-K8CH-7HG3
 func TestPageNamesAndTimeLayouts(t *testing.T) {
 	const service, minute, second = pages.ServiceName, pages.MinuteLayout, pages.SecondLayout
 	if service != "accounts" || minute != "2006-01-02 15:04" || second != "2006-01-02 15:04:05 UTC" {

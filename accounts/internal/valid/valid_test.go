@@ -118,15 +118,27 @@ func TestSSHKey(t *testing.T) {
 	if err != nil || key.Comment != "" || key.Body != body {
 		t.Fatal(key, err)
 	}
-	raw[14] = '8'
-	wrongType := base64.StdEncoding.EncodeToString(raw)
+}
+
+// R-K74K-TPPE
+func TestRejectedSSHKeys(t *testing.T) {
+	var raw [51]byte
+	binary.BigEndian.PutUint32(raw[:4], 11)
+	copy(raw[4:], "ssh-ed25519")
+	binary.BigEndian.PutUint32(raw[15:19], 32)
+	copy(raw[48:], []byte{0xfb, 0xff, 0xff})
+	body := base64.StdEncoding.EncodeToString(raw[:])
+	wrong := raw
+	wrong[14] = '8'
+	wrongType := base64.StdEncoding.EncodeToString(wrong[:])
 	for _, input := range []string{
-		"", "   ", "ssh-ed25519", "ssh-rsa " + body, "sk-ssh-ed25519@openssh.com " + body,
+		"", "   ", "ssh-ed25519", "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAAAAwECAw==", "sk-ssh-ed25519@openssh.com " + body,
 		"no-pty ssh-ed25519 " + body, "ssh-ed25519 " + body[:len(body)-1],
+		"ssh-ed25519 " + strings.Replace(body, "+", "-", 1), "ssh-ed25519 " + strings.Replace(body, "/", "_", 1),
 		"ssh-ed25519 " + wrongType, "ssh-ed25519 " + base64.StdEncoding.EncodeToString(raw[:50]),
-		"ssh-ed25519 " + base64.StdEncoding.EncodeToString(append(raw, 2)), "ssh-ed25519 " + body + " \xff",
+		"ssh-ed25519 " + base64.StdEncoding.EncodeToString(append(raw[:], 2)), "ssh-ed25519 " + body + " \xff",
 		"ssh-ed25519 " + body + " \rcomment", "ssh-ed25519 " + body + "\nssh-ed25519 " + body,
-		"ssh-ed25519 " + body + " " + strings.Repeat("x", int(maxKeyBytes)-len(body)-12),
+		"ssh-ed25519 " + body + " " + strings.Repeat("x", valid.MaxKeyBytes-len(body)-12),
 	} {
 		key, err := valid.ParseKey(input)
 		if key != (valid.Key{}) || !errors.Is(err, valid.ErrKey) {

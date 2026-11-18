@@ -229,33 +229,66 @@ func TestPersistenceAndFailedWrite(t *testing.T) {
 	equal(t, state.State, cloud.InstanceStopping)
 }
 
-func TestLaunchContractAndTokens(t *testing.T) {
-	// R-UMVO-B7NH
+func TestLaunchValidation(t *testing.T) {
+	// R-KI3O-9NDN
 	f := setup(t)
 	ctx := t.Context()
-	for name, edit := range map[string]func(*cloud.Launch){
-		"template":   func(l *cloud.Launch) { l.Template = "other" },
-		"profile":    func(l *cloud.Launch) { l.InstanceProfile = "other" },
-		"type":       func(l *cloud.Launch) { l.Type = "r8g.large" },
-		"no kind":    func(l *cloud.Launch) { delete(l.Tags, cloud.TagKind) },
-		"extra kind": func(l *cloud.Launch) { l.InstanceTags[cloud.TagKind] = cloud.KindHost },
-		"space":      func(l *cloud.Launch) { l.Tags["Space"] = "" },
-		"domain":     func(l *cloud.Launch) { l.InstanceTags["Domain"] = "" },
+	valid := f.launch()
+	valid.ClientToken = "used"
+	original, err := f.c.RunInstance(ctx, valid)
+	ok(t, err)
+	for _, test := range []struct {
+		name string
+		code string
+		edit func(*cloud.Launch)
+	}{
+		{name: "template", code: "UnauthorizedOperation", edit: func(l *cloud.Launch) { l.Template = "other" }},
+		{name: "profile", code: "UnauthorizedOperation", edit: func(l *cloud.Launch) { l.InstanceProfile = "other" }},
+		{name: "type", code: cloud.CodeTagContract, edit: func(l *cloud.Launch) { l.Type = "r8g.large" }},
+		{name: "no kind", code: cloud.CodeTagContract, edit: func(l *cloud.Launch) { delete(l.Tags, cloud.TagKind) }},
+		{name: "extra kind", code: cloud.CodeTagContract, edit: func(l *cloud.Launch) { l.InstanceTags[cloud.TagKind] = "" }},
+		{name: "shared space", code: cloud.CodeTagContract, edit: func(l *cloud.Launch) { l.Tags["Space"] = "" }},
+		{name: "shared domain", code: cloud.CodeTagContract, edit: func(l *cloud.Launch) { l.Tags["Domain"] = "" }},
+		{name: "instance space", code: cloud.CodeTagContract, edit: func(l *cloud.Launch) { l.InstanceTags["Space"] = "" }},
+		{name: "instance domain", code: cloud.CodeTagContract, edit: func(l *cloud.Launch) { l.InstanceTags["Domain"] = "" }},
+		{name: "bad template and type", code: "UnauthorizedOperation", edit: func(l *cloud.Launch) {
+			l.Template = "other"
+			l.Type = "r8g.large"
+		}},
 	} {
-		t.Run(name, func(t *testing.T) {
-			l := f.launch()
-			edit(&l)
-			_, err := f.c.RunInstance(ctx, l)
-			code := cloud.CodeTagContract
-			if name == "template" || name == "profile" {
-				code = "UnauthorizedOperation"
+		t.Run(test.name, func(t *testing.T) {
+			for _, token := range []string{"unused", valid.ClientToken} {
+				l := f.launch()
+				l.ClientToken = token
+				test.edit(&l)
+				_, err := f.c.RunInstance(ctx, l)
+				checkEC2(t, err, "RunInstances", "", test.code, cloud.ClassRefused)
 			}
-			checkEC2(t, err, "RunInstances", "", code, cloud.ClassRefused)
 		})
 	}
-	n := 0
-	ok(t, f.c.FindInstances(ctx, cloud.Tags{cloud.TagKind: cloud.KindHost}, func(page []cloud.Instance) bool { n += len(page); return true }))
-	equal(t, n, 0)
+	var instances []cloud.Instance
+	ok(t, f.c.FindInstances(ctx, cloud.Tags{"X": valid.InstanceTags["X"]}, func(page []cloud.Instance) bool {
+		instances = append(instances, page...)
+		return true
+	}))
+	equal(t, instances, []cloud.Instance{original})
+	var volumeIDs []string
+	ok(t, f.c.FindVolumes(ctx, cloud.Tags{"X": valid.Tags["X"]}, func(page []cloud.Volume) bool {
+		for _, v := range page {
+			volumeIDs = append(volumeIDs, v.ID)
+		}
+		return true
+	}))
+	equal(t, volumeIDs, []string{original.RootVolume})
+	again, err := f.c.RunInstance(ctx, valid)
+	ok(t, err)
+	equal(t, again, original)
+}
+
+func TestLaunchContractAndTokens(t *testing.T) {
+	// R-UMVO-B7NH R-KJBK-NF4C
+	f := setup(t)
+	ctx := t.Context()
 	l := f.launch()
 	l.ClientToken = "token"
 	i, err := f.c.RunInstance(ctx, l)
@@ -276,6 +309,9 @@ func TestLaunchContractAndTokens(t *testing.T) {
 	equal(t, again.ID, i.ID)
 	reopened, err := memory.New(f.cfg)
 	ok(t, err)
+	saved, err := reopened.RunInstance(ctx, l)
+	ok(t, err)
+	equal(t, saved, again)
 	for _, edit := range []func(*cloud.Launch){
 		func(l *cloud.Launch) { l.Type = "m7g.large" },
 		func(l *cloud.Launch) { l.RootGB++ },
@@ -288,6 +324,37 @@ func TestLaunchContractAndTokens(t *testing.T) {
 		_, err := reopened.RunInstance(ctx, changed)
 		checkEC2(t, err, "RunInstances", "", "IdempotentParameterMismatch", cloud.ClassMismatch)
 	}
+	for _, edit := range []func(*settings.Hosts){
+		func(hosts *settings.Hosts) { hosts.LaunchTemplate += "-changed" },
+		func(hosts *settings.Hosts) { hosts.InstanceProfile += "-changed" },
+	} {
+		cfg := f.cfg
+		edit(&cfg.Hosts)
+		reopened, err := memory.New(cfg)
+		ok(t, err)
+		_, err = reopened.RunInstance(ctx, l)
+		// R-KI3O-9NDN: The old parameters match the persisted token but are
+		// unauthorized under the current configuration.
+		checkEC2(t, err, "RunInstances", "", "UnauthorizedOperation", cloud.ClassRefused)
+		changed := l
+		changed.Template, changed.InstanceProfile = cfg.Hosts.LaunchTemplate, cfg.Hosts.InstanceProfile
+		_, err = reopened.RunInstance(ctx, changed)
+		checkEC2(t, err, "RunInstances", "", "IdempotentParameterMismatch", cloud.ClassMismatch)
+	}
+	var found []cloud.Instance
+	persisted, err := memory.New(f.cfg)
+	ok(t, err)
+	ok(t, persisted.FindInstances(ctx, cloud.Tags{cloud.TagKind: cloud.KindHost}, func(page []cloud.Instance) bool {
+		found = append(found, page...)
+		return true
+	}))
+	equal(t, found, []cloud.Instance{again})
+	var roots []cloud.Volume
+	ok(t, persisted.FindVolumes(ctx, l.Tags, func(page []cloud.Volume) bool {
+		roots = append(roots, page...)
+		return true
+	}))
+	equal(t, roots, []cloud.Volume{root})
 }
 
 func TestLifecycleAndTerminatedResources(t *testing.T) {
@@ -570,29 +637,40 @@ func TestAddresses(t *testing.T) {
 }
 
 func TestVolumeContractAndAttachments(t *testing.T) {
-	// R-UZ2O-4X2F
+	// R-UZ2O-4X2F R-KKJH-16V1
 	f := setup(t)
 	ctx := t.Context()
-	for _, tags := range []cloud.Tags{nil, {cloud.TagKind: cloud.KindHostData, "Space": ""}, {cloud.TagKind: cloud.KindHostData, "Domain": ""}} {
-		spec := f.spec()
-		spec.Tags = tags
-		_, err := f.c.CreateVolume(ctx, spec)
-		checkEC2(t, err, "CreateVolume", "", cloud.CodeTagContract, cloud.ClassRefused)
-	}
 	spec := f.spec()
 	spec.ClientToken = "volume-token"
+	spec.Tags["test"] = "original"
 	v, err := f.c.CreateVolume(ctx, spec)
 	ok(t, err)
 	equal(t, v.State, cloud.VolumeCreating)
 	equal(t, v.SizeGB, spec.SizeGB)
 	equal(t, v.AZ, spec.AZ)
 	equal(t, v.Tags, spec.Tags)
+	same, err := f.c.CreateVolume(ctx, spec)
+	ok(t, err)
+	equal(t, same, v)
 	i, other := f.instance(t), f.instance(t)
 	checkEC2(t, f.c.AttachVolume(ctx, v.ID, i.ID, "/dev/sdy"), "AttachVolume", v.ID, "IncorrectState", cloud.ClassTransient)
 	f.now = f.now.Add(memory.VolumeDelay)
 	checkEC2(t, f.c.AttachVolume(ctx, v.ID, i.ID, "/dev/sdy"), "AttachVolume", v.ID, "IncorrectInstanceState", cloud.ClassTransient)
 	reopened, err := memory.New(f.cfg)
 	ok(t, err)
+	for _, tags := range []cloud.Tags{
+		{"test": "original"},
+		{cloud.TagKind: cloud.KindHost, "test": "original"},
+		{cloud.TagKind: cloud.KindHostData, "test": "original", "Space": ""},
+		{cloud.TagKind: cloud.KindHostData, "test": "original", "Domain": ""},
+	} {
+		for _, token := range []string{"unused", spec.ClientToken} {
+			changed := spec
+			changed.Tags, changed.ClientToken = tags, token
+			_, err := reopened.CreateVolume(ctx, changed)
+			checkEC2(t, err, "CreateVolume", "", cloud.CodeTagContract, cloud.ClassRefused)
+		}
+	}
 	again, err := reopened.CreateVolume(ctx, spec)
 	ok(t, err)
 	equal(t, again.ID, v.ID)
@@ -602,12 +680,18 @@ func TestVolumeContractAndAttachments(t *testing.T) {
 		func(spec *cloud.VolumeSpec) { spec.SizeGB++ },
 		func(spec *cloud.VolumeSpec) { spec.Tags["test"] = "new" },
 	} {
-		changed := f.spec()
-		changed.ClientToken = spec.ClientToken
+		changed := spec
+		changed.Tags = maps.Clone(spec.Tags)
 		edit(&changed)
 		_, err := reopened.CreateVolume(ctx, changed)
 		checkEC2(t, err, "CreateVolume", "", "IdempotentParameterMismatch", cloud.ClassMismatch)
 	}
+	var found []cloud.Volume
+	ok(t, reopened.FindVolumes(ctx, cloud.Tags{"test": "original"}, func(page []cloud.Volume) bool {
+		found = append(found, page...)
+		return true
+	}))
+	equal(t, found, []cloud.Volume{again})
 	wrong := f.spec()
 	wrong.AZ = "other-zone"
 	foreign, err := reopened.CreateVolume(ctx, wrong)

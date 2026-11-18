@@ -38,6 +38,12 @@ func (c *Cloud) RunInstance(_ context.Context, l cloud.Launch) (cloud.Instance, 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	op := ec2("RunInstances", "")
+	if l.Template != c.cfg.Hosts.LaunchTemplate || l.InstanceProfile != c.cfg.Hosts.InstanceProfile {
+		return cloud.Instance{}, op.reject("UnauthorizedOperation")
+	}
+	if !allowedType(l.Type) || l.Tags[cloud.TagKind] != cloud.KindHost || hasKind(l.InstanceTags) || forbiddenTags(l.Tags) || forbiddenTags(l.InstanceTags) {
+		return cloud.Instance{}, op.reject(cloud.CodeTagContract)
+	}
 	now := c.cfg.Now()
 	if t, ok := c.state.LaunchTokens[l.ClientToken]; ok {
 		if !sameLaunch(l, t.Spec) {
@@ -47,13 +53,6 @@ func (c *Cloud) RunInstance(_ context.Context, l cloud.Launch) (cloud.Instance, 
 		result.Tags = maps.Clone(result.Tags)
 		return result, nil
 	}
-	if l.Template != c.cfg.Hosts.LaunchTemplate || l.InstanceProfile != c.cfg.Hosts.InstanceProfile {
-		return cloud.Instance{}, op.reject("UnauthorizedOperation")
-	}
-	if !allowedType(l.Type) || l.Tags[cloud.TagKind] != cloud.KindHost || hasKind(l.InstanceTags) || forbiddenTags(l.Tags) || forbiddenTags(l.InstanceTags) {
-		return cloud.Instance{}, op.reject(cloud.CodeTagContract)
-	}
-
 	if err := checkMutation(op, []cloud.Tags{l.Tags, l.InstanceTags}, l.Template, l.InstanceProfile, l.Type, l.ClientToken, c.cfg.Hosts.Region); err != nil {
 		return cloud.Instance{}, err
 	}

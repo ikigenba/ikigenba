@@ -89,32 +89,34 @@ func TestAccountLifecycle(t *testing.T) {
 	eq(t, value(t, result(s.Host(ctx, b.Name))).Version, bc.RemovedVersion)
 	eq(t, value(t, result(s.AccountsOn(ctx, b.Name))), []store.Account{})
 
-	// Host deletion completes both the current and the failed unplace.
+	// R-K3GV-OEHB: host deletion completes both the current and the failed unplace.
 	bc, _ = place(t, s, bc.Slug, b.Name)
 	bc, old := remove(t, s, bc.Slug)
 	checkErr(t, s.Fail(ctx, old.ID, "failed removal"), nil)
 	bc, current := remove(t, s, bc.Slug)
+	second, _ := place(t, s, "delta", b.Name)
+	_, secondRemoval := remove(t, s, second.Slug)
 	b = value(t, result(s.Host(ctx, b.Name)))
 	checkErr(t, s.Finish(ctx, b.Operation, store.Update{}), nil)
 	_, del := start(t, s, b.Name, store.OpDelete, store.Target{})
 	_, _, err = s.PlaceAccount(ctx, bc.Slug, b.Name, caller)
 	checkErr(t, err, store.ErrHostGone)
-	finished := value(t, result(store.FinishWithRemoved(ctx, s, del.ID, store.Update{})))
-	current.Status, current.Finished = store.OpDone, now.UTC().Truncate(time.Second)
-	eq(t, finished, []store.Operation{current})
+	*now = now.Add(time.Minute)
+	checkErr(t, s.Finish(ctx, del.ID, store.Update{}), nil)
 	_, _, err = s.PlaceAccount(ctx, bc.Slug, b.Name, caller)
 	checkErr(t, err, store.ErrHostGone)
-	_, err = s.Account(ctx, bc.Slug)
-	checkErr(t, err, store.ErrNotFound)
-	as, err := s.AccountsOn(ctx, b.Name)
-	checkErr(t, err, store.ErrNotFound)
-	eq(t, len(as), 0)
-	for _, id := range []string{old.ID, current.ID} {
+	for _, slug := range []string{bc.Slug, second.Slug} {
+		_, err = s.Account(ctx, slug)
+		checkErr(t, err, store.ErrNotFound)
+	}
+	eq(t, value(t, result(s.ListAccounts(ctx, "", 10))), []store.Account{ac, a})
+	for _, id := range []string{old.ID, current.ID, secondRemoval.ID} {
 		op := value(t, result(s.Operation(ctx, id)))
 		eq(t, op.Status, store.OpDone)
 		eq(t, op.Finished, now.UTC().Truncate(time.Second))
 	}
 	place(t, s, bc.Slug, h.Name)
+	place(t, s, second.Slug, h.Name)
 	checkErr(t, s.Fail(ctx, c.ID, "host failure"), nil)
 	place(t, s, "on-failed-host", h.Name)
 }

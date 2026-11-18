@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -56,7 +59,7 @@ func fixtureKey(comment string) string {
 }
 
 func TestApplyLockBeforeAnyHardeningFailure(t *testing.T) {
-	// R-BV89-YUHN
+	// R-BV89-YUHN R-KXYD-8O0O
 	f := newHardeningFixture(t)
 	const locked = "shell:x:990:alice,bob,zoe\n"
 	f.put("/etc/group", locked, 0o644)
@@ -67,6 +70,7 @@ func TestApplyLockBeforeAnyHardeningFailure(t *testing.T) {
 	for _, unit := range []string{alice, bob, zoe} {
 		f.put(unitDir+unit, "fixture", 0o644)
 	}
+	f.put(unitDir+"acct-outer-inner-zoe.slice", "not a person slice", 0o644)
 	f.put(linux.KeysDir+"/zoe", "old keys", 0o644)
 	f.put("/home/zoe/keep", "old home", 0o640)
 	f.answer = func(call string) (linux.Result, bool) {
@@ -92,7 +96,7 @@ func TestApplyLockBeforeAnyHardeningFailure(t *testing.T) {
 }
 
 func TestApplyAccountsAndUsers(t *testing.T) {
-	// R-BQSP-OL9R R-CM22-DSSX R-0FNF-5G1G R-CPPR-J410 R-CQXN-WVRP R-0GVB-J7S5 R-CTDG-OF93 R-82VL-4Z30 R-CX15-TQH6 R-0JB4-AR9J R-SM70-07MK
+	// R-BQSP-OL9R R-CM22-DSSX R-0FNF-5G1G R-CPPR-J410 R-CQXN-WVRP R-KZ69-MFRD R-CTDG-OF93 R-82VL-4Z30 R-CX15-TQH6 R-0JB4-AR9J R-SM70-07MK
 	f := newHardeningFixture(t)
 	f.put("/etc/group", "shell:x:990:retained\nwillow:x:21000:\nperry:x:21001:maia\nmaia:x:21003:\nwheel:x:10:maia\n", 0o644)
 	f.put("/etc/passwd", "perry:x:21001:21001::/srv/perry:/usr/sbin/nologin\nwillow:x:21000:21000::/srv/willow:/usr/sbin/nologin\nmaia:x:21003:21003::/home/maia:/bin/bash\n", 0o644)
@@ -205,31 +209,233 @@ func TestApplyRefusesIdentityMismatch(t *testing.T) {
 	}
 }
 
-func TestApplyDoesNotLockAnIdentityMismatch(t *testing.T) {
-	// R-0GVB-J7S5
-	f := newHardeningFixture(t)
-	f.put("/etc/group", "shell:x:990:alice\ncitron:x:20000:alice\nalice:x:20002:\n", 0o644)
-	f.put("/etc/passwd", "alice:x:20002:20002::/home/alice:/bin/bash\n", 0o644)
-	f.put("/etc/shadow", "alice:!:1::::::\n", 0o600)
-	f.put("/etc/systemd/system/"+linux.PersonSlice("citron", "alice"), "existing", 0o644)
-	err := f.host.Apply(t.Context(), protocol.DesiredState{
-		DataVolume: "vol-12345678",
-		Accounts:   []protocol.Account{{Slug: "citron", GID: 20000, State: protocol.AccountActive}},
-		Users:      []protocol.User{{Name: "alice", Account: "citron", UID: 20001, State: protocol.UserLocked}},
-	})
-	if !errors.Is(err, machine.ErrIdentity) {
-		t.Fatalf("conflicting identity Apply = %v, want ErrIdentity", err)
+func TestApplyLocksBeforeRefusingConflictingUserIdentity(t *testing.T) {
+	// R-KZ69-MFRD R-KXYD-8O0O
+	const groups = "shell:x:990:alice\ncitron:x:20000:alice\n"
+	const group = "alice:x:20001:\n"
+	const login = "alice:x:20001:20001::/home/alice:/bin/bash\n"
+	for _, tc := range []struct{ name, group, passwd string }{
+		{"private group id", "alice:x:20002:\n", login},
+		{"account uid", group, "alice:x:20002:20001::/home/alice:/bin/bash\n"},
+		{"account primary gid", group, "alice:x:20001:20002::/home/alice:/bin/bash\n"},
+		{"conflicting group name", "other:x:20001:\n", login},
+		{"conflicting account name", group, login + "other:x:20001:20002::/home/other:/bin/bash\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newHardeningFixture(t)
+			f.put("/etc/group", groups+tc.group, 0o644)
+			f.put("/etc/passwd", tc.passwd, 0o644)
+			f.put("/etc/shadow", "alice:!:1::::::\n", 0o600)
+			f.put("/srv/citron/.git/config", "existing", 0o644)
+			unit := linux.PersonSlice("citron", "alice")
+			f.put("/etc/systemd/system/"+unit, "existing", 0o644)
+			err := f.host.Apply(t.Context(), protocol.DesiredState{
+				DataVolume: "vol-12345678",
+				Accounts:   []protocol.Account{{Slug: "citron", GID: 20000, State: protocol.AccountActive}},
+				Users:      []protocol.User{{Name: "alice", Account: "citron", UID: 20001, State: protocol.UserLocked}},
+			})
+			if !errors.Is(err, machine.ErrIdentity) {
+				t.Fatalf("conflicting identity Apply = %v, want ErrIdentity", err)
+			}
+			want := []string{"usermod --expiredate 1 alice", "systemctl is-active " + unit, "systemctl stop " + unit, "rpm -q nftables"}
+			if len(f.commands) < len(want) || !slices.Equal(f.commands[:len(want)], want) {
+				t.Fatalf("identity conflict did not allow the lockdown first: %v", f.commands)
+			}
+			f.forbidCalls("groupadd --gid 20001", "useradd --uid 20001", "usermod --append", "usermod --expiredate  alice")
+			f.expectAbsent(linux.KeysDir + "/alice")
+		})
 	}
-	f.expectCalls()
+}
+
+func TestApplyReassignsDeletedUsersFiles(t *testing.T) {
+	// R-KT2R-PL1W
+	f := newHardeningFixture(t)
+	f.put("/srv/named/project/file", "keep", 0o600)
+	f.put("/srv/foreign/project", "keep", 0o600)
+	f.put("/srv/mismatch/project", "keep", 0o600)
+	f.put("/outside/file", "keep", 0o600)
+	if err := os.Symlink(f.path("/outside"), f.path("/srv/named/link")); err != nil {
+		t.Fatal(err)
+	}
+	stat, ok := f.stat("/srv/named/project/file").Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Fatal("cannot read the temporary files' owner")
+	}
+	uid := int64(stat.Uid)
+	const namedLogins = "named:x:25001:25001::/srv/named:/usr/sbin/nologin\n" +
+		"foreign:x:25002:25002::/srv/foreign:/usr/sbin/nologin\n" +
+		"mismatch:x:25003:25003::/home/mismatch:/usr/sbin/nologin\n"
+	f.put("/etc/passwd", fmt.Sprintf("retired:x:%d:%d::/home/retired:/bin/bash\n", uid, uid)+namedLogins, 0o644)
+	f.put("/etc/group", fmt.Sprintf("shell:x:990:retired\nretired:x:%d:\nabsent:x:25004:\n", uid), 0o644)
+	f.put("/etc/shadow", "retired:!:1::::::\n", 0o600)
+	const unitDir = "/etc/systemd/system/"
+	retired := linux.PersonSlice("named", "retired")
+	absent := linux.PersonSlice("named", "absent")
+	f.put(unitDir+retired, "retired", 0o644)
+	f.put(unitDir+absent, "absent", 0o644)
+	f.put(linux.KeysDir+"/retired", "retired", 0o644)
+	f.put(linux.KeysDir+"/absent", "absent", 0o644)
+	owners := map[string]string{}
+	for file, owner := range map[string]string{
+		"/srv/named": "named", "/srv/named/project": "named", "/srv/named/project/file": "named", "/srv/named/link": "named",
+		"/srv/foreign": "root", "/srv/foreign/project": "root", "/srv/mismatch": "root", "/srv/mismatch/project": "root",
+	} {
+		owners[f.path(file)] = owner
+	}
+	for i := range linux.ChownBatch {
+		file := fmt.Sprintf("/srv/named/project/file-%d", i)
+		f.put(file, "keep", 0o600)
+		owners[f.path(file)] = "named"
+	}
+	var got []string
+	chowned := 0
+	f.observe = func(c linux.Command) {
+		if c.Name != "chown" || !slices.Contains(c.Args, "--") {
+			return
+		}
+		if len(c.Args) < 4 || c.Args[0] != "--no-dereference" || c.Args[2] != "--" {
+			t.Fatalf("unexpected file reassignment: %+v", c)
+		}
+		if chowned == 0 {
+			got = append(got, "chown")
+		}
+		f.expectFile(linux.KeysDir+"/retired", "retired", 0o644)
+		owner, batch := c.Args[1], c.Args[3:]
+		if len(batch) > linux.ChownBatch {
+			t.Fatalf("chown batch has %d paths", len(batch))
+		}
+		for _, file := range batch {
+			if owners[file] != owner {
+				t.Fatalf("ownership of %s reassigned to %q, want %q", file, owner, owners[file])
+			}
+			delete(owners, file)
+			chowned++
+		}
+	}
+	f.answer = func(call string) (linux.Result, bool) {
+		switch call {
+		case "usermod --expiredate 1 retired", "systemctl is-active " + retired, "systemctl stop " + retired, "groupdel retired":
+			got = append(got, call)
+		case "userdel --remove retired":
+			f.expectAbsent(linux.KeysDir + "/retired")
+			got = append(got, call)
+			f.put("/etc/passwd", namedLogins, 0o644)
+		}
+		return linux.Result{}, false
+	}
+	f.apply(protocol.DesiredState{
+		DataVolume: "vol-12345678",
+		Accounts: []protocol.Account{
+			{Slug: "named", GID: 25001, State: protocol.AccountRemoved},
+			{Slug: "mismatch", GID: 25003, State: protocol.AccountRemoved},
+		},
+		Users: []protocol.User{
+			{Name: "retired", Account: "named", UID: uid, State: protocol.UserDeleted},
+			{Name: "absent", Account: "named", UID: 25004, State: protocol.UserDeleted},
+		},
+	})
+	want := []string{"usermod --expiredate 1 retired", "systemctl is-active " + retired, "systemctl stop " + retired, "chown", "userdel --remove retired", "groupdel retired"}
+	if !slices.Equal(got, want) || len(owners) != 0 || chowned <= linux.ChownBatch {
+		t.Fatalf("deletion steps = %v, want %v, reassigned %d paths, missing paths %v", got, want, chowned, owners)
+	}
+	f.expectAbsent(linux.KeysDir + "/absent")
+	f.expectAbsent(unitDir + retired)
+	f.expectAbsent(unitDir + absent)
+	f.forbidCalls("userdel foreign", "userdel --remove foreign", "groupdel foreign", "userdel --remove absent", "groupdel absent")
+}
+
+func TestApplyLeavesGroupAlreadyRemovedByUserdel(t *testing.T) {
+	// R-KT2R-PL1W
+	f := newHardeningFixture(t)
+	f.put("/srv/unrelated/file", "keep", 0o600)
+	fileOwner := f.stat("/srv/unrelated/file").Sys().(*syscall.Stat_t).Uid
+	uid := int64(fileOwner) + 1000
+	f.put("/etc/passwd", fmt.Sprintf("retired:x:%d:%d::/home/retired:/bin/bash\n", uid, uid), 0o644)
+	f.put("/etc/group", fmt.Sprintf("shell:x:990:retired\nretired:x:%d:\n", uid), 0o644)
+	f.put("/etc/shadow", "retired:!:1:::::1:\n", 0o600)
+	f.put(linux.KeysDir+"/retired", "retired", 0o644)
+	f.answer = func(call string) (linux.Result, bool) {
+		if call == "userdel --remove retired" {
+			f.put("/etc/passwd", "", 0o644)
+			f.put("/etc/group", "shell:x:990:\n", 0o644)
+		}
+		return linux.Result{}, false
+	}
+	f.apply(protocol.DesiredState{
+		DataVolume: "vol-12345678",
+		Users:      []protocol.User{{Name: "retired", Account: "pear", UID: uid, State: protocol.UserDeleted}},
+	})
+	if !slices.Contains(f.commands, "userdel --remove retired") {
+		t.Fatal("did not run userdel")
+	}
+	f.forbidCalls("groupdel retired", "chown --no-dereference root -- ")
+	f.expectAbsent(linux.KeysDir + "/retired")
+}
+
+func TestApplySecuresUnlistedUsersKeysAndPreservesOtherFiles(t *testing.T) {
+	// R-KVIK-H4JA R-KWQG-UW9Z R-KXYD-8O0O
+	f := newHardeningFixture(t)
+	const passwd = "retained:x:25001:25001::/home/retained:/bin/bash\nforeign:x:25002:25002::/srv/foreign:/usr/sbin/nologin\n"
+	const group = "shell:x:990:retained\nforeign:x:25002:\nretained:x:25001:\n"
+	f.put("/etc/passwd", passwd, 0o644)
+	f.put("/etc/group", group, 0o644)
+	f.put("/etc/shadow", "retained:!:1::::::\n", 0o600)
+	unit := linux.PersonSlice("foreign", "retained")
+	const unitDir = "/etc/systemd/system/"
+	f.put(unitDir+unit, "unlisted", 0o666)
+	f.put("/home/retained/file", "keep", 0o660)
+	f.put("/srv/foreign/file", "keep", 0o660)
+	f.put("/etc/accountsd.env", "keep", 0o662)
+	f.put(linux.KeysDir+"/retained", "old key bytes", 0o676)
+	keyBefore := f.stat(linux.KeysDir + "/retained")
+	f.put("/outside/keep", "keep", 0o666)
+	const linkedKey = linux.KeysDir + "/linked"
+	if err := os.Symlink(f.path("/outside/keep"), f.path(linkedKey)); err != nil {
+		t.Fatal(err)
+	}
+	keyLink, err := os.Lstat(f.path(linkedKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.apply(protocol.DesiredState{DataVolume: "vol-12345678"})
+	for _, path := range []string{
+		linux.DaemonPath, "/etc/accountsd.env", linux.SessionHelper, linux.HostKeyDir,
+		filepath.Join(linux.HostKeyDir, "ssh_host_ed25519_key"), filepath.Join(linux.HostKeyDir, "ssh_host_ed25519_key.pub"),
+		linux.KeysDir, linux.KeysDir + "/retained", linkedKey, "/etc/pam.d/sshd", unitDir + linux.PoolSlice,
+	} {
+		if !slices.Contains(f.commands, "chown --no-dereference root:root "+f.path(path)) {
+			t.Errorf("root ownership was not requested for %s", path)
+		}
+	}
+	if !slices.Contains(f.commands, "usermod --expiredate 1 retained") || !slices.Contains(f.commands, "systemctl stop "+unit) {
+		t.Fatalf("unlisted shell member was not locked down: %v", f.commands)
+	}
+	f.forbidCalls("groupdel", "userdel", "chown retained", "chown foreign", "chown --no-dereference foreign", "chown --no-dereference retained")
+	f.expectFile("/etc/passwd", passwd, 0o644)
+	f.expectFile("/etc/group", group, 0o644)
+	f.expectFile(unitDir+unit, "unlisted", 0o666)
+	f.expectFile("/home/retained/file", "keep", 0o660)
+	f.expectFile("/srv/foreign/file", "keep", 0o660)
+	f.expectFile("/etc/accountsd.env", "keep", 0o640)
+	f.expectFile(linux.KeysDir+"/retained", "old key bytes", 0o654)
+	assertUnchanged(t, f.path(linux.KeysDir+"/retained"), keyBefore)
+	f.expectFile("/outside/keep", "keep", 0o666)
+	linkAfter, err := os.Lstat(f.path(linkedKey))
+	if err != nil || !os.SameFile(keyLink, linkAfter) || keyLink.Mode() != linkAfter.Mode() {
+		t.Fatalf("key symlink changed: %v", err)
+	}
 }
 
 func TestApplySlicesAndSession(t *testing.T) {
-	// R-CJM9-M9BJ R-SJR7-8O56 R-0D7M-DWK2 R-0EFI-ROAR R-BU0D-L2QY
+	// R-CJM9-M9BJ R-LDT2-7ONP R-0D7M-DWK2 R-0EFI-ROAR R-BU0D-L2QY
 	f := newHardeningFixture(t)
 	const unitDir = "/etc/systemd/system/"
 	const pamFile = "/etc/pam.d/sshd"
-	const initialPAM = "session optional pam_systemd.so\n# an original line\n"
-	f.put(pamFile, initialPAM, 0o644)
+	const preface = "# preface\r\nsession optional pam_succeed_if.so quiet user != root\n"
+	const directSystemd = "\tsession optional pam_systemd.so\n"
+	const absoluteSystemd = "-session [success=ok default=ignore] /usr/lib64/security/pam_systemd.so\r\n"
+	lastLine := "# " + strings.Repeat("long comment ", 400)
+	f.put(pamFile, preface+directSystemd+absoluteSystemd+"\n"+lastLine, 0o666)
 	f.put("/etc/group", "shell:x:990:alice\ncit-ron:x:20000:alice\nalice:x:20001:\n", 0o644)
 	f.put("/etc/passwd", "cit-ron:x:20000:20000::/srv/cit-ron:/usr/sbin/nologin\nalice:x:20001:20001::/home/alice:/bin/bash\n", 0o644)
 	f.put("/srv/cit-ron/.git/config", "data", 0o600)
@@ -258,22 +464,39 @@ func TestApplySlicesAndSession(t *testing.T) {
 	if target, err := os.Readlink(f.path(linux.SessionHelper)); err != nil || target != linux.DaemonPath {
 		t.Fatalf("helper link = %q, %v", target, err)
 	}
-	pam, err := os.ReadFile(f.path(pamFile))
-	if err != nil || !strings.Contains(string(pam), initialPAM) {
-		t.Fatalf("PAM config lost the original lines: %s, %v", pam, err)
+	linkBefore, err := os.Lstat(f.path(linux.SessionHelper))
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, word := range []string{"ingroup " + linux.ShellGroup, "session required pam_exec.so", linux.SessionHelper} {
-		if !strings.Contains(string(pam), word) {
-			t.Fatalf("PAM config missing %q", word)
-		}
-	}
+	const skipSystemd = "session [success=1 default=ignore] pam_succeed_if.so quiet user ingroup " + linux.ShellGroup + "\n"
+	const helper = "session [success=ignore default=1] pam_succeed_if.so quiet user ingroup " + linux.ShellGroup + "\n" +
+		"session required pam_exec.so type=open_session " + linux.SessionHelper + "\n"
+	wantPAM := preface + skipSystemd + directSystemd + skipSystemd + absoluteSystemd + "\n" + helper + lastLine
+	f.expectFile(pamFile, wantPAM, 0o644)
 	before, err := os.Stat(f.path(pamFile))
 	if err != nil {
 		t.Fatal(err)
 	}
 	f.commands = nil
+	f.observe = func(c linux.Command) {
+		if filepath.Base(c.Name) == linux.SessionName {
+			t.Fatalf("repeated apply ran the session helper: %+v", c)
+		}
+		for _, arg := range c.Args {
+			for _, path := range []string{pamFile, linux.SessionHelper} {
+				if strings.Contains(arg, path) && (c.Name != "chown" || !slices.Equal(c.Args, []string{"--no-dereference", "root:root", f.path(path)})) {
+					t.Fatalf("repeated apply issued a placement command: %+v", c)
+				}
+			}
+		}
+	}
 	f.apply(active)
+	f.expectFile(pamFile, wantPAM, 0o644)
 	assertUnchanged(t, f.path(pamFile), before)
+	linkAfter, err := os.Lstat(f.path(linux.SessionHelper))
+	if err != nil || !os.SameFile(linkBefore, linkAfter) {
+		t.Fatalf("rewrote session helper: %v", err)
+	}
 	f.forbidCalls("systemctl daemon-reload")
 	var calls []linux.Command
 	code := 0

@@ -3,6 +3,7 @@ package cli_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -24,12 +25,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/accounts"
 	"github.com/ikigenba/ikigenba/accounts/internal/cli"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 	"github.com/ikigenba/ikigenba/accounts/internal/pages"
 	"github.com/ikigenba/ikigenba/accounts/internal/server"
 	"github.com/ikigenba/ikigenba/accounts/internal/tools"
 	"github.com/ikigenba/ikigenba/accounts/internal/valid"
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
@@ -128,6 +131,7 @@ type integrationOptions struct {
 	sink                                telemetry.Sink
 	nilSinks, nilUnset                  bool
 	noSandbox                           bool
+	unsetServices                       bool
 	emptyDir                            bool
 	env                                 map[string]string
 	mcp                                 func(*telemetry.Writer) *mcp.Server
@@ -203,6 +207,9 @@ func startIntegration(t *testing.T, o integrationOptions) *integrationRun {
 	}
 	if o.noSandbox {
 		delete(env, "IKIGENBA_SANDBOX")
+	}
+	if o.unsetServices {
+		delete(env, services.Variable)
 	}
 	p := cli.Process{nil, nil, nil, 73, &r.out, &r.err, runVersion, nil, func() time.Time { return fixedTime }, func(ctx context.Context, _ time.Duration) {
 		select {
@@ -713,29 +720,45 @@ func TestRunRandomAndTime(t *testing.T) {
 	}
 }
 
+// R-KPF2-K9TT
+func TestRunWithNoUsableServices(t *testing.T) {
+	for _, fixture := range []string{"unset", "empty", "missing", "invalid", "no_entries"} {
+		t.Run(fixture, func(t *testing.T) {
+			options := integrationOptions{unsetServices: fixture == "unset"}
+			if fixture != "unset" && fixture != "empty" {
+				options.path = filepath.Join(t.TempDir(), "services")
+			}
+			if fixture == "invalid" {
+				if err := os.WriteFile(options.path, []byte("not json"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if fixture == "no_entries" {
+				integrationServices(t, options.path, nil, "")
+			}
+			assertServes := func(t *testing.T, options integrationOptions) {
+				t.Helper()
+				r := startIntegration(t, options)
+				r.call("hosts", struct{}{}, nil)
+				if code, _, _ := r.request("GET", "/", "owner", "landing"); code != http.StatusOK {
+					t.Fatal(code)
+				}
+				r.stop()
+			}
+			t.Run("sandbox", func(t *testing.T) { assertServes(t, options) })
+			t.Run("AWS", func(t *testing.T) {
+				options.env = awsEnvironment()
+				options.noSandbox = true
+				base := testMemoryCloud(t)
+				options.cloud = func(context.Context, string) (cloud.Cloud, error) { return base, nil }
+				assertServes(t, options)
+			})
+		})
+	}
+}
+
 // R-R7H1-ZMHN
 func TestRunServices(t *testing.T) {
-	for _, mode := range []string{"unset", "empty", "missing", "invalid", "no_entries"} {
-		path := ""
-		if mode != "unset" && mode != "empty" {
-			path = filepath.Join(t.TempDir(), "services")
-		}
-		if mode == "invalid" {
-			if e := os.WriteFile(path, []byte("not json"), 0600); e != nil {
-				t.Fatal(e)
-			}
-		}
-		if mode == "no_entries" {
-			integrationServices(t, path, map[string]string{}, "")
-		}
-		r := startIntegration(t, integrationOptions{path: path})
-		r.call("hosts", struct{}{}, nil)
-		code, _, _ := r.request("GET", "/", "owner", "landing")
-		if code != 200 {
-			t.Fatal(code)
-		}
-		r.stop()
-	}
 	path := filepath.Join(t.TempDir(), "services")
 	integrationServices(t, path, map[string]string{"auth": ""}, "https://auth.one.test")
 	r := startIntegration(t, integrationOptions{path: path})
@@ -1045,28 +1068,114 @@ func (failedListener) Accept() (net.Conn, error) { return nil, errors.New("liste
 func (failedListener) Close() error              { return nil }
 func (failedListener) Addr() net.Addr            { return &net.UnixAddr{Name: "fixture", Net: "unix"} }
 
+// R-K28Z-AMQM
 func TestRunFatalAccept(t *testing.T) {
 	t.Setenv(services.Variable, "")
-	var out, errout writes
+	for _, tc := range []struct {
+		name        string
+		ahead       bool
+		unavailable bool
+	}{
+		{name: "listener failure"},
+		{name: "listener and cloud failure", unavailable: true},
+		{name: "ahead database and listener failure", ahead: true},
+		{name: "ahead database and listener and cloud failure", ahead: true, unavailable: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) { assertFatalAccept(t, tc.ahead, tc.unavailable) })
+	}
+}
+
+func assertFatalAccept(t *testing.T, ahead, unavailable bool) {
+	t.Helper()
+	dir := t.TempDir()
+	var prefix string
+	if ahead {
+		prefix = aheadDatabase(t, dir)
+	}
+	env := map[string]string{"LISTEN_PID": "79", "LISTEN_FDS": "1"}
+	var open cloud.Opener
+	if unavailable {
+		for k, v := range awsEnvironment() {
+			env[k] = v
+		}
+		open = func(context.Context, string) (cloud.Cloud, error) {
+			return nil, errors.New("no credentials\nretry")
+		}
+		prefix += "accounts: " + cli.NoCloud + ": no credentials retry\n"
+	}
+	var out safeBuffer
+	var errout diagnosticWrites
 	var writer *telemetry.Writer
-	p := cli.Process{Args: nil, Dir: t.TempDir(), Pid: 79, LookupEnv: func(k string) (string, bool) {
-		v, ok := map[string]string{"LISTEN_PID": "79", "LISTEN_FDS": "1", "IKIGENBA_SANDBOX": ""}[k]
+	p := cli.Process{Args: nil, Dir: dir, Pid: 79, LookupEnv: func(k string) (string, bool) {
+		v, ok := env[k]
 		return v, ok
 	}, Stdout: &out, Stderr: &errout, Version: runVersion, Inherit: func(uintptr) (net.Listener, error) { return failedListener{}, nil }, Now: func() time.Time { return fixedTime }, Sleep: func(context.Context, time.Duration) {}, Rand: integrationConstant(0), Sink: &telemetry.Capture{}, Banner: page.New(pages.ServiceName, version.Identity{}).Banner, MCP: func(w *telemetry.Writer) *mcp.Server {
 		writer = w
 		return mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: w})
-	}}
+	}, After: func(time.Duration) <-chan time.Time { return nil }, Cloud: open, Executable: func() (string, error) { return filepath.Join(dir, "accounts"), nil }}
 	if code := cli.Run(context.Background(), p); code != cli.ExitServerFailed {
 		t.Fatal(code)
 	}
-	before := errout.String()
-	if out.Len() != 0 || errout.n != 1 || !strings.HasPrefix(before, "accounts: ") || !strings.Contains(before, "listener gone now") || strings.Count(before, "\n") != 1 {
-		t.Fatal(out.String(), before, errout.n)
+	before := errout.snapshot()
+	if out.Len() != 0 || len(before) == 0 {
+		t.Fatal(out.String(), before)
+	}
+	last := before[len(before)-1]
+	if strings.Join(before[:len(before)-1], "") != prefix || !strings.HasPrefix(last, "accounts: ") ||
+		!strings.Contains(last, "listener gone now") || !strings.HasSuffix(last, "\n") || strings.Count(last, "\n") != 1 {
+		t.Fatalf("warning writes followed by a single listener diagnostic: %q", before)
 	}
 	writer.Emit(context.Background(), "change.finished", telemetry.Attrs{})
-	if errout.String() != before {
+	if !slices.Equal(errout.snapshot(), before) || out.Len() != 0 {
 		t.Fatal("late output")
 	}
+}
+
+type diagnosticWrites struct {
+	mu     sync.Mutex
+	writes []string
+}
+
+func (d *diagnosticWrites) Write(p []byte) (int, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.writes = append(d.writes, string(p))
+	return len(p), nil
+}
+
+func (d *diagnosticWrites) snapshot() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return slices.Clone(d.writes)
+}
+
+func aheadDatabase(t *testing.T, dir string) string {
+	t.Helper()
+	var warning bytes.Buffer
+	cfg := db.Config{Path: filepath.Join(dir, "state", "accounts.db"), Migrations: accounts.Migrations(),
+		Now: func() time.Time { return fixedTime }, Service: pages.ServiceName, Stderr: &warning}
+	d, err := db.Open(t.Context(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = d.Write(t.Context(), func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(t.Context(), "INSERT INTO schema_migrations SELECT MAX(version) + 1, ? FROM schema_migrations", fixedTime.Format(time.RFC3339))
+		return err
+	})
+	if err = errors.Join(err, d.Close()); err != nil {
+		t.Fatal(err)
+	}
+	d, err = db.Open(t.Context(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = d.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if warning.Len() == 0 {
+		t.Fatal("ahead database emitted no warning")
+	}
+	return warning.String()
 }
 
 // R-Y6WW-T7RD

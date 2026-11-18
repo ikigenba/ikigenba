@@ -90,7 +90,7 @@ func (c *resizeCloud) ModifyVolume(_ context.Context, _ string, target int32) er
 	return c.err
 }
 
-// R-MNTG-22XB R-UFK7-TLG8 R-NAZJ-BQ0I
+// R-MNTG-22XB R-UFK7-TLG8 R-NAZJ-BQ0I R-L0E6-07I2
 func TestGrowResumesAndNotesOnlyFirstAttempt(t *testing.T) {
 	f := setup(t)
 	h := f.ready()
@@ -137,7 +137,7 @@ func TestGrowResumesAndNotesOnlyFirstAttempt(t *testing.T) {
 	equal(t, grows, 1)
 }
 
-// R-UFK7-TLG8 R-NAZJ-BQ0I R-NDFC-39HW
+// R-UFK7-TLG8 R-NAZJ-BQ0I R-NDFC-39HW R-L0E6-07I2
 func TestVolumeStepDecisions(t *testing.T) {
 	for _, tc := range []struct {
 		name, step, state string
@@ -155,7 +155,10 @@ func TestVolumeStepDecisions(t *testing.T) {
 		{name: "same size failed while waiting", step: ops.StepWaitRoot, state: cloud.ModificationFailed, target: 30, volume: 20, reason: ops.ReasonModifyFailed},
 		{name: "same size completed", step: ops.StepWaitRoot, state: cloud.ModificationCompleted, target: 30, volume: 20},
 		{name: "size effective without modification", step: ops.StepWaitRoot, volume: 31},
-		{name: "timeout without modification", step: ops.StepWaitRoot, volume: 20, later: 2 * ops.StepTimeout, reason: ops.ReasonTimedOut},
+		{name: "grow timeout without modification", step: ops.StepGrowRoot, volume: 20, later: 2 * ops.StepTimeout, reason: ops.ReasonTimedOut},
+		{name: "expired wait still modifying", step: ops.StepWaitRoot, state: cloud.ModificationModifying, target: 30, volume: 20, later: 2 * ops.StepTimeout, wait: true},
+		{name: "expired wait already optimizing", step: ops.StepWaitRoot, state: cloud.ModificationOptimizing, target: 30, volume: 30, later: 2 * ops.StepTimeout, reason: ops.ReasonTimedOut},
+		{name: "wait timeout without modification", step: ops.StepWaitRoot, volume: 20, later: 2 * ops.StepTimeout, reason: ops.ReasonTimedOut},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := setup(t)

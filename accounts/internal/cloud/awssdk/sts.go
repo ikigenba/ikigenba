@@ -41,17 +41,12 @@ func (a *adapter) CallerOf(ctx context.Context, presignedURL, binding string) (c
 		code := httpCode(response.StatusCode)
 		return cloud.Caller{}, callerError(code, classify(code, response.StatusCode), nil)
 	}
-	if response.ContentLength > cloud.MaxCallerBytes {
+	body, err := io.ReadAll(io.LimitReader(response.Body, cloud.MaxCallerBytes+1))
+	if len(body) > cloud.MaxCallerBytes {
 		return cloud.Caller{}, callerError(cloud.CodeBadResponse, cloud.ClassRefused, nil)
 	}
-	body, err := io.ReadAll(io.LimitReader(response.Body, cloud.MaxCallerBytes))
 	if err != nil {
 		return cloud.Caller{}, callerError(cloud.CodeNoResponse, cloud.ClassTransient, err)
-	}
-	// If the limit was reached and framing did not establish the complete
-	// length, a prefix of an oversized response could look like valid XML.
-	if len(body) == cloud.MaxCallerBytes && response.ContentLength != cloud.MaxCallerBytes {
-		return cloud.Caller{}, callerError(cloud.CodeBadResponse, cloud.ClassRefused, nil)
 	}
 	result, err := readCaller(body)
 	if err != nil {
@@ -74,9 +69,7 @@ func readCaller(body []byte) (cloud.Caller, error) {
 		} `xml:"GetCallerIdentityResult"`
 	}
 	decoder := xml.NewDecoder(bytes.NewReader(body))
-	if err := decoder.Decode(&response); err != nil {
-		return cloud.Caller{}, err
-	}
+	hasRoot := false
 	for {
 		token, err := decoder.Token()
 		if errors.Is(err, io.EOF) {
@@ -89,11 +82,19 @@ func readCaller(body []byte) (cloud.Caller, error) {
 		case xml.Comment, xml.ProcInst:
 			continue
 		case xml.CharData:
-			if len(bytes.TrimSpace(token)) == 0 {
+			if len(bytes.Trim(token, " \t\r\n")) == 0 {
+				continue
+			}
+		case xml.StartElement:
+			if !hasRoot {
+				if err := decoder.DecodeElement(&response, &token); err != nil {
+					return cloud.Caller{}, err
+				}
+				hasRoot = true
 				continue
 			}
 		}
-		return cloud.Caller{}, errors.New("invalid content after STS XML document")
+		return cloud.Caller{}, errors.New("invalid content outside the STS XML root element")
 	}
 	r := response.Result
 	if r.Account == "" || r.Arn == "" {

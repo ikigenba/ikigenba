@@ -13,13 +13,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/accounts"
 	"github.com/ikigenba/ikigenba/accounts/internal/cli"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud/memory"
 	"github.com/ikigenba/ikigenba/accounts/internal/ops"
 	"github.com/ikigenba/ikigenba/accounts/internal/settings"
+	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/tools"
 	"github.com/ikigenba/ikigenba/accounts/internal/valid"
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 )
 
@@ -443,9 +446,47 @@ func TestRunSecrecy(t *testing.T) {
 	}
 }
 
+// R-KQMY-Y1KI
+func TestRunWithoutCloudLeavesOperationUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	sandbox := startIntegration(t, integrationOptions{dir: dir})
+	var created tools.HostChange
+	sandbox.call("create_host", struct{}{}, &created)
+	if sandbox.stop() != cli.ExitSuccess {
+		t.Fatal(sandbox.err.String())
+	}
+	before, err := reopenRunStore(t, dir).Operation(t.Context(), created.Operation)
+	if err != nil || before.Status != "running" || created.State != "provisioning" {
+		t.Fatal(created, before, err)
+	}
+	clock := newDrivenClock()
+	clock.advance(time.Hour)
+	run := startIntegration(t, integrationOptions{dir: dir, noSandbox: true, now: clock.now, after: clock.after})
+	run.request("GET", "/", "owner", "")
+	if run.stop() != cli.ExitSuccess {
+		t.Fatal(run.err.String())
+	}
+	reopened := reopenRunStore(t, dir)
+	host, err := reopened.Host(t.Context(), created.Host)
+	if err != nil || host.State != "provisioning" {
+		t.Fatal(host, err)
+	}
+	after, err := reopened.Operation(t.Context(), created.Operation)
+	if err != nil || after != before {
+		t.Fatal(before, after, err)
+	}
+	for _, event := range run.capture.Events() {
+		if event.Name == "host.changed" || event.Name == "operation.finished" {
+			t.Fatal(event)
+		}
+	}
+}
+
+// R-KRUV-BTB7
 func TestCloudOperationCannotHoldServerDrain(t *testing.T) {
 	entered, release, released := make(chan context.Context, 1), make(chan struct{}), make(chan struct{})
-	defer close(release)
+	releaseCall := sync.OnceFunc(func() { close(release) })
+	defer releaseCall()
 	env := awsEnvironment()
 	env["DRAIN_SECONDS"] = "1"
 	base := testMemoryCloud(t)
@@ -457,7 +498,8 @@ func TestCloudOperationCannotHoldServerDrain(t *testing.T) {
 			return cloud.Address{}, ctx.Err()
 		}}, nil
 	}})
-	run.call("create_host", struct{}{}, nil)
+	var created tools.HostChange
+	run.call("create_host", struct{}{}, &created)
 	var cloudCtx context.Context
 	select {
 	case cloudCtx = <-entered:
@@ -465,16 +507,41 @@ func TestCloudOperationCannotHoldServerDrain(t *testing.T) {
 		t.Fatal("cloud allocation did not start")
 	}
 	start := time.Now()
-	if run.stop() != cli.ExitSuccess || time.Since(start) > 3*time.Second || cloudCtx.Err() == nil {
+	run.cancel(errors.New("integration stop"))
+	if cloudCtx.Err() == nil {
+		t.Fatal("engine cloud context remained active after cancellation")
+	}
+	if run.stop() != cli.ExitSuccess || time.Since(start) > 3*time.Second {
 		t.Fatal("cloud call held the drain", run.err.String())
 	}
-	if run.err.Len() != 0 {
-		t.Fatal(run.err.String())
+	host, err := reopenRunStore(t, run.dir).Host(t.Context(), created.Host)
+	if err != nil || host.State != "provisioning" {
+		t.Fatal(host, err)
 	}
-	assertLifecycle(t, run.capture.Events())
 	select {
 	case <-released:
 		t.Fatal("fake returned before the test released it")
 	default:
 	}
+	releaseCall()
+	select {
+	case <-released:
+	case <-time.After(time.Second):
+		t.Fatal("cloud call did not return after release")
+	}
+}
+
+func reopenRunStore(t *testing.T, dir string) *store.Store {
+	t.Helper()
+	now := func() time.Time { return fixedTime }
+	d, err := db.Open(t.Context(), db.Config{Path: filepath.Join(dir, "state", "accounts.db"), Migrations: accounts.Migrations(), Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := d.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	return store.New(d, store.Config{Now: now, Rand: &integrationRandom{}})
 }

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -132,7 +133,7 @@ func TestInstanceStateRequests(t *testing.T) {
 }
 
 func TestAddresses(t *testing.T) {
-	// R-XF98-NJ4U R-XGH5-1AVJ
+	// R-XF98-NJ4U R-XGH5-1AVJ R-K5WO-FXYP
 	ctx := t.Context()
 	tags := cloud.Tags{cloud.TagKind: cloud.KindHost}
 	findCalls := 0
@@ -196,14 +197,19 @@ func TestAddresses(t *testing.T) {
 	_, err = c.DescribeAddress(ctx, "eip-missing")
 	checkError(t, err, "ec2", "DescribeAddresses", "eip-missing", "InvalidAllocationID.NotFound", cloud.ClassNotFound)
 
-	var found []cloud.Address
-	err = c.FindAddresses(ctx, cloud.Tags{cloud.TagKind: cloud.KindHost, cloud.TagHost: "host01"}, func(page []cloud.Address) bool {
-		found = append(found, page...)
-		return false
-	})
-	if err != nil || findCalls != 1 || len(found) != 2 || !reflect.DeepEqual(found[0], want) ||
-		found[1].AllocationID != "eip-other" || found[1].AssociationID != "" || found[1].InstanceID != "" || found[1].IP != "" || len(found[1].Tags) != 0 {
-		t.Fatalf("FindAddresses = %+v, %v; requests = %d", found, err, findCalls)
+	for _, keepGoing := range []bool{false, true} {
+		var found []cloud.Address
+		findCalls = 0
+		callbacks := 0
+		err = c.FindAddresses(ctx, cloud.Tags{cloud.TagKind: cloud.KindHost, cloud.TagHost: "host01"}, func(page []cloud.Address) bool {
+			callbacks++
+			found = append(found, page...)
+			return keepGoing
+		})
+		if err != nil || findCalls != 1 || callbacks != 1 || len(found) != 2 || !reflect.DeepEqual(found[0], want) ||
+			found[1].AllocationID != "eip-other" || found[1].AssociationID != "" || found[1].InstanceID != "" || found[1].IP != "" || len(found[1].Tags) != 0 {
+			t.Fatalf("FindAddresses = %+v, %v; requests = %d, callbacks = %d", found, err, findCalls, callbacks)
+		}
 	}
 
 	association, err := c.AssociateAddress(ctx, "eip-test", "i-test")
@@ -308,105 +314,117 @@ func TestVolumes(t *testing.T) {
 }
 
 func TestFindPages(t *testing.T) {
-	// DescribeAddresses cannot paginate. Instances and volumes page over
-	// the SDK protocol in order, including across empty response pages.
-	ctx := t.Context()
+	// R-K5WO-FXYP
 	for _, kind := range []string{"instances", "volumes"} {
-		t.Run(kind, func(t *testing.T) {
-			requests, callbacks := 0, 0
-			c := open(t, func(r *http.Request) (*http.Response, error) {
-				requests++
-				want := map[string]string{
-					"Filter.1.Name": "tag:Kind", "Filter.1.Value.1": "host",
-					"Filter.2.Name": "tag:Operation", "Filter.2.Value.1": "op-test",
+		for _, test := range []struct {
+			name    string
+			pages   [][]string
+			stop    bool
+			visited int
+		}{
+			{
+				name: "callback stops", pages: [][]string{{"z", "a"}, {"m"}, {"b"}},
+				stop: true, visited: 2,
+			},
+			{
+				name: "exhausted with an empty page", pages: [][]string{{"z", "a"}, {}, {"m"}},
+				visited: 3,
+			},
+		} {
+			t.Run(kind+"/"+test.name, func(t *testing.T) {
+				ctx := t.Context()
+				requests, callbacks := 0, 0
+				var expectedCallbacks int
+				for _, page := range test.pages[:test.visited] {
+					if len(page) != 0 {
+						expectedCallbacks++
+					}
 				}
-				switch requests {
-				case 1:
-				case 2:
-					want["NextToken"] = "second"
-				case 3:
-					want["NextToken"] = "third"
-				default:
-					t.Fatalf("requested a page after the callback returned false")
-				}
+				c := open(t, func(r *http.Request) (*http.Response, error) {
+					requests++
+					if requests > test.visited {
+						t.Fatalf("unexpected page request %d", requests)
+					}
+					want := map[string]string{
+						"Filter.1.Name": "tag:Kind", "Filter.1.Value.1": "host",
+						"Filter.2.Name": "tag:Operation", "Filter.2.Value.1": "op-test",
+					}
+					if requests > 1 {
+						want["NextToken"] = strconv.Itoa(requests)
+					}
 
-				var action, begin, end, idField string
+					var action, begin, end, idField string
+					if kind == "instances" {
+						action, begin, end, idField = "DescribeInstances",
+							"<reservationSet><item><instancesSet>", "</instancesSet></item></reservationSet>", "instanceId"
+						want["Filter.3.Name"] = "instance-state-name"
+						for i, state := range []string{"pending", "running", "shutting-down", "stopping", "stopped"} {
+							key := "Filter.3.Value." + string(rune('1'+i))
+							want[key] = state
+						}
+					} else {
+						action, begin, end, idField = "DescribeVolumes", "<volumeSet>", "</volumeSet>", "volumeId"
+					}
+					checkForm(t, form(t, r, action), want)
+
+					response := "<" + action + "Response>" + begin
+					for _, id := range test.pages[requests-1] {
+						response += "<item><" + idField + ">" + id + "</" + idField + "></item>"
+					}
+					response += end
+					if requests < len(test.pages) {
+						response += "<nextToken>" + strconv.Itoa(requests+1) + "</nextToken>"
+					}
+					response += "</" + action + "Response>"
+					return xmlResponse(200, response), nil
+				})
+				check := func(ids []string) bool {
+					t.Helper()
+					callbacks++
+					if len(ids) == 0 || !reflect.DeepEqual(ids, test.pages[requests-1]) {
+						t.Fatalf("callback on request %d: %v, want %v", requests, ids, test.pages[requests-1])
+					}
+					return !test.stop || callbacks < expectedCallbacks
+				}
+				tags := cloud.Tags{cloud.TagKind: cloud.KindHost, cloud.TagOperation: "op-test"}
+				var err error
 				if kind == "instances" {
-					action, begin, end, idField = "DescribeInstances",
-						"<reservationSet><item><instancesSet>", "</instancesSet></item></reservationSet>", "instanceId"
-					want["Filter.3.Name"] = "instance-state-name"
-					for i, state := range []string{"pending", "running", "shutting-down", "stopping", "stopped"} {
-						key := "Filter.3.Value." + string(rune('1'+i))
-						want[key] = state
-					}
+					err = c.FindInstances(ctx, tags, func(page []cloud.Instance) bool {
+						var ids []string
+						for _, item := range page {
+							ids = append(ids, item.ID)
+						}
+						return check(ids)
+					})
 				} else {
-					action, begin, end, idField = "DescribeVolumes", "<volumeSet>", "</volumeSet>", "volumeId"
+					err = c.FindVolumes(ctx, tags, func(page []cloud.Volume) bool {
+						var ids []string
+						for _, item := range page {
+							ids = append(ids, item.ID)
+						}
+						return check(ids)
+					})
 				}
-				checkForm(t, form(t, r, action), want)
-
-				response := "<" + action + "Response>" + begin
-				next := "fourth"
-				switch requests {
-				case 1:
-					next = "second"
-				case 2:
-					next = "third"
-					response += "<item><" + idField + ">z</" + idField + "></item><item><" + idField + ">a</" + idField + "></item>"
-				case 3:
-					response += "<item><" + idField + ">m</" + idField + "></item>"
+				if err != nil || requests != test.visited || callbacks != expectedCallbacks {
+					t.Fatalf("requests = %d, callbacks = %d, err = %v", requests, callbacks, err)
 				}
-				response += end + "<nextToken>" + next + "</nextToken></" + action + "Response>"
-				return xmlResponse(200, response), nil
 			})
-			check := func(ids []string) bool {
-				t.Helper()
-				callbacks++
-				if callbacks == 1 && (requests != 2 || !reflect.DeepEqual(ids, []string{"z", "a"})) {
-					t.Fatalf("first callback on request %d: %v", requests, ids)
-				}
-				if callbacks == 2 && (requests != 3 || !reflect.DeepEqual(ids, []string{"m"})) {
-					t.Fatalf("second callback on request %d: %v", requests, ids)
-				}
-				return callbacks == 1
-			}
-			tags := cloud.Tags{cloud.TagKind: cloud.KindHost, cloud.TagOperation: "op-test"}
-			var err error
-			if kind == "instances" {
-				err = c.FindInstances(ctx, tags, func(page []cloud.Instance) bool {
-					var ids []string
-					for _, item := range page {
-						ids = append(ids, item.ID)
-					}
-					return check(ids)
-				})
-			} else {
-				err = c.FindVolumes(ctx, tags, func(page []cloud.Volume) bool {
-					var ids []string
-					for _, item := range page {
-						ids = append(ids, item.ID)
-					}
-					return check(ids)
-				})
-			}
-			if err != nil || requests != 3 || callbacks != 2 {
-				t.Fatalf("requests = %d, callbacks = %d, err = %v", requests, callbacks, err)
-			}
-		})
+		}
 	}
 }
 
 func TestFindUsesLiteralTagValues(t *testing.T) {
-	ctx := t.Context()
+	// R-K5WO-FXYP
 	tags := cloud.Tags{cloud.TagHost: "*amazon?\\"}
-	tests := map[string]func(cloud.Cloud) error{
-		"DescribeInstances": func(c cloud.Cloud) error {
-			return c.FindInstances(ctx, tags, func([]cloud.Instance) bool { return true })
+	tests := map[string]func(*testing.T, cloud.Cloud) error{
+		"DescribeInstances": func(t *testing.T, c cloud.Cloud) error {
+			return c.FindInstances(t.Context(), tags, func([]cloud.Instance) bool { t.Fatal("callback on empty response"); return false })
 		},
-		"DescribeAddresses": func(c cloud.Cloud) error {
-			return c.FindAddresses(ctx, tags, func([]cloud.Address) bool { return true })
+		"DescribeAddresses": func(t *testing.T, c cloud.Cloud) error {
+			return c.FindAddresses(t.Context(), tags, func([]cloud.Address) bool { t.Fatal("callback on empty response"); return false })
 		},
-		"DescribeVolumes": func(c cloud.Cloud) error {
-			return c.FindVolumes(ctx, tags, func([]cloud.Volume) bool { return true })
+		"DescribeVolumes": func(t *testing.T, c cloud.Cloud) error {
+			return c.FindVolumes(t.Context(), tags, func([]cloud.Volume) bool { t.Fatal("callback on empty response"); return false })
 		},
 	}
 	for op, find := range tests {
@@ -420,7 +438,7 @@ func TestFindUsesLiteralTagValues(t *testing.T) {
 				}
 				return xmlResponse(200, "<"+op+"Response/>"), nil
 			})
-			if err := find(c); err != nil || calls != 1 {
+			if err := find(t, c); err != nil || calls != 1 {
 				t.Errorf("find = %v, %d requests", err, calls)
 			}
 		})

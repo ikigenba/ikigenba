@@ -110,7 +110,7 @@ func checkTags(t *testing.T, got, want cloud.Tags) {
 	}
 }
 
-// R-MNTG-22XB R-MP1C-FUO0 R-MQ98-TMEP R-MWCQ-QH46 R-MXKN-48UV R-RWXF-7MED R-N18C-9K2Y R-N2G8-NBTN R-N4W1-EVB1 R-N63X-SN1Q
+// R-MNTG-22XB R-MP1C-FUO0 R-MQ98-TMEP R-MWCQ-QH46 R-MXKN-48UV R-RWXF-7MED R-N18C-9K2Y R-N2G8-NBTN R-N4W1-EVB1 R-N63X-SN1Q R-KFNV-I3W9
 func TestCreateThroughRestarts(t *testing.T) {
 	f := setup(t)
 	h, op := f.create()
@@ -234,8 +234,9 @@ func TestTokensPersistPerGeneration(t *testing.T) {
 
 type adoptCloud struct {
 	cloud.Cloud
-	f  *fixture
-	op store.Operation
+	f     *fixture
+	op    store.Operation
+	state string
 }
 
 func (c *adoptCloud) FindAddresses(_ context.Context, tags cloud.Tags, each func([]cloud.Address) bool) error {
@@ -251,7 +252,7 @@ func (c *adoptCloud) FindInstances(_ context.Context, tags cloud.Tags, each func
 	if tags[cloud.TagOperation] != "" {
 		checkTags(c.f.t, tags, cloud.Tags{cloud.TagKind: cloud.KindHost, cloud.TagOperation: c.op.ID})
 		each([]cloud.Instance{{ID: "i-a", State: cloud.InstanceTerminated}, {ID: "i-z", State: cloud.InstanceRunning}})
-		each([]cloud.Instance{{ID: "i-b", State: cloud.InstancePending}})
+		each([]cloud.Instance{{ID: "i-b", State: c.state}})
 	}
 	return nil
 }
@@ -269,21 +270,25 @@ func (*adoptCloud) DescribeInstance(_ context.Context, id string) (cloud.Instanc
 	return cloud.Instance{ID: id, State: cloud.InstanceRunning, AZ: "zone", RootVolume: "root"}, nil
 }
 
-// R-MWCQ-QH46 R-MXKN-48UV R-N18C-9K2Y
+// R-MWCQ-QH46 R-MXKN-48UV R-N18C-9K2Y R-KFNV-I3W9
 func TestCreateAdoptsLowestIDsAcrossPages(t *testing.T) {
-	f := setup(t)
-	h, op := f.create()
-	f.cfg.Cloud = &adoptCloud{f: f, op: op}
-	e := ops.New(f.cfg)
-	equal(t, f.step(e, op.ID).Step, ops.StepLaunch)
-	h = f.host(h.Name)
-	equal(t, h.AllocationID, "eip-a")
-	equal(t, h.EIP, "192.0.2.15")
-	equal(t, f.step(e, op.ID).Step, ops.StepWaitRunning)
-	equal(t, f.host(h.Name).InstanceID, "i-b")
-	equal(t, f.step(e, op.ID).Step, ops.StepVolume)
-	equal(t, f.step(e, op.ID).Step, ops.StepWaitVolume)
-	equal(t, f.host(h.Name).DataVolume, "vol-a")
+	for _, state := range []string{cloud.InstancePending, cloud.InstanceRunning, cloud.InstanceStopping, cloud.InstanceStopped} {
+		t.Run(state, func(t *testing.T) {
+			f := setup(t)
+			h, op := f.create()
+			f.cfg.Cloud = &adoptCloud{f: f, op: op, state: state}
+			e := ops.New(f.cfg)
+			equal(t, f.step(e, op.ID).Step, ops.StepLaunch)
+			h = f.host(h.Name)
+			equal(t, h.AllocationID, "eip-a")
+			equal(t, h.EIP, "192.0.2.15")
+			equal(t, f.step(e, op.ID).Step, ops.StepWaitRunning)
+			equal(t, f.host(h.Name).InstanceID, "i-b")
+			equal(t, f.step(e, op.ID).Step, ops.StepVolume)
+			equal(t, f.step(e, op.ID).Step, ops.StepWaitVolume)
+			equal(t, f.host(h.Name).DataVolume, "vol-a")
+		})
+	}
 }
 
 // R-MXKN-48UV R-UI00-L4XM

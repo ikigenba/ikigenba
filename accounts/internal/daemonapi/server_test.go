@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -109,18 +110,23 @@ func fixtureStore(t *testing.T) (*db.DB, *store.Store, store.Host) {
 		Now:  func() time.Time { return fixtureNow },
 		Rand: strings.NewReader("12345678abcdefghIJKLMNOP"),
 	})
+	return d, s, provisionFixtureHost(t, s, fixtureInstance)
+}
+
+func provisionFixtureHost(t *testing.T, s *store.Store, instance string) store.Host {
+	t.Helper()
 	h, op, err := s.CreateHost(t.Context(), store.HostSpec{Type: "t4g.medium", RootGB: 20, DataGB: 50}, identity.Caller{UserID: "test-user"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Finish(t.Context(), op.ID, store.Update{InstanceID: fixtureInstance}); err != nil {
+	if err := s.Finish(t.Context(), op.ID, store.Update{InstanceID: instance}); err != nil {
 		t.Fatal(err)
 	}
 	h, err = s.Host(t.Context(), h.Name)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return d, s, h
+	return h
 }
 
 func server(t *testing.T, cfg Config) *Server {
@@ -392,7 +398,7 @@ func desired(t *testing.T, st *store.Store, name, digest string) protocol.Desire
 	return state
 }
 
-// R-RKK2-6VN1, R-RGWD-1KEY, R-AV2L-YS78.
+// R-RKK2-6VN1, R-RGWD-1KEY.
 func TestImmediateState(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	stamps := new(requests)
@@ -412,10 +418,6 @@ func TestImmediateState(t *testing.T) {
 		protocol.StatePath + "?after=9223372036854775807&digest=" + url.QueryEscape(s.Digest()),
 	} {
 		expectState(t, invoke(s, stamps.signed(t.Context(), http.MethodGet, path, nil)), want)
-	}
-	_ = invoke(s, httptest.NewRequestWithContext(t.Context(), http.MethodGet, protocol.BinaryPath, nil))
-	if report, err := st.Report(t.Context(), host.Name); report != nil || err != nil {
-		t.Fatalf("reads wrote a report: %+v, %v", report, err)
 	}
 }
 
@@ -602,6 +604,61 @@ func TestReportValidationAndRecording(t *testing.T) {
 	}
 }
 
+// R-KGVR-VVMY.
+func TestReportStoresDecodedBodyAndReceivedTime(t *testing.T) {
+	_, st, host := fixtureStore(t)
+	ctx := t.Context()
+	owner := identity.Caller{UserID: "test-user"}
+	for _, account := range []string{"acme", "zebra"} {
+		if _, _, err := st.PlaceAccount(ctx, account, host.Name, owner); err != nil {
+			t.Fatal(err)
+		}
+	}
+	key := store.Key{Type: "ssh-ed25519", Body: "fixture-key", Line: "ssh-ed25519 fixture-key"}
+	for _, user := range []string{"alice", "zack"} {
+		if _, err := st.AddUser(ctx, "acme", user, key, owner); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := fixtureNow.Add(time.Minute + 500*time.Millisecond)
+	input := protocol.Report{
+		Protocol: protocol.Version, Attempted: host.Version + 1, Applied: host.Version,
+		InstanceID: "reported-instance", Type: "reported-type", DaemonVersion: "test-daemon",
+		Error: "fixture apply failure", FailedUnits: []string{"z.service", "a.service"},
+		SignIns: []protocol.SignIn{{User: "zack", At: now.Add(time.Hour)}, {User: "nobody", At: now}, {User: "alice", At: fixtureNow}},
+		Slices:  []protocol.Slice{{Account: "zebra", MemoryBytes: 12}, {Account: "other"}, {Account: "acme", MemoryBytes: 10}},
+	}
+	raw, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := protocol.DecodeReport(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	filtered := decoded
+	filtered.SignIns = []protocol.SignIn{decoded.SignIns[0], decoded.SignIns[2]}
+	filtered.Slices = []protocol.Slice{decoded.Slices[0], decoded.Slices[2]}
+	stamps := new(requests)
+	w, _ := recorder(t)
+	s := server(t, Config{
+		Store: st, Verifier: stamps.verifier(fixtureSTS{instance: fixtureInstance}),
+		Configured: true, Telemetry: w, Now: func() time.Time { return now },
+	})
+	recording := &recordingReportStore{Store: st}
+	s.store = recording
+	response := invoke(s, stamps.signed(ctx, http.MethodPost, protocol.ReportPath, bytes.NewReader(raw)))
+	if response.Code != http.StatusNoContent || response.Body.Len() != 0 {
+		t.Fatalf("report = %d %q", response.Code, response.Body.String())
+	}
+	want := &store.Report{Host: host.Name, Received: now.Truncate(time.Second), Body: filtered}
+	if saved, err := st.Report(ctx, host.Name); err != nil || !reflect.DeepEqual(saved, want) {
+		t.Fatalf("saved report = %+v, %v; want %+v", saved, err, want)
+	}
+	recording.expectCall(t, reportCall{host: host.Name, body: decoded, now: now})
+}
+
+// R-KGVR-VVMY.
 func TestReportWriteFailure(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
@@ -610,18 +667,26 @@ func TestReportWriteFailure(t *testing.T) {
 		copy    string
 	}{
 		{"deleted", removeFixtureHost, http.StatusForbidden, UnknownHost},
-		{"database closed", closeFixtureDatabase, http.StatusServiceUnavailable, store.Unreachable},
+		{"database failing", func(_ *testing.T, d *db.DB, _ *store.Store, _ store.Host) {
+			d.SetFailing(true)
+		}, http.StatusServiceUnavailable, store.Unreachable},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			d, st, host := fixtureStore(t)
 			stamps := new(requests)
-			s := server(t, Config{Store: st, Configured: true, Verifier: stamps.verifier(fixtureSTS{instance: fixtureInstance})})
+			s := server(t, Config{
+				Store: st, Configured: true, Verifier: stamps.verifier(fixtureSTS{instance: fixtureInstance}),
+				Now: func() time.Time { return fixtureNow },
+			})
+			recording := &recordingReportStore{Store: st}
+			s.store = recording
 			body := readOnce{
 				before: func() { tt.failure(t, d, st, host) },
 				input:  strings.NewReader(fmt.Sprintf(`{"protocol":%d}`, protocol.Version)),
 			}
 			w := invoke(s, stamps.signed(t.Context(), http.MethodPost, protocol.ReportPath, &body))
 			expectError(t, w, tt.code, tt.copy)
+			recording.expectCall(t, reportCall{host: host.Name, body: protocol.Report{Protocol: protocol.Version}, now: fixtureNow})
 		})
 	}
 }
@@ -629,6 +694,29 @@ func TestReportWriteFailure(t *testing.T) {
 type readOnce struct {
 	before func()
 	input  *strings.Reader
+}
+
+type reportCall struct {
+	host string
+	body protocol.Report
+	now  time.Time
+}
+
+type recordingReportStore struct {
+	*store.Store
+	calls []reportCall
+}
+
+func (s *recordingReportStore) RecordReport(ctx context.Context, host string, body protocol.Report, now time.Time) (store.Transition, error) {
+	s.calls = append(s.calls, reportCall{host: host, body: body, now: now})
+	return s.Store.RecordReport(ctx, host, body, now)
+}
+
+func (s *recordingReportStore) expectCall(t *testing.T, want reportCall) {
+	t.Helper()
+	if !reflect.DeepEqual(s.calls, []reportCall{want}) {
+		t.Fatalf("RecordReport calls = %+v, want one call with %+v", s.calls, want)
+	}
 }
 
 func (r *readOnce) Read(p []byte) (int, error) {
@@ -639,25 +727,22 @@ func (r *readOnce) Read(p []byte) (int, error) {
 	return r.input.Read(p)
 }
 
-type eventSink struct {
-	mu     sync.Mutex
-	events []telemetry.Event
+func recorder(t *testing.T) (*telemetry.Writer, *telemetry.Capture) {
+	t.Helper()
+	capture := new(telemetry.Capture)
+	w := telemetry.New(telemetry.Config{
+		Service: "accounts", Sink: capture, Stderr: io.Discard,
+		Now: func() time.Time { return fixtureNow }, Rand: rand.NewChaCha8([32]byte{1}),
+	})
+	t.Cleanup(func() { w.Shutdown(context.Background(), "test stopped") })
+	return w, capture
 }
 
-func (s *eventSink) Deliver(_ context.Context, event telemetry.Event) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.events = append(s.events, event)
-	return nil
-}
-
-// R-ASMT-78PU, R-ATUP-L0GJ, R-AV2L-YS78.
+// R-ASMT-78PU, R-ATUP-L0GJ, R-LCL5-TWX0.
 func TestReportEmitsOnlyHealthEdgesWithoutCaller(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	stamps := new(requests)
-	sink := new(eventSink)
-	w := telemetry.New(telemetry.Config{Service: "accounts", Sink: sink, Stderr: io.Discard})
-	t.Cleanup(func() { w.Shutdown(context.Background(), "test stopped") })
+	w, sink := recorder(t)
 	received := fixtureNow.Add(store.SilentAfter + time.Second)
 	s := server(t, Config{
 		Store: st, Configured: true, Verifier: stamps.verifier(fixtureSTS{instance: fixtureInstance}),
@@ -680,16 +765,6 @@ func TestReportEmitsOnlyHealthEdgesWithoutCaller(t *testing.T) {
 		}
 		received = received.Add(time.Second)
 	}
-	saved, err := st.Report(t.Context(), host.Name)
-	if err != nil || !saved.Received.Equal(received.Add(-time.Second)) {
-		t.Fatalf("report did not use Config.Now: %+v, %v", saved, err)
-	}
-	wantState := desired(t, st, host.Name, "")
-	expectState(t, invoke(s, stamps.signed(ctx, http.MethodGet, protocol.StatePath, nil)), wantState)
-	current, err := st.Report(t.Context(), host.Name)
-	if err != nil || !reflect.DeepEqual(current, saved) {
-		t.Fatalf("state request changed report: %+v, %v", current, err)
-	}
 	if err := w.Flush(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -702,14 +777,62 @@ func TestReportEmitsOnlyHealthEdgesWithoutCaller(t *testing.T) {
 		{trail.EventHostSynced, telemetry.Attrs{"host": host.Name, "applied": host.Version}},
 		{trail.EventHostApplyFailed, telemetry.Attrs{"host": host.Name, "attempted": host.Version + 5}},
 	}
-	sink.mu.Lock()
-	defer sink.mu.Unlock()
-	if len(sink.events) != len(want) {
-		t.Fatalf("events = %+v; want %d", sink.events, len(want))
+	events := sink.Events()
+	if len(events) != len(want) {
+		t.Fatalf("events = %+v; want %d", events, len(want))
 	}
-	for i, e := range sink.events {
+	for i, e := range events {
 		if e.RequestID != "" || e.User != "" || e.Name != want[i].name || !reflect.DeepEqual(e.Attrs, want[i].attr) {
 			t.Errorf("event %d = %+v, want %s %v without caller", i, e, want[i].name, want[i].attr)
 		}
+	}
+}
+
+// R-LCL5-TWX0.
+func TestBinaryAndStateRequestsLeaveReportsUnchanged(t *testing.T) {
+	_, st, host := fixtureStore(t)
+	other := provisionFixtureHost(t, st, "i-87654321")
+	ctx := t.Context()
+	body := protocol.Report{Protocol: protocol.Version, Attempted: host.Version, Applied: host.Version, OS: "fixture"}
+	if _, err := st.RecordReport(ctx, host.Name, body, fixtureNow); err != nil {
+		t.Fatal(err)
+	}
+	stamps := new(requests)
+	w, capture := recorder(t)
+	file := filepath.Join(t.TempDir(), "accountsd")
+	writeBinary(t, file, []byte("fixture"))
+	timer := make(chan time.Time, 1)
+	timer <- fixtureNow
+	s := server(t, Config{
+		Store: st, Configured: true, Verifier: stamps.verifier(fixtureSTS{instance: fixtureInstance}),
+		Binary: file, Telemetry: w, Now: func() time.Time { return fixtureNow.Add(time.Minute) },
+		After: func(time.Duration) <-chan time.Time { return timer },
+	})
+	recording := &recordingReportStore{Store: st}
+	s.store = recording
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		if response := invoke(s, httptest.NewRequestWithContext(ctx, method, protocol.BinaryPath, nil)); response.Code != http.StatusOK {
+			t.Fatalf("%s binary = %d", method, response.Code)
+		}
+	}
+	wantState := desired(t, st, host.Name, s.Digest())
+	for _, path := range []string{protocol.StatePath, pollingRequest(host, s.Digest())} {
+		expectState(t, invoke(s, stamps.signed(ctx, http.MethodGet, path, nil)), wantState)
+	}
+	want := &store.Report{Host: host.Name, Received: fixtureNow, Body: body}
+	if got, err := st.Report(ctx, host.Name); err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("binary or state requests changed report: %+v, %v; want %+v", got, err, want)
+	}
+	if got, err := st.Report(ctx, other.Name); err != nil || got != nil {
+		t.Fatalf("binary or state requests created another host's report: %+v, %v", got, err)
+	}
+	if len(recording.calls) != 0 {
+		t.Fatalf("binary or state requests called RecordReport: %+v", recording.calls)
+	}
+	if err := w.Flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if events := capture.Events(); len(events) != 0 {
+		t.Fatalf("binary or state requests emitted events: %+v", events)
 	}
 }

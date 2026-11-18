@@ -41,7 +41,7 @@ func (c *faultCloud) AssociateAddress(ctx context.Context, allocation, instance 
 	return c.associate(ctx, allocation, instance)
 }
 
-// R-RJIJ-058Q R-RN68-5GGT
+// R-RJIJ-058Q R-RN68-5GGT R-L0E6-07I2
 func TestCloudErrorsAndTimeout(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

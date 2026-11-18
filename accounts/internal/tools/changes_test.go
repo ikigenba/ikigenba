@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -557,6 +558,41 @@ func TestChangeTrailAndWake(t *testing.T) {
 			t.Fatalf("event %d = %+v, want %+v", i, got, expected)
 		}
 	}
+}
+
+// R-K4OS-2680
+func TestPendingAccountAndRemovingUserThroughTools(t *testing.T) {
+	f := setup(t)
+	f.serveLoopback()
+	host := answer[tools.HostChange](t, f.call(tools.ToolCreateHost, tools.CreateHostArgs{}))
+	if host.Host != "host01" {
+		t.Fatalf("created host = %q, want host01", host.Host)
+	}
+	place := tools.CreateAccountArgs{Account: "acme", Host: host.Host}
+	answer[tools.Account](t, f.call(tools.ToolCreateAccount, place))
+	user := tools.UserArgs{Account: place.Account, User: "daffy"}
+	k := key(2)
+	answer[tools.UserChange](t, f.call(tools.ToolAddUser, tools.UserKeyArgs{Account: user.Account, User: user.User, Key: k}))
+	answer[tools.UserChange](t, f.call(tools.ToolLockUser, user))
+	answer[tools.UserChange](t, f.call(tools.ToolDeleteUser, user))
+
+	users := answer[tools.UserList](t, f.call(tools.ToolUsers, tools.UsersArgs{})).Users
+	if len(users) != 1 || users[0].User != user.User || users[0].Account != user.Account ||
+		users[0].State != store.UserRemoving || !users[0].Pending || !slices.Equal(users[0].Keys, []string{k}) {
+		t.Fatalf("users = %+v", users)
+	}
+	args := tools.AccountArgs{Account: place.Account}
+	account := answer[tools.AccountRead](t, f.call(tools.ToolAccount, args))
+	if account.State != store.AccountPending || !slices.Equal(account.UserNames, []string{user.User}) {
+		t.Fatalf("account = %+v", account)
+	}
+	hosts := answer[tools.HostList](t, f.call(tools.ToolHosts, tools.HostsArgs{})).Hosts
+	if len(hosts) != 1 || hosts[0].Host != host.Host || hosts[0].Accounts != 1 {
+		t.Fatalf("hosts = %+v", hosts)
+	}
+	refusal(t, f.call(tools.ToolRemoveAccount, args), tools.AccountHasUsers)
+	f.finish(host.Operation, store.Update{})
+	refusal(t, f.call(tools.ToolDeleteHost, tools.HostArgs{Host: host.Host}), tools.HostHasAccounts)
 }
 
 // R-ZBK0-22FI

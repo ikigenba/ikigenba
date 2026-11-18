@@ -21,6 +21,7 @@ type hardeningFixture struct {
 	host     *linux.Host
 	commands []string
 	answer   func(string) (linux.Result, bool)
+	observe  func(linux.Command)
 }
 
 func newHardeningFixture(t *testing.T) *hardeningFixture {
@@ -45,6 +46,9 @@ func newHardeningFixture(t *testing.T) *hardeningFixture {
 		Execute: func(_ context.Context, c linux.Command) (linux.Result, error) {
 			call := strings.Join(append([]string{c.Name}, c.Args...), " ")
 			f.commands = append(f.commands, call)
+			if f.observe != nil {
+				f.observe(c)
+			}
 			if f.answer != nil {
 				if result, ok := f.answer(call); ok {
 					return result, nil

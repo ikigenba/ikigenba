@@ -33,18 +33,6 @@ func TestOutputTypes(t *testing.T) {
 		Hosts []tools.Host
 		Next  *string
 	}(tools.HostList{})
-	_ = struct {
-		Host, State, Reason, Health, Type string
-		RootGB, DataGB                    int
-		EIP                               string
-		Accounts                          int
-		Reported, InstanceID, DataVolume  string
-		Version, Applied                  int64
-		Created, CreatedBy                string
-		AccountNames                      []string
-		Operation                         *tools.Operation
-		Report                            json.RawMessage
-	}(tools.HostRead{})
 	_ = struct{ Operation, Kind, Step, Status, Error, Started string }(tools.Operation{})
 	_ = struct{ Host, State, Operation string }(tools.HostChange{})
 	_ = struct {
@@ -103,6 +91,7 @@ func field(t *testing.T, raw json.RawMessage, name string) json.RawMessage {
 func testEncoding[R any](t *testing.T, value R) json.RawMessage {
 	t.Helper()
 	f := setup(t)
+	f.serveLoopback()
 	mcp.AddTool(f.srv, mcp.Tool[struct{}, R]{
 		Name: "probe", Description: "Probe encoding.", Effect: mcp.Read,
 		Handler: func(context.Context, identity.Caller, struct{}) (R, error) { return value, nil },
@@ -180,6 +169,45 @@ func TestOutputEncoding(t *testing.T) {
 
 	f := setup(t)
 	refusal(t, f.call(tools.ToolHost, tools.HostArgs{Host: "missing"}), tools.NoHost)
+}
+
+// R-KD82-QKEV
+func TestHostReadEncoding(t *testing.T) {
+	_ = struct {
+		Host, State, Reason, Health, Type string
+		RootGB, DataGB                    int
+		EIP                               string
+		Accounts                          int
+		Reported, InstanceID, DataVolume  string
+		Version, Applied                  int64
+		Created, CreatedBy                string
+		AccountNames                      []string
+		Operation                         *tools.Operation
+		Report                            json.RawMessage
+	}(tools.HostRead{})
+	base := []string{"host", "state", "reason", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported",
+		"instance_id", "data_volume", "version", "applied", "created", "created_by", "account_names"}
+	for _, names := range [][]string{nil, {}} {
+		raw := testEncoding(t, tools.HostRead{AccountNames: names})
+		wireMembers(t, raw, base...)
+		wireArray(t, raw, "account_names")
+	}
+	op := tools.Operation{Operation: "op_example", Kind: store.OpCreate, Status: store.OpRunning}
+	report := json.RawMessage(`{"z":7,"a":{"nested":true}}`)
+	raw := testEncoding(t, tools.HostRead{AccountNames: []string{"chosen"}, Operation: &op, Report: report})
+	wireMembers(t, raw, append(base, "operation", "report")...)
+	var names []string
+	if err := json.Unmarshal(field(t, raw, "account_names"), &names); err != nil || !slices.Equal(names, []string{"chosen"}) {
+		t.Fatalf("account names = %v (%v)", names, err)
+	}
+	wireMembers(t, field(t, raw, "operation"), "operation", "kind", "step", "status", "error", "started")
+	var got tools.Operation
+	if err := json.Unmarshal(field(t, raw, "operation"), &got); err != nil || got != op {
+		t.Fatalf("operation = %+v (%v), want %+v", got, err, op)
+	}
+	if got := field(t, raw, "report"); string(got) != string(report) {
+		t.Fatalf("report = %s, want %s", got, report)
+	}
 }
 
 // R-Y7BB-FMYL

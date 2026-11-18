@@ -157,7 +157,7 @@ func firstWindows(rows pages.LandingData, size int) [3]bounds {
 	return b
 }
 
-// R-RVYV-391H R-RYEN-USIV R-RONG-SMLB R-RR39-K62P R-S22D-03QY R-SO0J-VZ3G R-SP8G-9QU5
+// R-RVYV-391H R-RYEN-USIV R-RONG-SMLB R-RR39-K62P R-S22D-03QY R-SO0J-VZ3G R-SP8G-9QU5 R-KC06-CSO6
 func TestIndependentPaging(t *testing.T) {
 	f := setup(t)
 	const l = paging.DefaultLimit
@@ -171,8 +171,9 @@ func TestIndependentPaging(t *testing.T) {
 			afterToken := func(row int) string { return token(name, keyFor(row, i, data)...) }
 			b := initial
 			// Preserve one other list's position throughout this walk.
-			other := (i + 1) % len(b)
+			other := (i + 2) % len(b)
 			b[other] = bounds{l, 2 * l, initial[other].next, token(listNames[other]+"-before", keyFor(l, other, data)...), token(listNames[other], keyFor(2*l-1, other, data)...)}
+			checkLanding(t, f, pageURL(b), renderListWindows(data, b))
 			for start := 0; start < size; start += l {
 				if start != 0 {
 					stop := min(start+l, size)
@@ -289,7 +290,7 @@ func TestToolAndPageWindowsAgree(t *testing.T) {
 	}
 }
 
-// R-RTJ2-BPK3 R-SSW5-F228 R-SWJU-KDAB
+// R-RTJ2-BPK3 R-SSW5-F228 R-SWJU-KDAB R-K8CH-7HG3
 func TestHostDetailsAndLatestReport(t *testing.T) {
 	f := setup(t)
 	st := f.cfg.Store
