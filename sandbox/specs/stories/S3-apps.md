@@ -1,6 +1,6 @@
 # Stories — apps
 
-What `up` does with the checkout's apps: which directories it takes for apps, how it builds them, where each one runs, what each one is given, and every manifest or secret it refuses. The stories share one setting unless they say otherwise: the worktree is `/home/me/src/ikigenba/wip`, its sandbox is `wip` on port `7400`, its data is under `/home/me/.local/state/ikigenba/sandbox/wip/`, the developer is `me` with `XDG_CONFIG_HOME` and `XDG_STATE_HOME` unset, and the checkout holds two apps, `auth` and `dummy`, whose manifests are below. An app is an immediate subdirectory of the checkout root holding `etc/manifest.toml`; its directory name is the app's name, and its `main` package is `cmd/<app>/` inside it. Each app runs as a socket unit and a service unit, `sandbox-wip-<app>.socket` and `sandbox-wip-<app>.service`. Manifests are checked in app-name order, and `up` reports the first fault it finds and stops there. Every refusal in this group is found while `up` checks the checkout, before a port is taken and before anything is built, so nothing has changed: no app is built, no file, unit or registry entry is written (a sandbox not yet known stays unknown), nothing is started or restarted, and a sandbox that is already up keeps running its previous build unchanged. An app's secrets come from the environment `sandbox up` itself runs with: each secret a manifest lists is read from the environment variable of the same name, except that `GOOGLE_CLIENT_ID` is read from `GOOGLE_LOCALHOST_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` from `GOOGLE_LOCALHOST_CLIENT_SECRET`, for whichever app lists them; no other name is translated. A variable is consulted only for a secret some app's manifest lists.
+What `up` does with the checkout's apps: which directories it takes for apps, how it builds them, where each one runs, what each one is given, and every manifest or secret it refuses. The stories share one setting unless they say otherwise: the worktree is `/home/me/src/ikigenba/wip`, its sandbox is `wip` on port `7400`, its data is under `/home/me/.local/state/ikigenba/sandbox/wip/`, the developer is `me` with `XDG_CONFIG_HOME` and `XDG_STATE_HOME` unset, and the checkout holds two apps, `auth` and `dummy`, whose manifests are below. An app is an immediate subdirectory of the checkout root holding `etc/manifest.toml`; its directory name is the app's name, and its `main` package is `cmd/<app>/` inside it. Every other immediate subdirectory `cmd/<x>/` of an app is one of the app's extra commands, named `<x>`: `up` builds it as it builds the app, with the same `go build` settings, environment and working directory, right after the app's own build and in name order among the app's extra commands, and its binary lands beside the apps' at `<data>/bin/<x>`, staged and moved into place as theirs are and removed by `down` as theirs are. After a successful `up`, `<data>/bin/` holds exactly the programs that `up` built: the binary of an app or extra command gone from the checkout is removed. A failed build of an extra command is reported as the build of its app and has the same consequences. An extra command is only built: it has no unit, socket, route, env file or services entry, and `up` and `url` print nothing for it. Only an app has extra commands; a directory that is not an app is never built, whatever its `cmd/` holds. Every program `up` builds, app or extra command, has a name of its own; a name claimed by more than one program is refused while `up` checks the apps, before any manifest is read. When more than one name is claimed by more than one program, the first by program name is reported. Each app runs as a socket unit and a service unit, `sandbox-wip-<app>.socket` and `sandbox-wip-<app>.service`. Manifests are checked in app-name order, and `up` reports the first fault it finds and stops there. Every refusal in this group is found while `up` checks the checkout, before a port is taken and before anything is built, so nothing has changed: no app is built, no file, unit or registry entry is written (a sandbox not yet known stays unknown), nothing is started or restarted, and a sandbox that is already up keeps running its previous build unchanged. An app's secrets come from the environment `sandbox up` itself runs with: each secret a manifest lists is read from the environment variable of the same name, except that `GOOGLE_CLIENT_ID` is read from `GOOGLE_LOCALHOST_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` from `GOOGLE_LOCALHOST_CLIENT_SECRET`, for whichever app lists them; no other name is translated. A variable is consulted only for a secret some app's manifest lists.
 
 `auth/etc/manifest.toml`:
 
@@ -64,6 +64,99 @@ Postconditions:
 
 - `auth` and `dummy` were each built with `go build` from their `cmd/<app>/` and are running as `sandbox-wip-auth.service` and `sandbox-wip-dummy.service`, behind `sandbox-wip-auth.socket` and `sandbox-wip-dummy.socket`.
 - Nothing was built, started, or routed for `sandbox/`, `docs/`, or `tools/widget/`.
+
+## A developer brings up an app that has an extra command
+
+An app can hold more than one command under its `cmd/`. Here dummy's `cmd/` holds `dummy/` and `dummyd/`, both `main` packages. `up` builds `dummy`, then `dummyd`, and `dummyd`'s binary ends beside the apps' binaries; nothing runs it, so `up` prints what it prints without it. A later `up` rebuilds it with its app, and `down` removes it with the apps' binaries.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+auth   http://auth.wip.localhost:7400
+dummy  http://dummy.wip.localhost:7400
+```
+
+Exits 0. The text is on stdout; stderr is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip` or any directory below it.
+- `auth/etc/manifest.toml` and `dummy/etc/manifest.toml` hold the manifests above; `auth/cmd/` holds only `auth/`, and `dummy/cmd/` holds `dummy/` and `dummyd/`, each a `main` package that builds.
+- The environment `sandbox up` runs with exports `GOOGLE_LOCALHOST_CLIENT_ID` and `GOOGLE_LOCALHOST_CLIENT_SECRET` as above.
+
+Postconditions:
+
+- `auth`, `dummy` and `dummyd` were built, in that order, each with `go build` from its own `cmd/` directory, with the same settings, environment and working directory: `dummyd`'s build ran from `dummy/` as `dummy`'s did.
+- `/home/me/.local/state/ikigenba/sandbox/wip/bin/` holds `auth`, `dummy` and `dummyd`.
+- `auth` and `dummy` run as `sandbox-wip-auth.service` and `sandbox-wip-dummy.service`. No unit, socket, route, env file or services file entry exists for `dummyd`, and nothing runs it.
+
+## A developer brings up a sandbox after removing an extra command
+
+An extra command gone from its app's `cmd/` since the last `up` is not built, and its binary leaves the sandbox: after a successful `up`, `<data>/bin/` holds exactly the programs that `up` built.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+auth   http://auth.wip.localhost:7400
+dummy  http://dummy.wip.localhost:7400
+```
+
+Exits 0. The text is on stdout; stderr is empty.
+
+Preconditions:
+
+- The current directory is inside `/home/me/src/ikigenba/wip`.
+- `wip` is up on `7400` from an `up` run when `dummy/cmd/` held `dummy/` and `dummyd/`, so `/home/me/.local/state/ikigenba/sandbox/wip/bin/` holds `auth`, `dummy` and `dummyd`.
+- `dummy/cmd/dummyd/` has since been removed from the worktree; `auth` and `dummy` build.
+
+Postconditions:
+
+- `/home/me/.local/state/ikigenba/sandbox/wip/bin/dummyd` is gone; `bin/` holds exactly `auth` and `dummy`, the new builds.
+- `auth` and `dummy` run their new builds, as in any redeploy.
+
+## A developer brings up an app whose extra command does not compile
+
+An extra command is part of its app's build: its failure is reported as the app's, naming the app, with go's output quoted, and has the same consequences as a failed build of the app itself. The builds stop there, no unit or generated file is written, and nothing is started, so a sandbox that was already up keeps running its previous build.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: build dummy: exit status 1
+
+> # github.com/ikigenba/ikigenba/dummy/cmd/dummyd
+> cmd/dummyd/main.go:12:2: undefined: serve
+```
+
+Exits 1. The text is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is inside `/home/me/src/ikigenba/wip`.
+- `wip` is known with port `7400` and is up.
+- `auth` and `dummy` build; `dummy/cmd/` also holds `dummyd/`, and `dummy/cmd/dummyd/main.go` does not compile.
+
+Postconditions:
+
+- `wip` is still up, every unit running its previous build. No unit was started, restarted or stopped, and nginx was not reloaded.
+- No binary under `/home/me/.local/state/ikigenba/sandbox/wip/bin/`, unit file, generated file or registry entry changed.
 
 ## A developer brings up apps with edits they have not committed
 
@@ -1112,6 +1205,62 @@ Preconditions:
 
 - The current directory is `/home/me/src/ikigenba/wip`.
 - Both `auth/etc/manifest.toml` and `dummy/etc/manifest.toml` set `default = true`.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+
+## A developer brings up an app whose extra command is named like another app
+
+Every program `up` builds lands in the one directory `<data>/bin/`, so no two may share a name. Here auth's `cmd/` holds `dummy/`, an extra command named like the app `dummy`. Every program claiming the name is named by its directory, in the order of their directories' paths. The clash is found while `up` checks the apps, before any manifest is read. When more than one name is claimed by more than one program, the first by program name is reported.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: more than one program named 'dummy': auth/cmd/dummy, dummy/cmd/dummy
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `auth/cmd/` holds `auth/` and `dummy/`; `dummy/cmd/` holds only `dummy/`.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+
+## A developer brings up two apps that have an extra command of the same name
+
+Two apps' extra commands would land on the same `<data>/bin/<x>`, so `up` refuses them as it refuses an extra command named like an app, while it checks the apps, before any manifest is read.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: more than one program named 'worker': auth/cmd/worker, dummy/cmd/worker
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `auth/cmd/` holds `auth/` and `worker/`; `dummy/cmd/` holds `dummy/` and `worker/`.
 - `wip` is up from an earlier `up`, or is not yet known.
 
 Postconditions:
