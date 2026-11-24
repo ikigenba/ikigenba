@@ -10,27 +10,34 @@
      Data: .Outcome (string, which state to draw: "" the form, unsubmitted;
      "unusable" the token is unknown, used, expired or revoked, one answer
      for all four; "name" the user name was refused, taken, reserved or
-     malformed alike; "key" the key was refused; "limited" the submission
-     was refused because too many came from the person's address; "done"
-     the user was created). .Account (string, the slug of the invite's
-     account; empty when .Outcome is "unusable", which shows nothing of an
-     account, and otherwise set). .DNSName (string, the name people sign in
-     at, "<slug>.<hosts domain>", "acme.metaspot.org"; empty when .Outcome
-     is "unusable"). .Admin (bool, the invite creates its user as an admin
-     of the account; false when .Outcome is "unusable"). .User (string, the
-     user name field as submitted, untrimmed, when .Outcome is "name", "key"
-     or "limited"; the created user's login name when "done"; empty
+     malformed alike; "key" the key was refused; "full" the account's host
+     cannot take another user right now, and the invite stays usable;
+     "limited" the submission was refused because too many came from the
+     person's address, decided before the invite is looked up; "done" the
+     user was created). A removing account's invite answers "unusable".
+     .Account (string, the slug of the invite's account; empty when
+     .Outcome is "unusable" or "limited", which show nothing of an
+     account, and otherwise set). .DNSName (string, the name people sign
+     in at, "<slug>.<hosts domain>", "acme.metaspot.org"; empty when
+     .Account is). .Admin (bool, the invite creates its user as an admin
+     of the account; false when .Account is empty). .User (string, the
+     user name field as submitted, untrimmed, when .Outcome is "name",
+     "key" or "full"; the created user's login name when "done"; empty
      otherwise). .Key (string, the key field as submitted when .Outcome is
-     "name", "key" or "limited"; empty otherwise, and never on "done").
+     "name", "key" or "full"; empty otherwise, and never on "done").
      Hooks: the head as every accounts page (theme, preload, favicon,
      deferred /_appkit/feedback.js, which the copy button needs); title
      "Join <.Account> · accounts", or "Invite link · accounts" when
-     .Outcome is "unusable". body holds main.auth-page with one
+     .Outcome is "unusable" or "limited". body holds main.auth-page with one
      section.card#join, which opens with span.mark (text "Ikigenba").
      When .Outcome is "unusable": h1 "This invite link cannot be used" and
      p#unusable (text "It may have been used already, expired or been
      revoked, or it was not copied whole. Ask whoever sent it for a new
      one."); nothing else.
+     When .Outcome is "limited": div#limited.alert[data-kind=warn][role=alert]
+     holding strong "Too many attempts" and a p (text "Too many
+     submissions have come from your address. Wait a minute, then open
+     the link again."); nothing else: no h1, no account and no form.
      When .Outcome is "done": h1 "You've joined <.Account>" (.Account in a
      code element); div#done.alert.quiet[data-kind=ok][role=status]
      holding strong "Your user is created" and a p (text "Access begins
@@ -50,10 +57,11 @@
      account <.Account>, reached at <.DNSName>. Choose a user name and give
      one SSH public key to sign in with.", .Account and .DNSName each in a
      code element, then, when .Admin, " You will be one of its admins.");
-     when .Outcome is "limited", div#limited.alert[data-kind=warn][role=alert]
-     holding strong "Too many attempts" and a p (text "Too many
-     submissions have come from your address. Wait a few minutes, then
-     submit again."); then form[method=post] with no action holding
+     when .Outcome is "full", div#full.alert[data-kind=warn][role=alert]
+     holding strong "This account cannot take you right now" and a p
+     (text "Its host has no room for another user at the moment. Your
+     invite still works: try again later, or ask whoever invited you.");
+     then form[method=post] with no action holding
      label[for=join-user] "User name",
      input#join-user[type=text][name=user][required][maxlength=32]
      [autocomplete=username][autocapitalize=none][spellcheck=false] with
@@ -72,16 +80,20 @@
      button[type=submit] "Join"; then footer (text "Opening this link does
      not use it up; joining does. Anyone holding it can use it, so keep it
      to yourself."). The form is drawn the same for "", "name",
-     "key" and "limited"; a refusal keeps what was typed. */}}
+     "key" and "full"; a refusal keeps what was typed. */}}
 {{define "join"}}<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>{{if eq .Outcome "unusable"}}Invite link{{else}}Join {{.Account}}{{end}} · accounts</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css">{{template "preload"}}<link rel="icon" href="/_appkit/favicon.svg" type="image/svg+xml"><script src="/_appkit/feedback.js" defer></script><title>{{if or (eq .Outcome "unusable") (eq .Outcome "limited")}}Invite link{{else}}Join {{.Account}}{{end}} · accounts</title></head>
 <body>
 <main class="auth-page">
 <section class="card" id="join">
 <span class="mark">Ikigenba</span>
 {{if eq .Outcome "unusable"}}<h1>This invite link cannot be used</h1>
 <p id="unusable">It may have been used already, expired or been revoked, or it was not copied whole. Ask whoever sent it for a new one.</p>
+{{else if eq .Outcome "limited"}}<div id="limited" class="alert" data-kind="warn" role="alert">
+<strong>Too many attempts</strong>
+<p>Too many submissions have come from your address. Wait a minute, then open the link again.</p>
+</div>
 {{else if eq .Outcome "done"}}<h1>You've joined <code>{{.Account}}</code></h1>
 <div id="done" class="alert quiet" data-kind="ok" role="status">
 <strong>Your user is created</strong>
@@ -98,9 +110,9 @@
 <footer>Use the private key that pairs with the public key you gave. This link no longer works.</footer>
 {{else}}<h1>Join <code>{{.Account}}</code></h1>
 <p id="invited">You've been invited to the account <code>{{.Account}}</code>, reached at <code>{{.DNSName}}</code>. Choose a user name and give one SSH public key to sign in with.{{if .Admin}} You will be one of its admins.{{end}}</p>
-{{if eq .Outcome "limited"}}<div id="limited" class="alert" data-kind="warn" role="alert">
-<strong>Too many attempts</strong>
-<p>Too many submissions have come from your address. Wait a few minutes, then submit again.</p>
+{{if eq .Outcome "full"}}<div id="full" class="alert" data-kind="warn" role="alert">
+<strong>This account cannot take you right now</strong>
+<p>Its host has no room for another user at the moment. Your invite still works: try again later, or ask whoever invited you.</p>
 </div>
 {{end}}<form method="post">
 <label for="join-user">User name</label>
