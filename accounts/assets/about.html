@@ -12,7 +12,7 @@
      (.Banner.Service), dt "Version" then dd#about-version (.Banner.Release
      and .Banner.Commit, present even when empty), and dt "Description" then
      dd#about-description (.Description); then section#how.card with h2 "How
-     it works" and four p: "accounts runs SSH as a service. It keeps a
+     it works" and five p: "accounts runs SSH as a service. It keeps a
      fleet of machines, hosts, named host01, host02 and on in order,
      each with an Elastic IP, a data volume holding /home and /srv, and
      SSH host keys kept on that volume, so a host keeps its address, its
@@ -46,10 +46,21 @@
      accounts cannot be reached. An address that fails to sign in too
      often is banned from a host for 10 minutes; the host reports its
      bans, an agent can lift one, and each host keeps an allowlist of
-     addresses and networks it never bans, loopback always among them."; "Every change is made by an agent
-     with the tools, and each change, and each host going silent, coming
-     back in sync or failing to apply, is recorded in telemetry. This
-     page only shows the hosts, accounts and users." (host01, host02,
+     addresses and networks it never bans, loopback always among them.";
+     "A user may be an admin of their account, a flag the tools set and clear. A person joins an account by
+     an invite: a link an agent makes with the tools, shown once, and
+     shares itself over whatever channel it has; accounts sends no mail.
+     Opening the link shows a page, open to anyone who holds it, that
+     takes a user name and one public key; joining creates the user at
+     once and uses the invite up, while opening it or a refused attempt
+     does not. An invite lasts 72 hours and can be revoked before then; an
+     account holds at most 20 unused invites. An invite makes an ordinary
+     user unless the space made it an admin invite."; "Every change is
+     made by an agent with the tools, except joining, which a person does
+     on the page their invite links to; each change, each invite made,
+     revoked or used, and each host going silent, coming back in sync or
+     failing to apply, is recorded in telemetry. The other pages only show
+     the hosts, accounts and users." (host01, host02,
      /home, /srv, .DefaultType, /srv/<account>, <account>.<hosts domain> and
      ssh <user>@<account>.<hosts domain> each in a code element).
      No section of the landing page's. No script but appkit's
@@ -73,7 +84,8 @@
 <p>accounts runs SSH as a service. It keeps a fleet of machines, hosts, named <code>host01</code>, <code>host02</code> and on in order, each with an Elastic IP, a data volume holding <code>/home</code> and <code>/srv</code>, and SSH host keys kept on that volume, so a host keeps its address, its data and its identity across stop, start and resize. A host starts on the type and sizes the tools choose, a <code>{{.DefaultType}}</code> with a {{.DefaultRootGB}} GB root and a {{.DefaultDataGB}} GB data volume when they choose none; changing its type stops and starts it, and volumes only grow. Long operations run in the background: a host shows provisioning, running, stopping, stopped, starting, resizing, deleting or failed with its reason, and a failed operation can be retried.</p>
 <p>An account is one business, placed on one host. Its slug names a Linux group, a service account of the same name and the folder <code>/srv/&lt;account&gt;</code>, which every user of the account writes to and nobody else reads, and reserves the DNS name <code>&lt;account&gt;.&lt;hosts domain&gt;</code>, which points at its host. Each account runs in a slice of its own with an equal share of the host's CPU and a memory ceiling, so one busy business slows only itself. Account slugs and user names are unique across every host. An account with users cannot be removed, and removing an empty one leaves its folder on the data volume; a host with accounts cannot be deleted, and deleting an empty one keeps its data volume.</p>
 <p>A user is a person in exactly one account, with a login name, one or more ed25519 public keys and a state, active or locked. They sign in with <code>ssh &lt;user&gt;@&lt;account&gt;.&lt;hosts domain&gt;</code> and a key, never a password, and get a home readable by them alone. Locking a user ends their access and keeps their home; only a locked user can be deleted, which removes their home. Each host runs a daemon that fetches what the host should hold and makes it so, and reports back each cycle; a change shows as pending until the host reports it applied. A host keeps working with what it last applied when accounts cannot be reached. An address that fails to sign in too often is banned from a host for 10 minutes; the host reports its bans, an agent can lift one, and each host keeps an allowlist of addresses and networks it never bans, loopback always among them.</p>
-<p>Every change is made by an agent with the tools, and each change, and each host going silent, coming back in sync or failing to apply, is recorded in telemetry. This page only shows the hosts, accounts and users.</p>
+<p>A user may be an admin of their account, a flag the tools set and clear. A person joins an account by an invite: a link an agent makes with the tools, shown once, and shares itself over whatever channel it has; accounts sends no mail. Opening the link shows a page, open to anyone who holds it, that takes a user name and one public key; joining creates the user at once and uses the invite up, while opening it or a refused attempt does not. An invite lasts 72 hours and can be revoked before then; an account holds at most 20 unused invites. An invite makes an ordinary user unless the space made it an admin invite.</p>
+<p>Every change is made by an agent with the tools, except joining, which a person does on the page their invite links to; each change, each invite made, revoked or used, and each host going silent, coming back in sync or failing to apply, is recorded in telemetry. The other pages only show the hosts, accounts and users.</p>
 </section>
 </main>
 {{template "footer" .Banner}}
