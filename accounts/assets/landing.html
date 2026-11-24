@@ -80,7 +80,9 @@
      create hosts and accounts, add users and their keys, mark a user an
      admin of their account, and lock or delete users with the tools, or
      invite a person to join an account by a link they enroll at
-     themselves.", then, when .Configured, " People sign
+     themselves. On a host, with its own tools, every user manages their
+     own keys, and an account's admins invite, lock, unlock, delete,
+     promote and demote its users.", then, when .Configured, " People sign
      in as <user>@<account>.<.Domain>." with <user>@<account>.<.Domain> in
      a code element).
      When .Configured is false: div#not-configured.alert.callout[data-kind=info]
@@ -168,7 +170,7 @@
 {{template "banner" .Banner}}
 <main>
 <h1>accounts</h1>
-<p id="summary" class="lede">SSH as a service: accounts runs hosts, places each business account on one of them, and keeps the people who sign in to work there. Agents create hosts and accounts, add users and their keys, mark a user an admin of their account, and lock or delete users with the tools, or invite a person to join an account by a link they enroll at themselves.{{if .Configured}} People sign in as <code>&lt;user&gt;@&lt;account&gt;.{{.Domain}}</code>.{{end}}</p>
+<p id="summary" class="lede">SSH as a service: accounts runs hosts, places each business account on one of them, and keeps the people who sign in to work there. Agents create hosts and accounts, add users and their keys, mark a user an admin of their account, and lock or delete users with the tools, or invite a person to join an account by a link they enroll at themselves. On a host, with its own tools, every user manages their own keys, and an account's admins invite, lock, unlock, delete, promote and demote its users.{{if .Configured}} People sign in as <code>&lt;user&gt;@&lt;account&gt;.{{.Domain}}</code>.{{end}}</p>
 {{if not .Configured}}<div id="not-configured" class="alert callout" data-kind="info">
 <strong>This space operates no hosts</strong>
 <p>Hosts, accounts and their users are run from one space only, the one whose configuration names the hosts domain. Here the host and account tools refuse, saying the space is not configured.</p>
