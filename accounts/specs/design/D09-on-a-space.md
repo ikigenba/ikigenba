@@ -12,7 +12,7 @@ This document covers what accounts contributes when it runs on a space and in a 
 - the trust accounts places in what reaches it
 - the finish line
 
-Outcomes cited as outcome N are those of /home/mgreenly/Documents/ikigenba-ssh-hosts.md, and log entries those of /home/mgreenly/Documents/ikigenba-ssh-hosts-decisions.md.
+Outcomes cited as outcome N are those of /home/mgreenly/Documents/ikigenba-ssh-hosts.md, and log entries those of /home/mgreenly/Documents/ikigenba-ssh-hosts-decisions.md. Self-service outcome N is outcome N of /home/mgreenly/Documents/ikigenba-self-service-accounts.md.
 
 Almost every step between a checkout and a running host belongs to someone else:
 
@@ -39,7 +39,7 @@ The release holds five members of accounts' directory:
 - `etc/nginx.conf`, holding the bytes of `cli.NginxConf`.
 - `share/icon.svg`, unchanged.
 
-The two files under `etc/` are what the root package's `Etc` embeds (`D01-layout-and-run-seam`, R-C7K6-723O). The templates and the migrations ship inside the binary (`D01-layout-and-run-seam`, R-Y21B-A4SL and R-GSPX-5RRM; the migrations' bytes are `D04-store`'s). The database is not in the release: accounts creates `state/accounts.db` on its first start, and in a sandbox also `state/sandbox-cloud.json` (`D01-layout-and-run-seam`, R-ESG4-8UGU and R-Y9CP-KR8R).
+The two files under `etc/` are what the root package's `Etc` embeds (`D01-layout-and-run-seam`, R-C7K6-723O). The templates and the migrations ship inside the binary (`D01-layout-and-run-seam`, R-7QD1-Z5PQ and R-7RKY-CXGF; the migrations' bytes are `D04-store`'s). The database is not in the release: accounts creates `state/accounts.db` on its first start, and in a sandbox also `state/sandbox-cloud.json` (`D01-layout-and-run-seam`, R-ESG4-8UGU and R-Y9CP-KR8R).
 
 The tarball, its member list and its name are devctl's, and no test reads the checkout. So the release's members are outside what a requirement can state; a developer checks them with `tar`.
 
@@ -54,7 +54,7 @@ In order, the manifest says:
 - the app is `accounts`
 - its description is `pages.Description` (`D06-pages`, new words)
 - it is not the default app
-- it is an MCP service, so the gateway offers the twenty-two tools (`D07-tools`)
+- it is an MCP service, so the gateway offers the twenty-six tools (`D07-tools`)
 - it admits guests (`guests = true`)
 - it holds no secrets (`secrets = []`)
 - a `[database]` table names `sqlite` and `state/accounts.db`
@@ -66,6 +66,7 @@ In order, the manifest says:
 - Under `guests = true`, opsctl's nginx and the sandbox's ask auth's `/check/open` on `location /`. That subrequest admits a request with no credential and passes it on with no identity headers.
 - `/mcp` keeps the strict `/check`, so an agent without a credential is still turned away by nginx and auth with 401.
 - A page asked without a credential now reaches accounts. `identity.Optional` and `D06-pages` send that guest to sign in, as before.
+- The enrollment page, `/join/<token>`, rides the same `location /` and answers the guest itself (`D03-serve`, `D18-enrollment`): a person holding an invite link has no credential on the space (self-service outcome 11). It needs nothing more of the manifest or the fragment.
 - The daemon routes take no person's identity at all (`D03-serve`). `/accountsd` serves the release's binary to anyone, and `/accountsd/v1/*` demands the presigned identity header that `D13-daemon-endpoints` verifies (`D12-host-identity`).
 
 **Departure (recorded, flagged to the caller).** Outcome 21 says the daemon long-polls on "a path nginx passes without auth's subrequest". Under `guests = true` nginx still makes a subrequest, `/check/open`, which admits anyone. The daemon paths therefore depend on auth being up. While auth is down a host keeps its last applied state and sign-ins keep working (outcome 22), so nothing is lost but freshness.
@@ -101,7 +102,7 @@ Giving fragments a portable proxy target would be two sibling changes (log D13, 
 
 Nothing else is held back or added:
 
-- `/accountsd` and `/accountsd/…` ride `location /` with `/check/open`, so the fragment needs no location for them.
+- `/accountsd` and `/accountsd/…` ride `location /` with `/check/open`, so the fragment needs no location for them, and so does `/join/…`.
 - `/mcp` is guarded by nginx's own locations.
 
 `protocol.LongPoll` (45 s) sits under nginx's default 60 s `proxy_read_timeout`, which opsctl's generated configuration leaves unset. So a long poll needs no timeout directive in the fragment either. opsctl and the sandbox include `etc/nginx.conf` inside accounts' server.
@@ -140,7 +141,7 @@ On a space that URL is `https://accounts.<space host>`.
 
 **Backup and restore.** The host's backup archives `state/` whole, so `accounts.db` goes with it: the hosts, operations, accounts, users, keys and latest reports (`D04-store`). After a restore the record may lag AWS. Operations resume against what AWS holds, by their recorded steps and lookups by tag (`D10-operations`). A resource no restored record explains is reported as unexplained, never deleted (`D10-operations`).
 
-**Releases: expand only** (outcome 27). This release adds `0002_hosts.sql` and stops reading or writing the old `groups` and `users` tables of `0001`, but drops nothing (`D04-store`). It stops calling opsctl: no `sudo`, no `opsctl group|user` (`D01-layout-and-run-seam`, R-ETO0-MM7J). It changes nothing in opsctl. The SSH bans release adds `0003_bans.sql`, new tables and indexes only, and the release before it runs on that schema (`D04-store`).
+**Releases: expand only** (outcome 27). This release adds `0002_hosts.sql` and stops reading or writing the old `groups` and `users` tables of `0001`, but drops nothing (`D04-store`). It stops calling opsctl: no `sudo`, no `opsctl group|user` (`D01-layout-and-run-seam`, R-ETO0-MM7J). It changes nothing in opsctl. The SSH bans release adds `0003_bans.sql`, new tables and indexes only, and the release before it runs on that schema (`D04-store`). The self-service release adds `0004_invites.sql` the same way: an admin flag is a row of a new table rather than a new column of the users' table, so the release before it runs on that schema unchanged (`D04-store`); a user enrolled through an invite is an ordinary user to the old release, and the admin flag never reaches a host, so the daemon protocol does not change.
 
 The next release contracts. It drops accounts' old tables, and opsctl removes the shell group and its sshd rules, the pooled limits, the sudo rule for accounts, and its `group` and `user` commands. The daemon protocol changes by expand then contract too (`D11-protocol`).
 
@@ -178,7 +179,7 @@ The timings are `D16-sandbox`'s: about 40 s of `provisioning`, 5 s for a DNS cha
    - `GET /`, `/tools` and `/about` are fetched with the token, and without it (sent to sign in).
    - `POST /mcp` without a credential gets 401 from nginx.
    - `/events` and `/declarations` answer 404.
-   - The gateway's `describe` of accounts lists the twenty-two tools.
+   - The gateway's `describe` of accounts lists the twenty-six tools.
    - `curl` of `/accountsd` without a token gets bytes equal to `<data>/bin/accountsd`.
    - `GET /accountsd/v1/state` without the identity header is answered 401 by accounts.
 2. **Create a host.**
@@ -199,21 +200,32 @@ The timings are `D16-sandbox`'s: about 40 s of `provisioning`, 5 s for a DNS cha
    - `delete_user` `daffy` while active is refused.
    - `lock_user` then `delete_user` `daffy`: `removing`, then gone from `users`.
    - `add_user` `daffy` again succeeds.
-6. **Stop and start.**
+6. **Admins and invites** (self-service outcomes 1 to 15). The link is opened with curl and no bearer token, no credential at all, as the person invited would open it in a browser.
+   - `create_invite` `acme` answers an invite with `admin` false, an `expires` 72 hours after its `created`, and a `link` that is the sandbox's accounts URL followed by `/join/` and the token. `list_invites` `acme` shows it without the link, and the landing row of `acme` counts one invite.
+   - `GET` of the link shows the form naming `acme` and `acme.hosts.test`; a second `GET` shows it again, so opening uses nothing.
+   - A `POST` naming `bugs` (taken), `www` (reserved) and `Bugs` (malformed) each get the one name answer, a `POST` with a bad key the key answer, and the link still shows the form after each.
+   - A `POST` naming `elmer` with a fresh key answers that the user is created, with `elmer`, `acme` and `acme.hosts.test`. `users` shows `elmer` pending, then applied, not an admin. The link then answers the unusable page, 404.
+   - Reuse: a second invite's link, submitted with `elmer` again, gets the name answer and stays usable.
+   - Revoke: `revoke_invite` of that second invite answers it; its link then answers the same unusable page as a used one, and `revoke_invite` again is refused.
+   - Admin: `create_invite` `acme` with `admin` true, then a `POST` naming `porky`: `users` shows `porky` an admin. `set_admin` `acme` `porky` false, then true, each shows on the landing's users list.
+   - Rate limit: a burst of `POST`s to a usable link from the developer's machine, all from one address, ends in 429.
+7. **Stop and start.**
    - `stop_host` `host01`: `stopping`, then `stopped`. Health keeps its last word.
    - `start_host`: `starting`, then `running`, with the same EIP and data volume and health back to `sync`.
-7. **Resize.** `resize_host` `host01` to type `t4g.large` with `data_gb` 60 answers `restarts: true`, then `resizing`, then `running` with the new type and size.
-8. **Restart mid-operation.** `create_host` again (`host02`). During its `provisioning`, run `systemctl --user restart sandbox-<name>-accounts`. Then `resize_host` `host01`'s root to 30 and restart again during `resizing`. Each operation resumes from its recorded step and settles. After it settles, the delivery counts the instances, volumes and addresses tagged `Host=<name>` in `state/sandbox-cloud.json` and expects exactly one instance, one data volume, one root volume and one address per host. An extra resource the interrupted attempt made carries the running operation's `Operation` tag, so the stray scan treats it as explained; telemetry's lack of `resource.unexplained` alone proves nothing here.
-9. **Removal guards.**
+8. **Resize.** `resize_host` `host01` to type `t4g.large` with `data_gb` 60 answers `restarts: true`, then `resizing`, then `running` with the new type and size.
+9. **Restart mid-operation.** `create_host` again (`host02`). During its `provisioning`, run `systemctl --user restart sandbox-<name>-accounts`. Then `resize_host` `host01`'s root to 30 and restart again during `resizing`. Each operation resumes from its recorded step and settles. After it settles, the delivery counts the instances, volumes and addresses tagged `Host=<name>` in `state/sandbox-cloud.json` and expects exactly one instance, one data volume, one root volume and one address per host. An extra resource the interrupted attempt made carries the running operation's `Operation` tag, so the stray scan treats it as explained; telemetry's lack of `resource.unexplained` alone proves nothing here.
+10. **Removal guards.**
    - `delete_host` `host01` is refused while `acme` is on it.
    - `remove_account` `acme` is refused while it has users. Lock and delete them, then `remove_account` `acme`: `removing`, then gone.
    - `delete_host` `host02` and `host01`: `deleting`, then hidden from `hosts` and the landing page. Their data volumes stay in the memory cloud, tagged `Orphaned=true`.
-10. **Telemetry.** telemetry's `catalog` and `search` for accounts show:
+11. **Telemetry.** telemetry's `catalog` and `search` for accounts show:
     - one `change.finished` per changing call
     - `operation.started` and `operation.finished` for each operation
     - `host.changed` for each host state change
     - `account.changed` for each account state change
-    - nothing for a read
+    - `invite.created`, `invite.revoked` and `invite.used` for each invite made, revoked and used, and `admin.changed` for each flag `set_admin` changed
+    - nothing for a read, and nothing for a refused enrollment
+    - no token, in any event: a `request.started` of a link shows the path `/join/` alone
 
 Silence (`host.silent`) is not part of the walk, because a running sandbox host always reports. Unit tests prove it with an injected clock.
 
@@ -233,15 +245,18 @@ Each row is an outcome the walk checks and the documents that own it. A row nami
 | host states, health and the report page | `D10-operations`, `D04-store`, `D06-pages`, `D07-tools` |
 | account placement, DNS name, reserved and taken names | `D07-tools`, `D17-names-keys-sizes`, `D04-store`, `D10-operations` |
 | users pending, then applied; lock, unlock, delete, re-add | `D07-tools`, `D04-store`, `D13-daemon-endpoints`, `D14-accountsd`, `D15-machine` |
+| invites made, listed, counted on the landing, revoked; the admin flag set and shown | `D07-tools`, `D04-store`, `D06-pages` |
+| the enrollment page answers a guest: form, refusals, created user, unusable link, rate limit | `D18-enrollment`; routing `D03-serve` (R-W5XI-KH4S, R-7K9K-2B09); template data `D06-pages`; names and keys `D17-names-keys-sizes` |
 | stop, start, resize with `restarts` | `D07-tools`, `D10-operations` |
 | restart mid-operation resumes, with no duplicates and no strays | `D03-serve` (R-GT9G-XHJE, R-KRUV-BTB7); `D10-operations`; `D16-sandbox` |
 | removal guards, unplace, delete and orphaned volume | `D04-store`, `D07-tools`, `D10-operations` |
-| trail events | `D08-trail`; emitters `D07-tools`, `D10-operations`, `D13-daemon-endpoints` |
-| accounts reaches no sibling and runs no program | `D01-layout-and-run-seam` (R-GTXT-JJIB, R-ETO0-MM7J) |
+| trail events, and no token in the trail | `D08-trail`; emitters `D07-tools`, `D10-operations`, `D13-daemon-endpoints`, `D18-enrollment` |
+| accounts reaches no sibling and runs no program | `D01-layout-and-run-seam` (R-7SSU-QP74, R-ETO0-MM7J) |
 
 ## Trust
 
-- **People.** accounts believes the identity nginx sets for a person (`X-User-Id`, `X-User-Email`, `X-Request-Id`), as every sibling does. Every signed-in user of the space reads and changes every host, account and user, as themselves, and every change is recorded under the caller (`D08-trail`). `guests = true` lets a request without a credential reach accounts' socket. The pages send it to sign in, `/mcp` never sees it, and only the daemon routes answer it.
+- **People.** accounts believes the identity nginx sets for a person (`X-User-Id`, `X-User-Email`, `X-Request-Id`), as every sibling does. Every signed-in user of the space reads and changes every host, account and user, as themselves, and every change is recorded under the caller (`D08-trail`). That includes the admin flag, which any signed-in user may set or clear on any user (`set_admin`), and invites, which any signed-in user may make, admin invites included (self-service outcomes 4 and 10). The admin flag grants nothing on the space: it is recorded, shown and kept for the tools on the box, a later step. `guests = true` lets a request without a credential reach accounts' socket. The pages send it to sign in, `/mcp` never sees it, and only the daemon routes and the enrollment page, `/join/<token>`, answer it.
+- **Invite holders.** The enrollment page believes nothing about who is asking: its one authority is the token in the link (`D18-enrollment`). Whoever holds an unused, unexpired, unrevoked link can create one user of its account, with the admin flag the invite carries, once; a signed-in person opening it is treated as a guest. The token is drawn from the run's random source and kept only as its hash (`D04-store`), answered once by `create_invite` and never by any other tool, page or event (`D07-tools`, `D08-trail`). A refused name, an unusable link and a rate-limited submission each say no more than their one answer (self-service outcome 13), and submissions are limited per address, the address being nginx's `X-Real-IP`, which opsctl's nginx and the sandbox's set from the connection. The token does reach the space's nginx access log, which is opsctl's and outside accounts: an accepted risk, bounded by single use, 72 hours and revocation (`D18-enrollment`).
 - **Daemons.**
   - A daemon is believed only after its presigned `sts:GetCallerIdentity` request has been executed by accounts and answered by STS:
     - for accounts' own AWS account
@@ -274,6 +289,8 @@ On the space, with the space token and through the gateway, the delivery makes t
 6. Stop, start and resize keep the same EIP, data and host key.
 7. Restarting accounts during a create and a resize, and restarting the daemon during an apply, resumes and settles with no orphaned resource.
 8. SSM reaches the host, and `acme` and `bugs` are gone from `us`.
+
+The self-service release's finish line is its decisions document's, and it adds no check to these.
 
 No test can make the following checks, so they are made here:
 
