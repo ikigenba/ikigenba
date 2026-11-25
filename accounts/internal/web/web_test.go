@@ -123,7 +123,7 @@ func same(t *testing.T, a, b *httptest.ResponseRecorder) {
 	}
 }
 
-// R-GC6V-KP5O R-QMQR-HIVU R-GEMO-C8N2 R-QSU9-EDLB R-GIAD-HJV5 R-7K9K-2B09 R-QVA2-5X2P
+// R-GC6V-KP5O R-QMQR-HIVU R-GEMO-C8N2 R-QSU9-EDLB R-GIAD-HJV5 R-FUH5-FVTH R-QVA2-5X2P
 func TestRouteDispatch(t *testing.T) {
 	f := setup(t)
 	st := f.cfg.Store
@@ -160,7 +160,8 @@ func TestRouteDispatch(t *testing.T) {
 				target  string
 				handler http.Handler
 			}{
-				{"/", ph}, {"/tools?ignored=one", ph}, {"/about", ph}, {"/hosts/" + host.Name, ph}, {"/nope", ph}, {"/mcp/", ph}, {"/events", ph}, {"/declarations", ph}, {"/_appkit", ph}, {"/accountsdx", ph}, {"/join", ph}, {"/joinx", ph}, {"/JOIN/x", ph},
+				{"/", ph}, {"/tools?ignored=one", ph}, {"/about", ph}, {"/hosts/" + host.Name, ph}, {"/nope", ph}, {"/mcp/", ph}, {"/events", ph}, {"/declarations", ph}, {"/_appkit", ph}, {"/accountsdx", ph},
+				{"/join/", ph}, {"/join/x", ph}, {"/join/x/y?token=value", ph}, {"/joinx", ph}, {"/JOIN", ph},
 				{"/_appkit/theme.css", page.Static()}, {"/_appkit/not-present", page.Static()},
 				{protocol.BinaryPath, f.cfg.Daemon}, {protocol.StatePath, f.cfg.Daemon}, {"/accountsd//malformed", f.cfg.Daemon}, {"/%61ccountsd?ignored=one", f.cfg.Daemon},
 			} {
@@ -246,7 +247,7 @@ func assertEmptyStore(t *testing.T, st *store.Store) {
 	}
 }
 
-// R-7NX9-7M8C R-QP6K-92D8 R-QVA2-5X2P
+// R-JNG8-4KJ3 R-QP6K-92D8 R-QVA2-5X2P
 func TestMCPRegistrationAndIdentity(t *testing.T) {
 	f := setup(t)
 	h := web.Handler(f.cfg)
@@ -289,7 +290,7 @@ func TestMCPRegistrationAndIdentity(t *testing.T) {
 		t.Fatal("create_account did not use hosts settings", account)
 	}
 	invite := call[tools.InviteMade](t, client, caller, tools.ToolCreateInvite, `{"account":"acme"}`)
-	if !strings.HasPrefix(invite.Link, "http://"+settings.SandboxBinding+"/join/") {
+	if !strings.HasPrefix(invite.Link, "http://"+settings.SandboxBinding+"/join?token=") {
 		t.Fatalf("fallback invitation link = %q", invite.Link)
 	}
 	for _, first := range []string{"supplied", ""} {
@@ -339,7 +340,7 @@ func call[T any](t *testing.T, c *mcp.Client, caller identity.Caller, name, argu
 	return response.Data
 }
 
-// R-7MPC-TUHN
+// R-ISYQ-KAZQ
 func TestOtherRoutesKeepRecordsAndDoNotUseCloud(t *testing.T) {
 	f := setup(t)
 	st := f.cfg.Store
@@ -364,20 +365,23 @@ func TestOtherRoutesKeepRecordsAndDoNotUseCloud(t *testing.T) {
 	}
 	for _, user := range []string{"", "viewer"} {
 		for _, method := range []string{"GET", "POST", "DELETE"} {
-			for _, target := range []string{"/", "/tools", "/about", "/hosts/host01", "/nope", "/mcp/", "/_appkit/theme.css", "/join"} {
+			for _, target := range []string{"/", "/tools", "/about", "/hosts/host01", "/nope", "/mcp/", "/_appkit/theme.css", "/join/", "/join/" + link.Query().Get(join.TokenParam)} {
 				request(h, method, target, user)
 			}
 		}
 		for _, method := range []string{"GET", "DELETE"} {
-			request(h, method, link.Path, user)
+			request(h, method, link.RequestURI(), user)
 		}
 	}
-	token := strings.TrimPrefix(link.Path, "/join/")
+	token := link.Query().Get(join.TokenParam)
 	if found, err := st.InviteByToken(t.Context(), token); err != nil || found.ID != invite.Invite {
 		t.Fatalf("invite after reads = %+v, %v", found, err)
 	}
-	for _, user := range []string{"", "viewer"} {
-		postForm(h, link.Path, user, "chosen-request", "daffy")
+	if got := postForm(h, link.RequestURI(), "", "guest-enrollment", "daffy"); got.Code != http.StatusOK {
+		t.Fatalf("first enrollment status = %d, want %d", got.Code, http.StatusOK)
+	}
+	if got := postForm(h, link.RequestURI(), "viewer", "repeated-enrollment", "daffy"); got.Code != http.StatusNotFound {
+		t.Fatalf("repeated enrollment status = %d, want %d", got.Code, http.StatusNotFound)
 	}
 	if f.wakes.Load() != 0 {
 		t.Fatal("page or static route woke engine")
@@ -406,7 +410,7 @@ func TestOtherRoutesKeepRecordsAndDoNotUseCloud(t *testing.T) {
 	}
 }
 
-// R-7NX9-7M8C R-W5XI-KH4S
+// R-JNG8-4KJ3 R-HX9C-M9PO
 func TestEnrollmentDispatch(t *testing.T) {
 	f := setup(t)
 	f.cfg.ServicesPath = filepath.Join(t.TempDir(), "services.json")
@@ -424,14 +428,14 @@ func TestEnrollmentDispatch(t *testing.T) {
 			t.Fatal(err)
 		}
 		invite := call[tools.InviteMade](t, client, caller, tools.ToolCreateInvite, `{"account":"acme"}`)
-		if !strings.HasPrefix(invite.Link, strings.TrimRight(base, "/")+"/join/") {
+		if !strings.HasPrefix(invite.Link, strings.TrimRight(base, "/")+"/join?token=") {
 			t.Fatalf("invite link = %q for base %q", invite.Link, base)
 		}
 		link, err := url.Parse(invite.Link)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return link.Path
+		return link.RequestURI()
 	}
 	first := invitePath("https://accounts.one.test/")
 	second := invitePath("https://accounts.two.test")
@@ -451,7 +455,7 @@ func TestEnrollmentDispatch(t *testing.T) {
 	}
 	direct := join.Handler(join.Config{Pages: set, Store: f.cfg.Store, Configured: true, Domain: f.cfg.Hosts.Domain,
 		Limiter: join.NewLimiter(f.now), Telemetry: f.cfg.Telemetry})
-	for _, target := range []string{"/join/", "/join/x/y", "/%6aoin/" + strings.TrimPrefix(first, "/join/"), first + "?user=ignore"} {
+	for _, target := range []string{"/join", strings.Replace(first, "/join", "/%6aoin", 1), first + "&user=ignore", first + "&token="} {
 		for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodDelete} {
 			same(t, request(h, method, target, "viewer"), request(direct, method, target, "viewer"))
 		}
@@ -470,25 +474,6 @@ func TestEnrollmentDispatch(t *testing.T) {
 	if len(list.Users) != 1 || list.Users[0].User != "daffy" {
 		t.Fatalf("users after enrollment = %+v", list)
 	}
-	if err := f.cfg.Telemetry.Flush(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	var enrollmentID string
-	var used bool
-	for _, event := range f.capture.Events() {
-		if event.Name == "request.started" && event.Attrs["method"] == http.MethodPost && event.Attrs["path"] == "/join/" {
-			enrollmentID = event.RequestID
-		}
-		if event.Name == "invite.used" {
-			if used || enrollmentID == "" || event.RequestID != enrollmentID || event.RequestID == "unavailable-enrollment" || event.User != "" {
-				t.Fatalf("enrollment event = %+v, request id %q", event, enrollmentID)
-			}
-			used = true
-		}
-	}
-	if !used {
-		t.Fatal("missing enrollment event")
-	}
 	// Restore the tokens taken by the first two submissions.
 	f.advance(2 * join.Every)
 	for i := range join.Burst + 1 {
@@ -501,8 +486,28 @@ func TestEnrollmentDispatch(t *testing.T) {
 		t.Fatalf("GET after rate limit = %d", got.Code)
 	}
 	f.advance(join.Every)
-	if got := postForm(h, second, "", "refilled-request", ""); got.Code == http.StatusTooManyRequests {
-		t.Fatal("submission after refill was rate-limited")
+	if got := postForm(h, second, "", "refilled-request", "bugs"); got.Code != http.StatusOK {
+		t.Fatalf("enrollment after refill status = %d", got.Code)
+	}
+	if err := f.cfg.Telemetry.Flush(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	var enrollmentID string
+	used := make(map[string]string)
+	for _, event := range f.capture.Events() {
+		if event.Name == "request.started" && event.Attrs["method"] == http.MethodPost && event.Attrs["path"] == "/join" {
+			enrollmentID = event.RequestID
+		}
+		if event.Name == "invite.used" {
+			name, _ := event.Attrs["user"].(string)
+			if used[name] != "" || enrollmentID == "" || event.RequestID != enrollmentID || event.RequestID == "unavailable-enrollment" || event.User != "" {
+				t.Fatalf("enrollment event = %+v, request id %q", event, enrollmentID)
+			}
+			used[name] = event.RequestID
+		}
+	}
+	if len(used) != 2 || used["daffy"] == "" || used["daffy"] == "refilled-request" || used["bugs"] != "refilled-request" {
+		t.Fatalf("enrollment request ids = %v", used)
 	}
 }
 

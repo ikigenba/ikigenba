@@ -60,11 +60,16 @@ func (cfg Config) serve(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	token, ok := strings.CutPrefix(r.URL.EscapedPath(), Prefix)
-	if !ok || !store.ValidToken(token) || !cfg.Configured {
+	if r.URL.Path != Path || !cfg.Configured {
 		cfg.unusable(w, r)
 		return
 	}
+	tokens := r.URL.Query()[TokenParam]
+	if len(tokens) != 1 || !store.ValidToken(tokens[0]) {
+		cfg.unusable(w, r)
+		return
+	}
+	token := tokens[0]
 	if r.Method == http.MethodPost && r.Body != nil {
 		body, bodyErr = io.ReadAll(http.MaxBytesReader(w, r.Body, MaxBodyBytes))
 		if _, oversized := errors.AsType[*http.MaxBytesError](bodyErr); oversized {

@@ -254,7 +254,7 @@ func TestApplyPackages(t *testing.T) {
 }
 
 func TestApplyStopsAtCommandFailure(t *testing.T) {
-	// R-MKVI-5RAJ
+	// R-S739-S0BW
 	launchError := errors.New("executable unavailable")
 	for _, tc := range []struct {
 		name, command, label string
@@ -303,7 +303,7 @@ func TestApplyStopsAtCommandFailure(t *testing.T) {
 }
 
 func TestApplyStopsAtHostFilesystemFailure(t *testing.T) {
-	// R-MKVI-5RAJ
+	// R-S739-S0BW
 	f := newHardeningFixture(t)
 	const path = "/etc/dnf/vars/releasever"
 	if err := os.MkdirAll(f.path(path), 0o700); err != nil {

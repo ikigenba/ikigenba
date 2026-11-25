@@ -119,7 +119,7 @@ func TestApplyLockBeforeAnyHardeningFailure(t *testing.T) {
 }
 
 func TestApplyAbortsWhenStoppingUserSliceFails(t *testing.T) {
-	// R-AXUQ-0YCB R-MKVI-5RAJ
+	// R-AXUQ-0YCB R-S739-S0BW
 	f := newHardeningFixture(t)
 	f.put("/etc/group", "shell:x:990:alice,bob\n", 0o644)
 	f.put("/etc/passwd", "alice:x:20001:20001::/home/alice:/bin/bash\nbob:x:20002:20002::/home/bob:/bin/bash\n", 0o644)
@@ -133,7 +133,7 @@ func TestApplyAbortsWhenStoppingUserSliceFails(t *testing.T) {
 }
 
 func TestApplyAccountsAndUsers(t *testing.T) {
-	// R-CM22-DSSX R-0FNF-5G1G R-CPPR-J410 R-CQXN-WVRP R-KZ69-MFRD R-CTDG-OF93 R-82VL-4Z30 R-CX15-TQH6 R-0JB4-AR9J R-SM70-07MK R-CSTR-M40L
+	// R-CM22-DSSX R-0FNF-5G1G R-CPPR-J410 R-CQXN-WVRP R-KZ69-MFRD R-CTDG-OF93 R-82VL-4Z30 R-CX15-TQH6 R-0JB4-AR9J R-SM70-07MK R-B0TM-V8Q5
 	f := newHardeningFixture(t)
 	const groups = "willow:x:21000:\nperry:x:21001:maia\nmaia:x:21003:\nwheel:x:10:maia\n"
 	f.put("/etc/group", groups, 0o644)

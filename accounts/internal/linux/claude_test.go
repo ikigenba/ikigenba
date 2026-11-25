@@ -26,6 +26,7 @@ const (
 	claudeMarketDir    = "/usr/local/share/accountsd/claude"
 	claudePluginDir    = claudeMarketDir + "/plugins/accounts"
 	claudeRepoPath     = "/etc/yum.repos.d/claude-code.repo"
+	wantClaudeRepo     = "[claude-code]\nname=Claude Code\nbaseurl=https://downloads.claude.ai/claude-code/rpm/stable\nenabled=1\ngpgcheck=1\ngpgkey=https://downloads.claude.ai/keys/claude-code.asc\n"
 	claudeKeyProbe     = "rpm -q gpg-pubkey-1a7ecace"
 	claudePackageProbe = "rpm -q claude-code"
 	claudeDnfFlags     = " -y --setopt=claude-code.gpgkey= claude-code"
@@ -288,7 +289,7 @@ func (f *claudeFixture) expectPackageCalls(want ...string) {
 }
 
 func TestApplyClaudeConfigurationAndInstall(t *testing.T) {
-	// R-SOYB-4QQH R-MH7T-0G2G
+	// R-SOYB-4QQH R-R5AD-X4CD
 	f := newClaudeFixture(t)
 	for _, file := range claudeFiles {
 		f.put(file.path, "incorrect bytes", 0o600)
@@ -308,7 +309,7 @@ func TestApplyClaudeConfigurationAndInstall(t *testing.T) {
 			}
 		}
 		if call == claudePackageProbe {
-			f.expectFile(claudeRepoPath, "[claude-code]\nname=Claude Code\nbaseurl=https://downloads.claude.ai/claude-code/rpm/stable\nenabled=1\ngpgcheck=1\ngpgkey=https://downloads.claude.ai/keys/claude-code.asc\n", 0o644)
+			f.expectFile(claudeRepoPath, wantClaudeRepo, 0o644)
 			return linux.Result{ExitCode: 1}, true
 		}
 		return linux.Result{}, false
@@ -316,6 +317,7 @@ func TestApplyClaudeConfigurationAndInstall(t *testing.T) {
 	f.cycle()
 	f.expectPackageCalls(claudeKeyProbe, claudePackageProbe, claudeInstall)
 	f.forbidCalls("gpg ", "rpmkeys ")
+	f.expectAbsent(linux.GnupgHome)
 	f.expectFile(linux.ClaudeStamp, f.now.Format(time.RFC3339)+"\n", 0o644)
 	snapshot := snapshotApplyHost(t, f.root)
 	f.answer = nil
@@ -387,7 +389,7 @@ type failingKeyReader struct{ err error }
 func (r failingKeyReader) Read([]byte) (int, error) { return 0, r.err }
 
 func TestApplyClaudeDownloadsKey(t *testing.T) {
-	// R-MFZW-MOBR R-CSTR-M40L R-SSM0-A1YK
+	// R-FKNN-X12D R-B5P8-EBOX R-B0TM-V8Q5 R-SSM0-A1YK R-R5AD-X4CD
 	const pinnedListing = "pub:fixture\nfpr:::::::::" + linux.ClaudeKeyFingerprint + ":\nsub:fixture\nfpr:::::::::SUBKEY:\n"
 	for _, tc := range []struct {
 		name, listing string
@@ -399,6 +401,7 @@ func TestApplyClaudeDownloadsKey(t *testing.T) {
 		{"missing fingerprint", "pub:something\n", false},
 		{"no primary", "fpr:::::::::" + linux.ClaudeKeyFingerprint + ":\n", false},
 		{"first fingerprint wrong", "pub:fixture\nfpr:::::::::UNRELATED:\nfpr:::::::::" + linux.ClaudeKeyFingerprint + ":\n", false},
+		{"capture below byte limit", pinnedListing + strings.Repeat("x", linux.MaxCapture-len(pinnedListing)-1), true},
 		{"capture at byte limit", pinnedListing + strings.Repeat("x", linux.MaxCapture-len(pinnedListing)), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -436,7 +439,7 @@ func TestApplyClaudeDownloadsKey(t *testing.T) {
 					keyCommands = append(keyCommands, call)
 					f.expectFile(linux.ClaudeKeyFile, key, 0o600)
 				case claudePackageProbe:
-					f.expectAbsent(linux.ClaudeKeyFile)
+					f.expectFile(claudeRepoPath, wantClaudeRepo, 0o644)
 				}
 				return linux.Result{}, false
 			}
@@ -459,6 +462,53 @@ func TestApplyClaudeDownloadsKey(t *testing.T) {
 			}
 			if !slices.Equal(keyCommands, want) {
 				t.Fatalf("key commands = %v, want %v", keyCommands, want)
+			}
+		})
+	}
+}
+
+func TestApplyClaudeStopsWhenKeyCommandFails(t *testing.T) {
+	// R-FKNN-X12D R-R5AD-X4CD R-R7Q6-ONTR
+	for _, stage := range []string{"rpm", "gpg", "rpmkeys"} {
+		t.Run(stage, func(t *testing.T) {
+			f := newClaudeFixture(t)
+			f.put(linux.ClaudeKeyFile, "stale download", 0o600)
+			fetches := 0
+			f.env.Fetch = func(context.Context, string) (io.ReadCloser, error) {
+				fetches++
+				return io.NopCloser(strings.NewReader("fixture key")), nil
+			}
+			fail := linux.Result{ExitCode: 7}
+			last := ""
+			f.answer = func(call string) (linux.Result, bool) {
+				if (stage == "rpm" && call == claudeKeyProbe) || (stage != "rpm" && strings.HasPrefix(call, stage+" ")) {
+					last = call
+					return fail, true
+				}
+				switch {
+				case call == claudeKeyProbe:
+					return linux.Result{ExitCode: 1}, true
+				case strings.HasPrefix(call, "gpg "):
+					return hostAnswer("pub:fixture\nfpr:::::::::" + linux.ClaudeKeyFingerprint + ":\n"), true
+				default:
+					return linux.Result{}, false
+				}
+			}
+			f.host = linux.New(f.env)
+			f.cycle()
+			f.expectDiag(&linux.CommandError{Label: stage, Result: fail})
+			if last == "" || f.commands[len(f.commands)-1] != last {
+				t.Fatalf("commands continued past failing %s: %v", stage, f.commands)
+			}
+			f.expectPackageCalls(claudeKeyProbe)
+			f.expectAbsent(claudeRepoPath)
+			f.expectAbsent(linux.ClaudeKeyFile)
+			wantFetches := 1
+			if stage == "rpm" {
+				wantFetches = 0
+			}
+			if fetches != wantFetches {
+				t.Fatalf("fetched %d times, want %d", fetches, wantFetches)
 			}
 		})
 	}
@@ -506,7 +556,7 @@ func TestApplyClaudeRefusesFailedAndOversizeDownloads(t *testing.T) {
 }
 
 func TestApplyClaudeFailureIsNonfatalAndPaced(t *testing.T) {
-	// R-MIFP-E7T5 R-MM3E-JJ18 R-MKVI-5RAJ
+	// R-R7Q6-ONTR R-SBYV-B3AO
 	f := newClaudeFixture(t)
 	key := fixtureKey("new user")
 	const name = "alice"
@@ -547,7 +597,7 @@ func TestApplyClaudeFailureIsNonfatalAndPaced(t *testing.T) {
 }
 
 func TestApplyClaudeReportsOtherFailures(t *testing.T) {
-	// R-MIFP-E7T5 R-MFZW-MOBR
+	// R-R7Q6-ONTR R-B5P8-EBOX
 	f := newClaudeFixture(t)
 	cmdErr := errors.New("cannot execute\r\ncommand")
 	execute := f.env.Execute
@@ -565,6 +615,7 @@ func TestApplyClaudeReportsOtherFailures(t *testing.T) {
 	f.expectAbsent(claudeRepoPath)
 
 	f.host = linux.New(f.env)
+	f.put(linux.ClaudeKeyFile, "stale download", 0o600)
 	if err := os.Remove(f.path(claudeSettingsPath)); err != nil {
 		t.Fatal(err)
 	}
@@ -575,6 +626,7 @@ func TestApplyClaudeReportsOtherFailures(t *testing.T) {
 	f.expectDiag(errors.New(claudeSettingsPath + ": " + fs.ErrInvalid.Error()))
 	f.expectPackageCalls()
 	f.expectAbsent(claudeRepoPath)
+	f.expectAbsent(linux.ClaudeKeyFile)
 
 	f.env.Stderr = nil
 	f.host = linux.New(f.env)
@@ -585,7 +637,7 @@ func TestApplyClaudeReportsOtherFailures(t *testing.T) {
 }
 
 func TestApplyClaudeUpgradePersistsAcrossRestart(t *testing.T) {
-	// R-MES0-8WL2 R-MH7T-0G2G
+	// R-MES0-8WL2 R-R5AD-X4CD
 	f := newClaudeFixture(t)
 	f.answer = func(call string) (linux.Result, bool) {
 		return linux.Result{ExitCode: 1}, call == claudeUpgrade
@@ -627,7 +679,7 @@ func stagedStampPath(f *hardeningFixture, command linux.Command) string {
 }
 
 func TestApplyClaudePreparesStampOwnershipBeforeFailedUpgrade(t *testing.T) {
-	// R-KWQG-UW9Z R-BU0D-L2QY R-MES0-8WL2 R-MIFP-E7T5
+	// R-KWQG-UW9Z R-BU0D-L2QY R-MES0-8WL2 R-R7Q6-ONTR
 	f := newClaudeFixture(t)
 	var staged string
 	var inode fs.FileInfo

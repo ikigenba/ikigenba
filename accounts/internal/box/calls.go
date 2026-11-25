@@ -104,7 +104,7 @@ func (cfg Config) createInvite(ctx context.Context, c identity.Caller, _ NoArgs,
 		return tools.InviteMade{}, errors.New(tools.NoLink)
 	}
 	base, err := cfg.AccountsURL()
-	if err != nil {
+	if err != nil || len(base) > tools.MaxLinkBase {
 		return tools.InviteMade{}, errors.New(tools.NoLink)
 	}
 	i, token, err := cfg.Store.CreateInviteAs(ctx, r.actor, c)

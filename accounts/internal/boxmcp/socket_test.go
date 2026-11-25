@@ -56,8 +56,7 @@ func socketScript(t *testing.T, listener *net.UnixListener, steps ...socketStep)
 	return done
 }
 
-// The environment override and variable lookup in Run are observable. The
-// production timeout cannot be measured under the offline test discipline.
+// R-42UO-JH5T
 func TestRunSocketOverride(t *testing.T) {
 	l := unixListener(t)
 	list := []byte(`{"jsonrpc":"2.0","id":7,"result":{"tools":[]}}`)

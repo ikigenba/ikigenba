@@ -26,12 +26,23 @@ func BoxMethod(body []byte) string {
 		value := rest[:end]
 		switch string(name) {
 		case `"jsonrpc"`:
-			versionOK = decodeBoxString(value, len("2.0")) == "2.0"
+			if versionOK || decodeBoxString(value, len("2.0")) != "2.0" {
+				return ""
+			}
+			versionOK = true
 		case `"id"`:
-			idOK = value[0] == '"' ||
-				((value[0] == '-' || value[0] >= '0' && value[0] <= '9') && !bytes.ContainsAny(value, ".eE"))
+			if idOK || !BoxIDValid(value) {
+				return ""
+			}
+			idOK = true
 		case `"method"`:
+			if method != "" {
+				return ""
+			}
 			method = decodeBoxString(value, len(MethodToolsList))
+			if method != MethodToolsCall && method != MethodToolsList {
+				return ""
+			}
 		default:
 			// The downstream RPC decoder resolves escaped names before
 			// selecting the last value. Keep aliases from shadowing the
@@ -46,10 +57,19 @@ func BoxMethod(body []byte) string {
 			rest = bytes.TrimLeft(rest[1:], jsonSpace)
 		}
 	}
-	if versionOK && idOK && (method == MethodToolsCall || method == MethodToolsList) {
+	if versionOK && idOK {
 		return method
 	}
 	return ""
+}
+
+// BoxIDValid reports whether a syntactically valid JSON value is a box request id.
+func BoxIDValid(raw []byte) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	first := raw[0]
+	return first == '"' || (first == '-' || first >= '0' && first <= '9') && !bytes.ContainsAny(raw, ".eE")
 }
 
 func decodeBoxString(raw []byte, maxDecoded int) string {

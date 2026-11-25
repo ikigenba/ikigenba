@@ -1,10 +1,13 @@
 package store_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
@@ -117,6 +120,7 @@ func TestActiveUserResolutionUsesCurrentAccountAndUser(t *testing.T) {
 	checkErr(t, s.AdminCheck(ctx, u.Name), store.ErrNotAdmin)
 }
 
+// R-G0D7-NT9R R-G1L4-1L0G
 func TestGuardedKeysUseTheCentralMutationAndKeepLastKey(t *testing.T) {
 	_, s, _ := fixture(t)
 	_, central, _ := fixture(t)
@@ -129,18 +133,21 @@ func TestGuardedKeysUseTheCentralMutationAndKeepLastKey(t *testing.T) {
 		k := store.Key{Type: firstKey.Type, Body: fmt.Sprintf("key-%d", i), Line: fmt.Sprintf("%s key-%d", firstKey.Type, i)}
 		want := value(t, result(central.AddKey(ctx, "acme", "bugs", k)))
 		eq(t, value(t, result(s.AddKeyAs(ctx, "bugs", k))), want)
+		k.Line += " another comment"
 		eq(t, value(t, result(s.AddKeyAs(ctx, "bugs", k))), want)
 	}
 	overflow := store.Key{Type: firstKey.Type, Body: "extra", Line: "extra"}
+	held := value(t, result(s.UserNamed(ctx, "bugs")))
 	observe(s.AddKeyAs(ctx, "bugs", overflow)).assertZero(t, store.ErrTooManyKeys)
 	observe2(s.RemoveKeyAs(ctx, "bugs", overflow)).assertZero(t, store.ErrKeyNotHeld)
-	held := value(t, result(s.UserNamed(ctx, "bugs")))
+	eq(t, value(t, result(s.UserNamed(ctx, "bugs"))), held)
 	for _, k := range held.Keys {
 		if k == firstKey {
 			continue
 		}
 		want, left, err := central.RemoveKey(ctx, "acme", "bugs", k)
 		checkErr(t, err, nil)
+		k.Line += " another comment"
 		got, n, err := s.RemoveKeyAs(ctx, "bugs", k)
 		checkErr(t, err, nil)
 		eq(t, got, want)
@@ -151,14 +158,60 @@ func TestGuardedKeysUseTheCentralMutationAndKeepLastKey(t *testing.T) {
 	_, left, err := s.RemoveKey(ctx, "acme", "bugs", firstKey)
 	checkErr(t, err, nil)
 	eq(t, left, 0)
-	value(t, result(s.Lock(ctx, "acme", "bugs")))
+	locked := value(t, result(s.Lock(ctx, "acme", "bugs")))
 	for _, actor := range []string{"bugs", "unknown"} {
-		observe(s.AddKeyAs(ctx, actor, firstKey)).assertZero(t, store.ErrNotActive)
-		observe2(s.RemoveKeyAs(ctx, actor, firstKey)).assertZero(t, store.ErrNotActive)
+		observe(s.AddKeyAs(ctx, actor, overflow)).assertZero(t, store.ErrNotActive)
+		observe2(s.RemoveKeyAs(ctx, actor, overflow)).assertZero(t, store.ErrNotActive)
 	}
+	eq(t, value(t, result(s.UserNamed(ctx, "bugs"))), locked)
+	eq(t, value(t, result(s.NameHeld(ctx, "unknown"))), false)
 }
 
-// R-RLI6-NN3V R-RU1H-C1AQ
+// R-G2T0-FCR5
+func TestAdminGuardPrecedesTargetAndInviteChecks(t *testing.T) {
+	d, s, now := fixture(t)
+	h, _ := create(t, s)
+	a, _ := place(t, s, "acme", h.Name)
+	b, _ := place(t, s, "bravo", h.Name)
+	for _, name := range []string{"plain", "locked", "removing", "demoted"} {
+		value(t, result(s.AddUser(ctx, a.Slug, name, firstKey, caller)))
+		if name != "plain" {
+			_, _, err := s.SetAdmin(ctx, a.Slug, name, true)
+			checkErr(t, err, nil)
+			checkErr(t, s.AdminCheck(ctx, name), nil)
+		}
+	}
+	value(t, result(s.Lock(ctx, a.Slug, "locked")))
+	value(t, result(s.Lock(ctx, a.Slug, "removing")))
+	value(t, result(s.Delete(ctx, a.Slug, "removing")))
+	_, _, err := s.SetAdmin(ctx, a.Slug, "demoted", false)
+	checkErr(t, err, nil)
+
+	foreign := value(t, result(s.AddUser(ctx, b.Slug, "elmer", firstKey, caller)))
+	foreignInvite, _ := invite(t, s, b.Slug, true)
+	beforeUsers := value(t, result(s.UsersOf(ctx, a.Slug)))
+	beforeHost := value(t, result(s.Host(ctx, h.Name)))
+	random := bytes.NewReader(make([]byte, 64))
+	guarded := store.New(d, store.Config{Now: func() time.Time { return *now }, Rand: random})
+	for _, actor := range []string{"plain", "locked", "removing", "demoted", "missing"} {
+		t.Run(actor, func(t *testing.T) {
+			for _, call := range adminCalls(guarded, actor, "", "") {
+				call.assertZero(t, store.ErrNotAdmin)
+			}
+			for _, call := range adminCalls(guarded, actor, foreign.Name, foreignInvite.ID) {
+				call.assertZero(t, store.ErrNotAdmin)
+			}
+		})
+	}
+	eq(t, random.Len(), 64)
+	eq(t, value(t, result(s.UsersOf(ctx, a.Slug))), beforeUsers)
+	eq(t, value(t, result(s.UserNamed(ctx, foreign.Name))), foreign)
+	eq(t, value(t, result(s.Invites(ctx, a.Slug))), []store.Invite{})
+	eq(t, value(t, result(s.Invites(ctx, b.Slug))), []store.Invite{foreignInvite})
+	eq(t, value(t, result(s.Host(ctx, h.Name))), beforeHost)
+}
+
+// R-RLI6-NN3V R-RU1H-C1AQ R-G40W-T4HU R-G6GP-KNZ8
 func TestGuardedAdminToolsShareCentralRecord(t *testing.T) {
 	_, s, _ := fixture(t)
 	h, _ := create(t, s)
@@ -173,6 +226,9 @@ func TestGuardedAdminToolsShareCentralRecord(t *testing.T) {
 	}
 	_, _, err := s.SetAdmin(ctx, a.Slug, admin.Name, true)
 	checkErr(t, err, nil)
+	beforeTarget := value(t, result(s.UserNamed(ctx, target.Name)))
+	beforeAdmin := value(t, result(s.UserNamed(ctx, admin.Name)))
+	beforeHost := value(t, result(s.Host(ctx, h.Name)))
 	eq(t, value(t, result(s.UsersAs(ctx, admin.Name))), value(t, result(s.UsersOf(ctx, a.Slug))))
 	eq(t, value(t, result(s.InvitesAs(ctx, admin.Name))), []store.Invite{})
 	for _, name := range []string{"", "missing", foreign.Name} {
@@ -193,6 +249,9 @@ func TestGuardedAdminToolsShareCentralRecord(t *testing.T) {
 	checkErr(t, err, nil)
 	eq(t, changed, false)
 	observe(s.DeleteAs(ctx, admin.Name, target.Name)).assertZero(t, store.ErrNotLocked)
+	eq(t, value(t, result(s.UserNamed(ctx, target.Name))), beforeTarget)
+	eq(t, value(t, result(s.UserNamed(ctx, admin.Name))), beforeAdmin)
+	eq(t, value(t, result(s.Host(ctx, h.Name))), beforeHost)
 	promoted, changed, err := s.SetAdminAs(ctx, admin.Name, target.Name, true)
 	checkErr(t, err, nil)
 	eq(t, changed, true)
@@ -221,7 +280,7 @@ func TestGuardedAdminToolsShareCentralRecord(t *testing.T) {
 	eq(t, value(t, result(s.Invites(ctx, a.Slug))), []store.Invite{i})
 	eq(t, value(t, result(s.Account(ctx, a.Slug))).Invites, 1)
 	eq(t, value(t, result(s.InviteByToken(ctx, token))), i)
-	for _, id := range []string{"", "invalid", foreignInvite.ID} {
+	for _, id := range []string{"", "invalid", "iv_ffffffffffffffff", foreignInvite.ID} {
 		observe(s.RevokeInviteAs(ctx, admin.Name, id)).assertZero(t, store.ErrNotFound)
 	}
 	eq(t, value(t, result(s.InviteByToken(ctx, foreignToken))), foreignInvite)
@@ -241,4 +300,64 @@ func TestGuardedAdminToolsShareCentralRecord(t *testing.T) {
 	for _, call := range adminCalls(s, admin.Name, foreign.Name, foreignInvite.ID) {
 		call.assertZero(t, store.ErrNotAdmin)
 	}
+}
+
+// R-G40W-T4HU R-G58T-6W8J R-G6GP-KNZ8
+func TestAdminMutationsMatchCentralTwins(t *testing.T) {
+	const account, actor, target = "acme", "bugs", "daffy"
+	d, s, now := fixture(t)
+	_, central, _ := fixture(t)
+	var host string
+	for _, st := range []*store.Store{s, central} {
+		h, _ := create(t, st)
+		host = h.Name
+		place(t, st, account, host)
+		for _, admin := range []string{actor, target} {
+			value(t, result(st.AddUser(ctx, account, admin, firstKey, caller)))
+			_, _, err := st.SetAdmin(ctx, account, admin, true)
+			checkErr(t, err, nil)
+		}
+	}
+	compare := func(got, want observation) {
+		t.Helper()
+		checkErr(t, want.err, nil)
+		checkErr(t, got.err, nil)
+		eq(t, got.out, want.out)
+		eq(t, value(t, result(s.Host(ctx, host))), value(t, result(central.Host(ctx, host))))
+		eq(t, value(t, result(s.UsersOf(ctx, account))), value(t, result(central.UsersOf(ctx, account))))
+		eq(t, value(t, result(s.Account(ctx, account))), value(t, result(central.Account(ctx, account))))
+	}
+	compare(observe2(s.SetAdminAs(ctx, actor, target, false)), observe2(central.SetAdmin(ctx, account, target, false)))
+	compare(observe(s.LockAs(ctx, actor, target)), observe(central.Lock(ctx, account, target)))
+	compare(observe(s.UnlockAs(ctx, actor, target)), observe(central.Unlock(ctx, account, target)))
+	compare(observe(s.LockAs(ctx, actor, target)), observe(central.Lock(ctx, account, target)))
+	compare(observe(s.DeleteAs(ctx, actor, target)), observe(central.Delete(ctx, account, target)))
+
+	random := bytes.NewReader(make([]byte, 64))
+	guarded := store.New(d, store.Config{Now: func() time.Time { return *now }, Rand: random})
+	atLimit := identity.Caller{UserID: strings.Repeat("x", valid.MaxUserIDBytes)}
+	tooLong := identity.Caller{UserID: atLimit.UserID + "x"}
+	observe2(guarded.CreateInviteAs(ctx, actor, tooLong)).assertZero(t, store.ErrUnreachable)
+	eq(t, value(t, result(s.Invites(ctx, account))), []store.Invite{})
+	first, token, err := s.CreateInviteAs(ctx, actor, atLimit)
+	compare(observe2(first, token, err), observe2(central.CreateInvite(ctx, account, false, atLimit)))
+	second, secondToken, err := s.CreateInviteAs(ctx, actor, caller)
+	compare(observe2(second, secondToken, err), observe2(central.CreateInvite(ctx, account, false, caller)))
+	for range store.MaxInvites - 2 {
+		compare(observe2(s.CreateInviteAs(ctx, actor, caller)), observe2(central.CreateInvite(ctx, account, false, caller)))
+	}
+	observe2(guarded.CreateInviteAs(ctx, actor, caller)).assertZero(t, store.ErrTooManyInvites)
+	eq(t, random.Len(), 64)
+	eq(t, value(t, result(s.Invites(ctx, account))), value(t, result(central.Invites(ctx, account))))
+	compare(observe2(s.Enroll(ctx, token, "joiner", firstKey)), observe2(central.Enroll(ctx, token, "joiner", firstKey)))
+	observe(s.RevokeInviteAs(ctx, actor, first.ID)).assertZero(t, store.ErrNotFound)
+	compare(observe(s.RevokeInviteAs(ctx, actor, second.ID)), observe(central.RevokeInvite(ctx, second.ID)))
+
+	expired, _, err := s.CreateInviteAs(ctx, actor, caller)
+	checkErr(t, err, nil)
+	beforeExpiry := value(t, result(s.InvitesAs(ctx, actor)))
+	*now = expired.Expires
+	observe(s.RevokeInviteAs(ctx, actor, expired.ID)).assertZero(t, store.ErrNotFound)
+	*now = expired.Created
+	eq(t, value(t, result(s.InvitesAs(ctx, actor))), beforeExpiry)
 }

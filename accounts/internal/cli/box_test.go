@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -53,6 +54,7 @@ func (c boxCloud) CallerOf(ctx context.Context, raw, _ string) (cloud.Caller, er
 }
 
 type boxReply struct {
+	body    []byte
 	Tools   []struct{ Name string } `json:"tools"`
 	Content json.RawMessage         `json:"structuredContent"`
 	IsError bool                    `json:"isError"`
@@ -69,7 +71,14 @@ func writeAccountsURL(t *testing.T, file, accountsURL string) {
 	}
 }
 
-// R-H9S1-98I9 R-YQ2D-PVDA
+type boxTrailExpectation struct {
+	status           int
+	headerUser, user string
+	tool, result     string
+	detail           telemetry.Event
+}
+
+// R-1NIG-J0PT R-IJ8P-GADI
 func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 	clock := newDrivenClock()
 	hosts := settings.SandboxHosts
@@ -85,7 +94,7 @@ func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 	var servers int
 	run := startIntegration(t, integrationOptions{
 		now: clock.now, after: clock.after, sleep: clock.sleep, path: path, email: emailMarker + "@fixture.test",
-		random: rand.NewChaCha8([32]byte{6}), acceptNotify: true,
+		random: rand.NewChaCha8([32]byte{6}), acceptNotify: true, noSandbox: true,
 		env: map[string]string{
 			"AWS_REGION": hosts.Region, "IKIGENBA_HOSTS_ZONE_ID": hosts.ZoneID, "IKIGENBA_HOSTS_DOMAIN": hosts.Domain,
 			"IKIGENBA_HOSTS_LAUNCH_TEMPLATE": hosts.LaunchTemplate, "IKIGENBA_HOSTS_INSTANCE_PROFILE": hosts.InstanceProfile,
@@ -113,17 +122,30 @@ func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	u, err := store.New(d, store.Config{Now: clock.now}).User(t.Context(), "acme", "daffy")
-	if closeErr := d.Close(); closeErr != nil {
-		t.Fatal(closeErr)
-	}
+	t.Cleanup(func() { _ = d.Close() })
+	record := store.New(d, store.Config{Now: clock.now})
+	daffy, err := record.User(t.Context(), "acme", "daffy")
 	if err != nil {
 		t.Fatal(err)
 	}
+	bugs, err := record.User(t.Context(), "acme", "bugs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	requests := make(map[string]*boxTrailExpectation)
 	var next int
-	boxRequest := func(method string, params any, requestID string) boxReply {
+	boxRequest := func(method string, params any, requestID string, user store.User, status int) boxReply {
 		t.Helper()
 		next++
+		want := &boxTrailExpectation{status: status, headerUser: "owner"}
+		if user.Name == "bugs" {
+			want.headerUser = ""
+		}
+		want.user = want.headerUser
+		if user.Name != "" {
+			want.user = box.ActorPrefix + user.Name
+		}
+		requests[requestID] = want
 		sts := url.URL{Scheme: "https", Host: "sts." + hosts.Region + ".amazonaws.com", Path: "/"}
 		sts.RawQuery = url.Values{
 			"Action": {"GetCallerIdentity"}, "Version": {"2011-06-15"},
@@ -141,15 +163,19 @@ func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		query := url.Values{protocol.QueryUID: {strconv.FormatInt(u.UID, 10)}}.Encode()
+		query := url.Values{protocol.QueryUID: {strconv.FormatInt(user.UID, 10)}}.Encode()
 		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, run.base+protocol.BoxPath+"?"+query, bytes.NewReader(payload))
 		if err != nil {
 			t.Fatal(err)
 		}
 		req.Header.Set(hostauth.HeaderName, base64.RawURLEncoding.EncodeToString([]byte(sts.String())))
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-User-Id", "owner")
-		req.Header.Set("X-User-Email", run.email)
+		req.Host = "accounts.test"
+		req.Header.Set("X-Forwarded-Proto", "https")
+		if want.headerUser != "" {
+			req.Header.Set("X-User-Id", want.headerUser)
+			req.Header.Set("X-User-Email", run.email)
+		}
 		req.Header.Set("X-Request-Id", requestID)
 		if method == protocol.MethodToolsList {
 			req.Header.Set("MCP-Protocol-Version", mcp.ProtocolVersion)
@@ -161,24 +187,30 @@ func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 		}
 		defer func() { _ = res.Body.Close() }()
 		body, err := io.ReadAll(res.Body)
-		if err != nil || res.StatusCode != http.StatusOK {
-			t.Fatalf("box request %s answered %d: %s (%v)", method, res.StatusCode, body, err)
+		if err != nil || res.StatusCode != status {
+			t.Fatalf("%s: box request %s answered %d: %s (%v)", requestID, method, res.StatusCode, body, err)
+		}
+		if status != http.StatusOK {
+			return boxReply{}
 		}
 		var reply struct {
 			Result boxReply        `json:"result"`
 			Error  json.RawMessage `json:"error"`
 		}
 		if err := json.Unmarshal(body, &reply); err != nil || reply.Error != nil {
-			t.Fatalf("box reply = %s (%v)", body, err)
+			t.Fatalf("%s: box reply = %s (%v)", requestID, body, err)
 		}
-		if reply.Result.IsError && !bytes.Contains(body, []byte(box.OnlyAdmin)) {
-			t.Fatalf("unexpected box tool refusal: %s", body)
-		}
+		reply.Result.body = body
 		return reply.Result
 	}
-	call := func(tool string, args any, requestID string) boxReply {
+	call := func(requestID string, user store.User, tool string, args any, result, refusal string) boxReply {
 		t.Helper()
-		return boxRequest(protocol.MethodToolsCall, map[string]any{"name": tool, "arguments": args}, requestID)
+		reply := boxRequest(protocol.MethodToolsCall, map[string]any{"name": tool, "arguments": args}, requestID, user, http.StatusOK)
+		if reply.IsError != (refusal != "") || (refusal != "" && !bytes.Contains(reply.body, []byte(refusal))) {
+			t.Fatalf("%s: %s reply = %s, expected refusal %q", requestID, tool, reply.body, refusal)
+		}
+		requests[requestID].tool, requests[requestID].result = tool, result
+		return reply
 	}
 	checkList := func(list boxReply, registered, want []string, factoryNumber int) {
 		t.Helper()
@@ -202,65 +234,140 @@ func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 		t.Fatalf("factory catalogs before readiness notification: %v", catalogs)
 	}
 	userTools := []string{tools.ToolAddKey, box.ToolKeys, tools.ToolRemoveKey}
-	checkList(boxRequest(protocol.MethodToolsList, nil, "box-user-tools"), catalogs[1], userTools, 2)
-	if call(tools.ToolAddKey, box.KeyArgs{Key: extraKey}, "box-add-key").IsError {
-		t.Fatal("ordinary user could not add own key")
-	}
+	checkList(boxRequest(protocol.MethodToolsList, nil, "box-user-tools", daffy, http.StatusOK), catalogs[1], userTools, 2)
+	call("box-last-key", daffy, tools.ToolRemoveKey, box.KeyArgs{Key: key}, trail.ResultRefused, box.LastKey)
+	call("box-add-key", daffy, tools.ToolAddKey, box.KeyArgs{Key: extraKey}, trail.ResultOK, "")
 	var users tools.UserList
 	run.call(tools.ToolUsers, tools.AccountArgs{Account: "acme"}, &users)
 	index := slices.IndexFunc(users.Users, func(user tools.User) bool { return user.User == "daffy" })
 	if index < 0 || !slices.Contains(users.Users[index].Keys, extraKey) {
 		t.Fatalf("central list did not read the added key: %+v", users)
 	}
-	if !call(tools.ToolCreateInvite, struct{}{}, "box-no-admin").IsError {
-		t.Fatal("ordinary user could create an invite")
+	call("box-no-admin", daffy, tools.ToolCreateInvite, box.NoArgs{}, trail.ResultRefused, box.OnlyAdmin)
+	call("box-lock-no-admin", bugs, tools.ToolLockUser, box.UserArgs{User: "daffy"}, trail.ResultRefused, box.OnlyAdmin)
+	call("box-keys", daffy, box.ToolKeys, box.NoArgs{}, "", "")
+	missingKey := boxRequest(protocol.MethodToolsCall, map[string]any{"name": tools.ToolAddKey, "arguments": struct{}{}},
+		"box-missing-key", daffy, http.StatusOK)
+	if !missingKey.IsError {
+		t.Fatal("box add_key accepted a call with no key argument")
 	}
+	requests["box-missing-key"].tool = tools.ToolAddKey
+	boxRequest(protocol.MethodToolsCall, map[string]any{"name": tools.ToolAddKey, "arguments": box.KeyArgs{Key: extraKey}},
+		"box-unresolved-uid", store.User{}, http.StatusForbidden)
+
 	run.call(tools.ToolSetAdmin, tools.SetAdminArgs{Account: "acme", User: "daffy", Admin: true}, nil)
-	checkList(boxRequest(protocol.MethodToolsList, nil, "box-admin-tools"), catalogs[2],
+	checkList(boxRequest(protocol.MethodToolsList, nil, "box-admin-tools", daffy, http.StatusOK), catalogs[2],
 		append(slices.Clone(userTools), tools.ToolUsers, tools.ToolLockUser, tools.ToolUnlockUser, tools.ToolDeleteUser,
 			tools.ToolSetAdmin, tools.ToolCreateInvite, tools.ToolListInvites, tools.ToolRevokeInvite), 3)
 	writeAccountsURL(t, path, "https://accounts.two.test/")
-	if call(tools.ToolAddKey, box.KeyArgs{Key: adminKey}, "box-admin-add-key").IsError {
-		t.Fatal("admin could not add own key")
-	}
-	if call(tools.ToolRemoveKey, box.KeyArgs{Key: adminKey}, "box-admin-remove-key").IsError {
-		t.Fatal("admin could not remove own key")
-	}
-	reply := call(tools.ToolCreateInvite, struct{}{}, "box-make-invite")
+	call("box-admin-add-key", daffy, tools.ToolAddKey, box.KeyArgs{Key: adminKey}, trail.ResultOK, "")
+	call("box-admin-remove-key", daffy, tools.ToolRemoveKey, box.KeyArgs{Key: adminKey}, trail.ResultOK, "")
+	reply := call("box-make-invite", daffy, tools.ToolCreateInvite, box.NoArgs{}, trail.ResultOK, "")
 	var made tools.InviteMade
-	if err := json.Unmarshal(reply.Content, &made); err != nil || !strings.HasPrefix(made.Link, "https://accounts.two.test/join/") {
+	if err := json.Unmarshal(reply.Content, &made); err != nil || !strings.HasPrefix(made.Link, "https://accounts.two.test/join?token=") {
 		t.Fatalf("box invite after rewriting service URL: %+v (%v)", made, err)
 	}
-	for i, test := range []struct {
-		name string
-		args any
-	}{
-		{tools.ToolListInvites, struct{}{}},
-		{tools.ToolRevokeInvite, tools.InviteArgs{Invite: made.Invite}},
-		{tools.ToolSetAdmin, box.SetAdminArgs{User: "bugs", Admin: true}},
-		{tools.ToolSetAdmin, box.SetAdminArgs{User: "bugs", Admin: false}},
-		{tools.ToolLockUser, box.UserArgs{User: "bugs"}},
-	} {
-		if call(test.name, test.args, fmt.Sprintf("box-admin-request-%d", i)).IsError {
-			t.Fatalf("%s refused an admin", test.name)
-		}
+	requests["box-make-invite"].detail = telemetry.Event{Name: trail.EventInviteCreated, Attrs: telemetry.Attrs{
+		"invite": made.Invite, "account": made.Account, "host": host.Host, "admin": false,
+	}}
+	call("box-list-invites", daffy, tools.ToolListInvites, box.NoArgs{}, "", "")
+	reply = call("box-revoke-invite", daffy, tools.ToolRevokeInvite, tools.InviteArgs{Invite: made.Invite}, trail.ResultOK, "")
+	var revoked tools.Invite
+	if err := json.Unmarshal(reply.Content, &revoked); err != nil {
+		t.Fatal(err)
 	}
+	requests["box-revoke-invite"].detail = telemetry.Event{Name: trail.EventInviteRevoked, Attrs: telemetry.Attrs{
+		"invite": revoked.Invite, "account": revoked.Account, "host": host.Host,
+	}}
+	call("box-revoke-absent", daffy, tools.ToolRevokeInvite, tools.InviteArgs{Invite: made.Invite}, trail.ResultRefused, tools.NoInvite)
+
+	for _, admin := range []bool{true, false} {
+		requestID := fmt.Sprintf("box-set-admin-%t", admin)
+		args := box.SetAdminArgs{User: "bugs", Admin: admin}
+		reply := call(requestID, daffy, tools.ToolSetAdmin, args, trail.ResultOK, "")
+		var changed tools.UserChange
+		if err := json.Unmarshal(reply.Content, &changed); err != nil || changed.User != args.User || changed.Admin != admin {
+			t.Fatalf("set_admin reply: %+v (%v)", changed, err)
+		}
+		requests[requestID].detail = telemetry.Event{Name: trail.EventAdminChanged, Attrs: telemetry.Attrs{
+			"account": daffy.Account, "host": host.Host, "user": args.User, "admin": args.Admin,
+		}}
+	}
+	call("box-set-admin-unchanged", daffy, tools.ToolSetAdmin, box.SetAdminArgs{User: "bugs"}, trail.ResultOK, "")
+	call("box-set-admin-self", daffy, tools.ToolSetAdmin, box.SetAdminArgs{User: "daffy"}, trail.ResultRefused, box.NotSelf)
+	call("box-users", daffy, tools.ToolUsers, box.NoArgs{}, "", "")
+	call("box-lock", daffy, tools.ToolLockUser, box.UserArgs{User: "bugs"}, trail.ResultOK, "")
+	call("box-unlock", daffy, tools.ToolUnlockUser, box.UserArgs{User: "bugs"}, trail.ResultOK, "")
+	call("box-lock-again", daffy, tools.ToolLockUser, box.UserArgs{User: "bugs"}, trail.ResultOK, "")
+	call("box-delete", daffy, tools.ToolDeleteUser, box.UserArgs{User: "bugs"}, trail.ResultOK, "")
+
 	if run.stop() != cli.ExitSuccess {
 		t.Fatal(run.err.String())
 	}
 	events := run.capture.Events()
+	assertBoxTrail(t, events, requests)
 	assertTrailSecrecy(t, events, made)
-	var addEvents []telemetry.Event
+}
+
+func assertBoxTrail(t *testing.T, events []telemetry.Event, requests map[string]*boxTrailExpectation) {
+	t.Helper()
+	byRequest := make(map[string][]telemetry.Event)
 	for _, event := range events {
-		if event.RequestID == "box-add-key" {
-			addEvents = append(addEvents, event)
+		if _, ok := requests[event.RequestID]; ok {
+			byRequest[event.RequestID] = append(byRequest[event.RequestID], event)
 		}
 	}
-	if len(addEvents) != 4 || addEvents[0].Name != "request.started" || addEvents[1].Name != trail.EventChangeFinished ||
-		addEvents[2].Name != "tool.called" || addEvents[3].Name != "request.finished" ||
-		addEvents[0].User != "owner" || addEvents[3].User != "owner" ||
-		addEvents[1].User != box.ActorPrefix+"daffy" || addEvents[2].User != box.ActorPrefix+"daffy" ||
-		addEvents[0].Attrs["path"] != protocol.BoxPath || addEvents[1].Attrs["tool"] != tools.ToolAddKey {
-		t.Fatalf("box add_key trail = %+v", addEvents)
+	for id, want := range requests {
+		got := byRequest[id]
+		if len(got) < 2 {
+			t.Errorf("%s: missing request pair: %+v", id, got)
+			continue
+		}
+		start, finish := got[0], got[len(got)-1]
+		if start.Name != "request.started" || start.User != want.headerUser ||
+			!reflect.DeepEqual(start.Attrs, telemetry.Attrs{"method": http.MethodPost, "path": protocol.BoxPath}) ||
+			finish.Name != "request.finished" || finish.User != want.headerUser || fmt.Sprint(finish.Attrs["status"]) != strconv.Itoa(want.status) {
+			t.Errorf("%s: request pair: %+v, %+v", id, start, finish)
+		}
+
+		var changes []string
+		for _, event := range got[1 : len(got)-1] {
+			if event.User != want.user {
+				t.Errorf("%s: %s actor = %q, want %q", id, event.Name, event.User, want.user)
+			}
+			switch event.Name {
+			case trail.EventChangeFinished:
+				changes = append(changes, event.Name)
+				if event.Attrs["tool"] != want.tool || event.Attrs["result"] != want.result {
+					t.Errorf("%s: box change = %+v, want tool %q and result %q", id, event.Attrs, want.tool, want.result)
+				}
+			case trail.EventInviteCreated, trail.EventInviteRevoked, trail.EventAdminChanged:
+				changes = append(changes, event.Name)
+				if !reflect.DeepEqual(event.Attrs, want.detail.Attrs) {
+					t.Errorf("%s: %s fields = %+v, want %+v", id, event.Name, event.Attrs, want.detail.Attrs)
+				}
+			case "tool.called":
+				changes = append(changes, event.Name)
+				if event.Attrs["tool"] != want.tool {
+					t.Errorf("%s: tool.called tool = %v, want %q", id, event.Attrs["tool"], want.tool)
+				}
+			case trail.EventOperationStarted, trail.EventOperationFinished, trail.EventHostChanged, trail.EventAccountChanged,
+				trail.EventInviteUsed, "request.started", "request.finished":
+				t.Errorf("%s: unexpected event %+v", id, event)
+			}
+		}
+		var order []string
+		if want.detail.Name != "" {
+			order = append(order, want.detail.Name)
+		}
+		if want.result != "" {
+			order = append(order, trail.EventChangeFinished)
+		}
+		if want.tool != "" {
+			order = append(order, "tool.called")
+		}
+		if !slices.Equal(changes, order) {
+			t.Errorf("%s: box events = %v, want %v", id, changes, order)
+		}
 	}
 }

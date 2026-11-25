@@ -2,9 +2,7 @@
 package web
 
 import (
-	"context"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
@@ -35,8 +33,6 @@ type Config struct {
 	Settings     settings.Settings
 }
 
-type enrollmentURLKey struct{}
-
 // Handler registers the service's tools and composes its routes.
 func Handler(cfg Config) http.Handler {
 	tools.Register(cfg.MCP, tools.Config{
@@ -57,13 +53,7 @@ func Handler(cfg Config) http.Handler {
 		Pages: set, Store: cfg.Store, Configured: cfg.Configured, Domain: cfg.Hosts.Domain,
 		Limiter: join.NewLimiter(cfg.Telemetry.Now), Telemetry: cfg.Telemetry,
 	})
-	traced := telemetry.Middleware(cfg.Telemetry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if original, ok := r.Context().Value(enrollmentURLKey{}).(*url.URL); ok {
-			enrollment := *r
-			enrollment.URL = original
-			jh.ServeHTTP(w, &enrollment)
-			return
-		}
+	return telemetry.Middleware(cfg.Telemetry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		switch {
 		case path == "/mcp":
@@ -72,20 +62,10 @@ func Handler(cfg Config) http.Handler {
 			sh.ServeHTTP(w, r)
 		case path == "/accountsd" || strings.HasPrefix(path, "/accountsd/"):
 			cfg.Daemon.ServeHTTP(w, r)
+		case path == join.Path:
+			jh.ServeHTTP(w, r)
 		default:
 			ph.ServeHTTP(w, r)
 		}
 	}))
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, join.Prefix) {
-			// Keep the enrollment token out of request telemetry while preserving
-			// the original escaped and decoded paths for the enrollment handler.
-			redacted := *r.URL
-			redacted.Path = join.Prefix
-			redacted.RawPath = ""
-			r = r.WithContext(context.WithValue(r.Context(), enrollmentURLKey{}, r.URL))
-			r.URL = &redacted
-		}
-		traced.ServeHTTP(w, r)
-	})
 }

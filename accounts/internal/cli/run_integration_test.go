@@ -519,13 +519,13 @@ func (r *integrationRun) enroll(path, caller, id, user, key string) (int, string
 func invitePath(t *testing.T, invite tools.InviteMade) string {
 	t.Helper()
 	link, err := url.Parse(invite.Link)
-	if err != nil || !strings.HasPrefix(link.Path, "/join/") {
+	if err != nil || link.Path != "/join" || len(link.Query()["token"]) != 1 || !store.ValidToken(link.Query().Get("token")) {
 		t.Fatalf("bad invitation link %q: %v", invite.Link, err)
 	}
-	return link.Path
+	return link.RequestURI()
 }
 
-// R-14LR-87RE R-15TN-LZI3 R-125Y-GOA0 R-EH3H-OOMA
+// R-14LR-87RE R-HQRI-V1CD R-IJ8P-GADI R-125Y-GOA0 R-EH3H-OOMA
 func TestInviteAndEnrollmentTrail(t *testing.T) {
 	run := startIntegration(t, integrationOptions{})
 	run.call(tools.ToolCreateHost, struct{}{}, nil)
@@ -602,7 +602,7 @@ func TestInviteAndEnrollmentTrail(t *testing.T) {
 			t.Fatal(err)
 		}
 		rec := httptest.NewRecorder()
-		set.Write(rec, httptest.NewRequest(http.MethodPost, "/join/", nil), http.StatusOK, "join", pages.JoinData{
+		set.Write(rec, httptest.NewRequest(http.MethodPost, invitePath(t, invite), nil), http.StatusOK, "join", pages.JoinData{
 			Outcome: pages.JoinDone, User: username, Account: invite.Account, DNSName: "acme.hosts.test", Admin: invite.Admin,
 		})
 		if body != rec.Body.String() {
@@ -714,7 +714,7 @@ func TestInviteAndEnrollmentTrail(t *testing.T) {
 			t.Fatalf("%s: missing request pair: %+v", id, events)
 		}
 		start, finish := events[0], events[len(events)-1]
-		if start.Name != "request.started" || !reflect.DeepEqual(start.Attrs, telemetry.Attrs{"method": reply.method, "path": "/join/"}) ||
+		if start.Name != "request.started" || !reflect.DeepEqual(start.Attrs, telemetry.Attrs{"method": reply.method, "path": "/join"}) ||
 			start.User != reply.user || finish.Name != "request.finished" || finish.User != reply.user || finish.Attrs["status"] != int64(reply.status) {
 			t.Fatalf("%s: invalid request pair: %+v", id, events)
 		}
@@ -1098,7 +1098,7 @@ func addressCalls() []catalogCall {
 	}
 }
 
-// R-125Y-GOA0 R-EH3H-OOMA R-YOUH-C3ML
+// R-125Y-GOA0 R-EH3H-OOMA R-IJ8P-GADI
 func TestRunTrail(t *testing.T) {
 	r := startIntegration(t, integrationOptions{})
 	type requestRecord struct {
@@ -1127,8 +1127,8 @@ func TestRunTrail(t *testing.T) {
 				id := fmt.Sprintf("page-%d", len(requests))
 				code, _, _ := r.request(method, path, user, id)
 				trailPath, _, _ := strings.Cut(path, "?")
-				if strings.HasPrefix(trailPath, "/join/") {
-					trailPath = "/join/"
+				if method == http.MethodGet && path == "/tools?x=1" && user == "" && code != http.StatusFound {
+					t.Fatalf("guest tools status = %d, want %d", code, http.StatusFound)
 				}
 				requests[id] = requestRecord{method, trailPath, user, "", code, false}
 			}

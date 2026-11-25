@@ -15,7 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/linux"
 )
 
-// R-KKV0-8QID
+// R-BGR6-LSZ9, R-KKV0-8QID
 func TestBinaryDispatch(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "accountsd")

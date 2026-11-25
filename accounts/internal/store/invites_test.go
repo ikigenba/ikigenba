@@ -115,6 +115,30 @@ func TestInviteRecordAndExpiration(t *testing.T) {
 	eq(t, value(t, result(persisted.InviteByToken(ctx, token))), first)
 }
 
+// R-J04B-VKT7
+func TestAccountInviteCountsAtExpiry(t *testing.T) {
+	_, s, now := fixture(t)
+	h, _ := create(t, s)
+	a, _ := place(t, s, "acme", h.Name)
+	b, _ := place(t, s, "bravo", h.Name)
+	initial, initialToken := invite(t, s, a.Slug, false)
+	*now = initial.Expires.Add(-time.Second)
+	live, liveToken := invite(t, s, a.Slug, false)
+	revoked, _ := invite(t, s, a.Slug, false)
+	value(t, result(s.RevokeInvite(ctx, revoked.ID)))
+	eq(t, value(t, result(s.Account(ctx, a.Slug))).Invites, 2)
+	*now = initial.Expires
+	observe(s.InviteByToken(ctx, initialToken)).assertZero(t, store.ErrNotFound)
+	eq(t, value(t, result(s.InviteByToken(ctx, liveToken))), live)
+	a.Invites = 1
+	eq(t, value(t, result(s.Account(ctx, a.Slug))), a)
+	eq(t, value(t, result(s.Account(ctx, b.Slug))), b)
+	eq(t, value(t, result(s.AccountsOn(ctx, h.Name))), []store.Account{a, b})
+	eq(t, value(t, result(s.ListAccounts(ctx, "", 2))), []store.Account{a, b})
+	eq(t, value(t, result(s.ListAccountsBefore(ctx, "z", 2))), []store.Account{a, b})
+	eq(t, value(t, result(s.LastAccounts(ctx, 2))), []store.Account{a, b})
+}
+
 // R-CAN6-GRJX
 func TestInviteListSortsByCreatedBeforeID(t *testing.T) {
 	d, s, now := fixture(t)
@@ -198,7 +222,7 @@ func TestInviteCapsAndAccountRemoval(t *testing.T) {
 	eq(t, value(t, result(s.Account(ctx, c.Slug))).Invites, 0)
 }
 
-// R-0MO4-6JR3
+// R-IYWF-HT2I
 func TestInviteRandomDrawsAndRollback(t *testing.T) {
 	d, s, now := fixture(t)
 	h, _ := create(t, s)
@@ -230,21 +254,25 @@ func TestInviteRandomDrawsAndRollback(t *testing.T) {
 	eq(t, r.Len(), len(ninthDraw))
 	run(append(bytes.Clone(secondID), secret...), a.Slug).assertZero(t, store.ErrUnreachable)
 	run(bytes.Repeat([]byte{0x12}, 5), a.Slug).assertZero(t, store.ErrUnreachable)
+	run(append(bytes.Clone(secondID), secret[:5]...), a.Slug).assertZero(t, store.ErrUnreachable)
 	eq(t, value(t, result(s.Invites(ctx, a.Slug))), []store.Invite{first})
 
 	script, r = cfg(append(bytes.Clone(id), ninthDraw...))
-	second, _ := invite(t, script, a.Slug, false)
+	second, secondToken := invite(t, script, a.Slug, false)
 	eq(t, r.Len(), 0)
 	eq(t, second.ID, "iv_3838383838383838")
 	eq(t, value(t, result(s.Invites(ctx, a.Slug))), []store.Invite{second, first})
 	*now = first.Expires
 	run(bytes.Repeat(id, 8), b.Slug).assertZero(t, store.ErrUnreachable)
+	run(append(bytes.Repeat([]byte{0x49}, 8), secret...), b.Slug).assertZero(t, store.ErrUnreachable)
 	run(bytes.Clone(id), a.Slug).assertZero(t, store.ErrUnreachable)
 	run(bytes.Repeat(id, 8), b.Slug).assertZero(t, store.ErrUnreachable)
 	script, r = cfg(initialBytes)
 	reused, _ := invite(t, script, a.Slug, false)
 	eq(t, r.Len(), 0)
 	eq(t, reused.ID, first.ID)
+	*now = first.Created
+	observe(s.InviteByToken(ctx, secondToken)).assertZero(t, store.ErrNotFound)
 }
 
 // R-CFIR-ZUIP R-CGQO-DM9E R-CEAV-M2S0
@@ -289,6 +317,7 @@ func TestEnrollCreatesOnlyAfterRefusals(t *testing.T) {
 	eq(t, value(t, result(s.NameHeld(ctx, u.Name))), false)
 }
 
+// R-J1C8-9CJW
 func TestConcurrentEnrollmentConsumesInvite(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "record.db")
 	cfg := store.Config{Now: func() time.Time { return baseTime }, Rand: new(counterRandom)}
@@ -322,6 +351,85 @@ func TestConcurrentEnrollmentConsumesInvite(t *testing.T) {
 	eq(t, successes, 1)
 	observe(s.InviteByToken(ctx, token)).assertZero(t, store.ErrNotFound)
 	observe2(s.Enroll(ctx, token, "elmer", firstKey)).assertZero(t, store.ErrNotFound)
+}
+
+// R-J2K4-N4AL
+func TestInviteTokensStayOutOfStoreAnswers(t *testing.T) {
+	const account, actor, member = "acme", "owner", "candidate"
+	setup := func(t *testing.T) (*store.Store, string, int64) {
+		t.Helper()
+		d, s, now := fixture(t)
+		h, _ := create(t, s)
+		place(t, s, account, h.Name)
+		u := value(t, result(s.AddUser(ctx, account, actor, firstKey, caller)))
+		_, _, err := s.SetAdmin(ctx, account, actor, true)
+		checkErr(t, err, nil)
+		draws := bytes.Join([][]byte{
+			bytes.Repeat([]byte{0x17}, 8), bytes.Repeat([]byte{0xff}, 32),
+			bytes.Repeat([]byte{0x31}, 8), bytes.Repeat([]byte{0xee}, 32),
+			bytes.Repeat([]byte{0x73}, 8), bytes.Repeat([]byte{0x99}, 32),
+		}, nil)
+		return store.New(d, store.Config{Now: func() time.Time { return *now }, Rand: bytes.NewReader(draws)}), h.Name, u.UID
+	}
+	check := func(t *testing.T, tokens []string, values ...any) {
+		t.Helper()
+		for _, issued := range tokens {
+			eq(t, store.ValidToken(issued), true)
+			body := strings.ToLower(strings.TrimPrefix(issued, store.TokenPrefix))
+			for _, value := range values {
+				text := strings.ToLower(fmt.Sprintf("%+v", value))
+				for i := 0; i+8 <= len(body); i++ {
+					if strings.Contains(text, body[i:i+8]) {
+						t.Fatalf("value of type %T contains an invite token fragment", value)
+					}
+				}
+			}
+		}
+	}
+	t.Run("independent inputs", func(t *testing.T) {
+		s, host, uid := setup(t)
+		created, token := invite(t, s, account, true)
+		createdAs, tokenAs, err := s.CreateInviteAs(ctx, actor, caller)
+		checkErr(t, err, nil)
+		other, otherToken := invite(t, s, account, false)
+		unknown := store.TokenPrefix + strings.Repeat("G", 52)
+		tokens := []string{token, tokenAs, otherToken}
+		check(t, tokens, spec, caller, host, account, actor, member, firstKey, uid, unknown, created.ID, createdAs.ID, other.ID, "", "z", 2)
+		check(t, tokens, created, createdAs, other,
+			value(t, result(s.Invites(ctx, account))), value(t, result(s.InvitesAs(ctx, actor))),
+			value(t, result(s.Account(ctx, account))), value(t, result(s.AccountsOn(ctx, host))),
+			value(t, result(s.ListAccounts(ctx, "", 2))), value(t, result(s.ListAccountsBefore(ctx, "z", 2))),
+			value(t, result(s.LastAccounts(ctx, 2))), value(t, result(s.User(ctx, account, actor))),
+			value(t, result(s.UserNamed(ctx, actor))), value(t, result(s.ActiveUserByUID(ctx, host, uid))),
+			value(t, result(s.UsersOf(ctx, account))), value(t, result(s.UsersAs(ctx, actor))),
+			value(t, result(s.ListUsers(ctx, account, "", "", 2))),
+			value(t, result(s.ListUsersBefore(ctx, account, "z", "z", 2))), value(t, result(s.LastUsers(ctx, account, 2))),
+			value(t, result(s.RevokeInviteAs(ctx, actor, createdAs.ID))), value(t, result(s.RevokeInvite(ctx, other.ID))))
+		for _, call := range []observation{observe(s.InviteByToken(ctx, unknown)), observe2(s.Enroll(ctx, unknown, member, firstKey))} {
+			call.assertZero(t, store.ErrNotFound)
+			check(t, tokens, call.out, call.err)
+		}
+	})
+	t.Run("issued credential", func(t *testing.T) {
+		s, _, _ := setup(t)
+		created, token := invite(t, s, account, true)
+		createdAs, tokenAs, err := s.CreateInviteAs(ctx, actor, caller)
+		checkErr(t, err, nil)
+		value(t, result(s.RevokeInviteAs(ctx, actor, createdAs.ID)))
+		tokens := []string{token, tokenAs}
+		found := value(t, result(s.InviteByToken(ctx, token)))
+		eq(t, found, created)
+		conflict := observe2(s.Enroll(ctx, token, actor, firstKey))
+		conflict.assertZero(t, store.ErrTaken)
+		enrolled, user, err := s.Enroll(ctx, token, member, firstKey)
+		checkErr(t, err, nil)
+		eq(t, enrolled, created)
+		check(t, tokens, found, conflict.out, conflict.err, enrolled, user)
+		for _, call := range []observation{observe(s.InviteByToken(ctx, token)), observe2(s.Enroll(ctx, tokenAs, member, firstKey))} {
+			call.assertZero(t, store.ErrNotFound)
+			check(t, tokens, call.out, call.err)
+		}
+	})
 }
 
 // R-R83A-G5Y8 R-R9B6-TXOX R-RAJ3-7PFM R-RBQZ-LH6B R-RCYV-Z8X0 R-RE6S-D0NP R-RFEO-QSEE

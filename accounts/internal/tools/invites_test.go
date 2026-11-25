@@ -52,30 +52,42 @@ func TestInviteEncoding(t *testing.T) {
 	wireArray(t, empty, "invites")
 }
 
-// R-D24H-C8R8 R-EZNH-L5OF R-F23A-CP5T R-FRP6-DVQE R-FU4Z-5F7S R-FVCV-J6YH
+// R-D24H-C8R8 R-EZNH-L5OF R-F23A-CP5T R-GTU8-J8BM R-Q9KZ-Z32B R-FU4Z-5F7S R-FVCV-J6YH
 func TestInviteLifecycle(t *testing.T) {
 	ctx := context.Background()
 	sourceCalls := 0
-	f := setupWithURL(t, true, func() (string, error) { sourceCalls++; return accountsURL, nil })
+	base := accountsURL
+	f := setupWithURL(t, true, func() (string, error) { sourceCalls++; return base, nil })
 	f.serveLoopback()
+	f.now = time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC)
 	h, _ := f.seedHost(true)
-	createdAccount := answer[tools.Account](t, f.call(tools.ToolCreateAccount, tools.CreateAccountArgs{Account: "acme", Host: h.Name}))
+	var responses []mcp.Result
+	recordCall := func(name string, args any) mcp.Result {
+		t.Helper()
+		res := f.call(name, args)
+		responses = append(responses, res)
+		return res
+	}
+	createdAccount := answer[tools.Account](t, recordCall(tools.ToolCreateAccount, tools.CreateAccountArgs{Account: "acme", Host: h.Name}))
 	if createdAccount.Invites != 0 {
 		t.Fatal(createdAccount)
 	}
 	f.seedAccount("beta", h.Name)
+	member := tools.UserArgs{Account: "acme", User: "bugs"}
+	answer[tools.UserChange](t, recordCall(tools.ToolAddUser, tools.UserKeyArgs{Account: member.Account, User: member.User, Key: key(2)}))
 	checkCounts := func(n int) {
 		t.Helper()
-		a := readAccount(t, f, "acme")
-		as := answer[tools.AccountList](t, f.call(tools.ToolAccounts, tools.AccountsArgs{}))
+		a := answer[tools.AccountRead](t, recordCall(tools.ToolAccount, tools.AccountArgs{Account: "acme"}))
+		as := answer[tools.AccountList](t, recordCall(tools.ToolAccounts, tools.AccountsArgs{}))
 		if a.Invites != n || len(as.Accounts) != 2 || as.Accounts[0].Invites != n || as.Accounts[1].Invites != 0 {
 			t.Fatalf("invite count = %d, %+v, want %d for acme and 0 for beta", a.Invites, as, n)
 		}
 	}
 
 	before := f.host(h.Name).Version
+	const joinPrefix = accountsURL + "/join?token="
 	first := answer[tools.InviteMade](t, f.call(tools.ToolCreateInvite, json.RawMessage(`{"account":"acme","admin":null}`)))
-	token, ok := strings.CutPrefix(first.Link, accountsURL+"/join/")
+	token, ok := strings.CutPrefix(first.Link, joinPrefix)
 	if !ok || !store.ValidToken(token) {
 		t.Fatal(first)
 	}
@@ -92,24 +104,24 @@ func TestInviteLifecycle(t *testing.T) {
 	}
 	f.now = f.now.Add(5 * time.Second)
 	admin := true
-	second := answer[tools.InviteMade](t, f.call(tools.ToolCreateInvite, tools.CreateInviteArgs{Account: "acme", Admin: &admin}))
-	if !second.Admin || second.Created != f.now.UTC().Format(time.RFC3339) || sourceCalls != 2 {
+	base = accountsURL + "/"
+	second := answer[tools.InviteMade](t, recordCall(tools.ToolCreateInvite, tools.CreateInviteArgs{Account: "acme", Admin: &admin}))
+	secondToken, ok := strings.CutPrefix(second.Link, base+"/join?token=")
+	if !ok || !store.ValidToken(secondToken) || !second.Admin || second.Created != f.now.UTC().Format(time.RFC3339) || sourceCalls != 2 {
 		t.Fatal(second, sourceCalls)
 	}
+	base = accountsURL
 	checkCounts(2)
 
-	var responses []mcp.Result
-	recordCall := func(name string, args any) mcp.Result {
-		t.Helper()
-		res := f.call(name, args)
-		responses = append(responses, res)
-		return res
-	}
 	acme := tools.AccountArgs{Account: "acme"}
 	revoke := tools.InviteArgs{Invite: first.Invite}
 	list := answer[tools.InviteList](t, recordCall(tools.ToolListInvites, acme))
 	if len(list.Invites) != 2 || list.Invites[0] != want || list.Invites[1].Invite != second.Invite || !list.Invites[1].Admin {
 		t.Fatal(list)
+	}
+	users := answer[tools.UserList](t, recordCall(tools.ToolUsers, tools.UsersArgs{Account: &acme.Account}))
+	if len(users.Users) != 1 || users.Users[0].User != member.User {
+		t.Fatal(users)
 	}
 	if got := answer[tools.Invite](t, recordCall(tools.ToolRevokeInvite, revoke)); got != want {
 		t.Fatal(got, want)
@@ -122,47 +134,52 @@ func TestInviteLifecycle(t *testing.T) {
 		t.Fatal(got)
 	}
 	checkCounts(1)
-	for _, c := range []callCase{{tools.ToolAccount, acme, ""}, {tools.ToolAccounts, tools.AccountsArgs{}, ""},
-		{tools.ToolUsers, tools.UsersArgs{Account: &acme.Account}, ""}} {
-		if got := recordCall(c.name, c.args); got.IsError() {
-			t.Fatal(c.name, unpack(t, got))
-		}
-	}
 	f.now = f.now.Add(store.InviteLife)
 	if got := answer[tools.InviteList](t, recordCall(tools.ToolListInvites, acme)); got.Invites == nil || len(got.Invites) != 0 {
 		t.Fatal(got)
 	}
 	checkCounts(0)
 	refusal(t, recordCall(tools.ToolRevokeInvite, tools.InviteArgs{Invite: second.Invite}), tools.NoInvite)
-	for _, res := range responses {
-		r := unpack(t, res)
-		if strings.Contains(string(r.Structured), token) || strings.Contains(r.Content[0].Text, token) {
-			t.Fatalf("token leaked in %+v", r)
-		}
-	}
 	if f.host(h.Name).Version != before {
 		t.Fatal("invite lifecycle raised desired version")
 	}
 
-	makeBeta := answer[tools.InviteMade](t, f.call(tools.ToolCreateInvite, tools.CreateInviteArgs{Account: "beta"}))
+	makeBeta := answer[tools.InviteMade](t, recordCall(tools.ToolCreateInvite, tools.CreateInviteArgs{Account: "beta"}))
+	if makeBeta.Admin {
+		t.Fatal(makeBeta)
+	}
 	keyValue, err := valid.ParseKey(key(1))
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = f.st.Enroll(ctx, strings.TrimPrefix(makeBeta.Link, accountsURL+"/join/"), "daffy",
+	_, _, err = f.st.Enroll(ctx, strings.TrimPrefix(makeBeta.Link, joinPrefix), "daffy",
 		store.Key{Type: keyValue.Type, Body: keyValue.Body, Line: keyValue.Line()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	refusal(t, f.call(tools.ToolRevokeInvite, tools.InviteArgs{Invite: makeBeta.Invite}), tools.NoInvite)
+	refusal(t, recordCall(tools.ToolRevokeInvite, tools.InviteArgs{Invite: makeBeta.Invite}), tools.NoInvite)
 
-	answer[tools.InviteMade](t, f.call(tools.ToolCreateInvite, tools.CreateInviteArgs{Account: "acme"}))
-	answer[tools.Account](t, f.call(tools.ToolRemoveAccount, acme))
-	if got := answer[tools.InviteList](t, f.call(tools.ToolListInvites, acme)); got.Invites == nil || len(got.Invites) != 0 {
+	answer[tools.InviteMade](t, recordCall(tools.ToolCreateInvite, tools.CreateInviteArgs{Account: "acme"}))
+	answer[tools.UserChange](t, recordCall(tools.ToolLockUser, member))
+	answer[tools.UserChange](t, recordCall(tools.ToolDeleteUser, member))
+	f.syncHost(h.Name)
+	answer[tools.Account](t, recordCall(tools.ToolRemoveAccount, acme))
+	if got := answer[tools.InviteList](t, recordCall(tools.ToolListInvites, acme)); got.Invites == nil || len(got.Invites) != 0 {
 		t.Fatal(got)
 	}
-	refusal(t, f.call(tools.ToolListInvites, tools.AccountArgs{Account: "absent"}), tools.NoAccount)
+	refusal(t, recordCall(tools.ToolListInvites, tools.AccountArgs{Account: "absent"}), tools.NoAccount)
 
+	for _, res := range responses {
+		r := unpack(t, res)
+		if strings.Contains(string(r.Structured), token) {
+			t.Fatalf("token leaked in %s", r.Structured)
+		}
+		for _, block := range r.Content {
+			if strings.Contains(block.Text, token) {
+				t.Fatalf("token leaked in %q", block.Text)
+			}
+		}
+	}
 	for _, event := range allEvents(t, f) {
 		raw, err := json.Marshal(event.Attrs)
 		if err != nil || strings.Contains(string(raw), token) {
@@ -179,15 +196,32 @@ func allEvents(t *testing.T, f *fixture) []telemetry.Event {
 	return f.capture.Events()
 }
 
-// R-DANS-0MY3 R-FVCV-J6YH
+// R-FHMR-DAV0 R-FGEU-ZJ4B R-FVCV-J6YH
 func TestInviteRefusals(t *testing.T) {
-	for _, base := range []func() (string, error){nil, func() (string, error) { return "", settings.ErrNoAccountsURL }} {
+	const maxBytes int = tools.MaxLinkBase
+	const maxUnsigned uint = tools.MaxLinkBase
+	if got, want := [2]uint{uint(maxBytes), maxUnsigned}, [2]uint{512, 512}; got != want {
+		t.Fatal(got, want)
+	}
+	boundary := accountsURL + strings.Repeat("x", maxBytes-len(accountsURL))
+	for _, base := range []func() (string, error){
+		nil,
+		func() (string, error) { return "", settings.ErrNoAccountsURL },
+		func() (string, error) { return boundary[:maxBytes-1] + "é", nil },
+	} {
 		f := setupWithURL(t, true, base)
+		h, _ := f.seedHost(true)
+		f.seedAccount("acme", h.Name)
+		refusal(t, f.call(tools.ToolCreateInvite, tools.CreateInviteArgs{Account: "acme"}), tools.NoLink)
+		list := answer[tools.InviteList](t, f.call(tools.ToolListInvites, tools.AccountArgs{Account: "acme"}))
+		if len(list.Invites) != 0 {
+			t.Fatal(list)
+		}
 		f.d.SetFailing(true)
 		refusal(t, f.call(tools.ToolCreateInvite, tools.CreateInviteArgs{Account: "missing"}), tools.NoLink)
 		refusal(t, f.call(tools.ToolRevokeInvite, tools.InviteArgs{Invite: "iv_0"}), tools.NoInvite)
 	}
-	f := setup(t)
+	f := setupWithURL(t, true, func() (string, error) { return boundary, nil })
 	h, _ := f.seedHost(true)
 	f.seedAccount("acme", h.Name)
 	f.seedAccount("leaving", h.Name)
@@ -208,7 +242,9 @@ func TestInviteRefusals(t *testing.T) {
 	answer[tools.Invite](t, f.call(tools.ToolRevokeInvite, tools.InviteArgs{Invite: first.Invite}))
 	answer[tools.InviteMade](t, f.call(tools.ToolCreateInvite, args))
 	refusal(t, f.call(tools.ToolCreateInvite, args), tools.TooManyInvites)
-	f.now = f.now.Add(store.InviteLife)
+	f.now = f.now.Add(store.InviteLife - time.Second)
+	refusal(t, f.call(tools.ToolCreateInvite, args), tools.TooManyInvites)
+	f.now = f.now.Add(time.Second)
 	answer[tools.InviteMade](t, f.call(tools.ToolCreateInvite, args))
 }
 

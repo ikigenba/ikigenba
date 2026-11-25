@@ -197,7 +197,7 @@ func handle(ctx context.Context, cfg Config, line inputLine) []byte {
 		return rpcError(nil, CodeInvalidRequest, MsgInvalidRequest)
 	}
 
-	fields := exactFields(data)
+	fields, ambiguous := exactFields(data)
 	methodRaw, hasMethod := fields["method"]
 	if !hasMethod && (fields["result"] != nil || fields["error"] != nil) {
 		return nil
@@ -206,10 +206,10 @@ func handle(ctx context.Context, cfg Config, line inputLine) []byte {
 	id := fields["id"]
 	method, isString := jsonString(methodRaw)
 	version, _ := jsonString(fields["jsonrpc"])
-	if id != nil && !validID(id) {
+	if id != nil && !protocol.BoxIDValid(id) {
 		return rpcError(nil, CodeInvalidRequest, MsgInvalidRequest)
 	}
-	if version != protocolVersion || !isString {
+	if ambiguous || version != protocolVersion || !isString {
 		return rpcError(id, CodeInvalidRequest, MsgInvalidRequest)
 	}
 	if id == nil {
@@ -238,15 +238,18 @@ func handle(ctx context.Context, cfg Config, line inputLine) []byte {
 	}
 }
 
-// exactFields observes the member spelling before the decoder unescapes it.
+// exactFields observes the member spelling before the decoder unescapes it
+// and detects any alias or repetition of a JSON-RPC envelope member.
 // The input is already known to be a valid JSON object.
-func exactFields(data []byte) map[string]json.RawMessage {
+func exactFields(data []byte) (map[string]json.RawMessage, bool) {
 	d := json.NewDecoder(bytes.NewReader(data))
 	_, _ = d.Token()
 	fields := make(map[string]json.RawMessage)
+	ambiguous := false
 	for d.More() {
 		start := d.InputOffset()
-		if _, err := d.Token(); err != nil {
+		name, err := d.Token()
+		if err != nil {
 			break
 		}
 		raw := bytes.TrimLeft(data[start:d.InputOffset()], " \t\r\n,")
@@ -255,24 +258,26 @@ func exactFields(data []byte) map[string]json.RawMessage {
 			break
 		}
 		switch string(raw) {
-		case `"jsonrpc"`, `"id"`, `"method"`, `"params"`, `"result"`, `"error"`:
+		case `"jsonrpc"`, `"id"`, `"method"`:
+			key := string(raw[1 : len(raw)-1])
+			ambiguous = ambiguous || fields[key] != nil
+			fields[key] = value
+		case `"params"`, `"result"`, `"error"`:
 			fields[string(raw[1:len(raw)-1])] = value
+		default:
+			switch name {
+			case "jsonrpc", "id", "method":
+				ambiguous = true
+			}
 		}
 	}
-	return fields
+	return fields, ambiguous
 }
 
 func jsonString(raw json.RawMessage) (string, bool) {
 	var value string
 	ok := len(raw) != 0 && raw[0] == '"' && json.Unmarshal(raw, &value) == nil
 	return value, ok
-}
-
-// The caller has already validated the JSON syntax. An integer has no fraction
-// or exponent, and no imposed machine-sized range.
-func validID(id json.RawMessage) bool {
-	first := id[0]
-	return first == '"' || (first == '-' || first >= '0' && first <= '9') && !bytes.ContainsAny(id, ".eE")
 }
 
 func initialize(id, params json.RawMessage) []byte {

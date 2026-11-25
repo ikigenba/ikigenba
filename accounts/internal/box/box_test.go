@@ -203,7 +203,7 @@ func catalog() []toolSpec {
 	}
 }
 
-// R-ZRW5-2YDQ R-ZT41-GQ4F R-ZUBX-UHV4 R-ZVJU-89LT R-ZXZM-ZT37 R-00FF-RCKL R-01NC-54BA R-0434-WNSO R-06IX-O7A2 R-07QU-1Z0R
+// R-ZRW5-2YDQ R-ZT41-GQ4F R-ZUBX-UHV4 R-ZVJU-89LT R-ZXZM-ZT37 R-00FF-RCKL R-01NC-54BA R-0434-WNSO R-06IX-O7A2 R-07QU-1Z0R R-0XCQ-35LC
 func TestCatalog(t *testing.T) {
 	_ = struct {
 		Store       *store.Store
@@ -284,6 +284,9 @@ func checkOutput(t *testing.T, raw json.RawMessage) {
 	t.Helper()
 	var out schema
 	must(t, json.Unmarshal(raw, &out))
+	if _, paged := out.Properties["next"]; paged {
+		t.Fatalf("output schema declares next: %s", raw)
+	}
 	checkRequired(t, out)
 }
 func checkRequired(t *testing.T, s schema) {
@@ -320,6 +323,8 @@ func testArgumentRefusals(t *testing.T, c *mcp.Client, want toolSpec) {
 		}
 	}
 	test("account", acme, false)
+	test("page", "next-page", false)
+	test("limit", 1, false)
 	for _, field := range want.required {
 		test(field, []any{}, false)
 		test(field, nil, true)

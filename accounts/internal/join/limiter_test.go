@@ -24,16 +24,16 @@ func drain(t *testing.T, limiter *join.Limiter, key string) {
 	}
 }
 
-// R-1I5E-OJKW R-1JDB-2BBL R-1KL7-G32A
+// R-1I5E-OJKW R-H8AZ-1M14 R-1KL7-G32A
 func TestLimiterRefill(t *testing.T) {
 	makeLimiter := signature[func(func() time.Time) *join.Limiter](join.NewLimiter)
-	type route string
+	type text string
 	type count int
-	const prefix route = join.Prefix
+	const path, tokenParam text = join.Path, join.TokenParam
 	const burst, addresses, maxBody count = join.Burst, join.MaxAddresses, join.MaxBodyBytes
 	const every = join.Every
-	if prefix != "/join/" || burst != 10 || any(every) != 6*time.Second || addresses != 4096 || maxBody != 4096 {
-		t.Fatal("enrollment limits or route prefix changed")
+	if path != "/join" || tokenParam != "token" || burst != 10 || any(every) != 6*time.Second || addresses != 4096 || maxBody != 4096 {
+		t.Fatal("enrollment route, query parameter or limits changed")
 	}
 	var now time.Time
 	limiter := makeLimiter(func() time.Time { return now })

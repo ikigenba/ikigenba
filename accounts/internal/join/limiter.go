@@ -7,9 +7,10 @@ import (
 	"time"
 )
 
-// Enrollment limits and route prefix.
+// Enrollment route and limits.
 const (
-	Prefix       = "/join/"
+	Path         = "/join"
+	TokenParam   = "token"
 	Burst        = 10
 	Every        = 6 * time.Second
 	MaxAddresses = 4096

@@ -72,7 +72,10 @@ func Get(ctx context.Context, url string) (io.ReadCloser, error) {
 
 func (h *Host) applyClaude(ctx context.Context) {
 	err := h.configureClaude(ctx)
-	if err == nil {
+	if err != nil {
+		// Configuration can fail before the key step gets to remove a stale download.
+		_, _ = h.remove(ClaudeKeyFile)
+	} else {
 		now := h.env.Now()
 		if h.claudeFailed && !now.Before(h.claudeFailAt) && now.Before(h.claudeFailAt.Add(ClaudeRetry)) {
 			return

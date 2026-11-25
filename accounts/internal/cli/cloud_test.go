@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -473,7 +474,7 @@ func secrecyKey(t *testing.T, variant string) string {
 	return key
 }
 
-// R-E18S-PNZ9 R-EKR6-TZUD R-IF26-P336 R-171J-ZR8S R-O4Q5-ZNKA
+// R-E18S-PNZ9 R-EKR6-TZUD R-IF26-P336 R-171J-ZR8S
 func TestRunSecrecy(t *testing.T) {
 	key := secrecyKey(t, "")
 	clock := newDrivenClock()
@@ -568,7 +569,11 @@ func assertTrailSecrecy(t *testing.T, events []telemetry.Event, invites ...tools
 		}
 	}
 	for _, invite := range invites {
-		token := strings.ToLower(strings.TrimPrefix(invitePath(t, invite), "/join/"))
+		link, err := url.Parse(invitePath(t, invite))
+		if err != nil {
+			t.Fatal(err)
+		}
+		token := strings.ToLower(link.Query().Get("token"))
 		for start := 0; start+8 <= len(token); start++ {
 			head := token[start : start+8]
 			for _, id := range ids {

@@ -160,7 +160,7 @@ func TestBoxAuthenticatesBeforeStoreAndBody(t *testing.T) {
 	expectError(t, invoke(s, replay), http.StatusUnauthorized, Refused)
 }
 
-// R-WC9T-P52Z, R-YOG4-5A8H.
+// R-WC9T-P52Z, R-8EXD-EWMO.
 func TestBoxOnlyResolvesActiveUsersOfTheVerifiedHost(t *testing.T) {
 	d, st, host := fixtureStore(t)
 	otherHost := provisionFixtureHost(t, st, "i-87654321")
@@ -202,7 +202,7 @@ func TestBoxOnlyResolvesActiveUsersOfTheVerifiedHost(t *testing.T) {
 	}
 }
 
-// R-YFWT-GW1M.
+// R-YFWT-GW1M, R-8NGO-3ATJ.
 func TestBoxReadsOneBoundedJSONRPCRequest(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	addBoxAccount(t, st, host.Name, "acme")
@@ -228,8 +228,12 @@ func TestBoxReadsOneBoundedJSONRPCRequest(t *testing.T) {
 		strings.Replace(listRequest, protocol.MethodToolsList, "initialize", 1),
 		strings.Replace(listRequest, `"method"`, `"METHOD"`, 1),
 		strings.Replace(listRequest, `"method"`, `"metho\u0064"`, 1),
-		// Appkit decodes the key escape, which could change the method it dispatches.
+		strings.TrimSuffix(callRequest, "}") + `,"method":"` + protocol.MethodToolsList + `"}`,
 		strings.TrimSuffix(callRequest, "}") + `,"metho\u0064":"` + protocol.MethodToolsList + `"}`,
+		strings.TrimSuffix(listRequest, "}") + `,"id":2}`,
+		strings.TrimSuffix(listRequest, "}") + `,"\u0069d":2}`,
+		strings.TrimSuffix(listRequest, "}") + `,"jsonrpc":"2.0"}`,
+		strings.TrimSuffix(listRequest, "}") + `,"jsonrp\u0063":"2.0"}`,
 	} {
 		expectError(t, post(raw), http.StatusBadRequest, BadRequest)
 	}
@@ -245,7 +249,7 @@ func TestBoxReadsOneBoundedJSONRPCRequest(t *testing.T) {
 	}
 }
 
-// R-PA1Z-3OSO, R-PB9V-HGJD.
+// R-8R4D-8M1M, R-8US2-DX9P.
 func TestBoxTierAndForwardedCaller(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	addBoxAccount(t, st, host.Name, "acme")
@@ -373,7 +377,7 @@ func TestBoxRelaysHandlerStatusHeadersAndEachWrite(t *testing.T) {
 	}
 }
 
-// R-YPO0-J1Z6.
+// R-8IL2-K7UR.
 func TestBoxLimitsConcurrentRequestsAndReleasesCompletedSlot(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	addBoxAccount(t, st, host.Name, "acme")
@@ -437,6 +441,7 @@ func TestBoxLimitsConcurrentRequestsAndReleasesCompletedSlot(t *testing.T) {
 	}
 }
 
+// R-WB1X-BDCA.
 func TestBoxAnswersAtTheRecordAndRequestLimits(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	_, st, host := fixtureStore(t)

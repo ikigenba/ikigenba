@@ -380,7 +380,7 @@ func TestForwardPassesVerbatimWhileStatePollIsHeld(t *testing.T) {
 	expectBoxAnswer(t, client, boxmcp.Answer{Message: json.RawMessage(message)})
 }
 
-// R-ZEBV-ZC1F R-R7OV-9LIH
+// R-ZEBV-ZC1F R-PT7L-W7VD
 func TestBoxUsesLatestSuccessfulStateBeforeForwarding(t *testing.T) {
 	s := newBoxScenario(t)
 	memory := s.cfg.Machine
@@ -442,6 +442,9 @@ func TestBoxUsesLatestSuccessfulStateBeforeForwarding(t *testing.T) {
 		boxRequest(protocol.MethodToolsList, "null"), boxRequest("initialize", "1"),
 		strings.Replace(line, "method", "METHOD", 1), strings.Replace(line, "method", `m\u0065thod`, 1),
 		strings.TrimSuffix(line, "}") + `,"metho\u0064":"initialize"}`,
+		strings.TrimSuffix(boxRequest(protocol.MethodToolsCall, "19"), "}") + `,"method":"` + protocol.MethodToolsList + `"}`,
+		strings.TrimSuffix(line, "}") + `,"\u0069d":20}`,
+		strings.TrimSuffix(line, "}") + `,"jsonrp\u0063":"2.0"}`,
 		`{"jsonrpc":"2.0","method":"tools/list"}`, strings.Replace(line, "2.0", "1.0", 1),
 		"[" + line + "]", line + line, "broken",
 	} {

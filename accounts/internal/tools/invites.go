@@ -9,6 +9,9 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 )
 
+// MaxLinkBase bounds the number of bytes in an invite link's base.
+const MaxLinkBase = 512
+
 func (cfg Config) setAdmin(ctx context.Context, _ identity.Caller, a SetAdminArgs, r *changeRecord) (UserChange, error) {
 	if err := cfg.readUserAccount(ctx, r); err != nil {
 		return UserChange{}, err
@@ -33,7 +36,7 @@ func InviteAnswer(i store.Invite) Invite {
 func InviteMadeAnswer(i store.Invite, base, token string) InviteMade {
 	out := InviteAnswer(i)
 	return InviteMade{Invite: out.Invite, Account: out.Account, Admin: out.Admin,
-		Created: out.Created, Expires: out.Expires, CreatedBy: out.CreatedBy, Link: base + "/join/" + token}
+		Created: out.Created, Expires: out.Expires, CreatedBy: out.CreatedBy, Link: base + "/join?token=" + token}
 }
 
 // InviteListAnswer converts a bounded list of stored invites.
@@ -50,7 +53,7 @@ func (cfg Config) createInvite(ctx context.Context, c identity.Caller, a CreateI
 		return InviteMade{}, errors.New(NoLink)
 	}
 	base, err := cfg.AccountsURL()
-	if err != nil {
+	if err != nil || len(base) > MaxLinkBase {
 		return InviteMade{}, errors.New(NoLink)
 	}
 	account, err := cfg.Store.Account(ctx, a.Account)

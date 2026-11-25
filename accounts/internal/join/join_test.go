@@ -113,7 +113,11 @@ func (f *fixture) mint(t *testing.T, account string, admin bool) (store.Invite, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	return i, join.Prefix + token
+	return i, joinTarget(token)
+}
+
+func joinTarget(token string) string {
+	return join.Path + "?" + url.Values{join.TokenParam: {token}}.Encode()
 }
 
 func (f *fixture) data(outcome, account string, admin bool, user, key string) pages.JoinData {
@@ -192,7 +196,7 @@ func (b *countedBody) Read(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// R-1FPL-X03I R-1GXI-ARU7 R-1O8W-LEAD R-1PGS-Z612 R-1QOP-CXRR R-1RWL-QPIG R-20FW-F3PB
+// R-1FPL-X03I R-1GXI-ARU7 R-I6G5-R6SK R-1PGS-Z612 R-1QOP-CXRR R-IZPQ-XOL8 R-20FW-F3PB
 func TestJoinDispatchAndRateLimit(t *testing.T) {
 	f := setup(t)
 	_, link := f.mint(t, f.acct.Slug, true)
@@ -217,10 +221,17 @@ func TestJoinDispatchAndRateLimit(t *testing.T) {
 	if body.n != 0 {
 		t.Fatalf("method or rate-limited request read %d body bytes", body.n)
 	}
-	for _, path := range []string{join.Prefix, join.Prefix + "inv_x", link + "/", link + "/x", join.Prefix + "%69" + strings.TrimPrefix(link, join.Prefix+"i")} {
+	parsed := request("GET", link, nil).URL
+	token := parsed.Query().Get(join.TokenParam)
+	invalidLinks := []string{
+		join.Path, joinTarget(""), join.Path + "?utm=x", joinTarget("inv_x"),
+		link + "&" + parsed.RawQuery, link + "&%74oken=", joinTarget(token + "x"),
+		join.Path + "/?" + parsed.RawQuery, join.Path + "/" + token, join.Path + "?token=%zz",
+	}
+	for _, path := range invalidLinks {
 		for _, method := range []string{"GET", "HEAD", "POST"} {
 			r := request(method, path, body)
-			r.Header.Set("X-Real-IP", "192.0.2.8")
+			r.Header.Set("X-Real-IP", "192.0.2.9")
 			same(t, serve(f.h, r), expected(f.pages, r, 404, pages.JoinData{Outcome: pages.JoinUnusable}))
 		}
 	}
@@ -234,12 +245,12 @@ func TestJoinDispatchAndRateLimit(t *testing.T) {
 	if body.n != 0 {
 		t.Fatalf("unusable or unconfigured link read %d body bytes", body.n)
 	}
-	for range join.Burst - 6 {
+	for range join.Burst - 1 {
 		allow(t, f.cfg.Limiter, "192.0.2.8", true, 0)
 	}
 	allow(t, f.cfg.Limiter, "192.0.2.8", false, join.Every)
 	for range join.Burst {
-		r := request("POST", join.Prefix, body)
+		r := request("POST", join.Path, body)
 		same(t, serve(f.h, r), expected(f.pages, r, 404, pages.JoinData{Outcome: pages.JoinUnusable}))
 	}
 	for _, invalid := range []string{"bogus", "192.0.2.7, 10.0.0.1"} {
@@ -250,9 +261,11 @@ func TestJoinDispatchAndRateLimit(t *testing.T) {
 		same(t, serve(f.h, r), want)
 	}
 	f.db.SetFailing(false)
-	r = request("GET", link+"?utm=x", body)
-	r.Header.Set("X-Real-IP", addr)
-	same(t, serve(f.h, r), expected(f.pages, r, 200, f.data(pages.JoinForm, f.acct.Slug, true, "", "")))
+	for _, path := range []string{link + "&utm=x", join.Path + "?utm=x&" + parsed.RawQuery, "/%6aoin?" + parsed.RawQuery} {
+		r = request("GET", path, body)
+		r.Header.Set("X-Real-IP", addr)
+		same(t, serve(f.h, r), expected(f.pages, r, 200, f.data(pages.JoinForm, f.acct.Slug, true, "", "")))
+	}
 	if after := f.records(t); !reflect.DeepEqual(after, before) {
 		t.Fatal("dispatch or rate refusal changed the record")
 	}
@@ -352,7 +365,7 @@ func (f *fixture) records(t *testing.T) records {
 	return records{hosts, accts, users, invites}
 }
 
-// R-T118-83ML R-26JE-BYES
+// R-T118-83ML R-26JE-BYES R-EXM4-WJR5 R-I6G5-R6SK
 func TestJoinFormRefusals(t *testing.T) {
 	f := setup(t)
 	other := f.place(t, "other")
@@ -365,6 +378,7 @@ func TestJoinFormRefusals(t *testing.T) {
 		user, key, outcome string
 	}{
 		{"Bugs", keyLine(), pages.JoinName},
+		{"root", keyLine(), pages.JoinName},
 		{"root", "ssh-rsa AAAA", pages.JoinName},
 		{" bugs", keyLine(), pages.JoinName},
 		{"daffy", keyLine(), pages.JoinName},
@@ -380,8 +394,9 @@ func TestJoinFormRefusals(t *testing.T) {
 		{formType, "user=bugs&key=%Q2", "", ""},
 		{formType, "", "", ""},
 	} {
-		r := request("POST", link+"?user=bugs&key=query", strings.NewReader(tc.body))
+		r := request("POST", link+"&user=bugs&key=query", strings.NewReader(tc.body))
 		r.Header.Set("Content-Type", tc.contentType)
+		r.Header.Set("X-Real-IP", "192.0.2.8")
 		same(t, serve(f.h, r), expected(f.pages, r, 422, f.data(pages.JoinName, f.acct.Slug, true, tc.user, tc.key)))
 	}
 	if after := f.records(t); !reflect.DeepEqual(after, before) {
@@ -414,7 +429,7 @@ func TestJoinFullHost(t *testing.T) {
 	}
 }
 
-// R-T294-LVDA
+// R-T294-LVDA R-EXM4-WJR5
 func TestJoinNameClaimedDuringEnrollment(t *testing.T) {
 	f := setup(t)
 	ctx := t.Context()
@@ -431,7 +446,8 @@ func TestJoinNameClaimedDuringEnrollment(t *testing.T) {
 	if held, err := f.store.NameHeld(ctx, "bugs"); held || err != nil {
 		t.Fatalf("name before enrollment = %t, %v; want free", held, err)
 	}
-	if _, _, err := f.store.Enroll(ctx, strings.TrimPrefix(link, join.Prefix), "bugs", storedKey()); !errors.Is(err, store.ErrTaken) {
+	token := request("GET", link, nil).URL.Query().Get(join.TokenParam)
+	if _, _, err := f.store.Enroll(ctx, token, "bugs", storedKey()); !errors.Is(err, store.ErrTaken) {
 		t.Fatalf("competing claim returns %v, want %v", err, store.ErrTaken)
 	}
 	before := f.records(t)
@@ -451,7 +467,7 @@ func TestJoinNameClaimedDuringEnrollment(t *testing.T) {
 	same(t, serve(f.h, r), expected(f.pages, r, 200, f.data(pages.JoinDone, f.acct.Slug, true, "bugs", "")))
 }
 
-// R-T294-LVDA R-25BH-Y6O3 R-26JE-BYES R-T74Q-4YC2 R-T8CM-IQ2R
+// R-T294-LVDA R-25BH-Y6O3 R-26JE-BYES R-T74Q-4YC2 R-39O3-OM20
 func TestJoinEnrollment(t *testing.T) {
 	f := setup(t)
 	ctx := t.Context()
@@ -523,7 +539,7 @@ func TestJoinAccountReadFailureAfterEnrollment(t *testing.T) {
 	}
 }
 
-// R-T4OX-DEUO
+// R-JSZC-46DW
 func TestUnusableLinksAreIdentical(t *testing.T) {
 	f := setup(t)
 	ctx := t.Context()
@@ -545,12 +561,13 @@ func TestUnusableLinksAreIdentical(t *testing.T) {
 	}
 	cfg := f.cfg
 	cfg.Configured = false
-	unknown := join.Prefix + store.TokenPrefix + strings.Repeat("0", len(strings.TrimPrefix(validLink, join.Prefix+store.TokenPrefix)))
-	if !store.ValidToken(strings.TrimPrefix(unknown, join.Prefix)) {
+	validToken := request("GET", validLink, nil).URL.Query().Get(join.TokenParam)
+	unknown := store.TokenPrefix + strings.Repeat("0", len(validToken)-len(store.TokenPrefix))
+	if !store.ValidToken(unknown) {
 		t.Fatal("unknown token fixture is malformed")
 	}
 	want := expected(f.pages, request("GET", used, nil), 404, pages.JoinData{Outcome: pages.JoinUnusable})
-	for _, link := range []string{used, expired, revokedLink, removing, unknown, validLink + "/", join.Prefix} {
+	for _, link := range []string{used, expired, revokedLink, removing, joinTarget(unknown), validLink + "/", join.Path} {
 		same(t, serve(f.h, request("GET", link, nil)), want)
 		same(t, serve(f.h, submission(link, "root", "submitted key")), want)
 	}
@@ -558,10 +575,12 @@ func TestUnusableLinksAreIdentical(t *testing.T) {
 		t.Fatal(err)
 	}
 	same(t, serve(f.h, request("GET", removing, nil)), want)
+	same(t, serve(f.h, submission(removing, "bugs", keyLine())), want)
 	same(t, serve(join.Handler(cfg), request("GET", validLink, nil)), want)
+	same(t, serve(join.Handler(cfg), submission(validLink, "bugs", keyLine())), want)
 }
 
-// R-28Z7-3HW6 R-T8CM-IQ2R
+// R-28Z7-3HW6 R-39O3-OM20
 func TestConcurrentEnrollment(t *testing.T) {
 	f := setup(t)
 	i, link := f.mint(t, f.acct.Slug, false)

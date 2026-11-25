@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -352,10 +355,27 @@ func TestBoxScopesAdminTargets(t *testing.T) {
 	}
 }
 
-// R-0TP0-XUD9 R-0UWX-BM3Y
+// R-0TP0-XUD9 R-0UWX-BM3Y R-J4ZX-ENRZ
 func TestBoxEventsAndSecrets(t *testing.T) {
 	f := setup(t)
 	f.seed()
+	const bodyMarker = "GHIJKLMNGHIJKLMNGHIJKLMN"
+	const commentMarker = "WXYZ1234WXYZ1234WXYZ1234"
+	markerKey := func(i byte) string {
+		fields := strings.Split(key(i), " ")
+		return fields[0] + " " + fields[1][:28] + bodyMarker + fields[1][52:] + " " + commentMarker
+	}
+	held := markerKey(1)
+	marker := markerKey(8)
+	initial, err := valid.ParseKey(key(1))
+	must(t, err)
+	last, err := valid.ParseKey(held)
+	must(t, err)
+	_, err = f.st.AddKey(t.Context(), acme, daffy, store.Key{Type: last.Type, Body: last.Body, Line: last.Line()})
+	must(t, err)
+	_, _, err = f.st.RemoveKey(t.Context(), acme, daffy, store.Key{Type: initial.Type, Body: initial.Body, Line: initial.Line()})
+	must(t, err)
+
 	boxClient, _ := f.box(true)
 	central := f.central()
 	actor := box.ActorPrefix + daffy
@@ -367,20 +387,20 @@ func TestBoxEventsAndSecrets(t *testing.T) {
 		return r
 	}
 	i := answer[tools.InviteMade](t, as(t, boxClient, daffy, tools.ToolCreateInvite, box.NoArgs{}))
-	token, ok := strings.CutPrefix(i.Link, baseURL+"/join/")
+	token, ok := strings.CutPrefix(i.Link, baseURL+"/join?token=")
 	if !ok || !store.ValidToken(token) {
 		t.Fatal(i)
 	}
-	marker := key(8) + " marker-key"
-	k, err := valid.ParseKey(marker)
-	must(t, err)
 	answer[tools.UserChange](t, do(tools.ToolAddKey, box.KeyArgs{Key: marker}))
 	answer[tools.KeyRemoved](t, do(tools.ToolRemoveKey, box.KeyArgs{Key: marker}))
-	refusal(t, do(tools.ToolRemoveKey, box.KeyArgs{Key: key(1)}), box.LastKey)
+	refusal(t, do(tools.ToolRemoveKey, box.KeyArgs{Key: held}), box.LastKey)
 	answer[tools.InviteList](t, do(tools.ToolListInvites, box.NoArgs{}))
 	later = append(later, as(t, central, daffy, tools.ToolListInvites, tools.AccountArgs{Account: acme}))
-	refusal(t, as(t, boxClient, bugs, tools.ToolRevokeInvite, tools.InviteArgs{Invite: i.Invite}), box.OnlyAdmin)
+	refused := as(t, boxClient, bugs, tools.ToolRevokeInvite, tools.InviteArgs{Invite: i.Invite})
+	refusal(t, refused, box.OnlyAdmin)
+	later = append(later, refused)
 	answer[tools.Invite](t, do(tools.ToolRevokeInvite, tools.InviteArgs{Invite: i.Invite}))
+	later = append(later, as(t, central, daffy, tools.ToolAccount, tools.AccountArgs{Account: acme}))
 	for range 2 {
 		answer[tools.UserChange](t, do(tools.ToolSetAdmin, box.SetAdminArgs{User: bugs, Admin: true}))
 	}
@@ -388,10 +408,14 @@ func TestBoxEventsAndSecrets(t *testing.T) {
 	f.d.SetFailing(true)
 	refusal(t, do(tools.ToolLockUser, box.UserArgs{User: bugs}), store.Unreachable)
 	for _, r := range later {
-		data, err := json.Marshal(r)
-		must(t, err)
-		if strings.Contains(string(data), token) {
-			t.Fatalf("token leaked: %s", data)
+		out := wire(t, r)
+		if strings.Contains(string(out.Structured), token) {
+			t.Fatalf("token leaked in %s", out.Structured)
+		}
+		for _, block := range out.Content {
+			if strings.Contains(block.Text, token) {
+				t.Fatalf("token leaked in %q", block.Text)
+			}
 		}
 	}
 	change := func(tool, account, host, user, result, by string) telemetry.Event {
@@ -416,9 +440,12 @@ func TestBoxEventsAndSecrets(t *testing.T) {
 	for _, e := range f.events() {
 		data, err := json.Marshal(e.Attrs)
 		must(t, err)
-		for _, secret := range []string{token, k.Body, k.Line(), marker} {
-			if strings.Contains(string(data), secret) {
-				t.Fatalf("secret leaked in %s", data)
+		if strings.Contains(string(data), token) {
+			t.Fatalf("token leaked in %s", data)
+		}
+		for _, secret := range []string{bodyMarker, commentMarker} {
+			if strings.Contains(strings.ToUpper(string(data)), secret) {
+				t.Fatalf("key marker leaked in %s", data)
 			}
 		}
 		if e.Name != "tool.called" {
@@ -472,11 +499,13 @@ func TestBoxInviteURLFailure(t *testing.T) {
 	f.seed()
 	urlErr := errors.New("accounts URL unavailable")
 	calls := 0
+	base, baseErr := "", urlErr
 	f.base = func() (string, error) {
 		calls++
-		return "", urlErr
+		return base, baseErr
 	}
 	c, _ := f.box(true)
+	central := f.central()
 	before := f.snapshot()
 
 	refusal(t, as(t, c, bugs, tools.ToolCreateInvite, box.NoArgs{}), box.OnlyAdmin)
@@ -490,6 +519,16 @@ func TestBoxInviteURLFailure(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("admin call read the URL %d times, want 1", calls)
 	}
+	f.unchanged(before)
+
+	base, baseErr = baseURL+strings.Repeat("x", tools.MaxLinkBase), nil
+	refusal(t, as(t, c, bugs, tools.ToolCreateInvite, box.NoArgs{}), box.OnlyAdmin)
+	calls = 0
+	refusal(t, as(t, c, daffy, tools.ToolCreateInvite, box.NoArgs{}), tools.NoLink)
+	if calls != 1 {
+		t.Fatalf("admin call read the oversized URL %d times, want 1", calls)
+	}
+	refusal(t, as(t, central, daffy, tools.ToolCreateInvite, tools.CreateInviteArgs{Account: acme}), tools.NoLink)
 	f.unchanged(before)
 }
 
@@ -526,27 +565,88 @@ func TestBoxInviteCapacityAndLists(t *testing.T) {
 	f.unchanged(before)
 }
 
-func TestBoxUserListAtHostCapacity(t *testing.T) {
+// R-0XCQ-35LC
+func TestBoxAnswersAtCapacity(t *testing.T) {
 	f := setup(t)
-	f.seed()
-	c, _ := f.box(true)
-	k, err := valid.ParseKey(key(8))
-	must(t, err)
-	publicKey := store.Key{Type: k.Type, Body: k.Body, Line: k.Line()}
+	ctx := t.Context()
 	maker := identity.Caller{UserID: strings.Repeat("<", valid.MaxUserIDBytes)}
-	for i := 3; i < valid.MaxUsersPerHost; i++ {
+	host, _, err := f.st.CreateHost(ctx, store.HostSpec{Type: valid.DefaultType, RootGB: valid.DefaultRootGB, DataGB: valid.DefaultDataGB}, maker)
+	must(t, err)
+	_, _, err = f.st.PlaceAccount(ctx, acme, host.Name, maker)
+	must(t, err)
+	largeKey := func(i byte) store.Key {
+		t.Helper()
+		prefix := strings.TrimSuffix(key(i), "fixture")
+		k, err := valid.ParseKey(prefix + strings.Repeat("<", valid.MaxKeyBytes-len(prefix)))
+		must(t, err)
+		return store.Key{Type: k.Type, Body: k.Body, Line: k.Line()}
+	}
+	admin := fmt.Sprintf("user%028d", 0)
+	firstKey := largeKey(1)
+	for i := range valid.MaxUsersPerHost {
 		name := fmt.Sprintf("user%028d", i)
-		_, err := f.st.AddUser(t.Context(), acme, name, publicKey, maker)
+		_, err := f.st.AddUser(ctx, acme, name, firstKey, maker)
 		must(t, err)
 	}
-	res := as(t, c, daffy, tools.ToolUsers, box.NoArgs{})
-	users := answer[box.UserList](t, res).Users
-	if len(users) != valid.MaxUsersPerHost-1 || users[0].User != bugs || users[1].User != daffy {
-		t.Fatalf("users = %d, first = %+v", len(users), users[:min(len(users), 2)])
-	}
-	encoded, err := json.Marshal(res)
+	_, _, err = f.st.SetAdmin(ctx, acme, admin, true)
 	must(t, err)
-	if len(encoded) > protocol.MaxBoxAnswer {
-		t.Fatal(len(encoded))
+	for i := 2; i <= valid.MaxKeysPerUser; i++ {
+		_, err = f.st.AddKey(ctx, acme, admin, largeKey(byte(i)))
+		must(t, err)
+	}
+	for range store.MaxInvites - 1 {
+		_, _, err = f.st.CreateInvite(ctx, acme, false, maker)
+		must(t, err)
+	}
+
+	base := baseURL + "/" + strings.Repeat("<", tools.MaxLinkBase-len(baseURL)-1)
+	f.base = func() (string, error) { return base, nil }
+	srv := mcp.NewServer(mcp.ServerConfig{Name: "accounts", Telemetry: f.w})
+	box.RegisterAdmin(srv, box.Config{Store: f.st, Telemetry: f.w, AccountsURL: f.base})
+	var replyBytes atomic.Int64
+	httpServer := httptest.NewServer(identity.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, r)
+		replyBytes.Store(int64(rec.Body.Len()))
+		for name, values := range rec.Header() {
+			w.Header()[name] = values
+		}
+		w.WriteHeader(rec.Code)
+		if _, err := rec.Body.WriteTo(w); err != nil {
+			t.Error(err)
+		}
+	})))
+	t.Cleanup(httpServer.Close)
+	client := mcp.NewClient(mcp.ClientConfig{Endpoint: httpServer.URL + "/mcp", HTTPClient: httpServer.Client()})
+	callAtCapacity := func(tool string) mcp.Result {
+		t.Helper()
+		replyBytes.Store(0)
+		result := as(t, client, admin, tool, box.NoArgs{})
+		if n := replyBytes.Load(); n == 0 || n > protocol.MaxBoxAnswer {
+			t.Fatalf("%s answered %d bytes", tool, n)
+		}
+		var members map[string]json.RawMessage
+		must(t, json.Unmarshal(wire(t, result).Structured, &members))
+		if _, paged := members["next"]; paged {
+			t.Fatalf("%s returned a next member", tool)
+		}
+		return result
+	}
+	made := answer[tools.InviteMade](t, callAtCapacity(tools.ToolCreateInvite))
+	token, ok := strings.CutPrefix(made.Link, base+"/join?token=")
+	if !ok || !store.ValidToken(token) {
+		t.Fatalf("invite link at base limit = %q", made.Link)
+	}
+	users := answer[box.UserList](t, callAtCapacity(tools.ToolUsers)).Users
+	if len(users) != valid.MaxUsersPerHost {
+		t.Fatalf("users = %d, want %d", len(users), valid.MaxUsersPerHost)
+	}
+	keys := answer[box.KeyList](t, callAtCapacity(box.ToolKeys)).Keys
+	if len(keys) != valid.MaxKeysPerUser {
+		t.Fatalf("keys = %d, want %d", len(keys), valid.MaxKeysPerUser)
+	}
+	invites := answer[tools.InviteList](t, callAtCapacity(tools.ToolListInvites)).Invites
+	if len(invites) != store.MaxInvites {
+		t.Fatalf("invites = %d, want %d", len(invites), store.MaxInvites)
 	}
 }

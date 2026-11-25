@@ -203,7 +203,7 @@ func await[T any](t *testing.T, c <-chan T) T {
 	}
 }
 
-// R-7E5G-EZP5, R-7GL9-6J6J, R-7HT5-KAX8, R-X661-CZL2, R-7K8Y-BUEM, R-7MOR-3DW0, R-7P4J-UXDE
+// R-7E5G-EZP5, R-7GL9-6J6J, R-7HT5-KAX8, R-PUFI-9ZM2, R-7K8Y-BUEM, R-7MOR-3DW0, R-7P4J-UXDE
 func TestLocalRequests(t *testing.T) {
 	const pr = `"jsonrpc":"2.0"`
 	cases := []struct {
@@ -230,6 +230,11 @@ func TestLocalRequests(t *testing.T) {
 		{line: `{` + pr + `,"id":true,"method":"ping"}`, id: "null", code: boxmcp.CodeInvalidRequest, message: boxmcp.MsgInvalidRequest},
 		{line: `{` + pr + `,"id":4,"METHOD":"tools/list"}`, id: "4", code: boxmcp.CodeInvalidRequest, message: boxmcp.MsgInvalidRequest},
 		{line: `{` + pr + `,"id":4,"m\u0065thod":"tools/list"}`, id: "4", code: boxmcp.CodeInvalidRequest, message: boxmcp.MsgInvalidRequest},
+		{line: `{` + pr + `,"id":5,"method":"tools/call","method":"tools/list"}`, id: "5", code: boxmcp.CodeInvalidRequest, message: boxmcp.MsgInvalidRequest},
+		{line: `{` + pr + `,"id":6,"method":"tools/call","metho\u0064":"tools/list"}`, id: "6", code: boxmcp.CodeInvalidRequest, message: boxmcp.MsgInvalidRequest},
+		{line: `{` + pr + `,"id":7,"method":"ping","jsonrp\u0063":"2.0"}`, id: "7", code: boxmcp.CodeInvalidRequest, message: boxmcp.MsgInvalidRequest},
+		{line: `{` + pr + `,"id":"\u0061","method":"ping","\u0069d":9}`, id: `"\u0061"`, code: boxmcp.CodeInvalidRequest, message: boxmcp.MsgInvalidRequest},
+		{line: `{` + pr + `,"method":"ping","\u0069d":9}`, id: "null", code: boxmcp.CodeInvalidRequest, message: boxmcp.MsgInvalidRequest},
 		{line: `{"JSONRPC":"2.0","id":3,"method":"ping"}`, id: "3", code: boxmcp.CodeInvalidRequest, message: boxmcp.MsgInvalidRequest},
 		{line: `{` + pr + `,"ID":4,"method":"ping"}`},
 		{line: `{` + pr + `,"method":"notifications/initialized"}`},
