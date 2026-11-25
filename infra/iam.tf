@@ -330,8 +330,8 @@ locals {
     },
     {
       # The hosts zone, A records below the apex only, never the site names
-      # Terraform keeps: accounts writes <account>.<hosts domain> and nothing
-      # else.
+      # Terraform keeps: accounts writes <account>.<hosts domain> and
+      # <host>.<hosts domain> and nothing else.
       Effect   = "Allow"
       Action   = "route53:ChangeResourceRecordSets"
       Resource = aws_route53_zone.hosts.arn

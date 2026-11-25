@@ -15,10 +15,11 @@ moved {
   to   = aws_route53_zone.root
 }
 
-# The hosts zone. accounts on the hosts-operator space writes the A record of
-# each <account>.<hosts domain> and nothing else; every other record here is
-# Terraform's. Registered in the mgmt account, which points the registration's
-# name servers at this zone (hosts_zone_name_servers).
+# The hosts zone. accounts on the hosts-operator space writes the A records of
+# each <account>.<hosts domain> and each <host>.<hosts domain> and nothing
+# else; every other record here is Terraform's. Registered in the mgmt
+# account, which points the registration's name servers at this zone
+# (hosts_zone_name_servers).
 resource "aws_route53_zone" "hosts" {
   name    = local.hosts_domain
   comment = "${local.hosts_domain} SSH hosts; delegated at the registrar from the mgmt account"
