@@ -32,7 +32,7 @@ The root package, named `accounts`, holds what the module embeds:
 
 - `Assets()`: the six templates `about.html`, `host.html`, `join.html`, `landing.html`, `notfound.html` and `tools.html`.
 - `Etc()`: `manifest.toml` and `nginx.conf`.
-- `Migrations()`: `0001_accounts.sql`, kept byte for byte, `0002_hosts.sql`, which adds the hosts' tables, `0003_bans.sql`, which adds the allowlist and unban tables, `0004_invites.sql`, which adds the admin flags' and the invites' tables, and `0005_host_records.sql`, which adds the `host_records` table, each host's record change id and record reason (`D04-store`).
+- `Migrations()`: `0001_accounts.sql`, kept byte for byte, `0002_hosts.sql`, which adds the hosts' tables, `0003_bans.sql`, which adds the allowlist and unban tables, `0004_invites.sql`, which adds the admin flags' and the invites' tables, and `0005_host_records.sql`, which adds the `host_records` table, each host's record change id, record reason and, once deleted, whether it is settled (`D04-store`).
 
 `share/icon.svg` is packed beside `bin/` by `devctl build` and is not embedded (`D09-on-a-space`).
 
