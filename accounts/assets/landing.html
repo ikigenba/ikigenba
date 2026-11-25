@@ -16,7 +16,9 @@
      domain the configuration names, "metaspot.org"; read only when
      .Configured).
      .Hosts (a slice, one window of up to 25 hosts, in creation order by seq), each
-     with .Name (string, "host01", "host02", ...), .State (string, as
+     with .Name (string, "host01", "host02", ...), .DNSName (string, the
+     host's DNS name, "<.Name>.metaspot.org", the hosts domain from the
+     configuration; empty when no domain is configured), .State (string, as
      stored: "provisioning", "running", "stopping", "stopped", "starting",
      "resizing", "deleting" or "failed"), .Reason (string, why the last
      operation failed, as recorded; empty unless .State is "failed"),
@@ -97,11 +99,13 @@
      report. Nothing here changes a host."), then either, when .Hosts is
      empty, div#no-hosts.empty holding h3 "No hosts yet" and a p (text "A
      host an agent creates with the tools shows up here."), or
-     div.table-scroll holding table#host-list whose th read Host, State,
-     Health, Type, Root (GB) (th.num), Data (GB) (th.num), Elastic IP,
+     div.table-scroll holding table#host-list whose th read Host, DNS name,
+     State, Health, Type, Root (GB) (th.num), Data (GB) (th.num), Elastic IP,
      Accounts (th.num), Last report, with one tr[data-host=<.Name>] per
      host, in the order of .Hosts, holding td.host-name (a.host-link, href
-     "/hosts/<.Name>", .Name in a code element), td.host-state holding
+     "/hosts/<.Name>", .Name in a code element), td.host-dns (.DNSName in a
+     code element; when .DNSName is empty, td.host-dns.muted with text
+     "none"), td.host-state holding
      span.status[data-status=<.State>][data-kind=<kind>] (text .State)
      and, when .Reason is not empty, span.secondary-text.host-reason (text
      .Reason), td.host-health holding
@@ -179,10 +183,11 @@
 <header><div><h2 id="hosts-title">Hosts</h2><p>The machines accounts runs, each with an Elastic IP and a data volume that keep across stop, start and resize. Select a host for its latest report. Nothing here changes a host.</p></div></header>
 {{if .Hosts}}<div class="table-scroll">
 <table id="host-list">
-<thead><tr><th>Host</th><th>State</th><th>Health</th><th>Type</th><th class="num">Root (GB)</th><th class="num">Data (GB)</th><th>Elastic IP</th><th class="num">Accounts</th><th>Last report</th></tr></thead>
+<thead><tr><th>Host</th><th>DNS name</th><th>State</th><th>Health</th><th>Type</th><th class="num">Root (GB)</th><th class="num">Data (GB)</th><th>Elastic IP</th><th class="num">Accounts</th><th>Last report</th></tr></thead>
 <tbody>
 {{range .Hosts}}<tr data-host="{{.Name}}">
 <td class="host-name"><a class="host-link" href="/hosts/{{.Name}}"><code>{{.Name}}</code></a></td>
+{{if .DNSName}}<td class="host-dns"><code>{{.DNSName}}</code></td>{{else}}<td class="host-dns muted">none</td>{{end}}
 <td class="host-state">{{template "host-state" .State}}{{if .Reason}}<span class="secondary-text host-reason">{{.Reason}}</span>{{end}}</td>
 <td class="host-health">{{template "host-health" .Health}}</td>
 <td class="host-type"><code>{{.Type}}</code></td>

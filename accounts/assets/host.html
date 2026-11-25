@@ -6,7 +6,7 @@
      sign out. One level below the root: .Banner's .Trail is the one level
      <.Host.Name> at /hosts/<.Host.Name>.
      Data: .Banner (a page.Banner, for banner and footer); .Host, with
-     .Name, .State, .Reason, .Health, .Type, .RootGB, .DataGB, .EIP,
+     .Name, .DNSName, .State, .Reason, .Health, .Type, .RootGB, .DataGB, .EIP,
      .AccountCount, .Reported and .ReportedText as landing names them, and
      .InstanceID (string, the EC2 instance id; empty until one is
      launched), .DataVolume (string, the data volume's EBS id; empty until
@@ -18,7 +18,9 @@
      entry; empty when none); .Report (the latest report the host's
      daemon sent; nil when none has been received), with .Received and
      .ReceivedText (string, when it was received, in the two forms of
-     .Created), .InstanceID, .Type, .AMI, .OS, .Kernel and .DaemonVersion
+     .Created), .Hostname (string, the static hostname the host reported
+     having, set by it from the host's DNS name; empty when the report
+     carries none, as from a daemon older than the field), .InstanceID, .Type, .AMI, .OS, .Kernel and .DaemonVersion
      (string, as reported), .Booted and .BootedText (string, when the
      machine booted, from its uptime, in the two forms of .Created),
      .Applied (int64, the desired-state version the host has applied;
@@ -71,7 +73,9 @@
      Elastic IP, a data volume holding /home and /srv, and SSH host keys
      that keep across stop, start and resize.", /home and /srv each in a
      code element), then dl#host.kv holding, in this order, dt "Name" then
-     dd#host-name (.Name in a code element), dt "State" then
+     dd#host-name (.Name in a code element), dt "DNS name" then
+     dd#host-dns (.DNSName in a code element; when empty, dd#host-dns.muted
+     with text "none"), dt "State" then
      dd#host-state (the host-state span), dt "Reason" then
      dd#host-reason (.Reason) only when .Reason is set, dt "Health" then
      dd#host-health (the host-health span), dt "Instance" then
@@ -95,6 +99,8 @@
      host's daemon reports once it has started and reached accounts."), or
      dl#report-identity.kv holding, in this order, dt "Received" then
      dd#report-received (time, .Received, text .ReceivedText), dt
+     "Hostname" then dd#report-hostname (.Hostname in a code element; when
+     empty, dd#report-hostname.muted with text "not reported"), dt
      "Instance" then dd#report-instance (code), dt "Type" then
      dd#report-type (code), dt "Image" then dd#report-ami (code), dt "OS"
      then dd#report-os, dt "Kernel" then dd#report-kernel (code), dt
@@ -172,6 +178,7 @@
 <header><div><h2 id="host-title">Host</h2><p>An Elastic IP, a data volume holding <code>/home</code> and <code>/srv</code>, and SSH host keys that keep across stop, start and resize.</p></div></header>
 <dl id="host" class="kv">
 <dt>Name</dt><dd id="host-name"><code>{{.Name}}</code></dd>
+<dt>DNS name</dt>{{if .DNSName}}<dd id="host-dns"><code>{{.DNSName}}</code></dd>{{else}}<dd id="host-dns" class="muted">none</dd>{{end}}
 <dt>State</dt><dd id="host-state">{{template "host-state" .State}}</dd>
 {{if .Reason}}<dt>Reason</dt><dd id="host-reason">{{.Reason}}</dd>
 {{end}}<dt>Health</dt><dd id="host-health">{{template "host-health" .Health}}</dd>
@@ -190,6 +197,7 @@
 <header><div><h2 id="report-title">Latest report</h2><p>What the host's daemon reported at the end of its last cycle. Reports are kept as the latest only.</p></div></header>
 {{with .Report}}<dl id="report-identity" class="kv">
 <dt>Received</dt><dd id="report-received"><time datetime="{{.Received}}">{{.ReceivedText}}</time></dd>
+<dt>Hostname</dt>{{if .Hostname}}<dd id="report-hostname"><code>{{.Hostname}}</code></dd>{{else}}<dd id="report-hostname" class="muted">not reported</dd>{{end}}
 <dt>Instance</dt><dd id="report-instance"><code>{{.InstanceID}}</code></dd>
 <dt>Type</dt><dd id="report-type"><code>{{.Type}}</code></dd>
 <dt>Image</dt><dd id="report-ami"><code>{{.AMI}}</code></dd>
