@@ -66,7 +66,7 @@ In order, the manifest says:
 - Under `guests = true`, opsctl's nginx and the sandbox's ask auth's `/check/open` on `location /`. That subrequest admits a request with no credential and passes it on with no identity headers.
 - `/mcp` keeps the strict `/check`, so an agent without a credential is still turned away by nginx and auth with 401.
 - A page asked without a credential now reaches accounts. `identity.Optional` and `D06-pages` send that guest to sign in, as before.
-- The enrollment page, `/join/<token>`, rides the same `location /` and answers the guest itself (`D03-serve`, `D18-enrollment`): a person holding an invite link has no credential on the space (self-service outcome 11). It needs nothing more of the manifest or the fragment.
+- The enrollment page, `/join?token=<token>`, rides the same `location /` and answers the guest itself (`D03-serve`, `D18-enrollment`): a person holding an invite link has no credential on the space (self-service outcome 11). It needs nothing more of the manifest or the fragment.
 - The daemon routes take no person's identity at all (`D03-serve`). `/accountsd` serves the release's binary to anyone, and `/accountsd/v1/*` demands the presigned identity header that `D13-daemon-endpoints` verifies (`D12-host-identity`).
 
 **Departure (recorded, flagged to the caller).** Outcome 21 says the daemon long-polls on "a path nginx passes without auth's subrequest". Under `guests = true` nginx still makes a subrequest, `/check/open`, which admits anyone. The daemon paths therefore depend on auth being up. While auth is down a host keeps its last applied state and sign-ins keep working (outcome 22), so nothing is lost but freshness.
@@ -102,7 +102,7 @@ Giving fragments a portable proxy target would be two sibling changes (log D13, 
 
 Nothing else is held back or added:
 
-- `/accountsd` and `/accountsd/…` ride `location /` with `/check/open`, so the fragment needs no location for them, and so does `/join/…`.
+- `/accountsd` and `/accountsd/…` ride `location /` with `/check/open`, so the fragment needs no location for them, and so does `/join`.
 - `/mcp` is guarded by nginx's own locations.
 
 `protocol.LongPoll` (45 s) sits under nginx's default 60 s `proxy_read_timeout`, which opsctl's generated configuration leaves unset. So a long poll needs no timeout directive in the fragment either. opsctl and the sandbox include `etc/nginx.conf` inside accounts' server.
@@ -201,7 +201,7 @@ The timings are `D16-sandbox`'s: about 40 s of `provisioning`, 5 s for a DNS cha
    - `lock_user` then `delete_user` `daffy`: `removing`, then gone from `users`.
    - `add_user` `daffy` again succeeds.
 6. **Admins and invites** (self-service outcomes 1 to 15). The link is opened with curl and no bearer token, no credential at all, as the person invited would open it in a browser.
-   - `create_invite` `acme` answers an invite with `admin` false, an `expires` 72 hours after its `created`, and a `link` that is the sandbox's accounts URL followed by `/join/` and the token. `list_invites` `acme` shows it without the link, and the landing row of `acme` counts one invite.
+   - `create_invite` `acme` answers an invite with `admin` false, an `expires` 72 hours after its `created`, and a `link` that is the sandbox's accounts URL followed by `/join?token=` and the token. `list_invites` `acme` shows it without the link, and the landing row of `acme` counts one invite.
    - `GET` of the link shows the form naming `acme` and `acme.hosts.test`; a second `GET` shows it again, so opening uses nothing.
    - A `POST` naming `bugs` (taken), `www` (reserved) and `Bugs` (malformed) each get the one name answer, a `POST` with a bad key the key answer, and the link still shows the form after each.
    - A `POST` naming `elmer` with a fresh key answers that the user is created, with `elmer`, `acme` and `acme.hosts.test`. `users` shows `elmer` pending, then applied, not an admin. The link then answers the unusable page, 404.
@@ -231,7 +231,7 @@ The timings are `D16-sandbox`'s: about 40 s of `provisioning`, 5 s for a DNS cha
     - `account.changed` for each account state change
     - `invite.created`, `invite.revoked` and `invite.used` for each invite made, revoked and used, and `admin.changed` for each flag `set_admin` changed
     - nothing for a read, and nothing for a refused enrollment
-    - no token, in any event: a `request.started` of a link shows the path `/join/` alone
+    - no token, in any event: a `request.started` of a link shows the path `/join` alone, with no query
 
 Silence (`host.silent`) is not part of the walk, because a running sandbox host always reports. Unit tests prove it with an injected clock.
 
@@ -252,7 +252,7 @@ Each row is an outcome the walk checks and the documents that own it. A row nami
 | account placement, DNS name, reserved and taken names | `D07-tools`, `D17-names-keys-sizes`, `D04-store`, `D10-operations` |
 | users pending, then applied; lock, unlock, delete, re-add | `D07-tools`, `D04-store`, `D13-daemon-endpoints`, `D14-accountsd`, `D15-machine` |
 | invites made, listed, counted on the landing, revoked; the admin flag set and shown | `D07-tools`, `D04-store`, `D06-pages` |
-| the enrollment page answers a guest: form, refusals, created user, unusable link, rate limit | `D18-enrollment`; routing `D03-serve` (R-W5XI-KH4S, R-7K9K-2B09); template data `D06-pages`; names and keys `D17-names-keys-sizes` |
+| the enrollment page answers a guest: form, refusals, created user, unusable link, rate limit | `D18-enrollment`; routing `D03-serve` (R-HX9C-M9PO, R-FUH5-FVTH); template data `D06-pages`; names and keys `D17-names-keys-sizes` |
 | the box tools: the tool list fits the tier, each user's own keys, an admin's users and invites, the box refusals, a box change landing as desired state | `D19-box-tools`, `D04-store`; the box path `D11-protocol` (R-YFOX-ORCE), `D13-daemon-endpoints`; wiring `D03-serve` (R-H9S1-98I9); the host side `D14-accountsd`, `D20-box-mcp`; the sandbox's sockets `D16-sandbox` |
 | a box change's events name `ssh:<user>`, and a box-made invite's creator | `D08-trail`, `D19-box-tools`, `D04-store` |
 | stop, start, resize with `restarts` | `D07-tools`, `D10-operations` |
@@ -263,7 +263,7 @@ Each row is an outcome the walk checks and the documents that own it. A row nami
 
 ## Trust
 
-- **People.** accounts believes the identity nginx sets for a person (`X-User-Id`, `X-User-Email`, `X-Request-Id`), as every sibling does. Every signed-in user of the space reads and changes every host, account and user, as themselves, and every change is recorded under the caller (`D08-trail`). That includes the admin flag, which any signed-in user may set or clear on any user (`set_admin`), and invites, which any signed-in user may make, admin invites included (self-service outcomes 4 and 10). The admin flag grants nothing on the space: it is what the box tools' admin tier checks (`D19-box-tools`). `guests = true` lets a request without a credential reach accounts' socket. The pages send it to sign in, `/mcp` never sees it, and only the daemon routes and the enrollment page, `/join/<token>`, answer it.
+- **People.** accounts believes the identity nginx sets for a person (`X-User-Id`, `X-User-Email`, `X-Request-Id`), as every sibling does. Every signed-in user of the space reads and changes every host, account and user, as themselves, and every change is recorded under the caller (`D08-trail`). That includes the admin flag, which any signed-in user may set or clear on any user (`set_admin`), and invites, which any signed-in user may make, admin invites included (self-service outcomes 4 and 10). The admin flag grants nothing on the space: it is what the box tools' admin tier checks (`D19-box-tools`). `guests = true` lets a request without a credential reach accounts' socket. The pages send it to sign in, `/mcp` never sees it, and only the daemon routes and the enrollment page, `/join?token=<token>`, answer it.
 - **Invite holders.** The enrollment page believes nothing about who is asking: its one authority is the token in the link (`D18-enrollment`). Whoever holds an unused, unexpired, unrevoked link can create one user of its account, with the admin flag the invite carries, once; a signed-in person opening it is treated as a guest. The token is drawn from the run's random source and kept only as its hash (`D04-store`), answered once by `create_invite` and never by any other tool, page or event (`D07-tools`, `D08-trail`). A refused name, an unusable link and a rate-limited submission each say no more than their one answer (self-service outcome 13), and submissions are limited per address, the address being nginx's `X-Real-IP`, which opsctl's nginx and the sandbox's set from the connection. The token does reach the space's nginx access log, which is opsctl's and outside accounts: an accepted risk, bounded by single use, 72 hours and revocation (`D18-enrollment`).
 - **Daemons.**
   - A daemon is believed only after its presigned `sts:GetCallerIdentity` request has been executed by accounts and answered by STS:

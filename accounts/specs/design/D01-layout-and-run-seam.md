@@ -1,6 +1,6 @@
 # D01-layout-and-run-seam
 
-accounts runs the SSH hosts of the business. It keeps EC2 hosts it creates through the AWS SDK for Go v2, the accounts (customer businesses) it places on them, and the users of each account. A second binary, `accountsd`, runs as root on every host and reconciles it against the desired state it pulls from accounts. accounts' own SQLite database, `state/accounts.db`, is the source of truth (outcome 8). accounts records every change and every host state change in telemetry's trail, offers its MCP tools (`D07-tools`) at `/mcp` as the only API for the space's callers, offers the box tools (`D19-box-tools`) to the users of its hosts, whose daemons forward them to `/accountsd/v1/box`, serves read-only pages to a signed-in user, and serves one page with a form to anyone holding an invite link, the enrollment page at `/join/<token>` (`D18-enrollment`). Outcomes cited as outcome N are those of /home/mgreenly/Documents/ikigenba-ssh-hosts.md. Log entries are those of /home/mgreenly/Documents/ikigenba-ssh-hosts-decisions.md. Self-service outcome N is outcome N of /home/mgreenly/Documents/ikigenba-self-service-accounts.md.
+accounts runs the SSH hosts of the business. It keeps EC2 hosts it creates through the AWS SDK for Go v2, the accounts (customer businesses) it places on them, and the users of each account. A second binary, `accountsd`, runs as root on every host and reconciles it against the desired state it pulls from accounts. accounts' own SQLite database, `state/accounts.db`, is the source of truth (outcome 8). accounts records every change and every host state change in telemetry's trail, offers its MCP tools (`D07-tools`) at `/mcp` as the only API for the space's callers, offers the box tools (`D19-box-tools`) to the users of its hosts, whose daemons forward them to `/accountsd/v1/box`, serves read-only pages to a signed-in user, and serves one page with a form to anyone holding an invite link, the enrollment page at `/join?token=<token>` (`D18-enrollment`). Outcomes cited as outcome N are those of /home/mgreenly/Documents/ikigenba-ssh-hosts.md. Log entries are those of /home/mgreenly/Documents/ikigenba-ssh-hosts-decisions.md. Self-service outcome N is outcome N of /home/mgreenly/Documents/ikigenba-self-service-accounts.md.
 
 This document lays the structural ground the others stand on:
 
@@ -58,7 +58,7 @@ Each internal package holds one concern. The document named declares that packag
 - `internal/box`: the box tools, which a host's users reach through their host's daemon (`D19-box-tools`).
 - `internal/boxmcp`: the stdio MCP server that a host's users run as `accountsd-mcp`, the box tools' other end (`D20-box-mcp`).
 - `internal/pages`: the templates' data and the page routes (`D06-pages`), and `pages.ServiceName` (this document).
-- `internal/join`: the enrollment page at `/join/<token>` and its rate limiter (`D18-enrollment`).
+- `internal/join`: the enrollment page at `/join?token=<token>` and its rate limiter (`D18-enrollment`).
 - `internal/server`: a listener's life (`D03-serve`).
 - `internal/web`: the route table (`D03-serve`).
 - `internal/cli`, split by document:
