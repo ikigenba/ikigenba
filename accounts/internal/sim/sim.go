@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
@@ -29,6 +30,7 @@ type Config struct {
 	Sleep   func(context.Context, time.Duration)
 	After   func(time.Duration) <-chan time.Time
 	BanFile string
+	BoxDir  string
 }
 
 // Sim supervises the sandbox's simulated hosts.
@@ -41,21 +43,27 @@ type loop struct {
 	cancel  context.CancelFunc
 	done    <-chan struct{}
 	machine *machine.Memory
+	box     *hostListener
 }
 
 // Run watches instances and joins all their loops when ctx ends.
 func (s *Sim) Run(ctx context.Context) error {
 	loops := make(map[string]loop)
+	var boxDir string
+	if s.cfg.BoxDir != "" {
+		boxDir, _ = filepath.Abs(s.cfg.BoxDir)
+	}
 	defer func() {
 		for _, l := range loops {
-			l.cancel()
+			l.stop()
 		}
 		for _, l := range loops {
 			<-l.done
 		}
+		removeBoxListing(boxDir)
 	}()
 	for ctx.Err() == nil {
-		if err := s.look(ctx, loops); err != nil {
+		if err := s.look(ctx, loops, boxDir); err != nil && ctx.Err() == nil {
 			return err
 		}
 		if ctx.Err() != nil {
@@ -70,7 +78,7 @@ func (s *Sim) Run(ctx context.Context) error {
 	return nil
 }
 
-func (s *Sim) look(ctx context.Context, loops map[string]loop) error {
+func (s *Sim) look(ctx context.Context, loops map[string]loop, boxDir string) error {
 	running := make(map[string]string)
 	tags := cloud.Tags{cloud.TagKind: cloud.KindHost}
 	err := s.cfg.Cloud.FindInstances(ctx, tags, func(page []cloud.Instance) bool {
@@ -91,7 +99,7 @@ func (s *Sim) look(ctx context.Context, loops map[string]loop) error {
 			delete(loops, id)
 		default:
 			if _, up := running[id]; !up {
-				l.cancel()
+				l.stop()
 			}
 		}
 	}
@@ -100,34 +108,56 @@ func (s *Sim) look(ctx context.Context, loops map[string]loop) error {
 			break
 		}
 		if _, exists := loops[id]; !exists {
-			loops[id] = s.start(ctx, id)
+			loops[id] = s.start(ctx, id, boxDir)
 		}
 	}
 	s.consumeBans(running, loops)
+	if boxDir != "" {
+		updateBoxSockets(boxDir, running, loops)
+	}
 	return nil
 }
 
-func (s *Sim) start(ctx context.Context, id string) loop {
+func (l loop) stop() {
+	l.cancel()
+	if l.box != nil {
+		_ = l.box.Close()
+	}
+}
+
+func (s *Sim) start(ctx context.Context, id, boxDir string) loop {
 	cfg := s.cfg
 	loopCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	m := machine.NewMemory(machine.MemoryConfig{ApplyDelay: ApplyDelay, Sleep: cfg.Sleep, Now: cfg.Now})
+	d := daemon.Config{
+		BaseURL:   "http://" + cfg.Binding,
+		HTTP:      &http.Client{Transport: transport{handler: cfg.Handler, binding: cfg.Binding}},
+		Presigner: cfg.Cloud.Presigner(id),
+		Metadata:  cfg.Cloud.Metadata(id),
+		Machine:   m,
+		Now:       cfg.Now,
+		Sleep:     cfg.Sleep,
+		Stderr:    io.Discard,
+		After:     cfg.After,
+	}
+	var box *hostListener
+	if cfg.BoxDir != "" {
+		box = newHostListener(boxDir)
+		d.Box, d.PeerUID = box, boxUID
+	}
 	go func() {
 		defer close(done)
+		if box != nil {
+			defer func() { _ = box.Close() }()
+		}
 		if loopCtx.Err() != nil {
 			return
 		}
-		_ = daemon.Run(loopCtx, daemon.Config{
-			BaseURL:   "http://" + cfg.Binding,
-			HTTP:      &http.Client{Transport: transport{handler: cfg.Handler, binding: cfg.Binding}},
-			Presigner: cfg.Cloud.Presigner(id),
-			Metadata:  cfg.Cloud.Metadata(id),
-			Machine:   m,
-			Digest:    cfg.Digest(),
-			Now:       cfg.Now,
-			Sleep:     cfg.Sleep,
-			Stderr:    io.Discard,
-		})
+		d.Digest = cfg.Digest()
+		if loopCtx.Err() == nil {
+			_ = daemon.Run(loopCtx, d)
+		}
 	}()
-	return loop{cancel: cancel, done: done, machine: m}
+	return loop{cancel: cancel, done: done, machine: m, box: box}
 }

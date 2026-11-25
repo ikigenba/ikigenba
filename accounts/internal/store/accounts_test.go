@@ -10,8 +10,8 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/valid"
 )
 
-// R-0J1U-TEF4 R-H8VP-5ATJ R-HL2O-Z08H R-I70V-UVKZ R-0MPJ-YPN7 R-IAOL-06T2
-// R-IBWH-DYJR R-0NXG-CHDW R-RFUT-UU0N R-IFK6-J9RU R-IGS2-X1IJ R-I5SZ-H3UA
+// R-H8VP-5ATJ R-HL2O-Z08H R-0MPJ-YPN7 R-IAOL-06T2
+// R-RCYV-Z8X0 R-0NXG-CHDW R-RFUT-UU0N R-IFK6-J9RU R-IGS2-X1IJ R-I5SZ-H3UA
 // R-I3D6-PKCW R-0LHN-KXWI R-IU6Z-4IO6 R-HW1S-EXWQ R-I4L3-3C3L
 func TestAccountLifecycle(t *testing.T) {
 	_, s, now := fixture(t)
@@ -121,7 +121,7 @@ func TestAccountLifecycle(t *testing.T) {
 	place(t, s, "on-failed-host", h.Name)
 }
 
-// R-I70V-UVKZ R-IHZZ-AT98
+// R-RBQZ-LH6B R-RE6S-D0NP
 func TestPlacementCapsAndPrecedence(t *testing.T) {
 	_, s, _ := fixture(t)
 	h, _ := create(t, s)
@@ -148,7 +148,7 @@ func TestPlacementCapsAndPrecedence(t *testing.T) {
 	checkErr(t, err, store.ErrAccountFull)
 }
 
-// R-GU8W-K1X7 R-HA3L-J2K8 R-IJ7V-OKZX R-IKFS-2CQM R-ILNO-G4HB R-IMVK-TW80
+// R-HA3L-J2K8 R-IJ7V-OKZX R-IKFS-2CQM R-ILNO-G4HB R-IMVK-TW80
 // R-IO3H-7NYP R-IPBD-LFPE R-IQJ9-Z7G3 R-IRR6-CZ6S R-IU6Z-4IO6
 func TestUsersKeysAndPaging(t *testing.T) {
 	_, s, now := fixture(t)

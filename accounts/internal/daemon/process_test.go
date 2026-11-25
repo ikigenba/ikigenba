@@ -92,7 +92,7 @@ func TestNewClientTrustAndRedirects(t *testing.T) {
 	}
 }
 
-// R-1501-P9RM R-6WU8-ZJ6X R-6Y25-DAXM
+// R-6WU8-ZJ6X R-6Y25-DAXM R-KFZE-PNJL
 func TestMainValidatesBeforeExecutableAndOpen(t *testing.T) {
 	var tests = []struct {
 		name string
@@ -115,8 +115,10 @@ func TestMainValidatesBeforeExecutableAndOpen(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var stderr bytes.Buffer
 			lookups := 0
+			socket := boxSocketPath(t)
 			p := daemon.Process{
-				Args: tc.args,
+				Args:   tc.args,
+				Socket: socket,
 				LookupEnv: func(key string) (string, bool) {
 					lookups++
 					if key != daemon.EnvURL {
@@ -140,6 +142,9 @@ func TestMainValidatesBeforeExecutableAndOpen(t *testing.T) {
 			}
 			if code != daemon.ExitUsage || lookups != wantLookups || stderr.String() != "accountsd: "+tc.diag+"\n" {
 				t.Errorf("Main = %d, looked up %d times, stderr %q", code, lookups, stderr.String())
+			}
+			if _, err := os.Lstat(socket); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("invalid startup created a socket: %v", err)
 			}
 		})
 	}

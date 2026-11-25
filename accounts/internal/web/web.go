@@ -2,11 +2,14 @@
 package web
 
 import (
+	"context"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 	"github.com/ikigenba/ikigenba/accounts/internal/daemonapi"
+	"github.com/ikigenba/ikigenba/accounts/internal/join"
 	"github.com/ikigenba/ikigenba/accounts/internal/pages"
 	"github.com/ikigenba/ikigenba/accounts/internal/settings"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
@@ -32,10 +35,13 @@ type Config struct {
 	Settings     settings.Settings
 }
 
+type enrollmentURLKey struct{}
+
 // Handler registers the service's tools and composes its routes.
 func Handler(cfg Config) http.Handler {
 	tools.Register(cfg.MCP, tools.Config{
 		Store: cfg.Store, Cloud: cfg.Cloud, Hosts: cfg.Hosts, Configured: cfg.Configured, Wake: cfg.Wake, Telemetry: cfg.Telemetry,
+		AccountsURL: func() (string, error) { return cfg.Settings.AccountsURL(cfg.ServicesPath) },
 	})
 	set, err := pages.Load()
 	if err != nil {
@@ -47,7 +53,17 @@ func Handler(cfg Config) http.Handler {
 	}))
 	mh := identity.Require(cfg.MCP)
 	sh := identity.Optional(page.Static())
-	return telemetry.Middleware(cfg.Telemetry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	jh := join.Handler(join.Config{
+		Pages: set, Store: cfg.Store, Configured: cfg.Configured, Domain: cfg.Hosts.Domain,
+		Limiter: join.NewLimiter(cfg.Telemetry.Now), Telemetry: cfg.Telemetry,
+	})
+	traced := telemetry.Middleware(cfg.Telemetry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if original, ok := r.Context().Value(enrollmentURLKey{}).(*url.URL); ok {
+			enrollment := *r
+			enrollment.URL = original
+			jh.ServeHTTP(w, &enrollment)
+			return
+		}
 		path := r.URL.Path
 		switch {
 		case path == "/mcp":
@@ -60,4 +76,16 @@ func Handler(cfg Config) http.Handler {
 			ph.ServeHTTP(w, r)
 		}
 	}))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, join.Prefix) {
+			// Keep the enrollment token out of request telemetry while preserving
+			// the original escaped and decoded paths for the enrollment handler.
+			redacted := *r.URL
+			redacted.Path = join.Prefix
+			redacted.RawPath = ""
+			r = r.WithContext(context.WithValue(r.Context(), enrollmentURLKey{}, r.URL))
+			r.URL = &redacted
+		}
+		traced.ServeHTTP(w, r)
+	})
 }

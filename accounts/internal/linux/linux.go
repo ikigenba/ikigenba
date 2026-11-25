@@ -32,12 +32,14 @@ const (
 	UpdatesInterval = time.Hour
 )
 
-// Env supplies the filesystem root, command runner, clock and sleep.
+// Env supplies the host's filesystem, processes, clock, download and diagnostics.
 type Env struct {
 	Root    string
 	Execute func(context.Context, Command) (Result, error)
 	Now     func() time.Time
 	Sleep   func(time.Duration)
+	Fetch   func(context.Context, string) (io.ReadCloser, error)
+	Stderr  io.Writer
 }
 
 // Command is a direct process invocation.
@@ -130,7 +132,9 @@ func Exec(ctx context.Context, c Command) (Result, error) {
 }
 
 // Real targets the host's own filesystem, programs and clock.
-func Real() Env { return Env{Root: "/", Execute: Exec, Now: time.Now, Sleep: time.Sleep} }
+func Real() Env {
+	return Env{Root: "/", Execute: Exec, Now: time.Now, Sleep: time.Sleep, Fetch: Get, Stderr: os.Stderr}
+}
 
 // AccountSlice is the systemd unit for an account.
 func AccountSlice(account string) string { return "acct-" + escapeSlice(account) + ".slice" }
@@ -150,6 +154,8 @@ type Host struct {
 	dataSize     string
 	written      map[string]struct{}
 	backups      []string
+	claudeFailed bool
+	claudeFailAt time.Time
 
 	previousCPU     cpuTimes
 	previousSlices  map[string]int64
@@ -221,6 +227,7 @@ func (h *Host) Apply(ctx context.Context, s protocol.DesiredState) error {
 			return err
 		}
 	}
+	h.applyClaude(ctx)
 	return nil
 }
 

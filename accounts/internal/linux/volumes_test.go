@@ -290,6 +290,9 @@ func TestApplyWithoutDataVolume(t *testing.T) {
 						t.Fatal(err)
 					}
 					f.expectFile("/etc/systemd/system/acct.slice", "[Slice]\nCPUWeight=50\n", 0o644)
+					if target, err := os.Readlink(f.path(linux.MCPHelper)); err != nil || target != linux.DaemonPath {
+						t.Fatalf("MCP helper = %q, %v", target, err)
+					}
 				} else {
 					if !errors.Is(err, machine.ErrNoDataVolume) {
 						t.Fatalf("error = %v, want ErrNoDataVolume", err)
@@ -299,7 +302,8 @@ func TestApplyWithoutDataVolume(t *testing.T) {
 				for _, path := range []string{"/home", "/srv", "/data", sshUnitPath, sshDropInPath} {
 					f.expectAbsent(path)
 				}
-				f.forbidCalls("blkid ", "mkfs", "sshd ", "groupadd --system --gid", "useradd ", "chown ")
+				f.expectAbsent(claudeSettingsPath)
+				f.forbidCalls("blkid ", "mkfs", "sshd ", "groupadd --system --gid", "useradd ", claudeKeyProbe)
 			})
 		}
 	}

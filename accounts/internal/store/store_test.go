@@ -103,7 +103,7 @@ func remove(t *testing.T, s *store.Store, slug string) (store.Account, store.Ope
 }
 
 // R-GMXI-9FH1 R-GPDB-0YYF R-GQL7-EQP4 R-H6FW-DRC5
-// R-OTU8-67AN R-HEZ7-25J0 R-HG73-FX9P R-HHEZ-TP0E R-HJUS-L8HS
+// R-OTU8-67AN R-R83A-G5Y8 R-HG73-FX9P R-HHEZ-TP0E R-HJUS-L8HS
 func TestHostsReopenAndPage(t *testing.T) {
 	calls := 0
 	var random io.Reader = new(counterRandom)
@@ -185,14 +185,14 @@ func TestOperationIDCollisionsRollBack(t *testing.T) {
 	eq(t, h.Seq, int64(3))
 }
 
-// R-1WCG-1391
+// R-1WCG-1391 R-BYG6-N24Z R-RJ2D-W3MH
 func TestErrorClasses(t *testing.T) {
 	base := []error{store.ErrUnreachable, store.ErrNotFound, store.ErrTaken, store.ErrConflict}
 	groups := [][]error{base, {store.ErrNotInAccount, store.ErrKeyNotHeld}, {store.ErrBusy, store.ErrHostFailed,
 		store.ErrNotFailed, store.ErrNotRunning, store.ErrNotStopped, store.ErrHasAccounts, store.ErrHostFull,
 		store.ErrHostGone, store.ErrNothingToChange, store.ErrShrinks, store.ErrGrowLimit, store.ErrHasUsers,
 		store.ErrAccountRemoving, store.ErrAccountFull, store.ErrTooManyKeys, store.ErrNotLocked, store.ErrUserRemoving,
-		store.ErrTooManyUnbans, store.ErrAllowlistFull}}
+		store.ErrTooManyUnbans, store.ErrAllowlistFull, store.ErrTooManyInvites, store.ErrLastKey, store.ErrNotActive, store.ErrNotAdmin, store.ErrSelf}}
 	seen := map[error]bool{}
 	for i, group := range groups {
 		for pos, e := range group {

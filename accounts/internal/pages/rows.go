@@ -33,14 +33,14 @@ func accountRow(a store.Account, domain string) AccountRow {
 	created, createdText := stamps(a.Created, MinuteLayout)
 	return AccountRow{
 		Slug: a.Slug, Host: a.Host, DNSName: a.Slug + "." + domain, State: a.State, Reason: a.Reason,
-		UserCount: a.Users, Created: created, CreatedText: createdText,
+		UserCount: a.Users, InviteCount: a.Invites, Created: created, CreatedText: createdText,
 	}
 }
 
 func userRow(u store.User) UserRow {
 	signIn, signInText := optionalStamps(u.LastSignIn, MinuteLayout)
 	return UserRow{
-		Login: u.Name, Account: u.Account, State: u.State, Pending: u.Pending,
+		Login: u.Name, Account: u.Account, Admin: u.Admin, State: u.State, Pending: u.Pending,
 		KeyCount: len(u.Keys), LastSignIn: signIn, LastSignInText: signInText,
 	}
 }

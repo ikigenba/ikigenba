@@ -69,26 +69,28 @@ var _ struct {
 	RootGB, DataGB                                                                 int
 } = store.Update{}
 
-// R-0J1U-TEF4
+// R-BSCO-Q7FI
 var _ struct {
 	Slug, Host, State, Reason    string
 	GID, Version, RemovedVersion int64
 	Change, Operation            string
-	Users                        int
+	Users, Invites               int
 	Created                      time.Time
 	CreatedBy                    string
 } = store.Account{}
 
-// R-GU8W-K1X7
+// R-BTKL-3Z67
 var (
 	_ struct{ Type, Body, Line string } = store.Key{}
 	_ struct {
-		Name, Account, State string
-		UID, Version         int64
-		Pending              bool
-		Keys                 []store.Key
-		LastSignIn, Created  time.Time
-		CreatedBy            string
+		Name, Account       string
+		Admin               bool
+		State               string
+		UID, Version        int64
+		Pending             bool
+		Keys                []store.Key
+		LastSignIn, Created time.Time
+		CreatedBy           string
 	} = store.User{}
 )
 
@@ -152,3 +154,54 @@ const (
 	_ namedString = store.OpPlace
 	_ namedString = store.OpUnplace
 )
+
+// R-BUSH-HQWW
+var _ struct {
+	ID, Account      string
+	Admin            bool
+	Created, Expires time.Time
+	CreatedBy        string
+} = store.Invite{}
+
+type namedInt int
+
+const (
+	// R-BW0D-VINL
+	_ namedString = store.InvitePrefix
+	_ namedString = store.TokenPrefix
+	_ namedInt    = store.MaxInvites
+)
+
+// R-BX8A-9AEA
+var (
+	_ func(string) bool = store.ValidInviteID
+	_ func(string) bool = store.ValidToken
+)
+
+// R-BZO3-0TVO
+var _ interface {
+	CreateInvite(context.Context, string, bool, identity.Caller) (store.Invite, string, error)
+	Invites(context.Context, string) ([]store.Invite, error)
+	RevokeInvite(context.Context, string) (store.Invite, error)
+	InviteByToken(context.Context, string) (store.Invite, error)
+	NameHeld(context.Context, string) (bool, error)
+	Enroll(context.Context, string, string, store.Key) (store.Invite, store.User, error)
+	SetAdmin(context.Context, string, string, bool) (store.User, bool, error)
+} = (*store.Store)(nil)
+
+// R-RHUH-IBVS
+var _ interface {
+	UserNamed(context.Context, string) (store.User, error)
+	ActiveUserByUID(context.Context, string, int64) (store.User, error)
+	AddKeyAs(context.Context, string, store.Key) (store.User, error)
+	RemoveKeyAs(context.Context, string, store.Key) (store.User, int, error)
+	AdminCheck(context.Context, string) error
+	UsersAs(context.Context, string) ([]store.User, error)
+	LockAs(context.Context, string, string) (store.User, error)
+	UnlockAs(context.Context, string, string) (store.User, error)
+	DeleteAs(context.Context, string, string) (store.User, error)
+	SetAdminAs(context.Context, string, string, bool) (store.User, bool, error)
+	CreateInviteAs(context.Context, string, identity.Caller) (store.Invite, string, error)
+	InvitesAs(context.Context, string) ([]store.Invite, error)
+	RevokeInviteAs(context.Context, string, string) (store.Invite, error)
+} = (*store.Store)(nil)

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
+	"github.com/ikigenba/ikigenba/accounts/internal/valid"
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/paging"
@@ -77,7 +78,7 @@ type Account struct {
 	Slug, Host, State, Reason    string
 	GID, Version, RemovedVersion int64
 	Change, Operation            string
-	Users                        int
+	Users, Invites               int
 	Created                      time.Time
 	CreatedBy                    string
 }
@@ -87,12 +88,14 @@ type Key struct{ Type, Body, Line string }
 
 // User is an account member.
 type User struct {
-	Name, Account, State string
-	UID, Version         int64
-	Pending              bool
-	Keys                 []Key
-	LastSignIn, Created  time.Time
-	CreatedBy            string
+	Name, Account       string
+	Admin               bool
+	State               string
+	UID, Version        int64
+	Pending             bool
+	Keys                []Key
+	LastSignIn, Created time.Time
+	CreatedBy           string
 }
 
 // Report is a host's latest accepted report.
@@ -195,6 +198,11 @@ var (
 	ErrTooManyUnbans   = fmt.Errorf("host pending unban limit reached: %w", ErrConflict)
 	ErrAllowlistFull   = fmt.Errorf("host allowlist limit reached: %w", ErrConflict)
 	ErrNotInAccount    = fmt.Errorf("user belongs to another account: %w", ErrNotFound)
+	ErrTooManyInvites  = fmt.Errorf("account invite limit reached: %w", ErrConflict)
+	ErrLastKey         = fmt.Errorf("user must keep at least one key: %w", ErrConflict)
+	ErrNotActive       = fmt.Errorf("user is not active: %w", ErrConflict)
+	ErrNotAdmin        = fmt.Errorf("user is not an active admin: %w", ErrConflict)
+	ErrSelf            = fmt.Errorf("cannot perform this action on oneself: %w", ErrConflict)
 	ErrKeyNotHeld      = fmt.Errorf("user does not hold the key: %w", ErrNotFound)
 )
 
@@ -218,7 +226,7 @@ type hostWatchers struct {
 // New builds a store over the supplied handle without opening anything.
 func New(d *db.DB, cfg Config) *Store {
 	return &Store{
-		recordReader: recordReader{runRead: d.Read},
+		recordReader: recordReader{runRead: d.Read, now: cfg.Now},
 		d:            d, cfg: cfg, watchers: make(map[string]*hostWatchers),
 	}
 }
@@ -245,6 +253,10 @@ func allGiven(values ...string) bool {
 		}
 	}
 	return true
+}
+
+func validCaller(c identity.Caller) bool {
+	return len(c.UserID) > 0 && len(c.UserID) <= valid.MaxUserIDBytes
 }
 
 func validLimit(limit int) bool { return limit >= 1 && limit <= paging.MaxLimit+1 }
@@ -296,6 +308,7 @@ func collect[T any](q query, scan func(scanner) (T, error), stmt string, args ..
 }
 
 type recordReader struct {
+	now     func() time.Time
 	runRead func(context.Context, func(*sql.Tx) error) error
 }
 
@@ -309,7 +322,7 @@ func ReadSnapshot(ctx context.Context, s *Store, fn func(*Snapshot) error) error
 	}
 	var callbackErr error
 	err := s.d.Read(ctx, func(tx *sql.Tx) error {
-		snapshot := Snapshot{recordReader{runRead: func(_ context.Context, read func(*sql.Tx) error) error {
+		snapshot := Snapshot{recordReader{now: s.cfg.Now, runRead: func(_ context.Context, read func(*sql.Tx) error) error {
 			return read(tx)
 		}}}
 		callbackErr = fn(&snapshot)

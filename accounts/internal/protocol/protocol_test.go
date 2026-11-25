@@ -43,6 +43,19 @@ func TestConstantsAndSignatures(t *testing.T) {
 	}
 }
 
+// R-YFOX-ORCE R-YGWU-2J33
+func TestBoxConstants(t *testing.T) {
+	type wireName string
+	got := [4]wireName{BoxPath, QueryUID, MethodToolsList, MethodToolsCall}
+	want := [4]wireName{"/accountsd/v1/box", "uid", "tools/list", "tools/call"}
+	if got != want {
+		t.Errorf("box wire names = %v, want %v", got, want)
+	}
+	if got, want := [2]uint64{MaxBoxRequest, MaxBoxAnswer}, [2]uint64{64 << 10, 1 << 20}; got != want {
+		t.Errorf("box limits = %v, want %v", got, want)
+	}
+}
+
 // R-X76X-03BY.
 func TestBanLimits(t *testing.T) {
 	const (

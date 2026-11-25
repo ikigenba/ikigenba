@@ -36,6 +36,7 @@ const (
 	MaxAccountsPerHost  = 50
 	MaxUsersPerHost     = 200
 	MaxKeysPerUser      = 10
+	MaxUserIDBytes      = 64
 	MaxKeyBytes         = 512
 	MaxUnbansPerHost    = 50
 	MaxAllowlistPerHost = 50

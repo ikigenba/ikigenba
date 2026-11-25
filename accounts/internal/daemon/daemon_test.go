@@ -253,7 +253,7 @@ func wantDiagnostics(t *testing.T, s *scenario, messages ...string) {
 	}
 }
 
-// R-68G9-C4D1 R-6GZK-0IJW
+// R-6GZK-0IJW
 func TestRunRejectsBadBaseURL(t *testing.T) {
 	for _, raw := range []string{"", "/relative", "ftp://host", "https:///missing", "https://:443", "http://user@host", "https://host?a=1", "http://host?", "http://host#"} {
 		t.Run(raw, func(t *testing.T) {
@@ -267,7 +267,7 @@ func TestRunRejectsBadBaseURL(t *testing.T) {
 	}
 }
 
-// R-6GZK-0IJW R-95C2-ZTFX R-97RV-RCXB R-L1CI-Q6CF R-6VMC-LRG8
+// R-6GZK-0IJW R-95C2-ZTFX R-97RV-RCXB R-3UZX-Y177 R-6VMC-LRG8
 func TestFetchFailuresBackOffWithoutChangingHost(t *testing.T) {
 	bad := reply{http.StatusOK, "partial document"}
 	noContent := reply{http.StatusNoContent, ""}
@@ -428,7 +428,7 @@ func TestSelfUpdateStreamsAndExitsBeforeApplyOrReport(t *testing.T) {
 	}
 }
 
-// R-L3SB-HPTT R-6PIU-OWQR R-6QQR-2OHG R-98ZS-54O0 R-6T6J-U7YU
+// R-3W7U-BSXW R-6PIU-OWQR R-6QQR-2OHG R-98ZS-54O0 R-3SK5-6HPT
 func TestCyclesReportAndUpdateFailuresBackOffIndependently(t *testing.T) {
 	ack := reply{http.StatusNoContent, ""}
 	s := newScenario(t,
@@ -531,7 +531,7 @@ func TestCyclesReportAndUpdateFailuresBackOffIndependently(t *testing.T) {
 	}
 }
 
-// R-L3SB-HPTT R-6QQR-2OHG R-98ZS-54O0
+// R-3W7U-BSXW R-6QQR-2OHG R-98ZS-54O0
 func TestTransportFailuresAndInitiallyUnappliedState(t *testing.T) {
 	s := newScenario(t, state(7, "another"), state(8, "my-digest"), reply{http.StatusNoContent, ""})
 	ctx, cancel := context.WithCancel(t.Context())
@@ -629,7 +629,7 @@ func TestRunStopsAtCancellationBetweenMachineCalls(t *testing.T) {
 	}
 }
 
-// R-6T6J-U7YU
+// R-3SK5-6HPT
 func TestSigningAcrossSecondBoundaryStillAvoidsReplay(t *testing.T) {
 	s := newScenario(t, state(1, ""), reply{http.StatusNoContent, ""})
 	ctx, cancel := context.WithCancel(t.Context())
@@ -654,7 +654,7 @@ func TestSigningAcrossSecondBoundaryStillAvoidsReplay(t *testing.T) {
 	}
 }
 
-// R-L3SB-HPTT
+// R-3W7U-BSXW
 func TestUpdateFailuresCapTheirBackoff(t *testing.T) {
 	var replies []reply
 	const cycles = 6

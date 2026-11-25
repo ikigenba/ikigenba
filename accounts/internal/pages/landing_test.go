@@ -81,6 +81,71 @@ func checkLanding(t *testing.T, f *fixture, target string, data pages.LandingDat
 	same(t, answer(f, "GET", target, "viewer"), expected(f, "GET", target, "landing", 200, data))
 }
 
+// R-7GLU-WZS6 R-7HTR-ARIV
+func TestLandingInviteCountsAndAdmins(t *testing.T) {
+	f := setup(t)
+	ctx := t.Context()
+	st := f.cfg.Store
+	h, _, err := st.CreateHost(ctx, hostSpec, caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _, err := st.PlaceAccount(ctx, "acme", h.Name, caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := st.AddUser(ctx, a.Slug, "daffy", key, caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := pages.LandingData{
+		Configured: true,
+		Domain:     f.cfg.Domain,
+		Hosts:      []pages.HostRow{{Name: h.Name, State: store.HostProvisioning, Health: store.HealthNone, Type: hostSpec.Type, RootGB: hostSpec.RootGB, DataGB: hostSpec.DataGB, AccountCount: 1}},
+		Accounts:   []pages.AccountRow{{Slug: a.Slug, Host: h.Name, DNSName: a.Slug + "." + f.cfg.Domain, State: store.AccountPending, UserCount: 1, Created: created, CreatedText: createdMinute}},
+		Users:      []pages.UserRow{{Login: u.Name, Account: a.Slug, State: store.UserActive, KeyCount: 1, Pending: true}},
+	}
+	checkLanding(t, f, "/", data)
+	revoked, _, err := st.CreateInvite(ctx, a.Slug, false, caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, adminToken, err := st.CreateInvite(ctx, a.Slug, true, caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.SetAdmin(ctx, a.Slug, u.Name, true); err != nil {
+		t.Fatal(err)
+	}
+	data.Accounts[0].InviteCount = 2
+	data.Users[0].Admin = true
+	checkLanding(t, f, "/", data)
+
+	if _, err := st.RevokeInvite(ctx, revoked.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.SetAdmin(ctx, a.Slug, u.Name, false); err != nil {
+		t.Fatal(err)
+	}
+	data.Accounts[0].InviteCount = 1
+	data.Users[0].Admin = false
+	checkLanding(t, f, "/", data)
+
+	if _, _, err := st.Enroll(ctx, adminToken, "joined-user", key); err != nil {
+		t.Fatal(err)
+	}
+	data.Accounts[0].InviteCount = 0
+	data.Accounts[0].UserCount = 2
+	data.Users = append(data.Users, pages.UserRow{Login: "joined-user", Account: a.Slug, Admin: true, State: store.UserActive, KeyCount: 1, Pending: true})
+	checkLanding(t, f, "/", data)
+
+	if _, _, err := st.CreateInvite(ctx, a.Slug, false, caller); err != nil {
+		t.Fatal(err)
+	}
+	f.advance(store.InviteLife + time.Second)
+	checkLanding(t, f, "/", data)
+}
+
 func createListRows(t *testing.T, f *fixture, n int) pages.LandingData {
 	t.Helper()
 	out := pages.LandingData{Configured: true, Domain: f.cfg.Domain}

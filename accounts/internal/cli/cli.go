@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts"
+	"github.com/ikigenba/ikigenba/accounts/internal/box"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud/awssdk"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud/memory"
@@ -166,6 +167,7 @@ func serve(ctx context.Context, p Process, ln net.Listener, s settings.Settings)
 
 	path, _ := p.LookupEnv(services.Variable)
 	binding := func() (string, error) { return s.Binding(path) }
+	accountsURL := func() (string, error) { return s.AccountsURL(path) }
 	hosts := s.HostsInUse()
 	c, mc, err := openCloud(ctx, p, s, rnd)
 	if err != nil {
@@ -179,16 +181,20 @@ func serve(ctx context.Context, p Process, ln net.Listener, s settings.Settings)
 	}
 
 	verifier := hostauth.NewVerifier(hostauth.VerifierConfig{Region: hosts.Region, Role: hosts.InstanceProfile, Binding: binding, STS: c, Now: p.Now})
+	central, user, admin := p.MCP(writer), p.MCP(writer), p.MCP(writer)
+	boxConfig := box.Config{Store: st, Telemetry: writer, AccountsURL: accountsURL}
+	box.RegisterUser(user, boxConfig)
+	box.RegisterAdmin(admin, boxConfig)
 	// A cancelled start still needs a handler so the ordinary shutdown path
 	// can close the writer. An interrupted digest simply disables the download.
-	daemonConfig := daemonapi.Config{Store: st, Verifier: verifier, Binary: binary, Telemetry: writer, Now: p.Now, Configured: configured, After: p.After}
+	daemonConfig := daemonapi.Config{Store: st, Verifier: verifier, Binary: binary, Telemetry: writer, Now: p.Now, Configured: configured, After: p.After, BoxUser: user, BoxAdmin: admin}
 	ds, err := daemonapi.New(ctx, daemonConfig)
 	if err != nil {
 		daemonConfig.Binary = ""
 		ds, _ = daemonapi.New(context.Background(), daemonConfig)
 	}
-	engine := ops.New(ops.Config{Store: st, Cloud: c, Hosts: hosts, AccountsURL: func() (string, error) { return s.AccountsURL(path) }, Telemetry: writer, Now: p.Now, After: p.After})
-	handler := web.Handler(web.Config{Banner: p.Banner, MCP: p.MCP(writer), ServicesPath: path, Store: st, Cloud: c, Hosts: hosts, Configured: configured, Wake: engine.Wake, Daemon: ds, Telemetry: writer, Settings: s})
+	engine := ops.New(ops.Config{Store: st, Cloud: c, Hosts: hosts, AccountsURL: accountsURL, Telemetry: writer, Now: p.Now, After: p.After})
+	handler := web.Handler(web.Config{Banner: p.Banner, MCP: central, ServicesPath: path, Store: st, Cloud: c, Hosts: hosts, Configured: configured, Wake: engine.Wake, Daemon: ds, Telemetry: writer, Settings: s})
 	notifyReady(p.LookupEnv)
 
 	work, cancelWork := context.WithCancel(ctx)
@@ -211,6 +217,7 @@ func serve(ctx context.Context, p Process, ln net.Listener, s settings.Settings)
 		simulator := sim.New(sim.Config{
 			Cloud: mc, Handler: handler, Binding: b, Digest: ds.Digest, Now: p.Now, Sleep: p.Sleep, After: p.After,
 			BanFile: filepath.Join(p.Dir, "state", "sandbox-bans"),
+			BoxDir:  filepath.Join(p.Dir, "state", "box"),
 		})
 		background.Go(func() { _ = simulator.Run(work) })
 	}

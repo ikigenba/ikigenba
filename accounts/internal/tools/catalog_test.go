@@ -58,6 +58,10 @@ func catalog() []entry {
 		entryFor(tools.ToolLockUser, "lock_user", tools.DescribeLockUser, mcp.Additive, nil, user),
 		entryFor(tools.ToolUnlockUser, "unlock_user", tools.DescribeUnlockUser, mcp.Additive, nil, user),
 		entryFor(tools.ToolDeleteUser, "delete_user", tools.DescribeDeleteUser, mcp.Destructive, nil, user),
+		entryFor(tools.ToolSetAdmin, "set_admin", tools.DescribeSetAdmin, mcp.Additive, nil, []string{"account", "user", "admin"}),
+		entryFor(tools.ToolCreateInvite, "create_invite", tools.DescribeCreateInvite, mcp.Additive, []string{"admin"}, account),
+		entryFor(tools.ToolListInvites, "list_invites", tools.DescribeListInvites, mcp.Read, nil, account),
+		entryFor(tools.ToolRevokeInvite, "revoke_invite", tools.DescribeRevokeInvite, mcp.Destructive, nil, []string{"invite"}),
 		entryFor(tools.ToolUnbanIP, "unban_ip", tools.DescribeUnbanIP, mcp.Additive, host, []string{"ip"}),
 		entryFor(tools.ToolAllowIP, "allow_ip", tools.DescribeAllowIP, mcp.Additive, nil, []string{"host", "ip"}),
 		entryFor(tools.ToolDisallowIP, "disallow_ip", tools.DescribeDisallowIP, mcp.Destructive, nil, []string{"host", "ip"}),
@@ -128,7 +132,7 @@ func checkRequired(t *testing.T, s schema) {
 	}
 }
 
-// R-51DJ-TTH0 R-YDET-CHO2 R-YEMP-Q9ER R-YODW-SFCB R-ZJJV-6E73 R-ZLZN-XXOH R-Z7CV-COS5 R-Z8KR-QGIU R-ZDGD-9JHM R-ZEO9-NB8B
+// R-51DJ-TTH0 R-YDET-CHO2 R-YEMP-Q9ER R-YODW-SFCB R-CL1V-ZGDI R-CM9S-D847 R-CNHO-QZUW R-COPL-4RLL R-D0WK-YH0J R-CTL6-NUKD R-CUT3-1MB2 R-CW0Z-FE1R R-Z7CV-COS5 R-Z8KR-QGIU R-ZDGD-9JHM R-ZEO9-NB8B
 func TestCatalogAndSchemas(t *testing.T) {
 	const (
 		_ = tools.DescribeHosts
@@ -150,6 +154,10 @@ func TestCatalogAndSchemas(t *testing.T) {
 		_ = tools.DescribeLockUser
 		_ = tools.DescribeUnlockUser
 		_ = tools.DescribeDeleteUser
+		_ = tools.DescribeSetAdmin
+		_ = tools.DescribeCreateInvite
+		_ = tools.DescribeListInvites
+		_ = tools.DescribeRevokeInvite
 		_ = tools.DescribeUnbanIP
 		_ = tools.DescribeAllowIP
 		_ = tools.DescribeDisallowIP
@@ -213,7 +221,7 @@ func checkInput(t *testing.T, info mcp.ToolInfo, expected entry) {
 	copyByField := map[string]string{
 		"page": paging.PageDescription, "limit": paging.LimitDescription,
 		"host": tools.ArgHost, "account": tools.ArgAccount, "user": tools.ArgUser, "ip": tools.ArgIP,
-		"key": tools.ArgKey, "type": tools.ArgType, "root_gb": tools.ArgRootGB, "data_gb": tools.ArgDataGB,
+		"key": tools.ArgKey, "admin": tools.ArgAdmin, "invite": tools.ArgInvite, "type": tools.ArgType, "root_gb": tools.ArgRootGB, "data_gb": tools.ArgDataGB,
 	}
 	var in schema
 	if err := json.Unmarshal(info.InputSchema, &in); err != nil {
@@ -232,7 +240,10 @@ func checkInput(t *testing.T, info mcp.ToolInfo, expected entry) {
 	}
 	for _, n := range fields {
 		kind := "string"
-		if n == "limit" || n == "root_gb" || n == "data_gb" {
+		switch n {
+		case "admin":
+			kind = "boolean"
+		case "limit", "root_gb", "data_gb":
 			kind = "integer"
 		}
 		expectedType := `"` + kind + `"`
@@ -248,6 +259,10 @@ func validArgs(expected entry) map[string]any {
 		switch n {
 		case "ip":
 			args[n] = "192.0.2.7"
+		case "admin":
+			args[n] = false
+		case "invite":
+			args[n] = store.InvitePrefix + "0000000000000000"
 		case "page":
 			args[n] = ""
 		case "limit", "root_gb", "data_gb":
@@ -259,17 +274,18 @@ func validArgs(expected entry) map[string]any {
 	return args
 }
 
-// R-YC6W-YPXD R-YIAE-VKMU R-YJIB-9CDJ R-YKQ7-N448 R-YLY4-0VUX R-YN60-ENLM
+// R-CDQH-OTXC R-YIAE-VKMU R-YJIB-9CDJ R-YKQ7-N448 R-YLY4-0VUX R-YN60-ENLM
 func TestInputTypes(t *testing.T) {
 	t.Helper()
 	// Conversion to an anonymous struct checks the declared field names, order and types.
 	_ = struct {
-		Store      *store.Store
-		Cloud      cloud.Cloud
-		Hosts      settings.Hosts
-		Configured bool
-		Wake       func()
-		Telemetry  *telemetry.Writer
+		Store       *store.Store
+		Cloud       cloud.Cloud
+		Hosts       settings.Hosts
+		Configured  bool
+		Wake        func()
+		Telemetry   *telemetry.Writer
+		AccountsURL func() (string, error)
 	}(tools.Config{})
 	_ = struct {
 		Page  *string
@@ -297,4 +313,13 @@ func TestInputTypes(t *testing.T) {
 	}(tools.ResizeHostArgs{})
 	_ = struct{ Account, User string }(tools.UserArgs{})
 	_ = struct{ Account, User, Key string }(tools.UserKeyArgs{})
+	_ = struct {
+		Account, User string
+		Admin         bool
+	}(tools.SetAdminArgs{})
+	_ = struct {
+		Account string
+		Admin   *bool
+	}(tools.CreateInviteArgs{})
+	_ = struct{ Invite string }(tools.InviteArgs{})
 }

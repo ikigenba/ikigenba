@@ -46,17 +46,17 @@ func operationIDs() *bytes.Reader {
 }
 
 type fixture struct {
-	cfg    pages.Config
-	d      *db.DB
-	writer *telemetry.Writer
+	cfg     pages.Config
+	d       *db.DB
+	writer  *telemetry.Writer
+	advance func(time.Duration)
 }
 
 func setup(t *testing.T) *fixture {
 	t.Helper()
 	t.Setenv(services.Variable, "")
-	now := func() time.Time {
-		return time.Date(2026, 11, 17, 9, 3, 7, 0, time.FixedZone("chosen-zone", -5*3600))
-	}
+	clock := time.Date(2026, 11, 17, 9, 3, 7, 0, time.FixedZone("chosen-zone", -5*3600))
+	now := func() time.Time { return clock }
 	d, err := db.Open(t.Context(), db.Config{Path: filepath.Join(t.TempDir(), "accounts.db"), Migrations: accounts.Migrations(), Now: now})
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +72,7 @@ func setup(t *testing.T) *fixture {
 		return page.Banner{Service: pages.ServiceName, Release: "chosen-release", Commit: "chosen-commit", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Tools: true, Trail: []page.Level{{Name: "discarded", URL: "/discarded"}}}
 	}
 	cfg := pages.Config{banner, set, "", store.New(d, store.Config{Now: now, Rand: operationIDs()}), mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: w}), true, "work.test", now}
-	return &fixture{cfg: cfg, d: d, writer: w}
+	return &fixture{cfg: cfg, d: d, writer: w, advance: func(d time.Duration) { clock = clock.Add(d) }}
 }
 func request(method, target, user string) *http.Request {
 	r := httptest.NewRequest(method, target, strings.NewReader("chosen body"))
@@ -168,7 +168,7 @@ func TestPageNamesAndTimeLayouts(t *testing.T) {
 	}
 }
 
-// R-A8L8-1TI4 R-A9T4-FL8T R-ATBI-JX3X R-S6XY-J6PQ R-0QD9-40VA R-TSTJ-2BVL R-TU1F-G3MA R-SD1G-G1F7 R-AICF-3ZFO R-AJKB-HR6D R-AM04-9ANR R-TYX0-Z6L2
+// R-A8L8-1TI4 R-A9T4-FL8T R-ATBI-JX3X R-S6XY-J6PQ R-7CY5-ROK3 R-TSTJ-2BVL R-TU1F-G3MA R-SD1G-G1F7 R-AICF-3ZFO R-AJKB-HR6D R-AM04-9ANR R-7J1N-OJ9K R-7E62-5GAS R-7FDY-J81H
 func TestTemplateSet(t *testing.T) {
 	t.Chdir(t.TempDir())
 	independent, err := page.Templates().ParseFS(accounts.Assets(), "*.html")
@@ -244,18 +244,23 @@ func TestTemplateSet(t *testing.T) {
 		}
 		var accountsRows []pages.AccountRow
 		for _, state := range []string{store.AccountPending, store.AccountActive, store.AccountFailed, store.AccountRemoving} {
-			accountsRows = append(accountsRows, pages.AccountRow{"chosen-account", "chosen-host", "chosen-account.work.test", state, reason, 3, stamp, visible})
+			for _, invites := range []int{0, 2} {
+				accountsRows = append(accountsRows, pages.AccountRow{"chosen-account", "chosen-host", "chosen-account.work.test", state, reason, 3, invites, stamp, visible})
+			}
 		}
 		var users []pages.UserRow
 		for _, state := range []string{store.UserActive, store.UserLocked, store.UserRemoving} {
 			for _, pending := range []bool{false, true} {
-				users = append(users, pages.UserRow{"chosen-user", "chosen-account", state, pending, 2, stamp, visible})
+				for _, admin := range []bool{false, true} {
+					users = append(users, pages.UserRow{"chosen-user", "chosen-account", admin, state, pending, 2, stamp, visible})
+				}
 			}
 		}
 		check("landing", pages.LandingData{b, true, "work.test", hosts, "hp", "hprev", "hnext", accountsRows, "ap", "aprev", "anext", users, "up", "uprev", "unext"})
 		check("tools", pages.ToolsData{b, rows})
 		check("about", pages.AboutData{b, pages.Description, valid.DefaultType, valid.DefaultRootGB, valid.DefaultDataGB})
 	}
+	checkJoinTemplates(t, check)
 	for _, tc := range []struct {
 		name string
 		data any
@@ -265,6 +270,32 @@ func TestTemplateSet(t *testing.T) {
 			write(set, w, request(method, "/", "viewer"), 207, tc.name, tc.data)
 			if w.Code != 500 || w.Body.Len() != 0 || !reflect.DeepEqual(w.Header().Values("Content-Type"), []string{"text/html; charset=utf-8"}) {
 				t.Fatal("template failure leaked partial output")
+			}
+		}
+	}
+}
+
+func checkJoinTemplates(t *testing.T, check func(string, any)) {
+	t.Helper()
+	type outcomeValue string
+	const form, unusable, name, key, limited, full, done outcomeValue = pages.JoinForm, pages.JoinUnusable, pages.JoinName, pages.JoinKey, pages.JoinLimited, pages.JoinFull, pages.JoinDone
+	for _, outcome := range []struct{ constant, want outcomeValue }{
+		{form, ""}, {unusable, "unusable"}, {name, "name"}, {key, "key"}, {limited, "limited"}, {full, "full"}, {done, "done"},
+	} {
+		if outcome.constant != outcome.want {
+			t.Fatalf("join outcome %q, want %q", outcome.constant, outcome.want)
+		}
+	}
+	check("join", pages.JoinData{pages.JoinUnusable, "", "", false, "", ""})
+	check("join", pages.JoinData{pages.JoinLimited, "", "", false, "", ""})
+	for _, admin := range []bool{false, true} {
+		check("join", pages.JoinData{pages.JoinForm, "chosen-account", "chosen-account.work.test", admin, "", ""})
+		check("join", pages.JoinData{pages.JoinDone, "chosen-account", "chosen-account.work.test", admin, "chosen-user", ""})
+		for _, outcome := range []string{pages.JoinName, pages.JoinKey, pages.JoinFull} {
+			for _, user := range []string{"", "chosen-user"} {
+				for _, submittedKey := range []string{"", "chosen-key"} {
+					check("join", pages.JoinData{outcome, "chosen-account", "chosen-account.work.test", admin, user, submittedKey})
+				}
 			}
 		}
 	}

@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
+	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,11 +23,13 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/ops"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 	"github.com/ikigenba/ikigenba/accounts/internal/settings"
+	"github.com/ikigenba/ikigenba/accounts/internal/sim"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/tools"
 	"github.com/ikigenba/ikigenba/accounts/internal/valid"
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
 func awsEnvironment() map[string]string {
@@ -395,10 +400,10 @@ func TestSandboxResumesAndSynchronizesHosts(t *testing.T) {
 	})
 }
 
-// R-TB3B-1D9C
+// R-JFIG-JA0H
 func TestSandboxBanDropReachesHostReport(t *testing.T) {
 	clock := newDrivenClock()
-	run := startIntegration(t, integrationOptions{now: clock.now, after: clock.after, sleep: clock.sleep})
+	run := startIntegration(t, integrationOptions{dir: integrationSocketDir(t), now: clock.now, after: clock.after, sleep: clock.sleep})
 	var created tools.HostChange
 	run.call(tools.ToolCreateHost, struct{}{}, &created)
 	if created.Host != "host01" {
@@ -430,24 +435,50 @@ func TestSandboxBanDropReachesHostReport(t *testing.T) {
 	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("after the report the expected path must be absent: %v", err)
 	}
+	boxDir := filepath.Join(run.dir, "state", "box")
+	socket := filepath.Join(boxDir, "daffy")
+	if len(socket) > sim.MaxSocketPath {
+		t.Fatalf("fixture socket path is too long: %q", socket)
+	}
+	if _, err := os.Lstat(boxDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("box path before adding a user: %v", err)
+	}
+	run.call(tools.ToolCreateAccount, tools.CreateAccountArgs{Account: "acme", Host: created.Host}, nil)
+	run.call(tools.ToolAddUser, tools.UserKeyArgs{Account: "acme", User: "daffy", Key: validKey()}, nil)
+	driveUntil(t, clock, func() bool {
+		var users tools.UserList
+		run.call(tools.ToolUsers, tools.AccountArgs{Account: "acme"}, &users)
+		info, err := os.Lstat(socket)
+		return len(users.Users) == 1 && !users.Users[0].Pending && err == nil && info.Mode()&os.ModeSocket != 0
+	})
 	if run.stop() != cli.ExitSuccess {
 		t.Fatal(run.err.String())
 	}
 }
 
-// R-E18S-PNZ9 R-EKR6-TZUD R-IF26-P336
-func TestRunSecrecy(t *testing.T) {
-	const bodyMarker = "GHIJKLMNGHIJKLMNGHIJKLMN"
-	const emailMarker = "OPQRSTUVOPQRSTUVOPQRSTUV"
-	const commentMarker = "WXYZ1234WXYZ1234WXYZ1234"
+const (
+	bodyMarker    = "GHIJKLMNGHIJKLMNGHIJKLMN"
+	emailMarker   = "OPQRSTUVOPQRSTUVOPQRSTUV"
+	commentMarker = "WXYZ1234WXYZ1234WXYZ1234"
+)
+
+func secrecyKey(t *testing.T, variant string) string {
+	t.Helper()
 	body := strings.Split(validKey(), " ")[1]
-	encoded := body[:28] + bodyMarker + body[52:]
+	encoded := body[:28] + bodyMarker + variant + body[52+len(variant):]
 	key := "ssh-ed25519 " + encoded + " " + commentMarker
 	if _, err := valid.ParseKey(key); err != nil {
 		t.Fatal("invalid secrecy fixture", err)
 	}
+	return key
+}
+
+// R-E18S-PNZ9 R-EKR6-TZUD R-IF26-P336 R-171J-ZR8S R-O4Q5-ZNKA
+func TestRunSecrecy(t *testing.T) {
+	key := secrecyKey(t, "")
 	clock := newDrivenClock()
-	run := startIntegration(t, integrationOptions{now: clock.now, after: clock.after, sleep: clock.sleep, email: emailMarker + "@fixture.test"})
+	run := startIntegration(t, integrationOptions{now: clock.now, after: clock.after, sleep: clock.sleep, email: emailMarker + "@fixture.test",
+		random: rand.NewChaCha8([32]byte{4})})
 	run.call("create_host", struct{}{}, nil)
 	driveUntil(t, clock, func() bool {
 		var host tools.HostRead
@@ -472,6 +503,27 @@ func TestRunSecrecy(t *testing.T) {
 			t.Fatal(call.name, err)
 		}
 	}
+	var admin, ordinary tools.InviteMade
+	run.call(tools.ToolCreateInvite, map[string]any{"account": "acme", "admin": true}, &admin)
+	run.call(tools.ToolCreateInvite, tools.AccountArgs{Account: "acme"}, &ordinary)
+	var invites tools.InviteList
+	run.call(tools.ToolListInvites, tools.AccountArgs{Account: "acme"}, &invites)
+	if len(invites.Invites) != 2 {
+		t.Fatalf("live invites = %+v", invites.Invites)
+	}
+	run.call(tools.ToolRevokeInvite, tools.InviteArgs{Invite: ordinary.Invite}, nil)
+	path := invitePath(t, admin)
+	for _, viewer := range []string{"", "owner"} {
+		if status, _, _ := run.request(http.MethodGet, path, viewer, ""); status != http.StatusOK {
+			t.Fatalf("join GET status = %d", status)
+		}
+	}
+	if status, _ := run.enroll(path, "owner", "", "daffy", key); status != http.StatusOK {
+		t.Fatalf("join POST status = %d", status)
+	}
+	for _, admin := range []bool{true, false} {
+		run.call(tools.ToolSetAdmin, tools.SetAdminArgs{Account: "acme", User: "alice", Admin: admin}, nil)
+	}
 	for _, user := range []string{"", "owner"} {
 		for _, path := range []string{"/", "/hosts/host01", "/tools", "/about"} {
 			run.request("GET", path, user, "")
@@ -481,16 +533,9 @@ func TestRunSecrecy(t *testing.T) {
 		t.Fatal(run.err.String())
 	}
 	var allowObserved bool
-	for _, event := range run.capture.Events() {
-		data, err := json.Marshal(event)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, marker := range []string{bodyMarker, emailMarker, commentMarker} {
-			if strings.Contains(strings.ToLower(string(data)), strings.ToLower(marker)) {
-				t.Fatalf("marker in event %s", event.Name)
-			}
-		}
+	events := run.capture.Events()
+	assertTrailSecrecy(t, events, admin, ordinary)
+	for _, event := range events {
 		if event.Name == "change.finished" && event.Attrs["tool"] == tools.ToolAllowIP &&
 			event.Attrs["host"] == "host01" && event.Attrs["ip"] == "192.0.2.0/24" {
 			allowObserved = true
@@ -498,6 +543,52 @@ func TestRunSecrecy(t *testing.T) {
 	}
 	if !allowObserved {
 		t.Fatal("change.finished for the allowlist addition was missing")
+	}
+}
+
+func assertTrailSecrecy(t *testing.T, events []telemetry.Event, invites ...tools.InviteMade) {
+	t.Helper()
+	forbidden := []string{bodyMarker, emailMarker, commentMarker}
+	var ids []string
+	for _, invite := range invites {
+		ids = append(ids, strings.ToLower(invite.Invite))
+	}
+	requests := make(map[string]bool)
+	allowed := eventNames()
+	for _, event := range events {
+		if !slices.Contains(allowed, event.Name) {
+			t.Fatal("unknown event", event.Name)
+		}
+		if event.Name == "request.started" {
+			if event.RequestID == "" || requests[event.RequestID] {
+				t.Fatalf("fixture request ids are not unique: %q", event.RequestID)
+			}
+			requests[event.RequestID] = true
+			ids = append(ids, strings.ToLower(event.RequestID))
+		}
+	}
+	for _, invite := range invites {
+		token := strings.ToLower(strings.TrimPrefix(invitePath(t, invite), "/join/"))
+		for start := 0; start+8 <= len(token); start++ {
+			head := token[start : start+8]
+			for _, id := range ids {
+				if strings.Contains(id, head) {
+					t.Fatal("fixture token overlaps an invite or request id")
+				}
+			}
+			forbidden = append(forbidden, head)
+		}
+	}
+	for _, event := range events {
+		data, err := json.Marshal(event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, secret := range forbidden {
+			if strings.Contains(strings.ToLower(string(data)), strings.ToLower(secret)) {
+				t.Fatalf("secret appeared in event %s", event.Name)
+			}
+		}
 	}
 }
 

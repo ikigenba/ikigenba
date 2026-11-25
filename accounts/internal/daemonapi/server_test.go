@@ -109,7 +109,7 @@ func fixtureStore(t *testing.T) (*db.DB, *store.Store, store.Host) {
 	})
 	s := store.New(d, store.Config{
 		Now:  func() time.Time { return fixtureNow },
-		Rand: strings.NewReader("12345678abcdefghIJKLMNOP"),
+		Rand: strings.NewReader("12345678abcdefghIJKLMNOPqrstuvwx"),
 	})
 	return d, s, provisionFixtureHost(t, s, fixtureInstance)
 }
@@ -163,7 +163,7 @@ func writeBinary(t *testing.T, file string, content []byte) {
 	}
 }
 
-// R-R4PD-7V00, R-R5X9-LMQP, R-R755-ZEHE.
+// R-YC94-BKTJ, R-R5X9-LMQP, R-R755-ZEHE, R-YICM-8FJ0, R-YJKI-M79P.
 func TestSurfaceAndBinaryStartup(t *testing.T) {
 	_ = struct {
 		new    func(context.Context, Config) (*Server, error)
@@ -171,12 +171,24 @@ func TestSurfaceAndBinaryStartup(t *testing.T) {
 		digest func(*Server) string
 		http   http.Handler
 	}{New, (*Server).Stop, (*Server).Digest, (*Server)(nil)}
-	_ = Config{nil, nil, "", nil, nil, false, nil}
-	if MaxWaiters != 1000 || CopyBuffer != 32<<10 {
+	_ = struct {
+		Store      *store.Store
+		Verifier   *hostauth.Verifier
+		Binary     string
+		Telemetry  *telemetry.Writer
+		Now        func() time.Time
+		Configured bool
+		After      func(time.Duration) <-chan time.Time
+		BoxUser    http.Handler
+		BoxAdmin   http.Handler
+	}(Config{})
+	const _ int8 = MaxBoxServing
+	const _ uint16 = MaxBoxServing
+	if MaxWaiters != 1000 || CopyBuffer != 32<<10 || MaxBoxServing != 32 {
 		t.Fatal("unexpected HTTP limits")
 	}
 	seen := map[string]bool{store.Unreachable: true}
-	for _, copy := range []string{NotFound, NotAllowed, BadRequest, Refused, UnknownHost, TooLarge, Busy} {
+	for _, copy := range []string{NotFound, NotAllowed, BadRequest, Refused, UnknownHost, TooLarge, Busy, NotUser} {
 		if copy == "" || strings.ContainsAny(copy, "\r\n") || seen[copy] {
 			t.Fatalf("invalid or duplicate error copy %q", copy)
 		}
@@ -205,17 +217,17 @@ func TestSurfaceAndBinaryStartup(t *testing.T) {
 	}
 }
 
-// R-R8D2-D683, R-R9KY-QXYS, R-RC0R-IHG6, R-REGK-A0XK, R-RFOG-NSO9.
+// R-YDH0-PCK8, R-YEOX-34AX, R-RC0R-IHG6, R-REGK-A0XK, R-YFWT-GW1M.
 func TestRoutingAndMethodRefusals(t *testing.T) {
 	unconfigured := server(t, Config{})
 	configured := server(t, Config{Configured: true})
-	for _, path := range []string{protocol.BinaryPath, protocol.StatePath, protocol.ReportPath, "/accountsd/", "/accountsd/v1/state/", "/accountsd/v1", "/accountsd/v2/state"} {
+	for _, path := range []string{protocol.BinaryPath, protocol.StatePath, protocol.ReportPath, protocol.BoxPath, "/accountsd/", "/accountsd/v1/state/", "/accountsd/v1", "/accountsd/v2/state"} {
 		for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodDelete} {
 			w := invoke(unconfigured, httptest.NewRequestWithContext(t.Context(), method, path+"?after=bogus", neverRead{}))
 			expectError(t, w, http.StatusNotFound, NotFound)
 		}
 	}
-	for _, path := range []string{"/accountsd/", "/accountsd/v1/state/", "/accountsd/v1", "/accountsd/v2/state"} {
+	for _, path := range []string{"/accountsd/", "/accountsd/v1/state/", "/accountsd/v1", "/accountsd/v2/state", protocol.BoxPath + "/"} {
 		w := invoke(configured, httptest.NewRequestWithContext(t.Context(), http.MethodPost, path, neverRead{}))
 		expectError(t, w, http.StatusNotFound, NotFound)
 	}
@@ -883,7 +895,7 @@ func recorder(t *testing.T) (*telemetry.Writer, *telemetry.Capture) {
 	return w, capture
 }
 
-// R-ASMT-78PU, R-ATUP-L0GJ, R-LCL5-TWX0.
+// R-ASMT-78PU, R-ATUP-L0GJ, R-YH4P-UNSB.
 func TestReportEmitsOnlyHealthEdgesWithoutCaller(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	stamps := new(requests)
@@ -933,11 +945,15 @@ func TestReportEmitsOnlyHealthEdgesWithoutCaller(t *testing.T) {
 	}
 }
 
-// R-LCL5-TWX0.
-func TestBinaryAndStateRequestsLeaveReportsUnchanged(t *testing.T) {
+// R-YH4P-UNSB.
+func TestBinaryStateAndBoxRequestsLeaveReportsUnchanged(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	other := provisionFixtureHost(t, st, "i-87654321")
 	ctx := t.Context()
+	addBoxAccount(t, st, host.Name, "acme")
+	user := addBoxUser(t, st, "acme", "daffy")
+	boxReached := false
+	noop := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { boxReached = true })
 	body := protocol.Report{Protocol: protocol.Version, Attempted: host.Version, Applied: host.Version, OS: "fixture"}
 	if _, err := st.RecordReport(ctx, host.Name, body, fixtureNow); err != nil {
 		t.Fatal(err)
@@ -951,7 +967,7 @@ func TestBinaryAndStateRequestsLeaveReportsUnchanged(t *testing.T) {
 	s := server(t, Config{
 		Store: st, Configured: true, Verifier: stamps.verifier(fixtureSTS{instance: fixtureInstance}),
 		Binary: file, Telemetry: w, Now: func() time.Time { return fixtureNow.Add(time.Minute) },
-		After: func(time.Duration) <-chan time.Time { return timer },
+		After: func(time.Duration) <-chan time.Time { return timer }, BoxUser: noop, BoxAdmin: noop,
 	})
 	recording := &recordingReportStore{Store: st}
 	s.store = recording
@@ -964,20 +980,24 @@ func TestBinaryAndStateRequestsLeaveReportsUnchanged(t *testing.T) {
 	for _, path := range []string{protocol.StatePath, pollingRequest(host, s.Digest())} {
 		expectState(t, invoke(s, stamps.signed(ctx, http.MethodGet, path, nil)), wantState)
 	}
+	invoke(s, stamps.signed(ctx, http.MethodPost, boxPath(user.UID), strings.NewReader(listRequest)))
+	if !boxReached {
+		t.Fatal("box request did not reach its handler")
+	}
 	want := &store.Report{Host: host.Name, Received: fixtureNow, Body: body}
 	if got, err := st.Report(ctx, host.Name); err != nil || !reflect.DeepEqual(got, want) {
-		t.Fatalf("binary or state requests changed report: %+v, %v; want %+v", got, err, want)
+		t.Fatalf("binary, state or box requests changed report: %+v, %v; want %+v", got, err, want)
 	}
 	if got, err := st.Report(ctx, other.Name); err != nil || got != nil {
-		t.Fatalf("binary or state requests created another host's report: %+v, %v", got, err)
+		t.Fatalf("binary, state or box requests created another host's report: %+v, %v", got, err)
 	}
 	if len(recording.calls) != 0 {
-		t.Fatalf("binary or state requests called RecordReport: %+v", recording.calls)
+		t.Fatalf("binary, state or box requests called RecordReport: %+v", recording.calls)
 	}
 	if err := w.Flush(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if events := capture.Events(); len(events) != 0 {
-		t.Fatalf("binary or state requests emitted events: %+v", events)
+		t.Fatalf("binary, state or box requests emitted events: %+v", events)
 	}
 }

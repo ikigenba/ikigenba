@@ -57,7 +57,7 @@ func (f *fixture) syncHost(name string) {
 	}
 }
 
-// R-GI7B-51D4 R-ZH42-EUPP
+// R-FD2D-SMU2 R-ZH42-EUPP
 func TestNamedUnban(t *testing.T) {
 	f := setup(t)
 	f.serveLoopback()
@@ -106,7 +106,7 @@ func TestNamedUnban(t *testing.T) {
 	}
 }
 
-// R-GJF7-IT3T
+// R-FEAA-6EKR
 func TestUnbanAllRunning(t *testing.T) {
 	f := setup(t)
 	f.serveLoopback()
@@ -155,7 +155,7 @@ func TestUnbanAllRunning(t *testing.T) {
 	}
 }
 
-// R-ZVQV-03M1 R-ZY6N-RN3F R-ZZEK-5EU4 R-ZH42-EUPP
+// R-FFI6-K6BG R-FHXZ-BPSU R-FKDS-39A8 R-ZH42-EUPP
 func TestAllowlistChanges(t *testing.T) {
 	f := setup(t)
 	f.serveLoopback()
@@ -206,7 +206,7 @@ func TestAllowlistChanges(t *testing.T) {
 	}
 }
 
-// R-ZWYR-DVCQ
+// R-FGQ2-XY25
 func TestAllowlistHostChecks(t *testing.T) {
 	f := setup(t)
 	f.serveLoopback()
@@ -233,7 +233,7 @@ func TestAllowlistHostChecks(t *testing.T) {
 	}
 }
 
-// R-GLV0-ACL7 R-GOAT-1W2L R-GKN3-WKUI
+// R-ETJZ-OAYY R-FLLO-H10X R-FO1H-8KIB
 func TestAddressChangeTrail(t *testing.T) {
 	f := setup(t)
 	f.serveLoopback()

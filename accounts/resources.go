@@ -6,13 +6,13 @@ import (
 	"io/fs"
 )
 
-//go:embed assets/about.html assets/host.html assets/landing.html assets/notfound.html assets/tools.html
+//go:embed assets/about.html assets/host.html assets/join.html assets/landing.html assets/notfound.html assets/tools.html
 var assets embed.FS
 
 //go:embed etc/manifest.toml etc/nginx.conf
 var etc embed.FS
 
-//go:embed migrations/0001_accounts.sql migrations/0002_hosts.sql migrations/0003_bans.sql
+//go:embed migrations/0001_accounts.sql migrations/0002_hosts.sql migrations/0003_bans.sql migrations/0004_invites.sql
 var migrations embed.FS
 
 // Assets returns page templates rooted at their directory.

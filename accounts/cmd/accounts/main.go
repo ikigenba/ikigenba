@@ -38,7 +38,7 @@ func main() {
 		case <-ctx.Done():
 		}
 	}()
-	code := cli.Run(ctx, cli.Process{Args: os.Args[1:], LookupEnv: os.LookupEnv, Unsetenv: os.Unsetenv, Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr, Version: v, Inherit: inherit, Now: time.Now, Rand: rand.Reader, Cloud: awssdk.Open, Banner: kit.Banner, MCP: func(w *telemetry.Writer) *mcp.Server {
+	code := cli.Run(ctx, cli.Process{Args: os.Args[1:], LookupEnv: os.LookupEnv, Unsetenv: os.Unsetenv, Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr, Version: v, Inherit: inherit, Now: time.Now, Rand: rand.Reader, After: time.After, Executable: os.Executable, Cloud: awssdk.Open, Banner: kit.Banner, MCP: func(w *telemetry.Writer) *mcp.Server {
 		return mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Version: v, Telemetry: w})
 	}})
 	signal.Stop(signals)

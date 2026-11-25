@@ -1,4 +1,4 @@
-// Package daemonapi serves the host daemon's binary, desired state, and report intake.
+// Package daemonapi serves the daemon binary, desired state, reports, and host users' box requests.
 package daemonapi
 
 import (
@@ -23,15 +23,17 @@ import (
 
 // Poll and download limits, and the protocol's plain-text responses.
 const (
-	MaxWaiters = 1000
-	CopyBuffer = 32 << 10
+	MaxWaiters    = 1000
+	CopyBuffer    = 32 << 10
+	MaxBoxServing = 32
 
 	NotFound    = "Daemon resource not found."
 	NotAllowed  = "Method not allowed."
 	BadRequest  = "Malformed daemon request."
 	Refused     = "Daemon identity refused."
 	UnknownHost = "No live host matches this daemon."
-	TooLarge    = "Daemon report exceeds its size limit."
+	NotUser     = "No active user matches this host and uid."
+	TooLarge    = "Daemon request exceeds its size limit."
 	Busy        = "Daemon service temporarily unavailable."
 )
 
@@ -44,6 +46,8 @@ type Config struct {
 	Now        func() time.Time
 	Configured bool
 	After      func(time.Duration) <-chan time.Time
+	BoxUser    http.Handler
+	BoxAdmin   http.Handler
 }
 
 // Server handles the daemon endpoints for one accounts process.
@@ -57,6 +61,7 @@ type Server struct {
 	stopOnce sync.Once
 	stopped  chan struct{}
 	waiters  chan struct{}
+	boxSlots chan struct{}
 }
 
 type hostStore interface {
@@ -65,6 +70,7 @@ type hostStore interface {
 	Watch(string) (<-chan struct{}, func())
 	Desired(context.Context, string) (protocol.DesiredState, error)
 	RecordReport(context.Context, string, protocol.Report, time.Time) (store.Transition, error)
+	ActiveUserByUID(context.Context, string, int64) (store.User, error)
 }
 
 // New opens and digests the daemon binary when it is available.
@@ -78,6 +84,7 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 	s := &Server{
 		cfg: cfg, store: cfg.Store,
 		stopped: make(chan struct{}), waiters: make(chan struct{}, MaxWaiters),
+		boxSlots: make(chan struct{}, MaxBoxServing),
 	}
 	// Keep store access behind the daemon's narrower interface.
 	s.cfg.Store = nil
@@ -168,6 +175,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if ok {
 			s.report(w, r, host.Name)
 		}
+	case protocol.BoxPath:
+		s.serveBox(w, r)
 	default:
 		http.Error(w, NotFound, http.StatusNotFound)
 	}
@@ -203,17 +212,21 @@ func parsePoll(raw string) (after int64, digest string, err error) {
 		return 0, "", err
 	}
 	if values, ok := query[protocol.QueryAfter]; ok {
-		if len(values) != 1 || values[0] == "" || strings.ContainsFunc(values[0], func(r rune) bool {
-			return r < '0' || r > '9'
-		}) {
-			return 0, "", errors.New("invalid after value")
-		}
-		after, err = strconv.ParseInt(values[0], 10, 64)
+		after, err = decimalQueryValue(values)
 		if err != nil {
 			return 0, "", err
 		}
 	}
 	return after, query.Get(protocol.QueryDigest), nil
+}
+
+func decimalQueryValue(values []string) (int64, error) {
+	if len(values) != 1 || strings.ContainsFunc(values[0], func(r rune) bool {
+		return r < '0' || r > '9'
+	}) {
+		return 0, errors.New("expected one decimal query value")
+	}
+	return strconv.ParseInt(values[0], 10, 64)
 }
 
 func (s *Server) identify(w http.ResponseWriter, r *http.Request) (store.Host, bool) {

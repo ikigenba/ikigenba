@@ -27,7 +27,7 @@ type callCase struct {
 	want string
 }
 
-// R-Y9R4-76FZ R-Z1SS-ZWHY R-ZOFG-PH5V R-Y4VI-O3H7 R-D1GS-WBBJ
+// R-ESC3-AJ89 R-Z1SS-ZWHY R-ZOFG-PH5V R-Y4VI-O3H7 R-D1GS-WBBJ
 func TestDisabledAndUnavailableTools(t *testing.T) {
 	for _, configured := range []bool{false, true} {
 		t.Run(fmt.Sprint(configured), func(t *testing.T) {
@@ -217,7 +217,7 @@ func checkHostOperation(t *testing.T, f *fixture, name string, args tools.HostAr
 	return op.ID
 }
 
-// R-XV4B-LXJN R-XYS0-R8RQ R-ZGFL-L5EA
+// R-XV4B-LXJN R-XYS0-R8RQ R-F86S-9JVA
 func TestCreateAccountDNS(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
@@ -370,7 +370,7 @@ func testRemoveAccountFromState(t *testing.T, state string) {
 				t.Error(err)
 			}
 		}()
-		reopened := store.New(d, store.Config{})
+		reopened := store.New(d, store.Config{Now: func() time.Time { return f.now }})
 		stored, err := reopened.Account(ctx, args.Account)
 		if err != nil {
 			t.Fatal(err)
@@ -420,7 +420,7 @@ func testRemoveAccountWithUsers(t *testing.T) {
 	refusal(t, f.call(tools.ToolRemoveAccount, unplace), tools.AccountHasUsers)
 }
 
-// R-1LZA-Y1FS R-YAZ0-KY6O R-1N77-BT6H R-ZLB7-48D2
+// R-F9EO-NBLZ R-YAZ0-KY6O R-FAML-13CO R-FBUH-EV3D
 func TestUserAndKeyChanges(t *testing.T) {
 	f := setup(t)
 	h, _ := f.seedHost(false)
@@ -513,7 +513,7 @@ func TestUserAndKeyChanges(t *testing.T) {
 	}
 }
 
-// R-1LZA-Y1FS
+// R-F9EO-NBLZ
 func TestAccountUserCapacity(t *testing.T) {
 	f := setup(t)
 	h, _ := f.seedHost(false)
@@ -532,7 +532,7 @@ func TestAccountUserCapacity(t *testing.T) {
 	refusal(t, f.call(tools.ToolAddUser, tools.UserKeyArgs{Account: "beta", User: "overflow", Key: k.Line}), tools.AccountFull)
 }
 
-// R-ZMJ3-I03R R-GKN3-WKUI R-GPIP-FNTA
+// R-FMTK-USRM R-FO1H-8KIB R-FP9D-MC90
 func TestChangeTrailAndWake(t *testing.T) {
 	f := setup(t)
 	f.serveLoopback()

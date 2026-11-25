@@ -25,19 +25,22 @@ func writer(t *testing.T, sink telemetry.Sink) *telemetry.Writer {
 	return w
 }
 
-// R-9NTT-PE98 R-9P1Q-35ZX R-E3OL-H7GN R-E64E-8QY1
+// R-9NTT-PE98 R-9P1Q-35ZX R-E3OL-H7GN R-E64E-8QY1 R-0XAC-XLB8
 func TestWireConstants(t *testing.T) {
+	const _ = trail.EventInviteCreated + trail.EventInviteRevoked + trail.EventInviteUsed + trail.EventAdminChanged
 	got := []string{
 		trail.EventChangeFinished, trail.ResultOK, trail.ResultRefused, trail.ResultFailed,
 		trail.EventOperationStarted, trail.EventOperationFinished, trail.EventHostChanged, trail.EventAccountChanged,
 		trail.EventHostSilent, trail.EventHostSynced, trail.EventHostApplyFailed, trail.EventResourceUnexplained,
 		trail.AccountRemoved, trail.ResourceInstance, trail.ResourceVolume, trail.ResourceAddress,
+		trail.EventInviteCreated, trail.EventInviteRevoked, trail.EventInviteUsed, trail.EventAdminChanged,
 	}
 	want := []string{
 		"change.finished", "ok", "refused", "failed",
 		"operation.started", "operation.finished", "host.changed", "account.changed",
 		"host.silent", "host.synced", "host.apply_failed", "resource.unexplained",
 		"removed", "instance", "volume", "address",
+		"invite.created", "invite.revoked", "invite.used", "admin.changed",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("wire constants %v, want %v", got, want)
@@ -96,6 +99,16 @@ func notices(tool, host, account, user, ip, result, op, kind, from, to, status, 
 			func(ctx context.Context, w *telemetry.Writer) { trail.HostApplyFailed(ctx, w, host, n) }},
 		{trail.EventResourceUnexplained, telemetry.Attrs{"resource": resource, "kind": kind, "host": host},
 			func(ctx context.Context, w *telemetry.Writer) { trail.Unexplained(ctx, w, resource, kind, host) }},
+		{trail.EventInviteCreated, telemetry.Attrs{"invite": op, "account": account, "host": host, "admin": n > 0},
+			func(ctx context.Context, w *telemetry.Writer) { trail.InviteCreated(ctx, w, op, account, host, n > 0) }},
+		{trail.EventInviteRevoked, telemetry.Attrs{"invite": op, "account": account, "host": host},
+			func(ctx context.Context, w *telemetry.Writer) { trail.InviteRevoked(ctx, w, op, account, host) }},
+		{trail.EventInviteUsed, telemetry.Attrs{"invite": op, "account": account, "host": host, "user": user, "admin": n > 0},
+			func(ctx context.Context, w *telemetry.Writer) {
+				trail.InviteUsed(ctx, w, op, account, host, user, n > 0)
+			}},
+		{trail.EventAdminChanged, telemetry.Attrs{"account": account, "host": host, "user": user, "admin": n > 0},
+			func(ctx context.Context, w *telemetry.Writer) { trail.AdminChanged(ctx, w, account, host, user, n > 0) }},
 	}
 }
 
@@ -110,13 +123,13 @@ func checkEvent(t *testing.T, e telemetry.Event, want notice, c identity.Caller)
 	}
 }
 
-// R-I7QS-EGN0 R-E8K7-0AFF R-E9S3-E264 R-I8YO-S8DP R-IA6L-604E
+// R-I7QS-EGN0 R-E8K7-0AFF R-E9S3-E264 R-I8YO-S8DP R-IA6L-604E R-0YI9-BD1X R-0ZQ5-P4SM R-10Y2-2WJB
 func TestEachEvent(t *testing.T) {
 	caller := identity.Caller{UserID: "caller", RequestID: "request", Email: "private@example.test"}
-	for _, c := range []identity.Caller{{}, caller} {
+	for _, c := range []identity.Caller{{}, {RequestID: "anonymous-request"}, caller} {
 		for _, cancelled := range []bool{false, true} {
 			ctx := context.Background()
-			if c.UserID != "" {
+			if c.RequestID != "" {
 				ctx = identity.NewContext(ctx, c)
 			}
 			ctx, cancel := context.WithCancel(ctx)
@@ -158,7 +171,7 @@ func (s *blockedSink) Deliver(ctx context.Context, ev telemetry.Event) error {
 	return s.Capture.Deliver(ctx, ev)
 }
 
-// R-9V58-00PE R-9WD4-DSG3 R-IBEH-JRV3
+// R-9V58-00PE R-9WD4-DSG3 R-IBEH-JRV3 R-10Y2-2WJB
 func TestNoticeQueuesWithoutDelivery(t *testing.T) {
 	const primingEvent, laterEvent = "request.started", "tool.called"
 	for _, n := range example(7) {
@@ -193,7 +206,7 @@ func TestNoticeQueuesWithoutDelivery(t *testing.T) {
 	}
 }
 
-// R-ICMD-XJLS
+// R-ICMD-XJLS R-10Y2-2WJB
 func TestConcurrentNotices(t *testing.T) {
 	const callers = 32
 	capture := &telemetry.Capture{}

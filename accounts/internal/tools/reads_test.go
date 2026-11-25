@@ -22,7 +22,7 @@ func wantToken(t *testing.T, got *string, token paging.Token, fields ...any) {
 	}
 }
 
-// R-Y2FP-WJZT R-Z30P-DO8N R-Z48L-RFZC R-Z5GI-57Q1 R-Z947-AIY4
+// R-Y2FP-WJZT R-Z30P-DO8N R-F3B6-QGWI R-F4J3-48N7 R-Z947-AIY4
 func TestPaging(t *testing.T) {
 	f := setup(t)
 	if got := answer[tools.AccountList](t, f.call(tools.ToolAccounts, tools.AccountsArgs{})); got.Accounts == nil || len(got.Accounts) != 0 || got.Next != nil {
@@ -122,7 +122,7 @@ func readAccount(t *testing.T, f *fixture, account string) tools.AccountRead {
 	return answer[tools.AccountRead](t, f.call(tools.ToolAccount, tools.AccountArgs{Account: account}))
 }
 
-// R-XXK4-DH11 R-WD1R-OERO R-0V8U-N3U2 R-ZN7K-BPF6 R-0WGR-0VKR
+// R-EVZS-FUGC R-0V8U-N3U2 R-EX7O-TM71 R-F5QZ-I0DW R-F6YV-VS4L
 func TestReadAnswers(t *testing.T) {
 	f := setup(t)
 	f.serveLoopback()

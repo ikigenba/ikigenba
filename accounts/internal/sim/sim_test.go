@@ -17,8 +17,11 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts"
+	"github.com/ikigenba/ikigenba/accounts/internal/box"
+	"github.com/ikigenba/ikigenba/accounts/internal/boxmcp"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud/memory"
+	"github.com/ikigenba/ikigenba/accounts/internal/daemon"
 	"github.com/ikigenba/ikigenba/accounts/internal/daemonapi"
 	"github.com/ikigenba/ikigenba/accounts/internal/hostauth"
 	"github.com/ikigenba/ikigenba/accounts/internal/machine"
@@ -34,58 +37,30 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
-type simClock struct {
-	elapsed atomic.Int64
-}
-
-func (clock *simClock) advance(d time.Duration) { clock.elapsed.Add(int64(d)) }
-
-func (clock *simClock) now() time.Time {
-	return time.Date(2026, 10, 1, 3, 4, 5, 0, time.UTC).Add(time.Duration(clock.elapsed.Load()))
-}
-
-func sandboxCloud(t *testing.T, clock *simClock) (*memory.Cloud, cloud.Instance) {
-	t.Helper()
-	hosts := settings.SandboxHosts
-	c, err := memory.New(memory.Config{
-		Path: filepath.Join(t.TempDir(), "sandbox-cloud.json"),
-		Now:  clock.now, Rand: rand.NewChaCha8([32]byte{13}), Hosts: hosts,
-	})
-	must(t, err)
-	return c, launchSandboxHost(t, c, "host01")
-}
-
-func launchSandboxHost(t *testing.T, c *memory.Cloud, name string) cloud.Instance {
-	t.Helper()
-	hosts := settings.SandboxHosts
-	i, err := c.RunInstance(t.Context(), cloud.Launch{
-		Template: hosts.LaunchTemplate, InstanceProfile: hosts.InstanceProfile, Type: "t4g.medium", RootGB: 20,
-		Tags: cloud.Tags{cloud.TagKind: cloud.KindHost, cloud.TagHost: name},
-	})
-	must(t, err)
-	return i
-}
-
-func watchTimer(t *testing.T, watchers chan<- chan time.Time) func(time.Duration) <-chan time.Time {
-	t.Helper()
-	return func(d time.Duration) <-chan time.Time {
-		if d != WatchInterval {
-			t.Errorf("watch delay = %v, want %v", d, WatchInterval)
-		}
-		tick := make(chan time.Time, 1)
-		watchers <- tick
-		return tick
-	}
-}
-
 func TestWatchAndRestartLoop(t *testing.T) {
-	// R-QARJ-4MFY R-VB9N-YMHD
+	// R-XS1R-CMGN R-XT9N-QE7C
 	const (
 		_ int64  = MaxBanFileBytes
 		_ uint64 = MaxBanFileBytes
+		_ int64  = MaxSocketPath
+		_ uint64 = MaxSocketPath
 	)
-	if WatchInterval != 2*time.Second || ApplyDelay != 3*time.Second || MaxBanFileBytes != 64<<10 {
-		t.Fatalf("WatchInterval = %v, ApplyDelay = %v, MaxBanFileBytes = %d", WatchInterval, ApplyDelay, MaxBanFileBytes)
+	var _ = struct {
+		Cloud   *memory.Cloud
+		Handler http.Handler
+		Binding string
+		Digest  func() string
+		Now     func() time.Time
+		Sleep   func(context.Context, time.Duration)
+		After   func(time.Duration) <-chan time.Time
+		BanFile string
+		BoxDir  string
+	}(Config{})
+	if WatchInterval != 2*time.Second || ApplyDelay != 3*time.Second || MaxBanFileBytes != 64<<10 || MaxSocketPath != 107 {
+		t.Fatalf("WatchInterval = %v, ApplyDelay = %v, MaxBanFileBytes = %d, MaxSocketPath = %d", WatchInterval, ApplyDelay, MaxBanFileBytes, MaxSocketPath)
+	}
+	if SocketList != "sockets.txt" || StatusServed != "served" || StatusTooLong != "too-long" || StatusFailed != "failed" {
+		t.Fatalf("socket listing contract = %q, %q, %q, %q", SocketList, StatusServed, StatusTooLong, StatusFailed)
 	}
 	clock := &simClock{}
 	c, i := sandboxCloud(t, clock)
@@ -132,7 +107,7 @@ func TestWatchAndRestartLoop(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	s := New(Config{c, h, expectedBinding, func() string { return "sandbox-digest" }, clock.now,
-		func(ctx context.Context, _ time.Duration) { <-ctx.Done() }, watchTimer(t, watches), "",
+		func(ctx context.Context, _ time.Duration) { <-ctx.Done() }, watchTimer(t, watches), "", "",
 	})
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx) }()
@@ -227,7 +202,7 @@ func TestNoStartWhenCanceledAndWaitForLoops(t *testing.T) {
 }
 
 func TestDesiredChangeReachesApplied(t *testing.T) {
-	// R-VEXD-3XPG and the real-loop wiring of R-VB9N-YMHD.
+	// R-VEXD-3XPG and the real-loop wiring of R-XT9N-QE7C.
 	t.Setenv(services.Variable, "")
 	ctx := t.Context()
 	clock := &simClock{}
@@ -265,8 +240,13 @@ func TestDesiredChangeReachesApplied(t *testing.T) {
 	polls := make(chan chan time.Time, 4)
 	binary := filepath.Join(dir, "accountsd")
 	must(t, os.WriteFile(binary, []byte("sandbox daemon"), 0600))
+	boxUser := mcp.NewServer(mcp.ServerConfig{Name: "accounts", Telemetry: w})
+	boxAdmin := mcp.NewServer(mcp.ServerConfig{Name: "accounts", Telemetry: w})
+	box.RegisterUser(boxUser, box.Config{Store: st, Telemetry: w})
+	box.RegisterAdmin(boxAdmin, box.Config{Store: st, Telemetry: w})
 	ds, err := daemonapi.New(ctx, daemonapi.Config{
 		Store: st, Verifier: verifier, Binary: binary, Telemetry: w, Now: clock.now, Configured: true,
+		BoxUser: boxUser, BoxAdmin: boxAdmin,
 		After: func(d time.Duration) <-chan time.Time {
 			if d != protocol.LongPoll {
 				t.Errorf("long poll duration = %v", d)
@@ -310,9 +290,15 @@ func TestDesiredChangeReachesApplied(t *testing.T) {
 	applies := make(chan pause, 4)
 	watches := make(chan chan time.Time, 4)
 	banFile := filepath.Join(dir, "drop")
+	boxDir := filepath.Join(shortTempDir(t), "box")
 	const initialBan = "192.0.2.76"
 	must(t, os.WriteFile(banFile, []byte(host.Name+" "+initialBan+"\n"), 0600))
-	s := New(Config{Cloud: c, Handler: observed, Binding: binding, Digest: ds.Digest, Now: clock.now, After: watchTimer(t, watches), BanFile: banFile,
+	s := New(Config{Cloud: c, Handler: observed, Binding: binding, Digest: ds.Digest, Now: clock.now, After: func(d time.Duration) <-chan time.Time {
+		if d == daemon.BoxTimeout {
+			return make(chan time.Time)
+		}
+		return watchTimer(t, watches)(d)
+	}, BanFile: banFile, BoxDir: boxDir,
 		Sleep: func(ctx context.Context, d time.Duration) {
 			if d != ApplyDelay {
 				clock.advance(d)
@@ -339,7 +325,7 @@ func TestDesiredChangeReachesApplied(t *testing.T) {
 		close(p.proceed)
 		return appliedAt
 	}
-	// R-IV91-69U5. Collect both initial reports after the first look has run.
+	// R-7Y5B-L74L. Collect both initial reports after the first look has run.
 	watch := await(t, watches)
 	assertNoBanFile(t, banFile)
 	finishApply(await(t, applies))
@@ -366,7 +352,7 @@ func TestDesiredChangeReachesApplied(t *testing.T) {
 		initial.DaemonVersion != ds.Digest() {
 		t.Fatalf("initial report = %+v", initial)
 	}
-	account, _, err := st.PlaceAccount(ctx, "team", host.Name, caller)
+	account, place, err := st.PlaceAccount(ctx, "team", host.Name, caller)
 	must(t, err)
 	nextApply := await(t, applies)
 	pending, err := st.Host(ctx, host.Name)
@@ -400,7 +386,7 @@ func TestDesiredChangeReachesApplied(t *testing.T) {
 		return r.Body
 	}
 
-	// R-IV91-69U5
+	// R-7Y5B-L74L
 	const allowed = "198.51.100.0/24"
 	const banned = "192.0.2.77"
 	clock.advance(machine.MemoryBanTime)
@@ -439,7 +425,7 @@ func TestDesiredChangeReachesApplied(t *testing.T) {
 		t.Fatalf("drop for allowlisted address %s caused bans %+v", covered, r.Bans)
 	}
 
-	// R-IYWQ-BL28
+	// R-7ZD7-YYVA
 	for range 2 {
 		nextLook()
 		assertNoBanFile(t, banFile)
@@ -475,6 +461,42 @@ func TestDesiredChangeReachesApplied(t *testing.T) {
 	assertNoBanFile(t, banFile)
 	if r := nextReport(host.Name, &poll); len(r.Bans) != 2 || !slices.ContainsFunc(r.Bans, func(b protocol.Ban) bool { return b.Address == "192.0.2.90" }) {
 		t.Fatalf("report after a complete final line at the byte cap = %+v", r.Bans)
+	}
+
+	// R-Y30U-SK4W. Use the same handler for the daemon's box requests as for its fetches.
+	must(t, st.Finish(ctx, place.ID, store.Update{}))
+	const keyBody = "AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	user, err := st.AddUser(ctx, account.Slug, "alice", store.Key{Type: "ssh-ed25519", Body: keyBody, Line: "ssh-ed25519 " + keyBody}, caller)
+	must(t, err)
+	finishApply(await(t, applies))
+	await(t, reports)
+	await(t, polls)
+	if r := readReport(host.Name).Body; r.Applied != user.Version {
+		t.Fatalf("report applied version = %d, want %d", r.Applied, user.Version)
+	}
+	nextLook()
+	stdioRun := make(chan string, 1)
+	go func() {
+		var out bytes.Buffer
+		err := boxmcp.Run(run, strings.NewReader(boxRequest+"\n"), &out, func(k string) string {
+			if k == boxmcp.EnvSocket {
+				return filepath.Join(boxDir, user.Name)
+			}
+			return ""
+		})
+		if err != nil {
+			t.Error(err)
+		}
+		stdioRun <- out.String()
+	}()
+	response := await(t, stdioRun)
+	var result struct {
+		ID     int             `json:"id"`
+		Result json.RawMessage `json:"result"`
+	}
+	must(t, json.Unmarshal([]byte(response), &result))
+	if strings.Count(response, "\n") != 1 || result.ID != 1 || len(result.Result) == 0 {
+		t.Fatalf("stdio did not relay the handler's result: %q", response)
 	}
 }
 

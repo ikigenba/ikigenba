@@ -42,7 +42,7 @@ const (
 // R-CB7V-CDBR
 var _ func(context.Context, cli.Process) int = cli.Run
 
-// R-Y5P0-FG0O
+// R-22LW-2NEW
 var _ = struct {
 	Args       []string
 	LookupEnv  func(key string) (string, bool)

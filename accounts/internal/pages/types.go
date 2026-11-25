@@ -1,4 +1,4 @@
-// Package pages draws the service's read-only browser pages.
+// Package pages draws the service's browser pages.
 package pages
 
 import (
@@ -67,13 +67,15 @@ type HostRow struct {
 // AccountRow describes an account on the landing page.
 type AccountRow struct {
 	Slug, Host, DNSName, State, Reason string
-	UserCount                          int
+	UserCount, InviteCount             int
 	Created, CreatedText               string
 }
 
 // UserRow describes a user on the landing page.
 type UserRow struct {
-	Login, Account, State      string
+	Login, Account             string
+	Admin                      bool
+	State                      string
 	Pending                    bool
 	KeyCount                   int
 	LastSignIn, LastSignInText string
@@ -144,3 +146,21 @@ type AboutData struct {
 
 // NotFoundData supplies the unknown-page footer.
 type NotFoundData struct{ Banner page.Banner }
+
+// JoinData describes the enrollment form or the outcome of a submission.
+type JoinData struct {
+	Outcome, Account, DNSName string
+	Admin                     bool
+	User, Key                 string
+}
+
+// Enrollment outcomes consumed by the join template.
+const (
+	JoinForm     = ""
+	JoinUnusable = "unusable"
+	JoinName     = "name"
+	JoinKey      = "key"
+	JoinLimited  = "limited"
+	JoinFull     = "full"
+	JoinDone     = "done"
+)

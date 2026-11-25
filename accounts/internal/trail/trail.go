@@ -19,6 +19,10 @@ const (
 	EventHostSynced          = "host.synced"
 	EventHostApplyFailed     = "host.apply_failed"
 	EventResourceUnexplained = "resource.unexplained"
+	EventInviteCreated       = "invite.created"
+	EventInviteRevoked       = "invite.revoked"
+	EventInviteUsed          = "invite.used"
+	EventAdminChanged        = "admin.changed"
 )
 
 // Change results, account removal and resource kinds.
@@ -94,4 +98,24 @@ func HostApplyFailed(ctx context.Context, w *telemetry.Writer, host string, atte
 // Unexplained queues the first sighting of an unclaimed resource.
 func Unexplained(ctx context.Context, w *telemetry.Writer, resource, kind, host string) {
 	w.Emit(ctx, EventResourceUnexplained, telemetry.Attrs{"resource": resource, "kind": kind, "host": host})
+}
+
+// InviteCreated queues a new enrollment invitation.
+func InviteCreated(ctx context.Context, w *telemetry.Writer, invite, account, host string, admin bool) {
+	w.Emit(ctx, EventInviteCreated, telemetry.Attrs{"invite": invite, "account": account, "host": host, "admin": admin})
+}
+
+// InviteRevoked queues the revocation of an invitation.
+func InviteRevoked(ctx context.Context, w *telemetry.Writer, invite, account, host string) {
+	w.Emit(ctx, EventInviteRevoked, telemetry.Attrs{"invite": invite, "account": account, "host": host})
+}
+
+// InviteUsed queues a completed enrollment.
+func InviteUsed(ctx context.Context, w *telemetry.Writer, invite, account, host, user string, admin bool) {
+	w.Emit(ctx, EventInviteUsed, telemetry.Attrs{"invite": invite, "account": account, "host": host, "user": user, "admin": admin})
+}
+
+// AdminChanged queues a change to a user's administrator flag.
+func AdminChanged(ctx context.Context, w *telemetry.Writer, account, host, user string, admin bool) {
+	w.Emit(ctx, EventAdminChanged, telemetry.Attrs{"account": account, "host": host, "user": user, "admin": admin})
 }

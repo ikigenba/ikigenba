@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -28,9 +29,12 @@ import (
 	"github.com/ikigenba/ikigenba/accounts"
 	"github.com/ikigenba/ikigenba/accounts/internal/cli"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
+	"github.com/ikigenba/ikigenba/accounts/internal/join"
 	"github.com/ikigenba/ikigenba/accounts/internal/pages"
 	"github.com/ikigenba/ikigenba/accounts/internal/server"
+	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/tools"
+	"github.com/ikigenba/ikigenba/accounts/internal/trail"
 	"github.com/ikigenba/ikigenba/accounts/internal/valid"
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
@@ -160,6 +164,8 @@ type integrationRun struct {
 	stopped     bool
 	notice      *net.UnixConn
 	writer      *telemetry.Writer
+	servers     []*mcp.Server
+	readyTools  [][]string
 	makers      atomic.Int64
 }
 
@@ -250,11 +256,34 @@ func startIntegration(t *testing.T, o integrationOptions) *integrationRun {
 		}
 	}
 	maker := p.MCP
-	p.MCP = func(w *telemetry.Writer) *mcp.Server { r.writer = w; r.makers.Add(1); return maker(w) }
+	p.MCP = func(w *telemetry.Writer) *mcp.Server {
+		srv := maker(w)
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if r.writer != nil && r.writer != w {
+			t.Error("the MCP servers did not receive the same writer")
+		}
+		r.writer = w
+		r.servers = append(r.servers, srv)
+		r.makers.Add(1)
+		return srv
+	}
 	p.LookupEnv = func(k string) (string, bool) {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		r.keys = append(r.keys, k)
+		if k == "NOTIFY_SOCKET" && r.readyTools == nil {
+			// Snapshot registered tools before returning the notification
+			// socket. Observing them after READY alone can miss late setup.
+			r.readyTools = make([][]string, 0, len(r.servers))
+			for _, server := range r.servers {
+				var names []string
+				for _, tool := range server.Tools() {
+					names = append(names, tool.Name)
+				}
+				r.readyTools = append(r.readyTools, names)
+			}
+		}
 		v, ok := env[k]
 		return v, ok
 	}
@@ -374,6 +403,12 @@ func (r *integrationRun) callAs(name string, args any, caller identity.Caller) (
 	}
 	return r.client.CallTool(context.Background(), caller, name, b)
 }
+
+func (r *integrationRun) catalogsBeforeReady() [][]string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.readyTools
+}
 func (r *integrationRun) call(name string, args any, into any) {
 	r.t.Helper()
 	q := fmt.Sprintf("call-%d", integrationCalls.Add(1))
@@ -381,23 +416,28 @@ func (r *integrationRun) call(name string, args any, into any) {
 	if e != nil {
 		r.t.Fatalf("%s: %v", name, e)
 	}
-	b, e := result.MarshalJSON()
-	if e != nil {
-		r.t.Fatal(e)
-	}
 	if result.IsError() {
-		r.t.Fatalf("%s refused: %s", name, b)
+		r.t.Fatalf("%s refused: %+v", name, result)
 	}
 	if into != nil {
-		var env struct {
-			Content json.RawMessage `json:"structuredContent"`
-		}
-		if e = json.Unmarshal(b, &env); e != nil {
-			r.t.Fatal(e)
-		}
-		if e = json.Unmarshal(env.Content, into); e != nil {
-			r.t.Fatalf("%s output %s: %v", name, b, e)
-		}
+		decodeToolResponse(r.t, result, into)
+	}
+}
+
+func decodeToolResponse(t *testing.T, result mcp.Result, into any) {
+	t.Helper()
+	b, err := result.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var env struct {
+		Content json.RawMessage `json:"structuredContent"`
+	}
+	if err := json.Unmarshal(b, &env); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(env.Content, into); err != nil {
+		t.Fatalf("tool output %s: %v", b, err)
 	}
 }
 
@@ -429,17 +469,25 @@ func (r *integrationRun) refuse(name string, args any, word string) {
 }
 func (r *integrationRun) request(method, path, user, id string) (int, http.Header, string) {
 	r.t.Helper()
+	return r.requestBody(method, path, user, id, "", nil)
+}
+
+func (r *integrationRun) requestBody(method, path, user, id, media string, body io.Reader) (int, http.Header, string) {
+	r.t.Helper()
 	if id != "" {
 		r.mu.Lock()
 		r.sent = append(r.sent, id)
 		r.mu.Unlock()
 	}
-	req, e := http.NewRequestWithContext(context.Background(), method, r.base+path, nil)
+	req, e := http.NewRequestWithContext(context.Background(), method, r.base+path, body)
 	if e != nil {
 		r.t.Fatal(e)
 	}
 	req.Host = "accounts.test"
 	req.Header.Set("X-Forwarded-Proto", "https")
+	if media != "" {
+		req.Header.Set("Content-Type", media)
+	}
 	if user != "" {
 		req.Header.Set("X-User-Id", user)
 		req.Header.Set("X-User-Email", r.email)
@@ -451,14 +499,250 @@ func (r *integrationRun) request(method, path, user, id string) (int, http.Heade
 	if e != nil {
 		r.t.Fatal(e)
 	}
-	body, e := io.ReadAll(res.Body)
+	reply, e := io.ReadAll(res.Body)
 	if e != nil {
 		r.t.Error(e)
 	}
 	if e = res.Body.Close(); e != nil {
 		r.t.Error(e)
 	}
-	return res.StatusCode, res.Header, string(body)
+	return res.StatusCode, res.Header, string(reply)
+}
+
+func (r *integrationRun) enroll(path, caller, id, user, key string) (int, string) {
+	r.t.Helper()
+	form := url.Values{"user": {user}, "key": {key}}
+	status, _, response := r.requestBody(http.MethodPost, path, caller, id, "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
+	return status, response
+}
+
+func invitePath(t *testing.T, invite tools.InviteMade) string {
+	t.Helper()
+	link, err := url.Parse(invite.Link)
+	if err != nil || !strings.HasPrefix(link.Path, "/join/") {
+		t.Fatalf("bad invitation link %q: %v", invite.Link, err)
+	}
+	return link.Path
+}
+
+// R-14LR-87RE R-15TN-LZI3 R-125Y-GOA0 R-EH3H-OOMA
+func TestInviteAndEnrollmentTrail(t *testing.T) {
+	run := startIntegration(t, integrationOptions{})
+	run.call(tools.ToolCreateHost, struct{}{}, nil)
+	run.call(tools.ToolCreateAccount, tools.CreateAccountArgs{Account: "acme", Host: "host01"}, nil)
+	owner := identity.Caller{UserID: "owner", Email: run.email}
+	centralCalls := make(map[string]string)
+	type expectedEvent struct {
+		name, user string
+		attrs      telemetry.Attrs
+	}
+	expected := map[string]expectedEvent{}
+	central := func(id, tool string, args any, reject bool, into any) {
+		t.Helper()
+		owner.RequestID = id
+		centralCalls[id] = tool
+		result, err := run.callAs(tool, args, owner)
+		if err != nil || result.IsError() != reject {
+			t.Fatalf("%s: result=%+v err=%v", tool, result, err)
+		}
+		if into != nil {
+			decodeToolResponse(t, result, into)
+		}
+	}
+	create := func(id string, admin bool) tools.InviteMade {
+		t.Helper()
+		var made tools.InviteMade
+		args := map[string]any{"account": "acme"}
+		if admin {
+			args["admin"] = true
+		}
+		central(id, tools.ToolCreateInvite, args, false, &made)
+		expected[id] = expectedEvent{trail.EventInviteCreated, owner.UserID,
+			telemetry.Attrs{"invite": made.Invite, "account": made.Account, "host": "host01", "admin": made.Admin}}
+		return made
+	}
+	admin := create("make-admin", true)
+	ordinary := create("make-ordinary", false)
+	revoke := create("make-revoked", false)
+	var revoked tools.Invite
+	central("revoke", tools.ToolRevokeInvite, tools.InviteArgs{Invite: revoke.Invite}, false, &revoked)
+	expected["revoke"] = expectedEvent{trail.EventInviteRevoked, owner.UserID,
+		telemetry.Attrs{"invite": revoked.Invite, "account": revoked.Account, "host": "host01"}}
+	central("revoke-missing", tools.ToolRevokeInvite, tools.InviteArgs{Invite: revoke.Invite}, true, nil)
+	central("list-invites", tools.ToolListInvites, tools.AccountArgs{Account: "acme"}, false, nil)
+
+	type reply struct {
+		method string
+		user   string
+		status int
+	}
+	joinReplies := map[string]reply{}
+	posted := 0
+	request := func(method, path, user, id string, expectedStatus int) {
+		t.Helper()
+		actual, _, _ := run.request(method, path, user, id)
+		if actual != expectedStatus {
+			t.Fatalf("%s %s = %d, want %d", method, id, actual, expectedStatus)
+		}
+		joinReplies[id] = reply{method, user, actual}
+	}
+	enroll := func(invite tools.InviteMade, id, caller, username, key string, wantStatus int) {
+		t.Helper()
+		posted++
+		status, body := run.enroll(invitePath(t, invite), caller, id, username, key)
+		if status != wantStatus {
+			t.Fatalf("enroll %s = %d, want %d", id, status, wantStatus)
+		}
+		joinReplies[id] = reply{http.MethodPost, caller, status}
+		if status != http.StatusOK {
+			return
+		}
+		set, err := pages.Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec := httptest.NewRecorder()
+		set.Write(rec, httptest.NewRequest(http.MethodPost, "/join/", nil), http.StatusOK, "join", pages.JoinData{
+			Outcome: pages.JoinDone, User: username, Account: invite.Account, DNSName: "acme.hosts.test", Admin: invite.Admin,
+		})
+		if body != rec.Body.String() {
+			t.Fatalf("enrollment %s did not render the completed form", id)
+		}
+		expected[id] = expectedEvent{trail.EventInviteUsed, "",
+			telemetry.Attrs{"invite": invite.Invite, "account": invite.Account, "host": "host01", "user": username, "admin": invite.Admin}}
+	}
+	path := invitePath(t, admin)
+	request(http.MethodGet, path, "", "get-form", http.StatusOK)
+	request(http.MethodHead, path, owner.UserID, "head-form", http.StatusOK)
+	request(http.MethodDelete, path, owner.UserID, "bad-method", http.StatusMethodNotAllowed)
+	request(http.MethodGet, invitePath(t, revoke), "", "get-revoked", http.StatusNotFound)
+	enroll(admin, "use-admin", owner.UserID, "daffy", validKey(), http.StatusOK)
+	enroll(ordinary, "taken-name", owner.UserID, "daffy", validKey(), http.StatusUnprocessableEntity)
+	enroll(ordinary, "bad-key", "", "bugs", "invalid", http.StatusUnprocessableEntity)
+	enroll(ordinary, "use-ordinary", "", "bugs", validKey(), http.StatusOK)
+	enroll(admin, "used-link", "", "elmer", validKey(), http.StatusNotFound)
+	var fullInvite tools.InviteMade
+	for i := range store.MaxInvites {
+		made := create(fmt.Sprintf("make-until-cap-%d", i), false)
+		if i == 0 {
+			fullInvite = made
+			path = invitePath(t, made)
+		}
+	}
+	owner.RequestID = "invite-at-cap"
+	centralCalls[owner.RequestID] = tools.ToolCreateInvite
+	result, err := run.callAs(tools.ToolCreateInvite, tools.AccountArgs{Account: "acme"}, owner)
+	raw, encodeErr := result.MarshalJSON()
+	if err != nil || encodeErr != nil || !result.IsError() || !strings.Contains(string(raw), tools.TooManyInvites) {
+		t.Fatalf("invite at cap: %s, %v, %v", raw, err, encodeErr)
+	}
+	submit := func(id, body string, expectedStatus int) {
+		t.Helper()
+		posted++
+		status, _, _ := run.requestBody(http.MethodPost, path, "", id, "application/x-www-form-urlencoded", strings.NewReader(body))
+		if status != expectedStatus {
+			t.Fatalf("%s answered %d, want %d", id, status, expectedStatus)
+		}
+		joinReplies[id] = reply{http.MethodPost, "", status}
+	}
+	submit("body-too-large", strings.Repeat("X", join.MaxBodyBytes+1), http.StatusRequestEntityTooLarge)
+	fillEnrollmentHost(t, run)
+	enroll(fullInvite, "full-host", "", "elmer", validKey(), http.StatusConflict)
+	for posted < join.Burst {
+		submit(fmt.Sprintf("invalid-form-%d", posted), "", http.StatusUnprocessableEntity)
+	}
+	submit("limited", "", http.StatusTooManyRequests)
+	for _, args := range []struct {
+		id, user string
+		admin    bool
+		reject   bool
+	}{
+		{"demote", "daffy", false, false},
+		{"demote-again", "daffy", false, false},
+		{"promote", "bugs", true, false},
+		{"set-missing", "elmer", true, true},
+	} {
+		central(args.id, tools.ToolSetAdmin, tools.SetAdminArgs{Account: "acme", User: args.user, Admin: args.admin}, args.reject, nil)
+		if args.id == "demote" || args.id == "promote" {
+			expected[args.id] = expectedEvent{trail.EventAdminChanged, owner.UserID,
+				telemetry.Attrs{"account": "acme", "host": "host01", "user": args.user, "admin": args.admin}}
+		}
+	}
+	if run.stop() != cli.ExitSuccess {
+		t.Fatal(run.err.String())
+	}
+	eventsByRequest := make(map[string][]telemetry.Event)
+	allowed := eventNames()
+	for _, event := range run.capture.Events() {
+		if !slices.Contains(allowed, event.Name) {
+			t.Fatal("unknown event", event.Name)
+		}
+		eventsByRequest[event.RequestID] = append(eventsByRequest[event.RequestID], event)
+		switch event.Name {
+		case trail.EventInviteCreated, trail.EventInviteRevoked, trail.EventInviteUsed, trail.EventAdminChanged:
+			want, ok := expected[event.RequestID]
+			if !ok || event.Name != want.name || event.User != want.user || !reflect.DeepEqual(event.Attrs, want.attrs) {
+				t.Fatalf("unexpected event %+v", event)
+			}
+			delete(expected, event.RequestID)
+		}
+	}
+	if len(expected) != 0 {
+		t.Fatalf("missing events: %v", expected)
+	}
+	for id, tool := range centralCalls {
+		var sequence []string
+		for _, event := range eventsByRequest[id] {
+			if event.Name == trail.EventChangeFinished || event.Name == "tool.called" {
+				if event.User != owner.UserID || event.Attrs["tool"] != tool {
+					t.Fatalf("%s: unexpected tool event %+v", id, event)
+				}
+				sequence = append(sequence, event.Name)
+			}
+		}
+		want := []string{trail.EventChangeFinished, "tool.called"}
+		if tool == tools.ToolListInvites {
+			want = []string{"tool.called"}
+		}
+		if !slices.Equal(sequence, want) {
+			t.Fatalf("%s: event sequence = %v, want %v", id, sequence, want)
+		}
+	}
+	for id, reply := range joinReplies {
+		events := eventsByRequest[id]
+		if len(events) < 2 {
+			t.Fatalf("%s: missing request pair: %+v", id, events)
+		}
+		start, finish := events[0], events[len(events)-1]
+		if start.Name != "request.started" || !reflect.DeepEqual(start.Attrs, telemetry.Attrs{"method": reply.method, "path": "/join/"}) ||
+			start.User != reply.user || finish.Name != "request.finished" || finish.User != reply.user || finish.Attrs["status"] != int64(reply.status) {
+			t.Fatalf("%s: invalid request pair: %+v", id, events)
+		}
+		used := reply.method == http.MethodPost && reply.status == http.StatusOK
+		if (!used && len(events) != 2) || (used && (len(events) != 3 || events[1].Name != trail.EventInviteUsed)) {
+			t.Fatalf("%s: invalid request events: %+v", id, events)
+		}
+	}
+}
+
+func fillEnrollmentHost(t *testing.T, run *integrationRun) {
+	t.Helper()
+	d, err := db.Open(t.Context(), db.Config{Path: filepath.Join(run.dir, "state", "accounts.db"), Migrations: accounts.Migrations(), Now: func() time.Time { return fixedTime }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = d.Close() }()
+	st := store.New(d, store.Config{Now: func() time.Time { return fixedTime }})
+	parsed, err := valid.ParseKey(validKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := store.Key{Type: parsed.Type, Body: parsed.Body, Line: parsed.Line()}
+	for i := 2; i < valid.MaxUsersPerHost; i++ {
+		if _, err := st.AddUser(t.Context(), "acme", fmt.Sprintf("testuser%d", i), key, identity.Caller{UserID: "owner"}); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 type integrationAcceptListener struct {
@@ -501,14 +785,22 @@ func integrationDatagrams(c *net.UnixConn) ([]string, error) {
 	return result, readErr
 }
 
-// R-ESG4-8UGU R-Y9CP-KR8R R-YAKL-YIZG R-YBSI-CAQ5 R-QYXR-B8AS R-R1DK-2RS6 R-GODV-EEKM R-R519-8309 R-UVI5-53XK R-H30N-ZNGY
+// R-ESG4-8UGU R-Y9CP-KR8R R-YAKL-YIZG R-YBSI-CAQ5 R-QYXR-B8AS R-R1DK-2RS6 R-3GDR-38WI R-R519-8309 R-UVI5-53XK R-H30N-ZNGY
 func TestRunPersistenceAndLifecycle(t *testing.T) {
 	dir := t.TempDir()
 	r := startIntegration(t, integrationOptions{dir: dir, acceptNotify: true})
 	checkState(t, dir)
-	if r.makers.Load() != 1 {
+	catalogs := r.catalogsBeforeReady()
+	if len(catalogs) != 3 || !slices.Contains(catalogs[0], tools.ToolHosts) {
+		t.Fatalf("MCP catalogs before readiness notification: %v", catalogs)
+	}
+	if r.makers.Load() != 3 {
 		t.Fatal("server factory calls", r.makers.Load())
 	}
+	mcp.AddTool(r.servers[0], mcp.Tool[struct{}, struct{}]{Name: "central_probe", Effect: mcp.Read, Description: "Identify the first server.", Handler: func(context.Context, identity.Caller, struct{}) (struct{}, error) {
+		return struct{}{}, nil
+	}})
+	r.call("central_probe", struct{}{}, nil)
 	result, err := r.callAs("hosts", struct{}{}, identity.Caller{UserID: "owner", RequestID: "first-read"})
 	if err != nil || result.IsError() {
 		t.Fatal(result, err)
@@ -519,6 +811,9 @@ func TestRunPersistenceAndLifecycle(t *testing.T) {
 	checkState(t, dir)
 	if r.stop() != cli.ExitSuccess {
 		t.Fatal(r.err.String())
+	}
+	if r.makers.Load() != 3 {
+		t.Fatalf("server factory calls after shutdown = %d", r.makers.Load())
 	}
 	checkState(t, dir)
 	if r.inherit != 1 || !reflect.DeepEqual(r.unset, []string{"LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES"}) {
@@ -803,7 +1098,7 @@ func addressCalls() []catalogCall {
 	}
 }
 
-// R-5ESL-LDPF R-EFVL-AWVL R-EH3H-OOMA R-HT7K-XT5A
+// R-125Y-GOA0 R-EH3H-OOMA R-YOUH-C3ML
 func TestRunTrail(t *testing.T) {
 	r := startIntegration(t, integrationOptions{})
 	type requestRecord struct {
@@ -827,11 +1122,15 @@ func TestRunTrail(t *testing.T) {
 	}
 	requests[caller.RequestID] = requestRecord{"POST", "/mcp", caller.UserID, "", 200, false}
 	for _, user := range []string{"", "actor"} {
-		for _, path := range []string{"/", "/hosts/host01", "/tools", "/about", "/accountsd", "/nope"} {
+		for _, path := range []string{"/", "/hosts/host01", "/tools?x=1", "/about", "/accountsd", "/nope", "/join", "/joinx", "/join/x/y"} {
 			for _, method := range []string{"GET", "POST", "DELETE", "HEAD"} {
 				id := fmt.Sprintf("page-%d", len(requests))
 				code, _, _ := r.request(method, path, user, id)
-				requests[id] = requestRecord{method, path, user, "", code, false}
+				trailPath, _, _ := strings.Cut(path, "?")
+				if strings.HasPrefix(trailPath, "/join/") {
+					trailPath = "/join/"
+				}
+				requests[id] = requestRecord{method, trailPath, user, "", code, false}
 			}
 		}
 	}
@@ -839,7 +1138,7 @@ func TestRunTrail(t *testing.T) {
 		t.Fatal(r.err.String(), r.out.String())
 	}
 	byRequest := map[string][]telemetry.Event{}
-	allowed := strings.Fields("service.started service.stopping request.started request.finished tool.called change.finished operation.started operation.finished host.changed account.changed host.silent host.synced host.apply_failed resource.unexplained")
+	allowed := eventNames()
 	for _, event := range r.capture.Events() {
 		if !slices.Contains(allowed, event.Name) {
 			t.Fatal(event)
@@ -895,7 +1194,11 @@ func TestRunTrail(t *testing.T) {
 	}
 }
 
-// R-GTXT-JJIB
+func eventNames() []string {
+	return strings.Fields("service.started service.stopping request.started request.finished tool.called change.finished operation.started operation.finished host.changed account.changed host.silent host.synced host.apply_failed resource.unexplained invite.created invite.revoked invite.used admin.changed")
+}
+
+// R-7SSU-QP74
 func TestRunNoSiblingConnections(t *testing.T) {
 	var accepted atomic.Int64
 	ln, e := net.Listen("unix", filepath.Join(integrationSocketDir(t), "trap"))
@@ -941,7 +1244,29 @@ func TestRunNoSiblingConnections(t *testing.T) {
 	}
 	path := filepath.Join(t.TempDir(), "services")
 	integrationServices(t, path, entries, "")
-	r := startIntegration(t, integrationOptions{path: path})
+	bin := t.TempDir()
+	daemon := "chosen daemon for sibling check"
+	if err := os.WriteFile(filepath.Join(bin, "accountsd"), []byte(daemon), 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := startIntegration(t, integrationOptions{path: path, executable: func() (string, error) {
+		return filepath.Join(bin, "accounts"), nil
+	}})
+	r.call(tools.ToolCreateHost, struct{}{}, nil)
+	r.call(tools.ToolCreateAccount, tools.CreateAccountArgs{Account: "acme", Host: "host01"}, nil)
+	var invite tools.InviteMade
+	r.call(tools.ToolCreateInvite, tools.AccountArgs{Account: "acme"}, &invite)
+	pathToJoin := invitePath(t, invite)
+	if status, _, _ := r.request(http.MethodGet, pathToJoin, "", "sibling-enroll-get"); status != http.StatusOK {
+		t.Fatalf("join page status = %d", status)
+	}
+	if status, _ := r.enroll(pathToJoin, "", "sibling-enroll-post", "daffy", validKey()); status != http.StatusOK {
+		t.Fatalf("enrollment status = %d", status)
+	}
+	r.call(tools.ToolSetAdmin, tools.SetAdminArgs{Account: "acme", User: "daffy", Admin: true}, nil)
+	r.call(tools.ToolListInvites, tools.AccountArgs{Account: "acme"}, nil)
+	r.call(tools.ToolCreateInvite, tools.AccountArgs{Account: "acme"}, &invite)
+	r.call(tools.ToolRevokeInvite, tools.InviteArgs{Invite: invite.Invite}, nil)
 	calls := append(changeCalls(validKey()), readCalls()...)
 	calls = append(calls, addressCalls()...)
 	requests := make(map[string]string, len(calls))
@@ -953,8 +1278,13 @@ func TestRunNoSiblingConnections(t *testing.T) {
 			t.Fatal(call.name, err)
 		}
 	}
-	for _, path := range []string{"/", "/tools", "/about", "/hosts/host01", "/accountsd"} {
-		r.request("GET", path, "owner", "page"+path)
+	for _, path := range []string{"/", "/tools", "/about", "/hosts/host01"} {
+		if status, _, _ := r.request(http.MethodGet, path, "owner", "page"+path); status != http.StatusOK {
+			t.Fatalf("GET %s = %d", path, status)
+		}
+	}
+	if status, _, body := r.request(http.MethodGet, "/accountsd", "", "download"); status != http.StatusOK || body != daemon {
+		t.Fatalf("daemon download = %d, %q", status, body)
 	}
 	if code := r.stop(); code != cli.ExitSuccess {
 		t.Fatal(code, r.err.String())

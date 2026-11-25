@@ -33,6 +33,12 @@ const (
 	pamHook        = pamMemberTest + "\n" + pamHelperLine + "\n"
 )
 
+// MCPName selects the stdio MCP server. MCPHelper is its link to the daemon.
+const (
+	MCPName   = "accountsd-mcp"
+	MCPHelper = "/usr/local/libexec/" + MCPName
+)
+
 func (h *Host) unitFiles(visit func(string) error) error {
 	dir, err := os.Open(h.path(unitDirectory))
 	if errors.Is(err, fs.ErrNotExist) {
@@ -182,7 +188,13 @@ func (h *Host) slices(ctx context.Context, s protocol.DesiredState) error {
 			return err
 		}
 	}
-	return h.installSession()
+	if err := h.installSession(); err != nil {
+		return err
+	}
+	if err := h.linkDaemon(MCPHelper); err != nil {
+		return err
+	}
+	return h.secure(ctx, MCPHelper)
 }
 
 func (h *Host) installSession() error {
@@ -192,31 +204,34 @@ func (h *Host) installSession() error {
 	if err := h.installPAM(sharedPAMPath); err != nil {
 		return err
 	}
+	return h.linkDaemon(SessionHelper)
+}
 
-	path := h.path(SessionHelper)
+func (h *Host) linkDaemon(helper string) error {
+	path := h.path(helper)
 	if target, err := os.Readlink(path); err == nil && target == DaemonPath {
 		return nil
 	}
-	if err := h.mkdir(filepath.Dir(SessionHelper)); err != nil {
-		return hostError(SessionHelper, err)
+	if err := h.mkdir(filepath.Dir(helper)); err != nil {
+		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".accountsd-session-")
+	f, err := os.CreateTemp(filepath.Dir(path), ".accountsd-")
 	if err != nil {
-		return hostError(SessionHelper, err)
+		return hostError(helper, err)
 	}
 	tmp := f.Name()
 	defer func() { _ = os.Remove(tmp) }()
 	if err := f.Close(); err != nil {
-		return hostError(SessionHelper, err)
+		return hostError(helper, err)
 	}
 	if err := os.Remove(tmp); err != nil {
-		return hostError(SessionHelper, err)
+		return hostError(helper, err)
 	}
 	if err := os.Symlink(DaemonPath, tmp); err != nil {
-		return hostError(SessionHelper, err)
+		return hostError(helper, err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		return hostError(SessionHelper, err)
+		return hostError(helper, err)
 	}
 	return nil
 }
@@ -246,7 +261,7 @@ func (h *Host) installPAM(path string) error {
 			return hostError(path, err)
 		}
 	}
-	return h.writeStream(path, 0o644, func(dst io.Writer) (bool, error) {
+	return h.writeStream(path, 0o644, func(dst *os.File) (bool, error) {
 		return rewritePAM(f, size, dst, insertion)
 	})
 }

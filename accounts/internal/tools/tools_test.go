@@ -54,7 +54,14 @@ func setup(t *testing.T) *fixture {
 	return setupConfigured(t, true)
 }
 
+const accountsURL = "https://accounts.one.test"
+
 func setupConfigured(t *testing.T, configured bool) *fixture {
+	t.Helper()
+	return setupWithURL(t, configured, func() (string, error) { return accountsURL, nil })
+}
+
+func setupWithURL(t *testing.T, configured bool, base func() (string, error)) *fixture {
 	t.Helper()
 	t.Setenv(services.Variable, "")
 	f := &fixture{t: t, path: filepath.Join(t.TempDir(), "accounts.db"), now: time.Date(2026, 10, 29, 9, 3, 7, 900000000, time.FixedZone("offset", -5*3600)), caller: identity.Caller{UserID: "first-caller", Email: "private@example.test", RequestID: "tool-request"}}
@@ -76,7 +83,7 @@ func setupConfigured(t *testing.T, configured bool) *fixture {
 	t.Cleanup(func() { f.w.Shutdown(context.Background(), "done") })
 	f.srv = mcp.NewServer(mcp.ServerConfig{Name: "accounts", Telemetry: f.w})
 	tools.Register(f.srv, tools.Config{
-		Store: f.st, Cloud: f.cloud, Hosts: f.hosts, Configured: configured, Telemetry: f.w,
+		Store: f.st, Cloud: f.cloud, Hosts: f.hosts, Configured: configured, Telemetry: f.w, AccountsURL: base,
 		Wake: func() {
 			f.wakes++
 			if f.onWake != nil {

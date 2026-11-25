@@ -13,18 +13,40 @@ const accountFields = `slug, host, state, reason, gid, version, removed_version,
 const accountSelect = `SELECT ` + accountFields +
 	`, (SELECT count(*) FROM ssh_users WHERE account = accounts.slug) FROM accounts`
 
-func scanAccount(r scanner) (a Account, err error) {
-	err = r.Scan(&a.Slug, &a.Host, &a.State, &a.Reason, &a.GID, &a.Version, &a.RemovedVersion,
-		&a.Change, &a.Operation, storedTime{&a.Created}, &a.CreatedBy, &a.Users)
+const accountSelectWithInvites = `SELECT ` + accountFields +
+	`, (SELECT count(*) FROM ssh_users WHERE account = accounts.slug),
+	(SELECT count(*) FROM invites WHERE account = accounts.slug AND gid = accounts.gid AND expires > ?)
+	FROM accounts`
+
+func scanAccount(r scanner, withInvites bool) (a Account, err error) {
+	fields := []any{&a.Slug, &a.Host, &a.State, &a.Reason, &a.GID, &a.Version, &a.RemovedVersion,
+		&a.Change, &a.Operation, storedTime{&a.Created}, &a.CreatedBy, &a.Users}
+	if withInvites {
+		fields = append(fields, &a.Invites)
+	}
+	err = r.Scan(fields...)
 	return a, err
 }
 
 func getAccount(q query, slug string) (Account, error) {
-	return scanAccount(q.row(accountSelect+" WHERE slug = ?", slug))
+	return scanAccount(q.row(accountSelect+" WHERE slug = ?", slug), false)
 }
 
 func hostAccounts(q query, host string) ([]Account, error) {
-	return collect(q, scanAccount, accountSelect+" WHERE host = ? ORDER BY slug", host)
+	return collect(q, func(r scanner) (Account, error) { return scanAccount(r, false) }, accountSelect+" WHERE host = ? ORDER BY slug", host)
+}
+
+func collectAccounts(q query, stamp time.Time, stmt string, args ...any) ([]Account, error) {
+	return collect(q, func(r scanner) (Account, error) { return scanAccount(r, true) },
+		accountSelectWithInvites+stmt, append([]any{stamp.Unix()}, args...)...)
+}
+
+// NameHeld reports whether a user or account currently holds the name.
+func (s *Store) NameHeld(ctx context.Context, name string) (bool, error) {
+	return read(ctx, &s.recordReader, name != "", func(q query) (held bool, err error) {
+		err = q.row("SELECT EXISTS (SELECT 1 FROM names WHERE name = ?)", name).Scan(&held)
+		return held, err
+	})
 }
 
 func claimName(q query, name string) error {
@@ -40,6 +62,9 @@ func claimName(q query, name string) error {
 }
 
 func purgeAccount(q query, slug string) error {
+	if err := deleteAccountInvites(q, slug); err != nil {
+		return err
+	}
 	if err := q.exec("DELETE FROM accounts WHERE slug = ?", slug); err != nil {
 		return err
 	}
@@ -53,7 +78,7 @@ type accountOp struct {
 
 // PlaceAccount adds a business to one host and starts its placement.
 func (s *Store) PlaceAccount(ctx context.Context, slug, host string, c identity.Caller) (Account, Operation, error) {
-	out, err := write(ctx, s, allGiven(slug, host, c.UserID), func(w *writing) (accountOp, error) {
+	out, err := write(ctx, s, allGiven(slug, host) && validCaller(c), func(w *writing) (accountOp, error) {
 		h, err := getHost(w.query, host)
 		if err != nil {
 			return accountOp{}, err
@@ -120,7 +145,7 @@ func beginRemoval(w *writing, a *Account, stamp time.Time) (string, error) {
 
 // RemoveAccount starts removal or starts a new operation after a failed removal.
 func (s *Store) RemoveAccount(ctx context.Context, slug string, c identity.Caller) (Account, Operation, error) {
-	out, err := write(ctx, s, allGiven(slug, c.UserID), func(w *writing) (accountOp, error) {
+	out, err := write(ctx, s, slug != "" && validCaller(c), func(w *writing) (accountOp, error) {
 		a, err := getAccount(w.query, slug)
 		if err != nil {
 			return accountOp{}, err
@@ -139,6 +164,9 @@ func (s *Store) RemoveAccount(ctx context.Context, slug string, c identity.Calle
 		if err != nil {
 			return accountOp{}, err
 		}
+		if err := deleteAccountInvites(w.query, a.Slug); err != nil {
+			return accountOp{}, err
+		}
 		a.Operation = op.ID
 		return accountOp{a, op}, w.exec("UPDATE accounts SET state = ?, reason = ?, removed_version = ?, operation = ? WHERE slug = ?",
 			a.State, a.Reason, a.RemovedVersion, a.Operation, a.Slug)
@@ -148,12 +176,14 @@ func (s *Store) RemoveAccount(ctx context.Context, slug string, c identity.Calle
 
 // Account reads a business by slug.
 func (s *recordReader) Account(ctx context.Context, slug string) (Account, error) {
-	return read(ctx, s, true, func(q query) (Account, error) { return getAccount(q, slug) })
+	return read(ctx, s, true, func(q query) (Account, error) {
+		return scanAccount(q.row(accountSelectWithInvites+" WHERE slug = ?", cleanTime(s.now()).Unix(), slug), true)
+	})
 }
 
 func (s *recordReader) accountPage(ctx context.Context, limit int, reverse bool, stmt string, args ...any) ([]Account, error) {
 	return read(ctx, s, validLimit(limit), func(q query) ([]Account, error) {
-		out, err := collect(q, scanAccount, accountSelect+stmt, append(args, limit)...)
+		out, err := collectAccounts(q, cleanTime(s.now()), stmt, append(args, limit)...)
 		if reverse {
 			slices.Reverse(out)
 		}
@@ -182,6 +212,6 @@ func (s *recordReader) AccountsOn(ctx context.Context, host string) ([]Account, 
 		if _, err := liveHost(q, host); err != nil {
 			return nil, err
 		}
-		return hostAccounts(q, host)
+		return collectAccounts(q, cleanTime(s.now()), " WHERE host = ? ORDER BY slug", host)
 	})
 }

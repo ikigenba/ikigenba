@@ -8,10 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
@@ -31,6 +34,9 @@ type Config struct {
 	Now       func() time.Time
 	Sleep     func(context.Context, time.Duration)
 	Stderr    io.Writer
+	Box       net.Listener
+	PeerUID   func(net.Conn) (int64, error)
+	After     func(time.Duration) <-chan time.Time
 }
 
 // Request timing and the daemon's HTTP user agent.
@@ -58,23 +64,47 @@ const (
 type reconciler struct {
 	cfg        Config
 	binding    string
+	signing    chan struct{}
 	lastSigned time.Time
 	haveSigned bool
+	latest     atomic.Pointer[protocol.DesiredState]
+	diagnostic sync.Mutex
 	attempted  int64
 	applied    int64
 }
 
 // Run pulls and applies desired states until cancellation or a successful self-update.
-func Run(ctx context.Context, cfg Config) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
+func Run(ctx context.Context, cfg Config) (result error) {
 	u, err := parseBaseURL(cfg.BaseURL)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		err = ctxErr
+	} else if cfg.Box != nil && (cfg.PeerUID == nil || cfg.After == nil) {
+		err = errors.New("box listener requires peer credentials and a timer")
+	}
 	if err != nil {
+		if cfg.Box != nil {
+			_ = cfg.Box.Close()
+		}
 		return err
 	}
 
-	r := reconciler{cfg: cfg, binding: strings.ToLower(u.Host)}
+	r := reconciler{cfg: cfg, binding: strings.ToLower(u.Host), signing: make(chan struct{}, 1)}
+	if cfg.Box != nil {
+		acceptCtx, stopAccept := context.WithCancel(ctx)
+		drained := make(chan struct{})
+		go func() {
+			defer close(drained)
+			r.serveBox(acceptCtx, ctx)
+		}()
+		defer func() {
+			stopAccept()
+			_ = cfg.Box.Close()
+			<-drained
+			if ctx.Err() != nil {
+				result = ctx.Err()
+			}
+		}()
+	}
 	fetchBackoff, updateBackoff := MinBackoff, MinBackoff
 	for ctx.Err() == nil {
 		state, err := r.fetch(ctx)
@@ -82,12 +112,13 @@ func Run(ctx context.Context, cfg Config) error {
 			break
 		}
 		if err != nil {
-			diagnose(cfg.Stderr, DiagFetch, err)
+			r.diagnose(DiagFetch, err)
 			cfg.Sleep(ctx, fetchBackoff)
 			fetchBackoff = advanceBackoff(fetchBackoff)
 			continue
 		}
 		r.attempted = state.Version
+		r.latest.Store(&state)
 		fetchBackoff = MinBackoff
 
 		var updateErr error
@@ -99,7 +130,7 @@ func Run(ctx context.Context, cfg Config) error {
 			if updateErr == nil {
 				return nil
 			}
-			diagnose(cfg.Stderr, DiagUpdate, updateErr)
+			r.diagnose(DiagUpdate, updateErr)
 		}
 		if err := r.applyAndReport(ctx, state, updateErr); err != nil {
 			return err
@@ -138,7 +169,26 @@ func (r *reconciler) waitToSign(ctx context.Context) {
 	}
 }
 
-func (r *reconciler) request(ctx context.Context, method, path string, body io.Reader, identify bool) (*http.Response, error) {
+func (r *reconciler) identityHeader(ctx context.Context) (string, error) {
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case r.signing <- struct{}{}:
+	}
+	defer func() { <-r.signing }()
+	r.waitToSign(ctx)
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	header, err := hostauth.Header(ctx, r.cfg.Presigner, r.binding)
+	// Credential refresh can cross a second boundary before the presigner
+	// assigns X-Amz-Date. Wait from the second in which signing completed.
+	r.lastSigned = r.cfg.Now().UTC().Truncate(time.Second)
+	r.haveSigned = true
+	return header, err
+}
+
+func (r *reconciler) request(ctx context.Context, client *http.Client, method, path string, body io.Reader, identify bool) (*http.Response, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -151,11 +201,7 @@ func (r *reconciler) request(ctx context.Context, method, path string, body io.R
 		req.Header.Set("Content-Type", protocol.ContentJSON)
 	}
 	if identify {
-		header, err := hostauth.Header(ctx, r.cfg.Presigner, r.binding)
-		// Credential refresh can cross a second boundary before the presigner
-		// assigns X-Amz-Date. Wait from the second in which signing completed.
-		r.lastSigned = r.cfg.Now().UTC().Truncate(time.Second)
-		r.haveSigned = true
+		header, err := r.identityHeader(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -164,18 +210,17 @@ func (r *reconciler) request(ctx context.Context, method, path string, body io.R
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return r.cfg.HTTP.Do(req)
+	return client.Do(req)
 }
 
 func (r *reconciler) fetch(ctx context.Context) (protocol.DesiredState, error) {
-	r.waitToSign(ctx)
 	ctx, cancel := context.WithTimeout(ctx, RequestTimeout)
 	defer cancel()
 	query := url.Values{
 		protocol.QueryAfter:  {strconv.FormatInt(r.attempted, 10)},
 		protocol.QueryDigest: {r.cfg.Digest},
 	}
-	resp, err := r.request(ctx, http.MethodGet, protocol.StatePath+"?"+query.Encode(), nil, true)
+	resp, err := r.request(ctx, r.cfg.HTTP, http.MethodGet, protocol.StatePath+"?"+query.Encode(), nil, true)
 	if err != nil {
 		return protocol.DesiredState{}, err
 	}
@@ -189,7 +234,7 @@ func (r *reconciler) fetch(ctx context.Context) (protocol.DesiredState, error) {
 func (r *reconciler) update(ctx context.Context, digest string) error {
 	ctx, cancel := context.WithTimeout(ctx, DownloadTimeout)
 	defer cancel()
-	resp, err := r.request(ctx, http.MethodGet, protocol.BinaryPath, nil, false)
+	resp, err := r.request(ctx, r.cfg.HTTP, http.MethodGet, protocol.BinaryPath, nil, false)
 	if err != nil {
 		return err
 	}
@@ -212,7 +257,7 @@ func (r *reconciler) applyAndReport(ctx context.Context, state protocol.DesiredS
 		return err
 	}
 	if applyErr != nil {
-		diagnose(r.cfg.Stderr, DiagApply, applyErr)
+		r.diagnose(DiagApply, applyErr)
 	} else {
 		r.applied = state.Version
 	}
@@ -246,20 +291,19 @@ func (r *reconciler) applyAndReport(ctx context.Context, state protocol.DesiredS
 		return ctxErr
 	}
 	if err != nil {
-		diagnose(r.cfg.Stderr, DiagReport, err)
+		r.diagnose(DiagReport, err)
 	}
 	return nil
 }
 
 func (r *reconciler) report(ctx context.Context, facts protocol.Report) error {
-	r.waitToSign(ctx)
 	ctx, cancel := context.WithTimeout(ctx, RequestTimeout)
 	defer cancel()
 	body, err := json.Marshal(facts.Bounded())
 	if err != nil {
 		return err
 	}
-	resp, err := r.request(ctx, http.MethodPost, protocol.ReportPath, bytes.NewReader(body), true)
+	resp, err := r.request(ctx, r.cfg.HTTP, http.MethodPost, protocol.ReportPath, bytes.NewReader(body), true)
 	if err != nil {
 		return err
 	}
@@ -272,6 +316,12 @@ func checkStatus(resp *http.Response, want int) error {
 		return fmt.Errorf(statusError, resp.StatusCode)
 	}
 	return nil
+}
+
+func (r *reconciler) diagnose(message string, err error) {
+	r.diagnostic.Lock()
+	defer r.diagnostic.Unlock()
+	diagnose(r.cfg.Stderr, message, err)
 }
 
 func diagnose(w io.Writer, message string, err error) {

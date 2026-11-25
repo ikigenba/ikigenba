@@ -22,7 +22,7 @@ func TestFirstLine(t *testing.T) {
 	}
 }
 
-// R-Y3NM-ABQI R-YFUM-415G R-YH2I-HSW5 R-ZB0K-I008 R-ZC8G-VRQX
+// R-Y3NM-ABQI R-YFUM-415G R-YH2I-HSW5 R-ZB0K-I008 R-ZC8G-VRQX R-CSDA-A2TO R-CPXH-IJCA
 func TestCopyAndTimeout(t *testing.T) {
 	const (
 		_ = tools.NotConfigured
@@ -60,6 +60,11 @@ func TestCopyAndTimeout(t *testing.T) {
 		_ = tools.PrefixTooWide
 		_ = tools.TooManyUnbans
 		_ = tools.AllowlistFull
+		_ = tools.NoLink
+		_ = tools.NoInvite
+		_ = tools.TooManyInvites
+		_ = tools.ArgAdmin
+		_ = tools.ArgInvite
 		_ = tools.ArgIP
 		_ = tools.ArgHost
 		_ = tools.ArgAccount
@@ -77,7 +82,7 @@ func TestCopyAndTimeout(t *testing.T) {
 		tools.HostNotRunning, tools.HostNotStopped, tools.HostHasAccounts, tools.HostFull,
 		tools.HostGone, tools.AccountHasUsers, tools.AccountRemoving, tools.AccountFull,
 		tools.TooManyKeys, tools.GrowLimit, tools.UserNotLocked, tools.UserRemoving,
-		tools.NameHasRecord, tools.CloudFailed, tools.InvalidAddress, tools.PrefixTooWide, tools.TooManyUnbans, tools.AllowlistFull,
+		tools.NameHasRecord, tools.CloudFailed, tools.InvalidAddress, tools.PrefixTooWide, tools.TooManyUnbans, tools.AllowlistFull, tools.NoLink, tools.NoInvite, tools.TooManyInvites,
 	}
 	seen := map[string]bool{store.Unreachable: true}
 	for _, copy := range refusals {
@@ -86,7 +91,7 @@ func TestCopyAndTimeout(t *testing.T) {
 		}
 		seen[copy] = true
 	}
-	for _, copy := range []string{tools.ArgHost, tools.ArgAccount, tools.ArgUser, tools.ArgKey, tools.ArgType, tools.ArgRootGB, tools.ArgDataGB, tools.ArgIP} {
+	for _, copy := range []string{tools.ArgHost, tools.ArgAccount, tools.ArgUser, tools.ArgKey, tools.ArgType, tools.ArgRootGB, tools.ArgDataGB, tools.ArgIP, tools.ArgAdmin, tools.ArgInvite} {
 		if copy == "" || strings.Contains(copy, "\n") {
 			t.Fatalf("invalid argument description %q", copy)
 		}

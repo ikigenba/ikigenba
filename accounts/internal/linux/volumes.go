@@ -289,7 +289,7 @@ func (h *Host) hostKey(_ context.Context) error {
 }
 
 func (h *Host) copyHostKey(path string, source *os.File, mode fs.FileMode) error {
-	return h.writeStream(path, mode, func(output io.Writer) (bool, error) {
+	return h.writeStream(path, mode, func(output *os.File) (bool, error) {
 		equal, err := matchesKey(source, h.path(path))
 		if err != nil || equal {
 			return false, err

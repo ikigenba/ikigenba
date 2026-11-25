@@ -116,6 +116,18 @@ func (m *Memory) State() Snapshot {
 	return out
 }
 
+// RangeUnlockedUsers visits the name and uid of each unlocked applied user.
+// The callback runs under the machine's lock and must not call this machine.
+func (m *Memory) RangeUnlockedUsers(visit func(name string, uid int64)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, user := range m.users {
+		if !user.Locked {
+			visit(user.Name, user.UID)
+		}
+	}
+}
+
 // Ban records a simulated jail ban when the address is eligible.
 func (m *Memory) Ban(address string) {
 	if canonical, err := valid.Address(address); err != nil || canonical != address {

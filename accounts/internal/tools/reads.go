@@ -48,7 +48,7 @@ func hostAnswer(h store.Host, now time.Time) Host {
 func (cfg Config) accountAnswer(a store.Account) Account {
 	return Account{
 		Account: a.Slug, Host: a.Host, DNSName: a.Slug + "." + cfg.Hosts.Domain,
-		State: a.State, Reason: a.Reason, Users: a.Users, Created: stamp(a.Created), CreatedBy: a.CreatedBy,
+		State: a.State, Reason: a.Reason, Users: a.Users, Invites: a.Invites, Created: stamp(a.Created), CreatedBy: a.CreatedBy,
 	}
 }
 
@@ -58,7 +58,7 @@ func userAnswer(u store.User) User {
 		keys = append(keys, k.Line)
 	}
 	return User{
-		User: u.Name, Account: u.Account, State: u.State, Pending: u.Pending,
+		User: u.Name, Account: u.Account, Admin: u.Admin, State: u.State, Pending: u.Pending,
 		Keys: keys, LastSignIn: stamp(u.LastSignIn), Created: stamp(u.Created), CreatedBy: u.CreatedBy,
 	}
 }
@@ -219,7 +219,7 @@ func (cfg Config) account(ctx context.Context, args AccountArgs) (AccountRead, e
 	answer := cfg.accountAnswer(a)
 	return AccountRead{
 		Account: answer.Account, Host: answer.Host, DNSName: answer.DNSName, State: answer.State,
-		Reason: answer.Reason, Users: answer.Users, Created: answer.Created, CreatedBy: answer.CreatedBy,
+		Reason: answer.Reason, Users: answer.Users, Invites: answer.Invites, Created: answer.Created, CreatedBy: answer.CreatedBy,
 		UserNames: names, Operation: op,
 	}, nil
 }

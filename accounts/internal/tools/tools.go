@@ -32,6 +32,10 @@ func Register(srv *mcp.Server, cfg Config) {
 	mcp.AddTool(srv, mcp.Tool[UserArgs, UserChange]{Name: ToolLockUser, Description: DescribeLockUser, Effect: mcp.Additive, Handler: change(cfg, ToolLockUser, cfg.userOperation(cfg.Store.Lock))})
 	mcp.AddTool(srv, mcp.Tool[UserArgs, UserChange]{Name: ToolUnlockUser, Description: DescribeUnlockUser, Effect: mcp.Additive, Handler: change(cfg, ToolUnlockUser, cfg.userOperation(cfg.Store.Unlock))})
 	mcp.AddTool(srv, mcp.Tool[UserArgs, UserChange]{Name: ToolDeleteUser, Description: DescribeDeleteUser, Effect: mcp.Destructive, Handler: change(cfg, ToolDeleteUser, cfg.userOperation(cfg.Store.Delete))})
+	mcp.AddTool(srv, mcp.Tool[SetAdminArgs, UserChange]{Name: ToolSetAdmin, Description: DescribeSetAdmin, Effect: mcp.Additive, Handler: change(cfg, ToolSetAdmin, cfg.setAdmin)})
+	mcp.AddTool(srv, mcp.Tool[CreateInviteArgs, InviteMade]{Name: ToolCreateInvite, Description: DescribeCreateInvite, Effect: mcp.Additive, Handler: change(cfg, ToolCreateInvite, cfg.createInvite)})
+	mcp.AddTool(srv, mcp.Tool[AccountArgs, InviteList]{Name: ToolListInvites, Description: DescribeListInvites, Effect: mcp.Read, Handler: read(cfg, cfg.listInvites)})
+	mcp.AddTool(srv, mcp.Tool[InviteArgs, Invite]{Name: ToolRevokeInvite, Description: DescribeRevokeInvite, Effect: mcp.Destructive, Handler: change(cfg, ToolRevokeInvite, cfg.revokeInvite)})
 	mcp.AddTool(srv, mcp.Tool[UnbanArgs, Unbanned]{Name: ToolUnbanIP, Description: DescribeUnbanIP, Effect: mcp.Additive, Handler: change(cfg, ToolUnbanIP, cfg.unbanIP)})
 	mcp.AddTool(srv, mcp.Tool[HostIPArgs, AllowlistChange]{Name: ToolAllowIP, Description: DescribeAllowIP, Effect: mcp.Additive, Handler: change(cfg, ToolAllowIP, cfg.allowlistOperation(cfg.Store.Allow))})
 	mcp.AddTool(srv, mcp.Tool[HostIPArgs, AllowlistChange]{Name: ToolDisallowIP, Description: DescribeDisallowIP, Effect: mcp.Destructive, Handler: change(cfg, ToolDisallowIP, cfg.allowlistOperation(cfg.Store.Disallow))})
@@ -78,6 +82,10 @@ func changeNames(args any) changeRecord {
 		return changeRecord{account: a.Account}
 	case CreateAccountArgs:
 		return changeRecord{host: a.Host, account: a.Account}
+	case SetAdminArgs:
+		return changeRecord{account: a.Account, user: a.User}
+	case CreateInviteArgs:
+		return changeRecord{account: a.Account}
 	case UserArgs:
 		return changeRecord{account: a.Account, user: a.User}
 	case UserKeyArgs:
@@ -138,6 +146,7 @@ var storeRefusals = []struct {
 	{store.ErrAccountRemoving, AccountRemoving},
 	{store.ErrAccountFull, AccountFull},
 	{store.ErrTooManyKeys, TooManyKeys},
+	{store.ErrTooManyInvites, TooManyInvites},
 	{store.ErrNotLocked, UserNotLocked},
 	{store.ErrUserRemoving, UserRemoving},
 	{store.ErrNotInAccount, NotInAccount},

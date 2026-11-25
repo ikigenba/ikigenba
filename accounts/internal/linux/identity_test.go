@@ -69,7 +69,7 @@ func fixtureKey(comment string) string {
 }
 
 func TestApplyLockBeforeAnyHardeningFailure(t *testing.T) {
-	// R-BV89-YUHN R-KXYD-8O0O R-AXUQ-0YCB
+	// R-KXYD-8O0O R-AXUQ-0YCB
 	f := newHardeningFixture(t)
 	const locked = "shell:x:990:alice,bob,zoe,wren,sam\n"
 	f.put("/etc/group", locked, 0o644)
@@ -119,7 +119,7 @@ func TestApplyLockBeforeAnyHardeningFailure(t *testing.T) {
 }
 
 func TestApplyAbortsWhenStoppingUserSliceFails(t *testing.T) {
-	// R-AXUQ-0YCB R-BV89-YUHN
+	// R-AXUQ-0YCB R-MKVI-5RAJ
 	f := newHardeningFixture(t)
 	f.put("/etc/group", "shell:x:990:alice,bob\n", 0o644)
 	f.put("/etc/passwd", "alice:x:20001:20001::/home/alice:/bin/bash\nbob:x:20002:20002::/home/bob:/bin/bash\n", 0o644)
@@ -133,7 +133,7 @@ func TestApplyAbortsWhenStoppingUserSliceFails(t *testing.T) {
 }
 
 func TestApplyAccountsAndUsers(t *testing.T) {
-	// R-ZIO9-Y1PY R-CM22-DSSX R-0FNF-5G1G R-CPPR-J410 R-CQXN-WVRP R-KZ69-MFRD R-CTDG-OF93 R-82VL-4Z30 R-CX15-TQH6 R-0JB4-AR9J R-SM70-07MK
+	// R-CM22-DSSX R-0FNF-5G1G R-CPPR-J410 R-CQXN-WVRP R-KZ69-MFRD R-CTDG-OF93 R-82VL-4Z30 R-CX15-TQH6 R-0JB4-AR9J R-SM70-07MK R-CSTR-M40L
 	f := newHardeningFixture(t)
 	const groups = "willow:x:21000:\nperry:x:21001:maia\nmaia:x:21003:\nwheel:x:10:maia\n"
 	f.put("/etc/group", groups, 0o644)
@@ -256,7 +256,7 @@ func TestApplyRefusesIdentityMismatch(t *testing.T) {
 			if !errors.Is(err, machine.ErrIdentity) {
 				t.Fatalf("identity conflict Apply = %v", err)
 			}
-			f.forbidCalls("groupadd --system --gid", "useradd", "chown", "git config")
+			f.forbidCalls("groupadd --system --gid", "useradd", "chown citron:citron ", "git config")
 			f.expectAbsent("/srv/citron")
 		})
 	}

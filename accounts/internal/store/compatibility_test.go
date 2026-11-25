@@ -110,7 +110,14 @@ func TestInvalidInput(t *testing.T) {
 		noOutput(s.NoteGrow(ctx, "", baseTime)),
 		observe(s.Allow(ctx, "", "192.0.2.7")), observe(s.Disallow(ctx, "", "192.0.2.7")),
 		observe(s.Unban(ctx, "", "192.0.2.7")), observe(s.UnbanRunning(ctx, "")),
+		observe(s.NameHeld(ctx, "")), observe(s.UserNamed(ctx, "")), observe(s.ActiveUserByUID(ctx, "", 0)),
+		observe2(s.SetAdmin(ctx, a.Slug, "", true)), observe(s.Invites(ctx, "")),
+		observe2(s.CreateInvite(ctx, "", true, caller)), observe2(s.Enroll(ctx, "", "", firstKey)),
+		observe(s.AddKeyAs(ctx, "", firstKey)), observe2(s.RemoveKeyAs(ctx, "person", key)),
 	} {
+		call.assertZero(t, store.ErrUnreachable)
+	}
+	for _, call := range adminCalls(s, "", "", "") {
 		call.assertZero(t, store.ErrUnreachable)
 	}
 }
@@ -155,7 +162,7 @@ func TestDatabaseFailuresTakePrecedence(t *testing.T) {
 	cancel()
 	check := func(c context.Context, cause error) {
 		t.Helper()
-		for _, call := range exercise(c, s, h.Name, op.ID) {
+		for _, call := range append(exercise(c, s, h.Name, op.ID), inviteExercise(c, s, h.Name)...) {
 			call.assertZero(t, store.ErrUnreachable)
 			if cause != nil {
 				checkErr(t, call.err, cause)
@@ -194,7 +201,7 @@ func TestSnapshotKeepsItsViewAndDoesNotChangeStoreReads(t *testing.T) {
 	checkErr(t, err, nil)
 }
 
-// R-PDCM-AJ5R R-JDPD-8UJA R-JG56-0E0O R-2AZ8-MC5D
+// R-PDCM-AJ5R R-JDPD-8UJA R-JG56-0E0O R-CRPR-TJXN
 func TestAdditiveMigrations(t *testing.T) {
 	migrations := accounts.Migrations()
 	old := value(t, result(fs.ReadFile(migrations, "0001_accounts.sql")))
@@ -224,11 +231,12 @@ func TestAdditiveMigrations(t *testing.T) {
 	}), nil)
 	var extra strings.Builder
 	bansSchema := value(t, result(fs.ReadFile(migrations, "0003_bans.sql")))
-	for _, table := range tableNames(string(newSchema) + string(bansSchema)) {
+	inviteSchema := value(t, result(fs.ReadFile(migrations, "0004_invites.sql")))
+	for _, table := range tableNames(string(old) + string(newSchema) + string(bansSchema) + string(inviteSchema)) {
 		extra.WriteString("ALTER TABLE " + table + " ADD COLUMN future_note TEXT;\n")
 	}
 	expanded := fstest.MapFS{"0001_accounts.sql": {Data: old}, "0002_hosts.sql": {Data: newSchema},
-		"0003_bans.sql": {Data: bansSchema}, "0004_expand.sql": {Data: []byte(extra.String())}}
+		"0003_bans.sql": {Data: bansSchema}, "0004_invites.sql": {Data: inviteSchema}, "0005_expand.sql": {Data: []byte(extra.String())}}
 	cfg.Rand = new(counterRandom)
 	_, withExtra := open(t, filepath.Join(t.TempDir(), "expand.db"), expanded, cfg)
 	for _, s := range []*store.Store{baseline, withoutLegacy, withExtra} {
@@ -242,9 +250,14 @@ func TestAdditiveMigrations(t *testing.T) {
 		checkErr(t, call.err, nil)
 	}
 	closed(t, watch, true)
+	wantInvites := inviteExercise(ctx, baseline, host)
+	for _, call := range wantInvites {
+		checkErr(t, call.err, nil)
+	}
 	for _, s := range []*store.Store{withoutLegacy, withExtra} {
 		w, cancel := s.Watch(host)
 		eq(t, exercise(ctx, s, host, opID), want)
+		eq(t, inviteExercise(ctx, s, host), wantInvites)
 		closed(t, w, true)
 		cancel()
 	}
@@ -300,4 +313,78 @@ func TestBansMigrationExpandsPreviousSchema(t *testing.T) {
 	eq(t, value(t, result(expanded.Host(ctx, h.Name))), h)
 	h, _ = create(t, expanded)
 	eq(t, h.Seq, int64(12))
+}
+
+func inviteExercise(c context.Context, s *store.Store, host string) []observation {
+	const account, actor = "enrollment", "owner"
+	secondKey := store.Key{Type: firstKey.Type, Body: "extra", Line: "line"}
+	out := []observation{
+		observe2(s.PlaceAccount(c, account, host, caller)),
+		observe(s.AddUser(c, account, actor, firstKey, caller)),
+		observe2(s.SetAdmin(c, account, actor, true)),
+		observe(s.UserNamed(c, actor)), observe(s.NameHeld(c, actor)),
+		observe(s.AddKeyAs(c, actor, secondKey)), observe2(s.RemoveKeyAs(c, actor, secondKey)),
+	}
+	u, err := s.UserNamed(c, actor)
+	out = append(out, observe(u, err), observe(s.ActiveUserByUID(c, host, u.UID)))
+	i, token, err := s.CreateInvite(c, account, true, caller)
+	out = append(out, observe2(i, token, err), observe(s.Invites(c, account)),
+		observe(s.InviteByToken(c, token)), observe2(s.Enroll(c, token, "member", firstKey)),
+		noOutput(s.AdminCheck(c, actor)), observe(s.UsersAs(c, actor)),
+		observe(s.LockAs(c, actor, "member")), observe(s.UnlockAs(c, actor, "member")),
+		observe2(s.SetAdminAs(c, actor, "member", false)), observe(s.LockAs(c, actor, "member")),
+		observe(s.DeleteAs(c, actor, "member")))
+	i, token, err = s.CreateInviteAs(c, actor, caller)
+	out = append(out, observe2(i, token, err), observe(s.InvitesAs(c, actor)), observe(s.RevokeInviteAs(c, actor, i.ID)))
+	i, token, err = s.CreateInvite(c, account, false, caller)
+	out = append(out, observe2(i, token, err),
+		observe(s.Account(c, account)), observe(s.AccountsOn(c, host)),
+		observe(s.ListAccounts(c, "", 3)), observe(s.ListAccountsBefore(c, "z", 3)), observe(s.LastAccounts(c, 3)),
+		observe(s.User(c, account, actor)), observe(s.UsersOf(c, account)),
+		observe(s.ListUsers(c, account, "", "", 3)), observe(s.ListUsersBefore(c, account, "z", "z", 3)),
+		observe(s.LastUsers(c, account, 3)), observe(s.RevokeInvite(c, i.ID)))
+	return out
+}
+
+// R-CQHV-FS6Y
+func TestInviteMigrationPreservesEarlierRecord(t *testing.T) {
+	migrations := accounts.Migrations()
+	earlier := fstest.MapFS{}
+	var previousSchema strings.Builder
+	for _, name := range []string{"0001_accounts.sql", "0002_hosts.sql", "0003_bans.sql"} {
+		body := value(t, result(fs.ReadFile(migrations, name)))
+		earlier[name] = &fstest.MapFile{Data: body}
+		previousSchema.Write(body)
+	}
+	invites := value(t, result(fs.ReadFile(migrations, "0004_invites.sql")))
+	oldTable := regexp.MustCompile(`\b(` + strings.Join(tableNames(previousSchema.String()), "|") + `)\b`)
+	createStatement := regexp.MustCompile(`^CREATE (TABLE|INDEX|UNIQUE INDEX)\b`)
+	stmts := strings.Split(strings.TrimSuffix(strings.TrimSpace(string(invites)), ";"), ";")
+	for _, statement := range stmts {
+		if !createStatement.MatchString(strings.TrimSpace(statement)) || oldTable.MatchString(statement) {
+			t.Fatalf("migration statement is not additive: %q", statement)
+		}
+	}
+	cfg := store.Config{Now: func() time.Time { return baseTime }, Rand: new(counterRandom)}
+	path := filepath.Join(t.TempDir(), "previous.db")
+	d, old := open(t, path, earlier, cfg)
+	h, _ := create(t, old)
+	a, _ := place(t, old, "legacy", h.Name)
+	u := value(t, result(old.AddUser(ctx, a.Slug, "existing-user", firstKey, caller)))
+	checkErr(t, d.Close(), nil)
+
+	d, expanded := open(t, path, migrations, cfg)
+	eq(t, value(t, result(expanded.User(ctx, a.Slug, u.Name))), u)
+	eq(t, value(t, result(expanded.Invites(ctx, a.Slug))), []store.Invite{})
+	i, token := invite(t, expanded, a.Slug, true)
+	checkErr(t, d.Close(), nil)
+
+	d, old = open(t, path, earlier, cfg)
+	other := value(t, result(old.AddUser(ctx, a.Slug, "new-user", firstKey, caller)))
+	checkErr(t, d.Close(), nil)
+
+	_, expanded = open(t, path, migrations, cfg)
+	eq(t, value(t, result(expanded.User(ctx, a.Slug, u.Name))), u)
+	eq(t, value(t, result(expanded.User(ctx, a.Slug, other.Name))), other)
+	eq(t, value(t, result(expanded.InviteByToken(ctx, token))), i)
 }

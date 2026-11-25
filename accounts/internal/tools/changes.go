@@ -188,7 +188,7 @@ func parseKey(line string) (store.Key, error) {
 }
 
 func userChange(u store.User) UserChange {
-	return UserChange{User: u.Name, Account: u.Account, State: u.State, Pending: u.Pending}
+	return UserChange{User: u.Name, Account: u.Account, Admin: u.Admin, State: u.State, Pending: u.Pending}
 }
 
 func (cfg Config) addUser(ctx context.Context, c identity.Caller, a UserKeyArgs, r *changeRecord) (UserChange, error) {
@@ -236,7 +236,7 @@ func (cfg Config) removeKey(ctx context.Context, _ identity.Caller, a UserKeyArg
 	if err != nil {
 		return KeyRemoved{}, storeError(err, NoUser)
 	}
-	return KeyRemoved{User: u.Name, Account: u.Account, State: u.State, Pending: u.Pending, KeysLeft: left}, nil
+	return KeyRemoved{User: u.Name, Account: u.Account, Admin: u.Admin, State: u.State, Pending: u.Pending, KeysLeft: left}, nil
 }
 
 func (cfg Config) userOperation(operation func(context.Context, string, string) (store.User, error)) func(context.Context, identity.Caller, UserArgs, *changeRecord) (UserChange, error) {

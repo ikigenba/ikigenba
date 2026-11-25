@@ -20,14 +20,18 @@ import (
 
 // The daemon fleet uses these paths, query names, and media types.
 const (
-	BinaryPath    = "/accountsd"
-	StatePath     = "/accountsd/v1/state"
-	ReportPath    = "/accountsd/v1/report"
-	QueryAfter    = "after"
-	QueryDigest   = "digest"
-	ContentJSON   = "application/json"
-	ContentBinary = "application/octet-stream"
-	DigestPrefix  = "sha256:"
+	BinaryPath      = "/accountsd"
+	StatePath       = "/accountsd/v1/state"
+	ReportPath      = "/accountsd/v1/report"
+	BoxPath         = "/accountsd/v1/box"
+	QueryAfter      = "after"
+	QueryDigest     = "digest"
+	QueryUID        = "uid"
+	MethodToolsList = "tools/list"
+	MethodToolsCall = "tools/call"
+	ContentJSON     = "application/json"
+	ContentBinary   = "application/octet-stream"
+	DigestPrefix    = "sha256:"
 )
 
 // Wire version, payload bounds, and polling interval.
@@ -36,6 +40,8 @@ const (
 	MaxStateBytes  = 2 << 20
 	MaxReportBytes = 256 << 10
 	MaxBinaryBytes = 64 << 20
+	MaxBoxRequest  = 64 << 10
+	MaxBoxAnswer   = 1 << 20
 	MaxErrorBytes  = 4096
 	MaxFailedUnits = 100
 	MaxSlices      = 50

@@ -44,13 +44,13 @@ func (h *Host) configureAutomatic() error {
 		return hostError(updatesConfig, err)
 	}
 	defer func() { _ = input.Close() }()
-	return h.writeStream(updatesConfig, info.Mode()&permissionBits, func(output io.Writer) (bool, error) {
+	return h.writeStream(updatesConfig, info.Mode()&permissionBits, func(output *os.File) (bool, error) {
 		return rewriteAutomatic(input, info.Size(), output)
 	})
 }
 
 // writeStream atomically replaces a file with streamed content when it differs.
-func (h *Host) writeStream(path string, mode fs.FileMode, write func(io.Writer) (bool, error)) error {
+func (h *Host) writeStream(path string, mode fs.FileMode, write func(*os.File) (bool, error)) error {
 	dest := h.path(path)
 	dir := filepath.Dir(dest)
 	if err := h.mkdir(filepath.Dir(path)); err != nil {

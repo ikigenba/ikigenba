@@ -19,6 +19,7 @@ type hardeningFixture struct {
 	t        *testing.T
 	root     string
 	host     *linux.Host
+	env      linux.Env
 	commands []string
 	answer   func(string) (linux.Result, bool)
 	observe  func(linux.Command)
@@ -40,7 +41,7 @@ func newHardeningFixture(t *testing.T) *hardeningFixture {
 	} {
 		f.put(path, contents, 0o644)
 	}
-	f.host = linux.New(linux.Env{
+	f.env = linux.Env{
 		Root: f.root,
 		Now:  func() time.Time { return time.Unix(1_000, 0) },
 		Execute: func(_ context.Context, c linux.Command) (linux.Result, error) {
@@ -72,7 +73,8 @@ func newHardeningFixture(t *testing.T) *hardeningFixture {
 			}
 			return linux.Result{}, nil
 		},
-	})
+	}
+	f.host = linux.New(f.env)
 	return f
 }
 
@@ -249,6 +251,75 @@ func TestApplyPackages(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestApplyStopsAtCommandFailure(t *testing.T) {
+	// R-MKVI-5RAJ
+	launchError := errors.New("executable unavailable")
+	for _, tc := range []struct {
+		name, command, label string
+		err                  error
+	}{
+		{"launch error", "nft list table inet ikigenba_imds", "nft", launchError},
+		{"systemctl status", "systemctl daemon-reload", "systemctl daemon-reload", nil},
+		{"dnf status", "dnf install -y git", "dnf install", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newHardeningFixture(t)
+			if tc.label == "dnf install" {
+				f.answer = func(call string) (linux.Result, bool) {
+					return linux.Result{ExitCode: 1}, call == "rpm -q git"
+				}
+			}
+			want := linux.Result{ExitCode: 7, Stdout: []byte("partial stdout"), Stderr: []byte("partial stderr")}
+			execute := f.env.Execute
+			f.env.Execute = func(ctx context.Context, c linux.Command) (linux.Result, error) {
+				res, err := execute(ctx, c)
+				if f.commands[len(f.commands)-1] == tc.command {
+					return want, tc.err
+				}
+				return res, err
+			}
+			f.host = linux.New(f.env)
+			err := f.host.Apply(t.Context(), protocol.DesiredState{DataVolume: "vol-12345678"})
+			var commandErr *linux.CommandError
+			if !errors.As(err, &commandErr) || commandErr.Label != tc.label || !errors.Is(commandErr.Err, tc.err) {
+				t.Fatalf("Apply error = %v, want CommandError with label %q and cause %v", err, tc.label, tc.err)
+			}
+			got := commandErr.Result
+			if got.ExitCode != want.ExitCode || !slices.Equal(got.Stdout, want.Stdout) || !slices.Equal(got.Stderr, want.Stderr) {
+				t.Fatalf("CommandError.Result = %+v, want %+v", got, want)
+			}
+			if f.commands[len(f.commands)-1] != tc.command {
+				t.Fatalf("commands continued after failure: %v", f.commands)
+			}
+			f.expectAbsent(hardenJournal)
+			f.expectAbsent(claudeSettingsPath)
+			if tc.label != "dnf install" {
+				f.expectFile(hardenIMDSUnit, wantIMDSUnit, 0o644)
+			}
+		})
+	}
+}
+
+func TestApplyStopsAtHostFilesystemFailure(t *testing.T) {
+	// R-MKVI-5RAJ
+	f := newHardeningFixture(t)
+	const path = "/etc/dnf/vars/releasever"
+	if err := os.MkdirAll(f.path(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err := f.host.Apply(t.Context(), protocol.DesiredState{DataVolume: "vol-12345678"})
+	if !errors.Is(err, fs.ErrInvalid) || !strings.Contains(err.Error(), path) {
+		t.Fatalf("Apply error = %v, want invalid path %s", err, path)
+	}
+	if f.commands[len(f.commands)-1] != "journalctl --flush" {
+		t.Fatalf("commands continued after filesystem failure: %v", f.commands)
+	}
+	f.expectFile(hardenJournal, wantJournal, 0o644)
+	f.expectAbsent(hardenUpdates)
+	f.expectAbsent(hardenJail)
+	f.expectAbsent(claudeSettingsPath)
 }
 
 func TestApplyHostHardening(t *testing.T) {

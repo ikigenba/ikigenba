@@ -13,12 +13,13 @@ import (
 
 // Config connects the tools to the store, cloud, operations engine and trail.
 type Config struct {
-	Store      *store.Store
-	Cloud      cloud.Cloud
-	Hosts      settings.Hosts
-	Configured bool
-	Wake       func()
-	Telemetry  *telemetry.Writer
+	Store       *store.Store
+	Cloud       cloud.Cloud
+	Hosts       settings.Hosts
+	Configured  bool
+	Wake        func()
+	Telemetry   *telemetry.Writer
+	AccountsURL func() (string, error)
 }
 
 // DNSCheckTimeout bounds one account's DNS reservation check.
@@ -51,6 +52,10 @@ const (
 	ToolLockUser      = "lock_user"
 	ToolUnlockUser    = "unlock_user"
 	ToolDeleteUser    = "delete_user"
+	ToolSetAdmin      = "set_admin"
+	ToolCreateInvite  = "create_invite"
+	ToolListInvites   = "list_invites"
+	ToolRevokeInvite  = "revoke_invite"
 	ToolUnbanIP       = "unban_ip"
 	ToolAllowIP       = "allow_ip"
 	ToolDisallowIP    = "disallow_ip"
@@ -77,6 +82,10 @@ const (
 	DescribeLockUser      string = "Lock a user and keep their access settings."
 	DescribeUnlockUser    string = "Restore access to a locked user."
 	DescribeDeleteUser    string = "Delete a locked user and their home."
+	DescribeSetAdmin      string = "Set or clear an SSH user’s account admin flag."
+	DescribeCreateInvite  string = "Make a single-use invite link for an SSH account."
+	DescribeListInvites   string = "List unexpired, unused invites for an SSH account."
+	DescribeRevokeInvite  string = "Revoke an unexpired, unused SSH account invite."
 	DescribeUnbanIP       string = "Lift an SSH ban on one running host or all running hosts."
 	DescribeAllowIP       string = "Allow an address or network on one SSH host and lift any bans it covers."
 	DescribeDisallowIP    string = "Remove an address or network from one SSH host's allowlist."
@@ -85,6 +94,8 @@ const (
 	ArgAccount            string = "SSH account slug."
 	ArgUser               string = "SSH user name."
 	ArgKey                string = "OpenSSH public key, including its comment."
+	ArgAdmin              string = "Whether the user has account admin rights."
+	ArgInvite             string = "SSH account invite ID."
 	ArgType               string = "EC2 instance type."
 	ArgRootGB             string = "Root volume size in GB."
 	ArgDataGB             string = "Data volume size in GB."
@@ -126,6 +137,9 @@ const (
 	InvalidAddress  string = "the IP address or allowlist entry is invalid"
 	PrefixTooWide   string = "the allowlist prefix must be at least /24 for IPv4 or /48 for IPv6"
 	TooManyUnbans   string = "a host already holds its maximum number of pending unbans"
+	TooManyInvites  string = "the account already holds its maximum number of unexpired invites"
+	NoInvite        string = "no unexpired, unused invite has that id"
+	NoLink          string = "this space has no accounts URL for invite links"
 	AllowlistFull   string = "the host already holds its maximum number of allowlist entries"
 )
 
@@ -190,6 +204,24 @@ type UserKeyArgs struct {
 	Account string `json:"account" description:"SSH account slug." mcp:"required"`
 	User    string `json:"user" description:"SSH user name." mcp:"required"`
 	Key     string `json:"key" description:"OpenSSH public key, including its comment." mcp:"required"`
+}
+
+// SetAdminArgs sets the admin flag of a named account user.
+type SetAdminArgs struct {
+	Account string `json:"account" description:"SSH account slug." mcp:"required"`
+	User    string `json:"user" description:"SSH user name." mcp:"required"`
+	Admin   bool   `json:"admin" description:"Whether the user has account admin rights." mcp:"required"`
+}
+
+// CreateInviteArgs creates an invite for one account.
+type CreateInviteArgs struct {
+	Account string `json:"account" description:"SSH account slug." mcp:"required"`
+	Admin   *bool  `json:"admin" description:"Whether the user has account admin rights."`
+}
+
+// InviteArgs identifies an invite.
+type InviteArgs struct {
+	Invite string `json:"invite" description:"SSH account invite ID." mcp:"required"`
 }
 
 // UnbanArgs selects an address and, optionally, one running host.
@@ -296,6 +328,7 @@ type Account struct {
 	State     string `json:"state" mcp:"required"`
 	Reason    string `json:"reason" mcp:"required"`
 	Users     int    `json:"users" mcp:"required"`
+	Invites   int    `json:"invites" mcp:"required"`
 	Created   string `json:"created" mcp:"required"`
 	CreatedBy string `json:"created_by" mcp:"required"`
 }
@@ -314,6 +347,7 @@ type AccountRead struct {
 	State     string     `json:"state" mcp:"required"`
 	Reason    string     `json:"reason" mcp:"required"`
 	Users     int        `json:"users" mcp:"required"`
+	Invites   int        `json:"invites" mcp:"required"`
 	Created   string     `json:"created" mcp:"required"`
 	CreatedBy string     `json:"created_by" mcp:"required"`
 	UserNames []string   `json:"user_names" mcp:"required"`
@@ -324,6 +358,7 @@ type AccountRead struct {
 type User struct {
 	User       string   `json:"user" mcp:"required"`
 	Account    string   `json:"account" mcp:"required"`
+	Admin      bool     `json:"admin" mcp:"required"`
 	State      string   `json:"state" mcp:"required"`
 	Pending    bool     `json:"pending" mcp:"required"`
 	Keys       []string `json:"keys" mcp:"required"`
@@ -342,6 +377,7 @@ type UserList struct {
 type UserChange struct {
 	User    string `json:"user" mcp:"required"`
 	Account string `json:"account" mcp:"required"`
+	Admin   bool   `json:"admin" mcp:"required"`
 	State   string `json:"state" mcp:"required"`
 	Pending bool   `json:"pending" mcp:"required"`
 }
@@ -350,7 +386,34 @@ type UserChange struct {
 type KeyRemoved struct {
 	User     string `json:"user" mcp:"required"`
 	Account  string `json:"account" mcp:"required"`
+	Admin    bool   `json:"admin" mcp:"required"`
 	State    string `json:"state" mcp:"required"`
 	Pending  bool   `json:"pending" mcp:"required"`
 	KeysLeft int    `json:"keys_left" mcp:"required"`
+}
+
+// Invite describes an unexpired invite without its token.
+type Invite struct {
+	Invite    string `json:"invite" mcp:"required"`
+	Account   string `json:"account" mcp:"required"`
+	Admin     bool   `json:"admin" mcp:"required"`
+	Created   string `json:"created" mcp:"required"`
+	Expires   string `json:"expires" mcp:"required"`
+	CreatedBy string `json:"created_by" mcp:"required"`
+}
+
+// InviteMade includes the link returned when an invite is created.
+type InviteMade struct {
+	Invite    string `json:"invite" mcp:"required"`
+	Account   string `json:"account" mcp:"required"`
+	Admin     bool   `json:"admin" mcp:"required"`
+	Created   string `json:"created" mcp:"required"`
+	Expires   string `json:"expires" mcp:"required"`
+	CreatedBy string `json:"created_by" mcp:"required"`
+	Link      string `json:"link" mcp:"required"`
+}
+
+// InviteList contains one account's unexpired, unused invites.
+type InviteList struct {
+	Invites []Invite `json:"invites" mcp:"required"`
 }

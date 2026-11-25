@@ -27,12 +27,14 @@ import (
 var _ machine.Machine = (*linux.Host)(nil)
 
 func TestLinuxSeam(t *testing.T) {
-	// R-U3TQ-ZWIA R-BNWV-O81H R-BP4S-1ZS6 R-BQCO-FRIV
+	// R-SABI-JHU5 R-BNWV-O81H R-BP4S-1ZS6 R-BQCO-FRIV
 	var host machine.Machine = linux.New(linux.Env{
 		Root:    t.TempDir(),
 		Execute: func(context.Context, linux.Command) (linux.Result, error) { return linux.Result{}, nil },
 		Now:     func() time.Time { return time.Unix(0, 0) },
 		Sleep:   func(time.Duration) {},
+		Fetch:   func(context.Context, string) (io.ReadCloser, error) { return io.NopCloser(strings.NewReader("")), nil },
+		Stderr:  io.Discard,
 	})
 	if host == (*linux.Host)(nil) {
 		t.Fatal("New returned a nil host")
@@ -61,11 +63,12 @@ func TestLinuxSeam(t *testing.T) {
 }
 
 func TestExec(t *testing.T) {
-	// R-U7HG-57QD
+	// R-SCRB-B1BJ
 	env := linux.Real()
 	if env.Root != "/" || reflect.ValueOf(env.Execute).Pointer() != reflect.ValueOf(linux.Exec).Pointer() ||
 		reflect.ValueOf(env.Now).Pointer() != reflect.ValueOf(time.Now).Pointer() ||
-		reflect.ValueOf(env.Sleep).Pointer() != reflect.ValueOf(time.Sleep).Pointer() {
+		reflect.ValueOf(env.Sleep).Pointer() != reflect.ValueOf(time.Sleep).Pointer() ||
+		reflect.ValueOf(env.Fetch).Pointer() != reflect.ValueOf(linux.Get).Pointer() || env.Stderr != os.Stderr {
 		t.Fatal("Real returned unexpected seams")
 	}
 	script := filepath.Join(t.TempDir(), "probe.sh")
@@ -158,7 +161,7 @@ func (b *endlessBytes) Read(p []byte) (int, error) {
 }
 
 func TestInstallDaemon(t *testing.T) {
-	// R-D5KG-I4O1
+	// R-D5KG-I4O1 R-CSTR-M40L
 	f := newHardeningFixture(t)
 	const staging = "/usr/local/bin/.accountsd.new"
 	const body = "\x7fELFhost replacement"
@@ -189,7 +192,7 @@ func TestInstallDaemon(t *testing.T) {
 }
 
 func TestInspectHost(t *testing.T) {
-	// R-BSSH-7B09 R-5DW4-003H R-D0OU-Z1P9 R-D1WR-CTFY R-D34N-QL6N R-D4CK-4CXC
+	// R-5DW4-003H R-D0OU-Z1P9 R-D1WR-CTFY R-D34N-QL6N R-D4CK-4CXC R-CSTR-M40L
 	f := newHardeningFixture(t)
 	const cgroups = "/sys/fs/cgroup/acct.slice/"
 	for path, text := range map[string]string{
@@ -424,8 +427,11 @@ func TestApplyChangesOnlyManagedFiles(t *testing.T) {
 	seedApplySudoers(f)
 	before := snapshotApplyHost(t, f.root)
 	commands := applyRecordingCommands(f, protocol.DesiredState{})
-	expectApplyCommands(t, commands, append(initialHardeningCommands(f), []string{"systemctl", "daemon-reload"})...)
-	assertHostChanges(t, before, snapshotApplyHost(t, f.root), append(hardeningPaths(), "/var/log/journal", linux.SkelDir, linux.KeysDir, linux.SessionHelper))
+	after := snapshotApplyHost(t, f.root)
+	want := append(initialHardeningCommands(f), []string{"systemctl", "daemon-reload"})
+	want = appendSecureCommands(f, want, after, linux.MCPHelper)
+	expectApplyCommands(t, commands, want...)
+	assertHostChanges(t, before, after, append(hardeningPaths(), "/var/log/journal", linux.SkelDir, linux.KeysDir, linux.SessionHelper, linux.MCPHelper))
 }
 
 func seedApplySudoers(f *hardeningFixture) {
@@ -490,7 +496,7 @@ func hardeningPaths() []string {
 }
 
 func TestApplyChangesOnlyManagedFilesWithUsersAndData(t *testing.T) {
-	// R-UJOF-YX5B
+	// R-UJOF-YX5B R-SDZ7-OT28 R-CSTR-M40L
 	f := newHardeningFixture(t)
 	const unitDir = "/etc/systemd/system/"
 	const folder = "/srv/citron"
@@ -507,8 +513,10 @@ func TestApplyChangesOnlyManagedFilesWithUsersAndData(t *testing.T) {
 		f.put(path, "fixture for "+path, 0o664)
 	}
 	f.setMode(home, 0o755)
-	f.put("/etc/group", "shell:x:990:alice\ncitron:x:24000:alice\nalice:x:24001:\n", 0o644)
-	f.put("/etc/passwd", "citron:x:24000:24000::/srv/citron:/usr/sbin/nologin\nalice:x:24001:24001::/home/alice:/bin/bash\n", 0o644)
+	f.put("/etc/group", "shell:x:990:alice,unlisted\ncitron:x:24000:alice\nalice:x:24001:\npear:x:24010:\n", 0o644)
+	f.put("/etc/passwd", "citron:x:24000:24000::/srv/citron:/usr/sbin/nologin\nalice:x:24001:24001::/home/alice:/bin/bash\n"+
+		"unlisted:x:24002:24002::/home/unlisted:/bin/bash\npear:x:24010:24010::/srv/pear:/usr/sbin/nologin\n", 0o644)
+	f.put("/etc/shadow", "alice:!:1:::::1:\nunlisted:!:1::::::\n", 0o600)
 	f.put("/etc/pam.d/sshd", "session include password-auth\n", 0o644)
 	f.put(sharedPAMPath, "-session optional pam_systemd.so\n", 0o644)
 	gitQuery := []string{"git", "config", "--file", f.path("/etc/gitconfig"), "--get-all", "safe.directory"}
@@ -518,7 +526,7 @@ func TestApplyChangesOnlyManagedFilesWithUsersAndData(t *testing.T) {
 	}
 	before := snapshotApplyHost(t, f.root)
 	commands := applyRecordingCommands(f, protocol.DesiredState{
-		DataVolume: "vol-12345678",
+		DataVolume: "vol-12345678", Unban: []string{"192.0.2.7"},
 		Accounts: []protocol.Account{
 			{Slug: "citron", GID: 24000, State: protocol.AccountActive},
 			{Slug: "pear", GID: 24010, State: protocol.AccountRemoved},
@@ -533,27 +541,62 @@ func TestApplyChangesOnlyManagedFilesWithUsersAndData(t *testing.T) {
 		unitDir + linux.AccountSlice("citron"), unitDir + linux.PersonSlice("citron", "alice"), aliceKeys}
 	secureFirst := []string{linux.DaemonPath, linux.SessionHelper, linux.HostKeyDir, dataPrivateKey, dataPublicKey, linux.KeysDir}
 	managed := slices.Concat(hardeningPaths(), volumeFiles, secureFirst,
-		[]string{"/var/log/journal", linux.SkelDir, "/data/home", "/data/srv", folder, home, retiredKeys, staleSlice, sharedPAMPath})
+		[]string{"/var/log/journal", linux.SkelDir, "/data/home", "/data/srv", folder, home, retiredKeys, staleSlice,
+			sharedPAMPath, linux.MCPHelper, claudeRepoPath, linux.ClaudeStamp}, claudeFilePaths())
 	assertHostChanges(t, before, after, managed)
 
 	dataDevice := f.path("/dev/nvme1n1")
-	want := append(initialHardeningCommands(f),
+	want := [][]string{
+		{"usermod", "--expiredate", "1", "unlisted"},
+		{"systemctl", "is-active", "user-24002.slice"},
+		{"systemctl", "stop", "user-24002.slice"},
+	}
+	hardening := initialHardeningCommands(f)
+	bans := slices.IndexFunc(hardening, func(cmd []string) bool {
+		return slices.Equal(cmd, []string{"systemctl", "reload", "fail2ban.service"})
+	}) + 1
+	want = append(want, hardening[:bans]...)
+	want = append(want, []string{"fail2ban-client", "set", "sshd", "unbanip", "192.0.2.7"})
+	want = append(want, hardening[bans:]...)
+	want = append(want,
 		[]string{"blkid", "-p", "--output", "export", dataDevice}, []string{"systemctl", "daemon-reload"},
 		[]string{"systemctl", "is-enabled", "data.mount"}, []string{"systemctl", "is-active", "data.mount"},
 		[]string{"systemctl", "is-enabled", "home.mount"}, []string{"systemctl", "is-active", "home.mount"},
 		[]string{"systemctl", "is-enabled", "srv.mount"}, []string{"systemctl", "is-active", "srv.mount"},
 		[]string{"blockdev", "--getsize64", dataDevice}, []string{"xfs_growfs", "-d", f.path("/data")}, []string{"systemctl", "daemon-reload"},
 		[]string{"sshd", "-t", "-f", f.path("/etc/ssh/sshd_config")}, []string{"systemctl", "reload", "sshd.service"}, []string{"systemctl", "daemon-reload"})
+	want = appendSecureCommands(f, want, after, linux.MCPHelper)
 	if before[folder].uid != 24000 || before[folder].gid != 24000 {
 		want = append(want, []string{"chown", "citron:citron", f.path(folder)}, []string{"setfacl", "-d", "-m", "g::rwx,o::-", f.path(folder)})
 	}
-	want = append(want, gitQuery)
+	want = append(want, gitQuery, []string{"usermod", "--expiredate", "", "alice"},
+		[]string{"userdel", "pear"}, []string{"groupdel", "pear"})
 	secureLater := slices.Concat(hardeningPaths(), volumeFiles, []string{dataPrivateKey, dataPublicKey, sharedPAMPath})
 	slices.Sort(secureLater)
-	for _, path := range slices.Concat(secureFirst, secureLater) {
+	want = appendSecureCommands(f, want, after, slices.Concat(secureFirst, secureLater)...)
+	want = appendSecureCommands(f, want, after, claudeDirectories...)
+	want = appendSecureCommands(f, want, after, claudeFilePaths()...)
+	want = append(want, strings.Fields(claudeKeyProbe))
+	want = appendSecureCommands(f, want, after, claudeRepoPath)
+	want = append(want, []string{"rpm", "-q", "claude-code"})
+	if info := after[linux.ClaudeStamp]; info.uid != 0 || info.gid != 0 {
+		found := slices.IndexFunc(commands, func(c linux.Command) bool {
+			return stagedStampPath(f, c) != ""
+		})
+		if found < 0 {
+			t.Fatal("did not prepare stamp ownership")
+		}
+		want = append(want, []string{"chown", "--no-dereference", "root:root", stagedStampPath(f, commands[found])})
+	}
+	want = append(want, strings.Fields(claudeUpgrade))
+	expectApplyCommands(t, commands, want...)
+}
+
+func appendSecureCommands(f *hardeningFixture, want [][]string, after map[string]applyHostFile, paths ...string) [][]string {
+	for _, path := range paths {
 		if info := after[path]; info.uid != 0 || info.gid != 0 {
 			want = append(want, []string{"chown", "--no-dereference", "root:root", f.path(path)})
 		}
 	}
-	expectApplyCommands(t, commands, want...)
+	return want
 }

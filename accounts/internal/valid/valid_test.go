@@ -174,3 +174,12 @@ func TestHostSizes(t *testing.T) {
 		}
 	}
 }
+
+// R-IFJS-83M2
+func TestMaximumCallerIDBytes(t *testing.T) {
+	type size int
+	const limit size = valid.MaxUserIDBytes
+	if limit != 64 {
+		t.Fatalf("MaxUserIDBytes = %d, want 64", limit)
+	}
+}

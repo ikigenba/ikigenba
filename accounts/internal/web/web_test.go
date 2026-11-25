@@ -3,13 +3,18 @@ package web_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -20,6 +25,7 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud/memory"
 	"github.com/ikigenba/ikigenba/accounts/internal/daemonapi"
 	"github.com/ikigenba/ikigenba/accounts/internal/hostauth"
+	"github.com/ikigenba/ikigenba/accounts/internal/join"
 	"github.com/ikigenba/ikigenba/accounts/internal/pages"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 	"github.com/ikigenba/ikigenba/accounts/internal/settings"
@@ -42,13 +48,17 @@ type fixture struct {
 	d       *db.DB
 	path    string
 	now     func() time.Time
+	advance func(time.Duration)
 	wakes   atomic.Int32
 }
 
 func setup(t *testing.T) *fixture {
 	t.Helper()
 	t.Setenv(services.Variable, "")
-	now := func() time.Time { return time.Date(2026, 11, 17, 14, 3, 7, 0, time.UTC) }
+	var elapsed atomic.Int64
+	now := func() time.Time {
+		return time.Date(2026, 11, 17, 14, 3, 7, 0, time.UTC).Add(time.Duration(elapsed.Load()))
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "accounts.db")
 	d, err := db.Open(t.Context(), db.Config{Path: path, Migrations: accounts.Migrations(), Now: now})
@@ -56,14 +66,14 @@ func setup(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = d.Close() })
-	st := store.New(d, store.Config{Now: now, Rand: strings.NewReader("mock-id1mock-id2mock-id3mock-id4")})
+	st := store.New(d, store.Config{Now: now, Rand: rand.NewChaCha8([32]byte{1})})
 	capture := &telemetry.Capture{}
 	w := telemetry.New(telemetry.Config{Service: pages.ServiceName, Sink: capture, Now: now, Rand: bytes.NewReader(bytes.Repeat([]byte{0x5a}, 1<<16)), Stderr: io.Discard, Sleep: func(context.Context, time.Duration) {}})
 	t.Cleanup(func() { w.Shutdown(context.Background(), "test") })
 	banner := func(u page.User) page.Banner {
 		return page.Banner{Service: pages.ServiceName, Release: "chosen-release", Commit: "chosen-commit", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Tools: true}
 	}
-	s, err := settings.Read(func(name string) (string, bool) { return "1", name == "IKIGENBA_SANDBOX" })
+	s, err := settings.Read(func(name string) (string, bool) { return "", name == "IKIGENBA_SANDBOX" })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +92,7 @@ func setup(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(ds.Stop)
-	f := &fixture{capture: capture, d: d, path: path, now: now}
+	f := &fixture{capture: capture, d: d, path: path, now: now, advance: func(d time.Duration) { elapsed.Add(int64(d)) }}
 	wake := func() { f.wakes.Add(1) }
 	f.cfg = web.Config{banner, mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: w}), "", st, c, hosts, true, wake, ds, w, s}
 	return f
@@ -113,7 +123,7 @@ func same(t *testing.T, a, b *httptest.ResponseRecorder) {
 	}
 }
 
-// R-GC6V-KP5O R-QMQR-HIVU R-GEMO-C8N2 R-QSU9-EDLB R-GIAD-HJV5 R-GJI9-VBLU R-QVA2-5X2P
+// R-GC6V-KP5O R-QMQR-HIVU R-GEMO-C8N2 R-QSU9-EDLB R-GIAD-HJV5 R-7K9K-2B09 R-QVA2-5X2P
 func TestRouteDispatch(t *testing.T) {
 	f := setup(t)
 	st := f.cfg.Store
@@ -150,7 +160,7 @@ func TestRouteDispatch(t *testing.T) {
 				target  string
 				handler http.Handler
 			}{
-				{"/", ph}, {"/tools?ignored=one", ph}, {"/about", ph}, {"/hosts/" + host.Name, ph}, {"/nope", ph}, {"/mcp/", ph}, {"/events", ph}, {"/declarations", ph}, {"/_appkit", ph}, {"/accountsdx", ph},
+				{"/", ph}, {"/tools?ignored=one", ph}, {"/about", ph}, {"/hosts/" + host.Name, ph}, {"/nope", ph}, {"/mcp/", ph}, {"/events", ph}, {"/declarations", ph}, {"/_appkit", ph}, {"/accountsdx", ph}, {"/join", ph}, {"/joinx", ph}, {"/JOIN/x", ph},
 				{"/_appkit/theme.css", page.Static()}, {"/_appkit/not-present", page.Static()},
 				{protocol.BinaryPath, f.cfg.Daemon}, {protocol.StatePath, f.cfg.Daemon}, {"/accountsd//malformed", f.cfg.Daemon}, {"/%61ccountsd?ignored=one", f.cfg.Daemon},
 			} {
@@ -236,7 +246,7 @@ func assertEmptyStore(t *testing.T, st *store.Store) {
 	}
 }
 
-// R-GUNC-P0SM R-QP6K-92D8 R-QVA2-5X2P
+// R-7NX9-7M8C R-QP6K-92D8 R-QVA2-5X2P
 func TestMCPRegistrationAndIdentity(t *testing.T) {
 	f := setup(t)
 	h := web.Handler(f.cfg)
@@ -245,15 +255,17 @@ func TestMCPRegistrationAndIdentity(t *testing.T) {
 		tools.ToolRetryHost, tools.ToolDeleteHost, tools.ToolAccounts, tools.ToolAccount, tools.ToolCreateAccount, tools.ToolRemoveAccount,
 		tools.ToolUsers, tools.ToolAddUser, tools.ToolAddKey, tools.ToolRemoveKey, tools.ToolLockUser, tools.ToolUnlockUser, tools.ToolDeleteUser,
 		tools.ToolUnbanIP, tools.ToolAllowIP, tools.ToolDisallowIP,
+		tools.ToolSetAdmin, tools.ToolCreateInvite, tools.ToolListInvites, tools.ToolRevokeInvite,
 	}
 	registered := f.cfg.MCP.Tools()
-	if len(registered) != len(catalog) {
-		t.Fatal("registered count", len(registered))
+	names := make([]string, 0, len(registered))
+	for _, tool := range registered {
+		names = append(names, tool.Name)
 	}
-	for i, tool := range registered {
-		if tool.Name != catalog[i] {
-			t.Fatal("registered tools", registered)
-		}
+	slices.Sort(names)
+	slices.Sort(catalog)
+	if !slices.Equal(names, catalog) {
+		t.Fatal("registered tools", names)
 	}
 	observed := make(chan identity.Caller, 1)
 	mcp.AddTool(f.cfg.MCP, mcp.Tool[struct{}, struct{}]{Name: "observe_caller", Description: "Chosen test description.", Effect: mcp.Read, Handler: func(_ context.Context, c identity.Caller, _ struct{}) (struct{}, error) {
@@ -275,6 +287,10 @@ func TestMCPRegistrationAndIdentity(t *testing.T) {
 	account := call[tools.Account](t, client, caller, tools.ToolCreateAccount, `{"account":"acme","host":"host01"}`)
 	if account.DNSName != "acme."+f.cfg.Hosts.Domain {
 		t.Fatal("create_account did not use hosts settings", account)
+	}
+	invite := call[tools.InviteMade](t, client, caller, tools.ToolCreateInvite, `{"account":"acme"}`)
+	if !strings.HasPrefix(invite.Link, "http://"+settings.SandboxBinding+"/join/") {
+		t.Fatalf("fallback invitation link = %q", invite.Link)
 	}
 	for _, first := range []string{"supplied", ""} {
 		r := makeRequest("POST", "/mcp", "", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"observe_caller","arguments":{}}}`))
@@ -323,18 +339,45 @@ func call[T any](t *testing.T, c *mcp.Client, caller identity.Caller, name, argu
 	return response.Data
 }
 
-// R-GKQ6-93CJ
+// R-7MPC-TUHN
 func TestOtherRoutesKeepRecordsAndDoNotUseCloud(t *testing.T) {
 	f := setup(t)
+	st := f.cfg.Store
+	caller := identity.Caller{UserID: "viewer"}
+	host, _, err := st.CreateHost(t.Context(), store.HostSpec{Type: "sample", RootGB: 20, DataGB: 50}, caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.PlaceAccount(t.Context(), "acme", host.Name, caller); err != nil {
+		t.Fatal(err)
+	}
 	// An unexpected cloud call invokes a nil embedded method and fails the test.
 	f.cfg.Cloud = struct{ cloud.Cloud }{}
 	h := web.Handler(f.cfg)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	client := mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL + "/mcp", HTTPClient: srv.Client()})
+	invite := call[tools.InviteMade](t, client, caller, tools.ToolCreateInvite, `{"account":"acme"}`)
+	link, err := url.Parse(invite.Link)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, user := range []string{"", "viewer"} {
 		for _, method := range []string{"GET", "POST", "DELETE"} {
-			for _, target := range []string{"/", "/tools", "/about", "/hosts/host01", "/nope", "/mcp/", "/_appkit/theme.css"} {
+			for _, target := range []string{"/", "/tools", "/about", "/hosts/host01", "/nope", "/mcp/", "/_appkit/theme.css", "/join"} {
 				request(h, method, target, user)
 			}
 		}
+		for _, method := range []string{"GET", "DELETE"} {
+			request(h, method, link.Path, user)
+		}
+	}
+	token := strings.TrimPrefix(link.Path, "/join/")
+	if found, err := st.InviteByToken(t.Context(), token); err != nil || found.ID != invite.Invite {
+		t.Fatalf("invite after reads = %+v, %v", found, err)
+	}
+	for _, user := range []string{"", "viewer"} {
+		postForm(h, link.Path, user, "chosen-request", "daffy")
 	}
 	if f.wakes.Load() != 0 {
 		t.Fatal("page or static route woke engine")
@@ -347,5 +390,132 @@ func TestOtherRoutesKeepRecordsAndDoNotUseCloud(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = d.Close() }()
-	assertEmptyStore(t, store.New(d, store.Config{Now: f.now}))
+	reopened := store.New(d, store.Config{Now: f.now})
+	list, err := reopened.ListUsers(t.Context(), "", "", "", 10)
+	if err != nil || len(list) != 1 || list[0].Name != "daffy" || list[0].Account != "acme" {
+		t.Fatalf("users after reopening = %+v, %v", list, err)
+	}
+	hostList, he := reopened.ListHosts(t.Context(), 0, 10)
+	accountsList, ae := reopened.ListAccounts(t.Context(), "", 10)
+	invites, ie := reopened.Invites(t.Context(), "acme")
+	if he != nil || ae != nil || ie != nil || len(hostList) != 1 || hostList[0].Name != host.Name || len(accountsList) != 1 || accountsList[0].Slug != "acme" || len(invites) != 0 {
+		t.Fatalf("records after reopening: hosts=%+v accounts=%+v invites=%+v errors=%v %v %v", hostList, accountsList, invites, he, ae, ie)
+	}
+	if report, err := reopened.Report(t.Context(), host.Name); err != nil || report != nil {
+		t.Fatalf("report after reopening = %+v, %v", report, err)
+	}
+}
+
+// R-7NX9-7M8C R-W5XI-KH4S
+func TestEnrollmentDispatch(t *testing.T) {
+	f := setup(t)
+	f.cfg.ServicesPath = filepath.Join(t.TempDir(), "services.json")
+	h := web.Handler(f.cfg)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	client := mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL + "/mcp", HTTPClient: srv.Client()})
+	caller := identity.Caller{UserID: "owner"}
+	call[tools.HostChange](t, client, caller, tools.ToolCreateHost, `{}`)
+	call[tools.Account](t, client, caller, tools.ToolCreateAccount, `{"account":"acme","host":"host01"}`)
+	invitePath := func(base string) string {
+		t.Helper()
+		body := fmt.Sprintf(`{"services":[{"name":"accounts","url":%q,"description":"fixture","socket":"","enabled":true,"mcp":true}]}`, base)
+		if err := os.WriteFile(f.cfg.ServicesPath, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+		invite := call[tools.InviteMade](t, client, caller, tools.ToolCreateInvite, `{"account":"acme"}`)
+		if !strings.HasPrefix(invite.Link, strings.TrimRight(base, "/")+"/join/") {
+			t.Fatalf("invite link = %q for base %q", invite.Link, base)
+		}
+		link, err := url.Parse(invite.Link)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return link.Path
+	}
+	first := invitePath("https://accounts.one.test/")
+	second := invitePath("https://accounts.two.test")
+	set, err := pages.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, viewer := range []string{"", "viewer"} {
+		want := httptest.NewRecorder()
+		set.Write(want, makeRequest(http.MethodGet, first, viewer, nil), http.StatusOK, "join", pages.JoinData{
+			Outcome: pages.JoinForm, Account: "acme", DNSName: "acme.hosts.test",
+		})
+		got := request(h, http.MethodGet, first, viewer)
+		if got.Code != want.Code || got.Body.String() != want.Body.String() {
+			t.Fatalf("form for %q answered %d, want %d with the join template", viewer, got.Code, want.Code)
+		}
+	}
+	direct := join.Handler(join.Config{Pages: set, Store: f.cfg.Store, Configured: true, Domain: f.cfg.Hosts.Domain,
+		Limiter: join.NewLimiter(f.now), Telemetry: f.cfg.Telemetry})
+	for _, target := range []string{"/join/", "/join/x/y", "/%6aoin/" + strings.TrimPrefix(first, "/join/"), first + "?user=ignore"} {
+		for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodDelete} {
+			same(t, request(h, method, target, "viewer"), request(direct, method, target, "viewer"))
+		}
+	}
+	f.d.SetFailing(true)
+	unavailable := postForm(h, first, "viewer", "unavailable-enrollment", "daffy")
+	f.d.SetFailing(false)
+	if unavailable.Code != http.StatusServiceUnavailable {
+		t.Fatalf("enrollment with unreachable store status = %d", unavailable.Code)
+	}
+	post := postForm(h, first, "", "", "daffy")
+	if post.Code != http.StatusOK {
+		t.Fatalf("enrollment status = %d", post.Code)
+	}
+	list := call[tools.UserList](t, client, caller, tools.ToolUsers, `{"account":"acme"}`)
+	if len(list.Users) != 1 || list.Users[0].User != "daffy" {
+		t.Fatalf("users after enrollment = %+v", list)
+	}
+	if err := f.cfg.Telemetry.Flush(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	var enrollmentID string
+	var used bool
+	for _, event := range f.capture.Events() {
+		if event.Name == "request.started" && event.Attrs["method"] == http.MethodPost && event.Attrs["path"] == "/join/" {
+			enrollmentID = event.RequestID
+		}
+		if event.Name == "invite.used" {
+			if used || enrollmentID == "" || event.RequestID != enrollmentID || event.RequestID == "unavailable-enrollment" || event.User != "" {
+				t.Fatalf("enrollment event = %+v, request id %q", event, enrollmentID)
+			}
+			used = true
+		}
+	}
+	if !used {
+		t.Fatal("missing enrollment event")
+	}
+	// Restore the tokens taken by the first two submissions.
+	f.advance(2 * join.Every)
+	for i := range join.Burst + 1 {
+		got := postForm(h, second, "", "rate-limit-request", "")
+		if (i == join.Burst) != (got.Code == http.StatusTooManyRequests) {
+			t.Fatalf("attempt %d = %d", i, got.Code)
+		}
+	}
+	if got := request(h, http.MethodGet, second, ""); got.Code != http.StatusOK {
+		t.Fatalf("GET after rate limit = %d", got.Code)
+	}
+	f.advance(join.Every)
+	if got := postForm(h, second, "", "refilled-request", ""); got.Code == http.StatusTooManyRequests {
+		t.Fatal("submission after refill was rate-limited")
+	}
+}
+
+func postForm(h http.Handler, path, caller, id, user string) *httptest.ResponseRecorder {
+	keyBlob := append([]byte{0, 0, 0, 11}, []byte("ssh-ed25519")...)
+	keyBlob = append(keyBlob, 0, 0, 0, 32)
+	keyBlob = append(keyBlob, bytes.Repeat([]byte{22}, 32)...)
+	form := url.Values{"user": {user}, "key": {"ssh-ed25519 " + base64.StdEncoding.EncodeToString(keyBlob)}}
+	r := makeRequest(http.MethodPost, path, caller, strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Header.Set("X-Real-IP", "192.0.2.7")
+	r.Header.Set("X-Request-Id", id)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	return w
 }

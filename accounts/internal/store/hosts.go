@@ -56,7 +56,7 @@ type hostOp struct {
 
 // CreateHost allocates a new host and records its provisioning operation.
 func (s *Store) CreateHost(ctx context.Context, spec HostSpec, c identity.Caller) (Host, Operation, error) {
-	out, err := write(ctx, s, allGiven(spec.Type, c.UserID) && spec.RootGB > 0 && spec.DataGB > 0, func(w *writing) (hostOp, error) {
+	out, err := write(ctx, s, spec.Type != "" && validCaller(c) && spec.RootGB > 0 && spec.DataGB > 0, func(w *writing) (hostOp, error) {
 		stamp := s.stamp()
 		seq, err := allocate(w.query, "host", 1)
 		if err != nil {
@@ -179,7 +179,7 @@ var transitional = map[string]string{OpCreate: HostProvisioning, OpStop: HostSto
 
 // StartHostOp checks the host's guards and records a new host operation.
 func (s *Store) StartHostOp(ctx context.Context, name, kind string, target Target, c identity.Caller) (Host, Operation, error) {
-	valid := allGiven(name, c.UserID) && kind != OpCreate && transitional[kind] != "" &&
+	valid := name != "" && validCaller(c) && kind != OpCreate && transitional[kind] != "" &&
 		(kind != OpResize || target.RootGB >= 0 && target.DataGB >= 0)
 	out, err := write(ctx, s, valid, func(w *writing) (hostOp, error) {
 		h, err := getHost(w.query, name)
@@ -212,7 +212,7 @@ func (s *Store) StartHostOp(ctx context.Context, name, kind string, target Targe
 
 // RetryHost resumes the failed operation of a live host.
 func (s *Store) RetryHost(ctx context.Context, name string, c identity.Caller) (Host, Operation, error) {
-	out, err := write(ctx, s, allGiven(name, c.UserID), func(w *writing) (hostOp, error) {
+	out, err := write(ctx, s, name != "" && validCaller(c), func(w *writing) (hostOp, error) {
 		h, err := getHost(w.query, name)
 		if err != nil {
 			return hostOp{}, err

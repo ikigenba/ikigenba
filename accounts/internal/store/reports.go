@@ -97,6 +97,10 @@ func reportSlices(q query, host string, entries []protocol.Slice) ([]protocol.Sl
 }
 
 func purgeUsers(q query, host string, applied int64) error {
+	if err := q.exec(`DELETE FROM user_admins WHERE uid IN (SELECT uid FROM ssh_users WHERE state = ?
+		AND version <= ? AND account IN (SELECT slug FROM accounts WHERE host = ?))`, UserRemoving, applied, host); err != nil {
+		return err
+	}
 	names, err := collect(q, func(r scanner) (name string, err error) {
 		err = r.Scan(&name)
 		return name, err

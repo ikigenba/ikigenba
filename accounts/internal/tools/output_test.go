@@ -21,7 +21,7 @@ type hostShape = struct {
 }
 type accountShape = struct {
 	Account, Host, DNSName, State, Reason string
-	Users                                 int
+	Users, Invites                        int
 	Created, CreatedBy                    string
 }
 
@@ -46,13 +46,15 @@ func TestOutputTypes(t *testing.T) {
 	}(tools.AccountList{})
 	_ = struct {
 		Account, Host, DNSName, State, Reason string
-		Users                                 int
+		Users, Invites                        int
 		Created, CreatedBy                    string
 		UserNames                             []string
 		Operation                             *tools.Operation
 	}(tools.AccountRead{})
 	_ = struct {
-		User, Account, State           string
+		User, Account                  string
+		Admin                          bool
+		State                          string
 		Pending                        bool
 		Keys                           []string
 		LastSignIn, Created, CreatedBy string
@@ -62,13 +64,17 @@ func TestOutputTypes(t *testing.T) {
 		Next  *string
 	}(tools.UserList{})
 	_ = struct {
-		User, Account, State string
-		Pending              bool
+		User, Account string
+		Admin         bool
+		State         string
+		Pending       bool
 	}(tools.UserChange{})
 	_ = struct {
-		User, Account, State string
-		Pending              bool
-		KeysLeft             int
+		User, Account string
+		Admin         bool
+		State         string
+		Pending       bool
+		KeysLeft      int
 	}(tools.KeyRemoved{})
 }
 
@@ -117,11 +123,11 @@ func wireArray(t *testing.T, obj json.RawMessage, name string, members ...string
 	wireMembers(t, items[0], members...)
 }
 
-// R-YPLT-6730 R-YS1L-XQKE R-YUHE-PA1S R-0ST1-VKCO R-YWX7-GTJ6 R-YY53-UL9V R-XTWF-85SY
+// R-YPLT-6730 R-YS1L-XQKE R-YUHE-PA1S R-CHE6-U55F R-CEYE-2LO1 R-CG6A-GDEQ R-XTWF-85SY
 func TestOutputEncoding(t *testing.T) {
 	hostFields := []string{"host", "state", "reason", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported"}
-	accountFields := []string{"account", "host", "dns_name", "state", "reason", "users", "created", "created_by"}
-	userFields := []string{"user", "account", "state", "pending", "keys", "last_sign_in", "created", "created_by"}
+	accountFields := []string{"account", "host", "dns_name", "state", "reason", "users", "invites", "created", "created_by"}
+	userFields := []string{"user", "account", "admin", "state", "pending", "keys", "last_sign_in", "created", "created_by"}
 	opFields := []string{"operation", "kind", "step", "status", "error", "started"}
 	next := "next-page"
 	hosts := testEncoding(t, tools.HostList{Hosts: []tools.Host{{}}, Next: &next})
@@ -164,8 +170,8 @@ func TestOutputEncoding(t *testing.T) {
 
 	wireMembers(t, testEncoding(t, tools.HostChange{}), "host", "state", "operation")
 	wireMembers(t, testEncoding(t, tools.HostResize{}), "host", "state", "operation", "restarts")
-	wireMembers(t, testEncoding(t, tools.UserChange{}), "user", "account", "state", "pending")
-	wireMembers(t, testEncoding(t, tools.KeyRemoved{}), "user", "account", "state", "pending", "keys_left")
+	wireMembers(t, testEncoding(t, tools.UserChange{}), "user", "account", "admin", "state", "pending")
+	wireMembers(t, testEncoding(t, tools.KeyRemoved{}), "user", "account", "admin", "state", "pending", "keys_left")
 
 	f := setup(t)
 	refusal(t, f.call(tools.ToolHost, tools.HostArgs{Host: "missing"}), tools.NoHost)
