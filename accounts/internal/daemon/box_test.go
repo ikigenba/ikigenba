@@ -741,9 +741,25 @@ func TestBoxTimeoutClosesConnectionWhoseAnswerCannotFinish(t *testing.T) {
 	}
 }
 
+type notifyingWriter struct {
+	io.Writer
+	writes chan struct{}
+}
+
+func (w notifyingWriter) Write(p []byte) (int, error) {
+	n, err := w.Writer.Write(p)
+	select {
+	case w.writes <- struct{}{}:
+	default:
+	}
+	return n, err
+}
+
 // R-KB3T-6KKT
 func TestBoxAcceptFailureIsReportedAndRetriedOrStopsAccepting(t *testing.T) {
 	s := newBoxScenario(t)
+	writes := make(chan struct{}, 2)
+	s.cfg.Stderr = notifyingWriter{Writer: s.cfg.Stderr, writes: writes}
 	pauses := make(chan time.Duration, 2)
 	sleep := s.cfg.Sleep
 	s.cfg.Sleep = func(ctx context.Context, d time.Duration) {
@@ -755,6 +771,7 @@ func TestBoxAcceptFailureIsReportedAndRetriedOrStopsAccepting(t *testing.T) {
 	s.start(t)
 	s.prime(t)
 	sendBox(t, s.listener.input, boxAccept{err: errors.New("temporary accept error")})
+	waitBox(t, writes)
 	if d := waitBox(t, pauses); d != daemon.MinBackoff {
 		t.Errorf("accept backoff = %v, want %v", d, daemon.MinBackoff)
 	}
@@ -762,6 +779,7 @@ func TestBoxAcceptFailureIsReportedAndRetriedOrStopsAccepting(t *testing.T) {
 	socketLine(t, client, "not JSON\n")
 	expectBoxAnswer(t, client, boxmcp.Answer{Refusal: daemon.CannotReach})
 	sendBox(t, s.listener.input, boxAccept{err: fmt.Errorf("external close: %w", net.ErrClosed)})
+	waitBox(t, writes)
 	s.state(t, activeBoxState(2, ""))
 	req := waitBox(t, s.polls)
 	if got := req.URL.Query().Get(protocol.QueryAfter); got != "2" {
