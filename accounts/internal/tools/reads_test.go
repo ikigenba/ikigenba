@@ -22,7 +22,7 @@ func wantToken(t *testing.T, got *string, token paging.Token, fields ...any) {
 	}
 }
 
-// R-Y2FP-WJZT R-Z30P-DO8N R-F3B6-QGWI R-F4J3-48N7 R-Z947-AIY4
+// R-Y2FP-WJZT R-Z30P-DO8N R-1BGW-0TPL R-1COS-ELGA R-Z947-AIY4
 func TestPaging(t *testing.T) {
 	f := setup(t)
 	if got := answer[tools.AccountList](t, f.call(tools.ToolAccounts, tools.AccountsArgs{})); got.Accounts == nil || len(got.Accounts) != 0 || got.Next != nil {
@@ -122,7 +122,7 @@ func readAccount(t *testing.T, f *fixture, account string) tools.AccountRead {
 	return answer[tools.AccountRead](t, f.call(tools.ToolAccount, tools.AccountArgs{Account: account}))
 }
 
-// R-EVZS-FUGC R-0V8U-N3U2 R-EX7O-TM71 R-F5QZ-I0DW R-F6YV-VS4L
+// R-11PO-YNS1 R-0V8U-N3U2 R-16LA-HQQT R-1DWO-SD6Z R-1F4L-64XO
 func TestReadAnswers(t *testing.T) {
 	f := setup(t)
 	f.serveLoopback()
@@ -130,19 +130,28 @@ func TestReadAnswers(t *testing.T) {
 	h, op := f.seedHost(false)
 	created := f.now.UTC().Format(time.RFC3339)
 	provisioning := readHost(t, f, h.Name)
+	dnsName := h.Name + "." + f.hosts.Domain
 	want := tools.HostRead{
-		Host: h.Name, State: store.HostProvisioning, Health: store.Health(h, f.now), Type: h.Type,
+		Host: h.Name, DNSName: dnsName, State: store.HostProvisioning, Health: store.Health(h, f.now), Type: h.Type,
 		RootGB: h.RootGB, DataGB: h.DataGB, Version: h.Version, Created: created, CreatedBy: f.caller.UserID,
 		AccountNames: []string{}, Allowlist: []string{}, Operation: &tools.Operation{Operation: op.ID, Kind: store.OpCreate, Status: store.OpRunning, Started: created},
 	}
 	if !reflect.DeepEqual(provisioning, want) {
 		t.Fatalf("provisioning %+v, want %+v", provisioning, want)
 	}
+	const recordReason = "DNS record already exists"
+	if err := f.st.NoteHostRecord(ctx, h.Name, "", recordReason); err != nil {
+		t.Fatal(err)
+	}
 	f.fail(op.ID, "provisioning failed")
 	failed := readHost(t, f, h.Name)
-	if failed.State != store.HostFailed || failed.Reason != "provisioning failed" ||
+	if failed.State != store.HostFailed || failed.DNSName != dnsName || failed.Reason != "provisioning failed" ||
 		failed.Operation == nil || failed.Operation.Status != store.OpFailed || failed.Operation.Error != failed.Reason {
 		t.Fatalf("failed host %+v", failed)
+	}
+	if listed := answer[tools.HostList](t, f.call(tools.ToolHosts, tools.HostsArgs{})); len(listed.Hosts) != 1 ||
+		listed.Hosts[0].State != store.HostFailed || listed.Hosts[0].Reason != failed.Reason || listed.Hosts[0].DNSName != dnsName {
+		t.Fatalf("failed host list %+v", listed)
 	}
 	retry := answer[tools.HostChange](t, f.call(tools.ToolRetryHost, tools.HostArgs{Host: h.Name}))
 	f.finish(retry.Operation, store.Update{InstanceID: "instance", DataVolume: "data-volume", EIP: "192.0.2.10"})
@@ -162,7 +171,7 @@ func TestReadAnswers(t *testing.T) {
 	f.now = f.now.Add(time.Minute).UTC().Truncate(time.Second)
 	signIn := f.now.Add(-time.Second)
 	body := protocol.Report{
-		Protocol: protocol.Version, Applied: h.Version, Attempted: h.Version, InstanceID: h.InstanceID,
+		Protocol: protocol.Version, Applied: h.Version, Attempted: h.Version, InstanceID: h.InstanceID, Hostname: "chosen.report.test",
 		Booted: f.now.Add(-2 * time.Hour), Load: [3]float64{0.25, 0.5, 0.75},
 		SignIns:  []protocol.SignIn{{User: "daffy", At: signIn}},
 		Bans:     []protocol.Ban{{Address: "203.0.113.9", Banned: signIn, Expires: signIn.Add(10 * time.Minute)}},
@@ -177,16 +186,33 @@ func TestReadAnswers(t *testing.T) {
 	if err := json.Unmarshal(running.Report, &report); err != nil || !reflect.DeepEqual(report, body) {
 		t.Fatalf("report %+v, want %+v (%v)", report, body, err)
 	}
-	if running.Operation != nil || running.State != store.HostRunning || running.InstanceID != h.InstanceID ||
+	if running.Operation != nil || running.State != store.HostRunning || running.DNSName != dnsName || running.Reason != recordReason || running.InstanceID != h.InstanceID ||
 		running.Applied != h.Version || running.Version != h.Version || running.DataVolume != h.DataVolume || running.EIP != h.EIP ||
 		running.Accounts != 2 || !slices.Equal(running.AccountNames, []string{"acme", "beta"}) ||
 		!slices.Equal(running.Allowlist, []string{"192.0.2.7", "198.51.100.0/24"}) ||
 		running.Reported != f.now.Format(time.RFC3339) || running.Health != store.Health(f.host(h.Name), f.now) {
 		t.Fatalf("running host %+v", running)
 	}
-	fields := []string{"host", "state", "reason", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported",
+	fields := []string{"host", "dns_name", "state", "reason", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported",
 		"instance_id", "data_volume", "version", "applied", "created", "created_by", "account_names", "allowlist", "report"}
 	wireMembers(t, unpack(t, result).Structured, fields...)
+	wantList := tools.Host{
+		Host: h.Name, DNSName: dnsName, State: store.HostRunning, Reason: recordReason, Health: store.HealthSync, Type: h.Type,
+		RootGB: h.RootGB, DataGB: h.DataGB, EIP: h.EIP, Accounts: 2, Reported: f.now.Format(time.RFC3339),
+	}
+	if listed := answer[tools.HostList](t, f.call(tools.ToolHosts, tools.HostsArgs{})); !slices.Equal(listed.Hosts, []tools.Host{wantList}) {
+		t.Fatalf("running host list %+v, want %+v", listed, wantList)
+	}
+	if err := f.st.NoteHostRecord(ctx, h.Name, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	wantList.Reason = ""
+	if cleared := readHost(t, f, h.Name); cleared.Reason != "" || cleared.State != store.HostRunning || cleared.DNSName != dnsName {
+		t.Fatalf("host after clearing record reason %+v", cleared)
+	}
+	if listed := answer[tools.HostList](t, f.call(tools.ToolHosts, tools.HostsArgs{})); !slices.Equal(listed.Hosts, []tools.Host{wantList}) {
+		t.Fatalf("host list after clearing record reason %+v, want %+v", listed, wantList)
+	}
 
 	a := readAccount(t, f, acme.Slug)
 	if a.Reason != "record conflict" || a.State != store.AccountFailed || a.Account != acme.Slug || a.Host != h.Name ||

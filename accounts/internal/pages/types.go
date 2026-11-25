@@ -57,11 +57,11 @@ type LandingData struct {
 
 // HostRow describes a host and its last contact on the landing page.
 type HostRow struct {
-	Name, State, Reason, Health, Type string
-	RootGB, DataGB                    int
-	EIP                               string
-	AccountCount                      int
-	Reported, ReportedText            string
+	Name, DNSName, State, Reason, Health, Type string
+	RootGB, DataGB                             int
+	EIP                                        string
+	AccountCount                               int
+	Reported, ReportedText                     string
 }
 
 // AccountRow describes an account on the landing page.
@@ -90,7 +90,7 @@ type HostData struct {
 
 // HostView describes the host and its resources.
 type HostView struct {
-	Name, State, Reason, Health, Type                                    string
+	Name, DNSName, State, Reason, Health, Type                           string
 	RootGB, DataGB                                                       int
 	EIP                                                                  string
 	AccountCount                                                         int
@@ -100,19 +100,19 @@ type HostView struct {
 
 // ReportView describes the latest daemon report.
 type ReportView struct {
-	Received, ReceivedText, InstanceID, Type, AMI, OS, Kernel, DaemonVersion, Booted, BootedText string
-	Applied, Wanted                                                                              int64
-	Error                                                                                        string
-	Load1, Load5, Load15, CPUPercent                                                             float64
-	MemoryUsed, MemoryAvailable, SwapUsed, SwapTotal                                             int64
-	Root, Data                                                                                   VolumeView
-	Sessions, Updates                                                                            int
-	Reboot                                                                                       bool
-	FailedUnits                                                                                  []string
-	Slices                                                                                       []SliceRow
-	Bans                                                                                         []BanRow
-	BanTotal                                                                                     int
-	Allowlist                                                                                    []string
+	Received, ReceivedText, Hostname, InstanceID, Type, AMI, OS, Kernel, DaemonVersion, Booted, BootedText string
+	Applied, Wanted                                                                                        int64
+	Error                                                                                                  string
+	Load1, Load5, Load15, CPUPercent                                                                       float64
+	MemoryUsed, MemoryAvailable, SwapUsed, SwapTotal                                                       int64
+	Root, Data                                                                                             VolumeView
+	Sessions, Updates                                                                                      int
+	Reboot                                                                                                 bool
+	FailedUnits                                                                                            []string
+	Slices                                                                                                 []SliceRow
+	Bans                                                                                                   []BanRow
+	BanTotal                                                                                               int
+	Allowlist                                                                                              []string
 }
 
 // VolumeView describes space and inode use on a volume.

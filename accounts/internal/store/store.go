@@ -39,6 +39,7 @@ type Host struct {
 	Created                                                                  time.Time
 	CreatedBy                                                                string
 	Allowlist                                                                []string
+	Change, RecordReason                                                     string
 }
 
 // HostSpec supplies the initial type and sizes.

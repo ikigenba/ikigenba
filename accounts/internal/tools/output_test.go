@@ -13,11 +13,11 @@ import (
 )
 
 type hostShape = struct {
-	Host, State, Reason, Health, Type string
-	RootGB, DataGB                    int
-	EIP                               string
-	Accounts                          int
-	Reported                          string
+	Host, DNSName, State, Reason, Health, Type string
+	RootGB, DataGB                             int
+	EIP                                        string
+	Accounts                                   int
+	Reported                                   string
 }
 type accountShape = struct {
 	Account, Host, DNSName, State, Reason string
@@ -25,7 +25,7 @@ type accountShape = struct {
 	Created, CreatedBy                    string
 }
 
-// Exact Go result types used by the registered tools.
+// R-12XL-CFIQ checks the Go shape alongside its wire encoding below.
 func TestOutputTypes(t *testing.T) {
 	t.Helper()
 	_ = hostShape(tools.Host{})
@@ -123,9 +123,9 @@ func wireArray(t *testing.T, obj json.RawMessage, name string, members ...string
 	wireMembers(t, items[0], members...)
 }
 
-// R-YPLT-6730 R-YS1L-XQKE R-YUHE-PA1S R-CHE6-U55F R-CEYE-2LO1 R-CG6A-GDEQ R-XTWF-85SY
+// R-12XL-CFIQ R-YS1L-XQKE R-YUHE-PA1S R-CHE6-U55F R-CEYE-2LO1 R-CG6A-GDEQ R-XTWF-85SY
 func TestOutputEncoding(t *testing.T) {
-	hostFields := []string{"host", "state", "reason", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported"}
+	hostFields := []string{"host", "dns_name", "state", "reason", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported"}
 	accountFields := []string{"account", "host", "dns_name", "state", "reason", "users", "invites", "created", "created_by"}
 	userFields := []string{"user", "account", "admin", "state", "pending", "keys", "last_sign_in", "created", "created_by"}
 	opFields := []string{"operation", "kind", "step", "status", "error", "started"}
@@ -150,9 +150,11 @@ func TestOutputEncoding(t *testing.T) {
 			t.Fatalf("bad next in %s", raw)
 		}
 	}
-	emptyHosts := testEncoding(t, tools.HostList{})
-	wireMembers(t, emptyHosts, "hosts")
-	wireArray(t, emptyHosts, "hosts")
+	for _, rows := range [][]tools.Host{nil, {}} {
+		emptyHosts := testEncoding(t, tools.HostList{Hosts: rows})
+		wireMembers(t, emptyHosts, "hosts")
+		wireArray(t, emptyHosts, "hosts")
+	}
 	emptyAccounts := testEncoding(t, tools.AccountList{})
 	wireMembers(t, emptyAccounts, "accounts")
 	wireArray(t, emptyAccounts, "accounts")
@@ -177,21 +179,21 @@ func TestOutputEncoding(t *testing.T) {
 	refusal(t, f.call(tools.ToolHost, tools.HostArgs{Host: "missing"}), tools.NoHost)
 }
 
-// R-ZIBY-SMGE
+// R-15DE-3Z04
 func TestHostReadEncoding(t *testing.T) {
 	_ = struct {
-		Host, State, Reason, Health, Type string
-		RootGB, DataGB                    int
-		EIP                               string
-		Accounts                          int
-		Reported, InstanceID, DataVolume  string
-		Version, Applied                  int64
-		Created, CreatedBy                string
-		AccountNames, Allowlist           []string
-		Operation                         *tools.Operation
-		Report                            json.RawMessage
+		Host, DNSName, State, Reason, Health, Type string
+		RootGB, DataGB                             int
+		EIP                                        string
+		Accounts                                   int
+		Reported, InstanceID, DataVolume           string
+		Version, Applied                           int64
+		Created, CreatedBy                         string
+		AccountNames, Allowlist                    []string
+		Operation                                  *tools.Operation
+		Report                                     json.RawMessage
 	}(tools.HostRead{})
-	base := []string{"host", "state", "reason", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported",
+	base := []string{"host", "dns_name", "state", "reason", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported",
 		"instance_id", "data_volume", "version", "applied", "created", "created_by", "account_names", "allowlist"}
 	for _, names := range [][]string{nil, {}} {
 		raw := testEncoding(t, tools.HostRead{AccountNames: names, Allowlist: names})

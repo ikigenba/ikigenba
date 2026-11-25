@@ -1,68 +1,89 @@
 package ops
 
 import (
+	"context"
+	"errors"
+
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 )
 
-func (s step) name(a store.Account) string { return a.Slug + "." + s.cfg.Hosts.Domain }
+func (e *Engine) recordName(label string) string { return label + "." + e.cfg.Hosts.Domain }
 
 func pointsAt(record cloud.Record, ip string) bool {
 	return ip != "" && record.Type == "A" && len(record.Values) == 1 && record.Values[0] == ip
 }
 
-func (s step) record() error {
-	cl := s.cfg.Cloud
-	name, zone := s.name(s.a), s.cfg.Hosts.ZoneID
-	records, err := cl.FindRecords(s.ctx, zone, name)
+func (e *Engine) findRecord(ctx context.Context, name, ip string) (present, matches bool, err error) {
+	records, err := e.cfg.Cloud.FindRecords(ctx, e.cfg.Hosts.ZoneID, name)
+	return len(records) != 0, len(records) == 1 && pointsAt(records[0], ip), err
+}
+
+func (e *Engine) createRecord(ctx context.Context, name, ip string) (string, error) {
+	return e.cfg.Cloud.ChangeRecord(ctx, e.cfg.Hosts.ZoneID, cloud.RecordChange{
+		Action: cloud.RecordCreate, Name: name, IP: ip, TTL: RecordTTL,
+	})
+}
+
+func recordRefused(err error) bool {
+	class := cloud.ClassOf(err)
+	return class == cloud.ClassRefused || class == cloud.ClassMismatch
+}
+
+func (s step) record(slug, next, waitStep string) error {
+	label := slug
+	if label == "" {
+		label = s.h.Name
+	}
+	name := s.recordName(label)
+	present, matches, err := s.findRecord(s.ctx, name, s.h.EIP)
 	if err != nil {
 		return err
 	}
 	switch {
-	case len(records) == 1 && pointsAt(records[0], s.h.EIP):
-		return s.next(StepWaitApplied)
-	case len(records) != 0:
+	case matches:
+		return s.next(next)
+	case present:
 		return s.fail(ReasonRecordConflict)
 	}
-	change, err := cl.ChangeRecord(s.ctx, zone, cloud.RecordChange{
-		Action: cloud.RecordCreate, Name: name, IP: s.h.EIP, TTL: RecordTTL,
-	})
+	change, err := s.createRecord(s.ctx, name, s.h.EIP)
 	if err != nil {
-		switch cloud.ClassOf(err) {
-		case cloud.ClassRefused, cloud.ClassMismatch:
+		if recordRefused(err) {
 			return s.fail(ReasonRecordConflict)
-		default:
-			return err
 		}
-	}
-	if err := s.saveChange(s.a.Slug, change); err != nil {
 		return err
 	}
-	return s.next(StepWaitRecord)
+	if err := s.saveChange(slug, change); err != nil {
+		return err
+	}
+	return s.next(waitStep)
 }
 
 func (s step) saveChange(slug, change string) error {
 	if err := s.ctx.Err(); err != nil {
 		return err
 	}
+	if slug == "" {
+		return s.cfg.Store.RecordHostChange(s.ctx, s.op.ID, s.h.Name, change)
+	}
 	return s.cfg.Store.RecordChange(s.ctx, s.op.ID, slug, change)
 }
 
-func (s step) inSync(a store.Account) (bool, error) {
-	done, err := s.cfg.Cloud.ChangeInsync(s.ctx, a.Change)
+func (s step) inSync(change string) (bool, error) {
+	done, err := s.cfg.Cloud.ChangeInsync(s.ctx, change)
 	if err != nil && cloud.ClassOf(err) == cloud.ClassNotFound {
 		return true, nil
 	}
 	return done, err
 }
 
-func (s step) waitRecord() error {
-	done, err := s.inSync(s.a)
+func (s step) waitRecord(change, next string) error {
+	done, err := s.inSync(change)
 	if err != nil {
 		return err
 	}
 	if done {
-		return s.next(StepWaitApplied)
+		return s.next(next)
 	}
 	return s.wait()
 }
@@ -91,15 +112,20 @@ func (s step) unrecord() error {
 		return err
 	}
 	for _, a := range accounts {
-		if err := s.deleteRecord(a); err != nil {
+		if err := s.deleteRecord(a.Slug, a.Slug); err != nil {
+			return err
+		}
+	}
+	if s.op.Kind == store.OpDelete && s.h.EIP != "" {
+		if err := s.deleteRecord(s.h.Name, ""); err != nil {
 			return err
 		}
 	}
 	return s.next(StepWaitUnrecord)
 }
 
-func (s step) deleteRecord(a store.Account) error {
-	name, zone := s.name(a), s.cfg.Hosts.ZoneID
+func (s step) deleteRecord(label, slug string) error {
+	name, zone := s.recordName(label), s.cfg.Hosts.ZoneID
 	records, err := s.cfg.Cloud.FindRecords(s.ctx, zone, name)
 	if err != nil {
 		return err
@@ -114,7 +140,7 @@ func (s step) deleteRecord(a store.Account) error {
 		if err != nil {
 			return err
 		}
-		if err := s.saveChange(a.Slug, change); err != nil {
+		if err := s.saveChange(slug, change); err != nil {
 			return err
 		}
 	}
@@ -133,7 +159,7 @@ func (s step) waitUnrecord() error {
 		if a.Change == "" {
 			continue
 		}
-		done, err := s.inSync(a)
+		done, err := s.inSync(a.Change)
 		if err != nil {
 			return err
 		}
@@ -142,7 +168,70 @@ func (s step) waitUnrecord() error {
 		}
 	}
 	if s.op.Kind == store.OpDelete {
+		if s.h.Change != "" {
+			done, err := s.inSync(s.h.Change)
+			if err != nil {
+				return err
+			}
+			if !done {
+				return s.wait()
+			}
+		}
 		return s.next(StepTerminate)
 	}
 	return s.next(StepWaitApplied)
+}
+
+func (e *Engine) checkRecords(ctx context.Context) error {
+	for after := int64(0); ; {
+		hosts, err := e.cfg.Store.ListHosts(ctx, after, store.BatchSize)
+		if err != nil || len(hosts) == 0 {
+			return err
+		}
+		for _, host := range hosts {
+			if host.EIP == "" {
+				continue
+			}
+			switch host.State {
+			case store.HostRunning, store.HostStopping, store.HostStopped, store.HostStarting, store.HostResizing:
+				if err := e.checkHostRecord(ctx, host); err != nil {
+					return err
+				}
+			}
+		}
+		if len(hosts) < store.BatchSize {
+			return nil
+		}
+		after = hosts[len(hosts)-1].Seq
+	}
+}
+
+func (e *Engine) checkHostRecord(ctx context.Context, host store.Host) error {
+	name := e.recordName(host.Name)
+	present, matches, err := e.findRecord(ctx, name, host.EIP)
+	if err != nil {
+		return err
+	}
+	var change, reason string
+	switch {
+	case matches:
+		if host.RecordReason == "" {
+			return nil
+		}
+	case present:
+		reason = ReasonRecordConflict
+	default:
+		change, err = e.createRecord(ctx, name, host.EIP)
+		if err != nil {
+			if !recordRefused(err) {
+				return err
+			}
+			change, reason = "", ReasonRecordConflict
+		}
+	}
+	err = e.cfg.Store.NoteHostRecord(ctx, host.Name, change, reason)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	return err
 }

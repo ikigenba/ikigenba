@@ -59,7 +59,7 @@ func (f *fixture) unchanged(before snapshot) {
 	}
 }
 
-// R-EIPE-DPEF R-EHHH-ZXNQ R-EMD3-J0MI R-EOSW-AK3W R-0YKM-GXC1
+// R-EIPE-DPEF R-Z5TM-TQOG R-ZAP8-CTN8 R-ZD51-4D4M R-0YKM-GXC1
 func TestAccountSelfService(t *testing.T) {
 	f := setup(t)
 	f.seed()
@@ -235,7 +235,7 @@ func TestBoxUserToolsAgreeAcrossTiers(t *testing.T) {
 	a.unchanged(before)
 }
 
-// R-EQ0S-OBUL R-EIPE-DPEF R-EL57-58VT
+// R-EQ0S-OBUL R-EIPE-DPEF R-EL57-58VT R-ZAP8-CTN8
 func TestBoxGuardPrecedence(t *testing.T) {
 	for _, closeDB := range []bool{false, true} {
 		t.Run(fmt.Sprint(closeDB), func(t *testing.T) {
@@ -463,7 +463,7 @@ func TestBoxEventsAndSecrets(t *testing.T) {
 	}
 }
 
-// R-EJXA-RH54 R-0IPX-HWP0 R-EHHH-ZXNQ
+// R-EJXA-RH54 R-0IPX-HWP0 R-Z5TM-TQOG
 func TestBoxKeyLimitAndLastKey(t *testing.T) {
 	f := setup(t)
 	f.seed()

@@ -48,6 +48,7 @@ type Config struct {
 	After      func(time.Duration) <-chan time.Time
 	BoxUser    http.Handler
 	BoxAdmin   http.Handler
+	Domain     string
 }
 
 // Server handles the daemon endpoints for one accounts process.
@@ -322,6 +323,7 @@ func (s *Server) state(ctx context.Context, w http.ResponseWriter, name string) 
 		return
 	}
 	desired.Daemon = s.digest
+	desired.Domain = s.cfg.Domain
 	w.Header().Set("Content-Type", protocol.ContentJSON)
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(desired)

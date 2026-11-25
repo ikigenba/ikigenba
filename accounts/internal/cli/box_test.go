@@ -97,10 +97,22 @@ func (r *boxRandom) Read(p []byte) (int, error) {
 	return r.secrecyRandom.Read(p)
 }
 
-// R-AIMF-81PV R-IJ8P-GADI R-ANI0-R4ON R-YVM9-0XGA
+func fakeHostIdentity(region, instance string, now time.Time, signature int) string {
+	sts := url.URL{Scheme: "https", Host: "sts." + region + ".amazonaws.com", Path: "/"}
+	sts.RawQuery = url.Values{
+		"Action": {"GetCallerIdentity"}, "Version": {"2011-06-15"},
+		"X-Amz-Algorithm": {"AWS4-HMAC-SHA256"}, "X-Amz-SignedHeaders": {"host;" + strings.ToLower(hostauth.BindingHeader)},
+		"X-Amz-Expires": {"60"}, "X-Amz-Date": {now.Format("20060102T150405Z")},
+		"X-Amz-Signature": {fmt.Sprintf("%064x", signature)}, "X-Amz-Credential": {instance},
+	}.Encode()
+	return base64.RawURLEncoding.EncodeToString([]byte(sts.String()))
+}
+
+// R-AX78-VHKU (AWS), R-Z3DU-2772, R-IJ8P-GADI, R-Z89F-LA5U, R-ZI0M-NG3E.
 func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 	clock := newDrivenClock()
 	hosts := settings.SandboxHosts
+	hosts.Domain = "hosts.one.test"
 	c, err := memory.New(memory.Config{
 		Path: filepath.Join(t.TempDir(), "cloud.json"), Hosts: hosts, Now: clock.now, Rand: rand.NewChaCha8([32]byte{5}),
 	})
@@ -115,10 +127,7 @@ func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 	run := startIntegration(t, integrationOptions{
 		now: clock.now, after: clock.after, sleep: clock.sleep, path: path, email: emailMarker + "@fixture.test",
 		random: random, acceptNotify: true, noSandbox: true,
-		env: map[string]string{
-			"AWS_REGION": hosts.Region, "IKIGENBA_HOSTS_ZONE_ID": hosts.ZoneID, "IKIGENBA_HOSTS_DOMAIN": hosts.Domain,
-			"IKIGENBA_HOSTS_LAUNCH_TEMPLATE": hosts.LaunchTemplate, "IKIGENBA_HOSTS_INSTANCE_PROFILE": hosts.InstanceProfile,
-		},
+		env:   hostEnvironment(hosts),
 		cloud: func(context.Context, string) (cloud.Cloud, error) { return boxCloud{c}, nil },
 		mcp: func(w *telemetry.Writer) *mcp.Server {
 			servers++
@@ -142,6 +151,7 @@ func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 		run.call(tools.ToolHost, tools.HostArgs{Host: "host01"}, &host)
 		return host.State == store.HostRunning && host.InstanceID != ""
 	})
+	assertAWSStateDomain(t, run, hosts, host.InstanceID, clock.now())
 	run.call(tools.ToolCreateAccount, tools.CreateAccountArgs{Account: "acme", Host: "host01"}, nil)
 	key := secrecyKey(t, "")
 	extraKey := secrecyKey(t, "ABCD")
@@ -176,13 +186,6 @@ func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 			want.user = box.ActorPrefix + user.Name
 		}
 		requests[requestID] = want
-		sts := url.URL{Scheme: "https", Host: "sts." + hosts.Region + ".amazonaws.com", Path: "/"}
-		sts.RawQuery = url.Values{
-			"Action": {"GetCallerIdentity"}, "Version": {"2011-06-15"},
-			"X-Amz-Algorithm": {"AWS4-HMAC-SHA256"}, "X-Amz-SignedHeaders": {"host;" + strings.ToLower(hostauth.BindingHeader)},
-			"X-Amz-Expires": {"60"}, "X-Amz-Date": {clock.now().Format("20060102T150405Z")},
-			"X-Amz-Signature": {fmt.Sprintf("%064x", next)}, "X-Amz-Credential": {host.InstanceID},
-		}.Encode()
 		if params == nil {
 			params = make(map[string]any)
 		}
@@ -199,7 +202,7 @@ func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		req.Header.Set(hostauth.HeaderName, base64.RawURLEncoding.EncodeToString([]byte(sts.String())))
+		req.Header.Set(hostauth.HeaderName, fakeHostIdentity(hosts.Region, host.InstanceID, clock.now(), next))
 		req.Header.Set("Content-Type", "application/json")
 		req.Host = "accounts.test"
 		req.Header.Set("X-Forwarded-Proto", "https")
@@ -358,6 +361,27 @@ func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 	events := run.capture.Events()
 	assertBoxTrail(t, events, requests)
 	assertTrailSecrecy(t, events, first, made)
+}
+
+func assertAWSStateDomain(t *testing.T, run *integrationRun, hosts settings.Hosts, instance string, now time.Time) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, run.base+protocol.StatePath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set(hostauth.HeaderName, fakeHostIdentity(hosts.Region, instance, now, 0))
+	res, err := run.http.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("AWS state request answered %d", res.StatusCode)
+	}
+	state, err := protocol.DecodeState(res.Body)
+	if err != nil || state.Domain != hosts.Domain {
+		t.Fatalf("AWS state domain = %q, want %q (%v)", state.Domain, hosts.Domain, err)
+	}
 }
 
 func assertBoxStoreFailureTrail(t *testing.T, d *db.DB, record *store.Store, actor, target, invite string) {

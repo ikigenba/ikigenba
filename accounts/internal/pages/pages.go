@@ -100,7 +100,7 @@ func landing(w http.ResponseWriter, r *http.Request, cfg Config, banner page.Ban
 	data.Hosts = make([]HostRow, 0, len(hosts))
 	now := cfg.Now()
 	for _, h := range hosts {
-		data.Hosts = append(data.Hosts, hostRow(h, now))
+		data.Hosts = append(data.Hosts, hostRow(h, cfg.Domain, now))
 	}
 	data.Accounts = make([]AccountRow, 0, len(accounts))
 	for _, a := range accounts {
@@ -142,7 +142,7 @@ func hostDetail(w http.ResponseWriter, r *http.Request, cfg Config, banner page.
 		return
 	}
 	banner.Trail = []page.Level{HostLevel(h.Name)}
-	cfg.Pages.Write(w, r, http.StatusOK, "host", HostData{Banner: banner, Host: hostView(h, cfg.Now()), Report: reportView(report, h.Version)})
+	cfg.Pages.Write(w, r, http.StatusOK, "host", HostData{Banner: banner, Host: hostView(h, cfg.Domain, cfg.Now()), Report: reportView(report, h.Version)})
 }
 
 func redirect(w http.ResponseWriter, status int, location string) {

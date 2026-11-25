@@ -3,8 +3,10 @@ package ops_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -124,7 +126,7 @@ func checkIDs(t *testing.T, got, want []string) {
 	}
 }
 
-// R-MNTG-22XB R-MP1C-FUO0 R-S48T-I8UJ R-NFV4-USZA R-S6OM-9SBX R-NIAX-MCGO R-SACB-F3K0 R-13S5-BI0X
+// R-MNTG-22XB R-MP1C-FUO0 R-S48T-I8UJ R-NFV4-USZA R-IZ7Z-00CB R-J0FV-DS30 R-NIAX-MCGO R-SACB-F3K0 R-13S5-BI0X
 func TestDeleteSettlesDNSBeforeReleasingAndWalksCreateResources(t *testing.T) {
 	f := setup(t)
 	// Give the create the highest ID so its resources only appear after
@@ -159,6 +161,12 @@ func TestDeleteSettlesDNSBeforeReleasingAndWalksCreateResources(t *testing.T) {
 		records: map[string][]cloud.Record{
 			a.Slug + suffix: {{Type: "A", Values: []string{h.EIP}, TTL: 61}},
 			z.Slug + suffix: {{Type: "A", Values: []string{"192.0.2.19"}, TTL: 32}},
+			h.Name + suffix: {
+				{Type: "A", Values: []string{"192.0.2.21"}, TTL: 47},
+				{Type: "A", Values: []string{h.EIP}, TTL: 48},
+				{Type: "TXT", Values: []string{h.EIP}, TTL: 49},
+				{Type: "A", Values: []string{h.EIP, "192.0.2.23"}, TTL: 50},
+			},
 		},
 		before: func() { equal(t, f.operation(del.ID).Step, ops.StepUnrecord) },
 	}
@@ -176,17 +184,43 @@ func TestDeleteSettlesDNSBeforeReleasingAndWalksCreateResources(t *testing.T) {
 	f.cfg.Cloud = cl
 	e := ops.New(f.cfg)
 	equal(t, f.step(e, del.ID).Step, ops.StepWaitUnrecord)
-	checkIDs(t, records.lookups, []string{a.Slug + suffix, z.Slug + suffix})
-	equal(t, len(records.changes), 1)
-	equal(t, records.changes[0], cloud.RecordChange{Action: cloud.RecordDelete, Name: a.Slug + suffix, IP: h.EIP, TTL: 61})
-	equal(t, f.account(a.Slug).Change, "change-1")
+	equal(t, len(records.lookups), 3)
+	var accountLookups []string
+	for _, name := range records.lookups {
+		if name != h.Name+suffix {
+			accountLookups = append(accountLookups, name)
+		}
+	}
+	checkIDs(t, accountLookups, []string{a.Slug + suffix, z.Slug + suffix})
+	equal(t, len(records.changes), 2)
+	changes := make(map[cloud.RecordChange]string)
+	for i, change := range records.changes {
+		changes[change] = fmt.Sprintf("change-%d", i+1)
+	}
+	accountChange := changes[cloud.RecordChange{Action: cloud.RecordDelete, Name: a.Slug + suffix, IP: h.EIP, TTL: 61}]
+	hostChange := changes[cloud.RecordChange{Action: cloud.RecordDelete, Name: h.Name + suffix, IP: h.EIP, TTL: 48}]
+	if accountChange == "" || hostChange == "" {
+		t.Fatalf("missing matching account or host deletion: %v", records.changes)
+	}
+	equal(t, f.account(a.Slug).Change, accountChange)
 	equal(t, f.account(z.Slug).Change, "")
-	records.syncErr = cloudErr(cloud.ClassNotFound)
+	equal(t, f.host(h.Name).Change, hostChange)
+	records.sync = func(id string) (bool, error) { return id == accountChange, nil }
 	equal(t, f.step(e, del.ID).Step, ops.StepWaitUnrecord)
 	equal(t, len(cl.terminated), 0)
 	equal(t, len(cl.released), 0)
+	records.queried = nil
 	f.now = f.now.Add(ops.RecordSettle)
+	equal(t, f.step(e, del.ID).Step, ops.StepWaitUnrecord)
+	equal(t, slices.Contains(records.queried, hostChange), true)
+	records.sync = func(id string) (bool, error) {
+		if id == hostChange {
+			return false, cloudErr(cloud.ClassNotFound)
+		}
+		return true, nil
+	}
 	equal(t, f.step(e, del.ID).Step, ops.StepTerminate)
+	equal(t, slices.Contains(records.queried, accountChange), true)
 	equal(t, len(cl.released), 0)
 	equal(t, f.step(e, del.ID).Step, ops.StepWaitTerminated)
 	checkIDs(t, cl.terminated, []string{"i-stored", "i-tagged"})

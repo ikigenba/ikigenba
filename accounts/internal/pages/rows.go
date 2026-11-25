@@ -1,6 +1,7 @@
 package pages
 
 import (
+	"cmp"
 	"slices"
 	"strings"
 	"time"
@@ -20,10 +21,14 @@ func optionalStamps(t time.Time, layout string) (string, string) {
 	return stamps(t, layout)
 }
 
-func hostRow(h store.Host, now time.Time) HostRow {
+func hostRow(h store.Host, domain string, now time.Time) HostRow {
 	reported, reportedText := optionalStamps(h.Reported, MinuteLayout)
+	dnsName := ""
+	if domain != "" {
+		dnsName = h.Name + "." + domain
+	}
 	return HostRow{
-		Name: h.Name, State: h.State, Reason: h.Reason, Health: store.Health(h, now), Type: h.Type,
+		Name: h.Name, DNSName: dnsName, State: h.State, Reason: cmp.Or(h.Reason, h.RecordReason), Health: store.Health(h, now), Type: h.Type,
 		RootGB: h.RootGB, DataGB: h.DataGB, EIP: h.EIP, AccountCount: h.Accounts,
 		Reported: reported, ReportedText: reportedText,
 	}
@@ -45,11 +50,11 @@ func userRow(u store.User) UserRow {
 	}
 }
 
-func hostView(h store.Host, now time.Time) HostView {
-	row := hostRow(h, now)
+func hostView(h store.Host, domain string, now time.Time) HostView {
+	row := hostRow(h, domain, now)
 	created, createdText := stamps(h.Created, SecondLayout)
 	return HostView{
-		Name: row.Name, State: row.State, Reason: row.Reason, Health: row.Health, Type: row.Type,
+		Name: row.Name, DNSName: row.DNSName, State: row.State, Reason: row.Reason, Health: row.Health, Type: row.Type,
 		RootGB: row.RootGB, DataGB: row.DataGB, EIP: row.EIP, AccountCount: row.AccountCount,
 		Reported: row.Reported, ReportedText: row.ReportedText, InstanceID: h.InstanceID, DataVolume: h.DataVolume,
 		Created: created, CreatedText: createdText, Allowlist: append([]string{}, h.Allowlist...),
@@ -75,7 +80,7 @@ func reportView(report *store.Report, wanted int64) *ReportView {
 		bans = append(bans, BanRow{Address: ban.Address, Banned: banned, BannedText: bannedText, Expires: expires, ExpiresText: expiresText})
 	}
 	return &ReportView{
-		Received: received, ReceivedText: receivedText, InstanceID: body.InstanceID, Type: body.Type, AMI: body.AMI,
+		Received: received, ReceivedText: receivedText, Hostname: body.Hostname, InstanceID: body.InstanceID, Type: body.Type, AMI: body.AMI,
 		OS: body.OS, Kernel: body.Kernel, DaemonVersion: body.DaemonVersion, Booted: booted, BootedText: bootedText,
 		Applied: body.Applied, Wanted: wanted, Error: body.Error, Load1: body.Load[0], Load5: body.Load[1], Load15: body.Load[2],
 		CPUPercent: body.CPUPercent, MemoryUsed: body.MemoryUsed, MemoryAvailable: body.MemoryAvailable,

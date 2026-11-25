@@ -19,6 +19,8 @@ type observedCloud struct {
 	f            *fixture
 	id           string
 	allocate     []cloud.Tags
+	allocateErr  error
+	hostRecords  int
 	launch       []cloud.Launch
 	createVolume []cloud.VolumeSpec
 	attach       [][3]string
@@ -29,9 +31,25 @@ type observedCloud struct {
 	modify       []cloud.VolumeSpec
 }
 
+func (c *observedCloud) observe() store.Operation {
+	c.f.t.Helper()
+	op := c.f.operation(c.id)
+	switch op.Step {
+	case ops.StepRecord, ops.StepWaitRecord:
+		if op.Kind == store.OpCreate {
+			c.f.t.Fatalf("create recorded at account step %s", op.Step)
+		}
+	case ops.StepHostRecord, ops.StepWaitHostRecord:
+		if op.Kind != store.OpCreate {
+			c.f.t.Fatalf("%s recorded at create step %s", op.Kind, op.Step)
+		}
+	}
+	return op
+}
+
 func (c *observedCloud) recorded(step string) store.Operation {
 	c.f.t.Helper()
-	o := c.f.operation(c.id)
+	o := c.observe()
 	equal(c.f.t, o.Step, step)
 	if o.Generation < 1 || o.StepStarted.IsZero() {
 		c.f.t.Fatalf("step not recorded: %+v", o)
@@ -39,10 +57,44 @@ func (c *observedCloud) recorded(step string) store.Operation {
 	return o
 }
 
+func (c *observedCloud) FindAddresses(ctx context.Context, tags cloud.Tags, each func([]cloud.Address) bool) error {
+	c.observe()
+	return c.Cloud.FindAddresses(ctx, tags, each)
+}
+
 func (c *observedCloud) AllocateAddress(ctx context.Context, tags cloud.Tags) (cloud.Address, error) {
 	c.recorded(ops.StepAddress)
 	c.allocate = append(c.allocate, tags)
-	return c.Cloud.AllocateAddress(ctx, tags)
+	address, err := c.Cloud.AllocateAddress(ctx, tags)
+	if err == nil && c.allocateErr != nil {
+		return cloud.Address{}, c.allocateErr
+	}
+	return address, err
+}
+
+func (c *observedCloud) FindRecords(ctx context.Context, zone, name string) ([]cloud.Record, error) {
+	c.observe()
+	return c.Cloud.FindRecords(ctx, zone, name)
+}
+
+func (c *observedCloud) ChangeRecord(ctx context.Context, zone string, change cloud.RecordChange) (string, error) {
+	if c.observe().Kind == store.OpCreate {
+		c.recorded(ops.StepHostRecord)
+		c.hostRecords++
+	}
+	return c.Cloud.ChangeRecord(ctx, zone, change)
+}
+
+func (c *observedCloud) ChangeInsync(ctx context.Context, id string) (bool, error) {
+	if c.observe().Kind == store.OpCreate {
+		c.recorded(ops.StepWaitHostRecord)
+	}
+	return c.Cloud.ChangeInsync(ctx, id)
+}
+
+func (c *observedCloud) FindInstances(ctx context.Context, tags cloud.Tags, each func([]cloud.Instance) bool) error {
+	c.observe()
+	return c.Cloud.FindInstances(ctx, tags, each)
 }
 
 func (c *observedCloud) RunInstance(ctx context.Context, launch cloud.Launch) (cloud.Instance, error) {
@@ -52,11 +104,26 @@ func (c *observedCloud) RunInstance(ctx context.Context, launch cloud.Launch) (c
 	return c.Cloud.RunInstance(ctx, launch)
 }
 
+func (c *observedCloud) DescribeInstance(ctx context.Context, id string) (cloud.Instance, error) {
+	c.observe()
+	return c.Cloud.DescribeInstance(ctx, id)
+}
+
+func (c *observedCloud) FindVolumes(ctx context.Context, tags cloud.Tags, each func([]cloud.Volume) bool) error {
+	c.observe()
+	return c.Cloud.FindVolumes(ctx, tags, each)
+}
+
 func (c *observedCloud) CreateVolume(ctx context.Context, spec cloud.VolumeSpec) (cloud.Volume, error) {
 	o := c.recorded(ops.StepVolume)
 	equal(c.f.t, spec.ClientToken, fmt.Sprintf("%s-%s-%d", o.ID, o.Step, o.Generation))
 	c.createVolume = append(c.createVolume, spec)
 	return c.Cloud.CreateVolume(ctx, spec)
+}
+
+func (c *observedCloud) DescribeVolume(ctx context.Context, id string) (cloud.Volume, error) {
+	c.observe()
+	return c.Cloud.DescribeVolume(ctx, id)
 }
 
 func (c *observedCloud) AttachVolume(ctx context.Context, vol, instance, device string) error {
@@ -110,14 +177,14 @@ func checkTags(t *testing.T, got, want cloud.Tags) {
 	}
 }
 
-// R-MNTG-22XB R-MP1C-FUO0 R-MQ98-TMEP R-MWCQ-QH46 R-MXKN-48UV R-RWXF-7MED R-N18C-9K2Y R-N2G8-NBTN R-N4W1-EVB1 R-N63X-SN1Q R-KFNV-I3W9
+// R-MNTG-22XB R-MP1C-FUO0 R-MQ98-TMEP R-9FKU-S0RD R-9PC1-U6OX R-MXKN-48UV R-RWXF-7MED R-N18C-9K2Y R-N2G8-NBTN R-N4W1-EVB1 R-N63X-SN1Q R-KFNV-I3W9
 func TestCreateThroughRestarts(t *testing.T) {
 	f := setup(t)
 	h, op := f.create()
 	cl := &observedCloud{Cloud: f.memory, f: f, id: op.ID}
 	f.cfg.Cloud = cl
 	want := []string{
-		ops.StepLaunch, ops.StepWaitRunning, ops.StepVolume, ops.StepWaitVolume, ops.StepAttach,
+		ops.StepHostRecord, ops.StepWaitHostRecord, ops.StepLaunch, ops.StepWaitRunning, ops.StepVolume, ops.StepWaitVolume, ops.StepAttach,
 		ops.StepWaitAttached, ops.StepAssociate, ops.StepAssociate,
 	}
 	for _, next := range want {
@@ -137,6 +204,7 @@ func TestCreateThroughRestarts(t *testing.T) {
 	equal(t, final.State, store.HostRunning)
 	equal(t, final.Version, h.Version+1)
 	equal(t, len(cl.allocate), 1)
+	equal(t, cl.hostRecords, 1)
 	equal(t, len(cl.launch), 1)
 	equal(t, len(cl.createVolume), 1)
 	equal(t, len(cl.attach), 1)
@@ -163,6 +231,24 @@ func TestCreateThroughRestarts(t *testing.T) {
 	ok(t, err)
 	equal(t, a.InstanceID, final.InstanceID)
 	equal(t, a.AssociationID, final.AssociationID)
+}
+
+// R-9FKU-S0RD
+func TestCreateAdoptsAddressAfterLostAllocationAnswer(t *testing.T) {
+	f := setup(t)
+	h, op := f.create()
+	cl := &observedCloud{Cloud: f.memory, f: f, id: op.ID, allocateErr: cloudErr(cloud.ClassTransient)}
+	f.cfg.Cloud = cl
+	equal(t, f.step(ops.New(f.cfg), op.ID).Step, ops.StepAddress)
+	equal(t, f.host(h.Name).AllocationID, "")
+	cl.allocateErr = nil
+	equal(t, f.step(ops.New(f.cfg), op.ID).Step, ops.StepHostRecord)
+	equal(t, len(cl.allocate), 1)
+	checkTags(t, cl.allocate[0], tagset(h, op, cloud.KindHost))
+	h = f.host(h.Name)
+	address, err := f.memory.DescribeAddress(f.ctx, h.AllocationID)
+	ok(t, err)
+	equal(t, h.EIP, address.IP)
 }
 
 type replayCloud struct {
@@ -208,7 +294,9 @@ func TestTokensPersistPerGeneration(t *testing.T) {
 	cl := &replayCloud{Cloud: f.memory, f: f, id: op.ID}
 	f.cfg.Cloud = cl
 	e := ops.New(f.cfg)
-	f.step(e, op.ID)
+	for range 3 {
+		f.step(e, op.ID)
+	}
 	for range ops.MaxGenerations + 1 {
 		op = f.step(ops.New(f.cfg), op.ID)
 	}
@@ -270,18 +358,20 @@ func (*adoptCloud) DescribeInstance(_ context.Context, id string) (cloud.Instanc
 	return cloud.Instance{ID: id, State: cloud.InstanceRunning, AZ: "zone", RootVolume: "root"}, nil
 }
 
-// R-MWCQ-QH46 R-MXKN-48UV R-N18C-9K2Y R-KFNV-I3W9
+// R-9FKU-S0RD R-MXKN-48UV R-N18C-9K2Y R-KFNV-I3W9
 func TestCreateAdoptsLowestIDsAcrossPages(t *testing.T) {
 	for _, state := range []string{cloud.InstancePending, cloud.InstanceRunning, cloud.InstanceStopping, cloud.InstanceStopped} {
 		t.Run(state, func(t *testing.T) {
 			f := setup(t)
 			h, op := f.create()
-			f.cfg.Cloud = &adoptCloud{f: f, op: op, state: state}
+			f.cfg.Cloud = &adoptCloud{Cloud: f.memory, f: f, op: op, state: state}
 			e := ops.New(f.cfg)
-			equal(t, f.step(e, op.ID).Step, ops.StepLaunch)
+			equal(t, f.step(e, op.ID).Step, ops.StepHostRecord)
 			h = f.host(h.Name)
 			equal(t, h.AllocationID, "eip-a")
 			equal(t, h.EIP, "192.0.2.15")
+			equal(t, f.step(e, op.ID).Step, ops.StepWaitHostRecord)
+			equal(t, f.step(e, op.ID).Step, ops.StepLaunch)
 			equal(t, f.step(e, op.ID).Step, ops.StepWaitRunning)
 			equal(t, f.host(h.Name).InstanceID, "i-b")
 			equal(t, f.step(e, op.ID).Step, ops.StepVolume)

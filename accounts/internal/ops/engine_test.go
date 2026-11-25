@@ -2,6 +2,7 @@ package ops_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -224,6 +225,15 @@ func TestOperationSurface(t *testing.T) {
 	ok(t, e.Run(ctx))
 }
 
+// R-9D52-0H9Z
+func TestHostRecordStepConstants(t *testing.T) {
+	type stepName string
+	const hostRecord stepName = ops.StepHostRecord
+	const waitHostRecord stepName = ops.StepWaitHostRecord
+	equal(t, hostRecord, stepName("host_record"))
+	equal(t, waitHostRecord, stepName("wait_host_record"))
+}
+
 // R-MLDN-AJFX R-NUHX-G1VM
 func TestPassPagesOperationsAndSilentHosts(t *testing.T) {
 	f := setup(t)
@@ -236,7 +246,7 @@ func TestPassPagesOperationsAndSilentHosts(t *testing.T) {
 	ok(t, e.Pass(f.ctx))
 	for id, name := range names {
 		op := f.operation(id)
-		equal(t, op.Step, ops.StepLaunch)
+		equal(t, op.Step, ops.StepHostRecord)
 		if f.host(name).AllocationID == "" {
 			t.Fatalf("host %s has no allocation", name)
 		}
@@ -293,20 +303,26 @@ func TestRunSchedulingAndStoreRecovery(t *testing.T) {
 		}
 	}
 	waitFor(ops.PollInterval)
-	equal(t, f.operation(op.ID).Step, ops.StepLaunch)
+	equal(t, f.operation(op.ID).Step, ops.StepHostRecord)
 	equal(t, cl.scans, 1)
 	f.db.SetFailing(true)
 	e.Wake()
 	waitFor(ops.ReconcileInterval)
 	f.db.SetFailing(false)
-	equal(t, f.operation(op.ID).Step, ops.StepLaunch)
+	equal(t, f.operation(op.ID).Step, ops.StepHostRecord)
 	ok(t, f.st.Defer(f.ctx, op.ID, f.now.Add(17*time.Second), 0))
 	e.Wake()
 	waitFor(17 * time.Second)
-	equal(t, f.operation(op.ID).Step, ops.StepLaunch)
+	equal(t, f.operation(op.ID).Step, ops.StepHostRecord)
 	f.now = f.now.Add(17 * time.Second)
 	tick <- f.now
 	waitFor(ops.PollInterval)
+	equal(t, f.operation(op.ID).Step, ops.StepWaitHostRecord)
+	for range 2 {
+		f.now = f.now.Add(ReconcileAdvance)
+		tick <- f.now
+		waitFor(ops.PollInterval)
+	}
 	equal(t, f.operation(op.ID).Step, ops.StepWaitRunning)
 
 	f.now = f.now.Add(ops.ScanInterval)
@@ -338,18 +354,28 @@ func (c *scanCloud) FindInstances(ctx context.Context, tags cloud.Tags, each fun
 	return c.Cloud.FindInstances(ctx, tags, each)
 }
 
-// R-NVPT-TTMB R-NWXQ-7LD0
+// R-0DM7-JP72 R-NWXQ-7LD0
 func TestScanNotesEveryPageAndPreservesResources(t *testing.T) {
 	f := setup(t)
+	scanTime := f.now.Add(2 * time.Hour)
+	f.cfg.Now = func() time.Time { return scanTime }
+	// Reject stray notes stamped with anything other than the scan's clock.
+	ok(t, f.db.Write(f.ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(f.ctx, fmt.Sprintf(`CREATE TRIGGER require_scan_time BEFORE INSERT ON strays
+			WHEN NEW.noted IS NOT %d BEGIN SELECT RAISE(ABORT, 'unexpected stray timestamp'); END`, scanTime.Unix()))
+		return err
+	}))
 	h, op := f.create()
 	ok(t, f.st.Advance(f.ctx, op.ID, store.Update{InstanceID: "i-held"}))
-	cl := &pagedStrays{st: f.st, t: t, runningOp: op.ID, now: f.clock}
+	cl := &pagedStrays{st: f.st, t: t, runningOp: op.ID, now: f.cfg.Now}
 	f.cfg.Cloud = cl
 	e := ops.New(f.cfg)
 	ctx := identity.NewContext(f.ctx, author)
-	for range 2 {
-		ok(t, e.Scan(ctx))
-	}
+	ok(t, e.Scan(ctx))
+	eventWith(t, f.events(), trail.EventResourceUnexplained, telemetry.Attrs{
+		"resource": "i-unknown-op", "kind": trail.ResourceInstance, "host": "",
+	}, identity.Caller{})
+	ok(t, e.Scan(ctx))
 	if err := f.st.Finish(f.ctx, op.ID, store.Update{}); err != nil {
 		t.Fatal(err)
 	}
@@ -359,6 +385,7 @@ func TestScanNotesEveryPageAndPreservesResources(t *testing.T) {
 		"i-stray1": {trail.ResourceInstance, "retired"}, "i-stray2": {trail.ResourceInstance, ""},
 		"vol-root": {trail.ResourceVolume, ""}, "vol-data": {trail.ResourceVolume, ""},
 		"eip-stray": {trail.ResourceAddress, ""}, "i-running": {trail.ResourceInstance, ""},
+		"i-unknown-op": {trail.ResourceInstance, ""},
 	}
 	for _, ev := range f.events() {
 		equal(t, ev.Name, trail.EventResourceUnexplained)
@@ -396,7 +423,12 @@ func (c *pagedStrays) FindInstances(ctx context.Context, tags cloud.Tags, each f
 	added, err := c.st.NoteStray(ctx, "i-stray1", trail.ResourceInstance, "retired", c.now())
 	ok(c.t, err)
 	equal(c.t, added, false)
-	each([]cloud.Instance{{ID: "i-stray2"}, {ID: "i-held"}, {ID: "i-running", Tags: cloud.Tags{cloud.TagOperation: c.runningOp}}})
+	each([]cloud.Instance{
+		{ID: "i-stray2"},
+		{ID: "i-held"},
+		{ID: "i-running", Tags: cloud.Tags{cloud.TagOperation: c.runningOp}},
+		{ID: "i-unknown-op", Tags: cloud.Tags{cloud.TagOperation: "ffffffffffffffff"}},
+	})
 	return nil
 }
 

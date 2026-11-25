@@ -87,14 +87,22 @@ func (s *recordReader) NextTry(ctx context.Context) (time.Time, error) {
 	})
 }
 
+func runningOperation(q query, id string) (Operation, error) {
+	op, err := getOperation(q, id)
+	if err != nil {
+		return Operation{}, err
+	}
+	if op.Status != OpRunning {
+		return Operation{}, ErrConflict
+	}
+	return op, nil
+}
+
 func modifyOperation(ctx context.Context, s *Store, id string, valid bool, fn func(*writing, *Operation) error) error {
 	return change(ctx, s, valid && id != "", func(w *writing) error {
-		op, err := getOperation(w.query, id)
+		op, err := runningOperation(w.query, id)
 		if err != nil {
 			return err
-		}
-		if op.Status != OpRunning {
-			return ErrConflict
 		}
 		before := op
 		if err := fn(w, &op); err != nil {

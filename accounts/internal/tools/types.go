@@ -239,6 +239,7 @@ type HostIPArgs struct {
 // Host summarizes a live host.
 type Host struct {
 	Host     string `json:"host" mcp:"required"`
+	DNSName  string `json:"dns_name" mcp:"required"`
 	State    string `json:"state" mcp:"required"`
 	Reason   string `json:"reason" mcp:"required"`
 	Health   string `json:"health" mcp:"required"`
@@ -259,6 +260,7 @@ type HostList struct {
 // HostRead includes a host's record, accounts, operation and latest report.
 type HostRead struct {
 	Host         string          `json:"host" mcp:"required"`
+	DNSName      string          `json:"dns_name" mcp:"required"`
 	State        string          `json:"state" mcp:"required"`
 	Reason       string          `json:"reason" mcp:"required"`
 	Health       string          `json:"health" mcp:"required"`

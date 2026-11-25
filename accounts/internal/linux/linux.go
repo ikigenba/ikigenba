@@ -201,6 +201,9 @@ func (h *Host) Apply(ctx context.Context, s protocol.DesiredState) error {
 	if err := h.shell(ctx); err != nil {
 		return err
 	}
+	if err := h.setHostname(ctx, s); err != nil {
+		return err
+	}
 	if err := h.growRoot(ctx); err != nil {
 		return err
 	}

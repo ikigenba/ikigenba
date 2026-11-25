@@ -18,7 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 )
 
-// R-QRTY-GBYR
+// R-ZFKT-VWM0
 func TestRunReadAndPageTrail(t *testing.T) {
 	bin := t.TempDir()
 	if err := os.WriteFile(filepath.Join(bin, "accountsd"), []byte("chosen daemon"), 0600); err != nil {

@@ -68,7 +68,7 @@ func TestBanLimits(t *testing.T) {
 	}
 }
 
-// R-X3J7-US3V, R-U0RX-JI8F, R-X4R4-8JUK, R-U37Q-B1PT, R-X5Z0-MBL9, R-X9MP-RMTC.
+// R-YYGM-DOUB, R-U0RX-JI8F, R-YZOI-RGL0, R-U37Q-B1PT, R-X5Z0-MBL9, R-Z0WF-58BP.
 func TestWireObjects(t *testing.T) {
 	when := time.Date(2026, 11, 17, 12, 13, 14, 0, time.UTC)
 	banned := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
@@ -83,16 +83,22 @@ func TestWireObjects(t *testing.T) {
 		version, applied, memoryUsed, memoryAvailable, swapUsed, swapTotal int64   = 7, 6, 6, 7, 8, 9
 		cpuPercent                                                         float64 = 5
 	)
-	state := DesiredState{protocol, "host01", version, "", "", rootGB, dataGB, []Account{account}, []User{user}, []string{"192.0.2.0/24"}, []string{}}
-	report := Report{protocol, version, applied, "failure", "instance", "instance-type", "image", "os", "kernel", when, "digest", [3]float64{1, 2, 3}, cpuPercent, memoryUsed, memoryAvailable, swapUsed, swapTotal, disk, Disk{10, 11, 12, 13}, sessions, updates, true, []string{"unit"}, []Slice{slice}, []SignIn{signIn}, []Ban{ban}, total, []string{"192.0.2.0/24"}}
+	state := DesiredState{protocol, "host01", version, "", "", rootGB, dataGB, []Account{account}, []User{user}, []string{"192.0.2.0/24"}, []string{}, "hosts.example.com"}
+	report := Report{protocol, version, applied, "failure", "instance", "instance-type", "image", "os", "kernel", when, "digest", [3]float64{1, 2, 3}, cpuPercent, memoryUsed, memoryAvailable, swapUsed, swapTotal, disk, Disk{10, 11, 12, 13}, sessions, updates, true, []string{"unit"}, []Slice{slice}, []SignIn{signIn}, []Ban{ban}, total, []string{"192.0.2.0/24"}, "host01.hosts.example.com"}
 	for _, tt := range []struct {
 		value any
 		json  string
 	}{
-		{state, `{"protocol":1,"host":"host01","version":7,"daemon":"","data_volume":"","root_gb":20,"data_gb":50,"accounts":[{"slug":"acme","gid":20000,"state":"active"}],"users":[{"name":"daffy","account":"acme","uid":20001,"state":"locked","keys":[]}],"allowlist":["192.0.2.0/24"],"unban":[]}`},
-		{report, `{"protocol":1,"attempted":7,"applied":6,"error":"failure","instance_id":"instance","type":"instance-type","ami":"image","os":"os","kernel":"kernel","booted":"2026-11-17T12:13:14Z","daemon_version":"digest","load":[1,2,3],"cpu_percent":5,"memory_used":6,"memory_available":7,"swap_used":8,"swap_total":9,"root":{"used_bytes":1,"size_bytes":2,"inodes_used":3,"inodes_total":4},"data":{"used_bytes":10,"size_bytes":11,"inodes_used":12,"inodes_total":13},"sessions":14,"updates":15,"reboot":true,"failed_units":["unit"],"slices":[{"account":"acme","cpu_percent":6,"memory_bytes":7}],"sign_ins":[{"user":"daffy","at":"2026-11-17T12:13:14Z"}],"bans":[{"address":"192.0.2.77","banned":"2026-11-18T12:00:00Z","expires":"2026-11-18T12:10:00Z"}],"ban_total":16,"allowlist":["192.0.2.0/24"]}`},
+		{state, `{"protocol":1,"host":"host01","version":7,"daemon":"","data_volume":"","root_gb":20,"data_gb":50,"accounts":[{"slug":"acme","gid":20000,"state":"active"}],"users":[{"name":"daffy","account":"acme","uid":20001,"state":"locked","keys":[]}],"allowlist":["192.0.2.0/24"],"unban":[],"domain":"hosts.example.com"}`},
+		{report, `{"protocol":1,"attempted":7,"applied":6,"error":"failure","instance_id":"instance","type":"instance-type","ami":"image","os":"os","kernel":"kernel","booted":"2026-11-17T12:13:14Z","daemon_version":"digest","load":[1,2,3],"cpu_percent":5,"memory_used":6,"memory_available":7,"swap_used":8,"swap_total":9,"root":{"used_bytes":1,"size_bytes":2,"inodes_used":3,"inodes_total":4},"data":{"used_bytes":10,"size_bytes":11,"inodes_used":12,"inodes_total":13},"sessions":14,"updates":15,"reboot":true,"failed_units":["unit"],"slices":[{"account":"acme","cpu_percent":6,"memory_bytes":7}],"sign_ins":[{"user":"daffy","at":"2026-11-17T12:13:14Z"}],"bans":[{"address":"192.0.2.77","banned":"2026-11-18T12:00:00Z","expires":"2026-11-18T12:10:00Z"}],"ban_total":16,"allowlist":["192.0.2.0/24"],"hostname":"host01.hosts.example.com"}`},
+		{DesiredState{}, `{"protocol":0,"host":"","version":0,"daemon":"","data_volume":"","root_gb":0,"data_gb":0,"accounts":null,"users":null,"allowlist":null,"unban":null,"domain":""}`},
+		{account, `{"slug":"acme","gid":20000,"state":"active"}`},
+		{user, `{"name":"daffy","account":"acme","uid":20001,"state":"locked","keys":[]}`},
+		{disk, `{"used_bytes":1,"size_bytes":2,"inodes_used":3,"inodes_total":4}`},
+		{slice, `{"account":"acme","cpu_percent":6,"memory_bytes":7}`},
+		{signIn, `{"user":"daffy","at":"2026-11-17T12:13:14Z"}`},
 		{ban, `{"address":"192.0.2.77","banned":"2026-11-18T12:00:00Z","expires":"2026-11-18T12:10:00Z"}`},
-		{Report{}, `{"protocol":0,"attempted":0,"applied":0,"error":"","instance_id":"","type":"","ami":"","os":"","kernel":"","booted":"0001-01-01T00:00:00Z","daemon_version":"","load":[0,0,0],"cpu_percent":0,"memory_used":0,"memory_available":0,"swap_used":0,"swap_total":0,"root":{"used_bytes":0,"size_bytes":0,"inodes_used":0,"inodes_total":0},"data":{"used_bytes":0,"size_bytes":0,"inodes_used":0,"inodes_total":0},"sessions":0,"updates":0,"reboot":false,"failed_units":null,"slices":null,"sign_ins":null,"bans":null,"ban_total":0,"allowlist":null}`},
+		{Report{}, `{"protocol":0,"attempted":0,"applied":0,"error":"","instance_id":"","type":"","ami":"","os":"","kernel":"","booted":"0001-01-01T00:00:00Z","daemon_version":"","load":[0,0,0],"cpu_percent":0,"memory_used":0,"memory_available":0,"swap_used":0,"swap_total":0,"root":{"used_bytes":0,"size_bytes":0,"inodes_used":0,"inodes_total":0},"data":{"used_bytes":0,"size_bytes":0,"inodes_used":0,"inodes_total":0},"sessions":0,"updates":0,"reboot":false,"failed_units":null,"slices":null,"sign_ins":null,"bans":null,"ban_total":0,"allowlist":null,"hostname":""}`},
 	} {
 		got, err := json.Marshal(tt.value)
 		if err != nil || string(got) != tt.json {
@@ -146,7 +152,7 @@ func TestDecodeState(t *testing.T) {
 		{json: `{"protocol":1,"host":"host01","version":0}`, err: ErrMalformed},
 		{json: `{"protocol":"1","host":"host01","version":1}`, err: ErrMalformed},
 		{json: `{"protocol":1,"host":"host01","version":1,"unban":"192.0.2.7"}`, err: ErrMalformed},
-		{json: `{"protocol":1,"host":"host01","version":1,"allowlist":["192.0.2.0/24"],"unban":["198.51.100.7"]}`, want: DesiredState{Protocol: 1, Host: "host01", Version: 1, Allowlist: []string{"192.0.2.0/24"}, Unban: []string{"198.51.100.7"}}},
+		{json: `{"protocol":1,"host":"host01","version":1,"allowlist":["192.0.2.0/24"],"unban":["198.51.100.7"],"domain":"hosts.example.com"}`, want: DesiredState{Protocol: 1, Host: "host01", Version: 1, Allowlist: []string{"192.0.2.0/24"}, Unban: []string{"198.51.100.7"}, Domain: "hosts.example.com"}},
 		{json: `{"protocol":2,"host":"","version":0}`, err: ErrVersion},
 		{json: `{"host":"host01","version":1}`, err: ErrVersion},
 		{json: `{"protocol":null,"host":"host01","version":1}`, err: ErrVersion},
@@ -182,7 +188,7 @@ func TestDecodeReport(t *testing.T) {
 		{json: `{"protocol":1,"Protocol":null}`, err: ErrVersion},
 		{json: `{"protocol":1,"root":{"size_bytes":1},"ROOT":{"used_bytes":2},"data":{"size_bytes":3},"DATA":null,"booted":"2026-11-17T12:13:14Z","BOOTED":null,"sign_ins":[{"user":"daffy","at":"2026-11-17T12:13:14Z","At":null}]}`, want: Report{Protocol: 1, Root: Disk{UsedBytes: 2}, SignIns: []SignIn{{User: "daffy"}}}},
 		{json: `{}`, err: ErrVersion},
-		{json: " \n" + `{"protocol":2,"Protocol":1,"Attempted":3,"booted":null,"failed_units":["z","a"]}` + " 	", want: Report{Protocol: 1, Attempted: 3, FailedUnits: []string{"a", "z"}}},
+		{json: " \n" + `{"protocol":2,"Protocol":1,"Attempted":3,"booted":null,"failed_units":["z","a"],"hostname":"host01.hosts.example.com"}` + " 	", want: Report{Protocol: 1, Attempted: 3, FailedUnits: []string{"a", "z"}, Hostname: "host01.hosts.example.com"}},
 	} {
 		got, err := DecodeReport(strings.NewReader(tt.json))
 		if !errors.Is(err, tt.err) || !reflect.DeepEqual(got, tt.want) {

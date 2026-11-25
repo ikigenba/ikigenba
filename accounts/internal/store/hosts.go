@@ -14,13 +14,16 @@ const hostFields = `name, seq, state, reason, instance_type, root_gb, data_gb, i
 	reported, operation, created, created_by`
 
 const hostSelect = `SELECT ` + hostFields +
-	`, (SELECT count(*) FROM accounts WHERE host = hosts.name) FROM hosts`
+	`, (SELECT count(*) FROM accounts WHERE host = hosts.name),
+	coalesce((SELECT host_records.record_change FROM host_records WHERE host_records.host_name = hosts.name), ''),
+	coalesce((SELECT host_records.record_reason FROM host_records WHERE host_records.host_name = hosts.name), '')
+	FROM hosts`
 
 func scanHost(q query, r scanner) (h Host, err error) {
 	if err := r.Scan(&h.Name, &h.Seq, &h.State, &h.Reason, &h.Type, &h.RootGB, &h.DataGB,
 		&h.InstanceID, &h.RootVolume, &h.DataVolume, &h.AllocationID, &h.AssociationID, &h.EIP, &h.AZ,
 		&h.Version, &h.Applied, &h.Attempted, &h.ReportError, &h.Alarm, storedTime{&h.RunningSince},
-		storedTime{&h.Reported}, &h.Operation, storedTime{&h.Created}, &h.CreatedBy, &h.Accounts); err != nil {
+		storedTime{&h.Reported}, &h.Operation, storedTime{&h.Created}, &h.CreatedBy, &h.Accounts, &h.Change, &h.RecordReason); err != nil {
 		return Host{}, err
 	}
 	h.Allowlist, err = allowlist(q, h.Name)

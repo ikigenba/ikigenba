@@ -12,7 +12,7 @@ import (
 // These assignments use the public values as unnamed structs, so field order
 // and field types have to agree for the tests to compile.
 
-// R-1V4J-NBIC
+// R-D996-QDPE
 var _ struct {
 	Name                                                                     string
 	Seq                                                                      int64
@@ -28,7 +28,20 @@ var _ struct {
 	Created                                                                  time.Time
 	CreatedBy                                                                string
 	Allowlist                                                                []string
+	Change, RecordReason                                                     string
 } = store.Host{}
+
+// R-DAH3-45G3
+var _ interface {
+	RecordHostChange(context.Context, string, string, string) error
+	NoteHostRecord(context.Context, string, string, string) error
+} = (*store.Store)(nil)
+
+// R-A2QY-1NUK
+var _ interface {
+	DeletedHosts(context.Context, int64, int) ([]store.Host, error)
+	SettleDeleted(context.Context, string) error
+} = (*store.Store)(nil)
 
 // R-1XKC-EUZQ
 var _ interface {

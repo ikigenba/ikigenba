@@ -52,7 +52,7 @@ func TestInviteEncoding(t *testing.T) {
 	wireArray(t, empty, "invites")
 }
 
-// R-D24H-C8R8 R-EZNH-L5OF R-F23A-CP5T R-GTU8-J8BM R-Q9KZ-Z32B R-FU4Z-5F7S R-FVCV-J6YH
+// R-D24H-C8R8 R-1913-9A87 R-1A8Z-N1YW R-1MFZ-GRDU R-1RBK-ZUCM R-1NNV-UJ4J R-1Q3O-M2LX
 func TestInviteLifecycle(t *testing.T) {
 	ctx := context.Background()
 	sourceCalls := 0
@@ -196,7 +196,7 @@ func allEvents(t *testing.T, f *fixture) []telemetry.Event {
 	return f.capture.Events()
 }
 
-// R-FHMR-DAV0 R-FGEU-ZJ4B R-FVCV-J6YH
+// R-FHMR-DAV0 R-FGEU-ZJ4B R-1Q3O-M2LX
 func TestInviteRefusals(t *testing.T) {
 	const maxBytes int = tools.MaxLinkBase
 	const maxUnsigned uint = tools.MaxLinkBase
@@ -248,7 +248,7 @@ func TestInviteRefusals(t *testing.T) {
 	answer[tools.InviteMade](t, f.call(tools.ToolCreateInvite, args))
 }
 
-// R-EYFL-7DXQ R-FQHA-03ZP
+// R-17T6-VIHI R-1L83-2ZN5
 func TestSetAdminKeepsDesiredState(t *testing.T) {
 	f := setup(t)
 	h, _ := f.seedHost(true)
@@ -282,6 +282,10 @@ func TestSetAdminKeepsDesiredState(t *testing.T) {
 		t.Fatal(list)
 	}
 	if got := answer[tools.UserChange](t, f.call(tools.ToolLockUser, u)); !got.Admin {
+		t.Fatal(got)
+	}
+	removed := tools.UserKeyArgs{Account: u.Account, User: u.User, Key: key(1)}
+	if got := answer[tools.KeyRemoved](t, f.call(tools.ToolRemoveKey, removed)); !got.Admin || got.KeysLeft != 0 {
 		t.Fatal(got)
 	}
 	before = f.host(h.Name).Version

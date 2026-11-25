@@ -101,6 +101,9 @@ func TestInvalidInput(t *testing.T) {
 		noOutput(s.RecordStep(ctx, op.ID, "step", 0, baseTime)), noOutput(s.Advance(ctx, op.ID, store.Update{DataGB: -1})),
 		noOutput(s.Defer(ctx, "", baseTime, 1)), noOutput(s.Fail(ctx, "", "failed")), noOutput(s.Finish(ctx, "", store.Update{})),
 		noOutput(s.RecordChange(ctx, op.ID, a.Slug, "")), observe2(s.PlaceAccount(ctx, "", h.Name, caller)),
+		noOutput(s.RecordHostChange(ctx, op.ID, "", "change")),
+		noOutput(s.RecordHostChange(ctx, op.ID, h.Name, "")), noOutput(s.NoteHostRecord(ctx, "", "", "conflict")),
+		noOutput(s.SettleDeleted(ctx, "")),
 		observe2(s.RemoveAccount(ctx, "", caller)), observe(s.AccountsOn(ctx, "")),
 		observe(s.AddUser(ctx, a.Slug, "user", key, caller)),
 		observe(s.AddKey(ctx, a.Slug, "user", key)), observe2(s.RemoveKey(ctx, a.Slug, "user", store.Key{})),
@@ -126,6 +129,9 @@ func exercise(c context.Context, s *store.Store, host string, opID string) []obs
 	createTwo := observe2(s.CreateHost(c, spec, caller))
 	out := []observation{
 		createTwo, noOutput(s.RecordStep(c, opID, "prepare", 2, baseTime)),
+		noOutput(s.RecordHostChange(c, opID, host, "operation-change")),
+		noOutput(s.NoteHostRecord(c, host, "", "conflict")),
+		observe(s.DeletedHosts(c, 0, 1)),
 		noOutput(s.Advance(c, opID, store.Update{InstanceID: "instance", DataVolume: "volume"})),
 		noOutput(s.Defer(c, opID, baseTime.Add(time.Second), 1)), observe(s.NextTry(c)), observe(s.Host(c, host)),
 		observe(s.HostByInstance(c, "instance")), observe(s.Operation(c, opID)),
@@ -162,7 +168,9 @@ func TestDatabaseFailuresTakePrecedence(t *testing.T) {
 	cancel()
 	check := func(c context.Context, cause error) {
 		t.Helper()
-		for _, call := range append(exercise(c, s, h.Name, op.ID), inviteExercise(c, s, h.Name)...) {
+		calls := append(exercise(c, s, h.Name, op.ID), inviteExercise(c, s, h.Name)...)
+		calls = append(calls, noOutput(s.SettleDeleted(c, h.Name)))
+		for _, call := range calls {
 			call.assertZero(t, store.ErrUnreachable)
 			if cause != nil {
 				checkErr(t, call.err, cause)
@@ -232,11 +240,18 @@ func TestAdditiveMigrations(t *testing.T) {
 	var extra strings.Builder
 	bansSchema := value(t, result(fs.ReadFile(migrations, "0003_bans.sql")))
 	inviteSchema := value(t, result(fs.ReadFile(migrations, "0004_invites.sql")))
-	for _, table := range tableNames(string(old) + string(newSchema) + string(bansSchema) + string(inviteSchema)) {
+	hostRecordsSchema := value(t, result(fs.ReadFile(migrations, "0005_host_records.sql")))
+	for _, table := range tableNames(string(old) + string(newSchema) + string(bansSchema) + string(inviteSchema) + string(hostRecordsSchema)) {
 		extra.WriteString("ALTER TABLE " + table + " ADD COLUMN future_note TEXT;\n")
 	}
+	extra.WriteString(`ALTER TABLE host_records ADD COLUMN name TEXT;
+ALTER TABLE hosts ADD COLUMN settled INTEGER;
+ALTER TABLE hosts ADD COLUMN record_change TEXT;
+ALTER TABLE hosts ADD COLUMN record_reason TEXT;
+`)
 	expanded := fstest.MapFS{"0001_accounts.sql": {Data: old}, "0002_hosts.sql": {Data: newSchema},
-		"0003_bans.sql": {Data: bansSchema}, "0004_invites.sql": {Data: inviteSchema}, "0005_expand.sql": {Data: []byte(extra.String())}}
+		"0003_bans.sql": {Data: bansSchema}, "0004_invites.sql": {Data: inviteSchema},
+		"0005_host_records.sql": {Data: hostRecordsSchema}, "0006_expand.sql": {Data: []byte(extra.String())}}
 	cfg.Rand = new(counterRandom)
 	_, withExtra := open(t, filepath.Join(t.TempDir(), "expand.db"), expanded, cfg)
 	for _, s := range []*store.Store{baseline, withoutLegacy, withExtra} {
@@ -260,6 +275,17 @@ func TestAdditiveMigrations(t *testing.T) {
 		eq(t, inviteExercise(ctx, s, host), wantInvites)
 		closed(t, w, true)
 		cancel()
+	}
+	for _, s := range []*store.Store{baseline, withoutLegacy, withExtra} {
+		h, creation := create(t, s)
+		checkErr(t, s.Finish(ctx, creation.ID, store.Update{EIP: "192.0.2.9"}), nil)
+		deleting, deletion := start(t, s, h.Name, store.OpDelete, store.Target{})
+		checkErr(t, s.Finish(ctx, deletion.ID, store.Update{}), nil)
+		deleting.State = store.HostDeleted
+		deleting.EIP = "192.0.2.9"
+		eq(t, value(t, result(s.DeletedHosts(ctx, 0, 1))), []store.Host{deleting})
+		checkErr(t, s.SettleDeleted(ctx, h.Name), nil)
+		eq(t, value(t, result(s.DeletedHosts(ctx, 0, 1))), []store.Host{})
 	}
 }
 
@@ -369,22 +395,88 @@ func TestInviteMigrationPreservesEarlierRecord(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "previous.db")
 	d, old := open(t, path, earlier, cfg)
 	h, _ := create(t, old)
-	a, _ := place(t, old, "legacy", h.Name)
-	u := value(t, result(old.AddUser(ctx, a.Slug, "existing-user", firstKey, caller)))
+	const slug = "legacy"
+	checkErr(t, d.Write(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO names (name) VALUES (?)", slug); err != nil {
+			return err
+		}
+		// Seed an existing account using the earlier schema.
+		_, err := tx.ExecContext(ctx, `INSERT INTO accounts
+			(slug, host, state, reason, gid, version, removed_version, change_id, operation, created, created_by)
+			VALUES (?, ?, ?, '', ?, 1, 0, '', '', ?, ?)`,
+			slug, h.Name, store.AccountActive, store.FirstID+10, baseTime.Unix(), caller.UserID)
+		return err
+	}), nil)
+	u := value(t, result(old.AddUser(ctx, slug, "existing-user", firstKey, caller)))
 	checkErr(t, d.Close(), nil)
 
 	d, expanded := open(t, path, migrations, cfg)
-	eq(t, value(t, result(expanded.User(ctx, a.Slug, u.Name))), u)
-	eq(t, value(t, result(expanded.Invites(ctx, a.Slug))), []store.Invite{})
-	i, token := invite(t, expanded, a.Slug, true)
+	eq(t, value(t, result(expanded.User(ctx, slug, u.Name))), u)
+	eq(t, value(t, result(expanded.Invites(ctx, slug))), []store.Invite{})
+	i, token := invite(t, expanded, slug, true)
 	checkErr(t, d.Close(), nil)
 
 	d, old = open(t, path, earlier, cfg)
-	other := value(t, result(old.AddUser(ctx, a.Slug, "new-user", firstKey, caller)))
+	other := value(t, result(old.AddUser(ctx, slug, "new-user", firstKey, caller)))
 	checkErr(t, d.Close(), nil)
 
 	_, expanded = open(t, path, migrations, cfg)
-	eq(t, value(t, result(expanded.User(ctx, a.Slug, u.Name))), u)
-	eq(t, value(t, result(expanded.User(ctx, a.Slug, other.Name))), other)
+	eq(t, value(t, result(expanded.User(ctx, slug, u.Name))), u)
+	eq(t, value(t, result(expanded.User(ctx, slug, other.Name))), other)
 	eq(t, value(t, result(expanded.InviteByToken(ctx, token))), i)
+}
+
+// R-DGKL-105K
+func TestHostRecordsMigrationPreservesEarlierHosts(t *testing.T) {
+	migrations := accounts.Migrations()
+	earlier := fstest.MapFS{}
+	var previousSchema strings.Builder
+	for _, name := range []string{"0001_accounts.sql", "0002_hosts.sql", "0003_bans.sql", "0004_invites.sql"} {
+		body := value(t, result(fs.ReadFile(migrations, name)))
+		earlier[name] = &fstest.MapFile{Data: body}
+		previousSchema.Write(body)
+	}
+	records := value(t, result(fs.ReadFile(migrations, "0005_host_records.sql")))
+	oldTable := regexp.MustCompile(`(?i)\b(` + strings.Join(tableNames(previousSchema.String()), "|") + `)\b`)
+	createStatement := regexp.MustCompile(`^CREATE (TABLE|INDEX|UNIQUE INDEX)\b`)
+	for _, statement := range strings.Split(strings.TrimSuffix(strings.TrimSpace(string(records)), ";"), ";") {
+		if !createStatement.MatchString(strings.TrimSpace(statement)) || oldTable.MatchString(statement) {
+			t.Fatalf("migration statement is not additive: %q", statement)
+		}
+	}
+
+	cfg := store.Config{Now: func() time.Time { return baseTime }, Rand: new(counterRandom)}
+	path := filepath.Join(t.TempDir(), "previous.db")
+	d, old := open(t, path, earlier, cfg)
+	h, op := create(t, old)
+	// Model the address the earlier release learned without a host_records table.
+	h.EIP = "192.0.2.9"
+	checkErr(t, d.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "UPDATE hosts SET eip = ? WHERE name = ?", h.EIP, h.Name)
+		return err
+	}), nil)
+	checkErr(t, d.Close(), nil)
+
+	d, expanded := open(t, path, migrations, cfg)
+	eq(t, value(t, result(expanded.Host(ctx, h.Name))), h)
+	eq(t, value(t, result(expanded.Operation(ctx, op.ID))), op)
+	checkErr(t, expanded.NoteHostRecord(ctx, h.Name, "change", "conflict"), nil)
+	h.Change, h.RecordReason = "change", "conflict"
+	checkErr(t, d.Close(), nil)
+
+	d, old = open(t, path, earlier, cfg)
+	second, _ := create(t, old)
+	// The earlier release leaves the EIP and DNS details when it deletes a host.
+	checkErr(t, d.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "UPDATE hosts SET state = ? WHERE name = ?", store.HostDeleted, h.Name)
+		return err
+	}), nil)
+	checkErr(t, d.Close(), nil)
+
+	_, expanded = open(t, path, migrations, cfg)
+	eq(t, value(t, result(expanded.ListHosts(ctx, 0, 2))), []store.Host{second})
+	h.State = store.HostDeleted
+	eq(t, value(t, result(expanded.DeletedHosts(ctx, 0, 2))), []store.Host{h})
+	checkErr(t, expanded.SettleDeleted(ctx, h.Name), nil)
+	eq(t, value(t, result(expanded.DeletedHosts(ctx, 0, 2))), []store.Host{})
 }

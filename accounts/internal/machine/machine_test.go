@@ -18,7 +18,7 @@ import (
 var _ machine.Machine = (*machine.Memory)(nil)
 
 func TestMachineContracts(t *testing.T) {
-	// R-B9A3-2Z55 R-7QOL-B9O2 R-BBPV-UIMJ R-ZSFH-07NI
+	// R-B9A3-2Z55 R-7QOL-B9O2 R-BBPV-UIMJ
 	const delay = 33 * time.Second
 	ctx, cancel := context.WithCancel(t.Context())
 	var sleeps int
@@ -82,9 +82,14 @@ func apply(t *testing.T, m *machine.Memory, s protocol.DesiredState) {
 }
 
 func TestMemoryApplyAndSnapshot(t *testing.T) {
-	// R-BFDK-ZTUM R-BGLH-DLLB R-BJ1A-552P
+	// R-BFDK-ZTUM R-BGLH-DLLB R-ZKBA-QWDO R-ZLJ7-4O4D
 	m := fixedMachine()
+	if got := m.State().Hostname; got != "" {
+		t.Fatalf("initial hostname = %q", got)
+	}
 	first := protocol.DesiredState{
+		Host:       "host01",
+		Domain:     "hosts.example.com",
 		DataVolume: "vol-00000001",
 		Accounts: []protocol.Account{
 			{Slug: "zebra", GID: 20000, State: protocol.AccountActive},
@@ -105,6 +110,7 @@ func TestMemoryApplyAndSnapshot(t *testing.T) {
 			{Name: "zoe", Account: "zebra", UID: 20002, Locked: true, Keys: []string{"z", "a"}},
 		},
 		Folders: []string{"alpaca", "zebra"}, Applies: 1,
+		Hostname: "host01.hosts.example.com",
 	}
 	got := m.State()
 	if !reflect.DeepEqual(got, want) {
@@ -119,11 +125,11 @@ func TestMemoryApplyAndSnapshot(t *testing.T) {
 	}
 	failure := errors.New("injected")
 	m.SetFailure(failure)
-	if err := m.Apply(t.Context(), protocol.DesiredState{}); !errors.Is(err, failure) {
+	if err := m.Apply(t.Context(), protocol.DesiredState{Host: "failed", Domain: first.Domain}); !errors.Is(err, failure) {
 		t.Fatalf("faulted Apply = %v", err)
 	}
 	m.SetFailure(nil)
-	if err := m.Apply(t.Context(), protocol.DesiredState{Users: first.Users}); !errors.Is(err, machine.ErrNoDataVolume) {
+	if err := m.Apply(t.Context(), protocol.DesiredState{Host: "failed", Domain: first.Domain, Users: first.Users}); !errors.Is(err, machine.ErrNoDataVolume) {
 		t.Fatalf("Apply without volume = %v", err)
 	}
 	if after := m.State(); !reflect.DeepEqual(after, want) {
@@ -145,12 +151,43 @@ func TestMemoryApplyAndSnapshot(t *testing.T) {
 	if got := m.State(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("reconciled state = %+v, want %+v", got, want)
 	}
+	apply(t, m, protocol.DesiredState{Host: "host02", Domain: "hosts2.example.com"})
+	if got := m.State().Hostname; got != "host02.hosts2.example.com" {
+		t.Fatalf("updated hostname = %q", got)
+	}
+}
+
+// R-ZJ3E-D4MZ.
+func TestSnapshotShape(t *testing.T) {
+	var snapshot struct {
+		Accounts  []machine.Account
+		Users     []machine.User
+		Folders   []string
+		Daemon    string
+		Applies   int
+		Allowlist []string
+		Bans      []protocol.Ban
+		Hostname  string
+	} = fixedMachine().State()
+	if snapshot.Hostname != "" {
+		t.Fatalf("initial hostname = %q", snapshot.Hostname)
+	}
+	var _ struct {
+		Slug string
+		GID  int64
+	} = machine.Account{}
+	var _ struct {
+		Name, Account string
+		UID           int64
+		Locked        bool
+		Keys          []string
+	} = machine.User{}
 }
 
 func TestMemoryInspect(t *testing.T) {
-	// R-BE5O-M23X R-WA02-2RB8
+	// R-BE5O-M23X R-ZMR3-IFV2
 	m := fixedMachine()
-	s := protocol.DesiredState{RootGB: 20, DataGB: 30, DataVolume: "vol-00000001", Accounts: []protocol.Account{
+	s := protocol.DesiredState{Host: "host01", Domain: "hosts.example.com", RootGB: 20, DataGB: 30, DataVolume: "vol-00000001", Accounts: []protocol.Account{
 		{Slug: "zebra", GID: 20000, State: protocol.AccountActive},
 		{Slug: "alpaca", GID: 20001, State: protocol.AccountActive},
 	}}
@@ -175,7 +212,9 @@ func TestMemoryInspect(t *testing.T) {
 		},
 		BanTotal:  2,
 		Allowlist: []string{"198.51.100.0/24", "2001:db8::1"},
+		Hostname:  "host01.hosts.example.com",
 	}
+	s.Domain = ""
 	for _, volume := range []string{s.DataVolume, ""} {
 		s.DataVolume = volume
 		if volume == "" {

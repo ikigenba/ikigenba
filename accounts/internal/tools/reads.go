@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -37,9 +38,10 @@ func stamp(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
-func hostAnswer(h store.Host, now time.Time) Host {
+func (cfg Config) hostAnswer(h store.Host, now time.Time) Host {
 	return Host{
-		Host: h.Name, State: h.State, Reason: h.Reason, Health: store.Health(h, now),
+		Host: h.Name, DNSName: h.Name + "." + cfg.Hosts.Domain, State: h.State,
+		Reason: cmp.Or(h.Reason, h.RecordReason), Health: store.Health(h, now),
 		Type: h.Type, RootGB: h.RootGB, DataGB: h.DataGB, EIP: h.EIP,
 		Accounts: h.Accounts, Reported: stamp(h.Reported),
 	}
@@ -82,7 +84,7 @@ func (cfg Config) hosts(ctx context.Context, a HostsArgs) (HostList, error) {
 	out.Hosts = make([]Host, 0, len(rows))
 	now := cfg.Telemetry.Now()
 	for _, h := range rows {
-		out.Hosts = append(out.Hosts, hostAnswer(h, now))
+		out.Hosts = append(out.Hosts, cfg.hostAnswer(h, now))
 	}
 	return out, nil
 }
@@ -170,9 +172,9 @@ func (cfg Config) host(ctx context.Context, a HostArgs) (HostRead, error) {
 	for _, a := range accounts {
 		names = append(names, a.Slug)
 	}
-	answer := hostAnswer(h, cfg.Telemetry.Now())
+	answer := cfg.hostAnswer(h, cfg.Telemetry.Now())
 	out := HostRead{
-		Host: answer.Host, State: answer.State, Reason: answer.Reason, Health: answer.Health,
+		Host: answer.Host, DNSName: answer.DNSName, State: answer.State, Reason: answer.Reason, Health: answer.Health,
 		Type: answer.Type, RootGB: answer.RootGB, DataGB: answer.DataGB, EIP: answer.EIP,
 		Accounts: answer.Accounts, Reported: answer.Reported,
 		InstanceID: h.InstanceID, DataVolume: h.DataVolume, Version: h.Version, Applied: h.Applied,

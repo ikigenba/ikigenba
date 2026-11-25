@@ -22,11 +22,14 @@ type recordCloud struct {
 	lookups   []string
 	changes   []cloud.RecordChange
 	queried   []string
+	launches  int
 	synced    bool
 	syncErr   error
 	changeErr error
 	zone      string
 	before    func()
+	find      func(string) error
+	sync      func(string) (bool, error)
 }
 
 func (c *recordCloud) FindRecords(_ context.Context, zone, name string) ([]cloud.Record, error) {
@@ -34,6 +37,11 @@ func (c *recordCloud) FindRecords(_ context.Context, zone, name string) ([]cloud
 		return nil, fmt.Errorf("unexpected zone %q", zone)
 	}
 	c.lookups = append(c.lookups, name)
+	if c.find != nil {
+		if err := c.find(name); err != nil {
+			return nil, err
+		}
+	}
 	return c.records[name], nil
 }
 
@@ -50,7 +58,116 @@ func (c *recordCloud) ChangeRecord(_ context.Context, zone string, change cloud.
 
 func (c *recordCloud) ChangeInsync(_ context.Context, id string) (bool, error) {
 	c.queried = append(c.queried, id)
+	if c.sync != nil {
+		return c.sync(id)
+	}
 	return c.synced, c.syncErr
+}
+
+func (c *recordCloud) RunInstance(ctx context.Context, launch cloud.Launch) (cloud.Instance, error) {
+	c.launches++
+	return c.Cloud.RunInstance(ctx, launch)
+}
+
+// R-9J8J-XBZG R-9LOC-OVGU
+func TestCreateHostRecordsItsNameBeforeLaunch(t *testing.T) {
+	for _, state := range []struct {
+		name  string
+		ready bool
+		err   error
+	}{
+		{name: "in sync", ready: true},
+		{name: "missing", err: cloudErr(cloud.ClassNotFound)},
+	} {
+		t.Run(state.name, func(t *testing.T) {
+			f := setup(t)
+			h, op := f.create()
+			cl := &recordCloud{Cloud: f.memory, zone: f.cfg.Hosts.ZoneID, before: func() {
+				equal(t, f.operation(op.ID).Step, ops.StepHostRecord)
+			}}
+			f.cfg.Cloud = cl
+			e := ops.New(f.cfg)
+			equal(t, f.step(e, op.ID).Step, ops.StepHostRecord)
+			equal(t, f.step(e, op.ID).Step, ops.StepWaitHostRecord)
+			h = f.host(h.Name)
+			name := h.Name + "." + f.cfg.Hosts.Domain
+			checkIDs(t, cl.lookups, []string{name})
+			equal(t, len(cl.changes), 1)
+			equal(t, cl.changes[0], cloud.RecordChange{Action: cloud.RecordCreate, Name: name, IP: h.EIP, TTL: ops.RecordTTL})
+			equal(t, h.Change, "change-1")
+			next := f.step(e, op.ID)
+			equal(t, next.Step, ops.StepWaitHostRecord)
+			equal(t, next.NextTry, f.now.Add(ops.PollInterval))
+			equal(t, f.host(h.Name).InstanceID, "")
+			cl.synced, cl.syncErr = state.ready, state.err
+			equal(t, f.step(e, op.ID).Step, ops.StepLaunch)
+			checkIDs(t, cl.queried, []string{h.Change, h.Change})
+		})
+	}
+}
+
+// R-9J8J-XBZG
+func TestCreateHostAdoptsOnlyAnExactRecord(t *testing.T) {
+	const address = "192.0.2.14"
+	match := cloud.Record{Type: "A", Values: []string{address}, TTL: 42}
+	for _, tc := range []struct {
+		name    string
+		records []cloud.Record
+		err     error
+		adopt   bool
+		calls   int
+	}{
+		{name: "matching", records: []cloud.Record{match}, adopt: true},
+		{name: "multiple matching records", records: []cloud.Record{match, match}},
+		{name: "different type", records: []cloud.Record{{Type: "TXT", Values: []string{address}}}},
+		{name: "different address", records: []cloud.Record{{Type: "A", Values: []string{"192.0.2.15"}}}},
+		{name: "multiple addresses", records: []cloud.Record{{Type: "A", Values: []string{address, "192.0.2.15"}}}},
+		{name: "create refused", err: cloudErr(cloud.ClassRefused), calls: 1},
+		{name: "create mismatch", err: cloudErr(cloud.ClassMismatch), calls: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := setup(t)
+			h, op := f.create()
+			ok(t, f.st.Advance(f.ctx, op.ID, store.Update{Step: ops.StepHostRecord, EIP: address}))
+			name := h.Name + "." + f.cfg.Hosts.Domain
+			cl := &recordCloud{Cloud: f.memory, zone: f.cfg.Hosts.ZoneID, records: map[string][]cloud.Record{name: tc.records}, changeErr: tc.err}
+			f.cfg.Cloud = cl
+			next := f.step(ops.New(f.cfg), op.ID)
+			checkIDs(t, cl.lookups, []string{name})
+			equal(t, len(cl.changes), tc.calls)
+			equal(t, len(cl.queried), 0)
+			h = f.host(h.Name)
+			equal(t, h.Change, "")
+			equal(t, h.InstanceID, "")
+			equal(t, cl.launches, 0)
+			if tc.adopt {
+				equal(t, next.Step, ops.StepLaunch)
+				equal(t, next.Status, store.OpRunning)
+			} else {
+				equal(t, next.Status, store.OpFailed)
+				equal(t, next.Error, ops.ReasonRecordConflict)
+				equal(t, h.State, store.HostFailed)
+				equal(t, h.Reason, ops.ReasonRecordConflict)
+			}
+		})
+	}
+}
+
+// R-IY02-M8LM
+func TestRecordCreatedAsProvisioningEndsDoesNotAdvanceOrTell(t *testing.T) {
+	f := setup(t)
+	h, op := f.create()
+	ok(t, f.st.Advance(f.ctx, op.ID, store.Update{Step: ops.StepHostRecord, EIP: "192.0.2.14"}))
+	cl := &recordCloud{Cloud: f.memory, zone: f.cfg.Hosts.ZoneID, before: func() {
+		ok(t, f.st.Fail(f.ctx, op.ID, "ended independently"))
+	}}
+	f.cfg.Cloud = cl
+	next := f.step(ops.New(f.cfg), op.ID)
+	equal(t, next.Step, ops.StepHostRecord)
+	equal(t, next.Status, store.OpFailed)
+	equal(t, next.Error, "ended independently")
+	equal(t, f.host(h.Name).Change, "")
+	equal(t, len(f.events()), 0)
 }
 
 func eventWith(t *testing.T, events []telemetry.Event, name string, attrs telemetry.Attrs, who identity.Caller) {
@@ -89,7 +206,10 @@ func TestPlaceWaitsForAddressDNSAndAppliedVersion(t *testing.T) {
 	// Provision is kept deferred while the placement waits for an address.
 	ok(t, f.st.Defer(f.ctx, provision.ID, f.now.Add(3*ops.StepTimeout), 0))
 	a, op := f.place("acme", h.Name)
-	cl := &recordCloud{Cloud: f.memory, zone: f.cfg.Hosts.ZoneID, before: func() {
+	h.EIP = "192.0.2.1"
+	cl := &recordCloud{Cloud: f.memory, zone: f.cfg.Hosts.ZoneID, records: map[string][]cloud.Record{
+		h.Name + "." + f.cfg.Hosts.Domain: {{Type: "A", Values: []string{h.EIP}}},
+	}, before: func() {
 		equal(t, f.operation(op.ID).Step, ops.StepRecord)
 	}}
 	f.cfg.Cloud = cl
@@ -99,7 +219,6 @@ func TestPlaceWaitsForAddressDNSAndAppliedVersion(t *testing.T) {
 	equal(t, f.step(e, op.ID).Step, ops.StepWaitAddress)
 	equal(t, f.operation(op.ID).Status, store.OpRunning)
 	equal(t, len(cl.changes), 0)
-	h.EIP = "192.0.2.1"
 	ok(t, f.st.Finish(f.ctx, provision.ID, store.Update{EIP: h.EIP}))
 	equal(t, f.step(e, op.ID).Step, ops.StepRecord)
 	equal(t, f.step(e, op.ID).Step, ops.StepWaitRecord)
@@ -149,7 +268,9 @@ func TestPlaceRecordAdoptionAndConflicts(t *testing.T) {
 			ok(t, f.st.Finish(f.ctx, provisioning.ID, store.Update{EIP: "192.0.2.1"}))
 			a, op := f.place("acme", h.Name)
 			name := a.Slug + "." + f.cfg.Hosts.Domain
-			cl := &recordCloud{Cloud: f.memory, zone: f.cfg.Hosts.ZoneID, records: map[string][]cloud.Record{name: tc.records}, changeErr: tc.err}
+			cl := &recordCloud{Cloud: f.memory, zone: f.cfg.Hosts.ZoneID, records: map[string][]cloud.Record{
+				name: tc.records, h.Name + "." + f.cfg.Hosts.Domain: {{Type: "A", Values: []string{"192.0.2.1"}}},
+			}, changeErr: tc.err}
 			f.cfg.Cloud = cl
 			e := ops.New(f.cfg)
 			equal(t, f.step(e, op.ID).Step, ops.StepRecord)
@@ -172,7 +293,7 @@ func TestPlaceRecordAdoptionAndConflicts(t *testing.T) {
 	}
 }
 
-// R-RQTX-AROW
+// R-IY02-M8LM
 func TestCancelledPlaceDropsWithoutEvent(t *testing.T) {
 	f := setup(t)
 	h, provisioning := f.create()
@@ -191,7 +312,7 @@ func TestCancelledPlaceDropsWithoutEvent(t *testing.T) {
 	equal(t, len(f.events()), 0)
 }
 
-// R-MNTG-22XB R-NFV4-USZA R-S6OM-9SBX R-NQU8-AQNJ R-13S5-BI0X
+// R-MNTG-22XB R-NFV4-USZA R-IZ7Z-00CB R-J0FV-DS30 R-NQU8-AQNJ R-13S5-BI0X
 func TestUnplaceWaitsForDNSAndApplicationWhenAttempted(t *testing.T) {
 	for _, attempted := range []bool{false, true} {
 		t.Run(fmt.Sprint(attempted), func(t *testing.T) {
@@ -212,11 +333,15 @@ func TestUnplaceWaitsForDNSAndApplicationWhenAttempted(t *testing.T) {
 					{Type: "CNAME", Values: []string{h.EIP}, TTL: 15},
 					{Type: "A", Values: []string{"192.0.2.42"}, TTL: 12},
 					{Type: "A", Values: []string{h.EIP}, TTL: 45},
+				}, h.Name + "." + f.cfg.Hosts.Domain: {
+					{Type: "A", Values: []string{h.EIP}, TTL: 55},
 				}},
 				before: func() { equal(t, f.operation(op.ID).Step, ops.StepUnrecord) },
 			}
 			f.cfg.Cloud = cl
 			e := ops.New(f.cfg)
+			ok(t, e.Scan(f.ctx))
+			cl.lookups = nil
 			equal(t, f.step(e, op.ID).Step, ops.StepWaitUnrecord)
 			equal(t, len(cl.lookups), 1)
 			equal(t, len(cl.changes), 1)

@@ -79,6 +79,10 @@ func (s step) run() error {
 	switch s.op.Step {
 	case StepAddress:
 		return s.allocate()
+	case StepHostRecord:
+		return s.record("", StepLaunch, StepWaitHostRecord)
+	case StepWaitHostRecord:
+		return s.waitRecord(s.h.Change, StepLaunch)
 	case StepLaunch:
 		return s.launch()
 	case StepWaitRunning:
@@ -111,9 +115,9 @@ func (s step) run() error {
 		}
 		return s.wait()
 	case StepRecord:
-		return s.record()
+		return s.record(s.a.Slug, StepWaitApplied, StepWaitRecord)
 	case StepWaitRecord:
-		return s.waitRecord()
+		return s.waitRecord(s.a.Change, StepWaitApplied)
 	case StepWaitApplied:
 		return s.waitApplied()
 	case StepUnrecord:

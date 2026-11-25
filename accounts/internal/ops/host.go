@@ -32,7 +32,7 @@ func (s step) allocate() error {
 			return err
 		}
 	}
-	return s.advance(store.Update{Step: StepLaunch, AllocationID: next.AllocationID, EIP: next.IP})
+	return s.advance(store.Update{Step: StepHostRecord, AllocationID: next.AllocationID, EIP: next.IP})
 }
 
 func (s step) launch() error {

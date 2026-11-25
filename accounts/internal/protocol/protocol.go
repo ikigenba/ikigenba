@@ -82,6 +82,7 @@ type DesiredState struct {
 	Users      []User    `json:"users"`
 	Allowlist  []string  `json:"allowlist"`
 	Unban      []string  `json:"unban"`
+	Domain     string    `json:"domain"`
 }
 
 // Account describes a group and its service account.
@@ -130,6 +131,7 @@ type Report struct {
 	Bans            []Ban      `json:"bans"`
 	BanTotal        int        `json:"ban_total"`
 	Allowlist       []string   `json:"allowlist"`
+	Hostname        string     `json:"hostname"`
 }
 
 // Disk reports filesystem usage.

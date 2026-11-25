@@ -20,6 +20,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts"
@@ -163,7 +164,7 @@ func writeBinary(t *testing.T, file string, content []byte) {
 	}
 }
 
-// R-YC94-BKTJ, R-R5X9-LMQP, R-R755-ZEHE, R-YICM-8FJ0, R-YJKI-M79P.
+// R-E0OG-WWIF, R-R5X9-LMQP, R-R755-ZEHE, R-YICM-8FJ0, R-YJKI-M79P.
 func TestSurfaceAndBinaryStartup(t *testing.T) {
 	_ = struct {
 		new    func(context.Context, Config) (*Server, error)
@@ -181,6 +182,7 @@ func TestSurfaceAndBinaryStartup(t *testing.T) {
 		After      func(time.Duration) <-chan time.Time
 		BoxUser    http.Handler
 		BoxAdmin   http.Handler
+		Domain     string
 	}(Config{})
 	const _ int8 = MaxBoxServing
 	const _ uint16 = MaxBoxServing
@@ -411,20 +413,34 @@ func desired(t *testing.T, st *store.Store, name, digest string) protocol.Desire
 	return state
 }
 
-// R-X1NT-0HH5, R-RGWD-1KEY.
+type desiredWithDomain struct {
+	*store.Store
+	domain string
+}
+
+func (s desiredWithDomain) Desired(ctx context.Context, name string) (protocol.DesiredState, error) {
+	state, err := s.Store.Desired(ctx, name)
+	state.Domain = s.domain
+	return state, err
+}
+
+// R-E1WD-AO94, R-RGWD-1KEY.
 func TestImmediateState(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	stamps := new(requests)
 	file := filepath.Join(t.TempDir(), "accountsd")
 	writeBinary(t, file, []byte("fixture"))
+	const domain = "hosts.example.com"
 	s := server(t, Config{
-		Store: st, Verifier: stamps.verifier(fixtureSTS{instance: fixtureInstance}), Configured: true, Binary: file,
+		Store: st, Verifier: stamps.verifier(fixtureSTS{instance: fixtureInstance}), Configured: true, Binary: file, Domain: domain,
 		After: func(time.Duration) <-chan time.Time {
 			t.Fatal("immediate state request waited")
 			return nil
 		},
 	})
+	s.store = desiredWithDomain{st, "unwanted.example.com"}
 	want := desired(t, st, host.Name, s.Digest())
+	want.Domain = domain
 	for _, path := range []string{
 		protocol.StatePath,
 		pollingRequest(host, "previous-digest"),
@@ -439,6 +455,7 @@ func TestImmediateState(t *testing.T) {
 			return nil
 		},
 	})
+	s.store = desiredWithDomain{st, "unwanted.example.com"}
 	expectState(t, invoke(s, stamps.signed(t.Context(), http.MethodGet, protocol.StatePath, nil)), desired(t, st, host.Name, ""))
 }
 
@@ -471,16 +488,18 @@ func waitForPoll(t *testing.T, waits <-chan time.Duration, done <-chan *httptest
 	}
 }
 
-// R-AVPU-2ANX, R-AZDJ-7LW0.
+// R-E349-OFZT, R-E7ZV-7IYL.
 func TestPollEndsOnWriteTimeoutCancelOrStop(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	stamps := new(requests)
 	wait := make(chan time.Duration, 1)
 	timer := make(chan time.Time, 1)
+	const domain = "hosts.example.com"
 	s := server(t, Config{
-		Store: st, Configured: true, Verifier: stamps.verifier(fixtureSTS{instance: fixtureInstance}),
+		Store: st, Configured: true, Verifier: stamps.verifier(fixtureSTS{instance: fixtureInstance}), Domain: domain,
 		After: func(d time.Duration) <-chan time.Time { wait <- d; return timer },
 	})
+	s.store = desiredWithDomain{st, "unwanted.example.com"}
 	poll := func(ctx context.Context) <-chan *httptest.ResponseRecorder {
 		return startPoll(t, s, stamps.signed(ctx, http.MethodGet, pollingRequest(host, "ignored-with-no-binary"), nil), wait)
 	}
@@ -501,6 +520,7 @@ func TestPollEndsOnWriteTimeoutCancelOrStop(t *testing.T) {
 	}
 	w := <-writing
 	state := desired(t, st, host.Name, "")
+	state.Domain = domain
 	expectState(t, w, state)
 	if state.Version <= host.Version || len(state.Users) != 1 || state.Users[0].Name != u.Name {
 		t.Fatalf("account write did not change desired state: %+v", state)
@@ -544,7 +564,7 @@ func (w *blockedPollWriter) Write(p []byte) (int, error) {
 	return w.ResponseRecorder.Write(p)
 }
 
-// R-AVPU-2ANX, R-AZDJ-7LW0.
+// R-E349-OFZT, R-E7ZV-7IYL.
 func TestMatchingDigestPollStopsWithoutWaitingForWriter(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	stamps := new(requests)
@@ -613,7 +633,7 @@ func (s afterHostLookup) HostByInstance(ctx context.Context, instance string) (s
 	return host, err
 }
 
-// R-AVPU-2ANX.
+// R-E349-OFZT.
 func TestPollSeesWriteBetweenLookupAndWatch(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	stamps := new(requests)
@@ -637,7 +657,27 @@ func TestPollSeesWriteBetweenLookupAndWatch(t *testing.T) {
 	expectState(t, w, want)
 }
 
-// R-AWXQ-G2EM.
+// R-E349-OFZT, R-X8LV-14EK.
+func TestDefaultLongPollTimer(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		_, st, host := fixtureStore(t)
+		stamps := new(requests)
+		s := server(t, Config{
+			Store: st, Configured: true, Verifier: stamps.verifier(fixtureSTS{instance: fixtureInstance}),
+		})
+		ctx, cancel := context.WithTimeout(t.Context(), protocol.LongPoll+time.Second)
+		defer cancel()
+		req := stamps.signed(ctx, http.MethodGet, pollingRequest(host, ""), nil)
+		started := time.Now()
+		w := invoke(s, req)
+		if elapsed := time.Since(started); elapsed != protocol.LongPoll {
+			t.Fatalf("default long poll took %v, want %v", elapsed, protocol.LongPoll)
+		}
+		expectState(t, w, desired(t, st, host.Name, ""))
+	})
+}
+
+// R-E5K2-FZH7.
 func TestStateReadFailures(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
@@ -702,7 +742,7 @@ func closeFixtureDatabase(t *testing.T, d *db.DB, _ *store.Store, _ store.Host) 
 	}
 }
 
-// R-AY5M-TU5B.
+// R-E6RY-TR7W, R-X8LV-14EK.
 func TestWaiterLimitDoesNotThrottleImmediateReads(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	stamps := new(requests)
@@ -726,7 +766,7 @@ func TestWaiterLimitDoesNotThrottleImmediateReads(t *testing.T) {
 	}
 }
 
-// R-RRVG-HI37, R-UC6I-UWQX.
+// R-RRVG-HI37, R-X8LV-14EK.
 func TestReportValidationAndRecording(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	stamps := new(requests)

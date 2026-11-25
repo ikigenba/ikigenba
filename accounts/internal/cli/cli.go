@@ -169,6 +169,7 @@ func serve(ctx context.Context, p Process, ln net.Listener, s settings.Settings)
 	binding := func() (string, error) { return s.Binding(path) }
 	accountsURL := func() (string, error) { return s.AccountsURL(path) }
 	hosts := s.HostsInUse()
+	domain := hosts.Domain
 	c, mc, err := openCloud(ctx, p, s, rnd)
 	if err != nil {
 		diagnostic(stderr, NoCloud+": "+err.Error())
@@ -187,7 +188,7 @@ func serve(ctx context.Context, p Process, ln net.Listener, s settings.Settings)
 	box.RegisterAdmin(admin, boxConfig)
 	// A cancelled start still needs a handler so the ordinary shutdown path
 	// can close the writer. An interrupted digest simply disables the download.
-	daemonConfig := daemonapi.Config{Store: st, Verifier: verifier, Binary: binary, Telemetry: writer, Now: p.Now, Configured: configured, After: p.After, BoxUser: user, BoxAdmin: admin}
+	daemonConfig := daemonapi.Config{Store: st, Verifier: verifier, Binary: binary, Telemetry: writer, Now: p.Now, Configured: configured, After: p.After, BoxUser: user, BoxAdmin: admin, Domain: domain}
 	ds, err := daemonapi.New(ctx, daemonConfig)
 	if err != nil {
 		daemonConfig.Binary = ""

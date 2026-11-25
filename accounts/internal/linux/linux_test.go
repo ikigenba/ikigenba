@@ -422,16 +422,19 @@ func assertHostChanges(t *testing.T, before, after map[string]applyHostFile, man
 }
 
 func TestApplyChangesOnlyManagedFiles(t *testing.T) {
-	// R-UJOF-YX5B
+	// R-ZWIA-KLSM
 	f := newHardeningFixture(t)
 	seedApplySudoers(f)
 	before := snapshotApplyHost(t, f.root)
-	commands := applyRecordingCommands(f, protocol.DesiredState{})
+	commands := applyRecordingCommands(f, protocol.DesiredState{Host: "host04", Domain: "metaspot.org"})
 	after := snapshotApplyHost(t, f.root)
-	want := append(initialHardeningCommands(f), []string{"systemctl", "daemon-reload"})
+	want := append(initialHardeningCommands(f), []string{"hostnamectl", "set-hostname", "host04.metaspot.org"})
+	want = append(want, initialVolumeCommands(f)...)
+	want = append(want, []string{"systemctl", "daemon-reload"})
 	want = appendSecureCommands(f, want, after, linux.MCPHelper)
 	expectApplyCommands(t, commands, want...)
-	assertHostChanges(t, before, after, append(hardeningPaths(), "/var/log/journal", linux.SkelDir, linux.KeysDir, linux.SessionHelper, linux.MCPHelper))
+	assertHostChanges(t, before, after, append(hardeningPaths(), "/var/log/journal", linux.SkelDir, linux.KeysDir,
+		linux.SessionHelper, linux.MCPHelper, hostnameDropIn))
 }
 
 func seedApplySudoers(f *hardeningFixture) {
@@ -479,6 +482,11 @@ func initialHardeningCommands(f *hardeningFixture) [][]string {
 		{"systemctl", "is-enabled", "dnf-automatic.timer"}, {"systemctl", "is-active", "dnf-automatic.timer"},
 		{"systemctl", "is-enabled", "fail2ban.service"}, {"systemctl", "is-active", "fail2ban.service"},
 		{"systemctl", "reload", "fail2ban.service"},
+	}
+}
+
+func initialVolumeCommands(f *hardeningFixture) [][]string {
+	return [][]string{
 		{"lsblk", "--pairs", "--noheadings", "--output", "NAME,PKNAME,FSTYPE,MOUNTPOINT"},
 		{"blockdev", "--getsize64", f.path("/dev/nvme0n1")},
 		{"growpart", f.path("/dev/nvme0n1"), "1"},
@@ -496,7 +504,7 @@ func hardeningPaths() []string {
 }
 
 func TestApplyChangesOnlyManagedFilesWithUsersAndData(t *testing.T) {
-	// R-UJOF-YX5B R-SDZ7-OT28 R-B0TM-V8Q5
+	// R-ZWIA-KLSM R-ZNYZ-W7LR R-B0TM-V8Q5
 	f := newHardeningFixture(t)
 	const unitDir = "/etc/systemd/system/"
 	const folder = "/srv/citron"
@@ -526,6 +534,7 @@ func TestApplyChangesOnlyManagedFilesWithUsersAndData(t *testing.T) {
 	}
 	before := snapshotApplyHost(t, f.root)
 	commands := applyRecordingCommands(f, protocol.DesiredState{
+		Host: "host04", Domain: "metaspot.org",
 		DataVolume: "vol-12345678", Unban: []string{"192.0.2.7"},
 		Accounts: []protocol.Account{
 			{Slug: "citron", GID: 24000, State: protocol.AccountActive},
@@ -542,7 +551,7 @@ func TestApplyChangesOnlyManagedFilesWithUsersAndData(t *testing.T) {
 	secureFirst := []string{linux.DaemonPath, linux.SessionHelper, linux.HostKeyDir, dataPrivateKey, dataPublicKey, linux.KeysDir}
 	managed := slices.Concat(hardeningPaths(), volumeFiles, secureFirst,
 		[]string{"/var/log/journal", linux.SkelDir, "/data/home", "/data/srv", folder, home, retiredKeys, staleSlice,
-			sharedPAMPath, linux.MCPHelper, claudeRepoPath, linux.ClaudeStamp}, claudeFilePaths())
+			sharedPAMPath, linux.MCPHelper, claudeRepoPath, linux.ClaudeStamp, hostnameDropIn}, claudeFilePaths())
 	assertHostChanges(t, before, after, managed)
 
 	dataDevice := f.path("/dev/nvme1n1")
@@ -551,13 +560,10 @@ func TestApplyChangesOnlyManagedFilesWithUsersAndData(t *testing.T) {
 		{"systemctl", "is-active", "user-24002.slice"},
 		{"systemctl", "stop", "user-24002.slice"},
 	}
-	hardening := initialHardeningCommands(f)
-	bans := slices.IndexFunc(hardening, func(cmd []string) bool {
-		return slices.Equal(cmd, []string{"systemctl", "reload", "fail2ban.service"})
-	}) + 1
-	want = append(want, hardening[:bans]...)
+	want = append(want, initialHardeningCommands(f)...)
 	want = append(want, []string{"fail2ban-client", "set", "sshd", "unbanip", "192.0.2.7"})
-	want = append(want, hardening[bans:]...)
+	want = append(want, []string{"hostnamectl", "set-hostname", "host04.metaspot.org"})
+	want = append(want, initialVolumeCommands(f)...)
 	want = append(want,
 		[]string{"blkid", "-p", "--output", "export", dataDevice}, []string{"systemctl", "daemon-reload"},
 		[]string{"systemctl", "is-enabled", "data.mount"}, []string{"systemctl", "is-active", "data.mount"},
@@ -571,7 +577,7 @@ func TestApplyChangesOnlyManagedFilesWithUsersAndData(t *testing.T) {
 	}
 	want = append(want, gitQuery, []string{"usermod", "--expiredate", "", "alice"},
 		[]string{"userdel", "pear"}, []string{"groupdel", "pear"})
-	secureLater := slices.Concat(hardeningPaths(), volumeFiles, []string{dataPrivateKey, dataPublicKey, sharedPAMPath})
+	secureLater := slices.Concat(hardeningPaths(), volumeFiles, []string{dataPrivateKey, dataPublicKey, sharedPAMPath, hostnameDropIn})
 	slices.Sort(secureLater)
 	want = appendSecureCommands(f, want, after, slices.Concat(secureFirst, secureLater)...)
 	want = appendSecureCommands(f, want, after, claudeDirectories...)

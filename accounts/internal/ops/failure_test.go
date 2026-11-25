@@ -131,7 +131,7 @@ func TestRunLeavesStepRecordedWhenCloudCallCancelled(t *testing.T) {
 	equal(t, pending.Generation, op.Generation)
 	equal(t, pending.Error, "")
 	f.cfg.Cloud = f.memory
-	equal(t, f.step(ops.New(f.cfg), op.ID).Step, ops.StepLaunch)
+	equal(t, f.step(ops.New(f.cfg), op.ID).Step, ops.StepHostRecord)
 }
 
 // R-MSP1-L5W3 R-RWXF-7MED R-N2G8-NBTN R-N4W1-EVB1 R-N7BU-6ESF R-N8JQ-K6J4

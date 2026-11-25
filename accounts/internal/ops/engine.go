@@ -31,6 +31,8 @@ const (
 // Operation steps.
 const (
 	StepAddress        = "address"
+	StepHostRecord     = "host_record"
+	StepWaitHostRecord = "wait_host_record"
 	StepLaunch         = "launch"
 	StepWaitRunning    = "wait_running"
 	StepVolume         = "volume"
@@ -202,22 +204,21 @@ func (e *Engine) silence(ctx context.Context, now time.Time) error {
 	}
 }
 
-// Scan notes unexplained resources without modifying them and prunes expired grows.
+// Scan checks live and deleted hosts' records, notes unexplained resources, and prunes expired grows.
 func (e *Engine) Scan(ctx context.Context) error {
 	return e.scan(ctx, e.cfg.Now())
 }
 
 func (e *Engine) scan(ctx context.Context, now time.Time) error {
 	e.lastScan, e.hasScanned = now, true
+	var cloudErr error
 	if e.cfg.Cloud != nil {
-		if err := e.scanResources(ctx, now); err != nil {
-			return err
-		}
+		cloudErr = errors.Join(e.checkRecords(ctx), e.checkLeftovers(ctx), e.scanResources(ctx, now))
 	}
 	for {
 		n, err := e.cfg.Store.PruneGrows(ctx, now, store.BatchSize)
 		if err != nil || n < store.BatchSize {
-			return err
+			return errors.Join(cloudErr, err)
 		}
 	}
 }

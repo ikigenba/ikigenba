@@ -311,6 +311,7 @@ func (c *drivenClock) sleep(ctx context.Context, d time.Duration) {
 }
 
 // R-YYYL-LXTC R-Z2MA-R91F R-GT9G-XHJE R-GY52-GKI6 R-GZCY-UC8V
+// R-AX78-VHKU (sandbox), R-VN5D-PUG1.
 func TestSandboxResumesAndSynchronizesHosts(t *testing.T) {
 	for _, withURL := range []bool{true, false} {
 		t.Run(fmt.Sprint(withURL), func(t *testing.T) {
@@ -343,6 +344,15 @@ func TestSandboxResumesAndSynchronizesHosts(t *testing.T) {
 				run.call("host", map[string]string{"host": created.Host}, &host)
 				return host.State == "running" && host.Health == "sync"
 			})
+			wantName := "host01." + settings.SandboxHosts.Domain
+			var report protocol.Report
+			if err := json.Unmarshal(host.Report, &report); err != nil {
+				t.Fatal(err)
+			}
+			if host.DNSName != wantName || report.Hostname != wantName || host.EIP == "" {
+				t.Fatalf("sandbox host DNS name = %q, reported hostname = %q, EIP = %q; want %q for both names and an EIP",
+					host.DNSName, report.Hostname, host.EIP, wantName)
+			}
 			// Wait for the simulated daemon's next poll to begin before mutating.
 			var account tools.AccountRead
 			run.call("create_account", map[string]string{"account": "acme", "host": created.Host}, &account)
@@ -365,6 +375,10 @@ func TestSandboxResumesAndSynchronizesHosts(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			records, err := saved.FindRecords(t.Context(), settings.SandboxHosts.ZoneID, wantName)
+			if err != nil || len(records) != 1 || records[0].Type != "A" || !slices.Equal(records[0].Values, []string{host.EIP}) {
+				t.Fatalf("sandbox DNS records at %q = %+v (%v), want one A with %q", wantName, records, err, host.EIP)
+			}
 			var instances []cloud.Instance
 			err = saved.FindInstances(t.Context(), cloud.Tags{cloud.TagKind: cloud.KindHost}, func(page []cloud.Instance) bool {
 				instances = append(instances, page...)
@@ -379,8 +393,14 @@ func TestSandboxResumesAndSynchronizesHosts(t *testing.T) {
 
 	t.Run("AWS without an accounts URL", func(t *testing.T) {
 		clock := newDrivenClock()
-		base := testMemoryCloud(t)
-		run := startIntegration(t, integrationOptions{env: awsEnvironment(), now: clock.now, after: clock.after, cloud: func(context.Context, string) (cloud.Cloud, error) {
+		hosts := settings.SandboxHosts
+		base, err := memory.New(memory.Config{
+			Path: filepath.Join(t.TempDir(), "cloud.json"), Now: clock.now, Rand: &integrationRandom{}, Hosts: hosts,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		run := startIntegration(t, integrationOptions{env: hostEnvironment(hosts), now: clock.now, after: clock.after, cloud: func(context.Context, string) (cloud.Cloud, error) {
 			return base, nil
 		}})
 		run.call("create_host", struct{}{}, nil)
@@ -399,6 +419,13 @@ func TestSandboxResumesAndSynchronizesHosts(t *testing.T) {
 			t.Fatal(run.err.String())
 		}
 	})
+}
+
+func hostEnvironment(hosts settings.Hosts) map[string]string {
+	return map[string]string{
+		"AWS_REGION": hosts.Region, "IKIGENBA_HOSTS_ZONE_ID": hosts.ZoneID, "IKIGENBA_HOSTS_DOMAIN": hosts.Domain,
+		"IKIGENBA_HOSTS_LAUNCH_TEMPLATE": hosts.LaunchTemplate, "IKIGENBA_HOSTS_INSTANCE_PROFILE": hosts.InstanceProfile,
+	}
 }
 
 // R-JFIG-JA0H

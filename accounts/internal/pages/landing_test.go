@@ -29,7 +29,7 @@ const created = "2026-11-17T14:03:07Z"
 const createdMinute = "2026-11-17 14:03"
 const createdSecond = "2026-11-17 14:03:07 UTC"
 
-// R-S0UG-MC09 R-0RL5-HSLZ R-RUQY-PHAS R-SJ4Y-CW4O
+// R-CYA3-AG15 R-CZHZ-O7RU R-D35O-TIZX R-D4DL-7AQM
 func TestLandingRows(t *testing.T) {
 	f := setup(t)
 	data := pages.LandingData{Configured: true, Domain: f.cfg.Domain, Hosts: []pages.HostRow{}, Accounts: []pages.AccountRow{}, Users: []pages.UserRow{}}
@@ -53,6 +53,9 @@ func TestLandingRows(t *testing.T) {
 	if err := st.Finish(t.Context(), op.ID, store.Update{InstanceID: "assigned-instance", EIP: "192.0.2.7"}); err != nil {
 		t.Fatal(err)
 	}
+	if err := st.NoteHostRecord(t.Context(), h.Name, "", ops.ReasonRecordConflict); err != nil {
+		t.Fatal(err)
+	}
 	received := f.cfg.Now().Add(2*time.Minute + 2*time.Second)
 	seen := received.Add(-time.Second)
 	_, err = st.RecordReport(t.Context(), h.Name, protocol.Report{Protocol: protocol.Version, Attempted: u.Version, Applied: u.Version, SignIns: []protocol.SignIn{{User: u.Name, At: seen}}}, received)
@@ -63,7 +66,7 @@ func TestLandingRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.cfg.Now = func() time.Time { return received.Add(store.SilentAfter + time.Second) }
-	data.Hosts = []pages.HostRow{{Name: h.Name, State: store.HostRunning, Health: store.HealthSilent, Type: hostSpec.Type, RootGB: hostSpec.RootGB, DataGB: hostSpec.DataGB, AccountCount: 2, EIP: "192.0.2.7", Reported: "2026-11-17T14:05:09Z", ReportedText: "2026-11-17 14:05"}}
+	data.Hosts = []pages.HostRow{{Name: h.Name, DNSName: h.Name + "." + f.cfg.Domain, State: store.HostRunning, Reason: ops.ReasonRecordConflict, Health: store.HealthSilent, Type: hostSpec.Type, RootGB: hostSpec.RootGB, DataGB: hostSpec.DataGB, AccountCount: 2, EIP: "192.0.2.7", Reported: "2026-11-17T14:05:09Z", ReportedText: "2026-11-17 14:05"}}
 	data.Accounts = []pages.AccountRow{
 		{Slug: a.Slug, Host: h.Name, DNSName: a.Slug + "." + f.cfg.Domain, State: store.AccountActive, UserCount: 2, Created: created, CreatedText: createdMinute},
 		{Slug: abandoned.Slug, Host: h.Name, DNSName: abandoned.Slug + "." + f.cfg.Domain, State: store.AccountFailed, Reason: ops.ReasonRecordConflict, Created: created, CreatedText: createdMinute},
@@ -73,6 +76,23 @@ func TestLandingRows(t *testing.T) {
 		{Login: "other-user", Account: a.Slug, State: store.UserActive, KeyCount: 1, Pending: true},
 	}
 	checkLanding(t, f, "/?ignored=one", data)
+
+	_, stop, err := st.StartHostOp(t.Context(), h.Name, store.OpStop, store.Target{}, caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const failedReason = "chosen stop failure"
+	if err := st.Fail(t.Context(), stop.ID, failedReason); err != nil {
+		t.Fatal(err)
+	}
+	data.Hosts[0].State, data.Hosts[0].Reason, data.Hosts[0].Health = store.HostFailed, failedReason, store.HealthPending
+	checkLanding(t, f, "/", data)
+
+	f.cfg.Domain, data.Domain, data.Hosts[0].DNSName = "", "", ""
+	for i := range data.Accounts {
+		data.Accounts[i].DNSName = data.Accounts[i].Slug + "."
+	}
+	checkLanding(t, f, "/", data)
 }
 
 func checkLanding(t *testing.T, f *fixture, target string, data pages.LandingData) {
@@ -81,7 +101,7 @@ func checkLanding(t *testing.T, f *fixture, target string, data pages.LandingDat
 	same(t, answer(f, "GET", target, "viewer"), expected(f, "GET", target, "landing", 200, data))
 }
 
-// R-7GLU-WZS6 R-7HTR-ARIV
+// R-D0PW-1ZIJ R-D1XS-FR98
 func TestLandingInviteCountsAndAdmins(t *testing.T) {
 	f := setup(t)
 	ctx := t.Context()
@@ -101,7 +121,7 @@ func TestLandingInviteCountsAndAdmins(t *testing.T) {
 	data := pages.LandingData{
 		Configured: true,
 		Domain:     f.cfg.Domain,
-		Hosts:      []pages.HostRow{{Name: h.Name, State: store.HostProvisioning, Health: store.HealthNone, Type: hostSpec.Type, RootGB: hostSpec.RootGB, DataGB: hostSpec.DataGB, AccountCount: 1}},
+		Hosts:      []pages.HostRow{{Name: h.Name, DNSName: h.Name + "." + f.cfg.Domain, State: store.HostProvisioning, Health: store.HealthNone, Type: hostSpec.Type, RootGB: hostSpec.RootGB, DataGB: hostSpec.DataGB, AccountCount: 1}},
 		Accounts:   []pages.AccountRow{{Slug: a.Slug, Host: h.Name, DNSName: a.Slug + "." + f.cfg.Domain, State: store.AccountPending, UserCount: 1, Created: created, CreatedText: createdMinute}},
 		Users:      []pages.UserRow{{Login: u.Name, Account: a.Slug, State: store.UserActive, KeyCount: 1, Pending: true}},
 	}
@@ -163,7 +183,8 @@ func createListRows(t *testing.T, f *fixture, n int) pages.LandingData {
 		if err != nil {
 			t.Fatal(err)
 		}
-		out.Hosts = append(out.Hosts, pages.HostRow{Name: fmt.Sprintf("host%02d", i+1), State: store.HostProvisioning, Health: store.HealthNone, Type: hostSpec.Type, RootGB: hostSpec.RootGB, DataGB: hostSpec.DataGB, AccountCount: 1})
+		name := fmt.Sprintf("host%02d", i+1)
+		out.Hosts = append(out.Hosts, pages.HostRow{Name: name, DNSName: name + "." + f.cfg.Domain, State: store.HostProvisioning, Health: store.HealthNone, Type: hostSpec.Type, RootGB: hostSpec.RootGB, DataGB: hostSpec.DataGB, AccountCount: 1})
 		out.Accounts = append(out.Accounts, pages.AccountRow{Slug: a.Slug, Host: h.Name, DNSName: a.Slug + "." + f.cfg.Domain, State: store.AccountPending, UserCount: 1, Created: created, CreatedText: createdMinute})
 		out.Users = append(out.Users, pages.UserRow{Login: u.Name, Account: a.Slug, State: store.UserActive, KeyCount: 1, Pending: true})
 	}
@@ -222,7 +243,7 @@ func firstWindows(rows pages.LandingData, size int) [3]bounds {
 	return b
 }
 
-// R-RVYV-391H R-RYEN-USIV R-RONG-SMLB R-RR39-K62P R-S22D-03QY R-SO0J-VZ3G R-SP8G-9QU5 R-KC06-CSO6
+// R-RVYV-391H R-RYEN-USIV R-RONG-SMLB R-RR39-K62P R-S22D-03QY R-SO0J-VZ3G R-SP8G-9QU5 R-D81A-CLYP
 func TestIndependentPaging(t *testing.T) {
 	f := setup(t)
 	const l = paging.DefaultLimit
@@ -281,7 +302,26 @@ func TestIndependentPaging(t *testing.T) {
 	same(t, answer(empty, "GET", target, "viewer"), statusWithHeader(303, "Location", "/"))
 }
 
-// R-SKCU-QNVD
+// R-D81A-CLYP holds one list's position fixed across different positions of other lists.
+func TestUsersWindowIgnoresHostPosition(t *testing.T) {
+	f := setup(t)
+	const l = paging.DefaultLimit
+	const size = 4*l + 2
+	data := createListRows(t, f, size)
+	b := firstWindows(data, size)
+	b[2] = bounds{l, 2 * l, b[2].next, token("users-before", keyFor(l, 2, data)...), token("users", keyFor(2*l-1, 2, data)...)}
+	for _, hostPosition := range []bounds{
+		b[0],
+		{l, 2 * l, token("hosts", int64(l)), token("hosts-before", int64(l+1)), token("hosts", int64(2*l))},
+		{l, 2 * l, token("hosts-before", int64(2*l+1)), token("hosts-before", int64(l+1)), token("hosts", int64(2*l))},
+		{size - l, size, "last", token("hosts-before", int64(size-l+1)), ""},
+	} {
+		b[0] = hostPosition
+		checkLanding(t, f, pageURL(b), renderListWindows(data, b))
+	}
+}
+
+// R-D6TD-YU80
 func TestToolAndPageWindowsAgree(t *testing.T) {
 	f := setup(t)
 	const size = paging.DefaultLimit + 1
@@ -355,7 +395,7 @@ func TestToolAndPageWindowsAgree(t *testing.T) {
 	}
 }
 
-// R-S5OQ-Q4G0 R-S6WN-3W6P R-SWJU-KDAB R-K8CH-7HG3
+// R-UY9S-SWPB R-UZHP-6OG0 R-SWJU-KDAB R-K8CH-7HG3
 func TestHostDetailsAndLatestReport(t *testing.T) {
 	f := setup(t)
 	st := f.cfg.Store
@@ -365,7 +405,7 @@ func TestHostDetailsAndLatestReport(t *testing.T) {
 	}
 	target := "/hosts/" + h.Name
 	b := banner(f, target, []page.Level{pages.HostLevel(h.Name)})
-	view := pages.HostView{Name: h.Name, State: store.HostProvisioning, Health: store.HealthNone, Type: hostSpec.Type, RootGB: hostSpec.RootGB, DataGB: hostSpec.DataGB, Created: created, CreatedText: createdSecond, Allowlist: []string{}}
+	view := pages.HostView{Name: h.Name, DNSName: h.Name + "." + f.cfg.Domain, State: store.HostProvisioning, Health: store.HealthNone, Type: hostSpec.Type, RootGB: hostSpec.RootGB, DataGB: hostSpec.DataGB, Created: created, CreatedText: createdSecond, Allowlist: []string{}}
 	same(t, answer(f, "GET", target, "viewer"), expected(f, "GET", target, "host", 200, pages.HostData{Banner: b, Host: view}))
 	for _, slug := range []string{"alpha", "zulu"} {
 		if _, _, err := st.PlaceAccount(t.Context(), slug, h.Name, caller); err != nil {
@@ -376,6 +416,9 @@ func TestHostDetailsAndLatestReport(t *testing.T) {
 	if err := st.Finish(t.Context(), op.ID, store.Update{InstanceID: instance, DataVolume: volume, EIP: eip}); err != nil {
 		t.Fatal(err)
 	}
+	if err := st.NoteHostRecord(t.Context(), h.Name, "", ops.ReasonRecordConflict); err != nil {
+		t.Fatal(err)
+	}
 	for _, entry := range []string{"198.51.100.0/24", "192.0.2.7"} {
 		if _, err := st.Allow(t.Context(), h.Name, entry); err != nil {
 			t.Fatal(err)
@@ -383,9 +426,10 @@ func TestHostDetailsAndLatestReport(t *testing.T) {
 	}
 	received := f.cfg.Now().Add(2*time.Minute + 2*time.Second)
 	banned := received.In(time.FixedZone("test", 2*60*60))
+	const reportedHostname = "chosen-host.reported.test"
 	report := protocol.Report{
 		Protocol: protocol.Version, Attempted: 2, Applied: 1, Error: "chosen apply error", InstanceID: "reported-instance",
-		Type: "reported-type", AMI: "reported-ami", OS: "reported-os", Kernel: "reported-kernel", DaemonVersion: "reported-daemon", Booted: f.cfg.Now(),
+		Hostname: reportedHostname, Type: "reported-type", AMI: "reported-ami", OS: "reported-os", Kernel: "reported-kernel", DaemonVersion: "reported-daemon", Booted: f.cfg.Now(),
 		Load: [3]float64{1.21, 2.43, 3.65}, CPUPercent: 4.3, MemoryUsed: 101, MemoryAvailable: 102, SwapUsed: 103, SwapTotal: 104,
 		Root: protocol.Disk{UsedBytes: 201, SizeBytes: 202, InodesUsed: 203, InodesTotal: 204},
 		Data: protocol.Disk{UsedBytes: 301, SizeBytes: 302, InodesUsed: 303, InodesTotal: 304}, Sessions: 5, Updates: 6, Reboot: true,
@@ -409,11 +453,12 @@ func TestHostDetailsAndLatestReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	view.State, view.Health, view.AccountCount = store.HostRunning, store.HealthError, 2
+	view.Reason = ops.ReasonRecordConflict
 	view.InstanceID, view.DataVolume, view.EIP = instance, volume, eip
 	view.Allowlist = []string{"192.0.2.7", "198.51.100.0/24"}
 	view.Reported, view.ReportedText = "2026-11-17T14:05:09Z", "2026-11-17 14:05"
 	reportView := &pages.ReportView{
-		Received: "2026-11-17T14:05:09Z", ReceivedText: "2026-11-17 14:05:09 UTC", InstanceID: "reported-instance", Type: "reported-type",
+		Received: "2026-11-17T14:05:09Z", ReceivedText: "2026-11-17 14:05:09 UTC", Hostname: reportedHostname, InstanceID: "reported-instance", Type: "reported-type",
 		AMI: "reported-ami", OS: "reported-os", Kernel: "reported-kernel", DaemonVersion: "reported-daemon", Booted: created, BootedText: createdSecond,
 		Applied: 1, Wanted: recorded.Version, Error: "chosen apply error", Load1: 1.21, Load5: 2.43, Load15: 3.65, CPUPercent: 4.3,
 		MemoryUsed: 101, MemoryAvailable: 102, SwapUsed: 103, SwapTotal: 104, Root: pages.VolumeView{UsedBytes: 201, SizeBytes: 202, InodesUsed: 203, InodesTotal: 204},

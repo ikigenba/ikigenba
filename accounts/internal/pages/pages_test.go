@@ -168,7 +168,42 @@ func TestPageNamesAndTimeLayouts(t *testing.T) {
 	}
 }
 
-// R-A8L8-1TI4 R-A9T4-FL8T R-ATBI-JX3X R-S6XY-J6PQ R-7CY5-ROK3 R-TSTJ-2BVL R-TU1F-G3MA R-SD1G-G1F7 R-AICF-3ZFO R-AJKB-HR6D R-AM04-9ANR R-7J1N-OJ9K R-7E62-5GAS R-7FDY-J81H
+// R-CTEH-RD2D R-CUME-54T2 R-CVUA-IWJR
+func TestPageDataShapes(t *testing.T) {
+	t.Helper()
+	_ = struct {
+		Name, DNSName, State, Reason, Health, Type string
+		RootGB, DataGB                             int
+		EIP                                        string
+		AccountCount                               int
+		Reported, ReportedText                     string
+	}(pages.HostRow{})
+	_ = struct {
+		Name, DNSName, State, Reason, Health, Type                           string
+		RootGB, DataGB                                                       int
+		EIP                                                                  string
+		AccountCount                                                         int
+		Reported, ReportedText, InstanceID, DataVolume, Created, CreatedText string
+		Allowlist                                                            []string
+	}(pages.HostView{})
+	_ = struct {
+		Received, ReceivedText, Hostname, InstanceID, Type, AMI, OS, Kernel, DaemonVersion, Booted, BootedText string
+		Applied, Wanted                                                                                        int64
+		Error                                                                                                  string
+		Load1, Load5, Load15, CPUPercent                                                                       float64
+		MemoryUsed, MemoryAvailable, SwapUsed, SwapTotal                                                       int64
+		Root, Data                                                                                             pages.VolumeView
+		Sessions, Updates                                                                                      int
+		Reboot                                                                                                 bool
+		FailedUnits                                                                                            []string
+		Slices                                                                                                 []pages.SliceRow
+		Bans                                                                                                   []pages.BanRow
+		BanTotal                                                                                               int
+		Allowlist                                                                                              []string
+	}(pages.ReportView{})
+}
+
+// R-A8L8-1TI4 R-A9T4-FL8T R-ATBI-JX3X R-S6XY-J6PQ R-CTEH-RD2D R-CUME-54T2 R-CVUA-IWJR R-SD1G-G1F7 R-AICF-3ZFO R-AJKB-HR6D R-AM04-9ANR R-CX26-WOAG R-7E62-5GAS R-7FDY-J81H
 func TestTemplateSet(t *testing.T) {
 	t.Chdir(t.TempDir())
 	independent, err := page.Templates().ParseFS(accounts.Assets(), "*.html")
@@ -181,6 +216,10 @@ func TestTemplateSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	again, err := load()
+	if err != nil {
+		t.Fatal(err)
+	}
 	check := func(name string, data any) {
 		t.Helper()
 		var raw bytes.Buffer
@@ -188,14 +227,16 @@ func TestTemplateSet(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, method := range []string{"GET", "HEAD"} {
-			w := httptest.NewRecorder()
-			write(set, w, request(method, "/", "viewer"), 207, name, data)
 			want := raw.String()
 			if method == "HEAD" {
 				want = ""
 			}
-			if w.Code != 207 || !reflect.DeepEqual(w.Header().Values("Content-Type"), []string{"text/html; charset=utf-8"}) || w.Body.String() != want {
-				t.Fatalf("template %s method %s", name, method)
+			for _, templates := range []*pages.Set{set, again} {
+				w := httptest.NewRecorder()
+				write(templates, w, request(method, "/", "viewer"), 207, name, data)
+				if w.Code != 207 || !reflect.DeepEqual(w.Header().Values("Content-Type"), []string{"text/html; charset=utf-8"}) || w.Body.String() != want {
+					t.Fatalf("template %s method %s", name, method)
+				}
 			}
 		}
 	}
@@ -206,23 +247,28 @@ func TestTemplateSet(t *testing.T) {
 	states := []string{store.HostProvisioning, store.HostRunning, store.HostStopping, store.HostStopped, store.HostStarting, store.HostResizing, store.HostDeleting, store.HostFailed}
 	healths := []string{store.HealthSync, store.HealthPending, store.HealthError, store.HealthSilent, store.HealthNone}
 	for _, full := range []bool{false, true} {
-		var eip, reason, stamp, visible, instance, volume string
+		var dnsName, eip, reason, stamp, visible, instance, volume string
 		var rows []pages.ToolRow
 		var report *pages.ReportView
 		if full {
 			b.Release, b.Commit = "chosen-release", "chosen-commit"
+			dnsName = "chosen-host.work.test"
 			eip, reason, stamp, visible = "192.0.2.1", "chosen-reason", "2026-11-17T14:05:09Z", "2026-11-17 14:05"
 			instance, volume = "chosen-instance", "chosen-volume"
 			rows = []pages.ToolRow{{"chosen-tool", "chosen-copy"}}
-			report = &pages.ReportView{stamp, visible, instance, "chosen-type", "chosen-ami", "chosen-os", "chosen-kernel", "chosen-daemon", stamp, visible, 2, 3, reason, 1, 2, 3, 4, 10, 11, 12, 13, pages.VolumeView{1, 2, 3, 4}, pages.VolumeView{5, 6, 7, 8}, 15, 16, true, []string{}, []pages.SliceRow{}, []pages.BanRow{}, 0, []string{}}
+			report = &pages.ReportView{stamp, visible, "reported-host.work.test", instance, "chosen-type", "chosen-ami", "chosen-os", "chosen-kernel", "chosen-daemon", stamp, visible, 2, 3, reason, 1, 2, 3, 4, 10, 11, 12, 13, pages.VolumeView{1, 2, 3, 4}, pages.VolumeView{5, 6, 7, 8}, 15, 16, true, []string{}, []pages.SliceRow{}, []pages.BanRow{}, 0, []string{}}
 		}
 		var hosts []pages.HostRow
 		for i, state := range states {
 			health := healths[i%len(healths)]
-			hosts = append(hosts, pages.HostRow{"chosen-host", state, reason, health, "chosen-type", 20, 50, eip, 3, stamp, visible})
-			data := pages.HostData{b, pages.HostView{"chosen-host", state, reason, health, "chosen-type", 20, 50, eip, 3, stamp, visible, instance, volume, stamp, visible, []string{}}, report}
+			hosts = append(hosts, pages.HostRow{"chosen-host", dnsName, state, reason, health, "chosen-type", 20, 50, eip, 3, stamp, visible})
+			data := pages.HostData{b, pages.HostView{"chosen-host", dnsName, state, reason, health, "chosen-type", 20, 50, eip, 3, stamp, visible, instance, volume, stamp, visible, []string{}}, report}
 			check("host", data)
 			if report != nil {
+				withoutHostname := *report
+				withoutHostname.Hostname = ""
+				data.Report = &withoutHostname
+				check("host", data)
 				populated := *report
 				populated.FailedUnits = []string{"chosen-unit"}
 				populated.Slices = []pages.SliceRow{{"chosen-slice", 17, 18}}
@@ -312,7 +358,7 @@ func statusWithHeader(status int, name, value string) *httptest.ResponseRecorder
 	return w
 }
 
-// R-ADGT-KWGW R-S5Q2-5EZ1 R-AY74-302P R-RSB5-XXTE R-RZMK-8K9K R-SFH9-7KWL R-RX6R-H0S6 R-SGP5-LCNA R-SHX1-Z4DZ R-SMSN-I7CR R-SQGC-NIKU
+// R-ADGT-KWGW R-CQYO-ZTKZ R-AY74-302P R-RSB5-XXTE R-RZMK-8K9K R-SFH9-7KWL R-RX6R-H0S6 R-SGP5-LCNA R-SHX1-Z4DZ R-SMSN-I7CR R-SQGC-NIKU
 func TestPageDecisionOrder(t *testing.T) {
 	f := setup(t)
 	f.cfg.ServicesPath = servicesFile(t, "https://chosen-auth.test/")

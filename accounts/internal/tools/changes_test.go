@@ -217,7 +217,7 @@ func checkHostOperation(t *testing.T, f *fixture, name string, args tools.HostAr
 	return op.ID
 }
 
-// R-XV4B-LXJN R-XYS0-R8RQ R-F86S-9JVA
+// R-XV4B-LXJN R-XYS0-R8RQ R-1GCH-JWOD
 func TestCreateAccountDNS(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
@@ -420,7 +420,7 @@ func testRemoveAccountWithUsers(t *testing.T) {
 	refusal(t, f.call(tools.ToolRemoveAccount, unplace), tools.AccountHasUsers)
 }
 
-// R-F9EO-NBLZ R-YAZ0-KY6O R-FAML-13CO R-FBUH-EV3D
+// R-1HKD-XOF2 R-YAZ0-KY6O R-1ISA-BG5R R-1K06-P7WG
 func TestUserAndKeyChanges(t *testing.T) {
 	f := setup(t)
 	h, _ := f.seedHost(false)
@@ -513,7 +513,7 @@ func TestUserAndKeyChanges(t *testing.T) {
 	}
 }
 
-// R-F9EO-NBLZ
+// R-1HKD-XOF2
 func TestAccountUserCapacity(t *testing.T) {
 	f := setup(t)
 	h, _ := f.seedHost(false)

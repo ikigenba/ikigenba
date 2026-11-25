@@ -54,6 +54,7 @@ type Snapshot struct {
 	Applies   int
 	Allowlist []string
 	Bans      []protocol.Ban
+	Hostname  string
 }
 
 // Memory is an in-memory machine for tests and sandbox hosts.
@@ -69,6 +70,7 @@ type Memory struct {
 	failure   error
 	allowlist []string
 	bans      map[string]protocol.Ban
+	hostname  string
 }
 
 // NewMemory makes an empty simulated host.
@@ -99,6 +101,7 @@ func (m *Memory) State() Snapshot {
 	defer m.mu.Unlock()
 	out := Snapshot{
 		Daemon: m.daemon, Applies: m.applies, Allowlist: slices.Clone(m.allowlist), Bans: m.activeBans(),
+		Hostname: m.hostname,
 	}
 	for _, account := range m.accounts {
 		out.Accounts = append(out.Accounts, account)
@@ -235,6 +238,9 @@ func (m *Memory) Apply(ctx context.Context, s protocol.DesiredState) error {
 			delete(m.bans, address)
 		}
 	}
+	if s.Domain != "" {
+		m.hostname = s.Host + "." + s.Domain
+	}
 	m.applies++
 	return nil
 }
@@ -250,6 +256,7 @@ func (m *Memory) Inspect(_ context.Context, s protocol.DesiredState) (protocol.R
 		OS: MemoryOS, Kernel: MemoryKernel, Booted: m.booted,
 		MemoryUsed: MemoryUsed, MemoryAvailable: MemoryAvailable, Root: disk(s.RootGB),
 		Allowlist: slices.Clone(m.allowlist), Bans: m.activeBans(),
+		Hostname: m.hostname,
 	}
 	report.BanTotal = len(report.Bans)
 	if s.DataVolume != "" {
