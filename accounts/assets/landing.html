@@ -21,7 +21,9 @@
      configuration; empty when no domain is configured), .State (string, as
      stored: "provisioning", "running", "stopping", "stopped", "starting",
      "resizing", "deleting" or "failed"), .Reason (string, why the last
-     operation failed, as recorded; empty unless .State is "failed"),
+     operation failed, as recorded, or, when that is empty, why the host's
+     own DNS record could not be made, so a running host may carry one;
+     empty when neither applies),
      .Health (string, from the host's latest report: "sync" the report
      applied the host's current desired state, "pending" the host has not
      yet applied a change made since, "error" the latest report says the
