@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,6 +20,7 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/cli"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud/memory"
+	"github.com/ikigenba/ikigenba/accounts/internal/join"
 	"github.com/ikigenba/ikigenba/accounts/internal/ops"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 	"github.com/ikigenba/ikigenba/accounts/internal/settings"
@@ -474,12 +474,31 @@ func secrecyKey(t *testing.T, variant string) string {
 	return key
 }
 
-// R-E18S-PNZ9 R-EKR6-TZUD R-IF26-P336 R-171J-ZR8S
+type secrecyRandom struct {
+	integrationRandom
+}
+
+func (r *secrecyRandom) Read(p []byte) (int, error) {
+	n, err := r.integrationRandom.Read(p)
+	if len(p) == 32 {
+		// Preserve two counter bytes to vary the token. Crockford base32
+		// encodes the surrounding one bits as Z (G in the padded last digit),
+		// so each eight-character run contains a character absent from hex IDs.
+		for i := range p {
+			if i != 16 && i != 17 {
+				p[i] = 0xff
+			}
+		}
+	}
+	return n, err
+}
+
+// R-E18S-PNZ9 R-EKR6-TZUD R-IF26-P336 R-171J-ZR8S R-AL27-ZL79
 func TestRunSecrecy(t *testing.T) {
 	key := secrecyKey(t, "")
 	clock := newDrivenClock()
 	run := startIntegration(t, integrationOptions{now: clock.now, after: clock.after, sleep: clock.sleep, email: emailMarker + "@fixture.test",
-		random: rand.NewChaCha8([32]byte{4})})
+		random: &secrecyRandom{}})
 	run.call("create_host", struct{}{}, nil)
 	driveUntil(t, clock, func() bool {
 		var host tools.HostRead
@@ -533,7 +552,7 @@ func TestRunSecrecy(t *testing.T) {
 	if run.stop() != cli.ExitSuccess {
 		t.Fatal(run.err.String())
 	}
-	var allowObserved bool
+	var allowObserved, enrollmentObserved bool
 	events := run.capture.Events()
 	assertTrailSecrecy(t, events, admin, ordinary)
 	for _, event := range events {
@@ -541,15 +560,21 @@ func TestRunSecrecy(t *testing.T) {
 			event.Attrs["host"] == "host01" && event.Attrs["ip"] == "192.0.2.0/24" {
 			allowObserved = true
 		}
+		if event.Name == "invite.used" && event.Attrs["invite"] == admin.Invite && event.Attrs["user"] == "daffy" {
+			enrollmentObserved = true
+		}
 	}
 	if !allowObserved {
 		t.Fatal("change.finished for the allowlist addition was missing")
+	}
+	if !enrollmentObserved {
+		t.Fatal("the join POST did not record enrollment through the admin invite")
 	}
 }
 
 func assertTrailSecrecy(t *testing.T, events []telemetry.Event, invites ...tools.InviteMade) {
 	t.Helper()
-	forbidden := []string{bodyMarker, emailMarker, commentMarker}
+	forbidden := []string{strings.ToLower(bodyMarker), strings.ToLower(emailMarker), strings.ToLower(commentMarker)}
 	var ids []string
 	for _, invite := range invites {
 		ids = append(ids, strings.ToLower(invite.Invite))
@@ -569,29 +594,41 @@ func assertTrailSecrecy(t *testing.T, events []telemetry.Event, invites ...tools
 		}
 	}
 	for _, invite := range invites {
-		link, err := url.Parse(invitePath(t, invite))
+		link, err := url.Parse(invite.Link)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatal("invalid invite link in secrecy fixture")
 		}
-		token := strings.ToLower(link.Query().Get("token"))
+		query := link.Query()
+		token := query.Get(join.TokenParam)
+		if link.Path != join.Path || len(query[join.TokenParam]) != 1 || !store.ValidToken(token) {
+			t.Fatal("missing or invalid invite token in secrecy fixture")
+		}
+		token = strings.ToLower(token)
 		for start := 0; start+8 <= len(token); start++ {
-			head := token[start : start+8]
+			fragment := token[start : start+8]
 			for _, id := range ids {
-				if strings.Contains(id, head) {
+				if strings.Contains(id, fragment) {
 					t.Fatal("fixture token overlaps an invite or request id")
 				}
 			}
-			forbidden = append(forbidden, head)
+			forbidden = append(forbidden, fragment)
 		}
 	}
-	for _, event := range events {
+	for i, event := range events {
 		data, err := json.Marshal(event)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, secret := range forbidden {
-			if strings.Contains(strings.ToLower(string(data)), strings.ToLower(secret)) {
-				t.Fatalf("secret appeared in event %s", event.Name)
+		fields := []string{event.Time.String(), event.Service, event.Name, event.RequestID, event.User, string(data)}
+		for key, value := range event.Attrs {
+			fields = append(fields, key, fmt.Sprint(value))
+		}
+		for _, field := range fields {
+			folded := strings.ToLower(field)
+			for _, secret := range forbidden {
+				if strings.Contains(folded, secret) {
+					t.Fatalf("secret appeared in captured event %d", i)
+				}
 			}
 		}
 	}

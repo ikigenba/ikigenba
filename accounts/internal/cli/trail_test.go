@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/cli"
+	"github.com/ikigenba/ikigenba/accounts/internal/join"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/tools"
@@ -17,7 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 )
 
-// R-QD8P-4EAE
+// R-QRTY-GBYR
 func TestRunReadAndPageTrail(t *testing.T) {
 	bin := t.TempDir()
 	if err := os.WriteFile(filepath.Join(bin, "accountsd"), []byte("chosen daemon"), 0600); err != nil {
@@ -65,8 +66,11 @@ func TestRunReadAndPageTrail(t *testing.T) {
 		}
 	}
 	for _, viewer := range []string{"", "owner"} {
-		for _, path := range []string{"/", "/hosts/host01", "/tools?x=1", "/about", "/accountsd", "/does-not-exist", "/join", protocol.BoxPath} {
-			for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodDelete} {
+		for _, path := range []string{"/", "/hosts/host01", "/tools?x=1", "/about", protocol.BinaryPath, "/does-not-exist", join.Path, protocol.BoxPath} {
+			for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodDelete, http.MethodPost} {
+				if method == http.MethodPost && path == protocol.BoxPath {
+					continue
+				}
 				id := fmt.Sprintf("read-page-%d", len(requests))
 				run.request(method, path, viewer, id)
 				requests[id] = false

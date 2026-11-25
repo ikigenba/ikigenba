@@ -9,6 +9,7 @@ import (
 	"io"
 	"math/rand/v2"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -16,7 +17,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ikigenba/ikigenba/accounts"
 	"github.com/ikigenba/ikigenba/accounts/internal/box"
@@ -24,12 +27,14 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud/memory"
 	"github.com/ikigenba/ikigenba/accounts/internal/hostauth"
+	"github.com/ikigenba/ikigenba/accounts/internal/join"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 	"github.com/ikigenba/ikigenba/accounts/internal/settings"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/tools"
 	"github.com/ikigenba/ikigenba/accounts/internal/trail"
 	"github.com/ikigenba/ikigenba/appkit/db"
+	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
@@ -73,12 +78,26 @@ func writeAccountsURL(t *testing.T, file, accountsURL string) {
 
 type boxTrailExpectation struct {
 	status           int
+	method           string
 	headerUser, user string
 	tool, result     string
 	detail           telemetry.Event
 }
 
-// R-1NIG-J0PT R-IJ8P-GADI
+type boxRandom struct {
+	secrecyRandom
+	failToken atomic.Bool
+}
+
+func (r *boxRandom) Read(p []byte) (int, error) {
+	// The store draws 32 bytes for the token after it draws the invite ID.
+	if len(p) == 32 && r.failToken.Swap(false) {
+		return 0, io.ErrUnexpectedEOF
+	}
+	return r.secrecyRandom.Read(p)
+}
+
+// R-AIMF-81PV R-IJ8P-GADI R-ANI0-R4ON R-YVM9-0XGA
 func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 	clock := newDrivenClock()
 	hosts := settings.SandboxHosts
@@ -92,9 +111,10 @@ func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 	writeAccountsURL(t, path, "https://accounts.one.test/")
 	serverVersion := func(number int) string { return runVersion + "-" + strconv.Itoa(number) }
 	var servers int
+	random := &boxRandom{}
 	run := startIntegration(t, integrationOptions{
 		now: clock.now, after: clock.after, sleep: clock.sleep, path: path, email: emailMarker + "@fixture.test",
-		random: rand.NewChaCha8([32]byte{6}), acceptNotify: true, noSandbox: true,
+		random: random, acceptNotify: true, noSandbox: true,
 		env: map[string]string{
 			"AWS_REGION": hosts.Region, "IKIGENBA_HOSTS_ZONE_ID": hosts.ZoneID, "IKIGENBA_HOSTS_DOMAIN": hosts.Domain,
 			"IKIGENBA_HOSTS_LAUNCH_TEMPLATE": hosts.LaunchTemplate, "IKIGENBA_HOSTS_INSTANCE_PROFILE": hosts.InstanceProfile,
@@ -105,6 +125,17 @@ func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 			return mcp.NewServer(mcp.ServerConfig{Name: "accounts", Version: serverVersion(servers), Telemetry: w})
 		},
 	})
+	const wrongMethod = "box-wrong-method"
+	requests := map[string]*boxTrailExpectation{
+		wrongMethod: {status: http.StatusMethodNotAllowed, method: http.MethodGet},
+	}
+	status, headers, _ := run.request(http.MethodGet, protocol.BoxPath, "", wrongMethod)
+	if status != http.StatusMethodNotAllowed || headers.Get("Allow") != http.MethodPost {
+		t.Fatalf("box GET answered %d with Allow %q", status, headers.Get("Allow"))
+	}
+	if status, _, _ := run.request(http.MethodPost, protocol.BoxPath+"/", "", "box-wrong-path"); status != http.StatusNotFound {
+		t.Fatalf("box path with trailing slash answered %d", status)
+	}
 	run.call(tools.ToolCreateHost, struct{}{}, nil)
 	var host tools.HostRead
 	driveUntil(t, clock, func() bool {
@@ -132,12 +163,11 @@ func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	requests := make(map[string]*boxTrailExpectation)
 	var next int
-	boxRequest := func(method string, params any, requestID string, user store.User, status int) boxReply {
+	boxRequest := func(method string, params map[string]any, requestID string, user store.User, status int) boxReply {
 		t.Helper()
 		next++
-		want := &boxTrailExpectation{status: status, headerUser: "owner"}
+		want := &boxTrailExpectation{status: status, method: http.MethodPost, headerUser: "owner"}
 		if user.Name == "bugs" {
 			want.headerUser = ""
 		}
@@ -153,11 +183,12 @@ func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 			"X-Amz-Expires": {"60"}, "X-Amz-Date": {clock.now().Format("20060102T150405Z")},
 			"X-Amz-Signature": {fmt.Sprintf("%064x", next)}, "X-Amz-Credential": {host.InstanceID},
 		}.Encode()
-		if method == protocol.MethodToolsList {
-			params = map[string]any{"_meta": map[string]any{
-				"io.modelcontextprotocol/protocolVersion":    mcp.ProtocolVersion,
-				"io.modelcontextprotocol/clientCapabilities": struct{}{},
-			}}
+		if params == nil {
+			params = make(map[string]any)
+		}
+		params["_meta"] = map[string]any{
+			"io.modelcontextprotocol/protocolVersion":    mcp.ProtocolVersion,
+			"io.modelcontextprotocol/clientCapabilities": struct{}{},
 		}
 		payload, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": next, "method": method, "params": params})
 		if err != nil {
@@ -177,9 +208,10 @@ func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 			req.Header.Set("X-User-Email", run.email)
 		}
 		req.Header.Set("X-Request-Id", requestID)
-		if method == protocol.MethodToolsList {
-			req.Header.Set("MCP-Protocol-Version", mcp.ProtocolVersion)
-			req.Header.Set("Mcp-Method", method)
+		req.Header.Set("MCP-Protocol-Version", mcp.ProtocolVersion)
+		req.Header.Set("Mcp-Method", method)
+		if tool, ok := params["name"].(string); ok {
+			req.Header.Set("Mcp-Name", tool)
 		}
 		res, err := run.http.Do(req)
 		if err != nil {
@@ -196,18 +228,22 @@ func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 		var reply struct {
 			Result boxReply        `json:"result"`
 			Error  json.RawMessage `json:"error"`
+			ID     int             `json:"id"`
 		}
-		if err := json.Unmarshal(body, &reply); err != nil || reply.Error != nil {
+		if err := json.Unmarshal(body, &reply); err != nil || reply.Error != nil || reply.ID != next {
 			t.Fatalf("%s: box reply = %s (%v)", requestID, body, err)
+		}
+		if got := reply.Result.Meta.Server.Version; method == protocol.MethodToolsCall && got != serverVersion(3) {
+			t.Fatalf("%s: tool call served by version %q, want %q", requestID, got, serverVersion(3))
 		}
 		reply.Result.body = body
 		return reply.Result
 	}
-	call := func(requestID string, user store.User, tool string, args any, result, refusal string) boxReply {
+	call := func(requestID string, user store.User, tool string, args any, result, toolError string) boxReply {
 		t.Helper()
 		reply := boxRequest(protocol.MethodToolsCall, map[string]any{"name": tool, "arguments": args}, requestID, user, http.StatusOK)
-		if reply.IsError != (refusal != "") || (refusal != "" && !bytes.Contains(reply.body, []byte(refusal))) {
-			t.Fatalf("%s: %s reply = %s, expected refusal %q", requestID, tool, reply.body, refusal)
+		if reply.IsError != (toolError != "") || (toolError != "" && !bytes.Contains(reply.body, []byte(toolError))) {
+			t.Fatalf("%s: %s reply = %s, expected tool error %q", requestID, tool, reply.body, toolError)
 		}
 		requests[requestID].tool, requests[requestID].result = tool, result
 		return reply
@@ -259,19 +295,26 @@ func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 	checkList(boxRequest(protocol.MethodToolsList, nil, "box-admin-tools", daffy, http.StatusOK), catalogs[2],
 		append(slices.Clone(userTools), tools.ToolUsers, tools.ToolLockUser, tools.ToolUnlockUser, tools.ToolDeleteUser,
 			tools.ToolSetAdmin, tools.ToolCreateInvite, tools.ToolListInvites, tools.ToolRevokeInvite), 3)
+	makeInvite := func(requestID, base string) tools.InviteMade {
+		t.Helper()
+		reply := call(requestID, daffy, tools.ToolCreateInvite, box.NoArgs{}, trail.ResultOK, "")
+		var made tools.InviteMade
+		linkPrefix := base + join.Path + "?" + join.TokenParam + "="
+		if err := json.Unmarshal(reply.Content, &made); err != nil || !strings.HasPrefix(made.Link, linkPrefix) {
+			t.Fatalf("%s: box invite link does not start with %q (%v)", requestID, linkPrefix, err)
+		}
+		requests[requestID].detail = telemetry.Event{Name: trail.EventInviteCreated, Attrs: telemetry.Attrs{
+			"invite": made.Invite, "account": made.Account, "host": host.Host, "admin": false,
+		}}
+		return made
+	}
+	first := makeInvite("box-first-invite", "https://accounts.one.test")
 	writeAccountsURL(t, path, "https://accounts.two.test/")
 	call("box-admin-add-key", daffy, tools.ToolAddKey, box.KeyArgs{Key: adminKey}, trail.ResultOK, "")
 	call("box-admin-remove-key", daffy, tools.ToolRemoveKey, box.KeyArgs{Key: adminKey}, trail.ResultOK, "")
-	reply := call("box-make-invite", daffy, tools.ToolCreateInvite, box.NoArgs{}, trail.ResultOK, "")
-	var made tools.InviteMade
-	if err := json.Unmarshal(reply.Content, &made); err != nil || !strings.HasPrefix(made.Link, "https://accounts.two.test/join?token=") {
-		t.Fatalf("box invite after rewriting service URL: %+v (%v)", made, err)
-	}
-	requests["box-make-invite"].detail = telemetry.Event{Name: trail.EventInviteCreated, Attrs: telemetry.Attrs{
-		"invite": made.Invite, "account": made.Account, "host": host.Host, "admin": false,
-	}}
+	made := makeInvite("box-make-invite", "https://accounts.two.test")
 	call("box-list-invites", daffy, tools.ToolListInvites, box.NoArgs{}, "", "")
-	reply = call("box-revoke-invite", daffy, tools.ToolRevokeInvite, tools.InviteArgs{Invite: made.Invite}, trail.ResultOK, "")
+	reply := call("box-revoke-invite", daffy, tools.ToolRevokeInvite, tools.InviteArgs{Invite: made.Invite}, trail.ResultOK, "")
 	var revoked tools.Invite
 	if err := json.Unmarshal(reply.Content, &revoked); err != nil {
 		t.Fatal(err)
@@ -289,14 +332,22 @@ func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 		if err := json.Unmarshal(reply.Content, &changed); err != nil || changed.User != args.User || changed.Admin != admin {
 			t.Fatalf("set_admin reply: %+v (%v)", changed, err)
 		}
+		held, err := record.User(t.Context(), daffy.Account, args.User)
+		if err != nil || held.Admin != admin {
+			t.Fatalf("%s: stored admin = %t, want %t (%v)", requestID, held.Admin, admin, err)
+		}
 		requests[requestID].detail = telemetry.Event{Name: trail.EventAdminChanged, Attrs: telemetry.Attrs{
 			"account": daffy.Account, "host": host.Host, "user": args.User, "admin": args.Admin,
 		}}
 	}
 	call("box-set-admin-unchanged", daffy, tools.ToolSetAdmin, box.SetAdminArgs{User: "bugs"}, trail.ResultOK, "")
 	call("box-set-admin-self", daffy, tools.ToolSetAdmin, box.SetAdminArgs{User: "daffy"}, trail.ResultRefused, box.NotSelf)
+	call("box-set-admin-absent", daffy, tools.ToolSetAdmin, box.SetAdminArgs{User: "elmer", Admin: true}, trail.ResultRefused, tools.NoUser)
+	assertBoxStoreFailureTrail(t, d, record, daffy.Name, bugs.Name, first.Invite)
 	call("box-users", daffy, tools.ToolUsers, box.NoArgs{}, "", "")
 	call("box-lock", daffy, tools.ToolLockUser, box.UserArgs{User: "bugs"}, trail.ResultOK, "")
+	random.failToken.Store(true)
+	call("box-invite-token-failed", daffy, tools.ToolCreateInvite, box.NoArgs{}, trail.ResultFailed, store.Unreachable)
 	call("box-unlock", daffy, tools.ToolUnlockUser, box.UserArgs{User: "bugs"}, trail.ResultOK, "")
 	call("box-lock-again", daffy, tools.ToolLockUser, box.UserArgs{User: "bugs"}, trail.ResultOK, "")
 	call("box-delete", daffy, tools.ToolDeleteUser, box.UserArgs{User: "bugs"}, trail.ResultOK, "")
@@ -306,7 +357,63 @@ func TestRunBoxToolWiringAndSecrecy(t *testing.T) {
 	}
 	events := run.capture.Events()
 	assertBoxTrail(t, events, requests)
-	assertTrailSecrecy(t, events, made)
+	assertTrailSecrecy(t, events, first, made)
+}
+
+func assertBoxStoreFailureTrail(t *testing.T, d *db.DB, record *store.Store, actor, target, invite string) {
+	t.Helper()
+	// Run owns its database handle. Exercise the same registered handlers with
+	// a test-owned handle to inject a store failure after routing.
+	capture := &telemetry.Capture{}
+	writer := telemetry.New(telemetry.Config{Service: "accounts", Sink: capture, Stderr: io.Discard,
+		Now: func() time.Time { return fixedTime }, Sleep: func(context.Context, time.Duration) {}, Rand: &integrationRandom{}})
+	writer.Ready()
+	defer writer.Shutdown(t.Context(), "test complete")
+	srv := mcp.NewServer(mcp.ServerConfig{Name: "accounts", Version: runVersion, Telemetry: writer})
+	box.RegisterAdmin(srv, box.Config{Store: record, Telemetry: writer})
+	httpServer := httptest.NewServer(identity.Require(srv))
+	defer httpServer.Close()
+	client := mcp.NewClient(mcp.ClientConfig{Endpoint: httpServer.URL + "/mcp", HTTPClient: httpServer.Client()})
+	d.SetFailing(true)
+	defer d.SetFailing(false)
+	for _, test := range []struct {
+		tool string
+		args any
+	}{
+		{tools.ToolSetAdmin, box.SetAdminArgs{User: target, Admin: true}},
+		{tools.ToolRevokeInvite, tools.InviteArgs{Invite: invite}},
+	} {
+		user := box.ActorPrefix + actor
+		args, err := json.Marshal(test.args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := client.CallTool(t.Context(), identity.Caller{UserID: user, RequestID: test.tool}, test.tool, args)
+		if err != nil {
+			t.Fatalf("%s with failing store: %v", test.tool, err)
+		}
+		body, err := result.MarshalJSON()
+		if err != nil || !result.IsError() || !bytes.Contains(body, []byte(store.Unreachable)) {
+			t.Fatalf("%s with failing store answered %s (%v)", test.tool, body, err)
+		}
+		if err := writer.Flush(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, event := range capture.Events() {
+			if event.RequestID != test.tool {
+				continue
+			}
+			names = append(names, event.Name)
+			if event.User != user || event.Attrs["tool"] != test.tool ||
+				(event.Name == trail.EventChangeFinished && event.Attrs["result"] != trail.ResultFailed) {
+				t.Errorf("%s with failing store had unexpected event %+v", test.tool, event)
+			}
+		}
+		if !slices.Equal(names, []string{trail.EventChangeFinished, "tool.called"}) {
+			t.Errorf("%s with failing store recorded events %v", test.tool, names)
+		}
+	}
 }
 
 func assertBoxTrail(t *testing.T, events []telemetry.Event, requests map[string]*boxTrailExpectation) {
@@ -325,7 +432,7 @@ func assertBoxTrail(t *testing.T, events []telemetry.Event, requests map[string]
 		}
 		start, finish := got[0], got[len(got)-1]
 		if start.Name != "request.started" || start.User != want.headerUser ||
-			!reflect.DeepEqual(start.Attrs, telemetry.Attrs{"method": http.MethodPost, "path": protocol.BoxPath}) ||
+			!reflect.DeepEqual(start.Attrs, telemetry.Attrs{"method": want.method, "path": protocol.BoxPath}) ||
 			finish.Name != "request.finished" || finish.User != want.headerUser || fmt.Sprint(finish.Attrs["status"]) != strconv.Itoa(want.status) {
 			t.Errorf("%s: request pair: %+v, %+v", id, start, finish)
 		}
