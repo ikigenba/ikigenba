@@ -17,7 +17,7 @@ accounts holds no copy of the stylesheet, fonts, or licences; appkit's `page` pa
 - Go 1.26 (`go version` must report 1.26+)
 - a C compiler `cgo` can use (`gcc`, say): `go test -race` needs it, and without one gate 5 fails with `go: -race requires cgo`. The release builds themselves are cgo-free, which gates 3 and 4 prove.
 - the modules `go.mod` requires, in the Go module cache; `go.sum` is committed, and the gates themselves run offline. The build run sets these requirements and their `go.sum` lines, and moves a module to another release only when this file names one:
-  - appkit `v0.32.0`, set with `go get github.com/ikigenba/ikigenba/appkit@v0.32.0`: a release that exports the `db`, `paging` and `version` packages, and whose `page.Banner` carries the trail, the home link and the tools flag the templates use, with `Release` and `Commit`. See Adopting appkit below.
+  - appkit `v0.32.1`, set with `go get github.com/ikigenba/ikigenba/appkit@v0.32.1`: a release that exports the `db`, `paging` and `version` packages, and whose `page.Banner` carries the trail, the home link and the tools flag the templates use, with `Release` and `Commit`. See Adopting appkit below.
   - the AWS SDK for Go v2 (approved, decisions log P3), at these releases, each set with `go get <module>@<release>`:
     - `github.com/aws/aws-sdk-go-v2` `v1.48.0`
     - `github.com/aws/aws-sdk-go-v2/config` `v1.33.19`
@@ -37,7 +37,7 @@ accounts holds no copy of the stylesheet, fonts, or licences; appkit's `page` pa
 
 ### Adopting appkit
 
-appkit is required only at a published release, here `v0.32.0`, fetched through the ordinary module proxy and checked against the checksum database (see the root `AGENTS.md`); it is set with `go get github.com/ikigenba/ikigenba/appkit@v0.32.0`. No `replace` directive, no `go.work`, no local module cache stands in for it or for any other module.
+appkit is required only at a published release, here `v0.32.1`, fetched through the ordinary module proxy and checked against the checksum database (see the root `AGENTS.md`); it is set with `go get github.com/ikigenba/ikigenba/appkit@v0.32.1`. No `replace` directive, no `go.work`, no local module cache stands in for it or for any other module.
 
 ## Test files
 
