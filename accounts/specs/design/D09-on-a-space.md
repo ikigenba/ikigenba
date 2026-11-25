@@ -209,17 +209,23 @@ The timings are `D16-sandbox`'s: about 40 s of `provisioning`, 5 s for a DNS cha
    - Revoke: `revoke_invite` of that second invite answers it; its link then answers the same unusable page as a used one, and `revoke_invite` again is refused.
    - Admin: `create_invite` `acme` with `admin` true, then a `POST` naming `porky`: `users` shows `porky` an admin. `set_admin` `acme` `porky` false, then true, each shows on the landing's users list.
    - Rate limit: a burst of `POST`s to a usable link from the developer's machine, all from one address, ends in 429.
-7. **Stop and start.**
+7. **Tools on the box** (self-service outcomes 16 to 26; the finish line's items 4 to 9, in the sandbox). The delivery drives the stdio server as `D16-sandbox` says: the sandbox's `accountsd` run under the name `accountsd-mcp`, with `ACCOUNTSD_SOCKET` naming a user's socket from `state/box/sockets.txt`, piped JSON-RPC lines or registered in `claude`.
+   - As `porky`, an admin: `tools/list` offers the eleven box tools; `users` lists `acme`'s users; `create_invite` answers a link like the central one, and enrolling `taz` through it makes an ordinary user.
+   - As `elmer`, not an admin: `tools/list` offers `keys`, `add_key` and `remove_key` only, and an admin tool is refused with the only-an-admin answer. `add_key` a second key, `remove_key` the first, then `remove_key` the last is refused with the last-key answer. `keys`, and centrally `users`, show each change once applied.
+   - As `porky`: `lock_user` `elmer` is applied and `elmer`'s socket is gone; `unlock_user` brings both back. Locking, deleting and demoting `porky` are each refused with the cannot-yourself answer. `set_admin` `elmer` true, and `elmer`'s `create_invite` answers; false, and it is refused.
+   - `revoke_invite` of a box-made invite answers it, and its link then answers the unusable page.
+8. **Stop and start.**
    - `stop_host` `host01`: `stopping`, then `stopped`. Health keeps its last word.
    - `start_host`: `starting`, then `running`, with the same EIP and data volume and health back to `sync`.
-8. **Resize.** `resize_host` `host01` to type `t4g.large` with `data_gb` 60 answers `restarts: true`, then `resizing`, then `running` with the new type and size.
-9. **Restart mid-operation.** `create_host` again (`host02`). During its `provisioning`, run `systemctl --user restart sandbox-<name>-accounts`. Then `resize_host` `host01`'s root to 30 and restart again during `resizing`. Each operation resumes from its recorded step and settles. After it settles, the delivery counts the instances, volumes and addresses tagged `Host=<name>` in `state/sandbox-cloud.json` and expects exactly one instance, one data volume, one root volume and one address per host. An extra resource the interrupted attempt made carries the running operation's `Operation` tag, so the stray scan treats it as explained; telemetry's lack of `resource.unexplained` alone proves nothing here.
-10. **Removal guards.**
+9. **Resize.** `resize_host` `host01` to type `t4g.large` with `data_gb` 60 answers `restarts: true`, then `resizing`, then `running` with the new type and size.
+10. **Restart mid-operation.** `create_host` again (`host02`). During its `provisioning`, run `systemctl --user restart sandbox-<name>-accounts`. Then `resize_host` `host01`'s root to 30 and restart again during `resizing`. Each operation resumes from its recorded step and settles. After it settles, the delivery counts the instances, volumes and addresses tagged `Host=<name>` in `state/sandbox-cloud.json` and expects exactly one instance, one data volume, one root volume and one address per host. An extra resource the interrupted attempt made carries the running operation's `Operation` tag, so the stray scan treats it as explained; telemetry's lack of `resource.unexplained` alone proves nothing here.
+11. **Removal guards.**
    - `delete_host` `host01` is refused while `acme` is on it.
    - `remove_account` `acme` is refused while it has users. Lock and delete them, then `remove_account` `acme`: `removing`, then gone.
    - `delete_host` `host02` and `host01`: `deleting`, then hidden from `hosts` and the landing page. Their data volumes stay in the memory cloud, tagged `Orphaned=true`.
-11. **Telemetry.** telemetry's `catalog` and `search` for accounts show:
-    - one `change.finished` per changing call
+12. **Telemetry.** telemetry's `catalog` and `search` for accounts show:
+    - one `change.finished` per changing call, a box call's naming `ssh:<user>` as its user
+    - a box-made invite's `invite.created` naming `ssh:<user>`, and the `invite.used` of its enrollment
     - `operation.started` and `operation.finished` for each operation
     - `host.changed` for each host state change
     - `account.changed` for each account state change
@@ -247,6 +253,8 @@ Each row is an outcome the walk checks and the documents that own it. A row nami
 | users pending, then applied; lock, unlock, delete, re-add | `D07-tools`, `D04-store`, `D13-daemon-endpoints`, `D14-accountsd`, `D15-machine` |
 | invites made, listed, counted on the landing, revoked; the admin flag set and shown | `D07-tools`, `D04-store`, `D06-pages` |
 | the enrollment page answers a guest: form, refusals, created user, unusable link, rate limit | `D18-enrollment`; routing `D03-serve` (R-W5XI-KH4S, R-7K9K-2B09); template data `D06-pages`; names and keys `D17-names-keys-sizes` |
+| the box tools: the tool list fits the tier, each user's own keys, an admin's users and invites, the box refusals, a box change landing as desired state | `D19-box-tools`, `D04-store`; the box path `D11-protocol` (R-YFOX-ORCE), `D13-daemon-endpoints`; wiring `D03-serve` (R-H9S1-98I9); the host side `D14-accountsd`, `D20-box-mcp`; the sandbox's sockets `D16-sandbox` |
+| a box change's events name `ssh:<user>`, and a box-made invite's creator | `D08-trail`, `D19-box-tools`, `D04-store` |
 | stop, start, resize with `restarts` | `D07-tools`, `D10-operations` |
 | restart mid-operation resumes, with no duplicates and no strays | `D03-serve` (R-GT9G-XHJE, R-KRUV-BTB7); `D10-operations`; `D16-sandbox` |
 | removal guards, unplace, delete and orphaned volume | `D04-store`, `D07-tools`, `D10-operations` |
@@ -255,7 +263,7 @@ Each row is an outcome the walk checks and the documents that own it. A row nami
 
 ## Trust
 
-- **People.** accounts believes the identity nginx sets for a person (`X-User-Id`, `X-User-Email`, `X-Request-Id`), as every sibling does. Every signed-in user of the space reads and changes every host, account and user, as themselves, and every change is recorded under the caller (`D08-trail`). That includes the admin flag, which any signed-in user may set or clear on any user (`set_admin`), and invites, which any signed-in user may make, admin invites included (self-service outcomes 4 and 10). The admin flag grants nothing on the space: it is recorded, shown and kept for the tools on the box, a later step. `guests = true` lets a request without a credential reach accounts' socket. The pages send it to sign in, `/mcp` never sees it, and only the daemon routes and the enrollment page, `/join/<token>`, answer it.
+- **People.** accounts believes the identity nginx sets for a person (`X-User-Id`, `X-User-Email`, `X-Request-Id`), as every sibling does. Every signed-in user of the space reads and changes every host, account and user, as themselves, and every change is recorded under the caller (`D08-trail`). That includes the admin flag, which any signed-in user may set or clear on any user (`set_admin`), and invites, which any signed-in user may make, admin invites included (self-service outcomes 4 and 10). The admin flag grants nothing on the space: it is what the box tools' admin tier checks (`D19-box-tools`). `guests = true` lets a request without a credential reach accounts' socket. The pages send it to sign in, `/mcp` never sees it, and only the daemon routes and the enrollment page, `/join/<token>`, answer it.
 - **Invite holders.** The enrollment page believes nothing about who is asking: its one authority is the token in the link (`D18-enrollment`). Whoever holds an unused, unexpired, unrevoked link can create one user of its account, with the admin flag the invite carries, once; a signed-in person opening it is treated as a guest. The token is drawn from the run's random source and kept only as its hash (`D04-store`), answered once by `create_invite` and never by any other tool, page or event (`D07-tools`, `D08-trail`). A refused name, an unusable link and a rate-limited submission each say no more than their one answer (self-service outcome 13), and submissions are limited per address, the address being nginx's `X-Real-IP`, which opsctl's nginx and the sandbox's set from the connection. The token does reach the space's nginx access log, which is opsctl's and outside accounts: an accepted risk, bounded by single use, 72 hours and revocation (`D18-enrollment`).
 - **Daemons.**
   - A daemon is believed only after its presigned `sts:GetCallerIdentity` request has been executed by accounts and answered by STS:
@@ -266,6 +274,8 @@ Each row is an outcome the walk checks and the documents that own it. A row nami
   - The session name is trusted as the instance id because the hosts' role trusts only `ec2.amazonaws.com` (infra).
   - Customer users cannot obtain the role's credentials, because the host blocks IMDS for every uid but root (`D15-machine`).
   - What a forged report could do is bounded to its own host (`D04-store`).
+- **Hosts' users.** A user on a host reaches the box tools through the host's daemon, which forwards to `/accountsd/v1/box` under the host's verified identity with the caller's uid (`D13-daemon-endpoints`). accounts resolves the verified host and the uid to an active user of an account placed on that host and never reads a name or an account from the host. Each call acts as that user, `ssh:<name>`, within that user's account only, and an admin tool checks in the same transaction as its write that the user is still an active admin (`D19-box-tools`, `D04-store`).
+  - Accepted risk (self-service outcome 20): the host becomes a write path into accounts. Root on a host can forward any uid, so it can act as any admin of the accounts placed on that host. It could already do anything to those accounts' files and sessions. accounts never lets a host touch an account placed elsewhere.
 - **The binary.** `/accountsd` serves, to anyone, the release's own daemon binary. It holds no secret: the daemon learns everything else from the verified protocol.
 - **AWS.** accounts holds no secret of its own. Its credentials are the space role's, which the operator policy limits to the tag contract, so AWS itself refuses anything outside it. An AWS error's message text never enters the trail, only its service, operation, subject and code (`D05-cloud`).
 
@@ -309,7 +319,7 @@ No test can make the following checks, so they are made here:
 - **`memory_max = "256M"`.** A departure from `128M` (ledger, connections, accounts before), for the reasons above.
 - **`secrets = []` and no `[env]`.** Credentials come from the instance role. The hosts keys are opsctl's to write, and reserved.
 - **`[home] group = "core"`** is kept.
-- **`cli.NginxConf` is unchanged.** The daemon paths need no location of their own under `guests = true`. A fragment that proxied them past auth would need a proxy target that is not portable across opsctl and the sandbox.
+- **`cli.NginxConf` is unchanged.** The daemon paths need no location of their own under `guests = true`. The box path, `/accountsd/v1/box`, is one of them: it rides `location /` like every `/accountsd/` path, which the route table hands to the daemon endpoints (R-GIAD-HJV5), and its largest body, `protocol.MaxBoxRequest` (64 KiB), is under nginx's documented default `client_max_body_size` of 1m, which the fragment does not set. The manifest is unchanged too. A fragment that proxied them past auth would need a proxy target that is not portable across opsctl and the sandbox.
 - **What ships, the preconditions and the finish line are prose.** Only a real release, a real AWS account and a real host could observe them, and no permitted test reaches those.
 - No release, space, host name, zone or template is named in the manifest, the fragment or any requirement.
 
