@@ -253,7 +253,7 @@ Each row is an outcome the walk checks and the documents that own it. A row nami
 | users pending, then applied; lock, unlock, delete, re-add | `D07-tools`, `D04-store`, `D13-daemon-endpoints`, `D14-accountsd`, `D15-machine` |
 | invites made, listed, counted on the landing, revoked; the admin flag set and shown | `D07-tools`, `D04-store`, `D06-pages` |
 | the enrollment page answers a guest: form, refusals, created user, unusable link, rate limit | `D18-enrollment`; routing `D03-serve` (R-HX9C-M9PO, R-FUH5-FVTH); template data `D06-pages`; names and keys `D17-names-keys-sizes` |
-| the box tools: the tool list fits the tier, each user's own keys, an admin's users and invites, the box refusals, a box change landing as desired state | `D19-box-tools`, `D04-store`; the box path `D11-protocol` (R-YFOX-ORCE), `D13-daemon-endpoints`; wiring `D03-serve` (R-H9S1-98I9); the host side `D14-accountsd`, `D20-box-mcp`; the sandbox's sockets `D16-sandbox` |
+| the box tools: the tool list fits the tier, each user's own keys, an admin's users and invites, the box refusals, a box change landing as desired state | `D19-box-tools`, `D04-store`; the box path `D11-protocol` (R-YFOX-ORCE), `D13-daemon-endpoints`; wiring `D03-serve` (R-AIMF-81PV); the host side `D14-accountsd`, `D20-box-mcp`; the sandbox's sockets `D16-sandbox` |
 | a box change's events name `ssh:<user>`, and a box-made invite's creator | `D08-trail`, `D19-box-tools`, `D04-store` |
 | stop, start, resize with `restarts` | `D07-tools`, `D10-operations` |
 | restart mid-operation resumes, with no duplicates and no strays | `D03-serve` (R-GT9G-XHJE, R-KRUV-BTB7); `D10-operations`; `D16-sandbox` |
