@@ -12,7 +12,7 @@ This document covers what accounts contributes when it runs on a space and in a 
 - the trust accounts places in what reaches it
 - the finish line
 
-Outcomes cited as outcome N are those of /home/mgreenly/Documents/ikigenba-ssh-hosts.md, and log entries those of /home/mgreenly/Documents/ikigenba-ssh-hosts-decisions.md. Self-service outcome N is outcome N of /home/mgreenly/Documents/ikigenba-self-service-accounts.md.
+Outcomes cited as outcome N are those of /home/mgreenly/Documents/ikigenba-ssh-hosts.md, and log entries those of /home/mgreenly/Documents/ikigenba-ssh-hosts-decisions.md. Self-service outcome N is outcome N of /home/mgreenly/Documents/ikigenba-self-service-accounts.md. Host-names outcome N is outcome N of /home/mgreenly/Documents/ikigenba-host-names.md, and host-names log entries those of /home/mgreenly/Documents/ikigenba-host-names-decisions.md.
 
 Almost every step between a checkout and a running host belongs to someone else:
 
@@ -39,7 +39,7 @@ The release holds five members of accounts' directory:
 - `etc/nginx.conf`, holding the bytes of `cli.NginxConf`.
 - `share/icon.svg`, unchanged.
 
-The two files under `etc/` are what the root package's `Etc` embeds (`D01-layout-and-run-seam`, R-C7K6-723O). The templates and the migrations ship inside the binary (`D01-layout-and-run-seam`, R-7QD1-Z5PQ and R-7RKY-CXGF; the migrations' bytes are `D04-store`'s). The database is not in the release: accounts creates `state/accounts.db` on its first start, and in a sandbox also `state/sandbox-cloud.json` (`D01-layout-and-run-seam`, R-ESG4-8UGU and R-Y9CP-KR8R).
+The two files under `etc/` are what the root package's `Etc` embeds (`D01-layout-and-run-seam`, R-C7K6-723O). The templates and the migrations ship inside the binary (`D01-layout-and-run-seam`, R-7QD1-Z5PQ and R-O5MQ-FQHM; the migrations' bytes are `D04-store`'s). The database is not in the release: accounts creates `state/accounts.db` on its first start, and in a sandbox also `state/sandbox-cloud.json` (`D01-layout-and-run-seam`, R-ESG4-8UGU and R-Y9CP-KR8R).
 
 The tarball, its member list and its name are devctl's, and no test reads the checkout. So the release's members are outside what a requirement can state; a developer checks them with `tar`.
 
@@ -135,15 +135,18 @@ On a space that URL is `https://accounts.<space host>`.
   - The security group.
   - The hosts' role and instance profile, named alike, which `D12-host-identity` relies on: the verifier expects the assumed-role ARN under the profile's name.
   - The operator policy holding the tag contract `D05-cloud` and `D10-operations` follow. AWS denies any call outside it.
+  - In that policy, the Route 53 change right on the hosts zone, which already allows a host's record (host-names "What was observed": the operator role already allows the record), so the host-names release needs no new right. Precedent, not proof, for its scope is infra's `iam.tf`, which limits it to records of type A whose names match `*.<hosts domain>` and are not one of the site names Terraform keeps there; the exact scope is checked at the finish line (Route 53 accepts the host's record under the operator policy). accounts writes records for accounts and for hosts and nothing else: `<account>.<hosts domain>` (`D10-operations`) and `<host>.<hosts domain>` (`D10-operations`). Host names, `host` followed by digits, are reserved for accounts and users (`D17-names-keys-sizes`), so the two never collide; neither form is one of the site names.
 - **`devctl hosts set`** on the operating space (outcome 5), which gives its role the operator policy.
 - **opsctl writes the five keys** (log D9) and accepts extra files in `bin/` (log D11).
 - **The space's accounts unit can reach IMDS and AWS's regional endpoints** for EC2, STS and Route 53. Its unit hardening is opsctl's, and the finish line checks it.
 
-**Backup and restore.** The host's backup archives `state/` whole, so `accounts.db` goes with it: the hosts, operations, accounts, users, keys and latest reports (`D04-store`). After a restore the record may lag AWS. Operations resume against what AWS holds, by their recorded steps and lookups by tag (`D10-operations`). A resource no restored record explains is reported as unexplained, never deleted (`D10-operations`).
+The host-names release adds no precondition. The hosts domain and zone are the ones accounts already writes account records in, and the operator role already allows a host's record (host-names "What was observed"). Its infra change is comments only (host-names log P3), so infra needs no new apply for it.
 
-**Releases: expand only** (outcome 27). This release adds `0002_hosts.sql` and stops reading or writing the old `groups` and `users` tables of `0001`, but drops nothing (`D04-store`). It stops calling opsctl: no `sudo`, no `opsctl group|user` (`D01-layout-and-run-seam`, R-ETO0-MM7J). It changes nothing in opsctl. The SSH bans release adds `0003_bans.sql`, new tables and indexes only, and the release before it runs on that schema (`D04-store`). The self-service release adds `0004_invites.sql` the same way: an admin flag is a row of a new table rather than a new column of the users' table, so the release before it runs on that schema unchanged (`D04-store`); a user enrolled through an invite is an ordinary user to the old release, and the admin flag never reaches a host, so the daemon protocol does not change.
+**Backup and restore.** The host's backup archives `state/` whole, so `accounts.db` goes with it: the hosts, operations, accounts, users, keys and latest reports (`D04-store`). After a restore the record may lag AWS. Operations resume against what AWS holds, by their recorded steps and lookups by tag (`D10-operations`). A resource no restored record explains is reported as unexplained, never deleted (`D10-operations`). For a host that is running, stopping, stopped, starting or resizing and has an EIP, the engine's scan puts back its own A record if it is missing, and a record that is not the host's is left alone and shown as the host's reason (`D10-operations`).
 
-The next release contracts. It drops accounts' old tables, and opsctl removes the shell group and its sshd rules, the pooled limits, the sudo rule for accounts, and its `group` and `user` commands. The daemon protocol changes by expand then contract too (`D11-protocol`).
+**Releases: expand only** (outcome 27). This release adds `0002_hosts.sql` and stops reading or writing the old `groups` and `users` tables of `0001`, but drops nothing (`D04-store`). It stops calling opsctl: no `sudo`, no `opsctl group|user` (`D01-layout-and-run-seam`, R-ETO0-MM7J). It changes nothing in opsctl. The SSH bans release adds `0003_bans.sql`, new tables and indexes only, and the release before it runs on that schema (`D04-store`). The self-service release adds `0004_invites.sql` the same way: an admin flag is a row of a new table rather than a new column of the users' table, so the release before it runs on that schema unchanged (`D04-store`); a user enrolled through an invite is an ordinary user to the old release, and the admin flag never reaches a host, so the daemon protocol does not change. The host-names release adds `0005_host_records.sql` the same way, a new table only, so the release before it runs on that schema (`D04-store`). It adds `domain` to the desired state and `hostname` to the report in the same release, a recorded departure from expand then contract (`D11-protocol`; host-names log P2): the daemon ships inside accounts and updates itself to the digest accounts names, both sides ignore members they do not know, and a daemon given no domain leaves the hostname alone, so an old and new mix works in both directions and a rollback never renames a host (host-names outcome 6).
+
+The next release contracts. It drops accounts' old tables, and opsctl removes the shell group and its sshd rules, the pooled limits, the sudo rule for accounts, and its `group` and `user` commands. The daemon protocol changes by expand then contract too (`D11-protocol`), the host-names release's one-release addition being the recorded exception.
 
 ## In a sandbox
 
@@ -160,7 +163,7 @@ No AWS call and no real host change is made on the developer's machine.
 What survives a restart:
 
 - The record and the memory cloud survive `down`, `up` and an accounts restart, so an interrupted operation resumes against what the fake already made.
-- Simulated machines do not survive. Their next cycle re-applies the whole desired state, as a real daemon does after a reboot.
+- Simulated machines do not survive. Their next cycle re-applies the whole desired state, the hostname included, as a real daemon does after a reboot.
 - `sandbox wipe` removes everything.
 
 An agent is curl on the developer's machine:
@@ -170,7 +173,7 @@ An agent is curl on the developer's machine:
 
 ### The walk
 
-The sandbox is up from the worktree. The delivery walks it as the developer, with the stored token, through the gateway's tools or accounts' `/mcp`, and with curl. Keys are fresh ed25519 OpenSSH public keys the delivery generates.
+The sandbox has no real machine: it shows a host's record in the memory cloud and the hostname a simulated host was asked to take and reports, never a real hostname (host-names "What was observed"). The sandbox is up from the worktree. The delivery walks it as the developer, with the stored token, through the gateway's tools or accounts' `/mcp`, and with curl. Keys are fresh ed25519 OpenSSH public keys the delivery generates.
 
 The timings are `D16-sandbox`'s: about 40 s of `provisioning`, 5 s for a DNS change, and 3 s per apply.
 
@@ -184,9 +187,10 @@ The timings are `D16-sandbox`'s: about 40 s of `provisioning`, 5 s for a DNS cha
    - `GET /accountsd/v1/state` without the identity header is answered 401 by accounts.
 2. **Create a host.**
    - `hosts` lists none.
-   - `create_host` with no argument answers `host01`, `provisioning`.
-   - `host` shows `host01`, `/hosts/host01` shows the host page, and the landing row shows health `none`.
-   - After about 40 s the host is `running`, and within a cycle its health is `sync` with a full report on `/hosts/host01`.
+   - `create_host` with no argument answers `host01`, `provisioning`; its answer is unchanged and carries no DNS name.
+   - `host` shows `host01` and `dns_name` `host01.hosts.test`, `/hosts/host01` shows the host page with the DNS name, and the landing row shows the DNS name and health `none`.
+   - Once the host's address is made, `state/sandbox-cloud.json` holds one A record at `host01.hosts.test` whose one value is the host's EIP; the launch follows the record's change, about 5 s.
+   - After about 40 s the host is `running`, and within a cycle its health is `sync` with a full report on `/hosts/host01`, which shows the reported hostname `host01.hosts.test`; the `host` tool's `report` carries `hostname` `host01.hosts.test`. `hosts` lists `host01` with its `dns_name`.
 3. **Place an account.**
    - `create_account` `acme` on `host01` answers `pending` and the DNS name `acme.hosts.test`. It turns `active` after the DNS change and one apply.
    - `create_account` `www` is refused as reserved.
@@ -217,12 +221,13 @@ The timings are `D16-sandbox`'s: about 40 s of `provisioning`, 5 s for a DNS cha
 8. **Stop and start.**
    - `stop_host` `host01`: `stopping`, then `stopped`. Health keeps its last word.
    - `start_host`: `starting`, then `running`, with the same EIP and data volume and health back to `sync`.
-9. **Resize.** `resize_host` `host01` to type `t4g.large` with `data_gb` 60 answers `restarts: true`, then `resizing`, then `running` with the new type and size.
-10. **Restart mid-operation.** `create_host` again (`host02`). During its `provisioning`, run `systemctl --user restart sandbox-<name>-accounts`. Then `resize_host` `host01`'s root to 30 and restart again during `resizing`. Each operation resumes from its recorded step and settles. After it settles, the delivery counts the instances, volumes and addresses tagged `Host=<name>` in `state/sandbox-cloud.json` and expects exactly one instance, one data volume, one root volume and one address per host. An extra resource the interrupted attempt made carries the running operation's `Operation` tag, so the stray scan treats it as explained; telemetry's lack of `resource.unexplained` alone proves nothing here.
+   - The record at `host01.hosts.test` is the same one throughout, and the report after the start carries the same hostname.
+9. **Resize.** `resize_host` `host01` to type `t4g.large` with `data_gb` 60 answers `restarts: true`, then `resizing`, then `running` with the new type and size, the same record and the same reported hostname.
+10. **Restart mid-operation.** `create_host` again (`host02`). During its `provisioning`, run `systemctl --user restart sandbox-<name>-accounts`. Then `resize_host` `host01`'s root to 30 and restart again during `resizing`. Each operation resumes from its recorded step and settles. After it settles, the delivery counts the instances, volumes and addresses tagged `Host=<name>` in `state/sandbox-cloud.json` and expects exactly one instance, one data volume, one root volume and one address per host, and exactly one A record at each host's DNS name, holding its EIP; `host02`'s report carries `host02.hosts.test`. An extra resource the interrupted attempt made carries the running operation's `Operation` tag, so the stray scan treats it as explained; telemetry's lack of `resource.unexplained` alone proves nothing here.
 11. **Removal guards.**
    - `delete_host` `host01` is refused while `acme` is on it.
    - `remove_account` `acme` is refused while it has users. Lock and delete them, then `remove_account` `acme`: `removing`, then gone.
-   - `delete_host` `host02` and `host01`: `deleting`, then hidden from `hosts` and the landing page. Their data volumes stay in the memory cloud, tagged `Orphaned=true`.
+   - `delete_host` `host02` and `host01`: `deleting`, then hidden from `hosts` and the landing page. Their data volumes stay in the memory cloud, tagged `Orphaned=true`. Their records at `host01.hosts.test` and `host02.hosts.test` are gone from it, as `acme.hosts.test` is.
 12. **Telemetry.** telemetry's `catalog` and `search` for accounts show:
     - one `change.finished` per changing call, a box call's naming `ssh:<user>` as its user
     - a box-made invite's `invite.created` naming `ssh:<user>`, and the `invite.used` of its enrollment
@@ -234,6 +239,8 @@ The timings are `D16-sandbox`'s: about 40 s of `provisioning`, 5 s for a DNS cha
     - no token, in any event: a `request.started` of a link shows the path `/join` alone, with no query
 
 Silence (`host.silent`) is not part of the walk, because a running sandbox host always reports. Unit tests prove it with an injected clock.
+
+Neither is a taken host name: the walk has no way to put a record at a host's name before its create, since every name below the domain the walk can write is an account's and host names are reserved. Unit tests over the memory cloud prove a create failing with the record conflict and the scan healing a missing record and showing a conflicting one as the host's reason (`D10-operations`).
 
 The real chain, AWS, real hosts, SSH and the space's nginx, is not in the sandbox. It is walked at the finish line.
 
@@ -249,11 +256,13 @@ Each row is an outcome the walk checks and the documents that own it. A row nami
 | `/accountsd` serves the binary to anyone; `/accountsd/v1/*` refuses a request without identity | `D13-daemon-endpoints`; routing `D03-serve` (R-GIAD-HJV5); binary path `D01-layout-and-run-seam` (R-Z1EE-DHAQ) |
 | the sandbox runs on the memory cloud and simulated daemons, persisted across restarts | `D01-layout-and-run-seam` (R-YRN7-BBD6, R-YYYL-LXTC); `D03-serve` (R-GY52-GKI6); `D16-sandbox` |
 | host states, health and the report page | `D10-operations`, `D04-store`, `D06-pages`, `D07-tools` |
-| account placement, DNS name, reserved and taken names | `D07-tools`, `D17-names-keys-sizes`, `D04-store`, `D10-operations` |
+| a host's DNS name on the page and in the tools, its record made at create, kept through stop, start and resize, and deleted with it | `D06-pages`, `D07-tools`, `D10-operations`, `D04-store`; the memory cloud `D16-sandbox` |
+| a host is asked to take its DNS name and reports the hostname it has | `D11-protocol`, `D13-daemon-endpoints`, `D15-machine`; the domain's wiring `D03-serve`; the simulated host `D16-sandbox` |
+| account placement, DNS name, reserved and taken names, host names reserved for accounts and users | `D07-tools`, `D17-names-keys-sizes`, `D04-store`, `D10-operations` |
 | users pending, then applied; lock, unlock, delete, re-add | `D07-tools`, `D04-store`, `D13-daemon-endpoints`, `D14-accountsd`, `D15-machine` |
 | invites made, listed, counted on the landing, revoked; the admin flag set and shown | `D07-tools`, `D04-store`, `D06-pages` |
 | the enrollment page answers a guest: form, refusals, created user, unusable link, rate limit | `D18-enrollment`; routing `D03-serve` (R-HX9C-M9PO, R-FUH5-FVTH); template data `D06-pages`; names and keys `D17-names-keys-sizes` |
-| the box tools: the tool list fits the tier, each user's own keys, an admin's users and invites, the box refusals, a box change landing as desired state | `D19-box-tools`, `D04-store`; the box path `D11-protocol` (R-YFOX-ORCE), `D13-daemon-endpoints`; wiring `D03-serve` (R-AIMF-81PV); the host side `D14-accountsd`, `D20-box-mcp`; the sandbox's sockets `D16-sandbox` |
+| the box tools: the tool list fits the tier, each user's own keys, an admin's users and invites, the box refusals, a box change landing as desired state | `D19-box-tools`, `D04-store`; the box path `D11-protocol` (R-YFOX-ORCE), `D13-daemon-endpoints`; wiring `D03-serve` (R-Z3DU-2772); the host side `D14-accountsd`, `D20-box-mcp`; the sandbox's sockets `D16-sandbox` |
 | a box change's events name `ssh:<user>`, and a box-made invite's creator | `D08-trail`, `D19-box-tools`, `D04-store` |
 | stop, start, resize with `restarts` | `D07-tools`, `D10-operations` |
 | restart mid-operation resumes, with no duplicates and no strays | `D03-serve` (R-GT9G-XHJE, R-KRUV-BTB7); `D10-operations`; `D16-sandbox` |
@@ -277,7 +286,7 @@ Each row is an outcome the walk checks and the documents that own it. A row nami
 - **Hosts' users.** A user on a host reaches the box tools through the host's daemon, which forwards to `/accountsd/v1/box` under the host's verified identity with the caller's uid (`D13-daemon-endpoints`). accounts resolves the verified host and the uid to an active user of an account placed on that host and never reads a name or an account from the host. Each call acts as that user, `ssh:<name>`, within that user's account only, and an admin tool checks in the same transaction as its write that the user is still an active admin (`D19-box-tools`, `D04-store`).
   - Accepted risk (self-service outcome 20): the host becomes a write path into accounts. Root on a host can forward any uid, so it can act as any admin of the accounts placed on that host. It could already do anything to those accounts' files and sessions. accounts never lets a host touch an account placed elsewhere.
 - **The binary.** `/accountsd` serves, to anyone, the release's own daemon binary. It holds no secret: the daemon learns everything else from the verified protocol.
-- **AWS.** accounts holds no secret of its own. Its credentials are the space role's, which the operator policy limits to the tag contract, so AWS itself refuses anything outside it. An AWS error's message text never enters the trail, only its service, operation, subject and code (`D05-cloud`).
+- **AWS.** accounts holds no secret of its own. Its credentials are the space role's, which the operator policy limits to the tag contract and to A records below the hosts domain, so AWS itself refuses anything outside it. Within that, accounts writes only accounts' and hosts' own records, creates a record only where none is, and deletes only one that is exactly its own (`D10-operations`). An AWS error's message text never enters the trail, only its service, operation, subject and code (`D05-cloud`).
 
 ## The finish line
 
@@ -302,6 +311,19 @@ On the space, with the space token and through the gateway, the delivery makes t
 
 The self-service release's finish line is its decisions document's, and it adds no check to these.
 
+The host-names release adds the eight checks of its own Finish line (host-names log P4, P5). They run on `us` after the next suite release is deployed, with no one having touched `host04` by hand, on `host04` (the one existing host, carrying `mgd`) and on a disposable host created and deleted through the gateway:
+
+1. On `host04`, `hostname` prints `host04.metaspot.org`, and accounts shows the name as applied: the `host` tool's `report` and the host page's report carry `hostname` `host04.metaspot.org`, and the host's health is `sync`. This proves that an existing host takes the name through the daemon's normal update.
+2. `host04.metaspot.org` resolves, from the developer's machine, to `host04`'s EIP, which the scan made with no operation run (`D10-operations`). `mgd.metaspot.org` resolves as before.
+3. An existing user of `mgd` signs in as `<user>@mgd.metaspot.org` with no host key warning, and sudo is refused as before (host-names log P1) and the accounts tools work for them as before.
+4. A new host is created through the gateway. The `host` tool shows its DNS name. When it first reports in sync its hostname is its full name, and that name resolves to its EIP.
+5. The new host is rebooted, then stopped and started. The hostname and the record are the same after each.
+6. Creating an account named like a host, such as `host09`, is refused (`D17-names-keys-sizes`).
+7. The new host is deleted. Its record is gone and its name no longer resolves. The data volume `delete_host` keeps is deleted by hand (host-names log P4).
+8. The `hosts` and `host` tools and the page show each host's DNS name.
+
+The report gives what each check answered and the ids of every AWS resource left running.
+
 No test can make the following checks, so they are made here:
 
 - an SSH session's processes sit in `acct-<account>-<user>.slice` with the slice's properties: on `host01`, `/proc/<pid>/cgroup` of a signed-in session's shell, and of a background child it started, names a cgroup at or below `/acct.slice/<AccountSlice(a)>/<PersonSlice(a, u)>/`, `a` the account and `u` the user, in every one of at least 30 sign-ins with and without a terminal, with no process of theirs left in a logind `session-<n>.scope`, so the limits of the account's and the person's slice files bound it (`D15-machine`; the PAM mechanism is unproven until here, coordinator decision Q2; the seam requirements prove only the files, the link and `Session`'s command)
@@ -311,6 +333,8 @@ No test can make the following checks, so they are made here:
 - the space's nginx passes `/accountsd` under `guests = true`
 - opsctl activates a release whose `bin/` holds `accountsd`
 - the accounts unit reaches IMDS and AWS
+- on the hosts' image, `hostnamectl set-hostname` with a full dotted name sets the static hostname that `/etc/hostname` holds, and the cloud-init drop-in holding `preserve_hostname: true` keeps it across a reboot (`D15-machine`; host-names checks 1, 4 and 5). This mechanism is checked only here. The scratch host of host-names "What was observed" showed, in its own terms, that a full dotted name set as the static hostname worked on the hosts' image and survived a reboot and a stop and start, and that with cloud-init told to preserve the hostname it survived a reboot after cloud-init's saved state was removed; the finish line does not repeat the loss of saved state
+- Route 53 accepts the host's record under the operator policy, and the name resolves (host-names checks 2 and 4)
 
 ## Recorded decisions
 
@@ -322,6 +346,8 @@ No test can make the following checks, so they are made here:
 - **`cli.NginxConf` is unchanged.** The daemon paths need no location of their own under `guests = true`. The box path, `/accountsd/v1/box`, is one of them: it rides `location /` like every `/accountsd/` path, which the route table hands to the daemon endpoints (R-GIAD-HJV5), and its largest body, `protocol.MaxBoxRequest` (64 KiB), is under nginx's documented default `client_max_body_size` of 1m, which the fragment does not set. The manifest is unchanged too. A fragment that proxied them past auth would need a proxy target that is not portable across opsctl and the sandbox.
 - **What ships, the preconditions and the finish line are prose.** Only a real release, a real AWS account and a real host could observe them, and no permitted test reaches those.
 - No release, space, host name, zone or template is named in the manifest, the fragment or any requirement.
+- **The host-names release adds no requirement here.** Its walk and its checks are prose, as the rest of the finish line is, and none of the four requirements below is changed by it: the manifest is unchanged, since the release adds no tool, no setting and no secret, and so is the fragment.
+- **The operator policy needs no change for host names.** The operator role already allows a host's record (host-names "What was observed"). infra's `iam.tf` is precedent for why: its right on the hosts zone is A records matching `*.<hosts domain>`, less the site names, which would admit `<host>.<hosts domain>` as it admits `<account>.<hosts domain>`. The exact scope is left to the finish line's check that Route 53 accepts the host's record under the operator policy. The comments in infra that said only account names are written are corrected by the delivery (host-names log P3).
 
 ## Consumer usage
 
