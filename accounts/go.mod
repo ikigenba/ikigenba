@@ -11,7 +11,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/route53 v1.71.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.52.0
 	github.com/aws/smithy-go v1.28.9
-	github.com/ikigenba/ikigenba/appkit v0.32.0
+	github.com/ikigenba/ikigenba/appkit v0.32.1
 )
 
 require (
