@@ -31,6 +31,42 @@
     <footer>Think you should have access? Ask an acme.dev workspace admin to add you.</footer>
   </section>
 
+  <p class="state-note">state: accounts' enrollment, the form</p>
+  <section class="card" aria-labelledby="join-title">
+    <span class="mark">ikigenba</span>
+    <h1 id="join-title">Join <code>acme</code></h1>
+    <p>You've been invited to the account <code>acme</code>, reached at <code>acme.metaspot.org</code>. Choose a user name and give one SSH public key to sign in with.</p>
+    <form method="post">
+      <label for="join-user">User name</label>
+      <input id="join-user" type="text" name="user" required maxlength="32" autocomplete="username" autocapitalize="none" spellcheck="false">
+      <span class="hint">Your login on the host: a lower-case letter first, then lower-case letters, digits, _ and -, at most 32 in all.</span>
+      <label for="join-key">Public key</label>
+      <textarea id="join-key" name="key" rows="3" required autocapitalize="none" spellcheck="false" autocomplete="off"></textarea>
+      <span class="hint">One line from your .pub file, starting ssh-ed25519. Only ed25519 keys are accepted.</span>
+      <button type="submit">Join</button>
+    </form>
+    <footer>Opening this link does not use it up; joining does. Anyone holding it can use it, so keep it to yourself.</footer>
+  </section>
+
+  <p class="state-note">state: accounts' enrollment, joined: a copy row on this layout</p>
+  <section class="card" aria-labelledby="joined-title">
+    <span class="mark">ikigenba</span>
+    <h1 id="joined-title">You've joined <code>acme</code></h1>
+    <div class="alert quiet" data-kind="ok" role="status">
+      <strong>Your user is created</strong>
+      <p>Access begins once the host has applied the change. If your first sign-in is refused, wait a minute and try again.</p>
+    </div>
+    <dl class="kv">
+      <dt>User</dt><dd><code>ada</code></dd>
+      <dt>Account</dt><dd><code>acme</code></dd>
+      <dt>Admin</dt><dd class="muted">no</dd>
+      <dt>Host name</dt><dd><code>acme.metaspot.org</code></dd>
+    </dl>
+    <p>Sign in with:</p>
+    <div class="secret"><code>ssh ada@acme.metaspot.org</code><button class="secondary" type="button"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666"/><path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1"/></svg>Copy</button></div>
+    <footer>Use the private key that pairs with the public key you gave. This link no longer works.</footer>
+  </section>
+
 </main>
 <script src="feedback.js"></script>
 <script src="lab.js"></script>

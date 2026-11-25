@@ -20,7 +20,8 @@ design/
     banner.html     the banner: the home link, the breadcrumb trail and its
                     page menu, profile, sign out, on every kind of page, and
                     at 375px
-    login.html      auth's sign-in, its error state, the signed-in profile
+    login.html      auth's sign-in, its error state, the signed-in profile,
+                    and accounts' enrollment, its form and joined states
     profile.html    account, sessions, API tokens
     scripts.html    scripts' catalog: your scripts and their last runs
     scripts-script.html
@@ -993,6 +994,10 @@ hooks, words and states; what differs is listed here.
   `acme.dev` workspace; `Try another account`.
 - Signed-in profile: email, signed in via Google,
   last sign-in `2026-09-24 14:02 UTC`, session expires in 11h 58m, `Sign out`.
+- accounts' enrollment on the same layout: the form, "Join `acme`", with its
+  full-width `Join` button; and the joined state, a key/value card and the
+  command `ssh ada@acme.metaspot.org` in a copy row, the one `.secret` inside
+  `.auth-page`.
 
 **specimen.html** — the parts: color tokens (swatch, name, value); type scale
 h1–h4, body, small, mono; paragraph with a link, inline `code`, `kbd`; a code
@@ -1053,3 +1058,6 @@ error; a key/value list; a card/panel; an empty state.
   (a plain-http host) or refuses, the code is selected and an error toast
   says to press Ctrl+C (⌘C on a Mac), shown longer. Toasts sit in one
   `aria-live` region; under reduced motion they fade without sliding.
+- The sign-in layout's buttons are full width, except a copy row's: inside
+  `.auth-page` the `.secret`'s button keeps its own width, so the code takes
+  the row as it does on every other page.
