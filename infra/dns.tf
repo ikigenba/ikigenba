@@ -72,3 +72,17 @@ resource "aws_route53_record" "hosts_site" {
   ttl     = 300
   records = [local.us_eip]
 }
+
+# The hosts zone's SOA, which Route 53 made with the zone, held here only to
+# set its TTL. A resolver remembers "no such name" for the lower of this TTL
+# and the record's last field, so at Route 53's default of 900 a name looked up
+# a moment before accounts writes its record is refused for fifteen minutes.
+# The value repeats what Route 53 wrote; only the TTL differs.
+resource "aws_route53_record" "hosts_soa" {
+  zone_id         = aws_route53_zone.hosts.zone_id
+  name            = local.hosts_domain
+  type            = "SOA"
+  ttl             = 60
+  allow_overwrite = true
+  records         = ["${aws_route53_zone.hosts.primary_name_server}. awsdns-hostmaster.amazon.com. 1 7200 900 1209600 86400"]
+}
