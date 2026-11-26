@@ -74,7 +74,7 @@ const (
 	DescribeStartHost  string = "Start a stopped host."
 	DescribeResizeHost string = "Change a host instance type or grow its volumes."
 	DescribeRetryHost  string = "Resume a failed host operation."
-	DescribeDeleteHost string = "Delete a host, keeping its data volume unless keep_data is false."
+	DescribeDeleteHost string = "Delete a host, keeping its data volume unless keep_data is false.\nWith keep_data false the data volume is deleted, which cannot be undone."
 
 	DescribeKeptVolumes      string = "List data volumes kept from deleted hosts, most recently deleted first."
 	DescribeDeleteKeptVolume string = "Permanently delete a kept data volume.\nThis cannot be undone."
