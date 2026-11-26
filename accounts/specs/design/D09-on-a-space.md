@@ -12,7 +12,7 @@ This document covers what accounts contributes when it runs on a space and in a 
 - the trust accounts places in what reaches it
 - the finish line
 
-Outcomes cited as outcome N are those of /home/mgreenly/Documents/ikigenba-ssh-hosts.md, and log entries those of /home/mgreenly/Documents/ikigenba-ssh-hosts-decisions.md. Self-service outcome N is outcome N of /home/mgreenly/Documents/ikigenba-self-service-accounts.md. Host-names outcome N is outcome N of /home/mgreenly/Documents/ikigenba-host-names.md, and host-names log entries those of /home/mgreenly/Documents/ikigenba-host-names-decisions.md.
+Outcomes cited as outcome N are those of /home/mgreenly/Documents/ikigenba-ssh-hosts.md, and log entries those of /home/mgreenly/Documents/ikigenba-ssh-hosts-decisions.md. Self-service outcome N is outcome N of /home/mgreenly/Documents/ikigenba-self-service-accounts.md. Host-names outcome N is outcome N of /home/mgreenly/Documents/ikigenba-host-names.md, and host-names log entries those of /home/mgreenly/Documents/ikigenba-host-names-decisions.md. Host-numbers outcome N is outcome N of /home/mgreenly/Documents/ikigenba-host-numbers-and-delete.md, and host-numbers log entries those of /home/mgreenly/Documents/ikigenba-host-numbers-and-delete-decisions.md.
 
 Almost every step between a checkout and a running host belongs to someone else:
 
@@ -39,7 +39,7 @@ The release holds five members of accounts' directory:
 - `etc/nginx.conf`, holding the bytes of `cli.NginxConf`.
 - `share/icon.svg`, unchanged.
 
-The two files under `etc/` are what the root package's `Etc` embeds (`D01-layout-and-run-seam`, R-C7K6-723O). The templates and the migrations ship inside the binary (`D01-layout-and-run-seam`, R-7QD1-Z5PQ and R-O5MQ-FQHM; the migrations' bytes are `D04-store`'s). The database is not in the release: accounts creates `state/accounts.db` on its first start, and in a sandbox also `state/sandbox-cloud.json` (`D01-layout-and-run-seam`, R-ESG4-8UGU and R-Y9CP-KR8R).
+The two files under `etc/` are what the root package's `Etc` embeds (`D01-layout-and-run-seam`, R-C7K6-723O). The templates and the migrations ship inside the binary (`D01-layout-and-run-seam`, R-7QD1-Z5PQ and R-7SFE-Z3X0; the migrations' bytes are `D04-store`'s). The database is not in the release: accounts creates `state/accounts.db` on its first start, and in a sandbox also `state/sandbox-cloud.json` (`D01-layout-and-run-seam`, R-ESG4-8UGU and R-Y9CP-KR8R).
 
 The tarball, its member list and its name are devctl's, and no test reads the checkout. So the release's members are outside what a requirement can state; a developer checks them with `tar`.
 
@@ -54,7 +54,7 @@ In order, the manifest says:
 - the app is `accounts`
 - its description is `pages.Description` (`D06-pages`, new words)
 - it is not the default app
-- it is an MCP service, so the gateway offers the twenty-six tools (`D07-tools`)
+- it is an MCP service, so the gateway offers the twenty-eight tools (`D07-tools`)
 - it admits guests (`guests = true`)
 - it holds no secrets (`secrets = []`)
 - a `[database]` table names `sqlite` and `state/accounts.db`
@@ -135,6 +135,7 @@ On a space that URL is `https://accounts.<space host>`.
   - The security group.
   - The hosts' role and instance profile, named alike, which `D12-host-identity` relies on: the verifier expects the assumed-role ARN under the profile's name.
   - The operator policy holding the tag contract `D05-cloud` and `D10-operations` follow. AWS denies any call outside it.
+  - In that policy, and in the space boundary that carries the same statements, `ec2:DeleteVolume` on volumes tagged `Kind=host-data` and nothing wider (host-numbers Sequence step 1; infra commit e69e0506, applied 2026-11-25, host-numbers log P1). A delete told not to keep the data (`delete_data`, `D10-operations`) and `delete_kept_volume` (`D07-tools`) need it; without it AWS answers `UnauthorizedOperation`, which fails the delete or returns the kept volume to `kept` with that reason (`D05-cloud`).
   - In that policy, the Route 53 change right on the hosts zone, which already allows a host's record (host-names "What was observed": the operator role already allows the record), so the host-names release needs no new right. Precedent, not proof, for its scope is infra's `iam.tf`, which limits it to records of type A whose names match `*.<hosts domain>` and are not one of the site names Terraform keeps there; the exact scope is checked at the finish line (Route 53 accepts the host's record under the operator policy). accounts writes records for accounts and for hosts and nothing else: `<account>.<hosts domain>` (`D10-operations`) and `<host>.<hosts domain>` (`D10-operations`). Host names, `host` followed by digits, are reserved for accounts and users (`D17-names-keys-sizes`), so the two never collide; neither form is one of the site names.
 - **`devctl hosts set`** on the operating space (outcome 5), which gives its role the operator policy.
 - **opsctl writes the five keys** (log D9) and accepts extra files in `bin/` (log D11).
@@ -142,9 +143,11 @@ On a space that URL is `https://accounts.<space host>`.
 
 The host-names release adds no precondition. The hosts domain and zone are the ones accounts already writes account records in, and the operator role already allows a host's record (host-names "What was observed"). Its infra change is comments only (host-names log P3), so infra needs no new apply for it.
 
-**Backup and restore.** The host's backup archives `state/` whole, so `accounts.db` goes with it: the hosts, operations, accounts, users, keys and latest reports (`D04-store`). After a restore the record may lag AWS. Operations resume against what AWS holds, by their recorded steps and lookups by tag (`D10-operations`). A resource no restored record explains is reported as unexplained, never deleted (`D10-operations`). For a host that is running, stopping, stopped, starting or resizing and has an EIP, the engine's scan puts back its own A record if it is missing, and a record that is not the host's is left alone and shown as the host's reason (`D10-operations`).
+The host-numbers release adds one precondition, the `ec2:DeleteVolume` right above, applied before the deploy. Nothing else changes for the operator: no new key, no new setting, no opsctl change.
 
-**Releases: expand only** (outcome 27). This release adds `0002_hosts.sql` and stops reading or writing the old `groups` and `users` tables of `0001`, but drops nothing (`D04-store`). It stops calling opsctl: no `sudo`, no `opsctl group|user` (`D01-layout-and-run-seam`, R-ETO0-MM7J). It changes nothing in opsctl. The SSH bans release adds `0003_bans.sql`, new tables and indexes only, and the release before it runs on that schema (`D04-store`). The self-service release adds `0004_invites.sql` the same way: an admin flag is a row of a new table rather than a new column of the users' table, so the release before it runs on that schema unchanged (`D04-store`); a user enrolled through an invite is an ordinary user to the old release, and the admin flag never reaches a host, so the daemon protocol does not change. The host-names release adds `0005_host_records.sql` the same way, a new table only, so the release before it runs on that schema (`D04-store`). Its persisted operation steps follow the same rule: a create's own record steps are named `host_record` and `wait_host_record`, which the release before it does not know and so never runs as an account's steps, and a host that release deletes keeps its record only until the scan removes it (`D10-operations`). It adds `domain` to the desired state and `hostname` to the report in the same release, a recorded departure from expand then contract (`D11-protocol`; host-names log P2): the daemon ships inside accounts and updates itself to the digest accounts names, both sides ignore members they do not know, and a daemon given no domain leaves the hostname alone, so an old and new mix works in both directions and a rollback never renames a host (host-names outcome 6).
+**Backup and restore.** The host's backup archives `state/` whole, so `accounts.db` goes with it: the hosts, operations, accounts, users, keys and latest reports (`D04-store`). After a restore the record may lag AWS. Operations resume against what AWS holds, by their recorded steps and lookups by tag (`D10-operations`). A resource no restored record explains is reported as unexplained, never deleted (`D10-operations`), and is never listed or deleted as a kept volume, which only the record names (`D04-store`). A kept volume the restored record lists that was deleted since counts as done when deleted again. For a host that is running, stopping, stopped, starting or resizing and has an EIP, the engine's scan puts back its own A record if it is missing, and a record that is not the host's is left alone and shown as the host's reason (`D10-operations`).
+
+**Releases: expand only** (outcome 27). This release adds `0002_hosts.sql` and stops reading or writing the old `groups` and `users` tables of `0001`, but drops nothing (`D04-store`). It stops calling opsctl: no `sudo`, no `opsctl group|user` (`D01-layout-and-run-seam`, R-ETO0-MM7J). It changes nothing in opsctl. The SSH bans release adds `0003_bans.sql`, new tables and indexes only, and the release before it runs on that schema (`D04-store`). The self-service release adds `0004_invites.sql` the same way: an admin flag is a row of a new table rather than a new column of the users' table, so the release before it runs on that schema unchanged (`D04-store`); a user enrolled through an invite is an ordinary user to the old release, and the admin flag never reaches a host, so the daemon protocol does not change. The host-names release adds `0005_host_records.sql` the same way, a new table only, so the release before it runs on that schema (`D04-store`). Its persisted operation steps follow the same rule: a create's own record steps are named `host_record` and `wait_host_record`, which the release before it does not know and so never runs as an account's steps, and a host that release deletes keeps its record only until the scan removes it (`D10-operations`). It adds `domain` to the desired state and `hostname` to the report in the same release, a recorded departure from expand then contract (`D11-protocol`; host-names log P2): the daemon ships inside accounts and updates itself to the digest accounts names, both sides ignore members they do not know, and a daemon given no domain leaves the hostname alone, so an old and new mix works in both directions and a rollback never renames a host (host-names outcome 6). The host-numbers release adds `0006_kept_volumes.sql` the same way, new tables and indexes only, and the release before it runs on that schema (`D04-store`): a delete's choice and a kept volume live only in the new tables, which the release before never reads; a host number it reuses is one the release before never gives again, since that release names a host by its counter, which is above every number given; and a delete told not to keep the data that the release before finds at a step it knows goes on to keep the data, the safe side, while one at `delete_data` or `wait_data_deleted`, step names it does not know, waits and times out until the roll-forward, which resumes or restarts it (`D10-operations`; host-numbers log P3).
 
 The next release contracts. It drops accounts' old tables, and opsctl removes the shell group and its sshd rules, the pooled limits, the sudo rule for accounts, and its `group` and `user` commands. The daemon protocol changes by expand then contract too (`D11-protocol`), the host-names release's one-release addition being the recorded exception.
 
@@ -182,7 +185,8 @@ The timings are `D16-sandbox`'s: about 40 s of `provisioning`, 5 s for a DNS cha
    - `GET /`, `/tools` and `/about` are fetched with the token, and without it (sent to sign in).
    - `POST /mcp` without a credential gets 401 from nginx.
    - `/events` and `/declarations` answer 404.
-   - The gateway's `describe` of accounts lists the twenty-six tools.
+   - The gateway's `describe` of accounts lists the twenty-eight tools, `kept_volumes` and `delete_kept_volume` right after `delete_host`.
+   - `kept_volumes` lists none.
    - `curl` of `/accountsd` without a token gets bytes equal to `<data>/bin/accountsd`.
    - `GET /accountsd/v1/state` without the identity header is answered 401 by accounts.
 2. **Create a host.**
@@ -227,11 +231,19 @@ The timings are `D16-sandbox`'s: about 40 s of `provisioning`, 5 s for a DNS cha
 11. **Removal guards.**
    - `delete_host` `host01` is refused while `acme` is on it.
    - `remove_account` `acme` is refused while it has users. Lock and delete them, then `remove_account` `acme`: `removing`, then gone.
-   - `delete_host` `host02` and `host01`: `deleting`, then hidden from `hosts` and the landing page. Their data volumes stay in the memory cloud, tagged `Orphaned=true`. Their records at `host01.hosts.test` and `host02.hosts.test` are gone from it, as `acme.hosts.test` is.
-12. **Telemetry.** telemetry's `catalog` and `search` for accounts show:
+   - `delete_host` `host01` with no `keep_data`: `deleting`, its `on_delete` `keep` in the answer, on `host` and on the host page, then hidden from `hosts` and the landing page. Its data volume stays in the memory cloud, tagged `Orphaned=true`, and its record at `host01.hosts.test` is gone from it, as `acme.hosts.test` is.
+   - `delete_host` `host02` with `keep_data` false: `deleting` with `on_delete` `delete`, then hidden. Restart accounts while it is `deleting` (its terminate takes 10 s); it resumes and finishes. The memory cloud then holds no volume, address or record of `host02` and no instance of it that is not terminated.
+12. **Host numbers** (host-numbers outcomes 1 to 3). With no host live, `create_host` answers `host01` again, then `host02`. Delete `host01` with `keep_data` false and, once it is hidden, `create_host` answers `host01` a third time, with a new record, instance, address and empty data volume, while `host02` keeps its own. While a host is still `deleting`, `create_host` skips its number. `host` for the new `host01` answers its own create as its operation, no report until its first, an empty `reason` and `on_delete`, and its own new `instance_id` and `data_volume`, none of the earlier `host01`'s.
+13. **Kept volumes** (host-numbers outcomes 14 to 16).
+   - `kept_volumes` lists the first `host01`'s volume from step 11, with its id, the host's name, its size and when the host was deleted; the landing's kept-volumes list shows the same.
+   - `delete_kept_volume` of it answers `deleting`, then within about 10 s (5 s of `deleting` in the memory cloud and the engine's 5 s poll) it is gone from `kept_volumes` and from the memory cloud. Of it again, of a live host's data volume, and of an id the cloud never made, each is refused as no such kept volume.
+   - Delete `host02` with no `keep_data`, then `delete_kept_volume` of its volume, and restart accounts while it is `deleting`: after the restart it finishes, and `kept_volumes` lists none.
+   - Delete the remaining `host01` with `keep_data` false: the memory cloud holds no host and no host volume.
+14. **Telemetry.** telemetry's `catalog` and `search` for accounts show:
     - one `change.finished` per changing call, a box call's naming `ssh:<user>` as its user
     - a box-made invite's `invite.created` naming `ssh:<user>`, and the `invite.used` of its enrollment
-    - `operation.started` and `operation.finished` for each operation
+    - `operation.started` and `operation.finished` for each operation, a delete's `data` saying `keep` or `delete`
+    - `volume.changed` for each kept volume's change of state, `kept` to `deleting` under the caller of `delete_kept_volume` and `deleting` to `deleted` under the same caller
     - `host.changed` for each host state change
     - `account.changed` for each account state change
     - `invite.created`, `invite.revoked` and `invite.used` for each invite made, revoked and used, and `admin.changed` for each flag `set_admin` changed
@@ -267,6 +279,9 @@ Each row is an outcome the walk checks and the documents that own it. A row nami
 | stop, start, resize with `restarts` | `D07-tools`, `D10-operations` |
 | restart mid-operation resumes, with no duplicates and no strays | `D03-serve` (R-GT9G-XHJE, R-KRUV-BTB7); `D10-operations`; `D16-sandbox` |
 | removal guards, unplace, delete and orphaned volume | `D04-store`, `D07-tools`, `D10-operations` |
+| a new host takes the lowest free number, and a reused name carries nothing of the earlier host | `D04-store`, `D07-tools`, `D10-operations` |
+| a delete with `keep_data` false leaves nothing of the host, resumes after a restart, and shows its choice | `D07-tools`, `D04-store`, `D10-operations`, `D06-pages`, `D08-trail`; the seam `D05-cloud` (R-7KQ3-HPFX); the memory cloud `D16-sandbox` (R-7JI7-3XP8, R-L4HV-TQ6K, R-L5PS-7HX9) |
+| kept volumes listed, on the page and by tool, and deleted, resuming after a restart | `D04-store`, `D07-tools`, `D10-operations`, `D06-pages`, `D08-trail`; the memory cloud `D16-sandbox` |
 | trail events, and no token in the trail | `D08-trail`; emitters `D07-tools`, `D10-operations`, `D13-daemon-endpoints`, `D18-enrollment` |
 | accounts reaches no sibling and runs no program | `D01-layout-and-run-seam` (R-7SSU-QP74, R-ETO0-MM7J) |
 
@@ -286,7 +301,7 @@ Each row is an outcome the walk checks and the documents that own it. A row nami
 - **Hosts' users.** A user on a host reaches the box tools through the host's daemon, which forwards to `/accountsd/v1/box` under the host's verified identity with the caller's uid (`D13-daemon-endpoints`). accounts resolves the verified host and the uid to an active user of an account placed on that host and never reads a name or an account from the host. Each call acts as that user, `ssh:<name>`, within that user's account only, and an admin tool checks in the same transaction as its write that the user is still an active admin (`D19-box-tools`, `D04-store`).
   - Accepted risk (self-service outcome 20): the host becomes a write path into accounts. Root on a host can forward any uid, so it can act as any admin of the accounts placed on that host. It could already do anything to those accounts' files and sessions. accounts never lets a host touch an account placed elsewhere.
 - **The binary.** `/accountsd` serves, to anyone, the release's own daemon binary. It holds no secret: the daemon learns everything else from the verified protocol.
-- **AWS.** accounts holds no secret of its own. Its credentials are the space role's, which the operator policy limits to the tag contract and to A records below the hosts domain, so AWS itself refuses anything outside it. Within that, accounts writes only accounts' and hosts' own records, creates a record only where none is, and deletes only one that is exactly its own (`D10-operations`). An AWS error's message text never enters the trail, only its service, operation, subject and code (`D05-cloud`).
+- **AWS.** accounts holds no secret of its own. Its credentials are the space role's, which the operator policy limits to the tag contract and to A records below the hosts domain, so AWS itself refuses anything outside it. Within that, accounts writes only accounts' and hosts' own records, creates a record only where none is, and deletes only one that is exactly its own (`D10-operations`). The policy allows deleting only a volume tagged `Kind=host-data`; within that, accounts deletes only a data volume its record explains, a host's own on a delete told not to keep it or a kept volume a caller names, never a stray (`D10-operations`, `D04-store`); a host's own only once the host holds no account that is not being removed (`D07-tools`). An AWS error's message text never enters the trail, only its service, operation, subject and code (`D05-cloud`).
 
 ## The finish line
 
@@ -324,6 +339,20 @@ The host-names release adds the eight checks of its own Finish line (host-names 
 
 The report gives what each check answered and the ids of every AWS resource left running.
 
+The host-numbers release adds the nine checks of its own Finish line. They run on `us` after the next suite release is deployed and the `ec2:DeleteVolume` right is applied, starting with no host running and the kept data volumes the host-names delivery left (host-numbers Prerequisites), through the gateway:
+
+1. `create_host` answers `host01`, though the database has given out higher numbers before (host-numbers outcome 4); it runs, reaches `sync`, and `host01.metaspot.org` resolves to its EIP.
+2. A second `create_host` answers `host02`.
+3. `delete_host` `host01` with `keep_data` false. Its instance, address, DNS record and data volume are gone, and the AWS account holds no volume tagged `Host=host01`.
+4. `create_host` answers `host01` again: in sync, with a new empty data volume and no SSH or DNS trace of the earlier one.
+5. accounts is restarted during a `keep_data` false delete; the delete resumes and finishes with nothing left behind.
+6. `delete_host` `host02` with no `keep_data`. Its data volume remains, tagged `Orphaned=true`.
+7. `kept_volumes` lists `host02`'s volume and those the host-names delivery left that the record explains (host-numbers log P2: a volume the record does not explain stays a stray, is reported and is not deleted by hand); `delete_kept_volume` of each, and the list is empty.
+8. `delete_host` of the remaining `host01` with `keep_data` false. The AWS account holds no host and no host volume the record explains.
+9. A full setup is left standing for the owner: `create_host` answers `host01`; `mgd` is placed on it; `mike` is added as its admin with a key generated at `~/.ssh/id_ed25519_host01_mike`; a `mgd-mike` entry is added to `~/.ssh/config` (host-numbers log P5); `ssh mike@mgd.metaspot.org` works from the developer's machine.
+
+The report gives what each tool answered and the ids of every AWS resource left running.
+
 No test can make the following checks, so they are made here:
 
 - an SSH session's processes sit in `acct-<account>-<user>.slice` with the slice's properties: on `host01`, `/proc/<pid>/cgroup` of a signed-in session's shell, and of a background child it started, names a cgroup at or below `/acct.slice/<AccountSlice(a)>/<PersonSlice(a, u)>/`, `a` the account and `u` the user, in every one of at least 30 sign-ins with and without a terminal, with no process of theirs left in a logind `session-<n>.scope`, so the limits of the account's and the person's slice files bound it (`D15-machine`; the PAM mechanism is unproven until here, coordinator decision Q2; the seam requirements prove only the files, the link and `Session`'s command)
@@ -335,6 +364,8 @@ No test can make the following checks, so they are made here:
 - the accounts unit reaches IMDS and AWS
 - on the hosts' image, `hostnamectl set-hostname` with a full dotted name sets the static hostname that `/etc/hostname` holds, and the cloud-init drop-in holding `preserve_hostname: true` keeps it across a reboot (`D15-machine`; host-names checks 1, 4 and 5). This mechanism is checked only here. The scratch host of host-names "What was observed" showed, in its own terms, that a full dotted name set as the static hostname worked on the hosts' image and survived a reboot and a stop and start, and that with cloud-init told to preserve the hostname it survived a reboot after cloud-init's saved state was removed; the finish line does not repeat the loss of saved state
 - Route 53 accepts the host's record under the operator policy, and the name resolves (host-names checks 2 and 4)
+- EC2 accepts `DeleteVolume` of a volume tagged `Kind=host-data` under the operator policy, and the volume is gone from `DescribeVolumes` once deleted (host-numbers checks 3, 7 and 8); the memory cloud's `deleting` and its refusals only mirror this (`D16-sandbox`)
+- under the operator role, `DeleteVolume` and `DescribeVolumes` of a volume that no longer exists answer `InvalidVolume.NotFound` and not `UnauthorizedOperation`; the observation `D05-cloud` cites was made with the owner's SSO session (host-numbers checks 3, 5 and 7)
 
 ## Recorded decisions
 
@@ -348,6 +379,8 @@ No test can make the following checks, so they are made here:
 - No release, space, host name, zone or template is named in the manifest, the fragment or any requirement.
 - **The host-names release adds no requirement here.** Its walk and its checks are prose, as the rest of the finish line is, and none of the four requirements below is changed by it: the manifest is unchanged, since the release adds no tool, no setting and no secret, and so is the fragment.
 - **The operator policy needs no change for host names.** The operator role already allows a host's record (host-names "What was observed"). infra's `iam.tf` is precedent for why: its right on the hosts zone is A records matching `*.<hosts domain>`, less the site names, which would admit `<host>.<hosts domain>` as it admits `<account>.<hosts domain>`. The exact scope is left to the finish line's check that Route 53 accepts the host's record under the operator policy. The comments in infra that said only account names are written are corrected by the delivery (host-names log P3).
+- **The host-numbers release adds no requirement here.** Its walk, its precondition and its checks are prose. The manifest is unchanged: two new tools change what the gateway lists, not the manifest's text, and there is no new setting or secret. The fragment is unchanged.
+- **The operator policy gains `ec2:DeleteVolume` on `Kind=host-data` volumes, and nothing wider** (host-numbers Sequence step 1, log P1). One right serves both a delete told not to keep the data and `delete_kept_volume`. It overturns the ssh-hosts rule that no tool deletes a data volume (host-numbers outcome 15), as the reuse of host numbers overturns the rule that a host name is never reused (host-numbers outcome 6): a host's number is free again once its delete has finished (`D04-store`).
 
 ## Consumer usage
 
