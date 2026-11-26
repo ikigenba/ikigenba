@@ -280,7 +280,7 @@ Each row is an outcome the walk checks and the documents that own it. A row nami
 | restart mid-operation resumes, with no duplicates and no strays | `D03-serve` (R-GT9G-XHJE, R-KRUV-BTB7); `D10-operations`; `D16-sandbox` |
 | removal guards, unplace, delete and orphaned volume | `D04-store`, `D07-tools`, `D10-operations` |
 | a new host takes the lowest free number, and a reused name carries nothing of the earlier host | `D04-store`, `D07-tools`, `D10-operations` |
-| a delete with `keep_data` false leaves nothing of the host, resumes after a restart, and shows its choice | `D07-tools`, `D04-store`, `D10-operations`, `D06-pages`, `D08-trail`; the seam `D05-cloud` (R-7KQ3-HPFX); the memory cloud `D16-sandbox` (R-7JI7-3XP8, R-L4HV-TQ6K, R-L5PS-7HX9) |
+| a delete with `keep_data` false leaves nothing of the host, resumes after a restart, and shows its choice | `D07-tools`, `D04-store`, `D10-operations`, `D06-pages`, `D08-trail`; the seam `D05-cloud` (R-7KQ3-HPFX); the memory cloud `D16-sandbox` (R-7JI7-3XP8, R-QO4W-BTK6, R-L5PS-7HX9) |
 | kept volumes listed, on the page and by tool, and deleted, resuming after a restart | `D04-store`, `D07-tools`, `D10-operations`, `D06-pages`, `D08-trail`; the memory cloud `D16-sandbox` |
 | trail events, and no token in the trail | `D08-trail`; emitters `D07-tools`, `D10-operations`, `D13-daemon-endpoints`, `D18-enrollment` |
 | accounts reaches no sibling and runs no program | `D01-layout-and-run-seam` (R-7SSU-QP74, R-ETO0-MM7J) |
