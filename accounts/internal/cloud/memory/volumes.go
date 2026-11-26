@@ -29,6 +29,12 @@ func (v volume) latest(now time.Time) cloud.Modification {
 func (v volume) at(s state, now time.Time) (cloud.Volume, bool) {
 	value := v.Value
 	switch {
+	case value.State == cloud.VolumeDeleting:
+		if now.Sub(v.DeleteStarted) >= VolumeDelay {
+			value.State = cloud.VolumeDeleted
+			return value, false
+		}
+		return value, true
 	case s.terminated(value.Attachment.InstanceID, now):
 		if s.Instances[value.Attachment.InstanceID].Value.RootVolume == value.ID {
 			return cloud.Volume{}, false
@@ -199,4 +205,31 @@ func (c *Cloud) VolumeModification(_ context.Context, id string) (cloud.Modifica
 		return cloud.Modification{}, ec2("DescribeVolumesModifications", id).reject("InvalidVolume.NotFound")
 	}
 	return c.state.Volumes[id].latest(now), nil
+}
+
+// DeleteVolume starts deleting an available data volume.
+func (c *Cloud) DeleteVolume(_ context.Context, id string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	op := ec2("DeleteVolume", id)
+	now := c.cfg.Now()
+	value, exists := c.state.volume(id, now)
+	switch {
+	case !exists:
+		return op.reject("InvalidVolume.NotFound")
+	case value.Tags[cloud.TagKind] != cloud.KindHostData:
+		return op.reject("UnauthorizedOperation")
+	case value.Attachment.InstanceID != "":
+		return op.reject("VolumeInUse")
+	case value.State == cloud.VolumeDeleting:
+		return nil
+	case value.State != cloud.VolumeAvailable:
+		return op.reject("IncorrectState")
+	}
+	value.State = cloud.VolumeDeleting
+	v := c.state.Volumes[id]
+	v.Value, v.DeleteStarted = value, now
+	next := c.state.snapshot()
+	next.Volumes[id] = v
+	return c.save(next, op)
 }

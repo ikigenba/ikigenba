@@ -20,7 +20,9 @@ func Register(srv *mcp.Server, cfg Config) {
 	mcp.AddTool(srv, mcp.Tool[HostArgs, HostChange]{Name: ToolStartHost, Description: DescribeStartHost, Effect: mcp.Additive, Handler: change(cfg, ToolStartHost, cfg.hostOperation(store.OpStart))})
 	mcp.AddTool(srv, mcp.Tool[ResizeHostArgs, HostResize]{Name: ToolResizeHost, Description: DescribeResizeHost, Effect: mcp.Additive, Handler: change(cfg, ToolResizeHost, cfg.resizeHost)})
 	mcp.AddTool(srv, mcp.Tool[HostArgs, HostChange]{Name: ToolRetryHost, Description: DescribeRetryHost, Effect: mcp.Additive, Handler: change(cfg, ToolRetryHost, cfg.retryHost)})
-	mcp.AddTool(srv, mcp.Tool[HostArgs, HostChange]{Name: ToolDeleteHost, Description: DescribeDeleteHost, Effect: mcp.Destructive, Handler: change(cfg, ToolDeleteHost, cfg.hostOperation(store.OpDelete))})
+	mcp.AddTool(srv, mcp.Tool[DeleteHostArgs, HostChange]{Name: ToolDeleteHost, Description: DescribeDeleteHost, Effect: mcp.Destructive, Handler: change(cfg, ToolDeleteHost, cfg.deleteHost)})
+	mcp.AddTool(srv, mcp.Tool[KeptVolumesArgs, KeptVolumeList]{Name: ToolKeptVolumes, Description: DescribeKeptVolumes, Effect: mcp.Read, Handler: read(cfg, cfg.keptVolumes)})
+	mcp.AddTool(srv, mcp.Tool[KeptVolumeArgs, KeptVolume]{Name: ToolDeleteKeptVolume, Description: DescribeDeleteKeptVolume, Effect: mcp.Destructive, Handler: change(cfg, ToolDeleteKeptVolume, cfg.deleteKeptVolume)})
 	mcp.AddTool(srv, mcp.Tool[AccountsArgs, AccountList]{Name: ToolAccounts, Description: DescribeAccounts, Effect: mcp.Read, Handler: read(cfg, cfg.accounts)})
 	mcp.AddTool(srv, mcp.Tool[AccountArgs, AccountRead]{Name: ToolAccount, Description: DescribeAccount, Effect: mcp.Read, Handler: read(cfg, cfg.account)})
 	mcp.AddTool(srv, mcp.Tool[CreateAccountArgs, Account]{Name: ToolCreateAccount, Description: DescribeCreateAccount, Effect: mcp.Additive, Handler: change(cfg, ToolCreateAccount, cfg.createAccount)})
@@ -55,6 +57,7 @@ type changeRecord struct {
 	host, account, user, ip string
 	ipErr                   error
 	before, after           string
+	onDelete, volume        string
 	operation               store.Operation
 }
 
@@ -75,6 +78,8 @@ func change[A, R any](cfg Config, name string, handle func(context.Context, iden
 func changeNames(args any) changeRecord {
 	switch a := args.(type) {
 	case HostArgs:
+		return changeRecord{host: a.Host}
+	case DeleteHostArgs:
 		return changeRecord{host: a.Host}
 	case ResizeHostArgs:
 		return changeRecord{host: a.Host}
@@ -103,7 +108,7 @@ func changeNames(args any) changeRecord {
 func (cfg Config) tellChange(ctx context.Context, name string, r changeRecord, err error) {
 	op := r.operation
 	if op.Supersedes != "" {
-		trail.OperationFinished(ctx, cfg.Telemetry, op.Supersedes, store.OpPlace, r.host, r.account, store.OpCancelled, "")
+		trail.OperationFinished(ctx, cfg.Telemetry, op.Supersedes, store.OpPlace, r.host, r.account, store.OpCancelled, "", "")
 	}
 	if op.ID != "" {
 		if r.account == "" {
@@ -111,7 +116,10 @@ func (cfg Config) tellChange(ctx context.Context, name string, r changeRecord, e
 		} else if r.before != r.after {
 			trail.AccountChanged(ctx, cfg.Telemetry, r.account, r.host, r.before, r.after)
 		}
-		trail.OperationStarted(ctx, cfg.Telemetry, op.ID, op.Kind, r.host, r.account)
+		trail.OperationStarted(ctx, cfg.Telemetry, op.ID, op.Kind, r.host, r.account, r.onDelete)
+	}
+	if r.volume != "" {
+		trail.VolumeChanged(ctx, cfg.Telemetry, r.volume, r.host, store.VolumeKept, store.VolumeDeleting, "")
 	}
 	result := trail.ResultOK
 	if err != nil {
@@ -121,7 +129,7 @@ func (cfg Config) tellChange(ctx context.Context, name string, r changeRecord, e
 		}
 	}
 	trail.Change(ctx, cfg.Telemetry, name, r.host, r.account, r.user, r.ip, result)
-	if op.ID != "" {
+	if op.ID != "" || r.volume != "" {
 		cfg.Wake()
 	}
 }
@@ -153,6 +161,7 @@ var storeRefusals = []struct {
 	{store.ErrKeyNotHeld, KeyNotHeld},
 	{store.ErrTooManyUnbans, TooManyUnbans},
 	{store.ErrAllowlistFull, AllowlistFull},
+	{store.ErrVolumeDeleting, VolumeDeleting},
 }
 
 func storeError(err error, missing string) error {

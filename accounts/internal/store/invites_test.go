@@ -432,7 +432,7 @@ func TestInviteTokensStayOutOfStoreAnswers(t *testing.T) {
 	})
 }
 
-// R-R83A-G5Y8 R-R9B6-TXOX R-RAJ3-7PFM R-RBQZ-LH6B R-RCYV-Z8X0 R-RE6S-D0NP R-RFEO-QSEE
+// R-759B-PGTT R-78X0-US1W R-RAJ3-7PFM R-RBQZ-LH6B R-RCYV-Z8X0 R-RE6S-D0NP R-RFEO-QSEE
 func TestRecordedCallersAreLimitedByBytes(t *testing.T) {
 	d, s, _ := fixture(t)
 	h, op := create(t, s)

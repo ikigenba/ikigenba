@@ -22,7 +22,7 @@ func TestFirstLine(t *testing.T) {
 	}
 }
 
-// R-Y3NM-ABQI R-YFUM-415G R-YH2I-HSW5 R-ZB0K-I008 R-ZC8G-VRQX R-CSDA-A2TO R-CPXH-IJCA
+// R-Y3NM-ABQI R-YH2I-HSW5 R-ZB0K-I008 R-ZC8G-VRQX R-CSDA-A2TO R-CPXH-IJCA R-0VXT-EZQU
 func TestCopyAndTimeout(t *testing.T) {
 	const (
 		_ = tools.NotConfigured
@@ -63,6 +63,8 @@ func TestCopyAndTimeout(t *testing.T) {
 		_ = tools.NoLink
 		_ = tools.NoInvite
 		_ = tools.TooManyInvites
+		_ = tools.NoKeptVolume
+		_ = tools.VolumeDeleting
 		_ = tools.ArgAdmin
 		_ = tools.ArgInvite
 		_ = tools.ArgIP
@@ -82,7 +84,7 @@ func TestCopyAndTimeout(t *testing.T) {
 		tools.HostNotRunning, tools.HostNotStopped, tools.HostHasAccounts, tools.HostFull,
 		tools.HostGone, tools.AccountHasUsers, tools.AccountRemoving, tools.AccountFull,
 		tools.TooManyKeys, tools.GrowLimit, tools.UserNotLocked, tools.UserRemoving,
-		tools.NameHasRecord, tools.CloudFailed, tools.InvalidAddress, tools.PrefixTooWide, tools.TooManyUnbans, tools.AllowlistFull, tools.NoLink, tools.NoInvite, tools.TooManyInvites,
+		tools.NameHasRecord, tools.CloudFailed, tools.InvalidAddress, tools.PrefixTooWide, tools.TooManyUnbans, tools.AllowlistFull, tools.NoLink, tools.NoInvite, tools.TooManyInvites, tools.NoKeptVolume, tools.VolumeDeleting,
 	}
 	seen := map[string]bool{store.Unreachable: true}
 	for _, copy := range refusals {

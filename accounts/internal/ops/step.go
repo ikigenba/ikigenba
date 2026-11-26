@@ -76,6 +76,17 @@ func (s step) run() error {
 			return s.fail(ReasonTimedOut)
 		}
 	}
+	// A rollback may leave a delete at a step for the other data choice.
+	switch s.op.Step {
+	case StepOrphan:
+		if s.deletesData() {
+			return s.next(StepDeleteData)
+		}
+	case StepDeleteData, StepWaitDataDeleted:
+		if s.op.Kind == store.OpDelete && !s.deletesData() {
+			return s.next(StepOrphan)
+		}
+	}
 	switch s.op.Step {
 	case StepAddress:
 		return s.allocate()
@@ -132,9 +143,16 @@ func (s step) run() error {
 		return s.release()
 	case StepOrphan:
 		return s.orphan()
-	default:
-		return fmt.Errorf("%w: unknown operation step %q", store.ErrUnreachable, s.op.Step)
+	case StepDeleteData:
+		if s.deletesData() {
+			return s.deleteData()
+		}
+	case StepWaitDataDeleted:
+		if s.deletesData() {
+			return s.waitDataDeleted()
+		}
 	}
+	return fmt.Errorf("%w: unknown operation step %q for %q", store.ErrUnreachable, s.op.Step, s.op.Kind)
 }
 
 func (s step) expired() bool { return s.now.Sub(s.op.StepStarted) > StepTimeout }
@@ -176,16 +194,22 @@ func (s step) cloudError(err error) error {
 	case cloud.ClassRefused, cloud.ClassMismatch:
 		return s.fail(err.Error())
 	default:
-		delay := PollInterval
-		for n := s.op.Attempts; n > 0 && delay < MaxBackoff; n-- {
-			delay = min(delay*2, MaxBackoff)
-		}
+		delay := retryDelay(s.op.Attempts)
 		var ce *cloud.Error
 		if errors.As(err, &ce) && ce.Code == "VolumeModificationRateExceeded" {
 			delay = MaxBackoff
 		}
 		return s.deferFor(delay, s.op.Attempts+1)
 	}
+}
+
+func retryDelay(attempts int) time.Duration {
+	delay := PollInterval
+	for attempts > 0 && delay < MaxBackoff {
+		attempts--
+		delay = min(delay*2, MaxBackoff)
+	}
+	return delay
 }
 
 func (s step) fail(reason string) error {
@@ -242,7 +266,11 @@ func (s step) tell(status, reason string) {
 			trail.HostChanged(ctx, w, s.h.Name, s.h.State, state, op.ID)
 		}
 	}
-	trail.OperationFinished(ctx, w, op.ID, op.Kind, op.Host, op.Account, status, reason)
+	var data string
+	if op.Kind == store.OpDelete {
+		data = s.h.OnDelete
+	}
+	trail.OperationFinished(ctx, w, op.ID, op.Kind, op.Host, op.Account, status, reason, data)
 }
 
 func endState(op store.Operation, status string) string {
@@ -270,6 +298,6 @@ func (s step) tellRemoved(removed []store.Operation) {
 	for _, op := range removed {
 		trail.AccountChanged(ctx, w, op.Account, op.Host, store.AccountRemoving, trail.AccountRemoved)
 		unplace := identity.NewContext(s.ctx, op.Caller)
-		trail.OperationFinished(unplace, w, op.ID, op.Kind, op.Host, op.Account, op.Status, "")
+		trail.OperationFinished(unplace, w, op.ID, op.Kind, op.Host, op.Account, op.Status, "", "")
 	}
 }

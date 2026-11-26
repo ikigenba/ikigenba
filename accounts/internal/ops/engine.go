@@ -30,34 +30,36 @@ const (
 
 // Operation steps.
 const (
-	StepAddress        = "address"
-	StepHostRecord     = "host_record"
-	StepWaitHostRecord = "wait_host_record"
-	StepLaunch         = "launch"
-	StepWaitRunning    = "wait_running"
-	StepVolume         = "volume"
-	StepWaitVolume     = "wait_volume"
-	StepAttach         = "attach"
-	StepWaitAttached   = "wait_attached"
-	StepAssociate      = "associate"
-	StepStop           = "stop"
-	StepWaitStopped    = "wait_stopped"
-	StepStart          = "start"
-	StepGrowRoot       = "grow_root"
-	StepWaitRoot       = "wait_root"
-	StepGrowData       = "grow_data"
-	StepWaitData       = "wait_data"
-	StepSetType        = "set_type"
-	StepUnrecord       = "unrecord"
-	StepWaitUnrecord   = "wait_unrecord"
-	StepTerminate      = "terminate"
-	StepWaitTerminated = "wait_terminated"
-	StepRelease        = "release"
-	StepOrphan         = "orphan"
-	StepWaitAddress    = "wait_address"
-	StepRecord         = "record"
-	StepWaitRecord     = "wait_record"
-	StepWaitApplied    = "wait_applied"
+	StepAddress         = "address"
+	StepHostRecord      = "host_record"
+	StepWaitHostRecord  = "wait_host_record"
+	StepLaunch          = "launch"
+	StepWaitRunning     = "wait_running"
+	StepVolume          = "volume"
+	StepWaitVolume      = "wait_volume"
+	StepAttach          = "attach"
+	StepWaitAttached    = "wait_attached"
+	StepAssociate       = "associate"
+	StepStop            = "stop"
+	StepWaitStopped     = "wait_stopped"
+	StepStart           = "start"
+	StepGrowRoot        = "grow_root"
+	StepWaitRoot        = "wait_root"
+	StepGrowData        = "grow_data"
+	StepWaitData        = "wait_data"
+	StepSetType         = "set_type"
+	StepUnrecord        = "unrecord"
+	StepWaitUnrecord    = "wait_unrecord"
+	StepTerminate       = "terminate"
+	StepWaitTerminated  = "wait_terminated"
+	StepRelease         = "release"
+	StepOrphan          = "orphan"
+	StepDeleteData      = "delete_data"
+	StepWaitDataDeleted = "wait_data_deleted"
+	StepWaitAddress     = "wait_address"
+	StepRecord          = "record"
+	StepWaitRecord      = "wait_record"
+	StepWaitApplied     = "wait_applied"
 )
 
 // Reasons recorded when a step cannot finish.
@@ -140,7 +142,7 @@ func (e *Engine) Run(ctx context.Context) error {
 	return nil
 }
 
-// Pass takes one step of each due operation, then runs the due sweeps.
+// Pass takes one step of each due operation, works due kept volumes, then runs the due sweeps.
 func (e *Engine) Pass(ctx context.Context) error {
 	return e.pass(ctx, false)
 }
@@ -148,6 +150,9 @@ func (e *Engine) Pass(ctx context.Context) error {
 func (e *Engine) pass(ctx context.Context, first bool) error {
 	now := e.cfg.Now()
 	if err := e.steps(ctx, now, first); err != nil {
+		return err
+	}
+	if err := e.deleteKeptVolumes(ctx, now); err != nil {
 		return err
 	}
 	if err := e.silence(ctx, now); err != nil {
@@ -204,7 +209,7 @@ func (e *Engine) silence(ctx context.Context, now time.Time) error {
 	}
 }
 
-// Scan checks live and deleted hosts' records, notes unexplained resources, and prunes expired grows.
+// Scan checks host records, notes unexplained resources, adopts kept volumes, and prunes expired grows.
 func (e *Engine) Scan(ctx context.Context) error {
 	return e.scan(ctx, e.cfg.Now())
 }
@@ -215,10 +220,11 @@ func (e *Engine) scan(ctx context.Context, now time.Time) error {
 	if e.cfg.Cloud != nil {
 		cloudErr = errors.Join(e.checkRecords(ctx), e.checkLeftovers(ctx), e.scanResources(ctx, now))
 	}
+	adoptErr := e.adoptKeptVolumes(ctx)
 	for {
 		n, err := e.cfg.Store.PruneGrows(ctx, now, store.BatchSize)
 		if err != nil || n < store.BatchSize {
-			return errors.Join(cloudErr, err)
+			return errors.Join(cloudErr, adoptErr, err)
 		}
 	}
 }

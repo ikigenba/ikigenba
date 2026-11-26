@@ -68,6 +68,7 @@ type volume struct {
 	Value         cloud.Volume
 	Created       time.Time
 	Attached      time.Time
+	DeleteStarted time.Time
 	Modifications []modification
 }
 

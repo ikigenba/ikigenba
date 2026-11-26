@@ -1,0 +1,9 @@
+# Kept-volume cursors lose chronological position
+
+Filed during the accounts build-spec run from `40b111be`. The open requirements are R-184T-8P5S and R-1AKM-08N6 in D07, and R-2ZAZ-HP5D, R-30IV-VGW2, R-346L-0S45, R-35EH-EJUU, R-36MD-SBLJ, R-3BHZ-BEKB and R-3CPV-P6B0 in D06.
+
+D04 permits recording deletions at injected UTC clock values outside the range representable as a signed count of Unix nanoseconds. For example, finish two host deletes with distinct data volumes at `2026-01-01T00:00:00Z` and `2300-01-01T00:00:00Z`. The signed-in landing page is required to show the 2300 volume first. The tool is required to order by `Deleted.UnixNano()` descending. On Go 1.26.5 those keys are `1767225600000000000` and `-8032952073709551616`, so the tool is required to show 2026 first. Page and tool parity requires the same order. Go documents `UnixNano` outside its representable range, including at the zero time, as undefined.
+
+The same encoding cannot uniquely locate a chronological cursor. With `paging.DefaultLimit` kept volumes deleted at distinct seconds in 2300 and an older one deleted in 2026, the chronological first window can emit a boundary that decodes as a date in 1715. The resulting next window skips the 2026 row and there is no previous token to reverse the walk. The same ambiguity affects before-token windows, underflow redirects and the landing data and responses that depend on them. Valid tokens can name positions with no corresponding record, so looking up a volume cannot generally recover the encoded date.
+
+Resolve the shared cursor contract with a representation that preserves ordering at store precision, such as versioned Unix-second cursors with legacy decoding, and define the zero-time sentinel explicitly. Another option is to specify a supported deletion date range and how to handle existing records outside it.

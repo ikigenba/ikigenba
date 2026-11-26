@@ -33,14 +33,18 @@ func FirstLine(description string) string {
 
 // Tool names in catalog order.
 const (
-	ToolHosts         = "hosts"
-	ToolHost          = "host"
-	ToolCreateHost    = "create_host"
-	ToolStopHost      = "stop_host"
-	ToolStartHost     = "start_host"
-	ToolResizeHost    = "resize_host"
-	ToolRetryHost     = "retry_host"
-	ToolDeleteHost    = "delete_host"
+	ToolHosts      = "hosts"
+	ToolHost       = "host"
+	ToolCreateHost = "create_host"
+	ToolStopHost   = "stop_host"
+	ToolStartHost  = "start_host"
+	ToolResizeHost = "resize_host"
+	ToolRetryHost  = "retry_host"
+	ToolDeleteHost = "delete_host"
+
+	ToolKeptVolumes      = "kept_volumes"
+	ToolDeleteKeptVolume = "delete_kept_volume"
+
 	ToolAccounts      = "accounts"
 	ToolAccount       = "account"
 	ToolCreateAccount = "create_account"
@@ -63,14 +67,18 @@ const (
 
 // Tool and argument descriptions.
 const (
-	DescribeHosts         string = "List live SSH hosts in creation order."
-	DescribeHost          string = "Read a host, its accounts, current operation and latest report."
-	DescribeCreateHost    string = "Provision a new SSH host."
-	DescribeStopHost      string = "Stop a running host."
-	DescribeStartHost     string = "Start a stopped host."
-	DescribeResizeHost    string = "Change a host instance type or grow its volumes."
-	DescribeRetryHost     string = "Resume a failed host operation."
-	DescribeDeleteHost    string = "Delete a host and retain its data volume."
+	DescribeHosts      string = "List live SSH hosts in creation order."
+	DescribeHost       string = "Read a host, its accounts, current operation and latest report."
+	DescribeCreateHost string = "Provision a new SSH host."
+	DescribeStopHost   string = "Stop a running host."
+	DescribeStartHost  string = "Start a stopped host."
+	DescribeResizeHost string = "Change a host instance type or grow its volumes."
+	DescribeRetryHost  string = "Resume a failed host operation."
+	DescribeDeleteHost string = "Delete a host, keeping its data volume unless keep_data is false."
+
+	DescribeKeptVolumes      string = "List data volumes kept from deleted hosts, most recently deleted first."
+	DescribeDeleteKeptVolume string = "Permanently delete a kept data volume.\nThis cannot be undone."
+
 	DescribeAccounts      string = "List SSH accounts by slug."
 	DescribeAccount       string = "Read an SSH account, its users and its current operation."
 	DescribeCreateAccount string = "Place an SSH account on a host."
@@ -99,6 +107,8 @@ const (
 	ArgType               string = "EC2 instance type."
 	ArgRootGB             string = "Root volume size in GB."
 	ArgDataGB             string = "Data volume size in GB."
+	ArgKeepData           string = "Keep the data volume when deleting the host. Defaults to true."
+	ArgVolume             string = "Kept data volume ID."
 )
 
 // Refusal text returned to tool callers.
@@ -141,6 +151,8 @@ const (
 	NoInvite        string = "no unexpired, unused invite has that id"
 	NoLink          string = "this space has no accounts URL for invite links"
 	AllowlistFull   string = "the host already holds its maximum number of allowlist entries"
+	NoKeptVolume    string = "no kept data volume has that id"
+	VolumeDeleting  string = "the kept data volume is already being deleted"
 )
 
 // HostsArgs selects a window of live hosts.
@@ -152,6 +164,23 @@ type HostsArgs struct {
 // HostArgs names a host.
 type HostArgs struct {
 	Host string `json:"host" description:"SSH host name." mcp:"required"`
+}
+
+// DeleteHostArgs names a host and selects whether to keep its data volume.
+type DeleteHostArgs struct {
+	Host     string `json:"host" mcp:"required"`
+	KeepData *bool  `json:"keep_data"`
+}
+
+// KeptVolumesArgs selects a window of kept data volumes.
+type KeptVolumesArgs struct {
+	Page  *string `json:"page" description:"Continues a previous answer: pass the next value it returned, with the same filters. Leave out for the first page."`
+	Limit *int    `json:"limit" description:"Most entries to return, 1 to 500; 25 when left out."`
+}
+
+// KeptVolumeArgs identifies a kept data volume.
+type KeptVolumeArgs struct {
+	Volume string `json:"volume" mcp:"required"`
 }
 
 // CreateHostArgs specifies the resources for a new host.
@@ -242,6 +271,7 @@ type Host struct {
 	DNSName  string `json:"dns_name" mcp:"required"`
 	State    string `json:"state" mcp:"required"`
 	Reason   string `json:"reason" mcp:"required"`
+	OnDelete string `json:"on_delete" mcp:"required"`
 	Health   string `json:"health" mcp:"required"`
 	Type     string `json:"type" mcp:"required"`
 	RootGB   int    `json:"root_gb" mcp:"required"`
@@ -263,6 +293,7 @@ type HostRead struct {
 	DNSName      string          `json:"dns_name" mcp:"required"`
 	State        string          `json:"state" mcp:"required"`
 	Reason       string          `json:"reason" mcp:"required"`
+	OnDelete     string          `json:"on_delete" mcp:"required"`
 	Health       string          `json:"health" mcp:"required"`
 	Type         string          `json:"type" mcp:"required"`
 	RootGB       int             `json:"root_gb" mcp:"required"`
@@ -311,6 +342,7 @@ type Operation struct {
 type HostChange struct {
 	Host      string `json:"host" mcp:"required"`
 	State     string `json:"state" mcp:"required"`
+	OnDelete  string `json:"on_delete" mcp:"required"`
 	Operation string `json:"operation"`
 }
 
@@ -320,6 +352,22 @@ type HostResize struct {
 	State     string `json:"state" mcp:"required"`
 	Operation string `json:"operation"`
 	Restarts  bool   `json:"restarts" mcp:"required"`
+}
+
+// KeptVolume summarizes a data volume from a deleted host.
+type KeptVolume struct {
+	Volume  string `json:"volume" mcp:"required"`
+	Host    string `json:"host" mcp:"required"`
+	SizeGB  int    `json:"size_gb" mcp:"required"`
+	Deleted string `json:"deleted" mcp:"required"`
+	State   string `json:"state" mcp:"required"`
+	Reason  string `json:"reason" mcp:"required"`
+}
+
+// KeptVolumeList holds one window of kept data volumes.
+type KeptVolumeList struct {
+	KeptVolumes []KeptVolume `json:"kept_volumes" mcp:"required"`
+	Next        *string      `json:"next" description:"Present when more entries follow; pass it back as page to get them."`
 }
 
 // Account summarizes an account and its placement.

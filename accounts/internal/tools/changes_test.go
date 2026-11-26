@@ -105,7 +105,7 @@ func toolEvents(t *testing.T, f *fixture) []telemetry.Event {
 	return events
 }
 
-// R-ZCRW-FU67 R-XZZX-50IF R-104G-66SU R-1OF3-PKX6 R-1PN0-3CNV
+// R-ZCRW-FU67 R-XZZX-50IF R-104G-66SU R-1OF3-PKX6 R-1PN0-3CNV R-14H4-3DXP
 func TestHostOperations(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
@@ -116,7 +116,7 @@ func TestHostOperations(t *testing.T) {
 	created := answer[tools.HostChange](t, f.call(tools.ToolCreateHost, tools.CreateHostArgs{}))
 	host := tools.HostArgs{Host: created.Host}
 	h := f.host(host.Host)
-	if created.Host != "host01" || created.State != store.HostProvisioning || h.State != created.State ||
+	if created.Host != "host01" || created.State != store.HostProvisioning || created.OnDelete != "" || h.State != created.State ||
 		h.Type != valid.DefaultType || h.RootGB != valid.DefaultRootGB || h.DataGB != valid.DefaultDataGB || h.CreatedBy != f.caller.UserID {
 		t.Fatalf("create answer %+v, stored %+v", created, h)
 	}
@@ -136,7 +136,7 @@ func TestHostOperations(t *testing.T) {
 		{tools.ToolRetryHost, host, tools.HostNotFailed},
 		{tools.ToolStartHost, host, tools.HostBusy},
 		{tools.ToolStopHost, host, tools.HostBusy},
-		{tools.ToolDeleteHost, host, tools.HostBusy},
+		{tools.ToolDeleteHost, tools.DeleteHostArgs{Host: host.Host}, tools.HostBusy},
 	} {
 		refusal(t, f.call(c.name, c.args), c.want)
 	}
@@ -184,7 +184,7 @@ func TestHostOperations(t *testing.T) {
 		t.Fatal(resizeOnlyData, op)
 	}
 	f.finish(resizeOnlyData.Operation, store.Update{DataGB: dataSize})
-	stopped := checkHostOperation(t, f, tools.ToolStopHost, host, store.OpStop, store.HostStopping)
+	stopped := checkHostOperation(t, f, tools.ToolStopHost, host.Host, store.OpStop, store.HostStopping)
 	f.finish(stopped, store.Update{})
 	refusal(t, f.call(tools.ToolStopHost, host), tools.HostNotRunning)
 	newType := "t4g.xlarge"
@@ -193,12 +193,12 @@ func TestHostOperations(t *testing.T) {
 		t.Fatal(stoppedResize)
 	}
 	f.finish(stoppedResize.Operation, store.Update{Type: newType})
-	started := checkHostOperation(t, f, tools.ToolStartHost, host, store.OpStart, store.HostStarting)
+	started := checkHostOperation(t, f, tools.ToolStartHost, host.Host, store.OpStart, store.HostStarting)
 	f.finish(started, store.Update{})
 	f.seedAccount("acme", h.Name)
-	refusal(t, f.call(tools.ToolDeleteHost, host), tools.HostHasAccounts)
+	refusal(t, f.call(tools.ToolDeleteHost, tools.DeleteHostArgs{Host: host.Host}), tools.HostHasAccounts)
 	answer[tools.Account](t, f.call(tools.ToolRemoveAccount, tools.AccountArgs{Account: "acme"}))
-	checkHostOperation(t, f, tools.ToolDeleteHost, host, store.OpDelete, store.HostDeleting)
+	checkHostOperation(t, f, tools.ToolDeleteHost, host.Host, store.OpDelete, store.HostDeleting)
 
 	custom := answer[tools.HostChange](t, f.call(tools.ToolCreateHost, tools.CreateHostArgs{Type: &instance, RootGB: &rootSize, DataGB: &dataSize}))
 	if actual := f.host(custom.Host); actual.Type != instance || actual.RootGB != rootSize || actual.DataGB != dataSize {
@@ -206,11 +206,15 @@ func TestHostOperations(t *testing.T) {
 	}
 }
 
-func checkHostOperation(t *testing.T, f *fixture, name string, args tools.HostArgs, kind, state string) string {
+func checkHostOperation(t *testing.T, f *fixture, name, host, kind, state string) string {
 	t.Helper()
-	out := answer[tools.HostChange](t, f.call(name, args))
+	out := answer[tools.HostChange](t, f.call(name, map[string]string{"host": host}))
 	op := f.operation(out.Operation)
-	if out.Host != args.Host || out.State != state || f.host(args.Host).State != state ||
+	wantChoice := ""
+	if kind == store.OpDelete {
+		wantChoice = store.OnDeleteKeep
+	}
+	if out.Host != host || out.State != state || f.host(host).State != state || out.OnDelete != wantChoice ||
 		op.Kind != kind || op.Status != store.OpRunning || op.Caller.UserID != f.caller.UserID {
 		t.Fatalf("host operation answer %+v, stored %+v", out, op)
 	}
@@ -226,7 +230,7 @@ func TestCreateAccountDNS(t *testing.T) {
 	f.seedAccount("held", host.Name)
 	answer[tools.UserChange](t, f.call(tools.ToolAddUser, tools.UserKeyArgs{Account: "held", User: "held-user", Key: key(1)}))
 	deleting, _ := f.seedHost(true)
-	checkHostOperation(t, f, tools.ToolDeleteHost, tools.HostArgs{Host: deleting.Name}, store.OpDelete, store.HostDeleting)
+	checkHostOperation(t, f, tools.ToolDeleteHost, deleting.Name, store.OpDelete, store.HostDeleting)
 	for _, c := range []callCase{
 		{tools.ToolCreateAccount, tools.CreateAccountArgs{Account: "bad name", Host: host.Name}, tools.InvalidName},
 		{tools.ToolCreateAccount, tools.CreateAccountArgs{Account: "www", Host: host.Name}, tools.ReservedName},
@@ -309,7 +313,7 @@ func TestCreateAccountDNS(t *testing.T) {
 	refusal(t, f.call(tools.ToolCreateAccount, tools.CreateAccountArgs{Account: "overflow", Host: lastSlot.Name}), tools.HostFull)
 	aboutToDelete, _ := f.seedHost(true)
 	f.cloud.find = func(context.Context, string, string) ([]cloud.Record, error) {
-		_, _, err := f.st.StartHostOp(ctx, aboutToDelete.Name, store.OpDelete, store.Target{}, f.caller)
+		_, _, err := f.st.DeleteHost(ctx, aboutToDelete.Name, true, f.caller)
 		return nil, err
 	}
 	refusal(t, f.call(tools.ToolCreateAccount, tools.CreateAccountArgs{Account: "too-late", Host: aboutToDelete.Name}), tools.HostGone)
@@ -532,7 +536,7 @@ func TestAccountUserCapacity(t *testing.T) {
 	refusal(t, f.call(tools.ToolAddUser, tools.UserKeyArgs{Account: "beta", User: "overflow", Key: k.Line}), tools.AccountFull)
 }
 
-// R-FMTK-USRM R-FO1H-8KIB R-FP9D-MC90
+// R-0NEI-QLJZ R-FO1H-8KIB R-0R27-VWS2
 func TestChangeTrailAndWake(t *testing.T) {
 	f := setup(t)
 	f.serveLoopback()
@@ -595,7 +599,7 @@ func TestChangeTrailAndWake(t *testing.T) {
 		return expectedEvent{trail.EventChangeFinished, telemetry.Attrs{"tool": tool, "host": h, "account": a, "user": u, "ip": "", "result": result}}
 	}
 	started := func(id, kind, account string) expectedEvent {
-		return expectedEvent{trail.EventOperationStarted, telemetry.Attrs{"operation": id, "kind": kind, "host": host.Host, "account": account}}
+		return expectedEvent{trail.EventOperationStarted, telemetry.Attrs{"operation": id, "kind": kind, "host": host.Host, "account": account, "data": ""}}
 	}
 	hostChanged := func(from string) expectedEvent {
 		return expectedEvent{trail.EventHostChanged, telemetry.Attrs{"host": host.Host, "from": from, "to": store.HostProvisioning, "operation": host.Operation}}
@@ -607,7 +611,7 @@ func TestChangeTrailAndWake(t *testing.T) {
 		hostChanged(""), started(host.Operation, store.OpCreate, ""), changed(tools.ToolCreateHost, host.Host, "", "", trail.ResultOK),
 		hostChanged(store.HostFailed), started(host.Operation, store.OpCreate, ""), changed(tools.ToolRetryHost, host.Host, "", "", trail.ResultOK),
 		accountChanged("", store.AccountPending), started(p, store.OpPlace, account.Account), changed(tools.ToolCreateAccount, host.Host, account.Account, "", trail.ResultOK),
-		{trail.EventOperationFinished, telemetry.Attrs{"operation": p, "kind": store.OpPlace, "host": host.Host, "account": account.Account, "status": store.OpCancelled, "reason": ""}},
+		{trail.EventOperationFinished, telemetry.Attrs{"operation": p, "kind": store.OpPlace, "host": host.Host, "account": account.Account, "status": store.OpCancelled, "reason": "", "data": ""}},
 		accountChanged(store.AccountPending, store.AccountRemoving), started(removal, store.OpUnplace, account.Account), changed(tools.ToolRemoveAccount, host.Host, account.Account, "", trail.ResultOK),
 		started(retry, store.OpUnplace, account.Account), changed(tools.ToolRemoveAccount, host.Host, account.Account, "", trail.ResultOK),
 		changed(tools.ToolAddUser, host.Host, user.Account, user.User, trail.ResultOK),
@@ -660,7 +664,7 @@ func TestPendingAccountAndRemovingUserThroughTools(t *testing.T) {
 	}
 	refusal(t, f.call(tools.ToolRemoveAccount, args), tools.AccountHasUsers)
 	f.finish(host.Operation, store.Update{})
-	refusal(t, f.call(tools.ToolDeleteHost, tools.HostArgs{Host: host.Host}), tools.HostHasAccounts)
+	refusal(t, f.call(tools.ToolDeleteHost, tools.DeleteHostArgs{Host: host.Host}), tools.HostHasAccounts)
 }
 
 // R-ZOFG-PH5V
@@ -684,6 +688,7 @@ func TestClosedRecord(t *testing.T) {
 		{tools.ToolUnbanIP, tools.UnbanArgs{IP: "192.0.2.7"}, store.Unreachable},
 		{tools.ToolAllowIP, tools.HostIPArgs{Host: "host01", IP: "192.0.2.7"}, store.Unreachable},
 		{tools.ToolDisallowIP, tools.HostIPArgs{Host: "host01", IP: "192.0.2.7"}, store.Unreachable},
+		{tools.ToolDeleteKeptVolume, tools.KeptVolumeArgs{}, store.Unreachable},
 	} {
 		refusal(t, f.call(c.name, c.args), c.want)
 	}

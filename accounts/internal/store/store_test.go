@@ -88,6 +88,13 @@ func start(t *testing.T, s *store.Store, name, kind string, target store.Target)
 	return h, op
 }
 
+func deleteHost(t *testing.T, s *store.Store, name string, keepData bool) (store.Host, store.Operation) {
+	t.Helper()
+	h, op, err := s.DeleteHost(ctx, name, keepData, caller)
+	checkErr(t, err, nil)
+	return h, op
+}
+
 func place(t *testing.T, s *store.Store, slug, host string) (store.Account, store.Operation) {
 	t.Helper()
 	a, op, err := s.PlaceAccount(ctx, slug, host, caller)
@@ -103,7 +110,7 @@ func remove(t *testing.T, s *store.Store, slug string) (store.Account, store.Ope
 }
 
 // R-GMXI-9FH1 R-GPDB-0YYF R-GQL7-EQP4 R-H6FW-DRC5
-// R-OTU8-67AN R-R83A-G5Y8 R-HG73-FX9P R-HHEZ-TP0E R-HJUS-L8HS
+// R-OTU8-67AN R-759B-PGTT R-HG73-FX9P R-HHEZ-TP0E R-HJUS-L8HS
 func TestHostsReopenAndPage(t *testing.T) {
 	calls := 0
 	var random io.Reader = new(counterRandom)
@@ -130,19 +137,22 @@ func TestHostsReopenAndPage(t *testing.T) {
 	eq(t, h.Name, "host01")
 	_, err := s.HostByInstance(ctx, "")
 	checkErr(t, err, store.ErrNotFound)
-	for i := 2; i <= 100; i++ {
+	for i := 2; i <= 101; i++ {
 		next, op := create(t, s)
 		eq(t, next.Seq, int64(i))
 		if i == 3 {
 			checkErr(t, s.Finish(ctx, op.ID, store.Update{InstanceID: "deleted-instance"}), nil)
-			_, deletion := start(t, s, next.Name, store.OpDelete, store.Target{})
+			_, deletion := deleteHost(t, s, next.Name, true)
 			checkErr(t, s.Finish(ctx, deletion.ID, store.Update{}), nil)
 			_, err := s.Host(ctx, next.Name)
 			checkErr(t, err, store.ErrNotFound)
 			_, err = s.HostByInstance(ctx, "deleted-instance")
 			checkErr(t, err, store.ErrNotFound)
 		}
-		if i == 100 {
+		if i == 4 {
+			eq(t, next.Name, "host03")
+		}
+		if i == 101 {
 			eq(t, next.Name, "host100")
 		}
 	}
@@ -155,7 +165,7 @@ func TestHostsReopenAndPage(t *testing.T) {
 	}
 	eq(t, asSeq(value(t, result(s.ListHosts(ctx, 1, 2)))), []int64{2, 4})
 	eq(t, asSeq(value(t, result(s.ListHostsBefore(ctx, 5, 2)))), []int64{2, 4})
-	eq(t, asSeq(value(t, result(s.LastHosts(ctx, 2)))), []int64{99, 100})
+	eq(t, asSeq(value(t, result(s.LastHosts(ctx, 2)))), []int64{100, 101})
 }
 
 // R-HG73-FX9P
@@ -185,14 +195,14 @@ func TestOperationIDCollisionsRollBack(t *testing.T) {
 	eq(t, h.Seq, int64(3))
 }
 
-// R-1WCG-1391 R-BYG6-N24Z R-RJ2D-W3MH
+// R-1WCG-1391 R-BYG6-N24Z R-RJ2D-W3MH R-6Z5T-SM4C
 func TestErrorClasses(t *testing.T) {
 	base := []error{store.ErrUnreachable, store.ErrNotFound, store.ErrTaken, store.ErrConflict}
 	groups := [][]error{base, {store.ErrNotInAccount, store.ErrKeyNotHeld}, {store.ErrBusy, store.ErrHostFailed,
 		store.ErrNotFailed, store.ErrNotRunning, store.ErrNotStopped, store.ErrHasAccounts, store.ErrHostFull,
 		store.ErrHostGone, store.ErrNothingToChange, store.ErrShrinks, store.ErrGrowLimit, store.ErrHasUsers,
 		store.ErrAccountRemoving, store.ErrAccountFull, store.ErrTooManyKeys, store.ErrNotLocked, store.ErrUserRemoving,
-		store.ErrTooManyUnbans, store.ErrAllowlistFull, store.ErrTooManyInvites, store.ErrLastKey, store.ErrNotActive, store.ErrNotAdmin, store.ErrSelf}}
+		store.ErrTooManyUnbans, store.ErrAllowlistFull, store.ErrTooManyInvites, store.ErrLastKey, store.ErrNotActive, store.ErrNotAdmin, store.ErrSelf, store.ErrVolumeDeleting}}
 	seen := map[error]bool{}
 	for i, group := range groups {
 		for pos, e := range group {
@@ -208,8 +218,10 @@ func TestErrorClasses(t *testing.T) {
 	}
 }
 
-// R-GWOP-BLEL R-0K9R-765T R-GZ4I-34VZ R-H0CE-GWMO R-H2S7-8G42
+// R-GWOP-BLEL R-0K9R-765T R-GZ4I-34VZ R-H0CE-GWMO R-H2S7-8G42 R-6VI4-NAW9
 func TestPublishedValues(t *testing.T) {
+	eq(t, []string{store.OnDeleteKeep, store.OnDeleteDelete, store.VolumeKept, store.VolumeDeleting, store.VolumeDeleted},
+		[]string{"keep", "delete", "kept", "deleting", "deleted"})
 	eq(t, []string{store.HostProvisioning, store.HostRunning, store.HostStopping, store.HostStopped, store.HostStarting,
 		store.HostResizing, store.HostDeleting, store.HostFailed, store.HostDeleted},
 		[]string{"provisioning", "running", "stopping", "stopped", "starting", "resizing", "deleting", "failed", "deleted"})

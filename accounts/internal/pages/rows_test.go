@@ -21,7 +21,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
-// R-D35O-TIZX distinguishes non-nil empty slices from nil at the template input.
+// TestEmptyLandingData distinguishes non-nil empty slices from nil at the template input.
 func TestEmptyLandingData(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	now := func() time.Time { return time.Date(2026, 11, 18, 14, 5, 9, 0, time.UTC) }
@@ -61,7 +61,7 @@ func TestEmptyLandingData(t *testing.T) {
 		auth := Auth(r, cfg.ServicesPath)
 		want := LandingData{
 			Banner:     page.Banner{Email: email, ProfileURL: auth + "/", LogoutURL: auth + "/logout"},
-			Configured: true, Domain: cfg.Domain, Hosts: []HostRow{}, Accounts: []AccountRow{}, Users: []UserRow{},
+			Configured: true, Domain: cfg.Domain, Hosts: []HostRow{}, KeptVolumes: []KeptVolumeRow{}, Accounts: []AccountRow{}, Users: []UserRow{},
 		}
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)
@@ -71,7 +71,7 @@ func TestEmptyLandingData(t *testing.T) {
 	}
 }
 
-// R-UY9S-SWPB
+// R-3F5O-GPSE
 func TestEmptyHostAndReportLists(t *testing.T) {
 	at := time.Date(2026, 11, 18, 14, 5, 9, 0, time.UTC)
 	host := hostView(store.Host{Name: "host01", State: store.HostRunning}, "", at)

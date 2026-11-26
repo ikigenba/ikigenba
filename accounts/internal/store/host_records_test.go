@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/paging"
 )
 
-// R-A56Q-T7BY
+// R-7F0I-RMRD
 func TestDeletedHostsPagesRetainedHostRecords(t *testing.T) {
 	_, s, _ := fixture(t)
 	eq(t, value(t, result(s.DeletedHosts(ctx, 0, 1))), []store.Host{})
@@ -27,14 +27,16 @@ func TestDeletedHostsPagesRetainedHostRecords(t *testing.T) {
 	checkErr(t, s.Finish(ctx, lastCreate.ID, store.Update{}), nil)
 
 	// Delete in reverse sequence order.
-	deletingLast, lastDelete := start(t, s, last.Name, store.OpDelete, store.Target{})
+	deletingLast, lastDelete := deleteHost(t, s, last.Name, true)
 	checkErr(t, s.Finish(ctx, lastDelete.ID, store.Update{}), nil)
 	deletingLast.State = store.HostDeleted
+	deletingLast.OnDelete = ""
 	deletingLast.EIP = ""
-	deletingFirst, firstDelete := start(t, s, first.Name, store.OpDelete, store.Target{})
+	deletingFirst, firstDelete := deleteHost(t, s, first.Name, true)
 	eq(t, value(t, result(s.DeletedHosts(ctx, 0, 3))), []store.Host{deletingLast})
 	checkErr(t, s.Finish(ctx, firstDelete.ID, store.Update{}), nil)
 	deletingFirst.State = store.HostDeleted
+	deletingFirst.OnDelete = ""
 	deletingFirst.EIP = retainedEIP
 
 	want := []store.Host{deletingFirst, deletingLast}
@@ -52,6 +54,11 @@ func TestDeletedHostsPagesRetainedHostRecords(t *testing.T) {
 
 	checkErr(t, s.SettleDeleted(ctx, first.Name), nil)
 	eq(t, value(t, result(s.DeletedHosts(ctx, 0, 1))), want[1:])
+	replacement, _ := create(t, s)
+	eq(t, replacement.Name, first.Name)
+	replacement, _ = create(t, s)
+	eq(t, replacement.Name, last.Name)
+	eq(t, value(t, result(s.DeletedHosts(ctx, 0, 2))), []store.Host{})
 }
 
 // R-A7MJ-KQTC
@@ -65,15 +72,15 @@ func TestSettleDeletedGuardsAndPreservesHostRecord(t *testing.T) {
 	checkErr(t, s.Advance(ctx, creation.ID, store.Update{EIP: "192.0.2.1"}), nil)
 	checkErr(t, s.Finish(ctx, creation.ID, store.Update{EIP: "192.0.2.2"}), nil)
 	checkErr(t, s.NoteHostRecord(ctx, h.Name, "host change", "host conflict"), nil)
-	_, deletion := start(t, s, h.Name, store.OpDelete, store.Target{})
+	deleted, otherCreation := create(t, s)
+	checkErr(t, s.Finish(ctx, otherCreation.ID, store.Update{}), nil)
+	_, deletion := deleteHost(t, s, h.Name, true)
 	checkErr(t, s.Finish(ctx, deletion.ID, store.Update{}), nil)
 	checkErr(t, d.Write(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, "UPDATE hosts SET reason = ? WHERE name = ?", "host reason", h.Name)
 		return err
 	}), nil)
-	deleted, otherCreation := create(t, s)
-	checkErr(t, s.Finish(ctx, otherCreation.ID, store.Update{}), nil)
-	_, otherDeletion := start(t, s, deleted.Name, store.OpDelete, store.Target{})
+	_, otherDeletion := deleteHost(t, s, deleted.Name, true)
 	checkErr(t, s.Finish(ctx, otherDeletion.ID, store.Update{}), nil)
 	before := value(t, result(s.DeletedHosts(ctx, 0, 2)))
 	eq(t, len(before), 2)
@@ -169,7 +176,7 @@ func TestNoteHostRecordChangesOnlyTheRecord(t *testing.T) {
 	eq(t, value(t, result(s.Operation(ctx, op.ID))), finished)
 	closed(t, watch, false)
 
-	_, deletion := start(t, s, h.Name, store.OpDelete, store.Target{})
+	_, deletion := deleteHost(t, s, h.Name, true)
 	checkErr(t, s.Finish(ctx, deletion.ID, store.Update{}), nil)
 	checkErr(t, s.NoteHostRecord(ctx, h.Name, "unexpected", "unexpected"), store.ErrNotFound)
 	eq(t, value(t, result(s.ListHosts(ctx, 0, 2))), []store.Host{})

@@ -38,6 +38,7 @@ type EC2 interface {
 	AttachVolume(ctx context.Context, volumeID, instanceID, device string) error
 	ModifyVolume(ctx context.Context, volumeID string, sizeGB int32) error
 	VolumeModification(ctx context.Context, volumeID string) (Modification, error)
+	DeleteVolume(ctx context.Context, id string) error
 	TagResource(ctx context.Context, id string, tags Tags) error
 }
 

@@ -30,6 +30,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
@@ -168,18 +169,54 @@ func TestPageNamesAndTimeLayouts(t *testing.T) {
 	}
 }
 
-// R-CTEH-RD2D R-CUME-54T2 R-CVUA-IWJR
+// R-2QRO-TAYI R-2RZL-72P7 R-2T7H-KUFW R-2UFD-YM6L R-CVUA-IWJR
 func TestPageDataShapes(t *testing.T) {
 	t.Helper()
 	_ = struct {
-		Name, DNSName, State, Reason, Health, Type string
-		RootGB, DataGB                             int
-		EIP                                        string
-		AccountCount                               int
-		Reported, ReportedText                     string
+		Banner                                   page.Banner
+		Configured                               bool
+		Domain                                   string
+		Hosts                                    []pages.HostRow
+		HostsPage, HostsPrev, HostsNext          string
+		KeptVolumes                              []pages.KeptVolumeRow
+		VolumesPage, VolumesPrev, VolumesNext    string
+		Accounts                                 []pages.AccountRow
+		AccountsPage, AccountsPrev, AccountsNext string
+		Users                                    []pages.UserRow
+		UsersPage, UsersPrev, UsersNext          string
+	}(pages.LandingData{})
+	_ = struct {
+		Name, DNSName, State, Reason, OnDelete, Health, Type string
+		RootGB, DataGB                                       int
+		EIP                                                  string
+		AccountCount                                         int
+		Reported, ReportedText                               string
 	}(pages.HostRow{})
 	_ = struct {
-		Name, DNSName, State, Reason, Health, Type                           string
+		Slug, Host, DNSName, State, Reason string
+		UserCount, InviteCount             int
+		Created, CreatedText               string
+	}(pages.AccountRow{})
+	_ = struct {
+		Login, Account             string
+		Admin                      bool
+		State                      string
+		Pending                    bool
+		KeyCount                   int
+		LastSignIn, LastSignInText string
+	}(pages.UserRow{})
+	_ = struct {
+		Volume, Host         string
+		SizeGB               int
+		Deleted, DeletedText string
+	}(pages.KeptVolumeRow{})
+	_ = struct {
+		Banner page.Banner
+		Host   pages.HostView
+		Report *pages.ReportView
+	}(pages.HostData{})
+	_ = struct {
+		Name, DNSName, State, Reason, OnDelete, Health, Type                 string
 		RootGB, DataGB                                                       int
 		EIP                                                                  string
 		AccountCount                                                         int
@@ -203,7 +240,7 @@ func TestPageDataShapes(t *testing.T) {
 	}(pages.ReportView{})
 }
 
-// R-A8L8-1TI4 R-A9T4-FL8T R-ATBI-JX3X R-S6XY-J6PQ R-CTEH-RD2D R-CUME-54T2 R-CVUA-IWJR R-SD1G-G1F7 R-AICF-3ZFO R-AJKB-HR6D R-AM04-9ANR R-CX26-WOAG R-7E62-5GAS R-7FDY-J81H
+// R-A8L8-1TI4 R-A9T4-FL8T R-ATBI-JX3X R-2VNA-CDXA R-CVUA-IWJR R-SD1G-G1F7 R-AICF-3ZFO R-AJKB-HR6D R-AM04-9ANR R-7E62-5GAS R-7FDY-J81H
 func TestTemplateSet(t *testing.T) {
 	t.Chdir(t.TempDir())
 	independent, err := page.Templates().ParseFS(accounts.Assets(), "*.html")
@@ -243,7 +280,7 @@ func TestTemplateSet(t *testing.T) {
 	var b page.Banner
 	check("notfound", pages.NotFoundData{b})
 	check("landing", pages.LandingData{Banner: b})
-	check("landing", pages.LandingData{Banner: b, Configured: true, Hosts: []pages.HostRow{}, Accounts: []pages.AccountRow{}, Users: []pages.UserRow{}})
+	check("landing", pages.LandingData{Banner: b, Configured: true, Hosts: []pages.HostRow{}, KeptVolumes: []pages.KeptVolumeRow{}, Accounts: []pages.AccountRow{}, Users: []pages.UserRow{}})
 	states := []string{store.HostProvisioning, store.HostRunning, store.HostStopping, store.HostStopped, store.HostStarting, store.HostResizing, store.HostDeleting, store.HostFailed}
 	healths := []string{store.HealthSync, store.HealthPending, store.HealthError, store.HealthSilent, store.HealthNone}
 	for _, full := range []bool{false, true} {
@@ -261,9 +298,12 @@ func TestTemplateSet(t *testing.T) {
 		var hosts []pages.HostRow
 		for i, state := range states {
 			health := healths[i%len(healths)]
-			hosts = append(hosts, pages.HostRow{"chosen-host", dnsName, state, reason, health, "chosen-type", 20, 50, eip, 3, stamp, visible})
-			data := pages.HostData{b, pages.HostView{"chosen-host", dnsName, state, reason, health, "chosen-type", 20, 50, eip, 3, stamp, visible, instance, volume, stamp, visible, []string{}}, report}
-			check("host", data)
+			data := pages.HostData{b, pages.HostView{"chosen-host", dnsName, state, reason, "", health, "chosen-type", 20, 50, eip, 3, stamp, visible, instance, volume, stamp, visible, []string{}}, report}
+			for _, choice := range []string{"", store.OnDeleteKeep, store.OnDeleteDelete} {
+				hosts = append(hosts, pages.HostRow{"chosen-host", dnsName, state, reason, choice, health, "chosen-type", 20, 50, eip, 3, stamp, visible})
+				data.Host.OnDelete = choice
+				check("host", data)
+			}
 			if report != nil {
 				withoutHostname := *report
 				withoutHostname.Hostname = ""
@@ -302,7 +342,8 @@ func TestTemplateSet(t *testing.T) {
 				}
 			}
 		}
-		check("landing", pages.LandingData{b, true, "work.test", hosts, "hp", "hprev", "hnext", accountsRows, "ap", "aprev", "anext", users, "up", "uprev", "unext"})
+		volumes := []pages.KeptVolumeRow{{"vol-chosen", "chosen-host", 50, "2026-11-17T14:05:09Z", "2026-11-17 14:05"}}
+		check("landing", pages.LandingData{b, true, "work.test", hosts, "hp", "hprev", "hnext", volumes, "vp", "vprev", "vnext", accountsRows, "ap", "aprev", "anext", users, "up", "uprev", "unext"})
 		check("tools", pages.ToolsData{b, rows})
 		check("about", pages.AboutData{b, pages.Description, valid.DefaultType, valid.DefaultRootGB, valid.DefaultDataGB})
 	}
@@ -358,7 +399,7 @@ func statusWithHeader(status int, name, value string) *httptest.ResponseRecorder
 	return w
 }
 
-// R-ADGT-KWGW R-CQYO-ZTKZ R-AY74-302P R-RSB5-XXTE R-RZMK-8K9K R-SFH9-7KWL R-RX6R-H0S6 R-SGP5-LCNA R-SHX1-Z4DZ R-SMSN-I7CR R-SQGC-NIKU
+// R-ADGT-KWGW R-CQYO-ZTKZ R-AY74-302P R-RSB5-XXTE R-RZMK-8K9K R-SFH9-7KWL R-RX6R-H0S6 R-SGP5-LCNA R-SHX1-Z4DZ R-26DQ-4UHE R-SQGC-NIKU R-3GDK-UHJ3
 func TestPageDecisionOrder(t *testing.T) {
 	f := setup(t)
 	f.cfg.ServicesPath = servicesFile(t, "https://chosen-auth.test/")
@@ -383,11 +424,15 @@ func TestPageDecisionOrder(t *testing.T) {
 			}
 		}
 		for _, method := range []string{"GET", "HEAD"} {
-			for _, target := range []string{"/?hosts_page=bogus", "/?accounts_page=LAST", "/?accounts_page=" + token("users", "account", "user")} {
+			for _, target := range []string{
+				"/?hosts_page=bogus", "/?users_page=LAST", "/?accounts_page=" + token("users", "account", "user"),
+				"/?volumes_page=" + token("hosts", int64(25)) + "&hosts_page=last",
+				"/?volumes_page=" + token("kept_volumes", "wrong-member-type", "vol-chosen"),
+			} {
 				same(t, answer(f, method, target, "viewer"), notFound(f, method, target))
 			}
 			if failing {
-				for _, target := range []string{"/", "/?hosts_page=last", "/hosts/host01", "/hosts/nope", "/hosts/escaped%2Fsegment"} {
+				for _, target := range []string{"/", "/?hosts_page=last", "/?volumes_page=last", "/hosts/host01", "/hosts/nope", "/hosts/escaped%2Fsegment"} {
 					w := statusWithHeader(503, "Content-Type", "text/plain; charset=utf-8")
 					if method == "GET" {
 						w.Body.WriteString(store.Unreachable + "\n")
@@ -435,10 +480,11 @@ func TestInformationPagesAndHead(t *testing.T) {
 	}
 }
 
-// R-CHCO-RGFC R-SXRQ-Y510 R-SYZN-BWRP
+// R-CHCO-RGFC R-3HLH-899S R-SYZN-BWRP
 func TestPagesAreReadOnlyAndReachNoSibling(t *testing.T) {
 	f := setup(t)
 	h, a, u, op := seedRecord(t, f)
+	createKeptVolume(t, f, "vol-read-only")
 	before := readRecord(t, f, h.Name, a.Slug, u.Name, op.ID)
 	dir, err := os.MkdirTemp("", "pages-")
 	if err != nil {
@@ -515,12 +561,13 @@ func readRecord(t *testing.T, f *fixture, h, a, u, id string) []any {
 	user, ue := f.cfg.Store.User(t.Context(), a, u)
 	op, oe := f.cfg.Store.Operation(t.Context(), id)
 	report, re := f.cfg.Store.Report(t.Context(), h)
-	for _, err := range []error{he, ae, ue, oe, re} {
+	kept, ke := f.cfg.Store.ListKeptVolumes(t.Context(), time.Time{}, "", paging.DefaultLimit)
+	for _, err := range []error{he, ae, ue, oe, re, ke} {
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	return []any{host, account, user, op, report}
+	return []any{host, account, user, op, report, kept}
 }
 
 var caller = identity.Caller{UserID: "creator"}

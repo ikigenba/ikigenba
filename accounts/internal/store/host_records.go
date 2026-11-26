@@ -19,10 +19,14 @@ func (s *Store) SettleDeleted(ctx context.Context, host string) error {
 		if state != HostDeleted {
 			return ErrConflict
 		}
-		return w.exec(`INSERT INTO host_records (host_name, record_change, record_reason, settled)
-			VALUES (?, '', '', 1)
-			ON CONFLICT (host_name) DO UPDATE SET settled = excluded.settled`, host)
+		return settleDeleted(w.query, host)
 	})
+}
+
+func settleDeleted(q query, host string) error {
+	return q.exec(`INSERT INTO host_records (host_name, record_change, record_reason, settled)
+		VALUES (?, '', '', 1)
+		ON CONFLICT (host_name) DO UPDATE SET settled = excluded.settled`, host)
 }
 
 // RecordHostChange checkpoints a host's Route 53 change for a running operation.

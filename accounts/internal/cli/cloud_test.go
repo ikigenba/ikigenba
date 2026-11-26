@@ -421,6 +421,66 @@ func TestSandboxResumesAndSynchronizesHosts(t *testing.T) {
 	})
 }
 
+// R-L5PS-7HX9
+func TestSandboxDeleteHostAndData(t *testing.T) {
+	clock := newDrivenClock()
+	run := startIntegration(t, integrationOptions{now: clock.now, after: clock.after, sleep: clock.sleep})
+	const name = "host01"
+	run.call(tools.ToolCreateHost, struct{}{}, nil)
+	waitForRunningHost(t, clock, run, name)
+	deleteSandboxHost(t, clock, run, name, false)
+	if run.stop() != cli.ExitSuccess {
+		t.Fatal(run.err.String())
+	}
+	saved, err := memory.New(memory.Config{
+		Path: filepath.Join(run.dir, "state", "sandbox-cloud.json"), Now: clock.now,
+		Rand: &integrationRandom{}, Hosts: settings.SandboxHosts,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tags := cloud.Tags{cloud.TagHost: name}
+	checkNoCloudPages(t, "instances", tags, saved.FindInstances)
+	checkNoCloudPages(t, "addresses", tags, saved.FindAddresses)
+	checkNoCloudPages(t, "volumes", tags, saved.FindVolumes)
+	records, err := saved.FindRecords(t.Context(), settings.SandboxHosts.ZoneID, name+"."+settings.SandboxHosts.Domain)
+	if err != nil || len(records) != 0 {
+		t.Fatalf("sandbox DNS records after teardown = %v, %v", records, err)
+	}
+}
+
+func checkNoCloudPages[T any](t *testing.T, resource string, tags cloud.Tags, find func(context.Context, cloud.Tags, func([]T) bool) error) {
+	t.Helper()
+	err := find(t.Context(), tags, func(page []T) bool {
+		t.Errorf("sandbox %s query delivered a page after teardown: %+v", resource, page)
+		return false
+	})
+	if err != nil {
+		t.Errorf("sandbox %s query failed after teardown: %v", resource, err)
+	}
+}
+
+func waitForRunningHost(t *testing.T, clock *drivenClock, run *integrationRun, name string) {
+	t.Helper()
+	driveUntil(t, clock, func() bool {
+		var host tools.HostRead
+		run.call(tools.ToolHost, tools.HostArgs{Host: name}, &host)
+		return host.State == store.HostRunning
+	})
+}
+
+func deleteSandboxHost(t *testing.T, clock *drivenClock, run *integrationRun, name string, keep bool) tools.HostChange {
+	t.Helper()
+	var deletion tools.HostChange
+	run.call(tools.ToolDeleteHost, tools.DeleteHostArgs{Host: name, KeepData: &keep}, &deletion)
+	driveUntil(t, clock, func() bool {
+		var hosts tools.HostList
+		run.call(tools.ToolHosts, tools.HostsArgs{}, &hosts)
+		return !slices.ContainsFunc(hosts.Hosts, func(host tools.Host) bool { return host.Host == name })
+	})
+	return deletion
+}
+
 func hostEnvironment(hosts settings.Hosts) map[string]string {
 	return map[string]string{
 		"AWS_REGION": hosts.Region, "IKIGENBA_HOSTS_ZONE_ID": hosts.ZoneID, "IKIGENBA_HOSTS_DOMAIN": hosts.Domain,
@@ -520,7 +580,7 @@ func (r *secrecyRandom) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// R-E18S-PNZ9 R-EKR6-TZUD R-IF26-P336 R-171J-ZR8S R-AL27-ZL79
+// R-E18S-PNZ9 R-EKR6-TZUD R-IF26-P336 R-171J-ZR8S R-AL27-ZL79 R-1U30-4KIA
 func TestRunSecrecy(t *testing.T) {
 	key := secrecyKey(t, "")
 	clock := newDrivenClock()
@@ -576,6 +636,7 @@ func TestRunSecrecy(t *testing.T) {
 			run.request("GET", path, user, "")
 		}
 	}
+	deletion, kept := runSecretVolumeDelete(t, clock, run)
 	if run.stop() != cli.ExitSuccess {
 		t.Fatal(run.err.String())
 	}
@@ -596,6 +657,57 @@ func TestRunSecrecy(t *testing.T) {
 	}
 	if !enrollmentObserved {
 		t.Fatal("the join POST did not record enrollment through the admin invite")
+	}
+	assertSecretVolumeEvents(t, events, deletion, kept)
+}
+
+func runSecretVolumeDelete(t *testing.T, clock *drivenClock, run *integrationRun) (tools.HostChange, tools.KeptVolume) {
+	t.Helper()
+	var created tools.HostChange
+	run.call(tools.ToolCreateHost, struct{}{}, &created)
+	waitForRunningHost(t, clock, run, created.Host)
+	deletion := deleteSandboxHost(t, clock, run, created.Host, true)
+	var kept tools.KeptVolumeList
+	run.call(tools.ToolKeptVolumes, tools.KeptVolumesArgs{}, &kept)
+	index := slices.IndexFunc(kept.KeptVolumes, func(volume tools.KeptVolume) bool { return volume.Host == created.Host })
+	if index == -1 {
+		t.Fatalf("no kept volume for %s: %+v", created.Host, kept.KeptVolumes)
+	}
+	volume := kept.KeptVolumes[index]
+	run.call(tools.ToolDeleteKeptVolume, tools.KeptVolumeArgs{Volume: volume.Volume}, nil)
+	driveUntil(t, clock, func() bool {
+		var current tools.KeptVolumeList
+		run.call(tools.ToolKeptVolumes, tools.KeptVolumesArgs{}, &current)
+		return !slices.ContainsFunc(current.KeptVolumes, func(entry tools.KeptVolume) bool { return entry.Volume == volume.Volume })
+	})
+	return deletion, volume
+}
+
+func assertSecretVolumeEvents(t *testing.T, events []telemetry.Event, deletion tools.HostChange, kept tools.KeptVolume) {
+	t.Helper()
+	found := map[string]bool{}
+	for _, e := range events {
+		switch e.Name {
+		case "operation.started", "operation.finished":
+			if e.Attrs["operation"] == deletion.Operation && e.Attrs["data"] == store.OnDeleteKeep {
+				found[e.Name] = true
+			}
+		case "change.finished":
+			if e.Attrs["tool"] == tools.ToolDeleteKeptVolume && e.Attrs["host"] == kept.Host {
+				found[e.Name] = true
+			}
+		case "volume.changed":
+			if e.Attrs["volume"] == kept.Volume {
+				if to, ok := e.Attrs["to"].(string); ok {
+					found[e.Name+" "+to] = true
+				}
+			}
+		}
+	}
+	for _, name := range []string{"operation.started", "operation.finished", "change.finished", "volume.changed deleting", "volume.changed deleted"} {
+		if !found[name] {
+			t.Errorf("kept volume teardown did not exercise %s", name)
+		}
 	}
 }
 

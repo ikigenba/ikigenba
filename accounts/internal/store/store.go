@@ -40,7 +40,28 @@ type Host struct {
 	CreatedBy                                                                string
 	Allowlist                                                                []string
 	Change, RecordReason                                                     string
+	OnDelete                                                                 string
 }
+
+// KeptVolume records a deleted host's data volume and its own deletion state.
+type KeptVolume struct {
+	Volume, Host  string
+	SizeGB        int
+	Deleted       time.Time
+	State, Reason string
+	Attempts      int
+	NextTry       time.Time
+	Caller        identity.Caller
+}
+
+// Delete choices and kept-volume states.
+const (
+	OnDeleteKeep   = "keep"
+	OnDeleteDelete = "delete"
+	VolumeKept     = "kept"
+	VolumeDeleting = "deleting"
+	VolumeDeleted  = "deleted"
+)
 
 // HostSpec supplies the initial type and sizes.
 type HostSpec struct {
@@ -205,6 +226,7 @@ var (
 	ErrNotAdmin        = fmt.Errorf("user is not an active admin: %w", ErrConflict)
 	ErrSelf            = fmt.Errorf("cannot perform this action on oneself: %w", ErrConflict)
 	ErrKeyNotHeld      = fmt.Errorf("user does not hold the key: %w", ErrNotFound)
+	ErrVolumeDeleting  = fmt.Errorf("volume is being deleted: %w", ErrConflict)
 )
 
 // Unreachable is the user-facing database failure line.
@@ -339,6 +361,28 @@ func read[T any](ctx context.Context, r *recordReader, valid bool, fn func(query
 	return transact(ctx, r.runRead, valid, fn)
 }
 
+type verifiedHostKey struct{}
+
+type verifiedHost struct {
+	name, instance string
+	seq            int64
+}
+
+// WithVerifiedHost ties store calls to the authenticated incarnation of a host.
+func WithVerifiedHost(ctx context.Context, h Host) context.Context {
+	return context.WithValue(ctx, verifiedHostKey{}, verifiedHost{name: h.Name, instance: h.InstanceID, seq: h.Seq})
+}
+
+func checkVerifiedHost(q query) error {
+	h, guarded := q.Value(verifiedHostKey{}).(verifiedHost)
+	if !guarded {
+		return nil
+	}
+	var found int
+	return q.row("SELECT 1 FROM hosts WHERE name = ? AND seq = ? AND instance_id = ? AND state <> ?",
+		h.name, h.seq, h.instance, HostDeleted).Scan(&found)
+}
+
 func transact[T any](ctx context.Context, run func(context.Context, func(*sql.Tx) error) error, valid bool, fn func(query) (T, error)) (out T, err error) {
 	if err := ctx.Err(); err != nil {
 		return out, storeError(err)
@@ -347,8 +391,12 @@ func transact[T any](ctx context.Context, run func(context.Context, func(*sql.Tx
 		if !valid {
 			return ErrUnreachable
 		}
+		q := query{ctx, tx}
+		if err := checkVerifiedHost(q); err != nil {
+			return err
+		}
 		var err error
-		out, err = fn(query{ctx, tx})
+		out, err = fn(q)
 		return err
 	})
 	if err != nil {

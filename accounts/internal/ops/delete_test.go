@@ -30,15 +30,56 @@ type deletionCloud struct {
 	released    []string
 	orphaned    []string
 	orphanedTag func()
+	storedData  cloud.Volume
+	otherData   []cloud.Volume
+	deleteData  []string
+	noRequests  bool
 }
 
 func (c *deletionCloud) lookup(tags cloud.Tags, kind string) bool {
 	c.f.t.Helper()
+	c.request()
 	if tags[cloud.TagOperation] == "" {
 		return false
 	}
 	checkTags(c.f.t, tags, cloud.Tags{cloud.TagOperation: c.createID, cloud.TagKind: kind})
+	c.checkChoice()
 	return true
+}
+
+func (c *deletionCloud) checkChoice() {
+	c.f.t.Helper()
+	c.request()
+	op := c.f.operation(c.deleteID)
+	h := c.f.host(op.Host)
+	switch op.Step {
+	case ops.StepDeleteData, ops.StepWaitDataDeleted:
+		equal(c.f.t, h.OnDelete, store.OnDeleteDelete)
+	case ops.StepOrphan:
+		equal(c.f.t, h.OnDelete, store.OnDeleteKeep)
+	}
+}
+
+func (c *deletionCloud) request() {
+	c.f.t.Helper()
+	if c.noRequests {
+		c.f.t.Fatal("cloud request while correcting a persisted step")
+	}
+}
+
+func (c *deletionCloud) FindRecords(ctx context.Context, zone, name string) ([]cloud.Record, error) {
+	c.checkChoice()
+	return c.recordCloud.FindRecords(ctx, zone, name)
+}
+
+func (c *deletionCloud) ChangeRecord(ctx context.Context, zone string, change cloud.RecordChange) (string, error) {
+	c.checkChoice()
+	return c.recordCloud.ChangeRecord(ctx, zone, change)
+}
+
+func (c *deletionCloud) ChangeInsync(ctx context.Context, change string) (bool, error) {
+	c.checkChoice()
+	return c.recordCloud.ChangeInsync(ctx, change)
 }
 
 func (c *deletionCloud) FindInstances(_ context.Context, tags cloud.Tags, each func([]cloud.Instance) bool) error {
@@ -55,11 +96,13 @@ func (c *deletionCloud) FindInstances(_ context.Context, tags cloud.Tags, each f
 }
 
 func (c *deletionCloud) DescribeInstance(_ context.Context, id string) (cloud.Instance, error) {
+	c.checkChoice()
 	equal(c.f.t, id, "i-stored")
 	return cloud.Instance{}, cloudErr(cloud.ClassNotFound)
 }
 
 func (c *deletionCloud) TerminateInstance(_ context.Context, id string) error {
+	c.checkChoice()
 	equal(c.f.t, c.f.operation(c.deleteID).Step, ops.StepTerminate)
 	c.terminated = append(c.terminated, id)
 	if id == "i-stored" {
@@ -78,17 +121,20 @@ func (c *deletionCloud) FindAddresses(_ context.Context, tags cloud.Tags, each f
 }
 
 func (c *deletionCloud) DescribeAddress(_ context.Context, id string) (cloud.Address, error) {
+	c.checkChoice()
 	equal(c.f.t, id, "ip-stored")
 	return cloud.Address{AllocationID: id, AssociationID: "assoc-stored"}, nil
 }
 
 func (c *deletionCloud) DisassociateAddress(_ context.Context, association string) error {
+	c.checkChoice()
 	equal(c.f.t, c.f.operation(c.deleteID).Step, ops.StepRelease)
 	c.disassoc = append(c.disassoc, association)
 	return nil
 }
 
 func (c *deletionCloud) ReleaseAddress(_ context.Context, allocation string) error {
+	c.checkChoice()
 	equal(c.f.t, c.f.operation(c.deleteID).Step, ops.StepRelease)
 	c.released = append(c.released, allocation)
 	if allocation == "ip-tagged" {
@@ -99,6 +145,14 @@ func (c *deletionCloud) ReleaseAddress(_ context.Context, allocation string) err
 
 func (c *deletionCloud) FindVolumes(_ context.Context, tags cloud.Tags, each func([]cloud.Volume) bool) error {
 	if c.lookup(tags, cloud.KindHostData) {
+		if c.otherData != nil {
+			for _, volume := range c.otherData {
+				if !each([]cloud.Volume{volume}) {
+					break
+				}
+			}
+			return nil
+		}
 		if each([]cloud.Volume{{ID: "v-stored"}}) {
 			each([]cloud.Volume{{ID: "v-tagged"}})
 		}
@@ -106,7 +160,38 @@ func (c *deletionCloud) FindVolumes(_ context.Context, tags cloud.Tags, each fun
 	return nil
 }
 
+func (c *deletionCloud) DescribeVolume(_ context.Context, id string) (cloud.Volume, error) {
+	c.checkChoice()
+	equal(c.f.t, id, "v-stored")
+	if c.storedData.ID == "" {
+		return cloud.Volume{}, cloudErr(cloud.ClassNotFound)
+	}
+	return c.storedData, nil
+}
+
+func (c *deletionCloud) DeleteVolume(_ context.Context, id string) error {
+	c.checkChoice()
+	equal(c.f.t, c.f.operation(c.deleteID).Step, ops.StepDeleteData)
+	if id == c.storedData.ID {
+		equal(c.f.t, c.storedData.State, cloud.VolumeAvailable)
+		c.storedData.State = cloud.VolumeDeleting
+	} else {
+		for i, v := range c.otherData {
+			if v.ID == id {
+				equal(c.f.t, v.State, cloud.VolumeAvailable)
+				c.otherData[i].State = cloud.VolumeDeleting
+			}
+		}
+	}
+	c.deleteData = append(c.deleteData, id)
+	if id == "v-gone" {
+		return cloudErr(cloud.ClassNotFound)
+	}
+	return nil
+}
+
 func (c *deletionCloud) TagResource(_ context.Context, id string, tags cloud.Tags) error {
+	c.checkChoice()
 	equal(c.f.t, c.f.operation(c.deleteID).Step, ops.StepOrphan)
 	checkTags(c.f.t, tags, cloud.Tags{cloud.TagOrphaned: cloud.OrphanedTrue})
 	c.orphaned = append(c.orphaned, id)
@@ -126,7 +211,7 @@ func checkIDs(t *testing.T, got, want []string) {
 	}
 }
 
-// R-MNTG-22XB R-MP1C-FUO0 R-S48T-I8UJ R-NFV4-USZA R-IZ7Z-00CB R-J0FV-DS30 R-NIAX-MCGO R-SACB-F3K0 R-13S5-BI0X
+// R-MNTG-22XB R-MP1C-FUO0 R-S48T-I8UJ R-NFV4-USZA R-IZ7Z-00CB R-J0FV-DS30 R-NIAX-MCGO R-97G8-3Z45 R-9NAX-2ZR6 R-9CBT-N22X
 func TestDeleteSettlesDNSBeforeReleasingAndWalksCreateResources(t *testing.T) {
 	f := setup(t)
 	// Give the create the highest ID so its resources only appear after
@@ -153,8 +238,7 @@ func TestDeleteSettlesDNSBeforeReleasingAndWalksCreateResources(t *testing.T) {
 		ok(t, f.st.Fail(f.ctx, op.ID, "host never applied removal"))
 	}
 	deleter := identity.Caller{UserID: "deleter", RequestID: "delete-request"}
-	_, del, err := f.st.StartHostOp(f.ctx, h.Name, store.OpDelete, store.Target{}, deleter)
-	ok(t, err)
+	del := f.deleteHost(h, true, deleter)
 	suffix := "." + f.cfg.Hosts.Domain
 	records := &recordCloud{
 		zone: f.cfg.Hosts.ZoneID,
@@ -237,7 +321,12 @@ func TestDeleteSettlesDNSBeforeReleasingAndWalksCreateResources(t *testing.T) {
 		t.Fatalf("host remains, got %v", err)
 	}
 	events := f.events()
-	finishedEvent(t, events, del, store.OpDone, "", deleter)
+	for _, ev := range events {
+		if ev.Name == trail.EventOperationStarted {
+			t.Fatalf("engine emitted operation.started: %+v", ev)
+		}
+	}
+	finishedWithData(t, events, del, store.OpDone, "", store.OnDeleteKeep, deleter)
 	eventWith(t, events, trail.EventHostChanged,
 		telemetry.Attrs{"host": h.Name, "from": store.HostDeleting, "to": store.HostDeleted, "operation": del.ID}, deleter)
 	for _, removed := range []store.Operation{retried, zRemove} {
@@ -248,4 +337,254 @@ func TestDeleteSettlesDNSBeforeReleasingAndWalksCreateResources(t *testing.T) {
 		finishedEvent(t, events, removed, store.OpDone, "", removed.Caller)
 		accountEvent(t, events, store.Account{Host: h.Name, Slug: removed.Account}, store.AccountRemoving, trail.AccountRemoved, deleter)
 	}
+}
+
+// R-97G8-3Z45 R-98O4-HQUU R-99W0-VILJ R-9NAX-2ZR6 R-9CBT-N22X
+func TestDeleteDataResumesAndWaitsForEveryCreateVolume(t *testing.T) {
+	f := setup(t)
+	h, create := f.create()
+	ok(t, f.st.Finish(f.ctx, create.ID, store.Update{InstanceID: "i-stored", AllocationID: "ip-stored", DataVolume: "v-stored"}))
+	caller := identity.Caller{UserID: "data-deleter", RequestID: "delete-data-request"}
+	op := f.deleteHost(h, false, caller)
+	cl := &deletionCloud{
+		f: f, createID: create.ID, deleteID: op.ID,
+		recordCloud: &recordCloud{zone: f.cfg.Hosts.ZoneID},
+		storedData:  cloud.Volume{ID: "v-stored", State: cloud.VolumeAvailable},
+		otherData: []cloud.Volume{
+			{ID: "v-stored", State: cloud.VolumeAvailable},
+			{ID: "v-tagged", State: cloud.VolumeAvailable},
+			{ID: "v-gone", State: cloud.VolumeAvailable},
+			{ID: "v-deleting", State: cloud.VolumeDeleting},
+			{ID: "v-deleted", State: cloud.VolumeDeleted},
+		},
+	}
+	f.cfg.Cloud = cl
+	e := ops.New(f.cfg)
+	equal(t, f.step(e, op.ID).Step, ops.StepWaitUnrecord)
+	f.now = f.now.Add(ops.RecordSettle)
+	equal(t, f.step(e, op.ID).Step, ops.StepTerminate)
+	equal(t, f.step(e, op.ID).Step, ops.StepWaitTerminated)
+	equal(t, f.step(e, op.ID).Step, ops.StepWaitTerminated)
+	equal(t, len(cl.deleteData), 0)
+	equal(t, len(cl.released), 0)
+	cl.gone = true
+	equal(t, f.step(e, op.ID).Step, ops.StepRelease)
+	equal(t, f.step(e, op.ID).Step, ops.StepDeleteData)
+	checkIDs(t, cl.released, []string{"ip-stored", "ip-tagged"})
+	equal(t, f.step(e, op.ID).Step, ops.StepWaitDataDeleted)
+	checkIDs(t, cl.deleteData, []string{"v-stored", "v-tagged", "v-gone"})
+	ok(t, f.st.Advance(f.ctx, op.ID, store.Update{Step: ops.StepDeleteData}))
+	e = ops.New(f.cfg)
+	equal(t, f.step(e, op.ID).Step, ops.StepWaitDataDeleted)
+	checkIDs(t, cl.deleteData, []string{"v-stored", "v-tagged", "v-gone"})
+	for i := range cl.otherData {
+		cl.otherData[i].State = cloud.VolumeDeleted
+	}
+	// Once all tagged results are gone, the stored ID alone still holds
+	// the operation open.
+	equal(t, f.step(e, op.ID).Status, store.OpRunning)
+	cl.storedData = cloud.Volume{}
+	cl.otherData = []cloud.Volume{{ID: "v-tagged", State: cloud.VolumeDeleting}}
+	equal(t, f.step(e, op.ID).Status, store.OpRunning)
+	cl.otherData[0].State = cloud.VolumeDeleted
+	equal(t, f.step(e, op.ID).Status, store.OpDone)
+	equal(t, len(cl.orphaned), 0)
+	events := f.events()
+	finishedWithData(t, events, op, store.OpDone, "", store.OnDeleteDelete, caller)
+	eventWith(t, events, trail.EventHostChanged,
+		telemetry.Attrs{"host": h.Name, "from": store.HostDeleting, "to": store.HostDeleted, "operation": op.ID}, caller)
+}
+
+func TestDeleteReconcilesPersistedStepWithChoiceWithoutCloudRequest(t *testing.T) {
+	for _, tc := range []struct {
+		persisted, want string
+		keep            bool
+	}{
+		{ops.StepOrphan, ops.StepDeleteData, false},
+		{ops.StepDeleteData, ops.StepOrphan, true},
+		{ops.StepWaitDataDeleted, ops.StepOrphan, true},
+	} {
+		t.Run(tc.persisted, func(t *testing.T) {
+			f := setup(t)
+			h, create := f.create()
+			ok(t, f.st.Finish(f.ctx, create.ID, store.Update{}))
+			op := f.deleteHost(h, tc.keep, author)
+			ok(t, f.st.Advance(f.ctx, op.ID, store.Update{Step: tc.persisted}))
+			cl := &deletionCloud{f: f, createID: create.ID, deleteID: op.ID,
+				recordCloud: &recordCloud{zone: f.cfg.Hosts.ZoneID}, otherData: []cloud.Volume{}}
+			f.cfg.Cloud = cl
+			e := ops.New(f.cfg)
+			ok(t, e.Scan(f.ctx))
+			// Escape neither through the expected request paths nor
+			// through the unimplemented methods of the embedded cloud.
+			cl.noRequests = true
+			equal(t, f.step(e, op.ID).Step, tc.want)
+		})
+	}
+}
+
+// R-98O4-HQUU R-99W0-VILJ
+func TestDeleteWithoutDataVolumesMovesThroughBothDataSteps(t *testing.T) {
+	f := setup(t)
+	h, create := f.create()
+	ok(t, f.st.Finish(f.ctx, create.ID, store.Update{}))
+	op := f.deleteHost(h, false, author)
+	ok(t, f.st.Advance(f.ctx, op.ID, store.Update{Step: ops.StepDeleteData}))
+	cl := &deletionCloud{f: f, createID: create.ID, deleteID: op.ID,
+		recordCloud: &recordCloud{zone: f.cfg.Hosts.ZoneID}, otherData: []cloud.Volume{}}
+	f.cfg.Cloud = cl
+	e := ops.New(f.cfg)
+	equal(t, f.step(e, op.ID).Step, ops.StepWaitDataDeleted)
+	equal(t, f.step(e, op.ID).Status, store.OpDone)
+	equal(t, len(cl.deleteData), 0)
+}
+
+// R-L0E6-07I2
+func TestExpiredDeleteStepFailsWithoutCloudRequests(t *testing.T) {
+	f := setup(t)
+	h, create := f.create()
+	ok(t, f.st.Finish(f.ctx, create.ID, store.Update{}))
+	op := f.deleteHost(h, false, author)
+	ok(t, f.st.Advance(f.ctx, op.ID, store.Update{Step: ops.StepOrphan}))
+	cl := &deletionCloud{f: f, createID: create.ID, deleteID: op.ID, recordCloud: &recordCloud{zone: f.cfg.Hosts.ZoneID}}
+	f.cfg.Cloud = cl
+	e := ops.New(f.cfg)
+	ok(t, e.Scan(f.ctx))
+	f.now = f.now.Add(ops.StepTimeout + time.Second)
+	cl.noRequests = true
+	ok(t, e.Pass(f.ctx))
+	equal(t, f.operation(op.ID).Status, store.OpFailed)
+	equal(t, f.host(h.Name).Reason, ops.ReasonTimedOut)
+}
+
+// R-9CBT-N22X
+func TestDeleteFinishEmitsOnlyAfterSuccessfulStoreWrite(t *testing.T) {
+	f := setup(t)
+	h, create := f.create()
+	ok(t, f.st.Finish(f.ctx, create.ID, store.Update{}))
+	op := f.deleteHost(h, true, author)
+	ok(t, f.st.Advance(f.ctx, op.ID, store.Update{Step: ops.StepOrphan}))
+	stopObserving := f.observeEventFormation(func() {
+		equal(t, f.operation(op.ID).Status, store.OpDone)
+		_, err := f.st.Host(f.ctx, h.Name)
+		equal(t, errors.Is(err, store.ErrNotFound), true)
+	})
+	defer stopObserving()
+	cl := &deletionCloud{f: f, createID: create.ID, deleteID: op.ID,
+		recordCloud: &recordCloud{zone: f.cfg.Hosts.ZoneID},
+		orphanedTag: func() { f.db.SetFailing(true) }}
+	f.cfg.Cloud = cl
+	e := ops.New(f.cfg)
+	ok(t, e.Scan(f.ctx))
+	err := e.Pass(f.ctx)
+	f.db.SetFailing(false)
+	equal(t, errors.Is(err, store.ErrUnreachable), true)
+	equal(t, f.operation(op.ID).Status, store.OpRunning)
+	equal(t, f.host(h.Name).State, store.HostDeleting)
+	equal(t, len(f.events()), 0)
+
+	cl.orphanedTag = nil
+	equal(t, f.step(e, op.ID).Status, store.OpDone)
+	events := f.events()
+	equal(t, len(events), 2)
+	finishedWithData(t, events, op, store.OpDone, "", store.OnDeleteKeep, author)
+	eventWith(t, events, trail.EventHostChanged,
+		telemetry.Attrs{"host": h.Name, "from": store.HostDeleting, "to": store.HostDeleted, "operation": op.ID}, author)
+}
+
+type oldHostCloud struct {
+	cloud.Cloud
+	t     *testing.T
+	old   store.Host
+	extra []string
+}
+
+func (c oldHostCloud) rejectOld(id string) {
+	c.t.Helper()
+	if slices.Contains(c.extra, id) || slices.Contains([]string{c.old.InstanceID, c.old.RootVolume, c.old.DataVolume, c.old.AllocationID, c.old.AssociationID}, id) {
+		c.t.Fatalf("operation touched earlier host's resource %q", id)
+	}
+}
+
+func (c oldHostCloud) TerminateInstance(ctx context.Context, id string) error {
+	c.rejectOld(id)
+	return c.Cloud.TerminateInstance(ctx, id)
+}
+
+func (c oldHostCloud) DisassociateAddress(ctx context.Context, id string) error {
+	c.rejectOld(id)
+	return c.Cloud.DisassociateAddress(ctx, id)
+}
+
+func (c oldHostCloud) ReleaseAddress(ctx context.Context, id string) error {
+	c.rejectOld(id)
+	return c.Cloud.ReleaseAddress(ctx, id)
+}
+
+func (c oldHostCloud) TagResource(ctx context.Context, id string, tags cloud.Tags) error {
+	c.rejectOld(id)
+	return c.Cloud.TagResource(ctx, id, tags)
+}
+
+func (c oldHostCloud) DeleteVolume(ctx context.Context, id string) error {
+	c.rejectOld(id)
+	return c.Cloud.DeleteVolume(ctx, id)
+}
+
+// R-8VIM-KBOF R-9JN7-XOJ3
+func TestDeleteOfReusedNameLeavesEarlierResourcesAndStrays(t *testing.T) {
+	f := setup(t)
+	h, create := f.create()
+	e := ops.New(f.cfg)
+	f.complete(e, create.ID)
+	earlier := f.host(h.Name)
+	f.complete(e, f.deleteHost(earlier, true, author).ID)
+	keptBefore, err := f.memory.DescribeVolume(f.ctx, earlier.DataVolume)
+	ok(t, err)
+	equal(t, keptBefore.Tags[cloud.TagOrphaned], cloud.OrphanedTrue)
+	tags := cloud.Tags{cloud.TagKind: cloud.KindHostData, cloud.TagHost: earlier.Name, cloud.TagOperation: create.ID}
+	extra, err := f.memory.CreateVolume(f.ctx, cloud.VolumeSpec{AZ: earlier.AZ, SizeGB: 20, ClientToken: "late-earlier-volume", Tags: tags})
+	ok(t, err)
+	strayTags := cloud.Tags{cloud.TagKind: cloud.KindHostData, cloud.TagHost: earlier.Name, cloud.TagOperation: "no-such-create"}
+	stray, err := f.memory.CreateVolume(f.ctx, cloud.VolumeSpec{AZ: earlier.AZ, SizeGB: 20, ClientToken: "unowned-volume", Tags: strayTags})
+	ok(t, err)
+	f.cfg.Cloud = oldHostCloud{Cloud: f.memory, t: t, old: earlier, extra: []string{extra.ID, stray.ID}}
+	e = ops.New(f.cfg)
+	current, currentCreate := f.create()
+	equal(t, current.Name, earlier.Name)
+	f.complete(e, currentCreate.ID)
+	current = f.host(current.Name)
+	equal(t, current.State, store.HostRunning)
+	f.complete(e, f.deleteHost(current, false, author).ID)
+	ok(t, e.Scan(f.ctx))
+	keptAfter, err := f.memory.DescribeVolume(f.ctx, earlier.DataVolume)
+	ok(t, err)
+	checkTags(t, keptAfter.Tags, keptBefore.Tags)
+	kept, err := f.st.KeptVolume(f.ctx, earlier.DataVolume)
+	ok(t, err)
+	equal(t, kept.State, store.VolumeKept)
+	late, err := f.memory.DescribeVolume(f.ctx, extra.ID)
+	ok(t, err)
+	checkTags(t, late.Tags, tags)
+	unowned, err := f.memory.DescribeVolume(f.ctx, stray.ID)
+	ok(t, err)
+	checkTags(t, unowned.Tags, strayTags)
+	_, err = f.memory.DescribeVolume(f.ctx, current.DataVolume)
+	equal(t, cloud.ClassOf(err), cloud.ClassNotFound)
+}
+
+// R-9CBT-N22X
+func TestDeleteFailureRetainsChoiceInOperationEvent(t *testing.T) {
+	f := setup(t)
+	h := f.ready()
+	caller := identity.Caller{UserID: "deleting-user", RequestID: "delete-failure"}
+	op := f.deleteHost(h, false, caller)
+	ok(t, f.st.Advance(f.ctx, op.ID, store.Update{Step: ops.StepDeleteData}))
+	f.now = f.now.Add(ops.StepTimeout + time.Second)
+	equal(t, f.step(ops.New(f.cfg), op.ID).Status, store.OpFailed)
+	equal(t, f.host(h.Name).State, store.HostFailed)
+	events := f.events()
+	finishedWithData(t, events, op, store.OpFailed, ops.ReasonTimedOut, store.OnDeleteDelete, caller)
+	eventWith(t, events, trail.EventHostChanged,
+		telemetry.Attrs{"host": h.Name, "from": store.HostDeleting, "to": store.HostFailed, "operation": op.ID}, caller)
 }

@@ -28,10 +28,16 @@ func hostRow(h store.Host, domain string, now time.Time) HostRow {
 		dnsName = h.Name + "." + domain
 	}
 	return HostRow{
-		Name: h.Name, DNSName: dnsName, State: h.State, Reason: cmp.Or(h.Reason, h.RecordReason), Health: store.Health(h, now), Type: h.Type,
+		Name: h.Name, DNSName: dnsName, State: h.State, Reason: cmp.Or(h.Reason, h.RecordReason), OnDelete: h.OnDelete,
+		Health: store.Health(h, now), Type: h.Type,
 		RootGB: h.RootGB, DataGB: h.DataGB, EIP: h.EIP, AccountCount: h.Accounts,
 		Reported: reported, ReportedText: reportedText,
 	}
+}
+
+func keptVolumeRow(v store.KeptVolume) KeptVolumeRow {
+	deleted, deletedText := stamps(v.Deleted, MinuteLayout)
+	return KeptVolumeRow{Volume: v.Volume, Host: v.Host, SizeGB: v.SizeGB, Deleted: deleted, DeletedText: deletedText}
 }
 
 func accountRow(a store.Account, domain string) AccountRow {
@@ -54,7 +60,7 @@ func hostView(h store.Host, domain string, now time.Time) HostView {
 	row := hostRow(h, domain, now)
 	created, createdText := stamps(h.Created, SecondLayout)
 	return HostView{
-		Name: row.Name, DNSName: row.DNSName, State: row.State, Reason: row.Reason, Health: row.Health, Type: row.Type,
+		Name: row.Name, DNSName: row.DNSName, State: row.State, Reason: row.Reason, OnDelete: row.OnDelete, Health: row.Health, Type: row.Type,
 		RootGB: row.RootGB, DataGB: row.DataGB, EIP: row.EIP, AccountCount: row.AccountCount,
 		Reported: row.Reported, ReportedText: row.ReportedText, InstanceID: h.InstanceID, DataVolume: h.DataVolume,
 		Created: created, CreatedText: createdText, Allowlist: append([]string{}, h.Allowlist...),

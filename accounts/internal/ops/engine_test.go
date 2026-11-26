@@ -122,6 +122,13 @@ func (f *fixture) start(h store.Host, kind string, target store.Target) store.Op
 	return op
 }
 
+func (f *fixture) deleteHost(h store.Host, keep bool, caller identity.Caller) store.Operation {
+	f.t.Helper()
+	_, op, err := f.st.DeleteHost(f.ctx, h.Name, keep, caller)
+	ok(f.t, err)
+	return op
+}
+
 func (f *fixture) place(slug, host string) (store.Account, store.Operation) {
 	f.t.Helper()
 	a, op, err := f.st.PlaceAccount(f.ctx, slug, host, author)
@@ -174,6 +181,25 @@ func (f *fixture) events() []telemetry.Event {
 	f.t.Helper()
 	ok(f.t, f.cfg.Telemetry.Flush(f.ctx))
 	return f.capture.Events()
+}
+
+func (f *fixture) observeEventFormation(verify func()) func() {
+	f.t.Helper()
+	observe := true
+	w := telemetry.New(telemetry.Config{Service: "accounts", Sink: f.capture, Stderr: io.Discard,
+		Now: func() time.Time {
+			if observe {
+				verify()
+			}
+			return f.clock()
+		},
+	})
+	f.t.Cleanup(func() {
+		observe = false
+		w.Shutdown(f.ctx, "done")
+	})
+	f.cfg.Telemetry = w
+	return func() { observe = false }
 }
 
 func cloudErr(class cloud.Class) error {
@@ -232,6 +258,15 @@ func TestHostRecordStepConstants(t *testing.T) {
 	const waitHostRecord stepName = ops.StepWaitHostRecord
 	equal(t, hostRecord, stepName("host_record"))
 	equal(t, waitHostRecord, stepName("wait_host_record"))
+}
+
+// R-968B-Q7DG
+func TestDataDeletionStepConstants(t *testing.T) {
+	type stepName string
+	const deleteData stepName = ops.StepDeleteData
+	const waitDataDeleted stepName = ops.StepWaitDataDeleted
+	equal(t, deleteData, stepName("delete_data"))
+	equal(t, waitDataDeleted, stepName("wait_data_deleted"))
 }
 
 // R-MLDN-AJFX R-NUHX-G1VM

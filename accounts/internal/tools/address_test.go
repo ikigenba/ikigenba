@@ -39,7 +39,13 @@ func TestAddressAnswerEncoding(t *testing.T) {
 
 func (f *fixture) changeHostState(name, kind string, finish bool) {
 	f.t.Helper()
-	_, op, err := f.st.StartHostOp(f.t.Context(), name, kind, store.Target{}, f.caller)
+	var op store.Operation
+	var err error
+	if kind == store.OpDelete {
+		_, op, err = f.st.DeleteHost(f.t.Context(), name, true, f.caller)
+	} else {
+		_, op, err = f.st.StartHostOp(f.t.Context(), name, kind, store.Target{}, f.caller)
+	}
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -213,12 +219,12 @@ func TestAllowlistHostChecks(t *testing.T) {
 	deleting, _ := f.seedHost(true)
 	f.changeHostState(deleting.Name, store.OpDelete, false)
 	deleted, _ := f.seedHost(true)
-	f.changeHostState(deleted.Name, store.OpDelete, true)
 	stopped, _ := f.seedHost(true)
 	f.changeHostState(stopped.Name, store.OpStop, true)
 	failed, op := f.seedHost(false)
 	f.fail(op.ID, "create failed")
 	provisioning, _ := f.seedHost(false)
+	f.changeHostState(deleted.Name, store.OpDelete, true)
 	for _, name := range []string{tools.ToolAllowIP, tools.ToolDisallowIP} {
 		for _, tc := range []struct{ host, want string }{
 			{deleting.Name, tools.HostGone}, {deleted.Name, tools.NoHost}, {"missing", tools.NoHost}, {"", tools.NoHost},
@@ -233,7 +239,7 @@ func TestAllowlistHostChecks(t *testing.T) {
 	}
 }
 
-// R-ETJZ-OAYY R-FLLO-H10X R-FO1H-8KIB
+// R-0PUB-I51D R-FLLO-H10X R-FO1H-8KIB
 func TestAddressChangeTrail(t *testing.T) {
 	f := setup(t)
 	f.serveLoopback()

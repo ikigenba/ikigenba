@@ -41,7 +41,7 @@ func stamp(t time.Time) string {
 func (cfg Config) hostAnswer(h store.Host, now time.Time) Host {
 	return Host{
 		Host: h.Name, DNSName: h.Name + "." + cfg.Hosts.Domain, State: h.State,
-		Reason: cmp.Or(h.Reason, h.RecordReason), Health: store.Health(h, now),
+		Reason: cmp.Or(h.Reason, h.RecordReason), OnDelete: h.OnDelete, Health: store.Health(h, now),
 		Type: h.Type, RootGB: h.RootGB, DataGB: h.DataGB, EIP: h.EIP,
 		Accounts: h.Accounts, Reported: stamp(h.Reported),
 	}
@@ -174,7 +174,7 @@ func (cfg Config) host(ctx context.Context, a HostArgs) (HostRead, error) {
 	}
 	answer := cfg.hostAnswer(h, cfg.Telemetry.Now())
 	out := HostRead{
-		Host: answer.Host, DNSName: answer.DNSName, State: answer.State, Reason: answer.Reason, Health: answer.Health,
+		Host: answer.Host, DNSName: answer.DNSName, State: answer.State, Reason: answer.Reason, OnDelete: answer.OnDelete, Health: answer.Health,
 		Type: answer.Type, RootGB: answer.RootGB, DataGB: answer.DataGB, EIP: answer.EIP,
 		Accounts: answer.Accounts, Reported: answer.Reported,
 		InstanceID: h.InstanceID, DataVolume: h.DataVolume, Version: h.Version, Applied: h.Applied,

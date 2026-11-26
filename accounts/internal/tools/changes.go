@@ -22,7 +22,22 @@ func checkSize(kind *string, root, data *int) error {
 
 func (r *changeRecord) hostResult(h store.Host, op store.Operation, before string) HostChange {
 	r.host, r.before, r.after, r.operation = h.Name, before, h.State, op
-	return HostChange{Host: h.Name, State: h.State, Operation: op.ID}
+	r.onDelete = h.OnDelete
+	return HostChange{Host: h.Name, State: h.State, OnDelete: h.OnDelete, Operation: op.ID}
+}
+
+func (cfg Config) deleteHost(ctx context.Context, c identity.Caller, a DeleteHostArgs, r *changeRecord) (HostChange, error) {
+	if _, err := cfg.Store.Host(ctx, a.Host); err != nil {
+		return HostChange{}, storeError(err, NoHost)
+	}
+	h, op, err := cfg.Store.DeleteHost(ctx, a.Host, value(a.KeepData, true), c)
+	if err != nil {
+		if errors.Is(err, store.ErrHostGone) {
+			return HostChange{}, errors.New(NoHost)
+		}
+		return HostChange{}, storeError(err, NoHost)
+	}
+	return r.hostResult(h, op, op.ResumeState), nil
 }
 
 func (cfg Config) createHost(ctx context.Context, c identity.Caller, a CreateHostArgs, r *changeRecord) (HostChange, error) {

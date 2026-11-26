@@ -110,7 +110,7 @@ func fixtureStore(t *testing.T) (*db.DB, *store.Store, store.Host) {
 	})
 	s := store.New(d, store.Config{
 		Now:  func() time.Time { return fixtureNow },
-		Rand: strings.NewReader("12345678abcdefghIJKLMNOPqrstuvwx"),
+		Rand: strings.NewReader("12345678abcdefghIJKLMNOPqrstuvwxABCDEFGHijklmnop"),
 	})
 	return d, s, provisionFixtureHost(t, s, fixtureInstance)
 }
@@ -726,7 +726,7 @@ func TestStateReadFailures(t *testing.T) {
 
 func removeFixtureHost(t *testing.T, _ *db.DB, st *store.Store, host store.Host) {
 	t.Helper()
-	_, op, err := st.StartHostOp(t.Context(), host.Name, store.OpDelete, store.Target{}, identity.Caller{UserID: "test-user"})
+	_, op, err := st.DeleteHost(t.Context(), host.Name, true, identity.Caller{UserID: "test-user"})
 	if err != nil {
 		t.Fatal(err)
 	}

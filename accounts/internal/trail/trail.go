@@ -23,6 +23,7 @@ const (
 	EventInviteRevoked       = "invite.revoked"
 	EventInviteUsed          = "invite.used"
 	EventAdminChanged        = "admin.changed"
+	EventVolumeChanged       = "volume.changed"
 )
 
 // Change results, account removal and resource kinds.
@@ -57,16 +58,17 @@ func Result(err error, refusals ...error) string {
 }
 
 // OperationStarted queues a newly recorded operation.
-func OperationStarted(ctx context.Context, w *telemetry.Writer, operation, kind, host, account string) {
+func OperationStarted(ctx context.Context, w *telemetry.Writer, operation, kind, host, account, data string) {
 	w.Emit(ctx, EventOperationStarted, telemetry.Attrs{
-		"operation": operation, "kind": kind, "host": host, "account": account,
+		"operation": operation, "kind": kind, "host": host, "account": account, "data": data,
 	})
 }
 
 // OperationFinished queues an ended operation.
-func OperationFinished(ctx context.Context, w *telemetry.Writer, operation, kind, host, account, status, reason string) {
+func OperationFinished(ctx context.Context, w *telemetry.Writer, operation, kind, host, account, status, reason, data string) {
 	w.Emit(ctx, EventOperationFinished, telemetry.Attrs{
 		"operation": operation, "kind": kind, "host": host, "account": account, "status": status, "reason": reason,
+		"data": data,
 	})
 }
 
@@ -118,4 +120,9 @@ func InviteUsed(ctx context.Context, w *telemetry.Writer, invite, account, host,
 // AdminChanged queues a change to a user's administrator flag.
 func AdminChanged(ctx context.Context, w *telemetry.Writer, account, host, user string, admin bool) {
 	w.Emit(ctx, EventAdminChanged, telemetry.Attrs{"account": account, "host": host, "user": user, "admin": admin})
+}
+
+// VolumeChanged queues a kept volume state transition.
+func VolumeChanged(ctx context.Context, w *telemetry.Writer, volume, host, from, to, reason string) {
+	w.Emit(ctx, EventVolumeChanged, telemetry.Attrs{"volume": volume, "host": host, "from": from, "to": to, "reason": reason})
 }

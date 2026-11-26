@@ -81,7 +81,7 @@ func TestAllowlistEditsAndHostReads(t *testing.T) {
 	silent := value(t, result(s.MarkSilent(ctx, baseTime.Add(store.SilentAfter+time.Second), "", 1)))
 	eq(t, len(silent), 1)
 	eq(t, silent[0].Allowlist, want.Allowlist)
-	deleting, deletion := start(t, s, h.Name, store.OpDelete, store.Target{})
+	deleting, deletion := deleteHost(t, s, h.Name, true)
 	eq(t, deleting.Allowlist, want.Allowlist)
 	observe(s.Allow(ctx, h.Name, address)).assertZero(t, store.ErrHostGone)
 	observe(s.Disallow(ctx, h.Name, address)).assertZero(t, store.ErrHostGone)
@@ -122,7 +122,7 @@ func TestPendingUnbanGuardsAndDesiredCaps(t *testing.T) {
 	stopped := value(t, result(s.Host(ctx, h.Name)))
 	observe(s.Unban(ctx, h.Name, ip)).assertZero(t, store.ErrNotRunning)
 	eq(t, value(t, result(s.Host(ctx, h.Name))), stopped)
-	_, deletion := start(t, s, h.Name, store.OpDelete, store.Target{})
+	_, deletion := deleteHost(t, s, h.Name, true)
 	checkErr(t, s.Finish(ctx, deletion.ID, store.Update{}), nil)
 	observe(s.Unban(ctx, h.Name, ip)).assertZero(t, store.ErrHostGone)
 }

@@ -187,8 +187,13 @@ func eventWith(t *testing.T, events []telemetry.Event, name string, attrs teleme
 
 func finishedEvent(t *testing.T, events []telemetry.Event, op store.Operation, status, reason string, who identity.Caller) {
 	t.Helper()
+	finishedWithData(t, events, op, status, reason, "", who)
+}
+
+func finishedWithData(t *testing.T, events []telemetry.Event, op store.Operation, status, reason, data string, who identity.Caller) {
+	t.Helper()
 	eventWith(t, events, trail.EventOperationFinished, telemetry.Attrs{
-		"operation": op.ID, "kind": op.Kind, "host": op.Host, "account": op.Account, "status": status, "reason": reason,
+		"operation": op.ID, "kind": op.Kind, "host": op.Host, "account": op.Account, "status": status, "reason": reason, "data": data,
 	}, who)
 }
 
@@ -199,7 +204,7 @@ func accountEvent(t *testing.T, events []telemetry.Event, a store.Account, from,
 	}, who)
 }
 
-// R-MNTG-22XB R-MP1C-FUO0 R-NLYM-RNOR R-12K8-XQA8 R-NOEF-J765 R-NPMB-WYWU R-13S5-BI0X R-L0E6-07I2
+// R-MNTG-22XB R-MP1C-FUO0 R-NLYM-RNOR R-12K8-XQA8 R-NOEF-J765 R-NPMB-WYWU R-9CBT-N22X R-L0E6-07I2
 func TestPlaceWaitsForAddressDNSAndAppliedVersion(t *testing.T) {
 	f := setup(t)
 	h, provision := f.create()
@@ -246,7 +251,7 @@ func TestPlaceWaitsForAddressDNSAndAppliedVersion(t *testing.T) {
 	}
 }
 
-// R-12K8-XQA8 R-13S5-BI0X
+// R-12K8-XQA8 R-9CBT-N22X
 func TestPlaceRecordAdoptionAndConflicts(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -312,7 +317,7 @@ func TestCancelledPlaceDropsWithoutEvent(t *testing.T) {
 	equal(t, len(f.events()), 0)
 }
 
-// R-MNTG-22XB R-NFV4-USZA R-IZ7Z-00CB R-J0FV-DS30 R-NQU8-AQNJ R-13S5-BI0X
+// R-MNTG-22XB R-NFV4-USZA R-IZ7Z-00CB R-J0FV-DS30 R-NQU8-AQNJ R-9CBT-N22X
 func TestUnplaceWaitsForDNSAndApplicationWhenAttempted(t *testing.T) {
 	for _, attempted := range []bool{false, true} {
 		t.Run(fmt.Sprint(attempted), func(t *testing.T) {

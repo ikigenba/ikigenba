@@ -98,7 +98,7 @@ func TestAccountLifecycle(t *testing.T) {
 	_, secondRemoval := remove(t, s, second.Slug)
 	b = value(t, result(s.Host(ctx, b.Name)))
 	checkErr(t, s.Finish(ctx, b.Operation, store.Update{}), nil)
-	_, del := start(t, s, b.Name, store.OpDelete, store.Target{})
+	_, del := deleteHost(t, s, b.Name, true)
 	_, _, err = s.PlaceAccount(ctx, bc.Slug, b.Name, caller)
 	checkErr(t, err, store.ErrHostGone)
 	*now = now.Add(time.Minute)

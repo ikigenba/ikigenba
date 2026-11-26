@@ -30,17 +30,16 @@ func TestPaging(t *testing.T) {
 	}
 	var wantHosts []string
 	for i := 1; i <= 105; i++ {
-		h, _ := f.seedHost(i == 2)
-		if i == 2 {
-			_, op, err := f.st.StartHostOp(context.Background(), h.Name, store.OpDelete, store.Target{}, f.caller)
-			if err != nil {
-				t.Fatal(err)
-			}
-			f.finish(op.ID, store.Update{})
-			continue
+		f.seedHost(i == 2)
+		if i != 2 {
+			wantHosts = append(wantHosts, fmt.Sprintf("host%02d", i))
 		}
-		wantHosts = append(wantHosts, fmt.Sprintf("host%02d", i))
 	}
+	_, deleted, err := f.st.DeleteHost(t.Context(), "host02", true, f.caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.finish(deleted.ID, store.Update{})
 	limit := 25
 	var hosts []string
 	token := paging.Token{Tool: tools.ToolHosts}
@@ -122,7 +121,7 @@ func readAccount(t *testing.T, f *fixture, account string) tools.AccountRead {
 	return answer[tools.AccountRead](t, f.call(tools.ToolAccount, tools.AccountArgs{Account: account}))
 }
 
-// R-11PO-YNS1 R-0V8U-N3U2 R-16LA-HQQT R-1DWO-SD6Z R-1F4L-64XO
+// R-11PO-YNS1 R-0V8U-N3U2 R-16LA-HQQT R-0KYP-Z22L R-1F4L-64XO
 func TestReadAnswers(t *testing.T) {
 	f := setup(t)
 	f.serveLoopback()
@@ -193,7 +192,7 @@ func TestReadAnswers(t *testing.T) {
 		running.Reported != f.now.Format(time.RFC3339) || running.Health != store.Health(f.host(h.Name), f.now) {
 		t.Fatalf("running host %+v", running)
 	}
-	fields := []string{"host", "dns_name", "state", "reason", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported",
+	fields := []string{"host", "dns_name", "state", "reason", "on_delete", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported",
 		"instance_id", "data_volume", "version", "applied", "created", "created_by", "account_names", "allowlist", "report"}
 	wireMembers(t, unpack(t, result).Structured, fields...)
 	wantList := tools.Host{
@@ -237,7 +236,7 @@ func TestReadAnswers(t *testing.T) {
 	}
 	refusal(t, f.call(tools.ToolAccount, tools.AccountArgs{Account: "missing"}), tools.NoAccount)
 	deleted, _ := f.seedHost(true)
-	deleteHost := answer[tools.HostChange](t, f.call(tools.ToolDeleteHost, tools.HostArgs{Host: deleted.Name}))
+	deleteHost := answer[tools.HostChange](t, f.call(tools.ToolDeleteHost, tools.DeleteHostArgs{Host: deleted.Name}))
 	f.finish(deleteHost.Operation, store.Update{})
 	refusal(t, f.call(tools.ToolHost, tools.HostArgs{Host: deleted.Name}), tools.NoHost)
 }

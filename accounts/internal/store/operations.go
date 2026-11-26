@@ -76,10 +76,14 @@ func (s *recordReader) Runnable(ctx context.Context, now time.Time, after string
 	})
 }
 
-// NextTry reads the earliest due time among running operations.
+// NextTry reads the earliest due time among running operations and volume deletions.
 func (s *recordReader) NextTry(ctx context.Context) (time.Time, error) {
 	return read(ctx, s, true, func(q query) (next time.Time, err error) {
-		err = q.row("SELECT next_try FROM operations WHERE status = ? ORDER BY next_try LIMIT 1", OpRunning).Scan(storedTime{&next})
+		err = q.row(`SELECT next_try FROM (
+			SELECT min(next_try) AS next_try FROM operations WHERE status = ?
+			UNION ALL
+			SELECT min(next_try) AS next_try FROM kept_volumes WHERE state = 'deleting'
+		) WHERE next_try IS NOT NULL ORDER BY next_try LIMIT 1`, OpRunning).Scan(storedTime{&next})
 		if errors.Is(err, sql.ErrNoRows) {
 			err = nil
 		}
@@ -262,6 +266,9 @@ func FinishWithRemoved(ctx context.Context, s *Store, opID string, u Update) ([]
 			h.State = op.ResumeState
 		case OpDelete:
 			h.State = HostDeleted
+			if err := recordDeletedHostVolume(w.query, h, stamp); err != nil {
+				return err
+			}
 			removed, err = deleteHostAccounts(w.query, h.Name, stamp)
 			if err != nil {
 				return err

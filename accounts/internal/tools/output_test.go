@@ -13,11 +13,11 @@ import (
 )
 
 type hostShape = struct {
-	Host, DNSName, State, Reason, Health, Type string
-	RootGB, DataGB                             int
-	EIP                                        string
-	Accounts                                   int
-	Reported                                   string
+	Host, DNSName, State, Reason, OnDelete, Health, Type string
+	RootGB, DataGB                                       int
+	EIP                                                  string
+	Accounts                                             int
+	Reported                                             string
 }
 type accountShape = struct {
 	Account, Host, DNSName, State, Reason string
@@ -25,7 +25,7 @@ type accountShape = struct {
 	Created, CreatedBy                    string
 }
 
-// R-12XL-CFIQ checks the Go shape alongside its wire encoding below.
+// R-0HB0-TQUI R-0JQT-LABW check Go shapes alongside their wire encodings below.
 func TestOutputTypes(t *testing.T) {
 	t.Helper()
 	_ = hostShape(tools.Host{})
@@ -34,7 +34,7 @@ func TestOutputTypes(t *testing.T) {
 		Next  *string
 	}(tools.HostList{})
 	_ = struct{ Operation, Kind, Step, Status, Error, Started string }(tools.Operation{})
-	_ = struct{ Host, State, Operation string }(tools.HostChange{})
+	_ = struct{ Host, State, OnDelete, Operation string }(tools.HostChange{})
 	_ = struct {
 		Host, State, Operation string
 		Restarts               bool
@@ -123,9 +123,9 @@ func wireArray(t *testing.T, obj json.RawMessage, name string, members ...string
 	wireMembers(t, items[0], members...)
 }
 
-// R-12XL-CFIQ R-YS1L-XQKE R-YUHE-PA1S R-CHE6-U55F R-CEYE-2LO1 R-CG6A-GDEQ R-XTWF-85SY
+// R-0HB0-TQUI R-YS1L-XQKE R-0JQT-LABW R-CHE6-U55F R-CEYE-2LO1 R-CG6A-GDEQ R-XTWF-85SY
 func TestOutputEncoding(t *testing.T) {
-	hostFields := []string{"host", "dns_name", "state", "reason", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported"}
+	hostFields := []string{"host", "dns_name", "state", "reason", "on_delete", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported"}
 	accountFields := []string{"account", "host", "dns_name", "state", "reason", "users", "invites", "created", "created_by"}
 	userFields := []string{"user", "account", "admin", "state", "pending", "keys", "last_sign_in", "created", "created_by"}
 	opFields := []string{"operation", "kind", "step", "status", "error", "started"}
@@ -170,7 +170,7 @@ func TestOutputEncoding(t *testing.T) {
 	wireMembers(t, account, append(accountReadFields, "operation")...)
 	wireMembers(t, field(t, account, "operation"), opFields...)
 
-	wireMembers(t, testEncoding(t, tools.HostChange{}), "host", "state", "operation")
+	wireMembers(t, testEncoding(t, tools.HostChange{}), "host", "state", "on_delete", "operation")
 	wireMembers(t, testEncoding(t, tools.HostResize{}), "host", "state", "operation", "restarts")
 	wireMembers(t, testEncoding(t, tools.UserChange{}), "user", "account", "admin", "state", "pending")
 	wireMembers(t, testEncoding(t, tools.KeyRemoved{}), "user", "account", "admin", "state", "pending", "keys_left")
@@ -179,21 +179,21 @@ func TestOutputEncoding(t *testing.T) {
 	refusal(t, f.call(tools.ToolHost, tools.HostArgs{Host: "missing"}), tools.NoHost)
 }
 
-// R-15DE-3Z04
+// R-0IIX-7IL7
 func TestHostReadEncoding(t *testing.T) {
 	_ = struct {
-		Host, DNSName, State, Reason, Health, Type string
-		RootGB, DataGB                             int
-		EIP                                        string
-		Accounts                                   int
-		Reported, InstanceID, DataVolume           string
-		Version, Applied                           int64
-		Created, CreatedBy                         string
-		AccountNames, Allowlist                    []string
-		Operation                                  *tools.Operation
-		Report                                     json.RawMessage
+		Host, DNSName, State, Reason, OnDelete, Health, Type string
+		RootGB, DataGB                                       int
+		EIP                                                  string
+		Accounts                                             int
+		Reported, InstanceID, DataVolume                     string
+		Version, Applied                                     int64
+		Created, CreatedBy                                   string
+		AccountNames, Allowlist                              []string
+		Operation                                            *tools.Operation
+		Report                                               json.RawMessage
 	}(tools.HostRead{})
-	base := []string{"host", "dns_name", "state", "reason", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported",
+	base := []string{"host", "dns_name", "state", "reason", "on_delete", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported",
 		"instance_id", "data_volume", "version", "applied", "created", "created_by", "account_names", "allowlist"}
 	for _, names := range [][]string{nil, {}} {
 		raw := testEncoding(t, tools.HostRead{AccountNames: names, Allowlist: names})
@@ -261,7 +261,7 @@ func TestSuccessfulToolsUseDeclaredOutput(t *testing.T) {
 	if len(firstHost.Hosts) != 1 || firstHost.Hosts[0].Accounts != 1 {
 		t.Fatal(firstHost)
 	}
-	refusal(t, f.call(tools.ToolDeleteHost, host), tools.HostBusy)
+	refusal(t, f.call(tools.ToolDeleteHost, tools.DeleteHostArgs{Host: host.Host}), tools.HostBusy)
 	refusal(t, f.call(tools.ToolRemoveAccount, account), tools.AccountHasUsers)
 
 	second, _ := f.seedHost(true)
@@ -278,5 +278,43 @@ func TestSuccessfulToolsUseDeclaredOutput(t *testing.T) {
 	typeName := "t4g.large"
 	resize := answer[tools.HostResize](t, f.call(tools.ToolResizeHost, tools.ResizeHostArgs{Host: host.Host, Type: &typeName}))
 	f.finish(resize.Operation, store.Update{Type: typeName})
-	answer[tools.HostChange](t, f.call(tools.ToolDeleteHost, host))
+	answer[tools.HostChange](t, f.call(tools.ToolDeleteHost, tools.DeleteHostArgs{Host: host.Host}))
+}
+
+// R-0ZLI-KAYX
+func TestKeptVolumeOutputEncoding(t *testing.T) {
+	_ = struct {
+		Volume, Host           string
+		SizeGB                 int
+		Deleted, State, Reason string
+	}(tools.KeptVolume{})
+	_ = struct {
+		KeptVolumes []tools.KeptVolume
+		Next        *string
+	}(tools.KeptVolumeList{})
+
+	const next = "next-page"
+	nextPage := next
+	volume := tools.KeptVolume{
+		Volume: "vol-example", Host: "host-example", SizeGB: 43,
+		Deleted: "2026-10-29T14:03:07Z", State: store.VolumeKept, Reason: "example reason",
+	}
+	list := testEncoding(t, tools.KeptVolumeList{KeptVolumes: []tools.KeptVolume{volume}, Next: &nextPage})
+	wireMembers(t, list, "kept_volumes", "next")
+	fields := []string{"volume", "host", "size_gb", "deleted", "state", "reason"}
+	wireArray(t, list, "kept_volumes", fields...)
+	if raw := field(t, list, "next"); string(raw) != `"next-page"` {
+		t.Fatal(string(raw))
+	}
+	for _, vols := range [][]tools.KeptVolume{nil, {}} {
+		empty := testEncoding(t, tools.KeptVolumeList{KeptVolumes: vols})
+		wireMembers(t, empty, "kept_volumes")
+		wireArray(t, empty, "kept_volumes")
+	}
+	one := testEncoding(t, volume)
+	wireMembers(t, one, fields...)
+	want, err := json.Marshal(volume)
+	if err != nil || string(one) != string(want) {
+		t.Fatalf("encoded volume = %s, want %s (%v)", one, want, err)
+	}
 }

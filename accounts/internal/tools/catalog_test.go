@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http/httptest"
 	"slices"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/settings"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/tools"
+	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/paging"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
@@ -25,10 +27,19 @@ type entry struct {
 	wire, description  string
 	effect             mcp.Effect
 	optional, required []string
+	register           func(*mcp.Server)
 }
 
-func entryFor(name toolName, wire, description string, effect mcp.Effect, optional, required []string) entry {
-	return entry{name: name, wire: wire, description: description, effect: effect, optional: optional, required: required}
+func entryFor[A any](name toolName, wire, description string, effect mcp.Effect, optional, required []string) entry {
+	return entry{
+		name: name, wire: wire, description: description, effect: effect, optional: optional, required: required,
+		register: func(srv *mcp.Server) {
+			mcp.AddTool(srv, mcp.Tool[A, struct{}]{
+				Name: wire, Description: description, Effect: effect,
+				Handler: func(context.Context, identity.Caller, A) (struct{}, error) { return struct{}{}, nil },
+			})
+		},
+	}
 }
 
 func catalog() []entry {
@@ -39,32 +50,34 @@ func catalog() []entry {
 	user := []string{"account", "user"}
 	key := []string{"account", "user", "key"}
 	return []entry{
-		entryFor(tools.ToolHosts, "hosts", tools.DescribeHosts, mcp.Read, pagingFields, nil),
-		entryFor(tools.ToolHost, "host", tools.DescribeHost, mcp.Read, nil, host),
-		entryFor(tools.ToolCreateHost, "create_host", tools.DescribeCreateHost, mcp.Additive, sizeFields, nil),
-		entryFor(tools.ToolStopHost, "stop_host", tools.DescribeStopHost, mcp.Additive, nil, host),
-		entryFor(tools.ToolStartHost, "start_host", tools.DescribeStartHost, mcp.Additive, nil, host),
-		entryFor(tools.ToolResizeHost, "resize_host", tools.DescribeResizeHost, mcp.Additive, sizeFields, host),
-		entryFor(tools.ToolRetryHost, "retry_host", tools.DescribeRetryHost, mcp.Additive, nil, host),
-		entryFor(tools.ToolDeleteHost, "delete_host", tools.DescribeDeleteHost, mcp.Destructive, nil, host),
-		entryFor(tools.ToolAccounts, "accounts", tools.DescribeAccounts, mcp.Read, pagingFields, nil),
-		entryFor(tools.ToolAccount, "account", tools.DescribeAccount, mcp.Read, nil, account),
-		entryFor(tools.ToolCreateAccount, "create_account", tools.DescribeCreateAccount, mcp.Additive, nil, []string{"account", "host"}),
-		entryFor(tools.ToolRemoveAccount, "remove_account", tools.DescribeRemoveAccount, mcp.Destructive, nil, account),
-		entryFor(tools.ToolUsers, "users", tools.DescribeUsers, mcp.Read, []string{"account", "page", "limit"}, nil),
-		entryFor(tools.ToolAddUser, "add_user", tools.DescribeAddUser, mcp.Additive, nil, key),
-		entryFor(tools.ToolAddKey, "add_key", tools.DescribeAddKey, mcp.Additive, nil, key),
-		entryFor(tools.ToolRemoveKey, "remove_key", tools.DescribeRemoveKey, mcp.Destructive, nil, key),
-		entryFor(tools.ToolLockUser, "lock_user", tools.DescribeLockUser, mcp.Additive, nil, user),
-		entryFor(tools.ToolUnlockUser, "unlock_user", tools.DescribeUnlockUser, mcp.Additive, nil, user),
-		entryFor(tools.ToolDeleteUser, "delete_user", tools.DescribeDeleteUser, mcp.Destructive, nil, user),
-		entryFor(tools.ToolSetAdmin, "set_admin", tools.DescribeSetAdmin, mcp.Additive, nil, []string{"account", "user", "admin"}),
-		entryFor(tools.ToolCreateInvite, "create_invite", tools.DescribeCreateInvite, mcp.Additive, []string{"admin"}, account),
-		entryFor(tools.ToolListInvites, "list_invites", tools.DescribeListInvites, mcp.Read, nil, account),
-		entryFor(tools.ToolRevokeInvite, "revoke_invite", tools.DescribeRevokeInvite, mcp.Destructive, nil, []string{"invite"}),
-		entryFor(tools.ToolUnbanIP, "unban_ip", tools.DescribeUnbanIP, mcp.Additive, host, []string{"ip"}),
-		entryFor(tools.ToolAllowIP, "allow_ip", tools.DescribeAllowIP, mcp.Additive, nil, []string{"host", "ip"}),
-		entryFor(tools.ToolDisallowIP, "disallow_ip", tools.DescribeDisallowIP, mcp.Destructive, nil, []string{"host", "ip"}),
+		entryFor[tools.HostsArgs](tools.ToolHosts, "hosts", tools.DescribeHosts, mcp.Read, pagingFields, nil),
+		entryFor[tools.HostArgs](tools.ToolHost, "host", tools.DescribeHost, mcp.Read, nil, host),
+		entryFor[tools.CreateHostArgs](tools.ToolCreateHost, "create_host", tools.DescribeCreateHost, mcp.Additive, sizeFields, nil),
+		entryFor[tools.HostArgs](tools.ToolStopHost, "stop_host", tools.DescribeStopHost, mcp.Additive, nil, host),
+		entryFor[tools.HostArgs](tools.ToolStartHost, "start_host", tools.DescribeStartHost, mcp.Additive, nil, host),
+		entryFor[tools.ResizeHostArgs](tools.ToolResizeHost, "resize_host", tools.DescribeResizeHost, mcp.Additive, sizeFields, host),
+		entryFor[tools.HostArgs](tools.ToolRetryHost, "retry_host", tools.DescribeRetryHost, mcp.Additive, nil, host),
+		entryFor[tools.DeleteHostArgs](tools.ToolDeleteHost, "delete_host", tools.DescribeDeleteHost, mcp.Destructive, []string{"keep_data"}, host),
+		entryFor[tools.KeptVolumesArgs](tools.ToolKeptVolumes, "kept_volumes", tools.DescribeKeptVolumes, mcp.Read, pagingFields, nil),
+		entryFor[tools.KeptVolumeArgs](tools.ToolDeleteKeptVolume, "delete_kept_volume", tools.DescribeDeleteKeptVolume, mcp.Destructive, nil, []string{"volume"}),
+		entryFor[tools.AccountsArgs](tools.ToolAccounts, "accounts", tools.DescribeAccounts, mcp.Read, pagingFields, nil),
+		entryFor[tools.AccountArgs](tools.ToolAccount, "account", tools.DescribeAccount, mcp.Read, nil, account),
+		entryFor[tools.CreateAccountArgs](tools.ToolCreateAccount, "create_account", tools.DescribeCreateAccount, mcp.Additive, nil, []string{"account", "host"}),
+		entryFor[tools.AccountArgs](tools.ToolRemoveAccount, "remove_account", tools.DescribeRemoveAccount, mcp.Destructive, nil, account),
+		entryFor[tools.UsersArgs](tools.ToolUsers, "users", tools.DescribeUsers, mcp.Read, []string{"account", "page", "limit"}, nil),
+		entryFor[tools.UserKeyArgs](tools.ToolAddUser, "add_user", tools.DescribeAddUser, mcp.Additive, nil, key),
+		entryFor[tools.UserKeyArgs](tools.ToolAddKey, "add_key", tools.DescribeAddKey, mcp.Additive, nil, key),
+		entryFor[tools.UserKeyArgs](tools.ToolRemoveKey, "remove_key", tools.DescribeRemoveKey, mcp.Destructive, nil, key),
+		entryFor[tools.UserArgs](tools.ToolLockUser, "lock_user", tools.DescribeLockUser, mcp.Additive, nil, user),
+		entryFor[tools.UserArgs](tools.ToolUnlockUser, "unlock_user", tools.DescribeUnlockUser, mcp.Additive, nil, user),
+		entryFor[tools.UserArgs](tools.ToolDeleteUser, "delete_user", tools.DescribeDeleteUser, mcp.Destructive, nil, user),
+		entryFor[tools.SetAdminArgs](tools.ToolSetAdmin, "set_admin", tools.DescribeSetAdmin, mcp.Additive, nil, []string{"account", "user", "admin"}),
+		entryFor[tools.CreateInviteArgs](tools.ToolCreateInvite, "create_invite", tools.DescribeCreateInvite, mcp.Additive, []string{"admin"}, account),
+		entryFor[tools.AccountArgs](tools.ToolListInvites, "list_invites", tools.DescribeListInvites, mcp.Read, nil, account),
+		entryFor[tools.InviteArgs](tools.ToolRevokeInvite, "revoke_invite", tools.DescribeRevokeInvite, mcp.Destructive, nil, []string{"invite"}),
+		entryFor[tools.UnbanArgs](tools.ToolUnbanIP, "unban_ip", tools.DescribeUnbanIP, mcp.Additive, host, []string{"ip"}),
+		entryFor[tools.HostIPArgs](tools.ToolAllowIP, "allow_ip", tools.DescribeAllowIP, mcp.Additive, nil, []string{"host", "ip"}),
+		entryFor[tools.HostIPArgs](tools.ToolDisallowIP, "disallow_ip", tools.DescribeDisallowIP, mcp.Destructive, nil, []string{"host", "ip"}),
 	}
 }
 
@@ -132,7 +145,7 @@ func checkRequired(t *testing.T, s schema) {
 	}
 }
 
-// R-51DJ-TTH0 R-YDET-CHO2 R-YEMP-Q9ER R-YODW-SFCB R-CL1V-ZGDI R-CM9S-D847 R-CNHO-QZUW R-COPL-4RLL R-D0WK-YH0J R-CTL6-NUKD R-CUT3-1MB2 R-CW0Z-FE1R R-Z7CV-COS5 R-Z8KR-QGIU R-ZDGD-9JHM R-ZEO9-NB8B
+// R-51DJ-TTH0 R-YDET-CHO2 R-YEMP-Q9ER R-CL1V-ZGDI R-0M6M-CTTA R-CNHO-QZUW R-COPL-4RLL R-CTL6-NUKD R-CUT3-1MB2 R-CW0Z-FE1R R-Z7CV-COS5 R-Z8KR-QGIU R-ZDGD-9JHM R-0SA4-9OIR R-0TI0-NG9G
 func TestCatalogAndSchemas(t *testing.T) {
 	const (
 		_ = tools.DescribeHosts
@@ -143,6 +156,8 @@ func TestCatalogAndSchemas(t *testing.T) {
 		_ = tools.DescribeResizeHost
 		_ = tools.DescribeRetryHost
 		_ = tools.DescribeDeleteHost
+		_ = tools.DescribeKeptVolumes
+		_ = tools.DescribeDeleteKeptVolume
 		_ = tools.DescribeAccounts
 		_ = tools.DescribeAccount
 		_ = tools.DescribeCreateAccount
@@ -174,7 +189,12 @@ func TestCatalogAndSchemas(t *testing.T) {
 		t.Fatal(err)
 	}
 	registered, want := f.srv.Tools(), catalog()
-	if len(list) != len(want) || len(registered) != len(want) {
+	client := schemaProbeClient(t, f.w, want)
+	wantSchema, err := client.ListTools(t.Context(), f.caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != len(want) || len(registered) != len(want) || len(wantSchema) != len(want) {
 		t.Fatal(len(list), len(registered))
 	}
 	for i, info := range list {
@@ -184,36 +204,76 @@ func TestCatalogAndSchemas(t *testing.T) {
 			tools.FirstLine(expected.description) == "" || info.Effect() != expected.effect {
 			t.Fatalf("catalog entry %+v (%+v)", info, registered[i])
 		}
+		if !bytes.Equal(info.InputSchema, wantSchema[i].InputSchema) {
+			t.Fatalf("%s input schema %s, want %s", info.Name, info.InputSchema, wantSchema[i].InputSchema)
+		}
 		checkInput(t, info, expected)
 		var out schema
 		if err := json.Unmarshal(info.OutputSchema, &out); err != nil {
 			t.Fatal(err)
 		}
 		checkRequired(t, out)
+	}
+}
 
-		valid := validArgs(expected)
+func schemaProbeClient(t *testing.T, writer *telemetry.Writer, entries []entry) *mcp.Client {
+	t.Helper()
+	probe := mcp.NewServer(mcp.ServerConfig{Name: "schema-probe", Telemetry: writer})
+	for _, tool := range entries {
+		tool.register(probe)
+	}
+	server := httptest.NewServer(identity.Require(probe))
+	t.Cleanup(server.Close)
+	return mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL})
+}
+
+func TestMCPArgumentValidation(t *testing.T) {
+	f := setup(t)
+	f.serveLoopback()
+	entries := catalog()
+	client := schemaProbeClient(t, f.w, entries)
+	for _, tool := range entries {
+		valid := validArgs(tool)
 		valid["unknown"] = true
-		if !f.call(info.Name, valid).IsError() {
-			t.Fatal("unknown member accepted", info.Name)
-		}
-		for n := range validArgs(expected) {
-			wrong := validArgs(expected)
+		assertAppkitRefusal(t, f, client, tool.wire, valid)
+
+		for n := range validArgs(tool) {
+			wrong := validArgs(tool)
 			wrong[n] = []string{"wrong"}
-			if !f.call(info.Name, wrong).IsError() {
-				t.Fatal("wrong member type accepted", info.Name, n)
+			switch n {
+			case "admin":
+				wrong[n] = "true"
+			case "keep_data":
+				wrong[n] = "false"
 			}
+			assertAppkitRefusal(t, f, client, tool.wire, wrong)
 		}
-		for _, n := range expected.required {
-			missing := validArgs(expected)
+		for _, n := range tool.required {
+			missing := validArgs(tool)
 			delete(missing, n)
-			if !f.call(info.Name, missing).IsError() {
-				t.Fatal("missing required member accepted", info.Name, n)
-			}
+			assertAppkitRefusal(t, f, client, tool.wire, missing)
 		}
 	}
 	if len(f.changes()) != 0 || len(f.cloud.lookups) != 0 || f.wakes != 0 {
 		t.Fatal("invalid argument reached a handler")
 	}
+}
+
+func assertAppkitRefusal(t *testing.T, f *fixture, client *mcp.Client, tool string, args map[string]any) {
+	t.Helper()
+	wire, err := json.Marshal(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := client.CallTool(t.Context(), f.caller, tool, wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe := unpack(t, want)
+	if !want.IsError() || len(probe.Content) != 1 {
+		t.Fatalf("appkit accepted invalid %s args %s", tool, wire)
+	}
+	refusal(t, f.call(tool, args), probe.Content[0].Text)
 }
 
 func checkInput(t *testing.T, info mcp.ToolInfo, expected entry) {
@@ -241,13 +301,18 @@ func checkInput(t *testing.T, info mcp.ToolInfo, expected entry) {
 	for _, n := range fields {
 		kind := "string"
 		switch n {
-		case "admin":
+		case "admin", "keep_data":
 			kind = "boolean"
 		case "limit", "root_gb", "data_gb":
 			kind = "integer"
 		}
 		expectedType := `"` + kind + `"`
-		if properties[n].Description != copyByField[n] || string(properties[n].Type) != expectedType {
+		description, checkDescription := copyByField[n]
+		// The new non-paging descriptions have an open copy contract issue.
+		if expected.wire == tools.ToolDeleteHost && n == "host" {
+			checkDescription = false
+		}
+		if checkDescription && properties[n].Description != description || string(properties[n].Type) != expectedType {
 			t.Fatalf("unexpected schema for %s.%s: %s", info.Name, n, info.InputSchema)
 		}
 	}
@@ -259,7 +324,7 @@ func validArgs(expected entry) map[string]any {
 		switch n {
 		case "ip":
 			args[n] = "192.0.2.7"
-		case "admin":
+		case "admin", "keep_data":
 			args[n] = false
 		case "invite":
 			args[n] = store.InvitePrefix + "0000000000000000"

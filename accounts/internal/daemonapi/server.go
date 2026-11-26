@@ -163,18 +163,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, BadRequest, http.StatusBadRequest)
 			return
 		}
-		host, ok := s.identify(w, r)
-		if ok {
-			s.poll(w, r, host, after, digest)
+		host, verified := s.identify(w, r)
+		if verified != nil {
+			s.poll(w, verified, host, after, digest)
 		}
 	case protocol.ReportPath:
 		if r.Method != http.MethodPost {
 			methodNotAllowed(w, http.MethodPost)
 			return
 		}
-		host, ok := s.identify(w, r)
-		if ok {
-			s.report(w, r, host.Name)
+		host, verified := s.identify(w, r)
+		if verified != nil {
+			s.report(w, verified, host.Name)
 		}
 	case protocol.BoxPath:
 		s.serveBox(w, r)
@@ -230,7 +230,7 @@ func decimalQueryValue(values []string) (int64, error) {
 	return strconv.ParseInt(values[0], 10, 64)
 }
 
-func (s *Server) identify(w http.ResponseWriter, r *http.Request) (store.Host, bool) {
+func (s *Server) identify(w http.ResponseWriter, r *http.Request) (store.Host, *http.Request) {
 	ctx := r.Context()
 	id, err := s.cfg.Verifier.Verify(ctx, r.Header.Get(hostauth.HeaderName))
 	if err != nil {
@@ -242,14 +242,14 @@ func (s *Server) identify(w http.ResponseWriter, r *http.Request) (store.Host, b
 		default:
 			http.Error(w, Busy, http.StatusServiceUnavailable)
 		}
-		return store.Host{}, false
+		return store.Host{}, nil
 	}
 	host, err := s.store.HostByInstance(ctx, id)
 	if err != nil {
 		storeFailure(w, err)
-		return store.Host{}, false
+		return store.Host{}, nil
 	}
-	return host, true
+	return host, r.WithContext(store.WithVerifiedHost(ctx, host))
 }
 
 func storeFailure(w http.ResponseWriter, err error) {

@@ -525,7 +525,7 @@ func invitePath(t *testing.T, invite tools.InviteMade) string {
 	return link.RequestURI()
 }
 
-// R-14LR-87RE R-HQRI-V1CD R-IJ8P-GADI R-125Y-GOA0 R-EH3H-OOMA
+// R-14LR-87RE R-HQRI-V1CD R-IJ8P-GADI R-1P7E-LHJI R-EH3H-OOMA
 func TestInviteAndEnrollmentTrail(t *testing.T) {
 	run := startIntegration(t, integrationOptions{})
 	run.call(tools.ToolCreateHost, struct{}{}, nil)
@@ -1080,12 +1080,14 @@ func changeCalls(key string) []catalogCall {
 		{"add_user", userKey}, {"add_key", userKey}, {"remove_key", userKey}, {"lock_user", user}, {"unlock_user", user}, {"delete_user", user},
 		{"remove_account", account}, {"stop_host", host}, {"start_host", host}, {"resize_host", map[string]any{"host": "host01", "data_gb": 60}},
 		{"retry_host", host}, {"delete_host", host},
+		{tools.ToolDeleteKeptVolume, map[string]any{"volume": "vol-missing"}},
 	}
 }
 func readCalls() []catalogCall {
 	return []catalogCall{
 		{"hosts", map[string]any{}}, {"host", map[string]any{"host": "host01"}}, {"accounts", map[string]any{}},
 		{"account", map[string]any{"account": "acme"}}, {"users", map[string]any{}},
+		{tools.ToolKeptVolumes, map[string]any{}},
 	}
 }
 
@@ -1098,7 +1100,7 @@ func addressCalls() []catalogCall {
 	}
 }
 
-// R-125Y-GOA0 R-EH3H-OOMA R-IJ8P-GADI
+// R-1P7E-LHJI R-EH3H-OOMA R-IJ8P-GADI
 func TestRunTrail(t *testing.T) {
 	r := startIntegration(t, integrationOptions{})
 	type requestRecord struct {
@@ -1195,7 +1197,7 @@ func TestRunTrail(t *testing.T) {
 }
 
 func eventNames() []string {
-	return strings.Fields("service.started service.stopping request.started request.finished tool.called change.finished operation.started operation.finished host.changed account.changed host.silent host.synced host.apply_failed resource.unexplained invite.created invite.revoked invite.used admin.changed")
+	return strings.Fields("service.started service.stopping request.started request.finished tool.called change.finished operation.started operation.finished host.changed account.changed host.silent host.synced host.apply_failed resource.unexplained invite.created invite.revoked invite.used admin.changed volume.changed")
 }
 
 // R-7SSU-QP74

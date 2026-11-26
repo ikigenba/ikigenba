@@ -116,6 +116,11 @@ func (a *adapter) VolumeModification(ctx context.Context, volumeID string) (clou
 	return cloud.Modification{State: string(newest.ModificationState), TargetGB: aws.ToInt32(newest.TargetSize)}, nil
 }
 
+func (a *adapter) DeleteVolume(ctx context.Context, id string) error {
+	_, err := a.ec2.DeleteVolume(ctx, &ec2.DeleteVolumeInput{VolumeId: aws.String(id)})
+	return failed("ec2", "DeleteVolume", id, err)
+}
+
 func (a *adapter) TagResource(ctx context.Context, id string, tags cloud.Tags) error {
 	if hasForbiddenTags(tags) || hasKind(tags) {
 		return ec2Error(createTags, id, cloud.CodeTagContract)

@@ -1,6 +1,7 @@
 package pages_test
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
@@ -29,10 +30,10 @@ const created = "2026-11-17T14:03:07Z"
 const createdMinute = "2026-11-17 14:03"
 const createdSecond = "2026-11-17 14:03:07 UTC"
 
-// R-CYA3-AG15 R-CZHZ-O7RU R-D35O-TIZX R-D4DL-7AQM
+// R-CYA3-AG15 R-CZHZ-O7RU
 func TestLandingRows(t *testing.T) {
 	f := setup(t)
-	data := pages.LandingData{Configured: true, Domain: f.cfg.Domain, Hosts: []pages.HostRow{}, Accounts: []pages.AccountRow{}, Users: []pages.UserRow{}}
+	data := pages.LandingData{Configured: true, Domain: f.cfg.Domain, Hosts: []pages.HostRow{}, KeptVolumes: []pages.KeptVolumeRow{}, Accounts: []pages.AccountRow{}, Users: []pages.UserRow{}}
 	checkLanding(t, f, "/", data)
 	h, a, u, op := seedRecord(t, f)
 	st := f.cfg.Store
@@ -175,20 +176,144 @@ func createListRows(t *testing.T, f *fixture, n int) pages.LandingData {
 		if err != nil {
 			t.Fatal(err)
 		}
-		a, _, err := st.PlaceAccount(t.Context(), fmt.Sprintf("account-%03d", i), h.Name, caller)
+		a, _, err := st.PlaceAccount(t.Context(), fmt.Sprintf("account-%03d", n-i-1), h.Name, caller)
 		if err != nil {
 			t.Fatal(err)
 		}
-		u, err := st.AddUser(t.Context(), a.Slug, fmt.Sprintf("user-%03d", n-i), key, caller)
-		if err != nil {
-			t.Fatal(err)
+		logins := []string{fmt.Sprintf("user-%03d", i+1)}
+		switch {
+		case i == 0 && n > 1:
+			logins = []string{"user-002", "user-001"}
+		case i == 1:
+			logins = nil
+		}
+		for _, login := range logins {
+			u, err := st.AddUser(t.Context(), a.Slug, login, key, caller)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out.Users = append(out.Users, pages.UserRow{Login: u.Name, Account: a.Slug, State: store.UserActive, KeyCount: 1, Pending: true})
 		}
 		name := fmt.Sprintf("host%02d", i+1)
 		out.Hosts = append(out.Hosts, pages.HostRow{Name: name, DNSName: name + "." + f.cfg.Domain, State: store.HostProvisioning, Health: store.HealthNone, Type: hostSpec.Type, RootGB: hostSpec.RootGB, DataGB: hostSpec.DataGB, AccountCount: 1})
-		out.Accounts = append(out.Accounts, pages.AccountRow{Slug: a.Slug, Host: h.Name, DNSName: a.Slug + "." + f.cfg.Domain, State: store.AccountPending, UserCount: 1, Created: created, CreatedText: createdMinute})
-		out.Users = append(out.Users, pages.UserRow{Login: u.Name, Account: a.Slug, State: store.UserActive, KeyCount: 1, Pending: true})
+		out.Accounts = append(out.Accounts, pages.AccountRow{Slug: a.Slug, Host: h.Name, DNSName: a.Slug + "." + f.cfg.Domain, State: store.AccountPending, UserCount: len(logins), Created: created, CreatedText: createdMinute})
 	}
+	slices.SortFunc(out.Accounts, func(a, b pages.AccountRow) int { return cmp.Compare(a.Slug, b.Slug) })
+	slices.SortFunc(out.Users, func(a, b pages.UserRow) int {
+		return cmp.Or(cmp.Compare(a.Account, b.Account), cmp.Compare(a.Login, b.Login))
+	})
+	for i := range n {
+		if i%2 == 0 {
+			f.advance(time.Second)
+		}
+		// Later pairs have smaller prefixes, and ties alternate which id is inserted first.
+		pair := i / 2
+		volume := fmt.Sprintf("vol-%03d-%d", n-pair, (i+pair)%2)
+		out.KeptVolumes = append(out.KeptVolumes, createKeptVolume(t, f, volume))
+	}
+	slices.SortFunc(out.KeptVolumes, func(a, b pages.KeptVolumeRow) int {
+		return cmp.Or(cmp.Compare(b.Deleted, a.Deleted), cmp.Compare(b.Volume, a.Volume))
+	})
 	return out
+}
+
+func createRunningHost(t *testing.T, f *fixture, volume string) store.Host {
+	t.Helper()
+	h, op, err := f.cfg.Store.CreateHost(t.Context(), hostSpec, caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.cfg.Store.Finish(t.Context(), op.ID, store.Update{DataVolume: volume}); err != nil {
+		t.Fatal(err)
+	}
+	return h
+}
+
+func completeKeptHost(t *testing.T, f *fixture, h store.Host, volume string) pages.KeptVolumeRow {
+	t.Helper()
+	_, op, err := f.cfg.Store.DeleteHost(t.Context(), h.Name, true, caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleted := f.cfg.Now().UTC()
+	if err := f.cfg.Store.Finish(t.Context(), op.ID, store.Update{}); err != nil {
+		t.Fatal(err)
+	}
+	return pages.KeptVolumeRow{
+		Volume: volume, Host: h.Name, SizeGB: h.DataGB,
+		Deleted: deleted.Format(time.RFC3339), DeletedText: deleted.Format(pages.MinuteLayout),
+	}
+}
+
+func createKeptVolume(t *testing.T, f *fixture, volume string) pages.KeptVolumeRow {
+	t.Helper()
+	return completeKeptHost(t, f, createRunningHost(t, f, volume), volume)
+}
+
+// R-2WV6-Q5NZ R-31QS-98MR R-32YO-N0DG R-3F5O-GPSE R-3GDK-UHJ3
+func TestLandingChoicesAndKeptVolumeRows(t *testing.T) {
+	f := setup(t)
+	st := f.cfg.Store
+	first := createRunningHost(t, f, "vol-first")
+	second, _, err := st.CreateHost(t.Context(), hostSpec, caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	earliest := completeKeptHost(t, f, first, "vol-first")
+	if _, err := st.DeleteKeptVolume(t.Context(), earliest.Volume, caller); err != nil {
+		t.Fatal(err)
+	}
+	f.advance(time.Second)
+	removed := createKeptVolume(t, f, "vol-removed")
+	if _, err := st.DeleteKeptVolume(t.Context(), removed.Volume, caller); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.FinishVolumeDelete(t.Context(), removed.Volume); err != nil {
+		t.Fatal(err)
+	}
+	reused, _, err := st.CreateHost(t.Context(), hostSpec, caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reused.Name != first.Name {
+		t.Fatalf("fixture host name = %q, want reused %q", reused.Name, first.Name)
+	}
+	f.advance(3*time.Minute + 2*time.Second)
+	latest := createRunningHost(t, f, "vol-last")
+	if latest.Name == first.Name {
+		t.Fatalf("fixture has only one historical host name: %q", latest.Name)
+	}
+	completeKeptHost(t, f, latest, "vol-last")
+	wantLatest := pages.KeptVolumeRow{Volume: "vol-last", Host: latest.Name, SizeGB: hostSpec.DataGB, Deleted: "2026-11-17T14:06:10Z", DeletedText: "2026-11-17 14:06"}
+	data := pages.LandingData{
+		Configured: true, Domain: f.cfg.Domain, KeptVolumes: []pages.KeptVolumeRow{wantLatest, earliest},
+		Hosts: []pages.HostRow{
+			{Name: second.Name, DNSName: second.Name + "." + f.cfg.Domain, State: store.HostProvisioning, Health: store.HealthNone, Type: hostSpec.Type, RootGB: hostSpec.RootGB, DataGB: hostSpec.DataGB},
+			{Name: reused.Name, DNSName: reused.Name + "." + f.cfg.Domain, State: store.HostProvisioning, Health: store.HealthNone, Type: hostSpec.Type, RootGB: hostSpec.RootGB, DataGB: hostSpec.DataGB},
+		},
+	}
+	for _, keepData := range []bool{true, false} {
+		h := createRunningHost(t, f, "")
+		if _, _, err := st.DeleteHost(t.Context(), h.Name, keepData, caller); err != nil {
+			t.Fatal(err)
+		}
+		choice := store.OnDeleteDelete
+		if keepData {
+			choice = store.OnDeleteKeep
+		}
+		row := pages.HostRow{Name: h.Name, DNSName: h.Name + "." + f.cfg.Domain, State: store.HostDeleting, OnDelete: choice, Health: store.HealthNone, Type: hostSpec.Type, RootGB: hostSpec.RootGB, DataGB: hostSpec.DataGB}
+		data.Hosts = append(data.Hosts, row)
+		target := "/hosts/" + h.Name
+		createdAt := f.cfg.Now().UTC()
+		view := pages.HostView{
+			Name: row.Name, DNSName: row.DNSName, State: row.State, OnDelete: choice, Health: row.Health,
+			Type: row.Type, RootGB: row.RootGB, DataGB: row.DataGB, Created: createdAt.Format(time.RFC3339), CreatedText: createdAt.Format(pages.SecondLayout),
+			Allowlist: []string{},
+		}
+		b := banner(f, target, []page.Level{pages.HostLevel(h.Name)})
+		same(t, answer(f, "GET", target, "viewer"), expected(f, "GET", target, "host", 200, pages.HostData{Banner: b, Host: view}))
+	}
+	checkLanding(t, f, "/", data)
 }
 
 type bounds struct {
@@ -196,34 +321,45 @@ type bounds struct {
 	value, prev, next string
 }
 
-func renderListWindows(data pages.LandingData, b [3]bounds) pages.LandingData {
+func renderListWindows(data pages.LandingData, b [4]bounds) pages.LandingData {
 	data.Hosts = data.Hosts[b[0].start:b[0].end]
 	data.Accounts = data.Accounts[b[1].start:b[1].end]
 	data.Users = data.Users[b[2].start:b[2].end]
+	data.KeptVolumes = data.KeptVolumes[b[3].start:b[3].end]
 	data.HostsPage, data.HostsPrev, data.HostsNext = b[0].value, b[0].prev, b[0].next
 	data.AccountsPage, data.AccountsPrev, data.AccountsNext = b[1].value, b[1].prev, b[1].next
 	data.UsersPage, data.UsersPrev, data.UsersNext = b[2].value, b[2].prev, b[2].next
+	data.VolumesPage, data.VolumesPrev, data.VolumesNext = b[3].value, b[3].prev, b[3].next
 	return data
 }
 
-var listNames = [3]string{"hosts", "accounts", "users"}
+var listNames = [4]string{"hosts", "accounts", "users", "kept_volumes"}
+var listParams = [4]string{"hosts_page", "accounts_page", "users_page", "volumes_page"}
 
-func keyFor(row int, list int, data pages.LandingData) []any {
+func keyFor(t *testing.T, row int, list int, data pages.LandingData) []any {
+	t.Helper()
 	switch list {
 	case 0:
 		return []any{int64(row + 1)}
 	case 1:
 		return []any{data.Accounts[row].Slug}
-	default:
+	case 2:
 		return []any{data.Users[row].Account, data.Users[row].Login}
+	default:
+		volume := data.KeptVolumes[row]
+		stamp, err := time.Parse(time.RFC3339, volume.Deleted)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return []any{stamp.UnixNano(), volume.Volume}
 	}
 }
 
-func pageURL(b [3]bounds) string {
+func pageURL(b [4]bounds) string {
 	query := url.Values{}
-	for i, name := range listNames {
+	for i, param := range listParams {
 		if b[i].value != "" {
-			query.Set(name+"_page", b[i].value)
+			query.Set(param, b[i].value)
 		}
 	}
 	if len(query) == 0 {
@@ -232,33 +368,34 @@ func pageURL(b [3]bounds) string {
 	return "/?" + query.Encode()
 }
 
-func firstWindows(rows pages.LandingData, size int) [3]bounds {
-	var b [3]bounds
+func firstWindows(t *testing.T, rows pages.LandingData, size int) [4]bounds {
+	t.Helper()
+	var b [4]bounds
 	for i, name := range listNames {
 		b[i].end = min(size, paging.DefaultLimit)
 		if size > paging.DefaultLimit {
-			b[i].next = token(name, keyFor(b[i].end-1, i, rows)...)
+			b[i].next = token(name, keyFor(t, b[i].end-1, i, rows)...)
 		}
 	}
 	return b
 }
 
-// R-RVYV-391H R-RYEN-USIV R-RONG-SMLB R-RR39-K62P R-S22D-03QY R-SO0J-VZ3G R-SP8G-9QU5 R-D81A-CLYP
+// R-2WV6-Q5NZ R-2Y33-3XEO R-3DXS-2Y1P
 func TestIndependentPaging(t *testing.T) {
 	f := setup(t)
 	const l = paging.DefaultLimit
 	const size = 4*l + 2
 	data := createListRows(t, f, size)
-	initial := firstWindows(data, size)
+	initial := firstWindows(t, data, size)
 	checkLanding(t, f, "/", renderListWindows(data, initial))
 	for i, name := range listNames {
 		t.Run(name, func(t *testing.T) {
-			beforeToken := func(row int) string { return token(name+"-before", keyFor(row, i, data)...) }
-			afterToken := func(row int) string { return token(name, keyFor(row, i, data)...) }
+			beforeToken := func(row int) string { return token(name+"-before", keyFor(t, row, i, data)...) }
+			afterToken := func(row int) string { return token(name, keyFor(t, row, i, data)...) }
 			b := initial
 			// Preserve one other list's position throughout this walk.
 			other := (i + 2) % len(b)
-			b[other] = bounds{l, 2 * l, initial[other].next, token(listNames[other]+"-before", keyFor(l, other, data)...), token(listNames[other], keyFor(2*l-1, other, data)...)}
+			b[other] = bounds{l, 2 * l, initial[other].next, token(listNames[other]+"-before", keyFor(t, l, other, data)...), token(listNames[other], keyFor(t, 2*l-1, other, data)...)}
 			checkLanding(t, f, pageURL(b), renderListWindows(data, b))
 			for start := 0; start < size; start += l {
 				if start != 0 {
@@ -282,46 +419,64 @@ func TestIndependentPaging(t *testing.T) {
 			}
 			b[i] = bounds{size - l, size, "last", beforeToken(size - l), ""}
 			checkLanding(t, f, pageURL(b), renderListWindows(data, b))
-			// A before-token beyond the end has the last window and no next token.
-			positions := []string{token(name+"-before", int64(size+7)), token(name+"-before", "zzz"), token(name+"-before", "zzz", "nonexistent")}
-			b[i].value = positions[i]
+			// A position beyond the end is a key with no matching entry.
+			positions := [4][]any{{int64(size + 7)}, {"zzz"}, {"zzz", "nonexistent"}, {int64(0), "vol-nonexistent"}}
+			b[i].value = token(name+"-before", positions[i]...)
 			checkLanding(t, f, pageURL(b), renderListWindows(data, b))
-			positions = []string{token(name, int64(size+7)), token(name, "zzz"), token(name, "zzz", "nonexistent")}
-			b[i] = bounds{size, size, positions[i], "", ""}
+			b[i] = bounds{size, size, token(name, positions[i]...), "", ""}
 			checkLanding(t, f, pageURL(b), renderListWindows(data, b))
 		})
 	}
 	hosts := token("hosts", int64(13))
 	users := token("users", "account-003", "nonexistent")
-	target := "/?ignored=one&users_page=" + url.QueryEscape(users) + "&accounts_page=" + url.QueryEscape(token("accounts-before", "a")) + "&hosts_page=" + url.QueryEscape(hosts)
-	canonical := "/?hosts_page=" + url.QueryEscape(hosts) + "&users_page=" + url.QueryEscape(users)
+	volumes := token("kept_volumes", keyFor(t, l-1, 3, data)...)
+	target := "/?ignored=one&volumes_page=" + url.QueryEscape(volumes) + "&users_page=" + url.QueryEscape(users) + "&accounts_page=" + url.QueryEscape(token("accounts-before", "a")) + "&hosts_page=" + url.QueryEscape(hosts)
+	canonical := "/?hosts_page=" + url.QueryEscape(hosts) + "&users_page=" + url.QueryEscape(users) + "&volumes_page=" + url.QueryEscape(volumes)
 	same(t, answer(f, "GET", target, "viewer"), statusWithHeader(303, "Location", canonical))
 
+	accounts := token("accounts", "account-003")
+	volumesUnderflow := token("kept_volumes-before", keyFor(t, l, 3, data)...)
+	target = "/?users_page=" + url.QueryEscape(users) + "&volumes_page=" + url.QueryEscape(volumesUnderflow) + "&hosts_page=" + url.QueryEscape(hosts) + "&accounts_page=" + url.QueryEscape(accounts)
+	canonical = "/?hosts_page=" + url.QueryEscape(hosts) + "&accounts_page=" + url.QueryEscape(accounts) + "&users_page=" + url.QueryEscape(users)
+	for _, method := range []string{"GET", "HEAD"} {
+		same(t, answer(f, method, target, "viewer"), statusWithHeader(303, "Location", canonical))
+	}
+	checkLanding(t, f, "/?volumes_page=&volumes_page=bogus", renderListWindows(data, initial))
+
 	empty := setup(t)
-	target = "/?hosts_page=last&accounts_page=last&users_page=last&ignored=out"
-	same(t, answer(empty, "GET", target, "viewer"), statusWithHeader(303, "Location", "/"))
+	fullFirstPage := setup(t)
+	createListRows(t, fullFirstPage, l)
+	target = "/?hosts_page=last&accounts_page=last&users_page=last&volumes_page=last&ignored=out"
+	for _, pageFixture := range []*fixture{empty, fullFirstPage} {
+		same(t, answer(pageFixture, "GET", target, "viewer"), statusWithHeader(303, "Location", "/"))
+	}
 }
 
-// R-D81A-CLYP holds one list's position fixed across different positions of other lists.
-func TestUsersWindowIgnoresHostPosition(t *testing.T) {
+// R-37UA-63C8 holds a list's position fixed across changes in the other lists.
+func TestUsersWindowIgnoresOtherPositions(t *testing.T) {
 	f := setup(t)
 	const l = paging.DefaultLimit
 	const size = 4*l + 2
 	data := createListRows(t, f, size)
-	b := firstWindows(data, size)
-	b[2] = bounds{l, 2 * l, b[2].next, token("users-before", keyFor(l, 2, data)...), token("users", keyFor(2*l-1, 2, data)...)}
-	for _, hostPosition := range []bounds{
-		b[0],
-		{l, 2 * l, token("hosts", int64(l)), token("hosts-before", int64(l+1)), token("hosts", int64(2*l))},
-		{l, 2 * l, token("hosts-before", int64(2*l+1)), token("hosts-before", int64(l+1)), token("hosts", int64(2*l))},
-		{size - l, size, "last", token("hosts-before", int64(size-l+1)), ""},
-	} {
-		b[0] = hostPosition
+	b := firstWindows(t, data, size)
+	b[2] = bounds{l, 2 * l, b[2].next, token("users-before", keyFor(t, l, 2, data)...), token("users", keyFor(t, 2*l-1, 2, data)...)}
+	checkLanding(t, f, pageURL(b), renderListWindows(data, b))
+	for _, direction := range []string{"after", "before", "last"} {
+		for _, i := range []int{0, 1, 3} {
+			name := listNames[i]
+			switch direction {
+			case "after":
+				b[i] = bounds{l, 2 * l, token(name, keyFor(t, l-1, i, data)...), token(name+"-before", keyFor(t, l, i, data)...), token(name, keyFor(t, 2*l-1, i, data)...)}
+			case "before":
+				b[i] = bounds{l, 2 * l, token(name+"-before", keyFor(t, 2*l, i, data)...), token(name+"-before", keyFor(t, l, i, data)...), token(name, keyFor(t, 2*l-1, i, data)...)}
+			case "last":
+				b[i] = bounds{size - l, size, "last", token(name+"-before", keyFor(t, size-l, i, data)...), ""}
+			}
+		}
 		checkLanding(t, f, pageURL(b), renderListWindows(data, b))
 	}
 }
 
-// R-D6TD-YU80
 func TestToolAndPageWindowsAgree(t *testing.T) {
 	f := setup(t)
 	const size = paging.DefaultLimit + 1
@@ -330,7 +485,7 @@ func TestToolAndPageWindowsAgree(t *testing.T) {
 	srv := httptest.NewServer(identity.Require(f.cfg.MCP))
 	defer srv.Close()
 	client := mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL, HTTPClient: srv.Client()})
-	initial := firstWindows(data, size)
+	initial := firstWindows(t, data, size)
 	for i, name := range listNames {
 		b := initial
 		for start := 0; start < size; start += paging.DefaultLimit {
@@ -352,10 +507,11 @@ func TestToolAndPageWindowsAgree(t *testing.T) {
 			}
 			var envelope struct {
 				Content struct {
-					Hosts    []struct{ Host string }
-					Accounts []struct{ Account string }
-					Users    []struct{ Account, User string }
-					Next     string
+					Hosts       []struct{ Host string }
+					Accounts    []struct{ Account string }
+					Users       []struct{ Account, User string }
+					KeptVolumes []struct{ Volume string } `json:"kept_volumes"`
+					Next        string
 				} `json:"structuredContent"`
 			}
 			if err := json.Unmarshal(encoded, &envelope); err != nil {
@@ -385,17 +541,24 @@ func TestToolAndPageWindowsAgree(t *testing.T) {
 				for _, row := range data.Users[b[i].start:b[i].end] {
 					want = append(want, row.Account+"/"+row.Login)
 				}
+			case 3:
+				for _, row := range content.KeptVolumes {
+					got = append(got, row.Volume)
+				}
+				for _, row := range data.KeptVolumes[b[i].start:b[i].end] {
+					want = append(want, row.Volume)
+				}
 			}
 			if !slices.Equal(got, want) || content.Next != b[i].next {
 				t.Fatalf("%s tool identities and next = %v %q, want %v %q", name, got, content.Next, want, b[i].next)
 			}
 			checkLanding(t, f, pageURL(b), renderListWindows(data, b))
-			b[i] = bounds{paging.DefaultLimit, size, b[i].next, token(name+"-before", keyFor(paging.DefaultLimit, i, data)...), ""}
+			b[i] = bounds{paging.DefaultLimit, size, b[i].next, token(name+"-before", keyFor(t, paging.DefaultLimit, i, data)...), ""}
 		}
 	}
 }
 
-// R-UY9S-SWPB R-UZHP-6OG0 R-SWJU-KDAB R-K8CH-7HG3
+// R-3F5O-GPSE R-3GDK-UHJ3 R-SWJU-KDAB R-K8CH-7HG3
 func TestHostDetailsAndLatestReport(t *testing.T) {
 	f := setup(t)
 	st := f.cfg.Store
@@ -480,7 +643,13 @@ func TestHostDetailsAndLatestReport(t *testing.T) {
 	if err := st.Finish(t.Context(), create.ID, store.Update{}); err != nil {
 		t.Fatal(err)
 	}
-	_, deleteOp, err := st.StartHostOp(t.Context(), empty.Name, store.OpDelete, store.Target{}, caller)
+	if _, err := st.Allow(t.Context(), empty.Name, "192.0.2.19"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.RecordReport(t.Context(), empty.Name, protocol.Report{Protocol: protocol.Version, Hostname: "earlier-host.work.test"}, received); err != nil {
+		t.Fatal(err)
+	}
+	_, deleteOp, err := st.DeleteHost(t.Context(), empty.Name, true, caller)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -490,6 +659,20 @@ func TestHostDetailsAndLatestReport(t *testing.T) {
 	for _, missing := range []string{"/hosts/nope", "/hosts/%68ost01", "/hosts/" + empty.Name} {
 		same(t, answer(f, "GET", missing, "viewer"), notFound(f, "GET", missing))
 	}
+	reused, _, err := st.CreateHost(t.Context(), hostSpec, caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reused.Name != empty.Name {
+		t.Fatalf("fixture host name = %q, want %q", reused.Name, empty.Name)
+	}
+	reusedPath := "/hosts/" + reused.Name
+	reusedBanner := banner(f, reusedPath, []page.Level{pages.HostLevel(reused.Name)})
+	reusedView := pages.HostView{
+		Name: reused.Name, DNSName: reused.Name + "." + f.cfg.Domain, State: store.HostProvisioning, Health: store.HealthNone,
+		Type: hostSpec.Type, RootGB: hostSpec.RootGB, DataGB: hostSpec.DataGB, Created: created, CreatedText: createdSecond, Allowlist: []string{},
+	}
+	same(t, answer(f, "GET", reusedPath, "viewer"), expected(f, "GET", reusedPath, "host", 200, pages.HostData{Banner: reusedBanner, Host: reusedView}))
 	get, head := answer(f, "GET", target, "viewer"), answer(f, "HEAD", target, "viewer")
 	if get.Code != head.Code || !reflect.DeepEqual(get.Header(), head.Header()) || head.Body.Len() != 0 {
 		t.Fatal("host HEAD differs from GET")

@@ -7,7 +7,7 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 )
 
-// R-GRT3-SIFT R-H7NS-RJ2U R-H214-5FQN R-H390-J7HC R-HCJE-AM1M
+// R-GRT3-SIFT R-H7NS-RJ2U R-H214-5FQN R-71LM-K5LQ R-HCJE-AM1M
 // R-HSE3-9MON R-HTLZ-NEFC R-HUTW-1661 R-HW1S-EXWQ R-HX9O-SPNF R-HYHL-6HE4
 // R-RAJ3-7PFM R-I0XD-Y0VI R-HIMW-7GR3 R-I4L3-3C3L R-0LHN-KXWI
 func TestOperationCheckpoints(t *testing.T) {
@@ -88,7 +88,7 @@ func TestOperationCheckpoints(t *testing.T) {
 	eq(t, value(t, result(s.NextTry(ctx))), time.Time{})
 }
 
-// R-R9B6-TXOX R-HOQE-4BGK R-HPYA-I379 R-RAJ3-7PFM R-J7LV-BZTT R-J8TR-PRKI
+// R-78X0-US1W R-HOQE-4BGK R-7A4X-8JSL R-RAJ3-7PFM R-J7LV-BZTT R-J8TR-PRKI
 func TestHostGuardsAndVolumeWindow(t *testing.T) {
 	_, s, now := fixture(t)
 	h, c := create(t, s)
@@ -98,6 +98,19 @@ func TestHostGuardsAndVolumeWindow(t *testing.T) {
 		checkErr(t, err, want)
 		eq(t, got, store.Host{})
 		eq(t, op, store.Operation{})
+	}
+	begin := func(kind, state string, target, wantTarget store.Target) store.Operation {
+		t.Helper()
+		before := value(t, result(s.Host(ctx, h.Name)))
+		after, op := start(t, s, h.Name, kind, target)
+		stamp := now.UTC().Truncate(time.Second)
+		eq(t, op, store.Operation{ID: op.ID, Host: h.Name, Kind: kind, Target: wantTarget, ResumeState: before.State,
+			Status: store.OpRunning, Generation: 1, Started: stamp, StepStarted: stamp, NextTry: stamp, Caller: caller})
+		before.State, before.Reason, before.Operation = state, "", op.ID
+		eq(t, after, before)
+		eq(t, value(t, result(s.Host(ctx, h.Name))), after)
+		eq(t, value(t, result(s.Operation(ctx, op.ID))), op)
+		return op
 	}
 	guard("missing", "invalid", store.Target{}, store.ErrUnreachable)
 	guard("missing", store.OpStop, store.Target{}, store.ErrNotFound)
@@ -111,6 +124,11 @@ func TestHostGuardsAndVolumeWindow(t *testing.T) {
 	_, _, err = s.RetryHost(ctx, h.Name, caller)
 	checkErr(t, err, nil)
 	checkErr(t, s.Finish(ctx, c.ID, store.Update{RootVolume: "root", DataVolume: "data", AllocationID: "allocation", InstanceID: "instance"}), nil)
+	beforeDelete := value(t, result(s.Host(ctx, h.Name)))
+	beforeDeleteOps := value(t, result(s.OperationsOf(ctx, h.Name, "", 2)))
+	guard(h.Name, store.OpDelete, store.Target{}, store.ErrUnreachable)
+	eq(t, value(t, result(s.Host(ctx, h.Name))), beforeDelete)
+	eq(t, value(t, result(s.OperationsOf(ctx, h.Name, "", 2))), beforeDeleteOps)
 	guard(h.Name, store.OpStart, store.Target{}, store.ErrNotStopped)
 	guard(h.Name, store.OpResize, store.Target{RootGB: spec.RootGB - 1}, store.ErrShrinks)
 	guard(h.Name, store.OpResize, store.Target{RootGB: spec.RootGB, Type: spec.Type}, store.ErrNothingToChange)
@@ -124,36 +142,24 @@ func TestHostGuardsAndVolumeWindow(t *testing.T) {
 	*now = now.Add(store.GrowWindow + time.Second)
 	checkErr(t, s.NoteGrow(ctx, "root", *now), nil)
 	// NoteGrow pruned two root notes and added one, so another root grow can be started.
-	h, resize := start(t, s, h.Name, store.OpResize, store.Target{Type: spec.Type, RootGB: spec.RootGB + 1, DataGB: spec.DataGB})
-	eq(t, h.State, store.HostResizing)
-	eq(t, resize.Target, store.Target{RootGB: spec.RootGB + 1})
-	eq(t, resize.ResumeState, store.HostRunning)
+	resize := begin(store.OpResize, store.HostResizing, store.Target{Type: spec.Type, RootGB: spec.RootGB + 1, DataGB: spec.DataGB},
+		store.Target{RootGB: spec.RootGB + 1})
 	checkErr(t, s.Finish(ctx, resize.ID, store.Update{RootGB: resize.Target.RootGB}), nil)
 	eq(t, value(t, result(s.PruneGrows(ctx, *now, 1))), 1)
 	eq(t, value(t, result(s.PruneGrows(ctx, *now, 5))), 1)
 	eq(t, value(t, result(s.PruneGrows(ctx, *now, 5))), 0)
 
-	h, stop := start(t, s, h.Name, store.OpStop, store.Target{Type: "ignored"})
-	eq(t, h.State, store.HostStopping)
-	eq(t, stop.Target, store.Target{})
-	eq(t, stop.ResumeState, store.HostRunning)
+	stop := begin(store.OpStop, store.HostStopping, store.Target{Type: "ignored"}, store.Target{})
 	checkErr(t, s.Finish(ctx, stop.ID, store.Update{}), nil)
 	earliest := value(t, result(s.Operation(ctx, c.ID)))
 	eq(t, value(t, result(s.OperationsOf(ctx, h.Name, "", 1))), []store.Operation{earliest})
 	guard(h.Name, store.OpStop, store.Target{}, store.ErrNotRunning)
-	h, startOp := start(t, s, h.Name, store.OpStart, store.Target{})
-	eq(t, h.State, store.HostStarting)
-	eq(t, startOp.ResumeState, store.HostStopped)
+	startOp := begin(store.OpStart, store.HostStarting, store.Target{DataGB: 75}, store.Target{})
 	checkErr(t, s.Finish(ctx, startOp.ID, store.Update{}), nil)
 
-	a, _ := place(t, s, "held", h.Name)
-	guard(h.Name, store.OpDelete, store.Target{}, store.ErrHasAccounts)
-	_, unplace := remove(t, s, a.Slug)
-	checkErr(t, s.Finish(ctx, unplace.ID, store.Update{}), nil)
-	h, deletion := start(t, s, h.Name, store.OpDelete, store.Target{})
-	eq(t, h.State, store.HostDeleting)
+	_, deletion := deleteHost(t, s, h.Name, true)
 	checkErr(t, s.Finish(ctx, deletion.ID, store.Update{}), nil)
-	guard(h.Name, store.OpDelete, store.Target{}, store.ErrHostGone)
+	guard(h.Name, store.OpStop, store.Target{}, store.ErrHostGone)
 	_, _, err = s.RetryHost(ctx, h.Name, caller)
 	checkErr(t, err, store.ErrHostGone)
 	for _, resource := range []string{"root", "data", "instance", "allocation"} {

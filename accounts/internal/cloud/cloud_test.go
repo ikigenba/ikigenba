@@ -10,7 +10,7 @@ import (
 )
 
 func TestInterfaceContracts(t *testing.T) {
-	// R-WKRR-39LH R-WLZN-H1C6 R-WN7J-UT2V R-WOFG-8KTK
+	// R-WKRR-39LH R-KZMA-AN7S R-WN7J-UT2V R-WOFG-8KTK
 	type ec2Contract interface {
 		RunInstance(context.Context, Launch) (Instance, error)
 		DescribeInstance(context.Context, string) (Instance, error)
@@ -31,6 +31,7 @@ func TestInterfaceContracts(t *testing.T) {
 		AttachVolume(context.Context, string, string, string) error
 		ModifyVolume(context.Context, string, int32) error
 		VolumeModification(context.Context, string) (Modification, error)
+		DeleteVolume(context.Context, string) error
 		TagResource(context.Context, string, Tags) error
 	}
 	type dnsContract interface {

@@ -42,13 +42,15 @@ type Config struct {
 	Now          func() time.Time
 }
 
-// LandingData describes the independent windows of the three lists.
+// LandingData describes the independent windows of the four lists.
 type LandingData struct {
 	Banner                                   page.Banner
 	Configured                               bool
 	Domain                                   string
 	Hosts                                    []HostRow
 	HostsPage, HostsPrev, HostsNext          string
+	KeptVolumes                              []KeptVolumeRow
+	VolumesPage, VolumesPrev, VolumesNext    string
 	Accounts                                 []AccountRow
 	AccountsPage, AccountsPrev, AccountsNext string
 	Users                                    []UserRow
@@ -57,11 +59,18 @@ type LandingData struct {
 
 // HostRow describes a host and its last contact on the landing page.
 type HostRow struct {
-	Name, DNSName, State, Reason, Health, Type string
-	RootGB, DataGB                             int
-	EIP                                        string
-	AccountCount                               int
-	Reported, ReportedText                     string
+	Name, DNSName, State, Reason, OnDelete, Health, Type string
+	RootGB, DataGB                                       int
+	EIP                                                  string
+	AccountCount                                         int
+	Reported, ReportedText                               string
+}
+
+// KeptVolumeRow describes a data volume retained when its host was deleted.
+type KeptVolumeRow struct {
+	Volume, Host         string
+	SizeGB               int
+	Deleted, DeletedText string
 }
 
 // AccountRow describes an account on the landing page.
@@ -90,7 +99,7 @@ type HostData struct {
 
 // HostView describes the host and its resources.
 type HostView struct {
-	Name, DNSName, State, Reason, Health, Type                           string
+	Name, DNSName, State, Reason, OnDelete, Health, Type                 string
 	RootGB, DataGB                                                       int
 	EIP                                                                  string
 	AccountCount                                                         int

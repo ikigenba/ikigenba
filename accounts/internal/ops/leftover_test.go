@@ -52,10 +52,14 @@ func (c *leftoverCloud) FindInstances(ctx context.Context, tags cloud.Tags, each
 
 func (f *fixture) deletedWithAddress(ip string) (string, store.Operation) {
 	f.t.Helper()
-	h := f.runningWithAddress(ip)
+	return f.finishHostDelete(f.runningWithAddress(ip))
+}
+
+func (f *fixture) finishHostDelete(h store.Host) (string, store.Operation) {
+	f.t.Helper()
 	// Simulate the previous release, which finished the delete without
 	// touching a host's DNS record.
-	op := f.start(h, store.OpDelete, store.Target{})
+	op := f.deleteHost(h, true, author)
 	ok(f.t, f.st.Finish(f.ctx, op.ID, store.Update{}))
 	return h.Name + "." + f.cfg.Hosts.Domain, f.operation(op.ID)
 }
@@ -80,8 +84,12 @@ func TestLeftoverCheckRemovesOnlyTheDeletedHostsOwnRecord(t *testing.T) {
 	f := setup(t)
 	const earlierTTL = 73
 	h := f.runningWithAddress(scanIP)
+	otherHost := f.runningWithAddress(scanIP)
+	absentHost := f.runningWithAddress(scanIP)
+	noAddressHost := f.runningWithAddress("")
+	settledHost := f.runningWithAddress(scanIP)
 	ok(t, f.st.NoteHostRecord(f.ctx, h.Name, "earlier-change", "earlier conflict"))
-	op := f.start(h, store.OpDelete, store.Target{})
+	op := f.deleteHost(h, true, author)
 	ok(t, f.st.Finish(f.ctx, op.ID, store.Update{}))
 	ok(t, f.db.Write(f.ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(f.ctx, "UPDATE hosts SET reason = ? WHERE name = ?", "earlier reason", h.Name)
@@ -96,10 +104,10 @@ func TestLeftoverCheckRemovesOnlyTheDeletedHostsOwnRecord(t *testing.T) {
 	equal(t, hosts[0].RecordReason, "earlier conflict")
 	beforeOps, err := f.st.OperationsOf(f.ctx, h.Name, "", store.BatchSize)
 	ok(t, err)
-	other, _ := f.deletedWithAddress(scanIP)
-	absent, _ := f.deletedWithAddress(scanIP)
-	noAddress, _ := f.deletedWithAddress("")
-	settled, settledOp := f.deletedWithAddress(scanIP)
+	other, _ := f.finishHostDelete(otherHost)
+	absent, _ := f.finishHostDelete(absentHost)
+	noAddress, _ := f.finishHostDelete(noAddressHost)
+	settled, settledOp := f.finishHostDelete(settledHost)
 	ok(t, f.st.SettleDeleted(f.ctx, settledOp.Host))
 	for _, name := range []string{owned, noAddress, settled} {
 		f.seedRecord(name, scanIP, earlierTTL)
@@ -182,8 +190,9 @@ func TestLeftoverCheckStopsAtAnErrorAndTheScanContinues(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := setup(t)
-			first, firstOp := f.deletedWithAddress(scanIP)
-			second, secondOp := f.deletedWithAddress(scanIP)
+			firstHost, secondHost := f.runningWithAddress(scanIP), f.runningWithAddress(scanIP)
+			first, firstOp := f.finishHostDelete(firstHost)
+			second, secondOp := f.finishHostDelete(secondHost)
 			for _, name := range []string{first, second} {
 				f.seedRecord(name, scanIP, 45)
 			}
@@ -258,8 +267,12 @@ func TestScanReturnsFailuresFromBothRecordChecks(t *testing.T) {
 func TestLeftoverCheckRemovesRecordsAcrossPages(t *testing.T) {
 	f := setup(t)
 	names := make([]string, 120)
-	for i := range names {
-		name, _ := f.deletedWithAddress(scanIP)
+	hosts := make([]store.Host, len(names))
+	for i := range hosts {
+		hosts[i] = f.runningWithAddress(scanIP)
+	}
+	for i, host := range hosts {
+		name, _ := f.finishHostDelete(host)
 		names[i] = name
 		f.seedRecord(name, scanIP, 45)
 	}
@@ -273,17 +286,23 @@ func TestLeftoverCheckRemovesRecordsAcrossPages(t *testing.T) {
 func TestLeftoverCheckReadsNextPageAfterProcessingTheFirst(t *testing.T) {
 	f := setup(t)
 	firstPage := make([]string, 0, store.BatchSize)
-	for range store.BatchSize - 1 {
-		name, _ := f.deletedWithAddress(scanIP)
+	firstHosts := make([]store.Host, store.BatchSize-1)
+	for i := range firstHosts {
+		firstHosts[i] = f.runningWithAddress(scanIP)
+	}
+	below := f.runningWithAddress(scanIP)
+	lastFirstHost := f.runningWithAddress(scanIP)
+	above := f.runningWithAddress(scanIP)
+	trailingHost := f.runningWithAddress(scanIP)
+	for _, host := range firstHosts {
+		name, _ := f.finishHostDelete(host)
 		firstPage = append(firstPage, name)
 	}
 	// Leave a pending delete on each side of the first page's final Seq.
-	below := f.runningWithAddress(scanIP)
-	deleteBelow := f.start(below, store.OpDelete, store.Target{})
-	pageEnd, _ := f.deletedWithAddress(scanIP)
-	above := f.runningWithAddress(scanIP)
-	deleteAbove := f.start(above, store.OpDelete, store.Target{})
-	trailing, _ := f.deletedWithAddress(scanIP)
+	deleteBelow := f.deleteHost(below, true, author)
+	pageEnd, _ := f.finishHostDelete(lastFirstHost)
+	deleteAbove := f.deleteHost(above, true, author)
+	trailing, _ := f.finishHostDelete(trailingHost)
 	belowName := below.Name + "." + f.cfg.Hosts.Domain
 	aboveName := above.Name + "." + f.cfg.Hosts.Domain
 	firstPage = append(firstPage, pageEnd)

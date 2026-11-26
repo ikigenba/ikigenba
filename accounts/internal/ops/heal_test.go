@@ -35,7 +35,7 @@ func TestRecordCheckCoversOnlyLiveHostsWithAnAddress(t *testing.T) {
 	resizing := f.runningWithAddress(scanIP)
 	f.start(resizing, store.OpResize, store.Target{Type: "t4g.large"})
 	deleting := f.runningWithAddress(scanIP)
-	f.start(deleting, store.OpDelete, store.Target{})
+	f.deleteHost(deleting, true, author)
 	failed, failOp := f.create()
 	ok(t, f.st.Advance(f.ctx, failOp.ID, store.Update{EIP: scanIP}))
 	ok(t, f.st.Fail(f.ctx, failOp.ID, "fixture failure"))
@@ -255,7 +255,7 @@ func TestRecordCheckSkipsHostDeletedAfterPageRead(t *testing.T) {
 		records: map[string][]cloud.Record{firstName: {{Type: "TXT", Values: []string{"unrelated"}}}},
 		find: func(name string) error {
 			if name == firstName && !deleted {
-				op := f.start(first, store.OpDelete, store.Target{})
+				op := f.deleteHost(first, true, author)
 				ok(t, f.st.Finish(f.ctx, op.ID, store.Update{}))
 				deleted = true
 			}

@@ -71,13 +71,18 @@ func landing(w http.ResponseWriter, r *http.Request, cfg Config, banner page.Ban
 		return
 	}
 	var hosts []store.Host
+	var volumes []store.KeptVolume
 	var accounts []store.Account
 	var users []store.User
-	var hw, aw, uw window
+	var hw, vw, aw, uw window
 	ctx := r.Context()
 	err := store.ReadSnapshot(ctx, cfg.Store, func(snapshot *store.Snapshot) error {
 		var err error
 		hosts, hw, err = hostListing(snapshot).read(ctx, positions.hosts, positions.hostSeq)
+		if err != nil {
+			return err
+		}
+		volumes, vw, err = volumeListing(snapshot).read(ctx, positions.volumes, positions.volume)
 		if err != nil {
 			return err
 		}
@@ -92,8 +97,8 @@ func landing(w http.ResponseWriter, r *http.Request, cfg Config, banner page.Ban
 		refusal(w, r, store.Unreachable)
 		return
 	}
-	if hw.underflow || aw.underflow || uw.underflow {
-		redirect(w, http.StatusSeeOther, canonicalLanding(hw, aw, uw))
+	if hw.underflow || vw.underflow || aw.underflow || uw.underflow {
+		redirect(w, http.StatusSeeOther, canonicalLanding(hw, aw, uw, vw))
 		return
 	}
 	data.Domain = cfg.Domain
@@ -101,6 +106,10 @@ func landing(w http.ResponseWriter, r *http.Request, cfg Config, banner page.Ban
 	now := cfg.Now()
 	for _, h := range hosts {
 		data.Hosts = append(data.Hosts, hostRow(h, cfg.Domain, now))
+	}
+	data.KeptVolumes = make([]KeptVolumeRow, 0, len(volumes))
+	for _, v := range volumes {
+		data.KeptVolumes = append(data.KeptVolumes, keptVolumeRow(v))
 	}
 	data.Accounts = make([]AccountRow, 0, len(accounts))
 	for _, a := range accounts {
@@ -111,6 +120,7 @@ func landing(w http.ResponseWriter, r *http.Request, cfg Config, banner page.Ban
 		data.Users = append(data.Users, userRow(u))
 	}
 	data.HostsPage, data.HostsPrev, data.HostsNext = hw.value, hw.prev, hw.next
+	data.VolumesPage, data.VolumesPrev, data.VolumesNext = vw.value, vw.prev, vw.next
 	data.AccountsPage, data.AccountsPrev, data.AccountsNext = aw.value, aw.prev, aw.next
 	data.UsersPage, data.UsersPrev, data.UsersNext = uw.value, uw.prev, uw.next
 	cfg.Pages.Write(w, r, http.StatusOK, "landing", data)

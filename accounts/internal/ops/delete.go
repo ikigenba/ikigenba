@@ -113,7 +113,14 @@ func (s step) release() error {
 	if err != nil {
 		return err
 	}
+	if s.deletesData() {
+		return s.next(StepDeleteData)
+	}
 	return s.next(StepOrphan)
+}
+
+func (s step) deletesData() bool {
+	return s.op.Kind == store.OpDelete && s.h.OnDelete == store.OnDeleteDelete
 }
 
 func (s step) orphan() error {
@@ -136,6 +143,55 @@ func (s step) orphan() error {
 	})
 	if err != nil {
 		return err
+	}
+	return s.finish(store.Update{})
+}
+
+func (s step) findDataVolumes(skipStored bool, use func(id, state string) error) error {
+	cl := s.cfg.Cloud
+	if s.h.DataVolume != "" {
+		v, err := cl.DescribeVolume(s.ctx, s.h.DataVolume)
+		if absentOK(err) != nil {
+			return err
+		}
+		if err == nil {
+			if err := use(s.h.DataVolume, v.State); err != nil {
+				return err
+			}
+		}
+	}
+	return s.creates(func(id string) error {
+		return eachResource(s.ctx, lookup(cloud.KindHostData, id), cl.FindVolumes, func(v cloud.Volume) error {
+			if skipStored && v.ID == s.h.DataVolume {
+				return nil
+			}
+			return use(v.ID, v.State)
+		})
+	})
+}
+
+func (s step) deleteData() error {
+	if err := s.findDataVolumes(true, func(id, state string) error {
+		if state == cloud.VolumeDeleting || state == cloud.VolumeDeleted {
+			return nil
+		}
+		return absentOK(s.cfg.Cloud.DeleteVolume(s.ctx, id))
+	}); err != nil {
+		return err
+	}
+	return s.next(StepWaitDataDeleted)
+}
+
+func (s step) waitDataDeleted() error {
+	pending := false
+	if err := s.findDataVolumes(false, func(_, state string) error {
+		pending = pending || state != cloud.VolumeDeleted
+		return nil
+	}); err != nil {
+		return err
+	}
+	if pending {
+		return s.wait()
 	}
 	return s.finish(store.Update{})
 }

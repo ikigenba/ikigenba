@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -16,14 +18,20 @@ const hostFields = `name, seq, state, reason, instance_type, root_gb, data_gb, i
 const hostSelect = `SELECT ` + hostFields +
 	`, (SELECT count(*) FROM accounts WHERE host = hosts.name),
 	coalesce((SELECT host_records.record_change FROM host_records WHERE host_records.host_name = hosts.name), ''),
-	coalesce((SELECT host_records.record_reason FROM host_records WHERE host_records.host_name = hosts.name), '')
+	coalesce((SELECT host_records.record_reason FROM host_records WHERE host_records.host_name = hosts.name), ''),
+	CASE WHEN hosts.state IN ('deleting', 'failed') THEN coalesce((
+		SELECT CASE WHEN delete_choices.keep_data = 0 THEN 'delete' ELSE 'keep' END
+		FROM operations LEFT JOIN delete_choices ON delete_choices.operation_id = operations.id
+		WHERE operations.id = hosts.operation AND operations.kind = 'delete'
+	), '') ELSE '' END
 	FROM hosts`
 
 func scanHost(q query, r scanner) (h Host, err error) {
 	if err := r.Scan(&h.Name, &h.Seq, &h.State, &h.Reason, &h.Type, &h.RootGB, &h.DataGB,
 		&h.InstanceID, &h.RootVolume, &h.DataVolume, &h.AllocationID, &h.AssociationID, &h.EIP, &h.AZ,
 		&h.Version, &h.Applied, &h.Attempted, &h.ReportError, &h.Alarm, storedTime{&h.RunningSince},
-		storedTime{&h.Reported}, &h.Operation, storedTime{&h.Created}, &h.CreatedBy, &h.Accounts, &h.Change, &h.RecordReason); err != nil {
+		storedTime{&h.Reported}, &h.Operation, storedTime{&h.Created}, &h.CreatedBy, &h.Accounts, &h.Change, &h.RecordReason,
+		&h.OnDelete); err != nil {
 		return Host{}, err
 	}
 	h.Allowlist, err = allowlist(q, h.Name)
@@ -65,7 +73,11 @@ func (s *Store) CreateHost(ctx context.Context, spec HostSpec, c identity.Caller
 		if err != nil {
 			return hostOp{}, err
 		}
-		h := Host{Name: fmt.Sprintf("host%02d", seq), Seq: seq, State: HostProvisioning, Type: spec.Type,
+		name, err := nextHostName(w.query)
+		if err != nil {
+			return hostOp{}, err
+		}
+		h := Host{Name: name, Seq: seq, State: HostProvisioning, Type: spec.Type,
 			RootGB: spec.RootGB, DataGB: spec.DataGB, Version: 1, Created: stamp, CreatedBy: c.UserID, Allowlist: []string{}}
 		op, err := s.newOperation(w.query, Operation{Host: h.Name, Kind: OpCreate, Caller: c}, stamp)
 		if err != nil {
@@ -75,6 +87,48 @@ func (s *Store) CreateHost(ctx context.Context, spec HostSpec, c identity.Caller
 		return hostOp{h, op}, insertHost(w.query, h)
 	})
 	return out.host, out.op, err
+}
+
+func nextHostName(q query) (string, error) {
+	for number := int64(1); ; number++ {
+		name := fmt.Sprintf("host%02d", number)
+		var seq int64
+		var state string
+		err := q.row("SELECT seq, state FROM hosts WHERE name = ?", name).Scan(&seq, &state)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return name, nil
+		case err != nil:
+			return "", err
+		case state == HostDeleted:
+			return name, vacateHost(q, name, seq)
+		}
+	}
+}
+
+func vacateHost(q query, name string, seq int64) error {
+	key := fmt.Sprintf("%s#%d", name, seq)
+	// Adopt before the old host's name changes. The report has an immediate
+	// foreign key, while the moved operations' foreign key is deferred.
+	if err := adoptVacatedVolume(q, name); err != nil {
+		return err
+	}
+	for _, stmt := range []string{"DELETE FROM reports WHERE host = ?",
+		"DELETE FROM host_allowlist WHERE host = ?", "DELETE FROM host_unbans WHERE host = ?"} {
+		if err := q.exec(stmt, name); err != nil {
+			return err
+		}
+	}
+	if err := q.exec("UPDATE hosts SET name = ? WHERE name = ?", key, name); err != nil {
+		return err
+	}
+	if err := q.exec("UPDATE operations SET host = ? WHERE host = ?", key, name); err != nil {
+		return err
+	}
+	if err := q.exec("UPDATE host_records SET host_name = ? WHERE host_name = ?", key, name); err != nil {
+		return err
+	}
+	return settleDeleted(q, key)
 }
 
 // Host reads a live host by name.
@@ -182,8 +236,17 @@ var transitional = map[string]string{OpCreate: HostProvisioning, OpStop: HostSto
 
 // StartHostOp checks the host's guards and records a new host operation.
 func (s *Store) StartHostOp(ctx context.Context, name, kind string, target Target, c identity.Caller) (Host, Operation, error) {
-	valid := name != "" && validCaller(c) && kind != OpCreate && transitional[kind] != "" &&
-		(kind != OpResize || target.RootGB >= 0 && target.DataGB >= 0)
+	valid := kind == OpStop || kind == OpStart || kind == OpResize && target.RootGB >= 0 && target.DataGB >= 0
+	return s.startHostOp(ctx, name, kind, target, c, valid, true)
+}
+
+// DeleteHost records a host deletion and its choice about the data volume.
+func (s *Store) DeleteHost(ctx context.Context, name string, keepData bool, c identity.Caller) (Host, Operation, error) {
+	return s.startHostOp(ctx, name, OpDelete, Target{}, c, true, keepData)
+}
+
+func (s *Store) startHostOp(ctx context.Context, name, kind string, target Target, c identity.Caller, valid, keepData bool) (Host, Operation, error) {
+	valid = valid && name != "" && validCaller(c)
 	out, err := write(ctx, s, valid, func(w *writing) (hostOp, error) {
 		h, err := getHost(w.query, name)
 		if err != nil {
@@ -208,6 +271,15 @@ func (s *Store) StartHostOp(ctx context.Context, name, kind string, target Targe
 			return hostOp{}, err
 		}
 		h.State, h.Reason, h.Operation = transitional[kind], "", op.ID
+		if kind == OpDelete {
+			if err := w.exec("INSERT INTO delete_choices (operation_id, keep_data) VALUES (?, ?)", op.ID, keepData); err != nil {
+				return hostOp{}, err
+			}
+			h.OnDelete = OnDeleteKeep
+			if !keepData {
+				h.OnDelete = OnDeleteDelete
+			}
+		}
 		return hostOp{h, op}, saveHostState(w.query, h)
 	})
 	return out.host, out.op, err

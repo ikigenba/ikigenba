@@ -29,11 +29,11 @@ func (s *Server) serveBox(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, BadRequest, http.StatusBadRequest)
 		return
 	}
-	host, ok := s.identify(w, r)
-	if !ok {
+	host, verified := s.identify(w, r)
+	if verified == nil {
 		return
 	}
-	user, err := s.store.ActiveUserByUID(r.Context(), host.Name, uid)
+	user, err := s.store.ActiveUserByUID(verified.Context(), host.Name, uid)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			http.Error(w, NotUser, http.StatusForbidden)
@@ -49,7 +49,7 @@ func (s *Server) serveBox(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, Busy, http.StatusServiceUnavailable)
 		return
 	}
-	s.forwardBox(w, r, user)
+	s.forwardBox(w, verified, user)
 }
 
 func parseUID(raw string) (int64, error) {

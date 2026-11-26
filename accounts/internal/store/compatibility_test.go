@@ -96,6 +96,12 @@ func TestInvalidInput(t *testing.T) {
 	for _, call := range []observation{
 		observe2(s.CreateHost(ctx, store.HostSpec{Type: "type", RootGB: -1, DataGB: 10}, caller)),
 		observe2(s.StartHostOp(ctx, h.Name, "", store.Target{}, caller)),
+		observe2(s.DeleteHost(ctx, "", true, caller)),
+		observe(s.KeptVolume(ctx, "")),
+		observe(s.DeleteKeptVolume(ctx, "", caller)),
+		noOutput(s.DeferVolumeDelete(ctx, "", baseTime, 1)),
+		noOutput(s.FinishVolumeDelete(ctx, "")),
+		noOutput(s.FailVolumeDelete(ctx, "", "refusal")),
 		observe2(s.RetryHost(ctx, h.Name, (store.Operation{}).Caller)), observe(s.Operation(ctx, "")),
 		observe(s.OperationsOf(ctx, "", "", 1)), noOutput(s.RecordStep(ctx, op.ID, "", 1, baseTime)),
 		noOutput(s.RecordStep(ctx, op.ID, "step", 0, baseTime)), noOutput(s.Advance(ctx, op.ID, store.Update{DataGB: -1})),
@@ -169,7 +175,13 @@ func TestDatabaseFailuresTakePrecedence(t *testing.T) {
 	check := func(c context.Context, cause error) {
 		t.Helper()
 		calls := append(exercise(c, s, h.Name, op.ID), inviteExercise(c, s, h.Name)...)
-		calls = append(calls, noOutput(s.SettleDeleted(c, h.Name)))
+		calls = append(calls, noOutput(s.SettleDeleted(c, h.Name)),
+			observe2(s.DeleteHost(c, h.Name, false, caller)), observe(s.AdoptKept(c, 1)),
+			observe(s.KeptVolume(c, "vol-data")), observe(s.DeleteKeptVolume(c, "vol-data", caller)),
+			observe(s.ListKeptVolumes(c, time.Time{}, "", 1)), observe(s.ListKeptVolumesBefore(c, baseTime, "vol-data", 1)),
+			observe(s.LastKeptVolumes(c, 1)), observe(s.DueVolumeDeletes(c, baseTime, "", 1)),
+			noOutput(s.DeferVolumeDelete(c, "vol-data", baseTime, 1)), noOutput(s.FinishVolumeDelete(c, "vol-data")),
+			noOutput(s.FailVolumeDelete(c, "vol-data", "refusal")))
 		for _, call := range calls {
 			call.assertZero(t, store.ErrUnreachable)
 			if cause != nil {
@@ -241,7 +253,9 @@ func TestAdditiveMigrations(t *testing.T) {
 	bansSchema := value(t, result(fs.ReadFile(migrations, "0003_bans.sql")))
 	inviteSchema := value(t, result(fs.ReadFile(migrations, "0004_invites.sql")))
 	hostRecordsSchema := value(t, result(fs.ReadFile(migrations, "0005_host_records.sql")))
-	for _, table := range tableNames(string(old) + string(newSchema) + string(bansSchema) + string(inviteSchema) + string(hostRecordsSchema)) {
+	keptSchema := value(t, result(fs.ReadFile(migrations, "0006_kept_volumes.sql")))
+	for _, table := range tableNames(string(old) + string(newSchema) + string(bansSchema) + string(inviteSchema) +
+		string(hostRecordsSchema) + string(keptSchema)) {
 		extra.WriteString("ALTER TABLE " + table + " ADD COLUMN future_note TEXT;\n")
 	}
 	extra.WriteString(`ALTER TABLE host_records ADD COLUMN name TEXT;
@@ -251,7 +265,8 @@ ALTER TABLE hosts ADD COLUMN record_reason TEXT;
 `)
 	expanded := fstest.MapFS{"0001_accounts.sql": {Data: old}, "0002_hosts.sql": {Data: newSchema},
 		"0003_bans.sql": {Data: bansSchema}, "0004_invites.sql": {Data: inviteSchema},
-		"0005_host_records.sql": {Data: hostRecordsSchema}, "0006_expand.sql": {Data: []byte(extra.String())}}
+		"0005_host_records.sql": {Data: hostRecordsSchema}, "0006_kept_volumes.sql": {Data: keptSchema},
+		"0007_expand.sql": {Data: []byte(extra.String())}}
 	cfg.Rand = new(counterRandom)
 	_, withExtra := open(t, filepath.Join(t.TempDir(), "expand.db"), expanded, cfg)
 	for _, s := range []*store.Store{baseline, withoutLegacy, withExtra} {
@@ -276,16 +291,50 @@ ALTER TABLE hosts ADD COLUMN record_reason TEXT;
 		closed(t, w, true)
 		cancel()
 	}
-	for _, s := range []*store.Store{baseline, withoutLegacy, withExtra} {
+	const volume = "vol-deleted-host"
+	var wantVolumes []observation
+	for i, s := range []*store.Store{baseline, withoutLegacy, withExtra} {
 		h, creation := create(t, s)
-		checkErr(t, s.Finish(ctx, creation.ID, store.Update{EIP: "192.0.2.9"}), nil)
-		deleting, deletion := start(t, s, h.Name, store.OpDelete, store.Target{})
+		checkErr(t, s.Finish(ctx, creation.ID, store.Update{EIP: "192.0.2.9", DataVolume: volume}), nil)
+		deleting, deletion := deleteHost(t, s, h.Name, true)
 		checkErr(t, s.Finish(ctx, deletion.ID, store.Update{}), nil)
 		deleting.State = store.HostDeleted
+		deleting.OnDelete = ""
 		deleting.EIP = "192.0.2.9"
 		eq(t, value(t, result(s.DeletedHosts(ctx, 0, 1))), []store.Host{deleting})
 		checkErr(t, s.SettleDeleted(ctx, h.Name), nil)
 		eq(t, value(t, result(s.DeletedHosts(ctx, 0, 1))), []store.Host{})
+		observed := keptVolumeExercise(s, volume)
+		if i == 0 {
+			for _, call := range observed {
+				checkErr(t, call.err, nil)
+			}
+			wantVolumes = observed
+		} else {
+			eq(t, observed, wantVolumes)
+		}
+	}
+}
+
+func keptVolumeExercise(s *store.Store, volume string) []observation {
+	stamp := baseTime.Truncate(time.Second)
+	next := stamp.Add(time.Minute)
+	return []observation{
+		observe(s.KeptVolume(ctx, volume)),
+		observe(s.ListKeptVolumes(ctx, time.Time{}, "", 1)),
+		observe(s.ListKeptVolumesBefore(ctx, stamp.Add(time.Second), "", 1)),
+		observe(s.LastKeptVolumes(ctx, 1)),
+		observe(s.DeleteKeptVolume(ctx, volume, caller)),
+		observe(s.DueVolumeDeletes(ctx, stamp, "", 1)),
+		noOutput(s.DeferVolumeDelete(ctx, volume, next, 1)),
+		observe(s.NextTry(ctx)),
+		observe(s.DueVolumeDeletes(ctx, next, "", 1)),
+		noOutput(s.FailVolumeDelete(ctx, volume, "refusal")),
+		observe(s.KeptVolume(ctx, volume)),
+		observe(s.DeleteKeptVolume(ctx, volume, caller)),
+		noOutput(s.FinishVolumeDelete(ctx, volume)),
+		observe(s.AdoptKept(ctx, 1)),
+		observe(s.LastKeptVolumes(ctx, 1)),
 	}
 }
 

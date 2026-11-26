@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/tools"
@@ -41,15 +42,17 @@ func decode(name, value string, key ...any) position {
 }
 
 type listPositions struct {
-	hosts, accounts, users      position
-	hostSeq                     int64
-	slug, userAccount, userName string
+	hosts, accounts, users, volumes position
+	hostSeq                         int64
+	slug, userAccount, userName     string
+	volume                          volumeKey
 }
 
 const (
 	hostsPage    = "hosts_page"
 	accountsPage = "accounts_page"
 	usersPage    = "users_page"
+	volumesPage  = "volumes_page"
 )
 
 func readPositions(query url.Values) listPositions {
@@ -57,11 +60,16 @@ func readPositions(query url.Values) listPositions {
 	p.hosts = decode(tools.ToolHosts, query.Get(hostsPage), &p.hostSeq)
 	p.accounts = decode(tools.ToolAccounts, query.Get(accountsPage), &p.slug)
 	p.users = decode(tools.ToolUsers, query.Get(usersPage), &p.userAccount, &p.userName)
+	var deleted int64
+	p.volumes = decode(tools.ToolKeptVolumes, query.Get(volumesPage), &deleted, &p.volume.id)
+	if p.volumes.direction == before || p.volumes.direction == after {
+		p.volume.deleted = time.Unix(0, deleted)
+	}
 	return p
 }
 
 func (p listPositions) valid() bool {
-	return p.hosts.direction != invalid && p.accounts.direction != invalid && p.users.direction != invalid
+	return p.hosts.direction != invalid && p.accounts.direction != invalid && p.users.direction != invalid && p.volumes.direction != invalid
 }
 
 type window struct {
@@ -77,9 +85,9 @@ func (w window) canonical(parameter string) string {
 	return parameter + "=" + url.QueryEscape(w.value)
 }
 
-func canonicalLanding(hosts, accounts, users window) string {
+func canonicalLanding(hosts, accounts, users, volumes window) string {
 	var parameters []string
-	for _, encoded := range []string{hosts.canonical(hostsPage), accounts.canonical(accountsPage), users.canonical(usersPage)} {
+	for _, encoded := range []string{hosts.canonical(hostsPage), accounts.canonical(accountsPage), users.canonical(usersPage), volumes.canonical(volumesPage)} {
 		if encoded != "" {
 			parameters = append(parameters, encoded)
 		}
@@ -88,6 +96,28 @@ func canonicalLanding(hosts, accounts, users window) string {
 		return "/"
 	}
 	return "/?" + strings.Join(parameters, "&")
+}
+
+type volumeKey struct {
+	deleted time.Time
+	id      string
+}
+
+func volumeListing(st *store.Snapshot) listing[store.KeptVolume, volumeKey] {
+	return listing[store.KeptVolume, volumeKey]{
+		name: tools.ToolKeptVolumes,
+		key:  func(v store.KeptVolume) volumeKey { return volumeKey{v.Deleted, v.Volume} },
+		encode: func(t paging.Token, k volumeKey) string {
+			return t.Encode(k.deleted.UnixNano(), k.id)
+		},
+		forward: func(ctx context.Context, k volumeKey, n int) ([]store.KeptVolume, error) {
+			return st.ListKeptVolumes(ctx, k.deleted, k.id, n)
+		},
+		backward: func(ctx context.Context, k volumeKey, n int) ([]store.KeptVolume, error) {
+			return st.ListKeptVolumesBefore(ctx, k.deleted, k.id, n)
+		},
+		last: st.LastKeptVolumes,
+	}
 }
 
 type listing[T, K any] struct {

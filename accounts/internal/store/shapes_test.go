@@ -12,7 +12,7 @@ import (
 // These assignments use the public values as unnamed structs, so field order
 // and field types have to agree for the tests to compile.
 
-// R-D996-QDPE
+// R-6UA8-9J5K
 var _ struct {
 	Name                                                                     string
 	Seq                                                                      int64
@@ -29,7 +29,34 @@ var _ struct {
 	CreatedBy                                                                string
 	Allowlist                                                                []string
 	Change, RecordReason                                                     string
+	OnDelete                                                                 string
 } = store.Host{}
+
+// R-6XXX-EUDN
+var _ struct {
+	Volume, Host  string
+	SizeGB        int
+	Deleted       time.Time
+	State, Reason string
+	Attempts      int
+	NextTry       time.Time
+	Caller        identity.Caller
+} = store.KeptVolume{}
+
+// R-70DQ-6DV1
+var _ interface {
+	DeleteHost(context.Context, string, bool, identity.Caller) (store.Host, store.Operation, error)
+	KeptVolume(context.Context, string) (store.KeptVolume, error)
+	ListKeptVolumes(context.Context, time.Time, string, int) ([]store.KeptVolume, error)
+	ListKeptVolumesBefore(context.Context, time.Time, string, int) ([]store.KeptVolume, error)
+	LastKeptVolumes(context.Context, int) ([]store.KeptVolume, error)
+	DeleteKeptVolume(context.Context, string, identity.Caller) (store.KeptVolume, error)
+	DueVolumeDeletes(context.Context, time.Time, string, int) ([]store.KeptVolume, error)
+	DeferVolumeDelete(context.Context, string, time.Time, int) error
+	FinishVolumeDelete(context.Context, string) error
+	FailVolumeDelete(context.Context, string, string) error
+	AdoptKept(context.Context, int) (int, error)
+} = (*store.Store)(nil)
 
 // R-DAH3-45G3
 var _ interface {
@@ -166,6 +193,13 @@ const (
 	_ namedString = store.OpDelete
 	_ namedString = store.OpPlace
 	_ namedString = store.OpUnplace
+
+	// R-6VI4-NAW9
+	_ namedString = store.OnDeleteKeep
+	_ namedString = store.OnDeleteDelete
+	_ namedString = store.VolumeKept
+	_ namedString = store.VolumeDeleting
+	_ namedString = store.VolumeDeleted
 )
 
 // R-BUSH-HQWW
