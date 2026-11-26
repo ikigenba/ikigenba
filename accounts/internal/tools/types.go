@@ -168,8 +168,8 @@ type HostArgs struct {
 
 // DeleteHostArgs names a host and selects whether to keep its data volume.
 type DeleteHostArgs struct {
-	Host     string `json:"host" mcp:"required"`
-	KeepData *bool  `json:"keep_data"`
+	Host     string `json:"host" description:"SSH host name." mcp:"required"`
+	KeepData *bool  `json:"keep_data" description:"Keep the data volume when deleting the host. Defaults to true."`
 }
 
 // KeptVolumesArgs selects a window of kept data volumes.
@@ -180,7 +180,7 @@ type KeptVolumesArgs struct {
 
 // KeptVolumeArgs identifies a kept data volume.
 type KeptVolumeArgs struct {
-	Volume string `json:"volume" mcp:"required"`
+	Volume string `json:"volume" description:"Kept data volume ID." mcp:"required"`
 }
 
 // CreateHostArgs specifies the resources for a new host.

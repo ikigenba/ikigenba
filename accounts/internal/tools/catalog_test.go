@@ -4,14 +4,20 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"testing"
+	"time"
 
+	accounts "github.com/ikigenba/ikigenba/accounts"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 	"github.com/ikigenba/ikigenba/accounts/internal/settings"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/tools"
+	"github.com/ikigenba/ikigenba/accounts/internal/valid"
+	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/appkit/paging"
@@ -146,6 +152,7 @@ func checkRequired(t *testing.T, s schema) {
 }
 
 // R-51DJ-TTH0 R-YDET-CHO2 R-YEMP-Q9ER R-CL1V-ZGDI R-0M6M-CTTA R-CNHO-QZUW R-COPL-4RLL R-CTL6-NUKD R-CUT3-1MB2 R-CW0Z-FE1R R-Z7CV-COS5 R-Z8KR-QGIU R-ZDGD-9JHM R-0SA4-9OIR R-0TI0-NG9G
+// R-9O8N-SZRE R-0X5P-SRHJ R-0YDM-6J88 R-YFUM-415G R-0UPX-1805
 func TestCatalogAndSchemas(t *testing.T) {
 	const (
 		_ = tools.DescribeHosts
@@ -218,7 +225,7 @@ func TestCatalogAndSchemas(t *testing.T) {
 
 func schemaProbeClient(t *testing.T, writer *telemetry.Writer, entries []entry) *mcp.Client {
 	t.Helper()
-	probe := mcp.NewServer(mcp.ServerConfig{Name: "schema-probe", Telemetry: writer})
+	probe := mcp.NewServer(mcp.ServerConfig{Name: "accounts", Telemetry: writer})
 	for _, tool := range entries {
 		tool.register(probe)
 	}
@@ -227,53 +234,116 @@ func schemaProbeClient(t *testing.T, writer *telemetry.Writer, entries []entry) 
 	return mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL})
 }
 
+// R-9O8N-SZRE
 func TestMCPArgumentValidation(t *testing.T) {
 	f := setup(t)
 	f.serveLoopback()
+	host, _ := f.seedHost(true)
+	accountHost, _ := f.seedHost(true)
+	const account, username = "acme", "daffy"
+	f.seedAccount(account, accountHost.Name)
+	answer[tools.UserChange](t, f.call(tools.ToolAddUser, tools.UserKeyArgs{Account: account, User: username, Key: key(1)}))
+	answer[tools.UserChange](t, f.call(tools.ToolSetAdmin, tools.SetAdminArgs{Account: account, User: username, Admin: true}))
+	deletedHost, _ := f.seedHost(true)
+	volume := f.finishKeeping(f.host(deletedHost.Name)).Volume
+	beforeHost, beforeUser, beforeVolume := f.host(host.Name), f.user(account, username), f.keptOnRecord(volume)
 	entries := catalog()
-	client := schemaProbeClient(t, f.w, entries)
+	probe := schemaProbeClient(t, f.w, entries)
 	for _, tool := range entries {
-		valid := validArgs(tool)
-		valid["unknown"] = true
-		assertAppkitRefusal(t, f, client, tool.wire, valid)
-
-		for n := range validArgs(tool) {
-			wrong := validArgs(tool)
-			wrong[n] = []string{"wrong"}
-			switch n {
-			case "admin":
-				wrong[n] = "true"
-			case "keep_data":
-				wrong[n] = "false"
+		t.Run(tool.wire, func(t *testing.T) {
+			args := validArgs(tool)
+			if _, ok := args["host"]; ok {
+				args["host"] = host.Name
 			}
-			assertAppkitRefusal(t, f, client, tool.wire, wrong)
-		}
-		for _, n := range tool.required {
-			missing := validArgs(tool)
-			delete(missing, n)
-			assertAppkitRefusal(t, f, client, tool.wire, missing)
-		}
+			if _, ok := args["volume"]; ok {
+				args["volume"] = volume
+			}
+			extra := maps.Clone(args)
+			extra["unknown"] = true
+			assertAppkitRefusal(t, f, probe, tool.wire, extra)
+
+			for _, n := range slices.Concat(tool.required, tool.optional) {
+				wrong := maps.Clone(args)
+				wrong[n] = []string{"wrong"}
+				assertAppkitRefusal(t, f, probe, tool.wire, wrong)
+				switch n {
+				case "admin":
+					wrong[n] = "true"
+					assertAppkitRefusal(t, f, probe, tool.wire, wrong)
+				case "keep_data":
+					wrong[n] = "false"
+					assertAppkitRefusal(t, f, probe, tool.wire, wrong)
+				}
+			}
+			for _, n := range tool.required {
+				missing := maps.Clone(args)
+				delete(missing, n)
+				assertAppkitRefusal(t, f, probe, tool.wire, missing)
+			}
+		})
 	}
-	if len(f.changes()) != 0 || len(f.cloud.lookups) != 0 || f.wakes != 0 {
-		t.Fatal("invalid argument reached a handler")
+	if len(f.cloud.lookups) != 0 || f.wakes != 0 {
+		t.Fatalf("invalid calls made %d cloud requests and %d wake calls", len(f.cloud.lookups), f.wakes)
+	}
+
+	d, err := db.Open(t.Context(), db.Config{
+		Path: f.path, Migrations: accounts.Migrations(), Now: func() time.Time { return f.now }, Service: "accounts",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := d.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	reopened := store.New(d, store.Config{Now: func() time.Time { return f.now }})
+	if after, err := reopened.Host(t.Context(), host.Name); err != nil || !reflect.DeepEqual(after, beforeHost) {
+		t.Errorf("host after invalid calls: %+v, want %+v (%v)", after, beforeHost, err)
+	}
+	if after, err := reopened.User(t.Context(), account, username); err != nil || !reflect.DeepEqual(after, beforeUser) {
+		t.Errorf("user after invalid calls: %+v, want %+v (%v)", after, beforeUser, err)
+	}
+	if after, err := reopened.KeptVolume(t.Context(), volume); err != nil || after != beforeVolume {
+		t.Errorf("kept volume after invalid calls: %+v, want %+v (%v)", after, beforeVolume, err)
 	}
 }
 
-func assertAppkitRefusal(t *testing.T, f *fixture, client *mcp.Client, tool string, args map[string]any) {
+func assertAppkitRefusal(t *testing.T, f *fixture, probe *mcp.Client, tool string, args map[string]any) {
 	t.Helper()
 	wire, err := json.Marshal(args)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := client.CallTool(t.Context(), f.caller, tool, wire)
+	before := len(allEvents(t, f))
+	want, err := probe.CallTool(t.Context(), f.caller, tool, wire)
 	if err != nil {
 		t.Fatal(err)
 	}
-	probe := unpack(t, want)
-	if !want.IsError() || len(probe.Content) != 1 {
+	if !want.IsError() {
 		t.Fatalf("appkit accepted invalid %s args %s", tool, wire)
 	}
-	refusal(t, f.call(tool, args), probe.Content[0].Text)
+	probeEvents := allEvents(t, f)[before:]
+	got, err := f.client.CallTool(t.Context(), f.caller, tool, wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantJSON, err := want.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotJSON, err := got.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(gotJSON, wantJSON) {
+		t.Fatalf("%s args %s: got %s, want %s", tool, wire, gotJSON, wantJSON)
+	}
+	gotEvents := allEvents(t, f)[before+len(probeEvents):]
+	// The probe's call outcome identifies an appkit refusal before the handler runs.
+	if !reflect.DeepEqual(gotEvents, probeEvents) {
+		t.Fatalf("%s args %s: captured events %+v, want %+v", tool, wire, gotEvents, probeEvents)
+	}
 }
 
 func checkInput(t *testing.T, info mcp.ToolInfo, expected entry) {
@@ -282,6 +352,7 @@ func checkInput(t *testing.T, info mcp.ToolInfo, expected entry) {
 		"page": paging.PageDescription, "limit": paging.LimitDescription,
 		"host": tools.ArgHost, "account": tools.ArgAccount, "user": tools.ArgUser, "ip": tools.ArgIP,
 		"key": tools.ArgKey, "admin": tools.ArgAdmin, "invite": tools.ArgInvite, "type": tools.ArgType, "root_gb": tools.ArgRootGB, "data_gb": tools.ArgDataGB,
+		"keep_data": tools.ArgKeepData, "volume": tools.ArgVolume,
 	}
 	var in schema
 	if err := json.Unmarshal(info.InputSchema, &in); err != nil {
@@ -307,12 +378,7 @@ func checkInput(t *testing.T, info mcp.ToolInfo, expected entry) {
 			kind = "integer"
 		}
 		expectedType := `"` + kind + `"`
-		description, checkDescription := copyByField[n]
-		// The new non-paging descriptions have an open copy contract issue.
-		if expected.wire == tools.ToolDeleteHost && n == "host" {
-			checkDescription = false
-		}
-		if checkDescription && properties[n].Description != description || string(properties[n].Type) != expectedType {
+		if properties[n].Description != copyByField[n] || string(properties[n].Type) != expectedType {
 			t.Fatalf("unexpected schema for %s.%s: %s", info.Name, n, info.InputSchema)
 		}
 	}
@@ -322,6 +388,14 @@ func validArgs(expected entry) map[string]any {
 	args := map[string]any{}
 	for _, n := range slices.Concat(expected.required, expected.optional) {
 		switch n {
+		case "host":
+			args[n] = "host01"
+		case "account":
+			args[n] = "acme"
+		case "user":
+			args[n] = "daffy"
+		case "key":
+			args[n] = key(1)
 		case "ip":
 			args[n] = "192.0.2.7"
 		case "admin", "keep_data":
@@ -330,16 +404,23 @@ func validArgs(expected entry) map[string]any {
 			args[n] = store.InvitePrefix + "0000000000000000"
 		case "page":
 			args[n] = ""
-		case "limit", "root_gb", "data_gb":
+		case "limit":
 			args[n] = 25
-		default:
-			args[n] = "value"
+		case "root_gb":
+			args[n] = valid.DefaultRootGB
+		case "data_gb":
+			args[n] = valid.DefaultDataGB
+		case "type":
+			args[n] = valid.DefaultType
+		case "volume":
+			args[n] = "vol-example"
 		}
 	}
 	return args
 }
 
 // R-CDQH-OTXC R-YIAE-VKMU R-YJIB-9CDJ R-YKQ7-N448 R-YLY4-0VUX R-YN60-ENLM
+// R-0X5P-SRHJ R-0YDM-6J88
 func TestInputTypes(t *testing.T) {
 	t.Helper()
 	// Conversion to an anonymous struct checks the declared field names, order and types.
@@ -365,6 +446,15 @@ func TestInputTypes(t *testing.T) {
 		Limit         *int
 	}(tools.UsersArgs{})
 	_ = struct{ Host string }(tools.HostArgs{})
+	_ = struct {
+		Host     string
+		KeepData *bool
+	}(tools.DeleteHostArgs{})
+	_ = struct {
+		Page  *string
+		Limit *int
+	}(tools.KeptVolumesArgs{})
+	_ = struct{ Volume string }(tools.KeptVolumeArgs{})
 	_ = struct{ Account string }(tools.AccountArgs{})
 	_ = struct{ Account, Host string }(tools.CreateAccountArgs{})
 	_ = struct {

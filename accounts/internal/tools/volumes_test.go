@@ -42,6 +42,7 @@ func (f *fixture) keptOnRecord(volume string) store.KeptVolume {
 	return kept
 }
 
+// R-184T-8P5S R-1AKM-08N6
 func TestKeptVolumePaging(t *testing.T) {
 	f := setup(t)
 	f.serveLoopback()
@@ -75,10 +76,17 @@ func TestKeptVolumePaging(t *testing.T) {
 		t.Fatal(err)
 	}
 	latest.Reason = reason
+	if _, err := f.st.DeleteKeptVolume(ctx, sameSecond.Volume, f.caller); err != nil {
+		t.Fatal(err)
+	}
+	sameSecond.State = store.VolumeDeleting
 
 	want := []tools.KeptVolume{latest, sameSecond, old}
-	if got := listKept(t, f, noArgs); !slices.Equal(got.KeptVolumes, want) || got.Next != nil {
-		t.Fatalf("kept volumes %+v, want %v", got, want)
+	maximum := paging.MaxLimit
+	for _, args := range []tools.KeptVolumesArgs{noArgs, {Limit: &maximum}} {
+		if got := listKept(t, f, args); !slices.Equal(got.KeptVolumes, want) || got.Next != nil {
+			t.Fatalf("kept volumes for %+v = %+v, want %v with no next page", args, got, want)
+		}
 	}
 	one := 1
 	token := paging.Token{Tool: tools.ToolKeptVolumes}
@@ -101,6 +109,15 @@ func TestKeptVolumePaging(t *testing.T) {
 	fractional := token.Encode(f.now.Truncate(time.Second).Add(time.Nanosecond).UnixNano(), "")
 	if got := listKept(t, f, tools.KeptVolumesArgs{Page: &fractional}); !slices.Equal(got.KeptVolumes, want) || got.Next != nil {
 		t.Fatalf("kept volumes after a sub-second cursor %+v, want %v", got, want)
+	}
+	oldSecond := f.now.Add(-time.Second).Truncate(time.Second).UnixNano()
+	afterRemoved := token.Encode(oldSecond, removed.Volume)
+	if got := listKept(t, f, tools.KeptVolumesArgs{Page: &afterRemoved}); !slices.Equal(got.KeptVolumes, []tools.KeptVolume{old}) || got.Next != nil {
+		t.Fatalf("kept volumes after a deleted volume = %+v, want %v with no next page", got, old)
+	}
+	afterOldest := token.Encode(oldSecond, old.Volume)
+	if got := listKept(t, f, tools.KeptVolumesArgs{Page: &afterOldest}); got.KeptVolumes == nil || len(got.KeptVolumes) != 0 || got.Next != nil {
+		t.Fatalf("kept volumes after the oldest = %+v, want an empty slice with no next page", got)
 	}
 }
 

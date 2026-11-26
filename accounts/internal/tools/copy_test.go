@@ -22,7 +22,7 @@ func TestFirstLine(t *testing.T) {
 	}
 }
 
-// R-Y3NM-ABQI R-YH2I-HSW5 R-ZB0K-I008 R-ZC8G-VRQX R-CSDA-A2TO R-CPXH-IJCA R-0VXT-EZQU
+// R-Y3NM-ABQI R-YH2I-HSW5 R-ZB0K-I008 R-ZC8G-VRQX R-CSDA-A2TO R-CPXH-IJCA R-0VXT-EZQU R-YFUM-415G R-0UPX-1805
 func TestCopyAndTimeout(t *testing.T) {
 	const (
 		_ = tools.NotConfigured
@@ -75,6 +75,8 @@ func TestCopyAndTimeout(t *testing.T) {
 		_ = tools.ArgType
 		_ = tools.ArgRootGB
 		_ = tools.ArgDataGB
+		_ = tools.ArgKeepData
+		_ = tools.ArgVolume
 	)
 	refusals := []string{
 		tools.NotConfigured, tools.InvalidName, tools.ReservedName, tools.NameTaken,
@@ -93,7 +95,11 @@ func TestCopyAndTimeout(t *testing.T) {
 		}
 		seen[copy] = true
 	}
-	for _, copy := range []string{tools.ArgHost, tools.ArgAccount, tools.ArgUser, tools.ArgKey, tools.ArgType, tools.ArgRootGB, tools.ArgDataGB, tools.ArgIP, tools.ArgAdmin, tools.ArgInvite} {
+	for _, copy := range []string{
+		tools.ArgHost, tools.ArgAccount, tools.ArgUser, tools.ArgKey,
+		tools.ArgType, tools.ArgRootGB, tools.ArgDataGB, tools.ArgIP,
+		tools.ArgAdmin, tools.ArgInvite, tools.ArgKeepData, tools.ArgVolume,
+	} {
 		if copy == "" || strings.Contains(copy, "\n") {
 			t.Fatalf("invalid argument description %q", copy)
 		}

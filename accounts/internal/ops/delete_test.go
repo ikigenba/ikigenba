@@ -33,12 +33,10 @@ type deletionCloud struct {
 	storedData  cloud.Volume
 	otherData   []cloud.Volume
 	deleteData  []string
-	noRequests  bool
 }
 
 func (c *deletionCloud) lookup(tags cloud.Tags, kind string) bool {
 	c.f.t.Helper()
-	c.request()
 	if tags[cloud.TagOperation] == "" {
 		return false
 	}
@@ -49,7 +47,6 @@ func (c *deletionCloud) lookup(tags cloud.Tags, kind string) bool {
 
 func (c *deletionCloud) checkChoice() {
 	c.f.t.Helper()
-	c.request()
 	op := c.f.operation(c.deleteID)
 	h := c.f.host(op.Host)
 	switch op.Step {
@@ -57,13 +54,6 @@ func (c *deletionCloud) checkChoice() {
 		equal(c.f.t, h.OnDelete, store.OnDeleteDelete)
 	case ops.StepOrphan:
 		equal(c.f.t, h.OnDelete, store.OnDeleteKeep)
-	}
-}
-
-func (c *deletionCloud) request() {
-	c.f.t.Helper()
-	if c.noRequests {
-		c.f.t.Fatal("cloud request while correcting a persisted step")
 	}
 }
 
@@ -395,7 +385,8 @@ func TestDeleteDataResumesAndWaitsForEveryCreateVolume(t *testing.T) {
 		telemetry.Attrs{"host": h.Name, "from": store.HostDeleting, "to": store.HostDeleted, "operation": op.ID}, caller)
 }
 
-func TestDeleteReconcilesPersistedStepWithChoiceWithoutCloudRequest(t *testing.T) {
+// R-QO30-IQDJ R-L0E6-07I2
+func TestDeleteReconcilesPersistedStepWithChoiceAfterCheckingTimeout(t *testing.T) {
 	for _, tc := range []struct {
 		persisted, want string
 		keep            bool
@@ -404,22 +395,38 @@ func TestDeleteReconcilesPersistedStepWithChoiceWithoutCloudRequest(t *testing.T
 		{ops.StepDeleteData, ops.StepOrphan, true},
 		{ops.StepWaitDataDeleted, ops.StepOrphan, true},
 	} {
-		t.Run(tc.persisted, func(t *testing.T) {
-			f := setup(t)
-			h, create := f.create()
-			ok(t, f.st.Finish(f.ctx, create.ID, store.Update{}))
-			op := f.deleteHost(h, tc.keep, author)
-			ok(t, f.st.Advance(f.ctx, op.ID, store.Update{Step: tc.persisted}))
-			cl := &deletionCloud{f: f, createID: create.ID, deleteID: op.ID,
-				recordCloud: &recordCloud{zone: f.cfg.Hosts.ZoneID}, otherData: []cloud.Volume{}}
-			f.cfg.Cloud = cl
-			e := ops.New(f.cfg)
-			ok(t, e.Scan(f.ctx))
-			// Escape neither through the expected request paths nor
-			// through the unimplemented methods of the embedded cloud.
-			cl.noRequests = true
-			equal(t, f.step(e, op.ID).Step, tc.want)
-		})
+		for _, age := range []time.Duration{0, ops.StepTimeout, ops.StepTimeout + time.Second} {
+			t.Run(tc.persisted+"/"+age.String(), func(t *testing.T) {
+				f := setup(t)
+				h, create := f.create()
+				ok(t, f.st.Finish(f.ctx, create.ID, store.Update{DataVolume: "v-stored"}))
+				op := f.deleteHost(h, tc.keep, author)
+				ok(t, f.st.Advance(f.ctx, op.ID, store.Update{Step: tc.persisted}))
+
+				cl := &struct{ cloud.Cloud }{Cloud: f.memory}
+				f.cfg.Cloud = cl
+				e := ops.New(f.cfg)
+				ok(t, e.Scan(f.ctx))
+				// Any cloud call after the initial scan fails the test.
+				cl.Cloud = nil
+
+				f.now = f.now.Add(age)
+				ok(t, e.Pass(f.ctx))
+				if age > ops.StepTimeout {
+					failed := f.operation(op.ID)
+					equal(t, failed.Status, store.OpFailed)
+					equal(t, failed.Error, ops.ReasonTimedOut)
+					equal(t, failed.Step, tc.persisted)
+					equal(t, f.host(h.Name).Reason, ops.ReasonTimedOut)
+					_, _, err := f.st.RetryHost(f.ctx, h.Name, author)
+					ok(t, err)
+					ok(t, e.Pass(f.ctx))
+				}
+				next := f.operation(op.ID)
+				equal(t, next.Status, store.OpRunning)
+				equal(t, next.Step, tc.want)
+			})
+		}
 	}
 }
 
@@ -437,24 +444,6 @@ func TestDeleteWithoutDataVolumesMovesThroughBothDataSteps(t *testing.T) {
 	equal(t, f.step(e, op.ID).Step, ops.StepWaitDataDeleted)
 	equal(t, f.step(e, op.ID).Status, store.OpDone)
 	equal(t, len(cl.deleteData), 0)
-}
-
-// R-L0E6-07I2
-func TestExpiredDeleteStepFailsWithoutCloudRequests(t *testing.T) {
-	f := setup(t)
-	h, create := f.create()
-	ok(t, f.st.Finish(f.ctx, create.ID, store.Update{}))
-	op := f.deleteHost(h, false, author)
-	ok(t, f.st.Advance(f.ctx, op.ID, store.Update{Step: ops.StepOrphan}))
-	cl := &deletionCloud{f: f, createID: create.ID, deleteID: op.ID, recordCloud: &recordCloud{zone: f.cfg.Hosts.ZoneID}}
-	f.cfg.Cloud = cl
-	e := ops.New(f.cfg)
-	ok(t, e.Scan(f.ctx))
-	f.now = f.now.Add(ops.StepTimeout + time.Second)
-	cl.noRequests = true
-	ok(t, e.Pass(f.ctx))
-	equal(t, f.operation(op.ID).Status, store.OpFailed)
-	equal(t, f.host(h.Name).Reason, ops.ReasonTimedOut)
 }
 
 // R-9CBT-N22X

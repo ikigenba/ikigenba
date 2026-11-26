@@ -443,12 +443,10 @@ func TestLifecycleAndTerminatedResources(t *testing.T) {
 	ok(t, f.c.FindVolumes(ctx, f.launch().Tags, noRoot))
 }
 
-func TestMissingResourcesAndTagging(t *testing.T) {
-	// R-UO3K-OZE6 R-G4VH-YAKN
+func TestMissingInstances(t *testing.T) {
+	// R-UO3K-OZE6
 	f := setup(t)
 	ctx := t.Context()
-	i := f.instance(t)
-	v := f.volume(t)
 	a, err := f.c.AllocateAddress(ctx, f.launch().Tags)
 	ok(t, err)
 	const missing = "i-absent"
@@ -467,27 +465,67 @@ func TestMissingResourcesAndTagging(t *testing.T) {
 	} {
 		checkEC2(t, tc.err, tc.op, tc.subject, "InvalidInstanceID.NotFound", cloud.ClassNotFound)
 	}
-	for _, tag := range []string{cloud.TagKind, "Space", "Domain"} {
-		checkEC2(t, f.c.TagResource(ctx, i.ID, cloud.Tags{tag: ""}), "CreateTags", i.ID, cloud.CodeTagContract, cloud.ClassRefused)
+}
+
+func TestTagResource(t *testing.T) {
+	// R-QKH7-6IC3
+	f := setup(t)
+	ctx := t.Context()
+	i := f.instance(t)
+	spec := f.spec()
+	spec.Tags["X"] = "volume"
+	spec.Tags["Z"] = "retained"
+	v, err := f.c.CreateVolume(ctx, spec)
+	ok(t, err)
+	a, err := f.c.AllocateAddress(ctx, f.launch().Tags)
+	ok(t, err)
+	checkTags := func(wantI, wantV, wantA cloud.Tags) {
+		t.Helper()
+		actualI, err := f.c.DescribeInstance(ctx, i.ID)
+		ok(t, err)
+		equal(t, actualI.Tags, wantI)
+		actualV, err := f.c.DescribeVolume(ctx, v.ID)
+		ok(t, err)
+		equal(t, actualV.Tags, wantV)
+		actualA, err := f.c.DescribeAddress(ctx, a.AllocationID)
+		ok(t, err)
+		equal(t, actualA.Tags, wantA)
 	}
-	for id, code := range map[string]string{"i-missing": "InvalidInstanceID.NotFound", "vol-missing": "InvalidVolume.NotFound", "eipalloc-missing": "InvalidAllocationID.NotFound"} {
-		checkEC2(t, f.c.TagResource(ctx, id, cloud.Tags{"X": "value"}), "CreateTags", id, code, cloud.ClassNotFound)
+	for _, tc := range []struct {
+		held, missing, code string
+	}{
+		{i.ID, "i-missing", "InvalidInstanceID.NotFound"},
+		{v.ID, "vol-missing", "InvalidVolume.NotFound"},
+		{a.AllocationID, "eipalloc-missing", "InvalidAllocationID.NotFound"},
+	} {
+		for _, key := range []string{cloud.TagKind, "Space", "Domain"} {
+			tags := cloud.Tags{key: "", "X": "rejected", "Y": "rejected"}
+			for _, id := range []string{tc.held, tc.missing} {
+				checkEC2(t, f.c.TagResource(ctx, id, tags), "CreateTags", id, cloud.CodeTagContract, cloud.ClassRefused)
+				checkTags(i.Tags, v.Tags, a.Tags)
+			}
+		}
+		checkEC2(t, f.c.TagResource(ctx, tc.missing, cloud.Tags{"X": "value"}), "CreateTags", tc.missing, tc.code, cloud.ClassNotFound)
 	}
+
 	extra := cloud.Tags{"X": "new", "Y": "another"}
 	for _, id := range []string{i.ID, v.ID, a.AllocationID} {
 		ok(t, f.c.TagResource(ctx, id, extra))
 	}
-	actualI, err := f.c.DescribeInstance(ctx, i.ID)
-	ok(t, err)
-	actualV, err := f.c.DescribeVolume(ctx, v.ID)
-	ok(t, err)
-	actualA, err := f.c.DescribeAddress(ctx, a.AllocationID)
-	ok(t, err)
-	for _, pair := range [][2]cloud.Tags{{i.Tags, actualI.Tags}, {v.Tags, actualV.Tags}, {a.Tags, actualA.Tags}} {
-		want := maps.Clone(pair[0])
+	wantTags := func(original cloud.Tags) cloud.Tags {
+		want := maps.Clone(original)
 		maps.Copy(want, extra)
-		equal(t, pair[1], want)
+		return want
 	}
+	checkTags(wantTags(i.Tags), wantTags(v.Tags), wantTags(a.Tags))
+
+	f.now = f.now.Add(memory.VolumeDelay)
+	ok(t, f.c.DeleteVolume(ctx, v.ID))
+	f.now = f.now.Add(memory.VolumeDelay - time.Nanosecond)
+	ok(t, f.c.TagResource(ctx, v.ID, cloud.Tags{cloud.TagOrphaned: cloud.OrphanedTrue}))
+	wantV := wantTags(v.Tags)
+	wantV[cloud.TagOrphaned] = cloud.OrphanedTrue
+	checkTags(wantTags(i.Tags), wantV, wantTags(a.Tags))
 }
 
 func TestConcurrentIDsAndPaginatedFiltering(t *testing.T) {

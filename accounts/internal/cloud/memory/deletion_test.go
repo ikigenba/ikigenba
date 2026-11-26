@@ -55,8 +55,11 @@ func TestDeleteVolumeGuards(t *testing.T) {
 }
 
 func TestDeleteVolumeVisibility(t *testing.T) {
+	// R-QO4W-BTK6 R-QKH7-6IC3
 	f := setup(t)
 	ctx := t.Context()
+	host := f.instance(t)
+	f.now = f.now.Add(memory.BootDelay)
 	spec := f.spec()
 	spec.Tags[cloud.TagHost] = "host01"
 	v, err := f.c.CreateVolume(ctx, spec)
@@ -72,33 +75,58 @@ func TestDeleteVolumeVisibility(t *testing.T) {
 
 	reopened, err := memory.New(f.cfg)
 	ok(t, err)
-	f.now = f.now.Add(memory.VolumeDelay - time.Second)
+	clouds := []*memory.Cloud{f.c, reopened}
 	filter := cloud.Tags{cloud.TagHost: "host01"}
-	for _, c := range []*memory.Cloud{f.c, reopened} {
-		described, err := c.DescribeVolume(ctx, v.ID)
+	checkDeleting := func() {
+		t.Helper()
+		for _, c := range clouds {
+			described, err := c.DescribeVolume(ctx, v.ID)
+			ok(t, err)
+			equal(t, described, want)
+			var found []cloud.Volume
+			ok(t, c.FindVolumes(ctx, filter, func(volumes []cloud.Volume) bool {
+				found = append(found, volumes...)
+				return true
+			}))
+			equal(t, found, []cloud.Volume{want})
+		}
+	}
+	checkDeleting()
+	f.now = f.now.Add(memory.VolumeDelay - time.Second)
+	checkDeleting()
+	f.now = f.now.Add(time.Second - time.Nanosecond)
+	checkDeleting()
+	for _, c := range clouds {
+		for op, err := range map[string]error{
+			"AttachVolume": c.AttachVolume(ctx, v.ID, host.ID, "/dev/sdf"),
+			"ModifyVolume": c.ModifyVolume(ctx, v.ID, spec.SizeGB+2),
+		} {
+			if cloud.ClassOf(err) == cloud.ClassNotFound {
+				t.Fatalf("%s returned not found before the deletion deadline: %v", op, err)
+			}
+		}
+		_, err := c.VolumeModification(ctx, v.ID)
 		ok(t, err)
-		equal(t, described, want)
-		var found []cloud.Volume
-		ok(t, c.FindVolumes(ctx, filter, func(volumes []cloud.Volume) bool {
-			found = append(found, volumes...)
-			return true
-		}))
-		equal(t, found, []cloud.Volume{want})
+		ok(t, c.TagResource(ctx, v.ID, filter))
+		ok(t, c.DeleteVolume(ctx, v.ID))
 	}
 
-	f.now = f.now.Add(time.Second)
-	for _, c := range []*memory.Cloud{f.c, reopened} {
+	f.now = f.now.Add(time.Nanosecond)
+	for _, c := range clouds {
 		_, describe := c.DescribeVolume(ctx, v.ID)
 		_, modification := c.VolumeModification(ctx, v.ID)
 		for op, err := range map[string]error{
 			"DescribeVolumes":              describe,
-			"AttachVolume":                 c.AttachVolume(ctx, v.ID, "i-test", "/dev/sdf"),
+			"AttachVolume":                 c.AttachVolume(ctx, v.ID, host.ID, "/dev/sdf"),
 			"ModifyVolume":                 c.ModifyVolume(ctx, v.ID, spec.SizeGB+2),
 			"DescribeVolumesModifications": modification,
 			"CreateTags":                   c.TagResource(ctx, v.ID, cloud.Tags{cloud.TagOrphaned: cloud.OrphanedTrue}),
 			"DeleteVolume":                 c.DeleteVolume(ctx, v.ID),
 		} {
 			checkEC2(t, err, op, v.ID, "InvalidVolume.NotFound", cloud.ClassNotFound)
+		}
+		for _, key := range []string{cloud.TagKind, "Space", "Domain"} {
+			checkEC2(t, c.TagResource(ctx, v.ID, cloud.Tags{key: ""}), "CreateTags", v.ID, cloud.CodeTagContract, cloud.ClassRefused)
 		}
 		ok(t, c.FindVolumes(ctx, filter, func(volumes []cloud.Volume) bool {
 			t.Fatalf("found deleted volume: %+v", volumes)

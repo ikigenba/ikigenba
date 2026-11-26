@@ -21,7 +21,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
-// TestEmptyLandingData distinguishes non-nil empty slices from nil at the template input.
+// R-346L-0S45 distinguishes non-nil empty slices from nil at the template input.
 func TestEmptyLandingData(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	now := func() time.Time { return time.Date(2026, 11, 18, 14, 5, 9, 0, time.UTC) }

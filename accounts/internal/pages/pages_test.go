@@ -47,10 +47,11 @@ func operationIDs() *bytes.Reader {
 }
 
 type fixture struct {
-	cfg     pages.Config
-	d       *db.DB
-	writer  *telemetry.Writer
-	advance func(time.Duration)
+	cfg      pages.Config
+	d        *db.DB
+	writer   *telemetry.Writer
+	advance  func(time.Duration)
+	setClock func(time.Time)
 }
 
 func setup(t *testing.T) *fixture {
@@ -73,7 +74,11 @@ func setup(t *testing.T) *fixture {
 		return page.Banner{Service: pages.ServiceName, Release: "chosen-release", Commit: "chosen-commit", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Tools: true, Trail: []page.Level{{Name: "discarded", URL: "/discarded"}}}
 	}
 	cfg := pages.Config{banner, set, "", store.New(d, store.Config{Now: now, Rand: operationIDs()}), mcp.NewServer(mcp.ServerConfig{Name: pages.ServiceName, Telemetry: w}), true, "work.test", now}
-	return &fixture{cfg: cfg, d: d, writer: w, advance: func(d time.Duration) { clock = clock.Add(d) }}
+	return &fixture{
+		cfg: cfg, d: d, writer: w,
+		advance:  func(d time.Duration) { clock = clock.Add(d) },
+		setClock: func(at time.Time) { clock = at },
+	}
 }
 func request(method, target, user string) *http.Request {
 	r := httptest.NewRequest(method, target, strings.NewReader("chosen body"))

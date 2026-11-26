@@ -30,7 +30,7 @@ const created = "2026-11-17T14:03:07Z"
 const createdMinute = "2026-11-17 14:03"
 const createdSecond = "2026-11-17 14:03:07 UTC"
 
-// R-CYA3-AG15 R-CZHZ-O7RU
+// R-CYA3-AG15 R-CZHZ-O7RU R-35EH-EJUU
 func TestLandingRows(t *testing.T) {
 	f := setup(t)
 	data := pages.LandingData{Configured: true, Domain: f.cfg.Domain, Hosts: []pages.HostRow{}, KeptVolumes: []pages.KeptVolumeRow{}, Accounts: []pages.AccountRow{}, Users: []pages.UserRow{}}
@@ -250,7 +250,7 @@ func createKeptVolume(t *testing.T, f *fixture, volume string) pages.KeptVolumeR
 	return completeKeptHost(t, f, createRunningHost(t, f, volume), volume)
 }
 
-// R-2WV6-Q5NZ R-31QS-98MR R-32YO-N0DG R-3F5O-GPSE R-3GDK-UHJ3
+// R-2WV6-Q5NZ R-31QS-98MR R-32YO-N0DG R-3F5O-GPSE R-3GDK-UHJ3 R-35EH-EJUU
 func TestLandingChoicesAndKeptVolumeRows(t *testing.T) {
 	f := setup(t)
 	st := f.cfg.Store
@@ -380,7 +380,7 @@ func firstWindows(t *testing.T, rows pages.LandingData, size int) [4]bounds {
 	return b
 }
 
-// R-2WV6-Q5NZ R-2Y33-3XEO R-3DXS-2Y1P
+// R-2WV6-Q5NZ R-2Y33-3XEO R-2ZAZ-HP5D R-30IV-VGW2 R-346L-0S45 R-3BHZ-BEKB R-3CPV-P6B0 R-3DXS-2Y1P
 func TestIndependentPaging(t *testing.T) {
 	f := setup(t)
 	const l = paging.DefaultLimit
@@ -445,11 +445,39 @@ func TestIndependentPaging(t *testing.T) {
 
 	empty := setup(t)
 	fullFirstPage := setup(t)
-	createListRows(t, fullFirstPage, l)
+	full := createListRows(t, fullFirstPage, l)
+	checkLanding(t, fullFirstPage, "/", renderListWindows(full, firstWindows(t, full, l)))
 	target = "/?hosts_page=last&accounts_page=last&users_page=last&volumes_page=last&ignored=out"
 	for _, pageFixture := range []*fixture{empty, fullFirstPage} {
-		same(t, answer(pageFixture, "GET", target, "viewer"), statusWithHeader(303, "Location", "/"))
+		for _, method := range []string{"GET", "HEAD"} {
+			same(t, answer(pageFixture, method, target, "viewer"), statusWithHeader(303, "Location", "/"))
+		}
 	}
+}
+
+// R-2ZAZ-HP5D R-30IV-VGW2
+func TestLandingVolumePagingWithMissingPosition(t *testing.T) {
+	f := setup(t)
+	const limit = paging.DefaultLimit
+	const count = limit + 3
+	data := createListRows(t, f, count)
+	// Removing a row from the second window leaves its key between retained entries.
+	const removed = limit + 1
+	key := keyFor(t, removed, 3, data)
+	volume := data.KeptVolumes[removed].Volume
+	st := f.cfg.Store
+	if _, err := st.DeleteKeptVolume(t.Context(), volume, caller); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.FinishVolumeDelete(t.Context(), volume); err != nil {
+		t.Fatal(err)
+	}
+	data.KeptVolumes = slices.Delete(data.KeptVolumes, removed, removed+1)
+	b := firstWindows(t, data, count)
+	b[3] = bounds{1, removed, token("kept_volumes-before", key...), token("kept_volumes-before", keyFor(t, 1, 3, data)...), token("kept_volumes", keyFor(t, removed-1, 3, data)...)}
+	checkLanding(t, f, pageURL(b), renderListWindows(data, b))
+	b[3] = bounds{removed, count - 1, token("kept_volumes", key...), token("kept_volumes-before", keyFor(t, removed, 3, data)...), ""}
+	checkLanding(t, f, pageURL(b), renderListWindows(data, b))
 }
 
 // R-37UA-63C8 holds a list's position fixed across changes in the other lists.
@@ -477,14 +505,43 @@ func TestUsersWindowIgnoresOtherPositions(t *testing.T) {
 	}
 }
 
+func pageToolClient(t *testing.T, f *fixture) *mcp.Client {
+	t.Helper()
+	tools.Register(f.cfg.MCP, tools.Config{Store: f.cfg.Store, Cloud: struct{ cloud.Cloud }{}, Hosts: settings.SandboxHosts, Configured: true, Wake: func() {}, Telemetry: f.writer})
+	srv := httptest.NewServer(identity.Require(f.cfg.MCP))
+	t.Cleanup(srv.Close)
+	return mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL, HTTPClient: srv.Client()})
+}
+
+func pageToolContent[T any](t *testing.T, client *mcp.Client, name string, args any) T {
+	t.Helper()
+	raw, err := json.Marshal(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.CallTool(t.Context(), caller, name, raw)
+	if err != nil || result.IsError() {
+		t.Fatalf("%s: %v %v", name, result, err)
+	}
+	encoded, err := result.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		Content T `json:"structuredContent"`
+	}
+	if err := json.Unmarshal(encoded, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	return envelope.Content
+}
+
+// R-35EH-EJUU R-36MD-SBLJ
 func TestToolAndPageWindowsAgree(t *testing.T) {
 	f := setup(t)
 	const size = paging.DefaultLimit + 1
 	data := createListRows(t, f, size)
-	tools.Register(f.cfg.MCP, tools.Config{Store: f.cfg.Store, Cloud: struct{ cloud.Cloud }{}, Hosts: settings.SandboxHosts, Configured: true, Wake: func() {}, Telemetry: f.writer})
-	srv := httptest.NewServer(identity.Require(f.cfg.MCP))
-	defer srv.Close()
-	client := mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL, HTTPClient: srv.Client()})
+	client := pageToolClient(t, f)
 	initial := firstWindows(t, data, size)
 	for i, name := range listNames {
 		b := initial
@@ -493,31 +550,13 @@ func TestToolAndPageWindowsAgree(t *testing.T) {
 			if b[i].value != "" {
 				args["page"] = b[i].value
 			}
-			raw, err := json.Marshal(args)
-			if err != nil {
-				t.Fatal(err)
-			}
-			result, err := client.CallTool(t.Context(), caller, name, raw)
-			if err != nil || result.IsError() {
-				t.Fatalf("%s: %v %v", name, result, err)
-			}
-			encoded, err := result.MarshalJSON()
-			if err != nil {
-				t.Fatal(err)
-			}
-			var envelope struct {
-				Content struct {
-					Hosts       []struct{ Host string }
-					Accounts    []struct{ Account string }
-					Users       []struct{ Account, User string }
-					KeptVolumes []struct{ Volume string } `json:"kept_volumes"`
-					Next        string
-				} `json:"structuredContent"`
-			}
-			if err := json.Unmarshal(encoded, &envelope); err != nil {
-				t.Fatal(err)
-			}
-			content := envelope.Content
+			content := pageToolContent[struct {
+				Hosts       []struct{ Host string }
+				Accounts    []struct{ Account string }
+				Users       []struct{ Account, User string }
+				KeptVolumes []tools.KeptVolume `json:"kept_volumes"`
+				Next        string
+			}](t, client, name, args)
 			var got, want []string
 			switch i {
 			case 0:
@@ -543,18 +582,75 @@ func TestToolAndPageWindowsAgree(t *testing.T) {
 				}
 			case 3:
 				for _, row := range content.KeptVolumes {
-					got = append(got, row.Volume)
+					got = append(got, fmt.Sprintf("%s %s %d %s", row.Volume, row.Host, row.SizeGB, row.Deleted))
 				}
 				for _, row := range data.KeptVolumes[b[i].start:b[i].end] {
-					want = append(want, row.Volume)
+					want = append(want, fmt.Sprintf("%s %s %d %s", row.Volume, row.Host, row.SizeGB, row.Deleted))
 				}
 			}
 			if !slices.Equal(got, want) || content.Next != b[i].next {
-				t.Fatalf("%s tool identities and next = %v %q, want %v %q", name, got, content.Next, want, b[i].next)
+				t.Fatalf("%s tool rows and next = %v %q, want %v %q", name, got, content.Next, want, b[i].next)
 			}
 			checkLanding(t, f, pageURL(b), renderListWindows(data, b))
 			b[i] = bounds{paging.DefaultLimit, size, b[i].next, token(name+"-before", keyFor(t, paging.DefaultLimit, i, data)...), ""}
 		}
+	}
+}
+
+// R-9QOG-KJ8S
+func TestKeptVolumeDeletionRangeThroughPagesAndTool(t *testing.T) {
+	f := setup(t)
+	times := []time.Time{
+		time.Date(2261, time.December, 31, 23, 59, 59, 0, time.UTC),
+		time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(1678, time.January, 1, 0, 0, 0, 0, time.UTC),
+	}
+	data := pages.LandingData{
+		Configured: true, Domain: f.cfg.Domain, Hosts: []pages.HostRow{}, Accounts: []pages.AccountRow{}, Users: []pages.UserRow{},
+		KeptVolumes: make([]pages.KeptVolumeRow, len(times)),
+	}
+	volumes := [3]string{"vol-range-latest", "vol-range-middle", "vol-range-earliest"}
+	var hosts [3]store.Host
+	for _, i := range []int{2, 0, 1} {
+		hosts[i] = createRunningHost(t, f, volumes[i])
+	}
+	// Finish deletes out of sequence so neither host order nor insertion order gives the expected window.
+	for _, i := range []int{1, 0, 2} {
+		f.setClock(times[i])
+		data.KeptVolumes[i] = completeKeptHost(t, f, hosts[i], volumes[i])
+	}
+	checkLanding(t, f, "/", data)
+	for _, i := range []int{0, len(times) - 1} {
+		value := token(tools.ToolKeptVolumes, times[i].UnixNano(), data.KeptVolumes[i].Volume)
+		b := [4]bounds{{}, {}, {}, {start: i + 1, end: len(times), value: value}}
+		if i+1 < len(times) {
+			b[3].prev = token(tools.ToolKeptVolumes+"-before", times[i+1].UnixNano(), data.KeptVolumes[i+1].Volume)
+		}
+		checkLanding(t, f, pageURL(b), renderListWindows(data, b))
+	}
+
+	client := pageToolClient(t, f)
+	var entries []tools.KeptVolume
+	for i, row := range data.KeptVolumes {
+		entries = append(entries, tools.KeptVolume{Volume: row.Volume, Host: row.Host, SizeGB: row.SizeGB, State: store.VolumeKept, Deleted: times[i].Format(time.RFC3339)})
+	}
+	if got := pageToolContent[tools.KeptVolumeList](t, client, tools.ToolKeptVolumes, tools.KeptVolumesArgs{}); !slices.Equal(got.KeptVolumes, entries) || got.Next != nil {
+		t.Fatalf("kept volumes = %+v, want %v with no next page", got, entries)
+	}
+	one := 1
+	args := tools.KeptVolumesArgs{Limit: &one}
+	for i, entry := range entries {
+		got := pageToolContent[tools.KeptVolumeList](t, client, tools.ToolKeptVolumes, args)
+		var next *string
+		if i+1 < len(entries) {
+			value := token(tools.ToolKeptVolumes, times[i].UnixNano(), entry.Volume)
+			next = &value
+		}
+		want := tools.KeptVolumeList{KeptVolumes: []tools.KeptVolume{entry}, Next: next}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("tool window %d = %+v, want %+v", i, got, want)
+		}
+		args.Page = got.Next
 	}
 }
 
