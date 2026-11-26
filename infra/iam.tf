@@ -366,6 +366,25 @@ locals {
       Action   = "route53:GetChange"
       Resource = "arn:aws:route53:::change/*"
     },
+    {
+      # Host backups (hosts_backups.tf): accounts assumes the backup role to
+      # issue each host its credentials; it lists the bucket for the
+      # create-account name check and deletes, versions included, for
+      # delete_account_backups and a host's hosts/<host>/ prefix.
+      Effect   = "Allow"
+      Action   = "sts:AssumeRole"
+      Resource = aws_iam_role.hosts_backup.arn
+    },
+    {
+      Effect   = "Allow"
+      Action   = ["s3:ListBucket", "s3:ListBucketVersions"]
+      Resource = aws_s3_bucket.hosts_backups.arn
+    },
+    {
+      Effect   = "Allow"
+      Action   = ["s3:DeleteObject", "s3:DeleteObjectVersion"]
+      Resource = "${aws_s3_bucket.hosts_backups.arn}/*"
+    },
   ]
 }
 

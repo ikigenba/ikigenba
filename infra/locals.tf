@@ -21,4 +21,10 @@ locals {
   hosts_domain        = "metaspot.org"
   host_instance_type  = "t4g.medium"
   host_root_volume_gb = 20
+
+  # Host backups (hosts_backups.tf): a deleted or overwritten object stays
+  # recoverable this long; a multipart upload left unfinished is aborted
+  # after the other.
+  hosts_backup_noncurrent_days = 35
+  hosts_backup_abort_days      = 7
 }
