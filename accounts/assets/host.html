@@ -6,8 +6,9 @@
      sign out. One level below the root: .Banner's .Trail is the one level
      <.Host.Name> at /hosts/<.Host.Name>.
      Data: .Banner (a page.Banner, for banner and footer); .Host, with
-     .Name, .DNSName, .State, .Reason, .Health, .Type, .RootGB, .DataGB, .EIP,
-     .AccountCount, .Reported and .ReportedText as landing names them, and
+     .Name, .DNSName, .State, .Reason, .OnDelete, .Health, .Type, .RootGB,
+     .DataGB, .EIP, .AccountCount, .Reported and .ReportedText as landing
+     names them, and
      .InstanceID (string, the EC2 instance id; empty until one is
      launched), .DataVolume (string, the data volume's EBS id; empty until
      one is made), .Created and .CreatedText (string, when the host was
@@ -49,11 +50,12 @@
      when none).
      Bytes and counts are shown as the plain integer, never a humanised
      size; load averages to two decimals and percents to one, by printf
-     here. Kinds and words for state and health are landing's host-state
-     and host-health templates.
+     here. Kinds and words for state, the delete's choice and health are
+     landing's host-state, host-on-delete and host-health templates.
      Hooks: title "<.Host.Name> · accounts"; h1 with text .Host.Name;
-     p#headline.cluster holding the host-state span, a space, the
-     host-health span and, when .Host.Reported is set, a space and
+     p#headline.cluster holding the host-state span, then, when
+     .Host.OnDelete is not empty, a space and the host-on-delete badge, a
+     space, the host-health span and, when .Host.Reported is set, a space and
      span.muted holding "last report" and time[datetime=<.Host.Reported>]
      (text .Host.ReportedText).
      When .Host.State is "failed", div#failure.alert[data-kind=err][role=alert]
@@ -84,7 +86,10 @@
      dd#host-type (.Type in a code element), dt "Root volume (GB)" then
      dd#host-root (.RootGB), dt "Data volume (GB)" then dd#host-data
      (.DataGB), dt "Data volume" then dd#host-volume (.DataVolume in a code
-     element; when empty, dd#host-volume.muted with text "none"), dt
+     element; when empty, dd#host-volume.muted with text "none"), dt "On
+     delete" then dd#host-on-delete only when .OnDelete is set (text "data
+     volume kept" for "keep" and "data volume deleted with the host" for
+     "delete"), dt
      "Elastic IP" then dd#host-eip (.EIP in a code element; when empty,
      dd#host-eip.muted with text "none"), dt "Accounts" then
      dd#host-accounts (.AccountCount), dt "Allowlist" then
@@ -159,7 +164,7 @@
 {{template "banner" .Banner}}
 <main>
 {{with .Host}}<h1>{{.Name}}</h1>
-<p id="headline" class="cluster">{{template "host-state" .State}} {{template "host-health" .Health}}{{if .Reported}} <span class="muted">last report <time datetime="{{.Reported}}">{{.ReportedText}}</time></span>{{end}}</p>
+<p id="headline" class="cluster">{{template "host-state" .State}}{{if .OnDelete}} {{template "host-on-delete" .OnDelete}}{{end}} {{template "host-health" .Health}}{{if .Reported}} <span class="muted">last report <time datetime="{{.Reported}}">{{.ReportedText}}</time></span>{{end}}</p>
 {{if eq .State "failed"}}<div id="failure" class="alert" data-kind="err" role="alert">
 <strong>The last operation failed</strong>
 <p id="failure-reason">{{.Reason}}</p>
@@ -187,7 +192,8 @@
 <dt>Root volume (GB)</dt><dd id="host-root">{{.RootGB}}</dd>
 <dt>Data volume (GB)</dt><dd id="host-data">{{.DataGB}}</dd>
 <dt>Data volume</dt>{{if .DataVolume}}<dd id="host-volume"><code>{{.DataVolume}}</code></dd>{{else}}<dd id="host-volume" class="muted">none</dd>{{end}}
-<dt>Elastic IP</dt>{{if .EIP}}<dd id="host-eip"><code>{{.EIP}}</code></dd>{{else}}<dd id="host-eip" class="muted">none</dd>{{end}}
+{{if .OnDelete}}<dt>On delete</dt><dd id="host-on-delete">{{if eq .OnDelete "delete"}}data volume deleted with the host{{else}}data volume kept{{end}}</dd>
+{{end}}<dt>Elastic IP</dt>{{if .EIP}}<dd id="host-eip"><code>{{.EIP}}</code></dd>{{else}}<dd id="host-eip" class="muted">none</dd>{{end}}
 <dt>Accounts</dt><dd id="host-accounts">{{.AccountCount}}</dd>
 <dt>Allowlist</dt>{{if .Allowlist}}<dd id="host-allowlist">{{range $i, $a := .Allowlist}}{{if $i}}, {{end}}<code data-ip="{{$a}}">{{$a}}</code>{{end}}</dd>{{else}}<dd id="host-allowlist" class="muted">loopback only</dd>{{end}}
 <dt>Created</dt><dd id="host-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></dd>

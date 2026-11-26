@@ -3,10 +3,10 @@
      root of the hierarchy: .Banner's .Trail is empty, so the banner's
      breadcrumb holds only the service. Shown only to a signed-in user; a
      guest is sent to sign in (the enrollment page, join.html, is the one
-     page a guest is shown). Every signed-in user sees the same hosts,
-     accounts and users: they are the service's, not a user's. Read-only:
-     no form but the banner's sign out; hosts, accounts and users are kept
-     with the tools. The page does not stream: states are as they stand
+     page a guest is shown). Every signed-in user sees the same hosts, kept
+     volumes, accounts and users: they are the service's, not a user's.
+     Read-only: no form but the banner's sign out; hosts, kept volumes,
+     accounts and users are kept with the tools. The page does not stream: states are as they stand
      when the page is loaded.
      Data: .Banner (a page.Banner, for banner and footer); .Configured
      (bool, the space's configuration names the hosts domain, the zone and
@@ -23,7 +23,10 @@
      "resizing", "deleting" or "failed"), .Reason (string, why the last
      operation failed, as recorded, or, when that is empty, why the host's
      own DNS record could not be made, so a running host may carry one;
-     empty when neither applies),
+     empty when neither applies), .OnDelete (string, what the delete asked
+     of the host does with its data volume: "keep" the volume is kept and
+     tagged orphaned, "delete" it is deleted with the host; empty when no
+     delete has been asked of the host),
      .Health (string, from the host's latest report: "sync" the report
      applied the host's current desired state, "pending" the host has not
      yet applied a change made since, "error" the latest report says the
@@ -38,6 +41,15 @@
      .HostsPage, .HostsPrev, .HostsNext (string, the hosts list's page
      tokens, as the two-list form in design/README.md names them, in the
      hosts_page parameter).
+     .KeptVolumes (a slice, one window of up to 25 data volumes kept from
+     hosts accounts deleted with their data kept, as accounts' record
+     explains them, the most recently deleted host first), each with
+     .Volume (string, the volume's EBS id), .Host (string, the name of the
+     deleted host it came from, which a later live host may carry too),
+     .SizeGB (int, the volume's size in GB), .Deleted and .DeletedText
+     (string, when its host was deleted, in the two forms of .Reported);
+     .VolumesPage, .VolumesPrev, .VolumesNext (string, the kept volumes
+     list's page tokens, in the volumes_page parameter).
      .Accounts (a slice, one window of up to 25 accounts, sorted by slug),
      each with .Slug (string, the account's slug, which names its Linux
      group, its service account and its folder), .Host (string, the name of
@@ -65,17 +77,18 @@
      both empty when the user has never signed in); .UsersPage, .UsersPrev,
      .UsersNext (string, the users list's page tokens, in the users_page
      parameter).
-     Three lists share the page, so each has its own nav and parameter, the
-     two-list form of design/README.md carried to three:
-     nav#paging-hosts with hosts_page, nav#paging-accounts with
-     accounts_page and nav#paging-users with users_page; each nav's hrefs,
-     First's, Prev's and Last's included, carry the other two lists'
-     current page values when they are not empty, in the order hosts_page,
-     accounts_page, users_page, so paging one list never resets the
-     others. Counts and sizes are shown as the plain integer.
+     Four lists share the page, so each has its own nav and parameter, the
+     two-list form of design/README.md carried to four:
+     nav#paging-hosts with hosts_page, nav#paging-kept-volumes with
+     volumes_page, nav#paging-accounts with accounts_page and
+     nav#paging-users with users_page; each nav's hrefs, First's, Prev's
+     and Last's included, carry the other three lists' current page values
+     when they are not empty, in the order hosts_page, accounts_page,
+     users_page, volumes_page, so paging one list never resets the others.
+     Counts and sizes are shown as the plain integer.
      Kinds are chosen here. Host state: "running" ok; "provisioning",
      "stopping", "starting", "resizing" and "deleting" info; "failed" err;
-     "stopped" no kind. Health: "sync" ok, "pending" info, "error" err,
+     "stopped" no kind. On delete: "keep" no kind, "delete" warn. Health: "sync" ok, "pending" info, "error" err,
      "silent" warn, "none" no kind. Account state: "active" ok, "pending"
      and "removing" info, "failed" err. User state: "active" ok, "locked" warn, "removing" info.
      Hooks: title "accounts"; h1 with text "accounts"; p#summary.lede (text
@@ -108,9 +121,10 @@
      "/hosts/<.Name>", .Name in a code element), td.host-dns (.DNSName in a
      code element; when .DNSName is empty, td.host-dns.muted with text
      "none"), td.host-state holding
-     span.status[data-status=<.State>][data-kind=<kind>] (text .State)
-     and, when .Reason is not empty, span.secondary-text.host-reason (text
-     .Reason), td.host-health holding
+     span.status[data-status=<.State>][data-kind=<kind>] (text .State),
+     then, when .OnDelete is not empty, a space and the host-on-delete
+     badge, and, when .Reason is not empty, span.secondary-text.host-reason
+     (text .Reason), td.host-health holding
      span.status[data-status=<.Health>][data-kind=<kind>] with the health's
      word ("in sync", "applying", "apply failed", "silent", "no report"),
      td.host-type (.Type in a code element), td.host-root.num (.RootGB),
@@ -121,6 +135,24 @@
      it is empty is td.host-reported.muted with text "never"; then, after
      the card, nav.paging#paging-hosts (aria-label "Pages"), shown when
      .Hosts is not empty or .HostsPage is not empty.
+     section#kept-volumes.card.flush with h2 "Kept volumes" and a p in its
+     header (text "The data volumes of hosts deleted with their data kept,
+     each still holding that host's /home and /srv. A later host may take
+     the same name; it never uses an earlier host's volume. An agent can
+     delete a kept volume with the tools, which cannot be undone. Nothing
+     here changes a volume.", /home and /srv each in a code element), then
+     either, when .KeptVolumes is empty, div#no-kept-volumes.empty holding
+     h3 "No kept volumes" and a p (text "A host an agent deletes with its
+     data kept leaves its data volume here."), or div.table-scroll holding
+     table#kept-volume-list whose th read Volume, Host, Size (GB) (th.num),
+     Host deleted, with one tr[data-volume=<.Volume>] per volume, in the
+     order of .KeptVolumes, holding td.kept-volume-id (.Volume in a code
+     element), td.kept-volume-host (.Host in a code element, not a link,
+     since a deleted host has no page), td.kept-volume-size.num (.SizeGB)
+     and td.kept-volume-deleted holding time[datetime=<.Deleted>] (text
+     .DeletedText); then, after the card, nav.paging#paging-kept-volumes
+     (aria-label "Pages"), shown when .KeptVolumes is not empty or
+     .VolumesPage is not empty.
      section#accounts.card.flush with h2 "Accounts" and a p in its header
      (text "Each account is a business placed on one host: a Linux group, a
      service account and the shared folder /srv/<account>, reached at its
@@ -190,7 +222,7 @@
 {{range .Hosts}}<tr data-host="{{.Name}}">
 <td class="host-name"><a class="host-link" href="/hosts/{{.Name}}"><code>{{.Name}}</code></a></td>
 {{if .DNSName}}<td class="host-dns"><code>{{.DNSName}}</code></td>{{else}}<td class="host-dns muted">none</td>{{end}}
-<td class="host-state">{{template "host-state" .State}}{{if .Reason}}<span class="secondary-text host-reason">{{.Reason}}</span>{{end}}</td>
+<td class="host-state">{{template "host-state" .State}}{{if .OnDelete}} {{template "host-on-delete" .OnDelete}}{{end}}{{if .Reason}}<span class="secondary-text host-reason">{{.Reason}}</span>{{end}}</td>
 <td class="host-health">{{template "host-health" .Health}}</td>
 <td class="host-type"><code>{{.Type}}</code></td>
 <td class="host-root num">{{.RootGB}}</td>
@@ -207,7 +239,28 @@
 <p>A host an agent creates with the tools shows up here.</p>
 </div>{{end}}
 </section>
-{{if or .Hosts .HostsPage}}<nav class="paging" id="paging-hosts" aria-label="Pages">{{if .HostsPage}}<a href="/{{if .AccountsPage}}?accounts_page={{.AccountsPage}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}{{else if .UsersPage}}?users_page={{.UsersPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .HostsPrev}}<a href="/?hosts_page={{.HostsPrev}}{{if .AccountsPage}}&amp;accounts_page={{.AccountsPage}}{{end}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}">Prev</a>{{end}}{{if .HostsNext}}<a href="/?hosts_page={{.HostsNext}}{{if .AccountsPage}}&amp;accounts_page={{.AccountsPage}}{{end}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}">Next</a>{{end}}{{if .HostsNext}}<a href="/?hosts_page=last{{if .AccountsPage}}&amp;accounts_page={{.AccountsPage}}{{end}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
+{{if or .Hosts .HostsPage}}<nav class="paging" id="paging-hosts" aria-label="Pages">{{if .HostsPage}}<a href="/{{if .AccountsPage}}?accounts_page={{.AccountsPage}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}{{if .VolumesPage}}&amp;volumes_page={{.VolumesPage}}{{end}}{{else if .UsersPage}}?users_page={{.UsersPage}}{{if .VolumesPage}}&amp;volumes_page={{.VolumesPage}}{{end}}{{else if .VolumesPage}}?volumes_page={{.VolumesPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .HostsPrev}}<a href="/?hosts_page={{.HostsPrev}}{{if .AccountsPage}}&amp;accounts_page={{.AccountsPage}}{{end}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}{{if .VolumesPage}}&amp;volumes_page={{.VolumesPage}}{{end}}">Prev</a>{{end}}{{if .HostsNext}}<a href="/?hosts_page={{.HostsNext}}{{if .AccountsPage}}&amp;accounts_page={{.AccountsPage}}{{end}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}{{if .VolumesPage}}&amp;volumes_page={{.VolumesPage}}{{end}}">Next</a>{{end}}{{if .HostsNext}}<a href="/?hosts_page=last{{if .AccountsPage}}&amp;accounts_page={{.AccountsPage}}{{end}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}{{if .VolumesPage}}&amp;volumes_page={{.VolumesPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
+{{end}}<section id="kept-volumes" class="card flush" aria-labelledby="kept-volumes-title">
+<header><div><h2 id="kept-volumes-title">Kept volumes</h2><p>The data volumes of hosts deleted with their data kept, each still holding that host's <code>/home</code> and <code>/srv</code>. A later host may take the same name; it never uses an earlier host's volume. An agent can delete a kept volume with the tools, which cannot be undone. Nothing here changes a volume.</p></div></header>
+{{if .KeptVolumes}}<div class="table-scroll">
+<table id="kept-volume-list">
+<thead><tr><th>Volume</th><th>Host</th><th class="num">Size (GB)</th><th>Host deleted</th></tr></thead>
+<tbody>
+{{range .KeptVolumes}}<tr data-volume="{{.Volume}}">
+<td class="kept-volume-id"><code>{{.Volume}}</code></td>
+<td class="kept-volume-host"><code>{{.Host}}</code></td>
+<td class="kept-volume-size num">{{.SizeGB}}</td>
+<td class="kept-volume-deleted"><time datetime="{{.Deleted}}">{{.DeletedText}}</time></td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}<div id="no-kept-volumes" class="empty">
+<h3 class="text-md">No kept volumes</h3>
+<p>A host an agent deletes with its data kept leaves its data volume here.</p>
+</div>{{end}}
+</section>
+{{if or .KeptVolumes .VolumesPage}}<nav class="paging" id="paging-kept-volumes" aria-label="Pages">{{if .VolumesPage}}<a href="/{{if .HostsPage}}?hosts_page={{.HostsPage}}{{if .AccountsPage}}&amp;accounts_page={{.AccountsPage}}{{end}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}{{else if .AccountsPage}}?accounts_page={{.AccountsPage}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}{{else if .UsersPage}}?users_page={{.UsersPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .VolumesPrev}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}{{if .AccountsPage}}accounts_page={{.AccountsPage}}&amp;{{end}}{{if .UsersPage}}users_page={{.UsersPage}}&amp;{{end}}volumes_page={{.VolumesPrev}}">Prev</a>{{end}}{{if .VolumesNext}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}{{if .AccountsPage}}accounts_page={{.AccountsPage}}&amp;{{end}}{{if .UsersPage}}users_page={{.UsersPage}}&amp;{{end}}volumes_page={{.VolumesNext}}">Next</a>{{end}}{{if .VolumesNext}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}{{if .AccountsPage}}accounts_page={{.AccountsPage}}&amp;{{end}}{{if .UsersPage}}users_page={{.UsersPage}}&amp;{{end}}volumes_page=last">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
 {{end}}<section id="accounts" class="card flush" aria-labelledby="accounts-title">
 <header><div><h2 id="accounts-title">Accounts</h2><p>Each account is a business placed on one host: a Linux group, a service account and the shared folder <code>/srv/&lt;account&gt;</code>, reached at its own name. Invites counts the account's invite links not yet used, revoked or expired. Nothing here changes an account.</p></div></header>
 {{if .Accounts}}<div class="table-scroll">
@@ -231,7 +284,7 @@
 <p>An account an agent creates on a host with the tools shows up here.</p>
 </div>{{end}}
 </section>
-{{if or .Accounts .AccountsPage}}<nav class="paging" id="paging-accounts" aria-label="Pages">{{if .AccountsPage}}<a href="/{{if .HostsPage}}?hosts_page={{.HostsPage}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}{{else if .UsersPage}}?users_page={{.UsersPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .AccountsPrev}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}accounts_page={{.AccountsPrev}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}">Prev</a>{{end}}{{if .AccountsNext}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}accounts_page={{.AccountsNext}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}">Next</a>{{end}}{{if .AccountsNext}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}accounts_page=last{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
+{{if or .Accounts .AccountsPage}}<nav class="paging" id="paging-accounts" aria-label="Pages">{{if .AccountsPage}}<a href="/{{if .HostsPage}}?hosts_page={{.HostsPage}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}{{if .VolumesPage}}&amp;volumes_page={{.VolumesPage}}{{end}}{{else if .UsersPage}}?users_page={{.UsersPage}}{{if .VolumesPage}}&amp;volumes_page={{.VolumesPage}}{{end}}{{else if .VolumesPage}}?volumes_page={{.VolumesPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .AccountsPrev}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}accounts_page={{.AccountsPrev}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}{{if .VolumesPage}}&amp;volumes_page={{.VolumesPage}}{{end}}">Prev</a>{{end}}{{if .AccountsNext}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}accounts_page={{.AccountsNext}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}{{if .VolumesPage}}&amp;volumes_page={{.VolumesPage}}{{end}}">Next</a>{{end}}{{if .AccountsNext}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}accounts_page=last{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}{{if .VolumesPage}}&amp;volumes_page={{.VolumesPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
 {{end}}<section id="users" class="card flush" aria-labelledby="users-title">
 <header><div><h2 id="users-title">Users</h2><p>The people who sign in over SSH, each in one account, some of them its admins. A locked user cannot sign in. A pending change is made on the host at its next cycle. Nothing here changes a user.</p></div></header>
 {{if .Users}}<div class="table-scroll">
@@ -253,7 +306,7 @@
 <p>A user an agent adds with the tools, or a person who joins by an invite, shows up here.</p>
 </div>{{end}}
 </section>
-{{if or .Users .UsersPage}}<nav class="paging" id="paging-users" aria-label="Pages">{{if .UsersPage}}<a href="/{{if .HostsPage}}?hosts_page={{.HostsPage}}{{if .AccountsPage}}&amp;accounts_page={{.AccountsPage}}{{end}}{{else if .AccountsPage}}?accounts_page={{.AccountsPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .UsersPrev}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}{{if .AccountsPage}}accounts_page={{.AccountsPage}}&amp;{{end}}users_page={{.UsersPrev}}">Prev</a>{{end}}{{if .UsersNext}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}{{if .AccountsPage}}accounts_page={{.AccountsPage}}&amp;{{end}}users_page={{.UsersNext}}">Next</a>{{end}}{{if .UsersNext}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}{{if .AccountsPage}}accounts_page={{.AccountsPage}}&amp;{{end}}users_page=last">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
+{{if or .Users .UsersPage}}<nav class="paging" id="paging-users" aria-label="Pages">{{if .UsersPage}}<a href="/{{if .HostsPage}}?hosts_page={{.HostsPage}}{{if .AccountsPage}}&amp;accounts_page={{.AccountsPage}}{{end}}{{if .VolumesPage}}&amp;volumes_page={{.VolumesPage}}{{end}}{{else if .AccountsPage}}?accounts_page={{.AccountsPage}}{{if .VolumesPage}}&amp;volumes_page={{.VolumesPage}}{{end}}{{else if .VolumesPage}}?volumes_page={{.VolumesPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .UsersPrev}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}{{if .AccountsPage}}accounts_page={{.AccountsPage}}&amp;{{end}}users_page={{.UsersPrev}}{{if .VolumesPage}}&amp;volumes_page={{.VolumesPage}}{{end}}">Prev</a>{{end}}{{if .UsersNext}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}{{if .AccountsPage}}accounts_page={{.AccountsPage}}&amp;{{end}}users_page={{.UsersNext}}{{if .VolumesPage}}&amp;volumes_page={{.VolumesPage}}{{end}}">Next</a>{{end}}{{if .UsersNext}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}{{if .AccountsPage}}accounts_page={{.AccountsPage}}&amp;{{end}}users_page=last{{if .VolumesPage}}&amp;volumes_page={{.VolumesPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
 {{end}}{{end}}<p><a id="tools-link" href="/tools">Tools</a> · <a id="about-link" href="/about">About accounts</a></p>
 </main>
 {{template "footer" .Banner}}
@@ -274,6 +327,13 @@
      Hooks: span.status[data-status=<health>] with data-kind when it has
      one. Used by landing and host. */}}
 {{define "host-health"}}{{if eq . "sync"}}<span class="status" data-status="sync" data-kind="ok">in sync</span>{{else if eq . "pending"}}<span class="status" data-status="pending" data-kind="info">applying</span>{{else if eq . "error"}}<span class="status" data-status="error" data-kind="err">apply failed</span>{{else if eq . "silent"}}<span class="status" data-status="silent" data-kind="warn">silent</span>{{else}}<span class="status" data-status="{{.}}">no report</span>{{end}}{{end}}
+{{/* host-on-delete: what the delete asked of a host does with its data
+     volume, as a .badge. Data: the choice string, "keep" or "delete".
+     Words and kinds: "keep" "keeps data", no kind; "delete" "deletes
+     data" warn. Hooks: span.badge.host-on-delete[data-delete=<choice>]
+     with data-kind when it has one. Used by landing and host, only when
+     the choice is not empty. */}}
+{{define "host-on-delete"}}{{if eq . "delete"}}<span class="badge host-on-delete" data-delete="delete" data-kind="warn">deletes data</span>{{else}}<span class="badge host-on-delete" data-delete="{{.}}">keeps data</span>{{end}}{{end}}
 {{/* account-state: an account's state as a .status word. Data: the state
      string, as stored. Kinds: "active" ok; "pending" and "removing" info;
      "failed" err; any other no kind. Hooks: span.status[data-status=<state>] with

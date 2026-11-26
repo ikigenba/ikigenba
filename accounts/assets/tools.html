@@ -8,7 +8,9 @@
      Hooks: title "tools · accounts"; h1 with text "Tools"; p#summary.lede
      (text "Agents run SSH hosting with these tools, through the MCP
      gateway's call and mutate: they create, stop, start, resize and
-     delete hosts, create accounts on a host and remove them, add users to
+     delete hosts, keeping a deleted host's data volume or deleting it
+     with the host, list and delete the data volumes kept from deleted
+     hosts, create accounts on a host and remove them, add users to
      an account with a key, add and remove keys, lock, unlock and delete
      users, set or clear a user's admin flag, make, list and revoke the
      invite links a person joins an account by, lift an address's ban and
@@ -27,7 +29,7 @@
 {{template "banner" .Banner}}
 <main>
 <h1>Tools</h1>
-<p id="summary" class="lede">Agents run SSH hosting with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>: they create, stop, start, resize and delete hosts, create accounts on a host and remove them, add users to an account with a key, add and remove keys, lock, unlock and delete users, set or clear a user's admin flag, make, list and revoke the invite links a person joins an account by, lift an address's ban and allow or disallow an address on a host, and list and read them all. A tool records the change and returns at once; an invite's link is answered once, when it is made; a host's state, and a pending user or key, show when it is done. On a space that operates no hosts the host and account tools refuse, saying the space is not configured.</p>
+<p id="summary" class="lede">Agents run SSH hosting with these tools, through the MCP gateway's <code>call</code> and <code>mutate</code>: they create, stop, start, resize and delete hosts, keeping a deleted host's data volume or deleting it with the host, list and delete the data volumes kept from deleted hosts, create accounts on a host and remove them, add users to an account with a key, add and remove keys, lock, unlock and delete users, set or clear a user's admin flag, make, list and revoke the invite links a person joins an account by, lift an address's ban and allow or disallow an address on a host, and list and read them all. A tool records the change and returns at once; an invite's link is answered once, when it is made; a host's state, and a pending user or key, show when it is done. On a space that operates no hosts the host and account tools refuse, saying the space is not configured.</p>
 <section class="card">
 <dl id="tools" class="kv">
 {{range .Tools}}<dt data-tool="{{.Name}}"><code>{{.Name}}</code></dt><dd>{{.Description}}</dd>
