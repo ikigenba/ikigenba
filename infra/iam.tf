@@ -238,8 +238,7 @@ locals {
     },
     {
       # Attach and detach take the volume and the instance; modify takes the
-      # volume, root or data. No delete: no tool deletes a data volume, and a
-      # root volume goes with its instance.
+      # volume, root or data. Delete is the next statement, data volumes only.
       Effect = "Allow"
       Action = [
         "ec2:AttachVolume",
@@ -252,6 +251,16 @@ locals {
       ]
       Condition = {
         StringEquals = { "aws:ResourceTag/Kind" = ["host", "host-data"] }
+      }
+    },
+    {
+      # A host delete that removes its data, and the kept-volume delete,
+      # delete a data volume. Never a root volume: it goes with its instance.
+      Effect   = "Allow"
+      Action   = "ec2:DeleteVolume"
+      Resource = "${local.ec2_arn}:volume/*"
+      Condition = {
+        StringEquals = { "aws:ResourceTag/Kind" = "host-data" }
       }
     },
     {
