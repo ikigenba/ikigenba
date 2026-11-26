@@ -25,12 +25,7 @@
      open is under way), "replacing" (a new machine is being put in place
      for the host), "restoring" (the new machine is restoring the host from
      backup; nobody can sign in until it reports every account restored) or
-     "failed"), .Closed and .ClosedText (string, when the host reported
-     every account fully backed up after a close, in the two forms of
-     .Reported; both empty while the host is open, and set only once a
-     close has finished), .BackupFlagged (int, how many accounts placed on
-     the host have backups whose health is "stale" or "error", as the
-     accounts list's .Backup names them; 0 when none), .Reason (string, why the last
+     "failed"), .Reason (string, why the last
      operation failed, as recorded, or, when that is empty, why the host's
      own DNS record could not be made, so a running host may carry one;
      empty when neither applies), .OnDelete (string, what the delete asked
@@ -47,7 +42,13 @@
      Elastic IP; empty until one is allocated), .AccountCount (int, how many
      accounts are placed on it), .Reported and .ReportedText (string, when
      the latest report was received, RFC 3339 UTC to the second and UTC to
-     the minute, "2026-11-17 14:05"; both empty when none has been);
+     the minute, "2026-11-17 14:05"; both empty when none has been),
+     .Closed and .ClosedText (string, when the host reported every account
+     fully backed up after a close, in the two forms of .Reported; both
+     empty while the host is open, and set only once a close has
+     finished), .BackupFlagged (int, how many accounts placed on the host
+     have backups whose health is "stale" or "error", as the accounts
+     list's .Backup names them; 0 when none);
      .HostsPage, .HostsPrev, .HostsNext (string, the hosts list's page
      tokens, as the two-list form in design/README.md names them, in the
      hosts_page parameter).

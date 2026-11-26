@@ -75,8 +75,8 @@
      slice, the account's databases as the host last reported them, sorted
      by path, at most 50), each with .Path (string, the database's path
      inside the account folder, "data/orders.db"), .Health (string, as
-     .Health above, for this one database: "stale" when its last streamed
-     write is older than the database threshold, "error" when the host
+     .Health above, for this one database: "stale" when its newest write
+     has not been streamed for longer than the database threshold, "error" when the host
      reported an error for it, among them a database not in WAL mode,
      "none" before its first write is streamed), .Written and .WrittenText
      (string, when its last write was streamed, in the two forms of
@@ -186,8 +186,11 @@
      when .Backups is empty, p#no-backups.muted (text "No account is placed
      on this host."), or div.table-scroll holding table#backup-list whose
      th read Account, Backups, Last snapshot, Last check, then Final backup
-     only when .Host.State is "closing" or .Host.Closed is set, then
-     Restore only when .Host.State is "restoring", then Error, with one
+     only when .Host.State is "closing", .Host.Closed is set or any
+     element's .Final is set, whatever the host's state, so a failed close
+     shows which account failed, then Restore only when .Host.State is
+     "restoring" or any element's .Restore is set, whatever the host's
+     state, so a failed restore shows which account failed, then Error, with one
      tr[data-account=<.Account>] per element of .Backups, in its order,
      holding td.backup-account (.Account in a code element),
      td.backup-health (the backup-health span for .Health),
@@ -362,7 +365,7 @@
 </section>
 {{end}}<section id="backups" class="card" aria-labelledby="backups-title">
 <header><div><h2 id="backups-title">Backups</h2><p>Each account's folder and its users' homes are snapshotted on a schedule, and each database under its <code>data/</code> folder is streamed as it is written, as the host last reported. An account is flagged when either falls behind or fails.</p></div></header>
-{{$final := or (eq .Host.State "closing") .Host.Closed}}{{$restore := eq .Host.State "restoring"}}{{if .Backups}}<div class="table-scroll">
+{{$final := or (eq .Host.State "closing") .Host.Closed}}{{$restore := eq .Host.State "restoring"}}{{range .Backups}}{{if .Final}}{{$final = true}}{{end}}{{if .Restore}}{{$restore = true}}{{end}}{{end}}{{if .Backups}}<div class="table-scroll">
 <table id="backup-list">
 <thead><tr><th>Account</th><th>Backups</th><th>Last snapshot</th><th>Last check</th>{{if $final}}<th>Final backup</th>{{end}}{{if $restore}}<th>Restore</th>{{end}}<th>Error</th></tr></thead>
 <tbody>
