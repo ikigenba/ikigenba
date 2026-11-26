@@ -50,6 +50,34 @@ func TestEmbeddedResources(t *testing.T) {
 	}
 }
 
+// R-ZZWT-ASA7
+func TestEmbeddedSeed(t *testing.T) {
+	want := map[string]fs.FileMode{
+		".": fs.ModeDir, ".gitignore": 0, "AGENTS.md": 0,
+		"data": fs.ModeDir, "data/.keep": 0, "setup.md": 0,
+	}
+	check := func(seed func() fs.FS) {
+		t.Helper()
+		got := make(map[string]fs.FileMode)
+		if err := fs.WalkDir(seed(), ".", func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			got[path] = entry.Type()
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("Seed() entries = %v, want %v", got, want)
+		}
+	}
+	for range 2 {
+		t.Chdir(t.TempDir())
+		check(accounts.Seed)
+	}
+}
+
 // R-V633-24YQ R-M7N8-UER0
 func TestEmbeddedDeploymentContents(t *testing.T) {
 	for name, want := range map[string]string{"manifest.toml": cli.Manifest, "nginx.conf": cli.NginxConf} {

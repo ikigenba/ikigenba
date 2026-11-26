@@ -43,6 +43,9 @@ func (h *Host) accounts(ctx context.Context, s protocol.DesiredState) error {
 		if err := h.ensureAccountFolder(ctx, account, path); err != nil {
 			return err
 		}
+		if err := h.seedAccountFolder(ctx, s, account, path); err != nil {
+			return err
+		}
 		gitConfig := h.path("/etc/gitconfig")
 		if knownDirectories == nil {
 			res, err := h.query(ctx, Command{Name: "git", Args: []string{"config", "--file", gitConfig, "--get-all", "safe.directory"}}, 0, 1)
@@ -66,27 +69,23 @@ func (h *Host) accounts(ctx context.Context, s protocol.DesiredState) error {
 }
 
 func (h *Host) ensureAccountFolder(ctx context.Context, account protocol.Account, path string) error {
+	staging := filepath.Join("/srv", "."+account.Slug+".seed")
+	if err := os.RemoveAll(h.path(staging)); err != nil {
+		return hostError(staging, err)
+	}
 	full := h.path(path)
 	info, err := os.Lstat(full)
-	missing := errors.Is(err, fs.ErrNotExist)
 	switch {
-	case missing:
-		if err := os.Mkdir(full, 0o700); err != nil {
-			return hostError(path, err)
+	case errors.Is(err, fs.ErrNotExist):
+		if err := h.stageAccountFolder(ctx, account, staging, path); err != nil {
+			return err
 		}
 	case err != nil:
 		return hostError(path, err)
 	case !info.IsDir():
 		return hostError(path, fs.ErrInvalid)
-	}
-	if missing || !ownerIs(info, account.GID, account.GID) {
-		if _, err := h.run(ctx, "chown", account.Slug+":"+account.Slug, full); err != nil {
-			return err
-		}
-		if err := h.mode(path, accountMode); err != nil {
-			return err
-		}
-		if _, err := h.run(ctx, "setfacl", "-d", "-m", "g::rwx,o::-", full); err != nil {
+	case !ownerIs(info, account.GID, account.GID):
+		if err := h.accountFolderPermissions(ctx, account.Slug, path); err != nil {
 			return err
 		}
 	}
@@ -99,6 +98,18 @@ func (h *Host) ensureAccountFolder(ctx context.Context, account protocol.Account
 		return hostError(filepath.Join(path, ".git"), err)
 	}
 	return nil
+}
+
+func (h *Host) accountFolderPermissions(ctx context.Context, slug, path string) error {
+	full := h.path(path)
+	if _, err := h.run(ctx, "chown", slug+":"+slug, full); err != nil {
+		return err
+	}
+	if err := h.mode(path, accountMode); err != nil {
+		return err
+	}
+	_, err := h.run(ctx, "setfacl", "-d", "-m", "g::rwx,o::-", full)
+	return err
 }
 
 func ownerIs(info fs.FileInfo, uid, gid int64) bool {

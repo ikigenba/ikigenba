@@ -2,9 +2,11 @@ package cli_test
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -21,6 +24,7 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud/memory"
 	"github.com/ikigenba/ikigenba/accounts/internal/join"
+	"github.com/ikigenba/ikigenba/accounts/internal/machine"
 	"github.com/ikigenba/ikigenba/accounts/internal/ops"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 	"github.com/ikigenba/ikigenba/accounts/internal/settings"
@@ -419,6 +423,145 @@ func TestSandboxResumesAndSynchronizesHosts(t *testing.T) {
 			t.Fatal(run.err.String())
 		}
 	})
+}
+
+// R-R5Y2-GACO R-H8X7-UWAT
+func TestSandboxListsSeededAccountFolder(t *testing.T) {
+	clock := newDrivenClock()
+	looks := make(chan chan time.Time, 1)
+	after := func(d time.Duration) <-chan time.Time {
+		if d != sim.WatchInterval {
+			return clock.after(d)
+		}
+		timer := make(chan time.Time, 1)
+		looks <- timer
+		return timer
+	}
+	waitForLook := func() chan time.Time {
+		select {
+		case timer := <-looks:
+			return timer
+		case <-time.After(5 * time.Second):
+			t.Fatal("simulated host look did not finish")
+			return nil
+		}
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state", "sandbox-seeds")
+	watch := watchSeedDirectory(t, filepath.Dir(path))
+	run := startIntegration(t, integrationOptions{dir: dir, now: clock.now, after: after, sleep: clock.sleep})
+	firstLook := waitForLook()
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("seed listing exists before creating a host: %v", err)
+	}
+
+	const hostName, accountName = "host01", "acme"
+	var created tools.HostChange
+	run.call(tools.ToolCreateHost, struct{}{}, &created)
+	if created.Host != hostName {
+		t.Fatalf("created host = %q, want %q", created.Host, hostName)
+	}
+	clock.advance(sim.WatchInterval)
+	firstLook <- clock.now()
+	driveUntil(t, clock, func() bool {
+		var host tools.HostRead
+		run.call(tools.ToolHost, tools.HostArgs{Host: hostName}, &host)
+		if host.Health == "sync" {
+			return true
+		}
+		select {
+		case timer := <-looks:
+			timer <- clock.now()
+		default:
+		}
+		return false
+	})
+	nextLook := waitForLook()
+	// The simulator can remove an empty listing in its first look. Check the
+	// directory events too so creation followed by removal still fails.
+	assertNoSeedCreation(t, watch, filepath.Base(path))
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("seed listing exists before creating an account: %v", err)
+	}
+
+	run.call(tools.ToolCreateAccount, tools.CreateAccountArgs{Account: accountName, Host: hostName}, nil)
+	driveUntil(t, clock, func() bool {
+		var listed tools.AccountList
+		run.call(tools.ToolAccounts, tools.AccountsArgs{}, &listed)
+		return len(listed.Accounts) == 1 && listed.Accounts[0].Account == accountName &&
+			listed.Accounts[0].Host == hostName && listed.Accounts[0].State == store.AccountActive
+	})
+	// Start a separate look after the MCP response and wait until it finishes.
+	clock.advance(sim.WatchInterval)
+	nextLook <- clock.now()
+	waitForLook()
+
+	var files []string
+	err := fs.WalkDir(accounts.Seed(), ".", func(path string, entry fs.DirEntry, err error) error {
+		if err == nil && entry.Type().IsRegular() {
+			files = append(files, path)
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(files)
+	var want strings.Builder
+	for _, file := range files {
+		fmt.Fprintf(&want, "%s %s file %s\n", hostName, accountName, file)
+	}
+	fmt.Fprintf(&want, "%s %s commit %s %s@%s.%s %s\n", hostName, accountName, accountName,
+		accountName, hostName, settings.SandboxHosts.Domain, machine.SeedMessage)
+	got, err := os.ReadFile(filepath.Clean(path))
+	if err != nil || string(got) != want.String() {
+		t.Fatalf("seed listing after the look = %q, err = %v; want %q", got, err, want.String())
+	}
+	if run.stop() != cli.ExitSuccess {
+		t.Fatal(run.err.String())
+	}
+}
+
+func watchSeedDirectory(t *testing.T, dir string) int {
+	t.Helper()
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	watch, err := syscall.InotifyInit1(syscall.IN_NONBLOCK | syscall.IN_CLOEXEC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = syscall.Close(watch) })
+	if _, err := syscall.InotifyAddWatch(watch, dir, syscall.IN_CREATE|syscall.IN_MOVED_TO); err != nil {
+		t.Fatal(err)
+	}
+	return watch
+}
+
+func assertNoSeedCreation(t *testing.T, watch int, seedName string) {
+	t.Helper()
+	var events [4096]byte
+	for {
+		n, err := syscall.Read(watch, events[:])
+		if errors.Is(err, syscall.EAGAIN) {
+			return
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		for remaining := events[:n]; len(remaining) > 0; {
+			var event syscall.InotifyEvent
+			size, err := binary.Decode(remaining, binary.NativeEndian, &event)
+			if err != nil || len(remaining)-size < int(event.Len) || event.Mask&syscall.IN_Q_OVERFLOW != 0 {
+				t.Fatalf("invalid seed directory event: mask %x, error %v", event.Mask, err)
+			}
+			end := size + int(event.Len)
+			if name := strings.TrimRight(string(remaining[size:end]), "\x00"); name == seedName {
+				t.Fatalf("seed listing was created before any account existed: %q (event mask %x)", name, event.Mask)
+			}
+			remaining = remaining[end:]
+		}
+	}
 }
 
 // R-L5PS-7HX9

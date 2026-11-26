@@ -133,13 +133,14 @@ func TestApplyAbortsWhenStoppingUserSliceFails(t *testing.T) {
 }
 
 func TestApplyAccountsAndUsers(t *testing.T) {
-	// R-CM22-DSSX R-0FNF-5G1G R-CPPR-J410 R-CQXN-WVRP R-KZ69-MFRD R-CTDG-OF93 R-82VL-4Z30 R-CX15-TQH6 R-0JB4-AR9J R-SM70-07MK R-B0TM-V8Q5
+	// R-CM22-DSSX R-0FNF-5G1G R-CQXN-WVRP R-KZ69-MFRD R-CTDG-OF93 R-82VL-4Z30 R-CX15-TQH6 R-0JB4-AR9J R-SM70-07MK R-B0TM-V8Q5
 	f := newHardeningFixture(t)
 	const groups = "willow:x:21000:\nperry:x:21001:maia\nmaia:x:21003:\nwheel:x:10:maia\n"
 	f.put("/etc/group", groups, 0o644)
 	f.put("/etc/passwd", "perry:x:21001:21001::/srv/perry:/usr/sbin/nologin\nwillow:x:21000:21000::/srv/willow:/usr/sbin/nologin\nmaia:x:21003:21003::/home/maia:/bin/bash\n", 0o644)
 	f.put("/etc/shadow", "maia:!:1:::::1:\n", 0o600)
 	f.put("/srv/willow/retained", "do not remove", 0o600)
+	f.put("/srv/citron/.git/config", "existing git configuration", 0o600)
 	f.put("/srv/perry/.git/config", "existing git configuration", 0o600)
 	f.put("/home/maia/cover", "private", 0o600)
 	f.setMode("/home/maia", 0o750)
@@ -207,7 +208,6 @@ func TestApplyAccountsAndUsers(t *testing.T) {
 		"useradd --system --uid 21002 --gid citron --home-dir /srv/citron --no-create-home --shell /usr/sbin/nologin citron",
 		"chown citron:citron " + f.path("/srv/citron"),
 		"setfacl -d -m g::rwx,o::- " + f.path("/srv/citron"),
-		"runuser -u citron -- git init --shared=group " + f.path("/srv/citron"),
 		gitQuery,
 		"git config --file " + f.path("/etc/gitconfig") + " --add safe.directory /srv/citron",
 		"chown perry:perry " + f.path("/srv/perry"),

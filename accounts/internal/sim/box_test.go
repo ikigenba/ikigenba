@@ -46,6 +46,11 @@ type sandboxBox struct {
 
 func newSandboxBox(t *testing.T, dir string, hosts int, forward http.HandlerFunc) *sandboxBox {
 	t.Helper()
+	return newSandbox(t, dir, "", hosts, forward)
+}
+
+func newSandbox(t *testing.T, boxDir, seedFile string, hosts int, forward http.HandlerFunc) *sandboxBox {
+	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	clock := &simClock{}
 	c, first := sandboxCloud(t, clock)
@@ -113,7 +118,7 @@ func newSandboxBox(t *testing.T, dir string, hosts int, forward http.HandlerFunc
 		return watch(d)
 	}
 	s := New(Config{
-		Cloud: c, Handler: h, Binding: binding, BoxDir: dir, After: after, BanFile: b.banFile,
+		Cloud: c, Handler: h, Binding: binding, BoxDir: boxDir, SeedFile: seedFile, After: after, BanFile: b.banFile,
 		Digest: func() string { return "same" }, Now: clock.now,
 		Sleep: func(_ context.Context, d time.Duration) { clock.advance(d) },
 	})
@@ -130,15 +135,21 @@ func newSandboxBox(t *testing.T, dir string, hosts int, forward http.HandlerFunc
 func (b *sandboxBox) apply(host int, version int64, users ...protocol.User) protocol.Report {
 	b.t.Helper()
 	instance := b.hosts[host-1]
-	b.states[instance.ID] <- protocol.DesiredState{
+	return b.applyState(host, protocol.DesiredState{
 		Protocol: protocol.Version, Host: instance.Tags[cloud.TagHost], Version: version, Daemon: "same",
 		DataVolume: "vol-data", DataGB: 100, RootGB: 20,
 		Accounts: []protocol.Account{{Slug: "team", GID: 4040, State: protocol.AccountActive}},
 		Users:    users,
-	}
+	})
+}
+
+func (b *sandboxBox) applyState(host int, state protocol.DesiredState) protocol.Report {
+	b.t.Helper()
+	instance := b.hosts[host-1]
+	b.states[instance.ID] <- state
 	r := await(b.t, b.reports)
-	if r.InstanceID != instance.ID || r.Applied != version {
-		b.t.Fatalf("report = %+v, expected instance %s version %d", r, instance.ID, version)
+	if r.InstanceID != instance.ID || r.Applied != state.Version {
+		b.t.Fatalf("report = %+v, expected instance %s version %d", r, instance.ID, state.Version)
 	}
 	return r
 }

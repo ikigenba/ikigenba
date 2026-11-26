@@ -18,6 +18,9 @@ type Machine interface {
 	InstallDaemon(ctx context.Context, body io.Reader, digest string) error
 }
 
+// SeedMessage is the first commit's message in a new account folder.
+const SeedMessage = "Initialize account folder"
+
 const (
 	noDataVolumeText   = "data volume is not attached"
 	digestMismatchText = "daemon digest does not match"

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -38,7 +39,7 @@ import (
 )
 
 func TestWatchAndRestartLoop(t *testing.T) {
-	// R-XS1R-CMGN R-XT9N-QE7C
+	// R-R2AD-AZ4L R-XT9N-QE7C
 	const (
 		_ int64  = MaxBanFileBytes
 		_ uint64 = MaxBanFileBytes
@@ -46,16 +47,22 @@ func TestWatchAndRestartLoop(t *testing.T) {
 		_ uint64 = MaxSocketPath
 	)
 	var _ = struct {
-		Cloud   *memory.Cloud
-		Handler http.Handler
-		Binding string
-		Digest  func() string
-		Now     func() time.Time
-		Sleep   func(context.Context, time.Duration)
-		After   func(time.Duration) <-chan time.Time
-		BanFile string
-		BoxDir  string
+		Cloud    *memory.Cloud
+		Handler  http.Handler
+		Binding  string
+		Digest   func() string
+		Now      func() time.Time
+		Sleep    func(context.Context, time.Duration)
+		After    func(time.Duration) <-chan time.Time
+		BanFile  string
+		BoxDir   string
+		SeedFile string
 	}(Config{})
+	for _, field := range reflect.VisibleFields(reflect.TypeFor[Sim]()) {
+		if field.IsExported() {
+			t.Errorf("Sim exports field %s", field.Name)
+		}
+	}
 	if WatchInterval != 2*time.Second || ApplyDelay != 3*time.Second || MaxBanFileBytes != 64<<10 || MaxSocketPath != 107 {
 		t.Fatalf("WatchInterval = %v, ApplyDelay = %v, MaxBanFileBytes = %d, MaxSocketPath = %d", WatchInterval, ApplyDelay, MaxBanFileBytes, MaxSocketPath)
 	}
@@ -107,7 +114,7 @@ func TestWatchAndRestartLoop(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	s := New(Config{c, h, expectedBinding, func() string { return "sandbox-digest" }, clock.now,
-		func(ctx context.Context, _ time.Duration) { <-ctx.Done() }, watchTimer(t, watches), "", "",
+		func(ctx context.Context, _ time.Duration) { <-ctx.Done() }, watchTimer(t, watches), "", "", "",
 	})
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx) }()

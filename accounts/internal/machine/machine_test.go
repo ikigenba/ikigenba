@@ -6,11 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/accounts"
 	"github.com/ikigenba/ikigenba/accounts/internal/machine"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 )
@@ -111,6 +114,7 @@ func TestMemoryApplyAndSnapshot(t *testing.T) {
 		},
 		Folders: []string{"alpaca", "zebra"}, Applies: 1,
 		Hostname: "host01.hosts.example.com",
+		Seeds:    m.State().Seeds, // Seeding is covered by TestMemorySeeds.
 	}
 	got := m.State()
 	if !reflect.DeepEqual(got, want) {
@@ -157,9 +161,9 @@ func TestMemoryApplyAndSnapshot(t *testing.T) {
 	}
 }
 
-// R-ZJ3E-D4MZ.
-func TestSnapshotShape(t *testing.T) {
-	var snapshot struct {
+// R-QZUK-JFN7
+func TestSnapshotShape(_ *testing.T) {
+	var _ struct {
 		Accounts  []machine.Account
 		Users     []machine.User
 		Folders   []string
@@ -168,10 +172,8 @@ func TestSnapshotShape(t *testing.T) {
 		Allowlist []string
 		Bans      []protocol.Ban
 		Hostname  string
+		Seeds     []machine.Seed
 	} = fixedMachine().State()
-	if snapshot.Hostname != "" {
-		t.Fatalf("initial hostname = %q", snapshot.Hostname)
-	}
 	var _ struct {
 		Slug string
 		GID  int64
@@ -182,6 +184,110 @@ func TestSnapshotShape(t *testing.T) {
 		Locked        bool
 		Keys          []string
 	} = machine.User{}
+	var _ struct {
+		Account                string
+		Files                  []string
+		Commits                int
+		Author, Email, Message string
+	} = machine.Seed{}
+}
+
+// R-R12G-X7DW R-H6HF-3CTF
+func TestMemorySeeds(t *testing.T) {
+	const message string = machine.SeedMessage
+	if message == "" || strings.ContainsAny(message, "\r\n") {
+		t.Fatalf("SeedMessage = %q, want a nonempty line", message)
+	}
+	var paths []string
+	if err := fs.WalkDir(accounts.Seed(), ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Type().IsRegular() {
+			paths = append(paths, path)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(paths)
+	m := fixedMachine()
+	if got := m.State().Seeds; len(got) != 0 {
+		t.Fatalf("initial seeds = %+v", got)
+	}
+	state := protocol.DesiredState{
+		Host: "host01", Domain: "hosts.example.com", DataVolume: "vol-00000001",
+		Accounts: []protocol.Account{
+			{Slug: "zebra", GID: 20000, State: protocol.AccountActive},
+			{Slug: "alpaca", GID: 20001, State: protocol.AccountRemoved},
+		},
+	}
+	apply(t, m, state)
+	zebra := machine.Seed{Account: "zebra", Files: paths, Commits: 1, Author: "zebra", Email: "zebra@host01.hosts.example.com", Message: message}
+	if got := m.State().Seeds; !reflect.DeepEqual(got, []machine.Seed{zebra}) {
+		t.Fatalf("seeds after first apply = %+v, want %+v", got, zebra)
+	}
+	state.Accounts[0].State = protocol.AccountRemoved
+	apply(t, m, state)
+	if got := m.State().Seeds; !reflect.DeepEqual(got, []machine.Seed{zebra}) {
+		t.Fatalf("seeds after removal = %+v, want %+v", got, zebra)
+	}
+	state.Host, state.Domain = "host02", ""
+	state.Accounts[0].State = protocol.AccountActive
+	state.Accounts[1].State = protocol.AccountActive
+	state.DataVolume = ""
+	if err := m.Apply(t.Context(), state); !errors.Is(err, machine.ErrNoDataVolume) {
+		t.Fatalf("apply without data volume = %v", err)
+	}
+	if got := m.State().Seeds; !reflect.DeepEqual(got, []machine.Seed{zebra}) {
+		t.Fatalf("seeds after failed apply = %+v, want %+v", got, zebra)
+	}
+	state.DataVolume = "vol-00000001"
+	apply(t, m, state)
+	want := []machine.Seed{
+		{Account: "alpaca", Files: paths, Commits: 1, Author: "alpaca", Email: "alpaca@host02", Message: message},
+		zebra,
+	}
+	snapshot := m.State()
+	if !reflect.DeepEqual(snapshot.Seeds, want) {
+		t.Fatalf("seeds after reactivation and new account = %+v, want %+v", snapshot.Seeds, want)
+	}
+	snapshot.Seeds[0].Files[0] = "changed"
+	snapshot.Seeds[1] = machine.Seed{}
+	if got := m.State().Seeds; !reflect.DeepEqual(got, want) {
+		t.Fatalf("seeds after modifying snapshot = %+v, want %+v", got, want)
+	}
+
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+	failure := errors.New("injected")
+	for _, tc := range []struct {
+		slug    string
+		gid     int64
+		ctx     context.Context
+		failure error
+		wantErr error
+	}{
+		{slug: "bison", gid: 20002, ctx: canceled, wantErr: context.Canceled},
+		{slug: "camel", gid: 20003, ctx: t.Context(), failure: failure, wantErr: failure},
+	} {
+		state.Accounts = []protocol.Account{{Slug: tc.slug, GID: tc.gid, State: protocol.AccountActive}}
+		m.SetFailure(tc.failure)
+		if err := m.Apply(tc.ctx, state); !errors.Is(err, tc.wantErr) {
+			t.Fatalf("apply for %s = %v, want %v", tc.slug, err, tc.wantErr)
+		}
+		if got := m.State().Seeds; !reflect.DeepEqual(got, want) {
+			t.Fatalf("seeds after failed apply for %s = %+v, want %+v", tc.slug, got, want)
+		}
+		m.SetFailure(nil)
+		apply(t, m, state)
+		want = slices.Insert(want, len(want)-1, machine.Seed{
+			Account: tc.slug, Files: paths, Commits: 1, Author: tc.slug, Email: tc.slug + "@host02", Message: message,
+		})
+		if got := m.State().Seeds; !reflect.DeepEqual(got, want) {
+			t.Fatalf("seeds after successful retry for %s = %+v, want %+v", tc.slug, got, want)
+		}
+	}
 }
 
 func TestMemoryInspect(t *testing.T) {

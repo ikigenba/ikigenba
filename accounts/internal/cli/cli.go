@@ -217,8 +217,9 @@ func serve(ctx context.Context, p Process, ln net.Listener, s settings.Settings)
 		b, _ := binding()
 		simulator := sim.New(sim.Config{
 			Cloud: mc, Handler: handler, Binding: b, Digest: ds.Digest, Now: p.Now, Sleep: p.Sleep, After: p.After,
-			BanFile: filepath.Join(p.Dir, "state", "sandbox-bans"),
-			BoxDir:  filepath.Join(p.Dir, "state", "box"),
+			BanFile:  filepath.Join(p.Dir, "state", "sandbox-bans"),
+			BoxDir:   filepath.Join(p.Dir, "state", "box"),
+			SeedFile: filepath.Join(p.Dir, "state", "sandbox-seeds"),
 		})
 		background.Go(func() { _ = simulator.Run(work) })
 	}

@@ -22,15 +22,16 @@ const ApplyDelay = 3 * time.Second
 
 // Config supplies the sandbox cloud, handler, and the simulator's clock and timers.
 type Config struct {
-	Cloud   *memory.Cloud
-	Handler http.Handler
-	Binding string
-	Digest  func() string
-	Now     func() time.Time
-	Sleep   func(context.Context, time.Duration)
-	After   func(time.Duration) <-chan time.Time
-	BanFile string
-	BoxDir  string
+	Cloud    *memory.Cloud
+	Handler  http.Handler
+	Binding  string
+	Digest   func() string
+	Now      func() time.Time
+	Sleep    func(context.Context, time.Duration)
+	After    func(time.Duration) <-chan time.Time
+	BanFile  string
+	BoxDir   string
+	SeedFile string
 }
 
 // Sim supervises the sandbox's simulated hosts.
@@ -114,6 +115,9 @@ func (s *Sim) look(ctx context.Context, loops map[string]loop, boxDir string) er
 	s.consumeBans(running, loops)
 	if boxDir != "" {
 		updateBoxSockets(boxDir, running, loops)
+	}
+	if s.cfg.SeedFile != "" {
+		updateSeedListing(s.cfg.SeedFile, running, loops)
 	}
 	return nil
 }

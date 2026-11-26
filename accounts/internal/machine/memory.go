@@ -3,11 +3,13 @@ package machine
 import (
 	"context"
 	"io"
+	"io/fs"
 	"slices"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/ikigenba/ikigenba/accounts"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 	"github.com/ikigenba/ikigenba/accounts/internal/valid"
 )
@@ -45,6 +47,14 @@ type User struct {
 	Keys          []string
 }
 
+// Seed records the files and first commit of a simulated account folder.
+type Seed struct {
+	Account                string
+	Files                  []string
+	Commits                int
+	Author, Email, Message string
+}
+
 // Snapshot describes the current contents of a simulated host.
 type Snapshot struct {
 	Accounts  []Account
@@ -55,6 +65,7 @@ type Snapshot struct {
 	Allowlist []string
 	Bans      []protocol.Ban
 	Hostname  string
+	Seeds     []Seed
 }
 
 // Memory is an in-memory machine for tests and sandbox hosts.
@@ -64,7 +75,7 @@ type Memory struct {
 	booted    time.Time
 	accounts  map[string]Account
 	users     map[string]User
-	folders   map[string]struct{}
+	folders   map[string]Seed
 	daemon    string
 	applies   int
 	failure   error
@@ -91,7 +102,7 @@ func NewMemory(cfg MemoryConfig) *Memory {
 	return &Memory{
 		cfg: cfg, booted: cfg.Now().UTC().Truncate(time.Second),
 		accounts: make(map[string]Account), users: make(map[string]User),
-		folders: make(map[string]struct{}), bans: make(map[string]protocol.Ban),
+		folders: make(map[string]Seed), bans: make(map[string]protocol.Ban),
 	}
 }
 
@@ -116,6 +127,11 @@ func (m *Memory) State() Snapshot {
 	sort.Slice(out.Accounts, func(i, j int) bool { return out.Accounts[i].Slug < out.Accounts[j].Slug })
 	sort.Slice(out.Users, func(i, j int) bool { return out.Users[i].Name < out.Users[j].Name })
 	slices.Sort(out.Folders)
+	for _, slug := range out.Folders {
+		seed := m.folders[slug]
+		seed.Files = slices.Clone(seed.Files)
+		out.Seeds = append(out.Seeds, seed)
+	}
 	return out
 }
 
@@ -203,11 +219,20 @@ func (m *Memory) Apply(ctx context.Context, s protocol.DesiredState) error {
 	if s.DataVolume == "" && (len(s.Accounts) != 0 || len(s.Users) != 0) {
 		return ErrNoDataVolume
 	}
+	host := s.Host
+	if s.Domain != "" {
+		host += "." + s.Domain
+	}
 	for _, account := range s.Accounts {
 		switch account.State {
 		case protocol.AccountActive:
 			m.accounts[account.Slug] = Account{Slug: account.Slug, GID: account.GID}
-			m.folders[account.Slug] = struct{}{}
+			if _, exists := m.folders[account.Slug]; !exists {
+				m.folders[account.Slug] = Seed{
+					Account: account.Slug, Files: seedFiles(), Commits: 1,
+					Author: account.Slug, Email: account.Slug + "@" + host, Message: SeedMessage,
+				}
+			}
 		case protocol.AccountRemoved:
 			delete(m.accounts, account.Slug)
 		}
@@ -239,10 +264,28 @@ func (m *Memory) Apply(ctx context.Context, s protocol.DesiredState) error {
 		}
 	}
 	if s.Domain != "" {
-		m.hostname = s.Host + "." + s.Domain
+		m.hostname = host
 	}
 	m.applies++
 	return nil
+}
+
+func seedFiles() []string {
+	var paths []string
+	err := fs.WalkDir(accounts.Seed(), ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Type().IsRegular() {
+			paths = append(paths, path)
+		}
+		return nil
+	})
+	if err != nil {
+		panic(err) // The seed is an embedded file system.
+	}
+	slices.Sort(paths)
+	return paths
 }
 
 // Inspect returns fixed simulated usage and the current set of account slices.
