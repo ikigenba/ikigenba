@@ -20,7 +20,17 @@
      host's DNS name, "<.Name>.metaspot.org", the hosts domain from the
      configuration; empty when no domain is configured), .State (string, as
      stored: "provisioning", "running", "stopping", "stopped", "starting",
-     "resizing", "deleting" or "failed"), .Reason (string, why the last
+     "resizing", "deleting", "closing" (a close is under way: users are
+     being locked out and each account's final backup taken), "opening" (an
+     open is under way), "replacing" (a new machine is being put in place
+     for the host), "restoring" (the new machine is restoring the host from
+     backup; nobody can sign in until it reports every account restored) or
+     "failed"), .Closed and .ClosedText (string, when the host reported
+     every account fully backed up after a close, in the two forms of
+     .Reported; both empty while the host is open, and set only once a
+     close has finished), .BackupFlagged (int, how many accounts placed on
+     the host have backups whose health is "stale" or "error", as the
+     accounts list's .Backup names them; 0 when none), .Reason (string, why the last
      operation failed, as recorded, or, when that is empty, why the host's
      own DNS record could not be made, so a running host may carry one;
      empty when neither applies), .OnDelete (string, what the delete asked
@@ -42,12 +52,16 @@
      tokens, as the two-list form in design/README.md names them, in the
      hosts_page parameter).
      .KeptVolumes (a slice, one window of up to 25 data volumes kept from
-     hosts accounts deleted with their data kept, as accounts' record
-     explains them, the most recently deleted host first), each with
-     .Volume (string, the volume's EBS id), .Host (string, the name of the
-     deleted host it came from, which a later live host may carry too),
-     .SizeGB (int, the volume's size in GB), .Deleted and .DeletedText
-     (string, when its host was deleted, in the two forms of .Reported);
+     hosts accounts deleted with their data kept or replaced from backup,
+     as accounts' record explains them, the most recently kept first), each
+     with .Volume (string, the volume's EBS id), .Host (string, the name of
+     the host it came from: a deleted host, whose name a later live host
+     may carry too, or a replaced host, which lives on with a new volume),
+     .Cause (string, why it was kept: "deleted" its host was deleted with
+     its data kept, "replaced" its host was replaced from backup and this
+     was its data volume before), .SizeGB (int, the volume's size in GB),
+     .Deleted and .DeletedText (string, when it was kept: when its host was
+     deleted or replaced, in the two forms of .Reported);
      .VolumesPage, .VolumesPrev, .VolumesNext (string, the kept volumes
      list's page tokens, in the volumes_page parameter).
      .Accounts (a slice, one window of up to 25 accounts, sorted by slug),
@@ -60,7 +74,13 @@
      "removing"), .Reason (string, why its placement failed, as recorded;
      empty unless .State is "failed"), .UserCount (int, how many
      users it has), .InviteCount (int, how many unused invites it holds:
-     neither used, revoked nor expired; never a token or a link), .Created and .CreatedText (string, when it was created,
+     neither used, revoked nor expired; never a token or a link),
+     .Backup (string, the account's backup health, as the host page's
+     .Backups names it: "healthy", "stale", "error" or "none"),
+     .Snapshot and .SnapshotText (string, when the account's last
+     successful file snapshot was taken, as its host last reported it, in
+     the two forms of .Reported; both empty when none has been reported),
+     .Created and .CreatedText (string, when it was created,
      in the two forms of .Reported); .AccountsPage, .AccountsPrev,
      .AccountsNext (string, the accounts list's page tokens, in the
      accounts_page parameter).
@@ -87,10 +107,13 @@
      users_page, volumes_page, so paging one list never resets the others.
      Counts and sizes are shown as the plain integer.
      Kinds are chosen here. Host state: "running" ok; "provisioning",
-     "stopping", "starting", "resizing" and "deleting" info; "failed" err;
+     "stopping", "starting", "resizing", "deleting", "closing", "opening",
+     "replacing" and "restoring" info; "failed" err;
      "stopped" no kind. On delete: "keep" no kind, "delete" warn. Health: "sync" ok, "pending" info, "error" err,
      "silent" warn, "none" no kind. Account state: "active" ok, "pending"
      and "removing" info, "failed" err. User state: "active" ok, "locked" warn, "removing" info.
+     Backup health: "healthy" ok, "stale" warn, "error" err, "none" no
+     kind. Kept because: "deleted" no kind, "replaced" info.
      Hooks: title "accounts"; h1 with text "accounts"; p#summary.lede (text
      "SSH as a service: accounts runs hosts, places each business account
      on one of them, and keeps the people who sign in to work there. Agents
@@ -99,7 +122,9 @@
      invite a person to join an account by a link they enroll at
      themselves. On a host, with its own tools, every user manages their
      own keys, and an account's admins invite, lock, unlock, delete,
-     promote and demote its users.", then, when .Configured, " People sign
+     promote and demote its users. Every account's files and databases
+     are backed up with nothing to set up, and agents can close a host,
+     put it on a new machine and restore from its backups.", then, when .Configured, " People sign
      in as <user>@<account>.<.Domain>." with <user>@<account>.<.Domain> in
      a code element).
      When .Configured is false: div#not-configured.alert.callout[data-kind=info]
@@ -123,10 +148,13 @@
      "none"), td.host-state holding
      span.status[data-status=<.State>][data-kind=<kind>] (text .State),
      then, when .OnDelete is not empty, a space and the host-on-delete
+     badge, then, when .Closed is not empty, a space and the host-closed
      badge, and, when .Reason is not empty, span.secondary-text.host-reason
      (text .Reason), td.host-health holding
      span.status[data-status=<.Health>][data-kind=<kind>] with the health's
-     word ("in sync", "applying", "apply failed", "silent", "no report"),
+     word ("in sync", "applying", "apply failed", "silent", "no report")
+     and, when .BackupFlagged is above 0, a space and
+     span.badge.host-backups[data-kind=warn] (text "backups behind"),
      td.host-type (.Type in a code element), td.host-root.num (.RootGB),
      td.host-data.num (.DataGB), td.host-eip (.EIP in a code element; when
      .EIP is empty, td.host-eip.muted with text "none"), td.host-accounts.num
@@ -137,18 +165,23 @@
      .Hosts is not empty or .HostsPage is not empty.
      section#kept-volumes.card.flush with h2 "Kept volumes" and a p in its
      header (text "The data volumes of hosts deleted with their data kept,
-     each still holding that host's /home and /srv. A later host may take
-     the same name; it never uses an earlier host's volume. An agent can
-     delete a kept volume with the tools, which cannot be undone. Nothing
-     here changes a volume.", /home and /srv each in a code element), then
+     and the old data volumes of hosts replaced from backup, each still
+     holding what that host had in /home and /srv. No host ever takes a
+     kept volume back. An agent can delete a kept volume with the tools,
+     which cannot be undone. Nothing here changes a volume.", /home and
+     /srv each in a code element), then
      either, when .KeptVolumes is empty, div#no-kept-volumes.empty holding
      h3 "No kept volumes" and a p (text "A host an agent deletes with its
-     data kept leaves its data volume here."), or div.table-scroll holding
+     data kept, or replaces from backup, leaves its data volume here."), or
+     div.table-scroll holding
      table#kept-volume-list whose th read Volume, Host, Size (GB) (th.num),
-     Host deleted, with one tr[data-volume=<.Volume>] per volume, in the
+     Kept, with one tr[data-volume=<.Volume>] per volume, in the
      order of .KeptVolumes, holding td.kept-volume-id (.Volume in a code
      element), td.kept-volume-host (.Host in a code element, not a link,
-     since a deleted host has no page), td.kept-volume-size.num (.SizeGB)
+     since a deleted host has no page and a later host may carry its name,
+     then a space and span.badge.kept-volume-cause[data-cause=<.Cause>],
+     text "host deleted" with no kind for "deleted" and "host replaced"
+     with data-kind info for "replaced"), td.kept-volume-size.num (.SizeGB)
      and td.kept-volume-deleted holding time[datetime=<.Deleted>] (text
      .DeletedText); then, after the card, nav.paging#paging-kept-volumes
      (aria-label "Pages"), shown when .KeptVolumes is not empty or
@@ -156,20 +189,25 @@
      section#accounts.card.flush with h2 "Accounts" and a p in its header
      (text "Each account is a business placed on one host: a Linux group, a
      service account and the shared folder /srv/<account>, reached at its
-     own name. Invites counts the account's invite links not yet used,
+     own name. Backups says whether the account's files and databases are
+     backed up on time, as its host last reported; its host's page has the
+     detail. Invites counts the account's invite links not yet used,
      revoked or expired. Nothing here changes an account.", /srv/<account>
      in a code element), then either, when .Accounts is empty, div#no-accounts.empty
      holding h3 "No accounts yet" and a p (text "An account an agent
      creates on a host with the tools shows up here."), or div.table-scroll
      holding table#account-list whose th read Account, Host, DNS name,
-     State, Users (th.num), Invites (th.num), Created, with one tr[data-account=<.Slug>] per
+     State, Backups, Users (th.num), Invites (th.num), Created, with one tr[data-account=<.Slug>] per
      account, in the order of .Accounts, holding td.account-slug (.Slug in
      a code element), td.account-host (a.host-link, href "/hosts/<.Host>", .Host
      in a code element), td.account-dns (.DNSName in a code element),
      td.account-state holding
      span.status[data-status=<.State>][data-kind=<kind>] (text .State)
      and, when .Reason is not empty, span.secondary-text.account-reason
-     (text .Reason), td.account-users.num (.UserCount), td.account-invites.num
+     (text .Reason), td.account-backups holding the backup-health span
+     for .Backup and, when .Snapshot is not empty,
+     span.secondary-text.account-snapshot (text "last snapshot " then
+     time[datetime=<.Snapshot>], text .SnapshotText), td.account-users.num (.UserCount), td.account-invites.num
      (.InviteCount) and td.account-created holding
      time[datetime=<.Created>] (text .CreatedText); then, after the card,
      nav.paging#paging-accounts (aria-label "Pages"), shown when .Accounts
@@ -208,7 +246,7 @@
 {{template "banner" .Banner}}
 <main>
 <h1>accounts</h1>
-<p id="summary" class="lede">SSH as a service: accounts runs hosts, places each business account on one of them, and keeps the people who sign in to work there. Agents create hosts and accounts, add users and their keys, mark a user an admin of their account, and lock or delete users with the tools, or invite a person to join an account by a link they enroll at themselves. On a host, with its own tools, every user manages their own keys, and an account's admins invite, lock, unlock, delete, promote and demote its users.{{if .Configured}} People sign in as <code>&lt;user&gt;@&lt;account&gt;.{{.Domain}}</code>.{{end}}</p>
+<p id="summary" class="lede">SSH as a service: accounts runs hosts, places each business account on one of them, and keeps the people who sign in to work there. Agents create hosts and accounts, add users and their keys, mark a user an admin of their account, and lock or delete users with the tools, or invite a person to join an account by a link they enroll at themselves. On a host, with its own tools, every user manages their own keys, and an account's admins invite, lock, unlock, delete, promote and demote its users. Every account's files and databases are backed up with nothing to set up, and agents can close a host, put it on a new machine and restore from its backups.{{if .Configured}} People sign in as <code>&lt;user&gt;@&lt;account&gt;.{{.Domain}}</code>.{{end}}</p>
 {{if not .Configured}}<div id="not-configured" class="alert callout" data-kind="info">
 <strong>This space operates no hosts</strong>
 <p>Hosts, accounts and their users are run from one space only, the one whose configuration names the hosts domain. Here the host and account tools refuse, saying the space is not configured.</p>
@@ -222,8 +260,8 @@
 {{range .Hosts}}<tr data-host="{{.Name}}">
 <td class="host-name"><a class="host-link" href="/hosts/{{.Name}}"><code>{{.Name}}</code></a></td>
 {{if .DNSName}}<td class="host-dns"><code>{{.DNSName}}</code></td>{{else}}<td class="host-dns muted">none</td>{{end}}
-<td class="host-state">{{template "host-state" .State}}{{if .OnDelete}} {{template "host-on-delete" .OnDelete}}{{end}}{{if .Reason}}<span class="secondary-text host-reason">{{.Reason}}</span>{{end}}</td>
-<td class="host-health">{{template "host-health" .Health}}</td>
+<td class="host-state">{{template "host-state" .State}}{{if .OnDelete}} {{template "host-on-delete" .OnDelete}}{{end}}{{if .Closed}} {{template "host-closed"}}{{end}}{{if .Reason}}<span class="secondary-text host-reason">{{.Reason}}</span>{{end}}</td>
+<td class="host-health">{{template "host-health" .Health}}{{if gt .BackupFlagged 0}} <span class="badge host-backups" data-kind="warn">backups behind</span>{{end}}</td>
 <td class="host-type"><code>{{.Type}}</code></td>
 <td class="host-root num">{{.RootGB}}</td>
 <td class="host-data num">{{.DataGB}}</td>
@@ -241,14 +279,14 @@
 </section>
 {{if or .Hosts .HostsPage}}<nav class="paging" id="paging-hosts" aria-label="Pages">{{if .HostsPage}}<a href="/{{if .AccountsPage}}?accounts_page={{.AccountsPage}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}{{if .VolumesPage}}&amp;volumes_page={{.VolumesPage}}{{end}}{{else if .UsersPage}}?users_page={{.UsersPage}}{{if .VolumesPage}}&amp;volumes_page={{.VolumesPage}}{{end}}{{else if .VolumesPage}}?volumes_page={{.VolumesPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .HostsPrev}}<a href="/?hosts_page={{.HostsPrev}}{{if .AccountsPage}}&amp;accounts_page={{.AccountsPage}}{{end}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}{{if .VolumesPage}}&amp;volumes_page={{.VolumesPage}}{{end}}">Prev</a>{{end}}{{if .HostsNext}}<a href="/?hosts_page={{.HostsNext}}{{if .AccountsPage}}&amp;accounts_page={{.AccountsPage}}{{end}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}{{if .VolumesPage}}&amp;volumes_page={{.VolumesPage}}{{end}}">Next</a>{{end}}{{if .HostsNext}}<a href="/?hosts_page=last{{if .AccountsPage}}&amp;accounts_page={{.AccountsPage}}{{end}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}{{if .VolumesPage}}&amp;volumes_page={{.VolumesPage}}{{end}}">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
 {{end}}<section id="kept-volumes" class="card flush" aria-labelledby="kept-volumes-title">
-<header><div><h2 id="kept-volumes-title">Kept volumes</h2><p>The data volumes of hosts deleted with their data kept, each still holding that host's <code>/home</code> and <code>/srv</code>. A later host may take the same name; it never uses an earlier host's volume. An agent can delete a kept volume with the tools, which cannot be undone. Nothing here changes a volume.</p></div></header>
+<header><div><h2 id="kept-volumes-title">Kept volumes</h2><p>The data volumes of hosts deleted with their data kept, and the old data volumes of hosts replaced from backup, each still holding what that host had in <code>/home</code> and <code>/srv</code>. No host ever takes a kept volume back. An agent can delete a kept volume with the tools, which cannot be undone. Nothing here changes a volume.</p></div></header>
 {{if .KeptVolumes}}<div class="table-scroll">
 <table id="kept-volume-list">
-<thead><tr><th>Volume</th><th>Host</th><th class="num">Size (GB)</th><th>Host deleted</th></tr></thead>
+<thead><tr><th>Volume</th><th>Host</th><th class="num">Size (GB)</th><th>Kept</th></tr></thead>
 <tbody>
 {{range .KeptVolumes}}<tr data-volume="{{.Volume}}">
 <td class="kept-volume-id"><code>{{.Volume}}</code></td>
-<td class="kept-volume-host"><code>{{.Host}}</code></td>
+<td class="kept-volume-host"><code>{{.Host}}</code> {{if eq .Cause "replaced"}}<span class="badge kept-volume-cause" data-cause="replaced" data-kind="info">host replaced</span>{{else}}<span class="badge kept-volume-cause" data-cause="{{.Cause}}">host deleted</span>{{end}}</td>
 <td class="kept-volume-size num">{{.SizeGB}}</td>
 <td class="kept-volume-deleted"><time datetime="{{.Deleted}}">{{.DeletedText}}</time></td>
 </tr>
@@ -257,21 +295,22 @@
 </div>
 {{else}}<div id="no-kept-volumes" class="empty">
 <h3 class="text-md">No kept volumes</h3>
-<p>A host an agent deletes with its data kept leaves its data volume here.</p>
+<p>A host an agent deletes with its data kept, or replaces from backup, leaves its data volume here.</p>
 </div>{{end}}
 </section>
 {{if or .KeptVolumes .VolumesPage}}<nav class="paging" id="paging-kept-volumes" aria-label="Pages">{{if .VolumesPage}}<a href="/{{if .HostsPage}}?hosts_page={{.HostsPage}}{{if .AccountsPage}}&amp;accounts_page={{.AccountsPage}}{{end}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}{{else if .AccountsPage}}?accounts_page={{.AccountsPage}}{{if .UsersPage}}&amp;users_page={{.UsersPage}}{{end}}{{else if .UsersPage}}?users_page={{.UsersPage}}{{end}}">First</a>{{else}}<span aria-current="page">First</span>{{end}}{{if .VolumesPrev}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}{{if .AccountsPage}}accounts_page={{.AccountsPage}}&amp;{{end}}{{if .UsersPage}}users_page={{.UsersPage}}&amp;{{end}}volumes_page={{.VolumesPrev}}">Prev</a>{{end}}{{if .VolumesNext}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}{{if .AccountsPage}}accounts_page={{.AccountsPage}}&amp;{{end}}{{if .UsersPage}}users_page={{.UsersPage}}&amp;{{end}}volumes_page={{.VolumesNext}}">Next</a>{{end}}{{if .VolumesNext}}<a href="/?{{if .HostsPage}}hosts_page={{.HostsPage}}&amp;{{end}}{{if .AccountsPage}}accounts_page={{.AccountsPage}}&amp;{{end}}{{if .UsersPage}}users_page={{.UsersPage}}&amp;{{end}}volumes_page=last">Last</a>{{else}}<span aria-current="page">Last</span>{{end}}</nav>
 {{end}}<section id="accounts" class="card flush" aria-labelledby="accounts-title">
-<header><div><h2 id="accounts-title">Accounts</h2><p>Each account is a business placed on one host: a Linux group, a service account and the shared folder <code>/srv/&lt;account&gt;</code>, reached at its own name. Invites counts the account's invite links not yet used, revoked or expired. Nothing here changes an account.</p></div></header>
+<header><div><h2 id="accounts-title">Accounts</h2><p>Each account is a business placed on one host: a Linux group, a service account and the shared folder <code>/srv/&lt;account&gt;</code>, reached at its own name. Backups says whether the account's files and databases are backed up on time, as its host last reported; its host's page has the detail. Invites counts the account's invite links not yet used, revoked or expired. Nothing here changes an account.</p></div></header>
 {{if .Accounts}}<div class="table-scroll">
 <table id="account-list">
-<thead><tr><th>Account</th><th>Host</th><th>DNS name</th><th>State</th><th class="num">Users</th><th class="num">Invites</th><th>Created</th></tr></thead>
+<thead><tr><th>Account</th><th>Host</th><th>DNS name</th><th>State</th><th>Backups</th><th class="num">Users</th><th class="num">Invites</th><th>Created</th></tr></thead>
 <tbody>
 {{range .Accounts}}<tr data-account="{{.Slug}}">
 <td class="account-slug"><code>{{.Slug}}</code></td>
 <td class="account-host"><a class="host-link" href="/hosts/{{.Host}}"><code>{{.Host}}</code></a></td>
 <td class="account-dns"><code>{{.DNSName}}</code></td>
 <td class="account-state">{{template "account-state" .State}}{{if .Reason}}<span class="secondary-text account-reason">{{.Reason}}</span>{{end}}</td>
+<td class="account-backups">{{template "backup-health" .Backup}}{{if .Snapshot}}<span class="secondary-text account-snapshot">last snapshot <time datetime="{{.Snapshot}}">{{.SnapshotText}}</time></span>{{end}}</td>
 <td class="account-users num">{{.UserCount}}</td>
 <td class="account-invites num">{{.InviteCount}}</td>
 <td class="account-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></td>
@@ -315,11 +354,35 @@
 {{end}}
 {{/* host-state: a host's state as a .status word. Data: the state string,
      as stored. Kinds: "running" ok; "provisioning", "stopping",
-     "starting", "resizing" and "deleting" info; "failed" err; any other,
+     "starting", "resizing", "deleting", "closing", "opening", "replacing"
+     and "restoring" info; "failed" err; any other,
      "stopped" included, no kind. Hooks: span.status[data-status=<state>]
      with data-kind when it has one, text the state. Used by landing and
      host. */}}
-{{define "host-state"}}<span class="status" data-status="{{.}}"{{if eq . "running"}} data-kind="ok"{{else if eq . "failed"}} data-kind="err"{{else if or (eq . "provisioning") (eq . "stopping") (eq . "starting") (eq . "resizing") (eq . "deleting")}} data-kind="info"{{end}}>{{.}}</span>{{end}}
+{{define "host-state"}}<span class="status" data-status="{{.}}"{{if eq . "running"}} data-kind="ok"{{else if eq . "failed"}} data-kind="err"{{else if or (eq . "provisioning") (eq . "stopping") (eq . "starting") (eq . "resizing") (eq . "deleting") (eq . "closing") (eq . "opening") (eq . "replacing") (eq . "restoring")}} data-kind="info"{{end}}>{{.}}</span>{{end}}
+{{/* host-closed: the mark of a host that is closed, as a .badge. Data:
+     none. Hooks: span.badge.host-closed[data-kind=warn], text "closed".
+     Used by landing and host, only when the host's .Closed is set. */}}
+{{define "host-closed"}}<span class="badge host-closed" data-kind="warn">closed</span>{{end}}
+{{/* backup-health: an account's or a database's backup health as a
+     .status word. Data: the health string, "healthy" (backed up within
+     its threshold), "stale" (the last file snapshot, or a database's last
+     streamed write, is older than its threshold), "error" (the host
+     reported an error for it) or "none" (nothing backed up yet, or a host
+     whose daemon does not yet report backups). Words and kinds: "healthy"
+     "backed up" ok; "stale" "behind" warn; "error" "backup failed" err;
+     "none" "not backed up yet", no kind. Hooks:
+     span.status[data-status=<health>] with data-kind when it has one.
+     Used by landing and host. */}}
+{{define "backup-health"}}{{if eq . "healthy"}}<span class="status" data-status="healthy" data-kind="ok">backed up</span>{{else if eq . "stale"}}<span class="status" data-status="stale" data-kind="warn">behind</span>{{else if eq . "error"}}<span class="status" data-status="error" data-kind="err">backup failed</span>{{else}}<span class="status" data-status="{{.}}">not backed up yet</span>{{end}}{{end}}
+{{/* backup-step: how far one step the host carries out for an account
+     has got (a close's final backup, a restore from backup, a restore an
+     agent asked for), as a .status word. Data: the step string,
+     "pending" (asked, not yet reported done), "done" or "failed". Words
+     and kinds: "pending" "pending" info; "done" "done" ok; "failed"
+     "failed" err. Hooks: span.status[data-status=<step>][data-kind=<kind>],
+     text the word. Used by host. */}}
+{{define "backup-step"}}{{if eq . "done"}}<span class="status" data-status="done" data-kind="ok">done</span>{{else if eq . "failed"}}<span class="status" data-status="failed" data-kind="err">failed</span>{{else}}<span class="status" data-status="{{.}}" data-kind="info">pending</span>{{end}}{{end}}
 {{/* host-health: a host's health as a .status word. Data: the health
      string, "sync", "pending", "error", "silent" or "none". Words and
      kinds: "sync" "in sync" ok; "pending" "applying" info; "error" "apply

@@ -7,9 +7,13 @@
      <.Host.Name> at /hosts/<.Host.Name>.
      Data: .Banner (a page.Banner, for banner and footer); .Host, with
      .Name, .DNSName, .State, .Reason, .OnDelete, .Health, .Type, .RootGB,
-     .DataGB, .EIP, .AccountCount, .Reported and .ReportedText as landing
-     names them, and
-     .InstanceID (string, the EC2 instance id; empty until one is
+     .DataGB, .EIP, .AccountCount, .Reported, .ReportedText, .Closed,
+     .ClosedText and .BackupFlagged as landing names them, and
+     .Replace (string, how the host's machine is being replaced: "volume"
+     a new instance with the existing data volume attached, "backup" a new
+     instance and a new empty data volume restored from backup; set while
+     .State is "replacing" or "restoring", or "failed" from either, and
+     empty otherwise), .InstanceID (string, the EC2 instance id; empty until one is
      launched), .DataVolume (string, the data volume's EBS id; empty until
      one is made), .Created and .CreatedText (string, when the host was
      created, RFC 3339 UTC to the second and the same as shown,
@@ -48,13 +52,64 @@
      host applied, each entry an address or a CIDR as reported, sorted, at
      most 50, loopback not included, since the host always adds it; empty
      when none).
+     .Backups (a slice, one per account placed on the host, sorted by
+     slug; empty when none is), each with .Account (string, the slug),
+     .Health (string, the account's backup health, as the backup-health
+     template names it: "stale" when its files or any of its databases are
+     behind, "error" when the host reported an error for its files or any
+     of its databases, error before stale), .FilesStale (bool, the last
+     file snapshot is older than the files threshold), .Snapshot and
+     .SnapshotText (string, when the last successful file snapshot was
+     taken, in the two forms of .Created; empty when none has been
+     reported), .Checked and .CheckedText (string, when the account's
+     snapshots were last checked for integrity, in the two forms of
+     .Created; empty when never), .Error (string, the error the host last
+     reported for the account's files or its integrity check; empty when
+     none), .Final (string, the account's final backup in a close: ""
+     when no close is under way or recorded, else "pending", "done" or
+     "failed", as backup-step names them), .FinalAt and .FinalAtText
+     (string, when the host reported the final backup done, in the two
+     forms of .Created; empty unless .Final is "done"), .Restore (string,
+     the account's restore while the host is restored from backup: "" when
+     none is under way, else "pending", "done" or "failed"), .Databases (a
+     slice, the account's databases as the host last reported them, sorted
+     by path, at most 50), each with .Path (string, the database's path
+     inside the account folder, "data/orders.db"), .Health (string, as
+     .Health above, for this one database: "stale" when its last streamed
+     write is older than the database threshold, "error" when the host
+     reported an error for it, among them a database not in WAL mode,
+     "none" before its first write is streamed), .Written and .WrittenText
+     (string, when its last write was streamed, in the two forms of
+     .Created; empty when none has been) and .Error (string, the error the
+     host reported for it; empty when none), and .DatabaseTotal (int, how
+     many databases the host reported for the account, which exceeds len
+     .Databases when the list was cut).
+     .DatabaseCount (int, the sum of len .Databases over .Backups, so the
+     page knows whether any database is listed).
+     .Restores (a slice, the restores agents asked for on the host's
+     accounts, newest first, at most 25), each with .Account (string, the
+     slug), .Kind (string, "database" one database as of a point in time,
+     or "files" a file, a folder, a user's home or the whole account folder
+     as of a snapshot), .Path (string, what was asked for, as the request
+     named it), .AsOf and .AsOfText (string, the time the copy is as of:
+     the point in time for a database, the snapshot's time for files, in
+     the two forms of .Created), .Copy (string, where the copy is written,
+     as the host reported it; empty until it is), .State (string,
+     "pending", "done" or "failed", as backup-step names them), .Reason
+     (string, why it failed; empty unless .State is "failed"), .Asked and
+     .AskedText (string, when it was asked for, in the two forms of
+     .Created); and .RestoreTotal (int, how many restores the host's
+     accounts have had asked for, which exceeds len .Restores when the
+     list was cut).
      Bytes and counts are shown as the plain integer, never a humanised
      size; load averages to two decimals and percents to one, by printf
      here. Kinds and words for state, the delete's choice and health are
      landing's host-state, host-on-delete and host-health templates.
      Hooks: title "<.Host.Name> · accounts"; h1 with text .Host.Name;
      p#headline.cluster holding the host-state span, then, when
-     .Host.OnDelete is not empty, a space and the host-on-delete badge, a
+     .Host.OnDelete is not empty, a space and the host-on-delete badge,
+     then, when .Host.Closed is not empty, a space and the host-closed
+     badge, a
      space, the host-health span and, when .Host.Reported is set, a space and
      span.muted holding "last report" and time[datetime=<.Host.Reported>]
      (text .Host.ReportedText).
@@ -63,14 +118,37 @@
      .Host.Reason), then a p (text "An agent can retry it with the tools;
      a retry continues from what the failed attempt left.").
      When .Host.State is "provisioning", "stopping", "starting",
-     "resizing" or "deleting", div#running.alert.quiet[data-kind=info]
-     holding strong "In progress" and p "The page does not stream. Reload
+     "resizing", "deleting", "closing", "opening", "replacing" or
+     "restoring", div#running.alert.quiet[data-kind=info]
+     holding strong "In progress", then, for the last four states only,
+     p#progress (text, for "closing", "Users are being locked out and
+     their sessions ended, and each account's final backup is being
+     taken. The host is closed once every account reports one."; for
+     "opening", "Users are being let back in."; for "replacing" with
+     .Replace "backup", "A new machine is starting with a new, empty data
+     volume, which will be restored from backup."; for "replacing"
+     otherwise, "A new machine is starting with this host's data
+     volume."; for "restoring", "The new machine is restoring each account
+     from backup. Nobody can sign in until every account is restored."),
+     then p "The page does not stream. Reload
      it to see the outcome.", and a#reload.button (href "/hosts/<.Host.Name>",
      text "Reload").
+     When .Host.Closed is not empty, div#closed.alert.callout[data-kind=warn]
+     holding strong "This host is closed" and a p (text "Every user is
+     locked out and new sign-ins are refused. Every account was fully
+     backed up at <time>. An agent can open the host again with the
+     tools.", <time> being time[datetime=<.Host.Closed>], text
+     .Host.ClosedText).
      When .Host.Health is "silent", div#silent.alert.callout[data-kind=warn]
      holding strong "Nothing heard from this host" and p (text "The host
      is running but has not reported for 5 minutes. People can still sign
      in with what it last applied.").
+     When .Host.BackupFlagged is above 0,
+     div#backups-behind.alert.callout[data-kind=warn] holding strong
+     "Backups are behind" and a p (text "1 account on this host is not
+     backed up on time or reports an error." for 1, "<n> accounts on this
+     host are not backed up on time or report an error." otherwise, then "
+     Backups below says which.").
      section#host-card.card with h2 "Host" and a p in its header (text "An
      Elastic IP, a data volume holding /home and /srv, and SSH host keys
      that keep across stop, start and resize.", /home and /srv each in a
@@ -89,7 +167,10 @@
      element; when empty, dd#host-volume.muted with text "none"), dt "On
      delete" then dd#host-on-delete only when .OnDelete is set (text "data
      volume kept" for "keep" and "data volume deleted with the host" for
-     "delete"), dt
+     "delete"), dt "Replacement" then dd#host-replace only when .Replace
+     is set (text "from backup" for "backup" and "keeping the data volume"
+     otherwise), dt "Closed" then dd#host-closed-at only when .Closed is set
+     (time[datetime=<.Closed>], text .ClosedText), dt
      "Elastic IP" then dd#host-eip (.EIP in a code element; when empty,
      dd#host-eip.muted with text "none"), dt "Accounts" then
      dd#host-accounts (.AccountCount), dt "Allowlist" then
@@ -97,6 +178,72 @@
      .Allowlist, separated by ", "; when empty, dd#host-allowlist.muted
      "loopback only"), and dt "Created" then dd#host-created holding
      time[datetime=<.Created>] (text .CreatedText).
+     section#backups.card with h2 "Backups" and a p in its header (text
+     "Each account's folder and its users' homes are snapshotted on a
+     schedule, and each database under its data/ folder is streamed as it
+     is written, as the host last reported. An account is flagged when
+     either falls behind or fails.", data/ in a code element), then either,
+     when .Backups is empty, p#no-backups.muted (text "No account is placed
+     on this host."), or div.table-scroll holding table#backup-list whose
+     th read Account, Backups, Last snapshot, Last check, then Final backup
+     only when .Host.State is "closing" or .Host.Closed is set, then
+     Restore only when .Host.State is "restoring", then Error, with one
+     tr[data-account=<.Account>] per element of .Backups, in its order,
+     holding td.backup-account (.Account in a code element),
+     td.backup-health (the backup-health span for .Health),
+     td.backup-snapshot (time[datetime=<.Snapshot>], text .SnapshotText,
+     then, when .FilesStale, a space and
+     span.badge.backup-files-stale[data-kind=warn] (text "behind"); when
+     .Snapshot is empty, td.backup-snapshot.muted with text "never"),
+     td.backup-checked (time[datetime=<.Checked>], text .CheckedText;
+     when .Checked is empty, td.backup-checked.muted with text "never"),
+     td.backup-final when that column shows (the backup-step span for
+     .Final and, when .FinalAt is set, span.secondary-text.backup-final-at
+     holding time[datetime=<.FinalAt>], text .FinalAtText; when .Final is
+     empty, td.backup-final.muted with text "none"), td.backup-restore
+     when that column shows (the backup-step span for .Restore; when
+     .Restore is empty, td.backup-restore.muted with text "none"), and
+     td.backup-error (.Error in a code element; when empty,
+     td.backup-error.muted with text "none"). Then, when .Backups is not
+     empty, h3 "Databases" and p.muted (text "Every SQLite file under an
+     account's data/ folder is a database, streamed as it is written. One
+     not in WAL mode cannot be streamed: it shows an error and is kept in
+     the file snapshots instead.", data/ in a code element), then either,
+     when .DatabaseCount is 0, p#no-databases.muted (text "No database
+     reported."), or div.table-scroll holding table#database-list whose th
+     read Account, Database, Backups, Last write, with one
+     tr[data-account=<account>][data-database=<.Path>] per database, the
+     accounts in the order of .Backups and each account's databases in the
+     order of its .Databases, holding td.database-account (the account's
+     slug in a code element), td.database-path (.Path in a code element),
+     td.database-health (the backup-health span for .Health and, when
+     .Error is set, span.secondary-text.database-error, text .Error) and
+     td.database-written (time[datetime=<.Written>], text .WrittenText;
+     when .Written is empty, td.database-written.muted with text "never");
+     then, for each element of .Backups whose .DatabaseTotal exceeds len
+     .Databases, p.muted.database-total[data-account=<.Account>] (text
+     "Showing <len .Databases> of <.DatabaseTotal> databases of
+     <.Account>.", .Account in a code element).
+     section#restores.card with h2 "Restores" and a p in its header (text
+     "Copies of a database or of files as of an earlier time, asked for by
+     an agent with the tools. A copy is written beside the original and
+     never changes or removes it; the team compares it and swaps it in.
+     Newest first."), then either, when .Restores is empty,
+     p#no-restores.muted (text "No restore has been asked for on this
+     host."), or div.table-scroll holding table#restore-list whose th read
+     Account, What, As of, Copy, State, Asked, with one
+     tr[data-account=<.Account>] per restore, in the order of .Restores,
+     holding td.restore-account (.Account in a code element),
+     td.restore-what (span.badge.restore-kind[data-restore-kind=<.Kind>],
+     text "database" or "files", then a space and .Path in a code
+     element), td.restore-as-of (time[datetime=<.AsOf>], text .AsOfText),
+     td.restore-copy (.Copy in a code element; when empty,
+     td.restore-copy.muted with text "not written yet"), td.restore-state
+     (the backup-step span for .State and, when .Reason is set,
+     span.secondary-text.restore-reason, text .Reason) and td.restore-asked
+     (time[datetime=<.Asked>], text .AskedText); then, when .RestoreTotal
+     exceeds len .Restores, p#restore-total.muted (text "Showing the
+     newest <len .Restores> of <.RestoreTotal> restores.").
      section#report.card with h2 "Latest report" and a p in its header
      (text "What the host's daemon reported at the end of its last cycle.
      Reports are kept as the latest only."), then, when .Report is nil,
@@ -164,20 +311,32 @@
 {{template "banner" .Banner}}
 <main>
 {{with .Host}}<h1>{{.Name}}</h1>
-<p id="headline" class="cluster">{{template "host-state" .State}}{{if .OnDelete}} {{template "host-on-delete" .OnDelete}}{{end}} {{template "host-health" .Health}}{{if .Reported}} <span class="muted">last report <time datetime="{{.Reported}}">{{.ReportedText}}</time></span>{{end}}</p>
+<p id="headline" class="cluster">{{template "host-state" .State}}{{if .OnDelete}} {{template "host-on-delete" .OnDelete}}{{end}}{{if .Closed}} {{template "host-closed"}}{{end}} {{template "host-health" .Health}}{{if .Reported}} <span class="muted">last report <time datetime="{{.Reported}}">{{.ReportedText}}</time></span>{{end}}</p>
 {{if eq .State "failed"}}<div id="failure" class="alert" data-kind="err" role="alert">
 <strong>The last operation failed</strong>
 <p id="failure-reason">{{.Reason}}</p>
 <p>An agent can retry it with the tools; a retry continues from what the failed attempt left.</p>
 </div>
-{{else if or (eq .State "provisioning") (eq .State "stopping") (eq .State "starting") (eq .State "resizing") (eq .State "deleting")}}<div id="running" class="alert quiet" data-kind="info">
+{{else if or (eq .State "provisioning") (eq .State "stopping") (eq .State "starting") (eq .State "resizing") (eq .State "deleting") (eq .State "closing") (eq .State "opening") (eq .State "replacing") (eq .State "restoring")}}<div id="running" class="alert quiet" data-kind="info">
 <strong>In progress</strong>
-<p>The page does not stream. Reload it to see the outcome.</p>
+{{if eq .State "closing"}}<p id="progress">Users are being locked out and their sessions ended, and each account's final backup is being taken. The host is closed once every account reports one.</p>
+{{else if eq .State "opening"}}<p id="progress">Users are being let back in.</p>
+{{else if eq .State "replacing"}}<p id="progress">{{if eq .Replace "backup"}}A new machine is starting with a new, empty data volume, which will be restored from backup.{{else}}A new machine is starting with this host's data volume.{{end}}</p>
+{{else if eq .State "restoring"}}<p id="progress">The new machine is restoring each account from backup. Nobody can sign in until every account is restored.</p>
+{{end}}<p>The page does not stream. Reload it to see the outcome.</p>
 </div>
 <p><a id="reload" class="button" href="/hosts/{{.Name}}">Reload</a></p>
+{{end}}{{if .Closed}}<div id="closed" class="alert callout" data-kind="warn">
+<strong>This host is closed</strong>
+<p>Every user is locked out and new sign-ins are refused. Every account was fully backed up at <time datetime="{{.Closed}}">{{.ClosedText}}</time>. An agent can open the host again with the tools.</p>
+</div>
 {{end}}{{if eq .Health "silent"}}<div id="silent" class="alert callout" data-kind="warn">
 <strong>Nothing heard from this host</strong>
 <p>The host is running but has not reported for 5 minutes. People can still sign in with what it last applied.</p>
+</div>
+{{end}}{{if gt .BackupFlagged 0}}<div id="backups-behind" class="alert callout" data-kind="warn">
+<strong>Backups are behind</strong>
+<p>{{if eq .BackupFlagged 1}}1 account on this host is not backed up on time or reports an error.{{else}}{{.BackupFlagged}} accounts on this host are not backed up on time or report an error.{{end}} Backups below says which.</p>
 </div>
 {{end}}<section id="host-card" class="card" aria-labelledby="host-title">
 <header><div><h2 id="host-title">Host</h2><p>An Elastic IP, a data volume holding <code>/home</code> and <code>/srv</code>, and SSH host keys that keep across stop, start and resize.</p></div></header>
@@ -193,13 +352,72 @@
 <dt>Data volume (GB)</dt><dd id="host-data">{{.DataGB}}</dd>
 <dt>Data volume</dt>{{if .DataVolume}}<dd id="host-volume"><code>{{.DataVolume}}</code></dd>{{else}}<dd id="host-volume" class="muted">none</dd>{{end}}
 {{if .OnDelete}}<dt>On delete</dt><dd id="host-on-delete">{{if eq .OnDelete "delete"}}data volume deleted with the host{{else}}data volume kept{{end}}</dd>
+{{end}}{{if .Replace}}<dt>Replacement</dt><dd id="host-replace">{{if eq .Replace "backup"}}from backup{{else}}keeping the data volume{{end}}</dd>
+{{end}}{{if .Closed}}<dt>Closed</dt><dd id="host-closed-at"><time datetime="{{.Closed}}">{{.ClosedText}}</time></dd>
 {{end}}<dt>Elastic IP</dt>{{if .EIP}}<dd id="host-eip"><code>{{.EIP}}</code></dd>{{else}}<dd id="host-eip" class="muted">none</dd>{{end}}
 <dt>Accounts</dt><dd id="host-accounts">{{.AccountCount}}</dd>
 <dt>Allowlist</dt>{{if .Allowlist}}<dd id="host-allowlist">{{range $i, $a := .Allowlist}}{{if $i}}, {{end}}<code data-ip="{{$a}}">{{$a}}</code>{{end}}</dd>{{else}}<dd id="host-allowlist" class="muted">loopback only</dd>{{end}}
 <dt>Created</dt><dd id="host-created"><time datetime="{{.Created}}">{{.CreatedText}}</time></dd>
 </dl>
 </section>
-{{end}}<section id="report" class="card" aria-labelledby="report-title">
+{{end}}<section id="backups" class="card" aria-labelledby="backups-title">
+<header><div><h2 id="backups-title">Backups</h2><p>Each account's folder and its users' homes are snapshotted on a schedule, and each database under its <code>data/</code> folder is streamed as it is written, as the host last reported. An account is flagged when either falls behind or fails.</p></div></header>
+{{$final := or (eq .Host.State "closing") .Host.Closed}}{{$restore := eq .Host.State "restoring"}}{{if .Backups}}<div class="table-scroll">
+<table id="backup-list">
+<thead><tr><th>Account</th><th>Backups</th><th>Last snapshot</th><th>Last check</th>{{if $final}}<th>Final backup</th>{{end}}{{if $restore}}<th>Restore</th>{{end}}<th>Error</th></tr></thead>
+<tbody>
+{{range .Backups}}<tr data-account="{{.Account}}">
+<td class="backup-account"><code>{{.Account}}</code></td>
+<td class="backup-health">{{template "backup-health" .Health}}</td>
+{{if .Snapshot}}<td class="backup-snapshot"><time datetime="{{.Snapshot}}">{{.SnapshotText}}</time>{{if .FilesStale}} <span class="badge backup-files-stale" data-kind="warn">behind</span>{{end}}</td>{{else}}<td class="backup-snapshot muted">never</td>{{end}}
+{{if .Checked}}<td class="backup-checked"><time datetime="{{.Checked}}">{{.CheckedText}}</time></td>{{else}}<td class="backup-checked muted">never</td>{{end}}
+{{if $final}}{{if .Final}}<td class="backup-final">{{template "backup-step" .Final}}{{if .FinalAt}}<span class="secondary-text backup-final-at"><time datetime="{{.FinalAt}}">{{.FinalAtText}}</time></span>{{end}}</td>{{else}}<td class="backup-final muted">none</td>{{end}}
+{{end}}{{if $restore}}{{if .Restore}}<td class="backup-restore">{{template "backup-step" .Restore}}</td>{{else}}<td class="backup-restore muted">none</td>{{end}}
+{{end}}{{if .Error}}<td class="backup-error"><code>{{.Error}}</code></td>{{else}}<td class="backup-error muted">none</td>{{end}}
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+<h3 class="text-md">Databases</h3>
+<p class="muted">Every SQLite file under an account's <code>data/</code> folder is a database, streamed as it is written. One not in WAL mode cannot be streamed: it shows an error and is kept in the file snapshots instead.</p>
+{{if gt .DatabaseCount 0}}<div class="table-scroll">
+<table id="database-list">
+<thead><tr><th>Account</th><th>Database</th><th>Backups</th><th>Last write</th></tr></thead>
+<tbody>
+{{range .Backups}}{{$account := .Account}}{{range .Databases}}<tr data-account="{{$account}}" data-database="{{.Path}}">
+<td class="database-account"><code>{{$account}}</code></td>
+<td class="database-path"><code>{{.Path}}</code></td>
+<td class="database-health">{{template "backup-health" .Health}}{{if .Error}}<span class="secondary-text database-error">{{.Error}}</span>{{end}}</td>
+{{if .Written}}<td class="database-written"><time datetime="{{.Written}}">{{.WrittenText}}</time></td>{{else}}<td class="database-written muted">never</td>{{end}}
+</tr>
+{{end}}{{end}}</tbody>
+</table>
+</div>
+{{range .Backups}}{{if gt .DatabaseTotal (len .Databases)}}<p class="muted database-total" data-account="{{.Account}}">Showing {{len .Databases}} of {{.DatabaseTotal}} databases of <code>{{.Account}}</code>.</p>
+{{end}}{{end}}{{else}}<p id="no-databases" class="muted">No database reported.</p>
+{{end}}{{else}}<p id="no-backups" class="muted">No account is placed on this host.</p>
+{{end}}</section>
+<section id="restores" class="card" aria-labelledby="restores-title">
+<header><div><h2 id="restores-title">Restores</h2><p>Copies of a database or of files as of an earlier time, asked for by an agent with the tools. A copy is written beside the original and never changes or removes it; the team compares it and swaps it in. Newest first.</p></div></header>
+{{if .Restores}}<div class="table-scroll">
+<table id="restore-list">
+<thead><tr><th>Account</th><th>What</th><th>As of</th><th>Copy</th><th>State</th><th>Asked</th></tr></thead>
+<tbody>
+{{range .Restores}}<tr data-account="{{.Account}}">
+<td class="restore-account"><code>{{.Account}}</code></td>
+<td class="restore-what"><span class="badge restore-kind" data-restore-kind="{{.Kind}}">{{if eq .Kind "database"}}database{{else}}files{{end}}</span> <code>{{.Path}}</code></td>
+<td class="restore-as-of"><time datetime="{{.AsOf}}">{{.AsOfText}}</time></td>
+{{if .Copy}}<td class="restore-copy"><code>{{.Copy}}</code></td>{{else}}<td class="restore-copy muted">not written yet</td>{{end}}
+<td class="restore-state">{{template "backup-step" .State}}{{if .Reason}}<span class="secondary-text restore-reason">{{.Reason}}</span>{{end}}</td>
+<td class="restore-asked"><time datetime="{{.Asked}}">{{.AskedText}}</time></td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}<p id="no-restores" class="muted">No restore has been asked for on this host.</p>
+{{end}}{{if gt .RestoreTotal (len .Restores)}}<p id="restore-total" class="muted">Showing the newest {{len .Restores}} of {{.RestoreTotal}} restores.</p>
+{{end}}</section>
+<section id="report" class="card" aria-labelledby="report-title">
 <header><div><h2 id="report-title">Latest report</h2><p>What the host's daemon reported at the end of its last cycle. Reports are kept as the latest only.</p></div></header>
 {{with .Report}}<dl id="report-identity" class="kv">
 <dt>Received</dt><dd id="report-received"><time datetime="{{.Received}}">{{.ReceivedText}}</time></dd>
