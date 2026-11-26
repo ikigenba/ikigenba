@@ -3,6 +3,7 @@ package accounts_test
 import (
 	"io/fs"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/accounts"
@@ -75,6 +76,14 @@ func TestEmbeddedSeed(t *testing.T) {
 	for range 2 {
 		t.Chdir(t.TempDir())
 		check(accounts.Seed)
+	}
+}
+
+// R-027W-U4P5
+func TestSeedVersion(t *testing.T) {
+	const version string = accounts.SeedVersion
+	if version == "" || strings.ContainsAny(version, "\r\n") {
+		t.Fatalf("SeedVersion = %q, want a non-empty string without CR or LF", version)
 	}
 }
 
